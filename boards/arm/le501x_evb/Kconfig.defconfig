@@ -1,0 +1,9 @@
+
+if BOARD_LE501X_EVB
+
+config BOARD
+	default "le501x_evb"
+
+config FLASH_LOAD_OFFSET
+	default 0x2000
+endif

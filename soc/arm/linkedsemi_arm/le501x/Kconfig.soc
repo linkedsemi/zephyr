@@ -1,0 +1,11 @@
+
+choice
+    prompt "Linkedsemi LE501X MCU Selection"
+    depends on SOC_SERIES_LE501X
+
+config SOC_LE5010
+    bool "LE5010"
+
+endchoice
+
+    
