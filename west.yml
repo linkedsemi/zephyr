@@ -153,6 +153,12 @@ manifest:
       path: modules/hal/xtensa
       groups:
         - hal
+    - name: hal_linkedsemi
+      revision: zephyr
+      url: http://10.10.20.8:8000/sw/ls_sdk.git
+      path: modules/hal/linkedsemi
+      groups:
+        - hal
     - name: libmetal
       revision: efa2ace6028290ddee494a78ade772a0b112ab83
       path: modules/hal/libmetal
