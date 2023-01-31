@@ -5,5 +5,18 @@ config BOARD
 	default "le501x_evb"
 
 config FLASH_LOAD_OFFSET
-	default 0x2000
+	default 0x26000
+
+config HEAP_MEM_POOL_SIZE
+	default 4096
+
+config BT_CTLR
+	default n
+
+config BT
+	default y
+
+config BT_COMPANY_ID
+	default 0x093A
+
 endif
