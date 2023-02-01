@@ -1,8 +1,9 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/timer/system_timer.h>
+#include <zephyr/pm/state.h>
 #include "platform.h"
-
+#include "sleep.h"
 #define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
@@ -14,6 +15,7 @@ struct hw_time
 };
 struct hw_time last_anchor;
 struct hw_time target;
+int32_t os_sleep_ticks;
 static struct k_spinlock lock;
 
 struct hw_time ble_time_get();
@@ -72,9 +74,16 @@ static void wakeup_compenstation(uint32_t hus)
 
 }
 
+static int32_t os_sleep_duration_get()
+{
+    return OSTICK_HS_STEP_INC(CONFIG_SYS_CLOCK_TICKS_PER_SEC,os_sleep_ticks);
+}
+
 static int le501x_init(const struct device *arg)
 {
     sys_init_ll();
+    extern int32_t (*os_sleep_duration_get_fn)();
+    os_sleep_duration_get_fn = os_sleep_duration_get;
     eif_init(ll_hci_read,ll_hci_write,ll_hci_flow_on,ll_hci_flow_off);
     ke_timer_os_wrapper_init(timer_start,timer_stop,os_tick_handler,wakeup_compenstation);
     ble_ll_init();
@@ -133,4 +142,26 @@ void ble_stack_isr()
         ble_ll_task_event_set();
     }
     z_arm_int_exit();
+}
+
+const struct pm_state_info *pm_policy_next_state(uint8_t cpu, int32_t ticks)
+{
+    static const struct pm_state_info idle = PM_STATE_INFO_DT_INIT(DT_NODELABEL(idle));
+    static const struct pm_state_info lp0 = PM_STATE_INFO_DT_INIT(DT_NODELABEL(lp0));
+    os_sleep_ticks = ticks;
+    if(mac_sleep_check())
+    {
+        return &lp0;
+    }else
+    {
+        return &idle;
+    }
+}
+
+void pm_state_set(enum pm_state state, uint8_t substate_id)
+{
+    if(state == PM_STATE_STANDBY)
+    {
+        deep_sleep();
+    }
 }
