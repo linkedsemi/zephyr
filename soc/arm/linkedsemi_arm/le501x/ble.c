@@ -198,9 +198,15 @@ static void ll_task(void *p1,void *p2,void *p3)
     }
 }
 
+void rco_freq_counting_init();
+void rco_freq_counting_start();
+uint16_t get_lsi_cnt_val();
 void aos_swint_init(void (*isr)());
 static int ble_init(const struct device *unused)
 {
+    rco_freq_counting_init();
+    rco_freq_counting_start();
+    while (get_lsi_cnt_val() == 0);
     aos_swint_init(swint_handler);
     k_thread_create(&ll_thread_data, ll_thread_stack,K_THREAD_STACK_SIZEOF(ll_thread_stack),
         ll_task,NULL, NULL, NULL,K_PRIO_COOP(LL_THREAD_PRIORITY), 0, K_NO_WAIT);

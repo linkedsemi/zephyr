@@ -71,12 +71,14 @@ static void os_tick_handler()
 
 static void wakeup_compenstation(uint32_t hus)
 {
-
+    int32_t ticks = ceiling_fraction(hus,2*1000000/CONFIG_SYS_CLOCK_TICKS_PER_SEC);
+    sys_clock_announce(ticks);
 }
 
 static int32_t os_sleep_duration_get()
 {
-    return OSTICK_HS_STEP_INC(CONFIG_SYS_CLOCK_TICKS_PER_SEC,os_sleep_ticks);
+    int32_t dur = OSTICK_HS_STEP_INC(CONFIG_SYS_CLOCK_TICKS_PER_SEC,(uint64_t)os_sleep_ticks);
+    return dur>=0?dur:INT_MAX;
 }
 
 static int le501x_init(const struct device *arg)
@@ -158,10 +160,15 @@ const struct pm_state_info *pm_policy_next_state(uint8_t cpu, int32_t ticks)
     }
 }
 
-void pm_state_set(enum pm_state state, uint8_t substate_id)
+__weak void pm_state_set(enum pm_state state, uint8_t substate_id)
 {
     if(state == PM_STATE_STANDBY)
     {
         deep_sleep();
     }
+}
+
+__weak void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
+{
+    irq_unlock(0);
 }
