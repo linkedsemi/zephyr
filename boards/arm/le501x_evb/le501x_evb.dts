@@ -20,6 +20,11 @@
 
 &flash0 {
 
+    /*
+	* Flash base address is 0x18000000,
+    * the following parts are all offeset addresses.
+	*/
+
 	partitions {
 		compatible = "fixed-partitions";
 		#address-cells = <1>;
@@ -36,8 +41,8 @@
 		};
 
 		/*
-		 * The flash starting at 0x0007C000 and ending at
-		 * 0x0007FFFF is reserved for use by the application.
+		 * The flash starting at 0x1807C000 and ending at
+		 * 0x1807FFFF is reserved for use by the application.
 		 */
 
 		/*
