@@ -1,0 +1,5 @@
+description: vnd linkedsemi flash controller
+
+compatible: "vnd,linkedsemi-flash-controller"
+
+include: flash-controller.yaml

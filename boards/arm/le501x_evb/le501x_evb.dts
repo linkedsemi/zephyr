@@ -4,7 +4,7 @@
  */
 
 /dts-v1/;
-#include "le501x.dtsi"
+#include <linkedsemi/le501x.dtsi>
 
 / {
 	model = "LE501X_EVB";
@@ -16,6 +16,39 @@
 		zephyr,flash = &flash0;
 	};
 
+};
+
+&flash0 {
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "info-sbl-llsw";
+			reg = <0x00000000 0x00026000>;
+		};
+	
+        app_partition: partition@26000 {
+			label = "app";
+			reg = <0x00026000 0x00056000>;
+		};
+
+		/*
+		 * The flash starting at 0x0007C000 and ending at
+		 * 0x0007FFFF is reserved for use by the application.
+		 */
+
+		/*
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
+		 */
+		storage_partition: partition@7C000 {
+			label = "storage";
+			reg = <0x0007c000 0x00004000>;
+		};
+	};
 };
 
 &uart1 {

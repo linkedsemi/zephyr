@@ -1,0 +1,14 @@
+identifier: le501x_evb
+name: le501x
+type: mcu
+arch: arm
+ram: 48
+flash: 512
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+supported:
+  - nvs
+
+ 
