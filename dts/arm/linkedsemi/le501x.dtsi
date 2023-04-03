@@ -25,7 +25,7 @@
     soc {
 
         flash_controller: flash-controller@40020000 {
-            compatible = "vnd,le501x-flash-controller";
+            compatible = "linkedsemi,ls-flash-controller";
             reg = <0x40020000 0x400>;
             #address-cells = <1>;
             #size-cells = <1>;

@@ -1,0 +1,5 @@
+description: linkedsemi ls flash controller
+
+compatible: "linkedsemi,ls-flash-controller"
+
+include: flash-controller.yaml

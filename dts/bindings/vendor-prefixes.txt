@@ -330,6 +330,7 @@ lgphilips	LG Display
 libretech	Shenzhen Libre Technology Co., Ltd
 licheepi	Lichee Pi
 linaro	Linaro Limited
+linkedsemi	LinkedSemi Microelectronics Co., Ltd
 linksprite	LinkSprite Technologies, Inc.
 linksys	Belkin International, Inc. (Linksys)
 linutronix	Linutronix GmbH

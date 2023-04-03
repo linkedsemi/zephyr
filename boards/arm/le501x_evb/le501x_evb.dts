@@ -7,8 +7,8 @@
 #include <linkedsemi/le501x.dtsi>
 
 / {
-	model = "LE501X_EVB";
-	compatible = "vendor,le501x_evb";
+	model = "linkedsemi LE501X_EVB";
+	compatible = "linkedsemi,le501x_evb";
 
 	chosen {
 		zephyr,console = &uart1;

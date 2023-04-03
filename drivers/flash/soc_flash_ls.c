@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Linkedsemi
+ * Copyright (c) 2023 LinkedSemi
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,7 +11,7 @@
 
 #include <ls_hal_flash.h>
 
-#define DT_DRV_COMPAT        vnd_linkedsemi_flash_controller
+#define DT_DRV_COMPAT        linkedsemi_ls_flash_controller
 #define SOC_NV_FLASH_NODE    DT_INST(0, soc_nv_flash)
 
 #define FLASH_ADDR           DT_REG_ADDR(SOC_NV_FLASH_NODE)
@@ -23,12 +23,12 @@
 	struct k_sem mutex;
 };
 
-static const struct flash_parameters flash_linkedsemi_parameters = {
+static const struct flash_parameters flash_ls_parameters = {
 	.write_block_size = FLASH_WRITE_SIZE,
 	.erase_value = 0xff,
 };
 
-static int flash_linkedsemi_init(const struct device *dev)
+static int flash_ls_init(const struct device *dev)
 {
 	struct flash_priv *priv = dev->data;
 
@@ -37,7 +37,7 @@ static int flash_linkedsemi_init(const struct device *dev)
 	return 0;
 }
 
-static bool flash_linkedsemi_valid_range(off_t offset, size_t size)
+static bool flash_ls_valid_range(off_t offset, size_t size)
 {
     if ((offset < 0) || (size < 1)) {
 		return false;
@@ -50,7 +50,7 @@ static bool flash_linkedsemi_valid_range(off_t offset, size_t size)
 	return true;
 }
 
-static int flash_linkedsemi_erase(const struct device *dev, off_t offset,
+static int flash_ls_erase(const struct device *dev, off_t offset,
 				     size_t size)
 {
 	struct flash_priv *priv = dev->data;
@@ -65,7 +65,7 @@ static int flash_linkedsemi_erase(const struct device *dev, off_t offset,
 		return -EINVAL;
 	}
 
-	if (!flash_linkedsemi_valid_range(offset, size)) {
+	if (!flash_ls_valid_range(offset, size)) {
 		return -EINVAL;
 	}
 
@@ -83,7 +83,7 @@ static int flash_linkedsemi_erase(const struct device *dev, off_t offset,
 	return 0;
 }
 
-static int flash_linkedsemi_write(const struct device *dev, off_t offset,
+static int flash_ls_write(const struct device *dev, off_t offset,
 				     const void *data, size_t size)
 {
 	struct flash_priv *priv = dev->data;
@@ -94,7 +94,7 @@ static int flash_linkedsemi_write(const struct device *dev, off_t offset,
 		return 0;
 	}
 
-	if (!flash_linkedsemi_valid_range(offset, size)) {
+	if (!flash_ls_valid_range(offset, size)) {
 		return -EINVAL;
 	}
 
@@ -120,7 +120,7 @@ static int flash_linkedsemi_write(const struct device *dev, off_t offset,
 	return 0;
 }
 
-static int flash_linkedsemi_read(const struct device *dev, off_t offset,
+static int flash_ls_read(const struct device *dev, off_t offset,
 				    void *data, size_t size)
 {
 	ARG_UNUSED(dev);
@@ -129,7 +129,7 @@ static int flash_linkedsemi_read(const struct device *dev, off_t offset,
 		return 0;
 	}
 
-	if (!flash_linkedsemi_valid_range(offset, size)) {
+	if (!flash_ls_valid_range(offset, size)) {
 		return -EINVAL;
 	}
     
@@ -139,11 +139,11 @@ static int flash_linkedsemi_read(const struct device *dev, off_t offset,
 }
 
 static const struct flash_parameters *
-flash_linkedsemi_get_parameters(const struct device *dev)
+flash_ls_get_parameters(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	return &flash_linkedsemi_parameters;
+	return &flash_ls_parameters;
 }
 
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
@@ -152,7 +152,7 @@ static const struct flash_pages_layout dev_layout = {
 	.pages_size = FLASH_ERASE_SIZE,
 };
 
-static void flash_linkedsemi_layout(const struct device *dev,
+static void flash_ls_layout(const struct device *dev,
 				       const struct flash_pages_layout **layout,
 				       size_t *layout_size)
 {
@@ -161,18 +161,18 @@ static void flash_linkedsemi_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
-static const struct flash_driver_api flash_linkedsemi_api = {
-	.erase = flash_linkedsemi_erase,
-	.write = flash_linkedsemi_write,
-	.read = flash_linkedsemi_read,
-	.get_parameters = flash_linkedsemi_get_parameters,
+static const struct flash_driver_api flash_ls_api = {
+	.erase = flash_ls_erase,
+	.write = flash_ls_write,
+	.read = flash_ls_read,
+	.get_parameters = flash_ls_get_parameters,
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
-	.page_layout = flash_linkedsemi_layout,
+	.page_layout = flash_ls_layout,
 #endif
 };
 
 static struct flash_priv flash_data;
 
-DEVICE_DT_INST_DEFINE(0, flash_linkedsemi_init, NULL, &flash_data, NULL,
+DEVICE_DT_INST_DEFINE(0, flash_ls_init, NULL, &flash_data, NULL,
 		      POST_KERNEL, CONFIG_FLASH_INIT_PRIORITY,
-		      &flash_linkedsemi_api);
+		      &flash_ls_api);
