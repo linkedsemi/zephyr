@@ -16,7 +16,7 @@
 _ASM_FILE_PROLOGUE
 
 GTEXT(z_arm_cpu_idle_init)
-GTEXT(arch_cpu_idle)
+WTEXT(arch_cpu_idle)
 GTEXT(arch_cpu_atomic_idle)
 
 #if defined(CONFIG_CPU_CORTEX_M)

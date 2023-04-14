@@ -172,3 +172,8 @@ __weak void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 {
     irq_unlock(0);
 }
+
+void arch_cpu_idle()
+{
+    irq_unlock(0);
+}
