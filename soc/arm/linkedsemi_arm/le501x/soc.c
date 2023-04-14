@@ -71,8 +71,8 @@ static void os_tick_handler()
 
 static void wakeup_compenstation(uint32_t hus)
 {
-    int32_t ticks = ceiling_fraction(hus,2*1000000/CONFIG_SYS_CLOCK_TICKS_PER_SEC);
-    sys_clock_announce(ticks);
+    // int32_t ticks = ceiling_fraction(hus,2*1000000/CONFIG_SYS_CLOCK_TICKS_PER_SEC);
+    // sys_clock_announce(ticks);
 }
 
 static int32_t os_sleep_duration_get()
