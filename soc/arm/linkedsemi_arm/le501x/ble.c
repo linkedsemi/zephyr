@@ -2,11 +2,13 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/drivers/bluetooth/hci_driver.h>
+#include <zephyr/sys/byteorder.h>
+
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ble_hci);
 
-#define LL_THREAD_STACK_SIZE  0x200
+#define LL_THREAD_STACK_SIZE  0x400
 #define LL_THREAD_PRIORITY 0
 
 #define HCI_CMD                 0x01
@@ -15,11 +17,13 @@ LOG_MODULE_REGISTER(ble_hci);
 #define HCI_EVT                 0x04
 #define HCI_ISO                 0x05
 
+static uint16_t _opcode;
 static K_SEM_DEFINE(hci_send_sem, 0, 1);
 static K_SEM_DEFINE(ll_thread_sem, 0, 1);
 K_THREAD_STACK_DEFINE(ll_thread_stack, LL_THREAD_STACK_SIZE);
 struct k_thread ll_thread_data;
 
+extern int cmd_handle(struct net_buf *buf);
 void (*ll_hci_write_callback)(void *,uint8_t);
 void *ll_hci_write_param;
 void (*ll_hci_read_callback)(void *,uint8_t);
@@ -127,6 +131,9 @@ bool ll_hci_flow_off()
 static int hci_driver_send(struct net_buf *buf)
 {
     uint8_t pkt_indicator;
+    struct bt_hci_cmd_hdr *chdr = (void *)buf->data;
+    _opcode = sys_le16_to_cpu(chdr->opcode);
+
 	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
 	switch (bt_buf_get_type(buf)) {
 	case BT_BUF_ACL_OUT:
@@ -134,6 +141,11 @@ static int hci_driver_send(struct net_buf *buf)
 		break;
 	case BT_BUF_CMD:
 		pkt_indicator = HCI_CMD;
+        if (BT_OGF(_opcode) == BT_OGF_VS) {
+            cmd_handle(buf);
+            net_buf_unref(buf);
+            return 0;
+        }
 		break;
 	case BT_BUF_ISO_OUT:
 		pkt_indicator = HCI_ISO;

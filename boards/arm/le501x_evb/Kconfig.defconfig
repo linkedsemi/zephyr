@@ -16,6 +16,9 @@ config BT_CTLR
 config BT
 	default y
 
+config BT_HAS_HCI_VS
+    default y
+
 config BT_COMPANY_ID
 	default 0x093A
 
