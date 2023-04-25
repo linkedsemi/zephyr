@@ -17,7 +17,6 @@ LOG_MODULE_REGISTER(ble_hci);
 #define HCI_EVT                 0x04
 #define HCI_ISO                 0x05
 
-static uint16_t _opcode;
 static K_SEM_DEFINE(hci_send_sem, 0, 1);
 static K_SEM_DEFINE(ll_thread_sem, 0, 1);
 K_THREAD_STACK_DEFINE(ll_thread_stack, LL_THREAD_STACK_SIZE);
@@ -132,7 +131,7 @@ static int hci_driver_send(struct net_buf *buf)
 {
     uint8_t pkt_indicator;
     struct bt_hci_cmd_hdr *chdr = (void *)buf->data;
-    _opcode = sys_le16_to_cpu(chdr->opcode);
+    uint16_t _opcode = sys_le16_to_cpu(chdr->opcode);
 
 	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
 	switch (bt_buf_get_type(buf)) {
