@@ -87,15 +87,6 @@ static uint8_t hci_vendor_read_static_addr(struct bt_hci_vs_static_addr addrs[],
 	return 1;
 }
 
-/* If Zephyr VS HCI commands are not enabled provide this functionality directly
- */
-#if !defined(CONFIG_BT_HCI_VS_EXT)
-static uint8_t bt_read_static_addr(struct bt_hci_vs_static_addr addrs[], uint8_t size)
-{
-	return hci_vendor_read_static_addr(addrs, size);
-}
-#endif /* !defined(CONFIG_BT_HCI_VS_EXT) */
-
 static void vs_read_static_addrs(struct net_buf *buf, struct net_buf **evt)
 {
 	struct bt_hci_rp_vs_read_static_addrs *rp;

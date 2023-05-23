@@ -22,7 +22,7 @@
 
     /*
 	* Flash base address is 0x18000000,
-    * the following parts are all offeset addresses.
+    * the following parts are all offset addresses.
 	*/
 
 	partitions {

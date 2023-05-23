@@ -76,6 +76,11 @@ config BT_B91
 	help
 	  Telink B91 HCI bluetooth interface
 
+config BT_LE501X
+	bool "Linkedsemi LE501X HCI driver"
+	help
+	  Linkedsemi LE501X HCI bluetooth interface
+
 config BT_NO_DRIVER
 	bool "No default HCI driver"
 	help

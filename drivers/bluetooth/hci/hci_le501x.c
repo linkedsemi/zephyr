@@ -1,12 +1,20 @@
-#include <zephyr/kernel.h>
+/*
+ * Copyright (c) 2023 Linkedsemi.
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
+
 #include <zephyr/drivers/bluetooth/hci_driver.h>
+
+#include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
 
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(ble_hci);
+LOG_MODULE_REGISTER(bt_hci_driver_le501x);
 
 #define LL_THREAD_STACK_SIZE  0x400
 #define LL_THREAD_PRIORITY 0

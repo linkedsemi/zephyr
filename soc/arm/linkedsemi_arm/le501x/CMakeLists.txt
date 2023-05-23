@@ -1,1 +1,1 @@
-zephyr_sources(soc.c ble.c hci_vendor.c)
+zephyr_sources(soc.c hci_vendor.c)
