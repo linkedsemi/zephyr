@@ -12,6 +12,7 @@
 
 	chosen {
 		zephyr,console = &uart1;
+		zephyr,shell-uart = &uart1;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 	};
@@ -62,6 +63,17 @@
 	current-speed = <115200>;
 };
 
+&uart2 {
+	status = "disabled";
+
+	current-speed = <115200>;
+};
+
+&uart3{
+	status = "disabled";
+
+	current-speed = <115200>;
+};
 &systick {
 	status = "okay";
 };

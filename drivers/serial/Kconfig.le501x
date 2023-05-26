@@ -1,0 +1,13 @@
+
+
+
+
+config UART_LE501X
+	default y
+	depends on DT_HAS_LE501X_UART_ENABLED
+	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
+	bool "LE501X_EVB serial driver"
+	help
+	  uart1 enable.
+ 
