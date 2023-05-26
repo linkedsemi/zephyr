@@ -64,9 +64,9 @@ static void timer_stop(void **timer)
 
 static void os_tick_handler()
 {
-    struct hw_time current_match = target;
-    sys_clock_announce((((target.hs - last_anchor.hs) & 0xfffffff)*625 - last_anchor.hus + target.hus)/CYC_PER_TICK);
-    last_anchor = current_match;
+    uint32_t clock_announce= (((target.hs - last_anchor.hs) & 0xfffffff)*625 - last_anchor.hus + target.hus)/CYC_PER_TICK;
+    last_anchor = target;
+    sys_clock_announce(clock_announce);
 }
 
 static void wakeup_compenstation(uint32_t hus)
