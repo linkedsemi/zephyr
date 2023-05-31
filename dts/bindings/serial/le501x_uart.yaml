@@ -1,0 +1,15 @@
+description: LE501X UART
+
+compatible: "le501x-uart"
+
+include: uart-controller.yaml
+
+properties:
+    reg:
+      required: true
+
+    current-speed:
+      required: true
+
+    interrupts:
+      required: false
