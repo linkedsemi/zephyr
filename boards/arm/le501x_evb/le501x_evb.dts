@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2021 Nordic Semiconductor ASA
+ * Copyright (c) 2023 Linkedsemi
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 #include <linkedsemi/le501x.dtsi>
+#include "le501x_evb-pinctrl.dtsi"
 
 / {
 	model = "linkedsemi LE501X_EVB";

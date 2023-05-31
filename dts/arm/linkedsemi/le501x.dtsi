@@ -38,6 +38,37 @@
             };
         };
 
+        pinctrl: pin-controller@48000000 {
+			compatible = "linkedsemi,ls-pinctrl";
+			#address-cells = <1>;
+			#size-cells = <1>;
+			reg = <0x48000000 0xC00>;
+
+			gpioa: gpio@48000000 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x48000000 0x400>;
+                status = "disabled";
+			};
+
+			gpiob: gpio@48000400 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x48000400 0x400>;
+                status = "disabled";
+			};
+
+			gpioc: gpio@48000800 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x48000800 0x400>;
+                status = "disabled";
+			};
+        };
+
         uart1: uart@40013800 {
             compatible = "uart-controller";
             reg = <0x40013800 0x400>;

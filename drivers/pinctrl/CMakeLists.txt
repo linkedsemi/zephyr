@@ -3,6 +3,7 @@
 
 zephyr_library()
 zephyr_library_sources(common.c)
+zephyr_library_sources_ifdef(CONFIG_PINCTRL_LS pinctrl_ls.c)
 zephyr_library_sources_ifdef(CONFIG_PINCTRL_TELINK_B91 pinctrl_b91.c)
 zephyr_library_sources_ifdef(CONFIG_PINCTRL_GD32_AF pinctrl_gd32_af.c)
 zephyr_library_sources_ifdef(CONFIG_PINCTRL_GD32_AFIO pinctrl_gd32_afio.c)

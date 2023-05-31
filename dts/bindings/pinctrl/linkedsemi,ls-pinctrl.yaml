@@ -1,0 +1,78 @@
+# Copyright (c) 2023 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  The linkedsemi LS pin controller is responsible for connecting peripheral outputs
+  to specific port/pins (also known as alternate functions) and configures pin properties.
+
+  The pinctrl settings are referenced in a device tree peripheral node. For example in a UART
+  node:
+
+  &uart {
+      compatible = "linkedsemi,ls-uart";
+      pinctrl-0 = <&uart1_tx_pb00 &uart1_rx_pb01>;
+      pinctrl-names = "default";
+      ...
+  };
+
+  The pre-defined nodes only set the alternate function of the output pin. The
+  configuration for the pin (i.e. drive strength) should be set in the board setup.
+  The set of possible configurations are defined in the properties section below (in addition
+  to the inherited property-allowlist list from pincfg-node.yaml).
+
+  To create a new pin configuration, the user may append to the &pinctrl node, for example
+
+  #include <zephyr/dt-bindings/pinctrl/ls-pinctrl.h>
+  &pinctrl {
+      my_node_config: my_node_config {
+      pinmux = <LS_PINMUX_SET(A, 01, ALTERNATE_FUNCTION)>;
+        ... other supported pin configurations ..
+  };
+  where LS_PINMUX_SET(PORT, PIN, ALTERNATE_FUNCTION) is a helper macro for setting the
+  alternate function for a given port/pin. 
+
+compatible: "linkedsemi,ls-pinctrl"
+
+include: base.yaml
+
+child-binding:
+    description: Each child node defines the configuration for a particular state.
+
+    include:
+      - name: pincfg-node.yaml
+        property-allowlist:
+          - bias-pull-down
+          - bias-pull-up
+          - drive-push-pull
+          - drive-open-drain
+          - input-enable
+          - output-enable
+          - output-high
+          - output-low
+
+    properties:
+        pinmux:
+          description: |
+            Encodes port/pin and alternate function. See helper macro LS_PINMUX_SET().
+            To simplify the usage, macro is available to generate "pinmux" field.
+            This macro is available here:
+              -include/zephyr/dt-bindings/pinctrl/ls-pinctrl.h
+            Some examples of macro usage:
+               GPIO A9 set as alernate function UART1_TXD
+            ... {
+                     pinmux = <LS_PINMUX_SET('A', 9, UART1_TXD)>;
+            };
+          required: true
+          type: int
+
+        drive-strength:
+          description: |
+            Drive strength of the output pin. Following options as in io_drive_type_t
+            See ls_soc_gpio.h. Default to 1/4 max driver.
+          type: string
+          default: "1/4 max driver"
+          enum:
+            - "1/4 max driver"          
+            - "1/4 max driver"
+            - "1/2 max driver"
+            - "max driver"
