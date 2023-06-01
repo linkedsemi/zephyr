@@ -7,14 +7,14 @@
 #define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
-#define TIMEOUT_MIN_TICKS 5
+#define TIMEOUT_MIN_TICKS 1
 struct hw_time
 {
     uint32_t hs;
     uint32_t hus;
 };
 struct hw_time last_anchor;
-struct hw_time target;
+static struct hw_time target;
 int32_t os_sleep_ticks;
 static struct k_spinlock lock;
 
@@ -146,7 +146,7 @@ void ble_stack_isr()
     z_arm_int_exit();
 }
 
-const struct pm_state_info *pm_policy_next_state(uint8_t cpu, int32_t ticks)
+__weak const struct pm_state_info *pm_policy_next_state(uint8_t cpu, int32_t ticks)
 {
     static const struct pm_state_info idle = PM_STATE_INFO_DT_INIT(DT_NODELABEL(idle));
     static const struct pm_state_info lp0 = PM_STATE_INFO_DT_INIT(DT_NODELABEL(lp0));
