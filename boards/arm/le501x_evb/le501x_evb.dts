@@ -7,9 +7,16 @@
 #include <linkedsemi/le501x.dtsi>
 #include "le501x_evb-pinctrl.dtsi"
 
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
+
 / {
 	model = "linkedsemi LE501X_EVB";
 	compatible = "linkedsemi,le501x_evb";
+    
+    aliases {
+		led0 = &led0;
+        sw0 = &btn0;
+	};
 
 	chosen {
 		zephyr,console = &uart1;
@@ -18,6 +25,21 @@
 		zephyr,flash = &flash0;
 	};
 
+    leds {
+		compatible = "gpio-leds";
+        led0: led_0 {
+            gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
+    };
+
+    keys {
+		compatible = "gpio-keys";
+		btn0: btn_0 {
+			gpios = <&gpioa 15 BTN_GPIO_FLAGS>;
+			label = "Push button 1";
+		};
+	};
 };
 
 &flash0 {
@@ -75,6 +97,19 @@
 
 	current-speed = <115200>;
 };
+
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpioc {
+	status = "okay";
+};
+
 &systick {
 	status = "okay";
 };

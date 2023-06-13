@@ -1,4 +1,5 @@
 #include <arm/armv6-m.dtsi>
+#include <zephyr/dt-bindings/gpio/gpio.h>
 
 / {
     chosen {
@@ -47,6 +48,7 @@
 			gpioa: gpio@48000000 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
+                interrupts = <0 0>;
 				#gpio-cells = <2>;
 				reg = <0x48000000 0x400>;
                 status = "disabled";
@@ -55,6 +57,7 @@
 			gpiob: gpio@48000400 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
+                interrupts = <0 0>;
 				#gpio-cells = <2>;
 				reg = <0x48000400 0x400>;
                 status = "disabled";
@@ -63,6 +66,7 @@
 			gpioc: gpio@48000800 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
+                interrupts = <0 0>;
 				#gpio-cells = <2>;
 				reg = <0x48000800 0x400>;
                 status = "disabled";

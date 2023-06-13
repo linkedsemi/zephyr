@@ -3,7 +3,10 @@
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/state.h>
 #include "platform.h"
+#include "reg_rcc.h"
+#include "reg_gpio.h"
 #include "sleep.h"
+
 #define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
 
@@ -79,6 +82,19 @@ static int32_t os_sleep_duration_get()
 {
     int32_t dur = OSTICK_HS_STEP_INC(CONFIG_SYS_CLOCK_TICKS_PER_SEC,(uint64_t)os_sleep_ticks);
     return dur>=0?dur:INT_MAX;
+}
+
+void io_init(void)
+{
+    RCC->AHBEN |= RCC_GPIOA_MASK | RCC_GPIOB_MASK | RCC_GPIOC_MASK;
+    LSGPIOA->MODE = 0;
+    LSGPIOA->IE = 0;
+    LSGPIOA->OE = 0;
+    LSGPIOA->PUPD = 0;
+    LSGPIOB->MODE &= 0x3c00;
+    LSGPIOB->IE = 0;
+    LSGPIOB->OE = 0;
+    LSGPIOB->PUPD = 0x2800;
 }
 
 static int le501x_init(const struct device *arg)
