@@ -1,5 +1,5 @@
 identifier: le501x_evb
-name: le501x  #SEGGER LE501X-EVB
+name: le501x
 type: mcu
 arch: arm
 ram: 48
@@ -11,6 +11,8 @@ toolchain:
 supported:
   - nvs
   - serial
+  - gpio
+  - spi
 testing:
   default: true
  

@@ -12,7 +12,7 @@
 
 #define DT_DRV_COMPAT linkedsemi_ls_pinctrl
 
-static void gpio_afs_init(gpio_pins_t *pin, uint8_t af)
+static void gpio_afs_init(gpio_port_pin_t *pin, uint8_t af)
 {
     reg_lsgpio_t *port = GPIO_GetPort(pin->port);
     switch(pin->num)
@@ -33,7 +33,7 @@ static void gpio_afs_init(gpio_pins_t *pin, uint8_t af)
     MODIFY_REG(port->MODE, GPIO_MODE0_MASK << (pin->num << 1u), SET_GPIO_MODE_AF << (pin->num << 1u));
 }
 
-static void gpio_analog_init(gpio_pins_t *pin, uint8_t ana)
+static void gpio_analog_init(gpio_port_pin_t *pin, uint8_t ana)
 {
    reg_lsgpio_t *port = GPIO_GetPort(pin->port);
    MODIFY_REG(port->AE, GPIO_AE0_MASK << (pin->num << 1u), ana << (pin->num << 1u));
@@ -90,9 +90,9 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     io_drive_capacity_write(pin, driv_stren);
 
     if (alt_fun < 64 ) {
-        gpio_afs_init((gpio_pins_t *)&pin, alt_fun);
+        gpio_afs_init((gpio_port_pin_t *)&pin, alt_fun);
     } else {
-        gpio_analog_init((gpio_pins_t *)&pin, (alt_fun - 64));
+        gpio_analog_init((gpio_port_pin_t *)&pin, (alt_fun - 64));
     }
 
 	return 0;

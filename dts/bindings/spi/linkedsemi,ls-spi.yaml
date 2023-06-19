@@ -1,0 +1,15 @@
+# Copyright (c) 2023 LinkedSemi.
+# SPDX-License-Identifier: Apache-2.0
+
+description: LinkedSemi LS SPI
+
+compatible: "linkedsemi,ls-spi"
+
+include: [spi-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: false

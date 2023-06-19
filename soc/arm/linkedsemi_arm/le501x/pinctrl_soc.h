@@ -37,7 +37,7 @@ typedef uint32_t pinctrl_soc_pin_t;
 	 DT_PROP_BY_PHANDLE_IDX(node, pr, idx, output_low) << LS_OUT_LOW_POS |                \
 	 DT_PROP_BY_PHANDLE_IDX(node, pr, idx, input_enable) << LS_CFG_INPUT_POS |            \
      DT_PROP_BY_PHANDLE_IDX(node, pr, idx, output_enable) << LS_CFG_OUTPUT_POS |          \
-	 DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, pr, idx), drive_strength) << LS_DRIVE_POS)
+	 DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, pr, idx), drive_strength) << LS_DRIVE_POS),
 
 /**
  * @brief Utility macro to initialize state pins contained in a given property.

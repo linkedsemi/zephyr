@@ -80,6 +80,11 @@
 	};
 };
 
+&cpu0 {
+	clock-frequency = <64000000>;
+    cpu-power-states = <&idle &lp0>;
+};
+
 &uart1 {
 	status = "okay";
 
@@ -96,6 +101,15 @@
 	status = "disabled";
 
 	current-speed = <115200>;
+};
+
+&spi2 {
+    status = "okay";
+    pinctrl-0 = <&spi2_sck_pb12
+                 &spi2_mosi_pb14 &spi2_miso_pb15>;
+	pinctrl-names = "default";
+
+	cs-gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;
 };
 
 &gpioa {

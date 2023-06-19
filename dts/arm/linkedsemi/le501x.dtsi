@@ -10,10 +10,9 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
-		cpu@0 {
+		cpu0: cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-m0";
-            cpu-power-states = <&idle &lp0>;
 			reg = <0>;
 		};
     };
@@ -94,6 +93,15 @@
             // label = "UART3";
             interrupts = <29 0> ;
         };
+
+        spi2: spi@40003800 {
+			compatible = "linkedsemi,ls-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40003800 0x400>;
+            interrupts = <26 0>;
+			status = "disabled";
+		};
     };
 
     power-states {
