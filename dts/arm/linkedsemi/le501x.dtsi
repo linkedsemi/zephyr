@@ -40,14 +40,15 @@
 
         pinctrl: pin-controller@48000000 {
 			compatible = "linkedsemi,ls-pinctrl";
+			interrupts = <0 3>;
+			interrupt-names = "EXTI_GPIO";
+            reg = <0x48000000 0xC00>;
 			#address-cells = <1>;
 			#size-cells = <1>;
-			reg = <0x48000000 0xC00>;
-
+            
 			gpioa: gpio@48000000 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
-                interrupts = <0 0>;
 				#gpio-cells = <2>;
 				reg = <0x48000000 0x400>;
                 status = "disabled";
@@ -56,7 +57,6 @@
 			gpiob: gpio@48000400 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
-                interrupts = <0 0>;
 				#gpio-cells = <2>;
 				reg = <0x48000400 0x400>;
                 status = "disabled";
@@ -65,7 +65,6 @@
 			gpioc: gpio@48000800 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
-                interrupts = <0 0>;
 				#gpio-cells = <2>;
 				reg = <0x48000800 0x400>;
                 status = "disabled";
@@ -77,21 +76,21 @@
             reg = <0x40013800 0x400>;
 			status = "disabled";
             // label = "UART1";
-            interrupts = <28 0> ;
+            interrupts = <27 3> ;
         };
         uart2: uart@40004400 {
             compatible = "le501x-uart";
             reg = <0x40004400 0x400>;
 			status = "disabled";
             // label = "UART2";
-            interrupts = <28 0> ;
+            interrupts = <28 3> ;
         };
         uart3: uart@40004800 {
             compatible = "le501x-uart";
             reg = <0x40004800 0x400>;
 			status = "disabled";
             // label = "UART3";
-            interrupts = <29 0> ;
+            interrupts = <29 3> ;
         };
 
         spi2: spi@40003800 {
@@ -99,7 +98,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40003800 0x400>;
-            interrupts = <26 0>;
+            // interrupts = <26 0>;
 			status = "disabled";
 		};
     };

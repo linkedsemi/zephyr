@@ -17,7 +17,17 @@
 #include <zephyr/irq.h>
 #include <errno.h>
 
+#define NUMBER_OF_PORTS         3
 #define LSPIN(_port, _pin)      (_port << 4 | _pin)
+
+struct gpio_ls_common_config {
+};
+
+struct gpio_ls_common_data {
+	/* a list of all ports */
+	const struct device *ports[NUMBER_OF_PORTS];
+	size_t count;
+};
 
 struct gpio_ls_config {
 	struct gpio_driver_config common;
@@ -26,7 +36,6 @@ struct gpio_ls_config {
 
 struct gpio_ls_data {
 	struct gpio_driver_data common;
-	const struct device *dev;
 	sys_slist_t callbacks;
 };
 
@@ -35,6 +44,13 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev,
 					gpio_port_pins_t pins);
 static int gpio_ls_port_clear_bits_raw(const struct device *dev,
 					gpio_port_pins_t pins);
+
+static inline void gpio_ls_add_port(struct gpio_ls_common_data *data,
+				       const struct device *dev)
+{
+	__ASSERT(dev, "No port device!");
+	data->ports[data->count++] = dev;
+}
 
 static int get_gpio_port_id(uint32_t port)
 {
@@ -137,8 +153,9 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 
 static void gpio_ls_isr(const struct device *dev)
 {
-	struct gpio_ls_data *data = dev->data;
-    
+	struct gpio_ls_common_data *data = dev->data;
+	const struct device *port_dev;
+	struct gpio_ls_data *port_data;
     uint8_t port, pinval;
     uint16_t status = EXTI->EEIFM;
 
@@ -150,8 +167,12 @@ static void gpio_ls_isr(const struct device *dev)
             io_wkup_en_clr_set(pinval);
         }
     }
-   
-	gpio_fire_callbacks(&data->callbacks, dev, status);
+
+    for (uint8_t i = 0; i < data->count; i++) {
+        port_dev = data->ports[i];
+	    port_data = port_dev->data;
+        gpio_fire_callbacks(&port_data->callbacks, port_dev, status);
+    }
 }
 
 static int gpio_ls_port_get_raw(const struct device *dev, gpio_port_value_t *value)
@@ -249,16 +270,6 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
 	return 0;
 }
 
-static int gpio_ls_init(const struct device *dev) 
-{
-    /* Enable IRQ */
-    IRQ_CONNECT(0, DT_INST_IRQ(0, priority),
-		    gpio_ls_isr, DEVICE_DT_INST_GET(0), 0);
-	irq_enable(0);
-
-    return 0; 
-}
-
 static const struct gpio_driver_api gpio_ls_driver_api = {
 	.pin_configure = gpio_ls_pin_configure,
 	.port_get_raw = gpio_ls_port_get_raw,
@@ -270,15 +281,51 @@ static const struct gpio_driver_api gpio_ls_driver_api = {
 	.manage_callback = gpio_ls_manage_callback,
 };
 
+static const struct gpio_driver_api gpio_ls_common_driver_api = {
+	.manage_callback = gpio_ls_manage_callback,
+};
+
+static const struct gpio_ls_common_config gpio_ls_common_config = {
+};
+
+static struct gpio_ls_common_data gpio_ls_common_data;
+
+static int gpio_ls_common_init(const struct device *dev) 
+{
+    ARG_UNUSED(dev);
+    gpio_ls_common_data.count = 0;
+    
+    IRQ_CONNECT(0,
+		    DT_IRQ_BY_NAME(DT_INST(0, linkedsemi_ls_pinctrl), exti_gpio, priority),
+		    gpio_ls_isr,
+		    DEVICE_DT_GET(DT_INST(0, linkedsemi_ls_pinctrl)), 0);
+
+    irq_enable(0);				     
+
+    return 0; 
+}
+
+DEVICE_DT_DEFINE(DT_INST(0, linkedsemi_ls_pinctrl),
+		    gpio_ls_common_init,
+		    NULL,
+		    &gpio_ls_common_data, &gpio_ls_common_config,
+		    PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,
+		    &gpio_ls_common_driver_api);
+
 #define GPIO_LS_DEFINE(index)                                   \
 	static struct gpio_ls_data ls_data_##index;                                     \
                                                                     \
 	static const struct gpio_ls_config ls_config_##index = {                         \
 		.base = (uint32_t *)DT_INST_REG_ADDR(index),                                \
 		.common = {.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(index)}};              \
-                                                                                                   \
-	DEVICE_DT_INST_DEFINE(index, gpio_ls_init, NULL, &ls_data_##index,               \
-			      &ls_config_##index, PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,     \
+                                                                    \
+        static int gpio_ls_port_init_##index(const struct device *dev) {   \
+            gpio_ls_add_port(&gpio_ls_common_data, dev); \
+            return 0;                                           \
+        }                                                           \
+                                                                                            \
+	DEVICE_DT_INST_DEFINE(index, gpio_ls_port_init_##index, NULL, &ls_data_##index,               \
+			      &ls_config_##index, POST_KERNEL, CONFIG_GPIO_INIT_PRIORITY,     \
 			      &gpio_ls_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(GPIO_LS_DEFINE)

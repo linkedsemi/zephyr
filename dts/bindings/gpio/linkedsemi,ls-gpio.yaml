@@ -1,4 +1,4 @@
-# Copyright (c) 2019 Brett Witherspoon
+# Copyright (c) 2023 Linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
 description: Linkedsemi LS GPIO node
@@ -9,9 +9,6 @@ include: [gpio-controller.yaml, base.yaml]
 
 properties:
     reg:
-      required: true
-
-    interrupts:
       required: true
 
     "#gpio-cells":
