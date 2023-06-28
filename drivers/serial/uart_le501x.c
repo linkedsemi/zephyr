@@ -1,9 +1,8 @@
 #include <zephyr/kernel.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/sys/__assert.h>
-
 #include <zephyr/drivers/uart.h>
-
+#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
 
@@ -26,8 +25,7 @@
 
 struct uart_le501x_data_t
 {
-	uint8_t uart_txd;
-	uint8_t uart_rxd;
+	const struct pinctrl_dev_config *pcfg;
 	uart_irq_callback_user_data_t user_cb;
 	void *user_parm;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
@@ -114,7 +112,8 @@ void uart3_msp_init(void)
 static int uart_le501x_init(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-
+	struct uart_le501x_data_t *data = (struct uart_le501x_data_t *)dev->data;
+	int ret;
 	switch((uint32_t)uart_handle->UARTX)
 	{
 		case (uint32_t)UART1:
@@ -139,18 +138,18 @@ static int uart_le501x_init(const struct device *dev)
                                   |FIELD_BUILD(UART_LCR_RXEN,1)|FIELD_BUILD(UART_LCR_BRWEN,0);
 
 	// LOG_I("uart addr : %x",(uint32_t)uart_handle->UARTX);
-    pinmux_uart3_init(PB00,PB01);
-    io_pull_write(PB01, IO_PULL_UP);
-
-    pinmux_uart1_init(PA08,PA09);
-    io_pull_write(PA09, IO_PULL_UP);
+	/* Configure dt provided device signals when available */
+	ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
+	if (ret < 0) {
+		// LOG_ERR("UART pinctrl setup failed (%d)", ret);
+		return ret;
+	}
 
 	#ifdef CONFIG_PM
 	uart_le501x_pm_policy_state_lock_get(dev);
 	#endif
 	
 	#ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	struct uart_le501x_data_t *data = (struct uart_le501x_data_t *)dev->data;
 	data->irq_config_func(dev);
 	#endif
 	return 0; 
@@ -368,6 +367,7 @@ static void uart_le501x_irq_config_func_##index(const struct device *dev)	\
 
 #define LE501X_UART_INIT(index)	\
 LE501X_UART_IRQ_HANDLER_DECL(index)	\
+PINCTRL_DT_INST_DEFINE(index);						\
 static UART_HandleTypeDef uart_handle_##index = {	\
 	.UARTX = (reg_uart_t *)DT_INST_REG_ADDR(index),	\
 	.Init.BaudRate = GET_UART_BAUDRATE(index),	\
@@ -379,6 +379,7 @@ static UART_HandleTypeDef uart_handle_##index = {	\
 static struct uart_le501x_data_t uart_le501x_data##index = {	\
 	.user_cb = NULL,	\
 	.user_parm = NULL,	\
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),			\
 	UART_IRQ_HANDLER_FUNC(index)	\
 };	\
 	\
@@ -389,7 +390,7 @@ DEVICE_DT_INST_DEFINE(index,	\
 		    PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY,	\
 		    &uart_le501x_api);	\
 	\
-LE501X_UART_IRQ_HANDLER(index)\
+LE501X_UART_IRQ_HANDLER(index)
 
 
 DT_INST_FOREACH_STATUS_OKAY(LE501X_UART_INIT)
