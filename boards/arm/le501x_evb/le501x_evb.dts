@@ -9,6 +9,7 @@
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
 
+#include <zephyr/dt-bindings/i2c/i2c.h>
 / {
 	model = "linkedsemi LE501X_EVB";
 	compatible = "linkedsemi,le501x_evb";
@@ -87,19 +88,22 @@
 
 &uart1 {
 	status = "okay";
-
+	pinctrl-0 = <&uart1_tx_pb00 &uart1_rx_pb01>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 };
 
 &uart2 {
 	status = "disabled";
-
+	pinctrl-0 = <&uart2_tx_pb00 &uart2_rx_pb01>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 };
 
 &uart3{
 	status = "disabled";
-
+	pinctrl-0 = <&uart3_tx_pb00 &uart3_rx_pb01>;
+	pinctrl-names = "default";
 	current-speed = <115200>;
 };
 
@@ -123,6 +127,20 @@
 &gpioc {
 	status = "okay";
 };
+&i2c1{
+	status = "okay";
+	pinctrl-0 = <&i2c1_scl_pa05 &i2c1_sda_pa06>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+
+&i2c2{
+	status = "disabled";
+	pinctrl-0 = <&i2c2_scl_pa05 &i2c2_sda_pa06>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_STANDARD>;
+};
+
 
 &systick {
 	status = "okay";

@@ -21,15 +21,51 @@
 		input-enable;
 	};
 
+	/* UART2 */
+	/omit-if-no-ref/uart2_tx_pb00: uart2_tx_pb00 {
+		pinmux = <LS_PINMUX_SET('B', 00, AF_UART2_TXD)>;
+        output-enable;
+        output-high;
+	};
+	/omit-if-no-ref/uart2_rx_pb01: uart2_rx_pb01 {
+		pinmux = <LS_PINMUX_SET('B', 01, AF_UART2_RXD)>;
+        bias-pull-up;
+		input-enable;
+	};
+
+	/* UART3 */
+	/omit-if-no-ref/uart3_tx_pb00: uart3_tx_pb00 {
+		pinmux = <LS_PINMUX_SET('B', 00, AF_UART3_TXD)>;
+        output-enable;
+        output-high;
+	};
+	/omit-if-no-ref/uart3_rx_pb01: uart3_rx_pb01 {
+		pinmux = <LS_PINMUX_SET('B', 01, AF_UART3_RXD)>;
+        output-enable;
+        output-high;
+	};
+
 	/* I2C1 */
-	/omit-if-no-ref/i2c1_scl_pb05: i2c1_scl_pb05 {
-		pinmux = <LS_PINMUX_SET('B', 05, AF_I2C1_SCL)>;
+	/omit-if-no-ref/i2c1_scl_pa05: i2c1_scl_pa05 {
+		pinmux = <LS_PINMUX_SET('A', 05, AF_I2C1_SCL)>;
 		bias-pull-up;
 		input-enable;
 	};
-	/omit-if-no-ref/i2c1_sda_pb06: i2c1_sda_pb06 {
-		pinmux = <LS_PINMUX_SET('B', 06, AF_I2C1_SDA)>;
+	/omit-if-no-ref/i2c1_sda_pa06: i2c1_sda_pa06 {
 		bias-pull-up;
+		pinmux = <LS_PINMUX_SET('A', 06, AF_I2C1_SDA)>;
+		input-enable;
+	};
+
+	/* I2C2 */
+	/omit-if-no-ref/i2c2_scl_pa05: i2c2_scl_pa05 {
+		pinmux = <LS_PINMUX_SET('A', 05, AF_I2C2_SCL)>;
+		bias-pull-up;
+		input-enable;
+	};
+	/omit-if-no-ref/i2c2_sda_pa06: i2c2_sda_pa06 {
+		bias-pull-up;
+		pinmux = <LS_PINMUX_SET('A', 06, AF_I2C2_SDA)>;
 		input-enable;
 	};
 

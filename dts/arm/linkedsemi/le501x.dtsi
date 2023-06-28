@@ -92,6 +92,24 @@
             // label = "UART3";
             interrupts = <29 3> ;
         };
+        i2c1: i2c@40005400 {
+            compatible = "le501x-i2c";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40005400 0x400>;
+            interrupts = <23 3>;
+            interrupt-names = "i2c1";
+            status = "disabled";
+        };
+        i2c2: i2c@40005800 {
+            compatible = "le501x-i2c";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40005800 0x400>;
+            interrupts = <24 3>;
+            interrupt-names = "i2c2";
+            status = "disabled";
+        };
 
         spi2: spi@40003800 {
 			compatible = "linkedsemi,ls-spi";
@@ -102,7 +120,6 @@
 			status = "disabled";
 		};
     };
-
     power-states {
         idle: idle{
             compatible = "zephyr,power-state";
