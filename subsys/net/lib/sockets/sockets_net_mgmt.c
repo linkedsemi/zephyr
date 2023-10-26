@@ -5,7 +5,11 @@
  */
 
 #include <stdbool.h>
+#ifdef CONFIG_ARCH_POSIX
 #include <fcntl.h>
+#else
+#include <zephyr/posix/fcntl.h>
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_sock_mgmt, CONFIG_NET_SOCKETS_LOG_LEVEL);
@@ -205,8 +209,12 @@ again:
 
 	if (info) {
 		ret = info_len + sizeof(hdr);
-		ret = MIN(max_len, ret);
-		memcpy(&copy_to[sizeof(hdr)], info, ret);
+		if (ret > max_len) {
+			errno = EMSGSIZE;
+			return -1;
+		}
+
+		memcpy(&copy_to[sizeof(hdr)], info, info_len);
 	} else {
 		ret = 0;
 	}

@@ -177,8 +177,12 @@ it the value ``always``. For example, these commands are equivalent::
   west build -p -b reel_board samples/hello_world
   west build -p=always -b reel_board samples/hello_world
 
-By default, ``west build`` applies a heuristic to detect if the build directory
-needs to be made pristine. This is the same as using ``--pristine=auto``.
+By default, ``west build`` makes no attempt to detect if the build directory
+needs to be made pristine. This can lead to errors if you do something like
+try to re-use a build directory for a different ``--board``.
+
+Using ``--pristine=auto`` makes ``west build`` detect some of these situations
+and make the build directory pristine before trying the build.
 
 .. tip::
 
@@ -208,10 +212,15 @@ build``, pass them after a ``--`` at the end of the command line.
 .. important::
 
    Passing additional CMake arguments like this forces ``west build`` to re-run
-   CMake, even if a build system has already been generated.
+   the CMake build configuration step, even if a build system has already been
+   generated.  This will make incremental builds slower (but still much faster
+   than building from scratch).
 
    After using ``--`` once to generate the build directory, use ``west build -d
    <build-dir>`` on subsequent runs to do incremental builds.
+
+   Alternatively, make your CMake arguments permanent as described in the next
+   section; it will not slow down incremental builds.
 
 For example, to use the Unix Makefiles CMake generator instead of Ninja (which
 ``west build`` uses by default), run::
@@ -237,7 +246,7 @@ To set :ref:`DTC_OVERLAY_FILE <important-build-vars>` to
 To merge the :file:`file.conf` Kconfig fragment into your build's
 :file:`.config`::
 
-  west build -- -DOVERLAY_CONFIG=file.conf
+  west build -- -DEXTRA_CONF_FILE=file.conf
 
 .. _west-building-cmake-config:
 
@@ -349,6 +358,11 @@ The ``--domain`` argument can be combined with the ``--target`` argument to
 build the specific target for the target, for example::
 
   west build --sysbuild --domain hello_world --target help
+
+Use a snippet
+-------------
+
+See :ref:`using-snippets`.
 
 .. _west-building-config:
 
@@ -728,8 +742,6 @@ By default, these West commands rebuild binaries before flashing and
 debugging. This can of course also be accomplished using the usual
 targets provided by Zephyr's build system (in fact, that's how these
 commands do it).
-
-.. rubric:: Footnotes
 
 .. _cmake(1):
    https://cmake.org/cmake/help/latest/manual/cmake.1.html

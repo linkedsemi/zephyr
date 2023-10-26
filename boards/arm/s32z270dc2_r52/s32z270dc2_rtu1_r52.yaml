@@ -12,3 +12,6 @@ supported:
   - uart
   - gpio
   - watchdog
+  - netif:eth
+  - can
+vendor: nxp

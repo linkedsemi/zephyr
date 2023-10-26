@@ -16,6 +16,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
+#include "clock_stm32_ll_mco.h"
 #include "stm32_hsem.h"
 
 
@@ -99,7 +100,7 @@
 #define APBx_FREQ_MAX		120000000UL
 #elif defined(CONFIG_SOC_STM32H723XX) ||\
 	  defined(CONFIG_SOC_STM32H725XX) ||\
-	  defined(CONFIG_SOC_STM32H730XX) ||\
+	  defined(CONFIG_SOC_STM32H730XX) || defined(CONFIG_SOC_STM32H730XXQ) ||\
 	  defined(CONFIG_SOC_STM32H735XX)
 /* All h7 SoC with maximum 550MHz SYSCLK */
 #define SYSCLK_FREQ_MAX		550000000UL
@@ -336,6 +337,7 @@ static int enabled_clock(uint32_t src_clk)
 	    ((src_clk == STM32_SRC_HSE) && IS_ENABLED(STM32_HSE_ENABLED)) ||
 	    ((src_clk == STM32_SRC_HSI_KER) && IS_ENABLED(STM32_HSI_ENABLED)) ||
 	    ((src_clk == STM32_SRC_CSI_KER) && IS_ENABLED(STM32_CSI_ENABLED)) ||
+	    ((src_clk == STM32_SRC_HSI48) && IS_ENABLED(STM32_HSI48_ENABLED)) ||
 	    ((src_clk == STM32_SRC_LSE) && IS_ENABLED(STM32_LSE_ENABLED)) ||
 	    ((src_clk == STM32_SRC_LSI) && IS_ENABLED(STM32_LSI_ENABLED)) ||
 	    ((src_clk == STM32_SRC_PLL1_P) && IS_ENABLED(STM32_PLL_P_ENABLED)) ||
@@ -413,6 +415,8 @@ static inline int stm32_clock_control_configure(const struct device *dev,
 
 	z_stm32_hsem_lock(CFG_HW_RCC_SEMID, HSEM_LOCK_DEFAULT_RETRY);
 
+	sys_clear_bits(DT_REG_ADDR(DT_NODELABEL(rcc)) + STM32_CLOCK_REG_GET(pclken->enr),
+		       STM32_CLOCK_MASK_GET(pclken->enr) << STM32_CLOCK_SHIFT_GET(pclken->enr));
 	sys_set_bits(DT_REG_ADDR(DT_NODELABEL(rcc)) + STM32_CLOCK_REG_GET(pclken->enr),
 		     STM32_CLOCK_VAL_GET(pclken->enr) << STM32_CLOCK_SHIFT_GET(pclken->enr));
 
@@ -487,6 +491,11 @@ static int stm32_clock_control_get_subsys_rate(const struct device *clock,
 		*rate = STM32_LSI_FREQ;
 		break;
 #endif /* STM32_LSI_ENABLED */
+#if defined(STM32_HSI48_ENABLED)
+	case STM32_SRC_HSI48:
+		*rate = STM32_HSI48_FREQ;
+		break;
+#endif /* STM32_HSI48_ENABLED */
 #if defined(STM32_PLL_ENABLED)
 	case STM32_SRC_PLL1_P:
 		*rate = get_pllout_frequency(get_pllsrc_frequency(),
@@ -626,6 +635,27 @@ static void set_up_fixed_clock_sources(void)
 	}
 }
 
+/*
+ * Unconditionally switch the system clock source to HSI.
+ */
+__unused
+static void stm32_clock_switch_to_hsi(void)
+{
+	/* Enable HSI if not enabled */
+	if (LL_RCC_HSI_IsReady() != 1) {
+		/* Enable HSI */
+		LL_RCC_HSI_Enable();
+		while (LL_RCC_HSI_IsReady() != 1) {
+			/* Wait for HSI ready */
+		}
+	}
+
+	/* Set HSI as SYSCLCK source */
+	LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_HSI);
+	while (LL_RCC_GetSysClkSource() != LL_RCC_SYS_CLKSOURCE_STATUS_HSI) {
+	}
+}
+
 __unused
 static int set_up_plls(void)
 {
@@ -633,6 +663,20 @@ static int set_up_plls(void)
 	int r;
 	uint32_t vco_input_range;
 	uint32_t vco_output_range;
+
+	/*
+	 * Case of chain-loaded applications:
+	 * Switch to HSI and disable the PLL before configuration.
+	 * (Switching to HSI makes sure we have a SYSCLK source in
+	 * case we're currently running from the PLL we're about to
+	 * turn off and reconfigure.)
+	 *
+	 */
+	if (LL_RCC_GetSysClkSource() == LL_RCC_SYS_CLKSOURCE_STATUS_PLL1) {
+		stm32_clock_switch_to_hsi();
+		LL_RCC_SetAHBPrescaler(LL_RCC_SYSCLK_DIV_1);
+	}
+	LL_RCC_PLL1_Disable();
 
 	/* Configure PLL source */
 
@@ -775,7 +819,7 @@ static int set_up_plls(void)
 }
 
 #if defined(CONFIG_CPU_CORTEX_M7)
-static int stm32_clock_control_init(const struct device *dev)
+int stm32_clock_control_init(const struct device *dev)
 {
 	uint32_t old_hclk_freq = 0;
 	uint32_t new_hclk_freq = 0;
@@ -792,6 +836,9 @@ static int stm32_clock_control_init(const struct device *dev)
 #endif
 
 	z_stm32_hsem_lock(CFG_HW_RCC_SEMID, HSEM_LOCK_DEFAULT_RETRY);
+
+	/* Configure MCO1/MCO2 based on Kconfig */
+	stm32_clock_control_mco_init();
 
 	/* Set up indiviual enabled clocks */
 	set_up_fixed_clock_sources();
@@ -842,10 +889,7 @@ static int stm32_clock_control_init(const struct device *dev)
 		}
 	} else if (IS_ENABLED(STM32_SYSCLK_SRC_HSI)) {
 		/* Set sysclk source to HSI */
-		LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_HSI);
-		while (LL_RCC_GetSysClkSource() !=
-					LL_RCC_SYS_CLKSOURCE_STATUS_HSI) {
-		}
+		stm32_clock_switch_to_hsi();
 	} else if (IS_ENABLED(STM32_SYSCLK_SRC_CSI)) {
 		/* Set sysclk source to CSI */
 		LL_RCC_SetSysClkSource(LL_RCC_SYS_CLKSOURCE_CSI);
@@ -873,7 +917,7 @@ static int stm32_clock_control_init(const struct device *dev)
 	return r;
 }
 #else
-static int stm32_clock_control_init(const struct device *dev)
+int stm32_clock_control_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 

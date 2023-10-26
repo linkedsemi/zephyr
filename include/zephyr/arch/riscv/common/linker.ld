@@ -57,7 +57,7 @@
 #define RAM_SIZE KB(CONFIG_SRAM_SIZE)
 
 #ifdef CONFIG_RISCV_PMP
-	#define MPU_MIN_SIZE 4
+	#define MPU_MIN_SIZE CONFIG_PMP_GRANULARITY
 	#define MPU_MIN_SIZE_ALIGN . = ALIGN(MPU_MIN_SIZE);
 	#if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
 		#define MPU_ALIGN(region_size) \
@@ -305,11 +305,6 @@ SECTIONS
 
     __data_region_end = .;
 
-    MPU_MIN_SIZE_ALIGN
-
-     _image_ram_end = .;
-     _end = .; /* end of image */
-
 	__kernel_ram_end = .;
 	__kernel_ram_size = __kernel_ram_end - __kernel_ram_start;
 
@@ -370,7 +365,11 @@ GROUP_END(DTCM)
  */
 #include <snippets-sections.ld>
 
-     GROUP_END(RAMABLE_REGION)
+#define LAST_RAM_ALIGN MPU_MIN_SIZE_ALIGN
+
+#include <zephyr/linker/ram-end.ld>
+
+    GROUP_END(RAMABLE_REGION)
 
 #include <zephyr/linker/debug-sections.ld>
 
@@ -397,6 +396,10 @@ SECTION_PROLOGUE(.last_section,,)
   /* Fill last section with a word to ensure location counter and actual rom
    * region data usage match. */
   LONG(CONFIG_LINKER_LAST_SECTION_ID_PATTERN)
+  /* __rom_region_size is used when configuring the PMP entry of the ROM region.
+   * Addresses (pmpaddr) in PMP registers need to be aligned to 4. Align
+   * __rom_region_size to 4 to meet that requirement. */
+  MPU_MIN_SIZE_ALIGN
 #endif
 } GROUP_LINK_IN(ROMABLE_REGION)
 

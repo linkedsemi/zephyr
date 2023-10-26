@@ -18,14 +18,11 @@
 #include <zephyr/mgmt/mcumgr/smp/smp.h>
 #include <zephyr/mgmt/mcumgr/transport/smp.h>
 #include <zephyr/mgmt/mcumgr/transport/smp_bt.h>
+#include <zephyr/mgmt/mcumgr/mgmt/handlers.h>
 #include <errno.h>
 
 #include <mgmt/mcumgr/transport/smp_internal.h>
 #include <mgmt/mcumgr/transport/smp_reassembly.h>
-
-#ifdef CONFIG_MCUMGR_TRANSPORT_BT_AUTOMATIC_INIT
-#include <zephyr/mgmt/mcumgr/mgmt/handlers.h>
-#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(mcumgr_smp, CONFIG_MCUMGR_TRANSPORT_LOG_LEVEL);
@@ -91,10 +88,6 @@ static uint8_t next_id;
 static struct smp_transport smp_bt_transport;
 static struct conn_param_data conn_data[CONFIG_BT_MAX_CONN];
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_BT_AUTOMATIC_INIT
-static K_SEM_DEFINE(bt_ready_sem, 0, 1);
-#endif
-
 /* SMP service.
  * {8D53DC1D-1DB7-4CD3-868B-8A527460AA84}
  */
@@ -106,6 +99,19 @@ static struct bt_uuid_128 smp_bt_svc_uuid = BT_UUID_INIT_128(
  */
 static struct bt_uuid_128 smp_bt_chr_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xda2e7828, 0xfbce, 0x4e01, 0xae9e, 0x261174997c48));
+
+static void connected(struct bt_conn *conn, uint8_t err);
+static void disconnected(struct bt_conn *conn, uint8_t reason);
+
+/* Bluetooth connection callback handlers */
+BT_CONN_CB_DEFINE(mcumgr_bt_callbacks) = {
+	.connected = connected,
+	.disconnected = disconnected,
+};
+
+#ifdef CONFIG_SMP_CLIENT
+static struct smp_client_transport_entry smp_client_transport;
+#endif
 
 /* Helper function that allocates conn_param_data for a conn. */
 static struct conn_param_data *conn_param_data_alloc(struct bt_conn *conn)
@@ -189,7 +195,8 @@ static void conn_param_set(struct bt_conn *conn, struct bt_le_conn_param *param)
 /* Work handler function for restoring the preferred connection parameters for the connection. */
 static void conn_param_on_pref_restore(struct k_work *work)
 {
-	struct conn_param_data *cpd = CONTAINER_OF(work, struct conn_param_data, dwork);
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct conn_param_data *cpd = CONTAINER_OF(dwork, struct conn_param_data, dwork);
 
 	if (cpd != NULL) {
 		conn_param_set(cpd->conn, CONN_PARAM_PREF);
@@ -200,7 +207,8 @@ static void conn_param_on_pref_restore(struct k_work *work)
 /* Work handler function for retrying on conn negotiation API error. */
 static void conn_param_on_error_retry(struct k_work *work)
 {
-	struct conn_param_data *cpd = CONTAINER_OF(work, struct conn_param_data, ework);
+	struct k_work_delayable *ework = k_work_delayable_from_work(work);
+	struct conn_param_data *cpd = CONTAINER_OF(ework, struct conn_param_data, ework);
 	struct bt_le_conn_param *param = (cpd->state & CONN_PARAM_SMP_REQUESTED) ?
 		CONN_PARAM_SMP : CONN_PARAM_PREF;
 
@@ -635,34 +643,12 @@ static bool smp_bt_query_valid_check(struct net_buf *nb, void *arg)
 	return true;
 }
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_BT_AUTOMATIC_INIT_WAIT
-static void bt_ready(int err)
-{
-	if (err) {
-		LOG_ERR("Bluetooth init failed (err %d)", err);
-		return;
-	}
-
-	LOG_INF("Bluetooth initialised");
-
-	k_sem_give(&bt_ready_sem);
-}
-#endif
-
-void smp_bt_start(void)
+static void smp_bt_setup(void)
 {
 	int rc;
 	uint8_t i = 0;
 
 	next_id = 1;
-
-	/* Register BT callbacks */
-	static struct bt_conn_cb conn_callbacks = {
-		.connected = connected,
-		.disconnected = disconnected,
-	};
-
-	bt_conn_cb_register(&conn_callbacks);
 
 	if (IS_ENABLED(CONFIG_MCUMGR_TRANSPORT_BT_CONN_PARAM_CONTROL)) {
 		conn_param_control_init();
@@ -673,37 +659,29 @@ void smp_bt_start(void)
 		++i;
 	}
 
-	smp_transport_init(&smp_bt_transport, smp_bt_tx_pkt,
-			   smp_bt_get_mtu, smp_bt_ud_copy,
-			   smp_bt_ud_free, smp_bt_query_valid_check);
+	smp_bt_transport.functions.output = smp_bt_tx_pkt;
+	smp_bt_transport.functions.get_mtu = smp_bt_get_mtu;
+	smp_bt_transport.functions.ud_copy = smp_bt_ud_copy;
+	smp_bt_transport.functions.ud_free = smp_bt_ud_free;
+	smp_bt_transport.functions.query_valid_check = smp_bt_query_valid_check;
 
-	rc = smp_bt_register();
+	rc = smp_transport_init(&smp_bt_transport);
+
+	if (rc == 0) {
+		rc = smp_bt_register();
+	}
+
+#ifdef CONFIG_SMP_CLIENT
+	if (rc == 0) {
+		smp_client_transport.smpt = &smp_bt_transport;
+		smp_client_transport.smpt_type = SMP_BLUETOOTH_TRANSPORT;
+		smp_client_transport_register(&smp_client_transport);
+	}
+#endif
 
 	if (rc != 0) {
 		LOG_ERR("Bluetooth SMP transport register failed (err %d)", rc);
 	}
 }
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_BT_AUTOMATIC_INIT
-static void smp_bt_setup(void)
-{
-	/* Enable Bluetooth */
-#ifdef CONFIG_MCUMGR_TRANSPORT_BT_AUTOMATIC_INIT_WAIT
-	int rc = bt_enable(bt_ready);
-#else
-	int rc = bt_enable(NULL);
-#endif
-
-	if (rc != 0) {
-		LOG_ERR("Bluetooth init failed (err %d)", rc);
-	} else {
-#ifdef CONFIG_MCUMGR_TRANSPORT_BT_AUTOMATIC_INIT_WAIT
-		k_sem_take(&bt_ready_sem, K_FOREVER);
-#endif
-	}
-
-	smp_bt_start();
-}
-
 MCUMGR_HANDLER_DEFINE(smp_bt, smp_bt_setup);
-#endif

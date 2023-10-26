@@ -10,3 +10,5 @@ ram: 20
 supported:
   - watchdog
   - dma
+  - spi
+vendor: sipeed

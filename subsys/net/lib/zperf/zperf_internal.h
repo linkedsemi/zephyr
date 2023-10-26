@@ -39,6 +39,12 @@
 
 #define PACKET_SIZE_MAX CONFIG_NET_ZPERF_MAX_PACKET_SIZE
 
+#define MY_SRC_PORT 50000
+#define DEF_PORT 5001
+#define DEF_PORT_STR STRINGIFY(DEF_PORT)
+
+#define ZPERF_VERSION "1.1"
+
 struct zperf_udp_datagram {
 	int32_t id;
 	uint32_t tv_sec;
@@ -93,7 +99,7 @@ const struct in_addr *zperf_get_default_if_in4_addr(void);
 const struct in6_addr *zperf_get_default_if_in6_addr(void);
 
 int zperf_prepare_upload_sock(const struct sockaddr *peer_addr, int tos,
-			      int proto);
+			      int priority, int proto);
 
 uint32_t zperf_packet_duration(uint32_t packet_size, uint32_t rate_in_kbps);
 

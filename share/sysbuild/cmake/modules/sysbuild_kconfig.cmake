@@ -24,9 +24,22 @@ else()
   # SYSBuild dedicated configuration file.
 endif()
 
-if(DEFINED SB_CONF_FILE AND NOT IS_ABSOLUTE SB_CONF_FILE)
-  cmake_path(ABSOLUTE_PATH SB_CONF_FILE BASE_DIRECTORY ${APP_DIR} OUTPUT_VARIABLE SB_CONF_FILE)
+if(NOT DEFINED SB_EXTRA_CONF_FILE AND DEFINED SB_OVERLAY_CONFIG)
+  set(SB_EXTRA_CONF_FILE ${SB_OVERLAY_CONFIG})
 endif()
+
+# Let SB_CONF_FILE and SB_EXTRA_CONF_FILE be relative to APP_DIR.
+# Either variable can be a list of paths, so we must make all of them absolute.
+foreach(conf_file_var SB_CONF_FILE SB_EXTRA_CONF_FILE)
+  if(DEFINED ${conf_file_var})
+    string(CONFIGURE "${${conf_file_var}}" conf_file_expanded)
+    set(${conf_file_var} "")
+    foreach(conf_file ${conf_file_expanded})
+      cmake_path(ABSOLUTE_PATH conf_file BASE_DIRECTORY ${APP_DIR})
+      list(APPEND ${conf_file_var} ${conf_file})
+    endforeach()
+  endif()
+endforeach()
 
 if(DEFINED SB_CONF_FILE AND NOT DEFINED CACHE{SB_CONF_FILE})
   # We only want to set this in cache it has been defined and is not already there.
@@ -46,10 +59,14 @@ endif()
 # Empty files to make kconfig.py happy.
 file(TOUCH ${CMAKE_CURRENT_BINARY_DIR}/empty.conf)
 set(APPLICATION_SOURCE_DIR ${CMAKE_CURRENT_SOURCE_DIR})
-set(KCONFIG_BINARY_DIR     ${CMAKE_CURRENT_BINARY_DIR})
 set(AUTOCONF_H             ${CMAKE_CURRENT_BINARY_DIR}/autoconf.h)
 set(CONF_FILE              ${SB_CONF_FILE})
+set(EXTRA_CONF_FILE        "${SB_EXTRA_CONF_FILE}")
 set(BOARD_DEFCONFIG        "${CMAKE_CURRENT_BINARY_DIR}/empty.conf")
+if(DEFINED BOARD_REVISION)
+  set(BOARD_REVISION_CONFIG "${CMAKE_CURRENT_BINARY_DIR}/empty.conf")
+endif()
+
 list(APPEND ZEPHYR_KCONFIG_MODULES_DIR BOARD=${BOARD})
 set(KCONFIG_NAMESPACE SB_CONFIG)
 

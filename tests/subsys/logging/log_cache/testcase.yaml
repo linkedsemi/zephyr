@@ -3,5 +3,7 @@ common:
     - native_posix
 
 tests:
-  logging.log_cache:
-    tags: log_cache logging
+  logging.cache:
+    tags:
+      - log_cache
+      - logging

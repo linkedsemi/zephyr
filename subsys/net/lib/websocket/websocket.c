@@ -31,7 +31,7 @@ LOG_MODULE_REGISTER(net_websocket, CONFIG_NET_WEBSOCKET_LOG_LEVEL);
 #include <zephyr/net/http/client.h>
 #include <zephyr/net/websocket.h>
 
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/base64.h>
 #include <mbedtls/sha1.h>
@@ -419,7 +419,11 @@ static int websocket_interal_disconnect(struct websocket_context *ctx)
 
 	NET_DBG("[%p] Disconnecting", ctx);
 
-	ret = close(ctx->real_sock);
+	ret = websocket_send_msg(ctx->sock, NULL, 0, WEBSOCKET_OPCODE_CLOSE,
+				 true, true, SYS_FOREVER_MS);
+	if (ret < 0) {
+		NET_ERR("[%p] Failed to send close message (err %d).", ctx, ret);
+	}
 
 	websocket_context_unref(ctx);
 
@@ -504,6 +508,10 @@ static int websocket_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 
 		return websocket_poll_offload(fds, nfds, timeout);
 	}
+
+	case ZFD_IOCTL_SET_LOCK:
+		/* Ignore, don't want to overwrite underlying socket lock. */
+		return 0;
 
 	default: {
 		const struct fd_op_vtable *vtable;
@@ -628,21 +636,20 @@ int websocket_send_msg(int ws_sock, const uint8_t *payload, size_t payload_len,
 		return -EINVAL;
 	}
 
-#if defined(CONFIG_NET_TEST)
-	/* Websocket unit test does not use socket layer but feeds
-	 * the data directly here when testing this function.
-	 */
-	ctx = UINT_TO_POINTER((unsigned int) ws_sock);
-#else
 	ctx = z_get_fd_obj(ws_sock, NULL, 0);
 	if (ctx == NULL) {
 		return -EBADF;
 	}
 
+#if !defined(CONFIG_NET_TEST)
+	/* Websocket unit test does not use context from pool but allocates
+	 * its own, hence skip the check.
+	 */
+
 	if (!PART_OF_ARRAY(contexts, ctx)) {
 		return -ENOENT;
 	}
-#endif /* CONFIG_NET_TEST */
+#endif /* !defined(CONFIG_NET_TEST) */
 
 	NET_DBG("[%p] Len %zd %s/%d/%s", ctx, payload_len, opcode2str(opcode),
 		mask, final ? "final" : "more");
@@ -787,7 +794,7 @@ static int websocket_parse(struct websocket_context *ctx, struct websocket_buffe
 				break;
 			case WEBSOCKET_PARSER_STATE_EXT_LEN:
 				ctx->parser_remaining--;
-				ctx->message_len |= (data << (ctx->parser_remaining * 8));
+				ctx->message_len |= ((uint64_t)data << (ctx->parser_remaining * 8));
 				if (ctx->parser_remaining == 0) {
 					if (ctx->masked) {
 						ctx->masking_value = 0;
@@ -853,11 +860,55 @@ static int websocket_parse(struct websocket_context *ctx, struct websocket_buffe
 	return parsed_count;
 }
 
+#if !defined(CONFIG_NET_TEST)
+static int wait_rx(int sock, int timeout)
+{
+	struct zsock_pollfd fds = {
+		.fd = sock,
+		.events = ZSOCK_POLLIN,
+	};
+	int ret;
+
+	ret = zsock_poll(&fds, 1, timeout);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (ret == 0) {
+		/* Timeout */
+		return -EAGAIN;
+	}
+
+	if (fds.revents & ZSOCK_POLLNVAL) {
+		return -EBADF;
+	}
+
+	if (fds.revents & ZSOCK_POLLERR) {
+		return -EIO;
+	}
+
+	return 0;
+}
+
+static int timeout_to_ms(k_timeout_t *timeout)
+{
+	if (K_TIMEOUT_EQ(*timeout, K_NO_WAIT)) {
+		return 0;
+	} else if (K_TIMEOUT_EQ(*timeout, K_FOREVER)) {
+		return SYS_FOREVER_MS;
+	} else {
+		return k_ticks_to_ms_floor32(timeout->ticks);
+	}
+}
+
+#endif /* !defined(CONFIG_NET_TEST) */
+
 int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 		       uint32_t *message_type, uint64_t *remaining, int32_t timeout)
 {
 	struct websocket_context *ctx;
 	int ret;
+	k_timepoint_t end;
 	k_timeout_t tout = K_FOREVER;
 	struct websocket_buffer payload = {.buf = buf, .size = buf_len, .count = 0};
 
@@ -869,9 +920,14 @@ int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 		return -EINVAL;
 	}
 
+	end = sys_timepoint_calc(tout);
+
 #if defined(CONFIG_NET_TEST)
-	struct test_data *test_data =
-	    UINT_TO_POINTER((unsigned int) ws_sock);
+	struct test_data *test_data = z_get_fd_obj(ws_sock, NULL, 0);
+
+	if (test_data == NULL) {
+		return -EBADF;
+	}
 
 	ctx = test_data->ctx;
 #else
@@ -900,16 +956,22 @@ int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 				ret = input_len;
 			} else {
 				/* emulate timeout */
-				errno = EAGAIN;
-				ret = -1;
+				ret = -EAGAIN;
 			}
 #else
-			ret = recv(ctx->real_sock, ctx->recv_buf.buf, ctx->recv_buf.size,
-				   K_TIMEOUT_EQ(tout, K_NO_WAIT) ? MSG_DONTWAIT : 0);
+			tout = sys_timepoint_timeout(end);
+
+			ret = wait_rx(ctx->real_sock, timeout_to_ms(&tout));
+			if (ret == 0) {
+				ret = recv(ctx->real_sock, ctx->recv_buf.buf,
+					   ctx->recv_buf.size, MSG_DONTWAIT);
+				if (ret < 0) {
+					ret = -errno;
+				}
+			}
 #endif /* CONFIG_NET_TEST */
 
 			if (ret < 0) {
-				ret = -errno;
 				if ((ret == -EAGAIN) && (payload.count > 0)) {
 					/* go to unmasking */
 					break;
