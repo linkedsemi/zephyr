@@ -6,5 +6,5 @@ config SOC_SERIES_LE501X
     select TICKLESS_CAPABLE
     select SOC_FAMILY_LINKEDSEMI_ARM
     select BUILD_OUTPUT_HEX
-    select PM
+    select HAS_PM
     select HAS_SEGGER_RTT 

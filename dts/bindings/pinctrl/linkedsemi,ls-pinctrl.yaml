@@ -70,9 +70,9 @@ child-binding:
             Drive strength of the output pin. Following options as in io_drive_type_t
             See ls_soc_gpio.h. Default to 1/4 max driver.
           type: string
-          default: "1/4 max driver"
+          default: "quarter max driver"
           enum:
-            - "1/4 max driver"          
-            - "1/4 max driver"
-            - "1/2 max driver"
+            - "quarter max driver"          
+            - "quarter max driver"
+            - "half max driver"
             - "max driver"

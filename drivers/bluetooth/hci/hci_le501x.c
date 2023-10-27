@@ -221,7 +221,8 @@ void rco_freq_counting_init();
 void rco_freq_counting_start();
 uint16_t get_lsi_cnt_val();
 void aos_swint_init(void (*isr)());
-static int ble_init(const struct device *unused)
+
+static int ble_init(void)
 {
     rco_freq_counting_init();
     rco_freq_counting_start();

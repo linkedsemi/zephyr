@@ -97,7 +97,7 @@ void io_init(void)
     LSGPIOB->PUPD = 0x2800;
 }
 
-static int le501x_init(const struct device *arg)
+static int le501x_init(void)
 {
     sys_init_ll();
     extern int32_t (*os_sleep_duration_get_fn)();
