@@ -12,7 +12,8 @@ LOG_MODULE_REGISTER(ble_hci_vs);
 #define BT_HCI_VS_HW_PLAT 0 
 #define BT_HCI_VS_HW_VAR  0
 
-#define BLE_DEVICE_ADDR_OFFSET     0x30
+/* Place random static address in 0x18025ff0(zephyr application starts at 0x18026000) */
+#define BLE_DEVICE_ADDR_OFFSET     0x25ff0
 #define BLE_ADDR_LEN    6
 
 static uint16_t _opcode;
@@ -81,7 +82,6 @@ static uint8_t hci_vendor_read_static_addr(struct bt_hci_vs_static_addr addrs[],
 {
 	ARG_UNUSED(size);
 
-	BT_ADDR_SET_STATIC(&addrs[0].bdaddr);
     hal_flash_fast_read(BLE_DEVICE_ADDR_OFFSET, addrs[0].bdaddr.val, BLE_ADDR_LEN);
 
 	return 1;

@@ -3,10 +3,11 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stdlib.h>
+#include <ls_hal_flash.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
-
 #include <zephyr/drivers/bluetooth/hci_driver.h>
 
 #include <zephyr/kernel.h>
@@ -15,6 +16,10 @@
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_hci_driver_le501x);
+
+/* Place random static address in 0x18025ff0(zephyr application starts at 0x18026000) */
+#define BT_ADDR_OFFSET 0x25ff0
+#define BT_ADDR_LEN 6
 
 #define LL_THREAD_STACK_SIZE  0x400
 #define LL_THREAD_PRIORITY 0
@@ -30,6 +35,7 @@ static K_SEM_DEFINE(ll_thread_sem, 0, 1);
 K_THREAD_STACK_DEFINE(ll_thread_stack, LL_THREAD_STACK_SIZE);
 struct k_thread ll_thread_data;
 
+uint32_t get_trng_value(void);
 extern int cmd_handle(struct net_buf *buf);
 void (*ll_hci_write_callback)(void *,uint8_t);
 void *ll_hci_write_param;
@@ -175,8 +181,30 @@ static int hci_driver_send(struct net_buf *buf)
     return 0;
 }
 
+static void generate_random_static_bt_addr(uint8_t * bt_addr) {
+    srand(get_trng_value());
+
+    for (uint8_t i = 0; i < BT_ADDR_LEN; i++) {
+        bt_addr[i] = rand() & 0xFF;
+    }
+
+    bt_addr[BT_ADDR_LEN - 1] |= 0xC0;
+}
+
+static void le501x_bt_addr_init(void)
+{
+    uint8_t bt_addr[BT_ADDR_LEN], default_random_addr[BT_ADDR_LEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
+
+    hal_flash_quad_io_read(BT_ADDR_OFFSET, bt_addr, BT_ADDR_LEN);
+    if (memcmp(default_random_addr, bt_addr, BT_ADDR_LEN) == 0) {
+        generate_random_static_bt_addr(bt_addr);
+        hal_flash_page_program(BT_ADDR_OFFSET, bt_addr, BT_ADDR_LEN);
+    }
+}
+
 static int hci_driver_open()
 {
+    le501x_bt_addr_init();
     return 0;
 }
 
