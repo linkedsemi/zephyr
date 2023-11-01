@@ -78,6 +78,7 @@
             // label = "UART1";
             interrupts = <27 3> ;
         };
+
         uart2: uart@40004400 {
             compatible = "le501x-uart";
             reg = <0x40004400 0x400>;
@@ -85,6 +86,7 @@
             // label = "UART2";
             interrupts = <28 3> ;
         };
+
         uart3: uart@40004800 {
             compatible = "le501x-uart";
             reg = <0x40004800 0x400>;
@@ -101,6 +103,7 @@
             interrupt-names = "i2c1";
             status = "disabled";
         };
+
         i2c2: i2c@40005800 {
             compatible = "le501x-i2c";
             #address-cells = <1>;
@@ -120,11 +123,13 @@
 			status = "disabled";
 		};
     };
+
     power-states {
         idle: idle{
             compatible = "zephyr,power-state";
 			power-state-name = "runtime-idle";
         };
+        
         lp0: lp0 {
 			compatible = "zephyr,power-state";
 			power-state-name = "standby";

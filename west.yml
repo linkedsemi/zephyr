@@ -258,7 +258,7 @@ manifest:
         - hal
     - name: hal_linkedsemi
       revision: zephyr
-      url: http://10.10.20.8:8000/sw/ls_sdk.git
+      url: https://github.com/linkedsemi/LS_SDK.git
       path: modules/hal/linkedsemi
       groups:
         - hal
