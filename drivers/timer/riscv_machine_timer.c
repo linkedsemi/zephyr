@@ -71,6 +71,13 @@
 #define MTIME_REG	(DT_INST_REG_ADDR_U64(0) + 8)
 #define MTIMECMP_REG	(DT_INST_REG_ADDR_U64(0) + 16)
 #define TIMER_IRQN	DT_INST_IRQN(0)
+/*linkedsemi-machine-timer*/
+#elif DT_HAS_COMPAT_STATUS_OKAY(linkedsemi_machine_timer)
+#define DT_DRV_COMPAT linkedsemi_machine_timer
+
+#define MTIMECMP_REG	DT_INST_REG_ADDR(0)
+#define MTIME_REG	(DT_INST_REG_ADDR(0) + 0x7FF8)
+#define TIMER_IRQN	DT_INST_IRQN(0)
 #endif
 
 #define CYC_PER_TICK (uint32_t)(sys_clock_hw_cycles_per_sec() \

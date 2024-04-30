@@ -1,0 +1,16 @@
+if SOC_LS1010
+
+config SOC
+    default "LS1010"
+
+config RISCV_HAS_PLIC
+	default n
+
+config RISCV_HAS_CLIC
+	default y
+
+config RISCV_SOC_MCAUSE_EXCEPTION_MASK
+	hex
+	default 0x1f
+
+endif

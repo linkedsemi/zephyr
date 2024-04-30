@@ -72,7 +72,7 @@
         };
 
         uart1: uart@40013800 {
-            compatible = "le501x-uart";
+            compatible = "linkedsemi-uart";
             reg = <0x40013800 0x400>;
 			status = "disabled";
             // label = "UART1";
@@ -80,7 +80,7 @@
         };
 
         uart2: uart@40004400 {
-            compatible = "le501x-uart";
+            compatible = "linkedsemi-uart";
             reg = <0x40004400 0x400>;
 			status = "disabled";
             // label = "UART2";
@@ -88,7 +88,7 @@
         };
 
         uart3: uart@40004800 {
-            compatible = "le501x-uart";
+            compatible = "linkedsemi-uart";
             reg = <0x40004800 0x400>;
 			status = "disabled";
             // label = "UART3";

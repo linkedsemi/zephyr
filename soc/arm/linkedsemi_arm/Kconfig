@@ -7,6 +7,9 @@ config SOC_FAMILY
     string
     default "linkedsemi_arm"
 
+config SOC_LE5010
+    bool "LE5010"
+
 source "soc/arm/linkedsemi_arm/*/Kconfig.soc"
 
 endif # SOC_FAMILY_LINKEDSEMI_ARM

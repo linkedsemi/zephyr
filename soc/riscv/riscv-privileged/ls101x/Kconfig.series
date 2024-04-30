@@ -1,0 +1,18 @@
+
+config SOC_SERIES_LS101X
+    bool "Linkedsemi LS1010 series risc-v MCU"
+    select RISCV
+  	select XIP
+    select TICKLESS_CAPABLE
+    select INCLUDE_RESET_VECTOR
+    select SOC_FAMILY_RISCV_PRIVILEGED
+    select BUILD_OUTPUT_HEX
+    select CPU_HAS_FPU
+    select ARCH_HAS_RAMFUNC_SUPPORT
+  	select RISCV_ISA_RV32I
+    select RISCV_ISA_EXT_M
+    select RISCV_ISA_EXT_A
+    select RISCV_ISA_EXT_C
+    select RISCV_HAS_CLIC
+    select RISCV_SOC_HAS_ISR_STACKING
+    

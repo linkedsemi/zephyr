@@ -1,0 +1,28 @@
+if SOC_SERIES_LS101X
+
+source "soc/riscv/riscv-privileged/ls101x/Kconfig.defconfig.ls1010"
+
+config SOC_SERIES
+    default "ls101x"
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default 24000000
+
+config NUM_IRQS
+	default 64
+
+config RISCV_GP
+	bool
+	default y
+
+config MAIN_STACK_SIZE
+	default 2048
+
+config RISCV_HAS_CPU_IDLE
+	default y
+
+config RISCV_HAS_PLIC
+	default n
+
+
+endif

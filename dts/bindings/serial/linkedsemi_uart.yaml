@@ -1,6 +1,6 @@
-description: LE501X UART
+description: LINKEDSEMI UART
 
-compatible: "le501x-uart"
+compatible: "linkedsemi-uart"
 
 include: [uart-controller.yaml,pinctrl-device.yaml]
 
@@ -14,8 +14,8 @@ properties:
     interrupts:
       required: false
 
-    pinctrl-0:
-      required: true
+    # pinctrl-0:
+    #   required: true
 
-    pinctrl-names:
-      required: true
+    # pinctrl-names:
+    #   required: true

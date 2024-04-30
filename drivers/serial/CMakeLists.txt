@@ -3,7 +3,7 @@
 zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/uart.h)
 
 zephyr_library()
-zephyr_library_sources_ifdef(CONFIG_UART_LE501X uart_le501x.c)
+zephyr_library_sources_ifdef(CONFIG_UART_LINKEDSEMI uart_linkedsemi.c)
 zephyr_library_sources_ifdef(CONFIG_UART_ALTERA_JTAG uart_altera_jtag.c)
 zephyr_library_sources_ifdef(CONFIG_UART_ALTERA uart_altera.c)
 zephyr_library_sources_ifdef(CONFIG_UART_TELINK_B91 uart_b91.c)

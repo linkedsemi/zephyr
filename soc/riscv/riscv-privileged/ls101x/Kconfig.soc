@@ -1,0 +1,12 @@
+
+
+choice
+    prompt "Linkedsemi LS1010 MCU Selection"
+    depends on SOC_SERIES_LS101X
+
+config SOC_LS1010
+    bool "LS1010"
+
+
+
+endchoice

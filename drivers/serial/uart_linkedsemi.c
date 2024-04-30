@@ -6,7 +6,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
 
-//....................................borad:le501x...........................................
+//....................................borad:ls...........................................
 
 #include <string.h>
 #include <stdlib.h>
@@ -15,15 +15,21 @@
 #include <ls_soc_gpio.h>
 
 #include <field_manipulate.h>
-#include <reg_rcc.h>
 // #include <log.h>
 #include <zephyr/irq.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/pm/policy.h>
+#include "reg_sysc_per.h"
+#include "ls_soc_gpio.h"
 
-#define DT_DRV_COMPAT le501x_uart
+#ifdef SOC_LE5010
+#include <reg_rcc.h>
+#endif
 
-struct uart_le501x_data_t
+
+#define DT_DRV_COMPAT linkedsemi_uart
+
+struct uart_ls_data_t
 {
 	const struct pinctrl_dev_config *pcfg;
 	uart_irq_callback_user_data_t user_cb;
@@ -36,9 +42,9 @@ struct uart_le501x_data_t
 #endif
 };
 
-static int uart_le501x_poll_in(const struct device *dev, unsigned char *p_char)
+static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
 {
-	// LOG_I("uart_le501x_poll_in");
+	// LOG_I("uart_ls_poll_in");
 	UART_HandleTypeDef *uart_handle  = (UART_HandleTypeDef *)dev->config;
 	if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_OE)) {
 	}
@@ -50,7 +56,7 @@ static int uart_le501x_poll_in(const struct device *dev, unsigned char *p_char)
 	return 0;
 }
 
-static void uart_le501x_poll_out(const struct device *dev, unsigned char p_char)
+static void uart_ls_poll_out(const struct device *dev, unsigned char p_char)
 {
 	UART_HandleTypeDef *uart_handle  = (UART_HandleTypeDef *)dev->config;
 
@@ -64,11 +70,11 @@ static void uart_le501x_poll_out(const struct device *dev, unsigned char p_char)
 		}
 	}
 }
-
+#ifdef SOC_LE5010
 #ifdef CONFIG_PM
-static void uart_le501x_pm_policy_state_lock_get(const struct device *dev)
+static void uart_ls_pm_policy_state_lock_get(const struct device *dev)
 {
-	struct uart_le501x_data_t *data = dev->data;
+	struct uart_ls_data_t *data = dev->data;
 
 	if (!data->pm_policy_state_on) {
 		data->pm_policy_state_on = true;
@@ -77,9 +83,9 @@ static void uart_le501x_pm_policy_state_lock_get(const struct device *dev)
 	}
 }
 
-// static void uart_le501x_pm_policy_state_lock_put(const struct device *dev)
+// static void uart_ls_pm_policy_state_lock_put(const struct device *dev)
 // {
-// 	struct uart_le501x_data_t *data = dev->data;
+// 	struct uart_ls_data_t *data = dev->data;
 
 // 	if (data->pm_policy_state_on) {
 // 		data->pm_policy_state_on = false;
@@ -88,47 +94,69 @@ static void uart_le501x_pm_policy_state_lock_get(const struct device *dev)
 // 	}
 // }
 #endif /* CONFIG_PM */
+#endif /*SOC_LE5010*/
 
 void uart1_msp_init(void)
 {
+#if defined(SOC_LE5010)
     REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 1);
     REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 0);
     REG_FIELD_WR(RCC->APB2EN, RCC_UART1, 1);	
+#elif defined(SOC_LS1010)
+	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART1, 1);
+#endif
 }
 
 void uart2_msp_init(void)
 {
+#if defined(SOC_LE5010)
     REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_UART2, 1);
+#elif defined(SOC_LS1010)
+	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART2, 1);
+#endif
 }
 
 void uart3_msp_init(void)
 {
+#if defined(SOC_LE5010)
     REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_UART3, 1);
+#elif defined(SOC_LS1010)
+	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART3, 1);
+#endif
 }
-static int uart_le501x_init(const struct device *dev)
+
+static void uart_msp_init(UART_HandleTypeDef *uart_handle)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	struct uart_le501x_data_t *data = (struct uart_le501x_data_t *)dev->data;
-	int ret;
 	switch((uint32_t)uart_handle->UARTX)
 	{
-		case (uint32_t)UART1:
+		case (uint32_t)UART1_BASE_ADDR:
 			uart1_msp_init();
 			break;
-		case (uint32_t)UART2:
+		case (uint32_t)UART2_BASE_ADDR:
 			uart2_msp_init();
 			break;
-		case (uint32_t)UART3:
+		case (uint32_t)UART3_BASE_ADDR:
 			uart3_msp_init();
 			break;
 		default:
 			break;
 	}
+}
 
+static int uart_ls_init(const struct device *dev)
+{
+	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
+	int ret = 0;
+	(void)data;
+	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART1, 1);
+	uart_msp_init(uart_handle);
+
+	pinmux_uart1_init(PC14,PC12);
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,1);
     uart_handle->UARTX->BRR  =  uart_handle->Init.BaudRate;
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,0);
@@ -139,83 +167,84 @@ static int uart_le501x_init(const struct device *dev)
 
 	// LOG_I("uart addr : %x",(uint32_t)uart_handle->UARTX);
 	/* Configure dt provided device signals when available */
-	ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
-	if (ret < 0) {
-		// LOG_ERR("UART pinctrl setup failed (%d)", ret);
-		return ret;
-	}
-
+	// ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
+	// if (ret < 0) {
+	// 	// LOG_ERR("UART pinctrl setup failed (%d)", ret);
+	// 	return ret;
+	// }
+#ifdef SOC_LE5010
 	#ifdef CONFIG_PM
-	uart_le501x_pm_policy_state_lock_get(dev);
+	uart_ls_pm_policy_state_lock_get(dev);
 	#endif
-	
+#endif
 	#ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	data->irq_config_func(dev);
 	#endif
-	return 0; 
+
+	return ret; 
 }
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
-static void uart_le501x_irq_tx_enable(const struct device *dev)
+static void uart_ls_irq_tx_enable(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;	
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS); //transmission complete interrupt enable
 }
 
-void uart_le501x_irq_tx_disable(const struct device *dev)
+void uart_ls_irq_tx_disable(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC);
 }
 
-int uart_le501x_irq_tx_ready(const struct device *dev)
+int uart_ls_irq_tx_ready(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) &&
 		LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC);
 }
 
-void uart_le501x_irq_rx_enable(const struct device *dev)
+void uart_ls_irq_rx_enable(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;	
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD); 	
 	// #ifdef CONFIG_PM
-	// 	uart_le501x_pm_policy_state_lock_get(dev);
+	// 	uart_ls_pm_policy_state_lock_get(dev);
 	// #endif	
 }
 
-void uart_le501x_irq_rx_disable(const struct device *dev)
+void uart_ls_irq_rx_disable(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD);
 	// #ifdef CONFIG_PM
-	// 	uart_le501x_pm_policy_state_lock_put(dev);
+	// 	uart_ls_pm_policy_state_lock_put(dev);
 	// #endif	
 }
 
-int uart_le501x_irq_tx_complete(const struct device *dev)
+int uart_ls_irq_tx_complete(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFEM);
 }
 
-int uart_le501x_irq_rx_ready(const struct device *dev)  //fifo no empty：Returen 1
+int uart_ls_irq_rx_ready(const struct device *dev)  //fifo no empty：Returen 1
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE);
 }
 
-void uart_le501x_irq_err_enable(const struct device *dev)
+void uart_ls_irq_err_enable(const struct device *dev)
 {
 	/* Not yet used in zephyr */
 }
 
-void uart_le501x_irq_err_disable(const struct device *dev)
+void uart_ls_irq_err_disable(const struct device *dev)
 {
 	/* Not yet used in zephyr */
 }
 
-int uart_le501x_irq_is_pending(const struct device *dev)
+int uart_ls_irq_is_pending(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 
@@ -225,22 +254,22 @@ int uart_le501x_irq_is_pending(const struct device *dev)
 		LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC)));
 }
 
-int uart_le501x_irq_update(const struct device *dev)
+int uart_ls_irq_update(const struct device *dev)
 {
 	return 1;
 }
 
-void uart_le501x_irq_callback_set(const struct device *dev,uart_irq_callback_user_data_t cb,void *user_data)
+void uart_ls_irq_callback_set(const struct device *dev,uart_irq_callback_user_data_t cb,void *user_data)
 {
-	struct uart_le501x_data_t *data = (struct uart_le501x_data_t *)dev->data;
+	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	data->user_cb = cb;
 	data->user_parm = user_data;
 }
 
-void uart_le501x_isr(const struct device *dev)
+void uart_ls_isr(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	struct uart_le501x_data_t *data = (struct uart_le501x_data_t *)dev->data;
+	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
     uint8_t irq_flag =  false;
 	if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD))
     {
@@ -264,7 +293,7 @@ void uart_le501x_isr(const struct device *dev)
 	}
 }
 
-int uart_le501x_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
+int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	uint8_t num_tx = 0U;
@@ -290,7 +319,7 @@ int uart_le501x_fifo_fill(const struct device *dev, const uint8_t *tx_data,int l
 	return num_tx;
 }
 
-int uart_le501x_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
+int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	uint8_t num_rx = 0U;
@@ -314,59 +343,59 @@ int uart_le501x_fifo_read(const struct device *dev, uint8_t *rx_data,const int s
 
 #endif
 
-static const  struct uart_driver_api uart_le501x_api = {
-	.poll_in = uart_le501x_poll_in,
-	.poll_out = uart_le501x_poll_out,
-	.err_check = uart_le501x_init,
+static const  struct uart_driver_api uart_ls_api = {
+	.poll_in = uart_ls_poll_in,
+	.poll_out = uart_ls_poll_out,
+	.err_check = uart_ls_init,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	.fifo_fill = uart_le501x_fifo_fill,
-	.fifo_read = uart_le501x_fifo_read,
-	.irq_tx_enable = uart_le501x_irq_tx_enable,
-	.irq_tx_disable = uart_le501x_irq_tx_disable,
-	.irq_tx_ready = uart_le501x_irq_tx_ready,
-	.irq_rx_enable = uart_le501x_irq_rx_enable,
-	.irq_rx_disable = uart_le501x_irq_rx_disable,
-	.irq_tx_complete = uart_le501x_irq_tx_complete,
-	.irq_rx_ready = uart_le501x_irq_rx_ready,
-	.irq_err_enable = uart_le501x_irq_err_enable,
-	.irq_err_disable = uart_le501x_irq_err_disable,
-	.irq_is_pending = uart_le501x_irq_is_pending,
-	.irq_update = uart_le501x_irq_update,
-	.irq_callback_set = uart_le501x_irq_callback_set,
+	.fifo_fill = uart_ls_fifo_fill,
+	.fifo_read = uart_ls_fifo_read,
+	.irq_tx_enable = uart_ls_irq_tx_enable,
+	.irq_tx_disable = uart_ls_irq_tx_disable,
+	.irq_tx_ready = uart_ls_irq_tx_ready,
+	.irq_rx_enable = uart_ls_irq_rx_enable,
+	.irq_rx_disable = uart_ls_irq_rx_disable,
+	.irq_tx_complete = uart_ls_irq_tx_complete,
+	.irq_rx_ready = uart_ls_irq_rx_ready,
+	.irq_err_enable = uart_ls_irq_err_enable,
+	.irq_err_disable = uart_ls_irq_err_disable,
+	.irq_is_pending = uart_ls_irq_is_pending,
+	.irq_update = uart_ls_irq_update,
+	.irq_callback_set = uart_ls_irq_callback_set,
 #endif  /* CONFIG_UART_INTERRUPT_DRIVEN */
 };
 
 
 
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN)	
-#define LE501X_UART_IRQ_HANDLER_DECL(index)				\
-	static void uart_le501x_irq_config_func_##index(const struct device *dev);\
+#define LS_UART_IRQ_HANDLER_DECL(index)				\
+	static void uart_ls_irq_config_func_##index(const struct device *dev);\
 
-#define LE501X_UART_IRQ_HANDLER(index)					\
-static void uart_le501x_irq_config_func_##index(const struct device *dev)	\
+#define LS_UART_IRQ_HANDLER(index)					\
+static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 {									\
 	IRQ_CONNECT(DT_INST_IRQN(index),				\
 		DT_INST_IRQ(index, priority),				\
-		uart_le501x_isr, DEVICE_DT_INST_GET(index),		\
+		uart_ls_isr, DEVICE_DT_INST_GET(index),		\
 		0);							\
 	irq_enable(DT_INST_IRQN(index));				\
 }
 #else
-#define LE501X_UART_IRQ_HANDLER_DECL(index) /* Not used */
-#define LE501X_UART_IRQ_HANDLER(index) /* Not used */
+#define LS_UART_IRQ_HANDLER_DECL(index) /* Not used */
+#define LS_UART_IRQ_HANDLER(index) /* Not used */
 #endif
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 #define UART_IRQ_HANDLER_FUNC(index)				\
-	.irq_config_func = uart_le501x_irq_config_func_##index,
+	.irq_config_func = uart_ls_irq_config_func_##index,
 #else
 #define UART_IRQ_HANDLER_FUNC(index) /* Not used */
 #endif
 
 #define GET_UART_BAUDRATE(index) UART_BUADRATE_ENUM_GEN(DT_INST_PROP(index, current_speed))
 
-#define LE501X_UART_INIT(index)	\
-LE501X_UART_IRQ_HANDLER_DECL(index)	\
+#define LS_UART_INIT(index)	\
+LS_UART_IRQ_HANDLER_DECL(index)	\
 PINCTRL_DT_INST_DEFINE(index);						\
 static UART_HandleTypeDef uart_handle_##index = {	\
 	.UARTX = (reg_uart_t *)DT_INST_REG_ADDR(index),	\
@@ -376,7 +405,7 @@ static UART_HandleTypeDef uart_handle_##index = {	\
 	.Init.StopBits = DT_INST_ENUM_IDX_OR(index, StopBits, UART_STOPBITS1),	\
 	.Init.WordLength =	DT_INST_ENUM_IDX_OR(index, WordLength, UART_BYTESIZE8),	\
 };	\
-static struct uart_le501x_data_t uart_le501x_data##index = {	\
+static struct uart_ls_data_t uart_ls_data##index = {	\
 	.user_cb = NULL,	\
 	.user_parm = NULL,	\
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),			\
@@ -384,13 +413,13 @@ static struct uart_le501x_data_t uart_le501x_data##index = {	\
 };	\
 	\
 DEVICE_DT_INST_DEFINE(index,	\
-		    &uart_le501x_init,	\
+		    &uart_ls_init,	\
 		    NULL,	\
-		    &uart_le501x_data##index, &uart_handle_##index,	\
+		    &uart_ls_data##index, &uart_handle_##index,	\
 		    PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY,	\
-		    &uart_le501x_api);	\
+		    &uart_ls_api);	\
 	\
-LE501X_UART_IRQ_HANDLER(index)
+LS_UART_IRQ_HANDLER(index)
 
 
-DT_INST_FOREACH_STATUS_OKAY(LE501X_UART_INIT)
+DT_INST_FOREACH_STATUS_OKAY(LS_UART_INIT)

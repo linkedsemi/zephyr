@@ -1,0 +1,91 @@
+
+#include <zephyr/dt-bindings/gpio/gpio.h>
+
+/ {
+    #address-cells = <1>;
+    #size-cells = <1>;
+    chosen {
+		// zephyr,flash-controller = &flash_controller;
+	};
+
+    cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+        mcause-exception-mask = <0x1f>;
+		cpu0: cpu@0 {
+            compatible = "riscv","linkedsemi,e906";
+			reg = <0>;
+			intc: interrupt-controller {
+				compatible = "riscv,cpu-intc";
+				#address-cells = <1>;
+				#interrupt-cells = <1>;
+				interrupt-controller;
+			};
+		};
+    };
+
+    sram0: memory@10000000{
+        compatible = "mmio-sram";
+        reg = <0x10000000 0x20000>;
+    };
+
+    soc {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "linkedsemi,linkedsemi-soc";
+        interrupt-parent = <&intc>;
+        flash_qspi: flash-controller@40000000 {
+            compatible = "linkedsemi,ls-flash-controller";
+            reg = <0x40000000 0x40>;
+
+            #address-cells = <1>;
+            #size-cells = <1>;
+
+            flash0: flash@8000000 {
+                compatible = "soc-nv-flash";
+                reg = <0x8000000 0x80000>;
+                erase-block-size = <4096>;
+                write-block-size = <4>;
+            };
+        };
+
+        mtimer: machine-timer@e0004000 {
+			compatible = "linkedsemi,machine-timer";
+			reg = <0xe0004000 0x8000>;
+			interrupts = <7 0>;
+		};
+
+        uart1: uart@40085000 {
+            compatible = "linkedsemi-uart";
+            reg = <0x40085000 0x400>;
+			status = "disabled";
+            // label = "UART1";
+            interrupts = <51 3> ;
+        };
+        uart2: uart@40085400 {
+            compatible = "linkedsemi-uart";
+            reg = <0x40085400 0x400>;
+			status = "disabled";
+            // label = "UART1";
+            interrupts = <51 3> ;
+        };
+        uart3: uart@40085800 {
+            compatible = "linkedsemi-uart";
+            reg = <0x40085800 0x400>;
+			status = "disabled";
+            // label = "UART1";
+            interrupts = <51 3> ;
+        };
+    };
+    power-states {
+        idle: idle{
+            compatible = "zephyr,power-state";
+			power-state-name = "runtime-idle";
+        };
+        
+        lp0: lp0 {
+			compatible = "zephyr,power-state";
+			power-state-name = "standby";
+        };
+    };
+};

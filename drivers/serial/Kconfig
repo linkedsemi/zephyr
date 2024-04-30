@@ -127,7 +127,7 @@ config UART_PIPE
 
 comment "Serial Drivers"
 
-source "drivers/serial/Kconfig.le501x"
+source "drivers/serial/Kconfig.linkedsemi"
 
 source "drivers/serial/Kconfig.b91"
 

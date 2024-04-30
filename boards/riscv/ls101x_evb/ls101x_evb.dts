@@ -1,0 +1,92 @@
+/*
+ * Copyright (c) 2021, Teslabs Engineering S.L.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// #include <gigadevice/gd32vf103Xb.dtsi>
+// #include "gd32vf103v_eval-pinctrl.dtsi"
+/dts-v1/;
+#include <riscv/linkedsemi/ls101x.dtsi>
+#include <zephyr/dt-bindings/input/input-event-codes.h>
+
+/ {
+	model = "linkedsemi LS101X_EVB";
+	compatible = "linkedsemi,ls101x_evb";
+
+	chosen {
+		zephyr,flash = &flash0;
+		zephyr,sram = &sram0;
+		zephyr,console = &uart1;
+	};
+    // aliases {
+
+	// };
+
+
+};
+
+&flash0 {
+
+    /*
+	* Flash base address is 0x8000000,
+    * the following parts are all offset addresses.
+	*/
+
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			label = "info-sbl";
+			reg = <0x00000000 0x00000800>;
+		};
+	
+        app_partition: partition@800 {
+			label = "app";
+			reg = <0x00000800 0x0007f800>;
+		};
+
+		/*
+		 * The flash starting at 0x1807C000 and ending at
+		 * 0x1807FFFF is reserved for use by the application.
+		 */
+
+		/*
+		 * Storage partition will be used by FCB/LittleFS/NVS
+		 * if enabled.
+		 */
+		// storage_partition: partition@7C000 {
+		// 	label = "storage";
+		// 	reg = <0x0007c000 0x00004000>;
+		// };
+	};
+};
+
+&cpu0 {
+	clock-frequency = <128000000>;
+    cpu-power-states = <&idle &lp0>;
+};
+
+&uart1 {
+	status = "okay";
+	// pinctrl-0 = <&idle &lp0>;
+	// pinctrl-names = "default";
+	current-speed = <921600>;
+};
+&uart2 {
+	status = "okay";
+	// pinctrl-0 = <&idle &lp0>;
+	// pinctrl-names = "default";
+	current-speed = <921600>;
+};
+&uart3 {
+	status = "okay";
+	// pinctrl-0 = <&idle &lp0>;
+	// pinctrl-names = "default";
+	current-speed = <921600>;
+};
+// &systick {
+// 	status = "okay";
+// };
+
