@@ -21,12 +21,16 @@ static void cpu_sleep_mode_config(uint8_t deep)
     __set_MEXSTATUS(mextstaus);
 }
 
+void systick_start(void){};
+void sw_timer_module_init(void){};
+
 extern void SystemInit();
 static int ls101x_init(void)
 {
     SystemInit();
     sys_init_none();
     cpu_sleep_mode_config(0);
+    arch_irq_lock();
     return 0;
 }
 
