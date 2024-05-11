@@ -19,11 +19,13 @@
 #include <zephyr/irq.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/pm/policy.h>
+
+
+#if defined(CONFIG_SOC_LE5010)
+#include <reg_rcc.h>
+#elif defined(CONFIG_SOC_LS1010)
 #include "reg_sysc_per.h"
 #include "ls_soc_gpio.h"
-
-#ifdef SOC_LE5010
-#include <reg_rcc.h>
 #endif
 
 
@@ -70,7 +72,7 @@ static void uart_ls_poll_out(const struct device *dev, unsigned char p_char)
 		}
 	}
 }
-#ifdef SOC_LE5010
+#ifdef CONFIG_SOC_LE5010
 #ifdef CONFIG_PM
 static void uart_ls_pm_policy_state_lock_get(const struct device *dev)
 {
@@ -98,33 +100,33 @@ static void uart_ls_pm_policy_state_lock_get(const struct device *dev)
 
 void uart1_msp_init(void)
 {
-#if defined(SOC_LE5010)
+#if defined(CONFIG_SOC_LE5010)
     REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 1);
     REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 0);
     REG_FIELD_WR(RCC->APB2EN, RCC_UART1, 1);	
-#elif defined(SOC_LS1010)
+#elif defined(CONFIG_SOC_LS1010)
 	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART1, 1);
 #endif
 }
 
 void uart2_msp_init(void)
 {
-#if defined(SOC_LE5010)
+#if defined(CONFIG_SOC_LE5010)
     REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_UART2, 1);
-#elif defined(SOC_LS1010)
+#elif defined(CONFIG_SOC_LS1010)
 	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART2, 1);
 #endif
 }
 
 void uart3_msp_init(void)
 {
-#if defined(SOC_LE5010)
+#if defined(CONFIG_SOC_LE5010)
     REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_UART3, 1);
-#elif defined(SOC_LS1010)
+#elif defined(CONFIG_SOC_LS1010)
 	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART3, 1);
 #endif
 }
@@ -153,10 +155,9 @@ static int uart_ls_init(const struct device *dev)
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	int ret = 0;
 	(void)data;
-	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART1, 1);
 	uart_msp_init(uart_handle);
 
-	pinmux_uart1_init(PC14,PC12);
+	// pinmux_uart1_init(PC14,PC12);
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,1);
     uart_handle->UARTX->BRR  =  uart_handle->Init.BaudRate;
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,0);
@@ -172,7 +173,7 @@ static int uart_ls_init(const struct device *dev)
 	// 	// LOG_ERR("UART pinctrl setup failed (%d)", ret);
 	// 	return ret;
 	// }
-#ifdef SOC_LE5010
+#ifdef CONFIG_SOC_LE5010
 	#ifdef CONFIG_PM
 	uart_ls_pm_policy_state_lock_get(dev);
 	#endif
