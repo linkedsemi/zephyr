@@ -11,6 +11,6 @@ config RISCV_HAS_CLIC
 
 config RISCV_SOC_MCAUSE_EXCEPTION_MASK
 	hex
-	default 0x1f
+	default 0xfff
 
 endif

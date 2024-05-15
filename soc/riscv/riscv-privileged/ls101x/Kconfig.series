@@ -15,4 +15,4 @@ config SOC_SERIES_LS101X
     select RISCV_ISA_EXT_C
     select RISCV_HAS_CLIC
     select RISCV_SOC_HAS_ISR_STACKING
-    
+    select HAS_SPI_DW

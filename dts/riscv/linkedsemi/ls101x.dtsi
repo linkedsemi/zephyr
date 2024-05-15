@@ -11,16 +11,10 @@
     cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-        mcause-exception-mask = <0x1f>;
+        mcause-exception-mask = <0xfff>;
 		cpu0: cpu@0 {
             compatible = "riscv","linkedsemi,e906";
 			reg = <0>;
-			intc: interrupt-controller {
-				compatible = "riscv,cpu-intc";
-				#address-cells = <1>;
-				#interrupt-cells = <1>;
-				interrupt-controller;
-			};
 		};
     };
 
@@ -48,7 +42,12 @@
                 write-block-size = <4>;
             };
         };
-
+        intc: interrupt-controller {
+            compatible = "ls,riscv,e906-intc";
+            #address-cells = <0>;
+            #interrupt-cells = <2>;
+            interrupt-controller;
+        };
         mtimer: machine-timer@e0004000 {
 			compatible = "linkedsemi,machine-timer";
 			reg = <0xe0004000 0x8000>;
@@ -76,6 +75,18 @@
             // label = "UART1";
             interrupts = <51 3> ;
         };
+
+		spi0: spi@40087000 {
+			compatible = "snps,designware-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40087000 0x1000>;
+			fifo-depth = <4>;
+			interrupts = <56 3>;
+			clock-frequency = <144000000>;
+			status = "okay";
+		};
+
     };
     power-states {
         idle: idle{
