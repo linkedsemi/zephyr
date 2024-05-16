@@ -12,4 +12,21 @@ config FLASH_LOAD_OFFSET
 config HEAP_MEM_POOL_SIZE
 	default 4096
 
+if SPI
+
+config HAS_SPI_DW
+	default y
+
+config SPI_DW
+	default y
+
+endif # SPI
+
+if SPI_DW
+
+config SPI_DW_ACCESS_WORD_ONLY
+	default y
+
+endif # SPI_DW
+
 endif
