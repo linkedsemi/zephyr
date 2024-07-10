@@ -54,6 +54,79 @@
 			interrupts = <7 0>;
 		};
 
+        pinctrl: pin-controller@4000a060 {
+			compatible = "linkedsemi,ls-pinctrl";
+			interrupts = <0 3>;
+			interrupt-names = "EXTI_GPIO";
+            reg = <0x4000a060 0xC00>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+            
+			gpioa: gpio@4000a060 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a060 0x400>;
+                status = "disabled";
+			};
+
+			gpiob: gpio@4000a080 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a080 0x400>;
+                status = "disabled";
+			};
+
+			gpioc: gpio@4000a0a0 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a0a0 0x400>;
+                status = "disabled";
+			};
+
+            gpiod: gpio@4000a0c0 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a0c0 0x400>;
+                status = "disabled";
+			};
+
+            gpioe: gpio@4000a0e0 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a0e0 0x400>;
+                status = "disabled";
+			};
+
+            gpiof: gpio@4000a100 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a100 0x400>;
+                status = "disabled";
+			};
+
+            gpiog: gpio@4000a120 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a120 0x400>;
+                status = "disabled";
+			};
+
+            gpioh: gpio@4000a140 {
+				compatible = "linkedsemi,ls-gpio";
+				gpio-controller;
+				#gpio-cells = <2>;
+				reg = <0x4000a140 0x400>;
+                status = "disabled";
+			};
+        };
+
         uart1: uart@40085000 {
             compatible = "linkedsemi-uart";
             reg = <0x40085000 0x400>;
@@ -66,17 +139,17 @@
             reg = <0x40085400 0x400>;
 			status = "disabled";
             // label = "UART1";
-            interrupts = <51 3> ;
+            interrupts = <52 3> ;
         };
         uart3: uart@40085800 {
             compatible = "linkedsemi-uart";
             reg = <0x40085800 0x400>;
 			status = "disabled";
             // label = "UART1";
-            interrupts = <51 3> ;
+            interrupts = <53 3> ;
         };
 
-		spi0: spi@40087000 {
+		spi1: spi@40087000 {
 			compatible = "snps,designware-spi";
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -86,6 +159,38 @@
 			clock-frequency = <144000000>;
 			status = "okay";
 		};
+
+        spi2: spi@40087400 {
+            compatible = "linkedsemi,ls-spi";
+            #address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40087400 0x400>;
+			interrupts = <56 3>;
+			status = "disabled";
+        };
+
+        adc1: adc@40089000 {
+            compatible = "linkedsemi-adc";
+            reg = <0x40089000 0x400>;
+            status = "disabled";
+            // lable = "ADC1";
+            interrupts = <60 3>;
+        };
+
+        adc2: adc@40089400 {
+            compatible = "linkedsemi-adc";
+            reg = <0x40089400 0x400>;
+            status = "disabled";
+            // lable = "ADC2";
+            interrupts = <61 3>;
+        };
+
+        dac12: dac@4008d400 {
+            compatible = "linkedsemi-dac";
+            reg = <0x4008d400 0x400>;
+            status = "disabled";
+            // lable = "DAC12"
+        };
 
     };
     power-states {

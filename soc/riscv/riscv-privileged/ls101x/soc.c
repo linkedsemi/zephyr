@@ -11,6 +11,7 @@
 #include <string.h>
 #include "leo.h"
 #include <zephyr/irq.h>
+#include "reg_sysc_per.h"
 #define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
 
@@ -24,12 +25,23 @@ static void cpu_sleep_mode_config(uint8_t deep)
 void systick_start(void){};
 void sw_timer_module_init(void){};
 
+static void driver_init(void)
+{
+#if CONFIG_SPI == 1
+	SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_CLR_SPI1_MASK;
+	SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_CLR_SPI1_N_MASK;
+	SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_SET_SPI1_N_MASK;
+	SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_SET_SPI1_MASK;
+#endif
+}
+
 extern void SystemInit();
 static int ls101x_init(void)
 {
     SystemInit();
     sys_init_none();
     cpu_sleep_mode_config(0);
+    driver_init();
     arch_irq_lock();
     return 0;
 }

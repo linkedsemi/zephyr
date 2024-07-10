@@ -154,7 +154,7 @@ static int uart_ls_init(const struct device *dev)
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	int ret = 0;
-	(void)data;
+	// (void)data;
 	uart_msp_init(uart_handle);
 
 	// pinmux_uart1_init(PC14,PC12);
@@ -168,11 +168,11 @@ static int uart_ls_init(const struct device *dev)
 
 	// LOG_I("uart addr : %x",(uint32_t)uart_handle->UARTX);
 	/* Configure dt provided device signals when available */
-	// ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
-	// if (ret < 0) {
-	// 	// LOG_ERR("UART pinctrl setup failed (%d)", ret);
-	// 	return ret;
-	// }
+	ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
+	if (ret < 0) {
+		// LOG_ERR("UART pinctrl setup failed (%d)", ret);
+		return ret;
+	}
 #ifdef CONFIG_SOC_LE5010
 	#ifdef CONFIG_PM
 	uart_ls_pm_policy_state_lock_get(dev);

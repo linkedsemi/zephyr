@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Linkedsemi
+ * Copyright (c) 2024 Linkedsemi
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,11 +9,11 @@
  * LS SoC specific helpers for pinctrl driver
  */
 
-#ifndef ZEPHYR_SOC_ARM_LINKEDSEMI_PINCTRL_SOC_H_
-#define ZEPHYR_SOC_ARM_LINKEDSEMI_PINCTRL_SOC_H_
+#ifndef ZEPHYR_SOC_RISCV_LINKEDSEMI_PINCTRL_SOC_H_
+#define ZEPHYR_SOC_RISCV_LINKEDSEMI_PINCTRL_SOC_H_
 
 #include <zephyr/devicetree.h>
-#include <zephyr/dt-bindings/pinctrl/ls-pinctrl.h>
+#include <zephyr/dt-bindings/pinctrl/ls101x-pinctrl.h>
 
 
 #ifdef __cplusplus
@@ -37,7 +37,7 @@ typedef uint32_t pinctrl_soc_pin_t;
 	 DT_PROP_BY_PHANDLE_IDX(node, pr, idx, output_low) << LS_OUT_LOW_POS |                \
 	 DT_PROP_BY_PHANDLE_IDX(node, pr, idx, input_enable) << LS_CFG_INPUT_POS |            \
      DT_PROP_BY_PHANDLE_IDX(node, pr, idx, output_enable) << LS_CFG_OUTPUT_POS |          \
-	 DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, pr, idx), drive_strength) << LS_DRIVE_POS),
+	 DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, pr, idx), drive_strength) << LS_DRIVE_POS),			  
 
 /**
  * @brief Utility macro to initialize state pins contained in a given property.
@@ -54,4 +54,4 @@ typedef uint32_t pinctrl_soc_pin_t;
 }
 #endif
 
-#endif /* ZEPHYR_SOC_ARM_LINKEDSEMI_PINCTRL_SOC_H_ */
+#endif /* ZEPHYR_SOC_RISCV_LINKEDSEMI_PINCTRL_SOC_H_ */

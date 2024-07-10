@@ -7,6 +7,8 @@
 // #include "gd32vf103v_eval-pinctrl.dtsi"
 /dts-v1/;
 #include <riscv/linkedsemi/ls101x.dtsi>
+#include "ls101x_evb-pinctrl.dtsi"
+#include <zephyr/dt-bindings/pinctrl/ls101x-pinctrl.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
@@ -65,28 +67,85 @@
 
 &cpu0 {
 	clock-frequency = <128000000>;
-    cpu-power-states = <&idle &lp0>;
+	cpu-power-states = <&idle &lp0>;
 };
 
 &uart1 {
 	status = "okay";
-	// pinctrl-0 = <&idle &lp0>;
-	// pinctrl-names = "default";
+	pinctrl-0 = <&uart1_tx_pb00 &uart1_rx_pb01>;
+	pinctrl-names = "default";
 	current-speed = <921600>;
 };
 &uart2 {
-	status = "okay";
-	// pinctrl-0 = <&idle &lp0>;
-	// pinctrl-names = "default";
+	status = "disabled";
+	pinctrl-0 = <&uart2_tx_pb00 &uart2_rx_pb01>;
+	pinctrl-names = "default";
 	current-speed = <921600>;
 };
 &uart3 {
-	status = "okay";
-	// pinctrl-0 = <&idle &lp0>;
-	// pinctrl-names = "default";
+	status = "disabled";
+	pinctrl-0 = <&uart3_tx_pb00 &uart3_rx_pb01>;
+	pinctrl-names = "default";
 	current-speed = <921600>;
 };
-// &systick {
-// 	status = "okay";
-// };
+
+&adc1 {
+	status = "disabled";
+	pinctrl-0 = <&adc1_in5_pa14>;
+	pinctrl-names = "default";
+};
+
+&adc2 {
+	status = "disabled";
+	pinctrl-0 = <&adc2_in5_ph13>;
+	// pinctrl-0 = <&amic_pa00>;
+	pinctrl-names = "default";
+};
+
+&dac12 {
+	status = "disabled";
+	pinctrl-0 = <&dac1_out1_pa02>;
+	pinctrl-names = "default";
+};
+
+&spi1 {
+	status = "okay";
+	pinctrl-0 = <&spi1_sck_pb12  &spi1_nss_pb13
+				 &spi1_mosi_pb14 &spi1_miso_pb15>;
+	pinctrl-names = "default";
+
+	// cs-gpios = <&gpiob 13 GPIO_ACTIVE_HIGH>;
+};
+
+&gpioa {
+	status = "okay";
+};
+
+&gpiob {
+	status = "okay";
+};
+
+&gpioc {
+	status = "okay";
+};
+
+&gpiod {
+	status = "okay";
+};
+
+&gpioe {
+	status = "okay";
+};
+
+&gpiof {
+	status = "okay";
+};
+
+&gpiog {
+	status = "okay";
+};
+
+&gpioh {
+	status = "okay";
+};
 

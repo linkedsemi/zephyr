@@ -5,10 +5,12 @@
  */
 
 #include <zephyr/drivers/pinctrl.h>
-#include <zephyr/dt-bindings/pinctrl/ls-pinctrl.h>
-
-#include <ls_soc_gpio.h>
 #include <field_manipulate.h>
+#include <ls_soc_gpio.h>
+
+#if CONFIG_SOC_SERIES_LE501X == 1
+
+#include <zephyr/dt-bindings/pinctrl/ls-pinctrl.h>
 
 #define DT_DRV_COMPAT linkedsemi_ls_pinctrl
 
@@ -40,6 +42,46 @@ static void gpio_analog_init(gpio_port_pin_t *pin, uint8_t ana)
    MODIFY_REG(port->MODE, GPIO_MODE0_MASK << (pin->num << 1u), SET_GPIO_MODE_ANALOG << (pin->num << 1u));
   
 }
+
+#elif CONFIG_SOC_SERIES_LS101X == 1
+
+#include <zephyr/dt-bindings/pinctrl/ls101x-pinctrl.h>
+#include "reg_sysc_awo.h"
+#include "reg_sysc_per.h"
+
+#define DT_DRV_COMPAT linkedsemi_ls101x_pinctrl
+
+static void per_func_enable(uint8_t func_io_num,uint8_t per_func)
+{
+    MODIFY_REG(SYSC_PER->FUNC_SEL[func_io_num/4],0xff<<8*(func_io_num%4),per_func<<8*(func_io_num%4));
+    if(func_io_num >= 96)
+    {
+        SYSC_AWO->PIN_SEL4 |= 1<<(func_io_num-96);
+    }else if(func_io_num >= 64)
+    {
+        SYSC_AWO->PIN_SEL3 |= 1<<(func_io_num-64);
+    }else if(func_io_num >= 32)
+    {
+        SYSC_AWO->PIN_SEL2 |= 1<<(func_io_num-32);
+    }else
+    {
+        SYSC_AWO->PIN_SEL1 |= 1<<func_io_num;
+    }
+}
+
+void gpio_analog_func1_init(uint8_t pin)
+{
+    gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
+    SYSC_AWO->IO[x->port].AE |= 1<<16<<x->num;
+}
+
+void gpio_analog_func2_init(uint8_t pin)
+{
+    gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
+    SYSC_AWO->IO[x->port].AE |= 1<<x->num;
+}
+#endif
+
 
 static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
 {
@@ -89,11 +131,20 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     driv_stren = LS_PINMUX_GET_DRIVE(pinmux);
     io_drive_capacity_write(pin, driv_stren);
 
+#if CONFIG_SOC_SERIES_LE501X == 1
     if (alt_fun < 64 ) {
         gpio_afs_init((gpio_port_pin_t *)&pin, alt_fun);
     } else {
         gpio_analog_init((gpio_port_pin_t *)&pin, (alt_fun - 64));
     }
+
+#elif CONFIG_SOC_SERIES_LS101X == 1
+	if(alt_fun < 164){
+        per_func_enable(pin, alt_fun);
+    }else{
+        gpio_analog_func1_init(pin);
+    }
+#endif
 
 	return 0;
 }
