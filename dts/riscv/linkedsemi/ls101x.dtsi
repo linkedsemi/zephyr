@@ -56,9 +56,9 @@
 
         pinctrl: pin-controller@4000a060 {
 			compatible = "linkedsemi,ls-pinctrl";
-			interrupts = <0 3>;
-			interrupt-names = "EXTI_GPIO";
-            reg = <0x4000a060 0xC00>;
+			interrupts = <19 3>,<78 3>;
+			interrupt-names = "EXTI_GPIO_V33","EXTI_GPIO_VCore";
+            reg = <0x4000a060 0x100>;
 			#address-cells = <1>;
 			#size-cells = <1>;
             
@@ -66,7 +66,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a060 0x400>;
+				reg = <0x4000a060 0x20>;
                 status = "disabled";
 			};
 
@@ -74,7 +74,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a080 0x400>;
+				reg = <0x4000a080 0x20>;
                 status = "disabled";
 			};
 
@@ -82,7 +82,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a0a0 0x400>;
+				reg = <0x4000a0a0 0x20>;
                 status = "disabled";
 			};
 
@@ -90,7 +90,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a0c0 0x400>;
+				reg = <0x4000a0c0 0x20>;
                 status = "disabled";
 			};
 
@@ -98,7 +98,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a0e0 0x400>;
+				reg = <0x4000a0e0 0x20>;
                 status = "disabled";
 			};
 
@@ -106,7 +106,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a100 0x400>;
+				reg = <0x4000a100 0x20>;
                 status = "disabled";
 			};
 
@@ -114,7 +114,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a120 0x400>;
+				reg = <0x4000a120 0x20>;
                 status = "disabled";
 			};
 
@@ -122,7 +122,7 @@
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
-				reg = <0x4000a140 0x400>;
+				reg = <0x4000a140 0x20>;
                 status = "disabled";
 			};
         };
@@ -153,7 +153,7 @@
 			compatible = "snps,designware-spi";
 			#address-cells = <1>;
 			#size-cells = <0>;
-			reg = <0x40087000 0x1000>;
+			reg = <0x40087000 0x400>;
 			fifo-depth = <4>;
 			interrupts = <56 3>;
 			clock-frequency = <144000000>;

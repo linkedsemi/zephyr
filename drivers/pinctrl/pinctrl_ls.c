@@ -49,7 +49,7 @@ static void gpio_analog_init(gpio_port_pin_t *pin, uint8_t ana)
 #include "reg_sysc_awo.h"
 #include "reg_sysc_per.h"
 
-#define DT_DRV_COMPAT linkedsemi_ls101x_pinctrl
+#define DT_DRV_COMPAT linkedsemi_ls_pinctrl
 
 static void per_func_enable(uint8_t func_io_num,uint8_t per_func)
 {

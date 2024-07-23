@@ -11,6 +11,8 @@
 #include <zephyr/dt-bindings/pinctrl/ls101x-pinctrl.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
 / {
 	model = "linkedsemi LS101X_EVB";
 	compatible = "linkedsemi,ls101x_evb";
@@ -20,11 +22,27 @@
 		zephyr,sram = &sram0;
 		zephyr,console = &uart1;
 	};
-    // aliases {
 
-	// };
+    aliases {
+		led0 = &led0;
+		sw0 = &btn0;
+	};
 
+	leds{
+		compatible = "gpio-leds";
+		led0: led_0{
+			gpios = <&gpioa 0 GPIO_ACTIVE_HIGH>;
+			label = "Red LED";
+		};
+	};
 
+	keys {
+		compatible = "gpio-keys";
+		btn0: btn_0{
+			gpios = <&gpiob 7 BTN_GPIO_FLAGS>;
+			label = "Push button 1";
+		};
+	};
 };
 
 &flash0 {
@@ -110,11 +128,11 @@
 
 &spi1 {
 	status = "okay";
-	pinctrl-0 = <&spi1_sck_pb12  &spi1_nss_pb13
-				 &spi1_mosi_pb14 &spi1_miso_pb15>;
+	pinctrl-0 = <&spi1_sck_pe00 
+				 &spi1_mosi_pe02 &spi1_miso_pe03>;
 	pinctrl-names = "default";
 
-	// cs-gpios = <&gpiob 13 GPIO_ACTIVE_HIGH>;
+	cs-gpios = <&gpioe 1 GPIO_ACTIVE_LOW>;
 };
 
 &gpioa {

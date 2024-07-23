@@ -9,7 +9,7 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 24000000
 
 config NUM_IRQS
-	default 64
+	default 80
 
 config RISCV_GP
 	bool
