@@ -48,7 +48,7 @@ struct gpio_ls_data {
 	struct gpio_driver_data common;
 	sys_slist_t callbacks;
 };
-
+extern void io_vcore_exti_config(uint8_t pin,exti_edge_t edge);
 void io_wkup_en_clr_set(uint8_t pin);
 static int gpio_ls_port_set_bits_raw(const struct device *dev,
 					gpio_port_pins_t pins);
