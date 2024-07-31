@@ -58,15 +58,15 @@ static int get_gpio_port_id(uint32_t port)
 
     switch (port) {
     /* port A base */
-    case 0x48000000:
+    case DT_REG_ADDR(DT_NODELABEL(gpioa)):
         port_id = 0;
         break;
     /* port B base */
-    case 0x48000400:
+    case DT_REG_ADDR(DT_NODELABEL(gpiob)):
         port_id = 1;
         break;
     /* port C base */
-    case 0x48000800:
+    case DT_REG_ADDR(DT_NODELABEL(gpioc)):
         port_id = 2;
         break;
     default:
@@ -124,7 +124,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 		break;
     case LS_GPIO_DS_MAX_DRIVE:
         io_drive_capacity_write(pinval, IO_OUTPUT_MAX_DRIVER);
-    break;
+        break;
 	default:
 		return -ENOTSUP;
 	}
