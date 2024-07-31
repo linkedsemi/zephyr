@@ -27,4 +27,9 @@ endchoice
 config BT_COMPANY_ID
 	default 0x093A
 
+if SPI_DW
+config SPI_DW_ACCESS_WORD_ONLY
+	default y
+endif # SPI_DW
+
 endif

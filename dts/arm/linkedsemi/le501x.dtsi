@@ -114,12 +114,23 @@
             status = "disabled";
         };
 
+        spi1: spi@40013000 {
+			compatible = "snps,designware-spi";
+            clock-frequency = <64000000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40013000 0x400>;
+			interrupts = <25 3>;
+			fifo-depth = <16>;
+			status = "disabled";
+		};
+
         spi2: spi@40003800 {
 			compatible = "linkedsemi,ls-spi";
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40003800 0x400>;
-            // interrupts = <26 0>;
+            interrupts = <26 3>;
 			status = "disabled";
 		};
     };

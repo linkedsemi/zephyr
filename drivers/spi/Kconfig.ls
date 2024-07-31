@@ -5,7 +5,6 @@
 
 config SPI_LS
 	bool "linkedsemi ls SPI driver"
-	default y
 	depends on DT_HAS_LINKEDSEMI_LS_SPI_ENABLED
 	help
 	  Enable support for the linkedsemi ls spi peripheral

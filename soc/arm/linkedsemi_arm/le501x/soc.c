@@ -6,6 +6,7 @@
 #include "reg_rcc.h"
 #include "reg_gpio.h"
 #include "sleep.h"
+#include "field_manipulate.h"
 
 #define CYC_PER_TICK (sys_clock_hw_cycles_per_sec()	\
 		      / CONFIG_SYS_CLOCK_TICKS_PER_SEC)
@@ -97,9 +98,21 @@ void io_init(void)
     LSGPIOB->PUPD = 0x2800;
 }
 
+#if defined(CONFIG_SPI_DW)
+static void spi_dw_rcc_config(void)
+{
+    REG_FIELD_WR(RCC->APB2RST, RCC_SPI1, 1);
+    REG_FIELD_WR(RCC->APB2RST, RCC_SPI1, 0);
+    REG_FIELD_WR(RCC->APB2EN, RCC_SPI1, 1);
+}
+#endif
+
 static int le501x_init(void)
 {
     sys_init_ll();
+#if defined(CONFIG_SPI_DW)
+    spi_dw_rcc_config();
+#endif
     extern int32_t (*os_sleep_duration_get_fn)();
     os_sleep_duration_get_fn = os_sleep_duration_get;
     eif_init(ll_hci_read,ll_hci_write,ll_hci_flow_on,ll_hci_flow_off);

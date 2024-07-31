@@ -3,147 +3,157 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/dts-v1/;
-#include <linkedsemi/le501x.dtsi>
-#include "le501x_evb-pinctrl.dtsi"
-#include <zephyr/dt-bindings/i2c/i2c.h>
-
-#define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
-
-/ {
-	model = "linkedsemi LE501X_EVB";
-	compatible = "linkedsemi,le501x_evb";
-    
-    aliases {
-		led0 = &led0;
-        sw0 = &btn0;
-	};
-
-	chosen {
-		zephyr,console = &uart1;
-		zephyr,shell-uart = &uart1;
-		zephyr,sram = &sram0;
-		zephyr,flash = &flash0;
-	};
-
-    leds {
-		compatible = "gpio-leds";
-        led0: led_0 {
-            gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;
-            label = "Red LED";
-        };
-    };
-
-    keys {
-		compatible = "gpio-keys";
-		btn0: btn_0 {
-			gpios = <&gpioa 15 BTN_GPIO_FLAGS>;
-			label = "Push button 1";
-		};
-	};
-};
-
-&flash0 {
-
-    /*
-	* Flash base address is 0x18000000,
-    * the following parts are all offset addresses.
-	*/
-
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
-
-		boot_partition: partition@0 {
-			label = "info-sbl-llsw";
-			reg = <0x00000000 0x00026000>;
-		};
-	
-        app_partition: partition@26000 {
-			label = "app";
-			reg = <0x00026000 0x00056000>;
-		};
-
-		/*
-		 * The flash starting at 0x1807C000 and ending at
-		 * 0x1807FFFF is reserved for use by the application.
-		 */
-
-		/*
-		 * Storage partition will be used by FCB/LittleFS/NVS
-		 * if enabled.
-		 */
-		storage_partition: partition@7C000 {
-			label = "storage";
-			reg = <0x0007c000 0x00004000>;
-		};
-	};
-};
-
-&cpu0 {
-	clock-frequency = <64000000>;
-    cpu-power-states = <&idle &lp0>;
-};
-
-&uart1 {
-	status = "okay";
-	pinctrl-0 = <&uart1_tx_pb00 &uart1_rx_pb01>;
-	pinctrl-names = "default";
-	current-speed = <115200>;
-};
-
-&uart2 {
-	status = "disabled";
-	pinctrl-0 = <&uart2_tx_pb00 &uart2_rx_pb01>;
-	pinctrl-names = "default";
-	current-speed = <115200>;
-};
-
-&uart3{
-	status = "disabled";
-	pinctrl-0 = <&uart3_tx_pb00 &uart3_rx_pb01>;
-	pinctrl-names = "default";
-	current-speed = <115200>;
-};
-
-&spi2 {
-    status = "okay";
-    pinctrl-0 = <&spi2_sck_pb12
-                 &spi2_mosi_pb14 &spi2_miso_pb15>;
-	pinctrl-names = "default";
-
-	cs-gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;
-};
-
-&gpioa {
-	status = "okay";
-};
-
-&gpiob {
-	status = "okay";
-};
-
-&gpioc {
-	status = "okay";
-};
-
-&i2c1{
-	status = "okay";
-	pinctrl-0 = <&i2c1_scl_pa05 &i2c1_sda_pa06>;
-	pinctrl-names = "default";
-	clock-frequency = <I2C_BITRATE_STANDARD>;
-};
-
-&i2c2{
-	status = "disabled";
-	pinctrl-0 = <&i2c2_scl_pa05 &i2c2_sda_pa06>;
-	pinctrl-names = "default";
-	clock-frequency = <I2C_BITRATE_STANDARD>;
-};
-
-
-&systick {
-	status = "okay";
-};
-
+ /dts-v1/;
+ #include <linkedsemi/le501x.dtsi>
+ #include "le501x_evb-pinctrl.dtsi"
+ #include <zephyr/dt-bindings/i2c/i2c.h>
+ 
+ #define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
+ 
+ / {
+     model = "linkedsemi LE501X_EVB";
+     compatible = "linkedsemi,le501x_evb";
+     
+     aliases {
+         led0 = &led0;
+         sw0 = &btn0;
+     };
+ 
+     chosen {
+         zephyr,console = &uart1;
+         zephyr,shell-uart = &uart1;
+         zephyr,sram = &sram0;
+         zephyr,flash = &flash0;
+     };
+ 
+     leds {
+         compatible = "gpio-leds";
+         led0: led_0 {
+             gpios = <&gpioa 1 GPIO_ACTIVE_HIGH>;
+             label = "Red LED";
+         };
+     };
+ 
+     keys {
+         compatible = "gpio-keys";
+         btn0: btn_0 {
+             gpios = <&gpioa 15 BTN_GPIO_FLAGS>;
+             label = "Push button 1";
+         };
+     };
+ };
+ 
+ &flash0 {
+ 
+     /*
+     * Flash base address is 0x18000000,
+     * the following parts are all offset addresses.
+     */
+ 
+     partitions {
+         compatible = "fixed-partitions";
+         #address-cells = <1>;
+         #size-cells = <1>;
+ 
+         boot_partition: partition@0 {
+             label = "info-sbl-llsw";
+             reg = <0x00000000 0x00026000>;
+         };
+     
+         app_partition: partition@26000 {
+             label = "app";
+             reg = <0x00026000 0x00056000>;
+         };
+ 
+         /*
+          * The flash starting at 0x1807C000 and ending at
+          * 0x1807FFFF is reserved for use by the application.
+          */
+ 
+         /*
+          * Storage partition will be used by FCB/LittleFS/NVS
+          * if enabled.
+          */
+         storage_partition: partition@7C000 {
+             label = "storage";
+             reg = <0x0007c000 0x00004000>;
+         };
+     };
+ };
+ 
+ &cpu0 {
+     clock-frequency = <64000000>;
+     cpu-power-states = <&idle &lp0>;
+ };
+ 
+ &uart1 {
+     status = "okay";
+     pinctrl-0 = <&uart1_tx_pb00 &uart1_rx_pb01>;
+     pinctrl-names = "default";
+     current-speed = <115200>;
+ };
+ 
+ &uart2 {
+     status = "disabled";
+     pinctrl-0 = <&uart2_tx_pb00 &uart2_rx_pb01>;
+     pinctrl-names = "default";
+     current-speed = <115200>;
+ };
+ 
+ &uart3{
+     status = "disabled";
+     pinctrl-0 = <&uart3_tx_pb00 &uart3_rx_pb01>;
+     pinctrl-names = "default";
+     current-speed = <115200>;
+ };
+ 
+ &spi1 {
+     status = "okay";
+     pinctrl-0 = <&spi1_sck_pa07 
+                  &spi1_mosi_pa09 &spi1_miso_pa10>;
+     pinctrl-names = "default";
+ 
+     cs-gpios = <&gpioa 8 GPIO_ACTIVE_LOW>;
+ };
+ 
+ &spi2 {
+     status = "okay";
+     pinctrl-0 = <&spi2_sck_pb12
+                  &spi2_mosi_pb14 &spi2_miso_pb15>;
+     pinctrl-names = "default";
+ 
+     cs-gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;
+ };
+ 
+ &gpioa {
+     status = "okay";
+ };
+ 
+ &gpiob {
+     status = "okay";
+ };
+ 
+ &gpioc {
+     status = "okay";
+ };
+ 
+ &i2c1{
+     status = "okay";
+     pinctrl-0 = <&i2c1_scl_pa05 &i2c1_sda_pa06>;
+     pinctrl-names = "default";
+     clock-frequency = <I2C_BITRATE_STANDARD>;
+ };
+ 
+ &i2c2{
+     status = "disabled";
+     pinctrl-0 = <&i2c2_scl_pa05 &i2c2_sda_pa06>;
+     pinctrl-names = "default";
+     clock-frequency = <I2C_BITRATE_STANDARD>;
+ };
+ 
+ 
+ &systick {
+     status = "okay";
+ };
+ 
+ 
