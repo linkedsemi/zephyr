@@ -149,6 +149,26 @@
             interrupts = <53 3> ;
         };
 
+        dwuart1: dwuart@40085C00 {
+            compatible = "ns16550","snps,dw-apb-uart";
+            reg = <0x40085C00 0x400>;
+			status = "disabled";
+            clock-frequency = <144000000>;
+            // label = "DWUART1";
+            interrupts = <54 3> ;
+			reg-shift = <2>;
+        };
+        
+        dwuart2: dwuart@40086000 {
+            compatible = "ns16550","snps,dw-apb-uart";
+            reg = <0x40086000 0x400>;
+			status = "disabled";
+            clock-frequency = <144000000>;
+            // label = "DWUART2";
+            interrupts = <55 3> ;
+            reg-shift = <2>;
+        };
+
 		spi1: spi@40087000 {
 			compatible = "snps,designware-spi";
 			#address-cells = <1>;

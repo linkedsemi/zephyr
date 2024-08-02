@@ -84,7 +84,7 @@
 };
 
 &cpu0 {
-	clock-frequency = <128000000>;
+	clock-frequency = <144000000>;
 	cpu-power-states = <&idle &lp0>;
 };
 
@@ -105,6 +105,22 @@
 	pinctrl-0 = <&uart3_tx_pb00 &uart3_rx_pb01>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
+};
+
+&dwuart1 {
+	status = "okay";
+	pinctrl-0 = <&dwuart1_tx_pb00 &dwuart1_rx_pb01>;
+	pinctrl-names = "default";
+	current-speed = <921600>;
+	label = "dwuart1";
+};
+
+&dwuart2 {
+	status = "disabled";
+	pinctrl-0 = <&dwuart2_tx_pb00 &dwuart2_rx_pb01>;
+	pinctrl-names = "default";
+	current-speed = <921600>;
+	label = "dwuart2";
 };
 
 &adc1 {
@@ -128,8 +144,8 @@
 
 &spi1 {
 	status = "okay";
-	pinctrl-0 = <&spi1_sck_pe00 
-				 &spi1_mosi_pe02 &spi1_miso_pe03>;
+	pinctrl-0 = <&spi1_sck_pe00
+	&spi1_mosi_pe02 &spi1_miso_pe03>;
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpioe 1 GPIO_ACTIVE_LOW>;

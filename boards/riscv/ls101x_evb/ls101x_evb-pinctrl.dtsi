@@ -44,6 +44,30 @@
         input-enable;
 	};
 
+	/* DWUART1 */
+	/omit-if-no-ref/dwuart1_tx_pb00: dwuart1_tx_pb00 {
+		pinmux = <LS_PINMUX_SET('B', 0, DWUART1_TXD)>;
+		output-enable;
+		output-high;
+	};
+	/omit-if-no-ref/dwuart1_rx_pb01: dwuart1_rx_pb01 {
+		pinmux = <LS_PINMUX_SET('B', 1, DWUART1_RXD)>;
+		bias-pull-up;
+		input-enable;
+	};
+
+	/* DWUART2 */
+	/omit-if-no-ref/dwuart2_tx_pb00: dwuart2_tx_pb00 {
+		pinmux = <LS_PINMUX_SET('B', 0, DWUART2_TXD)>;
+        output-enable;
+        output-high;
+	};
+	/omit-if-no-ref/dwuart2_rx_pb01: dwuart2_rx_pb01 {
+		pinmux = <LS_PINMUX_SET('B', 1, DWUART2_RXD)>;
+        bias-pull-up;
+        input-enable;
+	};
+
     /* I2C1 */
 	/omit-if-no-ref/i2c1_scl_pa05: i2c1_scl_pa05 {
 		pinmux = <LS_PINMUX_SET('A', 5, IIC1_SCL)>;
