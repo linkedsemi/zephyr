@@ -8,4 +8,4 @@ config SOC_SERIES_LE501X
     select BUILD_OUTPUT_HEX
     select HAS_PM
     select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
-    select HAS_SPI_DW if !SPI_LS
+    select HAS_SPI_DW if SPI_SNPS_DW
