@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) 2020 Intel Corporation
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&pinctrl {
+    /* UART1 */
+    /omit-if-no-ref/uart1_tx_ph10: uart1_tx_ph10 {
+        pinmux = <LS_PINMUX_SET('H', 10, UART1_TXD)>;
+        output-enable;
+        output-high;
+    };
+    /omit-if-no-ref/uart1_rx_pd06: uart1_rx_pd06 {
+        pinmux = <LS_PINMUX_SET('D', 6, UART1_RXD)>;
+        bias-pull-up;
+        input-enable;
+    };
+};
+
+&cpu0 {
+    clock-frequency = <32000000>;
+    cpu-power-states = <&idle &lp0>;
+};
+
+&uart1 {
+    status = "okay";
+    pinctrl-0 = <&uart1_tx_ph10 &uart1_rx_pd06>;
+    pinctrl-names = "default";
+    current-speed = <115200>;
+};
