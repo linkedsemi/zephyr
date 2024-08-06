@@ -3,7 +3,7 @@
 
 description: RISC-V CPU interrupt controller
 
-compatible: "ls,riscv,e906-intc"
+compatible: "linkedsemi,riscv,e906-intc"
 
 include: [interrupt-controller.yaml, base.yaml]
 

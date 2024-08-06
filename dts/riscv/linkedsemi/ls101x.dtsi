@@ -43,7 +43,7 @@
             };
         };
         intc: interrupt-controller {
-            compatible = "ls,riscv,e906-intc";
+            compatible = "linkedsemi,riscv,e906-intc";
             #address-cells = <0>;
             #interrupt-cells = <2>;
             interrupt-controller;
