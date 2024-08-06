@@ -112,7 +112,6 @@
 	pinctrl-0 = <&dwuart1_tx_pb00 &dwuart1_rx_pb01>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
-	label = "dwuart1";
 };
 
 &dwuart2 {
@@ -120,7 +119,6 @@
 	pinctrl-0 = <&dwuart2_tx_pb00 &dwuart2_rx_pb01>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
-	label = "dwuart2";
 };
 
 &adc1 {
