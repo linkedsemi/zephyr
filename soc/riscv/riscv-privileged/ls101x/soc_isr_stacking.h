@@ -79,10 +79,13 @@ struct __esf {
 
 GTEXT(clr_irq_flag)
 .global noint
+.extern pTaskStack
 
 #define SOC_ISR_SW_STACKING \
     addi sp, sp, -__z_arch_esf_t_SIZEOF;  \
     CALLER_SAVED(sr);\
+	la  t5, pTaskStack;\
+	sw  sp, 0( t5 );\
     csrr t0, mcause;\
     sr t0, 0x48(sp);\
 	li t1, SOC_MCAUSE_IRQ_MASK;\

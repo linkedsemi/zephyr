@@ -14,6 +14,7 @@
 #include "reg_sysc_per.h"
 #define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
+uint32_t *pTaskStack = NULL;
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -52,11 +53,25 @@ static void driver_init(void)
     dwuart_init();
 }
 
+void sys_arch_reboot(int type)
+{
+	platform_reset(0);
+}
+
+void Swint_Handler_C(uint32_t *args)
+{
+    csi_vic_clear_pending_irq(RV_SOFT_IRQn);
+    uint32_t *task_sp = pTaskStack;
+    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)task_sp[12];
+    task_sp[8] = func(task_sp[8],task_sp[9],task_sp[10],task_sp[11]);
+}
+
 extern void SystemInit();
 static int ls101x_init(void)
 {
     SystemInit();
     sys_init_none();
+	IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();

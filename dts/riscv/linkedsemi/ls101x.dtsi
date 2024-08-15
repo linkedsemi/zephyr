@@ -5,7 +5,7 @@
     #address-cells = <1>;
     #size-cells = <1>;
     chosen {
-		// zephyr,flash-controller = &flash_controller;
+		zephyr,flash-controller = &flash_controller;
 	};
 
     cpus {
@@ -20,9 +20,9 @@
 		};
     };
 
-    sram0: memory@10000000{
+    sram0: memory@1000006c{
         compatible = "mmio-sram";
-        reg = <0x10000000 0x20000>;
+        reg = <0x1000006c 0x20000>;
     };
 
     soc {
@@ -30,13 +30,14 @@
         #size-cells = <1>;
         compatible = "linkedsemi,linkedsemi-soc";
         interrupt-parent = <&intc>;
-        flash_qspi: flash-controller@40000000 {
+        flash_controller: flash-controller@40000000 {
             compatible = "linkedsemi,ls-flash-controller";
-            reg = <0x40000000 0x40>;
+            reg = <0x40000000 0x400>;
 
             #address-cells = <1>;
             #size-cells = <1>;
-
+            interrupts = <3 3>;
+            
             flash0: flash@8000000 {
                 compatible = "soc-nv-flash";
                 reg = <0x8000000 0x80000>;

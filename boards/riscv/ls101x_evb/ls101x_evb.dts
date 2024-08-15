@@ -64,22 +64,22 @@
 	
         app_partition: partition@800 {
 			label = "app";
-			reg = <0x00000800 0x0007f800>;
+			reg = <0x00000800 0x0007c800>;
 		};
 
 		/*
-		 * The flash starting at 0x1807C000 and ending at
-		 * 0x1807FFFF is reserved for use by the application.
+		 * The flash starting at 0x807d000 and ending at
+		 * 0x807FFFF is reserved for use by the application.
 		 */
 
 		/*
 		 * Storage partition will be used by FCB/LittleFS/NVS
 		 * if enabled.
 		 */
-		// storage_partition: partition@7C000 {
-		// 	label = "storage";
-		// 	reg = <0x0007c000 0x00004000>;
-		// };
+		storage_partition: partition@7d000 {
+			label = "storage";
+			reg = <0x0007d000 0x00003000>;
+		};
 	};
 };
 
