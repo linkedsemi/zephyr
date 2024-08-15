@@ -13,7 +13,9 @@
 		#size-cells = <0>;
         mcause-exception-mask = <0xfff>;
 		cpu0: cpu@0 {
-            compatible = "riscv","linkedsemi,e906";
+            device_type = "cpu";
+            compatible = "linkedsemi,riscv";
+            riscv,isa = "e906";
 			reg = <0>;
 		};
     };

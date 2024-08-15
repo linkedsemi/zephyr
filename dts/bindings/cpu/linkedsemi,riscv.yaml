@@ -1,0 +1,13 @@
+# Copyright (c) 2024 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: Linkedsemi RISC-V CPU
+
+compatible: "linkedsemi,riscv"
+
+include: riscv,cpus.yaml
+
+properties:
+  clock-source:
+    type: int
+    description: cpu clock source
