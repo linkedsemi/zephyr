@@ -256,16 +256,10 @@ manifest:
       path: modules/hal/xtensa
       groups:
         - hal
-    # - name: hal_linkedsemi
-    #   revision: zephyr
-    #   url: https://github.com/linkedsemi/LS_SDK.git
-    #   path: modules/hal/linkedsemi
-    #   groups:
-    #     - hal
     - name: hal_linkedsemi
       revision: zephyr
       url: https://github.com/linkedsemi/LS_SDK.git
-      path: modules/hal/ls_sdk
+      path: modules/hal/linkedsemi
       groups:
         - hal
     - name: libmetal
