@@ -1,0 +1,32 @@
+if SOC_LS1010
+
+config SOC
+    default "ls101x"
+
+config RISCV_HAS_PLIC
+	default n
+
+config RISCV_HAS_CLIC
+	default y
+
+config RISCV_MCAUSE_EXCEPTION_MASK
+	default 0xfff
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency)
+	
+config NUM_IRQS
+	default 80
+
+config RISCV_GP
+	bool
+	default y
+
+config MAIN_STACK_SIZE
+	default 2048
+
+config RISCV_HAS_CPU_IDLE
+	default y
+
+
+endif

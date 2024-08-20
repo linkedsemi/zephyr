@@ -16,7 +16,7 @@
 #define LS_GPIO_DS_HALF_DRIVE           (0x2U << LS_GPIO_DS_POS)
 #define LS_GPIO_DS_MAX_DRIVE            (0x3U << LS_GPIO_DS_POS)
 
-#elif CONFIG_SOC_SERIES_LS101X == 1
+#elif CONFIG_SOC_LS1010 == 1
 #define LS_GPIO_DS_QUARTER_DRIVE        (0x0U << LS_GPIO_DS_POS)
 #define LS_GPIO_DS_HALF_DRIVE           (0x1U << LS_GPIO_DS_POS)
 #define LS_GPIO_DS_MAX_DRIVE            (0x3U << LS_GPIO_DS_POS)

@@ -18,7 +18,7 @@
 	#include <ls_soc_gpio.h>
 	#include <reg_gpio.h>
 	#define NUMBER_OF_PORTS         3
-#elif defined(CONFIG_SOC_SERIES_LS101X)
+#elif defined(CONFIG_SOC_LS1010)
 	#include <leo/ls_soc_gpio.h>
 	#include <leo/reg_exti_type.h>
 	#include <leo/reg_sysc_awo.h>
@@ -287,7 +287,7 @@ static inline void gpio_ls_add_port(struct gpio_ls_common_data *data,
 	    return 0; 
 	}
 
-#elif defined(CONFIG_SOC_SERIES_LS101X)
+#elif defined(CONFIG_SOC_LS1010)
 	static int get_gpio_port_id(uint32_t port)
 	{
 	    uint8_t port_id;

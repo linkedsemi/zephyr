@@ -1,0 +1,4 @@
+
+
+config SOC_LS1010
+    bool

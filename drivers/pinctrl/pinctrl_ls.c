@@ -43,7 +43,7 @@ static void gpio_analog_init(gpio_port_pin_t *pin, uint8_t ana)
   
 }
 
-#elif CONFIG_SOC_SERIES_LS101X == 1
+#elif CONFIG_SOC_LS1010 == 1
 
 #include <zephyr/dt-bindings/pinctrl/ls101x-pinctrl.h>
 #include "reg_sysc_awo.h"
@@ -138,7 +138,7 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
         gpio_analog_init((gpio_port_pin_t *)&pin, (alt_fun - 64));
     }
 
-#elif CONFIG_SOC_SERIES_LS101X == 1
+#elif CONFIG_SOC_LS1010 == 1
 	if(alt_fun < 164){
         per_func_enable(pin, alt_fun);
     }else{
