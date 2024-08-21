@@ -111,12 +111,3 @@ void riscv_clic_irq_priority_set(uint32_t irq, uint32_t pri, uint32_t flags)
 {
     csi_vic_set_prio(irq,pri);
 }
-
-#if defined(CONFIG_RISCV_SOC_INTERRUPT_INIT)
-void soc_interrupt_init(void)
-{
-	(void)arch_irq_lock();
-
-	csr_write(mie, 0);
-}
-#endif
