@@ -96,27 +96,27 @@
 };
 &uart2 {
 	status = "disabled";
-	pinctrl-0 = <&uart2_tx_pb00 &uart2_rx_pb01>;
+	pinctrl-0 = <&uart2_tx_pb02 &uart2_rx_pb03 >;
 	pinctrl-names = "default";
 	current-speed = <921600>;
 };
 &uart3 {
 	status = "disabled";
-	pinctrl-0 = <&uart3_tx_pb00 &uart3_rx_pb01>;
+	pinctrl-0 = <&uart3_tx_pb04 &uart3_rx_pb05>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
 };
 
 &dwuart1 {
 	status = "okay";
-	pinctrl-0 = <&dwuart1_tx_pb00 &dwuart1_rx_pb01>;
+	pinctrl-0 = <&dwuart1_tx_pb06 &dwuart1_rx_pb07>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
 };
 
 &dwuart2 {
 	status = "disabled";
-	pinctrl-0 = <&dwuart2_tx_pb00 &dwuart2_rx_pb01>;
+	pinctrl-0 = <&dwuart2_tx_pb08 &dwuart2_rx_pb09>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
 };

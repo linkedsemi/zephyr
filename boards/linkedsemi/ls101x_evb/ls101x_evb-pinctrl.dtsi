@@ -21,49 +21,49 @@
 	};
 
     /* UART2 */
-    /omit-if-no-ref/uart2_tx_pb00: uart2_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 0, UART2_TXD)>;
+    /omit-if-no-ref/uart2_tx_pb02: uart2_tx_pb02 {
+		pinmux = <LS_PINMUX_SET('B', 2, UART2_TXD)>;
         output-enable;
         output-high;
 	};
-	/omit-if-no-ref/uart2_rx_pb01: uart2_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 1, UART2_RXD)>;
+	/omit-if-no-ref/uart2_rx_pb03: uart2_rx_pb03 {
+		pinmux = <LS_PINMUX_SET('B', 3, UART2_RXD)>;
         bias-pull-up;
 		input-enable;
 	};
 
 	/* UART3 */
-	/omit-if-no-ref/uart3_tx_pb00: uart3_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 0, UART3_TXD)>;
+	/omit-if-no-ref/uart3_tx_pb04: uart3_tx_pb04 {
+		pinmux = <LS_PINMUX_SET('B', 4, UART3_TXD)>;
         output-enable;
         output-high;
 	};
-	/omit-if-no-ref/uart3_rx_pb01: uart3_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 1, UART3_RXD)>;
+	/omit-if-no-ref/uart3_rx_pb05: uart3_rx_pb05 {
+		pinmux = <LS_PINMUX_SET('B', 5, UART3_RXD)>;
         bias-pull-up;
         input-enable;
 	};
 
 	/* DWUART1 */
-	/omit-if-no-ref/dwuart1_tx_pb00: dwuart1_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 0, DWUART1_TXD)>;
+	/omit-if-no-ref/dwuart1_tx_pb06: dwuart1_tx_pb06 {
+		pinmux = <LS_PINMUX_SET('B', 6, DWUART1_TXD)>;
 		output-enable;
 		output-high;
 	};
-	/omit-if-no-ref/dwuart1_rx_pb01: dwuart1_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 1, DWUART1_RXD)>;
+	/omit-if-no-ref/dwuart1_rx_pb07: dwuart1_rx_pb07 {
+		pinmux = <LS_PINMUX_SET('B', 7, DWUART1_RXD)>;
 		bias-pull-up;
 		input-enable;
 	};
 
 	/* DWUART2 */
-	/omit-if-no-ref/dwuart2_tx_pb00: dwuart2_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 0, DWUART2_TXD)>;
+	/omit-if-no-ref/dwuart2_tx_pb08: dwuart2_tx_pb08 {
+		pinmux = <LS_PINMUX_SET('B', 8, DWUART2_TXD)>;
         output-enable;
         output-high;
 	};
-	/omit-if-no-ref/dwuart2_rx_pb01: dwuart2_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 1, DWUART2_RXD)>;
+	/omit-if-no-ref/dwuart2_rx_pb09: dwuart2_rx_pb09 {
+		pinmux = <LS_PINMUX_SET('B', 9, DWUART2_RXD)>;
         bias-pull-up;
         input-enable;
 	};
