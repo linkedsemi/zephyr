@@ -8,7 +8,7 @@ zephyr_library_sources(i2c_common.c)
 
 zephyr_library_sources_ifdef(CONFIG_I2C_RTIO i2c_rtio.c)
 zephyr_library_sources_ifdef(CONFIG_I2C_SHELL		i2c_shell.c)
-zephyr_library_sources_ifdef(CONFIG_I2C_LE501X		i2c_le501x.c)
+zephyr_library_sources_ifdef(CONFIG_I2C_LS		i2c_ls.c)
 zephyr_library_sources_ifdef(CONFIG_I2C_BITBANG		i2c_bitbang.c)
 zephyr_library_sources_ifdef(CONFIG_I2C_TELINK_B91		i2c_b91.c)
 zephyr_library_sources_ifdef(CONFIG_I2C_IPROC i2c_bcm_iproc.c)

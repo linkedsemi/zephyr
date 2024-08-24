@@ -11,7 +11,6 @@
     cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
-        mcause-exception-mask = <0xfff>;
 		cpu0: cpu@0 {
             device_type = "cpu";
             compatible = "linkedsemi,riscv";
@@ -28,7 +27,7 @@
     soc {
         #address-cells = <1>;
         #size-cells = <1>;
-        compatible = "linkedsemi,linkedsemi-soc";
+        compatible = "simpe-bus";
         interrupt-parent = <&intc>;
         flash_controller: flash-controller@40000000 {
             compatible = "linkedsemi,ls-flash-controller";
@@ -190,6 +189,24 @@
 			reg = <0x40087400 0x400>;
 			interrupts = <56 3>;
 			status = "disabled";
+        };
+
+        i2c1: i2c@40083000 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40083000 0x400>;
+            #address-cells = <1>;
+			#size-cells = <0>;
+            interrupts = <45 3>;
+            status = "disabled";
+        };
+
+        i2c2: i2c@40083400 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40083400 0x400>;
+            #address-cells = <1>;
+			#size-cells = <0>;
+            interrupts = <46 3>;
+            status = "disabled";
         };
 
         adc1: adc@40089000 {

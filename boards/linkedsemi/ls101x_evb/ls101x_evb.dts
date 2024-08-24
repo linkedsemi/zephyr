@@ -10,6 +10,7 @@
 #include "ls101x_evb-pinctrl.dtsi"
 #include <zephyr/dt-bindings/pinctrl/ls101x-pinctrl.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -147,6 +148,12 @@
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpioe 1 GPIO_ACTIVE_LOW>;
+};
+
+&i2c1 {
+	status = "okay";
+	pinctrl-0 = <&i2c1_scl_pa05 &i2c1_sda_pa06>;
+	pinctrl-names = "default";
 };
 
 &gpioa {

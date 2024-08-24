@@ -1,9 +1,9 @@
 # Copyright (c) 2017 I-SENSE group of ICCS
 # SPDX-License-Identifier: Apache-2.0
 
-description: LE501X I2C  controller
+description: Linkedsemi I2C controller
 
-compatible: "le501x-i2c"
+compatible: "linkedsemi,ls-i2c"
 
 include: [i2c-controller.yaml, pinctrl-device.yaml]
 
