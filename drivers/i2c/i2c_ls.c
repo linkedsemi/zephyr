@@ -17,7 +17,6 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include <field_manipulate.h>
 #include <reg_i2c_type.h>
 
-
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
 #define MASTER_NACK_RECVIED BIT(0)
@@ -259,12 +258,12 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 		__ASSERT(0,"i2c speed not supported\n");
 	break;
 	}
+	config->reg->CR1 &= ~I2C_CR1_PE_MASK;
 	i2c_timing_param_get(config,i2c_clk,&timing_param);
-    MODIFY_REG(config->reg->CR1,I2C_CR1_PE_MASK,0);
     MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK), 
         timing_param.presc<<I2C_TIMINGR_PRESC_POS|timing_param.sclh<<I2C_TIMINGR_SCLH_POS|timing_param.scll<<I2C_TIMINGR_SCLL_POS|timing_param.sdadel<<I2C_TIMINGR_SDADEL_POS|timing_param.scldel<<I2C_TIMINGR_SCLDEL_POS);	
     config->reg->CFR = 0xffff;
-	MODIFY_REG(config->reg->CR1,0,I2C_CR1_PE_MASK);
+	config->reg->CR1 |= I2C_CR1_PE_MASK;
     return  0;
 }
 
@@ -287,28 +286,6 @@ static int i2c_ls_init(const struct device *dev)
 		// LOG_ERR("I2C pinctrl setup failed (%d)", ret);
 		return ret;
 	}
-
-    // if(cfg->reg == I2C1)
-    // {
-	// 	REG_FIELD_WR(RCC->APB1RST, RCC_I2C1, 1);
-	// 	REG_FIELD_WR(RCC->APB1RST, RCC_I2C1, 0);
-	// 	REG_FIELD_WR(RCC->APB1EN, RCC_I2C1, 1);
-    // }else if(cfg->reg == I2C2)
-    // {
-	// 	REG_FIELD_WR(RCC->APB1RST, RCC_I2C2, 1);
-	// 	REG_FIELD_WR(RCC->APB1RST, RCC_I2C2, 0);
-	// 	REG_FIELD_WR(RCC->APB1EN, RCC_I2C2, 1);
-    // }else
-    // {
-    //     return ENOTSUP;
-    // }
-
-	/*
-	 * initialize mutex used when multiple transfers
-	 * are taking place to guarantee that each one is
-	 * atomic and has exclusive access to the I2C bus.
-	 */
-
 
 	return 0;
 }
