@@ -66,7 +66,7 @@ void ls_i2c_isr(void *arg)
 		i2c_slave_addr_reenable(cfg->reg);
 		cfg->reg->ICR = I2C_ICR_TXEIC_MASK;
 		#ifdef CONFIG_I2C_TARGET
-		if(data->slave_cfg)
+		if(!data->current)
 		{
 			uint8_t val;
 			if(data->slave_cfg->callbacks->read_processed(data->slave_cfg,&val))
@@ -91,7 +91,7 @@ void ls_i2c_isr(void *arg)
 		do
 		{
 			#ifdef CONFIG_I2C_TARGET
-			if(data->slave_cfg)
+			if(!data->current)
 			{
 				if(data->slave_cfg->callbacks->write_received(data->slave_cfg,cfg->reg->RXDR))
 				{
@@ -243,6 +243,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
 		}
 	}
+	data->current = NULL;
 	k_sem_give(&data->bus_mutex);
 
 	return ret;
