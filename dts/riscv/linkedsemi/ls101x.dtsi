@@ -179,6 +179,7 @@
 			fifo-depth = <4>;
 			interrupts = <56 3>;
 			clock-frequency = <144000000>;
+            max-xfer-size = <32>;
 			status = "okay";
 		};
 
@@ -187,7 +188,19 @@
             #address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087400 0x400>;
-			interrupts = <56 3>;
+			interrupts = <57 3>;
+            clock-frequency = <144000000>;
+			status = "disabled";
+        };
+
+        
+        spi3: spi@40087800 {
+            compatible = "linkedsemi,ls-spi";
+            #address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40087800 0x400>;
+			interrupts = <58 3>;
+            clock-frequency = <144000000>;
 			status = "disabled";
         };
 

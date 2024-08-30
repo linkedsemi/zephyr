@@ -150,6 +150,24 @@
 	cs-gpios = <&gpioe 1 GPIO_ACTIVE_LOW>;
 };
 
+&spi2 {
+	status = "disabled";
+	pinctrl-0 = <&spi2_sck_pb12
+	&spi2_mosi_pb14 &spi2_miso_pb15>;
+	pinctrl-names = "default";
+
+	cs-gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;
+};
+
+&spi3 {
+	status = "disabled";
+	pinctrl-0 = <&spi3_sck_pa12
+	&spi3_mosi_pa14 &spi3_miso_pa15>;
+	pinctrl-names = "default";
+
+	cs-gpios = <&gpioa 13 GPIO_ACTIVE_LOW>;
+};
+
 &i2c1 {
 	status = "okay";
 	pinctrl-0 = <&i2c1_scl_pa05 &i2c1_sda_pa06>;
