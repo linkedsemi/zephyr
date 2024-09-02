@@ -1,0 +1,5 @@
+board:
+  name: lsqsh_app_evb
+  vendor: linkedsemi
+  socs:
+  - name: lsqsh

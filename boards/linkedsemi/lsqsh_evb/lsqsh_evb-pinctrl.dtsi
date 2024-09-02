@@ -1,0 +1,8 @@
+/*
+ * Copyright (c) 2024 Linkedsemi
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include <linkedsemi/lsqsh.dtsi>
+#include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>

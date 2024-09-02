@@ -1,0 +1,54 @@
+/*
+ * Copyright (c) 2021, Teslabs Engineering S.L.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+// #include <gigadevice/gd32vf103Xb.dtsi>
+// #include "gd32vf103v_eval-pinctrl.dtsi"
+/dts-v1/;
+#include <riscv/linkedsemi/lsqsh.dtsi>
+#include "lsqsh_evb-pinctrl.dtsi"
+#include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
+
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
+/ {
+    model = "linkedsemi LSQSH_EVB";
+    compatible = "linkedsemi,lsqsh_evb";
+
+    chosen {
+        zephyr,sram = &sram0;
+        zephyr,console = &uart3;
+    };
+
+    interrupt-parent = <&intc>;
+};
+
+&cpu0 {
+    clock-frequency = <32000000>;
+    cpu-power-states = <&idle &lp0>;
+};
+
+&sram1 {
+    status = "disabled";
+};
+
+&uart1 {
+    status = "disabled";
+    current-speed = <115200>;
+};
+
+&uart2 {
+    status = "disabled";
+    current-speed = <115200>;
+};
+
+&uart3 {
+    status = "okay";
+    current-speed = <115200>;
+};
+
+&uart4 {
+    status = "disabled";
+    current-speed = <115200>;
+};
