@@ -15,7 +15,7 @@ properties:
       required: true
 
     pinctrl-0:
-      required: true
+      required: false
 
     pinctrl-names:
-      required: true
+      required: false

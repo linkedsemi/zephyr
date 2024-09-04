@@ -1,7 +1,9 @@
 #include <soc.h>
 #include <errno.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/pinctrl.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
 #include <zephyr/drivers/i2c.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -21,7 +23,9 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 struct i2c_ls_config{
 	irq_cfg_func_t irq_config_func;   //函数指针类型要重新定义
     reg_i2c_t *reg;    
+#if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
+#endif
 };
 
 struct i2c_ls_data {
@@ -324,17 +328,21 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 static int i2c_ls_init(const struct device *dev)
 {
 	const struct i2c_ls_config *cfg = dev->config;
+#if defined(CONFIG_PINCTRL)
 	int ret;
+#endif
 	struct i2c_ls_data *data = dev->data;
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->bus_mutex, 1, 1);
 	cfg->irq_config_func(dev);
+#if defined(CONFIG_PINCTRL)
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
 	if (ret < 0) {
 		// LOG_ERR("I2C pinctrl setup failed (%d)", ret);
 		return ret;
 	}
+#endif
 	i2c_reenable(cfg,100000);
 	cfg->reg->ICR = 0xffff;
 	cfg->reg->IER = I2C_IER_STOPIE_MASK|I2C_IER_NACKIE_MASK|I2C_IER_BERRIE_MASK
@@ -399,21 +407,34 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 	irq_enable(DT_INST_IRQN(index));			\
 }
 
-
-#define LS_I2C_INIT(index)\
-	PINCTRL_DT_INST_DEFINE(index);\
-	LS_I2C_IRQ_HANDLER(index)\
-	static const struct i2c_ls_config i2c_ls_cfg_##index = {\
-		.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
-		.irq_config_func = i2c_ls_irq_config_func_##index,\
-		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),\
-	};\
-	static struct i2c_ls_data i2c_ls_dev_data_##index;\
-	I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
-				NULL, &i2c_ls_dev_data_##index,\
-				&i2c_ls_cfg_##index,\
-				POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,\
-				&api_funcs);
-
+#if defined(CONFIG_PINCTRL)
+	#define LS_I2C_INIT(index)\
+		PINCTRL_DT_INST_DEFINE(index);\
+		LS_I2C_IRQ_HANDLER(index)\
+		static const struct i2c_ls_config i2c_ls_cfg_##index = {\
+			.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
+			.irq_config_func = i2c_ls_irq_config_func_##index,\
+			.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),\
+		};\
+		static struct i2c_ls_data i2c_ls_dev_data_##index;\
+		I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
+					NULL, &i2c_ls_dev_data_##index,\
+					&i2c_ls_cfg_##index,\
+					POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,\
+					&api_funcs);
+#else
+	#define LS_I2C_INIT(index)\
+		LS_I2C_IRQ_HANDLER(index)\
+		static const struct i2c_ls_config i2c_ls_cfg_##index = {\
+			.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
+			.irq_config_func = i2c_ls_irq_config_func_##index,\
+		};\
+		static struct i2c_ls_data i2c_ls_dev_data_##index;\
+		I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
+					NULL, &i2c_ls_dev_data_##index,\
+					&i2c_ls_cfg_##index,\
+					POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,\
+					&api_funcs);
+#endif
 
 DT_INST_FOREACH_STATUS_OKAY(LS_I2C_INIT)
