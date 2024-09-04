@@ -63,6 +63,24 @@
             interrupts = <7 0>;
         };
 
+        i2c1: i2c@40083000 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40083000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <66 3>;
+            status = "disabled";
+        };
+
+        i2c2: i2c@40083400 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40083400 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <67 3>;
+            status = "disabled";
+        };
+
         uart1: uart@40087000 {
             compatible = "linkedsemi-uart";
             reg = <0x40087000 0x400>;
