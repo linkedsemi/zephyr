@@ -193,28 +193,28 @@
     };
 
 	/* SPI3 */
-    /omit-if-no-ref/spi3_sck_pb12: spi3_sck_pb12 {
-		pinmux = <LS_PINMUX_SET('B', 12, SPI3_SCK)>;
+    /omit-if-no-ref/spi3_sck_pa12: spi3_sck_pa12 {
+		pinmux = <LS_PINMUX_SET('A', 12, SPI3_SCK)>;
         bias-pull-down;
 		output-enable;
         output-low;
 	};
 
-    /omit-if-no-ref/ spi3_nss_pb13: spi3_nss_pb13 {
-		pinmux = <LS_PINMUX_SET('B', 13, SPI3_NSS)>;
+    /omit-if-no-ref/ spi3_nss_pa13: spi3_nss_pa13 {
+		pinmux = <LS_PINMUX_SET('A', 13, SPI3_NSS)>;
 		bias-pull-up;
         output-enable;
         output-high;
 	};
 
-    /omit-if-no-ref/spi3_mosi_pb14: spi3_mosi_pb14 {
-        pinmux = <LS_PINMUX_SET('B', 14, SPI3_MOSI)>;
+    /omit-if-no-ref/spi3_mosi_pa14: spi3_mosi_pa14 {
+        pinmux = <LS_PINMUX_SET('A', 14, SPI3_MOSI)>;
         output-enable;
         output-high;
     };
 
-    /omit-if-no-ref/ spi3_miso_pb15: spi3_miso_pb15 {
-        pinmux = <LS_PINMUX_SET('B', 15, SPI3_MISO)>;
+    /omit-if-no-ref/ spi3_miso_pa15: spi3_miso_pa15 {
+        pinmux = <LS_PINMUX_SET('A', 15, SPI3_MISO)>;
         input-enable;
     };
 

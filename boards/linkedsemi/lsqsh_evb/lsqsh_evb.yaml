@@ -1,0 +1,14 @@
+# Copyright (c) 2021, Teslabs Engineering S.L.
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: lsqsh_evb
+name: lsqsh
+type: mcu
+arch: riscv32
+ram: 512
+flash: 0
+toolchain:
+  - cross-compile
+  - zephyr
+supported:
+  - uart

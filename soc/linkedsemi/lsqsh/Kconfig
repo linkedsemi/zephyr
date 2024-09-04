@@ -1,0 +1,21 @@
+config SOC_LSQSH
+    select RISCV
+  	# select XIP
+    select TICKLESS_CAPABLE
+    select INCLUDE_RESET_VECTOR
+    select RISCV_PRIVILEGED
+    select BUILD_OUTPUT_HEX
+    select CPU_HAS_FPU
+    select FPU
+    select ARCH_HAS_RAMFUNC_SUPPORT
+  	select RISCV_ISA_RV32I
+    select RISCV_ISA_EXT_M
+    select RISCV_ISA_EXT_A
+    select RISCV_ISA_EXT_C
+    select RISCV_ISA_EXT_F
+    select RISCV_HAS_CLIC
+    select RISCV_GP
+    select RISCV_ALWAYS_SWITCH_THROUGH_ECALL
+    select RISCV_SOC_INTERRUPT_INIT
+    # select RISCV_SOC_HAS_ISR_STACKING
+    select ARCH_HAS_NOCACHE_MEMORY_SUPPORT
