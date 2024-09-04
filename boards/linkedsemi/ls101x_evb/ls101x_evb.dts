@@ -21,7 +21,7 @@
 	chosen {
 		zephyr,flash = &flash0;
 		zephyr,sram = &sram0;
-		zephyr,console = &uart1;
+		zephyr,console = &uart3;
 	};
 
     aliases {
@@ -90,7 +90,7 @@
 };
 
 &uart1 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&uart1_tx_pb00 &uart1_rx_pb01>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
@@ -102,14 +102,14 @@
 	current-speed = <921600>;
 };
 &uart3 {
-	status = "disabled";
-	pinctrl-0 = <&uart3_tx_pb04 &uart3_rx_pb05>;
+	status = "okay";
+	pinctrl-0 = <&uart3_tx_ph05 &uart3_rx_ph04>;
 	pinctrl-names = "default";
-	current-speed = <921600>;
+	current-speed = <115200>;
 };
 
 &dwuart1 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&dwuart1_tx_pb06 &dwuart1_rx_pb07>;
 	pinctrl-names = "default";
 	current-speed = <921600>;
@@ -152,8 +152,30 @@
 
 &i2c1 {
 	status = "okay";
-	pinctrl-0 = <&i2c1_scl_pa05 &i2c1_sda_pa06>;
+	pinctrl-0 = <&i2c1_scl_pa08 &i2c1_sda_pa09>;
 	pinctrl-names = "default";
+};
+
+&i2c2 {
+	status = "okay";
+	pinctrl-0 = <&i2c2_scl_pa10 &i2c2_sda_pa11>;
+	pinctrl-names = "default";
+};
+
+&i2c1 {
+	eeprom1: eeprom@50 {
+		compatible = "zephyr,i2c-target-eeprom";
+		reg = <0x50>;
+		size = <256>;
+	};
+};
+
+&i2c2 {
+	eeprom2: eeprom@50 {
+		compatible = "zephyr,i2c-target-eeprom";
+		reg = <0x50>;
+		size = <256>;
+	};
 };
 
 &gpioa {

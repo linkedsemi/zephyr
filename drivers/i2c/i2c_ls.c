@@ -12,7 +12,6 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include "platform.h"
 #include "field_manipulate.h"
 #include "reg_i2c_type.h"
-
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
 #define MASTER_NACK_RECVIED BIT(0)
@@ -63,7 +62,6 @@ void ls_i2c_isr(void *arg)
 	uint32_t irq = cfg->reg->IFM;
 	if(irq&I2C_IFM_TXEFM_MASK)
 	{
-		i2c_slave_addr_reenable(cfg->reg);
 		cfg->reg->ICR = I2C_ICR_TXEIC_MASK;
 		#ifdef CONFIG_I2C_TARGET
 		if(!data->current)
@@ -81,7 +79,7 @@ void ls_i2c_isr(void *arg)
 			if(--data->current->len == 0)
 			{
 				cfg->reg->IDR = I2C_IDR_TXEID_MASK;
-				cfg->reg->IER = I2C_IER_TCRIE_MASK;
+				cfg->reg->IER = I2C_IER_TCRIE_MASK|I2C_IER_TCIE_MASK;
 			}
 		}
 	}
@@ -106,7 +104,7 @@ void ls_i2c_isr(void *arg)
 				if(--data->current->len == 0)
 				{
 					cfg->reg->IDR = I2C_IDR_RXNEID_MASK;
-					cfg->reg->IER = I2C_IER_TCRIE_MASK;
+					cfg->reg->IER = I2C_IER_TCRIE_MASK|I2C_IER_TCIE_MASK;
 					break;
 				}
 			}
@@ -139,31 +137,42 @@ void ls_i2c_isr(void *arg)
 	}
 	if(irq&I2C_IFM_NACKFM_MASK)
 	{
-		data->errs |= MASTER_NACK_RECVIED;
 		cfg->reg->ICR = I2C_ICR_NACKIC_MASK;
-		k_sem_give(&data->device_sync_sem);
+		if(data->current)
+		{
+			data->errs |= MASTER_NACK_RECVIED;
+			k_sem_give(&data->device_sync_sem);
+		}
 	}
 	if(irq&I2C_IFM_STOPFM_MASK)
 	{
-		#ifdef CONFIG_I2C_TARGET
     	cfg->reg->ICR = I2C_ICR_STOPIC_MASK;
-		cfg->reg->IDR = I2C_IDR_TXEID_MASK | I2C_IDR_RXNEID_MASK;
-		cfg->reg->SR = 1;
-		while(cfg->reg->SR&I2C_SR_RXNE_MASK)
+		#ifdef CONFIG_I2C_TARGET
+		if(!data->current)
 		{
-			cfg->reg->RXDR;
-		}
-		data->slave_cfg->callbacks->stop(data->slave_cfg);
+			cfg->reg->IDR = I2C_IDR_TXEID_MASK | I2C_IDR_RXNEID_MASK;
+			cfg->reg->SR = 1;
+			while(cfg->reg->SR&I2C_SR_RXNE_MASK)
+			{
+				cfg->reg->RXDR;
+			}
+			data->slave_cfg->callbacks->stop(data->slave_cfg);
+		}else
 		#endif
+		{
+			k_sem_give(&data->device_sync_sem);
+		}
 	}
 	if(irq&I2C_IFM_TCFM_MASK)
 	{
-		__ASSERT(0,"i2c tc irq\n");
+		cfg->reg->ICR = I2C_ICR_TCIC_MASK;
+		cfg->reg->IDR = I2C_IDR_TCRID_MASK|I2C_IDR_TCID_MASK;
+		k_sem_give(&data->device_sync_sem);
 	}
 	if(irq&I2C_IFM_TCRFM_MASK)
 	{
 		cfg->reg->ICR = I2C_ICR_TCRIC_MASK;
-		cfg->reg->IDR = I2C_IDR_TCRID_MASK;
+		cfg->reg->IDR = I2C_IDR_TCRID_MASK|I2C_IDR_TCID_MASK;
 		k_sem_give(&data->device_sync_sem);
 	}
 	if(irq&I2C_IFM_BERRFM_MASK)
@@ -219,7 +228,10 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 		{
 			config->reg->CR2_3 &= ~I2C_CR2_RELOAD_MASK;
 			config->reg->CR2_2 = data->current->len;
-			config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
+			if((data->current->flags&I2C_MSG_STOP)==0)
+			{
+				config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
+			}
 			config->reg->CR2_0_1 = cr2_0_1 | I2C_CR2_START_MASK;
 		}else
 		{
@@ -238,9 +250,10 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			ret = -EIO;
 			break;
 		}
-		if(data->current->flags&I2C_MSG_STOP||data->current==&msg[num_msgs-1])
+		if(data->current->flags&I2C_MSG_STOP)
 		{
 			config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
+			k_sem_take(&data->device_sync_sem, K_FOREVER);
 		}
 	}
 	data->current = NULL;
@@ -249,57 +262,38 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 	return ret;
 }
 
-static void i2c_timing_param_get(const struct i2c_ls_config *config,uint32_t i2c_clk,struct i2c_speed_config_t *param)
+static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c_clk)
 {
 	uint32_t pclk = 144000000;
 	uint16_t cycle_count;
-	uint8_t prescalar = 0;
+	uint8_t prescalar = 1;
 	do{
-		prescalar += 2;
+		prescalar += 1;
 		cycle_count = pclk/i2c_clk/prescalar;
 	}while(cycle_count>256);
 	__ASSERT(cycle_count>=16&&prescalar<=16,"Invalid i2c timing");
     int16_t scll, sclh, scldel, sdadel;
-	scll = cycle_count/2;
-    sclh = cycle_count/2 - 1 - 4;
-    if (scll < 1)
-    {
-        scll = 1;
-    }
-    if (sclh < 0)
-    {
-        sclh = 0;
-    }
-    scldel = scll / 3;
-    if (scldel > 15)
-    {
-        scldel = 15;
-    }
-    else if (scldel < 5)
-    {
-        /* SCLDEL should not bee too small to keep campatible with different resistance */
-        scldel = 5;
-    }
-    sdadel = scldel - 4;
-    if (sdadel > 10)
-    {
-        /* We should set a ceiling for SDADEL. This is unnecessary, and will reduce compatibility if we are IIC slave */
-        sdadel = 10;
-    }
-    else if (sdadel < 1)
-    {
-        sdadel = 1;
-    }
-    /* HW design requires that SCLDEL should be no less than SDADEL + 5 */
-    if (scldel <= sdadel + 5)
-    {
-        scldel = sdadel + 5;
-    }
-    param->presc = prescalar - 1;
-    param->scll = scll;
-    param->sclh = sclh;
-    param->scldel = scldel;
-    param->sdadel = sdadel;
+	scll = cycle_count*2/3;
+    sclh = cycle_count/3;
+	scldel = scll>16?15:scll-2;
+	sdadel = 1;
+	struct i2c_speed_config_t param;
+    param.presc = prescalar - 1;
+    param.scll = scll;
+    param.sclh = sclh;
+    param.scldel = scldel;
+    param.sdadel = sdadel;
+   	MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK), 
+        param.presc<<I2C_TIMINGR_PRESC_POS|param.sclh<<I2C_TIMINGR_SCLH_POS|param.scll<<I2C_TIMINGR_SCLL_POS|param.sdadel<<I2C_TIMINGR_SDADEL_POS|param.scldel<<I2C_TIMINGR_SCLDEL_POS);	
+
+}
+
+static void i2c_reenable(const struct i2c_ls_config *config ,uint32_t i2c_clk)
+{
+	config->reg->CR1 &= ~I2C_CR1_PE_MASK;
+	i2c_timing_param_set(config,i2c_clk);
+    config->reg->CFR = 0xffff;
+	config->reg->CR1 |= I2C_CR1_PE_MASK;
 }
 
 static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
@@ -307,7 +301,6 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 	const struct i2c_ls_config *config = dev->config;
 	struct i2c_ls_data *data = (struct i2c_ls_data *const)(dev)->data;  
 	uint32_t i2c_clk = 0;
-	struct i2c_speed_config_t timing_param;
 	switch(I2C_SPEED_GET(dev_config))
 	{
 	case I2C_SPEED_STANDARD:
@@ -324,12 +317,7 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 	break;
 	}
 	data->dev_config = dev_config;
-	config->reg->CR1 &= ~I2C_CR1_PE_MASK;
-	i2c_timing_param_get(config,i2c_clk,&timing_param);
-    MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK), 
-        timing_param.presc<<I2C_TIMINGR_PRESC_POS|timing_param.sclh<<I2C_TIMINGR_SCLH_POS|timing_param.scll<<I2C_TIMINGR_SCLL_POS|timing_param.sdadel<<I2C_TIMINGR_SDADEL_POS|timing_param.scldel<<I2C_TIMINGR_SCLDEL_POS);	
-    config->reg->CFR = 0xffff;
-	config->reg->CR1 |= I2C_CR1_PE_MASK;
+	i2c_reenable(config,i2c_clk);
     return  0;
 }
 
@@ -341,16 +329,17 @@ static int i2c_ls_init(const struct device *dev)
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->bus_mutex, 1, 1);
 	cfg->irq_config_func(dev);
-	cfg->reg->ICR = 0xffff;
-	cfg->reg->IER = I2C_IER_NACKIE_MASK|I2C_IER_BERRIE_MASK
-		|I2C_IER_ARLOIE_MASK|I2C_IER_OVRIE_MASK|I2C_IER_PECEIE_MASK
-		|I2C_IER_TOUTIE_MASK|I2C_IER_ALERTIE_MASK;
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
 	if (ret < 0) {
 		// LOG_ERR("I2C pinctrl setup failed (%d)", ret);
 		return ret;
 	}
+	i2c_reenable(cfg,100000);
+	cfg->reg->ICR = 0xffff;
+	cfg->reg->IER = I2C_IER_STOPIE_MASK|I2C_IER_NACKIE_MASK|I2C_IER_BERRIE_MASK
+		|I2C_IER_ARLOIE_MASK|I2C_IER_OVRIE_MASK|I2C_IER_PECEIE_MASK
+		|I2C_IER_TOUTIE_MASK|I2C_IER_ALERTIE_MASK;
 
 	return 0;
 }
@@ -375,7 +364,7 @@ static int i2c_ls_target_register(const struct device *dev,struct i2c_target_con
 	{
 		cfg->reg->OAR1 = I2C_OAR1_OA1EN_MASK|target_cfg->address<<I2C_OAR1_OA11_7_POS;
 	}
-	cfg->reg->IER = I2C_IER_ADDRIE_MASK|I2C_IER_STOPIE_MASK;
+	cfg->reg->IER = I2C_IER_ADDRIE_MASK;
 	return 0;
 }
 
@@ -383,7 +372,7 @@ static int i2c_ls_target_unregister(const struct device *dev,struct i2c_target_c
 {
 	struct i2c_ls_data *data = dev->data;
 	const struct i2c_ls_config *cfg = dev->config;
-	cfg->reg->IDR = I2C_IDR_ADDRID_MASK|I2C_IDR_STOPID_MASK;
+	cfg->reg->IDR = I2C_IDR_ADDRID_MASK;
 	cfg->reg->OAR1 = 0;
 	data->slave_cfg = NULL;
 	return 0;
