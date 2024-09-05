@@ -146,7 +146,10 @@ void ls_i2c_isr(void *arg)
 		if(data->current)
 		{
 			data->errs |= MASTER_NACK_RECVIED;
-			k_sem_give(&data->device_sync_sem);
+			if(data->current->len)
+			{
+				k_sem_give(&data->device_sync_sem);
+			}
 		}
 	}
 	if(irq&I2C_IFM_STOPFM_MASK)
@@ -233,6 +236,10 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			}
 			config->reg->CR2_0_1 = cr2_0_1|I2C_CR2_START_MASK|I2C_CR2_STOP_MASK;
 			k_sem_take(&data->device_sync_sem, K_FOREVER);
+			if(data->errs)
+			{
+				ret = -EIO;
+			}
 			break;
 		}
 		if(read)
