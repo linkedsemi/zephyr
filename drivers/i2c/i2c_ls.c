@@ -118,6 +118,7 @@ void ls_i2c_isr(void *arg)
 	if(irq&I2C_IFM_ADDRFM_MASK)
 	{
 		#ifdef CONFIG_I2C_TARGET
+		k_sem_take(&data->bus_mutex,K_FOREVER);
 	    uint32_t status = cfg->reg->SR;
 		cfg->reg->ICR = I2C_ICR_ADDRIC_MASK;
 		if(status&I2C_SR_DIR_MASK)
@@ -161,6 +162,7 @@ void ls_i2c_isr(void *arg)
 				cfg->reg->RXDR;
 			}
 			data->slave_cfg->callbacks->stop(data->slave_cfg);
+			k_sem_give(&data->bus_mutex);
 		}else
 		#endif
 		{
