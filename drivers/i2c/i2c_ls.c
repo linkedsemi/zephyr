@@ -236,6 +236,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			}
 			config->reg->CR2_0_1 = cr2_0_1|I2C_CR2_START_MASK|I2C_CR2_STOP_MASK;
 			k_sem_take(&data->device_sync_sem, K_FOREVER);
+			config->reg->CR2_3 &= ~0x30;
 			if(data->errs)
 			{
 				ret = -EIO;
