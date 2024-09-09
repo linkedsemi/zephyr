@@ -155,8 +155,12 @@ void ls_i2c_isr(void *arg)
 	if(irq&I2C_IFM_STOPFM_MASK)
 	{
     	cfg->reg->ICR = I2C_ICR_STOPIC_MASK;
+		if(data->current)
+		{
+			k_sem_give(&data->device_sync_sem);
+		}
 		#ifdef CONFIG_I2C_TARGET
-		if(!data->current)
+		else if(data->slave_cfg)
 		{
 			cfg->reg->IDR = I2C_IDR_TXEID_MASK | I2C_IDR_RXNEID_MASK;
 			cfg->reg->SR = 1;
@@ -166,11 +170,8 @@ void ls_i2c_isr(void *arg)
 			}
 			data->slave_cfg->callbacks->stop(data->slave_cfg);
 			k_sem_give(&data->bus_mutex);
-		}else
-		#endif
-		{
-			k_sem_give(&data->device_sync_sem);
 		}
+		#endif
 	}
 	if(irq&I2C_IFM_TCFM_MASK)
 	{
