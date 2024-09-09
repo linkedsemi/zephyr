@@ -19,7 +19,7 @@
     chosen {
         zephyr,sram = &sram0;
         zephyr,console = &uart3;
-        zephyr_shell_uart = &uart3;
+        zephyr,shell-uart = &uart3;
     };
 
     interrupt-parent = <&intc>;
@@ -56,8 +56,18 @@
 
 &i2c1 {
     status = "okay";
+    eeprom2: eeprom@10 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x10>;
+        size = <256>;
+    };
 };
 
 &i2c2 {
     status = "okay";
+    eeprom1: eeprom@10 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x10>;
+        size = <256>;
+    };
 };
