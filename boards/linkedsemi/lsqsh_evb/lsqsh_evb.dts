@@ -56,18 +56,26 @@
 
 &i2c1 {
     status = "okay";
-    eeprom2: eeprom@10 {
+    eeprom2: eeprom@54 {
         compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x10>;
+        reg = <0x54>;
         size = <256>;
     };
 };
 
 &i2c2 {
     status = "okay";
-    eeprom1: eeprom@10 {
+    eeprom1: eeprom@54 {
         compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x10>;
+        reg = <0x54>;
         size = <256>;
     };
+};
+
+&smbus1 {
+    status = "okay";
+};
+
+&smbus2 {
+    status = "okay";
 };

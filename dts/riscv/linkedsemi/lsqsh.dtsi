@@ -81,6 +81,226 @@
             status = "disabled";
         };
 
+        i2c3: i2c@40083800 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40083800 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <68 3>;
+            status = "disabled";
+        };
+
+        i2c4: i2c@40083c00 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40083c00 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <69 3>;
+            status = "disabled";
+        };
+
+        i2c5: i2c@40084000 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40084000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <50 3>;
+            status = "disabled";
+        };
+
+        i2c6: i2c@40084400 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40084400 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <51 3>;
+            status = "disabled";
+        };
+
+        i2c7: i2c@40084800 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40084800 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <52 3>;
+            status = "disabled";
+        };
+
+        i2c8: i2c@40084C00 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40084C00 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <53 3>;
+            status = "disabled";
+        };
+
+        i2c9: i2c@40085000 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40085000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <54 3>;
+            status = "disabled";
+        };
+
+        i2c10: i2c@40085400 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40085400 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <55 3>;
+            status = "disabled";
+        };
+
+        i2c11: i2c@40085800 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40085800 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <56 3>;
+            status = "disabled";
+        };
+
+        i2c12: i2c@40085C00 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40085C00 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <57 3>;
+            status = "disabled";
+        };
+
+        i2c13: i2c@40086000 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40086000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <58 3>;
+            status = "disabled";
+        };
+
+        i2c14: i2c@40086400 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40086400 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <59 3>;
+            status = "disabled";
+        };
+
+        smbus1: smbus1 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c1>;
+            status = "disabled";
+        };
+
+        smbus2: smbus2 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c2>;
+            status = "disabled";
+        };
+
+        smbus3: smbus3 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c3>;
+            status = "disabled";
+        };
+
+        smbus4: smbus4 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c4>;
+            status = "disabled";
+        };
+
+        smbus5: smbus5 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c5>;
+            status = "disabled";
+        };
+
+        smbus6: smbus6 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c6>;
+            status = "disabled";
+        };
+
+        smbus7: smbus7 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c7>;
+            status = "disabled";
+        };
+
+        smbus8: smbus8 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c8>;
+            status = "disabled";
+        };
+
+        smbus9: smbus9 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c9>;
+            status = "disabled";
+        };
+
+        smbus10: smbus10 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c10>;
+            status = "disabled";
+        };
+
+        smbus11: smbus11 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c11>;
+            status = "disabled";
+        };
+
+        smbus12: smbus12 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c12>;
+            status = "disabled";
+        };
+
+        smbus13: smbus13 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c13>;
+            status = "disabled";
+        };
+
+        smbus14: smbus14 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c14>;
+            status = "disabled";
+        };
+
         uart1: uart@40087000 {
             compatible = "linkedsemi-uart";
             reg = <0x40087000 0x400>;
