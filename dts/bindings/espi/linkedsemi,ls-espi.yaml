@@ -1,0 +1,13 @@
+
+description: Linkedsemi eSPI slave
+
+compatible: "linkedsemi,ls-espi"
+
+include: [espi-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true

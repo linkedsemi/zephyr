@@ -10,6 +10,8 @@ menuconfig ESPI
 
 if ESPI
 
+source "drivers/espi/Kconfig.ls"
+
 source "drivers/espi/Kconfig.xec"
 
 source "drivers/espi/Kconfig.npcx"

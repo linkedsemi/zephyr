@@ -171,6 +171,13 @@
             reg-shift = <2>;
         };
 
+        espi: espi@40004000 {
+            compatible = "linkedsemi,ls-espi";
+            reg = <0x40004000 0x400>;
+            status = "disabled";
+            interrupts = <27 3>;
+        };
+
 		spi1: spi@40087000 {
 			compatible = "snps,designware-spi";
 			#address-cells = <1>;
