@@ -115,8 +115,10 @@ def build_elf(elf_file, include_dirs):
     includes = []
     for include_dir in include_dirs:
         includes.extend(["-I", include_dir])
+    #  Pass --sysroot path for cross compilation
+    sysrootarg = "--sysroot=" + args.sysroot
     cmd = ([args.compiler, "-shared", "-Wall", "-Werror", "-I."] + includes +
-           ["-fno-stack-protector", "-fpic", "-mno-red-zone", "-fshort-wchar",
+           ["-fno-stack-protector", "-fpic", "-mno-red-zone", "-fshort-wchar", sysrootarg,
             "-Wl,-nostdlib", "-T", ldscript, "-o", "zefi.elf", cfile])
     verbose(" ".join(cmd))
     subprocess.run(cmd, check = True)
@@ -156,6 +158,7 @@ def parse_args():
     parser.add_argument("-v", "--verbose", action="store_true", help="Verbose output")
     parser.add_argument("-i", "--includes", required=True, nargs="+",
                         help="Zephyr base include directories")
+    parser.add_argument("-s", "--sysroot", required=True, help="Cross compilation --sysroot=path")
 
     return parser.parse_args()
 

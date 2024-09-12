@@ -11,6 +11,7 @@ set_property(GLOBAL APPEND PROPERTY extra_post_build_commands
   -o ${CMAKE_OBJCOPY}
   -i ${ZEPHYR_BASE}/include ${PROJECT_BINARY_DIR}/include/generated
   -f ${PROJECT_BINARY_DIR}/${CONFIG_KERNEL_BIN_NAME}.elf
+  -s ${SYSROOT_DIR}
   $<$<BOOL:${CMAKE_VERBOSE_MAKEFILE}>:--verbose>
   WORKING_DIRECTORY ${PROJECT_BINARY_DIR}
 )
