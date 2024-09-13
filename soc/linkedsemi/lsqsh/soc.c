@@ -12,6 +12,10 @@
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sysc_per.h"
+#if !defined(CONFIG_PINCTRL)
+    #include "ls_soc_gpio.h"
+#endif
+
 #define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
 uint32_t *pTaskStack = NULL;
@@ -48,6 +52,14 @@ static int lsqsh_init(void)
 {
     SystemInit();
     sys_init_none();
+
+#if !defined(CONFIG_PINCTRL)
+    pinmux_dwuart1_init(PC03, PC04);
+    // pinmux_dwuart2_init(PD06, PD04);
+    pinmux_iic2_init(PB13, PB14);
+    pinmux_iic7_init(PG15, PG14);
+#endif
+
 	IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
