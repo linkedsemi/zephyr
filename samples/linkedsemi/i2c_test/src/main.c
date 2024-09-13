@@ -12,12 +12,25 @@
 static void write_read_compare(const struct device *const i2c,uint16_t dev_addr,const uint8_t *wdata,uint8_t *rdata,uint16_t len)
 {
 	i2c_burst_write(i2c,dev_addr,0,wdata,len);
+#if 0
 	io_toggle_pin(PA02);
+#endif
 	i2c_burst_read(i2c,dev_addr,0,rdata,len);
 	if(memcmp(wdata,rdata,len))
 	{
 		__ASSERT(0,"wdata rdata not match\n");
 	}
+#if 0
+	else
+	{
+		printf("data: ");
+		for(uint32_t i = 0; i < len; i++)
+		{
+			printf("%x ", wdata[i]);
+		}
+		printf("\n\n");
+	}
+#endif
 }
 
 static void gen_rand_data(uint8_t *buf,uint16_t len)
@@ -32,11 +45,17 @@ int main(void)
 {
 	printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
 
-	const struct device *const i2c1 = DEVICE_DT_GET(DT_NODELABEL(i2c1));
-	const struct device *const i2c2 = DEVICE_DT_GET(DT_NODELABEL(i2c2));
-	static const struct device *eeprom1 = DEVICE_DT_GET(DT_NODELABEL(eeprom1));
-	static const struct device *eeprom2 = DEVICE_DT_GET(DT_NODELABEL(eeprom2));
+	const struct device *const i2c1 = DEVICE_DT_GET(DT_ALIAS(testi2c1));
+	const struct device *const i2c2 = DEVICE_DT_GET(DT_ALIAS(testi2c2));
+	static const struct device *eeprom1 = DEVICE_DT_GET(DT_ALIAS(testeeprom1));
+	static const struct device *eeprom2 = DEVICE_DT_GET(DT_ALIAS(testeeprom2));
+	static const uint16_t dev_addr1 = DT_REG_ADDR(DT_ALIAS(testeeprom1));
+	static const uint16_t dev_addr2 = DT_REG_ADDR(DT_ALIAS(testeeprom2));
+	static const uint16_t dev_addr = dev_addr1;
 
+	if (dev_addr1 != dev_addr2) {
+		__ASSERT(0,"addr1 should equal to addr2\n");
+	}
 	if (!device_is_ready(i2c1)) {
 		__ASSERT(0,"I2C device is not ready\n");
 	}
@@ -69,8 +88,9 @@ int main(void)
 		printk("Failed to register i2c target driver\n");
 		return 0;
 	}
+#if 0
 	io_cfg_output(PA02);
-	uint16_t dev_addr=0x50;
+#endif
 	uint8_t wdata[255];
 	uint8_t rdata[255];
 	while(1)
