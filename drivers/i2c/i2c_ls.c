@@ -292,7 +292,11 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 
 static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c_clk)
 {
-	uint32_t pclk = 144000000;
+#if defined(CONFIG_SOC_LSQSH)
+	uint32_t pclk = 50000000;
+#else
+	uint32_t pclk = 1440000000;
+#endif
 	uint16_t cycle_count;
 	uint8_t prescalar = 1;
 	do{
