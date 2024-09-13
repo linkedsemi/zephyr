@@ -229,6 +229,15 @@
             status = "disabled";
         };
 
+		peci0: peci@4008f400 {
+			compatible = "linkedsemi,ls-peci";
+			reg = <0x4008f400 0x400>;
+			#address-cells= <1>;
+			#size-cells = <0>;
+			interrupts = <75 3>;
+			status = "disabled";
+		};
+
         adc1: adc@40089000 {
             compatible = "linkedsemi-adc";
             reg = <0x40089000 0x400>;

@@ -55,6 +55,8 @@ static void driver_init(void)
 	SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_SET_SPI1_MASK;
 #endif
     dwuart_init();
+
+    SYSC_PER->PD_PER_CLKG3 = SYSC_PER_CLKG_SET_PECI_MASK;
 }
 
 void sys_arch_reboot(int type)

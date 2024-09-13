@@ -27,6 +27,7 @@
     aliases {
 		led0 = &led0;
 		sw0 = &btn0;
+		peci-0 = &peci0;
 	};
 
 	leds{
@@ -198,6 +199,12 @@
 
 &espi {
 	status = "okay";
+};
+
+&peci0 {
+	status = "okay";
+	pinctrl-0 = <&peci_default_pc04>;
+	pinctrl-names = "default";
 };
 
 &gpioa {

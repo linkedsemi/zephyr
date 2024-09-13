@@ -1,0 +1,15 @@
+# Copyright (c) 2024 LINKEDSEMI Corporation. All Rights Reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+description: LINKEDSEMI LS PECI
+
+compatible: "linkedsemi,ls-peci"
+
+include: [peci.yaml, pinctrl-device.yaml]
+
+properties:
+  pinctrl-0:
+    required: true
+
+  pinctrl-names:
+    required: true

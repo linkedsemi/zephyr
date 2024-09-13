@@ -213,6 +213,12 @@
         output-high;
     };
 
+	/omit-if-no-ref/peci_default_pc04: peci_default_pc04 {
+		pinmux = <LS_PINMUX_SET('C', 4, PECI_DAT)>;
+		bias-pull-down;
+		drive-open-drain;
+	};
+
     /omit-if-no-ref/ spi3_miso_pa15: spi3_miso_pa15 {
         pinmux = <LS_PINMUX_SET('A', 15, SPI3_MISO)>;
         input-enable;
