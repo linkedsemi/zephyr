@@ -12,6 +12,10 @@
 #include "leo.h"
 #include <zephyr/irq.h>
 #include "reg_sysc_per.h"
+#include "reg_v33_rg.h"
+#include "field_manipulate.h"
+#include "ls_msp_peci.h"
+
 #define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
 uint32_t *pTaskStack = NULL;
@@ -42,6 +46,14 @@ void dwuart_init()
 	}
 }
 
+void peci_init()
+{
+    SYSC_PER->PD_PER_CLKG3 = SYSC_PER_CLKG_SET_PECI_MASK;
+    REG_FIELD_WR(V33_RG->TRIM0, V33_RG_LDO_PECI_VSEL, PECI_LDO_VOLT_1100);
+    MODIFY_REG(V33_RG->TRIM0,0,1<<23);  
+    SYSC_AWO->IO[2].DS |= 0x00100010;
+}
+
 static void driver_init(void)
 {
     SYSC_PER->PD_PER_CLKG0 = SYSC_PER_CLKG_SET_I2C1_MASK;
@@ -55,8 +67,8 @@ static void driver_init(void)
 	SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_SET_SPI1_MASK;
 #endif
     dwuart_init();
-
-    SYSC_PER->PD_PER_CLKG3 = SYSC_PER_CLKG_SET_PECI_MASK;
+    
+    peci_init();
 }
 
 void sys_arch_reboot(int type)

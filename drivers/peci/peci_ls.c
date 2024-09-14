@@ -16,39 +16,12 @@
 #include <zephyr/irq.h>
 
 #include <reg_peci_type.h>
+#include <ls_msp_peci.h>
 #include <reg_sysc_awo.h>
-#include "field_manipulate.h"
-#include <reg_v33_rg.h>
+#include <field_manipulate.h>
 
 LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
 #define CPU_FREQ (DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)/1000000)
-
-#define PECI_NPCX_MAX_TX_BUF_LEN 24
-#define PECI_NPCX_MAX_RX_BUF_LEN 24
-
-#define PECI_PRE_DIV_VAL      5
-
-#define PECI_DAT_LEN_VAL      6
-
-#define PECI_A_BIT_CYC_VAL    11
-#define PECI_A_TGT_IDX0_VAL   3
-#define PECI_M_TGT_IDX0_VAL   3
-#define PECI_A_SMP_IDX_VAL    9
-#define PECI_A_TGT_IDX1_VAL   8
-#define PECI_M_TGT_IDX1_VAL   8
-
-/* PECI Voltage */
-enum peci_ldo_voltage
-{
-    PECI_LDO_VOLT_1100,
-    PECI_LDO_VOLT_1150,
-    PECI_LDO_VOLT_1200,
-    PECI_LDO_VOLT_1250,
-    PECI_LDO_VOLT_900,
-    PECI_LDO_VOLT_950,
-    PECI_LDO_VOLT_1000,
-    PECI_LDO_VOLT_1050,
-};
 
 const uint8_t BitReverseTable256[] =
 {
@@ -79,7 +52,6 @@ struct peci_ls_config {
     const struct pinctrl_dev_config *pcfg;
 };
 
-
 struct peci_ls_data {
 	struct k_sem trans_sync_sem;
 	struct k_sem lock;
@@ -91,7 +63,7 @@ static void peci_core_reg_print(const struct device *dev)
     const struct peci_ls_config *const config = dev->config;
 	struct reg_peci_t *const reg = config->reg;
     
-    LOG_DBG("\n-------------------------\n");
+    LOG_DBG("-------------------------\n");
     LOG_DBG("INTR_MSK = %08x\n", reg->INTR_MSK);
     LOG_DBG("INTR_CLR = %08x\n", reg->INTR_CLR);
     LOG_DBG("INTR_STT = %08x\n", reg->INTR_STT);
@@ -138,8 +110,6 @@ static int peci_ls_init(const struct device *dev)
     struct reg_peci_t *const reg = config->reg;
     int ret;
 
-    MODIFY_REG(V33_RG->TRIM0,0,1<<23);  
-    SYSC_AWO->IO[2].DS |= 0x00100010;
     ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
 
 	if (ret != 0) {
@@ -147,10 +117,8 @@ static int peci_ls_init(const struct device *dev)
 		return ret;
 	}
 
-    REG_FIELD_WR(V33_RG->TRIM0, V33_RG_LDO_PECI_VSEL, PECI_LDO_VOLT_1100);
     reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL) | FIELD_BUILD(PECI_DAT_LEN, PECI_DAT_LEN_VAL);
 
-    WRITE_REG(reg->INTR_MSK,PECI_INTR_MSK_MASK);
 	k_sem_init(&data->trans_sync_sem, 0, 1);
 	k_sem_init(&data->lock, 1, 1);
     config->irq_config_func(dev);
@@ -212,7 +180,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 	struct reg_peci_t *const reg = config->reg;
 	struct peci_buf *peci_rx_buf = &msg->rx_buffer;
 	struct peci_buf *peci_tx_buf = &msg->tx_buffer;
-	enum peci_command_code cmd_code = msg->cmd_code;
 	int ret = 0;
     uint8_t txbuf8[24] = {0};
     uint8_t rxbuf8[24] = {0};
@@ -231,20 +198,26 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     txbuf8[0] = BitReverseTable256[msg->addr];
     txbuf8[1] = BitReverseTable256[peci_tx_buf->len];
     txbuf8[2] = BitReverseTable256[peci_rx_buf->len];
-    for(i = 0; i < peci_tx_buf->len; i++)
+    txbuf8[3] = BitReverseTable256[msg->cmd_code];
+
+    if(peci_tx_buf->len > 1)
     {
-        txbuf8[i+3] = BitReverseTable256[cmd_code];
+        for(i = 0; i < peci_tx_buf->len-1; i++)
+        {
+           txbuf8[i+4] = BitReverseTable256[peci_tx_buf->buf[i]];
+        }
     }
+
     memcpy(txbuf32, txbuf8, 24);
 
     WRITE_REG(reg->INTR_CLR,PECI_INTR_CLR_MASK);
+    WRITE_REG(reg->INTR_MSK,PECI_INTR_MSK_MASK);
     reg->TX_DAT0 = txbuf32[0];
     reg->TX_DAT1 = txbuf32[1];
     reg->TX_DAT2 = txbuf32[2];
     reg->TX_DAT3 = txbuf32[3];
     reg->TX_DAT4 = txbuf32[4];
     reg->TX_DAT5 = txbuf32[5];
-   LOG_DBG("88888");
     WRITE_REG(reg->TXRX_REQ,PECI_TXRX_REQ_MASK);
 
     k_sem_take(&data->trans_sync_sem, K_FOREVER);
@@ -262,7 +235,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     for(i = 0; i < peci_rx_buf->len; i++)
     {
         peci_rx_buf->buf[i] = BitReverseTable256[rxbuf8[peci_tx_buf->len+3+1+i]];
-        peci_rx_buf->buf[i] = BitReverseTable256[rxbuf8[i]];
     }
     k_sem_give(&data->lock);
 
