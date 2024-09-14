@@ -29,7 +29,27 @@
         testeeprom2 = &eeprom7;
     };
 
-    interrupt-parent = <&intc>;
+    soc {
+        compatible = "simpe-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        interrupt-parent = <&intc>;
+
+        mbox: mbox@1013f000 {
+            compatible = "linkedsemi,mbox";
+            reg = <0x1013f000 0x1000>;
+            interrupts = <27 3>;
+            fifo-deepth = <128>;
+            fifo-width = <4>;
+            #mbox-cells = <1>;
+        };
+    };
+
+    mbox-consumer {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 1>, <&mbox 0>;
+        mbox-names = "tx", "rx";
+    };
 };
 
 &cpu0 {

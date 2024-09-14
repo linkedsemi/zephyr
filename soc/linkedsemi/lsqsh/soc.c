@@ -53,9 +53,34 @@ static int lsqsh_init(void)
     SystemInit();
     sys_init_none();
 
+#if defined(CONFIG_CACHE)
+    SYSMAP->SYSMAPADDR0 = 0x10001000 >> 12;
+    SYSMAP->SYSMAPCFG0 = 0x10;
+    SYSMAP->SYSMAPADDR1 = 0x10140000 >> 12;
+    SYSMAP->SYSMAPCFG1 = 0xc;
+    SYSMAP->SYSMAPADDR2 = 0xffffffff >> 12;
+    SYSMAP->SYSMAPCFG2 = 0x10;
+    SYSMAP->SYSMAPADDR3 = 0;
+    SYSMAP->SYSMAPCFG3 = 0;
+    SYSMAP->SYSMAPADDR4 = 0;
+    SYSMAP->SYSMAPCFG4 = 0;
+    SYSMAP->SYSMAPADDR5 = 0;
+    SYSMAP->SYSMAPCFG5 = 0;
+    SYSMAP->SYSMAPADDR6 = 0;
+    SYSMAP->SYSMAPCFG6 = 0;
+    SYSMAP->SYSMAPADDR7 = 0;
+    SYSMAP->SYSMAPCFG7 = 0;
+
+    csi_dcache_enable();
+    csi_icache_enable();
+
+    csi_dcache_invalid();
+    csi_icache_invalid();
+#endif
+
 #if !defined(CONFIG_PINCTRL)
     pinmux_dwuart1_init(PC03, PC04);
-    // pinmux_dwuart2_init(PD06, PD04);
+    pinmux_dwuart2_init(PD06, PD04);
     pinmux_iic2_init(PB13, PB14);
     pinmux_iic7_init(PG15, PG14);
 #endif

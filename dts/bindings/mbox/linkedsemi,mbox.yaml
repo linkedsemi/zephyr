@@ -1,0 +1,23 @@
+# Copyright (c) 2021, linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: linkedsemi CPU Mailbox
+
+compatible: "linkedsemi,mbox"
+
+include: [base.yaml, mailbox-controller.yaml]
+
+properties:
+  reg:
+    required: true
+
+  fifo-deepth:
+    type: int
+    required: true
+
+  fifo-width:
+    type: int
+    required: true
+
+mbox-cells:
+  - channel

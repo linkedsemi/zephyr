@@ -1,0 +1,8 @@
+# Copyright (c) 2024 Celina Sophie Kalus <hello@celinakalus.de>
+# SPDX-License-Identifier: Apache-2.0
+
+config MBOX_LINKEDSEMI
+	bool "MBOX LINKEDSEMI driver"
+	depends on DT_HAS_LINKEDSEMI_MBOX_ENABLED
+	help
+	  MBOX Driver for LINKEDSEMI SOC

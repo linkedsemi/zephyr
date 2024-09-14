@@ -18,13 +18,20 @@
 
     sram0: memory@10000000{
         compatible = "mmio-sram";
-        reg = <0x10000000 0x80000>;
+        reg = <0x10000000 0x7f000>;
     };
 
     sram1: memory@10080000{
         compatible = "mmio-sram";
-        reg = <0x10080000 0xc0000>;
+        reg = <0x10080000 0xbf000>;
     };
+
+/*
+    share_memory0: memory@1013f000{
+        compatible = "mmio-sram";
+        reg = <0x1013f000 0x1000>;
+    };
+*/
 
     soc {
         compatible = "simpe-bus";

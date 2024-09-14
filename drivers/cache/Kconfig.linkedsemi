@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Copyright (c) 2022 LINKEDSEMI Technology Inc.
+
+config CACHE_LINKEDSEMI
+bool "LINKEDSEMI external cache driver"
+	depends on SOC_LSQSH
+	select CACHE_HAS_DRIVER
+	help
+	  This option enables the CACHE driver for LINKEDSEMI QSH series SOC.

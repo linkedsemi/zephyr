@@ -21,5 +21,14 @@ config NUM_IRQS
 config MAIN_STACK_SIZE
 	default 2048
 
+config ICACHE_LINE_SIZE
+	default 32
+
+config DCACHE_LINE_SIZE
+	default 32
+
+choice CACHE_TYPE
+	default EXTERNAL_CACHE
+endchoice
 
 endif

@@ -146,3 +146,8 @@ config RISCV_ISA_EXT_ZBS
 	  The Zbs instructions can be used for single-bit instructions that
 	  provide a mechanism to set, clear, invert, or extract a single bit in
 	  a register.
+
+config RISCV_ISA_EXT_THEAD
+	bool
+	help
+	  THEAD extension
