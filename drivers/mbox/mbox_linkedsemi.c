@@ -9,7 +9,6 @@
 #include <zephyr/irq.h>
 #define LOG_LEVEL CONFIG_MBOX_LOG_LEVEL
 #include <zephyr/logging/log.h>
-#include <zephyr/cache.h>
 #include <string.h>
 #include <reg_sysc_cpu.h>
 #include <fifo.h>
@@ -53,8 +52,6 @@ static void linkedsemi_isr(const struct device *dev)
     struct mbox_linkedsemi_conf *cfg = (struct mbox_linkedsemi_conf *)dev->config;
 
     if (data->cb[MBOX_RX_CHANNEL_ID] != NULL) {
-        // sys_cache_data_invd_range((struct fifo_env *)cfg->fifo[MBOX_RX_CHANNEL_ID], MBOX_SIZE >> 1);
-        sys_cache_data_invd_all();
         bool ret = general_fifo_get((struct fifo_env *)cfg->fifo[MBOX_RX_CHANNEL_ID], recv_data);
         if (ret) {
             struct mbox_msg msg = {(const void *)recv_data, MBOX_FIFO_WIDTH};
@@ -91,8 +88,6 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel,
         if (ret == false) {
             return -1;
         }
-        // sys_cache_data_flush_range(cfg->fifo[channel], MBOX_SIZE >> 1);
-        sys_cache_data_flush_all();
     }
 
     if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
