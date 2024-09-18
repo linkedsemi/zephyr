@@ -27,9 +27,9 @@
         #size-cells = <1>;
         interrupt-parent = <&intc>;
 
-        mbox: mbox@1013f000 {
+        mbox: mbox@1013f800 {
             compatible = "linkedsemi,mbox";
-            reg = <0x1013f000 0x1000>;
+            reg = <0x1013f800 0x800>;
             interrupts = <26 3>;
             fifo-deepth = <128>;
             fifo-width = <4>;
