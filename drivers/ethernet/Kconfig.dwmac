@@ -7,7 +7,7 @@ menuconfig ETH_DWMAC
 	bool "Synopsys DesignWare MAC driver"
 	default y
 	depends on NET_BUF_FIXED_DATA_SIZE
-	depends on (SOC_SERIES_STM32H7X && !ETH_STM32_HAL) || MMU
+	depends on (SOC_SERIES_STM32H7X && !ETH_STM32_HAL) || MMU || SOC_LSQSH
 	depends on DT_HAS_SNPS_DESIGNWARE_ETHERNET_ENABLED
 	help
 	  This is a driver for the Synopsys DesignWare MAC, also referred to
@@ -36,6 +36,11 @@ config ETH_DWMAC_STM32H7X
 config ETH_DWMAC_MMU
 	bool
 	depends on MMU
+	default y
+
+config ETH_DWMAC_LINKEDSEMI
+	bool
+	depends on SOC_LSQSH
 	default y
 
 config DWMAC_NB_TX_DESCS

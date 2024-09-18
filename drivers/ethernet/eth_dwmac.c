@@ -162,7 +162,11 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 			k_sem_give(&p->free_tx_descs);
 			goto abort;
 		}
+#if defined(CONFIG_SOC_LSQSH)
+		sys_cache_data_flush_all();
+#else
 		sys_cache_data_flush_range(pinned->data, pinned->len);
+#endif
 		p->tx_frags[d_idx] = pinned;
 		LOG_DBG("d[%d]: frag %p pinned %p len %d", d_idx,
 			frag->data, pinned->data, pinned->len);
@@ -188,8 +192,12 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 		frag = frag->frags;
 	} while (frag);
 
+#if defined(CONFIG_SOC_LSQSH)
+	sys_cache_data_flush_all();
+#else
 	/* make sure all the above made it to memory */
 	barrier_dmem_fence_full();
+#endif
 
 	/* update the descriptor index head */
 	p->tx_desc_head = d_idx;
@@ -368,7 +376,11 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 			}
 			LOG_DBG("new frag[%d] at %p", d_idx, frag->data);
 			__ASSERT(frag->size == RX_FRAG_SIZE, "");
+#if defined(CONFIG_SOC_LSQSH)
+			sys_cache_data_invd_all();
+#else
 			sys_cache_data_invd_range(frag->data, frag->size);
+#endif
 			p->rx_frags[d_idx] = frag;
 		} else {
 			LOG_DBG("reusing frag[%d] at %p", d_idx, frag->data);
@@ -379,9 +391,12 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 		d->des1 = phys_hi32(frag->data);
 		d->des2 = 0;
 		d->des3 = RDES3_BUF1V | RDES3_IOC | RDES3_OWN;
-
+#if defined(CONFIG_SOC_LSQSH)
+		sys_cache_data_flush_all();
+#else
 		/* commit the above to memory */
 		barrier_dmem_fence_full();
+#endif
 
 		/* advance to the next descriptor */
 		p->rx_desc_head = INC_WRAP(d_idx, NB_RX_DESCS);

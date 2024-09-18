@@ -79,6 +79,14 @@ static int lsqsh_init(void)
 #endif
 
 #if !defined(CONFIG_PINCTRL)
+    io_cfg_input(PT01);
+    io_cfg_input(PT08);
+    io_cfg_input(PT09);
+    io_cfg_input(PT10);
+    io_cfg_input(PT11);
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x58) = 0x206C80;
+
     pinmux_dwuart1_init(PC03, PC04);
     pinmux_dwuart2_init(PD06, PD04);
     pinmux_iic2_init(PB13, PB14);

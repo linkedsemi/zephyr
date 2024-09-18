@@ -357,6 +357,14 @@
             reg-shift = <2>;
             status = "disabled";
         };
+
+        mac: ethernet@4001c000 {
+            compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+            reg = <0x4001c000 0x2000>;
+            interrupts = <40 3>;
+            descs = <0x1013f000>;
+            status = "disabled";
+        };
     };
 
     power-states {

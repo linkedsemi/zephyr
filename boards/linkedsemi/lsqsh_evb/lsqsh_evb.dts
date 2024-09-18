@@ -108,3 +108,7 @@
 &smbus7 {
     status = "okay";
 };
+
+&mac {
+    status = "okay";
+};

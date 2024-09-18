@@ -1,0 +1,17 @@
+# Copyright (c) 2020, Linaro Limited
+# SPDX-License-Identifier: Apache-2.0
+
+description: LINKEDSEMI Ethernet
+
+compatible: "linkedsemi,ethernet"
+
+include: [ethernet-controller.yaml]
+
+properties:
+  reg:
+    required: true
+  interrupts:
+    required: true
+  descs:
+    type: int
+    required: true
