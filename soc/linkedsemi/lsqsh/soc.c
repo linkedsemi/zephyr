@@ -94,7 +94,7 @@ static int lsqsh_init(void)
 
     /* UART */
     pinmux_dwuart1_init(PC03, PC04);
-    pinmux_dwuart2_init(PD06, PD04);
+    pinmux_dwuart2_init(PD09, PD10);
 
     /* I2C */
     pinmux_iic2_init(PB13, PB14);
