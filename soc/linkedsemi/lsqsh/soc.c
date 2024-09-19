@@ -79,6 +79,7 @@ static int lsqsh_init(void)
 #endif
 
 #if !defined(CONFIG_PINCTRL)
+    /* RMII */
     io_cfg_input(PT01);
     io_cfg_input(PT08);
     io_cfg_input(PT09);
@@ -87,8 +88,15 @@ static int lsqsh_init(void)
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x58) = 0x206C80;
 
+    /* PECI */
+    io_cfg_input(PK00);
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xb4) = 0x1;
+
+    /* UART */
     pinmux_dwuart1_init(PC03, PC04);
     pinmux_dwuart2_init(PD06, PD04);
+
+    /* I2C */
     pinmux_iic2_init(PB13, PB14);
     pinmux_iic7_init(PG15, PG14);
 #endif

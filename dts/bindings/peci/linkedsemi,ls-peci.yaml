@@ -5,11 +5,4 @@ description: LINKEDSEMI LS PECI
 
 compatible: "linkedsemi,ls-peci"
 
-include: [peci.yaml, pinctrl-device.yaml]
-
-properties:
-  pinctrl-0:
-    required: true
-
-  pinctrl-names:
-    required: true
+include: [peci.yaml]

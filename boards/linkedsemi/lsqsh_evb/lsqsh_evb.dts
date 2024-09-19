@@ -27,6 +27,7 @@
         testi2c2 = &i2c7;
         testeeprom1 = &eeprom2;
         testeeprom2 = &eeprom7;
+        peci-0 = &peci0;
     };
 
     soc {
@@ -110,5 +111,9 @@
 };
 
 &mac {
+    status = "okay";
+};
+
+&peci0 {
     status = "okay";
 };

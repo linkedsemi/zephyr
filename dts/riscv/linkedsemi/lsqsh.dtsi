@@ -365,6 +365,15 @@
             descs = <0x1013f000>;
             status = "disabled";
         };
+
+        peci0: peci@4008c400 {
+            compatible = "linkedsemi,ls-peci";
+            reg = <0x4008c400 0x400>;
+            #address-cells= <1>;
+            #size-cells = <0>;
+            interrupts = <132 3>;
+            status = "disabled";
+        };
     };
 
     power-states {
