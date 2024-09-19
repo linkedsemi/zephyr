@@ -187,7 +187,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     uint32_t rxbuf32[6] = {0};
     volatile uint8_t i = 0;
 
-    if(peci_tx_buf->len > PECI_NPCX_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_NPCX_MAX_RX_BUF_LEN)
+    if(peci_tx_buf->len > PECI_LS_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_LS_MAX_RX_BUF_LEN)
     {
        ret = -EINVAL;
        goto out;
