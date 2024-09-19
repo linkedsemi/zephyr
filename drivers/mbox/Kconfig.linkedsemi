@@ -4,5 +4,6 @@
 config MBOX_LINKEDSEMI
 	bool "MBOX LINKEDSEMI driver"
 	depends on DT_HAS_LINKEDSEMI_MBOX_ENABLED
+	default y
 	help
 	  MBOX Driver for LINKEDSEMI SOC
