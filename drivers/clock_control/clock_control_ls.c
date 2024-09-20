@@ -3,7 +3,6 @@
 #include <soc.h>
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-#include <zephyr/dt-bindings/clock/ls101x_clock.h>
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_REGISTER(clock_control_ls, LOG_LEVEL_DBG);
