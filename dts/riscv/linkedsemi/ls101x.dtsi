@@ -59,10 +59,9 @@
 
         cctl: clock-controller@4008d000 {
             compatible = "linkedsemi,ls-cctl";
-            #clock-cells = <2>;
+            #clock-cells = <3>;
             reg = <0x4008d000 0x400
                    0x40009000 0x1000>;
-            reg-names = "sysc_per", "sysc_cpu";
         };
 
         pinctrl: pin-controller@4000a060 {
@@ -244,7 +243,7 @@
 			#address-cells= <1>;
 			#size-cells = <0>;
 			interrupts = <75 3>;
-            clocks = <&cctl LS_PD_PER_CLKG3 SYSC_PER_CLKG_SET_PECI_POS>;
+            clocks = <&cctl LS_CCTL_CLKG3 LS_CLKG_SET_PECI_POS LS_CLKG_CLR_PECI_POS>;
 			status = "disabled";
 		};
 

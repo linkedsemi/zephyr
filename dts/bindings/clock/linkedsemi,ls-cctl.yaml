@@ -12,5 +12,6 @@ properties:
     required: true
 
 clock-cells:
-  - offest
-  - bit
+  - cctl_base_addr
+  - set_bit
+  - clr_bit

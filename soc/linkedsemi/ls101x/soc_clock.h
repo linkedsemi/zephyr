@@ -20,16 +20,18 @@ extern "C" {
 #define LS_CLK_CTRL_NODE   DT_NODELABEL(cctl)
 
 struct ls_clk_cfg {
-	uint16_t offest:5;
-	uint16_t bit:5;
+	uint32_t cctl_base_addr;
+	uint16_t set_bit:5;
+	uint16_t clr_bit:5;
 };
 
 #define LS_DT_CLK_CFG_ITEM(inst)                                             \
 	{                                                                      \
-	  .offest = DT_PHA(DT_DRV_INST(inst), clocks, offest),                      \
-	  .bit  = DT_PHA(DT_DRV_INST(inst), clocks, bit),                      \
+	  .cctl_base_addr = DT_PHA(DT_DRV_INST(inst), clocks, cctl_base_addr),         \
+	  .set_bit  = DT_PHA(DT_DRV_INST(inst), clocks, set_bit),                      \
+	  .clr_bit  = DT_PHA(DT_DRV_INST(inst), clocks, clr_bit),                      \
 	}
-
+	
 #ifdef __cplusplus
 }
 #endif
