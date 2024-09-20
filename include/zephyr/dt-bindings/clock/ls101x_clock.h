@@ -1,5 +1,5 @@
 
-#define    LS_CCTL_CLCK0     0x4008d000
+#define    LS_CCTL_CLKG0     0x4008d000
 #define    LS_CCTL_CLKG1     0x4008d004
 #define    LS_CCTL_CLKG2     0x4008d008
 #define    LS_CCTL_CLKG3     0x4008d00c

@@ -31,8 +31,6 @@
 
     #define PECI_PRE_DIV_VAL      5
 
-    #define PECI_DAT_LEN_VAL      6
-
     #define PECI_A_BIT_CYC_VAL    11
     #define PECI_A_TGT_IDX0_VAL   3
     #define PECI_M_TGT_IDX0_VAL   3
@@ -46,7 +44,7 @@ LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
 
 const uint8_t BitReverseTable256[] =
 {
-    0X00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0,
+    0x00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0,
     0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98, 0x58, 0xD8, 0x38, 0xB8, 0x78, 0xF8,
     0x04, 0x84, 0x44, 0xC4, 0x24, 0xA4, 0x64, 0xE4, 0x14, 0x94, 0x54, 0xD4, 0x34, 0xB4, 0x74, 0xF4,
     0x0C, 0x8C, 0x4C, 0xCC, 0x2C, 0xAC, 0x6C, 0xEC, 0x1C, 0x9C, 0x5C, 0xDC, 0x3C, 0xBC, 0x7C, 0xFC,
@@ -80,6 +78,21 @@ struct peci_ls_data {
 	struct k_sem trans_sync_sem;
 	struct k_sem lock;
 };
+
+uint8_t crc8(const uint8_t *data, size_t length) {
+    uint8_t crc = 0x00;
+    for (size_t i = 0; i < length; i++) {
+        crc ^= data[i];
+        for (uint8_t j = 0; j < 8; j++) {
+            if (crc & 0x80) {
+                crc = (crc << 1) ^ 0x07;
+            } else {
+                crc <<= 1;
+            }
+        }
+    }
+    return crc; 
+}
 
 static void peci_core_reg_print(const struct device *dev)
 {
@@ -156,9 +169,9 @@ static int peci_ls_init(const struct device *dev)
 	}
 #endif
 
-    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL) | FIELD_BUILD(PECI_DAT_LEN, PECI_DAT_LEN_VAL);
+    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL);
 
-	k_sem_init(&data->trans_sync_sem, 0, 1);
+	k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->lock, 1, 1);
     config->irq_config_func(dev);
     return 0;
@@ -225,6 +238,8 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     uint32_t txbuf32[6] = {0};
     uint32_t rxbuf32[6] = {0};
     volatile uint8_t i = 0;
+    uint8_t crc_data[24] = {0};
+    uint8_t *crc_in = NULL;
 
     if(peci_tx_buf->len > PECI_LS_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_LS_MAX_RX_BUF_LEN)
     {
@@ -233,6 +248,13 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     }
 
     k_sem_take(&data->lock, K_FOREVER);
+
+    MODIFY_REG( reg->PECI_CTRL, PECI_DAT_LEN_MASK, peci_tx_buf->len+4 << PECI_DAT_LEN_POS);
+
+    crc_data[0] = msg->addr;
+    crc_data[1] = peci_tx_buf->len;
+    crc_data[2] = peci_rx_buf->len;
+    crc_data[3] = msg->cmd_code;
 
     txbuf8[0] = BitReverseTable256[msg->addr];
     txbuf8[1] = BitReverseTable256[peci_tx_buf->len];
@@ -243,8 +265,19 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     {
         for(i = 0; i < peci_tx_buf->len-1; i++)
         {
+           crc_data[i+4] = peci_tx_buf->buf[i];
            txbuf8[i+4] = BitReverseTable256[peci_tx_buf->buf[i]];
         }
+    }
+    crc_in = crc_data;
+    uint8_t crc_result = crc8(crc_in, peci_tx_buf->len + 3);
+
+    if(peci_tx_buf->len > 1)
+    {
+        txbuf8[i+4] = BitReverseTable256[crc_result];
+    }
+    else{
+        txbuf8[4] = BitReverseTable256[crc_result];
     }
 
     memcpy(txbuf32, txbuf8, 24);
