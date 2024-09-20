@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <soc.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/peci.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
@@ -18,7 +19,9 @@
 #include <zephyr/irq.h>
 
 #include <reg_peci_type.h>
+#include <ls_msp_peci.h>
 #include <field_manipulate.h>
+#include <soc_clock.h>
 
 #if defined (CONFIG_SOC_LS1010)
     #include <ls_msp_peci.h>
@@ -70,6 +73,7 @@ struct peci_ls_config {
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
 #endif
+    struct ls_clk_cfg clk_cfg;
 };
 
 struct peci_ls_data {
@@ -125,12 +129,24 @@ void ls_peci_isr(void *arg)
 
 static int peci_ls_init(const struct device *dev)
 {
+    const struct device *const clk_dev = DEVICE_DT_GET(LS_CLK_CTRL_NODE);
     const struct peci_ls_config *const config = dev->config;
     struct peci_ls_data *const data = dev->data;
     struct reg_peci_t *const reg = config->reg;
 
 #if defined(CONFIG_PINCTRL)
     int ret;
+
+	if (!device_is_ready(clk_dev)) {
+        LOG_DBG("%s device not ready", clk_dev->name);
+		return -ENODEV;
+	}
+
+    ret = clock_control_on(clk_dev, (clock_control_subsys_t)&config->clk_cfg);
+	if (ret < 0) {
+		LOG_ERR("Turn on PECI clock fail %d", ret);
+		return ret;
+	}
 
     ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
 
@@ -292,6 +308,7 @@ static const struct peci_driver_api peci_ls_driver_api = {
         .irq_num = DT_INST_IRQN(index),                         \
         .irq_config_func = peci_ls_irq_config_func_##index,      \
         .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),          \
+        .clk_cfg = LS_DT_CLK_CFG_ITEM(index),                   \
     };                                                          \
                                                                 \
     static struct peci_ls_data peci_ls_dev_data_##index = {     \
@@ -322,6 +339,7 @@ static const struct peci_driver_api peci_ls_driver_api = {
         .reg = (struct reg_peci_t *)DT_INST_REG_ADDR(index),   \
         .irq_num = DT_INST_IRQN(index),                         \
         .irq_config_func = peci_ls_irq_config_func_##index,      \
+        .clk_cfg = LS_DT_CLK_CFG_ITEM(index),                   \
     };                                                          \
                                                                 \
     static struct peci_ls_data peci_ls_dev_data_##index = {     \

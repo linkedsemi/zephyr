@@ -1,0 +1,16 @@
+# Copyright (c) 2024 LINKEDSEMI Corporation.
+# SPDX-License-Identifier: Apache-2.0
+
+description: LINKEDSEMI LS Clock Control
+
+compatible: "linkedsemi,ls-cctl"
+
+include: [clock-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+
+clock-cells:
+  - offest
+  - bit
