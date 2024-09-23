@@ -30,22 +30,6 @@ static void cpu_sleep_mode_config(uint8_t deep)
 void systick_start(void){};
 void sw_timer_module_init(void){};
 
-void dwuart_init()
-{
-	if (DT_PROP(DT_NODELABEL(dwuart1), status)) {
-
-		SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_CLR_DWUART1_N_MASK;
-		SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_SET_DWUART1_N_MASK;
-		SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_SET_DWUART1_MASK;
-	}
-
-	if (DT_PROP(DT_NODELABEL(dwuart2), status)) {
-		SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_CLR_DWUART2_N_MASK;
-		SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_SET_DWUART2_N_MASK;
-		SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_SET_DWUART2_MASK;
-	}
-}
-
 void peci_init()
 {
     REG_FIELD_WR(V33_RG->TRIM0, V33_RG_LDO_PECI_VSEL, PECI_LDO_VOLT_1100);
@@ -55,18 +39,6 @@ void peci_init()
 
 static void driver_init(void)
 {
-    SYSC_PER->PD_PER_CLKG0 = SYSC_PER_CLKG_SET_I2C1_MASK;
-    SYSC_PER->PD_PER_CLKG0 = SYSC_PER_CLKG_SET_I2C2_MASK;
-    SYSC_PER->PD_PER_CLKG0 = SYSC_PER_CLKG_SET_I2C3_MASK;
-
-#if CONFIG_SPI == 1
-	SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_CLR_SPI1_MASK;
-	SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_CLR_SPI1_N_MASK;
-	SYSC_PER->PD_PER_SRST1 = SYSC_PER_SRST_SET_SPI1_N_MASK;
-	SYSC_PER->PD_PER_CLKG1 = SYSC_PER_CLKG_SET_SPI1_MASK;
-#endif
-    dwuart_init();
-    
     peci_init();
 }
 

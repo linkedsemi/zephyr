@@ -33,6 +33,8 @@
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/irq.h>
+#include <zephyr/drivers/clock_control.h>
+#include <soc_clock.h>
 
 #if defined(CONFIG_PINCTRL)
 #include <zephyr/drivers/pinctrl.h>
@@ -332,6 +334,7 @@ struct uart_ns16550_device_config {
 	uint32_t sys_clk_freq;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
+	struct ls_clk_cfg clk_cfg;
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
 	uart_irq_config_func_t	irq_config_func;
 #endif
@@ -782,9 +785,18 @@ static int uart_ns16550_init(const struct device *dev)
 {
 	struct uart_ns16550_dev_data *data = dev->data;
 	const struct uart_ns16550_device_config *dev_cfg = dev->config;
+	const struct device *const clk_dev = DEVICE_DT_GET(LS_CLK_CTRL_NODE);
 	int ret;
 
 	ARG_UNUSED(dev_cfg);
+	
+	if (!device_is_ready(clk_dev))
+	{
+		LOG_DBG("%s device not ready", clk_dev->name);
+		return -ENODEV;
+	}
+
+    clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->clk_cfg);
 
 #if UART_NS16550_RESET_ENABLED
 	/* Assert the UART reset line if it is defined. */
@@ -1954,6 +1966,7 @@ static const struct uart_driver_api uart_ns16550_driver_api = {
 			   (.io_map = true,))                                        \
 		UART_NS16550_COMMON_DEV_CFG_INITIALIZER(n)                           \
 		DEV_CONFIG_IRQ_FUNC_INIT(n)                                          \
+		.clk_cfg = LS_DT_CLK_CFG_ITEM(n),  							\
 	};                                                                           \
 	static struct uart_ns16550_dev_data uart_ns16550_dev_data_##n = {            \
 		UART_NS16550_COMMON_DEV_DATA_INITIALIZER(n)                          \
@@ -1972,6 +1985,7 @@ static const struct uart_driver_api uart_ns16550_driver_api = {
 		UART_NS16550_COMMON_DEV_CFG_INITIALIZER(n)                           \
 		DEV_CONFIG_PCIE_IRQ_FUNC_INIT(n)                                     \
 		DEVICE_PCIE_INST_INIT(n, pcie)                                       \
+		.clk_cfg = LS_DT_CLK_CFG_ITEM(n),  					\
 	};                                                                           \
 	static struct uart_ns16550_dev_data uart_ns16550_dev_data_##n = {            \
 		UART_NS16550_COMMON_DEV_DATA_INITIALIZER(n)                          \

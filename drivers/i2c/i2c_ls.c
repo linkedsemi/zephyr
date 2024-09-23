@@ -14,6 +14,9 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include "platform.h"
 #include "field_manipulate.h"
 #include "reg_i2c_type.h"
+#include <zephyr/drivers/clock_control.h>
+#include <soc_clock.h>
+
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
 #define MASTER_NACK_RECVIED BIT(0)
@@ -23,6 +26,7 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 struct i2c_ls_config{
 	irq_cfg_func_t irq_config_func;   //函数指针类型要重新定义
     reg_i2c_t *reg;    
+	struct ls_clk_cfg clk_cfg;
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
 #endif
@@ -357,6 +361,7 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 static int i2c_ls_init(const struct device *dev)
 {
 	const struct i2c_ls_config *cfg = dev->config;
+	const struct device *const clk_dev = DEVICE_DT_GET(LS_CLK_CTRL_NODE);
 #if defined(CONFIG_PINCTRL)
 	int ret;
 #endif
@@ -364,6 +369,15 @@ static int i2c_ls_init(const struct device *dev)
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->bus_mutex, 1, 1);
 	cfg->irq_config_func(dev);
+
+	if (!device_is_ready(clk_dev))
+	{
+		LOG_DBG("%s device not ready", clk_dev->name);
+		return -ENODEV;
+	}
+
+    clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
+	
 #if defined(CONFIG_PINCTRL)
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
@@ -444,6 +458,7 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 			.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
 			.irq_config_func = i2c_ls_irq_config_func_##index,\
 			.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),\
+			.clk_cfg = LS_DT_CLK_CFG_ITEM(index),    \
 		};\
 		static struct i2c_ls_data i2c_ls_dev_data_##index;\
 		I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
@@ -457,6 +472,7 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 		static const struct i2c_ls_config i2c_ls_cfg_##index = {\
 			.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
 			.irq_config_func = i2c_ls_irq_config_func_##index,\
+			.clk_cfg = LS_DT_CLK_CFG_ITEM(index),  \
 		};\
 		static struct i2c_ls_data i2c_ls_dev_data_##index;\
 		I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\

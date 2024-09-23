@@ -15,6 +15,7 @@
 #include <zephyr/drivers/spi.h>
 
 #include "spi_context.h"
+#include <soc_clock.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,6 +44,7 @@ struct spi_dw_config {
 	spi_dw_set_bit_t set_bit_func;
 	spi_dw_clear_bit_t clear_bit_func;
 	spi_dw_test_bit_t test_bit_func;
+	struct ls_clk_cfg clk_cfg;
 };
 
 struct spi_dw_data {
