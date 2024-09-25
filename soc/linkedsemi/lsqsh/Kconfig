@@ -1,4 +1,4 @@
-config SOC_LSQSH
+config SOC_SERIES_LSQSH
     select RISCV
   	# select XIP
     select TICKLESS_CAPABLE

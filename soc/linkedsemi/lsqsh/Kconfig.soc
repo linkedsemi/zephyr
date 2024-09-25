@@ -1,2 +1,13 @@
 config SOC_LSQSH
     bool
+    select SOC_SERIES_LSQSH
+
+config SOC_SERIES_LSQSH
+    bool
+    select SOC_FAMILY_LS_MCU
+
+config SOC_SERIES
+    default "lsqsh" if SOC_SERIES_LSQSH
+
+config SOC
+    default "lsqsh" if SOC_LSQSH
