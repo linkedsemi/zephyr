@@ -2,5 +2,4 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config BOARD_LE501X_EVB
-	bool "LE501X EVB"
-	depends on SOC_LE5010
+	select SOC_LE5010

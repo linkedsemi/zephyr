@@ -1,7 +1,4 @@
-if SOC_LS1010
-
-config SOC
-    default "ls101x"
+if SOC_SERIES_LS101X
 
 config RISCV_HAS_PLIC
 	default n

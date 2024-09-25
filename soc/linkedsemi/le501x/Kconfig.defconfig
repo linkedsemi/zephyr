@@ -1,0 +1,6 @@
+if SOC_SERIES_LE501X
+
+config NUM_IRQS
+    default 32
+
+endif

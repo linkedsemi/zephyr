@@ -1,0 +1,8 @@
+
+config SOC_FAMILY_LS_MCU
+	bool
+
+config SOC_FAMILY
+	default "ls_mcu" if SOC_FAMILY_LS_MCU
+
+rsource "*/Kconfig.soc"

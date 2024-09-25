@@ -1,8 +1,0 @@
-if SOC_SERIES_LE501X
-
-source "soc/arm/linkedsemi_arm/le501x/Kconfig.defconfig.le5010"
-
-config SOC_SERIES
-    default "le501x"
-
-endif

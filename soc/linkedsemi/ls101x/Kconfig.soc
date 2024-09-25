@@ -2,3 +2,14 @@
 
 config SOC_LS1010
     bool
+    select SOC_SERIES_LS101X
+
+config SOC_SERIES_LS101X
+    bool
+    select SOC_FAMILY_LS_MCU
+
+config SOC_SERIES
+    default "ls101x" if SOC_SERIES_LS101X
+
+config SOC
+    default "ls1010" if SOC_LS1010

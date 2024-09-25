@@ -1,4 +1,4 @@
-config SOC_LS1010
+config SOC_SERIES_LS101X
     select RISCV
   	select XIP
     select TICKLESS_CAPABLE

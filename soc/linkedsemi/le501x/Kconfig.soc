@@ -1,11 +1,16 @@
 
-choice
-    prompt "Linkedsemi LE501X MCU Selection"
-    depends on SOC_SERIES_LE501X
-
 config SOC_LE5010
-    bool "LE5010"
+    bool
+    select SOC_SERIES_LE501X
 
-endchoice
+config SOC_SERIES_LE501X
+    bool
+    select SOC_FAMILY_LS_MCU
+
+config SOC_SERIES
+    default "le501x" if SOC_SERIES_LE501X
+
+config SOC
+    default "le5010" if SOC_LE5010
 
     

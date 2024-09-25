@@ -1,10 +1,9 @@
 config SOC_SERIES_LE501X
-    bool "Linkedsemi LE501X series Cortex-M0 MCU"
+    bool
     select ARM
     select CPU_CORTEX_M0
   	select XIP
     select TICKLESS_CAPABLE
-    select SOC_FAMILY_LINKEDSEMI_ARM
     select BUILD_OUTPUT_HEX
     select HAS_PM
     select HAS_SEGGER_RTT 

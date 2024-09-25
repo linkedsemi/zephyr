@@ -1,0 +1,7 @@
+
+
+if SOC_FAMILY_LS_MCU
+
+rsource "*/Kconfig.defconfig"
+
+endif 

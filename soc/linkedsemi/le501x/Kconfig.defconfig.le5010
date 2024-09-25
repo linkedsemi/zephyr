@@ -1,9 +1,0 @@
-if SOC_LE5010
-
-config SOC
-    default "LE5010"
-
-config NUM_IRQS
-    default 32
-
-endif

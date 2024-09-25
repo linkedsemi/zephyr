@@ -1,5 +1,5 @@
 board:
-  name: ls101x_evb
+  name: le501x_evb
   vendor: linkedsemi
   socs:
-  - name: ls1010
+  - name: le5010

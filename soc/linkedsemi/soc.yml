@@ -1,0 +1,15 @@
+family:
+- name: ls_mcu
+  series:
+  - name: le501x
+    socs:
+    - name: le5010
+  - name: ls101x
+    socs:
+    - name: ls1010
+  - name: lsqsh
+    socs:
+    - name: lsqsh
+      cpuclusters:
+      - name: seccpu
+      - name: appcpu
