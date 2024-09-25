@@ -150,14 +150,14 @@ static int peci_ls_init(const struct device *dev)
     const struct peci_ls_config *const config = dev->config;
     struct peci_ls_data *const data = dev->data;
     struct reg_peci_t *const reg = config->reg;
+
+#if defined(CONFIG_CLOCK_CONTROL)
     const struct device *clk_dev = config->cctl_dev;
     if (!device_is_ready(clk_dev)) {
 	    LOG_DBG("%s device not ready", clk_dev->name);
 	    return -ENODEV;
     }
-
-#if defined(CONFIG_CLOCK_CONTROL)
-        clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
+    clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
 #endif
 
 #if defined(CONFIG_PINCTRL)

@@ -173,6 +173,7 @@
             clock-frequency = <144000000>;
             // label = "DWUART1";
             interrupts = <54 3> ;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_DWUART1_POS LS_CLKG_CLR_DWUART1_POS>;
 			reg-shift = <2>;
         };
         
@@ -183,6 +184,7 @@
             clock-frequency = <144000000>;
             // label = "DWUART2";
             interrupts = <55 3> ;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_DWUART2_POS LS_CLKG_CLR_DWUART2_POS>;
             reg-shift = <2>;
         };
 
@@ -198,6 +200,7 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087000 0x400>;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_SPI1_POS LS_CLKG_CLR_SPI1_POS>;
 			fifo-depth = <4>;
 			interrupts = <56 3>;
 			clock-frequency = <144000000>;
@@ -210,6 +213,7 @@
             #address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087400 0x400>;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_SPI2_POS LS_CLKG_CLR_SPI2_POS>;
 			interrupts = <57 3>;
             clock-frequency = <144000000>;
 			status = "disabled";
@@ -221,6 +225,7 @@
             #address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087800 0x400>;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_SPI3_POS LS_CLKG_CLR_SPI3_POS>;
 			interrupts = <58 3>;
             clock-frequency = <144000000>;
 			status = "disabled";
@@ -232,6 +237,7 @@
             #address-cells = <1>;
 			#size-cells = <0>;
             interrupts = <45 3>;
+            clocks = <&per_cctl LS_CCTL_CLKG0 LS_CLKG_SET_I2C1_POS LS_CLKG_CLR_I2C1_POS>;
             status = "disabled";
         };
 
@@ -241,6 +247,7 @@
             #address-cells = <1>;
 			#size-cells = <0>;
             interrupts = <46 3>;
+            clocks = <&per_cctl LS_CCTL_CLKG0 LS_CLKG_SET_I2C2_POS LS_CLKG_CLR_I2C2_POS>;
             status = "disabled";
         };
 
