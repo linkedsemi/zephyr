@@ -1,0 +1,29 @@
+# Copyright (c) 2024 Alibaba
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_ZEPHYR_SECURE_MOC30
+
+config BOARD
+	default "zephyr_secure_moc30"
+
+config FLASH_LOAD_OFFSET
+	default 0x0
+
+config HEAP_MEM_POOL_SIZE
+	default 4096
+
+if SPI
+
+config SPI_DW
+	default y
+
+endif # SPI
+
+if SPI_DW
+
+config SPI_DW_ACCESS_WORD_ONLY
+	default y
+
+endif # SPI_DW
+
+endif

@@ -1,0 +1,14 @@
+# Copyright (c) 2024, Alibaba
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: zephyr_bmc_moc30
+name: lsqsh
+type: mcu
+arch: riscv32
+ram: 512
+flash: 0
+toolchain:
+  - cross-compile
+  - zephyr
+supported:
+  - uart
