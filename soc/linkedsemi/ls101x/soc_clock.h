@@ -16,6 +16,8 @@
 extern "C" {
 #endif
 
+#define DT_HAS_CLOCKS(inst)    DT_NODE_HAS_PROP(DT_DRV_INST(inst), clocks)
+
 struct ls_clk_cfg {
 	const struct device *cctl_dev;
 	uint16_t cctl_addr_offest:5;

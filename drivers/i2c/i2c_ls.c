@@ -14,10 +14,8 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include "platform.h"
 #include "field_manipulate.h"
 #include "reg_i2c_type.h"
-#if defined(CONFIG_CLOCK_CONTROL)
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-#endif
 
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
@@ -31,9 +29,7 @@ struct i2c_ls_config{
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
 #endif
-#if defined(CONFIG_CLOCK_CONTROL)
     struct ls_clk_cfg cctl_cfg;
-#endif
 };
 
 struct i2c_ls_data {
@@ -373,15 +369,15 @@ static int i2c_ls_init(const struct device *dev)
 	k_sem_init(&data->bus_mutex, 1, 1);
 	cfg->irq_config_func(dev);
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    const struct device *clk_dev = cfg->cctl_cfg.cctl_dev;
-    if (!device_is_ready(clk_dev)) {
-	    LOG_DBG("%s device not ready", clk_dev->name);
-	    return -ENODEV;
-    }
-    clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
-#endif
-	
+	if (cfg->cctl_cfg.cctl_dev) {
+		const struct device *clk_dev = cfg->cctl_cfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
+	}
+
 #if defined(CONFIG_PINCTRL)
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
@@ -461,7 +457,7 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 		.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
 		.irq_config_func = i2c_ls_irq_config_func_##index,\
     	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
-    	IF_ENABLED(CONFIG_CLOCK_CONTROL, (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
+    	IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
 	};\
 	static struct i2c_ls_data i2c_ls_dev_data_##index;\
 	I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
