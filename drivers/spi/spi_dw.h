@@ -15,7 +15,9 @@
 #include <zephyr/drivers/spi.h>
 
 #include "spi_context.h"
+#if defined(CONFIG_CLOCK_CONTROL)
 #include <soc_clock.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -46,7 +48,6 @@ struct spi_dw_config {
 	spi_dw_test_bit_t test_bit_func;
 #if defined(CONFIG_CLOCK_CONTROL)
     struct ls_clk_cfg cctl_cfg;
-    const struct device *cctl_dev;
 #endif
 };
 
