@@ -76,7 +76,6 @@ struct peci_ls_config {
 #if defined(CONFIG_CLOCK_CONTROL)
     struct ls_clk_cfg cctl_cfg;
     const struct device *cctl_dev;
-    uint8_t dt_has_clocks;
 #endif
 };
 
@@ -156,10 +155,10 @@ static int peci_ls_init(const struct device *dev)
 	    LOG_DBG("%s device not ready", clk_dev->name);
 	    return -ENODEV;
     }
-    if(config->dt_has_clocks)
-    {
+
+#if defined(CONFIG_CLOCK_CONTROL)
         clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
-    }
+#endif
 
 #if defined(CONFIG_PINCTRL)
     int ret;
@@ -331,13 +330,10 @@ static const struct peci_driver_api peci_ls_driver_api = {
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
-#define CCTL_DEVEIC(index) .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_DRV_INST(index),clocks,0))
-#define CCTL_CONFIG(index) .cctl_cfg = LS_DT_CLK_CFG_ITEM(index)
-#define DT_HAS_CLOCKS(index) .dt_has_clocks = DT_NODE_HAS_PROP(DT_DRV_INST(index), clocks)
+#define CCTL_CONFIG(index) .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_DRV_INST(index),clocks,0)), \
+                           .cctl_cfg = LS_DT_CLK_CFG_ITEM(index)
 #else
-#define PINCTRL_CFG(index)
 #define CCTL_CONFIG(index)
-#define DT_HAS_CLOCKS(index) 
 #endif
 
 #define LS_PECI_IRQ_HANDLER(index)                          \
@@ -359,8 +355,6 @@ static const struct peci_ls_config peci_ls_cfg_##index = {  \
     .irq_num = DT_INST_IRQN(index),                         \
     .irq_config_func = peci_ls_irq_config_func_##index,      \
     PINCTRL_CFG(index),                                     \
-    DT_HAS_CLOCKS(index),                                   \
-    CCTL_DEVEIC(index),                                     \
     CCTL_CONFIG(index),                                     \
 };                                                          \
                                                             \
