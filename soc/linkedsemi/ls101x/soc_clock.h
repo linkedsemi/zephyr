@@ -16,18 +16,15 @@
 extern "C" {
 #endif
 
-/* Common clock control device node for all LS series */
-#define LS_CLK_CTRL_NODE   DT_NODELABEL(cctl)
-
 struct ls_clk_cfg {
-	uint32_t cctl_base_addr;
+	uint16_t cctl_addr_offest:5;
 	uint16_t set_bit:5;
 	uint16_t clr_bit:5;
 };
 
 #define LS_DT_CLK_CFG_ITEM(inst)                                             \
 	{                                                                      \
-	  .cctl_base_addr = DT_PHA(DT_DRV_INST(inst), clocks, cctl_base_addr),         \
+	  .cctl_addr_offest = DT_PHA(DT_DRV_INST(inst), clocks, cctl_addr_offest),         \
 	  .set_bit  = DT_PHA(DT_DRV_INST(inst), clocks, set_bit),                      \
 	  .clr_bit  = DT_PHA(DT_DRV_INST(inst), clocks, clr_bit),                      \
 	}

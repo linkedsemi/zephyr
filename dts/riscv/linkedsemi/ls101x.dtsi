@@ -57,11 +57,18 @@
 			interrupts = <7 0>;
 		};
 
-        cctl: clock-controller@4008d000 {
+        per_cctl: clock-controller@4008d000 {
             compatible = "linkedsemi,ls-cctl";
             #clock-cells = <3>;
-            reg = <0x4008d000 0x400
-                   0x40009000 0x1000>;
+            reg = <0x4008d000 0x400>;
+            status = "okay";
+        };
+
+        cpu_cctl: clock-controller@40009000 {
+            compatible = "linkedsemi,ls-cctl";
+            #clock-cells = <3>;
+            reg = <0x40009000 0x1000>;
+            status = "okay";
         };
 
         pinctrl: pin-controller@4000a060 {
@@ -166,7 +173,6 @@
             clock-frequency = <144000000>;
             // label = "DWUART1";
             interrupts = <54 3> ;
-            clocks = <&cctl LS_CCTL_CLKG1 LS_CLKG_SET_DWUART1_POS LS_CLKG_CLR_DWUART1_POS>;
 			reg-shift = <2>;
         };
         
@@ -177,7 +183,6 @@
             clock-frequency = <144000000>;
             // label = "DWUART2";
             interrupts = <55 3> ;
-            clocks = <&cctl LS_CCTL_CLKG1 LS_CLKG_SET_DWUART2_POS LS_CLKG_CLR_DWUART2_POS>;
             reg-shift = <2>;
         };
 
@@ -193,7 +198,6 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087000 0x400>;
-            clocks = <&cctl LS_CCTL_CLKG1 LS_CLKG_SET_SPI1_POS LS_CLKG_CLR_SPI1_POS>;
 			fifo-depth = <4>;
 			interrupts = <56 3>;
 			clock-frequency = <144000000>;
@@ -206,7 +210,6 @@
             #address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087400 0x400>;
-            clocks = <&cctl LS_CCTL_CLKG1 LS_CLKG_SET_SPI2_POS LS_CLKG_CLR_SPI2_POS>;
 			interrupts = <57 3>;
             clock-frequency = <144000000>;
 			status = "disabled";
@@ -218,7 +221,6 @@
             #address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40087800 0x400>;
-            clocks = <&cctl LS_CCTL_CLKG1 LS_CLKG_SET_SPI3_POS LS_CLKG_CLR_SPI3_POS>;
 			interrupts = <58 3>;
             clock-frequency = <144000000>;
 			status = "disabled";
@@ -230,7 +232,6 @@
             #address-cells = <1>;
 			#size-cells = <0>;
             interrupts = <45 3>;
-            clocks = <&cctl LS_CCTL_CLKG0 LS_CLKG_SET_I2C1_POS LS_CLKG_CLR_I2C1_POS>;
             status = "disabled";
         };
 
@@ -240,7 +241,6 @@
             #address-cells = <1>;
 			#size-cells = <0>;
             interrupts = <46 3>;
-            clocks = <&cctl LS_CCTL_CLKG0 LS_CLKG_SET_I2C2_POS LS_CLKG_CLR_I2C2_POS>;
             status = "disabled";
         };
 
@@ -250,9 +250,10 @@
 			#address-cells= <1>;
 			#size-cells = <0>;
 			interrupts = <75 3>;
-            clocks = <&cctl LS_CCTL_CLKG3 LS_CLKG_SET_PECI_POS LS_CLKG_CLR_PECI_POS>;
+            clocks = <&per_cctl LS_CCTL_CLKG3 LS_CLKG_SET_PECI_POS LS_CLKG_CLR_PECI_POS>;
 			status = "disabled";
 		};
+
 
         adc1: adc@40089000 {
             compatible = "linkedsemi-adc";

@@ -1,9 +1,8 @@
-
-#define    LS_CCTL_CLKG0     0x4008d000
-#define    LS_CCTL_CLKG1     0x4008d004
-#define    LS_CCTL_CLKG2     0x4008d008
-#define    LS_CCTL_CLKG3     0x4008d00c
-#define    LS_CCTL_CLKG      0x40009010
+#define    LS_CCTL_CLKG0     0x0
+#define    LS_CCTL_CLKG1     0x4
+#define    LS_CCTL_CLKG2     0x8
+#define    LS_CCTL_CLKG3     0xc
+#define    LS_CCTL_CLKG      0x10
 
 #define    LS_CLKG_SET_BSTIM1_POS  0
 #define    LS_CLKG_CLR_BSTIM1_POS  1
