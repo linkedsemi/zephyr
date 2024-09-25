@@ -1,0 +1,12 @@
+if BOARD_LE501X_EVB
+
+config SPI_SNPS_DW
+    bool "synopsys designware spi driver"
+    depends on SPI
+
+if SPI_DW
+config SPI_DW_ACCESS_WORD_ONLY
+	default y
+endif # SPI_DW
+
+endif

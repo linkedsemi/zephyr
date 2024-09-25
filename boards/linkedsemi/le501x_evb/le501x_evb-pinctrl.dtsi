@@ -4,94 +4,120 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <linkedsemi/le501x.dtsi>
-#include <zephyr/dt-bindings/pinctrl/ls-pinctrl.h>
-
+ #include <linkedsemi/le501x.dtsi>
+ #include <zephyr/dt-bindings/pinctrl/ls-pinctrl.h>
+ 
 &pinctrl {
-	/* UART1 */
-	/omit-if-no-ref/uart1_tx_pb00: uart1_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 00, AF_UART1_TXD)>;
+    /* UART1 */
+    uart1_tx_pb00: uart1_tx_pb00 {
+        pinmux = <LS_PINMUX_SET('B', 0, AF_UART1_TXD)>;
         output-enable;
         output-high;
-
-	};
-	/omit-if-no-ref/uart1_rx_pb01: uart1_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 01, AF_UART1_RXD)>;
+    };
+    uart1_rx_pb01: uart1_rx_pb01 {
+        pinmux = <LS_PINMUX_SET('B', 1, AF_UART1_RXD)>;
         bias-pull-up;
-		input-enable;
-	};
-
-	/* UART2 */
-	/omit-if-no-ref/uart2_tx_pb00: uart2_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 00, AF_UART2_TXD)>;
+        input-enable;
+    };
+ 
+    /* UART2 */
+    uart2_tx_pb02: uart2_tx_pb02 {
+        pinmux = <LS_PINMUX_SET('B', 2, AF_UART2_TXD)>;
         output-enable;
         output-high;
-	};
-	/omit-if-no-ref/uart2_rx_pb01: uart2_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 01, AF_UART2_RXD)>;
+    };
+    uart2_rx_pb03: uart2_rx_pb03 {
+        pinmux = <LS_PINMUX_SET('B', 3, AF_UART2_RXD)>;
         bias-pull-up;
-		input-enable;
-	};
+        input-enable;
+    };
 
-	/* UART3 */
-	/omit-if-no-ref/uart3_tx_pb00: uart3_tx_pb00 {
-		pinmux = <LS_PINMUX_SET('B', 00, AF_UART3_TXD)>;
+    /* UART3 */
+    uart3_tx_pb04: uart3_tx_pb04 {
+        pinmux = <LS_PINMUX_SET('B', 4, AF_UART3_TXD)>;
         output-enable;
         output-high;
-	};
-	/omit-if-no-ref/uart3_rx_pb01: uart3_rx_pb01 {
-		pinmux = <LS_PINMUX_SET('B', 01, AF_UART3_RXD)>;
+    };
+    uart3_rx_pb05: uart3_rx_pb05 {
+        pinmux = <LS_PINMUX_SET('B', 5, AF_UART3_RXD)>;
         output-enable;
         output-high;
-	};
+    };
 
-	/* I2C1 */
-	/omit-if-no-ref/i2c1_scl_pa05: i2c1_scl_pa05 {
-		pinmux = <LS_PINMUX_SET('A', 05, AF_I2C1_SCL)>;
-		bias-pull-up;
-		input-enable;
-	};
-	/omit-if-no-ref/i2c1_sda_pa06: i2c1_sda_pa06 {
-		bias-pull-up;
-		pinmux = <LS_PINMUX_SET('A', 06, AF_I2C1_SDA)>;
-		input-enable;
-	};
+    /* I2C1 */
+    i2c1_scl_pa05: i2c1_scl_pa05 {
+        pinmux = <LS_PINMUX_SET('A', 5, AF_I2C1_SCL)>;
+        bias-pull-up;
+        input-enable;
+    };
+    i2c1_sda_pa06: i2c1_sda_pa06 {
+        bias-pull-up;
+        pinmux = <LS_PINMUX_SET('A', 6, AF_I2C1_SDA)>;
+        input-enable;
+    };
 
-	/* I2C2 */
-	/omit-if-no-ref/i2c2_scl_pa05: i2c2_scl_pa05 {
-		pinmux = <LS_PINMUX_SET('A', 05, AF_I2C2_SCL)>;
-		bias-pull-up;
-		input-enable;
-	};
-	/omit-if-no-ref/i2c2_sda_pa06: i2c2_sda_pa06 {
-		bias-pull-up;
-		pinmux = <LS_PINMUX_SET('A', 06, AF_I2C2_SDA)>;
-		input-enable;
-	};
+    /* I2C2 */
+    i2c2_scl_pa07: i2c2_scl_pa07 {
+        pinmux = <LS_PINMUX_SET('A', 7, AF_I2C2_SCL)>;
+        bias-pull-up;
+        input-enable;
+    };
+    i2c2_sda_pa08: i2c2_sda_pa08 {
+        bias-pull-up;
+        pinmux = <LS_PINMUX_SET('A', 8, AF_I2C2_SDA)>;
+        input-enable;
+    };
 
-	/* SPI2 */
-    /omit-if-no-ref/spi2_sck_pb12: spi2_sck_pb12 {
-		pinmux = <LS_PINMUX_SET('B', 12, AF_SPI2_SCK)>;
+    /* SPI1 */
+    spi1_sck_pa09: spi1_sck_pa09 {
+        pinmux = <LS_PINMUX_SET('A', 9, AF_SPI1_SCK)>;
         bias-pull-down;
-		output-enable;
+        output-enable;
         output-low;
-	};
+    };
 
-    /omit-if-no-ref/ spi2_nss_pb13: spi2_nss_pb13 {
-		pinmux = <LS_PINMUX_SET('B', 13, AF_SPI2_NSS)>;
-		bias-pull-up;
+    spi1_cs_pa10: spi1_cs_pa10 {
+        pinmux = <LS_PINMUX_SET('A', 10, AF_SPI1_NSS0)>;
+        bias-pull-up;
         output-enable;
         output-high;
-	};
+    };
 
-    /omit-if-no-ref/spi2_mosi_pb14: spi2_mosi_pb14 {
+    spi1_mosi_pa11: spi1_mosi_pa11 {
+        pinmux = <LS_PINMUX_SET('A', 11, AF_SPI1_DQ0)>;
+        output-enable;
+        output-high;
+    };
+
+    spi1_miso_pa12: spi1_miso_pa12 {
+        pinmux = <LS_PINMUX_SET('A', 12, AF_SPI1_DQ1)>;
+        input-enable;
+    };
+
+    /* SPI2 */
+    spi2_sck_pb12: spi2_sck_pb12 {
+        pinmux = <LS_PINMUX_SET('B', 12, AF_SPI2_SCK)>;
+        bias-pull-down;
+        output-enable;
+        output-low;
+    };
+
+    spi2_cs_pb13: spi2_cs_pb13 {
+        pinmux = <LS_PINMUX_SET('B', 13, AF_SPI2_NSS)>;
+        bias-pull-up;
+        output-enable;
+        output-high;
+    };
+
+    spi2_mosi_pb14: spi2_mosi_pb14 {
         pinmux = <LS_PINMUX_SET('B', 14, AF_SPI2_MOSI)>;
         output-enable;
         output-high;
     };
 
-    /omit-if-no-ref/ spi2_miso_pb15: spi2_miso_pb15 {
+    spi2_miso_pb15: spi2_miso_pb15 {
         pinmux = <LS_PINMUX_SET('B', 15, AF_SPI2_MISO)>;
         input-enable;
     };
 };
+ 
