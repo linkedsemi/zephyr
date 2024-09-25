@@ -412,7 +412,7 @@ static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 
 #define LS_UART_INIT(index)	\
 LS_UART_IRQ_HANDLER_DECL(index)	\
-PINCTRL_DT_INST_DEFINE(index);						\
+IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
 static UART_HandleTypeDef uart_handle_##index = {	\
 	.UARTX = (reg_uart_t *)DT_INST_REG_ADDR(index),	\
 	.Init.BaudRate = GET_UART_BAUDRATE(index),	\

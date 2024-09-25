@@ -451,7 +451,7 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 }
 
 #define LS_I2C_INIT(index)\
-	PINCTRL_DT_INST_DEFINE(index);\
+	IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
 	LS_I2C_IRQ_HANDLER(index)\
 	static const struct i2c_ls_config i2c_ls_cfg_##index = {\
 		.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\

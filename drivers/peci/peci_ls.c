@@ -328,7 +328,7 @@ static void peci_ls_irq_config_func_##index(const struct device *dev)   \
 }                                                           \
                                                             
 #define LS_PECI_INIT(index)                                 \
-    PINCTRL_DT_INST_DEFINE(index);                          \
+    IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
     LS_PECI_IRQ_HANDLER(index)                              \
                                                             \
 static const struct peci_ls_config peci_ls_cfg_##index = {  \
