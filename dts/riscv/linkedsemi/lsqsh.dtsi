@@ -64,6 +64,11 @@
             };
         };
 
+        pinctrl: pin-controller@4001f180 {
+            compatible = "linkedsemi,lsqsh-pinctrl";
+            reg = <0x4001f180 0x200>;
+        };
+
         mtimer: machine-timer@e0004000 {
             compatible = "linkedsemi,machine-timer";
             reg = <0xe0004000 0x8000>;
@@ -372,6 +377,13 @@
             #address-cells= <1>;
             #size-cells = <0>;
             interrupts = <132 3>;
+            status = "disabled";
+        };
+
+        sdhci: sdhci@40009000 {
+            compatible = "linkedsemi,sdhci";
+            reg = <0x40009000 0x1000>;
+            interrupts = <41 3>;
             status = "disabled";
         };
     };

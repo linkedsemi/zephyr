@@ -111,9 +111,17 @@
 };
 
 &mac {
+    pinctrl-0 = <&mdio_default_pt01
+                &rxc_default_pt08
+                &crsdv_default_pt09
+                &rxd0_default_pt10
+                &rxd1_default_pt11>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &peci0 {
+    pinctrl-0 = <&peci_default_pk00>;
+    pinctrl-names = "default";
     status = "okay";
 };
