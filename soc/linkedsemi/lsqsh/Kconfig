@@ -1,4 +1,4 @@
-config SOC_LSQSH
+config SOC_SERIES_LSQSH
     select RISCV
   	# select XIP
     select TICKLESS_CAPABLE
@@ -20,8 +20,7 @@ config SOC_LSQSH
     select RISCV_GP
     select RISCV_ALWAYS_SWITCH_THROUGH_ECALL
     select RISCV_SOC_INTERRUPT_INIT
-    # select RISCV_SOC_HAS_ISR_STACKING
-    select ARCH_HAS_NOCACHE_MEMORY_SUPPORT
+    select RISCV_SOC_CONTEXT_SAVE
     select CACHE
     select CPU_HAS_DCACHE
     select CPU_HAS_ICACHE

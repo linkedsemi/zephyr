@@ -14,10 +14,8 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include "platform.h"
 #include "field_manipulate.h"
 #include "reg_i2c_type.h"
-#if defined(CONFIG_CLOCK_CONTROL)
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-#endif
 
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
@@ -31,10 +29,7 @@ struct i2c_ls_config{
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
 #endif
-#if defined(CONFIG_CLOCK_CONTROL)
     struct ls_clk_cfg cctl_cfg;
-    const struct device *cctl_dev;
-#endif
 };
 
 struct i2c_ls_data {
@@ -374,15 +369,15 @@ static int i2c_ls_init(const struct device *dev)
 	k_sem_init(&data->bus_mutex, 1, 1);
 	cfg->irq_config_func(dev);
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    const struct device *clk_dev = cfg->cctl_dev;
-    if (!device_is_ready(clk_dev)) {
-	    LOG_DBG("%s device not ready", clk_dev->name);
-	    return -ENODEV;
-    }
-    clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
-#endif
-	
+	if (cfg->cctl_cfg.cctl_dev) {
+		const struct device *clk_dev = cfg->cctl_cfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
+	}
+
 #if defined(CONFIG_PINCTRL)
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
@@ -445,13 +440,6 @@ static const struct i2c_driver_api api_funcs = {
 #endif
 };
 
-#if defined(CONFIG_CLOCK_CONTROL)
-#define CCTL_CONFIG(index) .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_DRV_INST(index),clocks,0)), \
-                           .cctl_cfg = LS_DT_CLK_CFG_ITEM(index)
-#else
-#define CCTL_CONFIG(index)
-#endif
-
 #define LS_I2C_IRQ_HANDLER(index)					\
 static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 {									\
@@ -462,36 +450,19 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 	irq_enable(DT_INST_IRQN(index));			\
 }
 
-#if defined(CONFIG_PINCTRL)
-	#define LS_I2C_INIT(index)\
-		PINCTRL_DT_INST_DEFINE(index);\
-		LS_I2C_IRQ_HANDLER(index)\
-		static const struct i2c_ls_config i2c_ls_cfg_##index = {\
-			.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
-			.irq_config_func = i2c_ls_irq_config_func_##index,\
-			.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),\
-			CCTL_CONFIG(index),    						\
-		};\
-		static struct i2c_ls_data i2c_ls_dev_data_##index;\
-		I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
-					NULL, &i2c_ls_dev_data_##index,\
-					&i2c_ls_cfg_##index,\
-					POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,\
-					&api_funcs);
-#else
-	#define LS_I2C_INIT(index)\
-		LS_I2C_IRQ_HANDLER(index)\
-		static const struct i2c_ls_config i2c_ls_cfg_##index = {\
-			.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
-			.irq_config_func = i2c_ls_irq_config_func_##index,\
-			CCTL_CONFIG(index),  						\
-		};\
-		static struct i2c_ls_data i2c_ls_dev_data_##index;\
-		I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
-					NULL, &i2c_ls_dev_data_##index,\
-					&i2c_ls_cfg_##index,\
-					POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,\
-					&api_funcs);
-#endif
-
+#define LS_I2C_INIT(index)\
+	IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
+	LS_I2C_IRQ_HANDLER(index)\
+	static const struct i2c_ls_config i2c_ls_cfg_##index = {\
+		.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
+		.irq_config_func = i2c_ls_irq_config_func_##index,\
+    	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
+    	IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
+	};\
+	static struct i2c_ls_data i2c_ls_dev_data_##index;\
+	I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
+				NULL, &i2c_ls_dev_data_##index,\
+				&i2c_ls_cfg_##index,\
+				POST_KERNEL, CONFIG_I2C_INIT_PRIORITY,\
+				&api_funcs);
 DT_INST_FOREACH_STATUS_OKAY(LS_I2C_INIT)

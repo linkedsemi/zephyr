@@ -33,10 +33,8 @@
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/irq.h>
-#if defined(CONFIG_CLOCK_CONTROL)
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-#endif
 
 #if defined(CONFIG_PINCTRL)
 #include <zephyr/drivers/pinctrl.h>
@@ -336,10 +334,7 @@ struct uart_ns16550_device_config {
 	uint32_t sys_clk_freq;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
-#if defined(CONFIG_CLOCK_CONTROL)
     struct ls_clk_cfg cctl_cfg;
-    const struct device *cctl_dev;
-#endif
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
 	uart_irq_config_func_t	irq_config_func;
 #endif
@@ -793,15 +788,15 @@ static int uart_ns16550_init(const struct device *dev)
 	int ret;
 
 	ARG_UNUSED(dev_cfg);
-	
-#if defined(CONFIG_CLOCK_CONTROL)
-    const struct device *clk_dev = dev_cfg->cctl_dev;
-    if (!device_is_ready(clk_dev)) {
-	    LOG_DBG("%s device not ready", clk_dev->name);
-	    return -ENODEV;
-    }
-    clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->cctl_cfg);
-#endif
+
+	if (dev_cfg->cctl_cfg.cctl_dev) {
+		const struct device *clk_dev = dev_cfg->cctl_cfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->cctl_cfg);
+	}
 
 #if UART_NS16550_RESET_ENABLED
 	/* Assert the UART reset line if it is defined. */
@@ -1866,13 +1861,6 @@ static const struct uart_driver_api uart_ns16550_driver_api = {
 #define UART_NS16550_PCIE_IRQ_FUNC_DEFINE(n)
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
-#if defined(CONFIG_CLOCK_CONTROL)
-#define CCTL_CONFIG(n) .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_DRV_INST(n),clocks,0)), \
-                           .cctl_cfg = LS_DT_CLK_CFG_ITEM(n)
-#else
-#define CCTL_CONFIG(n)
-#endif
-
 #ifdef CONFIG_UART_ASYNC_API
 #define DMA_PARAMS(n)								\
 	.async.tx_dma_params = {						\
@@ -1978,7 +1966,7 @@ static const struct uart_driver_api uart_ns16550_driver_api = {
 			   (.io_map = true,))                                        \
 		UART_NS16550_COMMON_DEV_CFG_INITIALIZER(n)                           \
 		DEV_CONFIG_IRQ_FUNC_INIT(n)                                          \
-		CCTL_CONFIG(n),  							\
+		IF_ENABLED(DT_HAS_CLOCKS(n), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(n),))	 \
 	};                                                                           \
 	static struct uart_ns16550_dev_data uart_ns16550_dev_data_##n = {            \
 		UART_NS16550_COMMON_DEV_DATA_INITIALIZER(n)                          \
@@ -1997,7 +1985,7 @@ static const struct uart_driver_api uart_ns16550_driver_api = {
 		UART_NS16550_COMMON_DEV_CFG_INITIALIZER(n)                           \
 		DEV_CONFIG_PCIE_IRQ_FUNC_INIT(n)                                     \
 		DEVICE_PCIE_INST_INIT(n, pcie)                                       \
-		CCTL_CONFIG(n),  					\
+		IF_ENABLED(DT_HAS_CLOCKS(n), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(n),))	 \
 	};                                                                           \
 	static struct uart_ns16550_dev_data uart_ns16550_dev_data_##n = {            \
 		UART_NS16550_COMMON_DEV_DATA_INITIALIZER(n)                          \

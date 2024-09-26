@@ -1,4 +1,4 @@
-if SOC_LSQSH
+if SOC_SERIES_LSQSH
 
 config SOC
     default "lsqsh"

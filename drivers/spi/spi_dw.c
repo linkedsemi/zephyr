@@ -25,10 +25,10 @@ LOG_MODULE_REGISTER(spi_dw);
 
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/sys/util.h>
-#if defined(CONFIG_CLOCK_CONTROL)
+
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-#endif
+
 
 #ifdef CONFIG_IOAPIC
 #include <zephyr/drivers/interrupt_controller/ioapic.h>
@@ -543,14 +543,14 @@ int spi_dw_init(const struct device *dev)
 	const struct spi_dw_config *info = dev->config;
 	struct spi_dw_data *spi = dev->data;
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    const struct device *clk_dev = info->cctl_dev;
-    if (!device_is_ready(clk_dev)) {
-	    LOG_DBG("%s device not ready", clk_dev->name);
-	    return -ENODEV;
-    }
-    clock_control_on(clk_dev, (clock_control_subsys_t)&info->cctl_cfg);
-#endif
+	if (info->cctl_cfg.cctl_dev) {
+		const struct device *clk_dev = info->cctl_cfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		clock_control_on(clk_dev, (clock_control_subsys_t)&info->cctl_cfg);
+	}
 
 #ifdef CONFIG_PINCTRL
 	pinctrl_apply_state(info->pcfg, PINCTRL_STATE_DEFAULT);
@@ -575,13 +575,6 @@ int spi_dw_init(const struct device *dev)
 
 	return 0;
 }
-
-#if defined(CONFIG_CLOCK_CONTROL)
-#define CCTL_CONFIG(inst) .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_DRV_INST(inst),clocks,0)), \
-                          .cctl_cfg = LS_DT_CLK_CFG_ITEM(inst)
-#else
-#define CCTL_CONFIG(inst)
-#endif
 
 #define SPI_CFG_IRQS_SINGLE_ERR_LINE(inst)					\
 		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(inst, rx_avail, irq),		\
@@ -676,7 +669,7 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 			.set_bit_func = reg_set_bit,                                        \
 			.clear_bit_func = reg_clear_bit,                                    \
 			.test_bit_func = reg_test_bit,))                                    \
-		CCTL_CONFIG(inst)														\
+		IF_ENABLED(DT_HAS_CLOCKS(inst), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(inst),))		\
 	};                                                                                  \
 	DEVICE_DT_INST_DEFINE(inst,                                                         \
 		spi_dw_init,                                                                \

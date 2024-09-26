@@ -19,7 +19,9 @@
 #include <zephyr/irq.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/pm/policy.h>
-
+#include <zephyr/logging/log.h>
+#include <zephyr/drivers/clock_control.h>
+#include <soc_clock.h>
 
 #if defined(CONFIG_SOC_LE5010)
 #include <reg_rcc.h>
@@ -30,10 +32,14 @@
 
 
 #define DT_DRV_COMPAT linkedsemi_uart
+LOG_MODULE_REGISTER(uart_linkedsemi, LOG_LEVEL_DBG);
 
 struct uart_ls_data_t
 {
+#if defined(CONFIG_PINCTRL)
 	const struct pinctrl_dev_config *pcfg;
+#endif
+	struct ls_clk_cfg cctl_cfg;
 	uart_irq_callback_user_data_t user_cb;
 	void *user_parm;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
@@ -104,8 +110,6 @@ void uart1_msp_init(void)
     REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 1);
     REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 0);
     REG_FIELD_WR(RCC->APB2EN, RCC_UART1, 1);	
-#elif defined(CONFIG_SOC_LS1010)
-	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART1, 1);
 #endif
 }
 
@@ -115,8 +119,6 @@ void uart2_msp_init(void)
     REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_UART2, 1);
-#elif defined(CONFIG_SOC_LS1010)
-	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART2, 1);
 #endif
 }
 
@@ -126,11 +128,10 @@ void uart3_msp_init(void)
     REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_UART3, 1);
-#elif defined(CONFIG_SOC_LS1010)
-	REG_FIELD_WR(SYSC_PER->PD_PER_CLKG1, SYSC_PER_CLKG_SET_UART3, 1);
 #endif
 }
 
+#if defined(CONFIG_SOC_LE5010)
 static void uart_msp_init(UART_HandleTypeDef *uart_handle)
 {
 	switch((uint32_t)uart_handle->UARTX)
@@ -148,6 +149,7 @@ static void uart_msp_init(UART_HandleTypeDef *uart_handle)
 			break;
 	}
 }
+#endif
 
 static int uart_ls_init(const struct device *dev)
 {
@@ -155,8 +157,18 @@ static int uart_ls_init(const struct device *dev)
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	int ret = 0;
 	// (void)data;
+#if defined(CONFIG_SOC_LE5010)
 	uart_msp_init(uart_handle);
-
+#elif defined(CONFIG_SOC_LS1010)
+	if (data->cctl_cfg.cctl_dev) {
+		const struct device *clk_dev = data->cctl_cfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		clock_control_on(clk_dev, (clock_control_subsys_t)&data->cctl_cfg);
+	}
+#endif
 	// pinmux_uart1_init(PC14,PC12);
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,1);
     uart_handle->UARTX->BRR  =  uart_handle->Init.BaudRate;
@@ -168,11 +180,14 @@ static int uart_ls_init(const struct device *dev)
 
 	// LOG_I("uart addr : %x",(uint32_t)uart_handle->UARTX);
 	/* Configure dt provided device signals when available */
+#if defined(CONFIG_PINCTRL)
 	ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
 	if (ret < 0) {
 		// LOG_ERR("UART pinctrl setup failed (%d)", ret);
 		return ret;
 	}
+#endif
+
 #ifdef CONFIG_SOC_LE5010
 	#ifdef CONFIG_PM
 	uart_ls_pm_policy_state_lock_get(dev);
@@ -397,7 +412,7 @@ static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 
 #define LS_UART_INIT(index)	\
 LS_UART_IRQ_HANDLER_DECL(index)	\
-PINCTRL_DT_INST_DEFINE(index);						\
+IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
 static UART_HandleTypeDef uart_handle_##index = {	\
 	.UARTX = (reg_uart_t *)DT_INST_REG_ADDR(index),	\
 	.Init.BaudRate = GET_UART_BAUDRATE(index),	\
@@ -409,8 +424,9 @@ static UART_HandleTypeDef uart_handle_##index = {	\
 static struct uart_ls_data_t uart_ls_data##index = {	\
 	.user_cb = NULL,	\
 	.user_parm = NULL,	\
-	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),			\
 	UART_IRQ_HANDLER_FUNC(index)	\
+	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
+	IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
 };	\
 	\
 DEVICE_DT_INST_DEFINE(index,	\

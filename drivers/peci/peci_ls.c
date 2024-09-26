@@ -19,10 +19,8 @@
 #include <reg_peci_type.h>
 #include <ls_msp_peci.h>
 #include <field_manipulate.h>
-#if defined(CONFIG_CLOCK_CONTROL)
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-#endif
 
 #if defined (CONFIG_SOC_LS1010)
     #include <ls_msp_peci.h>
@@ -72,11 +70,7 @@ struct peci_ls_config {
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
 #endif
-
-#if defined(CONFIG_CLOCK_CONTROL)
     struct ls_clk_cfg cctl_cfg;
-    const struct device *cctl_dev;
-#endif
 };
 
 struct peci_ls_data {
@@ -151,14 +145,14 @@ static int peci_ls_init(const struct device *dev)
     struct peci_ls_data *const data = dev->data;
     struct reg_peci_t *const reg = config->reg;
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    const struct device *clk_dev = config->cctl_dev;
-    if (!device_is_ready(clk_dev)) {
-	    LOG_DBG("%s device not ready", clk_dev->name);
-	    return -ENODEV;
+    if (config->cctl_cfg.cctl_dev) {
+	    const struct device *clk_dev = config->cctl_cfg.cctl_dev;
+	    if (!device_is_ready(clk_dev)) {
+		    LOG_DBG("%s device not ready", clk_dev->name);
+		    return -ENODEV;
+	    }
+	    clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
     }
-    clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
-#endif
 
 #if defined(CONFIG_PINCTRL)
     int ret;
@@ -323,19 +317,6 @@ static const struct peci_driver_api peci_ls_driver_api = {
     .transfer = peci_ls_transfer,
 };
 
-#if defined(CONFIG_PINCTRL)
-#define PINCTRL_CFG(index) .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index)
-#else
-#define PINCTRL_CFG(index)
-#endif
-
-#if defined(CONFIG_CLOCK_CONTROL)
-#define CCTL_CONFIG(index) .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(DT_DRV_INST(index),clocks,0)), \
-                           .cctl_cfg = LS_DT_CLK_CFG_ITEM(index)
-#else
-#define CCTL_CONFIG(index)
-#endif
-
 #define LS_PECI_IRQ_HANDLER(index)                          \
 static void peci_ls_irq_config_func_##index(const struct device *dev)   \
 {                                                           \
@@ -347,15 +328,15 @@ static void peci_ls_irq_config_func_##index(const struct device *dev)   \
 }                                                           \
                                                             
 #define LS_PECI_INIT(index)                                 \
-    PINCTRL_DT_INST_DEFINE(index);                          \
+    IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
     LS_PECI_IRQ_HANDLER(index)                              \
                                                             \
 static const struct peci_ls_config peci_ls_cfg_##index = {  \
     .reg = (struct reg_peci_t *)DT_INST_REG_ADDR(index),   \
     .irq_num = DT_INST_IRQN(index),                         \
     .irq_config_func = peci_ls_irq_config_func_##index,      \
-    PINCTRL_CFG(index),                                     \
-    CCTL_CONFIG(index),                                     \
+    IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
+    IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
 };                                                          \
                                                             \
 static struct peci_ls_data peci_ls_dev_data_##index = {     \

@@ -150,6 +150,7 @@
 			status = "disabled";
             // label = "UART1";
             interrupts = <51 3> ;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_UART1_POS LS_CLKG_CLR_UART1_POS>;
         };
         uart2: uart@40085400 {
             compatible = "linkedsemi-uart";
@@ -157,6 +158,7 @@
 			status = "disabled";
             // label = "UART1";
             interrupts = <52 3> ;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_UART2_POS LS_CLKG_CLR_UART2_POS>;
         };
         uart3: uart@40085800 {
             compatible = "linkedsemi-uart";
@@ -164,6 +166,7 @@
 			status = "disabled";
             // label = "UART1";
             interrupts = <53 3> ;
+            clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_UART3_POS LS_CLKG_CLR_UART3_POS>;
         };
 
         dwuart1: dwuart@40085C00 {
