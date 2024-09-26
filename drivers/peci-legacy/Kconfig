@@ -1,0 +1,7 @@
+source "subsys/logging/Kconfig.template.log_config"
+
+config PECI_CORE
+	bool "peci core support libpeci"
+	default y
+	help
+	  Enable libpeci in zephyr.
