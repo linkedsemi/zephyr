@@ -154,6 +154,12 @@ config BT_AMBIQ_HCI
 	  Supports Ambiq Bluetooth SoC using SPI as the communication protocol.
 	  HCI packets are sent and received as single Byte transfers.
 
+config BT_LINKEDSEMI
+	bool "LINKEDSEMI HCI driver"
+	default y
+	depends on DT_HAS_LINKEDSEMI_BT_HCI_ENABLED
+	help
+	  LINKEDSEMI LE501X HCI bluetooth interface.
 
 if BT_SPI
 

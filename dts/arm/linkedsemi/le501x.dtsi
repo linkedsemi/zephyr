@@ -23,6 +23,10 @@
     };
 
     soc {
+        #address-cells = <1>;
+		#size-cells = <1>;
+		compatible = "simple-bus";
+		ranges;
 
         flash_controller: flash-controller@40020000 {
             compatible = "linkedsemi,ls-flash-controller";
@@ -135,6 +139,11 @@
 		};
     };
 
+    bt_hci_linkedsemi: bt_hci_linkedsemi {
+        compatible = "linkedsemi,bt-hci";
+        status = "disabled";
+    };
+    
     power-states {
         idle: idle{
             compatible = "zephyr,power-state";

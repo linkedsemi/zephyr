@@ -6,9 +6,9 @@
 #include <stdlib.h>
 #include <ls_hal_flash.h>
 
-#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/drivers/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
-#include <zephyr/drivers/bluetooth/hci_driver.h>
 
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
@@ -16,6 +16,8 @@
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_hci_driver_le501x);
+
+#define DT_DRV_COMPAT linkedsemi_bt_hci
 
 /* Place random static address in 0x18025ff0(zephyr application starts at 0x18026000) */
 #define BT_ADDR_OFFSET 0x25ff0
@@ -32,11 +34,11 @@ LOG_MODULE_REGISTER(bt_hci_driver_le501x);
 
 static K_SEM_DEFINE(hci_send_sem, 0, 1);
 static K_SEM_DEFINE(ll_thread_sem, 0, 1);
-K_THREAD_STACK_DEFINE(ll_thread_stack, LL_THREAD_STACK_SIZE);
-struct k_thread ll_thread_data;
+K_THREAD_STACK_DEFINE(rx_thread_stack, LL_THREAD_STACK_SIZE);
+struct k_thread rx_thread_data;
 
 uint32_t get_trng_value(void);
-extern int cmd_handle(struct net_buf *buf);
+int cmd_handle(const struct device *dev, struct net_buf *buf);
 void (*ll_hci_write_callback)(void *,uint8_t);
 void *ll_hci_write_param;
 void (*ll_hci_read_callback)(void *,uint8_t);
@@ -49,9 +51,23 @@ uint8_t *host_send_buf_current_ptr;
 uint16_t host_send_buf_valid_len;
 bool ll_hci_done_read;
 
+struct hci_data {
+	bt_hci_recv_t recv;
+};
+
 void ble_ll_task_event_set()
 {
     k_sem_give(&ll_thread_sem);
+}
+
+void ble_sched();
+static void rx_thread(void *p1,void *p2,void *p3)
+{
+    while(1)
+    {
+        k_sem_take(&ll_thread_sem,K_FOREVER);
+        ble_sched();
+    }
 }
 
 void aos_swint_set();
@@ -86,6 +102,8 @@ void ll_hci_read(uint8_t *bufptr, uint32_t size, void (*callback)(void *,uint8_t
 
 void ll_hci_write(uint8_t *bufptr, uint32_t size, void (*callback)(void *,uint8_t), void* dummy)
 {
+    const struct device *dev = DEVICE_DT_GET(DT_DRV_INST(0));
+    struct hci_data *hci = dev->data;
     ll_hci_write_callback = callback;
     ll_hci_write_param = dummy;
 	uint8_t pkt_indicator = bufptr[0];
@@ -126,7 +144,8 @@ void ll_hci_write(uint8_t *bufptr, uint32_t size, void (*callback)(void *,uint8_
     (void)(buf_tailroom);
     __ASSERT_NO_MSG(buf_tailroom>=size);
     net_buf_add_mem(buf,bufptr,size);
-    bt_recv(buf);
+    /* Provide the buffer to the host */
+	hci->recv(dev, buf);
     ll_hci_done_read = false;
     aos_swint_set();
 }
@@ -141,7 +160,7 @@ bool ll_hci_flow_off()
     return true;
 }
 
-static int hci_driver_send(struct net_buf *buf)
+static int bt_le501x_send(const struct device *dev, struct net_buf *buf)
 {
     uint8_t pkt_indicator;
     struct bt_hci_cmd_hdr *chdr = (void *)buf->data;
@@ -155,7 +174,7 @@ static int hci_driver_send(struct net_buf *buf)
 	case BT_BUF_CMD:
 		pkt_indicator = HCI_CMD;
         if (BT_OGF(_opcode) == BT_OGF_VS) {
-            cmd_handle(buf);
+            cmd_handle(dev, buf);
             net_buf_unref(buf);
             return 0;
         }
@@ -202,24 +221,38 @@ static void le501x_bt_addr_init(void)
     }
 }
 
-static int hci_driver_open()
+static int bt_le501x_open(const struct device *dev, bt_hci_recv_t recv)
 {
     le501x_bt_addr_init();
-    return 0;
+
+    struct hci_data *hci = dev->data;
+	k_tid_t tid;
+
+	tid = k_thread_create(&rx_thread_data, rx_thread_stack,
+			      K_KERNEL_STACK_SIZEOF(rx_thread_stack),
+			      rx_thread, (void *)dev, NULL, NULL,
+			      K_PRIO_COOP(LL_THREAD_PRIORITY),
+			      0, K_NO_WAIT);
+	k_thread_name_set(tid, "bt_rx_thread");
+
+	hci->recv = recv;
+
+	return 0;
 }
 
-static int hci_driver_close()
+static int bt_le501x_close(const struct device *dev)
 {
+    struct hci_data *hci = dev->data;
+
+	hci->recv = NULL;
+
     return 0;
 }
 
-static const struct bt_hci_driver drv = {
-	.name	= "ble_hci",
-	.bus	= BT_HCI_DRIVER_BUS_VIRTUAL,
-	.quirks = BT_QUIRK_NO_AUTO_DLE,
-	.open	= hci_driver_open,
-	.close	= hci_driver_close,
-	.send	= hci_driver_send,
+static const struct bt_hci_driver_api drv = {
+	.open	= bt_le501x_open,
+	.close	= bt_le501x_close,
+	.send	= bt_le501x_send,
 };
 
 static void swint_handler()
@@ -235,30 +268,26 @@ static void swint_handler()
     z_arm_int_exit();
 }
 
-void ble_sched();
-static void ll_task(void *p1,void *p2,void *p3)
-{
-    while(1)
-    {
-        k_sem_take(&ll_thread_sem,K_FOREVER);
-        ble_sched();
-    }
-}
-
 void rco_freq_counting_init();
 void rco_freq_counting_start();
 uint16_t get_lsi_cnt_val();
 void aos_swint_init(void (*isr)());
 
-static int ble_init(void)
+static int bt_le501x_init(const struct device *dev)
 {
     rco_freq_counting_init();
     rco_freq_counting_start();
     while (get_lsi_cnt_val() == 0);
     aos_swint_init(swint_handler);
-    k_thread_create(&ll_thread_data, ll_thread_stack,K_THREAD_STACK_SIZEOF(ll_thread_stack),
-        ll_task,NULL, NULL, NULL,K_PRIO_COOP(LL_THREAD_PRIORITY), 0, K_NO_WAIT);
-    return bt_hci_driver_register(&drv);
+
+    return 0;
 }
 
-SYS_INIT(ble_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+#define HCI_DEVICE_INIT(inst) \
+	static struct hci_data hci_data_##inst = { \
+	}; \
+	DEVICE_DT_INST_DEFINE(inst, bt_le501x_init, NULL, &hci_data_##inst, NULL, \
+			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &drv)
+
+/* Only one instance supported right now */
+HCI_DEVICE_INIT(0)

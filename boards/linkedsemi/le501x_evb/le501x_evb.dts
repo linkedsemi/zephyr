@@ -24,6 +24,7 @@
         zephyr,shell-uart = &uart1;
         zephyr,sram = &sram0;
         zephyr,flash = &flash0;
+        zephyr,bt-hci = &bt_hci_linkedsemi;
     };
 
     leds {
@@ -153,6 +154,11 @@
 
 &systick {
     status = "okay";
+};
+
+&bt_hci_linkedsemi {
+    bt-hci-vs-ext;
+	status = "okay";
 };
  
  

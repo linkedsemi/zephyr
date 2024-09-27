@@ -7,7 +7,6 @@
 #ifndef _SOC_H_
 #define _SOC_H_
 
-
-#define __MPU_PRESENT 0
+#include <le501x.h>
 
 #endif /* _SOC_H_ */

@@ -1,5 +1,6 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/drivers/bluetooth/hci_driver.h>
+#include <zephyr/drivers/bluetooth.h>
 #include <zephyr/bluetooth/hci_vs.h>
 
 #include <version.h>
@@ -15,6 +16,10 @@ LOG_MODULE_REGISTER(ble_hci_vs);
 /* Place random static address in 0x18025ff0(zephyr application starts at 0x18026000) */
 #define BLE_DEVICE_ADDR_OFFSET     0x25ff0
 #define BLE_ADDR_LEN    6
+
+struct hci_data {
+	bt_hci_recv_t recv;
+};
 
 static uint16_t _opcode;
 
@@ -58,12 +63,12 @@ static void vs_read_supported_commands(struct net_buf *buf,
 
 	/* Set Version Information, Supported Commands, Supported Features. */
 	rp->commands[0] |= BIT(0) | BIT(1) | BIT(2);
-#if defined(CONFIG_BT_HCI_VS_EXT)
+#if defined(CONFIG_BT_HCI_VS)
 	/* Write BD_ADDR, Read Build Info */
 	rp->commands[0] |= BIT(5) | BIT(7);
 	/* Read Static Addresses */
 	rp->commands[1] |= BIT(0);
-#endif /* CONFIG_BT_HCI_VS_EXT */
+#endif /* CONFIG_BT_HCI_VS */
 }
 
 static void vs_read_supported_features(struct net_buf *buf,
@@ -113,11 +118,9 @@ static int hci_vendor_cmd_handle_common(uint16_t ocf, struct net_buf *cmd,
 		vs_read_supported_features(cmd, evt);
 		break;
 
-#if defined(CONFIG_BT_HCI_VS_EXT)
 	case BT_OCF(BT_HCI_OP_VS_READ_STATIC_ADDRS):
 		vs_read_static_addrs(cmd, evt);
 		break;
-#endif /* CONFIG_BT_HCI_VS_EXT */
 
 	default:
 		return -EINVAL;
@@ -165,13 +168,14 @@ static struct net_buf *hci_cmd_handle(struct net_buf *cmd)
 	return evt;
 }
 
-int cmd_handle(struct net_buf *buf)
+int cmd_handle(const struct device *dev, struct net_buf *buf)
 {
+    struct hci_data *hci = dev->data;
 	struct net_buf *evt;
 	evt = hci_cmd_handle(buf);
 	if (evt) {
 		LOG_DBG("Replying with event of %u bytes", evt->len);
-		bt_recv_prio(evt);
+        hci->recv(dev, evt);
 	}
 
 	return 0;

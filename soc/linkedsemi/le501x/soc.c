@@ -180,10 +180,10 @@ __weak const struct pm_state_info *pm_policy_next_state(uint8_t cpu, int32_t tic
     static const struct pm_state_info idle = PM_STATE_INFO_DT_INIT(DT_NODELABEL(idle));
     static const struct pm_state_info lp0 = PM_STATE_INFO_DT_INIT(DT_NODELABEL(lp0));
     os_sleep_ticks = ticks;
-    if(mac_sleep_check())
-    {
-        return &lp0;
-    }else
+    // if(mac_sleep_check())
+    // {
+    //     return &lp0;
+    // }else
     {
         return &idle;
     }

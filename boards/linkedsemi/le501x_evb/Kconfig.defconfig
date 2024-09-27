@@ -14,15 +14,7 @@ config BT_CTLR
 	default n
 
 config BT
-	default y
-
-config BT_HAS_HCI_VS
     default y
-
-choice BT_HCI_BUS_TYPE
-	default BT_LE501X
-	depends on BT
-endchoice
 
 config BT_COMPANY_ID
 	default 0x093A
