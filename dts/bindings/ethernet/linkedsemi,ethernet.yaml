@@ -5,7 +5,7 @@ description: LINKEDSEMI Ethernet
 
 compatible: "linkedsemi,ethernet"
 
-include: [ethernet-controller.yaml]
+include: [ethernet-controller.yaml, pinctrl-device.yaml]
 
 properties:
   reg:

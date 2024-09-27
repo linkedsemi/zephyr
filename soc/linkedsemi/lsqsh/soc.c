@@ -12,9 +12,7 @@
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sysc_per.h"
-#if !defined(CONFIG_PINCTRL)
-    #include "ls_soc_gpio.h"
-#endif
+#include "ls_soc_gpio.h"
 
 #define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
@@ -78,18 +76,21 @@ static int lsqsh_init(void)
     csi_icache_invalid();
 #endif
 
-#if !defined(CONFIG_PINCTRL)
     /* RMII */
-    io_cfg_input(PT01);
-    io_cfg_input(PT08);
-    io_cfg_input(PT09);
-    io_cfg_input(PT10);
-    io_cfg_input(PT11);
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x58) = 0x206C80;
 
+    /* SDHC */
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
+
+    *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x10) = 0x10000000;
+    *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x18) = 0x10000000;
+
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x60) = 0xf0;
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00228;
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
+
     /* PECI */
-    io_cfg_input(PK00);
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xb4) = 0x1;
 
     /* UART */
@@ -99,9 +100,8 @@ static int lsqsh_init(void)
     /* I2C */
     pinmux_iic2_init(PB13, PB14);
     pinmux_iic7_init(PG15, PG14);
-#endif
 
-	IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
+    IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
