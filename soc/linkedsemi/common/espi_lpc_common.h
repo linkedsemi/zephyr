@@ -48,7 +48,9 @@ struct espi_lpc_ls_data {
             struct k_spinlock vw_tx_lock;
         }espi;
         struct {
-
+            struct k_spinlock serirq_src_lock;
+            struct k_spinlock int_msk_lock;
+            uint32_t serirq_edge_mask;
         }lpc;
     }u;
 };

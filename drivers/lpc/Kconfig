@@ -1,0 +1,21 @@
+menuconfig LPC
+    bool "LPC controller drivers"
+    help
+      Include LPC controller drivers in the system configuration.
+
+if LPC
+
+source "drivers/lpc/Kconfig.ls"
+
+module = LPC
+module-str = lpc
+source "subsys/logging/Kconfig.template.log_config"
+
+config LPC_INIT_PRIORITY
+    int "LPC controller driver init priority"
+    default 3
+    help
+       LPC controller driver initialization priority.
+
+
+endif

@@ -602,6 +602,10 @@ static int espi_ls_init(const struct device *dev)
 		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
     }
     ret = pinctrl_apply_state(cfg->pcfg,PINCTRL_STATE_DEFAULT);
+    if(ret)
+    {
+        return ret;
+    }
     espi_reg_init(dev);
     espi_send_boot_done(dev);
     return 0;
