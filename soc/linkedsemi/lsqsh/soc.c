@@ -69,11 +69,13 @@ static int lsqsh_init(void)
     SYSMAP->SYSMAPADDR7 = 0;
     SYSMAP->SYSMAPCFG7 = 0;
 
+#if defined(CONFIG_BOARD_LSQSH_APP_EVB)
     csi_dcache_enable();
     csi_icache_enable();
 
     csi_dcache_invalid();
     csi_icache_invalid();
+#endif
 #endif
 
     /* RMII */
