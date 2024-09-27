@@ -198,6 +198,17 @@
 };
 
 &espi {
+	e8042: e8042 {
+		compatible = "linkedsemi,ls-kcs";
+		port = <0x60 0x64>;
+		status = "okay";
+	};
+	eacpi: eacpi {
+		compatible = "linkedsemi,ls-kcs";
+		port = <0x80 0x81>;
+		status = "okay";
+	};
+
 	status = "okay";
 };
 

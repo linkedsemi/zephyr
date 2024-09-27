@@ -462,7 +462,7 @@ static void ls_espi_isr(void *arg)
     }
     if(stt&ESPI_INTR_STT_NPST_FREE_MASK)
     {
-		uint8_t *rx = np_rx_buf_get(espi->base);
+		uint8_t *rx = np_rx_buf_get(dev);
 		uint8_t opcode = rx[0];
         reg->INTERRUPT_CLEAR = ESPI_INTR_STT_NPST_FREE_MASK;
 		if((opcode&~0xf)==0x40)
@@ -561,7 +561,8 @@ static void espi_send_level_irq(const struct device *dev,uint8_t idx,uint8_t act
 
 static void espi_reg_init(const struct device *dev)
 {
-    reg_espi_t *reg = dev->config->reg;
+	const struct espi_lpc_ls_config *const cfg = dev->config;
+    reg_espi_t *reg = cfg->reg;
     reg->GEN_CFG = 0<<ESPI_GEN_CFG_IO_MODE_SUPP_POS|0<<ESPI_GEN_CFG_OP_FREQ_POS|0xf<<ESPI_GEN_CFG_CH_SUPP_POS;
     reg->PER_CH0_CFG = 1<<ESPI_CH0_CFG_PER_MAX_PLOAD_SUPP_POS|ESPI_CH0_CFG_PER_CH_RDY_MASK;
     reg->VWIR_CH1_CFG = 0x1f<<ESPI_CH1_CFG_VWIR_MAX_CNT_SUPP_POS|ESPI_CH1_CFG_VWIR_CH_RDY_MASK;
@@ -572,7 +573,7 @@ static void espi_reg_init(const struct device *dev)
                     |ESPI_STATUS_SET_PC_FREE_MASK|ESPI_STATUS_SET_FLASH_C_FREE_MASK
                     |ESPI_STATUS_SET_FLASH_NP_FREE_MASK;
     reg->DW_NPST_ADR = espi_buf_addr_to_reg(dev,np_rx_buf_get(dev));
-    reg->UW_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_rx_buf_get(dev));
+    reg->DW_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_rx_buf_get(dev));
     reg->UP_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_tx_buf_get(dev));
     reg->UP_VWIR_ADR = espi_buf_addr_to_reg(dev,vw_tx_buf_get(dev));
 

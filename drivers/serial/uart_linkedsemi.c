@@ -31,7 +31,7 @@
 #endif
 
 
-#define DT_DRV_COMPAT linkedsemi_uart
+#define DT_DRV_COMPAT linkedsemi_ls_uart
 LOG_MODULE_REGISTER(uart_linkedsemi, LOG_LEVEL_DBG);
 
 struct uart_ls_data_t

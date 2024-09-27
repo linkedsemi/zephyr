@@ -19,7 +19,7 @@ struct kcs_ls_data {
     struct peri_ioport io_data;
     struct peri_ioport io_cmd_stt;
     ibf_callback_t callback;
-    k_spinlock_t lock;
+    struct k_spinlock lock;
     uint8_t status;
     uint8_t data_out;
     uint8_t data_in;

@@ -1,6 +1,6 @@
 description: LINKEDSEMI UART
 
-compatible: "linkedsemi-uart"
+compatible: "linkedsemi,ls-uart"
 
 include: [uart-controller.yaml,pinctrl-device.yaml]
 

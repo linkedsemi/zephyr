@@ -5,6 +5,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/spinlock.h>
+#include "soc_clock.h"
 
 struct peri_ioport_content {
     void (*io_read)(struct peri_ioport_content *ioport,uint8_t size,void *res);
@@ -44,7 +45,7 @@ struct espi_lpc_ls_data {
 	sys_slist_t callbacks;
     union{
         struct {
-            k_spinlock_t vw_tx_lock;
+            struct k_spinlock vw_tx_lock;
         }espi;
         struct {
 

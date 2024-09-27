@@ -1,0 +1,11 @@
+description: Linkedsemi KCS controller
+
+compatible: "linkedsemi,ls-kcs"
+
+include: base.yaml
+
+properties:
+    port:
+      type: array
+      required: true
+      
