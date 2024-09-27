@@ -4,7 +4,6 @@ zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/gpio.h)
 
 zephyr_library()
 
-zephyr_library_sources_ifdef(CONFIG_GPIO_LS gpio_ls.c)
 # zephyr-keep-sorted-start
 zephyr_library_sources_ifdef(CONFIG_GPIO_AD559X     gpio_ad559x.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_ADP5585    gpio_adp5585.c)
@@ -96,6 +95,8 @@ zephyr_library_sources_ifdef(CONFIG_GPIO_XEC_V2     gpio_mchp_xec_v2.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_XLNX_AXI   gpio_xlnx_axi.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_XLNX_PS    gpio_xlnx_ps.c gpio_xlnx_ps_bank.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_XMC4XXX    gpio_xmc4xxx.c)
+zephyr_library_sources_ifdef(CONFIG_GPIO_LS         gpio_ls.c)
+zephyr_library_sources_ifdef(CONFIG_GPIO_LSQSH      gpio_lsqsh.c)
 # zephyr-keep-sorted-stop
 
 # zephyr-keep-sorted-start

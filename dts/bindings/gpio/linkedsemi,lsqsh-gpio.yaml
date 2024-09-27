@@ -1,0 +1,19 @@
+# Copyright (c) 2024 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: Linkedsemi LSQSH GPIO node
+
+compatible: "linkedsemi,lsqsh-gpio"
+
+include: [gpio-controller.yaml, base.yaml]
+
+properties:
+    reg:
+      required: true
+
+    "#gpio-cells":
+      const: 2
+
+gpio-cells:
+  - pin
+  - flags

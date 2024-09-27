@@ -1,0 +1,11 @@
+# Linkedsemi LS GPIO configuration options
+
+# Copyright (c) 2023 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+config GPIO_LSQSH
+    bool "Linkedsemi lsqsh GPIO driver"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LSQSH_GPIO_ENABLED
+    help
+      Enable the Linkedsemi ls GPIO driver.

@@ -13,13 +13,20 @@
 static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
 {
     uint8_t port_id, pin_id, pin, driv_stren;
-
+/*
+In parentheses are banks that do not exist:
+    A B C D E F G H I J K (L) M N (O) (P) Q (R) (S) T
+*/
     port_id = LS_PINMUX_GET_PORT(pinmux);
     __ASSERT(((port_id != 'L' - 'A')
               && (port_id != 'O' - 'A')
-              && (port_id != 'P' - 'A')),
-             "PLXX/POXX/PPXX is not exist");
-    if (port_id >= ('O' - 'A')) {
+              && (port_id != 'P' - 'A')
+              && (port_id != 'R' - 'A')
+              && (port_id != 'S' - 'A')),
+             "PLXX/POXX/PPXX/PRXX/PSXX is not exist");
+    if (port_id >= ('R' - 'A')) {
+        port_id -= 5;
+    } else if (port_id >= ('O' - 'A')) {
         port_id -= 3;
     } else if (port_id >= ('L' - 'A')) {
         port_id--;

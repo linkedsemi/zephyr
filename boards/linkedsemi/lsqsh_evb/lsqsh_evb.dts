@@ -28,6 +28,8 @@
         testeeprom1 = &eeprom2;
         testeeprom2 = &eeprom7;
         peci-0 = &peci0;
+        led0 = &led0;
+        sw0 = &btn0;
     };
 
     soc {
@@ -51,6 +53,22 @@
         mboxes = <&mbox 1>, <&mbox 0>;
         mbox-names = "tx", "rx";
     };
+
+    leds {
+        compatible = "gpio-leds";
+        led0: led_0{
+            gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+        btn0: btn_0{
+            gpios = <&gpioc 5 BTN_GPIO_FLAGS>;
+            label = "Push button 1";
+        };
+    };
 };
 
 &cpu0 {
@@ -60,6 +78,66 @@
 
 &sram1 {
     status = "disabled";
+};
+
+&gpioa {
+    status = "okay";
+};
+
+&gpiob {
+    status = "okay";
+};
+
+&gpioc {
+    status = "okay";
+};
+
+&gpiod {
+    status = "okay";
+};
+
+&gpioe {
+    status = "okay";
+};
+
+&gpiof {
+    status = "okay";
+};
+
+&gpiog {
+    status = "okay";
+};
+
+&gpioh {
+    status = "okay";
+};
+
+&gpioi {
+    status = "okay";
+};
+
+&gpioj {
+    status = "okay";
+};
+
+&gpiok {
+    status = "okay";
+};
+
+&gpiom {
+    status = "okay";
+};
+
+&gpion {
+    status = "okay";
+};
+
+&gpioq {
+    status = "okay";
+};
+
+&gpiot {
+    status = "okay";
 };
 
 &uart1 {
