@@ -196,8 +196,15 @@
             reg = <0x40004000 0x400>;
             status = "disabled";
             interrupts = <27 3>;
+            clocks = <&cpu_cctl LS_CCTL_CLKG0 LS_CLKG_SET_ESPI_POS LS_CLKG_CLR_ESPI_POS>;
         };
-
+        lpc: lpc@40005000 {
+            compatible = "linkedsemi,ls-lpc";
+            reg = <0x40005000 0x400>;
+            status = "disabled";
+            interrupts = <28 3>;
+            clocks = <&cpu_cctl LS_CCTL_CLKG0 LS_CLKG_SET_LPC_POS LS_CLKG_CLR_LPC_POS>;
+        };
 		spi1: spi@40087000 {
 			compatible = "snps,designware-spi";
 			#address-cells = <1>;
