@@ -28,6 +28,7 @@
         testeeprom1 = &eeprom2;
         testeeprom2 = &eeprom7;
         peci-0 = &peci0;
+        sdhc0 = &sdhci;
         led0 = &led0;
         sw0 = &btn0;
     };
@@ -202,4 +203,24 @@
     pinctrl-0 = <&peci_default_pk00>;
     pinctrl-names = "default";
     status = "okay";
+};
+
+&sdhci {
+    pinctrl-0 = <&d0_default_ph04
+                &d1_default_ph05
+                &d2_default_ph06
+                &d3_default_ph07
+                &d4_default_ph08
+                &d5_default_ph09
+                &d6_default_ph010
+                &d7_default_ph011
+                &cmd_default_ph013>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    disk {
+        compatible = "zephyr,mmc-disk";
+        bus-width = <1>;
+        status = "okay";
+    };
 };

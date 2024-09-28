@@ -1,0 +1,43 @@
+# Copyright 2022, LINKEDSEMI
+# SPDX-License-Identifier: Apache-2.0
+
+config SDHCI_LINKEDSEMI
+    bool "LINKEDSEMI SDHCI Driver"
+    default y
+    depends on DT_HAS_LINKEDSEMI_SDHCI_ENABLED
+    select SDHC_SUPPORTS_NATIVE_MODE
+    select SDHCI
+    select EVENTS
+    help
+      Enable the LINKEDSEMI SDHCI Host controller driver
+
+if SDHCI_LINKEDSEMI
+
+config SDHCI_LINKEDSEMI_DMA_SUPPORT
+    bool "DMA support for SDHCI driver"
+    default y
+    help
+      Enable DMA support for SDHCI driver. May be disabled to reduce
+      footprint of driver.
+        #define SDHCI_SDMA_ENABLE
+
+config SDHCI_SDMA_ENABLE
+    bool "SDMA support for SDHCI driver"
+    depends on SDHCI_LINKEDSEMI_DMA_SUPPORT
+    default y
+
+if SDHCI_LINKEDSEMI_DMA_SUPPORT
+
+# SDHCI DMA needs 32 bit aligned buffers
+config SDHC_BUFFER_ALIGNMENT
+    default 4
+
+config SDHCI_LINKEDSEMI_DMA_BUFFER_SIZE
+    int "Size of DMA descriptor buffer in bytes"
+    default 512
+    help
+      Size of SDHCI DMA descriptor buffer in bytes
+
+endif #SDHCI_LINKEDSEMI_DMA_SUPPORT
+
+endif #SDHCI_LINKEDSEMI

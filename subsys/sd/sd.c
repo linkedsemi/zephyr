@@ -32,6 +32,7 @@ static inline int sd_idle(struct sd_card *card)
 	return sdhc_request(card->sdhc, &cmd, NULL);
 }
 
+#if !defined(CONFIG_SDHCI_LINKEDSEMI)
 /* Sends CMD8 during SD initialization */
 static int sd_send_interface_condition(struct sd_card *card)
 {
@@ -68,6 +69,7 @@ static int sd_send_interface_condition(struct sd_card *card)
 	card->flags |= SD_SDHC_FLAG;
 	return 0;
 }
+#endif
 
 /* Sends CMD59 to enable CRC checking for SD card in SPI mode */
 static int sd_enable_crc(struct sd_card *card)
@@ -100,6 +102,7 @@ static int sd_common_init(struct sd_card *card)
 		LOG_ERR("Card error on CMD0");
 		return ret;
 	}
+#if !defined(CONFIG_SDHCI_LINKEDSEMI)
 	/* Perform voltage check using SD CMD8 */
 	ret = sd_retry(sd_send_interface_condition, card, CONFIG_SD_RETRY_COUNT);
 	if (ret == -ETIMEDOUT) {
@@ -109,6 +112,7 @@ static int sd_common_init(struct sd_card *card)
 		LOG_ERR("Card error on CMD 8");
 		return ret;
 	}
+#endif
 	if (card->host_props.is_spi &&
 		IS_ENABLED(CONFIG_SDHC_SUPPORTS_SPI_MODE)) {
 		/* Enable CRC for spi commands using CMD59 */

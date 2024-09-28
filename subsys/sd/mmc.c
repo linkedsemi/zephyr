@@ -240,7 +240,7 @@ static int mmc_send_op_cond(struct sd_card *card, int ocr)
 	if (cmd.response[0] & MMC_OCR_VDD27_36FLAG) {
 		card->flags |= SD_3000MV_FLAG;
 	}
-
+#if !defined(CONFIG_SDHCI_LINKEDSEMI)
 	/* Switch to 1.8V */
 	if (card->host_props.host_caps.vol_180_support && (card->flags & SD_1800MV_FLAG)) {
 		card->bus_io.signal_voltage = SD_VOL_1_8_V;
@@ -254,7 +254,7 @@ static int mmc_send_op_cond(struct sd_card *card, int ocr)
 		card->card_voltage = SD_VOL_1_8_V;
 		LOG_INF("Card switched to 1.8V signaling");
 	}
-
+#endif
 	/* SD high Capacity is >2GB, the same as sector supporting MMC cards. */
 	if (cmd.response[0] & MMC_OCR_SECTOR_MODE) {
 		card->flags |= SD_HIGH_CAPACITY_FLAG;
@@ -459,7 +459,7 @@ static int mmc_set_timing(struct sd_card *card, struct mmc_ext_csd *ext)
 {
 	int ret = 0;
 	struct sdhc_command cmd = {0};
-
+#if !defined(CONFIG_SDHCI_LINKEDSEMI)
 	/* Timing depends on EXT_CSD register information */
 	if ((ext->device_type.MMC_HS200_SDR_1200MV || ext->device_type.MMC_HS200_SDR_1800MV) &&
 	    (card->host_props.host_caps.hs200_support) &&
@@ -474,7 +474,9 @@ static int mmc_set_timing(struct sd_card *card, struct mmc_ext_csd *ext)
 		card->bus_io.timing = SDHC_TIMING_HS200;
 	} else if (ext->device_type.MMC_HS_52_DV) {
 		return mmc_set_hs_timing(card);
-	} else if (ext->device_type.MMC_HS_26_DV) {
+	} else
+#endif
+	if (ext->device_type.MMC_HS_26_DV) {
 		/* Nothing to do, card is already configured for this */
 		return 0;
 	} else {

@@ -508,6 +508,8 @@
             compatible = "linkedsemi,sdhci";
             reg = <0x40009000 0x1000>;
             interrupts = <41 3>;
+            max-bus-freq = <25000000>;
+            min-bus-freq = <200000>;
             status = "disabled";
         };
     };

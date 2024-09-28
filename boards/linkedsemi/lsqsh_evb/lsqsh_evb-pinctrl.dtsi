@@ -42,31 +42,31 @@
         pinmux = <LS_PINMUX_SET('H', 4, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d1_default_ph05: d0_default_ph05 {
+    /omit-if-no-ref/d1_default_ph05: d1_default_ph05 {
         pinmux = <LS_PINMUX_SET('H', 5, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d2_default_ph06: d0_default_ph06 {
+    /omit-if-no-ref/d2_default_ph06: d2_default_ph06 {
         pinmux = <LS_PINMUX_SET('H', 6, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d3_default_ph07: d0_default_ph07 {
+    /omit-if-no-ref/d3_default_ph07: d3_default_ph07 {
         pinmux = <LS_PINMUX_SET('H', 7, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d4_default_ph08: d0_default_ph08 {
+    /omit-if-no-ref/d4_default_ph08: d4_default_ph08 {
         pinmux = <LS_PINMUX_SET('H', 8, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d5_default_ph09: d0_default_ph09 {
+    /omit-if-no-ref/d5_default_ph09: d5_default_ph09 {
         pinmux = <LS_PINMUX_SET('H', 9, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d6_default_ph010: d0_default_ph010 {
+    /omit-if-no-ref/d6_default_ph010: d6_default_ph010 {
         pinmux = <LS_PINMUX_SET('H', 10, FUNC_NULL)>;
         input-enable;
     };
-    /omit-if-no-ref/d7_default_ph011: d0_default_ph011 {
+    /omit-if-no-ref/d7_default_ph011: d7_default_ph011 {
         pinmux = <LS_PINMUX_SET('H', 11, FUNC_NULL)>;
         input-enable;
     };

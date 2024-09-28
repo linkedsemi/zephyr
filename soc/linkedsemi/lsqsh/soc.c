@@ -89,7 +89,7 @@ static int lsqsh_init(void)
     *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x18) = 0x10000000;
 
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x60) = 0xf0;
-    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00228;
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00268;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
 
     /* PECI */
