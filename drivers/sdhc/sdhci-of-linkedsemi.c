@@ -13,6 +13,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/cache.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
 #include "sdhci.h"
 
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
@@ -29,6 +32,9 @@ struct linkedsemi_sdhci_config {
     uint32_t data_timeout;
     uint32_t min_bus_freq;
     uint32_t max_bus_freq;
+#if defined(CONFIG_PINCTRL)
+    const struct pinctrl_dev_config *pcfg;
+#endif
     void (*irq_config_func)(const struct device *dev);
 };
 
@@ -397,6 +403,14 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     const struct linkedsemi_sdhci_config *dev_config = dev->config;
     struct sdhci_host *host = &dev_data->host;
+#if defined(CONFIG_PINCTRL)
+    int ret;
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("SDHC pinctrl setup failed (%d)", ret);
+        return ret;
+    }
+#endif
 
     host->index = 0;
     host->have_phy = false;
@@ -425,6 +439,7 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
 };
 
 #define LINKEDSEMI_SDHCI_INIT(n)                                                                                \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                                                \
     static void sdhci_##n##_irq_config_func(const struct device *dev)                                           \
     {                                                                                                           \
         IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), linkedsemi_sdhci_isr, DEVICE_DT_INST_GET(n), 0); \
@@ -434,6 +449,7 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
     static struct linkedsemi_sdhci_config sdhci_##n##_config = {                                                \
         .max_bus_freq = DT_INST_PROP(n, max_bus_freq),                                                          \
         .min_bus_freq = DT_INST_PROP(n, min_bus_freq),                                                          \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),))                            \
         .irq_config_func = sdhci_##n##_irq_config_func,                                                         \
     };                                                                                                          \
                                                                                                                 \
