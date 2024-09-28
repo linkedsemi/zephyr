@@ -439,7 +439,7 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
 };
 
 #define LINKEDSEMI_SDHCI_INIT(n)                                                                                \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                                                \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                                                    \
     static void sdhci_##n##_irq_config_func(const struct device *dev)                                           \
     {                                                                                                           \
         IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), linkedsemi_sdhci_isr, DEVICE_DT_INST_GET(n), 0); \
@@ -449,7 +449,7 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
     static struct linkedsemi_sdhci_config sdhci_##n##_config = {                                                \
         .max_bus_freq = DT_INST_PROP(n, max_bus_freq),                                                          \
         .min_bus_freq = DT_INST_PROP(n, min_bus_freq),                                                          \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),))                            \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),))                                \
         .irq_config_func = sdhci_##n##_irq_config_func,                                                         \
     };                                                                                                          \
                                                                                                                 \
