@@ -21,8 +21,24 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "eth_dwmac_priv.h"
 
+#if defined(CONFIG_PINCTRL)
+#include <zephyr/drivers/pinctrl.h>
+PINCTRL_DT_INST_DEFINE(0);
+static const struct pinctrl_dev_config *eth0_pcfg =
+    PINCTRL_DT_INST_DEV_CONFIG_GET(0);
+#endif
+
 int dwmac_bus_init(struct dwmac_priv *p)
 {
+#if defined(CONFIG_PINCTRL)
+    int ret;
+    ret = pinctrl_apply_state(eth0_pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure ethernet pins");
+        return ret;
+    }
+#endif
+
     p->base_addr = DT_INST_REG_ADDR(0);
 
     return 0;
