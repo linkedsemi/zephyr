@@ -51,7 +51,6 @@ static int lsqsh_init(void)
     SystemInit();
     sys_init_none();
 
-#if defined(CONFIG_CACHE)
     SYSMAP->SYSMAPADDR0 = 0x10001000 >> 12;
     SYSMAP->SYSMAPCFG0 = 0x10;
     SYSMAP->SYSMAPADDR1 = 0x1013f000 >> 12;
@@ -69,13 +68,12 @@ static int lsqsh_init(void)
     SYSMAP->SYSMAPADDR7 = 0;
     SYSMAP->SYSMAPCFG7 = 0;
 
-#if defined(CONFIG_BOARD_LSQSH_APP_EVB)
+#if defined(CONFIG_CACHE)
     csi_dcache_enable();
     csi_icache_enable();
 
     csi_dcache_invalid();
     csi_icache_invalid();
-#endif
 #endif
 
     /* RMII */
