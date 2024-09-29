@@ -8,4 +8,7 @@ properties:
     port:
       type: array
       required: true
+
+    up_irq:
+      type: array
       

@@ -440,6 +440,16 @@ static void mem_io_rd_rsp_pkt_build(uint8_t len,uint32_t data,uint8_t *up_data_b
 	up_data_buf[2] = data>>24;
 }
 
+static void espi_send_oob_rst_ack(const struct device *dev)
+{
+	espi_vw_tx(dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
+}
+
+static void espi_send_host_rst_ack(const struct device *dev)
+{
+	espi_vw_tx(dev,1,6,ESPI_SYS_EVT_6_HOST_RST_ACK_VLD|ESPI_SYS_EVT_6_HOST_RST_ACK);
+}
+
 static void ls_espi_isr(void *arg)
 {
 	struct device *dev = (struct device *) arg;
@@ -510,15 +520,32 @@ static void ls_espi_isr(void *arg)
     }
     if(stt&ESPI_INTR_STT_DN_VWIR_02_MASK)
     {
+        uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
+        uint8_t s02 = dn_vwir_sys0>>16&0xf;
+        (void)s02;
+        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_02_MASK;
 
     }
     if(stt&ESPI_INTR_STT_DN_VWIR_03_MASK)
     {
+        uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
+        uint8_t s03 = dn_vwir_sys0>>24&0xf;
+        if(s03&ESPI_SYS_EVT_3_OOB_RST_WARN)
+        {
+			espi_send_oob_rst_ack(dev);
+        }
+        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_03_MASK;
 
     }
     if(stt&ESPI_INTR_STT_DN_VWIR_07_MASK)
     {
-
+        uint32_t dn_vwir_sys1 = reg->DN_VWIR_SYS1;
+		uint8_t s07 = dn_vwir_sys1>>24&0xf;
+		if(s07&ESPI_SYS_EVT_7_HOST_RST_WARN)
+		{
+			espi_send_host_rst_ack(dev);
+		}
+        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_07_MASK;
     }
     if(stt&ESPI_INTR_STT_DN_REST_MASK)
     {
@@ -537,16 +564,6 @@ static void espi_send_boot_done(const struct device *dev)
 {
 	espi_vw_tx(dev,1,5,ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE|
 						ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS);
-}
-
-static void espi_send_oob_rst_ack(const struct device *dev)
-{
-	espi_vw_tx(dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
-}
-
-static void espi_send_host_rst_ack(const struct device *dev)
-{
-	espi_vw_tx(dev,1,6,ESPI_SYS_EVT_6_HOST_RST_ACK_VLD|ESPI_SYS_EVT_6_HOST_RST_ACK);
 }
 
 static void espi_send_edge_irq(const struct device *dev,uint8_t idx)

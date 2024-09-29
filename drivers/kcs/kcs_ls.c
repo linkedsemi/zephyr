@@ -13,6 +13,7 @@ struct kcs_ls_config {
     struct peri_ioport_content data;
     struct peri_ioport_content cmd_stt;
     const struct device *parent;
+    struct upstream_irq_type *up_irq;
 };
 
 struct kcs_ls_data {
@@ -44,22 +45,46 @@ static int kcs_ls_init(const struct device *dev)
 static int kcs_ls_read_data(const struct device *dev,uint8_t *data)
 {
     struct kcs_ls_data *dev_data = dev->data;
+    int ret = 0;
     k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-    dev_data->status &= ~KCS_IBF;
-    *data = dev_data->data_in;
+    if(dev_data->status & KCS_IBF)
+    {
+        dev_data->status &= ~KCS_IBF;
+        *data = dev_data->data_in;
+    }else
+    {
+        ret = -EIO;
+    }
     k_spin_unlock(&dev_data->lock,key);
-    return 0;
+    return ret;
 }
 
 static int kcs_ls_write_data(const struct device *dev,uint8_t data)
 {
     struct kcs_ls_data *dev_data = dev->data;
+    struct kcs_ls_config *cfg = dev->config;
+    int ret = 0;
     k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-    dev_data->status |= KCS_OBF;
-    dev_data->data_out = data;
+    if(dev_data->status & KCS_OBF)
+    {
+        ret = -EIO;
+    }else
+    {
+        dev_data->status |= KCS_OBF;
+        dev_data->data_out = data;
+    }
     k_spin_unlock(&dev_data->lock,key);
-    //up irq
-    return 0;
+    if(ret == 0 && cfg->up_irq)
+    {
+        if(cfg->up_irq->type == UP_IRQ_EDGE_TYPE)
+        {
+            espi_lpc_raise_edge_irq(dev,cfg->up_irq->idx);
+        }else
+        {
+            espi_lpc_set_level_irq(dev,cfg->up_irq->idx,1);
+        }
+    }
+    return ret;
 }
 
 static int kcs_ls_read_status(const struct device *dev,uint8_t *status)
@@ -118,11 +143,15 @@ static void data_io_read(struct peri_ioport_content *ioport,uint8_t size,void *r
     uint8_t *val = res;
     struct device *dev = ioport->ctx;
     struct kcs_ls_data *dev_data = dev->data;
+    struct kcs_ls_config *cfg = dev->config;
     k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
 	*val = dev_data->data_out;
 	dev_data->status &= ~KCS_OBF;
     k_spin_unlock(&dev_data->lock,key);
-    //level irq inactive
+    if(cfg->up_irq&&cfg->up_irq->type!=UP_IRQ_EDGE_TYPE)
+    {
+        espi_lpc_set_level_irq(dev,cfg->up_irq->idx,0);
+    }
 }
 
 static void data_io_write(struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
@@ -146,6 +175,7 @@ static void cmd_stt_io_write(struct peri_ioport_content *ioport,uint8_t size,uin
 }
 
 #define LS_KCS_INIT(idx)\
+    IF_ENABLED(DT_HAS_UP_IRQ(idx),UPSTREAM_IRQ_DT_INST_DEFINE(idx);)\
     static struct kcs_ls_data kcs_ls_data_##idx;\
     static const struct kcs_ls_config kcs_ls_cfg_##idx = {\
         .data = {\
@@ -161,6 +191,7 @@ static void cmd_stt_io_write(struct peri_ioport_content *ioport,uint8_t size,uin
             .addr = DT_INST_PROP_BY_IDX(idx,port,1),\
         },\
         .parent = DT_INST_PARENT(idx),\
+        IF_ENABLED(DT_HAS_UP_IRQ(idx),.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx),)\
     };\
     DEVICE_DT_INST_DEFINE(idx,\
         &kcs_ls_init,\

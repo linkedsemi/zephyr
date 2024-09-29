@@ -30,6 +30,28 @@ struct peri_mem {
     struct peri_mem_content *content;
 };
 
+struct upstream_irq_type {
+    uint8_t idx;
+    uint8_t type;
+};
+#define DT_HAS_UP_IRQ(inst) DT_NODE_HAS_PROP(DT_DRV_INST(inst), up_irq)
+
+#define UP_IRQ_CONFIG_NAME(node_id) _CONCAT(__up_irq,DEVICE_DT_NAME_GET(node_id))
+
+#define UPSTREAM_IRQ_DT_DEFINE(node_id) \
+    static const struct upstream_irq_type UP_IRQ_CONFIG_NAME(node_id) = { \
+        .idx = DT_PROP_BY_IDX(node_id,up_irq,0),\
+        .type = DT_PROP_BY_IDX(node_id,up_irq,1),\
+    };
+
+#define UPSTREAM_IRQ_DT_INST_DEFINE(inst) UPSTREAM_IRQ_DT_DEFINE(DT_DRV_INST(inst))
+
+#define UPSTREAM_IRQ_DT_CONFIG_GET(node_id) &UP_IRQ_CONFIG_NAME(node_id)
+
+#define UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst) UPSTREAM_IRQ_DT_CONFIG_GET(DT_DRV_INST(inst))
+
+#define UP_IRQ_EDGE_TYPE 0
+
 struct espi_lpc_ls_config {
 	void (*irq_config_func)(const struct device *);
     void *reg;
