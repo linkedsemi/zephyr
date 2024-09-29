@@ -76,10 +76,13 @@ static int lsqsh_init(void)
     csi_icache_invalid();
 #endif
 
+#if defined(CONFIG_ETH_DRIVER)
     /* RMII */
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x58) = 0x206C80;
+#endif
 
+#if defined(CONFIG_SDHC)
     /* SDHC */
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
 
@@ -89,9 +92,12 @@ static int lsqsh_init(void)
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x60) = 0xf0;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00268;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
+#endif
 
+#if defined(CONFIG_PECI)
     /* PECI */
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xb4) = 0x1;
+#endif
 
     /* UART */
     pinmux_dwuart1_init(PC03, PC04);
