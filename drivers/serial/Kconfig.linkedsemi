@@ -4,7 +4,7 @@
 
 config UART_LINKEDSEMI
 	default y
-	depends on DT_HAS_LINKEDSEMI_UART_ENABLED
+	depends on DT_HAS_LINKEDSEMI_LS_UART_ENABLED
 	select SERIAL_HAS_DRIVER
 	select SERIAL_SUPPORT_INTERRUPT
 	bool "LINKEDSEMI serial driver"

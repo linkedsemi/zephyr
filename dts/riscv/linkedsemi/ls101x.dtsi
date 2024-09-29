@@ -145,7 +145,7 @@
         };
 
         uart1: uart@40085000 {
-            compatible = "linkedsemi-uart";
+            compatible = "linkedsemi,ls-uart";
             reg = <0x40085000 0x400>;
 			status = "disabled";
             // label = "UART1";
@@ -153,7 +153,7 @@
             clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_UART1_POS LS_CLKG_CLR_UART1_POS>;
         };
         uart2: uart@40085400 {
-            compatible = "linkedsemi-uart";
+            compatible = "linkedsemi,ls-uart";
             reg = <0x40085400 0x400>;
 			status = "disabled";
             // label = "UART1";
@@ -161,7 +161,7 @@
             clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_UART2_POS LS_CLKG_CLR_UART2_POS>;
         };
         uart3: uart@40085800 {
-            compatible = "linkedsemi-uart";
+            compatible = "linkedsemi,ls-uart";
             reg = <0x40085800 0x400>;
 			status = "disabled";
             // label = "UART1";
@@ -196,8 +196,15 @@
             reg = <0x40004000 0x400>;
             status = "disabled";
             interrupts = <27 3>;
+            clocks = <&cpu_cctl LS_CCTL_CLKG0 LS_CLKG_SET_ESPI_POS LS_CLKG_CLR_ESPI_POS>;
         };
-
+        lpc: lpc@40005000 {
+            compatible = "linkedsemi,ls-lpc";
+            reg = <0x40005000 0x400>;
+            status = "disabled";
+            interrupts = <28 3>;
+            clocks = <&cpu_cctl LS_CCTL_CLKG0 LS_CLKG_SET_LPC_POS LS_CLKG_CLR_LPC_POS>;
+        };
 		spi1: spi@40087000 {
 			compatible = "snps,designware-spi";
 			#address-cells = <1>;
@@ -266,7 +273,7 @@
 
 
         adc1: adc@40089000 {
-            compatible = "linkedsemi-adc";
+            compatible = "linkedsemi,ls-adc";
             reg = <0x40089000 0x400>;
             status = "disabled";
             // lable = "ADC1";
@@ -274,7 +281,7 @@
         };
 
         adc2: adc@40089400 {
-            compatible = "linkedsemi-adc";
+            compatible = "linkedsemi,ls-adc";
             reg = <0x40089400 0x400>;
             status = "disabled";
             // lable = "ADC2";
@@ -282,7 +289,7 @@
         };
 
         dac12: dac@4008d400 {
-            compatible = "linkedsemi-dac";
+            compatible = "linkedsemi,ls-dac";
             reg = <0x4008d400 0x400>;
             status = "disabled";
             // lable = "DAC12"

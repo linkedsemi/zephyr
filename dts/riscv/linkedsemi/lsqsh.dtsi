@@ -438,14 +438,14 @@
         };
 
         uart1: uart@40087000 {
-            compatible = "linkedsemi-uart";
+            compatible = "linkedsemi,ls-uart";
             reg = <0x40087000 0x400>;
             interrupts = <94 3> ;
             status = "disabled";
         };
 
         uart2: uart@40087400 {
-            compatible = "linkedsemi-uart";
+            compatible = "linkedsemi,ls-uart";
             reg = <0x40087400 0x400>;
             interrupts = <95 3> ;
             status = "disabled";

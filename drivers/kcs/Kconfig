@@ -1,0 +1,21 @@
+menuconfig KCS
+    bool "KCS controller drivers"
+    help
+      Include KCS controller drivers in the system configuration.
+
+if KCS
+
+source "drivers/kcs/Kconfig.ls"
+
+module = KCS
+module-str = kcs
+source "subsys/logging/Kconfig.template.log_config"
+
+config KCS_INIT_PRIORITY
+    int "KCS controller driver init priority"
+    default 10
+    help
+       KCS controller driver initialization priority.
+
+
+endif

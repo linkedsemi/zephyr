@@ -1,6 +1,10 @@
 
 if SOC_FAMILY_LS_MCU
 
+config ESPI_LPC
+    bool
+    default y if ESPI || LPC
+
 rsource "*/Kconfig"
 
 endif
