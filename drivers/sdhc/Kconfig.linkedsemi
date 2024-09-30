@@ -19,7 +19,6 @@ config SDHCI_LINKEDSEMI_DMA_SUPPORT
     help
       Enable DMA support for SDHCI driver. May be disabled to reduce
       footprint of driver.
-        #define SDHCI_SDMA_ENABLE
 
 config SDHCI_SDMA_ENABLE
     bool "SDMA support for SDHCI driver"
