@@ -17,7 +17,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <reg_peci_type.h>
-#include <ls_msp_peci.h>
 #include <field_manipulate.h>
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
