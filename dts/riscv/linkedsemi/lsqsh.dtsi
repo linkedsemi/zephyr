@@ -333,7 +333,7 @@
             status = "disabled";
         };
 
-        smbus2: smbus2 {
+        smbus_ali_11_runbmc_i2c8_fpga_i2c2: smbus_ali_11_runbmc_i2c8_fpga_i2c2 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -341,7 +341,7 @@
             status = "disabled";
         };
 
-        smbus3: smbus3 {
+        smbus_ali_14_runbmc_i2c4_fpga_i2c3: smbus_ali_14_runbmc_i2c4_fpga_i2c3 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -349,7 +349,7 @@
             status = "disabled";
         };
 
-        smbus4: smbus4 {
+        smbus_ali_9_runbmc_i2c12_fpga_i2c4: smbus_ali_9_runbmc_i2c12_fpga_i2c4 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -357,7 +357,7 @@
             status = "disabled";
         };
 
-        smbus5: smbus5 {
+        smbus_ali_16_runbmc_i2c14_fpga_i2c5: smbus_ali_16_runbmc_i2c14_fpga_i2c5 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -365,7 +365,7 @@
             status = "disabled";
         };
 
-        smbus6: smbus6 {
+        smbus_ali_7_runbmc_i2c15_fpga_i2c6: smbus_ali_7_runbmc_i2c15_fpga_i2c6 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -373,7 +373,7 @@
             status = "disabled";
         };
 
-        smbus7: smbus7 {
+        smbus_ali_13_runbmc_i2c7_fpga_i2c7: smbus_ali_13_runbmc_i2c7_fpga_i2c7 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -381,7 +381,7 @@
             status = "disabled";
         };
 
-        smbus8: smbus8 {
+        smbus8: smbu8 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -397,7 +397,7 @@
             status = "disabled";
         };
 
-        smbus10: smbus10 {
+        smbus_ali_10_runbmc_i2c16_fpga_i2c10: smbus_ali_10_runbmc_i2c16_fpga_i2c10 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -405,7 +405,7 @@
             status = "disabled";
         };
 
-        smbus11: smbus11 {
+        smbus_ali_8_runbmc_i2c11_fpga_i2c11: smbus_ali_8_runbmc_i2c11_fpga_i2c11 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -413,7 +413,7 @@
             status = "disabled";
         };
 
-        smbus12: smbus12 {
+        smbus_ali_15_runbmc_i2c2_fpga_i2c12: smbus_ali_15_runbmc_i2c2_fpga_i2c12 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -421,7 +421,7 @@
             status = "disabled";
         };
 
-        smbus13: smbus13 {
+        smbus_ali_5_runbmc_i2c9_fpga_i2c13: smbus_ali_5_runbmc_i2c9_fpga_i2c13 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;
@@ -429,7 +429,7 @@
             status = "disabled";
         };
 
-        smbus14: smbus14 {
+        smbus_ali_6_runbmc_i2c10_fpga_i2c14: smbus_ali_6_runbmc_i2c10_fpga_i2c14 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;

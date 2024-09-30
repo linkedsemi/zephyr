@@ -78,12 +78,26 @@ static int lsqsh_init(void)
 
 #if defined(CONFIG_ETH_DRIVER)
     /* RMII */
+    io_cfg_input(PT01);
+    io_cfg_input(PT08);
+    io_cfg_input(PT09);
+    io_cfg_input(PT10);
+    io_cfg_input(PT11);
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x58) = 0x206C80;
 #endif
 
 #if defined(CONFIG_SDHC)
     /* SDHC */
+    io_cfg_input(PH04);
+    io_cfg_input(PH05);
+    io_cfg_input(PH06);
+    io_cfg_input(PH07);
+    io_cfg_input(PH08);
+    io_cfg_input(PH09);
+    io_cfg_input(PH10);
+    io_cfg_input(PH11);
+    io_cfg_input(PH13);
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
 
     *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x10) = 0x10000000;
@@ -96,16 +110,31 @@ static int lsqsh_init(void)
 
 #if defined(CONFIG_PECI)
     /* PECI */
+    io_cfg_input(PK00);
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xb4) = 0x1;
 #endif
 
+#if defined(CONFIG_SERIAL)
     /* UART */
     pinmux_dwuart1_init(PC03, PC04);
     pinmux_dwuart2_init(PD09, PD10);
+#endif
 
+#if defined(CONFIG_I2C)
     /* I2C */
-    pinmux_iic2_init(PB13, PB14);
-    pinmux_iic7_init(PG15, PG14);
+    pinmux_iic2_init(PB03, PB04);
+    pinmux_iic3_init(PC13, PC11);
+    pinmux_iic4_init(PD00, PD01);
+    pinmux_iic5_init(PE07, PE08);
+    pinmux_iic6_init(PF07, PF08);
+    pinmux_iic7_init(PK15, PK14);
+    pinmux_iic9_init(PI03, PI02);
+    pinmux_iic10_init(PJ03, PJ02);
+    pinmux_iic11_init(PN09, PN08);
+    pinmux_iic12_init(PN13, PN14);
+    pinmux_iic13_init(PQ00, PQ01);
+    pinmux_iic14_init(PQ03, PQ02);
+#endif
 
     IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
     cpu_sleep_mode_config(0);

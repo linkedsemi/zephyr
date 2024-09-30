@@ -23,9 +23,9 @@
     };
 
     aliases {
-        testi2c1 = &i2c2;
+        testi2c1 = &i2c11;
         testi2c2 = &i2c7;
-        testeeprom1 = &eeprom2;
+        testeeprom1 = &eeprom11;
         testeeprom2 = &eeprom7;
         peci-0 = &peci0;
         sdhc0 = &sdhci;
@@ -163,12 +163,22 @@
 
 &i2c2 {
     status = "okay";
-    eeprom2: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
+};
+
+&i2c3 {
+    status = "okay";
+};
+
+&i2c4 {
+    status = "okay";
+};
+
+&i2c5 {
+    status = "okay";
+};
+
+&i2c6 {
+    status = "okay";
 };
 
 &i2c7 {
@@ -181,11 +191,77 @@
     };
 };
 
-&smbus2 {
+&i2c10 {
     status = "okay";
 };
 
-&smbus7 {
+&i2c11 {
+    status = "okay";
+    eeprom11: eeprom@76 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x76>;
+        size = <256>;
+        status = "okay";
+    };
+};
+
+&i2c12 {
+    status = "okay";
+};
+
+&i2c13 {
+    status = "okay";
+};
+
+&i2c14 {
+    status = "okay";
+};
+
+/*
+    smbus
+*/
+
+&smbus_ali_11_runbmc_i2c8_fpga_i2c2 {
+    status = "okay";
+};
+
+&smbus_ali_14_runbmc_i2c4_fpga_i2c3 {
+    status = "okay";
+};
+
+&smbus_ali_9_runbmc_i2c12_fpga_i2c4 {
+    status = "okay";
+};
+
+&smbus_ali_16_runbmc_i2c14_fpga_i2c5 {
+    status = "okay";
+};
+
+&smbus_ali_7_runbmc_i2c15_fpga_i2c6 {
+    status = "okay";
+};
+
+&smbus_ali_13_runbmc_i2c7_fpga_i2c7 {
+    status = "okay";
+};
+
+&smbus_ali_10_runbmc_i2c16_fpga_i2c10 {
+    status = "okay";
+};
+
+&smbus_ali_8_runbmc_i2c11_fpga_i2c11 {
+    status = "okay";
+};
+
+&smbus_ali_15_runbmc_i2c2_fpga_i2c12 {
+    status = "okay";
+};
+
+&smbus_ali_5_runbmc_i2c9_fpga_i2c13 {
+    status = "okay";
+};
+
+&smbus_ali_6_runbmc_i2c10_fpga_i2c14 {
     status = "okay";
 };
 
