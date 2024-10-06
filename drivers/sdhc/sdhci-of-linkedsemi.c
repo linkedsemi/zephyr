@@ -226,12 +226,14 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
                 continue;
             }
             if (data->rx_data) {
-                for (int i = 0; i < data->block_size / 4; i++) {
-                    data->rx_data[i + block * data->block_size] = sdhci_readl(host, SDHCI_BUFFER);
+                uint16_t block_size = data->block_size / 4;
+                for (int i = 0; i < block_size; i++) {
+                    data->rx_data[i + block * block_size] = sdhci_readl(host, SDHCI_BUFFER);
                 }
             } else {
-                for (int i = 0; i < data->block_size / 4; i++) {
-                    sdhci_writel(host, data->tx_data[i + block * data->block_size], SDHCI_BUFFER);
+                uint16_t block_size = data->block_size / 4;
+                for (int i = 0; i < block_size; i++) {
+                    sdhci_writel(host, data->tx_data[i + block * block_size], SDHCI_BUFFER);
                 }
             }
             block++;
