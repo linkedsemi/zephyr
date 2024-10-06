@@ -238,10 +238,6 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             }
             block++;
             if (block >= data->block_count) {
-                while (sdhci_get_present_status_flag(host) & sdhci_command_inhibit_flag) {
-                }
-                while (sdhci_get_present_status_flag(host) & sdhci_data_inhibit_flag) {
-                }
                 return 0;
             }
         }
@@ -284,6 +280,10 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     /* transfer data */
     if ((sdhci_data != NULL) && (ret == 0)) {
         ret = linkedsemi_sdhci_transfer_data_blocking(host, sdhci_data, use_dma);
+    }
+    while (sdhci_get_present_status_flag(host) & sdhci_command_inhibit_flag) {
+    }
+    while (sdhci_data && (sdhci_get_present_status_flag(host) & sdhci_data_inhibit_flag)) {
     }
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
