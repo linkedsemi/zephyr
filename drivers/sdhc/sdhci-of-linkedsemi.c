@@ -238,6 +238,10 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             }
             block++;
             if (block >= data->block_count) {
+                while (sdhci_get_present_status_flag(host) & sdhci_command_inhibit_flag) {
+                }
+                while (sdhci_get_present_status_flag(host) & sdhci_data_inhibit_flag) {
+                }
                 return 0;
             }
         }
