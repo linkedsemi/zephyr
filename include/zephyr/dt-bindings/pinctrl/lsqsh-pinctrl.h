@@ -7,17 +7,24 @@
 #ifndef ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_LSQSH_PINCTRL_H_
 #define ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_LSQSH_PINCTRL_H_
 
+#include "../../../../../modules/hal/linkedsemi/soc/rv32/qsh/per_func_mux.h"
+#include "../../../../../modules/hal/linkedsemi/soc/rv32/qsh/ls_soc_gpio_def.h"
+
 #define FUNC_NULL 0x0
 #define FUNC_GPIO 0xff
+
+#define PINMUX_FUNC0 0
+#define PINMUX_FUNC1 1
+#define PINMUX_FUNC2 2
+#define PINMUX_FUNC3 3
+#define PINMUX_FUNC_START PINMUX_FUNC0
+#define PINMUX_FUNC_END PINMUX_FUNC3
 
 /**
  * @brief Bit Masks
  */
-#define LS_PORT_POS  0
-#define LS_PORT_MASK 0xf
-
-#define LS_PIN_POS  4
-#define LS_PIN_MASK 0xf
+#define LS_PIN_POS  0
+#define LS_PIN_MASK 0xff
 
 #define LS_PULL_DOWN_POS  8
 #define LS_PULL_DOWN_MASK 0x1
@@ -52,15 +59,15 @@
 #define LS_ALT_POS  19
 #define LS_ALT_MASK 0xff
 
-/* Encode the IO port pin into a numeric format */
-#define LSPIN(port, pin) ((port) << 4 | (pin))
+#define LS_FUNC_POS  27
+#define LS_FUNC_MASK 0x3
+
+#define LSFUNC(func) (((func) << LS_FUNC_POS) & LS_FUNC_MASK)
 
 /* Set and get macro definitions for the pin reuse configuration */
+#define LS_PINMUX_SET(pin, alt_fun) \
+    ((pin) << LS_PIN_POS | (alt_fun) << LS_ALT_POS)
 
-#define LS_PINMUX_SET(port, pin, alt_fun) \
-    (((port) - 'A') << LS_PORT_POS | (pin) << LS_PIN_POS | (alt_fun) << LS_ALT_POS)
-
-#define LS_PINMUX_GET_PORT(pmx)       ((pmx >> LS_PORT_POS) & LS_PORT_MASK)
 #define LS_PINMUX_GET_PIN(pmx)        ((pmx >> LS_PIN_POS) & LS_PIN_MASK)
 #define LS_PINMUX_GET_PULL_DOWN(pmx)  ((pmx >> LS_PULL_DOWN_POS) & LS_PULL_DOWN_MASK)
 #define LS_PINMUX_GET_PULL_UP(pmx)    ((pmx >> LS_PULL_UP_POS) & LS_PULL_UP_MASK)
@@ -72,6 +79,7 @@
 #define LS_PINMUX_GET_OUTPUT(pmx)     ((pmx >> LS_CFG_OUTPUT_POS) & LS_CFG_OUTPUT_MASK)
 #define LS_PINMUX_GET_DRIVE(pmx)      ((pmx >> LS_DRIVE_POS) & LS_DRIVE_MASK)
 #define LS_PINMUX_GET_ALT(pmx)        ((pmx >> LS_ALT_POS) & LS_ALT_MASK)
+#define LS_PINMUX_GET_FUNC(pmx)        ((pmx >> LS_FUNC_POS) & LS_FUNC_MASK)
 #define LS_PINMUX_GET_ANALOG(pmx)     ((pmx >> LS_ANALOG_EN_POS) & LS_ANALOG_EN_MASK)
 #define LS_PINMUX_GET_LOCK(pmx)       ((pmx >> LS_LOCK_POS) & LS_LOCK_MASK)
 

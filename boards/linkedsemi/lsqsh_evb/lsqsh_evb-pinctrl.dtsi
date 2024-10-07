@@ -8,70 +8,191 @@
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
 &pinctrl {
+    /* I2C */
+    /omit-if-no-ref/i2c2_scl_pb03: i2c2_scl_pb03 {
+        pinmux = <LS_PINMUX_SET(PB03, FIOB_I2C2_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c2_sda_pb04: i2c2_sda_pb04 {
+        pinmux = <LS_PINMUX_SET(PB04, FIOB_I2C2_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c3_scl_pc13: i2c3_scl_pc13 {
+        pinmux = <LS_PINMUX_SET(PC13, FIOC_I2C3_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c3_sda_pc11: i2c3_sda_pc11 {
+        pinmux = <LS_PINMUX_SET(PC11, FIOC_I2C3_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c4_scl_pd00: i2c4_scl_pd00 {
+        pinmux = <LS_PINMUX_SET(PD00, FIOD_I2C4_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c4_sda_pd01: i2c4_sda_pd01 {
+        pinmux = <LS_PINMUX_SET(PD01, FIOD_I2C4_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c5_scl_pe07: i2c5_scl_pe07 {
+        pinmux = <LS_PINMUX_SET(PE07, FIOE_I2C5_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c5_sda_pe08: i2c5_sda_pe08 {
+        pinmux = <LS_PINMUX_SET(PE08, FIOE_I2C5_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c6_scl_pf07: i2c6_scl_pf07 {
+        pinmux = <LS_PINMUX_SET(PF07, FIOF_I2C6_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c6_sda_pf08: i2c6_sda_pf08 {
+        pinmux = <LS_PINMUX_SET(PF08, FIOF_I2C6_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c7_scl_pk15: i2c7_scl_pk15 {
+        pinmux = <LS_PINMUX_SET(PK15, FIOK_I2C7_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c7_sda_pk14: i2c7_sda_pk14 {
+        pinmux = <LS_PINMUX_SET(PK14, FIOK_I2C7_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c9_scl_pi03: i2c9_scl_pi03 {
+        pinmux = <LS_PINMUX_SET(PI03, FIOI_I2C9_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c9_sda_pi02: i2c9_sda_pi02 {
+        pinmux = <LS_PINMUX_SET(PI02, FIOI_I2C9_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c10_scl_pj03: i2c10_scl_pj03 {
+        pinmux = <LS_PINMUX_SET(PJ03, FIOJ_I2C10_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c10_sda_pj02: i2c10_sda_pj02 {
+        pinmux = <LS_PINMUX_SET(PJ02, FIOJ_I2C10_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c11_scl_pn09: i2c11_scl_pd00 {
+        pinmux = <LS_PINMUX_SET(PN09, FION_I2C11_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c11_sda_pn08: i2c11_sda_pn08 {
+        pinmux = <LS_PINMUX_SET(PN08, FION_I2C11_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c12_scl_pn13: i2c12_scl_pn13 {
+        pinmux = <LS_PINMUX_SET(PN13, FION_I2C12_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c12_sda_pn14: i2c12_sda_pn14 {
+        pinmux = <LS_PINMUX_SET(PN14, FION_I2C12_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c13_scl_pq00: i2c13_scl_pq00 {
+        pinmux = <LS_PINMUX_SET(PQ00, FIOQ_I2C13_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c13_sda_pq01: i2c13_sda_pq01 {
+        pinmux = <LS_PINMUX_SET(PQ01, FIOQ_I2C13_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c14_scl_pq03: i2c14_scl_pq03 {
+        pinmux = <LS_PINMUX_SET(PQ03, FIOQ_I2C14_SCL)>;
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c14_sda_pq02: i2c14_sda_pq02 {
+        pinmux = <LS_PINMUX_SET(PQ02, FIOQ_I2C14_SDA)>;
+        drive-open-drain;
+        input-enable;
+    };
+
     /* PECI */
-    /omit-if-no-ref/peci_default_pk00: peci_default_pk00 {
-        pinmux = <LS_PINMUX_SET('K', 0, FUNC_NULL)>;
+    /omit-if-no-ref/peci_pk00: peci_pk00 {
+        pinmux = <LS_PINMUX_SET(PK00, LSFUNC(PINMUX_FUNC1))>;
         bias-pull-down;
         drive-open-drain;
     };
 
     /* RMII */
-    /omit-if-no-ref/mdio_default_pt01: mdio_default_pt01 {
-        pinmux = <LS_PINMUX_SET('T', 1, FUNC_NULL)>;
+    /omit-if-no-ref/rmii_mdio_pt01: rmii_mdio_pt01 {
+        pinmux = <LS_PINMUX_SET(PT01, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/rxc_default_pt08: rxc_default_pt08 {
-        pinmux = <LS_PINMUX_SET('T', 8, FUNC_NULL)>;
+    /omit-if-no-ref/rmii_rxc_pt08: rmii_rxc_pt08 {
+        pinmux = <LS_PINMUX_SET(PT08, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/crsdv_default_pt09: crsdv_default_pt09 {
-        pinmux = <LS_PINMUX_SET('T', 9, FUNC_NULL)>;
+    /omit-if-no-ref/rmii_crsdv_pt09: rmii_crsdv_pt09 {
+        pinmux = <LS_PINMUX_SET(PT09, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/rxd0_default_pt10: rxd0_default_pt10 {
-        pinmux = <LS_PINMUX_SET('T', 10, FUNC_NULL)>;
+    /omit-if-no-ref/rmii_rxd0_pt10: rmii_rxd0_pt10 {
+        pinmux = <LS_PINMUX_SET(PT10, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/rxd1_default_pt11: rxd1_default_pt11 {
-        pinmux = <LS_PINMUX_SET('T', 11, FUNC_NULL)>;
+    /omit-if-no-ref/rmii_rxd1_pt11: rmii_rxd1_pt11 {
+        pinmux = <LS_PINMUX_SET(PT11, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
 
     /* SDHC */
-    /omit-if-no-ref/d0_default_ph04: d0_default_ph04 {
-        pinmux = <LS_PINMUX_SET('H', 4, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d0_ph04: sdhc_d0_ph04 {
+        pinmux = <LS_PINMUX_SET(PH04, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d1_default_ph05: d1_default_ph05 {
-        pinmux = <LS_PINMUX_SET('H', 5, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d1_ph05: sdhc_d1_ph05 {
+        pinmux = <LS_PINMUX_SET(PH05, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d2_default_ph06: d2_default_ph06 {
-        pinmux = <LS_PINMUX_SET('H', 6, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d2_ph06: sdhc_d2_ph06 {
+        pinmux = <LS_PINMUX_SET(PH06, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d3_default_ph07: d3_default_ph07 {
-        pinmux = <LS_PINMUX_SET('H', 7, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d3_ph07: sdhc_d3_ph07 {
+        pinmux = <LS_PINMUX_SET(PH07, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d4_default_ph08: d4_default_ph08 {
-        pinmux = <LS_PINMUX_SET('H', 8, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d4_ph08: sdhc_d4_ph08 {
+        pinmux = <LS_PINMUX_SET(PH08, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d5_default_ph09: d5_default_ph09 {
-        pinmux = <LS_PINMUX_SET('H', 9, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d5_ph09: sdhc_d5_ph09 {
+        pinmux = <LS_PINMUX_SET(PH09, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d6_default_ph010: d6_default_ph010 {
-        pinmux = <LS_PINMUX_SET('H', 10, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d6_ph010: sdhc_d6_ph010 {
+        pinmux = <LS_PINMUX_SET(PH10, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/d7_default_ph011: d7_default_ph011 {
-        pinmux = <LS_PINMUX_SET('H', 11, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_d7_ph011: sdhc_d7_ph011 {
+        pinmux = <LS_PINMUX_SET(PH11, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/cmd_default_ph013: cmd_default_ph013 {
-        pinmux = <LS_PINMUX_SET('H', 13, FUNC_NULL)>;
+    /omit-if-no-ref/sdhc_cmd_ph013: sdhc_cmd_ph013 {
+        pinmux = <LS_PINMUX_SET(PH13, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
 };

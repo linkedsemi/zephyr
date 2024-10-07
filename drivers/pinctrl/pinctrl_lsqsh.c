@@ -3,75 +3,96 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
+#include <reg_sysc_awo.h>
+#include <reg_sysc_per.h>
 #include <ls_soc_gpio.h>
 
 #define DT_DRV_COMPAT linkedsemi_lsqsh_pinctrl
 
 static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
 {
-    uint8_t port_id, pin_id, pin, driv_stren;
-/*
-In parentheses are banks that do not exist:
-    A B C D E F G H I J K (L) M N (O) (P) Q (R) (S) T
-*/
-    port_id = LS_PINMUX_GET_PORT(pinmux);
-    __ASSERT(((port_id != 'L' - 'A')
-              && (port_id != 'O' - 'A')
-              && (port_id != 'P' - 'A')
-              && (port_id != 'R' - 'A')
-              && (port_id != 'S' - 'A')),
-             "PLXX/POXX/PPXX/PRXX/PSXX is not exist");
-    if (port_id >= ('R' - 'A')) {
-        port_id -= 5;
-    } else if (port_id >= ('O' - 'A')) {
-        port_id -= 3;
-    } else if (port_id >= ('L' - 'A')) {
-        port_id--;
-    }
+    uint8_t pin = 0;
+    uint8_t driv_stren = 0;
+    uint8_t func = 0;
+    uint32_t alt = 0;
 
-    pin_id = LS_PINMUX_GET_PIN(pinmux);
-    pin = LSPIN(port_id, pin_id);
+    pin = pinmux.pin_attr_st.pin;
 
-    if (LS_PINMUX_GET_PULL_DOWN(pinmux)) {
+    if (pinmux.pin_attr_st.pull_down) {
         io_pull_write(pin, IO_PULL_DOWN);
     }
 
-    if (LS_PINMUX_GET_PULL_UP(pinmux)) {
+    if (pinmux.pin_attr_st.pull_up) {
         io_pull_write(pin, IO_PULL_UP);
     }
 
-    if (LS_PINMUX_GET_INPUT(pinmux)) {
+    if (pinmux.pin_attr_st.cfg_input) {
         io_cfg_input(pin);
     }
 
-    if (LS_PINMUX_GET_OUTPUT(pinmux)) {
+    if (pinmux.pin_attr_st.cfg_output) {
         io_cfg_output(pin);
     }
 
-    if (LS_PINMUX_GET_OPEN_DRAIN(pinmux)) {
+    if (pinmux.pin_attr_st.open_drain) {
         io_cfg_opendrain(pin);
     }
 
-    if (LS_PINMUX_GET_PUSH_PULL(pinmux)) {
+    if (pinmux.pin_attr_st.push_pull) {
         io_cfg_pushpull(pin);
     }
 
     /* only has effect if mode is push_pull */
-    if (LS_PINMUX_GET_OUT_HIGH(pinmux)) {
+    if (pinmux.pin_attr_st.out_high) {
         io_set_pin(pin);
     }
 
     /* only has effect if mode is push_pull */
-    if (LS_PINMUX_GET_OUT_LOW(pinmux)) {
+    if (pinmux.pin_attr_st.out_low) {
         io_clr_pin(pin);
     }
 
     /* only has effect if mode is push_pull */
-    driv_stren = LS_PINMUX_GET_DRIVE(pinmux);
+    driv_stren = pinmux.pin_attr_st.drive;
     io_drive_capacity_write(pin, driv_stren);
+
+    func = pinmux.pin_attr_st.func;
+    alt = pinmux.pin_attr_st.alt;
+    switch (func) {
+    case PINMUX_FUNC0:
+        per_func0_set(pin, alt);
+        __fallthrough;
+    case PINMUX_FUNC1:
+        __fallthrough;
+    case PINMUX_FUNC2:
+        __fallthrough;
+    case PINMUX_FUNC3:
+        switch (alt) {
+        case FUNC_NULL:
+            io_cfg_disable(pin);
+            __fallthrough;
+        case FUNC_GPIO:
+            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
+                per_func_disable(pin, PINMUX_FUNC0);
+            }
+            break;
+        default:
+            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
+                if (func == i) {
+                    per_func_enable(pin, i);
+                } else {
+                    per_func_disable(pin, i);
+                }
+            }
+            break;
+        }
+        break;
+    default:
+        break;
+    }
 
     return 0;
 }

@@ -162,26 +162,38 @@
 };
 
 &i2c2 {
+    pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c3 {
+    pinctrl-0 = <&i2c3_scl_pc13 &i2c3_sda_pc11>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c4 {
+    pinctrl-0 = <&i2c4_scl_pd00 &i2c4_sda_pd01>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c5 {
+    pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c6 {
+    pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c7 {
+    pinctrl-0 = <&i2c7_scl_pk15 &i2c7_sda_pk14>;
+    pinctrl-names = "default";
     status = "okay";
     eeprom7: eeprom@76 {
         compatible = "zephyr,i2c-target-eeprom";
@@ -192,10 +204,14 @@
 };
 
 &i2c10 {
+    pinctrl-0 = <&i2c10_scl_pj03 &i2c10_sda_pj02>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c11 {
+    pinctrl-0 = <&i2c11_scl_pn09 &i2c11_sda_pn08>;
+    pinctrl-names = "default";
     status = "okay";
     eeprom11: eeprom@76 {
         compatible = "zephyr,i2c-target-eeprom";
@@ -206,14 +222,20 @@
 };
 
 &i2c12 {
+    pinctrl-0 = <&i2c12_scl_pn13 &i2c12_sda_pn14>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c13 {
+    pinctrl-0 = <&i2c13_scl_pq00 &i2c13_sda_pq01>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
 &i2c14 {
+    pinctrl-0 = <&i2c14_scl_pq03 &i2c14_sda_pq02>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
@@ -266,31 +288,31 @@
 };
 
 &mac {
-    pinctrl-0 = <&mdio_default_pt01
-                &rxc_default_pt08
-                &crsdv_default_pt09
-                &rxd0_default_pt10
-                &rxd1_default_pt11>;
+    pinctrl-0 = <&rmii_mdio_pt01
+                &rmii_rxc_pt08
+                &rmii_crsdv_pt09
+                &rmii_rxd0_pt10
+                &rmii_rxd1_pt11>;
     pinctrl-names = "default";
     status = "okay";
 };
 
 &peci0 {
-    pinctrl-0 = <&peci_default_pk00>;
+    pinctrl-0 = <&peci_pk00>;
     pinctrl-names = "default";
     status = "okay";
 };
 
 &sdhci {
-    pinctrl-0 = <&d0_default_ph04
-                &d1_default_ph05
-                &d2_default_ph06
-                &d3_default_ph07
-                &d4_default_ph08
-                &d5_default_ph09
-                &d6_default_ph010
-                &d7_default_ph011
-                &cmd_default_ph013>;
+    pinctrl-0 = <&sdhc_d0_ph04
+                &sdhc_d1_ph05
+                &sdhc_d2_ph06
+                &sdhc_d3_ph07
+                &sdhc_d4_ph08
+                &sdhc_d5_ph09
+                &sdhc_d6_ph010
+                &sdhc_d7_ph011
+                &sdhc_cmd_ph013>;
     pinctrl-names = "default";
     status = "okay";
 

@@ -20,7 +20,24 @@
 extern "C" {
 #endif
 
-typedef uint32_t pinctrl_soc_pin_t;
+typedef union {
+    uint32_t pin_attr_val;
+    struct {
+        uint32_t pin        : 8,  // LS_PIN_POS (4), LS_PIN_MASK (0xff)
+                 pull_down  : 1,  // LS_PULL_DOWN_POS (8), LS_PULL_DOWN_MASK (0x1)
+                 pull_up    : 1,  // LS_PULL_UP_POS (9), LS_PULL_UP_MASK (0x1)
+                 push_pull  : 1,  // LS_PUSH_PULL_POS (10), LS_PUSH_PULL_MASK (0x1)
+                 open_drain : 1,  // LS_OPEN_DRAIN_POS (11), LS_OPEN_DRAIN_MASK (0x1)
+                 cfg_input  : 1,  // LS_CFG_INPUT_POS (12), LS_CFG_INPUT_MASK (0x1)
+                 cfg_output : 1,  // LS_CFG_OUTPUT_POS (13), LS_CFG_OUTPUT_MASK (0x1)
+                 out_high   : 1,  // LS_OUT_HIGH_POS (14), LS_OUT_HIGH_MASK (0x1)
+                 out_low    : 1,  // LS_OUT_LOW_POS (15), LS_OUT_LOW_MASK (0x1)
+                 drive      : 2,  // LS_DRIVE_POS (16), LS_DRIVE_MASK (0x3)
+                 din        : 1,  // LS_DIN_POS (18), LS_DIN_MASK (0x1)
+                 alt        : 8,  // LS_ALT_POS (19), LS_ALT_MASK (0xff)
+                 func       : 2;  // LS_FUNC_POS (27), LS_FUNC_MASK (0x3)
+    } pin_attr_st;
+} pinctrl_soc_pin_t;
 
 /**
  * @brief Utility macro to initialize pincfg field in #pinctrl_pin_t.
