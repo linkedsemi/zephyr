@@ -215,6 +215,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
     mask = SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE;
 
     while (1) {
+        k_sem_take(&host->transfer_sem, K_FOREVER);
         stat = host->irq_status;
         if (stat & SDHCI_INT_ERROR) {
             LOG_ERR("%s: Error detected in status(0x%X)!\n", __func__, stat);
