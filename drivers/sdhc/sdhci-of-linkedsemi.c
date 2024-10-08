@@ -431,7 +431,7 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     sdhci_init(host);
 
     k_mutex_init(&dev_data->access_mutex);
-    k_sem_init(&host->transfer_sem, 0, 1);
+    k_sem_init(&host->transfer_sem, 0, 2);
 
     dev_config->irq_config_func(dev);
 
