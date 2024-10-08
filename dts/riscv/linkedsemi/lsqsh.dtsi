@@ -1,5 +1,6 @@
 
 #include <zephyr/dt-bindings/gpio/gpio.h>
+#include <mem.h>
 
 / {
     #address-cells = <1>;
@@ -18,12 +19,12 @@
 
     sram0: memory@10000000{
         compatible = "mmio-sram";
-        reg = <0x10000000 0x7f000>;
+        reg = <0x10000000 DT_SIZE_K(512)>;
     };
 
     sram1: memory@10080000{
         compatible = "mmio-sram";
-        reg = <0x10080000 0xbf000>;
+        reg = <0x10080000 DT_SIZE_K(764)>;
     };
 
 /*

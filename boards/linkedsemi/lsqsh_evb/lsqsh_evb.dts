@@ -316,7 +316,7 @@
     pinctrl-names = "default";
     status = "okay";
 
-    disk {
+    mmc_disk0: disk {
         compatible = "zephyr,mmc-disk";
         bus-width = <1>;
         status = "okay";
