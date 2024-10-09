@@ -22,11 +22,11 @@
 #define LS_FUNC_POS  14
 #define LS_FUNC_MASK 0x3
 
-#define LSFUNC(func) (((func) << LS_FUNC_POS) & LS_FUNC_MASK)
+#define LSFUNC(func) (((func) & LS_FUNC_MASK) << (LS_FUNC_POS - LS_ALT_POS))
 
 /* Set and get macro definitions for the pin reuse configuration */
 #define LS_PINMUX_SET(pin, alt_fun) \
-    ((pin) << LS_PIN_POS | (alt_fun) << LS_ALT_POS)
+    ((pin) << LS_PIN_POS | ((alt_fun) << LS_ALT_POS))
 
 #define FUNC_NULL 0x0
 #define FUNC_GPIO LS_ALT_MASK
