@@ -7,8 +7,8 @@
 // #include "gd32vf103v_eval-pinctrl.dtsi"
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
-#include "lsqsh_evb-pinctrl.dtsi"
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
+#include "lsqsh_evb-pinctrl.dtsi"
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -154,6 +154,8 @@
 &uart3 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
+    pinctrl-names = "default";
 };
 
 &uart4 {

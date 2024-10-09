@@ -12,14 +12,47 @@
 
 #define DT_DRV_COMPAT linkedsemi_lsqsh_pinctrl
 
+static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
+{
+    switch (func) {
+    case PINMUX_FUNC0:
+        per_func0_set(pin, alt);
+        __fallthrough;
+    case PINMUX_FUNC1:
+        __fallthrough;
+    case PINMUX_FUNC2:
+        __fallthrough;
+    case PINMUX_FUNC3:
+        switch (alt) {
+        case FUNC_NULL:
+            io_cfg_disable(pin);
+            __fallthrough;
+        case FUNC_GPIO:
+            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
+                per_func_disable(pin, PINMUX_FUNC0);
+            }
+            break;
+        default:
+            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
+                if (func == i) {
+                    per_func_enable(pin, i);
+                } else {
+                    per_func_disable(pin, i);
+                }
+            }
+            break;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
 static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
 {
     uint8_t pin = 0;
-    uint8_t driv_stren = 0;
-    uint8_t func = 0;
-    uint32_t alt = 0;
 
-    pin = pinmux.pin_attr_st.pin;
+    pin = pinmux.pinmux_un.pinmux_st.pin;
 
     if (pinmux.pin_attr_st.pull_down) {
         io_pull_write(pin, IO_PULL_DOWN);
@@ -56,43 +89,11 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     }
 
     /* only has effect if mode is push_pull */
-    driv_stren = pinmux.pin_attr_st.drive;
-    io_drive_capacity_write(pin, driv_stren);
+    io_drive_capacity_write(pin, pinmux.pin_attr_st.drive);
 
-    func = pinmux.pin_attr_st.func;
-    alt = pinmux.pin_attr_st.alt;
-    switch (func) {
-    case PINMUX_FUNC0:
-        per_func0_set(pin, alt);
-        __fallthrough;
-    case PINMUX_FUNC1:
-        __fallthrough;
-    case PINMUX_FUNC2:
-        __fallthrough;
-    case PINMUX_FUNC3:
-        switch (alt) {
-        case FUNC_NULL:
-            io_cfg_disable(pin);
-            __fallthrough;
-        case FUNC_GPIO:
-            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-                per_func_disable(pin, PINMUX_FUNC0);
-            }
-            break;
-        default:
-            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-                if (func == i) {
-                    per_func_enable(pin, i);
-                } else {
-                    per_func_disable(pin, i);
-                }
-            }
-            break;
-        }
-        break;
-    default:
-        break;
-    }
+    pinctrl_configure_pin_func(pin,
+                                pinmux.pinmux_un.pinmux_st.func,
+                                pinmux.pinmux_un.pinmux_st.alt);
 
     return 0;
 }

@@ -72,7 +72,6 @@ child-binding:
           type: string
           default: "quarter max driver"
           enum:
-            - "quarter max driver"          
             - "quarter max driver"
             - "half max driver"
             - "max driver"
