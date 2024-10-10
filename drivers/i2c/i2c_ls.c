@@ -225,6 +225,11 @@ static inline void data_xfer_len_set(const struct device *dev)
 	config->reg->CR2_2 = data->xfer_len;
 }
 
+static inline bool need_reload(struct i2c_ls_data *data)
+{
+	return (data->current->flags&I2C_MSG_STOP)==0 || data->current->len > 255;
+}
+
 static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			      uint8_t num_msgs, uint16_t slave)
 {
@@ -270,13 +275,20 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			{
 				config->reg->CR2_3 &= ~I2C_CR2_RELOAD_MASK;
 				data_xfer_len_set(dev);
-				if((data->current->flags&I2C_MSG_STOP)==0 || data->current->len != data->xfer_len)
+				if(need_reload(data))
 				{
 					config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
 				}
 				config->reg->CR2_0_1 = cr2_0_1 | I2C_CR2_START_MASK;
 			}else
 			{
+				if(need_reload(data))
+				{
+					config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
+				}else
+				{
+					config->reg->CR2_3 &= ~I2C_CR2_RELOAD_MASK;
+				}
 				data_xfer_len_set(dev);
 			}
 			if(read)
