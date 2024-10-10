@@ -49,10 +49,15 @@ void sys_arch_reboot(int type)
 
 void Swint_Handler_C(uint32_t *args)
 {
-    csi_vic_clear_pending_irq(RV_SOFT_IRQn);
-    uint32_t *task_sp = pTaskStack;
-    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)task_sp[12];
-    task_sp[8] = func(task_sp[8],task_sp[9],task_sp[10],task_sp[11]);
+    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args[12];
+    args[8] = func(args[8],args[9],args[10],args[11]);
+}
+
+void SWINT_Handler_Asm(void) {
+    __asm__ (
+        "lw a0, 0(sp)\n"  
+        "j Swint_Handler_C"
+    );
 }
 
 extern void SystemInit();
@@ -60,7 +65,7 @@ static int ls101x_init(void)
 {
     SystemInit();
     sys_init_none();
-	IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
+	IRQ_CONNECT(RV_SOFT_IRQn, 0, SWINT_Handler_Asm, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
