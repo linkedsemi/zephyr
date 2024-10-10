@@ -38,6 +38,7 @@ struct i2c_ls_data {
 	uint32_t dev_config;
 	struct i2c_target_config *slave_cfg;
 	struct i2c_msg *current;
+	uint8_t xfer_len;
 	uint8_t errs;
 
 };
@@ -84,7 +85,7 @@ void ls_i2c_isr(void *arg)
 		#endif
 		{
 			cfg->reg->TXDR = *data->current->buf++;
-			if(--data->current->len == 0)
+			if(--data->xfer_len == 0)
 			{
 				cfg->reg->IDR = I2C_IDR_TXEID_MASK;
 				cfg->reg->IER = I2C_IER_TCRIE_MASK|I2C_IER_TCIE_MASK;
@@ -109,7 +110,7 @@ void ls_i2c_isr(void *arg)
 			#endif
 			{
 				*data->current->buf++ = cfg->reg->RXDR;
-				if(--data->current->len == 0)
+				if(--data->xfer_len == 0)
 				{
 					cfg->reg->IDR = I2C_IDR_RXNEID_MASK;
 					cfg->reg->IER = I2C_IER_TCRIE_MASK|I2C_IER_TCIE_MASK;
@@ -150,7 +151,7 @@ void ls_i2c_isr(void *arg)
 		if(data->current)
 		{
 			data->errs |= MASTER_NACK_RECVIED;
-			if(data->current->len)
+			if(data->xfer_len)
 			{
 				k_sem_give(&data->device_sync_sem);
 			}
@@ -216,6 +217,14 @@ void ls_i2c_isr(void *arg)
 }
 
 
+static inline void data_xfer_len_set(const struct device *dev)
+{
+	struct i2c_ls_data *data = dev->data;
+	const struct i2c_ls_config *config = dev->config;
+	data->xfer_len = data->current->len > 255 ? 255 : data->current->len;
+	config->reg->CR2_2 = data->xfer_len;
+}
+
 static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			      uint8_t num_msgs, uint16_t slave)
 {
@@ -255,33 +264,36 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 		{
 			cr2_0_1 &= ~I2C_CR2_RD_WEN_MASK;
 		}
-
-		if(data->current->flags&I2C_MSG_RESTART||data->current==msg)
-		{
-			config->reg->CR2_3 &= ~I2C_CR2_RELOAD_MASK;
-			config->reg->CR2_2 = data->current->len;
-			if((data->current->flags&I2C_MSG_STOP)==0)
+		data->xfer_len = 0;
+		do{
+			if(data->xfer_len == 0 && (data->current->flags&I2C_MSG_RESTART||data->current==msg))
 			{
-				config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
+				config->reg->CR2_3 &= ~I2C_CR2_RELOAD_MASK;
+				data_xfer_len_set(dev);
+				if((data->current->flags&I2C_MSG_STOP)==0 || data->current->len != data->xfer_len)
+				{
+					config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
+				}
+				config->reg->CR2_0_1 = cr2_0_1 | I2C_CR2_START_MASK;
+			}else
+			{
+				data_xfer_len_set(dev);
 			}
-			config->reg->CR2_0_1 = cr2_0_1 | I2C_CR2_START_MASK;
-		}else
-		{
-			config->reg->CR2_2 = data->current->len;
-		}
-		if(read)
-		{
-			config->reg->IER = I2C_IER_RXNEIE_MASK;
-		}else
-		{
-			config->reg->IER = I2C_IER_TXEIE_MASK;
-		}
-		k_sem_take(&data->device_sync_sem, K_FOREVER);
-		if(data->errs)
-		{
-			ret = -EIO;
-			break;
-		}
+			if(read)
+			{
+				config->reg->IER = I2C_IER_RXNEIE_MASK;
+			}else
+			{
+				config->reg->IER = I2C_IER_TXEIE_MASK;
+			}
+			k_sem_take(&data->device_sync_sem, K_FOREVER);
+			if(data->errs)
+			{
+				ret = -EIO;
+				goto err;
+			}
+			data->current->len -= data->xfer_len;
+		}while(data->current->len);
 		if(data->current->flags&I2C_MSG_STOP)
 		{
 			config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
@@ -290,7 +302,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 	}
 	data->current = NULL;
 	k_sem_give(&data->bus_mutex);
-
+err:
 	return ret;
 }
 
