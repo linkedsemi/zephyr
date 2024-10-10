@@ -42,13 +42,13 @@ static void linkedsemi_spid_isr(const struct device *dev)
     struct spid_linkedsemi_data *data = dev->data;
     struct spid_linkedsemi_config *cfg = (struct spid_linkedsemi_config *)dev->config;
 
-    uint32_t stat = sys_read32(cfg->reg + INTR_STATE);
+    uint32_t stat = sys_read32(cfg->reg + SPID_INTR_STATE);
     printk("%s stat: 0x%x\n", __func__, stat);
     if (stat) {
         data->cb(dev, 0, data->user_data, NULL);
     }
 
-    sys_write32(0xff, cfg->reg + INTR_STATE); 
+    sys_write32(0xff, cfg->reg + SPID_INTR_STATE); 
 }
 
 int spid_linkedsemi_register_callback(const struct device *dev,
@@ -78,9 +78,9 @@ void init_spid_registers(const struct device *dev, int mode)
 
     // invalid_locality=1
     if(mode == INTF_FIFO_MODE){
-        sys_write32(0x11, cfg->reg + TPM_CFG); 
+        sys_write32(0x11, cfg->reg + SPID_TPM_CFG); 
     }else if(mode == INTF_CRB_MODE){
-        sys_write32(0x13, cfg->reg + TPM_CFG); 
+        sys_write32(0x13, cfg->reg + SPID_TPM_CFG); 
     }else{
         printk("***Fatal error, invalid interface mode %d\n", mode);
     }
@@ -103,7 +103,7 @@ static int spid_linkedsemi_init(const struct device *dev)
     cfg->irq_config_func(dev);
 
     init_spid_registers(dev, INTF_CRB_MODE);
-    sys_write32(0xff, cfg->reg + INTR_ENABLE);
+    sys_write32(0xff, cfg->reg + SPID_INTR_ENABLE);
 #if 0
     k_msleep(1);
     sys_write32(0x1, cfg->reg + INTR_TEST);

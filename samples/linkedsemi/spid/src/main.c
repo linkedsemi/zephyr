@@ -24,7 +24,7 @@ static void spid_callback(const struct device *dev,
     ARG_UNUSED(drv_data);
 
     printk("irq\n");
-    cmd_addr = sys_read32(SPID2_BASE + TPM_CMD_ADDR);
+    cmd_addr = sys_read32(SPID2_BASE + SPID_TPM_CMD_ADDR);
     printk("irq cmd_addr=0x%x\n", cmd_addr);
 }
 
@@ -32,9 +32,9 @@ void poll_tpm_command(uint32_t *cmd_addr)
 {
     uint32_t tpm_status;
     while(true){
-        tpm_status = sys_read32(SPID2_BASE + TPM_STATUS);
+        tpm_status = sys_read32(SPID2_BASE + SPID_TPM_STATUS);
         if(tpm_status & BIT(0)){ // cmdaddr_notempty
-            *cmd_addr = sys_read32(SPID2_BASE + TPM_CMD_ADDR);
+            *cmd_addr = sys_read32(SPID2_BASE + SPID_TPM_CMD_ADDR);
             printk("Got tpm_status 0x%x, cmd_addr 0x%x\n", tpm_status, *cmd_addr);
             return;
         }
