@@ -17,7 +17,7 @@
 #define LS_PIN_MASK 0xff
 
 #define LS_ALT_POS  8
-#define LS_ALT_MASK 0x63
+#define LS_ALT_MASK 0x3f
 
 #define LS_FUNC_POS  14
 #define LS_FUNC_MASK 0x3
