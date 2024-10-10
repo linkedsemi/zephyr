@@ -29,6 +29,16 @@
         input-enable;
     };
 
+    /omit-if-no-ref/uart4_tx_pd09: uart4_tx_pd09 {
+        pinmux = <LS_PINMUX_SET(PD09, FIOD_UART4_TXD)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart4_rx_pd10: uart4_rx_pd10 {
+        pinmux = <LS_PINMUX_SET(PD10, FIOD_UART4_RXD)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
     /* I2C */
     /omit-if-no-ref/i2c2_scl_pb03: i2c2_scl_pb03 {
         pinmux = <LS_PINMUX_SET(PB03, FIOB_I2C2_SCL)>;
