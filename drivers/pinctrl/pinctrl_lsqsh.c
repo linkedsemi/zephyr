@@ -49,7 +49,7 @@ static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
     return;
 }
 
-__attribute__((optimize(0))) static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
+static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
 {
     uint8_t pin = 0;
 
