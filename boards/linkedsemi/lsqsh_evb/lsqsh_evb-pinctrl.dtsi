@@ -255,4 +255,23 @@
         drive-strength = "quarter max driver";
         input-enable;
     };
+
+    /* SPID */
+    /omit-if-no-ref/spid2_nss_pc12: spid2_nss_pc12 {
+        pinmux = <LS_PINMUX_SET(PC12, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
+    /omit-if-no-ref/spid2_sck_pc13: spid2_sck_pc13 {
+        pinmux = <LS_PINMUX_SET(PC13, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
+    /omit-if-no-ref/spid2_mosi_pc14: spid2_mosi_pc14 {
+        pinmux = <LS_PINMUX_SET(PC14, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
+    /omit-if-no-ref/spid2_miso_pc15: spid2_miso_pc15 {
+        pinmux = <LS_PINMUX_SET(PC15, LSFUNC(PINMUX_FUNC1))>;
+        output-enable;
+        output-high;
+    };
 };

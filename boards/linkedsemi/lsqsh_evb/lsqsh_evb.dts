@@ -324,3 +324,12 @@
         status = "okay";
     };
 };
+
+&spid {
+    pinctrl-0 = <&spid2_nss_pc12
+                &spid2_sck_pc13
+                &spid2_mosi_pc14
+                &spid2_miso_pc15>;
+    pinctrl-names = "default";
+    status = "okay";
+};

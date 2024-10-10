@@ -200,6 +200,13 @@
             interrupts = <7 0>;
         };
 
+        spid: spid@4000e000 {
+            compatible = "linkedsemi,spid";
+            reg = <0x4000e000 0x2000>;
+            interrupts = <55 0>;
+            status = "disabled";
+        };
+
         i2c1: i2c@40083000 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x40083000 0x400>;

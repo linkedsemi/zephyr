@@ -1,0 +1,15 @@
+# Copyright (c) 2024 linkedsemi <htliu@linkedsemi.com>
+# SPDX-License-Identifier: Apache-2.0
+
+config SPID_LINKEDSEMI
+    bool "opentitan SPI device"
+    default y
+    depends on DT_HAS_LINKEDSEMI_SPID_ENABLED
+    help
+      SPID_LINKEDSEMI.
+
+if SPID_LINKEDSEMI
+module = SPID_LINKEDSEMI
+module-str = spid_linkedsemi
+source "subsys/logging/Kconfig.template.log_config"
+endif
