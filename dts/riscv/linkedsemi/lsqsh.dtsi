@@ -2,6 +2,9 @@
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <mem.h>
 
+#include <zephyr/dt-bindings/memory-attr/memory-attr.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-riscv.h>
+
 / {
     #address-cells = <1>;
     #size-cells = <1>;
@@ -24,7 +27,7 @@
 
     sram1: memory@10080000{
         compatible = "mmio-sram";
-        reg = <0x10080000 DT_SIZE_K(764)>;
+        reg = <0x10080000 DT_SIZE_K(768)>;
     };
 
 /*
@@ -492,7 +495,6 @@
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
             reg = <0x4001c000 0x2000>;
             interrupts = <40 3>;
-            descs = <0x1013f000>;
             status = "disabled";
         };
 

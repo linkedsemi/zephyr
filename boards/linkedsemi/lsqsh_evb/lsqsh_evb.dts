@@ -33,6 +33,13 @@
         sw0 = &btn0;
     };
 
+    sram0_nocache: memory@1007f000{
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <(0x1007f000) DT_SIZE_K(4)>;
+        device_type = "memory";
+        zephyr,memory-region = "nocache";
+    };
+
     soc {
         compatible = "simpe-bus";
         #address-cells = <1>;
@@ -75,6 +82,11 @@
 &cpu0 {
     clock-frequency = <50000000>;
     cpu-power-states = <&idle &lp0>;
+};
+
+&sram0 {
+    reg = <0x10000000 DT_SIZE_K(508)>;
+    status = "disabled";
 };
 
 &sram1 {

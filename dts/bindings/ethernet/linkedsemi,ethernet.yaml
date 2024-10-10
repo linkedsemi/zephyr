@@ -6,12 +6,3 @@ description: LINKEDSEMI Ethernet
 compatible: "linkedsemi,ethernet"
 
 include: [ethernet-controller.yaml, pinctrl-device.yaml]
-
-properties:
-  reg:
-    required: true
-  interrupts:
-    required: true
-  descs:
-    type: int
-    required: true

@@ -48,19 +48,26 @@ void Swint_Handler_C(uint32_t *args)
 extern void SystemInit();
 static int lsqsh_init(void)
 {
+    uint32_t addr = 0;
+
     SystemInit();
     sys_init_none();
 
-    SYSMAP->SYSMAPADDR0 = 0x10001000 >> 12;
+    addr = 0x10000000;
+    SYSMAP->SYSMAPADDR0 = addr >> 12;
     SYSMAP->SYSMAPCFG0 = 0x10;
-    SYSMAP->SYSMAPADDR1 = 0x1013f000 >> 12;
+    addr = 0x10000000 + (508 * 1024);
+    SYSMAP->SYSMAPADDR1 = addr >> 12;
     SYSMAP->SYSMAPCFG1 = 0xc;
-    SYSMAP->SYSMAPADDR2 = 0xffffffff >> 12;
+    addr = 0x10000000 + (512 * 1024);
+    SYSMAP->SYSMAPADDR2 = addr >> 12;
     SYSMAP->SYSMAPCFG2 = 0x10;
-    SYSMAP->SYSMAPADDR3 = 0;
-    SYSMAP->SYSMAPCFG3 = 0;
-    SYSMAP->SYSMAPADDR4 = 0;
-    SYSMAP->SYSMAPCFG4 = 0;
+    addr = 0x10000000 + ((512 + 764) * 1024);
+    SYSMAP->SYSMAPADDR3 = addr >> 12;
+    SYSMAP->SYSMAPCFG3 = 0xc;
+    addr = 0xffffffff;
+    SYSMAP->SYSMAPADDR4 = addr >> 12;
+    SYSMAP->SYSMAPCFG4 = 0x10;
     SYSMAP->SYSMAPADDR5 = 0;
     SYSMAP->SYSMAPCFG5 = 0;
     SYSMAP->SYSMAPADDR6 = 0;
