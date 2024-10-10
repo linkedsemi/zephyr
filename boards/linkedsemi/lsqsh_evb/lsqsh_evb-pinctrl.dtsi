@@ -315,6 +315,10 @@
         drive-strength = "quarter max driver";
         input-enable;
     };
+    /omit-if-no-ref/sdhc_clk_ph012: sdhc_clk_ph012 {
+        pinmux = <LS_PINMUX_SET(PH12, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+    };
     /omit-if-no-ref/sdhc_cmd_ph013: sdhc_cmd_ph013 {
         pinmux = <LS_PINMUX_SET(PH13, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";

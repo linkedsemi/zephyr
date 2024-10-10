@@ -332,6 +332,7 @@
                 &sdhc_d5_ph09
                 &sdhc_d6_ph010
                 &sdhc_d7_ph011
+                &sdhc_clk_ph012
                 &sdhc_cmd_ph013>;
     pinctrl-names = "default";
     status = "okay";
