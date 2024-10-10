@@ -42,8 +42,8 @@ static void linkedsemi_spid_isr(const struct device *dev)
     struct spid_linkedsemi_data *data = dev->data;
     struct spid_linkedsemi_config *cfg = (struct spid_linkedsemi_config *)dev->config;
 
-    printk("%s\n", __func__);
-    uint32_t stat = sys_read32(cfg->reg + INTR_STATE);;
+    uint32_t stat = sys_read32(cfg->reg + INTR_STATE);
+    printk("%s stat: 0x%x\n", __func__, stat);
     if (stat) {
         data->cb(dev, 0, data->user_data, NULL);
     }

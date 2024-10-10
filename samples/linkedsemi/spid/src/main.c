@@ -17,12 +17,15 @@ static void spid_callback(const struct device *dev,
                 uint32_t callback_idx, void *user_data,
                 void *drv_data)
 {
+    uint32_t cmd_addr = 0;
     ARG_UNUSED(dev);
     ARG_UNUSED(callback_idx);
     ARG_UNUSED(user_data);
     ARG_UNUSED(drv_data);
 
     printk("irq\n");
+    cmd_addr = sys_read32(SPID2_BASE + TPM_CMD_ADDR);
+    printk("irq cmd_addr=0x%x\n", cmd_addr);
 }
 
 void poll_tpm_command(uint32_t *cmd_addr)
