@@ -193,8 +193,43 @@
     };
 
     /* RMII */
+    /omit-if-no-ref/rmii_mdc_pt00: rmii_mdc_pt00 {
+        pinmux = <LS_PINMUX_SET(PT00, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
     /omit-if-no-ref/rmii_mdio_pt01: rmii_mdio_pt01 {
         pinmux = <LS_PINMUX_SET(PT01, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rgmii_txck_pt02: rgmii_txck_pt02 {
+        pinmux = <LS_PINMUX_SET(PT02, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rmii_txen_pt03: rmii_txen_pt03 {
+        pinmux = <LS_PINMUX_SET(PT03, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rmii_txd0_pt04: rmii_txd0_pt04 {
+        pinmux = <LS_PINMUX_SET(PT04, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rmii_txd1_pt05: rmii_txd1_pt05 {
+        pinmux = <LS_PINMUX_SET(PT05, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rmgii_txd2_pt06: rmii_txd2_pt06 {
+        pinmux = <LS_PINMUX_SET(PT06, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rmgii_txd3_pt07: rmii_txd3_pt07 {
+        pinmux = <LS_PINMUX_SET(PT07, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         input-enable;
     };
@@ -215,6 +250,26 @@
     };
     /omit-if-no-ref/rmii_rxd1_pt11: rmii_rxd1_pt11 {
         pinmux = <LS_PINMUX_SET(PT11, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rgmii_rxd2_pt12: rgmii_rxd2_pt12 {
+        pinmux = <LS_PINMUX_SET(PT12, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rgmii_rxd3_pt13: rgmii_rxd3_pt13 {
+        pinmux = <LS_PINMUX_SET(PT13, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rgmii_col_pt14: rgmii_col_pt14 {
+        pinmux = <LS_PINMUX_SET(PT14, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/rgmii_crs_pt15: rgmii_crs_pt15 {
+        pinmux = <LS_PINMUX_SET(PT15, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         input-enable;
     };
