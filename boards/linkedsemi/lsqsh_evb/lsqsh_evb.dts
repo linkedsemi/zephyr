@@ -161,6 +161,8 @@
 &uart4 {
     status = "disabled";
     current-speed = <115200>;
+    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+    pinctrl-names = "default";
 };
 
 &i2c2 {
