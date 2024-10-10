@@ -3,4 +3,4 @@
 
 zephyr_library()
 
-zephyr_library_sources(spid_linkedsemi.c)
+zephyr_library_sources_ifdef(CONFIG_SPID_LINKEDSEMI spid_linkedsemi.c)

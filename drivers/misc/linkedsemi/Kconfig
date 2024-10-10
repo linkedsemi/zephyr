@@ -3,7 +3,6 @@
 
 config SPID_LINKEDSEMI
     bool "opentitan SPI device"
-    default y
     depends on DT_HAS_LINKEDSEMI_SPID_ENABLED
     help
       SPID_LINKEDSEMI.
