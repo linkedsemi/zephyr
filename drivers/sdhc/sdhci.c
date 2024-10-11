@@ -237,7 +237,7 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
             start_addr = (uint32_t)((uint8_t *)sdhci_data->rx_data);
         } else {
             start_addr = (uint32_t)((uint8_t *)sdhci_data->tx_data);
-            sys_cache_data_flush_all();
+            sys_cache_data_flush_range((void *)sdhci_data->tx_data, sdhci_data->block_size * sdhci_data->block_count);
         }
         command->flags2 |= sdhci_enable_dma_flag;
         sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
