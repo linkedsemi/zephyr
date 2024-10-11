@@ -13,7 +13,7 @@
 #define PRIORITY                7
 
 /* PECI Host address */
-#define PECI_HOST_ADDR          0x30u
+#define PECI_HOST_ADDR          0x31u
 /* PECI Host bitrate 1Mbps */
 #define PECI_HOST_BITRATE       1000u
 
@@ -47,6 +47,7 @@ int peci_ping(void)
 	packet.rx_buffer.len = PECI_PING_RD_LEN;
 
 	ret = peci_transfer(peci_dev, &packet);
+	printk("ping %d\n", ret);
 	if (ret) {
 		printk("ping failed %d\n", ret);
 		return ret;
@@ -177,6 +178,7 @@ static void monitor_temperature_func(void *dummy1, void *dummy2, void *dummy3)
 int main(void)
 {
 	int ret;
+	int n = 10;
 
 	printk("PECI sample test\n");
 
@@ -198,6 +200,12 @@ int main(void)
 	peci_enable(peci_dev);
 
 	cpu_tjmax = 100;
+
+	while(n){
+		peci_ping();
+		k_sleep(K_MSEC(1000));
+		n--;
+	}
 
 	get_max_temp();
 	printk("Start thread...\n");
