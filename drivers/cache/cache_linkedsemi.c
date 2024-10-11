@@ -62,8 +62,7 @@ int cache_data_flush_all(void)
 
 int cache_data_flush_and_invd_all(void)
 {
-    csi_dcache_clean();
-    csi_dcache_invalid();
+    csi_dcache_clean_invalid();
 
     return 0;
 }
@@ -77,7 +76,9 @@ int cache_data_flush_range(void *addr, size_t size)
 
 int cache_data_flush_and_invd_range(void *addr, size_t size)
 {
-    return -ENOTSUP;
+    csi_dcache_clean_invalid_range(addr, size);
+
+    return 0;
 }
 
 int cache_instr_flush_all(void)
