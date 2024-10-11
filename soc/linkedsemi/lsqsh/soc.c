@@ -62,7 +62,7 @@ static int lsqsh_init(void)
     addr = 0x10000000 + (512 * 1024);
     SYSMAP->SYSMAPADDR2 = addr >> 12;
     SYSMAP->SYSMAPCFG2 = 0x10;
-    addr = 0x10000000 + ((512 + 764) * 1024);
+    addr = 0x10000000 + ((512 + 760) * 1024);
     SYSMAP->SYSMAPADDR3 = addr >> 12;
     SYSMAP->SYSMAPCFG3 = 0xc;
     addr = 0xffffffff;

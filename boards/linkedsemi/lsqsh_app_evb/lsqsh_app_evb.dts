@@ -21,9 +21,9 @@
         zephyr,console = &uart4;
     };
 
-    sram1_nocache: memory@1013f000{
+    sram1_nocache: memory@100be000{
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013f000 DT_SIZE_K(4)>;
+        reg = <0x100be000 DT_SIZE_K(4)>;
         device_type = "memory";
         zephyr,memory-region = "nocache";
     };
