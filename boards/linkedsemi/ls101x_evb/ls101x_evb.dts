@@ -25,6 +25,10 @@
 	};
 
     aliases {
+        testi2c1 = &i2c1;
+        testi2c2 = &i2c2;
+        testeeprom1 = &eeprom1;
+        testeeprom2 = &eeprom2;
 		led0 = &led0;
 		sw0 = &btn0;
 		peci-0 = &peci0;
