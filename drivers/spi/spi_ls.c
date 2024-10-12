@@ -22,9 +22,14 @@ LOG_MODULE_REGISTER(spi_ls);
 
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
 
+typedef void (*irq_config_func_t)(const struct device *port);
+
 struct spi_ls_config {
 	reg_spi_t *instance;
-	const struct pinctrl_dev_config *pcfg; 
+    const struct pinctrl_dev_config *pcfg; 
+#ifdef CONFIG_SPI_LS_INTERRUPT
+	irq_config_func_t irq_config;
+#endif
 };
 
 struct spi_ls_data {
@@ -124,7 +129,7 @@ static int spi_ls_configure(const struct device *dev,
 	}
 
     REG_FIELD_WR(spi->CR2, SPI_CR2_SSOE, 1);
-    REG_FIELD_WR(spi->CR2,SPI_CR2_TXFTH,4);
+    REG_FIELD_WR(spi->CR2, SPI_CR2_TXFTH, 4);
 
     ctx->config = config;
     spi->IER = SPI_IT_ERR;
@@ -134,11 +139,20 @@ static int spi_ls_configure(const struct device *dev,
 
 static int spi_ls_get_err(reg_spi_t *spi)
 {
-	uint32_t sr = READ_REG(spi->SR);
+	uint32_t sr = READ_REG(spi->IFM);
 
-	if (sr & SPI_IFM_OVRFM_MASK) {
-		LOG_ERR("fifo overrun error");
+	if (sr & SPI_IFM_MODFFM_MASK) {
+        LOG_ERR("master mode fault");
+		return -EIO;
+	}
 
+    if (sr & SPI_IFM_OVRFM_MASK) {
+        LOG_ERR("fifo overrun error");
+		return -EIO;
+	}
+
+    if (sr & SPI_IFM_FREFM_MASK) {
+        LOG_ERR("frame format error");
 		return -EIO;
 	}
 
@@ -228,6 +242,59 @@ static int spi_data_exchange(reg_spi_t *spi, struct spi_ls_data *data)
 	return spi_ls_get_err(spi);
 }
 
+static void spi_ls_complete(const struct device *dev, int status)
+{
+    const struct spi_ls_config *cfg = dev->config;
+	struct spi_ls_data *data = dev->data;
+	reg_spi_t *spi = cfg->instance;
+
+#ifdef CONFIG_SPI_LS_INTERRUPT
+	spi->IDR = SPI_IT_TXE | SPI_IT_RXNE;
+#endif /* CONFIG_SPI_LS_INTERRUPT */
+
+    if (SPI_OP_MODE_GET(data->ctx.config->operation) == SPI_OP_MODE_MASTER) {
+        /* Check SR busy status */
+        while (REG_FIELD_RD(spi->SR,SPI_SR_BSY) == 1U);
+
+        spi_context_cs_control(&data->ctx, false);
+    }
+
+	if (!(data->ctx.config->operation & SPI_HOLD_ON_CS)) {
+        /* disable the selected SPI peripheral */
+		REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
+	}
+
+#ifdef CONFIG_SPI_LS_INTERRUPT
+	spi_context_complete(&data->ctx, dev, status);
+#endif
+}
+
+#ifdef CONFIG_SPI_LS_INTERRUPT
+static void spi_ls_isr(const struct device *dev)
+{
+	const struct spi_ls_config *cfg = dev->config;
+	struct spi_ls_data *data = dev->data;
+	reg_spi_t *spi = cfg->instance;
+	int err;
+
+	err = spi_ls_get_err(spi);
+	if (err) {
+		spi_ls_complete(dev, err);
+		return;
+	}
+
+	if (spi_context_tx_on(&data->ctx) || spi_context_rx_on(&data->ctx)) {
+		err = spi_data_exchange(spi, data);
+	}
+
+	if (err || !(spi_context_tx_on(&data->ctx) || spi_context_rx_on(&data->ctx))) {
+        spi_ls_complete(dev, err);
+	}
+
+    spi->ICR = SPI_ICR_TXEIC_MASK;
+}
+#endif
+
 static int spi_ls_transceive(const struct device *dev,
 				const struct spi_config *config,
 				const struct spi_buf_set *tx_bufs,
@@ -251,22 +318,34 @@ static int spi_ls_transceive(const struct device *dev,
 	}
 
 	/* Set buffers info */
-	spi_context_buffers_setup(ctx, tx_bufs, rx_bufs, 1);
+	if (SPI_WORD_SIZE_GET(config->operation) == 8) {
+		spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, 1);
+	} else {
+		spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, 2);
+	}
 
 	spi_context_cs_control(ctx, true);
 
     /* Enable the selected SPI peripheral */
     REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 1);
     
+#ifdef CONFIG_SPI_LS_INTERRUPT
+	if (rx_bufs) {
+		spi->ICR = SPI_IT_RXNE;
+        spi->IER = SPI_IT_RXNE;
+	}
+
+    spi->ICR = SPI_IT_TXE;
+    spi->IER = SPI_IT_TXE;
+	
+	err = spi_context_wait_for_completion(&data->ctx);
+#else
 	do {
 		err = spi_data_exchange(spi, data);
 	} while (spi_context_tx_on(ctx) || spi_context_rx_on(ctx));
+#endif /* CONFIG_SPI_LS_INTERRUPT */
 
-    /* Check SR status and disable the selected SPI peripheral */
-    while (REG_FIELD_RD(spi->SR,SPI_SR_BSY) == 1U);
-    REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
-
-    spi_context_cs_control(ctx, false);
+   spi_ls_complete(dev, err);
 
     #ifdef CONFIG_SPI_SLAVE
 	if (spi_context_is_slave(&data->ctx) && !err) {
@@ -290,11 +369,13 @@ static int spi_ls_release(const struct device *dev,
 		return -EINVAL;
 	}
 
-	if (REG_FIELD_RD(cfg->instance->SR,SPI_SR_BSY) == 1U) {
+	if (REG_FIELD_RD(cfg->instance->SR, SPI_SR_BSY) == 1U) {
 		return -EBUSY;
 	}
 
 	spi_context_unlock_unconditionally(ctx);
+    /* disable the selected SPI peripheral */
+	REG_FIELD_WR(cfg->instance->CR1, SPI_CR1_SPE, 0);
 
 	return 0;
 }
@@ -304,7 +385,26 @@ static const struct spi_driver_api spi_ls_driver_api = {
 	.release = spi_ls_release,
 };
 
-static void spi2_clock_init(void)
+#ifdef CONFIG_SPI_LS_INTERRUPT
+#define LS_SPI_IRQ_HANDLER_DECL(id)					\
+	static void spi_ls_irq_config_func_##id(const struct device *dev)
+#define LS_SPI_IRQ_HANDLER_FUNC(id)					\
+	.irq_config = spi_ls_irq_config_func_##id,
+#define LS_SPI_IRQ_HANDLER(id)					\
+static void spi_ls_irq_config_func_##id(const struct device *dev)		\
+{									\
+	IRQ_CONNECT(DT_INST_IRQN(id),					\
+		    DT_INST_IRQ(id, priority),				\
+		    spi_ls_isr, DEVICE_DT_INST_GET(id), 0);		\
+	irq_enable(DT_INST_IRQN(id));					\
+}
+#else
+#define LS_SPI_IRQ_HANDLER_DECL(id)
+#define LS_SPI_IRQ_HANDLER_FUNC(id)
+#define LS_SPI_IRQ_HANDLER(id)
+#endif /* CONFIG_SPI_LS_INTERRUPT */
+
+static void spi_clock_init(void)
 {
     REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 0);
@@ -316,7 +416,12 @@ static int spi_ls_init(const struct device *dev)
 	struct spi_ls_data *data __attribute__((unused)) = dev->data;
 	int err;
 
-    spi2_clock_init();
+#ifdef CONFIG_SPI_LS_INTERRUPT
+    const struct spi_ls_config *cfg = dev->config;
+	cfg->irq_config(dev);
+#endif
+
+    spi_clock_init();
 
 	err = spi_context_cs_configure_all(&data->ctx);
 	if (err < 0) {
@@ -329,11 +434,13 @@ static int spi_ls_init(const struct device *dev)
 }
 
 #define LS_SPI_INIT(id)				\
-    PINCTRL_DT_INST_DEFINE(id);	    \
+PINCTRL_DT_INST_DEFINE(id);	    	\
+LS_SPI_IRQ_HANDLER_DECL(id);					\
 									\
 static const struct spi_ls_config spi_ls_cfg_##id = {		\
 	.instance = (reg_spi_t *) DT_INST_REG_ADDR(id),			\
-    .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id)               \
+    .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id),               \
+    LS_SPI_IRQ_HANDLER_FUNC(id)					\
 };									\
 									\
 static struct spi_ls_data spi_ls_dev_data_##id = {		    \
@@ -345,7 +452,9 @@ static struct spi_ls_data spi_ls_dev_data_##id = {		    \
 DEVICE_DT_INST_DEFINE(id, &spi_ls_init, NULL,			\
 		    &spi_ls_dev_data_##id, &spi_ls_cfg_##id,	\
 		    POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,		\
-		    &spi_ls_driver_api);                
+		    &spi_ls_driver_api);                \
+                                    \
+LS_SPI_IRQ_HANDLER(id)
 
 DT_INST_FOREACH_STATUS_OKAY(LS_SPI_INIT)
 
