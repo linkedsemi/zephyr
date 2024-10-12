@@ -9,6 +9,9 @@
 #include <stdio.h>
 #include "reg_sysc_per.h"
 #include "ls_soc_gpio.h"
+#define BUF_SIZE 256
+uint8_t wdata_buf[BUF_SIZE];
+uint8_t rdata_buf[BUF_SIZE];
 static void write_read_compare(const struct device *const i2c,uint16_t dev_addr,const uint8_t *wdata,uint8_t *rdata,uint16_t len)
 {
 	i2c_burst_write(i2c,dev_addr,0,wdata,len);
@@ -91,15 +94,14 @@ int main(void)
 #if 0
 	io_cfg_output(PA02);
 #endif
-	uint8_t wdata[255];
-	uint8_t rdata[255];
+
 	while(1)
 	{
-		for(uint16_t len = 1;len<=255;len++)
+		for(uint16_t len = 1;len<=BUF_SIZE;len++)
 		{
-			gen_rand_data(wdata,len);
-			write_read_compare(i2c1,dev_addr,wdata,rdata,len);
-			write_read_compare(i2c2,dev_addr,wdata,rdata,len);
+			gen_rand_data(wdata_buf,len);
+			write_read_compare(i2c2,dev_addr,wdata_buf,rdata_buf,len);
+			write_read_compare(i2c1,dev_addr,wdata_buf,rdata_buf,len);
 		}
 	}
 
