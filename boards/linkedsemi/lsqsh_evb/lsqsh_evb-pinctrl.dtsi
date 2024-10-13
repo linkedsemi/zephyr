@@ -200,6 +200,7 @@
         drive-strength = "quarter max driver";
         bias-pull-down;
         drive-open-drain;
+        input-enable;
     };
 
     /* RMII */
