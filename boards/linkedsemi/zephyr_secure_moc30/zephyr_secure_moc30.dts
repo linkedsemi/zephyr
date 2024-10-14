@@ -25,7 +25,6 @@
         testi2c2 = &i2c7;
         testeeprom1 = &eeprom2;
         testeeprom2 = &eeprom7;
-        peci-0 = &peci0;
     };
 
     soc {
@@ -38,8 +37,8 @@
             compatible = "linkedsemi,mbox";
             reg = <0x1013f800 0x800>;
             interrupts = <27 3>;
-            fifo-deepth = <128>;
-            fifo-width = <4>;
+            fifo-deepth = <8>;
+            fifo-width = <64>;
             #mbox-cells = <1>;
         };
     };
@@ -109,9 +108,5 @@
 };
 
 &mac {
-    status = "okay";
-};
-
-&peci0 {
     status = "okay";
 };

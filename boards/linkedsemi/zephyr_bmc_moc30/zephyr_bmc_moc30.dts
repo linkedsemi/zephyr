@@ -12,20 +12,11 @@
 
 / {
     model = "linkedsemi LSQSH_EVB";
-    compatible = "linkedsemi,lsqsh_evb";
+    compatible = "linkedsemi,lsqsh_app_evb";
 
     chosen {
-        zephyr,sram = &sram0;
-        zephyr,console = &uart3;
-        zephyr,shell-uart = &uart3;
-    };
-
-    aliases {
-        testi2c1 = &i2c2;
-        testi2c2 = &i2c7;
-        testeeprom1 = &eeprom2;
-        testeeprom2 = &eeprom7;
-        peci-0 = &peci0;
+        zephyr,sram = &sram1;
+        zephyr,console = &uart4;
     };
 
     soc {
@@ -37,16 +28,16 @@
         mbox: mbox@1013f800 {
             compatible = "linkedsemi,mbox";
             reg = <0x1013f800 0x800>;
-            interrupts = <27 3>;
-            fifo-deepth = <128>;
-            fifo-width = <4>;
+            interrupts = <26 3>;
+            fifo-deepth = <8>;
+            fifo-width = <64>;
             #mbox-cells = <1>;
         };
     };
 
     mbox-consumer {
         compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 1>, <&mbox 0>;
+        mboxes = <&mbox 0>, <&mbox 1>;
         mbox-names = "tx", "rx";
     };
 };
@@ -56,7 +47,7 @@
     cpu-power-states = <&idle &lp0>;
 };
 
-&sram1 {
+&sram0 {
     status = "disabled";
 };
 
@@ -71,47 +62,11 @@
 };
 
 &uart3 {
-    status = "okay";
-    current-speed = <115200>;
-};
-
-&uart4 {
     status = "disabled";
     current-speed = <115200>;
 };
 
-&i2c2 {
+&uart4 {
     status = "okay";
-    eeprom2: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
-
-&i2c7 {
-    status = "okay";
-    eeprom7: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
-
-&smbus2 {
-    status = "okay";
-};
-
-&smbus7 {
-    status = "okay";
-};
-
-&mac {
-    status = "okay";
-};
-
-&peci0 {
-    status = "okay";
+    current-speed = <115200>;
 };
