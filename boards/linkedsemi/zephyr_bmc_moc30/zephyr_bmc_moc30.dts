@@ -17,6 +17,7 @@
     chosen {
         zephyr,sram = &sram1;
         zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
     };
 
     soc {
