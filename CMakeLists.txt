@@ -500,7 +500,7 @@ if(NOT CMAKE_C_COMPILER_ID STREQUAL "Clang" AND
   # `min-pagesize` parameter (defaults to 0x1000). The `min-pagesize` parameter
   # is set to 0 such that GCC never generates any warnings for the constant
   # address pointers. For more details, refer to the GCC PR99578.
-  zephyr_cc_option(--param=min-pagesize=0)
+#   zephyr_cc_option(--param=min-pagesize=0)
 
   if(NOT ${ZEPHYR_TOOLCHAIN_VARIANT} STREQUAL "xcc")
     zephyr_cc_option(-fno-defer-pop)
