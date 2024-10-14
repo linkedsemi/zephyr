@@ -11,6 +11,7 @@
 #include <string.h>
 #include "qsh.h"
 #include <zephyr/irq.h>
+#include "reg_sysc_cpu.h"
 #include "reg_sysc_per.h"
 #include "ls_soc_gpio.h"
 
@@ -151,6 +152,34 @@ static int lsqsh_init(void)
     pinmux_iic13_init(PQ00, PQ01);
     pinmux_iic14_init(PQ03, PQ02);
 #endif
+#endif
+
+#if defined(CONFIG_CRYPTO_LINKEDSEMI)
+    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_CLR_OTBN_MASK;
+    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_CLR_OTBN_MASK;
+    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_SET_OTBN_MASK;
+    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_SET_OTBN_MASK;
+
+    SYSC_CPU->OTBN_CTRL1 |= SYSC_CPU_EDN_URND_FIPS_MASK;
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        SYSC_CPU->EDN_URND_BUS = i;
+        SYSC_CPU->OTBN_CTRL1 |= SYSC_CPU_EDN_URND_ACK_MASK;
+        SYSC_CPU->OTBN_CTRL1 &= ~SYSC_CPU_EDN_URND_ACK_MASK;
+        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    }
+    for (uint8_t i = 0; i < 8; i++)
+    {
+        SYSC_CPU->EDN_URND_BUS = i;
+        SYSC_CPU->OTBN_CTRL1 |= SYSC_CPU_EDN_URND_ACK_MASK;
+        SYSC_CPU->OTBN_CTRL1 &= ~SYSC_CPU_EDN_URND_ACK_MASK;
+        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
+    }
+
+    SYSC_CPU->INTR_CTRL_CLR = 0x7ff;
+    SYSC_CPU->INTR_CTRL_MSK = 0x700;
 #endif
 
     IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);

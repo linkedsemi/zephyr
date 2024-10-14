@@ -203,6 +203,13 @@
             interrupts = <7 0>;
         };
 
+        crypto: crypto {
+            compatible = "linkedsemi,crypto";
+            interrupts = <44 3>, <46 3>, <47 3>, <48 3>, <49 3>;
+            interrupt-names = "crypto", "sha", "sm4", "otbn", "sysc_otbn";
+            status = "disabled";
+        };
+
         i2c1: i2c@40083000 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x40083000 0x400>;

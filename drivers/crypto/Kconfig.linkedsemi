@@ -1,0 +1,10 @@
+# Copyright (c) 2024 linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+
+config CRYPTO_LINKEDSEMI
+    bool "linkedsemi CRYPTO driver"
+    default y
+    depends on DT_HAS_LINKEDSEMI_CRYPTO_ENABLED
+    help
+      Enable linkedsemi CRYPTO driver.
