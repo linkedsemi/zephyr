@@ -83,7 +83,8 @@ int cache_data_flush_range(void *addr, size_t size)
 
 int cache_data_flush_and_invd_range(void *addr, size_t size)
 {
-    csi_dcache_clean_invalid_range(addr, size);
+    void *align_addr = (void *)ROUND_DOWN_CACHE_LINE((uint32_t)addr);
+    csi_dcache_clean_invalid_range(align_addr, size);
 
     return 0;
 }
