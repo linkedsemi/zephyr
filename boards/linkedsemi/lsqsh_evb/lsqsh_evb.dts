@@ -304,15 +304,20 @@
 };
 
 &mac {
-    pinctrl-0 = <&rmii_mdc_pt00
-                &rmii_mdio_pt01
-                &rmii_txen_pt03
+    pinctrl-0 = <&rmii_txen_pt03
                 &rmii_txd0_pt04
                 &rmii_txd1_pt05
                 &rmii_rxc_pt08
                 &rmii_crsdv_pt09
                 &rmii_rxd0_pt10
                 &rmii_rxd1_pt11>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&mdio {
+    pinctrl-0 = <&rmii_mdc_pt00
+                &rmii_mdio_pt01>;
     pinctrl-names = "default";
     status = "okay";
 };

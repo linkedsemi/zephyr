@@ -503,6 +503,13 @@
             reg = <0x4001c000 0x2000>;
             interrupts = <40 3>;
             status = "disabled";
+
+            mdio: mdio {
+                compatible = "snps,dwmac-mdio";
+                #address-cells = <1>;
+                #size-cells = <0>;
+                status = "disabled";
+            };
         };
 
         peci0: peci@4008c400 {

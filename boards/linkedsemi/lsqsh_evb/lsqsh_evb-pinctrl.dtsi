@@ -207,7 +207,6 @@
     /omit-if-no-ref/rmii_mdc_pt00: rmii_mdc_pt00 {
         pinmux = <LS_PINMUX_SET(PT00, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
-        input-enable;
     };
     /omit-if-no-ref/rmii_mdio_pt01: rmii_mdio_pt01 {
         pinmux = <LS_PINMUX_SET(PT01, LSFUNC(PINMUX_FUNC1))>;
