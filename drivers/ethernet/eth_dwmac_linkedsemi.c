@@ -46,13 +46,13 @@ int dwmac_bus_init(struct dwmac_priv *p)
 
 #if defined(CONFIG_NOCACHE_MEMORY)
 #define __desc_mem __nocache __aligned(4)
-#else
-#error "missing memory attribute for descriptors"
-#endif
-
 /* Descriptor rings in uncached memory */
 static struct dwmac_dma_desc dwmac_tx_descs[NB_TX_DESCS] __desc_mem;
 static struct dwmac_dma_desc dwmac_rx_descs[NB_RX_DESCS] __desc_mem;
+#else
+static struct dwmac_dma_desc dwmac_tx_descs[NB_TX_DESCS];
+static struct dwmac_dma_desc dwmac_rx_descs[NB_RX_DESCS];
+#endif
 
 void dwmac_platform_init(struct dwmac_priv *p)
 {
