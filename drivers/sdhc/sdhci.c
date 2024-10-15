@@ -238,8 +238,7 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
         } else {
             start_addr = (uint32_t)((uint8_t *)sdhci_data->tx_data);
         }
-        /* flush cache is required for tx or rx */
-        sys_cache_data_flush_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
+        sys_cache_data_flush_and_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
         command->flags2 |= sdhci_enable_dma_flag;
         sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
 #endif
