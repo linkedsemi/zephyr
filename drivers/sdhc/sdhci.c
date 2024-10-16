@@ -1,5 +1,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
+#include <zephyr/sys/barrier.h>
 #include <errno.h>
 #include <zephyr/logging/log.h>
 
@@ -238,6 +239,7 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
         } else {
             start_addr = (uint32_t)((uint8_t *)sdhci_data->tx_data);
         }
+        barrier_dmem_fence_full();
         sys_cache_data_flush_and_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
         command->flags2 |= sdhci_enable_dma_flag;
         sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
