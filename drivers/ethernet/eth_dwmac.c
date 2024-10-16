@@ -193,7 +193,9 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 
 	/* update the descriptor index head */
 	p->tx_desc_head = d_idx;
+#if !defined(CONFIG_NOCACHE_MEMORY)
 	sys_cache_data_flush_range((void *)TXDESC_PHYS_L(d_idx), sizeof(struct dwmac_dma_desc));
+#endif
 	/* lastly notify the hardware */
 	REG_WRITE(DMA_CHn_TXDESC_TAIL_PTR(0), TXDESC_PHYS_L(d_idx));
 
@@ -385,8 +387,9 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 
 		/* advance to the next descriptor */
 		p->rx_desc_head = INC_WRAP(d_idx, NB_RX_DESCS);
-
+#if !defined(CONFIG_NOCACHE_MEMORY)
 		sys_cache_data_flush_range((void *)RXDESC_PHYS_L(d_idx), sizeof(struct dwmac_dma_desc));
+#endif
 		/* lastly notify the hardware */
 		REG_WRITE(DMA_CHn_RXDESC_TAIL_PTR(0), RXDESC_PHYS_L(d_idx));
 	}
@@ -601,11 +604,10 @@ int dwmac_probe(const struct device *dev)
 
 	memset(p->tx_descs, 0, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
 	memset(p->rx_descs, 0, NB_RX_DESCS * sizeof(struct dwmac_dma_desc));
-
-	sys_cache_data_flush_range((void *)TXDESC_PHYS_H(0), sizeof(struct dwmac_dma_desc));
-	sys_cache_data_flush_range((void *)TXDESC_PHYS_L(0), sizeof(struct dwmac_dma_desc));
-	sys_cache_data_flush_range((void *)RXDESC_PHYS_H(0), sizeof(struct dwmac_dma_desc));
-	sys_cache_data_flush_range((void *)RXDESC_PHYS_L(0), sizeof(struct dwmac_dma_desc));
+#if !defined(CONFIG_NOCACHE_MEMORY)
+	sys_cache_data_flush_and_invd_range(p->tx_descs, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
+	sys_cache_data_flush_and_invd_range(p->rx_descs, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
+#endif
 	/* set up DMA */
 	REG_WRITE(DMA_CHn_TX_CTRL(0), 0);
 	REG_WRITE(DMA_CHn_RX_CTRL(0),
