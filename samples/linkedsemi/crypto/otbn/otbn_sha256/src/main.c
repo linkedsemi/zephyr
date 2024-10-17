@@ -26,7 +26,7 @@ int main(void)
     }
 
     ret = strcmp(result_check, result_str);
-    __ASSERT(ret != 0, "verify fail");
+    __ASSERT(ret == 0, "verify fail");
 
     printf("verify pass\n");
     printf("expect: %s\n", result_check);
