@@ -48,9 +48,9 @@
 
         mbox: mbox@1013f800 {
             compatible = "linkedsemi,mbox";
-            reg = <0x1013f800 0x800>;
+            reg = <0x1013f000 0x1000>;
             interrupts = <27 3>;
-            fifo-deepth = <2>;
+            fifo-deepth = <7>;
             fifo-width = <256>;
             #mbox-cells = <1>;
         };
