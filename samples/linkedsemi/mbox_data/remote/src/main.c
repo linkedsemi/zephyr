@@ -77,8 +77,8 @@ int main(void)
 			}
 			printk("\n");
 			ret = mbox_send_dt(&tx_channel, &msg);
-			if (ret == -EBUSY) {
-				printk("mbox_send() busy\n");
+			if (ret == -ENOSPC) {
+				printk("mbox full\n");
 				k_msleep(1);
 				continue;
 			}
@@ -89,7 +89,7 @@ int main(void)
 			for(uint16_t i = 0; i < max_transfer_size_bytes; i++) {
 				g_message[i]++;
 			}
-		} while ((ret != -EBUSY) && (g_message[0] < 99));
+		} while ((ret != -ENOSPC) && (g_message[0] < 99));
 	}
 
 	printk("mbox_data Server demo ended.\n");

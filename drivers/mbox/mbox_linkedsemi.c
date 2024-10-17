@@ -86,7 +86,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel,
     if(msg) {
         ret = general_fifo_put((struct fifo_env *)dev_data->fifo[channel], (void *)msg->data);
         if (ret == false) {
-            return -EBUSY;
+            return -ENOSPC;
         }
     }
 #if defined(CONFIG_NOTSUP_NULL_MSG)
