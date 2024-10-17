@@ -24,6 +24,12 @@ static void callback(const struct device *dev, mbox_channel_id_t channel_id, voi
 	memcpy(g_mbox_received_data, data->data, data->size);
 	g_mbox_received_channel = channel_id;
 
+	printk("Server receive (on channel %d)\n", g_mbox_received_channel);
+	for(uint16_t i = 0; i < data->size; i++) {
+		printk("%d  ", g_mbox_received_data[i]);
+	}
+	printk("\n");
+
 	k_sem_give(&g_mbox_data_rx_sem);
 }
 
@@ -56,27 +62,34 @@ int main(void)
 		k_sem_take(&g_mbox_data_rx_sem, K_FOREVER);
 		memcpy(g_message, g_mbox_received_data, max_transfer_size_bytes);
 
-		printk("Server receive (on channel %d)\n", g_mbox_received_channel);
-		for(uint16_t i = 0; i < max_transfer_size_bytes; i++) {
-			printk("%d  ", g_mbox_received_data[i]);
-		}
-		printk("\n");
 		for(uint16_t i = 0; i < max_transfer_size_bytes; i++) {
 			g_message[i]++;
 		}
 
-		msg.data = g_message;
-		msg.size = max_transfer_size_bytes;
+		int ret = 0;
+		do {
+			msg.data = g_message;
+			msg.size = max_transfer_size_bytes;
 
-		printk("Server send (on channel %d)\n", tx_channel.channel_id);
-		for(uint16_t i = 0; i < max_transfer_size_bytes; i++) {
-			printk("%d  ", g_message[i]);
-		}
-		printk("\n");
-		if (mbox_send_dt(&tx_channel, &msg) < 0) {
-			printk("mbox_send() error\n");
-			return 0;
-		}
+			printk("Server send (on channel %d)\n", tx_channel.channel_id);
+			for(uint16_t i = 0; i < max_transfer_size_bytes; i++) {
+				printk("%d  ", g_message[i]);
+			}
+			printk("\n");
+			ret = mbox_send_dt(&tx_channel, &msg);
+			if (ret == -EBUSY) {
+				printk("mbox_send() busy\n");
+				k_msleep(1);
+				continue;
+			}
+			if (ret) {
+				printk("mbox_send() error\n");
+				return 0;
+			}
+			for(uint16_t i = 0; i < max_transfer_size_bytes; i++) {
+				g_message[i]++;
+			}
+		} while ((ret != -EBUSY) && (g_message[0] < 99));
 	}
 
 	printk("mbox_data Server demo ended.\n");

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/irq.h>
 #define LOG_LEVEL CONFIG_MBOX_LOG_LEVEL
@@ -25,6 +24,8 @@ LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
 
 #define MAX_CHANNELS 2
 
+BUILD_ASSERT(((MBOX_FIFO_DEEPTH * MBOX_FIFO_WIDTH) + sizeof(struct fifo_env)) * 2 <= MBOX_SIZE, "fifo size overflow\n");
+
 enum mbox_channel_number
 {
     MBOX_CH0,
@@ -34,32 +35,18 @@ enum mbox_channel_number
 struct mbox_linkedsemi_data {
     mbox_callback_t cb[MAX_CHANNELS];
     void *user_data[MAX_CHANNELS];
+    struct fifo_env *fifo[MAX_CHANNELS];
     const struct device *dev;
     uint32_t enabled_mask;
 };
 
-struct mbox_linkedsemi_conf {
-    struct fifo_env *fifo[MAX_CHANNELS];
-};
-
 static struct mbox_linkedsemi_data linkedsemi_mbox_data;
-static struct mbox_linkedsemi_conf linkedsemi_mbox_config;
 uint8_t recv_data[MBOX_FIFO_WIDTH];
 
-static void linkedsemi_isr(const struct device *dev)
+static void mbox_linkedsemi_isr(const struct device *dev)
 {
-    struct mbox_linkedsemi_data *data = dev->data;
-    struct mbox_linkedsemi_conf *cfg = (struct mbox_linkedsemi_conf *)dev->config;
-
-    if (data->cb[MBOX_RX_CHANNEL_ID] != NULL) {
-        bool ret = general_fifo_get((struct fifo_env *)cfg->fifo[MBOX_RX_CHANNEL_ID], recv_data);
-        if (ret) {
-            struct mbox_msg msg = {(const void *)recv_data, MBOX_FIFO_WIDTH};
-            data->cb[MBOX_RX_CHANNEL_ID](dev, MBOX_RX_CHANNEL_ID, data->user_data, &msg);
-        } else {
-            data->cb[MBOX_RX_CHANNEL_ID](dev, MBOX_RX_CHANNEL_ID, data->user_data, NULL);
-        }
-    }
+    struct mbox_linkedsemi_data *dev_data = dev->data;
+    bool ret;
 
     if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
         cpu_intr0_clr();
@@ -68,12 +55,25 @@ static void linkedsemi_isr(const struct device *dev)
     } else {
         LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
     }
+
+    do {
+        ret = general_fifo_get((struct fifo_env *)dev_data->fifo[MBOX_RX_CHANNEL_ID], recv_data);
+        if (ret) {
+            struct mbox_msg msg = { (const void *)recv_data, MBOX_FIFO_WIDTH };
+            dev_data->cb[MBOX_RX_CHANNEL_ID](dev, MBOX_RX_CHANNEL_ID, dev_data->user_data, &msg);
+        }
+#if defined(CONFIG_NOTSUP_NULL_MSG)
+        else {
+            dev_data->cb[MBOX_RX_CHANNEL_ID](dev, MBOX_RX_CHANNEL_ID, dev_data->user_data, NULL);
+        }
+#endif
+    } while(ret);
 }
 
 static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel,
              const struct mbox_msg *msg)
 {
-    struct mbox_linkedsemi_conf *cfg = (struct mbox_linkedsemi_conf *)dev->config;
+    struct mbox_linkedsemi_data *dev_data = dev->data;
     bool ret;
 
 #if 0
@@ -84,11 +84,17 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel,
 #endif
 
     if(msg) {
-        ret = general_fifo_put((struct fifo_env *)cfg->fifo[channel], (void *)msg->data);
+        ret = general_fifo_put((struct fifo_env *)dev_data->fifo[channel], (void *)msg->data);
         if (ret == false) {
-            return -1;
+            return -EBUSY;
         }
     }
+#if defined(CONFIG_NOTSUP_NULL_MSG)
+    else {
+        LOG_ERR("Not supported signalling mode\n");
+        return -ENOTSUP;
+    }
+#endif
 
     if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
         cpu_intr1_activate();
@@ -96,7 +102,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel,
         cpu_intr0_activate();
     } else {
         LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
-        return -1;
+        return -ENOTSUP;
     }
 
     return 0;
@@ -105,10 +111,10 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel,
 static int mbox_linkedsemi_register_callback(const struct device *dev, uint32_t channel,
                       mbox_callback_t cb, void *user_data)
 {
-    struct mbox_linkedsemi_data *data = dev->data;
+    struct mbox_linkedsemi_data *dev_data = dev->data;
 
-    data->cb[channel] = cb;
-    data->user_data[channel] = user_data;
+    dev_data->cb[channel] = cb;
+    dev_data->user_data[channel] = user_data;
 
     return 0;
 }
@@ -128,7 +134,7 @@ static uint32_t mbox_linkedsemi_max_channels_get(const struct device *dev)
 
 static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channel, bool enable)
 {
-    struct mbox_linkedsemi_conf *cfg = (struct mbox_linkedsemi_conf *)dev->config;
+    struct mbox_linkedsemi_data *dev_data = dev->data;
     uint32_t addr;
 
     if (enable) {
@@ -140,7 +146,7 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
                 cpu_intr1_clr();
                 cpu_intr1_unmask();
             } else {
-                LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
+                __ASSERT(0, "channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
                 return -1;
             }
         }
@@ -153,20 +159,20 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
             LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
             return -1;
         }
-        cfg->fifo[channel] = (struct fifo_env *)addr;
+        dev_data->fifo[channel] = (struct fifo_env *)addr;
         if(channel != MBOX_RX_CHANNEL_ID) {
-            uint32_t buf_offset = (uint32_t)(cfg->fifo[channel]) + sizeof(struct fifo_env);
-            cfg->fifo[channel]->buf = (void *)buf_offset;
-            cfg->fifo[channel]->rd_idx = 0;
-            cfg->fifo[channel]->wr_idx = 0;
-            cfg->fifo[channel]->length = MBOX_FIFO_DEEPTH;
-            cfg->fifo[channel]->item_size = MBOX_FIFO_WIDTH;
+            uint32_t buf_offset = (uint32_t)(dev_data->fifo[channel]) + sizeof(struct fifo_env);
+            dev_data->fifo[channel]->buf = (void *)buf_offset;
+            dev_data->fifo[channel]->rd_idx = 0;
+            dev_data->fifo[channel]->wr_idx = 0;
+            dev_data->fifo[channel]->length = MBOX_FIFO_DEEPTH;
+            dev_data->fifo[channel]->item_size = MBOX_FIFO_WIDTH;
         }
     } else {
         if (channel == MBOX_CH0) {
             cpu_intr0_clr();
             cpu_intr0_mask();
-            cfg->fifo[channel] = NULL;
+            dev_data->fifo[channel] = NULL;
         } else if (channel == MBOX_CH1) {
             cpu_intr1_clr();
             cpu_intr1_mask();
@@ -174,7 +180,7 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
             LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
             return -1;
         }
-        cfg->fifo[channel] = NULL;
+        dev_data->fifo[channel] = NULL;
     }
 
     return 0;
@@ -194,8 +200,7 @@ static int mbox_linkedsemi_init(const struct device *dev)
     cpu_intr0_clr();
     cpu_intr1_clr();
 
-    IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority),
-            linkedsemi_isr, DEVICE_DT_INST_GET(0), 0);
+    IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority), mbox_linkedsemi_isr, DEVICE_DT_INST_GET(0), 0);
 
     irq_enable(DT_INST_IRQN(0));
 
@@ -215,7 +220,7 @@ DEVICE_DT_INST_DEFINE(
                 mbox_linkedsemi_init,
                 NULL,
                 &linkedsemi_mbox_data,
-                &linkedsemi_mbox_config,
+                NULL,
                 POST_KERNEL,
                 CONFIG_MBOX_INIT_PRIORITY,
                 &mbox_linkedsemi_driver_api);

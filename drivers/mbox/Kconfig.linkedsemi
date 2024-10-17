@@ -7,3 +7,13 @@ config MBOX_LINKEDSEMI
 	default y
 	help
 	  MBOX Driver for LINKEDSEMI SOC
+
+if MBOX_LINKEDSEMI
+
+config NOTSUP_NULL_MSG
+    bool "NULL msg support for mailbox"
+    default n
+    help
+      not support signalling mode
+
+endif #MBOX_LINKEDSEMI
