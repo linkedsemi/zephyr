@@ -203,8 +203,14 @@
             interrupts = <7 0>;
         };
 
-        crypto: crypto {
+        crypto: crypto@40018400 {
             compatible = "linkedsemi,crypto";
+            reg = <0x40018400 0x400>,
+                  <0x40018800 0x400>,
+                  <0x40018C00 0x400>,
+                  <0x40019000 0x400>,
+                  <0x40019400 0x400>;
+            reg-names = "calc_sha", "calc_crc", "calc", "crypt", "calc_sm4";
             interrupts = <44 3>, <46 3>, <47 3>, <48 3>, <49 3>;
             interrupt-names = "crypto", "sha", "sm4", "otbn", "sysc_otbn";
             status = "disabled";

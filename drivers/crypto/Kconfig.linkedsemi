@@ -8,3 +8,11 @@ config CRYPTO_LINKEDSEMI
     depends on DT_HAS_LINKEDSEMI_CRYPTO_ENABLED
     help
       Enable linkedsemi CRYPTO driver.
+
+config CRYPTO_LINKEDSEMI_MAX_SESSION
+    int "Maximum of sessions linkedsemi crypto driver can handle"
+    default 1
+    depends on CRYPTO_LINKEDSEMI
+    help
+      This can be used to tweak the amount of sessions the driver
+      can handle in parallel.
