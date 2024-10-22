@@ -11,29 +11,48 @@
 #include <string.h>
 #include <zephyr/crypto/crypto.h>
 #include <zephyr/sys/byteorder.h>
-#include <ls_hal_sha.h>
 #include <ls_hal_sm4.h>
 #include <ls_hal_otbn.h>
 #include <ls_msp_otbn.h>
-#include "crypto_linkedsemi.h"
+#include "crypto_linkedsemi_aes.h"
+#include "crypto_linkedsemi_sha.h"
 
 LOG_MODULE_REGISTER(crypto_linkedsem);
 
 #define DT_DRV_COMPAT linkedsemi_crypto
 
-#define CRYP_SUPPORT (CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | CAP_NO_IV_PREFIX)
+#define CRYPTO_LINKEDSEMI_CIPHER_CAPS (CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS | CAP_NO_IV_PREFIX)
+#define CRYPTO_LINKEDSEMI_HASH_CAPS   (CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS)
 
 #define CRYPTO_LINKEDSEMI_AES_MAX_KEY_LEN_BIT  512
 #define CRYPTO_LINKEDSEMI_AES_MAX_KEY_LEN_BYTE 32
 #define AES_BLOCK_LEN_BYTE                     16
 #define IV_LEN_BYTE                            AES_BLOCK_LEN_BYTE
 
+#define CRYPTO_LINKEDSEMI_SHA_MAX_BLOCK_NUM 0x4000
+#define SHA_BLOCK_LEN_BYTE                  64
+#define SHA_PADDING_MOD_LEN_BYTE            56
+
 struct crypto_linkedsemi_data {
     void *user_data;
     const struct device *dev;
     uint32_t data;
-    struct k_mutex crypto_mutex;
-    struct k_sem device_sync_sem;
+
+    struct k_mutex cipher_mutex;
+    struct k_sem cipher_device_sync_sem;
+    enum cipher_algo cipher_algo;
+    enum cipher_mode cipher_mode;
+
+    struct k_mutex hash_mutex;
+    struct k_sem hash_device_sync_sem;
+    enum hash_algo hash_algo;
+    struct hash_ctx *hash_ctx;
+    struct hash_pkt *hash_pkt;
+    uint64_t sha_in_buf_index;
+    uint64_t sha_calc_total_len_bit;
+    uint32_t sha_fifo;
+    uint8_t sha_fifo_index;
+    bool sha_is_final;
 };
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
@@ -50,32 +69,6 @@ struct crypto_linkedsemi_config {
 #endif
     irq_cfg_func_t irq_config_func;
 };
-
-static void linkedsemi_crypto_isr(const struct device *dev)
-{
-    struct crypto_linkedsemi_data *dev_data = dev->data;
-    const struct crypto_linkedsemi_config *dev_config = dev->config;
-
-    union crypto_reg_sr sr_un;
-    sr_un.value = sys_read32(dev_config->reg_crypt + CRYPT_SR);
-    if (sr_un.field.AESRIF) {
-        union crypto_reg_icfr crypto_reg_icfr_un = {
-            .field = {
-                .AESIF = 1,
-            },
-        };
-        sys_write32(crypto_reg_icfr_un.value, dev_config->reg_crypt + CRYPT_ICFR);
-        k_sem_give(&dev_data->device_sync_sem);
-    } else if (sr_un.field.DESRIF) {
-        __ASSERT(0, "TODO");
-    }
-}
-
-static void linkedsemi_sha_isr(const struct device *dev)
-{
-    ARG_UNUSED(dev);
-    LSSHA_IRQHandler();
-}
 
 static void linkedsemi_sm4_isr(const struct device *dev)
 {
@@ -95,6 +88,26 @@ static void linkedsemi_sysc_otbn_isr(const struct device *dev)
     HAL_OTBN_SYSC_IRQHandler();
 }
 
+static void linkedsemi_crypto_isr(const struct device *dev)
+{
+    struct crypto_linkedsemi_data *dev_data = dev->data;
+    const struct crypto_linkedsemi_config *dev_config = dev->config;
+
+    union aes_reg_sr sr_un;
+    sr_un.value = sys_read32(dev_config->reg_crypt + CRYPT_SR);
+    if (sr_un.field.AESRIF) {
+        union aes_reg_icfr aes_reg_icfr_un = {
+            .field = {
+                .AESIF = 1,
+            },
+        };
+        sys_write32(aes_reg_icfr_un.value, dev_config->reg_crypt + CRYPT_ICFR);
+        k_sem_give(&dev_data->cipher_device_sync_sem);
+    } else if (sr_un.field.DESRIF) {
+        __ASSERT(0, "TODO");
+    }
+}
+
 static int crypto_linkedsemi_single_block(const struct device *dev,
                                           const uint8_t *ctx_key_bit_stream,
                                           uint16_t ctx_keylen,
@@ -111,14 +124,14 @@ static int crypto_linkedsemi_single_block(const struct device *dev,
     bool is_iv_exist = iv ? true : false;
     uint32_t u32_key[CRYPTO_LINKEDSEMI_AES_MAX_KEY_LEN_BYTE];
     uint32_t u32_iv[4];
-    union crypto_reg_cr crypto_reg_cr_un;
+    union aes_reg_cr aes_reg_cr_un;
     int ret = 0;
 
     __ASSERT(pkt_in_len % AES_BLOCK_LEN_BYTE == 0, "padding before crypto");
 
     sys_memcpy_swap(u32_key, ctx_key_bit_stream, ctx_keylen);
 
-    k_mutex_lock(&dev_data->crypto_mutex, K_FOREVER);
+    k_mutex_lock(&dev_data->cipher_mutex, K_FOREVER);
 
     switch (ctx_keylen) {
     case 32:
@@ -153,7 +166,7 @@ static int crypto_linkedsemi_single_block(const struct device *dev,
     sys_write32(BSWAP_32(((uint32_t *)pkt_in_buf)[2]), dev_config->reg_crypt + CRYPT_DATA1);
     sys_write32(BSWAP_32(((uint32_t *)pkt_in_buf)[3]), dev_config->reg_crypt + CRYPT_DATA0);
 
-    crypto_reg_cr_un = (union crypto_reg_cr){
+    aes_reg_cr_un = (union aes_reg_cr){
         .field = {
             .GO = 1,
             .ENCS = is_encrypt, /* is_enc */
@@ -172,9 +185,9 @@ static int crypto_linkedsemi_single_block(const struct device *dev,
         },
     };
 
-    sys_write32(crypto_reg_cr_un.value, dev_config->reg_crypt + CRYPT_CR);
+    sys_write32(aes_reg_cr_un.value, dev_config->reg_crypt + CRYPT_CR);
 
-    k_sem_take(&dev_data->device_sync_sem, K_FOREVER);
+    k_sem_take(&dev_data->cipher_device_sync_sem, K_FOREVER);
 
     uint32_t out[] = {
         [0] = BSWAP_32(sys_read32(dev_config->reg_crypt + CRYPT_RES3)),
@@ -185,7 +198,7 @@ static int crypto_linkedsemi_single_block(const struct device *dev,
 
     memcpy(pkt_out_buf, out, sizeof(out));
 
-    k_mutex_unlock(&dev_data->crypto_mutex);
+    k_mutex_unlock(&dev_data->cipher_mutex);
 
     return ret;
 }
@@ -330,13 +343,13 @@ static int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx,
     return ret;
 }
 
-static int crypto_linkedsemi_begin_session(const struct device *dev,
+static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
                                            struct cipher_ctx *ctx,
                                            enum cipher_algo algo,
                                            enum cipher_mode mode,
                                            enum cipher_op op_type)
 {
-    if (ctx->flags & ~(CRYP_SUPPORT)) {
+    if (ctx->flags & ~(CRYPTO_LINKEDSEMI_CIPHER_CAPS)) {
         LOG_ERR("Unsupported flag");
         return -ENOTSUP;
     }
@@ -394,32 +407,211 @@ static int crypto_linkedsemi_begin_session(const struct device *dev,
     return 0;
 }
 
-static int crypto_linkedsemi_free_session(const struct device *dev,
+static int crypto_linkedsemi_cipher_free_session(const struct device *dev,
                                           struct cipher_ctx *ctx)
 {
+    ARG_UNUSED(dev);
+    ARG_UNUSED(ctx);
+
+    return 0;
+}
+
+static void sha_fifo_write_byte(const struct device *dev, uint8_t byte)
+{
+    const struct crypto_linkedsemi_config *dev_config = dev->config;
+    struct crypto_linkedsemi_data *dev_data = dev->data;
+
+    dev_data->sha_in_buf_index++;
+    ((uint8_t *)(&dev_data->sha_fifo))[dev_data->sha_fifo_index++] = byte;
+    if (dev_data->sha_fifo_index == 4) {
+        dev_data->sha_fifo_index = 0;
+        sys_write32(dev_data->sha_fifo, dev_config->reg_calc_sha + SHA_FIFO_DAT);
+    }
+}
+
+static void linkedsemi_sha_isr(const struct device *dev)
+{
+    const struct crypto_linkedsemi_config *dev_config = dev->config;
+    struct crypto_linkedsemi_data *dev_data = dev->data;
+
+    // uint8_t stat = LSSHA->INTR_S;
+    union sha_reg_intr sha_reg_intr_stat_un;
+    sha_reg_intr_stat_un.value = sys_read32(dev_config->reg_calc_sha + SHA_INTR_S);
+    if (sha_reg_intr_stat_un.field.FSM_EMPT) {
+        //do not overflow 64 byte
+        for (uint32_t i = 0; i < dev_data->hash_pkt->in_len; i++) {
+            sha_fifo_write_byte(dev, dev_data->hash_pkt->in_buf[i]);
+        }
+        if (dev_data->sha_is_final) {
+            sha_fifo_write_byte(dev, 0x80);
+            while (dev_data->sha_in_buf_index % SHA_BLOCK_LEN_BYTE
+                   != SHA_PADDING_MOD_LEN_BYTE) {
+                sha_fifo_write_byte(dev, 0x00);
+            }
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 56);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 48);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 40);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 32);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 24);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 16);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 8);
+            sha_fifo_write_byte(dev, dev_data->sha_calc_total_len_bit >> 0);
+            union sha_reg_intr sha_reg_intr_un = { .field = { .FSM_EMPT = 1, }, };
+            sys_write32(sha_reg_intr_un.value, dev_config->reg_calc_sha + SHA_INTR_C);
+        } else {
+            /* let it go */
+            k_sem_give(&dev_data->hash_device_sync_sem);
+        }
+        union sha_reg_intr sha_reg_intr_un = { .field = { .FSM_END = 1, .FSM_EMPT = 0, }, };
+        sys_write32(sha_reg_intr_un.value, dev_config->reg_calc_sha + SHA_INTR_M);
+    }
+    if (sha_reg_intr_stat_un.field.FSM_END) {
+        union sha_reg_intr sha_reg_intr_un = { .field = { .FSM_END = 1, }, };
+        sys_write32(sha_reg_intr_un.value, dev_config->reg_calc_sha + SHA_INTR_C);
+
+        k_sem_give(&dev_data->hash_device_sync_sem);
+    }
+}
+
+static int crypto_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, bool finish)
+{
+    const struct crypto_linkedsemi_config *dev_config = ctx->device->config;
+    struct crypto_linkedsemi_data *dev_data = ctx->device->data;
+    uint32_t block_num = 0;
+    int ret = 0;
+
+    dev_data->hash_pkt = pkt;
+    dev_data->sha_calc_total_len_bit += pkt->in_len * 8;
+    block_num = pkt->in_len / SHA_BLOCK_LEN_BYTE + 1;
+    if (finish) {
+        dev_data->sha_is_final = true;
+        if (pkt->in_len % SHA_BLOCK_LEN_BYTE > SHA_PADDING_MOD_LEN_BYTE - 1) {
+            block_num++;
+        }
+    }
+
+    union sha_reg_ctrl sha_reg_ctrl_un = {
+        .field = {
+            .FST_DAT = (dev_data->sha_in_buf_index == 0) ? 1 : 0,
+            .CALC_SHA224 = (dev_data->hash_algo == CRYPTO_HASH_ALGO_SHA224) ? 1 : 0,
+            .CALC_SM3 = 0,
+            /* LEN start from 0. write 0 means 1 block */
+            .LEN = block_num - 1,
+        },
+    };
+    sys_write32(sha_reg_ctrl_un.value, dev_config->reg_calc_sha + SHA_CTRL);
+
+    union sha_reg_intr sha_reg_intr_un = { .field = { .FSM_END = 1, .FSM_EMPT = 1, }, };
+    sys_write32(sha_reg_intr_un.value, dev_config->reg_calc_sha + SHA_INTR_M);
+
+    if (dev_data->sha_in_buf_index % SHA_BLOCK_LEN_BYTE == 0) {
+        union sha_reg_start sha_reg_start_un = { .field = { .FSM_START = 1, }, };
+        sys_write32(sha_reg_start_un.value, dev_config->reg_calc_sha + SHA_START);
+    }
+
+    k_sem_take(&dev_data->hash_device_sync_sem, K_FOREVER);
+
+    if (finish) {
+        uint8_t result_len = 0;
+        switch(dev_data->hash_algo) {
+        case CRYPTO_HASH_ALGO_SHA224:
+            result_len = 7;
+            break;
+        case CRYPTO_HASH_ALGO_SHA256:
+            result_len = 8;
+            break;
+        case CRYPTO_HASH_ALGO_SHA384:
+        case CRYPTO_HASH_ALGO_SHA512:
+            break;
+        default:
+            LOG_ERR("Unsupported mode");
+            return -ENOTSUP;
+        }
+        for (uint8_t i = 0; i < result_len; i++) {
+            uint32_t val = sys_read32(dev_config->reg_calc_sha + SHA_RSLT0 + i * 0x4);
+            val = BSWAP_32(val);
+            memcpy(pkt->out_buf + i * sizeof(uint32_t), &val, sizeof(uint32_t));
+        }
+
+        dev_data->sha_fifo_index = 0;
+        dev_data->sha_in_buf_index = 0;
+        dev_data->sha_calc_total_len_bit = 0;
+        dev_data->sha_is_final = false;
+    }
+
+    return ret;
+}
+
+static int crypto_linkedsemi_hash_begin_session(const struct device *dev,
+                                                struct hash_ctx *ctx,
+                                                enum hash_algo algo)
+{
+    struct crypto_linkedsemi_data *dev_data = dev->data;
+
+    if (ctx->flags & ~(CRYPTO_LINKEDSEMI_HASH_CAPS)) {
+        LOG_ERR("Unsupported flag");
+        return -ENOTSUP;
+    }
+
+    switch(algo) {
+    case CRYPTO_HASH_ALGO_SHA224:
+    case CRYPTO_HASH_ALGO_SHA256:
+        break;
+    case CRYPTO_HASH_ALGO_SHA384:
+    case CRYPTO_HASH_ALGO_SHA512:
+        __fallthrough;
+    default:
+        LOG_ERR("Unsupported algo");
+        return -ENOTSUP;
+    }
+
+    ctx->hash_hndlr = crypto_linkedsemi_sha;
+    dev_data->hash_ctx = ctx;
+    dev_data->hash_algo = algo;
+
+    return 0;
+}
+
+static int crypto_linkedsemi_hash_free_session(const struct device *dev,
+                                               struct hash_ctx *ctx)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(ctx);
+
     return 0;
 }
 
 static int crypto_linkedsemi_query_caps(const struct device *dev)
 {
-    return CRYP_SUPPORT;
+    ARG_UNUSED(dev);
+
+    return CRYPTO_LINKEDSEMI_CIPHER_CAPS | CRYPTO_LINKEDSEMI_HASH_CAPS;
 }
 
 static int crypto_linkedsemi_init(const struct device *dev)
 {
-    struct crypto_linkedsemi_data *dev_data = dev->data;
     const struct crypto_linkedsemi_config *cfg = dev->config;
+    struct crypto_linkedsemi_data *dev_data = dev->data;
 
-    k_mutex_init(&dev_data->crypto_mutex);
-    k_sem_init(&dev_data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
+    k_mutex_init(&dev_data->cipher_mutex);
+    k_sem_init(&dev_data->cipher_device_sync_sem, 0, K_SEM_MAX_LIMIT);
+    k_mutex_init(&dev_data->hash_mutex);
+    k_sem_init(&dev_data->hash_device_sync_sem, 0, K_SEM_MAX_LIMIT);
     cfg->irq_config_func(dev);
+
+    dev_data->sha_fifo_index = 0;
+    dev_data->sha_in_buf_index = 0;
+    dev_data->sha_calc_total_len_bit = 0;
+    dev_data->sha_is_final = false;
 
     return 0;
 }
 
 static struct crypto_driver_api crypto_enc_funcs = {
-    .cipher_begin_session = crypto_linkedsemi_begin_session,
-    .cipher_free_session = crypto_linkedsemi_free_session,
+    .cipher_begin_session = crypto_linkedsemi_cipher_begin_session,
+    .cipher_free_session = crypto_linkedsemi_cipher_free_session,
+    .hash_begin_session = crypto_linkedsemi_hash_begin_session,
+    .hash_free_session = crypto_linkedsemi_hash_free_session,
     .cipher_async_callback_set = NULL,
     .query_hw_caps = crypto_linkedsemi_query_caps,
 };
