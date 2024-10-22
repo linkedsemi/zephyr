@@ -343,6 +343,47 @@ static int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx,
     return ret;
 }
 
+static int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
+                                         struct cipher_pkt *pkt,
+                                         uint8_t *ctr)
+{
+    const struct device *dev = ctx->device;
+    uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t out_tmp[AES_BLOCK_LEN_BYTE] = {0};
+    uint32_t block_num = 0;
+    int ret = 0;
+
+    memcpy(iv, ctr, AES_BLOCK_LEN_BYTE - 4);
+    // block_num = (iv[12] << 24) | (iv[13] << 16) | (iv[14] << 8) | (iv[15]);
+    block_num = 0;
+    for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
+        ret = crypto_linkedsemi_single_block(dev,
+                                            ctx->key.bit_stream,
+                                            ctx->keylen,
+                                            iv,
+                                            out_tmp,
+                                            AES_BLOCK_LEN_BYTE,
+                                            true,
+                                            CRYPTO_CIPHER_MODE_ECB,
+                                            NULL);
+        if (ret == 0) {
+            block_num++;
+            iv[12] = (uint8_t)(block_num >> 24);
+            iv[13] = (uint8_t)(block_num >> 16);
+            iv[14] = (uint8_t)(block_num >> 8);
+            iv[15] = (uint8_t)(block_num);
+            mem_xor_128(pkt->out_buf + i * AES_BLOCK_LEN_BYTE,
+                        pkt->in_buf + i * AES_BLOCK_LEN_BYTE, out_tmp);
+            pkt->out_len += AES_BLOCK_LEN_BYTE;
+        } else {
+            LOG_ERR("%s: crypto error", __func__);
+            break;
+        }
+    }
+
+    return ret;
+}
+
 static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
                                            struct cipher_ctx *ctx,
                                            enum cipher_algo algo,
@@ -362,6 +403,7 @@ static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
     switch (mode) {
     case CRYPTO_CIPHER_MODE_ECB:
     case CRYPTO_CIPHER_MODE_CBC:
+    case CRYPTO_CIPHER_MODE_CTR:
         break;
     default:
         LOG_ERR("Unsupported mode");
@@ -386,6 +428,9 @@ static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
         case CRYPTO_CIPHER_MODE_CBC:
             ctx->ops.cbc_crypt_hndlr = crypto_linkedsemi_cbc_encrypt;
             break;
+        case CRYPTO_CIPHER_MODE_CTR:
+            ctx->ops.ctr_crypt_hndlr = crypto_linkedsemi_ctr;
+            break;
         default:
             LOG_ERR("Unsupported");
             return -ENOTSUP;
@@ -397,6 +442,9 @@ static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
             break;
         case CRYPTO_CIPHER_MODE_CBC:
             ctx->ops.cbc_crypt_hndlr = crypto_linkedsemi_cbc_decrypt;
+            break;
+        case CRYPTO_CIPHER_MODE_CTR:
+            ctx->ops.ctr_crypt_hndlr = crypto_linkedsemi_ctr;
             break;
         default:
             LOG_ERR("Unsupported");
