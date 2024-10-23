@@ -24,31 +24,31 @@ LOG_MODULE_REGISTER(mdio_dwmac, CONFIG_MDIO_LOG_LEVEL);
 #define MAC_MDIO_DATA    0x0204
 
 union mdio_address {
-    uint32_t reg;
+    volatile uint32_t value;
     struct {
-        uint32_t GB : 1,
-            C45E : 1,
-            GOC_0 : 1,
-            GOC_1 : 1,
-            SKAP : 1,
-            Reserved_7_5 : 3,
-            CR : 4,
-            NTC : 3,
-            Reserved_15 : 1,
-            RDA : 5,
-            PA : 5,
-            BTB : 1,
-            PSE : 1,
-            Reserved_31_28 : 4;
-    } st;
+        volatile uint32_t GB : 1,             /*[0]*/
+                          C45E : 1,           /*[1]*/
+                          GOC_0 : 1,          /*[2]*/
+                          GOC_1 : 1,          /*[3]*/
+                          SKAP : 1,           /*[4]*/
+                          Reserved_7_5 : 3,   /*[5-7]*/
+                          CR : 4,             /*[8-11]*/
+                          NTC : 3,            /*[12-14]*/
+                          Reserved_15 : 1,    /*[15]*/
+                          RDA : 5,            /*[16-20]*/
+                          PA : 5,             /*[21-25]*/
+                          BTB : 1,            /*[26]*/
+                          PSE : 1,            /*[27]*/
+                          Reserved_31_28 : 4; /*[28-31]*/
+    } field;
 } __attribute__((packed));
 
 union mdio_data {
-    uint32_t reg;
+    volatile uint32_t value;
     struct {
-        uint32_t GD : 16,
-            RA : 16;
-    } st;
+        volatile uint32_t GD : 16, /*[0-15]*/
+                          RA : 16; /*[16-31]*/
+    } field;
 } __attribute__((packed));
 
 struct mdio_dwmac_data {
@@ -66,10 +66,10 @@ static bool check_busy(const struct device *dev)
     struct mdio_dwmac_data *const dev_data = dev->data;
     union mdio_address mdio_address_un;
 
-    mdio_address_un.reg = sys_read32(dev_data->base + MAC_MDIO_ADDRESS);
+    mdio_address_un.value = sys_read32(dev_data->base + MAC_MDIO_ADDRESS);
 
     /* Return the busy bit */
-    return mdio_address_un.st.GB;
+    return mdio_address_un.field.GB;
 }
 
 static int mdio_dwmac_transfer(const struct device *dev,
@@ -85,7 +85,7 @@ static int mdio_dwmac_transfer(const struct device *dev,
     int ret = 0;
     union mdio_data mdio_data_un;
     union mdio_address mdio_address_un = {
-        .st = {
+        .field = {
             .Reserved_31_28 = 0,
             .PSE = 0,
             .BTB = 0,
@@ -106,12 +106,12 @@ static int mdio_dwmac_transfer(const struct device *dev,
     k_mutex_lock(&dev_data->mdio_mutex, K_FOREVER);
 
     if (is_write) {
-        mdio_data_un.st.RA = is_c45 ? regad : 0,
-        mdio_data_un.st.GD = *data,
-        sys_write32(mdio_data_un.reg, dev_data->base + MAC_MDIO_DATA);
+        mdio_data_un.field.RA = is_c45 ? regad : 0,
+        mdio_data_un.field.GD = *data,
+        sys_write32(mdio_data_un.value, dev_data->base + MAC_MDIO_DATA);
     }
 
-    sys_write32(mdio_address_un.reg, dev_data->base + MAC_MDIO_ADDRESS);
+    sys_write32(mdio_address_un.value, dev_data->base + MAC_MDIO_ADDRESS);
 
     ret = -ETIMEDOUT;
     for (int i = CONFIG_MDIO_SNPS_DWMAC_RECHECK_COUNT; i > 0; i--) {
@@ -128,8 +128,8 @@ static int mdio_dwmac_transfer(const struct device *dev,
     }
 
     if (!is_write) {
-        mdio_data_un.reg = sys_read32(dev_data->base + MAC_MDIO_DATA);
-        *data = mdio_data_un.st.GD;
+        mdio_data_un.value = sys_read32(dev_data->base + MAC_MDIO_DATA);
+        *data = mdio_data_un.field.GD;
     }
 
 done:
