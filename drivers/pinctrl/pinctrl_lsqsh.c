@@ -23,7 +23,7 @@ static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
             __fallthrough;
         case FUNC_GPIO:
             for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-                per_func_disable(pin, PINMUX_FUNC0);
+                per_func_disable(pin, i);
             }
             return; //no func enable. return here
         default:
