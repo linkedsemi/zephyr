@@ -271,8 +271,9 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
     uint8_t out_tmp[AES_BLOCK_LEN_BYTE] = {0};
     uint32_t block_num = 0;
     int ret = 0;
+    int ivlen = AES_BLOCK_LEN_BYTE - (ctx->mode_params.ctr_info.ctr_len >> 3);
 
-    memcpy(iv, ctr, AES_BLOCK_LEN_BYTE - 4);
+    memcpy(iv, ctr, ivlen);
     // block_num = (iv[12] << 24) | (iv[13] << 16) | (iv[14] << 8) | (iv[15]);
     block_num = 0;
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
