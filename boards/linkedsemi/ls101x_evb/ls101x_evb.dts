@@ -49,6 +49,11 @@
 			label = "Push button 1";
 		};
 	};
+
+	ipmi {
+		compatible = "linkedsemi,ls-ipmi-kcs";
+		kcs_chan = <&e8042>;
+	};
 };
 
 &flash0 {
@@ -208,11 +213,7 @@
 		up_irq = <1 0>;
 		status = "okay";
 	};
-	eacpi: eacpi {
-		compatible = "linkedsemi,ls-kcs";
-		port = <0x80 0x81>;
-		status = "okay";
-	};
+
 
 	status = "okay";
 };

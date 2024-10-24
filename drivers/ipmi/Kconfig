@@ -1,0 +1,20 @@
+menuconfig IPMI
+    bool "IPMI drivers"
+    help
+      Includes IPMI drivers in the system configuration.
+
+if IPMI
+
+source "drivers/ipmi/Kconfig.ls"
+
+module = IPMI
+module-str = ipmi
+source "subsys/logging/Kconfig.template.log_config"
+
+
+config IPMI_INIT_PRIORITY
+    int "IPMI driver init priority"
+    default 11
+    help
+       IPMI driver initialization priority.
+endif

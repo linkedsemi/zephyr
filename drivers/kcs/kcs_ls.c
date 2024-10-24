@@ -13,13 +13,14 @@ struct kcs_ls_config {
     struct peri_ioport_content data;
     struct peri_ioport_content cmd_stt;
     const struct device *parent;
-    struct upstream_irq_type *up_irq;
+    const struct upstream_irq_type *up_irq;
 };
 
 struct kcs_ls_data {
     struct peri_ioport io_data;
     struct peri_ioport io_cmd_stt;
     ibf_callback_t callback;
+    void *param;
     struct k_spinlock lock;
     uint8_t status;
     uint8_t data_out;
@@ -29,7 +30,7 @@ struct kcs_ls_data {
 static int kcs_ls_init(const struct device *dev)
 {
     struct kcs_ls_data *data = dev->data;
-    struct kcs_ls_config *cfg = dev->config;
+    const struct kcs_ls_config *cfg = dev->config;
     if(!device_is_ready(cfg->parent))
     {
 		LOG_DBG("%s device not ready", cfg->parent->name);
@@ -62,7 +63,7 @@ static int kcs_ls_read_data(const struct device *dev,uint8_t *data)
 static int kcs_ls_write_data(const struct device *dev,uint8_t data)
 {
     struct kcs_ls_data *dev_data = dev->data;
-    struct kcs_ls_config *cfg = dev->config;
+    const struct kcs_ls_config *cfg = dev->config;
     int ret = 0;
     k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
     if(dev_data->status & KCS_OBF)
@@ -103,10 +104,11 @@ static int kcs_ls_update_status(const struct device *dev,uint8_t mask,uint8_t va
     return 0;
 }
 
-static int kcs_ls_set_ibf_callback(const struct device *dev,ibf_callback_t callback)
+static int kcs_ls_set_ibf_callback(const struct device *dev,ibf_callback_t callback,void *param)
 {
     struct kcs_ls_data *dev_data = dev->data;
     dev_data->callback = callback;
+    dev_data->param = param;
     return 0;
 }
 
@@ -134,16 +136,16 @@ static void data_cmd_stt_iowr(const struct device *dev,uint8_t size,uint8_t *dat
     k_spin_unlock(&dev_data->lock,key);
     if(dev_data->callback)
     {
-        dev_data->callback(dev);
+        dev_data->callback(dev,dev_data->param);
     }
 }
 
-static void data_io_read(struct peri_ioport_content *ioport,uint8_t size,void *res)
+static void data_io_read(const struct peri_ioport_content *ioport,uint8_t size,void *res)
 {
     uint8_t *val = res;
     struct device *dev = ioport->ctx;
     struct kcs_ls_data *dev_data = dev->data;
-    struct kcs_ls_config *cfg = dev->config;
+    const struct kcs_ls_config *cfg = dev->config;
     k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
 	*val = dev_data->data_out;
 	dev_data->status &= ~KCS_OBF;
@@ -154,12 +156,12 @@ static void data_io_read(struct peri_ioport_content *ioport,uint8_t size,void *r
     }
 }
 
-static void data_io_write(struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
+static void data_io_write(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
 {
     data_cmd_stt_iowr(ioport->ctx,size,data,true);
 }
 
-static void cmd_stt_io_read(struct peri_ioport_content *ioport,uint8_t size,void *res)
+static void cmd_stt_io_read(const struct peri_ioport_content *ioport,uint8_t size,void *res)
 {
     uint8_t *val = res;
     struct device *dev = ioport->ctx;
@@ -169,29 +171,29 @@ static void cmd_stt_io_read(struct peri_ioport_content *ioport,uint8_t size,void
     k_spin_unlock(&dev_data->lock,key);
 }
 
-static void cmd_stt_io_write(struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
+static void cmd_stt_io_write(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
 {
     data_cmd_stt_iowr(ioport->ctx,size,data,false);
 }
 
 #define LS_KCS_INIT(idx)\
-    IF_ENABLED(DT_HAS_UP_IRQ(idx),UPSTREAM_IRQ_DT_INST_DEFINE(idx);)\
+    IF_ENABLED(DT_HAS_UP_IRQ(idx),(UPSTREAM_IRQ_DT_INST_DEFINE(idx)))\
     static struct kcs_ls_data kcs_ls_data_##idx;\
     static const struct kcs_ls_config kcs_ls_cfg_##idx = {\
         .data = {\
             .io_read = data_io_read,\
             .io_write = data_io_write,\
-            .ctx = DEVICE_DT_INST_GET(idx),\
+            .ctx = (void *)DEVICE_DT_INST_GET(idx),\
             .addr = DT_INST_PROP_BY_IDX(idx,port,0),\
         },\
         .cmd_stt = {\
             .io_read = cmd_stt_io_read,\
             .io_write = cmd_stt_io_write,\
-            .ctx = DEVICE_DT_INST_GET(idx),\
+            .ctx = (void *)DEVICE_DT_INST_GET(idx),\
             .addr = DT_INST_PROP_BY_IDX(idx,port,1),\
         },\
-        .parent = DT_INST_PARENT(idx),\
-        IF_ENABLED(DT_HAS_UP_IRQ(idx),.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx),)\
+        .parent = DEVICE_DT_GET(DT_INST_PARENT(idx)),\
+        IF_ENABLED(DT_HAS_UP_IRQ(idx),(.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx)))\
     };\
     DEVICE_DT_INST_DEFINE(idx,\
         &kcs_ls_init,\

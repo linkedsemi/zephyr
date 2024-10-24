@@ -1,0 +1,10 @@
+description: Linkedsemi IPMI over KCS controller
+
+compatible: "linkedsemi,ls-ipmi-kcs"
+
+include: base.yaml
+
+properties:
+    kcs_chan:
+      type: phandle
+      required: true

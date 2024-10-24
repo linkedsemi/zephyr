@@ -8,15 +8,15 @@
 #include "soc_clock.h"
 
 struct peri_ioport_content {
-    void (*io_read)(struct peri_ioport_content *ioport,uint8_t size,void *res);
-    void (*io_write)(struct peri_ioport_content *ioport,uint8_t size,uint8_t *data);
+    void (*io_read)(const struct peri_ioport_content *ioport,uint8_t size,void *res);
+    void (*io_write)(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data);
     void *ctx;
     uint16_t addr;
 };
 
 struct peri_ioport {
     sys_snode_t node;
-    struct peri_ioport_content *content;
+    const struct peri_ioport_content *content;
 };
 
 struct peri_mem_content {

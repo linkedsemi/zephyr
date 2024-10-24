@@ -22,9 +22,9 @@ typedef int (*kcs_read_status_t)(const struct device *dev,uint8_t *status);
 
 typedef int (*kcs_update_status_t)(const struct device *dev,uint8_t mask,uint8_t val);
 
-typedef void (*ibf_callback_t)(const struct device *);
+typedef void (*ibf_callback_t)(const struct device *,void *);
 
-typedef int (*kcs_set_ibf_callback_t)(const struct device *dev,ibf_callback_t callback);
+typedef int (*kcs_set_ibf_callback_t)(const struct device *dev,ibf_callback_t callback,void *param);
 
 __subsystem struct kcs_driver_api {
     kcs_read_data_t read_data;
@@ -78,15 +78,15 @@ static inline int z_impl_kcs_update_status(const struct device *dev,uint8_t mask
     return api->update_status(dev,mask,val);
 }
 
-__syscall int kcs_set_ibf_callback(const struct device *dev,ibf_callback_t callback);
+__syscall int kcs_set_ibf_callback(const struct device *dev,ibf_callback_t callback,void *param);
 
-static inline int z_impl_kcs_set_ibf_callback(const struct device *dev,ibf_callback_t callback)
+static inline int z_impl_kcs_set_ibf_callback(const struct device *dev,ibf_callback_t callback,void *param)
 {
     const struct kcs_driver_api *api = (const struct kcs_driver_api *)dev->api;
     if(api->set_ibf_callback == NULL) {
         return -ENOSYS;
     }
-    return api->set_ibf_callback(dev,callback);
+    return api->set_ibf_callback(dev,callback,param);
 }
 
 #ifdef __cplusplus
