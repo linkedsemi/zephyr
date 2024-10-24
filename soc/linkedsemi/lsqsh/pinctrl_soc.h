@@ -22,24 +22,28 @@ extern "C" {
 
 typedef struct {
     union {
-        uint16_t pinmux_val;
+        volatile uint16_t value;
         struct {
-            uint16_t pin  : 8,
-                     alt  : 6,
-                     func : 2;
-        } pinmux_st;
+            volatile uint16_t pin  : 8, /*[0-7]*/
+                              alt  : 6, /*[8-13]*/
+                              func : 2; /*[14-15]*/
+        } field;
     } pinmux_un;
-    struct {
-        uint16_t pull_down  : 1,
-                 pull_up    : 1,
-                 push_pull  : 1,
-                 open_drain : 1,
-                 cfg_input  : 1,
-                 cfg_output : 1,
-                 out_high   : 1,
-                 out_low    : 1,
-                 drive      : 2;
-    } pin_attr_st;
+    union {
+        volatile uint16_t value;
+        struct {
+            volatile uint16_t pull_down  : 1, /*[0]*/
+                              pull_up    : 1, /*[1]*/
+                              push_pull  : 1, /*[2]*/
+                              open_drain : 1, /*[3]*/
+                              cfg_input  : 1, /*[4]*/
+                              cfg_output : 1, /*[5]*/
+                              out_high   : 1, /*[6]*/
+                              out_low    : 1, /*[7]*/
+                              drive      : 2, /*[8-9]*/
+                              reserve0   : 6; /*[10-15]*/
+        } field;
+    } pin_attr_un;
 }  __attribute__((packed)) pinctrl_soc_pin_t;
 
 /**
@@ -49,16 +53,16 @@ typedef struct {
  */
 #define Z_PINCTRL_STATE_PIN_INIT(node, prop, idx) \
     { \
-        .pinmux_un.pinmux_val    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, pinmux), \
-        .pin_attr_st.pull_down   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_down), \
-        .pin_attr_st.pull_up     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up), \
-        .pin_attr_st.push_pull   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_push_pull), \
-        .pin_attr_st.open_drain  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_open_drain), \
-        .pin_attr_st.cfg_input   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, input_enable), \
-        .pin_attr_st.cfg_output  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_enable), \
-        .pin_attr_st.out_high    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_high), \
-        .pin_attr_st.out_low     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_low), \
-        .pin_attr_st.drive       = DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, prop, idx), drive_strength), \
+        .pinmux_un.value               = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, pinmux), \
+        .pin_attr_un.field.pull_down   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_down), \
+        .pin_attr_un.field.pull_up     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up), \
+        .pin_attr_un.field.push_pull   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_push_pull), \
+        .pin_attr_un.field.open_drain  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_open_drain), \
+        .pin_attr_un.field.cfg_input   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, input_enable), \
+        .pin_attr_un.field.cfg_output  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_enable), \
+        .pin_attr_un.field.out_high    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_high), \
+        .pin_attr_un.field.out_low     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_low), \
+        .pin_attr_un.field.drive       = DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, prop, idx), drive_strength), \
     },
 
 /**
