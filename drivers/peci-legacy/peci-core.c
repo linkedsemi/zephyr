@@ -5,6 +5,7 @@
 #include <zephyr/sys/crc.h>
 #include <zephyr/sys/crc8_lx.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/__assert.h>
 #include <sys/types.h>
 #include <zephyr/kernel.h> 
 #include <zephyr/sys_clock.h>
@@ -13,6 +14,7 @@
 #include <zephyr/drivers/peci-legacy.h>
 #include <zephyr/pm/pm.h>
 #include <stdio.h>
+#include <assert.h>
 #include <string.h>
 
 LOG_MODULE_REGISTER(peci_core, LOG_LEVEL_DBG);
@@ -38,7 +40,7 @@ DECLARE_CRC8_TABLE(peci_crc8_table);
 
 static bool is_registered;
 
-// static DEFINE_MUTEX(core_lock);
+static K_MUTEX_DEFINE(core_lock);
 // static DEFINE_IDR(peci_adapter_idr);
 
 /* Lock requests if sent to the same device on different interface */
@@ -178,22 +180,27 @@ struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
 	u8 *tx_buf, *rx_buf;
 
 	if (tx_len) {
-		tx_buf = k_calloc(tx_len, sizeof(uint8_t));
+		// tx_buf = k_calloc(tx_len, sizeof(uint8_t));
+		tx_buf = k_malloc(tx_len);
 		if (!tx_buf)
 			return NULL;
 	} else {
 		tx_buf = NULL;
 	}
+	
 
 	if (rx_len) {
-		rx_buf = k_calloc(rx_len, sizeof(uint8_t));
+		// rx_buf = k_calloc(rx_len, sizeof(uint8_t));
+		rx_buf = k_malloc(rx_len);
 		if (!rx_buf)
 			goto err_free_tx_buf;
 	} else {
 		rx_buf = NULL;
 	}
+	
 
-	msg = k_calloc(sizeof(*msg), sizeof(uint8_t));
+	// msg = k_calloc(1, sizeof(*msg));
+	msg = k_malloc(sizeof(*msg));
 	if (!msg)
 		goto err_free_tx_rx_buf;
 
@@ -201,12 +208,18 @@ struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
 	msg->tx_buf = tx_buf;
 	msg->rx_len = rx_len;
 	msg->rx_buf = rx_buf;
+	printf("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
+	printf("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
+	printf("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
+	printf("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
 
 	return msg;
 
 err_free_tx_rx_buf:
+	printk("Debug in %s: in err_free_tx_rx_buf");
 	k_free(rx_buf);
 err_free_tx_buf:
+	printk("Debug in %s: in err_free_tx_buf");
 	k_free(tx_buf);
 
 	return NULL;
@@ -222,9 +235,18 @@ void peci_put_xfer_msg(struct peci_xfer_msg *msg)
 	if (!msg)
 		return;
 
+	printf("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
 	k_free(msg->rx_buf);
+	msg->rx_buf = NULL;
+	printk("Debug in %s: free msg->rx_buf\n", __func__);
+	printf("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
 	k_free(msg->tx_buf);
+	msg->tx_buf = NULL;
+	printk("Debug in %s: free msg->tx_buf\n", __func__);
+	printf("Debug in %s: msg = %p\n", __func__, msg);
 	k_free(msg);
+	msg = NULL;
+	printk("Debug in %s: free msg\n", __func__);
 }
 // EXPORT_SYMBOL_GPL(peci_put_xfer_msg);
 
@@ -306,10 +328,14 @@ static int __peci_xfer(struct peci_adapter *adapter, struct peci_xfer_msg *msg,
 		return -EFAULT;
 	}
 
+	printk("Debug in %s: before loop\n", __func__);
 	for (;;) {
+		printk("Debug in %s: before k_mutex_lock\n", __func__);
 		k_mutex_lock(&cpu_domain_lock[node_id][domain_id], K_FOREVER);
+		printk("Debug in %s: before adapter->xfer\n", __func__);
 		ret = adapter->xfer(adapter, msg);
 		k_mutex_unlock(&cpu_domain_lock[node_id][domain_id]);
+		printk("Debug in %s: finish adapter->xfer\n", __func__);
 
 		if (!do_retry || ret || !msg->rx_buf)
 			break;
@@ -409,6 +435,7 @@ static int peci_scan_cmd_mask(struct peci_adapter *adapter)
 	msg->addr      = PECI_BASE_ADDR;
 	msg->tx_buf[0] = PECI_GET_DIB_CMD;
 
+	printk("Debug in %s: before peci_xfer\n", __func__);
 	ret = peci_xfer(adapter, msg);
 	if (ret) {
 		ret = -EAGAIN;
@@ -550,8 +577,9 @@ static int peci_cmd_ping(struct peci_adapter *adapter, uint msg_len, void *vmsg)
 
 	msg->addr   = umsg->addr;
 
+	printk("Debug in %s: before peci_xfer\n", __func__);
 	ret = peci_xfer(adapter, msg);
-
+	printk("Debug in %s: finish peci_xfer\n", __func__);
 	peci_put_xfer_msg(msg);
 
 	return ret;
@@ -571,11 +599,12 @@ static int peci_cmd_get_dib(struct peci_adapter *adapter, uint msg_len, void *vm
 	msg->tx_buf[0] = PECI_GET_DIB_CMD;
 
 	ret = peci_xfer(adapter, msg);
+	printk("Debug in %s: peci_xfer ret = %d\n", __func__, ret);
 	if (ret)
 		goto out;
 
 	umsg->dib = le64_to_cpup((__le64 *)msg->rx_buf);
-
+	printk("Debug in %s: peci_cmd_get_dib umsg->dib = %llx\n", __func__, umsg->dib);
 out:
 	peci_put_xfer_msg(msg);
 
@@ -1672,19 +1701,27 @@ int peci_command(struct peci_adapter *adapter, enum peci_cmd cmd, uint msg_len, 
 	if (cmd >= PECI_CORE_CMD_MAX || cmd < PECI_CORE_CMD_XFER)
 		return -ENOTTY;
 
-	dev_dbg(&adapter->dev, "%s, cmd=0x%02x\n", __func__, cmd);
 
 	if (!peci_cmd_fn[cmd])
 		return -EINVAL;
 
+	printf("Debug: %s, cmd=0x%02x\n", __func__, cmd);
+	printk("Debug: adapter is used in %p\n", (void *)adapter);
+	printk("Debug: adapter bus lock is used in %p\n", (void *)&adapter->bus_lock);
 	k_mutex_lock(&adapter->bus_lock, K_FOREVER);
+	printk("Debug in %s: finish k_mutex_lock\n", __func__);
 
 	ret = peci_check_cmd_support(adapter, cmd);
-	if (!ret)
+	printk("Debug in %s: finished peci_check_cmd_support ret = %d\n", __func__, ret);
+	if (!ret){
+		printk("Debug in %s: before peci_cmd_fn\n", __func__);
 		ret = peci_cmd_fn[cmd](adapter, msg_len, vmsg);
+		printk("Debug in %s: finish peci_cmd_fn ret = %d\n", __func__, ret);
+	}
 
+	printk("Debug in %s: before k_mutex_unlock\n", __func__);
 	k_mutex_unlock(&adapter->bus_lock);
-
+	printk("Debug in %s: finish k_mutex_unlock\n", __func__);
 	return ret;
 }
 // EXPORT_SYMBOL_GPL(peci_command);
@@ -2300,91 +2337,102 @@ int peci_command(struct peci_adapter *adapter, enum peci_cmd cmd, uint msg_len, 
 // extern struct notifier_block peci_of_notifier;
 // #endif /* CONFIG_OF_DYNAMIC */
 
-// /**
-//  * peci_alloc_adapter - allocate a PECI adapter
-//  * @dev: the adapter, possibly using the platform_bus
-//  * @size: how much zeroed driver-private data to allocate; the pointer to this
-//  *	memory is in the driver_data field of the returned device,
-//  *	accessible with peci_get_adapdata().
-//  * Context: can sleep
-//  *
-//  * This call is used only by PECI adapter drivers, which are the only ones
-//  * directly touching chip registers.  It's how they allocate a peci_adapter
-//  * structure, prior to calling peci_add_adapter().
-//  *
-//  * This must be called from context that can sleep.
-//  *
-//  * The caller is responsible for initializing the adapter's methods before
-//  * calling peci_add_adapter(); and (after errors while adding the device)
-//  * calling put_device() to prevent a memory leak.
-//  *
-//  * Return: the peci_adapter structure on success, else NULL.
-//  */
-// struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size)
-// {
-// 	struct peci_adapter *adapter;
+/**
+ * peci_alloc_adapter - allocate a PECI adapter
+ * @dev: the adapter, possibly using the platform_bus
+ * @size: how much zeroed driver-private data to allocate; the pointer to this
+ *	memory is in the driver_data field of the returned device,
+ *	accessible with peci_get_adapdata().
+ * Context: can sleep
+ *
+ * This call is used only by PECI adapter drivers, which are the only ones
+ * directly touching chip registers.  It's how they allocate a peci_adapter
+ * structure, prior to calling peci_add_adapter().
+ *
+ * This must be called from context that can sleep.
+ *
+ * The caller is responsible for initializing the adapter's methods before
+ * calling peci_add_adapter(); and (after errors while adding the device)
+ * calling put_device() to prevent a memory leak.
+ *
+ * Return: the peci_adapter structure on success, else NULL.
+ */
+struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size)
+{
+	struct peci_adapter *adapter;
 
-// 	if (!dev)
-// 		return NULL;
+	if (!dev)
+		return NULL;
 
-// 	adapter = k_calloc(size + sizeof(*adapter), GFP_KERNEL);
-// 	if (!adapter)
-// 		return NULL;
+	adapter = k_malloc(size + sizeof(*adapter));
+	if (!adapter)
+		return NULL;
 
-// 	device_initialize(&adapter->dev);
-// 	adapter->dev.parent = dev;
-// 	adapter->dev.bus = &peci_bus_type;
-// 	adapter->dev.type = &peci_adapter_type;
-// 	peci_set_adapdata(adapter, &adapter[1]);
+	device_init(&adapter->dev);
+	peci_set_adapdata(adapter, &adapter[1]);
 
-// 	return adapter;
-// }
-// EXPORT_SYMBOL_GPL(peci_alloc_adapter);
+	return adapter;
+}
 
-// static int peci_register_adapter(struct peci_adapter *adapter)
-// {
-// 	int ret = -EINVAL;
 
-// 	/* Can't register until after driver model init */
-// 	if (WARN_ON(!is_registered))
-// 		goto err_free_idr;
+static int peci_register_adapter(struct peci_adapter *adapter)
+{
+	int ret = -EINVAL;
 
-// 	if (WARN(!adapter->name[0], "peci adapter has no name"))
-// 		goto err_free_idr;
+	printk("Debug: In peci_register_adapter\n");
 
-// 	if (WARN(!adapter->xfer, "peci adapter has no xfer function\n"))
-// 		goto err_free_idr;
+	/* Can't register until after driver model init */
+	if (!is_registered)
+	{
+		printk("peci adapter is not registered yet\n");
+		goto err_free_idr;
+	}
 
-// 	mutex_init(&adapter->bus_lock);
-// 	mutex_init(&adapter->userspace_clients_lock);
-// 	INIT_LIST_HEAD(&adapter->userspace_clients);
+	if (!adapter->name[0])
+	{
+		printk("peci adapter has no name\n");
+		goto err_free_idr;
+	}	
 
-// 	dev_set_name(&adapter->dev, "peci-%d", adapter->nr);
+	if (!adapter->xfer)
+	{
+		printk("peci adapter has no xfer function\n");
+		goto err_free_idr;
+	}
+		
+	k_mutex_init(&adapter->bus_lock);
+	printk("Debug: adapter bus lock is init in %p\n", (void *)&adapter->bus_lock);
+	k_mutex_init(&adapter->userspace_clients_lock);
+	// SYS_DLIST_STATIC_INIT(&adapter->userspace_clients);
 
-// 	ret = device_add(&adapter->dev);
-// 	if (ret) {
-// 		pr_err("adapter '%s': can't add device (%d)\n",
-// 		       adapter->name, ret);
-// 		goto err_free_idr;
-// 	}
+	// dev_set_name(&adapter->dev, "peci-%d", adapter->nr);
 
-// 	dev_dbg(&adapter->dev, "adapter [%s] registered\n", adapter->name);
+	// ret = device_add(&adapter->dev);
+	// if (ret) {
+	// 	pr_err("adapter '%s': can't add device (%d)\n",
+	// 	       adapter->name, ret);
+	// 	goto err_free_idr;
+	// }
 
-// 	pm_runtime_no_callbacks(&adapter->dev);
-// 	pm_suspend_ignore_children(&adapter->dev, true);
-// 	pm_runtime_enable(&adapter->dev);
+	dev_dbg(&adapter->dev, "adapter [%s] registered\n", adapter->name);
+	printk("Debug: adapter [%s] registered\n", adapter->name);
 
-// 	/* create pre-declared device nodes */
-// 	peci_of_register_devices(adapter);
+	// pm_runtime_no_callbacks(&adapter->dev);
+	// pm_suspend_ignore_children(&adapter->dev, true);
+	// pm_runtime_enable(&adapter->dev);
 
-// 	return 0;
+	/* create pre-declared device nodes */
+	// peci_of_register_devices(adapter);
 
-// err_free_idr:
-// 	mutex_lock(&core_lock);
-// 	idr_remove(&peci_adapter_idr, adapter->nr);
-// 	mutex_unlock(&core_lock);
-// 	return ret;
-// }
+	return 0;
+
+err_free_idr:
+	k_mutex_lock(&core_lock, K_FOREVER);
+	// idr_remove(&peci_adapter_idr, adapter->nr);
+	printk("Debug: In err_free_idr\n");
+	k_mutex_unlock(&core_lock);
+	return ret;
+}
 
 // static int peci_add_numbered_adapter(struct peci_adapter *adapter)
 // {
@@ -2400,45 +2448,44 @@ int peci_command(struct peci_adapter *adapter, enum peci_cmd cmd, uint msg_len, 
 // 	return peci_register_adapter(adapter);
 // }
 
-// /**
-//  * peci_add_adapter - add a PECI adapter
-//  * @adapter: initialized adapter, originally from peci_alloc_adapter()
-//  * Context: can sleep
-//  *
-//  * PECI adapters connect to their drivers using some non-PECI bus,
-//  * such as the platform bus.  The final stage of probe() in that code
-//  * includes calling peci_add_adapter() to hook up to this PECI bus glue.
-//  *
-//  * This must be called from context that can sleep.
-//  *
-//  * It returns zero on success, else a negative error code (dropping the
-//  * adapter's refcount).  After a successful return, the caller is responsible
-//  * for calling peci_del_adapter().
-//  *
-//  * Return: zero on success, else a negative error code.
-//  */
-// int peci_add_adapter(struct peci_adapter *adapter)
-// {
-// 	struct device *dev = &adapter->dev;
-// 	int id;
+/**
+ * peci_add_adapter - add a PECI adapter
+ * @adapter: initialized adapter, originally from peci_alloc_adapter()
+ * Context: can sleep
+ *
+ * PECI adapters connect to their drivers using some non-PECI bus,
+ * such as the platform bus.  The final stage of probe() in that code
+ * includes calling peci_add_adapter() to hook up to this PECI bus glue.
+ *
+ * This must be called from context that can sleep.
+ *
+ * It returns zero on success, else a negative error code (dropping the
+ * adapter's refcount).  After a successful return, the caller is responsible
+ * for calling peci_del_adapter().
+ *
+ * Return: zero on success, else a negative error code.
+ */
+int peci_add_adapter(struct peci_adapter *adapter)
+{
+	// struct device *dev = &adapter->dev;
+	// int id;
 
-// 	id = of_alias_get_id(dev->of_node, "peci");
-// 	if (id >= 0) {
-// 		adapter->nr = id;
-// 		return peci_add_numbered_adapter(adapter);
-// 	}
+	// id = of_alias_get_id(dev->of_node, "peci");
+	// if (id >= 0) {
+	// 	adapter->nr = id;
+	// 	return peci_add_numbered_adapter(adapter);
+	// }
 
-// 	mutex_lock(&core_lock);
-// 	id = idr_alloc(&peci_adapter_idr, adapter, 0, 0, GFP_KERNEL);
-// 	mutex_unlock(&core_lock);
-// 	if (WARN(id < 0, "couldn't get idr"))
-// 		return id;
+	// mutex_lock(&core_lock);
+	// id = idr_alloc(&peci_adapter_idr, adapter, 0, 0, GFP_KERNEL);
+	// mutex_unlock(&core_lock);
+	// if (WARN(id < 0, "couldn't get idr"))
+	// 	return id;
 
-// 	adapter->nr = id;
+	// adapter->nr = id;
 
-// 	return peci_register_adapter(adapter);
-// }
-// EXPORT_SYMBOL_GPL(peci_add_adapter);
+	return peci_register_adapter(adapter);
+}
 
 // /**
 //  * peci_del_adapter - delete a PECI adapter
@@ -2566,6 +2613,8 @@ int peci_core_init(void)
 	for (i = 0; i < PECI_OFFSET_MAX; i++)
 		for (j = 0; j < DOMAIN_OFFSET_MAX; j++)
 			k_mutex_init(&cpu_domain_lock[i][j]);
+
+	is_registered = true;
 
 	return 0;
 }

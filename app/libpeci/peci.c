@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <peci.h>
 #include <linux/peci-ioctl.h>
+#include <zephyr/drivers/peci-legacy.h>
 
 LOG_MODULE_REGISTER(libpeci, LOG_LEVEL_DBG);
 
@@ -43,10 +44,20 @@ int* peci_i3c_fds[PECI_I3C_HANDLE_CNT];
 #define I3C_PID_TO_CPU(x)                                                      \
     (((x) >> PID_INSTANCE_ID_SHIFT) & PID_INSTANCE_ID_MASK)
 
-EPECIStatus peci_GetDIB_seq(uint8_t target, uint64_t* dib, int peci_fd);
+EPECIStatus peci_GetDIB_seq(uint8_t target, uint64_t* dib, int peci_fd, struct device* dev);
 
 char* peci_device_list[2];
 #define DEV_NAME_SIZE 64
+
+struct peci_ls_data {
+	struct k_sem trans_sync_sem;
+	struct k_sem lock;
+
+    struct device *dev;
+    struct peci_adapter *adapter;
+
+};
+
 /*-------------------------------------------------------------------------
  * This funcion sets the name of the PECI device file to use.
  * If the PECI device name is null try "/dev/peci-default",
@@ -66,8 +77,8 @@ void peci_SetDevName(char* peci_dev)
     }
     else
     {
-        peci_device_list[0] = "/dev/peci-default";
-        peci_device_list[1] = "/dev/peci-0";
+        peci_device_list[0] = "peci-0";
+        peci_device_list[1] = "peci-0";
         syslog(LOG_INFO, "PECI set dev names to %s, %s\n", peci_device_list[0],
                peci_device_list[1]);
     }
@@ -89,36 +100,13 @@ static void init()
 /*-------------------------------------------------------------------------
  * This function unlocks the peci interface
  *------------------------------------------------------------------------*/
-void peci_Unlock(int peci_fd)
+void peci_Unlock(int peci_fd, struct device** dev)
 {
-    if (peci_fd >= PECI_I3C_HANDLE_MIN && peci_fd <= PECI_I3C_HANDLE_MAX)
-    {
-        int fd_index = PECI_I3C_HANDLE_MAX - peci_fd;
 
-        for (int i = 0; i < MAX_CPUS; i++)
-        {
-            int fd = peci_i3c_fds[fd_index][i];
+    printk("Debuge in %s: before close\n", __func__);
+    free(*dev);
+    *dev = NULL;
 
-            if (fd < 0)
-            {
-                continue;
-            }
-
-            if (close(fd) != 0)
-            {
-                syslog(LOG_ERR, "PECI device failed to unlock.\n");
-            }
-        }
-        free(peci_i3c_fds[fd_index]);
-        peci_i3c_fds[fd_index] = NULL;
-    }
-    else
-    {
-        if (close(peci_fd) != 0)
-        {
-            syslog(LOG_ERR, "PECI device failed to unlock.\n");
-        }
-    }
 }
 
 static int peci_chardev_filter(const struct dirent* d)
@@ -331,7 +319,7 @@ static int peci_chardev_filter(const struct dirent* d)
 //     return false;
 // }
 
-static int peci_device_open(char* peci_device)
+static int peci_device_open(char* peci_device, struct device** dev)
 {
     // if (peci_device_i3c_check(peci_device))
     // {
@@ -339,9 +327,9 @@ static int peci_device_open(char* peci_device)
     // }
     //return open(peci_device, O_RDWR | O_CLOEXEC);
 
-    const struct device *dev;
-
-    dev = device_get_binding(peci_device);
+    *dev = device_get_binding("peci@4008c400");
+    printk("Debug in %s: dev = %p to %p\n", __func__, (void *)*dev, (void *)*dev+sizeof(struct device));
+    printk("Debug in %s: dev data = %p to %p\n", __func__, (void *)(*dev)->data, (void *)(*dev)->data+sizeof(struct peci_ls_data));
     if (!dev) {
         printk("Device not found: %s\n", peci_device);
         return -ENODEV;
@@ -354,7 +342,7 @@ static int peci_device_open(char* peci_device)
  * This function attempts to lock the peci interface with the specified
  * timeout and returns a file descriptor if successful.
  *------------------------------------------------------------------------*/
-EPECIStatus peci_Lock(int* peci_fd, int timeout_ms)
+EPECIStatus peci_Lock(int* peci_fd, int timeout_ms, struct device** dev)
 {
     struct timespec sRequest = {0};
     sRequest.tv_sec = 0;
@@ -368,11 +356,12 @@ EPECIStatus peci_Lock(int* peci_fd, int timeout_ms)
     }
 
     // Open the PECI driver with the specified timeout
-    *peci_fd = peci_device_open(peci_device);
+    *peci_fd = peci_device_open(peci_device, dev);
+    printk("Debug in %s: peci_device_open return dev = %p\n", __func__, (void *)*dev);
     if (*peci_fd == -1 && errno == ENOENT && peci_device_list[1])
     {
         peci_device = peci_device_list[1];
-        *peci_fd = peci_device_open(peci_device);
+        *peci_fd = peci_device_open(peci_device, dev);
     }
     switch (timeout_ms)
     {
@@ -382,7 +371,7 @@ EPECIStatus peci_Lock(int* peci_fd, int timeout_ms)
             while (-1 == *peci_fd)
             {
                 nanosleep(&sRequest, NULL);
-                *peci_fd = peci_device_open(peci_device);
+                *peci_fd = peci_device_open(peci_device, dev);
             }
             break;
         default:
@@ -390,7 +379,7 @@ EPECIStatus peci_Lock(int* peci_fd, int timeout_ms)
             {
                 nanosleep(&sRequest, NULL);
                 timeout_count += PECI_TIMEOUT_RESOLUTION_MS;
-                *peci_fd = peci_device_open(peci_device);
+                *peci_fd = peci_device_open(peci_device, dev);
             }
     }
 
@@ -406,15 +395,15 @@ EPECIStatus peci_Lock(int* peci_fd, int timeout_ms)
 /*-------------------------------------------------------------------------
  * This function closes the peci interface
  *------------------------------------------------------------------------*/
-static void peci_Close(int peci_fd)
+static void peci_Close(int peci_fd, struct device** dev)
 {
-    peci_Unlock(peci_fd);
+    peci_Unlock(peci_fd, dev);
 }
 
 /*-------------------------------------------------------------------------
  * This function opens the peci interface and returns a file descriptor
  *------------------------------------------------------------------------*/
-static EPECIStatus peci_Open(int* peci_fd)
+static EPECIStatus peci_Open(int* peci_fd, struct device** dev)
 {
     if (NULL == peci_fd)
     {
@@ -422,14 +411,14 @@ static EPECIStatus peci_Open(int* peci_fd)
     }
 
     // Lock the PECI driver with a default timeout
-    return peci_Lock(peci_fd, PECI_TIMEOUT_MS);
+    return peci_Lock(peci_fd, PECI_TIMEOUT_MS, dev);
 }
 
 /*-------------------------------------------------------------------------
  * This function issues peci commands to peci driver
  *------------------------------------------------------------------------*/
 static EPECIStatus HW_peci_issue_cmd(unsigned int cmd, char* cmdPtr,
-                                     int peci_fd)
+                                     int peci_fd, struct device* dev)
 {
     if (cmdPtr == NULL)
     {
@@ -448,7 +437,8 @@ static EPECIStatus HW_peci_issue_cmd(unsigned int cmd, char* cmdPtr,
         fd = peci_fd;
     }
 
-    if (ioctl(fd, cmd, cmdPtr) != 0)
+    printf("Debug: PECI_DEV_IOCTL: cmd = %d, fd = %d, dev = %p\n", cmd, fd, (void *)dev);
+    if (peci_dev_ioctl(dev, cmd, cmdPtr) != 0)
     {
         if (errno == ETIMEDOUT)
         {
@@ -534,6 +524,7 @@ EPECIStatus peci_Ping(uint8_t target)
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device *dev;
 
     // The target address must be in the valid range
     if (target < MIN_CLIENT_ADDR || target > MAX_CLIENT_ADDR)
@@ -541,13 +532,18 @@ EPECIStatus peci_Ping(uint8_t target)
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    printf("Debug in %s: dev init = %p\n", __func__, (void *)dev);
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
+        printf("Debug: PECI Ping failed\n");
         return PECI_CC_DRIVER_ERR;
     }
-    ret = peci_Ping_seq(target, peci_fd);
+    printf("Debug: PECI Ping successful\n");
+    printf("Debug in %s: peci_Open return = %p\n", __func__, (void *)dev);
+    ret = peci_Ping_seq(target, peci_fd, dev);
+    printf("Debug: PECI Ping seq successful\n");
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);
     return ret;
 }
 
@@ -555,7 +551,7 @@ EPECIStatus peci_Ping(uint8_t target)
  * This function allows sequential Ping with the provided
  * peci file descriptor.
  *------------------------------------------------------------------------*/
-EPECIStatus peci_Ping_seq(uint8_t target, int peci_fd)
+EPECIStatus peci_Ping_seq(uint8_t target, int peci_fd, struct device* dev)
 {
     EPECIStatus ret = PECI_CC_SUCCESS;
     struct peci_ping_msg cmd = {0};
@@ -567,7 +563,8 @@ EPECIStatus peci_Ping_seq(uint8_t target, int peci_fd)
     }
 
     cmd.addr = target;
-    ret = HW_peci_issue_cmd(PECI_IOC_PING, (char*)&cmd, peci_fd);
+    printf("Debug: PECI Ping seq In\n");
+    ret = HW_peci_issue_cmd(PECI_CMD_PING, (char*)&cmd, peci_fd, dev);
 
     return ret;
 }
@@ -579,6 +576,7 @@ EPECIStatus peci_GetDIB(uint8_t target, uint64_t* dib)
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (dib == NULL)
     {
@@ -591,13 +589,13 @@ EPECIStatus peci_GetDIB(uint8_t target, uint64_t* dib)
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
-    ret = peci_GetDIB_seq(target, dib, peci_fd);
-
-    peci_Close(peci_fd);
+    ret = peci_GetDIB_seq(target, dib, peci_fd, dev);
+    printk("Debug in %s: finish peci_GetDIB_seq\n", __func__);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -605,7 +603,7 @@ EPECIStatus peci_GetDIB(uint8_t target, uint64_t* dib)
  * This function allows sequential GetDIB with the provided
  * peci file descriptor.
  *------------------------------------------------------------------------*/
-EPECIStatus peci_GetDIB_seq(uint8_t target, uint64_t* dib, int peci_fd)
+EPECIStatus peci_GetDIB_seq(uint8_t target, uint64_t* dib, int peci_fd, struct device* dev)
 {
     struct peci_get_dib_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -622,12 +620,14 @@ EPECIStatus peci_GetDIB_seq(uint8_t target, uint64_t* dib, int peci_fd)
         return PECI_CC_INVALID_REQ;
     }
 
-    ret = HW_peci_issue_cmd(PECI_IOC_GET_DIB, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_GET_DIB, (char*)&cmd, peci_fd, dev);
 
+    printk("Debug in %s: finish HW_peci_issue_cmd, ret = %d\n", __func__, ret);
     if (ret == PECI_CC_SUCCESS)
     {
         *dib = cmd.dib;
     }
+    printk("Debug in %s: finish dib\n", __func__);
 
     return ret;
 }
@@ -640,6 +640,7 @@ EPECIStatus peci_GetTemp(uint8_t target, int16_t* temperature)
 {
     int peci_fd = -1;
     struct peci_get_temp_msg cmd = {0};
+    struct device* dev;
 
     if (temperature == NULL)
     {
@@ -652,22 +653,22 @@ EPECIStatus peci_GetTemp(uint8_t target, int16_t* temperature)
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
 
     cmd.addr = target;
 
-    EPECIStatus ret = HW_peci_issue_cmd(PECI_IOC_GET_TEMP, (char*)&cmd,
-                                        peci_fd);
+    EPECIStatus ret = HW_peci_issue_cmd(PECI_CMD_GET_TEMP, (char*)&cmd,
+                                        peci_fd, dev);
 
     if (ret == PECI_CC_SUCCESS)
     {
         *temperature = cmd.temp_raw;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
 
     return ret;
 }
@@ -696,6 +697,7 @@ EPECIStatus peci_RdPkgConfig_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pPkgConfig == NULL || cc == NULL)
     {
@@ -710,14 +712,14 @@ EPECIStatus peci_RdPkgConfig_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_RdPkgConfig_seq_dom(target, domainId, u8Index, u16Value,
-                                   u8ReadLen, pPkgConfig, peci_fd, cc);
+                                   u8ReadLen, pPkgConfig, peci_fd, cc, dev);
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -727,11 +729,11 @@ EPECIStatus peci_RdPkgConfig_dom(uint8_t target, uint8_t domainId,
  *------------------------------------------------------------------------*/
 EPECIStatus peci_RdPkgConfig_seq(uint8_t target, uint8_t u8Index,
                                  uint16_t u16Value, uint8_t u8ReadLen,
-                                 uint8_t* pPkgConfig, int peci_fd, uint8_t* cc)
+                                 uint8_t* pPkgConfig, int peci_fd, uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_RdPkgConfig_seq_dom(target, 0, u8Index, u16Value, u8ReadLen,
-                                    pPkgConfig, peci_fd, cc);
+                                    pPkgConfig, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -741,7 +743,7 @@ EPECIStatus peci_RdPkgConfig_seq(uint8_t target, uint8_t u8Index,
 EPECIStatus peci_RdPkgConfig_seq_dom(uint8_t target, uint8_t domainId,
                                      uint8_t u8Index, uint16_t u16Value,
                                      uint8_t u8ReadLen, uint8_t* pPkgConfig,
-                                     int peci_fd, uint8_t* cc)
+                                     int peci_fd, uint8_t* cc, struct device* dev)
 {
     struct peci_rd_pkg_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -777,7 +779,7 @@ EPECIStatus peci_RdPkgConfig_seq_dom(uint8_t target, uint8_t domainId,
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_RD_PKG_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_RD_PKG_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -811,6 +813,7 @@ EPECIStatus peci_WrPkgConfig_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (cc == NULL || pPkgData == NULL)
     {
@@ -823,14 +826,14 @@ EPECIStatus peci_WrPkgConfig_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_WrPkgConfig_seq_dom(target, domainId, u8Index, u16Param,
-                                   pPkgData, u8WriteLen, peci_fd, cc);
+                                   pPkgData, u8WriteLen, peci_fd, cc, dev);
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -840,11 +843,11 @@ EPECIStatus peci_WrPkgConfig_dom(uint8_t target, uint8_t domainId,
  *------------------------------------------------------------------------*/
 EPECIStatus peci_WrPkgConfig_seq(uint8_t target, uint8_t u8Index,
                                  uint16_t u16Param, const void* pPkgData,
-                                 uint8_t u8WriteLen, int peci_fd, uint8_t* cc)
+                                 uint8_t u8WriteLen, int peci_fd, uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_WrPkgConfig_seq_dom(target, 0, u8Index, u16Param, pPkgData,
-                                    u8WriteLen, peci_fd, cc);
+                                    u8WriteLen, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -854,7 +857,7 @@ EPECIStatus peci_WrPkgConfig_seq(uint8_t target, uint8_t u8Index,
 EPECIStatus peci_WrPkgConfig_seq_dom(uint8_t target, uint8_t domainId,
                                      uint8_t u8Index, uint16_t u16Param,
                                      const void* pPkgData, uint8_t u8WriteLen,
-                                     int peci_fd, uint8_t* cc)
+                                     int peci_fd, uint8_t* cc, struct device* dev)
 {
     struct peci_wr_pkg_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -884,7 +887,7 @@ EPECIStatus peci_WrPkgConfig_seq_dom(uint8_t target, uint8_t domainId,
     memcpy(cmd.pkg_data, pPkgData, u8WriteLen);
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_WR_PKG_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_WR_PKG_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     return ret;
@@ -912,6 +915,7 @@ EPECIStatus peci_RdIAMSR_dom(uint8_t target, uint8_t domainId, uint8_t threadID,
     int peci_fd = -1;
     struct peci_rd_ia_msr_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (u64MsrVal == NULL || cc == NULL)
     {
@@ -924,7 +928,7 @@ EPECIStatus peci_RdIAMSR_dom(uint8_t target, uint8_t domainId, uint8_t threadID,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -934,14 +938,14 @@ EPECIStatus peci_RdIAMSR_dom(uint8_t target, uint8_t domainId, uint8_t threadID,
     cmd.address = MSRAddress; // MSR Address
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_RD_IA_MSR, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_RD_IA_MSR, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
         *u64MsrVal = cmd.value;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -969,6 +973,7 @@ EPECIStatus peci_RdPCIConfig_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pPCIData == NULL || cc == NULL)
     {
@@ -981,14 +986,14 @@ EPECIStatus peci_RdPCIConfig_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_RdPCIConfig_seq_dom(target, domainId, u8Bus, u8Device, u8Fcn,
-                                   u16Reg, pPCIData, peci_fd, cc);
+                                   u16Reg, pPCIData, peci_fd, cc, dev);
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -999,11 +1004,11 @@ EPECIStatus peci_RdPCIConfig_dom(uint8_t target, uint8_t domainId,
 EPECIStatus peci_RdPCIConfig_seq(uint8_t target, uint8_t u8Bus,
                                  uint8_t u8Device, uint8_t u8Fcn,
                                  uint16_t u16Reg, uint8_t* pPCIData,
-                                 int peci_fd, uint8_t* cc)
+                                 int peci_fd, uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_RdPCIConfig_seq_dom(target, 0, u8Bus, u8Device, u8Fcn, u16Reg,
-                                    pPCIData, peci_fd, cc);
+                                    pPCIData, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1014,7 +1019,7 @@ EPECIStatus peci_RdPCIConfig_seq_dom(uint8_t target, uint8_t domainId,
                                      uint8_t u8Bus, uint8_t u8Device,
                                      uint8_t u8Fcn, uint16_t u16Reg,
                                      uint8_t* pPCIData, int peci_fd,
-                                     uint8_t* cc)
+                                     uint8_t* cc, struct device* dev)
 {
     struct peci_rd_pci_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -1043,7 +1048,7 @@ EPECIStatus peci_RdPCIConfig_seq_dom(uint8_t target, uint8_t domainId,
     cmd.reg = u16Reg;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_RD_PCI_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_RD_PCI_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     if (ret == PECI_CC_SUCCESS)
@@ -1079,6 +1084,7 @@ EPECIStatus peci_RdPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pPCIReg == NULL || cc == NULL)
     {
@@ -1091,15 +1097,15 @@ EPECIStatus peci_RdPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_RdPCIConfigLocal_seq_dom(target, domainId, u8Bus, u8Device,
                                         u8Fcn, u16Reg, u8ReadLen, pPCIReg,
-                                        peci_fd, cc);
+                                        peci_fd, cc, dev);
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1111,12 +1117,12 @@ EPECIStatus peci_RdPCIConfigLocal_seq(uint8_t target, uint8_t u8Bus,
                                       uint8_t u8Device, uint8_t u8Fcn,
                                       uint16_t u16Reg, uint8_t u8ReadLen,
                                       uint8_t* pPCIReg, int peci_fd,
-                                      uint8_t* cc)
+                                      uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_RdPCIConfigLocal_seq_dom(target, 0, u8Bus, u8Device, u8Fcn,
                                          u16Reg, u8ReadLen, pPCIReg, peci_fd,
-                                         cc);
+                                         cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1127,7 +1133,7 @@ EPECIStatus peci_RdPCIConfigLocal_seq_dom(uint8_t target, uint8_t domainId,
                                           uint8_t u8Bus, uint8_t u8Device,
                                           uint8_t u8Fcn, uint16_t u16Reg,
                                           uint8_t u8ReadLen, uint8_t* pPCIReg,
-                                          int peci_fd, uint8_t* cc)
+                                          int peci_fd, uint8_t* cc, struct device* dev)
 {
     struct peci_rd_pci_cfg_local_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -1163,7 +1169,7 @@ EPECIStatus peci_RdPCIConfigLocal_seq_dom(uint8_t target, uint8_t domainId,
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_RD_PCI_CFG_LOCAL, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_RD_PCI_CFG_LOCAL, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     if (ret == PECI_CC_SUCCESS)
@@ -1200,6 +1206,7 @@ EPECIStatus peci_WrPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
     int peci_fd = -1;
     struct peci_wr_pci_cfg_local_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (cc == NULL)
     {
@@ -1212,7 +1219,7 @@ EPECIStatus peci_WrPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -1220,7 +1227,7 @@ EPECIStatus peci_WrPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
     // Per the PECI spec, the write length must be a byte, word, or dword
     if (DataLen != 1 && DataLen != 2 && DataLen != 4)
     {
-        peci_Close(peci_fd);
+        peci_Close(peci_fd, &dev);;
         return PECI_CC_INVALID_REQ;
     }
 
@@ -1233,10 +1240,10 @@ EPECIStatus peci_WrPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
     cmd.value = DataVal;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_WR_PCI_CFG_LOCAL, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_WR_PCI_CFG_LOCAL, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1247,7 +1254,7 @@ EPECIStatus peci_WrPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
 static EPECIStatus peci_RdEndPointConfigPciCommon_dom(
     uint8_t target, uint8_t domainId, uint8_t u8MsgType, uint8_t u8Seg,
     uint8_t u8Bus, uint8_t u8Device, uint8_t u8Fcn, uint16_t u16Reg,
-    uint8_t u8ReadLen, uint8_t* pPCIData, int peci_fd, uint8_t* cc)
+    uint8_t u8ReadLen, uint8_t* pPCIData, int peci_fd, uint8_t* cc, struct device* dev)
 {
     struct peci_rd_end_pt_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -1279,7 +1286,7 @@ static EPECIStatus peci_RdEndPointConfigPciCommon_dom(
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_RD_END_PT_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_RD_END_PT_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     if (ret == PECI_CC_SUCCESS)
@@ -1321,6 +1328,7 @@ EPECIStatus peci_RdEndPointConfigPci_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pPCIData == NULL || cc == NULL)
     {
@@ -1333,14 +1341,14 @@ EPECIStatus peci_RdEndPointConfigPci_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_RdEndPointConfigPci_seq_dom(target, domainId, u8Seg, u8Bus,
                                            u8Device, u8Fcn, u16Reg, u8ReadLen,
-                                           pPCIData, peci_fd, cc);
-    peci_Close(peci_fd);
+                                           pPCIData, peci_fd, cc, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1352,12 +1360,12 @@ EPECIStatus peci_RdEndPointConfigPci_seq(uint8_t target, uint8_t u8Seg,
                                          uint8_t u8Bus, uint8_t u8Device,
                                          uint8_t u8Fcn, uint16_t u16Reg,
                                          uint8_t u8ReadLen, uint8_t* pPCIData,
-                                         int peci_fd, uint8_t* cc)
+                                         int peci_fd, uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_RdEndPointConfigPci_seq_dom(target, 0, u8Seg, u8Bus, u8Device,
                                             u8Fcn, u16Reg, u8ReadLen, pPCIData,
-                                            peci_fd, cc);
+                                            peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1369,7 +1377,7 @@ EPECIStatus peci_RdEndPointConfigPci_seq_dom(uint8_t target, uint8_t domainId,
                                              uint8_t u8Device, uint8_t u8Fcn,
                                              uint16_t u16Reg, uint8_t u8ReadLen,
                                              uint8_t* pPCIData, int peci_fd,
-                                             uint8_t* cc)
+                                             uint8_t* cc, struct device* dev)
 {
     if (pPCIData == NULL || cc == NULL)
     {
@@ -1390,7 +1398,7 @@ EPECIStatus peci_RdEndPointConfigPci_seq_dom(uint8_t target, uint8_t domainId,
 
     return peci_RdEndPointConfigPciCommon_dom(
         target, domainId, PECI_ENDPTCFG_TYPE_PCI, u8Seg, u8Bus, u8Device, u8Fcn,
-        u16Reg, u8ReadLen, pPCIData, peci_fd, cc);
+        u16Reg, u8ReadLen, pPCIData, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1422,6 +1430,7 @@ EPECIStatus peci_RdEndPointConfigPciLocal_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pPCIData == NULL || cc == NULL)
     {
@@ -1434,14 +1443,14 @@ EPECIStatus peci_RdEndPointConfigPciLocal_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_RdEndPointConfigPciLocal_seq_dom(
         target, domainId, u8Seg, u8Bus, u8Device, u8Fcn, u16Reg, u8ReadLen,
-        pPCIData, peci_fd, cc);
-    peci_Close(peci_fd);
+        pPCIData, peci_fd, cc, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1454,12 +1463,12 @@ EPECIStatus peci_RdEndPointConfigPciLocal_seq(uint8_t target, uint8_t u8Seg,
                                               uint8_t u8Fcn, uint16_t u16Reg,
                                               uint8_t u8ReadLen,
                                               uint8_t* pPCIData, int peci_fd,
-                                              uint8_t* cc)
+                                              uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_RdEndPointConfigPciLocal_seq_dom(
         target, 0, u8Seg, u8Bus, u8Device, u8Fcn, u16Reg, u8ReadLen, pPCIData,
-        peci_fd, cc);
+        peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1469,7 +1478,7 @@ EPECIStatus peci_RdEndPointConfigPciLocal_seq(uint8_t target, uint8_t u8Seg,
 EPECIStatus peci_RdEndPointConfigPciLocal_seq_dom(
     uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
     uint8_t u8Device, uint8_t u8Fcn, uint16_t u16Reg, uint8_t u8ReadLen,
-    uint8_t* pPCIData, int peci_fd, uint8_t* cc)
+    uint8_t* pPCIData, int peci_fd, uint8_t* cc, struct device* dev)
 {
     if (pPCIData == NULL || cc == NULL)
     {
@@ -1490,7 +1499,7 @@ EPECIStatus peci_RdEndPointConfigPciLocal_seq_dom(
 
     return peci_RdEndPointConfigPciCommon_dom(
         target, domainId, PECI_ENDPTCFG_TYPE_LOCAL_PCI, u8Seg, u8Bus, u8Device,
-        u8Fcn, u16Reg, u8ReadLen, pPCIData, peci_fd, cc);
+        u8Fcn, u16Reg, u8ReadLen, pPCIData, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1523,6 +1532,7 @@ EPECIStatus peci_RdEndPointConfigMmio_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pMmioData == NULL || cc == NULL)
     {
@@ -1535,14 +1545,14 @@ EPECIStatus peci_RdEndPointConfigMmio_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_RdEndPointConfigMmio_seq_dom(
         target, domainId, u8Seg, u8Bus, u8Device, u8Fcn, u8Bar, u8AddrType,
-        u64Offset, u8ReadLen, pMmioData, peci_fd, cc);
-    peci_Close(peci_fd);
+        u64Offset, u8ReadLen, pMmioData, peci_fd, cc, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1553,12 +1563,12 @@ EPECIStatus peci_RdEndPointConfigMmio_dom(uint8_t target, uint8_t domainId,
 EPECIStatus peci_RdEndPointConfigMmio_seq(
     uint8_t target, uint8_t u8Seg, uint8_t u8Bus, uint8_t u8Device,
     uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType, uint64_t u64Offset,
-    uint8_t u8ReadLen, uint8_t* pMmioData, int peci_fd, uint8_t* cc)
+    uint8_t u8ReadLen, uint8_t* pMmioData, int peci_fd, uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_RdEndPointConfigMmio_seq_dom(
         target, 0, u8Seg, u8Bus, u8Device, u8Fcn, u8Bar, u8AddrType, u64Offset,
-        u8ReadLen, pMmioData, peci_fd, cc);
+        u8ReadLen, pMmioData, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1569,7 +1579,7 @@ EPECIStatus peci_RdEndPointConfigMmio_seq_dom(
     uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
     uint8_t u8Device, uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType,
     uint64_t u64Offset, uint8_t u8ReadLen, uint8_t* pMmioData, int peci_fd,
-    uint8_t* cc)
+    uint8_t* cc, struct device* dev)
 {
     struct peci_rd_end_pt_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -1609,7 +1619,7 @@ EPECIStatus peci_RdEndPointConfigMmio_seq_dom(
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_RD_END_PT_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_RD_END_PT_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     if (ret == PECI_CC_SUCCESS)
@@ -1633,12 +1643,12 @@ EPECIStatus peci_WrEndPointConfig_seq(uint8_t target, uint8_t u8MsgType,
                                       uint8_t u8Device, uint8_t u8Fcn,
                                       uint16_t u16Reg, uint8_t DataLen,
                                       uint32_t DataVal, int peci_fd,
-                                      uint8_t* cc)
+                                      uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_WrEndPointConfig_seq_dom(target, 0, u8MsgType, u8Seg, u8Bus,
                                          u8Device, u8Fcn, u16Reg, DataLen,
-                                         DataVal, peci_fd, cc);
+                                         DataVal, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1650,7 +1660,7 @@ EPECIStatus peci_WrEndPointConfig_seq_dom(uint8_t target, uint8_t domainId,
                                           uint8_t u8Bus, uint8_t u8Device,
                                           uint8_t u8Fcn, uint16_t u16Reg,
                                           uint8_t DataLen, uint32_t DataVal,
-                                          int peci_fd, uint8_t* cc)
+                                          int peci_fd, uint8_t* cc, struct device* dev)
 {
     struct peci_wr_end_pt_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -1683,7 +1693,7 @@ EPECIStatus peci_WrEndPointConfig_seq_dom(uint8_t target, uint8_t domainId,
     cmd.value = DataVal;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_WR_END_PT_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_WR_END_PT_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     return ret;
@@ -1715,16 +1725,17 @@ EPECIStatus peci_WrEndPointPCIConfigLocal_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
 
     ret = peci_WrEndPointConfig_seq_dom(
         target, domainId, PECI_ENDPTCFG_TYPE_LOCAL_PCI, u8Seg, u8Bus, u8Device,
-        u8Fcn, u16Reg, DataLen, DataVal, peci_fd, cc);
-    peci_Close(peci_fd);
+        u8Fcn, u16Reg, DataLen, DataVal, peci_fd, cc, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1754,15 +1765,16 @@ EPECIStatus peci_WrEndPointPCIConfig_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_WrEndPointConfig_seq_dom(
         target, domainId, PECI_ENDPTCFG_TYPE_PCI, u8Seg, u8Bus, u8Device, u8Fcn,
-        u16Reg, DataLen, DataVal, peci_fd, cc);
-    peci_Close(peci_fd);
+        u16Reg, DataLen, DataVal, peci_fd, cc, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1796,6 +1808,7 @@ EPECIStatus peci_WrEndPointConfigMmio_dom(uint8_t target, uint8_t domainId,
 {
     int peci_fd = -1;
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (cc == NULL)
     {
@@ -1808,14 +1821,14 @@ EPECIStatus peci_WrEndPointConfigMmio_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
     ret = peci_WrEndPointConfigMmio_seq_dom(
         target, domainId, u8Seg, u8Bus, u8Device, u8Fcn, u8Bar, u8AddrType,
-        u64Offset, u8DataLen, u64DataVal, peci_fd, cc);
-    peci_Close(peci_fd);
+        u64Offset, u8DataLen, u64DataVal, peci_fd, cc, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1826,12 +1839,12 @@ EPECIStatus peci_WrEndPointConfigMmio_dom(uint8_t target, uint8_t domainId,
 EPECIStatus peci_WrEndPointConfigMmio_seq(
     uint8_t target, uint8_t u8Seg, uint8_t u8Bus, uint8_t u8Device,
     uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType, uint64_t u64Offset,
-    uint8_t u8DataLen, uint64_t u64DataVal, int peci_fd, uint8_t* cc)
+    uint8_t u8DataLen, uint64_t u64DataVal, int peci_fd, uint8_t* cc, struct device* dev)
 {
     //  Default to domain ID 0
     return peci_WrEndPointConfigMmio_seq_dom(
         target, 0, u8Seg, u8Bus, u8Device, u8Fcn, u8Bar, u8AddrType, u64Offset,
-        u8DataLen, u64DataVal, peci_fd, cc);
+        u8DataLen, u64DataVal, peci_fd, cc, dev);
 }
 
 /*-------------------------------------------------------------------------
@@ -1842,7 +1855,7 @@ EPECIStatus peci_WrEndPointConfigMmio_seq_dom(
     uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
     uint8_t u8Device, uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType,
     uint64_t u64Offset, uint8_t u8DataLen, uint64_t u64DataVal, int peci_fd,
-    uint8_t* cc)
+    uint8_t* cc, struct device* dev)
 {
     struct peci_wr_end_pt_cfg_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
@@ -1877,7 +1890,7 @@ EPECIStatus peci_WrEndPointConfigMmio_seq_dom(
     cmd.value = u64DataVal;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_WR_END_PT_CFG, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_WR_END_PT_CFG, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
 
     return ret;
@@ -1909,6 +1922,7 @@ EPECIStatus peci_CrashDump_Discovery_dom(uint8_t target, uint8_t domainId,
     int peci_fd = -1;
     struct peci_crashdump_disc_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -1933,7 +1947,7 @@ EPECIStatus peci_CrashDump_Discovery_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -1946,7 +1960,7 @@ EPECIStatus peci_CrashDump_Discovery_dom(uint8_t target, uint8_t domainId,
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_CRASHDUMP_DISC, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_CRASHDUMP_DISC, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -1957,7 +1971,7 @@ EPECIStatus peci_CrashDump_Discovery_dom(uint8_t target, uint8_t domainId,
         ret = PECI_CC_DRIVER_ERR;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -1986,6 +2000,7 @@ EPECIStatus peci_CrashDump_GetFrame_dom(uint8_t target, uint8_t domainId,
     int peci_fd = -1;
     struct peci_crashdump_get_frame_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -2014,7 +2029,7 @@ EPECIStatus peci_CrashDump_GetFrame_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -2026,7 +2041,7 @@ EPECIStatus peci_CrashDump_GetFrame_dom(uint8_t target, uint8_t domainId,
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_CRASHDUMP_GET_FRAME, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_CRASHDUMP_GET_FRAME, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -2037,7 +2052,7 @@ EPECIStatus peci_CrashDump_GetFrame_dom(uint8_t target, uint8_t domainId,
         ret = PECI_CC_DRIVER_ERR;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2067,6 +2082,7 @@ EPECIStatus peci_Telemetry_Discovery_dom(uint8_t target, uint8_t domainId,
     int peci_fd = -1;
     struct peci_telemetry_disc_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -2085,7 +2101,7 @@ EPECIStatus peci_Telemetry_Discovery_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -2098,7 +2114,7 @@ EPECIStatus peci_Telemetry_Discovery_dom(uint8_t target, uint8_t domainId,
     cmd.rx_len = u8ReadLen;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_TELEMETRY_DISC, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_TELEMETRY_DISC, (char*)&cmd, peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -2109,7 +2125,7 @@ EPECIStatus peci_Telemetry_Discovery_dom(uint8_t target, uint8_t domainId,
         ret = PECI_CC_DRIVER_ERR;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2137,6 +2153,7 @@ EPECIStatus peci_Telemetry_GetTelemSample_dom(uint8_t target, uint8_t domainId,
     int peci_fd = -1;
     struct peci_telemetry_get_telem_sample_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -2155,7 +2172,7 @@ EPECIStatus peci_Telemetry_GetTelemSample_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -2165,8 +2182,8 @@ EPECIStatus peci_Telemetry_GetTelemSample_dom(uint8_t target, uint8_t domainId,
     cmd.sample = sample;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_TELEMETRY_GET_TELEM_SAMPLE, (char*)&cmd,
-                            peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_TELEMETRY_GET_TELEM_SAMPLE, (char*)&cmd,
+                            peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -2177,7 +2194,7 @@ EPECIStatus peci_Telemetry_GetTelemSample_dom(uint8_t target, uint8_t domainId,
         ret = PECI_CC_DRIVER_ERR;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2205,6 +2222,7 @@ EPECIStatus peci_Telemetry_ConfigWatcherRd_dom(uint8_t target, uint8_t domainId,
     int peci_fd;
     struct peci_telemetry_config_watcher_msg cmd = {0};
     EPECIStatus ret;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -2223,7 +2241,7 @@ EPECIStatus peci_Telemetry_ConfigWatcherRd_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -2233,8 +2251,8 @@ EPECIStatus peci_Telemetry_ConfigWatcherRd_dom(uint8_t target, uint8_t domainId,
     cmd.offset = offset;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_TELEMETRY_CONFIG_WATCHER_RD, (char*)&cmd,
-                            peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_TELEMETRY_CONFIG_WATCHER_RD, (char*)&cmd,
+                            peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -2245,7 +2263,7 @@ EPECIStatus peci_Telemetry_ConfigWatcherRd_dom(uint8_t target, uint8_t domainId,
         ret = PECI_CC_DRIVER_ERR;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2273,6 +2291,7 @@ EPECIStatus peci_Telemetry_ConfigWatcherWr_dom(uint8_t target, uint8_t domainId,
     int peci_fd;
     struct peci_telemetry_config_watcher_msg cmd = {0};
     EPECIStatus ret;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -2291,7 +2310,7 @@ EPECIStatus peci_Telemetry_ConfigWatcherWr_dom(uint8_t target, uint8_t domainId,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -2302,11 +2321,11 @@ EPECIStatus peci_Telemetry_ConfigWatcherWr_dom(uint8_t target, uint8_t domainId,
     memcpy(cmd.data, pData, u8DataLen);
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_TELEMETRY_CONFIG_WATCHER_WR, (char*)&cmd,
-                            peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_TELEMETRY_CONFIG_WATCHER_WR, (char*)&cmd,
+                            peci_fd, dev);
     *cc = cmd.cc;
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2333,6 +2352,7 @@ EPECIStatus peci_Telemetry_GetCrashlogSample_dom(
     int peci_fd = -1;
     struct peci_telemetry_get_crashlog_sample_msg cmd = {0};
     EPECIStatus ret = PECI_CC_SUCCESS;
+    struct device* dev;
 
     if (pData == NULL || cc == NULL)
     {
@@ -2351,7 +2371,7 @@ EPECIStatus peci_Telemetry_GetCrashlogSample_dom(
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
@@ -2361,8 +2381,8 @@ EPECIStatus peci_Telemetry_GetCrashlogSample_dom(
     cmd.sample = sample;
     cmd.domain_id = domainId;
 
-    ret = HW_peci_issue_cmd(PECI_IOC_TELEMETRY_GET_CRASHLOG_SAMPLE, (char*)&cmd,
-                            peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_TELEMETRY_GET_CRASHLOG_SAMPLE, (char*)&cmd,
+                            peci_fd, dev);
     *cc = cmd.cc;
     if (ret == PECI_CC_SUCCESS)
     {
@@ -2373,7 +2393,7 @@ EPECIStatus peci_Telemetry_GetCrashlogSample_dom(
         ret = PECI_CC_DRIVER_ERR;
     }
 
-    peci_Close(peci_fd);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2386,6 +2406,7 @@ EPECIStatus peci_raw(uint8_t target, uint8_t u8ReadLen, const uint8_t* pRawCmd,
                      uint32_t respSize)
 {
     int peci_fd = -1;
+    struct device* dev;
     if (u8ReadLen && pRawResp == NULL)
     {
         return PECI_CC_INVALID_REQ;
@@ -2397,14 +2418,14 @@ EPECIStatus peci_raw(uint8_t target, uint8_t u8ReadLen, const uint8_t* pRawCmd,
         return PECI_CC_INVALID_REQ;
     }
 
-    if (peci_Open(&peci_fd) != PECI_CC_SUCCESS)
+    if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
         return PECI_CC_DRIVER_ERR;
     }
 
     EPECIStatus ret = peci_raw_seq(target, u8ReadLen, pRawCmd, cmdSize,
-                                   pRawResp, respSize, peci_fd);
-    peci_Close(peci_fd);
+                                   pRawResp, respSize, peci_fd, dev);
+    peci_Close(peci_fd, &dev);;
     return ret;
 }
 
@@ -2413,7 +2434,7 @@ EPECIStatus peci_raw(uint8_t target, uint8_t u8ReadLen, const uint8_t* pRawCmd,
  *------------------------------------------------------------------------*/
 EPECIStatus peci_raw_seq(uint8_t target, uint8_t u8ReadLen, const uint8_t* pRawCmd,
                      const uint32_t cmdSize, uint8_t* pRawResp,
-                     uint32_t respSize, int peci_fd)
+                     uint32_t respSize, int peci_fd, struct device* dev)
 {
     struct peci_xfer_msg cmd = {0};
     uint8_t u8TxBuf[PECI_BUFFER_SIZE] = {0};
@@ -2447,7 +2468,7 @@ EPECIStatus peci_raw_seq(uint8_t target, uint8_t u8ReadLen, const uint8_t* pRawC
 
     cmd.tx_buf = u8TxBuf;
     cmd.rx_buf = u8RxBuf;
-    ret = HW_peci_issue_cmd(PECI_IOC_XFER, (char*)&cmd, peci_fd);
+    ret = HW_peci_issue_cmd(PECI_CMD_XFER, (char*)&cmd, peci_fd, dev);
 
     if (ret == PECI_CC_SUCCESS || ret == PECI_CC_TIMEOUT)
     {

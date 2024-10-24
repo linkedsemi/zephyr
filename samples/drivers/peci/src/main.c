@@ -47,7 +47,7 @@ int peci_ping(void)
 	packet.rx_buffer.len = PECI_PING_RD_LEN;
 
 	ret = peci_transfer(peci_dev, &packet);
-	printk("ping %d\n", ret);
+	printk("ping addr: %d is %d\n", packet.addr, ret);
 	if (ret) {
 		printk("ping failed %d\n", ret);
 		return ret;

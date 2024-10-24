@@ -20,6 +20,7 @@ extern "C"
 #endif
 #include <inttypes.h>
 #include <stdbool.h>
+#include <zephyr/device.h>
 
 // PECI Client Address List
 #define MIN_CLIENT_ADDR 0x30
@@ -123,14 +124,14 @@ extern "C"
     EPECIStatus peci_RdPkgConfig_seq(uint8_t target, uint8_t u8Index,
                                      uint16_t u16Value, uint8_t u8ReadLen,
                                      uint8_t* pPkgConfig, int peci_fd,
-                                     uint8_t* cc);
+                                     uint8_t* cc, struct device* dev);
 
     // Allows sequential RdPkgConfig with the provided peci file descriptor in
     // the specified domain
     EPECIStatus peci_RdPkgConfig_seq_dom(uint8_t target, uint8_t domainId,
                                          uint8_t u8Index, uint16_t u16Value,
                                          uint8_t u8ReadLen, uint8_t* pPkgConfig,
-                                         int peci_fd, uint8_t* cc);
+                                         int peci_fd, uint8_t* cc, struct device* dev);
 
     // Provides write access to the package configuration space within the
     // processor
@@ -149,7 +150,7 @@ extern "C"
     EPECIStatus peci_WrPkgConfig_seq(uint8_t target, uint8_t u8Index,
                                      uint16_t u16Param, const void* pPkgData,
                                      uint8_t u8WriteLen, int peci_fd,
-                                     uint8_t* cc);
+                                     uint8_t* cc, struct device* dev);
 
     // Allows sequential WrPkgConfig with the provided peci file descriptor in
     // the specified domain
@@ -157,7 +158,7 @@ extern "C"
                                          uint8_t u8Index, uint16_t u16Param,
                                          const void* pPkgData,
                                          uint8_t u8WriteLen, int peci_fd,
-                                         uint8_t* cc);
+                                         uint8_t* cc, struct device* dev);
 
     // Provides read access to Model Specific Registers
     EPECIStatus peci_RdIAMSR(uint8_t target, uint8_t threadID,
@@ -185,7 +186,7 @@ extern "C"
     EPECIStatus peci_RdPCIConfig_seq(uint8_t target, uint8_t u8Bus,
                                      uint8_t u8Device, uint8_t u8Fcn,
                                      uint16_t u16Reg, uint8_t* pPCIData,
-                                     int peci_fd, uint8_t* cc);
+                                     int peci_fd, uint8_t* cc, struct device* dev);
 
     // Allows sequential RdPCIConfig with the provided peci file descriptor in
     // the specified domain
@@ -193,7 +194,7 @@ extern "C"
                                          uint8_t u8Bus, uint8_t u8Device,
                                          uint8_t u8Fcn, uint16_t u16Reg,
                                          uint8_t* pPCIData, int peci_fd,
-                                         uint8_t* cc);
+                                         uint8_t* cc, struct device* dev);
 
     // Provides read access to the local PCI Configuration space
     EPECIStatus peci_RdPCIConfigLocal(uint8_t target, uint8_t u8Bus,
@@ -214,7 +215,7 @@ extern "C"
                                           uint8_t u8Device, uint8_t u8Fcn,
                                           uint16_t u16Reg, uint8_t u8ReadLen,
                                           uint8_t* pPCIReg, int peci_fd,
-                                          uint8_t* cc);
+                                          uint8_t* cc, struct device* dev);
 
     // Allows sequential RdPCIConfigLocal with the provided peci file descriptor
     // in the specified domain
@@ -223,7 +224,7 @@ extern "C"
                                               uint8_t u8Fcn, uint16_t u16Reg,
                                               uint8_t u8ReadLen,
                                               uint8_t* pPCIReg, int peci_fd,
-                                              uint8_t* cc);
+                                              uint8_t* cc, struct device* dev);
 
     // Provides write access to the local PCI Configuration space
     EPECIStatus peci_WrPCIConfigLocal(uint8_t target, uint8_t u8Bus,
@@ -259,14 +260,14 @@ extern "C"
                                              uint8_t u8Fcn, uint16_t u16Reg,
                                              uint8_t u8ReadLen,
                                              uint8_t* pPCIData, int peci_fd,
-                                             uint8_t* cc);
+                                             uint8_t* cc, struct device* dev);
 
     // Allows sequential RdEndPointConfig to PCI Configuration space in the
     // specified domain
     EPECIStatus peci_RdEndPointConfigPci_seq_dom(
         uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
         uint8_t u8Device, uint8_t u8Fcn, uint16_t u16Reg, uint8_t u8ReadLen,
-        uint8_t* pPCIData, int peci_fd, uint8_t* cc);
+        uint8_t* pPCIData, int peci_fd, uint8_t* cc, struct device* dev);
 
     // Provides read access to the local PCI configuration space
     EPECIStatus peci_RdEndPointConfigPciLocal(uint8_t target, uint8_t u8Seg,
@@ -286,14 +287,14 @@ extern "C"
     EPECIStatus peci_RdEndPointConfigPciLocal_seq(
         uint8_t target, uint8_t u8Seg, uint8_t u8Bus, uint8_t u8Device,
         uint8_t u8Fcn, uint16_t u16Reg, uint8_t u8ReadLen, uint8_t* pPCIData,
-        int peci_fd, uint8_t* cc);
+        int peci_fd, uint8_t* cc, struct device* dev);
 
     // Allows sequential RdEndPointConfig to the local PCI Configuration space
     // in the specified domain
     EPECIStatus peci_RdEndPointConfigPciLocal_seq_dom(
         uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
         uint8_t u8Device, uint8_t u8Fcn, uint16_t u16Reg, uint8_t u8ReadLen,
-        uint8_t* pPCIData, int peci_fd, uint8_t* cc);
+        uint8_t* pPCIData, int peci_fd, uint8_t* cc, struct device* dev);
 
     // Provides read access to PCI MMIO space
     EPECIStatus peci_RdEndPointConfigMmio(uint8_t target, uint8_t u8Seg,
@@ -313,7 +314,7 @@ extern "C"
     EPECIStatus peci_RdEndPointConfigMmio_seq(
         uint8_t target, uint8_t u8Seg, uint8_t u8Bus, uint8_t u8Device,
         uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType, uint64_t u64Offset,
-        uint8_t u8ReadLen, uint8_t* pMmioData, int peci_fd, uint8_t* cc);
+        uint8_t u8ReadLen, uint8_t* pMmioData, int peci_fd, uint8_t* cc, struct device* dev);
 
     // Allows sequential RdEndPointConfig to PCI MMIO space in the specified
     // domain
@@ -321,7 +322,7 @@ extern "C"
         uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
         uint8_t u8Device, uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType,
         uint64_t u64Offset, uint8_t u8ReadLen, uint8_t* pMmioData, int peci_fd,
-        uint8_t* cc);
+        uint8_t* cc, struct device* dev);
 
     // Provides write access to the EP local PCI Configuration space
     EPECIStatus peci_WrEndPointPCIConfigLocal(uint8_t target, uint8_t u8Seg,
@@ -358,7 +359,7 @@ extern "C"
                                           uint8_t u8Device, uint8_t u8Fcn,
                                           uint16_t u16Reg, uint8_t DataLen,
                                           uint32_t DataVal, int peci_fd,
-                                          uint8_t* cc);
+                                          uint8_t* cc, struct device* dev);
 
     // Allows sequential write access to the EP PCI Configuration space in the
     // specified domain
@@ -367,7 +368,7 @@ extern "C"
                                               uint8_t u8Bus, uint8_t u8Device,
                                               uint8_t u8Fcn, uint16_t u16Reg,
                                               uint8_t DataLen, uint32_t DataVal,
-                                              int peci_fd, uint8_t* cc);
+                                              int peci_fd, uint8_t* cc, struct device* dev);
 
     // Provides write access to the EP PCI MMIO space
     EPECIStatus peci_WrEndPointConfigMmio(uint8_t target, uint8_t u8Seg,
@@ -390,7 +391,7 @@ extern "C"
     EPECIStatus peci_WrEndPointConfigMmio_seq(
         uint8_t target, uint8_t u8Seg, uint8_t u8Bus, uint8_t u8Device,
         uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType, uint64_t u64Offset,
-        uint8_t u8DataLen, uint64_t u64DataVal, int peci_fd, uint8_t* cc);
+        uint8_t u8DataLen, uint64_t u64DataVal, int peci_fd, uint8_t* cc, struct device* dev);
 
     // Allows sequential write access to the EP PCI MMIO space in the specified
     // domain
@@ -398,7 +399,7 @@ extern "C"
         uint8_t target, uint8_t domainId, uint8_t u8Seg, uint8_t u8Bus,
         uint8_t u8Device, uint8_t u8Fcn, uint8_t u8Bar, uint8_t u8AddrType,
         uint64_t u64Offset, uint8_t u8DataLen, uint64_t u64DataVal, int peci_fd,
-        uint8_t* cc);
+        uint8_t* cc, struct device* dev);
 
     // Provides access to the Crashdump Discovery API
     EPECIStatus peci_CrashDump_Discovery(uint8_t target, uint8_t subopcode,
@@ -494,12 +495,12 @@ extern "C"
     // Provides sequential raw PECI command access
     EPECIStatus peci_raw_seq(uint8_t target, uint8_t u8ReadLen,
                          const uint8_t* pRawCmd, const uint32_t cmdSize,
-                         uint8_t* pRawResp, uint32_t respSize, int peci_fd);
+                         uint8_t* pRawResp, uint32_t respSize, int peci_fd, struct device* dev);
 
-    EPECIStatus peci_Lock(int* peci_fd, int timeout_ms);
-    void peci_Unlock(int peci_fd);
+    EPECIStatus peci_Lock(int* peci_fd, int timeout_ms, struct device** dev);
+    void peci_Unlock(int peci_fd, struct device** dev);
     EPECIStatus peci_Ping(uint8_t target);
-    EPECIStatus peci_Ping_seq(uint8_t target, int peci_fd);
+    EPECIStatus peci_Ping_seq(uint8_t target, int peci_fd, struct device* dev);
     EPECIStatus peci_GetCPUID(const uint8_t clientAddr, CPUModel* cpuModel,
                               uint8_t* stepping, uint8_t* cc);
     void peci_SetDevName(char* peci_dev);

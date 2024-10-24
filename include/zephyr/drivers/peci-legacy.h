@@ -159,10 +159,10 @@ struct peci_device_id {
 // int  peci_register_driver(struct module *owner, struct peci_driver *drv);
 // void peci_del_driver(struct peci_driver *driver);
 // struct peci_client *peci_verify_client(struct device *dev);
-// struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size);
+struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size);
 // struct peci_adapter *peci_get_adapter(int nr);
 // void peci_put_adapter(struct peci_adapter *adapter);
-// int  peci_add_adapter(struct peci_adapter *adapter);
+int  peci_add_adapter(struct peci_adapter *adapter);
 // void peci_del_adapter(struct peci_adapter *adapter);
 // struct peci_adapter *peci_verify_adapter(struct device *dev);
 // int  peci_for_each_dev(void *data, int (*fn)(struct device *, void *));
@@ -170,6 +170,7 @@ int peci_core_init(void);
 struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len);
 void peci_put_xfer_msg(struct peci_xfer_msg *msg);
 int  peci_command(struct peci_adapter *adpater, enum peci_cmd cmd, uint msg_len, void *vmsg);
+long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg);
 // int  peci_get_cpu_id(struct peci_adapter *adapter, u8 addr, u8 domain_id, u32 *cpu_id);
 
 #endif /* __LINUX_PECI_H */
