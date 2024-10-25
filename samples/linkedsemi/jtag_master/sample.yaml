@@ -1,0 +1,16 @@
+sample:
+  description: jtag master sample, the simplest Zephyr
+    application
+  name: jtag_master_test
+common:
+  tags: introduction
+  integration_platforms:
+    - native_sim
+  harness: console
+  harness_config:
+    type: one_line
+    regex:
+      - "Hello World! (.*)"
+tests:
+  sample.basic.helloworld:
+    tags: introduction

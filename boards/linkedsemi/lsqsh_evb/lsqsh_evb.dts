@@ -25,6 +25,7 @@
     aliases {
         testi2c1 = &i2c11;
         testi2c2 = &i2c7;
+        testjtag2 = &jtag2;
         testeeprom1 = &eeprom11;
         testeeprom2 = &eeprom7;
         peci-0 = &peci0;
