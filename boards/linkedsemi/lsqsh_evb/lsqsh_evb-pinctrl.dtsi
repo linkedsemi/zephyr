@@ -334,4 +334,113 @@
         drive-strength = "quarter max driver";
         input-enable;
     };
+
+    /* JTAG */
+    /omit-if-no-ref/jtag1_tck_pd04: jtag1_tck_pd04 {
+        pinmux = <LS_PINMUX_SET(PD04, FIOD_MJTAG1_TCK)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag1_tms_pd08: jtag1_tms_pd08 {
+        pinmux = <LS_PINMUX_SET(PD08, FIOD_MJTAG1_TMS)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag1_tdi_pd09: jtag1_tdi_pd09 {
+        pinmux = <LS_PINMUX_SET(PD09, FIOD_MJTAG1_TDI)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag1_tdo_pd10: jtag1_tdo_pd10 {
+        pinmux = <LS_PINMUX_SET(PD10, FIOD_MJTAG1_TDO)>;
+        input-enable;
+    };
+
+
+    /omit-if-no-ref/jtag1_gpio_pd04: jtag1_gpio_pd04 {
+        pinmux = <LS_PINMUX_SET(PD04, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag1_gpio_pd08: jtag1_gpio_pd08 {
+        pinmux = <LS_PINMUX_SET(PD08, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag1_gpio_pd09: jtag1_gpio_pd09 {
+        pinmux = <LS_PINMUX_SET(PD09, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag2_tck_pe01: jtag2_tck_pe01 {
+        pinmux = <LS_PINMUX_SET(PE01, FIOE_MJTAG2_TCK)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag2_tms_pe07: jtag2_tms_pe07 {
+        pinmux = <LS_PINMUX_SET(PE07, FIOE_MJTAG2_TMS)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag2_tdi_pe00: jtag2_tdi_pe00 {
+        pinmux = <LS_PINMUX_SET(PE00, FIOE_MJTAG2_TDI)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag2_tdo_pe08: jtag2_tdo_pe08 {
+        pinmux = <LS_PINMUX_SET(PE08, FIOE_MJTAG2_TDO)>;
+        input-enable;
+    };
+
+
+    /omit-if-no-ref/jtag2_gpio_pe01: jtag2_gpio_pe01 {
+        pinmux = <LS_PINMUX_SET(PE01, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag2_gpio_pe07: jtag2_gpio_pe07 {
+        pinmux = <LS_PINMUX_SET(PE07, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag2_gpio_pe00: jtag2_gpio_pe00 {
+        pinmux = <LS_PINMUX_SET(PE00, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag3_tck_pf07: jtag3_tck_pf07 {
+        pinmux = <LS_PINMUX_SET(PF07, FIOF_MJTAG3_TCK)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag3_tms_pf08: jtag3_tms_pf08 {
+        pinmux = <LS_PINMUX_SET(PF08, FIOF_MJTAG3_TMS)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag3_tdi_pf06: jtag3_tdi_pf06 {
+        pinmux = <LS_PINMUX_SET(PF06, FIOF_MJTAG3_TDI)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag3_tdo_pf09: jtag3_tdo_pf09 {
+        pinmux = <LS_PINMUX_SET(PF09, FIOF_MJTAG3_TDO)>;
+        input-enable;
+    };
+
+
+    /omit-if-no-ref/jtag3_gpio_pf07: jtag3_gpio_pf07 {
+        pinmux = <LS_PINMUX_SET(PF07, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag3_gpio_pf08: jtag3_gpio_pf08 {
+        pinmux = <LS_PINMUX_SET(PF08, FUNC_GPIO)>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/jtag3_gpio_pf06: jtag3_gpio_pf06 {
+        pinmux = <LS_PINMUX_SET(PF06, FUNC_GPIO)>;
+        output-enable;
+    };
 };

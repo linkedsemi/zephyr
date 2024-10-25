@@ -535,6 +535,27 @@
             min-bus-freq = <200000>;
             status = "disabled";
         };
+
+        jtag1: jtag@40092000 {
+            compatible = "linkedsemi,ls-jtag";
+            reg = <0x40092000 0x400>;
+            interrupts = <123 3>;
+            status = "disabled";
+        };
+
+        jtag2: jtag@40092400 {
+            compatible = "linkedsemi,ls-jtag";
+            reg = <0x40092400 0x400>;
+            interrupts = <124 3>;
+            status = "disabled";
+        };
+
+        jtag3: jtag@40092800 {
+            compatible = "linkedsemi,ls-jtag";
+            reg = <0x40092800 0x400>;
+            interrupts = <125 3>;
+            status = "disabled";
+        };
     };
 
     power-states {

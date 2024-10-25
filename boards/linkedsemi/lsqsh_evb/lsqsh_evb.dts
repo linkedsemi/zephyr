@@ -352,3 +352,24 @@
 &crypto {
     status = "okay";
 };
+
+&jtag1 {
+    pinctrl-0 = <&jtag1_tck_pd04 &jtag1_tms_pd08 &jtag1_tdi_pd09 &jtag1_tdo_pd10>;
+    pinctrl-1 = <&jtag1_gpio_pd04 &jtag1_gpio_pd08 &jtag1_gpio_pd09>;
+    pinctrl-names = "default", "priv_start";
+    status = "okay";
+};
+
+&jtag2 {
+    pinctrl-0 = <&jtag2_tck_pe01 &jtag2_tms_pe07 &jtag2_tdi_pe00 &jtag2_tdo_pe08>;
+    pinctrl-1 = <&jtag2_gpio_pe01 &jtag2_gpio_pe07 &jtag2_gpio_pe00>;
+    pinctrl-names = "default", "priv_start";
+    status = "okay";
+};
+
+&jtag3 {
+    pinctrl-0 = <&jtag3_tck_pf07 &jtag3_tms_pf08 &jtag3_tdi_pf06 &jtag3_tdo_pf09>;
+    pinctrl-1 = <&jtag3_gpio_pf07 &jtag3_gpio_pf08 &jtag3_gpio_pf06>;
+    pinctrl-names = "default", "priv_start";
+    status = "okay";
+};

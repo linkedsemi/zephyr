@@ -195,6 +195,12 @@ static int lsqsh_init(void)
     SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_SET_CRYPT_MASK;
 #endif
 
+#if defined(CONFIG_JTAG)
+    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG1_MASK;
+    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG2_MASK;
+    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG3_MASK;
+#endif
+
     IRQ_CONNECT(RV_SOFT_IRQn, 0, Swint_Handler_C, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
