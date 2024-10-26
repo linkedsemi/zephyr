@@ -264,6 +264,14 @@ manifest:
       path: modules/hal/linkedsemi
       groups:
         - hal
+    - name: wolfssl
+      revision: 00e42151ca061463ba6a95adb2290f678cbca472
+      url: https://github.com/wolfSSL/wolfssl.git
+      path: modules/lib/wolfssl
+    - name: wolfssh
+      revision: v1.4.18-stable-fix-build-error
+      url: https://github.com/linkedsemi/wolfssh.git
+      path: modules/lib/wolfssh
     - name: hostap
       repo-path: hostap
       path: modules/lib/hostap
