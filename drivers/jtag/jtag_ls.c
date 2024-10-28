@@ -40,7 +40,7 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 struct jtag_ls_config {
     irq_cfg_func_t irq_config_func;
 	/* jtag controller base address */
-	struct reg_mjtag_t *reg;
+	reg_mjtag_t *reg;
     uint8_t irq_num;
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
@@ -63,7 +63,7 @@ void ls_jtag_isr(void *arg)
     struct device *dev = (struct device *) arg;
 	const struct jtag_ls_config *config = dev->config;
 	struct jtag_ls_data *data = dev->data;
-    struct reg_mjtag_t *const reg = config->reg;
+    reg_mjtag_t *const reg = config->reg;
 
 	if(reg->INTR_STT & MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK)
 	{
@@ -84,7 +84,7 @@ static int jtag_ls_init(const struct device *dev)
 {
     const struct jtag_ls_config *const config = dev->config;
     struct jtag_ls_data *const data = dev->data;
-    struct reg_mjtag_t *const reg = config->reg;
+    reg_mjtag_t *const reg = config->reg;
 
 #if defined(CONFIG_PINCTRL)
     int ret;
@@ -191,7 +191,7 @@ static void jtag_ls_set_tap_state(const struct device *dev, enum jtag_ls_tap_sta
 {
     const struct jtag_ls_config *const config = dev->config;
 	struct jtag_ls_data *const data = dev->data;
-	struct reg_mjtag_t *const reg = config->reg;
+	reg_mjtag_t *const reg = config->reg;
 	uint8_t tmsbits;
 	uint8_t count;
 
@@ -372,7 +372,7 @@ static int jtag_ls_tck_run(const struct device *dev, uint32_t run_count)
 {
 	const struct jtag_ls_config *const config = dev->config;
 	struct jtag_ls_data *const data = dev->data;
-	struct reg_mjtag_t *const reg = config->reg;
+	reg_mjtag_t *const reg = config->reg;
 	int ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
     if(ret != 0) {
         LOG_ERR("JTAG pinctrl init failed (%d)", ret);
@@ -398,7 +398,7 @@ static void jtag_ls_xfer_gpio(const struct device *dev, uint32_t out_bits_len, c
 {
 	const struct jtag_ls_config *const config = dev->config;
 	struct jtag_ls_data *const data = dev->data;
-	struct reg_mjtag_t *const reg = config->reg;
+	reg_mjtag_t *const reg = config->reg;
 	volatile uint32_t bits_len, count;
 	data->tdo_value = in_data;
 
@@ -591,7 +591,7 @@ static void jtag_ls_irq_config_func_##index(const struct device *dev)   \
     LS_JTAG_IRQ_HANDLER(index)                              \
                                                             \
 static const struct jtag_ls_config jtag_ls_cfg_##index = {  \
-    .reg = (struct reg_mjtag_t *)DT_INST_REG_ADDR(index),   \
+    .reg = (reg_mjtag_t *)DT_INST_REG_ADDR(index),   \
     .irq_num = DT_INST_IRQN(index),                         \
     .irq_config_func = jtag_ls_irq_config_func_##index,      \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
