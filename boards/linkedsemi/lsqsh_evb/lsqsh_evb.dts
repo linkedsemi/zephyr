@@ -87,7 +87,6 @@
 
 &sram0 {
     reg = <0x10000000 DT_SIZE_K(508)>;
-    status = "disabled";
 };
 
 &sram1 {

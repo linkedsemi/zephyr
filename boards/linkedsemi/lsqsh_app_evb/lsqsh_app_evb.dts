@@ -62,7 +62,6 @@
 
 &sram1 {
     reg = <0x10080000 DT_SIZE_K(764)>;
-    status = "disabled";
 };
 
 &uart1 {
