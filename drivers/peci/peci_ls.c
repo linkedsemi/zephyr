@@ -8,6 +8,8 @@
 
 #include <errno.h>
 #include <soc.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/peci.h>
 #if defined(CONFIG_PINCTRL)
@@ -80,32 +82,32 @@ static void peci_core_reg_print(const struct device *dev)
     const struct peci_ls_config *const config = dev->config;
 	reg_peci_t *const reg = config->reg;
     
-    LOG_DBG("-------------------------\n");
-    LOG_DBG("INTR_MSK = %08x\n", reg->INTR_MSK);
-    LOG_DBG("INTR_CLR = %08x\n", reg->INTR_CLR);
-    LOG_DBG("INTR_STT = %08x\n", reg->INTR_STT);
-    LOG_DBG("INTR_RAW = %08x\n", reg->INTR_RAW);
-    LOG_DBG("PECI_CTRL = %08x\n", reg->PECI_CTRL);
-    LOG_DBG("TXRX_REQ = %08x\n", reg->TXRX_REQ);
+    // LOG_DBG("-------------------------\n");
+    // LOG_DBG("INTR_MSK = %08x\n", reg->INTR_MSK);
+    // LOG_DBG("INTR_CLR = %08x\n", reg->INTR_CLR);
+    // LOG_DBG("INTR_STT = %08x\n", reg->INTR_STT);
+    // LOG_DBG("INTR_RAW = %08x\n", reg->INTR_RAW);
+    // LOG_DBG("PECI_CTRL = %08x\n", reg->PECI_CTRL);
+    // LOG_DBG("TXRX_REQ = %08x\n", reg->TXRX_REQ);
 
-    LOG_DBG("PECI_A_TIM0 = %08x\n", reg->PECI_A_TIM0);
-    LOG_DBG("PECI_A_TIM1 = %08x\n", reg->PECI_A_TIM1);
-    LOG_DBG("PECI_M_TIM0 = %08x\n", reg->PECI_M_TIM0);
-    LOG_DBG("PECI_M_TIM1 = %08x\n", reg->PECI_M_TIM1);
-    LOG_DBG("TX_DAT0 = %08x\n", reg->TX_DAT0);
-    LOG_DBG("TX_DAT1 = %08x\n", reg->TX_DAT1);
-    LOG_DBG("TX_DAT2 = %08x\n", reg->TX_DAT2);
-    LOG_DBG("TX_DAT3 = %08x\n", reg->TX_DAT3);
-    LOG_DBG("TX_DAT4 = %08x\n", reg->TX_DAT4);
-    LOG_DBG("TX_DAT5 = %08x\n", reg->TX_DAT5);
+    // LOG_DBG("PECI_A_TIM0 = %08x\n", reg->PECI_A_TIM0);
+    // LOG_DBG("PECI_A_TIM1 = %08x\n", reg->PECI_A_TIM1);
+    // LOG_DBG("PECI_M_TIM0 = %08x\n", reg->PECI_M_TIM0);
+    // LOG_DBG("PECI_M_TIM1 = %08x\n", reg->PECI_M_TIM1);
+    // LOG_DBG("TX_DAT0 = %08x\n", reg->TX_DAT0);
+    // LOG_DBG("TX_DAT1 = %08x\n", reg->TX_DAT1);
+    // LOG_DBG("TX_DAT2 = %08x\n", reg->TX_DAT2);
+    // LOG_DBG("TX_DAT3 = %08x\n", reg->TX_DAT3);
+    // LOG_DBG("TX_DAT4 = %08x\n", reg->TX_DAT4);
+    // LOG_DBG("TX_DAT5 = %08x\n", reg->TX_DAT5);
 
-    LOG_DBG("RX_DAT0 = %08x\n", reg->RX_DAT0);
-    LOG_DBG("RX_DAT1 = %08x\n", reg->RX_DAT1);
-    LOG_DBG("RX_DAT2 = %08x\n", reg->RX_DAT2);
-    LOG_DBG("RX_DAT3 = %08x\n", reg->RX_DAT3);
-    LOG_DBG("RX_DAT4 = %08x\n", reg->RX_DAT4);
-    LOG_DBG("RX_DAT5 = %08x\n", reg->RX_DAT5);
-    LOG_DBG("-------------------------\n\n");
+    // LOG_DBG("RX_DAT0 = %08x\n", reg->RX_DAT0);
+    // LOG_DBG("RX_DAT1 = %08x\n", reg->RX_DAT1);
+    // LOG_DBG("RX_DAT2 = %08x\n", reg->RX_DAT2);
+    // LOG_DBG("RX_DAT3 = %08x\n", reg->RX_DAT3);
+    // LOG_DBG("RX_DAT4 = %08x\n", reg->RX_DAT4);
+    // LOG_DBG("RX_DAT5 = %08x\n", reg->RX_DAT5);
+    // LOG_DBG("-------------------------\n\n");
 }
 
 void ls_peci_isr(void *arg)
@@ -208,11 +210,25 @@ static int peci_ls_disable(const struct device *dev)
 static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 {
 
+<<<<<<< HEAD
     const struct peci_ls_config *const config = dev->config;
 	struct peci_ls_data *const data = dev->data;
 	reg_peci_t *const reg = config->reg;
 	struct peci_buf *peci_rx_buf = &msg->rx_buffer;
 	struct peci_buf *peci_tx_buf = &msg->tx_buffer;
+=======
+    printf("Debug in %s: before define1\n", __func__);
+    const struct peci_ls_config *const config = dev->config;
+    printf("Debug in %s: before define2\n", __func__);
+	struct peci_ls_data *const data = dev->data;
+    printf("Debug in %s: before define3\n", __func__);
+	struct reg_peci_t *const reg = config->reg;
+    printf("Debug in %s: before define4\n", __func__);
+	struct peci_buf *peci_rx_buf = &msg->rx_buffer;
+    printf("Debug in %s: before define5\n", __func__);
+	struct peci_buf *peci_tx_buf = &msg->tx_buffer;
+    printf("Debug in %s: before define6\n", __func__);
+>>>>>>> Successfully achieve libpeci in Zephyr. peci_Ping and peci_GetTemp pass
 	int ret = 0;
     uint8_t txbuf8[24] = {0};
     uint8_t rxbuf8[24] = {0};
@@ -222,12 +238,20 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     uint8_t crc_data[24] = {0};
     uint8_t *crc_in = NULL;
 
+<<<<<<< HEAD
+=======
+    printf("Debug in %s: before if\n", __func__);
+>>>>>>> Successfully achieve libpeci in Zephyr. peci_Ping and peci_GetTemp pass
     if(peci_tx_buf->len > PECI_LS_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_LS_MAX_RX_BUF_LEN)
     {
        ret = -EINVAL;
        goto out;
     }
 
+<<<<<<< HEAD
+=======
+    printf("Debug in %s: before k_sem_take\n", __func__);
+>>>>>>> Successfully achieve libpeci in Zephyr. peci_Ping and peci_GetTemp pass
     k_sem_take(&data->lock, K_FOREVER);
 
     MODIFY_REG( reg->PECI_CTRL, PECI_DAT_LEN_MASK, ((peci_tx_buf->len)+4) << PECI_DAT_LEN_POS);
@@ -295,6 +319,107 @@ out:
     return ret;
 }
 
+<<<<<<< HEAD
+=======
+static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg)
+{
+    struct peci_msg *msg_ls;
+    struct peci_ls_data *ls_data = adapter->dev.data;
+    int ret;
+
+    printf("Debug in %s: \n", __func__);
+    
+    printf("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
+    printf("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
+    printf("Debug in %s: msg = %p\n", __func__, msg);
+
+    msg_ls = malloc(sizeof(struct peci_msg));
+    printf("Debug in %s: finish malloc msg_ls\n", __func__);
+    msg_ls->addr = msg->addr;
+    printf("Debug in %s: msg_ls->addr = %x\n", __func__, msg_ls->addr);
+
+    if(msg->tx_buf != NULL){
+        msg_ls->cmd_code = msg->tx_buf[0];
+        msg_ls->tx_buffer.buf = msg->tx_buf + 1; 
+    }
+
+    if(msg->rx_buf != NULL){
+        msg_ls->rx_buffer.buf = msg->rx_buf;
+    }
+
+    msg_ls->tx_buffer.len = msg->tx_len;
+    msg_ls->rx_buffer.len = msg->rx_len;
+
+    printf("Debug in %s: msg_ls->cmd_code = %x\n", __func__, msg_ls->cmd_code);
+    printf("Debug in %s: adapter = %p, adapter->dev = %p\n", __func__, adapter, ls_data->dev);
+    ret = peci_ls_transfer(ls_data->dev, msg_ls);
+
+    printf("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
+    printf("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
+    printf("Debug in %s: msg = %p\n", __func__, msg);
+
+    free(msg_ls);
+    return ret;
+}
+
+static int peci_ls_init(struct device *dev)
+{
+    const struct peci_ls_config *const config = dev->config;
+    // struct peci_ls_data *const data = dev->data;
+    struct peci_ls_data *data;
+    struct reg_peci_t *const reg = config->reg;
+    struct peci_adapter *adapter;
+
+    adapter = peci_alloc_adapter(dev, sizeof(*data));
+    if(!adapter)
+        return -ENOMEM;
+    
+    data = adapter->dev.data;
+    printf("Debug: peci dev = %p\n", (void *)dev);
+    printf("Debug in %s: data = %p to %p\n", __func__, (void *)data, (void *)data+sizeof(*data));
+    printf("Debug in %s: dev->data = %p\n", __func__, (void *)dev->data);
+
+    data->adapter = adapter;
+    printf("Debug: data->adapter = %p\n", (void *)data->adapter);
+    printf("Debug: adapter = %p\n", (void *)adapter);
+
+    data->dev = dev;
+    dev->data = data;
+    printf("Debug in %s: adapter->dev = %p\n", __func__, (void *)&adapter->dev);
+    printf("Debug in %s: data->adapter->dev = %p\n", __func__, (void *)&data->adapter->dev);
+    printf("Debug in %s: adapter->dev->data = %p, dev->data = %p\n", __func__, (void *)adapter->dev.data, (void *)dev->data);
+
+    strncpy(data->adapter->name, dev->name, sizeof(data->adapter->name));
+    printf("PECI adapter %s initialized\n", dev->name);
+    data->adapter->xfer = peci_lib_xfer_base_ls;
+    data->adapter->use_dma = false;
+
+    peci_core_init();
+    peci_add_adapter(data->adapter);
+
+
+#if defined(CONFIG_PINCTRL)
+    int ret;
+
+    ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+
+	if (ret != 0) {
+		LOG_ERR("XEC PECI pinctrl init failed (%d)", ret);
+		return ret;
+	}
+#endif
+
+    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL) | FIELD_BUILD(PECI_DAT_LEN, PECI_DAT_LEN_VAL);
+
+	k_sem_init(&data->trans_sync_sem, 0, 1);
+	k_sem_init(&data->lock, 1, 1);
+    config->irq_config_func(dev);
+
+    
+    return 0;
+}
+
+>>>>>>> Successfully achieve libpeci in Zephyr. peci_Ping and peci_GetTemp pass
 static const struct peci_driver_api peci_ls_driver_api = {
     .config = peci_ls_configure,
     .enable = peci_ls_enable,

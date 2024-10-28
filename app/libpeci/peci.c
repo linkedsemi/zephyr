@@ -103,9 +103,9 @@ static void init()
 void peci_Unlock(int peci_fd, struct device** dev)
 {
 
-    printk("Debuge in %s: before close\n", __func__);
-    free(*dev);
-    *dev = NULL;
+    printk("Debug in %s: before close\n", __func__);
+    // free(*dev);
+    // *dev = NULL;
 
 }
 
@@ -437,7 +437,7 @@ static EPECIStatus HW_peci_issue_cmd(unsigned int cmd, char* cmdPtr,
         fd = peci_fd;
     }
 
-    printf("Debug: PECI_DEV_IOCTL: cmd = %d, fd = %d, dev = %p\n", cmd, fd, (void *)dev);
+    printk("Debug: PECI_DEV_IOCTL: cmd = %d, fd = %d, dev = %p\n", cmd, fd, (void *)dev);
     if (peci_dev_ioctl(dev, cmd, cmdPtr) != 0)
     {
         if (errno == ETIMEDOUT)
@@ -532,16 +532,16 @@ EPECIStatus peci_Ping(uint8_t target)
         return PECI_CC_INVALID_REQ;
     }
 
-    printf("Debug in %s: dev init = %p\n", __func__, (void *)dev);
+    printk("Debug in %s: dev init = %p\n", __func__, (void *)dev);
     if (peci_Open(&peci_fd, &dev) != PECI_CC_SUCCESS)
     {
-        printf("Debug: PECI Ping failed\n");
+        printk("Debug: PECI Ping failed\n");
         return PECI_CC_DRIVER_ERR;
     }
-    printf("Debug: PECI Ping successful\n");
-    printf("Debug in %s: peci_Open return = %p\n", __func__, (void *)dev);
+    printk("Debug: PECI Ping successful\n");
+    printk("Debug in %s: peci_Open return = %p\n", __func__, (void *)dev);
     ret = peci_Ping_seq(target, peci_fd, dev);
-    printf("Debug: PECI Ping seq successful\n");
+    printk("Debug: PECI Ping seq successful\n");
 
     peci_Close(peci_fd, &dev);
     return ret;
@@ -563,7 +563,7 @@ EPECIStatus peci_Ping_seq(uint8_t target, int peci_fd, struct device* dev)
     }
 
     cmd.addr = target;
-    printf("Debug: PECI Ping seq In\n");
+    printk("Debug: PECI Ping seq In\n");
     ret = HW_peci_issue_cmd(PECI_CMD_PING, (char*)&cmd, peci_fd, dev);
 
     return ret;
@@ -701,14 +701,14 @@ EPECIStatus peci_RdPkgConfig_dom(uint8_t target, uint8_t domainId,
 
     if (pPkgConfig == NULL || cc == NULL)
     {
-        printf("pPkgConfig or cc is NULL");
+        printk("pPkgConfig or cc is NULL");
         return PECI_CC_INVALID_REQ;
     }
 
     // The target address must be in the valid range
     if (target < MIN_CLIENT_ADDR || target > MAX_CLIENT_ADDR)
     {
-        printf("target address is invalid");
+        printk("target address is invalid");
         return PECI_CC_INVALID_REQ;
     }
 
@@ -762,14 +762,14 @@ EPECIStatus peci_RdPkgConfig_seq_dom(uint8_t target, uint8_t domainId,
     // Support PECI 4.0 read lengths
     if (u8ReadLen != 1 && u8ReadLen != 2 && u8ReadLen != 4 && u8ReadLen != 8)
     {
-        printf("u8ReadLen is invalid");
+        printk("u8ReadLen is invalid");
         return PECI_CC_INVALID_REQ;
     }
 
     // The PECI buffer must be large enough to hold the requested data
     if (sizeof(cmd.pkg_config) < u8ReadLen)
     {
-        printf("The PECI buffer is small");
+        printk("The PECI buffer is small");
         return PECI_CC_INVALID_REQ;
     }
 
@@ -2004,28 +2004,28 @@ EPECIStatus peci_CrashDump_GetFrame_dom(uint8_t target, uint8_t domainId,
 
     if (pData == NULL || cc == NULL)
     {
-        printf("pData or cc is NULL\n");
+        printk("pData or cc is NULL\n");
         return PECI_CC_INVALID_REQ;
     }
 
     // The target address must be in the valid range
     if (target < MIN_CLIENT_ADDR || target > MAX_CLIENT_ADDR)
     {
-        printf("target is out of range\n");
+        printk("target is out of range\n");
         return PECI_CC_INVALID_REQ;
     }
 
     // Per the PECI spec, the read length must be a qword or dqword
     if (u8ReadLen != 8 && u8ReadLen != 16)
     {
-        printf("u8ReadLen is not supported\n");
+        printk("u8ReadLen is not supported\n");
         return PECI_CC_INVALID_REQ;
     }
 
     // The PECI buffer must be large enough to hold the requested data
     if (sizeof(cmd.data) < u8ReadLen)
     {
-        printf("u8ReadLen is out of range\n");
+        printk("u8ReadLen is out of range\n");
         return PECI_CC_INVALID_REQ;
     }
 

@@ -10,8 +10,10 @@
 #include <zephyr/drivers/peci-legacy.h>
 #include <zephyr/pm/pm.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
+LOG_MODULE_REGISTER(peci_dev, LOG_LEVEL_DBG);
 struct peci_ls_data {
 	struct k_sem trans_sync_sem;
 	struct k_sem lock;
@@ -103,7 +105,7 @@ long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg)
 		break;
 
 	default:
-        msg = k_malloc(msg_len);
+        msg = malloc(msg_len);
 		memcpy(msg, umsg, msg_len);
 		printf("Debug in %s: msg in peci_dev_ioctl = %p to %p\n", __func__, msg, msg+msg_len);
 		printf("Debug in %s: umsg in peci_dev_ioctl = %p to %p\n", __func__, umsg, umsg+msg_len);
@@ -131,7 +133,7 @@ long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg)
 	peci_put_xfer_msg(xmsg);
 	printf("Debug in %s: After peci_put_xfer_msg\n", __func__);
 	if (msg != NULL)
-		k_free(msg);
+		free(msg);
 	printf("Debug in %s: After k_free msg\n", __func__);
 	return (long)ret;
 }

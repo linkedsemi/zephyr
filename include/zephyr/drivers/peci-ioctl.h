@@ -105,7 +105,7 @@ struct peci_xfer_msg {
 	uint8_t	padding;
 	uint8_t	*tx_buf;
 	uint8_t	*rx_buf;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_ping_msg - ping command
@@ -118,7 +118,7 @@ struct peci_xfer_msg {
 struct peci_ping_msg {
 	uint8_t	addr;
 	uint8_t	padding[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_get_dib_msg - GetDIB command
@@ -142,7 +142,7 @@ struct peci_get_dib_msg {
 	uint8_t	addr;
 	uint8_t	padding[3];
 	uint64_t	dib;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_get_temp_msg - GetTemp command
@@ -167,7 +167,7 @@ struct peci_get_temp_msg {
 	uint8_t	addr;
 	uint8_t	padding;
 	int16_t	temp_raw;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_rd_pkg_cfg_msg - RdPkgConfig command
@@ -260,7 +260,7 @@ struct peci_rd_pkg_cfg_msg {
 	uint8_t	pkg_config[PECI_RDPKGCFG_PKGCFG_LEN];
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_wr_pkg_cfg_msg - WrPkgConfig command
@@ -296,7 +296,7 @@ struct peci_wr_pkg_cfg_msg {
 	uint8_t	value[PECI_WRPKGCFG_MAX_WRITE_LEN];
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_rd_ia_msr_msg - RdIAMSR command
@@ -323,7 +323,7 @@ struct peci_rd_ia_msr_msg {
 	uint64_t	value;
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_wr_ia_msr_msg - WrIAMSR command
@@ -350,7 +350,7 @@ struct peci_wr_ia_msr_msg {
 	uint64_t	value;
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_rd_ia_msrex_msg - RdIAMSREX command
@@ -381,7 +381,7 @@ struct peci_rd_ia_msrex_msg {
 	uint64_t	value;
 	uint8_t	domain_id;
 	uint8_t	padding2[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_rd_pci_cfg_msg - RdPCIConfig command
@@ -423,7 +423,7 @@ struct peci_rd_pci_cfg_msg {
 	uint8_t	pci_config[4];
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_wr_pci_cfg_msg - WrPCIConfig command
@@ -454,7 +454,7 @@ struct peci_wr_pci_cfg_msg {
 	uint8_t	pci_config[4];
 	uint8_t	domain_id;
 	uint8_t	padding[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_rd_pci_cfg_local_msg - RdPCIConfigLocal command
@@ -487,7 +487,7 @@ struct peci_rd_pci_cfg_local_msg {
 	uint8_t	pci_config[4];
 	uint8_t	domain_id;
 	uint8_t	padding[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /**
  * struct peci_wr_pci_cfg_local_msg - WrPCIConfigLocal command
@@ -520,7 +520,7 @@ struct peci_wr_pci_cfg_local_msg {
 	uint32_t	value;
 	uint8_t	domain_id;
 	uint8_t	padding[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_rd_end_pt_cfg_msg {
 #define PECI_RDENDPTCFG_PCI_WRITE_LEN		12
@@ -563,7 +563,7 @@ struct peci_rd_end_pt_cfg_msg {
 	uint8_t	data[8];
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_wr_end_pt_cfg_msg {
 #define PECI_WRENDPTCFG_PCI_WRITE_LEN_BASE	13
@@ -602,7 +602,7 @@ struct peci_wr_end_pt_cfg_msg {
 	uint64_t	value;
 	uint8_t	domain_id;
 	uint8_t	padding1[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 /* Crashdump Agent */
 #define PECI_CRASHDUMP_CORE		0x00
@@ -630,7 +630,7 @@ struct peci_crashdump_disc_msg {
 	uint8_t	data[8];
 	uint8_t	domain_id;
 	uint8_t	padding[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_crashdump_get_frame_msg {
 #define PECI_CRASHDUMP_DISC_WRITE_LEN		9
@@ -654,7 +654,7 @@ struct peci_crashdump_get_frame_msg {
 	uint8_t	data[16];
 	uint8_t	domain_id;
 	uint8_t	padding2[3];
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_telemetry_disc_msg {
 #define PECI_TELEMETRY_DISC_WRITE_LEN		9
@@ -673,7 +673,7 @@ struct peci_telemetry_disc_msg {
 	uint8_t	data[10];
 	uint8_t	domain_id;
 	uint8_t	padding;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_telemetry_get_telem_sample_msg {
 #define PECI_TELEMETRY_GET_TELEM_SAMPLE_WRITE_LEN	8
@@ -688,7 +688,7 @@ struct peci_telemetry_get_telem_sample_msg {
 	uint8_t	data[8];
 	uint8_t	domain_id;
 	uint8_t	padding;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_telemetry_config_watcher_msg {
 #define PECI_TELEMETRY_CONFIG_WATCHER_RD_WRITE_LEN	9
@@ -707,7 +707,7 @@ struct peci_telemetry_config_watcher_msg {
 	uint8_t	data[8];
 	uint8_t	domain_id;
 	uint8_t	padding;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 struct peci_telemetry_get_crashlog_sample_msg {
 #define PECI_TELEMETRY_GET_CRASHLOG_SAMPLE_WRITE_LEN	8
@@ -722,7 +722,7 @@ struct peci_telemetry_get_crashlog_sample_msg {
 	uint8_t	data[8];
 	uint8_t	domain_id;
 	uint8_t	padding;
-} __attribute__((__packed__));
+} __attribute__((__packed__, aligned(16)));
 
 
 #endif /* __PECI_IOCTL_H */

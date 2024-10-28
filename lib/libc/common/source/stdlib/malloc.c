@@ -257,6 +257,7 @@ void *realloc(void *ptr, size_t requested_size)
 
 void free(void *ptr)
 {
+	printf("Debug in %s: free ptr %p to %p\n", __func__, ptr, ptr + sizeof(*ptr));
 	malloc_lock();
 	sys_heap_free(&z_malloc_heap, ptr);
 	malloc_unlock();
