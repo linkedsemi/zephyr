@@ -16,9 +16,14 @@ LOG_MODULE_REGISTER(spi_ls);
 #include <zephyr/pm/policy.h>
 
 #include <ls_hal_spi_i2s.h>
+
+#if CONFIG_SOC_SERIES_LE501X == 1
 #include <reg_rcc.h>
+#endif
 
 #include "spi_context.h"
+#include <soc_clock.h>
+#include <zephyr/drivers/clock_control.h>
 
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
 
@@ -30,6 +35,7 @@ struct spi_ls_config {
 #ifdef CONFIG_SPI_LS_INTERRUPT
 	irq_config_func_t irq_config;
 #endif
+	struct ls_clk_cfg cctl_cfg;
 };
 
 struct spi_ls_data {
@@ -404,24 +410,39 @@ static void spi_ls_irq_config_func_##id(const struct device *dev)		\
 #define LS_SPI_IRQ_HANDLER(id)
 #endif /* CONFIG_SPI_LS_INTERRUPT */
 
+#if CONFIG_SOC_SERIES_LE501X == 1
 static void spi_clock_init(void)
 {
     REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 1);
     REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 0);
     REG_FIELD_WR(RCC->APB1EN, RCC_SPI2, 1);
 }
+#endif
 
 static int spi_ls_init(const struct device *dev)
 {
 	struct spi_ls_data *data __attribute__((unused)) = dev->data;
 	int err;
+	const struct spi_ls_config *const config = dev->config;
 
 #ifdef CONFIG_SPI_LS_INTERRUPT
     const struct spi_ls_config *cfg = dev->config;
 	cfg->irq_config(dev);
 #endif
 
+#if CONFIG_SOC_SERIES_LE501X == 1
     spi_clock_init();
+#elif CONFIG_SOC_LS1010 == 1
+
+    if (config->cctl_cfg.cctl_dev) {
+	    const struct device *clk_dev = config->cctl_cfg.cctl_dev;
+	    if (!device_is_ready(clk_dev)) {
+		    LOG_DBG("%s device not ready", clk_dev->name);
+		    return -ENODEV;
+	    }
+	    clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
+    }
+#endif
 
 	err = spi_context_cs_configure_all(&data->ctx);
 	if (err < 0) {
@@ -441,6 +462,7 @@ static const struct spi_ls_config spi_ls_cfg_##id = {		\
 	.instance = (reg_spi_t *) DT_INST_REG_ADDR(id),			\
     .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id),               \
     LS_SPI_IRQ_HANDLER_FUNC(id)					\
+	IF_ENABLED(DT_HAS_CLOCKS(id), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(id),))	 \
 };									\
 									\
 static struct spi_ls_data spi_ls_dev_data_##id = {		    \
