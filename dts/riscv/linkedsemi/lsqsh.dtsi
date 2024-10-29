@@ -50,6 +50,28 @@
             interrupt-controller;
         };
 
+        dma0: dma@40004000 {
+            compatible = "snps,designware-dma";
+            reg = <0x40004000 0x1000>;
+            #dma-cells = <1>;
+            interrupts = <50 3>;
+            interrupt-parent = <&intc>;
+            dma-channels = <8>;
+            dma-buf-addr-alignment = <4>;
+            status = "disabled";
+        };
+
+        dma1: dma@40005000 {
+            compatible = "snps,designware-dma";
+            reg = <0x40005000 0x1000>;
+            #dma-cells = <1>;
+            interrupts = <51 3>;
+            interrupt-parent = <&intc>;
+            dma-channels = <8>;
+            dma-buf-addr-alignment = <4>;
+            status = "disabled";
+        };
+
         flash_controller: flash-controller@40000000 {
             compatible = "linkedsemi,ls-flash-controller";
             reg = <0x40000000 0x400>;

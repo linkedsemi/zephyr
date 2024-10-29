@@ -380,3 +380,7 @@
     pinctrl-names = "default", "priv_start";
     status = "okay";
 };
+
+tst_dma0: &dma0 {
+    status = "okay";
+};
