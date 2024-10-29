@@ -10,10 +10,10 @@ config MBOX_LINKEDSEMI
 
 if MBOX_LINKEDSEMI
 
-config NOTSUP_NULL_MSG
+config SIGNALLING_MODE_SUPPORT
     bool "NULL msg support for mailbox"
     default n
     help
       not support signalling mode
 
-endif #MBOX_LINKEDSEMI
+endif # MBOX_LINKEDSEMI

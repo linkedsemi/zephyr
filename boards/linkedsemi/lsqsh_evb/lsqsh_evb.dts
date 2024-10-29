@@ -51,15 +51,22 @@
             compatible = "linkedsemi,mbox";
             reg = <0x1013f000 0x1000>;
             interrupts = <27 3>;
-            fifo-deepth = <7>;
-            fifo-width = <256>;
+            nchannels = <2>;
+            fifo-deepth = <3>;
+            fifo-width = <4>;
             #mbox-cells = <1>;
         };
     };
 
-    mbox-consumer {
+    mbox_consumer0: mbox-consumer0 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 1>, <&mbox 0>;
+        mbox-names = "tx", "rx";
+    };
+
+    mbox_consumer1: mbox-consumer1 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 3>, <&mbox 2>;
         mbox-names = "tx", "rx";
     };
 

@@ -11,6 +11,10 @@ properties:
   reg:
     required: true
 
+  nchannels:
+    type: int
+    required: true
+
   fifo-deepth:
     type: int
     required: true
