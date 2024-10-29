@@ -52,6 +52,9 @@ static const struct dma_driver_api dw_dma_driver_api = {
 	.config = dw_dma_config,
 	.start = dw_dma_start,
 	.stop = dw_dma_stop,
+	.suspend = dw_dma_suspend,
+	.resume = dw_dma_resume,
+	.get_status = dw_dma_get_status,
 };
 
 #define DW_DMAC_INIT(inst)						\
@@ -117,7 +120,7 @@ static const struct dma_driver_api dw_dma_driver_api = {
 		IRQ_CONNECT(DT_INST_IRQN(inst),				\
 			    DT_INST_IRQ(inst, priority), dw_dma_isr,	\
 			    DEVICE_DT_INST_GET(inst),			\
-			    DT_INST_IRQ(inst, sense));			\
+			    0);			\
 		irq_enable(DT_INST_IRQN(inst));				\
 	}
 
