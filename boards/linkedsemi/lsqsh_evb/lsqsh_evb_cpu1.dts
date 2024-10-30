@@ -1,10 +1,8 @@
 /*
- * Copyright (c) 2021, Teslabs Engineering S.L.
+ * Copyright (c) 2024, linkedsemi
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// #include <gigadevice/gd32vf103Xb.dtsi>
-// #include "gd32vf103v_eval-pinctrl.dtsi"
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
 #include "lsqsh_evb-pinctrl.dtsi"

@@ -1,5 +1,7 @@
-# Copyright (c) 2021, Teslabs Engineering S.L.
+# Copyright (c) 2024, linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
 config BOARD_LSQSH_EVB
-	select SOC_LSQSH
+    select SOC_LSQSH
+    select SOC_LSQSH_CPU0 if BOARD_LSQSH_CPU0_EVB
+    select SOC_LSQSH_CPU1 if BOARD_LSQSH_CPU1_EVB

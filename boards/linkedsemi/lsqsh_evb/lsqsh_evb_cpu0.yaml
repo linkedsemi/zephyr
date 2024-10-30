@@ -1,7 +1,7 @@
-# Copyright (c) 2021, Teslabs Engineering S.L.
+# Copyright (c) 2024, linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
-identifier: lsqsh_evb
+identifier: lsqsh_evb@1/lsqsh/cpu0
 name: lsqsh
 type: mcu
 arch: riscv32

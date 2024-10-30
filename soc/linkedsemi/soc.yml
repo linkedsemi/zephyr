@@ -10,3 +10,6 @@ family:
   - name: lsqsh
     socs:
     - name: lsqsh
+      cpuclusters:
+      - name: cpu0
+      - name: cpu1

@@ -3,3 +3,8 @@ board:
   vendor: linkedsemi
   socs:
   - name: lsqsh
+  revision:
+    format: number
+    default: "1"
+    revisions:
+      - name: "1"

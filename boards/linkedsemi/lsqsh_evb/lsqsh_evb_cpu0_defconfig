@@ -1,6 +1,5 @@
-# Copyright (c) 2023 Linkedsemi
+# Copyright (c) 2024 Linkedsemi
 # SPDX-License-Identifier: Apache-2.0
-
 
 CONFIG_MINIMAL_LIBC=y
 CONFIG_MINIMAL_LIBC_RAND=y

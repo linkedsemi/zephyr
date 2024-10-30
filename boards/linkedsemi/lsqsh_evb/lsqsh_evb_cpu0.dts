@@ -1,10 +1,8 @@
 /*
- * Copyright (c) 2021, Teslabs Engineering S.L.
+ * Copyright (c) 2024, linkedsemi
  * SPDX-License-Identifier: Apache-2.0
  */
 
-// #include <gigadevice/gd32vf103Xb.dtsi>
-// #include "gd32vf103v_eval-pinctrl.dtsi"
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
@@ -13,7 +11,7 @@
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
 / {
-    model = "linkedsemi LSQSH_EVB";
+    model = "linkedsemi lsqsh_evb";
     compatible = "linkedsemi,lsqsh_evb";
 
     chosen {
