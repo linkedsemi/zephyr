@@ -54,7 +54,7 @@
             compatible = "snps,designware-dma";
             reg = <0x40004000 0x1000>;
             #dma-cells = <1>;
-            interrupts = <50 3>;
+            interrupts = <34 3>;
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
@@ -65,7 +65,7 @@
             compatible = "snps,designware-dma";
             reg = <0x40005000 0x1000>;
             #dma-cells = <1>;
-            interrupts = <51 3>;
+            interrupts = <35 3>;
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
