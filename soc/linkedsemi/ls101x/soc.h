@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Henrik Brix Andersen <henrik@brixandersen.dk>
+ * Copyright (c) 2020 Linkedsemi
  *
  * SPDX-License-Identifier: Apache-2.0
  */
