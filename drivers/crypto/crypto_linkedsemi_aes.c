@@ -414,13 +414,12 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
     struct cipher_pkt *pkt = apkt->pkt;
 
     uint8_t gcm_h[AES_BLOCK_LEN_BYTE] = {0};
-    uint8_t e_j0[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t c_j0[AES_BLOCK_LEN_BYTE] = {0};
 
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
     const bool is_block_len_align = ((pkt->in_len % AES_BLOCK_LEN_BYTE) == 0);
-    uint8_t c_last_block_padding_zero[AES_BLOCK_LEN_BYTE] = {0};
     uint32_t cnt = 1;
     int ret = 0;
 
@@ -464,8 +463,6 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
             mem_xor_n(pkt->out_buf + pkt->out_len,
                         pkt->in_buf + pkt->out_len, c_iv, last_block_len);
             pkt->out_len += last_block_len;
-
-            memcpy(c_last_block_padding_zero, pkt->in_buf + pkt->out_len, last_block_len);
         } else {
             LOG_ERR("%s: crypto error", __func__);
             return -EINVAL;
@@ -496,7 +493,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         iv, /* in */
-                                        e_j0, /* out */
+                                        c_j0, /* out */
                                         AES_BLOCK_LEN_BYTE,
                                         true,
                                         CRYPTO_CIPHER_MODE_ECB,
@@ -507,7 +504,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
     }
 /* GMAC: end encrypt j0 */
     ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->out_buf, pkt->out_len, pkt->out_buf + pkt->out_len, ctx->mode_params.gcm_info.tag_len);
-    mem_xor_n(pkt->out_buf + pkt->out_len, pkt->out_buf + pkt->out_len, e_j0, apkt->ad_len);
+    mem_xor_n(pkt->out_buf + pkt->out_len, pkt->out_buf + pkt->out_len, c_j0, apkt->ad_len);
 /* end GMAC */
 
     pkt->out_len += ctx->mode_params.gcm_info.tag_len;
@@ -523,14 +520,13 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
     struct cipher_pkt *pkt = apkt->pkt;
 
     uint8_t gcm_h[AES_BLOCK_LEN_BYTE] = {0};
-    uint8_t e_j0[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t c_j0[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t t_prime[AES_BLOCK_LEN_BYTE] = {0};
 
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
     const bool is_block_len_align = ((pkt->in_len % AES_BLOCK_LEN_BYTE) == 0);
-    uint8_t c_last_block_padding_zero[AES_BLOCK_LEN_BYTE] = {0};
     uint32_t cnt = 1;
     int ret = 0;
 
@@ -574,8 +570,6 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
             mem_xor_n(pkt->out_buf + pkt->out_len,
                         pkt->in_buf + pkt->out_len, c_iv, last_block_len);
             pkt->out_len += last_block_len;
-
-            memcpy(c_last_block_padding_zero, pkt->in_buf + pkt->out_len, last_block_len);
         } else {
             LOG_ERR("%s: crypto error", __func__);
             return -EINVAL;
@@ -606,7 +600,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         iv, /* in */
-                                        e_j0, /* out */
+                                        c_j0, /* out */
                                         AES_BLOCK_LEN_BYTE,
                                         true,
                                         CRYPTO_CIPHER_MODE_ECB,
@@ -617,7 +611,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
     }
 /* GMAC: end encrypt j0 */
     ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->in_buf, pkt->in_len, t_prime, sizeof(t_prime));
-    mem_xor_n(t_prime, t_prime, e_j0, sizeof(t_prime));
+    mem_xor_n(t_prime, t_prime, c_j0, sizeof(t_prime));
 
     if (memcmp(t_prime, apkt->tag, ctx->mode_params.gcm_info.tag_len) != 0) {
         LOG_ERR("tag error");

@@ -144,6 +144,10 @@ static int crypto_linkedsemi_hash_begin_session(const struct device *dev,
     ctx->hash_hndlr = crypto_linkedsemi_sha;
     dev_data->hash_ctx = ctx;
     dev_data->hash_algo = algo;
+    dev_data->sha_fifo_index = 0;
+    dev_data->sha_pkt_in_buf_index = 0;
+    dev_data->sha_total_len = 0;
+    dev_data->sha_is_final = false;
 
     return 0;
 }
@@ -174,11 +178,6 @@ static int crypto_linkedsemi_init(const struct device *dev)
     k_mutex_init(&dev_data->hash_mutex);
     k_sem_init(&dev_data->hash_device_sync_sem, 0, K_SEM_MAX_LIMIT);
     cfg->irq_config_func(dev);
-
-    dev_data->sha_fifo_index = 0;
-    dev_data->sha_pkt_in_buf_index = 0;
-    dev_data->sha_total_len = 0;
-    dev_data->sha_is_final = false;
 
     return 0;
 }
