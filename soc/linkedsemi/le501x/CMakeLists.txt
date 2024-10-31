@@ -1,4 +1,10 @@
-zephyr_sources(soc.c hci_vendor.c)
+zephyr_sources(soc.c)
+
 zephyr_include_directories(.)
 
-set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/include/zephyr/arch/arm/cortex_m/scripts/linker.ld CACHE INTERNAL "")
+zephyr_library_sources_ifdef(CONFIG_PM power.c)
+zephyr_library_sources_ifdef(CONFIG_BT_LINKEDSEMI hci_vendor.c)
+
+zephyr_linker_sources(RAM_SECTIONS controller_em.ld)
+
+set(SOC_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld CACHE INTERNAL "")
