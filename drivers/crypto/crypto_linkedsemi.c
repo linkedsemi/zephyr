@@ -51,6 +51,7 @@ static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
     case CRYPTO_CIPHER_MODE_ECB:
     case CRYPTO_CIPHER_MODE_CBC:
     case CRYPTO_CIPHER_MODE_CTR:
+    case CRYPTO_CIPHER_MODE_GCM:
         break;
     default:
         LOG_ERR("Unsupported mode");
@@ -78,6 +79,9 @@ static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
         case CRYPTO_CIPHER_MODE_CTR:
             ctx->ops.ctr_crypt_hndlr = crypto_linkedsemi_ctr;
             break;
+        case CRYPTO_CIPHER_MODE_GCM:
+            ctx->ops.gcm_crypt_hndlr = crypto_linkedsemi_gcm_encrypt_auth;
+            break;
         default:
             LOG_ERR("Unsupported");
             return -ENOTSUP;
@@ -92,6 +96,9 @@ static int crypto_linkedsemi_cipher_begin_session(const struct device *dev,
             break;
         case CRYPTO_CIPHER_MODE_CTR:
             ctx->ops.ctr_crypt_hndlr = crypto_linkedsemi_ctr;
+            break;
+        case CRYPTO_CIPHER_MODE_GCM:
+            ctx->ops.gcm_crypt_hndlr = crypto_linkedsemi_gcm_decrypt_auth;
             break;
         default:
             LOG_ERR("Unsupported");

@@ -57,12 +57,13 @@ struct crypto_linkedsemi_config {
 };
 
 void linkedsemi_crypto_isr(const struct device *dev);
-
 int crypto_linkedsemi_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt);
 int crypto_linkedsemi_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt);
 int crypto_linkedsemi_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv);
 int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv);
 int crypto_linkedsemi_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *ctr);
+int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx, struct cipher_aead_pkt *apkt, uint8_t *nonce);
+int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx, struct cipher_aead_pkt *apkt, uint8_t *nonce);
 
 void linkedsemi_sha_isr(const struct device *dev);
 int crypto_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, bool finish);

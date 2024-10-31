@@ -15,11 +15,7 @@ void linkedsemi_crypto_isr(const struct device *dev)
     union aes_reg_sr sr_un;
     sr_un.value = sys_read32(dev_config->reg_crypt + CRYPT_SR);
     if (sr_un.field.AESRIF) {
-        union aes_reg_icfr aes_reg_icfr_un = {
-            .field = {
-                .AESIF = 1,
-            },
-        };
+        union aes_reg_icfr aes_reg_icfr_un = { .field = { .AESIF = 1, }, };
         sys_write32(aes_reg_icfr_un.value, dev_config->reg_crypt + CRYPT_ICFR);
         k_sem_give(&dev_data->cipher_device_sync_sem);
     } else if (sr_un.field.DESRIF) {
@@ -268,32 +264,27 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
 {
     const struct device *dev = ctx->device;
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
-    uint8_t out_tmp[AES_BLOCK_LEN_BYTE] = {0};
-    uint32_t block_num = 0;
+    uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
+    const uint8_t ivlen = AES_BLOCK_LEN_BYTE - (ctx->mode_params.ctr_info.ctr_len >> 3);
+    uint32_t cnt = 0;
     int ret = 0;
-    int ivlen = AES_BLOCK_LEN_BYTE - (ctx->mode_params.ctr_info.ctr_len >> 3);
 
     memcpy(iv, ctr, ivlen);
-    // block_num = (iv[12] << 24) | (iv[13] << 16) | (iv[14] << 8) | (iv[15]);
-    block_num = 0;
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
         ret = crypto_linkedsemi_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
-                                            out_tmp,
+                                            c_iv,
                                             AES_BLOCK_LEN_BYTE,
                                             true,
                                             CRYPTO_CIPHER_MODE_ECB,
                                             NULL);
         if (ret == 0) {
-            block_num++;
-            iv[12] = (uint8_t)(block_num >> 24);
-            iv[13] = (uint8_t)(block_num >> 16);
-            iv[14] = (uint8_t)(block_num >> 8);
-            iv[15] = (uint8_t)(block_num);
+            cnt++;
+            *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
             mem_xor_128(pkt->out_buf + i * AES_BLOCK_LEN_BYTE,
-                        pkt->in_buf + i * AES_BLOCK_LEN_BYTE, out_tmp);
+                        pkt->in_buf + i * AES_BLOCK_LEN_BYTE, c_iv);
             pkt->out_len += AES_BLOCK_LEN_BYTE;
         } else {
             LOG_ERR("%s: crypto error", __func__);
@@ -302,4 +293,337 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
     }
 
     return ret;
+}
+
+/* wolfssl */
+static void gmult(uint64_t* x, uint64_t* y)
+{
+    uint64_t z[2] = {0,0};
+    uint64_t v[2];
+    int i, j;
+    uint64_t v1;
+    v[0] = x[0];
+    v[1] = x[1];
+
+    for (i = 0; i < 2; i++)
+    {
+        uint64_t y_tmp = y[i];
+        for (j = 0; j < 64; j++)
+        {
+            uint64_t mask = 0 - (y_tmp >> 63);
+            z[0] ^= v[0] & mask;
+            z[1] ^= v[1] & mask;
+            v1 = (0 - (v[1] & 1)) & 0xe100000000000000ull;
+            v[1] >>= 1;
+            v[1] |= v[0] << 63;
+            v[0] >>= 1;
+            v[0] ^= v1;
+            y_tmp <<= 1;
+        }
+    }
+    x[0] = z[0];
+    x[1] = z[1];
+}
+
+/* wolfssl */
+void ghash(uint8_t gcm_h[16], const uint8_t* a, uint32_t a_size, const uint8_t* c,
+    uint32_t c_size, uint8_t* s, uint32_t s_size)
+{
+    uint64_t x[2] = {0,0};
+    uint32_t blocks, partial;
+    uint64_t big_h[2];
+
+    memcpy(big_h, gcm_h, AES_BLOCK_LEN_BYTE);
+    big_h[0] = BSWAP_64(big_h[0]);
+    big_h[1] = BSWAP_64(big_h[1]);
+
+    /* Hash in A, the Additional Authentication Data */
+    if (a_size != 0 && a != NULL) {
+        uint64_t big_a[2];
+        blocks = a_size / AES_BLOCK_LEN_BYTE;
+        partial = a_size % AES_BLOCK_LEN_BYTE;
+        while (blocks--) {
+            memcpy(big_a, a, AES_BLOCK_LEN_BYTE);
+            big_a[0] = BSWAP_64(big_a[0]);
+            big_a[1] = BSWAP_64(big_a[1]);
+            x[0] ^= big_a[0];
+            x[1] ^= big_a[1];
+            gmult(x, big_h);
+            a += AES_BLOCK_LEN_BYTE;
+        }
+        if (partial != 0) {
+            memset(big_a, 0, AES_BLOCK_LEN_BYTE);
+            memcpy(big_a, a, partial);
+            big_a[0] = BSWAP_64(big_a[0]);
+            big_a[1] = BSWAP_64(big_a[1]);
+            x[0] ^= big_a[0];
+            x[1] ^= big_a[1];
+            gmult(x, big_h);
+        }
+    }
+
+    /* Hash in C, the Ciphertext */
+    if (c_size != 0 && c != NULL) {
+        uint64_t big_c[2];
+        blocks = c_size / AES_BLOCK_LEN_BYTE;
+        partial = c_size % AES_BLOCK_LEN_BYTE;
+
+        while (blocks--) {
+            memcpy(big_c, c, AES_BLOCK_LEN_BYTE);
+            big_c[0] = BSWAP_64(big_c[0]);
+            big_c[1] = BSWAP_64(big_c[1]);
+            x[0] ^= big_c[0];
+            x[1] ^= big_c[1];
+            gmult(x, big_h);
+            c += AES_BLOCK_LEN_BYTE;
+        }
+        if (partial != 0) {
+            memset(big_c, 0, AES_BLOCK_LEN_BYTE);
+            memcpy(big_c, c, partial);
+            big_c[0] = BSWAP_64(big_c[0]);
+            big_c[1] = BSWAP_64(big_c[1]);
+            x[0] ^= big_c[0];
+            x[1] ^= big_c[1];
+            gmult(x, big_h);
+        }
+    }
+
+    /* Hash in the lengths in bits of A and C */
+    {
+        uint64_t len[2];
+        len[0] = a_size; len[1] = c_size;
+
+        /* Lengths are in bytes. Convert to bits. */
+        len[0] *= 8;
+        len[1] *= 8;
+
+        x[0] ^= len[0];
+        x[1] ^= len[1];
+        gmult(x, big_h);
+    }
+    x[0] = BSWAP_64(x[0]);
+    x[1] = BSWAP_64(x[1]);
+    memcpy(s, x, s_size);
+}
+
+int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
+                 struct cipher_aead_pkt *apkt,
+                 uint8_t *nonce)
+{
+    const struct device *dev = ctx->device;
+    struct cipher_pkt *pkt = apkt->pkt;
+
+    uint8_t gcm_h[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t e_j0[AES_BLOCK_LEN_BYTE] = {0};
+
+    uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
+    const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
+    const bool is_block_len_align = ((pkt->in_len % AES_BLOCK_LEN_BYTE) == 0);
+    uint8_t c_last_block_padding_zero[AES_BLOCK_LEN_BYTE] = {0};
+    uint32_t cnt = 1;
+    int ret = 0;
+
+    memcpy(iv, nonce, ivlen);
+/* GCTR */
+    for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
+        cnt++;
+        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        ret = crypto_linkedsemi_single_block(dev,
+                                            ctx->key.bit_stream,
+                                            ctx->keylen,
+                                            iv,
+                                            c_iv,
+                                            AES_BLOCK_LEN_BYTE,
+                                            true,
+                                            CRYPTO_CIPHER_MODE_ECB,
+                                            NULL);
+        if (ret == 0) {
+            mem_xor_128(pkt->out_buf + i * AES_BLOCK_LEN_BYTE,
+                        pkt->in_buf + i * AES_BLOCK_LEN_BYTE, c_iv);
+            pkt->out_len += AES_BLOCK_LEN_BYTE;
+        } else {
+            LOG_ERR("%s: crypto error", __func__);
+            return -EINVAL;
+        }
+    }
+    if (!is_block_len_align) {
+        cnt++;
+        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        ret = crypto_linkedsemi_single_block(dev,
+                                            ctx->key.bit_stream,
+                                            ctx->keylen,
+                                            iv,
+                                            c_iv,
+                                            AES_BLOCK_LEN_BYTE,
+                                            true,
+                                            CRYPTO_CIPHER_MODE_ECB,
+                                            NULL);
+        if (ret == 0) {
+            const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
+            mem_xor_n(pkt->out_buf + pkt->out_len,
+                        pkt->in_buf + pkt->out_len, c_iv, last_block_len);
+            pkt->out_len += last_block_len;
+
+            memcpy(c_last_block_padding_zero, pkt->in_buf + pkt->out_len, last_block_len);
+        } else {
+            LOG_ERR("%s: crypto error", __func__);
+            return -EINVAL;
+        }
+    }
+/* end GCTR */
+
+/* GMAC */
+/* GMAC: gcm_h: arr[128] = {0} ---encrypt---> gcm_h[128] */
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        gcm_h, /* in */
+                                        gcm_h, /* out */
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+/* GMAC: end gcm_h */
+
+/* GMAC: encrypt j0 */
+    *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(1);
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        iv, /* in */
+                                        e_j0, /* out */
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+/* GMAC: end encrypt j0 */
+    ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->out_buf, pkt->out_len, pkt->out_buf + pkt->out_len, ctx->mode_params.gcm_info.tag_len);
+    mem_xor_n(pkt->out_buf + pkt->out_len, pkt->out_buf + pkt->out_len, e_j0, apkt->ad_len);
+/* end GMAC */
+
+    pkt->out_len += ctx->mode_params.gcm_info.tag_len;
+
+    return 0;
+}
+
+int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
+                 struct cipher_aead_pkt *apkt,
+                 uint8_t *nonce)
+{
+    const struct device *dev = ctx->device;
+    struct cipher_pkt *pkt = apkt->pkt;
+
+    uint8_t gcm_h[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t e_j0[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t t_prime[AES_BLOCK_LEN_BYTE] = {0};
+
+    uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
+    uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
+    const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
+    const bool is_block_len_align = ((pkt->in_len % AES_BLOCK_LEN_BYTE) == 0);
+    uint8_t c_last_block_padding_zero[AES_BLOCK_LEN_BYTE] = {0};
+    uint32_t cnt = 1;
+    int ret = 0;
+
+    memcpy(iv, nonce, ivlen);
+/* GCTR */
+    for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
+        cnt++;
+        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        ret = crypto_linkedsemi_single_block(dev,
+                                            ctx->key.bit_stream,
+                                            ctx->keylen,
+                                            iv,
+                                            c_iv,
+                                            AES_BLOCK_LEN_BYTE,
+                                            true,
+                                            CRYPTO_CIPHER_MODE_ECB,
+                                            NULL);
+        if (ret == 0) {
+            mem_xor_128(pkt->out_buf + i * AES_BLOCK_LEN_BYTE,
+                        pkt->in_buf + i * AES_BLOCK_LEN_BYTE, c_iv);
+            pkt->out_len += AES_BLOCK_LEN_BYTE;
+        } else {
+            LOG_ERR("%s: crypto error", __func__);
+            return -EINVAL;
+        }
+    }
+    if (!is_block_len_align) {
+        cnt++;
+        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        ret = crypto_linkedsemi_single_block(dev,
+                                            ctx->key.bit_stream,
+                                            ctx->keylen,
+                                            iv,
+                                            c_iv,
+                                            AES_BLOCK_LEN_BYTE,
+                                            true,
+                                            CRYPTO_CIPHER_MODE_ECB,
+                                            NULL);
+        if (ret == 0) {
+            const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
+            mem_xor_n(pkt->out_buf + pkt->out_len,
+                        pkt->in_buf + pkt->out_len, c_iv, last_block_len);
+            pkt->out_len += last_block_len;
+
+            memcpy(c_last_block_padding_zero, pkt->in_buf + pkt->out_len, last_block_len);
+        } else {
+            LOG_ERR("%s: crypto error", __func__);
+            return -EINVAL;
+        }
+    }
+/* end GCTR */
+
+/* GMAC */
+/* GMAC: gcm_h: arr[128] = {0} ---encrypt---> gcm_h[128] */
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        gcm_h, /* in */
+                                        gcm_h, /* out */
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+/* GMAC: end gcm_h */
+
+/* GMAC: encrypt j0 */
+    *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(1);
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        iv, /* in */
+                                        e_j0, /* out */
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+/* GMAC: end encrypt j0 */
+    ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->in_buf, pkt->in_len, t_prime, sizeof(t_prime));
+    mem_xor_n(t_prime, t_prime, e_j0, sizeof(t_prime));
+
+    if (memcmp(t_prime, apkt->tag, ctx->mode_params.gcm_info.tag_len) != 0) {
+        LOG_ERR("tag error");
+        return -EFAULT;
+    }
+/* end GMAC */
+
+    return 0;
 }
