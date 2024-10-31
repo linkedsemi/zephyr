@@ -175,93 +175,40 @@ bool is_vmalloc_addr(void *addr) {
  *
  * This function must only be called from process context!
  */
-// struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
-// {
-// 	struct peci_xfer_msg *msg;
-// 	u8 *tx_buf, *rx_buf;
-
-// 	if (tx_len) {
-// 		// tx_buf = k_calloc(tx_len, sizeof(uint8_t));
-// 		tx_buf = malloc(tx_len);
-// 		if (!tx_buf)
-// 			return NULL;
-// 	} else {
-// 		tx_buf = NULL;
-// 	}
-	
-
-// 	if (rx_len) {
-// 		// rx_buf = k_calloc(rx_len, sizeof(uint8_t));
-// 		rx_buf = malloc(rx_len);
-// 		if (!rx_buf)
-// 			goto err_free_tx_buf;
-// 	} else {
-// 		rx_buf = NULL;
-// 	}
-	
-
-// 	// msg = k_calloc(1, sizeof(*msg));
-// 	msg = malloc(sizeof(*msg));
-// 	if (!msg)
-// 		goto err_free_tx_rx_buf;
-
-// 	msg->tx_len = tx_len;
-// 	msg->tx_buf = tx_buf;
-// 	msg->rx_len = rx_len;
-// 	msg->rx_buf = rx_buf;
-// 	printf("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
-// 	printf("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
-// 	printf("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
-// 	printf("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
-
-// 	return msg;
-
-// err_free_tx_rx_buf:
-// 	printf("Debug in %s: in err_free_tx_rx_buf");
-// 	free(rx_buf);
-// err_free_tx_buf:
-// 	printf("Debug in %s: in err_free_tx_buf");
-// 	free(tx_buf);
-
-// 	return NULL;
-// }
-// EXPORT_SYMBOL_GPL(peci_get_xfer_msg);
-
 struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
 {
 	struct peci_xfer_msg *msg;
 	u8 *tx_buf, *rx_buf;
 
-	msg = malloc(sizeof(*msg));
-	if (!msg)
-		goto err_free_tx_rx_buf;
-	
 	if (tx_len) {
 		// tx_buf = k_calloc(tx_len, sizeof(uint8_t));
-		msg->tx_buf = malloc(tx_len);
-		if (!msg->tx_buf)
+		tx_buf = malloc(tx_len);
+		if (!tx_buf)
 			return NULL;
 	} else {
-		msg->tx_buf = NULL;
+		tx_buf = NULL;
 	}
 	
 
 	if (rx_len) {
 		// rx_buf = k_calloc(rx_len, sizeof(uint8_t));
-		msg->rx_buf = malloc(rx_len);
-		if (!msg->rx_buf)
+		rx_buf = malloc(rx_len);
+		if (!rx_buf)
 			goto err_free_tx_buf;
 	} else {
-		msg->rx_buf = NULL;
+		rx_buf = NULL;
 	}
 	
 
 	// msg = k_calloc(1, sizeof(*msg));
-	
+	msg = malloc(sizeof(*msg));
+	if (!msg)
+		goto err_free_tx_rx_buf;
+
 	msg->tx_len = tx_len;
-
+	msg->tx_buf = tx_buf;
 	msg->rx_len = rx_len;
-
+	msg->rx_buf = rx_buf;
 	printf("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
 	printf("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
 	printf("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
@@ -271,13 +218,66 @@ struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
 
 err_free_tx_rx_buf:
 	printf("Debug in %s: in err_free_tx_rx_buf");
-	free(msg->rx_buf);
+	free(rx_buf);
 err_free_tx_buf:
 	printf("Debug in %s: in err_free_tx_buf");
-	free(msg->tx_buf);
+	free(tx_buf);
 
 	return NULL;
 }
+// EXPORT_SYMBOL_GPL(peci_get_xfer_msg);
+
+// struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
+// {
+// 	struct peci_xfer_msg *msg;
+// 	u8 *tx_buf, *rx_buf;
+
+// 	msg = malloc(sizeof(*msg));
+// 	if (!msg)
+// 		goto err_free_tx_rx_buf;
+	
+// 	if (tx_len) {
+// 		// tx_buf = k_calloc(tx_len, sizeof(uint8_t));
+// 		msg->tx_buf = malloc(tx_len);
+// 		if (!msg->tx_buf)
+// 			return NULL;
+// 	} else {
+// 		msg->tx_buf = NULL;
+// 	}
+	
+
+// 	if (rx_len) {
+// 		// rx_buf = k_calloc(rx_len, sizeof(uint8_t));
+// 		msg->rx_buf = malloc(rx_len);
+// 		if (!msg->rx_buf)
+// 			goto err_free_tx_buf;
+// 	} else {
+// 		msg->rx_buf = NULL;
+// 	}
+	
+
+// 	// msg = k_calloc(1, sizeof(*msg));
+	
+// 	msg->tx_len = tx_len;
+
+// 	msg->rx_len = rx_len;
+
+// 	printf("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
+// 	printf("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
+// 	printf("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
+// 	printf("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
+
+// 	return msg;
+
+// err_free_tx_rx_buf:
+// 	printf("Debug in %s: in err_free_tx_rx_buf");
+// 	free(msg->rx_buf);
+// err_free_tx_buf:
+// 	printf("Debug in %s: in err_free_tx_buf");
+// 	free(msg->tx_buf);
+
+// 	return NULL;
+// }
 
 /**
  * peci_put_xfer_msg - release a DMA safe peci_xfer_msg
