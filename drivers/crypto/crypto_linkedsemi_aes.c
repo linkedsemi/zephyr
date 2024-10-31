@@ -266,6 +266,7 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = AES_BLOCK_LEN_BYTE - (ctx->mode_params.ctr_info.ctr_len >> 3);
+    const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
     uint32_t cnt = 0;
     int ret = 0;
 
@@ -289,6 +290,28 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
         } else {
             LOG_ERR("%s: crypto error", __func__);
             break;
+        }
+    }
+
+    if (last_block_len != 0) {
+        cnt++;
+        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        ret = crypto_linkedsemi_single_block(dev,
+                                            ctx->key.bit_stream,
+                                            ctx->keylen,
+                                            iv,
+                                            c_iv,
+                                            AES_BLOCK_LEN_BYTE,
+                                            true,
+                                            CRYPTO_CIPHER_MODE_ECB,
+                                            NULL);
+        if (ret == 0) {
+            mem_xor_n(pkt->out_buf + pkt->out_len,
+                        pkt->in_buf + pkt->out_len, c_iv, last_block_len);
+            pkt->out_len += last_block_len;
+        } else {
+            LOG_ERR("%s: crypto error", __func__);
+            return -EINVAL;
         }
     }
 
@@ -419,7 +442,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
-    const bool is_block_len_align = ((pkt->in_len % AES_BLOCK_LEN_BYTE) == 0);
+    const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
     uint32_t cnt = 1;
     int ret = 0;
 
@@ -446,7 +469,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
             return -EINVAL;
         }
     }
-    if (!is_block_len_align) {
+    if (last_block_len != 0) {
         cnt++;
         *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
         ret = crypto_linkedsemi_single_block(dev,
@@ -459,7 +482,6 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
                                             CRYPTO_CIPHER_MODE_ECB,
                                             NULL);
         if (ret == 0) {
-            const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
             mem_xor_n(pkt->out_buf + pkt->out_len,
                         pkt->in_buf + pkt->out_len, c_iv, last_block_len);
             pkt->out_len += last_block_len;
@@ -526,7 +548,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
-    const bool is_block_len_align = ((pkt->in_len % AES_BLOCK_LEN_BYTE) == 0);
+    const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
     uint32_t cnt = 1;
     int ret = 0;
 
@@ -553,7 +575,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
             return -EINVAL;
         }
     }
-    if (!is_block_len_align) {
+    if (last_block_len != 0) {
         cnt++;
         *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
         ret = crypto_linkedsemi_single_block(dev,
@@ -566,7 +588,6 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
                                             CRYPTO_CIPHER_MODE_ECB,
                                             NULL);
         if (ret == 0) {
-            const uint32_t last_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
             mem_xor_n(pkt->out_buf + pkt->out_len,
                         pkt->in_buf + pkt->out_len, c_iv, last_block_len);
             pkt->out_len += last_block_len;
