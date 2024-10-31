@@ -10,5 +10,5 @@ properties:
   bt-hci-bus:
     default: "BT_HCI_BUS_VIRTUAL"
   bt-hci-quirks:
-    default: ["BT_HCI_QUIRK_NO_RESET"]
+    default: ["BT_HCI_QUIRK_NO_AUTO_DLE"]
 
