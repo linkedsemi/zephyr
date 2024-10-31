@@ -6,3 +6,36 @@
 
 #include <linkedsemi/lsqsh.dtsi>
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
+
+&pinctrl {
+    /* UART */
+    /omit-if-no-ref/uart3_tx_pc03: uart3_tx_pc03 {
+        pinmux = <LS_PINMUX_SET(PC03, FIOC_UART3_TXD)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart3_rx_pc04: uart3_rx_pc04 {
+        pinmux = <LS_PINMUX_SET(PC04, FIOC_UART3_RXD)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
+    /omit-if-no-ref/uart3_tx_pc14: uart3_tx_pc14 {
+        pinmux = <LS_PINMUX_SET(PC14, FIOC_UART3_TXD)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart3_rx_pc15: uart3_rx_pc15 {
+        pinmux = <LS_PINMUX_SET(PC15, FIOC_UART3_RXD)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
+    /omit-if-no-ref/uart4_tx_pd09: uart4_tx_pd09 {
+        pinmux = <LS_PINMUX_SET(PD09, FIOD_UART4_TXD)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart4_rx_pd10: uart4_rx_pd10 {
+        pinmux = <LS_PINMUX_SET(PD10, FIOD_UART4_RXD)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+};

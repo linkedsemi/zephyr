@@ -8,6 +8,13 @@
 #include "zephyr_secure_moc30-pinctrl.dtsi"
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
+// Secure SRAM Layout
+// 0x10000000 - 0x1007f000 size:508K sram0
+// 0x1007f000 - 0x10080000 size:4K   mmio-sram
+
+// Shared SRAM
+// 0x1013f000 - 0x10140000 size:4K   mailbox
+
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
 / {
@@ -21,10 +28,22 @@
     };
 
     aliases {
-        testi2c1 = &i2c2;
+        testi2c1 = &i2c11;
         testi2c2 = &i2c7;
-        testeeprom1 = &eeprom2;
+        testjtag2 = &jtag2;
+        testeeprom1 = &eeprom11;
         testeeprom2 = &eeprom7;
+        peci-0 = &peci0;
+        sdhc0 = &sdhci;
+        led0 = &led0;
+        sw0 = &btn0;
+    };
+
+    sram0_nocache: memory@1007f000{
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <(0x1007f000) DT_SIZE_K(4)>;
+        device_type = "memory";
+        zephyr,memory-region = "nocache";
     };
 
     soc {
@@ -33,20 +52,43 @@
         #size-cells = <1>;
         interrupt-parent = <&intc>;
 
-        mbox: mbox@1013f800 {
+        mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
-            reg = <0x1013f800 0x800>;
+            reg = <0x1013f000 0x1000>;
             interrupts = <27 3>;
+            nchannels = <2>;
             fifo-deepth = <8>;
             fifo-width = <64>;
             #mbox-cells = <1>;
         };
     };
 
-    mbox-consumer {
+    mbox_consumer0: mbox-consumer0 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 1>, <&mbox 0>;
         mbox-names = "tx", "rx";
+    };
+
+    mbox_consumer1: mbox-consumer1 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 3>, <&mbox 2>;
+        mbox-names = "tx", "rx";
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led0: led_0{
+            gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+        btn0: btn_0{
+            gpios = <&gpioc 5 BTN_GPIO_FLAGS>;
+            label = "Push button 1";
+        };
     };
 };
 
@@ -55,8 +97,72 @@
     cpu-power-states = <&idle &lp0>;
 };
 
+&sram0 {
+    reg = <0x10000000 DT_SIZE_K(508)>;
+};
+
 &sram1 {
     status = "disabled";
+};
+
+&gpioa {
+    status = "okay";
+};
+
+&gpiob {
+    status = "okay";
+};
+
+&gpioc {
+    status = "okay";
+};
+
+&gpiod {
+    status = "okay";
+};
+
+&gpioe {
+    status = "okay";
+};
+
+&gpiof {
+    status = "okay";
+};
+
+&gpiog {
+    status = "okay";
+};
+
+&gpioh {
+    status = "okay";
+};
+
+&gpioi {
+    status = "okay";
+};
+
+&gpioj {
+    status = "okay";
+};
+
+&gpiok {
+    status = "okay";
+};
+
+&gpiom {
+    status = "okay";
+};
+
+&gpion {
+    status = "okay";
+};
+
+&gpioq {
+    status = "okay";
+};
+
+&gpiot {
+    status = "okay";
 };
 
 &uart1 {
@@ -72,24 +178,50 @@
 &uart3 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
+    pinctrl-names = "default";
 };
 
 &uart4 {
     status = "disabled";
     current-speed = <115200>;
+    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+    pinctrl-names = "default";
 };
 
 &i2c2 {
+    pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
+    pinctrl-names = "default";
     status = "okay";
-    eeprom2: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
+};
+
+&i2c3 {
+    pinctrl-0 = <&i2c3_scl_pc13 &i2c3_sda_pc11>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&i2c4 {
+    pinctrl-0 = <&i2c4_scl_pd00 &i2c4_sda_pd01>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&i2c5 {
+    pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&i2c6 {
+    pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
+    pinctrl-names = "default";
+    status = "okay";
 };
 
 &i2c7 {
+    pinctrl-0 = <&i2c7_scl_pk15 &i2c7_sda_pk14>;
+    pinctrl-names = "default";
     status = "okay";
     eeprom7: eeprom@76 {
         compatible = "zephyr,i2c-target-eeprom";
@@ -99,14 +231,157 @@
     };
 };
 
-&smbus2 {
+&i2c10 {
+    pinctrl-0 = <&i2c10_scl_pj03 &i2c10_sda_pj02>;
+    pinctrl-names = "default";
     status = "okay";
 };
 
-&smbus7 {
+&i2c11 {
+    pinctrl-0 = <&i2c11_scl_pn09 &i2c11_sda_pn08>;
+    pinctrl-names = "default";
+    status = "okay";
+    eeprom11: eeprom@76 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x76>;
+        size = <256>;
+        status = "okay";
+    };
+};
+
+&i2c12 {
+    pinctrl-0 = <&i2c12_scl_pn13 &i2c12_sda_pn14>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&i2c13 {
+    pinctrl-0 = <&i2c13_scl_pq00 &i2c13_sda_pq01>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&i2c14 {
+    pinctrl-0 = <&i2c14_scl_pq03 &i2c14_sda_pq02>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+/*
+    smbus
+*/
+
+&smbus_ali_11_runbmc_i2c8_fpga_i2c2 {
+    status = "okay";
+};
+
+&smbus_ali_14_runbmc_i2c4_fpga_i2c3 {
+    status = "okay";
+};
+
+&smbus_ali_9_runbmc_i2c12_fpga_i2c4 {
+    status = "okay";
+};
+
+&smbus_ali_16_runbmc_i2c14_fpga_i2c5 {
+    status = "okay";
+};
+
+&smbus_ali_7_runbmc_i2c15_fpga_i2c6 {
+    status = "okay";
+};
+
+&smbus_ali_13_runbmc_i2c7_fpga_i2c7 {
+    status = "okay";
+};
+
+&smbus_ali_10_runbmc_i2c16_fpga_i2c10 {
+    status = "okay";
+};
+
+&smbus_ali_8_runbmc_i2c11_fpga_i2c11 {
+    status = "okay";
+};
+
+&smbus_ali_15_runbmc_i2c2_fpga_i2c12 {
+    status = "okay";
+};
+
+&smbus_ali_5_runbmc_i2c9_fpga_i2c13 {
+    status = "okay";
+};
+
+&smbus_ali_6_runbmc_i2c10_fpga_i2c14 {
     status = "okay";
 };
 
 &mac {
+    pinctrl-0 = <&rmii_txen_pt03
+                &rmii_txd0_pt04
+                &rmii_txd1_pt05
+                &rmii_rxc_pt08
+                &rmii_crsdv_pt09
+                &rmii_rxd0_pt10
+                &rmii_rxd1_pt11>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&mdio {
+    pinctrl-0 = <&rmii_mdc_pt00
+                &rmii_mdio_pt01>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&peci0 {
+    pinctrl-0 = <&peci_pk00>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&sdhci {
+    pinctrl-0 = <&sdhc_d0_ph04
+                &sdhc_d1_ph05
+                &sdhc_d2_ph06
+                &sdhc_d3_ph07
+                &sdhc_d4_ph08
+                &sdhc_d5_ph09
+                &sdhc_d6_ph010
+                &sdhc_d7_ph011
+                &sdhc_clk_ph012
+                &sdhc_cmd_ph013>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    mmc_disk0: disk {
+        compatible = "zephyr,mmc-disk";
+        bus-width = <1>;
+        status = "okay";
+    };
+};
+
+&crypto {
+    status = "okay";
+};
+
+&jtag1 {
+    pinctrl-0 = <&jtag1_tck_pd04 &jtag1_tms_pd08 &jtag1_tdi_pd09 &jtag1_tdo_pd10>;
+    pinctrl-1 = <&jtag1_gpio_pd04 &jtag1_gpio_pd08 &jtag1_gpio_pd09>;
+    pinctrl-names = "default", "priv_start";
+    status = "okay";
+};
+
+&jtag2 {
+    pinctrl-0 = <&jtag2_tck_pe01 &jtag2_tms_pe07 &jtag2_tdi_pe00 &jtag2_tdo_pe08>;
+    pinctrl-1 = <&jtag2_gpio_pe01 &jtag2_gpio_pe07 &jtag2_gpio_pe00>;
+    pinctrl-names = "default", "priv_start";
+    status = "okay";
+};
+
+&jtag3 {
+    pinctrl-0 = <&jtag3_tck_pf07 &jtag3_tms_pf08 &jtag3_tdi_pf06 &jtag3_tdo_pf09>;
+    pinctrl-1 = <&jtag3_gpio_pf07 &jtag3_gpio_pf08 &jtag3_gpio_pf06>;
+    pinctrl-names = "default", "priv_start";
     status = "okay";
 };

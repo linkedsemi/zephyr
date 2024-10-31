@@ -8,6 +8,11 @@
 #include "zephyr_bmc_moc30-pinctrl.dtsi"
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
+// Non-secure SRAM Layout
+// 0x10080000 - 0x1013e000 size:760K sram1
+// 0x1013e000 - 0x1013f000 size:4K   mmio-sram
+// 0x1013f000 - 0x10140000 size:4K   mailbox
+
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
 / {
@@ -20,25 +25,39 @@
         zephyr,shell-uart = &uart4;
     };
 
+    sram1_nocache: memory@100be000{
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x100be000 DT_SIZE_K(4)>;
+        device_type = "memory";
+        zephyr,memory-region = "nocache";
+    };
+
     soc {
         compatible = "simpe-bus";
         #address-cells = <1>;
         #size-cells = <1>;
         interrupt-parent = <&intc>;
 
-        mbox: mbox@1013f800 {
+        mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
-            reg = <0x1013f800 0x800>;
+            reg = <0x1013f000 0x1000>;
             interrupts = <26 3>;
+            nchannels = <2>;
             fifo-deepth = <8>;
             fifo-width = <64>;
             #mbox-cells = <1>;
         };
     };
 
-    mbox-consumer {
+    mbox_consumer0: mbox-consumer0 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 0>, <&mbox 1>;
+        mbox-names = "tx", "rx";
+    };
+
+    mbox_consumer1: mbox-consumer1 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 2>, <&mbox 3>;
         mbox-names = "tx", "rx";
     };
 };
@@ -50,6 +69,10 @@
 
 &sram0 {
     status = "disabled";
+};
+
+&sram1 {
+    reg = <0x10080000 DT_SIZE_K(760)>;
 };
 
 &uart1 {
@@ -70,4 +93,6 @@
 &uart4 {
     status = "okay";
     current-speed = <115200>;
+    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+    pinctrl-names = "default";
 };
