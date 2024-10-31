@@ -57,13 +57,13 @@
         #size-cells = <1>;
 
         boot_partition: partition@0 {
-            label = "info-sbl-llsw";
-            reg = <0x00000000 0x00026000>;
+            label = "info-sbl";
+            reg = <0x00000000 0x00002000>;
         };
     
-        app_partition: partition@26000 {
+        app_partition: partition@2000 {
             label = "app";
-            reg = <0x00026000 0x00056000>;
+            reg = <0x00002000 0x0007A000>;
         };
 
         /*
@@ -77,7 +77,7 @@
         */
         storage_partition: partition@7C000 {
             label = "storage";
-            reg = <0x0007c000 0x00004000>;
+            reg = <0x0007C000 0x00004000>;
         };
     };
 };

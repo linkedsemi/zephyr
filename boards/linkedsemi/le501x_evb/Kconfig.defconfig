@@ -5,23 +5,19 @@ config BOARD
 	default "le501x_evb"
 
 config FLASH_LOAD_OFFSET
-	default 0x26000
+	default 0x2000
 
 config HEAP_MEM_POOL_SIZE
-	default 4096
-
-config BT_CTLR
-	default n
-
-config BT
-    default y
+	default 6144
 
 config BT_COMPANY_ID
-	default 0x093A
+	default 0x093A if BT
 
 if SPI_DW
+
 config SPI_DW_ACCESS_WORD_ONLY
 	default y
+    
 endif # SPI_DW
 
 endif
