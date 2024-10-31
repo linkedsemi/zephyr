@@ -2,4 +2,4 @@ description: linkedsemi ls flash controller
 
 compatible: "linkedsemi,ls-flash-controller"
 
-include: flash-controller.yaml
+include: [flash-controller.yaml,pinctrl-device.yaml]

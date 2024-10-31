@@ -10,6 +10,9 @@
 #include <string.h>
 
 #include <ls_hal_flash.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
 
 #define DT_DRV_COMPAT        linkedsemi_ls_flash_controller
 #define SOC_NV_FLASH_NODE    DT_INST(0, soc_nv_flash)
@@ -23,6 +26,12 @@
 	struct k_sem mutex;
 };
 
+struct flash_ls_config {
+#if defined(CONFIG_PINCTRL)
+    const struct pinctrl_dev_config *pcfg;
+#endif
+};
+
 static const struct flash_parameters flash_ls_parameters = {
 	.write_block_size = FLASH_WRITE_SIZE,
 	.erase_value = 0xff,
@@ -31,6 +40,17 @@ static const struct flash_parameters flash_ls_parameters = {
 static int flash_ls_init(const struct device *dev)
 {
 	struct flash_priv *priv = dev->data;
+
+#if CONFIG_SOC_LSQSH == 1
+	#if defined(CONFIG_PINCTRL)
+		const struct flash_ls_config *const config = dev->config;
+		int ret;
+		ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+		if(ret != 0) {
+			return ret;
+		}
+		#endif
+#endif
 
 	k_sem_init(&priv->mutex, 1, 1);
 
@@ -171,8 +191,13 @@ static const struct flash_driver_api flash_ls_api = {
 #endif
 };
 
+IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(0)));
+static const struct flash_ls_config flash_ls_cfg = {
+	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),))
+};
+
 static struct flash_priv flash_data;
 
-DEVICE_DT_INST_DEFINE(0, flash_ls_init, NULL, &flash_data, NULL,
+DEVICE_DT_INST_DEFINE(0, flash_ls_init, NULL, &flash_data, &flash_ls_cfg,
 		      POST_KERNEL, CONFIG_FLASH_INIT_PRIORITY,
 		      &flash_ls_api);

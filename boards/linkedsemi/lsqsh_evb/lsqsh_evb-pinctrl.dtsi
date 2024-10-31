@@ -443,4 +443,35 @@
         pinmux = <LS_PINMUX_SET(PF06, FUNC_GPIO)>;
         output-enable;
     };
+
+    /* QSPI */
+    /omit-if-no-ref/qspi1_sck_pq10: qspi1_sck_pq10 {
+        pinmux = <LS_PINMUX_SET(PQ10, LSFUNC(PINMUX_FUNC1))>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/qspi1_cs_pq11: qspi1_cs_pq11 {
+        pinmux = <LS_PINMUX_SET(PQ11, LSFUNC(PINMUX_FUNC1))>;
+        output-enable;
+    };
+
+    /omit-if-no-ref/qspi1_dq0_pq12: qspi1_dq0_pq12 {
+        pinmux = <LS_PINMUX_SET(PQ12, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
+
+    /omit-if-no-ref/qspi1_dq1_pq13: qspi1_dq1_pq13 {
+        pinmux = <LS_PINMUX_SET(PQ13, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
+
+    /omit-if-no-ref/qspi1_dq2_pq14: qspi1_dq2_pq14 {
+        pinmux = <LS_PINMUX_SET(PQ14, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
+
+    /omit-if-no-ref/qspi1_dq3_pq15: qspi1_dq3_pq15 {
+        pinmux = <LS_PINMUX_SET(PQ15, LSFUNC(PINMUX_FUNC1))>;
+        input-enable;
+    };
 };

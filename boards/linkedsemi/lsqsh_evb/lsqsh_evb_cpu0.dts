@@ -15,6 +15,8 @@
     compatible = "linkedsemi,lsqsh_evb";
 
     chosen {
+        zephyr,flash = &flash0;
+        zephyr,flash-controller = &flash_controller;
         zephyr,sram = &sram0;
         zephyr,console = &uart3;
         zephyr,shell-uart = &uart3;
@@ -81,6 +83,42 @@
         btn0: btn_0{
             gpios = <&gpioc 5 BTN_GPIO_FLAGS>;
             label = "Push button 1";
+        };
+    };
+};
+
+&flash0 {
+     /*
+    * Flash base address is 0x8000000,
+    * the following parts are all offset addresses.
+    */
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        boot_partition: partition@0 {
+            label = "info-sbl";
+            reg = <0x00000000 0x00000800>;
+        };
+
+        app_partition: partition@800 {
+            label = "app";
+            reg = <0x00000800 0x0007c800>;
+        };
+
+        /*
+         * The flash starting at 0x807d000 and ending at
+         * 0x807FFFF is reserved for use by the application.
+         */
+
+        /*
+         * Storage partition will be used by FCB/LittleFS/NVS
+         * if enabled.
+         */
+         storage_partition: partition@7d000 {
+            label = "storage";
+            reg = <0x0007d000 0x00003000>;
         };
     };
 };
@@ -380,5 +418,11 @@
 };
 
 tst_dma0: &dma0 {
+    status = "okay";
+};
+
+&flash_controller {
+    pinctrl-0 = <&qspi1_sck_pq10 &qspi1_cs_pq11 &qspi1_dq0_pq12 &qspi1_dq1_pq13 &qspi1_dq2_pq14 &qspi1_dq3_pq15>;
+    pinctrl-names = "default";
     status = "okay";
 };
