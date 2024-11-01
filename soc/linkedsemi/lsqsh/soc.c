@@ -44,13 +44,7 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
-void SWINT_Handler_Asm(void) {
-    __asm__ (
-        "lw a0, 0(sp)\n"
-        "j Swint_Handler_C"
-    );
-}
-
+extern void SWINT_Handler_Asm(void);
 extern void SystemInit();
 static int lsqsh_init(void)
 {
