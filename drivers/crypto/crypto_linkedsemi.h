@@ -16,6 +16,12 @@
 #define SHA_BLOCK_LEN_BYTE                  64
 #define SHA_PADDING_MOD_LEN_BYTE            56
 
+/* max additional authenticated size in bytes: 2^16 - 2^8 = 65280 */
+#define CCM_AAD_MAX_BYTES 0xff00
+
+/* max message size in bytes: 2^(8L) = 2^16 = 65536 */
+#define CCM_PAYLOAD_MAX_BYTES 0x10000
+
 struct crypto_linkedsemi_data {
     void *user_data;
     const struct device *dev;
@@ -62,6 +68,8 @@ int crypto_linkedsemi_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt
 int crypto_linkedsemi_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv);
 int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *iv);
 int crypto_linkedsemi_ctr(struct cipher_ctx *ctx, struct cipher_pkt *pkt, uint8_t *ctr);
+int crypto_linkedsemi_ccm_encrypt_auth(struct cipher_ctx *ctx, struct cipher_aead_pkt *apkt, uint8_t *nonce);
+int crypto_linkedsemi_ccm_decrypt_auth(struct cipher_ctx *ctx, struct cipher_aead_pkt *apkt, uint8_t *nonce);
 int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx, struct cipher_aead_pkt *apkt, uint8_t *nonce);
 int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx, struct cipher_aead_pkt *apkt, uint8_t *nonce);
 

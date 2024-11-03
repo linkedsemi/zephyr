@@ -318,6 +318,300 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
     return ret;
 }
 
+static int ccm_cbc_mac(struct cipher_ctx *ctx,
+                        uint8_t *T,
+                        const uint8_t *data,
+                        uint32_t dlen,
+                        uint32_t flag)
+{
+    const struct device *dev = ctx->device;
+    uint32_t i;
+    int ret = 0;
+
+    if (flag > 0) {
+        T[0] ^= (uint8_t)(dlen >> 8);
+        T[1] ^= (uint8_t)(dlen);
+        dlen += 2; i = 2;
+    } else {
+        i = 0;
+    }
+
+    while (i < dlen) {
+        T[i++ % (AES_BLOCK_LEN_BYTE)] ^= *data++;
+        if (((i % (AES_BLOCK_LEN_BYTE)) == 0) || dlen == i) {
+            ret = crypto_linkedsemi_single_block(dev,
+                                    ctx->key.bit_stream,
+                                    ctx->keylen,
+                                    T,
+                                    T,
+                                    AES_BLOCK_LEN_BYTE,
+                                    true,
+                                    CRYPTO_CIPHER_MODE_ECB,
+                                    NULL);
+            if (ret != 0) {
+                LOG_ERR("%s: crypto error", __func__);
+                ret = -EINVAL;
+            }
+        }
+    }
+
+    return ret;
+}
+
+/**
+ * Variation of CTR mode used in CCM.
+ * The CTR mode used by CCM is slightly different than the conventional CTR
+ * mode (the counter is increased before encryption, instead of after
+ * encryption). Besides, it is assumed that the counter is stored in the last
+ * 2 bytes of the nonce.
+ */
+static int ccm_ctr_mode(struct cipher_ctx *ctx,
+                        uint8_t *out,
+                        uint32_t outlen,
+                        const uint8_t *in,
+                        uint32_t inlen,
+                        uint8_t *ctr)
+{
+    const struct device *dev = ctx->device;
+    uint8_t buffer[AES_BLOCK_LEN_BYTE];
+    uint8_t nonce[AES_BLOCK_LEN_BYTE];
+    uint16_t block_num;
+    uint32_t i;
+    int ret = 0;
+
+    /* input sanity check: */
+    if (out == NULL || in == NULL || ctr == NULL
+        || inlen == 0 || outlen == 0 || outlen != inlen) {
+        return -EINVAL;
+    }
+
+    /* copy the counter to the nonce */
+    memcpy(nonce, ctr, sizeof(nonce));
+
+    /* select the last 2 bytes of the nonce to be incremented */
+    block_num = (uint16_t)((nonce[14] << 8) | (nonce[15]));
+    for (i = 0; i < inlen; ++i) {
+        if ((i % (AES_BLOCK_LEN_BYTE)) == 0) {
+            block_num++;
+            nonce[14] = (uint8_t)(block_num >> 8);
+            nonce[15] = (uint8_t)(block_num);
+            ret = crypto_linkedsemi_single_block(dev,
+                                    ctx->key.bit_stream,
+                                    ctx->keylen,
+                                    nonce,
+                                    buffer,
+                                    AES_BLOCK_LEN_BYTE,
+                                    true,
+                                    CRYPTO_CIPHER_MODE_ECB,
+                                    NULL);
+            if (ret != 0) {
+                LOG_ERR("%s: crypto error", __func__);
+                return -EINVAL;
+            }
+        }
+        /* update the output */
+        *out++ = buffer[i % (AES_BLOCK_LEN_BYTE)] ^ *in++;
+    }
+
+    /* update the counter */
+    ctr[14] = nonce[14];
+    ctr[15] = nonce[15];
+
+    return 0;
+}
+
+int crypto_linkedsemi_ccm_encrypt_auth(struct cipher_ctx *ctx,
+                                        struct cipher_aead_pkt *apkt,
+                                        uint8_t *nonce)
+{
+    const struct device *dev = ctx->device;
+    struct cipher_pkt *pkt = apkt->pkt;
+    uint8_t b[AES_BLOCK_LEN_BYTE];
+    uint8_t tag[AES_BLOCK_LEN_BYTE];
+    const uint8_t nonce_len = ctx->mode_params.ccm_info.nonce_len;
+    const uint8_t tag_len = ctx->mode_params.ccm_info.tag_len;
+    uint8_t *out = pkt->out_buf;
+    uint32_t i;
+    int ret = 0;
+
+    if ((pkt->out_buf == NULL)
+        || ((pkt->in_len > 0) && (pkt->in_buf == NULL))
+        || ((apkt->ad_len > 0) && (apkt->ad == NULL))
+        || (apkt->ad_len >= CCM_AAD_MAX_BYTES)
+        || (pkt->in_len >= CCM_PAYLOAD_MAX_BYTES)/* payload size unsupported */
+        /* || (olen < (pkt->in_len + tag_len))*/) { /* invalid output buffer size */
+        return -EINVAL;
+    }
+
+    if (nonce_len != 13) {
+        return -EINVAL; /* The allowed nonce size is: 13. See documentation.*/
+    } else if ((tag_len < 4) || (tag_len > 16) || (tag_len & 1)) {
+        return -EINVAL; /* The allowed mac sizes are: 4, 6, 8, 10, 12, 14, 16.*/
+    }
+    /* GENERATING THE AUTHENTICATION TAG: */
+
+    /* formatting the sequence b for authentication: */
+    b[0] = ((apkt->ad_len > 0) ? 0x40 : 0) | (((tag_len - 2) / 2 << 3)) | (1);
+    for (i = 1; i <= 13; ++i) {
+        b[i] = nonce[i - 1];
+    }
+    b[14] = (uint8_t)(pkt->in_len >> 8);
+    b[15] = (uint8_t)(pkt->in_len);
+
+    /* computing the authentication tag using cbc-mac: */
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        b,
+                                        tag,
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+    if (apkt->ad_len > 0) {
+        ccm_cbc_mac(ctx, tag, apkt->ad, apkt->ad_len, 1);
+    }
+    if (pkt->in_len > 0) {
+        ccm_cbc_mac(ctx, tag, pkt->in_buf, pkt->in_len, 0);
+    }
+    /* ENCRYPTION: */
+
+    /* formatting the sequence b for encryption: */
+    b[0] = 1; /* q - 1 = 2 - 1 = 1 */
+    b[14] = b[15] = 0;
+
+    /* encrypting pkt->in_buf using ctr mode: */
+    ccm_ctr_mode(ctx, pkt->out_buf, pkt->in_len, pkt->in_buf, pkt->in_len, b);
+
+    b[14] = b[15] = 0; /* restoring initial counter for ctr_mode (0):*/
+
+    /* encrypting b and adding the tag to the output: */
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        b,
+                                        b,
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+    out += pkt->in_len;
+    for (i = 0; i < tag_len; ++i) {
+        *out++ = tag[i] ^ b[i];
+    }
+
+    pkt->out_len = pkt->in_len + tag_len;
+
+    return 0;
+}
+
+int crypto_linkedsemi_ccm_decrypt_auth(struct cipher_ctx *ctx,
+                 struct cipher_aead_pkt *apkt,
+                 uint8_t *nonce)
+{
+    const struct device *dev = ctx->device;
+    struct cipher_pkt *pkt = apkt->pkt;
+    uint8_t b[AES_BLOCK_LEN_BYTE];
+    uint8_t tag[AES_BLOCK_LEN_BYTE];
+    const uint8_t tag_len = ctx->mode_params.ccm_info.tag_len;
+    uint32_t payload_len = pkt->in_len + tag_len;
+    uint8_t *out = pkt->out_buf;
+    uint32_t i;
+    int ret = 0;
+
+    if ((out == NULL) || ((payload_len > 0) && (pkt->in_buf == NULL))
+       || ((apkt->ad_len > 0) && (apkt->ad == NULL))
+       || (apkt->ad_len >= CCM_AAD_MAX_BYTES) /* associated data size unsupported */
+       || (payload_len >= CCM_PAYLOAD_MAX_BYTES) /* pkt->in_buf size unsupported */
+        /*||  (olen < pkt->in_len - tag_len)*/) { /* invalid output buffer size */
+        return -1;
+    }
+
+    /* DECRYPTION: */
+
+    /* formatting the sequence b for decryption: */
+    b[0] = 1; /* q - 1 = 2 - 1 = 1 */
+    for (i = 1; i < 14; ++i) {
+        b[i] = nonce[i - 1];
+    }
+    b[14] = b[15] = 0; /* initial counter value is 0 */
+
+    /* decrypting pkt->in_buf using ctr mode: */
+    ccm_ctr_mode(ctx, out, payload_len - tag_len, pkt->in_buf, payload_len - tag_len, b);
+
+    b[14] = b[15] = 0; /* restoring initial counter value (0) */
+
+    /* encrypting b and restoring the tag from input: */
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        b,
+                                        b,
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+    for (i = 0; i < tag_len; ++i) {
+        tag[i] = *(pkt->in_buf + payload_len - tag_len + i) ^ b[i];
+    }
+
+    /* VERIFYING THE AUTHENTICATION TAG: */
+
+    /* formatting the sequence b for authentication: */
+    b[0] = ((apkt->ad_len > 0) ? 0x40 : 0) | (((tag_len - 2) / 2 << 3)) | (1);
+    for (i = 1; i < 14; ++i) {
+        b[i] = nonce[i - 1];
+    }
+    b[14] = (uint8_t)((payload_len - tag_len) >> 8);
+    b[15] = (uint8_t)(payload_len - tag_len);
+
+    /* computing the authentication tag using cbc-mac: */
+    ret = crypto_linkedsemi_single_block(dev,
+                                        ctx->key.bit_stream,
+                                        ctx->keylen,
+                                        b,
+                                        b,
+                                        AES_BLOCK_LEN_BYTE,
+                                        true,
+                                        CRYPTO_CIPHER_MODE_ECB,
+                                        NULL);
+    if (ret != 0) {
+        LOG_ERR("%s: crypto error", __func__);
+        return -EINVAL;
+    }
+    if (apkt->ad_len > 0) {
+        ccm_cbc_mac(ctx, b, apkt->ad, apkt->ad_len, 1);
+    }
+    if (payload_len > 0) {
+        ccm_cbc_mac(ctx, b, out, payload_len - tag_len, 0);
+    }
+
+    /* comparing the received tag and the computed one: */
+    if (memcmp(b, tag, tag_len) == 0) {
+        ret = 0;
+    } else {
+        /* erase the decrypted buffer in case of mac validation failure: */
+        memset(out, 0, payload_len - tag_len);
+        ret = -1;
+    }
+
+    pkt->out_len = pkt->in_len;
+
+    return ret;
+}
+
 /* wolfssl */
 static void gmult(uint64_t* x, uint64_t* y)
 {
@@ -349,7 +643,7 @@ static void gmult(uint64_t* x, uint64_t* y)
 }
 
 /* wolfssl */
-void ghash(uint8_t gcm_h[16], const uint8_t* a, uint32_t a_size, const uint8_t* c,
+static void ghash(uint8_t gcm_h[16], const uint8_t* a, uint32_t a_size, const uint8_t* c,
     uint32_t c_size, uint8_t* s, uint32_t s_size)
 {
     uint64_t x[2] = {0,0};
