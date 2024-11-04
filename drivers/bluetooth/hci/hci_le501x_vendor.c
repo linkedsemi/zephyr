@@ -13,8 +13,8 @@ LOG_MODULE_REGISTER(ble_hci_vs);
 #define BT_HCI_VS_HW_PLAT 0 
 #define BT_HCI_VS_HW_VAR  0
 
-/* Place random static address in 0x18025ff0(zephyr application starts at 0x18026000) */
-#define BLE_DEVICE_ADDR_OFFSET     0x25ff0
+/* Place random static address in 0x1800!ff0(zephyr application starts at 0x18026000) */
+#define BLE_DEVICE_ADDR_OFFSET     0x1FF0
 #define BLE_ADDR_LEN    6
 
 struct hci_data {
