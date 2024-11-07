@@ -236,6 +236,32 @@
             status = "disabled";
         };
 
+        espi0: espi@40006000 {
+            compatible = "linkedsemi,ls-espi";
+            reg = <0x40006000 0x1000>;
+            status = "disabled";
+            interrupts = <36 3>;
+        };
+
+        espi1: espi@40007000 {
+            compatible = "linkedsemi,ls-espi";
+            reg = <0x40007000 0x1000>;
+            interrupts = <37 3>;
+            status = "disabled";
+        };
+
+        lpc: lpc@40008000 {
+            compatible = "linkedsemi,ls-lpc";
+            reg = <0x40008000 0x1000>;
+            interrupts = <38 3>;
+            status = "disabled";
+        };
+
+        ipmi_kcs: ipmi_kcs {
+            compatible = "linkedsemi,ls-ipmi-kcs";
+            status = "disabled";
+        };
+
         i2c1: i2c@40083000 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x40083000 0x400>;

@@ -213,3 +213,26 @@
 tst_dma0: &dma0 {
     status = "okay";
 };
+
+&lpc {
+    pinctrl-0 = <&lpc_serirq_pi09
+                &lpc_frm_pi10
+                &lpc_clk_pi11
+                &lpc_dat3_pi12
+                &lpc_dat2_pi13
+                &lpc_dat1_pi14
+                &lpc_dat0_pi15>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    kcs_ca2: kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "okay";
+    };
+};
+
+&ipmi_kcs {
+    kcs_chan = <&kcs_ca2>;
+    status = "okay";
+};
