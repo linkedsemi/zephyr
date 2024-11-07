@@ -23,8 +23,8 @@ struct kcs_ls_data {
     void *param;
     struct k_spinlock lock;
     uint8_t status;
-    uint8_t data_out;
-    uint8_t data_in;
+    uint16_t data_out;
+    uint16_t data_in;
 };
 
 static int kcs_ls_init(const struct device *dev)

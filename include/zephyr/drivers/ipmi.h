@@ -4,6 +4,7 @@
 #include <zephyr/device.h>
 #include <zephyr/sys/util.h>
 #include <stddef.h>
+#include <errno.h>
 
 #ifdef __cplusplus
 extern "C" {

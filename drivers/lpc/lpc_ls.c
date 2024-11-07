@@ -19,6 +19,8 @@ static void lpc_reg_init(const struct device *dev)
 {
 	const struct espi_lpc_ls_config *const cfg = dev->config;
     reg_lpc_t *reg = cfg->reg;
+    reg->LPC_MASTER_CTRL0 = 0x4000;
+    reg->LPC_SERIRQ_CTRL = 0x100001;
     reg->INTR_CLR = LPC_INTR_STT_CMD_VLD_MASK|LPC_INTR_STT_SYNC_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_MASK|LPC_INTR_STT_SERIRQ_STOP_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_IVLD_MASK;
     reg->INTR_MSK = LPC_INTR_STT_CMD_VLD_MASK|LPC_INTR_STT_SYNC_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_MASK|LPC_INTR_STT_SERIRQ_STOP_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_IVLD_MASK;
 }
@@ -115,6 +117,7 @@ static void ls_lpc_isr(void *arg)
             memwr_short(dev_data,1,addr,&data);
         break;
         default:
+            __ASSERT(0, "start_cycle_dir: %#x\n", start_cycle_dir);
             while(1);
         break;
         }
@@ -169,6 +172,9 @@ static void lpc_send_edge_irq(const struct device *dev,uint8_t idx)
 
 static void lpc_send_level_irq(const struct device *dev,uint8_t idx,uint8_t active)
 {
+	struct espi_lpc_ls_data *dev_data = dev->data;
+	const struct espi_lpc_ls_config *const cfg = dev->config;
+    reg_lpc_t *reg = cfg->reg;
     k_spinlock_key_t key = k_spin_lock(&dev_data->u.lpc.serirq_src_lock);
     uint32_t serirq = reg->LPC_CTRL2;
     if(active)
@@ -190,9 +196,9 @@ static void lpc_send_level_irq(const struct device *dev,uint8_t idx,uint8_t acti
                 ls_lpc_isr,DEVICE_DT_INST_GET(idx), 0);\
         irq_enable(DT_INST_IRQN(idx));\
     }\
-    static struct lpc_ls_data lpc_ls_data_##idx;\
-    static const struct lpc_ls_config lpc_ls_cfg_##idx = {\
-        .reg = (reg_espi_t *)DT_INST_REG_ADDR(idx),\
+    static struct espi_lpc_ls_data lpc_ls_data_##idx;\
+    static const struct espi_lpc_ls_config lpc_ls_cfg_##idx = {\
+        .reg = (void *)DT_INST_REG_ADDR(idx),\
         .irq_config_func = lpc_ls_irq_config_func_##idx,\
         .raise_edge_irq = lpc_send_edge_irq,\
         .set_level_irq = lpc_send_level_irq,\

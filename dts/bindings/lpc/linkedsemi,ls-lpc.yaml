@@ -3,7 +3,7 @@ description: Linkedsemi LPC controller
 
 compatible: "linkedsemi,ls-lpc"
 
-include: base.yaml
+include: [base.yaml, pinctrl-device.yaml]
 
 properties:
   reg:

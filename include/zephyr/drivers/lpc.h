@@ -10,7 +10,7 @@ extern "C" {
 #endif
 
 enum lpc_peripheral_opcode {
-
+    TODO,
 };
 
 typedef int (*lpc_read_request_t)(const struct device *dev,enum lpc_peripheral_opcode op,uint32_t *data);
