@@ -21,11 +21,26 @@ static void write_read_compare(const struct device *const i2c,uint16_t dev_addr,
 	i2c_burst_read(i2c,dev_addr,0,rdata,len);
 	if(memcmp(wdata,rdata,len))
 	{
+		printf("len: %d\n", len);
+		printf("wdata: ");
+		for(uint32_t i = 0; i < len; i++)
+		{
+			printf("%x ", wdata[i]);
+		}
+		printf("\n\n");
+		printf("len: %d\n", len);
+		printf("rdata: ");
+		for(uint32_t i = 0; i < len; i++)
+		{
+			printf("%x ", rdata[i]);
+		}
+		printf("\n\n");
 		__ASSERT(0,"wdata rdata not match\n");
 	}
 #if 0
 	else
 	{
+		printf("len: %d\n", len);
 		printf("data: ");
 		for(uint32_t i = 0; i < len; i++)
 		{
