@@ -6,9 +6,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
-#if defined(CONFIG_PINCTRL)
-#include <zephyr/drivers/pinctrl.h>
-#endif
 #include <zephyr/drivers/smbus.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
@@ -19,9 +16,6 @@
 LOG_MODULE_REGISTER(linkedsemi_smbus, CONFIG_SMBUS_LOG_LEVEL);
 
 struct smbus_linkedsemi_config {
-#if defined(CONFIG_PINCTRL)
-    const struct pinctrl_dev_config *pcfg;
-#endif
     const struct device *i2c_dev;
 };
 
@@ -71,22 +65,14 @@ static int smbus_linkedsemi_init(const struct device *dev)
 {
     const struct smbus_linkedsemi_config *config = dev->config;
     struct smbus_linkedsemi_data *data = dev->data;
-#if defined(CONFIG_PINCTRL)
-    int result;
-#endif
+
     data->dev = dev;
 
     if (!device_is_ready(config->i2c_dev)) {
         LOG_ERR("%s: I2C device is not ready", dev->name);
         return -ENODEV;
     }
-#if defined(CONFIG_PINCTRL)
-    result = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
-    if (result < 0) {
-        LOG_ERR("%s: pinctrl setup failed (%d)", dev->name, result);
-        return result;
-    }
-#endif
+
 #ifdef CONFIG_SMBUS_LINKEDSEMI_SMBALERT
     // k_work_init(&data->smbalert_work, smbus_linkedsemi_smbalert_work);
 
@@ -278,30 +264,16 @@ static const struct smbus_driver_api smbus_linkedsemi_api = {
 
 #define DT_DRV_COMPAT linkedsemi_smbus
 
-#if defined(CONFIG_PINCTRL)
-#define SMBUS_LINKEDSEMI_DEVICE_INIT(n)                                                         \
-    PINCTRL_DT_INST_DEFINE(n);                                                                  \
-    static struct smbus_linkedsemi_config smbus_linkedsemi_config_##n = {                       \
-        .i2c_dev = DEVICE_DT_GET(DT_INST_PROP(n, i2c)),                                         \
-        .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),                                              \
-    };                                                                                          \
-                                                                                                \
-    static struct smbus_linkedsemi_data smbus_linkedsemi_data_##n;                              \
-                                                                                                \
-    SMBUS_DEVICE_DT_INST_DEFINE(n, smbus_linkedsemi_init, NULL, &smbus_linkedsemi_data_##n,     \
-                    &smbus_linkedsemi_config_##n, POST_KERNEL,                                  \
+
+#define SMBUS_LINKEDSEMI_DEVICE_INIT(n)                                                     \
+    static struct smbus_linkedsemi_config smbus_linkedsemi_config_##n = {                   \
+        .i2c_dev = DEVICE_DT_GET(DT_INST_PROP(n, i2c)),                                     \
+    };                                                                                      \
+                                                                                            \
+    static struct smbus_linkedsemi_data smbus_linkedsemi_data_##n;                          \
+                                                                                            \
+    SMBUS_DEVICE_DT_INST_DEFINE(n, smbus_linkedsemi_init, NULL, &smbus_linkedsemi_data_##n, \
+                    &smbus_linkedsemi_config_##n, POST_KERNEL,                              \
                     CONFIG_SMBUS_INIT_PRIORITY, &smbus_linkedsemi_api);
-#else
-    #define SMBUS_LINKEDSEMI_DEVICE_INIT(n)                                                     \
-        static struct smbus_linkedsemi_config smbus_linkedsemi_config_##n = {                   \
-            .i2c_dev = DEVICE_DT_GET(DT_INST_PROP(n, i2c)),                                     \
-        };                                                                                      \
-                                                                                                \
-        static struct smbus_linkedsemi_data smbus_linkedsemi_data_##n;                          \
-                                                                                                \
-        SMBUS_DEVICE_DT_INST_DEFINE(n, smbus_linkedsemi_init, NULL, &smbus_linkedsemi_data_##n, \
-                        &smbus_linkedsemi_config_##n, POST_KERNEL,                              \
-                        CONFIG_SMBUS_INIT_PRIORITY, &smbus_linkedsemi_api);
-#endif
 
 DT_INST_FOREACH_STATUS_OKAY(SMBUS_LINKEDSEMI_DEVICE_INIT)
