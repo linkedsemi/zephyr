@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
+CONFIG_ASSERT=y
 CONFIG_MINIMAL_LIBC=y
 CONFIG_MINIMAL_LIBC_RAND=y
 CONFIG_MAIN_STACK_SIZE=20480
