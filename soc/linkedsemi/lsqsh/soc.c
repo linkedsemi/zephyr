@@ -204,6 +204,12 @@ static int lsqsh_init(void)
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
+
+#if defined(CONFIG_BOARD_LSQSH_EVB_LSQSH_CPU0)
+    SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
+    SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+#endif
+
     return 0;
 }
 
