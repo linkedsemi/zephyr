@@ -17,6 +17,7 @@
     chosen {
         zephyr,sram = &sram1;
         zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
     };
 
     sram1_nocache: memory@1013e000 {
@@ -67,4 +68,23 @@
 
 &sram1 {
     reg = <0x10080000 DT_SIZE_K(760)>;
+};
+
+&mac {
+    pinctrl-0 = <&rmii_txen_pt03
+                &rmii_txd0_pt04
+                &rmii_txd1_pt05
+                &rmii_rxc_pt08
+                &rmii_crsdv_pt09
+                &rmii_rxd0_pt10
+                &rmii_rxd1_pt11>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&mdio {
+    pinctrl-0 = <&rmii_mdc_pt00
+                &rmii_mdio_pt01>;
+    pinctrl-names = "default";
+    status = "okay";
 };
