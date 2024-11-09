@@ -6,7 +6,11 @@
 
 #include <zephyr/drivers/lpc.h>
 #include <zephyr/logging/log.h>
+#if defined(CONFIG_SOC_LS1010)
 #include "reg_lpc_type.h"
+#elif defined(CONFIG_SOC_LSQSH)
+#include "reg_lpcv2_type.h"
+#endif
 #include "espi_lpc_common.h"
 
 LOG_MODULE_REGISTER(lpc_ls, LOG_LEVEL_DBG);
@@ -19,8 +23,10 @@ static void lpc_reg_init(const struct device *dev)
 {
 	const struct espi_lpc_ls_config *const cfg = dev->config;
     reg_lpc_t *reg = cfg->reg;
+#if defined(CONFIG_SOC_LSQSH)
     reg->LPC_MASTER_CTRL0 = 0x4000;
     reg->LPC_SERIRQ_CTRL = 0x100001;
+#endif
     reg->INTR_CLR = LPC_INTR_STT_CMD_VLD_MASK|LPC_INTR_STT_SYNC_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_MASK|LPC_INTR_STT_SERIRQ_STOP_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_IVLD_MASK;
     reg->INTR_MSK = LPC_INTR_STT_CMD_VLD_MASK|LPC_INTR_STT_SYNC_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_MASK|LPC_INTR_STT_SERIRQ_STOP_TO_MASK|LPC_INTR_STT_SERIRQ_STOP_IVLD_MASK;
 }
