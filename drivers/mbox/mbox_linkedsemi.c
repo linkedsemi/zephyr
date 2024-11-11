@@ -157,8 +157,8 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
 {
     uint32_t intr_num = channel % 2;
 
-    if (enable) {
-        if (intr_num == MBOX_RX_CHANNEL_ID) {
+    if (intr_num == MBOX_RX_CHANNEL_ID) {
+        if (enable) {
             if (intr_num == MBOX_CH0) {
                 cpu_intr0_unmask();
             } else if (intr_num == MBOX_CH1) {
@@ -167,17 +167,17 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
             }
-        }
-    } else {
-        if (intr_num == MBOX_CH0) {
-            cpu_intr0_clr();
-            cpu_intr0_mask();
-        } else if (intr_num == MBOX_CH1) {
-            cpu_intr1_clr();
-            cpu_intr1_mask();
         } else {
-            __ASSERT(0, "channel invalid!\n");
-            return -1;
+            if (intr_num == MBOX_CH0) {
+                cpu_intr0_clr();
+                cpu_intr0_mask();
+            } else if (intr_num == MBOX_CH1) {
+                cpu_intr1_clr();
+                cpu_intr1_mask();
+            } else {
+                __ASSERT(0, "channel invalid!\n");
+                return -1;
+            }
         }
     }
 
