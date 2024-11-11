@@ -1,0 +1,19 @@
+&cpu0 {
+    clock-frequency = <64000000>;
+};
+
+&uart3 {
+    clock-frequency = <64000000>;
+};
+
+&uart4 {
+    clock-frequency = <64000000>;
+};
+
+&uart5 {
+    clock-frequency = <64000000>;
+};
+
+&uart6 {
+    clock-frequency = <64000000>;
+};
