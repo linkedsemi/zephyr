@@ -181,6 +181,20 @@ static void flash_ls_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
+#if defined(CONFIG_FLASH_JESD216_API)
+static int flash_ls_read_jedec_id(const struct device *dev,
+								uint8_t *id)
+{
+	if (id == NULL) {
+		return -EINVAL;
+	}
+
+	hal_flash_read_id(id);
+
+	return 0;
+}
+#endif /* CONFIG_FLASH_JESD216_API */
+
 static const struct flash_driver_api flash_ls_api = {
 	.erase = flash_ls_erase,
 	.write = flash_ls_write,
@@ -188,6 +202,9 @@ static const struct flash_driver_api flash_ls_api = {
 	.get_parameters = flash_ls_get_parameters,
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 	.page_layout = flash_ls_layout,
+#endif
+#if defined(CONFIG_FLASH_JESD216_API)
+	.read_jedec_id = flash_ls_read_jedec_id,
 #endif
 };
 
