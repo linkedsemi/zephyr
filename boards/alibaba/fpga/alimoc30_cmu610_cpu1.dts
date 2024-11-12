@@ -5,8 +5,8 @@
 
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
-#include "zephyr_bmc_moc30-pinctrl.dtsi"
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
+#include "../alicmu_pinctrl_common.dtsi"
 
 // Non-secure SRAM Layout
 // 0x10080000 - 0x1013e000 size:760K sram1
@@ -25,9 +25,9 @@
         zephyr,shell-uart = &uart4;
     };
 
-    sram1_nocache: memory@100be000{
+    sram1_nocache: memory@1013e000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x100be000 DT_SIZE_K(4)>;
+        reg = <0x1013e000 DT_SIZE_K(4)>;
         device_type = "memory";
         zephyr,memory-region = "nocache";
     };
@@ -75,24 +75,21 @@
     reg = <0x10080000 DT_SIZE_K(760)>;
 };
 
-&uart1 {
-    status = "disabled";
-    current-speed = <115200>;
-};
-
-&uart2 {
-    status = "disabled";
-    current-speed = <115200>;
-};
-
-&uart3 {
-    status = "disabled";
-    current-speed = <115200>;
-};
-
-&uart4 {
-    status = "okay";
-    current-speed = <115200>;
-    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+&mac {
+    pinctrl-0 = <&rmii_txen_pt03
+                &rmii_txd0_pt04
+                &rmii_txd1_pt05
+                &rmii_rxc_pt08
+                &rmii_crsdv_pt09
+                &rmii_rxd0_pt10
+                &rmii_rxd1_pt11>;
     pinctrl-names = "default";
+    status = "okay";
+};
+
+&mdio {
+    pinctrl-0 = <&rmii_mdc_pt00
+                &rmii_mdio_pt01>;
+    pinctrl-names = "default";
+    status = "okay";
 };

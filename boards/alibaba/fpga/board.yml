@@ -1,0 +1,11 @@
+board:
+  name: alimoc30
+  vendor: alibaba
+  socs:
+  - name: cmu610
+  revision:
+    format: "custom"
+    default: "zynq"
+    revisions:
+      - name: "zynq"
+      - name: "acku"

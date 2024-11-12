@@ -1,8 +1,8 @@
 # Copyright (c) 2024, Alibaba
 # SPDX-License-Identifier: Apache-2.0
 
-identifier: zephyr_bmc_moc30
-name: lsqsh
+identifier: alimoc30/cmu610/cpu1
+name: cmu610
 type: mcu
 arch: riscv32
 ram: 512

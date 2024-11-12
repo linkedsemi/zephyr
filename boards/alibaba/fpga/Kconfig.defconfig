@@ -1,0 +1,12 @@
+# Copyright (c) 2024 Alibaba
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_ALIMOC30
+
+config FLASH_LOAD_OFFSET
+	default 0x0
+
+config HEAP_MEM_POOL_SIZE
+	default 4096
+
+endif

@@ -1,5 +1,0 @@
-board:
-  name: zephyr_secure_moc30
-  vendor: alibaba
-  socs:
-  - name: lsqsh

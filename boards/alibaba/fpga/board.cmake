@@ -1,5 +1,2 @@
 # Copyright (c) 2024, Alibaba
 # SPDX-License-Identifier: Apache-2.0
-
-config BOARD_ZEPHYR_BMC_MOC30
-	select SOC_LSQSH

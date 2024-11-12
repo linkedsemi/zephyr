@@ -1,0 +1,28 @@
+/*
+ * Copyright (c) 2024, Alibaba
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "alicmu_pinctrl_zynq.dtsi"
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    status = "okay";
+    current-speed = <115200>;
+    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+    pinctrl-names = "default";
+};
