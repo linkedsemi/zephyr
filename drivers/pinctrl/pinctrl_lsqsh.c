@@ -65,7 +65,7 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     }
 
     if (pinmux.pin_attr_un.field.cfg_input) {
-        io_cfg_input(pin);
+        io_cfg_input_pure(pin);
     }
 
     if (pinmux.pin_attr_un.field.cfg_output) {
