@@ -13,8 +13,10 @@ config RISCV_MCAUSE_EXCEPTION_MASK
 	default 0xfff
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency)
-	
+	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency) if $(dt_path_enabled,/cpus/cpu@0)
+	default $(dt_node_int_prop_int,/cpus/cpu@1,clock-frequency) if $(dt_path_enabled,/cpus/cpu@1)
+	default 0
+
 config NUM_IRQS
 	default 144
 
