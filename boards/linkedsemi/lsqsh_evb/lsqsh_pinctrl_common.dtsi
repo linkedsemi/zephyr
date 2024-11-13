@@ -156,6 +156,7 @@
     /omit-if-no-ref/qspi1_cs_pq11: qspi1_cs_pq11 {
         pinmux = <LS_PINMUX_SET(PQ11, LSFUNC(PINMUX_FUNC1))>;
         output-enable;
+        input-enable;
     };
     /omit-if-no-ref/qspi1_dq0_pq12: qspi1_dq0_pq12 {
         pinmux = <LS_PINMUX_SET(PQ12, LSFUNC(PINMUX_FUNC1))>;
