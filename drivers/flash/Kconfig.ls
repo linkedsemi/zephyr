@@ -8,5 +8,6 @@ config SOC_FLASH_LS
 	select FLASH_HAS_PAGE_LAYOUT
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_JESD216
+	select FLASH_HAS_EXPLICIT_ERASE
 	help
 	  Enables linkedsemi ls flash driver.
