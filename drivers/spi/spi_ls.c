@@ -12,19 +12,19 @@ LOG_MODULE_REGISTER(spi_ls);
 
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/clock_control.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/policy.h>
+#include "spi_context.h"
 
 #include <ls_hal_spi_i2s.h>
 #include <reg_sysc_per.h>
 
-#if CONFIG_SOC_SERIES_LE501X == 1
+#if defined(CONFIG_SOC_SERIES_LE501X)
 #include <reg_rcc.h>
-#endif
-
-#include "spi_context.h"
+#else
 #include <soc_clock.h>
-#include <zephyr/drivers/clock_control.h>
+#endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
@@ -93,6 +93,10 @@ static int spi_ls_configure(const struct device *dev,
 
     if (SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_MASTER) {
         MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_MASTER);
+        /* Hardware chip select mode */
+        if (!spi_cs_is_gpio(config)) {
+            MODIFY_REG(spi->CR2, SPI_CR2_SSOE_MASK, SPI_CR2_SSOE_MASK);
+        }
 	} else {
         MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_SLAVE);
     }
@@ -269,7 +273,9 @@ static void spi_ls_complete(const struct device *dev, int status)
         /* Check SR busy status */
         while (REG_FIELD_RD(spi->SR,SPI_SR_BSY) == 1U);
 
-        spi_context_cs_control(&data->ctx, false);
+        if (spi_cs_is_gpio(data->ctx.config)) {
+            spi_context_cs_control(&data->ctx, false);
+	    }
     }
 
 	if (!(data->ctx.config->operation & SPI_HOLD_ON_CS)) {
@@ -337,7 +343,9 @@ static int spi_ls_transceive(const struct device *dev,
 		spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, 2);
 	}
 
-	spi_context_cs_control(ctx, true);
+    if (spi_cs_is_gpio(config)) {
+        spi_context_cs_control(ctx, true);
+    }
 
     /* Enable the selected SPI peripheral */
     REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 1);
@@ -417,7 +425,7 @@ static void spi_ls_irq_config_func_##id(const struct device *dev)		\
 #define LS_SPI_IRQ_HANDLER(id)
 #endif /* CONFIG_SPI_LS_INTERRUPT */
 
-#if CONFIG_SOC_SERIES_LE501X == 1
+#if defined(CONFIG_SOC_SERIES_LE501X)
 static void spi_clock_init(void)
 {
     REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 1);
@@ -436,10 +444,9 @@ static int spi_ls_init(const struct device *dev)
 	config->irq_config(dev);
 #endif
 
-#if CONFIG_SOC_SERIES_LE501X == 1
+#if defined(CONFIG_SOC_SERIES_LE501X)
     spi_clock_init();
-#elif CONFIG_SOC_LS1010 == 1
-
+#else
     if (config->cctl_cfg.cctl_dev) {
 	    const struct device *clk_dev = config->cctl_cfg.cctl_dev;
 	    if (!device_is_ready(clk_dev)) {
