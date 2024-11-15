@@ -200,6 +200,13 @@ static int lsqsh_init(void)
     SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG3_MASK;
 #endif
 
+#if defined(CONFIG_SPI)
+    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_CLR_SPI1_MASK;
+    SYSC_PER->PD_PER_SRST2 = SYSC_PER_SRST_CLR_SPI1_N_MASK;
+    SYSC_PER->PD_PER_SRST2 = SYSC_PER_SRST_SET_SPI1_N_MASK;
+    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_SPI1_MASK;
+#endif
+
     IRQ_CONNECT(RV_SOFT_IRQn, 0, SWINT_Handler_Asm, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
