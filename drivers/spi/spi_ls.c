@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(spi_ls);
 #include <zephyr/pm/policy.h>
 
 #include <ls_hal_spi_i2s.h>
+#include <reg_sysc_per.h>
 
 #if CONFIG_SOC_SERIES_LE501X == 1
 #include <reg_rcc.h>
@@ -25,7 +26,13 @@ LOG_MODULE_REGISTER(spi_ls);
 #include <soc_clock.h>
 #include <zephyr/drivers/clock_control.h>
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
+#elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency)
+#else
+#error can not get peripheral frequence from dts
+#endif
 
 typedef void (*irq_config_func_t)(const struct device *port);
 
@@ -421,13 +428,12 @@ static void spi_clock_init(void)
 
 static int spi_ls_init(const struct device *dev)
 {
-	struct spi_ls_data *data __attribute__((unused)) = dev->data;
+	__maybe_unused const struct spi_ls_config *const config = dev->config;
+	struct spi_ls_data *data = dev->data;
 	int err;
-	const struct spi_ls_config *const config = dev->config;
 
 #ifdef CONFIG_SPI_LS_INTERRUPT
-    const struct spi_ls_config *cfg = dev->config;
-	cfg->irq_config(dev);
+	config->irq_config(dev);
 #endif
 
 #if CONFIG_SOC_SERIES_LE501X == 1
