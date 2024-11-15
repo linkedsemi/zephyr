@@ -93,7 +93,7 @@ static int lsqsh_init(void)
     io_cfg_input(PT11);
     *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
 #endif
-    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x58) = 0x206C80;
+    *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x54) = 0x10;
 #endif
 
 #if defined(CONFIG_SDHC)

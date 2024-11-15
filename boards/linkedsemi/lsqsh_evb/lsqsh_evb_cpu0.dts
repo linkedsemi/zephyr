@@ -164,7 +164,7 @@
     status = "okay";
 };
 
-&mac {
+&mac0 {
     pinctrl-0 = <&rmii_txen_pt03
                 &rmii_txd0_pt04
                 &rmii_txd1_pt05
@@ -176,7 +176,7 @@
     status = "okay";
 };
 
-&mdio {
+&mdio0 {
     pinctrl-0 = <&rmii_mdc_pt00
                 &rmii_mdio_pt01>;
     pinctrl-names = "default";

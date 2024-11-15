@@ -556,13 +556,27 @@
             status = "disabled";
         };
 
-        mac: ethernet@4001c000 {
+        mac0: ethernet@4001a000 {
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
-            reg = <0x4001c000 0x2000>;
+            reg = <0x4001a000 0x2000>;
             interrupts = <40 3>;
             status = "disabled";
 
-            mdio: mdio {
+            mdio0: mdio {
+                compatible = "snps,dwmac-mdio";
+                #address-cells = <1>;
+                #size-cells = <0>;
+                status = "disabled";
+            };
+        };
+
+        mac1: ethernet@4001c000 {
+            compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+            reg = <0x4001c000 0x2000>;
+            interrupts = <42 3>;
+            status = "disabled";
+
+            mdio1: mdio {
                 compatible = "snps,dwmac-mdio";
                 #address-cells = <1>;
                 #size-cells = <0>;
