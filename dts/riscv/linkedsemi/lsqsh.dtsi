@@ -570,6 +570,47 @@
             };
         };
 
+        spi1: spi@40089000 {
+            compatible = "linkedsemi,ls-spi";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40089000 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <100 3>;
+            status = "disabled";
+        };
+
+        spi2: spi@40089400 {
+            compatible = "linkedsemi,ls-spi";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40089400 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <101 3>;
+            status = "disabled";
+        };
+
+        spi3: spi@40089800 {
+            compatible = "snps,designware-spi";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40089800 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <102 3>;
+            max-xfer-size = <32>;
+            status = "disabled";
+        };
+
+        spi4: spi@40089c00 {
+            compatible = "snps,designware-spi";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40089c00 0x400>;
+            interrupts = <102 3>;
+            max-xfer-size = <32>;
+            status = "disabled";
+        };
+
         peci0: peci@4008c400 {
             compatible = "linkedsemi,ls-peci";
             reg = <0x4008c400 0x400>;

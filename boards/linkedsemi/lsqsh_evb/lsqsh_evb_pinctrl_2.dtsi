@@ -202,4 +202,17 @@
         drive-open-drain;
         input-enable;
     };
+
+    /* SPI */
+    /omit-if-no-ref/spi2_sck_pb11: spi2_sck_pb11 {
+        pinmux = <LS_PINMUX_SET(PB11, FIOB_SPI2_SCK)>;
+    };
+    /omit-if-no-ref/spi2_miso_pb13: spi2_miso_pb13 {
+        pinmux = <LS_PINMUX_SET(PB13, FIOB_SPI2_MISO)>;
+        input-enable;
+    };
+    /omit-if-no-ref/spi2_mosi_pb10: spi1_mosi_pb10 {
+        pinmux = <LS_PINMUX_SET(PB10, FIOB_SPI2_MOSI)>;
+        input-enable;
+    };
 };
