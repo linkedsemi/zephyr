@@ -10,7 +10,12 @@ config SPI_LS
 	help
 	  Enable support for the linkedsemi ls spi peripheral
 
+if SPI_LS
+
 config SPI_LS_INTERRUPT
 	bool "LS SPI Interrupt Support"
+    default y
 	help
 	  Enable Interrupt support for the SPI Driver of LS family.
+
+endif
