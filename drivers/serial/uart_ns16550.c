@@ -34,7 +34,10 @@
 #include <zephyr/spinlock.h>
 #include <zephyr/irq.h>
 #include <zephyr/drivers/clock_control.h>
+
+#if defined(SOC_FAMILY_LS_MCU)
 #include <soc_clock.h>
+#endif
 
 #if defined(CONFIG_PINCTRL)
 #include <zephyr/drivers/pinctrl.h>
@@ -334,7 +337,9 @@ struct uart_ns16550_device_config {
 	uint32_t sys_clk_freq;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
+#if defined(SOC_FAMILY_LS_MCU)
     struct ls_clk_cfg cctl_cfg;
+#endif
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
 	uart_irq_config_func_t	irq_config_func;
 #endif
@@ -789,6 +794,7 @@ static int uart_ns16550_init(const struct device *dev)
 
 	ARG_UNUSED(dev_cfg);
 
+#if defined(SOC_FAMILY_LS_MCU)
 	if (dev_cfg->cctl_cfg.cctl_dev) {
 		const struct device *clk_dev = dev_cfg->cctl_cfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {
@@ -797,6 +803,7 @@ static int uart_ns16550_init(const struct device *dev)
 		}
 		clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->cctl_cfg);
 	}
+#endif
 
 #if UART_NS16550_RESET_ENABLED
 	/* Assert the UART reset line if it is defined. */
