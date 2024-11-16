@@ -4,8 +4,4 @@ board:
   socs:
   - name: lsqsh
   revision:
-    format: number
-    default: "1"
-    revisions:
-      - name: "1"
-      - name: "2"
+    format: custom

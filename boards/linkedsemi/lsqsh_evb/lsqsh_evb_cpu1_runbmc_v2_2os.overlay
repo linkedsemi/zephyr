@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "lsqsh_evb_pinctrl_1.dtsi"
+#include "lsqsh_evb_pinctrl_runbmc_v2.dtsi"
 
 &uart1 {
     current-speed = <115200>;

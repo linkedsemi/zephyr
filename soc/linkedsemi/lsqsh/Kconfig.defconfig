@@ -40,4 +40,14 @@ config NET_L2_ETHERNET
 
 endif # NETWORKING
 
+config NUM_USE_CPU
+	int "running CPU number"
+	range 1 2
+	default 2
+
+config NUM_OS
+	int "running OS number"
+	range 1 2
+	default 2
+
 endif

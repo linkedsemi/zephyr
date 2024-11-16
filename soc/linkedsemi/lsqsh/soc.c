@@ -15,6 +15,8 @@
 #include "reg_sysc_per.h"
 #include "ls_soc_gpio.h"
 
+BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
+
 #define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
 uint32_t *pTaskStack = NULL;
@@ -50,9 +52,7 @@ static int lsqsh_init(void)
 {
     uint32_t addr = 0;
 
-    SystemInit();
-    sys_init_none();
-
+#if ((CONFIG_NUM_OS == 2) && (CONFIG_NUM_USE_CPU == 2))
     addr = 0x10000000;
     SYSMAP->SYSMAPADDR0 = addr >> 12;
     SYSMAP->SYSMAPCFG0 = 0x10;
@@ -74,6 +74,30 @@ static int lsqsh_init(void)
     SYSMAP->SYSMAPCFG6 = 0;
     SYSMAP->SYSMAPADDR7 = 0;
     SYSMAP->SYSMAPCFG7 = 0;
+#else
+    addr = 0x10000000;
+    SYSMAP->SYSMAPADDR0 = addr >> 12;
+    SYSMAP->SYSMAPCFG0 = 0x10;
+    addr = 0x10000000 + ((512 + 760) * 1024);
+    SYSMAP->SYSMAPADDR1 = addr >> 12;
+    SYSMAP->SYSMAPCFG1 = 0xc;
+    addr = 0xffffffff;
+    SYSMAP->SYSMAPADDR2 = addr >> 12;
+    SYSMAP->SYSMAPCFG2 = 0x10;
+    SYSMAP->SYSMAPADDR3 = 0;
+    SYSMAP->SYSMAPCFG3 = 0;
+    SYSMAP->SYSMAPADDR4 = 0;
+    SYSMAP->SYSMAPCFG4 = 0;
+    SYSMAP->SYSMAPADDR5 = 0;
+    SYSMAP->SYSMAPCFG5 = 0;
+    SYSMAP->SYSMAPADDR6 = 0;
+    SYSMAP->SYSMAPCFG6 = 0;
+    SYSMAP->SYSMAPADDR7 = 0;
+    SYSMAP->SYSMAPCFG7 = 0;
+#endif
+
+    SystemInit();
+    sys_init_none();
 
 #if defined(CONFIG_CACHE)
     csi_dcache_enable();
@@ -212,9 +236,11 @@ static int lsqsh_init(void)
     driver_init();
     arch_irq_lock();
 
+#if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
     SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
     SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+#endif
 #endif
 
     return 0;

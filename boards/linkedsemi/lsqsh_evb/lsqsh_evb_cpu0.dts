@@ -92,18 +92,6 @@
     cpu-power-states = <&idle &lp0>;
 };
 
-&cpu1 {
-    status = "disabled";
-};
-
-&sram0 {
-    reg = <0x10000000 DT_SIZE_K(508)>;
-};
-
-&sram1 {
-    status = "disabled";
-};
-
 &gpioa {
     status = "okay";
 };

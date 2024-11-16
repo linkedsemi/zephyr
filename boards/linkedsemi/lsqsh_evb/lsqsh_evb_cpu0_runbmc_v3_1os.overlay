@@ -3,7 +3,41 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "lsqsh_evb_pinctrl_2.dtsi"
+#include "lsqsh_evb_pinctrl_runbmc_v3.dtsi"
+
+/delete-node/ &sram0_nocache;
+/ {
+    sram0_nocache: memory@1013e000{
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013e000 DT_SIZE_K(4)>;
+        device_type = "memory";
+        zephyr,memory-region = "nocache";
+    };
+};
+
+&cpu1 {
+    status = "disabled";
+};
+
+&sram0 {
+    reg = <0x10000000 DT_SIZE_K(512 + 764)>;
+};
+
+&sram1 {
+    status = "disabled";
+};
+
+&mbox {
+    status = "disabled";
+};
+
+&mbox_consumer0 {
+    status = "disabled";
+};
+
+&mbox_consumer1 {
+    status = "disabled";
+};
 
 &uart1 {
     current-speed = <115200>;
