@@ -1,8 +1,8 @@
-zephyr_sources(soc.c)
+zephyr_sources(soc.c power.c)
 
 zephyr_include_directories(.)
 
-zephyr_library_sources_ifdef(CONFIG_PM power.c)
+# zephyr_library_sources_ifdef(CONFIG_PM power.c)
 
 zephyr_linker_sources(RAM_SECTIONS controller_em.ld)
 
