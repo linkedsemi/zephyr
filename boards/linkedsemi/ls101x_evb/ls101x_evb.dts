@@ -70,12 +70,12 @@
 
 		boot_partition: partition@0 {
 			label = "info-sbl";
-			reg = <0x00000000 0x00000800>;
+			reg = <0x00000000 0x00001800>;
 		};
 	
-        app_partition: partition@800 {
+        app_partition: partition@1800 {
 			label = "app";
-			reg = <0x00000800 0x0007c800>;
+			reg = <0x00001800 0x0007c800>;
 		};
 
 		/*
