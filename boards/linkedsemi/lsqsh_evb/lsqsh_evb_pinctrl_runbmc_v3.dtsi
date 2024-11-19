@@ -203,7 +203,7 @@
         input-enable;
     };
 
-    /* SPI */
+    /* SPI2 */
     /omit-if-no-ref/spi2_sck_pb11: spi2_sck_pb11 {
         pinmux = <LS_PINMUX_SET(PB11, FIOB_SPI2_SCK)>;
     };
@@ -215,4 +215,27 @@
         pinmux = <LS_PINMUX_SET(PB10, FIOB_SPI2_MOSI)>;
         input-enable;
     };
+    /* SPI2 end */
+
+    /* SPI3 */
+    /omit-if-no-ref/spi3_sck_pc01: spi3_sck_pc01 {
+        pinmux = <LS_PINMUX_SET(PC01, FIOC_SPI3_SCK)>;
+    };
+    /omit-if-no-ref/spi3_d0_mosi_pc02: spi3_d0_mosi_pc02 {
+        pinmux = <LS_PINMUX_SET(PC02, FIOC_SPI3_DATA0)>;
+        input-enable;
+    };
+    /omit-if-no-ref/spi3_d1_miso_pc05: spi3_d1_miso_pc05 {
+        pinmux = <LS_PINMUX_SET(PC05, FIOC_SPI3_DATA1)>;
+        input-enable;
+    };
+    /omit-if-no-ref/spi3_d2_wp_pc04: spi3_d2_wp_pc04 {
+        pinmux = <LS_PINMUX_SET(PC04, FIOC_SPI3_DATA2)>;
+        input-enable;
+    };
+    /omit-if-no-ref/spi3_d3_hold_pc03: spi3_d3_hold_pc03 {
+        pinmux = <LS_PINMUX_SET(PC03, FIOC_SPI3_DATA3)>;
+        input-enable;
+    };
+    /* SPI3 end */
 };

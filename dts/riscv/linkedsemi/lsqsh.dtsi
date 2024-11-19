@@ -611,6 +611,7 @@
             reg = <0x40089800 0x400>;
             clock-frequency = <50000000>;
             interrupts = <102 3>;
+            fifo-depth = <4>;
             max-xfer-size = <32>;
             status = "disabled";
         };
@@ -621,6 +622,7 @@
             #size-cells = <0>;
             reg = <0x40089c00 0x400>;
             interrupts = <102 3>;
+            fifo-depth = <4>;
             max-xfer-size = <32>;
             status = "disabled";
         };
