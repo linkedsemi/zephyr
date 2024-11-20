@@ -43,7 +43,7 @@
     current-speed = <115200>;
     pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
     pinctrl-names = "default";
-    status = "disabled";
+    status = "okay";
 };
 
 &uart2 {
@@ -65,6 +65,13 @@
     status = "disabled";
 };
 
+&uart5 {
+    current-speed = <115200>;
+    pinctrl-0 = <&uart5_tx_pe00 &uart5_rx_pe01>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
 &i2c2 {
     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
     pinctrl-names = "default";
@@ -79,7 +86,7 @@
 };
 
 &i2c3 {
-    pinctrl-0 = <&i2c3_scl_pc13 &i2c3_sda_pc11>;
+    pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
     pinctrl-names = "default";
     status = "okay";
 
@@ -268,6 +275,22 @@
         spi-max-frequency = <1000000>;
         jedec-id = [85 60 16];
         size = <0x400000>;
+        status = "okay";
+    };
+};
+
+&spi3 {
+    cs-gpios = <&gpiok 13 GPIO_ACTIVE_LOW>;
+    pinctrl-0 = <&spi3_sck_pc01 &spi3_d0_mosi_pc02 &spi3_d1_miso_pc05>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    mx66l1g: mx66l1g@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <1000000>;
+        jedec-id = [c2 25 3b];
+        size = <0x8000000>;
         status = "okay";
     };
 };
