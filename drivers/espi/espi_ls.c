@@ -86,31 +86,31 @@ static inline uint32_t espi_buf_addr_to_reg(const struct device *dev,uint8_t *ad
 
 static inline uint8_t *pc_rx_buf_get(const struct device *dev)
 {
-    struct espi_lpc_ls_config *cfg = dev->config;
+    const struct espi_lpc_ls_config *cfg = dev->config;
     return (uint8_t *)cfg->reg + ESPI_PC_RX_BUF_OFFSET;
 }
 
 static inline uint8_t *np_rx_buf_get(const struct device *dev)
 {
-    struct espi_lpc_ls_config *cfg = dev->config;
+    const struct espi_lpc_ls_config *cfg = dev->config;
     return (uint8_t *)cfg->reg + ESPI_NP_RX_BUF_OFFSET;
 }
 
 static inline uint8_t *pc_tx_buf_get(const struct device *dev)
 {
-    struct espi_lpc_ls_config *cfg = dev->config;
+    const struct espi_lpc_ls_config *cfg = dev->config;
     return (uint8_t *)cfg->reg + ESPI_PC_TX_BUF_OFFSET;
 }
 
 static inline uint8_t *vw_tx_buf_get(const struct device *dev)
 {
-    struct espi_lpc_ls_config *cfg = dev->config;
+    const struct espi_lpc_ls_config *cfg = dev->config;
     return (uint8_t *)cfg->reg + ESPI_VW_TX_BUF_OFFSET;
 }
 
 static inline uint32_t espi_buf_addr_to_reg(const struct device *dev,uint8_t *addr)
 {
-    struct espi_lpc_ls_config *cfg = dev->config;
+    const struct espi_lpc_ls_config *cfg = dev->config;
     return (uint32_t)addr - (uint32_t)cfg->reg;
 }
 #endif
