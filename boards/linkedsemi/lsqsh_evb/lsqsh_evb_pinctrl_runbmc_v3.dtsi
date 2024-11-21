@@ -58,6 +58,16 @@
         input-enable;
     };
 
+    /omit-if-no-ref/uart4_tx_pd11: uart4_tx_pd11 {
+        pinmux = <LS_PINMUX_SET(PD11, FIOD_UART4_TXD)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart4_rx_pd12: uart4_rx_pd12 {
+        pinmux = <LS_PINMUX_SET(PD12, FIOD_UART4_RXD)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
     /omit-if-no-ref/uart5_tx_pe00: uart5_tx_pe00 {
         pinmux = <LS_PINMUX_SET(PE00, FIOE_UART5_TXD)>;
         drive-strength = "quarter max driver";
