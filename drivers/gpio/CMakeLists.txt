@@ -97,6 +97,7 @@ zephyr_library_sources_ifdef(CONFIG_GPIO_XLNX_PS    gpio_xlnx_ps.c gpio_xlnx_ps_
 zephyr_library_sources_ifdef(CONFIG_GPIO_XMC4XXX    gpio_xmc4xxx.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_LS         gpio_ls.c)
 zephyr_library_sources_ifdef(CONFIG_GPIO_LSQSH      gpio_lsqsh.c)
+zephyr_library_sources_ifdef(CONFIG_GPIO_LINKEDSEMI_SGPIOM gpio_linkedsemi_sgpiom.c)
 # zephyr-keep-sorted-stop
 
 # zephyr-keep-sorted-start

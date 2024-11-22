@@ -1,6 +1,6 @@
 # Linkedsemi LS GPIO configuration options
 
-# Copyright (c) 2023 Linkedsemi
+# Copyright (c) 2024 Linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
 config GPIO_LSQSH
@@ -9,3 +9,11 @@ config GPIO_LSQSH
     depends on DT_HAS_LINKEDSEMI_LSQSH_GPIO_ENABLED
     help
       Enable the Linkedsemi ls GPIO driver.
+
+config GPIO_LINKEDSEMI_SGPIOM
+    bool "LINKEDSEMI SGPIOM Controllers"
+    default y
+    depends on DT_HAS_LINKEDSEMI_SGPIOM_ENABLED
+    select DYNAMIC_INTERRUPTS
+    help
+      Enable config options to support the LINKEDSEMI SGPIOM controllers.
