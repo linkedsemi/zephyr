@@ -9,6 +9,6 @@ properties:
       type: array
       required: true
 
-    up_irq:
+    up-irq:
       type: array
       

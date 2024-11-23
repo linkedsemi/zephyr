@@ -1816,10 +1816,11 @@ static const struct uart_driver_api uart_ns16550_driver_api = {
 	static void uart_ns16550_irq_config_func##n(const struct device *dev) \
 	{                                                                     \
 		ARG_UNUSED(dev);                                              \
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),	      \
-			    uart_ns16550_isr, DEVICE_DT_INST_GET(n),	      \
-			    UART_NS16550_IRQ_FLAGS(n));			      \
-		irq_enable(DT_INST_IRQN(n));                                  \
+		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 0),                                 \
+			(IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),           \
+						uart_ns16550_isr, DEVICE_DT_INST_GET(n),              \
+						UART_NS16550_IRQ_FLAGS(n));                           \
+			irq_enable(DT_INST_IRQN(n));))                                    \
 	}
 
 /* PCI(e) with auto IRQ detection */
