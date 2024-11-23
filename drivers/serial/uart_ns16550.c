@@ -35,7 +35,7 @@
 #include <zephyr/irq.h>
 #include <zephyr/drivers/clock_control.h>
 
-#if defined(SOC_FAMILY_LS_MCU)
+#if defined(CONFIG_SOC_FAMILY_LS_MCU)
 #include <soc_clock.h>
 #endif
 
@@ -337,7 +337,7 @@ struct uart_ns16550_device_config {
 	uint32_t sys_clk_freq;
 	const struct device *clock_dev;
 	clock_control_subsys_t clock_subsys;
-#if defined(SOC_FAMILY_LS_MCU)
+#if defined(CONFIG_SOC_FAMILY_LS_MCU)
     struct ls_clk_cfg cctl_cfg;
 #endif
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN) || defined(CONFIG_UART_ASYNC_API)
@@ -794,7 +794,7 @@ static int uart_ns16550_init(const struct device *dev)
 
 	ARG_UNUSED(dev_cfg);
 
-#if defined(SOC_FAMILY_LS_MCU)
+#if defined(CONFIG_SOC_FAMILY_LS_MCU)
 	if (dev_cfg->cctl_cfg.cctl_dev) {
 		const struct device *clk_dev = dev_cfg->cctl_cfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {
