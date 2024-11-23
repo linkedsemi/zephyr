@@ -78,6 +78,16 @@
         input-enable;
     };
 
+    /omit-if-no-ref/uart6_tx_pf13: uart6_tx_pf13 {
+        pinmux = <LS_PINMUX_SET(PF13, FIOF_UART6_TXD)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart6_rx_pf14: uart6_rx_pf14 {
+        pinmux = <LS_PINMUX_SET(PF14, FIOF_UART6_RXD)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
     /* I2C */
     /omit-if-no-ref/i2c2_scl_pb03: i2c2_scl_pb03 {
         pinmux = <LS_PINMUX_SET(PB03, FIOB_I2C2_SCL)>;
@@ -146,6 +156,18 @@
     };
     /omit-if-no-ref/i2c7_sda_pk14: i2c7_sda_pk14 {
         pinmux = <LS_PINMUX_SET(PK14, FIOK_I2C7_SDA)>;
+        drive-strength = "quarter max driver";
+        drive-open-drain;
+        input-enable;
+    };
+
+    /omit-if-no-ref/i2c8_scl_ph00: i2c8_scl_ph00 {
+        pinmux = <LS_PINMUX_SET(PH00, FIOH_I2C8_SCL)>;
+        drive-strength = "quarter max driver";
+        drive-open-drain;
+    };
+    /omit-if-no-ref/i2c8_sda_ph01: i2c8_sda_ph01 {
+        pinmux = <LS_PINMUX_SET(PH01, FIOH_I2C8_SDA)>;
         drive-strength = "quarter max driver";
         drive-open-drain;
         input-enable;
@@ -258,4 +280,24 @@
         input-enable;
     };
     /* SPI3 end */
+
+    /* SGPIOM */
+    /omit-if-no-ref/sgpiom_clk_pe06: sgpiom_clk_pe06 {
+        pinmux = <LS_PINMUX_SET(PE06, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/sgpiom_di_pe07: sgpiom_di_pe07 {
+        pinmux = <LS_PINMUX_SET(PE07, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/sgpiom_do_pe08: sgpiom_do_pe08 {
+        pinmux = <LS_PINMUX_SET(PE08, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/sgpiom_ld_pe09: sgpiom_ld_pe09 {
+        pinmux = <LS_PINMUX_SET(PE09, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+    };
 };
