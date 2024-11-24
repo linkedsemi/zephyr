@@ -1,0 +1,10 @@
+# Copyright 2023 NXP
+#
+# SPDX-License-Identifier: Apache-2.0
+
+source "Kconfig.zephyr"
+
+config INTEL_AVENUE_CITY_CRB
+	bool "intel avenue city crb specific signal"
+	help
+	  intel avenue city crb specific signal

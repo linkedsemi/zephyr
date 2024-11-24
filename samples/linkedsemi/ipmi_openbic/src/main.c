@@ -15,6 +15,9 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
+BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(ipmi_kcs)), "check configuration");
+BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(ipmi_kcs), okay), "check configuration");
+
 #define KCS_POLL_STACK_SIZE 4096
 #define KCS_POLLING_INTERVAL 100
 #define KCS_BUFF_SIZE 256
@@ -36,10 +39,70 @@ void reset_kcs_ok()
 	proc_kcs_ok = false;
 }
 
+#if defined(CONFIG_INTEL_AVENUE_CITY_CRB)
+#include <stdio.h>
+#include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
+#include "ls_soc_gpio.h"
+
+/* 1000 msec = 1 sec */
+#define SLEEP_TIME_MS 1000
+
+/* The devicetree node identifier for the "led0" alias. */
+#define LED0_NODE DT_NODELABEL(bmc_boot_done_btn)
+
+/*
+ * A build error on this line means your board is unsupported.
+ * See the sample documentation for information on how to fix this.
+ */
+static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(LED0_NODE, gpios);
+
+// GPIO19
+#define ONCTL PD03
+// GPIO69
+#define SLPS3 PM06
+
+int bhs_bmc_ready(void)
+{
+    int ret;
+
+    printf("Hello World! %s\n", CONFIG_BOARD);
+
+    if (!gpio_is_ready_dt(&led)) {
+        return 0;
+    }
+
+    ret = gpio_pin_configure_dt(&led, GPIO_OUTPUT_ACTIVE);
+    if (ret < 0) {
+        return 0;
+    }
+
+    ret = gpio_pin_set_dt(&led, 1);
+    if (ret < 0) {
+        return 0;
+    }
+
+    io_cfg_input(ONCTL);
+    io_cfg_input(SLPS3);
+
+    while(io_read_pin(SLPS3) == 1);
+    printf("%s: %d\n", __func__, __LINE__);
+
+    io_cfg_output(ONCTL);
+    io_write_pin(ONCTL, 0);
+
+    return 0;
+}
+#endif
+
 int main(void)
 {
     printf("FPGA version: %8.8x\n", *(volatile uint32_t *)0x4001f3fc);
     printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
+
+#if defined(CONFIG_INTEL_AVENUE_CITY_CRB)
+    bhs_bmc_ready();
+#endif
 
     printf("ipmi_read...\n");
 

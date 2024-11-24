@@ -50,7 +50,10 @@ bool pal_request_msg_to_BIC_from_HOST(uint8_t netfn, uint8_t cmd)
         return true;
     }
     if (netfn == NETFN_APP_REQ) {
-        if (cmd == CMD_APP_GET_DEVICE_ID) {
+        switch (cmd) {
+        case CMD_APP_GET_DEVICE_ID:
+        case CMD_APP_SET_BMC_GLOBAL_ENABLES:
+        case CMD_APP_GET_BMC_GLOBAL_ENABLES:
             return true;
         }
     }

@@ -239,11 +239,22 @@ __weak void APP_WARM_RESET(ipmi_msg *msg)
 
 // 	return;
 // }
+
+uint8_t BMC_GLOBAL_ENABLES = 0;
+
+__weak void APP_SET_BMC_GLOBAL_ENABLES(ipmi_msg *msg)
+{
+    CHECK_NULL_ARG(msg);
+    BMC_GLOBAL_ENABLES = msg->data[0];
+    msg->data_len = 0;
+    msg->completion_code = CC_SUCCESS;
+    return;
+}
+
 __weak void APP_GET_BMC_GLOBAL_ENABLES(ipmi_msg *msg)
 {
     CHECK_NULL_ARG(msg);
-
-    msg->data[0] = 0;
+    msg->data[0] = BMC_GLOBAL_ENABLES;
     msg->data_len = 1;
     msg->completion_code = CC_SUCCESS;
     return;
@@ -424,6 +435,9 @@ void IPMI_APP_handler(ipmi_msg *msg)
 	// case CMD_APP_GET_SYSTEM_GUID:
 	// 	APP_GET_SYSTEM_GUID(msg);
 	// 	break;
+	case CMD_APP_SET_BMC_GLOBAL_ENABLES:
+		APP_SET_BMC_GLOBAL_ENABLES(msg);
+		break;
 	case CMD_APP_GET_BMC_GLOBAL_ENABLES:
 		APP_GET_BMC_GLOBAL_ENABLES(msg);
 		break;
