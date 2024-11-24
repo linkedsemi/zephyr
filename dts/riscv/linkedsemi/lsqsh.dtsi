@@ -307,6 +307,19 @@
                 up-irq = <0x4 IRQ_TYPE_LEVEL_HIGH>;
                 status = "disabled";
             };
+
+            sio0: sio0 {
+                compatible = "linkedsemi,ls-sio";
+                port = <0x2e>;
+                status = "disabled";
+            };
+
+            mmbi0: mmbi0 {
+                compatible = "linkedsemi,ls-mmbi";
+                host-addr = <0xf6810000>;
+                size-order = <0>;
+                status = "disabled";
+            };
         };
 
         espi1: espi@40007000 {
