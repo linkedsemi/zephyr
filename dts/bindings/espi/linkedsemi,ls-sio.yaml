@@ -1,0 +1,10 @@
+description: Linkedsemi eSPI slave to sio
+
+compatible: "linkedsemi,ls-sio"
+
+include: [pinctrl-device.yaml]
+
+properties:
+  port:
+    type: int
+    required: true

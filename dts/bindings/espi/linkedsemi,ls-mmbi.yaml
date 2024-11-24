@@ -1,0 +1,14 @@
+description: Linkedsemi eSPI slave to mmbi
+
+compatible: "linkedsemi,ls-mmbi"
+
+include: [pinctrl-device.yaml]
+
+properties:
+  host-addr:
+    type: int
+    required: true
+
+  size-order:
+      type: int
+      required: true
