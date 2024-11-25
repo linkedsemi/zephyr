@@ -86,7 +86,7 @@
 };
 
 &i2c5 {
-    pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
+    pinctrl-0 = <&i2c5_scl_pe03 &i2c5_sda_pe03>;
     pinctrl-names = "default";
     status = "okay";
 
@@ -121,6 +121,22 @@
         reg = <0x76>;
         size = <256>;
         status = "okay";
+    };
+};
+
+&i2c8 {
+    pinctrl-0 = <&i2c8_scl_ph00 &i2c8_sda_ph01>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    eeprom8: eeprom@50 {
+        compatible = "atmel,at24c32","atmel,at24";
+        reg = <0x50>;
+        status = "okay";
+        size = <DT_SIZE_K(4)>;
+        pagesize = <8>;
+        address-width = <8>;
+        timeout = <5>;
     };
 };
 

@@ -7,11 +7,43 @@
 
 /delete-node/ &sram0_nocache;
 / {
+    aliases {
+        testi2c1 = &i2c5;
+        testi2c2 = &i2c12;
+        testeeprom1 = &eeprom5;
+        testeeprom2 = &eeprom12;
+        eeprom-0 = &eeprom8_24c32;
+        testjtag2 = &jtag2;
+        led0 = &led0;
+        sw0 = &btn0;
+    };
+
     sram0_nocache: memory@1013e000{
         compatible = "zephyr,memory-region", "mmio-sram";
         reg = <0x1013e000 DT_SIZE_K(4)>;
         device_type = "memory";
         zephyr,memory-region = "nocache";
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led0: led_0{
+            gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+        btn0: btn_0{
+            gpios = <&gpioc 5 BTN_GPIO_FLAGS>;
+            label = "Push button 1";
+        };
+
+        bmc_boot_done_btn: bmc_boot_done {
+            gpios = <&sgpiom_m_p 3 GPIO_ACTIVE_HIGH>;
+            label = "bmc boot done";
+        };
     };
 };
 
@@ -135,7 +167,7 @@
 };
 
 &i2c5 {
-    pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
+    pinctrl-0 = <&i2c5_scl_pe03 &i2c5_sda_pe03>;
     pinctrl-names = "default";
     status = "okay";
 
@@ -166,6 +198,42 @@
     status = "okay";
 
     eeprom7: eeprom@76 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x76>;
+        size = <256>;
+        status = "okay";
+    };
+};
+
+&i2c8 {
+    pinctrl-0 = <&i2c8_scl_ph00 &i2c8_sda_ph01>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    eeprom8: eeprom@76 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x76>;
+        size = <256>;
+        status = "okay";
+    };
+
+    eeprom8_24c32: eeprom@50 {
+        compatible = "atmel,at24c32","atmel,at24";
+        reg = <0x50>;
+        status = "okay";
+        size = <DT_SIZE_K(4)>;
+        pagesize = <8>;
+        address-width = <16>;
+        timeout = <5>;
+    };
+};
+
+&i2c9 {
+    pinctrl-0 = <&i2c9_scl_pi00 &i2c9_sda_pi01>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    eeprom9: eeprom@76 {
         compatible = "zephyr,i2c-target-eeprom";
         reg = <0x76>;
         size = <256>;
@@ -263,6 +331,14 @@
 };
 
 &smbus_ali_13_runbmc_i2c7_fpga_i2c7 {
+    status = "okay";
+};
+
+&smbus8 {
+    status = "okay";
+};
+
+&smbus9 {
     status = "okay";
 };
 

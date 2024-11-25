@@ -523,7 +523,7 @@
             status = "disabled";
         };
 
-        smbus8: smbu8 {
+        smbus8: smbus8 {
             compatible = "linkedsemi,smbus";
             #address-cells = <1>;
             #size-cells = <0>;

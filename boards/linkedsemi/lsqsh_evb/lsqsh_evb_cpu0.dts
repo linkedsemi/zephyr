@@ -23,15 +23,8 @@
     };
 
     aliases {
-        testi2c1 = &i2c5;
-        testi2c2 = &i2c12;
-        testjtag2 = &jtag2;
-        testeeprom1 = &eeprom5;
-        testeeprom2 = &eeprom12;
         peci-0 = &peci0;
         sdhc0 = &sdhci;
-        led0 = &led0;
-        sw0 = &btn0;
     };
 
     sram0_nocache: memory@1007f000{
@@ -68,27 +61,6 @@
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 3>, <&mbox 2>;
         mbox-names = "tx", "rx";
-    };
-
-    leds {
-        compatible = "gpio-leds";
-        led0: led_0{
-            gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>;
-            label = "Red LED";
-        };
-    };
-
-    keys {
-        compatible = "gpio-keys";
-        btn0: btn_0{
-            gpios = <&gpioc 5 BTN_GPIO_FLAGS>;
-            label = "Push button 1";
-        };
-
-        bmc_boot_done_btn: bmc_boot_done {
-            gpios = <&sgpiom_m_p 3 GPIO_ACTIVE_HIGH>;
-            label = "bmc boot done";
-        };
     };
 };
 
