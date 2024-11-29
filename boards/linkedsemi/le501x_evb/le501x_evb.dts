@@ -110,8 +110,8 @@
 
 &spi1 {
     status = "okay";
-    pinctrl-0 = <&spi1_sck_pa09 
-                &spi1_mosi_pa11 &spi1_miso_pa12>;
+    pinctrl-0 = <&spi1_sck_pa09 &spi1_cs_pa10
+                 &spi1_mosi_pa11 &spi1_miso_pa12>;
     pinctrl-names = "default";
 
     cs-gpios = <&gpioa 10 GPIO_ACTIVE_LOW>;
@@ -119,8 +119,8 @@
 
 &spi2 {
     status = "okay";
-    pinctrl-0 = <&spi2_sck_pb12
-                &spi2_mosi_pb14 &spi2_miso_pb15>;
+    pinctrl-0 = <&spi2_sck_pb12 &spi2_cs_pb13
+                 &spi2_mosi_pb14 &spi2_miso_pb15>;
     pinctrl-names = "default";
 
     cs-gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;

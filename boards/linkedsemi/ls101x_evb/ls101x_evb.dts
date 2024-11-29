@@ -153,8 +153,8 @@
 
 &spi1 {
 	status = "okay";
-	pinctrl-0 = <&spi1_sck_pe00
-	&spi1_mosi_pe02 &spi1_miso_pe03>;
+	pinctrl-0 = <&spi1_sck_pe00 &spi1_nss_pe01
+	             &spi1_mosi_pe02 &spi1_miso_pe03>;
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpioe 1 GPIO_ACTIVE_LOW>;
@@ -162,8 +162,8 @@
 
 &spi2 {
 	status = "disabled";
-	pinctrl-0 = <&spi2_sck_pb12
-	&spi2_mosi_pb14 &spi2_miso_pb15>;
+	pinctrl-0 = <&spi2_sck_pb12 &spi2_nss_pb13
+	             &spi2_mosi_pb14 &spi2_miso_pb15>;
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpiob 13 GPIO_ACTIVE_LOW>;
@@ -171,8 +171,8 @@
 
 &spi3 {
 	status = "disabled";
-	pinctrl-0 = <&spi3_sck_pa12
-	&spi3_mosi_pa14 &spi3_miso_pa15>;
+	pinctrl-0 = <&spi3_sck_pa12 &spi3_nss_pa13
+	             &spi3_mosi_pa14 &spi3_miso_pa15>;
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpioa 13 GPIO_ACTIVE_LOW>;
