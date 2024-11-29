@@ -77,10 +77,7 @@ void ls_i2c_isr(void *arg)
 		if(!data->current)
 		{
 			uint8_t val;
-			if(data->slave_cfg->callbacks->read_processed(data->slave_cfg,&val))
-			{
-				cfg->reg->CR2_0_1 |= I2C_CR2_NACK_MASK;
-			}
+			data->slave_cfg->callbacks->read_processed(data->slave_cfg,&val);
 			cfg->reg->TXDR = val;
 		}else
 		#endif
@@ -103,10 +100,10 @@ void ls_i2c_isr(void *arg)
 			{
 				if(data->slave_cfg->callbacks->write_received(data->slave_cfg,cfg->reg->RXDR))
 				{
+					k_busy_wait(10);
 					cfg->reg->CR2_0_1 |= I2C_CR2_NACK_MASK;
-					cfg->reg->IDR = I2C_IDR_RXNEID_MASK;
-					break;
 				}
+				cfg->reg->CR2_2 = 1;
 			}else
 			#endif
 			{
@@ -132,10 +129,7 @@ void ls_i2c_isr(void *arg)
 			if(status&I2C_SR_DIR_MASK)
 			{
 				uint8_t val;
-				if(data->slave_cfg->callbacks->read_requested(data->slave_cfg,&val))
-				{
-					cfg->reg->CR2_0_1 |= I2C_CR2_NACK_MASK;
-				}
+				data->slave_cfg->callbacks->read_requested(data->slave_cfg,&val);
 				cfg->reg->TXDR = val;
 				cfg->reg->IER = I2C_IER_TXEIE_MASK;
 			}else
@@ -230,6 +224,12 @@ static inline void data_xfer_len_set(const struct device *dev)
 	config->reg->CR2_2 = data->xfer_len;
 }
 
+static inline void slv_single_byte(const struct i2c_ls_config *config)
+{
+	config->reg->CR2_2 = 1;
+	config->reg->CR2_3 |= I2C_CR2_RELOAD_MASK;
+}
+
 static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			      uint8_t num_msgs, uint16_t slave)
 {
@@ -313,6 +313,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 	}
 err:
 	data->current = NULL;
+	slv_single_byte(config);
 	k_sem_give(&data->bus_mutex);
 	return ret;
 }
@@ -353,7 +354,8 @@ static void i2c_reenable(const struct i2c_ls_config *config ,uint32_t i2c_clk)
 	config->reg->CR1 &= ~I2C_CR1_PE_MASK;
 	i2c_timing_param_set(config,i2c_clk);
     config->reg->CFR = 0xffff;
-	config->reg->CR1 |= I2C_CR1_PE_MASK;
+	config->reg->CR1 |= I2C_CR1_SBC_MASK|I2C_CR1_PE_MASK;
+	slv_single_byte(config);
 }
 
 static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
@@ -410,6 +412,7 @@ static int i2c_ls_init(const struct device *dev)
 	}
 #endif
 	i2c_reenable(cfg,100000);
+	cfg->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
 	cfg->reg->ICR = 0xffff;
 	cfg->reg->IER = I2C_IER_STOPIE_MASK|I2C_IER_NACKIE_MASK|I2C_IER_BERRIE_MASK
 		|I2C_IER_ARLOIE_MASK|I2C_IER_OVRIE_MASK|I2C_IER_PECEIE_MASK
