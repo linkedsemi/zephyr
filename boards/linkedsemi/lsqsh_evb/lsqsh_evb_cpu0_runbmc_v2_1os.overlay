@@ -6,12 +6,37 @@
 #include "lsqsh_evb_pinctrl_runbmc_v2.dtsi"
 
 /delete-node/ &sram0_nocache;
+/delete-node/ &mac0;
 / {
+    interrupt-parent = <&intc>;
+
+    chosen {
+        zephyr,flash = &flash0;
+        zephyr,flash-controller = &flash_controller;
+        zephyr,sram = &sram0;
+        zephyr,console = &uart3;
+        zephyr,shell-uart = &uart3;
+    };
+
     sram0_nocache: memory@1013e000{
         compatible = "zephyr,memory-region", "mmio-sram";
         reg = <0x1013e000 DT_SIZE_K(4)>;
         device_type = "memory";
         zephyr,memory-region = "nocache";
+    };
+
+    mac0: ethernet@4001c000 {
+        compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+        reg = <0x4001c000 0x2000>;
+        interrupts = <40 3>;
+        status = "disabled";
+
+        mdio0: mdio {
+            compatible = "snps,dwmac-mdio";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            status = "disabled";
+        };
     };
 };
 
@@ -273,4 +298,16 @@
     pinctrl-1 = <&jtag3_gpio_pf07 &jtag3_gpio_pf08 &jtag3_gpio_pf06>;
     pinctrl-names = "default", "priv_start";
     status = "disabled";
+};
+
+&mac0 {
+    pinctrl-0 = <&rmii_txen_pt03
+                &rmii_txd0_pt04
+                &rmii_txd1_pt05
+                &rmii_rxc_pt08
+                &rmii_crsdv_pt09
+                &rmii_rxd0_pt10
+                &rmii_rxd1_pt11>;
+    pinctrl-names = "default";
+    status = "okay";
 };

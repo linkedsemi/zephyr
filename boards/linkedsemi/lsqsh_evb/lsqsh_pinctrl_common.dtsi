@@ -12,7 +12,6 @@
         pinmux = <LS_PINMUX_SET(PK00, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         bias-pull-down;
-        drive-open-drain;
         input-enable;
     };
 
@@ -261,5 +260,25 @@
     /omit-if-no-ref/lpc_dat0_pi15: lpc_dat0_pi15 {
         pinmux = <LS_PINMUX_SET(PI15,  LSFUNC(PINMUX_FUNC2))>;
         input-enable;
+    };
+
+    /* SGPIOM */
+    /omit-if-no-ref/sgpiom_clk_pe06: sgpiom_clk_pe06 {
+        pinmux = <LS_PINMUX_SET(PE06, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/sgpiom_di_pe07: sgpiom_di_pe07 {
+        pinmux = <LS_PINMUX_SET(PE07, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/sgpiom_do_pe08: sgpiom_do_pe08 {
+        pinmux = <LS_PINMUX_SET(PE08, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/sgpiom_ld_pe09: sgpiom_ld_pe09 {
+        pinmux = <LS_PINMUX_SET(PE09, LSFUNC(PINMUX_FUNC1))>;
+        drive-strength = "quarter max driver";
     };
 };
