@@ -1,0 +1,70 @@
+From f7a242d77889f3c9f7f9cdba2b7c7426f530b554 Mon Sep 17 00:00:00 2001
+From: Hunter Liu <htliu@linkedsemi.com>
+Date: Fri, 29 Nov 2024 17:37:46 +0800
+Subject: [PATCH] Xuantie-900-gcc-elf-newlib-x86_64-V2.10.2: zephyr:
+ samples/cpp/hello_world: fix build eror due to set CONFIG_POSIX_API=y
+
+---
+ .../include/sys/_pthreadtypes.h               | 28 ++++++++++---------
+ 1 file changed, 15 insertions(+), 13 deletions(-)
+
+diff --git a/riscv64-unknown-elf/include/sys/_pthreadtypes.h b/riscv64-unknown-elf/include/sys/_pthreadtypes.h
+index 9d66630..e2d4c0a 100644
+--- a/riscv64-unknown-elf/include/sys/_pthreadtypes.h
++++ b/riscv64-unknown-elf/include/sys/_pthreadtypes.h
+@@ -24,7 +24,7 @@
+  *  2.5 Primitive System Data Types,  P1003.1c/D10, p. 19.
+  */
+ 
+-typedef void *pthread_t;            /* identify a thread */
++// typedef void *pthread_t;            /* identify a thread */
+ 
+ /* P1003.1c/D10, p. 118-119 */
+ #define PTHREAD_SCOPE_SYSTEM  0
+@@ -122,10 +122,10 @@ typedef union {
+ #ifndef __THEAD_SIZEOF_PTHREAD_MUTEX_T
+ #define __THEAD_SIZEOF_PTHREAD_MUTEX_T 1
+ #endif
+-typedef union {
+-  char __size[__THEAD_SIZEOF_PTHREAD_MUTEX_T];
+-  int __align;
+-} pthread_mutex_t;
++// typedef union {
++//   char __size[__THEAD_SIZEOF_PTHREAD_MUTEX_T];
++//   int __align;
++// } pthread_mutex_t;
+ 
+ #define _PTHREAD_MUTEX_INITIALIZER {{0}}
+ 
+@@ -136,18 +136,20 @@ typedef union {
+ #ifndef __THEAD_SIZEOF_PTHREAD_CONDATTR_T
+ #define __THEAD_SIZEOF_PTHREAD_CONDATTR_T 1
+ #endif
+-typedef union {
+-  char __size[__THEAD_SIZEOF_PTHREAD_CONDATTR_T];
+-  int __align;
+-} pthread_condattr_t;
++// typedef union {
++//   char __size[__THEAD_SIZEOF_PTHREAD_CONDATTR_T];
++//   int __align;
++// } pthread_condattr_t;
++struct pthread_condattr;
++typedef struct pthread_condattr pthread_condattr_t;
+ 
+ #ifndef __THEAD_SIZEOF_PTHREAD_COND_T
+ #define __THEAD_SIZEOF_PTHREAD_COND_T 1
+ #endif
+-typedef union {
+-  char __size[__THEAD_SIZEOF_PTHREAD_COND_T];
+-  int __align;
+-} pthread_cond_t;
++// typedef union {
++//   char __size[__THEAD_SIZEOF_PTHREAD_COND_T];
++//   int __align;
++// } pthread_cond_t;
+ 
+ /* Keys */
+ 
+-- 
+2.39.2
+

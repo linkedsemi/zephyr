@@ -78,10 +78,7 @@ struct pthread_condattr {
 	clockid_t clock;
 };
 
-#if defined(CONFIG_MINIMAL_LIBC) || defined(CONFIG_PICOLIBC) || defined(CONFIG_ARMCLANG_STD_LIBC) \
-	|| defined(CONFIG_ARCMWDT_LIBC)
 typedef struct pthread_condattr pthread_condattr_t;
-#endif
 BUILD_ASSERT(sizeof(pthread_condattr_t) >= sizeof(struct pthread_condattr));
 
 /* Barrier */
