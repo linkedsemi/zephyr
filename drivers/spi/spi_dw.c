@@ -35,6 +35,7 @@ LOG_MODULE_REGISTER(spi_dw);
 #endif
 
 #include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/spi/rtio.h>
 #include <zephyr/irq.h>
 
 #include "spi_dw.h"
@@ -534,6 +535,9 @@ static const struct spi_driver_api dw_spi_api = {
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_dw_transceive_async,
 #endif /* CONFIG_SPI_ASYNC */
+#ifdef CONFIG_SPI_RTIO
+	.iodev_submit = spi_rtio_iodev_default_submit,
+#endif
 	.release = spi_dw_release,
 };
 
