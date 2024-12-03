@@ -196,6 +196,7 @@
 
     mmc_disk0: disk {
         compatible = "zephyr,mmc-disk";
+        disk-name = "SD";
         bus-width = <1>;
         status = "okay";
     };
