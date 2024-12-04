@@ -10,7 +10,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
-#include <zephyr/cache.h>
 #include <zephyr/drivers/sdhci-of-linkedsemi.h>
 #include "reg_sysc_cpu.h"
 
@@ -26,44 +25,14 @@ static uint32_t sector_count;
 
 #define MMC_UNALIGN_OFFSET 1
 
-BUILD_ASSERT(CONFIG_NUM_USE_CPU == 2, "config err");
-BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay), "config err");
-
 /*
  * Verify that SD stack can initialize an MMC card
  * This test must run first, to ensure the card is initialized.
  */
 ZTEST(sd_stack, test_0_init)
 {
-	bool is_cpu0_use_emmc = true;
-
-	for (int i = 0; i < 10; i++) {
+	for (int i = 0; i < 5; i++) {
 		int ret;
-		printk("i: %d  is_cpu0_use_emmc: %s\n", i, is_cpu0_use_emmc ? "Y" : "N");
-
-		if (is_cpu0_use_emmc) {
-			is_cpu0_use_emmc = !is_cpu0_use_emmc;
-			SYSC_CPU->APP_CPU_SRST = 0x2; /* reset */
-			linkedsemi_sdhci_deinit(sdhc_dev);
-			linkedsemi_sdhci_reinit(sdhc_dev);
-		} else {
-			is_cpu0_use_emmc = !is_cpu0_use_emmc;
-
-			*(volatile uint32_t *)0x1007ff00 = 0x1;
-			sys_cache_instr_flush_all();
-			sys_cache_data_flush_and_invd_all();
-			linkedsemi_sdhci_deinit(sdhc_dev);
-			SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
-			SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
-
-			sys_cache_data_invd_all();
-			/* wait for cpu1 access emmc done */
-			while(*(volatile uint32_t *)0x1007ff00) {
-				k_msleep(1);
-			}
-			*(volatile uint32_t *)0x1007ff00 = 0x1;
-			continue;
-		}
 
 		zassert_true(device_is_ready(sdhc_dev), "SDHC device is not ready");
 
@@ -114,12 +83,12 @@ ZTEST(sd_stack, test_0_init)
 		ret = mmc_read_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
 		zassert_equal(ret, 0, "Unaligned read failed");
 	// }
-#if 1
+
 	// /* Verify that SD stack can write to an SD card */
 	// ZTEST(sd_stack, test_write)
 	// {
 	// 	int ret;
-		block_addr = 0;
+		// int block_addr = 0;
 
 		/* Try simple writes from start of SD card */
 
@@ -154,7 +123,7 @@ ZTEST(sd_stack, test_0_init)
 	// ZTEST(sd_stack, test_rw)
 	// {
 	// 	int ret;
-		block_addr = 0;
+		// int block_addr = 0;
 
 		/* Zero the write buffer */
 		memset(buf, 0, BUF_SIZE);
@@ -195,7 +164,7 @@ ZTEST(sd_stack, test_0_init)
 					"Unaligned read of written area was not correct");
 		}
 	// }
-#endif
+
 	// /* Simply dump the card configuration. */
 	// ZTEST(sd_stack, test_card_config)
 	// {

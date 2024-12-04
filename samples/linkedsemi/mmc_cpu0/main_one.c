@@ -10,7 +10,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
 
-#include <zephyr/cache.h>
 #include <zephyr/drivers/sdhci-of-linkedsemi.h>
 #include "reg_sysc_cpu.h"
 
@@ -25,8 +24,6 @@ static uint32_t sector_size;
 static uint32_t sector_count;
 
 #define MMC_UNALIGN_OFFSET 1
-BUILD_ASSERT(CONFIG_NUM_USE_CPU == 2, "config err");
-BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), "config err");
 
 /*
  * Verify that SD stack can initialize an MMC card
@@ -35,9 +32,10 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), "config err");
 ZTEST(sd_stack, test_0_init)
 {
 	int ret;
+
 #if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-	*(volatile uint32_t *)0x1007ff00 = 0x1;
+	*(volatile uint32_t *)0x1007ff00 = 0x0;
 #endif
 #endif
 	zassert_true(device_is_ready(sdhc_dev), "SDHC device is not ready");
@@ -45,12 +43,12 @@ ZTEST(sd_stack, test_0_init)
 	ret = sd_init(sdhc_dev, &card);
 
 	zassert_equal(ret, 0, "Card initialization failed");
-// }
+}
 
-// /* Verify that MMC stack returns valid IOCTL values */
-// ZTEST(sd_stack, test_ioctl)
-// {
-	// int ret;
+/* Verify that MMC stack returns valid IOCTL values */
+ZTEST(sd_stack, test_ioctl)
+{
+	int ret;
 
 	ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_COUNT, &sector_count);
 	zassert_equal(ret, 0, "IOCTL sector count read failed");
@@ -59,12 +57,12 @@ ZTEST(sd_stack, test_0_init)
 	ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_SIZE, &sector_size);
 	zassert_equal(ret, 0, "IOCTL sector size read failed");
 	TC_PRINT("SD card reports sector size of %d\n", sector_size);
-// }
+}
 
-// /* Verify that SD stack can read from an SD card */
-// ZTEST(sd_stack, test_read)
-// {
-	// int ret;
+/* Verify that SD stack can read from an SD card */
+ZTEST(sd_stack, test_read)
+{
+	int ret;
 	int block_addr = 0;
 
 	/* Try simple reads from start of SD card */
@@ -94,13 +92,13 @@ ZTEST(sd_stack, test_0_init)
 	block_addr = 3;
 	ret = mmc_read_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
 	zassert_equal(ret, 0, "Unaligned read failed");
-// }
-#if 1
-// /* Verify that SD stack can write to an SD card */
-// ZTEST(sd_stack, test_write)
-// {
-	// int ret;
-	block_addr = 0;
+}
+
+/* Verify that SD stack can write to an SD card */
+ZTEST(sd_stack, test_write)
+{
+	int ret;
+	int block_addr = 0;
 
 	/* Try simple writes from start of SD card */
 
@@ -129,13 +127,72 @@ ZTEST(sd_stack, test_0_init)
 	block_addr = 3;
 	ret = mmc_write_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
 	zassert_equal(ret, 0, "Unaligned write failed");
-// }
+}
+#if 0
+#if (CONFIG_NUM_USE_CPU == 2)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+/*
+ * Verify that SD stack can initialize an MMC card
+ * This test must run first, to ensure the card is initialized.
+ */
+ZTEST(sd_stack, test_0_init_2)
+{
+	int ret;
 
-// /* Test reads and writes interleaved, to verify data is making it on disk */
-// ZTEST(sd_stack, test_rw)
-// {
-	// int ret;
-	block_addr = 0;
+	// k_msleep(1000);
+    linkedsemi_sdhci_deinit(sdhc_dev);
+
+    SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
+    SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+
+	// k_msleep(50000); //wait for cpu1 access emmc done
+	while(*(volatile uint32_t *)0x1007ff00 != 0x123456c1) {;}
+    SYSC_CPU->APP_CPU_SRST = 0x0; /* release reset */
+    linkedsemi_sdhci_reinit(sdhc_dev);
+
+	zassert_true(device_is_ready(sdhc_dev), "SDHC device is not ready");
+
+	ret = sd_init(sdhc_dev, &card);
+
+	zassert_equal(ret, 0, "Card initialization failed");
+}
+
+/* Verify that MMC stack returns valid IOCTL values */
+ZTEST(sd_stack, test_ioctl_2)
+{
+	int ret;
+
+	ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_COUNT, &sector_count);
+	zassert_equal(ret, 0, "IOCTL sector count read failed");
+	TC_PRINT("SD card reports sector count of %d\n", sector_count);
+
+	ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_SIZE, &sector_size);
+	zassert_equal(ret, 0, "IOCTL sector size read failed");
+	TC_PRINT("SD card reports sector size of %d\n", sector_size);
+}
+#endif
+#endif
+#endif
+
+/* Test reads and writes interleaved, to verify data is making it on disk */
+ZTEST(sd_stack, test_rw)
+{
+	int ret;
+	int block_addr = 0;
+
+#if (CONFIG_NUM_USE_CPU == 2)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+    linkedsemi_sdhci_deinit(sdhc_dev);
+
+    SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
+    SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+
+	// k_msleep(50000); //wait for cpu1 access emmc done
+	while(*(volatile uint32_t *)0x1007ff00 != 0x123456c1) {;}
+    SYSC_CPU->APP_CPU_SRST = 0x0; /* release reset */
+    linkedsemi_sdhci_reinit(sdhc_dev);
+#endif
+#endif
 
 	/* Zero the write buffer */
 	memset(buf, 0, BUF_SIZE);
@@ -175,11 +232,11 @@ ZTEST(sd_stack, test_0_init)
 				  (SECTOR_COUNT - 1) * sector_size,
 				  "Unaligned read of written area was not correct");
 	}
-// }
-#endif
-// /* Simply dump the card configuration. */
-// ZTEST(sd_stack, test_card_config)
-// {
+}
+
+/* Simply dump the card configuration. */
+ZTEST(sd_stack, test_card_config)
+{
 	switch (card.card_voltage) {
 	case SD_VOL_1_2_V:
 		TC_PRINT("Card voltage: 1.2V\n");
@@ -229,11 +286,11 @@ ZTEST(sd_stack, test_0_init)
 	default:
 		zassert_unreachable("Card type is not known value");
 	}
+
+	
 #if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-	*(volatile uint32_t *)0x1007ff00 = 0x0;
-	sys_cache_instr_flush_all();
-	sys_cache_data_flush_and_invd_all();
+	*(volatile uint32_t *)0x1007ff00 = 0x123456c1;
 #endif
 #endif
 }
