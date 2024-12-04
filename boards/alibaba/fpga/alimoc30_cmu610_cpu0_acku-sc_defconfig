@@ -1,0 +1,40 @@
+# Copyright (c) 2024 Alibaba
+# SPDX-License-Identifier: Apache-2.0
+
+CONFIG_SINGLE_CORE=y
+
+# Enable Networking
+CONFIG_NETWORKING=y
+CONFIG_NET_TCP=y
+CONFIG_NET_IPV4=y
+CONFIG_NET_SOCKETS=y
+# CONFIG_NET_UDP=y
+# CONFIG_NET_IPV6=y
+CONFIG_NET_CONFIG_SETTINGS=y
+CONFIG_NET_CONFIG_MY_IPV4_ADDR="192.0.2.1"
+
+# Enable Random Generator, for now, we just use test random generator.
+CONFIG_TEST_RANDOM_GENERATOR=y
+# CONFIG_ENTROPY_DEVICE_RANDOM_GENERATOR=y
+# CONFIG_XOSHIRO_RANDOM_GENERATOR=y
+# CONFIG_TIMER_RANDOM_GENERATOR=y
+# CONFIG_ENTROPY_GENERATOR=y
+
+# Don't known why ioctl defined in stropts.c which was controlled by this config item, but we indeed need set this item.
+CONFIG_XOPEN_STREAMS=y
+
+# Enable userspace
+# CONFIG_USERSPACE=y
+
+# It seems that these configs don't have any effect, maybe they are set by other config?
+# CONFIG_GLIBCXX_LIBCPP=y
+# CONFIG_GNU_C_EXTENSIONS=y
+# CONFIG_COMMON_LIBC_THRD=y
+# CONFIG_DYNAMIC_THREAD=y
+# CONFIG_TRACING=y
+# CONFIG_MULTITHREADING=y
+# CONFIG_USERSPACE=y
+# CONFIG_THREAD_NAME=y
+# CONFIG_DEBUG=y
+# CONFIG_SYMTAB=y
+# CONFIG_EXCEPTION_STACK_TRACE_SYMTAB=y

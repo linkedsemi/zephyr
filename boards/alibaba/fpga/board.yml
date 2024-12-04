@@ -9,3 +9,4 @@ board:
     revisions:
       - name: "zynq"
       - name: "acku"
+      - name: "acku-sc"
