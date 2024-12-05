@@ -12,7 +12,7 @@ config GPIO_LSQSH
 
 config GPIO_LINKEDSEMI_SGPIOM
     bool "LINKEDSEMI SGPIOM Controllers"
-    default y
+    default n
     depends on DT_HAS_LINKEDSEMI_SGPIOM_ENABLED
     select DYNAMIC_INTERRUPTS
     help
