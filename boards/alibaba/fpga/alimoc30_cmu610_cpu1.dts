@@ -25,6 +25,10 @@
         zephyr,shell-uart = &uart4;
     };
 
+    aliases {
+        sdhc0 = &sdhci;
+    };
+
     sram1_nocache: memory@1013e000 {
         compatible = "zephyr,memory-region", "mmio-sram";
         reg = <0x1013e000 DT_SIZE_K(4)>;
@@ -67,6 +71,7 @@
 };
 
 &cpu1 {
+    status = "okay";
     clock-frequency = <50000000>;
     cpu-power-states = <&idle &lp0>;
 };
@@ -96,4 +101,25 @@
                 &rmii_mdio_pt01>;
     pinctrl-names = "default";
     status = "okay";
+};
+
+&sdhci {
+    pinctrl-0 = <&sdhc_d0_ph04
+                &sdhc_d1_ph05
+                &sdhc_d2_ph06
+                &sdhc_d3_ph07
+                &sdhc_d4_ph08
+                &sdhc_d5_ph09
+                &sdhc_d6_ph010
+                &sdhc_d7_ph011
+                &sdhc_clk_ph012
+                &sdhc_cmd_ph013>;
+    pinctrl-names = "default";
+    status = "okay";
+
+    mmc_disk0: disk {
+        compatible = "zephyr,mmc-disk";
+        bus-width = <1>;
+        status = "okay";
+    };
 };
