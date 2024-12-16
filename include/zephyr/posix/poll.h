@@ -15,10 +15,15 @@ extern "C" {
 #define pollfd zsock_pollfd
 
 #define POLLIN ZSOCK_POLLIN
+#define	POLLPRI		0x0002		/* OOB/Urgent readable data */
 #define POLLOUT ZSOCK_POLLOUT
 #define POLLERR ZSOCK_POLLERR
 #define POLLHUP ZSOCK_POLLHUP
 #define POLLNVAL ZSOCK_POLLNVAL
+#define	POLLRDNORM	0x0040		/* non-OOB/URG data available */
+#define	POLLWRNORM	POLLOUT		/* no write type differentiation */
+#define	POLLRDBAND	0x0080		/* OOB/Urgent readable data */
+#define	POLLWRBAND	0x0100		/* OOB/Urgent data can be written */
 
 int poll(struct pollfd *fds, int nfds, int timeout);
 

@@ -1197,6 +1197,11 @@ struct in_pktinfo {
 /** Leave IPv4 multicast group. */
 #define IP_DROP_MEMBERSHIP 36
 
+struct ip_mreq {
+	struct in_addr imr_multiaddr;	/* IP multicast address of group */
+	struct in_addr imr_interface;	/* local IP address of interface */
+};
+
 /**
  * @brief Struct used when joining or leaving a IPv4 multicast group.
  */
@@ -1234,6 +1239,9 @@ struct ipv6_mreq {
 
 	/** Network interface index of the local IPv6 address */
 	int ipv6mr_ifindex;
+
+    /* local interface */
+    unsigned int ipv6mr_interface;
 };
 
 /** Don't support IPv4 access */

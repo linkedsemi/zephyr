@@ -33,7 +33,7 @@ FUNC_NORETURN void z_irq_spurious(const void *unused)
 
 	mcause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
 
-	LOG_ERR("Spurious interrupt detected! IRQ: %ld", mcause);
+	LOG_ERROR("Spurious interrupt detected! IRQ: %ld", mcause);
 #if defined(CONFIG_RISCV_HAS_PLIC)
 	if (mcause == RISCV_IRQ_MEXT) {
 		unsigned int save_irq = riscv_plic_get_irq();

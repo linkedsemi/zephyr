@@ -141,6 +141,8 @@ enum {
 	_SC_TZNAME_MAX,
 };
 
+#define _SC_CLK_TCK _SC_CLK_TCK
+
 #define __z_posix_sysconf_SC_ADVISORY_INFO (-1L)
 #define __z_posix_sysconf_SC_ASYNCHRONOUS_IO                                                       \
 	COND_CODE_1(CONFIG_POSIX_ASYNCHRONOUS_IO, (_POSIX_ASYNCHRONOUS_IO), (-1L))

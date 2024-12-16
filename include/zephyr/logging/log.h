@@ -41,7 +41,7 @@ extern "C" {
  * @param ... A string optionally containing printk valid conversion specifier,
  * followed by as many values as specifiers.
  */
-#define LOG_ERR(...)    Z_LOG(LOG_LEVEL_ERR, __VA_ARGS__)
+#define LOG_ERROR(...)    Z_LOG(LOG_LEVEL_ERR, __VA_ARGS__)
 
 /**
  * @brief Writes a WARNING level message to the log.
@@ -463,7 +463,7 @@ void z_log_vprintk(const char *fmt, va_list ap);
  * code and freezes the whole IDE. Following lines hides LOG_x macros from them.
  */
 #if defined(__CDT_PARSER__) || defined(__JETBRAINS_IDE__)
-#undef LOG_ERR
+#undef LOG_ERROR
 #undef LOG_WRN
 #undef LOG_INF
 #undef LOG_DBG
@@ -473,7 +473,7 @@ void z_log_vprintk(const char *fmt, va_list ap);
 #undef LOG_HEXDUMP_INF
 #undef LOG_HEXDUMP_DBG
 
-#define LOG_ERR(...) (void) 0
+#define LOG_ERROR(...) (void) 0
 #define LOG_WRN(...) (void) 0
 #define LOG_DBG(...) (void) 0
 #define LOG_INF(...) (void) 0

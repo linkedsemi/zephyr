@@ -91,52 +91,52 @@ FUNC_NORETURN void z_riscv_fatal_error_csf(unsigned int reason, const struct arc
 	__asm__ volatile("csrr %0, mcause" : "=r" (mcause));
 
 	mcause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
-	LOG_ERR("");
-	LOG_ERR(" mcause: %ld, %s", mcause, z_riscv_mcause_str(mcause));
+	LOG_ERROR("");
+	LOG_ERROR(" mcause: %ld, %s", mcause, z_riscv_mcause_str(mcause));
 
 #ifndef CONFIG_SOC_OPENISA_RV32M1
 	unsigned long mtval;
 
 	__asm__ volatile("csrr %0, mtval" : "=r" (mtval));
-	LOG_ERR("  mtval: %lx", mtval);
+	LOG_ERROR("  mtval: %lx", mtval);
 #endif /* CONFIG_SOC_OPENISA_RV32M1 */
 
 #ifdef CONFIG_EXCEPTION_DEBUG
 	if (esf != NULL) {
-		LOG_ERR("     a0: " PR_REG "    t0: " PR_REG, esf->a0, esf->t0);
-		LOG_ERR("     a1: " PR_REG "    t1: " PR_REG, esf->a1, esf->t1);
-		LOG_ERR("     a2: " PR_REG "    t2: " PR_REG, esf->a2, esf->t2);
+		LOG_ERROR("     a0: " PR_REG "    t0: " PR_REG, esf->a0, esf->t0);
+		LOG_ERROR("     a1: " PR_REG "    t1: " PR_REG, esf->a1, esf->t1);
+		LOG_ERROR("     a2: " PR_REG "    t2: " PR_REG, esf->a2, esf->t2);
 #if defined(CONFIG_RISCV_ISA_RV32E)
-		LOG_ERR("     a3: " PR_REG, esf->a3);
-		LOG_ERR("     a4: " PR_REG, esf->a4);
-		LOG_ERR("     a5: " PR_REG, esf->a5);
+		LOG_ERROR("     a3: " PR_REG, esf->a3);
+		LOG_ERROR("     a4: " PR_REG, esf->a4);
+		LOG_ERROR("     a5: " PR_REG, esf->a5);
 #else
-		LOG_ERR("     a3: " PR_REG "    t3: " PR_REG, esf->a3, esf->t3);
-		LOG_ERR("     a4: " PR_REG "    t4: " PR_REG, esf->a4, esf->t4);
-		LOG_ERR("     a5: " PR_REG "    t5: " PR_REG, esf->a5, esf->t5);
-		LOG_ERR("     a6: " PR_REG "    t6: " PR_REG, esf->a6, esf->t6);
-		LOG_ERR("     a7: " PR_REG, esf->a7);
+		LOG_ERROR("     a3: " PR_REG "    t3: " PR_REG, esf->a3, esf->t3);
+		LOG_ERROR("     a4: " PR_REG "    t4: " PR_REG, esf->a4, esf->t4);
+		LOG_ERROR("     a5: " PR_REG "    t5: " PR_REG, esf->a5, esf->t5);
+		LOG_ERROR("     a6: " PR_REG "    t6: " PR_REG, esf->a6, esf->t6);
+		LOG_ERROR("     a7: " PR_REG, esf->a7);
 #endif /* CONFIG_RISCV_ISA_RV32E */
-		LOG_ERR("     sp: " PR_REG, z_riscv_get_sp_before_exc(esf));
-		LOG_ERR("     ra: " PR_REG, esf->ra);
-		LOG_ERR("   mepc: " PR_REG, esf->mepc);
-		LOG_ERR("mstatus: " PR_REG, esf->mstatus);
-		LOG_ERR("");
+		LOG_ERROR("     sp: " PR_REG, z_riscv_get_sp_before_exc(esf));
+		LOG_ERROR("     ra: " PR_REG, esf->ra);
+		LOG_ERROR("   mepc: " PR_REG, esf->mepc);
+		LOG_ERROR("mstatus: " PR_REG, esf->mstatus);
+		LOG_ERROR("");
 	}
 
 	if (csf != NULL) {
 #if defined(CONFIG_RISCV_ISA_RV32E)
-		LOG_ERR("     s0: " PR_REG, csf->s0);
-		LOG_ERR("     s1: " PR_REG, csf->s1);
+		LOG_ERROR("     s0: " PR_REG, csf->s0);
+		LOG_ERROR("     s1: " PR_REG, csf->s1);
 #else
-		LOG_ERR("     s0: " PR_REG "    s6: " PR_REG, csf->s0, csf->s6);
-		LOG_ERR("     s1: " PR_REG "    s7: " PR_REG, csf->s1, csf->s7);
-		LOG_ERR("     s2: " PR_REG "    s8: " PR_REG, csf->s2, csf->s8);
-		LOG_ERR("     s3: " PR_REG "    s9: " PR_REG, csf->s3, csf->s9);
-		LOG_ERR("     s4: " PR_REG "   s10: " PR_REG, csf->s4, csf->s10);
-		LOG_ERR("     s5: " PR_REG "   s11: " PR_REG, csf->s5, csf->s11);
+		LOG_ERROR("     s0: " PR_REG "    s6: " PR_REG, csf->s0, csf->s6);
+		LOG_ERROR("     s1: " PR_REG "    s7: " PR_REG, csf->s1, csf->s7);
+		LOG_ERROR("     s2: " PR_REG "    s8: " PR_REG, csf->s2, csf->s8);
+		LOG_ERROR("     s3: " PR_REG "    s9: " PR_REG, csf->s3, csf->s9);
+		LOG_ERROR("     s4: " PR_REG "   s10: " PR_REG, csf->s4, csf->s10);
+		LOG_ERROR("     s5: " PR_REG "   s11: " PR_REG, csf->s5, csf->s11);
 #endif /* CONFIG_RISCV_ISA_RV32E */
-		LOG_ERR("");
+		LOG_ERROR("");
 	}
 #endif /* CONFIG_EXCEPTION_DEBUG */
 

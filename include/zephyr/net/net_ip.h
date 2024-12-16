@@ -153,10 +153,10 @@ struct in6_addr {
 /** IPv4 address struct */
 struct in_addr {
 	union {
+		uint32_t s_addr; /**< In big endian, for POSIX compatibility. */
 		uint8_t s4_addr[4];    /**< IPv4 address buffer */
 		uint16_t s4_addr16[2]; /**< In big endian */
 		uint32_t s4_addr32[1]; /**< In big endian */
-		uint32_t s_addr; /**< In big endian, for POSIX compatibility. */
 	};
 };
 
@@ -181,6 +181,7 @@ typedef size_t socklen_t;
 struct sockaddr_in6 {
 	sa_family_t		sin6_family;   /**< AF_INET6               */
 	uint16_t		sin6_port;     /**< Port number            */
+	uint32_t			sin6_flowinfo;  /* IPv6 flow information */
 	struct in6_addr		sin6_addr;     /**< IPv6 address           */
 	uint8_t			sin6_scope_id; /**< Interfaces for a scope */
 };

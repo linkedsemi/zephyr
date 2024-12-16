@@ -255,11 +255,11 @@ static bool in_fatal_stack_bound(uintptr_t addr, const struct k_thread *const th
 
 #ifdef CONFIG_SYMTAB
 #define LOG_STACK_TRACE(idx, sfp, ra, name, offset)                                                \
-	LOG_ERR("     %2d: " SFP ": " PR_REG " ra: " PR_REG " [%s+0x%x]", idx, sfp, ra, name,      \
+	LOG_ERROR("     %2d: " SFP ": " PR_REG " ra: " PR_REG " [%s+0x%x]", idx, sfp, ra, name,      \
 		offset)
 #else
 #define LOG_STACK_TRACE(idx, sfp, ra, name, offset)                                                \
-	LOG_ERR("     %2d: " SFP ": " PR_REG " ra: " PR_REG, idx, sfp, ra)
+	LOG_ERROR("     %2d: " SFP ": " PR_REG " ra: " PR_REG, idx, sfp, ra)
 #endif /* CONFIG_SYMTAB */
 
 static bool print_trace_address(void *arg, unsigned long ra, unsigned long sfp)
@@ -279,8 +279,8 @@ void z_riscv_unwind_stack(const struct arch_esf *esf, const _callee_saved_t *csf
 {
 	int i = 0;
 
-	LOG_ERR("call trace:");
+	LOG_ERROR("call trace:");
 	walk_stackframe(print_trace_address, &i, _current, esf, in_fatal_stack_bound, csf);
-	LOG_ERR("");
+	LOG_ERROR("");
 }
 #endif /* CONFIG_EXCEPTION_STACK_TRACE */
