@@ -168,6 +168,9 @@ int pthread_condattr_setclock(pthread_condattr_t *att, clockid_t clock_id);
 #define PTHREAD_MUTEX_NORMAL        0
 #define PTHREAD_MUTEX_RECURSIVE     1
 #define PTHREAD_MUTEX_ERRORCHECK    2
+#ifdef PTHREAD_MUTEX_DEFAULT
+#undef PTHREAD_MUTEX_DEFAULT
+#endif
 #define PTHREAD_MUTEX_DEFAULT       PTHREAD_MUTEX_NORMAL
 
 /*

@@ -129,10 +129,10 @@ struct pthread_condattr {
 	clockid_t clock;
 };
 
-#if !defined(CONFIG_NEWLIB_LIBC)
+// #if !defined(CONFIG_NEWLIB_LIBC)
 typedef struct pthread_condattr pthread_condattr_t;
 BUILD_ASSERT(sizeof(pthread_condattr_t) >= sizeof(struct pthread_condattr));
-#endif
+// #endif
 
 /* Barrier */
 typedef uint32_t pthread_barrier_t;

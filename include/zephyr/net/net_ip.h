@@ -153,10 +153,10 @@ struct in6_addr {
 /** IPv4 address struct */
 struct in_addr {
 	union {
+		uint32_t s_addr; /**< In big endian, for POSIX compatibility. */
 		uint8_t s4_addr[4];    /**< IPv4 address buffer */
 		uint16_t s4_addr16[2]; /**< In big endian */
 		uint32_t s4_addr32[1]; /**< In big endian */
-		uint32_t s_addr; /**< In big endian, for POSIX compatibility. */
 	};
 };
 

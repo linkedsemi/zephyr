@@ -11,7 +11,7 @@ GTEXT(__soc_handle_irq)
 SECTION_FUNC(exception.other, __soc_handle_irq) 
 	/* In the interrupt stack, open mie to implement interrupt nesting  */
 
-	csrrwi  t0, mnxti, 8
+	csrrwi  t0, 0x345, 8   //0x345:mnxti
 
 	/* Return */
 	ret
