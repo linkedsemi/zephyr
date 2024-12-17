@@ -75,11 +75,10 @@ int crypto_linkedsemi_single_block(const struct device *dev,
         sys_write32(u32_iv[2], dev_config->reg_crypt + CRYPT_IVR2);
         sys_write32(u32_iv[3], dev_config->reg_crypt + CRYPT_IVR3);
     }
-
-    sys_write32(BSWAP_32(((uint32_t *)pkt_in_buf)[0]), dev_config->reg_crypt + CRYPT_DATA3);
-    sys_write32(BSWAP_32(((uint32_t *)pkt_in_buf)[1]), dev_config->reg_crypt + CRYPT_DATA2);
-    sys_write32(BSWAP_32(((uint32_t *)pkt_in_buf)[2]), dev_config->reg_crypt + CRYPT_DATA1);
-    sys_write32(BSWAP_32(((uint32_t *)pkt_in_buf)[3]), dev_config->reg_crypt + CRYPT_DATA0);
+    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[0])), dev_config->reg_crypt + CRYPT_DATA3);
+    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[1])), dev_config->reg_crypt + CRYPT_DATA2);
+    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[2])), dev_config->reg_crypt + CRYPT_DATA1);
+    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[3])), dev_config->reg_crypt + CRYPT_DATA0);
 
     aes_reg_cr_un = (union aes_reg_cr){
         .field = {
@@ -257,6 +256,13 @@ int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx,
 
     return ret;
 }
+static inline void inc_ctr(uint8_t* ctr, uint32_t ctr_size)
+{
+    for (uint32_t i = ctr_size - 1; i >= 0; i--) {
+        if (++ctr[i])
+            break;
+    }
+}
 
 int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
                                          struct cipher_pkt *pkt,
@@ -265,7 +271,8 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
     const struct device *dev = ctx->device;
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
-    const uint8_t ivlen = AES_BLOCK_LEN_BYTE - (ctx->mode_params.ctr_info.ctr_len >> 3);
+    const uint8_t cntlen = ctx->mode_params.ctr_info.ctr_len >> 3;
+    const uint8_t ivlen = AES_BLOCK_LEN_BYTE - cntlen;
     const uint32_t unalign_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
     uint32_t cnt = 0;
     int ret = 0;
@@ -283,7 +290,7 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
                                             NULL);
         if (ret == 0) {
             cnt++;
-            *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+            inc_ctr(iv + ivlen, cntlen);
             mem_xor_128(pkt->out_buf + i * AES_BLOCK_LEN_BYTE,
                         pkt->in_buf + i * AES_BLOCK_LEN_BYTE, c_iv);
             pkt->out_len += AES_BLOCK_LEN_BYTE;
@@ -295,7 +302,7 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
 
     if (unalign_block_len != 0) {
         cnt++;
-        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        inc_ctr(iv + ivlen, cntlen);
         ret = crypto_linkedsemi_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
@@ -736,15 +743,15 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
+    const uint8_t cntlen = AES_BLOCK_LEN_BYTE - ctx->mode_params.gcm_info.nonce_len;
     const uint32_t unalign_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
-    uint32_t cnt = 1;
     int ret = 0;
 
     memcpy(iv, nonce, ivlen);
+    inc_ctr(iv + ivlen, cntlen);
 /* GCTR */
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
-        cnt++;
-        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        inc_ctr(iv + ivlen, cntlen);
         ret = crypto_linkedsemi_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
@@ -764,8 +771,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
         }
     }
     if (unalign_block_len != 0) {
-        cnt++;
-        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        inc_ctr(iv + ivlen, cntlen);
         ret = crypto_linkedsemi_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
@@ -804,7 +810,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
 /* GMAC: end gcm_h */
 
 /* GMAC: encrypt j0 */
-    *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(1);
+    UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)&iv[12]);
     ret = crypto_linkedsemi_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
@@ -842,15 +848,15 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
     uint8_t iv[AES_BLOCK_LEN_BYTE] = {0};
     uint8_t c_iv[AES_BLOCK_LEN_BYTE] = {0};
     const uint8_t ivlen = ctx->mode_params.gcm_info.nonce_len;
+    const uint8_t cntlen = AES_BLOCK_LEN_BYTE - ctx->mode_params.gcm_info.nonce_len;
     const uint32_t unalign_block_len = pkt->in_len % AES_BLOCK_LEN_BYTE;
-    uint32_t cnt = 1;
     int ret = 0;
 
     memcpy(iv, nonce, ivlen);
+    inc_ctr(iv + ivlen, cntlen);
 /* GCTR */
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
-        cnt++;
-        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        inc_ctr(iv + ivlen, cntlen);
         ret = crypto_linkedsemi_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
@@ -870,8 +876,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
         }
     }
     if (unalign_block_len != 0) {
-        cnt++;
-        *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(cnt);
+        inc_ctr(iv + ivlen, cntlen);
         ret = crypto_linkedsemi_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
@@ -910,7 +915,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
 /* GMAC: end gcm_h */
 
 /* GMAC: encrypt j0 */
-    *(uint32_t *)(&(iv[ivlen])) = BSWAP_32(1);
+    UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)&iv[12]);
     ret = crypto_linkedsemi_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,

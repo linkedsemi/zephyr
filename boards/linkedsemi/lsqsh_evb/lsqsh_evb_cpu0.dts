@@ -67,6 +67,11 @@
 &cpu0 {
     clock-frequency = <50000000>;
     cpu-power-states = <&idle &lp0>;
+    status = "okay";
+};
+
+&cpu1 {
+    status = "disabled";
 };
 
 &gpioa {
@@ -196,6 +201,7 @@
 
     mmc_disk0: disk {
         compatible = "zephyr,mmc-disk";
+        disk-name = "SD";
         bus-width = <1>;
         status = "okay";
     };

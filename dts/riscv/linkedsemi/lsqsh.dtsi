@@ -23,6 +23,7 @@
             compatible = "linkedsemi,riscv";
             riscv,isa = "rv32imafcxp";
             reg = <1>;
+            status = "disabled";
         };
     };
 
