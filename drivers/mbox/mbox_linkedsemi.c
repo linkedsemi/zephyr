@@ -9,7 +9,7 @@
 #define LOG_LEVEL CONFIG_MBOX_LOG_LEVEL
 #include <zephyr/logging/log.h>
 #include <string.h>
-#include <reg_sysc_cpu.h>
+#include <platform.h>
 #include <fifo.h>
 
 LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
