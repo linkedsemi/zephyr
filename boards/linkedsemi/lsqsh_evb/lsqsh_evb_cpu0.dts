@@ -263,6 +263,7 @@ tst_dma0: &dma0 {
 };
 
 &flash0 {
+    reg = <0x8000000 0x400000>;
     /*
    * Flash base address is 0x8000000,
    * the following parts are all offset addresses.
