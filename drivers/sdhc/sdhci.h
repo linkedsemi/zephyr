@@ -11,13 +11,6 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define false 0
-#define true 1
-#define SDEMMC0_BASE 0x91580000
-#define SDEMMC1_BASE 0x91581000
-#define IRQN_SD0     142
-#define IRQN_SD1     144
-
 /*
  * Controller registers
  */
