@@ -236,13 +236,6 @@ static int lsqsh_init(void)
     driver_init();
     arch_irq_lock();
 
-#if (CONFIG_NUM_USE_CPU == 2)
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
-    SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
-    SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
-#endif
-#endif
-
     return 0;
 }
 
