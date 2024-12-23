@@ -1,10 +1,6 @@
 # Copyright (c) 2024 Alibaba
 # SPDX-License-Identifier: Apache-2.0
 
-
-CONFIG_MINIMAL_LIBC=y
-CONFIG_MINIMAL_LIBC_RAND=y
-
 CONFIG_PINCTRL=y
 CONFIG_GPIO=y
 
