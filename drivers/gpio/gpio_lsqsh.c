@@ -16,7 +16,7 @@
 
 #include <ls_soc_gpio.h>
 #include <reg_exti_type.h>
-#include <reg_pmu.h>
+#include <reg_gpio.h>
 
 #define NUMBER_OF_PORTS 15
 
@@ -45,7 +45,8 @@ struct gpio_ls_common_data {
 
 struct gpio_ls_config {
     struct gpio_driver_config common;
-    uint32_t *base;
+    uint32_t *base_io_cfg;
+    uint32_t *base_io_val;
 };
 
 struct gpio_ls_data {
@@ -72,36 +73,64 @@ static int get_gpio_port_id(uint32_t port)
 
     switch (port) {
     /* port A base */
-    case DT_REG_ADDR(DT_NODELABEL(gpioa)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioa), io_cfg):
         port_id = 0;
         break;
     /* port B base */
-    case DT_REG_ADDR(DT_NODELABEL(gpiob)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiob), io_cfg):
         port_id = 1;
         break;
     /* port C base */
-    case DT_REG_ADDR(DT_NODELABEL(gpioc)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioc), io_cfg):
         port_id = 2;
         break;
     /* port D base */
-    case DT_REG_ADDR(DT_NODELABEL(gpiod)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiod), io_cfg):
         port_id = 3;
         break;
     /* port E base */
-    case DT_REG_ADDR(DT_NODELABEL(gpioe)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioe), io_cfg):
         port_id = 4;
         break;
     /* port F base */
-    case DT_REG_ADDR(DT_NODELABEL(gpiof)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiof), io_cfg):
         port_id = 5;
         break;
     /* port G base */
-    case DT_REG_ADDR(DT_NODELABEL(gpiog)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiog), io_cfg):
         port_id = 6;
         break;
     /* port H base */
-    case DT_REG_ADDR(DT_NODELABEL(gpioh)):
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioh), io_cfg):
         port_id = 7;
+        break;
+    /* port I base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioi), io_cfg):
+        port_id = 8;
+        break;
+    /* port J base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioj), io_cfg):
+        port_id = 9;
+        break;
+    /* port K base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiok), io_cfg):
+        port_id = 10;
+        break;
+    /* port M base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiom), io_cfg):
+        port_id = 11;
+        break;
+    /* port N base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpion), io_cfg):
+        port_id = 12;
+        break;
+    /* port Q base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpioq), io_cfg):
+        port_id = 13;
+        break;
+    /* port T base */
+    case DT_REG_ADDR_BY_NAME(DT_NODELABEL(gpiot), io_cfg):
+        port_id = 14;
         break;
     default:
         return -ENOTSUP;
@@ -112,17 +141,15 @@ static int get_gpio_port_id(uint32_t port)
 static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_flags_t flags)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
 
     uint8_t pinval, port;
 
-    port = get_gpio_port_id((uint32_t)gpio);
+    port = get_gpio_port_id((uint32_t)gpio_cfg);
     pinval = LSPIN(port, pin);
 
     switch (flags & (GPIO_INPUT | GPIO_OUTPUT)) {
-    case GPIO_INPUT:
-        io_cfg_input(pinval);
-        break;
     case GPIO_OUTPUT:
         io_cfg_output(pinval);
         break;
@@ -130,37 +157,39 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
         io_pull_write(pinval, IO_PULL_DISABLE);
         io_cfg_disable(pinval);
         break;
+    case GPIO_INPUT:
+        //TBD
     default:
         return -ENOTSUP;
     }
 
-    switch (flags & (GPIO_PULL_UP | GPIO_PULL_DOWN)) {
-    case 0:
-        io_pull_write(pinval, IO_PULL_DISABLE);
-        break;
-    case GPIO_PULL_UP:
-        io_pull_write(pinval, IO_PULL_UP);
-        break;
-    case GPIO_PULL_DOWN:
-        io_pull_write(pinval, IO_PULL_DOWN);
-        break;
-    default:
-        return -EINVAL;
-    }
+    // switch (flags & (GPIO_PULL_UP | GPIO_PULL_DOWN)) {
+    // case 0:
+    //     io_pull_write(pinval, IO_PULL_DISABLE);
+    //     break;
+    // case GPIO_PULL_UP:
+    //     io_pull_write(pinval, IO_PULL_UP);
+    //     break;
+    // case GPIO_PULL_DOWN:
+    //     io_pull_write(pinval, IO_PULL_DOWN);
+    //     break;
+    // default:
+    //     return -EINVAL;
+    // }
 
-    switch (flags & LS_GPIO_DS_MASK) {
-    case LS_GPIO_DS_QUARTER_DRIVE:
-        io_drive_capacity_write(pinval, IO_OUTPUT_QUARTER_DRIVER);
-        break;
-    case LS_GPIO_DS_HALF_DRIVE:
-        io_drive_capacity_write(pinval, IO_OUTPUT_HALF_DRIVER);
-        break;
-    case LS_GPIO_DS_MAX_DRIVE:
-        io_drive_capacity_write(pinval, IO_OUTPUT_MAX_DRIVER);
-        break;
-    default:
-        return -ENOTSUP;
-    }
+    // switch (flags & LS_GPIO_DS_MASK) {
+    // case LS_GPIO_DS_QUARTER_DRIVE:
+    //     io_drive_capacity_write(pinval, IO_OUTPUT_QUARTER_DRIVER);
+    //     break;
+    // case LS_GPIO_DS_HALF_DRIVE:
+    //     io_drive_capacity_write(pinval, IO_OUTPUT_HALF_DRIVER);
+    //     break;
+    // case LS_GPIO_DS_MAX_DRIVE:
+    //     io_drive_capacity_write(pinval, IO_OUTPUT_MAX_DRIVER);
+    //     break;
+    // default:
+    //     return -ENOTSUP;
+    // }
 
     if ((flags & GPIO_OUTPUT) != 0) {
         if ((flags & GPIO_SINGLE_ENDED) != 0) {
@@ -184,14 +213,15 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
     return 0;
 }
 
+//TBD
 static void gpio_vcore_isr(const struct device *dev)
 {
     struct gpio_ls_common_data *data = (struct gpio_ls_common_data *)DEVICE_DT_GET(DT_INST(0, linkedsemi_lsqsh_pinctrl))->data;
     const struct device *port_dev;
     struct gpio_ls_data *port_data;
     uint32_t interrupt_status = 0;
-    volatile uint32_t *INT_STAT_BASE = PMU->GPIO_INTR_STT;
-    volatile uint32_t *INT_CLR_BASE = PMU->GPIO_INTR_CLR;
+    volatile uint32_t *INT_STAT_BASE = APP_GPIO->GPIO_INTR_STT;
+    volatile uint32_t *INT_CLR_BASE = APP_GPIO->GPIO_INTR_CLR;
     for (uint8_t i = 0; i < 8; ++i) {
         volatile uint32_t *INT_STAT_REG = &INT_STAT_BASE[i];
         volatile uint32_t *INT_CLR_REG = &INT_CLR_BASE[i];
@@ -226,27 +256,35 @@ static void gpio_vcore_isr(const struct device *dev)
 static int gpio_ls_port_get_raw(const struct device *dev, gpio_port_value_t *value)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
-    *value = gpio->DIN;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
+
+    *value = gpio_val->OE_DIN & 0xffff;
+
     return 0;
 }
 
 static int gpio_ls_port_set_masked_raw(const struct device *dev, gpio_port_pins_t mask, gpio_port_value_t value)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     uint32_t port_value;
-    port_value = gpio->DOT;
-    gpio->DOT = (value & mask) | (port_value & ~mask);
+
+    port_value = gpio_val->DOC_DOS; // & 0xffff;
+    gpio_val->DOC_DOS = ((value & mask) | (port_value & (~mask))) & 0xffff;
+    gpio_val->DOC_DOS = (((~value) & mask) | ((~port_value) & (~mask))) << 16;
+
     return 0;
 }
 
 static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t pins)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
 
-    gpio->DOT = pins;
+    gpio_val->DOC_DOS = pins & 0xffff;
 
     return 0;
 }
@@ -254,9 +292,10 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
 static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_t pins)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
 
-    gpio->DOT = pins << 16;
+    gpio_val->DOC_DOS = pins << 16;
 
     return 0;
 }
@@ -264,8 +303,10 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
 static int gpio_ls_port_toggle_bits(const struct device *dev, gpio_port_pins_t pins)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
-    if (gpio->DOT & pins) {
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
+
+    if ((gpio_val->DOC_DOS & 0xffff) & pins) {
         gpio_ls_port_clear_bits_raw(dev, pins);
     } else {
         gpio_ls_port_set_bits_raw(dev, pins);
@@ -279,10 +320,11 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
                                            enum gpio_int_trig trig)
 {
     const struct gpio_ls_config *cfg = dev->config;
-    pmu_io_reg_t *gpio = (pmu_io_reg_t *)cfg->base;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     uint8_t config, pinval, port;
 
-    port = get_gpio_port_id((uint32_t)gpio);
+    port = get_gpio_port_id((uint32_t)gpio_cfg);
     pinval = LSPIN(port, pin);
 
     if (mode != GPIO_INT_MODE_DISABLED) {
@@ -360,7 +402,8 @@ DEVICE_DT_DEFINE(DT_INST(0, linkedsemi_lsqsh_pinctrl),
     static struct gpio_ls_data ls_data_##index;                               \
                                                                               \
     static const struct gpio_ls_config ls_config_##index = {                  \
-        .base = (uint32_t *)DT_INST_REG_ADDR(index),                          \
+        .base_io_cfg = (uint32_t *)DT_INST_REG_ADDR_BY_NAME(index, io_cfg),   \
+        .base_io_val = (uint32_t *)DT_INST_REG_ADDR_BY_NAME(index, io_val),   \
         .common = { .port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(index) } \
     };                                                                        \
                                                                               \

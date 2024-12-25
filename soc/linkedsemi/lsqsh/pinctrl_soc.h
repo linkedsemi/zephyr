@@ -30,18 +30,25 @@ typedef struct {
         } field;
     } pinmux_un;
     union {
-        volatile uint16_t value;
+        volatile uint32_t value;
         struct {
-            volatile uint16_t pull_down  : 1, /*[0]*/
-                              pull_up    : 1, /*[1]*/
-                              push_pull  : 1, /*[2]*/
-                              open_drain : 1, /*[3]*/
-                              cfg_input  : 1, /*[4]*/
-                              cfg_output : 1, /*[5]*/
-                              out_high   : 1, /*[6]*/
-                              out_low    : 1, /*[7]*/
-                              drive      : 2, /*[8-9]*/
-                              reserve0   : 6; /*[10-15]*/
+            volatile uint32_t lock          : 1,
+                              pull_up0      : 1,
+                              pull_up1      : 1,
+                              pull_up2      : 1,
+                              pull_down     : 1,
+                              push_pull     : 1,
+                              open_drain    : 1,
+                              cfg_input     : 1,
+                              cfg_input_1v8 : 1,
+                              cfg_output    : 1,
+                              analog        : 1,
+                              input_filter  : 1,
+                              st            : 1,
+                              sl            : 1,
+                              drive         : 3,
+                              out_high      : 1,
+                              out_low       : 1;
         } field;
     } pin_attr_un;
 }  __attribute__((packed)) pinctrl_soc_pin_t;
@@ -53,16 +60,19 @@ typedef struct {
  */
 #define Z_PINCTRL_STATE_PIN_INIT(node, prop, idx) \
     { \
-        .pinmux_un.value               = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, pinmux), \
-        .pin_attr_un.field.pull_down   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_down), \
-        .pin_attr_un.field.pull_up     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up), \
-        .pin_attr_un.field.push_pull   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_push_pull), \
-        .pin_attr_un.field.open_drain  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_open_drain), \
-        .pin_attr_un.field.cfg_input   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, input_enable), \
-        .pin_attr_un.field.cfg_output  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_enable), \
-        .pin_attr_un.field.out_high    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_high), \
-        .pin_attr_un.field.out_low     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_low), \
-        .pin_attr_un.field.drive       = DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, prop, idx), drive_strength), \
+        .pinmux_un.value                 = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, pinmux), \
+        .pin_attr_un.field.pull_down     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_down), \
+        .pin_attr_un.field.pull_up0      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up0), \
+        .pin_attr_un.field.pull_up1      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up1), \
+        .pin_attr_un.field.pull_up2      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up2), \
+        .pin_attr_un.field.push_pull     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_push_pull), \
+        .pin_attr_un.field.open_drain    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_open_drain), \
+        .pin_attr_un.field.cfg_input     = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, input_enable), \
+        .pin_attr_un.field.cfg_input_1v8 = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, input_1v8_enable), \
+        .pin_attr_un.field.cfg_output    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_enable), \
+        .pin_attr_un.field.out_high      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_high), \
+        .pin_attr_un.field.out_low       = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, output_low), \
+        .pin_attr_un.field.drive         = DT_ENUM_IDX(DT_PHANDLE_BY_IDX(node, prop, idx), drive_strength), \
     },
 
 /**

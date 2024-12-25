@@ -21,7 +21,7 @@
     };
 
     aliases {
-        sdhc0 = &sdhci;
+        sdhc0 = &sdhci1;
     };
 
     sram1_nocache: memory@1013e000 {
@@ -98,7 +98,7 @@
     status = "okay";
 };
 
-&sdhci {
+&sdhci1 {
     pinctrl-0 = <&sdhc_d0_ph04
                 &sdhc_d1_ph05
                 &sdhc_d2_ph06

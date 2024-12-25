@@ -4,6 +4,8 @@
 
 #include <zephyr/dt-bindings/memory-attr/memory-attr.h>
 #include <zephyr/dt-bindings/memory-attr/memory-attr-riscv.h>
+#include "../../../../modules/hal/linkedsemi/soc/rv32/qsh/reg_base_addr.h"
+#include "../../../../modules/hal/linkedsemi/soc/rv32/qsh/qsh.h"
 
 / {
     #address-cells = <1>;
@@ -27,14 +29,14 @@
         };
     };
 
-    sram0: memory@10000000{
+    sram0: memory@30000000 {
         compatible = "mmio-sram";
-        reg = <0x10000000 DT_SIZE_K(512)>;
+        reg = <0x30000000 DT_SIZE_K(512)>;
     };
 
-    sram1: memory@10080000{
+    sram1: memory@30080000{
         compatible = "mmio-sram";
-        reg = <0x10080000 DT_SIZE_K(768)>;
+        reg = <0x30080000 DT_SIZE_K(768)>;
     };
 
 /*
@@ -57,34 +59,34 @@
             interrupt-controller;
         };
 
-        dma0: dma@40004000 {
+        dma0: dma@40041000 {
             compatible = "snps,designware-dma";
-            reg = <0x40004000 0x1000>;
+            reg = <0x40041000 0x1000>;
             #dma-cells = <1>;
-            interrupts = <34 3>;
+            interrupts = <DMAC1_IRQN 3>;
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
             status = "disabled";
         };
 
-        dma1: dma@40005000 {
+        dma1: dma@40042000 {
             compatible = "snps,designware-dma";
-            reg = <0x40005000 0x1000>;
+            reg = <0x40042000 0x1000>;
             #dma-cells = <1>;
-            interrupts = <35 3>;
+            interrupts = <DMAC2_IRQN 3>;
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
             status = "disabled";
         };
 
-        flash_controller: flash-controller@40000000 {
+        qspi1: qspi@40000000 {
             compatible = "linkedsemi,ls-flash-controller";
             reg = <0x40000000 0x1000>;
             #address-cells = <1>;
             #size-cells = <1>;
-            interrupts = <30 3>;
+            interrupts = <QSPI1_IRQN 3>;
             status = "disabled";
 
             flash0: flash@8000000 {
@@ -95,131 +97,146 @@
             };
         };
 
-        pinctrl: pin-controller@4001f180 {
+        pinctrl: pin-controller@4002F080 {
             compatible = "linkedsemi,lsqsh-pinctrl";
-            reg = <0x4001f180 0x200>;
+            reg = <0x4002F080 0x200>;
             interrupts = <19 3>;
             interrupt-names = "EXTI_GPIO_VCore";
             #address-cells = <1>;
             #size-cells = <1>;
 
-            gpioa: gpio@4001f180 {
+            gpioa: gpio@4002f180 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f180 0x20>;
+                reg = <0x4002f180 0x20>, <0x4002f360 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiob: gpio@4001f1a0 {
+            gpiob: gpio@4006f1a0 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f1a0 0x20>;
+                reg = <0x4006f1a0 0x20>, <0x4006f368 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpioc: gpio@4001f1c0 {
+            gpioc: gpio@4002f1c0 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f1c0 0x20>;
+                reg = <0x4002f1c0 0x20>, <0x4002f370 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiod: gpio@4001f1e0 {
+            gpiod: gpio@4006f1e0 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f1e0 0x20>;
+                reg = <0x4006f1e0 0x20>, <0x4006f378 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpioe: gpio@4001f200 {
+            gpioe: gpio@4002f200 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f200 0x20>;
+                reg = <0x4002f200 0x20>, <0x4002f380 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiof: gpio@4001f220 {
+            gpiof: gpio@4006f220 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f220 0x20>;
+                reg = <0x4006f220 0x20>, <0x4006f388 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiog: gpio@4001f240 {
+            gpiog: gpio@4006f240 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f240 0x20>;
+                reg = <0x4006f240 0x20>, <0x4006f390 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpioh: gpio@4001f260 {
+            gpioh: gpio@4006f260 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f260 0x20>;
+                reg = <0x4006f260 0x20>, <0x4006f398 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpioi: gpio@4001f280 {
+            gpioi: gpio@4002f280 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f280 0x20>;
+                reg = <0x4002f280 0x20>, <0x4002f3a0 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpioj: gpio@4001f2a0 {
+            gpioj: gpio@4006f2a0 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f2a0 0x20>;
+                reg = <0x4006f2a0 0x20>, <0x4006f3a8 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiok: gpio@4001f2c0 {
+            gpiok: gpio@4002f2c0 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f2c0 0x20>;
+                reg = <0x4002f2c0 0x20>, <0x4002f3b0 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiom: gpio@4001f2e0 {
+            gpiom: gpio@4006f2e0 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f2e0 0x20>;
+                reg = <0x4006f2e0 0x20>, <0x4006f3b8 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpion: gpio@4001f300 {
+            gpion: gpio@4006f300 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f300 0x20>;
+                reg = <0x4006f300 0x20>, <0x4006f3c0 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpioq: gpio@4001f320 {
+            gpioq: gpio@4006f320 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f320 0x20>;
+                reg = <0x4006f320 0x20>, <0x4006f3c8 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
 
-            gpiot: gpio@4001f340 {
+            gpiot: gpio@4006f340 {
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4001f340 0x20>;
+                reg = <0x4006f340 0x20>, <0x4006f3d0 0x8>;
+                reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
         };
@@ -280,7 +297,7 @@
         mtimer: machine-timer@e0004000 {
             compatible = "linkedsemi,machine-timer";
             reg = <0xe0004000 0x8000>;
-            interrupts = <7 0>;
+            interrupts = <RV_TIME_IRQN 0>;
         };
 
         crypto: crypto@40018400 {
@@ -291,7 +308,11 @@
                   <0x40019000 0x400>,
                   <0x40019400 0x400>;
             reg-names = "calc_sha", "calc_crc", "calc", "crypt", "calc_sm4";
-            interrupts = <44 3>, <46 3>, <47 3>, <48 3>, <49 3>;
+            interrupts = <CALC_AES256_IRQN 3>,
+                         <CALC_SHA256_IRQN 3>,
+                         <CALC_SM4_IRQN 3>,
+                         <OBTN_IRQN 3>,
+                         <OTBN_SYSC_IRQN 3>;
             interrupt-names = "crypto", "sha", "sm4", "otbn", "sysc_otbn";
             status = "disabled";
         };
@@ -300,40 +321,34 @@
             compatible = "linkedsemi,ls-espi";
             reg = <0x40006000 0x1000>;
             status = "disabled";
-            interrupts = <36 3>;
-
-            vuart0: vuart0 {
-                compatible = "linkedsemi,ls-vuart";
-                port = <0x3f8>;
-                up-irq = <0x4 IRQ_TYPE_LEVEL_HIGH>;
-                status = "disabled";
-            };
-
-            sio0: sio0 {
-                compatible = "linkedsemi,ls-sio";
-                port = <0x2e>;
-                status = "disabled";
-            };
-
-            mmbi0: mmbi0 {
-                compatible = "linkedsemi,ls-mmbi";
-                host-addr = <0xf6810000>;
-                size-order = <0>;
-                status = "disabled";
-            };
+            interrupts = <ESPI1_IRQN 3>;
         };
 
-        espi1: espi@40007000 {
+        espi1: espi@40045000 {
             compatible = "linkedsemi,ls-espi";
-            reg = <0x40007000 0x1000>;
-            interrupts = <37 3>;
+            reg = <0x40045000 0x1000>;
+            interrupts = <ESPI2_IRQN 3>;
             status = "disabled";
         };
 
-        lpc: lpc@40008000 {
+        espi2: espi@40046000 {
+            compatible = "linkedsemi,ls-espi";
+            reg = <0x40046000 0x1000>;
+            interrupts = <ESPI2_IRQN 3>;
+            status = "disabled";
+        };
+
+        lpc1: lpc@40047000 {
             compatible = "linkedsemi,ls-lpc";
-            reg = <0x40008000 0x1000>;
-            interrupts = <38 3>;
+            reg = <0x40047000 0x1000>;
+            interrupts = <LPC1_IRQN 3>;
+            status = "disabled";
+        };
+
+        lpc2: lpc@40048000 {
+            compatible = "linkedsemi,ls-lpc";
+            reg = <0x40048000 0x1000>;
+            interrupts = <LPC2_IRQN 3>;
             status = "disabled";
         };
 
@@ -342,12 +357,12 @@
             status = "disabled";
         };
 
-        i2c1: i2c@40083000 {
+        i2c1: i2c@400a0000 {
             compatible = "linkedsemi,ls-i2c";
-            reg = <0x40083000 0x400>;
+            reg = <0x400a0000 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <66 3>;
+            interrupts = <I2C1_IRQN 3>;
             status = "disabled";
         };
 
@@ -356,7 +371,7 @@
             reg = <0x40083400 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <67 3>;
+            interrupts = <I2C2_IRQN 3>;
             status = "disabled";
         };
 
@@ -365,7 +380,7 @@
             reg = <0x40083800 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <68 3>;
+            interrupts = <I2C3_IRQN 3>;
             status = "disabled";
         };
 
@@ -374,7 +389,7 @@
             reg = <0x40083c00 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <69 3>;
+            interrupts = <I2C4_IRQN 3>;
             status = "disabled";
         };
 
@@ -383,7 +398,7 @@
             reg = <0x40084000 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <70 3>;
+            interrupts = <I2C5_IRQN 3>;
             status = "disabled";
         };
 
@@ -392,7 +407,7 @@
             reg = <0x40084400 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <71 3>;
+            interrupts = <I2C6_IRQN 3>;
             status = "disabled";
         };
 
@@ -401,7 +416,7 @@
             reg = <0x40084800 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <72 3>;
+            interrupts = <I2C7_IRQN 3>;
             status = "disabled";
         };
 
@@ -410,7 +425,7 @@
             reg = <0x40084C00 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <73 3>;
+            interrupts = <I2C8_IRQN 3>;
             status = "disabled";
         };
 
@@ -419,7 +434,7 @@
             reg = <0x40085000 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <74 3>;
+            interrupts = <I2C9_IRQN 3>;
             status = "disabled";
         };
 
@@ -428,7 +443,7 @@
             reg = <0x40085400 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <75 3>;
+            interrupts = <I2C10_IRQN 3>;
             status = "disabled";
         };
 
@@ -437,7 +452,7 @@
             reg = <0x40085800 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <76 3>;
+            interrupts = <I2C11_IRQN 3>;
             status = "disabled";
         };
 
@@ -446,7 +461,7 @@
             reg = <0x40085C00 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <77 3>;
+            interrupts = <I2C12_IRQN 3>;
             status = "disabled";
         };
 
@@ -455,7 +470,7 @@
             reg = <0x40086000 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <78 3>;
+            interrupts = <I2C13_IRQN 3>;
             status = "disabled";
         };
 
@@ -464,7 +479,25 @@
             reg = <0x40086400 0x400>;
             #address-cells = <1>;
             #size-cells = <0>;
-            interrupts = <79 3>;
+            interrupts = <I2C14_IRQN 3>;
+            status = "disabled";
+        };
+
+        i2c15: i2c@40086800 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40086800 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <I2C15_IRQN 3>;
+            status = "disabled";
+        };
+
+        i2c16: i2c@40086c00 {
+            compatible = "linkedsemi,ls-i2c";
+            reg = <0x40086c00 0x400>;
+            #address-cells = <1>;
+            #size-cells = <0>;
+            interrupts = <I2C16_IRQN 3>;
             status = "disabled";
         };
 
@@ -580,17 +613,33 @@
             status = "disabled";
         };
 
-        uart1: uart@40087000 {
+        smbus_fpga_i2c15: smbus_fpga_i2c15 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c15>;
+            status = "disabled";
+        };
+
+        smbus_fpga_i2c16: smbus_fpga_i2c16 {
+            compatible = "linkedsemi,smbus";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            i2c = <&i2c16>;
+            status = "disabled";
+        };
+
+        uart1: uart@400a1000 {
             compatible = "linkedsemi,ls-uart";
-            reg = <0x40087000 0x400>;
-            interrupts = <94 3> ;
+            reg = <0x400a1000 0x400>;
+            interrupts = <UART1_IRQN 3> ;
             status = "disabled";
         };
 
         uart2: uart@40087400 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40087400 0x400>;
-            interrupts = <95 3> ;
+            interrupts = <UART2_IRQN 3> ;
             status = "disabled";
         };
 
@@ -598,7 +647,7 @@
             compatible = "ns16550";
             reg = <0x40087800 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <96 3> ;
+            interrupts = <UART3_IRQN 3> ;
             reg-shift = <2>;
             status = "disabled";
         };
@@ -607,7 +656,7 @@
             compatible = "ns16550";
             reg = <0x40087c00 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <97 3> ;
+            interrupts = <UART4_IRQN 3> ;
             reg-shift = <2>;
             status = "disabled";
         };
@@ -616,7 +665,7 @@
             compatible = "ns16550";
             reg = <0x40088000 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <98 3> ;
+            interrupts = <UART5_IRQN 3> ;
             reg-shift = <2>;
             status = "disabled";
         };
@@ -625,15 +674,69 @@
             compatible = "ns16550";
             reg = <0x40088400 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <99 3> ;
+            interrupts = <UART6_IRQN 3> ;
             reg-shift = <2>;
             status = "disabled";
         };
 
-        mac0: ethernet@4001a000 {
+        uart7: uart@40088800 {
+            compatible = "ns16550";
+            reg = <0x40088800 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <UART7_IRQN 3> ;
+            reg-shift = <2>;
+            status = "disabled";
+        };
+
+        uart8: uart@40088c00 {
+            compatible = "ns16550";
+            reg = <0x40088c00 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <UART8_IRQN 3> ;
+            reg-shift = <2>;
+            status = "disabled";
+        };
+
+        uart9: uart@40089000 {
+            compatible = "ns16550";
+            reg = <0x40089000 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <UART9_IRQN 3> ;
+            reg-shift = <2>;
+            status = "disabled";
+        };
+
+        uart10: uart@40089400 {
+            compatible = "ns16550";
+            reg = <0x40089400 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <UART10_IRQN 3> ;
+            reg-shift = <2>;
+            status = "disabled";
+        };
+
+        uart11: uart@40089800 {
+            compatible = "ns16550";
+            reg = <0x40089800 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <UART11_IRQN 3> ;
+            reg-shift = <2>;
+            status = "disabled";
+        };
+
+        uart12: uart@40089c00 {
+            compatible = "ns16550";
+            reg = <0x40089c00 0x400>;
+            clock-frequency = <50000000>;
+            interrupts = <UART12_IRQN 3> ;
+            reg-shift = <2>;
+            status = "disabled";
+        };
+
+        mac0: ethernet@40064000 {
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
-            reg = <0x4001a000 0x2000>;
-            interrupts = <40 3>;
+            reg = <0x40064000 0x2000>;
+            interrupts = <ETH1_IRQN 3>;
             status = "disabled";
 
             mdio0: mdio {
@@ -644,10 +747,10 @@
             };
         };
 
-        mac1: ethernet@4001c000 {
+        mac1: ethernet@40066000 {
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
-            reg = <0x4001c000 0x2000>;
-            interrupts = <42 3>;
+            reg = <0x40066000 0x2000>;
+            interrupts = <ETH2_IRQN 3>;
             status = "disabled";
 
             mdio1: mdio {
@@ -658,62 +761,80 @@
             };
         };
 
-        spi1: spi@40089000 {
+        spi1: spi@4008a000 {
             compatible = "linkedsemi,ls-spi";
             #address-cells = <1>;
             #size-cells = <0>;
-            reg = <0x40089000 0x400>;
+            reg = <0x4008a000 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <100 3>;
+            interrupts = <SPI1_IRQN 3>;
             status = "disabled";
         };
 
-        spi2: spi@40089400 {
+        spi2: spi@4008a400 {
             compatible = "linkedsemi,ls-spi";
             #address-cells = <1>;
             #size-cells = <0>;
-            reg = <0x40089400 0x400>;
+            reg = <0x4008a400 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <101 3>;
+            interrupts = <SPI2_IRQN 3>;
             status = "disabled";
         };
 
-        spi3: spi@40089800 {
+        spi3: spi@4006e000 {
             compatible = "snps,designware-spi";
             #address-cells = <1>;
             #size-cells = <0>;
-            reg = <0x40089800 0x400>;
+            reg = <0x4006e000 0x400>;
             clock-frequency = <50000000>;
-            interrupts = <102 3>;
+            interrupts = <SPI3_IRQN 3>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
             status = "disabled";
         };
 
-        spi4: spi@40089c00 {
+        spi4: spi@4006e400 {
             compatible = "snps,designware-spi";
             #address-cells = <1>;
             #size-cells = <0>;
-            reg = <0x40089c00 0x400>;
-            interrupts = <102 3>;
+            reg = <0x4006e400 0x400>;
+            interrupts = <SPI4_IRQN 3>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
             status = "disabled";
         };
 
-        peci0: peci@4008c400 {
+        peci0: peci@4008d800 {
             compatible = "linkedsemi,ls-peci";
-            reg = <0x4008c400 0x400>;
+            reg = <0x4008d800 0x400>;
             #address-cells= <1>;
             #size-cells = <0>;
-            interrupts = <132 3>;
+            interrupts = <PECI1_IRQN 3>;
             status = "disabled";
         };
 
-        sdhci: sdhci@40009000 {
+        peci1: peci@4008dc00 {
+            compatible = "linkedsemi,ls-peci";
+            reg = <0x4008dc00 0x400>;
+            #address-cells= <1>;
+            #size-cells = <0>;
+            interrupts = <PECI2_IRQN 3>;
+            status = "disabled";
+        };
+
+        sdhci1: sdhci@40049000 {
             compatible = "linkedsemi,sdhci";
-            reg = <0x40009000 0x1000>;
-            interrupts = <41 3>;
+            reg = <0x40049000 0x1000>;
+            interrupts = <EMMC1_IRQN 3>;
+            max-bus-freq = <50000000>;
+            min-bus-freq = <200000>;
+            status = "disabled";
+        };
+
+        sdhci2: sdhci@4004a000 {
+            compatible = "linkedsemi,sdhci";
+            reg = <0x4004a000 0x1000>;
+            interrupts = <EMMC2_IRQN 3>;
             max-bus-freq = <50000000>;
             min-bus-freq = <200000>;
             status = "disabled";
@@ -722,21 +843,21 @@
         jtag1: jtag@40092000 {
             compatible = "linkedsemi,ls-jtag";
             reg = <0x40092000 0x400>;
-            interrupts = <123 3>;
+            interrupts = <MJTAG1_IRQN 3>;
             status = "disabled";
         };
 
         jtag2: jtag@40092400 {
             compatible = "linkedsemi,ls-jtag";
             reg = <0x40092400 0x400>;
-            interrupts = <124 3>;
+            interrupts = <MJTAG2_IRQN 3>;
             status = "disabled";
         };
 
         jtag3: jtag@40092800 {
             compatible = "linkedsemi,ls-jtag";
             reg = <0x40092800 0x400>;
-            interrupts = <125 3>;
+            interrupts = <MJTAG3_IRQN 3>;
             status = "disabled";
         };
     };

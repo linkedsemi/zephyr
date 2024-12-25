@@ -45,12 +45,12 @@
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmgii_txd2_pt06: rmii_txd2_pt06 {
+    /omit-if-no-ref/rgmii_txd2_pt06: rgmii_txd2_pt06 {
         pinmux = <LS_PINMUX_SET(PT06, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmgii_txd3_pt07: rmii_txd3_pt07 {
+    /omit-if-no-ref/rgmii_txd3_pt07: rgmii_txd3_pt07 {
         pinmux = <LS_PINMUX_SET(PT07, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         input-enable;
@@ -85,12 +85,12 @@
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rgmii_col_pt14: rgmii_col_pt14 {
+    /omit-if-no-ref/mii_col_pt14: mii_col_pt14 {
         pinmux = <LS_PINMUX_SET(PT14, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rgmii_crs_pt15: rgmii_crs_pt15 {
+    /omit-if-no-ref/mii_crs_pt15: mii_crs_pt15 {
         pinmux = <LS_PINMUX_SET(PT15, LSFUNC(PINMUX_FUNC1))>;
         drive-strength = "quarter max driver";
         input-enable;
@@ -148,29 +148,29 @@
     };
 
     /* QSPI */
-    /omit-if-no-ref/qspi1_sck_pq10: qspi1_sck_pq10 {
-        pinmux = <LS_PINMUX_SET(PQ10, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_sck_pa00: qspi1_sck_pa00 {
+        pinmux = <LS_PINMUX_SET(PA00, LSFUNC(PINMUX_FUNC1))>;
         output-enable;
     };
-    /omit-if-no-ref/qspi1_cs_pq11: qspi1_cs_pq11 {
-        pinmux = <LS_PINMUX_SET(PQ11, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_csn_pa01: qspi1_csn_pa01 {
+        pinmux = <LS_PINMUX_SET(PA01, LSFUNC(PINMUX_FUNC1))>;
         output-enable;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq0_pq12: qspi1_dq0_pq12 {
-        pinmux = <LS_PINMUX_SET(PQ12, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq0_pa02: qspi1_dq0_pa02 {
+        pinmux = <LS_PINMUX_SET(PA02, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq1_pq13: qspi1_dq1_pq13 {
-        pinmux = <LS_PINMUX_SET(PQ13, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq1_pa03: qspi1_dq1_pa03 {
+        pinmux = <LS_PINMUX_SET(PA03, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq2_pq14: qspi1_dq2_pq14 {
-        pinmux = <LS_PINMUX_SET(PQ14, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq2_pa04: qspi1_dq2_pa04 {
+        pinmux = <LS_PINMUX_SET(PA04, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq3_pq15: qspi1_dq3_pq15 {
-        pinmux = <LS_PINMUX_SET(PQ15, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq3_pa05: qspi1_dq3_pa05 {
+        pinmux = <LS_PINMUX_SET(PA05, LSFUNC(PINMUX_FUNC1))>;
         input-enable;
     };
 

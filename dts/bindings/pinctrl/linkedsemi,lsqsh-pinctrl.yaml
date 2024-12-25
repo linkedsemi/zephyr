@@ -42,13 +42,12 @@ child-binding:
       - name: pincfg-node.yaml
         property-allowlist:
           - bias-pull-down
-          - bias-pull-up
           - drive-push-pull
           - drive-open-drain
-          - input-enable
-          - output-enable
           - output-high
           - output-low
+          - input-enable
+          - output-enable
 
     properties:
         pinmux:
@@ -75,3 +74,20 @@ child-binding:
             - "quarter max driver"
             - "half max driver"
             - "max driver"
+
+        input-1v8-enable:
+          type: boolean
+          description: |
+            enable input on pin (e.g. enable an input buffer, no effect on output)
+
+        bias-pull-up0:
+          type: boolean
+          description: enable pull-up resistor
+
+        bias-pull-up1:
+          type: boolean
+          description: enable pull-up resistor
+
+        bias-pull-up2:
+          type: boolean
+          description: enable pull-up resistor
