@@ -16,7 +16,7 @@
 
     chosen {
         zephyr,flash = &flash0;
-        zephyr,flash-controller = &flash_controller;
+        zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram0;
         zephyr,console = &uart5;
         zephyr,shell-uart = &uart5;
@@ -24,7 +24,7 @@
 
     aliases {
         peci-0 = &peci0;
-        sdhc0 = &sdhci;
+        sdhc0 = &sdhci1;
     };
 
     sram0_nocache: memory@1007f000{
@@ -161,13 +161,25 @@
 };
 
 &mac0 {
+    // pinctrl-0 = <&rmii_txen_pt03
+    //             &rmii_txd0_pt04
+    //             &rmii_txd1_pt05
+    //             &rmii_rxc_pt08
+    //             &rmii_crsdv_pt09
+    //             &rmii_rxd0_pt10
+    //             &rmii_rxd1_pt11>;
     pinctrl-0 = <&rmii_txen_pt03
                 &rmii_txd0_pt04
                 &rmii_txd1_pt05
                 &rmii_rxc_pt08
                 &rmii_crsdv_pt09
                 &rmii_rxd0_pt10
-                &rmii_rxd1_pt11>;
+                &rmii_rxd1_pt11
+                &rgmii_rxd2_pt12
+                &rgmii_rxd3_pt13
+                &rgmii_txd2_pt06
+                &rgmii_txd3_pt07
+                &rgmii_txck_pt02>;
     pinctrl-names = "default";
     status = "okay";
 };
@@ -185,7 +197,7 @@
     status = "okay";
 };
 
-&sdhci {
+&sdhci1 {
     pinctrl-0 = <&sdhc_d0_ph04
                 &sdhc_d1_ph05
                 &sdhc_d2_ph06
@@ -215,7 +227,7 @@ tst_dma0: &dma0 {
     status = "okay";
 };
 
-&lpc {
+&lpc1 {
     pinctrl-0 = <&lpc_serirq_pi09
                 &lpc_frm_pi10
                 &lpc_clk_pi11
@@ -256,8 +268,13 @@ tst_dma0: &dma0 {
     status = "okay";
 };
 
-&flash_controller {
-    pinctrl-0 = <&qspi1_sck_pq10 &qspi1_cs_pq11 &qspi1_dq0_pq12 &qspi1_dq1_pq13 &qspi1_dq2_pq14 &qspi1_dq3_pq15>;
+&qspi1 {
+    pinctrl-0 = <&qspi1_sck_pa00
+                 &qspi1_csn_pa01
+                 &qspi1_dq0_pa02
+                 &qspi1_dq1_pa03
+                 &qspi1_dq2_pa04
+                 &qspi1_dq3_pa05>;
     pinctrl-names = "default";
     status = "okay";
 };
