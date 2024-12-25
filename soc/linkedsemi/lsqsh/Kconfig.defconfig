@@ -18,7 +18,7 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 0
 
 config NUM_IRQS
-	default 144
+	default 176
 
 config MAIN_STACK_SIZE
 	default 2048
