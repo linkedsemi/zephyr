@@ -12,4 +12,13 @@ config HEAP_MEM_POOL_SIZE
 config SINGLE_CORE
 	bool "Run CMU with single core configurations"
 	default n
+
+config STORAGE_MEDIA_FLASH_RW
+	bool "Using flash rw partitions as storage media"
+    default y
+
+config STORAGE_MEDIA_EMMC
+	bool "Using emmc device as storage media"
+    default y
+
 endif
