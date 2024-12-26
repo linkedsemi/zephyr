@@ -111,28 +111,28 @@
     status = "okay";
 };
 
-&uart6 {
-    /delete-property/ interrupts;
-    pinctrl-0 = <&uart6_tx_pf13 &uart6_rx_pf14>;
-    pinctrl-names = "default";
-    clock-frequency = <50000000>;
-    current-speed = <115200>;
-    status = "okay";
-};
+// &uart6 {
+//     /delete-property/ interrupts;
+//     pinctrl-0 = <&uart6_tx_pf13 &uart6_rx_pf14>;
+//     pinctrl-names = "default";
+//     clock-frequency = <50000000>;
+//     current-speed = <115200>;
+//     status = "okay";
+// };
 
-&vuart0 {
-    interrupts = <99 3>;
-    uart = <&uart6>;
-    status = "okay";
-};
+// &vuart0 {
+//     interrupts = <99 3>;
+//     uart = <&uart6>;
+//     status = "okay";
+// };
 
-&sio0 {
-    status = "okay";
-};
+// &sio0 {
+//     status = "okay";
+// };
 
-&mmbi0 {
-    status = "okay";
-};
+// &mmbi0 {
+//     status = "okay";
+// };
 
 // &i2c2 {
 //     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
