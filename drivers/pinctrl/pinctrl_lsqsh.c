@@ -13,7 +13,7 @@
 static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
 {
     switch (func) {
-    case PINMUX_FUNC0:
+    case PINMUX_FUNC1:
         switch (alt) {
         case FUNC_NULL:
             io_cfg_disable(pin);
@@ -24,16 +24,16 @@ static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
             }
             return; //no func enable. return here
         default:
-            per_func_disable(pin, PINMUX_FUNC0);
+            per_func_disable(pin, PINMUX_FUNC1);
             per_func0_set(pin, alt);
             break;
         }
         __fallthrough;
-    case PINMUX_FUNC1:
-        __fallthrough;
     case PINMUX_FUNC2:
         __fallthrough;
     case PINMUX_FUNC3:
+        __fallthrough;
+    case PINMUX_FUNC4:
             for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
                 if (func == i) {
                     per_func_enable(pin, i);
