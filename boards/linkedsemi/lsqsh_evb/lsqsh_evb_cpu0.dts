@@ -192,7 +192,7 @@
 };
 
 &peci0 {
-    pinctrl-0 = <&peci_pk00>;
+    pinctrl-0 = <>;
     pinctrl-names = "default";
     status = "okay";
 };

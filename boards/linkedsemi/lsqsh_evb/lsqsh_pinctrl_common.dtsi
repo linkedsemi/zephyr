@@ -7,14 +7,6 @@
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
 &pinctrl {
-    /* PECI */
-    /omit-if-no-ref/peci_pk00: peci_pk00 {
-        pinmux = <LS_PINMUX_SET(PK00, LSFUNC(PINMUX_FUNC2))>;
-        drive-strength = "quarter max driver";
-        bias-pull-down;
-        input-enable;
-    };
-
     /* RMII */
     /omit-if-no-ref/rmii_mdc_pt00: rmii_mdc_pt00 {
         pinmux = <LS_PINMUX_SET(PT00, LSFUNC(PINMUX_FUNC2))>;
