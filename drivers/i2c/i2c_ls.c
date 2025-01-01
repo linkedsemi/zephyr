@@ -158,6 +158,7 @@ void ls_i2c_isr(void *arg)
 	if(irq&I2C_INT_STOP_MASK)
 	{
     	cfg->reg->ICR = I2C_INT_STOP_MASK;
+		cfg->reg->IDR = I2C_INT_TXE_MASK | I2C_INT_RXNE_MASK;
 		if(data->current)
 		{
 			k_sem_give(&data->device_sync_sem);
@@ -165,7 +166,6 @@ void ls_i2c_isr(void *arg)
 		#ifdef CONFIG_I2C_TARGET
 		else if(data->slave_cfg)
 		{
-			cfg->reg->IDR = I2C_INT_TXE_MASK | I2C_INT_RXNE_MASK;
 			cfg->reg->SR = 1;
 			while(cfg->reg->SR&I2C_SR_RXNE_MASK)
 			{
