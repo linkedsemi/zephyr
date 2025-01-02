@@ -45,7 +45,7 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 struct peci_ls_config {
     irq_cfg_func_t irq_config_func;
 	/* peci controller base address */
-	struct reg_peci_t *reg;
+	reg_peci_t *reg;
     uint8_t irq_num;
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
@@ -77,7 +77,7 @@ static void peci_core_reg_print(const struct device *dev)
 {
 
     const struct peci_ls_config *const config = dev->config;
-	struct reg_peci_t *const reg = config->reg;
+	reg_peci_t *const reg = config->reg;
     
     LOG_DBG("-------------------------\n");
     LOG_DBG("INTR_MSK = %08x\n", reg->INTR_MSK);
@@ -112,7 +112,7 @@ void ls_peci_isr(void *arg)
     struct device *dev = (struct device *) arg;
 	const struct peci_ls_config *config = dev->config;
 	struct peci_ls_data *data = dev->data;
-    struct reg_peci_t *const reg = config->reg;
+    reg_peci_t *const reg = config->reg;
 
     WRITE_REG(reg->INTR_CLR, PECI_INTR_CLR_MASK);
     WRITE_REG(reg->INTR_MSK,0);
@@ -123,7 +123,7 @@ static int peci_ls_init(const struct device *dev)
 {
     const struct peci_ls_config *const config = dev->config;
     struct peci_ls_data *const data = dev->data;
-    struct reg_peci_t *const reg = config->reg;
+    reg_peci_t *const reg = config->reg;
 
     if (config->cctl_cfg.cctl_dev) {
 	    const struct device *clk_dev = config->cctl_cfg.cctl_dev;
@@ -157,7 +157,7 @@ static int peci_ls_configure(const struct device *dev, uint32_t bitrate)
 {
     const struct peci_ls_config *const config = dev->config;
 	struct peci_ls_data *const data = dev->data;
-	struct reg_peci_t *const reg = config->reg;
+	reg_peci_t *const reg = config->reg;
 
 	k_sem_take(&data->lock, K_FOREVER);
 
@@ -175,7 +175,7 @@ static int peci_ls_enable(const struct device *dev)
 {
     const struct peci_ls_config *const config = dev->config;
     struct peci_ls_data *const data = dev->data;
-    struct reg_peci_t *const reg = config->reg;
+    reg_peci_t *const reg = config->reg;
 
     k_sem_take(&data->lock, K_FOREVER);
 
@@ -206,7 +206,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     const struct peci_ls_config *const config = dev->config;
 	struct peci_ls_data *const data = dev->data;
-	struct reg_peci_t *const reg = config->reg;
+	reg_peci_t *const reg = config->reg;
 	struct peci_buf *peci_rx_buf = &msg->rx_buffer;
 	struct peci_buf *peci_tx_buf = &msg->tx_buffer;
 	int ret = 0;
@@ -313,7 +313,7 @@ static void peci_ls_irq_config_func_##index(const struct device *dev)   \
     LS_PECI_IRQ_HANDLER(index)                              \
                                                             \
 static const struct peci_ls_config peci_ls_cfg_##index = {  \
-    .reg = (struct reg_peci_t *)DT_INST_REG_ADDR(index),   \
+    .reg = (reg_peci_t *)DT_INST_REG_ADDR(index),   \
     .irq_num = DT_INST_IRQN(index),                         \
     .irq_config_func = peci_ls_irq_config_func_##index,      \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
