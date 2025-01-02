@@ -166,6 +166,11 @@ void ls_i2c_isr(void *arg)
 		#ifdef CONFIG_I2C_TARGET
 		else if(data->slave_cfg)
 		{
+			/* workaound to clear i2c slave internal counter after stop */
+			cfg->reg->CR1 &= ~I2C_CR1_PE_MASK;
+			cfg->reg->CR1 |= I2C_CR1_PE_MASK;
+			/* --------------------------------------------- */
+
 			cfg->reg->SR = 1;
 			while(cfg->reg->SR&I2C_SR_RXNE_MASK)
 			{
