@@ -149,10 +149,10 @@ void ls_i2c_isr(void *arg)
 		if(data->current)
 		{
 			data->errs |= MASTER_NACK_RECVIED;
-			if(data->xfer_remain)
-			{
-				k_sem_give(&data->device_sync_sem);
-			}
+			// if(data->xfer_remain)
+			// {
+			// 	k_sem_give(&data->device_sync_sem);
+			// }
 		}
 	}
 	if(irq&I2C_INT_STOP_MASK)
