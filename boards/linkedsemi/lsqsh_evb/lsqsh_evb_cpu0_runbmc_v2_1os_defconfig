@@ -1,6 +1,7 @@
 # Copyright (c) 2024 Linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
+CONFIG_OUTPUT_DISASSEMBLY=y
 CONFIG_NUM_USE_CPU=1
 CONFIG_NUM_OS=1
 
