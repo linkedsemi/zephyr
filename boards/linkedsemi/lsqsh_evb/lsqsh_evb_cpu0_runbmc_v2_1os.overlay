@@ -301,13 +301,13 @@
 };
 
 &mac0 {
-    pinctrl-0 = <&rmii_txen_pt03
-                &rmii_txd0_pt04
-                &rmii_txd1_pt05
-                &rmii_rxc_pt08
-                &rmii_crsdv_pt09
-                &rmii_rxd0_pt10
-                &rmii_rxd1_pt11>;
+    pinctrl-0 = <&rmii_txen_pt04
+                &rmii_txd0_pt05
+                &rmii_txd1_pt06
+                &rmii_rxc_pt10
+                &rmii_crsdv_pt11
+                &rmii_rxd0_pt12
+                &rmii_rxd1_pt13>;
     pinctrl-names = "default";
     status = "okay";
 };

@@ -25,8 +25,8 @@ typedef struct {
         volatile uint16_t value;
         struct {
             volatile uint16_t pin  : 8, /*[0-7]*/
-                              alt  : 6, /*[8-13]*/
-                              func : 2; /*[14-15]*/
+                              func : 2, /*[8-9]*/
+                              alt  : 6; /*[10-15]*/
         } field;
     } pinmux_un;
     union {
