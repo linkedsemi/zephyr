@@ -133,6 +133,8 @@ static int lsqsh_init(void)
     io_cfg_input(PH10);
     io_cfg_input(PH11);
     io_cfg_input(PH13);
+    *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x60) = BIT(14) | BIT(26);
+    *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x64) = BIT(7) | BIT(15);
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
 #endif
 
@@ -142,14 +144,6 @@ static int lsqsh_init(void)
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x60) = 0xf0;
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00268;
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
-#endif
-
-#if defined(CONFIG_PECI)
-#if !defined(CONFIG_PINCTRL)
-    /* PECI */
-    io_cfg_input(PK00);
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xb4) = 0x1;
-#endif
 #endif
 
 #if defined(CONFIG_SERIAL)
@@ -233,11 +227,16 @@ static int lsqsh_init(void)
 #endif
 
 #if defined(CONFIG_SOC_FLASH_LS)
-    flash_swint_init();
+#if !defined(XIP)
     hal_flash_init();
+#endif
+    flash_swint_init();
     hal_flash_dual_mode_set(1);
-
+    hal_flash_xip_func_ptr_init();
     IRQ_CONNECT(RV_SOFT_IRQN, 0, SWINT_Handler_Asm, NULL, 0);
+#if !defined(XIP)
+    hal_flash_xip_mode_reset();
+#endif
 #endif
 
     cpu_sleep_mode_config(0);
