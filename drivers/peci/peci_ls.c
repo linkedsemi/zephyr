@@ -135,14 +135,15 @@ static int peci_ls_init(const struct device *dev)
     }
 
 #if defined(CONFIG_PINCTRL)
-    int ret;
+    if (config->pcfg) {
+        int ret;
 
-    ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+        ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
 
-	if (ret != 0) {
-		LOG_ERR("PECI pinctrl init failed (%d)", ret);
-		return ret;
-	}
+        if (ret != 0) {
+            LOG_DBG("maybe no PECI pinctrl node (%d)", ret);
+        }
+    }
 #endif
 
     reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL);
