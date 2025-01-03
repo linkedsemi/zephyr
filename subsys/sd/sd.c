@@ -103,7 +103,7 @@ static int sd_enable_crc(struct sd_card *card)
 /* Retries SD and SDIO initialisation until card has valid response to SD CMD8 */
 static int sd_common_init(struct sd_card *card)
 {
-	int ret;
+	int ret = 0;
 
 #if !defined(CONFIG_SDHCI_LINKEDSEMI)
 	/* Perform voltage check using SD CMD8 */
