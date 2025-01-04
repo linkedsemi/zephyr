@@ -7,6 +7,7 @@ config SOC_SERIES_LSQSH
     select BUILD_OUTPUT_HEX
     select CPU_HAS_FPU
     select FPU
+    select CPU_HAS_FPU_DOUBLE_PRECISION if $(dt_path_enabled,/cpus/cpu@1)
     select ARCH_HAS_RAMFUNC_SUPPORT
   	select RISCV_ISA_RV32I
     select RISCV_ISA_EXT_M
