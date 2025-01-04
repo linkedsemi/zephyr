@@ -15,6 +15,7 @@
 #include "ls_soc_gpio.h"
 #include "ls_hal_flash.h"
 #include "ls_hal_cache.h"
+#include "ls_msp_qspiv2.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 
@@ -234,6 +235,7 @@ static int lsqsh_init(void)
 #if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
 #if ((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024)))
+    lsqspiv2_msp_init();
     pinmux_hal_flash_init();
     hal_flash_dual_mode_set(true);
     hal_flash_drv_var_init(false, false);
@@ -259,10 +261,15 @@ static int lsqsh_init(void)
 #if defined(CONFIG_SOC_FLASH_LS)
 #if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
+#else
+    qspiv2_global_int_ctrl_fn_init();
 #endif
 
     hal_flash_dual_mode_set(1);
     flash_swint_init();
+#if defined(CONFIG_XIP)
+    hal_flash_drv_var_init(true,false);
+#endif
     hal_flash_xip_func_ptr_init();
     IRQ_CONNECT(RV_SOFT_IRQN, 0, SWINT_Handler_Asm, NULL, 0);
 
