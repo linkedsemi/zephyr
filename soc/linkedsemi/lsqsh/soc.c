@@ -14,6 +14,7 @@
 #include "reg_sysc_sec_cpu.h"
 #include "ls_soc_gpio.h"
 #include "ls_hal_flash.h"
+#include "ls_hal_cache.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 
@@ -242,6 +243,31 @@ static int lsqsh_init(void)
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
+
+#if (CONFIG_NUM_USE_CPU == 2)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+#if ((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024)))
+    pinmux_hal_flash_init();
+    hal_flash_dual_mode_set(true);
+    hal_flash_drv_var_init(false, false);
+    hal_flash_xip_func_ptr_dummy();
+    hal_flash_init();
+
+    hal_flash_xip_mode_reset();
+    hal_flash_release_from_deep_power_down();
+    DELAY_US(20);
+    hal_flash_software_reset();
+    DELAY_US(200);
+
+    // pinmux_hal_flash_quad_init();
+    hal_flash_xip_start();
+    lscache_cache_enable(1);
+    hal_flash_xip_func_ptr_init();
+#endif
+    SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU1_BOOT_ADDR; /* set cpu1 pc addr */
+    SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+#endif
+#endif
 
     return 0;
 }

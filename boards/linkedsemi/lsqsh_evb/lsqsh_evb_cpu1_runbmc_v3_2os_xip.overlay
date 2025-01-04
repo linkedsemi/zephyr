@@ -1,0 +1,50 @@
+/*
+ * Copyright (c) 2024, linkedsemi
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "lsqsh_evb_pinctrl_runbmc_v3.dtsi"
+
+/ {
+    chosen {
+        zephyr,flash = &flash0;
+        zephyr,flash-controller = &qspi1;
+    };
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    status = "okay";
+    current-speed = <115200>;
+    pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
+    pinctrl-names = "default";
+};
+
+&uart5 {
+    status = "disabled";
+};
+
+&qspi1 {
+    pinctrl-0 = <>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&flash0 {
+    reg = <0x8000000 0x1000000>;
+    status = "okay";
+};

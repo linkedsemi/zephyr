@@ -50,4 +50,10 @@ config NUM_OS
 	range 1 2
 	default 2
 
+if (((NUM_USE_CPU=2) && (NUM_OS=2)) && $(dt_path_enabled,/cpus/cpu@0))
+	config CPU1_BOOT_ADDR
+		hex "CPU1_BOOT_ADDR"
+		default 0x10080000
+endif
+
 endif
