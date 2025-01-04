@@ -227,19 +227,6 @@ static int lsqsh_init(void)
     SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_SPI1_MASK;
 #endif
 
-#if defined(CONFIG_SOC_FLASH_LS)
-#if !defined(XIP)
-    hal_flash_init();
-#endif
-    flash_swint_init();
-    hal_flash_dual_mode_set(1);
-    hal_flash_xip_func_ptr_init();
-    IRQ_CONNECT(RV_SOFT_IRQN, 0, SWINT_Handler_Asm, NULL, 0);
-#if !defined(XIP)
-    hal_flash_xip_mode_reset();
-#endif
-#endif
-
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
@@ -266,6 +253,21 @@ static int lsqsh_init(void)
 #endif
     SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU1_BOOT_ADDR; /* set cpu1 pc addr */
     SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+#endif
+#endif
+
+#if defined(CONFIG_SOC_FLASH_LS)
+#if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
+    hal_flash_init();
+#endif
+
+    hal_flash_dual_mode_set(1);
+    flash_swint_init();
+    hal_flash_xip_func_ptr_init();
+    IRQ_CONNECT(RV_SOFT_IRQN, 0, SWINT_Handler_Asm, NULL, 0);
+
+#if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
+    hal_flash_xip_mode_reset();
 #endif
 #endif
 
