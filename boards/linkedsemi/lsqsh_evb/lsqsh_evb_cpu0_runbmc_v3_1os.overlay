@@ -7,13 +7,20 @@
 
 /delete-node/ &sram0_nocache;
 / {
+    chosen {
+        zephyr,flash = &flash0;
+        zephyr,flash-controller = &qspi1;
+        zephyr,sram = &sram0;
+    };
+
     aliases {
-        testi2c1 = &i2c5;
-        testi2c2 = &i2c12;
-        testeeprom1 = &eeprom5;
-        testeeprom2 = &eeprom12;
-        eeprom-0 = &eeprom8_24c32;
+        // testi2c1 = &i2c5;
+        // testi2c2 = &i2c12;
+        // testeeprom1 = &eeprom5;
+        // testeeprom2 = &eeprom12;
         testjtag2 = &jtag2;
+        peci-0 = &peci0;
+        sdhc0 = &sdhci1;
         led0 = &led0;
         sw0 = &btn0;
     };
@@ -75,7 +82,7 @@
     current-speed = <115200>;
     pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
     pinctrl-names = "default";
-    status = "okay";
+    status = "disabled";
 };
 
 &uart2 {
@@ -87,7 +94,7 @@
     current-speed = <115200>;
     pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
     pinctrl-names = "default";
-    status = "okay";
+    status = "disabled";
 };
 
 &uart4 {
@@ -104,292 +111,248 @@
     status = "okay";
 };
 
-&uart6 {
-    /delete-property/ interrupts;
-    pinctrl-0 = <&uart6_tx_pf13 &uart6_rx_pf14>;
-    pinctrl-names = "default";
-    clock-frequency = <50000000>;
-    current-speed = <115200>;
-    status = "okay";
-};
+// &uart6 {
+//     /delete-property/ interrupts;
+//     pinctrl-0 = <&uart6_tx_pf13 &uart6_rx_pf14>;
+//     pinctrl-names = "default";
+//     clock-frequency = <50000000>;
+//     current-speed = <115200>;
+//     status = "okay";
+// };
 
-&vuart0 {
-    interrupts = <99 3>;
-    uart = <&uart6>;
-    status = "okay";
-};
+// &vuart0 {
+//     interrupts = <99 3>;
+//     uart = <&uart6>;
+//     status = "okay";
+// };
 
-&sio0 {
-    status = "okay";
-};
+// &sio0 {
+//     status = "okay";
+// };
 
-&mmbi0 {
-    status = "okay";
-};
+// &mmbi0 {
+//     status = "okay";
+// };
 
-&i2c2 {
-    pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c2 {
+//     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom2: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+//     eeprom2: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-&i2c3 {
-    pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c3 {
+//     pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom3: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+//     eeprom3: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-&i2c4 {
-    pinctrl-0 = <&i2c4_scl_pd00 &i2c4_sda_pd01>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c4 {
+//     pinctrl-0 = <&i2c4_scl_pd00 &i2c4_sda_pd01>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom4: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+//     eeprom4: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-&i2c5 {
-    pinctrl-0 = <&i2c5_scl_pe03 &i2c5_sda_pe03>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c5 {
+//     pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom5: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+//     eeprom5: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-&i2c6 {
-    pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c6 {
+//     pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom6: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+//     eeprom6: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-&i2c7 {
-    pinctrl-0 = <&i2c7_scl_pk15 &i2c7_sda_pk14>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c7 {
+//     pinctrl-0 = <&i2c7_scl_pk15 &i2c7_sda_pk14>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom7: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+//     eeprom7: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-&i2c8 {
-    pinctrl-0 = <&i2c8_scl_ph00 &i2c8_sda_ph01>;
-    pinctrl-names = "default";
-    status = "okay";
+// &i2c10 {
+//     pinctrl-0 = <&i2c10_scl_pj03 &i2c10_sda_pj02>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-    eeprom8: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
+//     eeprom10: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-    eeprom8_24c32: eeprom@50 {
-        compatible = "atmel,at24c32","atmel,at24";
-        reg = <0x50>;
-        status = "okay";
-        size = <DT_SIZE_K(4)>;
-        pagesize = <8>;
-        address-width = <16>;
-        timeout = <5>;
-    };
-};
+// &i2c11 {
+//     pinctrl-0 = <&i2c11_scl_pn09 &i2c11_sda_pn08>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-&i2c9 {
-    pinctrl-0 = <&i2c9_scl_pi00 &i2c9_sda_pi01>;
-    pinctrl-names = "default";
-    status = "okay";
+//     eeprom11: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-    eeprom9: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// &i2c12 {
+//     pinctrl-0 = <&i2c12_scl_pn13 &i2c12_sda_pn14>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-&i2c10 {
-    pinctrl-0 = <&i2c10_scl_pj03 &i2c10_sda_pj02>;
-    pinctrl-names = "default";
-    status = "okay";
+//     eeprom12: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-    eeprom10: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// &i2c13 {
+//     pinctrl-0 = <&i2c13_scl_pq00 &i2c13_sda_pq01>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-&i2c11 {
-    pinctrl-0 = <&i2c11_scl_pn09 &i2c11_sda_pn08>;
-    pinctrl-names = "default";
-    status = "okay";
+//     eeprom13: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-    eeprom11: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// &i2c14 {
+//     pinctrl-0 = <&i2c14_scl_pq03 &i2c14_sda_pq02>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-&i2c12 {
-    pinctrl-0 = <&i2c12_scl_pn13 &i2c12_sda_pn14>;
-    pinctrl-names = "default";
-    status = "okay";
+//     eeprom14: eeprom@76 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x76>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
-    eeprom12: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// /*
+//     smbus
+// */
 
-&i2c13 {
-    pinctrl-0 = <&i2c13_scl_pq00 &i2c13_sda_pq01>;
-    pinctrl-names = "default";
-    status = "okay";
+// &smbus_ali_11_runbmc_i2c8_fpga_i2c2 {
+//     status = "okay";
+// };
 
-    eeprom13: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// &smbus_ali_14_runbmc_i2c4_fpga_i2c3 {
+//     status = "okay";
+// };
 
-&i2c14 {
-    pinctrl-0 = <&i2c14_scl_pq03 &i2c14_sda_pq02>;
-    pinctrl-names = "default";
-    status = "okay";
+// &smbus_ali_9_runbmc_i2c12_fpga_i2c4 {
+//     status = "okay";
+// };
 
-    eeprom14: eeprom@76 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x76>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// &smbus_ali_16_runbmc_i2c14_fpga_i2c5 {
+//     status = "okay";
+// };
 
-/*
-    smbus
-*/
+// &smbus_ali_7_runbmc_i2c15_fpga_i2c6 {
+//     status = "okay";
+// };
 
-&smbus_ali_11_runbmc_i2c8_fpga_i2c2 {
-    status = "okay";
-};
+// &smbus_ali_13_runbmc_i2c7_fpga_i2c7 {
+//     status = "okay";
+// };
 
-&smbus_ali_14_runbmc_i2c4_fpga_i2c3 {
-    status = "okay";
-};
+// &smbus_ali_10_runbmc_i2c16_fpga_i2c10 {
+//     status = "okay";
+// };
 
-&smbus_ali_9_runbmc_i2c12_fpga_i2c4 {
-    status = "okay";
-};
+// &smbus_ali_8_runbmc_i2c11_fpga_i2c11 {
+//     status = "okay";
+// };
 
-&smbus_ali_16_runbmc_i2c14_fpga_i2c5 {
-    status = "okay";
-};
+// &smbus_ali_15_runbmc_i2c2_fpga_i2c12 {
+//     status = "okay";
+// };
 
-&smbus_ali_7_runbmc_i2c15_fpga_i2c6 {
-    status = "okay";
-};
+// &smbus_ali_5_runbmc_i2c9_fpga_i2c13 {
+//     status = "okay";
+// };
 
-&smbus_ali_13_runbmc_i2c7_fpga_i2c7 {
-    status = "okay";
-};
+// &smbus_ali_6_runbmc_i2c10_fpga_i2c14 {
+//     status = "okay";
+// };
 
-&smbus8 {
-    status = "okay";
-};
+// &spi2 {
+//     cs-gpios = <&gpioe 6 GPIO_ACTIVE_LOW>;
+//     pinctrl-0 = <&spi2_sck_pb11 &spi2_miso_pb13 &spi2_mosi_pb10>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-&smbus9 {
-    status = "okay";
-};
+//     p25q32: p25q32@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <1000000>;
+//         jedec-id = [85 60 16];
+//         size = <0x400000>;
+//         status = "okay";
+//     };
+// };
 
-&smbus_ali_10_runbmc_i2c16_fpga_i2c10 {
-    status = "okay";
-};
+// &spi3 {
+//     cs-gpios = <&gpiok 13 GPIO_ACTIVE_LOW>;
+//     pinctrl-0 = <&spi3_sck_pc01 &spi3_d0_mosi_pc02 &spi3_d1_miso_pc05>;
+//     pinctrl-names = "default";
+//     status = "okay";
 
-&smbus_ali_8_runbmc_i2c11_fpga_i2c11 {
-    status = "okay";
-};
-
-&smbus_ali_15_runbmc_i2c2_fpga_i2c12 {
-    status = "okay";
-};
-
-&smbus_ali_5_runbmc_i2c9_fpga_i2c13 {
-    status = "okay";
-};
-
-&smbus_ali_6_runbmc_i2c10_fpga_i2c14 {
-    status = "okay";
-};
-
-&spi2 {
-    cs-gpios = <&gpioe 6 GPIO_ACTIVE_LOW>;
-    pinctrl-0 = <&spi2_sck_pb11 &spi2_miso_pb13 &spi2_mosi_pb10>;
-    pinctrl-names = "default";
-    status = "okay";
-
-    p25q32: p25q32@0 {
-        compatible = "jedec,spi-nor";
-        reg = <0>;
-        spi-max-frequency = <1000000>;
-        jedec-id = [85 60 16];
-        size = <0x400000>;
-        status = "okay";
-    };
-};
-
-&spi3 {
-    cs-gpios = <&gpiok 13 GPIO_ACTIVE_LOW>;
-    pinctrl-0 = <&spi3_sck_pc01 &spi3_d0_mosi_pc02 &spi3_d1_miso_pc05>;
-    pinctrl-names = "default";
-    status = "okay";
-
-    mx66l1g: mx66l1g@0 {
-        compatible = "jedec,spi-nor";
-        reg = <0>;
-        spi-max-frequency = <1000000>;
-        jedec-id = [c2 25 3b];
-        size = <0x8000000>;
-        status = "okay";
-    };
-};
+//     mx66l1g: mx66l1g@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <1000000>;
+//         jedec-id = [c2 25 3b];
+//         size = <0x8000000>;
+//         status = "okay";
+//     };
+// };

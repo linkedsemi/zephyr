@@ -18,7 +18,7 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default 0
 
 config NUM_IRQS
-	default 144
+	default 176
 
 config MAIN_STACK_SIZE
 	default 2048
@@ -49,5 +49,11 @@ config NUM_OS
 	int "running OS number"
 	range 1 2
 	default 2
+
+if (((NUM_USE_CPU=2) && (NUM_OS=2)) && $(dt_path_enabled,/cpus/cpu@0))
+	config CPU1_BOOT_ADDR
+		hex "CPU1_BOOT_ADDR"
+		default 0x10080000
+endif
 
 endif

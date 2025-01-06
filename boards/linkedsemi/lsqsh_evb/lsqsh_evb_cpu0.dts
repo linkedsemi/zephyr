@@ -16,7 +16,7 @@
 
     chosen {
         zephyr,flash = &flash0;
-        zephyr,flash-controller = &flash_controller;
+        zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram0;
         zephyr,console = &uart5;
         zephyr,shell-uart = &uart5;
@@ -24,7 +24,7 @@
 
     aliases {
         peci-0 = &peci0;
-        sdhc0 = &sdhci;
+        sdhc0 = &sdhci1;
     };
 
     sram0_nocache: memory@1007f000{
@@ -136,11 +136,11 @@
 
 &sgpiom {
     ngpios = <128>;
-    pinctrl-0 = <&sgpiom_clk_pe06
-                &sgpiom_di_pe07
-                &sgpiom_do_pe08
-                &sgpiom_ld_pe09>;
-    pinctrl-names = "default";
+    // pinctrl-0 = <&sgpiom_clk_pe06
+    //             &sgpiom_di_pe07
+    //             &sgpiom_do_pe08
+    //             &sgpiom_ld_pe09>;
+    // pinctrl-names = "default";
     status = "okay";
 };
 
@@ -161,41 +161,51 @@
 };
 
 &mac0 {
-    pinctrl-0 = <&rmii_txen_pt03
-                &rmii_txd0_pt04
-                &rmii_txd1_pt05
-                &rmii_rxc_pt08
-                &rmii_crsdv_pt09
-                &rmii_rxd0_pt10
-                &rmii_rxd1_pt11>;
+    // pinctrl-0 = <&rmii_txen_pt04
+    //             &rmii_txd0_pt05
+    //             &rmii_txd1_pt06
+    //             &rmii_rxc_pt10
+    //             &rmii_crsdv_pt11
+    //             &rmii_rxd0_pt12
+    //             &rmii_rxd1_pt13>;
+    pinctrl-0 = <&rmii_txen_pt04
+                &rmii_txd0_pt05
+                &rmii_txd1_pt06
+                &rmii_rxc_pt10
+                &rmii_crsdv_pt11
+                &rmii_rxd0_pt12
+                &rmii_rxd1_pt13
+                &rgmii_rxd2_pt14
+                &rgmii_rxd3_pt15
+                &rgmii_txd2_pt07
+                &rgmii_txd3_pt08
+                &rgmii_txck_pt03>;
     pinctrl-names = "default";
     status = "okay";
 };
 
 &mdio0 {
-    pinctrl-0 = <&rmii_mdc_pt00
-                &rmii_mdio_pt01>;
+    pinctrl-0 = <&rmii_mdc_pa14
+                &rmii_mdio_pa15>;
     pinctrl-names = "default";
     status = "okay";
 };
 
 &peci0 {
-    pinctrl-0 = <&peci_pk00>;
-    pinctrl-names = "default";
     status = "okay";
 };
 
-&sdhci {
-    pinctrl-0 = <&sdhc_d0_ph04
-                &sdhc_d1_ph05
-                &sdhc_d2_ph06
-                &sdhc_d3_ph07
-                &sdhc_d4_ph08
-                &sdhc_d5_ph09
-                &sdhc_d6_ph010
-                &sdhc_d7_ph011
-                &sdhc_clk_ph012
-                &sdhc_cmd_ph013>;
+&sdhci1 {
+    pinctrl-0 = <&sdhc_d0_pm04
+                &sdhc_d1_pm05
+                &sdhc_d2_pm06
+                &sdhc_d3_pm07
+                &sdhc_d4_pm08
+                &sdhc_d5_pm09
+                &sdhc_d6_pm10
+                &sdhc_d7_pm11
+                &sdhc_clk_pm12
+                &sdhc_cmd_pm13>;
     pinctrl-names = "default";
     status = "okay";
 
@@ -215,15 +225,15 @@ tst_dma0: &dma0 {
     status = "okay";
 };
 
-&lpc {
-    pinctrl-0 = <&lpc_serirq_pi09
-                &lpc_frm_pi10
-                &lpc_clk_pi11
-                &lpc_dat3_pi12
-                &lpc_dat2_pi13
-                &lpc_dat1_pi14
-                &lpc_dat0_pi15>;
-    pinctrl-names = "default";
+&lpc1 {
+    // pinctrl-0 = <&lpc_serirq_pi09
+    //             &lpc_frm_pi10
+    //             &lpc_clk_pi11
+    //             &lpc_dat3_pi12
+    //             &lpc_dat2_pi13
+    //             &lpc_dat1_pi14
+    //             &lpc_dat0_pi15>;
+    // pinctrl-names = "default";
     status = "disabled";
 
     lpc_kcs_ca2: lpc_kcs_ca2 {
@@ -234,14 +244,14 @@ tst_dma0: &dma0 {
 };
 
 &espi0 {
-    pinctrl-0 = <&espi1_alertn_pi09
-                &espi1_csn_pi10
-                &espi1_sck_pi11
-                &espi1_dat3_pi12
-                &espi1_dat2_pi13
-                &espi1_dat1_pi14
-                &espi1_dat0_pi15>;
-    pinctrl-names = "default";
+    // pinctrl-0 = <&espi1_alertn_pi09
+    //             &espi1_csn_pi10
+    //             &espi1_sck_pi11
+    //             &espi1_dat3_pi12
+    //             &espi1_dat2_pi13
+    //             &espi1_dat1_pi14
+    //             &espi1_dat0_pi15>;
+    // pinctrl-names = "default";
     status = "okay";
 
     espi0_kcs_ca2: espi0_kcs_ca2 {
@@ -256,13 +266,19 @@ tst_dma0: &dma0 {
     status = "okay";
 };
 
-&flash_controller {
-    pinctrl-0 = <&qspi1_sck_pq10 &qspi1_cs_pq11 &qspi1_dq0_pq12 &qspi1_dq1_pq13 &qspi1_dq2_pq14 &qspi1_dq3_pq15>;
+&qspi1 {
+    pinctrl-0 = <&qspi1_sck_pa00
+                 &qspi1_csn_pa01
+                 &qspi1_dq0_pa02
+                 &qspi1_dq1_pa03
+                 &qspi1_dq2_pa04
+                 &qspi1_dq3_pa05>;
     pinctrl-names = "default";
     status = "okay";
 };
 
 &flash0 {
+    reg = <0x8000000 0x400000>;
     /*
    * Flash base address is 0x8000000,
    * the following parts are all offset addresses.

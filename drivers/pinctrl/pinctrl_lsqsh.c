@@ -6,8 +6,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
-#include <reg_sysc_awo.h>
-#include <reg_sysc_per.h>
 #include <ls_soc_gpio.h>
 
 #define DT_DRV_COMPAT linkedsemi_lsqsh_pinctrl
@@ -15,7 +13,7 @@
 static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
 {
     switch (func) {
-    case PINMUX_FUNC0:
+    case PINMUX_FUNC1:
         switch (alt) {
         case FUNC_NULL:
             io_cfg_disable(pin);
@@ -26,16 +24,16 @@ static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
             }
             return; //no func enable. return here
         default:
-            per_func_disable(pin, PINMUX_FUNC0);
+            per_func_disable(pin, PINMUX_FUNC1);
             per_func0_set(pin, alt);
             break;
         }
         __fallthrough;
-    case PINMUX_FUNC1:
-        __fallthrough;
     case PINMUX_FUNC2:
         __fallthrough;
     case PINMUX_FUNC3:
+        __fallthrough;
+    case PINMUX_FUNC4:
             for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
                 if (func == i) {
                     per_func_enable(pin, i);
@@ -60,13 +58,25 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
         io_pull_write(pin, IO_PULL_DOWN);
     }
 
-    if (pinmux.pin_attr_un.field.pull_up) {
-        io_pull_write(pin, IO_PULL_UP);
+    if (pinmux.pin_attr_un.field.pull_up0) {
+        io_pull_write(pin, IO_PULL_UP0);
+    }
+
+    if (pinmux.pin_attr_un.field.pull_up1) {
+        io_pull_write(pin, IO_PULL_UP1);
+    }
+
+    if (pinmux.pin_attr_un.field.pull_up2) {
+        io_pull_write(pin, IO_PULL_UP2);
     }
 
     if (pinmux.pin_attr_un.field.cfg_input) {
         io_cfg_input_pure(pin);
     }
+
+    // if (pinmux.pin_attr_un.field.cfg_input_1v8) {
+    //     io_cfg_input_1v8_pure(pin);
+    // }
 
     if (pinmux.pin_attr_un.field.cfg_output) {
         io_cfg_output(pin);
@@ -91,7 +101,7 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     }
 
     /* only has effect if mode is push_pull */
-    io_drive_capacity_write(pin, pinmux.pin_attr_un.field.drive);
+    // io_drive_capacity_write(pin, pinmux.pin_attr_un.field.drive);
 
     pinctrl_configure_pin_func(pin,
                                 pinmux.pinmux_un.field.func,

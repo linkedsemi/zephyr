@@ -7,278 +7,260 @@
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
 &pinctrl {
-    /* PECI */
-    /omit-if-no-ref/peci_pk00: peci_pk00 {
-        pinmux = <LS_PINMUX_SET(PK00, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-        bias-pull-down;
-        input-enable;
-    };
-
-    /* RMII */
-    /omit-if-no-ref/rmii_mdc_pt00: rmii_mdc_pt00 {
-        pinmux = <LS_PINMUX_SET(PT00, LSFUNC(PINMUX_FUNC1))>;
+    /* RGMII1 */
+    /omit-if-no-ref/rmii_mdc_pa14: rmii_mdc_pa14 {
+        pinmux = <LS_PINMUX_RGMII1_MDC_FUNC2_PA14>;
         drive-strength = "quarter max driver";
     };
-    /omit-if-no-ref/rmii_mdio_pt01: rmii_mdio_pt01 {
-        pinmux = <LS_PINMUX_SET(PT01, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_mdio_pa15: rmii_mdio_pa15 {
+        pinmux = <LS_PINMUX_RGMII1_MDIO_FUNC2_PA15>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rgmii_txck_pt02: rgmii_txck_pt02 {
-        pinmux = <LS_PINMUX_SET(PT02, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rgmii_txck_pt03: rgmii_txck_pt03 {
+        pinmux = <LS_PINMUX_RGMII1_TXCK_FUNC3_PT03>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_txen_pt03: rmii_txen_pt03 {
-        pinmux = <LS_PINMUX_SET(PT03, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_txen_pt04: rmii_txen_pt04 {
+        pinmux = <LS_PINMUX_RGMII1_TXCTL_FUNC3_PT04>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_txd0_pt04: rmii_txd0_pt04 {
-        pinmux = <LS_PINMUX_SET(PT04, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_txd0_pt05: rmii_txd0_pt05 {
+        pinmux = <LS_PINMUX_RGMII1_TXD0_FUNC3_PT05>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_txd1_pt05: rmii_txd1_pt05 {
-        pinmux = <LS_PINMUX_SET(PT05, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_txd1_pt06: rmii_txd1_pt06 {
+        pinmux = <LS_PINMUX_RGMII1_TXD1_FUNC3_PT06>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmgii_txd2_pt06: rmii_txd2_pt06 {
-        pinmux = <LS_PINMUX_SET(PT06, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rgmii_txd2_pt07: rgmii_txd2_pt07 {
+        pinmux = <LS_PINMUX_RGMII1_TXD2_FUNC3_PT07>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmgii_txd3_pt07: rmii_txd3_pt07 {
-        pinmux = <LS_PINMUX_SET(PT07, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rgmii_txd3_pt08: rgmii_txd3_pt08 {
+        pinmux = <LS_PINMUX_RGMII1_TXD3_FUNC3_PT08>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_rxc_pt08: rmii_rxc_pt08 {
-        pinmux = <LS_PINMUX_SET(PT08, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_rxc_pt10: rmii_rxc_pt10 {
+        pinmux = <LS_PINMUX_RGMII1_RXCK_FUNC3_PT10>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_crsdv_pt09: rmii_crsdv_pt09 {
-        pinmux = <LS_PINMUX_SET(PT09, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_crsdv_pt11: rmii_crsdv_pt11 {
+        pinmux = <LS_PINMUX_RGMII1_RXCTL_FUNC3_PT11>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_rxd0_pt10: rmii_rxd0_pt10 {
-        pinmux = <LS_PINMUX_SET(PT10, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_rxd0_pt12: rmii_rxd0_pt12 {
+        pinmux = <LS_PINMUX_RGMII1_RXD0_FUNC3_PT12>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rmii_rxd1_pt11: rmii_rxd1_pt11 {
-        pinmux = <LS_PINMUX_SET(PT11, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rmii_rxd1_pt13: rmii_rxd1_pt13 {
+        pinmux = <LS_PINMUX_RGMII1_RXD1_FUNC3_PT13>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rgmii_rxd2_pt12: rgmii_rxd2_pt12 {
-        pinmux = <LS_PINMUX_SET(PT12, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rgmii_rxd2_pt14: rgmii_rxd2_pt14 {
+        pinmux = <LS_PINMUX_RGMII1_RXD2_FUNC3_PT14>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/rgmii_rxd3_pt13: rgmii_rxd3_pt13 {
-        pinmux = <LS_PINMUX_SET(PT13, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
-    /omit-if-no-ref/rgmii_col_pt14: rgmii_col_pt14 {
-        pinmux = <LS_PINMUX_SET(PT14, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
-    /omit-if-no-ref/rgmii_crs_pt15: rgmii_crs_pt15 {
-        pinmux = <LS_PINMUX_SET(PT15, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/rgmii_rxd3_pt15: rgmii_rxd3_pt15 {
+        pinmux = <LS_PINMUX_RGMII1_RXD3_FUNC3_PT15>;
         drive-strength = "quarter max driver";
         input-enable;
     };
 
-    /* SDHC */
-    /omit-if-no-ref/sdhc_d0_ph04: sdhc_d0_ph04 {
-        pinmux = <LS_PINMUX_SET(PH04, LSFUNC(PINMUX_FUNC1))>;
+    /* SDHC1 */
+    /omit-if-no-ref/sdhc_d0_pm04: sdhc_d0_pm04 {
+        pinmux = <LS_PINMUX_EMMC_DAT0_FUNC4_PM04>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d1_ph05: sdhc_d1_ph05 {
-        pinmux = <LS_PINMUX_SET(PH05, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d1_pm05: sdhc_d1_pm05 {
+        pinmux = <LS_PINMUX_EMMC_DAT1_FUNC4_PM05>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d2_ph06: sdhc_d2_ph06 {
-        pinmux = <LS_PINMUX_SET(PH06, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d2_pm06: sdhc_d2_pm06 {
+        pinmux = <LS_PINMUX_EMMC_DAT2_FUNC4_PM06>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d3_ph07: sdhc_d3_ph07 {
-        pinmux = <LS_PINMUX_SET(PH07, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d3_pm07: sdhc_d3_pm07 {
+        pinmux = <LS_PINMUX_EMMC_DAT3_FUNC4_PM07>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d4_ph08: sdhc_d4_ph08 {
-        pinmux = <LS_PINMUX_SET(PH08, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d4_pm08: sdhc_d4_pm08 {
+        pinmux = <LS_PINMUX_EMMC_DAT4_FUNC4_PM08>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d5_ph09: sdhc_d5_ph09 {
-        pinmux = <LS_PINMUX_SET(PH09, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d5_pm09: sdhc_d5_pm09 {
+        pinmux = <LS_PINMUX_EMMC_DAT5_FUNC4_PM09>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d6_ph010: sdhc_d6_ph010 {
-        pinmux = <LS_PINMUX_SET(PH10, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d6_pm10: sdhc_d6_pm10 {
+        pinmux = <LS_PINMUX_EMMC_DAT6_FUNC4_PM10>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_d7_ph011: sdhc_d7_ph011 {
-        pinmux = <LS_PINMUX_SET(PH11, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_d7_pm11: sdhc_d7_pm11 {
+        pinmux = <LS_PINMUX_EMMC_DAT7_FUNC4_PM11>;
         drive-strength = "quarter max driver";
         input-enable;
     };
-    /omit-if-no-ref/sdhc_clk_ph012: sdhc_clk_ph012 {
-        pinmux = <LS_PINMUX_SET(PH12, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_clk_pm12: sdhc_clk_pm12 {
+        pinmux = <LS_PINMUX_EMMC_CLK_FUNC4_PM12>;
         drive-strength = "quarter max driver";
     };
-    /omit-if-no-ref/sdhc_cmd_ph013: sdhc_cmd_ph013 {
-        pinmux = <LS_PINMUX_SET(PH13, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/sdhc_cmd_pm13: sdhc_cmd_pm13 {
+        pinmux = <LS_PINMUX_EMMC_CMD_FUNC4_PM13>;
         drive-strength = "quarter max driver";
         input-enable;
     };
 
-    /* QSPI */
-    /omit-if-no-ref/qspi1_sck_pq10: qspi1_sck_pq10 {
-        pinmux = <LS_PINMUX_SET(PQ10, LSFUNC(PINMUX_FUNC1))>;
+    /* QSPI1 */
+    /omit-if-no-ref/qspi1_sck_pa00: qspi1_sck_pa00 {
+        pinmux = <LS_PINMUX_QSPI1_SCK_FUNC3_PA00>;
         output-enable;
     };
-    /omit-if-no-ref/qspi1_cs_pq11: qspi1_cs_pq11 {
-        pinmux = <LS_PINMUX_SET(PQ11, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_csn_pa01: qspi1_csn_pa01 {
+        pinmux = <LS_PINMUX_QSPI1_CSN_FUNC3_PA01>;
         output-enable;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq0_pq12: qspi1_dq0_pq12 {
-        pinmux = <LS_PINMUX_SET(PQ12, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq0_pa02: qspi1_dq0_pa02 {
+        pinmux = <LS_PINMUX_QSPI1_DAT0_FUNC3_PA02>;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq1_pq13: qspi1_dq1_pq13 {
-        pinmux = <LS_PINMUX_SET(PQ13, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq1_pa03: qspi1_dq1_pa03 {
+        pinmux = <LS_PINMUX_QSPI1_DAT1_FUNC3_PA03>;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq2_pq14: qspi1_dq2_pq14 {
-        pinmux = <LS_PINMUX_SET(PQ14, LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq2_pa04: qspi1_dq2_pa04 {
+        pinmux = <LS_PINMUX_QSPI1_DAT2_FUNC3_PA04>;
         input-enable;
     };
-    /omit-if-no-ref/qspi1_dq3_pq15: qspi1_dq3_pq15 {
-        pinmux = <LS_PINMUX_SET(PQ15, LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-
-    /* eSPI */
-    /omit-if-no-ref/espi1_alertn_pi09: espi1_alertn_pi09 {
-        pinmux = <LS_PINMUX_SET(PI09,  LSFUNC(PINMUX_FUNC1))>;
-    };
-    /omit-if-no-ref/espi1_csn_pi10: espi1_csn_pi10 {
-        pinmux = <LS_PINMUX_SET(PI10,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi1_sck_pi11: espi1_sck_pi11 {
-        pinmux = <LS_PINMUX_SET(PI11,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi1_dat3_pi12: espi1_dat3_pi12 {
-        pinmux = <LS_PINMUX_SET(PI12,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi1_dat2_pi13: espi1_dat2_pi13 {
-        pinmux = <LS_PINMUX_SET(PI13,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi1_dat1_pi14: espi1_dat1_pi14 {
-        pinmux = <LS_PINMUX_SET(PI14,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi1_dat0_pi15: espi1_dat0_pi15 {
-        pinmux = <LS_PINMUX_SET(PI15,  LSFUNC(PINMUX_FUNC1))>;
+    /omit-if-no-ref/qspi1_dq3_pa05: qspi1_dq3_pa05 {
+        pinmux = <LS_PINMUX_QSPI1_DAT3_FUNC3_PA05>;
         input-enable;
     };
 
-    /* eSPI */
-    /omit-if-no-ref/espi2_alertn_ph04: espi2_alertn_ph04 {
-        pinmux = <LS_PINMUX_SET(PH04,  LSFUNC(PINMUX_FUNC1))>;
-    };
-    /omit-if-no-ref/espi2_csn_ph05: espi2_csn_ph05 {
-        pinmux = <LS_PINMUX_SET(PH05,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi2_sck_ph06: espi2_sck_ph06 {
-        pinmux = <LS_PINMUX_SET(PH06,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi2_dat3_ph07: espi2_dat3_ph07 {
-        pinmux = <LS_PINMUX_SET(PH07,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi2_dat2_ph08: espi2_dat2_ph08 {
-        pinmux = <LS_PINMUX_SET(PH08,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi2_dat1_ph09: espi2_dat1_ph09 {
-        pinmux = <LS_PINMUX_SET(PH09,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
-    /omit-if-no-ref/espi2_dat0_ph10: espi2_dat0_ph10 {
-        pinmux = <LS_PINMUX_SET(PH10,  LSFUNC(PINMUX_FUNC1))>;
-        input-enable;
-    };
+    // /* eSPI */
+    // /omit-if-no-ref/espi1_alertn_pi09: espi1_alertn_pi09 {
+    //     pinmux = <LS_PINMUX_SET(PI09,  LSFUNC(PINMUX_FUNC2))>;
+    // };
+    // /omit-if-no-ref/espi1_csn_pi10: espi1_csn_pi10 {
+    //     pinmux = <LS_PINMUX_SET(PI10,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi1_sck_pi11: espi1_sck_pi11 {
+    //     pinmux = <LS_PINMUX_SET(PI11,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi1_dat3_pi12: espi1_dat3_pi12 {
+    //     pinmux = <LS_PINMUX_SET(PI12,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi1_dat2_pi13: espi1_dat2_pi13 {
+    //     pinmux = <LS_PINMUX_SET(PI13,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi1_dat1_pi14: espi1_dat1_pi14 {
+    //     pinmux = <LS_PINMUX_SET(PI14,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi1_dat0_pi15: espi1_dat0_pi15 {
+    //     pinmux = <LS_PINMUX_SET(PI15,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
 
-    /* LPC */
-    /omit-if-no-ref/lpc_serirq_pi09: lpc_serirq_pi09 {
-        pinmux = <LS_PINMUX_SET(PI09,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
-    /omit-if-no-ref/lpc_frm_pi10: lpc_frm_pi10 {
-        pinmux = <LS_PINMUX_SET(PI10,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
-    /omit-if-no-ref/lpc_clk_pi11: lpc_clk_pi11 {
-        pinmux = <LS_PINMUX_SET(PI11,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
-    /omit-if-no-ref/lpc_dat3_pi12: lpc_dat3_pi12 {
-        pinmux = <LS_PINMUX_SET(PI12,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
-    /omit-if-no-ref/lpc_dat2_pi13: lpc_dat2_pi13 {
-        pinmux = <LS_PINMUX_SET(PI13,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
-    /omit-if-no-ref/lpc_dat1_pi14: lpc_dat1_pi14 {
-        pinmux = <LS_PINMUX_SET(PI14,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
-    /omit-if-no-ref/lpc_dat0_pi15: lpc_dat0_pi15 {
-        pinmux = <LS_PINMUX_SET(PI15,  LSFUNC(PINMUX_FUNC2))>;
-        input-enable;
-    };
+    // /* eSPI */
+    // /omit-if-no-ref/espi2_alertn_ph04: espi2_alertn_ph04 {
+    //     pinmux = <LS_PINMUX_SET(PH04,  LSFUNC(PINMUX_FUNC2))>;
+    // };
+    // /omit-if-no-ref/espi2_csn_ph05: espi2_csn_ph05 {
+    //     pinmux = <LS_PINMUX_SET(PH05,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi2_sck_ph06: espi2_sck_ph06 {
+    //     pinmux = <LS_PINMUX_SET(PH06,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi2_dat3_ph07: espi2_dat3_ph07 {
+    //     pinmux = <LS_PINMUX_SET(PH07,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi2_dat2_ph08: espi2_dat2_ph08 {
+    //     pinmux = <LS_PINMUX_SET(PH08,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi2_dat1_ph09: espi2_dat1_ph09 {
+    //     pinmux = <LS_PINMUX_SET(PH09,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/espi2_dat0_ph10: espi2_dat0_ph10 {
+    //     pinmux = <LS_PINMUX_SET(PH10,  LSFUNC(PINMUX_FUNC2))>;
+    //     input-enable;
+    // };
 
-    /* SGPIOM */
-    /omit-if-no-ref/sgpiom_clk_pe06: sgpiom_clk_pe06 {
-        pinmux = <LS_PINMUX_SET(PE06, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/sgpiom_di_pe07: sgpiom_di_pe07 {
-        pinmux = <LS_PINMUX_SET(PE07, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
-    /omit-if-no-ref/sgpiom_do_pe08: sgpiom_do_pe08 {
-        pinmux = <LS_PINMUX_SET(PE08, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
-    /omit-if-no-ref/sgpiom_ld_pe09: sgpiom_ld_pe09 {
-        pinmux = <LS_PINMUX_SET(PE09, LSFUNC(PINMUX_FUNC1))>;
-        drive-strength = "quarter max driver";
-    };
+    // /* LPC */
+    // /omit-if-no-ref/lpc_serirq_pi09: lpc_serirq_pi09 {
+    //     pinmux = <LS_PINMUX_SET(PI09,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/lpc_frm_pi10: lpc_frm_pi10 {
+    //     pinmux = <LS_PINMUX_SET(PI10,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/lpc_clk_pi11: lpc_clk_pi11 {
+    //     pinmux = <LS_PINMUX_SET(PI11,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/lpc_dat3_pi12: lpc_dat3_pi12 {
+    //     pinmux = <LS_PINMUX_SET(PI12,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/lpc_dat2_pi13: lpc_dat2_pi13 {
+    //     pinmux = <LS_PINMUX_SET(PI13,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/lpc_dat1_pi14: lpc_dat1_pi14 {
+    //     pinmux = <LS_PINMUX_SET(PI14,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/lpc_dat0_pi15: lpc_dat0_pi15 {
+    //     pinmux = <LS_PINMUX_SET(PI15,  LSFUNC(PINMUX_FUNC3))>;
+    //     input-enable;
+    // };
+
+    // /* SGPIOM */
+    // /omit-if-no-ref/sgpiom_clk_pe06: sgpiom_clk_pe06 {
+    //     pinmux = <LS_PINMUX_SET(PE06, LSFUNC(PINMUX_FUNC2))>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/sgpiom_di_pe07: sgpiom_di_pe07 {
+    //     pinmux = <LS_PINMUX_SET(PE07, LSFUNC(PINMUX_FUNC2))>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/sgpiom_do_pe08: sgpiom_do_pe08 {
+    //     pinmux = <LS_PINMUX_SET(PE08, LSFUNC(PINMUX_FUNC2))>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/sgpiom_ld_pe09: sgpiom_ld_pe09 {
+    //     pinmux = <LS_PINMUX_SET(PE09, LSFUNC(PINMUX_FUNC2))>;
+    //     drive-strength = "quarter max driver";
+    // };
 };

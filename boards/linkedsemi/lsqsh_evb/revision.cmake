@@ -1,9 +1,8 @@
 set(BOARD_REVISIONS "runbmc_v2_2os"
                     "runbmc_v2_1os"
-                    "runbmc_v2_1os_smp"
                     "runbmc_v3_2os"
-                    "runbmc_v3_1os"
-                    "runbmc_v3_1os_smp")
+                    "runbmc_v3_2os_xip"
+                    "runbmc_v3_1os")
 if(NOT DEFINED BOARD_REVISION)
   set(BOARD_REVISION "runbmc_v3_2os")
 else()
