@@ -157,7 +157,7 @@ static inline int _zbus_vded_exec(const struct zbus_channel *chan, k_timepoint_t
 
 		if (err) {
 			last_error = err;
-			LOG_ERR("could not deliver notification to observer %s. Error code %d",
+			LOG_ERROR("could not deliver notification to observer %s. Error code %d",
 				_ZBUS_OBS_NAME(obs), err);
 			if (err == -ENOMEM) {
 				if (IS_ENABLED(CONFIG_ZBUS_MSG_SUBSCRIBER)) {

@@ -49,7 +49,7 @@ int zbus_chan_add_obs(const struct zbus_channel *chan, const struct zbus_observe
 	struct zbus_observer_node *new_obs_nd = k_malloc(sizeof(struct zbus_observer_node));
 
 	if (new_obs_nd == NULL) {
-		LOG_ERR("Could not allocate observer node the heap is full!");
+		LOG_ERROR("Could not allocate observer node the heap is full!");
 
 		k_sem_give(&chan->data->sem);
 

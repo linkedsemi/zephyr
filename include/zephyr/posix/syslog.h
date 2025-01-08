@@ -45,6 +45,10 @@
 #define LOG_INFO    6
 #define LOG_DEBUG   7
 
+#define	LOG_PRIMASK	0x07	/* mask to extract priority part (internal) */
+				/* extract priority */
+#define	LOG_PRI(p)	((p) & LOG_PRIMASK)
+
 /* generate a valid log mask */
 #define LOG_MASK(mask) ((mask) & BIT_MASK(LOG_DEBUG + 1))
 

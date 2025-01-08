@@ -7,9 +7,9 @@
 #ifndef ZEPHYR_INCLUDE_POSIX_TYPES_H_
 #define ZEPHYR_INCLUDE_POSIX_TYPES_H_
 
-#if !(defined(CONFIG_ARCH_POSIX) && defined(CONFIG_EXTERNAL_LIBC))
-#include <sys/types.h>
-#endif
+// #if !(defined(CONFIG_ARCH_POSIX) && defined(CONFIG_EXTERNAL_LIBC))
+// #include <sys/types.h>
+// #endif
 
 #if !defined(_CLOCK_T_DECLARED) && !defined(__clock_t_defined)
 typedef unsigned long clock_t;
@@ -154,6 +154,10 @@ typedef uint32_t pthread_key_t;
 typedef struct pthread_once pthread_once_t;
 /* Newlib typedefs pthread_once_t as a struct with two ints */
 BUILD_ASSERT(sizeof(pthread_once_t) >= sizeof(struct pthread_once));
+#endif
+
+#if !(defined(CONFIG_ARCH_POSIX) && defined(CONFIG_EXTERNAL_LIBC))
+#include <sys/types.h>
 #endif
 
 #ifdef __cplusplus

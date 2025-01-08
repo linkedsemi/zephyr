@@ -7,9 +7,12 @@ config SOC_FAMILY_QEMU_VIRT_RISCV
 	select RISCV_ISA_EXT_M
 	select RISCV_ISA_EXT_A
 	select RISCV_ISA_EXT_C
+	select RISCV_ISA_EXT_F
 	select RISCV
 	select RISCV_PRIVILEGED
 	select RISCV_HAS_PLIC
+	select CPU_HAS_FPU
+	select FPU
 	imply XIP
 
 if SOC_FAMILY_QEMU_VIRT_RISCV

@@ -39,7 +39,7 @@ FUNC_NORETURN void z_irq_spurious(const void *unused)
 		unsigned int save_irq = riscv_plic_get_irq();
 		const struct device *save_dev = riscv_plic_get_dev();
 
-		LOG_ERR("PLIC interrupt line causing the IRQ: %d (%p)", save_irq, save_dev);
+		LOG_ERROR("PLIC interrupt line causing the IRQ: %d (%p)", save_irq, save_dev);
 	}
 #endif
 	z_riscv_fatal_error(K_ERR_SPURIOUS_IRQ, NULL);

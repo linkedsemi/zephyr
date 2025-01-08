@@ -165,7 +165,7 @@ static bool set_pmp_entry(unsigned int *index_p, uint8_t perm,
 	__ASSERT((size & (CONFIG_PMP_GRANULARITY - 1)) == 0, "misaligned size");
 
 	if (index >= index_limit) {
-		LOG_ERR("out of PMP slots");
+		LOG_ERROR("out of PMP slots");
 		ok = false;
 	} else if (PMP_TOR_SUPPORTED &&
 		   ((index == 0 && start == 0) ||
@@ -186,7 +186,7 @@ static bool set_pmp_entry(unsigned int *index_p, uint8_t perm,
 		pmp_n_cfg[index] = perm | PMP_NAPOT;
 		index += 1;
 	} else if (PMP_TOR_SUPPORTED && index + 1 >= index_limit) {
-		LOG_ERR("out of PMP slots");
+		LOG_ERROR("out of PMP slots");
 		ok = false;
 	} else if (PMP_TOR_SUPPORTED) {
 		pmp_addr[index] = PMP_ADDR(start);
@@ -196,7 +196,7 @@ static bool set_pmp_entry(unsigned int *index_p, uint8_t perm,
 		pmp_n_cfg[index] = perm | PMP_TOR;
 		index += 1;
 	} else {
-		LOG_ERR("inappropriate PMP range (start=%#lx size=%#zx)", start, size);
+		LOG_ERROR("inappropriate PMP range (start=%#lx size=%#zx)", start, size);
 		ok = false;
 	}
 

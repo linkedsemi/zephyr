@@ -237,14 +237,14 @@ static inline int slip_input_byte(struct slip_context *slip,
 			slip->rx = net_pkt_rx_alloc_on_iface(slip->iface,
 							     K_NO_WAIT);
 			if (!slip->rx) {
-				LOG_ERR("[%p] cannot allocate pkt", slip);
+				LOG_ERROR("[%p] cannot allocate pkt", slip);
 				return 0;
 			}
 
 			slip->last = net_pkt_get_frag(slip->rx, SLIP_FRAG_LEN,
 						      K_NO_WAIT);
 			if (!slip->last) {
-				LOG_ERR("[%p] cannot allocate 1st data buffer",
+				LOG_ERROR("[%p] cannot allocate 1st data buffer",
 					slip);
 				net_pkt_unref(slip->rx);
 				slip->rx = NULL;
@@ -272,7 +272,7 @@ static inline int slip_input_byte(struct slip_context *slip,
 
 		buf = net_pkt_get_reserve_rx_data(SLIP_FRAG_LEN, K_NO_WAIT);
 		if (!buf) {
-			LOG_ERR("[%p] cannot allocate next data buf", slip);
+			LOG_ERROR("[%p] cannot allocate next data buf", slip);
 			net_pkt_unref(slip->rx);
 			slip->rx = NULL;
 			slip->last = NULL;

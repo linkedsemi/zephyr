@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+#include <sys/types.h>
 #ifndef ZEPHYR_POSIX_FCNTL_H_
 #define ZEPHYR_POSIX_FCNTL_H_
 
@@ -126,6 +126,8 @@
 #define F_UNLCK		2
 #endif
 
+#define AT_FDCWD	-100
+# define F_DUPFD_CLOEXEC 1030
 struct flock
   {
     short int l_type;   /* Type of lock: F_RDLCK, F_WRLCK, or F_UNLCK.  */

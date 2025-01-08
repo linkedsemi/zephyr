@@ -42,7 +42,7 @@ struct itimerspec {
 #ifdef __cplusplus
 }
 #endif
-
+#define __timespec_defined
 #endif /* __timespec_defined */
 #endif /* __NEWLIB__ */
 

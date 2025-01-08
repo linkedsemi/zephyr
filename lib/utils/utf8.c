@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <zephyr/sys/__assert.h>
+#include <endian.h>
 
 #define ASCII_CHAR 0x7F
 #define SEQUENCE_FIRST_MASK 0xC0

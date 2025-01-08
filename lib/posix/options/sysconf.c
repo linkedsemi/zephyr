@@ -217,16 +217,16 @@ long sysconf(int x)
 		return z_sysconf(_SC_AIO_MAX);
 	case _SC_AIO_PRIO_DELTA_MAX:
 		return z_sysconf(_SC_AIO_PRIO_DELTA_MAX);
-	case _SC_ARG_MAX:
-		return z_sysconf(_SC_ARG_MAX);
+	// case _SC_ARG_MAX:
+	// 	return z_sysconf(_SC_ARG_MAX);
 	case _SC_ATEXIT_MAX:
 		return z_sysconf(_SC_ATEXIT_MAX);
-	case _SC_CHILD_MAX:
-		return z_sysconf(_SC_CHILD_MAX);
+	// case _SC_CHILD_MAX:
+	// 	return z_sysconf(_SC_CHILD_MAX);
 	case _SC_HOST_NAME_MAX:
 		return z_sysconf(_SC_HOST_NAME_MAX);
-	case _SC_IOV_MAX:
-		return z_sysconf(_SC_IOV_MAX);
+	// case _SC_IOV_MAX:
+	// 	return z_sysconf(_SC_IOV_MAX);
 	case _SC_LOGIN_NAME_MAX:
 		return z_sysconf(_SC_LOGIN_NAME_MAX);
 	case _SC_NGROUPS_MAX:

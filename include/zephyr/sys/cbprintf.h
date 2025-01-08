@@ -134,14 +134,14 @@ extern "C" {
  */
 
 /** @brief Required alignment of the buffer used for packaging. */
-#ifdef __xtensa__
+// #ifdef __xtensa__
+// #define CBPRINTF_PACKAGE_ALIGNMENT 16
+// #else
+// #define CBPRINTF_PACKAGE_ALIGNMENT \
+// 	Z_POW2_CEIL(COND_CODE_1(CONFIG_CBPRINTF_PACKAGE_LONGDOUBLE, \
+// 		(sizeof(long double)), (MAX(sizeof(double), sizeof(long long)))))
+// #endif
 #define CBPRINTF_PACKAGE_ALIGNMENT 16
-#else
-#define CBPRINTF_PACKAGE_ALIGNMENT \
-	Z_POW2_CEIL(COND_CODE_1(CONFIG_CBPRINTF_PACKAGE_LONGDOUBLE, \
-		(sizeof(long double)), (MAX(sizeof(double), sizeof(long long)))))
-#endif
-
 BUILD_ASSERT(Z_IS_POW2(CBPRINTF_PACKAGE_ALIGNMENT));
 
 
