@@ -34,6 +34,7 @@ struct i2c_ls_config{
 
 struct i2c_ls_data {
 	struct k_sem device_sync_sem;
+	struct k_sem stop_sem;
 	struct k_sem bus_mutex;
 	uint32_t dev_config;
 	struct i2c_target_config *slave_cfg;
@@ -41,7 +42,7 @@ struct i2c_ls_data {
 	uint8_t xfer_len;
 	uint8_t xfer_remain;
 	uint8_t errs;
-
+	bool stop_pending;
 };
 
 struct i2c_speed_config_t
@@ -82,8 +83,11 @@ void ls_i2c_isr(void *arg)
 		}else
 		#endif
 		{
-			cfg->reg->TXDR = *data->current->buf++;
-			if(--data->xfer_remain == 0)
+			if(data->xfer_remain)
+			{
+				cfg->reg->TXDR = *data->current->buf++;
+				--data->xfer_remain;
+			}else
 			{
 				cfg->reg->IDR = I2C_INT_TXE_MASK;
 				cfg->reg->IER = I2C_INT_TCR_MASK|I2C_INT_TC_MASK;
@@ -161,7 +165,14 @@ void ls_i2c_isr(void *arg)
 		cfg->reg->IDR = I2C_INT_TXE_MASK | I2C_INT_RXNE_MASK;
 		if(data->current)
 		{
-			k_sem_give(&data->device_sync_sem);
+			if(data->stop_pending)
+			{
+				data->stop_pending = false;
+				k_sem_give(&data->stop_sem);
+			}else if(data->xfer_remain||(cfg->reg->SR&I2C_SR_TXFLV_MASK))
+			{
+				k_sem_give(&data->device_sync_sem);
+			}
 		}
 		#ifdef CONFIG_I2C_TARGET
 		else if(data->slave_cfg)
@@ -185,12 +196,14 @@ void ls_i2c_isr(void *arg)
 	{
 		cfg->reg->ICR = I2C_INT_TC_MASK;
 		cfg->reg->IDR = I2C_INT_TCR_MASK|I2C_INT_TC_MASK;
+		__ASSERT(k_sem_count_get(&data->device_sync_sem) == 0, "TC: %d\n", __LINE__);
 		k_sem_give(&data->device_sync_sem);
 	}
 	if(irq&I2C_INT_TCR_MASK)
 	{
 		cfg->reg->ICR = I2C_INT_TCR_MASK;
 		cfg->reg->IDR = I2C_INT_TCR_MASK|I2C_INT_TC_MASK;
+		__ASSERT(k_sem_count_get(&data->device_sync_sem) == 0, "TCR: %d\n", __LINE__);
 		k_sem_give(&data->device_sync_sem);
 	}
 	if(irq&I2C_INT_BERR_MASK)
@@ -276,6 +289,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 		}
 		data->xfer_len = 0;
 		do{
+			__ASSERT(k_sem_count_get(&data->device_sync_sem) == 0, "S: %d\n", __LINE__);
 			bool start = (data->current->flags&I2C_MSG_RESTART||data->current==msg) && data->xfer_len == 0;
 			if(start)
 			{
@@ -312,8 +326,9 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 		}while(data->current->len);
 		if(data->current->flags&I2C_MSG_STOP)
 		{
+			data->stop_pending = true;
 			config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
-			k_sem_take(&data->device_sync_sem, K_FOREVER);
+			k_sem_take(&data->stop_sem, K_FOREVER);
 		}
 	}
 err:
@@ -396,6 +411,7 @@ static int i2c_ls_init(const struct device *dev)
 #endif
 	struct i2c_ls_data *data = dev->data;
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
+	k_sem_init(&data->stop_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->bus_mutex, 1, 1);
 	cfg->irq_config_func(dev);
 
