@@ -354,8 +354,8 @@ static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c
 	__ASSERT(cycle_count>=16&&prescalar<=16,"Invalid i2c timing");
     int16_t scll, sclh, scldel, sdadel;
     cycle_count -= 4;
-	scll = cycle_count*2/3;
-    sclh = cycle_count/3;
+	scll = cycle_count >> 1;
+    sclh = scll;
 	scldel = scll>16?15:scll-2;
 	sdadel = 1;
 	struct i2c_speed_config_t param;
