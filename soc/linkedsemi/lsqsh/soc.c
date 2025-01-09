@@ -48,58 +48,29 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
+/* strong order | cacheable | bufferable */
+/*       2      |     1     |     0      */
+#define BUFFERABLE BIT(0)
+#define CACHEABLE BIT(1)
+#define STRONG_ORDER BIT(2)
+void cache_region_init(void)
+{
+    csi_sysmap_config_region(0, 0x8000000, STRONG_ORDER);
+    csi_sysmap_config_region(1, 0x8000000 + (16 << 20), CACHEABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(2, 0x10000000, STRONG_ORDER);
+    csi_sysmap_config_region(3, 0x10000000 + ((512 + 760) << 10), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+    csi_sysmap_config_region(4, 0x18000000, STRONG_ORDER);
+    csi_sysmap_config_region(5, 0x18000000 + (16 << 20), CACHEABLE | BUFFERABLE);
+    csi_sysmap_config_region(6, 0xffffffff, STRONG_ORDER);
+}
+
 extern void SWINT_Handler_Asm(void);
 extern void SystemInit();
 static int lsqsh_init(void)
 {
-    uint32_t addr = 0;
-
-#if ((CONFIG_NUM_OS == 2) && (CONFIG_NUM_USE_CPU == 2))
-    addr = 0x10000000;
-    SYSMAP->SYSMAPADDR0 = addr >> 12;
-    SYSMAP->SYSMAPCFG0 = 0x10;
-    addr = 0x10000000 + (508 * 1024);
-    SYSMAP->SYSMAPADDR1 = addr >> 12;
-    SYSMAP->SYSMAPCFG1 = 0xc;
-    addr = 0x10000000 + (512 * 1024);
-    SYSMAP->SYSMAPADDR2 = addr >> 12;
-    SYSMAP->SYSMAPCFG2 = 0x10;
-    addr = 0x10000000 + ((512 + 760) * 1024);
-    SYSMAP->SYSMAPADDR3 = addr >> 12;
-    SYSMAP->SYSMAPCFG3 = 0xc;
-    addr = 0xffffffff;
-    SYSMAP->SYSMAPADDR4 = addr >> 12;
-    SYSMAP->SYSMAPCFG4 = 0x10;
-    SYSMAP->SYSMAPADDR5 = 0;
-    SYSMAP->SYSMAPCFG5 = 0;
-    SYSMAP->SYSMAPADDR6 = 0;
-    SYSMAP->SYSMAPCFG6 = 0;
-    SYSMAP->SYSMAPADDR7 = 0;
-    SYSMAP->SYSMAPCFG7 = 0;
-#else
-    addr = 0x10000000;
-    SYSMAP->SYSMAPADDR0 = addr >> 12;
-    SYSMAP->SYSMAPCFG0 = 0x10;
-    addr = 0x10000000 + ((512 + 760) * 1024);
-    SYSMAP->SYSMAPADDR1 = addr >> 12;
-    SYSMAP->SYSMAPCFG1 = 0xc;
-    addr = 0xffffffff;
-    SYSMAP->SYSMAPADDR2 = addr >> 12;
-    SYSMAP->SYSMAPCFG2 = 0x10;
-    SYSMAP->SYSMAPADDR3 = 0;
-    SYSMAP->SYSMAPCFG3 = 0;
-    SYSMAP->SYSMAPADDR4 = 0;
-    SYSMAP->SYSMAPCFG4 = 0;
-    SYSMAP->SYSMAPADDR5 = 0;
-    SYSMAP->SYSMAPCFG5 = 0;
-    SYSMAP->SYSMAPADDR6 = 0;
-    SYSMAP->SYSMAPCFG6 = 0;
-    SYSMAP->SYSMAPADDR7 = 0;
-    SYSMAP->SYSMAPCFG7 = 0;
-#endif
-
     SystemInit();
     // sys_init_none();
+    cache_region_init();
 
 #if defined(CONFIG_CACHE)
     csi_dcache_enable();
