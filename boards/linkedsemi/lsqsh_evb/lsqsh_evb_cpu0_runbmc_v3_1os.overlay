@@ -80,8 +80,8 @@
 
 &uart1 {
     current-speed = <115200>;
-    pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
-    pinctrl-names = "default";
+    // pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
+    // pinctrl-names = "default";
     status = "disabled";
 };
 
@@ -92,15 +92,15 @@
 
 &uart3 {
     current-speed = <115200>;
-    pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
-    pinctrl-names = "default";
+    // pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
+    // pinctrl-names = "default";
     status = "disabled";
 };
 
 &uart4 {
     current-speed = <115200>;
-    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
-    pinctrl-names = "default";
+    // pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+    // pinctrl-names = "default";
     status = "disabled";
 };
 
