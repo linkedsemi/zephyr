@@ -8,72 +8,72 @@
 
 &pinctrl {
     /* UART */
-    /omit-if-no-ref/uart1_tx_pn04: uart1_tx_pn04 {
-        pinmux = <LS_PINMUX_SET(PN04, FION_UART1_TXD)>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/uart1_rx_pn03: uart1_rx_pn03 {
-        pinmux = <LS_PINMUX_SET(PN03, FION_UART1_RXD)>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
+    // /omit-if-no-ref/uart1_tx_pn04: uart1_tx_pn04 {
+    //     pinmux = <LS_PINMUX_SET(PN04, FION_UART1_TXD)>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/uart1_rx_pn03: uart1_rx_pn03 {
+    //     pinmux = <LS_PINMUX_SET(PN03, FION_UART1_RXD)>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
 
-    /omit-if-no-ref/uart3_tx_pc03: uart3_tx_pc03 {
-        pinmux = <LS_PINMUX_SET(PC03, FIOC_UART3_TXD)>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/uart3_rx_pc04: uart3_rx_pc04 {
-        pinmux = <LS_PINMUX_SET(PC04, FIOC_UART3_RXD)>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
+    // /omit-if-no-ref/uart3_tx_pc03: uart3_tx_pc03 {
+    //     pinmux = <LS_PINMUX_SET(PC03, FIOC_UART3_TXD)>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/uart3_rx_pc04: uart3_rx_pc04 {
+    //     pinmux = <LS_PINMUX_SET(PC04, FIOC_UART3_RXD)>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
 
-    /omit-if-no-ref/uart3_tx_pc14: uart3_tx_pc14 {
-        pinmux = <LS_PINMUX_SET(PC14, FIOC_UART3_TXD)>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/uart3_rx_pc15: uart3_rx_pc15 {
-        pinmux = <LS_PINMUX_SET(PC15, FIOC_UART3_RXD)>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
+    // /omit-if-no-ref/uart3_tx_pc14: uart3_tx_pc14 {
+    //     pinmux = <LS_PINMUX_SET(PC14, FIOC_UART3_TXD)>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/uart3_rx_pc15: uart3_rx_pc15 {
+    //     pinmux = <LS_PINMUX_SET(PC15, FIOC_UART3_RXD)>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
 
-    /omit-if-no-ref/uart3_tx_pi00: uart3_tx_pi00 {
-        pinmux = <LS_PINMUX_SET(PI00, FIOC_UART3_TXD)>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/uart3_rx_pi01: uart3_rx_pi01 {
-        pinmux = <LS_PINMUX_SET(PI01, FIOC_UART3_RXD)>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
+    // /omit-if-no-ref/uart3_tx_pi00: uart3_tx_pi00 {
+    //     pinmux = <LS_PINMUX_SET(PI00, FIOC_UART3_TXD)>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/uart3_rx_pi01: uart3_rx_pi01 {
+    //     pinmux = <LS_PINMUX_SET(PI01, FIOC_UART3_RXD)>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
 
-    /omit-if-no-ref/uart4_tx_pd09: uart4_tx_pd09 {
-        pinmux = <LS_PINMUX_SET(PD09, FIOD_UART4_TXD)>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/uart4_rx_pd10: uart4_rx_pd10 {
-        pinmux = <LS_PINMUX_SET(PD10, FIOD_UART4_RXD)>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
+    // /omit-if-no-ref/uart4_tx_pd09: uart4_tx_pd09 {
+    //     pinmux = <LS_PINMUX_SET(PD09, FIOD_UART4_TXD)>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/uart4_rx_pd10: uart4_rx_pd10 {
+    //     pinmux = <LS_PINMUX_SET(PD10, FIOD_UART4_RXD)>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
 
-    /omit-if-no-ref/uart4_tx_pd11: uart4_tx_pd11 {
-        pinmux = <LS_PINMUX_SET(PD11, FIOD_UART4_TXD)>;
-        drive-strength = "quarter max driver";
-    };
-    /omit-if-no-ref/uart4_rx_pd12: uart4_rx_pd12 {
-        pinmux = <LS_PINMUX_SET(PD12, FIOD_UART4_RXD)>;
-        drive-strength = "quarter max driver";
-        input-enable;
-    };
+    // /omit-if-no-ref/uart4_tx_pd11: uart4_tx_pd11 {
+    //     pinmux = <LS_PINMUX_SET(PD11, FIOD_UART4_TXD)>;
+    //     drive-strength = "quarter max driver";
+    // };
+    // /omit-if-no-ref/uart4_rx_pd12: uart4_rx_pd12 {
+    //     pinmux = <LS_PINMUX_SET(PD12, FIOD_UART4_RXD)>;
+    //     drive-strength = "quarter max driver";
+    //     input-enable;
+    // };
 
     /omit-if-no-ref/uart5_tx_pe00: uart5_tx_pe00 {
-        pinmux = <LS_PINMUX_SET(PE00, FIOE_UART5_TXD)>;
+        pinmux = <LS_PINMUX_UART5_TXD_FUNC1_IDX9_PE(00)>;
         drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart5_rx_pe01: uart5_rx_pe01 {
-        pinmux = <LS_PINMUX_SET(PE01, FIOE_UART5_RXD)>;
+        pinmux = <LS_PINMUX_UART5_RXD_FUNC1_IDX10_PE(01)>;
         drive-strength = "quarter max driver";
         input-enable;
     };
