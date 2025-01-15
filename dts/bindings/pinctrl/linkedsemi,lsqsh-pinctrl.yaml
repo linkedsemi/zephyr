@@ -91,3 +91,24 @@ child-binding:
         bias-pull-up2:
           type: boolean
           description: enable pull-up resistor
+
+        lock:
+          type: boolean
+
+        gpio:
+          type: boolean
+
+        disable-all:
+          type: boolean
+
+        st:
+          type: boolean
+
+        sl:
+          type: boolean
+
+        input-filter:
+          type: boolean
+
+        analog:
+          type: boolean

@@ -65,10 +65,20 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     /* only has effect if mode is push_pull */
     // io_drive_capacity_write(pin, pinmux.pin_attr_un.field.drive);
 
-    pinmux_cfg_pin_func_alt(pin,
-                                pinmux.pinmux_un.field.func,
-                                pinmux.pinmux_un.field.alt);
+    if (pinmux.pin_attr_un.field.gpio) {
+        goto end;
+    } else if (pinmux.pin_attr_un.field.disable_all) {
+        per_func_disable_all(pin);
+        io_cfg_disable(pin);
+        goto end;
+    } else {
+        pinmux_cfg_pin_func_alt(pin,
+                                    pinmux.pinmux_un.field.func,
+                                    pinmux.pinmux_un.field.alt);
+        goto end;
+    }
 
+end:
     return 0;
 }
 
