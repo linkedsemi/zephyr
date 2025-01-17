@@ -9,6 +9,8 @@
 #include <zephyr/logging/log_backend.h>
 #include <zephyr/logging/log_output_dict.h>
 #include <zephyr/logging/log_backend_std.h>
+#include <zephyr/logging/log_backend_fs.h>
+#include <zephyr/logging/log_ctrl.h>
 #include <assert.h>
 #include <zephyr/fs/fs.h>
 
@@ -146,8 +148,12 @@ close_dir:
 	return rc;
 }
 
+K_MUTEX_DEFINE(fs_mutex);
+
 int write_log_to_file(uint8_t *data, size_t length, void *ctx)
 {
+	k_mutex_lock(&fs_mutex, K_FOREVER);
+
 	int rc;
 	struct fs_file_t *f = &fs_file;
 
@@ -218,10 +224,13 @@ int write_log_to_file(uint8_t *data, size_t length, void *ctx)
 		}
 	}
 
+	k_mutex_unlock(&fs_mutex);
+
 	return length;
 
 on_error:
 	backend_state = BACKEND_FS_CORRUPTED;
+	k_mutex_unlock(&fs_mutex);
 	return length;
 }
 
@@ -341,7 +350,7 @@ static int allocate_new_file(struct fs_file_t *file)
 		curr_file_num = newest;
 
 		/* Is there space left in the newest file? */
-		snprintf(fname, sizeof(fname), "%s/%s%04d", CONFIG_LOG_BACKEND_FS_DIR,
+		snprintf(fname, sizeof(fname), "%s/%s%d", CONFIG_LOG_BACKEND_FS_DIR,
 			 CONFIG_LOG_BACKEND_FS_FILE_PREFIX, curr_file_num);
 		rc = fs_open(file, fname, FS_O_CREATE | FS_O_WRITE | FS_O_APPEND);
 		if (rc < 0) {
@@ -504,4 +513,27 @@ static const struct log_backend_api log_backend_fs_api = {
 
 LOG_BACKEND_DEFINE(log_backend_fs, log_backend_fs_api,
 		   IS_ENABLED(CONFIG_LOG_BACKEND_FS_AUTOSTART));
+
+int log_backend_fs_enable(void)
+{
+	if (!IS_ENABLED(CONFIG_LOG_BACKEND_FS_AUTOSTART)) {
+		log_backend_fs_init(&log_backend_fs);
+	}
+	if (!log_backend_is_ready(&log_backend_fs)) {
+		log_backend_enable(&log_backend_fs,
+            log_backend_fs.cb->ctx, CONFIG_LOG_MAX_LEVEL);
+	}
+
+	return 0;
+}
+
+int log_backend_fs_disable(void)
+{
+	if (log_backend_is_ready(&log_backend_fs)) {
+		log_backend_disable(&log_backend_fs);
+	}
+
+	return 0;
+}
+
 #endif
