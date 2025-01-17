@@ -18,7 +18,7 @@
 	compatible = "riscv-virtio";
 	model = "riscv-virtio,qemu";
 
-	flash@20000000 {
+	flash: flash@20000000 {
 		bank-width = < 0x04 >;
 		reg = < 0x20000000 0x2000000 0x22000000 0x2000000 >;
 		compatible = "cfi-flash";
