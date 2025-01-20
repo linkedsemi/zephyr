@@ -46,11 +46,14 @@ int main(void)
     printf("dereset cpu1\n");
     app_cpu_dereset();
 
+#if defined(CONFIG_APP_RST_INTERRUPT)
     printf("wait\n");
     int err = k_sem_take(&sem_rst_occur, K_FOREVER);
     if (err != 0) {
         printk("Failed to take sem_rst_occur (err %d)\n", err);
     }
+#endif
+
     printf("done\n");
 
     return 0;
