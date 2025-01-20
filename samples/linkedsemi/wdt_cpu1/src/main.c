@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <zephyr/kernel.h>
+#include <ls_hal_iwdgv2.h>
 #include <platform.h>
 
 #define BOOT_WDG_VALUE_BASE_S  (1000000 * 10)
@@ -31,21 +32,11 @@ void app_cpu_rst_isr()
 int main(void)
 {
     printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
-
-#if defined(CONFIG_APP_RST_INTERRUPT)
     sys_write32(BIT(24), SEC_SYSC_CPU_SEC_ADDR + APP_CPU_RST_INTR_CLR);
     sys_write32(BIT(24), SEC_SYSC_CPU_SEC_ADDR + APP_CPU_RST_INTR_MSK);
     IRQ_CONNECT(APP_CPU_RST_IRQN, 0, app_cpu_rst_isr, NULL, 0);
     irq_enable(APP_CPU_RST_IRQN);
-#endif
-
-    printf("reset cpu1\n");
-    app_cpu_reset();
-    printf("sleep 1s\n");
-    k_msleep(1000);
-    printf("dereset cpu1\n");
-    app_cpu_dereset();
-
+    HAL_IWDG_Init(APP_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
     printf("wait\n");
     int err = k_sem_take(&sem_rst_occur, K_FOREVER);
     if (err != 0) {
