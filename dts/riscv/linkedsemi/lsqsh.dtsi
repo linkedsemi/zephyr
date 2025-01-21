@@ -635,7 +635,6 @@
             interrupts = <UART1_IRQN 3> ;
             status = "disabled";
         };
-
         uart2: uart@40087400 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40087400 0x400>;
@@ -860,6 +859,31 @@
             interrupts = <MJTAG3_IRQN 3>;
             status = "disabled";
         };
+
+        i3c9: i3c@040095000 {
+			compatible = "linkedsemi,i3c";
+    		#address-cells = <3>;
+			#size-cells = <0>;
+			reg = <0x40095000 0x2000>;
+            interrupts = <120 2>;
+            status = "disabled";
+            
+            i3c-scl-hz = <1000000>;
+            // i2c-scl-hz = <400000>;
+		};
+
+    	i3c10: i3c@40095400 {
+			compatible = "linkedsemi,i3c";
+    		#address-cells = <3>;
+			#size-cells = <0>;
+			reg = <0x40095400 0x2000>;
+            interrupts = <121 2>;
+            status = "disabled";
+            
+            i3c-scl-hz = <1000000>;
+            // i2c-scl-hz = <400000>;
+		};
+
     };
 
     power-states {
