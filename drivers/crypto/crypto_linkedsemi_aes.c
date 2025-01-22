@@ -12,13 +12,13 @@ void linkedsemi_crypto_isr(const struct device *dev)
     struct crypto_linkedsemi_data *dev_data = dev->data;
     const struct crypto_linkedsemi_config *dev_config = dev->config;
 
-    union aes_reg_sr sr_un;
-    sr_un.value = sys_read32(dev_config->reg_crypt + CRYPT_SR);
-    if (sr_un.field.AESRIF) {
-        union aes_reg_icfr aes_reg_icfr_un = { .field = { .AESIF = 1, }, };
-        sys_write32(aes_reg_icfr_un.value, dev_config->reg_crypt + CRYPT_ICFR);
+    aes_reg_sr_t sr;
+    sr.value = sys_read32(dev_config->reg_crypt + CRYPT_SR);
+    if (sr.AESRIF) {
+        aes_reg_icfr_t aes_reg_icfr = { .AESIF = 1, };
+        sys_write32(aes_reg_icfr.value, dev_config->reg_crypt + CRYPT_ICFR);
         k_sem_give(&dev_data->cipher_device_sync_sem);
-    } else if (sr_un.field.DESRIF) {
+    } else if (sr.DESRIF) {
         __ASSERT(0, "TODO");
     }
 }
@@ -39,7 +39,7 @@ int crypto_linkedsemi_single_block(const struct device *dev,
     bool is_iv_exist = iv ? true : false;
     uint32_t u32_key[CRYPTO_LINKEDSEMI_AES_MAX_KEY_LEN_BYTE];
     uint32_t u32_iv[4];
-    union aes_reg_cr aes_reg_cr_un;
+    aes_reg_cr_t aes_reg_cr;
     int ret = 0;
 
     __ASSERT(pkt_in_len % AES_BLOCK_LEN_BYTE == 0, "padding before crypto");
@@ -80,26 +80,24 @@ int crypto_linkedsemi_single_block(const struct device *dev,
     sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[2])), dev_config->reg_crypt + CRYPT_DATA1);
     sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[3])), dev_config->reg_crypt + CRYPT_DATA0);
 
-    aes_reg_cr_un = (union aes_reg_cr){
-        .field = {
-            .GO = 1,
-            .ENCS = is_encrypt, /* is_enc */
-            .AESKS = (ctx_keylen - 1) >> 4, /* 00: 128 bits   01: 192 bits   10: 256 bits */
-            .MODE = is_cbc, /* is_cbc */
-            .IVREN = is_iv_exist, /* is_iv_exist */
-            .IE = 1,
-            .TYPE = 0,
-            .TDES = 0,
-            .DESKS = 0,
-            .FIFOEN = 0,
-            .FIFOODR = 0,
-            .DMAEN = 0,
-            .RESERVED0 = 0,
-            .CRYSEL = 0,
-        },
+    aes_reg_cr = (aes_reg_cr_t){
+        .GO = 1,
+        .ENCS = is_encrypt, /* is_enc */
+        .AESKS = (ctx_keylen - 1) >> 4, /* 00: 128 bits   01: 192 bits   10: 256 bits */
+        .MODE = is_cbc, /* is_cbc */
+        .IVREN = is_iv_exist, /* is_iv_exist */
+        .IE = 1,
+        .TYPE = 0,
+        .TDES = 0,
+        .DESKS = 0,
+        .FIFOEN = 0,
+        .FIFOODR = 0,
+        .DMAEN = 0,
+        .RESERVED0 = 0,
+        .CRYSEL = 0,
     };
 
-    sys_write32(aes_reg_cr_un.value, dev_config->reg_crypt + CRYPT_CR);
+    sys_write32(aes_reg_cr.value, dev_config->reg_crypt + CRYPT_CR);
 
     k_sem_take(&dev_data->cipher_device_sync_sem, K_FOREVER);
 

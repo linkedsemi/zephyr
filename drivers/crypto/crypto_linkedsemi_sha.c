@@ -25,12 +25,12 @@ void linkedsemi_sha_isr(const struct device *dev)
     const struct crypto_linkedsemi_config *dev_config = dev->config;
     struct crypto_linkedsemi_data *dev_data = dev->data;
 
-    union sha_reg_intr sha_reg_intr_stat_un;
-    sha_reg_intr_stat_un.value = sys_read32(dev_config->reg_calc_sha + SHA_INTR_S);
+    sha_reg_intr_t sha_reg_intr_stat;
+    sha_reg_intr_stat.value = sys_read32(dev_config->reg_calc_sha + SHA_INTR_S);
 
-    if (sha_reg_intr_stat_un.field.FSM_END) {
-        union sha_reg_intr sha_reg_intr_un = { .field = { .FSM_END = 1, }, };
-        sys_write32(sha_reg_intr_un.value, dev_config->reg_calc_sha + SHA_INTR_C);
+    if (sha_reg_intr_stat.FSM_END) {
+        sha_reg_intr_t sha_reg_intr = { .FSM_END = 1, };
+        sys_write32(sha_reg_intr.value, dev_config->reg_calc_sha + SHA_INTR_C);
 
         k_sem_give(&dev_data->hash_device_sync_sem);
     }
@@ -43,27 +43,25 @@ int crypto_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, bool finis
     struct crypto_linkedsemi_data *dev_data = dev->data;
     int ret = 0;
 
-    union sha_reg_ctrl sha_reg_ctrl_un = {
-        .field = {
-            .FST_DAT = (dev_data->sha_total_len == 0) ? 1 : 0,
-            .CALC_SHA224 = (dev_data->hash_algo == CRYPTO_HASH_ALGO_SHA224) ? 1 : 0,
-            .CALC_SM3 = 0,
-            /* LEN start from 0. write 0 means 1 block */
-            .LEN = 0,
-        },
+    sha_reg_ctrl_t sha_reg_ctrl = {
+        .FST_DAT = (dev_data->sha_total_len == 0) ? 1 : 0,
+        .CALC_SHA224 = (dev_data->hash_algo == CRYPTO_HASH_ALGO_SHA224) ? 1 : 0,
+        .CALC_SM3 = 0,
+        /* LEN start from 0. write 0 means 1 block */
+        .LEN = 0,
     };
-    union sha_reg_intr sha_reg_intr_un = { .field = { .FSM_END = 1, .FSM_EMPT = 0, }, };
-    const union sha_reg_start sha_reg_start_un = { .field = { .FSM_START = 1, }, };
+    sha_reg_intr_t sha_reg_intr = { .FSM_END = 1, .FSM_EMPT = 0, };
+    const sha_reg_start_t sha_reg_start = { .FSM_START = 1, };
 
     dev_data->sha_total_len += pkt->in_len;
     dev_data->sha_pkt_in_buf_index = 0;
 
-    sys_write32(sha_reg_ctrl_un.value, dev_config->reg_calc_sha + SHA_CTRL);
-    sys_write32(sha_reg_intr_un.value, dev_config->reg_calc_sha + SHA_INTR_M);
-    sys_write32(sha_reg_start_un.value, dev_config->reg_calc_sha + SHA_START);
+    sys_write32(sha_reg_ctrl.value, dev_config->reg_calc_sha + SHA_CTRL);
+    sys_write32(sha_reg_intr.value, dev_config->reg_calc_sha + SHA_INTR_M);
+    sys_write32(sha_reg_start.value, dev_config->reg_calc_sha + SHA_START);
 
-    sha_reg_ctrl_un.field.FST_DAT = 0;
-    sys_write32(sha_reg_ctrl_un.value, dev_config->reg_calc_sha + SHA_CTRL);
+    sha_reg_ctrl.FST_DAT = 0;
+    sys_write32(sha_reg_ctrl.value, dev_config->reg_calc_sha + SHA_CTRL);
 
     /* copy buffer to hash engine */
     for (uint64_t i = dev_data->sha_pkt_in_buf_index; i < pkt->in_len; i++) {
@@ -71,7 +69,7 @@ int crypto_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, bool finis
         if(dev_data->sha_current_block_index == SHA_BLOCK_LEN_BYTE) {
             dev_data->sha_current_block_index = 0;
             k_sem_take(&dev_data->hash_device_sync_sem, K_FOREVER);
-            sys_write32(sha_reg_start_un.value, dev_config->reg_calc_sha + SHA_START);
+            sys_write32(sha_reg_start.value, dev_config->reg_calc_sha + SHA_START);
         }
     }
 
@@ -82,7 +80,7 @@ int crypto_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, bool finis
             if(dev_data->sha_current_block_index == SHA_BLOCK_LEN_BYTE) {
                 dev_data->sha_current_block_index = 0;
                 k_sem_take(&dev_data->hash_device_sync_sem, K_FOREVER);
-                sys_write32(sha_reg_start_un.value, dev_config->reg_calc_sha + SHA_START);
+                sys_write32(sha_reg_start.value, dev_config->reg_calc_sha + SHA_START);
             }
             sha_fifo_write_byte(dev, 0x00);
         }
