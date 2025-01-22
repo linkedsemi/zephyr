@@ -26,37 +26,36 @@ int main(void)
 #if defined(TEST_NAPOT)
 /*
 
-| N | addr                             | mode  | RWX  |       desc               |
+| N | addr                             | mode  | rwx  |       desc               |
 | - | - | - | - | - |
 | 0 | 0x8000000--(0x8000000+2MB)       | NAPOT | ---  | sec flash xip mem        |
-| 1 | 0x8000000--(0x8000000+64MB)      | NAPOT | RWX  | app flash xip mem        |
-| 2 | 0x10000000--(0x10000000+512KB)   | NAPOT | ---  | sec sram                 |
-| 3 | 0x10000000--(0x10000000+128MB)   | NAPOT | RWX  | app sram                 |
-| 4 | 0x40000000--(0x40000000+12KB)    | NAPOT | ---  | sec peripheral region 1  |
-| 5 | 0x400A0000--(0x400A0000+42KB)    | NAPOT | ---  | sec peripheral region 2  |
-| 6 | 0x40000000--(0x40000000+128MB)   | NAPOT | RWX  | app peripheral           |
-| 7 |                                  |       |      |                          |
+| 1 | 0x10000000--(0x10000000+512KB)   | NAPOT | ---  | sec sram                 |
+| 2 | 0x40000000--(0x40000000+256KB)   | NAPOT | ---  | sec peripheral region 1  |
+| 3 | 0x400a0000--(0x400A0000+32KB)    | NAPOT | ---  | sec peripheral region 2  |
+| 4 |                                  | ----- |      |                          |
+| 5 |                                  | ----- |      |                          |
+| 6 |                                  | ----- |      |                          |
+| 7 | 0x0 -- 4GB                       | NAPOT | rwx  |                          |
 |
 
 */
         iopmp_config_region_napot4(dev, 0, 0x8000000, MB(2), false, false, false, false);
-        iopmp_config_region_napot4(dev, 1, 0x8000000, MB(64), true, true, true, false);
-        iopmp_config_region_napot4(dev, 2, 0x10000000, KB(512), false, false, false, false);
-        iopmp_config_region_napot4(dev, 3, 0x10000000, MB(128), true, true, true, false);
-        iopmp_config_region_napot4(dev, 4, 0x40000000, KB(12), false, false, false, false);
-        iopmp_config_region_napot4(dev, 5, 0x400A0000, KB(42), false, false, false, false);
-        iopmp_config_region_napot4(dev, 6, 0x40000000, MB(128), true, true, true, false);
+        iopmp_config_region_napot4(dev, 1, 0x10000000, KB(512), false, false, false, false);
+        iopmp_config_region_napot4(dev, 2, 0x40000000, KB(256), false, false, false, false);
+        iopmp_config_region_napot4(dev, 3, 0x400A0000, KB(32), false, false, false, false);
+
+        iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * 1024 * 1024 * 1024, true, true, true, false);
 #elif defined(TEST_TOR)
 /*
 
-| N | addr                             | mode  | RWX  |       desc            |        
+| N | addr                             | mode  | rwx  |       desc            |        
 | - | - | - | - | - | 
 | 0 | 0x8000000+2MB                    | TOR   | ---  |                       |
-| 1 | 0x8000000+64MB                   | TOR   | RWX  | app flash xip mem     |
+| 1 | 0x8000000+64MB                   | TOR   | rwx  | app flash xip mem     |
 | 2 | 0x10000000+512KB                 | TOR   | ---  |                       |
-| 3 | 0x10000000+128MB                 | TOR   | RWX  | app sram              |
-| 4 | 0x40000000+12KB                  | TOR   | ---  |                       |
-| 5 | 0x400A0000                       | TOR   | RWX  | app peripheral        |
+| 3 | 0x10000000+128MB                 | TOR   | rwx  | app sram              |
+| 4 | 0x40000000+256KB                 | TOR   | ---  |                       |
+| 5 | 0x400a0000                       | TOR   | rwx  | app peripheral        |
 | 6 | 0xffffffff                       | TOR   | ---  |                       |
 | 7 |                                  |       |      |                       |
 |
@@ -66,7 +65,7 @@ int main(void)
         iopmp_config_region_tor(dev, 1, (0x8000000 + MB(64)), true, true, true, false);
         iopmp_config_region_tor(dev, 2, (0x10000000 + KB(512)), false, false, false, false);
         iopmp_config_region_tor(dev, 3, (0x10000000 + MB(128)), true, true, true, false);
-        iopmp_config_region_tor(dev, 4, (0x40000000 + KB(12)), false, false, false, false);
+        iopmp_config_region_tor(dev, 4, (0x40000000 + KB(256)), false, false, false, false);
         iopmp_config_region_tor(dev, 5, (0x400A0000), true, true, true, false);
         iopmp_config_region_tor(dev, 6, (0xffffffff), false, false, false, false);
 #endif
