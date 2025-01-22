@@ -80,8 +80,8 @@
 
 &uart1 {
     current-speed = <115200>;
-    // pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
-    // pinctrl-names = "default";
+    pinctrl-0 = <&uart1_tx_pn08 &uart1_rx_pn03>;
+    pinctrl-names = "default";
     status = "disabled";
 };
 
@@ -190,6 +190,10 @@
 //     pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
 //     pinctrl-names = "default";
 //     status = "okay";
+// &i2c6 {
+//     pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
+//     pinctrl-names = "default";
+//     status = "disabled";
 
 //     eeprom6: eeprom@76 {
 //         compatible = "zephyr,i2c-target-eeprom";
@@ -356,3 +360,37 @@
 //         status = "okay";
 //     };
 // };
+
+&i3c9 {
+
+    i3c-scl-hz = <1000000>;
+    // i2c-scl-hz = <400000>;
+    status = "okay";
+    is-secondary;
+
+    // own-dynamic_address = <0x38>;
+    tgt-pid = <0x0208 0x13811000>;
+    dcr = <0x5>;
+    bcr = <0x06>;
+
+};
+
+&i3c10 {
+
+    i3c-scl-hz = <1000000>;
+    // i2c-scl-hz = <400000>;
+    status = "okay";
+    // is-secondary;
+
+    own-dynamic_address = <0x38>;
+    tgt-pid = <0x5 0x55>;
+    dcr = <0x5>;
+    bcr = <0x42>;
+
+    i3ctarget1: i3ctarget@20813811000 {
+        compatible = "vnd,i3c-device";
+        reg = < 0 0x0208 0x13811000>;
+        assigned-address = <0x32>;
+        status = "okay";
+    };
+};
