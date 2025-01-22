@@ -103,7 +103,7 @@ static int jtag_ls_init(const struct device *dev)
 	pins = state->pins;
 	for(int i = 0; i< state->pin_cnt; i++)
 	{
-		data->pinmux[i] = (*pins++).pinmux_un.field.pin;
+		data->pinmux[i] = (*pins++).pinmux.pin;
 	}
 	data->tck_dev = data->pinmux[0];
 	data->tms_dev = data->pinmux[1];
