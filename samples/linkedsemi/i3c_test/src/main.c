@@ -177,6 +177,31 @@ int main(void)
     target_rx_count = 0;
     tx_count = 0;
 
+
+#ifdef CONFIG_I3C_USE_IBI
+    /*test 3 ： ibi*/
+    /*controller enable ibi function*/
+    i3c_ibi_enable(i3c_target1);
+    i3c_target1->ibi_cb = i3c_target_ibi_cb;
+    /*target raise a ibi*/
+    static uint8_t ibi_data[4];/*the qsh i3c controller receives a maximum of 4 bytes of ibi payloads*/
+    ibi_data[0] = 0xaa;
+    ibi_data[1] = 0xbb;
+    ibi_data[2] = 0xcc;
+    ibi_data[3] = 0xdd;
+    
+    static struct i3c_ibi ibi_request =
+    {
+        .ibi_type = I3C_IBI_TARGET_INTR,
+        .payload = ibi_data,
+        .payload_len = 4,
+    };
+    ibi_request.payload_len = 4;
+    i3c_ibi_raise(i3c_dev_target1,&ibi_request);
+
+    ibi_request.payload_len = 1;
+    i3c_ibi_raise(i3c_dev_target1,&ibi_request);
+#endif
     while(1);
 
     return 0;

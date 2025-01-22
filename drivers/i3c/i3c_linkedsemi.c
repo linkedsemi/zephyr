@@ -92,8 +92,8 @@ enum{
 #define I3C_TGT_INTSET_MASK                                                                        \
 	(I3C_SINTSET_START_MASK | I3C_SINTSET_MATCHED_MASK | I3C_SINTSET_STOP_MASK |   \
 	 I3C_SINTSET_DACHG_MASK | I3C_SINTSET_CCC_MASK | I3C_SINTSET_ERRWARN_MASK |    \
-	I3C_SINTSET_RXPEND_MASK|                        \
-	 I3C_SINTSET_EVENT_MASK)
+	 I3C_SINTSET_RXPEND_MASK| I3C_SINTSET_CHANDLED_MASK |I3C_SINTSET_NOWCNTLR_MASK|  \
+	 I3C_SINTSET_EVENT_MASK | I3C_SINTSET_SLVRST_MASK)
 
 struct i3c_fifo_info
 {
@@ -117,6 +117,13 @@ enum i3c_role {
 	I3C_ROLE_TARGET,
 	I3C_ROLE_NONE,
 };
+
+/* CTRL register options */
+#define CTRL_EVENT_NORMAL    0
+#define CTRL_EVENT_IBI       1
+#define CTRL_EVENT_CNTLR_REQ 2
+#define CTRL_EVENT_HJ        3
+
 
 /* Driver config */
 struct ls_i3c_config {
@@ -461,15 +468,10 @@ static int ls_i3c_request_transfer_flag(I3C_TypeDef *base);
  */
 static int ls_i3c_init(const struct device *dev)
 {
-    /*系统初始化时的I3C初始化*/
 	const struct ls_i3c_config *config = dev->config;
 	struct ls_i3c_data *data = dev->data;
 	struct i3c_config_controller *ctrl_config = &data->common.ctrl_config;
 	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
-
-	
-	// i3c_stm32_configure(dev, I3C_CONFIG_CONTROLLER, &data->drv_data.ctrl_config);
-
     int ret = 0;
 
 	ret = i3c_addr_slots_init(dev);
@@ -512,13 +514,10 @@ static int ls_i3c_init(const struct device *dev)
     per_func_enable(I3C9_SDA,PINMUX_FUNC3);
 
     /*时钟使能*/
-	// printf("SYSC_PER = 0x%x\r\n",(uint32_t)SYSC_PER);
     SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C10_MASK;
     SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C9_MASK;
-    // WRITE_REG(I3C9->SCONFIG2,I3C_SCONFIG2_TARGET_CLOCK_EN_MASK);
 
 #if defined(CONFIG_I3C_USE_IBI)
-
 	base->IER = I3C_IER_IBIIE_MASK;
 
 #else
@@ -1247,13 +1246,17 @@ static void ls_i3c_target_isr(const struct device *dev)
 	while (base->SINTMASKED){
 
 		/* Check error or warning has occurred */
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_ERRWARN_MASK)) {
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_ERRWARN_MASK)) {
 			base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
 			LOG_ERR("%s: Error %#x", __func__, base->SERRWARN);
 			base->SERRWARN = base->SERRWARN;
 		}
 
-		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SSTATUS_TXNOTFULL_MASK))
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTSET_SLVRST_MASK)) {
+			base->SSTATUS = I3C_SSTATUS_SLVRST_MASK;
+		}
+		
+		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SINTCLR_TXSEND_MASK))
 		{
 			// uint8_t free_space= data->fifo_info.TargetTxFifoSize -
 			// 		((base->SDATACTRL&I3C_SDATACTRL_TXCOUNT_MASK)>>I3C_SDATACTRL_TXCOUNT_POS);
@@ -1288,7 +1291,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 		}
 
 		// /* Check incoming header matched target dynamic address */
-		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SSTATUS_MATCHED_MASK))
+		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SINTCLR_MATCHED_MASK))
 		{
 			if(data->state != LS_I3C_OP_STATE_IBI)
 			{
@@ -1331,11 +1334,15 @@ static void ls_i3c_target_isr(const struct device *dev)
 				*
 				* Clear the status bit in STOP or START handler.
 				*/
-			if (I3C_CHECK_FLAG(base->SCONFIG, I3C_SSTATUS_MATCHED_MASK)) { 
-				base->SINTCLR = I3C_SSTATUS_MATCHED_MASK;
+			if (I3C_CHECK_FLAG(base->SCONFIG, I3C_SCONFIG_MATCHSS_MASK)) { 
+				base->SINTCLR = I3C_SINTCLR_MATCHED_MASK;
 			} else {
 				base->SSTATUS = I3C_SSTATUS_MATCHED_MASK;
 			}
+		}
+
+		if (I3C_CHECK_FLAG(base->SCONFIG, I3C_SINTMASK_SLVRST_MASK)) {
+			base->SSTATUS = I3C_SINTMASK_SLVRST_MASK;
 		}
 
 		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SSTATUS_RXPEND_MASK))
@@ -1352,7 +1359,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 
 
 		// /* Check START or Sr detected */
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_START_MASK)) {
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_START_MASK)) {
 			/* The end of xfer is a Sr */
 			if ((data->state == LS_I3C_OP_STATE_WR) ||
 				(data->state == LS_I3C_OP_STATE_RD)) {
@@ -1362,26 +1369,26 @@ static void ls_i3c_target_isr(const struct device *dev)
 		}
 
 		/* CCC 'not' automatically handled was received */
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_CCC_MASK)) {
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_CCC_MASK)) {
 			base->SSTATUS = I3C_SSTATUS_CCC_MASK;
 		}
 
 		/* CCC handled (handled by IP) */
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_CHANDLED_MASK)) {
-			base->SSTATUS = I3C_SSTATUS_CHANDLED_MASK;
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_CHANDLED_MASK)) {
+			base->SSTATUS = I3C_SINTMASK_CHANDLED_MASK;
 		}
 
 		// /* Event requested. IBI, hot-join, bus control */
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_EVENT_MASK)) {
-			base->SSTATUS = I3C_SSTATUS_EVENT_MASK;
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_EVENT_MASK)) {
+			base->SSTATUS = I3C_SINTMASK_EVENT_MASK;
 
-			if (((base->SSTATUS & I3C_SSTATUS_EVENT_MASK) >> I3C_SSTATUS_EVENT_POS)  ==
+			if (((base->SSTATUS & I3C_SSTATUS_EVDET_MASK) >> I3C_SSTATUS_EVDET_POS)  ==
 				STATUS_EVDET_REQ_SENT_ACKED) {
 				k_sem_give(&data->target_event_lock_sem);
 			}
 		}
 
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_DACHG_MASK)) {
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_DACHG_MASK)) {
 			base->SSTATUS = I3C_SSTATUS_DACHG_MASK;
 			if(base->SDYNADDR & I3C_SDYNADDR_DAVALID_MASK)
 			{
@@ -1393,9 +1400,10 @@ static void ls_i3c_target_isr(const struct device *dev)
 			}
 		}
 
-		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_NOWCNTLR_MASK)) {
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTSET_NOWCNTLR_MASK)) {
+			LOG_ERR("%s: crr not support", __func__);
 			base->SSTATUS = I3C_SSTATUS_NOWCNTLR_MASK;
-			base->SCONFIG &= ~I3C_SCONFIG_SLVENA_MASK;
+			// base->SCONFIG &= ~I3C_SCONFIG_SLVENA_MASK;
 		}
 	
 		
@@ -1410,6 +1418,17 @@ static void ls_i3c_target_isr(const struct device *dev)
 			base->SSTATUS = I3C_SSTATUS_MATCHED_MASK;
 			base->SINTSET = I3C_SSTATUS_MATCHED_MASK;
 			base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
+		}
+
+		/* Event requested. IBI, hot-join, bus control */
+		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SSTATUS_EVENT_MASK)) {
+			base->SSTATUS = I3C_SSTATUS_EVENT_MASK;
+
+			if ((base->SSTATUS & I3C_SSTATUS_EVDET_MASK) ==
+			    I3C_SSTATUS_EVDET_MASK) {
+				k_sem_give(&data->target_event_lock_sem);
+				data->state = LS_I3C_OP_STATE_IDLE;
+			}
 		}
 	}
 	
@@ -1445,7 +1464,6 @@ static void ls_i3c_isr(const struct device *dev)
 
 		/*将 ibi 的信息抛送给对应的从机设备*/
 		target = i3c_dev_list_i3c_addr_find(dev, (uint8_t)IBICRTgtAddr);
-		// target->ibi_cb = 
 		ret = i3c_ibi_work_enqueue_target_irq(target,(uint8_t *)&IBITgtPayload,IBITgtNbPayload);
 		if (ret < 0) {
 		LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
@@ -1570,6 +1588,85 @@ static int ls_i3c_ibi_disable(const struct device *dev, struct i3c_device_desc *
 
 	return ret;
 }	
+
+static int ls_i3c_target_ibi_raise(const struct device *dev, struct i3c_ibi *request)
+{
+	const struct ls_i3c_config *config = dev->config;
+	struct ls_i3c_data *data = dev->data;
+	I3C_TypeDef *base = config->base;
+	uint32_t ctrlValue = 0;
+	/* the request or the payload were not specific */
+	if ((request == NULL) || ((request->payload_len) && (request->payload == NULL))) {
+		return -EINVAL;
+	}
+	if(READ_BIT(base->SCONFIG,I3C_SCONFIG_SLVENA_MASK) != I3C_SCONFIG_SLVENA_MASK)
+	{
+		return -EINVAL;
+	}
+	switch (request->ibi_type)
+	{
+	case I3C_IBI_TARGET_INTR:
+		if (request->payload_len == 0 || request->payload_len > 8) {
+			LOG_ERR("%s: IBI invalid payload_len, len: %#x", __func__,
+				request->payload_len);
+			return -EINVAL;
+		}
+		k_sem_take(&data->target_event_lock_sem, K_FOREVER);
+		data->state = LS_I3C_OP_STATE_IBI;
+
+		ctrlValue = base->SCTRL;
+		ctrlValue &= ~I3C_SCTRL_EVENT_MASK;
+		ctrlValue |= (CTRL_EVENT_IBI << I3C_SCTRL_EVENT_POS) & I3C_SCTRL_EVENT_MASK;
+		uint8_t *ibi_payload = request->payload;
+		ctrlValue |= (((uint32_t)*ibi_payload<<I3C_SCTRL_IBIDATA_POS) & I3C_SCTRL_IBIDATA_MASK);
+
+		base->IBIEXTIDATA |= I3C_SIBIEXTIDATA_CLR_MASK;
+		uint16_t remain_num = request->payload_len - 1;
+		if(remain_num > 1)
+		{
+			ctrlValue |= I3C_SCTRL_EXTDATA_MASK;
+			ibi_payload++;
+			while((remain_num > 0) && (base->IBIEXTIDATA & I3C_SIBIEXTIDATA_FREE_MASK))
+			{
+				if(remain_num > 1)
+				{
+					base->IBIEXTIDATA = (uint32_t)*ibi_payload;
+				}else
+				{
+					base->IBIEXTIDATA = (uint32_t)*ibi_payload|I3C_SIBIEXTIDATA_END1_MASK;
+				}
+				remain_num --;
+				ibi_payload++;
+			}
+		}
+		if(remain_num > 0)
+		{
+			base->IBIEXTIDATA |= I3C_SIBIEXTIDATA_CLR_MASK;
+			LOG_ERR("%s : ibi paload too long , the ibi fifo is full", __func__);
+			return -EINVAL;
+		}
+		base->SCTRL = ctrlValue;
+		break;
+	case I3C_IBI_CONTROLLER_ROLE_REQUEST:
+		LOG_ERR("not supported crr");
+		return -ENOTSUP;
+		break;
+	case I3C_IBI_HOTJOIN:
+		k_sem_take(&data->target_event_lock_sem, K_FOREVER);
+		data->state = LS_I3C_OP_STATE_IBI;
+
+		ctrlValue = base->SCTRL;
+		ctrlValue &= ~I3C_SCTRL_EVENT_MASK;
+		ctrlValue |= (CTRL_EVENT_HJ << I3C_SCTRL_EVENT_POS) & I3C_SCTRL_EVENT_MASK;
+
+		base->SCTRL = ctrlValue;
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
 #endif
 
 
@@ -1650,7 +1747,6 @@ static int ls_i3c_target_tx_write(const struct device *dev, uint8_t *buf, uint16
 }
 
 static const struct i3c_driver_api ls_i3c_driver_api = {
-	/*主机从机各种参数和中断配置可以通过config ，但是 en 只在初始化或者crr流程中改变*/
 	.configure = ls_i3c_configure,
 	.config_get = ls_i3c_config_get,
 
@@ -1671,7 +1767,7 @@ static const struct i3c_driver_api ls_i3c_driver_api = {
 #ifdef CONFIG_I3C_USE_IBI
 	.ibi_enable = ls_i3c_ibi_enable,
 	.ibi_disable = ls_i3c_ibi_disable,
-	// .ibi_raise = LS_i3c_target_ibi_raise,
+	.ibi_raise = ls_i3c_target_ibi_raise,
 #endif 
 };
 
