@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include <stdint.h>
 #include <string.h>
+#include "iopmp.h"
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sysc_sec_cpu.h"
@@ -77,6 +78,33 @@ void cpu1_cache_region_init(void)
     csi_sysmap_config_region(6, 0xffffffff, STRONG_ORDER);
 }
 
+/*
+| N | addr                           | mode  | rwx | desc                    |
+|---|--------------------------------|-------|-----|-------------------------|
+| 0 | 0x8000000--(0x8000000+2MB)     | NAPOT | --- | sec flash xip mem       |
+| 1 | 0x10000000--(0x10000000+512KB) | NAPOT | --- | sec sram                |
+| 2 | 0x40000000--(0x40000000+256KB) | NAPOT | --- | sec peripheral region 1 |
+| 3 | 0x400a0000--(0x400A0000+32KB)  | NAPOT | --- | sec peripheral region 2 |
+| 4 |                                | ----- |     |                         |
+| 5 |                                | ----- |     |                         |
+| 6 |                                | ----- |     |                         |
+| 7 | 0x0 -- 4GB                     | NAPOT | rwx |                         |
+|   |                                |       |     |                         |
+*/
+void iopmp_region_init(void)
+{
+    for (uint32_t idx = 0; idx < 5; idx++) {
+        uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
+        iopmp_config_region_napot4(dev, 0, 0x8000000, MB(2), false, false, false, false);
+        iopmp_config_region_napot4(dev, 1, 0x10000000, KB(512), false, false, false, false);
+        iopmp_config_region_napot4(dev, 2, 0x40000000, KB(256), false, false, false, false);
+        iopmp_config_region_napot4(dev, 3, 0x400A0000, KB(32), false, false, false, false);
+
+        iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * 1024 * 1024 * 1024, true, true, true, false);
+        iopmp_config_enable(dev, true);
+    }
+}
+
 extern void SWINT_Handler_Asm(void);
 extern void SystemInit();
 static int lsqsh_init(void)
@@ -87,6 +115,10 @@ static int lsqsh_init(void)
     cpu0_cache_region_init();
 #else
     cpu1_cache_region_init();
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+    iopmp_region_init();
 #endif
 
 #if defined(CONFIG_CACHE)
