@@ -20,9 +20,7 @@
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 
-#define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
-uint32_t *pTaskStack = NULL;
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
