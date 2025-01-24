@@ -48,19 +48,32 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
+#define CPU0_FW_REGION_SIZE MB(2)
+#define CPU1_FW_REGION_SIZE MB(14)
 /* strong order | cacheable | bufferable */
 /*       2      |     1     |     0      */
 #define BUFFERABLE BIT(0)
 #define CACHEABLE BIT(1)
 #define STRONG_ORDER BIT(2)
-void cache_region_init(void)
+void cpu0_cache_region_init(void)
 {
     csi_sysmap_config_region(0, 0x8000000, STRONG_ORDER);
-    csi_sysmap_config_region(1, 0x8000000 + (16 << 20), CACHEABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(1, 0x8000000 + CPU0_FW_REGION_SIZE, CACHEABLE); /* 16MB PSRAM */
     csi_sysmap_config_region(2, 0x10000000, STRONG_ORDER);
-    csi_sysmap_config_region(3, 0x10000000 + ((512 + 760) << 10), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+    csi_sysmap_config_region(3, 0x10000000 + KB(512 + 760), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
     csi_sysmap_config_region(4, 0x18000000, STRONG_ORDER);
-    csi_sysmap_config_region(5, 0x18000000 + (16 << 20), CACHEABLE | BUFFERABLE);
+    csi_sysmap_config_region(5, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE);
+    csi_sysmap_config_region(6, 0xffffffff, STRONG_ORDER);
+}
+
+void cpu1_cache_region_init(void)
+{
+    csi_sysmap_config_region(0, 0x8000000 + CPU0_FW_REGION_SIZE, STRONG_ORDER);
+    csi_sysmap_config_region(1, 0x8000000 + CPU1_FW_REGION_SIZE, CACHEABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(2, 0x10000000 + KB(512), STRONG_ORDER);
+    csi_sysmap_config_region(3, 0x10000000 + KB(512 + 760), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+    csi_sysmap_config_region(4, 0x18000000, STRONG_ORDER);
+    csi_sysmap_config_region(5, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE);
     csi_sysmap_config_region(6, 0xffffffff, STRONG_ORDER);
 }
 
@@ -70,7 +83,11 @@ static int lsqsh_init(void)
 {
     SystemInit();
     // sys_init_none();
-    cache_region_init();
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+    cpu0_cache_region_init();
+#else
+    cpu1_cache_region_init();
+#endif
 
 #if defined(CONFIG_CACHE)
     csi_dcache_enable();
