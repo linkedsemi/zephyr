@@ -83,11 +83,6 @@ static int lsqsh_init(void)
 #if defined(CONFIG_ETH_DRIVER)
 #if !defined(CONFIG_PINCTRL)
     /* RMII */
-    io_cfg_input(PT01);
-    io_cfg_input(PT08);
-    io_cfg_input(PT09);
-    io_cfg_input(PT10);
-    io_cfg_input(PT11);
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
 #endif
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x54) = 0x10;
@@ -97,15 +92,6 @@ static int lsqsh_init(void)
 #if defined(CONFIG_SDHC)
 #if !defined(CONFIG_PINCTRL)
     /* SDHC */
-    io_cfg_input(PH04);
-    io_cfg_input(PH05);
-    io_cfg_input(PH06);
-    io_cfg_input(PH07);
-    io_cfg_input(PH08);
-    io_cfg_input(PH09);
-    io_cfg_input(PH10);
-    io_cfg_input(PH11);
-    io_cfg_input(PH13);
     *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x60) = BIT(14) | BIT(26);
     *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x64) = BIT(7) | BIT(15);
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
@@ -117,59 +103,6 @@ static int lsqsh_init(void)
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x60) = 0xf0;
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00268;
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
-#endif
-
-#if defined(CONFIG_SERIAL)
-#if !defined(CONFIG_PINCTRL)
-    /* UART */
-    pinmux_dwuart1_init(PC03, PC04);
-    pinmux_dwuart2_init(PD09, PD10);
-#endif
-#endif
-
-#if defined(CONFIG_I2C)
-#if !defined(CONFIG_PINCTRL)
-    /* I2C */
-    pinmux_iic2_init(PB03, PB04);
-    pinmux_iic3_init(PC13, PC11);
-    pinmux_iic4_init(PD00, PD01);
-    pinmux_iic5_init(PE07, PE08);
-    pinmux_iic6_init(PF07, PF08);
-    pinmux_iic7_init(PK15, PK14);
-    pinmux_iic9_init(PI03, PI02);
-    pinmux_iic10_init(PJ03, PJ02);
-    pinmux_iic11_init(PN09, PN08);
-    pinmux_iic12_init(PN13, PN14);
-    pinmux_iic13_init(PQ00, PQ01);
-    pinmux_iic14_init(PQ03, PQ02);
-#endif
-#endif
-
-#if defined(CONFIG_CRYPTO_LINKEDSEMI)
-    /* AES */
-    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_CLR_CRYPT_MASK;
-    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_CLR_CRYPT_MASK;
-    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_SET_CRYPT_MASK;
-    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_SET_CRYPT_MASK;
-
-    /* SHA */
-    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_CLR_CALC_SHA_MASK;
-    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_CLR_CALC_SHA_MASK;
-    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_SET_CALC_SHA_MASK;
-    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_SET_CRYPT_MASK;
-#endif
-
-#if defined(CONFIG_JTAG)
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG1_MASK;
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG2_MASK;
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG3_MASK;
-#endif
-
-#if defined(CONFIG_SPI)
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_CLR_SPI1_MASK;
-    SYSC_PER->PD_PER_SRST2 = SYSC_PER_SRST_CLR_SPI1_N_MASK;
-    SYSC_PER->PD_PER_SRST2 = SYSC_PER_SRST_SET_SPI1_N_MASK;
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_SPI1_MASK;
 #endif
 
     cpu_sleep_mode_config(0);
