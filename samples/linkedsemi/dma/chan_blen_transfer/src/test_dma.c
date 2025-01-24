@@ -25,7 +25,7 @@
 
 static __aligned(32) char tx_data[] = "It is harder to be kind than to be wise........";
 static __aligned(32) char rx_data[RX_BUFF_SIZE] = { 0 };
-static bool wait_flag;
+static volatile bool wait_flag;
 
 static void test_done(const struct device *dma_dev, void *arg,
 		      uint32_t id, int status)
@@ -93,6 +93,7 @@ static int test_task(const struct device *dma, uint32_t chan_id, uint32_t blen)
 	}
 	// k_sleep(K_MSEC(2000));
 	while(wait_flag == true);
+	wait_flag = false;
 
 	TC_PRINT("%s\n", rx_data);
 
