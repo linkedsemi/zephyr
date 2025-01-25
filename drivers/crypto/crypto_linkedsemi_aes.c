@@ -75,10 +75,10 @@ int crypto_linkedsemi_single_block(const struct device *dev,
         sys_write32(u32_iv[2], dev_config->reg_crypt + CRYPT_IVR2);
         sys_write32(u32_iv[3], dev_config->reg_crypt + CRYPT_IVR3);
     }
-    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[0])), dev_config->reg_crypt + CRYPT_DATA3);
-    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[1])), dev_config->reg_crypt + CRYPT_DATA2);
-    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[2])), dev_config->reg_crypt + CRYPT_DATA1);
-    sys_write32(BSWAP_32(UNALIGNED_GET(&((uint32_t *)pkt_in_buf)[3])), dev_config->reg_crypt + CRYPT_DATA0);
+    sys_write32(BSWAP_32(UNALIGNED_GET((uint32_t *)(pkt_in_buf + 0x0))), dev_config->reg_crypt + CRYPT_DATA3);
+    sys_write32(BSWAP_32(UNALIGNED_GET((uint32_t *)(pkt_in_buf + 0x4))), dev_config->reg_crypt + CRYPT_DATA2);
+    sys_write32(BSWAP_32(UNALIGNED_GET((uint32_t *)(pkt_in_buf + 0x8))), dev_config->reg_crypt + CRYPT_DATA1);
+    sys_write32(BSWAP_32(UNALIGNED_GET((uint32_t *)(pkt_in_buf + 0xc))), dev_config->reg_crypt + CRYPT_DATA0);
 
     aes_reg_cr = (aes_reg_cr_t){
         .GO = 1,
@@ -808,7 +808,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
 /* GMAC: end gcm_h */
 
 /* GMAC: encrypt j0 */
-    UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)&iv[12]);
+    UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)(iv + 12));
     ret = crypto_linkedsemi_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
@@ -913,7 +913,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
 /* GMAC: end gcm_h */
 
 /* GMAC: encrypt j0 */
-    UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)&iv[12]);
+    UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)(iv + 12));
     ret = crypto_linkedsemi_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
