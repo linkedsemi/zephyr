@@ -162,12 +162,12 @@ static int linkedsemi_sdhci_card_busy(const struct device *dev)
     return sdhci_card_busy(host);
 }
 
-static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struct sdhci_command *command, bool executeTuning)
+static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struct sdhci_command *command, bool execute_tuning)
 {
     __ASSERT_NO_MSG(NULL != command);
 
     /* tuning cmd do not need to wait command done */
-    if (executeTuning)
+    if (execute_tuning)
         return 0;
     /* Wait command complete or SDHC encounters error. */
     k_sem_take(&host->transfer_sem, K_FOREVER);
@@ -261,9 +261,9 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     int ret = 0;
 
     /* Wait until command/data bus out of busy status. */
-    while (sdhci_get_present_status_flag(host) & sdhci_command_inhibit_flag) {
+    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
     }
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & sdhci_data_inhibit_flag)) {
+    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG)) {
     }
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
 
@@ -277,14 +277,14 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     k_sem_reset(&host->transfer_sem);
     sdhci_send_command(host, sdhci_command, use_dma);
     /* wait command done */
-    ret = linkedsemi_sdhci_wait_command_done(host, sdhci_command, ((sdhci_data == NULL) ? false : sdhci_data->executeTuning));
+    ret = linkedsemi_sdhci_wait_command_done(host, sdhci_command, ((sdhci_data == NULL) ? false : sdhci_data->execute_tuning));
     /* transfer data */
     if ((sdhci_data != NULL) && (ret == 0)) {
         ret = linkedsemi_sdhci_transfer_data_blocking(host, sdhci_data, use_dma);
     }
-    while (sdhci_get_present_status_flag(host) & sdhci_command_inhibit_flag) {
+    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
     }
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & sdhci_data_inhibit_flag)) {
+    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG)) {
     }
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
@@ -312,33 +312,33 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
     sdhci_command.index = cmd->opcode;
     sdhci_command.argument = cmd->arg;
     /* Mask out part of response type field used for SPI commands */
-    sdhci_command.responseType = (cmd->response_type & SDHC_NATIVE_RESPONSE_MASK);
+    sdhci_command.response_type = (cmd->response_type & SDHC_NATIVE_RESPONSE_MASK);
     if (cmd->opcode == SD_STOP_TRANSMISSION) {
-        sdhci_command.type = card_command_type_abort;
+        sdhci_command.type = CARD_COMMAND_TYPE_ABORT;
     } else {
-        sdhci_command.type = card_command_type_normal;
+        sdhci_command.type = CARD_COMMAND_TYPE_NORMAL;
     }
 
     host->sdhci_command = &sdhci_command;
 
     if (data) {
-        sdhci_command.flags |= sdhci_enable_cmd_data_present_flag;
-        sdhci_command.flags2 |= sdhci_enable_block_count_flag;
+        sdhci_command.flags |= SDHCI_ENABLE_CMD_DATA_PRESENT_FLAG;
+        sdhci_command.flags2 |= SDHCI_ENABLE_BLOCK_COUNT_FLAG;
 
         if (sdhci_data.rx_data) {
-            sdhci_command.flags2 |= sdhci_data_read_flag;
+            sdhci_command.flags2 |= SDHCI_DATA_READ_FLAG;
         }
 
         if (sdhci_data.block_count > 1U) {
-            sdhci_command.flags2 |= (sdhci_multiple_block_flag);
+            sdhci_command.flags2 |= (SDHCI_MULTIPLE_BLOCK_FLAG);
             /* auto command 12 */
-            if (sdhci_data.enableAutoCommand12) {
+            if (sdhci_data.enable_auto_command12) {
                 /* Enable Auto command 12. */
-                sdhci_command.flags2 |= sdhci_enable_auto_command12_flag;
+                sdhci_command.flags2 |= SDHCI_ENABLE_AUTO_COMMAND12_FLAG;
             }
             /* auto command 23 */
-            if (sdhci_data.enableAutoCommand23) {
-                sdhci_command.flags2 |= sdhci_enable_auto_command23_flag;
+            if (sdhci_data.enable_auto_command23) {
+                sdhci_command.flags2 |= SDHCI_ENABLE_AUTO_COMMAND23_FLAG;
             }
         }
 
@@ -348,12 +348,12 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         switch (cmd->opcode) {
         case SD_WRITE_SINGLE_BLOCK:
         case SD_WRITE_MULTIPLE_BLOCK:
-            sdhci_data.enableAutoCommand12 = true;
+            sdhci_data.enable_auto_command12 = true;
             sdhci_data.tx_data = data->data;
             break;
         case SD_READ_SINGLE_BLOCK:
         case SD_READ_MULTIPLE_BLOCK:
-            sdhci_data.enableAutoCommand12 = true;
+            sdhci_data.enable_auto_command12 = true;
             sdhci_data.rx_data = data->data;
             break;
         case SD_APP_SEND_SCR:

@@ -69,7 +69,7 @@ uint32_t sdhci_get_present_status_flag(struct sdhci_host *sdhci_host)
 
 uint32_t sdhci_card_busy(struct sdhci_host *sdhci_host)
 {
-    return sdhci_get_present_status_flag(sdhci_host) & sdhci_command_inhibit_flag;
+    return sdhci_get_present_status_flag(sdhci_host) & SDHCI_COMMAND_INHIBIT_FLAG;
 }
 
 uint32_t sdhci_get_int_status_flag(struct sdhci_host *sdhci_host)
@@ -101,7 +101,7 @@ void sdhic_error_recovery(struct sdhci_host *sdhci_host)
 
 int32_t sdhci_receive_command_response(struct sdhci_host *sdhci_host, struct sdhci_command *command)
 {
-    if (command->responseType == card_response_type_r2) {
+    if (command->response_type == CARD_RESPONSE_TYPE_R2) {
         /* CRC is stripped so we need to do some shifting. */
         for (int i = 0; i < 4; i++) {
             command->response[3 - i] = sdhci_readl(sdhci_host, SDHCI_RESPONSE + (3 - i) * 4) << 8;
@@ -113,12 +113,12 @@ int32_t sdhci_receive_command_response(struct sdhci_host *sdhci_host, struct sdh
         command->response[0] = sdhci_readl(sdhci_host, SDHCI_RESPONSE);
     }
     /* check response error flag */
-    if ((command->responseErrorFlags != 0U)
-        && ((command->responseType == card_response_type_r1)
-        || (command->responseType == card_response_type_r1b)
-        || (command->responseType == card_response_type_r6)
-        || (command->responseType == card_response_type_r5))) {
-        if (((command->responseErrorFlags) & (command->response[0U])) != 0U) {
+    if ((command->response_error_flags != 0U)
+        && ((command->response_type == CARD_RESPONSE_TYPE_R1)
+        || (command->response_type == CARD_RESPONSE_TYPE_R1B)
+        || (command->response_type == CARD_RESPONSE_TYPE_R6)
+        || (command->response_type == CARD_RESPONSE_TYPE_R5))) {
+        if (((command->response_error_flags) & (command->response[0U])) != 0U) {
             return -1;
         }
     }
@@ -144,7 +144,7 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
         }
         barrier_dmem_fence_full();
         sys_cache_data_flush_and_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
-        command->flags2 |= sdhci_enable_dma_flag;
+        command->flags2 |= SDHCI_ENABLE_DMA_FLAG;
         sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
 #endif
         sdhci_writew(sdhci_host, SDHCI_MAKE_BLKSZ(SDHCI_DEFAULT_BOUNDARY_ARG, sdhci_data->block_size), SDHCI_BLOCK_SIZE);
@@ -161,62 +161,62 @@ int32_t sdhci_set_transfer_config(struct sdhci_host *sdhci_host, struct sdhci_co
 {
     __ASSERT_NO_MSG(sdhci_command);
     /* Define the flag corresponding to each response type. */
-    switch (sdhci_command->responseType) {
-    case card_response_type_none:
+    switch (sdhci_command->response_type) {
+    case CARD_RESPONSE_TYPE_NONE:
         break;
-    case card_response_type_r1: /* Response 1 */
-    case card_response_type_r5: /* Response 5 */
-    case card_response_type_r6: /* Response 6 */
-    case card_response_type_r7: /* Response 7 */
+    case CARD_RESPONSE_TYPE_R1: /* Response 1 */
+    case CARD_RESPONSE_TYPE_R5: /* Response 5 */
+    case CARD_RESPONSE_TYPE_R6: /* Response 6 */
+    case CARD_RESPONSE_TYPE_R7: /* Response 7 */
 
-        sdhci_command->flags |= (sdhci_cmd_resp_short | sdhci_enable_cmd_crc_flag | sdhci_enable_cmd_index_chk_flag);
-        break;
-
-    case card_response_type_r1b: /* Response 1 with busy */
-    case card_response_type_r5b: /* Response 5 with busy */
-        sdhci_command->flags |= (sdhci_cmd_resp_short_busy | sdhci_enable_cmd_crc_flag | sdhci_enable_cmd_index_chk_flag);
+        sdhci_command->flags |= (SDHCI_CMD_RESP_SHORT | SDHCI_ENABLE_CMD_CRC_FLAG | SDHCI_ENABLE_CMD_INDEX_CHK_FLAG);
         break;
 
-    case card_response_type_r2: /* Response 2 */
-        sdhci_command->flags |= (sdhci_cmd_resp_long | sdhci_enable_cmd_crc_flag);
+    case CARD_RESPONSE_TYPE_R1B: /* Response 1 with busy */
+    case CARD_RESPONSE_TYPE_R5B: /* Response 5 with busy */
+        sdhci_command->flags |= (SDHCI_CMD_RESP_SHORT_BUSY | SDHCI_ENABLE_CMD_CRC_FLAG | SDHCI_ENABLE_CMD_INDEX_CHK_FLAG);
         break;
 
-    case card_response_type_r3: /* Response 3 */
-    case card_response_type_r4: /* Response 4 */
-        sdhci_command->flags |= (sdhci_cmd_resp_short);
+    case CARD_RESPONSE_TYPE_R2: /* Response 2 */
+        sdhci_command->flags |= (SDHCI_CMD_RESP_LONG | SDHCI_ENABLE_CMD_CRC_FLAG);
+        break;
+
+    case CARD_RESPONSE_TYPE_R3: /* Response 3 */
+    case CARD_RESPONSE_TYPE_R4: /* Response 4 */
+        sdhci_command->flags |= (SDHCI_CMD_RESP_SHORT);
         break;
 
     default:
         break;
     }
 
-    if (sdhci_command->type == card_command_type_abort) {
-        sdhci_command->flags |= sdhci_enable_command_type_abort;
-    } else if (sdhci_command->type == card_command_type_resume) {
-        sdhci_command->flags |= sdhci_enable_command_type_resume;
-    } else if (sdhci_command->type == card_command_type_suspend) {
-        sdhci_command->flags |= sdhci_enable_command_type_suspend;
-    } else if (sdhci_command->type == card_command_type_normal) {
-        sdhci_command->flags |= sdhci_enable_command_type_normal;
+    if (sdhci_command->type == CARD_COMMAND_TYPE_ABORT) {
+        sdhci_command->flags |= SDHCI_ENABLE_COMMAND_TYPE_ABORT;
+    } else if (sdhci_command->type == CARD_COMMAND_TYPE_RESUME) {
+        sdhci_command->flags |= SDHCI_ENABLE_COMMAND_TYPE_RESUME;
+    } else if (sdhci_command->type == CARD_COMMAND_TYPE_SUSPEND) {
+        sdhci_command->flags |= SDHCI_ENABLE_COMMAND_TYPE_SUSPEND;
+    } else if (sdhci_command->type == CARD_COMMAND_TYPE_NORMAL) {
+        sdhci_command->flags |= SDHCI_ENABLE_COMMAND_TYPE_NORMAL;
     }
 
     if (sdhci_data) {
-        sdhci_command->flags |= sdhci_enable_cmd_data_present_flag;
-        sdhci_command->flags2 |= sdhci_enable_block_count_flag;
+        sdhci_command->flags |= SDHCI_ENABLE_CMD_DATA_PRESENT_FLAG;
+        sdhci_command->flags2 |= SDHCI_ENABLE_BLOCK_COUNT_FLAG;
 
         if (sdhci_data->rx_data) {
-            sdhci_command->flags2 |= sdhci_data_read_flag;
+            sdhci_command->flags2 |= SDHCI_DATA_READ_FLAG;
         }
         if (sdhci_data->block_count > 1U) {
-            sdhci_command->flags2 |= (sdhci_multiple_block_flag);
+            sdhci_command->flags2 |= (SDHCI_MULTIPLE_BLOCK_FLAG);
             /* auto command 12 */
-            if (sdhci_data->enableAutoCommand12) {
+            if (sdhci_data->enable_auto_command12) {
                 /* Enable Auto command 12. */
-                sdhci_command->flags2 |= sdhci_enable_auto_command12_flag;
+                sdhci_command->flags2 |= SDHCI_ENABLE_AUTO_COMMAND12_FLAG;
             }
             /* auto command 23 */
-            if (sdhci_data->enableAutoCommand23) {
-                sdhci_command->flags2 |= sdhci_enable_auto_command23_flag;
+            if (sdhci_data->enable_auto_command23) {
+                sdhci_command->flags2 |= SDHCI_ENABLE_AUTO_COMMAND23_FLAG;
             }
         }
     }
