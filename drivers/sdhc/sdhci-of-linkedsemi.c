@@ -24,7 +24,7 @@ LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
 #define LINKEDSEMI_SDHCI_DEFAULT_TIMEOUT (5000U)
 
-#define LINKEDSEMI_SDHCI_PERI_BUS_FREQ MHZ(50)
+#define LINKEDSEMI_SDHCI_PERI_BUS_FREQ MHZ(12.5)
 
 struct linkedsemi_sdhci_config {
     uint32_t response_timeout;
@@ -189,7 +189,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
         k_sem_take(&host->transfer_sem, K_FOREVER);
         stat = host->irq_status;
         if (stat & SDHCI_INT_ERROR) {
-            LOG_DBG("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
+            LOG_ERR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
             sdhci_reg_display(host);
             return -1;
         }

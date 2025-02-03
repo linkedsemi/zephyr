@@ -41,89 +41,6 @@ void sdhci_reg_display(struct sdhci_host *host)
     LOG_INF("CAPABILITIES2_R:%x\n", sdhci_readl(host, SDHCI_CAPABILITIES_1));
     LOG_INF("FORCE_AUTO_CMD_STAT_R:%x\n", sdhci_readw(host, SDHCI_MAX_CURRENT));
     LOG_INF("FORCE_ERROR_INT_STAT_R:%x\n", sdhci_readw(host, SDHCI_SET_ACMD12_ERROR));
-    LOG_INF("AMDA_ERR_STAT_STAT_R:%x\n", sdhci_readl(host, SDHCI_ADMA_ERROR));
-    LOG_INF("AMDA_SA_LOW_STAT_R:%x\n", sdhci_readl(host, SDHCI_ADMA_ADDRESS));
-    LOG_INF("AMDA_SA_HIGH_STAT_R:%x\n", sdhci_readl(host, SDHCI_ADMA_ADDRESS_HI));
-}
-
-void dwcmshc_phy_1_8v_init(struct sdhci_host *host)
-{
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_EMMC_DAT, DWC_MSHC_CMDPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_EMMC_DAT, DWC_MSHC_DATPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_EMMC_CLK, DWC_MSHC_CLKPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_EMMC_STB, DWC_MSHC_STBPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_EMMC_DAT, DWC_MSHC_RSTNPAD_CNFG);
-}
-
-void dwcmshc_phy_3_3v_init(struct sdhci_host *host)
-{
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_SD_DAT, DWC_MSHC_CMDPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_SD_DAT, DWC_MSHC_DATPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_SD_CLK, DWC_MSHC_CLKPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_SD_STB, DWC_MSHC_STBPAD_CNFG);
-    sdhci_writew(host, DWC_MSHC_PHY_PAD_SD_DAT, DWC_MSHC_RSTNPAD_CNFG);
-}
-
-void dwcmshc_phy_delay_config(struct sdhci_host *host)
-{
-    sdhci_writeb(host, 1, DWC_MSHC_COMMDL_CNFG);
-    if (host->tx_delay_line > 256) {
-        LOG_ERR("host%d: tx_delay_line err\n", host->index);
-    } else if (host->tx_delay_line > 128) {
-        sdhci_writeb(host, 0x1, DWC_MSHC_SDCLKDL_CNFG);
-        sdhci_writeb(host, host->tx_delay_line - 128, DWC_MSHC_SDCLKDL_DC);
-    } else {
-        sdhci_writeb(host, 0x0, DWC_MSHC_SDCLKDL_CNFG);
-        sdhci_writeb(host, host->tx_delay_line, DWC_MSHC_SDCLKDL_DC);
-    }
-    sdhci_writeb(host, host->rx_delay_line, DWC_MSHC_SMPLDL_CNFG);
-    sdhci_writeb(host, 0xc, DWC_MSHC_ATDL_CNFG);
-    sdhci_writel(host, (sdhci_readl(host, SDHCI_VENDER_AT_CTRL_REG) | BIT(16) | BIT(17) | BIT(19) | BIT(20)), SDHCI_VENDER_AT_CTRL_REG);
-    sdhci_writel(host, 0x0, SDHCI_VENDER_AT_STAT_REG);
-}
-
-int dwcmshc_phy_init(struct sdhci_host *host)
-{
-    uint32_t reg;
-    uint32_t timeout = 15000;
-    /* reset phy */
-    sdhci_writew(host, 0, DWC_MSHC_PHY_CNFG);
-
-    /* Disable the clock */
-    sdhci_writew(host, 0, SDHCI_CLOCK_CONTROL);
-
-    if (host->io_fixed_1v8) {
-        uint32_t data = sdhci_readw(host, SDHCI_HOST_CONTROL2);
-        data |= SDHCI_CTRL_VDD_180;
-        sdhci_writew(host, data, SDHCI_HOST_CONTROL2);
-        dwcmshc_phy_1_8v_init(host);
-    } else {
-        dwcmshc_phy_3_3v_init(host);
-    }
-
-    dwcmshc_phy_delay_config(host);
-
-    /* Wait max 150 ms */
-    while (1) {
-        reg = sdhci_readl(host, DWC_MSHC_PHY_CNFG);
-        if (reg & PHY_PWRGOOD)
-            break;
-        if (!timeout) {
-            return -1;
-        }
-        timeout--;
-
-        k_msleep(1);
-    }
-
-    reg = PAD_SN_DEFAULT | PAD_SP_DEFAULT;
-    sdhci_writel(host, reg, DWC_MSHC_PHY_CNFG);
-
-    /* de-assert the phy */
-    reg |= PHY_RSTN;
-    sdhci_writel(host, reg, DWC_MSHC_PHY_CNFG);
-
-    return 0;
 }
 
 void sdhci_reset(struct sdhci_host *host, uint8_t mask)
@@ -142,20 +59,6 @@ void sdhci_reset(struct sdhci_host *host, uint8_t mask)
         }
         timeout--;
         k_msleep(1);
-    }
-    if (mask == SDHCI_RESET_ALL) {
-        if (host->index == 0) {
-            uint16_t emmc_ctl = sdhci_readw(host, EMMC_CTRL_R);
-            if (host->is_emmc_card)
-                emmc_ctl |= (1 << CARD_IS_EMMC);
-            else
-                emmc_ctl &= ~(1 << CARD_IS_EMMC);
-            sdhci_writeb(host, emmc_ctl, EMMC_CTRL_R);
-        }
-        if (host->have_phy)
-            dwcmshc_phy_init(host);
-        else
-            sdhci_writeb(host, host->mshc_ctrl_r, MSHC_CTRL_R);
     }
 }
 
