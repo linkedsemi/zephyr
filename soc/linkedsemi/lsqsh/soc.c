@@ -136,7 +136,7 @@ static int lsqsh_init(void)
     cpu1_cache_region_init();
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
 #endif
 
