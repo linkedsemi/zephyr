@@ -5,12 +5,13 @@
 
 #include "lsqsh_evb_pinctrl_runbmc_v3.dtsi"
 
-/delete-node/ &sram0_nocache;
 / {
     chosen {
         zephyr,flash = &flash0;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram0;
+        zephyr,console = &uart5;
+        zephyr,shell-uart = &uart5;
     };
 
     aliases {
@@ -23,13 +24,6 @@
         sdhc0 = &sdhci1;
         led0 = &led0;
         sw0 = &btn0;
-    };
-
-    sram0_nocache: memory@1013e000{
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013e000 DT_SIZE_K(4)>;
-        device_type = "memory";
-        zephyr,memory-region = "nocache";
     };
 
     leds {
@@ -78,12 +72,12 @@
     status = "disabled";
 };
 
-&uart1 {
-    current-speed = <115200>;
-    pinctrl-0 = <&uart1_tx_pn08 &uart1_rx_pn03>;
-    pinctrl-names = "default";
-    status = "disabled";
-};
+// &uart1 {
+//     current-speed = <115200>;
+//     pinctrl-0 = <&uart1_tx_pn08 &uart1_rx_pn03>;
+//     pinctrl-names = "default";
+//     status = "disabled";
+// };
 
 &uart2 {
     current-speed = <115200>;

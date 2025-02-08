@@ -5,7 +5,6 @@
 
 #include "lsqsh_evb_pinctrl_runbmc_v2.dtsi"
 
-/delete-node/ &sram0_nocache;
 /delete-node/ &mac0;
 / {
     interrupt-parent = <&intc>;
@@ -16,13 +15,6 @@
         zephyr,sram = &sram0;
         zephyr,console = &uart3;
         zephyr,shell-uart = &uart3;
-    };
-
-    sram0_nocache: memory@1013e000{
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013e000 DT_SIZE_K(4)>;
-        device_type = "memory";
-        zephyr,memory-region = "nocache";
     };
 
     mac0: ethernet@4001c000 {
