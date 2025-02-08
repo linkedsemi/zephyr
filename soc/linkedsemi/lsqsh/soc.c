@@ -19,6 +19,7 @@
 #include "ls_msp_qspiv2.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
+BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
 extern void noint(void);
 
@@ -47,6 +48,10 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
+extern uint32_t _nocache_ram_start;
+extern uint32_t _nocache_ram_end;
+extern uint32_t _nocache_ram_size;
+
 #define CPU0_FW_REGION_SIZE MB(2)
 #define CPU1_FW_REGION_SIZE MB(14)
 /* strong order | cacheable | bufferable */
@@ -56,24 +61,32 @@ void Swint_Handler_C(uint32_t *args)
 #define STRONG_ORDER BIT(2)
 void cpu0_cache_region_init(void)
 {
-    csi_sysmap_config_region(0, 0x8000000, STRONG_ORDER);
-    csi_sysmap_config_region(1, 0x8000000 + CPU0_FW_REGION_SIZE, CACHEABLE); /* 16MB PSRAM */
-    csi_sysmap_config_region(2, 0x10000000, STRONG_ORDER);
-    csi_sysmap_config_region(3, 0x10000000 + KB(512 + 760), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
-    csi_sysmap_config_region(4, 0x18000000, STRONG_ORDER);
-    csi_sysmap_config_region(5, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE);
-    csi_sysmap_config_region(6, 0xffffffff, STRONG_ORDER);
+    uint8_t idx = 0;
+    csi_sysmap_config_region(idx++, 0x10000000, 0);
+    if ((uint32_t)&_nocache_ram_size > 0) {
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
+    }
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+
+    csi_sysmap_config_region(idx++, 0x18000000, 0);
+    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
 }
 
 void cpu1_cache_region_init(void)
 {
-    csi_sysmap_config_region(0, 0x8000000 + CPU0_FW_REGION_SIZE, STRONG_ORDER);
-    csi_sysmap_config_region(1, 0x8000000 + CPU1_FW_REGION_SIZE, CACHEABLE); /* 16MB PSRAM */
-    csi_sysmap_config_region(2, 0x10000000 + KB(512), STRONG_ORDER);
-    csi_sysmap_config_region(3, 0x10000000 + KB(512 + 760), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
-    csi_sysmap_config_region(4, 0x18000000, STRONG_ORDER);
-    csi_sysmap_config_region(5, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE);
-    csi_sysmap_config_region(6, 0xffffffff, STRONG_ORDER);
+    uint8_t idx = 0;
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), 0);
+    if ((uint32_t)&_nocache_ram_size > 0) {
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
+    }
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+
+    csi_sysmap_config_region(idx++, 0x18000000, 0);
+    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
 }
 
 /*
@@ -110,8 +123,16 @@ static int lsqsh_init(void)
     SystemInit();
     // sys_init_none();
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+    if (!(((uint32_t)&_nocache_ram_start > 0x10000000)
+                    && ((uint32_t)&_nocache_ram_end < (0x10000000 + KB(512))))) {
+        while(1);
+    }
     cpu0_cache_region_init();
 #else
+    if (!(((uint32_t)&_nocache_ram_start > (0x10000000 + KB(512))
+                    && ((uint32_t)&_nocache_ram_end < (0x10000000 + KB(512) + KB(764)))))) {
+        while(1);
+    }
     cpu1_cache_region_init();
 #endif
 
@@ -180,6 +201,10 @@ static int lsqsh_init(void)
     SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU1_BOOT_ADDR; /* set cpu1 pc addr */
     SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
 #endif
+#endif
+
+#if defined(CONFIG_PECI)
+    sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
 #if defined(CONFIG_SOC_FLASH_LS)
