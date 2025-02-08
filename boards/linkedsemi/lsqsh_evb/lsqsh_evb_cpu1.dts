@@ -24,13 +24,6 @@
         sdhc0 = &sdhci1;
     };
 
-    sram1_nocache: memory@1013e000 {
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013e000 DT_SIZE_K(4)>;
-        device_type = "memory";
-        zephyr,memory-region = "nocache";
-    };
-
     soc {
         compatible = "simpe-bus";
         #address-cells = <1>;
@@ -76,7 +69,7 @@
 };
 
 &sram1 {
-    reg = <0x10080000 DT_SIZE_K(760)>;
+    reg = <0x10080000 DT_SIZE_K(764)>;
 };
 
 &mac0 {
@@ -118,4 +111,8 @@
         bus-width = <1>;
         status = "okay";
     };
+};
+
+tst_dma0: &dma0 {
+    status = "okay";
 };
