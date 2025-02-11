@@ -141,10 +141,14 @@ static int lsqsh_init(void)
 #endif
 
 #if defined(CONFIG_CACHE)
+#if !defined(CONFIG_SMP)
     csi_dcache_enable();
+#endif
     csi_icache_enable();
 
+#if !defined(CONFIG_SMP)
     csi_dcache_invalid();
+#endif
     csi_icache_invalid();
 #endif
 
@@ -198,8 +202,10 @@ static int lsqsh_init(void)
     lscache_cache_enable(1);
     hal_flash_xip_func_ptr_init();
 #endif
+#if defined(CONFIG_BOOT_CPU1)
     SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU1_BOOT_ADDR; /* set cpu1 pc addr */
     SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+#endif
 #endif
 #endif
 
