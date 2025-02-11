@@ -33,6 +33,14 @@ config IOPMP
 	bool "IOPMP"
 	default n
 
+config RV_BOOT_HART_MRADDR
+	hex
+	default 0x1000000
+
+config BOOT_CPU1
+	bool "boot cpu1"
+	default n
+
 choice CACHE_TYPE
 	default EXTERNAL_CACHE
 endchoice
