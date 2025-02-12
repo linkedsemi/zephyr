@@ -19,7 +19,7 @@
 #include "ls_msp_qspiv2.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
-BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
+// BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
 extern void noint(void);
 
@@ -48,9 +48,11 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
+#if defined(CONFIG_NOCACHE_MEMORY)
 extern uint32_t _nocache_ram_start;
 extern uint32_t _nocache_ram_end;
 extern uint32_t _nocache_ram_size;
+#endif
 
 #define CPU0_FW_REGION_SIZE MB(2)
 #define CPU1_FW_REGION_SIZE MB(14)
@@ -63,10 +65,12 @@ void cpu0_cache_region_init(void)
 {
     uint8_t idx = 0;
     csi_sysmap_config_region(idx++, 0x10000000, 0);
+#if defined(CONFIG_NOCACHE_MEMORY)
     if ((uint32_t)&_nocache_ram_size > 0) {
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
     }
+#endif
     csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
 
     csi_sysmap_config_region(idx++, 0x18000000, 0);
@@ -78,10 +82,12 @@ void cpu1_cache_region_init(void)
 {
     uint8_t idx = 0;
     csi_sysmap_config_region(idx++, 0x10000000 + KB(512), 0);
+#if defined(CONFIG_NOCACHE_MEMORY)
     if ((uint32_t)&_nocache_ram_size > 0) {
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
     }
+#endif
     csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
 
     csi_sysmap_config_region(idx++, 0x18000000, 0);
@@ -123,16 +129,20 @@ static int lsqsh_init(void)
     SystemInit();
     // sys_init_none();
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+#if defined(CONFIG_NOCACHE_MEMORY)
     if (!(((uint32_t)&_nocache_ram_start > 0x10000000)
                     && ((uint32_t)&_nocache_ram_end < (0x10000000 + KB(512))))) {
         while(1);
     }
+#endif
     cpu0_cache_region_init();
 #else
+#if defined(CONFIG_NOCACHE_MEMORY)
     if (!(((uint32_t)&_nocache_ram_start > (0x10000000 + KB(512))
                     && ((uint32_t)&_nocache_ram_end < (0x10000000 + KB(512) + KB(764)))))) {
         while(1);
     }
+#endif
     cpu1_cache_region_init();
 #endif
 
