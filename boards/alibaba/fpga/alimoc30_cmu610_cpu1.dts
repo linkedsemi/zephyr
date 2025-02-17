@@ -26,14 +26,7 @@
     };
 
     aliases {
-        sdhc0 = &sdhci;
-    };
-
-    sram1_nocache: memory@1013e000 {
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013e000 DT_SIZE_K(4)>;
-        device_type = "memory";
-        zephyr,memory-region = "nocache";
+        sdhc0 = &sdhci1;
     };
 
     soc {
@@ -81,45 +74,50 @@
 };
 
 &sram1 {
-    reg = <0x10080000 DT_SIZE_K(760)>;
+    reg = <0x10080000 DT_SIZE_K(764)>;
 };
 
 &mac0 {
-    pinctrl-0 = <&rmii_txen_pt03
-                &rmii_txd0_pt04
-                &rmii_txd1_pt05
-                &rmii_rxc_pt08
-                &rmii_crsdv_pt09
-                &rmii_rxd0_pt10
-                &rmii_rxd1_pt11>;
+    pinctrl-0 = <&rmii_txen_pt04
+                &rmii_txd0_pt05
+                &rmii_txd1_pt06
+                &rmii_rxc_pt10
+                &rmii_crsdv_pt11
+                &rmii_rxd0_pt12
+                &rmii_rxd1_pt13>;
     pinctrl-names = "default";
     status = "okay";
 };
 
-&mdio1 {
-    pinctrl-0 = <&rmii_mdc_pt00
-                &rmii_mdio_pt01>;
+&mdio0 {
+    pinctrl-0 = <&rmii_mdc_pa14
+                &rmii_mdio_pa15>;
     pinctrl-names = "default";
     status = "okay";
 };
 
-&sdhci {
-    pinctrl-0 = <&sdhc_d0_ph04
-                &sdhc_d1_ph05
-                &sdhc_d2_ph06
-                &sdhc_d3_ph07
-                &sdhc_d4_ph08
-                &sdhc_d5_ph09
-                &sdhc_d6_ph010
-                &sdhc_d7_ph011
-                &sdhc_clk_ph012
-                &sdhc_cmd_ph013>;
+&sdhci1 {
+    pinctrl-0 = <&sdhc_d0_pm04
+                &sdhc_d1_pm05
+                &sdhc_d2_pm06
+                &sdhc_d3_pm07
+                &sdhc_d4_pm08
+                &sdhc_d5_pm09
+                &sdhc_d6_pm10
+                &sdhc_d7_pm11
+                &sdhc_clk_pm12
+                &sdhc_cmd_pm13>;
     pinctrl-names = "default";
     status = "okay";
 
     mmc_disk0: disk {
         compatible = "zephyr,mmc-disk";
+        disk-name = "SD";
         bus-width = <1>;
         status = "okay";
     };
+};
+
+tst_dma0: &dma0 {
+    status = "okay";
 };

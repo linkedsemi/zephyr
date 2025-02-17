@@ -10,3 +10,4 @@ board:
       - name: "zynq"
       - name: "acku"
       - name: "acku-sc"
+      - name: "acku-xip"
