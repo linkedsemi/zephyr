@@ -277,8 +277,40 @@ tst_dma0: &dma0 {
     status = "okay";
 };
 
+// &flash0 {
+//     reg = <0x8000000 0x400000>;
+//     /*
+//    * Flash base address is 0x8000000,
+//    * the following parts are all offset addresses.
+//    */
+//    partitions {
+//        compatible = "fixed-partitions";
+//        #address-cells = <1>;
+//        #size-cells = <1>;
+
+//        boot_partition: partition@0 {
+//            label = "info-sbl";
+//            reg = <0x00000000 0x00000800>;
+//        };
+
+//        app_partition: partition@800 {
+//            label = "app";
+//            reg = <0x00000800 0x0007c800>;
+//        };
+
+//         storage_partition: partition@7d000 {
+//            label = "storage";
+//            reg = <0x0007d000 0x00003000>;
+//        };
+//    };
+//    status = "okay";
+// };
+
+// /delete-node/ &boot_partition;
+// /delete-node/ &app_partition;
+// /delete-node/ &storage_partition;
+
 &flash0 {
-    reg = <0x8000000 0x400000>;
     /*
    * Flash base address is 0x8000000,
    * the following parts are all offset addresses.
@@ -288,20 +320,42 @@ tst_dma0: &dma0 {
        #address-cells = <1>;
        #size-cells = <1>;
 
-       boot_partition: partition@0 {
-           label = "info-sbl";
-           reg = <0x00000000 0x00000800>;
-       };
+    //    boot_partition: partition@0 {
+    //        label = "info-sbl";
+    //        reg = <0x00000000 0x00000800>;
+    //    };
 
-       app_partition: partition@800 {
-           label = "app";
-           reg = <0x00000800 0x0007c800>;
-       };
+    //    app_partition: partition@800 {
+    //        label = "app";
+    //        reg = <0x00000800 0x0007c800>;
+    //    };
 
-        storage_partition: partition@7d000 {
-           label = "storage";
-           reg = <0x0007d000 0x00003000>;
-       };
+    //    /*
+    //     * The flash starting at 0x807d000 and ending at
+    //     * 0x807FFFF is reserved for use by the application.
+    //     */
+
+    //    /*
+    //     * Storage partition will be used by FCB/LittleFS/NVS
+    //     * if enabled.
+    //     */
+    //     storage_partition: partition@7d000 {
+    //        label = "storage";
+    //        reg = <0x0007d000 0x00310000>;
+    //    };
+
+       storage_partition: partition@0 {
+        label = "storage";
+        reg = <0x00000000 0x300000>;
+    };
    };
-   status = "okay";
+};
+
+/ {
+	msc_disk0 {
+		compatible = "zephyr,flash-disk";
+		partition = <&storage_partition>;
+		disk-name = "NAND";
+		cache-size = <4096>;
+	};
 };
