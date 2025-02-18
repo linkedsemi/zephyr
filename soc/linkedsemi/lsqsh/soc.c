@@ -193,7 +193,7 @@ static int lsqsh_init(void)
 
 #if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
-#if ((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024)))
+#if (((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024))) || (CONFIG_CPU1_BOOT_ADDR == 0x10080000))
     lsqspiv2_msp_init();
     pinmux_hal_flash_init();
     hal_flash_dual_mode_set(true);
