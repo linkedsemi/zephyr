@@ -236,7 +236,7 @@ static int lsqsh_init(void)
     hal_flash_drv_var_init(true,false);
 #endif
     hal_flash_xip_func_ptr_init();
-    IRQ_CONNECT(RV_SOFT_IRQN, 0, SWINT_Handler_Asm, NULL, 0);
+    IRQ_CONNECT(FLASH_SWINT_NUM, 0, SWINT_Handler_Asm, NULL, 0);
 
 #if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
