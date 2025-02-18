@@ -108,8 +108,8 @@ static int mdio_dwmac_transfer(const struct device *dev,
     k_mutex_lock(&dev_data->mdio_mutex, K_FOREVER);
 
     if (is_write) {
-        mdio_data.RA = is_c45 ? regad : 0,
-        mdio_data.GD = *data,
+        mdio_data.RA = is_c45 ? regad : 0;
+        mdio_data.GD = *data;
         sys_write32(mdio_data.value, dev_data->base + MAC_MDIO_DATA);
     }
 
