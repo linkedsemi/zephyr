@@ -24,24 +24,19 @@
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
 
-#if defined (CONFIG_SOC_LS1010)
-    #include <ls_msp_peci.h>
-#else
-    #define PECI_LS_MAX_TX_BUF_LEN 24
-    #define PECI_LS_MAX_RX_BUF_LEN 24
+#define PECI_LS_MAX_TX_BUF_LEN 24
+#define PECI_LS_MAX_RX_BUF_LEN 24
 
-    #define PECI_PRE_DIV_VAL      5
+#define PECI_PRE_DIV_VAL      0x20
 
-    #define PECI_A_BIT_CYC_VAL    11
-    #define PECI_A_TGT_IDX0_VAL   3
-    #define PECI_M_TGT_IDX0_VAL   3
-    #define PECI_A_SMP_IDX_VAL    6
-    #define PECI_A_TGT_IDX1_VAL   8
-    #define PECI_M_TGT_IDX1_VAL   8
-#endif
+#define PECI_A_BIT_CYC_VAL    11
+#define PECI_A_TGT_IDX0_VAL   3
+#define PECI_M_TGT_IDX0_VAL   3
+#define PECI_A_SMP_IDX_VAL    6
+#define PECI_A_TGT_IDX1_VAL   8
+#define PECI_M_TGT_IDX1_VAL   8
 
 LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
-#define CPU_FREQ (DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)/1000000)
 
 static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg);
 
@@ -248,13 +243,12 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 	struct peci_buf *peci_tx_buf = &msg->tx_buffer;
 
 	int ret = 0;
-    uint8_t txbuf8[24] = {0};
-    uint8_t rxbuf8[24] = {0};
     uint32_t txbuf32[6] = {0};
     uint32_t rxbuf32[6] = {0};
+    uint8_t *txbuf8 = (uint8_t *)txbuf32;
+    uint8_t *rxbuf8 = (uint8_t *)rxbuf32;
     volatile uint8_t i = 0;
-    uint8_t crc_data[24] = {0};
-    uint8_t *crc_in = NULL;
+    uint8_t crc_result = 0;
 
     if(peci_tx_buf->len > PECI_LS_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_LS_MAX_RX_BUF_LEN)
     {
@@ -266,11 +260,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     MODIFY_REG( reg->PECI_CTRL, PECI_DAT_LEN_MASK, ((peci_tx_buf->len)+4) << PECI_DAT_LEN_POS);
 
-    crc_data[0] = msg->addr;
-    crc_data[1] = peci_tx_buf->len;
-    crc_data[2] = peci_rx_buf->len;
-    crc_data[3] = msg->cmd_code;
-
     txbuf8[0] = msg->addr;
     LOG_DBG("Debug: peci_ls_transfer: addr = %02x, tx_len = %d, rx_len = %d, cmd_code = %02x\n", msg->addr, peci_tx_buf->len, peci_rx_buf->len, msg->cmd_code);
     txbuf8[1] = peci_tx_buf->len;
@@ -281,12 +270,11 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     {
         for(i = 0; i < peci_tx_buf->len-1; i++)
         {
-           crc_data[i+4] = peci_tx_buf->buf[i];
            txbuf8[i+4] = peci_tx_buf->buf[i];
         }
     }
-    crc_in = crc_data;
-    uint8_t crc_result = crc8_ls(crc_in, peci_tx_buf->len + 3);
+
+    crc_result = crc8_ls(txbuf8, peci_tx_buf->len + 3);
 
     if(peci_tx_buf->len > 1)
     {
@@ -295,8 +283,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     else{
         txbuf8[4] = crc_result;
     }
-
-    memcpy(txbuf32, txbuf8, 24);
 
     WRITE_REG(reg->INTR_CLR,PECI_INTR_CLR_MASK);
     WRITE_REG(reg->INTR_MSK,PECI_INTR_MSK_MASK);
@@ -318,7 +304,8 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     rxbuf32[3] = reg->RX_DAT3;
     rxbuf32[4] = reg->RX_DAT4;
     rxbuf32[5] = reg->RX_DAT5;
-    memcpy(rxbuf8, rxbuf32, 24);
+
+    __ASSERT(reg->TX_DAT0 == reg->RX_DAT0, "check waveform sample fail");
 
     for(i = 0; i < peci_rx_buf->len; i++)
     {
