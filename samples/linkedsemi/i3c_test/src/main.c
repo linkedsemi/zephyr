@@ -8,7 +8,6 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/kernel.h>
 #include <stdlib.h>
-#include <stdio.h>
 
 #include <zephyr/drivers/i3c.h>
 

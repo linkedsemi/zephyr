@@ -36,7 +36,7 @@ int main(void)
     // HAL_IWDG_Init(APP_IWDG, BOOT_WDG_VALUE_BASE_S * 5);
     HAL_IWDG_Init(APP_IWDG, BOOT_WDG_VALUE_BASE_MS * 1);
     // HAL_IWDG_Refresh(APP_IWDG);
-    while(1)
+    while(1) {};
 
     return 0;
 }
