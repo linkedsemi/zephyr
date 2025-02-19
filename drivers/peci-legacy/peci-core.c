@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(peci_core, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(peci_core);
 
 #define dev_dbg(dev, fmt, ...) \
     LOG_INF("Dev %p: " fmt, (void *) dev, ##__VA_ARGS__)
@@ -209,18 +209,18 @@ struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len)
 	msg->tx_buf = tx_buf;
 	msg->rx_len = rx_len;
 	msg->rx_buf = rx_buf;
-	printf("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
-	printf("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
-	printf("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
-	printf("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
+	// LOG_INF("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
+	// LOG_INF("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
+	// LOG_INF("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
+	// LOG_INF("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
 
 	return msg;
 
 err_free_tx_rx_buf:
-	printf("Debug in %s: in err_free_tx_rx_buf");
+	// LOG_INF("Debug in %s: in err_free_tx_rx_buf");
 	free(rx_buf);
 err_free_tx_buf:
-	printf("Debug in %s: in err_free_tx_buf");
+	// LOG_INF("Debug in %s: in err_free_tx_buf");
 	free(tx_buf);
 
 	return NULL;
@@ -262,18 +262,18 @@ err_free_tx_buf:
 
 // 	msg->rx_len = rx_len;
 
-// 	printf("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
-// 	printf("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
-// 	printf("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
-// 	printf("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
+// 	LOG_INF("Debug in %s: msg->rx_buf = %p to %p\n", __func__, msg->rx_buf, msg->rx_buf+rx_len-1);
+// 	LOG_INF("Debug in %s: msg->tx_buf = %p to %p\n", __func__, msg->tx_buf, msg->tx_buf+tx_len-1);
+// 	LOG_INF("Debug in %s: msg = %p to %p\n", __func__, msg, msg+sizeof(*msg)-1);
+// 	LOG_INF("Debug in %s: msg size is p = %d and s = %d\n", __func__, sizeof(*msg), sizeof(struct peci_xfer_msg));
 
 // 	return msg;
 
 // err_free_tx_rx_buf:
-// 	printf("Debug in %s: in err_free_tx_rx_buf");
+// 	LOG_INF("Debug in %s: in err_free_tx_rx_buf");
 // 	free(msg->rx_buf);
 // err_free_tx_buf:
-// 	printf("Debug in %s: in err_free_tx_buf");
+// 	LOG_INF("Debug in %s: in err_free_tx_buf");
 // 	free(msg->tx_buf);
 
 // 	return NULL;
@@ -288,19 +288,19 @@ void peci_put_xfer_msg(struct peci_xfer_msg *msg)
 	if (!msg)
 		return;
 
-	printf("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
+	// LOG_INF("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
 	free(msg->rx_buf);
 	msg->rx_buf = NULL;
-	printf("Debug in %s: free msg->rx_buf\n", __func__);
-	printf("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
+	// LOG_INF("Debug in %s: free msg->rx_buf\n", __func__);
+	// LOG_INF("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
 	free(msg->tx_buf);
-	// printf("Debug in %s: free msg->tx_buf\n", __func__);
+	// LOG_INF("Debug in %s: free msg->tx_buf\n", __func__);
 	msg->tx_buf = NULL;
-	printf("Debug in %s: free msg->tx_buf\n", __func__);
-	printf("Debug in %s: msg = %p\n", __func__, msg);
+	// LOG_INF("Debug in %s: free msg->tx_buf\n", __func__);
+	// LOG_INF("Debug in %s: msg = %p\n", __func__, msg);
 	free(msg);
 	msg = NULL;
-	printf("Debug in %s: free msg\n", __func__);
+	// LOG_INF("Debug in %s: free msg\n", __func__);
 }
 // EXPORT_SYMBOL_GPL(peci_put_xfer_msg);
 
@@ -382,14 +382,14 @@ static int __peci_xfer(struct peci_adapter *adapter, struct peci_xfer_msg *msg,
 		return -EFAULT;
 	}
 
-	printf("Debug in %s: before loop\n", __func__);
+	// LOG_INF("Debug in %s: before loop\n", __func__);
 	for (;;) {
-		printf("Debug in %s: before k_mutex_lock\n", __func__);
+		// LOG_INF("Debug in %s: before k_mutex_lock\n", __func__);
 		k_mutex_lock(&cpu_domain_lock[node_id][domain_id], K_FOREVER);
-		printf("Debug in %s: before adapter->xfer\n", __func__);
+		// LOG_INF("Debug in %s: before adapter->xfer\n", __func__);
 		ret = adapter->xfer(adapter, msg);
 		k_mutex_unlock(&cpu_domain_lock[node_id][domain_id]);
-		printf("Debug in %s: finish adapter->xfer\n", __func__);
+		// LOG_INF("Debug in %s: finish adapter->xfer\n", __func__);
 
 		if (!do_retry || ret || !msg->rx_buf)
 			break;
@@ -489,7 +489,7 @@ static int peci_scan_cmd_mask(struct peci_adapter *adapter)
 	msg->addr      = PECI_BASE_ADDR;
 	msg->tx_buf[0] = PECI_GET_DIB_CMD;
 
-	printf("Debug in %s: before peci_xfer\n", __func__);
+	// LOG_INF("Debug in %s: before peci_xfer\n", __func__);
 	ret = peci_xfer(adapter, msg);
 	if (ret) {
 		ret = -EAGAIN;
@@ -631,9 +631,9 @@ static int peci_cmd_ping(struct peci_adapter *adapter, uint msg_len, void *vmsg)
 
 	msg->addr   = umsg->addr;
 
-	printf("Debug in %s: before peci_xfer\n", __func__);
+	// LOG_INF("Debug in %s: before peci_xfer\n", __func__);
 	ret = peci_xfer(adapter, msg);
-	printf("Debug in %s: finish peci_xfer\n", __func__);
+	// LOG_INF("Debug in %s: finish peci_xfer\n", __func__);
 	peci_put_xfer_msg(msg);
 
 	return ret;
@@ -653,20 +653,20 @@ static int peci_cmd_get_dib(struct peci_adapter *adapter, uint msg_len, void *vm
 	msg->tx_buf[0] = PECI_GET_DIB_CMD;
 
 	ret = peci_xfer(adapter, msg);
-	printf("Debug in %s: peci_xfer ret = %p\n", __func__, &ret);
+	// LOG_INF("Debug in %s: peci_xfer ret = %p\n", __func__, &ret);
 	if (ret)
 		goto out;
 
-	printf("Debug in %s: peci_cmd_get_dib umsg->dib = %p\n", __func__, &umsg->dib);
-	printf("Debug in %s: peci_cmd_get_dib umsg->dib = %llx\n", __func__, umsg->dib);
+	// LOG_INF("Debug in %s: peci_cmd_get_dib umsg->dib = %p\n", __func__, &umsg->dib);
+	// LOG_INF("Debug in %s: peci_cmd_get_dib umsg->dib = %llx\n", __func__, umsg->dib);
 
 	if(msg->rx_buf && msg->rx_len >= sizeof(uint64_t)){
 		umsg->dib = le64_to_cpup((__le64 *)msg->rx_buf);
 	}
 	
-	printf("Debug in %s: peci_cmd_get_dib umsg->dib = %p\n", __func__, &umsg->dib);
+	// LOG_INF("Debug in %s: peci_cmd_get_dib umsg->dib = %p\n", __func__, &umsg->dib);
 	// umsg->dib = *(__le64 *)msg->rx_buf;
-	printf("Debug in %s: peci_cmd_get_dib umsg->dib = %llx\n", __func__, umsg->dib);
+	// LOG_INF("Debug in %s: peci_cmd_get_dib umsg->dib = %llx\n", __func__, umsg->dib);
 out:
 	peci_put_xfer_msg(msg);
 
@@ -691,7 +691,7 @@ static int peci_cmd_get_temp(struct peci_adapter *adapter, uint msg_len, void *v
 		goto out;
 
 	umsg->temp_raw = le16_to_cpup((__le16 *)msg->rx_buf);
-	printf("Debug in %s: peci_cmd_get_temp umsg->temp_raw = %d\n", __func__, umsg->temp_raw);
+	// LOG_INF("Debug in %s: peci_cmd_get_temp umsg->temp_raw = %d\n", __func__, umsg->temp_raw);
 
 out:
 	peci_put_xfer_msg(msg);
@@ -1768,23 +1768,23 @@ int peci_command(struct peci_adapter *adapter, enum peci_cmd cmd, uint msg_len, 
 	if (!peci_cmd_fn[cmd])
 		return -EINVAL;
 
-	printf("Debug: %s, cmd=0x%02x\n", __func__, cmd);
-	printf("Debug: adapter is used in %p\n", (void *)adapter);
-	printf("Debug: adapter bus lock is used in %p\n", (void *)&adapter->bus_lock);
+	LOG_INF("Debug: %s, cmd=0x%02x\n", __func__, cmd);
+	LOG_INF("Debug: adapter is used in %p\n", (void *)adapter);
+	LOG_INF("Debug: adapter bus lock is used in %p\n", (void *)&adapter->bus_lock);
 	k_mutex_lock(&adapter->bus_lock, K_FOREVER);
-	printf("Debug in %s: finish k_mutex_lock\n", __func__);
+	LOG_INF("Debug in %s: finish k_mutex_lock\n", __func__);
 
 	ret = peci_check_cmd_support(adapter, cmd);
-	printf("Debug in %s: finished peci_check_cmd_support ret = %d\n", __func__, ret);
+	LOG_INF("Debug in %s: finished peci_check_cmd_support ret = %d\n", __func__, ret);
 	if (!ret){
-		printf("Debug in %s: before peci_cmd_fn\n", __func__);
+		LOG_INF("Debug in %s: before peci_cmd_fn\n", __func__);
 		ret = peci_cmd_fn[cmd](adapter, msg_len, vmsg);
-		printf("Debug in %s: finish peci_cmd_fn ret = %d\n", __func__, ret);
+		LOG_INF("Debug in %s: finish peci_cmd_fn ret = %d\n", __func__, ret);
 	}
 
-	printf("Debug in %s: before k_mutex_unlock\n", __func__);
+	LOG_INF("Debug in %s: before k_mutex_unlock\n", __func__);
 	k_mutex_unlock(&adapter->bus_lock);
-	printf("Debug in %s: finish k_mutex_unlock\n", __func__);
+	LOG_INF("Debug in %s: finish k_mutex_unlock\n", __func__);
 	return ret;
 }
 // EXPORT_SYMBOL_GPL(peci_command);
@@ -2442,31 +2442,31 @@ static int peci_register_adapter(struct peci_adapter *adapter)
 {
 	int ret = -EINVAL;
 
-	printf("Debug: In peci_register_adapter\n");
+	LOG_INF("Debug: In peci_register_adapter\n");
 
 	/* Can't register until after driver model init */
 	if (!is_registered)
 	{
-		printf("peci adapter is not registered yet\n");
+		LOG_INF("peci adapter is not registered yet\n");
 		goto err_free_idr;
 	}
 
 	if (!adapter->name[0])
 	{
-		printf("peci adapter has no name\n");
+		LOG_INF("peci adapter has no name\n");
 		goto err_free_idr;
 	}	
 
 	if (!adapter->xfer)
 	{
-		printf("peci adapter has no xfer function\n");
+		LOG_INF("peci adapter has no xfer function\n");
 		goto err_free_idr;
 	}
 		
 	k_mutex_init(&adapter->bus_lock);
-	printf("Debug: adapter bus lock is init in %p\n", (void *)&adapter->bus_lock);
+	LOG_INF("Debug: adapter bus lock is init in %p\n", (void *)&adapter->bus_lock);
 	k_mutex_init(&adapter->userspace_clients_lock);
-	printf("Debug in %s: after init userspace_clients_lock\n", __func__);
+	LOG_INF("Debug in %s: after init userspace_clients_lock\n", __func__);
 	// SYS_DLIST_STATIC_INIT(&adapter->userspace_clients);
 
 	// dev_set_name(&adapter->dev, "peci-%d", adapter->nr);
@@ -2477,10 +2477,10 @@ static int peci_register_adapter(struct peci_adapter *adapter)
 	// 	       adapter->name, ret);
 	// 	goto err_free_idr;
 	// }
-	printf("Debug in %s: before dev_dbg\n", __func__);
-	printf("Debug in %s: adapter->dev = %p\n", __func__, &adapter->dev);
+	LOG_INF("Debug in %s: before dev_dbg\n", __func__);
+	LOG_INF("Debug in %s: adapter->dev = %p\n", __func__, &adapter->dev);
 	dev_dbg(&adapter->dev, "adapter [%s] registered\n", adapter->name);
-	printf("Debug: adapter [%s] registered\n", adapter->name);
+	LOG_INF("Debug: adapter [%s] registered\n", adapter->name);
 
 	// pm_runtime_no_callbacks(&adapter->dev);
 	// pm_suspend_ignore_children(&adapter->dev, true);
@@ -2494,7 +2494,7 @@ static int peci_register_adapter(struct peci_adapter *adapter)
 err_free_idr:
 	k_mutex_lock(&core_lock, K_FOREVER);
 	// idr_remove(&peci_adapter_idr, adapter->nr);
-	printf("Debug: In err_free_idr\n");
+	LOG_INF("Debug: In err_free_idr\n");
 	k_mutex_unlock(&core_lock);
 	return ret;
 }

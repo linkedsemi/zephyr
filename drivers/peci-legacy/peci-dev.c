@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(peci_dev, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(peci_dev, LOG_LEVEL_INF);
 struct peci_ls_data {
 	struct k_sem trans_sync_sem;
 	struct k_sem lock;
@@ -33,13 +33,13 @@ long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg)
 	uint msg_len;
 	int ret;
 
-	printf("Debug %s: dev = %p\n",  __func__, dev);
+	// LOG_INF("Debug %s: dev = %p\n",  __func__, dev);
 
     adapter = ls_data->adapter;
 	cmd = iocmd;
 	msg_len = sizeof(*umsg);
 
-	printf("Debug: Before switch\n");
+	// LOG_INF("Debug: Before switch\n");
 	switch (cmd) {
 	case PECI_CORE_CMD_XFER:
 		if (msg_len != sizeof(struct peci_xfer_msg)) {
@@ -107,9 +107,9 @@ long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg)
 	default:
         msg = malloc(msg_len);
 		memcpy(msg, umsg, msg_len);
-		printf("Debug in %s: msg in peci_dev_ioctl = %p to %p\n", __func__, msg, msg+msg_len);
-		printf("Debug in %s: umsg in peci_dev_ioctl = %p to %p\n", __func__, umsg, umsg+msg_len);
-		printf("Debug in %s: xmsg in peci_dev_ioctl = %p to %p\n", __func__, xmsg, xmsg+msg_len);
+		// LOG_INF("Debug in %s: msg in peci_dev_ioctl = %p to %p\n", __func__, (void *)msg, (void *)msg+msg_len);
+		// LOG_INF("Debug in %s: umsg in peci_dev_ioctl = %p to %p\n", __func__, (void *)umsg, (void *)umsg+msg_len);
+		// LOG_INF("Debug in %s: xmsg in peci_dev_ioctl = %p to %p\n", __func__, (void *)xmsg, (void *)xmsg+msg_len);
 		if (msg == NULL) {
 			ret = -ENOMEM;
 			break;
@@ -120,20 +120,15 @@ long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg)
 		 * either success or timeout to provide the completion code to
 		 * the caller.
 		 */
-		printf("Debug in %s: Before peci_command\n", __func__);
 		ret = peci_command(adapter, cmd, msg_len, msg);
-		printf("Debug in %s: After peci_command\n", __func__);
 		memcpy(umsg, msg, msg_len);
-		printf("Debug in %s: After memcpy\n", __func__);
 
 		break;
 	}
 
-	printf("Debug in %s: Before peci_put_xfer_msg\n", __func__);
 	peci_put_xfer_msg(xmsg);
-	printf("Debug in %s: After peci_put_xfer_msg\n", __func__);
 	if (msg != NULL)
 		free(msg);
-	printf("Debug in %s: After k_free msg\n", __func__);
+		
 	return (long)ret;
 }

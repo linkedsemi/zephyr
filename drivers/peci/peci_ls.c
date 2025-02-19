@@ -148,22 +148,22 @@ static int peci_ls_init(struct device *dev)
         return -ENOMEM;
     
     data = adapter->dev.data;
-    printf("Debug: peci dev = %p\n", (void *)dev);
-    printf("Debug in %s: data = %p to %p\n", __func__, (void *)data, (void *)data+sizeof(*data));
-    printf("Debug in %s: dev->data = %p\n", __func__, (void *)dev->data);
+    LOG_INF("Debug: peci dev = %p\n", (void *)dev);
+    LOG_INF("Debug in %s: data = %p to %p\n", __func__, (void *)data, (void *)data+sizeof(*data));
+    LOG_INF("Debug in %s: dev->data = %p\n", __func__, (void *)dev->data);
 
     data->adapter = adapter;
-    printf("Debug: data->adapter = %p\n", (void *)data->adapter);
-    printf("Debug: adapter = %p\n", (void *)adapter);
+    LOG_INF("Debug: data->adapter = %p\n", (void *)data->adapter);
+    LOG_INF("Debug: adapter = %p\n", (void *)adapter);
 
     data->dev = dev;
     dev->data = data;
-    printf("Debug in %s: adapter->dev = %p\n", __func__, (void *)&adapter->dev);
-    printf("Debug in %s: data->adapter->dev = %p\n", __func__, (void *)&data->adapter->dev);
-    printf("Debug in %s: adapter->dev->data = %p, dev->data = %p\n", __func__, (void *)adapter->dev.data, (void *)dev->data);
+    LOG_INF("Debug in %s: adapter->dev = %p\n", __func__, (void *)&adapter->dev);
+    LOG_INF("Debug in %s: data->adapter->dev = %p\n", __func__, (void *)&data->adapter->dev);
+    LOG_INF("Debug in %s: adapter->dev->data = %p, dev->data = %p\n", __func__, (void *)adapter->dev.data, (void *)dev->data);
 
     strncpy(data->adapter->name, dev->name, sizeof(data->adapter->name));
-    printf("PECI adapter %s initialized\n", dev->name);
+    LOG_INF("PECI adapter %s initialized\n", dev->name);
     data->adapter->xfer = peci_lib_xfer_base_ls;
     data->adapter->use_dma = false;
 
@@ -272,7 +272,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     crc_data[3] = msg->cmd_code;
 
     txbuf8[0] = msg->addr;
-    printf("Debug: peci_ls_transfer: addr = %02x, tx_len = %d, rx_len = %d, cmd_code = %02x\n", msg->addr, peci_tx_buf->len, peci_rx_buf->len, msg->cmd_code);
+    LOG_INF("Debug: peci_ls_transfer: addr = %02x, tx_len = %d, rx_len = %d, cmd_code = %02x\n", msg->addr, peci_tx_buf->len, peci_rx_buf->len, msg->cmd_code);
     txbuf8[1] = peci_tx_buf->len;
     txbuf8[2] = peci_rx_buf->len;
     txbuf8[3] = msg->cmd_code;
@@ -336,46 +336,46 @@ static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_
     struct peci_ls_data *ls_data = adapter->dev.data;
     int ret;
 
-    printf("Debug in %s: \n", __func__);
+    LOG_INF("Debug in %s: \n", __func__);
     
-    printf("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
-    printf("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
-    printf("Debug in %s: msg = %p\n", __func__, msg);
+    LOG_INF("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
+    LOG_INF("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
+    LOG_INF("Debug in %s: msg = %p\n", __func__, msg);
 
     msg_ls = malloc(sizeof(struct peci_msg));
     if (msg_ls == NULL)
         return -ENOMEM;
         
-    printf("Debug in %s: finish malloc msg_ls\n", __func__);
+    LOG_INF("Debug in %s: finish malloc msg_ls\n", __func__);
     msg_ls->addr = msg->addr;
     msg_ls->cmd_code = 0;
     msg_ls->tx_buffer.buf = NULL;
     msg_ls->rx_buffer.buf = NULL;
     msg_ls->tx_buffer.len = 0;
     msg_ls->rx_buffer.len = 0;
-    printf("Debug in %s: msg_ls->addr = %x\n", __func__, msg_ls->addr);
+    LOG_INF("Debug in %s: msg_ls->addr = %x\n", __func__, msg_ls->addr);
 
     if(msg->tx_buf != NULL){
-        printf("Debug in %s: msg->tx_buf != NULL\n", __func__);
+        LOG_INF("Debug in %s: msg->tx_buf != NULL\n", __func__);
         msg_ls->cmd_code = msg->tx_buf[0];
         msg_ls->tx_buffer.buf = msg->tx_buf + 1; 
     }
 
     if(msg->rx_buf != NULL){
-        printf("Debug in %s: msg->rx_buf != NULL\n", __func__);
+        LOG_INF("Debug in %s: msg->rx_buf != NULL\n", __func__);
         msg_ls->rx_buffer.buf = msg->rx_buf;
     }
 
     msg_ls->tx_buffer.len = msg->tx_len;
     msg_ls->rx_buffer.len = msg->rx_len;
 
-    printf("Debug in %s: msg_ls->cmd_code = %x\n", __func__, msg_ls->cmd_code);
-    printf("Debug in %s: adapter = %p, adapter->dev = %p\n", __func__, adapter, ls_data->dev);
+    LOG_INF("Debug in %s: msg_ls->cmd_code = %x\n", __func__, msg_ls->cmd_code);
+    LOG_INF("Debug in %s: adapter = %p, adapter->dev = %p\n", __func__, adapter, ls_data->dev);
     ret = peci_ls_transfer(ls_data->dev, msg_ls);
 
-    printf("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
-    printf("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
-    printf("Debug in %s: msg = %p\n", __func__, msg);
+    LOG_INF("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
+    LOG_INF("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
+    LOG_INF("Debug in %s: msg = %p\n", __func__, msg);
 
     free(msg_ls);
     return ret;
