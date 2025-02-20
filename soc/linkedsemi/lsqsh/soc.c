@@ -19,7 +19,7 @@
 #include "ls_msp_qspiv2.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
-// BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
+BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
 extern void noint(void);
 
@@ -67,11 +67,13 @@ void cpu0_cache_region_init(void)
     csi_sysmap_config_region(idx++, 0x10000000, 0);
 #if defined(CONFIG_NOCACHE_MEMORY)
     if ((uint32_t)&_nocache_ram_size > 0) {
+        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
     }
 #endif
-    csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
 
     csi_sysmap_config_region(idx++, 0x18000000, 0);
     csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
@@ -84,7 +86,11 @@ void cpu1_cache_region_init(void)
     csi_sysmap_config_region(idx++, 0x10000000 + KB(512), 0);
 #if defined(CONFIG_NOCACHE_MEMORY)
     if ((uint32_t)&_nocache_ram_size > 0) {
-        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        if (((uint32_t)&_nocache_ram_size) != 0x10080000) {
+            csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
         csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
     }
 #endif
@@ -130,16 +136,16 @@ static int lsqsh_init(void)
     // sys_init_none();
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
 #if defined(CONFIG_NOCACHE_MEMORY)
-    if (!(((uint32_t)&_nocache_ram_start > 0x10000000)
-                    && ((uint32_t)&_nocache_ram_end < (0x10000000 + KB(512))))) {
+    if (!(((uint32_t)&_nocache_ram_start >= 0x10000000)
+                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512))))) {
         while(1);
     }
 #endif
     cpu0_cache_region_init();
 #else
 #if defined(CONFIG_NOCACHE_MEMORY)
-    if (!(((uint32_t)&_nocache_ram_start > (0x10000000 + KB(512))
-                    && ((uint32_t)&_nocache_ram_end < (0x10000000 + KB(512) + KB(764)))))) {
+    if (!(((uint32_t)&_nocache_ram_start >= (0x10000000 + KB(512))
+                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512) + KB(764)))))) {
         while(1);
     }
 #endif
@@ -223,7 +229,7 @@ static int lsqsh_init(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
-#if defined(CONFIG_SOC_FLASH_LS)
+#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU0) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU1)
 #if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
 #else
