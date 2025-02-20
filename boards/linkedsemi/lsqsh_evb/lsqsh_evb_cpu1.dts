@@ -32,11 +32,11 @@
 
         mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
-            reg = <0x1013f000 0x1000>;
+            reg = <0x1013f000 DT_SIZE_K(4)>;
             interrupts = <26 3>;
-            nchannels = <2>;
-            fifo-deepth = <3>;
-            fifo-width = <4>;
+            nchannels = <3>;
+            fifo-deepth = <2>;
+            fifo-width = <256>;
             #mbox-cells = <1>;
         };
     };
@@ -50,6 +50,13 @@
     mbox_consumer1: mbox-consumer1 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 2>, <&mbox 3>;
+        mbox-names = "tx", "rx";
+    };
+
+    /* func call */
+    mbox_consumer2: mbox-consumer2 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 4>, <&mbox 5>;
         mbox-names = "tx", "rx";
     };
 };
@@ -111,8 +118,4 @@
         bus-width = <1>;
         status = "okay";
     };
-};
-
-tst_dma0: &dma0 {
-    status = "okay";
 };

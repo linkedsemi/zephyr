@@ -16,4 +16,18 @@ config SIGNALLING_MODE_SUPPORT
     help
       not support signalling mode
 
+config MBOX_LINKEDSEMI_APP_CPU0
+	bool "MBOX LINKEDSEMI driver app cpu0"
+	depends on $(dt_path_enabled,/cpus/cpu@0)
+	default y
+	help
+	  MBOX Driver for LINKEDSEMI SOC
+
+config MBOX_LINKEDSEMI_APP_CPU1
+	bool "MBOX LINKEDSEMI driver app cpu1"
+	depends on $(dt_path_enabled,/cpus/cpu@1)
+	default y
+	help
+	  MBOX Driver for LINKEDSEMI SOC
+
 endif # MBOX_LINKEDSEMI
