@@ -3436,10 +3436,10 @@ __STATIC_INLINE uint32_t LL_I3C_IsEnabledIT_CFNF(const I3C_TypeDef *I3Cx)
   * @param  I3Cx I3C Instance.
   * @retval None
   */
-// __STATIC_INLINE void LL_I3C_EnableIT_SFNE(I3C_TypeDef *I3Cx)
-// {
-//   SET_BIT(I3Cx->IER, I3C_IER_SFNEIE);
-// }
+__STATIC_INLINE void LL_I3C_EnableIT_SFNE(I3C_TypeDef *I3Cx)
+{
+  SET_BIT(I3Cx->IER, I3C_IER_SFNEIE);
+}
 
 /**
   * @brief  Disable Status FIFO Not Empty interrupt.
@@ -3458,10 +3458,10 @@ __STATIC_INLINE uint32_t LL_I3C_IsEnabledIT_CFNF(const I3C_TypeDef *I3Cx)
   * @param  I3Cx I3C Instance.
   * @retval State of bit (1 or 0).
   */
-// __STATIC_INLINE uint32_t LL_I3C_IsEnabledIT_SFNE(const I3C_TypeDef *I3Cx)
-// {
-//   return ((READ_BIT(I3Cx->IER, I3C_IER_SFNEIE) == (I3C_IER_SFNEIE)) ? 1UL : 0UL);
-// }
+__STATIC_INLINE uint32_t LL_I3C_IsEnabledIT_SFNE(const I3C_TypeDef *I3Cx)
+{
+  return ((READ_BIT(I3Cx->IER, I3C_IER_SFNEIE) == (I3C_IER_SFNEIE)) ? 1UL : 0UL);
+}
 
 /**
   * @brief  Enable Transmit FIFO Not Full interrupt.

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Linkedsemi Corporation.
+ * Copyright (c) 2025 Linkedsemi Corporation.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,15 +26,12 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 #include "ls_i3c/reg_i3c.h"
 #include "reg_sysc_app_per.h"
 #include "HAL_def.h"
-// #include "reg_sysc_per.h"
 #include <zephyr/sys/util.h>
 
-#include "field_manipulate.h"
-
-#include <math.h>
+// #include "field_manipulate.h"
+// #include <math.h>
 
 #define DT_DRV_COMPAT linkedsemi_i3c
-
 
 #define I3C_SCLH_I2C_MIN_FM_NS  600ull
 #define I3C_SCLH_I2C_MIN_FMP_NS 260ull
@@ -43,8 +40,8 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 #define I3C_SCLL_OD_MIN_I3C_NS  200ull
 
 #define I3C_SCLL_PP_MIN_NS  32ull
-#define I3C_SCLH_I3C_MIN_NS 200ull
-// #define I3C_SCLH_I3C_MIN_NS 100ull
+#define I3C_SCLH_I3C_MIN_NS 64ull
+// #define I3C_SCLH_I3C_MIN_NS 128ull
 
 #define I3C_TBUF_FMP_MIN_NS 500.0
 #define I3C_TBUF_FM_MIN_NS  1300.0
@@ -53,14 +50,14 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 /* i3c target default confige*/
 #define I3C_TARGET_OFFLINE_EN 1
 #define I3C_TARGET_ENBALE_RADDOM_PART 0
-#define I3C_TARGET_SOUPPORT_HDR 0  // not sopport hdr mode
+#define I3C_TARGET_SOUPPORT_HDR 0  		// 	The hdr mode is not supported
 #define I3C_TARGET_IGNORE_SE0SE1 0
 #define I3C_TARGET_MATCH_START_STOP 1
 #define I3C_TARGET_NACK_REQUEST 0
 #define I3C_TARGET_ONCE_WRITE_TX_LEN 4
 
 
-/* STATUS options */
+/* target event status  */
 #define STATUS_EVDET_NONE            0
 #define STATUS_EVDET_REQ_NOT_SENT    1
 #define STATUS_EVDET_REQ_SENT_NACKED 2
@@ -72,22 +69,17 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 
 #define __LS_I3C_GET_FLAG(__HANDLE__, __FLAG__) (((((__HANDLE__)->EVR) &\
                                                     (__FLAG__)) == (__FLAG__)) ? SET : RESET)
+#define __LS_I3C_MASTER_GET_ERROR(__HANDLE__) 			((__HANDLE__)->SER)
+#define __LS_I3C_SLAVE_GET_ERROR(__HANDLE__) 	((__HANDLE__)->SERRWARN)
+#define I3C_CHECK_FLAG(__ISR__, __FLAG__) 		((((__ISR__) & (__FLAG__)) == (__FLAG__)) ? SET : RESET)
 
-#define __LS_I3C_GET_ERROR(__HANDLE__) ((__HANDLE__)->SER)
-#define I3C_CHECK_FLAG(__ISR__, __FLAG__) ((((__ISR__) & (__FLAG__)) == (__FLAG__)) ? SET : RESET)
-
-#define TIMEOUT_CYC_100MS 	k_us_to_cyc_ceil64(100000)
-#define I3C_REG_EVR_TX_FULL_MASK 0x80
+#define LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT  	k_ms_to_cyc_ceil64(1)
+#define LS_I3C_TRANSFER_TIMEOUT  				K_MSEC(100)
 
 /* I3C target PID parsing */
 #define GET_PID_VENDOR_ID(pid) (((uint64_t)pid >> 33) & 0x7fff) /* PID[47:33] */
 #define GET_PID_ID_TYP(pid)    (((uint64_t)pid >> 32) & 0x1)    /* PID[32] */
 #define GET_PID_PARTNO(pid)    (pid & 0xffffffff)               /* PID[31:0] */
-
-enum{
-    TARGET_CONTINUE,
-    TARGET_END,
-};
 
 #define I3C_TGT_INTSET_MASK                                                                        \
 	(I3C_SINTSET_START_MASK | I3C_SINTSET_MATCHED_MASK | I3C_SINTSET_STOP_MASK |   \
@@ -103,8 +95,8 @@ struct i3c_fifo_info
 	uint32_t                   TargetRxFifoSize;
 };
 
-/* Operation type */
-enum ls_i3c_oper_state {
+/*target operation type */
+enum ls_i3c_target_oper_state {
 	LS_I3C_OP_STATE_IDLE,
 	LS_I3C_OP_STATE_WR,
 	LS_I3C_OP_STATE_RD,
@@ -112,10 +104,54 @@ enum ls_i3c_oper_state {
 	LS_I3C_OP_STATE_MAX,
 };
 
+// enum ls_i3c_sf_state {
+// 	LS_I3C_SF_DAA,    /* Dynamic addressing state */
+// 	LS_I3C_SF_CCC,    /* First part of CCC command state*/
+// 	LS_I3C_SF_CCC_P2, /* Second part of CCC command state (used for direct commands)*/
+// 	LS_I3C_SF,        /* Private msg state */
+// 	LS_I2C_SF,        /* I2C legacy msg state */
+// 	LS_I3C_SF_IDLE,   /* Idle bus state */
+// 	LS_I3C_SF_ERR,    /* Error state */
+// 	LS_I3C_SF_INVAL,  /* Invalid state */
+// };
+
+enum ls_i3c_msg_state {
+	LS_I3C_MSG_DAA,    /* Dynamic addressing state */
+	LS_I3C_MSG_CCC,    /* First part of CCC command state*/
+	LS_I3C_MSG_CCC_P2, /* Second part of CCC command state (used for direct commands)*/
+	LS_I3C_MSG,        /* Private msg state */
+	LS_I3C_MSG_IDLE,   /* Idle bus state */
+	LS_I3C_MSG_ERR,    /* Error state */
+	LS_I3C_MSG_INVAL,  /* Invalid state */
+};
+
 enum i3c_role {
 	I3C_ROLE_CONTROLLER,
 	I3C_ROLE_TARGET,
 	I3C_ROLE_NONE,
+};
+
+/* Struct to hold the information about the current message on the bus */
+struct ls_i3c_msg {
+	uint8_t target_addr;         /* Current target xfer address */
+	struct i3c_msg *i3c_msg_ptr; /* Pointer to the current private message to send on the bus */
+	struct i3c_msg *i3c_msg_ctrl_ptr; /* Pointer to the private message that will be used by the
+					   * control FIFO
+					   */
+	struct i3c_msg *i3c_msg_status_ptr; /* Pointer to the private message that will be used by
+					     * the status FIFO
+					     */
+	struct i2c_msg *i2c_msg_ptr; /* Pointer to the current legacy message to send on the bus */
+	struct i2c_msg *i2c_msg_ctrl_ptr; /* Pointer to the I2C legavy message that will be used by
+					   * the control FIFO
+					   */
+	size_t num_msgs;                  /* Number of messages */
+	size_t ctrl_msg_idx;              /* Current control message index */
+	size_t status_msg_idx;            /* Current status message index */
+	size_t xfer_msg_idx;              /* Current trasnfer message index */
+	uint32_t msg_type;                /* Either LL_I3C_CONTROLLER_MTYPE_PRIVATE or
+					   * LL_I3C_CONTROLLER_MTYPE_LEGACY_I2C
+					   */
 };
 
 /* CTRL register options */
@@ -127,7 +163,6 @@ enum i3c_role {
 
 /* Driver config */
 struct ls_i3c_config {
-    /*存储从机设备星系*/
 	struct i3c_driver_config common;
 
     /* Pointer to controller registers. */
@@ -142,14 +177,18 @@ struct ls_i3c_data {
 	struct i3c_target_config *target_config;
 	struct i3c_config_target config_target;
 	struct i3c_fifo_info fifo_info;
-	enum ls_i3c_oper_state state;
+	enum ls_i3c_target_oper_state state;
 	enum i3c_role cur_role;
 	/** Mutex to serialize access */
 	struct k_mutex lock;
 	struct k_sem target_event_lock_sem; /* Semaphore used for i3c target ibi_raise() */	
+	struct k_sem device_sync_sem; /* controller :Sync between device communication messages */
+
+	struct ls_i3c_msg curr_msg;
+	enum ls_i3c_msg_state msg_state;  /* Current I3C bus state */
 #ifdef CONFIG_I3C_USE_IBI
 	struct {
-		/* List of addresses used in the MIBIRULES register. */
+		/* List of addresses used in the DEVICEx[] register. */
 		uint8_t addr;
 
 		/*
@@ -191,8 +230,8 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 	uint64_t scll_pp = 0;
 	uint64_t sclh_i3c = 0;
 	uint32_t clk_wave = 0;
-	printf("CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC = %d\r\n",CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
-	printf("i2c hz= 0x%x ,i3c hz= 0x%x \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
+	LOG_DBG("CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC = %d\r\n",CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
+	LOG_DBG("i2c hz= 0x%x ,i3c hz= 0x%x \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
 
 	if(data->common.ctrl_config.scl.i2c > 0)
 	{
@@ -335,8 +374,8 @@ static int ls_i3c_configure(const struct device *dev, enum i3c_config_type type,
 
 		ls_i3c_xfer_reset(base);
 
-		ret = ls_i3c_cntlr_wave_init(dev);
 		// uint32_t contr_en = REG_FIELD_RD(base->CFGR,I3C_CFGR_MASTER_EN);
+		ret = ls_i3c_cntlr_wave_init(dev);
 		// if(contr_en)
 		// {
 		// 	REG_FIELD_WR(base->CFGR,I3C_CFGR_MASTER_EN,1);
@@ -402,11 +441,11 @@ static void ls_i3c_dev_init(const struct device *dev)
 	REG_FIELD_WR(base->CFGR,I3C_CFGR_EXITPTRN,1);
 	REG_FIELD_WR(base->CFGR,I3C_CFGR_RSTPTRN,1);
 	REG_FIELD_WR(base->CFGR,I3C_CFGR_SMODE,0);
-	REG_FIELD_WR(base->CFGR,I3C_CFGR_STOP_MODE,1);
+	// REG_FIELD_WR(base->CFGR,I3C_CFGR_STOP_MODE,1);
 	
 	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_TARGET_CLOCK_EN,1);
-	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_CCRCCC_EN,1);	
-
+	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_CCRCCC_EN,0);	
+	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_CONTROLLER_RESET_PATTERN_DELAY,1);
 
 	ls_i3c_target_config(dev);
 	uint8_t matchCount = (uint8_t)(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC/1e6);
@@ -426,7 +465,6 @@ static void ls_i3c_dev_init(const struct device *dev)
 
 	if (I3C_BCR_DEVICE_ROLE(config_target->bcr) == I3C_BCR_DEVICE_ROLE_I3C_CONTROLLER_CAPABLE)
 	{
-
 		ls_i3c_cntlr_wave_init(dev);
 		if(ctrl_config->is_secondary == true)
 		{
@@ -452,8 +490,6 @@ static void ls_i3c_dev_init(const struct device *dev)
 		REG_FIELD_WR(base->CFGR,I3C_CFGR_MASTER_EN,0);
 	}
 }
-
-static int ls_i3c_request_transfer_flag(I3C_TypeDef *base);
 
 #include "ls_soc_gpio.h"
 #define I3C10_SCL PJ00
@@ -530,6 +566,7 @@ static int ls_i3c_init(const struct device *dev)
 	ls_i3c_dev_init(dev);
 
 	k_sem_init(&data->target_event_lock_sem, 1, 1);
+	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_mutex_init(&data->lock);
 
 	/* Perform bus initialization */
@@ -538,6 +575,366 @@ static int ls_i3c_init(const struct device *dev)
 }
 
 
+static int i3c_ls_curr_msg_init(const struct device *dev, struct i3c_msg *i3c_msgs,
+				   struct i2c_msg *i2c_msgs, uint8_t num_msgs, uint8_t tgt_addr)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+	const struct ls_i3c_config *config = dev->config;
+	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
+
+	/* Either should be NULL */
+	__ASSERT(!(i3c_msgs == NULL && i2c_msgs == NULL), "Both i3c_msgs and i2c_msgs are NULL");
+	__ASSERT(!(i3c_msgs != NULL && i2c_msgs != NULL),
+		 "Both i3c_msgs and i2c_msgs are not NULL");
+
+	curr_msg->target_addr = tgt_addr;
+	curr_msg->num_msgs = num_msgs;
+	curr_msg->ctrl_msg_idx = 0;
+	curr_msg->status_msg_idx = 0;
+	curr_msg->xfer_msg_idx = 0;
+
+	/* I3C private message */
+	if (i2c_msgs == NULL) {
+		curr_msg->msg_type = LL_I3C_CONTROLLER_MTYPE_PRIVATE;
+		curr_msg->i3c_msg_ptr = i3c_msgs;
+		curr_msg->i3c_msg_ctrl_ptr = i3c_msgs;
+		curr_msg->i3c_msg_status_ptr = i3c_msgs;
+	} else {
+		/* Legacy I2C message */
+		curr_msg->msg_type = LL_I3C_CONTROLLER_MTYPE_LEGACY_I2C;
+		curr_msg->i2c_msg_ptr = i2c_msgs;
+		curr_msg->i2c_msg_ctrl_ptr = i2c_msgs;
+	}
+
+	if(curr_msg->msg_type == LL_I3C_CONTROLLER_MTYPE_PRIVATE)
+	{
+		if(i3c_msgs->flags & I3C_MSG_NBCH)
+		{
+		/* Disable arbitration header */
+		LL_I3C_DisableArbitrationHeader(base);
+		}
+		else
+		{
+		/* Enable arbitration header */
+		LL_I3C_EnableArbitrationHeader(base);
+		}
+	}
+	return 0;
+}
+
+static bool ls_i3c_curr_msg_is_i3c(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	return (curr_msg->msg_type == LL_I3C_CONTROLLER_MTYPE_PRIVATE);
+}
+
+/**
+ * @brief Fills the I3C TX FIFO from a given buffer
+ *
+ * @param buf The buffer to fill the TX FIFO from
+ * @param len The total buffer length
+ * @param offset Pointer to the offset from the beginning of buffer which will be incremented by the
+ * number of bytes sent to the TX FIFO
+ *
+ * @return Returns true if last byte was sent (TXLAST flag was set)
+ */
+static bool ls_i3c_fill_tx_fifo(const struct device *dev)
+{
+	const struct ls_i3c_config *config = dev->config;
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+	I3C_TypeDef *base = config->base;
+	uint8_t *buf;
+	size_t len;
+
+	if (curr_msg->xfer_msg_idx >= curr_msg->num_msgs) {
+		LOG_ERR("No more messages left");
+		return -EFAULT;
+	}
+
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		buf = curr_msg->i3c_msg_ptr->buf;
+		len = curr_msg->i3c_msg_ptr->len;
+	} else {
+		buf = curr_msg->i2c_msg_ptr->buf;
+		len = curr_msg->i2c_msg_ptr->len;
+	}
+
+	while (LL_I3C_IsActiveFlag_TXFNF(base)) {
+		LL_I3C_TransmitData8(base, buf[curr_msg->i3c_msg_ptr->num_xfer]);
+		curr_msg->i3c_msg_ptr->num_xfer++;
+		if(curr_msg->i3c_msg_ptr->num_xfer == curr_msg->i3c_msg_ptr->len)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+/**
+ * @brief Drains the I3C RX FIFO from a given buffer
+ *
+ * @param buf The buffer to drain the RX FIFO to
+ * @param len The total buffer length
+ * @param offset Pointer to the offset from the beginning of buffer which will be incremented by the
+ * number of bytes drained from the RX FIFO
+ *
+ * @return Returns true if last byte was received (RXLAST flag was set)
+ */
+static bool ls_i3c_drain_rx_fifo(const struct device *dev)
+{
+	const struct ls_i3c_config *config = dev->config;
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+	I3C_TypeDef *base = config->base;
+	uint8_t *buf;
+	size_t len;
+
+	if (curr_msg->xfer_msg_idx >= curr_msg->num_msgs) {
+		LOG_ERR("No more messages left");
+		return -EFAULT;
+	}
+
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		buf = curr_msg->i3c_msg_ptr->buf;
+		len = curr_msg->i3c_msg_ptr->len;
+	} else {
+		buf = curr_msg->i2c_msg_ptr->buf;
+		len = curr_msg->i2c_msg_ptr->len;
+	}
+
+	if (LL_I3C_IsActiveFlag_RXFNE(base)) {
+		buf[curr_msg->i3c_msg_ptr->num_xfer] = LL_I3C_ReceiveData8(base);
+		curr_msg->i3c_msg_ptr->num_xfer++;
+		if(curr_msg->i3c_msg_ptr->num_xfer == curr_msg->i3c_msg_ptr->len)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static int ls_i3c_curr_msg_xfer_next(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	if (curr_msg->xfer_msg_idx >= curr_msg->num_msgs) {
+		LOG_ERR("No more messages left");
+		return -EFAULT;
+	}
+
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		curr_msg->i3c_msg_ptr++;
+	} else {
+		curr_msg->i2c_msg_ptr++;
+	}
+
+	curr_msg->xfer_msg_idx++;
+
+	return 0;
+}
+
+
+static void ls_i3c_event_isr_tx(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+
+	switch (data->msg_state) {
+	case LS_I3C_MSG: {
+
+		if (ls_i3c_fill_tx_fifo(dev)) {
+			ls_i3c_curr_msg_xfer_next(dev);
+		}
+
+		break;
+	}
+	case LS_I3C_MSG_DAA: {
+
+		break;
+	}
+	case LS_I3C_MSG_CCC: {
+
+		break;
+	}
+	case LS_I3C_MSG_CCC_P2: {
+
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static void ls_i3c_event_isr_rx(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+
+	switch (data->msg_state) {
+	case LS_I3C_MSG: {
+
+		if (ls_i3c_drain_rx_fifo(dev)) {
+			ls_i3c_curr_msg_xfer_next(dev);
+		}
+
+		break;
+	}
+	case LS_I3C_MSG_DAA: {
+		break;
+	}
+	case LS_I3C_MSG_CCC_P2: {
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+static int ls_i3c_curr_msg_status_next(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	if (curr_msg->status_msg_idx >= curr_msg->num_msgs) {
+		LOG_ERR("No more messages left");
+		return -EFAULT;
+	}
+
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		curr_msg->i3c_msg_status_ptr++;
+		curr_msg->status_msg_idx++;
+	}
+
+	return 0;
+}
+
+static int ls_i3c_curr_msg_status_update_num_xfer(const struct device *dev, size_t num_xfer)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	if (curr_msg->status_msg_idx >= curr_msg->num_msgs) {
+		LOG_ERR("No more messages left");
+		return -EFAULT;
+	}
+
+	/* Legacy I2C messages do not have num_xfer */
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		curr_msg->i3c_msg_status_ptr->num_xfer = num_xfer;
+	}
+
+	return 0;
+}
+
+static int ls_i3c_curr_msg_control_get_dir(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		return (((curr_msg->i3c_msg_ctrl_ptr->flags & I3C_MSG_RW_MASK) == I3C_MSG_READ)
+				? LL_I3C_DIRECTION_READ
+				: LL_I3C_DIRECTION_WRITE);
+	}
+
+	return (((curr_msg->i2c_msg_ctrl_ptr->flags & I2C_MSG_RW_MASK) == I2C_MSG_READ)
+			? LL_I3C_DIRECTION_READ
+			: LL_I3C_DIRECTION_WRITE);
+}
+
+static int ls_i3c_curr_msg_control_get_len(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	return (ls_i3c_curr_msg_is_i3c(dev)) ? curr_msg->i3c_msg_ctrl_ptr->len
+						: curr_msg->i2c_msg_ctrl_ptr->len;
+}
+
+static int ls_i3c_curr_msg_control_get_end(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	return ((curr_msg->ctrl_msg_idx < (curr_msg->num_msgs - 1)) ? LL_I3C_GENERATE_RESTART
+								    : LL_I3C_GENERATE_STOP);
+}
+
+static int ls_i3c_curr_msg_control_next(const struct device *dev)
+{
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+
+	if (curr_msg->ctrl_msg_idx >= curr_msg->num_msgs) {
+		LOG_ERR("No more messages left");
+		return -EFAULT;
+	}
+
+	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		curr_msg->i3c_msg_ctrl_ptr++;
+	} else {
+		curr_msg->i2c_msg_ctrl_ptr++;
+	}
+
+	curr_msg->ctrl_msg_idx++;
+
+	return 0;
+}
+
+static void ls_i3c_event_isr_cf(const struct device *dev)
+{
+	const struct ls_i3c_config *config = dev->config;
+	struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+	I3C_TypeDef *base = config->base;
+
+	switch (data->msg_state) {
+	case LS_I3C_MSG: {
+		LL_I3C_ControllerHandleMessage(
+			base, curr_msg->target_addr, ls_i3c_curr_msg_control_get_len(dev),
+			ls_i3c_curr_msg_control_get_dir(dev), curr_msg->msg_type,
+			ls_i3c_curr_msg_control_get_end(dev));
+
+		ls_i3c_curr_msg_control_next(dev);
+		break;
+	}
+	case LS_I3C_MSG_CCC:
+	case LS_I3C_MSG_CCC_P2: {
+		break;
+	}
+	default:
+		break;
+	}
+}
+
+
+static int ls_i3c_request_transfer_flag(const struct device *dev)
+{
+	const struct ls_i3c_config *config = dev->config;
+	struct ls_i3c_data *data = dev->data;
+	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
+
+	data->msg_state = LS_I3C_MSG;
+	// data->sf_state = LS_I3C_SF;
+
+	LL_I3C_RequestTransfer(base);
+
+	/* Wait for whole transfer to complete */
+	if (k_sem_take(&data->device_sync_sem, LS_I3C_TRANSFER_TIMEOUT) != 0) {
+		return -ETIMEDOUT;
+	}
+
+	if (data->msg_state == LS_I3C_MSG_ERR) {
+		return -EIO;
+	}
+
+	return 0;
+}
 
 
 /**
@@ -588,9 +985,10 @@ static int ls_i3c_do_daa(const struct device *dev)
 			pid = (uint64_t)vendor_id << 32U | (uint64_t)part_no;
 
 			// LOG_DBG("DAA: Rcvd PID 0x%04x%08x", vendor_id, part_no);
-			/*如果ret为 0，表示 target -dyn_addr 两个元素从addr_slots 和 dev_list顺利找到位置
-			addr_slots： 随机分配的地址节点，每个节点有个地址
-			dev_list： 用户设备树中定义的设备信息
+			/*
+				如果ret为 0，表示 target -dyn_addr 两个元素从addr_slots 和 dev_list顺利找到位置
+				addr_slots： 随机分配的地址节点，每个节点有个地址
+				dev_list： 用户设备树中定义的设备信息
 			*/
 			ret = i3c_dev_list_daa_addr_helper(&data->common.attached_dev.addr_slots,
 							   &config->common.dev_list, pid,
@@ -620,14 +1018,13 @@ static int ls_i3c_do_daa(const struct device *dev)
 			}
 
 			/* Check if Tx FIFO requests data */
-			// if (__LS_I3C_GET_FLAG(base, I3C_EVR_TXFNFF) == SET)
-			// {
+			if (__LS_I3C_GET_FLAG(base, I3C_EVR_TXFNFF) == SET)
+			{
 				/* Write device address in the TDR register */
 				LL_I3C_TransmitData8(base, dyn_addr<<1);
-				LOG_DBG("PID 0x%04x%08x assigned dynamic address 0x%02x",
-					vendor_id, part_no, dyn_addr);
-				// WRITE_REG(base->IER,I3C_EVR_TXFNFF);
-			// }
+				// LOG_DBG("PID 0x%04x%08x assigned dynamic address 0x%02x",
+				// 	vendor_id, part_no, dyn_addr);
+			}
 			// else
 			// {
 			// 	ret = -EBUSY;
@@ -639,15 +1036,13 @@ static int ls_i3c_do_daa(const struct device *dev)
 	
 
 out_daa:
-	while (__LS_I3C_GET_FLAG(base,I3C_EVR_FCF_MASK) != SET
-			&& __LS_I3C_GET_FLAG(base,I3C_EVR_ERRF_MASK) != SET );
 
 	if(__LS_I3C_GET_FLAG(base,I3C_EVR_ERRF_MASK))
 	{
 		ret = -EIO;
-		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_GET_ERROR(base));
+		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
 		LL_I3C_ClearFlag_ERR(base);
-		goto out_daa_unlock;
+		ls_i3c_xfer_reset(base);
 	}
 
 	if(__LS_I3C_GET_FLAG(base,I3C_EVR_FCF_MASK))
@@ -656,7 +1051,6 @@ out_daa:
 		LL_I3C_ClearFlag_FC(base);
 	}
 
-out_daa_unlock:
 	k_mutex_unlock(&data->lock);
 
 	return ret;
@@ -718,8 +1112,6 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	// mcux_i3c_xfer_reset(base);
-
 	LOG_DBG("CCC[0x%02x]", payload->ccc.id);
 	LOG_DBG("CCC len  :  %d", payload->ccc.data_len);
 	if(payload->targets.num_targets > 0)
@@ -728,11 +1120,9 @@ static int ls_i3c_do_ccc(const struct device *dev,
 		
 	}
 	/* Emit START */
-	// ret = mcux_i3c_request_emit_start(base, I3C_BROADCAST_ADDR, false, false, 0);
 
-
-	if (ls_i3c_request_transfer_flag(base) == ETIMEDOUT) {
-		ret = ETIMEDOUT;
+	if (ls_i3c_request_transfer_flag(dev) == ETIMEDOUT) {
+		ret = -ETIMEDOUT;
 		LOG_ERR("CCC[0x%02x] %s START error (%d)",
 			payload->ccc.id,
 			i3c_ccc_is_payload_broadcast(payload) ? "broadcast" : "direct",
@@ -741,19 +1131,13 @@ static int ls_i3c_do_ccc(const struct device *dev,
 		goto out_ccc_stop;
 	}
 
-	/* Write the CCC code */
-	// mcux_i3c_status_clear_all(base);
-	// mcux_i3c_errwarn_clear_all_nowait(base);
-    LL_I3C_RequestRxFIFOFlush(base);
-    LL_I3C_RequestTxFIFOFlush(base);
-    LL_I3C_RequestStatusFIFOFlush(base);
-    LL_I3C_RequestControlFIFOFlush(base);
-
+	ls_i3c_xfer_reset(base);
+	
 	if(i3c_ccc_is_payload_broadcast(payload) == true)
 	{
 		LL_I3C_ControllerHandleCCC(base,payload->ccc.id,payload->ccc.data_len,LL_I3C_GENERATE_STOP);
 		start_time = arch_k_cycle_get_64(); 
-		exp_time = TIMEOUT_CYC_100MS + start_time;	
+		exp_time = LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT + start_time;	
 		do{
 			if((__LS_I3C_GET_FLAG(base, I3C_EVR_TXFNFF) == SET) && (payload->ccc.data_len !=0))
 			{
@@ -764,7 +1148,9 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 			if(arch_k_cycle_get_64() > exp_time)
 			{
+				LOG_ERR("%s : timeout ",__func__);
 				timeout = true;
+				ret = -ETIMEDOUT;
 			}
 
 			exit_condition = ((base->EVR) & (I3C_EVR_FCF | I3C_EVR_ERRF));
@@ -772,14 +1158,14 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 		if(exit_condition == I3C_EVR_ERRF)
 		{
-			ret = EIO;
+			ret = -EIO;
 			LOG_ERR(" ERROR bccc , error code = 0X%X",base->SER);
 		}
 		
 		if(timeout == true)
 		{
 			LOG_ERR(" ERROR bccc: transfer timeout ");
-			ret = ETIMEDOUT;
+			ret = -ETIMEDOUT;
 		}
 		
 		goto out_ccc_stop;
@@ -793,12 +1179,12 @@ static int ls_i3c_do_ccc(const struct device *dev,
 		uint32_t transfer_num = 0;
 		if(num_target == 0)
 		{
-			LOG_ERR(" ERROR num_target ");
-			ret = EIO;
+			LOG_ERR("%s : error num_target ",__func__);
+			ret = -EIO;
 			goto out_ccc_stop;
 		}
-		// start_time = arch_k_cycle_get_64(); 
-		// exp_time = TIMEOUT_CYC_100MS * num_target + start_time;	
+		start_time = arch_k_cycle_get_64(); 
+		exp_time = LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT * num_target + start_time;	
 		LL_I3C_ControllerHandleCCC(base,payload->ccc.id,payload->ccc.data_len,LL_I3C_GENERATE_RESTART);
 		do{
 			/*tx-fifo depth is 16 ,so broadcast tx data can be fully input, broadcast tx data is not too long*/
@@ -809,21 +1195,24 @@ static int ls_i3c_do_ccc(const struct device *dev,
 				payload->ccc.data_len--;
 			}
 
-			// if(arch_k_cycle_get_64() > exp_time)
-			// {
-			// 	timeout = true;
-			// }
+			if(arch_k_cycle_get_64() > exp_time)
+			{
+				LOG_ERR("%s : timeout ",__func__);
+				timeout = true;
+				ret = -ETIMEDOUT;
+			}
 			exit_condition = ((base->EVR) & (I3C_EVR_FCF | I3C_EVR_ERRF));
 		} while (payload->ccc.data_len > 0 && exit_condition == 0);
 
 		if(exit_condition == I3C_EVR_ERRF)
 		{
-			ret = EIO;
+			ret = -EIO;
 			LOG_ERR(" ERROR bccc , error code = 0X%X",base->SER);
+			goto out_ccc_stop;
 		}
 
 		start_time = arch_k_cycle_get_64(); 
-		exp_time = TIMEOUT_CYC_100MS * num_target + start_time;	
+		exp_time = LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT * num_target + start_time;	
 		uint32_t rnw;
 		do{
 			if (__LS_I3C_GET_FLAG(base, I3C_EVR_CFNFF) == SET)
@@ -852,10 +1241,9 @@ static int ls_i3c_do_ccc(const struct device *dev,
 						rnw,
 						LL_I3C_CONTROLLER_MTYPE_DIRECT,
 						LL_I3C_GENERATE_STOP);
-					// LOG_DBG("new_tgt->rnw = %d",new_tgt->rnw);
 				}else
 				{
-					LOG_ERR(" ERROR num_target ");
+					LOG_ERR("%s : error num_target ",__func__);
 					goto out_ccc_stop;
 				}
 				transfer_num += new_tgt->data_len;
@@ -866,7 +1254,7 @@ static int ls_i3c_do_ccc(const struct device *dev,
 			{
 				if(cur_tgt_idx > payload->targets.num_targets)
 				{
-					LOG_ERR(" ERROR num_target ");
+					LOG_ERR("%s : error num_target ",__func__);
 					goto out_ccc_stop;
 				}
 				if(cur_tgt->data_len != 0)
@@ -888,7 +1276,7 @@ static int ls_i3c_do_ccc(const struct device *dev,
 			{
 				if(cur_tgt_idx > payload->targets.num_targets)
 				{
-					LOG_ERR(" ERROR num_target ");
+					LOG_ERR("%s : error num_target ",__func__);
 					goto out_ccc_stop;
 				}
 				if(cur_tgt->data_len != 0)
@@ -909,9 +1297,10 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 			if(arch_k_cycle_get_64() > exp_time)
 			{
+				LOG_ERR("%s : timeout ",__func__);
 				timeout = true;
-				ret = ETIMEDOUT;
-				break;
+				ret = -ETIMEDOUT;
+				// break;
 			}
 
 			/* Calculate exit_condition value based on Frame complete and error flags */
@@ -920,7 +1309,8 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 		if(timeout == true)
 		{
-			LOG_ERR(" i3c_do_ccc timeout");
+			LOG_ERR("CCC[0x%02x]: timeout",payload->ccc.id);
+			ret = -ETIMEDOUT;
 			goto out_ccc_stop;
 		}
 
@@ -928,8 +1318,8 @@ static int ls_i3c_do_ccc(const struct device *dev,
 		{
 			if(cur_tgt->num_xfer < cur_tgt->data_len)
 			{
-				LOG_ERR("CCC received unexpected data");
-				ret = EIO;
+				LOG_ERR("CCC[0x%02x]: received unexpected data",payload->ccc.id);
+				ret = -EIO;
 				break;
 			}
 			else
@@ -943,8 +1333,8 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 		if(transfer_num != 0)
 		{
-			LOG_ERR("CCC: the amount of data transmitted does not match");
-			ret = EIO;
+			LOG_ERR("CCC[0x%02x]: the amount of data transmitted does not match",payload->ccc.id);
+			ret = -EIO;
 		}
 	}
 
@@ -961,10 +1351,10 @@ out_ccc_stop:
 	{
 		/* Clear error flag */
 
-		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_GET_ERROR(base));
+		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
 		LL_I3C_ClearFlag_ERR(base);
 		/* Update returned status value */
-		ret = EIO;
+		ret = -EIO;
 	}
 
 	ls_i3c_xfer_reset(base);
@@ -973,25 +1363,6 @@ out_ccc_stop:
 
 	return ret;
 }
-
-
-
-
-static int ls_i3c_request_transfer_flag(I3C_TypeDef *base)
-{
-	LL_I3C_RequestTransfer(base);
-	/*After setting, the c-fifo not full flag must wait for 1us before it is set*/
-	k_busy_wait(1);
-    /* Check if Control FIFO requests data */
-    if (I3C_CHECK_FLAG(base->EVR, I3C_EVR_CFNFF) != RESET)
-	{
-		return 0;
-	}
-	
-	return ETIMEDOUT;
-}
-
-
 
 
 /*
@@ -1013,11 +1384,6 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 	struct ls_i3c_data *data = dev->data;
 	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
 	int ret = 0;
-	uint32_t exit_condition = 0;
-
-	uint64_t start_time; 
-	uint64_t exp_time;
-	uint8_t timeout = false;	
 
 	if (msgs == NULL) {
 		return -EINVAL;
@@ -1038,147 +1404,41 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 
 	for(uint8_t i=0;i < num_msgs;i++)  // error
 	{
+		msgs[i].num_xfer = 0;
 		if(msgs[i].hdr_mode != 0)
 		{
-			LOG_DBG(" not soupport hdr mode ");
+			LOG_ERR("%s : not soupport hdr mode ",__func__);
 			return -EINVAL;
 		}
 	}
+	
+	LL_I3C_EnableIT_FC(base);
+	LL_I3C_EnableIT_CFNF(base);
+	LL_I3C_EnableIT_SFNE(base);
+	LL_I3C_EnableIT_RXFNE(base);
+	LL_I3C_EnableIT_TXFNF(base);
+	LL_I3C_EnableIT_ERR(base);
 
+
+	// int key = arch_irq_lock();
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	uint8_t new_msg_idx = 0;
-	uint8_t cur_msg_idx = 0;
-	uint32_t transfer_num = 0;
-	(void)transfer_num;
-	if (ls_i3c_request_transfer_flag(base) == ETIMEDOUT) {
-		ret = ETIMEDOUT;
-		// LOG_ERR("CCC[0x%02x] %s START error (%d)",
-		// 	payload->ccc.id,
-		// 	i3c_ccc_is_payload_broadcast(payload) ? "broadcast" : "direct",
-		// 	ret);
+	// uint8_t new_msg_idx = 0;
+	// uint8_t cur_msg_idx = 0;
+	// uint32_t transfer_num = 0;
+	// (void)transfer_num;
+	ret = i3c_ls_curr_msg_init(dev, msgs, NULL, num_msgs, target->dynamic_addr);
 
-		goto out_transfer_stop;
+	ret = ls_i3c_request_transfer_flag(dev);
+	if(ret !=0){
+		LOG_ERR("Failed to transfer messages, err=%d", ret);
 	}
-
-	start_time = arch_k_cycle_get_64(); 
-	exp_time = TIMEOUT_CYC_100MS * num_msgs + start_time;	
-
-	do
-	{
-
-		while(new_msg_idx < num_msgs && (I3C_CHECK_FLAG(base->EVR, I3C_EVR_CFNFF) != RESET))
-		{
-			uint32_t is_read = (msgs[new_msg_idx].flags & I3C_MSG_RW_MASK) 
-							== I3C_MSG_READ?LL_I3C_DIRECTION_READ:LL_I3C_DIRECTION_WRITE;
-			/* next transfer start mode*/
-			uint32_t ending = (msgs[new_msg_idx].flags & I3C_MSG_STOP) == I3C_MSG_STOP?I3C_CR_MEND_MASK:0;
-
-			bool nbhd = (msgs[new_msg_idx].flags & I3C_MSG_NBCH) == I3C_MSG_NBCH;
-			if(nbhd == true)
-			{
-			/* Disable arbitration header */
-			LL_I3C_DisableArbitrationHeader(base);
-			}
-			else
-			{
-			/* Enable arbitration header */
-			LL_I3C_EnableArbitrationHeader(base);
-			}
-
-			LL_I3C_ControllerHandleMessage(base,target->dynamic_addr,msgs[new_msg_idx].len,is_read,LL_I3C_CONTROLLER_MTYPE_PRIVATE,ending);
-			new_msg_idx ++;
-		}
-	
-        while((__LS_I3C_GET_FLAG(base, I3C_EVR_TXFNFF) == SET))
-        {
-          	LL_I3C_TransmitData8(base, (uint8_t)*msgs[cur_msg_idx].buf);
-			msgs[cur_msg_idx].buf++;
-			msgs[cur_msg_idx].num_xfer++;
-			if(msgs[cur_msg_idx].num_xfer == msgs[cur_msg_idx].len)
-			{
-				cur_msg_idx++;
-			}
-        }
-
-        while((__LS_I3C_GET_FLAG(base, I3C_EVR_RXFNEF) == SET))
-        {
-			*msgs[cur_msg_idx].buf = LL_I3C_ReceiveData8(base);
-			msgs[cur_msg_idx].buf++;
-			msgs[cur_msg_idx].num_xfer++;
-			if(msgs[cur_msg_idx].num_xfer == msgs[cur_msg_idx].len)
-			{
-				cur_msg_idx++;
-			}
-        }
-
-	    if ((__LS_I3C_GET_FLAG(base, I3C_EVR_FCF) == SET) && (cur_msg_idx < num_msgs - 1))
-        {
-          /* Clear frame complete flag */
-          LL_I3C_ClearFlag_FC(base);
-
-          /* Then Initiate a Start condition */
-          LL_I3C_RequestTransfer(base);
-        }
-		
-		if(arch_k_cycle_get_64() > exp_time)
-		{
-			timeout = true;
-			ret = ETIMEDOUT;
-			goto out_transfer_stop;
-		}
-
-		/* Calculate exit_condition value based on Frame complete and error flags */
-		exit_condition = (READ_REG(base->EVR) & (I3C_EVR_FCF | I3C_EVR_ERRF));
-	} while ((exit_condition == 0) ||
-			((exit_condition == I3C_EVR_FCF) && (cur_msg_idx < num_msgs)));
-	
-
-	if(exit_condition & I3C_EVR_ERRF)
-	{
-		/* Clear error flag */
-
-		LOG_DBG("i3c transger ERROR , ERROR CODE = 0x%x",__LS_I3C_GET_ERROR(base));
-		LL_I3C_ClearFlag_ERR(base);
-		/* Update returned status value */
-		ls_i3c_xfer_reset(base);
-		ret = EIO;
-	}
-
-	while((__LS_I3C_GET_FLAG(base, I3C_EVR_RXFNEF) == SET))
-	{
-		*msgs[cur_msg_idx -1].buf = LL_I3C_ReceiveData8(base);
-		msgs[cur_msg_idx -1].num_xfer++;
-		if(msgs[cur_msg_idx -1].num_xfer == msgs[cur_msg_idx -1].len)
-		{
-			if((__LS_I3C_GET_FLAG(base, I3C_EVR_RXFNEF) == SET))
-			{
-				ret = EIO;
-				break;
-			}
-		}
-	}
-
-out_transfer_stop:
-
-	if (__LS_I3C_GET_FLAG(base, LL_I3C_EVR_FCF) == SET)
-	{
-		LL_I3C_ClearFlag_FC(base);
-	}	
-
-	/* Check on error flag */
-	if (__LS_I3C_GET_FLAG(base, LL_I3C_EVR_ERRF) == SET)
-	{
-		/* Clear error flag */
-
-		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_GET_ERROR(base));
-		LL_I3C_ClearFlag_ERR(base);
-		/* Update returned status value */
-		ret = EIO;
-	}
-
-	ls_i3c_xfer_reset(base);
-
+	LL_I3C_DisableIT_FC(base);
+	LL_I3C_DisableIT_CFNF(base);
+	// LL_I3C_DisableIT_SFNE(base);
+	LL_I3C_DisableIT_RXFNE(base);
+	LL_I3C_DisableIT_TXFNF(base);
+	LL_I3C_DisableIT_ERR(base);
 	k_mutex_unlock(&data->lock);
 
 	return ret;
@@ -1243,7 +1503,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 
 	
 
-	while (base->SINTMASKED){
+	if(base->SINTMASKED){
 
 		/* Check error or warning has occurred */
 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_ERRWARN_MASK)) {
@@ -1253,36 +1513,19 @@ static void ls_i3c_target_isr(const struct device *dev)
 		}
 
 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTSET_SLVRST_MASK)) {
+			LOG_DBG("%s : Slave reset",__func__);
 			base->SSTATUS = I3C_SSTATUS_SLVRST_MASK;
 		}
 		
 		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SINTCLR_TXSEND_MASK))
 		{
-			// uint8_t free_space= data->fifo_info.TargetTxFifoSize -
-			// 		((base->SDATACTRL&I3C_SDATACTRL_TXCOUNT_MASK)>>I3C_SDATACTRL_TXCOUNT_POS);
 			uint8_t byte;
-			// uint8_t tx_buffer[free_space];
-			// uint8_t tx_len = 0;
-			// for (int j = 0; j < free_space; j++) {
-				// read_requested_cb
-				status = target_cb->read_processed_cb(data->target_config,
-										&byte);
-				// if(status == 0)	
-				// {
-				// 	tx_buffer[j] = byte;
-				// 	tx_len++;
-				// }else
-				// {
-				// 	break;
-				// }		  
-			// }
-			// if(tx_len > 0){
-			// 	ls_i3c_target_write_tx_fifo(config, tx_buffer, tx_len);
-			// }
+
+			status = target_cb->read_processed_cb(data->target_config,
+									&byte);
 			if(status == 0)
 			{
 				base->SWDATAB = byte;
-				// ls_i3c_target_write_tx_fifo(config, &byte, 1);
 			}
 			else if(status == 1)
 			{
@@ -1310,7 +1553,10 @@ static void ls_i3c_target_isr(const struct device *dev)
 							if(status == 0)
 							{
 								base->SWDATAB = tx_data;
-								// ls_i3c_target_write_tx_fifo(config, &tx_data, 1);
+							}
+							else if(status == 1)
+							{
+								base->SWDATAB = tx_data|I3C_SWDATAB_END0_MASK;
 							}
 						}
 					}
@@ -1378,7 +1624,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 			base->SSTATUS = I3C_SINTMASK_CHANDLED_MASK;
 		}
 
-		// /* Event requested. IBI, hot-join, bus control */
+		/* Event requested. IBI, hot-join, bus control */
 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_EVENT_MASK)) {
 			base->SSTATUS = I3C_SINTMASK_EVENT_MASK;
 
@@ -1434,16 +1680,55 @@ static void ls_i3c_target_isr(const struct device *dev)
 	
 }
 
+static void ls_i3c_log_err_type(const struct device *dev)
+{
+	const struct ls_i3c_config *config = dev->config;
+	I3C_TypeDef *i3c = config->base;
+
+	if (LL_I3C_IsActiveFlag_ANACK(i3c)) {
+		LOG_ERR("Address NACK");
+	}
+
+	if (LL_I3C_IsActiveFlag_COVR(i3c)) {
+		LOG_ERR("Control/Status FIFO underrun/overrun");
+	}
+
+	if (LL_I3C_IsActiveFlag_DOVR(i3c)) {
+		LOG_ERR("TX/RX FIFO underrun/overrun");
+	}
+
+	if (LL_I3C_IsActiveFlag_DNACK(i3c)) {
+		LOG_ERR("Data NACK by target");
+	}
+
+	if (LL_I3C_IsActiveFlag_PERR(i3c)) {
+		switch (LL_I3C_GetMessageErrorCode(i3c)) {
+		case LL_I3C_CONTROLLER_ERROR_CE0:
+			LOG_ERR("Illegally formatted CCC detected");
+			break;
+		case LL_I3C_CONTROLLER_ERROR_CE1:
+			LOG_ERR("Data on bus is not as expected");
+			break;
+		case LL_I3C_CONTROLLER_ERROR_CE2:
+			LOG_ERR("No response to broadcast address");
+			break;
+		default:
+			LOG_ERR("Unsupported error detected");
+			break;
+		}
+	}
+}
+
 static void ls_i3c_isr(const struct device *dev)
 {
 	const struct ls_i3c_config *config = dev->config;
-	// struct ls_i3c_data *data = dev->data;
+	struct ls_i3c_data *data = dev->data;
 	I3C_TypeDef *base = config->base;
 	struct i3c_device_desc *target = NULL;
 
 	int ret;
-
-	if(READ_BIT(base->SCONFIG,I3C_SCONFIG_SLVENA_MASK))
+	
+	if(READ_BIT(base->SCONFIG,I3C_SCONFIG_SLVENA_MASK) && data->cur_role == I3C_ROLE_TARGET)
 	{
 		ls_i3c_target_isr(dev);
 		return;
@@ -1453,6 +1738,75 @@ static void ls_i3c_isr(const struct device *dev)
 	uint32_t it_sources = READ_REG(base->IER);
 
 	uint32_t it_masks   = (uint32_t)(it_flags & it_sources);
+
+	/* TX FIFO not full handler */
+	if (LL_I3C_IsActiveFlag_ERR(base)) {
+		LL_I3C_ClearFlag_ERR(base);
+		ls_i3c_log_err_type(dev);
+		data->msg_state = LS_I3C_MSG_ERR;
+		k_sem_give(&data->device_sync_sem);
+	}
+
+	/* TX FIFO not full handler */
+	if (LL_I3C_IsActiveFlag_TXFNF(base) && LL_I3C_IsEnabledIT_TXFNF(base)) {
+		ls_i3c_event_isr_tx(dev);
+	}
+
+
+	/* TX FIFO not full handler */
+	if (LL_I3C_IsActiveFlag_TXFNF(base) && LL_I3C_IsEnabledIT_TXFNF(base)) {
+		ls_i3c_event_isr_tx(dev);
+	}
+
+	/* RX FIFO not empty handler */
+	if (LL_I3C_IsActiveFlag_RXFNE(base) && LL_I3C_IsEnabledIT_RXFNE(base)) {
+		ls_i3c_event_isr_rx(dev);
+	}
+
+	/* Control FIFO not full handler */
+	if (LL_I3C_IsActiveFlag_CFNF(base) && LL_I3C_IsEnabledIT_CFNF(base)) {
+		ls_i3c_event_isr_cf(dev);
+	}
+
+	/* Status FIFO not empty handler */
+	if (LL_I3C_IsActiveFlag_SFNE(base) && LL_I3C_IsEnabledIT_SFNE(base)) {
+
+		if (data->msg_state == LS_I3C_MSG) {
+			size_t num_xfer = LL_I3C_GetXferDataCount(base);
+
+			ls_i3c_curr_msg_status_update_num_xfer(dev, num_xfer);
+			ls_i3c_curr_msg_status_next(dev);
+		} else {
+			/* Read and discard the status FIFO word since it will not be used */
+			uint32_t status_reg = base->SR;
+
+			ARG_UNUSED(status_reg);
+		}
+	}
+
+	/* Target read early termination flag (only used during CCC commands)*/
+	if (LL_I3C_IsActiveFlag_RXTGTEND(base) && LL_I3C_IsEnabledIT_RXTGTEND(base)) {
+		/* A target ended a read request early during a CCC command, move the ptr to the
+		 * next target
+		 */
+		LL_I3C_ClearFlag_RXTGTEND(base);
+	}
+
+	/* Frame complete handler */
+	if (LL_I3C_IsActiveFlag_FC(base) && LL_I3C_IsEnabledIT_FC(base)) {
+		LL_I3C_ClearFlag_FC(base);
+		k_sem_give(&data->device_sync_sem);
+
+		// (void)pm_device_runtime_put(dev);
+		// pm_policy_state_lock_put(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
+
+		/* Mark bus as idle after each frame complete */
+		/* RX FIFO not empty handler */
+		while (LL_I3C_IsActiveFlag_RXFNE(base)) {
+			ls_i3c_event_isr_rx(dev);
+		}
+		data->msg_state = LS_I3C_MSG_IDLE;
+	}
 #if defined(CONFIG_I3C_USE_IBI)
 	if (I3C_CHECK_FLAG(it_masks, I3C_EVR_IBIF) != RESET)
 	{
@@ -1749,8 +2103,6 @@ static int ls_i3c_target_tx_write(const struct device *dev, uint8_t *buf, uint16
 static const struct i3c_driver_api ls_i3c_driver_api = {
 	.configure = ls_i3c_configure,
 	.config_get = ls_i3c_config_get,
-
-	// .recover_bus = ls_i3c_recover_bus, 
 
 	.do_daa = ls_i3c_do_daa,
 	.do_ccc = ls_i3c_do_ccc,
