@@ -36,6 +36,9 @@
 #define PECI_A_TGT_IDX1_VAL   8
 #define PECI_M_TGT_IDX1_VAL   8
 
+#define PECI_FCS_LEN          1
+#define PECI_RDLEN_LEN        1
+
 LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
 
 static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg);
@@ -249,6 +252,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     uint8_t *rxbuf8 = (uint8_t *)rxbuf32;
     volatile uint8_t i = 0;
     uint8_t crc_result = 0;
+    uint32_t reg_len = 0;
 
     if(peci_tx_buf->len > PECI_LS_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_LS_MAX_RX_BUF_LEN)
     {
@@ -258,7 +262,12 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     k_sem_take(&data->lock, K_FOREVER);
 
-    MODIFY_REG( reg->PECI_CTRL, PECI_DAT_LEN_MASK, ((peci_tx_buf->len)+4) << PECI_DAT_LEN_POS);
+    reg_len = PECI_RDLEN_LEN + peci_tx_buf->len + PECI_FCS_LEN;
+    if(peci_rx_buf)
+    {
+        reg_len += peci_rx_buf->len + PECI_FCS_LEN;
+    }
+    MODIFY_REG(reg->PECI_CTRL, PECI_DAT_LEN_MASK, reg_len << PECI_DAT_LEN_POS);
 
     txbuf8[0] = msg->addr;
     LOG_DBG("Debug: peci_ls_transfer: addr = %02x, tx_len = %d, rx_len = %d, cmd_code = %02x\n", msg->addr, peci_tx_buf->len, peci_rx_buf->len, msg->cmd_code);
