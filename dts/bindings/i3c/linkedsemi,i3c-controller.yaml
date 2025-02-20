@@ -1,0 +1,18 @@
+# Copyright (c) 2019 NXP
+# Copyright (c) 2022 Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+description:  LINKEDSEMI I3C controller
+
+# compatible: "linkedsemi,i3c"
+
+include: [i3c-controller.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+

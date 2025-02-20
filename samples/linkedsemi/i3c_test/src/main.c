@@ -9,6 +9,7 @@
 #include <zephyr/kernel.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <zephyr/drivers/i3c/ccc.h>
 
 #include <zephyr/drivers/i3c.h>
 
@@ -16,7 +17,7 @@
 static const struct device *i3c_dev_controller = DEVICE_DT_GET(DT_NODELABEL(i3c10));
 static const struct device *i3c_dev_target1 = DEVICE_DT_GET(DT_NODELABEL(i3c9));
 
-
+volatile bool ibi_recived = false;
 int target1_ibi_callback(struct i3c_device_desc *target,struct i3c_ibi_payload *payload);
 int target2_ibi_callback(struct i3c_device_desc *target,struct i3c_ibi_payload *payload);
 
@@ -43,7 +44,8 @@ int i3c_target_ibi_cb(struct i3c_device_desc *target,
     {
         printf(" 0x%X ",payload->payload[i]);
     }
-
+    printf("\r\n");
+    ibi_recived = true;
     return 0;
 }   
 
@@ -51,7 +53,8 @@ enum{
     TARGET_CONTINUE,
     TARGET_END,
 };
-#define TEST_COUNT 256
+
+#define TEST_COUNT 100
 uint8_t target_tx_buffer[TEST_COUNT];
 uint8_t target_rx_buffer[TEST_COUNT];
 uint8_t controller_tx_buf[TEST_COUNT];
@@ -86,6 +89,7 @@ int target1_read_processed_cb(struct i3c_target_config *config,uint8_t *val)
 {
     *val = target_tx_buffer[tx_count];
     tx_count++;
+
     if(tx_count == TEST_COUNT)
     {
         return TARGET_END;
@@ -96,8 +100,6 @@ int target1_read_processed_cb(struct i3c_target_config *config,uint8_t *val)
 
 int target1_stop_cb(struct i3c_target_config *config)
 {
-
-
     return 0;
 }
 
@@ -115,10 +117,13 @@ struct i3c_target_config target1_cfg;
 int main(void)
 {
 
+while(1)
+{
     for(uint16_t i = 0;i<TEST_COUNT;i++)
     {
         target_tx_buffer[i] = i+1;
-        controller_tx_buf[i] = i+101;
+        controller_tx_buf[i] = i+1;
+        // controller_tx_buf[i] = i+101;
     }
     memset(target_rx_buffer,0,TEST_COUNT);
     memset(controller_rx_buf,0,TEST_COUNT);
@@ -130,7 +135,6 @@ int main(void)
     test_idx = 1;
     /* target */
     i3c_target_register(i3c_dev_target1,&target1_cfg);
-
     /*controller*/
     struct i3c_device_desc *i3c_target1 = NULL;
     i3c_target1 = i3c_dev_list_i3c_addr_find(i3c_dev_controller,target1_addr);
@@ -199,9 +203,18 @@ int main(void)
     ibi_request.payload_len = 4;
     i3c_ibi_raise(i3c_dev_target1,&ibi_request);
 
+    while(ibi_recived == false);
+    ibi_recived = false;
+
     ibi_request.payload_len = 1;
     i3c_ibi_raise(i3c_dev_target1,&ibi_request);
+
+    while(ibi_recived == false);
+    ibi_recived = false;
+
+
 #endif
+}
     while(1);
 
     return 0;

@@ -865,7 +865,7 @@
     		#address-cells = <3>;
 			#size-cells = <0>;
 			reg = <0x40095000 0x2000>;
-            interrupts = <120 2>;
+            interrupts = <120 4>;
             status = "disabled";
             
             i3c-scl-hz = <1000000>;
@@ -877,7 +877,7 @@
     		#address-cells = <3>;
 			#size-cells = <0>;
 			reg = <0x40095400 0x2000>;
-            interrupts = <121 2>;
+            interrupts = <121 3>;
             status = "disabled";
             
             i3c-scl-hz = <1000000>;
