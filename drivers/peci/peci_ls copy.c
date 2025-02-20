@@ -8,8 +8,6 @@
 
 #include <errno.h>
 #include <soc.h>
-#include <stdlib.h>
-#include <stdio.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/peci.h>
 #if defined(CONFIG_PINCTRL)
@@ -18,7 +16,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
-#include <zephyr/drivers/peci-legacy.h>
 #include <reg_peci_type.h>
 #include <field_manipulate.h>
 #include <zephyr/drivers/clock_control.h>
@@ -45,8 +42,6 @@
 
 LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
 
-static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg);
-
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct peci_ls_config {
@@ -61,14 +56,12 @@ struct peci_ls_config {
 };
 
 struct peci_ls_data {
-	struct k_sem trans_sync_sem;
-	struct k_sem lock;
-    
-    struct device *dev;
-    struct peci_adapter *adapter;
+    struct k_sem trans_sync_sem;
+    struct k_sem lock;
 };
 
-uint8_t crc8_ls(const uint8_t *data, size_t length) {
+uint8_t crc8(const uint8_t *data, size_t length)
+{
     uint8_t crc = 0x00;
     for (size_t i = 0; i < length; i++) {
         crc ^= data[i];
@@ -128,12 +121,11 @@ void ls_peci_isr(void *arg)
     k_sem_give(&data->trans_sync_sem);
 }
 
-static int peci_ls_init(struct device *dev)
+static int peci_ls_init(const struct device *dev)
 {
     const struct peci_ls_config *const config = dev->config;
-    struct peci_ls_data *data;
+    struct peci_ls_data *const data = dev->data;
     reg_peci_t *const reg = config->reg;
-    struct peci_adapter *adapter;
 
     if (config->cctl_cfg.cctl_dev) {
         const struct device *clk_dev = config->cctl_cfg.cctl_dev;
@@ -143,33 +135,6 @@ static int peci_ls_init(struct device *dev)
         }
         clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
     }
-
-    adapter = peci_alloc_adapter(dev, sizeof(*data));
-    if(!adapter)
-        return -ENOMEM;
-    
-    data = adapter->dev.data;
-    LOG_DBG("Debug: peci dev = %p\n", (void *)dev);
-    LOG_DBG("Debug in %s: data = %p to %p\n", __func__, (void *)data, (void *)data+sizeof(*data));
-    LOG_DBG("Debug in %s: dev->data = %p\n", __func__, (void *)dev->data);
-
-    data->adapter = adapter;
-    LOG_DBG("Debug: data->adapter = %p\n", (void *)data->adapter);
-    LOG_DBG("Debug: adapter = %p\n", (void *)adapter);
-
-    data->dev = dev;
-    dev->data = data;
-    LOG_DBG("Debug in %s: adapter->dev = %p\n", __func__, (void *)&adapter->dev);
-    LOG_DBG("Debug in %s: data->adapter->dev = %p\n", __func__, (void *)&data->adapter->dev);
-    LOG_DBG("Debug in %s: adapter->dev->data = %p, dev->data = %p\n", __func__, (void *)adapter->dev.data, (void *)dev->data);
-
-    strncpy(data->adapter->name, dev->name, sizeof(data->adapter->name));
-    LOG_DBG("PECI adapter %s initialized\n", dev->name);
-    data->adapter->xfer = peci_lib_xfer_base_ls;
-    data->adapter->use_dma = false;
-
-    peci_core_init();
-    peci_add_adapter(data->adapter);
 
 #if defined(CONFIG_PINCTRL)
     if (config->pcfg) {
@@ -269,7 +234,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     MODIFY_REG(reg->PECI_CTRL, PECI_DAT_LEN_MASK, reg_len << PECI_DAT_LEN_POS);
 
     txbuf8[0] = msg->addr;
-    LOG_DBG("Debug: peci_ls_transfer: addr = %02x, tx_len = %d, rx_len = %d, cmd_code = %02x\n", msg->addr, peci_tx_buf->len, peci_rx_buf->len, msg->cmd_code);
     txbuf8[1] = peci_tx_buf->len;
     txbuf8[2] = peci_rx_buf->len;
     /* first tx data */
@@ -280,7 +244,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
             txbuf8[i + 4] = peci_tx_buf->buf[i];
         }
     }
-    crc_result = crc8_ls(txbuf8, PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len);
+    crc_result = crc8(txbuf8, PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len);
     txbuf8[PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len] = crc_result;
 
     WRITE_REG(reg->INTR_CLR, PECI_INTR_CLR_MASK);
@@ -312,57 +276,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     k_sem_give(&data->lock);
 
 out:
-    return ret;
-}
-
-static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg)
-{
-    struct peci_msg *msg_ls;
-    struct peci_ls_data *ls_data = adapter->dev.data;
-    int ret;
-
-    LOG_DBG("Debug in %s: \n", __func__);
-    
-    LOG_DBG("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
-    LOG_DBG("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
-    LOG_DBG("Debug in %s: msg = %p\n", __func__, msg);
-
-    msg_ls = malloc(sizeof(struct peci_msg));
-    if (msg_ls == NULL)
-        return -ENOMEM;
-        
-    LOG_DBG("Debug in %s: finish malloc msg_ls\n", __func__);
-    msg_ls->addr = msg->addr;
-    msg_ls->cmd_code = 0;
-    msg_ls->tx_buffer.buf = NULL;
-    msg_ls->rx_buffer.buf = NULL;
-    msg_ls->tx_buffer.len = 0;
-    msg_ls->rx_buffer.len = 0;
-    LOG_DBG("Debug in %s: msg_ls->addr = %x\n", __func__, msg_ls->addr);
-
-    if(msg->tx_buf != NULL){
-        LOG_DBG("Debug in %s: msg->tx_buf != NULL\n", __func__);
-        msg_ls->cmd_code = msg->tx_buf[0];
-        msg_ls->tx_buffer.buf = msg->tx_buf + 1; 
-    }
-
-    if(msg->rx_buf != NULL){
-        LOG_DBG("Debug in %s: msg->rx_buf != NULL\n", __func__);
-        msg_ls->rx_buffer.buf = msg->rx_buf;
-    }
-
-    msg_ls->tx_buffer.len = msg->tx_len;
-    msg_ls->rx_buffer.len = msg->rx_len;
-
-    LOG_DBG("Debug in %s: msg_ls->cmd_code = %x\n", __func__, msg_ls->cmd_code);
-    LOG_DBG("Debug in %s: adapter = %p, adapter->dev = %p\n", __func__, adapter, ls_data->dev);
-    ret = peci_ls_transfer(ls_data->dev, msg_ls);
-
-    LOG_DBG("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
-    LOG_DBG("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
-    LOG_DBG("Debug in %s: msg = %p\n", __func__, msg);
-
-    free(msg_ls);
     return ret;
 }
 
