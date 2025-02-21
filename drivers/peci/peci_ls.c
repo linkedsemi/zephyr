@@ -211,8 +211,8 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     struct peci_buf *peci_tx_buf = &msg->tx_buffer;
     int ret = 0;
     uint32_t idx = 0;
-    uint32_t txbuf32[6] = { 0 };
-    uint32_t rxbuf32[6] = { 0 };
+    uint32_t txbuf32[8] = {};
+    uint32_t rxbuf32[8] = {};
     uint8_t *txbuf8 = (uint8_t *)txbuf32;
     uint8_t *rxbuf8 = (uint8_t *)rxbuf32;
     uint8_t crc_result = 0;
@@ -249,6 +249,8 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     reg->TX_DAT3 = txbuf32[3];
     reg->TX_DAT4 = txbuf32[4];
     reg->TX_DAT5 = txbuf32[5];
+    reg->TX_DAT6 = txbuf32[6];
+    reg->TX_DAT7 = txbuf32[7];
     WRITE_REG(reg->TXRX_REQ, PECI_TXRX_REQ_MASK);
 
     k_sem_take(&dev_data->trans_sync_sem, K_FOREVER);
@@ -265,6 +267,8 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     rxbuf32[3] = reg->RX_DAT3;
     rxbuf32[4] = reg->RX_DAT4;
     rxbuf32[5] = reg->RX_DAT5;
+    rxbuf32[6] = reg->RX_DAT6;
+    rxbuf32[7] = reg->RX_DAT7;
 
     for (uint8_t i = 0; i < peci_rx_buf->len; i++) {
         peci_rx_buf->buf[i] = rxbuf8[PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len + PECI_FCS_LEN + i];
