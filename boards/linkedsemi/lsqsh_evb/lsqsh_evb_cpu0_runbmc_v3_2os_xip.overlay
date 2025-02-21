@@ -262,3 +262,21 @@
 //         status = "okay";
 //     };
 // };
+
+&qspi1 {
+    compatible = "linkedsemi,mbox-cpu0-flash-controller";
+    mbox = <&mbox_consumer2>;
+    pinctrl-0 = <&qspi1_sck_pa00
+                 &qspi1_csn_pa01
+                 &qspi1_dq0_pa02
+                 &qspi1_dq1_pa03
+                 &qspi1_dq2_pa04
+                 &qspi1_dq3_pa05>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&flash0 {
+    reg = <0x8000000 0x400000>;
+    status = "okay";
+};

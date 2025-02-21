@@ -265,8 +265,6 @@
 };
 
 &qspi1 {
-    compatible = "linkedsemi,mbox-cpu0-flash-controller";
-    mbox = <&mbox_consumer2>;
     pinctrl-0 = <&qspi1_sck_pa00
                  &qspi1_csn_pa01
                  &qspi1_dq0_pa02
@@ -279,5 +277,29 @@
 
 &flash0 {
     reg = <0x8000000 0x400000>;
+    /*
+    * Flash base address is 0x8000000,
+    * the following parts are all offset addresses.
+    */
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        boot_partition: partition@0 {
+            label = "info-sbl";
+            reg = <0x00000000 0x00000800>;
+        };
+
+        app_partition: partition@800 {
+            label = "app";
+            reg = <0x00000800 0x0007c800>;
+        };
+
+        storage_partition: partition@7d000 {
+            label = "storage";
+            reg = <0x0007d000 0x00003000>;
+        };
+    };
     status = "okay";
 };
