@@ -58,13 +58,16 @@ struct peci_ls_config {
 struct peci_ls_data {
     struct k_sem trans_sync_sem;
     struct k_sem lock;
+    uint32_t peci_fifo;
+    uint32_t peci_fifo_idx;
+    uint32_t peci_txdat_idx;
 };
 
-uint8_t crc8(const uint8_t *data, size_t length)
+uint8_t crc8(const uint8_t *dev_data, size_t length)
 {
     uint8_t crc = 0x00;
     for (size_t i = 0; i < length; i++) {
-        crc ^= data[i];
+        crc ^= dev_data[i];
         for (uint8_t j = 0; j < 8; j++) {
             if (crc & 0x80) {
                 crc = (crc << 1) ^ 0x07;
@@ -138,7 +141,9 @@ static int peci_ls_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     if (dev_config->pcfg) {
         int ret;
+
         ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+
         if (ret != 0) {
             LOG_DBG("maybe no PECI pinctrl node (%d)", ret);
         }
@@ -210,7 +215,6 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     struct peci_buf *peci_rx_buf = &msg->rx_buffer;
     struct peci_buf *peci_tx_buf = &msg->tx_buffer;
     int ret = 0;
-    uint32_t idx = 0;
     uint32_t txbuf32[6] = { 0 };
     uint32_t rxbuf32[6] = { 0 };
     uint8_t *txbuf8 = (uint8_t *)txbuf32;
@@ -231,24 +235,18 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     }
     MODIFY_REG(reg->PECI_CTRL, PECI_DAT_LEN_MASK, reg_len << PECI_DAT_LEN_POS);
 
-    idx = 0;
-    txbuf8[idx++] = msg->addr;
-    txbuf8[idx++] = peci_tx_buf->len;
-    txbuf8[idx++] = peci_rx_buf->len;
-    txbuf8[idx++] = msg->cmd_code;
+    peci_tx_byte(dev, msg->addr);
+    peci_tx_byte(dev, peci_tx_buf->len);
+    peci_tx_byte(dev, peci_rx_buf->len);
+    peci_tx_byte(dev, msg->cmd_code);
     for (uint8_t i = 0; i < peci_tx_buf->len - 1; i++) {
-        txbuf8[idx++] = peci_tx_buf->buf[i];
+        peci_tx_byte(dev, peci_tx_buf->buf[i]);
     }
-    crc_result = crc8(txbuf8, idx);
-    txbuf8[idx] = crc_result;
+    crc_result = crc8(txbuf8, PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len);
+    // txbuf8[PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len] = crc_result;
+    peci_tx_byte(dev, crc_result);
     WRITE_REG(reg->INTR_CLR, PECI_INTR_CLR_MASK);
     WRITE_REG(reg->INTR_MSK, PECI_INTR_MSK_MASK);
-    reg->TX_DAT0 = txbuf32[0];
-    reg->TX_DAT1 = txbuf32[1];
-    reg->TX_DAT2 = txbuf32[2];
-    reg->TX_DAT3 = txbuf32[3];
-    reg->TX_DAT4 = txbuf32[4];
-    reg->TX_DAT5 = txbuf32[5];
     WRITE_REG(reg->TXRX_REQ, PECI_TXRX_REQ_MASK);
 
     k_sem_take(&dev_data->trans_sync_sem, K_FOREVER);
@@ -257,7 +255,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     __ASSERT(reg->TX_DAT0 == reg->RX_DAT0, "check waveform sample fail");
 
-    peci_core_reg_print(dev);
+    // peci_core_reg_print(dev);
 
     rxbuf32[0] = reg->RX_DAT0;
     rxbuf32[1] = reg->RX_DAT1;
@@ -282,36 +280,36 @@ static const struct peci_driver_api peci_ls_driver_api = {
     .transfer = peci_ls_transfer,
 };
 
-#define LS_PECI_IRQ_HANDLER(index)                                        \
-    static void peci_ls_irq_config_func_##index(const struct device *dev) \
+#define LS_PECI_IRQ_HANDLER(n)                                        \
+    static void peci_ls_irq_config_func_##n(const struct device *dev) \
     {                                                                     \
-        IRQ_CONNECT(DT_INST_IRQN(index),                                  \
-                    DT_INST_IRQ(index, priority),                         \
+        IRQ_CONNECT(DT_INST_IRQN(n),                                  \
+                    DT_INST_IRQ(n, priority),                         \
                     peci_ls_isr,                                          \
-                    DEVICE_DT_INST_GET(index),                            \
+                    DEVICE_DT_INST_GET(n),                            \
                     0);                                                   \
-        irq_enable(DT_INST_IRQN(index));                                  \
+        irq_enable(DT_INST_IRQN(n));                                  \
     }
 
-#define LS_PECI_INIT(index)                                                             \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(index)));                        \
-    LS_PECI_IRQ_HANDLER(index)                                                          \
+#define LS_PECI_INIT(n)                                                             \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                        \
+    LS_PECI_IRQ_HANDLER(n)                                                          \
                                                                                         \
-    static const struct peci_ls_config peci_ls_cfg_##index = {                          \
-        .reg = (reg_peci_t *)DT_INST_REG_ADDR(index),                                   \
-        .irq_num = DT_INST_IRQN(index),                                                 \
-        .irq_config_func = peci_ls_irq_config_func_##index,                             \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), ))   \
-        IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index), ))     \
+    static const struct peci_ls_config peci_ls_cfg_##n = {                          \
+        .reg = (reg_peci_t *)DT_INST_REG_ADDR(n),                                   \
+        .irq_num = DT_INST_IRQN(n),                                                 \
+        .irq_config_func = peci_ls_irq_config_func_##n,                             \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n), ))   \
+            IF_ENABLED(DT_HAS_CLOCKS(n), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(n), )) \
     };                                                                                  \
                                                                                         \
-    static struct peci_ls_data peci_ls_dev_data_##index = {};                           \
+    static struct peci_ls_data peci_ls_dev_data_##n = {};                           \
                                                                                         \
-    DEVICE_DT_INST_DEFINE(index,                                                        \
+    DEVICE_DT_INST_DEFINE(n,                                                        \
                           &peci_ls_init,                                                \
                           NULL,                                                         \
-                          &peci_ls_dev_data_##index,                                    \
-                          &peci_ls_cfg_##index,                                         \
+                          &peci_ls_dev_data_##n,                                    \
+                          &peci_ls_cfg_##n,                                         \
                           POST_KERNEL,                                                  \
                           CONFIG_PECI_INIT_PRIORITY,                                    \
                           &peci_ls_driver_api);
