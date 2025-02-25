@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
@@ -147,12 +148,17 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
-    mbox_func_call(&dev_config->tx_channel,
-                   MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ,
-                   3,
-                   (void *)&offset,
-                   (void *)&data,
-                   (void *)&size);
+    bool xip_present = is_cpu1_xip();
+    if (xip_present) {
+        memcpy(data, (void *)(FLASH_ADDR + offset), size);
+    } else {
+        mbox_func_call(&dev_config->tx_channel,
+                    MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ,
+                    3,
+                    (void *)&offset,
+                    (void *)&data,
+                    (void *)&size);
+    }
 
     return 0;
 }
