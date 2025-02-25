@@ -93,7 +93,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
     }
 #if !defined(CONFIG_SIGNALLING_MODE_SUPPORT)
     else {
-        LOG_ERR("Not supported signalling mode\n");
+        LOG_ERROR("Not supported signalling mode\n");
         return -ENOTSUP;
     }
 #endif
@@ -103,7 +103,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
     } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
         cpu_intr0_activate();
     } else {
-        LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
+        LOG_ERROR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
         return -ENOTSUP;
     }
 

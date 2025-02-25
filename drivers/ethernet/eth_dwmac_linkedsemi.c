@@ -34,7 +34,7 @@ int dwmac_bus_init(struct dwmac_priv *p)
     int ret;
     ret = pinctrl_apply_state(eth0_pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERR("Could not configure ethernet pins");
+        LOG_ERROR("Could not configure ethernet pins");
         return ret;
     }
 #endif
