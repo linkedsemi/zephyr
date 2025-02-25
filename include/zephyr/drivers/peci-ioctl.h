@@ -35,7 +35,7 @@
 /* Completion Code mask to check retry needs */
 #define PECI_DEV_CC_RETRY_CHECK_MASK			0xf0
 
-#define PECI_DEV_RETRY_TIMEOUT				msecs_to_jiffies(700)
+#define PECI_DEV_RETRY_TIMEOUT				k_ms_to_ticks_ceil32(700)
 #define PECI_DEV_RETRY_INTERVAL_MIN_USEC		100
 #define PECI_DEV_RETRY_INTERVAL_MAX_USEC		(128 * 1000)
 #define PECI_DEV_RETRY_BIT				0x01
@@ -63,29 +63,29 @@
  * Available commands depend on client's PECI revision.
  */
 enum peci_cmd {
-	PECI_CMD_XFER = 0,
-	PECI_CMD_PING,
-	PECI_CMD_GET_DIB,
-	PECI_CMD_GET_TEMP,
-	PECI_CMD_RD_PKG_CFG,
-	PECI_CMD_WR_PKG_CFG,
-	PECI_CMD_RD_IA_MSR,
-	PECI_CMD_WR_IA_MSR,
-	PECI_CMD_RD_IA_MSREX,
-	PECI_CMD_RD_PCI_CFG,
-	PECI_CMD_WR_PCI_CFG,
-	PECI_CMD_RD_PCI_CFG_LOCAL,
-	PECI_CMD_WR_PCI_CFG_LOCAL,
-	PECI_CMD_RD_END_PT_CFG,
-	PECI_CMD_WR_END_PT_CFG,
-	PECI_CMD_CRASHDUMP_DISC,
-	PECI_CMD_CRASHDUMP_GET_FRAME,
-	PECI_CMD_TELEMETRY_DISC,
-	PECI_CMD_TELEMETRY_GET_TELEM_SAMPLE,
-	PECI_CMD_TELEMETRY_CONFIG_WATCHER_RD,
-	PECI_CMD_TELEMETRY_CONFIG_WATCHER_WR,
-	PECI_CMD_TELEMETRY_GET_CRASHLOG_SAMPLE,
-	PECI_CMD_MAX
+	PECI_CORE_CMD_XFER = 0,
+	PECI_CORE_CMD_PING,
+	PECI_CORE_CMD_GET_DIB,
+	PECI_CORE_CMD_GET_TEMP,
+	PECI_CORE_CMD_RD_PKG_CFG,
+	PECI_CORE_CMD_WR_PKG_CFG,
+	PECI_CORE_CMD_RD_IA_MSR,
+	PECI_CORE_CMD_WR_IA_MSR,
+	PECI_CORE_CMD_RD_IA_MSREX,
+	PECI_CORE_CMD_RD_PCI_CFG,
+	PECI_CORE_CMD_WR_PCI_CFG,
+	PECI_CORE_CMD_RD_PCI_CFG_LOCAL,
+	PECI_CORE_CMD_WR_PCI_CFG_LOCAL,
+	PECI_CORE_CMD_RD_END_PT_CFG,
+	PECI_CORE_CMD_WR_END_PT_CFG,
+	PECI_CORE_CMD_CRASHDUMP_DISC,
+	PECI_CORE_CMD_CRASHDUMP_GET_FRAME,
+	PECI_CORE_CMD_TELEMETRY_DISC,
+	PECI_CORE_CMD_TELEMETRY_GET_TELEM_SAMPLE,
+	PECI_CORE_CMD_TELEMETRY_CONFIG_WATCHER_RD,
+	PECI_CORE_CMD_TELEMETRY_CONFIG_WATCHER_WR,
+	PECI_CORE_CMD_TELEMETRY_GET_CRASHLOG_SAMPLE,
+	PECI_CORE_CMD_MAX
 };
 
 /**
@@ -131,8 +131,12 @@ struct peci_ping_msg {
  * command.
  */
 struct peci_get_dib_msg {
+#ifndef PECI_GET_DIB_WR_LEN
 #define PECI_GET_DIB_WR_LEN	1
+#endif
+#ifndef PECI_GET_DIB_RD_LEN
 #define PECI_GET_DIB_RD_LEN	8
+#endif
 #define PECI_GET_DIB_CMD	0xf7
 
 	uint8_t	addr;
@@ -152,8 +156,12 @@ struct peci_get_dib_msg {
  * below the maximum processor junction temperature.
  */
 struct peci_get_temp_msg {
+#ifndef PECI_GET_TEMP_WR_LEN
 #define PECI_GET_TEMP_WR_LEN	1
+#endif
+#ifndef PECI_GET_TEMP_RD_LEN
 #define PECI_GET_TEMP_RD_LEN	2
+#endif
 #define PECI_GET_TEMP_CMD	0x01
 
 	uint8_t	addr;
@@ -716,83 +724,83 @@ struct peci_telemetry_get_crashlog_sample_msg {
 	uint8_t	padding;
 } __attribute__((__packed__));
 
-#define PECI_IOC_BASE	0xb8
+// #define PECI_IOC_BASE	0xb8
 
-#define PECI_IOC_XFER \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_XFER, struct peci_xfer_msg)
+// #define PECI_IOC_XFER \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_XFER, struct peci_xfer_msg)
 
-#define PECI_IOC_PING \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_PING, struct peci_ping_msg)
+// #define PECI_IOC_PING \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_PING, struct peci_ping_msg)
 
-#define PECI_IOC_GET_DIB \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_GET_DIB, struct peci_get_dib_msg)
+// #define PECI_IOC_GET_DIB \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_GET_DIB, struct peci_get_dib_msg)
 
-#define PECI_IOC_GET_TEMP \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_GET_TEMP, struct peci_get_temp_msg)
+// #define PECI_IOC_GET_TEMP \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_GET_TEMP, struct peci_get_temp_msg)
 
-#define PECI_IOC_RD_PKG_CFG \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_PKG_CFG, struct peci_rd_pkg_cfg_msg)
+// #define PECI_IOC_RD_PKG_CFG \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_PKG_CFG, struct peci_rd_pkg_cfg_msg)
 
-#define PECI_IOC_WR_PKG_CFG \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_PKG_CFG, struct peci_wr_pkg_cfg_msg)
+// #define PECI_IOC_WR_PKG_CFG \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_PKG_CFG, struct peci_wr_pkg_cfg_msg)
 
-#define PECI_IOC_RD_IA_MSR \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_IA_MSR, struct peci_rd_ia_msr_msg)
+// #define PECI_IOC_RD_IA_MSR \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_IA_MSR, struct peci_rd_ia_msr_msg)
 
-#define PECI_IOC_WR_IA_MSR \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_IA_MSR, struct peci_wr_ia_msr_msg)
+// #define PECI_IOC_WR_IA_MSR \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_IA_MSR, struct peci_wr_ia_msr_msg)
 
-#define PECI_IOC_RD_IA_MSREX \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_IA_MSREX, struct peci_rd_ia_msrex_msg)
+// #define PECI_IOC_RD_IA_MSREX \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_IA_MSREX, struct peci_rd_ia_msrex_msg)
 
-#define PECI_IOC_RD_PCI_CFG \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_PCI_CFG, struct peci_rd_pci_cfg_msg)
+// #define PECI_IOC_RD_PCI_CFG \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_PCI_CFG, struct peci_rd_pci_cfg_msg)
 
-#define PECI_IOC_WR_PCI_CFG \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_PCI_CFG, struct peci_wr_pci_cfg_msg)
+// #define PECI_IOC_WR_PCI_CFG \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_PCI_CFG, struct peci_wr_pci_cfg_msg)
 
-#define PECI_IOC_RD_PCI_CFG_LOCAL \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_PCI_CFG_LOCAL, \
-	      struct peci_rd_pci_cfg_local_msg)
+// #define PECI_IOC_RD_PCI_CFG_LOCAL \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_PCI_CFG_LOCAL, \
+// 	      struct peci_rd_pci_cfg_local_msg)
 
-#define PECI_IOC_WR_PCI_CFG_LOCAL \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_PCI_CFG_LOCAL, \
-	      struct peci_wr_pci_cfg_local_msg)
+// #define PECI_IOC_WR_PCI_CFG_LOCAL \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_PCI_CFG_LOCAL, \
+// 	      struct peci_wr_pci_cfg_local_msg)
 
-#define PECI_IOC_RD_END_PT_CFG \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_END_PT_CFG, \
-	      struct peci_rd_end_pt_cfg_msg)
+// #define PECI_IOC_RD_END_PT_CFG \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_RD_END_PT_CFG, \
+// 	      struct peci_rd_end_pt_cfg_msg)
 
-#define PECI_IOC_WR_END_PT_CFG \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_END_PT_CFG, \
-	      struct peci_wr_end_pt_cfg_msg)
+// #define PECI_IOC_WR_END_PT_CFG \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_WR_END_PT_CFG, \
+// 	      struct peci_wr_end_pt_cfg_msg)
 
-#define PECI_IOC_CRASHDUMP_DISC \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_CRASHDUMP_DISC, \
-	      struct peci_crashdump_disc_msg)
+// #define PECI_IOC_CRASHDUMP_DISC \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_CRASHDUMP_DISC, \
+// 	      struct peci_crashdump_disc_msg)
 
-#define PECI_IOC_CRASHDUMP_GET_FRAME \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_CRASHDUMP_GET_FRAME, \
-	      struct peci_crashdump_get_frame_msg)
+// #define PECI_IOC_CRASHDUMP_GET_FRAME \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_CRASHDUMP_GET_FRAME, \
+// 	      struct peci_crashdump_get_frame_msg)
 
-#define PECI_IOC_TELEMETRY_DISC \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_DISC, \
-	      struct peci_telemetry_disc_msg)
+// #define PECI_IOC_TELEMETRY_DISC \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_DISC, \
+// 	      struct peci_telemetry_disc_msg)
 
-#define PECI_IOC_TELEMETRY_GET_TELEM_SAMPLE \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_GET_TELEM_SAMPLE, \
-	      struct peci_telemetry_get_telem_sample_msg)
+// #define PECI_IOC_TELEMETRY_GET_TELEM_SAMPLE \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_GET_TELEM_SAMPLE, \
+// 	      struct peci_telemetry_get_telem_sample_msg)
 
-#define PECI_IOC_TELEMETRY_CONFIG_WATCHER_RD \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_CONFIG_WATCHER_RD, \
-	      struct peci_telemetry_config_watcher_msg)
+// #define PECI_IOC_TELEMETRY_CONFIG_WATCHER_RD \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_CONFIG_WATCHER_RD, \
+// 	      struct peci_telemetry_config_watcher_msg)
 
-#define PECI_IOC_TELEMETRY_CONFIG_WATCHER_WR \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_CONFIG_WATCHER_WR, \
-	      struct peci_telemetry_config_watcher_msg)
+// #define PECI_IOC_TELEMETRY_CONFIG_WATCHER_WR \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_CONFIG_WATCHER_WR, \
+// 	      struct peci_telemetry_config_watcher_msg)
 
-#define PECI_IOC_TELEMETRY_GET_CRASHLOG_SAMPLE \
-	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_GET_CRASHLOG_SAMPLE, \
-	      struct peci_telemetry_get_crashlog_sample_msg)
+// #define PECI_IOC_TELEMETRY_GET_CRASHLOG_SAMPLE \
+// 	_IOWR(PECI_IOC_BASE, PECI_CMD_TELEMETRY_GET_CRASHLOG_SAMPLE, \
+// 	      struct peci_telemetry_get_crashlog_sample_msg)
 
 #endif /* __PECI_IOCTL_H */

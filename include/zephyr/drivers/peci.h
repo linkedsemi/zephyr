@@ -89,8 +89,12 @@ enum peci_command_code {
  * @name GetDIB command format.
  * @{
  */
+#ifndef PECI_GET_DIB_WR_LEN
 #define PECI_GET_DIB_WR_LEN            (1U)
+#endif
+#ifndef PECI_GET_DIB_RD_LEN
 #define PECI_GET_DIB_RD_LEN            (8U)
+#endif
 #define PECI_GET_DIB_CMD_LEN           (4U)
 #define PECI_GET_DIB_DEVINFO           (0U)
 #define PECI_GET_DIB_REVNUM            (1U)
@@ -103,8 +107,12 @@ enum peci_command_code {
  * @name GetTemp command format.
  * @{
  */
+#ifndef PECI_GET_TEMP_WR_LEN
 #define PECI_GET_TEMP_WR_LEN           (1U)
+#endif
+#ifndef PECI_GET_TEMP_RD_LEN
 #define PECI_GET_TEMP_RD_LEN           (2U)
+#endif
 #define PECI_GET_TEMP_CMD_LEN          (4U)
 #define PECI_GET_TEMP_LSB              (0U)
 #define PECI_GET_TEMP_MSB              (1U)

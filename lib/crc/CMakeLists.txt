@@ -8,5 +8,6 @@ zephyr_sources_ifdef(CONFIG_CRC
   crc8_sw.c
   crc7_sw.c
   crc4_sw.c
+  crc8_lx.c
   )
 zephyr_sources_ifdef(CONFIG_CRC_SHELL crc_shell.c)

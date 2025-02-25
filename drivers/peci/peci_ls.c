@@ -16,6 +16,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
+#include <zephyr/drivers/peci-legacy.h>
 #include <reg_peci_type.h>
 #include <field_manipulate.h>
 #include <zephyr/drivers/clock_control.h>
@@ -151,6 +152,8 @@ static int peci_ls_init(const struct device *dev)
 	k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->lock, 1, 1);
     config->irq_config_func(dev);
+
+    peci_core_init();
     return 0;
 }
 

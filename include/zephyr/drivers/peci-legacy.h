@@ -18,8 +18,18 @@ typedef unsigned int uint;
 typedef unsigned long ulong;
 typedef uint8_t u8;
 typedef uint16_t u16;
+typedef uint16_t __le16;
 typedef uint32_t u32;
 typedef uint64_t u64;
+typedef uint64_t __le64;
+
+/* CRC Head Section */
+/* required table size for crc8 algorithm */
+#define CRC8_TABLE_SIZE			256
+
+/* helper macro assuring right table size is used */
+#define DECLARE_CRC8_TABLE(_table) \
+	static u8 _table[CRC8_TABLE_SIZE]
 
 struct peci_board_info {
 	char			type[PECI_NAME_SIZE];
@@ -104,61 +114,62 @@ struct peci_device_id {
 	ulong	driver_data;	/* Data private to the driver */
 };
 
-/**
- * struct peci_driver - represent a PECI device driver
- * @probe: callback for device binding
- * @remove: callback for device unbinding
- * @shutdown: callback for device shutdown
- * @driver: device driver model driver
- * @id_table: list of PECI devices supported by this driver
- *
- * The driver.owner field should be set to the module owner of this driver.
- * The driver.name field should be set to the name of this driver.
- */
-struct peci_driver {
-	int				(*probe)(struct peci_client *client);
-	int				(*remove)(struct peci_client *client);
-	void				(*shutdown)(struct peci_client *client);
-	struct device_driver		driver;
-	const struct peci_device_id	*id_table;
-};
+// /**
+//  * struct peci_driver - represent a PECI device driver
+//  * @probe: callback for device binding
+//  * @remove: callback for device unbinding
+//  * @shutdown: callback for device shutdown
+//  * @driver: device driver model driver
+//  * @id_table: list of PECI devices supported by this driver
+//  *
+//  * The driver.owner field should be set to the module owner of this driver.
+//  * The driver.name field should be set to the name of this driver.
+//  */
+// struct peci_driver {
+// 	int				(*probe)(struct peci_client *client);
+// 	int				(*remove)(struct peci_client *client);
+// 	void				(*shutdown)(struct peci_client *client);
+// 	struct device_driver		driver;
+// 	const struct peci_device_id	*id_table;
+// };
 
-static inline struct peci_driver *to_peci_driver(void *d)
-{
-	return CONTAINER_OF(d, struct peci_driver, driver);
-}
+// static inline struct peci_driver *to_peci_driver(void *d)
+// {
+// 	return CONTAINER_OF(d, struct peci_driver, driver);
+// }
 
-/**
- * module_peci_driver - Helper macro for registering a modular PECI driver
- * @__peci_driver: peci_driver struct
- *
- * Helper macro for PECI drivers which do not do anything special in module
- * init/exit. This eliminates a lot of boilerplate. Each module may only
- * use this macro once, and calling it replaces module_init() and module_exit()
- */
-#define module_peci_driver(__peci_driver) \
-	module_driver(__peci_driver, peci_add_driver, peci_del_driver)
+// /**
+//  * module_peci_driver - Helper macro for registering a modular PECI driver
+//  * @__peci_driver: peci_driver struct
+//  *
+//  * Helper macro for PECI drivers which do not do anything special in module
+//  * init/exit. This eliminates a lot of boilerplate. Each module may only
+//  * use this macro once, and calling it replaces module_init() and module_exit()
+//  */
+// #define module_peci_driver(__peci_driver) \
+// 	module_driver(__peci_driver, peci_add_driver, peci_del_driver)
 
-/* use a define to avoid include chaining to get THIS_MODULE */
-#define peci_add_driver(driver) peci_register_driver(THIS_MODULE, driver)
+// /* use a define to avoid include chaining to get THIS_MODULE */
+// #define peci_add_driver(driver) peci_register_driver(THIS_MODULE, driver)
 
-extern struct bus_type peci_bus_type;
-extern struct device_type peci_adapter_type;
-extern struct device_type peci_client_type;
+// extern struct bus_type peci_bus_type;
+// extern struct device_type peci_adapter_type;
+// extern struct device_type peci_client_type;
 
-int  peci_register_driver(struct module *owner, struct peci_driver *drv);
-void peci_del_driver(struct peci_driver *driver);
-struct peci_client *peci_verify_client(struct device *dev);
-struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size);
-struct peci_adapter *peci_get_adapter(int nr);
-void peci_put_adapter(struct peci_adapter *adapter);
-int  peci_add_adapter(struct peci_adapter *adapter);
-void peci_del_adapter(struct peci_adapter *adapter);
-struct peci_adapter *peci_verify_adapter(struct device *dev);
-int  peci_for_each_dev(void *data, int (*fn)(struct device *, void *));
+// int  peci_register_driver(struct module *owner, struct peci_driver *drv);
+// void peci_del_driver(struct peci_driver *driver);
+// struct peci_client *peci_verify_client(struct device *dev);
+// struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size);
+// struct peci_adapter *peci_get_adapter(int nr);
+// void peci_put_adapter(struct peci_adapter *adapter);
+// int  peci_add_adapter(struct peci_adapter *adapter);
+// void peci_del_adapter(struct peci_adapter *adapter);
+// struct peci_adapter *peci_verify_adapter(struct device *dev);
+// int  peci_for_each_dev(void *data, int (*fn)(struct device *, void *));
+int peci_core_init(void);
 struct peci_xfer_msg *peci_get_xfer_msg(u8 tx_len, u8 rx_len);
 void peci_put_xfer_msg(struct peci_xfer_msg *msg);
 int  peci_command(struct peci_adapter *adpater, enum peci_cmd cmd, uint msg_len, void *vmsg);
-int  peci_get_cpu_id(struct peci_adapter *adapter, u8 addr, u8 domain_id, u32 *cpu_id);
+// int  peci_get_cpu_id(struct peci_adapter *adapter, u8 addr, u8 domain_id, u32 *cpu_id);
 
 #endif /* __LINUX_PECI_H */
