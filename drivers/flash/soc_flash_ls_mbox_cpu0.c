@@ -21,8 +21,7 @@
 #define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
 
 #define FLASH_ADDR       DT_REG_ADDR(SOC_NV_FLASH_NODE)
-// #define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
-#define FLASH_SIZE       MB(16)
+#define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
 #define FLASH_ERASE_SIZE DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
 #define FLASH_WRITE_SIZE DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
 
