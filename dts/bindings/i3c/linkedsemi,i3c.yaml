@@ -1,0 +1,68 @@
+# Copyright (c) 2019 NXP
+# Copyright (c) 2022 Intel Corporation
+#
+# SPDX-License-Identifier: Apache-2.0
+
+description:  LINKEDSEMI I3C CONFIG
+
+compatible: "linkedsemi,i3c"
+
+include: [i3c-controller.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  is-secondary:
+    type: boolean
+    description: |
+      if true, the device is secondary controller(target), 
+      otherwise it is the primary controller device
+
+  static-address:
+    type: int
+    description: |
+      Target static address.
+
+  own-dynamic_address:
+    type: int
+    description: |
+      If the local device is the primary controller, the dynamic 
+      address  can be directly configured instead of assigned.
+
+  tgt-pid:
+    type: array
+    description: |
+      Target 48-bit Provisioned ID.
+      array[0]: PID[47:33] MIPI manufacturer ID.
+                PID[32] ID type selector (i'b1 ramdom value, 1'b0 vendor fixed).
+      array[1]: PID[31:0] Random value or vendor fixed value.
+
+  dcr:
+    type: int
+    description: |
+      Device Characteristics Register, used for bus enumeration with ENTDAA.
+
+  bcr:
+    required: true
+    type: int
+    description: |
+      Bus Characteristics Register, used for bus enumeration with ENTDAA and
+      determine device role and capabilities of the device on the bus.
+
+  maximum-write:
+    type: int
+    default: 4095
+    description: |
+      Maximum number of bytes that I3C controller may write to I3C target per message.
+      Range: 8 to 4095.
+
+  maximum-read:
+    type: int
+    default: 4095
+    description: |
+      Maximum number of bytes that I3C controller may read from to I3C target per message.
+      Range: 8 to 4095.

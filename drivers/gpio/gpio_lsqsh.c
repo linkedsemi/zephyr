@@ -158,7 +158,8 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
         io_cfg_disable(pinval);
         break;
     case GPIO_INPUT:
-        //TBD
+        io_cfg_input(pinval);
+        break;
     default:
         return -ENOTSUP;
     }
@@ -213,36 +214,43 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
     return 0;
 }
 
-//TBD
 static void gpio_vcore_isr(const struct device *dev)
 {
     struct gpio_ls_common_data *data = (struct gpio_ls_common_data *)DEVICE_DT_GET(DT_INST(0, linkedsemi_lsqsh_pinctrl))->data;
     const struct device *port_dev;
     struct gpio_ls_data *port_data;
     uint32_t interrupt_status = 0;
-    volatile uint32_t *INT_STAT_BASE = APP_GPIO->GPIO_INTR_STT;
-    volatile uint32_t *INT_CLR_BASE = APP_GPIO->GPIO_INTR_CLR;
-    for (uint8_t i = 0; i < 8; ++i) {
-        volatile uint32_t *INT_STAT_REG = &INT_STAT_BASE[i];
-        volatile uint32_t *INT_CLR_REG = &INT_CLR_BASE[i];
-        uint32_t int_stat = *INT_STAT_REG;
-        if (int_stat == 0) {
-            continue;
-        }
-        for (uint8_t j = 0; j < 16; ++j) {
-            exti_edge_t edge = INT_EDGE_NONE;
-            if (1 << j & int_stat) {
-                *INT_CLR_REG = 1 << j;
-                interrupt_status = 1 << j;
-                edge |= INT_EDGE_RISING;
+    reg_gpio_t *GPIO_ARR[] = {
+#if ((!defined(CONFIG_IOPMP)) || (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)))
+        SEC_GPIO,
+#endif
+        APP_GPIO,
+    };
+    for (uint8_t k = 0; k < sizeof(GPIO_ARR) / sizeof(reg_gpio_t *); ++k) {
+        volatile uint32_t *INT_STAT_BASE = (volatile uint32_t *)&GPIO_ARR[k]->GPIO_INTR_STT;
+        volatile uint32_t *INT_CLR_BASE = (volatile uint32_t *)&GPIO_ARR[k]->GPIO_INTR_CLR;
+        for (uint8_t i = 0; i < NUMBER_OF_PORTS; ++i) {
+            volatile uint32_t *INT_STAT_REG = &INT_STAT_BASE[i];
+            volatile uint32_t *INT_CLR_REG = &INT_CLR_BASE[i];
+            uint32_t int_stat = *INT_STAT_REG;
+            if (int_stat == 0) {
+                continue;
             }
-            if (1 << 16 << j & int_stat) {
-                *INT_CLR_REG = 1 << 16 << j;
-                interrupt_status = 1 << j;
-                edge |= INT_EDGE_FALLING;
-            }
-            if (edge) {
-                *INT_CLR_REG = 0;
+            for (uint8_t j = 0; j < 16; ++j) {
+                exti_edge_t edge = INT_EDGE_NONE;
+                if (1 << j & int_stat) {
+                    *INT_CLR_REG = 1 << j;
+                    interrupt_status = 1 << j;
+                    edge |= INT_EDGE_RISING;
+                }
+                if (1 << 16 << j & int_stat) {
+                    *INT_CLR_REG = 1 << 16 << j;
+                    interrupt_status = 1 << j;
+                    edge |= INT_EDGE_FALLING;
+                }
+                if (edge) {
+                    *INT_CLR_REG = 0;
+                }
             }
         }
     }

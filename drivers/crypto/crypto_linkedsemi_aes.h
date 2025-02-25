@@ -28,45 +28,48 @@
 #define CRYPT_ICFR 0x58
 #define CRYPT_FIFO 0x5c
 
-union aes_reg_cr {
-    volatile uint32_t value;
+typedef union aes_reg_cr {
+    uint32_t value;
     struct {
-        volatile uint32_t GO: 1,         /*[0]    */
-                          ENCS: 1,       /*[1]    */
-                          AESKS: 2,      /*[2-3]  */
-                          MODE: 2,       /*[4-5]  */
-                          IVREN: 1,      /*[6]    */
-                          IE: 1,         /*[7]    */
-                          TYPE: 2,       /*[8-9]  */
-                          TDES: 1,       /*[10]   */
-                          DESKS: 1,      /*[11]   */
-                          FIFOEN: 1,     /*[12]   */
-                          FIFOODR: 1,    /*[13]   */
-                          DMAEN: 1,      /*[14]   */
-                          RESERVED0: 16, /*[15-30]*/
-                          CRYSEL: 1;     /*[31]   */
-    } field;
-} __attribute__((packed));
+        uint32_t
+            GO: 1,         /*[0]    */
+            ENCS: 1,       /*[1]    */
+            AESKS: 2,      /*[2-3]  */
+            MODE: 2,       /*[4-5]  */
+            IVREN: 1,      /*[6]    */
+            IE: 1,         /*[7]    */
+            TYPE: 2,       /*[8-9]  */
+            TDES: 1,       /*[10]   */
+            DESKS: 1,      /*[11]   */
+            FIFOEN: 1,     /*[12]   */
+            FIFOODR: 1,    /*[13]   */
+            DMAEN: 1,      /*[14]   */
+            RESERVED0: 16, /*[15-30]*/
+            CRYSEL: 1;     /*[31]   */
+    };
+} aes_reg_cr_t;
 
-union aes_reg_sr {
-    volatile uint32_t value;
+typedef union aes_reg_sr {
+    uint32_t value;
     struct {
-        volatile uint32_t AESRIF: 1,       /*[0]*/
-                          DESRIF: 1,       /*[1]*/
-                          RESERVED0 : 6,   /*[2-7]*/
-                          DONE: 1,         /*[8]*/
-                          RESERVED1 : 23;  /*[9-31]*/
-    } field;
-} __attribute__((packed));
+        uint32_t
+            AESRIF: 1,       /*[0]*/
+            DESRIF: 1,       /*[1]*/
+            RESERVED0 : 6,   /*[2-7]*/
+            DONE: 1,         /*[8]*/
+            RESERVED1 : 23;  /*[9-31]*/
+    };
+} aes_reg_sr_t;
 
-union aes_reg_icfr {
-    volatile uint32_t value;
+typedef union aes_reg_icfr {
+    uint32_t value;
     struct {
-    volatile uint32_t AESIF: 1,       /*[0]*/
-                      DESIF: 1,       /*[1]*/
-                      MULIF: 1,       /*[2]*/
-                      RESERVED0 : 29; /*[3-31]*/
-    } field;
-} __attribute__((packed));
+        uint32_t
+            AESIF: 1,       /*[0]*/
+            DESIF: 1,       /*[1]*/
+            MULIF: 1,       /*[2]*/
+            RESERVED0 : 29; /*[3-31]*/
+    };
+} aes_reg_icfr_t;
 
 #endif /* ZEPHYR_DRIVERS_CRYPTO_CRYPTO_LINKEDSEMIH_AES_ */

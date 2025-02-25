@@ -29,6 +29,14 @@ config ICACHE_LINE_SIZE
 config DCACHE_LINE_SIZE
 	default 32
 
+config IOPMP
+	bool "IOPMP"
+	default n
+
+config RV_BOOT_HART_MRADDR
+	hex
+	default 0x1000000
+
 choice CACHE_TYPE
 	default EXTERNAL_CACHE
 endchoice
@@ -50,10 +58,18 @@ config NUM_OS
 	range 1 2
 	default 2
 
-if (((NUM_USE_CPU=2) && (NUM_OS=2)) && $(dt_path_enabled,/cpus/cpu@0))
+if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@0))
+	config CPU1_XIP_ADDR
+		hex "cpu1 xip addr"
+		default 0x8800000
+
 	config CPU1_BOOT_ADDR
 		hex "CPU1_BOOT_ADDR"
 		default 0x10080000
+
+	config BOOT_CPU1
+		bool "boot cpu1"
+		default n
 endif
 
 endif

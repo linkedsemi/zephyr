@@ -18,20 +18,11 @@
         zephyr,flash = &flash0;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram0;
-        zephyr,console = &uart5;
-        zephyr,shell-uart = &uart5;
     };
 
     aliases {
         peci-0 = &peci0;
         sdhc0 = &sdhci1;
-    };
-
-    sram0_nocache: memory@1007f000{
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <(0x1007f000) DT_SIZE_K(4)>;
-        device_type = "memory";
-        zephyr,memory-region = "nocache";
     };
 
     soc {
@@ -42,11 +33,11 @@
 
         mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
-            reg = <0x1013f000 0x1000>;
+            reg = <0x1013f000 DT_SIZE_K(4)>;
             interrupts = <27 3>;
-            nchannels = <2>;
-            fifo-deepth = <3>;
-            fifo-width = <4>;
+            nchannels = <3>;
+            fifo-deepth = <2>;
+            fifo-width = <256>;
             #mbox-cells = <1>;
         };
     };
@@ -60,6 +51,13 @@
     mbox_consumer1: mbox-consumer1 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 3>, <&mbox 2>;
+        mbox-names = "tx", "rx";
+    };
+
+    /* func call */
+    mbox_consumer2: mbox-consumer2 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 5>, <&mbox 4>;
         mbox-names = "tx", "rx";
     };
 };
@@ -221,9 +219,9 @@
     status = "okay";
 };
 
-tst_dma0: &dma0 {
-    status = "okay";
-};
+// tst_dma0: &dma0 {
+//     status = "okay";
+// };
 
 &lpc1 {
     // pinctrl-0 = <&lpc_serirq_pi09
@@ -280,28 +278,28 @@ tst_dma0: &dma0 {
 &flash0 {
     reg = <0x8000000 0x400000>;
     /*
-   * Flash base address is 0x8000000,
-   * the following parts are all offset addresses.
-   */
-   partitions {
-       compatible = "fixed-partitions";
-       #address-cells = <1>;
-       #size-cells = <1>;
+    * Flash base address is 0x8000000,
+    * the following parts are all offset addresses.
+    */
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
 
-       boot_partition: partition@0 {
-           label = "info-sbl";
-           reg = <0x00000000 0x00000800>;
-       };
+        boot_partition: partition@0 {
+            label = "info-sbl";
+            reg = <0x00000000 0x00000800>;
+        };
 
-       app_partition: partition@800 {
-           label = "app";
-           reg = <0x00000800 0x0007c800>;
-       };
+        app_partition: partition@800 {
+            label = "app";
+            reg = <0x00000800 0x0007c800>;
+        };
 
         storage_partition: partition@7d000 {
-           label = "storage";
-           reg = <0x0007d000 0x00003000>;
-       };
-   };
-   status = "okay";
+            label = "storage";
+            reg = <0x0007d000 0x00003000>;
+        };
+    };
+    status = "okay";
 };

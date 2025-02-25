@@ -1,0 +1,10 @@
+description: linkedsemi ls flash controller
+
+compatible: "linkedsemi,mbox-cpu1-flash-controller"
+
+include: [flash-controller.yaml]
+
+properties:
+  mbox:
+    type: phandle
+    description: mbox consumer

@@ -7,6 +7,9 @@
 
 / {
     chosen {
+        zephyr,sram = &sram1;
+        zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
         zephyr,flash = &flash0;
         zephyr,flash-controller = &qspi1;
     };
@@ -38,13 +41,16 @@
     status = "disabled";
 };
 
+/delete-node/ &flash0;
 &qspi1 {
-    pinctrl-0 = <>;
-    pinctrl-names = "default";
+    compatible = "linkedsemi,mbox-cpu1-flash-controller";
+    mbox = <&mbox_consumer2>;
     status = "okay";
-};
 
-&flash0 {
-    reg = <0x8000000 0x1000000>;
-    status = "okay";
+    flash0: flash@8800000 {
+        compatible = "soc-nv-flash";
+        reg = <(0x8000000 + DT_SIZE_M(8)) DT_SIZE_M(8)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
+    };
 };

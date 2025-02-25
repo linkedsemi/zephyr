@@ -118,5 +118,6 @@ rsource "Kconfig.nxp"
 rsource "Kconfig.cdns"
 rsource "Kconfig.npcx"
 rsource "Kconfig.test"
+rsource "Kconfig.linkedsemi"
 
 endif # I3C

@@ -10,103 +10,75 @@
 
 #define DT_DRV_COMPAT linkedsemi_lsqsh_pinctrl
 
-static void pinctrl_configure_pin_func(uint8_t pin, uint8_t func, uint32_t alt)
-{
-    switch (func) {
-    case PINMUX_FUNC1:
-        switch (alt) {
-        case FUNC_NULL:
-            io_cfg_disable(pin);
-            __fallthrough;
-        case FUNC_GPIO:
-            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-                per_func_disable(pin, i);
-            }
-            return; //no func enable. return here
-        default:
-            per_func_disable(pin, PINMUX_FUNC1);
-            per_func0_set(pin, alt);
-            break;
-        }
-        __fallthrough;
-    case PINMUX_FUNC2:
-        __fallthrough;
-    case PINMUX_FUNC3:
-        __fallthrough;
-    case PINMUX_FUNC4:
-            for (uint8_t i = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-                if (func == i) {
-                    per_func_enable(pin, i);
-                } else {
-                    per_func_disable(pin, i);
-                }
-            }
-    default:
-        break;
-    }
-
-    return;
-}
-
-static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
+static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
 {
     uint8_t pin = 0;
 
-    pin = pinmux.pinmux_un.field.pin;
+    pin = pin_desc.pinmux.pin;
 
-    if (pinmux.pin_attr_un.field.pull_down) {
+    if (pin_desc.pin_attr.pull_down) {
         io_pull_write(pin, IO_PULL_DOWN);
     }
 
-    if (pinmux.pin_attr_un.field.pull_up0) {
+    if (pin_desc.pin_attr.pull_up0) {
         io_pull_write(pin, IO_PULL_UP0);
     }
 
-    if (pinmux.pin_attr_un.field.pull_up1) {
+    if (pin_desc.pin_attr.pull_up1) {
         io_pull_write(pin, IO_PULL_UP1);
     }
 
-    if (pinmux.pin_attr_un.field.pull_up2) {
+    if (pin_desc.pin_attr.pull_up2) {
         io_pull_write(pin, IO_PULL_UP2);
     }
 
-    if (pinmux.pin_attr_un.field.cfg_input) {
+    if (pin_desc.pin_attr.cfg_input) {
         io_cfg_input_pure(pin);
     }
 
-    // if (pinmux.pin_attr_un.field.cfg_input_1v8) {
+    // if (pin_desc.pin_attr.cfg_input_1v8) {
     //     io_cfg_input_1v8_pure(pin);
     // }
 
-    if (pinmux.pin_attr_un.field.cfg_output) {
+    if (pin_desc.pin_attr.cfg_output) {
         io_cfg_output(pin);
     }
 
-    if (pinmux.pin_attr_un.field.open_drain) {
+    if (pin_desc.pin_attr.open_drain) {
         io_cfg_opendrain(pin);
     }
 
-    if (pinmux.pin_attr_un.field.push_pull) {
+    if (pin_desc.pin_attr.push_pull) {
         io_cfg_pushpull(pin);
     }
 
     /* only has effect if mode is push_pull */
-    if (pinmux.pin_attr_un.field.out_high) {
+    if (pin_desc.pin_attr.out_high) {
         io_set_pin(pin);
     }
 
     /* only has effect if mode is push_pull */
-    if (pinmux.pin_attr_un.field.out_low) {
+    if (pin_desc.pin_attr.out_low) {
         io_clr_pin(pin);
     }
 
     /* only has effect if mode is push_pull */
-    // io_drive_capacity_write(pin, pinmux.pin_attr_un.field.drive);
+    // io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
 
-    pinctrl_configure_pin_func(pin,
-                                pinmux.pinmux_un.field.func,
-                                pinmux.pinmux_un.field.alt);
+    if (pin_desc.pin_attr.gpio) {
+        goto end;
+    } else if (pin_desc.pin_attr.disable_all) {
+        per_func_disable_all(pin);
+        io_cfg_disable(pin);
+        goto end;
+    } else {
+        pinmux_cfg_pin_func_alt(pin,
+                                    pin_desc.pinmux.func,
+                                    pin_desc.pinmux.alt);
+        goto end;
+    }
 
+end:
     return 0;
 }
 

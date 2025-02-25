@@ -5,39 +5,49 @@
 
 #include "lsqsh_evb_pinctrl_runbmc_v3.dtsi"
 
+/ {
+    chosen {
+        zephyr,flash = &flash0;
+        zephyr,flash-controller = &qspi1;
+        zephyr,sram = &sram0;
+        zephyr,console = &uart5;
+        zephyr,shell-uart = &uart5;
+    };
+};
+
 &sram0 {
-    reg = <0x10000000 DT_SIZE_K(508)>;
+    reg = <0x10000000 DT_SIZE_K(512)>;
 };
 
 &sram1 {
     status = "disabled";
 };
 
-&uart1 {
-    current-speed = <115200>;
-    pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
-    pinctrl-names = "default";
-    status = "disabled";
-};
+// &uart1 {
+//     current-speed = <115200>;
+//     pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
+//     pinctrl-names = "default";
+//     status = "disabled";
+// };
 
-&uart2 {
-    current-speed = <115200>;
-    status = "disabled";
-};
+// &uart2 {
+//     current-speed = <115200>;
+//     status = "disabled";
+// };
 
-&uart3 {
-    current-speed = <115200>;
-    pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
-    pinctrl-names = "default";
-    status = "okay";
-};
+// &uart3 {
+//     current-speed = <115200>;
+//     pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
+//     pinctrl-names = "default";
+//     status = "okay";
+// };
 
-&uart4 {
-    current-speed = <115200>;
-    pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
-    pinctrl-names = "default";
-    status = "disabled";
-};
+// &uart4 {
+//     current-speed = <115200>;
+//     pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
+//     pinctrl-names = "default";
+//     status = "disabled";
+// };
 
 &uart5 {
     current-speed = <115200>;

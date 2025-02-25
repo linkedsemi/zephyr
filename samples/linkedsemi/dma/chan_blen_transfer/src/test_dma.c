@@ -17,6 +17,7 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/cache.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/ztest.h>
 
@@ -24,6 +25,7 @@
 
 static __aligned(32) char tx_data[] = "It is harder to be kind than to be wise........";
 static __aligned(32) char rx_data[RX_BUFF_SIZE] = { 0 };
+static volatile bool wait_flag;
 
 static void test_done(const struct device *dma_dev, void *arg,
 		      uint32_t id, int status)
@@ -33,6 +35,7 @@ static void test_done(const struct device *dma_dev, void *arg,
 	} else {
 		TC_PRINT("DMA transfer met an error\n");
 	}
+	wait_flag = false;
 }
 
 static int test_task(const struct device *dma, uint32_t chan_id, uint32_t blen)
@@ -81,14 +84,20 @@ static int test_task(const struct device *dma, uint32_t chan_id, uint32_t blen)
 		goto out;
 	}
 
+	wait_flag = true;
+	sys_cache_data_flush_range(tx_data, sizeof(tx_data));
 	if (dma_start(dma, chan_id)) {
 		TC_PRINT("ERROR: transfer\n");
 		ret = TC_FAIL;
 		goto out;
 	}
-	k_sleep(K_MSEC(2000));
+	// k_sleep(K_MSEC(2000));
+	while(wait_flag == true);
+	wait_flag = false;
 
 	TC_PRINT("%s\n", rx_data);
+
+	sys_cache_data_invd_range(rx_data, sizeof(rx_data));
 	if (strcmp(tx_data, rx_data) != 0) {
 		ret = TC_FAIL;
 		goto out;

@@ -300,13 +300,13 @@
             interrupts = <RV_TIME_IRQN 0>;
         };
 
-        crypto: crypto@40018400 {
+        crypto: crypto@40028400 {
             compatible = "linkedsemi,crypto";
-            reg = <0x40018400 0x400>,
-                  <0x40018800 0x400>,
-                  <0x40018C00 0x400>,
-                  <0x40019000 0x400>,
-                  <0x40019400 0x400>;
+            reg = <0x40028400 0x400>,
+                  <0x40028800 0x400>,
+                  <0x40028C00 0x400>,
+                  <0x40029000 0x400>,
+                  <0x40029400 0x400>;
             reg-names = "calc_sha", "calc_crc", "calc", "crypt", "calc_sm4";
             interrupts = <CALC_AES256_IRQN 3>,
                          <CALC_SHA256_IRQN 3>,
@@ -635,7 +635,6 @@
             interrupts = <UART1_IRQN 3> ;
             status = "disabled";
         };
-
         uart2: uart@40087400 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40087400 0x400>;
@@ -826,7 +825,7 @@
             compatible = "linkedsemi,sdhci";
             reg = <0x40049000 0x1000>;
             interrupts = <EMMC1_IRQN 3>;
-            max-bus-freq = <50000000>;
+            max-bus-freq = <5000000>;
             min-bus-freq = <200000>;
             status = "disabled";
         };
@@ -835,7 +834,7 @@
             compatible = "linkedsemi,sdhci";
             reg = <0x4004a000 0x1000>;
             interrupts = <EMMC2_IRQN 3>;
-            max-bus-freq = <50000000>;
+            max-bus-freq = <5000000>;
             min-bus-freq = <200000>;
             status = "disabled";
         };
@@ -859,6 +858,26 @@
             reg = <0x40092800 0x400>;
             interrupts = <MJTAG3_IRQN 3>;
             status = "disabled";
+        };
+
+        i3c9: i3c@40095000 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40095000 0x2000>;
+            interrupts = <120 4>;
+            status = "disabled";
+            i3c-scl-hz = <1000000>;
+        };
+
+        i3c10: i3c@40095400 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40095400 0x2000>;
+            interrupts = <121 3>;
+            status = "disabled";
+            i3c-scl-hz = <1000000>;
         };
     };
 

@@ -9,6 +9,7 @@
 #include "cpu.h"
 #include <stdint.h>
 #include <string.h>
+#include "iopmp.h"
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sysc_sec_cpu.h"
@@ -18,10 +19,9 @@
 #include "ls_msp_qspiv2.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
+BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
-#define RV_SOFT_IRQ_IDX 23
 extern void noint(void);
-uint32_t *pTaskStack = NULL;
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -48,75 +48,129 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
+#if defined(CONFIG_NOCACHE_MEMORY)
+extern uint32_t _nocache_ram_start;
+extern uint32_t _nocache_ram_end;
+extern uint32_t _nocache_ram_size;
+#endif
+
+#define CPU0_FW_REGION_SIZE MB(2)
+#define CPU1_FW_REGION_SIZE MB(14)
+/* strong order | cacheable | bufferable */
+/*       2      |     1     |     0      */
+#define BUFFERABLE BIT(0)
+#define CACHEABLE BIT(1)
+#define STRONG_ORDER BIT(2)
+void cpu0_cache_region_init(void)
+{
+    uint8_t idx = 0;
+    csi_sysmap_config_region(idx++, 0x10000000, 0);
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if ((uint32_t)&_nocache_ram_size > 0) {
+        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
+    }
+#endif
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+
+    csi_sysmap_config_region(idx++, 0x18000000, 0);
+    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+}
+
+void cpu1_cache_region_init(void)
+{
+    uint8_t idx = 0;
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), 0);
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if ((uint32_t)&_nocache_ram_size > 0) {
+        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        if (((uint32_t)&_nocache_ram_size) != 0x10080000) {
+            csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
+    }
+#endif
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+
+    csi_sysmap_config_region(idx++, 0x18000000, 0);
+    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+}
+
+/*
+| N | addr                           | mode  | rwx | desc                    |
+|---|--------------------------------|-------|-----|-------------------------|
+| 0 | 0x8000000--(0x8000000+2MB)     | NAPOT | --- | sec flash xip mem       |
+| 1 | 0x10000000--(0x10000000+512KB) | NAPOT | --- | sec sram                |
+| 2 | 0x40000000--(0x40000000+256KB) | NAPOT | --- | sec peripheral region 1 |
+| 3 | 0x400a0000--(0x400A0000+32KB)  | NAPOT | --- | sec peripheral region 2 |
+| 4 |                                | ----- |     |                         |
+| 5 |                                | ----- |     |                         |
+| 6 |                                | ----- |     |                         |
+| 7 | 0x0 -- 4GB                     | NAPOT | rwx |                         |
+|   |                                |       |     |                         |
+*/
+void iopmp_region_init(void)
+{
+    for (uint32_t idx = 0; idx < 5; idx++) {
+        uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
+        iopmp_config_region_napot4(dev, 0, 0x8000000, MB(2), false, false, false, false);
+        iopmp_config_region_napot4(dev, 1, 0x10000000, KB(512), false, false, false, false);
+        iopmp_config_region_napot4(dev, 2, 0x40000000, KB(256), false, false, false, false);
+        iopmp_config_region_napot4(dev, 3, 0x400A0000, KB(32), false, false, false, false);
+
+        iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * 1024 * 1024 * 1024, true, true, true, false);
+        iopmp_config_enable(dev, true);
+    }
+}
+
 extern void SWINT_Handler_Asm(void);
 extern void SystemInit();
 static int lsqsh_init(void)
 {
-    uint32_t addr = 0;
-
-#if ((CONFIG_NUM_OS == 2) && (CONFIG_NUM_USE_CPU == 2))
-    addr = 0x10000000;
-    SYSMAP->SYSMAPADDR0 = addr >> 12;
-    SYSMAP->SYSMAPCFG0 = 0x10;
-    addr = 0x10000000 + (508 * 1024);
-    SYSMAP->SYSMAPADDR1 = addr >> 12;
-    SYSMAP->SYSMAPCFG1 = 0xc;
-    addr = 0x10000000 + (512 * 1024);
-    SYSMAP->SYSMAPADDR2 = addr >> 12;
-    SYSMAP->SYSMAPCFG2 = 0x10;
-    addr = 0x10000000 + ((512 + 760) * 1024);
-    SYSMAP->SYSMAPADDR3 = addr >> 12;
-    SYSMAP->SYSMAPCFG3 = 0xc;
-    addr = 0xffffffff;
-    SYSMAP->SYSMAPADDR4 = addr >> 12;
-    SYSMAP->SYSMAPCFG4 = 0x10;
-    SYSMAP->SYSMAPADDR5 = 0;
-    SYSMAP->SYSMAPCFG5 = 0;
-    SYSMAP->SYSMAPADDR6 = 0;
-    SYSMAP->SYSMAPCFG6 = 0;
-    SYSMAP->SYSMAPADDR7 = 0;
-    SYSMAP->SYSMAPCFG7 = 0;
-#else
-    addr = 0x10000000;
-    SYSMAP->SYSMAPADDR0 = addr >> 12;
-    SYSMAP->SYSMAPCFG0 = 0x10;
-    addr = 0x10000000 + ((512 + 760) * 1024);
-    SYSMAP->SYSMAPADDR1 = addr >> 12;
-    SYSMAP->SYSMAPCFG1 = 0xc;
-    addr = 0xffffffff;
-    SYSMAP->SYSMAPADDR2 = addr >> 12;
-    SYSMAP->SYSMAPCFG2 = 0x10;
-    SYSMAP->SYSMAPADDR3 = 0;
-    SYSMAP->SYSMAPCFG3 = 0;
-    SYSMAP->SYSMAPADDR4 = 0;
-    SYSMAP->SYSMAPCFG4 = 0;
-    SYSMAP->SYSMAPADDR5 = 0;
-    SYSMAP->SYSMAPCFG5 = 0;
-    SYSMAP->SYSMAPADDR6 = 0;
-    SYSMAP->SYSMAPCFG6 = 0;
-    SYSMAP->SYSMAPADDR7 = 0;
-    SYSMAP->SYSMAPCFG7 = 0;
-#endif
-
     SystemInit();
     // sys_init_none();
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if (!(((uint32_t)&_nocache_ram_start >= 0x10000000)
+                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512))))) {
+        while(1);
+    }
+#endif
+    cpu0_cache_region_init();
+#else
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if (!(((uint32_t)&_nocache_ram_start >= (0x10000000 + KB(512))
+                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512) + KB(764)))))) {
+        while(1);
+    }
+#endif
+    cpu1_cache_region_init();
+#endif
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)) && defined(CONFIG_IOPMP)
+    iopmp_region_init();
+#endif
 
 #if defined(CONFIG_CACHE)
+#if !defined(CONFIG_SMP)
     csi_dcache_enable();
+#endif
     csi_icache_enable();
 
+#if !defined(CONFIG_SMP)
     csi_dcache_invalid();
+#endif
     csi_icache_invalid();
 #endif
 
 #if defined(CONFIG_ETH_DRIVER)
 #if !defined(CONFIG_PINCTRL)
     /* RMII */
-    io_cfg_input(PT01);
-    io_cfg_input(PT08);
-    io_cfg_input(PT09);
-    io_cfg_input(PT10);
-    io_cfg_input(PT11);
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
 #endif
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x54) = 0x10;
@@ -126,15 +180,6 @@ static int lsqsh_init(void)
 #if defined(CONFIG_SDHC)
 #if !defined(CONFIG_PINCTRL)
     /* SDHC */
-    io_cfg_input(PH04);
-    io_cfg_input(PH05);
-    io_cfg_input(PH06);
-    io_cfg_input(PH07);
-    io_cfg_input(PH08);
-    io_cfg_input(PH09);
-    io_cfg_input(PH10);
-    io_cfg_input(PH11);
-    io_cfg_input(PH13);
     *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x60) = BIT(14) | BIT(26);
     *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x64) = BIT(7) | BIT(15);
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
@@ -148,93 +193,13 @@ static int lsqsh_init(void)
     // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
 #endif
 
-#if defined(CONFIG_SERIAL)
-#if !defined(CONFIG_PINCTRL)
-    /* UART */
-    pinmux_dwuart1_init(PC03, PC04);
-    pinmux_dwuart2_init(PD09, PD10);
-#endif
-#endif
-
-#if defined(CONFIG_I2C)
-#if !defined(CONFIG_PINCTRL)
-    /* I2C */
-    pinmux_iic2_init(PB03, PB04);
-    pinmux_iic3_init(PC13, PC11);
-    pinmux_iic4_init(PD00, PD01);
-    pinmux_iic5_init(PE07, PE08);
-    pinmux_iic6_init(PF07, PF08);
-    pinmux_iic7_init(PK15, PK14);
-    pinmux_iic9_init(PI03, PI02);
-    pinmux_iic10_init(PJ03, PJ02);
-    pinmux_iic11_init(PN09, PN08);
-    pinmux_iic12_init(PN13, PN14);
-    pinmux_iic13_init(PQ00, PQ01);
-    pinmux_iic14_init(PQ03, PQ02);
-#endif
-#endif
-
-#if defined(CONFIG_CRYPTO_LINKEDSEMI)
-    /* AES */
-    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_CLR_CRYPT_MASK;
-    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_CLR_CRYPT_MASK;
-    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_SET_CRYPT_MASK;
-    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_SET_CRYPT_MASK;
-
-    /* OTBN */
-    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_CLR_OTBN_MASK;
-    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_CLR_OTBN_MASK;
-    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_SET_OTBN_MASK;
-    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_SET_OTBN_MASK;
-
-    SYSC_CPU->OTBN_CTRL1 |= SYSC_CPU_EDN_URND_FIPS_MASK;
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        SYSC_CPU->EDN_URND_BUS = i;
-        SYSC_CPU->OTBN_CTRL1 |= SYSC_CPU_EDN_URND_ACK_MASK;
-        SYSC_CPU->OTBN_CTRL1 &= ~SYSC_CPU_EDN_URND_ACK_MASK;
-        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    }
-    for (uint8_t i = 0; i < 8; i++)
-    {
-        SYSC_CPU->EDN_URND_BUS = i;
-        SYSC_CPU->OTBN_CTRL1 |= SYSC_CPU_EDN_URND_ACK_MASK;
-        SYSC_CPU->OTBN_CTRL1 &= ~SYSC_CPU_EDN_URND_ACK_MASK;
-        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-        __NOP(); __NOP(); __NOP(); __NOP(); __NOP();
-    }
-
-    SYSC_CPU->INTR_CTRL_CLR = 0x7ff;
-    SYSC_CPU->INTR_CTRL_MSK = 0x700;
-
-    /* SHA */
-    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_CLR_CALC_SHA_MASK;
-    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_CLR_CALC_SHA_MASK;
-    SYSC_CPU->PD_CPU_SRST[1] = SYSC_CPU_SRST_SET_CALC_SHA_MASK;
-    SYSC_CPU->PD_CPU_CLKG[1] = SYSC_CPU_CLKG_SET_CRYPT_MASK;
-#endif
-
-#if defined(CONFIG_JTAG)
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG1_MASK;
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG2_MASK;
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_MJTAG3_MASK;
-#endif
-
-#if defined(CONFIG_SPI)
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_CLR_SPI1_MASK;
-    SYSC_PER->PD_PER_SRST2 = SYSC_PER_SRST_CLR_SPI1_N_MASK;
-    SYSC_PER->PD_PER_SRST2 = SYSC_PER_SRST_SET_SPI1_N_MASK;
-    SYSC_PER->PD_PER_CLKG2 = SYSC_PER_CLKG_SET_SPI1_MASK;
-#endif
-
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
 
 #if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
-#if ((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024)))
+#if (((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024))) || (CONFIG_CPU1_BOOT_ADDR == 0x10080000))
     lsqspiv2_msp_init();
     pinmux_hal_flash_init();
     hal_flash_dual_mode_set(true);
@@ -253,12 +218,18 @@ static int lsqsh_init(void)
     lscache_cache_enable(1);
     hal_flash_xip_func_ptr_init();
 #endif
+#if defined(CONFIG_BOOT_CPU1)
     SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU1_BOOT_ADDR; /* set cpu1 pc addr */
     SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
 #endif
 #endif
+#endif
 
-#if defined(CONFIG_SOC_FLASH_LS)
+#if defined(CONFIG_PECI)
+    sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
+#endif
+
+#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU0) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU1)
 #if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
 #else
@@ -271,7 +242,7 @@ static int lsqsh_init(void)
     hal_flash_drv_var_init(true,false);
 #endif
     hal_flash_xip_func_ptr_init();
-    IRQ_CONNECT(RV_SOFT_IRQN, 0, SWINT_Handler_Asm, NULL, 0);
+    IRQ_CONNECT(FLASH_SWINT_NUM, 0, SWINT_Handler_Asm, NULL, 0);
 
 #if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();

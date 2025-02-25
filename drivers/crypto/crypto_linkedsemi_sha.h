@@ -21,50 +21,55 @@
 #define SHA_RSLT6     0x58
 #define SHA_RSLT7     0x5c
 
-union sha_reg_start {
-    volatile uint32_t value;
+typedef union sha_reg_start {
+    uint32_t value;
     struct {
-        volatile uint32_t FSM_START : 1,  /* [0] */
-                          RESERVED0 : 31; /* [1-31] */
-    } field;
-} __attribute__((packed));
+        uint32_t
+            FSM_START : 1,  /* [0] */
+            RESERVED0 : 31; /* [1-31] */
+    };
+} sha_reg_start_t;
 
-union sha_reg_ctrl {
-    volatile uint32_t value;
+typedef union sha_reg_ctrl {
+    uint32_t value;
     struct {
-        volatile uint32_t FST_DAT     : 1,   /*[0]*/
-                          RESERVED0   : 3,   /*[1-3]*/
-                          CALC_SHA224 : 1,   /*[4]*/
-                          CALC_SM3    : 1,   /*[5]*/
-                          RESERVED1   : 2,   /*[6-7]*/
-                          LEN         : 14,  /*[8-21]*/
-                          RESERVED2   : 10;  /*[22-31]*/
-    } field;
-} __attribute__((packed));
+        uint32_t
+            FST_DAT     : 1,   /*[0]*/
+            RESERVED0   : 3,   /*[1-3]*/
+            CALC_SHA224 : 1,   /*[4]*/
+            CALC_SM3    : 1,   /*[5]*/
+            RESERVED1   : 2,   /*[6-7]*/
+            LEN         : 14,  /*[8-21]*/
+            RESERVED2   : 10;  /*[22-31]*/
+    };
+} sha_reg_ctrl_t;
 
-union sha_reg_intr {
-    volatile uint32_t value;
+typedef union sha_reg_intr {
+    uint32_t value;
     struct {
-        volatile uint32_t FSM_END  : 1,  /*[0]*/
-                          FSM_EMPT : 1,  /*[1]*/
-                          RESERVED0     : 30; /*[2-31]*/
-    } field;
-} __attribute__((packed));
+        uint32_t
+            FSM_END   : 1,  /*[0]*/
+            FSM_EMPT  : 1,  /*[1]*/
+            RESERVED0 : 30; /*[2-31]*/
+    };
+} sha_reg_intr_t;
 
-union sha_reg_fifo_stat {
-    volatile uint32_t value;
+typedef union sha_reg_fifo_stat {
+    uint32_t value;
     struct {
-        volatile uint32_t FIFO_FLVL : 4,  /*[0-3]*/
-                          RESERVED0 : 28; /*[4-31]*/
-    } field;
-} __attribute__((packed));
+        uint32_t
+            FIFO_FLVL : 4,  /*[0-3]*/
+            RESERVED0 : 28; /*[4-31]*/
+    };
+} sha_reg_fifo_stat_t;
 
-union sha_reg_fsm_stat {
-    volatile uint32_t value;
+typedef union sha_reg_fsm_stat {
+    uint32_t value;
     struct {
-        volatile uint32_t FSM_IDLE  : 1,  /*[0]*/
-                          RESERVED0 : 31; /*[1-31]*/
-    } field;
-} __attribute__((packed));
+        uint32_t
+            FSM_IDLE  : 1,  /*[0]*/
+            RESERVED0 : 31; /*[1-31]*/
+    };
+} sha_reg_fsm_stat_t;
 
 #endif /* ZEPHYR_DRIVERS_CRYPTO_CRYPTO_LINKEDSEMIH_SHA_ */

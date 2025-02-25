@@ -4,6 +4,15 @@
  */
 
 #include "lsqsh_evb_pinctrl_runbmc_v2.dtsi"
+/ {
+    chosen {
+        zephyr,flash = &flash0;
+        zephyr,flash-controller = &qspi1;
+        zephyr,sram = &sram0;
+        zephyr,console = &uart5;
+        zephyr,shell-uart = &uart5;
+    };
+};
 
 &sram0 {
     reg = <0x10000000 DT_SIZE_K(508)>;

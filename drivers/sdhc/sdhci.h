@@ -42,11 +42,6 @@
 #define SDHCI_CMD_DATA      0x20
 #define SDHCI_CMD_ABORTCMD  0xC0
 
-#define SDHCI_CMD_RESP_NONE       0x00
-#define SDHCI_CMD_RESP_LONG       0x01
-#define SDHCI_CMD_RESP_SHORT      0x02
-#define SDHCI_CMD_RESP_SHORT_BUSY 0x03
-
 #define SDHCI_MAKE_CMD(c, f) (((c & 0xff) << 8) | (f & 0xff))
 #define SDHCI_GET_CMD(c)     ((c >> 8) & 0x3f)
 
@@ -269,110 +264,109 @@
 #define SDHCI_MAX_DIV_SPEC_300 2046
 /*! @brief Transfer flag mask */
 enum sdhci_transfer_mode {
-    sdhci_enable_dma_flag = SDHCI_TRNS_DMA, /*!< Enable DMA */
+    SDHCI_ENABLE_DMA_FLAG = SDHCI_TRNS_DMA, /*!< ENABLE DMA */
 
-    sdhci_enable_block_count_flag = SDHCI_TRNS_BLK_CNT_EN, /*!< Enable block count */
-    sdhci_enable_auto_command12_flag = SDHCI_TRNS_AUTO_CMD12, /*!< Enable auto CMD12 */
-    sdhci_data_read_flag = SDHCI_TRNS_READ, /*!< Enable data read */
-    sdhci_multiple_block_flag = SDHCI_TRNS_MULTI, /*!< Multiple block data read/write */
-    sdhci_enable_auto_command23_flag = SDHCI_TRNS_AUTO_CMD23, /*!< Enable auto CMD23 */
-    sdhci_enable_auto_commamd_sel_flag = SDHCI_TRNS_AUTO_SEL, /* Enable auto command sel*/
+    SDHCI_ENABLE_BLOCK_COUNT_FLAG = SDHCI_TRNS_BLK_CNT_EN, /*!< ENABLE BLOCK COUNT */
+    SDHCI_ENABLE_AUTO_COMMAND12_FLAG = SDHCI_TRNS_AUTO_CMD12, /*!< ENABLE AUTO CMD12 */
+    SDHCI_DATA_READ_FLAG = SDHCI_TRNS_READ, /*!< ENABLE DATA READ */
+    SDHCI_MULTIPLE_BLOCK_FLAG = SDHCI_TRNS_MULTI, /*!< MULTIPLE BLOCK DATA READ/WRITE */
+    SDHCI_ENABLE_AUTO_COMMAND23_FLAG = SDHCI_TRNS_AUTO_CMD23, /*!< ENABLE AUTO CMD23 */
+    SDHCI_ENABLE_AUTO_COMMAMD_SEL_FLAG = SDHCI_TRNS_AUTO_SEL, /* ENABLE AUTO COMMAND SEL*/
 };
 
 enum sdhci_command_flag {
-    sdhci_cmd_resp_nono = SDHCI_CMD_RESP_NONE,
-    sdhci_cmd_resp_long = SDHCI_CMD_RESP_LONG,
-    sdhci_cmd_resp_short = SDHCI_CMD_RESP_SHORT,
-    sdhci_cmd_resp_short_busy = SDHCI_CMD_RESP_SHORT_BUSY,
+    SDHCI_CMD_RESP_NONO = 0x0,
+    SDHCI_CMD_RESP_LONG = 0x1,
+    SDHCI_CMD_RESP_SHORT = 0x2,
+    SDHCI_CMD_RESP_SHORT_BUSY = 0x3,
 
-    sdhci_enable_cmd_crc_flag = SDHCI_CMD_CRC,
-    sdhci_enable_cmd_index_chk_flag = SDHCI_CMD_INDEX,
-    sdhci_enable_cmd_data_present_flag = SDHCI_CMD_DATA,
+    SDHCI_ENABLE_CMD_CRC_FLAG = SDHCI_CMD_CRC,
+    SDHCI_ENABLE_CMD_INDEX_CHK_FLAG = SDHCI_CMD_INDEX,
+    SDHCI_ENABLE_CMD_DATA_PRESENT_FLAG = SDHCI_CMD_DATA,
 
-    sdhci_enable_command_type_normal = 0x00,
-    sdhci_enable_command_type_suspend = 0x40,
-    sdhci_enable_command_type_resume = 0x80,
-    sdhci_enable_command_type_abort = 0xc0,
+    SDHCI_ENABLE_COMMAND_TYPE_NORMAL = 0X00,
+    SDHCI_ENABLE_COMMAND_TYPE_SUSPEND = 0X40,
+    SDHCI_ENABLE_COMMAND_TYPE_RESUME = 0X80,
+    SDHCI_ENABLE_COMMAND_TYPE_ABORT = 0XC0,
 };
 
 /*! @brief Present status flag mask */
 enum sdhci_present_status_flag {
-    sdhci_command_inhibit_flag = 0x1, /*!< Command inhibit */
-    sdhci_data_inhibit_flag = 0x2, /*!< Data inhibit */
-    sdhci_data_line_active_flag = 0x4, /*!< Data line active */
-    sdhci_write_transfer_active_flag = 0x100, /*!< Write transfer active */
-    sdhci_read_transfer_active_flag = 0x200, /*!< Read transfer active */
-    sdhci_buffer_write_enable_flag = 0x400, /*!< Buffer write enable */
-    sdhci_buffer_read_enable_flag = 0x800, /*!< Buffer read enable */
+    SDHCI_COMMAND_INHIBIT_FLAG = 0x1, /*!< Command inhibit */
+    SDHCI_DATA_INHIBIT_FLAG = 0x2, /*!< Data inhibit */
+    SDHCI_DATA_LINE_ACTIVE_FLAG = 0x4, /*!< Data line active */
+    SDHCI_WRITE_TRANSFER_ACTIVE_FLAG = 0x100, /*!< Write transfer active */
+    SDHCI_READ_TRANSFER_ACTIVE_FLAG = 0x200, /*!< Read transfer active */
+    SDHCI_BUFFER_WRITE_ENABLE_FLAG = 0x400, /*!< Buffer write enable */
+    SDHCI_BUFFER_READ_ENABLE_FLAG = 0x800, /*!< Buffer read enable */
 
-    sdhci_card_insert_flag = 0x10000, /*!< Card inserted */
-    sdhci_sd_clock_stable_flag = 0x20000, /*!< SD bus clock stable */
-    sdhci_card_detect_pin_level_flag = 0x40000, /*!< card detect pin level */
-    sdhci_write_protect_switch_pin_level_flag = 0x80000, /*<write protect switch pin level>*/
+    SDHCI_CARD_INSERT_FLAG = 0x10000, /*!< Card inserted */
+    SDHCI_SD_CLOCK_STABLE_FLAG = 0x20000, /*!< SD bus clock stable */
+    SDHCI_CARD_DETECT_PIN_LEVEL_FLAG = 0x40000, /*!< card detect pin level */
+    SDHCI_WRITE_PROTECT_SWITCH_PIN_LEVEL_FLAG = 0x80000, /*<write protect switch pin level>*/
 
-    sdhci_data0_line_level_flag = (1U << 20), /*!< Data0 line signal level */
-    sdhci_data1_line_level_flag = (1U << (20 + 1U)), /*!< Data1 line signal level */
-    sdhci_data2_line_level_flag = (1U << (20 + 2U)), /*!< Data2 line signal level */
-    sdhci_data3_line_level_flag = (1U << (20 + 3U)), /*!< Data3 line signal level */
-    sdhci_data4_line_level_flag = (1U << (4 + 0U)), /*!< Data4 line signal level */
-    sdhci_data5_line_level_flag = (1U << (4 + 1U)), /*!< Data5 line signal level */
-    sdhci_data6_line_level_flag = (1U << (4 + 2U)), /*!< Data6 line signal level */
-    sdhci_data7_line_level_flag = (1U << (4 + 3U)), /*!< Data7 line signal level */
+    SDHCI_DATA0_LINE_LEVEL_FLAG = (1U << 20), /*!< Data0 line signal level */
+    SDHCI_DATA1_LINE_LEVEL_FLAG = (1U << (20 + 1U)), /*!< Data1 line signal level */
+    SDHCI_DATA2_LINE_LEVEL_FLAG = (1U << (20 + 2U)), /*!< Data2 line signal level */
+    SDHCI_DATA3_LINE_LEVEL_FLAG = (1U << (20 + 3U)), /*!< Data3 line signal level */
+    SDHCI_DATA4_LINE_LEVEL_FLAG = (1U << (4 + 0U)), /*!< Data4 line signal level */
+    SDHCI_DATA5_LINE_LEVEL_FLAG = (1U << (4 + 1U)), /*!< Data5 line signal level */
+    SDHCI_DATA6_LINE_LEVEL_FLAG = (1U << (4 + 2U)), /*!< Data6 line signal level */
+    SDHCI_DATA7_LINE_LEVEL_FLAG = (1U << (4 + 3U)), /*!< Data7 line signal level */
 
-    sdhci_command_line_signal_level_flag = 0x1000000,
-    sdhci_host_reg_voltage_stable_flag = 0x2000000,
-    sdhci_command_not_issued_by_error_flag = 0x8000000,
-    sdhci_sub_command_status_flag = 0x10000000,
-    sdhci_in_dormant_status_flag = 0x20000000,
-    sdhci_lane_synchronization_flag = 0x40000000,
-    sdhci_uhs_ii_interface_detection_flag = 0x80000000,
+    SDHCI_COMMAND_LINE_SIGNAL_LEVEL_FLAG = 0x1000000,
+    SDHCI_HOST_REG_VOLTAGE_STABLE_FLAG = 0x2000000,
+    SDHCI_COMMAND_NOT_ISSUED_BY_ERROR_FLAG = 0x8000000,
+    SDHCI_SUB_COMMAND_STATUS_FLAG = 0x10000000,
+    SDHCI_IN_DORMANT_STATUS_FLAG = 0x20000000,
+    SDHCI_LANE_SYNCHRONIZATION_FLAG = 0x40000000,
+    SDHCI_UHS_II_INTERFACE_DETECTION_FLAG = 0x80000000,
 };
 
 /*! @brief Interrupt status flag mask */
 enum sdhci_interrupt_status_flag {
-    sdhci_command_complete_flag = 0x1, /*!< Command complete */
-    sdhci_data_complete_flag = 0x2, /*!< Data complete */
-    sdhci_block_gap_event_flag = 0x4, /*!< Block gap event */
-    sdhci_dma_complete_flag = 0x8, /*!< DMA interrupt */
-    sdhci_buffer_write_ready_flag = 0x10, /*!< Buffer write ready */
-    sdhci_buffer_read_ready_flag = 0x20, /*!< Buffer read ready */
-    sdhci_card_insertion_flag = 0x40, /*!< Card inserted */
-    sdhci_card_removal_flag = 0x80, /*!< Card removed */
-    sdhci_card_interrupt_flag = 0x100, /*!< Card interrupt */
+    SDHCI_COMMAND_COMPLETE_FLAG = 0x1, /*!< Command complete */
+    SDHCI_DATA_COMPLETE_FLAG = 0x2, /*!< Data complete */
+    SDHCI_BLOCK_GAP_EVENT_FLAG = 0x4, /*!< Block gap event */
+    SDHCI_DMA_COMPLETE_FLAG = 0x8, /*!< DMA interrupt */
+    SDHCI_BUFFER_WRITE_READY_FLAG = 0x10, /*!< Buffer write ready */
+    SDHCI_BUFFER_READ_READY_FLAG = 0x20, /*!< Buffer read ready */
+    SDHCI_CARD_INSERTION_FLAG = 0x40, /*!< Card inserted */
+    SDHCI_CARD_REMOVAL_FLAG = 0x80, /*!< Card removed */
+    SDHCI_CARD_INTERRUPT_FLAG = 0x100, /*!< Card interrupt */
 
-    sdhci_command_timeout_flag = 0x10000, /*!< Command timeout error */
-    sdhci_command_crc_error_flag = 0x20000, /*!< Command CRC error */
-    sdhci_command_end_bit_error_flag = 0x40000, /*!< Command end bit error */
-    sdhci_command_index_error_flag = 0x80000, /*!< Command index error */
-    sdhci_data_timeout_flag = 0x100000, /*!< Data timeout error */
-    sdhci_data_crc_error_flag = 0x200000, /*!< Data CRC error */
-    sdhci_data_end_bit_error_flag = 0x400000, /*!< Data end bit error */
-    sdhci_auto_command_error_flag = 0x1000000, /*!< Auto CMD error */
-    sdhci_dma_error_flag = 0x2000000, /*!< ADMA error */
-    sdhci_tuning_error_flag = 0x4000000, /* tuning err*/
-    sdhci_response_err_flag = 0x8000000, /*resp error*/
+    SDHCI_COMMAND_TIMEOUT_FLAG = 0x10000, /*!< Command timeout error */
+    SDHCI_COMMAND_CRC_ERROR_FLAG = 0x20000, /*!< Command CRC error */
+    SDHCI_COMMAND_END_BIT_ERROR_FLAG = 0x40000, /*!< Command end bit error */
+    SDHCI_COMMAND_INDEX_ERROR_FLAG = 0x80000, /*!< Command index error */
+    SDHCI_DATA_TIMEOUT_FLAG = 0x100000, /*!< Data timeout error */
+    SDHCI_DATA_CRC_ERROR_FLAG = 0x200000, /*!< Data CRC error */
+    SDHCI_DATA_END_BIT_ERROR_FLAG = 0x400000, /*!< Data end bit error */
+    SDHCI_AUTO_COMMAND_ERROR_FLAG = 0x1000000, /*!< Auto CMD error */
+    SDHCI_DMA_ERROR_FLAG = 0x2000000, /*!< ADMA error */
+    SDHCI_TUNING_ERROR_FLAG = 0x4000000, /* tuning err*/
+    SDHCI_RESPONSE_ERR_FLAG = 0x8000000, /*resp error*/
 
-    sdhci_command_error_flag = (sdhci_command_timeout_flag | sdhci_command_crc_error_flag | sdhci_command_end_bit_error_flag | sdhci_command_index_error_flag), /*!< Command error */
-    sdhci_data_error_flag = (sdhci_data_timeout_flag | sdhci_data_crc_error_flag | sdhci_data_end_bit_error_flag | sdhci_auto_command_error_flag), /*!< Data error */
-    sdhci_error_flag = (sdhci_command_error_flag | sdhci_data_error_flag | sdhci_dma_error_flag), /*!< All error */
-    sdhci_data_flag = (sdhci_data_complete_flag | sdhci_dma_complete_flag | sdhci_buffer_write_ready_flag | sdhci_buffer_read_ready_flag | sdhci_data_error_flag | sdhci_dma_error_flag), /*!< Data interrupts */
-    sdhci_command_flag = (sdhci_command_error_flag | sdhci_command_complete_flag), /*!< Command interrupts */
-    sdhci_card_detect_flag = (sdhci_card_insertion_flag | sdhci_card_removal_flag), /*!< Card detection interrupts */
-    sdhci_sdr104_tuning_flag = (sdhci_tuning_error_flag),
+    SDHCI_COMMAND_ERROR_FLAG = (SDHCI_COMMAND_TIMEOUT_FLAG | SDHCI_COMMAND_CRC_ERROR_FLAG | SDHCI_COMMAND_END_BIT_ERROR_FLAG | SDHCI_COMMAND_INDEX_ERROR_FLAG), /*!< Command error */
+    SDHCI_DATA_ERROR_FLAG = (SDHCI_DATA_TIMEOUT_FLAG | SDHCI_DATA_CRC_ERROR_FLAG | SDHCI_DATA_END_BIT_ERROR_FLAG | SDHCI_AUTO_COMMAND_ERROR_FLAG), /*!< Data error */
+    SDHCI_ERROR_FLAG = (SDHCI_COMMAND_ERROR_FLAG | SDHCI_DATA_ERROR_FLAG | SDHCI_DMA_ERROR_FLAG), /*!< All error */
+    SDHCI_DATA_FLAG = (SDHCI_DATA_COMPLETE_FLAG | SDHCI_DMA_COMPLETE_FLAG | SDHCI_BUFFER_WRITE_READY_FLAG | SDHCI_BUFFER_READ_READY_FLAG | SDHCI_DATA_ERROR_FLAG | SDHCI_DMA_ERROR_FLAG), /*!< Data interrupts */
+    SDHCI_COMMAND_FLAG = (SDHCI_COMMAND_ERROR_FLAG | SDHCI_COMMAND_COMPLETE_FLAG), /*!< Command interrupts */
+    SDHCI_CARD_DETECT_FLAG = (SDHCI_CARD_INSERTION_FLAG | SDHCI_CARD_REMOVAL_FLAG), /*!< Card detection interrupts */
+    SDHCI_SDR104_TUNING_FLAG = (SDHCI_TUNING_ERROR_FLAG),
 
-    sdhci_all_interrupt_flags = (sdhci_block_gap_event_flag | sdhci_card_detect_flag | sdhci_command_flag | sdhci_data_flag | sdhci_error_flag | sdhci_sdr104_tuning_flag), /*!< All flags mask */
+    SDHCI_ALL_INTERRUPT_FLAGS = (SDHCI_BLOCK_GAP_EVENT_FLAG | SDHCI_CARD_DETECT_FLAG | SDHCI_COMMAND_FLAG | SDHCI_DATA_FLAG | SDHCI_ERROR_FLAG | SDHCI_SDR104_TUNING_FLAG), /*!< All flags mask */
 };
 
 /*! @brief USDHC status */
 enum sdhci_status {
-    sdhci_status_busy_transferring = 65, /*!< Transfer is on-going */
-    sdhci_status_prepare_adma_descriptor_failed = 66, /*!< Set DMA descriptor failed */
-    sdhci_status_send_command_failed = 67, /*!< Send command failed */
-    sdhci_status_transfer_data_failed = 68, /*!< Transfer data failed */
-    sdhci_status_dma_data_addr_no_align = 69, /*!< data address not align */
-    sdhci_status_retuning_request = 70, /*!< re-tuning request */
-    sdhci_status_tuning_error = 71, /*!< tuning error */
-
+    SDHCI_STATUS_BUSY_TRANSFERRING = 65, /*!< Transfer is on-going */
+    SDHCI_STATUS_PREPARE_ADMA_DESCRIPTOR_FAILED = 66, /*!< Set DMA descriptor failed */
+    SDHCI_STATUS_SEND_COMMAND_FAILED = 67, /*!< Send command failed */
+    SDHCI_STATUS_TRANSFER_DATA_FAILED = 68, /*!< Transfer data failed */
+    SDHCI_STATUS_DMA_DATA_ADDR_NO_ALIGN = 69, /*!< data address not align */
+    SDHCI_STATUS_RETUNING_REQUEST = 70, /*!< re-tuning request */
+    SDHCI_STATUS_TUNING_ERROR = 71, /*!< tuning error */
 };
 
 /* ADMA2 data alignment */
@@ -397,10 +391,10 @@ struct sdhci_64bit_adma2_descriptor {
 
 /*! @brief The command type */
 enum sdhci_card_command_type {
-    card_command_type_normal = 0U, /*!< Normal command */
-    card_command_type_suspend = 1U, /*!< Suspend command */
-    card_command_type_resume = 2U, /*!< Resume command */
-    card_command_type_abort = 3U, /*!< Abort command */
+    CARD_COMMAND_TYPE_NORMAL = 0U, /*!< Normal command */
+    CARD_COMMAND_TYPE_SUSPEND = 1U, /*!< Suspend command */
+    CARD_COMMAND_TYPE_RESUME = 2U, /*!< Resume command */
+    CARD_COMMAND_TYPE_ABORT = 3U, /*!< Abort command */
 };
 
 /*!
@@ -409,16 +403,16 @@ enum sdhci_card_command_type {
  * Define the command response type from card to host controller.
  */
 enum sdhci_card_response_type {
-    card_response_type_none = 0U, /*!< Response type: none */
-    card_response_type_r1 = 1U, /*!< Response type: R1 */
-    card_response_type_r1b = 2U, /*!< Response type: R1b */
-    card_response_type_r2 = 3U, /*!< Response type: R2 */
-    card_response_type_r3 = 4U, /*!< Response type: R3 */
-    card_response_type_r4 = 5U, /*!< Response type: R4 */
-    card_response_type_r5 = 6U, /*!< Response type: R5 */
-    card_response_type_r5b = 7U, /*!< Response type: R5b */
-    card_response_type_r6 = 8U, /*!< Response type: R6 */
-    card_response_type_r7 = 9U, /*!< Response type: R7 */
+    CARD_RESPONSE_TYPE_NONE = 0U, /*!< Response type: none */
+    CARD_RESPONSE_TYPE_R1 = 1U, /*!< Response type: R1 */
+    CARD_RESPONSE_TYPE_R1B = 2U, /*!< Response type: R1b */
+    CARD_RESPONSE_TYPE_R2 = 3U, /*!< Response type: R2 */
+    CARD_RESPONSE_TYPE_R3 = 4U, /*!< Response type: R3 */
+    CARD_RESPONSE_TYPE_R4 = 5U, /*!< Response type: R4 */
+    CARD_RESPONSE_TYPE_R5 = 6U, /*!< Response type: R5 */
+    CARD_RESPONSE_TYPE_R5B = 7U, /*!< Response type: R5b */
+    CARD_RESPONSE_TYPE_R6 = 8U, /*!< Response type: R6 */
+    CARD_RESPONSE_TYPE_R7 = 9U, /*!< Response type: R7 */
 };
 
 /*!
@@ -430,10 +424,10 @@ enum sdhci_card_response_type {
  * happen for example bus testing procedure for MMC card.
  */
 struct sdhci_data {
-    bool enableAutoCommand12; /*!< Enable auto CMD12 */
-    bool enableAutoCommand23; /*!< Enable auto CMD23 */
+    bool enable_auto_command12; /*!< Enable auto CMD12 */
+    bool enable_auto_command23; /*!< Enable auto CMD23 */
     bool enableIgnoreError; /*!< Enable to ignore error event to read/write all the data */
-    bool executeTuning; /*!< execute tuning flag */
+    bool execute_tuning; /*!< execute tuning flag */
 
     uint32_t block_size; /*!< Block size */
     uint32_t block_count; /*!< Block count */
@@ -451,9 +445,9 @@ struct sdhci_command {
     uint32_t index; /*!< Command index */
     uint32_t argument; /*!< Command argument */
     enum sdhci_card_command_type type; /*!< Command type */
-    enum sdhci_card_response_type responseType; /*!< Command response type */
+    enum sdhci_card_response_type response_type; /*!< Command response type */
     uint32_t response[4U]; /*!< Response for this command */
-    uint32_t responseErrorFlags; /*!< response error flag, the flag which need to check
+    uint32_t response_error_flags; /*!< response error flag, the flag which need to check
                                                  the command reponse*/
     uint16_t flags; /*!< Cmd flags */
     uint16_t flags2; /*xfer mode*/
@@ -584,7 +578,7 @@ void sdhci_clear_int_status_flag(struct sdhci_host *sdhci_host, uint32_t mask);
 void sdhic_error_recovery(struct sdhci_host *sdhci_host);
 int32_t sdhci_receive_command_response(struct sdhci_host *sdhci_host, struct sdhci_command *command);
 void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *command, bool use_dma);
-// int32_t sdhci_wait_command_done(struct sdhci_host *sdhci_host, struct sdhci_command *command, bool executeTuning);
+// int32_t sdhci_wait_command_done(struct sdhci_host *sdhci_host, struct sdhci_command *command, bool execute_tuning);
 // int32_t sdhci_transfer_data_blocking(struct sdhci_host *sdhci_host, struct sdhci_data *data, bool use_dma);
 int32_t sdhci_set_transfer_config(struct sdhci_host *sdhci_host, struct sdhci_command *sdhci_command, struct sdhci_data *sdhci_data);
 // int32_t sdhci_transfer_blocking(struct sdhci_host *sdhci_host);

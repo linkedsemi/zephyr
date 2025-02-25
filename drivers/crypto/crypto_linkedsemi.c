@@ -19,13 +19,13 @@ static void linkedsemi_sm4_isr(const struct device *dev)
     HAL_SM4_IRQHandler();
 }
 
-static void linkedsemi_otbn_isr(const struct device *dev)
+__maybe_unused static void linkedsemi_otbn_isr(const struct device *dev)
 {
     ARG_UNUSED(dev);
     HAL_OTBN_IRQHandler();
 }
 
-static void linkedsemi_sysc_otbn_isr(const struct device *dev)
+__maybe_unused static void linkedsemi_sysc_otbn_isr(const struct device *dev)
 {
     ARG_UNUSED(dev);
     HAL_OTBN_SYSC_IRQHandler();
@@ -214,8 +214,6 @@ static struct crypto_driver_api crypto_enc_funcs = {
         CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, crypto);                               \
         CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, sha);                                  \
         CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, sm4);                                  \
-        CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, otbn);                                 \
-        CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, sysc_otbn);                            \
     }
 
 #define CRYPTO_LINKEDSEMI_INIT(index)                                               \

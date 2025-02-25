@@ -45,3 +45,8 @@ zephyr_library_sources_ifdef(
   CONFIG_I3C_TEST
   i3c_test.c
 )
+
+zephyr_library_sources_ifdef(
+  CONFIG_I3C_LINKEDSEMI
+  i3c_linkedsemi.c
+)

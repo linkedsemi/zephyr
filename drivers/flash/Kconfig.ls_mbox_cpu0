@@ -1,0 +1,14 @@
+# Copyright (c) 2023 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+config SOC_FLASH_LS_MBOX_CPU0
+	bool "linkedsemi ls flash driver"
+	default y
+	depends on DT_HAS_LINKEDSEMI_MBOX_CPU0_FLASH_CONTROLLER_ENABLED
+	select FLASH_HAS_PAGE_LAYOUT
+	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_JESD216
+	select FLASH_HAS_EXPLICIT_ERASE
+	select MBOX
+	help
+	  Enables linkedsemi ls flash driver.
