@@ -31,7 +31,7 @@
 #define PECI_LS_MAX_XFER_LEN 1024
 
 /* reg val */
-#define PECI_PRE_DIV_VAL    0x20
+#define PECI_PRE_DIV_VAL    0xff
 #define PECI_A_BIT_CYC_VAL  11
 #define PECI_A_TGT_IDX0_VAL 3
 #define PECI_M_TGT_IDX0_VAL 3
@@ -315,11 +315,11 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     peci_tx_byte(dev, buf.u8, msg->rx_buffer.len);
     peci_tx_byte(dev, buf.u8, msg->cmd_code);
 
+    const uint16_t tx_len = msg->tx_buffer.len - 1;
     /* calculate crc */
     crc_result = crc8(crc_result, buf.u8, 4);
-    if (msg->tx_buffer.len > 0) {
+    if (tx_len > 0) {
          /* msg->tx_buffer.len - 1: because msg->cmd_code is the first byte */
-        const uint16_t tx_len = msg->tx_buffer.len - 1;
         const uint8_t *tx_buf = msg->tx_buffer.buf;
 
         crc_result = crc8(crc_result, tx_buf, tx_len);
