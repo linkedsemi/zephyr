@@ -16,7 +16,7 @@
 #include <ls_hal_flash.h>
 
 #define DT_DRV_COMPAT     linkedsemi_mbox_cpu1_flash_controller
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
+#define SOC_NV_FLASH_NODE DT_CHOSEN(share_flash)
 
 #define FLASH_ADDR       DT_REG_ADDR(SOC_NV_FLASH_NODE)
 #define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
