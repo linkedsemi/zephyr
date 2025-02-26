@@ -18,10 +18,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(peci_core, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(peci_core, LOG_LEVEL_INF);
 
 #define dev_dbg(dev, fmt, ...) \
-    LOG_DBG("Dev %p: " fmt, (void *) dev, ##__VA_ARGS__)
+    LOG_INF("Dev %p: " fmt, (void *) dev, ##__VA_ARGS__)
 
 #define WARN_ONCE(condition, msg)                   \
     do {                                            \
