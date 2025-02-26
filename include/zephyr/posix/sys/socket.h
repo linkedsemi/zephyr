@@ -13,10 +13,14 @@
 #define SHUT_WR   ZSOCK_SHUT_WR
 #define SHUT_RDWR ZSOCK_SHUT_RDWR
 
+#define MSG_OOB		 1
 #define MSG_PEEK     ZSOCK_MSG_PEEK
+#define MSG_DONTROUTE	4
 #define MSG_TRUNC    ZSOCK_MSG_TRUNC
 #define MSG_DONTWAIT ZSOCK_MSG_DONTWAIT
+#define MSG_EOR      0x80				/* End of record */
 #define MSG_WAITALL  ZSOCK_MSG_WAITALL
+#define MSG_NOSIGNAL 0x4000				/* Do not generate SIGPIPE */
 
 #ifdef __cplusplus
 extern "C" {

@@ -1206,6 +1206,14 @@ struct ip_mreqn {
 	int            imr_ifindex;   /**< Network interface index */
 };
 
+/**
+ * @brief Struct used when setting a IPv4 multicast network interface.
+ */
+struct ip_mreq  {
+	struct in_addr imr_multiaddr;   /**< IP multicast group address */
+	struct in_addr imr_interface;   /**< IP address of local interface */
+};
+
 /** @} */
 
 /**
@@ -1234,6 +1242,9 @@ struct ipv6_mreq {
 
 	/** Network interface index of the local IPv6 address */
 	int ipv6mr_ifindex;
+
+	/** Local interface */
+	unsigned int ipv6mr_interface;
 };
 
 /** Don't support IPv4 access */

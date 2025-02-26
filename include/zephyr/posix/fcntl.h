@@ -25,6 +25,7 @@
 
 #define O_EXCL	   0x0800
 #define O_NONBLOCK 0x4000
+#define O_NOCTTY   0x0100
 
 #define F_DUPFD 0
 #define F_GETFL 3

@@ -77,6 +77,40 @@ size_t confstr(int name, char *buf, size_t len);
 long sysconf(int opt);
 #endif /* CONFIG_POSIX_SYSCONF_IMPL_FULL */
 
+typedef unsigned long rlim_t;
+
+struct rlimit {
+	rlim_t	rlim_cur;
+	rlim_t	rlim_max;
+};
+#define RLIMIT_STACK	3		/* max stack size */
+
+#define RLIM_INFINITY	(~0UL)
+int getrlimit (int __resource, struct rlimit *__rlp);
+int setrlimit (int __resource, const struct rlimit *__rlp);
+
+int     pipe (int __fildes[2]);
+ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
+ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
+int	mkstemp (char *);
+pid_t   fork (void);
+int     dup (int __fildes);
+int     dup2 (int __fildes, int __fildes2);
+int	access (const char *__path, int __amode);
+int     execve (const char *__path, char * const __argv[], char * const __envp[]);
+int	 dirfd(void *);
+time_t timegm(struct tm *tm);
+
+#define STDIN_FILENO    0       /* standard input file descriptor */
+#define STDOUT_FILENO   1       /* standard output file descriptor */
+#define STDERR_FILENO   2       /* standard error file descriptor */
+
+#define	F_OK	0
+#define	R_OK	4
+#define	W_OK	2
+#define	X_OK	1
+
+#define WIFCONTINUED(status) ((status)==0xffff)b
 #ifdef __cplusplus
 }
 #endif
