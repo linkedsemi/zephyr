@@ -12,6 +12,7 @@
         zephyr,shell-uart = &uart4;
         zephyr,flash = &flash_xip;
         zephyr,flash-controller = &qspi1;
+        share,flash = &flash0;
     };
 };
 
