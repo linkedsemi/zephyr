@@ -267,6 +267,8 @@ void sys_heap_stress(void *(*alloc_fn)(void *arg, size_t bytes),
  */
 void sys_heap_print_info(struct sys_heap *heap, bool dump_chunks);
 
+void print_sys_memory_stats(void);
+
 /**
  * @}
  */

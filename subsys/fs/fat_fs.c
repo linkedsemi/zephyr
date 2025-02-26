@@ -394,11 +394,35 @@ static int fatfs_closedir(struct fs_dir_t *zdp)
 	return translate_error(res);
 }
 
+static int fatfs_is_root_path(const char *path)
+{
+	const char *volume_strs[] = {FF_VOLUME_STRS};
+	size_t num_volume = sizeof(volume_strs) / sizeof(volume_strs[0]);
+
+	for (size_t i = 0; i < num_volume; i++) {
+		size_t len = strlen(volume_strs[i]);
+
+		if ((strncmp(path, volume_strs[i], len) == 0) &&
+				path[strlen(path) - 1] == ':') {
+			printk("%s is root path", path);
+			return FR_OK;
+		}
+	}
+
+	return FR_INVALID_PARAMETER;
+}
+
 static int fatfs_stat(struct fs_mount_t *mountp,
 		      const char *path, struct fs_dirent *entry)
 {
 	FRESULT res;
 	FILINFO fno;
+
+
+	res = fatfs_is_root_path(translate_path(path));
+	if(res == FR_OK) {
+		return translate_error(res);
+	}
 
 	res = f_stat(translate_path(path), &fno);
 	if (res == FR_OK) {

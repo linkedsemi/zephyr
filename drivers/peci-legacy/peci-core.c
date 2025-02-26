@@ -18,7 +18,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(peci_core);
+LOG_MODULE_REGISTER(peci_core, LOG_LEVEL_DBG);
 
 #define dev_dbg(dev, fmt, ...) \
     LOG_DBG("Dev %p: " fmt, (void *) dev, ##__VA_ARGS__)
