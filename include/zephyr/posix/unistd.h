@@ -111,7 +111,7 @@ time_t timegm(struct tm *tm);
 #define	W_OK	2
 #define	X_OK	1
 
-#define WIFCONTINUED(status) ((status)==0xffff)b
+#define WIFCONTINUED(status) ((status)==0xffff)
 #ifdef __cplusplus
 }
 #endif
