@@ -1,7 +1,6 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/timer/system_timer.h>
-#include <zephyr/linker/linker-defs.h>
 #include <zephyr/pm/state.h>
 #include "platform.h"
 #include "core_rv32.h"
@@ -49,37 +48,56 @@ void Swint_Handler_C(uint32_t *args)
     args[8] = func(args[8],args[9],args[10],args[11]);
 }
 
+#if defined(CONFIG_NOCACHE_MEMORY)
+extern uint32_t _nocache_ram_start;
+extern uint32_t _nocache_ram_end;
+extern uint32_t _nocache_ram_size;
+#endif
+
 #define CPU0_FW_REGION_SIZE MB(2)
-#define CPU1_FW_REGION_SIZE MB(14)
+#define CPU2_FW_REGION_SIZE MB(14)
 /* strong order | cacheable | bufferable */
 /*       2      |     1     |     0      */
 #define BUFFERABLE BIT(0)
 #define CACHEABLE BIT(1)
 #define STRONG_ORDER BIT(2)
-
-__no_optimization void cpu_cache_region_init(void)
+void cpu1_cache_region_init(void)
 {
-    const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
-    const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
-    const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
-    const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
-    const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
-    const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
     uint8_t idx = 0;
-
-    csi_sysmap_config_region(idx++, __image_ram_start, 0);
+    csi_sysmap_config_region(idx++, 0x10000000, 0);
 #if defined(CONFIG_NOCACHE_MEMORY)
-    if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
-        // __ASSERT_NO_MSG(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
-        while(!(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
-        csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
-        csi_sysmap_config_region(idx++, __nocache_ram_end, 0);
+    if ((uint32_t)&_nocache_ram_size > 0) {
+        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
     }
 #endif
-    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
 
-    csi_sysmap_config_region(idx++, PSRAM_ADDR, 0);
-    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(8), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+    csi_sysmap_config_region(idx++, 0x18000000, 0);
+    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+}
+
+void cpu2_cache_region_init(void)
+{
+    uint8_t idx = 0;
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), 0);
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if ((uint32_t)&_nocache_ram_size > 0) {
+        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        if (((uint32_t)&_nocache_ram_size) != 0x10080000) {
+            csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
+        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
+    }
+#endif
+    csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+
+    csi_sysmap_config_region(idx++, 0x18000000, 0);
+    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
     csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
 }
 
@@ -116,9 +134,25 @@ static int lsqsh_init(void)
 {
     SystemInit();
     // sys_init_none();
-    cpu_cache_region_init();
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if (!(((uint32_t)&_nocache_ram_start >= 0x10000000)
+                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512))))) {
+        while(1);
+    }
+#endif
+    cpu1_cache_region_init();
+#else
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if (!(((uint32_t)&_nocache_ram_start >= (0x10000000 + KB(512))
+                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512) + KB(764)))))) {
+        while(1);
+    }
+#endif
+    cpu2_cache_region_init();
+#endif
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)) && defined(CONFIG_IOPMP)
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
 #endif
 
@@ -164,8 +198,8 @@ static int lsqsh_init(void)
     arch_irq_lock();
 
 #if (CONFIG_NUM_USE_CPU == 2)
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
-#if (((CONFIG_CPU1_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU1_BOOT_ADDR <= (0x8000000 + 64*1024*1024))) || (CONFIG_CPU1_BOOT_ADDR == 0x10080000))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if (((CONFIG_CPU2_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU2_BOOT_ADDR <= (0x8000000 + 64*1024*1024))) || (CONFIG_CPU2_BOOT_ADDR == 0x10080000))
     lsqspiv2_msp_init();
     pinmux_hal_flash_init();
     hal_flash_dual_mode_set(true);
@@ -184,8 +218,8 @@ static int lsqsh_init(void)
     lscache_cache_enable(1);
     hal_flash_xip_func_ptr_init();
 #endif
-#if defined(CONFIG_BOOT_CPU1)
-    SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU1_BOOT_ADDR; /* set cpu1 pc addr */
+#if defined(CONFIG_BOOT_CPU2)
+    SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU2_BOOT_ADDR; /* set cpu2 pc addr */
     SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
 #endif
 #endif
@@ -195,8 +229,8 @@ static int lsqsh_init(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
-#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU0) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU1)
-#if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
+#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU0) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU2)
+#if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
 #else
     qspiv2_global_int_ctrl_fn_init();
@@ -210,7 +244,7 @@ static int lsqsh_init(void)
     hal_flash_xip_func_ptr_init();
     IRQ_CONNECT(FLASH_SWINT_NUM, 0, SWINT_Handler_Asm, NULL, 0);
 
-#if !defined(CONFIG_CPU1_BOOT_ADDR) && !defined(CONFIG_XIP)
+#if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
 #endif
 #endif

@@ -5,19 +5,20 @@
  */
 
 #include <string.h>
-#include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
-#include <zephyr/cache.h>
-#include <string.h>
 #include <zephyr/drivers/mbox.h>
-#include <cpu.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
+#include <platform.h>
+#include <cpu.h>
 
 #include <ls_hal_flash.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
 
 #define DT_DRV_COMPAT     linkedsemi_mbox_cpu1_flash_controller
-#define SOC_NV_FLASH_NODE DT_CHOSEN(share_flash)
+#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
 
 #define FLASH_ADDR       DT_REG_ADDR(SOC_NV_FLASH_NODE)
 #define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
@@ -30,6 +31,9 @@ struct flash_ls_data {
 
 struct flash_ls_config {
     const struct mbox_dt_spec tx_channel;
+#if defined(CONFIG_PINCTRL)
+    const struct pinctrl_dev_config *pcfg;
+#endif
 };
 
 static const struct flash_parameters flash_ls_parameters = {
@@ -41,6 +45,14 @@ static int flash_ls_init(const struct device *dev)
 {
     __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
+
+#if defined(CONFIG_PINCTRL)
+    int ret;
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret != 0) {
+        return ret;
+    }
+#endif
 
     k_sem_init(&dev_data->mutex, 1, 1);
 
@@ -84,7 +96,17 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
 
     /* Erase sector one by one*/
     for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
-        mbox_func_call(&dev_config->tx_channel, MBOX_FUNC_CALL_HAL_FLASH_SECTOR_ERASE, 1, (void *)&addr);
+        int ret_mbox = 0;
+        bool xip_present = is_cpu2_xip() & is_cpu1_running();
+        if (xip_present) {
+            ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
+        }
+        if (!ret_mbox) {
+            hal_flash_sector_erase(addr);
+        }
+        if (xip_present) {
+            mbox_release_cpu2();
+        }
     }
 
     k_sem_give(&dev_data->mutex);
@@ -111,19 +133,23 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
         return -EACCES;
     }
 
-    sys_cache_data_flush_range((void *)data, size);
     while (size) {
         /* If the offset isn't a multiple of the page size, we first need
-         * to write the remaining part that fits, otherwise the write could
-         * be wrapped around within the same page
-         */
+		 * to write the remaining part that fits, otherwise the write could
+		 * be wrapped around within the same page
+		 */
         len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-        mbox_func_call(&dev_config->tx_channel,
-                       MBOX_FUNC_CALL_HAL_FLASH_PAGE_PROGRAM,
-                       3,
-                       (void *)&offset,
-                       (void *)&write_data,
-                       (void *)&len);
+        int ret_mbox = 0;
+        bool xip_present = is_cpu2_xip() & is_cpu1_running();
+        if (xip_present) {
+            ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
+        }
+        if (!ret_mbox) {
+            hal_flash_page_program(offset, write_data, len);
+        }
+        if (xip_present) {
+            mbox_release_cpu2();
+        }
 
         write_data += len;
         offset += len;
@@ -148,18 +174,18 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
-    mbox_func_call(&dev_config->tx_channel,
-                MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ,
-                3,
-                (void *)&offset,
-                (void *)&data,
-                (void *)&size);
-    sys_cache_data_invd_range((void *)data, size);
+    bool xip_present = is_cpu2_xip() & is_cpu1_running();
+    if (xip_present) {
+        memcpy(data, (void *)(FLASH_ADDR + offset), size);
+    } else {
+        hal_flash_multi_io_read(offset, (uint8_t *)data, size);
+    }
 
     return 0;
 }
 
-static const struct flash_parameters *flash_ls_get_parameters(const struct device *dev)
+static const struct flash_parameters *
+flash_ls_get_parameters(const struct device *dev)
 {
     ARG_UNUSED(dev);
 
@@ -192,7 +218,17 @@ static int flash_ls_read_jedec_id(const struct device *dev,
         return -EINVAL;
     }
 
-    mbox_func_call(&dev_config->tx_channel, MBOX_FUNC_CALL_HAL_FLASH_READ_ID, 1, (void *)&id);
+    int ret_mbox = 0;
+    bool xip_present = is_cpu2_xip() & is_cpu1_running();
+    if (xip_present) {
+        ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
+    }
+    if (!ret_mbox) {
+        hal_flash_read_id(id);
+    }
+    if (xip_present) {
+        mbox_release_cpu2();
+    }
 
     return 0;
 }
@@ -211,8 +247,10 @@ static const struct flash_driver_api flash_ls_api = {
 #endif
 };
 
+IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(0)));
 static const struct flash_ls_config flash_ls_config_0 = {
     .tx_channel = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(0, mbox), tx),
+    IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0), ))
 };
 
 static struct flash_ls_data flash_ls_data_0;

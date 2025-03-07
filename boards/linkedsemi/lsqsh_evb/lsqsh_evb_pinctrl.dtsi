@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Linkedsemi
+ * Copyright (c) 2025 linkedsemi
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,16 +8,15 @@
 
 &pinctrl {
     /* UART */
-    // /omit-if-no-ref/uart1_tx_pn04: uart1_tx_pn04 {
-    //     pinmux = <LS_PINMUX_SET(PN04, FION_UART1_TXD)>;
-    //     drive-strength = "quarter max driver";
-    // };
-    // /omit-if-no-ref/uart1_rx_pn03: uart1_rx_pn03 {
-    //     pinmux = <LS_PINMUX_SET(PN03, FION_UART1_RXD)>;
-    //     drive-strength = "quarter max driver";
-    //     input-enable;
-    // };
-
+    /omit-if-no-ref/uart1_tx_pn04: uart1_tx_pn04 {
+        pinmux = <UART1_TXD_FUNC1_IDX16_PINMUX_PN(04)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart1_rx_pn03: uart1_rx_pn03 {
+        pinmux = <UART1_RXD_FUNC1_IDX17_PINMUX_PN(03)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
     // /omit-if-no-ref/uart3_tx_pc03: uart3_tx_pc03 {
     //     pinmux = <LS_PINMUX_SET(PC03, FIOC_UART3_TXD)>;
     //     drive-strength = "quarter max driver";
@@ -59,21 +58,21 @@
     // };
 
     /omit-if-no-ref/uart4_tx_pd11: uart4_tx_pd11 {
-        pinmux = <LS_PINMUX_UART4_TXD_FUNC1_IDX9_PD(11)>;
+        pinmux = <UART4_TXD_FUNC1_IDX09_PINMUX_PD(11)>;
         drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart4_rx_pd12: uart4_rx_pd12 {
-        pinmux = <LS_PINMUX_UART4_RXD_FUNC1_IDX10_PD(12)>;
+        pinmux = <UART4_RXD_FUNC1_IDX10_PINMUX_PD(12)>;
         drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart5_tx_pe00: uart5_tx_pe00 {
-        pinmux = <LS_PINMUX_UART5_TXD_FUNC1_IDX9_PE(00)>;
+        pinmux = <UART5_TXD_FUNC1_IDX09_PINMUX_PE(00)>;
         drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart5_rx_pe01: uart5_rx_pe01 {
-        pinmux = <LS_PINMUX_UART5_RXD_FUNC1_IDX10_PE(01)>;
+        pinmux = <UART5_RXD_FUNC1_IDX10_PINMUX_PE(01)>;
         drive-strength = "quarter max driver";
         input-enable;
     };
@@ -236,26 +235,9 @@
     //     input-enable;
     // };
     // /* SPI2 end */
+};
 
-    // /* SPI3 */
-    // /omit-if-no-ref/spi3_sck_pc01: spi3_sck_pc01 {
-    //     pinmux = <LS_PINMUX_SET(PC01, FIOC_SPI3_SCK)>;
-    // };
-    // /omit-if-no-ref/spi3_d0_mosi_pc02: spi3_d0_mosi_pc02 {
-    //     pinmux = <LS_PINMUX_SET(PC02, FIOC_SPI3_DATA0)>;
-    //     input-enable;
-    // };
-    // /omit-if-no-ref/spi3_d1_miso_pc05: spi3_d1_miso_pc05 {
-    //     pinmux = <LS_PINMUX_SET(PC05, FIOC_SPI3_DATA1)>;
-    //     input-enable;
-    // };
-    // /omit-if-no-ref/spi3_d2_wp_pc04: spi3_d2_wp_pc04 {
-    //     pinmux = <LS_PINMUX_SET(PC04, FIOC_SPI3_DATA2)>;
-    //     input-enable;
-    // };
-    // /omit-if-no-ref/spi3_d3_hold_pc03: spi3_d3_hold_pc03 {
-    //     pinmux = <LS_PINMUX_SET(PC03, FIOC_SPI3_DATA3)>;
-    //     input-enable;
-    // };
-    // /* SPI3 end */
+&uart1 {
+    pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
+    pinctrl-names = "default";
 };

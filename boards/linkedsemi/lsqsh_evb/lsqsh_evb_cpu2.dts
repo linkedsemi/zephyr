@@ -9,17 +9,16 @@
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
 / {
-    model = "linkedsemi lsqsh_evb";
-    compatible = "linkedsemi,lsqsh_evb";
+    model = "linkedsemi LSQSH_EVB";
+    compatible = "linkedsemi,lsqsh_app_evb";
 
     chosen {
-        zephyr,flash = &flash1;
-        zephyr,flash-controller = &qspi1;
-        zephyr,sram = &sram1;
+        zephyr,sram = &sram2;
+        zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
     };
 
     aliases {
-        peci-0 = &peci1;
         sdhc0 = &sdhci1;
     };
 
@@ -32,7 +31,7 @@
         mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
             reg = <0x1013f000 DT_SIZE_K(4)>;
-            interrupts = <27 3>;
+            interrupts = <26 3>;
             nchannels = <3>;
             fifo-deepth = <2>;
             fifo-width = <256>;
@@ -42,32 +41,40 @@
 
     mbox_consumer1: mbox-consumer1 {
         compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 1>, <&mbox 0>;
+        mboxes = <&mbox 0>, <&mbox 1>;
         mbox-names = "tx", "rx";
     };
 
     mbox_consumer2: mbox-consumer2 {
         compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 3>, <&mbox 2>;
+        mboxes = <&mbox 2>, <&mbox 3>;
         mbox-names = "tx", "rx";
     };
 
     /* func call */
     mbox_consumer3: mbox-consumer3 {
         compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 5>, <&mbox 4>;
+        mboxes = <&mbox 4>, <&mbox 5>;
         mbox-names = "tx", "rx";
     };
 };
 
 &cpu1 {
+    status = "disabled";
+};
+
+&cpu2 {
     clock-frequency = <50000000>;
     cpu-power-states = <&idle &lp0>;
     status = "okay";
 };
 
-&cpu2 {
+&sram1 {
     status = "disabled";
+};
+
+&sram2 {
+    reg = <0x10080000 DT_SIZE_K(764)>;
 };
 
 &gpioa {
@@ -130,57 +137,11 @@
     status = "okay";
 };
 
-// &sgpiom {
-//     ngpios = <128>;
-//     status = "okay";
-// };
-
-// &sgpiom_a_d {
-//     status = "okay";
-// };
-
-// &sgpiom_e_h {
-//     status = "okay";
-// };
-
-// &sgpiom_i_l {
-//     status = "okay";
-// };
-
-// &sgpiom_m_p {
-//     status = "okay";
-// };
-
-&sgpiom2 {
-    ngpios = <128>;
-    status = "okay";
-};
-
-&sgpiom2_a_d {
-    status = "okay";
-};
-
-&sgpiom2_e_h {
-    status = "okay";
-};
-
-&sgpiom2_i_l {
-    status = "okay";
-};
-
-&sgpiom2_m_p {
-    status = "okay";
-};
-
 &mac1 {
     status = "okay";
 };
 
 &mdio1 {
-    status = "okay";
-};
-
-&peci1 {
     status = "okay";
 };
 
@@ -193,35 +154,4 @@
         bus-width = <1>;
         status = "okay";
     };
-};
-
-&crypto {
-    status = "okay";
-};
-
-// tst_dma0: &dma0 {
-//     status = "okay";
-// };
-
-&lpc1 {
-    status = "disabled";
-
-    lpc_kcs_ca2: lpc_kcs_ca2 {
-        compatible = "linkedsemi,ls-kcs";
-        port = <0xca2 0xca3>;
-        status = "disabled";
-    };
-};
-
-&espi1 {
-    espi1_kcs_ca2: espi1_kcs_ca2 {
-        compatible = "linkedsemi,ls-kcs";
-        port = <0xca2 0xca3>;
-        status = "okay";
-    };
-};
-
-&ipmi_kcs {
-    kcs_chan = <&espi1_kcs_ca2>;
-    status = "okay";
 };

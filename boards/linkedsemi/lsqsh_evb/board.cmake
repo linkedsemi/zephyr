@@ -1,2 +1,2 @@
-# Copyright (c) 2024, linkedsemi
+# Copyright (c) 2025 linkedsemi
 # SPDX-License-Identifier: Apache-2.0
