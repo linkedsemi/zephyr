@@ -14,29 +14,35 @@
 #include "reg_sysc_app_per.h"
 #include "per_func_mux.h"
 
+// lock:
+//     func
+//     config(except ien)
+//     din
+//     intr clr
+
 int main(void)
 {
-	printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
-    for(uint32_t i = PA00; i <= PT00; i++) {
-        for(uint32_t func_num = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-            gpio_port_pin_t *x = (gpio_port_pin_t *)&i;
+    printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
+    for (uint32_t pin = PA00; pin <= PT00; pin++) {
+        for (uint32_t func_num = PINMUX_FUNC_START; pin <= PINMUX_FUNC_END; pin++) {
+            gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
             /* save */
             uint32_t stat = SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1];
             /* unlock && clear */
-            SYSC_SEC_AWO->FUNC_IO_LOCK[i / 16] &= ~(1 << (x->num));
-            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] &= ~(1 << (((x->port % 2) * 16)+ x->num));
+            io_func_cfg_lock(pin, false);
+            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] &= ~(1 << (((x->port % 2) * 16) + x->num));
 
             /* lock && set */
-            SYSC_SEC_AWO->FUNC_IO_LOCK[i / 16] = 1 << (x->num);
-            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] = 1 << (((x->port % 2) * 16)+ x->num);
-            if (SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] & (1 << (((x->port % 2) * 16)+ x->num))) {
+            io_func_cfg_lock(pin, true);
+            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] = 1 << (((x->port % 2) * 16) + x->num);
+            if (SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] & (1 << (((x->port % 2) * 16) + x->num))) {
                 __ASSERT(0, "lock test fail");
             }
 
             /* unlock && set */
-            SYSC_SEC_AWO->FUNC_IO_LOCK[i / 16] &= ~(1 << (x->num));
-            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] = 1 << (((x->port % 2) * 16)+ x->num);
-            if (!(SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] & (1 << (((x->port % 2) * 16)+ x->num)))) {
+            io_func_cfg_lock(pin, false);
+            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] = 1 << (((x->port % 2) * 16) + x->num);
+            if (!(SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] & (1 << (((x->port % 2) * 16) + x->num)))) {
                 __ASSERT(0, "unlock test fail");
             }
             /* reload */
@@ -44,9 +50,9 @@ int main(void)
         }
     }
 
-    for(uint32_t i = PA00; i <= PT00; i++) {
-        for(uint32_t func_num = PINMUX_FUNC_START; i <= PINMUX_FUNC_END; i++) {
-            gpio_port_pin_t *x = (gpio_port_pin_t *)&i;
+    for (uint32_t pin = PA00; pin <= PT00; pin++) {
+        for (uint32_t func_num = PINMUX_FUNC_START; pin <= PINMUX_FUNC_END; pin++) {
+            gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
             /* save */
             uint32_t stat = SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1];
             uint32_t stat_per = SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4];
@@ -58,15 +64,14 @@ int main(void)
             } while ((test_val == 0) || (test_val == stat_per));
 
             /* unlock && clear */
-            SYSC_SEC_AWO->FUNC_IO_LOCK[i / 16] &= ~(1 << (x->num));
-            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] &= ~(1 << (((x->port % 2) * 16)+ x->num));
+            io_func_cfg_lock(pin, false);
+            SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] &= ~(1 << (((x->port % 2) * 16) + x->num));
 
             /* unlock && clear */
-            SYSC_SEC_PER->IO_FUNC_LOCK[i / 16] &= ~(1 << (x->num));
             SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4] &= ~(0x3f << ((x->num % 4) * 8));
 
             /* lock && set */
-            SYSC_SEC_PER->IO_FUNC_LOCK[i / 16] = 1 << (x->num);
+            io_func_cfg_lock(pin, true);
             SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4] |= test_val << ((x->num % 4) * 8);
             peek_val = (SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4] >> ((x->num % 4) * 8)) & 0x3f;
             if (peek_val != 0) {
@@ -74,7 +79,7 @@ int main(void)
             }
 
             /* unlock && set */
-            SYSC_SEC_PER->IO_FUNC_LOCK[i / 16] &= ~(1 << (x->num));
+            io_func_cfg_lock(pin, false);
             SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4] |= test_val << ((x->num % 4) * 8);
             peek_val = (SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4] >> ((x->num % 4) * 8)) & 0x3f;
             if (peek_val != test_val) {
@@ -85,6 +90,85 @@ int main(void)
             SYSC_APP_AWO->IO_FUNC[func_num][x->port >> 1] = stat;
         }
     }
+
+    for (uint32_t pin = PA00; pin <= PT00; pin++) {
+        // unlock
+        io_cfg_lock(pin, false);
+        // set
+        io_cfg_output(pin);
+        // check pass
+        __ASSERT_NO_MSG(io_is_output(pin));
+
+        //clear
+        io_cfg_disable(pin);
+
+        // lock
+        io_cfg_lock(pin, true);
+        // set
+        io_cfg_output(pin);
+        // check fail
+        __ASSERT_NO_MSG(!io_is_output(pin));
+
+        break; //do not test all usless safe
+    }
+
+    for (uint32_t pin = PA00; pin <= PT00; pin++) {
+        // unlock
+        io_cfg_lock(pin, false);
+        // set
+        io_cfg_input(pin);
+        // check pass
+        __ASSERT_NO_MSG(io_is_input(pin));
+
+        //clear
+        io_cfg_disable(pin);
+
+        // lock
+        io_cfg_lock(pin, true);
+        // set
+        io_cfg_input(pin);
+        // check fail
+        __ASSERT_NO_MSG(!io_is_input(pin));
+    }
+
+    for (uint32_t pin = PA00; pin <= PT00; pin++) {
+        io_cfg_lock(pin, false);
+        io_cfg_input(pin);
+        io_cfg_output(pin);
+
+        // unlock
+        io_cfg_app_input_lock(pin, false);
+
+        // set
+        io_set_pin(pin);
+        // check pass
+        __ASSERT_NO_MSG(io_sec_get_input_val(pin) == 1);
+        __ASSERT_NO_MSG(io_app_get_input_val(pin) == 1);
+
+        // set
+        io_clr_pin(pin);
+        // check pass
+        __ASSERT_NO_MSG(io_sec_get_input_val(pin) == 0);
+        __ASSERT_NO_MSG(io_app_get_input_val(pin) == 0);
+
+        // lock
+        io_cfg_app_input_lock(pin, true);
+
+        // set
+        io_set_pin(pin);
+        // check fail
+        __ASSERT_NO_MSG(io_sec_get_input_val(pin) == 1);
+        __ASSERT_NO_MSG(io_app_get_input_val(pin) == 0);
+
+        // set
+        io_clr_pin(pin);
+        // check
+        __ASSERT_NO_MSG(io_sec_get_input_val(pin) == 0);
+        __ASSERT_NO_MSG(io_app_get_input_val(pin) == 0);
+
+        break; //do not test all usless safe
+    }
+
     printf("pass\n");
 
     return 0;
