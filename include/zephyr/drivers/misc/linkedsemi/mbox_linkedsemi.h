@@ -31,14 +31,14 @@ typedef struct __packed {
 } mbox_func_call_data_t;
 
 int mbox_func_call(const struct mbox_dt_spec *tx_channel, enum mbox_func_call_id api_id, uint32_t parm_num, ...);
-int mbox_acquire_cpu1_idle(const struct mbox_dt_spec *tx_channel);
-void mbox_release_cpu1(void);
+int mbox_acquire_cpu2_idle(const struct mbox_dt_spec *tx_channel);
+void mbox_release_cpu2(void);
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
-static inline bool is_cpu1_xip(void)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+static inline bool is_cpu2_xip(void)
 {
-    return ((CONFIG_CPU1_BOOT_ADDR >= 0x8000000)
-            && (CONFIG_CPU1_BOOT_ADDR < (0x8000000 + (16 * 1024 * 1024))));
+    return ((CONFIG_CPU2_BOOT_ADDR >= 0x8000000)
+            && (CONFIG_CPU2_BOOT_ADDR < (0x8000000 + (16 * 1024 * 1024))));
 }
 #endif
 

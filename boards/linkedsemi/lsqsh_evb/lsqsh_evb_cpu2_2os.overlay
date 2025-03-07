@@ -1,0 +1,56 @@
+/*
+ * Copyright (c) 2025 linkedsemi
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#include "lsqsh_evb_pinctrl.dtsi"
+
+/ {
+    chosen {
+        zephyr,sram = &sram2;
+        zephyr,console = &uart4;
+        zephyr,shell-uart = &uart4;
+        zephyr,flash = &flash1;
+        zephyr,flash-controller = &qspi1;
+    };
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    status = "okay";
+    current-speed = <115200>;
+    pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
+    pinctrl-names = "default";
+};
+
+&uart5 {
+    status = "disabled";
+};
+
+/delete-node/ &flash1;
+&qspi1 {
+    compatible = "linkedsemi,mbox-cpu2-flash-controller";
+    mbox = <&mbox_consumer3>;
+    status = "okay";
+
+    flash1: flash@8800000 {
+        compatible = "soc-nv-flash";
+        reg = <(0x8000000 + DT_SIZE_M(8)) DT_SIZE_M(8)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
+    };
+};

@@ -1,18 +1,18 @@
 /*
- * Copyright (c) 2024, linkedsemi
+ * Copyright (c) 2025 linkedsemi
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "lsqsh_evb_pinctrl_runbmc_v3.dtsi"
+#include "lsqsh_evb_pinctrl.dtsi"
 
 / {
     chosen {
-        zephyr,sram = &sram1;
+        zephyr,sram = &sram2;
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
         zephyr,flash = &flash_xip;
         zephyr,flash-controller = &qspi1;
-        share,flash = &flash0;
+        share,flash = &flash1;
     };
 };
 
@@ -43,11 +43,11 @@
 };
 
 &qspi1 {
-    compatible = "linkedsemi,mbox-cpu1-flash-controller";
-    mbox = <&mbox_consumer2>;
+    compatible = "linkedsemi,mbox-cpu2-flash-controller";
+    mbox = <&mbox_consumer3>;
     status = "okay";
 
-    flash0: flash@8000000 {
+    flash1: flash@8000000 {
         compatible = "soc-nv-flash";
         reg = <0x8000000 DT_SIZE_M(16)>;
         erase-block-size = <4096>;
