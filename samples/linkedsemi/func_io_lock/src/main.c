@@ -14,6 +14,10 @@
 #include "reg_sysc_app_per.h"
 #include "per_func_mux.h"
 
+#if defined(CONFIG_GPIO)
+#error CONFIG_GPIO=n
+#endif
+
 // lock:
 //     func
 //     config(except ien)
@@ -168,6 +172,57 @@ int main(void)
 
         break; //do not test all usless safe
     }
+
+    do {
+        io_cfg_lock(PT15, false);
+        io_cfg_lock(PK13, false);
+        io_func_cfg_lock(PT15, false);
+        io_func_cfg_lock(PK13, false);
+
+        // unlock
+        io_exti_clr_cfg_lock(PK13, INT_EDGE_FALLING, false);
+
+        io_cfg_output(PT15);
+        io_cfg_input(PK13);
+        io_set_pin(PT15);
+        __ASSERT(1 == io_sec_get_input_val(PK13), "please connect PT15 && PK13");
+        io_clr_pin(PT15);
+        __ASSERT(0 == io_sec_get_input_val(PK13), "please connect PT15 && PK13");
+
+        io_sec_exti_config(PK13, INT_EDGE_FALLING);
+
+        // set
+        io_set_pin(PT15);
+        io_clr_pin(PT15);
+
+        // check pass
+        __ASSERT_NO_MSG(true == io_sec_get_exti_status(PK13, INT_EDGE_FALLING));
+        io_clr_exti(PK13, INT_EDGE_FALLING);
+        __ASSERT_NO_MSG(false == io_sec_get_exti_status(PK13, INT_EDGE_FALLING));
+
+        // lock
+        io_exti_clr_cfg_lock(PK13, INT_EDGE_FALLING, true);
+
+        // set
+        io_set_pin(PT15);
+        io_clr_pin(PT15);
+
+        __ASSERT_NO_MSG(true == io_sec_get_exti_status(PK13, INT_EDGE_FALLING));
+        // clr intr
+        io_clr_exti(PK13, INT_EDGE_FALLING);
+        // check fail
+        __ASSERT_NO_MSG(true == io_sec_get_exti_status(PK13, INT_EDGE_FALLING));
+
+        // unlock
+        io_exti_clr_cfg_lock(PK13, INT_EDGE_FALLING, false);
+
+        // clr intr
+        io_clr_exti(PK13, INT_EDGE_FALLING);
+        // check pass
+        __ASSERT_NO_MSG(false == io_sec_get_exti_status(PK13, INT_EDGE_FALLING));
+
+        break; //do not test all usless safe
+    } while(0);
 
     printf("pass\n");
 
