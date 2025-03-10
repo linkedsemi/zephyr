@@ -186,6 +186,8 @@ struct fs_file_system_t {
 	 */
 	int (*statvfs)(struct fs_mount_t *mountp, const char *path,
 					struct fs_statvfs *stat);
+	int (*ioctl)(struct fs_file_t *filp, unsigned long request,
+					va_list args);
 #if defined(CONFIG_FILE_SYSTEM_MKFS) || defined(__DOXYGEN__)
 	/**
 	 * Formats a device to specified file system type.

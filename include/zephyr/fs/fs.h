@@ -63,6 +63,9 @@ enum {
 
 	/** Base identifier for external file systems. */
 	FS_TYPE_EXTERNAL_BASE,
+
+	/** Identifier for in-tree i2cfs file system. */
+    FS_I2C,
 };
 
 /** Flag prevents formatting device if requested file system not found */
