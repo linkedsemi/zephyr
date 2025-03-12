@@ -3,6 +3,7 @@
 
 #include <zephyr/kernel.h>
 #include <core_rv32.h>
+#include "reg_sysc_sec_cpu.h"
 
 #define MBOX_FUNC_CALL_PARM_NUM_MAX 10
 #define MBOX_RETRY_MAX_CNT 100000
@@ -41,6 +42,11 @@ static inline bool is_cpu2_xip(void)
             && (CONFIG_CPU2_BOOT_ADDR < (0x8000000 + (16 * 1024 * 1024))));
 }
 #endif
+
+static inline bool is_cpu2_running(void)
+{
+    return (SYSC_SEC_CPU->APP_CPU_SRST > 0);
+}
 
 static inline void nop_delay(uint64_t count)
 {
