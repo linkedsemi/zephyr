@@ -87,7 +87,8 @@ enum net_ip_protocol_secure {
 enum net_sock_type {
 	SOCK_STREAM = 1,           /**< Stream socket type   */
 	SOCK_DGRAM,                /**< Datagram socket type */
-	SOCK_RAW                   /**< RAW socket type      */
+	SOCK_RAW,                  /**< RAW socket type      */
+	SOCK_SEQPACKET	= 5        /**< sequential packet socket*/
 };
 
 /** @brief Convert 16-bit value from network to host byte order.
