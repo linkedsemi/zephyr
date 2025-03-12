@@ -11,11 +11,11 @@ family:
     socs:
     - name: lsqsh
       cpuclusters:
-      - name: cpu0
       - name: cpu1
+      - name: cpu2
   - name: alicmu
     socs:
     - name: cmu610
       cpuclusters:
-      - name: cpu0
       - name: cpu1
+      - name: cpu2
