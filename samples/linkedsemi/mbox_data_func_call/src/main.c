@@ -38,7 +38,7 @@ static void callback0(const struct device *dev, mbox_channel_id_t channel_id, vo
 
 bool is_cpu1_flash_area(uint32_t addr)
 {
-    return addr >= (CONFIG_CPU1_XIP_ADDR - FLASH_ADDR);
+    return addr >= (CONFIG_CPU2_XIP_ADDR - FLASH_ADDR);
 }
 
 int main(void)
