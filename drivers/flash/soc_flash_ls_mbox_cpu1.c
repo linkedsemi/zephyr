@@ -97,7 +97,7 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
     /* Erase sector one by one*/
     for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
         int ret_mbox = 0;
-        bool xip_present = is_cpu2_xip() & is_cpu1_running();
+        bool xip_present = is_cpu2_xip() & is_cpu2_running();
         if (xip_present) {
             ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
         }
@@ -140,7 +140,7 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
 		 */
         len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
         int ret_mbox = 0;
-        bool xip_present = is_cpu2_xip() & is_cpu1_running();
+        bool xip_present = is_cpu2_xip() & is_cpu2_running();
         if (xip_present) {
             ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
         }
@@ -174,7 +174,7 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
-    bool xip_present = is_cpu2_xip() & is_cpu1_running();
+    bool xip_present = is_cpu2_xip() & is_cpu2_running();
     if (xip_present) {
         memcpy(data, (void *)(FLASH_ADDR + offset), size);
     } else {
@@ -219,7 +219,7 @@ static int flash_ls_read_jedec_id(const struct device *dev,
     }
 
     int ret_mbox = 0;
-    bool xip_present = is_cpu2_xip() & is_cpu1_running();
+    bool xip_present = is_cpu2_xip() & is_cpu2_running();
     if (xip_present) {
         ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
     }
