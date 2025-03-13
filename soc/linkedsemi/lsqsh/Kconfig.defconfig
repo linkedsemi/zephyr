@@ -58,7 +58,7 @@ config NUM_OS
 	range 1 2
 	default 2
 
-if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@0))
+if ((NUM_USE_CPU=2))
 	config CPU1_XIP_ADDR
 		hex "cpu1 xip addr"
 		default 0x8800000

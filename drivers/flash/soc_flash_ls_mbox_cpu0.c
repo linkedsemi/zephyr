@@ -11,6 +11,7 @@
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include <platform.h>
 #include <cpu.h>
+#include "reg_sysc_sec_cpu.h"
 
 #include <ls_hal_flash.h>
 #if defined(CONFIG_PINCTRL)
@@ -40,6 +41,11 @@ static const struct flash_parameters flash_ls_parameters = {
     .write_block_size = FLASH_WRITE_SIZE,
     .erase_value = 0xff,
 };
+
+static inline bool is_cpu1_running(void)
+{
+    return (SYSC_SEC_CPU->APP_CPU_SRST > 0);
+}
 
 static int flash_ls_init(const struct device *dev)
 {
