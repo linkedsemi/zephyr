@@ -7,6 +7,7 @@
 #define ZEPHYR_INCLUDE_POSIX_UNISTD_H_
 
 #include <zephyr/posix/posix_types.h>
+#include <zephyr/net/net_ip.h>
 
 #ifdef CONFIG_POSIX_API
 #include <zephyr/fs/fs.h>

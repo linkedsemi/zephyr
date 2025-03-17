@@ -9,6 +9,7 @@
 #include <zephyr/init.h>
 #include <errno.h>
 #include <zephyr/sys/math_extras.h>
+#include <zephyr/sys/sys_heap.h>
 #include <string.h>
 #include <zephyr/app_memory/app_memdomain.h>
 #ifdef CONFIG_MULTITHREADING
@@ -143,7 +144,7 @@ void print_sys_memory_stats(void)
 
 	sys_heap_runtime_stats_get(&z_malloc_heap, &stats);
 
-	printk("allocated %zu, free %zu, max allocated %zu, heap size %u\n",
+	printk("allocated %zu, free %zu, max allocated %zu, heap size %lu\n",
 		stats.allocated_bytes, stats.free_bytes,
 		stats.max_allocated_bytes, HEAP_SIZE);
 }
