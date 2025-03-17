@@ -93,3 +93,20 @@
         write-block-size = <4>;
     };
 };
+
+/ {
+    fstab {
+        compatible = "zephyr,fstab";
+        lfs1: lfs1{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/lfs";
+            partition = <&storage_partition>;
+            automount;
+            read-size = <16>;
+            prog-size = <16>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+    };
+};
