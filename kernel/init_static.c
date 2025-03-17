@@ -81,7 +81,7 @@ void __do_init_array_aux(void)
 	for (func_ptr *func = __zephyr_init_array_start;
 		func < __zephyr_init_array_end;
 		func++) {
-		printk("Init item %#p, func %#p\n", func, *func);
+		printk("Init item %p, func %p\n", func, *func);
 		(*func)();
 	}
 }
