@@ -1,0 +1,31 @@
+
+&i3c9 {
+    // i3c-scl-hz = <1000000>;
+    // i2c-scl-hz = <400000>;
+    status = "okay";
+    is-secondary;
+
+    // own-dynamic_address = <0x38>;
+    tgt-pid = <0x0208 0x13811000>;
+    dcr = <0x4>;
+    bcr = <0x06>;
+
+};
+
+&i3c10 {
+    i3c-scl-hz = <600000>;
+    // i2c-scl-hz = <400000>;
+    status = "okay";
+    
+    own-dynamic_address = <0x38>;
+    tgt-pid = <0x5 0x55>;
+    dcr = <0x4>;
+    bcr = <0x42>;
+
+    i3ctarget1: i3ctarget@20813811000 {
+        compatible = "vnd,i3c-device";
+        reg = < 0 0x0208 0x13811000>;
+        assigned-address = <0x32>;
+        status = "okay";
+    };
+};
