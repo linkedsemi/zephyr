@@ -2,8 +2,9 @@
 &i3c9 {
     // i3c-scl-hz = <1000000>;
     // i2c-scl-hz = <400000>;
-    status = "okay";
+    interrupts = <120 4>;
     is-secondary;
+    status = "okay";
 
     // own-dynamic_address = <0x38>;
     tgt-pid = <0x0208 0x13811000>;
