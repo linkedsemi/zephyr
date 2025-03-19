@@ -52,7 +52,7 @@ void sdhci_reset(struct sdhci_host *host, uint8_t mask)
     sdhci_writeb(host, mask, SDHCI_SOFTWARE_RESET);
     while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
         if (timeout == 0) {
-            LOG_ERR("%s: Reset 0x%x never completed.\n",
+            LOG_ERROR("%s: Reset 0x%x never completed.\n",
                     __func__,
                     (int)mask);
             return;

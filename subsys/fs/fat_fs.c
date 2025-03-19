@@ -515,14 +515,14 @@ static int fatfs_unmount(struct fs_mount_t *mountp)
 
 	res = f_mount(NULL, translate_path(mountp->mnt_point), 0);
 	if (res != FR_OK) {
-		LOG_ERR("Unmount failed (%d)", res);
+		LOG_ERROR("Unmount failed (%d)", res);
 		return translate_error(res);
 	}
 
 	/* Make direct disk IOCTL call to deinit disk */
 	disk_res = disk_ioctl(((FATFS *)mountp->fs_data)->pdrv, CTRL_POWER, &param);
 	if (disk_res != RES_OK) {
-		LOG_ERR("Could not power off disk (%d)", disk_res);
+		LOG_ERROR("Could not power off disk (%d)", disk_res);
 		return translate_disk_error(disk_res);
 	}
 

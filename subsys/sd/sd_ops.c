@@ -387,7 +387,7 @@ int sdmmc_switch_voltage(struct sd_card *card)
 	card->bus_io.clock = sd_clock;
 	ret = sdhc_set_io(card->sdhc, &card->bus_io);
 	if (ret) {
-		LOG_ERR("Failed to restart SD clock");
+		LOG_ERROR("Failed to restart SD clock");
 		return ret;
 	}
 	/*
@@ -527,14 +527,14 @@ static int card_read(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 
 	ret = sdhc_request(card->sdhc, &cmd, &data);
 	if (ret) {
-		LOG_ERR("Failed to read from SDMMC %d", ret);
+		LOG_ERROR("Failed to read from SDMMC %d", ret);
 		return ret;
 	}
 
 	/* Verify card is back in transfer state after read */
 	ret = sdmmc_wait_ready(card);
 	if (ret) {
-		LOG_ERR("Card did not return to ready state");
+		LOG_ERROR("Card did not return to ready state");
 		return -ETIMEDOUT;
 	}
 	return 0;
@@ -570,7 +570,7 @@ int card_read_blocks(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 		/* lower bits of address are set, not aligned. Use internal buffer */
 		LOG_DBG("Unaligned buffer access to SD card may incur performance penalty");
 		if (sizeof(card->card_buffer) < card->block_size) {
-			LOG_ERR("Card buffer size needs to be increased for "
+			LOG_ERROR("Card buffer size needs to be increased for "
 				"unaligned writes to work");
 			k_mutex_unlock(&card->lock);
 			return -ENOBUFS;
@@ -582,7 +582,7 @@ int card_read_blocks(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 			/* Read from disk to card buffer */
 			ret = card_read(card, card->card_buffer, sector + start_block, rlen);
 			if (ret) {
-				LOG_ERR("Write failed");
+				LOG_ERROR("Write failed");
 				k_mutex_unlock(&card->lock);
 				return ret;
 			}
@@ -596,7 +596,7 @@ int card_read_blocks(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 		/* Aligned buffers can be used directly */
 		ret = card_read(card, rbuf, start_block, num_blocks);
 		if (ret) {
-			LOG_ERR("Card read failed");
+			LOG_ERROR("Card read failed");
 			k_mutex_unlock(&card->lock);
 			return ret;
 		}
@@ -693,13 +693,13 @@ static int card_write(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 		if (ret) {
 			return ret;
 		}
-		LOG_ERR("Only %d blocks of %d were written", blocks, num_blocks);
+		LOG_ERROR("Only %d blocks of %d were written", blocks, num_blocks);
 		return -EIO;
 	}
 	/* Verify card is back in transfer state after write */
 	ret = sdmmc_wait_ready(card);
 	if (ret) {
-		LOG_ERR("Card did not return to ready state");
+		LOG_ERROR("Card did not return to ready state");
 		return -ETIMEDOUT;
 	}
 	return 0;
@@ -735,7 +735,7 @@ int card_write_blocks(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 		/* lower bits of address are set, not aligned. Use internal buffer */
 		LOG_DBG("Unaligned buffer access to SD card may incur performance penalty");
 		if (sizeof(card->card_buffer) < card->block_size) {
-			LOG_ERR("Card buffer size needs to be increased for "
+			LOG_ERROR("Card buffer size needs to be increased for "
 				"unaligned writes to work");
 			k_mutex_unlock(&card->lock);
 			return -ENOBUFS;
@@ -749,7 +749,7 @@ int card_write_blocks(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 			/* Write card buffer to disk */
 			ret = card_write(card, card->card_buffer, sector + start_block, wlen);
 			if (ret) {
-				LOG_ERR("Write failed");
+				LOG_ERROR("Write failed");
 				k_mutex_unlock(&card->lock);
 				return ret;
 			}
@@ -761,7 +761,7 @@ int card_write_blocks(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 		/* We can use aligned buffers directly */
 		ret = card_write(card, wbuf, start_block, num_blocks);
 		if (ret) {
-			LOG_ERR("Write failed");
+			LOG_ERROR("Write failed");
 			k_mutex_unlock(&card->lock);
 			return ret;
 		}

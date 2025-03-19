@@ -657,7 +657,7 @@ static int littlefs_flash_init(struct fs_littlefs *fs, void *dev_id)
 	/* Open flash area */
 	ret = flash_area_open(area_id, fap);
 	if ((ret < 0) || (*fap == NULL)) {
-		LOG_ERR("can't open flash area %d", area_id);
+		LOG_ERROR("can't open flash area %d", area_id);
 		return -ENODEV;
 	}
 
@@ -666,7 +666,7 @@ static int littlefs_flash_init(struct fs_littlefs *fs, void *dev_id)
 
 	dev = flash_area_get_device(*fap);
 	if (dev == NULL) {
-		LOG_ERR("can't get flash device: %s",
+		LOG_ERROR("can't get flash device: %s",
 			(*fap)->fa_dev->name);
 		return -ENODEV;
 	}
@@ -682,7 +682,7 @@ static int littlefs_init_backend(struct fs_littlefs *fs, void *dev_id, int flags
 
 	if (!(IS_ENABLED(CONFIG_FS_LITTLEFS_FMP_DEV) && !littlefs_on_blkdev(flags)) &&
 	    !(IS_ENABLED(CONFIG_FS_LITTLEFS_BLK_DEV) && littlefs_on_blkdev(flags))) {
-		LOG_ERR("Can't init littlefs backend, review configs and flags 0x%08x", flags);
+		LOG_ERROR("Can't init littlefs backend, review configs and flags 0x%08x", flags);
 		return -ENOTSUP;
 	}
 
@@ -691,7 +691,7 @@ static int littlefs_init_backend(struct fs_littlefs *fs, void *dev_id, int flags
 		fs->backend = dev_id;
 		ret = disk_access_init((char *) fs->backend);
 		if (ret < 0) {
-			LOG_ERR("Storage init ERROR!");
+			LOG_ERROR("Storage init ERROR!");
 			return ret;
 		}
 	}
@@ -738,7 +738,7 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 
 	if (!(IS_ENABLED(CONFIG_FS_LITTLEFS_FMP_DEV) && !littlefs_on_blkdev(flags)) &&
 	    !(IS_ENABLED(CONFIG_FS_LITTLEFS_BLK_DEV) && littlefs_on_blkdev(flags))) {
-		LOG_ERR("Can't init littlefs config, review configs and flags 0x%08x", flags);
+		LOG_ERROR("Can't init littlefs config, review configs and flags 0x%08x", flags);
 		return -ENOTSUP;
 	}
 
@@ -749,7 +749,7 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 						DISK_IOCTL_GET_SECTOR_SIZE,
 						&block_size);
 			if (ret < 0) {
-				LOG_ERR("Unable to get sector size");
+				LOG_ERROR("Unable to get sector size");
 				return ret;
 			}
 		}
@@ -798,7 +798,7 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 					DISK_IOCTL_GET_SECTOR_COUNT,
 					&block_count);
 		if (ret < 0) {
-			LOG_ERR("Unable to get sector count!");
+			LOG_ERROR("Unable to get sector count!");
 			return -EINVAL;
 		}
 		LOG_INF("FS at %s: is %u 0x%x-byte blocks with %u cycle",
@@ -847,14 +847,14 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 		lcp->prog_size = block_size;
 
 		if (lcp->cache_size < new_cache_size) {
-			LOG_ERR("Configured cache size is too small: %d < %d", lcp->cache_size,
+			LOG_ERROR("Configured cache size is too small: %d < %d", lcp->cache_size,
 				new_cache_size);
 			return -ENOMEM;
 		}
 		lcp->cache_size = new_cache_size;
 
 		if (lcp->lookahead_size < new_lookahead_size) {
-			LOG_ERR("Configured lookahead size is too small: %d < %d",
+			LOG_ERROR("Configured lookahead size is too small: %d < %d",
 				lcp->lookahead_size, new_lookahead_size);
 			return -ENOMEM;
 		}
@@ -934,19 +934,19 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 			LOG_WRN("can't mount (LFS %d); formatting", ret);
 			ret = lfs_format(&fs->lfs, &fs->cfg);
 			if (ret < 0) {
-				LOG_ERR("format failed (LFS %d)", ret);
+				LOG_ERROR("format failed (LFS %d)", ret);
 				ret = lfs_to_errno(ret);
 				goto out;
 			}
 		} else {
-			LOG_ERR("can not format read-only system");
+			LOG_ERROR("can not format read-only system");
 			ret = -EROFS;
 			goto out;
 		}
 
 		ret = lfs_mount(&fs->lfs, &fs->cfg);
 		if (ret < 0) {
-			LOG_ERR("remount after format failed (LFS %d)", ret);
+			LOG_ERROR("remount after format failed (LFS %d)", ret);
 			ret = lfs_to_errno(ret);
 			goto out;
 		}
@@ -993,7 +993,7 @@ static int littlefs_mkfs(uintptr_t dev_id, void *cfg, int flags)
 
 	ret = lfs_format(&fs->lfs, &fs->cfg);
 	if (ret < 0) {
-		LOG_ERR("format failed (LFS %d)", ret);
+		LOG_ERROR("format failed (LFS %d)", ret);
 		ret = lfs_to_errno(ret);
 		goto out;
 	}
@@ -1103,7 +1103,7 @@ static void mount_init(struct fs_mount_t *mp)
 		int rc = fs_mount(mp);
 
 		if (rc < 0) {
-			LOG_ERR("Automount %s failed: %d",
+			LOG_ERROR("Automount %s failed: %d",
 				mp->mnt_point, rc);
 		} else {
 			LOG_INF("Automount %s succeeded",

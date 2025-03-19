@@ -49,7 +49,7 @@ static int sd_send_interface_condition(struct sd_card *card)
 	/* Reset card with CMD0 */
 	ret = sd_idle(card);
 	if (ret) {
-		LOG_ERR("Card error on CMD0");
+		LOG_ERROR("Card error on CMD0");
 		return ret;
 	}
 
@@ -112,7 +112,7 @@ static int sd_common_init(struct sd_card *card)
 		LOG_INF("Card does not support CMD8, assuming legacy card");
 		return sd_idle(card);
 	} else if (ret) {
-		LOG_ERR("Card error on CMD 8");
+		LOG_ERROR("Card error on CMD 8");
 		return ret;
 	}
 #endif
@@ -158,14 +158,14 @@ static int sd_init_io(struct sd_card *card)
 	bus_io->power_mode = SDHC_POWER_OFF;
 	ret = sdhc_set_io(card->sdhc, bus_io);
 	if (ret) {
-		LOG_ERR("Could not disable card power via SDHC");
+		LOG_ERROR("Could not disable card power via SDHC");
 		return ret;
 	}
 	sd_delay(card->host_props.power_delay);
 	bus_io->power_mode = SDHC_POWER_ON;
 	ret = sdhc_set_io(card->sdhc, bus_io);
 	if (ret) {
-		LOG_ERR("Could not disable card power via SDHC");
+		LOG_ERROR("Could not disable card power via SDHC");
 		return ret;
 	}
 	/* After reset or init, card voltage should be max HC support */
@@ -178,7 +178,7 @@ static int sd_init_io(struct sd_card *card)
 	bus_io->clock = SDMMC_CLOCK_400KHZ;
 	ret = sdhc_set_io(card->sdhc, bus_io);
 	if (ret) {
-		LOG_ERR("Could not start bus clock");
+		LOG_ERROR("Could not start bus clock");
 		return ret;
 	}
 	return 0;
@@ -224,7 +224,7 @@ static int sd_command_init(struct sd_card *card)
 #ifdef CONFIG_MMC_STACK
 	ret = sd_idle(card);
 	if (ret) {
-		LOG_ERR("Card error on CMD0");
+		LOG_ERROR("Card error on CMD0");
 		return ret;
 	}
 	if (!mmc_card_init(card)) {
@@ -246,7 +246,7 @@ int sd_init(const struct device *sdhc_dev, struct sd_card *card)
 	card->sdhc = sdhc_dev;
 	ret = sdhc_get_host_props(card->sdhc, &card->host_props);
 	if (ret) {
-		LOG_ERR("SD host controller returned invalid properties");
+		LOG_ERROR("SD host controller returned invalid properties");
 		return ret;
 	}
 
@@ -258,7 +258,7 @@ int sd_init(const struct device *sdhc_dev, struct sd_card *card)
 	}
 	ret = k_mutex_lock(&card->lock, K_MSEC(CONFIG_SD_INIT_TIMEOUT));
 	if (ret) {
-		LOG_ERR("Timeout while trying to acquire card mutex");
+		LOG_ERROR("Timeout while trying to acquire card mutex");
 		return ret;
 	}
 
@@ -287,13 +287,13 @@ int sd_init(const struct device *sdhc_dev, struct sd_card *card)
 		/* Reset I/O to default */
 		ret = sd_init_io(card);
 		if (ret) {
-			LOG_ERR("Failed to reset SDHC I/O");
+			LOG_ERROR("Failed to reset SDHC I/O");
 			k_mutex_unlock(&card->lock);
 			return ret;
 		}
 		ret = sd_command_init(card);
 		if (ret) {
-			LOG_ERR("Failed to init SD card after I/O reset");
+			LOG_ERROR("Failed to init SD card after I/O reset");
 			k_mutex_unlock(&card->lock);
 			return ret;
 		}

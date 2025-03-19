@@ -57,7 +57,7 @@ static void linkedsemi_sdhci_isr(const void *arg)
     if (status & (SDHCI_INT_ERROR | SDHCI_INT_DATA_END | SDHCI_INT_DMA_END | SDHCI_INT_RESPONSE | SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL)) {
         host->error_code = (status >> 16) & 0xffff;
         if (host->error_code) {
-            LOG_ERR("error: %#4.4x\n", host->error_code);
+            LOG_ERROR("error: %#4.4x\n", host->error_code);
         }
         host->irq_status |= status;
         k_sem_give(&host->transfer_sem);
@@ -172,7 +172,7 @@ static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struc
     /* Wait command complete or SDHC encounters error. */
     k_sem_take(&host->transfer_sem, K_FOREVER);
     if (host->error_code & SDHCI_INT_ERROR) {
-        LOG_ERR("%s: Error detected in status(0x%X)!\n", __func__, host->error_code);
+        LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, host->error_code);
         host->error_code = 0;
         return -1;
     }
@@ -189,7 +189,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
         k_sem_take(&host->transfer_sem, K_FOREVER);
         stat = host->irq_status;
         if (stat & SDHCI_INT_ERROR) {
-            LOG_ERR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
+            LOG_ERROR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
             sdhci_reg_display(host);
             return -1;
         }
@@ -218,7 +218,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
         k_sem_take(&host->transfer_sem, K_FOREVER);
         stat = host->irq_status;
         if (stat & SDHCI_INT_ERROR) {
-            LOG_ERR("%s: Error detected in status(0x%X)!\n", __func__, stat);
+            LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, stat);
             sdhci_reg_display(host);
             return -1;
         }
@@ -304,7 +304,7 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
 
     ret = k_mutex_lock(&dev_data->access_mutex, K_FOREVER);
     if (ret) {
-        LOG_ERR("Could not access card");
+        LOG_ERROR("Could not access card");
         return -EBUSY;
     }
 
@@ -416,7 +416,7 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     int ret;
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERR("SDHC pinctrl setup failed (%d)", ret);
+        LOG_ERROR("SDHC pinctrl setup failed (%d)", ret);
         return ret;
     }
 #endif
