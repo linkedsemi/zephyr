@@ -16,7 +16,6 @@
 extern "C" {
 #endif
 
-#define	SOCK_SEQPACKET  5       /* sequenced packet stream */
 
 struct if_nameindex {
 	unsigned int if_index;
