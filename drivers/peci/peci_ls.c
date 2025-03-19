@@ -352,12 +352,12 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     const uint16_t tx_len = msg->tx_buffer.len - 1;
     /* calculate crc */
-    crc_result = crc8(crc_result, buf.u8, 4);
+    crc_result = crc8_ls(crc_result, buf.u8, 4);
     if (tx_len > 0) {
          /* msg->tx_buffer.len - 1: because msg->cmd_code is the first byte */
         const uint8_t *tx_buf = msg->tx_buffer.buf;
 
-        crc_result = crc8(crc_result, tx_buf, tx_len);
+        crc_result = crc8_ls(crc_result, tx_buf, tx_len);
 
         pingpong = false;
         /* send payload */
