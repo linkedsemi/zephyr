@@ -115,6 +115,9 @@
 #define B3000000   28
 #define B3500000   29
 #define B4000000   30
+#define CIBAUD    002003600000		/* input baud rate */
+#define CMSPAR    010000000000		/* mark or space (stick) parity */
+#define CRTSCTS   020000000000		/* flow control */
 
 // Control Modes for the c_cflag field:
 #define CSIZE      (3u << 0)        /* Character size: */
