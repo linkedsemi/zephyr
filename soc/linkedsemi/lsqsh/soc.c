@@ -17,11 +17,13 @@
 #include "ls_hal_flash.h"
 #include "ls_hal_cache.h"
 #include "ls_msp_qspiv2.h"
+#include "soc.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
-extern void noint(void);
+volatile uint32_t irq_nested_level = 0;
+volatile uint32_t irq_nested_mcause[IRQ_NESTED_MAX] = {0,0,0,0,0,0,0,0,0,0};
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {

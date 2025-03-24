@@ -22,8 +22,8 @@ K_THREAD_STACK_DEFINE(user_stack2, USER_STACKSIZE);
 
 
 
-// K_APPMEM_PARTITION_DEFINE(part_common);
-// K_APP_BMEM(part_common) static uint8_t t1_count = 0;
+K_APPMEM_PARTITION_DEFINE(part_common);
+K_APP_BMEM(part_common) static uint8_t t1_count = 0;
 
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
 {
@@ -31,7 +31,6 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
 	printf("-thread user_function1 is aborted !!!!!!!!!!\r\n");
 }
 
-// static uint8_t t1_count = 0;
 static void user_function1(void *p1, void *p2, void *p3)
 {
 	static uint32_t Z_THREAD_LOCAL pr_cnt = 0;
@@ -40,6 +39,7 @@ static void user_function1(void *p1, void *p2, void *p3)
 	{
 		k_msleep(1);
 		printf("+user_function1---- 0x%x\r\n",thread_data32);
+		t1_count++;
 		if(pr_cnt++ > 10)
 		{
 			printf("+thread user_function1 can be abort !!!!!!!!!!\r\n");
@@ -60,8 +60,6 @@ static void user_function2(void *p1, void *p2, void *p3)
 	}
 }
 
-K_APPMEM_PARTITION_DEFINE(part_common);
-K_APP_BMEM(part_common) uint32_t t1_count = 0;
 int main(void)
 {
 	/*
