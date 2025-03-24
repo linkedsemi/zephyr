@@ -18,5 +18,21 @@ config NUM_IRQS
 config MAIN_STACK_SIZE
 	default 2048
 
+config USERSPACE
+	default n
 
+config RISCV_PMP
+	default y
+	
+config PMP_SLOTS
+	default 16
+
+config PMP_GRANULARITY
+	default 128
+
+config PMP_NO_NA4
+	default y
+
+config RISCV_SOC_HAS_ISR_STACKING
+	default y
 endif

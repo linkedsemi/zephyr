@@ -71,9 +71,7 @@ static void uart_ls_poll_out(const struct device *dev, unsigned char p_char)
 	while (1) {
 		if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF))
 		{
-			uint32_t key = irq_lock();
 			LL_UART_TransmitData((reg_uart_t *)uart_handle->UARTX,p_char);
-			irq_unlock(key);
 			return;
 		}
 	}
