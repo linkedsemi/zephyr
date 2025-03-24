@@ -104,7 +104,10 @@ GDATA(irq_nested_mcause)
     lw   t1, 0(t0);\
     addi t2, t1, 1;\
     sw   t2, 0(t0);\
-	\
+	li	 t0, IRQ_NESTED_MAX;\
+	bne  t2, t0, 1f;\
+	j .;\
+1:;\
 	slli t2, t1, 2;\
     la   t0, irq_nested_mcause;\
     add  t0, t0, t2;\
