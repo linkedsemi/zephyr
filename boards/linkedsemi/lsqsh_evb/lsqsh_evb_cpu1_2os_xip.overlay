@@ -10,8 +10,8 @@
         zephyr,flash = &flash1;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
-        zephyr,console = &uart5;
-        zephyr,shell-uart = &uart5;
+        zephyr,console = &uar3;
+        zephyr,shell-uart = &uart3;
     };
 };
 
@@ -35,12 +35,10 @@
 //     status = "disabled";
 // };
 
-// &uart3 {
-//     current-speed = <115200>;
-//     pinctrl-0 = <&uart3_tx_pc03 &uart3_rx_pc04>;
-//     pinctrl-names = "default";
-//     status = "okay";
-// };
+&uart3 {
+    current-speed = <115200>;
+    status = "okay";
+};
 
 // &uart4 {
 //     current-speed = <115200>;
@@ -49,12 +47,12 @@
 //     status = "disabled";
 // };
 
-&uart5 {
-    current-speed = <115200>;
-    pinctrl-0 = <&uart5_tx_pe00 &uart5_rx_pe01>;
-    pinctrl-names = "default";
-    status = "okay";
-};
+// &uart5 {
+//     current-speed = <115200>;
+//     pinctrl-0 = <&uart5_tx_pe00 &uart5_rx_pe01>;
+//     pinctrl-names = "default";
+//     status = "okay";
+// };
 
 // &i2c2 {
 //     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;

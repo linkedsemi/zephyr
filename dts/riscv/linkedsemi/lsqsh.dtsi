@@ -918,7 +918,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095000 0x2000>;
-            interrupts = <120 4>;
+            interrupts = <120 3>;
             status = "disabled";
             i3c-scl-hz = <1000000>;
         };
