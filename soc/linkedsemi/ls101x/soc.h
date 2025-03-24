@@ -8,7 +8,6 @@
 #define _SOC_H_
 
 
-
 #define IRQ_NESTED_MAX 10
 
 #endif /* _SOC_H_ */

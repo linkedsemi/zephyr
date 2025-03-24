@@ -72,4 +72,22 @@ if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@1))
 		default n
 endif
 
+config USERSPACE
+	default n
+
+config RISCV_PMP
+	default y
+	
+config PMP_SLOTS
+	default 16
+
+config PMP_GRANULARITY
+	default 128
+
+config PMP_NO_NA4
+	default y
+
+config RISCV_SOC_HAS_ISR_STACKING
+	default y
+	
 endif
