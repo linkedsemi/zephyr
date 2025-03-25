@@ -214,14 +214,13 @@ void uart_ls_irq_tx_disable(const struct device *dev)
 int uart_ls_irq_tx_ready(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) &&
-		LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC);
+	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF);
 }
 
 void uart_ls_irq_rx_enable(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;	
-	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD); 	
+	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD); 
 	// #ifdef CONFIG_PM
 	// 	uart_ls_pm_policy_state_lock_get(dev);
 	// #endif	
