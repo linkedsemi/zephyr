@@ -3,7 +3,7 @@ set(BOARD_REVISIONS "zynq"
                     "acku-sc"
                     "acku-xip")
 if (NOT DEFINED BOARD_REVISION)
-  set(BOARD_REVISION "acku")
+  set(BOARD_REVISION "acku-xip")
 else ()
   if (NOT (BOARD_REVISION STREQUAL "zynq") 
       AND NOT (BOARD_REVISION STREQUAL "acku") 

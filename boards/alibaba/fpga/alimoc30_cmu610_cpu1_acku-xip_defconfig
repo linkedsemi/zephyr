@@ -5,6 +5,8 @@ CONFIG_OUTPUT_DISASSEMBLY=y
 # CONFIG_COMPILER_OPT="-O0"
 CONFIG_NUM_USE_CPU=2
 CONFIG_NUM_OS=2
+# set addr to real boot position will lead to flash acess error
+# CONFIG_CPU1_BOOT_ADDR=0x10080000
 
 CONFIG_NOCACHE_MEMORY=y
 CONFIG_RISCV_PMP=y
@@ -34,8 +36,7 @@ CONFIG_CACHE=y
 CONFIG_CACHE_MANAGEMENT=y
 CONFIG_CACHE_LINKEDSEMI=y
 
-CONFIG_DISK_DRIVERS=y
-CONFIG_DISK_DRIVER_FLASH=y
+CONFIG_FS_LITTLEFS_FMP_DEV=y
 # There may be no files on internal SoC flash, so this Kconfig
 # options has ben enabled to create some if listing does not
 # find in the first place.
