@@ -3049,19 +3049,15 @@
 //     pinctrl-names = "default";
 // };
 
-// &sgpio2 {
-//     pinctrl-0 = <
-//         &sgpio2_mdi1_pe12
-//         &sgpio2_mck_pe13
-//         &sgpio2_mld_pe14
-//         &sgpio2_mdi0_pe15
-//         &sgpio2_mst_ck_pk08
-//         &sgpio2_mst_ld_pk09
-//         &sgpio2_mst_do_pk10
-//         &sgpio2_mst_di_pk11
-//     >;
-//     pinctrl-names = "default";
-// };
+&sgpiom2 {
+    pinctrl-0 = <
+        &sgpio2_mst_ck_pk08
+        &sgpio2_mst_ld_pk09
+        &sgpio2_mst_do_pk10
+        &sgpio2_mst_di_pk11
+    >;
+    pinctrl-names = "default";
+};
 
 // &thruout3 {
 //     pinctrl-0 = <
@@ -3666,25 +3662,25 @@
 //     pinctrl-names = "default";
 // };
 
-// &espi1 {
-//     pinctrl-0 = <
-//         &espi1_sck_tst_pa14
-//         &espi1_csn_tst_pc00
-//         &espi1_dat0_tst_pc01
-//         &espi1_dat1_tst_pc02
-//         &espi1_dat2_tst_pc03
-//         &espi1_dat3_tst_pc04
-//         &espi1_alert_tst_pg02
-//         &espi1_alert_n_pi09
-//         &espi1_csn_pi10
-//         &espi1_sck_pi11
-//         &espi1_dat3_pi12
-//         &espi1_dat2_pi13
-//         &espi1_dat1_pi14
-//         &espi1_dat0_pi15
-//     >;
-//     pinctrl-names = "default";
-// };
+&espi1 {
+    pinctrl-0 = <
+        &espi1_alert_n_pi09
+        &espi1_csn_pi10
+        &espi1_sck_pi11
+        &espi1_dat3_pi12
+        &espi1_dat2_pi13
+        &espi1_dat1_pi14
+        &espi1_dat0_pi15
+        /* &espi1_sck_tst_pa14 */
+        /* &espi1_csn_tst_pc00 */
+        /* &espi1_dat0_tst_pc01 */
+        /* &espi1_dat1_tst_pc02 */
+        /* &espi1_dat2_tst_pc03 */
+        /* &espi1_dat3_tst_pc04 */
+        /* &espi1_alert_tst_pg02 */
+    >;
+    pinctrl-names = "default";
+};
 
 // &uart3 {
 //     pinctrl-0 = <
@@ -3792,20 +3788,20 @@
 //     pinctrl-names = "default";
 // };
 
-// &emmc {
-//     pinctrl-0 = <
-//         &emmc_dat0_pm04
-//         &emmc_dat1_pm05
-//         &emmc_dat2_pm06
-//         &emmc_dat3_pm07
-//         &emmc_dat4_pm08
-//         &emmc_dat5_pm09
-//         &emmc_dat6_pm10
-//         &emmc_dat7_pm11
-//         &emmc_clk_pm12
-//         &emmc_cmd_pm13
-//         &emmc_ds_pm14
-//         &emmc_rstn_pm15
-//     >;
-//     pinctrl-names = "default";
-// };
+&sdhci1 {
+    pinctrl-0 = <
+        &emmc_dat0_pm04
+        &emmc_dat1_pm05
+        &emmc_dat2_pm06
+        &emmc_dat3_pm07
+        &emmc_dat4_pm08
+        &emmc_dat5_pm09
+        &emmc_dat6_pm10
+        &emmc_dat7_pm11
+        &emmc_clk_pm12
+        &emmc_cmd_pm13
+        &emmc_ds_pm14
+        &emmc_rstn_pm15
+    >;
+    pinctrl-names = "default";
+};
