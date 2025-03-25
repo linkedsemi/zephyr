@@ -1,15 +1,28 @@
 
+#ifndef __SOC_ISR_STACKING__
+#define __SOC_ISR_STACKING__
 #include <zephyr/toolchain.h>
 #include <zephyr/linker/sections.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/arch/riscv/csr.h>
 #include "soc.h"
-// #include "exp.h"
-// #define RV_E(op...) op
-// #define RV_I(op...) /* unavailable */
 
-#ifndef __ASSEMBLER__ 
+#ifndef _ASMLANGUAGE
+#ifdef CONFIG_RISCV_SOC_HAS_ISR_STACKING
+#include <zephyr/types.h>
+#include <zephyr/toolchain.h>
+#ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
+#include <soc_context.h>
+#endif
+
+#ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
+struct soc_esf {
+	SOC_ESF_MEMBERS;
+};
+#endif
+
+
 struct arch_esf {
 	unsigned long ra;		/* return address */
 
@@ -52,7 +65,8 @@ struct arch_esf {
 #endif
 } __aligned(16);
 
-#define SOC_ISR_STACKING_ESF_DECLARE 
+#define SOC_ISR_STACKING_ESF_DECLARE
+#endif /* RISCV_SOC_HAS_ISR_STACKING*/
 
 #else
 
@@ -96,58 +110,28 @@ struct arch_esf {
 
 GDATA(irq_nested_level)
 GDATA(irq_nested_mcause)
+GTEXT(isr_stacking_mcause)
+GTEXT(isr_unstacking_mcause)
 
 #define SOC_ISR_SW_STACKING \
-	addi sp, sp, -__struct_arch_esf_SIZEOF;  \
-    DO_CALLER_SAVED(sr);\
-    la   t0, irq_nested_level;\
-    lw   t1, 0(t0);\
-    addi t2, t1, 1;\
-    sw   t2, 0(t0);\
-	li	 t0, IRQ_NESTED_MAX;\
-	bne  t2, t0, 1f;\
-	j .;\
-1:;\
-	slli t2, t1, 2;\
-    la   t0, irq_nested_mcause;\
-    add  t0, t0, t2;\
-    csrr t1, mcause;\
-    sw   t1, 0(t0);\
-
+	addi sp, sp, -__struct_arch_esf_SIZEOF;\
+	DO_CALLER_SAVED(sr)		;\
+	call isr_stacking_mcause;
 
 #ifdef CONFIG_USERSPACE
 #define SOC_ISR_SW_UNSTACKING\
-	la   t0, irq_nested_level;\
-	lw   t1, 0(t0);\
-	addi t1, t1, -1;\
-	sw   t1, 0(t0);\
-	\
-	slli t2, t1, 2;\
-	la   t3, irq_nested_mcause;\
-	add  t4, t3, t2;\
-	lw   t5, 0(t4);\
-	csrw mcause, t5;\
+	call isr_unstacking_mcause;\
 	DO_CALLER_SAVED(lr);\
-	lr sp, __struct_arch_esf_sp_OFFSET(sp)
+	lr sp, __struct_arch_esf_sp_OFFSET(sp);
 #else
+
 #define SOC_ISR_SW_UNSTACKING\
-	la   t0, irq_nested_level;\
-	lw   t1, 0(t0);\
-	addi t1, t1, -1;\
-	sw   t1, 0(t0);\
-	\
-	slli t2, t1, 2;\
-	la   t3, irq_nested_mcause;\
-	add  t4, t3, t2;\
-	lw   t5, 0(t4);\
-	csrw mcause, t5;\
+	call isr_unstacking_mcause;\
 	DO_CALLER_SAVED(lr);\
-	addi sp, sp, __struct_arch_esf_SIZEOF
+	addi sp, sp, __struct_arch_esf_SIZEOF;
 #endif /*CONFIG_USERSPACE*/
 
 #endif
 
 
-
-
-
+#endif /**/

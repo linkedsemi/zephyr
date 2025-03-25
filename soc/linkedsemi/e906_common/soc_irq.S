@@ -7,9 +7,20 @@
 
 
 GTEXT(__soc_handle_irq)
-
 SECTION_FUNC(exception.other, __soc_handle_irq) 
+	ret
+
+#ifdef CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_HANDLING
+
+GTEXT(__soc_handle_all_irqs)
+SECTION_FUNC(exception.other, __soc_handle_all_irqs)
+
+	addi    sp, sp, -REGBYTES
+	sw      ra, 0(sp)
+
+	csrr    a0, mcause
 	/* In the interrupt stack, open mie to implement interrupt nesting  */
+	csrs    mstatus, (1 << 3)
 
 	csrrwi  t0, 0x345, 8   //0x345:mnxti
 
@@ -27,6 +38,7 @@ GTEXT(__soc_restore_context)
 #define MEXSTATUS_EX_MASK 0x20
 
 
+<<<<<<< HEAD:soc/linkedsemi/ls101x/soc_irq.S
 SECTION_FUNC(exception.other, __soc_save_context)
 	csrr 	t0, mcause
 	sw 		t0, 0(a0)
@@ -43,6 +55,10 @@ SECTION_FUNC(exception.other, __soc_restore_context)
 	or t0, t0, t1
 	csrw mcause,t0
 2:
+=======
+	lw      ra, 0(sp)
+	addi    sp, sp, REGBYTES
+>>>>>>> 2002c5fd3ff... e906 ISR: mcause stacking and unstacking:soc/linkedsemi/e906_common/soc_irq.S
 	ret
 
 #endif

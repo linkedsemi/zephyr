@@ -17,8 +17,6 @@
 #include "ls_msp_peci.h"
 #include "soc.h"
 
-volatile uint32_t irq_nested_level = 0;
-volatile uint32_t irq_nested_mcause[IRQ_NESTED_MAX] = {0,0,0,0,0,0,0,0,0,0};
 
 #define RV_SOFT_IRQ_IDX 23
 
