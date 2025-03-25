@@ -284,7 +284,7 @@ int sgpiom_linkedsemi_init(const struct device *device)
 
 static uint16_t sgpiom_linkedsemi_get_clk_div(const struct device *parent)
 {
-    uint32_t clk_rate = DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency);
+    uint32_t clk_rate = DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency);
     uint32_t target_freq = DEV_PARENT_CFG(parent)->bus_freq;
 
     LOG_INF("target rate: %d div: %d", target_freq, ((clk_rate >> 1) / target_freq) - 1);
