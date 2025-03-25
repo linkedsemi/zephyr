@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) 2025, linkedsemi
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+    aliases {
+        led0 = &led0;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led0: led_0{
+            gpios = <&gpioa 2 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
+    };
+
+    keys {
+        compatible = "gpio-keys";
+
+        bmc_boot_done_btn: bmc_boot_done {
+            gpios = <&sgpiom2_m_p 3 GPIO_ACTIVE_HIGH>;
+            label = "bmc boot done";
+        };
+    };
+};
+
+&espi1 {
+    status = "okay";
+};
