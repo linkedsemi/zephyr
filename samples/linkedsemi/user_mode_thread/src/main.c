@@ -38,12 +38,12 @@ static void user_function1(void *p1, void *p2, void *p3)
 	while(1)
 	{
 		k_msleep(1);
+		t1_count ++;
 		printf("+user_function1---- 0x%x\r\n",thread_data32);
 		t1_count++;
 		if(pr_cnt++ > 10)
 		{
 			printf("+thread user_function1 can be abort !!!!!!!!!!\r\n");
-			k_msleep(1);
 			uint32_t *pcc = NULL;
 			*pcc = thread_data32;
 		}
@@ -74,7 +74,6 @@ int main(void)
 		user_function2, NULL, NULL, NULL,
 		2, K_USER|K_INHERIT_PERMS, K_MSEC(0));
 	k_mem_domain_add_thread(&k_mem_domain_default, &user_thread1);
-	k_mem_domain_add_thread(&k_mem_domain_default, &user_thread2);
 	return 0;
 }
 

@@ -9,7 +9,6 @@
 #include <zephyr/arch/riscv/csr.h>
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/arch/riscv/syscall.h>
-#include <soc.h>
 
 #define REGBYTES                4
 
@@ -25,12 +24,9 @@ SECTION_FUNC(exception.other, __soc_handle_all_irqs)
 	addi    sp, sp, -REGBYTES
 	sw      ra, 0(sp)
 
-	addi 	sp, sp, -REGBYTES
 	csrr    a0, mcause
-	sw 		a0, 0(sp)
-
 	/* In the interrupt stack, open mie to implement interrupt nesting  */
-	csrrwi  t0, mnxti, 8
+	csrs    mstatus, (1 << 3)
 
 	li 		t0, CONFIG_RISCV_MCAUSE_EXCEPTION_MASK
 	and 	a0, a0, t0
@@ -55,18 +51,7 @@ SECTION_FUNC(exception.other, __soc_handle_all_irqs)
 	/* Disable global irq */
 	csrc    mstatus, (1 << 3) 
 
-	lw 		t0, 0(sp)
-	csrw 	mcause,t0
-	addi 	sp, sp, REGBYTES
-
 	lw      ra, 0(sp)
 	addi    sp, sp, REGBYTES
 	ret
 #endif
-
-.section .text
-.global SWINT_Handler_Asm
-SWINT_Handler_Asm:
-    lw a0, 0(sp)
-    j Swint_Handler_C
-	ret
