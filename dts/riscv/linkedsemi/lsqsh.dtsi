@@ -370,17 +370,10 @@
             status = "disabled";
         };
 
-        espi0: espi@40006000 {
-            compatible = "linkedsemi,ls-espi";
-            reg = <0x40006000 0x1000>;
-            status = "disabled";
-            interrupts = <ESPI1_IRQN 3>;
-        };
-
         espi1: espi@40045000 {
             compatible = "linkedsemi,ls-espi";
             reg = <0x40045000 0x1000>;
-            interrupts = <ESPI2_IRQN 3>;
+            interrupts = <ESPI1_IRQN 3>;
             status = "disabled";
         };
 
