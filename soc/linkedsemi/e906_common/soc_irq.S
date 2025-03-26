@@ -38,27 +38,15 @@ GTEXT(__soc_restore_context)
 #define MEXSTATUS_EX_MASK 0x20
 
 
-<<<<<<< HEAD:soc/linkedsemi/ls101x/soc_irq.S
-SECTION_FUNC(exception.other, __soc_save_context)
-	csrr 	t0, mcause
-	sw 		t0, 0(a0)
-	ret
-
-SECTION_FUNC(exception.other, __soc_restore_context)
-	# csrr 	t0, mexstatus
-	# li 		t1, MEXSTATUS_EX_MASK
-	# and 	t0, t0, t1
-	# bnez  	t0, 2f 
-
-	lw t0, 0(a0)
-	li t1, 0x80000000
-	or t0, t0, t1
-	csrw mcause,t0
-2:
-=======
 	lw      ra, 0(sp)
 	addi    sp, sp, REGBYTES
->>>>>>> 2002c5fd3ff... e906 ISR: mcause stacking and unstacking:soc/linkedsemi/e906_common/soc_irq.S
 	ret
-
 #endif
+
+
+.section .text
+.global SWINT_Handler_Asm
+SWINT_Handler_Asm:
+    lw a0, 0(sp)
+    j Swint_Handler_C
+	ret
