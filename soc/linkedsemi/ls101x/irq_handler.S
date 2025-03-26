@@ -9,10 +9,3 @@
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/arch/riscv/syscall.h>
 
-
-.section .text
-.global SWINT_Handler_Asm
-SWINT_Handler_Asm:
-    lw a0, 0(sp)
-    j Swint_Handler_C
-	ret
