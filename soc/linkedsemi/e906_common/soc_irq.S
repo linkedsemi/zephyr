@@ -55,3 +55,11 @@ SECTION_FUNC(exception.other, __soc_handle_all_irqs)
 	addi    sp, sp, REGBYTES
 	ret
 #endif
+
+
+.section .text
+.global SWINT_Handler_Asm
+SWINT_Handler_Asm:
+    lw a0, 0(sp)
+    j Swint_Handler_C
+	ret

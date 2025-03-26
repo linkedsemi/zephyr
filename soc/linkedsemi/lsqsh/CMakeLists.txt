@@ -1,6 +1,5 @@
 zephyr_sources(soc.c)
 zephyr_include_directories(.)
-zephyr_sources(irq_handler.S)
 
 zephyr_sources(../e906_common/soc_irq.S)
 zephyr_sources(../e906_common/soc_isr_stacking_e906.c)
