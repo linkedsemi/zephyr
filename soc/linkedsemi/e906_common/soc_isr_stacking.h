@@ -16,13 +16,6 @@
 #include <soc_context.h>
 #endif
 
-#ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
-struct soc_esf {
-	SOC_ESF_MEMBERS;
-};
-#endif
-
-
 struct arch_esf {
 	unsigned long ra;		/* return address */
 
