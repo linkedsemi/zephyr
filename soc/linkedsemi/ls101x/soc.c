@@ -47,13 +47,13 @@ void sys_arch_reboot(int type)
 	platform_reset(0);
 }
 
-extern void SWINT_Handler_Asm(void);
+extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 static int ls101x_init(void)
 {
     SystemInit();
     sys_init_none();
-	IRQ_CONNECT(RV_SOFT_IRQn, 0, SWINT_Handler_Asm, NULL, 0);
+	IRQ_CONNECT(RV_SOFT_IRQn, 0, SWINT_Handler_ASM, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();

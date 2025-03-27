@@ -16,14 +16,21 @@
 
 #include <platform.h>
 
-#define DT_DRV_COMPAT     linkedsemi_mbox_cpu0_flash_controller
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
+#define DT_DRV_COMPAT linkedsemi_mbox
 
-#define FLASH_ADDR       DT_REG_ADDR(SOC_NV_FLASH_NODE)
+#define MBOX_BASE_ADDRESS  (DT_INST_REG_ADDR(0))
+#define MBOX_SIZE          (DT_INST_REG_SIZE(0))
+#define MBOX_NCHANNELS     (DT_INST_PROP(0, nchannels))
+#define MBOX_FIFO_DEEPTH   (DT_INST_PROP(0, fifo_deepth))
+#define MBOX_FIFO_WIDTH    (DT_INST_PROP(0, fifo_width))
+
+#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
+#define FLASH_ADDR        DT_REG_ADDR(SOC_NV_FLASH_NODE)
 
 static K_SEM_DEFINE(g_mbox_data_rx_sem0, 0, 1);
 
-static mbox_func_call_data_t g_mbox_received_data0;
+// static mbox_func_call_data_t g_mbox_received_data0;
+uint8_t g_mbox_received_data0[MBOX_FIFO_WIDTH];
 static mbox_channel_id_t g_mbox_received_channel0;
 
 static void callback0(const struct device *dev, mbox_channel_id_t channel_id, void *user_data, struct mbox_msg *data)
@@ -37,9 +44,9 @@ static void callback0(const struct device *dev, mbox_channel_id_t channel_id, vo
     // printk("Server receive (on channel %d)\n", g_mbox_received_channel0);
 }
 
-bool is_cpu1_flash_area(uint32_t addr)
+bool is_cpu2_flash_area(uint32_t addr)
 {
-    return addr >= (CONFIG_CPU2_XIP_ADDR - FLASH_ADDR);
+    return addr >= (CONFIG_CPU2_BOOT_ADDR - FLASH_ADDR);
 }
 
 int main(void)
@@ -70,35 +77,43 @@ int main(void)
 
         // printk("Server receive (on channel %d)\n", g_mbox_received_channel0);
 
-        switch (g_mbox_received_data0.api_id) {
+        mbox_func_call_data_t *mbox_received_data0 = (mbox_func_call_data_t *)g_mbox_received_data0;
+        switch (mbox_received_data0->api_id) {
         case MBOX_FUNC_CALL_HAL_FLASH_READ_ID:
             // printk("MBOX_FUNC_CALL_HAL_FLASH_READ_ID\n");
             do {
-                uint8_t **id = (uint8_t **)(((int *)(g_mbox_received_data0.parm))[0]);
+                uint8_t **id = (uint8_t **)(((int *)(mbox_received_data0->parm))[0]);
                 __ASSERT_NO_MSG(id);
                 hal_flash_read_id(*id);
-                *g_mbox_received_data0.done = true;
+                *mbox_received_data0->done = true;
             } while (0);
             break;
         case MBOX_FUNC_CALL_HAL_FLASH_SECTOR_ERASE:
             // printk("MBOX_FUNC_CALL_HAL_FLASH_SECTOR_ERASE\n");
             do {
-                off_t *offset = (off_t *)(((int *)(g_mbox_received_data0.parm))[0]);
+                off_t *offset = (off_t *)(((int *)(mbox_received_data0->parm))[0]);
+                // printk("offset: %#x\n", *offset);
                 __ASSERT_NO_MSG(offset);
-                if (is_cpu1_flash_area(*offset)) {
+                if (is_cpu2_flash_area(*offset)) {
                     hal_flash_sector_erase(*offset);
                 } else {
                     printk("offset: %#x is invalid\n", *offset);
                 }
-                *g_mbox_received_data0.done = true;
+                *mbox_received_data0->done = true;
             } while (0);
             break;
         case MBOX_FUNC_CALL_HAL_FLASH_PAGE_PROGRAM:
             // printk("MBOX_FUNC_CALL_HAL_FLASH_PAGE_PROGRAM\n");
             do {
-                off_t *offset = (off_t *)(((int *)(g_mbox_received_data0.parm))[0]);
-                uint8_t **data = (uint8_t **)(((int *)(g_mbox_received_data0.parm))[1]);
-                size_t *size = (size_t *)(((int *)(g_mbox_received_data0.parm))[2]);
+                off_t *offset = (off_t *)(((int *)(mbox_received_data0->parm))[0]);
+                uint8_t **data = (uint8_t **)(((int *)(mbox_received_data0->parm))[1]);
+                size_t *size = (size_t *)(((int *)(mbox_received_data0->parm))[2]);
+                // printk("offset: %#x\n", *offset);
+                // printk("size: %#x\n", *size);
+                // printk("data: %#x\n", *data);
+                // printk("&offset: %#x\n", offset);
+                // printk("&size: %#x\n",   size);
+                // printk("&data: %#x\n",   data);
                 __ASSERT_NO_MSG(offset);
                 __ASSERT_NO_MSG(data);
                 __ASSERT_NO_MSG(size);
@@ -108,28 +123,44 @@ int main(void)
                 } else {
                     printk("offset: %#x is invalid\n", *offset);
                 }
-                *g_mbox_received_data0.done = true;
+                *mbox_received_data0->done = true;
             } while (0);
             break;
         case MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ:
             // printk("MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ\n");
             do {
-                off_t *offset = (off_t *)(((int *)(g_mbox_received_data0.parm))[0]);
-                uint8_t **data = (uint8_t **)(((int *)(g_mbox_received_data0.parm))[1]);
-                size_t *size = (size_t *)(((int *)(g_mbox_received_data0.parm))[2]);
+                off_t *offset = (off_t *)(((int *)(mbox_received_data0->parm))[0]);
+                uint8_t **data = (uint8_t **)(((int *)(mbox_received_data0->parm))[1]);
+                size_t *size = (size_t *)(((int *)(mbox_received_data0->parm))[2]);
+                // printk("offset: %#x\n", *offset);
+                // printk("size: %#x\n", *size);
+                // printk("data: %#x\n", *data);
+                // printk("&offset: %#x\n", offset);
+                // printk("&size: %#x\n",   size);
+                // printk("&data: %#x\n",   data);
                 __ASSERT_NO_MSG(offset);
                 __ASSERT_NO_MSG(data);
                 __ASSERT_NO_MSG(size);
-                if (is_cpu1_flash_area(*offset)) {
+                if (is_cpu2_flash_area(*offset)) {
                     hal_flash_multi_io_read(*offset, *data, *size);
                 } else {
                     printk("offset: %#x is invalid\n", *offset);
                     sys_cache_data_flush_range((void *)(*data), *size);
                 }
-                *g_mbox_received_data0.done = true;
+                // printk("rd- - - - - -------------------\n");
+                // for(int i = 0; i < *size; i++) {
+                //     if ((i % 16 == 0) && (i != 0)) {
+                //         printk("\n");
+                //     }
+                //     printk("%2.2x ", ((char *)(*data))[i]);
+                // }
+                // printk("\n");
+                *mbox_received_data0->done = true;
             } while (0);
             break;
-        default: break;
+        default: 
+            printk("default\n");
+            break;
         }
     }
 

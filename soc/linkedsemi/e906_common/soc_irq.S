@@ -46,8 +46,8 @@ GTEXT(__soc_restore_context)
 
 
 .section .text
-.global SWINT_Handler_Asm
-SWINT_Handler_Asm:
+.global SWINT_Handler_ASM
+SWINT_Handler_ASM:
     lw a0, 4(sp)
     j Swint_Handler_C
 	ret

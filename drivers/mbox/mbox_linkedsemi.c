@@ -21,7 +21,9 @@ LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
 #define MBOX_NCHANNELS     (DT_INST_PROP(0, nchannels))
 #define MBOX_FIFO_DEEPTH   (DT_INST_PROP(0, fifo_deepth))
 #define MBOX_FIFO_WIDTH    (DT_INST_PROP(0, fifo_width))
-#define MBOX_RX_CHANNEL_ID (DT_MBOX_CHANNEL_BY_NAME(DT_NODELABEL(mbox_consumer0), rx))
+#define MBOX_CONSUMER_REFERENCE mbox_consumer1
+BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(MBOX_CONSUMER_REFERENCE)), "MBOX_CONSUMER_REFERENCE not found");
+#define MBOX_RX_CHANNEL_ID (DT_MBOX_CHANNEL_BY_NAME(DT_NODELABEL(MBOX_CONSUMER_REFERENCE), rx))
 
 #define CALC_MBOX_SIZE (((MBOX_FIFO_DEEPTH * MBOX_FIFO_WIDTH) + sizeof(struct fifo_env)) * MBOX_NCHANNELS * 2)
 BUILD_ASSERT(CALC_MBOX_SIZE <= MBOX_SIZE, "fifo size overflow\n");
@@ -62,6 +64,7 @@ static void mbox_linkedsemi_isr(const struct device *dev)
             ret = general_fifo_get(dev_data->fifo[rx_fifo_idx], dev_data->recv_data[i]);
             if (ret) {
                 struct mbox_msg msg = { (const void *)(dev_data->recv_data[i]), MBOX_FIFO_WIDTH };
+                __ASSERT_NO_MSG(dev_data->cb[i]);
                 dev_data->cb[i](dev, rx_fifo_idx, dev_data->user_data, &msg);
             }
 #if defined(CONFIG_SIGNALLING_MODE_SUPPORT)
@@ -88,6 +91,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
     if (msg) {
         ret = general_fifo_put(dev_data->fifo[channel], (void *)msg->data);
         if (ret == false) {
+            LOG_ERR("ENOSPC\n");
             return -ENOSPC;
         }
     }
@@ -114,8 +118,8 @@ static int mbox_linkedsemi_register_callback(const struct device *dev, uint32_t 
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
 
-    dev_data->cb[channel / 2] = cb;
-    dev_data->user_data[channel / 2] = user_data;
+    dev_data->cb[channel] = cb;
+    dev_data->user_data[channel] = user_data;
 
     return 0;
 }

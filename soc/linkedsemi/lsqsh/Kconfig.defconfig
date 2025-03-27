@@ -59,18 +59,14 @@ config NUM_OS
 	default 2
 
 if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@1))
-	config CPU2_XIP_ADDR
-		hex "CPU2_XIP_ADDR"
-		default 0x8800000
-
-	config CPU2_BOOT_ADDR
-		hex "CPU2_BOOT_ADDR"
-		default 0x10080000
-
 	config BOOT_CPU2
 		bool "BOOT_CPU2"
 		default n
 endif
+
+config CPU2_BOOT_ADDR
+	hex "CPU2_BOOT_ADDR"
+	default 0x8800000
 
 config USERSPACE
 	default n

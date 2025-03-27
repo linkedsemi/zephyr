@@ -46,14 +46,6 @@ static int flash_ls_init(const struct device *dev)
     __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
 
-#if defined(CONFIG_PINCTRL)
-    int ret;
-    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret != 0) {
-        return ret;
-    }
-#endif
-
     k_sem_init(&dev_data->mutex, 1, 1);
 
     return 0;
