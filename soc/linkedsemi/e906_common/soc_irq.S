@@ -20,7 +20,8 @@ SECTION_FUNC(exception.other, __soc_handle_all_irqs)
 
 	csrr    a0, mcause
 	/* In the interrupt stack, open mie to implement interrupt nesting  */
-	csrs    mstatus, (1 << 3)
+	// csrs    mstatus, (1 << 3)
+	csrrwi  t0, mnxti, 8
 
 	csrrwi  t0, 0x345, 8   //0x345:mnxti
 
@@ -47,6 +48,6 @@ GTEXT(__soc_restore_context)
 .section .text
 .global SWINT_Handler_Asm
 SWINT_Handler_Asm:
-    lw a0, 0(sp)
+    lw a0, 4(sp)
     j Swint_Handler_C
 	ret
