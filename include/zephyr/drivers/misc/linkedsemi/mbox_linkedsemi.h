@@ -35,13 +35,11 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel, enum mbox_func_call_id
 int mbox_acquire_cpu2_idle(const struct mbox_dt_spec *tx_channel);
 void mbox_release_cpu2(void);
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 static inline bool is_cpu2_xip(void)
 {
     return ((CONFIG_CPU2_BOOT_ADDR >= 0x8000000)
-            && (CONFIG_CPU2_BOOT_ADDR < (0x8000000 + (16 * 1024 * 1024))));
+            && (CONFIG_CPU2_BOOT_ADDR < (0x8000000 + MB(16))));
 }
-#endif
 
 static inline bool is_cpu2_running(void)
 {

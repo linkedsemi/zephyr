@@ -146,17 +146,12 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
-    bool xip_present = is_cpu2_xip();
-    if (xip_present) {
-        memcpy(data, (void *)(FLASH_ADDR + offset), size);
-    } else {
-        mbox_func_call(&dev_config->tx_channel,
-                    MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ,
-                    3,
-                    (void *)&offset,
-                    (void *)&data,
-                    (void *)&size);
-    }
+    mbox_func_call(&dev_config->tx_channel,
+                MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ,
+                3,
+                (void *)&offset,
+                (void *)&data,
+                (void *)&size);
 
     return 0;
 }

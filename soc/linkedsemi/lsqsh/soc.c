@@ -121,7 +121,7 @@ void iopmp_region_init(void)
     }
 }
 
-extern void SWINT_Handler_Asm(void);
+extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 static int lsqsh_init(void)
 {
@@ -211,10 +211,6 @@ static int lsqsh_init(void)
     lscache_cache_enable(1);
     hal_flash_xip_func_ptr_init();
 #endif
-#if defined(CONFIG_BOOT_CPU2)
-    SYSC_SEC_CPU->APP_CPU_ADDR_CFG = CONFIG_CPU2_BOOT_ADDR; /* set cpu2 pc addr */
-    SYSC_SEC_CPU->APP_CPU_SRST = 0x1; /* release reset */
-#endif
 #endif
 #endif
 
@@ -222,7 +218,7 @@ static int lsqsh_init(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
-#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU0) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU2)
+#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU1) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU2)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
 #else
@@ -235,11 +231,17 @@ static int lsqsh_init(void)
     hal_flash_drv_var_init(true,false);
 #endif
     hal_flash_xip_func_ptr_init();
-    IRQ_CONNECT(FLASH_SWINT_NUM, 0, SWINT_Handler_Asm, NULL, 0);
+    IRQ_CONNECT(FLASH_SWINT_NUM, 0, SWINT_Handler_ASM, NULL, 0);
 
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
 #endif
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
+    app_cpu_reset();
+    __NOP();
+    app_cpu_dereset();
 #endif
 
     return 0;

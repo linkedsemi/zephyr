@@ -10,7 +10,7 @@
         zephyr,flash = &flash1;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
-        zephyr,console = &uar3;
+        zephyr,console = &uart3;
         zephyr,shell-uart = &uart3;
     };
 };
@@ -268,6 +268,6 @@
 };
 
 &flash1 {
-    reg = <0x8000000 0x400000>;
+    reg = <0x8000000 DT_SIZE_M(16)>;
     status = "okay";
 };
