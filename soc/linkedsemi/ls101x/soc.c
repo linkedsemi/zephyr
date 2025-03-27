@@ -47,12 +47,6 @@ void sys_arch_reboot(int type)
 	platform_reset(0);
 }
 
-void Swint_Handler_C(uint32_t *args)
-{
-    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args[12];
-    args[8] = func(args[8],args[9],args[10],args[11]);
-}
-
 extern void SWINT_Handler_Asm(void);
 extern void SystemInit();
 static int ls101x_init(void)

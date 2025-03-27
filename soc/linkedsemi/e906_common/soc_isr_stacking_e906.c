@@ -47,3 +47,9 @@ void isr_unstacking_mcause(void)
         while(1);
     }
 }
+
+void Swint_Handler_C(struct arch_esf *args)
+{
+    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args->a4;
+    args->a0 = func(args->a0, args->a1, args->a2, args->a3);
+}
