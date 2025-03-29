@@ -169,7 +169,7 @@ void ls_i2c_isr(void *arg)
 			{
 				data->stop_pending = false;
 				k_sem_give(&data->stop_sem);
-			}else if(data->xfer_remain||(cfg->reg->SR&I2C_SR_TXFLV_MASK))
+			}else if(data->xfer_remain||(cfg->reg->SR&I2C_SR_TXFLV_MASK)||(data->current->len == 0))
 			{
 				k_sem_give(&data->device_sync_sem);
 			}
