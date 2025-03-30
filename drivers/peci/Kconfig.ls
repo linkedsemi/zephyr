@@ -8,5 +8,6 @@ config PECI_LS
 	default y
 	depends on DT_HAS_LINKEDSEMI_LS_PECI_ENABLED
     select PECI_INTERRUPT_DRIVEN
+	select CRC
 	help
 	  Enable the Linkedsemi PECI IO driver.
