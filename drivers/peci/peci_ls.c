@@ -15,6 +15,7 @@
 #endif
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/crc.h>
 #include <zephyr/irq.h>
 #include <reg_peci_type.h>
 #include <field_manipulate.h>
@@ -59,23 +60,6 @@ struct peci_ls_data {
     struct k_sem lock;
     uint8_t buf_idx;
 };
-
-uint8_t crc8(uint8_t crc, const uint8_t *data, size_t length)
-{
-    __ASSERT_NO_MSG(data != NULL);
-
-    for (size_t i = 0; i < length; i++) {
-        crc ^= data[i];
-        for (uint8_t j = 0; j < 8; j++) {
-            if (crc & 0x80) {
-                crc = (crc << 1) ^ 0x07;
-            } else {
-                crc <<= 1;
-            }
-        }
-    }
-    return crc;
-}
 
 __unused static void peci_core_reg_print(const struct device *dev)
 {
@@ -317,12 +301,12 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     const uint16_t tx_len = msg->tx_buffer.len - 1;
     /* calculate crc */
-    crc_result = crc8(crc_result, buf.u8, 4);
+    crc_result = crc8(buf.u8, 4, 0x7, crc_result, false);
     if (tx_len > 0) {
          /* msg->tx_buffer.len - 1: because msg->cmd_code is the first byte */
         const uint8_t *tx_buf = msg->tx_buffer.buf;
 
-        crc_result = crc8(crc_result, tx_buf, tx_len);
+        crc_result = crc8(tx_buf, tx_len, 0x7, crc_result, false);
 
         pingpong = false;
         /* send payload */
