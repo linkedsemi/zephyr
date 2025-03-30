@@ -3,5 +3,4 @@
 
 config BOARD_LSQSH_EVB
     select SOC_LSQSH
-    select SOC_LSQSH_CPU1 if BOARD_LSQSH_CPU1_EVB
-    select SOC_LSQSH_CPU2 if BOARD_LSQSH_CPU2_EVB
+
