@@ -50,6 +50,14 @@ typedef uint32_t pinctrl_soc_pin_t;
 
 /** @endcond */
 
+static inline uint16_t pinctrl_pin2code(const pinctrl_soc_pin_t *pin)
+{
+    uint8_t port_id = LS_PINMUX_GET_PORT(*pin);
+    uint8_t pin_id = LS_PINMUX_GET_PIN(*pin);
+
+    return LSPIN(port_id, pin_id);
+}
+
 #ifdef __cplusplus
 }
 #endif

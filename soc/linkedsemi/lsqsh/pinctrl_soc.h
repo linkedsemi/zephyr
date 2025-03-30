@@ -93,6 +93,11 @@ typedef struct __attribute__((packed)) {
 #define Z_PINCTRL_STATE_PINS_INIT(node_id, prop) \
     {DT_FOREACH_PROP_ELEM(node_id, prop, Z_PINCTRL_STATE_PIN_INIT)}
 
+static inline uint16_t pinctrl_pin2code(const pinctrl_soc_pin_t *pin)
+{
+    return pin->pinmux.pin;
+}
+
 /** @endcond */
 
 #ifdef __cplusplus

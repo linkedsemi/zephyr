@@ -14,6 +14,7 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include "platform.h"
 #include "field_manipulate.h"
 #include "reg_i2c_type.h"
+#include <ls_soc_gpio.h>
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
 
@@ -43,6 +44,7 @@ struct i2c_ls_data {
 	uint8_t xfer_remain;
 	uint8_t errs;
 	bool stop_pending;
+	uint8_t pin[2];
 };
 
 struct i2c_speed_config_t
@@ -54,6 +56,25 @@ struct i2c_speed_config_t
     uint32_t role 	  : 4;
     uint32_t presc    : 4;
 };
+
+#if defined(CONFIG_PINCTRL)
+static inline bool is_i2c_bus_idle(const struct device *dev)
+{
+    struct i2c_ls_data *data = dev->data;
+    uint8_t pin_val[2];
+    bool ret = true;;
+
+    pin_val[0] = io_get_input_val(data->pin[0]);
+    pin_val[1] = io_get_input_val(data->pin[1]);
+    if (1 != (pin_val[0] & pin_val[1])) {
+        LOG_ERR("bus busy. pin[%#x]: %d.  pin:[%#x]: %d.\n",
+                data->pin[0], pin_val[0], data->pin[1], pin_val[1]);
+        ret = false;
+    }
+
+    return ret;
+}
+#endif
 
 static void i2c_slave_addr_reenable(reg_i2c_t *reg)
 {
@@ -256,6 +277,11 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 	int ret = 0;
 
 	k_sem_take(&data->bus_mutex, K_FOREVER);
+#if defined(CONFIG_PINCTRL)
+	if (!(is_i2c_bus_idle(dev))) {
+		goto err;
+	}
+#endif
 	data->errs = 0;
 	config->reg->SR = I2C_SR_TXE_MASK;//clear tx fifo
 	uint32_t cr2_0_1 = msg->flags&I2C_MSG_ADDR_10_BITS? I2C_CR2_SADD10_MASK|slave<<I2C_CR2_SADD0_POS :slave<<I2C_CR2_SADD1_7_POS;
@@ -408,6 +434,7 @@ static int i2c_ls_init(const struct device *dev)
 	const struct i2c_ls_config *cfg = dev->config;
 #if defined(CONFIG_PINCTRL)
 	int ret;
+	const struct pinctrl_state *state;
 #endif
 	struct i2c_ls_data *data = dev->data;
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
@@ -431,6 +458,12 @@ static int i2c_ls_init(const struct device *dev)
 		// LOG_ERR("I2C pinctrl setup failed (%d)", ret);
 		return ret;
 	}
+	ret = pinctrl_lookup_state(cfg->pcfg, PINCTRL_STATE_DEFAULT, &state);
+	if (ret < 0) {
+		return ret;
+	}
+	data->pin[0] = pinctrl_pin2code(&state->pins[0]);
+	data->pin[1] = pinctrl_pin2code(&state->pins[1]);
 #endif
 	i2c_reenable(cfg,100000);
 	cfg->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
