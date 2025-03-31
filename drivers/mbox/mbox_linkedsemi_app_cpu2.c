@@ -8,6 +8,20 @@ __nocache static volatile bool g_done = false;
 __nocache static volatile bool g_ack = false;
 __nocache static volatile int g_ret = 0;
 
+__ramfunc static void mbox_func_call_send_and_wait(const struct mbox_dt_spec *tx_channel,
+                                                   struct mbox_msg *msg,
+                                                   uint32_t *retry_cnt)
+{
+    if (mbox_send_dt(tx_channel, msg) == -ENOSPC) {
+        printk("mbox_send() full\n");
+    }
+    *retry_cnt = 0;
+    while ((!g_done) && (*retry_cnt < MBOX_RETRY_MAX_CNT)) {
+        (*retry_cnt)++;
+        nop_delay(10);
+    }
+}
+
 int mbox_func_call(const struct mbox_dt_spec *tx_channel,
                    enum mbox_func_call_id api_id,
                    uint32_t parm_num,
@@ -41,14 +55,7 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
 
     sys_cache_data_flush_all();
     disable_global_irq();
-    if (mbox_send_dt(tx_channel, &msg) == -ENOSPC) {
-        printk("mbox_send() full\n");
-    }
-    retry_cnt = 0;
-    while ((!g_done) && (retry_cnt < MBOX_RETRY_MAX_CNT)) {
-        retry_cnt++;
-        nop_delay(10);
-    }
+    mbox_func_call_send_and_wait(tx_channel, &msg, &retry_cnt);
     if (retry_cnt > MBOX_RETRY_MAX_CNT) {
         ret = -1;
         goto timeout;
