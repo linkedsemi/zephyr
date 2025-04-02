@@ -63,6 +63,10 @@ if ((NUM_USE_CPU=2))
 		hex "cpu1 xip addr"
 		default 0x8800000
 
+	config CPU1_XIP_BACKUP_OFFSET
+		hex "cpu1 xip backup offset"
+		default 0x100000
+
 	config CPU1_BOOT_ADDR
 		hex "CPU1_BOOT_ADDR"
 		default 0x10080000
