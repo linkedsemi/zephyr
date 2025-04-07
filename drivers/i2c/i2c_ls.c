@@ -464,6 +464,7 @@ static int i2c_ls_init(const struct device *dev)
 	}
 	data->pin[0] = pinctrl_pin2code(&state->pins[0]);
 	data->pin[1] = pinctrl_pin2code(&state->pins[1]);
+	__ASSERT(data->pin[0] != data->pin[1], "scl pin and sda pin can not be duplicated");
 #endif
 	i2c_reenable(cfg,100000);
 	cfg->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
