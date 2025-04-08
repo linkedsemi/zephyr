@@ -349,4 +349,6 @@ static inline void z_sched_usage_switch(struct k_thread *thread)
 #endif /* CONFIG_SCHED_THREAD_USAGE */
 }
 
+void z_switch_hook_run(struct k_thread *old_thread, struct k_thread *new_thread);
+
 #endif /* ZEPHYR_KERNEL_INCLUDE_KSCHED_H_ */

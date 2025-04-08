@@ -122,6 +122,9 @@ static ALWAYS_INLINE unsigned int do_swap(unsigned int key,
 	new_thread = z_swap_next_thread();
 
 	if (new_thread != old_thread) {
+#ifdef CONFIG_TASK_SWITCH_HOOK_ENABLED
+		z_switch_hook_run(old_thread, new_thread);
+#endif
 		z_sched_usage_switch(new_thread);
 
 #ifdef CONFIG_SMP

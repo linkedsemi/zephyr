@@ -32,6 +32,9 @@ extern "C" {
  * @{
  */
 
+// TODO: Saved lastword to reserved memory, then os can read it after system reboot
+#define LOG_LASTWORD(fmt, ...)	printk(fmt "\n", ##__VA_ARGS__)
+
 /**
  * @brief Writes an ERROR level message to the log.
  *

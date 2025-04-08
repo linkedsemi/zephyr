@@ -380,7 +380,8 @@ no_fp:	/* increment _current->arch.exception_depth */
 	 * no_reschedule to restore stack.
 	 */
 	mv a0, sp
-	la ra, no_reschedule
+	// Reserved la for gdb bt cmd
+	// la ra, no_reschedule
 	tail _Fault
 
 is_kernel_syscall:

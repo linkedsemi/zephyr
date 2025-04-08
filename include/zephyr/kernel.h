@@ -6242,6 +6242,9 @@ void k_sys_runtime_stats_enable(void);
  */
 void k_sys_runtime_stats_disable(void);
 
+typedef void (*z_switch_hook)(struct k_thread *old_thread, struct k_thread *new_thread);
+void z_switch_hook_register(z_switch_hook hook);
+
 #ifdef __cplusplus
 }
 #endif

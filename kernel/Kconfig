@@ -241,6 +241,12 @@ config DYNAMIC_THREAD
 	help
 	  Enable support for dynamic threads and stacks.
 
+config TASK_SWITCH_HOOK_ENABLED
+	bool "Task switch hook enabled"
+	default n
+	help
+	  This option allows a hook to be called when a task switch occurs.
+
 if DYNAMIC_THREAD
 
 config DYNAMIC_THREAD_STACK_SIZE

@@ -947,6 +947,11 @@ void *z_get_next_switch_handle(void *interrupted)
 	z_sched_usage_switch(_kernel.ready_q.cache);
 	_current->switch_handle = interrupted;
 	set_current(_kernel.ready_q.cache);
+
+#ifdef CONFIG_TASK_SWITCH_HOOK_ENABLED
+	z_switch_hook_run(NULL, _current);
+#endif /* CONFIG_TASK_SWITCH_HOOK_ENABLED */
+
 	return _current->switch_handle;
 #endif /* CONFIG_SMP */
 }
@@ -1570,5 +1575,19 @@ void z_unready_thread(struct k_thread *thread)
 {
 	K_SPINLOCK(&_sched_spinlock) {
 		unready_thread(thread);
+	}
+}
+
+z_switch_hook z_switch_hook_func = NULL;
+
+void z_switch_hook_register(z_switch_hook hook)
+{
+	z_switch_hook_func = hook;
+}
+
+void z_switch_hook_run(struct k_thread *old_thread, struct k_thread *new_thread)
+{
+	if (z_switch_hook_func != NULL) {
+		z_switch_hook_func(old_thread, new_thread);
 	}
 }
