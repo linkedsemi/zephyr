@@ -3,7 +3,6 @@
 #include <string.h>
 #include <zephyr/crypto/crypto.h>
 #include <zephyr/sys/byteorder.h>
-#include <ls_hal_sm4.h>
 #include <ls_hal_otbn.h>
 #include <ls_msp_otbn.h>
 #include "crypto_linkedsemi.h"
@@ -12,12 +11,6 @@ LOG_MODULE_REGISTER(crypto_linkedsem);
 #include "crypto_linkedsemi_sha.h"
 
 #define DT_DRV_COMPAT linkedsemi_crypto
-
-static void linkedsemi_sm4_isr(const struct device *dev)
-{
-    ARG_UNUSED(dev);
-    HAL_SM4_IRQHandler();
-}
 
 __maybe_unused static void linkedsemi_otbn_isr(const struct device *dev)
 {
@@ -213,7 +206,6 @@ static struct crypto_driver_api crypto_enc_funcs = {
     {                                                                               \
         CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, crypto);                               \
         CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, sha);                                  \
-        CRYPTO_LINKEDSEMI_IRQ_CONNECT(index, sm4);                                  \
     }
 
 #define CRYPTO_LINKEDSEMI_INIT(index)                                               \
@@ -223,7 +215,6 @@ static struct crypto_driver_api crypto_enc_funcs = {
         .reg_calc_crc = (mem_addr_t)DT_INST_REG_ADDR_BY_NAME(index, calc_crc),      \
         .reg_calc = (mem_addr_t)DT_INST_REG_ADDR_BY_NAME(index, calc),              \
         .reg_crypt = (mem_addr_t)DT_INST_REG_ADDR_BY_NAME(index, crypt),            \
-        .reg_calc_sm4 = (mem_addr_t)DT_INST_REG_ADDR_BY_NAME(index, calc_sm4),      \
         .irq_config_func = crypto_linkedsemi_irq_config_func_##index,               \
         IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index), )) \
     };                                                                              \

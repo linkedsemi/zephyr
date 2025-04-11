@@ -54,7 +54,6 @@ struct crypto_linkedsemi_config {
     mem_addr_t reg_calc_crc;
     mem_addr_t reg_calc;
     mem_addr_t reg_crypt;
-    mem_addr_t reg_calc_sm4;
     uint32_t data;
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;

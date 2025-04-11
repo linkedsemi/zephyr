@@ -28,6 +28,7 @@
 /** Cipher Algorithm */
 enum cipher_algo {
 	CRYPTO_CIPHER_ALGO_AES = 1,
+	CRYPTO_CIPHER_ALGO_SM4 = 3,
 };
 
 /** Cipher Operation */
