@@ -96,6 +96,13 @@
                 write-block-size = <4>;
             };
         };
+        
+        per_cctl: clock-controller@4008d000 {
+            compatible = "linkedsemi,ls-cctl";
+            #clock-cells = <3>;
+            reg = <0x4008d000 0x400>;
+            status = "okay";
+        };
 
         pinctrl: pin-controller@4002f080 {
             compatible = "linkedsemi,lsqsh-pinctrl";
@@ -358,16 +365,22 @@
             reg = <0x40028400 0x400>,
                   <0x40028800 0x400>,
                   <0x40028C00 0x400>,
-                  <0x40029000 0x400>,
-                  <0x40029400 0x400>;
-            reg-names = "calc_sha", "calc_crc", "calc", "crypt", "calc_sm4";
+                  <0x40029000 0x400>;
+            reg-names = "calc_sha", "calc_crc", "calc", "crypt";
             interrupts = <CALC_AES256_IRQN 3>,
                          <CALC_SHA256_IRQN 3>,
-                         <CALC_SM4_IRQN 3>,
                          <OBTN_IRQN 3>,
                          <OTBN_SYSC_IRQN 3>;
-            interrupt-names = "crypto", "sha", "sm4", "otbn", "sysc_otbn";
+            interrupt-names = "crypto", "sha", "otbn", "sysc_otbn";
             status = "disabled";
+        };
+
+        sm4:sm4@40029400 {
+            compatible = "linkedsemi,sm4";
+            reg = <0x40029400 0x400>;
+            interrupts = <CALC_SM4_IRQN 3>;
+            status = "disabled";
+            clocks = <&per_cctl 0 0 0>; // TODO
         };
 
         espi1: espi@40045000 {
