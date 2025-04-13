@@ -123,6 +123,7 @@ void iopmp_region_init(void)
 
 extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
+extern void psram_init(void);
 static int lsqsh_init(void)
 {
     SystemInit();
@@ -236,6 +237,10 @@ static int lsqsh_init(void)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
 #endif
+#endif
+
+#if defined(CONFIG_PSRAM)
+    psram_init();
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)

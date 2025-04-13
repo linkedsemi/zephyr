@@ -85,5 +85,28 @@ config PMP_NO_NA4
 
 config RISCV_SOC_HAS_ISR_STACKING
 	default y
-	
+
+config PSRAM
+	bool "PSRAM"
+	default n
+
+config COMMON_LIBC_MALLOC_LSQSH
+	bool "COMMON_LIBC_MALLOC_LSQSH"
+	default n
+
+if COMMON_LIBC_MALLOC_LSQSH
+
+config COMMON_LIBC_MALLOC
+	default n
+
+config COMMON_LIBC_MALLOC_ARENA_SIZE
+	int "COMMON_LIBC_MALLOC_ARENA_SIZE"
+	default 0
+
+config COMMON_LIBC_MALLOC_ARENA_2_SIZE
+	int "COMMON_LIBC_MALLOC_ARENA_2_SIZE"
+	default 0
+
+endif
+
 endif
