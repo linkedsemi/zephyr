@@ -360,18 +360,24 @@
             interrupts = <RV_TIME_IRQN 0>;
         };
 
-        crypto: crypto@40028400 {
+        sha256:sha256@40002800 {
+            compatible = "linkedsemi,sha256";
+            reg = <0x40002800 0x400>;
+            interrupts = <CALC_SHA256_IRQN 3>;
+            status = "disabled";
+            clocks = <&per_cctl 0 0 0>; // TODO fpga no clock
+        };
+
+        crypto: crypto@40028800 {
             compatible = "linkedsemi,crypto";
-            reg = <0x40028400 0x400>,
-                  <0x40028800 0x400>,
+            reg = <0x40028800 0x400>,
                   <0x40028C00 0x400>,
                   <0x40029000 0x400>;
-            reg-names = "calc_sha", "calc_crc", "calc", "crypt";
+            reg-names = "calc_crc", "calc", "crypt";
             interrupts = <CALC_AES256_IRQN 3>,
-                         <CALC_SHA256_IRQN 3>,
                          <OBTN_IRQN 3>,
                          <OTBN_SYSC_IRQN 3>;
-            interrupt-names = "crypto", "sha", "otbn", "sysc_otbn";
+            interrupt-names = "crypto", "otbn", "sysc_otbn";
             status = "disabled";
         };
 

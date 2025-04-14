@@ -199,6 +199,10 @@
     status = "okay";
 };
 
+&sha256 {
+    status = "okay";
+};
+
 &sm4 {
     status = "okay";
 };

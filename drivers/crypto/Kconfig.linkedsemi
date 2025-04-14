@@ -1,6 +1,12 @@
 # Copyright (c) 2024 linkedsemi
 # SPDX-License-Identifier: Apache-2.0
 
+config CRYPTO_LINKEDSEMI_SHA256
+    bool "linkedsemi SHA256 driver"
+    default y
+    help
+      Enable linkedsemi SHA256 driver.
+
 config CRYPTO_LINKEDSEMI_SHA512
     bool "linkedsemi SHA512 driver"
     default y

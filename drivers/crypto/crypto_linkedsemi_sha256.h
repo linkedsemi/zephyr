@@ -1,0 +1,38 @@
+#ifndef ZEPHYR_DRIVERS_CRYPTO_CRYPTO_LINKEDSEMIH_SHA256_
+#define ZEPHYR_DRIVERS_CRYPTO_CRYPTO_LINKEDSEMIH_SHA256_
+
+#include <stdint.h>
+#include <zephyr/crypto/crypto.h>
+#include <zephyr/drivers/clock_control.h>
+#include "soc_clock.h"
+#include "reg_sha_type.h"
+
+#define LOG_LEVEL CONFIG_SHA256_LOG_LEVEL
+
+#define SHA256_LINKEDSEMI_HASH_CAPS   (CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS)
+
+#define SHA256_TOTAL_LEN_BYTE       (0x08)
+#define SHA256_PADDING_ZERO         (0x00)
+#define SHA256_PADDING_BYTE         (0x80)
+#define SHA256_BLOCK_BYTE_SIZE      (0x40)
+#define SHA256_BLOCK_WORD_SIZE      (SHA256_BLOCK_BYTE_SIZE / sizeof(uint32_t))
+#define SHA256_FIANL_LENGTH         (SHA256_BLOCK_BYTE_SIZE - SHA256_TOTAL_LEN_BYTE)
+
+
+struct sha256_linkedsemi_data {
+    struct k_mutex sha256_engine_mutex;
+    struct k_sem fsm_end_sem;
+    
+    uint8_t buffer[SHA256_BLOCK_BYTE_SIZE];
+	uint32_t buf_idx;
+    uint32_t total_len;
+    enum hash_algo algo;
+};
+
+struct sha256_linkedsemi_config {
+	reg_sha_t *reg; /* SHA256 engine base address */
+	void (*irq_config_func)(const struct device *);
+    struct ls_clk_cfg cctl_cfg;
+};
+
+#endif /* ZEPHYR_DRIVERS_CRYPTO_CRYPTO_LINKEDSEMIH_SHA256_ */
