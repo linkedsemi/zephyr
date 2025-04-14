@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <string.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/mbox.h>
@@ -20,8 +21,7 @@
 #define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
 
 #define FLASH_ADDR       DT_REG_ADDR(SOC_NV_FLASH_NODE)
-// #define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
-#define FLASH_SIZE       MB(16)
+#define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
 #define FLASH_ERASE_SIZE DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
 #define FLASH_WRITE_SIZE DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
 
@@ -174,16 +174,11 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
-    int ret_mbox = 0;
     bool xip_present = is_cpu1_xip() & is_cpu1_running();
     if (xip_present) {
-        ret_mbox = mbox_acquire_cpu1_idle(&dev_config->tx_channel);
-    }
-    if (!ret_mbox) {
+        memcpy(data, (void *)(FLASH_ADDR + offset), size);
+    } else {
         hal_flash_multi_io_read(offset, (uint8_t *)data, size);
-    }
-    if (xip_present) {
-        mbox_release_cpu1();
     }
 
     return 0;

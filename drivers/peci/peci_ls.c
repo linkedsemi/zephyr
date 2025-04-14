@@ -28,11 +28,10 @@
 #define PECI_RDLEN_LEN 1
 
 /* feature */
-#define PECI_LS_MAX_TX_BUF_LEN 24
-#define PECI_LS_MAX_RX_BUF_LEN 24
+#define PECI_LS_MAX_XFER_LEN 1024
 
 /* reg val */
-#define PECI_PRE_DIV_VAL    0x20
+#define PECI_PRE_DIV_VAL    0xff
 #define PECI_A_BIT_CYC_VAL  11
 #define PECI_A_TGT_IDX0_VAL 3
 #define PECI_M_TGT_IDX0_VAL 3
@@ -56,13 +55,15 @@ struct peci_ls_config {
 };
 
 struct peci_ls_data {
-    struct k_sem trans_sync_sem;
+    struct k_sem xfer_sync_sem;
     struct k_sem lock;
+    uint8_t buf_idx;
 };
 
-uint8_t crc8(const uint8_t *data, size_t length)
+uint8_t crc8(uint8_t crc, const uint8_t *data, size_t length)
 {
-    uint8_t crc = 0x00;
+    __ASSERT_NO_MSG(data != NULL);
+
     for (size_t i = 0; i < length; i++) {
         crc ^= data[i];
         for (uint8_t j = 0; j < 8; j++) {
@@ -76,7 +77,7 @@ uint8_t crc8(const uint8_t *data, size_t length)
     return crc;
 }
 
-static void peci_core_reg_print(const struct device *dev)
+__unused static void peci_core_reg_print(const struct device *dev)
 {
     const struct peci_ls_config *const dev_config = dev->config;
     reg_peci_t *const reg = dev_config->reg;
@@ -116,8 +117,8 @@ void peci_ls_isr(void *arg)
     struct peci_ls_data *dev_data = dev->data;
     reg_peci_t *const reg = dev_config->reg;
 
-    WRITE_REG(reg->INTR_CLR, PECI_INTR_CLR_MASK);
-    k_sem_give(&dev_data->trans_sync_sem);
+    WRITE_REG(reg->INTR_CLR, reg->INTR_STT);
+    k_sem_give(&dev_data->xfer_sync_sem);
 }
 
 static int peci_ls_init(const struct device *dev)
@@ -147,7 +148,7 @@ static int peci_ls_init(const struct device *dev)
 
     reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL);
 
-    k_sem_init(&dev_data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
+    k_sem_init(&dev_data->xfer_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_sem_init(&dev_data->lock, 1, 1);
     dev_config->irq_config_func(dev);
 
@@ -180,7 +181,6 @@ static int peci_ls_enable(const struct device *dev)
 
     k_sem_take(&dev_data->lock, K_FOREVER);
 
-    WRITE_REG(reg->INTR_CLR, PECI_INTR_CLR_MASK);
     SET_BIT(reg->PECI_CTRL2, PECI_BIT_REVERSE_MASK);
 
     k_sem_give(&dev_data->lock);
@@ -202,80 +202,191 @@ static int peci_ls_disable(const struct device *dev)
     return 0;
 }
 
+static void peci_wr_pingpong_buf(const struct device *dev, uint32_t *txbuf32, bool pingpong)
+{
+    const struct peci_ls_config *const dev_config = dev->config;
+    reg_peci_t *const reg = dev_config->reg;
+
+    if (pingpong) {
+        reg->TX_H_DAT0 = txbuf32[0];
+        reg->TX_H_DAT1 = txbuf32[1];
+        reg->TX_H_DAT2 = txbuf32[2];
+        reg->TX_H_DAT3 = txbuf32[3];
+        reg->TX_H_DAT4 = txbuf32[4];
+        reg->TX_H_DAT5 = txbuf32[5];
+        reg->TX_H_DAT6 = txbuf32[6];
+        reg->TX_H_DAT7 = txbuf32[7];
+    } else {
+        reg->TX_DAT0 = txbuf32[0];
+        reg->TX_DAT1 = txbuf32[1];
+        reg->TX_DAT2 = txbuf32[2];
+        reg->TX_DAT3 = txbuf32[3];
+        reg->TX_DAT4 = txbuf32[4];
+        reg->TX_DAT5 = txbuf32[5];
+        reg->TX_DAT6 = txbuf32[6];
+        reg->TX_DAT7 = txbuf32[7];
+    }
+}
+
+static void peci_rd_pingpong_buf(const struct device *dev, uint32_t *rxbuf32, bool pingpong)
+{
+    const struct peci_ls_config *const dev_config = dev->config;
+    reg_peci_t *const reg = dev_config->reg;
+
+    if (pingpong) {
+        rxbuf32[0] = reg->RX_H_DAT0;
+        rxbuf32[1] = reg->RX_H_DAT1;
+        rxbuf32[2] = reg->RX_H_DAT2;
+        rxbuf32[3] = reg->RX_H_DAT3;
+        rxbuf32[4] = reg->RX_H_DAT4;
+        rxbuf32[5] = reg->RX_H_DAT5;
+        rxbuf32[6] = reg->RX_H_DAT6;
+        rxbuf32[7] = reg->RX_H_DAT7;
+    } else {
+        rxbuf32[0] = reg->RX_DAT0;
+        rxbuf32[1] = reg->RX_DAT1;
+        rxbuf32[2] = reg->RX_DAT2;
+        rxbuf32[3] = reg->RX_DAT3;
+        rxbuf32[4] = reg->RX_DAT4;
+        rxbuf32[5] = reg->RX_DAT5;
+        rxbuf32[6] = reg->RX_DAT6;
+        rxbuf32[7] = reg->RX_DAT7;
+    }
+}
+
+static bool peci_tx_byte(const struct device *dev, uint8_t *buf_u8, uint8_t byte)
+{
+    struct peci_ls_data *dev_data = dev->data;
+    bool full = false;
+
+    buf_u8[dev_data->buf_idx++] = byte;
+
+    if (dev_data->buf_idx % 32 == 0) {
+        dev_data->buf_idx = 0;
+        full = true;
+    }
+
+    return full;
+}
+
 static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 {
     const struct peci_ls_config *const dev_config = dev->config;
     struct peci_ls_data *const dev_data = dev->data;
     reg_peci_t *const reg = dev_config->reg;
-    struct peci_buf *peci_rx_buf = &msg->rx_buffer;
-    struct peci_buf *peci_tx_buf = &msg->tx_buffer;
-    int ret = 0;
-    uint32_t idx = 0;
-    uint32_t txbuf32[8] = {};
-    uint32_t rxbuf32[8] = {};
-    uint8_t *txbuf8 = (uint8_t *)txbuf32;
-    uint8_t *rxbuf8 = (uint8_t *)rxbuf32;
     uint8_t crc_result = 0;
-    uint32_t reg_len = 0;
+    bool pingpong = false;
+    bool is_to_req = true;
+    int ret = 0;
 
-    if (peci_tx_buf->len > PECI_LS_MAX_TX_BUF_LEN || peci_rx_buf->len > PECI_LS_MAX_RX_BUF_LEN) {
+    union {
+        uint32_t u32[8];
+        uint8_t u8[32];
+    } buf = {};
+
+    /* pre-calculate lengths */
+    const uint16_t xfer_tx_len = PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + msg->tx_buffer.len + PECI_FCS_LEN;
+    const uint16_t xfer_rx_len = msg->rx_buffer.len ? (msg->rx_buffer.len + PECI_FCS_LEN) : 0;
+    const uint16_t xfer_len = xfer_tx_len + xfer_rx_len;
+    const uint8_t reg_tx_tail_len = xfer_tx_len % 32;
+    const uint16_t reg_rx_len = reg_tx_tail_len + xfer_rx_len;
+
+    if (xfer_len > PECI_LS_MAX_XFER_LEN) {
         ret = -EINVAL;
-        goto out;
     }
+
+    /* initialize device state */
+    dev_data->buf_idx = 0;
 
     k_sem_take(&dev_data->lock, K_FOREVER);
 
-    reg_len = PECI_RDLEN_LEN + peci_tx_buf->len + PECI_FCS_LEN;
-    if (peci_rx_buf) {
-        reg_len += peci_rx_buf->len + PECI_FCS_LEN;
+    /* configure registers */
+    SET_BIT(reg->INTR_CLR, PECI_INTR_MSK_MASK | PECI_INTR_32BYTES_END_MSK_MASK);
+    if (xfer_len > 32) {
+        SET_BIT(reg->INTR_MSK, PECI_INTR_32BYTES_END_MSK_MASK);
+        SET_BIT(reg->PECI_CTRL, PECI_WT_MODE_MASK);
+        MODIFY_REG(reg->PECI_CTRL, PECI_DAT_WLEN_MASK, xfer_tx_len << PECI_DAT_WLEN_POS);
     }
-    MODIFY_REG(reg->PECI_CTRL, PECI_DAT_LEN_MASK, reg_len << PECI_DAT_LEN_POS);
+    MODIFY_REG(reg->PECI_CTRL, PECI_DAT_LEN_MASK, (xfer_len - PECI_ADDR_LEN - PECI_WRLEN_LEN) << PECI_DAT_LEN_POS);
 
-    idx = 0;
-    txbuf8[idx++] = msg->addr;
-    txbuf8[idx++] = peci_tx_buf->len;
-    txbuf8[idx++] = peci_rx_buf->len;
-    txbuf8[idx++] = msg->cmd_code;
-    for (uint8_t i = 0; i < peci_tx_buf->len - 1; i++) {
-        txbuf8[idx++] = peci_tx_buf->buf[i];
+    /* send header */
+    peci_tx_byte(dev, buf.u8, msg->addr);
+    peci_tx_byte(dev, buf.u8, msg->tx_buffer.len);
+    peci_tx_byte(dev, buf.u8, msg->rx_buffer.len);
+    peci_tx_byte(dev, buf.u8, msg->cmd_code);
+
+    const uint16_t tx_len = msg->tx_buffer.len - 1;
+    /* calculate crc */
+    crc_result = crc8(crc_result, buf.u8, 4);
+    if (tx_len > 0) {
+         /* msg->tx_buffer.len - 1: because msg->cmd_code is the first byte */
+        const uint8_t *tx_buf = msg->tx_buffer.buf;
+
+        crc_result = crc8(crc_result, tx_buf, tx_len);
+
+        pingpong = false;
+        /* send payload */
+        for (uint16_t i = 0; i < tx_len; i++) {
+            bool full = peci_tx_byte(dev, buf.u8, tx_buf[i]);
+            if (full) {
+                peci_wr_pingpong_buf(dev, buf.u32, pingpong);
+                if (is_to_req && pingpong) {
+                    WRITE_REG(reg->TXRX_REQ, PECI_TXRX_REQ_MASK);
+                    is_to_req = false;
+                }
+                pingpong ^= true;
+                if (!is_to_req) {
+                    k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
+                }
+            }
+        }
     }
-    crc_result = crc8(txbuf8, idx);
-    txbuf8[idx] = crc_result;
-    WRITE_REG(reg->INTR_CLR, PECI_INTR_CLR_MASK);
-    WRITE_REG(reg->INTR_MSK, PECI_INTR_MSK_MASK);
-    reg->TX_DAT0 = txbuf32[0];
-    reg->TX_DAT1 = txbuf32[1];
-    reg->TX_DAT2 = txbuf32[2];
-    reg->TX_DAT3 = txbuf32[3];
-    reg->TX_DAT4 = txbuf32[4];
-    reg->TX_DAT5 = txbuf32[5];
-    reg->TX_DAT6 = txbuf32[6];
-    reg->TX_DAT7 = txbuf32[7];
-    WRITE_REG(reg->TXRX_REQ, PECI_TXRX_REQ_MASK);
 
-    k_sem_take(&dev_data->trans_sync_sem, K_FOREVER);
-
-    WRITE_REG(reg->INTR_MSK, 0);
-
-    __ASSERT(reg->TX_DAT0 == reg->RX_DAT0, "check waveform sample fail");
-
-    peci_core_reg_print(dev);
-
-    rxbuf32[0] = reg->RX_DAT0;
-    rxbuf32[1] = reg->RX_DAT1;
-    rxbuf32[2] = reg->RX_DAT2;
-    rxbuf32[3] = reg->RX_DAT3;
-    rxbuf32[4] = reg->RX_DAT4;
-    rxbuf32[5] = reg->RX_DAT5;
-    rxbuf32[6] = reg->RX_DAT6;
-    rxbuf32[7] = reg->RX_DAT7;
-
-    for (uint8_t i = 0; i < peci_rx_buf->len; i++) {
-        peci_rx_buf->buf[i] = rxbuf8[PECI_ADDR_LEN + PECI_WRLEN_LEN + PECI_RDLEN_LEN + peci_tx_buf->len + PECI_FCS_LEN + i];
+    /* send crc */
+    peci_tx_byte(dev, buf.u8, crc_result);
+    peci_wr_pingpong_buf(dev, buf.u32, pingpong);
+    if (is_to_req) {
+        WRITE_REG(reg->TXRX_REQ, PECI_TXRX_REQ_MASK);
+        /* is_to_req = false; */
     }
+
+    if (xfer_rx_len > 0) {
+        /* receive handling */
+        pingpong = false;
+        uint8_t *rx_dest = msg->rx_buffer.buf;
+        bool is_first_rx = true;
+        const uint16_t rx_loop_count = reg_rx_len / 32;
+        uint8_t rx_valid;
+
+        for (uint16_t i = 0; i < rx_loop_count; i++) {
+            k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
+            peci_rd_pingpong_buf(dev, buf.u32, pingpong);
+            rx_valid = is_first_rx ? (32 - reg_tx_tail_len) : 32;
+            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_valid);
+            rx_dest += rx_valid;
+            is_first_rx = false;
+            pingpong ^= true;
+        }
+
+        MODIFY_REG(reg->INTR_MSK, PECI_INTR_32BYTES_END_MSK_MASK | PECI_INTR_MSK_MASK, PECI_INTR_MSK_MASK);
+
+        /* handle remaining bytes */
+        const uint8_t rx_remain = reg_rx_len % 32;
+        if (rx_remain) {
+            k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
+            peci_rd_pingpong_buf(dev, buf.u32, pingpong);
+            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_remain);
+            /* is_first_rx = false; */
+        }
+    } else {
+        MODIFY_REG(reg->INTR_MSK, PECI_INTR_32BYTES_END_MSK_MASK | PECI_INTR_MSK_MASK, PECI_INTR_MSK_MASK);
+        k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
+    }
+
+    CLEAR_BIT(reg->INTR_MSK, PECI_INTR_MSK_MASK | PECI_INTR_32BYTES_END_MSK_MASK);
+
     k_sem_give(&dev_data->lock);
 
-out:
     return ret;
 }
 
