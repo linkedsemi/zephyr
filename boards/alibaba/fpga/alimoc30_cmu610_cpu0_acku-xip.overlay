@@ -277,6 +277,6 @@
 };
 
 &flash0 {
-    reg = <0x8000000 0x400000>;
+    reg = <0x8000000 DT_SIZE_M(16)>;
     status = "okay";
 };
