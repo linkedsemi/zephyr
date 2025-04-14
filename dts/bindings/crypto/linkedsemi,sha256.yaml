@@ -1,0 +1,7 @@
+description: LINKEDSEMI SHA256
+
+compatible: "linkedsemi,sha256"
+
+include: [base.yaml]
+
+
