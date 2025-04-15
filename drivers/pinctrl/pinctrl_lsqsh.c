@@ -70,6 +70,7 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     // io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
 
     if (pin_desc.pin_attr.gpio) {
+        per_func_disable_all(pin);
         goto end;
     } else if (pin_desc.pin_attr.disable_all) {
         per_func_disable_all(pin);
