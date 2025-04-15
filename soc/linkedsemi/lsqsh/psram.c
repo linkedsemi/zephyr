@@ -5,6 +5,7 @@
 #include <ls_soc_gpio.h>
 #include <DWC_ssi_v2_header.h>
 #include <ls_hal_ssi.h>
+#include <core_rv32.h>
 
 #if !defined(DW_FIELD_BUILD)
 #define DW_FIELD_BUILD(field,val) \
@@ -37,7 +38,11 @@ void psram_reset(void)
     SSI_HandleTypeDef SsiHandle = {0};
     uint8_t ssi_tx_buf[] = {CMD_RESET_ENABLE, CMD_RESET, CMD_WRAP_BOUNDARY_TOGGLE};
     SsiHandle.REG = (reg_ssi_t *)APP_PSRAM_CFG_ADDR;
+#if 1
+    SsiHandle.Init.clk_div = SSI_CLK_DIV << 1;
+#else
     SsiHandle.Init.clk_div = SSI_CLK_DIV;
+#endif
     SsiHandle.Init.rxsample_dly = 0;
     SsiHandle.Init.ctrl.cph = SCLK_Toggle_In_Middle;
     SsiHandle.Init.ctrl.cpol = Inactive_Low;
@@ -51,11 +56,13 @@ void psram_reset(void)
     if (HAL_SSI_Transmit(&SsiHandle, (uint8_t *)&ssi_tx_buf[0], 1) != HAL_OK) {
         while(1);
     }
-    k_usleep(1);
+    // k_msleep(1);
+    for(uint32_t i = 0; i < 10000; i++) __NOP();
     if (HAL_SSI_Transmit(&SsiHandle, (uint8_t *)&ssi_tx_buf[1], 1) != HAL_OK) {
         while(1);
     }
-    k_usleep(1);
+    // k_msleep(1);
+    for(uint32_t i = 0; i < 10000; i++) __NOP();
     if (HAL_SSI_Transmit(&SsiHandle, (uint8_t *)&ssi_tx_buf[2], 1) != HAL_OK) {
         while(1);
     }
