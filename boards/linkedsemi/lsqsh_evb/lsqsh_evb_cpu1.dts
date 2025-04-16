@@ -172,7 +172,7 @@
     status = "okay";
 };
 
-&mac1 {
+&eth1 {
     status = "okay";
 };
 

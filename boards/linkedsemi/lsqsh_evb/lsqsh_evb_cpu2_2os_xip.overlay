@@ -84,3 +84,7 @@
         write-block-size = <4>;
     };
 };
+
+&psram {
+    status = "okay";
+};
