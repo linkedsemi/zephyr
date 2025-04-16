@@ -39,6 +39,13 @@
         reg = <0x10080000 DT_SIZE_K(768)>;
     };
 
+    psram: memory@18000000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x18000000 DT_SIZE_M(8)>;
+        zephyr,memory-region = "PSRAM";
+        status = "disabled";
+    };
+
 /*
     share_memory0: memory@1013f000{
         compatible = "mmio-sram";
@@ -805,7 +812,7 @@
             status = "disabled";
         };
 
-        mac1: ethernet@40064000 {
+        eth1: ethernet@40064000 {
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
             reg = <0x40064000 0x2000>;
             interrupts = <ETH1_IRQN 3>;
@@ -819,7 +826,7 @@
             };
         };
 
-        mac2: ethernet@40066000 {
+        eth2: ethernet@40066000 {
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
             reg = <0x40066000 0x2000>;
             interrupts = <ETH2_IRQN 3>;
