@@ -59,8 +59,9 @@ int mdio_set_phy(void)
 		printk("%4.4x\n", val);
 
 		/* 10Mbps */
-		sys_clear_bits((mem_addr_t)&val, BIT(6) | BIT(12) | BIT(13));
-		rc = mdio_write(mdio_dev, 0x0, reg, val);
+		// sys_clear_bits((mem_addr_t)&val, BIT(6) | BIT(12) | BIT(13));
+		// rc = mdio_write(mdio_dev, 0x0, reg, val);
+		rc = mdio_write(mdio_dev, 0x0, reg, 0);
 
 		printk("phy addr: %d  reg: %d :", addr, reg);
 		rc = mdio_read(mdio_dev, addr, reg, &val);
