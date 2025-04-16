@@ -360,6 +360,14 @@
             interrupts = <RV_TIME_IRQN 0>;
         };
 
+        sha512:sha512@40005000 {
+            compatible = "linkedsemi,sha512";
+            reg = <0x40005000 0x400>;
+            interrupts = <SHA512_IRQN 3>;
+            status = "disabled";
+            clocks = <&per_cctl 0 0 0>; // TODO fpga no clock
+        };
+
         sha256:sha256@40002800 {
             compatible = "linkedsemi,sha256";
             reg = <0x40002800 0x400>;

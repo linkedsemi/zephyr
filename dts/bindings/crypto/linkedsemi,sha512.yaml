@@ -1,0 +1,7 @@
+description: LINKEDSEMI SHA512
+
+compatible: "linkedsemi,sha512"
+
+include: [base.yaml]
+
+
