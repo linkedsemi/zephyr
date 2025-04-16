@@ -6,6 +6,10 @@ config RISCV_HAS_PLIC
 config RISCV_HAS_CLIC
 	default y
 
+config XUANTIE_E906_CLIC
+	bool
+	default y
+
 config RISCV_MCAUSE_EXCEPTION_MASK
 	default 0xfff
 
