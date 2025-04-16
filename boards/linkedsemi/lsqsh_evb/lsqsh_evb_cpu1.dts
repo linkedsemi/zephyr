@@ -203,6 +203,10 @@
     status = "okay";
 };
 
+&sha512 {
+    status = "okay";
+};
+
 &sm4 {
     status = "okay";
 };
