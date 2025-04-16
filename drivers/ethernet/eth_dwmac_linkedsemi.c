@@ -28,6 +28,8 @@ static const struct pinctrl_dev_config *eth0_pcfg =
     PINCTRL_DT_INST_DEV_CONFIG_GET(0);
 #endif
 
+#define M_10_1000M
+
 int dwmac_bus_init(struct dwmac_priv *p)
 {
 #if defined(CONFIG_PINCTRL)
@@ -60,10 +62,20 @@ void dwmac_platform_init(struct dwmac_priv *p)
     p->rx_descs = dwmac_rx_descs;
 
     /* basic configuration for this platform */
-    REG_WRITE(MAC_CONF,
-          MAC_CONF_PS |
-          MAC_CONF_FES |
-          MAC_CONF_DM);
+
+#if defined(M_10_1000M)
+        REG_WRITE(MAC_CONF,
+            MAC_CONF_PS |
+            MAC_CONF_DM);
+#elif defined(M_100_2500M)
+        REG_WRITE(MAC_CONF,
+            MAC_CONF_PS |
+            MAC_CONF_FES |
+            MAC_CONF_DM);
+#else
+#error not define speed
+#endif
+
     REG_WRITE(DMA_SYSBUS_MODE,
           DMA_SYSBUS_MODE_AAL |
           DMA_SYSBUS_MODE_FB);

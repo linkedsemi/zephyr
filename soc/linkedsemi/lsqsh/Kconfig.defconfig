@@ -46,6 +46,9 @@ if NETWORKING
 config NET_L2_ETHERNET
 	default y
 
+config NET_DRIVERS
+	default y
+
 endif # NETWORKING
 
 config NUM_USE_CPU
