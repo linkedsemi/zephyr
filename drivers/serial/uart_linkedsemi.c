@@ -5,6 +5,7 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
+#include <zephyr/interrupt_util.h>
 
 //....................................borad:ls...........................................
 
@@ -48,6 +49,7 @@ struct uart_ls_data_t
 #ifdef CONFIG_PM
 	bool pm_policy_state_on;
 #endif
+	uint32_t irq;
 };
 
 static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
@@ -199,10 +201,15 @@ static int uart_ls_init(const struct device *dev)
 }
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
+void uart_ls_isr(const struct device *dev);
 static void uart_ls_irq_tx_enable(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;	
+	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS); //transmission complete interrupt enable
+	
+	// uart_ls_isr(dev);
+	trigger_irq(data->irq);
 }
 
 void uart_ls_irq_tx_disable(const struct device *dev)
@@ -214,7 +221,7 @@ void uart_ls_irq_tx_disable(const struct device *dev)
 int uart_ls_irq_tx_ready(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF);
+	return (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) == UART_SR_TFNF)? true : false;
 }
 
 void uart_ls_irq_rx_enable(const struct device *dev)
@@ -238,13 +245,13 @@ void uart_ls_irq_rx_disable(const struct device *dev)
 int uart_ls_irq_tx_complete(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFEM);
+	return (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFEM) == UART_SR_TFEM)? true : false;
 }
 
 int uart_ls_irq_rx_ready(const struct device *dev)  //fifo no empty：Returen 1
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	return LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE);
+	return (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE) == UART_SR_RFNE)? true : false;
 }
 
 void uart_ls_irq_err_enable(const struct device *dev)
@@ -261,10 +268,12 @@ int uart_ls_irq_is_pending(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 
-	return ((LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE)	&&
-		LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_RXRD))||
-		(LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) &&
-		LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC)));
+	return LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX,UART_IT_RXRD)|| LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC);
+
+	// return ((LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE)	&&
+	// 	LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_RXRD))||
+	// 	(LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) &&
+	// 	LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC)));
 }
 
 int uart_ls_irq_update(const struct device *dev)
@@ -278,29 +287,25 @@ void uart_ls_irq_callback_set(const struct device *dev,uart_irq_callback_user_da
 	data->user_cb = cb;
 	data->user_parm = user_data;
 }
-
+#include "ls_soc_gpio.h"
 void uart_ls_isr(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
-    uint8_t irq_flag =  false;
 	if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD))
     {
         LL_UART_ClearFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD);
-		irq_flag = true;
     }
-    else if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS))
+    if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS))
     {
         LL_UART_ClearFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS);
-		irq_flag = true;
     }
-    else if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC))
+    if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC))
     {
         LL_UART_ClearFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC);
-		irq_flag = true;
     }
 	
-	if(irq_flag == true && data->user_cb !=NULL)
+	if(data->user_cb !=NULL)
 	{
 		data->user_cb(dev,data->user_parm);
 	}
@@ -309,25 +314,25 @@ void uart_ls_isr(const struct device *dev)
 int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	uint8_t num_tx = 0U;
-	unsigned int key;
+	int num_tx = 0U;
+	// unsigned int key;
 
-	if (!LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF)) {
-		return num_tx;
-	}
+	// if (!(LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF) == UART_SR_TFNF)) {
+	// 	return num_tx;
+	// }
 
 	/* Lock interrupts to prevent nested interrupts or thread switch */
-	key = irq_lock();
+	// key = irq_lock();
 
-	while ((len - num_tx > 0) &&
-	       LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF)) {
+	while ((len-num_tx)>0 &&
+	       (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF) == UART_SR_TFNF)) {
 		/* TXE flag will be cleared with byte write to DR|RDR register */
 
 		/* Send a character (8bit , parity none) */
 		LL_UART_TransmitData((reg_uart_t *)uart_handle->UARTX,tx_data[num_tx++]);
 	}
 
-	irq_unlock(key);
+	// irq_unlock(key);
 
 	return num_tx;
 }
@@ -335,9 +340,9 @@ int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	uint8_t num_rx = 0U;
+	int num_rx = 0U;
 
-	while ((size - num_rx > 0) &&
+	while (((size - num_rx) > 0) &&
 	       LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_RFNE)) {
 		/* RXNE flag will be cleared upon read from DR|RDR register */
 
@@ -392,6 +397,8 @@ static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 		uart_ls_isr, DEVICE_DT_INST_GET(index),		\
 		0);							\
 	irq_enable(DT_INST_IRQN(index));				\
+	struct uart_ls_data_t *data = dev->data;\
+	data->irq = DT_INST_IRQN(index);\
 }
 #else
 #define LS_UART_IRQ_HANDLER_DECL(index) /* Not used */

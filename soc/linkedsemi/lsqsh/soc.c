@@ -232,35 +232,3 @@ static int lsqsh_init(void)
 }
 
 SYS_INIT(lsqsh_init, PRE_KERNEL_1, 0);
-
-/**
- * @brief Enable interrupt
- */
-void riscv_clic_irq_enable(uint32_t irq)
-{
-    enable_irq(irq);
-}
-
-/**
- * @brief Disable interrupt
- */
-void riscv_clic_irq_disable(uint32_t irq)
-{
-    disable_irq(irq);
-}
-
-/**
- * @brief Get enable status of interrupt
- */
-int riscv_clic_irq_is_enabled(uint32_t irq)
-{
-    return (uint32_t)csi_vic_get_enabled_irq(irq);
-}
-
-/**
- * @brief Set priority and level of interrupt
- */
-void riscv_clic_irq_priority_set(uint32_t irq, uint32_t pri, uint32_t flags)
-{
-    csi_vic_set_prio(irq,pri);
-}
