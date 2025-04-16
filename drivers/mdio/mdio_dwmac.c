@@ -87,22 +87,20 @@ static int mdio_dwmac_transfer(const struct device *dev,
     int ret = 0;
     mdio_data_t mdio_data;
     mdio_address_t mdio_address = {
-        .field = {
-            .Reserved_31_28 = 0,
-            .PSE = 0,
-            .BTB = 0,
-            .PA = prtad,
-            .RDA = is_c45 ? devad : regad,
-            .Reserved_15 = 0,
-            .NTC = 0,
-            .CR = dev_data->divider,
-            .Reserved_7_5 = 0,
-            .SKAP = 0,
-            .GOC_1 = is_write ? 0 : 1,
-            .GOC_0 = 1,
-            .C45E = is_c45 ? 1 : 0,
-            .GB = 1,
-        },
+        .Reserved_31_28 = 0,
+        .PSE = 0,
+        .BTB = 0,
+        .PA = prtad,
+        .RDA = is_c45 ? devad : regad,
+        .Reserved_15 = 0,
+        .NTC = 0,
+        .CR = dev_data->divider,
+        .Reserved_7_5 = 0,
+        .SKAP = 0,
+        .GOC_1 = is_write ? 0 : 1,
+        .GOC_0 = 1,
+        .C45E = is_c45 ? 1 : 0,
+        .GB = 1,
     };
 
     k_mutex_lock(&dev_data->mdio_mutex, K_FOREVER);
@@ -168,14 +166,14 @@ static int mdio_dwmac_init(const struct device *dev)
 {
     struct mdio_dwmac_data *const dev_data = dev->data;
     const struct mdio_dwmac_config *const config = dev->config;
-    uint32_t per_clk_rate = DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency);
+    uint32_t per_clk_rate = DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency);
 
     k_mutex_init(&dev_data->mdio_mutex);
 
 #if defined(CONFIG_PINCTRL)
     int ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        return ret;
+        LOG_WRN("pinctrl_apply_state fail");
     }
 #endif
 
@@ -191,7 +189,7 @@ static int mdio_dwmac_init(const struct device *dev)
     } else if (per_clk_rate < 250) {
         dev_data->divider = 4;
     } else {
-        LOG_ERR("ENET QOS clk rate does not allow MDIO");
+        LOG_ERR("MAC clk rate does not allow MDIO");
         return -ENOTSUP;
     }
 

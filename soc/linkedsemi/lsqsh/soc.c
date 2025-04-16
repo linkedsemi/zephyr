@@ -163,28 +163,7 @@ static int lsqsh_init(void)
 #endif
 
 #if defined(CONFIG_ETH_DRIVER)
-#if !defined(CONFIG_PINCTRL)
-    /* RMII */
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xbc) = 0x2f3b;
-#endif
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x54) = 0x10;
-    // *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x100) = 0x9;
-#endif
-
-#if defined(CONFIG_SDHC)
-#if !defined(CONFIG_PINCTRL)
-    /* SDHC */
-    *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x60) = BIT(14) | BIT(26);
-    *(volatile uint32_t *)(APP_SYSC_AWO_APP_ADDR + 0x64) = BIT(7) | BIT(15);
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0xac) = 0x3FF00000;
-#endif
-
-    // *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x10) = 0x10000000;
-    // *(volatile uint32_t *)(QSH_SYSC_CPU_ADDR + 0x18) = 0x10000000;
-
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x60) = 0xf0;
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x64) = 0xa0a00268;
-    // *(volatile uint32_t *)(QSH_SYSC_AWO_ADDR + 0x68) = 0x1a0;
+    SYSC_APP_CPU->ETH1_PHY_CTRL = 0x9;
 #endif
 
     cpu_sleep_mode_config(0);
