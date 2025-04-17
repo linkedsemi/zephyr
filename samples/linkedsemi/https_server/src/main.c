@@ -78,7 +78,7 @@ void handle_client(WOLFSSL* ssl) {
 
         const char* response = "HTTP/1.1 200 OK\r\n"
                                "Content-Type: application/json\r\n"
-                               "Content-Length: 20\r\n"
+                               "Content-Length: 17\r\n"
                                "\r\n"
                                "{\"v1\": \"Redfish\"}";
 
