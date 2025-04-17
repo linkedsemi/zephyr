@@ -410,9 +410,9 @@ static int sm4_linkedsemi_gcm_encrypt(struct cipher_ctx *ctx, struct cipher_aead
 		return -EINVAL;
 	}
 	/* GMAC: end encrypt j0 */
-	ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->out_buf, pkt->out_len,
-	      pkt->out_buf + pkt->out_len, ctx->mode_params.gcm_info.tag_len);
-	mem_xor_n(apkt->tag, pkt->out_buf + pkt->out_len, c_j0, ctx->mode_params.gcm_info.tag_len);
+	ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->out_buf, pkt->out_len, apkt->tag,
+	      ctx->mode_params.gcm_info.tag_len);
+	mem_xor_n(apkt->tag, apkt->tag, c_j0, ctx->mode_params.gcm_info.tag_len);
 	/* end GMAC */
 
 	pkt->out_len = pkt->in_len;
