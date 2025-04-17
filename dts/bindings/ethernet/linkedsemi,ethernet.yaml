@@ -6,3 +6,10 @@ description: LINKEDSEMI Ethernet
 compatible: "linkedsemi,ethernet"
 
 include: [ethernet-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  clock-frequency:
+    type: int
+    required: true
+    description: |
+      clock frequency in Hz

@@ -54,21 +54,22 @@ typedef union mdio_data {
 } mdio_data_t;
 
 struct mdio_dwmac_data {
-    mem_addr_t base;
     uint8_t divider;
     struct k_mutex mdio_mutex;
 };
 
 struct mdio_dwmac_config {
+    mem_addr_t base;
+    uint32_t clock_frequency;
     const struct pinctrl_dev_config *pincfg;
 };
 
 static bool check_busy(const struct device *dev)
 {
-    struct mdio_dwmac_data *const dev_data = dev->data;
+    const struct mdio_dwmac_config *const dev_config = dev->config;
     mdio_address_t mdio_address;
 
-    mdio_address.value = sys_read32(dev_data->base + MAC_MDIO_ADDRESS);
+    mdio_address.value = sys_read32(dev_config->base + MAC_MDIO_ADDRESS);
 
     /* Return the busy bit */
     return mdio_address.GB;
@@ -81,6 +82,7 @@ static int mdio_dwmac_transfer(const struct device *dev,
                                uint16_t *data,
                                enum mdio_opcode op)
 {
+    const struct mdio_dwmac_config *const dev_config = dev->config;
     struct mdio_dwmac_data *const dev_data = dev->data;
     bool is_c45 = ((op == MDIO_OP_C22_READ) || (op == MDIO_OP_C22_WRITE)) ? false : true;
     bool is_write = ((op == MDIO_OP_C22_READ) || (op == MDIO_OP_C45_READ)) ? false : true;
@@ -108,10 +110,10 @@ static int mdio_dwmac_transfer(const struct device *dev,
     if (is_write) {
         mdio_data.RA = is_c45 ? regad : 0;
         mdio_data.GD = *data;
-        sys_write32(mdio_data.value, dev_data->base + MAC_MDIO_DATA);
+        sys_write32(mdio_data.value, dev_config->base + MAC_MDIO_DATA);
     }
 
-    sys_write32(mdio_address.value, dev_data->base + MAC_MDIO_ADDRESS);
+    sys_write32(mdio_address.value, dev_config->base + MAC_MDIO_ADDRESS);
 
     ret = -ETIMEDOUT;
     for (int i = CONFIG_MDIO_SNPS_DWMAC_RECHECK_COUNT; i > 0; i--) {
@@ -128,7 +130,7 @@ static int mdio_dwmac_transfer(const struct device *dev,
     }
 
     if (!is_write) {
-        mdio_data.value = sys_read32(dev_data->base + MAC_MDIO_DATA);
+        mdio_data.value = sys_read32(dev_config->base + MAC_MDIO_DATA);
         *data = mdio_data.GD;
     }
 
@@ -164,29 +166,27 @@ static int mdio_dwmac_write_c45(const struct device *dev, uint8_t prtad, uint8_t
 
 static int mdio_dwmac_init(const struct device *dev)
 {
+    const struct mdio_dwmac_config *const dev_config = dev->config;
     struct mdio_dwmac_data *const dev_data = dev->data;
-    const struct mdio_dwmac_config *const config = dev->config;
-    uint32_t per_clk_rate = DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency);
 
     k_mutex_init(&dev_data->mdio_mutex);
 
 #if defined(CONFIG_PINCTRL)
-    int ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+    int ret = pinctrl_apply_state(dev_config->pincfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
         LOG_WRN("pinctrl_apply_state fail");
     }
 #endif
 
-    per_clk_rate /= 1000000;
-    if (per_clk_rate >= 20 && per_clk_rate < 35) {
+    if (dev_config->clock_frequency >= MHZ(20) && dev_config->clock_frequency < MHZ(35)) {
         dev_data->divider = 2;
-    } else if (per_clk_rate < 60) {
+    } else if (dev_config->clock_frequency < MHZ(60)) {
         dev_data->divider = 3;
-    } else if (per_clk_rate < 100) {
+    } else if (dev_config->clock_frequency < MHZ(100)) {
         dev_data->divider = 0;
-    } else if (per_clk_rate < 150) {
+    } else if (dev_config->clock_frequency < MHZ(150)) {
         dev_data->divider = 1;
-    } else if (per_clk_rate < 250) {
+    } else if (dev_config->clock_frequency < MHZ(250)) {
         dev_data->divider = 4;
     } else {
         LOG_ERR("MAC clk rate does not allow MDIO");
@@ -206,10 +206,10 @@ static const struct mdio_driver_api mdio_dwmac_api = {
 #define MDIO_DWMAC_DEVICE(inst)                                                        \
     IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                        \
                                                                                        \
-    static struct mdio_dwmac_data mdio_dwmac_data_##inst = {                           \
-        .base = DT_REG_ADDR(DT_INST_PARENT(inst)),                                     \
-    };                                                                                 \
+    static struct mdio_dwmac_data mdio_dwmac_data_##inst = {};                         \
     static struct mdio_dwmac_config mdio_dwmac_config_##inst = {                       \
+        .base = DT_REG_ADDR(DT_INST_PARENT(inst)),                                     \
+        .clock_frequency = DT_PROP(DT_INST_PARENT(inst), clock_frequency),             \
         IF_ENABLED(CONFIG_PINCTRL, (.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), )) \
     };                                                                                 \
     DEVICE_DT_INST_DEFINE(inst,                                                        \
