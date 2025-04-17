@@ -1,5 +1,6 @@
 #include <arm/armv6-m.dtsi>
 #include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/clock/le501x_clock.h>
 
 / {
     chosen {
@@ -75,12 +76,20 @@
 			};
         };
 
+        rcc: clock-controller@40021000 {
+            compatible = "linkedsemi,le501x-cctl";
+            #clock-cells = <3>;
+            reg = <0x40021000 0x400>;
+            status = "okay";
+        };
+
         uart1: uart@40013800 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40013800 0x400>;
 			status = "disabled";
             // label = "UART1";
             interrupts = <27 3> ;
+            clocks = <&rcc LE501X_CLOCK_BUS_APB2 LE501X_RESET_BUS_APB2 LE501X_UART1_POS>;
         };
 
         uart2: uart@40004400 {
@@ -89,6 +98,7 @@
 			status = "disabled";
             // label = "UART2";
             interrupts = <28 3> ;
+            clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_UART2_POS>;
         };
 
         uart3: uart@40004800 {
@@ -97,6 +107,7 @@
 			status = "disabled";
             // label = "UART3";
             interrupts = <29 3> ;
+            clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_UART3_POS>;
         };
         i2c1: i2c@40005400 {
             compatible = "le501x-i2c";
