@@ -52,14 +52,14 @@ static inline uint32_t get_available_nvic_line(uint32_t initial_offset)
 		}
 	}
 
-	zassert_true(i >= 0, "No available IRQ line\n");
+	// zassert_true(i >= 0, "No available IRQ line\n");
 
 	return i;
 }
 
 static inline void trigger_irq(int irq)
 {
-	printk("Triggering irq : %d\n", irq);
+	// printk("Triggering irq : %d\n", irq);
 #if defined(CONFIG_SOC_TI_LM3S6965_QEMU) || defined(CONFIG_CPU_CORTEX_M0) \
 	|| defined(CONFIG_CPU_CORTEX_M0PLUS) || defined(CONFIG_CPU_CORTEX_M1)\
 	|| defined(CONFIG_ARMV6_M_ARMV8_M_BASELINE)

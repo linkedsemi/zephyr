@@ -3,6 +3,7 @@
 zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_LS                  clock_control_ls.c)
+zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_LE501X              clock_control_le501x.c)
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_BEETLE              beetle_clock_control.c)
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_ADSP                clock_control_adsp.c)
 zephyr_library_sources_ifdef(CONFIG_CLOCK_CONTROL_ARM_SCMI            clock_control_arm_scmi.c)
