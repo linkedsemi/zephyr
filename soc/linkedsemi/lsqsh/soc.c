@@ -1,5 +1,6 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
+#include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/state.h>
 #include "platform.h"
@@ -41,12 +42,6 @@ void sys_arch_reboot(int type)
 	// platform_reset(0);
 }
 
-#if defined(CONFIG_NOCACHE_MEMORY)
-extern uint32_t _nocache_ram_start;
-extern uint32_t _nocache_ram_end;
-extern uint32_t _nocache_ram_size;
-#endif
-
 #define CPU0_FW_REGION_SIZE MB(2)
 #define CPU2_FW_REGION_SIZE MB(14)
 /* strong order | cacheable | bufferable */
@@ -54,43 +49,30 @@ extern uint32_t _nocache_ram_size;
 #define BUFFERABLE BIT(0)
 #define CACHEABLE BIT(1)
 #define STRONG_ORDER BIT(2)
-void cpu1_cache_region_init(void)
+
+__no_optimization void cpu_cache_region_init(void)
 {
+    const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+    const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+    const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+    const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
     uint8_t idx = 0;
-    csi_sysmap_config_region(idx++, 0x10000000, 0);
+
+    csi_sysmap_config_region(idx++, __image_ram_start, 0);
 #if defined(CONFIG_NOCACHE_MEMORY)
-    if ((uint32_t)&_nocache_ram_size > 0) {
-        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
-        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
-        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
-        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
+    if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
+        // __ASSERT_NO_MSG(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+        csi_sysmap_config_region(idx++, __nocache_ram_end, 0);
     }
 #endif
-    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
+    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
 
-    csi_sysmap_config_region(idx++, 0x18000000, 0);
-    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
-    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
-}
-
-void cpu2_cache_region_init(void)
-{
-    uint8_t idx = 0;
-    csi_sysmap_config_region(idx++, 0x10000000 + KB(512), 0);
-#if defined(CONFIG_NOCACHE_MEMORY)
-    if ((uint32_t)&_nocache_ram_size > 0) {
-        // __ASSERT_NO_MSG((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
-        while(!((uint32_t)&_nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
-        if (((uint32_t)&_nocache_ram_size) != 0x10080000) {
-            csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_start, CACHEABLE | BUFFERABLE);
-        }
-        csi_sysmap_config_region(idx++, (uint32_t)&_nocache_ram_end, 0);
-    }
-#endif
-    csi_sysmap_config_region(idx++, 0x10000000 + KB(512 + 764), CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
-
-    csi_sysmap_config_region(idx++, 0x18000000, 0);
-    csi_sysmap_config_region(idx++, 0x18000000 + MB(16), CACHEABLE | BUFFERABLE); /* 16MB PSRAM */
+    csi_sysmap_config_region(idx++, PSRAM_ADDR, 0);
+    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(8), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
     csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
 }
 
@@ -128,24 +110,7 @@ static int lsqsh_init(void)
 {
     SystemInit();
     // sys_init_none();
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-#if defined(CONFIG_NOCACHE_MEMORY)
-    if (!(((uint32_t)&_nocache_ram_start >= 0x10000000)
-                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512))))) {
-        while(1);
-    }
-#endif
-    cpu1_cache_region_init();
-#else
-#if defined(CONFIG_NOCACHE_MEMORY)
-    if (!(((uint32_t)&_nocache_ram_start >= (0x10000000 + KB(512))
-                    && ((uint32_t)&_nocache_ram_end <= (0x10000000 + KB(512) + KB(764)))))) {
-        while(1);
-    }
-#endif
-    cpu2_cache_region_init();
-#endif
-
+    cpu_cache_region_init();
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
 #endif
