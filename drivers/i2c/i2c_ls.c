@@ -58,18 +58,40 @@ struct i2c_speed_config_t
 };
 
 #if defined(CONFIG_PINCTRL)
+int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_config *pcfg, uint8_t pinctrl_state)
+{
+    struct i2c_ls_data *data = dev->data;
+    const struct pinctrl_state *state;
+    int ret = -EINVAL;
+
+    ret = pinctrl_lookup_state(pcfg, pinctrl_state, &state);
+    if (!ret) {
+        data->pin[0] = pinctrl_pin2code(&state->pins[0]);
+        data->pin[1] = pinctrl_pin2code(&state->pins[1]);
+        __ASSERT(data->pin[0] != data->pin[1], "scl pin and sda pin can not be duplicated");
+        ret = 0;
+    } else {
+        data->pin[0] = 0;
+        data->pin[1] = 0;
+    }
+
+    return ret;
+}
+
 static inline bool is_i2c_bus_idle(const struct device *dev)
 {
     struct i2c_ls_data *data = dev->data;
     uint8_t pin_val[2];
-    bool ret = true;;
+    bool ret = true;
 
-    pin_val[0] = io_get_input_val(data->pin[0]);
-    pin_val[1] = io_get_input_val(data->pin[1]);
-    if (1 != (pin_val[0] & pin_val[1])) {
-        LOG_ERR("bus busy. pin[%#x]: %d.  pin:[%#x]: %d.\n",
-                data->pin[0], pin_val[0], data->pin[1], pin_val[1]);
-        ret = false;
+    if (data->pin[0] != data->pin[1]) {
+        pin_val[0] = io_get_input_val(data->pin[0]);
+        pin_val[1] = io_get_input_val(data->pin[1]);
+        if (1 != (pin_val[0] & pin_val[1])) {
+            LOG_ERR("bus busy. pin[%#x]: %d.  pin:[%#x]: %d.\n",
+                    data->pin[0], pin_val[0], data->pin[1], pin_val[1]);
+            ret = false;
+        }
     }
 
     return ret;
@@ -432,10 +454,6 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 static int i2c_ls_init(const struct device *dev)
 {
 	const struct i2c_ls_config *cfg = dev->config;
-#if defined(CONFIG_PINCTRL)
-	int ret;
-	const struct pinctrl_state *state;
-#endif
 	struct i2c_ls_data *data = dev->data;
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->stop_sem, 0, K_SEM_MAX_LIMIT);
@@ -453,18 +471,8 @@ static int i2c_ls_init(const struct device *dev)
 
 #if defined(CONFIG_PINCTRL)
 	/* Configure dt provided device signals when available */
-	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
-	if (ret < 0) {
-		// LOG_ERR("I2C pinctrl setup failed (%d)", ret);
-		return ret;
-	}
-	ret = pinctrl_lookup_state(cfg->pcfg, PINCTRL_STATE_DEFAULT, &state);
-	if (ret < 0) {
-		return ret;
-	}
-	data->pin[0] = pinctrl_pin2code(&state->pins[0]);
-	data->pin[1] = pinctrl_pin2code(&state->pins[1]);
-	__ASSERT(data->pin[0] != data->pin[1], "scl pin and sda pin can not be duplicated");
+	pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
+	i2c_idle_check_prepare(dev, cfg->pcfg, PINCTRL_STATE_DEFAULT);
 #endif
 	i2c_reenable(cfg,100000);
 	cfg->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
