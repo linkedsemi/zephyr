@@ -879,6 +879,7 @@
             #address-cells = <1>;
             #size-cells = <0>;
             reg = <0x4006e400 0x400>;
+            clock-frequency = <50000000>;
             interrupts = <SPI4_IRQN 3>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
