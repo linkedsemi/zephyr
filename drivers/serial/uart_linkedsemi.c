@@ -104,62 +104,14 @@ static void uart_ls_pm_policy_state_lock_get(const struct device *dev)
 #endif /* CONFIG_PM */
 #endif /*SOC_LE5010*/
 
-void uart1_msp_init(void)
-{
-#if defined(CONFIG_SOC_LE5010)
-    REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 1);
-    REG_FIELD_WR(RCC->APB2RST, RCC_UART1, 0);
-    REG_FIELD_WR(RCC->APB2EN, RCC_UART1, 1);	
-#endif
-}
-
-void uart2_msp_init(void)
-{
-#if defined(CONFIG_SOC_LE5010)
-    REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 1);
-    REG_FIELD_WR(RCC->APB1RST, RCC_UART2, 0);
-    REG_FIELD_WR(RCC->APB1EN, RCC_UART2, 1);
-#endif
-}
-
-void uart3_msp_init(void)
-{
-#if defined(CONFIG_SOC_LE5010)
-    REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 1);
-    REG_FIELD_WR(RCC->APB1RST, RCC_UART3, 0);
-    REG_FIELD_WR(RCC->APB1EN, RCC_UART3, 1);
-#endif
-}
-
-#if defined(CONFIG_SOC_LE5010)
-static void uart_msp_init(UART_HandleTypeDef *uart_handle)
-{
-	switch((uint32_t)uart_handle->UARTX)
-	{
-		case (uint32_t)UART1_BASE_ADDR:
-			uart1_msp_init();
-			break;
-		case (uint32_t)UART2_BASE_ADDR:
-			uart2_msp_init();
-			break;
-		case (uint32_t)UART3_BASE_ADDR:
-			uart3_msp_init();
-			break;
-		default:
-			break;
-	}
-}
-#endif
-
 static int uart_ls_init(const struct device *dev)
 {
 	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	int ret = 0;
 	// (void)data;
-#if defined(CONFIG_SOC_LE5010)
-	uart_msp_init(uart_handle);
-#elif defined(CONFIG_SOC_LS1010)
+
+#if defined(CONFIG_SOC_LS1010) || defined(CONFIG_SOC_LE5010)
 	if (data->cctl_cfg.cctl_dev) {
 		const struct device *clk_dev = data->cctl_cfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {

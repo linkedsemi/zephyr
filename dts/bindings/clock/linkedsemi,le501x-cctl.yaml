@@ -1,0 +1,17 @@
+# Copyright (c) 2024 LINKEDSEMI Corporation.
+# SPDX-License-Identifier: Apache-2.0
+
+description: LINKEDSEMI LE501X Clock Control
+
+compatible: "linkedsemi,le501x-cctl"
+
+include: [clock-controller.yaml, base.yaml]
+
+properties:
+  reg:
+    required: true
+
+clock-cells:
+  - bus
+  - reset
+  - pos

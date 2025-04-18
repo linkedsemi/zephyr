@@ -4,8 +4,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config CLOCK_CONTROL_LS
-	bool "linkedsemi ls clock control"
-	default y
-	depends on DT_HAS_LINKEDSEMI_LS_CCTL_ENABLED
-	help
-	  Enable support for Linkedsemi clock controller driver.
+    bool "linkedsemi ls clock control"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LS_CCTL_ENABLED
+    help
+      Enable support for Linkedsemi clock controller driver.
+
+config CLOCK_CONTROL_LE501X
+    bool "linkedsemi le501x clock control"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LE501X_CCTL_ENABLED
+    help
+      Enable support for Linkedsemi clock controller driver.
