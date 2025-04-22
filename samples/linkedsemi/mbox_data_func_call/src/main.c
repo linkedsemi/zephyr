@@ -9,6 +9,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <zephyr/kernel.h>
+#include <zephyr/cache.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include <ls_hal_flash.h>
@@ -117,6 +118,7 @@ int main(void)
                 __ASSERT_NO_MSG(data);
                 __ASSERT_NO_MSG(size);
                 if (is_cpu2_flash_area(*offset)) {
+                    sys_cache_data_invd_range((void *)(*data), *size);
                     hal_flash_page_program(*offset, *data, *size);
                 } else {
                     printk("offset: %#x is invalid\n", *offset);
@@ -141,6 +143,7 @@ int main(void)
                 __ASSERT_NO_MSG(size);
                 if (is_cpu2_flash_area(*offset)) {
                     hal_flash_multi_io_read(*offset, *data, *size);
+                    sys_cache_data_flush_range((void *)(*data), *size);
                 } else {
                     printk("offset: %#x is invalid\n", *offset);
                 }
