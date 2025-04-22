@@ -100,7 +100,10 @@ int main(void)
                 __ASSERT_NO_MSG(data);
                 __ASSERT_NO_MSG(size);
                 if (is_cpu1_flash_area(*offset)) {
+                    sys_cache_data_invd_range((void *)(*data), *size);
                     hal_flash_page_program(*offset, *data, *size);
+                } else {
+                    printk("offset: %#x is invalid\n", *offset);
                 }
                 *g_mbox_received_data0.done = true;
             } while (0);
@@ -116,6 +119,9 @@ int main(void)
                 __ASSERT_NO_MSG(size);
                 if (is_cpu1_flash_area(*offset)) {
                     hal_flash_multi_io_read(*offset, *data, *size);
+                } else {
+                    printk("offset: %#x is invalid\n", *offset);
+                    sys_cache_data_flush_range((void *)(*data), *size);
                 }
                 *g_mbox_received_data0.done = true;
             } while (0);
