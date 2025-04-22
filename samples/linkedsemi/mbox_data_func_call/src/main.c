@@ -8,6 +8,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <zephyr/cache.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
@@ -86,6 +87,8 @@ int main(void)
                 __ASSERT_NO_MSG(offset);
                 if (is_cpu1_flash_area(*offset)) {
                     hal_flash_sector_erase(*offset);
+                } else {
+                    printk("offset: %#x is invalid\n", *offset);
                 }
                 *g_mbox_received_data0.done = true;
             } while (0);

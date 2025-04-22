@@ -8,6 +8,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
+#include <zephyr/cache.h>
 #include <string.h>
 #include <zephyr/drivers/mbox.h>
 #include <cpu.h>
@@ -110,6 +111,7 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
         return -EACCES;
     }
 
+    sys_cache_data_flush_range((void *)data, size);
     while (size) {
         /* If the offset isn't a multiple of the page size, we first need
          * to write the remaining part that fits, otherwise the write could
@@ -152,6 +154,7 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
                 (void *)&offset,
                 (void *)&data,
                 (void *)&size);
+    sys_cache_data_invd_range((void *)data, size);
 
     return 0;
 }
