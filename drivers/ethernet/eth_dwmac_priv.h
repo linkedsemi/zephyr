@@ -41,6 +41,7 @@ struct dwmac_dma_desc {
 struct dwmac_priv {
 	mem_addr_t base_addr;
 	struct net_if *iface;
+	const struct device *dev;
 	const struct device *clock;
 
 	uint8_t mac_addr[6];
@@ -67,6 +68,8 @@ struct dwmac_priv {
 
 	K_KERNEL_STACK_MEMBER(rx_refill_thread_stack, RX_REFILL_STACK_SIZE);
 	struct k_thread rx_refill_thread;
+	struct k_mutex tx_mutex;
+	bool need_tx_mutex;
 };
 
 /*
@@ -81,8 +84,12 @@ struct dwmac_priv {
  */
 
 int dwmac_probe(const struct device *dev);
+int dwmac_init(const struct device *dev);
+int dwmac_reinit(const struct device *dev);
+void dwmac_deinit(const struct device *dev);
 int dwmac_bus_init(struct dwmac_priv *p);
 void dwmac_platform_init(struct dwmac_priv *p);
+void dwmac_platform_deinit(const struct device *const dev);
 void dwmac_isr(const struct device *ddev);
 extern const struct ethernet_api dwmac_api;
 

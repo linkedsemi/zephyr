@@ -126,6 +126,22 @@ static inline int net_pkt_get_nbfrags(struct net_pkt *pkt)
 	return nbfrags;
 }
 
+void dwmac_tx_lock(const struct device *dev)
+{
+	struct dwmac_priv *p = dev->data;
+	if (p->need_tx_mutex) {
+		k_mutex_lock(&p->tx_mutex, K_FOREVER);
+	}
+}
+
+void dwmac_tx_unlock(const struct device *dev)
+{
+	struct dwmac_priv *p = dev->data;
+	if (p->need_tx_mutex) {
+		k_mutex_unlock(&p->tx_mutex);
+	}
+}
+
 static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 {
 	struct dwmac_priv *p = dev->data;
@@ -134,6 +150,8 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	unsigned int d_idx;
 	struct dwmac_dma_desc *d;
 	uint32_t des2_flags, des3_flags;
+
+	dwmac_tx_lock(dev);
 
 	LOG_DBG("pkt len/frags=%d/%d", pkt_len, net_pkt_get_nbfrags(pkt));
 
@@ -162,7 +180,7 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 			k_sem_give(&p->free_tx_descs);
 			goto abort;
 		}
-		sys_cache_data_flush_range((void *)pinned->data, pinned->len);
+		sys_cache_data_flush_range(pinned->data, pinned->len);
 		p->tx_frags[d_idx] = pinned;
 		LOG_DBG("d[%d]: frag %p pinned %p len %d", d_idx,
 			frag->data, pinned->data, pinned->len);
@@ -193,11 +211,11 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 
 	/* update the descriptor index head */
 	p->tx_desc_head = d_idx;
-#if !defined(CONFIG_NOCACHE_MEMORY)
-	sys_cache_data_flush_range((void *)TXDESC_PHYS_L(d_idx), sizeof(struct dwmac_dma_desc));
-#endif
+
 	/* lastly notify the hardware */
 	REG_WRITE(DMA_CHn_TXDESC_TAIL_PTR(0), TXDESC_PHYS_L(d_idx));
+
+	dwmac_tx_unlock(dev);
 
 	return 0;
 
@@ -209,6 +227,8 @@ abort:
 		net_pkt_frag_unref(frag);
 		k_sem_give(&p->free_tx_descs);
 	}
+	dwmac_tx_unlock(dev);
+
 	return -ENOMEM;
 }
 
@@ -387,9 +407,7 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 
 		/* advance to the next descriptor */
 		p->rx_desc_head = INC_WRAP(d_idx, NB_RX_DESCS);
-#if !defined(CONFIG_NOCACHE_MEMORY)
-		sys_cache_data_flush_range((void *)RXDESC_PHYS_L(d_idx), sizeof(struct dwmac_dma_desc));
-#endif
+
 		/* lastly notify the hardware */
 		REG_WRITE(DMA_CHn_RXDESC_TAIL_PTR(0), RXDESC_PHYS_L(d_idx));
 	}
@@ -565,6 +583,36 @@ static void dwmac_iface_init(struct net_if *iface)
 	LOG_DBG("done");
 }
 
+static void dwmac_iface_reinit(struct net_if *iface)
+{
+	__ASSERT(iface, "interface not initialized?");
+	struct dwmac_priv *p = net_if_get_device(iface)->data;
+	uint32_t reg_val;
+	__ASSERT(p->iface, "interface already initialized?");
+
+	k_sem_init(&p->free_tx_descs, NB_TX_DESCS - 1, NB_TX_DESCS - 1);
+	k_sem_init(&p->free_rx_descs, NB_RX_DESCS - 1, NB_RX_DESCS - 1);
+	/* start up TX/RX */
+	reg_val = REG_READ(DMA_CHn_TX_CTRL(0));
+	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St);
+	reg_val = REG_READ(DMA_CHn_RX_CTRL(0));
+	REG_WRITE(DMA_CHn_RX_CTRL(0), reg_val | DMA_CHn_RX_CTRL_SR);
+	reg_val = REG_READ(MAC_CONF);
+	reg_val |= MAC_CONF_CST | MAC_CONF_TE | MAC_CONF_RE;
+	REG_WRITE(MAC_CONF, reg_val);
+
+	/* unmask IRQs */
+	REG_WRITE(DMA_CHn_IRQ_ENABLE(0),
+		  DMA_CHn_IRQ_ENABLE_TIE |
+		  DMA_CHn_IRQ_ENABLE_RIE |
+		  DMA_CHn_IRQ_ENABLE_NIE |
+		  DMA_CHn_IRQ_ENABLE_FBEE |
+		  DMA_CHn_IRQ_ENABLE_CDEE |
+		  DMA_CHn_IRQ_ENABLE_AIE);
+
+	LOG_DBG("done");
+}
+
 int dwmac_probe(const struct device *dev)
 {
 	struct dwmac_priv *p = dev->data;
@@ -587,11 +635,10 @@ int dwmac_probe(const struct device *dev)
 	timeout = sys_timepoint_calc(K_MSEC(100));
 	while (REG_READ(DMA_MODE) & DMA_MODE_SWR) {
 		if (sys_timepoint_expired(timeout)) {
-			LOG_ERROR("unable to reset hardware");
+			__ASSERT(0, "unable to reset hardware");
 			return -EIO;
 		}
 	}
-
 	/* get configured hardware features */
 	p->feature0 = REG_READ(MAC_HW_FEATURE0);
 	p->feature1 = REG_READ(MAC_HW_FEATURE1);
@@ -604,10 +651,7 @@ int dwmac_probe(const struct device *dev)
 
 	memset(p->tx_descs, 0, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
 	memset(p->rx_descs, 0, NB_RX_DESCS * sizeof(struct dwmac_dma_desc));
-#if !defined(CONFIG_NOCACHE_MEMORY)
-	sys_cache_data_flush_and_invd_range(p->tx_descs, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
-	sys_cache_data_flush_and_invd_range(p->rx_descs, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
-#endif
+
 	/* set up DMA */
 	REG_WRITE(DMA_CHn_TX_CTRL(0), 0);
 	REG_WRITE(DMA_CHn_RX_CTRL(0),
@@ -621,6 +665,51 @@ int dwmac_probe(const struct device *dev)
 	REG_WRITE(DMA_CHn_RXDESC_RING_LENGTH(0), NB_RX_DESCS - 1);
 
 	return 0;
+}
+
+int dwmac_init(const struct device *dev)
+{
+	struct dwmac_priv *p = dev->data;
+	p->dev = dev;
+	k_mutex_init(&p->tx_mutex);
+	return dwmac_probe(dev);
+}
+
+int dwmac_reinit(const struct device *const dev)
+{
+	struct dwmac_priv *p = dev->data;
+	int ret = 0;
+
+	memset(&p->free_tx_descs, 0, sizeof(struct k_sem));
+	memset(&p->free_rx_descs, 0, sizeof(struct k_sem));
+	p->tx_desc_head = 0;
+	p->tx_desc_tail = 0;
+	p->rx_desc_head = 0;
+	p->rx_desc_tail = 0;
+#if defined(CONFIG_MMU)
+	p->tx_descs_phys = NULL;
+	p->rx_descs_phys = NULL;
+#endif
+	memset(p->tx_frags, 0, NB_TX_DESCS * sizeof(struct net_buf));
+	memset(p->rx_frags, 0, NB_RX_DESCS * sizeof(struct net_buf));
+	p->rx_pkt = NULL;
+	p->rx_bytes = 0;
+
+	ret = dwmac_probe(dev);
+	dwmac_iface_reinit(p->iface);
+	dwmac_tx_unlock(dev);
+	p->need_tx_mutex = false;
+
+	return ret;
+}
+
+void dwmac_deinit(const struct device *const dev)
+{
+	struct dwmac_priv *p = dev->data;
+	dwmac_tx_lock(dev);
+	p->need_tx_mutex = true;
+	dwmac_platform_deinit(dev);
+	REG_WRITE(DMA_MODE, DMA_MODE_SWR);
 }
 
 const struct ethernet_api dwmac_api = {
