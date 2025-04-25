@@ -413,6 +413,26 @@
             reg = <0x40045000 0x1000>;
             interrupts = <ESPI1_IRQN 3>;
             status = "disabled";
+
+            vuart1: vuart1 {
+                compatible = "linkedsemi,ls-vuart";
+                port = <0x3f8>;
+                up-irq = <0x4 IRQ_TYPE_LEVEL_HIGH>;
+                status = "disabled";
+            };
+
+            sio1: sio1 {
+                compatible = "linkedsemi,ls-sio";
+                port = <0x2e>;
+                status = "disabled";
+            };
+
+            mmbi1: mmbi1 {
+                compatible = "linkedsemi,ls-mmbi";
+                host-addr = <0xf6810000>;
+                size-order = <0>;
+                status = "disabled";
+            };
         };
 
         espi2: espi@40046000 {
