@@ -10,7 +10,7 @@
         zephyr,flash = &flash1;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
-        zephyr,console = &uar3;
+        zephyr,console = &uart3;
         zephyr,shell-uart = &uart3;
     };
 
@@ -126,18 +126,9 @@
 //     status = "okay";
 // };
 
-// &i2c2 {
-//     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom2: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
+&i2c2 {
+    status = "okay";
+};
 
 // &i2c3 {
 //     pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
@@ -277,49 +268,9 @@
 //     smbus
 // */
 
-// &smbus_ali_11_i2c8_fpga_i2c2 {
-//     status = "okay";
-// };
-
-// &smbus_ali_14_i2c4_fpga_i2c3 {
-//     status = "okay";
-// };
-
-// &smbus_ali_9_i2c12_fpga_i2c4 {
-//     status = "okay";
-// };
-
-// &smbus_ali_16_i2c14_fpga_i2c5 {
-//     status = "okay";
-// };
-
-// &smbus_ali_7_i2c15_fpga_i2c6 {
-//     status = "okay";
-// };
-
-// &smbus_ali_13_i2c7_fpga_i2c7 {
-//     status = "okay";
-// };
-
-// &smbus_ali_10_i2c16_fpga_i2c10 {
-//     status = "okay";
-// };
-
-// &smbus_ali_8_i2c11_fpga_i2c11 {
-//     status = "okay";
-// };
-
-// &smbus_ali_15_i2c2_fpga_i2c12 {
-//     status = "okay";
-// };
-
-// &smbus_ali_5_i2c9_fpga_i2c13 {
-//     status = "okay";
-// };
-
-// &smbus_ali_6_i2c10_fpga_i2c14 {
-//     status = "okay";
-// };
+&smbus2 {
+    status = "okay";
+};
 
 // &spi2 {
 //     cs-gpios = <&gpioe 6 GPIO_ACTIVE_LOW>;
