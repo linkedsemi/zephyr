@@ -7,12 +7,16 @@
 #include <stdio.h>
 
 #include "bhs.c"
+#include "peci.c"
 
 int main(void)
 {
     printf("boot...");
     bhs_bmc_ready();
     printf("done");
+
+    printf("peci start");
+    peci_main();
 
     return 0;
 }
