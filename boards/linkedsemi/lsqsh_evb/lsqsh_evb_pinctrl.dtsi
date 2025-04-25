@@ -258,6 +258,11 @@
     pinctrl-names = "default";
 };
 
+&uart4 {
+    pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
+    pinctrl-names = "default";
+};
+
 &i2c2 {
     pinctrl-0 = <&i2c2_scl_pb00 &i2c2_sda_pb01>;
     pinctrl-names = "default";

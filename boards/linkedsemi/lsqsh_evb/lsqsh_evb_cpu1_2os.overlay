@@ -10,8 +10,8 @@
         zephyr,flash = &flash1;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
-        zephyr,console = &uart3;
-        zephyr,shell-uart = &uart3;
+        zephyr,console = &uart1;
+        zephyr,shell-uart = &uart1;
     };
 
     aliases {
@@ -45,42 +45,30 @@
     status = "disabled";
 };
 
-// &uart2 {
-//     current-speed = <115200>;
-//     status = "disabled";
-// };
-
-&uart3 {
+&uart1 {
     current-speed = <115200>;
     status = "okay";
 };
 
-// &uart4 {
-//     current-speed = <115200>;
-//     pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
-//     pinctrl-names = "default";
-//     status = "disabled";
-// };
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
-// &uart5 {
-//     current-speed = <115200>;
-//     pinctrl-0 = <&uart5_tx_pe00 &uart5_rx_pe01>;
-//     pinctrl-names = "default";
-//     status = "okay";
-// };
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
-// &i2c2 {
-//     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
-//     pinctrl-names = "default";
-//     status = "okay";
+&uart4 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
-//     eeprom2: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
 // &i2c3 {
 //     pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
