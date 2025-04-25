@@ -42,7 +42,7 @@
         };
 
         bmc_boot_done_btn: bmc_boot_done {
-            gpios = <&sgpiom_m_p 3 GPIO_ACTIVE_HIGH>;
+            gpios = <&sgpiom2_m_p 3 GPIO_ACTIVE_HIGH>;
             label = "bmc boot done";
         };
     };
@@ -97,28 +97,25 @@
     status = "disabled";
 };
 
-// &uart6 {
-//     /delete-property/ interrupts;
-//     pinctrl-0 = <&uart6_tx_pf13 &uart6_rx_pf14>;
-//     pinctrl-names = "default";
-//     clock-frequency = <50000000>;
-//     current-speed = <115200>;
-//     status = "okay";
-// };
+&uart7 {
+    /delete-property/ interrupts;
+    current-speed = <115200>;
+    status = "okay";
+};
 
-// &vuart0 {
-//     interrupts = <99 3>;
-//     uart = <&uart6>;
-//     status = "okay";
-// };
+&vuart1 {
+    interrupts = <UART7_IRQN 3>;
+    uart = <&uart7>;
+    status = "okay";
+};
 
-// &sio0 {
-//     status = "okay";
-// };
+&sio1 {
+    status = "okay";
+};
 
-// &mmbi0 {
-//     status = "okay";
-// };
+&mmbi1 {
+    status = "okay";
+};
 
 &i2c2 {
     status = "okay";

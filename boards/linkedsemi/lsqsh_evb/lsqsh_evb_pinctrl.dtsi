@@ -87,6 +87,16 @@
         input-enable;
     };
 
+    /omit-if-no-ref/uart7_tx_pg13: uart7_tx_pg13 {
+        pinmux = <UART7_TXD_FUNC1_IDX13_PINMUX_PG(13)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart7_rx_pg15: uart7_rx_pg15 {
+        pinmux = <UART7_RXD_FUNC1_IDX14_PINMUX_PG(15)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
     // /* I2C */
     /omit-if-no-ref/i2c2_scl_pb00: i2c2_scl_pb00 {
         pinmux = <I2C2_SCL_FUNC1_IDX10_PINMUX_PB(00)>;
@@ -260,6 +270,11 @@
 
 &uart4 {
     pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
+    pinctrl-names = "default";
+};
+
+&uart7 {
+    pinctrl-0 = <&uart7_tx_pg13 &uart7_rx_pg15>;
     pinctrl-names = "default";
 };
 
