@@ -32,6 +32,15 @@
 };
 
 &uart4 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart5 {
+    status = "disabled";
+};
+
+&uart4 {
     status = "okay";
     current-speed = <115200>;
     pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
