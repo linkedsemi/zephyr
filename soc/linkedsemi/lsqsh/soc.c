@@ -2,9 +2,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
-#include <zephyr/logging/log_ctrl.h>
-#include <zephyr/logging/log.h>
-#include <zephyr/fatal.h>
 #include <zephyr/pm/state.h>
 #include "platform.h"
 #include "core_rv32.h"
@@ -23,39 +20,8 @@
 #include "ls_msp_qspiv2.h"
 #include "soc.h"
 
-LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
-
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
-
-FUNC_NORETURN void arch_system_halt(unsigned int reason)
-{
-    ARG_UNUSED(reason);
-
-    /* TODO: What's the best way to totally halt the system if SMP
-     * is enabled?
-     */
-
-    (void)arch_irq_lock();
-    for (;;) {
-        /* Spin endlessly */
-    }
-}
-
-void k_sys_fatal_error_handler(unsigned int reason,
-                      const struct arch_esf *esf)
-{
-    ARG_UNUSED(esf);
-
-    LOG_PANIC();
-    LOG_ERROR("Halting thread");
-    if (IS_ENABLED(CONFIG_MULTITHREADING)) {
-        k_thread_abort(_current);
-    } else {
-        arch_system_halt(reason);
-    }
-    CODE_UNREACHABLE;
-}
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
