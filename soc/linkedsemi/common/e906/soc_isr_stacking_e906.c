@@ -48,6 +48,11 @@ void isr_unstacking_mcause(void)
     }
 }
 
+void discard_current_irq_nested(void)
+{
+    irq_nested_level--;
+}
+
 void Swint_Handler_C(struct arch_esf *args)
 {
     uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args->a4;
