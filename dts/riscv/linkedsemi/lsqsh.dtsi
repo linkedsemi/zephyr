@@ -128,13 +128,6 @@
             status = "okay";
         };
 
-        rctl_sysc_sec_pmu: reset-controller@4002f000 {
-            compatible = "linkedsemi,rctl";
-            reg = <0x4002f000 DT_SIZE_K(1)>;
-            #reset-cells = <1>;
-            status = "okay";
-        };
-
         rctl_sysc_app_cpu: reset-controller@40062000 {
             compatible = "linkedsemi,rctl";
             reg = <0x40062000 DT_SIZE_K(1)>;
@@ -145,13 +138,6 @@
         rctl_sysc_app_per: reset-controller@4008fc00 {
             compatible = "linkedsemi,rctl";
             reg = <0x4008fc00 DT_SIZE_K(1)>;
-            #reset-cells = <1>;
-            status = "okay";
-        };
-
-        rctl_sysc_app_pmu: reset-controller@4006f000 {
-            compatible = "linkedsemi,rctl";
-            reg = <0x4006f000 DT_SIZE_K(1)>;
             #reset-cells = <1>;
             status = "okay";
         };
