@@ -113,7 +113,7 @@ static int uart_ls_init(const struct device *dev)
 	int ret = 0;
 	// (void)data;
 
-#if defined(CONFIG_SOC_LS1010) || defined(CONFIG_SOC_LE5010)
+#if defined(CONFIG_CLOCK_CONTROL)
 	if (data->cctl_cfg.cctl_dev) {
 		const struct device *clk_dev = data->cctl_cfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {
