@@ -546,18 +546,46 @@ int spi_dw_init(const struct device *dev)
 	int err;
 	const struct spi_dw_config *info = dev->config;
 	struct spi_dw_data *spi = dev->data;
+    __maybe_unused int ret;
 
-	if (info->cctl_cfg.cctl_dev) {
-		const struct device *clk_dev = info->cctl_cfg.cctl_dev;
-		if (!device_is_ready(clk_dev)) {
-			LOG_DBG("%s device not ready", clk_dev->name);
-			return -ENODEV;
-		}
-		clock_control_on(clk_dev, (clock_control_subsys_t)&info->cctl_cfg);
-	}
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (info->ccfg.cctl_dev) {
+        const struct device *clk_dev = info->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&info->ccfg);
+    }
+#endif
 
-#ifdef CONFIG_PINCTRL
-	pinctrl_apply_state(info->pcfg, PINCTRL_STATE_DEFAULT);
+#if defined(CONFIG_RESET)
+    if (info->reset.dev != NULL) {
+        if (!device_is_ready(info->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(info->reset.dev, info->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (info->ccfg.cctl_dev) {
+        const struct device *clk_dev = info->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&info->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_PINCTRL)
+    ret = pinctrl_apply_state(info->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
+    }
 #endif
 
 	DEVICE_MMIO_MAP(dev, K_MEM_CACHE_NONE);
@@ -673,7 +701,9 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 			.set_bit_func = reg_set_bit,                                        \
 			.clear_bit_func = reg_clear_bit,                                    \
 			.test_bit_func = reg_test_bit,))                                    \
-		IF_ENABLED(DT_HAS_CLOCKS(inst), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(inst),))		\
+		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                 \
+		IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                       \
+		IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))  \
 	};                                                                                  \
 	DEVICE_DT_INST_DEFINE(inst,                                                         \
 		spi_dw_init,                                                                \
