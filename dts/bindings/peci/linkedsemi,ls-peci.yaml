@@ -5,4 +5,4 @@ description: LINKEDSEMI LS PECI
 
 compatible: "linkedsemi,ls-peci"
 
-include: [peci.yaml, pinctrl-device.yaml]
+include: [peci.yaml, pinctrl-device.yaml, reset-device.yaml]
