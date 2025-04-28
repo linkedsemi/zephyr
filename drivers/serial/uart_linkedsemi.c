@@ -2,10 +2,21 @@
 #include <zephyr/arch/cpu.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/drivers/uart.h>
-#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/interrupt_util.h>
+#include <zephyr/pm/policy.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
+
 
 //....................................borad:ls...........................................
 
@@ -19,9 +30,7 @@
 // #include <log.h>
 #include <zephyr/irq.h>
 #include <zephyr/devicetree.h>
-#include <zephyr/pm/policy.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
 
 #if defined(CONFIG_SOC_LE5010)
@@ -35,27 +44,31 @@
 #define DT_DRV_COMPAT linkedsemi_ls_uart
 LOG_MODULE_REGISTER(uart_linkedsemi, LOG_LEVEL_DBG);
 
-struct uart_ls_data_t
-{
-#if defined(CONFIG_PINCTRL)
-	const struct pinctrl_dev_config *pcfg;
-#endif
-	struct ls_clk_cfg cctl_cfg;
-	uart_irq_callback_user_data_t user_cb;
-	void *user_parm;
-#ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	uart_irq_config_func_t irq_config_func;
-#endif		
+struct uart_ls_config_t {
+	UART_HandleTypeDef *uart_handle;
 #ifdef CONFIG_PM
 	bool pm_policy_state_on;
 #endif
+#ifdef CONFIG_UART_INTERRUPT_DRIVEN
+	uart_irq_config_func_t irq_config_func;
+#endif		
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+};
+
+struct uart_ls_data_t
+{
+	uart_irq_callback_user_data_t user_cb;
+	void *user_parm;
 	uint32_t irq;
 };
 
 static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
 {
 	// LOG_I("uart_ls_poll_in");
-	UART_HandleTypeDef *uart_handle  = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_OE)) {
 	}
 
@@ -68,7 +81,8 @@ static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
 
 static void uart_ls_poll_out(const struct device *dev, unsigned char p_char)
 {
-	UART_HandleTypeDef *uart_handle  = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
 	while (1) {
 		if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF))
@@ -106,21 +120,50 @@ static void uart_ls_pm_policy_state_lock_get(const struct device *dev)
 
 static int uart_ls_init(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
-	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int ret = 0;
-	// (void)data;
 
 #if defined(CONFIG_CLOCK_CONTROL)
-	if (data->cctl_cfg.cctl_dev) {
-		const struct device *clk_dev = data->cctl_cfg.cctl_dev;
-		if (!device_is_ready(clk_dev)) {
-			LOG_DBG("%s device not ready", clk_dev->name);
-			return -ENODEV;
-		}
-		clock_control_on(clk_dev, (clock_control_subsys_t)&data->cctl_cfg);
-	}
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
 #endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_PINCTRL)
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
+    }
+#endif
+
 	// pinmux_uart1_init(PC14,PC12);
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,1);
     uart_handle->UARTX->BRR  =  uart_handle->Init.BaudRate;
@@ -132,13 +175,6 @@ static int uart_ls_init(const struct device *dev)
 
 	// LOG_I("uart addr : %x",(uint32_t)uart_handle->UARTX);
 	/* Configure dt provided device signals when available */
-#if defined(CONFIG_PINCTRL)
-	ret = pinctrl_apply_state(data->pcfg, PINCTRL_STATE_DEFAULT);   //pin
-	if (ret < 0) {
-		// LOG_ERR("UART pinctrl setup failed (%d)", ret);
-		return ret;
-	}
-#endif
 
 #ifdef CONFIG_SOC_LE5010
 	#ifdef CONFIG_PM
@@ -146,7 +182,7 @@ static int uart_ls_init(const struct device *dev)
 	#endif
 #endif
 	#ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	data->irq_config_func(dev);
+	dev_config->irq_config_func(dev);
 	#endif
 
 	return ret; 
@@ -156,7 +192,8 @@ static int uart_ls_init(const struct device *dev)
 void uart_ls_isr(const struct device *dev);
 static void uart_ls_irq_tx_enable(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;	
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS); //transmission complete interrupt enable
 	
@@ -166,19 +203,22 @@ static void uart_ls_irq_tx_enable(const struct device *dev)
 
 void uart_ls_irq_tx_disable(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC);
 }
 
 int uart_ls_irq_tx_ready(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	return (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) == UART_SR_TFNF)? true : false;
 }
 
 void uart_ls_irq_rx_enable(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;	
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD); 
 	// #ifdef CONFIG_PM
 	// 	uart_ls_pm_policy_state_lock_get(dev);
@@ -187,7 +227,8 @@ void uart_ls_irq_rx_enable(const struct device *dev)
 
 void uart_ls_irq_rx_disable(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD);
 	// #ifdef CONFIG_PM
 	// 	uart_ls_pm_policy_state_lock_put(dev);
@@ -196,13 +237,15 @@ void uart_ls_irq_rx_disable(const struct device *dev)
 
 int uart_ls_irq_tx_complete(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	return (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFEM) == UART_SR_TFEM)? true : false;
 }
 
 int uart_ls_irq_rx_ready(const struct device *dev)  //fifo no empty：Returen 1
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	return (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE) == UART_SR_RFNE)? true : false;
 }
 
@@ -218,7 +261,8 @@ void uart_ls_irq_err_disable(const struct device *dev)
 
 int uart_ls_irq_is_pending(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
 	return LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX,UART_IT_RXRD)|| LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC);
 
@@ -242,7 +286,8 @@ void uart_ls_irq_callback_set(const struct device *dev,uart_irq_callback_user_da
 #include "ls_soc_gpio.h"
 void uart_ls_isr(const struct device *dev)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 	if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD))
     {
@@ -265,7 +310,8 @@ void uart_ls_isr(const struct device *dev)
 
 int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int num_tx = 0U;
 	// unsigned int key;
 
@@ -291,7 +337,8 @@ int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 
 int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 {
-	UART_HandleTypeDef *uart_handle = (UART_HandleTypeDef *)dev->config;
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int num_rx = 0U;
 
 	while (((size - num_rx) > 0) &&
@@ -377,18 +424,22 @@ static UART_HandleTypeDef uart_handle_##index = {	\
 	.Init.StopBits = DT_INST_ENUM_IDX_OR(index, StopBits, UART_STOPBITS1),	\
 	.Init.WordLength =	DT_INST_ENUM_IDX_OR(index, WordLength, UART_BYTESIZE8),	\
 };	\
+static struct uart_ls_config_t uart_ls_config##index = {	\
+	.uart_handle = &uart_handle_##index, \
+	UART_IRQ_HANDLER_FUNC(index)	\
+	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), )) \
+	IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), )) \
+	IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
+};	\
 static struct uart_ls_data_t uart_ls_data##index = {	\
 	.user_cb = NULL,	\
 	.user_parm = NULL,	\
-	UART_IRQ_HANDLER_FUNC(index)	\
-	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
-	IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
 };	\
 	\
 DEVICE_DT_INST_DEFINE(index,	\
 		    &uart_ls_init,	\
 		    NULL,	\
-		    &uart_ls_data##index, &uart_handle_##index,	\
+		    &uart_ls_data##index, &uart_ls_config##index,	\
 		    PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY,	\
 		    &uart_ls_api);	\
 	\
