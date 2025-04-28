@@ -3,7 +3,7 @@ description: Linkedsemi eSPI slave
 
 compatible: "linkedsemi,ls-espi"
 
-include: [espi-controller.yaml, pinctrl-device.yaml]
+include: [espi-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   reg:
