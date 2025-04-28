@@ -3,8 +3,13 @@
 
 #include <stdint.h>
 #include <zephyr/crypto/crypto.h>
-#include <zephyr/drivers/clock_control.h>
-#include "soc_clock.h"
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 #include "reg_sha_type.h"
 
 #define LOG_LEVEL CONFIG_SHA256_LOG_LEVEL
@@ -32,7 +37,8 @@ struct sha256_linkedsemi_data {
 struct sha256_linkedsemi_config {
 	reg_sha_t *reg; /* SHA256 engine base address */
 	void (*irq_config_func)(const struct device *);
-    struct ls_clk_cfg cctl_cfg;
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 #endif /* ZEPHYR_DRIVERS_CRYPTO_CRYPTO_LINKEDSEMIH_SHA256_ */
