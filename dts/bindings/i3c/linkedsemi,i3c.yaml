@@ -7,7 +7,7 @@ description:  LINKEDSEMI I3C CONFIG
 
 compatible: "linkedsemi,i3c"
 
-include: [i3c-controller.yaml]
+include: [i3c-controller.yaml, reset-device.yaml]
 
 properties:
   reg:
