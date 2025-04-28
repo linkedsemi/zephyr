@@ -9,8 +9,16 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/pinctrl.h>
-#include <soc.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
 #include <zephyr/drivers/gpio/gpio_utils.h>
 #include "gpio_linkedsemi_sgpiom.h"
@@ -33,7 +41,9 @@ struct sgpiom_linkedsemi_parent_config {
     uint32_t child_num;
     uint32_t bus_freq;
     uint32_t ngpios;
-    const struct pinctrl_dev_config *pcfg;
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct sgpiom_linkedsemi_config {
@@ -295,23 +305,59 @@ static uint16_t sgpiom_linkedsemi_get_clk_div(const struct device *parent)
 int sgpiom_linkedsemi_parent_init(const struct device *parent)
 {
     struct sgpiom_register_s *sgpiom_reg = DEV_PARENT_CFG(parent)->base;
-    const struct sgpiom_linkedsemi_parent_config *cfg = DEV_PARENT_CFG(parent);
+    const struct sgpiom_linkedsemi_parent_config *dev_config = DEV_PARENT_CFG(parent);
     union sgpiom_config_register_s config;
-    int ret;
+    __maybe_unused int ret;
 
-    ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret) {
-        return ret;
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
     }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_PINCTRL)
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
+    }
+#endif
+
     config.value = sgpiom_reg->config.value;
     config.fields.enable = 1;
     config.fields.drive = 1; /* push-pull */
-    config.fields.numbers = DIV_ROUND_UP(cfg->ngpios, 8);
+    config.fields.numbers = DIV_ROUND_UP(dev_config->ngpios, 8);
     config.fields.division = sgpiom_linkedsemi_get_clk_div(parent);
     sgpiom_reg->config.value = config.value;
 
-    irq_connect_dynamic(cfg->irq_num, cfg->irq_prio, sgpiom_linkedsemi_isr, parent, 0);
-    irq_enable(cfg->irq_num);
+    irq_connect_dynamic(dev_config->irq_num, dev_config->irq_prio, sgpiom_linkedsemi_isr, parent, 0);
+    irq_enable(dev_config->irq_num);
 
     return 0;
 }
@@ -323,13 +369,13 @@ struct device_cont {
 
 #define SGPIOM_ENUM(node_id)                node_id,
 #define SGPIOM_LINKEDSEMI_DEV_DATA(node_id) {},
-#define SGPIOM_LINKEDSEMI_DEV_CFG(node_id)  {                                \
-    .common = {                                                              \
-        .port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_NODE(node_id) },         \
-        .parent = DEVICE_DT_GET(DT_PARENT(node_id)),                         \
-        .base = (struct sgpiom_register_s *)DT_REG_ADDR(DT_PARENT(node_id)), \
-        .pin_offset = DT_PROP(node_id, pin_offset),                          \
-    },
+#define SGPIOM_LINKEDSEMI_DEV_CFG(node_id)  {                            \
+    .common = {                                                          \
+        .port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_NODE(node_id) },     \
+    .parent = DEVICE_DT_GET(DT_PARENT(node_id)),                         \
+    .base = (struct sgpiom_register_s *)DT_REG_ADDR(DT_PARENT(node_id)), \
+    .pin_offset = DT_PROP(node_id, pin_offset),                          \
+},
 #define SGPIOM_LINKEDSEMI_DT_DEFINE(node_id)            \
     DEVICE_DT_DEFINE(node_id,                           \
                      sgpiom_linkedsemi_init,            \
@@ -342,42 +388,44 @@ struct device_cont {
 
 #define SGPIOM_LINKEDSEMI_DEV_DECLARE(node_id) { .dev = DEVICE_DT_GET(node_id) },
 
-#define LINKEDSEMI_SGPIOM_DEVICE_INIT(inst)                                                     \
-    PINCTRL_DT_INST_DEFINE(inst);                                                               \
-    static struct device_array child_dev_##inst[] = {                                           \
-        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DEV_DECLARE)          \
-    };                                                                                          \
-    static const struct sgpiom_linkedsemi_parent_config sgpiom_linkedsemi_parent_cfg_##inst = { \
-        .base = (struct sgpiom_register_s *)DT_INST_REG_ADDR(inst),                             \
-        .irq_num = DT_INST_IRQN(inst),                                                          \
-        .irq_prio = DT_INST_IRQ(inst, priority),                                                \
-        .child_dev = child_dev_##inst,                                                          \
-        .child_num = ARRAY_SIZE(child_dev_##inst),                                              \
-        .ngpios = DT_INST_PROP(inst, ngpios),                                                   \
-        .bus_freq = DT_INST_PROP(inst, linkedsemi_bus_freq),                                    \
-        .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),                                           \
-    };                                                                                          \
-    DEVICE_DT_INST_DEFINE(inst,                                                                 \
-                          sgpiom_linkedsemi_parent_init,                                        \
-                          NULL,                                                                 \
-                          NULL,                                                                 \
-                          &sgpiom_linkedsemi_parent_cfg_##inst,                                 \
-                          POST_KERNEL,                                                          \
-                          CONFIG_GPIO_INIT_PRIORITY,                                            \
-                          NULL);                                                                \
-    static const struct sgpiom_linkedsemi_config sgpiom_linkedsemi_cfg_##inst[] = {             \
-        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DEV_CFG)              \
-    };                                                                                          \
-    static struct sgpiom_linkedsemi_data sgpiom_linkedsemi_data_##inst[] = {                    \
-        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DEV_DATA)             \
-    };                                                                                          \
-    static const struct device_cont DT_DRV_INST(inst) = {                                       \
-        .cfg = sgpiom_linkedsemi_cfg_##inst,                                                    \
-        .data = sgpiom_linkedsemi_data_##inst,                                                  \
-    };                                                                                          \
-    enum {                                                                                      \
-        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_ENUM)                            \
-    };                                                                                          \
+#define LINKEDSEMI_SGPIOM_DEVICE_INIT(inst)                                                           \
+    PINCTRL_DT_INST_DEFINE(inst);                                                                     \
+    static struct device_array child_dev_##inst[] = {                                                 \
+        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DEV_DECLARE)                \
+    };                                                                                                \
+    static const struct sgpiom_linkedsemi_parent_config sgpiom_linkedsemi_parent_cfg_##inst = {       \
+        .base = (struct sgpiom_register_s *)DT_INST_REG_ADDR(inst),                                   \
+        .irq_num = DT_INST_IRQN(inst),                                                                \
+        .irq_prio = DT_INST_IRQ(inst, priority),                                                      \
+        .child_dev = child_dev_##inst,                                                                \
+        .child_num = ARRAY_SIZE(child_dev_##inst),                                                    \
+        .ngpios = DT_INST_PROP(inst, ngpios),                                                         \
+        .bus_freq = DT_INST_PROP(inst, linkedsemi_bus_freq),                                          \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                 \
+        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                       \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))  \
+    };                                                                                                \
+    DEVICE_DT_INST_DEFINE(inst,                                                                       \
+                          sgpiom_linkedsemi_parent_init,                                              \
+                          NULL,                                                                       \
+                          NULL,                                                                       \
+                          &sgpiom_linkedsemi_parent_cfg_##inst,                                       \
+                          POST_KERNEL,                                                                \
+                          CONFIG_GPIO_INIT_PRIORITY,                                                  \
+                          NULL);                                                                      \
+    static const struct sgpiom_linkedsemi_config sgpiom_linkedsemi_cfg_##inst[] = {                   \
+        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DEV_CFG)                    \
+    };                                                                                                \
+    static struct sgpiom_linkedsemi_data sgpiom_linkedsemi_data_##inst[] = {                          \
+        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DEV_DATA)                   \
+    };                                                                                                \
+    static const struct device_cont DT_DRV_INST(inst) = {                                             \
+        .cfg = sgpiom_linkedsemi_cfg_##inst,                                                          \
+        .data = sgpiom_linkedsemi_data_##inst,                                                        \
+    };                                                                                                \
+    enum {                                                                                            \
+        DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_ENUM)                                  \
+    };                                                                                                \
     DT_FOREACH_CHILD_STATUS_OKAY(DT_DRV_INST(inst), SGPIOM_LINKEDSEMI_DT_DEFINE)
 
 DT_INST_FOREACH_STATUS_OKAY(LINKEDSEMI_SGPIOM_DEVICE_INIT)
