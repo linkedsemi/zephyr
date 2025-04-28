@@ -5,7 +5,7 @@ description: LinkedSemi LS SPI
 
 compatible: "linkedsemi,ls-spi"
 
-include: [spi-controller.yaml, pinctrl-device.yaml]
+include: [spi-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   reg:
