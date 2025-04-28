@@ -7,11 +7,6 @@
 #include <zephyr/kernel.h>
 #include <core_rv32.h>
 
-#define DCACHE_LINE_SIZE 32
-#define ICACHE_LINE_SIZE 32
-
-#define ROUND_DOWN_CACHE_LINE(x) (((x) >> 5) << 5)
-
 void cache_data_enable(void)
 {
     csi_dcache_enable();
@@ -41,8 +36,7 @@ int cache_data_invd_all(void)
 
 int cache_data_invd_range(void *addr, size_t size)
 {
-    void *align_addr = (void *)ROUND_DOWN_CACHE_LINE((uint32_t)addr);
-    csi_dcache_invalid_range((uint32_t *)align_addr, size);
+    csi_dcache_invalid_range(addr, size);
 
     return 0;
 }
@@ -75,8 +69,7 @@ int cache_data_flush_and_invd_all(void)
 
 int cache_data_flush_range(void *addr, size_t size)
 {
-    void *align_addr = (void *)ROUND_DOWN_CACHE_LINE((uint32_t)addr);
-    csi_dcache_clean_range((uint32_t *)align_addr, size);
+    csi_dcache_clean_range(addr, size);
 
     return 0;
 }
@@ -111,13 +104,13 @@ int cache_instr_flush_and_invd_range(void *addr, size_t size)
 #ifdef CONFIG_DCACHE_LINE_SIZE_DETECT
 size_t cache_data_line_size_get(void)
 {
-    return DCACHE_LINE_SIZE;
+    return 32;
 }
 #endif /* CONFIG_DCACHE_LINE_SIZE_DETECT */
 
 #ifdef CONFIG_ICACHE_LINE_SIZE_DETECT
 size_t cache_instr_line_size_get(void)
 {
-    return ICACHE_LINE_SIZE;
+    return 32;
 }
 #endif /* CONFIG_ICACHE_LINE_SIZE_DETECT */
