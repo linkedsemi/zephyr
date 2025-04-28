@@ -3,8 +3,13 @@
 
 #include <stdint.h>
 #include <zephyr/crypto/crypto.h>
-#include <zephyr/drivers/clock_control.h>
-#include "soc_clock.h"
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 #include "reg_sm4_type.h"
 
 #define LOG_LEVEL CONFIG_SM4_LOG_LEVEL
@@ -35,7 +40,8 @@ struct sm4_linkedsemi_data {
 struct sm4_linkedsemi_config {
 	reg_sm4_t *reg; /* SM4 engine base address */
 	void (*irq_config_func)(const struct device *);
-    struct ls_clk_cfg cctl_cfg;
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 extern struct cipher_ops sm4_encrypt_ops;
