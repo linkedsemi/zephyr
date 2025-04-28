@@ -11,14 +11,20 @@
 LOG_MODULE_REGISTER(spi_ls);
 
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/pinctrl.h>
-#include <zephyr/drivers/clock_control.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+#endif
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/policy.h>
 #include "spi_context.h"
 
 #include <ls_hal_spi_i2s.h>
-#include <reg_sysc_per.h>
 
 #if defined(CONFIG_SOC_SERIES_LE501X)
 #include <reg_rcc.h>
@@ -30,6 +36,8 @@ LOG_MODULE_REGISTER(spi_ls);
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
 #elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency)
+#elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay)
+#define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_2), clock_frequency)
 #else
 #error can not get peripheral frequence from dts
 #endif
@@ -38,11 +46,12 @@ typedef void (*irq_config_func_t)(const struct device *port);
 
 struct spi_ls_config {
 	reg_spi_t *instance;
-    const struct pinctrl_dev_config *pcfg; 
 #ifdef CONFIG_SPI_LS_INTERRUPT
 	irq_config_func_t irq_config;
 #endif
-	struct ls_clk_cfg cctl_cfg;
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct spi_ls_data {
@@ -436,24 +445,60 @@ static void spi_clock_init(void)
 
 static int spi_ls_init(const struct device *dev)
 {
-	__maybe_unused const struct spi_ls_config *const config = dev->config;
+	__maybe_unused const struct spi_ls_config *const dev_config = dev->config;
 	struct spi_ls_data *data = dev->data;
+    __maybe_unused int ret;
 	int err;
 
 #ifdef CONFIG_SPI_LS_INTERRUPT
-	config->irq_config(dev);
+	dev_config->irq_config(dev);
 #endif
 
 #if defined(CONFIG_SOC_SERIES_LE501X)
     spi_clock_init();
-#else
-    if (config->cctl_cfg.cctl_dev) {
-	    const struct device *clk_dev = config->cctl_cfg.cctl_dev;
-	    if (!device_is_ready(clk_dev)) {
-		    LOG_DBG("%s device not ready", clk_dev->name);
-		    return -ENODEV;
-	    }
-	    clock_control_on(clk_dev, (clock_control_subsys_t)&config->cctl_cfg);
+#endif
+
+#if !defined(CONFIG_SOC_SERIES_LE501X)
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if !defined(CONFIG_SOC_SERIES_LE501X)
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+#endif
+
+#if defined(CONFIG_PINCTRL)
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
     }
 #endif
 
@@ -473,9 +518,10 @@ LS_SPI_IRQ_HANDLER_DECL(id);					\
 									\
 static const struct spi_ls_config spi_ls_cfg_##id = {		\
 	.instance = (reg_spi_t *) DT_INST_REG_ADDR(id),			\
-    .pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id),               \
     LS_SPI_IRQ_HANDLER_FUNC(id)					\
-	IF_ENABLED(DT_HAS_CLOCKS(id), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(id),))	 \
+	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id), ))                 \
+	IF_ENABLED(DT_HAS_CLOCKS(id), (.ccfg = LS_DT_CLK_CFG_ITEM(id), ))                       \
+	IF_ENABLED(DT_INST_NODE_HAS_PROP(id, resets), (.reset = RESET_DT_SPEC_INST_GET(id), ))  \
 };									\
 									\
 static struct spi_ls_data spi_ls_dev_data_##id = {		    \
