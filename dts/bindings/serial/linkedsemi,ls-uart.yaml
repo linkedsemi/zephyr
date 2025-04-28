@@ -2,7 +2,7 @@ description: LINKEDSEMI UART
 
 compatible: "linkedsemi,ls-uart"
 
-include: [uart-controller.yaml,pinctrl-device.yaml]
+include: [uart-controller.yaml,pinctrl-device.yaml, reset-device.yaml]
 
 properties:
     reg:
