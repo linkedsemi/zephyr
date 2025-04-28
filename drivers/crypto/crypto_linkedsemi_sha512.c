@@ -146,19 +146,44 @@ static int sha512_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, boo
 
 static int sha512_linkedsemi_init(const struct device *dev)
 {
-	const struct sha512_linkedsemi_config *const cfg = dev->config;
+	const struct sha512_linkedsemi_config *const dev_config = dev->config;
 	struct sha512_linkedsemi_data *dev_data = dev->data;
+    __maybe_unused int ret;
 
-	if (cfg->cctl_cfg.cctl_dev) {
-		const struct device *clk_dev = cfg->cctl_cfg.cctl_dev;
-		if (!device_is_ready(clk_dev)) {
-			LOG_DBG("%s device not ready", clk_dev->name);
-			return -ENODEV;
-		}
-		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
-	}
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
 
-	cfg->irq_config_func(dev);
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+	dev_config->irq_config_func(dev);
 
 	k_mutex_init(&dev_data->sha512_engine_mutex);
 	k_sem_init(&dev_data->calc_end_sem, 0, K_SEM_MAX_LIMIT);
@@ -234,6 +259,8 @@ static struct crypto_driver_api sha512_driver_api = {
 	static const struct sha512_linkedsemi_config sha512_linkedsemi_config_##idx = {            \
 		.reg = (void *)DT_INST_REG_ADDR(idx),                                              \
 		.irq_config_func = sha512_linkedsemi_irq_config_func_##idx,                        \
+        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                       \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))  \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(idx, sha512_linkedsemi_init, NULL, &sha512_linkedsemi_data_##idx,    \
 			      &sha512_linkedsemi_config_##idx, POST_KERNEL,                        \
