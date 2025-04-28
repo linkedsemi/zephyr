@@ -139,7 +139,7 @@
 #define LTPI_SCM_RESET   GEN_RESET(LTPI_SCM)
 #define LTPI_HPM_RESET   GEN_RESET(LTPI_HPM)
 #define LTPI_PHY_RESET   GEN_RESET(LTPI_PHY)
-#define I2C2_RESET       GEN_RESET(I2C2)
+#define I2C1_RESET       GEN_RESET(I2C1)
 #define I3C1_RESET       GEN_RESET(I3C1)
 #define UART1_RESET      GEN_RESET(UART1)
 #define IWDT1_RESET      GEN_RESET(IWDT1)
@@ -276,13 +276,14 @@
 #define LTPI_SCM_RST_BASE   sysc_app_cpu
 #define LTPI_HPM_RST_BASE   sysc_app_cpu
 #define LTPI_PHY_RST_BASE   sysc_app_cpu
+#define I2C1_RST_BASE       sysc_sec_per
 #define I3C1_RST_BASE       sysc_sec_per
 #define UART1_RST_BASE      sysc_sec_per
 #define IWDT1_RST_BASE      sysc_sec_per
 #define WWDT1_RST_BASE      sysc_sec_per
 #define TRNG_RST_BASE       sysc_sec_per
 
-#define I2C2_RST_REG  PD_PER_SRST0_RSTREG
+#define I2C1_RST_REG  PD_PER_SRST0_RSTREG
 #define I3C1_RST_REG  PD_PER_SRST0_RSTREG
 #define UART1_RST_REG PD_PER_SRST0_RSTREG
 #define IWDT1_RST_REG PD_PER_SRST0_RSTREG
@@ -419,6 +420,8 @@
 #define LTPI_HPM_RST_REG PD_CPU_SRST1_RSTREG
 #define LTPI_PHY_RST_REG PD_CPU_SRST1_RSTREG
 
+#define I2C1_RST_SET_MASK       0x1
+#define I2C1_RST_SET_POS        0
 #define I2C1_RST_CLR_MASK       0x2
 #define I2C1_RST_CLR_POS        1
 #define I3C1_RST_SET_MASK       0x10
