@@ -808,6 +808,7 @@ static int uart_ns16550_init(const struct device *dev)
 
 	ARG_UNUSED(dev_cfg);
 
+#if defined(CONFIG_CLOCK_CONTROL)
 #if defined(CONFIG_SOC_FAMILY_LS_MCU)
 	if (dev_cfg->cctl_cfg.cctl_dev) {
 		const struct device *clk_dev = dev_cfg->cctl_cfg.cctl_dev;
@@ -815,8 +816,9 @@ static int uart_ns16550_init(const struct device *dev)
 			LOG_DBG("%s device not ready", clk_dev->name);
 			return -ENODEV;
 		}
-		clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->cctl_cfg);
+		clock_control_off(clk_dev, (clock_control_subsys_t)&dev_cfg->cctl_cfg);
 	}
+#endif
 #endif
 
 #if UART_NS16550_RESET_ENABLED
@@ -827,6 +829,15 @@ static int uart_ns16550_init(const struct device *dev)
 			return ret;
 		}
 	}
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+#if defined(CONFIG_SOC_FAMILY_LS_MCU)
+	if (dev_cfg->cctl_cfg.cctl_dev) {
+		const struct device *clk_dev = dev_cfg->cctl_cfg.cctl_dev;
+		clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->cctl_cfg);
+	}
+#endif
 #endif
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(pcie)
@@ -939,6 +950,7 @@ static int uart_ns16550_poll_in(const struct device *dev, unsigned char *c)
 static void uart_ns16550_poll_out(const struct device *dev,
 					   unsigned char c)
 {
+#if 1
 	struct uart_ns16550_dev_data *data = dev->data;
 	const struct uart_ns16550_dev_config * const dev_cfg = dev->config;
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
@@ -949,6 +961,7 @@ static void uart_ns16550_poll_out(const struct device *dev,
 	ns16550_outbyte(dev_cfg, THR(dev), c);
 
 	k_spin_unlock(&data->lock, key);
+#endif
 }
 
 /**
@@ -1290,7 +1303,7 @@ static void uart_ns16550_irq_callback_set(const struct device *dev,
  *
  * @param arg Argument to ISR.
  */
-static void uart_ns16550_isr(const struct device *dev)
+__maybe_unused static void uart_ns16550_isr(const struct device *dev)
 {
 	struct uart_ns16550_dev_data * const dev_data = dev->data;
 	const struct uart_ns16550_dev_config * const dev_cfg = dev->config;
