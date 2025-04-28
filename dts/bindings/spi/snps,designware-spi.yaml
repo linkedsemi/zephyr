@@ -6,7 +6,7 @@ description: Synopsys DesignWare SPI node
 
 compatible: "snps,designware-spi"
 
-include: [spi-controller.yaml, pinctrl-device.yaml]
+include: [spi-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   reg:
