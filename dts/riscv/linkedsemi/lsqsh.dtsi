@@ -147,6 +147,8 @@
             reg = <0x40041000 0x1000>;
             #dma-cells = <1>;
             interrupts = <DMAC1_IRQN 3>;
+            clocks = <DMAC1_CLOCK>;
+            resets = <DMAC1_RESET>;
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
@@ -158,6 +160,8 @@
             reg = <0x40042000 0x1000>;
             #dma-cells = <1>;
             interrupts = <DMAC2_IRQN 3>;
+            clocks = <DMAC2_CLOCK>;
+            resets = <DMAC2_RESET>;
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
@@ -324,10 +328,13 @@
             };
         };
 
-        sgpiom: sgpiom@40097000 {
+        sgpiom1: sgpiom@40097000 {
             compatible = "linkedsemi,sgpiom";
             reg = <0x40097000 0x400>;
             interrupts = <151 3>;
+            interrupts = <CALC_SM4_IRQN 3>;
+            clocks = <SGPIO1_MST_CLOCK>;
+            resets = <SGPIO1_MST_RESET>;
             ngpios = <256>;
             linkedsemi,bus-freq = <1000000>;
             status = "disabled";
@@ -381,6 +388,8 @@
             compatible = "linkedsemi,sgpiom";
             reg = <0x40097400 0x400>;
             interrupts = <152 3>;
+            clocks = <SGPIO2_MST_CLOCK>;
+            resets = <SGPIO2_MST_RESET>;
             ngpios = <256>;
             linkedsemi,bus-freq = <1000000>;
             status = "disabled";
@@ -441,6 +450,7 @@
             reg = <0x40005000 0x400>;
             interrupts = <SHA512_IRQN 3>;
             clocks = <SHA512_CLOCK>;
+            resets = <SHA512_RESET>;
             status = "disabled";
         };
 
@@ -449,6 +459,7 @@
             reg = <0x40002800 0x400>;
             interrupts = <CALC_SHA256_IRQN 3>;
             clocks = <CALC_SHA_CLOCK>;
+            resets = <CALC_SHA_RESET>;
             status = "disabled";
         };
 
@@ -470,6 +481,7 @@
             reg = <0x40029400 0x400>;
             interrupts = <CALC_SM4_IRQN 3>;
             clocks = <CALC_SM4_CLOCK>;
+            resets = <CALC_SM4_RESET>;
             status = "disabled";
         };
 
@@ -477,6 +489,8 @@
             compatible = "linkedsemi,ls-espi";
             reg = <0x40045000 0x1000>;
             interrupts = <ESPI1_IRQN 3>;
+            clocks = <ESPI1_CLOCK>;
+            resets = <ESPI1_RESET>;
             status = "disabled";
 
             vuart1: vuart1 {
@@ -504,6 +518,8 @@
             compatible = "linkedsemi,ls-espi";
             reg = <0x40046000 0x1000>;
             interrupts = <ESPI2_IRQN 3>;
+            clocks = <ESPI2_CLOCK>;
+            resets = <ESPI2_RESET>;
             status = "disabled";
         };
 
@@ -511,6 +527,8 @@
             compatible = "linkedsemi,ls-lpc";
             reg = <0x40047000 0x1000>;
             interrupts = <LPC1_IRQN 3>;
+            clocks = <LPC1_CLOCK>;
+            resets = <LPC1_RESET>;
             status = "disabled";
         };
 
@@ -518,6 +536,8 @@
             compatible = "linkedsemi,ls-lpc";
             reg = <0x40048000 0x1000>;
             interrupts = <LPC2_IRQN 3>;
+            clocks = <LPC2_CLOCK>;
+            resets = <LPC2_RESET>;
             status = "disabled";
         };
 
@@ -532,6 +552,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C1_IRQN 3>;
+            clocks = <I2C1_CLOCK>;
+            resets = <I2C1_RESET>;
             status = "disabled";
         };
 
@@ -541,6 +563,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C2_IRQN 3>;
+            clocks = <I2C2_CLOCK>;
+            resets = <I2C2_RESET>;
             status = "disabled";
         };
 
@@ -550,6 +574,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C3_IRQN 3>;
+            clocks = <I2C3_CLOCK>;
+            resets = <I2C3_RESET>;
             status = "disabled";
         };
 
@@ -559,6 +585,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C4_IRQN 3>;
+            clocks = <I2C4_CLOCK>;
+            resets = <I2C4_RESET>;
             status = "disabled";
         };
 
@@ -568,6 +596,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C5_IRQN 3>;
+            clocks = <I2C5_CLOCK>;
+            resets = <I2C5_RESET>;
             status = "disabled";
         };
 
@@ -577,6 +607,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C6_IRQN 3>;
+            clocks = <I2C6_CLOCK>;
+            resets = <I2C6_RESET>;
             status = "disabled";
         };
 
@@ -586,6 +618,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C7_IRQN 3>;
+            clocks = <I2C7_CLOCK>;
+            resets = <I2C7_RESET>;
             status = "disabled";
         };
 
@@ -595,6 +629,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C8_IRQN 3>;
+            clocks = <I2C8_CLOCK>;
+            resets = <I2C8_RESET>;
             status = "disabled";
         };
 
@@ -604,6 +640,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C9_IRQN 3>;
+            clocks = <I2C9_CLOCK>;
+            resets = <I2C9_RESET>;
             status = "disabled";
         };
 
@@ -613,6 +651,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C10_IRQN 3>;
+            clocks = <I2C10_CLOCK>;
+            resets = <I2C10_RESET>;
             status = "disabled";
         };
 
@@ -622,6 +662,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C11_IRQN 3>;
+            clocks = <I2C11_CLOCK>;
+            resets = <I2C11_RESET>;
             status = "disabled";
         };
 
@@ -631,6 +673,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C12_IRQN 3>;
+            clocks = <I2C12_CLOCK>;
+            resets = <I2C12_RESET>;
             status = "disabled";
         };
 
@@ -640,6 +684,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C13_IRQN 3>;
+            clocks = <I2C13_CLOCK>;
+            resets = <I2C13_RESET>;
             status = "disabled";
         };
 
@@ -649,6 +695,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C14_IRQN 3>;
+            clocks = <I2C14_CLOCK>;
+            resets = <I2C14_RESET>;
             status = "disabled";
         };
 
@@ -658,6 +706,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C15_IRQN 3>;
+            clocks = <I2C15_CLOCK>;
+            resets = <I2C15_RESET>;
             status = "disabled";
         };
 
@@ -667,6 +717,8 @@
             #address-cells = <1>;
             #size-cells = <0>;
             interrupts = <I2C16_IRQN 3>;
+            clocks = <I2C16_CLOCK>;
+            resets = <I2C16_RESET>;
             status = "disabled";
         };
 
@@ -803,6 +855,7 @@
             reg = <0x400a1000 0x400>;
             interrupts = <UART1_IRQN 3>;
             clocks = <UART1_CLOCK>;
+            resets = <UART1_RESET>;
             status = "disabled";
         };
 
@@ -811,6 +864,7 @@
             reg = <0x40087400 0x400>;
             interrupts = <UART2_IRQN 3>;
             clocks = <UART2_CLOCK>;
+            resets = <UART2_RESET>;
             status = "disabled";
         };
 
@@ -928,6 +982,8 @@
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
             reg = <0x40064000 0x2000>;
             interrupts = <ETH1_IRQN 3>;
+            clocks = <ETH1_CLOCK>;
+            resets = <ETH1_RESET>;
             clock-frequency = <50000000>;
             status = "disabled";
 
@@ -943,6 +999,8 @@
             compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
             reg = <0x40066000 0x2000>;
             interrupts = <ETH2_IRQN 3>;
+            clocks = <ETH2_CLOCK>;
+            resets = <ETH2_RESET>;
             clock-frequency = <50000000>;
             status = "disabled";
 
@@ -961,6 +1019,8 @@
             reg = <0x4008a000 0x400>;
             clock-frequency = <50000000>;
             interrupts = <SPI1_IRQN 3>;
+            clocks = <SPI1_CLOCK>;
+            resets = <SPI1_RESET>;
             status = "disabled";
         };
 
@@ -971,6 +1031,8 @@
             reg = <0x4008a400 0x400>;
             clock-frequency = <50000000>;
             interrupts = <SPI2_IRQN 3>;
+            clocks = <SPI2_CLOCK>;
+            resets = <SPI2_RESET>;
             status = "disabled";
         };
 
@@ -981,6 +1043,8 @@
             reg = <0x4006e000 0x400>;
             clock-frequency = <50000000>;
             interrupts = <SPI3_IRQN 3>;
+            clocks = <SPI3_CLOCK>;
+            resets = <SPI3_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
             status = "disabled";
@@ -993,6 +1057,8 @@
             reg = <0x4006e400 0x400>;
             clock-frequency = <50000000>;
             interrupts = <SPI4_IRQN 3>;
+            clocks = <SPI4_CLOCK>;
+            resets = <SPI4_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
             status = "disabled";
@@ -1004,6 +1070,8 @@
             #address-cells= <1>;
             #size-cells = <0>;
             interrupts = <PECI1_IRQN 3>;
+            clocks = <PECI1_CLOCK>;
+            resets = <PECI1_RESET>;
             status = "disabled";
         };
 
@@ -1013,6 +1081,8 @@
             #address-cells= <1>;
             #size-cells = <0>;
             interrupts = <PECI2_IRQN 3>;
+            clocks = <PECI2_CLOCK>;
+            resets = <PECI2_RESET>;
             status = "disabled";
         };
 
@@ -1020,6 +1090,9 @@
             compatible = "linkedsemi,sdhci";
             reg = <0x40049000 0x1000>;
             interrupts = <EMMC1_IRQN 3>;
+            clocks = <EMMC1_CLOCK>;
+            resets = <EMMC1_RESET>;
+            clock-frequency = <12500000>;
             max-bus-freq = <5000000>;
             min-bus-freq = <200000>;
             status = "disabled";
@@ -1029,6 +1102,9 @@
             compatible = "linkedsemi,sdhci";
             reg = <0x4004a000 0x1000>;
             interrupts = <EMMC2_IRQN 3>;
+            clocks = <EMMC2_CLOCK>;
+            resets = <EMMC2_RESET>;
+            clock-frequency = <12500000>;
             max-bus-freq = <5000000>;
             min-bus-freq = <200000>;
             status = "disabled";
@@ -1038,6 +1114,8 @@
             compatible = "linkedsemi,ls-jtag";
             reg = <0x40092000 0x400>;
             interrupts = <MJTAG1_IRQN 3>;
+            clocks = <MJTAG1_CLOCK>;
+            resets = <MJTAG1_RESET>;
             status = "disabled";
         };
 
@@ -1045,6 +1123,8 @@
             compatible = "linkedsemi,ls-jtag";
             reg = <0x40092400 0x400>;
             interrupts = <MJTAG2_IRQN 3>;
+            clocks = <MJTAG2_CLOCK>;
+            resets = <MJTAG2_RESET>;
             status = "disabled";
         };
 
@@ -1052,6 +1132,104 @@
             compatible = "linkedsemi,ls-jtag";
             reg = <0x40092800 0x400>;
             interrupts = <MJTAG3_IRQN 3>;
+            clocks = <MJTAG3_CLOCK>;
+            resets = <MJTAG3_RESET>;
+            status = "disabled";
+        };
+
+        i3c1: i3c@400a0800 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x400a0800 0x2000>;
+            interrupts = <I3C1_IRQN 3>;
+            clocks = <I3C1_CLOCK>;
+            resets = <I3C1_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c2: i3c@40093400 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40093400 0x2000>;
+            interrupts = <I3C2_IRQN 3>;
+            clocks = <I3C2_CLOCK>;
+            resets = <I3C2_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c3: i3c@40093800 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40093800 0x2000>;
+            interrupts = <I3C3_IRQN 3>;
+            clocks = <I3C3_CLOCK>;
+            resets = <I3C3_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c4: i3c@40093c00 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40093c00 0x2000>;
+            interrupts = <I3C4_IRQN 3>;
+            clocks = <I3C4_CLOCK>;
+            resets = <I3C4_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c5: i3c@40094000 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40094000 0x2000>;
+            interrupts = <I3C5_IRQN 3>;
+            clocks = <I3C5_CLOCK>;
+            resets = <I3C5_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c6: i3c@40094400 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40094400 0x2000>;
+            interrupts = <I3C6_IRQN 3>;
+            clocks = <I3C6_CLOCK>;
+            resets = <I3C6_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c7: i3c@40094800 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40094800 0x2000>;
+            interrupts = <I3C7_IRQN 3>;
+            clocks = <I3C7_CLOCK>;
+            resets = <I3C7_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c8: i3c@40094c00 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40094c00 0x2000>;
+            interrupts = <I3C8_IRQN 3>;
+            clocks = <I3C8_CLOCK>;
+            resets = <I3C8_RESET>;
+            i3c-scl-hz = <1000000>;
             status = "disabled";
         };
 
@@ -1060,9 +1238,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095000 0x2000>;
-            interrupts = <120 3>;
-            status = "disabled";
+            interrupts = <I3C9_IRQN 3>;
+            clocks = <I3C9_CLOCK>;
+            resets = <I3C9_RESET>;
             i3c-scl-hz = <1000000>;
+            status = "disabled";
         };
 
         i3c10: i3c@40095400 {
@@ -1070,9 +1250,59 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095400 0x2000>;
-            interrupts = <121 3>;
-            status = "disabled";
+            interrupts = <I3C10_IRQN 3>;
+            clocks = <I3C10_CLOCK>;
+            resets = <I3C10_RESET>;
             i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c11: i3c@40095800 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40095800 0x2000>;
+            interrupts = <I3C11_IRQN 3>;
+            clocks = <I3C11_CLOCK>;
+            resets = <I3C11_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c12: i3c@40095c00 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40095c00 0x2000>;
+            interrupts = <I3C12_IRQN 3>;
+            clocks = <I3C12_CLOCK>;
+            resets = <I3C12_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c13: i3c@40096000 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40096000 0x2000>;
+            interrupts = <I3C13_IRQN 3>;
+            clocks = <I3C13_CLOCK>;
+            resets = <I3C13_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
+        };
+
+        i3c14: i3c@40096400 {
+            compatible = "linkedsemi,i3c";
+            #address-cells = <3>;
+            #size-cells = <0>;
+            reg = <0x40096400 0x2000>;
+            interrupts = <I3C14_IRQN 3>;
+            clocks = <I3C14_CLOCK>;
+            resets = <I3C14_RESET>;
+            i3c-scl-hz = <1000000>;
+            status = "disabled";
         };
     };
 
