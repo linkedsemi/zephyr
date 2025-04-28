@@ -9,12 +9,18 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/sdhc.h>
 #include <zephyr/devicetree.h>
-#include <zephyr/drivers/clock_control.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/cache.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
 #endif
 #include "sdhci.h"
 
@@ -24,24 +30,24 @@ LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
 #define LINKEDSEMI_SDHCI_DEFAULT_TIMEOUT (5000U)
 
-#define LINKEDSEMI_SDHCI_PERI_BUS_FREQ MHZ(12.5)
-
 struct linkedsemi_sdhci_config {
     uint32_t response_timeout;
     uint32_t cd_debounce_clocks;
     uint32_t data_timeout;
     uint32_t min_bus_freq;
     uint32_t max_bus_freq;
-#if defined(CONFIG_PINCTRL)
-    const struct pinctrl_dev_config *pcfg;
-#endif
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
     void (*irq_config_func)(const struct device *dev);
     void (*irq_deconfig_func)(const struct device *dev);
 };
 
 struct linkedsemi_sdhci_data {
+    uint32_t clock_frequency;
     struct sdhci_host host;
     struct k_mutex access_mutex;
+    uint32_t *align_buf;
 };
 
 /*
@@ -412,12 +418,46 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     const struct linkedsemi_sdhci_config *dev_config = dev->config;
     struct sdhci_host *host = &dev_data->host;
+    __maybe_unused int ret;
+
 #if defined(CONFIG_PINCTRL)
-    int ret;
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
         LOG_ERROR("SDHC pinctrl setup failed (%d)", ret);
         return ret;
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
     }
 #endif
 
@@ -427,7 +467,6 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     host->rx_delay_line = 0;
     host->tx_delay_line = 0;
     host->io_fixed_1v8 = 0;
-    host->max_clk = LINKEDSEMI_SDHCI_PERI_BUS_FREQ;
     sdhci_init(host);
 
     k_mutex_init(&dev_data->access_mutex);
@@ -461,41 +500,45 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
     .card_busy = linkedsemi_sdhci_card_busy,
 };
 
-#define LINKEDSEMI_SDHCI_INIT(n)                                                                                           \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                                                               \
-    static void sdhci_##n##_irq_config_func(const struct device *dev)                                                      \
-    {                                                                                                                      \
-        ARG_UNUSED(dev);                                                                                                   \
-        IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), linkedsemi_sdhci_isr, DEVICE_DT_INST_GET(n), 0);            \
-        irq_enable(DT_INST_IRQN(n));                                                                                       \
-    }                                                                                                                      \
-    static void sdhci_##n##_irq_deconfig_func(const struct device *dev)                                                    \
-    {                                                                                                                      \
-        ARG_UNUSED(dev);                                                                                                   \
-        irq_disable(DT_INST_IRQN(n));                                                                                      \
-    }                                                                                                                      \
-                                                                                                                           \
-    static struct linkedsemi_sdhci_config sdhci_##n##_config = {                                                           \
-        .max_bus_freq = DT_INST_PROP(n, max_bus_freq),                                                                     \
-        .min_bus_freq = DT_INST_PROP(n, min_bus_freq),                                                                     \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),))                                           \
-        .irq_config_func = sdhci_##n##_irq_config_func,                                                                    \
-        .irq_deconfig_func = sdhci_##n##_irq_deconfig_func,                                                                \
-    };                                                                                                                     \
-                                                                                                                           \
-    static struct linkedsemi_sdhci_data sdhci_##n##_data = {                                                               \
-        .host = {                                                                                                          \
-            .mapbase = DT_INST_REG_ADDR(n),                                                                                \
-        },                                                                                                                 \
-    };                                                                                                                     \
-                                                                                                                           \
-    DEVICE_DT_INST_DEFINE(n,                                                                                               \
-                          &linkedsemi_sdhci_init,                                                                          \
-                          NULL,                                                                                            \
-                          &sdhci_##n##_data,                                                                               \
-                          &sdhci_##n##_config,                                                                             \
-                          POST_KERNEL,                                                                                     \
-                          CONFIG_SDHC_INIT_PRIORITY,                                                                       \
+#define LINKEDSEMI_SDHCI_INIT(n)                                                                                \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                                                    \
+    static void sdhci_##n##_irq_config_func(const struct device *dev)                                           \
+    {                                                                                                           \
+        ARG_UNUSED(dev);                                                                                        \
+        IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), linkedsemi_sdhci_isr, DEVICE_DT_INST_GET(n), 0); \
+        irq_enable(DT_INST_IRQN(n));                                                                            \
+    }                                                                                                           \
+    static void sdhci_##n##_irq_deconfig_func(const struct device *dev)                                         \
+    {                                                                                                           \
+        ARG_UNUSED(dev);                                                                                        \
+        irq_disable(DT_INST_IRQN(n));                                                                           \
+    }                                                                                                           \
+                                                                                                                \
+    static struct linkedsemi_sdhci_config sdhci_##n##_config = {                                                \
+        .max_bus_freq = DT_INST_PROP(n, max_bus_freq),                                                          \
+        .min_bus_freq = DT_INST_PROP(n, min_bus_freq),                                                          \
+        .irq_config_func = sdhci_##n##_irq_config_func,                                                         \
+        .irq_deconfig_func = sdhci_##n##_irq_deconfig_func,                                                     \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n), ))                               \
+        IF_ENABLED(DT_HAS_CLOCKS(n), (.ccfg = LS_DT_CLK_CFG_ITEM(n), ))                                         \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(n, resets), (.reset = RESET_DT_SPEC_INST_GET(n), ))                    \
+    };                                                                                                          \
+                                                                                                                \
+    static struct linkedsemi_sdhci_data sdhci_##n##_data = {                                                    \
+        .host = {                                                                                               \
+            .mapbase = DT_INST_REG_ADDR(n),                                                                     \
+            .max_clk = DT_INST_PROP(n, clock_frequency),                                                        \
+        },                                                                                                      \
+        .clock_frequency = DT_INST_PROP(n, clock_frequency),                                                    \
+    };                                                                                                          \
+                                                                                                                \
+    DEVICE_DT_INST_DEFINE(n,                                                                                    \
+                          &linkedsemi_sdhci_init,                                                               \
+                          NULL,                                                                                 \
+                          &sdhci_##n##_data,                                                                    \
+                          &sdhci_##n##_config,                                                                  \
+                          POST_KERNEL,                                                                          \
+                          CONFIG_SDHC_INIT_PRIORITY,                                                            \
                           &linkedsemi_sdhci_api);
 
 DT_INST_FOREACH_STATUS_OKAY(LINKEDSEMI_SDHCI_INIT)
