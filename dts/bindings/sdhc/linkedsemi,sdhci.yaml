@@ -5,4 +5,11 @@ description: LIKEDSEMI SDHC
 
 compatible: "linkedsemi,sdhci"
 
-include: [sdhc.yaml, pinctrl-device.yaml]
+include: [sdhc.yaml, pinctrl-device.yaml, reset-device.yaml]
+
+properties:
+  clock-frequency:
+    type: int
+    default: 50000000
+    description: |
+      peripheral clock
