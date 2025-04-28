@@ -48,7 +48,7 @@ void k_sys_fatal_error_handler(unsigned int reason,
     ARG_UNUSED(esf);
 
     LOG_PANIC();
-    LOG_ERR("Halting thread");
+    LOG_ERROR("Halting thread");
     if (IS_ENABLED(CONFIG_MULTITHREADING)) {
         k_thread_abort(_current);
     } else {

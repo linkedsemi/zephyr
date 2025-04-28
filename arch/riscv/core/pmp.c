@@ -603,7 +603,7 @@ static void resync_pmp_domain(struct k_thread *thread,
 
 		if (part->size < 4) {
 			/* * 4 bytes is the minimum we can map */
-			LOG_ERR("non-empty partition too small");
+			LOG_ERROR("non-empty partition too small");
 			__ASSERT(false, "");
 			continue;
 		}

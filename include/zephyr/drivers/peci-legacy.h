@@ -146,9 +146,9 @@ struct peci_device_id {
 //  * init/exit. This eliminates a lot of boilerplate. Each module may only
 //  * use this macro once, and calling it replaces module_init() and module_exit()
 //  */
-// #define module_peci_driver(__peci_driver) \
-// 	module_driver(__peci_driver, peci_add_driver, peci_del_driver)
-
+/* #define module_peci_driver(__peci_driver) \
+ 	module_driver(__peci_driver, peci_add_driver, peci_del_driver)
+*/
 // /* use a define to avoid include chaining to get THIS_MODULE */
 // #define peci_add_driver(driver) peci_register_driver(THIS_MODULE, driver)
 

@@ -69,7 +69,7 @@ static int smbus_linkedsemi_init(const struct device *dev)
     data->dev = dev;
 
     if (!device_is_ready(config->i2c_dev)) {
-        LOG_ERR("%s: I2C device is not ready", dev->name);
+        LOG_ERROR("%s: I2C device is not ready", dev->name);
         return -ENODEV;
     }
 
@@ -88,12 +88,12 @@ static int smbus_linkedsemi_configure(const struct device *dev, uint32_t config_
     struct smbus_linkedsemi_data *data = dev->data;
 
     if (config_value & SMBUS_MODE_PEC) {
-        LOG_ERR("%s: not implemented", dev->name);
+        LOG_ERROR("%s: not implemented", dev->name);
         return -EINVAL;
     }
 
     if (config_value & SMBUS_MODE_HOST_NOTIFY) {
-        LOG_ERR("%s: not available", dev->name);
+        LOG_ERROR("%s: not available", dev->name);
         return -EINVAL;
     }
 
@@ -135,7 +135,7 @@ static int smbus_linkedsemi_quick(const struct device *dev, uint16_t periph_addr
     case SMBUS_MSG_READ:
         return i2c_read(config->i2c_dev, NULL, 0, periph_addr);
     default:
-        LOG_ERR("%s: invalid smbus direction %i", dev->name, rw);
+        LOG_ERROR("%s: invalid smbus direction %i", dev->name, rw);
         return -EINVAL;
     }
 }

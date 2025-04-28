@@ -2669,7 +2669,7 @@ int peci_add_adapter(struct peci_adapter *adapter)
 
 int peci_core_init(void)
 {
-	int ret, i, j;
+	int i, j;
 
 	total_retry_timeout_us = k_ticks_to_us_ceil32(PECI_DEV_RETRY_TIMEOUT);
 

@@ -88,7 +88,7 @@ static inline bool is_i2c_bus_idle(const struct device *dev)
         pin_val[0] = io_get_input_val(data->pin[0]);
         pin_val[1] = io_get_input_val(data->pin[1]);
         if (1 != (pin_val[0] & pin_val[1])) {
-            LOG_ERR("bus busy. pin[%#x]: %d.  pin:[%#x]: %d.\n",
+            LOG_ERROR("bus busy. pin[%#x]: %d.  pin:[%#x]: %d.\n",
                     data->pin[0], pin_val[0], data->pin[1], pin_val[1]);
             ret = false;
         }

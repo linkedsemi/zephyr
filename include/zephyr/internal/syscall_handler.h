@@ -375,7 +375,7 @@ int k_usermode_string_copy(char *dst, const char *src, size_t maxlen);
 		TOOLCHAIN_IGNORE_WSHADOW_BEGIN \
 		LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL); \
 		TOOLCHAIN_IGNORE_WSHADOW_END \
-		LOG_ERR("syscall %s failed check: " fmt, \
+		LOG_ERROR("syscall %s failed check: " fmt, \
 			__func__, ##__VA_ARGS__); \
 	} \
 	expr_copy; })
