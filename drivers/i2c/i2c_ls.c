@@ -1,9 +1,6 @@
 #include <soc.h>
 #include <errno.h>
 #include <zephyr/drivers/gpio.h>
-#if defined(CONFIG_PINCTRL)
-    #include <zephyr/drivers/pinctrl.h>
-#endif
 #include <zephyr/drivers/i2c.h>
 #include <string.h>
 #include <zephyr/kernel.h>
@@ -15,8 +12,16 @@ LOG_MODULE_REGISTER(i2c_ls);
 #include "field_manipulate.h"
 #include "reg_i2c_type.h"
 #include <ls_soc_gpio.h>
-#include <zephyr/drivers/clock_control.h>
-#include <soc_clock.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
@@ -26,11 +31,10 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct i2c_ls_config{
 	irq_cfg_func_t irq_config_func;
-    reg_i2c_t *reg;    
-#if defined(CONFIG_PINCTRL)
-    const struct pinctrl_dev_config *pcfg;
-#endif
-    struct ls_clk_cfg cctl_cfg;
+    reg_i2c_t *reg;
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct i2c_ls_data {
@@ -453,31 +457,61 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 
 static int i2c_ls_init(const struct device *dev)
 {
-	const struct i2c_ls_config *cfg = dev->config;
+	const struct i2c_ls_config *dev_config = dev->config;
 	struct i2c_ls_data *data = dev->data;
+    __maybe_unused int ret;
+
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->stop_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->bus_mutex, 1, 1);
-	cfg->irq_config_func(dev);
+	dev_config->irq_config_func(dev);
 
-	if (cfg->cctl_cfg.cctl_dev) {
-		const struct device *clk_dev = cfg->cctl_cfg.cctl_dev;
-		if (!device_is_ready(clk_dev)) {
-			LOG_DBG("%s device not ready", clk_dev->name);
-			return -ENODEV;
-		}
-		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
-	}
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
 
 #if defined(CONFIG_PINCTRL)
-	/* Configure dt provided device signals when available */
-	pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);   //pin
-	i2c_idle_check_prepare(dev, cfg->pcfg, PINCTRL_STATE_DEFAULT);
+    /* Configure dt provided device signals when available */
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
+    }
+    i2c_idle_check_prepare(dev, dev_config->pcfg, PINCTRL_STATE_DEFAULT);
 #endif
-	i2c_reenable(cfg,100000);
-	cfg->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
-	cfg->reg->ICR = 0xffff;
-	cfg->reg->IER = I2C_INT_STOP_MASK|I2C_INT_NACK_MASK|I2C_INT_BERR_MASK
+
+	i2c_reenable(dev_config,100000);
+	dev_config->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
+	dev_config->reg->ICR = 0xffff;
+	dev_config->reg->IER = I2C_INT_STOP_MASK|I2C_INT_NACK_MASK|I2C_INT_BERR_MASK
 		|I2C_INT_ARLO_MASK|I2C_INT_OVR_MASK|I2C_INT_PECE_MASK
 		|I2C_INT_TOUT_MASK|I2C_INT_ALERT_MASK;
 
@@ -545,8 +579,9 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 	static const struct i2c_ls_config i2c_ls_cfg_##index = {\
 		.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
 		.irq_config_func = i2c_ls_irq_config_func_##index,\
-    	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
-    	IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index),))	 \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), )) \
+        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), )) \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
 	};\
 	static struct i2c_ls_data i2c_ls_dev_data_##index;\
 	I2C_DEVICE_DT_INST_DEFINE(index, i2c_ls_init,\
