@@ -13,11 +13,18 @@
 #include <zephyr/irq.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/sys_io.h>
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
-#include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/i3c.h>
-#include <zephyr/drivers/pinctrl.h>
-#include <zephyr/drivers/reset.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
@@ -168,6 +175,9 @@ struct ls_i3c_config {
     /* Pointer to controller registers. */
 	I3C_TypeDef   *base;
     void (*irq_config_func)(const struct device *dev);
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct ls_i3c_data {
@@ -504,10 +514,10 @@ static void ls_i3c_dev_init(const struct device *dev)
  */
 static int ls_i3c_init(const struct device *dev)
 {
-	const struct ls_i3c_config *config = dev->config;
+	const struct ls_i3c_config *dev_config = dev->config;
 	struct ls_i3c_data *data = dev->data;
 	struct i3c_config_controller *ctrl_config = &data->common.ctrl_config;
-	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
+	I3C_TypeDef *base = (I3C_TypeDef *)dev_config->base;
     int ret = 0;
 
 	ret = i3c_addr_slots_init(dev);
@@ -515,7 +525,6 @@ static int ls_i3c_init(const struct device *dev)
 		return ret;
 	}
 
-	(void)config;
 	(void)ctrl_config;
 	/* Check clock device ready */
 	// if (!device_is_ready(clk_dev)) {
@@ -530,12 +539,45 @@ static int ls_i3c_init(const struct device *dev)
 	// 	return ret;
 	// }
 
-	/* Apply pin-muxing */
-	// ret = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
-	// if (ret != 0) {
-	// 	LOG_ERR("Apply pinctrl fail %d", ret);
-	// 	return ret;
-	// }
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_PINCTRL)
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
+    }
+#endif
 
 	data->state = LS_I3C_OP_STATE_IDLE;
 	data->fifo_info.ControllerTxFifoSize = 16;
@@ -560,7 +602,7 @@ static int ls_i3c_init(const struct device *dev)
 	base->IER = 0;
 #endif
 
-	config->irq_config_func(dev);
+	dev_config->irq_config_func(dev);
 
 	/* Initial I3C device as controller or target */
 	ls_i3c_dev_init(dev);
@@ -570,7 +612,7 @@ static int ls_i3c_init(const struct device *dev)
     k_mutex_init(&data->lock);
 
 	/* Perform bus initialization */
-	ret = i3c_bus_init(dev, &config->common.dev_list);
+	ret = i3c_bus_init(dev, &dev_config->common.dev_list);
 	return ret;
 }
 
@@ -2133,6 +2175,7 @@ static const struct i3c_driver_api ls_i3c_driver_api = {
 
 
 #define I3C_LS_DEVICE(id)                                                                        \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(id)));                                  \
 	static void ls_i3c_config_func_##id(const struct device *dev)                            \
 	{                                                                                          \
 		IRQ_CONNECT(DT_INST_IRQN(id), DT_INST_IRQ(id, priority), ls_i3c_isr,             \
@@ -2149,6 +2192,9 @@ static const struct i3c_driver_api ls_i3c_driver_api = {
 		.common.dev_list.num_i3c = ARRAY_SIZE(ls_i3c_device_array_##id),                 \
 		.common.dev_list.i2c = ls_i2c_device_array_##id,                             \
 		.common.dev_list.num_i2c = ARRAY_SIZE(ls_i2c_device_array_##id),             \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id), )) \
+        IF_ENABLED(DT_HAS_CLOCKS(id), (.ccfg = LS_DT_CLK_CFG_ITEM(id), )) \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(id, resets), (.reset = RESET_DT_SPEC_INST_GET(id), )) \
 	};                                                                                         \
 	static struct ls_i3c_data ls_i3c_data_##id = {                                            \
 		.common.ctrl_config.scl.i3c = DT_INST_PROP_OR(id, i3c_scl_hz, 0),                   \
