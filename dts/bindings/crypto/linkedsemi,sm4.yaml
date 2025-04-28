@@ -2,6 +2,6 @@ description: LINKEDSEMI SM4
 
 compatible: "linkedsemi,sm4"
 
-include: [base.yaml]
+include: [base.yaml, reset-device.yaml]
 
 
