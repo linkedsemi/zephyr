@@ -602,27 +602,53 @@ static void espi_reg_init(const struct device *dev)
 
 static int espi_ls_init(const struct device *dev)
 {
-	const struct espi_lpc_ls_config *const cfg = dev->config;
+	const struct espi_lpc_ls_config *const dev_config = dev->config;
 	struct espi_lpc_ls_data *const data = dev->data;
-    int ret;
+    __maybe_unused int ret;
 	sys_slist_init(&data->peri_io);
 	sys_slist_init(&data->peri_mem);
 	sys_slist_init(&data->callbacks);
-    cfg->irq_config_func(dev);
-    if(cfg->cctl_cfg.cctl_dev)
-    {
-		const struct device *clk_dev = cfg->cctl_cfg.cctl_dev;
-		if (!device_is_ready(clk_dev)) {
-			LOG_DBG("%s device not ready", clk_dev->name);
-			return -ENODEV;
-		}
-		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->cctl_cfg);
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
     }
-    ret = pinctrl_apply_state(cfg->pcfg,PINCTRL_STATE_DEFAULT);
-    if(ret)
-    {
-        return ret;
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
     }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_PINCTRL)
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    if (ret < 0) {
+        LOG_ERR("Could not configure pins");
+    }
+#endif
+
     espi_reg_init(dev);
     espi_send_boot_done(dev);
     return 0;
@@ -641,8 +667,9 @@ static int espi_ls_init(const struct device *dev)
         .irq_config_func = espi_ls_irq_config_func_##idx,\
         .raise_edge_irq = espi_send_edge_irq,\
         .set_level_irq = espi_send_level_irq,\
-    	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx),)) \
-    	IF_ENABLED(DT_HAS_CLOCKS(idx), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(idx),))	 \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), )) \
+        IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), )) \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), )) \
     };\
     static struct espi_lpc_ls_data espi_ls_data_##idx;\
     DEVICE_DT_INST_DEFINE(idx,espi_ls_init,NULL,&espi_ls_data_##idx,\
