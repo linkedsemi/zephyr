@@ -2,4 +2,4 @@ description: LINKEDSEMI LS JTAG
 
 compatible: "linkedsemi,ls-jtag"
 
-include: [base.yaml,pinctrl-device.yaml]
+include: [base.yaml,pinctrl-device.yaml, reset-device.yaml]
