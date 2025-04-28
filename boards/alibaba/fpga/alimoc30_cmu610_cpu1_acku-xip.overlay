@@ -264,7 +264,7 @@
 // };
 
 &qspi1 {
-    compatible = "linkedsemi,mbox-cpu0-flash-controller";
+    compatible = "linkedsemi,mbox-cpu1-flash-controller";
     mbox = <&mbox_consumer2>;
     pinctrl-0 = <&qspi1_sck_pa00
                  &qspi1_csn_pa01

@@ -59,7 +59,7 @@
 };
 
 &qspi1 {
-    compatible = "linkedsemi,mbox-cpu1-flash-controller";
+    compatible = "linkedsemi,mbox-cpu2-flash-controller";
     mbox = <&mbox_consumer2>;
     status = "okay";
 

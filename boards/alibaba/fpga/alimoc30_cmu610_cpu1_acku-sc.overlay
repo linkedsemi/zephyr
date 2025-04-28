@@ -48,7 +48,7 @@
      };
  };
  
- &cpu1 {
+ &cpu2 {
      status = "disabled";
  };
  

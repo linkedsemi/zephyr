@@ -1,7 +1,7 @@
 # Copyright (c) 2024, Alibaba
 # SPDX-License-Identifier: Apache-2.0
 
-identifier: alimoc30@acku-xip/cmu610/cpu1
+identifier: alimoc30@acku-xip/cmu610/cpu2
 name: cmu610
 type: mcu
 arch: riscv32
