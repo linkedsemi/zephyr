@@ -15,7 +15,17 @@
 #include <zephyr/drivers/spi.h>
 
 #include "spi_context.h"
-#include <soc_clock.h>
+
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -36,15 +46,14 @@ struct spi_dw_config {
 	bool serial_target;
 	uint8_t fifo_depth;
 	uint8_t max_xfer_size;
-#ifdef CONFIG_PINCTRL
-	const struct pinctrl_dev_config *pcfg;
-#endif
 	spi_dw_read_t read_func;
 	spi_dw_write_t write_func;
 	spi_dw_set_bit_t set_bit_func;
 	spi_dw_clear_bit_t clear_bit_func;
 	spi_dw_test_bit_t test_bit_func;
-    struct ls_clk_cfg cctl_cfg;
+	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct spi_dw_data {
