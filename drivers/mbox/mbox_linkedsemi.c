@@ -118,8 +118,8 @@ static int mbox_linkedsemi_register_callback(const struct device *dev, uint32_t 
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
 
-    dev_data->cb[channel] = cb;
-    dev_data->user_data[channel] = user_data;
+    dev_data->cb[channel / 2] = cb;
+    dev_data->user_data[channel / 2] = user_data;
 
     return 0;
 }
