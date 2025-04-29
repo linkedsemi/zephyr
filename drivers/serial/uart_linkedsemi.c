@@ -27,7 +27,6 @@
 #include <ls_soc_gpio.h>
 
 #include <field_manipulate.h>
-// #include <log.h>
 #include <zephyr/irq.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/logging/log.h>
@@ -40,6 +39,9 @@
 #include "ls_soc_gpio.h"
 #endif
 
+#ifdef CONFIG_RISCV_HAS_CLIC
+void riscv_clic_irq_disable_trigger_mode(uint32_t irq);
+#endif
 
 #define DT_DRV_COMPAT linkedsemi_ls_uart
 LOG_MODULE_REGISTER(uart_linkedsemi, LOG_LEVEL_DBG);
@@ -66,7 +68,6 @@ struct uart_ls_data_t
 
 static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
 {
-	// LOG_I("uart_ls_poll_in");
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_OE)) {
@@ -166,7 +167,6 @@ static int uart_ls_init(const struct device *dev)
     }
 #endif
 
-	// pinmux_uart1_init(PC14,PC12);
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,1);
     uart_handle->UARTX->BRR  =  uart_handle->Init.BaudRate;
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,0);
@@ -175,7 +175,6 @@ static int uart_ls_init(const struct device *dev)
                                   |FIELD_BUILD(UART_LCR_PARITY,uart_handle->Init.Parity)|FIELD_BUILD(UART_LCR_MSB,uart_handle->Init.MSBEN)
                                   |FIELD_BUILD(UART_LCR_RXEN,1)|FIELD_BUILD(UART_LCR_BRWEN,0);
 
-	// LOG_I("uart addr : %x",(uint32_t)uart_handle->UARTX);
 	/* Configure dt provided device signals when available */
 
 #ifdef CONFIG_SOC_LE5010
@@ -207,7 +206,7 @@ void uart_ls_irq_tx_disable(const struct device *dev)
 {
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
-	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC);
+	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS);
 }
 
 int uart_ls_irq_tx_ready(const struct device *dev)
@@ -263,15 +262,7 @@ void uart_ls_irq_err_disable(const struct device *dev)
 
 int uart_ls_irq_is_pending(const struct device *dev)
 {
-	const struct uart_ls_config_t *dev_config = dev->config;
-	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
-
-	return LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX,UART_IT_RXRD)|| LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC);
-
-	// return ((LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE)	&&
-	// 	LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_RXRD))||
-	// 	(LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) &&
-	// 	LL_UART_IsMaskIT((reg_uart_t *)uart_handle->UARTX,UART_IT_TC)));
+	return uart_ls_irq_rx_ready(dev) || uart_ls_irq_rx_ready(dev);
 }
 
 int uart_ls_irq_update(const struct device *dev)
@@ -285,12 +276,17 @@ void uart_ls_irq_callback_set(const struct device *dev,uart_irq_callback_user_da
 	data->user_cb = cb;
 	data->user_parm = user_data;
 }
-#include "ls_soc_gpio.h"
+
 void uart_ls_isr(const struct device *dev)
 {
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
+
+#ifdef CONFIG_RISCV_HAS_CLIC
+	riscv_clic_irq_disable_trigger_mode(data->irq);
+#endif
+
 	if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD))
     {
         LL_UART_ClearFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD);
@@ -298,10 +294,6 @@ void uart_ls_isr(const struct device *dev)
     if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS))
     {
         LL_UART_ClearFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS);
-    }
-    if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC))
-    {
-        LL_UART_ClearFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TC);
     }
 	
 	if(data->user_cb !=NULL)
@@ -315,14 +307,6 @@ int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int num_tx = 0U;
-	// unsigned int key;
-
-	// if (!(LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF) == UART_SR_TFNF)) {
-	// 	return num_tx;
-	// }
-
-	/* Lock interrupts to prevent nested interrupts or thread switch */
-	// key = irq_lock();
 
 	while ((len-num_tx)>0 &&
 	       (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF) == UART_SR_TFNF)) {
@@ -332,7 +316,6 @@ int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 		LL_UART_TransmitData((reg_uart_t *)uart_handle->UARTX,tx_data[num_tx++]);
 	}
 
-	// irq_unlock(key);
 
 	return num_tx;
 }
@@ -349,11 +332,6 @@ int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 
 		/* Receive a character (8bit , parity none) */
 		rx_data[num_rx++] = LL_UART_ReceiveData((reg_uart_t *)uart_handle->UARTX);
-
-		/* Clear overrun error flag */
-		// if (LL_USART_IsActiveFlag_ORE(config->usart)) {
-		// 	LL_USART_ClearFlag_ORE(config->usart);
-		// }
 	}
 
 	return num_rx;
