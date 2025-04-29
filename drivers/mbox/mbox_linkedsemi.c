@@ -91,7 +91,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
     if (msg) {
         ret = general_fifo_put(dev_data->fifo[channel], (void *)msg->data);
         if (ret == false) {
-            LOG_ERR("ENOSPC\n");
+            LOG_ERROR("ENOSPC\n");
             return -ENOSPC;
         }
     }
@@ -118,8 +118,8 @@ static int mbox_linkedsemi_register_callback(const struct device *dev, uint32_t 
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
 
-    dev_data->cb[channel] = cb;
-    dev_data->user_data[channel] = user_data;
+    dev_data->cb[channel / 2] = cb;
+    dev_data->user_data[channel / 2] = user_data;
 
     return 0;
 }

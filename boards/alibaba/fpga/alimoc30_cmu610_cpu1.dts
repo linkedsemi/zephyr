@@ -5,15 +5,6 @@
 
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
-#include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
-#include "../alicmu_pinctrl_common.dtsi"
-
-// Secure SRAM Layout
-// 0x10000000 - 0x1007f000 size:508K sram0
-// 0x1007f000 - 0x10080000 size:4K   mmio-sram
-
-// Shared SRAM
-// 0x1013f000 - 0x10140000 size:4K   mailbox
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -22,13 +13,13 @@
     compatible = "linkedsemi,lsqsh_evb";
 
     chosen {
-        zephyr,flash = &flash0;
+        zephyr,flash = &flash1;
         zephyr,flash-controller = &qspi1;
-        zephyr,sram = &sram0;
+        zephyr,sram = &sram1;
     };
 
     aliases {
-        peci-0 = &peci0;
+        peci-0 = &peci1;
         sdhc0 = &sdhci1;
     };
 
@@ -49,20 +40,20 @@
         };
     };
 
-    mbox_consumer0: mbox-consumer0 {
+    mbox_consumer1: mbox-consumer1 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 1>, <&mbox 0>;
         mbox-names = "tx", "rx";
     };
 
-    mbox_consumer1: mbox-consumer1 {
+    mbox_consumer2: mbox-consumer2 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 3>, <&mbox 2>;
         mbox-names = "tx", "rx";
     };
 
-    /* flash driver agent call */
-    mbox_consumer2: mbox-consumer2 {
+    /* func call */
+    mbox_consumer3: mbox-consumer3 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 5>, <&mbox 4>;
         mbox-names = "tx", "rx";
@@ -70,8 +61,6 @@
 };
 
 &cpu1 {
-    clock-frequency = <50000000>;
-    cpu-power-states = <&idle &lp0>;
     status = "okay";
 };
 
@@ -139,82 +128,64 @@
     status = "okay";
 };
 
-&sgpiom {
+// &sgpiom {
+//     ngpios = <128>;
+//     status = "okay";
+// };
+
+// &sgpiom_a_d {
+//     status = "okay";
+// };
+
+// &sgpiom_e_h {
+//     status = "okay";
+// };
+
+// &sgpiom_i_l {
+//     status = "okay";
+// };
+
+// &sgpiom_m_p {
+//     status = "okay";
+// };
+
+&sgpiom2 {
     ngpios = <128>;
-    // pinctrl-0 = <&sgpiom_clk_pe06
-    //             &sgpiom_di_pe07
-    //             &sgpiom_do_pe08
-    //             &sgpiom_ld_pe09>;
-    // pinctrl-names = "default";
     status = "okay";
 };
 
-&sgpiom_a_d {
+&sgpiom2_a_d {
     status = "okay";
 };
 
-&sgpiom_e_h {
+&sgpiom2_e_h {
     status = "okay";
 };
 
-&sgpiom_i_l {
+&sgpiom2_i_l {
     status = "okay";
 };
 
-&sgpiom_m_p {
+&sgpiom2_m_p {
     status = "okay";
 };
 
-&mac0 {
-    // pinctrl-0 = <&rmii_txen_pt04
-    //             &rmii_txd0_pt05
-    //             &rmii_txd1_pt06
-    //             &rmii_rxc_pt10
-    //             &rmii_crsdv_pt11
-    //             &rmii_rxd0_pt12
-    //             &rmii_rxd1_pt13>;
-    pinctrl-0 = <&rmii_txen_pt04
-                &rmii_txd0_pt05
-                &rmii_txd1_pt06
-                &rmii_rxc_pt10
-                &rmii_crsdv_pt11
-                &rmii_rxd0_pt12
-                &rmii_rxd1_pt13
-                &rgmii_rxd2_pt14
-                &rgmii_rxd3_pt15
-                &rgmii_txd2_pt07
-                &rgmii_txd3_pt08
-                &rgmii_txck_pt03>;
-    pinctrl-names = "default";
+&eth1 {
     status = "okay";
 };
 
-&mdio0 {
-    pinctrl-0 = <&rmii_mdc_pa14
-                &rmii_mdio_pa15>;
-    pinctrl-names = "default";
+&mdio1 {
     status = "okay";
 };
 
-&peci0 {
+&peci1 {
     status = "okay";
 };
 
 &sdhci1 {
-    pinctrl-0 = <&sdhc_d0_pm04
-                &sdhc_d1_pm05
-                &sdhc_d2_pm06
-                &sdhc_d3_pm07
-                &sdhc_d4_pm08
-                &sdhc_d5_pm09
-                &sdhc_d6_pm10
-                &sdhc_d7_pm11
-                &sdhc_clk_pm12
-                &sdhc_cmd_pm13>;
-    pinctrl-names = "default";
     status = "okay";
 
-    mmc_disk0: disk {
+    mmc_disk1: disk {
         compatible = "zephyr,mmc-disk";
         disk-name = "SD";
         bus-width = <1>;
@@ -226,15 +197,23 @@
     status = "okay";
 };
 
+&sha256 {
+    status = "okay";
+};
+
+&sha512 {
+    status = "okay";
+};
+
+&sm4 {
+    status = "okay";
+};
+
+// tst_dma0: &dma0 {
+//     status = "okay";
+// };
+
 &lpc1 {
-    // pinctrl-0 = <&lpc_serirq_pi09
-    //             &lpc_frm_pi10
-    //             &lpc_clk_pi11
-    //             &lpc_dat3_pi12
-    //             &lpc_dat2_pi13
-    //             &lpc_dat1_pi14
-    //             &lpc_dat0_pi15>;
-    // pinctrl-names = "default";
     status = "disabled";
 
     lpc_kcs_ca2: lpc_kcs_ca2 {
@@ -244,18 +223,8 @@
     };
 };
 
-&espi0 {
-    // pinctrl-0 = <&espi1_alertn_pi09
-    //             &espi1_csn_pi10
-    //             &espi1_sck_pi11
-    //             &espi1_dat3_pi12
-    //             &espi1_dat2_pi13
-    //             &espi1_dat1_pi14
-    //             &espi1_dat0_pi15>;
-    // pinctrl-names = "default";
-    status = "okay";
-
-    espi0_kcs_ca2: espi0_kcs_ca2 {
+&espi1 {
+    espi1_kcs_ca2: espi1_kcs_ca2 {
         compatible = "linkedsemi,ls-kcs";
         port = <0xca2 0xca3>;
         status = "okay";
@@ -263,46 +232,6 @@
 };
 
 &ipmi_kcs {
-    kcs_chan = <&espi0_kcs_ca2>;
-    status = "okay";
-};
-
-&qspi1 {
-    pinctrl-0 = <&qspi1_sck_pa00
-                 &qspi1_csn_pa01
-                 &qspi1_dq0_pa02
-                 &qspi1_dq1_pa03
-                 &qspi1_dq2_pa04
-                 &qspi1_dq3_pa05>;
-    pinctrl-names = "default";
-    status = "okay";
-};
-
-&flash0 {
-    reg = <0x8000000 0x400000>;
-    /*
-    * Flash base address is 0x8000000,
-    * the following parts are all offset addresses.
-    */
-    partitions {
-        compatible = "fixed-partitions";
-        #address-cells = <1>;
-        #size-cells = <1>;
-
-        boot_partition: partition@0 {
-            label = "info-sbl";
-            reg = <0x00000000 0x00000800>;
-        };
-
-        app_partition: partition@800 {
-            label = "app";
-            reg = <0x00000800 0x0007c800>;
-        };
-
-        storage_partition: partition@7d000 {
-            label = "storage";
-            reg = <0x0007d000 0x00003000>;
-        };
-    };
+    kcs_chan = <&espi1_kcs_ca2>;
     status = "okay";
 };

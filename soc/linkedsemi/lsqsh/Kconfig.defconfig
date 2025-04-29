@@ -65,10 +65,15 @@ config NUM_OS
 	range 1 2
 	default 2
 
-if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@1))
+if ((NUM_USE_CPU=2))
+if ($(dt_path_enabled,/cpus/cpu@1))
 	config BOOT_CPU2
 		bool "BOOT_CPU2"
 		default n
+endif
+	config CPU2_XIP_BACKUP_OFFSET
+		hex "cpu1 xip backup offset"
+		default 0x100000
 endif
 
 config CPU2_BOOT_ADDR

@@ -5,13 +5,6 @@
 
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
-#include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
-#include "../alicmu_pinctrl_common.dtsi"
-
-// Non-secure SRAM Layout
-// 0x10080000 - 0x1013e000 size:760K sram1
-// 0x1013e000 - 0x1013f000 size:4K   mmio-sram
-// 0x1013f000 - 0x10140000 size:4K   mailbox
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -20,7 +13,7 @@
     compatible = "linkedsemi,lsqsh_app_evb";
 
     chosen {
-        zephyr,sram = &sram1;
+        zephyr,sram = &sram2;
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
     };
@@ -46,20 +39,20 @@
         };
     };
 
-    mbox_consumer0: mbox-consumer0 {
+    mbox_consumer1: mbox-consumer1 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 0>, <&mbox 1>;
         mbox-names = "tx", "rx";
     };
 
-    mbox_consumer1: mbox-consumer1 {
+    mbox_consumer2: mbox-consumer2 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 2>, <&mbox 3>;
         mbox-names = "tx", "rx";
     };
 
-    /* flash driver agent call */
-    mbox_consumer2: mbox-consumer2 {
+    /* func call */
+    mbox_consumer3: mbox-consumer3 {
         compatible = "vnd,mbox-consumer";
         mboxes = <&mbox 4>, <&mbox 5>;
         mbox-names = "tx", "rx";
@@ -71,53 +64,89 @@
 };
 
 &cpu2 {
-    clock-frequency = <50000000>;
-    cpu-power-states = <&idle &lp0>;
     status = "okay";
-};
-
-&sram0 {
-    status = "disabled";
 };
 
 &sram1 {
+    status = "disabled";
+};
+
+&sram2 {
     reg = <0x10080000 DT_SIZE_K(764)>;
 };
 
-&mac0 {
-    pinctrl-0 = <&rmii_txen_pt04
-                &rmii_txd0_pt05
-                &rmii_txd1_pt06
-                &rmii_rxc_pt10
-                &rmii_crsdv_pt11
-                &rmii_rxd0_pt12
-                &rmii_rxd1_pt13>;
-    pinctrl-names = "default";
+&gpioa {
     status = "okay";
 };
 
-&mdio0 {
-    pinctrl-0 = <&rmii_mdc_pa14
-                &rmii_mdio_pa15>;
-    pinctrl-names = "default";
+&gpiob {
+    status = "okay";
+};
+
+&gpioc {
+    status = "okay";
+};
+
+&gpiod {
+    status = "okay";
+};
+
+&gpioe {
+    status = "okay";
+};
+
+&gpiof {
+    status = "okay";
+};
+
+&gpiog {
+    status = "okay";
+};
+
+&gpioh {
+    status = "okay";
+};
+
+&gpioi {
+    status = "okay";
+};
+
+&gpioj {
+    status = "okay";
+};
+
+&gpiok {
+    status = "okay";
+};
+
+&gpiom {
+    status = "okay";
+};
+
+&gpion {
+    status = "okay";
+};
+
+&gpioq {
+    status = "okay";
+};
+
+&gpiot {
+    status = "okay";
+};
+
+&eth1 {
+    status = "okay";
+};
+
+&mdio1 {
     status = "okay";
 };
 
 &sdhci1 {
-    pinctrl-0 = <&sdhc_d0_pm04
-                &sdhc_d1_pm05
-                &sdhc_d2_pm06
-                &sdhc_d3_pm07
-                &sdhc_d4_pm08
-                &sdhc_d5_pm09
-                &sdhc_d6_pm10
-                &sdhc_d7_pm11
-                &sdhc_clk_pm12
-                &sdhc_cmd_pm13>;
-    pinctrl-names = "default";
     status = "okay";
 
-    mmc_disk0: disk {
+    mmc_disk1: disk {
         compatible = "zephyr,mmc-disk";
         disk-name = "SD";
         bus-width = <1>;
