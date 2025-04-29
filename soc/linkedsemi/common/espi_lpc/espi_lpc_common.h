@@ -2,10 +2,17 @@
 #define ESPI_LPC_COMMON_H_
 #include <zephyr/sys/slist.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/clock_control.h>
-#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/spinlock.h>
-#include "soc_clock.h"
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
 struct peri_ioport_content {
     void (*io_read)(const struct peri_ioport_content *ioport,uint8_t size,void *res);
@@ -57,8 +64,9 @@ struct espi_lpc_ls_config {
     void *reg;
     void (*raise_edge_irq)(const struct device *,uint8_t);
     void (*set_level_irq)(const struct device *,uint8_t,uint8_t);
-    const struct pinctrl_dev_config *pcfg;
-    struct ls_clk_cfg cctl_cfg;
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct espi_lpc_ls_data {
