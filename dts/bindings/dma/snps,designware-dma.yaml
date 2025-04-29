@@ -5,7 +5,7 @@ description: Synopsys Designware DMA Controller node
 
 compatible: "snps,designware-dma"
 
-include: dma-controller.yaml
+include: [dma-controller.yaml, reset-device.yaml]
 
 properties:
   reg:
