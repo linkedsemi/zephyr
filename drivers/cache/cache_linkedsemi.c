@@ -7,6 +7,9 @@
 #include <zephyr/kernel.h>
 #include <core_rv32.h>
 
+BUILD_ASSERT(CONFIG_ICACHE_LINE_SIZE > 0);
+BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0);
+
 void cache_data_enable(void)
 {
     csi_dcache_enable();
@@ -36,6 +39,10 @@ int cache_data_invd_all(void)
 
 int cache_data_invd_range(void *addr, size_t size)
 {
+    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE)
+                        && IS_ALIGNED(size, CONFIG_DCACHE_LINE_SIZE),
+                        "buffer[%p] should be aligned to cache line[%d bytes]",
+                        addr, CONFIG_DCACHE_LINE_SIZE);
     csi_dcache_invalid_range(addr, size);
 
     return 0;
@@ -69,6 +76,10 @@ int cache_data_flush_and_invd_all(void)
 
 int cache_data_flush_range(void *addr, size_t size)
 {
+    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE)
+            && IS_ALIGNED(size, CONFIG_DCACHE_LINE_SIZE),
+                        "buffer[%p] should be aligned to cache line[%d bytes]",
+                        addr, CONFIG_DCACHE_LINE_SIZE);
     csi_dcache_clean_range(addr, size);
 
     return 0;
@@ -76,6 +87,10 @@ int cache_data_flush_range(void *addr, size_t size)
 
 int cache_data_flush_and_invd_range(void *addr, size_t size)
 {
+    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE)
+            && IS_ALIGNED(size, CONFIG_DCACHE_LINE_SIZE),
+                        "buffer[%p] should be aligned to cache line[%d bytes]",
+                        addr, CONFIG_DCACHE_LINE_SIZE);
     csi_dcache_clean_invalid_range(addr, size);
 
     return 0;
@@ -104,13 +119,13 @@ int cache_instr_flush_and_invd_range(void *addr, size_t size)
 #ifdef CONFIG_DCACHE_LINE_SIZE_DETECT
 size_t cache_data_line_size_get(void)
 {
-    return 32;
+    return CONFIG_DCACHE_LINE_SIZE;
 }
 #endif /* CONFIG_DCACHE_LINE_SIZE_DETECT */
 
 #ifdef CONFIG_ICACHE_LINE_SIZE_DETECT
 size_t cache_instr_line_size_get(void)
 {
-    return 32;
+    return CONFIG_ICACHE_LINE_SIZE;
 }
 #endif /* CONFIG_ICACHE_LINE_SIZE_DETECT */
