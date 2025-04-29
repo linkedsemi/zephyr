@@ -186,7 +186,7 @@
 
         pinctrl: pin-controller@4002f080 {
             compatible = "linkedsemi,lsqsh-pinctrl";
-            reg = <0x4002f080 0x200>;
+            reg = <0x4006f080 0x200>;
             interrupts = <PMU_EXT_SEC_IRQN 3>, <PMU_EXT_APP_IRQN 3>;
             interrupt-names = "cpu1", "cpu2";
             #address-cells = <1>;
@@ -196,7 +196,7 @@
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4002f180 0x20>, <0x4002f360 0x8>;
+                reg = <0x4006f180 0x20>, <0x4006f360 0x8>;
                 reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
@@ -214,7 +214,7 @@
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4002f1c0 0x20>, <0x4002f370 0x8>;
+                reg = <0x4006f1c0 0x20>, <0x4006f370 0x8>;
                 reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
@@ -232,7 +232,7 @@
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4002f200 0x20>, <0x4002f380 0x8>;
+                reg = <0x4006f200 0x20>, <0x4006f380 0x8>;
                 reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
@@ -268,7 +268,7 @@
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4002f280 0x20>, <0x4002f3a0 0x8>;
+                reg = <0x4006f280 0x20>, <0x4006f3a0 0x8>;
                 reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
@@ -286,7 +286,7 @@
                 compatible = "linkedsemi,lsqsh-gpio";
                 gpio-controller;
                 #gpio-cells = <2>;
-                reg = <0x4002f2c0 0x20>, <0x4002f3b0 0x8>;
+                reg = <0x4006f2c0 0x20>, <0x4006f3b0 0x8>;
                 reg-names = "io_cfg", "io_val";
                 status = "disabled";
             };
