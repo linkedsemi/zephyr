@@ -45,5 +45,7 @@ void riscv_clic_irq_set_pending(uint32_t irq)
 	csi_vic_set_pending_irq(irq);
 }
 
-
-
+void riscv_clic_irq_disable_trigger_mode(uint32_t irq)
+{
+    MODIFY_REG(CLIC->CLICINT[irq].ATTR,CLIC_INTATTR_TRIG_Msk,0<<CLIC_INTATTR_TRIG_Pos);
+}
