@@ -28,8 +28,14 @@ config SDHCI_SDMA_ENABLE
 if SDHCI_LINKEDSEMI_DMA_SUPPORT
 
 # SDHCI DMA needs 32 bit aligned buffers
+if CACHE
+if DCACHE
+
 config SDHC_BUFFER_ALIGNMENT
-    default 32
+	default DCACHE_LINE_SIZE
+
+endif # DCACHE
+endif # CACHE
 
 config SDHCI_LINKEDSEMI_DMA_BUFFER_SIZE
     int "Size of DMA descriptor buffer in bytes"
