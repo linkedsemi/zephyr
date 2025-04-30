@@ -53,6 +53,15 @@ config NET_L2_ETHERNET
 config NET_DRIVERS
 	default y
 
+if CACHE
+if DCACHE
+
+config NET_BUF_ALIGNMENT
+	default DCACHE_LINE_SIZE
+
+endif # DCACHE
+endif # CACHE
+
 endif # NETWORKING
 
 config NUM_USE_CPU
