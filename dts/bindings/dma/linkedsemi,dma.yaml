@@ -1,0 +1,22 @@
+# Copyright (c) 2025 linkedsemi. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+description: DMA Controller node
+
+compatible: "linkedsemi,dma"
+
+include: [dma-controller.yaml, reset-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  "#dma-cells":
+    const: 2
+
+dma-cells:
+  - channel
+  - handshake
