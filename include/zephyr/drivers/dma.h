@@ -168,6 +168,7 @@ struct dma_block_config {
 #define DMA_STATUS_COMPLETE	0
 /** The DMA callback has occurred at the completion of a single transfer block in a transfer list */
 #define DMA_STATUS_BLOCK	1
+#define DMA_STATUS_TRIGGER	2
 
 /**
  * @typedef dma_callback_t
@@ -261,6 +262,12 @@ struct dma_config {
 	uint32_t  dest_burst_length :   16;
 	/** Number of blocks in transfer list */
 	uint32_t block_count;
+	/** HW handshake, HW specific */
+	uint16_t handshake;
+	/** Automatic Source Reload */
+	bool reload_source;
+	/** Automatic Destination Reload */
+	bool reload_dest;
 	/** Pointer to the first block in the transfer list */
 	struct dma_block_config *head_block;
 	/** Optional attached user data for callbacks */
