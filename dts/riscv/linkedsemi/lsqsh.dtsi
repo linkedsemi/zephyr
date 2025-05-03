@@ -143,9 +143,9 @@
         };
 
         dmac1: dmac@40041000 {
-            compatible = "snps,designware-dma";
+            compatible = "linkedsemi,dma", "snps,designware-dma-2.20a";
             reg = <0x40041000 0x1000>;
-            #dma-cells = <1>;
+            #dma-cells = <2>;
             interrupts = <DMAC1_IRQN 3>;
             clocks = <DMAC1_CLOCK>;
             resets = <DMAC1_RESET>;
@@ -156,9 +156,9 @@
         };
 
         dmac2: dmac@40042000 {
-            compatible = "snps,designware-dma";
+            compatible = "linkedsemi,dma", "snps,designware-dma-2.20a";
             reg = <0x40042000 0x1000>;
-            #dma-cells = <1>;
+            #dma-cells = <2>;
             interrupts = <DMAC2_IRQN 3>;
             clocks = <DMAC2_CLOCK>;
             resets = <DMAC2_RESET>;
