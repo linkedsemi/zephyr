@@ -6,12 +6,26 @@
 config DMA_DW
 	bool "DesignWare DMA driver"
 	default y
-	depends on DT_HAS_SNPS_DESIGNWARE_DMA_ENABLED
+	depends on DT_HAS_SNPS_DESIGNWARE_DMA_ENABLED || DT_HAS_SNPS_DESIGNWARE_DMA_2_20A_ENABLED
 	help
 	  DesignWare DMA driver.
 
-if DMA_DW
+config DMA_DW_2_20A
+	bool "DesignWare DMA driver"
+	default y
+	depends on DT_HAS_SNPS_DESIGNWARE_DMA_2_20A_ENABLED
+	help
+	  DesignWare DMA driver.
+
+config DMA_LINKEDSEMI
+	bool "linkedsemi DMA driver"
+	default y
+	depends on DT_HAS_LINKEDSEMI_DMA_ENABLED
+	help
+	  DesignWare DMA driver.
+
+if DMA_DW || DMA_DW_2_20A || DMA_LINKEDSEMI
 
 source "drivers/dma/Kconfig.dw_common"
 
-endif # DMA_DW
+endif
