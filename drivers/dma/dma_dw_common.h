@@ -73,12 +73,25 @@ extern "C" {
 #define DW_CLEAR_DST_TRAN	0x0350
 #define DW_CLEAR_ERR		0x0358
 #define DW_INTR_STATUS		0x0360
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_REQ_SRC		0x368
+#define DW_REQ_DST		0x370
+#define DW_SGL_REQ_SRC	0x378
+#define DW_SGL_REQ_DST	0x380
+#define DW_LST_SRC		0x388
+#define DW_LST_DST		0x390
+#endif /* CONFIG_DMA_DW_2_20A */
 #define DW_DMA_CFG		0x0398
 #define DW_DMA_CHAN_EN		0x03A0
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_DMA_ID			0x3a8
+#endif /* CONFIG_DMA_DW_2_20A */
+#if !defined(CONFIG_DMA_DW_2_20A)
 #define DW_FIFO_PART0_LO	0x400
 #define DW_FIFO_PART0_HI	0x404
 #define DW_FIFO_PART1_LO	0x408
 #define DW_FIFO_PART1_HI	0x40C
+#endif /* ! CONFIG_DMA_DW_2_20A */
 
 /* channel bits */
 #define DW_CHAN_WRITE_EN_ALL	MASK(2 * DW_MAX_CHAN - 1, DW_MAX_CHAN)
@@ -94,13 +107,34 @@ extern "C" {
 #define DW_CFGL_RELOAD_DST	BIT(31)
 #define DW_CFGL_RELOAD_SRC	BIT(30)
 #define DW_CFGL_DRAIN		BIT(10) /* For Intel GPDMA variant only */
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_CFGL_DST_SW_HS       BIT(10) /* For Synopsys variant only */
+#define DW_CFGL_SRC_SW_HS       BIT(11) /* For Synopsys variant only */
+#else
 #define DW_CFGL_SRC_SW_HS       BIT(10) /* For Synopsys variant only */
 #define DW_CFGL_DST_SW_HS       BIT(11) /* For Synopsys variant only */
+#endif /* CONFIG_DMA_DW_2_20A */
 #define DW_CFGL_FIFO_EMPTY	BIT(9)
 #define DW_CFGL_SUSPEND		BIT(8)
+#if !defined(CONFIG_DMA_DW_2_20A)
 #define DW_CFGL_CTL_HI_UPD_EN	BIT(5)
+#endif /* ! CONFIG_DMA_DW_2_20A */
 
 /* CFG_HI */
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_CFGH_DST_PER(x)	SET_BITS(14, 11, x)
+#define DW_CFGH_SRC_PER(x)	SET_BITS(10, 7, x)
+#define DW_CFGH_DST(x)		DW_CFGH_DST_PER(x)
+#define DW_CFGH_SRC(x)		DW_CFGH_SRC_PER(x)
+#define DW_CFGH_SS_UPD_EN	BIT(6)
+#define DW_CFGH_DS_UPD_EN	BIT(5)
+#define DW_CFGH_PROTCTL_2	BIT(4)
+#define DW_CFGH_PROTCTL_1	BIT(3)
+#define DW_CFGH_PROTCTL_0	BIT(2)
+#define DW_CFGH_PROTCTL		MASK(4, 2)
+#define DW_CFGH_FIFO_MODE	BIT(1)
+#define DW_CFGH_FCMODE		BIT(0)
+#else
 #define DW_CFGH_DST_PER_EXT(x)		SET_BITS(31, 30, x)
 #define DW_CFGH_SRC_PER_EXT(x)		SET_BITS(29, 28, x)
 #define DW_CFGH_DST_PER(x)		SET_BITS(7, 4, x)
@@ -109,10 +143,13 @@ extern "C" {
 	(DW_CFGH_DST_PER_EXT((x) >> 4) | DW_CFGH_DST_PER(x))
 #define DW_CFGH_SRC(x) \
 	(DW_CFGH_SRC_PER_EXT((x) >> 4) | DW_CFGH_SRC_PER(x))
+#endif /* CONFIG_DMA_DW_2_20A */
 
 /* CTL_LO */
+#if !defined(CONFIG_DMA_DW_2_20A)
 #define DW_CTLL_RELOAD_DST	BIT(31)
 #define DW_CTLL_RELOAD_SRC	BIT(30)
+#endif /* ! CONFIG_DMA_DW_2_20A */
 #define DW_CTLL_LLP_S_EN	BIT(28)
 #define DW_CTLL_LLP_D_EN	BIT(27)
 #define DW_CTLL_SMS(x)		SET_BIT(25, x)
@@ -140,20 +177,26 @@ extern "C" {
 #define DW_CTLL_DST_WIDTH_SHIFT	1
 
 /* CTL_HI */
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_CTLH_DONE		BIT(12)
+#else
 #define DW_CTLH_CLASS(x)	SET_BITS(31, 29, x)
 #define DW_CTLH_WEIGHT(x)	SET_BITS(28, 18, x)
 #define DW_CTLH_DONE(x)		SET_BIT(17, x)
+#endif /* CONFIG_DMA_DW_2_20A */
 #define DW_CTLH_BLOCK_TS_MASK	MASK(16, 0)
 
 /* DSR */
 #define DW_DSR_DSC(x)		SET_BITS(31, 20, x)
 #define DW_DSR_DSI(x)		SET_BITS(19, 0, x)
 
+#if !defined(CONFIG_DMA_DW_2_20A)
 /* FIFO_PART */
 #define DW_FIFO_SIZE 0x80
 #define DW_FIFO_UPD		BIT(26)
 #define DW_FIFO_CHx(x)		SET_BITS(25, 13, x)
 #define DW_FIFO_CHy(x)		SET_BITS(12, 0, x)
+#endif /* ! CONFIG_DMA_DW_2_20A */
 
 /* number of tries to wait for reset */
 #define DW_DMA_CFG_TRIES	10000
@@ -165,7 +208,11 @@ extern "C" {
 #define DW_DMA_CFG_NO_IRQ_MIN_ELEMS	3
 
 #define DW_DMA_CHANNEL_REGISTER_OFFSET_END	0x50
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_DMA_IP_REGISTER_OFFSET_END		0x3a8
+#else
 #define DW_DMA_IP_REGISTER_OFFSET_END		0x418
+#endif /* CONFIG_DMA_DW_2_20A */
 #define DW_DMA_IP_REGISTER_OFFSET_START	0x2C0
 
 /* linked list item address */
@@ -234,6 +281,10 @@ struct dw_dma_chan_data {
 	void *blkuser_data;
 	dma_callback_t dma_tfrcallback;
 	void *tfruser_data;
+	dma_callback_t dma_srctrancallback;
+	void *srctranuser_data;
+	dma_callback_t dma_dsttrancallback;
+	void *dsttranuser_data;
 };
 
 /* use array to get burst_elems for specific slot number setting.

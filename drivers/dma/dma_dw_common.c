@@ -32,6 +32,7 @@ void dw_dma_isr(const struct device *dev)
 
 	uint32_t status_tfr = 0U;
 	uint32_t status_block = 0U;
+	uint32_t status_dsttran = 0U;
 	uint32_t status_err = 0U;
 	uint32_t status_intr;
 	uint32_t channel;
@@ -44,6 +45,7 @@ void dw_dma_isr(const struct device *dev)
 	/* get the source of our IRQ. */
 	status_block = dw_read(dev_cfg->base, DW_STATUS_BLOCK);
 	status_tfr = dw_read(dev_cfg->base, DW_STATUS_TFR);
+	status_dsttran = dw_read(dev_cfg->base, DW_STATUS_DST_TRAN);
 
 	/* TODO: handle errors, just clear them atm */
 	status_err = dw_read(dev_cfg->base, DW_STATUS_ERR);
@@ -53,10 +55,29 @@ void dw_dma_isr(const struct device *dev)
 	}
 
 	/* clear interrupts */
+	dw_write(dev_cfg->base, DW_CLEAR_DST_TRAN, status_dsttran);
 	dw_write(dev_cfg->base, DW_CLEAR_BLOCK, status_block);
 	dw_write(dev_cfg->base, DW_CLEAR_TFR, status_tfr);
 
-	/* Dispatch callbacks for channels depending upon the bit set */
+	while (status_dsttran) {
+		channel = find_lsb_set(status_dsttran) - 1;
+		status_dsttran &= ~(1 << channel);
+		chan_data = &dev_data->chan[channel];
+
+		if (chan_data->dma_dsttrancallback) {
+			LOG_DBG("%s: Dispatching dsttran complete callback fro channel %d\n", dev->name,
+				channel);
+
+			/* Ensure the linked list (chan_data->lli) is
+			 * freed in the user callback function once
+			 * all the dsttrans are transferred.
+			 */
+			chan_data->dma_dsttrancallback(dev,
+						   chan_data->dsttranuser_data,
+						   channel, DMA_STATUS_TRIGGER);
+		}
+	}
+
 	while (status_block) {
 		channel = find_lsb_set(status_block) - 1;
 		status_block &= ~(1 << channel);
@@ -132,7 +153,11 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	struct dw_lli *lli_desc;
 	struct dw_lli *lli_desc_head;
 	struct dw_lli *lli_desc_tail;
+#if defined(CONFIG_DMA_DW_2_20A)
+	int32_t msize = 3;/* default msize, 8 bytes */
+#else
 	uint32_t msize = 3;/* default msize, 8 bytes */
+#endif /* CONFIG_DMA_DW_2_20A */
 	int ret = 0;
 
 	if (channel >= DW_CHAN_COUNT) {
@@ -176,6 +201,11 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 
 	/* burst_size = (2 ^ msize) */
 	msize = find_msb_set(cfg->source_burst_length) - 1;
+#if defined(CONFIG_DMA_DW_2_20A)
+	if(msize < 0) {
+		msize = 0;
+	}
+#endif /* CONFIG_DMA_DW_2_20A */
 	LOG_DBG("%s: channel %d m_size=%d", dev->name, channel, msize);
 	__ASSERT_NO_MSG(msize < 5);
 
@@ -301,15 +331,18 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 				DW_CTLL_DST_FIX;
 #if CONFIG_DMA_DW_HW_LLI
 			lli_desc->ctrl_lo |= DW_CTLL_LLP_S_EN;
-			chan_data->cfg_lo |= DW_CFGL_RELOAD_DST;
 #endif
 			/* Assign a hardware handshake interface (0-15) to the
 			 * destination of the channel
 			 */
+#if defined(CONFIG_DMA_DW_2_20A)
+			chan_data->cfg_hi |= DW_CFGH_DST(cfg->dma_slot) | DW_CFGH_SRC(cfg->dma_slot);
+#else
 			chan_data->cfg_hi |= DW_CFGH_DST(cfg->dma_slot);
 #if CONFIG_DMA_DW
 			chan_data->cfg_lo |= DW_CFGL_SRC_SW_HS;
 #endif
+#endif /* CONFIG_DMA_DW_2_20A */
 			break;
 		case PERIPHERAL_TO_MEMORY:
 			lli_desc->ctrl_lo |= DW_CTLL_FC_P2M | DW_CTLL_SRC_FIX |
@@ -323,15 +356,18 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 				 */
 				lli_desc->ctrl_lo |= DW_CTLL_D_SCAT_EN;
 			}
-			chan_data->cfg_lo |= DW_CFGL_RELOAD_SRC;
 #endif
 			/* Assign a hardware handshake interface (0-15) to the
 			 * source of the channel
 			 */
+#if defined(CONFIG_DMA_DW_2_20A)
+			chan_data->cfg_hi |= DW_CFGH_SRC(cfg->dma_slot) | DW_CFGH_DST(cfg->dma_slot);
+#else
 			chan_data->cfg_hi |= DW_CFGH_SRC(cfg->dma_slot);
 #if CONFIG_DMA_DW
 			chan_data->cfg_lo |= DW_CFGL_DST_SW_HS;
 #endif
+#endif /* CONFIG_DMA_DW_2_20A */
 			break;
 		default:
 			LOG_ERR("%s: channel %d invalid direction %d", dev->name, channel,
@@ -339,6 +375,15 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			ret = -EINVAL;
 			goto out;
 		}
+
+#if CONFIG_DMA_DW_HW_LLI
+		if (cfg->reload_source) {
+			chan_data->cfg_lo |= DW_CFGL_RELOAD_SRC;
+		}
+		if (cfg->reload_dest) {
+			chan_data->cfg_lo |= DW_CFGL_RELOAD_DST;
+		}
+#endif
 
 		LOG_DBG("%s: direction: lli_desc %p, ctrl_lo %x, cfg_hi %x, cfg_lo %x", dev->name,
 			lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi, chan_data->cfg_lo);
@@ -357,8 +402,12 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 		}
 
 		/* Set class and transfer size */
+#if defined(CONFIG_DMA_DW_2_20A)
+		lli_desc->ctrl_hi |= block_cfg->block_size & DW_CTLH_BLOCK_TS_MASK;
+#else
 		lli_desc->ctrl_hi |= DW_CTLH_CLASS(dev_data->channel_data->chan[channel].class) |
 			(block_cfg->block_size & DW_CTLH_BLOCK_TS_MASK);
+#endif /* CONFIG_DMA_DW_2_20A */
 
 		LOG_DBG("%s: block_size, class: lli_desc %p, ctrl_lo %x, cfg_hi %x, cfg_lo %x",
 			dev->name, lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi,
@@ -377,9 +426,11 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 		block_cfg = block_cfg->next_block;
 	}
 
+#if !defined(CONFIG_DMA_DW_2_20A)
 #if CONFIG_DMA_DW_HW_LLI
 	chan_data->cfg_lo |= DW_CFGL_CTL_HI_UPD_EN;
 #endif
+#endif /* ! CONFIG_DMA_DW_2_20A */
 
 	/* end of list or cyclic buffer */
 	if (cfg->cyclic) {
@@ -413,7 +464,10 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	if (cfg->complete_callback_en) {
 		chan_data->dma_blkcallback = cfg->dma_callback;
 		chan_data->blkuser_data = cfg->user_data;
+		chan_data->dma_dsttrancallback = cfg->dma_callback;
+		chan_data->dsttranuser_data = cfg->user_data;
 		dw_write(dev_cfg->base, DW_MASK_BLOCK, DW_CHAN_UNMASK(channel));
+		dw_write(dev_cfg->base, DW_MASK_DST_TRAN, DW_CHAN_UNMASK(channel));
 	} else {
 		chan_data->dma_tfrcallback = cfg->dma_callback;
 		chan_data->tfruser_data = cfg->user_data;
@@ -621,7 +675,11 @@ int dw_dma_stop(const struct device *dev, uint32_t channel)
 
 #if CONFIG_DMA_DW_HW_LLI
 	for (i = 0; i < chan_data->lli_count; i++) {
+#if defined(CONFIG_DMA_DW_2_20A)
+		lli->ctrl_hi &= ~DW_CTLH_DONE;
+#else
 		lli->ctrl_hi &= ~DW_CTLH_DONE(1);
+#endif /* CONFIG_DMA_DW_2_20A */
 		lli++;
 	}
 #endif
