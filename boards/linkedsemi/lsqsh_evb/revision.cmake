@@ -9,3 +9,5 @@ else()
                           Accepted revisions: ${BOARD_REVISIONS}")
   endif()
 endif()
+
+list(APPEND EXTRA_DTC_FLAGS "-Wno-unique_unit_address_if_enabled")
