@@ -5,4 +5,4 @@ description: linkedsemi aes256
 
 compatible: "linkedsemi,aes256"
 
-include: [base.yaml]
+include: [base.yaml, reset-device.yaml]
