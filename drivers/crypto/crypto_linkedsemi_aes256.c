@@ -3,11 +3,18 @@
 #include <string.h>
 #include <zephyr/crypto/crypto.h>
 #include <zephyr/sys/byteorder.h>
-#include "crypto_linkedsemi_aes256.h"
-
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 #define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(crypto_aes256);
+
+#include "crypto_linkedsemi_aes256.h"
 
 #define DT_DRV_COMPAT linkedsemi_aes256
 
@@ -1048,12 +1055,46 @@ static int crypto_linkedsemi_aes256_query_caps(const struct device *dev)
 
 static int crypto_linkedsemi_aes256_init(const struct device *dev)
 {
-    const struct crypto_linkedsemi_aes256_config *cfg = dev->config;
+    const struct crypto_linkedsemi_aes256_config *dev_config = dev->config;
     struct crypto_linkedsemi_aes256_data *dev_data = dev->data;
+    __maybe_unused int ret;
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
 
     k_mutex_init(&dev_data->cipher_mutex);
     k_sem_init(&dev_data->cipher_device_sync_sem, 0, K_SEM_MAX_LIMIT);
-    cfg->irq_config_func(dev);
+    dev_config->irq_config_func(dev);
 
     return 0;
 }
@@ -1088,7 +1129,8 @@ static struct crypto_driver_api crypto_enc_funcs = {
     static const struct crypto_linkedsemi_aes256_config crypto_linkedsemi_aes256_cfg_##index = {  \
         .reg_crypt = (mem_addr_t)DT_INST_REG_ADDR(index),                           \
         .irq_config_func = crypto_linkedsemi_aes256_irq_config_func_##index,               \
-        IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index), )) \
+        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                       \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))  \
     };                                                                              \
     static struct crypto_linkedsemi_aes256_data crypto_linkedsemi_aes256_dev_data_##index;        \
     DEVICE_DT_INST_DEFINE(index,                                                    \
