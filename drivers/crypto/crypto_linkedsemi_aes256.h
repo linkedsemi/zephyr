@@ -104,9 +104,8 @@ struct crypto_linkedsemi_aes256_config {
     mem_addr_t reg_calc;
     mem_addr_t reg_crypt;
     uint32_t data;
-#if defined(CONFIG_PINCTRL)
-    const struct pinctrl_dev_config *pcfg;
-#endif
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
     irq_cfg_func_t irq_config_func;
 };
 
