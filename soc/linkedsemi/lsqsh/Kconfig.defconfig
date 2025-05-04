@@ -53,6 +53,9 @@ config NET_L2_ETHERNET
 config NET_DRIVERS
 	default y
 
+config MDIO
+	default y
+
 if CACHE
 if DCACHE
 
