@@ -1,3 +1,5 @@
+#if defined(CONFIG_MDIO)
+
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/mdio.h>
 
@@ -34,3 +36,5 @@ static int mdio_set_phy(void)
 }
 
 SYS_INIT(mdio_set_phy, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+
+#endif
