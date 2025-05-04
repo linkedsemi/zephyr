@@ -19,10 +19,10 @@ config CRYPTO_LINKEDSEMI_SM4
     help
       Enable linkedsemi SM4 driver.
 
-config CRYPTO_LINKEDSEMI
-    bool "linkedsemi CRYPTO driver"
+config CRYPTO_LINKEDSEMI_AES256
+    bool "linkedsemi AES256 driver"
     default y
-    depends on DT_HAS_LINKEDSEMI_CRYPTO_ENABLED
+    depends on DT_HAS_LINKEDSEMI_AES256_ENABLED
     help
       Enable linkedsemi CRYPTO driver.
 

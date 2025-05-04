@@ -3,14 +3,18 @@
 #include <string.h>
 #include <zephyr/crypto/crypto.h>
 #include <zephyr/sys/byteorder.h>
-#include "crypto_linkedsemi.h"
-LOG_MODULE_DECLARE(crypto_linkedsem);
-#include "crypto_linkedsemi_aes.h"
+#include "crypto_linkedsemi_aes256.h"
 
-void linkedsemi_crypto_isr(const struct device *dev)
+#define LOG_LEVEL CONFIG_CRYPTO_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(crypto_aes256);
+
+#define DT_DRV_COMPAT linkedsemi_aes256
+
+void linkedsemi_aes256_isr(const struct device *dev)
 {
-    struct crypto_linkedsemi_data *dev_data = dev->data;
-    const struct crypto_linkedsemi_config *dev_config = dev->config;
+    struct crypto_linkedsemi_aes256_data *dev_data = dev->data;
+    const struct crypto_linkedsemi_aes256_config *dev_config = dev->config;
 
     aes_reg_sr_t sr;
     sr.value = sys_read32(dev_config->reg_crypt + CRYPT_SR);
@@ -23,7 +27,7 @@ void linkedsemi_crypto_isr(const struct device *dev)
     }
 }
 
-int crypto_linkedsemi_single_block(const struct device *dev,
+int crypto_linkedsemi_aes256_single_block(const struct device *dev,
                                           const uint8_t *ctx_key_bit_stream,
                                           uint16_t ctx_keylen,
                                           uint8_t *pkt_in_buf,
@@ -33,11 +37,11 @@ int crypto_linkedsemi_single_block(const struct device *dev,
                                           enum cipher_mode mode,
                                           uint8_t *iv)
 {
-    struct crypto_linkedsemi_data *dev_data = dev->data;
-    const struct crypto_linkedsemi_config *dev_config = dev->config;
+    struct crypto_linkedsemi_aes256_data *dev_data = dev->data;
+    const struct crypto_linkedsemi_aes256_config *dev_config = dev->config;
     bool is_cbc = (mode == CRYPTO_CIPHER_MODE_CBC) ? true : false;
     bool is_iv_exist = iv ? true : false;
-    uint32_t u32_key[CRYPTO_LINKEDSEMI_AES_MAX_KEY_LEN_BYTE];
+    uint32_t u32_key[CRYPTO_LINKEDSEMI_AES256_AES_MAX_KEY_LEN_BYTE];
     uint32_t u32_iv[4];
     aes_reg_cr_t aes_reg_cr;
     int ret = 0;
@@ -115,7 +119,7 @@ int crypto_linkedsemi_single_block(const struct device *dev,
     return ret;
 }
 
-int crypto_linkedsemi_multiple_block(const struct device *dev,
+int crypto_linkedsemi_aes256_multiple_block(const struct device *dev,
                                             const uint8_t *ctx_key_bit_stream,
                                             uint16_t ctx_keylen,
                                             uint8_t *pkt_in_buf,
@@ -130,7 +134,7 @@ int crypto_linkedsemi_multiple_block(const struct device *dev,
 
     *pkt_out_len = 0;
     for (uint32_t i = 0; i < pkt_in_len / AES_BLOCK_LEN_BYTE; i++) {
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                              ctx_key_bit_stream,
                                              ctx_keylen,
                                              pkt_in_buf + i * AES_BLOCK_LEN_BYTE,
@@ -150,12 +154,12 @@ int crypto_linkedsemi_multiple_block(const struct device *dev,
     return ret;
 }
 
-int crypto_linkedsemi_ecb_encrypt(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_ecb_encrypt(struct cipher_ctx *ctx,
                                          struct cipher_pkt *pkt)
 {
     int ret;
 
-    ret = crypto_linkedsemi_multiple_block(ctx->device,
+    ret = crypto_linkedsemi_aes256_multiple_block(ctx->device,
                                            ctx->key.bit_stream,
                                            ctx->keylen,
                                            pkt->in_buf,
@@ -172,12 +176,12 @@ int crypto_linkedsemi_ecb_encrypt(struct cipher_ctx *ctx,
     return ret;
 }
 
-int crypto_linkedsemi_ecb_decrypt(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_ecb_decrypt(struct cipher_ctx *ctx,
                                          struct cipher_pkt *pkt)
 {
     int ret;
 
-    ret = crypto_linkedsemi_multiple_block(ctx->device,
+    ret = crypto_linkedsemi_aes256_multiple_block(ctx->device,
                                            ctx->key.bit_stream,
                                            ctx->keylen,
                                            pkt->in_buf,
@@ -194,7 +198,7 @@ int crypto_linkedsemi_ecb_decrypt(struct cipher_ctx *ctx,
     return ret;
 }
 
-int crypto_linkedsemi_cbc_encrypt(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_cbc_encrypt(struct cipher_ctx *ctx,
                                          struct cipher_pkt *pkt,
                                          uint8_t *iv)
 {
@@ -207,7 +211,7 @@ int crypto_linkedsemi_cbc_encrypt(struct cipher_ctx *ctx,
         out_offset = IV_LEN_BYTE;
     }
 
-    ret = crypto_linkedsemi_multiple_block(ctx->device,
+    ret = crypto_linkedsemi_aes256_multiple_block(ctx->device,
                                            ctx->key.bit_stream,
                                            ctx->keylen,
                                            pkt->in_buf,
@@ -226,7 +230,7 @@ int crypto_linkedsemi_cbc_encrypt(struct cipher_ctx *ctx,
     return ret;
 }
 
-int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_cbc_decrypt(struct cipher_ctx *ctx,
                                          struct cipher_pkt *pkt,
                                          uint8_t *iv)
 {
@@ -238,7 +242,7 @@ int crypto_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx,
         in_offset = IV_LEN_BYTE;
     }
 
-    ret = crypto_linkedsemi_multiple_block(ctx->device,
+    ret = crypto_linkedsemi_aes256_multiple_block(ctx->device,
                                            ctx->key.bit_stream,
                                            ctx->keylen,
                                            pkt->in_buf + in_offset,
@@ -262,7 +266,7 @@ static inline void inc_ctr(uint8_t* ctr, uint32_t ctr_size)
     }
 }
 
-int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_ctr(struct cipher_ctx *ctx,
                                          struct cipher_pkt *pkt,
                                          uint8_t *ctr)
 {
@@ -277,7 +281,7 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
 
     memcpy(iv, ctr, ivlen);
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
@@ -301,7 +305,7 @@ int crypto_linkedsemi_ctr(struct cipher_ctx *ctx,
     if (unalign_block_len != 0) {
         cnt++;
         inc_ctr(iv + ivlen, cntlen);
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
@@ -344,7 +348,7 @@ static int ccm_cbc_mac(struct cipher_ctx *ctx,
     while (i < dlen) {
         T[i++ % (AES_BLOCK_LEN_BYTE)] ^= *data++;
         if (((i % (AES_BLOCK_LEN_BYTE)) == 0) || dlen == i) {
-            ret = crypto_linkedsemi_single_block(dev,
+            ret = crypto_linkedsemi_aes256_single_block(dev,
                                     ctx->key.bit_stream,
                                     ctx->keylen,
                                     T,
@@ -400,7 +404,7 @@ static int ccm_ctr_mode(struct cipher_ctx *ctx,
             block_num++;
             nonce[14] = (uint8_t)(block_num >> 8);
             nonce[15] = (uint8_t)(block_num);
-            ret = crypto_linkedsemi_single_block(dev,
+            ret = crypto_linkedsemi_aes256_single_block(dev,
                                     ctx->key.bit_stream,
                                     ctx->keylen,
                                     nonce,
@@ -425,7 +429,7 @@ static int ccm_ctr_mode(struct cipher_ctx *ctx,
     return 0;
 }
 
-int crypto_linkedsemi_ccm_encrypt_auth(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_ccm_encrypt_auth(struct cipher_ctx *ctx,
                                         struct cipher_aead_pkt *apkt,
                                         uint8_t *nonce)
 {
@@ -464,7 +468,7 @@ int crypto_linkedsemi_ccm_encrypt_auth(struct cipher_ctx *ctx,
     b[15] = (uint8_t)(pkt->in_len);
 
     /* computing the authentication tag using cbc-mac: */
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         b,
@@ -495,7 +499,7 @@ int crypto_linkedsemi_ccm_encrypt_auth(struct cipher_ctx *ctx,
     b[14] = b[15] = 0; /* restoring initial counter for ctr_mode (0):*/
 
     /* encrypting b and adding the tag to the output: */
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         b,
@@ -518,7 +522,7 @@ int crypto_linkedsemi_ccm_encrypt_auth(struct cipher_ctx *ctx,
     return 0;
 }
 
-int crypto_linkedsemi_ccm_decrypt_auth(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_ccm_decrypt_auth(struct cipher_ctx *ctx,
                  struct cipher_aead_pkt *apkt,
                  uint8_t *nonce)
 {
@@ -555,7 +559,7 @@ int crypto_linkedsemi_ccm_decrypt_auth(struct cipher_ctx *ctx,
     b[14] = b[15] = 0; /* restoring initial counter value (0) */
 
     /* encrypting b and restoring the tag from input: */
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         b,
@@ -583,7 +587,7 @@ int crypto_linkedsemi_ccm_decrypt_auth(struct cipher_ctx *ctx,
     b[15] = (uint8_t)(payload_len - tag_len);
 
     /* computing the authentication tag using cbc-mac: */
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         b,
@@ -728,7 +732,7 @@ static void ghash(uint8_t gcm_h[16], const uint8_t* a, uint32_t a_size, const ui
     memcpy(s, x, s_size);
 }
 
-int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_gcm_encrypt_auth(struct cipher_ctx *ctx,
                  struct cipher_aead_pkt *apkt,
                  uint8_t *nonce)
 {
@@ -750,7 +754,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
 /* GCTR */
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
         inc_ctr(iv + ivlen, cntlen);
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
@@ -770,7 +774,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
     }
     if (unalign_block_len != 0) {
         inc_ctr(iv + ivlen, cntlen);
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
@@ -792,7 +796,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
 
 /* GMAC */
 /* GMAC: gcm_h: arr[128] = {0} ---encrypt---> gcm_h[128] */
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         gcm_h, /* in */
@@ -809,7 +813,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
 
 /* GMAC: encrypt j0 */
     UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)(iv + 12));
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         iv, /* in */
@@ -832,7 +836,7 @@ int crypto_linkedsemi_gcm_encrypt_auth(struct cipher_ctx *ctx,
     return 0;
 }
 
-int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
+int crypto_linkedsemi_aes256_gcm_decrypt_auth(struct cipher_ctx *ctx,
                  struct cipher_aead_pkt *apkt,
                  uint8_t *nonce)
 {
@@ -855,7 +859,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
 /* GCTR */
     for (uint32_t i = 0; i < pkt->in_len / AES_BLOCK_LEN_BYTE; i++) {
         inc_ctr(iv + ivlen, cntlen);
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
@@ -875,7 +879,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
     }
     if (unalign_block_len != 0) {
         inc_ctr(iv + ivlen, cntlen);
-        ret = crypto_linkedsemi_single_block(dev,
+        ret = crypto_linkedsemi_aes256_single_block(dev,
                                             ctx->key.bit_stream,
                                             ctx->keylen,
                                             iv,
@@ -897,7 +901,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
 
 /* GMAC */
 /* GMAC: gcm_h: arr[128] = {0} ---encrypt---> gcm_h[128] */
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         gcm_h, /* in */
@@ -914,7 +918,7 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
 
 /* GMAC: encrypt j0 */
     UNALIGNED_PUT(BSWAP_32(1), (uint32_t *)(iv + 12));
-    ret = crypto_linkedsemi_single_block(dev,
+    ret = crypto_linkedsemi_aes256_single_block(dev,
                                         ctx->key.bit_stream,
                                         ctx->keylen,
                                         iv, /* in */
@@ -939,3 +943,160 @@ int crypto_linkedsemi_gcm_decrypt_auth(struct cipher_ctx *ctx,
 
     return 0;
 }
+
+static int crypto_linkedsemi_aes256_cipher_begin_session(const struct device *dev,
+                                           struct cipher_ctx *ctx,
+                                           enum cipher_algo algo,
+                                           enum cipher_mode mode,
+                                           enum cipher_op op_type)
+{
+    if (ctx->flags & ~(CRYPTO_LINKEDSEMI_AES256_CIPHER_CAPS)) {
+        LOG_ERR("Unsupported flag");
+        return -ENOTSUP;
+    }
+
+    if (algo != CRYPTO_CIPHER_ALGO_AES) {
+        LOG_ERR("Unsupported algo");
+        return -ENOTSUP;
+    }
+
+    switch (mode) {
+    case CRYPTO_CIPHER_MODE_ECB:
+    case CRYPTO_CIPHER_MODE_CBC:
+    case CRYPTO_CIPHER_MODE_CTR:
+    case CRYPTO_CIPHER_MODE_CCM:
+    case CRYPTO_CIPHER_MODE_GCM:
+        break;
+    default:
+        LOG_ERR("Unsupported mode");
+        return -ENOTSUP;
+    }
+
+    switch (ctx->keylen) {
+    case 16:
+    case 24:
+    case 32:
+        break;
+    default:
+        LOG_ERR("Unsupported");
+        return -ENOTSUP;
+    }
+
+    if (op_type == CRYPTO_CIPHER_OP_ENCRYPT) {
+        switch (mode) {
+        case CRYPTO_CIPHER_MODE_ECB:
+            ctx->ops.block_crypt_hndlr = crypto_linkedsemi_aes256_ecb_encrypt;
+            break;
+        case CRYPTO_CIPHER_MODE_CBC:
+            ctx->ops.cbc_crypt_hndlr = crypto_linkedsemi_aes256_cbc_encrypt;
+            break;
+        case CRYPTO_CIPHER_MODE_CTR:
+            ctx->ops.ctr_crypt_hndlr = crypto_linkedsemi_aes256_ctr;
+            break;
+        case CRYPTO_CIPHER_MODE_CCM:
+            ctx->ops.ccm_crypt_hndlr = crypto_linkedsemi_aes256_ccm_encrypt_auth;
+            break;
+        case CRYPTO_CIPHER_MODE_GCM:
+            ctx->ops.gcm_crypt_hndlr = crypto_linkedsemi_aes256_gcm_encrypt_auth;
+            break;
+        default:
+            LOG_ERR("Unsupported");
+            return -ENOTSUP;
+        }
+    } else {
+        switch (mode) {
+        case CRYPTO_CIPHER_MODE_ECB:
+            ctx->ops.block_crypt_hndlr = crypto_linkedsemi_aes256_ecb_decrypt;
+            break;
+        case CRYPTO_CIPHER_MODE_CBC:
+            ctx->ops.cbc_crypt_hndlr = crypto_linkedsemi_aes256_cbc_decrypt;
+            break;
+        case CRYPTO_CIPHER_MODE_CTR:
+            ctx->ops.ctr_crypt_hndlr = crypto_linkedsemi_aes256_ctr;
+            break;
+        case CRYPTO_CIPHER_MODE_CCM:
+            ctx->ops.ccm_crypt_hndlr = crypto_linkedsemi_aes256_ccm_decrypt_auth;
+            break;
+        case CRYPTO_CIPHER_MODE_GCM:
+            ctx->ops.gcm_crypt_hndlr = crypto_linkedsemi_aes256_gcm_decrypt_auth;
+            break;
+        default:
+            LOG_ERR("Unsupported");
+            return -ENOTSUP;
+        }
+    }
+
+    return 0;
+}
+
+static int crypto_linkedsemi_aes256_cipher_free_session(const struct device *dev,
+                                          struct cipher_ctx *ctx)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(ctx);
+
+    return 0;
+}
+
+
+static int crypto_linkedsemi_aes256_query_caps(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+
+    return CRYPTO_LINKEDSEMI_AES256_CIPHER_CAPS;
+}
+
+static int crypto_linkedsemi_aes256_init(const struct device *dev)
+{
+    const struct crypto_linkedsemi_aes256_config *cfg = dev->config;
+    struct crypto_linkedsemi_aes256_data *dev_data = dev->data;
+
+    k_mutex_init(&dev_data->cipher_mutex);
+    k_sem_init(&dev_data->cipher_device_sync_sem, 0, K_SEM_MAX_LIMIT);
+    cfg->irq_config_func(dev);
+
+    return 0;
+}
+
+static struct crypto_driver_api crypto_enc_funcs = {
+    .cipher_begin_session = crypto_linkedsemi_aes256_cipher_begin_session,
+    .cipher_free_session = crypto_linkedsemi_aes256_cipher_free_session,
+    .hash_begin_session = NULL,
+    .hash_free_session = NULL,
+    .cipher_async_callback_set = NULL,
+    .query_hw_caps = crypto_linkedsemi_aes256_query_caps,
+};
+
+#define CRYPTO_LINKEDSEMI_AES256_IRQ_CONNECT(index)              \
+    do {                                                            \
+        IRQ_CONNECT(DT_INST_IRQ(index, irq),      \
+                    DT_INST_IRQ(index, priority), \
+                    linkedsemi_aes256_isr,                    \
+                    DEVICE_DT_INST_GET(index),                      \
+                    0);                                             \
+        irq_enable(DT_INST_IRQ(index, irq));      \
+    } while (false)
+
+#define CRYPTO_LINKEDSEMI_AES256_IRQ_HANDLER(index)                                        \
+    static void crypto_linkedsemi_aes256_irq_config_func_##index(const struct device *dev) \
+    {                                                                               \
+        CRYPTO_LINKEDSEMI_AES256_IRQ_CONNECT(index);                               \
+    }
+
+#define CRYPTO_LINKEDSEMI_AES256_INIT(index)                                               \
+    CRYPTO_LINKEDSEMI_AES256_IRQ_HANDLER(index)                                            \
+    static const struct crypto_linkedsemi_aes256_config crypto_linkedsemi_aes256_cfg_##index = {  \
+        .reg_crypt = (mem_addr_t)DT_INST_REG_ADDR(index),                           \
+        .irq_config_func = crypto_linkedsemi_aes256_irq_config_func_##index,               \
+        IF_ENABLED(DT_HAS_CLOCKS(index), (.cctl_cfg = LS_DT_CLK_CFG_ITEM(index), )) \
+    };                                                                              \
+    static struct crypto_linkedsemi_aes256_data crypto_linkedsemi_aes256_dev_data_##index;        \
+    DEVICE_DT_INST_DEFINE(index,                                                    \
+                          crypto_linkedsemi_aes256_init,                                   \
+                          NULL,                                                     \
+                          &crypto_linkedsemi_aes256_dev_data_##index,                      \
+                          &crypto_linkedsemi_aes256_cfg_##index,                           \
+                          POST_KERNEL,                                              \
+                          CONFIG_KERNEL_INIT_PRIORITY_DEVICE,                       \
+                          (void *)&crypto_enc_funcs);
+DT_INST_FOREACH_STATUS_OKAY(CRYPTO_LINKEDSEMI_AES256_INIT)
