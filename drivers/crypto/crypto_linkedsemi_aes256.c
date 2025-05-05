@@ -1108,37 +1108,32 @@ static struct crypto_driver_api crypto_enc_funcs = {
     .query_hw_caps = crypto_linkedsemi_aes256_query_caps,
 };
 
-#define CRYPTO_LINKEDSEMI_AES256_IRQ_CONNECT(index)              \
-    do {                                                            \
-        IRQ_CONNECT(DT_INST_IRQ(index, irq),      \
-                    DT_INST_IRQ(index, priority), \
-                    linkedsemi_aes256_isr,                    \
-                    DEVICE_DT_INST_GET(index),                      \
-                    0);                                             \
-        irq_enable(DT_INST_IRQ(index, irq));      \
-    } while (false)
-
 #define CRYPTO_LINKEDSEMI_AES256_IRQ_HANDLER(index)                                        \
     static void crypto_linkedsemi_aes256_irq_config_func_##index(const struct device *dev) \
-    {                                                                               \
-        CRYPTO_LINKEDSEMI_AES256_IRQ_CONNECT(index);                               \
+    {                                                                                      \
+        IRQ_CONNECT(DT_INST_IRQ(index, irq),        \
+                    DT_INST_IRQ(index, priority),   \
+                    linkedsemi_aes256_isr,          \
+                    DEVICE_DT_INST_GET(index),      \
+                    0);                             \
+        irq_enable(DT_INST_IRQ(index, irq));        \
     }
 
-#define CRYPTO_LINKEDSEMI_AES256_INIT(index)                                               \
-    CRYPTO_LINKEDSEMI_AES256_IRQ_HANDLER(index)                                            \
-    static const struct crypto_linkedsemi_aes256_config crypto_linkedsemi_aes256_cfg_##index = {  \
-        .reg_crypt = (mem_addr_t)DT_INST_REG_ADDR(index),                           \
-        .irq_config_func = crypto_linkedsemi_aes256_irq_config_func_##index,               \
-        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                       \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))  \
-    };                                                                              \
-    static struct crypto_linkedsemi_aes256_data crypto_linkedsemi_aes256_dev_data_##index;        \
-    DEVICE_DT_INST_DEFINE(index,                                                    \
-                          crypto_linkedsemi_aes256_init,                                   \
-                          NULL,                                                     \
-                          &crypto_linkedsemi_aes256_dev_data_##index,                      \
-                          &crypto_linkedsemi_aes256_cfg_##index,                           \
-                          POST_KERNEL,                                              \
-                          CONFIG_KERNEL_INIT_PRIORITY_DEVICE,                       \
+#define CRYPTO_LINKEDSEMI_AES256_INIT(index)                                                             \
+    CRYPTO_LINKEDSEMI_AES256_IRQ_HANDLER(index)                                                          \
+    static const struct crypto_linkedsemi_aes256_config crypto_linkedsemi_aes256_cfg_##index = {         \
+        .reg_crypt = (mem_addr_t)DT_INST_REG_ADDR(index),                                                \
+        .irq_config_func = crypto_linkedsemi_aes256_irq_config_func_##index,                             \
+        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                          \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))     \
+    };                                                                                                   \
+    static struct crypto_linkedsemi_aes256_data crypto_linkedsemi_aes256_dev_data_##index;               \
+    DEVICE_DT_INST_DEFINE(index,                                                                         \
+                          crypto_linkedsemi_aes256_init,                                                 \
+                          NULL,                                                                          \
+                          &crypto_linkedsemi_aes256_dev_data_##index,                                    \
+                          &crypto_linkedsemi_aes256_cfg_##index,                                         \
+                          POST_KERNEL,                                                                   \
+                          CONFIG_KERNEL_INIT_PRIORITY_DEVICE,                                            \
                           (void *)&crypto_enc_funcs);
 DT_INST_FOREACH_STATUS_OKAY(CRYPTO_LINKEDSEMI_AES256_INIT)
