@@ -526,9 +526,8 @@ int crypto_linkedsemi_aes256_ccm_encrypt_auth(struct cipher_ctx *ctx,
         LOG_ERR("%s: crypto error", __func__);
         return -EINVAL;
     }
-    out += pkt->in_len;
     for (i = 0; i < tag_len; ++i) {
-        *out++ = tag[i] ^ b[i];
+        apkt->tag[i] = tag[i] ^ b[i];
     }
 
     pkt->out_len = pkt->in_len + tag_len;
@@ -587,7 +586,7 @@ int crypto_linkedsemi_aes256_ccm_decrypt_auth(struct cipher_ctx *ctx,
         return -EINVAL;
     }
     for (i = 0; i < tag_len; ++i) {
-        tag[i] = *(pkt->in_buf + payload_len - tag_len + i) ^ b[i];
+        tag[i] = apkt->tag[i] ^ b[i];
     }
 
     /* VERIFYING THE AUTHENTICATION TAG: */
@@ -841,8 +840,8 @@ int crypto_linkedsemi_aes256_gcm_encrypt_auth(struct cipher_ctx *ctx,
         return -EINVAL;
     }
 /* GMAC: end encrypt j0 */
-    ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->out_buf, pkt->out_len, pkt->out_buf + pkt->out_len, ctx->mode_params.gcm_info.tag_len);
-    mem_xor_n(pkt->out_buf + pkt->out_len, pkt->out_buf + pkt->out_len, c_j0, apkt->ad_len);
+    ghash(gcm_h, apkt->ad, apkt->ad_len, pkt->out_buf, pkt->out_len, apkt->tag, ctx->mode_params.gcm_info.tag_len);
+    mem_xor_n(apkt->tag, apkt->tag, c_j0, ctx->mode_params.gcm_info.tag_len);
 /* end GMAC */
 
     pkt->out_len += ctx->mode_params.gcm_info.tag_len;
