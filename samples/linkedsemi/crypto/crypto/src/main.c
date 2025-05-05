@@ -31,8 +31,8 @@ LOG_MODULE_REGISTER(main);
 #define CRYPTO_DEV_COMPAT nordic_nrf_ecb
 #elif DT_HAS_COMPAT_STATUS_OKAY(renesas_smartbond_crypto)
 #define CRYPTO_DEV_COMPAT renesas_smartbond_crypto
-#elif DT_HAS_COMPAT_STATUS_OKAY(linkedsemi_crypto)
-#define CRYPTO_DEV_COMPAT linkedsemi_crypto
+#elif DT_HAS_COMPAT_STATUS_OKAY(linkedsemi_aes256)
+#define CRYPTO_DEV_COMPAT linkedsemi_aes256
 #else
 #error "You need to enable one crypto device"
 #endif
