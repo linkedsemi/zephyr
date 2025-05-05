@@ -453,7 +453,6 @@ int crypto_linkedsemi_aes256_ccm_encrypt_auth(struct cipher_ctx *ctx,
     uint8_t tag[AES_BLOCK_LEN_BYTE];
     const uint8_t nonce_len = ctx->mode_params.ccm_info.nonce_len;
     const uint8_t tag_len = ctx->mode_params.ccm_info.tag_len;
-    uint8_t *out = pkt->out_buf;
     uint32_t i;
     int ret = 0;
 
