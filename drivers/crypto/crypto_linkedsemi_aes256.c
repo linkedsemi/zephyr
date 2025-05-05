@@ -94,7 +94,7 @@ int crypto_linkedsemi_aes256_single_block(const struct device *dev,
     aes_reg_cr = (aes_reg_cr_t){
         .GO = 1,
         .ENCS = is_encrypt, /* is_enc */
-        .AESKS = (ctx_keylen - 1) >> 4, /* 00: 128 bits   01: 192 bits   10: 256 bits */
+        // .AESKS = 0, /* 00: 128 bits   01: 192 bits   10: 256 bits */
         .MODE = is_cbc, /* is_cbc */
         .IVREN = is_iv_exist, /* is_iv_exist */
         .IE = 1,
@@ -107,6 +107,13 @@ int crypto_linkedsemi_aes256_single_block(const struct device *dev,
         .RESERVED0 = 0,
         .CRYSEL = 0,
     };
+
+    switch(ctx_keylen) {
+    case 16: aes_reg_cr.AESKS = 0; break;
+    case 24: aes_reg_cr.AESKS = 1; break;
+    case 32: aes_reg_cr.AESKS = 2; break;
+    default: break;
+    }
 
     sys_write32(aes_reg_cr.value, dev_config->reg_crypt + CRYPT_CR);
 
