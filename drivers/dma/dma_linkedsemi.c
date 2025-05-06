@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2018 Intel Corporation.
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #define DT_DRV_COMPAT linkedsemi_dma
 
 #include <errno.h>
@@ -27,7 +21,7 @@ LOG_MODULE_REGISTER(dma_dw, CONFIG_DMA_LOG_LEVEL);
 
 #include <soc.h>
 #include <soc_dma.h>
-#include "dma_dw_common_2_20a.h"
+#include "dma_dw_common.h"
 
 /* Device constant configuration parameters */
 struct dw_dma_cfg {
@@ -98,7 +92,7 @@ int linkedsemi_dma_config(const struct device *dev, uint32_t channel, struct dma
     const struct dw_dma_cfg *const dev_config = dev->config;
 
     if (cfg->channel_direction != MEMORY_TO_MEMORY) {
-        soc_dma_channel_handshake_set(dev_config->dw_cfg.base, channel, cfg->handshake);
+        soc_dma_channel_handshake_set(dev_config->dw_cfg.base, channel, cfg->dma_slot);
     }
 
     return dw_dma_config(dev, channel, cfg);
