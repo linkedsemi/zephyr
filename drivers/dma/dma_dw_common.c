@@ -15,6 +15,7 @@
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
 #include <soc.h>
+#include <zephyr/drivers/dma/dma_dw.h>
 #include "dma_dw_common.h"
 
 #define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
@@ -321,10 +322,12 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 				DW_CTLL_LLP_S_EN | DW_CTLL_LLP_D_EN;
 			LOG_DBG("%s: lli_desc->ctrl_lo %x", dev->name, lli_desc->ctrl_lo);
 #endif
+#if !defined(CONFIG_DMA_DW_2_20A)
 #if CONFIG_DMA_DW
 			chan_data->cfg_lo |= DW_CFGL_SRC_SW_HS;
 			chan_data->cfg_lo |= DW_CFGL_DST_SW_HS;
 #endif
+#endif /* ! CONFIG_DMA_DW_2_20A */
 			break;
 		case MEMORY_TO_PERIPHERAL:
 			lli_desc->ctrl_lo |= DW_CTLL_FC_M2P | DW_CTLL_SRC_INC |
@@ -336,11 +339,16 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			 * destination of the channel
 			 */
 #if defined(CONFIG_DMA_DW_2_20A)
-			chan_data->cfg_hi |= DW_CFGH_DST(cfg->dma_slot) | DW_CFGH_SRC(cfg->dma_slot);
+			chan_data->cfg_hi |= DW_CFGH_SRC(channel);
+			chan_data->cfg_hi |= DW_CFGH_DST(channel);
+#if CONFIG_DMA_DW
+			chan_data->cfg_lo &= ~DW_CFGL_SRC_SW_HS;
+			chan_data->cfg_lo &= ~DW_CFGL_DST_SW_HS;
+#endif
 #else
 			chan_data->cfg_hi |= DW_CFGH_DST(cfg->dma_slot);
 #if CONFIG_DMA_DW
-			chan_data->cfg_lo |= DW_CFGL_SRC_SW_HS;
+			chan_data->cfg_lo |= DW_CFGL_DST_SW_HS;
 #endif
 #endif /* CONFIG_DMA_DW_2_20A */
 			break;
@@ -361,11 +369,16 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			 * source of the channel
 			 */
 #if defined(CONFIG_DMA_DW_2_20A)
-			chan_data->cfg_hi |= DW_CFGH_SRC(cfg->dma_slot) | DW_CFGH_DST(cfg->dma_slot);
+			chan_data->cfg_hi |= DW_CFGH_SRC(channel);
+			chan_data->cfg_hi |= DW_CFGH_DST(channel);
+#if CONFIG_DMA_DW
+			chan_data->cfg_lo &= ~DW_CFGL_SRC_SW_HS;
+			chan_data->cfg_lo &= ~DW_CFGL_DST_SW_HS;
+#endif
 #else
 			chan_data->cfg_hi |= DW_CFGH_SRC(cfg->dma_slot);
 #if CONFIG_DMA_DW
-			chan_data->cfg_lo |= DW_CFGL_DST_SW_HS;
+			chan_data->cfg_lo |= DW_CFGL_SRC_SW_HS;
 #endif
 #endif /* CONFIG_DMA_DW_2_20A */
 			break;
@@ -376,14 +389,9 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			goto out;
 		}
 
-#if CONFIG_DMA_DW_HW_LLI
-		if (cfg->reload_source) {
-			chan_data->cfg_lo |= DW_CFGL_RELOAD_SRC;
-		}
-		if (cfg->reload_dest) {
-			chan_data->cfg_lo |= DW_CFGL_RELOAD_DST;
-		}
-#endif
+		/* force no reload */
+		chan_data->cfg_lo &= ~DW_CFGL_RELOAD_SRC;
+		chan_data->cfg_lo &= ~DW_CFGL_RELOAD_DST;
 
 		LOG_DBG("%s: direction: lli_desc %p, ctrl_lo %x, cfg_hi %x, cfg_lo %x", dev->name,
 			lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi, chan_data->cfg_lo);
