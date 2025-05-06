@@ -236,8 +236,8 @@ static struct crypto_driver_api sha256_driver_api = {
 	static const struct sha256_linkedsemi_config sha256_linkedsemi_config_##idx = {            \
 		.reg = (void *)DT_INST_REG_ADDR(idx),                                              \
 		.irq_config_func = sha256_linkedsemi_irq_config_func_##idx,                        \
-        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                       \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))  \
+        IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), ))                       \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), ))  \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(idx, sha256_linkedsemi_init, NULL, &sha256_linkedsemi_data_##idx,    \
 			      &sha256_linkedsemi_config_##idx, POST_KERNEL,                        \
