@@ -193,7 +193,7 @@
     };
 };
 
-&crypto {
+&aes256 {
     status = "okay";
 };
 
