@@ -7,8 +7,8 @@
 #ifndef ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_LSQSH_PINCTRL_H_
 #define ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_LSQSH_PINCTRL_H_
 
-#include "../../../../../modules/hal/linkedsemi/soc/rv32/qsh/per_func_mux.h"
-#include "../../../../../modules/hal/linkedsemi/soc/rv32/qsh/ls_soc_gpio_def.h"
+#include "per_func_mux.h"
+#include "ls_soc_gpio_def.h"
 
 /**
  * @brief Bit Masks
