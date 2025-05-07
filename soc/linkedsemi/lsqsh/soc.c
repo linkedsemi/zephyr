@@ -93,12 +93,13 @@ void iopmp_region_init(void)
 {
     for (uint32_t idx = 0; idx < 5; idx++) {
         uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
-        iopmp_config_region_napot4(dev, 0, 0x8000000, MB(2), false, false, false, false);
-        iopmp_config_region_napot4(dev, 1, 0x10000000, KB(512), false, false, false, false);
-        iopmp_config_region_napot4(dev, 2, 0x40000000, KB(256), false, false, false, false);
-        iopmp_config_region_napot4(dev, 3, 0x400A0000, KB(32), false, false, false, false);
+        iopmp_config_region_napot4(dev, 0, 0x1000000, KB(64), false, false, false, false);
+        iopmp_config_region_napot4(dev, 1, 0x8000000, MB(2), false, false, false, false);
+        iopmp_config_region_napot4(dev, 2, 0x10000000, KB(512), false, false, false, false);
+        iopmp_config_region_napot4(dev, 3, 0x40000000, KB(256), false, false, false, false);
+        iopmp_config_region_napot4(dev, 4, 0x400A0000, KB(32), false, false, false, false);
 
-        iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * 1024 * 1024 * 1024, true, true, true, false);
+        iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
         iopmp_config_enable(dev, true);
     }
 }
