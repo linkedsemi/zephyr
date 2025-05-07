@@ -47,6 +47,16 @@ extern "C" {
 __printf_like(1, 2) void printk(const char *fmt, ...);
 __printf_like(1, 0) void vprintk(const char *fmt, va_list ap);
 
+#define printk_thread(fmt, ...) \
+do { \
+    uint64_t ts = k_uptime_get(); \
+    printk("[%5llu.%03llu][%s][%s: %u] " fmt "\n", \
+        ts / 1000, ts % 1000, \
+        k_thread_name_get(k_current_get()), \
+        __FUNCTION__ , __LINE__, \
+        ##__VA_ARGS__); \
+} while(0)
+
 #else
 static inline __printf_like(1, 2) void printk(const char *fmt, ...)
 {
