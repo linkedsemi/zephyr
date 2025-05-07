@@ -19,6 +19,7 @@
 #include "ls_hal_cache.h"
 #include "ls_msp_qspiv2.h"
 #include "soc.h"
+#include "soc_reset.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
@@ -39,7 +40,8 @@ static void driver_init(void)
 
 void sys_arch_reboot(int type)
 {
-	// platform_reset(0);
+    reset_reason_set(HART_RESET);
+    csi_core_reset();
 }
 
 #define CPU0_FW_REGION_SIZE MB(2)
