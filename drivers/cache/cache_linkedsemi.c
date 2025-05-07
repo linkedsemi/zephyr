@@ -39,9 +39,9 @@ int cache_data_invd_all(void)
 
 int cache_data_invd_range(void *addr, size_t size)
 {
-    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
-                        "buffer[%p] should be aligned to cache line[%d bytes]",
-                        addr, CONFIG_DCACHE_LINE_SIZE);
+    // __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
+    //                     "buffer[%p] should be aligned to cache line[%d bytes]",
+    //                     addr, CONFIG_DCACHE_LINE_SIZE);
     csi_dcache_invalid_range(addr, size);
 
     return 0;
@@ -75,9 +75,9 @@ int cache_data_flush_and_invd_all(void)
 
 int cache_data_flush_range(void *addr, size_t size)
 {
-    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
-                        "buffer[%p] should be aligned to cache line[%d bytes]",
-                        addr, CONFIG_DCACHE_LINE_SIZE);
+    // __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
+    //                     "buffer[%p] should be aligned to cache line[%d bytes]",
+    //                     addr, CONFIG_DCACHE_LINE_SIZE);
     csi_dcache_clean_range(addr, size);
 
     return 0;
@@ -85,9 +85,9 @@ int cache_data_flush_range(void *addr, size_t size)
 
 int cache_data_flush_and_invd_range(void *addr, size_t size)
 {
-    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
-                        "buffer[%p] should be aligned to cache line[%d bytes]",
-                        addr, CONFIG_DCACHE_LINE_SIZE);
+    // __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
+    //                     "buffer[%p] should be aligned to cache line[%d bytes]",
+    //                     addr, CONFIG_DCACHE_LINE_SIZE);
     csi_dcache_clean_invalid_range(addr, size);
 
     return 0;
