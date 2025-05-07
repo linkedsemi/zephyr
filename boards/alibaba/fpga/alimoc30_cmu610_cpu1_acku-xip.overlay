@@ -23,36 +23,31 @@
     status = "disabled";
 };
 
-// &uart1 {
-//     current-speed = <115200>;
-//     pinctrl-0 = <&uart1_tx_pn04 &uart1_rx_pn03>;
-//     pinctrl-names = "default";
-//     status = "disabled";
-// };
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
-// &uart2 {
-//     current-speed = <115200>;
-//     status = "disabled";
-// };
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
 &uart3 {
     current-speed = <115200>;
     status = "okay";
 };
 
-// &uart4 {
-//     current-speed = <115200>;
-//     pinctrl-0 = <&uart4_tx_pd09 &uart4_rx_pd10>;
-//     pinctrl-names = "default";
-//     status = "disabled";
-// };
+&uart4 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
-// &uart5 {
-//     current-speed = <115200>;
-//     pinctrl-0 = <&uart5_tx_pe00 &uart5_rx_pe01>;
-//     pinctrl-names = "default";
-//     status = "okay";
-// };
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
 
 // &i2c2 {
 //     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;

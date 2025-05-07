@@ -6,8 +6,8 @@
 
 #include <zephyr/dt-bindings/memory-attr/memory-attr.h>
 #include <zephyr/dt-bindings/memory-attr/memory-attr-riscv.h>
-#include "../../../../modules/hal/linkedsemi/soc/rv32/qsh/reg_base_addr.h"
-#include "../../../../modules/hal/linkedsemi/soc/rv32/qsh/qsh.h"
+#include "../../../../modules/hal/linkedsemi/soc/rv32/qsh/include/reg_base_addr.h"
+#include "../../../../modules/hal/linkedsemi/soc/rv32/qsh/include/qsh.h"
 
 / {
     #address-cells = <1>;
