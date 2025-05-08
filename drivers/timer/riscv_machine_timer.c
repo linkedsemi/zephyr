@@ -179,9 +179,9 @@ static void timer_isr(const void *arg)
 
 	uint64_t now = mtime();
 	uint64_t dcycles = now - last_count;
-	uint32_t dticks = (cycle_diff_t)dcycles / CYC_PER_TICK;
+	uint64_t dticks = dcycles / CYC_PER_TICK;
 
-	last_count += (cycle_diff_t)dticks * CYC_PER_TICK;
+	last_count += dticks * CYC_PER_TICK;
 	last_ticks += dticks;
 	last_elapsed = 0;
 
