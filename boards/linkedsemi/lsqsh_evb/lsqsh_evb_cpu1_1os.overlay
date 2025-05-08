@@ -29,7 +29,7 @@
     leds {
         compatible = "gpio-leds";
         led0: led_0{
-            gpios = <&gpioc 12 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
             label = "Red LED";
         };
     };
@@ -37,7 +37,7 @@
     keys {
         compatible = "gpio-keys";
         btn0: btn_0{
-            gpios = <&gpioc 5 BTN_GPIO_FLAGS>;
+            gpios = <&gpioh 10 BTN_GPIO_FLAGS>;
             label = "Push button 1";
         };
 
