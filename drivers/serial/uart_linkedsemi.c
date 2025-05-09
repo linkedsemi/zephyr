@@ -391,7 +391,7 @@ static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 #define UART_IRQ_HANDLER_FUNC(index) /* Not used */
 #endif
 
-#define GET_UART_BAUDRATE(index) UART_BUADRATE_ENUM_GEN(DT_INST_PROP(index, current_speed))
+#define GET_UART_BAUDRATE(index) ((((uint32_t)(DT_INST_PROP(index, clock_frequency) << 4) / (DT_INST_PROP(index, current_speed))) + 8) >> 4)
 
 #define LS_UART_INIT(index)	\
 LS_UART_IRQ_HANDLER_DECL(index)	\

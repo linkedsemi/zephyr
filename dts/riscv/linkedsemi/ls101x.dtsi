@@ -147,6 +147,7 @@
         uart1: uart@40085000 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40085000 0x400>;
+            clock-frequency = <144000000>;
 			status = "disabled";
             // label = "UART1";
             interrupts = <51 3> ;
@@ -155,6 +156,7 @@
         uart2: uart@40085400 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40085400 0x400>;
+            clock-frequency = <144000000>;
 			status = "disabled";
             // label = "UART1";
             interrupts = <52 3> ;
@@ -163,6 +165,7 @@
         uart3: uart@40085800 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40085800 0x400>;
+            clock-frequency = <144000000>;
 			status = "disabled";
             // label = "UART1";
             interrupts = <53 3> ;
