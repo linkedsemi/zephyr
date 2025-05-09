@@ -103,6 +103,58 @@
     status = "okay";
 };
 
+&i2c5 {
+    status = "okay";
+};
+
+&i2c6 {
+    status = "okay";
+};
+
+&i2c7 {
+    status = "okay";
+};
+
+&i2c8 {
+    status = "okay";
+};
+
+&i2c9 {
+    status = "okay";
+};
+
+&i2c10 {
+    status = "okay";
+};
+
+&i2c10 {
+    status = "okay";
+};
+
+&i2c11 {
+    status = "okay";
+};
+
+&i2c12 {
+    status = "okay";
+};
+
+&i2c13 {
+    status = "okay";
+};
+
+&i2c14 {
+    status = "okay";
+};
+
+&i2c15 {
+    status = "okay";
+};
+
+&i2c16 {
+    status = "okay";
+};
+
 &vuart1 {
     interrupts = <UART7_IRQN 3>;
     uart = <&uart7>;
@@ -121,145 +173,63 @@
     status = "okay";
 };
 
-// &i2c3 {
-//     pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom3: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c4 {
-//     pinctrl-0 = <&i2c4_scl_pd00 &i2c4_sda_pd01>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom4: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c5 {
-//     pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom5: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c6 {
-//     pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
-//     pinctrl-names = "default";
-//     status = "okay";
-// &i2c6 {
-//     pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
-//     pinctrl-names = "default";
-//     status = "disabled";
-
-//     eeprom6: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c7 {
-//     pinctrl-0 = <&i2c7_scl_pk15 &i2c7_sda_pk14>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom7: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c10 {
-//     pinctrl-0 = <&i2c10_scl_pj03 &i2c10_sda_pj02>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom10: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c11 {
-//     pinctrl-0 = <&i2c11_scl_pn09 &i2c11_sda_pn08>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom11: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c12 {
-//     pinctrl-0 = <&i2c12_scl_pn13 &i2c12_sda_pn14>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom12: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c13 {
-//     pinctrl-0 = <&i2c13_scl_pq00 &i2c13_sda_pq01>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom13: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c14 {
-//     pinctrl-0 = <&i2c14_scl_pq03 &i2c14_sda_pq02>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom14: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
 // /*
 //     smbus
 // */
 
 &smbus2 {
+    status = "okay";
+};
+
+&smbus5 {
+    status = "okay";
+};
+
+&smbus6 {
+    status = "okay";
+};
+
+&smbus7 {
+    status = "okay";
+};
+
+&smbus8 {
+    status = "okay";
+};
+
+&smbus9 {
+    status = "okay";
+};
+
+&smbus10 {
+    status = "okay";
+};
+
+&smbus10 {
+    status = "okay";
+};
+
+&smbus11 {
+    status = "okay";
+};
+
+&smbus12 {
+    status = "okay";
+};
+
+&smbus13 {
+    status = "okay";
+};
+
+&smbus14 {
+    status = "okay";
+};
+
+&smbus15 {
+    status = "okay";
+};
+
+&smbus16 {
     status = "okay";
 };
 
