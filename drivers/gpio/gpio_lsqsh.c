@@ -162,7 +162,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
             IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, true);))
             ret = io_is_output(pincode);
             IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
+                (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
         break;
     case GPIO_DISCONNECTED:
@@ -173,7 +173,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
             IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, true);))
             ret = (!io_is_output(pincode)) && (!io_is_input(pincode));
             IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
+                (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
         break;
     case GPIO_INPUT:
@@ -184,7 +184,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
             IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_app_input_lock(pincode, true);))
             ret = io_is_input(pincode);
             IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
+                (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
         break;
     default:
@@ -325,7 +325,7 @@ static int gpio_ls_port_set_masked_raw(const struct device *dev, gpio_port_pins_
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);))
         ret = ((gpio_val->DOC_DOS & target_pins) == target_pins);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-            (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
+            (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
 
     return 0;
@@ -348,7 +348,7 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
         ret = ((gpio_val->DOC_DOS & pins) == pins);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-            (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
+            (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
 
     return 0;
@@ -371,7 +371,7 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
         ret = ((gpio_val->DOC_DOS & pins) == 0);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-            (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
+            (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
 
     return 0;
