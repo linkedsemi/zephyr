@@ -25,6 +25,7 @@ static uint32_t sector_size;
 static uint32_t sector_count;
 
 #define MMC_UNALIGN_OFFSET 1
+
 BUILD_ASSERT(CONFIG_NUM_USE_CPU == 2, "config err");
 BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), "config err");
 
@@ -34,208 +35,220 @@ BUILD_ASSERT(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), "config err");
  */
 ZTEST(sd_stack, test_0_init)
 {
-	int ret;
-#if (CONFIG_NUM_USE_CPU == 2)
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-	*(volatile uint32_t *)0x1007ff00 = 0x1;
-#endif
-#endif
-	zassert_true(device_is_ready(sdhc_dev), "SDHC device is not ready");
+	bool is_cpu1_use_emmc = true;
 
-	ret = sd_init(sdhc_dev, &card);
-
-	zassert_equal(ret, 0, "Card initialization failed");
-// }
-
-// /* Verify that MMC stack returns valid IOCTL values */
-// ZTEST(sd_stack, test_ioctl)
-// {
-	// int ret;
-
-	ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_COUNT, &sector_count);
-	zassert_equal(ret, 0, "IOCTL sector count read failed");
-	TC_PRINT("SD card reports sector count of %d\n", sector_count);
-
-	ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_SIZE, &sector_size);
-	zassert_equal(ret, 0, "IOCTL sector size read failed");
-	TC_PRINT("SD card reports sector size of %d\n", sector_size);
-// }
-
-// /* Verify that SD stack can read from an SD card */
-// ZTEST(sd_stack, test_read)
-// {
-	// int ret;
-	int block_addr = 0;
-
-	/* Try simple reads from start of SD card */
-
-	ret = mmc_read_blocks(&card, buf, block_addr, 1);
-	zassert_equal(ret, 0, "Single block card read failed");
-
-	ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
-	zassert_equal(ret, 0, "Multiple block card read failed");
-
-	/* Try a series of reads from the same block */
-	block_addr = sector_count / 2;
 	for (int i = 0; i < 10; i++) {
-		ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT);
-		zassert_equal(ret, 0, "Multiple reads from same addr failed");
-	}
-	/* Verify that out of bounds read fails */
-	block_addr = sector_count;
-	ret = mmc_read_blocks(&card, buf, block_addr, 1);
-	zassert_not_equal(ret, 0, "Out of bounds read should fail");
+		int ret;
+		printk("i: %d  is_cpu1_use_emmc: %s\n", i, is_cpu1_use_emmc ? "Y" : "N");
 
-	block_addr = sector_count - 2;
-	ret = mmc_read_blocks(&card, buf, block_addr, 2);
-	zassert_equal(ret, 0, "Read from end of card failed");
+		if (is_cpu1_use_emmc) {
+			is_cpu1_use_emmc = !is_cpu1_use_emmc;
+			SYSC_CPU->APP_CPU_SRST = 0x2; /* reset */
+			linkedsemi_sdhci_deinit(sdhc_dev);
+			linkedsemi_sdhci_reinit(sdhc_dev);
+		} else {
+			is_cpu1_use_emmc = !is_cpu1_use_emmc;
 
-	/* Verify that unaligned reads work */
-	block_addr = 3;
-	ret = mmc_read_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
-	zassert_equal(ret, 0, "Unaligned read failed");
-// }
+			*(volatile uint32_t *)0x1007ff00 = 0x1;
+			sys_cache_instr_flush_all();
+			sys_cache_data_flush_and_invd_all();
+			linkedsemi_sdhci_deinit(sdhc_dev);
+			SYSC_CPU->APP_CPU_ADDR_CFG = 0x10080000; /* set cpu1 pc addr */
+			SYSC_CPU->APP_CPU_SRST = 0x1; /* release reset */
+
+			sys_cache_data_invd_all();
+			/* wait for cpu1 access emmc done */
+			while(*(volatile uint32_t *)0x1007ff00) {
+				k_msleep(1);
+			}
+			*(volatile uint32_t *)0x1007ff00 = 0x1;
+			continue;
+		}
+
+		zassert_true(device_is_ready(sdhc_dev), "SDHC device is not ready");
+
+		ret = sd_init(sdhc_dev, &card);
+
+		zassert_equal(ret, 0, "Card initialization failed");
+
+		ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_COUNT, &sector_count);
+		zassert_equal(ret, 0, "IOCTL sector count read failed");
+		TC_PRINT("SD card reports sector count of %d\n", sector_count);
+
+		ret = mmc_ioctl(&card, DISK_IOCTL_GET_SECTOR_SIZE, &sector_size);
+		zassert_equal(ret, 0, "IOCTL sector size read failed");
+		TC_PRINT("SD card reports sector size of %d\n", sector_size);
+	// }
+
+	// /* Verify that SD stack can read from an SD card */
+	// ZTEST(sd_stack, test_read)
+	// {
+	// 	int ret;
+		int block_addr = 0;
+
+		/* Try simple reads from start of SD card */
+
+		ret = mmc_read_blocks(&card, buf, block_addr, 1);
+		zassert_equal(ret, 0, "Single block card read failed");
+
+		ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
+		zassert_equal(ret, 0, "Multiple block card read failed");
+
+		/* Try a series of reads from the same block */
+		block_addr = sector_count / 2;
+		for (int i = 0; i < 10; i++) {
+			ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT);
+			zassert_equal(ret, 0, "Multiple reads from same addr failed");
+		}
+		/* Verify that out of bounds read fails */
+		block_addr = sector_count;
+		ret = mmc_read_blocks(&card, buf, block_addr, 1);
+		zassert_not_equal(ret, 0, "Out of bounds read should fail");
+
+		block_addr = sector_count - 2;
+		ret = mmc_read_blocks(&card, buf, block_addr, 2);
+		zassert_equal(ret, 0, "Read from end of card failed");
+
+		/* Verify that unaligned reads work */
+		block_addr = 3;
+		ret = mmc_read_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
+		zassert_equal(ret, 0, "Unaligned read failed");
+	// }
 #if 1
-// /* Verify that SD stack can write to an SD card */
-// ZTEST(sd_stack, test_write)
-// {
-	// int ret;
-	block_addr = 0;
+	// /* Verify that SD stack can write to an SD card */
+	// ZTEST(sd_stack, test_write)
+	// {
+	// 	int ret;
+		block_addr = 0;
 
-	/* Try simple writes from start of SD card */
+		/* Try simple writes from start of SD card */
 
-	ret = mmc_write_blocks(&card, buf, block_addr, 1);
-	zassert_equal(ret, 0, "Single block card write failed");
+		ret = mmc_write_blocks(&card, buf, block_addr, 1);
+		zassert_equal(ret, 0, "Single block card write failed");
 
-	ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
-	zassert_equal(ret, 0, "Multiple block card write failed");
+		ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
+		zassert_equal(ret, 0, "Multiple block card write failed");
 
-	/* Try a series of reads from the same block */
-	block_addr = sector_count / 2;
-	for (int i = 0; i < 10; i++) {
-		ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT);
-		zassert_equal(ret, 0, "Multiple writes to same addr failed");
-	}
-	/* Verify that out of bounds write fails */
-	block_addr = sector_count;
-	ret = mmc_write_blocks(&card, buf, block_addr, 1);
-	zassert_not_equal(ret, 0, "Out of bounds write should fail");
+		/* Try a series of reads from the same block */
+		block_addr = sector_count / 2;
+		for (int i = 0; i < 10; i++) {
+			ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT);
+			zassert_equal(ret, 0, "Multiple writes to same addr failed");
+		}
+		/* Verify that out of bounds write fails */
+		block_addr = sector_count;
+		ret = mmc_write_blocks(&card, buf, block_addr, 1);
+		zassert_not_equal(ret, 0, "Out of bounds write should fail");
 
-	block_addr = sector_count - 2;
-	ret = mmc_write_blocks(&card, buf, block_addr, 2);
-	zassert_equal(ret, 0, "Write to end of card failed");
+		block_addr = sector_count - 2;
+		ret = mmc_write_blocks(&card, buf, block_addr, 2);
+		zassert_equal(ret, 0, "Write to end of card failed");
 
-	/* Verify that unaligned writes work */
-	block_addr = 3;
-	ret = mmc_write_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
-	zassert_equal(ret, 0, "Unaligned write failed");
-// }
-
-// /* Test reads and writes interleaved, to verify data is making it on disk */
-// ZTEST(sd_stack, test_rw)
-// {
-	// int ret;
-	block_addr = 0;
-
-	/* Zero the write buffer */
-	memset(buf, 0, BUF_SIZE);
-	memset(check_buf, 0, BUF_SIZE);
-	ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
-	zassert_equal(ret, 0, "Write to card failed");
-	/* Verify that a read from this area is empty */
-	ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
-	zassert_equal(ret, 0, "Read from card failed");
-	zassert_mem_equal(buf, check_buf, BUF_SIZE, "Read of erased area was not zero");
-
-	/* Now write nonzero data block */
-	for (int i = 0; i < sizeof(buf); i++) {
-		check_buf[i] = buf[i] = (uint8_t)i;
-	}
-
-	ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT);
-	zassert_equal(ret, 0, "Write to card failed");
-	/* Clear the read buffer, then write to it again */
-	memset(buf, 0, BUF_SIZE);
-	ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT);
-	zassert_equal(ret, 0, "Read from card failed");
-	zassert_mem_equal(buf, check_buf, BUF_SIZE, "Read of written area was not correct");
-
-	block_addr = (sector_count / 3);
-	for (int i = 0; i < 10; i++) {
 		/* Verify that unaligned writes work */
-		ret = mmc_write_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr,
-				       SECTOR_COUNT - 1);
+		block_addr = 3;
+		ret = mmc_write_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr, SECTOR_COUNT - 1);
+		zassert_equal(ret, 0, "Unaligned write failed");
+	// }
+
+	// /* Test reads and writes interleaved, to verify data is making it on disk */
+	// ZTEST(sd_stack, test_rw)
+	// {
+	// 	int ret;
+		block_addr = 0;
+
+		/* Zero the write buffer */
+		memset(buf, 0, BUF_SIZE);
+		memset(check_buf, 0, BUF_SIZE);
+		ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
 		zassert_equal(ret, 0, "Write to card failed");
-		/* Zero check buffer and read into it */
-		memset(check_buf + MMC_UNALIGN_OFFSET, 0, (SECTOR_COUNT - 1) * sector_size);
-		ret = mmc_read_blocks(&card, check_buf + MMC_UNALIGN_OFFSET, block_addr,
-				      (SECTOR_COUNT - 1));
+		/* Verify that a read from this area is empty */
+		ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT / 2);
 		zassert_equal(ret, 0, "Read from card failed");
-		zassert_mem_equal(buf + MMC_UNALIGN_OFFSET, check_buf + MMC_UNALIGN_OFFSET,
-				  (SECTOR_COUNT - 1) * sector_size,
-				  "Unaligned read of written area was not correct");
-	}
-// }
+		zassert_mem_equal(buf, check_buf, BUF_SIZE, "Read of erased area was not zero");
+
+		/* Now write nonzero data block */
+		for (int i = 0; i < sizeof(buf); i++) {
+			check_buf[i] = buf[i] = (uint8_t)i;
+		}
+
+		ret = mmc_write_blocks(&card, buf, block_addr, SECTOR_COUNT);
+		zassert_equal(ret, 0, "Write to card failed");
+		/* Clear the read buffer, then write to it again */
+		memset(buf, 0, BUF_SIZE);
+		ret = mmc_read_blocks(&card, buf, block_addr, SECTOR_COUNT);
+		zassert_equal(ret, 0, "Read from card failed");
+		zassert_mem_equal(buf, check_buf, BUF_SIZE, "Read of written area was not correct");
+
+		block_addr = (sector_count / 3);
+		for (int i = 0; i < 10; i++) {
+			/* Verify that unaligned writes work */
+			ret = mmc_write_blocks(&card, buf + MMC_UNALIGN_OFFSET, block_addr,
+						SECTOR_COUNT - 1);
+			zassert_equal(ret, 0, "Write to card failed");
+			/* Zero check buffer and read into it */
+			memset(check_buf + MMC_UNALIGN_OFFSET, 0, (SECTOR_COUNT - 1) * sector_size);
+			ret = mmc_read_blocks(&card, check_buf + MMC_UNALIGN_OFFSET, block_addr,
+						(SECTOR_COUNT - 1));
+			zassert_equal(ret, 0, "Read from card failed");
+			zassert_mem_equal(buf + MMC_UNALIGN_OFFSET, check_buf + MMC_UNALIGN_OFFSET,
+					(SECTOR_COUNT - 1) * sector_size,
+					"Unaligned read of written area was not correct");
+		}
+	// }
 #endif
-// /* Simply dump the card configuration. */
-// ZTEST(sd_stack, test_card_config)
-// {
-	switch (card.card_voltage) {
-	case SD_VOL_1_2_V:
-		TC_PRINT("Card voltage: 1.2V\n");
-		break;
-	case SD_VOL_1_8_V:
-		TC_PRINT("Card voltage: 1.8V\n");
-		break;
-	case SD_VOL_3_0_V:
-		TC_PRINT("Card voltage: 3.0V\n");
-		break;
-	case SD_VOL_3_3_V:
-		TC_PRINT("Card voltage: 3.3V\n");
-		break;
-	default:
-		zassert_unreachable("Card voltage is not known value");
+	// /* Simply dump the card configuration. */
+	// ZTEST(sd_stack, test_card_config)
+	// {
+		switch (card.card_voltage) {
+		case SD_VOL_1_2_V:
+			TC_PRINT("Card voltage: 1.2V\n");
+			break;
+		case SD_VOL_1_8_V:
+			TC_PRINT("Card voltage: 1.8V\n");
+			break;
+		case SD_VOL_3_0_V:
+			TC_PRINT("Card voltage: 3.0V\n");
+			break;
+		case SD_VOL_3_3_V:
+			TC_PRINT("Card voltage: 3.3V\n");
+			break;
+		default:
+			zassert_unreachable("Card voltage is not known value");
+		}
+		zassert_equal(card.status, CARD_INITIALIZED, "Card status is not OK");
+		switch (card.card_speed) {
+		case MMC_LEGACY_TIMING:
+			TC_PRINT("Card timing: Legacy MMC\n");
+			break;
+		case MMC_HS_TIMING:
+			TC_PRINT("Card timing: High Speed MMC\n");
+			break;
+		case MMC_HS200_TIMING:
+			TC_PRINT("Card timing: MMC HS200\n");
+			break;
+		case MMC_HS400_TIMING:
+			TC_PRINT("Card timing: MMC HS400\n");
+			break;
+		default:
+			zassert_unreachable("Card timing is not known value");
+		}
+		switch (card.type) {
+		case CARD_SDIO:
+			TC_PRINT("Card type: SDIO\n");
+			break;
+		case CARD_SDMMC:
+			TC_PRINT("Card type: SDMMC\n");
+			break;
+		case CARD_COMBO:
+			TC_PRINT("Card type: combo card\n");
+			break;
+		case CARD_MMC:
+			TC_PRINT("Card type: MMC\n");
+			break;
+		default:
+			zassert_unreachable("Card type is not known value");
+		}
 	}
-	zassert_equal(card.status, CARD_INITIALIZED, "Card status is not OK");
-	switch (card.card_speed) {
-	case MMC_LEGACY_TIMING:
-		TC_PRINT("Card timing: Legacy MMC\n");
-		break;
-	case MMC_HS_TIMING:
-		TC_PRINT("Card timing: High Speed MMC\n");
-		break;
-	case MMC_HS200_TIMING:
-		TC_PRINT("Card timing: MMC HS200\n");
-		break;
-	case MMC_HS400_TIMING:
-		TC_PRINT("Card timing: MMC HS400\n");
-		break;
-	default:
-		zassert_unreachable("Card timing is not known value");
-	}
-	switch (card.type) {
-	case CARD_SDIO:
-		TC_PRINT("Card type: SDIO\n");
-		break;
-	case CARD_SDMMC:
-		TC_PRINT("Card type: SDMMC\n");
-		break;
-	case CARD_COMBO:
-		TC_PRINT("Card type: combo card\n");
-		break;
-	case CARD_MMC:
-		TC_PRINT("Card type: MMC\n");
-		break;
-	default:
-		zassert_unreachable("Card type is not known value");
-	}
-#if (CONFIG_NUM_USE_CPU == 2)
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-	*(volatile uint32_t *)0x1007ff00 = 0x0;
-	sys_cache_instr_flush_all();
-	sys_cache_data_flush_and_invd_all();
-#endif
-#endif
 }
 
 ZTEST_SUITE(sd_stack, NULL, NULL, NULL, NULL, NULL);
