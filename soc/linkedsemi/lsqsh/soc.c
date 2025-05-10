@@ -1,4 +1,5 @@
 #include <zephyr/init.h>
+#include <zephyr/platform/hooks.h>
 #include <zephyr/kernel.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
@@ -14,6 +15,7 @@
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sysc_sec_cpu.h"
+#include "ls_hal_iwdgv2.h"
 #include "ls_soc_gpio.h"
 #include "ls_hal_flash.h"
 #include "ls_hal_cache.h"
@@ -114,7 +116,8 @@ void iopmp_region_init(void)
 extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 extern void psram_init(void);
-static int lsqsh_init(void)
+
+void soc_early_init_hook(void)
 {
     SystemInit();
     // sys_init_none();
@@ -201,7 +204,12 @@ static int lsqsh_init(void)
     app_cpu_dereset();
 #endif
 
-    return 0;
+    return;
 }
 
-SYS_INIT(lsqsh_init, PRE_KERNEL_1, 0);
+void soc_late_init_hook(void)
+{
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    HAL_IWDG_DeInit(SEC_IWDG);
+#endif
+}
