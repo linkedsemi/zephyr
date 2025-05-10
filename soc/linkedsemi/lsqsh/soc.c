@@ -198,12 +198,6 @@ void soc_early_init_hook(void)
     psram_init();
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
-    app_cpu_reset();
-    __NOP();
-    app_cpu_dereset();
-#endif
-
     return;
 }
 
@@ -211,5 +205,11 @@ void soc_late_init_hook(void)
 {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     HAL_IWDG_DeInit(SEC_IWDG);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
+    app_cpu_reset();
+    __NOP();
+    app_cpu_dereset();
 #endif
 }
