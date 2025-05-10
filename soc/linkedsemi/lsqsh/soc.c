@@ -14,6 +14,7 @@
 #include "iopmp.h"
 #include "qsh.h"
 #include <zephyr/irq.h>
+#include "reg_sec_pmu_rg.h"
 #include "reg_sysc_sec_cpu.h"
 #include "ls_hal_iwdgv2.h"
 #include "ls_soc_gpio.h"
@@ -205,6 +206,7 @@ void soc_late_init_hook(void)
 {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     HAL_IWDG_DeInit(SEC_IWDG);
+    SEC_PMU->SFT_CTRL[2] &= ~0xf;
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
