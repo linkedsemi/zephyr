@@ -9,8 +9,8 @@
 #include <ls_hal_iwdgv2.h>
 #include <platform.h>
 
-#define BOOT_WDG_VALUE_BASE_S  (1000000 * 10)
-#define BOOT_WDG_VALUE_BASE_MS ((1000000 * 10) / 1000)
+#define BOOT_WDG_VALUE_BASE_S  (32768)
+#define BOOT_WDG_VALUE_BASE_MS ((32768) / 1000)
 #define APP_CPU_RST_IRQN       82
 #define APP_CPU_RST_INTR_MSK   0x60
 #define APP_CPU_RST_INTR_CLR   0x64
