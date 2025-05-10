@@ -39,11 +39,11 @@ int main(void)
     irq_enable(APP_CPU_RST_IRQN);
 #endif
 
-    printf("reset cpu1\n");
+    printf("reset cpu2\n");
     app_cpu_reset();
     printf("sleep 1s\n");
     k_msleep(1000);
-    printf("dereset cpu1\n");
+    printf("dereset cpu2\n");
     app_cpu_dereset();
 
 #if defined(CONFIG_APP_RST_INTERRUPT)
