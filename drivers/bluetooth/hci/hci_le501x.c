@@ -43,7 +43,6 @@ struct hci_data {
 void *ll_hci_write_param, *ll_hci_read_param;
 uint8_t *ll_hci_read_buf, *host_send_buf_current_ptr;
 uint16_t ll_hci_read_size, host_send_buf_valid_len;
-uint16_t ll_hci_write_size;
 bool ll_hci_done_read;
 
 uint16_t get_lsi_cnt_val(void);
@@ -77,7 +76,7 @@ static void hci_copy_from_send_buf(void)
     if (ll_hci_read_size == 0) {
         return;
     }
-    
+
     if (host_send_buf_valid_len == 0) {
         if (host_send_buf) {
             net_buf_unref(host_send_buf);
@@ -91,7 +90,7 @@ static void hci_copy_from_send_buf(void)
     host_send_buf_current_ptr += ll_hci_read_size;
     host_send_buf_valid_len -= ll_hci_read_size;
     ll_hci_read_size = 0;
-    k_mutex_lock(&ll_hci_done_read_lock,  K_FOREVER);
+    k_mutex_lock(&ll_hci_done_read_lock, K_FOREVER);
     ll_hci_done_read = true;
     aos_swint_set();
     k_mutex_unlock(&ll_hci_done_read_lock);
@@ -113,9 +112,7 @@ void ll_hci_write(uint8_t *bufptr, uint32_t size, void (*callback)(void))
     static uint8_t pkt_indicator;
 
     if (size == 1) {
-        ll_hci_write_size = 1;
         pkt_indicator = bufptr[0];
-        // ll_hci_done_read = false;
         ll_hci_write_callback();
     } else {
         struct net_buf *buf = NULL;
@@ -152,8 +149,7 @@ void ll_hci_write(uint8_t *bufptr, uint32_t size, void (*callback)(void))
         net_buf_add_mem(buf, bufptr, size);
         /* Provide the buffer to the host */
         hci->recv(dev, buf);
-        ll_hci_write_size = 0;
-        k_mutex_lock(&ll_hci_done_read_lock,  K_FOREVER);
+        k_mutex_lock(&ll_hci_done_read_lock, K_FOREVER);
         ll_hci_done_read = false;
         aos_swint_set();
         k_mutex_unlock(&ll_hci_done_read_lock);
@@ -195,18 +191,14 @@ static void le501x_bt_addr_init(void)
 
 static void swint_handler(void)
 {
-    uint16_t ll_hci_write_len = ll_hci_write_size;
-
     if (ll_hci_done_read) {
         ll_hci_read_callback();
     } else {
         ll_hci_write_callback();
     }
 
-    if (ll_hci_write_len != 1) {
-        ble_ll_task_event_set();
-        z_arm_int_exit();
-    }
+    ble_ll_task_event_set();
+    z_arm_int_exit();
 }
 
 static int bt_le501x_init(const struct device *dev)
