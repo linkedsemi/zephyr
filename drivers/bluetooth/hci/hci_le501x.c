@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(bt_hci_driver_le501x);
 
 static K_SEM_DEFINE(hci_send_sem, 0, 1);
 static K_SEM_DEFINE(ll_thread_sem, 0, 1);
+K_MUTEX_DEFINE(ll_hci_done_read_lock);
 K_THREAD_STACK_DEFINE(rx_thread_stack, CONFIG_BT_RX_STACK_SIZE);
 
 struct k_thread rx_thread_data;
@@ -90,8 +91,10 @@ static void hci_copy_from_send_buf(void)
     host_send_buf_current_ptr += ll_hci_read_size;
     host_send_buf_valid_len -= ll_hci_read_size;
     ll_hci_read_size = 0;
+    k_mutex_lock(&ll_hci_done_read_lock,  K_FOREVER);
     ll_hci_done_read = true;
     aos_swint_set();
+    k_mutex_unlock(&ll_hci_done_read_lock);
 }
 
 void ll_hci_read(uint8_t *bufptr, uint32_t size, void (*callback)(void))
@@ -112,7 +115,7 @@ void ll_hci_write(uint8_t *bufptr, uint32_t size, void (*callback)(void))
     if (size == 1) {
         ll_hci_write_size = 1;
         pkt_indicator = bufptr[0];
-        ll_hci_done_read = false;
+        // ll_hci_done_read = false;
         ll_hci_write_callback();
     } else {
         struct net_buf *buf = NULL;
@@ -149,9 +152,11 @@ void ll_hci_write(uint8_t *bufptr, uint32_t size, void (*callback)(void))
         net_buf_add_mem(buf, bufptr, size);
         /* Provide the buffer to the host */
         hci->recv(dev, buf);
-        ll_hci_done_read = false;
         ll_hci_write_size = 0;
+        k_mutex_lock(&ll_hci_done_read_lock,  K_FOREVER);
+        ll_hci_done_read = false;
         aos_swint_set();
+        k_mutex_unlock(&ll_hci_done_read_lock);
     }
 }
 
