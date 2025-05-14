@@ -125,7 +125,7 @@ static int mdio_dwmac_transfer(const struct device *dev,
     }
 
     if (ret) {
-        LOG_ERR("MDIO transaction timed out");
+        LOG_ERROR("MDIO transaction timed out");
         goto done;
     }
 
@@ -189,7 +189,7 @@ static int mdio_dwmac_init(const struct device *dev)
     } else if (dev_config->clock_frequency < MHZ(250)) {
         dev_data->divider = 4;
     } else {
-        LOG_ERR("MAC clk rate does not allow MDIO");
+        LOG_ERROR("MAC clk rate does not allow MDIO");
         return -ENOTSUP;
     }
 
