@@ -19,6 +19,7 @@
     };
 
     aliases {
+        peci-0 = &peci1;
         sdhc0 = &sdhci1;
     };
 
@@ -152,4 +153,8 @@
         bus-width = <1>;
         status = "okay";
     };
+};
+
+&peci1 {
+    status = "okay";
 };

@@ -19,7 +19,6 @@
     };
 
     aliases {
-        peci-0 = &peci1;
         sdhc0 = &sdhci1;
     };
 
@@ -175,10 +174,6 @@
 };
 
 &mdio1 {
-    status = "okay";
-};
-
-&peci1 {
     status = "okay";
 };
 
