@@ -25,6 +25,8 @@ extern "C" {
 #define	POLLRDBAND	0x0080		/* OOB/Urgent readable data */
 #define	POLLWRBAND	0x0100		/* OOB/Urgent data can be written */
 
+typedef unsigned int nfds_t;
+
 int poll(struct pollfd *fds, int nfds, int timeout);
 
 #ifdef __cplusplus
