@@ -15,9 +15,10 @@
 
 LOG_MODULE_REGISTER(peci_dev, LOG_LEVEL_INF);
 struct peci_ls_data {
-	struct k_sem trans_sync_sem;
-	struct k_sem lock;
-
+    struct k_sem xfer_sync_sem;
+    struct k_sem lock;
+    uint8_t buf_idx;
+    
     struct device *dev;
     struct peci_adapter *adapter;
 };

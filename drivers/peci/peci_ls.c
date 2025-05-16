@@ -50,8 +50,6 @@
 
 LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
 
-static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg);
-
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct peci_ls_config {
@@ -72,6 +70,9 @@ struct peci_ls_data {
     struct device *dev;
     struct peci_adapter *adapter;
 };
+
+static int peci_init_adapter(struct device *dev, struct peci_ls_data *dev_data, struct peci_adapter *adapter);
+static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_msg *msg);
 
 __unused static void peci_core_reg_print(const struct device *dev)
 {
@@ -117,11 +118,12 @@ void peci_ls_isr(void *arg)
     k_sem_give(&dev_data->xfer_sync_sem);
 }
 
-static int peci_ls_init(const struct device *dev)
+static int peci_ls_init(struct device *dev)
 {
     const struct peci_ls_config *const dev_config = dev->config;
-    struct peci_ls_data *const dev_data = dev->data;
+    struct peci_ls_data *dev_data = dev->data;
     reg_peci_t *const reg = dev_config->reg;
+    struct peci_adapter *adapter;
     __maybe_unused int ret;
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -135,16 +137,18 @@ static int peci_ls_init(const struct device *dev)
     }
 #endif
 
+    ret = peci_init_adapter(dev, dev_data, adapter);
+
 #if defined(CONFIG_RESET)
     if (dev_config->reset.dev != NULL) {
         if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
+            LOG_ERROR("Reset controller device is not ready");
             return -ENODEV;
         }
 
         ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
         if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
+            LOG_ERROR("toggle reset line failed");
             return ret;
         }
     }
@@ -160,7 +164,7 @@ static int peci_ls_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERR("Could not configure pins");
+        LOG_ERROR("Could not configure pins");
     }
 #endif
 
@@ -333,7 +337,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     peci_tx_byte(dev, buf.u8, msg->rx_buffer.len);
     peci_tx_byte(dev, buf.u8, msg->cmd_code);
 
-    const uint16_t tx_len = msg->tx_buffer.len - 1;
+    const uint16_t tx_len = msg->tx_buffer.len ? msg->tx_buffer.len - 1 : 0;
     /* calculate crc */
     crc_result = crc8(buf.u8, 4, 0x7, crc_result, false);
     if (tx_len > 0) {
@@ -457,6 +461,43 @@ static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_
     LOG_DBG("Debug in %s: msg = %p\n", __func__, msg);
 
     free(msg_ls);
+    return ret;
+}
+
+static int peci_init_adapter(struct device *dev, struct peci_ls_data *dev_data, struct peci_adapter *adapter)
+{
+    int ret;
+
+    adapter = peci_alloc_adapter(dev, sizeof(*dev_data));
+    if(!adapter)
+        return -ENOMEM;
+    LOG_DBG("Debug in %s: adapter->cmd_mask = %d\n", __func__, adapter->cmd_mask);
+    LOG_DBG("Debug: dev = %p\n", (void *)dev);
+    LOG_DBG("Debug in %s: adapter->dev = %p\n", __func__, (void *)&adapter->dev);
+    
+    dev_data = adapter->dev.data;
+    LOG_DBG("Debug: peci dev = %p\n", (void *)dev);
+    LOG_DBG("Debug in %s: data = %p to %p\n", __func__, (void *)dev_data, (void *)dev_data+sizeof(*dev_data));
+    LOG_DBG("Debug in %s: adapter->dev.data = %p\n", __func__, (void *)adapter->dev.data);
+    LOG_DBG("Debug in %s: dev->data = %p\n", __func__, (void *)dev->data);
+
+    dev_data->adapter = adapter;
+    LOG_DBG("Debug: data->adapter = %p\n", (void *)dev_data->adapter);
+    LOG_DBG("Debug: adapter = %p\n", (void *)adapter);
+
+    dev_data->dev = dev;
+    LOG_DBG("Debug in %s: adapter->dev = %p\n", __func__, (void *)&adapter->dev);
+    LOG_DBG("Debug in %s: data->adapter->dev = %p\n", __func__, (void *)&dev_data->adapter->dev);
+    LOG_DBG("Debug in %s: adapter->dev->data = %p, dev->data = %p\n", __func__, (void *)adapter->dev.data, (void *)dev->data);
+
+    strncpy(dev_data->adapter->name, dev->name, sizeof(dev_data->adapter->name));
+    LOG_DBG("PECI adapter %s initialized\n", dev->name);
+    dev_data->adapter->xfer = peci_lib_xfer_base_ls;
+    dev_data->adapter->use_dma = false;
+
+    peci_core_init();
+    ret = peci_add_adapter(dev_data->adapter);
+
     return ret;
 }
 

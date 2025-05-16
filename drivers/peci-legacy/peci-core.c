@@ -2427,12 +2427,14 @@ struct peci_adapter *peci_alloc_adapter(struct device *dev, uint size)
 	if (!dev)
 		return NULL;
 
-	adapter = malloc(size + sizeof(*adapter));
+	adapter = malloc(sizeof(*adapter));
 	if (!adapter)
 		return NULL;
+	
+	memset(adapter, 0, sizeof(*adapter));
 
 	device_init(&adapter->dev);
-	peci_set_adapdata(adapter, &adapter[1]);
+	peci_set_adapdata(adapter, dev->data);
 
 	return adapter;
 }
