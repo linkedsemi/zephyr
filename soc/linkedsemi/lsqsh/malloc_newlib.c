@@ -304,7 +304,7 @@ void *malloc(size_t size)
 {
 	ARG_UNUSED(size);
 
-	LOG_ERR("CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE is 0");
+	LOG_ERROR("CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE is 0");
 	errno = ENOMEM;
 
 	return NULL;
