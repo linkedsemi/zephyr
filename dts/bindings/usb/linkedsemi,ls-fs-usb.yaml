@@ -1,0 +1,26 @@
+# Copyright (c) 2021, Pete Johanson
+# SPDX-License-Identifier: Apache-2.0
+
+description: linkedsemi USB Device Controller.
+
+compatible: "linkedsemi,ls-fs-usb"
+
+include: [usb-ep.yaml, reset-device.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  ram-size:
+    type: int
+    required: true
+    description: |
+      Size of USB dedicated RAM. STM32 SOC's reference
+      manual defines USB packet SRAM size.
+
+  phys:
+    type: phandle
+    description: PHY provider specifier
