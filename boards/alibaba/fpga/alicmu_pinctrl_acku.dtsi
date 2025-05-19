@@ -111,6 +111,19 @@
         input-enable;
     };
 
+    /omit-if-no-ref/i2c8_scl_ph05: i2c8_scl_ph05 {
+        pinmux = <I2C8_SCL_FUNC1_IDX10_PINMUX_PH(05)>;
+        drive-strength = "quarter max driver";
+        drive-open-drain;
+        input-enable;
+    };
+    /omit-if-no-ref/i2c8_sda_ph07: i2c8_sda_ph07 {
+        pinmux = <I2C8_SDA_FUNC1_IDX11_PINMUX_PH(07)>;
+        drive-strength = "quarter max driver";
+        drive-open-drain;
+        input-enable;
+    };
+
     // /omit-if-no-ref/i2c3_scl_pc06: i2c3_scl_pc06 {
     //     pinmux = <LS_PINMUX_SET(PC06, FIOC_I2C3_SCL)>;
     //     drive-strength = "quarter max driver";
@@ -280,5 +293,10 @@
 
 &i2c2 {
     pinctrl-0 = <&i2c2_scl_pb00 &i2c2_sda_pb01>;
+    pinctrl-names = "default";
+};
+
+&i2c8 {
+    pinctrl-0 = <&i2c8_scl_ph05 &i2c8_sda_ph07>;
     pinctrl-names = "default";
 };
