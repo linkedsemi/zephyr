@@ -75,14 +75,14 @@ void *net_buf_simple_add_mem(struct net_buf_simple *buf, const void *mem,
 
 uint8_t *net_buf_simple_add_u8(struct net_buf_simple *buf, uint8_t val)
 {
-	uint8_t *u8;
+	uint8_t *u8ptr;
 
 	NET_BUF_SIMPLE_DBG("buf %p val 0x%02x", buf, val);
 
-	u8 = net_buf_simple_add(buf, 1);
-	*u8 = val;
+	u8ptr = net_buf_simple_add(buf, 1);
+	*u8ptr = val;
 
-	return u8;
+	return u8ptr;
 }
 
 void net_buf_simple_add_le16(struct net_buf_simple *buf, uint16_t val)
