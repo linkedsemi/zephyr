@@ -298,6 +298,22 @@
             // lable = "DAC12"
         };
 
+        usb: usb@40001000 {
+            compatible = "linkedsemi,ls-fs-usb";
+            reg = <0x40001000 0x400>;
+            interrupts = <22 3>;
+            num-bidir-endpoints = <8>;
+            maximum-speed = "full-speed";
+            ram-size = <64>;
+            clocks = <&cpu_cctl LS_CCTL_CLKG LS_CLKG_SET_USB_POS LS_CLKG_CLR_USB_POS>;
+            phys = <&usb_fs_phy>; 
+            status = "disabled";
+        };
+
+        usb_fs_phy: usbphy {
+            compatible = "usb-nop-xceiv";
+            #phy-cells = <0>;
+        }; // Currently empty, high-speed PHY may need to be implemented in the future.
     };
     power-states {
         idle: idle{
