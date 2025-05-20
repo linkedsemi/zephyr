@@ -65,13 +65,6 @@ __no_optimization void cpu_cache_region_init(void)
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
     uint8_t idx = 0;
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-    csi_sysmap_config_region(idx++, 0x8000000, 0);
-    csi_sysmap_config_region(idx++, 0x8000000 + MB(8), CACHEABLE);
-#else
-    csi_sysmap_config_region(idx++, 0x8000000 + MB(8), 0);
-    csi_sysmap_config_region(idx++, 0x8000000 + MB(16), 0);
-#endif
     csi_sysmap_config_region(idx++, __image_ram_start, 0);
 #if defined(CONFIG_NOCACHE_MEMORY)
     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
@@ -81,8 +74,10 @@ __no_optimization void cpu_cache_region_init(void)
         csi_sysmap_config_region(idx++, __nocache_ram_end, 0);
     }
 #endif
-    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE); /* 512KB + 768KB SRAM */
 
+    csi_sysmap_config_region(idx++, PSRAM_ADDR, 0);
+    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(8), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
     csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
 }
 
