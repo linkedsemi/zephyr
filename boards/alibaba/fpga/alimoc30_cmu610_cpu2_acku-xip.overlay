@@ -58,6 +58,29 @@
     status = "disabled";
 };
 
+&i2c1 {
+    status = "okay";
+    label = "i2c-1";
+};
+&i2c2 {
+    status = "okay";
+    label = "i2c-2";
+};
+
+&espi1 {
+    espi1_kcs_ca2: espi1_kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "okay";
+    };
+    status = "okay";
+};
+&ipmi_kcs {
+    kcs_chan = <&espi1_kcs_ca2>;
+    status = "okay";
+    label = "ipmi-kcs";
+};
+
 &qspi1 {
     compatible = "linkedsemi,mbox-cpu2-flash-controller";
     mbox = <&mbox_consumer3>;
