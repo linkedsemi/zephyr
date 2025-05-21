@@ -300,9 +300,23 @@ static int ipmi_kcs_ls_write(const struct device *dev,uint8_t *data,uint32_t siz
 	return size;
 }
 
+static int ipmi_kcs_ls_update_status(const struct device *dev,uint8_t mask,uint8_t val)
+{
+    kcs_update_status(dev,mask,val);
+	return 0;
+}
+
+static int ipmi_kcs_ls_force_abort(const struct device *dev)
+{
+    kcs_force_abort(dev);
+	return 0;
+}
+
 static const struct ipmi_driver_api ipmi_kcs_ls_api = {
     .read = ipmi_kcs_ls_read,
     .write = ipmi_kcs_ls_write,
+	.update_status = ipmi_kcs_ls_update_status,
+	.force_abort = ipmi_kcs_ls_force_abort,
 };
 
 #define IPMI_KCS_LS_INIT(n)						     \

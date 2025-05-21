@@ -192,7 +192,7 @@ static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 	}
 	default:
 		if (ptr->file.mp->fs->ioctl) {
-			ptr->file.mp->fs->ioctl(&ptr->file, request, args);
+			rc = ptr->file.mp->fs->ioctl(&ptr->file, request, args);
 		} else {
 			errno = EOPNOTSUPP;
 			return -1;

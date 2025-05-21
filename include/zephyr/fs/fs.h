@@ -67,6 +67,9 @@ enum {
 	/** Identifier for in-tree i2cfs file system. */
     FS_I2C,
     FS_GPIO,
+
+	/** Identifier for in-tree kcsfs file system. */
+    FS_KCS,
 };
 
 /** Flag prevents formatting device if requested file system not found */
