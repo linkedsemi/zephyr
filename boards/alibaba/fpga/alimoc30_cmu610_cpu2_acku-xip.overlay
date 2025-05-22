@@ -84,9 +84,9 @@
                 label = "app";
                 reg = <0xa00000 DT_SIZE_M(2)>;
             };
-            storage_partition: partition@c00000 {
+            storage_partition: partition@f00000 {
                 label = "storage";
-                reg = <0xc00000 DT_SIZE_M(4)>;
+                reg = <0xf00000 DT_SIZE_M(1)>;
             };
         };
     };
