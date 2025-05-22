@@ -152,8 +152,6 @@ K_MUTEX_DEFINE(fs_mutex);
 
 int write_log_to_file(uint8_t *data, size_t length, void *ctx)
 {
-	k_mutex_lock(&fs_mutex, K_FOREVER);
-
 	int rc;
 	struct fs_file_t *f = &fs_file;
 
@@ -224,13 +222,10 @@ int write_log_to_file(uint8_t *data, size_t length, void *ctx)
 		}
 	}
 
-	k_mutex_unlock(&fs_mutex);
-
 	return length;
 
 on_error:
 	backend_state = BACKEND_FS_CORRUPTED;
-	k_mutex_unlock(&fs_mutex);
 	return length;
 }
 
