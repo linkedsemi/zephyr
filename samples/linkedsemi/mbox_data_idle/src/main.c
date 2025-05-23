@@ -30,10 +30,16 @@ static void callback0(const struct device *dev, mbox_channel_id_t channel_id, vo
     // printk("Server receive (on channel %d)\n", g_mbox_received_channel0);
 }
 
+__ramfunc void wait_for_done(void)
+{
+    *g_mbox_received_data0.ack = true;
+    while(*g_mbox_received_data0.done == false);
+}
+
 int main(void)
 {
-    const struct mbox_dt_spec tx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer2), tx);
-    const struct mbox_dt_spec rx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer2), rx);
+    const struct mbox_dt_spec tx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer3), tx);
+    const struct mbox_dt_spec rx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer3), rx);
 
     printk("mbox_data Server demo started\n");
 
@@ -60,14 +66,12 @@ int main(void)
         // printk("Server receive (on channel %d)\n", g_mbox_received_channel0);
 
         switch (g_mbox_received_data0.api_id) {
-        case MBOX_FUNC_CALL_GO_IDLE:
+        case MBOX_FUNC_CALL_DO_IDLE:
             do {
                 printk("done: %p\n", g_mbox_received_data0.done);
                 printk("ack: %p\n", g_mbox_received_data0.ack);
                 disable_global_irq();
-                *g_mbox_received_data0.ack = true;
-                printk("idle\n");
-                while(*g_mbox_received_data0.done == false);
+                wait_for_done();
                 enable_global_irq();
                 printk("release\n");
             } while (0);
