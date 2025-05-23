@@ -4,16 +4,19 @@
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include <cpu.h>
 
+BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
+
 __nocache static volatile bool g_done = false;
 __nocache static volatile bool g_ack = false;
 __nocache static volatile int g_ret = 0;
+__nocache static void *parm[MBOX_FUNC_CALL_PARM_NUM_MAX] = {};
 
-__ramfunc static void mbox_func_call_send_and_wait(const struct mbox_dt_spec *tx_channel,
+__ramfunc void mbox_func_call_send_and_wait(const struct mbox_dt_spec *tx_channel,
                                                    struct mbox_msg *msg,
                                                    uint32_t *retry_cnt)
 {
-    if (mbox_send_dt(tx_channel, msg) == -ENOSPC) {
-        printk("mbox_send() full\n");
+    if (mbox_linkedsemi_send_ramfunc(tx_channel->dev, tx_channel->channel_id, msg) == -ENOSPC) {
+        while(1);
     }
     *retry_cnt = 0;
     while ((!g_done) && (*retry_cnt < MBOX_RETRY_MAX_CNT)) {
@@ -27,7 +30,6 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
                    uint32_t parm_num,
                    ...)
 {
-    void *parm[MBOX_FUNC_CALL_PARM_NUM_MAX] = {};
     mbox_func_call_data_t mbox_func_call_data = {};
     struct mbox_msg msg = {};
     uint32_t retry_cnt = 0;
@@ -53,7 +55,6 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
 
     g_done = false;
 
-    sys_cache_data_flush_all();
     disable_global_irq();
     mbox_func_call_send_and_wait(tx_channel, &msg, &retry_cnt);
     if (retry_cnt > MBOX_RETRY_MAX_CNT) {
@@ -66,8 +67,10 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
     }
 
 timeout:
+    if ((retry_cnt == 0) || (retry_cnt > MBOX_RETRY_MAX_CNT)) {
+        while(1);
+    }
     enable_global_irq();
-    sys_cache_data_invd_all();
 
     return ret;
 }
