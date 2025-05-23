@@ -16,6 +16,8 @@
 
 #include <ls_hal_flash.h>
 
+BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
+
 #define DT_DRV_COMPAT     linkedsemi_mbox_cpu2_flash_controller
 #define SOC_NV_FLASH_NODE DT_CHOSEN(share_flash)
 
@@ -23,6 +25,10 @@
 #define FLASH_SIZE       DT_REG_SIZE(SOC_NV_FLASH_NODE)
 #define FLASH_ERASE_SIZE DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
 #define FLASH_WRITE_SIZE DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
+
+__nocache static off_t nc_offset;
+__nocache static const void *nc_data;
+__nocache static size_t nc_size;
 
 struct flash_ls_data {
     struct k_sem mutex;
@@ -82,10 +88,13 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
         return -EACCES;
     }
 
-    /* Erase sector one by one*/
-    for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
-        mbox_func_call(&dev_config->tx_channel, MBOX_FUNC_CALL_HAL_FLASH_SECTOR_ERASE, 1, (void *)&addr);
-    }
+    nc_offset = offset;
+    nc_size = size;
+    mbox_func_call(&dev_config->tx_channel,
+                    MBOX_FUNC_CALL_FLASH_ERASE,
+                    2,
+                    (void *)&nc_offset,
+                    (void *)&nc_size);
 
     k_sem_give(&dev_data->mutex);
 
@@ -96,8 +105,6 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
 {
     __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
-    size_t len = size;
-    uint8_t *write_data = (uint8_t *)data;
 
     if (!size) {
         return 0;
@@ -112,23 +119,16 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
     }
 
     sys_cache_data_flush_range((void *)data, size);
-    while (size) {
-        /* If the offset isn't a multiple of the page size, we first need
-         * to write the remaining part that fits, otherwise the write could
-         * be wrapped around within the same page
-         */
-        len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-        mbox_func_call(&dev_config->tx_channel,
-                       MBOX_FUNC_CALL_HAL_FLASH_PAGE_PROGRAM,
-                       3,
-                       (void *)&offset,
-                       (void *)&write_data,
-                       (void *)&len);
 
-        write_data += len;
-        offset += len;
-        size -= len;
-    }
+    nc_offset = offset;
+    nc_data = data;
+    nc_size = size;
+    mbox_func_call(&dev_config->tx_channel,
+                    MBOX_FUNC_CALL_FLASH_WRITE,
+                    3,
+                    (void *)&nc_offset,
+                    (void *)&nc_data,
+                    (void *)&nc_size);
 
     k_sem_give(&dev_data->mutex);
 
@@ -148,12 +148,16 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
+    nc_offset = offset;
+    nc_data = data;
+    nc_size = size;
     mbox_func_call(&dev_config->tx_channel,
-                MBOX_FUNC_CALL_HAL_FLASH_MULTI_IO_READ,
+                MBOX_FUNC_CALL_FLASH_READ,
                 3,
-                (void *)&offset,
-                (void *)&data,
-                (void *)&size);
+                (void *)&nc_offset,
+                (void *)&nc_data,
+                (void *)&nc_size);
+
     sys_cache_data_invd_range((void *)data, size);
 
     return 0;
@@ -192,7 +196,12 @@ static int flash_ls_read_jedec_id(const struct device *dev,
         return -EINVAL;
     }
 
-    mbox_func_call(&dev_config->tx_channel, MBOX_FUNC_CALL_HAL_FLASH_READ_ID, 1, (void *)&id);
+    nc_data = id;
+    mbox_func_call(&dev_config->tx_channel,
+                    MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID,
+                    1,
+                    (void *)&nc_data);
+    sys_cache_data_invd_range((void *)id, 3);
 
     return 0;
 }

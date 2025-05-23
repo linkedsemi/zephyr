@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/drivers/mbox.h>
+#include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include <zephyr/irq.h>
 #define LOG_LEVEL CONFIG_MBOX_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -108,6 +109,44 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
         cpu_intr0_activate();
     } else {
         LOG_ERROR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
+        return -ENOTSUP;
+    }
+
+    return 0;
+}
+
+__ramfunc int mbox_linkedsemi_send_ramfunc(const struct device *dev, uint32_t channel, const struct mbox_msg *msg)
+{
+    struct mbox_linkedsemi_data *dev_data = dev->data;
+    bool ret;
+
+#if 0
+    if (msg->size != MBOX_FIFO_WIDTH) {
+        /* We can only send this many bytes at a time. */
+        return -EMSGSIZE;
+    }
+#endif
+
+    if (msg) {
+        ret = general_fifo_put(dev_data->fifo[channel], (void *)msg->data);
+        if (ret == false) {
+            LOG_ERR("ENOSPC\n");
+            return -ENOSPC;
+        }
+    }
+#if !defined(CONFIG_SIGNALLING_MODE_SUPPORT)
+    else {
+        LOG_ERR("Not supported signalling mode\n");
+        return -ENOTSUP;
+    }
+#endif
+
+    if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
+        cpu_intr1_activate();
+    } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
+        cpu_intr0_activate();
+    } else {
+        LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
         return -ENOTSUP;
     }
 

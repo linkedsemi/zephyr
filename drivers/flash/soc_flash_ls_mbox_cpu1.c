@@ -7,8 +7,11 @@
 #include <string.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
+#include <zephyr/linker/linker-defs.h>
+#include <zephyr/cache.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
+#include <zephyr/drivers/flash/soc_flash_ls_mbox_cpu1.h>
 #include <platform.h>
 #include <cpu.h>
 
@@ -27,6 +30,7 @@
 
 struct flash_ls_data {
     struct k_sem mutex;
+    bool mult_host;
 };
 
 struct flash_ls_config {
@@ -40,6 +44,27 @@ static const struct flash_parameters flash_ls_parameters = {
     .write_block_size = FLASH_WRITE_SIZE,
     .erase_value = 0xff,
 };
+
+int flash_ls_mult_host(const struct device *dev, bool flag)
+{
+    __unused struct flash_ls_data *dev_data = dev->data;
+
+    if (k_sem_take(&dev_data->mutex, K_FOREVER)) {
+        return -EACCES;
+    }
+
+    dev_data->mult_host = flag;
+
+    k_sem_give(&dev_data->mutex);
+
+    return 0;
+}
+
+static bool is_own_ram(uint32_t addr)
+{
+    return ((addr >= DT_REG_ADDR(DT_CHOSEN(zephyr_sram)))
+            && (addr < (DT_REG_ADDR(DT_CHOSEN(zephyr_sram)) + DT_REG_SIZE(DT_CHOSEN(zephyr_sram)))));
+}
 
 static int flash_ls_init(const struct device *dev)
 {
@@ -87,17 +112,18 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
     }
 
     /* Erase sector one by one*/
-    for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
-        int ret_mbox = 0;
-        bool xip_present = is_cpu2_xip() & is_cpu2_running();
-        if (xip_present) {
-            ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-        }
+    bool xip_present = is_cpu2_xip() & is_cpu2_running();
+    if (dev_data->mult_host && xip_present) {
+        int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
         if (!ret_mbox) {
-            hal_flash_sector_erase(addr);
+            for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
+                hal_flash_sector_erase(addr);
+            }
         }
-        if (xip_present) {
-            mbox_release_cpu2();
+        mbox_release_cpu2();
+    } else {
+        for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
+            hal_flash_sector_erase(addr);
         }
     }
 
@@ -125,28 +151,38 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
         return -EACCES;
     }
 
-    while (size) {
-        /* If the offset isn't a multiple of the page size, we first need
-		 * to write the remaining part that fits, otherwise the write could
-		 * be wrapped around within the same page
-		 */
-        len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-        int ret_mbox = 0;
-        bool xip_present = is_cpu2_xip() & is_cpu2_running();
-        if (xip_present) {
-            ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-        }
+    bool xip_present = is_cpu2_xip() & is_cpu2_running();
+    if (dev_data->mult_host && xip_present) {
+        int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
         if (!ret_mbox) {
-            hal_flash_page_program(offset, write_data, len);
-        }
-        if (xip_present) {
-            mbox_release_cpu2();
-        }
+            while (size) {
+                /* If the offset isn't a multiple of the page size, we first need
+                * to write the remaining part that fits, otherwise the write could
+                * be wrapped around within the same page
+                */
+                len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
+                if (is_own_ram((uint32_t)write_data)) {
+                    sys_cache_data_invd_range((void *)write_data, len);
+                }
+                hal_flash_page_program(offset, write_data, len);
 
-        write_data += len;
-        offset += len;
-        size -= len;
+                write_data += len;
+                offset += len;
+                size -= len;
+            }
+        }
+        mbox_release_cpu2();
+    } else {
+        while (size) {
+            len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
+            hal_flash_page_program(offset, write_data, len);
+
+            write_data += len;
+            offset += len;
+            size -= len;
+        }
     }
+
 
     k_sem_give(&dev_data->mutex);
 
@@ -166,12 +202,25 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
         return -EINVAL;
     }
 
+    if (k_sem_take(&dev_data->mutex, K_FOREVER)) {
+        return -EACCES;
+    }
+
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
-    if (xip_present) {
-        memcpy(data, (void *)(FLASH_ADDR + offset), size);
+    if (dev_data->mult_host && xip_present) {
+        int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
+        if (!ret_mbox) {
+            hal_flash_multi_io_read(offset, (uint8_t *)data, size);
+            if (is_own_ram((uint32_t)data)) {
+                sys_cache_data_flush_range((void *)data, size);
+            }
+        }
+        mbox_release_cpu2();
     } else {
         hal_flash_multi_io_read(offset, (uint8_t *)data, size);
     }
+
+    k_sem_give(&dev_data->mutex);
 
     return 0;
 }
@@ -210,16 +259,18 @@ static int flash_ls_read_jedec_id(const struct device *dev,
         return -EINVAL;
     }
 
-    int ret_mbox = 0;
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
-    if (xip_present) {
-        ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-    }
-    if (!ret_mbox) {
-        hal_flash_read_id(id);
-    }
-    if (xip_present) {
+    if (dev_data->mult_host && xip_present) {
+        int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
+        if (!ret_mbox) {
+            hal_flash_read_id(id);
+            if (is_own_ram((uint32_t)id)) {
+                sys_cache_data_flush_range((void *)id, 3);
+            }
+        }
         mbox_release_cpu2();
+    } else {
+        hal_flash_read_id(id);
     }
 
     return 0;
@@ -245,7 +296,9 @@ static const struct flash_ls_config flash_ls_config_0 = {
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0), ))
 };
 
-static struct flash_ls_data flash_ls_data_0;
+static struct flash_ls_data flash_ls_data_0 = {
+    .mult_host = false,
+};
 
 DEVICE_DT_INST_DEFINE(0,
                       flash_ls_init,
