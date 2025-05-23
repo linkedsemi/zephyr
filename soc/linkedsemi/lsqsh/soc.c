@@ -4,6 +4,9 @@
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/state.h>
+#include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
+#include <zephyr/drivers/flash/soc_flash_ls_mbox_cpu1.h>
 #include "platform.h"
 #include "core_rv32.h"
 #include "exception_isr.h"
@@ -51,11 +54,12 @@ void sys_arch_reboot(int type)
 #define CPU2_FW_REGION_SIZE MB(14)
 /* strong order | cacheable | bufferable */
 /*       2      |     1     |     0      */
+#define WEAK_ORDER 0
 #define BUFFERABLE BIT(0)
 #define CACHEABLE BIT(1)
 #define STRONG_ORDER BIT(2)
 
-__no_optimization void cpu_cache_region_init(void)
+__no_optimization void cpu1_cache_region_init(void)
 {
     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
@@ -65,26 +69,73 @@ __no_optimization void cpu_cache_region_init(void)
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
     uint8_t idx = 0;
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-    csi_sysmap_config_region(idx++, 0x8000000, 0);
-    csi_sysmap_config_region(idx++, 0x8000000 + MB(8), CACHEABLE);
-#else
-    csi_sysmap_config_region(idx++, 0x8000000 + MB(8), 0);
-    csi_sysmap_config_region(idx++, 0x8000000 + MB(16), 0);
-#endif
-    csi_sysmap_config_region(idx++, __image_ram_start, 0);
+    csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
+
 #if defined(CONFIG_NOCACHE_MEMORY)
     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
         // __ASSERT_NO_MSG(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
         while(!(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
-        csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
-        csi_sysmap_config_region(idx++, __nocache_ram_end, 0);
+        if (__image_ram_start != __nocache_ram_start) {
+            csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
+        csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
     }
 #endif
+
+    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+
+#if DT_NODE_EXISTS(DT_NODELABEL(mbox))
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(mbox)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
+#endif
+
     csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
 
-    csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+    if (idx < 8) {
+        csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+    }
 }
+
+__no_optimization void cpu2_cache_region_init(void)
+{
+    __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+    __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+    __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+    __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    uint8_t idx = 0;
+
+#if defined(CONFIG_XIP)
+    csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
+#endif
+
+    csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
+
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
+        // __ASSERT_NO_MSG(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0);
+        while(!(__nocache_ram_size % CONFIG_PMP_GRANULARITY == 0));
+        if (__image_ram_start != __nocache_ram_start) {
+            csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
+        csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
+    }
+#endif
+
+    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+
+#if DT_NODE_EXISTS(DT_NODELABEL(mbox))
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(mbox)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
+#endif
+
+    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+
+    if (idx < 8) {
+        csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+    }
+}
+
 
 /*
 | N | addr                           | mode  | rwx | desc                    |
@@ -122,7 +173,12 @@ void soc_early_init_hook(void)
 {
     SystemInit();
     // sys_init_none();
-    cpu_cache_region_init();
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    cpu1_cache_region_init();
+#else
+    cpu2_cache_region_init();
+#endif
+
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
 #endif
@@ -213,5 +269,11 @@ void soc_late_init_hook(void)
     app_cpu_reset();
     __NOP();
     app_cpu_dereset();
+
+    const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
+    bool xip = is_cpu2_xip();
+    if (xip) {
+        flash_ls_mult_host(flash_dev, true);
+    }
 #endif
 }
