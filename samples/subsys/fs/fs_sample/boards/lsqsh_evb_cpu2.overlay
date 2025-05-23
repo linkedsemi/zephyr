@@ -1,18 +1,10 @@
-/*
- * Copyright (c) 2023 Nordic Semiconductor ASA
- *
- * SPDX-License-Identifier: Apache-2.0
- */
+&qspi1 {
+    compatible = "linkedsemi,mbox-cpu2-flash-controller";
+    mbox = <&mbox_consumer3>;
+    status = "okay";
+};
 
-/* Because FAT FS needs at least 64kiB partition and default
- * storage_partition is 32kiB for that board, we need to reorgatnize
- * partitions to get at least 64KiB.
- * This overlay removes image slot partitions and strips each of 64kiB,
- * and removes the storage partition to add the additional 2*64kiB to
- * it.
- */
-
-&flash0 {
+&flash1 {
     /*
 	* Flash base address is 0x8000000,
     * the following parts are all offset addresses.
