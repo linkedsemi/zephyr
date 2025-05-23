@@ -270,10 +270,12 @@ void soc_late_init_hook(void)
     __NOP();
     app_cpu_dereset();
 
+#if defined(CONFIG_FLASH) && DT_NODE_EXISTS(DT_NODELABEL(qspi1))
     const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
     bool xip = is_cpu2_xip();
     if (xip) {
         flash_ls_mult_host(flash_dev, true);
     }
+#endif
 #endif
 }
