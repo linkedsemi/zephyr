@@ -42,10 +42,10 @@ static void callback1(const struct device *dev, mbox_channel_id_t channel_id, vo
 
 int main(void)
 {
-	const struct mbox_dt_spec tx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer0), tx);
-	const struct mbox_dt_spec rx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer0), rx);
-	const struct mbox_dt_spec tx_channel1 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer1), tx);
-	const struct mbox_dt_spec rx_channel1 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer1), rx);
+	const struct mbox_dt_spec tx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer2), tx);
+	const struct mbox_dt_spec rx_channel0 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer2), rx);
+	const struct mbox_dt_spec tx_channel1 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer3), tx);
+	const struct mbox_dt_spec rx_channel1 = MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer3), rx);
 	struct mbox_msg msg = {0};
 	uint32_t message = 0;
 
