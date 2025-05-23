@@ -62,16 +62,23 @@ config NET_DRIVERS
 config MDIO
 	default y
 
+endif # NETWORKING
+
 if CACHE
 if DCACHE
 
+if NETWORKING
 config NET_BUF_ALIGNMENT
 	default DCACHE_LINE_SIZE
+endif # NETWORKING
+
+if FAT_FILESYSTEM_ELM
+config FS_FATFS_WINDOW_ALIGNMENT
+	default DCACHE_LINE_SIZE
+endif # FAT_FILESYSTEM_ELM
 
 endif # DCACHE
 endif # CACHE
-
-endif # NETWORKING
 
 config NUM_USE_CPU
 	int "running CPU number"
