@@ -25,17 +25,19 @@ enum reset_reason reset_reason_get(void)
     } else {
         if (HART_RESET == reset_reason.u8_val) {
             ret = HART_RESET;
-        }
-        else {
+        } else {
             ret = PASSIVE_RESET;
         }
     }
 #else
-    if (HART_RESET == reset_reason.u8_val) {
-        ret = HART_RESET;
-    }
-    else {
-        ret = PASSIVE_RESET;
+    if (MAGIC_VALUE != reset_reason.magic) {
+        ret = COLD_RESET;
+    } else {
+        if (HART_RESET == reset_reason.u8_val) {
+            ret = HART_RESET;
+        } else {
+            ret = PASSIVE_RESET;
+        }
     }
 #endif
 
