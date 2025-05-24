@@ -1,6 +1,8 @@
 #include <zephyr/init.h>
 #include <zephyr/platform/hooks.h>
 #include <zephyr/kernel.h>
+#include <zephyr/cache.h>
+#include <zephyr/sys/reboot.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/state.h>
@@ -46,7 +48,12 @@ static void driver_init(void)
 
 void sys_arch_reboot(int type)
 {
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    global_reset_reason_clean();
+#endif
+    reset_reason_magic_set();
     reset_reason_set(HART_RESET);
+    sys_cache_data_flush_all();
     csi_core_reset();
 }
 
