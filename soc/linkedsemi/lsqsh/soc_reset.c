@@ -2,7 +2,13 @@
 #include "reg_sec_pmu_rg.h"
 #include "field_manipulate.h"
 
-__nocache volatile uint8_t reset_reason;
+#define MAGIC_VALUE 0xdeadbeef
+
+struct magic_u8 {
+    volatile uint32_t magic;
+    volatile enum reset_reason u8_val;
+};
+__noinit struct magic_u8 reset_reason;
 
 enum reset_reason reset_reason_get(void)
 {
@@ -11,21 +17,25 @@ enum reset_reason reset_reason_get(void)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     uint8_t reset_src = REG_FIELD_RD(SEC_PMU->PMU_STATUS, SEC_PMU_RG_RST_SRC);
     if (reset_src) {
-        ret = GLOBAL_RESET;
+        if (MAGIC_VALUE != reset_reason.magic) {
+            ret = COLD_RESET;
+        } else {
+            ret = GLOBAL_RESET;
+        }
     } else {
-        if (HART_RESET == reset_reason) {
+        if (HART_RESET == reset_reason.u8_val) {
             ret = HART_RESET;
         }
         else {
-            ret = SEC_WDT_RESET;
+            ret = PASSIVE_RESET;
         }
     }
 #else
-    if (HART_RESET == reset_reason) {
+    if (HART_RESET == reset_reason.u8_val) {
         ret = HART_RESET;
     }
     else {
-        ret = APP_WDT_RESET;
+        ret = PASSIVE_RESET;
     }
 #endif
 
@@ -35,17 +45,22 @@ enum reset_reason reset_reason_get(void)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 void global_reset_reason_clean(void)
 {
-    REG_FIELD_WR(SEC_PMU->PMU_STATUS, SEC_PMU_RG_RST_SRC_CLR, 1);
-    REG_FIELD_WR(SEC_PMU->PMU_STATUS, SEC_PMU_RG_RST_SRC_CLR, 0);
+    REG_FIELD_WR(SEC_PMU->RST_SFT, SEC_PMU_RG_RST_SRC_CLR, 1);
+    REG_FIELD_WR(SEC_PMU->RST_SFT, SEC_PMU_RG_RST_SRC_CLR, 0);
 }
 #endif
 
 void reset_reason_clean(void)
 {
-    reset_reason = NO_RESET_REASON;
+    reset_reason.u8_val = NO_RESET_REASON;
 }
 
 void reset_reason_set(enum reset_reason reason)
 {
-    reset_reason = reason;
+    reset_reason.u8_val = reason;
+}
+
+void reset_reason_magic_set()
+{
+    reset_reason.magic = MAGIC_VALUE;
 }
