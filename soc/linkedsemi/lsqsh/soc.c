@@ -3,6 +3,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
 #include <zephyr/sys/reboot.h>
+#include <zephyr/sys/crc.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/state.h>
@@ -28,9 +29,12 @@
 #include "ls_msp_qspiv2.h"
 #include "soc.h"
 #include "soc_reset.h"
+#include "soc_boot.h"
 
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
+BUILD_ASSERT(CONFIG_FLASH);
+BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(qspi1)));
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -273,16 +277,40 @@ void soc_late_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
-    app_cpu_reset();
-    __NOP();
-    app_cpu_dereset();
-
-#if defined(CONFIG_FLASH) && DT_NODE_EXISTS(DT_NODELABEL(qspi1))
+#if (CONFIG_CPU2_LOAD_ADDR < 0x10000000)
     const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
     bool xip = is_cpu2_xip();
     if (xip) {
         flash_ls_mult_host(flash_dev, true);
     }
-#endif
-#endif
+
+    image_header_t image_header = {};
+    flash_read(flash_dev, CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS, &image_header, sizeof(image_header_t));
+
+    if (image_header.test_word[0] != TEST_WORD0 || image_header.test_word[1] != TEST_WORD1)
+        return;
+    // LOG_I("\t test_word pass");
+
+    uint32_t crc = crc32_ieee((uint8_t *)&image_header, sizeof(image_header_t) - sizeof(uint32_t));
+    if (crc != image_header.header_crc)
+        return;
+    // LOG_I("\t header_crc pass");
+
+    uint32_t exe_addr = 0;
+    if (image_header.exe_addr == 0x0) {
+        exe_addr = CONFIG_CPU2_LOAD_ADDR + image_header.offset;
+    } else {
+        exe_addr = image_header.exe_addr;
+        flash_read(flash_dev, (CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS) + image_header.offset, (uint8_t *)image_header.exe_addr, image_header.length);
+    }
+
+    app_cpu_reset();
+    __NOP();
+    app_cpu_dereset_by_addr(exe_addr);
+#else
+    app_cpu_reset();
+    __NOP();
+    app_cpu_dereset_by_addr(CONFIG_CPU2_BOOT_ADDR);
+#endif /* (CONFIG_CPU2_LOAD_ADDR < 0x10000000) */
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2) */
 }
