@@ -277,7 +277,10 @@ void soc_late_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
-#if (CONFIG_CPU2_LOAD_ADDR < 0x10000000)
+#if (CONFIG_CPU2_LOAD_ADDR != CONFIG_CPU2_BOOT_ADDR) \
+    && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
+    && (CONFIG_CPU2_LOAD_ADDR < (CACHE1_ADDR + (64 << 20)))
+
     const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
     bool xip = is_cpu2_xip();
     if (xip) {
@@ -301,7 +304,9 @@ void soc_late_init_hook(void)
         exe_addr = CONFIG_CPU2_LOAD_ADDR + image_header.offset;
     } else {
         exe_addr = image_header.exe_addr;
-        flash_read(flash_dev, (CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS) + image_header.offset, (uint8_t *)image_header.exe_addr, image_header.length);
+        flash_read(flash_dev,
+                (CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS) + image_header.offset + LSQSPIV2->BACKUP_OFFSET,
+                (uint8_t *)image_header.exe_addr, image_header.length);
     }
 
     app_cpu_reset();
