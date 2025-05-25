@@ -96,9 +96,19 @@ if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@1))
 		default n
 endif
 
+config CPU2_LOAD_ADDR
+	hex "CPU2_LOAD_ADDR"
+	default 0x8800000
+
 config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
 	default 0x8800000
+
+config FLASH
+	default y
+
+config CRC
+	default y
 
 config USERSPACE
 	default n
