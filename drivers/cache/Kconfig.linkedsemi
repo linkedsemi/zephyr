@@ -6,5 +6,7 @@ config CACHE_LINKEDSEMI
 bool "LINKEDSEMI external cache driver"
 	depends on SOC_LSQSH
 	select CACHE_HAS_DRIVER
+	select DCACHE_LINE_SIZE_DETECT
+	select ICACHE_LINE_SIZE_DETECT
 	help
 	  This option enables the CACHE driver for LINKEDSEMI QSH series SOC.
