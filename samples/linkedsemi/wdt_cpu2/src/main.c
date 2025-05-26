@@ -33,7 +33,7 @@ int main(void)
 #endif
     reset_reason_magic_set();
     reset_reason_clean();
-    sys_cache_data_flush_all();
+    reset_reason_flush_cache();
     HAL_IWDG_Init(APP_IWDG, BOOT_WDG_VALUE_BASE_S * 1);
     while(1) {
         printf("wait for reset..\n");
