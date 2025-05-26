@@ -1,6 +1,6 @@
 #define WOLFSSH_ZEPHYR
-#include "../../../samples/linkedsemi/shell_wolfssh/wolfssl_user_settings_nofs.h"
-#include "../../../samples/linkedsemi/shell_wolfssh/wolfssh_user_settings_nofs.h"
+#include "wolfssl_user_settings_nofs.h"
+#include "wolfssh_user_settings_nofs.h"
 
 #include <zephyr/init.h>
 #include <zephyr/net/socket.h>
@@ -49,8 +49,6 @@ static const char echoserverBanner[] = "shell wolfssh example\n";
 
 #define MAX_PASSWD_RETRY 3
 static int passwdRetry = MAX_PASSWD_RETRY;
-
-#define EXAMPLE_BUFFER_SZ 4096
 
 #define EXAMPLE_KEYLOAD_BUFFER_SZ 1200
 
