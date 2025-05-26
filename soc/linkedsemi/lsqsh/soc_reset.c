@@ -1,3 +1,4 @@
+#include <zephyr/cache.h>
 #include "soc_reset.h"
 #include "reg_sec_pmu_rg.h"
 #include "field_manipulate.h"
@@ -8,7 +9,8 @@ struct magic_u8 {
     volatile uint32_t magic;
     volatile enum reset_reason u8_val;
 };
-__noinit struct magic_u8 reset_reason;
+
+static struct magic_u8 reset_reason __noinit IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)));
 
 enum reset_reason reset_reason_get(void)
 {
@@ -65,4 +67,9 @@ void reset_reason_set(enum reset_reason reason)
 void reset_reason_magic_set()
 {
     reset_reason.magic = MAGIC_VALUE;
+}
+
+void reset_reason_flush_cache(void)
+{
+    sys_cache_data_flush_range((void *)&reset_reason, sizeof(struct magic_u8));
 }
