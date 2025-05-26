@@ -19,5 +19,6 @@ void global_reset_reason_clean(void);
 void reset_reason_clean(void);
 void reset_reason_set(enum reset_reason reason);
 void reset_reason_magic_set();
+void reset_reason_flush_cache(void);
 
 #endif /* _SOC_RESET_H_ */
