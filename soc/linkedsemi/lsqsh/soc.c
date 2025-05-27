@@ -266,7 +266,7 @@ void soc_early_init_hook(void)
 #endif
 #endif
 
-#if defined(CONFIG_PSRAM) && (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+#if defined(CONFIG_PSRAM)
     psram_init();
 #endif
 
