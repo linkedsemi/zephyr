@@ -174,6 +174,24 @@ config NEWLIB_LIBC_MALLOC_ARENA_2_SIZE
 	int "NEWLIB_LIBC_MALLOC_ARENA_2_SIZE"
 	default 0
 
+config NEWLIB_LIBC_CALLOC
+	bool "Common C library calloc"
+	depends on NEWLIB_LIBC_MALLOC_LSQSH
+	default n if MINIMAL_LIBC
+	default y
+	help
+	  Enable the common C library trivial implementation of calloc,
+	  which forwards to malloc and memset.
+
+config NEWLIB_LIBC_REALLOCARRAY
+	bool "Common C library reallocarray"
+	depends on NEWLIB_LIBC_MALLOC_LSQSH
+	default n if MINIMAL_LIBC
+	default y
+	help
+	  Enable the common C library trivial implementation of
+	  reallocarray, which forwards to realloc.
+
 config COMMON_LIBC_MALLOC
 	default n
 

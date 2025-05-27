@@ -266,36 +266,45 @@ static int malloc_prepare(void)
 
 void *_realloc_r(struct _reent *r, void *ptr, size_t requested_size)
 {
-	malloc_lock();
-
 	void *ret = NULL;
-	if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
-		ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr,
-						__alignof__(z_max_align_t),
-						requested_size);
-	} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
-		ret = sys_heap_aligned_realloc(&z_malloc_heap_2, ptr,
-						__alignof__(z_max_align_t),
-						requested_size);
-	}
-	if (ret == NULL && requested_size != 0) {
-		errno = ENOMEM;
-	}
 
-	malloc_unlock();
+	if (NULL == ptr) {
+		ret = malloc(requested_size);
+	} else if (0 == requested_size) {
+		free(ptr);
+	} else {
+		malloc_lock();
+
+		if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
+			ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr,
+							__alignof__(z_max_align_t),
+							requested_size);
+		} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
+			ret = sys_heap_aligned_realloc(&z_malloc_heap_2, ptr,
+							__alignof__(z_max_align_t),
+							requested_size);
+		}
+		if (ret == NULL && requested_size != 0) {
+			errno = ENOMEM;
+		}
+
+		malloc_unlock();
+	}
 
 	return ret;
 }
 
 void _free_r(struct _reent *r, void *ptr)
 {
-	malloc_lock();
-	if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
-		sys_heap_free(&z_malloc_heap, ptr);
-	} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
-		sys_heap_free(&z_malloc_heap_2, ptr);
+	if (ptr != NULL) {
+		malloc_lock();
+		if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
+			sys_heap_free(&z_malloc_heap, ptr);
+		} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
+			sys_heap_free(&z_malloc_heap_2, ptr);
+		}
+		malloc_unlock();
 	}
-	malloc_unlock();
 }
 
 SYS_INIT(malloc_prepare, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_LIBC);
@@ -324,7 +333,8 @@ void *realloc(void *ptr, size_t size)
 
 #endif /* CONFIG_NEWLIB_LIBC_MALLOC */
 
-#ifdef CONFIG_COMMON_LIBC_CALLOC
+#ifdef CONFIG_NEWLIB_LIBC_CALLOC
+
 void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
 {
 	void *ret;
@@ -342,9 +352,9 @@ void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
 
 	return ret;
 }
-#endif /* CONFIG_COMMON_LIBC_CALLOC */
+#endif /* CONFIG_NEWLIB_LIBC_CALLOC */
 
-#ifdef CONFIG_COMMON_LIBC_REALLOCARRAY
+#ifdef CONFIG_NEWLIB_LIBC_REALLOCARRAY
 void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
 	if (size_mul_overflow(nmemb, size, &size)) {
@@ -353,4 +363,4 @@ void *reallocarray(void *ptr, size_t nmemb, size_t size)
 	}
 	return realloc(ptr, size);
 }
-#endif /* CONFIG_COMMON_LIBC_REALLOCARRAY */
+#endif /* CONFIG_NEWLIB_LIBC_REALLOCARRAY */
