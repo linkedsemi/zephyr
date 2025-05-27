@@ -281,7 +281,7 @@ void soc_late_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
-#if (CONFIG_CPU2_LOAD_ADDR != CONFIG_CPU2_BOOT_ADDR) \
+#if (CONFIG_IMAGE_HEADER) \
     && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
     && (CONFIG_CPU2_LOAD_ADDR < (CACHE1_ADDR + (64 << 20)))
 

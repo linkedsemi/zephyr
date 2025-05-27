@@ -96,6 +96,10 @@ if ((NUM_USE_CPU=2) && $(dt_path_enabled,/cpus/cpu@1))
 		default n
 endif
 
+config IMAGE_HEADER
+	bool "IMAGE_HEADER"
+	default n
+
 config CPU2_LOAD_ADDR
 	hex "CPU2_LOAD_ADDR"
 	default 0x8800000
