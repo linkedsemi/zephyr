@@ -71,7 +71,14 @@ void psram_reset(void)
 void psram_init(void) {
     uint32_t val = 0;
 
-    __ASSERT_NO_MSG(SSIC_VERSION_ID == sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID));
+    if (SSIC_VERSION_ID != sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID)) {
+        sys_write32(0xdeadbeef, PSRAM_ADDR);
+        if (sys_read32(PSRAM_ADDR) != 0xdeadbeef) {
+            while(1);
+        } else {
+            return;
+        }
+    }
     psram_pin_init();
     psram_reset();
 
