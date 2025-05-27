@@ -7,6 +7,9 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <platform.h>
+#include <ls_msp_qspiv2.h>
+
+#define CONFIG_APP_RST_INTERRUPT
 
 #define BOOT_WDG_VALUE_BASE_S  (1000000 * 10)
 #define BOOT_WDG_VALUE_BASE_MS ((1000000 * 10) / 1000)
@@ -16,6 +19,7 @@
 #define APP_CPU_RST_INTR_STT   0x68
 #define APP_CPU_RST_INTR_RAW   0x6c
 
+#if defined(CONFIG_APP_RST_INTERRUPT)
 static K_SEM_DEFINE(sem_rst_occur, 0, 1);
 
 void app_cpu_rst_isr()
@@ -27,6 +31,7 @@ void app_cpu_rst_isr()
     sys_write32(BIT(24), SEC_SYSC_CPU_SEC_ADDR + APP_CPU_RST_INTR_CLR);
     k_sem_give(&sem_rst_occur);
 }
+#endif
 
 int main(void)
 {
@@ -39,22 +44,32 @@ int main(void)
     irq_enable(APP_CPU_RST_IRQN);
 #endif
 
-    printf("reset cpu2\n");
-    app_cpu_reset();
-    printf("sleep 1s\n");
-    k_msleep(1000);
-    printf("dereset cpu2\n");
-    app_cpu_dereset();
+    bool flag = false;
+
+    while(1) {
+        if (flag) {
+            LSQSPIV2->BACKUP_OFFSET = 0x100000 >> 14;
+        } else {
+            LSQSPIV2->BACKUP_OFFSET = 0;
+        }
+
+        printf("reset cpu2\n");
+        app_cpu_reset();
+        printf("sleep 100ms\n");
+        k_msleep(100);
+        printf("dereset cpu2\n");
+        app_cpu_dereset();
 
 #if defined(CONFIG_APP_RST_INTERRUPT)
-    printf("wait\n");
-    int err = k_sem_take(&sem_rst_occur, K_FOREVER);
-    if (err != 0) {
-        printk("Failed to take sem_rst_occur (err %d)\n", err);
-    }
+        printf("wait\n");
+        int err = k_sem_take(&sem_rst_occur, K_FOREVER);
+        if (err != 0) {
+            printk("Failed to take sem_rst_occur (err %d)\n", err);
+        }
 #endif
-
-    printf("done\n");
+        printf("done\n");
+        flag = !flag;
+    }
 
     return 0;
 }
