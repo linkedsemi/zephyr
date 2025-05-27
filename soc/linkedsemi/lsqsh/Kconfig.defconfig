@@ -101,6 +101,10 @@ endif
 		default 0x100000
 endif
 
+config IMAGE_HEADER
+	bool "IMAGE_HEADER"
+	default n
+
 config CPU2_LOAD_ADDR
 	hex "CPU2_LOAD_ADDR"
 	default 0x8800000
