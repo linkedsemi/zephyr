@@ -60,6 +60,11 @@
     status = "disabled";
 };
 
+&qspi1 {
+    compatible = "linkedsemi,ls-flash-controller";
+    status = "okay";
+};
+
 &mbox {
     status = "disabled";
 };
