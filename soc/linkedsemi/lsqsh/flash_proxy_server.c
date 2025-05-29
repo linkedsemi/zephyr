@@ -189,7 +189,7 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
     return;
 }
 
-static int flash_proxy_server_init()
+static int flash_proxy_server_init(void)
 {
     k_sem_init(&g_mbox_data_rx_sem0, 0, 1);
 
@@ -198,6 +198,8 @@ static int flash_proxy_server_init()
             flash_proxy_server, NULL, NULL, NULL,
             0, K_PRIO_PREEMPT(0), K_NO_WAIT);
     k_thread_name_set(&flash_proxy_server_thread, "flash_proxy_server");
+
+    return 0;
 }
 
 SYS_INIT(flash_proxy_server_init, POST_KERNEL, 99);
