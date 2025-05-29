@@ -849,7 +849,7 @@
             compatible = "linkedsemi,ls-uart";
             reg = <0x400a1000 0x400>;
             interrupts = <UART1_IRQN 3>;
-            clock-frequency = <50000000>;
+            clock-frequency = <FPGA_CLOCK_FREQ>;
             clocks = <UART1_CLOCK>;
             resets = <UART1_RESET>;
             status = "disabled";
@@ -859,7 +859,7 @@
             compatible = "linkedsemi,ls-uart";
             reg = <0x40087400 0x400>;
             interrupts = <UART2_IRQN 3>;
-            clock-frequency = <50000000>;
+            clock-frequency = <FPGA_CLOCK_FREQ>;
             clocks = <UART2_CLOCK>;
             resets = <UART2_RESET>;
             status = "disabled";

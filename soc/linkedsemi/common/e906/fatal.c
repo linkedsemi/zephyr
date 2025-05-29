@@ -12,5 +12,5 @@ void k_sys_fatal_error_handler(unsigned int reason,
     ARG_UNUSED(esf);
 
     LOG_PANIC();
-    LOG_ERR("not Halting system");
+    LOG_ERROR("not Halting system");
 }

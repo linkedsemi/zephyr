@@ -10,8 +10,8 @@
         zephyr,flash = &flash1;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
-        zephyr,console = &uart3;
-        zephyr,shell-uart = &uart3;
+        zephyr,console = &uart1;
+        zephyr,shell-uart = &uart1;
     };
 };
 
@@ -25,9 +25,8 @@
 
 &uart1 {
     current-speed = <115200>;
-    status = "disabled";
+    status = "okay";
 };
-
 
 &uart2 {
     current-speed = <115200>;
@@ -36,7 +35,7 @@
 
 &uart3 {
     current-speed = <115200>;
-    status = "okay";
+    status = "disabled";
 };
 
 &uart4 {

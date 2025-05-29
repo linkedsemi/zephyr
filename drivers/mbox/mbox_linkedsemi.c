@@ -130,13 +130,13 @@ __ramfunc int mbox_linkedsemi_send_ramfunc(const struct device *dev, uint32_t ch
     if (msg) {
         ret = general_fifo_put(dev_data->fifo[channel], (void *)msg->data);
         if (ret == false) {
-            LOG_ERR("ENOSPC\n");
+            LOG_ERROR("ENOSPC\n");
             return -ENOSPC;
         }
     }
 #if !defined(CONFIG_SIGNALLING_MODE_SUPPORT)
     else {
-        LOG_ERR("Not supported signalling mode\n");
+        LOG_ERROR("Not supported signalling mode\n");
         return -ENOTSUP;
     }
 #endif
@@ -146,7 +146,7 @@ __ramfunc int mbox_linkedsemi_send_ramfunc(const struct device *dev, uint32_t ch
     } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
         cpu_intr0_activate();
     } else {
-        LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
+        LOG_ERROR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
         return -ENOTSUP;
     }
 
