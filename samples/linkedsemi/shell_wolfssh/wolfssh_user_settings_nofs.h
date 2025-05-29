@@ -28,6 +28,9 @@ extern "C" {
 
 #include <wolfssl/wolfcrypt/types.h>
 
+#undef  WOLFSSH_SMALL_STACK
+#define WOLFSSH_SMALL_STACK
+
 #undef WOLFSSH_SCP
 
 #undef NO_APITEST_MAIN_DRIVER
