@@ -9,7 +9,7 @@ BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 __nocache static volatile bool g_done = false;
 __nocache static volatile bool g_ack = false;
 
-__ramfunc static void mbox_func_call_send_and_wait(const struct mbox_dt_spec *tx_channel,
+static void mbox_func_call_send_and_wait(const struct mbox_dt_spec *tx_channel,
                                                    struct mbox_msg *msg,
                                                    uint32_t *retry_cnt)
 {
