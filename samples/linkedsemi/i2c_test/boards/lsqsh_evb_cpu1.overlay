@@ -1,0 +1,29 @@
+
+/ {
+    aliases {
+        testi2c1 = &i2c1;
+        testi2c2 = &i2c2;
+        testeeprom1 = &eeprom1_1;
+        testeeprom2 = &eeprom2_1;
+    };
+};
+
+&i2c1 {
+    status = "okay";
+
+    eeprom1_1: eeprom@50 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x50>;
+        size = <256>;
+    };
+};
+
+&i2c2 {
+    status = "okay";
+
+    eeprom2_1: eeprom@50 {
+        compatible = "zephyr,i2c-target-eeprom";
+        reg = <0x50>;
+        size = <256>;
+    };
+};
