@@ -116,6 +116,21 @@ config CPU2_BOOT_ADDR
 config FLASH
 	default y
 
+config FLASH_PROXY_SERVER
+	bool "FLASH_PROXY_SERVER"
+	default n
+
+if FLASH_PROXY_SERVER
+	config MBOX
+		default y
+
+	config FLASH
+		default y
+
+	config FLASH_JESD216_API
+		default y
+endif
+
 config CRC
 	default y
 
