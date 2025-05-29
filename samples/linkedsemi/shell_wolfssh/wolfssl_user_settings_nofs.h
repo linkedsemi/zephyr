@@ -25,6 +25,9 @@
 extern "C" {
 #endif
 
+#undef  WOLFSSL_SMALL_STACK
+#define WOLFSSL_SMALL_STACK
+
 #undef  WOLFSSL_ZEPHYR
 #define WOLFSSL_ZEPHYR
 

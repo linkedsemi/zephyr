@@ -9,7 +9,7 @@ extern "C" {
 extern const struct shell_transport_api shell_ssh_transport_api;
 
 #define SHELL_WOLFSSH_POLLFD_COUNT 1
-#define EXAMPLE_BUFFER_SZ 4096
+#define EXAMPLE_BUFFER_SZ 1024
 
 // // /** SSH-based shell transport using wolfSSH library. */
 struct shell_ssh {

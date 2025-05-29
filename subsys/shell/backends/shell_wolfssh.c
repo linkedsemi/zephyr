@@ -50,7 +50,7 @@ static const char echoserverBanner[] = "shell wolfssh example\n";
 #define MAX_PASSWD_RETRY 3
 static int passwdRetry = MAX_PASSWD_RETRY;
 
-#define EXAMPLE_KEYLOAD_BUFFER_SZ 1200
+#define EXAMPLE_KEYLOAD_BUFFER_SZ 130
 
 static int load_key(byte isEcc, byte *buf, word32 bufSz);
 
