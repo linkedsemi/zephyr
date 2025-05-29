@@ -790,7 +790,7 @@ config SHELL_BACKEND_WOLFSSH_INIT_PRIORITY
 
 config SHELL_PROMPT_SSH
 	string "Displayed prompt name"
-	default "wolfssh:~$ "
+	default "CoreLynxV6:~$ "
 	help
 	  Displayed prompt name for WOLFSSH backend. If prompt is set, the shell will
 	  send two newlines during initialization.

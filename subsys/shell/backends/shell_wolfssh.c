@@ -45,7 +45,7 @@ LOG_MODULE_REGISTER(shell_wolfssh);
 #define SOCKET_ECONNABORTED ECONNABORTED
 #define SOCKET_EWOULDBLOCK  EWOULDBLOCK
 
-static const char echoserverBanner[] = "shell wolfssh example\n";
+static const char echoserverBanner[] = "Welcome to wolfSSH!\n";
 
 #define MAX_PASSWD_RETRY 3
 static int passwdRetry = MAX_PASSWD_RETRY;
@@ -128,7 +128,7 @@ static PwMap *PwMapNew(PwMapList *list, byte type, const byte *username, word32 
 
 static const char samplePasswordBuffer[] = "jill:upthehill\n"
 					   "jack:fetchapail\n"
-					   "linkedsemi:linkedsemi1\n";
+					   "root:0penBmc\n";
 
 static int LoadPasswordBuffer(byte *buf, word32 bufSz, PwMapList *list)
 {
@@ -349,8 +349,8 @@ static void server_worker(thread_ctx_t *thread_ctx, WS_SOCKET_T clientFd)
 	ret = wolfSSH_accept(thread_ctx->ssh);
 
 	if (wolfSSH_get_error(thread_ctx->ssh) == WS_AUTH_PENDING) {
-		LOG_ERR("Auth pending error, use -N for non blocking\n");
-		LOG_ERR("Trying to close down the connection\n");
+		LOG_ERROR("Auth pending error, use -N for non blocking\n");
+		LOG_ERROR("Trying to close down the connection\n");
 	}
 
 	switch (ret) {
@@ -365,7 +365,7 @@ static void server_worker(thread_ctx_t *thread_ctx, WS_SOCKET_T clientFd)
 		ret = net_socket_service_register(&ssh_server, sh_ssh->fds, ARRAY_SIZE(sh_ssh->fds),
 						  NULL);
 		if (ret < 0) {
-			LOG_ERR("Failed to register socket service, %d", ret);
+			LOG_ERROR("Failed to register socket service, %d", ret);
 		}
 		break;
 	}
@@ -383,12 +383,12 @@ static void create_tcp_connection()
 	word16 port = wolfSshPort;
 
 	if (wolfSSH_Init() != WS_SUCCESS) {
-		LOG_ERR("Couldn't initialize wolfSSH.\n");
+		LOG_ERROR("Couldn't initialize wolfSSH.\n");
 	}
 
 	ctx = wolfSSH_CTX_new(WOLFSSH_ENDPOINT_SERVER, heap);
 	if (ctx == NULL) {
-		LOG_ERR("Couldn't allocate SSH CTX data.\n");
+		LOG_ERROR("Couldn't allocate SSH CTX data.\n");
 	}
 
 	WMEMSET(&pwMapList, 0, sizeof(pwMapList));
@@ -406,10 +406,10 @@ static void create_tcp_connection()
 	bufSz = EXAMPLE_KEYLOAD_BUFFER_SZ;
 	bufSz = load_key(peerEcc, keyLoadBuf, bufSz);
 	if (bufSz == 0) {
-		LOG_ERR("Couldn't load second key file.\n");
+		LOG_ERROR("Couldn't load second key file.\n");
 	}
 	if (wolfSSH_CTX_UsePrivateKey_buffer(ctx, keyLoadBuf, bufSz, WOLFSSH_FORMAT_ASN1) < 0) {
-		LOG_ERR("Couldn't use second key buffer.\n");
+		LOG_ERROR("Couldn't use second key buffer.\n");
 	}
 	bufSz = (word32)WSTRLEN(samplePasswordBuffer);
 	WMEMCPY(keyLoadBuf, samplePasswordBuffer, bufSz);
@@ -427,14 +427,14 @@ static void create_tcp_connection()
 
 	threadCtx = (thread_ctx_t *)WMALLOC(sizeof(thread_ctx_t), NULL, 0);
 	if (threadCtx == NULL) {
-		LOG_ERR("Couldn't allocate thread context data.\n");
+		LOG_ERROR("Couldn't allocate thread context data.\n");
 	}
 	WMEMSET(threadCtx, 0, sizeof *threadCtx);
 
 	ssh = wolfSSH_new(ctx);
 	if (ssh == NULL) {
 		WFREE(threadCtx, NULL, 0);
-		LOG_ERR("Couldn't allocate SSH data.\n");
+		LOG_ERROR("Couldn't allocate SSH data.\n");
 	}
 	wolfSSH_SetUserAuthCtx(ssh, &pwMapList);
 
@@ -442,7 +442,7 @@ static void create_tcp_connection()
 	clientFd = accept(listenFd, (struct sockaddr *)&clientAddr, &clientAddrSz);
 
 	if (clientFd == -1) {
-		LOG_ERR("tcp accept failed");
+		LOG_ERROR("tcp accept failed");
 	} else {
 		LOG_DBG("tcp accept success\n");
 	}
