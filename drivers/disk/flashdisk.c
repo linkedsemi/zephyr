@@ -476,7 +476,7 @@ static const struct disk_operations flash_disk_ops = {
 #define CACHE_SIZE(n) (DT_INST_PROP(n, cache_size) * !DT_PROP(PARTITION_PHANDLE(n), read_only))
 
 #define DEFINE_FLASHDISKS_CACHE(n) \
-	static uint8_t __aligned(4) flashdisk##n##_cache[CACHE_SIZE(n)];
+	static uint8_t __aligned(4) flashdisk##n##_cache[CACHE_SIZE(n)] IF_ENABLED(CONFIG_NOCACHE_MEMORY, (__nocache));
 DT_INST_FOREACH_STATUS_OKAY(DEFINE_FLASHDISKS_CACHE)
 
 #define DEFINE_FLASHDISKS_DEVICE(n)						\
