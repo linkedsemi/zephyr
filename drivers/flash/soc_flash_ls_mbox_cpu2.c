@@ -30,12 +30,9 @@ __nocache static off_t nc_offset;
 __nocache static const void *nc_data;
 __nocache static size_t nc_size;
 
-struct flash_ls_data {
-    struct k_sem mutex;
-};
-
 struct flash_ls_config {
     const struct mbox_dt_spec tx_channel;
+    const struct mbox_dt_spec rx_channel;
 };
 
 static const struct flash_parameters flash_ls_parameters = {
@@ -45,10 +42,9 @@ static const struct flash_parameters flash_ls_parameters = {
 
 static int flash_ls_init(const struct device *dev)
 {
-    __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
 
-    k_sem_init(&dev_data->mutex, 1, 1);
+    mbox_func_call_recv_register(&dev_config->rx_channel);
 
     return 0;
 }
@@ -68,7 +64,6 @@ static bool flash_ls_valid_range(off_t offset, size_t size)
 
 static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
 {
-    __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
 
     if (!size) {
@@ -84,10 +79,6 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
         return -EINVAL;
     }
 
-    if (k_sem_take(&dev_data->mutex, K_FOREVER)) {
-        return -EACCES;
-    }
-
     nc_offset = offset;
     nc_size = size;
     mbox_func_call(&dev_config->tx_channel,
@@ -96,14 +87,11 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
                     (void *)&nc_offset,
                     (void *)&nc_size);
 
-    k_sem_give(&dev_data->mutex);
-
     return 0;
 }
 
 static int flash_ls_write(const struct device *dev, off_t offset, const void *data, size_t size)
 {
-    __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
 
     if (!size) {
@@ -112,10 +100,6 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
 
     if (!flash_ls_valid_range(offset, size)) {
         return -EINVAL;
-    }
-
-    if (k_sem_take(&dev_data->mutex, K_FOREVER)) {
-        return -EACCES;
     }
 
     sys_cache_data_flush_range((void *)data, size);
@@ -130,14 +114,11 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
                     (void *)&nc_data,
                     (void *)&nc_size);
 
-    k_sem_give(&dev_data->mutex);
-
     return 0;
 }
 
 static int flash_ls_read(const struct device *dev, off_t offset, void *data, size_t size)
 {
-    __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
 
     if (!size) {
@@ -189,7 +170,6 @@ static void flash_ls_layout(const struct device *dev,
 static int flash_ls_read_jedec_id(const struct device *dev,
                                   uint8_t *id)
 {
-    __unused struct flash_ls_data *dev_data = dev->data;
     __unused const struct flash_ls_config *dev_config = dev->config;
 
     if (id == NULL) {
@@ -222,14 +202,13 @@ static const struct flash_driver_api flash_ls_api = {
 
 static const struct flash_ls_config flash_ls_config_0 = {
     .tx_channel = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(0, mbox), tx),
+    .rx_channel = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(0, mbox), rx),
 };
-
-static struct flash_ls_data flash_ls_data_0;
 
 DEVICE_DT_INST_DEFINE(0,
                       flash_ls_init,
                       NULL,
-                      &flash_ls_data_0,
+                      NULL,
                       &flash_ls_config_0,
                       POST_KERNEL,
                       CONFIG_FLASH_INIT_PRIORITY,
