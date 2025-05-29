@@ -1,0 +1,26 @@
+# Copyright (c) 2025 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+config UDC_LS_FS
+    bool "Driver for an Linkedsemi USB device controller"
+    depends on DT_HAS_LINKEDSEMI_LS_FS_USB_ENABLED
+    select PINCTRL
+    default y
+    help
+      Linkedsemi USB device controller driver.
+
+if UDC_LS_FS
+
+config UDC_LS_FS_THREAD_STACK_SIZE
+  int "UDC controller driver internal thread stack size"
+  default 1024
+  help
+    Device controller driver internal thread stack size.
+
+config UDC_LS_FS_THREAD_PRIORITY
+  int "UDC controller driver thread priority"
+  default 8
+  help
+    Device controller driver thread priority.
+
+endif # UDC_LS_FS

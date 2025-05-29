@@ -21,6 +21,7 @@
 	chosen {
 		zephyr,flash = &flash0;
 		zephyr,sram = &sram0;
+		zephyr,shell-uart = &uart3;
 		zephyr,console = &uart3;
 	};
 
@@ -54,6 +55,12 @@
 		compatible = "linkedsemi,ls-ipmi-kcs";
 		kcs_chan = <&e8042>;
 	};
+};
+
+zephyr_udc0: &usb {
+	pinctrl-0 = <&usb_dp_pd0 &usb_dm_pd1>;
+	pinctrl-names = "default";
+	status = "okay";
 };
 
 &flash0 {

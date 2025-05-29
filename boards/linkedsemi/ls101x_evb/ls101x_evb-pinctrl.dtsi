@@ -239,4 +239,12 @@
 	/omit-if-no-ref/ dac1_out1_pa02: dac1_out1_pa02 {
         pinmux = <LS_PINMUX_SET('A', 2, FIO_DAC)>;
     };
+
+    /omit-if-no-ref/ usb_dp_pd0: usb_dp_pd0 {
+        pinmux = <LS_PINMUX_SET('D', 0, FIO_USB_DP)>;
+    };
+
+    /omit-if-no-ref/ usb_dm_pd1: usb_dm_pd1 {
+        pinmux = <LS_PINMUX_SET('D', 1, FIO_USB_DM)>;
+    };
 };
