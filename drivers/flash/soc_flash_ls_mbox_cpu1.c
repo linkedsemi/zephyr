@@ -49,13 +49,7 @@ int flash_ls_mult_host(const struct device *dev, bool flag)
 {
     __unused struct flash_ls_data *dev_data = dev->data;
 
-    if (k_sem_take(&dev_data->mutex, K_FOREVER)) {
-        return -EACCES;
-    }
-
     dev_data->mult_host = flag;
-
-    k_sem_give(&dev_data->mutex);
 
     return 0;
 }
@@ -72,6 +66,11 @@ static int flash_ls_init(const struct device *dev)
     __unused const struct flash_ls_config *dev_config = dev->config;
 
     k_sem_init(&dev_data->mutex, 1, 1);
+
+    bool xip = is_cpu2_xip();
+    if (xip) {
+        flash_ls_mult_host(dev, true);
+    }
 
     return 0;
 }
@@ -126,6 +125,8 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
             hal_flash_sector_erase(addr);
         }
     }
+
+    flash_ls_mult_host(dev, true);
 
     k_sem_give(&dev_data->mutex);
 
@@ -183,6 +184,7 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
         }
     }
 
+    flash_ls_mult_host(dev, true);
 
     k_sem_give(&dev_data->mutex);
 
@@ -219,6 +221,8 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
     } else {
         hal_flash_multi_io_read(offset, (uint8_t *)data, size);
     }
+
+    flash_ls_mult_host(dev, true);
 
     k_sem_give(&dev_data->mutex);
 
@@ -259,6 +263,10 @@ static int flash_ls_read_jedec_id(const struct device *dev,
         return -EINVAL;
     }
 
+    if (k_sem_take(&dev_data->mutex, K_FOREVER)) {
+        return -EACCES;
+    }
+
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
     if (dev_data->mult_host && xip_present) {
         int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
@@ -272,6 +280,10 @@ static int flash_ls_read_jedec_id(const struct device *dev,
     } else {
         hal_flash_read_id(id);
     }
+
+    flash_ls_mult_host(dev, true);
+
+    k_sem_give(&dev_data->mutex);
 
     return 0;
 }
