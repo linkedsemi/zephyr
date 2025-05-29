@@ -59,6 +59,8 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
     const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
     const struct mbox_dt_spec tx_channel0 = MBOX_DT_SPEC_GET(DT_PHANDLE(DT_NODELABEL(qspi1), mbox), tx);
     const struct mbox_dt_spec rx_channel0 = MBOX_DT_SPEC_GET(DT_PHANDLE(DT_NODELABEL(qspi1), mbox), rx);
+    struct mbox_msg msg = {};
+    uint32_t mbox_data;
 
     LOG_DBG("mbox_data Server demo started\n");
     const int max_transfer_size_bytes = mbox_mtu_get_dt(&tx_channel0);
@@ -73,7 +75,7 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
         return;
     }
 
-    if (mbox_set_enabled_dt(&rx_channel0, 1)) {
+    if (mbox_set_enabled_dt(&rx_channel0, true)) {
         LOG_ERR("mbox_set_enable() error\n");
         return;
     }
@@ -92,6 +94,13 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(id);
                 __ASSERT_NO_MSG(*id);
                 flash_ls_mult_host(flash_dev, false);
+                mbox_data = MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID;
+                msg.data = &mbox_data;
+                msg.size = sizeof(uint32_t);
+                if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
+                    while(1);
+                }
+                while(true != *mbox_received_data0->ack);
                 flash_read_jedec_id(flash_dev, *id);
 
                 *mbox_received_data0->done = true;
@@ -106,6 +115,13 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(offset);
                 if (is_open_partition_area(*offset)) {
                     flash_ls_mult_host(flash_dev, false);
+                    mbox_data = MBOX_FUNC_CALL_FLASH_ERASE;
+                    msg.data = &mbox_data;
+                    msg.size = sizeof(uint32_t);
+                    if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
+                        while(1);
+                    }
+                    while(true != *mbox_received_data0->ack);
                     flash_erase(flash_dev, *offset, *size);
                 } else {
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
@@ -132,8 +148,15 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(*data);
                 __ASSERT_NO_MSG(size);
                 if (is_open_partition_area(*offset)) {
-                    flash_ls_mult_host(flash_dev, false);
                     LOG_DBG("offset: %#lx\n", *offset);
+                    flash_ls_mult_host(flash_dev, false);
+                    mbox_data = MBOX_FUNC_CALL_FLASH_WRITE;
+                    msg.data = &mbox_data;
+                    msg.size = sizeof(uint32_t);
+                    if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
+                        while(1);
+                    }
+                    while(true != *mbox_received_data0->ack);
                     flash_write(flash_dev, *offset, *data, *size);
                 } else {
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
@@ -160,8 +183,15 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(*data);
                 __ASSERT_NO_MSG(size);
                 if (is_open_partition_area(*offset)) {
-                    flash_ls_mult_host(flash_dev, false);
                     LOG_DBG("offset: %#lx\n", *offset);
+                    flash_ls_mult_host(flash_dev, false);
+                    mbox_data = MBOX_FUNC_CALL_FLASH_READ;
+                    msg.data = &mbox_data;
+                    msg.size = sizeof(uint32_t);
+                    if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
+                        while(1);
+                    }
+                    while(true != *mbox_received_data0->ack);
                     flash_read(flash_dev, *offset, *data, *size);
                 } else {
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
