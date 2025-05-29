@@ -7,7 +7,6 @@
 #include <zephyr/kernel.h>
 #include <stdlib.h>
 #include <stdio.h>
-#include "reg_sysc_per.h"
 #include "ls_soc_gpio.h"
 #define BUF_SIZE 256
 uint8_t wdata_buf[BUF_SIZE];
