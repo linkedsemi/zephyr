@@ -42,12 +42,21 @@ typedef enum {
     USB_EP0_STAGE_STATUSOUT     /* (after IN data) */
 } ep0_state_t;
 
+struct udc_ep_item
+{
+    struct co_list_hdr tlist;
+    struct net_buf *buf;
+    uint8_t ep_index;
+    const void *priv;
+};
+
 struct udc_ls_data
 {
     reg_usb_t *usb_instance;
     struct udc_ep_config *ep_cfg_in;
     struct udc_ep_config *ep_cfg_out;
-    linked_async_inst_t dcd_async_inst;
+    struct udc_ep_item *ep_tx;
+    linked_async_inst_t async_list;
     ep0_state_t ep0_state;
     struct k_thread thread;
     struct usb_setup_packet setup;
@@ -295,6 +304,17 @@ static int udc_ls_rx(const struct device *dev, uint8_t ep_index,
     usb_reg->RXCSRL &= ~USB_RXCSRL1_RXRDY;
 
     return 0;
+}
+
+static void async_tx_process(linked_async_inst_t *async, struct co_list_hdr *item)
+{
+    struct udc_ep_item *ep_item = (struct udc_ep_item *)item;
+    udc_ls_tx(ep_item->priv, ep_item->ep_index, ep_item->buf);
+}
+
+static bool async_tx_end(struct linked_async_inst_s *inst, struct co_list_hdr *hdr, void *dummy, uint8_t status)
+{
+    return false;
 }
 
 static int udc_ls_enqueue(const struct device *dev, struct udc_ep_config *const cfg,
@@ -740,14 +760,21 @@ static void ls_handle_evt_xfer_ep0(const struct device *dev, uint8_t ep)
 
 static void ls_handle_evt_xfer(const struct device *dev, uint8_t ep)
 {
-    if (USB_EP_GET_IDX(ep))
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
+    uint8_t ep_index = USB_EP_GET_IDX(ep);
+
+    if (ep_index)
     {
         if (USB_EP_DIR_IS_IN(ep))
         {
             struct net_buf *buf = udc_buf_peek(dev, ep);
             if (buf == NULL)
                 return;
-            udc_ls_tx(dev, USB_EP_GET_IDX(ep), buf);
+
+            usb_data->ep_tx[ep_index].buf = buf;
+            usb_data->ep_tx[ep_index].priv = dev;
+            usb_data->ep_tx[ep_index].ep_index = ep_index;
+            linked_async_start(&usb_data->async_list, &usb_data->ep_tx[ep_index].tlist);
         }
     }
     else
@@ -759,12 +786,17 @@ static void ls_handle_evt_xfer(const struct device *dev, uint8_t ep)
 static void ls_handle_evt_in(const struct device *dev, uint8_t ep)
 {
     struct net_buf *buf = udc_buf_peek(dev, ep);
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
 
     if (buf == NULL)
-        return;
-
-    /* send remain data */
-    udc_ls_tx(dev, USB_EP_GET_IDX(ep), buf);
+    {
+        linked_async_end(&usb_data->async_list, NULL, 0);
+    }
+    else
+    {
+        /* send remain data */
+        udc_ls_tx(dev, USB_EP_GET_IDX(ep), buf);
+    }
 }
 
 static void ls_handle_evt_out(const struct device *dev, uint8_t ep)
@@ -1092,6 +1124,7 @@ static int udc_ls_driver_preinit(const struct device *dev)
         }
     }
 
+    linked_async_init(&usb_data->async_list, async_tx_process, async_tx_end);
     usb_cfg->make_thread(dev);
 
     return 0;
@@ -1140,8 +1173,9 @@ static const struct udc_api udc_ls_api = {
                 K_NO_WAIT);      \
         k_thread_name_set(&priv->thread, dev->name);   \
     }      \
-    static struct udc_ep_config ep_cfg_out[DT_INST_PROP(n, num_bidir_endpoints)];   \
-    static struct udc_ep_config ep_cfg_in[DT_INST_PROP(n, num_bidir_endpoints)];   \
+    static struct udc_ep_config ep_cfg_out_##n[DT_INST_PROP(n, num_bidir_endpoints)];   \
+    static struct udc_ep_config ep_cfg_in_##n[DT_INST_PROP(n, num_bidir_endpoints)];   \
+    static struct udc_ep_item ep_tx_##n[DT_INST_PROP(n, num_bidir_endpoints)];\
                                             \
     static void udc_ls_irq_connect##n(const struct device *dev)     \
     {                                   \
@@ -1170,8 +1204,9 @@ static const struct udc_api udc_ls_api = {
                                             \
     static struct udc_ls_data udc_priv_##n = {     \
         .usb_instance = (reg_usb_t *)DT_INST_REG_ADDR(n),        \
-        .ep_cfg_in = ep_cfg_in,                 \
-        .ep_cfg_out = ep_cfg_out,               \
+        .ep_cfg_in = ep_cfg_in_##n,                 \
+        .ep_cfg_out = ep_cfg_out_##n,               \
+        .ep_tx = ep_tx_##n,                         \
         .rx_fifo_addr = USB_TX_BUF_ADDR,        \
         .ep0_state = USB_EP0_STAGE_SETUP,        \
         .is_set_addr = false                    \
