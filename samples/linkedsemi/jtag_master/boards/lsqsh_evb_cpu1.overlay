@@ -1,0 +1,9 @@
+/ {
+    aliases {
+        testjtag = &jtag1;
+    };
+};
+
+&jtag1 {
+    status = "okay";
+};

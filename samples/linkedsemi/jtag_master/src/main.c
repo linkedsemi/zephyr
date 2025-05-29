@@ -20,27 +20,27 @@ int main(void)
 {
 	printf("start jtag master test! %s\n", CONFIG_BOARD_TARGET);
 
-	const struct device *const jtag2 = DEVICE_DT_GET(DT_ALIAS(testjtag2));
+	const struct device *const jtag = DEVICE_DT_GET(DT_ALIAS(testjtag));
 
-	if (!device_is_ready(jtag2))
+	if (!device_is_ready(jtag))
 	{
 		__ASSERT(0,"JTAG2 device is not ready");
 	}
 
 	state = true;
-	if(!jtag_tap_set(jtag2, TAP_RESET))
+	if(!jtag_tap_set(jtag, TAP_RESET))
 		state = false;
 	if(state == false)
 	{
 		state = true;
-		if(!jtag_ir_scan(jtag2, 0x5, &ir_scan_value, tdi_buffer,TAP_IDLE))
+		if(!jtag_ir_scan(jtag, 0x5, &ir_scan_value, tdi_buffer,TAP_IDLE))
 			state = false;
 	}
 
 	if(state == false)
 	{
 		state = true;
-		if(!jtag_dr_scan(jtag2, 0x20, &dr_scan_value, tdi_buffer,TAP_IDLE))
+		if(!jtag_dr_scan(jtag, 0x20, &dr_scan_value, tdi_buffer,TAP_IDLE))
 		{
 			state = false;
 		}
