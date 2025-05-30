@@ -32,7 +32,7 @@
         mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
             reg = <0x1013f000 DT_SIZE_K(4)>;
-            interrupts = <SYSC_APP_CPU_IRQN 3>;
+            interrupts = <SYSC_SEC_CPU_IRQN 3>;
             nchannels = <3>;
             fifo-deepth = <2>;
             fifo-width = <256>;
