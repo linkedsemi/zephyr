@@ -54,9 +54,9 @@ static void mbox_linkedsemi_isr(const struct device *dev)
     bool ret;
 
     if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_SEC) {
-        cpu_intr_app_clr();
-    } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
         cpu_intr_sec_clr();
+    } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
+        cpu_intr_app_clr();
     } else {
         __ASSERT(0, "channel invalid!\n");
     }
@@ -107,9 +107,9 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
 #endif
 
     if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_SEC) {
-        cpu_intr_sec_activate();
-    } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
         cpu_intr_app_activate();
+    } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
+        cpu_intr_sec_activate();
     } else {
         LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_RX_CH_SEC, MBOX_RX_CH_APP);
         return -ENOTSUP;
