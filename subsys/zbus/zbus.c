@@ -369,6 +369,102 @@ int zbus_chan_pub(const struct zbus_channel *chan, const void *msg, k_timeout_t 
 	return err;
 }
 
+int zbus_chan_pub_ex(const struct zbus_channel *chan, const void *msg, k_timeout_t timeout)
+{
+	int err = 0;
+	int last_error = 0;
+	struct net_buf *buf = NULL;
+
+	/* Static observer event dispatcher logic */
+	struct zbus_channel_observation *observation;
+	struct zbus_channel_observation_mask *observation_mask;
+
+	_ZBUS_ASSERT(chan != NULL, "chan is required");
+	_ZBUS_ASSERT(msg != NULL, "msg is required");
+
+	if (k_is_in_isr()) {
+		timeout = K_NO_WAIT;
+	}
+
+	k_timepoint_t end_time = sys_timepoint_calc(timeout);
+
+	if (chan->validator != NULL && !chan->validator(msg, chan->message_size)) {
+		return -ENOMSG;
+	}
+	
+#if defined(CONFIG_ZBUS_MSG_SUBSCRIBER)
+	struct net_buf_pool *pool =
+		COND_CODE_1(CONFIG_ZBUS_MSG_SUBSCRIBER_NET_BUF_POOL_ISOLATION,
+			    (chan->data->msg_subscriber_pool), (&_zbus_msg_subscribers_pool));
+
+	buf = _zbus_create_net_buf(pool, zbus_chan_msg_size(chan), sys_timepoint_timeout(end_time));
+
+	_ZBUS_ASSERT(buf != NULL, "net_buf zbus_msg_subscribers_pool is "
+				  "unavailable or heap is full");
+
+	memcpy(net_buf_user_data(buf), &chan, sizeof(struct zbus_channel *));
+
+	net_buf_add_mem(buf, msg, zbus_chan_msg_size(chan));
+#endif /* CONFIG_ZBUS_MSG_SUBSCRIBER */
+
+	LOG_DBG("Notifing %s's observers. Starting VDED:", _ZBUS_CHAN_NAME(chan));
+
+	int __maybe_unused index = 0;
+
+	for (int16_t i = chan->data->observers_start_idx, limit = chan->data->observers_end_idx;
+	     i < limit; ++i) {
+		STRUCT_SECTION_GET(zbus_channel_observation, i, &observation);
+		STRUCT_SECTION_GET(zbus_channel_observation_mask, i, &observation_mask);
+
+		_ZBUS_ASSERT(observation != NULL, "observation must be not NULL");
+
+		const struct zbus_observer *obs = observation->obs;
+
+		if (!obs->data->enabled || observation_mask->enabled) {
+			continue;
+		}
+
+		err = _zbus_notify_observer(chan, obs, end_time, buf);
+
+		if (err) {
+			last_error = err;
+			LOG_ERROR("could not deliver notification to observer %s. Error code %d",
+				_ZBUS_OBS_NAME(obs), err);
+			if (err == -ENOMEM) {
+				if (IS_ENABLED(CONFIG_ZBUS_MSG_SUBSCRIBER)) {
+					net_buf_unref(buf);
+				}
+				return err;
+			}
+		}
+
+		LOG_DBG(" %d -> %s", index++, _ZBUS_OBS_NAME(obs));
+	}
+
+#if defined(CONFIG_ZBUS_RUNTIME_OBSERVERS)
+	/* Dynamic observer event dispatcher logic */
+	struct zbus_observer_node *obs_nd, *tmp;
+
+	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&chan->data->observers, obs_nd, tmp, node) {
+		const struct zbus_observer *obs = obs_nd->obs;
+
+		if (!obs->data->enabled) {
+			continue;
+		}
+
+		err = _zbus_notify_observer(chan, obs, end_time, buf);
+
+		if (err) {
+			last_error = err;
+		}
+	}
+#endif /* CONFIG_ZBUS_RUNTIME_OBSERVERS */
+
+	IF_ENABLED(CONFIG_ZBUS_MSG_SUBSCRIBER, (net_buf_unref(buf);))
+
+	return last_error;
+}
+
 int zbus_chan_read(const struct zbus_channel *chan, void *msg, k_timeout_t timeout)
 {
 	_ZBUS_ASSERT(chan != NULL, "chan is required");

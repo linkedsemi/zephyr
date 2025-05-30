@@ -539,6 +539,7 @@ struct zbus_channel_observation {
  * value when the @kconfig{CONFIG_ZBUS_ASSERT_MOCK} is enabled.
  */
 int zbus_chan_pub(const struct zbus_channel *chan, const void *msg, k_timeout_t timeout);
+int zbus_chan_pub_ex(const struct zbus_channel *chan, const void *msg, k_timeout_t timeout);
 
 /**
  * @brief Read a channel
