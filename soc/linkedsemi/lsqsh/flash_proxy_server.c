@@ -95,8 +95,8 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(*id);
                 flash_ls_mult_host(flash_dev, false);
                 mbox_data = MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID;
-                msg.data = &mbox_data;
-                msg.size = sizeof(uint32_t);
+                msg.data = mbox_received_data0;
+                msg.size = sizeof(mbox_func_call_data_t);
                 if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
                     while(1);
                 }
@@ -116,8 +116,8 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 if (is_open_partition_area(*offset)) {
                     flash_ls_mult_host(flash_dev, false);
                     mbox_data = MBOX_FUNC_CALL_FLASH_ERASE;
-                    msg.data = &mbox_data;
-                    msg.size = sizeof(uint32_t);
+                    msg.data = mbox_received_data0;
+                    msg.size = sizeof(mbox_func_call_data_t);
                     if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
                         while(1);
                     }
@@ -151,8 +151,8 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                     LOG_DBG("offset: %#lx\n", *offset);
                     flash_ls_mult_host(flash_dev, false);
                     mbox_data = MBOX_FUNC_CALL_FLASH_WRITE;
-                    msg.data = &mbox_data;
-                    msg.size = sizeof(uint32_t);
+                    msg.data = mbox_received_data0;
+                    msg.size = sizeof(mbox_func_call_data_t);
                     if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
                         while(1);
                     }
@@ -186,8 +186,8 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                     LOG_DBG("offset: %#lx\n", *offset);
                     flash_ls_mult_host(flash_dev, false);
                     mbox_data = MBOX_FUNC_CALL_FLASH_READ;
-                    msg.data = &mbox_data;
-                    msg.size = sizeof(uint32_t);
+                    msg.data = mbox_received_data0;
+                    msg.size = sizeof(mbox_func_call_data_t);
                     if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
                         while(1);
                     }
