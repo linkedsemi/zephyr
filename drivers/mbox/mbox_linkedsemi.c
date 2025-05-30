@@ -34,6 +34,9 @@ enum mbox_channel_number {
     MBOX_CH1,
 };
 
+#define MBOX_RX_CH_SEC MBOX_CH0
+#define MBOX_RX_CH_APP MBOX_CH1
+
 struct mbox_linkedsemi_data {
     mbox_callback_t cb[MBOX_NCHANNELS];
     void *user_data[MBOX_NCHANNELS];
@@ -50,10 +53,10 @@ static void mbox_linkedsemi_isr(const struct device *dev)
     struct mbox_linkedsemi_data *dev_data = dev->data;
     bool ret;
 
-    if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
-        cpu_intr0_clr();
-    } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
-        cpu_intr1_clr();
+    if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_SEC) {
+        cpu_intr_app_clr();
+    } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
+        cpu_intr_sec_clr();
     } else {
         __ASSERT(0, "channel invalid!\n");
     }
@@ -103,12 +106,12 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
     }
 #endif
 
-    if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
-        cpu_intr1_activate();
-    } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
-        cpu_intr0_activate();
+    if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_SEC) {
+        cpu_intr_sec_activate();
+    } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
+        cpu_intr_app_activate();
     } else {
-        LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
+        LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_RX_CH_SEC, MBOX_RX_CH_APP);
         return -ENOTSUP;
     }
 
@@ -164,21 +167,21 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
 
     if (intr_num == MBOX_RX_CHANNEL_ID) {
         if (enable) {
-            if (intr_num == MBOX_CH0) {
-                cpu_intr0_unmask();
-            } else if (intr_num == MBOX_CH1) {
-                cpu_intr1_unmask();
+            if (intr_num == MBOX_RX_CH_SEC) {
+                cpu_intr_sec_unmask();
+            } else if (intr_num == MBOX_RX_CH_APP) {
+                cpu_intr_app_unmask();
             } else {
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
             }
         } else {
-            if (intr_num == MBOX_CH0) {
-                cpu_intr0_clr();
-                cpu_intr0_mask();
-            } else if (intr_num == MBOX_CH1) {
-                cpu_intr1_clr();
-                cpu_intr1_mask();
+            if (intr_num == MBOX_RX_CH_SEC) {
+                cpu_intr_sec_clr();
+                cpu_intr_sec_mask();
+            } else if (intr_num == MBOX_RX_CH_APP) {
+                cpu_intr_app_clr();
+                cpu_intr_app_mask();
             } else {
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
