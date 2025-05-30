@@ -16,20 +16,53 @@ __nocache static volatile int g_ret = 0;
 __nocache static void *parm[MBOX_FUNC_CALL_PARM_NUM_MAX] = {};
 static K_SEM_DEFINE(mbox_func_call_sem, 0, 1);
 
+__ramfunc static void mbox_func_call_wait(void)
+{
+    g_ack = true;
+    while (!g_done);
+}
+
+__ramfunc void wait_for_done(mbox_func_call_data_t *mbox_func_call_data)
+{
+    *mbox_func_call_data->ack = true;
+    while(false == *mbox_func_call_data->done);
+}
+
 static void mbox_func_call_recv_callback(const struct device *dev,
                                         mbox_channel_id_t channel_id,
                                         void *user_data,
                                         struct mbox_msg *data)
 {
-    uint32_t *mbox_data = (uint32_t *)data->data;
-    if ((*mbox_data == MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID)
-        || (*mbox_data == MBOX_FUNC_CALL_FLASH_ERASE)
-        || (*mbox_data == MBOX_FUNC_CALL_FLASH_WRITE)
-        || (*mbox_data == MBOX_FUNC_CALL_FLASH_READ)) {
-        k_sem_give(&mbox_func_call_sem);
-    } else {
-        LOG_ERR("invalid data\n");
+    mbox_func_call_data_t *mbox_func_call_data = (mbox_func_call_data_t *)data->data;
+
+    if (NULL == mbox_func_call_data) {
+        return;
     }
+
+    switch(mbox_func_call_data->api_id) {
+    case MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID:
+        __fallthrough;
+    case MBOX_FUNC_CALL_FLASH_ERASE:
+        __fallthrough;
+    case MBOX_FUNC_CALL_FLASH_WRITE:
+        __fallthrough;
+    case MBOX_FUNC_CALL_FLASH_READ:
+        disable_global_irq();
+        mbox_func_call_wait();
+        enable_global_irq();
+        k_sem_give(&mbox_func_call_sem);
+        break;
+    case MBOX_FUNC_CALL_DO_IDLE:
+        disable_global_irq();
+        wait_for_done(mbox_func_call_data);
+        enable_global_irq();
+        break;
+    default:
+        LOG_ERR("invalid data\n");
+        break;
+    };
+
+    return;
 }
 
 void mbox_func_call_recv_register(const struct mbox_dt_spec *rx_channel)
@@ -45,18 +78,6 @@ void mbox_func_call_recv_register(const struct mbox_dt_spec *rx_channel)
     }
 }
 
-__ramfunc static void mbox_func_call_wait(const struct mbox_dt_spec *tx_channel,
-                                                   struct mbox_msg *msg,
-                                                   uint32_t *retry_cnt)
-{
-    g_ack = true;
-    *retry_cnt = 0;
-    while ((!g_done) && (*retry_cnt < MBOX_RETRY_MAX_CNT)) {
-        (*retry_cnt)++;
-        nop_delay(10);
-    }
-}
-
 int mbox_func_call(const struct mbox_dt_spec *tx_channel,
                    enum mbox_func_call_id api_id,
                    uint32_t parm_num,
@@ -64,7 +85,6 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
 {
     mbox_func_call_data_t mbox_func_call_data = {};
     struct mbox_msg msg = {};
-    uint32_t retry_cnt = 0;
     int ret = 0;
 
     va_list args;
@@ -92,22 +112,10 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
         while(1);
     }
     k_sem_take(&mbox_func_call_sem, K_FOREVER);
-    disable_global_irq();
-    mbox_func_call_wait(tx_channel, &msg, &retry_cnt);
-    if (retry_cnt > MBOX_RETRY_MAX_CNT) {
-        ret = -1;
-        goto timeout;
-    }
 
     if (mbox_func_call_data.ret) {
         ret = *((int *)mbox_func_call_data.ret);
     }
-
-timeout:
-    if ((retry_cnt == 0) || (retry_cnt > MBOX_RETRY_MAX_CNT)) {
-        while(1);
-    }
-    enable_global_irq();
 
     return ret;
 }
