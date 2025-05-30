@@ -285,12 +285,6 @@ void soc_late_init_hook(void)
     && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
     && (CONFIG_CPU2_LOAD_ADDR < (CACHE1_ADDR + (64 << 20)))
 
-    const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
-    bool xip = is_cpu2_xip();
-    if (xip) {
-        flash_ls_mult_host(flash_dev, true);
-    }
-
     image_header_t image_header = {};
     flash_read(flash_dev, CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS, &image_header, sizeof(image_header_t));
 
