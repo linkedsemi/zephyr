@@ -15,6 +15,7 @@
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 
 #include <ls_hal_flash.h>
+#include <soc_platform.h>
 
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
@@ -44,7 +45,7 @@ static int flash_ls_init(const struct device *dev)
 {
     __unused const struct flash_ls_config *dev_config = dev->config;
 
-    mbox_func_call_recv_register(&dev_config->rx_channel);
+    mbox_func_call_trx_register(&dev_config->tx_channel, &dev_config->rx_channel);
 
     return 0;
 }
@@ -98,6 +99,10 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
         return 0;
     }
 
+    if (!soc_check_addr_dcache_aligned((uint32_t)data)) {
+        return -EINVAL;
+    }
+
     if (!flash_ls_valid_range(offset, size)) {
         return -EINVAL;
     }
@@ -126,6 +131,10 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
     }
 
     if (!flash_ls_valid_range(offset, size)) {
+        return -EINVAL;
+    }
+
+    if (!soc_check_addr_dcache_aligned((uint32_t)data)) {
         return -EINVAL;
     }
 
@@ -173,6 +182,10 @@ static int flash_ls_read_jedec_id(const struct device *dev,
     __unused const struct flash_ls_config *dev_config = dev->config;
 
     if (id == NULL) {
+        return -EINVAL;
+    }
+
+    if (!soc_check_addr_dcache_aligned((uint32_t)id)) {
         return -EINVAL;
     }
 
