@@ -10,7 +10,7 @@
 #include <zephyr/drivers/flash/soc_flash_ls_mbox_cpu1.h>
 #define LOG_LEVEL LOG_LEVEL_INF
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(mbox_data_func_call);
+LOG_MODULE_REGISTER(flash_proxy_server);
 
 #include <hal_flash_int.h>
 #include <ls_hal_flash.h>
@@ -44,7 +44,20 @@ static void callback0(const struct device *dev, mbox_channel_id_t channel_id, vo
     memcpy(&g_mbox_received_data0, data->data, sizeof(mbox_func_call_data_t));
     g_mbox_received_channel0 = channel_id;
 
-    k_sem_give(&g_mbox_data_rx_sem0);
+    switch (g_mbox_received_data0.api_id) {
+        case MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID:
+        case MBOX_FUNC_CALL_FLASH_ERASE:
+        case MBOX_FUNC_CALL_FLASH_WRITE:
+        case MBOX_FUNC_CALL_FLASH_READ:
+            k_sem_give(&g_mbox_data_rx_sem0);
+            break;
+        case MBOX_FUNC_CALL_DO_IDLE:
+            mbox_func_call_recv_do_idle_callback(&g_mbox_received_data0);
+            break;
+        default:
+            LOG_DBG("default\n");
+            break;
+    };
 
     LOG_DBG("Server receive (on channel %d)\n", g_mbox_received_channel0);
 }
@@ -59,8 +72,8 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
     const struct device *const flash_dev = DEVICE_DT_GET(DT_NODELABEL(qspi1));
     const struct mbox_dt_spec tx_channel0 = MBOX_DT_SPEC_GET(DT_PHANDLE(DT_NODELABEL(qspi1), mbox), tx);
     const struct mbox_dt_spec rx_channel0 = MBOX_DT_SPEC_GET(DT_PHANDLE(DT_NODELABEL(qspi1), mbox), rx);
-    struct mbox_msg msg = {};
-    uint32_t mbox_data;
+    // struct mbox_msg msg = {};
+    // uint32_t mbox_data;
 
     LOG_DBG("mbox_data Server demo started\n");
     const int max_transfer_size_bytes = mbox_mtu_get_dt(&tx_channel0);
@@ -93,14 +106,7 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 uint8_t **id = (uint8_t **)(((int *)(mbox_received_data0->parm))[0]);
                 __ASSERT_NO_MSG(id);
                 __ASSERT_NO_MSG(*id);
-                flash_ls_mult_host(flash_dev, false);
-                mbox_data = MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID;
-                msg.data = mbox_received_data0;
-                msg.size = sizeof(mbox_func_call_data_t);
-                if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
-                    while(1);
-                }
-                while(true != *mbox_received_data0->ack);
+                flash_ls_set_proxy_state(flash_dev, true);
                 flash_read_jedec_id(flash_dev, *id);
 
                 *mbox_received_data0->done = true;
@@ -114,14 +120,7 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 LOG_DBG("offset: %#lx\n", *offset);
                 __ASSERT_NO_MSG(offset);
                 if (is_open_partition_area(*offset)) {
-                    flash_ls_mult_host(flash_dev, false);
-                    mbox_data = MBOX_FUNC_CALL_FLASH_ERASE;
-                    msg.data = mbox_received_data0;
-                    msg.size = sizeof(mbox_func_call_data_t);
-                    if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
-                        while(1);
-                    }
-                    while(true != *mbox_received_data0->ack);
+                    flash_ls_set_proxy_state(flash_dev, true);
                     flash_erase(flash_dev, *offset, *size);
                 } else {
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
@@ -149,14 +148,7 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(size);
                 if (is_open_partition_area(*offset)) {
                     LOG_DBG("offset: %#lx\n", *offset);
-                    flash_ls_mult_host(flash_dev, false);
-                    mbox_data = MBOX_FUNC_CALL_FLASH_WRITE;
-                    msg.data = mbox_received_data0;
-                    msg.size = sizeof(mbox_func_call_data_t);
-                    if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
-                        while(1);
-                    }
-                    while(true != *mbox_received_data0->ack);
+                    flash_ls_set_proxy_state(flash_dev, true);
                     flash_write(flash_dev, *offset, *data, *size);
                 } else {
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
@@ -184,14 +176,7 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 __ASSERT_NO_MSG(size);
                 if (is_open_partition_area(*offset)) {
                     LOG_DBG("offset: %#lx\n", *offset);
-                    flash_ls_mult_host(flash_dev, false);
-                    mbox_data = MBOX_FUNC_CALL_FLASH_READ;
-                    msg.data = mbox_received_data0;
-                    msg.size = sizeof(mbox_func_call_data_t);
-                    if (mbox_send_dt(&tx_channel0, &msg) == -ENOSPC) {
-                        while(1);
-                    }
-                    while(true != *mbox_received_data0->ack);
+                    flash_ls_set_proxy_state(flash_dev, true);
                     flash_read(flash_dev, *offset, *data, *size);
                 } else {
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
