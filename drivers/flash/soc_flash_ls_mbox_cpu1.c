@@ -30,11 +30,12 @@
 
 struct flash_ls_data {
     struct k_sem mutex;
-    bool mult_host;
+    bool is_proxy;
 };
 
 struct flash_ls_config {
     const struct mbox_dt_spec tx_channel;
+    const struct mbox_dt_spec rx_channel;
 #if defined(CONFIG_PINCTRL)
     const struct pinctrl_dev_config *pcfg;
 #endif
@@ -45,13 +46,20 @@ static const struct flash_parameters flash_ls_parameters = {
     .erase_value = 0xff,
 };
 
-int flash_ls_mult_host(const struct device *dev, bool flag)
+int flash_ls_set_proxy_state(const struct device *dev, bool flag)
 {
     __unused struct flash_ls_data *dev_data = dev->data;
 
-    dev_data->mult_host = flag;
+    dev_data->is_proxy = flag;
 
     return 0;
+}
+
+static bool flash_ls_get_proxy_state(const struct device *dev)
+{
+    __unused struct flash_ls_data *dev_data = dev->data;
+
+    return dev_data->is_proxy;
 }
 
 static bool is_own_ram(uint32_t addr)
@@ -67,10 +75,7 @@ static int flash_ls_init(const struct device *dev)
 
     k_sem_init(&dev_data->mutex, 1, 1);
 
-    bool xip = is_cpu2_xip();
-    if (xip) {
-        flash_ls_mult_host(dev, true);
-    }
+    mbox_func_call_trx_register(&dev_config->tx_channel, &dev_config->rx_channel);
 
     return 0;
 }
@@ -112,21 +117,24 @@ static int flash_ls_erase(const struct device *dev, off_t offset, size_t size)
 
     /* Erase sector one by one*/
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
-    if (dev_data->mult_host && xip_present) {
+    bool need_interact = flash_ls_get_proxy_state(dev) || xip_present;
+    if (need_interact) {
         int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-        if (!ret_mbox) {
-            for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
-                hal_flash_sector_erase(addr);
-            }
-        }
-        mbox_release_cpu2();
-    } else {
-        for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
-            hal_flash_sector_erase(addr);
+        if (ret_mbox) {
+            goto interact_fail;
         }
     }
 
-    flash_ls_mult_host(dev, true);
+    for (off_t addr = offset; addr < offset + size; addr += FLASH_ERASE_SIZE) {
+        hal_flash_sector_erase(addr);
+    }
+
+    if (need_interact) {
+        mbox_release_cpu2();
+    }
+
+interact_fail:
+    flash_ls_set_proxy_state(dev, false);
 
     k_sem_give(&dev_data->mutex);
 
@@ -153,38 +161,38 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
     }
 
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
-    if (dev_data->mult_host && xip_present) {
+    bool need_interact = flash_ls_get_proxy_state(dev) || xip_present;
+    if (need_interact) {
         int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-        if (!ret_mbox) {
-            while (size) {
-                /* If the offset isn't a multiple of the page size, we first need
-                * to write the remaining part that fits, otherwise the write could
-                * be wrapped around within the same page
-                */
-                len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-                if (is_own_ram((uint32_t)write_data)) {
-                    sys_cache_data_invd_range((void *)write_data, len);
-                }
-                hal_flash_page_program(offset, write_data, len);
-
-                write_data += len;
-                offset += len;
-                size -= len;
-            }
-        }
-        mbox_release_cpu2();
-    } else {
-        while (size) {
-            len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-            hal_flash_page_program(offset, write_data, len);
-
-            write_data += len;
-            offset += len;
-            size -= len;
+        if (ret_mbox) {
+            goto interact_fail;
         }
     }
 
-    flash_ls_mult_host(dev, true);
+    while (size) {
+        /* If the offset isn't a multiple of the page size, we first need
+        * to write the remaining part that fits, otherwise the write could
+        * be wrapped around within the same page
+        */
+        len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
+        if (!need_interact) {
+            if (is_own_ram((uint32_t)write_data)) {
+                sys_cache_data_invd_range((void *)write_data, len);
+            }
+        }
+        hal_flash_page_program(offset, write_data, len);
+
+        write_data += len;
+        offset += len;
+        size -= len;
+    }
+
+    if (need_interact) {
+        mbox_release_cpu2();
+    }
+
+interact_fail:
+    flash_ls_set_proxy_state(dev, false);
 
     k_sem_give(&dev_data->mutex);
 
@@ -209,20 +217,25 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
     }
 
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
-    if (dev_data->mult_host && xip_present) {
+    bool need_interact = flash_ls_get_proxy_state(dev) || xip_present;
+    if (need_interact) {
         int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-        if (!ret_mbox) {
-            hal_flash_multi_io_read(offset, (uint8_t *)data, size);
-            if (is_own_ram((uint32_t)data)) {
-                sys_cache_data_flush_range((void *)data, size);
-            }
+        if (ret_mbox) {
+            goto interact_fail;
         }
-        mbox_release_cpu2();
-    } else {
-        hal_flash_multi_io_read(offset, (uint8_t *)data, size);
     }
 
-    flash_ls_mult_host(dev, true);
+    hal_flash_multi_io_read(offset, (uint8_t *)data, size);
+    if (!need_interact) {
+        if (is_own_ram((uint32_t)data)) {
+            sys_cache_data_flush_range((void *)data, size);
+        }
+    } else {
+        mbox_release_cpu2();
+    }
+
+interact_fail:
+    flash_ls_set_proxy_state(dev, false);
 
     k_sem_give(&dev_data->mutex);
 
@@ -268,20 +281,25 @@ static int flash_ls_read_jedec_id(const struct device *dev,
     }
 
     bool xip_present = is_cpu2_xip() & is_cpu2_running();
-    if (dev_data->mult_host && xip_present) {
+    bool need_interact = flash_ls_get_proxy_state(dev) || xip_present;
+    if (need_interact) {
         int ret_mbox = mbox_acquire_cpu2_idle(&dev_config->tx_channel);
-        if (!ret_mbox) {
-            hal_flash_read_id(id);
-            if (is_own_ram((uint32_t)id)) {
-                sys_cache_data_flush_range((void *)id, 3);
-            }
+        if (ret_mbox) {
+            goto interact_fail;
         }
-        mbox_release_cpu2();
-    } else {
-        hal_flash_read_id(id);
     }
 
-    flash_ls_mult_host(dev, true);
+    hal_flash_read_id(id);
+
+    if (need_interact) {
+        if (is_own_ram((uint32_t)id)) {
+            sys_cache_data_flush_range((void *)id, 3);
+        }
+        mbox_release_cpu2();
+    }
+
+interact_fail:
+    flash_ls_set_proxy_state(dev, false);
 
     k_sem_give(&dev_data->mutex);
 
@@ -305,11 +323,12 @@ static const struct flash_driver_api flash_ls_api = {
 IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(0)));
 static const struct flash_ls_config flash_ls_config_0 = {
     .tx_channel = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(0, mbox), tx),
+    .rx_channel = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(0, mbox), rx),
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0), ))
 };
 
 static struct flash_ls_data flash_ls_data_0 = {
-    .mult_host = false,
+    .is_proxy = false,
 };
 
 DEVICE_DT_INST_DEFINE(0,
