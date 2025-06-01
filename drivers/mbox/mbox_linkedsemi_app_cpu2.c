@@ -10,22 +10,16 @@ LOG_MODULE_REGISTER(mbox_linkedsemi_app_cpu2);
 
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 
+static bool mbox_func_call_state = false;
 __nocache static volatile bool g_done = false;
-__nocache static volatile bool g_ack = false;
 __nocache static volatile int g_ret = 0;
+const struct mbox_dt_spec *g_tx_channel;
 __nocache static void *parm[MBOX_FUNC_CALL_PARM_NUM_MAX] = {};
 static K_SEM_DEFINE(mbox_func_call_sem, 0, 1);
 
 __ramfunc static void mbox_func_call_wait(void)
 {
-    g_ack = true;
     while (!g_done);
-}
-
-__ramfunc void wait_for_done(mbox_func_call_data_t *mbox_func_call_data)
-{
-    *mbox_func_call_data->ack = true;
-    while(false == *mbox_func_call_data->done);
 }
 
 static void mbox_func_call_recv_callback(const struct device *dev,
@@ -40,22 +34,31 @@ static void mbox_func_call_recv_callback(const struct device *dev,
     }
 
     switch(mbox_func_call_data->api_id) {
-    case MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID:
-        __fallthrough;
-    case MBOX_FUNC_CALL_FLASH_ERASE:
-        __fallthrough;
-    case MBOX_FUNC_CALL_FLASH_WRITE:
-        __fallthrough;
-    case MBOX_FUNC_CALL_FLASH_READ:
-        disable_global_irq();
-        mbox_func_call_wait();
-        enable_global_irq();
-        k_sem_give(&mbox_func_call_sem);
-        break;
     case MBOX_FUNC_CALL_DO_IDLE:
         disable_global_irq();
-        wait_for_done(mbox_func_call_data);
+        struct mbox_msg msg = {};
+        mbox_func_call_data_t mbox_func_call_data_ack = {};
+        mbox_func_call_data_ack.msg_id = MBOX_FUNC_CALL;
+        mbox_func_call_data_ack.api_id = MBOX_FUNC_CALL_DO_IDLE;
+        mbox_func_call_data_ack.done = &g_done;
+
+        msg.data = &mbox_func_call_data_ack;
+        msg.size = sizeof(mbox_func_call_data_t);
+
+        g_done = false;
+        if (NULL != g_tx_channel) {
+            if (mbox_send_dt(g_tx_channel, &msg) == -ENOSPC) {
+                while(1);
+            }
+        } else {
+            LOG_ERR("invalid g_tx_channel\n");
+        }
+        mbox_func_call_wait();
         enable_global_irq();
+        if (mbox_func_call_state) {
+            k_sem_give(&mbox_func_call_sem);
+            mbox_func_call_state = false;
+        }
         break;
     default:
         LOG_ERR("invalid data\n");
@@ -65,8 +68,13 @@ static void mbox_func_call_recv_callback(const struct device *dev,
     return;
 }
 
-void mbox_func_call_recv_register(const struct mbox_dt_spec *rx_channel)
+void mbox_func_call_trx_register(const struct mbox_dt_spec *tx_channel,
+                                    const struct mbox_dt_spec *rx_channel)
 {
+    __ASSERT_NO_MSG(tx_channel);
+    __ASSERT_NO_MSG(rx_channel);
+    g_tx_channel = tx_channel;
+
     if (mbox_register_callback_dt(rx_channel, mbox_func_call_recv_callback, NULL)) {
         LOG_ERR("mbox_register_callback() error\n");
         return;
@@ -83,6 +91,7 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
                    uint32_t parm_num,
                    ...)
 {
+    __ASSERT_NO_MSG(tx_channel);
     mbox_func_call_data_t mbox_func_call_data = {};
     struct mbox_msg msg = {};
     int ret = 0;
@@ -96,9 +105,6 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
 
     mbox_func_call_data.msg_id = MBOX_FUNC_CALL;
     mbox_func_call_data.api_id = api_id;
-    mbox_func_call_data.done = &g_done;
-    mbox_func_call_data.ack = &g_ack;
-    // mbox_func_call_data.ret = &g_ret;
     mbox_func_call_data.parm_num = parm_num;
     mbox_func_call_data.parm = parm;
 
@@ -106,8 +112,8 @@ int mbox_func_call(const struct mbox_dt_spec *tx_channel,
     msg.size = sizeof(mbox_func_call_data_t);
 
     g_done = false;
-    g_ack = false;
 
+    mbox_func_call_state = true;
     if (mbox_send_dt(tx_channel, &msg) == -ENOSPC) {
         while(1);
     }
