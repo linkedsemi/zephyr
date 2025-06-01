@@ -35,7 +35,7 @@ config DCACHE_LINE_SIZE
 
 config IOPMP
 	bool "IOPMP"
-	default n
+	default y
 
 config RV_BOOT_HART_MRADDR
 	hex
@@ -119,7 +119,7 @@ config FLASH
 config FLASH_PROXY_SERVER
 	bool "FLASH_PROXY_SERVER"
 	depends on $(dt_path_enabled,/cpus/cpu@1)
-	default n
+	default y
 
 if FLASH_PROXY_SERVER
 	config MBOX
