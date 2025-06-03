@@ -98,7 +98,7 @@ if ($(dt_path_enabled,/cpus/cpu@1))
 endif
 	config CPU2_XIP_BACKUP_OFFSET
 		hex "cpu1 xip backup offset"
-		default 0x100000
+		default 0x780000
 endif
 
 config IMAGE_HEADER
@@ -107,11 +107,11 @@ config IMAGE_HEADER
 
 config CPU2_LOAD_ADDR
 	hex "CPU2_LOAD_ADDR"
-	default 0x8800000
+	default 0x8080000
 
 config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
-	default 0x8800000
+	default 0x8080000
 
 config FLASH
 	default y

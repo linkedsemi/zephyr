@@ -116,9 +116,9 @@
         };
     };
 
-    flash_xip: flash@8800000 {
+    flash_xip: flash@8080000 {
         compatible = "soc-nv-flash";
-        reg = <0x8800000 DT_SIZE_M(8)>;
+        reg = <0x8080000 DT_SIZE_M(6)>;
         erase-block-size = <4096>;
         write-block-size = <4>;
     };
