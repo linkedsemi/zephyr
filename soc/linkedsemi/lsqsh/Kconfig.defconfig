@@ -119,6 +119,7 @@ config FLASH
 config FLASH_PROXY_SERVER
 	bool "FLASH_PROXY_SERVER"
 	depends on $(dt_path_enabled,/cpus/cpu@1)
+	depends on (NUM_USE_CPU > 1)
 	default y
 
 if FLASH_PROXY_SERVER
