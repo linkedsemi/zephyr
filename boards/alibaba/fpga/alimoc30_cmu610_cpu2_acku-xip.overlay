@@ -67,6 +67,14 @@
     label = "i2c-2";
 };
 
+&smbus1 {
+    status = "okay";
+};
+
+&smbus2 {
+    status = "okay";
+};
+
 &espi1 {
     espi1_kcs_ca2: espi1_kcs_ca2 {
         compatible = "linkedsemi,ls-kcs";
