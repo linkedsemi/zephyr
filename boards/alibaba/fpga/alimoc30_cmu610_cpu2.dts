@@ -95,6 +95,7 @@
 
 &gpiod {
     label = "gpiochip3";
+    ngpios = <16>;
     status = "okay";
 };
 
@@ -129,6 +130,8 @@
 };
 
 &gpioj {
+    label = "gpiochip9";
+    ngpios = <16>;
     status = "okay";
 };
 
