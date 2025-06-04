@@ -36,13 +36,15 @@ int main(void)
     sys_write32(BIT(24), SEC_SYSC_CPU_SEC_ADDR + APP_CPU_RST_INTR_MSK);
     IRQ_CONNECT(APP_CPU_RST_IRQN, 0, app_cpu_rst_isr, NULL, 0);
     irq_enable(APP_CPU_RST_IRQN);
-    HAL_IWDG_Init(APP_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
-    printf("wait\n");
-    int err = k_sem_take(&sem_rst_occur, K_FOREVER);
-    if (err != 0) {
-        printk("Failed to take sem_rst_occur (err %d)\n", err);
+    while(1) {
+        HAL_IWDG_Init(APP_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
+        printf("wait\n");
+        int err = k_sem_take(&sem_rst_occur, K_FOREVER);
+        if (err != 0) {
+            printk("Failed to take sem_rst_occur (err %d)\n", err);
+        }
+        printf("done\n");
     }
-    printf("done\n");
 
     return 0;
 }
