@@ -13,8 +13,6 @@
 #define BOOT_WDG_VALUE_BASE_S  (32768)
 #define BOOT_WDG_VALUE_BASE_MS ((32768) / 1000)
 
-extern volatile uint8_t reset_reason;
-
 char reset_reason_str[][15] = {
     [NO_RESET_REASON] = "NO_RESET_REASON",
     [COLD_RESET] = "COLD_RESET",
@@ -26,7 +24,7 @@ char reset_reason_str[][15] = {
 int main(void)
 {
     printf("\n\n\nHello World! %s\n", reset_reason_str[reset_reason_get()]);
-    printf("reset_reason %d\n", reset_reason);
+    printf("reset_reason %d\n", reset_reason_get());
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     global_reset_reason_clean();
