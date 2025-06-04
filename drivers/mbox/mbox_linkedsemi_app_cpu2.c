@@ -34,6 +34,34 @@ static void mbox_func_call_recv_callback(const struct device *dev,
     }
 
     switch(mbox_func_call_data->api_id) {
+    case MBOX_FUNC_CALL_FLASH_READ_JEDEC_ID:
+        if (mbox_func_call_state) {
+            k_sem_give(&mbox_func_call_sem);
+            mbox_func_call_state = false;
+        }
+        LOG_ERR("call fail\n");
+        break;
+    case MBOX_FUNC_CALL_FLASH_ERASE:
+        if (mbox_func_call_state) {
+            k_sem_give(&mbox_func_call_sem);
+            mbox_func_call_state = false;
+        }
+        LOG_ERR("call fail\n");
+        break;
+    case MBOX_FUNC_CALL_FLASH_WRITE:
+        if (mbox_func_call_state) {
+            k_sem_give(&mbox_func_call_sem);
+            mbox_func_call_state = false;
+        }
+        LOG_ERR("call fail\n");
+        break;
+    case MBOX_FUNC_CALL_FLASH_READ:
+        if (mbox_func_call_state) {
+            k_sem_give(&mbox_func_call_sem);
+            mbox_func_call_state = false;
+        }
+        LOG_ERR("call fail\n");
+        break;
     case MBOX_FUNC_CALL_DO_IDLE:
         disable_global_irq();
         struct mbox_msg msg = {};

@@ -76,6 +76,27 @@ int mbox_acquire_cpu2_idle(const struct mbox_dt_spec *tx_channel)
     return ret;
 }
 
+int mbox_send_cpu2_invalid(const struct mbox_dt_spec *tx_channel, enum mbox_func_call_id mbox_func_call_id)
+{
+    __ASSERT_NO_MSG(tx_channel);
+    mbox_func_call_data_t mbox_func_call_data = {};
+    struct mbox_msg msg = {};
+    int ret = 0;
+
+    mbox_func_call_data.msg_id = MBOX_FUNC_CALL;
+    mbox_func_call_data.api_id = mbox_func_call_id;
+
+    msg.data = &mbox_func_call_data;
+    msg.size = sizeof(mbox_func_call_data_t);
+
+    if (mbox_send_dt(tx_channel, &msg) == -ENOSPC) {
+        printk("mbox_send() full\n");
+        return -ENOSPC;
+    }
+
+    return ret;
+}
+
 void mbox_release_cpu2(void)
 {
     if (NULL != g_done) {

@@ -34,6 +34,7 @@ typedef struct __packed {
 
 int mbox_func_call(const struct mbox_dt_spec *tx_channel, enum mbox_func_call_id api_id, uint32_t parm_num, ...);
 int mbox_acquire_cpu2_idle(const struct mbox_dt_spec *tx_channel);
+int mbox_send_cpu2_invalid(const struct mbox_dt_spec *tx_channel, enum mbox_func_call_id mbox_func_call_id);
 void mbox_release_cpu2(void);
 void mbox_func_call_trx_register(const struct mbox_dt_spec *tx_channel,
                                     const struct mbox_dt_spec *rx_channel);
