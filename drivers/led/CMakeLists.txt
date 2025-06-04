@@ -6,7 +6,7 @@ zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_HT16K33 ht16k33.c)
 zephyr_library_sources_ifdef(CONFIG_IS31FL3216A is31fl3216a.c)
-zephyr_library_sources_ifdef(CONFIG_LED_GPIO led_gpio.c)
+# zephyr_library_sources_ifdef(CONFIG_LED_GPIO led_gpio.c)
 zephyr_library_sources_ifdef(CONFIG_LED_NPM1300 led_npm1300.c)
 zephyr_library_sources_ifdef(CONFIG_LED_PWM led_pwm.c)
 zephyr_library_sources_ifdef(CONFIG_LED_XEC led_mchp_xec.c)
@@ -20,6 +20,8 @@ zephyr_library_sources_ifdef(CONFIG_TLC59108 tlc59108.c)
 zephyr_library_sources_ifdef(CONFIG_IS31FL3733 is31fl3733.c)
 zephyr_library_sources_ifdef(CONFIG_IS31FL3194 is31fl3194.c)
 
-zephyr_library_sources_ifdef(CONFIG_LED_SHELL   led_shell.c)
+# zephyr_library_sources_ifdef(CONFIG_LED_SHELL   led_shell.c)
 
-zephyr_library_sources_ifdef(CONFIG_USERSPACE   led_handlers.c)
+# zephyr_library_sources_ifdef(CONFIG_USERSPACE   led_handlers.c)
+
+zephyr_library_sources_ifdef(CONFIG_LED_GPIO_CORELYNX led_gpio_corelynx.c)

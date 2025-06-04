@@ -21,6 +21,15 @@
     aliases {
         peci-0 = &peci1;
         sdhc0 = &sdhci1;
+        led0 = &led0;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led0: led_0{
+            gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
     };
 
     soc {

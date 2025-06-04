@@ -10,6 +10,7 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include <zephyr/drivers/flash/soc_flash_ls_mbox_cpu1.h>
+#include <zephyr/drivers/led/led_gpio_corelynx.h>
 #include "platform.h"
 #include "core_rv32.h"
 #include "exception_isr.h"
@@ -276,6 +277,7 @@ void soc_early_init_hook(void)
 void soc_late_init_hook(void)
 {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    led_state_init();
     HAL_IWDG_DeInit(SEC_IWDG);
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
 #endif

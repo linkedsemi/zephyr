@@ -1,0 +1,5 @@
+config LED_GPIO_CORELYNX
+	bool "CoreLynx GPIO LED driver"
+	default y
+	help
+	  Enable driver for CoreLynx GPIO LEDs.
