@@ -14,10 +14,15 @@ BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0);
 __no_optimization bool is_cache_region(uint32_t addr)
 {
 #if defined(CONFIG_NOCACHE_MEMORY)
+    __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
-    if ((addr >=__nocache_ram_start) && (addr < __nocache_ram_end)) {
+    if (((addr >=__nocache_ram_start) && (addr < __nocache_ram_end))
+        || (addr < __image_ram_start)
+        || (addr >= __image_ram_end)) {
         return false;
     } else {
         return true;
