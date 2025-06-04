@@ -117,16 +117,17 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
             do {
                 off_t *offset = (off_t *)(((int *)(mbox_received_data0->parm))[0]);
                 off_t *size = (off_t *)(((int *)(mbox_received_data0->parm))[1]);
-                LOG_DBG("offset: %#lx\n", *offset);
                 __ASSERT_NO_MSG(offset);
+                LOG_DBG("offset: %#lx\n", *offset);
                 if (is_open_partition_area(*offset)) {
                     flash_ls_set_proxy_state(flash_dev, true);
                     flash_erase(flash_dev, *offset, *size);
+                    *mbox_received_data0->done = true;
                 } else {
+                    mbox_send_cpu2_invalid(&tx_channel0, MBOX_FUNC_CALL_FLASH_ERASE);
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
                 }
 
-                *mbox_received_data0->done = true;
             } while (0);
             break;
         case MBOX_FUNC_CALL_FLASH_WRITE:
@@ -135,6 +136,10 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 off_t *offset = (off_t *)(((int *)(mbox_received_data0->parm))[0]);
                 uint8_t **data = (uint8_t **)(((int *)(mbox_received_data0->parm))[1]);
                 size_t *size = (size_t *)(((int *)(mbox_received_data0->parm))[2]);
+                __ASSERT_NO_MSG(offset);
+                __ASSERT_NO_MSG(data);
+                __ASSERT_NO_MSG(*data);
+                __ASSERT_NO_MSG(size);
                 LOG_DBG("&offset: %p\n", offset);
                 LOG_DBG("&size: %p\n", size);
                 LOG_DBG("&data: %p\n", data);
@@ -142,19 +147,16 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 LOG_DBG("offset: %#lx\n", *offset);
                 LOG_DBG("size: %#x\n", *size);
                 LOG_DBG("data: %p\n", *data);
-                __ASSERT_NO_MSG(offset);
-                __ASSERT_NO_MSG(data);
-                __ASSERT_NO_MSG(*data);
-                __ASSERT_NO_MSG(size);
                 if (is_open_partition_area(*offset)) {
                     LOG_DBG("offset: %#lx\n", *offset);
                     flash_ls_set_proxy_state(flash_dev, true);
                     flash_write(flash_dev, *offset, *data, *size);
+                    *mbox_received_data0->done = true;
                 } else {
+                    mbox_send_cpu2_invalid(&tx_channel0, MBOX_FUNC_CALL_FLASH_WRITE);
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
                 }
 
-                *mbox_received_data0->done = true;
             } while (0);
             break;
         case MBOX_FUNC_CALL_FLASH_READ:
@@ -163,6 +165,10 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 off_t *offset = (off_t *)(((int *)(mbox_received_data0->parm))[0]);
                 uint8_t **data = (uint8_t **)(((int *)(mbox_received_data0->parm))[1]);
                 size_t *size = (size_t *)(((int *)(mbox_received_data0->parm))[2]);
+                __ASSERT_NO_MSG(offset);
+                __ASSERT_NO_MSG(data);
+                __ASSERT_NO_MSG(*data);
+                __ASSERT_NO_MSG(size);
                 LOG_DBG("&offset: %p\n", offset);
                 LOG_DBG("&size: %p\n", size);
                 LOG_DBG("&data: %p\n", data);
@@ -170,15 +176,13 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 LOG_DBG("offset: %#lx\n", *offset);
                 LOG_DBG("size: %#x\n", *size);
                 LOG_DBG("data: %p\n", *data);
-                __ASSERT_NO_MSG(offset);
-                __ASSERT_NO_MSG(data);
-                __ASSERT_NO_MSG(*data);
-                __ASSERT_NO_MSG(size);
                 if (is_open_partition_area(*offset)) {
                     LOG_DBG("offset: %#lx\n", *offset);
                     flash_ls_set_proxy_state(flash_dev, true);
                     flash_read(flash_dev, *offset, *data, *size);
+                    *mbox_received_data0->done = true;
                 } else {
+                    mbox_send_cpu2_invalid(&tx_channel0, MBOX_FUNC_CALL_FLASH_READ);
                     LOG_DBG("offset: %#lx is invalid\n", *offset);
                 }
                 LOG_DBG("rd- - - - - -------------------\n");
@@ -190,7 +194,6 @@ static void flash_proxy_server(void *unused1, void *unused2, void *unused3)
                 }
                 LOG_DBG("\n");
 
-                *mbox_received_data0->done = true;
             } while (0);
             break;
         default:
