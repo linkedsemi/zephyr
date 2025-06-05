@@ -47,6 +47,7 @@ extern "C" {
 __printf_like(1, 2) void printk(const char *fmt, ...);
 __printf_like(1, 0) void vprintk(const char *fmt, va_list ap);
 
+#ifdef CONFIG_ENABLE_PRINTK_THREAD
 #define printk_thread(fmt, ...) \
 do { \
     uint64_t ts = k_uptime_get(); \
@@ -56,6 +57,9 @@ do { \
         __FUNCTION__ , __LINE__, \
         ##__VA_ARGS__); \
 } while(0)
+#else
+#define printk_thread(fmt, ...)
+#endif /* CONFIG_ENABLE_PRINTK_THREAD */
 
 #else
 static inline __printf_like(1, 2) void printk(const char *fmt, ...)
