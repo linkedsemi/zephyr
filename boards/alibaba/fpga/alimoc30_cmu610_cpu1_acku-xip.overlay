@@ -191,23 +191,23 @@
 //     };
 // };
 
-&i2c2 {
-    status = "okay";
-    eeprom2: eeprom@50 {
-        compatible = "zephyr,i2c-target-eeprom";
-        reg = <0x50>;
-        size = <256>;
-        status = "okay";
-    };
-};
+// &i2c2 {
+//     status = "okay";
+//     eeprom2: eeprom@50 {
+//         compatible = "zephyr,i2c-target-eeprom";
+//         reg = <0x50>;
+//         size = <256>;
+//         status = "okay";
+//     };
+// };
 
 &i2c8 {
     status = "okay";
 };
 
-&smbus2 {
-    status = "okay";
-};
+// &smbus2 {
+//     status = "okay";
+// };
 
 &smbus8 {
     status = "okay";
