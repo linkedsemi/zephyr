@@ -11,6 +11,7 @@ void k_sys_fatal_error_handler(unsigned int reason,
 {
     ARG_UNUSED(esf);
 
+    discard_current_irq_nested();
     LOG_PANIC();
     LOG_ERR("not Halting system");
 }
