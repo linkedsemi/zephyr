@@ -214,4 +214,8 @@ config COMMON_LIBC_MALLOC
 
 endif
 
+config FATAL_HANDLE_LINKEDSEMI
+	bool "FATAL_HANDLE_LINKEDSEMI"
+	default y
+
 endif
