@@ -175,7 +175,7 @@ static int flash_ls_write(const struct device *dev, off_t offset, const void *da
         * be wrapped around within the same page
         */
         len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-        if (!need_interact) {
+        if (need_interact) {
             if (is_own_ram((uint32_t)write_data)) {
                 sys_cache_data_invd_range((void *)write_data, len);
             }
@@ -226,7 +226,7 @@ static int flash_ls_read(const struct device *dev, off_t offset, void *data, siz
     }
 
     hal_flash_multi_io_read(offset, (uint8_t *)data, size);
-    if (!need_interact) {
+    if (need_interact) {
         if (is_own_ram((uint32_t)data)) {
             sys_cache_data_flush_range((void *)data, size);
         }
