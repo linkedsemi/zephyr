@@ -23,22 +23,38 @@
         peci-0 = &peci1;
         sdhc0 = &sdhci1;
         led0 = &led0;
+        led1 = &led1;
+        led2 = &led2;
         sw0 = &btn0;
+        sw1 = &btn1;
     };
 
-    leds {
+    leds: leds {
         compatible = "gpio-leds";
         led0: led_0{
             gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
-            label = "Red LED";
+            label = "SYS_LED";
+        };
+        led1: led_1{
+            gpios = <&gpioa 12 GPIO_ACTIVE_HIGH>;
+            label = "USER_LED 1";
+        };
+        led2: led_2{
+            gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
+            label = "USER_LED 2";
         };
     };
 
     keys {
         compatible = "gpio-keys";
         btn0: btn_0{
+            gpios = <&gpiom 2 BTN_GPIO_FLAGS>;
+            label = "USER_LED 1";
+        };
+
+        btn1: btn_1{
             gpios = <&gpioh 10 BTN_GPIO_FLAGS>;
-            label = "Push button 1";
+            label = "USER_LED 2";
         };
 
         bmc_boot_done_btn: bmc_boot_done {
