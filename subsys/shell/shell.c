@@ -1374,9 +1374,9 @@ void shell_thread(void *shell_handle, void *arg_log_backend,
 	}
 }
 
-int shell_init(const struct shell *sh, const void *transport_config,
+int shell_init_common(const struct shell *sh, const void *transport_config,
 	       struct shell_backend_config_flags cfg_flags,
-	       bool log_backend, uint32_t init_log_level)
+	       bool log_backend, uint32_t init_log_level, size_t stack_size)
 {
 	__ASSERT_NO_MSG(sh);
 	__ASSERT_NO_MSG(sh->ctx && sh->iface && sh->default_prompt);
@@ -1392,7 +1392,7 @@ int shell_init(const struct shell *sh, const void *transport_config,
 	}
 
 	k_tid_t tid = k_thread_create(sh->thread,
-				  sh->stack, CONFIG_SHELL_STACK_SIZE,
+				  sh->stack, stack_size,
 				  shell_thread, (void *)sh, (void *)log_backend,
 				  UINT_TO_POINTER(init_log_level),
 				  SHELL_THREAD_PRIORITY, 0, K_NO_WAIT);

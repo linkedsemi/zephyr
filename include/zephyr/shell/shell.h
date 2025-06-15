@@ -925,7 +925,7 @@ extern void z_shell_print_stream(const void *user_ctx, const char *data,
  * @param[in] _log_backend	Pointer to the log backend instance.
  * @param[in] _shell_flag	Shell output newline sequence.
  */
-#define Z_SHELL_DEFINE(_name, _prompt, _transport_iface, _out_buf, _log_backend, _shell_flag)      \
+#define Z_SHELL_DEFINE(_name, _prompt, _transport_iface, _out_buf, _log_backend, _shell_flag, _stack_size)      \
 	static const struct shell _name;                                                           \
 	static struct shell_ctx UTIL_CAT(_name, _ctx);                                             \
 	Z_SHELL_HISTORY_DEFINE(_name##_history, CONFIG_SHELL_HISTORY_BUFFER);                      \
@@ -933,7 +933,7 @@ extern void z_shell_print_stream(const void *user_ctx, const char *data,
 			       true, z_shell_print_stream);                                        \
 	LOG_INSTANCE_REGISTER(shell, _name, CONFIG_SHELL_LOG_LEVEL);                               \
 	Z_SHELL_STATS_DEFINE(_name);                                                               \
-	static K_KERNEL_STACK_DEFINE(_name##_stack, CONFIG_SHELL_STACK_SIZE);                      \
+	static K_KERNEL_STACK_DEFINE(_name##_stack, _stack_size);                      \
 	static struct k_thread _name##_thread;                                                     \
 	static const STRUCT_SECTION_ITERABLE(shell, _name) = {                                     \
 		.default_prompt = _prompt,                                                         \
@@ -960,12 +960,15 @@ extern void z_shell_print_stream(const void *user_ctx, const char *data,
  *				message is dropped.
  * @param[in] _shell_flag	Shell output newline sequence.
  */
-#define SHELL_DEFINE(_name, _prompt, _transport_iface, _log_queue_size, _log_timeout, _shell_flag) \
+#define SHELL_DEFINE_COMMON(_name, _prompt, _transport_iface, _log_queue_size, _log_timeout, _shell_flag, _stack_size) \
 	static uint8_t _name##_out_buffer[CONFIG_SHELL_PRINTF_BUFF_SIZE];                          \
 	Z_SHELL_LOG_BACKEND_DEFINE(_name, _name##_out_buffer, CONFIG_SHELL_PRINTF_BUFF_SIZE,       \
 				   _log_queue_size, _log_timeout);                                 \
 	Z_SHELL_DEFINE(_name, _prompt, _transport_iface, _name##_out_buffer,                       \
-		       Z_SHELL_LOG_BACKEND_PTR(_name), _shell_flag)
+		       Z_SHELL_LOG_BACKEND_PTR(_name), _shell_flag, _stack_size)
+
+#define SHELL_DEFINE(_name, _prompt, _transport_iface, _log_queue_size, _log_timeout, _shell_flag) \
+    SHELL_DEFINE_COMMON(_name, _prompt, _transport_iface, _log_queue_size, _log_timeout, _shell_flag, CONFIG_SHELL_STACK_SIZE)
 
 /**
  * @brief Function for initializing a transport layer and internal shell state.
@@ -980,10 +983,12 @@ extern void z_shell_print_stream(const void *user_ctx, const char *data,
  *
  * @return Standard error code.
  */
-int shell_init(const struct shell *sh, const void *transport_config,
+int shell_init_common(const struct shell *sh, const void *transport_config,
 	       struct shell_backend_config_flags cfg_flags,
-	       bool log_backend, uint32_t init_log_level);
+	       bool log_backend, uint32_t init_log_level, size_t stack_size);
 
+#define shell_init(sh, transport_config, cfg_flags, log_backend, init_log_level) \
+    shell_init_common(sh, transport_config, cfg_flags, log_backend, init_log_level, CONFIG_SHELL_STACK_SIZE)
 /**
  * @brief Uninitializes the transport layer and the internal shell state.
  *

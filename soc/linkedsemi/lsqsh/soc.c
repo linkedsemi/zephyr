@@ -277,7 +277,9 @@ void soc_early_init_hook(void)
 void soc_late_init_hook(void)
 {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+#if CONFIG_LED
     led_state_init();
+#endif
     HAL_IWDG_DeInit(SEC_IWDG);
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
 #endif

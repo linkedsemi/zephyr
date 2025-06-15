@@ -586,10 +586,11 @@ const struct shell_transport_api shell_ssh_transport_api = {
 	.read = shell_read,
 };
 
+#define STACK_SSH_SIZE (30 * 1024)
 SHELL_SSH_DEFINE(shell_transport_ssh);
-SHELL_DEFINE(shell_ssh, CONFIG_SHELL_PROMPT_SSH, &shell_transport_ssh,
+SHELL_DEFINE_COMMON(shell_ssh, CONFIG_SHELL_PROMPT_SSH, &shell_transport_ssh,
 	     CONFIG_SHELL_BACKEND_WOLFSSH_LOG_MESSAGE_QUEUE_SIZE,
-	     CONFIG_SHELL_BACKEND_WOLFSSH_LOG_MESSAGE_QUEUE_TIMEOUT, SHELL_FLAG_OLF_CRLF);
+	     CONFIG_SHELL_BACKEND_WOLFSSH_LOG_MESSAGE_QUEUE_TIMEOUT, SHELL_FLAG_OLF_CRLF, STACK_SSH_SIZE);
 
 static int enable_shell_ssh(void)
 {
@@ -601,7 +602,7 @@ static int enable_shell_ssh(void)
 	static const struct shell_backend_config_flags cfg_flags =
 		SHELL_DEFAULT_BACKEND_CONFIG_FLAGS;
 
-	return shell_init(&shell_ssh, NULL, cfg_flags, log_backend, level);
+	return shell_init_common(&shell_ssh, NULL, cfg_flags, log_backend, level, STACK_SSH_SIZE);
 }
 
 SYS_INIT(enable_shell_ssh, POST_KERNEL, CONFIG_SHELL_BACKEND_WOLFSSH_INIT_PRIORITY);
