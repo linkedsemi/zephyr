@@ -369,7 +369,7 @@ int zbus_chan_pub(const struct zbus_channel *chan, const void *msg, k_timeout_t 
 	return err;
 }
 
-int zbus_chan_pub_ex(const struct zbus_channel *chan, const void *msg, k_timeout_t timeout)
+int zbus_chan_pub_ex(const struct zbus_channel *chan, const void *msg, const struct zbus_observer* dst_obs, k_timeout_t timeout)
 {
 	int err = 0;
 	int last_error = 0;
@@ -411,54 +411,65 @@ int zbus_chan_pub_ex(const struct zbus_channel *chan, const void *msg, k_timeout
 
 	int __maybe_unused index = 0;
 
-	for (int16_t i = chan->data->observers_start_idx, limit = chan->data->observers_end_idx;
-	     i < limit; ++i) {
-		STRUCT_SECTION_GET(zbus_channel_observation, i, &observation);
-		STRUCT_SECTION_GET(zbus_channel_observation_mask, i, &observation_mask);
+	if(dst_obs == NULL)
+	{
+		for (int16_t i = chan->data->observers_start_idx, limit = chan->data->observers_end_idx;
+			i < limit; ++i) {
+			STRUCT_SECTION_GET(zbus_channel_observation, i, &observation);
+			STRUCT_SECTION_GET(zbus_channel_observation_mask, i, &observation_mask);
 
-		_ZBUS_ASSERT(observation != NULL, "observation must be not NULL");
+			_ZBUS_ASSERT(observation != NULL, "observation must be not NULL");
 
-		const struct zbus_observer *obs = observation->obs;
+			const struct zbus_observer *obs = observation->obs;
 
-		if (!obs->data->enabled || observation_mask->enabled) {
-			continue;
-		}
-
-		err = _zbus_notify_observer(chan, obs, end_time, buf);
-
-		if (err) {
-			last_error = err;
-			LOG_ERROR("could not deliver notification to observer %s. Error code %d",
-				_ZBUS_OBS_NAME(obs), err);
-			if (err == -ENOMEM) {
-				if (IS_ENABLED(CONFIG_ZBUS_MSG_SUBSCRIBER)) {
-					net_buf_unref(buf);
-				}
-				return err;
+			if (!obs->data->enabled || observation_mask->enabled) {
+				continue;
 			}
-		}
 
-		LOG_DBG(" %d -> %s", index++, _ZBUS_OBS_NAME(obs));
-	}
+			err = _zbus_notify_observer(chan, obs, end_time, buf);
+
+			if (err) {
+				last_error = err;
+				LOG_ERROR("could not deliver notification to observer %s. Error code %d",
+					_ZBUS_OBS_NAME(obs), err);
+				if (err == -ENOMEM) {
+					if (IS_ENABLED(CONFIG_ZBUS_MSG_SUBSCRIBER)) {
+						net_buf_unref(buf);
+					}
+					return err;
+				}
+			}
+
+			LOG_DBG(" %d -> %s", index++, _ZBUS_OBS_NAME(obs));
+		}
 
 #if defined(CONFIG_ZBUS_RUNTIME_OBSERVERS)
-	/* Dynamic observer event dispatcher logic */
-	struct zbus_observer_node *obs_nd, *tmp;
+		/* Dynamic observer event dispatcher logic */
+		struct zbus_observer_node *obs_nd, *tmp;
 
-	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&chan->data->observers, obs_nd, tmp, node) {
-		const struct zbus_observer *obs = obs_nd->obs;
+		SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&chan->data->observers, obs_nd, tmp, node) {
+			const struct zbus_observer *obs = obs_nd->obs;
 
-		if (!obs->data->enabled) {
-			continue;
+			if (!obs->data->enabled) {
+				continue;
+			}
+
+			err = _zbus_notify_observer(chan, obs, end_time, buf);
+
+			if (err) {
+				last_error = err;
+			}
 		}
-
-		err = _zbus_notify_observer(chan, obs, end_time, buf);
+#endif /* CONFIG_ZBUS_RUNTIME_OBSERVERS */
+	}
+	else
+	{
+		err = _zbus_notify_observer(chan, dst_obs, end_time, buf);
 
 		if (err) {
 			last_error = err;
 		}
 	}
-#endif /* CONFIG_ZBUS_RUNTIME_OBSERVERS */
 
 	IF_ENABLED(CONFIG_ZBUS_MSG_SUBSCRIBER, (net_buf_unref(buf);))
 
