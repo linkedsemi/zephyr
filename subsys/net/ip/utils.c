@@ -1001,7 +1001,8 @@ const struct in_addr *net_ipv4_unspecified_address(void)
 
 const struct in_addr *net_ipv4_broadcast_address(void)
 {
-	static const struct in_addr addr = { { { 255, 255, 255, 255 } } };
+	// static const struct in_addr addr = { { { 255, 255, 255, 255 } } };
+	static const struct in_addr addr = { { .s_addr = 0xFFFFFFFF }};
 
 	return &addr;
 }
