@@ -28,4 +28,11 @@ config ESPI_LS_MMBI
     help
         Enable Linkedsemi ESPI slave to mmbi driver.
 
+config ESPI_LS_PORT_80
+    bool "Linkedsemi ESPI slave port 80 driver"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LS_PORT_80_ENABLED
+    help
+        Enable Linkedsemi ESPI slave port 80 driver.
+
 endif
