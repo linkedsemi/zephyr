@@ -118,6 +118,12 @@
     status = "disabled";
 };
 
+&uart6 {
+    /delete-property/ interrupts;
+    current-speed = <115200>;
+    status = "okay";
+};
+
 &uart7 {
     /delete-property/ interrupts;
     current-speed = <115200>;
@@ -187,6 +193,10 @@
 };
 
 &mmbi1 {
+    status = "okay";
+};
+
+&port80 {
     status = "okay";
 };
 
