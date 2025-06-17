@@ -1,0 +1,10 @@
+description: Linkedsemi espi slave port 80
+
+compatible: "linkedsemi,ls-port-80"
+
+include: [uart-controller.yaml, pinctrl-device.yaml]
+
+properties:
+  port:
+    type: int
+    required: true
