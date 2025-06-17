@@ -651,6 +651,8 @@ static int espi_ls_init(const struct device *dev)
 
     espi_reg_init(dev);
     espi_send_boot_done(dev);
+    dev_config->irq_config_func(dev);
+
     return 0;
 }
 
