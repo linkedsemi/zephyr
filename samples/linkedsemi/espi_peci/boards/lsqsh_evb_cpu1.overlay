@@ -1,0 +1,34 @@
+/*
+ * Copyright (c) 2025, linkedsemi
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&espi1 {
+    status = "okay";
+};
+
+&sgpiom2 {
+    status = "disabled";
+};
+
+&sgpiom2_a_d {
+    status = "disabled";
+};
+
+&sgpiom2_e_h{
+    status = "disabled";
+};
+
+&sgpiom2_i_l {
+    status = "disabled";
+};
+
+&sgpiom2_m_p {
+    status = "disabled";
+};
+
+&vuart1 {
+    interrupts = <UART6_IRQN 3>;
+    uart = <&uart6>;
+    status = "okay";
+};
