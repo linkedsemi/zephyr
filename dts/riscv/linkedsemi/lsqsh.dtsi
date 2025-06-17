@@ -507,6 +507,12 @@
                 size-order = <0>;
                 status = "disabled";
             };
+
+            port80: port80 {
+                compatible = "linkedsemi,ls-port-80";
+                port = <0x80>;
+                status = "disabled";
+            };
         };
 
         espi2: espi@40046000 {
