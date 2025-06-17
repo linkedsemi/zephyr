@@ -48,6 +48,16 @@
         input-enable;
     };
 
+    /omit-if-no-ref/uart6_tx_pf10: uart6_tx_pf10 {
+        pinmux = <UART6_TXD_FUNC1_IDX08_PINMUX_PF(10)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart6_rx_pf02: uart6_rx_pf02 {
+        pinmux = <UART6_RXD_FUNC1_IDX09_PINMUX_PF(02)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
     /omit-if-no-ref/uart7_tx_pg13: uart7_tx_pg13 {
         pinmux = <UART7_TXD_FUNC1_IDX13_PINMUX_PG(13)>;
         drive-strength = "quarter max driver";
@@ -227,6 +237,41 @@
         drive-open-drain;
         input-enable;
     };
+
+    /omit-if-no-ref/spi1_clk_pa02: spi1_clk_pa02 {
+        pinmux = <SPI1_SCK_FUNC1_IDX18_PINMUX_PA(02)>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/spi1_miso_pa01: spi1_miso_pa01 {
+        pinmux = <SPI1_MISO_FUNC1_IDX21_PINMUX_PA(01)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/spi1_mosi_pa04: spi1_mosi_pa04 {
+        pinmux = <SPI1_MOSI_FUNC1_IDX20_PINMUX_PA(04)>;
+        drive-strength = "quarter max driver";
+    };
+
+    /omit-if-no-ref/spi4_mst_clk_pq00: spi4_mst_clk_pq00 {
+        pinmux = <SPI4_SCK_FUNC4_PQ00_PINMUX>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/spi4_mst_io0_pq03: spi4_mst_io0_pq03 {
+        pinmux = <SPI4_DAT0_FUNC4_PQ03_PINMUX>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/spi4_mst_io1_pq04: spi4_mst_io1_pq04 {
+        pinmux = <SPI4_DAT1_FUNC4_PQ04_PINMUX>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/spi4_mst_io2_pq05: spi4_mst_io2_pq05 {
+        pinmux = <SPI4_DAT2_FUNC4_PQ05_PINMUX>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/spi4_mst_io3_pq06: spi4_mst_io3_pq06 {
+        pinmux = <SPI4_DAT3_FUNC4_PQ06_PINMUX>;
+        drive-strength = "quarter max driver";
+    };
 };
 
 &uart1 {
@@ -241,6 +286,11 @@
 
 &uart4 {
     pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
+    pinctrl-names = "default";
+};
+
+&uart6 {
+    pinctrl-0 = <&uart6_tx_pf10 &uart6_rx_pf02>;
     pinctrl-names = "default";
 };
 
@@ -311,5 +361,22 @@
 
 &i2c16 {
     pinctrl-0 = <&i2c16_scl_pq12 &i2c16_sda_pq11>;
+    pinctrl-names = "default";
+};
+
+&spi1 {
+    pinctrl-0 = <&spi1_clk_pa02 &spi1_miso_pa01 &spi1_mosi_pa04>;
+    pinctrl-names = "default";
+};
+
+&spi4 {
+    cs-gpios = <&gpioq 0 GPIO_ACTIVE_LOW>;
+    pinctrl-0 = <
+        &spi4_mst_clk_pq00
+        &spi4_mst_io0_pq03
+        &spi4_mst_io1_pq04
+        // &spi4_mst_io2_pq05
+        // &spi4_mst_io3_pq06
+    >;
     pinctrl-names = "default";
 };
