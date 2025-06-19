@@ -23,21 +23,16 @@ SECTION_FUNC(exception.other, __soc_handle_all_irqs)
 
 	addi    sp, sp, -REGBYTES
 	sw      ra, 0(sp)
-
-	csrr    a0, mcause
+int_enter:
 	/* In the interrupt stack, open mie to implement interrupt nesting  */
-	// csrs    mstatus, (1 << 3)
-	csrrwi  t0, mnxti, 8
-
-	li 		t0, CONFIG_RISCV_MCAUSE_EXCEPTION_MASK
-	and 	a0, a0, t0
-
+	csrrsi  a0, mnxti, 8
+	beqz	a0, int_exit
 	/*
 	 * Call corresponding registered function in _sw_isr_table.
 	 * (table is 2-word wide, we should shift index accordingly)
 	 */
 	la 		t0, _sw_isr_table
-	slli 	a0, a0, (RV_REGSHIFT + 1)
+	slli 	a0, a0, 1
 	add 	t0, t0, a0
 
 	/* Load argument in a0 register */
@@ -52,6 +47,9 @@ SECTION_FUNC(exception.other, __soc_handle_all_irqs)
 	/* Disable global irq */
 	csrc    mstatus, (1 << 3) 
 
+	/* Jump back to read mnxti again */
+	j		int_enter
+int_exit:
 	lw      ra, 0(sp)
 	addi    sp, sp, REGBYTES
 	ret
