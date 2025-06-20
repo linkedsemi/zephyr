@@ -71,6 +71,9 @@ enum {
 	/** Identifier for in-tree kcsfs file system. */
     FS_KCS,
 
+	/** Identifier for in-tree eepromfs file system. */
+    FS_EEPROM,
+
 	/** Identifier for in-tree OverlayFS file system. */
 	FS_OVERLAYFS,
 };

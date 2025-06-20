@@ -77,6 +77,47 @@
     status = "disabled";
 };
 
+&i2c5 {
+    status = "okay";
+    label = "i2c-5";
+};
+&i2c2 {
+    status = "okay";
+    label = "i2c-2";
+
+    eeprom: eeprom@55 {
+		compatible = "atmel,at24";
+		reg = <0x55>;
+		status = "okay";
+		size = <256>;
+		pagesize = <8>;
+		address-width = <8>;
+		timeout = <5>;
+	};
+};
+
+&smbus5 {
+    status = "okay";
+};
+
+&smbus2 {
+    status = "okay";
+};
+
+&espi1 {
+    espi1_kcs_ca2: espi1_kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "okay";
+    };
+    status = "okay";
+};
+&ipmi_kcs {
+    kcs_chan = <&espi1_kcs_ca2>;
+    status = "okay";
+    label = "ipmi-kcs";
+};
+
 &qspi1 {
     flash1: flash@8000000 {
         compatible = "soc-nv-flash";
