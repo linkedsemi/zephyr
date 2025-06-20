@@ -3,9 +3,9 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-menuconfig SPI_NOR
+menuconfig SPI_NOR_MULTI_DEV
 	bool "SPI NOR Flash"
-	default n
+	default y
 	depends on DT_HAS_JEDEC_SPI_NOR_ENABLED
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_HAS_EXPLICIT_ERASE
@@ -14,7 +14,7 @@ menuconfig SPI_NOR
 	select FLASH_HAS_EX_OP
 	select SPI
 
-if SPI_NOR
+if SPI_NOR_MULTI_DEV
 
 choice SPI_NOR_SFDP
 	prompt "Source for Serial Flash Discoverable Parameters"
@@ -89,4 +89,4 @@ config SPI_NOR_ACTIVE_DWELL_MS
 	  call, eliminating the active->idle->active transition sequence if another
 	  transaction occurs before the dwell period expires.
 
-endif # SPI_NOR
+endif # SPI_NOR_MULTI_DEV
