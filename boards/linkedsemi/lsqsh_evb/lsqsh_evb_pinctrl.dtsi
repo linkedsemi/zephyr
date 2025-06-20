@@ -259,18 +259,22 @@
     /omit-if-no-ref/spi4_mst_io0_pq03: spi4_mst_io0_pq03 {
         pinmux = <SPI4_DAT0_FUNC4_PQ03_PINMUX>;
         drive-strength = "quarter max driver";
+        input-enable;
     };
     /omit-if-no-ref/spi4_mst_io1_pq04: spi4_mst_io1_pq04 {
         pinmux = <SPI4_DAT1_FUNC4_PQ04_PINMUX>;
         drive-strength = "quarter max driver";
+        input-enable;
     };
     /omit-if-no-ref/spi4_mst_io2_pq05: spi4_mst_io2_pq05 {
         pinmux = <SPI4_DAT2_FUNC4_PQ05_PINMUX>;
         drive-strength = "quarter max driver";
+        input-enable;
     };
     /omit-if-no-ref/spi4_mst_io3_pq06: spi4_mst_io3_pq06 {
         pinmux = <SPI4_DAT3_FUNC4_PQ06_PINMUX>;
         drive-strength = "quarter max driver";
+        input-enable;
     };
 };
 
