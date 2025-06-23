@@ -13,6 +13,7 @@ struct flash_ls_client_config {
     void *reg;
 	const struct mbox_dt_spec mbox_tx;
 	const struct mbox_dt_spec mbox_rx;
+	struct flash_pages_layout layout;
 };
 
 struct flash_ls_client_data {
@@ -206,24 +207,9 @@ static void flash_ls_client_layout(const struct device *dev,
 				       const struct flash_pages_layout **layout,
 				       size_t *layout_size)
 {
-	struct flash_ls_client_data *priv = dev->data;
 	const struct flash_ls_client_config *cfg = dev->config;
-	if (k_sem_take(&priv->sem, K_FOREVER)) {
-		return;
-	}
-    struct delegate_c2s_params param = {
-		.reg = cfg->reg,
-		.op = FLASH_DELEGATE_SERVER_LAYOUT
-	};
-	struct mbox_msg msg = {
-		.data = &param,
-		.size = sizeof(param),
-	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
-	k_sem_take(&priv->op_return_sem,K_FOREVER);
-	*layout = &priv->ret.flash_layout;	
+	*layout = &cfg->layout;	
 	*layout_size = 1;
-	k_sem_give(&priv->sem);
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
@@ -345,11 +331,19 @@ static struct flash_driver_api flash_ls_client_api = {
 #endif
 };
 
+#define LS_FLASH_CONTROLLER_CLIENT_CHILD(node_id)\
+		IF_ENABLED(DT_NODE_HAS_COMPAT(node_id,soc_nv_flash),(\
+		.layout = {\
+			.pages_count = DT_REG_SIZE(node_id)/FLASH_SECTOR_SIZE,\
+			.pages_size = FLASH_SECTOR_SIZE,\
+		},))
+
 #define LS_FLASH_CLIENT_INIT(idx)\
     static const struct flash_ls_client_config flash_ls_client_cfg_##idx ={\
         .reg = (void *)DT_INST_REG_ADDR(idx),\
 		.mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
 		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
+		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CLIENT_CHILD)\
     };\
     static struct flash_ls_client_data flash_ls_client_data_##idx;\
 	DEVICE_DT_INST_DEFINE(idx,flash_ls_client_init,NULL,\

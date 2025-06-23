@@ -71,9 +71,6 @@ static void delegation_server_work_handler(struct k_work *work)
 		const struct flash_parameters *flash_params = flash_get_parameters(priv->dev);
 		memcpy(&param.ret.flash_params,flash_params,sizeof(struct flash_parameters));
 	}break;
-	case FLASH_DELEGATE_SERVER_LAYOUT:
-		param.ret.flash_layout = cfg->layout;
-	break;
 	case FLASH_DELEGATE_SERVER_READ_JEDEC_ID:
 		param.ret.value = flash_read_jedec_id(priv->dev,priv->req_param.data);
 	break;
