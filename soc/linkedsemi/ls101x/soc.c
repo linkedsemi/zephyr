@@ -53,7 +53,6 @@ static int ls101x_init(void)
 {
     SystemInit();
     sys_init_none();
-	IRQ_CONNECT(RV_SOFT_IRQn, 0, SWINT_Handler_ASM, NULL, 0);
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();

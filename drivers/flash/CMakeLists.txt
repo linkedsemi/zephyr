@@ -17,6 +17,7 @@ zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/flash.h)
 zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_SOC_FLASH_LS soc_flash_ls.c)
+zephyr_library_sources_ifdef(CONFIG_SOC_FLASH_LS_DELEGATION_CLIENT soc_flash_ls_client.c)
 zephyr_library_sources_ifdef(CONFIG_SOC_FLASH_LS_MBOX_CPU1 soc_flash_ls_mbox_cpu1.c)
 zephyr_library_sources_ifdef(CONFIG_SOC_FLASH_LS_MBOX_CPU2 soc_flash_ls_mbox_cpu2.c)
 

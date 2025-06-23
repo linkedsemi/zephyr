@@ -56,7 +56,7 @@ int_exit:
 #endif
 
 
-.section .text
+.section .text.SWINT_Handler_ASM
 .global SWINT_Handler_ASM
 SWINT_Handler_ASM:
     lw a0, 4(sp)
