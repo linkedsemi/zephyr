@@ -10,7 +10,6 @@ enum delegate_server_op
 	FLASH_DELEGATE_SERVER_WRITE,
 	FLASH_DELEGATE_SERVER_ERASE,
 	FLASH_DELEGATE_SERVER_GET_PARAMS,
-	FLASH_DELEGATE_SERVER_LAYOUT,
 	FLASH_DELEGATE_SERVER_READ_JEDEC_ID,
 	FLASH_DELEGATE_SERVER_SFDP_READ,
 	FLASH_DELEGATE_SERVER_SUSPEND,
@@ -49,7 +48,6 @@ enum delegate_client_op
 struct flash_op_return
 {
 	struct flash_parameters flash_params;
-	struct flash_pages_layout flash_layout;
 	int value;
 };
 
