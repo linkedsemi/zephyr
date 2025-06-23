@@ -37,7 +37,9 @@
             #address-cells = <1>;
             #size-cells = <1>;
             interrupts = <3 3>;
-            
+            quad;
+            continuous_mode;
+
             flash0: flash@8000000 {
                 compatible = "soc-nv-flash";
                 reg = <0x8000000 0x800000>;

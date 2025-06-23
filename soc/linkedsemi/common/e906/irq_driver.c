@@ -11,7 +11,7 @@
  */
 void riscv_clic_irq_enable(uint32_t irq)
 {
-    enable_irq(irq);
+    csi_vic_enable_irq(irq);
 }
 
 /**
@@ -19,7 +19,7 @@ void riscv_clic_irq_enable(uint32_t irq)
  */
 void riscv_clic_irq_disable(uint32_t irq)
 {
-    disable_irq(irq);
+    csi_vic_disable_irq(irq);
 }
 
 /**

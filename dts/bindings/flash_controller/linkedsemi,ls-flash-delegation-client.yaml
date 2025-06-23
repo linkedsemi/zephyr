@@ -1,0 +1,11 @@
+description: linkedsemi ls flash delegation client
+
+compatible: "linkedsemi,ls-flash-delegation-client"
+
+include: [flash-controller.yaml]
+
+properties:
+  mbox:
+    type: phandle
+    required: true
+

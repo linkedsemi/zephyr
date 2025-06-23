@@ -9,5 +9,26 @@ config SOC_FLASH_LS
 	select FLASH_HAS_DRIVER_ENABLED
 	select FLASH_JESD216
 	select FLASH_HAS_EXPLICIT_ERASE
+	select FLASH_HAS_EX_OP
+	select FLASH_EX_OP_ENABLED
 	help
 	  Enables linkedsemi ls flash driver.
+
+if SOC_FLASH_LS
+
+config FLASH_SWINT_PRIORITY
+	int "Flash Software Interrupt Priority"
+	default 1
+
+config FLASH_OP_DELEGATION_SERVER
+	bool "Flash Operation Delegation Server"
+
+endif
+
+config SOC_FLASH_LS_DELEGATION_CLIENT
+	bool "linkedsemi ls flash delegation client"
+	depends on DT_HAS_LINKEDSEMI_LS_FLASH_DELEGATION_CLIENT_ENABLED
+	select FLASH_HAS_DRIVER_ENABLED
+	select FLASH_HAS_EXPLICIT_ERASE
+	select FLASH_HAS_EX_OP
+	select FLASH_EX_OP_ENABLED

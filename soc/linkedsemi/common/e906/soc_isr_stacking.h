@@ -6,7 +6,6 @@
 #include <zephyr/arch/cpu.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/arch/riscv/csr.h>
-#include "soc.h"
 
 #ifndef _ASMLANGUAGE
 #ifdef CONFIG_RISCV_SOC_HAS_ISR_STACKING

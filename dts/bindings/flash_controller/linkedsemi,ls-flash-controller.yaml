@@ -3,3 +3,16 @@ description: linkedsemi ls flash controller
 compatible: "linkedsemi,ls-flash-controller"
 
 include: [flash-controller.yaml,pinctrl-device.yaml]
+
+properties:
+  quad:
+    type: boolean
+
+  continuous_mode:
+    type: boolean
+
+  addr4b:
+    type: boolean
+
+  mbox:
+    type: phandle
