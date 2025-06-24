@@ -256,8 +256,6 @@
 // };
 
 &qspi1 {
-    compatible = "linkedsemi,mbox-cpu1-flash-controller";
-    mbox = <&mbox_consumer3>;
     status = "okay";
 };
 

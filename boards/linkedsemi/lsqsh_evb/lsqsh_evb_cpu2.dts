@@ -28,34 +28,54 @@
         #size-cells = <1>;
         interrupt-parent = <&intc>;
 
+        share_memory: share-memory@1013e000 {
+            compatible = "zephyr,memory-region", "mmio-sram";
+            reg = <0x1013e000 DT_SIZE_K(4)>;
+            zephyr,memory-region = "SHMEM";
+        };
+
         mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
             reg = <0x1013f000 DT_SIZE_K(4)>;
-            interrupts = <SYSC_APP_CPU_IRQN 3>;
             nchannels = <3>;
             fifo-deepth = <2>;
             fifo-width = <256>;
             #mbox-cells = <1>;
+
+            interrupts = <SYSC_APP_CPU_IRQN 3>;
+
+            mbox_consumer1: mbox-consumer1 {
+                compatible = "vnd,mbox-consumer";
+                mboxes = <&mbox 0>, <&mbox 1>;
+                mbox-names = "tx", "rx";
+            };
+            mbox_consumer2: mbox-consumer2 {
+                compatible = "vnd,mbox-consumer";
+                mboxes = <&mbox 2>, <&mbox 3>;
+                mbox-names = "tx", "rx";
+            };
+            mbox_consumer3: mbox-consumer3 {
+                compatible = "vnd,mbox-consumer";
+                mboxes = <&mbox 4>, <&mbox 5>;
+                mbox-names = "tx", "rx";
+            };
         };
-    };
 
-    mbox_consumer1: mbox-consumer1 {
-        compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 0>, <&mbox 1>;
-        mbox-names = "tx", "rx";
-    };
+        qspi1: flash-client@40000000 {
+            compatible = "linkedsemi,ls-flash-delegation-client";
+            reg = <0x40000000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <1>;
+            interrupts = <3 3>;
+            mbox = <&mbox_consumer1>;
 
-    mbox_consumer2: mbox-consumer2 {
-        compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 2>, <&mbox 3>;
-        mbox-names = "tx", "rx";
-    };
-
-    /* func call */
-    mbox_consumer3: mbox-consumer3 {
-        compatible = "vnd,mbox-consumer";
-        mboxes = <&mbox 4>, <&mbox 5>;
-        mbox-names = "tx", "rx";
+            flash1: flash@8000000 {
+                compatible = "soc-nv-flash";
+                reg = <0x8000000 0x80000>;
+                erase-block-size = <4096>;
+                write-block-size = <4>;
+            };
+        };
     };
 };
 
@@ -72,7 +92,7 @@
 };
 
 &sram2 {
-    reg = <0x10080000 DT_SIZE_K(764)>;
+    reg = <0x10080000 DT_SIZE_K(760)>;
 };
 
 &gpioa {

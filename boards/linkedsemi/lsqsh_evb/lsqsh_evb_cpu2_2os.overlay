@@ -10,7 +10,6 @@
         zephyr,sram = &sram2;
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
-        zephyr,flash = &flash_xip;
         zephyr,flash-controller = &qspi1;
         share,flash = &flash1;
     };
@@ -38,48 +37,4 @@
 
 &uart5 {
     status = "disabled";
-};
-
-/delete-node/ &flash1;
-&qspi1 {
-    compatible = "linkedsemi,mbox-cpu2-flash-controller";
-    mbox = <&mbox_consumer3>;
-    status = "okay";
-
-    flash1: flash@8000000 {
-        compatible = "soc-nv-flash";
-        reg = <0x8000000 DT_SIZE_M(16)>;
-        erase-block-size = <4096>;
-        write-block-size = <4>;
-
-        partitions {
-            compatible = "fixed-partitions";
-            #address-cells = <1>;
-            #size-cells = <1>;
-
-            reserved_partition: partition@0 {
-                label = "reserved";
-                reg = <0x0 DT_SIZE_M(8)>;
-            };
-            boot_partition: partition@800000 {
-                label = "info-sbl";
-                reg = <0x800000 DT_SIZE_M(2)>;
-            };
-            app_partition: partition@a00000 {
-                label = "app";
-                reg = <0xa00000 DT_SIZE_M(2)>;
-            };
-            storage_partition: partition@c00000 {
-                label = "storage";
-                reg = <0xc00000 DT_SIZE_M(4)>;
-            };
-        };
-    };
-
-    flash_xip: flash@8800000 {
-        compatible = "soc-nv-flash";
-        reg = <0x8800000 DT_SIZE_M(8)>;
-        erase-block-size = <4096>;
-        write-block-size = <4>;
-    };
 };
