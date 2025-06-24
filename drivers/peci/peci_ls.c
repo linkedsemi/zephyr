@@ -385,7 +385,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
         if (rx_remain) {
             k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
             peci_rd_pingpong_buf(dev, buf.u32, pingpong);
-            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_remain);
+            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_remain - (is_first_rx ? reg_tx_tail_len : 0));
             /* is_first_rx = false; */
         }
     } else {
