@@ -6,6 +6,5 @@ zephyr_sources(fpga.c)
 zephyr_sources(soc_reset.c)
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_MALLOC_LSQSH malloc.c)
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH malloc_newlib.c)
-zephyr_library_sources_ifdef(CONFIG_FLASH_PROXY_SERVER flash_proxy_server.c)
 
 set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/soc/linkedsemi/lsqsh/linker.ld CACHE INTERNAL "")
