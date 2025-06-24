@@ -30,6 +30,7 @@ static uint32_t flash_load_written;
 static uint32_t flash_load_chunk;
 
 static uint32_t flash_load_boff;
+IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) \
 static uint8_t flash_load_buf[FLASH_LOAD_BUF_MAX];
 
 /* This only issues compilation error when it would not be possible
@@ -42,7 +43,8 @@ BUILD_ASSERT(BUF_ARRAY_CNT >= 1);
 static const struct device *const zephyr_flash_controller =
 	DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
-static uint8_t __aligned(4) test_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
+COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
+static uint8_t test_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
 
 static int parse_helper(const struct shell *sh, size_t *argc,
 		char **argv[], const struct device * *flash_dev,
@@ -129,8 +131,10 @@ static int cmd_erase(const struct shell *sh, size_t argc, char *argv[])
 
 static int cmd_write(const struct shell *sh, size_t argc, char *argv[])
 {
-	uint32_t __aligned(4) check_array[BUF_ARRAY_CNT];
-	uint32_t __aligned(4) buf_array[BUF_ARRAY_CNT];
+	COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
+	uint32_t check_array[BUF_ARRAY_CNT];
+	COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
+	uint32_t buf_array[BUF_ARRAY_CNT];
 	const struct device *flash_dev;
 	uint32_t w_addr;
 	int ret;
@@ -234,6 +238,7 @@ static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 	}
 
 	for (upto = 0; upto < cnt; upto += todo) {
+		IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) \
 		uint8_t data[SHELL_HEXDUMP_BYTES_IN_LINE];
 
 		todo = MIN(cnt - upto, SHELL_HEXDUMP_BYTES_IN_LINE);
@@ -259,7 +264,9 @@ static int cmd_test(const struct shell *sh, size_t argc, char *argv[])
 	uint32_t addr;
 	uint32_t size;
 
-	static uint8_t __aligned(4) check_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
+	
+	COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
+	static uint8_t check_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
 
 	result = parse_helper(sh, &argc, &argv, &flash_dev, &addr);
 	if (result) {
