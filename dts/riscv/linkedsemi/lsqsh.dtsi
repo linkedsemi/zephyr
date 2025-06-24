@@ -167,22 +167,6 @@
             status = "disabled";
         };
 
-        qspi1: qspi@40000000 {
-            compatible = "linkedsemi,ls-flash-controller";
-            reg = <0x40000000 0x1000>;
-            #address-cells = <1>;
-            #size-cells = <1>;
-            interrupts = <QSPI1_IRQN 3>;
-            status = "disabled";
-
-            flash1: flash@8000000 {
-                compatible = "soc-nv-flash";
-                reg = <0x8000000 0x80000>;
-                erase-block-size = <4096>;
-                write-block-size = <4>;
-            };
-        };
-
         pinctrl: pin-controller@4006f080 {
             compatible = "linkedsemi,lsqsh-pinctrl";
             reg = <0x4006f080 0x200>;
