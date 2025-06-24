@@ -75,6 +75,10 @@ void sys_arch_reboot(int type)
 #define CACHEABLE BIT(1)
 #define STRONG_ORDER BIT(2)
 
+extern char __SHMEM_start[];
+extern char __SHMEM_end[];
+extern char __SHMEM_size[];
+
 __no_optimization void cpu1_cache_region_init(void)
 {
     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
@@ -83,6 +87,9 @@ __no_optimization void cpu1_cache_region_init(void)
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
+    __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
+    __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
     uint8_t idx = 0;
 
     csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
@@ -101,7 +108,7 @@ __no_optimization void cpu1_cache_region_init(void)
     csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
 
 #if DT_NODE_EXISTS(DT_NODELABEL(mbox))
-    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(mbox)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
+    csi_sysmap_config_region(idx++, (___SHMEM_start + DT_REG_SIZE(DT_NODELABEL(share_memory)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
 #endif
 
     csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
@@ -119,6 +126,9 @@ __no_optimization void cpu2_cache_region_init(void)
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
+    __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
+    __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
     uint8_t idx = 0;
 
 #if defined(CONFIG_XIP)
@@ -142,7 +152,7 @@ __no_optimization void cpu2_cache_region_init(void)
     csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
 
 #if DT_NODE_EXISTS(DT_NODELABEL(mbox))
-    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(mbox)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
+    csi_sysmap_config_region(idx++, (___SHMEM_start + DT_REG_SIZE(DT_NODELABEL(share_memory)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
 #endif
 
     csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
@@ -223,23 +233,23 @@ void soc_early_init_hook(void)
 #if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #if (((CONFIG_CPU2_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU2_BOOT_ADDR <= (0x8000000 + 64*1024*1024))) || (CONFIG_CPU2_BOOT_ADDR == 0x10080000))
-    lsqspiv2_msp_init();
+    lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
     pinmux_hal_flash_init();
-    hal_flash_dual_mode_set(true);
-    hal_flash_drv_var_init(false, false);
-    hal_flash_xip_func_ptr_dummy();
+    flash1.reg = (void *)SEC_QSPI1_ADDR;
+    flash1.dual_mode_only = false;
+    flash1.continuous_mode_enable = false;
+    flash1.writing = false;
+    flash1.suspend_count = 0;
+    flash1.continuous_mode_on = false;
+    flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
     hal_flash_init();
 
-    hal_flash_xip_mode_reset();
     hal_flash_release_from_deep_power_down();
     DELAY_US(20);
     hal_flash_software_reset();
     DELAY_US(200);
 
-    // pinmux_hal_flash_quad_init();
-    hal_flash_xip_start();
     lscache_cache_enable(1);
-    hal_flash_xip_func_ptr_init();
 #endif
 #endif
 #endif
@@ -255,13 +265,10 @@ void soc_early_init_hook(void)
     qspiv2_global_int_ctrl_fn_init();
 #endif
 
-    hal_flash_dual_mode_set(1);
     flash_swint_init();
 #if defined(CONFIG_XIP)
     hal_flash_drv_var_init(true,false);
 #endif
-    hal_flash_xip_func_ptr_init();
-    IRQ_CONNECT(FLASH_SWINT_NUM, 0, SWINT_Handler_ASM, NULL, 0);
 
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
@@ -271,6 +278,8 @@ void soc_early_init_hook(void)
 #if defined(CONFIG_PSRAM)
     psram_init();
 #endif
+
+    CLIC->CLICCFG = 0x7f;
 
     return;
 }

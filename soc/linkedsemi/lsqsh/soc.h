@@ -8,6 +8,7 @@
 #define _SOC_H_
 
 
+#include "soc_common.h"
 #define IRQ_NESTED_MAX 10
 
 
