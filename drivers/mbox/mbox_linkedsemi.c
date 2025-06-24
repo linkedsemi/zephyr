@@ -51,9 +51,9 @@ static void mbox_linkedsemi_isr(const struct device *dev)
     bool ret;
 
     if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
-        cpu_intr0_clr();
+        cpu_intr_app_clr();
     } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
-        cpu_intr1_clr();
+        cpu_intr_sec_clr();
     } else {
         __ASSERT(0, "channel invalid!\n");
     }
@@ -104,9 +104,9 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
 #endif
 
     if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
-        cpu_intr1_activate();
+        cpu_intr_sec_activate();
     } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
-        cpu_intr0_activate();
+        cpu_intr_app_activate();
     } else {
         LOG_ERROR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
         return -ENOTSUP;
@@ -142,9 +142,9 @@ __ramfunc int mbox_linkedsemi_send_ramfunc(const struct device *dev, uint32_t ch
 #endif
 
     if (MBOX_RX_CHANNEL_ID == MBOX_CH0) {
-        cpu_intr1_activate();
+        cpu_intr_sec_activate();
     } else if (MBOX_RX_CHANNEL_ID == MBOX_CH1) {
-        cpu_intr0_activate();
+        cpu_intr_app_activate();
     } else {
         LOG_ERROR("channel invalid! it must be %d or %d\n", MBOX_CH0, MBOX_CH1);
         return -ENOTSUP;
@@ -203,20 +203,20 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
     if (intr_num == MBOX_RX_CHANNEL_ID) {
         if (enable) {
             if (intr_num == MBOX_CH0) {
-                cpu_intr0_unmask();
+                cpu_intr_app_unmask();
             } else if (intr_num == MBOX_CH1) {
-                cpu_intr1_unmask();
+                cpu_intr_sec_unmask();
             } else {
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
             }
         } else {
             if (intr_num == MBOX_CH0) {
-                cpu_intr0_clr();
-                cpu_intr0_mask();
+                cpu_intr_app_clr();
+                cpu_intr_app_mask();
             } else if (intr_num == MBOX_CH1) {
-                cpu_intr1_clr();
-                cpu_intr1_mask();
+                cpu_intr_sec_clr();
+                cpu_intr_sec_mask();
             } else {
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
