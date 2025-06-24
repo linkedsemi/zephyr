@@ -1,9 +1,3 @@
-&qspi1 {
-    compatible = "linkedsemi,mbox-cpu1-flash-controller";
-    mbox = <&mbox_consumer3>;
-    status = "okay";
-};
-
 &flash1 {
     compatible = "soc-nv-flash";
     reg = <0x8000000 DT_SIZE_M(16)>;
