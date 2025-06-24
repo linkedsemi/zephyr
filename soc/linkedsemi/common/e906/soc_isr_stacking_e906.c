@@ -8,7 +8,7 @@
 #include "soc.h"
 #include "field_manipulate.h"
 
-static uint32_t irq_nested_level = 0;
+uint32_t irq_nested_level = 0;
 static uint32_t irq_nested_mcause[IRQ_NESTED_MAX] = {0,0,0,0,0,0,0,0,0,0};
 
 
