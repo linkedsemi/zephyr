@@ -323,11 +323,17 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
     peci_tx_byte(dev, buf.u8, msg->addr);
     peci_tx_byte(dev, buf.u8, msg->tx_buffer.len);
     peci_tx_byte(dev, buf.u8, msg->rx_buffer.len);
-    peci_tx_byte(dev, buf.u8, msg->cmd_code);
 
-    const uint16_t tx_len = msg->tx_buffer.len - 1;
-    /* calculate crc */
-    crc_result = crc8(buf.u8, 4, 0x7, crc_result, false);
+    const int16_t tx_len = msg->tx_buffer.len - 1;
+    if (msg->cmd_code == PECI_CMD_PING) {
+        crc_result = crc8(buf.u8, 3, 0x7, crc_result, false);
+    } else {
+        peci_tx_byte(dev, buf.u8, msg->cmd_code);
+
+        /* calculate crc */
+        crc_result = crc8(buf.u8, 4, 0x7, crc_result, false);
+    }
+
     if (tx_len > 0) {
          /* msg->tx_buffer.len - 1: because msg->cmd_code is the first byte */
         const uint8_t *tx_buf = msg->tx_buffer.buf;
