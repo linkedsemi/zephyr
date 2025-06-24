@@ -1,9 +1,3 @@
-&qspi1 {
-    compatible = "linkedsemi,mbox-cpu2-flash-controller";
-    mbox = <&mbox_consumer3>;
-    status = "okay";
-};
-
 &flash1 {
     /*
 	* Flash base address is 0x8000000,
