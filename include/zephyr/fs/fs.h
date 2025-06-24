@@ -73,6 +73,9 @@ enum {
 
 	/** Identifier for in-tree eepromfs file system. */
     FS_EEPROM,
+    
+	/** Identifier for in-tree uart file system. */
+    FS_UART,
 
 	/** Identifier for in-tree OverlayFS file system. */
 	FS_OVERLAYFS,
