@@ -198,6 +198,7 @@ extern void psram_init(void);
 
 void soc_early_init_hook(void)
 {
+    __set_MTVT((uint32_t)0);
     SystemInit();
     // sys_init_none();
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
@@ -230,9 +231,7 @@ void soc_early_init_hook(void)
     driver_init();
     arch_irq_lock();
 
-#if (CONFIG_NUM_USE_CPU == 2)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-#if (((CONFIG_CPU2_BOOT_ADDR >= 0x8000000) && (CONFIG_CPU2_BOOT_ADDR <= (0x8000000 + 64*1024*1024))) || (CONFIG_CPU2_BOOT_ADDR == 0x10080000))
     lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
     pinmux_hal_flash_init();
     flash1.reg = (void *)SEC_QSPI1_ADDR;
@@ -244,14 +243,7 @@ void soc_early_init_hook(void)
     flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
     hal_flash_init();
 
-    hal_flash_release_from_deep_power_down();
-    DELAY_US(20);
-    hal_flash_software_reset();
-    DELAY_US(200);
-
     lscache_cache_enable(1);
-#endif
-#endif
 #endif
 
 #if defined(CONFIG_PECI)
