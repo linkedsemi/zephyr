@@ -20,7 +20,7 @@ void k_sys_fatal_error_handler(unsigned int reason,
         for (;;) {;}
         CODE_UNREACHABLE;
     } else {
-        // irq_nested_level--;
+        irq_nested_level--;
         LOG_ERR("not Halting system");
     }
 }
