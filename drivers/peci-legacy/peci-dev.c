@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <linux/ioctl.h>
 
 LOG_MODULE_REGISTER(peci_dev, LOG_LEVEL_INF);
 struct peci_ls_data {
@@ -37,8 +38,8 @@ long peci_dev_ioctl(struct device* dev, uint iocmd, char* umsg)
 	// LOG_INF("Debug %s: dev = %p\n",  __func__, dev);
 
     adapter = ls_data->adapter;
-	cmd = iocmd;
-	msg_len = sizeof(*umsg);
+	cmd = _IOC_NR(iocmd);
+	msg_len = _IOC_SIZE(iocmd);
 
 	// LOG_INF("Debug: Before switch\n");
 	switch (cmd) {
