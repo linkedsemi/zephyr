@@ -505,18 +505,23 @@ static int peci_scan_cmd_mask(struct peci_adapter *adapter)
 	} else {
 		dib = le64_to_cpup((__le64 *)msg->rx_buf);
 
-		/* Check special case for Get DIB command */
-		if (dib == 0) {
-			dev_dbg(&adapter->dev, "DIB read as 0\n");
-			ret = -EIO;
-			goto out;
-		}
+		if (0) { //test for debugging
+			/* Check special case for Get DIB command */
+			if (dib == 1) {
+				dev_dbg(&adapter->dev, "DIB read as 0\n");
+				ret = -EIO;
+				goto out;
+			}
 
-		/*
-		 * Setting up the supporting commands based on revision number.
-		 * See PECI Spec Table 3-1.
-		 */
-		revision = FIELD_GET(REVISION_NUM_MASK, dib);
+			/*
+			* Setting up the supporting commands based on revision number.
+			* See PECI Spec Table 3-1.
+			*/
+			revision = FIELD_GET(REVISION_NUM_MASK, dib);
+		}
+		else {
+			revision = 0x40;
+		}
 	}
 
 	if (revision >= 0x41) { /* Rev. 4.1 */
