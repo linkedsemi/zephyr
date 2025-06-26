@@ -70,6 +70,9 @@ enum {
 
 	/** Identifier for in-tree kcsfs file system. */
     FS_KCS,
+
+	/** Identifier for in-tree OverlayFS file system. */
+	FS_OVERLAYFS,
 };
 
 /** Flag prevents formatting device if requested file system not found */
