@@ -8,6 +8,7 @@
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/state.h>
 #include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include <zephyr/drivers/flash/soc_flash_ls_mbox_cpu1.h>
 #include <zephyr/drivers/led/led_gpio_corelynx.h>
@@ -181,7 +182,9 @@ void iopmp_region_init(void)
     for (uint32_t idx = 0; idx < 5; idx++) {
         uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
         iopmp_config_region_napot4(dev, 0, 0x1000000, KB(64), false, false, false, false);
+#if 0
         iopmp_config_region_napot4(dev, 1, 0x8000000, MB(2), false, false, false, false);
+#endif
         iopmp_config_region_napot4(dev, 2, 0x10000000, KB(512), false, false, false, false);
         iopmp_config_region_napot4(dev, 3, SEC_SYSC_CPU_SEC_ADDR + 0x28 /* sec_cpu_intr */, 4, true, true, true, false);
         iopmp_config_region_napot4(dev, 4, 0x40000000, KB(256), false, false, false, false);
@@ -276,17 +279,16 @@ void soc_early_init_hook(void)
     return;
 }
 
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 void soc_late_init_hook(void)
 {
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 #if CONFIG_LED
     led_state_init();
 #endif
     HAL_IWDG_DeInit(SEC_IWDG);
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
-#endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2)
+#if defined(CONFIG_BOOT_CPU2)
 #if (CONFIG_IMAGE_HEADER) \
     && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
     && (CONFIG_CPU2_LOAD_ADDR < (CACHE1_ADDR + (64 << 20)))
@@ -319,7 +321,43 @@ void soc_late_init_hook(void)
 #else
     app_cpu_reset();
     __NOP();
+#if (DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) >= (16 << 20))
+    __ASSERT_NO_MSG(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
+    if (1) {
+        printk("boot a_app_image_partition\n");
+        hal_flashx_write_ear(&flash1, 0x0);
+        uint8_t ear = hal_flashx_read_ear(&flash1);
+        if (0x0 != ear) {
+            printk("hal_flashx_write_ear err\n");
+            while(1);
+        }
+    } else {
+        printk("boot b_app_image_partition_offset\n");
+        hal_flashx_write_ear(&flash1, 0x1);
+        uint8_t ear = hal_flashx_read_ear(&flash1);
+        if (0x1 != ear) {
+            printk("hal_flashx_write_ear err\n");
+            while(1);
+        }
+        const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
+        const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
+        const uint32_t offset = abs(b_app_image_partition_offset - a_app_image_partition_offset);
+        if (0 != offset) {
+            if (0 == (offset % KB(16))) {
+                LSQSPIV2->BACKUP_OFFSET = offset >> 14;
+            } else {
+                // while(1);
+                printk("0 != (abs(b_app_image_partition_offset - a_app_image_partition_offset) %% 16KB)\n");
+            }
+        }
+    }
+#endif
     app_cpu_dereset_by_addr(CONFIG_CPU2_BOOT_ADDR);
 #endif /* (CONFIG_CPU2_LOAD_ADDR < 0x10000000) */
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_BOOT_CPU2) */
+#endif /* defined(CONFIG_BOOT_CPU2) */
 }
+#else
+void soc_late_init_hook(void)
+{
+}
+#endif
