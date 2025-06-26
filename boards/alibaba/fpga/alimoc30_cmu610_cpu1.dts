@@ -19,7 +19,7 @@
     };
 
     aliases {
-        peci-0 = &peci1;
+        // peci-0 = &peci1;
         sdhc0 = &sdhci1;
         led0 = &led0;
     };
