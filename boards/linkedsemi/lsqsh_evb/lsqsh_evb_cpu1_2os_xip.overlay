@@ -261,7 +261,7 @@
 
 &flash1 {
     compatible = "soc-nv-flash";
-    reg = <0x8000000 DT_SIZE_M(16)>;
+    reg = <0x8000000 DT_SIZE_M(32)>;
     erase-block-size = <4096>;
     write-block-size = <4>;
 
