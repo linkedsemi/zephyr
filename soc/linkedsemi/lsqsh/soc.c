@@ -198,6 +198,8 @@ extern void psram_init(void);
 void soc_early_init_hook(void)
 {
     __set_MTVT((uint32_t)0);
+    CLIC->CLICCFG = 0x7f;
+
     SystemInit();
     // sys_init_none();
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
@@ -269,8 +271,6 @@ void soc_early_init_hook(void)
 #if defined(CONFIG_PSRAM)
     psram_init();
 #endif
-
-    CLIC->CLICCFG = 0x7f;
 
     return;
 }
