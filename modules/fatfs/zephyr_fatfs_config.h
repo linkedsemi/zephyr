@@ -96,8 +96,23 @@
 #endif /* defined(CONFIG_FS_FATFS_HAS_RTC) */
 
 /* Zephyr uses FF_VOLUME_STRS */
+#if defined(CONFIG_ZEPHYR_FATFS_UNIX_MNTPOINT)
+#undef FF_STR_VOLUME_ID
+#define FF_STR_VOLUME_ID 2
+
+#undef FF_VOLUME_STRS
+#define FF_VOLUME_STRS		CONFIG_ZEPHYR_FATFS_RAM_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_NAND_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_CF_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_SD_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_SD2_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_USB_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_USB2_ALIAS_UNIX,\
+                            CONFIG_ZEPHYR_FATFS_USB3_ALIAS_UNIX
+#else
 #undef FF_STR_VOLUME_ID
 #define FF_STR_VOLUME_ID 1
+#endif /* defined(CONFIG_ZEPHYR_FATFS_UNIX_MNTPOINT) */
 
 /* By default FF_STR_VOLUME_ID in ffconf.h is 0, which means that
  * FF_VOLUME_STRS is not used. Zephyr uses FF_VOLUME_STRS, which

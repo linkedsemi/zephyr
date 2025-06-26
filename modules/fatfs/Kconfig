@@ -6,3 +6,39 @@ config ZEPHYR_FATFSFS_MODULE
 
 # Configuration of ELM FAT is found in subsys/fs/Kconfig.fatfs for historic
 # reasons.
+
+config ZEPHYR_FATFS_UNIX_MNTPOINT
+	bool "Using unix style mount point"
+	default n
+
+config ZEPHYR_FATFS_RAM_ALIAS_UNIX
+	string "RAM unix style alias in FF_VOLUME_STRS"
+	default "RAM"
+
+config ZEPHYR_FATFS_NAND_ALIAS_UNIX
+	string "NAND unix style alias in FF_VOLUME_STRS"
+	default "NAND"
+	
+config ZEPHYR_FATFS_CF_ALIAS_UNIX
+	string "CF unix style alias in FF_VOLUME_STRS"
+	default "CF"
+
+config ZEPHYR_FATFS_SD_ALIAS_UNIX
+	string "SD unix style alias in FF_VOLUME_STRS"
+	default "SD"
+	
+config ZEPHYR_FATFS_SD2_ALIAS_UNIX
+	string "SD2 unix style alias in FF_VOLUME_STRS"
+	default "SD2"
+
+config ZEPHYR_FATFS_USB_ALIAS_UNIX
+	string "USB unix style alias in FF_VOLUME_STRS"
+	default "USB"
+
+config ZEPHYR_FATFS_USB2_ALIAS_UNIX
+	string "USB2 unix style alias in FF_VOLUME_STRS"
+	default "USB2"
+	
+config ZEPHYR_FATFS_USB3_ALIAS_UNIX
+	string "USB3 unix style alias in FF_VOLUME_STRS"
+	default "USB3"
