@@ -17,12 +17,25 @@
 
     fstab {
         compatible = "zephyr,fstab";
-        lfs1: lfs1{
+        ro_lfs: ro_lfs{
             compatible = "zephyr,fstab,littlefs";
-            mount-point = "/lfs";
+            mount-point = "/ro";
             partition = <&storage_partition>;
             automount;
             no-format;
+            read-only;
+            read-size = <16>;
+            prog-size = <16>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+        rw_lfs: rw_lfs{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/rw";
+            partition = <&rw_partition>;
+            automount;
+            // no-format;
             read-size = <16>;
             prog-size = <16>;
             cache-size = <4096>;
@@ -116,6 +129,10 @@
             app_partition: partition@a00000 {
                 label = "app";
                 reg = <0xa00000 DT_SIZE_M(2)>;
+            };
+            rw_partition: partition@e00000 {
+                label = "rw";
+                reg = <0xe00000 DT_SIZE_M(1)>;
             };
             storage_partition: partition@f00000 {
                 label = "storage";
