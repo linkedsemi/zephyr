@@ -4,7 +4,8 @@
 #ifndef __PECI_IOCTL_H
 #define __PECI_IOCTL_H
 
-#include <zephyr/types.h>
+#include <linux/types.h>
+#include <linux/ioctl.h>
 
 /* The PECI client's default address of 0x30 */
 #define PECI_BASE_ADDR					0x30
@@ -724,5 +725,82 @@ struct peci_telemetry_get_crashlog_sample_msg {
 	uint8_t	padding;
 } __attribute__((__packed__, aligned(16)));
 
+#define PECI_IOC_BASE	0xb8
 
+#define PECI_IOC_XFER \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_XFER, struct peci_xfer_msg)
+
+#define PECI_IOC_PING \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_PING, struct peci_ping_msg)
+
+#define PECI_IOC_GET_DIB \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_GET_DIB, struct peci_get_dib_msg)
+
+#define PECI_IOC_GET_TEMP \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_GET_TEMP, struct peci_get_temp_msg)
+
+#define PECI_IOC_RD_PKG_CFG \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_RD_PKG_CFG, struct peci_rd_pkg_cfg_msg)
+
+#define PECI_IOC_WR_PKG_CFG \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_WR_PKG_CFG, struct peci_wr_pkg_cfg_msg)
+
+#define PECI_IOC_RD_IA_MSR \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_RD_IA_MSR, struct peci_rd_ia_msr_msg)
+
+#define PECI_IOC_WR_IA_MSR \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_WR_IA_MSR, struct peci_wr_ia_msr_msg)
+
+#define PECI_IOC_RD_IA_MSREX \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_RD_IA_MSREX, struct peci_rd_ia_msrex_msg)
+
+#define PECI_IOC_RD_PCI_CFG \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_RD_PCI_CFG, struct peci_rd_pci_cfg_msg)
+
+#define PECI_IOC_WR_PCI_CFG \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_WR_PCI_CFG, struct peci_wr_pci_cfg_msg)
+
+#define PECI_IOC_RD_PCI_CFG_LOCAL \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_RD_PCI_CFG_LOCAL, \
+	      struct peci_rd_pci_cfg_local_msg)
+
+#define PECI_IOC_WR_PCI_CFG_LOCAL \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_WR_PCI_CFG_LOCAL, \
+	      struct peci_wr_pci_cfg_local_msg)
+
+#define PECI_IOC_RD_END_PT_CFG \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_RD_END_PT_CFG, \
+	      struct peci_rd_end_pt_cfg_msg)
+
+#define PECI_IOC_WR_END_PT_CFG \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_WR_END_PT_CFG, \
+	      struct peci_wr_end_pt_cfg_msg)
+
+#define PECI_IOC_CRASHDUMP_DISC \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_CRASHDUMP_DISC, \
+	      struct peci_crashdump_disc_msg)
+
+#define PECI_IOC_CRASHDUMP_GET_FRAME \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_CRASHDUMP_GET_FRAME, \
+	      struct peci_crashdump_get_frame_msg)
+
+#define PECI_IOC_TELEMETRY_DISC \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_TELEMETRY_DISC, \
+	      struct peci_telemetry_disc_msg)
+
+#define PECI_IOC_TELEMETRY_GET_TELEM_SAMPLE \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_TELEMETRY_GET_TELEM_SAMPLE, \
+	      struct peci_telemetry_get_telem_sample_msg)
+
+#define PECI_IOC_TELEMETRY_CONFIG_WATCHER_RD \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_TELEMETRY_CONFIG_WATCHER_RD, \
+	      struct peci_telemetry_config_watcher_msg)
+
+#define PECI_IOC_TELEMETRY_CONFIG_WATCHER_WR \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_TELEMETRY_CONFIG_WATCHER_WR, \
+	      struct peci_telemetry_config_watcher_msg)
+
+#define PECI_IOC_TELEMETRY_GET_CRASHLOG_SAMPLE \
+	_IOWR(PECI_IOC_BASE, PECI_CORE_CMD_TELEMETRY_GET_CRASHLOG_SAMPLE, \
+	      struct peci_telemetry_get_crashlog_sample_msg)
 #endif /* __PECI_IOCTL_H */

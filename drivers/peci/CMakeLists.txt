@@ -11,3 +11,5 @@ zephyr_library_sources_ifdef(CONFIG_PECI_NPCX	peci_npcx.c)
 zephyr_library_sources_ifdef(CONFIG_USERSPACE   peci_handlers.c)
 
 zephyr_library_compile_options(-Wno-incompatible-pointer-types)
+
+zephyr_library_link_libraries(zephyr-osal)

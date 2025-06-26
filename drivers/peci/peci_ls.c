@@ -397,7 +397,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
         if (rx_remain) {
             k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
             peci_rd_pingpong_buf(dev, buf.u32, pingpong);
-            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_remain);
+            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_remain - (is_first_rx ? reg_tx_tail_len : 0));
             /* is_first_rx = false; */
         }
     } else {
@@ -419,48 +419,70 @@ static int peci_lib_xfer_base_ls(struct peci_adapter *adapter, struct peci_xfer_
     struct peci_ls_data *ls_data = adapter->dev.data;
     int ret;
 
+    if (!adapter || !adapter->dev.data || !msg) {
+        return -EINVAL;
+    }
+
     LOG_DBG("Debug in %s: \n", __func__);
     
     LOG_DBG("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
     LOG_DBG("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
     LOG_DBG("Debug in %s: msg = %p\n", __func__, msg);
 
-    msg_ls = malloc(sizeof(struct peci_msg));
+    msg_ls = calloc(1, sizeof(struct peci_msg));
     if (msg_ls == NULL)
         return -ENOMEM;
-        
+
     LOG_DBG("Debug in %s: finish malloc msg_ls\n", __func__);
     msg_ls->addr = msg->addr;
-    msg_ls->cmd_code = 0;
     msg_ls->tx_buffer.buf = NULL;
     msg_ls->rx_buffer.buf = NULL;
-    msg_ls->tx_buffer.len = 0;
-    msg_ls->rx_buffer.len = 0;
-    LOG_DBG("Debug in %s: msg_ls->addr = %x\n", __func__, msg_ls->addr);
-
-    if(msg->tx_buf != NULL){
-        LOG_DBG("Debug in %s: msg->tx_buf != NULL\n", __func__);
-        msg_ls->cmd_code = msg->tx_buf[0];
-        msg_ls->tx_buffer.buf = msg->tx_buf + 1; 
-    }
-
-    if(msg->rx_buf != NULL){
-        LOG_DBG("Debug in %s: msg->rx_buf != NULL\n", __func__);
-        msg_ls->rx_buffer.buf = msg->rx_buf;
-    }
-
     msg_ls->tx_buffer.len = msg->tx_len;
     msg_ls->rx_buffer.len = msg->rx_len;
+
+    if (msg->tx_buf && msg->tx_len > 0) {
+        msg_ls->cmd_code = msg->tx_buf[0];
+        msg_ls->tx_buffer.buf = malloc(msg->tx_len);
+        if (msg_ls->tx_buffer.buf == NULL) {
+            free(msg_ls);
+            return -ENOMEM;
+        }
+        memcpy(msg_ls->tx_buffer.buf, msg->tx_buf, msg->tx_len);
+    }
+
+    if (msg->rx_buf && msg->rx_len > 0) {
+        msg_ls->rx_buffer.buf = malloc(msg->rx_len + PECI_FCS_LEN);
+        if (msg_ls->rx_buffer.buf == NULL) {
+            free(msg_ls->tx_buffer.buf);
+            free(msg_ls);
+            return -ENOMEM;
+        }
+    }
 
     LOG_DBG("Debug in %s: msg_ls->cmd_code = %x\n", __func__, msg_ls->cmd_code);
     LOG_DBG("Debug in %s: adapter = %p, adapter->dev = %p\n", __func__, adapter, ls_data->dev);
     ret = peci_ls_transfer(ls_data->dev, msg_ls);
 
-    LOG_DBG("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
-    LOG_DBG("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
-    LOG_DBG("Debug in %s: msg = %p\n", __func__, msg);
+    if(msg->rx_buf && msg->rx_len > 0 && msg_ls->rx_buffer.buf) {
+        memcpy(msg->rx_buf, msg_ls->rx_buffer.buf, msg->rx_len);
+    }
 
+    LOG_DBG("Debug in %s: msg->rx_buf = %p\n", __func__, msg->rx_buf);
+    LOG_DBG("Debug in %s: msg->rx_len = %d\n", __func__, msg->rx_len);
+    LOG_DBG("Debug in %s: msg->tx_buf = %p\n", __func__, msg->tx_buf);
+    LOG_DBG("Debug in %s: msg->tx_len = %d\n", __func__, msg->tx_len);
+    LOG_DBG("Debug in %s: msg = %p\n", __func__, msg);
+    LOG_DBG("Debug in %s: msg_ls->rx_buffer.buf = %p\n", __func__, msg_ls->rx_buffer.buf);
+    LOG_DBG("Debug in %s: msg_ls->rx_buffer.len = %d\n", __func__, msg_ls->rx_buffer.len);
+    LOG_DBG("Debug in %s: msg_ls->tx_buffer.buf = %p\n", __func__, msg_ls->tx_buffer.buf);
+    LOG_DBG("Debug in %s: msg_ls->tx_buffer.len = %d\n", __func__, msg_ls->tx_buffer.len);
+
+    free(msg_ls->tx_buffer.buf);
+    LOG_DBG("Debug in %s: free(msg_ls->tx_buffer.buf)\n", __func__);
+    free(msg_ls->rx_buffer.buf);
+    LOG_DBG("Debug in %s: free(msg_ls->rx_buffer.buf)\n", __func__);
     free(msg_ls);
+    LOG_DBG("Debug in %s: ret = %d\n", __func__, ret);
     return ret;
 }
 
