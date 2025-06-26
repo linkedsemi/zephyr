@@ -15,9 +15,9 @@
         share,flash = &flash1;
     };
 
-    flash_xip_partition: flash@8800000 {
+    flash_xip_partition: flash@8110000 {
         compatible = "soc-nv-flash";
-        reg = <0x8800000 DT_SIZE_M(16)>;
+        reg = <0x8110000 DT_SIZE_M(12)>;
         erase-block-size = <4096>;
         write-block-size = <4>;
     };
