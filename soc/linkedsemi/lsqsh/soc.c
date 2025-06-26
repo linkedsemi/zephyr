@@ -321,7 +321,7 @@ void soc_late_init_hook(void)
 #else
     app_cpu_reset();
     __NOP();
-#if (DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) >= (16 << 20))
+#if (DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) > (16 << 20))
     __ASSERT_NO_MSG(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
     if (1) {
         printk("boot a_app_image_partition\n");
