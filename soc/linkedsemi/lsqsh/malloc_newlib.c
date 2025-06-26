@@ -125,6 +125,17 @@ extern char _heap_sentry[];
 Z_LIBC_DATA static struct sys_heap z_malloc_heap;
 Z_LIBC_DATA static struct sys_heap z_malloc_heap_2;
 
+void print_sys_memory_stats(void)
+{
+	struct sys_memory_stats stats;
+
+	sys_heap_runtime_stats_get(&z_malloc_heap_2, &stats);
+
+	printk("allocated %zu, free %zu, max allocated %zu, heap size %lu\n",
+		stats.allocated_bytes, stats.free_bytes,
+		stats.max_allocated_bytes, HEAP_2_SIZE);
+}
+
 #ifdef CONFIG_MULTITHREADING
 Z_LIBC_DATA SYS_MUTEX_DEFINE(z_malloc_heap_mutex);
 

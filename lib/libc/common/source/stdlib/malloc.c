@@ -138,17 +138,6 @@ malloc_unlock(void)
 #define malloc_unlock()
 #endif
 
-void print_sys_memory_stats(void)
-{
-	struct sys_memory_stats stats;
-
-	sys_heap_runtime_stats_get(&z_malloc_heap, &stats);
-
-	printk("allocated %zu, free %zu, max allocated %zu, heap size %lu\n",
-		stats.allocated_bytes, stats.free_bytes,
-		stats.max_allocated_bytes, HEAP_SIZE);
-}
-
 void *malloc(size_t size)
 {
 	malloc_lock();
