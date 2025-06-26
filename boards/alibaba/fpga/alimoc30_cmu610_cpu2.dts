@@ -101,90 +101,135 @@
     label = "gpiochip0";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiob {
     label = "gpiochip1";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpioc {
     label = "gpiochip2";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiod {
     label = "gpiochip3";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpioe {
     label = "gpiochip4";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiof {
     label = "gpiochip5";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiog {
     label = "gpiochip6";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpioh {
     label = "gpiochip7";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpioi {
     label = "gpiochip8";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpioj {
     label = "gpiochip9";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiok {
     label = "gpiochip10";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiom {
     label = "gpiochip11";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpion {
     label = "gpiochip12";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpioq {
     label = "gpiochip13";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
  
 &gpiot {
     label = "gpiochip14";
     ngpios = <16>;
     status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
 };
 
 &eth1 {
