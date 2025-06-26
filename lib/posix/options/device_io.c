@@ -49,15 +49,15 @@ int close(int fd)
 FUNC_ALIAS(close, _close, int);
 #endif
 
-FILE *fdopen(int fd, const char *mode)
-{
-	return zvfs_fdopen(fd, mode);
-}
+// FILE *fdopen(int fd, const char *mode)
+// {
+// 	return zvfs_fdopen(fd, mode);
+// }
 
-int fileno(FILE *file)
-{
-	return zvfs_fileno(file);
-}
+// int fileno(FILE *file)
+// {
+// 	return zvfs_fileno(file);
+// }
 
 int open(const char *name, int flags, ...)
 {
