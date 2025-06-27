@@ -179,7 +179,7 @@ __no_optimization void cpu2_cache_region_init(void)
 */
 void iopmp_region_init(void)
 {
-    for (uint32_t idx = 0; idx < 5; idx++) {
+    for (uint32_t idx = 0; idx < 2; idx++) {
         uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
         iopmp_config_region_napot4(dev, 0, 0x1000000, KB(64), false, false, false, false);
 #if 0
