@@ -11,7 +11,7 @@
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
         zephyr,flash-controller = &qspi1;
-        share,flash = &flash1;
+        zephyr,internal-flash = &flash1;
     };
 };
 

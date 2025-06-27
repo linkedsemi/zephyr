@@ -12,7 +12,7 @@
         zephyr,shell-uart = &uart4;
         zephyr,flash = &flash_xip_partition;
         zephyr,flash-controller = &qspi1;
-        share,flash = &flash1;
+        zephyr,internal-flash = &flash1;
     };
 
     flash_xip_partition: flash@8110000 {
