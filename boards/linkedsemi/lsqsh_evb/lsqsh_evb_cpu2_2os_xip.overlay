@@ -48,65 +48,6 @@
     status = "disabled";
 };
 
-&qspi1 {
-    flash1: flash@8000000 {
-        compatible = "soc-nv-flash";
-        reg = <0x8000000 DT_SIZE_M(32)>;
-        erase-block-size = <4096>;
-        write-block-size = <4>;
-
-        partitions {
-            compatible = "fixed-partitions";
-            #address-cells = <1>;
-            #size-cells = <1>;
-
-            /* sbl */
-            sbl_partition: partition@0 {
-                label = "sbl";
-                reg = <0x0 DT_SIZE_K(56)>;
-            };
-            sbl_env_partition: partition@e000 {
-                label = "sbl_env";
-                reg = <0xe000 DT_SIZE_K(8)>;
-            };
-
-            /* a */
-            a_sec_image_partition: partition@10000 {
-                label = "a_sec_image";
-                reg = <0x10000 DT_SIZE_M(1)>;
-            };
-            a_app_image_partition: partition@110000 {
-                label = "a_app_image";
-                reg = <0x110000 DT_SIZE_M(12)>;
-            };
-            a_rofs_partition: partition@d10000 {
-                label = "a_rofs";
-                reg = <0xd10000 (DT_SIZE_M(2) - DT_SIZE_K(64))>;
-            };
-
-            /* common */
-            rwfs_partition: partition@f00000 {
-                label = "rwfs";
-                reg = <0xf00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
-            };
-
-            /* b */
-            b_sec_image_partition: partition@1110000 {
-                label = "b_sec_image";
-                reg = <0x1110000 DT_SIZE_M(1)>;
-            };
-            b_app_image_partition: partition@1210000 {
-                label = "b_app_image";
-                reg = <0x1210000 DT_SIZE_M(12)>;
-            };
-            b_rofs_partition: partition@1e10000 {
-                label = "b_rofs";
-                reg = <0x1e10000 (DT_SIZE_M(2) - DT_SIZE_K(64))>;
-            };
-        };
-    };
-};
-
 &psram {
     status = "okay";
 };
