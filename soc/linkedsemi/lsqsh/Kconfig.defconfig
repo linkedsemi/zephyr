@@ -90,8 +90,8 @@ config NUM_OS
 	range 1 2
 	default 2
 
-if ((NUM_USE_CPU=2))
-if ($(dt_path_enabled,/cpus/cpu@1))
+if (NUM_USE_CPU=2)
+if $(dt_path_enabled,/cpus/cpu@1)
 	config BOOT_CPU2
 		bool "BOOT_CPU2"
 		default n
@@ -99,6 +99,10 @@ endif
 	config CPU2_XIP_BACKUP_OFFSET
 		hex "cpu1 xip backup offset"
 		default 0x780000
+endif
+
+	config MBOX
+		default y
 endif
 
 config IMAGE_HEADER
@@ -116,22 +120,6 @@ config CPU2_BOOT_ADDR
 config FLASH
 	default y
 
-config FLASH_PROXY_SERVER
-	bool "FLASH_PROXY_SERVER"
-	depends on $(dt_path_enabled,/cpus/cpu@1)
-	depends on (NUM_USE_CPU > 1)
-	default y
-
-if FLASH_PROXY_SERVER
-	config MBOX
-		default y
-
-	config FLASH
-		default y
-
-	config FLASH_JESD216_API
-		default y
-endif
 
 config CRC
 	default y
