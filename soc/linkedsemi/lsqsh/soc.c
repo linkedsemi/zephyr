@@ -40,6 +40,7 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(qspi1)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
 #endif
+BUILD_ASSERT(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -318,7 +319,6 @@ void soc_late_init_hook(void)
     app_cpu_reset();
     __NOP();
 #if (DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) > (16 << 20))
-    __ASSERT_NO_MSG(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
     if (1) {
         printk("boot a_app_image_partition\n");
         hal_flashx_write_ear(&flash1, 0x0);
@@ -337,13 +337,14 @@ void soc_late_init_hook(void)
         }
         const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
         const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
-        const uint32_t offset = abs(b_app_image_partition_offset - a_app_image_partition_offset);
+        const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
+        __ASSERT_NO_MSG(offset >= 0);
         if (0 != offset) {
             if (0 == (offset % KB(16))) {
                 LSQSPIV2->BACKUP_OFFSET = offset >> 14;
             } else {
                 // while(1);
-                printk("0 != (abs(b_app_image_partition_offset - a_app_image_partition_offset) %% 16KB)\n");
+                printk("0 != ((b_app_image_partition_offset - a_app_image_partition_offset) %% 16KB)\n");
             }
         }
     }
