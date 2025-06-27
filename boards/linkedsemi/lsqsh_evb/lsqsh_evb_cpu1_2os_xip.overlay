@@ -7,16 +7,23 @@
 
 / {
     chosen {
-        zephyr,flash = &flash1;
+        zephyr,flash = &sram1_ro;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
     };
-};
 
-&sram1 {
-    reg = <0x10000000 DT_SIZE_K(512)>;
+    /delete-node/ memory@10000000;
+    sram1_ro: memory@10000000 {
+        compatible = "mmio-sram";
+        reg = <0x10000000 DT_SIZE_K(256)>;
+    };
+
+    sram1: memory@10040000 {
+        compatible = "mmio-sram";
+        reg = <(0x10000000 + DT_SIZE_K(256)) (DT_SIZE_K(512) - DT_SIZE_K(256))>;
+    };
 };
 
 &sram2 {
