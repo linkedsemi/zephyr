@@ -45,11 +45,6 @@ static inline bool is_cpu2_xip(void)
             && (CONFIG_CPU2_BOOT_ADDR < (0x8000000 + MB(16))));
 }
 
-static inline bool is_cpu2_running(void)
-{
-    return (SYSC_SEC_CPU->APP_CPU_SRST > 0);
-}
-
 static ALWAYS_INLINE void nop_delay(uint64_t count)
 {
     for (uint64_t i = 0; i < count; i ++) {
