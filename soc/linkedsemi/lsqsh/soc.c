@@ -256,7 +256,7 @@ void soc_early_init_hook(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
-#if defined(CONFIG_SOC_FLASH_LS) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU1) || defined(CONFIG_SOC_FLASH_LS_MBOX_CPU2)
+#if defined(CONFIG_SOC_FLASH_LS)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
 #else
@@ -264,9 +264,6 @@ void soc_early_init_hook(void)
 #endif
 
     flash_swint_init();
-#if defined(CONFIG_XIP)
-    hal_flash_drv_var_init(true,false);
-#endif
 
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
