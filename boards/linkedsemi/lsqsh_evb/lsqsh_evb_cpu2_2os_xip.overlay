@@ -85,7 +85,7 @@
             };
 
             /* common */
-            rwfs_partition: partition@f10000 {
+            rwfs_partition: partition@f00000 {
                 label = "rwfs";
                 reg = <0xf00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
             };
