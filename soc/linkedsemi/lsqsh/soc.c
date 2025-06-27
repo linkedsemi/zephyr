@@ -229,14 +229,27 @@ void soc_early_init_hook(void)
     csi_icache_invalid();
 #endif
 
-#if defined(CONFIG_ETH_DRIVER)
-    SYSC_APP_CPU->ETH1_PHY_CTRL = 0x9;
-#endif
-
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_FLASH)
+    flash1.reg = (void *)SEC_QSPI1_ADDR;
+    flash1.dual_mode_only = false;
+    flash1.continuous_mode_enable = false;
+    flash1.writing = false;
+    flash1.suspend_count = 0;
+    flash1.continuous_mode_on = false;
+    flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
+    qspiv2_global_int_ctrl_fn_init();
+    if (!is_cpu2_running()) {
+        lscache_cache_enable(1);
+    }
+#endif
+#endif
+
+#if 0
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
     pinmux_hal_flash_init();
@@ -268,6 +281,15 @@ void soc_early_init_hook(void)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_xip_mode_reset();
 #endif
+#endif
+#endif
+
+#if defined(CONFIG_ETH_DRIVER)
+    SYSC_APP_CPU->ETH1_PHY_CTRL = 0x9;
+#endif
+
+#if defined(CONFIG_PECI)
+    sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
 #if defined(CONFIG_PSRAM)
@@ -319,7 +341,7 @@ void soc_late_init_hook(void)
 #else
     app_cpu_reset();
     __NOP();
-#if (DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) > (16 << 20))
+#if (DT_REG_SIZE(DT_CHOSEN(zephyr_internal_flash)) > (16 << 20))
     if (1) {
         printk("boot a_app_image_partition\n");
         hal_flashx_write_ear(&flash1, 0x0);
