@@ -243,7 +243,7 @@ void soc_early_init_hook(void)
     flash1.continuous_mode_on = false;
     flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
     qspiv2_global_int_ctrl_fn_init();
-    if (!is_cpu2_running()) {
+    if (!is_app_cpu_running()) {
         lscache_cache_enable(1);
     }
 #endif
