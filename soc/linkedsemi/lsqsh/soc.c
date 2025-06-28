@@ -232,6 +232,7 @@ void soc_early_init_hook(void)
     driver_init();
     arch_irq_lock();
 
+#if !defined(CONFIG_INIT_FLASH_FOR_DEBUG)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #if defined(CONFIG_FLASH)
     flash1.reg = (void *)SEC_QSPI1_ADDR;
@@ -248,7 +249,8 @@ void soc_early_init_hook(void)
 #endif
 #endif
 
-#if 0
+#else /* !CONFIG_INIT_FLASH_FOR_DEBUG */
+
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
     pinmux_hal_flash_init();
@@ -264,10 +266,6 @@ void soc_early_init_hook(void)
     lscache_cache_enable(1);
 #endif
 
-#if defined(CONFIG_PECI)
-    sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
-#endif
-
 #if defined(CONFIG_SOC_FLASH_LS)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
     hal_flash_init();
@@ -281,7 +279,7 @@ void soc_early_init_hook(void)
     hal_flash_xip_mode_reset();
 #endif
 #endif
-#endif
+#endif /* !CONFIG_INIT_FLASH_FOR_DEBUG */
 
 #if defined(CONFIG_ETH_DRIVER)
     SYSC_APP_CPU->ETH1_PHY_CTRL = 0x9;

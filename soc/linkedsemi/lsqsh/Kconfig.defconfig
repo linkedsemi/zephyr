@@ -113,6 +113,10 @@ config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
 	default 0x8800000
 
+config INIT_FLASH_FOR_DEBUG
+	bool "INIT_FLASH_FOR_DEBUG"
+	default n
+
 config FLASH
 	default y
 
