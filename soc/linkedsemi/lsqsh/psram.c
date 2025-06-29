@@ -71,11 +71,8 @@ void psram_reset(void)
 void psram_init(void) {
     uint32_t val = 0;
 
-    if (sys_read32(APP_SYSC_CPU_APP_ADDR + 0x80) & (BIT(0) | BIT(2))) {
-        return; /* it has been initialized */
-    }
     if (SSIC_VERSION_ID != sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID)) {
-        while(1);
+        return; /* it has been initialized */
     }
     psram_pin_init();
     psram_reset();
