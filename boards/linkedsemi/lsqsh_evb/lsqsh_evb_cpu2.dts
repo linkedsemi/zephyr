@@ -44,19 +44,9 @@
 
             interrupts = <SYSC_APP_CPU_IRQN 3>;
 
-            mbox_consumer1: mbox-consumer1 {
+            mbox_consumer_qspi1: mbox-consumer_qspi1 {
                 compatible = "vnd,mbox-consumer";
                 mboxes = <&mbox 0>, <&mbox 1>;
-                mbox-names = "tx", "rx";
-            };
-            mbox_consumer2: mbox-consumer2 {
-                compatible = "vnd,mbox-consumer";
-                mboxes = <&mbox 2>, <&mbox 3>;
-                mbox-names = "tx", "rx";
-            };
-            mbox_consumer3: mbox-consumer3 {
-                compatible = "vnd,mbox-consumer";
-                mboxes = <&mbox 4>, <&mbox 5>;
                 mbox-names = "tx", "rx";
             };
         };
@@ -67,7 +57,7 @@
             #address-cells = <1>;
             #size-cells = <1>;
             interrupts = <3 3>;
-            mbox = <&mbox_consumer1>;
+            mbox = <&mbox_consumer_qspi1>;
 
             flash1: flash@8000000 {
                 compatible = "soc-nv-flash";
