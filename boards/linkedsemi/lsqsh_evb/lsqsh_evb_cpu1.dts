@@ -38,7 +38,6 @@
         mbox: mbox@1013f000 {
             compatible = "linkedsemi,mbox";
             reg = <0x1013f000 DT_SIZE_K(4)>;
-            nchannels = <3>;
             fifo-deepth = <2>;
             fifo-width = <256>;
             #mbox-cells = <1>;
