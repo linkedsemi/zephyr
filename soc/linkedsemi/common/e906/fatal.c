@@ -12,15 +12,14 @@ void k_sys_fatal_error_handler(unsigned int reason,
 {
     ARG_UNUSED(esf);
 
-    discard_current_irq_nested();
     LOG_PANIC();
     if (irq_nested_level > 1) {
-        LOG_ERR("fatal error! Halting system");
+        LOG_ERROR("fatal error! Halting system");
         disable_global_irq();
         for (;;) {;}
         CODE_UNREACHABLE;
     } else {
         irq_nested_level--;
-        LOG_ERR("not Halting system");
+        LOG_ERROR("not Halting system");
     }
 }

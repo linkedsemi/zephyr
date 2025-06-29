@@ -15,7 +15,7 @@
         zephyr,internal-flash = &flash1;
     };
 
-    flash_xip_partition: flash@8110000 {
+    flash_xip_partition: flash@8100000 {
         compatible = "soc-nv-flash";
         reg = <0x8100000 DT_SIZE_M(12)>;
         erase-block-size = <4096>;

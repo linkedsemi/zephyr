@@ -98,8 +98,7 @@ if $(dt_path_enabled,/cpus/cpu@1)
 endif
 	config CPU2_XIP_BACKUP_OFFSET
 		hex "cpu1 xip backup offset"
-		default 0x780000
-endif
+		default 0x100000
 
 	config MBOX
 		default y
@@ -111,11 +110,11 @@ config IMAGE_HEADER
 
 config CPU2_LOAD_ADDR
 	hex "CPU2_LOAD_ADDR"
-	default 0x8080000
+	default 0x8100000
 
 config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
-	default 0x8080000
+	default 0x8100000
 
 config INIT_FLASH_FOR_DEBUG
 	bool "INIT_FLASH_FOR_DEBUG"
@@ -186,9 +185,5 @@ config COMMON_LIBC_MALLOC
 	default n
 
 endif
-
-config FATAL_HANDLE_LINKEDSEMI
-	bool "FATAL_HANDLE_LINKEDSEMI"
-	default y
 
 endif

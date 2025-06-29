@@ -45,7 +45,7 @@ static int mbox_func_call_send_and_wait(const struct mbox_dt_spec *tx_channel,
     }
 
     if (k_sem_take(&mbox_func_call_sem, K_MSEC(MBOX_RETRY_MAX_CNT)) != 0) {
-        LOG_ERR("no response!\n");
+        LOG_ERROR("no response!\n");
         return -ETIMEDOUT;
     }
 

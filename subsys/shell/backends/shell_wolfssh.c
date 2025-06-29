@@ -586,7 +586,7 @@ const struct shell_transport_api shell_ssh_transport_api = {
 	.read = shell_read,
 };
 
-#define STACK_SSH_SIZE (30 * 1024)
+#define STACK_SSH_SIZE (10 * 1024)
 SHELL_SSH_DEFINE(shell_transport_ssh);
 SHELL_DEFINE_COMMON(shell_ssh, CONFIG_SHELL_PROMPT_SSH, &shell_transport_ssh,
 	     CONFIG_SHELL_BACKEND_WOLFSSH_LOG_MESSAGE_QUEUE_SIZE,

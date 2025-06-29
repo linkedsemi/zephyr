@@ -17,7 +17,7 @@
 #include <inttypes.h>
 #include <limits.h>
 
-#define STORAGE_PARTITION	storage_partition
+#define STORAGE_PARTITION	rwfs_partition
 #define STORAGE_PARTITION_ID	FIXED_PARTITION_ID(STORAGE_PARTITION)
 
 /* FAT */

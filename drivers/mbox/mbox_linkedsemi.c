@@ -22,7 +22,7 @@ LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
 #define MBOX_NCHANNELS     (DT_NUM_INST_STATUS_OKAY(vnd_mbox_consumer))
 #define MBOX_FIFO_DEEPTH   (DT_INST_PROP(0, fifo_deepth))
 #define MBOX_FIFO_WIDTH    (DT_INST_PROP(0, fifo_width))
-#define MBOX_CONSUMER_REFERENCE mbox_consumer_qspi1
+#define MBOX_CONSUMER_REFERENCE mbox_consumer1
 BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(MBOX_CONSUMER_REFERENCE)), "MBOX_CONSUMER_REFERENCE not found");
 #define MBOX_RX_CHANNEL_ID (DT_MBOX_CHANNEL_BY_NAME(DT_NODELABEL(MBOX_CONSUMER_REFERENCE), rx))
 
@@ -111,7 +111,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
     } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
         cpu_intr_sec_activate();
     } else {
-        LOG_ERR("channel invalid! it must be %d or %d\n", MBOX_RX_CH_SEC, MBOX_RX_CH_APP);
+        LOG_ERROR("channel invalid! it must be %d or %d\n", MBOX_RX_CH_SEC, MBOX_RX_CH_APP);
         return -ENOTSUP;
     }
 

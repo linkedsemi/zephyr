@@ -39,28 +39,28 @@ static void mbox_func_call_recv_callback(const struct device *dev,
             k_sem_give(&mbox_func_call_sem);
             mbox_func_call_state = false;
         }
-        LOG_ERR("call fail\n");
+        LOG_ERROR("call fail\n");
         break;
     case MBOX_FUNC_CALL_FLASH_ERASE:
         if (mbox_func_call_state) {
             k_sem_give(&mbox_func_call_sem);
             mbox_func_call_state = false;
         }
-        LOG_ERR("call fail\n");
+        LOG_ERROR("call fail\n");
         break;
     case MBOX_FUNC_CALL_FLASH_WRITE:
         if (mbox_func_call_state) {
             k_sem_give(&mbox_func_call_sem);
             mbox_func_call_state = false;
         }
-        LOG_ERR("call fail\n");
+        LOG_ERROR("call fail\n");
         break;
     case MBOX_FUNC_CALL_FLASH_READ:
         if (mbox_func_call_state) {
             k_sem_give(&mbox_func_call_sem);
             mbox_func_call_state = false;
         }
-        LOG_ERR("call fail\n");
+        LOG_ERROR("call fail\n");
         break;
     case MBOX_FUNC_CALL_DO_IDLE:
         disable_global_irq();
@@ -79,7 +79,7 @@ static void mbox_func_call_recv_callback(const struct device *dev,
                 while(1);
             }
         } else {
-            LOG_ERR("invalid g_tx_channel\n");
+            LOG_ERROR("invalid g_tx_channel\n");
         }
         mbox_func_call_wait();
         enable_global_irq();
@@ -89,7 +89,7 @@ static void mbox_func_call_recv_callback(const struct device *dev,
         }
         break;
     default:
-        LOG_ERR("invalid data\n");
+        LOG_ERROR("invalid data\n");
         break;
     };
 
@@ -104,12 +104,12 @@ void mbox_func_call_trx_register(const struct mbox_dt_spec *tx_channel,
     g_tx_channel = tx_channel;
 
     if (mbox_register_callback_dt(rx_channel, mbox_func_call_recv_callback, NULL)) {
-        LOG_ERR("mbox_register_callback() error\n");
+        LOG_ERROR("mbox_register_callback() error\n");
         return;
     }
 
     if (mbox_set_enabled_dt(rx_channel, true)) {
-        LOG_ERR("mbox_set_enable() error\n");
+        LOG_ERROR("mbox_set_enable() error\n");
         return;
     }
 }

@@ -10,7 +10,7 @@
         zephyr,sram = &sram2;
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
-        zephyr,flash = &flash_xip;
+        zephyr,flash = &flash_xip_partition;
         zephyr,flash-controller = &qspi1;
         share,flash = &flash1;
     };
@@ -20,7 +20,7 @@
         ro_lfs: ro_lfs{
             compatible = "zephyr,fstab,littlefs";
             mount-point = "/ro";
-            partition = <&storage_partition>;
+            partition = <&a_rofs_partition>;
             automount;
             no-format;
             read-only;
@@ -33,7 +33,7 @@
         rw_lfs: rw_lfs{
             compatible = "zephyr,fstab,littlefs";
             mount-point = "/rw";
-            partition = <&rw_partition>;
+            partition = <&rwfs_partition>;
             automount;
             // no-format;
             read-size = <16>;
@@ -42,6 +42,13 @@
             lookahead-size = <256>;
             block-cycles = <512>;
         };
+    };
+
+    flash_xip_partition: flash@8100000 {
+        compatible = "soc-nv-flash";
+        reg = <0x8100000 DT_SIZE_M(12)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
     };
 };
 
@@ -61,55 +68,19 @@
 };
 
 &uart4 {
-    status = "okay";
     current-speed = <115200>;
-    pinctrl-0 = <&uart4_tx_pd11 &uart4_rx_pd12>;
-    pinctrl-names = "default";
+    status = "okay";
 };
 
 &uart5 {
+    current-speed = <115200>;
     status = "disabled";
 };
 
-&i2c1 {
-    status = "okay";
-    label = "i2c-1";
-};
-&i2c2 {
-    status = "okay";
-    label = "i2c-2";
-};
-
-&smbus1 {
-    status = "okay";
-};
-
-&smbus2 {
-    status = "okay";
-};
-
-&espi1 {
-    espi1_kcs_ca2: espi1_kcs_ca2 {
-        compatible = "linkedsemi,ls-kcs";
-        port = <0xca2 0xca3>;
-        status = "okay";
-    };
-    status = "okay";
-};
-&ipmi_kcs {
-    kcs_chan = <&espi1_kcs_ca2>;
-    status = "okay";
-    label = "ipmi-kcs";
-};
-
 &qspi1 {
-    compatible = "linkedsemi,mbox-cpu2-flash-controller";
-    mbox = <&mbox_consumer3>;
-    status = "okay";
-
     flash1: flash@8000000 {
         compatible = "soc-nv-flash";
-        reg = <0x8000000 DT_SIZE_M(16)>;
+        reg = <0x8000000 DT_SIZE_M(32)>;
         erase-block-size = <4096>;
         write-block-size = <4>;
 
@@ -118,34 +89,50 @@
             #address-cells = <1>;
             #size-cells = <1>;
 
-            reserved_partition: partition@0 {
-                label = "reserved";
-                reg = <0x0 DT_SIZE_M(8)>;
+            /* sbl */
+            sbl_partition: partition@0 {
+                label = "sbl";
+                reg = <0x0 DT_SIZE_K(56)>;
             };
-            boot_partition: partition@800000 {
-                label = "info-sbl";
-                reg = <0x800000 DT_SIZE_M(2)>;
+            sbl_env_partition: partition@e000 {
+                label = "sbl_env";
+                reg = <0xe000 DT_SIZE_K(8)>;
             };
-            app_partition: partition@a00000 {
-                label = "app";
-                reg = <0xa00000 DT_SIZE_M(2)>;
+
+            /* a */
+            a_sec_image_partition: partition@10000 {
+                label = "a_sec_image";
+                reg = <0x10000 DT_SIZE_K(960)>;
             };
-            rw_partition: partition@e00000 {
-                label = "rw";
-                reg = <0xe00000 DT_SIZE_M(1)>;
+            a_app_image_partition: partition@100000 {
+                label = "a_app_image";
+                reg = <0x100000 DT_SIZE_M(12)>;
             };
-            storage_partition: partition@f00000 {
-                label = "storage";
-                reg = <0xf00000 DT_SIZE_M(1)>;
+            a_rofs_partition: partition@d00000 {
+                label = "a_rofs";
+                reg = <0xd00000 DT_SIZE_M(2)>;
+            };
+
+            /* common */
+            rwfs_partition: partition@f00000 {
+                label = "rwfs";
+                reg = <0xf00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
+            };
+
+            /* b */
+            b_sec_image_partition: partition@1110000 {
+                label = "b_sec_image";
+                reg = <0x1110000 DT_SIZE_K(960)>;
+            };
+            b_app_image_partition: partition@1200000 {
+                label = "b_app_image";
+                reg = <0x1200000 DT_SIZE_M(12)>;
+            };
+            b_rofs_partition: partition@1E00000 {
+                label = "b_rofs";
+                reg = <0x1E00000 DT_SIZE_M(2)>;
             };
         };
-    };
-
-    flash_xip: flash@8080000 {
-        compatible = "soc-nv-flash";
-        reg = <0x8080000 DT_SIZE_M(10)>;
-        erase-block-size = <4096>;
-        write-block-size = <4>;
     };
 };
 
