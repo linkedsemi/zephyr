@@ -19,7 +19,7 @@ LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
 
 #define MBOX_BASE_ADDRESS  (DT_INST_REG_ADDR(0))
 #define MBOX_SIZE          (DT_INST_REG_SIZE(0))
-#define MBOX_NCHANNELS     (DT_INST_PROP(0, nchannels))
+#define MBOX_NCHANNELS     (DT_NUM_INST_STATUS_OKAY(vnd_mbox_consumer))
 #define MBOX_FIFO_DEEPTH   (DT_INST_PROP(0, fifo_deepth))
 #define MBOX_FIFO_WIDTH    (DT_INST_PROP(0, fifo_width))
 #define MBOX_CONSUMER_REFERENCE mbox_consumer_qspi1
