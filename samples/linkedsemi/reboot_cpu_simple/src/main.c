@@ -14,9 +14,12 @@ int main(void)
     sys_cache_data_flush_all();
     sys_cache_data_disable();
     sys_cache_instr_disable();
-    void (* goto_sbl)();
-    goto_sbl = (void *)__rom_region_start;
-    goto_sbl();
+    for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
+        irq_disable(irq);
+    }
+    void (* goto_rom_region_start)();
+    goto_rom_region_start = (void *)__rom_region_start;
+    goto_rom_region_start();
 
     return 0;
 }
