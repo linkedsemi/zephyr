@@ -186,4 +186,9 @@ config COMMON_LIBC_MALLOC
 
 endif
 
+if POSIX_SINGLE_PROCESS
+	config POSIX_UNAME_VERSION_LEN
+		default 100
+endif
+
 endif
