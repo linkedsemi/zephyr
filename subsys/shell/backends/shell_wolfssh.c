@@ -382,6 +382,10 @@ static void create_tcp_connection()
 	int peerEcc = 0;
 	word16 port = wolfSshPort;
 
+#ifdef DEBUG_WOLFSSH
+	wolfSSH_Debugging_ON();
+#endif
+
 	if (wolfSSH_Init() != WS_SUCCESS) {
 		LOG_ERROR("Couldn't initialize wolfSSH.\n");
 	}
