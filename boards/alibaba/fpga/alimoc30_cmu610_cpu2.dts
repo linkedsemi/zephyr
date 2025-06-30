@@ -98,62 +98,92 @@
 };
 
 &gpioa {
+    label = "gpiochip0";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiob {
+    label = "gpiochip1";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpioc {
+    label = "gpiochip2";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiod {
+    label = "gpiochip3";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpioe {
+    label = "gpiochip4";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiof {
+    label = "gpiochip5";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiog {
+    label = "gpiochip6";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpioh {
+    label = "gpiochip7";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpioi {
+    label = "gpiochip8";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpioj {
+    label = "gpiochip9";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiok {
+    label = "gpiochip10";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiom {
+    label = "gpiochip11";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpion {
+    label = "gpiochip12";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpioq {
+    label = "gpiochip13";
+    ngpios = <16>;
     status = "okay";
 };
-
+ 
 &gpiot {
+    label = "gpiochip14";
+    ngpios = <16>;
     status = "okay";
 };
 
