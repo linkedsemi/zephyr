@@ -34,7 +34,7 @@ static int reset_linkedsemi_status(const struct device *dev, uint32_t id, uint8_
     const struct rctl_linkedsemi_config *const dev_config = dev->config;
     rstctrl_soc_rst_t *rst = (rstctrl_soc_rst_t *)&id;
 
-    *status = !!sys_test_bit(dev_config->base + rst->reg, rst->set_bit);
+    *status = !sys_test_bit(dev_config->base + rst->reg, rst->set_bit);
 
     return 0;
 }
@@ -44,7 +44,7 @@ static int reset_linkedsemi_line_assert(const struct device *dev, uint32_t id)
     const struct rctl_linkedsemi_config *const dev_config = dev->config;
     rstctrl_soc_rst_t *rst = (rstctrl_soc_rst_t *)&id;
 
-    sys_set_bit(dev_config->base + rst->reg, rst->clr_bit);
+    sys_write32(BIT(rst->clr_bit), dev_config->base + rst->reg);
 
     return 0;
 }
@@ -54,7 +54,7 @@ static int reset_linkedsemi_line_deassert(const struct device *dev, uint32_t id)
     const struct rctl_linkedsemi_config *const dev_config = dev->config;
     rstctrl_soc_rst_t *rst = (rstctrl_soc_rst_t *)&id;
 
-    sys_set_bit(dev_config->base + rst->reg, rst->set_bit);
+    sys_write32(BIT(rst->set_bit), dev_config->base + rst->reg);
 
     return 0;
 }
