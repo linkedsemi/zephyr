@@ -87,7 +87,6 @@ typedef union {
 typedef enum {
     LS_EVT_XFER,
     LS_EVT_SETUP,
-    LS_EVT_DOUT,
     LS_EVT_DIN,
 } ls_event_t;
 
@@ -293,14 +292,11 @@ static int udc_ls_rx(const struct device *dev, uint8_t ep_index,
     musb_set_active_ep(usb_reg, ep_index);
     read_count = usb_reg->RXCOUNT;
     rx_len = MIN(MIN(net_buf_tailroom(buf), ep_cfg->mps), read_count);
-    fifo_read(net_buf_add(buf, rx_len), &usb_reg->FIFO0_WORD + ep_index, rx_len);
 
-    if (net_buf_tailroom(buf) == 0 || rx_len < ep_cfg->mps)
-    {
-        buf = udc_buf_get(dev, ep_cfg->addr);
-        /* receive finish, notify upper layer */
-        udc_submit_ep_event(dev, buf, 0);
-    }
+    fifo_read(net_buf_add(buf, rx_len), &usb_reg->FIFO0_WORD + ep_index, rx_len);
+    buf = udc_buf_get(dev, ep_cfg->addr);
+    /* We don't know when the last package will arrive, so we have to give each package to the upper level */
+    udc_submit_ep_event(dev, buf, 0);
     usb_reg->RXCSRL &= ~USB_RXCSRL1_RXRDY;
 
     return 0;
@@ -776,6 +772,22 @@ static void ls_handle_evt_xfer(const struct device *dev, uint8_t ep)
             usb_data->ep_tx[ep_index].ep_index = ep_index;
             linked_async_start(&usb_data->async_list, &usb_data->ep_tx[ep_index].tlist);
         }
+        else
+        {
+            reg_usb_t *usb_instance = usb_data->usb_instance;
+            musb_set_active_ep(usb_instance, USB_EP_GET_IDX(ep));
+            if (usb_instance->RXCOUNT)
+            {
+                struct net_buf *buf = udc_buf_peek(dev, ep);
+                uint32_t key = irq_lock();
+                /* 
+                 * The upper layer has applied for memory and can continue to receive data from FIFO 
+                 * Notes: Upload fifo, will cause new out interrupt (Controller replies ack to host, and then the host sends the remaining data)
+                */
+                udc_ls_rx(dev, ep_index, buf);
+                irq_unlock(key);
+            }
+        }
     }
     else
     {
@@ -799,17 +811,6 @@ static void ls_handle_evt_in(const struct device *dev, uint8_t ep)
     }
 }
 
-static void ls_handle_evt_out(const struct device *dev, uint8_t ep)
-{
-    struct net_buf *buf = udc_buf_peek(dev, ep);
-
-    if (buf == NULL)
-        return;
-
-    /* receive new data */
-    udc_ls_rx(dev, USB_EP_GET_IDX(ep), buf);
-}
-
 static void udc_ls_thread_handler(void *dev)
 {
     struct ls_event evt;
@@ -821,9 +822,6 @@ static void udc_ls_thread_handler(void *dev)
         {
             case LS_EVT_XFER:
                 ls_handle_evt_xfer(dev, evt.ep);
-                break;
-            case LS_EVT_DOUT:
-                ls_handle_evt_out(dev, evt.ep);
                 break;
             case LS_EVT_DIN:
                 ls_handle_evt_in(dev, evt.ep);
@@ -985,21 +983,18 @@ static void endpoint_tx_handler(reg_usb_t *reg, uint8_t ep_num)
     k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
 }
 
-static void endpoint_rx_handler(reg_usb_t *reg, uint8_t ep_num)
+static void endpoint_rx_handler(const struct device *dev, reg_usb_t *reg, uint8_t ep_num)
 {
-    struct ls_event evt = {
-        .type = LS_EVT_DOUT,
-        .ep = ep_num | USB_EP_DIR_OUT
-    };
     musb_set_active_ep(reg, ep_num);
-
     if (reg->RXCSRL & USB_RXCSRL1_STALLED)
     {
         reg->RXCSRL &= ~(USB_RXCSRL1_STALLED | USB_RXCSRL1_OVER);
         return;
     }
 
-    k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
+    struct net_buf *buf = udc_buf_peek(dev, ep_num | USB_EP_DIR_OUT);
+    if (buf)
+        udc_ls_rx(dev, ep_num, buf);
 }
 
 static void udc_ls_irq(const struct device *dev)
@@ -1052,7 +1047,7 @@ static void udc_ls_irq(const struct device *dev)
     rxis &= usb_instance->RXIE;
     while (rxis) {
         unsigned const num = __builtin_ctz(rxis);
-        endpoint_rx_handler(usb_instance, num);
+        endpoint_rx_handler(dev, usb_instance, num);
         rxis &= ~BIT(num);
     }
 }
