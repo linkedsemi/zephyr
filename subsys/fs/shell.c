@@ -838,31 +838,22 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs_mount,
 );
 #endif
 
-SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs,
-	SHELL_CMD(cd, NULL, "Change working directory", cmd_cd),
-	SHELL_CMD(ls, NULL, "List files in current directory", cmd_ls),
-	SHELL_CMD_ARG(mkdir, NULL, "Create directory", cmd_mkdir, 2, 0),
-#if defined(CONFIG_FAT_FILESYSTEM_ELM)		\
-	|| defined(CONFIG_FILE_SYSTEM_LITTLEFS)
-	SHELL_CMD(mount, &sub_fs_mount,
-		  "<Mount fs, syntax:- fs mount <fs type> <mount-point>", NULL),
+SHELL_CMD_REGISTER(cd, NULL, "Change working directory", cmd_cd);
+SHELL_CMD_REGISTER(ls, NULL, "List files in current directory", cmd_ls);
+SHELL_CMD_ARG_REGISTER(mkdir, NULL, "Create directory", cmd_mkdir, 2, 0);
+#if defined(CONFIG_FAT_FILESYSTEM_ELM) || defined(CONFIG_FILE_SYSTEM_LITTLEFS)
+SHELL_CMD_REGISTER(mount, &sub_fs_mount, "<Mount fs, syntax:- fs mount <fs type> <mount-point>",
+		   NULL);
 #endif
-	SHELL_CMD(pwd, NULL, "Print current working directory", cmd_pwd),
-	SHELL_CMD_ARG(read, NULL, "Read from file", cmd_read, 2, 255),
-	SHELL_CMD_ARG(cat, NULL,
-		"Concatenate files and print on the standard output",
-		cmd_cat, 2, 255),
-	SHELL_CMD_ARG(rm, NULL, "Remove file", cmd_rm, 2, 0),
-	SHELL_CMD_ARG(statvfs, NULL, "Show file system state", cmd_statvfs, 2, 0),
-	SHELL_CMD_ARG(trunc, NULL, "Truncate file", cmd_trunc, 2, 255),
-	SHELL_CMD_ARG(write, NULL, "Write file", cmd_write, 3, 255),
+SHELL_CMD_REGISTER(pwd, NULL, "Print current working directory", cmd_pwd);
+SHELL_CMD_ARG_REGISTER(read, NULL, "Read from file", cmd_read, 2, 255);
+SHELL_CMD_ARG_REGISTER(cat, NULL, "Concatenate files and print on the standard output", cmd_cat, 2,
+		       255);
+SHELL_CMD_ARG_REGISTER(rm, NULL, "Remove file", cmd_rm, 2, 0);
+SHELL_CMD_ARG_REGISTER(statvfs, NULL, "Show file system state", cmd_statvfs, 2, 0);
+SHELL_CMD_ARG_REGISTER(trunc, NULL, "Truncate file", cmd_trunc, 2, 255);
+SHELL_CMD_ARG_REGISTER(write, NULL, "Write file", cmd_write, 3, 255);
 #ifdef CONFIG_FILE_SYSTEM_SHELL_TEST_COMMANDS
-	SHELL_CMD_ARG(read_test, NULL, "Read file test",
-		      cmd_read_test, 2, 2),
-	SHELL_CMD_ARG(erase_write_test, NULL, "Erase/write file test",
-		      cmd_erase_write_test, 3, 3),
+SHELL_CMD_ARG_REGISTER(read_test, NULL, "Read file test", cmd_read_test, 2, 2);
+SHELL_CMD_ARG_REGISTER(erase_write_test, NULL, "Erase/write file test", cmd_erase_write_test, 3, 3);
 #endif
-	SHELL_SUBCMD_SET_END
-);
-
-SHELL_CMD_REGISTER(fs, &sub_fs, "File system commands", NULL);
