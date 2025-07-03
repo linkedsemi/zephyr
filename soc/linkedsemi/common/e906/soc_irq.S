@@ -60,5 +60,5 @@ int_exit:
 .global SWINT_Handler_ASM
 SWINT_Handler_ASM:
     lw a0, 4(sp)
-    j Swint_Handler_C
-	ret
+	la a1, Swint_Handler_C
+    jr a1
