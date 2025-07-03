@@ -117,6 +117,7 @@ struct cdc_acm_uart_data {
 	struct k_work rx_fifo_work;
 	atomic_t state;
 	struct k_sem notif_sem;
+	bool zlp_needed;
 };
 
 static void cdc_acm_irq_rx_enable(const struct device *dev);
@@ -576,6 +577,8 @@ static void cdc_acm_tx_fifo_handler(struct k_work *work)
 	len = ring_buf_get(data->tx_fifo.rb, buf->data, buf->size);
 	net_buf_add(buf, len);
 
+	data->zlp_needed = len != 0 && len % cdc_acm_get_bulk_mps(c_data) == 0;
+
 	ret = usbd_ep_enqueue(c_data, buf);
 	if (ret) {
 		LOG_ERR("Failed to enqueue");
@@ -846,9 +849,12 @@ static void cdc_acm_irq_cb_handler(struct k_work *work)
 		cdc_acm_work_submit(&data->rx_fifo_work);
 	}
 
-	if (data->tx_fifo.altered) {
-		LOG_DBG("tx fifo altered, submit work");
-		if (!atomic_test_bit(&data->state, CDC_ACM_TX_FIFO_BUSY)) {
+	if (!atomic_test_bit(&data->state, CDC_ACM_TX_FIFO_BUSY)) {
+		if (data->tx_fifo.altered) {
+			LOG_DBG("tx fifo altered, submit work");
+			cdc_acm_work_schedule(&data->tx_fifo_work, K_NO_WAIT);
+		} else if (data->zlp_needed) {
+			LOG_DBG("zlp needed, submit work");
 			cdc_acm_work_schedule(&data->tx_fifo_work, K_NO_WAIT);
 		}
 	}
