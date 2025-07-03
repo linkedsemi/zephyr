@@ -51,6 +51,7 @@ extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 static int ls101x_init(void)
 {
+    __set_MTVT((uint32_t)0);
     SystemInit();
     sys_init_none();
     cpu_sleep_mode_config(0);
