@@ -17,10 +17,23 @@
 
     fstab {
         compatible = "zephyr,fstab";
-        ro_lfs: ro_lfs{
+        ro_lfs_a: ro_lfs_a{
             compatible = "zephyr,fstab,littlefs";
             mount-point = "/ro";
             partition = <&a_rofs_partition>;
+            automount;
+            no-format;
+            read-only;
+            read-size = <16>;
+            prog-size = <16>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+        ro_lfs_b: ro_lfs_b{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/ro";
+            partition = <&b_rofs_partition>;
             automount;
             no-format;
             read-only;
