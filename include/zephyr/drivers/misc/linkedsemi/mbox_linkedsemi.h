@@ -38,6 +38,7 @@ void mbox_release_cpu2(void);
 void mbox_func_call_trx_register(const struct mbox_dt_spec *tx_channel,
                                     const struct mbox_dt_spec *rx_channel);
 void mbox_func_call_recv_do_idle_callback(mbox_func_call_data_t *mbox_func_call_data);
+int mbox_linkedsemi_irq_enable(const struct device *dev, bool enable);
 
 static inline bool is_cpu2_xip(void)
 {

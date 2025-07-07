@@ -168,10 +168,8 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
     if (intr_num == MBOX_RX_CHANNEL_ID) {
         if (enable) {
             if (intr_num == MBOX_RX_CH_SEC) {
-                irq_enable(DT_INST_IRQN(0));
                 cpu_intr_sec_unmask();
             } else if (intr_num == MBOX_RX_CH_APP) {
-                irq_enable(DT_INST_IRQN(0));
                 cpu_intr_app_unmask();
             } else {
                 __ASSERT(0, "channel invalid!\n");
@@ -207,6 +205,24 @@ static int mbox_linkedsemi_init(const struct device *dev)
     return 0;
 }
 
+int mbox_linkedsemi_irq_enable(const struct device *dev, bool enable)
+{
+    struct mbox_linkedsemi_data *dev_data = dev->data;
+
+    if (enable) {
+        for (int channel = 0; channel < MBOX_NCHANNELS >> 1; channel++) {
+            if (NULL == dev_data->cb[channel]) {
+                LOG_WRN("NULL == dev_data->cb[%d]\n", channel);
+            }
+        }
+        irq_enable(DT_INST_IRQN(0));
+    } else {
+        irq_disable(DT_INST_IRQN(0));
+    }
+
+    return 0;
+}
+
 static const struct mbox_driver_api mbox_linkedsemi_driver_api = {
     .send = mbox_linkedsemi_send,
     .register_callback = mbox_linkedsemi_register_callback,
@@ -220,6 +236,6 @@ DEVICE_DT_INST_DEFINE(0,
                       NULL,
                       &linkedsemi_mbox_data,
                       NULL,
-                      POST_KERNEL,
+                      PRE_KERNEL_1,
                       CONFIG_MBOX_INIT_PRIORITY,
                       &mbox_linkedsemi_driver_api);
