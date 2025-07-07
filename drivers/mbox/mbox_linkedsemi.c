@@ -168,8 +168,10 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
     if (intr_num == MBOX_RX_CHANNEL_ID) {
         if (enable) {
             if (intr_num == MBOX_RX_CH_SEC) {
+                irq_enable(DT_INST_IRQN(0));
                 cpu_intr_sec_unmask();
             } else if (intr_num == MBOX_RX_CH_APP) {
+                irq_enable(DT_INST_IRQN(0));
                 cpu_intr_app_unmask();
             } else {
                 __ASSERT(0, "channel invalid!\n");
@@ -177,9 +179,11 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
             }
         } else {
             if (intr_num == MBOX_RX_CH_SEC) {
+                irq_disable(DT_INST_IRQN(0));
                 cpu_intr_sec_clr();
                 cpu_intr_sec_mask();
             } else if (intr_num == MBOX_RX_CH_APP) {
+                irq_disable(DT_INST_IRQN(0));
                 cpu_intr_app_clr();
                 cpu_intr_app_mask();
             } else {
@@ -198,7 +202,7 @@ static int mbox_linkedsemi_init(const struct device *dev)
 
     IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority), mbox_linkedsemi_isr, DEVICE_DT_INST_GET(0), 0);
 
-    irq_enable(DT_INST_IRQN(0));
+    irq_disable(DT_INST_IRQN(0));
 
     return 0;
 }
