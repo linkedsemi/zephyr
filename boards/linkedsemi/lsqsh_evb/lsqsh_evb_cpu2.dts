@@ -207,7 +207,8 @@
 
     mmc_disk1: disk {
         compatible = "zephyr,mmc-disk";
-        disk-name = "SD";
+        /* samples/subsys/fs/fs_sample/ assert disk-name to SD2 */
+        disk-name = "SD2";
         bus-width = <1>;
         status = "okay";
     };
