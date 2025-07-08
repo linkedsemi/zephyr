@@ -1,0 +1,44 @@
+&flash1 {
+    /*
+	* Flash base address is 0x8000000,
+    * the following parts are all offset addresses.
+	*/
+	compatible = "soc-nv-flash";
+	reg = <0x8000000 DT_SIZE_M(16)>;
+	erase-block-size = <4096>;
+	write-block-size = <4>;
+
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        reserved_partition: partition@0 {
+            label = "reserved";
+            reg = <0x0 DT_SIZE_M(8)>;
+        };
+        boot_partition: partition@800000 {
+            label = "info-sbl";
+            reg = <0x800000 DT_SIZE_M(2)>;
+        };
+        app_partition: partition@a00000 {
+            label = "app";
+            reg = <0xa00000 DT_SIZE_M(2)>;
+        };
+        storage_partition: partition@c00000 {
+            label = "storage";
+            reg = <0xc00000 DT_SIZE_M(4)>;
+        };
+    };
+};
+
+/ {
+	msc_disk0 {
+		status="okay";
+		compatible = "zephyr,flash-disk";
+		partition = <&storage_partition>;
+		disk-name = "SD2";
+		/* cache-size == page erase size */
+		cache-size = <4096>;
+	};
+};

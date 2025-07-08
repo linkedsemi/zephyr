@@ -1,0 +1,41 @@
+&flash1 {
+    compatible = "soc-nv-flash";
+    reg = <0x8000000 DT_SIZE_M(16)>;
+    erase-block-size = <4096>;
+    write-block-size = <4>;
+
+    partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        boot_partition: partition@0 {
+            label = "info-sbl";
+            reg = <0x0 DT_SIZE_M(2)>;
+        };
+        app_partition: partition@200000 {
+            label = "app";
+            reg = <0x200000 DT_SIZE_M(2)>;
+        };
+        storage_partition: partition@400000 {
+            label = "storage";
+            reg = <0x400000 DT_SIZE_M(4)>;
+        };
+        open_partition: partition@800000 {
+            label = "open";
+            reg = <0x800000 DT_SIZE_M(8)>;
+        };
+    };
+};
+
+
+/ {
+	msc_disk0 {
+		status="okay";
+		compatible = "zephyr,flash-disk";
+		partition = <&storage_partition>;
+		disk-name = "SD2";
+		/* cache-size == page erase size */
+		cache-size = <4096>;
+	};
+};
