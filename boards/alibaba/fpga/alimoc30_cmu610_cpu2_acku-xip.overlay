@@ -21,7 +21,7 @@
             compatible = "zephyr,fstab,littlefs";
             mount-point = "/ro";
             partition = <&a_rofs_partition>;
-            automount;
+            // automount;
             no-format;
             read-only;
             read-size = <16>;
@@ -34,7 +34,7 @@
             compatible = "zephyr,fstab,littlefs";
             mount-point = "/ro";
             partition = <&b_rofs_partition>;
-            automount;
+            // automount;
             no-format;
             read-only;
             read-size = <16>;
@@ -47,7 +47,7 @@
             compatible = "zephyr,fstab,littlefs";
             mount-point = "/rw";
             partition = <&rwfs_partition>;
-            automount;
+            // automount;
             // no-format;
             read-size = <16>;
             prog-size = <16>;
