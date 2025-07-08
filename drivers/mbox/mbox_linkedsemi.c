@@ -163,6 +163,7 @@ static int mbox_linkedsemi_fifo_init(const struct device *dev)
 
 static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channel, bool enable)
 {
+    struct mbox_linkedsemi_data *dev_data = dev->data;
     uint32_t intr_num = channel % 2;
 
     if (intr_num == MBOX_RX_CHANNEL_ID) {
@@ -174,6 +175,16 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
             } else {
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
+            }
+            bool flag_irq_enable = true;
+            for (int channel_idx = 0; channel_idx < MBOX_NCHANNELS >> 1; channel_idx++) {
+                if (NULL == dev_data->cb[channel_idx]) {
+                    flag_irq_enable = false;
+                    break;
+                }
+            }
+            if (flag_irq_enable) {
+                irq_enable(DT_INST_IRQN(0));
             }
         } else {
             if (intr_num == MBOX_RX_CH_SEC) {
