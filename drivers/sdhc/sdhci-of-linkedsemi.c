@@ -22,6 +22,7 @@
     #include <zephyr/drivers/clock_control.h>
     #include <soc_clock.h>
 #endif
+#include "platform.h"
 #include "sdhci.h"
 
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
@@ -91,6 +92,13 @@ static int linkedsemi_sdhci_get_host_props(const struct device *dev, struct sdhc
 {
     const struct linkedsemi_sdhci_config *dev_config = dev->config;
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if (is_app_cpu_running()) {
+        LOG_INF("app_cpu_running");
+        return -EBUSY;
+    }
+#endif
+
     memset(props, 0, sizeof(*props));
     props->f_max = dev_config->max_bus_freq;
     props->f_min = dev_config->min_bus_freq;
@@ -110,6 +118,13 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
     uint8_t ctrl;
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if (is_app_cpu_running()) {
+        LOG_INF("app_cpu_running");
+        return -EBUSY;
+    }
+#endif
 
     LOG_DBG("%s: sdhci_clk=%d, bus_width:%d\n", __func__, ios->clock, ios->bus_width);
 
@@ -157,6 +172,13 @@ static int linkedsemi_sdhci_get_card_present(const struct device *dev)
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if (is_app_cpu_running()) {
+        LOG_INF("app_cpu_running");
+        return -EBUSY;
+    }
+#endif
+
     return sdhci_get_present_status_flag(host);
 }
 
@@ -164,6 +186,13 @@ static int linkedsemi_sdhci_card_busy(const struct device *dev)
 {
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if (is_app_cpu_running()) {
+        LOG_INF("app_cpu_running");
+        return -EBUSY;
+    }
+#endif
 
     return sdhci_card_busy(host);
 }
@@ -308,6 +337,13 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
     struct sdhci_data sdhci_data = { 0 };
     struct sdhci_command sdhci_command = { 0 };
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if (is_app_cpu_running()) {
+        LOG_INF("app_cpu_running");
+        return -EBUSY;
+    }
+#endif
+
     ret = k_mutex_lock(&dev_data->access_mutex, K_FOREVER);
     if (ret) {
         LOG_ERR("Could not access card");
@@ -419,6 +455,13 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     const struct linkedsemi_sdhci_config *dev_config = dev->config;
     struct sdhci_host *host = &dev_data->host;
     __maybe_unused int ret;
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if (is_app_cpu_running()) {
+        LOG_INF("app_cpu_running");
+        return -EBUSY;
+    }
+#endif
 
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);

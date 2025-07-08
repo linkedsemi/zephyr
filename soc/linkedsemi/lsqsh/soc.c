@@ -252,18 +252,20 @@ void soc_early_init_hook(void)
 #else /* !CONFIG_INIT_FLASH_FOR_DEBUG */
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-    lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
-    pinmux_hal_flash_init();
-    flash1.reg = (void *)SEC_QSPI1_ADDR;
-    flash1.dual_mode_only = false;
-    flash1.continuous_mode_enable = false;
-    flash1.writing = false;
-    flash1.suspend_count = 0;
-    flash1.continuous_mode_on = false;
-    flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
-    hal_flash_init();
+    if (!is_app_cpu_running()) {
+        lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
+        pinmux_hal_flash_init();
+        flash1.reg = (void *)SEC_QSPI1_ADDR;
+        flash1.dual_mode_only = false;
+        flash1.continuous_mode_enable = false;
+        flash1.writing = false;
+        flash1.suspend_count = 0;
+        flash1.continuous_mode_on = false;
+        flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
+        hal_flash_init();
 
-    lscache_cache_enable(1);
+        lscache_cache_enable(1);
+    }
 #endif
 
 #if defined(CONFIG_SOC_FLASH_LS)
