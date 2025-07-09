@@ -191,4 +191,7 @@ if POSIX_SINGLE_PROCESS
 		default 100
 endif
 
+config REBOOT
+	default y
+
 endif
