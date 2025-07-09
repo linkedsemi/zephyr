@@ -64,8 +64,22 @@ void sys_arch_reboot(int type)
 #endif
     reset_reason_magic_set();
     reset_reason_set(HART_RESET);
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    disable_global_irq();
+    sys_cache_data_flush_all();
+    sys_cache_data_disable();
+    sys_cache_instr_disable();
+    for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
+        irq_disable(irq);
+    }
+    void (* goto_rom_region_start)();
+    goto_rom_region_start = (void *)__rom_region_start;
+    goto_rom_region_start();
+#else
     sys_cache_data_flush_all();
     csi_core_reset();
+#endif
 }
 
 #define CPU0_FW_REGION_SIZE MB(2)
@@ -168,7 +182,7 @@ __no_optimization void cpu2_cache_region_init(void)
 /*
 | N | addr                           | mode  | rwx | desc                    |
 |---|--------------------------------|-------|-----|-------------------------|
-| 0 | 0x8000000--(0x8000000+2MB)     | NAPOT | --- | sec flash xip mem       |
+| 0 | 0x1000000--(0x1000000+64KB)    | NAPOT | --- | rom                     |
 | 1 | 0x10000000--(0x10000000+512KB) | NAPOT | --- | sec sram                |
 | 2 | 0x40000000--(0x40000000+256KB) | NAPOT | --- | sec peripheral region 1 |
 | 3 | 0x400a0000--(0x400A0000+32KB)  | NAPOT | --- | sec peripheral region 2 |
@@ -309,6 +323,7 @@ void soc_late_init_hook(void)
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
 
 #if defined(CONFIG_BOOT_CPU2)
+    app_cpu_reset();
 #if (CONFIG_IMAGE_HEADER) \
     && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
     && (CONFIG_CPU2_LOAD_ADDR < (CACHE1_ADDR + (64 << 20)))
@@ -335,12 +350,9 @@ void soc_late_init_hook(void)
                 (uint8_t *)image_header.exe_addr, image_header.length);
     }
 
-    app_cpu_reset();
-    __NOP();
     app_cpu_dereset_by_addr(exe_addr);
+    app_cpu_reset_hold_clr();
 #else
-    app_cpu_reset();
-    __NOP();
 #if (DT_REG_SIZE(DT_CHOSEN(zephyr_internal_flash)) > (16 << 20))
     if (1) {
         printk("boot a_app_image_partition\n");
@@ -373,6 +385,7 @@ void soc_late_init_hook(void)
     }
 #endif
     app_cpu_dereset_by_addr(CONFIG_CPU2_BOOT_ADDR);
+    app_cpu_reset_hold_clr();
 #endif /* (CONFIG_CPU2_LOAD_ADDR < 0x10000000) */
 #endif /* defined(CONFIG_BOOT_CPU2) */
 }
