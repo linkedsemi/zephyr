@@ -320,16 +320,14 @@ void soc_early_init_hook(void)
     return;
 }
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-void soc_late_init_hook(void)
+void boot_cpu2()
 {
 #if CONFIG_LED
     led_state_init();
 #endif
-    HAL_IWDG_DeInit(SEC_IWDG);
-    SEC_PMU->SFT_CTRL[2] &= ~0xf;
-
-#if defined(CONFIG_BOOT_CPU2)
+    if (is_app_cpu_running()) {
+        return;
+    }
     app_cpu_reset();
 #if (CONFIG_IMAGE_HEADER) \
     && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
@@ -394,7 +392,16 @@ void soc_late_init_hook(void)
     app_cpu_dereset_by_addr(CONFIG_CPU2_BOOT_ADDR);
     app_cpu_reset_hold_clr();
 #endif /* (CONFIG_CPU2_LOAD_ADDR < 0x10000000) */
-#endif /* defined(CONFIG_BOOT_CPU2) */
+}
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+void soc_late_init_hook(void)
+{
+    HAL_IWDG_DeInit(SEC_IWDG);
+    SEC_PMU->SFT_CTRL[2] &= ~0xf;
+#if defined(CONFIG_BOOT_CPU2)
+    boot_cpu2();
+#endif /* CONFIG_BOOT_CPU2 */
 }
 #else
 void soc_late_init_hook(void)
