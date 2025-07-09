@@ -3,16 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "lsqsh_evb_pinctrl.dtsi"
-
 / {
     chosen {
-        zephyr,sram = &sram2;
-        zephyr,console = &uart4;
-        zephyr,shell-uart = &uart4;
         zephyr,flash = &flash_xip_partition;
-        zephyr,flash-controller = &qspi1;
-        zephyr,internal-flash = &flash1;
     };
 
     flash_xip_partition: flash@8100000 {
@@ -21,33 +14,4 @@
         erase-block-size = <4096>;
         write-block-size = <4>;
     };
-};
-
-&uart1 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart2 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart3 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart4 {
-    current-speed = <115200>;
-    status = "okay";
-};
-
-&uart5 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&psram {
-    status = "okay";
 };
