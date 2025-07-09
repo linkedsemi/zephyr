@@ -24,14 +24,79 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 config NUM_IRQS
 	default 176
 
+if MINIMAL_LIBC
+	config MINIMAL_LIBC_RAND
+		default y
+endif
+
 config MAIN_STACK_SIZE
-	default 2048
+	default 10240
+
+config ISR_STACK_SIZE
+	default 4096
 
 config ICACHE_LINE_SIZE
 	default 32
 
 config DCACHE_LINE_SIZE
 	default 32
+
+config COMPILER_SAVE_TEMPS
+	default y
+
+config OUTPUT_DISASSEMBLY
+	default y
+
+config NOCACHE_MEMORY
+	default y
+
+config RISCV_PMP
+	default y
+
+config PMP_GRANULARITY
+	default 4096
+
+config ASSERT
+	default y
+
+config PINCTRL
+	default y
+
+config CLOCK_CONTROL
+	default y
+
+config RESET
+	default y
+
+config GPIO
+	default y
+
+config SERIAL
+	default y
+
+config CONSOLE
+	default y
+
+config UART_CONSOLE
+	default y
+
+config XIP
+	default y
+
+config CACHE
+	default y
+
+config CACHE_MANAGEMENT
+	default y
+
+config CACHE_LINKEDSEMI
+	default y
+
+config ICACHE_LINE_SIZE_DETECT
+	default y
+
+config DCACHE_LINE_SIZE_DETECT
+	default y
 
 config IOPMP
 	bool "IOPMP"
@@ -91,11 +156,16 @@ config NUM_OS
 	default 2
 
 if (NUM_USE_CPU=2)
-if $(dt_path_enabled,/cpus/cpu@1)
-	config BOOT_CPU2
-		bool "BOOT_CPU2"
-		default n
-endif
+	if $(dt_path_enabled,/cpus/cpu@1)
+		config BOOT_CPU2
+			bool "BOOT_CPU2"
+			default n
+
+	if (NUM_OS=2)
+		config FLASH_OP_DELEGATION_SERVER
+			default y
+	endif # (NUM_OS=2)
+endif # (NUM_USE_CPU=2)
 
 	config MBOX
 		default y
@@ -115,7 +185,7 @@ config CPU2_BOOT_ADDR
 
 config INIT_FLASH_FOR_DEBUG
 	bool "INIT_FLASH_FOR_DEBUG"
-	default n
+	default $(dt_path_enabled,/cpus/cpu@1)
 
 config FLASH
 	default y
@@ -193,6 +263,6 @@ config REBOOT
 
 config PRECISE_EXCEPTION
 	bool "PRECISE_EXCEPTION"
-	default n
+	default y
 
 endif
