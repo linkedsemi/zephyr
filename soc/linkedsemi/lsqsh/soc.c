@@ -33,6 +33,7 @@
 #include "soc_reset.h"
 #include "soc_boot.h"
 
+#define MHINT_AEE_POS 20
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 BUILD_ASSERT(CONFIG_FLASH);
@@ -217,6 +218,12 @@ extern void psram_init(void);
 void soc_early_init_hook(void)
 {
     __set_MTVT((uint32_t)0);
+#if defined(CONFIG_PRECISE_EXCEPTION)
+    __set_MHINT(__get_MHINT() | BIT(MHINT_AEE_POS));
+    if (BIT(MHINT_AEE_POS) != (__get_MHINT() & BIT(MHINT_AEE_POS))) {
+        while(1);
+    }
+#endif
     CLIC->CLICCFG = 0x7f;
 
     SystemInit();
