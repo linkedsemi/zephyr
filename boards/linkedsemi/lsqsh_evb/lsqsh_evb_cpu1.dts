@@ -5,17 +5,24 @@
 
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
-
+#include "lsqsh_evb_pinctrl.dtsi"
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
+#define SRAM_TOTAL_SIZE DT_SIZE_K(512)
+#define SRAM_RO_SIZE    DT_SIZE_K(256)
+#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
 
 / {
     model = "linkedsemi lsqsh_evb";
     compatible = "linkedsemi,lsqsh_evb";
 
     chosen {
-        zephyr,flash = &flash1;
+        zephyr,flash = &sram1_ro;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
+        zephyr,console = &uart1;
+        zephyr,shell-uart = &uart1;
+        zephyr,internal-flash = &flash1;
     };
 
     aliases {
@@ -28,6 +35,17 @@
         #address-cells = <1>;
         #size-cells = <1>;
         interrupt-parent = <&intc>;
+
+        /delete-node/ memory@10000000;
+        sram1_ro: memory@10000000 {
+            compatible = "mmio-sram";
+            reg = <0x10000000 SRAM_RO_SIZE>;
+        };
+
+        sram1: memory@10040000 {
+            compatible = "mmio-sram";
+            reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+        };
 
         share_memory: share-memory@1013e000 {
             compatible = "zephyr,memory-region", "mmio-sram";
@@ -185,6 +203,37 @@
 };
 
 &gpiot {
+    status = "okay";
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart7 {
+    /delete-property/ interrupts;
+    current-speed = <115200>;
     status = "okay";
 };
 

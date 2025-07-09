@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
+#include "lsqsh_evb_pinctrl.dtsi"
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -16,6 +17,8 @@
         zephyr,sram = &sram2;
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
+        zephyr,flash-controller = &qspi1;
+        zephyr,internal-flash = &flash1;
     };
 
     aliases {
@@ -132,6 +135,35 @@
 
 &sram2 {
     reg = <0x10080000 DT_SIZE_K(760)>;
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&psram {
+    status = "okay";
 };
 
 &gpioa {

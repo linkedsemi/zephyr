@@ -85,43 +85,6 @@
     status = "disabled";
 };
 
-&uart1 {
-    current-speed = <115200>;
-    status = "okay";
-};
-
-&uart2 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart3 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart4 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart5 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart6 {
-    /delete-property/ interrupts;
-    current-speed = <115200>;
-    status = "okay";
-};
-
-&uart7 {
-    /delete-property/ interrupts;
-    current-speed = <115200>;
-    status = "okay";
-};
-
 &i2c5 {
     status = "okay";
 };
