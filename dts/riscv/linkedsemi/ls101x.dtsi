@@ -293,6 +293,15 @@
             interrupts = <61 3>;
         };
 
+        cap:cap@40082800 {
+            compatible = "linkedsemi,ls-cap";
+            reg = <0x40082800 0x400>;
+            status = "okay";
+            interrupts = <44 3>;  
+          	clocks = <&per_cctl LS_CCTL_CLKG0 LS_CLKG_SET_CAP_POS LS_CLKG_CLR_CAP_POS>;
+            clock-frequency = <144000000>;
+          };
+          
         dac12: dac@4008d400 {
             compatible = "linkedsemi,ls-dac";
             reg = <0x4008d400 0x400>;

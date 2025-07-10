@@ -1,0 +1,25 @@
+description: CAP controller for Linkedsemi
+
+compatible: "linkedsemi,ls-cap"
+
+include: [base.yaml, pinctrl-device.yaml]
+
+properties:
+  reg:
+    required: true
+    description: "Register address and size"
+  clock-frequency:
+    type: int
+    required: true
+    description: CAP模块输入时钟频率(单位Hz)
+  prescaler:
+    type: int
+    required: true
+    description: "Prescaler value for the CAP timer"
+  channels:
+    type: array
+    required: true
+    description: "CAP channels config"
+  clocks:
+    required: true
+    description: "CAP module clock"
