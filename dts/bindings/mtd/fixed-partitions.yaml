@@ -95,3 +95,6 @@ child-binding:
         address of the parent memory, and SIZE is the size of
         the partition in bytes.
       required: true
+    attr:
+      type: int
+      description: attr
