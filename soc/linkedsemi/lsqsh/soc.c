@@ -318,7 +318,7 @@ void soc_early_init_hook(void)
     return;
 }
 
-void boot_cpu2()
+static void boot_cpu2()
 {
 #if CONFIG_LED
     led_state_init();
