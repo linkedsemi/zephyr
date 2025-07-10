@@ -10,8 +10,6 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
 #include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
-#include <zephyr/drivers/flash/soc_flash_ls_mbox_cpu1.h>
-#include <zephyr/drivers/led/led_gpio_corelynx.h>
 #include "platform.h"
 #include "core_rv32.h"
 #include "exception_isr.h"
@@ -359,39 +357,41 @@ void boot_cpu2()
     app_cpu_reset_hold_clr();
 #else
 #if (DT_REG_SIZE(DT_CHOSEN(zephyr_internal_flash)) > (16 << 20))
-    if (1) {
-        printk("boot a_app_image_partition\n");
-        hal_flashx_write_ear(&flash1, 0x0);
-        uint8_t ear = hal_flashx_read_ear(&flash1);
-        if (0x0 != ear) {
-            printk("hal_flashx_write_ear err\n");
-            while(1);
-        }
-    } else {
-        printk("boot b_app_image_partition_offset\n");
-        hal_flashx_write_ear(&flash1, 0x1);
-        uint8_t ear = hal_flashx_read_ear(&flash1);
-        if (0x1 != ear) {
-            printk("hal_flashx_write_ear err\n");
-            while(1);
-        }
-        const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
-        const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
-        const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
-        __ASSERT_NO_MSG(offset >= 0);
-        if (0 != offset) {
-            if (0 == (offset % KB(16))) {
-                LSQSPIV2->BACKUP_OFFSET = offset >> 14;
-            } else {
-                // while(1);
-                printk("0 != ((b_app_image_partition_offset - a_app_image_partition_offset) %% 16KB)\n");
+    if (CONFIG_CPU2_BOOT_ADDR < SRAM1_ADDR) {
+        if (1) {
+            printk("boot a_app_image_partition\n");
+            hal_flashx_write_ear(&flash1, 0x0);
+            uint8_t ear = hal_flashx_read_ear(&flash1);
+            if (0x0 != ear) {
+                printk("hal_flashx_write_ear err\n");
+                while(1);
+            }
+        } else {
+            printk("boot b_app_image_partition_offset\n");
+            hal_flashx_write_ear(&flash1, 0x1);
+            uint8_t ear = hal_flashx_read_ear(&flash1);
+            if (0x1 != ear) {
+                printk("hal_flashx_write_ear err\n");
+                while(1);
+            }
+            const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
+            const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
+            const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
+            __ASSERT_NO_MSG(offset >= 0);
+            if (0 != offset) {
+                if (0 == (offset % KB(16))) {
+                    LSQSPIV2->BACKUP_OFFSET = offset >> 14;
+                } else {
+                    // while(1);
+                    printk("0 != ((b_app_image_partition_offset - a_app_image_partition_offset) %% 16KB)\n");
+                }
             }
         }
     }
 #endif
     app_cpu_dereset_by_addr(CONFIG_CPU2_BOOT_ADDR);
     app_cpu_reset_hold_clr();
-#endif /* (CONFIG_CPU2_LOAD_ADDR < 0x10000000) */
+#endif /* CONFIG_IMAGE_HEADER */
 }
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
