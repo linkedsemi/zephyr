@@ -439,7 +439,7 @@ static struct flash_driver_api flash_ls_api = {
 
 #define LS_FLASH_INIT(idx) \
 	struct flash_partition_attr attr_partition_##idx[] =\
-		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions_attr), LS_PARTITION_CHILD)};\
+		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};\
 	static const struct flash_ls_config flash_ls_cfg_##idx = {\
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
 		.dual_mode_only = !DT_INST_PROP(idx,quad),\
@@ -451,7 +451,7 @@ static struct flash_driver_api flash_ls_api = {
 		))\
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CHILD)\
 		.attr = attr_partition_##idx,\
-		.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions_attr)),\
+		.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions)),\
 	};\
 	IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (__attribute__((section("SHMEM"))))) \
 	static struct flash_ls_data flash_ls_data_##idx;\
