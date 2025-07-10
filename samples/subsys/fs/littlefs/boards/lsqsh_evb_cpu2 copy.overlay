@@ -1,0 +1,92 @@
+/*
+ * Copyright (c) 2023 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/* Because FAT FS needs at least 64kiB partition and default
+ * storage_partition is 32kiB for that board, we need to reorgatnize
+ * partitions to get at least 64KiB.
+ * This overlay removes image slot partitions and strips each of 64kiB,
+ * and removes the storage partition to add the additional 2*64kiB to
+ * it.
+ */
+
+&flash1_partitions {
+    /* a */
+    a_bl2_partition: partition@0 {
+        label = "bl2";
+        reg = <0x0 DT_SIZE_K(128)>;
+    };
+    a_sec_image_partition: partition@20000 {
+        label = "a_sec_image";
+        reg = <0x20000 DT_SIZE_K(384)>;
+    };
+    a_app_image_partition: partition@80000 {
+        label = "a_app_image";
+        reg = <0x80000 DT_SIZE_K(384)>;
+    };
+    /* a end */
+
+    rwfs_partition: partition@e0000 {
+        label = "rwfs";
+        reg = <0xe0000 DT_SIZE_K(128)>;
+    };
+
+    /* b */
+    b_bl2_partition: partition@100000 {
+        label = "bl2";
+        reg = <0x100000 DT_SIZE_K(128)>;
+    };
+    b_sec_image_partition: partition@120000 {
+        label = "a_sec_image";
+        reg = <0x120000 DT_SIZE_K(384)>;
+    };
+    b_app_image_partition: partition@180000 {
+        label = "a_app_image";
+        reg = <0x180000 DT_SIZE_K(384)>;
+    };
+    /* b end */
+
+    partition_1e0000: partition@1e0000 {
+        label = "1e0000";
+        reg = <0x1e0000 DT_SIZE_K(16)>;
+    };
+    reserved1_partition: partition@1e4000 {
+        label = "reserved1";
+        reg = <0x1e4000 DT_SIZE_K(112)>;
+    };
+
+    rwfs2_partition: partition@200000 {
+        label = "rwfs2";
+        reg = <0x200000 DT_SIZE_K(512)>;
+    };
+    storage_partition: partition@280000 {
+        label = "fw";
+        reg = <0x280000 DT_SIZE_K(512)>;
+    };
+    reserved2_partition: partition@300000 {
+        label = "reserved";
+        reg = <0x300000 DT_SIZE_M(1)>;
+    };
+    reserved3_partition: partition@400000 {
+        label = "reserved";
+        reg = <0x400000 DT_SIZE_M(1)>;
+    };
+};
+
+/ {
+	fstab {
+		compatible = "zephyr,fstab";
+		lfs1: lfs1 {
+			compatible = "zephyr,fstab,littlefs";
+			read-size = <256>;
+			prog-size = <256>;
+			cache-size = <4096>;
+			lookahead-size = <256>;
+			block-cycles = <512>;
+			partition = <&storage_partition>;
+			mount-point = "/lfs1";
+		};
+	};
+};
