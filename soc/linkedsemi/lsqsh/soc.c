@@ -318,6 +318,7 @@ void soc_early_init_hook(void)
     return;
 }
 
+__maybe_unused
 static void boot_cpu2()
 {
     if (is_app_cpu_running()) {
