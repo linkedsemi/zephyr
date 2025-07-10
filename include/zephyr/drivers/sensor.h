@@ -155,7 +155,15 @@ enum sensor_channel {
 
 	/** Revolutions per minute, in RPM. */
 	SENSOR_CHAN_RPM,
-
+	/**caputer channel data */
+	SENSOR_CHAN_CAP_01,
+	SENSOR_CHAN_CAP_02,
+	SENSOR_CHAN_CAP_03,
+	SENSOR_CHAN_CAP_04,
+	SENSOR_CHAN_CAP_05,
+	SENSOR_CHAN_CAP_06,
+	SENSOR_CHAN_CAP_07,
+	SENSOR_CHAN_CAP_08,
 	/** Voltage, in volts **/
 	SENSOR_CHAN_GAUGE_VOLTAGE,
 	/** Average current, in amps **/
