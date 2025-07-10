@@ -9,6 +9,7 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
 #include <zephyr/arch/riscv/csr.h>
+#include <zephyr/drivers/flash/soc_flash_ls.h>
 #include <zephyr/logging/log.h>
 #include <string.h>
 #include "platform.h"
@@ -74,6 +75,13 @@ int flash_ls_get_part_info(const struct device *dev, uint8_t idx, uint32_t *base
 	*attr = cfg->attr[idx].attr;
 
 	return 0;
+}
+
+int flash_ls_get_part_num(const struct device *dev)
+{
+	const struct flash_ls_config *cfg = dev->config;
+
+	return cfg->attr_num;
 }
 
 int flash_ls_set_part_info(const struct device *dev, uint8_t idx, uint32_t base,
