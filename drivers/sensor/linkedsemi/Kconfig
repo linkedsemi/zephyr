@@ -1,0 +1,17 @@
+# Linkedsemi CAP Sensor Kconfig
+
+menuconfig CAP_LS
+    bool "Linkedsemi CAP sensor driver"
+    default y
+    depends on SENSOR && PINCTRL
+    help
+      Enable the Linkedsemi CAP function sensor driver.
+
+if CAP_LS
+
+# drivers/sensor/linkedsemi/Kconfig
+
+module = CAP
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # CAP_LS

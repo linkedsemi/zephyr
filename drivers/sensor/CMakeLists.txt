@@ -28,6 +28,7 @@ add_subdirectory(tdk)
 add_subdirectory(ti)
 add_subdirectory(vishay)
 add_subdirectory(wsen)
+add_subdirectory(linkedsemi)
 # zephyr-keep-sorted-stop
 
 add_subdirectory_ifdef(CONFIG_A01NYUB a01nyub)

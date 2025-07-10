@@ -173,6 +173,40 @@
 		output-enable;
         output-low;
 	};
+  
+     /* CAP */
+    /omit-if-no-ref/cap1_rx_pf00: cap1_rx_pf00 {
+        pinmux = <LS_PINMUX_SET('F', 0, FIO_CAP1)>;
+        input-enable;
+    };
+    /omit-if-no-ref/cap2_rx_pf01: cap2_rx_pf01 {
+        pinmux = <LS_PINMUX_SET('F', 10, FIO_CAP2)>;
+        input-enable;
+    };
+    /omit-if-no-ref/cap3_rx_pf02: cap3_rx_pf02 {
+        pinmux = <LS_PINMUX_SET('F', 2, FIO_CAP3)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap4_rx_pf03: cap4_rx_pf03 {
+        pinmux = <LS_PINMUX_SET('F', 3, FIO_CAP4)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap5_rx_pf04: cap5_rx_pf04 {
+        pinmux = <LS_PINMUX_SET('F', 4, FIO_CAP5)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap6_rx_pf05: cap6_rx_pf05 {
+        pinmux = <LS_PINMUX_SET('F', 5, FIO_CAP6)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap7_rx_pf06: cap7_rx_pf06 {
+        pinmux = <LS_PINMUX_SET('F', 6, FIO_CAP7)>;
+        input-enable;
+    };
+	 /omit-if-no-ref/ cap8_rx_pf07: cap8_rx_pf07 {
+        pinmux = <LS_PINMUX_SET('F', 7, FIO_CAP8)>;
+       	input-enable;
+    };
 
     /omit-if-no-ref/ spi2_nss_pb13: spi2_nss_pb13 {
 		pinmux = <LS_PINMUX_SET('B', 13, SPI2_NSS)>;
