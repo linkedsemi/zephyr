@@ -1,6 +1,0 @@
-#ifndef _INCLUDE_ZEPHYR_DRIVERS_FLASH_SOC_FLASH_LS_MBOX_CPU1_H
-#define _INCLUDE_ZEPHYR_DRIVERS_FLASH_SOC_FLASH_LS_MBOX_CPU1_H
-
-int flash_ls_mult_host(const struct device *dev, bool flag);
-
-#endif /* _INCLUDE_ZEPHYR_DRIVERS_FLASH_SOC_FLASH_LS_MBOX_CPU1_H */
