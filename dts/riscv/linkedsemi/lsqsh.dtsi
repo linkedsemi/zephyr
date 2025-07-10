@@ -34,35 +34,34 @@
         };
     };
 
-    sram1: memory@10000000 {
-        compatible = "mmio-sram";
-        reg = <0x10000000 DT_SIZE_K(512)>;
-    };
-
-    sram2: memory@10080000{
-        compatible = "mmio-sram";
-        reg = <0x10080000 DT_SIZE_K(768)>;
-    };
-
-    psram: memory@18000000 {
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x18000000 DT_SIZE_M(8)>;
-        zephyr,memory-region = "PSRAM";
-        status = "disabled";
-    };
-
-/*
-    share_memory0: memory@1013f000{
-        compatible = "mmio-sram";
-        reg = <0x1013f000 0x1000>;
-    };
-*/
-
     soc {
         compatible = "simpe-bus";
         #address-cells = <1>;
         #size-cells = <1>;
         interrupt-parent = <&intc>;
+
+        sram1: memory@10000000 {
+            compatible = "mmio-sram";
+            reg = <0x10000000 DT_SIZE_K(512)>;
+        };
+
+        sram2: memory@10080000{
+            compatible = "mmio-sram";
+            reg = <0x10080000 DT_SIZE_K(768)>;
+        };
+
+/*
+        share_memory0: memory@1013f000{
+            compatible = "mmio-sram";
+            reg = <0x1013f000 0x1000>;
+        };
+*/
+        psram: memory@18000000 {
+            compatible = "zephyr,memory-region", "mmio-sram";
+            reg = <0x18000000 DT_SIZE_M(8)>;
+            zephyr,memory-region = "PSRAM";
+            status = "disabled";
+        };
 
         intc: interrupt-controller {
             compatible = "linkedsemi,riscv,e906-intc";
