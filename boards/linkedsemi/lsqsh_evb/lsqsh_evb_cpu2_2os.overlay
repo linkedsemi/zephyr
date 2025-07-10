@@ -28,7 +28,7 @@
 
         sram2: memory@100e0000 {
             compatible = "mmio-sram";
-            reg = <(0x100e0000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+            reg = <(0x10080000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
         };
     };
 };
