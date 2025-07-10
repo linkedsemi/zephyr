@@ -1,38 +1,3 @@
-/*
- * Copyright (c) 2025 linkedsemi
- * SPDX-License-Identifier: Apache-2.0
- */
-
-#define SRAM_TOTAL_SIZE DT_SIZE_K(768)
-#define SRAM_MBOX_SIZE DT_SIZE_K(4)
-#define SRAM_SHMEM_SIZE DT_SIZE_K(4)
-#define SRAM_RO_SIZE    DT_SIZE_K(384)
-#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE - SRAM_MBOX_SIZE - SRAM_SHMEM_SIZE)
-
-/ {
-    chosen {
-        zephyr,flash = &sram2_ro;
-    };
-
-    soc {
-        compatible = "simpe-bus";
-        #address-cells = <1>;
-        #size-cells = <1>;
-        interrupt-parent = <&intc>;
-
-        /delete-node/ memory@10080000;
-        sram2_ro: memory@10080000 {
-            compatible = "mmio-sram";
-            reg = <0x10080000 SRAM_RO_SIZE>;
-        };
-
-        sram2: memory@100e0000 {
-            compatible = "mmio-sram";
-            reg = <(0x10080000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
-        };
-    };
-};
-
 &qspi1 {
     /delete-property/ addr4b;
 };
@@ -55,60 +20,73 @@
     a_bl2_partition: partition@0 {
         label = "bl2";
         reg = <0x0 DT_SIZE_K(128)>;
+        attr = <0>;
     };
     a_sec_image_partition: partition@20000 {
         label = "a_sec_image";
         reg = <0x20000 DT_SIZE_K(384)>;
+        attr = <0>;
     };
     a_app_image_partition: partition@80000 {
         label = "a_app_image";
         reg = <0x80000 DT_SIZE_K(384)>;
+        attr = <(PMP_R | PMP_W)>;
     };
     /* a end */
 
     rwfs_partition: partition@e0000 {
         label = "rwfs";
         reg = <0xe0000 DT_SIZE_K(128)>;
+        attr = <(PMP_R | PMP_W)>;
     };
 
     /* b */
     b_bl2_partition: partition@100000 {
         label = "bl2";
         reg = <0x100000 DT_SIZE_K(128)>;
+        attr = <0>;
     };
     b_sec_image_partition: partition@120000 {
         label = "a_sec_image";
         reg = <0x120000 DT_SIZE_K(384)>;
+        attr = <0>;
     };
     b_app_image_partition: partition@180000 {
         label = "a_app_image";
         reg = <0x180000 DT_SIZE_K(384)>;
+        attr = <(PMP_R | PMP_W)>;
     };
     /* b end */
 
     partition_1e0000: partition@1e0000 {
         label = "1e0000";
         reg = <0x1e0000 DT_SIZE_K(16)>;
+        attr = <(PMP_R | PMP_W)>;
     };
     reserved1_partition: partition@1e4000 {
         label = "reserved1";
         reg = <0x1e4000 DT_SIZE_K(112)>;
+        attr = <0>;
     };
 
     rwfs2_partition: partition@200000 {
         label = "rwfs2";
         reg = <0x200000 DT_SIZE_K(512)>;
+        attr = <(PMP_R | PMP_W)>;
     };
     fw_partition: partition@280000 {
         label = "fw";
         reg = <0x280000 DT_SIZE_K(512)>;
+        attr = <(PMP_R | PMP_W)>;
     };
     reserved2_partition: partition@300000 {
         label = "reserved";
         reg = <0x300000 DT_SIZE_M(1)>;
+        attr = <0>;
     };
     reserved3_partition: partition@400000 {
         label = "reserved";
         reg = <0x400000 DT_SIZE_M(1)>;
+        attr = <0>;
     };
 };

@@ -86,7 +86,7 @@
                 write-block-size = <4>;
             };
 
-            partitions {
+            flash1_partitions: partitions {
                 compatible = "fixed-partitions-attr";
                 #address-cells = <1>;
                 #size-cells = <1>;
