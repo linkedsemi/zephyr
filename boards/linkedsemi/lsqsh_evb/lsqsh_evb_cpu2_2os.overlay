@@ -35,80 +35,74 @@
 
 &qspi1 {
     /delete-property/ addr4b;
+    flash1_partitions: partitions {
+        compatible = "fixed-partitions";
+        #address-cells = <1>;
+        #size-cells = <1>;
+
+        /* a */
+        a_bl2_partition: partition@0 {
+            label = "bl2";
+            reg = <0x0 DT_SIZE_K(128)>;
+        };
+        a_sec_image_partition: partition@20000 {
+            label = "a_sec_image";
+            reg = <0x20000 DT_SIZE_K(384)>;
+        };
+        a_app_image_partition: partition@80000 {
+            label = "a_app_image";
+            reg = <0x80000 DT_SIZE_K(384)>;
+        };
+        /* a end */
+
+        rwfs_partition: partition@e0000 {
+            label = "rwfs";
+            reg = <0xe0000 DT_SIZE_K(128)>;
+        };
+
+        /* b */
+        b_bl2_partition: partition@100000 {
+            label = "bl2";
+            reg = <0x100000 DT_SIZE_K(128)>;
+        };
+        b_sec_image_partition: partition@120000 {
+            label = "a_sec_image";
+            reg = <0x120000 DT_SIZE_K(384)>;
+        };
+        b_app_image_partition: partition@180000 {
+            label = "a_app_image";
+            reg = <0x180000 DT_SIZE_K(384)>;
+        };
+        /* b end */
+
+        partition_1e0000: partition@1e0000 {
+            label = "1e0000";
+            reg = <0x1e0000 DT_SIZE_K(16)>;
+        };
+        reserved1_partition: partition@1e4000 {
+            label = "reserved1";
+            reg = <0x1e4000 DT_SIZE_K(112)>;
+        };
+
+        rwfs2_partition: partition@200000 {
+            label = "rwfs2";
+            reg = <0x200000 DT_SIZE_K(512)>;
+        };
+        fw_partition: partition@280000 {
+            label = "fw";
+            reg = <0x280000 DT_SIZE_K(512)>;
+        };
+        reserved2_partition: partition@300000 {
+            label = "reserved";
+            reg = <0x300000 DT_SIZE_M(1)>;
+        };
+        reserved3_partition: partition@400000 {
+            label = "reserved";
+            reg = <0x400000 DT_SIZE_M(1)>;
+        };
+    };
 };
 
 &flash1 {
     reg = <0x8000000 DT_SIZE_M(4)>;
-};
-
-/delete-node/ &sbl_partition;
-/delete-node/ &sbl_env_partition;
-/delete-node/ &a_sec_image_partition;
-/delete-node/ &a_app_image_partition;
-/delete-node/ &a_rofs_partition;
-/delete-node/ &rwfs_partition;
-/delete-node/ &b_sec_image_partition;
-/delete-node/ &b_app_image_partition;
-/delete-node/ &b_rofs_partition;
-&flash1_partitions {
-    /* a */
-    a_bl2_partition: partition@0 {
-        label = "bl2";
-        reg = <0x0 DT_SIZE_K(128)>;
-    };
-    a_sec_image_partition: partition@20000 {
-        label = "a_sec_image";
-        reg = <0x20000 DT_SIZE_K(384)>;
-    };
-    a_app_image_partition: partition@80000 {
-        label = "a_app_image";
-        reg = <0x80000 DT_SIZE_K(384)>;
-    };
-    /* a end */
-
-    rwfs_partition: partition@e0000 {
-        label = "rwfs";
-        reg = <0xe0000 DT_SIZE_K(128)>;
-    };
-
-    /* b */
-    b_bl2_partition: partition@100000 {
-        label = "bl2";
-        reg = <0x100000 DT_SIZE_K(128)>;
-    };
-    b_sec_image_partition: partition@120000 {
-        label = "a_sec_image";
-        reg = <0x120000 DT_SIZE_K(384)>;
-    };
-    b_app_image_partition: partition@180000 {
-        label = "a_app_image";
-        reg = <0x180000 DT_SIZE_K(384)>;
-    };
-    /* b end */
-
-    partition_1e0000: partition@1e0000 {
-        label = "1e0000";
-        reg = <0x1e0000 DT_SIZE_K(16)>;
-    };
-    reserved1_partition: partition@1e4000 {
-        label = "reserved1";
-        reg = <0x1e4000 DT_SIZE_K(112)>;
-    };
-
-    rwfs2_partition: partition@200000 {
-        label = "rwfs2";
-        reg = <0x200000 DT_SIZE_K(512)>;
-    };
-    fw_partition: partition@280000 {
-        label = "fw";
-        reg = <0x280000 DT_SIZE_K(512)>;
-    };
-    reserved2_partition: partition@300000 {
-        label = "reserved";
-        reg = <0x300000 DT_SIZE_M(1)>;
-    };
-    reserved3_partition: partition@400000 {
-        label = "reserved";
-        reg = <0x400000 DT_SIZE_M(1)>;
-    };
 };
