@@ -318,7 +318,7 @@ void soc_early_init_hook(void)
     return;
 }
 
-void boot_cpu2()
+static void boot_cpu2()
 {
     if (is_app_cpu_running()) {
         return;
