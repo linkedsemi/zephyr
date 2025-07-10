@@ -8,12 +8,23 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
+#include <zephyr/arch/riscv/csr.h>
+#include <zephyr/logging/log.h>
 #include <string.h>
 #include "platform.h"
 #include "soc_common.h"
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 #include <zephyr/drivers/mbox.h>
 #endif
+
+LOG_MODULE_REGISTER(linkedsemi_ls_flash_controller, CONFIG_FLASH_LOG_LEVEL);
+
+struct flash_partition_attr {
+	uint32_t base;
+	uint32_t end;
+	uint32_t size;
+	uint32_t attr;
+};
 
 struct flash_ls_config {
 	#if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
@@ -28,6 +39,8 @@ struct flash_ls_config {
     bool dual_mode_only;
     bool continuous_mode_enable;
 	bool addr4b;
+	struct flash_partition_attr *attr;
+	uint8_t attr_num;
 };
 
 
@@ -48,6 +61,72 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 	k_sem_take(&priv->delegate_sem,K_FOREVER);
 }
 
+int flash_ls_get_part_info(const struct device *dev, uint8_t idx, uint32_t *base,
+				   uint32_t *size, uint32_t *attr)
+{
+	const struct flash_ls_config *cfg = dev->config;
+	if (idx >= cfg->attr_num) {
+		return -EINVAL;
+	}
+
+	*base = cfg->attr[idx].base;
+	*size = cfg->attr[idx].size;
+	*attr = cfg->attr[idx].attr;
+
+	return 0;
+}
+
+int flash_ls_set_part_info(const struct device *dev, uint8_t idx, uint32_t base,
+				   uint32_t size, uint32_t attr)
+{
+	const struct flash_ls_config *cfg = dev->config;
+	if (idx >= cfg->attr_num) {
+		return -EINVAL;
+	}
+
+	cfg->attr[idx].base = base;
+	cfg->attr[idx].size = size;
+	cfg->attr[idx].end = cfg->attr[idx].base + cfg->attr[idx].size;
+	cfg->attr[idx].attr = attr;
+
+	return 0;
+}
+
+int flash_ls_set_part_attr(const struct device *dev, uint8_t idx, uint32_t attr)
+{
+	const struct flash_ls_config *cfg = dev->config;
+	if (idx >= cfg->attr_num) {
+		return -EINVAL;
+	}
+
+	cfg->attr[idx].attr = attr;
+
+	return 0;
+}
+
+static uint32_t get_guest_permission(const struct device *dev, uint32_t base, uint32_t size)
+{
+	const struct flash_ls_config *cfg = dev->config;
+	uint32_t end = base + size;
+	uint32_t attr = 0;
+
+	for (uint8_t start_idx = 0; start_idx < cfg->attr_num; start_idx++) {
+		if ((base >= cfg->attr[start_idx].base) && (base < cfg->attr[start_idx].end)) {
+			attr = cfg->attr[start_idx].attr;
+			for (uint8_t end_idx = start_idx; end_idx < cfg->attr_num; end_idx++) {
+				if (start_idx != end_idx) {
+					attr &= cfg->attr[start_idx].attr;
+				}
+				if ((end >= cfg->attr[end_idx].base) && (end < cfg->attr[end_idx].end)) {
+					return attr;
+				}
+			}
+		}
+	}
+
+	return 0;
+}
+
 static void delegation_server_work_handler(struct k_work *work)
 {
 	struct flash_ls_data *priv = CONTAINER_OF(work,struct flash_ls_data,worker);
@@ -58,13 +137,25 @@ static void delegation_server_work_handler(struct k_work *work)
 	switch(priv->req_param.op)
 	{
 	case FLASH_DELEGATE_SERVER_READ:
-		param.ret.value = flash_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+		if (get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R) {
+			param.ret.value = flash_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+		} else {
+			param.ret.value = -EINVAL;
+		}
 	break;
 	case FLASH_DELEGATE_SERVER_WRITE:
-		param.ret.value = flash_write(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+		if (get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_W) {
+			param.ret.value = flash_write(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+		} else {
+			param.ret.value = -EINVAL;
+		}
 	break;
 	case FLASH_DELEGATE_SERVER_ERASE:
-		param.ret.value = flash_erase(priv->dev,priv->req_param.offset,priv->req_param.size);
+		if (get_guest_permission(priv->dev, priv->req_param.offset,priv->req_param.size) & PMP_W) {
+			param.ret.value = flash_erase(priv->dev,priv->req_param.offset,priv->req_param.size);
+		} else {
+			param.ret.value = -EINVAL;
+		}
 	break;
 	case FLASH_DELEGATE_SERVER_GET_PARAMS:
 	{
@@ -78,7 +169,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		param.ret.value = flash_sfdp_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
 	break;
 	default:
-		__ASSERT(0,"delegation_server_work_handler opcode error");
+		LOG_ERR("delegation_server_work_handler opcode error");
 	break;
 	}
 	struct mbox_msg msg = {
@@ -316,6 +407,14 @@ static struct flash_driver_api flash_ls_api = {
 #endif
 };
 
+#define LS_PARTITION_CHILD(node_id)\
+			{\
+				.base = DT_REG_ADDR(node_id),\
+				.size = DT_REG_SIZE(node_id),\
+				.end = (DT_REG_ADDR(node_id) + DT_REG_SIZE(node_id)),\
+				.attr = DT_PROP(node_id, attr),\
+			},\
+
 #define LS_FLASH_CONTROLLER_CHILD(node_id)\
 		IF_ENABLED(DT_NODE_HAS_COMPAT(node_id,soc_nv_flash),(\
 		.params = {\
@@ -331,6 +430,8 @@ static struct flash_driver_api flash_ls_api = {
 		},))
 
 #define LS_FLASH_INIT(idx) \
+	struct flash_partition_attr attr_partition_##idx[] =\
+		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions_attr), LS_PARTITION_CHILD)};\
 	static const struct flash_ls_config flash_ls_cfg_##idx = {\
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
 		.dual_mode_only = !DT_INST_PROP(idx,quad),\
@@ -341,6 +442,8 @@ static struct flash_driver_api flash_ls_api = {
 		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
 		))\
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CHILD)\
+		.attr = attr_partition_##idx,\
+		.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions_attr)),\
 	};\
 	IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (__attribute__((section("SHMEM"))))) \
 	static struct flash_ls_data flash_ls_data_##idx;\
