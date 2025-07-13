@@ -170,11 +170,11 @@ static int flash_ls_client_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
+    sys_cache_data_invd_range((void *)data, size);
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
 	k_sem_give(&priv->sem);
-    sys_cache_data_invd_range((void *)data, size);
 	return ret;
 }
 
@@ -235,11 +235,11 @@ static int flash_ls_client_read_jedec_id(const struct device *dev,
 		.data = &param,
 		.size = sizeof(param),
 	};
+    sys_cache_data_invd_range((void *)id, 3);
 	mbox_send_dt(&cfg->mbox_tx,&msg);
 	k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
 	k_sem_give(&priv->sem);
-    sys_cache_data_invd_range((void *)id, 3);
 	return ret;
 }
 
@@ -262,11 +262,11 @@ static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
+    sys_cache_data_invd_range((void *)data, len);
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
 	k_sem_give(&priv->sem);
-    sys_cache_data_invd_range((void *)data, len);
 	return ret;
 }
 
