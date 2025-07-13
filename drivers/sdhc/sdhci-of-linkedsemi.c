@@ -233,11 +233,6 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
         }
         if (stat & SDHCI_INT_DATA_END) {
-            if (data) {
-                if (data->rx_data) {
-                    sys_cache_data_invd_range((void *)host->sdhci_data->rx_data, host->sdhci_data->block_size * host->sdhci_data->block_count);
-                }
-            }
             return 0;
         }
     }

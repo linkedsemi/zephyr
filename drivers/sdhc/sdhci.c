@@ -139,11 +139,11 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
         uint32_t start_addr;
         if (sdhci_data->rx_data) {
             start_addr = (uint32_t)((uint8_t *)sdhci_data->rx_data);
+            sys_cache_data_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
         } else {
             start_addr = (uint32_t)((uint8_t *)sdhci_data->tx_data);
+            sys_cache_data_flush_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
         }
-        barrier_dmem_fence_full();
-        sys_cache_data_flush_and_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
         command->flags2 |= SDHCI_ENABLE_DMA_FLAG;
         sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
 #endif
