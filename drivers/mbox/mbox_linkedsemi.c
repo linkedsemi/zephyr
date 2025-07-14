@@ -48,11 +48,33 @@ struct mbox_linkedsemi_data {
 
 static struct mbox_linkedsemi_data linkedsemi_mbox_data;
 
+static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_t rx_channel)
+{
+    /* handle events of all rx channels */
+    struct mbox_linkedsemi_data *dev_data = dev->data;
+    const uint8_t callback_idx = rx_channel >> 1;
+    bool ret;
+    do {
+        ret = general_fifo_get(dev_data->fifo[rx_channel], dev_data->recv_data[callback_idx]);
+        if (ret) {
+            struct mbox_msg msg = { (const void *)(dev_data->recv_data[callback_idx]), MBOX_FIFO_WIDTH };
+            if (dev_data->cb[callback_idx]) {
+                dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data, &msg);
+            } else {
+                LOG_WRN("rx_channel: %d callback() is NULL", rx_channel);
+                return;
+            }
+        }
+#if defined(CONFIG_SIGNALLING_MODE_SUPPORT)
+        else {
+            dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data, NULL);
+        }
+#endif
+    } while (ret);
+}
+
 static void mbox_linkedsemi_isr(const struct device *dev)
 {
-    struct mbox_linkedsemi_data *dev_data = dev->data;
-    bool ret;
-
     if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_SEC) {
         cpu_intr_sec_clr();
     } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
@@ -61,22 +83,9 @@ static void mbox_linkedsemi_isr(const struct device *dev)
         __ASSERT(0, "channel invalid!\n");
     }
 
-    /* handle events of all rx channels */
     for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
-        const uint8_t rx_fifo_idx = MBOX_RX_CHANNEL_ID + i * 2;
-        do {
-            ret = general_fifo_get(dev_data->fifo[rx_fifo_idx], dev_data->recv_data[i]);
-            if (ret) {
-                struct mbox_msg msg = { (const void *)(dev_data->recv_data[i]), MBOX_FIFO_WIDTH };
-                __ASSERT_NO_MSG(dev_data->cb[i]);
-                dev_data->cb[i](dev, rx_fifo_idx, dev_data->user_data, &msg);
-            }
-#if defined(CONFIG_SIGNALLING_MODE_SUPPORT)
-            else {
-                dev_data->cb[i](dev, rx_fifo_idx, dev_data->user_data, NULL);
-            }
-#endif
-        } while (ret);
+        const uint8_t rx_channel = MBOX_RX_CHANNEL_ID + i * 2;
+        mbox_linkedsemi_rx_callback_handle(dev, rx_channel);
     }
 }
 
@@ -122,8 +131,8 @@ static int mbox_linkedsemi_register_callback(const struct device *dev, uint32_t 
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
 
-    dev_data->cb[channel / 2] = cb;
-    dev_data->user_data[channel / 2] = user_data;
+    dev_data->cb[channel >> 1] = cb;
+    dev_data->user_data[channel >> 1] = user_data;
 
     return 0;
 }
@@ -144,7 +153,7 @@ static uint32_t mbox_linkedsemi_max_channels_get(const struct device *dev)
 static int mbox_linkedsemi_fifo_init(const struct device *dev)
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
-    const uint32_t cell = (MBOX_SIZE / MBOX_NCHANNELS) / 2;
+    const uint32_t cell = (MBOX_SIZE / MBOX_NCHANNELS) >> 1;
 
     for (uint8_t i = 0; i < MBOX_NCHANNELS * 2; i++) {
         uint32_t env_addr = MBOX_BASE_ADDRESS + i * cell;
@@ -170,21 +179,19 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
         if (enable) {
             if (intr_num == MBOX_RX_CH_SEC) {
                 cpu_intr_sec_unmask();
+                const uint8_t callback_idx = channel >> 1;
+                if (dev_data->cb[callback_idx]) {
+                    mbox_linkedsemi_rx_callback_handle(dev, channel);
+                }
             } else if (intr_num == MBOX_RX_CH_APP) {
                 cpu_intr_app_unmask();
+                const uint8_t callback_idx = channel >> 1;
+                if (dev_data->cb[callback_idx]) {
+                    mbox_linkedsemi_rx_callback_handle(dev, channel);
+                }
             } else {
                 __ASSERT(0, "channel invalid!\n");
                 return -1;
-            }
-            bool flag_irq_enable = true;
-            for (int channel_idx = 0; channel_idx < MBOX_NCHANNELS >> 1; channel_idx++) {
-                if (NULL == dev_data->cb[channel_idx]) {
-                    flag_irq_enable = false;
-                    break;
-                }
-            }
-            if (flag_irq_enable) {
-                irq_enable(DT_INST_IRQN(0));
             }
         } else {
             if (intr_num == MBOX_RX_CH_SEC) {
@@ -211,25 +218,7 @@ static int mbox_linkedsemi_init(const struct device *dev)
 
     IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority), mbox_linkedsemi_isr, DEVICE_DT_INST_GET(0), 0);
 
-    irq_disable(DT_INST_IRQN(0));
-
-    return 0;
-}
-
-int mbox_linkedsemi_irq_enable(const struct device *dev, bool enable)
-{
-    struct mbox_linkedsemi_data *dev_data = dev->data;
-
-    if (enable) {
-        for (int channel = 0; channel < MBOX_NCHANNELS >> 1; channel++) {
-            if (NULL == dev_data->cb[channel]) {
-                LOG_WRN("NULL == dev_data->cb[%d]\n", channel);
-            }
-        }
-        irq_enable(DT_INST_IRQN(0));
-    } else {
-        irq_disable(DT_INST_IRQN(0));
-    }
+    irq_enable(DT_INST_IRQN(0));
 
     return 0;
 }
