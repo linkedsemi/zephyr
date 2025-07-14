@@ -22,7 +22,7 @@
 
     sram0: memory@1000006c{
         compatible = "mmio-sram";
-        reg = <0x1000006c 0x20000>;
+        reg = <0x1000006c 0x1ff94>;
     };
 
     soc {

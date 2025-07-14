@@ -26,12 +26,14 @@ LOG_MODULE_REGISTER(udc_ls_fs, CONFIG_UDC_DRIVER_LOG_LEVEL);
 
 #define USB_EP0_SIZE            (64)
 #define USB_TX_BUF_ADDR         (8)
-#define USB_TX_FIFO_SZ          (1)
+#define USB_TX_FIFO_SZ          (2)
 #define USB_TX_BUF_SIZE         (1<<(3+USB_TX_FIFO_SZ))
 #define USB_RX_BUF_ADDR         (USB_TX_BUF_ADDR + USB_TX_BUF_SIZE / 8)
 
 #define USB_DIR_OUT             0       /* to device */
 #define USB_DIR_IN              0x80    /* to host */
+
+#define USB_MSGQ_LENGTH         (16)
 
 typedef enum {
     USB_EP0_STAGE_IDLE,         /* idle, waiting for SETUP */
@@ -49,22 +51,6 @@ struct udc_ep_item
     uint8_t ep_index;
     const void *priv;
 };
-
-struct udc_ls_data
-{
-    reg_usb_t *usb_instance;
-    struct udc_ep_config *ep_cfg_in;
-    struct udc_ep_config *ep_cfg_out;
-    struct udc_ep_item *ep_tx;
-    linked_async_inst_t async_list;
-    ep0_state_t ep0_state;
-    struct k_thread thread;
-    struct usb_setup_packet setup;
-    bool is_set_addr;
-    uint8_t ackpend;
-    uint16_t rx_fifo_addr;
-};
-
 struct udc_ls_config
 {
     uint32_t num_endpoints;
@@ -88,6 +74,7 @@ typedef enum {
     LS_EVT_XFER,
     LS_EVT_SETUP,
     LS_EVT_IN_COMPLETE,
+    LS_EVT_IN_ZLP,
 } ls_event_t;
 
 struct ls_event
@@ -96,7 +83,21 @@ struct ls_event
     uint8_t ep;
 };
 
-K_MSGQ_DEFINE(drv_msgq, sizeof(struct ls_event), 16, sizeof(void *));
+struct udc_ls_data
+{
+    reg_usb_t *usb_instance;
+    struct udc_ep_config *ep_cfg_in;
+    struct udc_ep_config *ep_cfg_out;
+    struct udc_ep_item *ep_tx;
+    linked_async_inst_t async_list;
+    ep0_state_t ep0_state;
+    struct k_thread thread;
+    struct usb_setup_packet setup;
+    bool is_set_addr;
+    uint16_t rx_fifo_addr;
+    struct k_msgq msgq;
+    struct ls_event msgq_buf[USB_MSGQ_LENGTH];
+};
 
 static void fifo_write(volatile void *fifo, void *buf, unsigned len)
 {
@@ -146,6 +147,11 @@ static void fifo_read(void *buf, volatile void *fifo, unsigned len)
 static void musb_set_active_ep(reg_usb_t *usb_instance, uint8_t ep_index)
 {
     usb_instance->EPIDX = ep_index;
+}
+
+static uint8_t musb_get_active_ep(reg_usb_t *usb_instance)
+{
+    return usb_instance->EPIDX;
 }
 
 static int udc_ls_lock(const struct device *dev)
@@ -212,6 +218,9 @@ static int udc_ls_init(const struct device *dev)
         usb_reg->RXFIFO_SIZE[0] = 0;
         usb_reg->RXFIFO_SIZE[1] = 0;
     }
+
+    k_msgq_init(&usb_data->msgq, (char *)usb_data->msgq_buf, sizeof(struct ls_event), USB_MSGQ_LENGTH);
+    usb_cfg->make_thread(dev);
 
     return 0;
 }
@@ -287,11 +296,17 @@ static int udc_ls_rx(const struct device *dev, uint8_t ep_index,
     musb_set_active_ep(usb_reg, ep_index);
     read_count = usb_reg->RXCOUNT;
     rx_len = MIN(MIN(net_buf_tailroom(buf), ep_cfg->mps), read_count);
-
     fifo_read(net_buf_add(buf, rx_len), &usb_reg->FIFO0_WORD + ep_index, rx_len);
-    buf = udc_buf_get(dev, ep_cfg->addr);
-    /* We don't know when the last package will arrive, so we have to give each package to the upper level */
-    udc_submit_ep_event(dev, buf, 0);
+
+    if (!net_buf_tailroom(buf) || rx_len < ep_cfg->mps)
+    {
+        /* If the space of buf is greater than the endpoint max size, 
+         * the last packet (equal to ep_cfg->mps) of the host must be sent zlp, if it is not sent, the upper layer will not be notified.
+        */
+        buf = udc_buf_get(dev, ep_cfg->addr);
+        udc_submit_ep_event(dev, buf, 0);
+    }
+
     usb_reg->RXCSRL &= ~USB_RXCSRL1_RXRDY;
 
     return 0;
@@ -311,27 +326,23 @@ static bool async_tx_end(struct linked_async_inst_s *inst, struct co_list_hdr *h
 static int udc_ls_enqueue(const struct device *dev, struct udc_ep_config *const cfg,
         struct net_buf *const buf)
 {
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     struct ls_event evt = {
         .type = LS_EVT_XFER,
         .ep = cfg->addr
     };
 
-    LOG_DBG("%p enqueue %x %p", dev, cfg->addr, buf);
+    LOG_DBG("%p enqueue %x %p, len = %d.\n", dev, cfg->addr, buf, buf->len);
     udc_buf_put(cfg, buf);
 
-    if (!cfg->stat.halted)
-    {
-        k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
-    }
-
-    return 0;
+    return k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);;
 }
 
 static int udc_ls_dequeue(const struct device *dev, struct udc_ep_config *const cfg)
 {
     struct net_buf *buf;
-
     buf = udc_buf_get_all(dev, cfg->addr);
+
     if (buf)
     {
         udc_submit_ep_event(dev, buf, -ECONNABORTED);
@@ -410,6 +421,7 @@ static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *con
             usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
         usb_reg->TXFIFO_SIZE[0]  = 0;
         usb_reg->TXFIFO_SIZE[1]  = 0;
+        usb_data->rx_fifo_addr = USB_TX_BUF_ADDR;
     }
     else
     {
@@ -469,7 +481,7 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
         if (USB_EP_DIR_IS_IN(cfg->addr)) 
         {
             usb_reg->TXFIFO_SIZE[0] = USB_TX_BUF_ADDR;
-            usb_reg->TXFIFO_SIZE[1] = USB_TX_FIFO_SZ << USB_TX_FIFO_SIZE_POS; // 16bytes
+            usb_reg->TXFIFO_SIZE[1] = USB_TX_FIFO_SZ << USB_TX_FIFO_SIZE_POS; // 32bytes
         }
         else
         {
@@ -553,19 +565,6 @@ static int usbd_ctrl_feed_dout(const struct device *dev, const size_t length)
     return 0;
 }
 
-static void udc_ctrl_buf_free(const struct device *dev)
-{
-    struct net_buf *buf;
-
-    buf = udc_buf_get_all(dev, USB_CONTROL_EP_OUT);
-    if (buf != NULL)
-        net_buf_unref(buf);
-
-    buf = udc_buf_get_all(dev, USB_CONTROL_EP_IN);
-    if (buf != NULL)
-        net_buf_unref(buf);
-}
-
 static void ls_handle_evt_setup(const struct device *dev)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
@@ -573,7 +572,6 @@ static void ls_handle_evt_setup(const struct device *dev)
     struct net_buf *buf;
     musb_set_active_ep(usb_instance, 0);
 
-    udc_ctrl_buf_free(dev);
     buf = udc_ctrl_alloc(dev, USB_CONTROL_EP_OUT, 8);
     if (buf == NULL)
     {
@@ -595,6 +593,8 @@ static void ls_handle_evt_setup(const struct device *dev)
         {
             udc_submit_ep_event(dev, buf, -ENOMEM);
         }
+        /* We have prepared a new buffer and are now ready to receive data */
+        usb_instance->CSRL0 = USB_CSRL0_RXRDYC;
     }
     else if (udc_ctrl_stage_is_data_in(dev))
     {
@@ -639,12 +639,8 @@ static int udc_ctrl_in_state_update(const struct device *dev, struct net_buf *co
     udc_ctrl_update_stage(dev, buf);
 
     if (udc_ctrl_stage_is_status_out(dev)) {
-        /*
-            * IN transfer finished, release buffer,
-            * Feed control OUT buffer for status stage.
-            */
+        /* IN transfer finished, release buffer */
         net_buf_unref(buf);
-        return usbd_ctrl_feed_dout(dev, 0);
     }
 
     return err;
@@ -664,6 +660,8 @@ static void _usb_ep0_txstate(const struct device *dev)
 
     if (trans < ep_cfg->mps)
     {
+        buf = udc_buf_get(dev, USB_CONTROL_EP_IN);
+        udc_ctrl_in_state_update(dev, buf);
         usb_data->ep0_state = USB_EP0_STAGE_STATUSOUT;
         csr |= USB_CSRL0_DATAEND;
     }
@@ -679,7 +677,6 @@ static void _usb_ep0_rxstate(const struct device *dev)
     struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_OUT);
     uint8_t csr = 0;
     uint8_t ep0_count = usb_reg->COUNT0;
-
     size_t len = MIN(ep0_count, net_buf_tailroom(buf));
 
     if (len)
@@ -687,10 +684,8 @@ static void _usb_ep0_rxstate(const struct device *dev)
         fifo_read(buf->data, (void *)&usb_reg->FIFO0_WORD, len);
         net_buf_add(buf, len);
 
-        csr = USB_CSRL0_RXRDYC;
         if (len < ep_cfg->mps || !net_buf_tailroom(buf))
         {
-            // data out complete
             usb_data->ep0_state = USB_EP0_STAGE_STATUSIN;
             csr |= USB_CSRL0_DATAEND;
             /* update stage */
@@ -707,37 +702,30 @@ static void ls_handle_evt_xfer_ep0(const struct device *dev, uint8_t ep)
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     reg_usb_t *usb_reg = usb_data->usb_instance;
 
-    if (usb_data->ep0_state == USB_EP0_STAGE_TX && buf->len)
+    musb_set_active_ep(usb_reg, 0);
+
+    if (usb_data->ep0_state == USB_EP0_STAGE_TX)
     {
+        __ASSERT(buf, "ep0 tx buffer is null ??\n");
         _usb_ep0_txstate(dev);
     }
-    else if (usb_data->ep0_state == USB_EP0_STAGE_RX && net_buf_tailroom(buf))
+    else if (usb_data->ep0_state == USB_EP0_STAGE_RX)
     {
         _usb_ep0_rxstate(dev);
     }
     else
     {
-        if (buf->len)
+        if (!buf->len && usb_data->ep0_state == USB_EP0_STAGE_STATUSIN)
         {
-            __ASSERT(0, "error");
+            buf = udc_buf_get(dev, USB_CONTROL_EP_IN);
+            udc_ctrl_in_state_update(dev, buf);
+            /* ep0 send zlp */
+            usb_reg->CSRL0 = USB_CSRL0_DATAEND | USB_CSRL0_RXRDYC | USB_CSRL0_TXRDY;
         }
         else
         {
-            if (usb_data->ep0_state == USB_EP0_STAGE_STATUSIN)
-            {
-                usb_reg->CSRL0 |= USB_CSRL0_DATAEND | USB_CSRL0_RXRDYC;
-            } 
-            else if (usb_data->ep0_state == USB_EP0_STAGE_STATUSOUT)
-            {
-                usb_reg->CSRL0 |= USB_CSRL0_DATAEND | USB_CSRL0_TXRDY;
-            }
+            __ASSERT(0, "Wrong state, usb_data->ep0_state = %d, buf->len = %d.\n", usb_data->ep0_state, buf->len);
         }
-    }
-
-    if (ep == USB_CONTROL_EP_IN && !buf->len)
-    {
-        buf = udc_buf_get(dev, ep);
-        udc_ctrl_in_state_update(dev, buf);
     }
 }
 
@@ -763,17 +751,12 @@ static void ls_handle_evt_xfer(const struct device *dev, uint8_t ep)
         else
         {
             reg_usb_t *usb_instance = usb_data->usb_instance;
+            struct net_buf *buf = udc_buf_peek(dev, ep);
             musb_set_active_ep(usb_instance, USB_EP_GET_IDX(ep));
-            if (usb_instance->RXCOUNT)
+            /* buf may be empty (rx irq came first, and the protocol stack has not put buf) */
+            if (buf && usb_instance->RXCOUNT)
             {
-                struct net_buf *buf = udc_buf_peek(dev, ep);
-                uint32_t key = irq_lock();
-                /* 
-                 * The upper layer has applied for memory and can continue to receive data from FIFO 
-                 * Notes: Upload fifo, will cause new out interrupt (Controller replies ack to host, and then the host sends the remaining data)
-                */
                 udc_ls_rx(dev, ep_index, buf);
-                irq_unlock(key);
             }
         }
     }
@@ -789,13 +772,25 @@ static void ls_handle_evt_in_complete(const struct device *dev, uint8_t ep)
     linked_async_end(&usb_data->async_list, NULL, 0);
 }
 
+static void ls_handle_evt_in_zlp(const struct device *dev, uint8_t ep)
+{
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
+    reg_usb_t *usb_instance = usb_data->usb_instance;
+
+    musb_set_active_ep(usb_instance, USB_EP_GET_IDX(ep));
+    usb_instance->TXCSRH |= USB_TXCSRH1_MODE;
+    /* trigger irq, finish tx trans */
+    usb_instance->TXCSRL = USB_TXCSRL1_TXRDY;
+}
+
 static void udc_ls_thread_handler(void *dev)
 {
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     struct ls_event evt;
 
     while (1)
     {
-        k_msgq_get(&drv_msgq, &evt, K_FOREVER);
+        k_msgq_get(&usb_data->msgq, &evt, K_FOREVER);
         switch (evt.type)
         {
             case LS_EVT_XFER:
@@ -803,6 +798,9 @@ static void udc_ls_thread_handler(void *dev)
                 break;
             case LS_EVT_IN_COMPLETE:
                 ls_handle_evt_in_complete(dev, evt.ep);
+                break;
+            case LS_EVT_IN_ZLP:
+                ls_handle_evt_in_zlp(dev, evt.ep);
                 break;
             case LS_EVT_SETUP:
                 ls_handle_evt_setup(dev);
@@ -862,19 +860,18 @@ static void _usbd_process_ep0(const struct device *dev)
                 .type = LS_EVT_XFER,
                 .ep = USB_CONTROL_EP_IN
             };
-            k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
+            k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
         }
         break;
 
     case USB_EP0_STAGE_RX:
         /* irq on set rxpktrdy */
         if (csr & USB_CSRL0_RXRDY) {
-            /* DATA OUT */
             struct ls_event evt = {
                 .type = LS_EVT_XFER,
                 .ep = USB_CONTROL_EP_OUT
             };
-            k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
+            k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
         }
         break;
     case USB_EP0_STAGE_STATUSIN:
@@ -904,38 +901,30 @@ static void _usbd_process_ep0(const struct device *dev)
                 break;
             }
             usb_data->is_set_addr = false;
-            usb_data->ackpend = USB_CSRL0_RXRDYC;
-
             fifo_read(&usb_data->setup, (void *)&usb_instance->FIFO0_WORD, sizeof(usb_data->setup));
 
             struct ls_event evt = {
                 .type = LS_EVT_SETUP,
                 .ep = USB_CONTROL_EP_OUT
             };
-            k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
+            k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
 
             if (usb_data->setup.wLength == 0) {
-                if (usb_data->setup.bmRequestType & USB_DIR_IN) {
-                    usb_data->ackpend |= USB_CSRL0_TXRDY;
-                }
+                /* No data stage, must send zlp to host */
                 usb_data->ep0_state = USB_EP0_STAGE_STATUSIN;
-
                 if (usb_data->setup.bRequest == USB_SREQ_SET_ADDRESS) {
                     usb_data->is_set_addr = true;
                 }
-                usb_data->ackpend |= USB_CSRL0_DATAEND;
             } else if (usb_data->setup.bmRequestType & USB_DIR_IN) {
+                /* IN stage, send data to host */
                 usb_data->ep0_state = USB_EP0_STAGE_TX;
                 usb_instance->CSRL0 = USB_CSRL0_RXRDYC;
-                while ((usb_instance->CSRL0 & USB_CSRL0_RXRDYC) != 0)
-                    ;
-                usb_data->ackpend = 0;
+                while ((usb_instance->CSRL0 & USB_CSRL0_RXRDY) != 0);
             } else {
+                /* OUT stage, recive data from host */
                 usb_data->ep0_state = USB_EP0_STAGE_RX;
             }
         }
-        usb_instance->CSRL0 = usb_data->ackpend;
-        usb_data->ackpend = 0;
         break;
     default:
         /* "can't happen" */
@@ -946,7 +935,7 @@ static void _usbd_process_ep0(const struct device *dev)
 
 static void endpoint_tx_handler(const struct device *dev, reg_usb_t *reg, uint8_t ep_num)
 {
-
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     struct net_buf *buf = udc_buf_peek(dev, ep_num | USB_EP_DIR_IN);
     struct ls_event evt = {
         .type = LS_EVT_IN_COMPLETE,
@@ -960,12 +949,11 @@ static void endpoint_tx_handler(const struct device *dev, reg_usb_t *reg, uint8_
         return;
     }
 
-    if (udc_ep_buf_has_zlp(buf))
+    if (!buf->len && udc_ep_buf_has_zlp(buf))
     {
         udc_ep_buf_clear_zlp(buf);
-        /* fifo empty, send zlp */
-        reg->TXCSRH |= USB_TXCSRH1_MODE;
-        reg->TXCSRL = USB_TXCSRL1_TXRDY;
+        evt.type = LS_EVT_IN_ZLP;
+        k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
         return;
     }
 
@@ -977,7 +965,7 @@ static void endpoint_tx_handler(const struct device *dev, reg_usb_t *reg, uint8_
     else
     {
         /* current data send complete */
-        k_msgq_put(&drv_msgq, &evt, K_NO_WAIT);
+        k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
         /* release buffer */
         buf = udc_buf_get(dev, ep_num | USB_EP_DIR_IN);
         udc_ep_set_busy(dev, ep_num | USB_EP_DIR_IN, false);
@@ -988,16 +976,19 @@ static void endpoint_tx_handler(const struct device *dev, reg_usb_t *reg, uint8_
 
 static void endpoint_rx_handler(const struct device *dev, reg_usb_t *reg, uint8_t ep_num)
 {
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
+    struct ls_event evt = {
+        .type = LS_EVT_XFER,
+        .ep = ep_num
+    };
+
     musb_set_active_ep(reg, ep_num);
     if (reg->RXCSRL & USB_RXCSRL1_STALLED)
     {
         reg->RXCSRL &= ~(USB_RXCSRL1_STALLED | USB_RXCSRL1_OVER);
         return;
     }
-
-    struct net_buf *buf = udc_buf_peek(dev, ep_num | USB_EP_DIR_OUT);
-    if (buf)
-        udc_ls_rx(dev, ep_num, buf);
+    k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
 }
 
 static void udc_ls_irq(const struct device *dev)
@@ -1005,6 +996,7 @@ static void udc_ls_irq(const struct device *dev)
     uint_fast8_t is, txis, rxis;
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     reg_usb_t *usb_instance = usb_data->usb_instance;
+    uint8_t old_ep = musb_get_active_ep(usb_data->usb_instance);
 
     is   = usb_instance->IS;  
     txis = usb_instance->TXIS;
@@ -1053,6 +1045,9 @@ static void udc_ls_irq(const struct device *dev)
         endpoint_rx_handler(dev, usb_instance, num);
         rxis &= ~BIT(num);
     }
+
+    /* Resume the old endpoint. */
+    musb_set_active_ep(usb_instance, old_ep);
 }
 
 static int udc_ls_driver_preinit(const struct device *dev)
@@ -1121,9 +1116,7 @@ static int udc_ls_driver_preinit(const struct device *dev)
             return err;
         }
     }
-
     linked_async_init(&usb_data->async_list, async_tx_process, async_tx_end);
-    usb_cfg->make_thread(dev);
 
     return 0;
 }
