@@ -126,7 +126,7 @@ __no_optimization void cpu1_cache_region_init(void)
     csi_sysmap_config_region(idx++, (___SHMEM_start + DT_REG_SIZE(DT_NODELABEL(share_memory)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
 #endif
 
-    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
 
     if (idx < 8) {
         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
@@ -170,7 +170,7 @@ __no_optimization void cpu2_cache_region_init(void)
     csi_sysmap_config_region(idx++, (___SHMEM_start + DT_REG_SIZE(DT_NODELABEL(share_memory)) + DT_REG_SIZE(DT_NODELABEL(mbox))), WEAK_ORDER);
 #endif
 
-    csi_sysmap_config_region(idx++, PSRAM_ADDR + MB(64), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
 
     if (idx < 8) {
         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
