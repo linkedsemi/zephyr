@@ -187,6 +187,10 @@ config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
 	default 0x8100000
 
+config CPU2_XIP
+	bool "CPU2_XIP"
+	default n
+
 config INIT_FLASH_FOR_DEBUG
 	bool "INIT_FLASH_FOR_DEBUG"
 	default $(dt_path_enabled,/cpus/cpu@1)
