@@ -6,6 +6,7 @@
 #define DT_DRV_COMPAT        linkedsemi_ls_flash_controller
 
 #include <zephyr/device.h>
+#include <zephyr/cache.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/kernel.h>
 #include <zephyr/arch/riscv/csr.h>
@@ -135,6 +136,18 @@ static uint32_t get_guest_permission(const struct device *dev, uint32_t base, ui
 	return 0;
 }
 
+static bool is_own_ram(uint32_t addr)
+{
+    return ((addr >= DT_REG_ADDR(DT_CHOSEN(zephyr_sram)))
+            && (addr < (DT_REG_ADDR(DT_CHOSEN(zephyr_sram)) + DT_REG_SIZE(DT_CHOSEN(zephyr_sram)))));
+}
+
+static bool is_psram(uint32_t addr)
+{
+    return ((addr >= DT_REG_ADDR(DT_NODELABEL(psram)))
+            && (addr < (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram)))));
+}
+
 static void delegation_server_work_handler(struct k_work *work)
 {
 	struct flash_ls_data *priv = CONTAINER_OF(work,struct flash_ls_data,worker);
@@ -145,14 +158,22 @@ static void delegation_server_work_handler(struct k_work *work)
 	switch(priv->req_param.op)
 	{
 	case FLASH_DELEGATE_SERVER_READ:
-		if (get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R) {
+		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R)
+			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
 			param.ret.value = flash_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+			if (is_psram((uint32_t)priv->req_param.data)) {
+    			sys_cache_data_flush_range((void *)priv->req_param.data, priv->req_param.size);
+			}
 		} else {
 			param.ret.value = -EINVAL;
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_WRITE:
-		if (get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_W) {
+		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_W)
+			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
+			if (is_psram((uint32_t)priv->req_param.data)) {
+    			sys_cache_data_invd_range((void *)priv->req_param.data, priv->req_param.size);
+			}
 			param.ret.value = flash_write(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
 		} else {
 			param.ret.value = -EINVAL;
@@ -171,10 +192,24 @@ static void delegation_server_work_handler(struct k_work *work)
 		memcpy(&param.ret.flash_params,flash_params,sizeof(struct flash_parameters));
 	}break;
 	case FLASH_DELEGATE_SERVER_READ_JEDEC_ID:
-		param.ret.value = flash_read_jedec_id(priv->dev,priv->req_param.data);
+		if (!is_own_ram((uint32_t)priv->req_param.data)) {
+			param.ret.value = flash_read_jedec_id(priv->dev,priv->req_param.data);
+			if (is_psram((uint32_t)priv->req_param.data)) {
+    			sys_cache_data_flush_range((void *)priv->req_param.data, priv->req_param.size);
+			}
+		} else {
+			param.ret.value = -EINVAL;
+		}
 	break;
 	case FLASH_DELEGATE_SERVER_SFDP_READ:
-		param.ret.value = flash_sfdp_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+		if (!is_own_ram((uint32_t)priv->req_param.data)) {
+			param.ret.value = flash_sfdp_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
+			if (is_psram((uint32_t)priv->req_param.data)) {
+    			sys_cache_data_flush_range((void *)priv->req_param.data, priv->req_param.size);
+			}
+		} else {
+			param.ret.value = -EINVAL;
+		}
 	break;
 	default:
 		LOG_ERR("delegation_server_work_handler opcode error");
@@ -263,7 +298,7 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
-	if (is_app_cpu_running()) {
+	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
 		flash_delegation_server_operation_sync(dev);
 	}
 	/* Erase sector one by one*/
@@ -291,7 +326,7 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 	
-	if (is_app_cpu_running()) {
+	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
 		flash_delegation_server_operation_sync(dev);
 	}
     while (size) {
@@ -324,7 +359,7 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	if (is_app_cpu_running()) {
+	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
 		flash_delegation_server_operation_sync(dev);
 	}
     hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
@@ -364,7 +399,7 @@ static int flash_ls_read_jedec_id(const struct device *dev,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	if (is_app_cpu_running()) {
+	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
 		flash_delegation_server_operation_sync(dev);
 	}
 	hal_flashx_read_id(&priv->env,id);
@@ -380,7 +415,7 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	if (is_app_cpu_running()) {
+	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
 		flash_delegation_server_operation_sync(dev);
 	}
 	hal_flashx_read_sfdp(&priv->env,offset,data,len);
