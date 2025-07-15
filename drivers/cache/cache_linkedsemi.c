@@ -14,12 +14,6 @@ LOG_MODULE_REGISTER(cache_linkedsemi, CONFIG_CACHE_LOG_LEVEL);
 BUILD_ASSERT(CONFIG_ICACHE_LINE_SIZE > 0);
 BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0);
 
-#if defined(CONFIG_PSRAM)
-extern char __PSRAM_start[];
-extern char __PSRAM_end[];
-extern char __PSRAM_size[];
-#endif /* CONFIG_PSRAM */
-
 __no_optimization bool is_cache_region(uint32_t addr)
 {
 #if defined(CONFIG_NOCACHE_MEMORY)
@@ -29,21 +23,14 @@ __no_optimization bool is_cache_region(uint32_t addr)
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
-#if defined(CONFIG_PSRAM)
-    __maybe_unused const uint32_t ___PSRAM_start = (uint32_t)__PSRAM_start;
-    __maybe_unused const uint32_t ___PSRAM_end = (uint32_t)__PSRAM_end;
-    __maybe_unused const uint32_t ___PSRAM_size = (uint32_t)__PSRAM_size;
+    __maybe_unused const uint32_t __PSRAM_start = DT_REG_ADDR(DT_NODELABEL(psram));
+    __maybe_unused const uint32_t __PSRAM_end = DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram));
+    __maybe_unused const uint32_t __PSRAM_size = DT_REG_SIZE(DT_NODELABEL(psram));
     if (((addr >=__nocache_ram_start) && (addr < __nocache_ram_end))
         || (addr < __image_ram_start)
-        || ((addr >= __image_ram_end) && (addr < ___PSRAM_start))
-        || (addr >= ___PSRAM_end)) {
+        || ((addr >= __image_ram_end) && (addr < __PSRAM_start))
+        || (addr >= __PSRAM_end)) {
         return false;
-#else /* defined(CONFIG_PSRAM) */
-    if (((addr >=__nocache_ram_start) && (addr < __nocache_ram_end))
-        || (addr < __image_ram_start)
-        || (addr >= __image_ram_end)) {
-        return false;
-#endif /* defined(CONFIG_PSRAM) */
     } else {
         return true;
     }
