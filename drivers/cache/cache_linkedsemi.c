@@ -6,10 +6,19 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/linker/linker-defs.h>
+#include <zephyr/logging/log.h>
 #include <core_rv32.h>
+
+LOG_MODULE_REGISTER(cache_linkedsemi, CONFIG_CACHE_LOG_LEVEL);
 
 BUILD_ASSERT(CONFIG_ICACHE_LINE_SIZE > 0);
 BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0);
+
+#if defined(CONFIG_PSRAM)
+extern char __PSRAM_start[];
+extern char __PSRAM_end[];
+extern char __PSRAM_size[];
+#endif /* CONFIG_PSRAM */
 
 __no_optimization bool is_cache_region(uint32_t addr)
 {
@@ -20,16 +29,27 @@ __no_optimization bool is_cache_region(uint32_t addr)
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+#if defined(CONFIG_PSRAM)
+    __maybe_unused const uint32_t ___PSRAM_start = (uint32_t)__PSRAM_start;
+    __maybe_unused const uint32_t ___PSRAM_end = (uint32_t)__PSRAM_end;
+    __maybe_unused const uint32_t ___PSRAM_size = (uint32_t)__PSRAM_size;
+    if (((addr >=__nocache_ram_start) && (addr < __nocache_ram_end))
+        || (addr < __image_ram_start)
+        || ((addr >= __image_ram_end) && (addr < ___PSRAM_start))
+        || (addr >= ___PSRAM_end)) {
+        return false;
+#else /* defined(CONFIG_PSRAM) */
     if (((addr >=__nocache_ram_start) && (addr < __nocache_ram_end))
         || (addr < __image_ram_start)
         || (addr >= __image_ram_end)) {
         return false;
+#endif /* defined(CONFIG_PSRAM) */
     } else {
         return true;
     }
-#else
+#else /*  defined(CONFIG_NOCACHE_MEMORY) */
     return true;
-#endif
+#endif /*  defined(CONFIG_NOCACHE_MEMORY) */
 }
 
 void cache_data_enable(void)
@@ -65,9 +85,10 @@ int cache_data_invd_range(void *addr, size_t size)
         return 0;
     }
 
-    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
-                        "buffer[%p] should be aligned to cache line[%d bytes]",
+    if(!IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE)) {
+        LOG_WRN("buffer[%p] should be aligned to cache line[%d bytes]",
                         addr, CONFIG_DCACHE_LINE_SIZE);
+    }
     csi_dcache_invalid_range(addr, size);
 
     return 0;
@@ -105,9 +126,10 @@ int cache_data_flush_range(void *addr, size_t size)
         return 0;
     }
 
-    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
-                        "buffer[%p] should be aligned to cache line[%d bytes]",
+    if(!IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE)) {
+        LOG_WRN("buffer[%p] should be aligned to cache line[%d bytes]",
                         addr, CONFIG_DCACHE_LINE_SIZE);
+    }
     csi_dcache_clean_range(addr, size);
 
     return 0;
@@ -119,9 +141,10 @@ int cache_data_flush_and_invd_range(void *addr, size_t size)
         return 0;
     }
 
-    __ASSERT(IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE),
-                        "buffer[%p] should be aligned to cache line[%d bytes]",
+    if(!IS_ALIGNED(addr, CONFIG_DCACHE_LINE_SIZE)) {
+        LOG_WRN("buffer[%p] should be aligned to cache line[%d bytes]",
                         addr, CONFIG_DCACHE_LINE_SIZE);
+    }
     csi_dcache_clean_invalid_range(addr, size);
 
     return 0;
