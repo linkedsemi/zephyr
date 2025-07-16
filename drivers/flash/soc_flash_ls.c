@@ -59,6 +59,11 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 		.data = &param,
 		.size = sizeof(param),
 	};
+
+	if ((!is_app_cpu_running()) || (!IS_ENABLED(CONFIG_CPU2_XIP))) {
+		return;
+	}
+
 	mbox_send_dt(&cfg->mbox_tx,&msg);
 	k_sem_take(&priv->delegate_sem,K_FOREVER);
 }
@@ -298,9 +303,7 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
-	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
-		flash_delegation_server_operation_sync(dev);
-	}
+	flash_delegation_server_operation_sync(dev);
 	/* Erase sector one by one*/
     for (off_t addr = offset; addr < offset + size; addr += FLASH_SECTOR_SIZE) {
         hal_flashx_sector_erase(&priv->env,addr);
@@ -325,10 +328,8 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	
-	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
-		flash_delegation_server_operation_sync(dev);
-	}
+
+	flash_delegation_server_operation_sync(dev);
     while (size) {
 		/* If the offset isn't a multiple of the page size, we first need
 		 * to write the remaining part that fits, otherwise the write could
@@ -359,9 +360,8 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
-		flash_delegation_server_operation_sync(dev);
-	}
+
+	flash_delegation_server_operation_sync(dev);
     hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
 
 	k_sem_give(&priv->sem);
@@ -399,9 +399,8 @@ static int flash_ls_read_jedec_id(const struct device *dev,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
-		flash_delegation_server_operation_sync(dev);
-	}
+
+	flash_delegation_server_operation_sync(dev);
 	hal_flashx_read_id(&priv->env,id);
 	k_sem_give(&priv->sem);
 
@@ -415,9 +414,8 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-	if ((is_app_cpu_running()) && (IS_ENABLED(CONFIG_CPU2_XIP))) {
-		flash_delegation_server_operation_sync(dev);
-	}
+
+	flash_delegation_server_operation_sync(dev);
 	hal_flashx_read_sfdp(&priv->env,offset,data,len);
 	k_sem_give(&priv->sem);
 
