@@ -1,0 +1,44 @@
+# SPDX-License-Identifier: Apache-2.0
+
+description: Linkedsemi LS101x RTC controller
+
+compatible: "linkedsemi,ls-rtc"
+
+include: base.yaml
+
+properties:
+  reg:
+    required: true
+
+  clocks:
+    type: phandle-array
+    required: true
+    description: |
+      Clock controller phandle with 3 cell values:
+        - <cctl_addr_offest>
+        - <set_bit>
+        - <clr_bit>
+
+  clock-frequency:
+    type: int
+    description: Internal or external RTC clock frequency
+
+  #属性名要与 DTS 中一致：cyc-1hz、calib-cyc、calib-en  类型分别是 int（整型）和 boolean（布尔）
+  cyc-1hz:
+    type: int
+    required: false
+    description: |
+      This value defines the number of base cycles for 1Hz, minus 1.
+      Used for RTC calibration.
+
+  calib-cyc:
+    type: int
+    required: false
+    description: |
+      Extra calibration cycles for 60s-period correction.
+
+  calib-enable:
+    type: boolean
+    required: false
+    description: |
+      Enable RTC calibration mode.

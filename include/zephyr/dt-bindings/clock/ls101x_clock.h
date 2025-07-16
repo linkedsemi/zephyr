@@ -2,6 +2,7 @@
 #define    LS_CCTL_CLKG1     0x4
 #define    LS_CCTL_CLKG2     0x8
 #define    LS_CCTL_CLKG3     0xc
+#define    LS_CCTL_CLKG4     0x2c
 #define    LS_CCTL_CLKG      0x10
 
 #define    LS_CLKG_SET_BSTIM1_POS  0
@@ -39,6 +40,8 @@
 #define    LS_CLKG_CLR_I2C5_POS  1
 #define    LS_CLKG_SET_I2C6_POS  2
 #define    LS_CLKG_CLR_I2C6_POS  3
+#define    LS_CLKG_SET_RTC_POS   4 
+#define    LS_CLKG_CLR_RTC_POS   5 
 #define    LS_CLKG_SET_UART1_POS  8
 #define    LS_CLKG_CLR_UART1_POS  9
 #define    LS_CLKG_SET_UART2_POS  10
