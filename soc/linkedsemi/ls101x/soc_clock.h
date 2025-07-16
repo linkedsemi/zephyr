@@ -20,7 +20,8 @@ extern "C" {
 
 struct ls_clk_cfg {
 	const struct device *cctl_dev;
-	uint16_t cctl_addr_offest:5;
+	// uint16_t cctl_addr_offest:5;
+	uint16_t cctl_addr_offest;
 	uint16_t set_bit:5;
 	uint16_t clr_bit:5;
 };

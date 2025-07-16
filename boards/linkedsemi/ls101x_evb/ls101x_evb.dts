@@ -34,6 +34,7 @@
 		led0 = &led0;
 		sw0 = &btn0;
 		peci-0 = &peci0;
+		rtc0 = &rtc0;		
 	};
 
 	leds{
@@ -106,6 +107,11 @@ zephyr_udc0: &usb {
 	clock-frequency = <144000000>;
 	cpu-power-states = <&idle &lp0>;
 };
+
+&rtc0{
+    status = "okay";
+
+ };
 
 &uart1 {
 	status = "disabled";

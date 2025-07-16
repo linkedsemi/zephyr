@@ -72,6 +72,12 @@
             reg = <0x40009000 0x1000>;
             status = "okay";
         };
+        v33_cctl: clock-controller@4000f000 {
+            compatible = "linkedsemi,ls-cctl";
+            #clock-cells = <3>;
+            reg = <0x4000f000 0x1000>;
+            status = "okay";
+        };           
 
         pinctrl: pin-controller@4000a060 {
 			compatible = "linkedsemi,ls-pinctrl";
@@ -145,7 +151,19 @@
                 status = "disabled";
 			};
         };
-
+        rtc0: rtc@4000f140 {
+            compatible = "linkedsemi,ls-rtc";
+            reg = <0x4000f140 0x1c>;//地址手册定义7个数，28个字节
+            clock-frequency = <144000000>; //CPU的主频是144000000Hz
+            status = "disabled";//芯片层面dis
+            //label = "RTC_LS101X";
+		    interrupts = <16 3>;
+		    interrupt-parent = <&intc>;
+            clocks = <&v33_cctl LS_CCTL_CLKG4 LS_CLKG_SET_RTC_POS LS_CLKG_CLR_RTC_POS>;
+            cyc-1hz = <32768>;     // 实际频率
+            calib-cyc = <0>;          // 校准补偿周期数，单位是时钟周期
+            calib-enable;             // 若存在此属性，则表示启用校准
+        };
         uart1: uart@40085000 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x40085000 0x400>;
