@@ -63,6 +63,17 @@
         erase-block-size = <4096>;
         write-block-size = <4>;
     };
+    aliases {
+        led0 = &led0;
+    };
+
+    leds: leds {
+        compatible = "gpio-leds";
+        led0: led0 {
+            gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
+            label = "LED0";
+        };
+    };
 };
 
 &uart1 {
