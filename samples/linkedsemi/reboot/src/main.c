@@ -13,20 +13,27 @@
 #include <zephyr/sys/reboot.h>
 #include <soc_reset.h>
 
-extern volatile uint8_t reset_reason;
-
-char reset_reason_str[][15] = {
-    [NO_RESET_REASON] = "NO_RESET_REASON",
-    [COLD_RESET] = "COLD_RESET",
-    [GLOBAL_RESET] = "GLOBAL_RESET",
-    [HART_RESET] = "HART_RESET",
-    [PASSIVE_RESET] = "PASSIVE_RESET",
+char *reset_reason_str[] = {
+    [NO_RESET_REASON] = "NO_RESET_REASON ",
+    [PWR_FULL_RESET] = "PWR_FULL_RESET ",
+    [SOFT_FULL_RESET] = "SOFT_FULL_RESET ",
+    [CPU_FULL_RESET] = "CPU_FULL_RESET ",
+    [SYS_IWDT_FULL_RESET] = "SYS_IWDT_FULL_RESET",
+    [EXT_FULL_RESET] = "EXT_FULL_RESET ",
+    [SEC_IWDT_FULL_RESET] = "SEC_IWDT_FULL_RESET",
+    [SEC_WWDT_FULL_RESET] = "SEC_WWDT_FULL_RESET",
+    [SEC_IWDT_HART_RESET] = "SEC_IWDT_HART_RESET",
+    [SEC_WWDT_HART_RESET] = "SEC_WWDT_HART_RESET",
+    [SOFT_HART_RESET] = "SOFT_HART_RESET ",
+    [APP_IWDT_HART_RESET] = "APP_IWDT_HART_RESET",
+    [APP_WWDT_HART_RESET] = "APP_WWDT_HART_RESET",
+    [EMUL_SOFT_RESET] = "EMUL_SOFT_RESET",
 };
 
 int main()
 {
     printf("\n\n\nHello World! %s\n", reset_reason_str[reset_reason_get()]);
-    printf("reset_reason %d\n", reset_reason);
+    printf("reset_reason %d\n", reset_reason_get());
 
     sys_reboot(SYS_REBOOT_WARM);
 
