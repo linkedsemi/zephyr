@@ -89,7 +89,7 @@ static void mbox_linkedsemi_isr(const struct device *dev)
     }
 }
 
-static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, const struct mbox_msg *msg)
+__ramfunc static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, const struct mbox_msg *msg)
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
     bool ret;
@@ -223,7 +223,7 @@ static int mbox_linkedsemi_init(const struct device *dev)
     return 0;
 }
 
-static const struct mbox_driver_api mbox_linkedsemi_driver_api = {
+static struct mbox_driver_api mbox_linkedsemi_driver_api = {
     .send = mbox_linkedsemi_send,
     .register_callback = mbox_linkedsemi_register_callback,
     .mtu_get = mbox_linkedsemi_mtu_get,
