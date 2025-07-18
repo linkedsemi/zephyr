@@ -59,13 +59,8 @@ static void driver_init(void)
 void sys_arch_reboot(int type)
 {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-    global_reset_reason_clean();
-#endif
-    reset_reason_magic_set();
-    reset_reason_set(HART_RESET);
-
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     disable_global_irq();
+    reset_reason_magic_set();
     sys_cache_data_flush_all();
     sys_cache_data_disable();
     sys_cache_instr_disable();
@@ -315,6 +310,7 @@ void soc_early_init_hook(void)
     psram_init();
 #endif
 
+    reset_reason_get();
     return;
 }
 
