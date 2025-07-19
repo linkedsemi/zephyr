@@ -210,6 +210,8 @@ extern void psram_init(void);
 
 void soc_early_init_hook(void)
 {
+    reset_reason_init();
+
     __set_MTVT((uint32_t)0);
 #if defined(CONFIG_PRECISE_EXCEPTION)
     __set_MHINT(__get_MHINT() | BIT(MHINT_AEE_POS));
@@ -310,7 +312,6 @@ void soc_early_init_hook(void)
     psram_init();
 #endif
 
-    reset_reason_get();
     return;
 }
 

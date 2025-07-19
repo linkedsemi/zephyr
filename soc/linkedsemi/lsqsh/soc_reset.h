@@ -9,23 +9,26 @@ enum reset_reason {
 
     /* sec pmu reg indicate */
     PWR_FULL_RESET, /* reset source: AC machine */
-    SOFT_FULL_RESET, /* reset source: 1. write sec pmu system reset reg 2. debugger */
-    CPU_FULL_RESET, /* reset source: 1. write cpu1 system reset reg 2. debugger */
-    SYS_IWDT_FULL_RESET, /* reset source: 1. SYS_IWDT 2. debugger */
+    SOFT_FULL_RESET, /* reset source: 1. write sec pmu system reset reg */
+    CPU_FULL_RESET, /* reset source: 1. write cpu1 system reset reg  2. debugger */
+    SYS_IWDT_FULL_RESET, /* reset source: 1. SYS_IWDT */
     EXT_FULL_RESET, /* reset source: 1. EXTRST/SRST RESET pin */
 
     /* sec per reg && sec iwdt/wwdt reg indicate */
-    SEC_IWDT_FULL_RESET, /* reset source: 1. SEC_IWDT 2. debugger */
-    SEC_WWDT_FULL_RESET, /* reset source: 1. SEC_WWDT 2. debugger */
-    /* sec per reg && sec iwdt/wwdt reg indicate */
-    SEC_IWDT_HART_RESET, /* reset source: 1. SEC_IWDT 2. debugger */
-    SEC_WWDT_HART_RESET, /* reset source: 1. SEC_WWDT 2. debugger */
+    SEC_IWDT_FULL_RESET, /* reset source: 1. SEC_IWDT && all peripherals */
+    SEC_WWDT_FULL_RESET, /* reset source: 1. SEC_WWDT && all peripherals */
+    SEC_IWDT_PARTIAL_RESET, /* reset source: 1. SEC_IWDT && partial peripherals */
+    SEC_WWDT_PARTIAL_RESET, /* reset source: 1. SEC_WWDT && partial peripherals */
+    SEC_IWDT_HART_RESET, /* reset source: 1. SEC_IWDT && only hart */
+    SEC_WWDT_HART_RESET, /* reset source: 1. SEC_WWDT && only hart */
+    SEC_IWDT_RESET, /* reset source: 1. SEC_IWDT && no reserved information to indicate full/partial/hart reset */
+    SEC_WWDT_RESET, /* reset source: 1. SEC_WWDT && no reserved information to indicate full/partial/hart reset */
     /* sec per/app per reg && sec per/app per reg indicate */
     SOFT_HART_RESET, /* reset source: write cpu1/cpu2 core reset reg */
 
     /* app per reg && app iwdt/wwdt reg indicate */
-    APP_IWDT_HART_RESET, /* reset source: 1. APP_IWDT 2. debugger */
-    APP_WWDT_HART_RESET, /* reset source: 1. APP_WWDT 2. debugger */
+    APP_IWDT_HART_RESET, /* reset source: 1. APP_IWDT */
+    APP_WWDT_HART_RESET, /* reset source: 1. APP_WWDT */
 
     /* magic word indicate */
     EMUL_SOFT_RESET, /* reset source: set pc to __rom_region_start */
@@ -198,8 +201,10 @@ struct wdt_reset_en {
     };
 };
 
+void reset_reason_init(void);
 enum reset_reason reset_reason_get(void);
 void reset_reason_magic_set(void);
+struct wdt_reset_en * wdt_reset_en_val_get(void);
 int sec_iwdt_reset_en_get(struct wdt_reset_en *wdt_reset_en);
 int sec_iwdt_reset_en_set(struct wdt_reset_en *wdt_reset_en);
 int wdt_reset_en_print(struct wdt_reset_en *wdt_reset_en);
