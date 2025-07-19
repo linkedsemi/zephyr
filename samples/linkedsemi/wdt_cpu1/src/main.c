@@ -5,6 +5,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
 #include <soc_reset.h>
@@ -22,6 +23,8 @@ char *reset_reason_str[] = {
     [EXT_FULL_RESET] = "EXT_FULL_RESET ",
     [SEC_IWDT_FULL_RESET] = "SEC_IWDT_FULL_RESET",
     [SEC_WWDT_FULL_RESET] = "SEC_WWDT_FULL_RESET",
+    [SEC_IWDT_PARTIAL_RESET] = "SEC_IWDT_PARTIAL_RESET",
+    [SEC_WWDT_PARTIAL_RESET] = "SEC_WWDT_PARTIAL_RESET",
     [SEC_IWDT_HART_RESET] = "SEC_IWDT_HART_RESET",
     [SEC_WWDT_HART_RESET] = "SEC_WWDT_HART_RESET",
     [SOFT_HART_RESET] = "SOFT_HART_RESET ",
@@ -36,16 +39,16 @@ int main(void)
     printf("\n\n\nHello World! %s\n", reset_reason_str[reset_reason]);
     printf("reset_reason %d\n", reset_reason);
 
-    HAL_IWDG_Init(SEC_IWDG, BOOT_WDG_VALUE_BASE_S * 5);
-    // HAL_IWDG_Init(SEC_PMU_IWDG, BOOT_WDG_VALUE_BASE_S * 5);
+    struct wdt_reset_en *sec_iwdt_reset_en = wdt_reset_en_val_get();
+    /* memset sec_iwdt_reset_en is an essential step */
+    memset(sec_iwdt_reset_en, 0, sizeof(struct wdt_reset_en));
+    sec_iwdt_reset_en->UART1 = 1;
+    sec_iwdt_reset_en->PSRAM = 1;
 
-    static struct wdt_reset_en sec_iwdt_reset_en = {};
-    sec_iwdt_reset_en_get(&sec_iwdt_reset_en);
-    // wdt_reset_en_print(&sec_iwdt_reset_en);
-    sec_iwdt_reset_en.UART1 = 1;
-    sec_iwdt_reset_en_set(&sec_iwdt_reset_en);
-    sec_iwdt_reset_en_get(&sec_iwdt_reset_en);
-    // wdt_reset_en_print(&sec_iwdt_reset_en);
+    HAL_IWDG_Init(SEC_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
+    // HAL_IWDG_Init(SEC_PMU_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
+
+    sec_iwdt_reset_en_set(sec_iwdt_reset_en);
 
     while(1) {
         printf("wait for reset..\n");
