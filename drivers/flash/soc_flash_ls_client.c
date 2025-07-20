@@ -170,7 +170,11 @@ static int flash_ls_client_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-    sys_cache_data_invd_range((void *)data, size);
+	if (IS_ALIGNED((uint32_t)data, CONFIG_DCACHE_LINE_SIZE) && IS_ALIGNED(size, CONFIG_DCACHE_LINE_SIZE)) {
+		sys_cache_data_invd_range((void *)data, size);
+	} else {
+		sys_cache_data_flush_and_invd_range((void *)data, size);
+	}
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
@@ -235,7 +239,7 @@ static int flash_ls_client_read_jedec_id(const struct device *dev,
 		.data = &param,
 		.size = sizeof(param),
 	};
-    sys_cache_data_invd_range((void *)id, 3);
+	sys_cache_data_flush_and_invd_range((void *)id, 3);
 	mbox_send_dt(&cfg->mbox_tx,&msg);
 	k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
@@ -262,7 +266,11 @@ static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-    sys_cache_data_invd_range((void *)data, len);
+	if (IS_ALIGNED((uint32_t)data, CONFIG_DCACHE_LINE_SIZE) && IS_ALIGNED(len, CONFIG_DCACHE_LINE_SIZE)) {
+		sys_cache_data_invd_range((void *)data, len);
+	} else {
+		sys_cache_data_flush_and_invd_range((void *)data, len);
+	}
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
