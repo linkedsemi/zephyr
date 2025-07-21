@@ -67,7 +67,7 @@ static void completed(const struct device *dev, int error)
 
 out:
 	/* need to give time for FIFOs to drain before issuing more commands */
-	while (test_bit_sr_busy(dev)) {
+	while (test_bit_sr_busy(dev) | (!test_bit_sr_tfe(dev))) {
 	}
 
 	/* Disabling interrupts */
