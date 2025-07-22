@@ -48,6 +48,7 @@ child-binding:
           - output-low
           - input-enable
           - output-enable
+          - bias-pull-up
 
     properties:
         pinmux:
