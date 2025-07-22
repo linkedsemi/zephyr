@@ -154,6 +154,12 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
     port = get_gpio_port_id((uint32_t)gpio_cfg);
     pincode = LSPIN(port, pin);
 
+    if ((GPIO_OUTPUT | GPIO_LINE_OPEN_DRAIN | GPIO_OUTPUT_INIT_HIGH)
+        == (flags & (GPIO_OUTPUT | GPIO_LINE_OPEN_DRAIN | GPIO_OUTPUT_INIT_HIGH))) {
+        flags &= ~GPIO_OUTPUT;
+        flags |= GPIO_INPUT;
+    }
+
     switch (flags & (GPIO_INPUT | GPIO_OUTPUT)) {
     case GPIO_OUTPUT:
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
@@ -344,6 +350,9 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
 
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
+        if ((pins << 16) & gpio_cfg->OD_FIR) {
+            gpio_val->OE_DIN &= ~((pins << 16) & gpio_cfg->OD_FIR);
+        }
         gpio_val->DOC_DOS = pins & 0xffff;
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
         ret = ((gpio_val->DOC_DOS & pins) == pins);
@@ -368,6 +377,9 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
         gpio_val->DOC_DOS = pins << 16;
+        if ((pins << 16) & gpio_cfg->OD_FIR) {
+            gpio_val->OE_DIN |= (pins << 16) & gpio_cfg->OD_FIR;
+        }
         IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
         ret = ((gpio_val->DOC_DOS & pins) == 0);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
