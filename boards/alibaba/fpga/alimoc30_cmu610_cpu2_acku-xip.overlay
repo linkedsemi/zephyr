@@ -3,58 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "alicmu_pinctrl_acku.dtsi"
-
 / {
     chosen {
-        zephyr,sram = &sram2;
-        zephyr,console = &uart4;
-        zephyr,shell-uart = &uart4;
         zephyr,flash = &flash_xip_partition;
-        zephyr,flash-controller = &qspi1;
-        share,flash = &flash1;
-    };
-
-    fstab {
-        compatible = "zephyr,fstab";
-        ro_lfs_a: ro_lfs_a{
-            compatible = "zephyr,fstab,littlefs";
-            mount-point = "/ro";
-            partition = <&a_rofs_partition>;
-            // automount;
-            no-format;
-            read-only;
-            read-size = <16>;
-            prog-size = <16>;
-            cache-size = <4096>;
-            lookahead-size = <256>;
-            block-cycles = <512>;
-        };
-        ro_lfs_b: ro_lfs_b{
-            compatible = "zephyr,fstab,littlefs";
-            mount-point = "/ro";
-            partition = <&b_rofs_partition>;
-            // automount;
-            no-format;
-            read-only;
-            read-size = <16>;
-            prog-size = <16>;
-            cache-size = <4096>;
-            lookahead-size = <256>;
-            block-cycles = <512>;
-        };
-        rw_lfs: rw_lfs{
-            compatible = "zephyr,fstab,littlefs";
-            mount-point = "/rw";
-            partition = <&rwfs_partition>;
-            // automount;
-            // no-format;
-            read-size = <16>;
-            prog-size = <16>;
-            cache-size = <4096>;
-            lookahead-size = <256>;
-            block-cycles = <512>;
-        };
     };
 
     flash_xip_partition: flash@8100000 {
@@ -76,131 +27,54 @@
     };
 };
 
-&uart1 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart2 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart3 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart4 {
-    current-speed = <115200>;
-    status = "okay";
-};
-
-&uart5 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&i2c5 {
-    status = "okay";
-    label = "i2c-5";
-};
-&i2c2 {
-    status = "okay";
-    label = "i2c-2";
-
-    eeprom: eeprom@55 {
-		compatible = "atmel,at24";
-		reg = <0x55>;
-		status = "okay";
-		size = <256>;
-		pagesize = <8>;
-		address-width = <8>;
-		timeout = <5>;
-	};
-};
-
-&smbus5 {
-    status = "okay";
-};
-
-&smbus2 {
-    status = "okay";
-};
-
-&espi1 {
-    espi1_kcs_ca2: espi1_kcs_ca2 {
-        compatible = "linkedsemi,ls-kcs";
-        port = <0xca2 0xca3>;
-        status = "okay";
-    };
-    status = "okay";
-};
-&ipmi_kcs {
-    kcs_chan = <&espi1_kcs_ca2>;
-    status = "okay";
-    label = "ipmi-kcs";
-};
-
 &qspi1 {
-    flash1: flash@8000000 {
-        compatible = "soc-nv-flash";
-        reg = <0x8000000 DT_SIZE_M(32)>;
-        erase-block-size = <4096>;
-        write-block-size = <4>;
+    flash1_partitions: partitions {
+    compatible = "fixed-partitions";
+    #address-cells = <1>;
+    #size-cells = <1>;
 
-        partitions {
-            compatible = "fixed-partitions";
-            #address-cells = <1>;
-            #size-cells = <1>;
+    /* sbl */
+    sbl_partition: partition@0 {
+        label = "sbl";
+        reg = <0x0 DT_SIZE_K(56)>;
+    };
+    sbl_env_partition: partition@e000 {
+        label = "sbl_env";
+        reg = <0x0000e000 DT_SIZE_K(8)>;
+    };
 
-            /* sbl */
-            sbl_partition: partition@0 {
-                label = "sbl";
-                reg = <0x0 DT_SIZE_K(56)>;
-            };
-            sbl_env_partition: partition@e000 {
-                label = "sbl_env";
-                reg = <0xe000 DT_SIZE_K(8)>;
-            };
+    /* a */
+    a_sec_image_partition: partition@10000 {
+        label = "a_sec_image";
+        reg = <0x00010000 (DT_SIZE_M(1) - DT_SIZE_K(64))>;
+    };
+    a_app_image_partition: partition@100000 {
+        label = "a_app_image";
+        reg = <0x00100000 DT_SIZE_M(12)>;
+    };
+    a_rofs_partition: partition@d00000 {
+        label = "a_rofs";
+        reg = <0x00d00000 DT_SIZE_M(2)>;
+    };
 
-            /* a */
-            a_sec_image_partition: partition@10000 {
-                label = "a_sec_image";
-                reg = <0x10000 DT_SIZE_K(960)>;
-            };
-            a_app_image_partition: partition@100000 {
-                label = "a_app_image";
-                reg = <0x100000 DT_SIZE_M(12)>;
-            };
-            a_rofs_partition: partition@d00000 {
-                label = "a_rofs";
-                reg = <0xd00000 DT_SIZE_M(2)>;
-            };
+    /* common */
+    rwfs_partition: partition@f00000 {
+        label = "rwfs";
+        reg = <0x00f00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
+    };
 
-            /* common */
-            rwfs_partition: partition@f00000 {
-                label = "rwfs";
-                reg = <0xf00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
-            };
-
-            /* b */
-            b_sec_image_partition: partition@1110000 {
-                label = "b_sec_image";
-                reg = <0x1110000 DT_SIZE_K(960)>;
-            };
-            b_app_image_partition: partition@1200000 {
-                label = "b_app_image";
-                reg = <0x1200000 DT_SIZE_M(12)>;
-            };
-            b_rofs_partition: partition@1E00000 {
-                label = "b_rofs";
-                reg = <0x1E00000 DT_SIZE_M(2)>;
-            };
-        };
+    /* b */
+    b_sec_image_partition: partition@1110000 {
+        label = "b_sec_image";
+        reg = <0x01110000 (DT_SIZE_M(1) - DT_SIZE_K(64))>;
+    };
+    b_app_image_partition: partition@1200000 {
+        label = "b_app_image";
+        reg = <0x01200000 DT_SIZE_M(12)>;
+    };
+    b_rofs_partition: partition@1e00000 {
+        label = "b_rofs";
+        reg = <0x01e00000 DT_SIZE_M(2)>;
     };
 };
-
-&psram {
-    status = "okay";
 };

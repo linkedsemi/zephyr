@@ -5,6 +5,7 @@
 
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
+#include "alicmu_pinctrl_acku.dtsi"
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -16,11 +17,55 @@
         zephyr,sram = &sram2;
         zephyr,console = &uart4;
         zephyr,shell-uart = &uart4;
+        zephyr,flash-controller = &qspi1;
+        zephyr,internal-flash = &flash1;
     };
 
     aliases {
         peci0 = &peci1;
         sdhc0 = &sdhci1;
+    };
+
+    fstab {
+        compatible = "zephyr,fstab";
+        ro_lfs_a: ro_lfs_a{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/ro";
+            partition = <&a_rofs_partition>;
+            // automount;
+            no-format;
+            read-only;
+            read-size = <16>;
+            prog-size = <16>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+        ro_lfs_b: ro_lfs_b{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/ro";
+            partition = <&b_rofs_partition>;
+            // automount;
+            no-format;
+            read-only;
+            read-size = <16>;
+            prog-size = <16>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+        rw_lfs: rw_lfs{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/rw";
+            partition = <&rwfs_partition>;
+            // automount;
+            // no-format;
+            read-size = <16>;
+            prog-size = <16>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
     };
 
     soc {
@@ -89,12 +134,73 @@
     status = "okay";
 };
 
+&i2c2 {
+    status = "okay";
+    label = "i2c-2";
+    eeprom: eeprom@55 {
+		compatible = "atmel,at24";
+		reg = <0x55>;
+		status = "okay";
+		size = <256>;
+		pagesize = <8>;
+		address-width = <8>;
+		timeout = <5>;
+	};
+};
+
+&i2c5 {
+    status = "okay";
+    label = "i2c-5";
+};
+
+&i2c8 {
+    status = "okay";
+    label = "i2c-8";
+};
+
+&smbus2 {
+    status = "okay";
+};
+
+&smbus5 {
+    status = "okay";
+};
+
 &sram1 {
     status = "disabled";
 };
 
 &sram2 {
     reg = <0x10080000 DT_SIZE_K(760)>;
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&psram {
+    status = "okay";
 };
 
 &gpioa {
@@ -105,7 +211,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiob {
     label = "gpiochip1";
     ngpios = <16>;
@@ -114,7 +220,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpioc {
     label = "gpiochip2";
     ngpios = <16>;
@@ -123,7 +229,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiod {
     label = "gpiochip3";
     ngpios = <16>;
@@ -132,7 +238,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpioe {
     label = "gpiochip4";
     ngpios = <16>;
@@ -141,7 +247,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiof {
     label = "gpiochip5";
     ngpios = <16>;
@@ -150,7 +256,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiog {
     label = "gpiochip6";
     ngpios = <16>;
@@ -159,7 +265,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpioh {
     label = "gpiochip7";
     ngpios = <16>;
@@ -168,7 +274,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpioi {
     label = "gpiochip8";
     ngpios = <16>;
@@ -177,7 +283,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpioj {
     label = "gpiochip9";
     ngpios = <16>;
@@ -186,7 +292,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiok {
     label = "gpiochip10";
     ngpios = <16>;
@@ -195,7 +301,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiom {
     label = "gpiochip11";
     ngpios = <16>;
@@ -204,7 +310,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpion {
     label = "gpiochip12";
     ngpios = <16>;
@@ -213,7 +319,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpioq {
     label = "gpiochip13";
     ngpios = <16>;
@@ -222,7 +328,7 @@
     /*A0-A7*/	"","","","","","","","",
     /*B0-B7*/	"","","","","","","","";
 };
- 
+
 &gpiot {
     label = "gpiochip14";
     ngpios = <16>;
@@ -253,4 +359,19 @@
 
 &peci1 {
     status = "okay";
+};
+
+&espi1 {
+    espi1_kcs_ca2: espi1_kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "okay";
+    };
+    status = "okay";
+};
+
+&ipmi_kcs {
+    kcs_chan = <&espi1_kcs_ca2>;
+    status = "okay";
+    label = "ipmi-kcs";
 };

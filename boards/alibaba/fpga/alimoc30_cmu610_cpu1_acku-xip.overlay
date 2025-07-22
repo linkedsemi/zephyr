@@ -3,295 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "alicmu_pinctrl_acku.dtsi"
-
-/ {
-    chosen {
-        zephyr,flash = &sram1_ro;
-        zephyr,flash-controller = &qspi1;
-        zephyr,internal-flash = &flash1;
-        zephyr,sram = &sram1;
-        zephyr,console = &uart1;
-        zephyr,shell-uart = &uart1;
-    };
-
-    /delete-node/ memory@10000000;
-    sram1_ro: memory@10000000 {
-        compatible = "mmio-sram";
-        reg = <0x10000000 DT_SIZE_K(256)>;
-    };
-
-    sram1: memory@10040000 {
-        compatible = "mmio-sram";
-        reg = <(0x10000000 + DT_SIZE_K(256)) (DT_SIZE_K(512) - DT_SIZE_K(256))>;
-    };
-};
-
-&sram2 {
-    status = "disabled";
-};
-
-&uart1 {
-    current-speed = <115200>;
-    status = "okay";
-};
-
-&uart2 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart3 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart4 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart5 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-// &i2c2 {
-//     pinctrl-0 = <&i2c2_scl_pb03 &i2c2_sda_pb04>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom2: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c3 {
-//     pinctrl-0 = <&i2c3_scl_pc06 &i2c3_sda_pc11>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom3: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c4 {
-//     pinctrl-0 = <&i2c4_scl_pd00 &i2c4_sda_pd01>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom4: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c5 {
-//     pinctrl-0 = <&i2c5_scl_pe07 &i2c5_sda_pe08>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom5: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c6 {
-//     pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom6: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c7 {
-//     pinctrl-0 = <&i2c7_scl_pk15 &i2c7_sda_pk14>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom7: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c10 {
-//     pinctrl-0 = <&i2c10_scl_pj03 &i2c10_sda_pj02>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom10: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c11 {
-//     pinctrl-0 = <&i2c11_scl_pn09 &i2c11_sda_pn08>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom11: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c12 {
-//     pinctrl-0 = <&i2c12_scl_pn13 &i2c12_sda_pn14>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom12: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c13 {
-//     pinctrl-0 = <&i2c13_scl_pq00 &i2c13_sda_pq01>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom13: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c14 {
-//     pinctrl-0 = <&i2c14_scl_pq03 &i2c14_sda_pq02>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     eeprom14: eeprom@76 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x76>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-// &i2c2 {
-//     status = "okay";
-//     eeprom2: eeprom@50 {
-//         compatible = "zephyr,i2c-target-eeprom";
-//         reg = <0x50>;
-//         size = <256>;
-//         status = "okay";
-//     };
-// };
-
-&i2c8 {
-    status = "okay";
-};
-
-// &smbus2 {
-//     status = "okay";
-// };
-
-&smbus8 {
-    status = "okay";
-};
-
-// &smbus_ali_11_i2c8_fpga_i2c2 {
-//     status = "okay";
-// };
-
-// &smbus_ali_14_i2c4_fpga_i2c3 {
-//     status = "okay";
-// };
-
-// &smbus_ali_9_i2c12_fpga_i2c4 {
-//     status = "okay";
-// };
-
-// &smbus_ali_16_i2c14_fpga_i2c5 {
-//     status = "okay";
-// };
-
-// &smbus_ali_7_i2c15_fpga_i2c6 {
-//     status = "okay";
-// };
-
-// &smbus_ali_13_i2c7_fpga_i2c7 {
-//     status = "okay";
-// };
-
-// &smbus_ali_10_i2c16_fpga_i2c10 {
-//     status = "okay";
-// };
-
-// &smbus_ali_8_i2c11_fpga_i2c11 {
-//     status = "okay";
-// };
-
-// &smbus_ali_15_i2c2_fpga_i2c12 {
-//     status = "okay";
-// };
-
-// &smbus_ali_5_i2c9_fpga_i2c13 {
-//     status = "okay";
-// };
-
-// &smbus_ali_6_i2c10_fpga_i2c14 {
-//     status = "okay";
-// };
-
-// &spi2 {
-//     cs-gpios = <&gpioe 6 GPIO_ACTIVE_LOW>;
-//     pinctrl-0 = <&spi2_sck_pb11 &spi2_miso_pb13 &spi2_mosi_pb10>;
-//     pinctrl-names = "default";
-//     status = "okay";
-
-//     p25q32: p25q32@0 {
-//         compatible = "jedec,spi-nor";
-//         reg = <0>;
-//         spi-max-frequency = <1000000>;
-//         jedec-id = [85 60 16];
-//         size = <0x400000>;
-//         status = "okay";
-//     };
-// };
-
 &qspi1 {
-    status = "okay";
-};
-
-&flash1 {
-    compatible = "soc-nv-flash";
-    reg = <0x8000000 DT_SIZE_M(32)>;
-    erase-block-size = <4096>;
-    write-block-size = <4>;
-
-    partitions {
+    flash1_partitions: partitions {
         compatible = "fixed-partitions";
         #address-cells = <1>;
         #size-cells = <1>;
@@ -300,44 +13,53 @@
         sbl_partition: partition@0 {
             label = "sbl";
             reg = <0x0 DT_SIZE_K(56)>;
+            attr = <0>;
         };
         sbl_env_partition: partition@e000 {
             label = "sbl_env";
-            reg = <0xe000 DT_SIZE_K(8)>;
+            reg = <0x0000e000 DT_SIZE_K(8)>;
+            attr = <PMP_R>;
         };
 
         /* a */
         a_sec_image_partition: partition@10000 {
             label = "a_sec_image";
-            reg = <0x10000 DT_SIZE_K(960)>;
+            reg = <0x00010000 (DT_SIZE_M(1) - DT_SIZE_K(64))>;
+            attr = <0>;
         };
         a_app_image_partition: partition@100000 {
             label = "a_app_image";
-            reg = <0x100000 DT_SIZE_M(12)>;
+            reg = <0x00100000 DT_SIZE_M(12)>;
+            attr = <(PMP_R | PMP_W | PMP_X)>;
         };
         a_rofs_partition: partition@d00000 {
             label = "a_rofs";
-            reg = <0xd00000 DT_SIZE_M(2)>;
+            reg = <0x00d00000 DT_SIZE_M(2)>;
+            attr = <PMP_R>;
         };
 
         /* common */
         rwfs_partition: partition@f00000 {
             label = "rwfs";
-            reg = <0xf00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
+            reg = <0x00f00000 (DT_SIZE_M(2) + DT_SIZE_K(64))>;
+            attr = <(PMP_R | PMP_W)>;
         };
 
         /* b */
         b_sec_image_partition: partition@1110000 {
             label = "b_sec_image";
-            reg = <0x1110000 DT_SIZE_K(960)>;
+            reg = <0x01110000 (DT_SIZE_M(1) - DT_SIZE_K(64))>;
+            attr = <0>;
         };
         b_app_image_partition: partition@1200000 {
             label = "b_app_image";
-            reg = <0x1200000 DT_SIZE_M(12)>;
+            reg = <0x01200000 DT_SIZE_M(12)>;
+            attr = <(PMP_R | PMP_W | PMP_X)>;
         };
-        b_rofs_partition: partition@1E00000 {
+        b_rofs_partition: partition@1e00000 {
             label = "b_rofs";
-            reg = <0x1E00000 DT_SIZE_M(2)>;
+            reg = <0x01e00000 DT_SIZE_M(2)>;
+            attr = <PMP_R>;
         };
     };
 };
