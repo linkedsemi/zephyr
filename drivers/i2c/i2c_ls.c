@@ -22,6 +22,8 @@ LOG_MODULE_REGISTER(i2c_ls);
     #include <zephyr/drivers/clock_control.h>
     #include <soc_clock.h>
 #endif
+#include "i2c_bitbang.h"
+#include "i2c-priv.h"
 
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
@@ -31,10 +33,13 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct i2c_ls_config{
 	irq_cfg_func_t irq_config_func;
-    reg_i2c_t *reg;
-    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
-    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
-    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+	reg_i2c_t *reg;
+	uint32_t clock_frequency;
+	struct gpio_dt_spec scl;
+	struct gpio_dt_spec sda;
+	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct i2c_ls_data {
@@ -61,7 +66,116 @@ struct i2c_speed_config_t
     uint32_t presc    : 4;
 };
 
+#if defined(CONFIG_I2C_SHOW_STATE)
+const uint8_t *i2c_reg_stat_fsm_str[] = {
+    [I2C_STAT_FSM_ST_IDLE] = "ST_IDLE",
+    [I2C_STAT_FSM_M_WAIT] = "M_WAIT",
+    [I2C_STAT_FSM_M_START] = "M_START",
+    [I2C_STAT_FSM_M_ADDR1] = "M_ADDR1",
+    [I2C_STAT_FSM_M_ADDR2] = "M_ADDR2",
+    [I2C_STAT_FSM_M_DATA] = "M_DATA",
+    [I2C_STAT_FSM_M_RESTART] = "M_RESTART",
+    [I2C_STAT_FSM_M_HOLD] = "M_HOLD",
+    [I2C_STAT_FSM_M_PEC] = "M_PEC",
+    [I2C_STAT_FSM_M_STOP] = "M_STOP",
+    [I2C_STAT_FSM_S_START] = "S_START",
+    [I2C_STAT_FSM_S_ADDR1] = "S_ADDR1",
+    [I2C_STAT_FSM_S_ADDR2] = "S_ADDR2",
+    [I2C_STAT_FSM_S_DATA] = "S_DATA",
+    [I2C_STAT_FSM_S_HOLD] = "S_HOLD",
+    [I2C_STAT_FSM_S_PEC] = "S_PEC",
+};
+
+static void i2c_ls_show_state(const struct device *dev)
+{
+    const struct i2c_ls_config *config = dev->config;
+    LOG_DBG("%s: FSM: %s\n", dev->name, i2c_reg_stat_fsm_str[REG_FIELD_RD(config->reg->STAT, I2C_STAT_FSM_STAT)]);
+    LOG_DBG("%s: SMBA_OE: %x\n", dev->name, REG_FIELD_RD(config->reg->STAT, I2C_STAT_SMBA_OE));
+    LOG_DBG("%s: SDA_OE: %x\n", dev->name, REG_FIELD_RD(config->reg->STAT, I2C_STAT_SDA_OE));
+    LOG_DBG("%s: SCL_OE: %x\n", dev->name, REG_FIELD_RD(config->reg->STAT, I2C_STAT_SCL_OE));
+}
+#endif
+
 #if defined(CONFIG_PINCTRL)
+static void i2c_ls_bitbang_set_scl(void *io_context, int state)
+{
+	const struct i2c_ls_config *config = io_context;
+
+	gpio_pin_set_dt(&config->scl, state);
+}
+
+static void i2c_ls_bitbang_set_sda(void *io_context, int state)
+{
+	const struct i2c_ls_config *config = io_context;
+
+	gpio_pin_set_dt(&config->sda, state);
+}
+
+static int i2c_ls_bitbang_get_sda(void *io_context)
+{
+	const struct i2c_ls_config *config = io_context;
+
+	return gpio_pin_get_dt(&config->sda) == 0 ? 0 : 1;
+}
+
+static int i2c_ls_recover_bus(const struct device *dev)
+{
+	const struct i2c_ls_config *config = dev->config;
+	struct i2c_bitbang bitbang_ctx;
+	struct i2c_bitbang_io bitbang_io = {
+		.set_scl = i2c_ls_bitbang_set_scl,
+		.set_sda = i2c_ls_bitbang_set_sda,
+		.get_sda = i2c_ls_bitbang_get_sda,
+	};
+	uint32_t bitrate_cfg;
+	int error = 0;
+
+	LOG_ERR("%s: attempting to recover bus", dev->name);
+
+	if (!gpio_is_ready_dt(&config->scl)) {
+		LOG_ERR("%s: SCL GPIO device not ready", dev->name);
+		return -EIO;
+	}
+
+	if (!gpio_is_ready_dt(&config->sda)) {
+		LOG_ERR("%s: SDA GPIO device not ready", dev->name);
+		return -EIO;
+	}
+
+	pinctrl_apply_state(config->pcfg, PINCTRL_STATE_PRIV_START);
+
+	error = gpio_pin_configure_dt(&config->scl, GPIO_OUTPUT_HIGH | GPIO_PULL_UP | GPIO_LINE_OPEN_DRAIN);
+	if (error != 0) {
+		LOG_ERR("%s: failed to configure SCL GPIO (err %d)", dev->name, error);
+		goto restore;
+	}
+
+	error = gpio_pin_configure_dt(&config->sda, GPIO_OUTPUT_HIGH | GPIO_PULL_UP | GPIO_LINE_OPEN_DRAIN);
+	if (error != 0) {
+		LOG_ERR("%s: failed to configure SDA GPIO (err %d)", dev->name, error);
+		goto restore;
+	}
+
+	i2c_bitbang_init(&bitbang_ctx, &bitbang_io, (void *)config);
+
+	bitrate_cfg = i2c_map_dt_bitrate(I2C_BITRATE_STANDARD) | I2C_MODE_CONTROLLER;
+	error = i2c_bitbang_configure(&bitbang_ctx, bitrate_cfg);
+	if (error != 0) {
+		LOG_ERR("%s: failed to configure I2C bitbang (err %d)", dev->name, error);
+		goto restore;
+	}
+
+	error = i2c_bitbang_recover_bus(&bitbang_ctx);
+	if (error != 0) {
+		LOG_ERR("%s: failed to recover bus (err %d)", dev->name, error);
+	}
+
+restore:
+	(void)pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+
+	return error;
+}
+
 int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_config *pcfg, uint8_t pinctrl_state)
 {
     struct i2c_ls_data *data = dev->data;
@@ -77,25 +191,6 @@ int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_co
     } else {
         data->pin[0] = 0;
         data->pin[1] = 0;
-    }
-
-    return ret;
-}
-
-static inline bool is_i2c_bus_idle(const struct device *dev)
-{
-    struct i2c_ls_data *data = dev->data;
-    uint8_t pin_val[2];
-    bool ret = true;
-
-    if (data->pin[0] != data->pin[1]) {
-        pin_val[0] = io_get_input_val(data->pin[0]);
-        pin_val[1] = io_get_input_val(data->pin[1]);
-        if (1 != (pin_val[0] & pin_val[1])) {
-            LOG_ERROR("bus busy. pin[%#x]: %d.  pin:[%#x]: %d.\n",
-                    data->pin[0], pin_val[0], data->pin[1], pin_val[1]);
-            ret = false;
-        }
     }
 
     return ret;
@@ -300,12 +395,29 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 {
 	struct i2c_ls_data *data = dev->data;
 	const struct i2c_ls_config *config = dev->config;
+	uint8_t scl_val;
+	uint8_t sda_val;
 	int ret = 0;
 
 	k_sem_take(&data->bus_mutex, K_FOREVER);
 #if defined(CONFIG_PINCTRL)
-	if (!(is_i2c_bus_idle(dev))) {
-		goto err;
+	if ((NULL != config->scl.port) && (NULL != config->sda.port)) {
+		scl_val = gpio_pin_get_dt(&config->scl);
+		sda_val = gpio_pin_get_dt(&config->sda);
+		if (!((1 == scl_val) && (1 == sda_val))) {
+			LOG_DBG("%s: bus busy\n", dev->name);
+			IF_ENABLED(CONFIG_I2C_SHOW_STATE, (i2c_ls_show_state(dev)));
+			 if ((1 == scl_val) && (0 == sda_val)) {
+				LOG_DBG("%s: try recovery\n", dev->name);
+				ret = i2c_ls_recover_bus(dev);
+				if (ret) {
+					goto err;
+				}
+			} else {
+				LOG_DBG("%s: scl: %d.  sda: %d.\n", dev->name, scl_val, sda_val);
+				goto err;
+			}
+		}
 	}
 #endif
 	data->errs = 0;
@@ -392,33 +504,28 @@ err:
 
 static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c_clk)
 {
-#if defined(CONFIG_SOC_LSQSH)
-	uint32_t pclk = 50000000;
-#else
-	uint32_t pclk = 144000000;
-#endif
 	uint16_t cycle_count;
 	uint8_t prescalar = 1;
+	int16_t scll, sclh, scldel, sdadel;
 	do{
 		prescalar += 1;
-		cycle_count = pclk/i2c_clk/prescalar;
+		cycle_count = config->clock_frequency/i2c_clk/prescalar;
 	}while(cycle_count>256);
-	__ASSERT(cycle_count>=16&&prescalar<=16,"Invalid i2c timing");
-    int16_t scll, sclh, scldel, sdadel;
-    cycle_count -= 4;
-	scll = cycle_count >> 1;
-    sclh = scll;
-	scldel = scll>16?15:scll-2;
-	sdadel = 1;
-	struct i2c_speed_config_t param;
-    param.presc = prescalar - 1;
-    param.scll = scll;
-    param.sclh = sclh;
-    param.scldel = scldel;
-    param.sdadel = sdadel;
-   	MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK), 
-        param.presc<<I2C_TIMINGR_PRESC_POS|param.sclh<<I2C_TIMINGR_SCLH_POS|param.scll<<I2C_TIMINGR_SCLL_POS|param.sdadel<<I2C_TIMINGR_SDADEL_POS|param.scldel<<I2C_TIMINGR_SCLDEL_POS);	
 
+	scll = (cycle_count-4) >> 1;
+	scldel = scll>16?15:scll-2;
+	while((scll - scldel) > (scll >> 1)) {
+		prescalar += 1;
+		cycle_count = config->clock_frequency/i2c_clk/prescalar;
+		scll = (cycle_count-4) >> 1;
+		scldel = scll>16?15:scll-2;
+	};
+	__ASSERT(cycle_count>=16&&prescalar<=16,"Invalid i2c timing");
+
+    sclh = scll;
+	sdadel = 0;
+   	MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK), 
+        (prescalar - 1)<<I2C_TIMINGR_PRESC_POS|sclh<<I2C_TIMINGR_SCLH_POS|scll<<I2C_TIMINGR_SCLL_POS|sdadel<<I2C_TIMINGR_SDADEL_POS|scldel<<I2C_TIMINGR_SCLDEL_POS);	
 }
 
 static void i2c_reenable(const struct i2c_ls_config *config ,uint32_t i2c_clk)
@@ -470,7 +577,7 @@ static int i2c_ls_init(const struct device *dev)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
         if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
+            LOG_DBG("%s: %s device not ready", dev->name, clk_dev->name);
             return -ENODEV;
         }
         clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
@@ -480,13 +587,21 @@ static int i2c_ls_init(const struct device *dev)
 #if defined(CONFIG_RESET)
     if (dev_config->reset.dev != NULL) {
         if (!device_is_ready(dev_config->reset.dev)) {
+<<<<<<< HEAD
             LOG_ERROR("Reset controller device is not ready");
+=======
+            LOG_ERR("%s: Reset controller device is not ready", dev->name);
+>>>>>>> c4b86a52f86... drivers/i2c/i2c_ls.c: 1. add bus recovery support 2. optimize timing parameter
             return -ENODEV;
         }
 
         ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
         if (ret != 0) {
+<<<<<<< HEAD
             LOG_ERROR("toggle reset line failed");
+=======
+            LOG_ERR("%s: toggle reset line failed", dev->name);
+>>>>>>> c4b86a52f86... drivers/i2c/i2c_ls.c: 1. add bus recovery support 2. optimize timing parameter
             return ret;
         }
     }
@@ -503,7 +618,11 @@ static int i2c_ls_init(const struct device *dev)
     /* Configure dt provided device signals when available */
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
+<<<<<<< HEAD
         LOG_ERROR("Could not configure pins");
+=======
+        LOG_ERR("%s: Could not configure pins", dev->name);
+>>>>>>> c4b86a52f86... drivers/i2c/i2c_ls.c: 1. add bus recovery support 2. optimize timing parameter
     }
     i2c_idle_check_prepare(dev, dev_config->pcfg, PINCTRL_STATE_DEFAULT);
 #endif
@@ -579,6 +698,12 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 	static const struct i2c_ls_config i2c_ls_cfg_##index = {\
 		.reg = (reg_i2c_t *)DT_INST_REG_ADDR(index),\
 		.irq_config_func = i2c_ls_irq_config_func_##index,\
+		.clock_frequency = COND_CODE_1(\
+			DT_NODE_HAS_PROP(DT_INST_PHANDLE(index, clocks), clock_frequency),\
+			(DT_INST_PROP_BY_PHANDLE(index, clocks, clock_frequency)),\
+			(DT_INST_PROP(index, clock_frequency))),\
+		.scl =	GPIO_DT_SPEC_INST_GET_OR(index, scl_gpios, {0}),\
+		.sda = GPIO_DT_SPEC_INST_GET_OR(index, sda_gpios, {0}),\
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), )) \
         IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), )) \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
