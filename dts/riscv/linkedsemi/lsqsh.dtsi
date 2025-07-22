@@ -532,6 +532,7 @@
             interrupts = <I2C1_IRQN 3>;
             clocks = <I2C1_CLOCK>;
             resets = <I2C1_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -543,6 +544,7 @@
             interrupts = <I2C2_IRQN 3>;
             clocks = <I2C2_CLOCK>;
             resets = <I2C2_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -554,6 +556,7 @@
             interrupts = <I2C3_IRQN 3>;
             clocks = <I2C3_CLOCK>;
             resets = <I2C3_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -565,6 +568,7 @@
             interrupts = <I2C4_IRQN 3>;
             clocks = <I2C4_CLOCK>;
             resets = <I2C4_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -576,6 +580,7 @@
             interrupts = <I2C5_IRQN 3>;
             clocks = <I2C5_CLOCK>;
             resets = <I2C5_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -587,6 +592,7 @@
             interrupts = <I2C6_IRQN 3>;
             clocks = <I2C6_CLOCK>;
             resets = <I2C6_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -598,6 +604,7 @@
             interrupts = <I2C7_IRQN 3>;
             clocks = <I2C7_CLOCK>;
             resets = <I2C7_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -609,6 +616,7 @@
             interrupts = <I2C8_IRQN 3>;
             clocks = <I2C8_CLOCK>;
             resets = <I2C8_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -620,6 +628,7 @@
             interrupts = <I2C9_IRQN 3>;
             clocks = <I2C9_CLOCK>;
             resets = <I2C9_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -631,6 +640,7 @@
             interrupts = <I2C10_IRQN 3>;
             clocks = <I2C10_CLOCK>;
             resets = <I2C10_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -642,6 +652,7 @@
             interrupts = <I2C11_IRQN 3>;
             clocks = <I2C11_CLOCK>;
             resets = <I2C11_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -653,6 +664,7 @@
             interrupts = <I2C12_IRQN 3>;
             clocks = <I2C12_CLOCK>;
             resets = <I2C12_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -664,6 +676,7 @@
             interrupts = <I2C13_IRQN 3>;
             clocks = <I2C13_CLOCK>;
             resets = <I2C13_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -675,6 +688,7 @@
             interrupts = <I2C14_IRQN 3>;
             clocks = <I2C14_CLOCK>;
             resets = <I2C14_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -686,6 +700,7 @@
             interrupts = <I2C15_IRQN 3>;
             clocks = <I2C15_CLOCK>;
             resets = <I2C15_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 
@@ -697,6 +712,7 @@
             interrupts = <I2C16_IRQN 3>;
             clocks = <I2C16_CLOCK>;
             resets = <I2C16_RESET>;
+            clock-frequency = <25000000>;
             status = "disabled";
         };
 

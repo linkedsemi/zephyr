@@ -47,4 +47,41 @@
 #define IRQ_TYPE_LEVEL_HIGH	4
 #define IRQ_TYPE_LEVEL_LOW	8
 
+#define DEFINE_PINCTRL_PRODUCER_I2C(NAME, PIN_SCL, PIN_SDA, PINMUX_SCL, PINMUX_SDA)\
+    /omit-if-no-ref/NAME##_scl_##PIN_SCL: NAME##_scl_##PIN_SCL {\
+        pinmux = <PINMUX_SCL>;\
+        drive-strength = "quarter max driver";\
+        bias-pull-up;\
+        drive-open-drain;\
+        input-enable;\
+    };\
+    /omit-if-no-ref/NAME##_sda_##PIN_SDA: NAME##_sda_##PIN_SDA {\
+        pinmux = <PINMUX_SDA>;\
+        drive-strength = "quarter max driver";\
+        bias-pull-up;\
+        drive-open-drain;\
+        input-enable;\
+    };\
+    /omit-if-no-ref/NAME##_scl_gpio_##PIN_SCL: NAME##_scl_gpio_##PIN_SCL {\
+        pinmux = <PIN_SCL>;\
+        gpio;\
+        bias-pull-up;\
+        drive-open-drain;\
+        input-enable;\
+    };\
+    /omit-if-no-ref/NAME##_sda_gpio_##PIN_SDA: NAME##_sda_gpio_##PIN_SDA {\
+        pinmux = <PIN_SDA>;\
+        gpio;\
+        bias-pull-up;\
+        drive-open-drain;\
+        input-enable;\
+    };
+
+#define DEFINE_PINCTRL_CONSUMER_I2C(NAME, PIN_SCL, PIN_SDA, GPIO_PORT_SCL, GPIO_NUM_SCL, GPIO_PORT_SDA, GPIO_NUM_SDA)\
+    scl-gpios = <&GPIO_PORT_SCL GPIO_NUM_SCL (GPIO_OPEN_DRAIN | GPIO_PULL_UP)>;\
+    sda-gpios = <&GPIO_PORT_SDA GPIO_NUM_SDA (GPIO_OPEN_DRAIN | GPIO_PULL_UP)>;\
+    pinctrl-0 = <&NAME##_scl_##PIN_SCL &NAME##_sda_##PIN_SDA>;\
+    pinctrl-1 = <&NAME##_scl_gpio_##PIN_SCL &NAME##_sda_gpio_##PIN_SDA>;\
+    pinctrl-names = "default", "priv_start";
+
 #endif

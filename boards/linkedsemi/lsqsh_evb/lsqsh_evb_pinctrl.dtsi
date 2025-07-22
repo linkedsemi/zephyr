@@ -69,174 +69,19 @@
     };
 
     // /* I2C */
-    /omit-if-no-ref/i2c2_scl_pb00: i2c2_scl_pb00 {
-        pinmux = <I2C2_SCL_FUNC1_IDX10_PINMUX_PB(00)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c2_sda_pb01: i2c2_sda_pb01 {
-        pinmux = <I2C2_SDA_FUNC1_IDX11_PINMUX_PB(01)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c5_scl_pe01: i2c5_scl_pe01 {
-        pinmux = <I2C5_SCL_FUNC1_IDX06_PINMUX_PE(01)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c5_sda_pe06: i2c5_sda_pe06 {
-        pinmux = <I2C5_SDA_FUNC1_IDX07_PINMUX_PE(06)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c6_scl_pf07: i2c6_scl_pf07 {
-        pinmux = <I2C6_SCL_FUNC1_IDX05_PINMUX_PF(07)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c6_sda_pf08: i2c6_sda_pf08 {
-        pinmux = <I2C6_SDA_FUNC1_IDX06_PINMUX_PF(08)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c7_scl_pg11: i2c7_scl_pg11 {
-        pinmux = <I2C7_SCL_FUNC1_IDX10_PINMUX_PG(11)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c7_sda_pg10: i2c7_sda_pg10 {
-        pinmux = <I2C7_SDA_FUNC1_IDX11_PINMUX_PG(10)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c8_scl_ph05: i2c8_scl_ph05 {
-        pinmux = <I2C8_SCL_FUNC1_IDX10_PINMUX_PH(05)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c8_sda_ph07: i2c8_sda_ph07 {
-        pinmux = <I2C8_SDA_FUNC1_IDX11_PINMUX_PH(07)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c9_scl_pi02: i2c9_scl_pi02 {
-        pinmux = <I2C9_SCL_FUNC1_IDX06_PINMUX_PI(02)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c9_sda_pi03: i2c9_sda_pi03 {
-        pinmux = <I2C9_SDA_FUNC1_IDX07_PINMUX_PI(03)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c10_scl_pj06: i2c10_scl_pj06 {
-        pinmux = <I2C10_SCL_FUNC1_IDX06_PINMUX_PJ(06)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c10_sda_pj07: i2c10_sda_pj07 {
-        pinmux = <I2C10_SDA_FUNC1_IDX07_PINMUX_PJ(07)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c11_scl_pk15: i2c11_scl_pk15 {
-        pinmux = <I2C11_SCL_FUNC1_IDX06_PINMUX_PK(15)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_sda_pk01: i2c11_sda_pk01 {
-        pinmux = <I2C11_SDA_FUNC1_IDX07_PINMUX_PK(01)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c12_scl_pm14: i2c12_scl_pm14 {
-        pinmux = <I2C12_SCL_FUNC1_IDX05_PINMUX_PM(14)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_sda_pm15: i2c12_sda_pm15 {
-        pinmux = <I2C12_SDA_FUNC1_IDX06_PINMUX_PM(15)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c13_scl_pn14: i2c13_scl_pn14 {
-        pinmux = <I2C13_SCL_FUNC1_IDX10_PINMUX_PN(14)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_sda_pn06: i2c13_sda_pn06 {
-        pinmux = <I2C13_SDA_FUNC1_IDX11_PINMUX_PN(06)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c14_scl_pn13: i2c14_scl_pn13 {
-        pinmux = <I2C14_SCL_FUNC1_IDX13_PINMUX_PN(13)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_sda_pn00: i2c14_sda_pn00 {
-        pinmux = <I2C14_SDA_FUNC1_IDX14_PINMUX_PN(00)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c15_scl_pq14: i2c15_scl_pq14 {
-        pinmux = <I2C15_SCL_FUNC1_IDX10_PINMUX_PQ(14)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c15_sda_pq15: i2c15_sda_pq15 {
-        pinmux = <I2C15_SDA_FUNC1_IDX11_PINMUX_PQ(15)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-
-    /omit-if-no-ref/i2c16_scl_pq12: i2c16_scl_pq12 {
-        pinmux = <I2C16_SCL_FUNC1_IDX13_PINMUX_PQ(12)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c16_sda_pq11: i2c16_sda_pq11 {
-        pinmux = <I2C16_SDA_FUNC1_IDX14_PINMUX_PQ(11)>;
-        drive-strength = "quarter max driver";
-        drive-open-drain;
-        input-enable;
-    };
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C2, PB00, PB01, I2C2_SCL_FUNC1_IDX10_PINMUX_PB(00), I2C2_SDA_FUNC1_IDX11_PINMUX_PB(01))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C5, PE01, PE06, I2C5_SCL_FUNC1_IDX06_PINMUX_PE(01), I2C5_SDA_FUNC1_IDX07_PINMUX_PE(06))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C6, PF07, PF08, I2C6_SCL_FUNC1_IDX05_PINMUX_PF(07), I2C6_SDA_FUNC1_IDX06_PINMUX_PF(08))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C7, PG11, PG10, I2C7_SCL_FUNC1_IDX10_PINMUX_PG(11), I2C7_SDA_FUNC1_IDX11_PINMUX_PG(10))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C8, PH05, PH07, I2C8_SCL_FUNC1_IDX10_PINMUX_PH(05), I2C8_SDA_FUNC1_IDX11_PINMUX_PH(07))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C9, PI02, PI03, I2C9_SCL_FUNC1_IDX06_PINMUX_PI(02), I2C9_SDA_FUNC1_IDX07_PINMUX_PI(03))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C10, PJ06, PJ07, I2C10_SCL_FUNC1_IDX06_PINMUX_PJ(06), I2C10_SDA_FUNC1_IDX07_PINMUX_PJ(07))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C11, PK15, PK01, I2C11_SCL_FUNC1_IDX06_PINMUX_PK(15), I2C11_SDA_FUNC1_IDX07_PINMUX_PK(01))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C12, PM14, PM15, I2C12_SCL_FUNC1_IDX05_PINMUX_PM(14), I2C12_SDA_FUNC1_IDX06_PINMUX_PM(15))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C13, PN14, PN06, I2C13_SCL_FUNC1_IDX10_PINMUX_PN(14), I2C13_SDA_FUNC1_IDX11_PINMUX_PN(06))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C14, PN13, PN00, I2C14_SCL_FUNC1_IDX13_PINMUX_PN(13), I2C14_SDA_FUNC1_IDX14_PINMUX_PN(00))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C15, PQ14, PQ15, I2C15_SCL_FUNC1_IDX10_PINMUX_PQ(14), I2C15_SDA_FUNC1_IDX11_PINMUX_PQ(15))
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C16, PQ12, PQ11, I2C16_SCL_FUNC1_IDX13_PINMUX_PQ(12), I2C16_SDA_FUNC1_IDX14_PINMUX_PQ(11))
 
     /omit-if-no-ref/spi1_clk_pa02: spi1_clk_pa02 {
         pinmux = <SPI1_SCK_FUNC1_IDX18_PINMUX_PA(02)>;
@@ -304,68 +149,55 @@
 };
 
 &i2c2 {
-    pinctrl-0 = <&i2c2_scl_pb00 &i2c2_sda_pb01>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C2, PB00, PB01, gpiob, 0, gpiob, 1)
 };
 
 &i2c5 {
-    pinctrl-0 = <&i2c5_scl_pe01 &i2c5_sda_pe06>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C5, PE01, PE06, gpioe, 1, gpioe, 6)
 };
 
 &i2c6 {
-    pinctrl-0 = <&i2c6_scl_pf07 &i2c6_sda_pf08>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C6, PF07, PF08, gpiof, 7, gpiof, 8)
 };
 
 &i2c7 {
-    pinctrl-0 = <&i2c7_scl_pg11 &i2c7_sda_pg10>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C7, PG11, PG10, gpiog, 11, gpiog, 10)
 };
 
 &i2c8 {
-    pinctrl-0 = <&i2c8_scl_ph05 &i2c8_sda_ph07>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C8, PH05, PH07, gpioh, 5, gpioh, 7)
 };
 
 &i2c9 {
-    pinctrl-0 = <&i2c9_scl_pi02 &i2c9_sda_pi03>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C9, PI02, PI03, gpioi, 2, gpioi, 3)
 };
 
 &i2c10 {
-    pinctrl-0 = <&i2c10_scl_pj06 &i2c10_sda_pj07>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C10, PJ06, PJ07, gpioj, 6, gpioj, 7)
 };
 
 &i2c11 {
-    pinctrl-0 = <&i2c11_scl_pk15 &i2c11_sda_pk01>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C11, PK15, PK01, gpiok, 15, gpiok, 1)
 };
 
 &i2c12 {
-    pinctrl-0 = <&i2c12_scl_pm14 &i2c12_sda_pm15>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C12, PM14, PM15, gpiom, 14, gpiom, 15)
 };
 
 &i2c13 {
-    pinctrl-0 = <&i2c13_scl_pn14 &i2c13_sda_pn06>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C13, PN14, PN06, gpion, 14, gpion, 6)
 };
 
 &i2c14 {
-    pinctrl-0 = <&i2c14_scl_pn13 &i2c14_sda_pn00>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C14, PN13, PN00, gpion, 13, gpion, 0)
 };
 
 &i2c15 {
-    pinctrl-0 = <&i2c15_scl_pq14 &i2c15_sda_pq15>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C15, PQ14, PQ15, gpioq, 14, gpioq, 15)
 };
 
 &i2c16 {
-    pinctrl-0 = <&i2c16_scl_pq12 &i2c16_sda_pq11>;
-    pinctrl-names = "default";
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C16, PQ12, PQ11, gpioq, 12, gpioq, 11)
 };
 
 &spi1 {

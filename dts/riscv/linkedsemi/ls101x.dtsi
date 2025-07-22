@@ -271,6 +271,7 @@
 			#size-cells = <0>;
             interrupts = <45 3>;
             clocks = <&per_cctl LS_CCTL_CLKG0 LS_CLKG_SET_I2C1_POS LS_CLKG_CLR_I2C1_POS>;
+            clock-frequency = <144000000>;
             status = "disabled";
         };
 
@@ -281,6 +282,7 @@
 			#size-cells = <0>;
             interrupts = <46 3>;
             clocks = <&per_cctl LS_CCTL_CLKG0 LS_CLKG_SET_I2C2_POS LS_CLKG_CLR_I2C2_POS>;
+            clock-frequency = <144000000>;
             status = "disabled";
         };
 
