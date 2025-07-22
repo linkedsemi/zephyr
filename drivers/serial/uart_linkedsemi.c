@@ -24,7 +24,6 @@
 #include <stdlib.h>
 #include <ls_hal_uart.h>
 #include <ls_ll_uart.h>
-#include <ls_soc_gpio.h>
 
 #include <field_manipulate.h>
 #include <zephyr/irq.h>
@@ -36,7 +35,6 @@
 #include <reg_rcc.h>
 #elif defined(CONFIG_SOC_LS1010)
 #include "reg_sysc_per.h"
-#include "ls_soc_gpio.h"
 #endif
 
 #ifdef CONFIG_RISCV_HAS_CLIC
