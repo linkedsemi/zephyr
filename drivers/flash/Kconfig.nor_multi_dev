@@ -18,8 +18,9 @@ if SPI_NOR_MULTI_DEV
 
 choice SPI_NOR_SFDP
 	prompt "Source for Serial Flash Discoverable Parameters"
-	default SPI_NOR_SFDP_MINIMAL
+	default SPI_NOR_SFDP_RUNTIME
 
+if 0
 config SPI_NOR_SFDP_MINIMAL
 	bool "Fixed flash configuration"
 	help
@@ -34,6 +35,7 @@ config SPI_NOR_SFDP_DEVICETREE
 	  The JESD216 Basic Flash Parameters table must be provided in the
 	  sfdp-bfp property in devicetree.  The size and jedec-id properties are
 	  also required.
+endif
 
 config SPI_NOR_SFDP_RUNTIME
 	bool "Read flash parameters at runtime"

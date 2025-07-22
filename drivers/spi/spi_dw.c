@@ -34,6 +34,7 @@ LOG_MODULE_REGISTER(spi_dw);
 #include <zephyr/drivers/interrupt_controller/ioapic.h>
 #endif
 
+#include <zephyr/drivers/spi_nor.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/spi/rtio.h>
 #include <zephyr/irq.h>
@@ -530,6 +531,98 @@ out:
 	completed(dev, error);
 }
 
+#define SPI_NOR_DUMMY_CYCLE_MAX 5
+static int spi_dw_nor_transceive(const struct device *dev,
+						const struct spi_config *config,
+						struct spi_nor_op_info *op_info)
+{
+	bool is_addressed = (op_info->addr_len > 0);
+	bool is_write = (SPI_NOR_DATA_DIRECT_OUT == op_info->data_direct);
+	uint8_t buf[5 + SPI_NOR_DUMMY_CYCLE_MAX] = { 0 };
+	struct spi_buf spi_buf[2] = {
+		{
+			.buf = buf,
+			.len = 1,
+		},
+		{
+			.buf = op_info->buf,
+			.len = op_info->data_len,
+		}
+	};
+
+	buf[0] = op_info->opcode;
+	if (is_addressed) {
+		bool access_24bit = (3 == op_info->addr_len);
+		bool access_32bit = (4 == op_info->addr_len);
+		bool use_32bit = (access_32bit || (!access_24bit));
+		union {
+			uint32_t u32;
+			uint8_t u8[4];
+		} addr32 = {
+			.u32 = sys_cpu_to_be32(op_info->addr),
+		};
+
+		if (use_32bit) {
+			memcpy(&buf[1], &addr32.u8[0], 4);
+			spi_buf[0].len += 4;
+		} else {
+			memcpy(&buf[1], &addr32.u8[1], 3);
+			spi_buf[0].len += 3;
+		}
+
+		spi_buf[0].len +=
+			(op_info->dummy_cycle / (8 / JESD216_GET_ADDR_BUSWIDTH(op_info->mode)));
+	};
+
+	const struct spi_buf_set tx_set = {
+		.buffers = spi_buf,
+		.count = (op_info->data_len != 0) ? 2 : 1,
+	};
+
+	const struct spi_buf_set rx_set = {
+		.buffers = spi_buf,
+		.count = 2,
+	};
+
+	if (is_write) {
+		return transceive(dev, config, &tx_set, NULL, false, NULL, NULL);
+	}
+
+	return transceive(dev, config, &tx_set, &rx_set, false, NULL, NULL);;
+}
+
+static int spi_dw_nor_read_init(const struct device *dev,
+						const struct spi_config *config,
+						struct spi_nor_op_info *op_info)
+{
+	int ret = 0;
+
+	LOG_DBG("mode %08x, cmd: %x, dummy: %d, frequency: %d",
+		op_info->mode, op_info->opcode, op_info->dummy_cycle,
+		config->frequency);
+
+	return ret;
+}
+
+static int spi_dw_nor_write_init(const struct device *dev,
+						const struct spi_config *config,
+						struct spi_nor_op_info *op_info)
+{
+	int ret = 0;
+
+	LOG_DBG("mode %08x, cmd: %x, dummy: %d, frequency: %d",
+		op_info->mode, op_info->opcode, op_info->dummy_cycle,
+		config->frequency);
+
+	return ret;
+}
+
+static const struct spi_nor_ops spi_dw_nor_ops = {
+	.transceive = spi_dw_nor_transceive,
+	.read_init = spi_dw_nor_read_init,
+	.write_init = spi_dw_nor_write_init,
+};
+
 static const struct spi_driver_api dw_spi_api = {
 	.transceive = spi_dw_transceive,
 #ifdef CONFIG_SPI_ASYNC
@@ -539,6 +632,7 @@ static const struct spi_driver_api dw_spi_api = {
 	.iodev_submit = spi_rtio_iodev_default_submit,
 #endif
 	.release = spi_dw_release,
+	.spi_nor_op = &spi_dw_nor_ops,
 };
 
 int spi_dw_init(const struct device *dev)
