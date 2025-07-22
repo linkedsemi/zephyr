@@ -30,6 +30,7 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/rtio/rtio.h>
 #include <zephyr/stats/stats.h>
+#include <zephyr/drivers/spi_nor.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -676,6 +677,23 @@ typedef void (*spi_api_iodev_submit)(const struct device *dev,
 typedef int (*spi_api_release)(const struct device *dev,
 			       const struct spi_config *config);
 
+typedef int (*spi_nor_transceive)(const struct device *dev,
+				  const struct spi_config *config,
+				  struct spi_nor_op_info *op_info);
+
+typedef int (*spi_nor_read_init)(const struct device *dev,
+				 const struct spi_config *config,
+				 struct spi_nor_op_info *read_op_info);
+
+typedef int (*spi_nor_write_init)(const struct device *dev,
+				  const struct spi_config *config,
+				  struct spi_nor_op_info *write_op_info);
+
+struct spi_nor_ops {
+	spi_nor_transceive transceive;
+	spi_nor_read_init read_init;
+	spi_nor_write_init write_init;
+};
 
 /**
  * @brief SPI driver API
@@ -690,6 +708,7 @@ __subsystem struct spi_driver_api {
 	spi_api_iodev_submit iodev_submit;
 #endif /* CONFIG_SPI_RTIO */
 	spi_api_release release;
+	const struct spi_nor_ops *spi_nor_op;
 };
 
 /**
