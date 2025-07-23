@@ -503,28 +503,37 @@ err:
 
 static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c_clk)
 {
-	uint16_t cycle_count;
-	uint8_t prescalar = 1;
-	int16_t scll, sclh, scldel, sdadel;
-	do{
-		prescalar += 1;
-		cycle_count = config->clock_frequency/i2c_clk/prescalar;
-	}while(cycle_count>256);
+	uint16_t cycle_count = 0;
+	uint8_t prescalar = 0;
+	int16_t scll = 0;
+	int16_t sclh = 0;
+	int16_t scldel = 0;
+	int16_t sdadel = 0;
 
-	scll = (cycle_count-4) >> 1;
-	scldel = scll>16?15:scll-2;
-	while((scll - scldel) > (scll >> 1)) {
-		prescalar += 1;
-		cycle_count = config->clock_frequency/i2c_clk/prescalar;
-		scll = (cycle_count-4) >> 1;
-		scldel = scll>16?15:scll-2;
-	};
-	__ASSERT(cycle_count>=16&&prescalar<=16,"Invalid i2c timing");
+	uint8_t __prescalar = 1;
+	uint16_t __cycle_count;
+	int16_t __scll;
 
-    sclh = scll;
+	while (1) {
+		__prescalar++;
+		__cycle_count = config->clock_frequency / i2c_clk / __prescalar;
+		__scll = __cycle_count >> 1;
+
+		if (((__cycle_count > 256) || (__scll > 16)) && (__cycle_count >= 16) && (__prescalar<=16)) {
+			prescalar = __prescalar;
+			cycle_count = __cycle_count;
+			scll = __scll;
+		} else {
+			break;
+		}
+	}
+	__ASSERT((cycle_count>=16) && (prescalar<=16) && (scll<48),"Invalid i2c timing");
+
+	scldel = (scll >> 1) > 16 ? 15 : (scll >> 1);
+	sclh = scll;
 	sdadel = 0;
-   	MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK), 
-        (prescalar - 1)<<I2C_TIMINGR_PRESC_POS|sclh<<I2C_TIMINGR_SCLH_POS|scll<<I2C_TIMINGR_SCLL_POS|sdadel<<I2C_TIMINGR_SDADEL_POS|scldel<<I2C_TIMINGR_SCLDEL_POS);	
+    MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK),
+        (prescalar - 1)<<I2C_TIMINGR_PRESC_POS|sclh<<I2C_TIMINGR_SCLH_POS|scll<<I2C_TIMINGR_SCLL_POS|sdadel<<I2C_TIMINGR_SDADEL_POS|scldel<<I2C_TIMINGR_SCLDEL_POS);
 }
 
 static void i2c_reenable(const struct i2c_ls_config *config ,uint32_t i2c_clk)
