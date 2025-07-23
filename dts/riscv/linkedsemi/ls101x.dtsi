@@ -339,6 +339,16 @@
             clocks = <&cpu_cctl LS_CCTL_CLKG LS_CLKG_SET_USB_POS LS_CLKG_CLR_USB_POS>;
             status = "disabled";
         };
+
+      iwdgt:watchdog@0x4000f120 {
+          compatible = "linkedsemi,ls-watchdog";
+          reg = <0x4000F120 0x400>;
+          interrupts = <17 4>;
+          status = "disabled";
+        	clocks = <&v33_cctl LS_CCTL_CLKG4 LS_CLKG_SET_WDT_MASK LS_CLKG_CLR_WDT_MASK>;
+          clock-frequency = <32768>;
+        };
+  
     };
     power-states {
         idle: idle{
