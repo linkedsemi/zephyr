@@ -41,14 +41,15 @@ int main(void)
 
     struct wdt_reset_en *sec_iwdt_reset_en = wdt_reset_en_val_get();
     /* memset sec_iwdt_reset_en is an essential step */
-    memset(sec_iwdt_reset_en, 0, sizeof(struct wdt_reset_en));
+    memset(sec_iwdt_reset_en, 0xff, sizeof(struct wdt_reset_en));
     sec_iwdt_reset_en->UART1 = 1;
-    sec_iwdt_reset_en->PSRAM = 1;
+    sec_iwdt_reset_en->QSPI1 = 0;
 
     HAL_IWDG_Init(SEC_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
     // HAL_IWDG_Init(SEC_PMU_IWDG, BOOT_WDG_VALUE_BASE_S * 2);
 
     sec_iwdt_reset_en_set(sec_iwdt_reset_en);
+    sys_cache_data_flush_and_invd_range(sec_iwdt_reset_en, sizeof(struct wdt_reset_en));
 
     while(1) {
         printf("wait for reset..\n");
