@@ -72,6 +72,11 @@ void reset_reason_init(void)
         reset_src = SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK;
         sec_wdt_reset_reason_clean();
         if (SYSC_SEC_PER_RST_FROM_IWDT1_MASK & reset_src) {
+            wdt_reset_en.value1 &= IWDT_RSTEN1_ALL_MASK;
+            wdt_reset_en.value2 &= IWDT_RSTEN2_ALL_MASK;
+            wdt_reset_en.value3 &= IWDT_RSTEN3_ALL_MASK;
+            wdt_reset_en.value4 &= IWDT_RSTEN4_ALL_MASK;
+            wdt_reset_en.value5 &= IWDT_RSTEN5_ALL_MASK;
             if ((IWDT_RSTEN1_ALL_MASK == wdt_reset_en.value1)
                 && (IWDT_RSTEN2_ALL_MASK == wdt_reset_en.value2)
                 && (IWDT_RSTEN3_ALL_MASK == wdt_reset_en.value3)
