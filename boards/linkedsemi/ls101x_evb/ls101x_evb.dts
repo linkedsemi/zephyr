@@ -34,7 +34,8 @@
 		led0 = &led0;
 		sw0 = &btn0;
 		peci-0 = &peci0;
-		rtc0 = &rtc0;		
+    rtc0 = &rtc0;	
+    watchdog0 = &iwdgt;
 	};
 
 	leds{
@@ -197,6 +198,11 @@ zephyr_udc0: &usb {
 	pinctrl-names = "default";
 
 	cs-gpios = <&gpioa 13 GPIO_ACTIVE_LOW>;
+};
+
+&iwdgt
+{
+	status = "okay";
 };
 
 &i2c1 {

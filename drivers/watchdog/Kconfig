@@ -132,6 +132,8 @@ source "drivers/watchdog/Kconfig.numaker"
 
 source "drivers/watchdog/Kconfig.ene"
 
+source "drivers/watchdog/Kconfig.ls"
+
 source "drivers/watchdog/Kconfig.litex"
 
 endif # WATCHDOG

@@ -11,7 +11,7 @@ properties:
   clock-frequency:
     type: int
     required: true
-    description: CAP模块输入时钟频率(单位Hz)
+    description: "Input clock frequency of the CAP module (unit: Hz)"
   prescaler:
     type: int
     required: true
