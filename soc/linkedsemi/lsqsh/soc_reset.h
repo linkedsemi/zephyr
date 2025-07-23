@@ -21,8 +21,6 @@ enum reset_reason {
     SEC_WWDT_PARTIAL_RESET, /* reset source: 1. SEC_WWDT && partial peripherals */
     SEC_IWDT_HART_RESET, /* reset source: 1. SEC_IWDT && only hart */
     SEC_WWDT_HART_RESET, /* reset source: 1. SEC_WWDT && only hart */
-    SEC_IWDT_RESET, /* reset source: 1. SEC_IWDT && no reserved information to indicate full/partial/hart reset */
-    SEC_WWDT_RESET, /* reset source: 1. SEC_WWDT && no reserved information to indicate full/partial/hart reset */
     /* sec per/app per reg && sec per/app per reg indicate */
     SOFT_HART_RESET, /* reset source: write cpu1/cpu2 core reset reg */
 

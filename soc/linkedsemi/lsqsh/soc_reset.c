@@ -92,7 +92,7 @@ void reset_reason_init(void)
                 ret = SEC_IWDT_PARTIAL_RESET;
             } else {
                 /* unreachable */
-                ret = SEC_IWDT_RESET;
+                for (;;) {}
             }
 
             if (wdt_reset_en.PSRAM) {
