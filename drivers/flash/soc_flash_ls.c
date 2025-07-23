@@ -463,7 +463,7 @@ static struct flash_driver_api flash_ls_api = {
 				.base = DT_REG_ADDR(node_id),\
 				.size = DT_REG_SIZE(node_id),\
 				.end = (DT_REG_ADDR(node_id) + DT_REG_SIZE(node_id)),\
-				.attr = DT_PROP(node_id, attr),\
+				.attr = DT_PROP_OR(node_id, attr, 0),\
 			},\
 
 #define LS_FLASH_CONTROLLER_CHILD(node_id)\
