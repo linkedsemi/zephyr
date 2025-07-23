@@ -1697,6 +1697,91 @@ static int spi_nor_read_jedec_id(const struct device *dev,
 	return ret;
 }
 
+int spi_nor_get_jedec_id(const struct device *dev, uint8_t *id)
+{
+	struct spi_nor_data *data = dev->data;
+
+	if (NULL == id) {
+		return -EINVAL;
+	}
+	id[0] = data->jedec_id[0];
+	id[1] = data->jedec_id[1];
+	id[2] = data->jedec_id[2];
+
+	return 0;
+}
+
+int spi_nor_rdsr_by_cmd(const struct device *dev, uint8_t cmd)
+{
+	uint8_t reg;
+	struct spi_nor_op_info op_info =
+			SPI_NOR_OP_INFO(JESD216_MODE_111, cmd,
+				0, 0, 0, &reg, sizeof(reg), SPI_NOR_DATA_DIRECT_IN);
+
+	int ret = spi_nor_op_exec(dev, &op_info);
+
+	if (ret == 0) {
+		ret = reg;
+	}
+
+	return ret;
+}
+
+int spi_nor_get_4byte_mode(const struct device *dev, bool* en4b)
+{
+	uint8_t id[4] = {0};
+	int ret;
+	ret = spi_nor_read_jedec_id(dev, id);
+	if (ret != 0) {
+		LOG_ERR("JEDEC ID read failed: %d", ret);
+		return ret;
+	}
+	int en4b_pos = 0;
+	uint8_t opcode = 0;
+	switch (id[0]) {
+	//mxic cr, 15h, bit5
+	case SPI_NOR_MFR_ID_MXIC:
+		LOG_DBG("Macronix");
+		opcode = SPI_NOR_CMD_RDCR;
+		en4b_pos = 5;
+		break;
+	//winbond sr3, 15h, bit0
+	case SPI_NOR_MFR_ID_WINBOND:
+		LOG_DBG("Winbond");
+		opcode = SPI_NOR_CMD_RDSR3;
+		en4b_pos = 0;
+		break;
+	//gd sr2, 35h, bit0
+	case SPI_NOR_MFR_ID_GIGADEVICE:
+		LOG_DBG("Gigadevice");
+		opcode = SPI_NOR_CMD_RDSR2;
+		en4b_pos = 0;
+		//GD25LB512MEFIRR fr, 70h, bit0
+		if (id[1] == 0x67 && id[2] == 0x1a) {
+			LOG_DBG("GD25LB512MEFIRR");
+			opcode = SPI_NOR_CMD_RDFR;
+			en4b_pos = 0;
+		} else if (id[1] == 0x60 && id[2] == 0x1a) {
+			LOG_DBG("GD25LB512MFFIRR");
+			opcode = SPI_NOR_CMD_RDSR3;
+			en4b_pos = 3;
+		}
+		break;
+	default:
+		LOG_ERR("%s jedec id:0x%02x unkown", dev->name, id[0]);
+		return -ENXIO;
+	}
+
+	ret = spi_nor_rdsr_by_cmd(dev, opcode);
+	if (ret < 0) {
+		LOG_ERR("spi_nor_rdsr_by_cmd id:%d opcode:0x%02x err:%d", id[0], opcode, ret);
+		return ret;
+	}
+	*en4b = ret & BIT(en4b_pos);
+
+	return 0;
+}
+
 /* Put the device into the appropriate address mode, if supported.
  *
  * On successful return spi_nor_data::flag_access_32bit has been set
