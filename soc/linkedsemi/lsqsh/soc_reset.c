@@ -11,8 +11,8 @@
 #define MAGIC_VALUE 0xdeadbeef
 
 static enum reset_reason reset_reason = NO_RESET_REASON;
-struct wdt_reset_en wdt_reset_en __noinit;
-static volatile uint32_t magic __noinit IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)));
+struct wdt_reset_en wdt_reset_en __nocache;
+static volatile uint32_t magic __nocache IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)));
 
 __maybe_unused static void global_reset_reason_clean(void)
 {
