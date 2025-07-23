@@ -79,6 +79,7 @@
 #define SPI_NOR_CMD_PP_1_4_4_4B  0x3e  /* Quad Page program (1-4-4) 4 Byte Address */
 
 #define SPI_NOR_CMD_RDSFDP          0x5A    /* Read SFDP */
+#define SPI_NOR_CMD_RDFR            0x70    /* Read flag register  */
 
 #define SPI_NOR_CMD_MXIC_ENQPI      0x35
 #define SPI_NOR_CMD_WINBOND_ENQPI   0x38
@@ -206,5 +207,8 @@ int spi_nor_erase_by_cmd(const struct device *dev, off_t addr,
 			 size_t size, uint8_t cmd);
 int spi_nor_get_erase_sz(const struct device *dev, uint8_t cmd);
 int spi_nor_rst_by_cmd(const struct device *dev);
+/* get jedec id from buffer */
+int spi_nor_get_jedec_id(const struct device *dev, uint8_t *id);
+int spi_nor_get_4byte_mode(const struct device *dev, bool* en4b);
 
 #endif /*__SPI_NOR_H__*/
