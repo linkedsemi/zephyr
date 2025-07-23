@@ -46,9 +46,7 @@ typedef void (*irq_config_func_t)(const struct device *port);
 
 struct spi_ls_config {
 	reg_spi_t *instance;
-#ifdef CONFIG_SPI_LS_INTERRUPT
 	irq_config_func_t irq_config;
-#endif
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -274,9 +272,8 @@ static void spi_ls_complete(const struct device *dev, int status)
 	struct spi_ls_data *data = dev->data;
 	reg_spi_t *spi = cfg->instance;
 
-#ifdef CONFIG_SPI_LS_INTERRUPT
 	spi->IDR = SPI_IT_TXE | SPI_IT_RXNE;
-#endif /* CONFIG_SPI_LS_INTERRUPT */
+
 
     if (SPI_OP_MODE_GET(data->ctx.config->operation) == SPI_OP_MODE_MASTER) {
         /* Check SR busy status */
@@ -292,12 +289,9 @@ static void spi_ls_complete(const struct device *dev, int status)
 		REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
 	}
 
-#ifdef CONFIG_SPI_LS_INTERRUPT
 	spi_context_complete(&data->ctx, dev, status);
-#endif
 }
 
-#ifdef CONFIG_SPI_LS_INTERRUPT
 static void spi_ls_isr(const struct device *dev)
 {
 	const struct spi_ls_config *cfg = dev->config;
@@ -321,7 +315,6 @@ static void spi_ls_isr(const struct device *dev)
 
     spi->ICR = SPI_ICR_TXEIC_MASK;
 }
-#endif
 
 static int spi_ls_transceive(const struct device *dev,
 				const struct spi_config *config,
@@ -359,7 +352,6 @@ static int spi_ls_transceive(const struct device *dev,
     /* Enable the selected SPI peripheral */
     REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 1);
     
-#ifdef CONFIG_SPI_LS_INTERRUPT
 	if (rx_bufs) {
 		spi->ICR = SPI_IT_RXNE;
         spi->IER = SPI_IT_RXNE;
@@ -369,14 +361,8 @@ static int spi_ls_transceive(const struct device *dev,
     spi->IER = SPI_IT_TXE;
 	
 	err = spi_context_wait_for_completion(&data->ctx);
-#else
-	do {
-		err = spi_data_exchange(spi, data);
-	} while (spi_context_tx_on(ctx) || spi_context_rx_on(ctx));
-#endif /* CONFIG_SPI_LS_INTERRUPT */
 
    spi_ls_complete(dev, err);
-
     #ifdef CONFIG_SPI_SLAVE
 	if (spi_context_is_slave(&data->ctx) && !err) {
 		err = data->ctx.recv_frames;
@@ -415,7 +401,6 @@ static const struct spi_driver_api spi_ls_driver_api = {
 	.release = spi_ls_release,
 };
 
-#ifdef CONFIG_SPI_LS_INTERRUPT
 #define LS_SPI_IRQ_HANDLER_DECL(id)					\
 	static void spi_ls_irq_config_func_##id(const struct device *dev)
 #define LS_SPI_IRQ_HANDLER_FUNC(id)					\
@@ -428,11 +413,7 @@ static void spi_ls_irq_config_func_##id(const struct device *dev)		\
 		    spi_ls_isr, DEVICE_DT_INST_GET(id), 0);		\
 	irq_enable(DT_INST_IRQN(id));					\
 }
-#else
-#define LS_SPI_IRQ_HANDLER_DECL(id)
-#define LS_SPI_IRQ_HANDLER_FUNC(id)
-#define LS_SPI_IRQ_HANDLER(id)
-#endif /* CONFIG_SPI_LS_INTERRUPT */
+
 
 #if defined(CONFIG_SOC_SERIES_LE501X)
 static void spi_clock_init(void)
@@ -450,9 +431,8 @@ static int spi_ls_init(const struct device *dev)
     __maybe_unused int ret;
 	int err;
 
-#ifdef CONFIG_SPI_LS_INTERRUPT
+
 	dev_config->irq_config(dev);
-#endif
 
 #if defined(CONFIG_SOC_SERIES_LE501X)
     spi_clock_init();
