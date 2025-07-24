@@ -30,3 +30,8 @@ properties:
       description: |
         GPIO to which the I2C SDA signal is routed. This is only needed for I2C bus recovery
         support.
+
+    pinctrl-noinit:
+      type: boolean
+      description: |
+        do not run pinctrl during init stage
