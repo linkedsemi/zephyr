@@ -36,6 +36,7 @@ struct i2c_ls_config{
 	uint32_t clock_frequency;
 	struct gpio_dt_spec scl;
 	struct gpio_dt_spec sda;
+	bool pinctrl_noinit;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -570,6 +571,23 @@ static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
     return  0;
 }
 
+int i2c_ls_pinctrl(const struct device *dev, uint32_t pinctrl_state)
+{
+	const struct i2c_ls_config *dev_config = dev->config;
+	int ret = 0;
+
+	__ASSERT_NO_MSG(dev);
+
+	/* Configure dt provided device signals when available */
+	ret = pinctrl_apply_state(dev_config->pcfg, pinctrl_state);
+	if (ret < 0) {
+		LOG_ERR("%s: Could not configure pins", dev->name);
+	}
+	i2c_idle_check_prepare(dev, dev_config->pcfg, pinctrl_state);
+
+	return ret;
+}
+
 static int i2c_ls_init(const struct device *dev)
 {
 	const struct i2c_ls_config *dev_config = dev->config;
@@ -615,12 +633,9 @@ static int i2c_ls_init(const struct device *dev)
 #endif
 
 #if defined(CONFIG_PINCTRL)
-    /* Configure dt provided device signals when available */
-    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret < 0) {
-        LOG_ERR("%s: Could not configure pins", dev->name);
-    }
-    i2c_idle_check_prepare(dev, dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+	if (!dev_config->pinctrl_noinit) {
+		i2c_ls_pinctrl(dev, PINCTRL_STATE_DEFAULT);
+	}
 #endif
 
 	i2c_reenable(dev_config,100000);
@@ -700,6 +715,7 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 			(DT_INST_PROP(index, clock_frequency))),\
 		.scl =	GPIO_DT_SPEC_INST_GET_OR(index, scl_gpios, {0}),\
 		.sda = GPIO_DT_SPEC_INST_GET_OR(index, sda_gpios, {0}),\
+		.pinctrl_noinit = DT_INST_PROP_OR(index, pinctrl_noinit, 0),\
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), )) \
         IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), )) \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
