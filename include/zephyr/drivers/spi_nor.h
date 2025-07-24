@@ -210,5 +210,6 @@ int spi_nor_rst_by_cmd(const struct device *dev);
 /* get jedec id from buffer */
 int spi_nor_get_jedec_id(const struct device *dev, uint8_t *id);
 int spi_nor_get_4byte_mode(const struct device *dev, bool* en4b);
+int spi_nor_init_check(const struct device *dev);
 
 #endif /*__SPI_NOR_H__*/
