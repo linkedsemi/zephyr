@@ -7,14 +7,14 @@
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
 &pinctrl {
-    /omit-if-no-ref/i2c15_smba_pa00: i2c15_smba_pa00 {
-        pinmux = <I2C15_SMBA_FUNC2_PA00_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c16_smba_pa01: i2c16_smba_pa01 {
-        pinmux = <I2C16_SMBA_FUNC2_PA01_PINMUX>;
-        input-enable;
-    };
+    ///omit-if-no-ref/i2c15_smba_pa00: i2c15_smba_pa00 {
+    //     pinmux = <I2C15_SMBA_FUNC2_PA00_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c16_smba_pa01: i2c16_smba_pa01 {
+    //     pinmux = <I2C16_SMBA_FUNC2_PA01_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/fan_pwm14_pa02: fan_pwm14_pa02 {
         pinmux = <FAN_PWM14_FUNC2_PA02_PINMUX>;
         input-enable;
@@ -71,14 +71,14 @@
         pinmux = <FAN_PWM2_FUNC2_PA15_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c4_sda_pb00: i2c4_sda_pb00 {
-        pinmux = <I2C4_SDA_FUNC2_PB00_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c2_sda_pb01: i2c2_sda_pb01 {
-        pinmux = <I2C2_SDA_FUNC2_PB01_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c4_sda_pb00: i2c4_sda_pb00 {
+    //     pinmux = <I2C4_SDA_FUNC2_PB00_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c2_sda_pb01: i2c2_sda_pb01 {
+    //     pinmux = <I2C2_SDA_FUNC2_PB01_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/ltpi_ll_gpo1_pb02: ltpi_ll_gpo1_pb02 {
         pinmux = <LTPI_LL_GPO1_FUNC2_PB02_PINMUX>;
         input-enable;
@@ -87,18 +87,18 @@
         pinmux = <LTPI_NL_GPO21_FUNC2_PB03_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c2_scl_pb04: i2c2_scl_pb04 {
-        pinmux = <I2C2_SCL_FUNC2_PB04_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c2_scl_pb04: i2c2_scl_pb04 {
+    //     pinmux = <I2C2_SCL_FUNC2_PB04_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/ltpi_hpm_intr_pb05: ltpi_hpm_intr_pb05 {
         pinmux = <LTPI_HPM_INTR_FUNC2_PB05_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c1_scl_pb06: i2c1_scl_pb06 {
-        pinmux = <I2C1_SCL_FUNC2_PB06_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c1_scl_pb06: i2c1_scl_pb06 {
+    //     pinmux = <I2C1_SCL_FUNC2_PB06_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/ltpi_ll_gpi8_pb07: ltpi_ll_gpi8_pb07 {
         pinmux = <LTPI_LL_GPI8_FUNC2_PB07_PINMUX>;
         input-enable;
@@ -111,10 +111,10 @@
         pinmux = <LTPI_LL_GPO0_FUNC2_PB09_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c1_sda_pb10: i2c1_sda_pb10 {
-        pinmux = <I2C1_SDA_FUNC2_PB10_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c1_sda_pb10: i2c1_sda_pb10 {
+    //     pinmux = <I2C1_SDA_FUNC2_PB10_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/ltpi_nl_gpo20_pb11: ltpi_nl_gpo20_pb11 {
         pinmux = <LTPI_NL_GPO20_FUNC2_PB11_PINMUX>;
         input-enable;
@@ -127,14 +127,14 @@
         pinmux = <LTPI_SCM_INTR_FUNC2_PB13_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c3_sda_pb14: i2c3_sda_pb14 {
-        pinmux = <I2C3_SDA_FUNC2_PB14_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c3_scl_pb15: i2c3_scl_pb15 {
-        pinmux = <I2C3_SCL_FUNC2_PB15_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c3_sda_pb14: i2c3_sda_pb14 {
+    //     pinmux = <I2C3_SDA_FUNC2_PB14_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c3_scl_pb15: i2c3_scl_pb15 {
+    //     pinmux = <I2C3_SCL_FUNC2_PB15_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/keyo16_pc00: keyo16_pc00 {
         pinmux = <KEYO16_FUNC2_PC00_PINMUX>;
         input-enable;
@@ -147,58 +147,58 @@
         pinmux = <KEYO14_FUNC2_PC02_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c9_smba_pc03: i2c9_smba_pc03 {
-        pinmux = <I2C9_SMBA_FUNC2_PC03_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c10_smba_pc04: i2c10_smba_pc04 {
-        pinmux = <I2C10_SMBA_FUNC2_PC04_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_smba_pc05: i2c14_smba_pc05 {
-        pinmux = <I2C14_SMBA_FUNC2_PC05_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c5_smba_pc06: i2c5_smba_pc06 {
-        pinmux = <I2C5_SMBA_FUNC2_PC06_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c6_smba_pc07: i2c6_smba_pc07 {
-        pinmux = <I2C6_SMBA_FUNC2_PC07_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c7_smba_pc08: i2c7_smba_pc08 {
-        pinmux = <I2C7_SMBA_FUNC2_PC08_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c8_smba_pc09: i2c8_smba_pc09 {
-        pinmux = <I2C8_SMBA_FUNC2_PC09_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c9_smba_pc03: i2c9_smba_pc03 {
+    //     pinmux = <I2C9_SMBA_FUNC2_PC03_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c10_smba_pc04: i2c10_smba_pc04 {
+    //     pinmux = <I2C10_SMBA_FUNC2_PC04_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c14_smba_pc05: i2c14_smba_pc05 {
+    //     pinmux = <I2C14_SMBA_FUNC2_PC05_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c5_smba_pc06: i2c5_smba_pc06 {
+    //     pinmux = <I2C5_SMBA_FUNC2_PC06_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c6_smba_pc07: i2c6_smba_pc07 {
+    //     pinmux = <I2C6_SMBA_FUNC2_PC07_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c7_smba_pc08: i2c7_smba_pc08 {
+    //     pinmux = <I2C7_SMBA_FUNC2_PC08_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c8_smba_pc09: i2c8_smba_pc09 {
+    //     pinmux = <I2C8_SMBA_FUNC2_PC09_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/keyo17_pc10: keyo17_pc10 {
         pinmux = <KEYO17_FUNC2_PC10_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c15_smba_pc11: i2c15_smba_pc11 {
-        pinmux = <I2C15_SMBA_FUNC2_PC11_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c16_smba_pc12: i2c16_smba_pc12 {
-        pinmux = <I2C16_SMBA_FUNC2_PC12_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_smba_pc13: i2c13_smba_pc13 {
-        pinmux = <I2C13_SMBA_FUNC2_PC13_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_smba_pc14: i2c11_smba_pc14 {
-        pinmux = <I2C11_SMBA_FUNC2_PC14_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_smba_pc15: i2c12_smba_pc15 {
-        pinmux = <I2C12_SMBA_FUNC2_PC15_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c15_smba_pc11: i2c15_smba_pc11 {
+    //     pinmux = <I2C15_SMBA_FUNC2_PC11_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c16_smba_pc12: i2c16_smba_pc12 {
+    //     pinmux = <I2C16_SMBA_FUNC2_PC12_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c13_smba_pc13: i2c13_smba_pc13 {
+    //     pinmux = <I2C13_SMBA_FUNC2_PC13_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c11_smba_pc14: i2c11_smba_pc14 {
+    //     pinmux = <I2C11_SMBA_FUNC2_PC14_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c12_smba_pc15: i2c12_smba_pc15 {
+    //     pinmux = <I2C12_SMBA_FUNC2_PC15_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/uart2_ctsn_pd00: uart2_ctsn_pd00 {
         pinmux = <UART2_CTSN_FUNC2_PD00_PINMUX>;
         input-enable;
@@ -271,10 +271,10 @@
         pinmux = <LTPI_LL_GPI1_FUNC2_PE01_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c4_scl_pe02: i2c4_scl_pe02 {
-        pinmux = <I2C4_SCL_FUNC2_PE02_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c4_scl_pe02: i2c4_scl_pe02 {
+    //     pinmux = <I2C4_SCL_FUNC2_PE02_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/ltpi_ll_gpo2_pe03: ltpi_ll_gpo2_pe03 {
         pinmux = <LTPI_LL_GPO2_FUNC2_PE03_PINMUX>;
         input-enable;
@@ -559,166 +559,166 @@
         pinmux = <LTPI_NL_GPO29_FUNC2_PI15_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c10_scl_pj00: i2c10_scl_pj00 {
-        pinmux = <I2C10_SCL_FUNC2_PJ00_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c10_sda_pj01: i2c10_sda_pj01 {
-        pinmux = <I2C10_SDA_FUNC2_PJ01_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c9_scl_pj02: i2c9_scl_pj02 {
-        pinmux = <I2C9_SCL_FUNC2_PJ02_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c9_sda_pj03: i2c9_sda_pj03 {
-        pinmux = <I2C9_SDA_FUNC2_PJ03_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c8_scl_pj04: i2c8_scl_pj04 {
-        pinmux = <I2C8_SCL_FUNC2_PJ04_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c8_sda_pj05: i2c8_sda_pj05 {
-        pinmux = <I2C8_SDA_FUNC2_PJ05_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c7_scl_pj06: i2c7_scl_pj06 {
-        pinmux = <I2C7_SCL_FUNC2_PJ06_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c7_sda_pj07: i2c7_sda_pj07 {
-        pinmux = <I2C7_SDA_FUNC2_PJ07_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c6_scl_pj08: i2c6_scl_pj08 {
-        pinmux = <I2C6_SCL_FUNC2_PJ08_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c6_sda_pj09: i2c6_sda_pj09 {
-        pinmux = <I2C6_SDA_FUNC2_PJ09_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c5_scl_pj10: i2c5_scl_pj10 {
-        pinmux = <I2C5_SCL_FUNC2_PJ10_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c5_sda_pj11: i2c5_sda_pj11 {
-        pinmux = <I2C5_SDA_FUNC2_PJ11_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c4_scl_pj12: i2c4_scl_pj12 {
-        pinmux = <I2C4_SCL_FUNC2_PJ12_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c4_sda_pj13: i2c4_sda_pj13 {
-        pinmux = <I2C4_SDA_FUNC2_PJ13_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c3_scl_pj14: i2c3_scl_pj14 {
-        pinmux = <I2C3_SCL_FUNC2_PJ14_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c3_sda_pj15: i2c3_sda_pj15 {
-        pinmux = <I2C3_SDA_FUNC2_PJ15_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c2_scl_pk00: i2c2_scl_pk00 {
-        pinmux = <I2C2_SCL_FUNC2_PK00_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c2_sda_pk01: i2c2_sda_pk01 {
-        pinmux = <I2C2_SDA_FUNC2_PK01_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c1_scl_pk02: i2c1_scl_pk02 {
-        pinmux = <I2C1_SCL_FUNC2_PK02_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c1_sda_pk03: i2c1_sda_pk03 {
-        pinmux = <I2C1_SDA_FUNC2_PK03_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_scl_pk04: i2c11_scl_pk04 {
-        pinmux = <I2C11_SCL_FUNC2_PK04_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_sda_pk05: i2c11_sda_pk05 {
-        pinmux = <I2C11_SDA_FUNC2_PK05_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_scl_pk06: i2c12_scl_pk06 {
-        pinmux = <I2C12_SCL_FUNC2_PK06_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_sda_pk07: i2c12_sda_pk07 {
-        pinmux = <I2C12_SDA_FUNC2_PK07_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_scl_pk08: i2c13_scl_pk08 {
-        pinmux = <I2C13_SCL_FUNC2_PK08_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_sda_pk09: i2c13_sda_pk09 {
-        pinmux = <I2C13_SDA_FUNC2_PK09_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_scl_pk10: i2c14_scl_pk10 {
-        pinmux = <I2C14_SCL_FUNC2_PK10_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_sda_pk11: i2c14_sda_pk11 {
-        pinmux = <I2C14_SDA_FUNC2_PK11_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_sda_pk12: i2c14_sda_pk12 {
-        pinmux = <I2C14_SDA_FUNC2_PK12_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_scl_pk13: i2c14_scl_pk13 {
-        pinmux = <I2C14_SCL_FUNC2_PK13_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_sda_pk14: i2c13_sda_pk14 {
-        pinmux = <I2C13_SDA_FUNC2_PK14_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_scl_pk15: i2c13_scl_pk15 {
-        pinmux = <I2C13_SCL_FUNC2_PK15_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_sda_pm00: i2c12_sda_pm00 {
-        pinmux = <I2C12_SDA_FUNC2_PM00_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_scl_pm01: i2c12_scl_pm01 {
-        pinmux = <I2C12_SCL_FUNC2_PM01_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_sda_pm02: i2c11_sda_pm02 {
-        pinmux = <I2C11_SDA_FUNC2_PM02_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_scl_pm03: i2c11_scl_pm03 {
-        pinmux = <I2C11_SCL_FUNC2_PM03_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c11_smba_pm04: i2c11_smba_pm04 {
-        pinmux = <I2C11_SMBA_FUNC2_PM04_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c12_smba_pm05: i2c12_smba_pm05 {
-        pinmux = <I2C12_SMBA_FUNC2_PM05_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c13_smba_pm06: i2c13_smba_pm06 {
-        pinmux = <I2C13_SMBA_FUNC2_PM06_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c14_smba_pm07: i2c14_smba_pm07 {
-        pinmux = <I2C14_SMBA_FUNC2_PM07_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c10_scl_pj00: i2c10_scl_pj00 {
+    //     pinmux = <I2C10_SCL_FUNC2_PJ00_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c10_sda_pj01: i2c10_sda_pj01 {
+    //     pinmux = <I2C10_SDA_FUNC2_PJ01_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c9_scl_pj02: i2c9_scl_pj02 {
+    //     pinmux = <I2C9_SCL_FUNC2_PJ02_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c9_sda_pj03: i2c9_sda_pj03 {
+    //     pinmux = <I2C9_SDA_FUNC2_PJ03_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c8_scl_pj04: i2c8_scl_pj04 {
+    //     pinmux = <I2C8_SCL_FUNC2_PJ04_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c8_sda_pj05: i2c8_sda_pj05 {
+    //     pinmux = <I2C8_SDA_FUNC2_PJ05_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c7_scl_pj06: i2c7_scl_pj06 {
+    //     pinmux = <I2C7_SCL_FUNC2_PJ06_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c7_sda_pj07: i2c7_sda_pj07 {
+    //     pinmux = <I2C7_SDA_FUNC2_PJ07_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c6_scl_pj08: i2c6_scl_pj08 {
+    //     pinmux = <I2C6_SCL_FUNC2_PJ08_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c6_sda_pj09: i2c6_sda_pj09 {
+    //     pinmux = <I2C6_SDA_FUNC2_PJ09_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c5_scl_pj10: i2c5_scl_pj10 {
+    //     pinmux = <I2C5_SCL_FUNC2_PJ10_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c5_sda_pj11: i2c5_sda_pj11 {
+    //     pinmux = <I2C5_SDA_FUNC2_PJ11_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c4_scl_pj12: i2c4_scl_pj12 {
+    //     pinmux = <I2C4_SCL_FUNC2_PJ12_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c4_sda_pj13: i2c4_sda_pj13 {
+    //     pinmux = <I2C4_SDA_FUNC2_PJ13_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c3_scl_pj14: i2c3_scl_pj14 {
+    //     pinmux = <I2C3_SCL_FUNC2_PJ14_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c3_sda_pj15: i2c3_sda_pj15 {
+    //     pinmux = <I2C3_SDA_FUNC2_PJ15_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c2_scl_pk00: i2c2_scl_pk00 {
+    //     pinmux = <I2C2_SCL_FUNC2_PK00_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c2_sda_pk01: i2c2_sda_pk01 {
+    //     pinmux = <I2C2_SDA_FUNC2_PK01_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c1_scl_pk02: i2c1_scl_pk02 {
+    //     pinmux = <I2C1_SCL_FUNC2_PK02_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c1_sda_pk03: i2c1_sda_pk03 {
+    //     pinmux = <I2C1_SDA_FUNC2_PK03_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c11_scl_pk04: i2c11_scl_pk04 {
+    //     pinmux = <I2C11_SCL_FUNC2_PK04_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c11_sda_pk05: i2c11_sda_pk05 {
+    //     pinmux = <I2C11_SDA_FUNC2_PK05_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c12_scl_pk06: i2c12_scl_pk06 {
+    //     pinmux = <I2C12_SCL_FUNC2_PK06_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c12_sda_pk07: i2c12_sda_pk07 {
+    //     pinmux = <I2C12_SDA_FUNC2_PK07_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c13_scl_pk08: i2c13_scl_pk08 {
+    //     pinmux = <I2C13_SCL_FUNC2_PK08_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c13_sda_pk09: i2c13_sda_pk09 {
+    //     pinmux = <I2C13_SDA_FUNC2_PK09_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c14_scl_pk10: i2c14_scl_pk10 {
+    //     pinmux = <I2C14_SCL_FUNC2_PK10_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c14_sda_pk11: i2c14_sda_pk11 {
+    //     pinmux = <I2C14_SDA_FUNC2_PK11_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c14_sda_pk12: i2c14_sda_pk12 {
+    //     pinmux = <I2C14_SDA_FUNC2_PK12_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c14_scl_pk13: i2c14_scl_pk13 {
+    //     pinmux = <I2C14_SCL_FUNC2_PK13_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c13_sda_pk14: i2c13_sda_pk14 {
+    //     pinmux = <I2C13_SDA_FUNC2_PK14_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c13_scl_pk15: i2c13_scl_pk15 {
+    //     pinmux = <I2C13_SCL_FUNC2_PK15_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c12_sda_pm00: i2c12_sda_pm00 {
+    //     pinmux = <I2C12_SDA_FUNC2_PM00_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c12_scl_pm01: i2c12_scl_pm01 {
+    //     pinmux = <I2C12_SCL_FUNC2_PM01_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c11_sda_pm02: i2c11_sda_pm02 {
+    //     pinmux = <I2C11_SDA_FUNC2_PM02_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c11_scl_pm03: i2c11_scl_pm03 {
+    //     pinmux = <I2C11_SCL_FUNC2_PM03_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c11_smba_pm04: i2c11_smba_pm04 {
+    //     pinmux = <I2C11_SMBA_FUNC2_PM04_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c12_smba_pm05: i2c12_smba_pm05 {
+    //     pinmux = <I2C12_SMBA_FUNC2_PM05_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c13_smba_pm06: i2c13_smba_pm06 {
+    //     pinmux = <I2C13_SMBA_FUNC2_PM06_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c14_smba_pm07: i2c14_smba_pm07 {
+    //     pinmux = <I2C14_SMBA_FUNC2_PM07_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/fan_pwm10_pm08: fan_pwm10_pm08 {
         pinmux = <FAN_PWM10_FUNC2_PM08_PINMUX>;
         input-enable;
@@ -735,14 +735,14 @@
         pinmux = <FAN_PWM13_FUNC2_PM11_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c9_smba_pm12: i2c9_smba_pm12 {
-        pinmux = <I2C9_SMBA_FUNC2_PM12_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c10_smba_pm13: i2c10_smba_pm13 {
-        pinmux = <I2C10_SMBA_FUNC2_PM13_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c9_smba_pm12: i2c9_smba_pm12 {
+    //     pinmux = <I2C9_SMBA_FUNC2_PM12_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c10_smba_pm13: i2c10_smba_pm13 {
+    //     pinmux = <I2C10_SMBA_FUNC2_PM13_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/fan_pwm8_pm14: fan_pwm8_pm14 {
         pinmux = <FAN_PWM8_FUNC2_PM14_PINMUX>;
         input-enable;
@@ -1671,22 +1671,22 @@
         pinmux = <SGPIO1_MST_LD_FUNC3_PN01_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c15_scl_pn02: i2c15_scl_pn02 {
-        pinmux = <I2C15_SCL_FUNC3_PN02_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c15_sda_pn03: i2c15_sda_pn03 {
-        pinmux = <I2C15_SDA_FUNC3_PN03_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c16_scl_pn04: i2c16_scl_pn04 {
-        pinmux = <I2C16_SCL_FUNC3_PN04_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c16_sda_pn05: i2c16_sda_pn05 {
-        pinmux = <I2C16_SDA_FUNC3_PN05_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c15_scl_pn02: i2c15_scl_pn02 {
+    //     pinmux = <I2C15_SCL_FUNC3_PN02_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c15_sda_pn03: i2c15_sda_pn03 {
+    //     pinmux = <I2C15_SDA_FUNC3_PN03_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c16_scl_pn04: i2c16_scl_pn04 {
+    //     pinmux = <I2C16_SCL_FUNC3_PN04_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c16_sda_pn05: i2c16_sda_pn05 {
+    //     pinmux = <I2C16_SDA_FUNC3_PN05_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/uart12_txd_pn06: uart12_txd_pn06 {
         pinmux = <UART12_TXD_FUNC3_PN06_PINMUX>;
         input-enable;
@@ -1851,22 +1851,22 @@
         pinmux = <UART4_RTSN_FUNC4_PA05_PINMUX>;
         input-enable;
     };
-    /omit-if-no-ref/i2c2_smba_pa06: i2c2_smba_pa06 {
-        pinmux = <I2C2_SMBA_FUNC4_PA06_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c1_smba_pa07: i2c1_smba_pa07 {
-        pinmux = <I2C1_SMBA_FUNC4_PA07_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c3_smba_pa08: i2c3_smba_pa08 {
-        pinmux = <I2C3_SMBA_FUNC4_PA08_PINMUX>;
-        input-enable;
-    };
-    /omit-if-no-ref/i2c4_smba_pa09: i2c4_smba_pa09 {
-        pinmux = <I2C4_SMBA_FUNC4_PA09_PINMUX>;
-        input-enable;
-    };
+    // /omit-if-no-ref/i2c2_smba_pa06: i2c2_smba_pa06 {
+    //     pinmux = <I2C2_SMBA_FUNC4_PA06_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c1_smba_pa07: i2c1_smba_pa07 {
+    //     pinmux = <I2C1_SMBA_FUNC4_PA07_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c3_smba_pa08: i2c3_smba_pa08 {
+    //     pinmux = <I2C3_SMBA_FUNC4_PA08_PINMUX>;
+    //     input-enable;
+    // };
+    // /omit-if-no-ref/i2c4_smba_pa09: i2c4_smba_pa09 {
+    //     pinmux = <I2C4_SMBA_FUNC4_PA09_PINMUX>;
+    //     input-enable;
+    // };
     /omit-if-no-ref/rgmii2_mdc_pa10: rgmii2_mdc_pa10 {
         pinmux = <RGMII2_MDC_FUNC4_PA10_PINMUX>;
         input-enable;
