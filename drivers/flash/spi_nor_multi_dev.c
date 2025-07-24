@@ -222,6 +222,7 @@ struct spi_nor_data {
 
 	bool init_4b_mode_once;
 	bool re_init_support;
+	bool init_ok;
 };
 
 #define SPI_NOR_PROT_NUM 8
@@ -2562,8 +2563,25 @@ static int spi_nor_pm_control(const struct device *dev, enum pm_device_action ac
 	return rc;
 }
 
+int spi_nor_init_check(const struct device *dev)
+{
+	int ret;
+	struct spi_nor_data *data = dev->data;
+
+	if (!data->init_ok) {
+		ret = spi_nor_re_init(dev);
+		if (ret) {
+			return ret;
+		}
+	}
+
+	return 0;
+}
+
 int spi_nor_re_init(const struct device *dev)
 {
+	struct spi_nor_data *const data = dev->data;
+
 #if ANY_INST_HAS_WP_GPIOS
 	if (DEV_CFG(dev)->wp_gpios_exist) {
 		if (!device_is_ready(DEV_CFG(dev)->wp.port)) {
@@ -2589,7 +2607,12 @@ int spi_nor_re_init(const struct device *dev)
 	}
 #endif /* ANY_INST_HAS_HOLD_GPIOS */
 
-	return pm_device_driver_init(dev, spi_nor_pm_control);
+	int ret = pm_device_driver_init(dev, spi_nor_pm_control);
+	if (!ret) {
+		data->init_ok = true;
+	}
+
+	return ret;
 }
 
 /**
@@ -2789,6 +2812,7 @@ static const struct flash_driver_api spi_nor_api = {
 		},	\
 		.init_4b_mode_once = false,	\
 		.re_init_support = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), re_init_support),	\
+		.init_ok = false,	\
 	};	\
 	DEVICE_DT_INST_DEFINE(idx, &spi_nor_init, PM_DEVICE_DT_INST_GET(idx),	\
 			&spi_nor_##idx##_data, &spi_nor_##idx##_config,		\
