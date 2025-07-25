@@ -219,7 +219,10 @@ void soc_early_init_hook(void)
         while(1);
     }
 #endif
+
+#if defined(CONFIG_IRQ_NESTED)
     CLIC->CLICCFG = 0x7f;
+#endif
 
     SystemInit();
     // sys_init_none();
