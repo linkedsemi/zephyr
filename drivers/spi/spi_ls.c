@@ -91,13 +91,6 @@ static int spi_ls_configure(const struct device *dev,
         return -ENOTSUP;
     }
 
-    /* Word sizes other than 8 and 16 bits has not been implemented */
-    if ((SPI_WORD_SIZE_GET(config->operation) != 8)
-	    && (SPI_WORD_SIZE_GET(config->operation) != 16)) {
-		LOG_ERROR("Word sizes other than 8 and 16 bits are not supported");
-		return -ENOTSUP;
-	}
-
     if (SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_MASTER) {
         MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_MASTER);
         /* Hardware chip select mode */
