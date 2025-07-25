@@ -273,4 +273,8 @@ config PRECISE_EXCEPTION
 	bool "PRECISE_EXCEPTION"
 	default y
 
+config IRQ_NESTED
+	bool "PRECISE_EXCEPTION"
+	default n
+
 endif
