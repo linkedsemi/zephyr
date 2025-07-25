@@ -185,7 +185,7 @@ config CPU2_BOOT_ADDR
 
 config CPU2_XIP
 	bool "CPU2_XIP"
-	default n
+	default y
 
 config INIT_FLASH_FOR_DEBUG
 	bool "INIT_FLASH_FOR_DEBUG"
