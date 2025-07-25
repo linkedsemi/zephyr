@@ -14,7 +14,7 @@ const struct device *rtc = DEVICE_DT_INST_GET(0);
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 static const char *weekday_str[] = {
-    "一", "二", "三", "四", "五", "六","日"
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday","Sunday"
 };
 
 struct rtc_regs {
@@ -64,15 +64,15 @@ void main(void)
 
     if (!device_is_ready(rtc)) {
 
-        printk("RTC device not ready!\n");
+        LOG_INF("RTC device not ready!\n");
         return;
     }
     else  {
 
-        printk("RTC device ready is ok!\n");
+        LOG_INF("RTC device ready is ok!\n");
     }
 
-    printk("rtc driver ready? %d\n", device_is_ready(DEVICE_DT_INST_GET(0)));
+    LOG_INF("rtc driver ready? %d\n", device_is_ready(DEVICE_DT_INST_GET(0)));
 
     k_sleep(K_SECONDS(2));
 
@@ -90,11 +90,11 @@ void main(void)
 
     if (rtc_set_time(rtc, &set_tm) != 0) {
 
-        printk("Failed to set RTC time!\n");
+        LOG_INF("Failed to set RTC time!\n");
         return;
     }
 
-    printk("RTC time set to:  %04d年%02d月%02d日 周%s %02d:%02d:%02d\n",
+    LOG_INF("RTC time set to:  %04d.%02d.%02d %s %02d:%02d:%02d\n",
            set_tm.tm_year + 1900, set_tm.tm_mon, set_tm.tm_mday, weekday_str[set_tm.tm_wday-1],
            set_tm.tm_hour, set_tm.tm_min, set_tm.tm_sec);
 
@@ -131,7 +131,7 @@ void main(void)
 
     rtc_alarm_set_time(rtc, 0, alarm_mask, &alarm_tm);
 
-    printk("Alarm time set to:  %04d年%02d月%02d日 周%s %02d:%02d:%02d\n",
+    LOG_INF("Alarm time set to:  %04d.%02d.%02d %s %02d:%02d:%02d\n",
            alarm_tm.tm_year + 1900, alarm_tm.tm_mon, alarm_tm.tm_mday, weekday_str[alarm_tm.tm_wday-1],
            alarm_tm.tm_hour, alarm_tm.tm_min, alarm_tm.tm_sec);
     
@@ -140,14 +140,14 @@ void main(void)
 
     if (rtc_alarm_get_time(rtc, 0, &alarm_mask_read, &alarm_readback) == 0) {
 
-        printk(">>> [ReadBack Alarm] %04d年%02d月%02d日 周%s %02d:%02d:%02d\n",
+        LOG_INF(">>> [ReadBack Alarm] %04d.%02d.%02d %s %02d:%02d:%02d\n",
                alarm_readback.tm_year + 1900, alarm_readback.tm_mon, alarm_readback.tm_mday,
                weekday_str[alarm_readback.tm_wday - 1],
                alarm_readback.tm_hour, alarm_readback.tm_min, alarm_readback.tm_sec);
-               printk(">>> Alarm mask: 0x%04x\n", alarm_mask_read);
+               LOG_INF(">>> Alarm mask: 0x%04x\n", alarm_mask_read);
     } else {
 
-        printk(">>> Failed to read back alarm time.\n");
+        LOG_INF(">>> Failed to read back alarm time.\n");
     }
 
     int ret = rtc_update_set_callback(rtc, update_alarm_callback, false);
@@ -182,7 +182,7 @@ void main(void)
         // ============ get_time =============
         rtc_get_time(rtc, &now);
 
-        printk("[LOOP] Current RTC time: %04d年%02d月%02d日 周%s %02d:%02d:%02d\n",
+        LOG_INF("[LOOP] Current RTC time: %04d.%02d.%02d %s %02d:%02d:%02d\n",
                 now.tm_year + 1900, now.tm_mon, now.tm_mday,  weekday_str[now.tm_wday-1],
                 now.tm_hour, now.tm_min, now.tm_sec);
 
@@ -190,10 +190,10 @@ void main(void)
         if (api->alarm_is_pending) {
 
         pending = api->alarm_is_pending(rtc_dev, 0); 
-        printk("Alarm pending: %s\n", pending ? "YES" : "NO");
+        LOG_INF("Alarm pending: %s\n", pending ? "YES" : "NO");
         } else {
 
-        printk("alarm_is_pending() not implemented in driver\n");
+        LOG_INF("alarm_is_pending() not implemented in driver\n");
         }
 
         LOG_INF("rtc_ctrl     = %08x[%08x]", (uint32_t)&RTC->CTRL, RTC->CTRL);
@@ -209,10 +209,10 @@ void main(void)
         k_sleep(K_SECONDS(1));
         if (result == 0) {
 
-        printf("RTC calibration: %d ppb\n", calibration_value);
+        LOG_INF("RTC calibration: %d ppb\n", calibration_value);
         } else {
 
-        printf("get calibration fault, result: %d\n", result);
+        LOG_INF("get calibration fault, result: %d\n", result);
         }
 
         k_sleep(K_SECONDS(1));

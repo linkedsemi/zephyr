@@ -5,7 +5,6 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
-#include <zephyr/sys/printk.h>
 #include <zephyr/drivers/clock_control.h>
 #include <reg_rtcv2_type.h>
 #include <soc_clock.h>
@@ -147,7 +146,7 @@ static bool is_valid_time(const struct rtc_time *t) {
 static int rtc_ls_set_time(const struct device *dev, const struct rtc_time *tm) {
     struct rtc_ls_data *data = dev->data;
     if (!is_valid_time(tm)) {
-    printk("设置时间非法，操作已中止！\n");
+    LOG_INF("The set time is illegal. The operation has been aborted!\n");
     return -EINVAL;
     }
 
@@ -185,11 +184,11 @@ static int rtc_ls_alarm_set_time(const struct device *dev, uint16_t id, uint16_t
     struct rtc_ls_data *data = dev->data;
 
     if (!is_valid_time(tm)) {
-    printk("设置时间非法，操作已中止！\n");
+    LOG_INF("The set time is illegal. The operation has been aborted!\n");
     return -EINVAL;
     }
 
-    printk("alarm_set_time(): tm->hour=%d min=%d sec=%d\n", tm->tm_hour, tm->tm_min, tm->tm_sec);
+    LOG_INF("alarm_set_time(): tm->hour=%d min=%d sec=%d\n", tm->tm_hour, tm->tm_min, tm->tm_sec);
 
     k_spinlock_key_t key = k_spin_lock(&data->lock);
 
@@ -344,12 +343,12 @@ static int rtc_ls_set_calibration(const struct device *dev, int32_t calibration)
     else{
 
         uint32_t cyc_1hz_m1_act = cfg->cyc_1hz+(floor_custom_divisor(calibration,RTC_CALIB_MAX_PPB));
-        // printf("cyc_1hz_m1_act: %d \n",cyc_1hz_m1_act);
+        // LOG_INF("cyc_1hz_m1_act: %d \n",cyc_1hz_m1_act);
 
         int64_t calib_cyc_pre = (calibration%RTC_CALIB_MAX_PPB);
 
         uint32_t calib_cyc_act = 1*60 + (calib_cyc_pre*60/RTC_CALIB_MAX_PPB);
-        // printf("calib_cyc_act: %d \n",calib_cyc_act);
+        // LOG_INF("calib_cyc_act: %d \n",calib_cyc_act);
 
         rtc_cycle_config(dev, cyc_1hz_m1_act , calib_cyc_act, true);
 
