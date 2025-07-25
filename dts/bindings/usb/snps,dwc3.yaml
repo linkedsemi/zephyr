@@ -1,0 +1,33 @@
+# Copyright (c) 2023 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
+
+description: DesignWare USB 3.0 controller
+
+compatible: "snps,dwc3"
+
+include: [base.yaml,reset-device.yaml]
+
+bus: usb
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: true
+
+  num-in-eps:
+    type: int
+    required: true
+    description: |
+      Number of configured OUT endpoints including control endpoint.
+
+  num-out-eps:
+    type: int
+    required: true
+    description: |
+      Number of configured IN endpoints including control endpoint.
+
+  phys:
+    type: phandle
+    description: PHY provider specifier
