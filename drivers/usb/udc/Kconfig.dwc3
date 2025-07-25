@@ -1,0 +1,31 @@
+# Copyright (c) 2023 Nordic Semiconductor ASA
+# SPDX-License-Identifier: Apache-2.0
+
+config UDC_DWC3
+	bool "DWC3 USB device controller driver"
+	default y
+	depends on DT_HAS_SNPS_DWC3_ENABLED
+	select EVENTS
+	help
+	  DWC3 USB device controller driver.
+
+config UDC_DWC3_DMA
+	bool "DWC3 USB DMA support"
+	default y
+	depends on UDC_DWC3
+	help
+	  Enable Buffer DMA if DWC3 USB controller supports Internal DMA.
+
+config UDC_DWC3_STACK_SIZE
+	int "UDC DWC3 driver internal thread stack size"
+	depends on UDC_DWC3
+	default 2048
+	help
+	  DWC3 driver internal thread stack size.
+
+config UDC_DWC3_THREAD_PRIORITY
+	int "UDC DWC3 driver thread priority"
+	depends on UDC_DWC3
+	default 8
+	help
+	  DWC3 driver thread priority.

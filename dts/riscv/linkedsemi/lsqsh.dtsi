@@ -1300,6 +1300,27 @@
             i3c-scl-hz = <1000000>;
             status = "disabled";
         };
+
+        usb_dwc3: usb@40050000 {
+            compatible = "snps,dwc3";
+            reg = <0x40050000 0xe000>;
+            interrupts = <USB2_IRQN 3>;
+            clocks = <USB2_CLOCK>;
+            resets = <USB2_RESET>;
+            phys = <&utmi_phy>;
+            num-in-eps = <4>;
+            num-out-eps = <4>;
+            status = "disabled";
+        };
+
+        utmi_phy: phy@b74000 {
+            compatible = "kaka,kaka-phy";
+            reg = <0xb74000 0x128>;
+            #phy-cells = <0>;
+            clocks = <USB2_CLOCK>;
+            resets = <USB2_RESET>;
+            status = "disabled";
+        };
     };
 
     power-states {
