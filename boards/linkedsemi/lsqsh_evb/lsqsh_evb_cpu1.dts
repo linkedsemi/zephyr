@@ -296,3 +296,7 @@
     kcs_chan = <&espi1_kcs_ca2>;
     status = "okay";
 };
+
+zephyr_udc0: &usb_dwc3 {
+    status = "okay";
+};
