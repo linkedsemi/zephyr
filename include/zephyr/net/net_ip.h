@@ -241,6 +241,7 @@ struct sockaddr_can_ptr {
 /** @endcond */
 
 #if !defined(HAVE_IOVEC)
+#define HAVE_IOVEC 1
 /** IO vector array element */
 struct iovec {
 	void  *iov_base; /**< Pointer to data */
