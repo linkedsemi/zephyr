@@ -82,19 +82,19 @@ static int spi_ls_configure(const struct device *dev,
 	}
 
 	if (config->operation & SPI_HALF_DUPLEX) {
-		LOG_ERR("Half-duplex not supported");
+		LOG_ERROR("Half-duplex not supported");
 		return -ENOTSUP;
 	}
 
     if (config->operation & SPI_FRAME_FORMAT_TI) {
-        LOG_ERR("TI mode is not supported");
+        LOG_ERROR("TI mode is not supported");
         return -ENOTSUP;
     }
 
     /* Word sizes other than 8 and 16 bits has not been implemented */
     if ((SPI_WORD_SIZE_GET(config->operation) != 8)
 	    && (SPI_WORD_SIZE_GET(config->operation) != 16)) {
-		LOG_ERR("Word sizes other than 8 and 16 bits are not supported");
+		LOG_ERROR("Word sizes other than 8 and 16 bits are not supported");
 		return -ENOTSUP;
 	}
 
@@ -134,7 +134,7 @@ static int spi_ls_configure(const struct device *dev,
 	}
 
 	if (8 * config->frequency > CPU_FREQ) {
-		LOG_ERR("Frequency greater than supported in master mode");
+		LOG_ERROR("Frequency greater than supported in master mode");
 		return -EINVAL;
 	}
 
@@ -148,7 +148,7 @@ static int spi_ls_configure(const struct device *dev,
 
     err = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
 	if (err < 0) {
-		LOG_ERR("applying SPI pinctrl state failed");
+		LOG_ERROR("applying SPI pinctrl state failed");
 		return err;
 	}
 
@@ -166,17 +166,17 @@ static int spi_ls_get_err(reg_spi_t *spi)
 	uint32_t sr = READ_REG(spi->IFM);
 
 	if (sr & SPI_IFM_MODFFM_MASK) {
-        LOG_ERR("master mode fault");
+        LOG_ERROR("master mode fault");
 		return -EIO;
 	}
 
     if (sr & SPI_IFM_OVRFM_MASK) {
-        LOG_ERR("fifo overrun error");
+        LOG_ERROR("fifo overrun error");
 		return -EIO;
 	}
 
     if (sr & SPI_IFM_FREFM_MASK) {
-        LOG_ERR("frame format error");
+        LOG_ERROR("frame format error");
 		return -EIO;
 	}
 
@@ -454,13 +454,13 @@ static int spi_ls_init(const struct device *dev)
 #if defined(CONFIG_RESET)
     if (dev_config->reset.dev != NULL) {
         if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
+            LOG_ERROR("Reset controller device is not ready");
             return -ENODEV;
         }
 
         ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
         if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
+            LOG_ERROR("toggle reset line failed");
             return ret;
         }
     }
@@ -478,7 +478,7 @@ static int spi_ls_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERR("Could not configure pins");
+        LOG_ERROR("Could not configure pins");
     }
 #endif
 

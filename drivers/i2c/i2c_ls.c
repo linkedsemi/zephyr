@@ -130,15 +130,15 @@ static int i2c_ls_recover_bus(const struct device *dev)
 	uint32_t bitrate_cfg;
 	int error = 0;
 
-	LOG_ERR("%s: attempting to recover bus", dev->name);
+	LOG_ERROR("%s: attempting to recover bus", dev->name);
 
 	if (!gpio_is_ready_dt(&config->scl)) {
-		LOG_ERR("%s: SCL GPIO device not ready", dev->name);
+		LOG_ERROR("%s: SCL GPIO device not ready", dev->name);
 		return -EIO;
 	}
 
 	if (!gpio_is_ready_dt(&config->sda)) {
-		LOG_ERR("%s: SDA GPIO device not ready", dev->name);
+		LOG_ERROR("%s: SDA GPIO device not ready", dev->name);
 		return -EIO;
 	}
 
@@ -146,13 +146,13 @@ static int i2c_ls_recover_bus(const struct device *dev)
 
 	error = gpio_pin_configure_dt(&config->scl, GPIO_OUTPUT_HIGH | GPIO_PULL_UP | GPIO_LINE_OPEN_DRAIN);
 	if (error != 0) {
-		LOG_ERR("%s: failed to configure SCL GPIO (err %d)", dev->name, error);
+		LOG_ERROR("%s: failed to configure SCL GPIO (err %d)", dev->name, error);
 		goto restore;
 	}
 
 	error = gpio_pin_configure_dt(&config->sda, GPIO_OUTPUT_HIGH | GPIO_PULL_UP | GPIO_LINE_OPEN_DRAIN);
 	if (error != 0) {
-		LOG_ERR("%s: failed to configure SDA GPIO (err %d)", dev->name, error);
+		LOG_ERROR("%s: failed to configure SDA GPIO (err %d)", dev->name, error);
 		goto restore;
 	}
 
@@ -161,13 +161,13 @@ static int i2c_ls_recover_bus(const struct device *dev)
 	bitrate_cfg = i2c_map_dt_bitrate(I2C_BITRATE_STANDARD) | I2C_MODE_CONTROLLER;
 	error = i2c_bitbang_configure(&bitbang_ctx, bitrate_cfg);
 	if (error != 0) {
-		LOG_ERR("%s: failed to configure I2C bitbang (err %d)", dev->name, error);
+		LOG_ERROR("%s: failed to configure I2C bitbang (err %d)", dev->name, error);
 		goto restore;
 	}
 
 	error = i2c_bitbang_recover_bus(&bitbang_ctx);
 	if (error != 0) {
-		LOG_ERR("%s: failed to recover bus (err %d)", dev->name, error);
+		LOG_ERROR("%s: failed to recover bus (err %d)", dev->name, error);
 	}
 
 restore:
@@ -581,7 +581,7 @@ int i2c_ls_pinctrl(const struct device *dev, uint32_t pinctrl_state)
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(dev_config->pcfg, pinctrl_state);
 	if (ret < 0) {
-		LOG_ERR("%s: Could not configure pins", dev->name);
+		LOG_ERROR("%s: Could not configure pins", dev->name);
 	}
 	i2c_idle_check_prepare(dev, dev_config->pcfg, pinctrl_state);
 

@@ -30,7 +30,7 @@ static inline uint32_t i2c_map_dt_bitrate(uint32_t bitrate)
 		return I2C_SPEED_ULTRA << I2C_SPEED_SHIFT;
 	}
 
-	LOG_ERR("Invalid I2C bit rate value");
+	LOG_ERROR("Invalid I2C bit rate value");
 
 	return 0;
 }

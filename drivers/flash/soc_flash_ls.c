@@ -217,7 +217,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	default:
-		LOG_ERR("delegation_server_work_handler opcode error");
+		LOG_ERROR("delegation_server_work_handler opcode error");
 	break;
 	}
 	struct mbox_msg msg = {

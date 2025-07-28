@@ -199,19 +199,19 @@ static int spi_dw_configure(const struct device *dev,
 	}
 
 	if (config->operation & SPI_HALF_DUPLEX) {
-		LOG_ERR("Half-duplex not supported");
+		LOG_ERROR("Half-duplex not supported");
 		return -ENOTSUP;
 	}
 
 	/* Verify if requested op mode is relevant to this controller */
 	if (config->operation & SPI_OP_MODE_SLAVE) {
 		if (!(info->serial_target)) {
-			LOG_ERR("Slave mode not supported");
+			LOG_ERROR("Slave mode not supported");
 			return -ENOTSUP;
 		}
 	} else {
 		if (info->serial_target) {
-			LOG_ERR("Master mode not supported");
+			LOG_ERROR("Master mode not supported");
 			return -ENOTSUP;
 		}
 	}
@@ -220,12 +220,12 @@ static int spi_dw_configure(const struct device *dev,
 	    (IS_ENABLED(CONFIG_SPI_EXTENDED_MODES) &&
 	     (config->operation & (SPI_LINES_DUAL |
 				   SPI_LINES_QUAD | SPI_LINES_OCTAL)))) {
-		LOG_ERR("Unsupported configuration");
+		LOG_ERROR("Unsupported configuration");
 		return -EINVAL;
 	}
 
 	if (info->max_xfer_size < SPI_WORD_SIZE_GET(config->operation)) {
-		LOG_ERR("Max xfer size is %u, word size of %u not allowed",
+		LOG_ERROR("Max xfer size is %u, word size of %u not allowed",
 			info->max_xfer_size, SPI_WORD_SIZE_GET(config->operation));
 		return -ENOTSUP;
 	}
@@ -656,13 +656,13 @@ int spi_dw_init(const struct device *dev)
 #if defined(CONFIG_RESET)
     if (info->reset.dev != NULL) {
         if (!device_is_ready(info->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
+            LOG_ERROR("Reset controller device is not ready");
             return -ENODEV;
         }
 
         ret = reset_line_toggle(info->reset.dev, info->reset.id);
         if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
+            LOG_ERROR("toggle reset line failed");
             return ret;
         }
     }
@@ -678,7 +678,7 @@ int spi_dw_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(info->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERR("Could not configure pins");
+        LOG_ERROR("Could not configure pins");
     }
 #endif
 

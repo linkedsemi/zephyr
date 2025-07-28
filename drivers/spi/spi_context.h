@@ -165,7 +165,7 @@ static inline int spi_context_wait_for_completion(struct spi_context *ctx)
 		}
 
 		if (k_sem_take(&ctx->sync, timeout)) {
-			LOG_ERR("Timeout waiting for transfer complete");
+			LOG_ERROR("Timeout waiting for transfer complete");
 			return -ETIMEDOUT;
 		}
 		status = ctx->sync_status;
@@ -219,7 +219,7 @@ static inline int spi_context_cs_configure_all(struct spi_context *ctx)
 
 	for (cs_gpio = ctx->cs_gpios; cs_gpio < &ctx->cs_gpios[ctx->num_cs_gpios]; cs_gpio++) {
 		if (!device_is_ready(cs_gpio->port)) {
-			LOG_ERR("CS GPIO port %s pin %d is not ready",
+			LOG_ERROR("CS GPIO port %s pin %d is not ready",
 				cs_gpio->port->name, cs_gpio->pin);
 			return -ENODEV;
 		}
@@ -333,7 +333,7 @@ void spi_context_update_tx(struct spi_context *ctx, uint8_t dfs, uint32_t len)
 	}
 
 	if (len > ctx->tx_len) {
-		LOG_ERR("Update exceeds current buffer");
+		LOG_ERROR("Update exceeds current buffer");
 		return;
 	}
 
@@ -384,7 +384,7 @@ void spi_context_update_rx(struct spi_context *ctx, uint8_t dfs, uint32_t len)
 	}
 
 	if (len > ctx->rx_len) {
-		LOG_ERR("Update exceeds current buffer");
+		LOG_ERROR("Update exceeds current buffer");
 		return;
 	}
 
