@@ -35,8 +35,8 @@
             // automount;
             no-format;
             read-only;
-            read-size = <16>;
-            prog-size = <16>;
+            read-size = <32>;
+            prog-size = <32>;
             cache-size = <4096>;
             lookahead-size = <256>;
             block-cycles = <512>;
@@ -48,8 +48,8 @@
             // automount;
             no-format;
             read-only;
-            read-size = <16>;
-            prog-size = <16>;
+            read-size = <32>;
+            prog-size = <32>;
             cache-size = <4096>;
             lookahead-size = <256>;
             block-cycles = <512>;
@@ -60,8 +60,8 @@
             partition = <&rwfs_partition>;
             // automount;
             // no-format;
-            read-size = <16>;
-            prog-size = <16>;
+            read-size = <32>;
+            prog-size = <32>;
             cache-size = <4096>;
             lookahead-size = <256>;
             block-cycles = <512>;
@@ -171,7 +171,7 @@
 };
 
 &sram2 {
-    reg = <0x10080000 DT_SIZE_K(760)>;
+    reg = <0x10070000 DT_SIZE_K(824)>;
 };
 
 &uart1 {
