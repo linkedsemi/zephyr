@@ -1,0 +1,9 @@
+&spi2 {
+    status = "okay";
+    flash2: flash2@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <1000000>;
+        status = "okay";
+    };
+};
