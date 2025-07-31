@@ -80,6 +80,9 @@ enum {
 
 	/** Identifier for in-tree OverlayFS file system. */
 	FS_OVERLAYFS,
+
+	/* Random generator file system */
+	FS_RANDOM,
 };
 
 /** Flag prevents formatting device if requested file system not found */
