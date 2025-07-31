@@ -322,7 +322,7 @@ void soc_early_init_hook(void)
 __maybe_unused
 static void boot_cpu2()
 {
-#if CONFIG_LED
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && CONFIG_LED
     led_state_init();
 #endif
     if (is_app_cpu_running()) {
