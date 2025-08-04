@@ -178,7 +178,7 @@ void *aligned_alloc(size_t alignment, size_t size)
 					size);
 	if (ret == NULL && size != 0) {
 		ret = sys_heap_aligned_alloc(&z_malloc_heap_2,
-						__alignof__(z_max_align_t),
+						alignment,
 						size);
 		if (ret == NULL && size != 0) {
 			errno = ENOMEM;
