@@ -165,9 +165,11 @@ static void delegation_server_work_handler(struct k_work *work)
 	case FLASH_DELEGATE_SERVER_READ:
 		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R)
 			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
+			int data_addr = (uint32_t)priv->req_param.data;
+			int data_size = (uint32_t)priv->req_param.size;
 			param.ret.value = flash_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
-			if (is_psram((uint32_t)priv->req_param.data)) {
-    			sys_cache_data_flush_range((void *)priv->req_param.data, priv->req_param.size);
+			if (is_psram(data_addr)) {
+				sys_cache_data_flush_range((void *)data_addr, data_size);
 			}
 		} else {
 			param.ret.value = -EINVAL;
@@ -198,9 +200,11 @@ static void delegation_server_work_handler(struct k_work *work)
 	}break;
 	case FLASH_DELEGATE_SERVER_READ_JEDEC_ID:
 		if (!is_own_ram((uint32_t)priv->req_param.data)) {
+			int data_addr = (uint32_t)priv->req_param.data;
+			int data_size = (uint32_t)priv->req_param.size;
 			param.ret.value = flash_read_jedec_id(priv->dev,priv->req_param.data);
-			if (is_psram((uint32_t)priv->req_param.data)) {
-    			sys_cache_data_flush_range((void *)priv->req_param.data, priv->req_param.size);
+			if (is_psram(data_addr)) {
+				sys_cache_data_flush_range((void *)data_addr, data_size);
 			}
 		} else {
 			param.ret.value = -EINVAL;
@@ -208,9 +212,11 @@ static void delegation_server_work_handler(struct k_work *work)
 	break;
 	case FLASH_DELEGATE_SERVER_SFDP_READ:
 		if (!is_own_ram((uint32_t)priv->req_param.data)) {
+			int data_addr = (uint32_t)priv->req_param.data;
+			int data_size = (uint32_t)priv->req_param.size;
 			param.ret.value = flash_sfdp_read(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
-			if (is_psram((uint32_t)priv->req_param.data)) {
-    			sys_cache_data_flush_range((void *)priv->req_param.data, priv->req_param.size);
+			if (is_psram(data_addr)) {
+				sys_cache_data_flush_range((void *)data_addr, data_size);
 			}
 		} else {
 			param.ret.value = -EINVAL;
