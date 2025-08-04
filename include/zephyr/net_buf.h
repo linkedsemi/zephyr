@@ -1141,7 +1141,7 @@ struct net_buf_pool {
 	BUILD_ASSERT(sizeof(struct _net_buf_##_name) ==					       \
 		     ROUND_UP(sizeof(struct net_buf) + _ud_size, __alignof__(struct net_buf)), \
 		     "Size cannot be determined");					       \
-	static struct _net_buf_##_name _net_buf_##_name[_count] __noinit
+	static struct _net_buf_##_name _net_buf_##_name[_count] __attribute__((section("PSRAM")))
 
 extern const struct net_buf_data_alloc net_buf_heap_alloc;
 /** @endcond */
