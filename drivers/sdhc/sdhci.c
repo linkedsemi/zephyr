@@ -135,18 +135,18 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
 
     cmd_r = SDHCI_MAKE_CMD(command->index, command->flags);
     if (sdhci_data != NULL) {
-#if defined(CONFIG_SDHCI_SDMA_ENABLE)
-        uint32_t start_addr;
-        if (sdhci_data->rx_data) {
-            start_addr = (uint32_t)((uint8_t *)sdhci_data->rx_data);
-            sys_cache_data_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
-        } else {
-            start_addr = (uint32_t)((uint8_t *)sdhci_data->tx_data);
-            sys_cache_data_flush_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
+        if (IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE) && use_dma) {
+            uint32_t start_addr;
+            if (sdhci_data->rx_data) {
+                start_addr = (uint32_t)((uint8_t *)sdhci_data->rx_data);
+                sys_cache_data_invd_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
+            } else {
+                start_addr = (uint32_t)((uint8_t *)sdhci_data->tx_data);
+                sys_cache_data_flush_range((void *)start_addr, sdhci_data->block_size * sdhci_data->block_count);
+            }
+            command->flags2 |= SDHCI_ENABLE_DMA_FLAG;
+            sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
         }
-        command->flags2 |= SDHCI_ENABLE_DMA_FLAG;
-        sdhci_writel(sdhci_host, start_addr, SDHCI_DMA_ADDRESS);
-#endif
         sdhci_writew(sdhci_host, SDHCI_MAKE_BLKSZ(SDHCI_DEFAULT_BOUNDARY_ARG, sdhci_data->block_size), SDHCI_BLOCK_SIZE);
         sdhci_writew(sdhci_host, sdhci_data->block_count, SDHCI_BLOCK_COUNT);
     }

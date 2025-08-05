@@ -60,18 +60,34 @@ static void linkedsemi_sdhci_isr(const void *arg)
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
     uint32_t status = sdhci_get_int_status_flag(host);
+    sdhci_clear_int_status_flag(host, status);
 
-    if (status & (SDHCI_INT_ERROR | SDHCI_INT_DATA_END | SDHCI_INT_DMA_END | SDHCI_INT_RESPONSE | SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL)) {
+    if (status & (SDHCI_INT_RESPONSE
+                | SDHCI_INT_DATA_END
+                | SDHCI_INT_DMA_END
+                | SDHCI_INT_SPACE_AVAIL
+                | SDHCI_INT_DATA_AVAIL
+                | SDHCI_INT_ERROR)) {
         host->error_code = (status >> 16) & 0xffff;
         if (host->error_code) {
             LOG_ERROR("error: %#4.4x\n", host->error_code);
         }
         host->irq_status |= status;
-        k_sem_give(&host->transfer_sem);
+        if (status & SDHCI_INT_ERROR) {
+            k_sem_give(&host->transfer_sem);
+        }
+        if (status & SDHCI_INT_RESPONSE) {
+            k_sem_give(&host->transfer_sem);
+        }
+        if (status & (SDHCI_INT_DATA_END
+                    | SDHCI_INT_DMA_END
+                    | SDHCI_INT_SPACE_AVAIL
+                    | SDHCI_INT_DATA_AVAIL)) {
+            k_sem_give(&host->transfer_sem);
+        }
     }
     // if (status & SDHCI_INT_CARD_INT)
     //     sdio_irq_wakeup(host->host);
-    sdhci_clear_int_status_flag(host, status);
 }
 
 static int linkedsemi_sdhci_reset(const struct device *dev)
@@ -217,79 +233,96 @@ static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struc
 
 static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, struct sdhci_data *data, bool use_dma)
 {
-#if defined(CONFIG_SDHCI_SDMA_ENABLE)
-    uint32_t stat;
+    if (IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE) && use_dma) {
+        uint32_t stat;
 
-    while (1) {
-        k_sem_take(&host->transfer_sem, K_FOREVER);
-        stat = host->irq_status;
-        if (stat & SDHCI_INT_ERROR) {
-            LOG_ERROR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
-            sdhci_reg_display(host);
-            return -1;
-        }
-        if (stat & SDHCI_INT_DMA_END) {
-            sdhci_writel(host, SDHCI_INT_DMA_END, SDHCI_INT_STATUS);
-            sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
-        }
-        if (stat & SDHCI_INT_DATA_END) {
-            return 0;
-        }
-    }
-#else
-    uint32_t stat, rdy, mask, timeout, block;
-
-    block = 0;
-    timeout = 1000000;
-    rdy = SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL;
-    mask = SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE;
-
-    while (1) {
-        k_sem_take(&host->transfer_sem, K_FOREVER);
-        stat = host->irq_status;
-        if (stat & SDHCI_INT_ERROR) {
-            LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, stat);
-            sdhci_reg_display(host);
-            return -1;
-        }
-        if (stat & rdy) {
-            if (!(sdhci_readl(host, SDHCI_PRESENT_STATE) & mask)) {
-                continue;
+        while (1) {
+            k_sem_take(&host->transfer_sem, K_FOREVER);
+            stat = host->irq_status;
+            if (stat & SDHCI_INT_ERROR) {
+                LOG_ERROR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
+                sdhci_reg_display(host);
+                return -1;
             }
-            if (data->rx_data) {
-                uint16_t block_size = data->block_size / 4;
-                for (int i = 0; i < block_size; i++) {
-                    data->rx_data[i + block * block_size] = sdhci_readl(host, SDHCI_BUFFER);
-                }
-            } else {
-                uint16_t block_size = data->block_size / 4;
-                for (int i = 0; i < block_size; i++) {
-                    sdhci_writel(host, data->tx_data[i + block * block_size], SDHCI_BUFFER);
-                }
+            if (stat & SDHCI_INT_DMA_END) {
+                sdhci_writel(host, SDHCI_INT_DMA_END, SDHCI_INT_STATUS);
+                sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
             }
-            block++;
-            if (block >= data->block_count) {
+            if (stat & SDHCI_INT_DATA_END) {
                 return 0;
             }
         }
-        if (timeout == 0) {
-            LOG_INF("%s: Transfer data timeout\n", __func__);
-            return -1;
+    } else {
+        uint32_t stat, rdy, mask, block;
+
+        block = 0;
+        rdy = SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL;
+        mask = SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE;
+
+        while (1) {
+            k_sem_take(&host->transfer_sem, K_FOREVER);
+            stat = host->irq_status;
+            if (stat & SDHCI_INT_ERROR) {
+                LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, stat);
+                sdhci_reg_display(host);
+                return -1;
+            }
+            if (stat & rdy) {
+                if (!(sdhci_readl(host, SDHCI_PRESENT_STATE) & mask)) {
+                    continue;
+                }
+                if (data->rx_data) {
+                    uint16_t block_size = data->block_size >> 2;
+                    for (int i = 0; i < block_size; i++) {
+                        data->rx_data[i + block * block_size] = sdhci_readl(host, SDHCI_BUFFER);
+                    }
+                } else {
+                    uint16_t block_size = data->block_size >> 2;
+                    for (int i = 0; i < block_size; i++) {
+                        sdhci_writel(host, data->tx_data[i + block * block_size], SDHCI_BUFFER);
+                    }
+                }
+                block++;
+                if (block >= data->block_count) {
+                    return 0;
+                }
+            }
         }
-        timeout--;
-        k_msleep(1);
     }
-#endif
 }
+
+#if defined(CONFIG_SOC_LSQSH)
+static bool is_psram(uint32_t addr)
+{
+    return ((addr >= DT_REG_ADDR(DT_NODELABEL(psram)))
+            && (addr < (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram)))));
+}
+
+static bool lsqsh_workaround_psram_use_dma(struct sdhci_host *host)
+{
+    struct sdhci_data *sdhci_data = host->sdhci_data;
+    if (sdhci_data) {
+        if (sdhci_data->rx_data) {
+            return !is_psram((uint32_t)sdhci_data->rx_data);
+        } else if (sdhci_data->tx_data) {
+            return !is_psram((uint32_t)sdhci_data->tx_data);
+        }
+    }
+
+    return false;
+}
+#endif
 
 static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
 {
     __ASSERT_NO_MSG(host);
     struct sdhci_command *sdhci_command = host->sdhci_command;
     struct sdhci_data *sdhci_data = host->sdhci_data;
-    bool use_dma = false;
+    bool use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
     int ret = 0;
-
+#if defined(CONFIG_SOC_LSQSH)
+    use_dma = lsqsh_workaround_psram_use_dma(host);
+#endif
     /* Wait until command/data bus out of busy status. */
     while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
     }
