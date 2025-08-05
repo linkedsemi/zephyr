@@ -389,6 +389,10 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			goto out;
 		}
 
+#if defined(CONFIG_DMA_DW_2_20A)
+			chan_data->cfg_hi |= DW_CFGH_PROTCTL;
+#endif /* CONFIG_DMA_DW_2_20A */
+
 		/* force no reload */
 		chan_data->cfg_lo &= ~DW_CFGL_RELOAD_SRC;
 		chan_data->cfg_lo &= ~DW_CFGL_RELOAD_DST;
