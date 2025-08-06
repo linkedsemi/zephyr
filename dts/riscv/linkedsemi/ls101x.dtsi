@@ -340,7 +340,7 @@
             status = "disabled";
         };
 
-      iwdgt:watchdog@0x4000f120 {
+      iwdgt:watchdog@4000f120 {
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x4000F120 0x400>;
           interrupts = <17 4>;
