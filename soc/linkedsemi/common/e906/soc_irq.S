@@ -46,6 +46,8 @@ int_enter:
 	/* Jump back to read mnxti again */
 	j		int_enter
 int_exit:
+	/* Disable global irq */
+	csrc    mstatus, (1 << 3) 
 	lw      ra, 0(sp)
 	addi    sp, sp, REGBYTES
 	ret
