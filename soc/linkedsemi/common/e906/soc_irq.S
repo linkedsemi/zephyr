@@ -12,10 +12,6 @@
 
 #define REGBYTES                4
 
-GTEXT(__soc_handle_irq)
-SECTION_FUNC(exception.other, __soc_handle_irq) 
-	ret
-
 #ifdef CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_HANDLING
 
 GTEXT(__soc_handle_all_irqs)

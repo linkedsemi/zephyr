@@ -166,12 +166,6 @@ SECTIONS
 		KEEP(*(.reset.*))
     } GROUP_LINK_IN(ROMABLE_REGION)
 
-    SECTION_PROLOGUE(_EXCEPTION_SECTION_NAME,,)
-    {
-		 KEEP(*(".exception.entry.*"))
-		 *(".exception.other.*")
-    } GROUP_LINK_IN(ROMABLE_REGION)
-
     SECTION_PROLOGUE(_TEXT_SECTION_NAME,,)
 	{
 		. = ALIGN(4);
