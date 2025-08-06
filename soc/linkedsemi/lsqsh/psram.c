@@ -6,6 +6,7 @@
 #include <DWC_ssi_v2_header.h>
 #include <ls_hal_ssi.h>
 #include <core_rv32.h>
+#include <platform.h>
 
 #if !defined(DW_FIELD_BUILD)
 #define DW_FIELD_BUILD(field,val) \
@@ -74,6 +75,9 @@ void psram_init(void) {
     if (SSIC_VERSION_ID != sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID)) {
         return; /* it has been initialized */
     }
+    ls_clock_control_off(PSRAM_CLOCK);
+    ls_reset_line_toggle(PSRAM_RESET);
+    ls_clock_control_on(PSRAM_CLOCK);
     psram_pin_init();
     psram_reset();
 
