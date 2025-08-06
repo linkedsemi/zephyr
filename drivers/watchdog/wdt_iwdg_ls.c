@@ -113,7 +113,6 @@ static int iwdt_ls_install_timeout(const struct device *dev, const struct wdt_ti
 
 static int iwdt_ls_disable(const struct device *dev)
 {
-	struct iwdt_ls_data *data = dev->data;
 	const struct iwdt_ls_config *const config = dev->config;
 	config->iwdg_reg->IWDT_CTRL = 0x0;
 	return 0;
