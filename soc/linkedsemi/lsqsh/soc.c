@@ -188,6 +188,9 @@ __no_optimization void cpu2_cache_region_init(void)
 */
 void iopmp_region_init(void)
 {
+    ls_clock_control_off(IOPMP_CLOCK);
+    ls_reset_line_toggle(IOPMP_RESET);
+    ls_clock_control_on(IOPMP_CLOCK);
     for (uint32_t idx = 0; idx < 2; idx++) {
         uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
         iopmp_config_region_napot4(dev, 0, 0x1000000, KB(64), false, false, false, false);
