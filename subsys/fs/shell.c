@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <inttypes.h>
 #include <limits.h>
+#include <sys/unistd.h>
 
 #define STORAGE_PARTITION	rwfs_partition
 #define STORAGE_PARTITION_ID	FIXED_PARTITION_ID(STORAGE_PARTITION)
@@ -83,6 +84,23 @@ static struct fs_mount_t littlefs_mnt = {
 
 /* Maintenance guarantees this begins with '/' and is NUL-terminated. */
 static char cwd[MAX_PATH_LEN] = "/";
+
+char *  getcwd (char *__buf, size_t __size)
+{
+	if (__buf == NULL) {
+        /* Simplify the error handling when buf is NULL*/
+		return NULL;
+	}
+
+	if (__size <= strlen(cwd)) {
+		/* Buffer size too small to contain the current path */
+		errno = ERANGE;
+		return NULL;
+	}
+
+	strcpy(__buf, cwd);
+	return __buf;
+}
 
 static void create_abs_path(const char *name, char *path, size_t len)
 {
