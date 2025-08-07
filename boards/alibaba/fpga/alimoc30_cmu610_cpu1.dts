@@ -79,7 +79,7 @@
             #address-cells = <1>;
             #size-cells = <1>;
             interrupts = <3 3>;
-            quad;
+            quad_mode;
             addr4b;
             mbox = <&mbox_consumer_qspi1>;
 
