@@ -108,9 +108,11 @@ zephyr_interface_library_named(mbedTLS)
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/rsa.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha1.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha256.c
+      ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha256_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha512.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha3.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading.c
+      ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/timing.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/version_features.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/version.c
