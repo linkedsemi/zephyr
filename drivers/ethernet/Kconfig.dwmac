@@ -70,4 +70,10 @@ config DWMAC_NB_RX_DESCS
 	  memory. A smaller number increases the risk of an overflow and
 	  dropped packets.
 
+config RX_REFILL_STACK_SIZE
+	int "stack size for RX refill thread"
+	default 1024
+	help
+	  stack size for RX refill thread
+
 endif # ETH_DWMAC

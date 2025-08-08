@@ -22,9 +22,6 @@
 #define NB_TX_DESCS		CONFIG_DWMAC_NB_TX_DESCS
 #define NB_RX_DESCS		CONFIG_DWMAC_NB_RX_DESCS
 
-/* stack size for RX refill thread */
-#define RX_REFILL_STACK_SIZE	1024
-
 /*
  * Common structure definitions
  */
@@ -66,7 +63,7 @@ struct dwmac_priv {
 	struct net_pkt *rx_pkt;
 	unsigned int rx_bytes;
 
-	K_KERNEL_STACK_MEMBER(rx_refill_thread_stack, RX_REFILL_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(rx_refill_thread_stack, CONFIG_RX_REFILL_STACK_SIZE);
 	struct k_thread rx_refill_thread;
 	struct k_mutex tx_mutex;
 	bool need_tx_mutex;
