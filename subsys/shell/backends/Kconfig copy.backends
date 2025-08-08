@@ -774,4 +774,85 @@ config SHELL_BACKEND_ADSP_MEMORY_WINDOW_POLL_INTERVAL
 
 endif # SHELL_BACKEND_ADSP_MEMORY_WINDOW
 
+config SHELL_BACKEND_WOLFSSH
+	bool "WOLFSSH backend."
+	help
+	  Enable WOLFSSH backend.
+
+if SHELL_BACKEND_WOLFSSH
+
+config WOLFSSHPORT
+	int "WOLFSSHPORT"
+	default 22
+	help
+	  WOLFSSHPORT
+
+config SSH_SERVER_BACKEND_STACK_SIZE
+	int "SSH_SERVER_BACKEND_STACK_SIZE"
+	default 32768
+	help
+	  SSH_SERVER_BACKEND_STACK_SIZE
+
+config SSH_SERVER_RING_BUF_SIZE
+	int "SSH_SERVER_RING_BUF_SIZE"
+	default 2048
+	help
+	  SSH_SERVER_RING_BUF_SIZE
+
+config SHELL_BACKEND_WOLFSSH_INIT_PRIORITY
+	int "Initialization priority"
+	default 95
+	range 0 99
+	help
+	  Initialization priority for wolfssh shell backend.
+
+config SHELL_PROMPT_SSH
+	string "Displayed prompt name"
+	default "$ "
+	help
+	  Displayed prompt name for WOLFSSH backend. If prompt is set, the shell will
+	  send two newlines during initialization.
+
+choice
+	prompt "Initial log level limit"
+	default SHELL_BACKEND_WOLFSSH_LOG_LEVEL_DEFAULT
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL_DEFAULT
+	bool "System limit (LOG_MAX_LEVEL)"
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL_DBG
+	bool "Debug"
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL_INF
+	bool "Info"
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL_WRN
+	bool "Warning"
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL_ERR
+	bool "Error"
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL_NONE
+	bool "None"
+
+endchoice
+
+config SHELL_BACKEND_WOLFSSH_LOG_LEVEL
+	int
+	default 0 if SHELL_BACKEND_WOLFSSH_LOG_LEVEL_NONE
+	default 1 if SHELL_BACKEND_WOLFSSH_LOG_LEVEL_ERR
+	default 2 if SHELL_BACKEND_WOLFSSH_LOG_LEVEL_WRN
+	default 3 if SHELL_BACKEND_WOLFSSH_LOG_LEVEL_INF
+	default 4 if SHELL_BACKEND_WOLFSSH_LOG_LEVEL_DBG
+	default 5 if SHELL_BACKEND_WOLFSSH_LOG_LEVEL_DEFAULT
+
+module = SHELL_BACKEND_WOLFSSH
+default-timeout = 100
+source "subsys/shell/Kconfig.template.shell_log_queue_timeout"
+
+default-size = 512
+source "subsys/shell/Kconfig.template.shell_log_queue_size"
+
+endif # SHELL_BACKEND_WOLFSSH
+
 endif # SHELL_BACKENDS

@@ -1,0 +1,17 @@
+
+#undef SRAM_TOTAL_SIZE
+#undef SRAM_RO_SIZE
+#undef SRAM_RW_SIZE
+
+#define SRAM_TOTAL_SIZE DT_SIZE_K(512+760)
+#define SRAM_RO_SIZE    DT_SIZE_K(512)
+#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
+
+&sram1_ro {
+    compatible = "mmio-sram";
+    reg = <0x10000000 SRAM_RO_SIZE>;
+};
+
+&sram1{
+    reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+};
