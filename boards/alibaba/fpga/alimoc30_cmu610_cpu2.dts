@@ -166,6 +166,10 @@
     status = "okay";
 };
 
+&smbus8 {
+    status = "okay";
+};
+
 &sram1 {
     status = "disabled";
 };
