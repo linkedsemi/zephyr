@@ -55,6 +55,7 @@ zephyr_interface_library_named(mbedTLS)
     # Base mbed TLS files
     list(APPEND mbedtls_base_src
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes.c
+      ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/aesni.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/aria.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/asn1parse.c
