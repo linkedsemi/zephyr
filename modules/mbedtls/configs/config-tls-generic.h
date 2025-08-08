@@ -168,6 +168,7 @@
 
 #if defined(CONFIG_MBEDTLS_CIPHER_AES_ENABLED)
 #define MBEDTLS_AES_C
+#define MBEDTLS_AES_ALT
 #endif
 
 #if defined(CONFIG_MBEDTLS_AES_ROM_TABLES)
