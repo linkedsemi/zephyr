@@ -115,6 +115,8 @@ extern "C" {
 #undef  WOLFSSL_STATIC_MEMORY
 #define WOLFSSL_STATIC_MEMORY
 
+#undef  WOLFSSL_TLS12
+
 #undef  WOLFSSL_TLS13
 #define WOLFSSL_TLS13
 
@@ -126,6 +128,9 @@ extern "C" {
 
 #undef  HAVE_FFDHE_2048
 #define HAVE_FFDHE_2048
+
+#undef NO_FILESYSTEM
+#define NO_FILESYSTEM
 
 #ifdef __cplusplus
 }
