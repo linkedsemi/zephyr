@@ -18,6 +18,7 @@
  * along with wolfSSH.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdbool.h>
 #ifdef HAVE_CONFIG_H
     #include <config.h>
 #endif
@@ -1111,7 +1112,6 @@ static int ssh_worker(thread_ctx_t* threadCtx)
                     do {
                         channel_buf_size = ring_buf_get_claim(sh_ssh->tx_buf, &channel_buf, channel_buf_used);
                         cnt_w = wolfSSH_ChannelIdSend(sh_ssh->ssh, 0, channel_buf, channel_buf_size);
-                        __ASSERT_NO_MSG(cnt_w == channel_buf_size);
                         ret = ring_buf_get_finish(sh_ssh->tx_buf, channel_buf_size);
                         __ASSERT_NO_MSG(ret == 0);
                         channel_buf_used = ring_buf_size_get(sh_ssh->tx_buf);
@@ -1521,6 +1521,12 @@ static int NonBlockSSH_accept(WOLFSSH* ssh)
     return ret;
 }
 
+static void server_worker_clean()
+{
+    sh_ssh->ready = false;
+    ring_buf_reset(sh_ssh->rx_buf);
+    ring_buf_reset(sh_ssh->tx_buf);
+}
 
 static THREAD_RETURN WOLFSSH_THREAD server_worker(void* vArgs)
 {
@@ -1590,6 +1596,7 @@ static THREAD_RETURN WOLFSSH_THREAD server_worker(void* vArgs)
 
     if (error != WS_SOCKET_ERROR_E && error != WS_FATAL_ERROR) {
         ret = wolfSSH_shutdown(threadCtx->ssh);
+        server_worker_clean();
 
         /* peer hung up, stop shutdown */
         if (ret == WS_SOCKET_ERROR_E) {
@@ -3018,7 +3025,7 @@ int wolfSSH_Echoserver(int argc, char** argv)
     }
 #endif /* WOLFSSL_NUCLEUS */
 
-struct k_thread ssh_read_thread;
+struct k_thread ssh_work_thread;
 #define PRIORITY              7
 K_THREAD_STACK_DEFINE(ssh_server_backend_stack, CONFIG_SSH_SERVER_BACKEND_STACK_SIZE);
 
@@ -3052,9 +3059,15 @@ static int ssh_shell_uninit(const struct shell_transport *transport)
 
 RING_BUF_DECLARE(ssh_tx_buf, CONFIG_SSH_SERVER_RING_BUF_SIZE);
 RING_BUF_DECLARE(ssh_rx_buf, CONFIG_SSH_SERVER_RING_BUF_SIZE);
-
+static bool ssh_shell_enable_flag = false;
 static int ssh_shell_enable(const struct shell_transport *transport, bool blocking_tx)
 {
+    if (ssh_shell_enable_flag) {
+        return 0;
+    } else {
+        ssh_shell_enable_flag = true;
+    }
+
     sh_ssh->tx_efd = eventfd(0, 0);
     if (sh_ssh->tx_efd == -1) {
         __ASSERT_NO_MSG(0);//fatal("eventfd");
@@ -3062,10 +3075,11 @@ static int ssh_shell_enable(const struct shell_transport *transport, bool blocki
     sh_ssh->tx_buf = &ssh_tx_buf;
     sh_ssh->rx_buf = &ssh_rx_buf;
     sh_ssh->ready = false;
-    k_thread_create(&ssh_read_thread, ssh_server_backend_stack, CONFIG_SSH_SERVER_BACKEND_STACK_SIZE,
+    k_thread_create(&ssh_work_thread, ssh_server_backend_stack, CONFIG_SSH_SERVER_BACKEND_STACK_SIZE,
             ssh_server_backend, NULL, NULL, NULL,
             PRIORITY, K_INHERIT_PERMS, K_FOREVER);
-    k_thread_start(&ssh_read_thread);
+    k_thread_name_set(&ssh_work_thread, "ssh_work_thread");
+    k_thread_start(&ssh_work_thread);
 
     return 0;
 }
@@ -3077,6 +3091,10 @@ static int ssh_shell_write(const struct shell_transport *transport, const void *
     if (sh_ssh == NULL) {
         *cnt = 0;
         return -ENODEV;
+    }
+
+    if (!sh_ssh->ready) {
+        goto drop;
     }
 
     k_mutex_lock(&sh_ssh->tx_lock, K_FOREVER);
@@ -3107,6 +3125,8 @@ static int ssh_shell_write(const struct shell_transport *transport, const void *
     *cnt = length;
     sh_ssh->shell_handler(SHELL_TRANSPORT_EVT_TX_RDY, sh_ssh->shell_context);
 
+drop:
+    *cnt = length;
     return ret;
 }
 
