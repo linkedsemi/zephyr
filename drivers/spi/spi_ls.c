@@ -12,13 +12,13 @@ LOG_MODULE_REGISTER(spi_ls);
 
 #include <zephyr/drivers/spi.h>
 #if defined(CONFIG_PINCTRL)
-    #include <zephyr/drivers/pinctrl.h>
+	#include <zephyr/drivers/pinctrl.h>
 #endif
 #if defined(CONFIG_RESET)
-    #include <zephyr/drivers/reset.h>
+	#include <zephyr/drivers/reset.h>
 #endif
 #if defined(CONFIG_CLOCK_CONTROL)
-    #include <zephyr/drivers/clock_control.h>
+	#include <zephyr/drivers/clock_control.h>
 #endif
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/policy.h>
@@ -26,11 +26,7 @@ LOG_MODULE_REGISTER(spi_ls);
 
 #include <ls_hal_spi_i2s.h>
 
-#if defined(CONFIG_SOC_SERIES_LE501X)
-#include <reg_rcc.h>
-#else
 #include <soc_clock.h>
-#endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
@@ -47,9 +43,9 @@ typedef void (*irq_config_func_t)(const struct device *port);
 struct spi_ls_config {
 	reg_spi_t *instance;
 	irq_config_func_t irq_config;
-    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
-    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
-    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct spi_ls_data {
@@ -57,15 +53,15 @@ struct spi_ls_data {
 };
 
 static int spi_ls_configure(const struct device *dev,
-				       const struct spi_config *config)
+					const struct spi_config *config)
 {
 	const struct spi_ls_config *cfg = dev->config;
 	struct spi_ls_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-    reg_spi_t *spi = cfg->instance;
-    int err;
-    uint32_t clock = CPU_FREQ;
-    const uint32_t scaler[] = {
+	reg_spi_t *spi = cfg->instance;
+	int err;
+	uint32_t clock = CPU_FREQ;
+	const uint32_t scaler[] = {
 		SPI_BAUDRATEPRESCALER_8,
 		SPI_BAUDRATEPRESCALER_16,
 		SPI_BAUDRATEPRESCALER_32,
@@ -74,9 +70,9 @@ static int spi_ls_configure(const struct device *dev,
 		SPI_BAUDRATEPRESCALER_256
 	};
 
-    /* Disable the selected SPI peripheral */
-    REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
-    
+	/* Disable the selected SPI peripheral */
+	REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
+
 	if (spi_context_configured(ctx, config)) {
 		return 0;
 	}
@@ -86,6 +82,7 @@ static int spi_ls_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
+<<<<<<< HEAD
     if (config->operation & SPI_FRAME_FORMAT_TI) {
         LOG_ERROR("TI mode is not supported");
         return -ENOTSUP;
@@ -97,33 +94,47 @@ static int spi_ls_configure(const struct device *dev,
         if (!spi_cs_is_gpio(config)) {
             MODIFY_REG(spi->CR2, SPI_CR2_SSOE_MASK, SPI_CR2_SSOE_MASK);
         }
+=======
+	if (config->operation & SPI_FRAME_FORMAT_TI) {
+		LOG_ERR("TI mode is not supported");
+		return -ENOTSUP;
+	}
+
+
+	if (SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_MASTER) {
+		MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_MASTER);
+		/* Hardware chip select mode */
+		if (!spi_cs_is_gpio(config)) {
+			MODIFY_REG(spi->CR2, SPI_CR2_SSOE_MASK, SPI_CR2_SSOE_MASK);
+		}
+>>>>>>> 25ccb2b4646... spi_ls 501x&101x  combine
 	} else {
-        MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_SLAVE);
-    }
+		MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_SLAVE);
+	}
 
 	if (config->operation & SPI_TRANSFER_LSB) {
-        MODIFY_REG(spi->CR1, SPI_CR1_LSBFIRST_MASK, SPI_FIRSTBIT_LSB);
+		MODIFY_REG(spi->CR1, SPI_CR1_LSBFIRST_MASK, SPI_FIRSTBIT_LSB);
 	} else {
-        MODIFY_REG(spi->CR1, SPI_CR1_LSBFIRST_MASK, SPI_FIRSTBIT_MSB);
-    }
+		MODIFY_REG(spi->CR1, SPI_CR1_LSBFIRST_MASK, SPI_FIRSTBIT_MSB);
+	}
 
-    /* Word sizes other than 8 bits and 16 bits has not been implemented */
-    if (SPI_WORD_SIZE_GET(config->operation) == 8) {
-        MODIFY_REG(spi->CR2, SPI_CR2_DS_MASK, SPI_DATASIZE_8BIT);
+	/* Word sizes other than 8 bits and 16 bits has not been implemented */
+	if (SPI_WORD_SIZE_GET(config->operation) == 8) {
+		MODIFY_REG(spi->CR2, SPI_CR2_DS_MASK, SPI_DATASIZE_8BIT);
 	} else { 
-        MODIFY_REG(spi->CR2, SPI_CR2_DS_MASK, SPI_DATASIZE_16BIT);
+		MODIFY_REG(spi->CR2, SPI_CR2_DS_MASK, SPI_DATASIZE_16BIT);
 	} 
 
-    if (SPI_MODE_GET(config->operation) & SPI_MODE_CPOL) {
-        MODIFY_REG(spi->CR1, SPI_CR1_CPOL_MASK, SPI_POLARITY_HIGH);
+	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPOL) {
+		MODIFY_REG(spi->CR1, SPI_CR1_CPOL_MASK, SPI_POLARITY_HIGH);
 	} else {
-        MODIFY_REG(spi->CR1, SPI_CR1_CPOL_MASK, SPI_POLARITY_LOW);
+		MODIFY_REG(spi->CR1, SPI_CR1_CPOL_MASK, SPI_POLARITY_LOW);
 	}
 
 	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPHA) {
-        MODIFY_REG(spi->CR1, SPI_CR1_CPHA_MASK, SPI_PHASE_2EDGE);
+		MODIFY_REG(spi->CR1, SPI_CR1_CPHA_MASK, SPI_PHASE_2EDGE);
 	} else {
-        MODIFY_REG(spi->CR1, SPI_CR1_CPHA_MASK, SPI_PHASE_1EDGE);
+		MODIFY_REG(spi->CR1, SPI_CR1_CPHA_MASK, SPI_PHASE_1EDGE);
 	}
 
 	if (8 * config->frequency > CPU_FREQ) {
@@ -131,7 +142,7 @@ static int spi_ls_configure(const struct device *dev,
 		return -EINVAL;
 	}
 
-    for (uint8_t i = 0U; i <= ARRAY_SIZE(scaler); i++) {
+	for (uint8_t i = 0U; i <= ARRAY_SIZE(scaler); i++) {
 		uint32_t clk = clock >> (i + 3);
 		if (clk <= config->frequency) {
 			MODIFY_REG(spi->CR1, SPI_CR1_BR_MASK, scaler[i]);
@@ -139,17 +150,17 @@ static int spi_ls_configure(const struct device *dev,
 		}
 	}
 
-    err = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	err = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
 	if (err < 0) {
 		LOG_ERROR("applying SPI pinctrl state failed");
 		return err;
 	}
 
-    REG_FIELD_WR(spi->CR2, SPI_CR2_SSOE, 1);
-    REG_FIELD_WR(spi->CR2, SPI_CR2_TXFTH, 4);
+	REG_FIELD_WR(spi->CR2, SPI_CR2_SSOE, 1);
+	REG_FIELD_WR(spi->CR2, SPI_CR2_TXFTH, 4);
 
-    ctx->config = config;
-    spi->IER = SPI_IT_ERR;
+	ctx->config = config;
+	spi->IER = SPI_IT_ERR;
 
 	return 0;
 }
@@ -159,6 +170,7 @@ static int spi_ls_get_err(reg_spi_t *spi)
 	uint32_t sr = READ_REG(spi->IFM);
 
 	if (sr & SPI_IFM_MODFFM_MASK) {
+<<<<<<< HEAD
         LOG_ERROR("master mode fault");
 		return -EIO;
 	}
@@ -170,6 +182,19 @@ static int spi_ls_get_err(reg_spi_t *spi)
 
     if (sr & SPI_IFM_FREFM_MASK) {
         LOG_ERROR("frame format error");
+=======
+		LOG_ERR("master mode fault");
+		return -EIO;
+	}
+
+	if (sr & SPI_IFM_OVRFM_MASK) {
+		LOG_ERR("fifo overrun error");
+		return -EIO;
+	}
+
+	if (sr & SPI_IFM_FREFM_MASK) {
+		LOG_ERR("frame format error");
+>>>>>>> 25ccb2b4646... spi_ls 501x&101x  combine
 		return -EIO;
 	}
 
@@ -178,30 +203,30 @@ static int spi_ls_get_err(reg_spi_t *spi)
 
 static void spi_ls_data_exchange_master(reg_spi_t *spi, struct spi_ls_data *data)
 {
-    uint16_t tx_frame = 0, rx_frame;
+	uint16_t tx_frame = 0, rx_frame;
 
-    while (!REG_FIELD_RD(spi->SR, SPI_SR_TXE));
-    
-    if (SPI_WORD_SIZE_GET(data->ctx.config->operation) == 8) {
+	while (!REG_FIELD_RD(spi->SR, SPI_SR_TXE));
+
+	if (SPI_WORD_SIZE_GET(data->ctx.config->operation) == 8) {
 		if (spi_context_tx_buf_on(&data->ctx)) {
 			tx_frame = UNALIGNED_GET((uint8_t *)(data->ctx.tx_buf));
 		}
-        *((uint8_t *)&spi->DR) = tx_frame;
+		*((uint8_t *)&spi->DR) = tx_frame;
 		/* The update is ignored if TX is off. */
 		spi_context_update_tx(&data->ctx, 1, 1);
 	} else {
 		if (spi_context_tx_buf_on(&data->ctx)) {
 			tx_frame = UNALIGNED_GET((uint16_t *)(data->ctx.tx_buf));
 		}
-        spi->DR = tx_frame;
+		spi->DR = tx_frame;
 		/* The update is ignored if TX is off. */
 		spi_context_update_tx(&data->ctx, 2, 1);
 	}
 
-    while (!REG_FIELD_RD(spi->SR, SPI_SR_RXNE));
+	while (!REG_FIELD_RD(spi->SR, SPI_SR_RXNE));
 
-    if (SPI_WORD_SIZE_GET(data->ctx.config->operation) == 8) {
-        rx_frame = spi->DR;
+	if (SPI_WORD_SIZE_GET(data->ctx.config->operation) == 8) {
+		rx_frame = spi->DR;
 		if (spi_context_rx_buf_on(&data->ctx)) {
 			UNALIGNED_PUT(rx_frame, (uint8_t *)data->ctx.rx_buf);
 		}
@@ -217,7 +242,7 @@ static void spi_ls_data_exchange_master(reg_spi_t *spi, struct spi_ls_data *data
 
 static void spi_ls_data_exchange_slave(reg_spi_t *spi, struct spi_ls_data *data)
 {
-    if (REG_FIELD_RD(spi->SR, SPI_SR_TXE) && spi_context_tx_on(&data->ctx)) {
+	if (REG_FIELD_RD(spi->SR, SPI_SR_TXE) && spi_context_tx_on(&data->ctx)) {
 		uint16_t tx_frame;
 
 		if (SPI_WORD_SIZE_GET(data->ctx.config->operation) == 8) {
@@ -248,7 +273,7 @@ static void spi_ls_data_exchange_slave(reg_spi_t *spi, struct spi_ls_data *data)
 
 static int spi_data_exchange(reg_spi_t *spi, struct spi_ls_data *data)
 {
-    uint16_t operation = data->ctx.config->operation;
+	uint16_t operation = data->ctx.config->operation;
 
 	if (SPI_OP_MODE_GET(operation) == SPI_OP_MODE_MASTER) {
 		spi_ls_data_exchange_master(spi, data);
@@ -261,24 +286,24 @@ static int spi_data_exchange(reg_spi_t *spi, struct spi_ls_data *data)
 
 static void spi_ls_complete(const struct device *dev, int status)
 {
-    const struct spi_ls_config *cfg = dev->config;
+	const struct spi_ls_config *cfg = dev->config;
 	struct spi_ls_data *data = dev->data;
 	reg_spi_t *spi = cfg->instance;
 
 	spi->IDR = SPI_IT_TXE | SPI_IT_RXNE;
 
 
-    if (SPI_OP_MODE_GET(data->ctx.config->operation) == SPI_OP_MODE_MASTER) {
-        /* Check SR busy status */
-        while (REG_FIELD_RD(spi->SR,SPI_SR_BSY) == 1U);
+	if (SPI_OP_MODE_GET(data->ctx.config->operation) == SPI_OP_MODE_MASTER) {
+		/* Check SR busy status */
+		while (REG_FIELD_RD(spi->SR,SPI_SR_BSY) == 1U);
 
-        if (spi_cs_is_gpio(data->ctx.config)) {
-            spi_context_cs_control(&data->ctx, false);
-	    }
-    }
+		if (spi_cs_is_gpio(data->ctx.config)) {
+			spi_context_cs_control(&data->ctx, false);
+		}
+	}
 
 	if (!(data->ctx.config->operation & SPI_HOLD_ON_CS)) {
-        /* disable the selected SPI peripheral */
+		/* disable the selected SPI peripheral */
 		REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
 	}
 
@@ -303,10 +328,10 @@ static void spi_ls_isr(const struct device *dev)
 	}
 
 	if (err || !(spi_context_tx_on(&data->ctx) || spi_context_rx_on(&data->ctx))) {
-        spi_ls_complete(dev, err);
+		spi_ls_complete(dev, err);
 	}
 
-    spi->ICR = SPI_ICR_TXEIC_MASK;
+	spi->ICR = SPI_ICR_TXEIC_MASK;
 }
 
 static int spi_ls_transceive(const struct device *dev,
@@ -316,7 +341,7 @@ static int spi_ls_transceive(const struct device *dev,
 {
 	const struct spi_ls_config *cfg = dev->config;
 	struct spi_ls_data *data = dev->data;
-    struct spi_context *ctx = &data->ctx;
+	struct spi_context *ctx = &data->ctx;
 	reg_spi_t *spi = cfg->instance;
 	int err;
 
@@ -338,29 +363,43 @@ static int spi_ls_transceive(const struct device *dev,
 		spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, 2);
 	}
 
-    if (spi_cs_is_gpio(config)) {
-        spi_context_cs_control(ctx, true);
-    }
-
-    /* Enable the selected SPI peripheral */
-    REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 1);
-    
-	if (rx_bufs) {
-		spi->ICR = SPI_IT_RXNE;
-        spi->IER = SPI_IT_RXNE;
+	if (spi_cs_is_gpio(config)) {
+		spi_context_cs_control(ctx, true);
 	}
 
-    spi->ICR = SPI_IT_TXE;
-    spi->IER = SPI_IT_TXE;
-	
-	err = spi_context_wait_for_completion(&data->ctx);
+	/* Enable the selected SPI peripheral */
+	REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 1);
 
-   spi_ls_complete(dev, err);
-    #ifdef CONFIG_SPI_SLAVE
+	if (rx_bufs) {
+		spi->ICR = SPI_IT_RXNE;
+		spi->IER = SPI_IT_RXNE;
+	}
+
+	spi->ICR = SPI_IT_TXE;
+	spi->IER = SPI_IT_TXE;
+
+	#if defined(CONFIG_SOC_SERIES_LE501X)
+	if (tx_bufs) {
+		if (SPI_WORD_SIZE_GET(data->ctx.config->operation) == 8) {
+			uint8_t first_data = UNALIGNED_GET((uint8_t *)(tx_bufs->buffers[0].buf));
+			*((uint8_t *)&spi->DR)=first_data;
+			spi_context_update_tx(&data->ctx, 1, 1);
+		} else {
+			uint16_t first_data = UNALIGNED_GET((uint16_t *)(tx_bufs->buffers[0].buf));
+			spi->DR = first_data;
+			spi_context_update_tx(&data->ctx, 2, 1);
+		}
+	}
+	#endif /* CONFIG_SOC_SERIES_LE501X */
+
+	err = spi_context_wait_for_completion(&data->ctx);
+	spi_ls_complete(dev, err);
+
+	#ifdef CONFIG_SPI_SLAVE
 	if (spi_context_is_slave(&data->ctx) && !err) {
 		err = data->ctx.recv_frames;
 	}
-    #endif /* CONFIG_SPI_SLAVE */
+	#endif /* CONFIG_SPI_SLAVE */
 
 done:
 	spi_context_release(ctx, err);
@@ -383,7 +422,7 @@ static int spi_ls_release(const struct device *dev,
 	}
 
 	spi_context_unlock_unconditionally(ctx);
-    /* disable the selected SPI peripheral */
+	/* disable the selected SPI peripheral */
 	REG_FIELD_WR(cfg->instance->CR1, SPI_CR1_SPE, 0);
 
 	return 0;
@@ -402,77 +441,69 @@ static const struct spi_driver_api spi_ls_driver_api = {
 static void spi_ls_irq_config_func_##id(const struct device *dev)		\
 {									\
 	IRQ_CONNECT(DT_INST_IRQN(id),					\
-		    DT_INST_IRQ(id, priority),				\
-		    spi_ls_isr, DEVICE_DT_INST_GET(id), 0);		\
+			DT_INST_IRQ(id, priority),				\
+			spi_ls_isr, DEVICE_DT_INST_GET(id), 0);		\
 	irq_enable(DT_INST_IRQN(id));					\
 }
 
 
-#if defined(CONFIG_SOC_SERIES_LE501X)
-static void spi_clock_init(void)
-{
-    REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 1);
-    REG_FIELD_WR(RCC->APB1RST, RCC_SPI2, 0);
-    REG_FIELD_WR(RCC->APB1EN, RCC_SPI2, 1);
-}
-#endif
 
 static int spi_ls_init(const struct device *dev)
 {
 	__maybe_unused const struct spi_ls_config *const dev_config = dev->config;
 	struct spi_ls_data *data = dev->data;
-    __maybe_unused int ret;
+	__maybe_unused int ret;
 	int err;
 
 
 	dev_config->irq_config(dev);
 
-#if defined(CONFIG_SOC_SERIES_LE501X)
-    spi_clock_init();
-#endif
 
-#if !defined(CONFIG_SOC_SERIES_LE501X)
 #if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
-            return -ENODEV;
-        }
-        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-    }
-#endif
+	if (dev_config->ccfg.cctl_dev) {
+		const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+	}
 #endif
 
 #if defined(CONFIG_RESET)
-    if (dev_config->reset.dev != NULL) {
-        if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERROR("Reset controller device is not ready");
-            return -ENODEV;
-        }
+	if (dev_config->reset.dev != NULL) {
+		if (!device_is_ready(dev_config->reset.dev)) {
+			LOG_ERR("Reset controller device is not ready");
+			return -ENODEV;
+		}
 
-        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
-        if (ret != 0) {
-            LOG_ERROR("toggle reset line failed");
-            return ret;
-        }
-    }
+		ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+		if (ret != 0) {
+			LOG_ERR("toggle reset line failed");
+			return ret;
+		}
+	}
 #endif
 
-#if !defined(CONFIG_SOC_SERIES_LE501X)
 #if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-    }
-#endif
+	if (dev_config->ccfg.cctl_dev) {
+		const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+		clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+	}
 #endif
 
 #if defined(CONFIG_PINCTRL)
+<<<<<<< HEAD
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
         LOG_ERROR("Could not configure pins");
     }
+=======
+	ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+	if (ret < 0) {
+		LOG_ERR("Could not configure pins");
+	}
+>>>>>>> 25ccb2b4646... spi_ls 501x&101x  combine
 #endif
 
 	err = spi_context_cs_configure_all(&data->ctx);
@@ -491,7 +522,7 @@ LS_SPI_IRQ_HANDLER_DECL(id);					\
 									\
 static const struct spi_ls_config spi_ls_cfg_##id = {		\
 	.instance = (reg_spi_t *) DT_INST_REG_ADDR(id),			\
-    LS_SPI_IRQ_HANDLER_FUNC(id)					\
+	LS_SPI_IRQ_HANDLER_FUNC(id)					\
 	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id), ))                 \
 	IF_ENABLED(DT_HAS_CLOCKS(id), (.ccfg = LS_DT_CLK_CFG_ITEM(id), ))                       \
 	IF_ENABLED(DT_INST_NODE_HAS_PROP(id, resets), (.reset = RESET_DT_SPEC_INST_GET(id), ))  \
@@ -500,14 +531,14 @@ static const struct spi_ls_config spi_ls_cfg_##id = {		\
 static struct spi_ls_data spi_ls_dev_data_##id = {		    \
 	SPI_CONTEXT_INIT_LOCK(spi_ls_dev_data_##id, ctx),		\
 	SPI_CONTEXT_INIT_SYNC(spi_ls_dev_data_##id, ctx),		\
-    SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(id), ctx)	\
+	SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(id), ctx)	\
 };									\
 									\
 DEVICE_DT_INST_DEFINE(id, &spi_ls_init, NULL,			\
-		    &spi_ls_dev_data_##id, &spi_ls_cfg_##id,	\
-		    POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,		\
-		    &spi_ls_driver_api);                \
-                                    \
+			&spi_ls_dev_data_##id, &spi_ls_cfg_##id,	\
+			POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,		\
+			&spi_ls_driver_api);                \
+									\
 LS_SPI_IRQ_HANDLER(id)
 
 DT_INST_FOREACH_STATUS_OKAY(LS_SPI_INIT)
