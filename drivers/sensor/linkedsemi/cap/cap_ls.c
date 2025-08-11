@@ -5,21 +5,27 @@
 #include <zephyr/device.h>
 #include <zephyr/types.h>
 #include <zephyr/arch/cpu.h>
-#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/mutex.h>
 #include <stdio.h>
 #include <zephyr/dt-bindings/clock/lsqsh_clock.h>
 #include <zephyr/dt-bindings/sensor/linkedsemi-cap.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/devicetree.h>
-#include <zephyr/drivers/clock_control.h>
-#include <soc_clock.h>
 #include "reg_cap_type.h"
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
 #define CHAN_CONT 8
 
@@ -43,11 +49,12 @@ struct cap_data {
 struct cap_config {
 	reg_cap_t *const regs;
 	uint8_t prescaler;
-	const struct pinctrl_dev_config *pcfg;
 	uint8_t channels[CHAN_CONT];
-	struct ls_clk_cfg ccfg;
 	irq_cfg_func_t irq_config_func;
 	uint32_t hclk_hz;
+	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 };
 
 uint32_t get_freq(uint32_t hclk_mhz, uint16_t cap_low, uint16_t cap_high, uint32_t prescaler)
@@ -143,21 +150,46 @@ static int cap_init(const struct device *dev)
 		}
 	}
 
+#if defined(CONFIG_CLOCK_CONTROL)
 	if (cfg->ccfg.cctl_dev) {
 		const struct device *clk_dev = cfg->ccfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {
 			LOG_DBG("%s device not ready", clk_dev->name);
 			return -ENODEV;
 		}
+		clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
+	}
+#endif
+
+#if defined(CONFIG_RESET)
+	if (cfg->reset.dev != NULL) {
+		if (!device_is_ready(cfg->reset.dev)) {
+			LOG_ERR("%s: Reset controller device is not ready", dev->name);
+			return -ENODEV;
+		}
+
+		ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
+		if (ret != 0) {
+			LOG_ERR("%s: toggle reset line failed", dev->name);
+			return ret;
+		}
+	}
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+	if (cfg->ccfg.cctl_dev) {
+		const struct device *clk_dev = cfg->ccfg.cctl_dev;
 		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
 	}
+#endif
 
+#if defined(CONFIG_PINCTRL)
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
 	if (ret != 0) {
 		LOG_ERR("Failed to apply 'pin' state (%d)", ret);
 		return ret;
 	}
-
+#endif
 	cfg->irq_config_func(dev);
 
 	cap->CAP_CNT_EN = 1;
@@ -231,7 +263,7 @@ static const struct sensor_driver_api cap_driver_api = {
 
 #define CAP_DEFINE(inst)                                                                           \
 	static struct cap_data cap_data_##inst;                                                    \
-	PINCTRL_DT_INST_DEFINE(inst);                                                              \
+	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                              \
 	static void cap_irq_config_##inst(const struct device *dev)                                \
 	{                                                                                          \
 		IRQ_CONNECT(DT_INST_IRQN(inst), DT_INST_IRQ(inst, priority), ls_cap_isr,           \
@@ -241,11 +273,12 @@ static const struct sensor_driver_api cap_driver_api = {
 	static const struct cap_config cap_config_##inst = {                                       \
 		.regs = (reg_cap_t *)DT_INST_REG_ADDR(inst),                                       \
 		.prescaler = DT_INST_PROP(inst, prescaler),                                        \
-		.pcfg = PINCTRL_DT_DEV_CONFIG_GET(DT_DRV_INST(inst)),                              \
-		.ccfg = LS_DT_CLK_CFG_ITEM(inst),                                                  \
 		.channels = DT_INST_PROP(inst, channels),                                          \
 		.hclk_hz = DT_INST_PROP(inst, clock_frequency),                                    \
 		.irq_config_func = cap_irq_config_##inst,                                          \
+		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), )) \
+        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), )) \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) \
 	};                                                                                         \
 	SENSOR_DEVICE_DT_INST_DEFINE(inst, cap_init, NULL, &cap_data_##inst, &cap_config_##inst,   \
 				     POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &cap_driver_api);
