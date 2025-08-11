@@ -8,11 +8,16 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util_macro.h>
 #include <zephyr/dt-bindings/clock/lsqsh_clock.h>
-#include <zephyr/drivers/clock_control.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/spinlock.h>
-#include <soc_clock.h>
 #include <stdbool.h>
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 #include "reg_iwdgv2_type.h"
 #include "field_manipulate.h"
 #include "ls_msp_iwdg.h"
@@ -25,10 +30,11 @@ LOG_MODULE_REGISTER(wdt_iwdg_ls, LOG_LEVEL_DBG);
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct iwdt_ls_config {
-	struct ls_clk_cfg ccfg;
 	reg_iwdg_t *iwdg_reg;
 	irq_cfg_func_t irq_config_func;
 	uint32_t hclk_hz;
+	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct iwdt_ls_data {
@@ -130,18 +136,44 @@ static void iwdt_ls_isr(void *arg)
 static int iwdt_init(const struct device *dev)
 {
 	const struct iwdt_ls_config *const cfg = dev->config;
+	cfg->iwdg_reg->IWDT_CTRL &= ~WDT_CTRL_RST_EN;
 
+#if defined(CONFIG_CLOCK_CONTROL)
 	if (cfg->ccfg.cctl_dev) {
 		const struct device *clk_dev = cfg->ccfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {
-			LOG_INF("%s device not ready", clk_dev->name);
+			LOG_ERR("%s: %s device not ready", dev->name, clk_dev->name);
 			return -ENODEV;
 		}
+		clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
+	}
+#endif
+
+#if defined(CONFIG_RESET)
+	if (cfg->reset.dev != NULL) {
+		if (!device_is_ready(cfg->reset.dev)) {
+			LOG_ERR("%s: Reset controller device is not ready", dev->name);
+			return -ENODEV;
+		}
+
+		int ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
+		if (ret != 0) {
+			LOG_ERR("%s: toggle reset line failed", dev->name);
+			return ret;
+		}
+	}
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+	if (cfg->ccfg.cctl_dev) {
+		const struct device *clk_dev = cfg->ccfg.cctl_dev;
 		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
 	}
-  cfg->irq_config_func(dev);
-	
-  return 0;
+#endif
+
+	cfg->irq_config_func(dev);
+
+	return 0;
 }
 
 static const struct wdt_driver_api iwdt_ls_api = {
@@ -164,6 +196,8 @@ static const struct wdt_driver_api iwdt_ls_api = {
 		.ccfg = LS_DT_CLK_CFG_ITEM(inst),                                                  \
 		.irq_config_func = iwdt_irq_config_##inst,                                         \
 		.hclk_hz = DT_INST_PROP(inst, clock_frequency),                                    \
+        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), )) \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, iwdt_init, NULL, &iwdt_ls_data##inst, &iwdt_ls_config##inst,   \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &iwdt_ls_api);
