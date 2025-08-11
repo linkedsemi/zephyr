@@ -356,6 +356,7 @@ int aes_test()
 
 int main(void)
 {
+#if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)
     if(test_sha224() != 0)
     {
         printf("SHA-224  test failed!\n");
@@ -369,13 +370,16 @@ int main(void)
     }else{
         printf("SHA-256  test passed!\n");
     }
+#endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
 
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
     if(aes_test() != 0)
     {
         printf("AES  test failed!\n");
     }else{
         printf("AES  test passed!\n");
     }
+#endif /* CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI */
 
     return 0;
 }
