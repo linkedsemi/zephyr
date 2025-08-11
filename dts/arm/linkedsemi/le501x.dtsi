@@ -3,11 +3,11 @@
 #include <zephyr/dt-bindings/clock/le501x_clock.h>
 
 / {
-    chosen {
+	chosen {
 		zephyr,flash-controller = &flash_controller;
 	};
 
-    cpus {
+	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
 
@@ -16,47 +16,47 @@
 			compatible = "arm,cortex-m0";
 			reg = <0>;
 		};
-    };
+	};
 
-    sram0: memory@62c {
-        compatible = "mmio-sram";
-        reg = <0x62c 0xc000>;
-    };
+	sram0: memory@62c {
+		compatible = "mmio-sram";
+		reg = <0x62c 0xc000>;
+	};
 
-    soc {
-        #address-cells = <1>;
+	soc {
+		#address-cells = <1>;
 		#size-cells = <1>;
 		compatible = "simple-bus";
 		ranges;
 
-        flash_controller: flash-controller@40020000 {
-            compatible = "linkedsemi,ls-flash-controller";
-            reg = <0x40020000 0x400>;
-            #address-cells = <1>;
-            #size-cells = <1>;
+		flash_controller: flash-controller@40020000 {
+			compatible = "linkedsemi,ls-flash-controller";
+			reg = <0x40020000 0x400>;
+			#address-cells = <1>;
+			#size-cells = <1>;
 
-            flash0: flash@18000000 {
-                compatible = "soc-nv-flash";
-                reg = <0x18000000 0x80000>;
-                erase-block-size = <4096>;
-                write-block-size = <4>;
-            };
-        };
+			flash0: flash@18000000 {
+				compatible = "soc-nv-flash";
+				reg = <0x18000000 0x80000>;
+				erase-block-size = <4096>;
+				write-block-size = <4>;
+			};
+		};
 
-        pinctrl: pin-controller@48000000 {
+		pinctrl: pin-controller@48000000 {
 			compatible = "linkedsemi,ls-pinctrl";
 			interrupts = <0 3>;
 			interrupt-names = "EXTI_GPIO";
-            reg = <0x48000000 0xC00>;
+			reg = <0x48000000 0xC00>;
 			#address-cells = <1>;
 			#size-cells = <1>;
-            
+
 			gpioa: gpio@48000000 {
 				compatible = "linkedsemi,ls-gpio";
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000000 0x400>;
-                status = "disabled";
+				status = "disabled";
 			};
 
 			gpiob: gpio@48000400 {
@@ -64,7 +64,7 @@
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000400 0x400>;
-                status = "disabled";
+				status = "disabled";
 			};
 
 			gpioc: gpio@48000800 {
@@ -72,69 +72,69 @@
 				gpio-controller;
 				#gpio-cells = <2>;
 				reg = <0x48000800 0x400>;
-                status = "disabled";
+				status = "disabled";
 			};
-        };
+		};
 
-        rcc: clock-controller@40021000 {
-            compatible = "linkedsemi,le501x-cctl";
-            #clock-cells = <3>;
-            reg = <0x40021000 0x400>;
-            status = "okay";
-        };
+		rcc: clock-controller@40021000 {
+			compatible = "linkedsemi,le501x-cctl";
+			#clock-cells = <3>;
+			reg = <0x40021000 0x400>;
+			status = "okay";
+		};
 
-        uart1: uart@40013800 {
-            compatible = "linkedsemi,ls-uart";
-            reg = <0x40013800 0x400>;
-            clock-frequency = <64000000>;
+		uart1: uart@40013800 {
+			compatible = "linkedsemi,ls-uart";
+			reg = <0x40013800 0x400>;
+			clock-frequency = <64000000>;
 			status = "disabled";
-            // label = "UART1";
-            interrupts = <27 3> ;
-            clocks = <&rcc LE501X_CLOCK_BUS_APB2 LE501X_RESET_BUS_APB2 LE501X_UART1_POS>;
-        };
+			// label = "UART1";
+			interrupts = <27 3> ;
+			clocks = <&rcc LE501X_CLOCK_BUS_APB2 LE501X_RESET_BUS_APB2 LE501X_UART1_POS>;
+		};
 
-        uart2: uart@40004400 {
-            compatible = "linkedsemi,ls-uart";
-            reg = <0x40004400 0x400>;
-            clock-frequency = <64000000>;
+		uart2: uart@40004400 {
+			compatible = "linkedsemi,ls-uart";
+			reg = <0x40004400 0x400>;
+			clock-frequency = <64000000>;
 			status = "disabled";
-            // label = "UART2";
-            interrupts = <28 3> ;
-            clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_UART2_POS>;
-        };
+			// label = "UART2";
+			interrupts = <28 3> ;
+			clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_UART2_POS>;
+		};
 
-        uart3: uart@40004800 {
-            compatible = "linkedsemi,ls-uart";
-            reg = <0x40004800 0x400>;
-            clock-frequency = <64000000>;
+		uart3: uart@40004800 {
+			compatible = "linkedsemi,ls-uart";
+			reg = <0x40004800 0x400>;
+			clock-frequency = <64000000>;
 			status = "disabled";
-            // label = "UART3";
-            interrupts = <29 3> ;
-            clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_UART3_POS>;
-        };
-        i2c1: i2c@40005400 {
-            compatible = "le501x-i2c";
-            #address-cells = <1>;
-            #size-cells = <0>;
-            reg = <0x40005400 0x400>;
-            interrupts = <23 3>;
-            interrupt-names = "i2c1";
-            status = "disabled";
-        };
+			// label = "UART3";
+			interrupts = <29 3> ;
+			clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_UART3_POS>;
+		};
+		i2c1: i2c@40005400 {
+			compatible = "le501x-i2c";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40005400 0x400>;
+			interrupts = <23 3>;
+			interrupt-names = "i2c1";
+			status = "disabled";
+		};
 
-        i2c2: i2c@40005800 {
-            compatible = "le501x-i2c";
-            #address-cells = <1>;
-            #size-cells = <0>;
-            reg = <0x40005800 0x400>;
-            interrupts = <24 3>;
-            interrupt-names = "i2c2";
-            status = "disabled";
-        };
+		i2c2: i2c@40005800 {
+			compatible = "le501x-i2c";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x40005800 0x400>;
+			interrupts = <24 3>;
+			interrupt-names = "i2c2";
+			status = "disabled";
+		};
 
-        spi1: spi@40013000 {
+		spi1: spi@40013000 {
 			compatible = "snps,designware-spi";
-            clock-frequency = <64000000>;
+			clock-frequency = <64000000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40013000 0x400>;
@@ -143,32 +143,34 @@
 			status = "disabled";
 		};
 
-        spi2: spi@40003800 {
+		spi2: spi@40003800 {
 			compatible = "linkedsemi,ls-spi";
+			clocks = <&rcc LE501X_CLOCK_BUS_APB1 LE501X_RESET_BUS_APB1 LE501X_SPI2_POS>;
+			clock-frequency = <64000000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
 			reg = <0x40003800 0x400>;
-            interrupts = <26 3>;
+			interrupts = <26 3>;
 			status = "disabled";
 		};
-    };
+	};
 
-    bt_hci_linkedsemi: bt_hci_linkedsemi {
-        compatible = "linkedsemi,bt-hci";
-        status = "disabled";
-    };
-    
-    power-states {
-        idle: idle{
-            compatible = "zephyr,power-state";
+	bt_hci_linkedsemi: bt_hci_linkedsemi {
+		compatible = "linkedsemi,bt-hci";
+		status = "disabled";
+	};
+
+	power-states {
+		idle: idle{
+			compatible = "zephyr,power-state";
 			power-state-name = "runtime-idle";
-        };
-        
-        lp0: lp0 {
+		};
+
+		lp0: lp0 {
 			compatible = "zephyr,power-state";
 			power-state-name = "standby";
-        };
-    };
+		};
+	};
 };
 
 &nvic {

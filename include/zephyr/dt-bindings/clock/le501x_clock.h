@@ -10,3 +10,5 @@
 #define LE501X_UART1_POS                14
 #define LE501X_UART2_POS                17
 #define LE501X_UART3_POS                18
+#define LE501X_SPI1_POS                 12
+#define LE501X_SPI2_POS                 14
