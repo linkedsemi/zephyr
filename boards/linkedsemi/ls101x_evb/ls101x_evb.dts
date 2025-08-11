@@ -134,7 +134,7 @@ zephyr_udc0: &usb {
 };
 
 &cap {
-    prescaler = <7>;                    // 分频系数
+    prescaler = <7>;
     channels = <CAP_DISABLED CAP_DISABLED CAP_MODE0 CAP_MODE1 CAP_MODE1 CAP_MODE1 CAP_MODE1 CAP_MODE1>;//cap_mode
     pinctrl-0 = <&cap1_rx_pf00 &cap2_rx_pf01 &cap3_rx_pf02 &cap4_rx_pf03 &cap5_rx_pf04
                  &cap6_rx_pf05 &cap7_rx_pf06 &cap8_rx_pf07>;
