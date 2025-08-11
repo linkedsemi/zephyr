@@ -5,9 +5,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
-#include <zephyr/drivers/clock_control.h>
 #include <reg_rtcv2_type.h>
-#include <soc_clock.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/spinlock.h>
 #include <stdbool.h>
@@ -16,6 +14,14 @@
 #include <stdlib.h>
 #include <time.h>
 
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
+
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
 LOG_MODULE_REGISTER(rtc_ls, LOG_LEVEL_DBG);
 
 #define DT_DRV_COMPAT linkedsemi_ls_rtc
@@ -28,7 +34,8 @@ LOG_MODULE_REGISTER(rtc_ls, LOG_LEVEL_DBG);
 
 
 struct rtc_ls_config {
-    struct ls_clk_cfg clk_cfg;
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg clk_cfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
     uintptr_t base;
     void (*irq_config_func)(const struct device *dev);
     uint32_t cyc_1hz;
@@ -44,7 +51,7 @@ struct rtc_ls_data {
 };
 
 #define RTC_REGS(dev) \
-	((volatile  reg_rtc_t *)((const struct rtc_ls_config *)dev->config)->base)
+    ((volatile  reg_rtc_t *)((const struct rtc_ls_config *)dev->config)->base)
 
 static void rtc_cycle_config(const struct device *dev, uint32_t cyc_1hz, uint32_t calib_cyc, bool calib_en){
     RTC_REGS(dev)->CALIB = ((calib_cyc & 0xFF) << 24) | ((cyc_1hz - 1) & 0xFFFFF);
@@ -292,9 +299,9 @@ static int rtc_ls_alarm_get_supported_fields(const struct device *dev, uint16_t 
 #if defined(CONFIG_RTC_UPDATE)
 static int rtc_ls_update_set_callback(const struct device *dev, rtc_update_callback callback, void *user_data){
     ARG_UNUSED(dev);
-	ARG_UNUSED(callback);
-	ARG_UNUSED(user_data);
-	return -ENOTSUP;
+    ARG_UNUSED(callback);
+    ARG_UNUSED(user_data);
+    return -ENOTSUP;
 }
 #endif /* CONFIG_RTC_UPDATE */
 
@@ -381,25 +388,49 @@ static int rtc_ls_get_calibration(const struct device *dev, int32_t *calibration
 static int rtc_ls_init(const struct device *dev){
 
     const struct rtc_ls_config *cfg = dev->config;
-    const struct device *clk_dev =cfg->clk_cfg.cctl_dev;
     struct rtc_ls_data *data = dev->data;
-
+    __maybe_unused int ret;
     data->alarm_cb = NULL;
     data->alarm_cb_user_data = NULL;
 
-    RTC_REGS(dev)->CTRL &= ~RTC_CTRL_ALARM_EN_MASK;//Alarm Disable
-    if (device_is_ready(clk_dev)) {
-
-        clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
-    } else {
-
-        LOG_ERR("Clock control device not ready!");
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (cfg->clk_cfg.cctl_dev) {
+        const struct device *clk_dev = cfg->clk_cfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s: %s device not ready", dev->name, clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
     }
+#endif/* CONFIG_CLOCK_CONTROL */
+
+#if defined(CONFIG_RESET)
+    if (cfg->reset.dev != NULL) {
+        if (!device_is_ready(cfg->reset.dev)) {
+            LOG_ERR("%s: Reset controller device is not ready", dev->name);
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
+        if (ret != 0) {
+            LOG_ERR("%s: toggle reset line failed", dev->name);
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (cfg->clk_cfg.cctl_dev) {
+        const struct device *clk_dev = cfg->clk_cfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
+    }
+#endif
 
     cfg->irq_config_func(dev);
     rtc_cycle_config(dev, cfg->cyc_1hz, cfg->calib_cyc,true);
+    RTC_REGS(dev)->CTRL &= ~RTC_CTRL_ALARM_EN_MASK;//Alarm Disable
     RTC_REGS(dev)->CTRL |= RTC_CTRL_ENABLE_MASK;
-	return 0;
+    return 0;
 }
 
 /**
@@ -431,27 +462,28 @@ static const struct rtc_driver_api rtc_ls_api = {
 #define RTC_LS_IRQ_INIT(n) \
 static void rtc_ls_irq_config_func_##n(const struct device *dev) \
 { \
-	IRQ_CONNECT(DT_INST_IRQN(n), \
-		DT_INST_IRQ(n, priority), \
-		rtc_irq_handler, \
-		DEVICE_DT_INST_GET(n), 0); \
-	irq_enable(DT_INST_IRQN(n)); \
+        IRQ_CONNECT(DT_INST_IRQN(n), \
+        DT_INST_IRQ(n, priority), \
+        rtc_irq_handler, \
+        DEVICE_DT_INST_GET(n), 0); \
+    irq_enable(DT_INST_IRQN(n)); \
 }
 
 #define RTC_LS_DEVICE(n) \
-	RTC_LS_IRQ_INIT(n); \
-	static struct rtc_ls_data rtc_ls_data_##n; \
-	static const struct rtc_ls_config rtc_ls_config_##n = { \
-        .clk_cfg = LS_DT_CLK_CFG_ITEM(n),  \
-		.base = DT_INST_REG_ADDR(n), \
-		.irq_config_func = rtc_ls_irq_config_func_##n, \
+    RTC_LS_IRQ_INIT(n); \
+    static struct rtc_ls_data rtc_ls_data_##n; \
+    static const struct rtc_ls_config rtc_ls_config_##n = { \
+        IF_ENABLED(DT_HAS_CLOCKS(n), (.clk_cfg = LS_DT_CLK_CFG_ITEM(n), )) \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(n, resets), (.reset = RESET_DT_SPEC_INST_GET(n), )) \
+        .base = DT_INST_REG_ADDR(n), \
+        .irq_config_func = rtc_ls_irq_config_func_##n, \
         .cyc_1hz = DT_INST_PROP(n, cyc_1hz), \
         .calib_cyc = DT_INST_PROP(n, calib_cyc), \
         .calib_enable = DT_INST_NODE_HAS_PROP(DT_DRV_INST(n), calib_enable), \
-	}; \
-	DEVICE_DT_INST_DEFINE(n, rtc_ls_init, NULL, \
-				&rtc_ls_data_##n, &rtc_ls_config_##n, \
-				POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, \
-				&rtc_ls_api);
+    }; \
+    DEVICE_DT_INST_DEFINE(n, rtc_ls_init, NULL, \
+                &rtc_ls_data_##n, &rtc_ls_config_##n, \
+                POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, \
+                &rtc_ls_api);
 
 DT_INST_FOREACH_STATUS_OKAY(RTC_LS_DEVICE)
