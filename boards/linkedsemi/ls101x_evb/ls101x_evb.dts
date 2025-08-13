@@ -58,6 +58,11 @@
 		compatible = "linkedsemi,ls-ipmi-kcs";
 		kcs_chan = <&e8042>;
 	};
+	hwmon0 {
+		compatible = "linkedsemi,hwmon";
+		class = <0>;
+		hwmons = <&cap 0>;//,<&pwm 1>;
+	};
 };
 
 zephyr_udc0: &usb {

@@ -2,7 +2,7 @@ description: CAP controller for Linkedsemi
 
 compatible: "linkedsemi,ls-cap"
 
-include: [base.yaml, pinctrl-device.yaml, reset-device.yaml]
+include: [base.yaml, pinctrl-device.yaml, reset-device.yaml,hwmon-controller.yaml]
 
 properties:
   reg:
