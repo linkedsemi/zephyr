@@ -1,0 +1,17 @@
+# Copyright (c) 2021, linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: linkedsemi Hwmon
+
+compatible: "linkedsemi,hwmon"
+
+include: [base.yaml]
+
+properties:
+  class:
+    type: int
+    required: true
+  hwmons:
+    type: phandle-array
+    required: true
+

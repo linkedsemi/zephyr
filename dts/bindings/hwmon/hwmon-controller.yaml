@@ -1,0 +1,12 @@
+# Copyright (c) 2021, Linaro Limited
+# SPDX-License-Identifier: Apache-2.0
+
+# Common fields for hwmon controller
+
+properties:
+  "#hwmon-cells":
+    type: int
+    description: Number of items to expect in a hwmon specifier
+
+hwmon-cells:
+  - channel
