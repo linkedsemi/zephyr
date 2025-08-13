@@ -24,6 +24,10 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
         io_pull_write(pin, IO_PULL_DOWN);
     }
 
+    if (pin_desc.pin_attr.pull_up) {
+        io_pull_write(pin, IO_PULL_UP);
+    }
+
     if (pin_desc.pin_attr.pull_up0) {
         io_pull_write(pin, IO_PULL_UP0);
     }
