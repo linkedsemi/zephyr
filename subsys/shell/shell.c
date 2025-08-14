@@ -11,6 +11,10 @@
 #if defined(CONFIG_SHELL_BACKEND_DUMMY)
 #include <zephyr/shell/shell_dummy.h>
 #endif
+#if defined(CONFIG_SHELL_TAB_AUTOCOMPLETION)
+#include <stdio.h>
+#include <zephyr/fs/fs.h>
+#endif
 #include "shell_ops.h"
 #include "shell_help.h"
 #include "shell_utils.h"
@@ -807,6 +811,164 @@ static int execute(const struct shell *sh)
 			&argv[cmd_with_handler_lvl], &help_entry);
 }
 
+#if defined(CONFIG_SHELL_TAB_AUTOCOMPLETION)
+static bool is_path_argument(const struct shell *sh, const char **argv, size_t argc, size_t arg_idx)
+{
+	// only process absolute paths that start with '/'
+	if (arg_idx > 0 && argv[arg_idx] && argv[arg_idx][0] == '/') {
+		return true;
+	}
+	
+	// for specific commands, their parameters are usually paths.
+	if (argc > 0 && argv[0]) {
+		const char *path_commands[] = {"ls", "cd", "cat", "rm", "mkdir", "cp", "mv", NULL};
+		for (int i = 0; path_commands[i]; i++) {
+			if (strcmp(argv[0], path_commands[i]) == 0) {
+				// 只有当参数是绝对路径时才返回true
+				return arg_idx > 0 && argv[arg_idx] && argv[arg_idx][0] == '/';
+			}
+		}
+	}
+	
+	return false;
+}
+
+static size_t find_path_completion_candidates(const struct shell *sh,
+					      const char *incomplete_path,
+					      char **candidates,
+					      size_t max_candidates,
+					      uint16_t *longest)
+{
+    size_t count = 0;
+    *longest = 0;
+    
+    // only process absolute paths that start with '/'
+    if (!incomplete_path || incomplete_path[0] != '/') {
+        return 0;
+    }
+    
+    // separate the directory part and the filename part
+    char dir_path[PATH_MAX];
+    char filename_part[PATH_MAX];
+    
+    // extract the directory section
+    strncpy(dir_path, incomplete_path, sizeof(dir_path) - 1);
+    dir_path[sizeof(dir_path) - 1] = '\0';
+    
+    char *last_slash = strrchr(dir_path, '/');
+    if (last_slash) {
+        strncpy(filename_part, last_slash + 1, sizeof(filename_part) - 1);
+        filename_part[sizeof(filename_part) - 1] = '\0';
+        if (last_slash == dir_path) {
+            strcpy(dir_path, "/");
+        } else {
+            *last_slash = '\0';
+        }
+    } else {
+        z_shell_fprintf(sh, SHELL_ERROR, "slash handle error");
+        return 0;
+    }
+
+    // open the directory and find the matching items
+    struct fs_dir_t dir;
+    fs_dir_t_init(&dir);
+    
+    int rc = fs_opendir(&dir, dir_path);
+    if (rc == 0) {
+        struct fs_dirent dirent;
+        while (fs_readdir(&dir, &dirent) == 0 && dirent.name[0] != 0) {
+            if (count >= max_candidates) break;
+            
+            // check if the incomplete file name matches
+            if (strncmp(dirent.name, filename_part, strlen(filename_part)) == 0) {
+                // construct a complete path
+                char full_path[PATH_MAX];
+                if (strcmp(dir_path, "/") == 0) {
+                    snprintf(full_path, sizeof(full_path), "/%s", dirent.name);
+                } else {
+                    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, dirent.name);
+                }
+                
+                candidates[count] = k_malloc(strlen(full_path) + 2); // +2 for possible trailing '/'
+                if (candidates[count]) {
+                    strcpy(candidates[count], full_path);
+                    // if it is a directory, add a slash.
+                    if (dirent.type == FS_DIR_ENTRY_DIR) {
+                        strcat(candidates[count], "/");
+                    }
+                    *longest = Z_MAX(strlen(candidates[count]), *longest);
+                    count++;
+                }
+            }
+        }
+        fs_closedir(&dir);
+    }
+    
+    return count;
+}
+
+static void path_autocomplete(const struct shell *sh,
+			      const char *incomplete_path,
+			      char **candidates,
+			      size_t candidate_count)
+{
+    if (candidate_count == 1) {
+        // there is only one match, complete directly.
+        const char *to_insert = candidates[0];
+        
+        // extract the filename part
+        const char *last_slash = strrchr(incomplete_path, '/');
+        const char *filename_part = last_slash ? last_slash + 1 : incomplete_path;
+        
+        last_slash = strrchr(to_insert, '/');
+        const char *candidate_filename = last_slash ? last_slash + 1 : to_insert;
+        
+        if (to_insert[strlen(to_insert) - 1] == '/') {
+            // if it is a directory, complete it directly.
+            z_shell_op_completion_insert(sh, to_insert + strlen(incomplete_path), 
+                                         strlen(to_insert) - strlen(incomplete_path));
+        } else {
+            // if it is a file, only complete the file name part.
+            z_shell_op_completion_insert(sh, candidate_filename + strlen(filename_part), 
+                                         strlen(candidate_filename) - strlen(filename_part));
+        }
+    } else if (candidate_count > 1) {
+        // multiple matching items, found common prefix
+        if (candidate_count > 1) {
+            size_t common_len = strlen(candidates[0]);
+            for (size_t i = 1; i < candidate_count; i++) {
+                size_t j;
+                for (j = 0; candidates[0][j] && candidates[i][j] && 
+                     candidates[0][j] == candidates[i][j]; j++);
+                if (j < common_len) {
+                    common_len = j;
+                }
+            }
+            
+            // only complete to the public prefix part
+            if (common_len > strlen(incomplete_path)) {
+                z_shell_op_completion_insert(sh, 
+                                           candidates[0] + strlen(incomplete_path),
+                                           common_len - strlen(incomplete_path));
+            }
+        }
+        
+        // display all candidates
+        uint16_t longest = 0;
+        for (size_t i = 0; i < candidate_count; i++) {
+            longest = Z_MAX(strlen(candidates[i]), longest);
+        }
+        
+        tab_item_print(sh, SHELL_INIT_OPTION_PRINTER, longest);
+        for (size_t i = 0; i < candidate_count; i++) {
+            tab_item_print(sh, candidates[i], longest);
+        }
+        z_cursor_next_line_move(sh);
+        z_shell_print_prompt_and_cmd(sh);
+    }
+}
+#endif
+
 static void tab_handle(const struct shell *sh)
 {
 	const char *__argv[CONFIG_SHELL_ARGC_MAX + 1];
@@ -826,6 +988,27 @@ static void tab_handle(const struct shell *sh)
 	if (tab_possible == false) {
 		return;
 	}
+
+#if defined(CONFIG_SHELL_TAB_AUTOCOMPLETION)
+	// check if it is a path parameter
+	if (is_path_argument(sh, argv, argc, arg_idx) && argv[arg_idx]) {
+		// handle path auto-completion
+		char *candidates[CONFIG_SHELL_ARGC_MAX];
+		size_t path_cnt = find_path_completion_candidates(sh, argv[arg_idx], 
+								  candidates, 
+								  CONFIG_SHELL_ARGC_MAX,
+								  &longest);
+		
+		if (path_cnt > 0) {
+			path_autocomplete(sh, argv[arg_idx], candidates, path_cnt);
+			// clear memory
+			for (size_t i = 0; i < path_cnt; i++) {
+				k_free(candidates[i]);
+			}
+			return;
+		}
+	}
+#endif
 
 	find_completion_candidates(sh, cmd, argv[arg_idx], &first, &cnt,
 				   &longest);
