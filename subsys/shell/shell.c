@@ -848,8 +848,9 @@ static size_t find_path_completion_candidates(const struct shell *sh,
     }
     
     // separate the directory part and the filename part
-    char dir_path[PATH_MAX];
-    char filename_part[PATH_MAX];
+    char dir_path[PATH_MAX] = "";
+    char filename_part[PATH_MAX] = "";
+    char normalized_dir[PATH_MAX] = "";
     
     // extract the directory section
     strncpy(dir_path, incomplete_path, sizeof(dir_path) - 1);
@@ -869,11 +870,17 @@ static size_t find_path_completion_candidates(const struct shell *sh,
         return 0;
     }
 
+    // normalize directory paths using realpath, handling situations such as "." and "..".
+    if (realpath(dir_path, normalized_dir) != normalized_dir) {
+        z_shell_fprintf(sh, SHELL_ERROR, "path normalize error");
+        return 0;
+    }
+
     // open the directory and find the matching items
     struct fs_dir_t dir;
     fs_dir_t_init(&dir);
     
-    int rc = fs_opendir(&dir, dir_path);
+    int rc = fs_opendir(&dir, normalized_dir);
     if (rc == 0) {
         struct fs_dirent dirent;
         while (fs_readdir(&dir, &dirent) == 0 && dirent.name[0] != 0) {
@@ -883,10 +890,10 @@ static size_t find_path_completion_candidates(const struct shell *sh,
             if (strncmp(dirent.name, filename_part, strlen(filename_part)) == 0) {
                 // construct a complete path
                 char full_path[PATH_MAX];
-                if (strcmp(dir_path, "/") == 0) {
+                if (strcmp(normalized_dir, "/") == 0) {
                     snprintf(full_path, sizeof(full_path), "/%s", dirent.name);
                 } else {
-                    snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, dirent.name);
+                    snprintf(full_path, sizeof(full_path), "%s/%s", normalized_dir, dirent.name);
                 }
                 
                 candidates[count] = k_malloc(strlen(full_path) + 2); // +2 for possible trailing '/'
