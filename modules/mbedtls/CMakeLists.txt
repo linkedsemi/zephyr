@@ -55,7 +55,6 @@ zephyr_interface_library_named(mbedTLS)
     # Base mbed TLS files
     list(APPEND mbedtls_base_src
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes.c
-      ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/aesni.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/aria.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/asn1parse.c
@@ -109,18 +108,39 @@ zephyr_interface_library_named(mbedTLS)
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/rsa.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha1.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha256.c
-      ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha256_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha512.c
-      ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha512_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha3.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading.c
-      ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading_alt.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/timing.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/version_features.c
       ${ZEPHYR_CURRENT_MODULE_DIR}/library/version.c
       zephyr_init.c
       zephyr_entropy.c
     )
+
+    if(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha256_alt.c
+      )
+    endif()
+
+    if(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha512_alt.c
+      )
+    endif()
+
+    if(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes_alt.c
+      )
+    endif()
+
+    if((CONFIG_MBEDTLS_SHA512_LINKEDSEMI) OR (CONFIG_MBEDTLS_SHA256_LINKEDSEMI)) 
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading_alt.c
+      )
+    endif()
 
     zephyr_library_sources(${mbedtls_base_src})
 
