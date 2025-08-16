@@ -14,7 +14,7 @@
 #endif
 
 #define CONFIG_PSRAM_CACHE
-#define SSI_CLK_DIV              3
+#define SSI_CLK_DIV              (600/50)
 #define SSIC_VERSION_ID          0x3130332a
 #define CMD_RESET_ENABLE         0x66
 #define CMD_RESET                0x99
