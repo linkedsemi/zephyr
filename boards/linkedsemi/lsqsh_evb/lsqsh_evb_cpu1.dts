@@ -87,6 +87,38 @@
             };
         };
     };
+
+    leds: leds {
+        compatible = "gpio-leds";
+        led5: led5 {
+            gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
+            label = "LED5";
+        };
+        led1: led1 {
+            gpios = <&gpioh 7 GPIO_ACTIVE_HIGH>;
+            label = "LED1";
+        };
+        led2: led2 {
+            gpios = <&gpioh 0 GPIO_ACTIVE_HIGH>;
+            label = "LED2";
+        };
+    };
+
+    keys: keys {
+        compatible = "gpio-keys";
+        btn2: btn2 {
+            gpios = <&gpiog 4 BTN_GPIO_FLAGS>;
+            label = "Push button 2";
+        };
+        btn1: btn1 {
+            gpios = <&gpioh 1 BTN_GPIO_FLAGS>;
+            label = "Push button 1";
+        };
+        btn3: btn3 {
+            gpios = <&gpioh 4 BTN_GPIO_FLAGS>;
+            label = "Push button 3";
+        };
+    };
 };
 
 &cpu1 {
@@ -162,11 +194,6 @@
     status = "okay";
 };
 
-&uart2 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
 &uart3 {
     current-speed = <115200>;
     status = "disabled";
@@ -175,17 +202,6 @@
 &uart4 {
     current-speed = <115200>;
     status = "disabled";
-};
-
-&uart5 {
-    current-speed = <115200>;
-    status = "disabled";
-};
-
-&uart7 {
-    /delete-property/ interrupts;
-    current-speed = <115200>;
-    status = "okay";
 };
 
 // &sgpiom {
@@ -230,73 +246,190 @@
 //     status = "okay";
 // };
 
-&eth1 {
-    status = "okay";
-};
+// &eth1 {
+//     status = "okay";
+// };
 
-&mdio1 {
-    status = "okay";
-};
+// &mdio1 {
+//     status = "okay";
+// };
 
-&peci1 {
-    status = "okay";
-};
+// &peci1 {
+//     status = "okay";
+// };
 
-&sdhci1 {
-    status = "okay";
+// &sdhci1 {
+//     status = "okay";
 
-    mmc_disk1: disk {
-        compatible = "zephyr,mmc-disk";
-        /* samples/subsys/fs/fs_sample/ assert disk-name to SD2 */
-        disk-name = "SD2";
-        bus-width = <1>;
-        status = "okay";
-    };
-};
-
-&aes256 {
-    status = "okay";
-};
-
-&sha256 {
-    status = "okay";
-};
-
-&sha512 {
-    status = "okay";
-};
-
-&sm4 {
-    status = "okay";
-};
+//     mmc_disk1: disk {
+//         compatible = "zephyr,mmc-disk";
+//         /* samples/subsys/fs/fs_sample/ assert disk-name to SD2 */
+//         disk-name = "SD2";
+//         bus-width = <1>;
+//         status = "okay";
+//     };
+// };
 
 // tst_dma0: &dma0 {
 //     status = "okay";
 // };
 
-&lpc1 {
-    status = "disabled";
+// &lpc1 {
+//     status = "disabled";
 
-    lpc_kcs_ca2: lpc_kcs_ca2 {
-        compatible = "linkedsemi,ls-kcs";
-        port = <0xca2 0xca3>;
-        status = "disabled";
-    };
-};
+//     lpc_kcs_ca2: lpc_kcs_ca2 {
+//         compatible = "linkedsemi,ls-kcs";
+//         port = <0xca2 0xca3>;
+//         status = "disabled";
+//     };
+// };
 
-&espi1 {
-    espi1_kcs_ca2: espi1_kcs_ca2 {
-        compatible = "linkedsemi,ls-kcs";
-        port = <0xca2 0xca3>;
-        status = "okay";
-    };
-};
+// &espi1 {
+//     espi1_kcs_ca2: espi1_kcs_ca2 {
+//         compatible = "linkedsemi,ls-kcs";
+//         port = <0xca2 0xca3>;
+//         status = "okay";
+//     };
+// };
 
-&ipmi_kcs {
-    kcs_chan = <&espi1_kcs_ca2>;
-    status = "okay";
-};
+// &ipmi_kcs {
+//     kcs_chan = <&espi1_kcs_ca2>;
+//     status = "okay";
+// };
 
-zephyr_udc0: &usb_dwc3 {
-    status = "okay";
-};
+// zephyr_udc0: &usb_dwc3 {
+//     status = "okay";
+// };
+
+// &i2c5 {
+//     status = "okay";
+//     eeprom_5_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c6 {
+//     eeprom_6_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c7 {
+//     status = "okay";
+//     eeprom_7_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c8 {
+//     status = "okay";
+//     eeprom_8_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c9 {
+//     status = "okay";
+//     eeprom_9_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c10 {
+//     status = "okay";
+//     eeprom_10_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c11 {
+//     status = "okay";
+//     eeprom_11_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c14 {
+//     status = "okay";
+//     eeprom_14_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// #if 0
+// &spi1 {
+//     status = "okay";
+//     flash1_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
+
+// &spi2 {
+//     status = "okay";
+//     flash2_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
+// #endif
+
+// &spi3 {
+//     status = "okay";
+//     flash3_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
+
+// &spi4 {
+//     status = "okay";
+//     flash4_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
