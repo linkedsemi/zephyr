@@ -233,7 +233,7 @@ static void enable_dpll()
     while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK));
 }
 
-static void cpu_600M_ahb_300M_qspi_166M_init()
+static void cpu_600M_ahb_300M_qspi_200M_init()
 {
     SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
@@ -261,7 +261,7 @@ static void cpu_600M_ahb_300M_qspi_166M_init()
                                  //| FIELD_BUILD(SYSC_SEC_AWO_HSE_DCT_EN, 0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_HBUS_FLT_CTRL, 0x9)
                                    | FIELD_BUILD(SYSC_SEC_AWO_QSPI_FLT_CTRL, 0x9)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x8)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x10)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
 }
@@ -400,10 +400,13 @@ void soc_early_init_hook(void)
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
-        set_trim_params();
-        enable_dpll();
-        cpu_600M_ahb_300M_qspi_166M_init();
-        peripheral_init();
+        if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
+            && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
+            set_trim_params();
+            enable_dpll();
+            cpu_600M_ahb_300M_qspi_200M_init();
+            peripheral_init();
+        }
     }
 #endif
 
