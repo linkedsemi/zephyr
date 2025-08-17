@@ -1870,10 +1870,12 @@
     /omit-if-no-ref/rgmii2_mdc_pa10: rgmii2_mdc_pa10 {
         pinmux = <RGMII2_MDC_FUNC4_PA10_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_mdio_pa11: rgmii2_mdio_pa11 {
         pinmux = <RGMII2_MDIO_FUNC4_PA11_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/uart4_txd_pa12: uart4_txd_pa12 {
         pinmux = <UART4_TXD_FUNC4_PA12_PINMUX>;
@@ -2134,6 +2136,7 @@
     /omit-if-no-ref/rgmii1_mdio_pe12: rgmii1_mdio_pe12 {
         pinmux = <RGMII1_MDIO_FUNC4_PE12_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/thruin4_pe13: thruin4_pe13 {
         pinmux = <THRUIN4_FUNC4_PE13_PINMUX>;
@@ -2146,6 +2149,7 @@
     /omit-if-no-ref/rgmii1_mdc_pe15: rgmii1_mdc_pe15 {
         pinmux = <RGMII1_MDC_FUNC4_PE15_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/espi2_dat0_tst_pf00: espi2_dat0_tst_pf00 {
         pinmux = <ESPI2_DAT0_TST_FUNC4_PF00_PINMUX>;
@@ -2238,18 +2242,22 @@
     /omit-if-no-ref/rgmii1_mdc_pk04: rgmii1_mdc_pk04 {
         pinmux = <RGMII1_MDC_FUNC4_PK04_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_mdio_pk05: rgmii1_mdio_pk05 {
         pinmux = <RGMII1_MDIO_FUNC4_PK05_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_mdc_pk06: rgmii2_mdc_pk06 {
         pinmux = <RGMII2_MDC_FUNC4_PK06_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_mdio_pk07: rgmii2_mdio_pk07 {
         pinmux = <RGMII2_MDIO_FUNC4_PK07_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/sgpio2_mst_ck_pk08: sgpio2_mst_ck_pk08 {
         pinmux = <SGPIO2_MST_CK_FUNC4_PK08_PINMUX>;
@@ -2270,50 +2278,62 @@
     /omit-if-no-ref/emmc_dat0_pm04: emmc_dat0_pm04 {
         pinmux = <EMMC_DAT0_FUNC4_PM04_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat1_pm05: emmc_dat1_pm05 {
         pinmux = <EMMC_DAT1_FUNC4_PM05_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat2_pm06: emmc_dat2_pm06 {
         pinmux = <EMMC_DAT2_FUNC4_PM06_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat3_pm07: emmc_dat3_pm07 {
         pinmux = <EMMC_DAT3_FUNC4_PM07_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat4_pm08: emmc_dat4_pm08 {
         pinmux = <EMMC_DAT4_FUNC4_PM08_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat5_pm09: emmc_dat5_pm09 {
         pinmux = <EMMC_DAT5_FUNC4_PM09_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat6_pm10: emmc_dat6_pm10 {
         pinmux = <EMMC_DAT6_FUNC4_PM10_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat7_pm11: emmc_dat7_pm11 {
         pinmux = <EMMC_DAT7_FUNC4_PM11_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_clk_pm12: emmc_clk_pm12 {
         pinmux = <EMMC_CLK_FUNC4_PM12_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_cmd_pm13: emmc_cmd_pm13 {
         pinmux = <EMMC_CMD_FUNC4_PM13_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_ds_pm14: emmc_ds_pm14 {
         pinmux = <EMMC_DS_FUNC4_PM14_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_rstn_pm15: emmc_rstn_pm15 {
         pinmux = <EMMC_RSTN_FUNC4_PM15_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/paral_busy_pn00: paral_busy_pn00 {
         pinmux = <PARAL_BUSY_FUNC4_PN00_PINMUX>;
