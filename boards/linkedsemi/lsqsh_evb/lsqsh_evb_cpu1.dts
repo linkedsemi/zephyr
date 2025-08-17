@@ -246,13 +246,13 @@
 //     status = "okay";
 // };
 
-// &eth1 {
-//     status = "okay";
-// };
+&eth1 {
+    status = "okay";
+};
 
-// &mdio1 {
-//     status = "okay";
-// };
+&mdio1 {
+    status = "okay";
+};
 
 // &peci1 {
 //     status = "okay";
