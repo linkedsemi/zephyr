@@ -32,8 +32,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
     #include <soc_clock.h>
 #endif
 
-#define M_10_1000M
-
 struct eth_linkedsemi_config {
     void (*irq_config_func)(const struct device *dev);
     void (*irq_deconfig_func)(const struct device *dev);
@@ -92,20 +90,31 @@ int dwmac_bus_init(struct dwmac_priv *p)
     return 0;
 }
 
+void dwmac_10M_100M_speed_cofig(const struct device *const dev)
+{
+    struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
+
+    uint32_t val = REG_READ(MAC_CONF);
+    val &= ~(MAC_CONF_FES);
+    val |= MAC_CONF_PS;
+    REG_WRITE(MAC_CONF, val);
+}
+
+void dwmac_1000M_2500M_speed_cofig(const struct device *const dev)
+{
+    struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
+
+    uint32_t val = REG_READ(MAC_CONF);
+    val &= ~(MAC_CONF_FES | MAC_CONF_PS);
+    REG_WRITE(MAC_CONF, val);
+}
+
 void dwmac_platform_init(struct dwmac_priv *p)
 {
     const struct device *const dev = p->dev;
     const struct eth_linkedsemi_config *dev_config = dev->config;
 
-#if defined(M_10_1000M)
-    REG_WRITE(MAC_CONF,
-              MAC_CONF_PS | MAC_CONF_DM);
-#elif defined(M_100_2500M)
-    REG_WRITE(MAC_CONF,
-              MAC_CONF_PS | MAC_CONF_FES | MAC_CONF_DM);
-#else
-    #error not define speed
-#endif
+    REG_WRITE(MAC_CONF, MAC_CONF_DM);
 
     REG_WRITE(DMA_SYSBUS_MODE, DMA_SYSBUS_MODE_AAL | DMA_SYSBUS_MODE_FB);
 

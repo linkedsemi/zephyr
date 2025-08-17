@@ -23,6 +23,16 @@ LOG_MODULE_REGISTER(mdio_dwmac, CONFIG_MDIO_LOG_LEVEL);
 #define MAC_MDIO_ADDRESS 0x0200
 #define MAC_MDIO_DATA    0x0204
 
+/* MDC Clock Selection define*/
+#define STMMAC_CSR_60_100M  0x0 /* MDC = clk_scr_i/42 */
+#define STMMAC_CSR_100_150M 0x1 /* MDC = clk_scr_i/62 */
+#define STMMAC_CSR_20_35M   0x2 /* MDC = clk_scr_i/16 */
+#define STMMAC_CSR_35_60M   0x3 /* MDC = clk_scr_i/26 */
+#define STMMAC_CSR_150_250M 0x4 /* MDC = clk_scr_i/102 */
+#define STMMAC_CSR_250_300M 0x5 /* MDC = clk_scr_i/124 */
+#define STMMAC_CSR_300_500M 0x6 /* MDC = clk_scr_i/204 */
+#define STMMAC_CSR_500_800M 0x7 /* MDC = clk_scr_i/324 */
+
 typedef union mdio_address {
     uint32_t value;
     struct {
@@ -178,19 +188,30 @@ static int mdio_dwmac_init(const struct device *dev)
     }
 #endif
 
-    if (dev_config->clock_frequency >= MHZ(20) && dev_config->clock_frequency < MHZ(35)) {
-        dev_data->divider = 2;
-    } else if (dev_config->clock_frequency < MHZ(60)) {
-        dev_data->divider = 3;
-    } else if (dev_config->clock_frequency < MHZ(100)) {
-        dev_data->divider = 0;
-    } else if (dev_config->clock_frequency < MHZ(150)) {
-        dev_data->divider = 1;
-    } else if (dev_config->clock_frequency < MHZ(250)) {
-        dev_data->divider = 4;
-    } else {
-        LOG_ERROR("MAC clk rate does not allow MDIO");
-        return -ENOTSUP;
+    dev_data->divider = 0xf;
+    if (dev_config->clock_frequency < MHZ(35)) {
+        dev_data->divider = STMMAC_CSR_20_35M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(35)) && (dev_config->clock_frequency < MHZ(60))) {
+        dev_data->divider = STMMAC_CSR_35_60M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(60)) && (dev_config->clock_frequency < MHZ(100))) {
+        dev_data->divider = STMMAC_CSR_60_100M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(100)) && (dev_config->clock_frequency < MHZ(150))) {
+        dev_data->divider = STMMAC_CSR_100_150M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(150)) && (dev_config->clock_frequency < MHZ(250))) {
+        dev_data->divider = STMMAC_CSR_150_250M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(250)) && (dev_config->clock_frequency < MHZ(300))) {
+        dev_data->divider = STMMAC_CSR_250_300M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(300)) && (dev_config->clock_frequency < MHZ(500))) {
+        dev_data->divider = STMMAC_CSR_300_500M;
+    }
+    else if ((dev_config->clock_frequency >= MHZ(500)) && (dev_config->clock_frequency <= MHZ(800))) {
+        dev_data->divider = STMMAC_CSR_500_800M;
     }
 
     return 0;
