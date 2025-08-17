@@ -21,6 +21,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define PHYSR_SPEED_STATUS_100M  0x1
 #define PHYSR_SPEED_STATUS_10M   0x0
 
+#define PHYID1                   0x2
+#define PHYID2                   0x3
+
 extern void dwmac_10M_100M_speed_cofig(const struct device *const dev);
 extern void dwmac_1000M_2500M_speed_cofig(const struct device *const dev);
 
@@ -54,25 +57,28 @@ static int mdio_set_phy(void)
         LOG_DBG("phy addr: %d  reg: %x : %4.4x\n", addr, reg, val);
     } while (((val & BMSR_LINK_STATUS_MASK) >> BMSR_LINK_STATUS_POS) != BMSR_LINK_STATUS_LINKED);
 
-    reg = 0x2;
+    reg = PHYID1;
     rc = mdio_read(mdio_dev, addr, reg, &val);
     LOG_DBG("phy addr: %d  reg: %x : %4.4x\n", addr, reg, val);
-    reg = 0x3;
+    reg = PHYID2;
     rc = mdio_read(mdio_dev, addr, reg, &val);
     LOG_DBG("phy addr: %d  reg: %x : %4.4x\n", addr, reg, val);
 
     /* force 10Mbps */
     // sys_clear_bits((mem_addr_t)&val, BIT(6) | BIT(12) | BIT(13));
-    // rc = mdio_write(mdio_dev, 0x0, reg, val);
+    // rc = mdio_write(mdio_dev, addr, reg, val);
 
     /* force 10Mbps */
-    // rc = mdio_write(mdio_dev, 0x0, reg, 0);
+    // reg = BMCR;
+    // rc = mdio_write(mdio_dev, addr, reg, 0);
 
     /* force 100Mbps */
-    // rc = mdio_write(mdio_dev, 0x0, reg, BIT(13));
+    // reg = BMCR;
+    // rc = mdio_write(mdio_dev, addr, reg, BIT(13));
 
     /* force 1Gbps */
-    // rc = mdio_write(mdio_dev, 0x0, reg, BIT(6) | BIT(13));
+    // reg = BMCR;
+    // rc = mdio_write(mdio_dev, addr, reg, BIT(6) | BIT(13));
 
     reg = PHYSR;
     rc = mdio_read(mdio_dev, addr, reg, &val);
