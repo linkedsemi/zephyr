@@ -70,6 +70,10 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
         io_clr_pin(pin);
     }
 
+    if (pin_desc.pin_attr.analog) {
+        gpio_ana_init(pin);
+    }
+
     /* only has effect if mode is push_pull */
     io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
 
