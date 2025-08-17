@@ -74,6 +74,7 @@ child-binding:
           enum:
             - "quarter max driver"
             - "half max driver"
+            - "three quarter max driver"
             - "max driver"
 
         input-1v8-enable:

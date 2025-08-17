@@ -71,7 +71,7 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     }
 
     /* only has effect if mode is push_pull */
-    // io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
+    io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
 
     if (pin_desc.pin_attr.gpio) {
         per_func_disable_all(pin);
