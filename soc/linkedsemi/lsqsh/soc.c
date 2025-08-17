@@ -398,6 +398,16 @@ void soc_early_init_hook(void)
     CLIC->CLICCFG = 0x7f;
 #endif
 
+    if ((PWR_FULL_RESET == reset_reason_get())
+        || (SOFT_FULL_RESET == reset_reason_get())
+        || (CPU_FULL_RESET == reset_reason_get())
+        || (SYS_IWDT_FULL_RESET == reset_reason_get())
+        || (EXT_FULL_RESET == reset_reason_get())
+        || (SEC_IWDT_FULL_RESET == reset_reason_get())
+        || (SEC_WWDT_FULL_RESET == reset_reason_get())) {
+        memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
+    }
+
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
         if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
