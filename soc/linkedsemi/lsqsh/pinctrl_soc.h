@@ -47,7 +47,7 @@ typedef struct __attribute__((packed)) {
                               input_filter  : 1,
                               st            : 1,
                               sl            : 1,
-                              drive         : 3,
+                              drive         : 2,
                               out_high      : 1,
                               out_low       : 1,
                               gpio          : 1,
