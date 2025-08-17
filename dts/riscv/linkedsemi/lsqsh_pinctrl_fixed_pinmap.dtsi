@@ -2398,98 +2398,122 @@
     /omit-if-no-ref/rgmii2_txck_pq07: rgmii2_txck_pq07 {
         pinmux = <RGMII2_TXCK_FUNC4_PQ07_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_txctl_pq08: rgmii2_txctl_pq08 {
         pinmux = <RGMII2_TXCTL_FUNC4_PQ08_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_txd0_pq09: rgmii2_txd0_pq09 {
         pinmux = <RGMII2_TXD0_FUNC4_PQ09_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_txd1_pq10: rgmii2_txd1_pq10 {
         pinmux = <RGMII2_TXD1_FUNC4_PQ10_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_txd2_pq11: rgmii2_txd2_pq11 {
         pinmux = <RGMII2_TXD2_FUNC4_PQ11_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_txd3_pq12: rgmii2_txd3_pq12 {
         pinmux = <RGMII2_TXD3_FUNC4_PQ12_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_rxck_pq13: rgmii2_rxck_pq13 {
         pinmux = <RGMII2_RXCK_FUNC4_PQ13_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_rxctl_pq14: rgmii2_rxctl_pq14 {
         pinmux = <RGMII2_RXCTL_FUNC4_PQ14_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_rxd0_pq15: rgmii2_rxd0_pq15 {
         pinmux = <RGMII2_RXD0_FUNC4_PQ15_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_rxd1_pt00: rgmii2_rxd1_pt00 {
         pinmux = <RGMII2_RXD1_FUNC4_PT00_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_rxd2_pt01: rgmii2_rxd2_pt01 {
         pinmux = <RGMII2_RXD2_FUNC4_PT01_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii2_rxd3_pt02: rgmii2_rxd3_pt02 {
         pinmux = <RGMII2_RXD3_FUNC4_PT02_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_txck_pt03: rgmii1_txck_pt03 {
         pinmux = <RGMII1_TXCK_FUNC4_PT03_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_txctl_pt04: rgmii1_txctl_pt04 {
         pinmux = <RGMII1_TXCTL_FUNC4_PT04_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_txd0_pt05: rgmii1_txd0_pt05 {
         pinmux = <RGMII1_TXD0_FUNC4_PT05_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_txd1_pt06: rgmii1_txd1_pt06 {
         pinmux = <RGMII1_TXD1_FUNC4_PT06_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_txd2_pt07: rgmii1_txd2_pt07 {
         pinmux = <RGMII1_TXD2_FUNC4_PT07_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_txd3_pt08: rgmii1_txd3_pt08 {
         pinmux = <RGMII1_TXD3_FUNC4_PT08_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_rxck_pt10: rgmii1_rxck_pt10 {
         pinmux = <RGMII1_RXCK_FUNC4_PT10_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_rxctl_pt11: rgmii1_rxctl_pt11 {
         pinmux = <RGMII1_RXCTL_FUNC4_PT11_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_rxd0_pt12: rgmii1_rxd0_pt12 {
         pinmux = <RGMII1_RXD0_FUNC4_PT12_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_rxd1_pt13: rgmii1_rxd1_pt13 {
         pinmux = <RGMII1_RXD1_FUNC4_PT13_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_rxd2_pt14: rgmii1_rxd2_pt14 {
         pinmux = <RGMII1_RXD2_FUNC4_PT14_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
     /omit-if-no-ref/rgmii1_rxd3_pt15: rgmii1_rxd3_pt15 {
         pinmux = <RGMII1_RXD3_FUNC4_PT15_PINMUX>;
         input-enable;
+        drive-strength = "max driver";
     };
 };
 
