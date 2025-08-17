@@ -14,7 +14,9 @@
 #endif
 
 #define CONFIG_PSRAM_CACHE
-#define SSI_CLK_DIV              (600/50)
+#define SSI_CLK                  (100)
+#define SSI_CLK_BAUDR            (600 / SSI_CLK)
+#define SSI_CLK_DIV              (SSI_CLK_BAUDR >> 1)
 #define SSIC_VERSION_ID          0x3130332a
 #define CMD_RESET_ENABLE         0x66
 #define CMD_RESET                0x99
@@ -72,14 +74,27 @@ void psram_reset(void)
 void psram_init(void) {
     uint32_t val = 0;
 
-    if (SSIC_VERSION_ID != sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID)) {
-        return; /* it has been initialized */
-    }
     ls_clock_control_off(PSRAM_CLOCK);
     ls_reset_line_toggle(PSRAM_RESET);
     ls_clock_control_on(PSRAM_CLOCK);
+    if (SSIC_VERSION_ID != sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID)) {
+        return; /* it has been initialized */
+    }
     psram_pin_init();
     psram_reset();
+
+    // 100MHz rx sample delay value test result:
+    // val = 0; // fail
+    // val = 1; // fail
+    // val = 2; // pass
+    // val = 3; // pass
+    val = 4; // pass
+    // val = 5; // pass
+    // val = 6; // pass
+    // val = 7; // pass
+    // val = 8; // fail
+    // val = 9; // fail
+    sys_write32(val, APP_PSRAM_CFG_ADDR + SSIV2_RX_SAMPLE_DELAY);
 
     val = DW_FIELD_BUILD(SSIV2_CTRLR0_SSI_IS_MST, 0x1)
         | DW_FIELD_BUILD(SSIV2_CTRLR0_SPI_FRF, 0x2)
