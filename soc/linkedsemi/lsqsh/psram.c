@@ -34,6 +34,12 @@ void psram_pin_init(void)
     io_cfg_input(PSRAM_DAT1_FUNC3_PT09_PIN);
     io_cfg_input(PSRAM_DAT3_FUNC3_PH12_PIN);
     io_cfg_input(PSRAM_DAT2_FUNC3_PF00_PIN);
+    io_drive_capacity_write(PSRAM_CSN0_FUNC3_PG07_PIN, IO_OUTPUT_MAX_DRIVER);
+    io_drive_capacity_write(PSRAM_CLK_FUNC3_PF12_PIN , IO_OUTPUT_MAX_DRIVER);
+    io_drive_capacity_write(PSRAM_DAT0_FUNC3_PF01_PIN, IO_OUTPUT_MAX_DRIVER);
+    io_drive_capacity_write(PSRAM_DAT1_FUNC3_PT09_PIN, IO_OUTPUT_MAX_DRIVER);
+    io_drive_capacity_write(PSRAM_DAT3_FUNC3_PH12_PIN, IO_OUTPUT_MAX_DRIVER);
+    io_drive_capacity_write(PSRAM_DAT2_FUNC3_PF00_PIN, IO_OUTPUT_MAX_DRIVER);
 }
 
 void psram_reset(void)
