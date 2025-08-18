@@ -6,8 +6,9 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/mdio.h>
 
-#define BMCR            0x0
-#define BMCR_RESET_MASK 0x8000
+#define BMCR                       0x0
+#define BMCR_RESET_MASK            0x8000
+#define BMCR_FULL_DUPLEX_OPERATION BIT(8)
 
 #define BMSR                    0x1
 #define BMSR_LINK_STATUS_MASK   0x4
@@ -43,8 +44,23 @@ static int mdio_set_phy(void)
         }
     }
 
+#if defined(CONFIG_NET_PHY_FORCE_10M)
+    /* force 10Mbps */
+    reg = BMCR;
+    rc = mdio_write(mdio_dev, addr, reg, BMCR_FULL_DUPLEX_OPERATION);
+#elif defined(CONFIG_NET_PHY_FORCE_100M)
+    /* force 100Mbps */
+    reg = BMCR;
+    rc = mdio_write(mdio_dev, addr, reg, BIT(13) | BMCR_FULL_DUPLEX_OPERATION);
+#elif defined(CONFIG_NET_PHY_FORCE_1000M)
+    /* force 1Gbps */
+    reg = BMCR;
+    rc = mdio_write(mdio_dev, addr, reg, BIT(6) | BIT(13) | BMCR_FULL_DUPLEX_OPERATION);
+#else
+    /* auto-negotiation */ 
     reg = BMCR;
     rc = mdio_write(mdio_dev, addr, reg, BMCR_RESET_MASK);
+#endif
 
     do {
         k_msleep(100);
@@ -63,22 +79,6 @@ static int mdio_set_phy(void)
     reg = PHYID2;
     rc = mdio_read(mdio_dev, addr, reg, &val);
     LOG_DBG("phy addr: %d  reg: %x : %4.4x\n", addr, reg, val);
-
-    /* force 10Mbps */
-    // sys_clear_bits((mem_addr_t)&val, BIT(6) | BIT(12) | BIT(13));
-    // rc = mdio_write(mdio_dev, addr, reg, val);
-
-    /* force 10Mbps */
-    // reg = BMCR;
-    // rc = mdio_write(mdio_dev, addr, reg, 0);
-
-    /* force 100Mbps */
-    // reg = BMCR;
-    // rc = mdio_write(mdio_dev, addr, reg, BIT(13));
-
-    /* force 1Gbps */
-    // reg = BMCR;
-    // rc = mdio_write(mdio_dev, addr, reg, BIT(6) | BIT(13));
 
     reg = PHYSR;
     rc = mdio_read(mdio_dev, addr, reg, &val);
