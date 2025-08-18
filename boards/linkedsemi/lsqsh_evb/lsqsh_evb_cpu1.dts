@@ -297,9 +297,9 @@
 //     status = "okay";
 // };
 
-// zephyr_udc0: &usb_dwc3 {
-//     status = "okay";
-// };
+zephyr_udc0: &usb_dwc3 {
+    status = "okay";
+};
 
 // &i2c5 {
 //     status = "okay";
