@@ -12,7 +12,7 @@
 #define CPU_CLOCK      DT_FREQ_M(600)
 #define PBUS0123_CLOCK DT_FREQ_M(300)
 #define PBUS4_CLOCK    DT_FREQ_M(75)
-#define SDHCI_CLOCK    DT_FREQ_M(200)
+#define SDHCI_CLOCK    DT_FREQ_M(25)
 
 / {
     #address-cells = <1>;

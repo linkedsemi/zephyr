@@ -238,16 +238,19 @@ void sdhci_init(struct sdhci_host *host)
     host->power_mode = SDHC_POWER_ON;
 }
 
+#if defined(CONFIG_DIV_REG_VAILD)
+
 void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
 {
     uint32_t div, val;
+
+    if (clock == 0)
+        return;
 
     val = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
     val &= ~(SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE);
     sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
 
-    if (clock == 0)
-        return;
 
     if (host->max_clk <= clock) {
         div = 1;
@@ -266,3 +269,33 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
     sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
     while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
 }
+
+#else /* CONFIG_DIV_REG_VAILD */
+
+extern void lsqsh_emmc_txck_rxck_config(uint32_t base_clock, uint32_t target_clock);
+
+void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
+{
+    uint32_t div;
+    uint32_t val;
+
+    if (clock == 0)
+        return;
+
+    div = 0;
+    val = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
+    val &= ~(SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE);
+    sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
+
+    val &= ~((SDHCI_DIV_MASK << SDHCI_DIVIDER_SHIFT) | SDHCI_DIV_HI_MASK);
+    val |= (div & SDHCI_DIV_MASK) << SDHCI_DIVIDER_SHIFT;
+    val |= ((div & SDHCI_DIV_HI_MASK) >> SDHCI_DIV_MASK_LEN)
+        << SDHCI_DIVIDER_HI_SHIFT;
+    val |= SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE;
+
+    lsqsh_emmc_txck_rxck_config(host->max_clk, clock);
+    sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
+    while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
+}
+
+#endif /* CONFIG_DIV_REG_VAILD */
