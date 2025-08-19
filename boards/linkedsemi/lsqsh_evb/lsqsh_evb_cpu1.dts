@@ -258,17 +258,17 @@
 //     status = "okay";
 // };
 
-// &sdhci1 {
-//     status = "okay";
+&sdhci1 {
+    status = "okay";
 
-//     mmc_disk1: disk {
-//         compatible = "zephyr,mmc-disk";
-//         /* samples/subsys/fs/fs_sample/ assert disk-name to SD2 */
-//         disk-name = "SD2";
-//         bus-width = <1>;
-//         status = "okay";
-//     };
-// };
+    mmc_disk1: disk {
+        compatible = "zephyr,mmc-disk";
+        /* samples/subsys/fs/fs_sample/ assert disk-name to SD2 */
+        disk-name = "SD2";
+        bus-width = <1>;
+        status = "okay";
+    };
+};
 
 // tst_dma0: &dma0 {
 //     status = "okay";

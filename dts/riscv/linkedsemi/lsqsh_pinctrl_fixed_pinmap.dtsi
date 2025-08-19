@@ -2278,61 +2278,73 @@
     /omit-if-no-ref/emmc_dat0_pm04: emmc_dat0_pm04 {
         pinmux = <EMMC_DAT0_FUNC4_PM04_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat1_pm05: emmc_dat1_pm05 {
         pinmux = <EMMC_DAT1_FUNC4_PM05_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat2_pm06: emmc_dat2_pm06 {
         pinmux = <EMMC_DAT2_FUNC4_PM06_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat3_pm07: emmc_dat3_pm07 {
         pinmux = <EMMC_DAT3_FUNC4_PM07_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat4_pm08: emmc_dat4_pm08 {
         pinmux = <EMMC_DAT4_FUNC4_PM08_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat5_pm09: emmc_dat5_pm09 {
         pinmux = <EMMC_DAT5_FUNC4_PM09_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat6_pm10: emmc_dat6_pm10 {
         pinmux = <EMMC_DAT6_FUNC4_PM10_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_dat7_pm11: emmc_dat7_pm11 {
         pinmux = <EMMC_DAT7_FUNC4_PM11_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_clk_pm12: emmc_clk_pm12 {
         pinmux = <EMMC_CLK_FUNC4_PM12_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_cmd_pm13: emmc_cmd_pm13 {
         pinmux = <EMMC_CMD_FUNC4_PM13_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_ds_pm14: emmc_ds_pm14 {
         pinmux = <EMMC_DS_FUNC4_PM14_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/emmc_rstn_pm15: emmc_rstn_pm15 {
         pinmux = <EMMC_RSTN_FUNC4_PM15_PINMUX>;
         input-enable;
+        bias-pull-up;
         drive-strength = "max driver";
     };
     /omit-if-no-ref/paral_busy_pn00: paral_busy_pn00 {
