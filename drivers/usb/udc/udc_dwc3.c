@@ -333,6 +333,7 @@ LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define DWC3_DCTL_ULSTCHNG_LOOPBACK    (DWC3_DCTL_ULSTCHNGREQ(11))
 
 /* Device Event Enable Register */
+#define DWC3_DEVTEN_ECCERREN            BIT(16)
 #define DWC3_DEVTEN_VNDRDEVTSTRCVEDEN   BIT(12)
 #define DWC3_DEVTEN_EVNTOVERFLOWEN      BIT(11)
 #define DWC3_DEVTEN_CMDCMPLTEN          BIT(10)
@@ -1077,6 +1078,9 @@ static void ep_enqueue_handler(const struct device *dev, void *param)
                 dwc3_prepare_one_trb(trb, buf->data, buf->len, TRB_Control_Data, false);
                 sys_cache_data_flush_range(buf->data, buf->len);
             } else if (bi->status) {
+                /* If there is no delay, the hardware will report the 0xa0c2 event, and the zlp response must be determined by the USB protocol stack context */
+                if (!dwc3_data->three_stage_setup)
+                    k_usleep(1);
                 dwc3_prepare_one_trb(trb, NULL, 0, dwc3_data->three_stage_setup ? TRB_Control_Status_3 : TRB_Control_Status_2, false);
                 dwc3_ep0_in_state_update(dev, udc_buf_get(dev, USB_CONTROL_EP_IN));
             }
@@ -1404,6 +1408,10 @@ static void dwc3_dev_wakeup_detected_event(const struct device *dev, const union
     udc_submit_event(dev, UDC_EVT_RESUME, 0);
 }
 
+static void dwc3_dev_link_change_event(const struct device *dev, const union evt_buf_u *evt)
+{
+}
+
 static void dwc3_dev_event(const struct device *dev, const union evt_buf_u *evt)
 {
     /* Device-Specific Events */
@@ -1424,8 +1432,15 @@ static void dwc3_dev_event(const struct device *dev, const union evt_buf_u *evt)
     case DEVT_USBSuspendEntryEvt:
         dwc3_dev_suspend_entry_event(dev, evt);
         break;
+    case DEVT_ULStChng:
+        dwc3_dev_link_change_event(dev, evt);
+        break;
     case DEVT_HibernationRequestEvt:
-        /* TODO: ?? */
+        break;
+    case DEVT_CmdCmplt:
+        break;
+    case DEVT_EvntOverflow:
+        LOG_ERR("DEVT_EvntOverflow.\n");
         break;
     default:
         break;
@@ -1602,7 +1617,7 @@ static int udc_dwc3_init(const struct device *dev)
     MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
     while (dwc3_dev->DCTL & DWC3_DCTL_CSFTRST);
 
-    dwc3_gbl->GUSB2PHYCFG[0] = 0x40002487;
+    dwc3_gbl->GUSB2PHYCFG[0] = 0x40002407;
     dwc3_dev->DCFG = 0x480800; 
     dwc3_gbl->GUCTL = 0xa400010;
 
@@ -1612,8 +1627,9 @@ static int udc_dwc3_init(const struct device *dev)
     dwc3_gbl->GEVNT[0].COUNT = 0;
     dwc3_gbl->GCTL = 0x30C12204;
 
-    dwc3_dev->DEVTEN = 0x1f;
-
+    dwc3_dev->DEVTEN = DWC3_DEVTEN_DISCONNEVTEN | DWC3_DEVTEN_USBRSTEN | DWC3_DEVTEN_CONNECTDONEEN 
+                    | DWC3_DEVTEN_WKUPEVTEN | DWC3_DEVTEN_HIBERNATIONREQEVTEN
+                    | DWC3_DEVTEN_ERRTICERREN | DWC3_DEVTEN_CMDCMPLTEN | DWC3_DEVTEN_EVNTOVERFLOWEN | DWC3_DEVTEN_ECCERREN;
     return 0;
 }
 
@@ -1762,15 +1778,18 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
     union dep_command_param param = {0};
     union dep_command end_trans = {
         .cmd = {
-            .commandparam = DWC3_DEPCMD_PARAM(dwc3_data->ep_res_index[phy_ep_idx]),
+            .commandparam = dwc3_data->ep_res_index[phy_ep_idx],
             .cmdact = 1,
+            .cmdioc = 1,
             .hipri_forcerm = 1,
             .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
         },
     };
 
-    dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
-    dwc3_data->ep_res_index[phy_ep_idx] = 0;
+    if (phy_ep_idx && dwc3_data->ep_res_index[phy_ep_idx]) {
+        dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
+        dwc3_data->ep_res_index[phy_ep_idx] = 0;
+    }
 
     if (cfg->stat.halted) {
         union dep_command clear_halt = {
@@ -1782,6 +1801,7 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
         dwc3_dep_command(dwc3_dev, phy_ep_idx, &clear_halt, &param);
         cfg->stat.halted = false;
     }
+    dwc3_dev->DALEPENA &= ~(1 << phy_ep_idx);
 
     return 0;
 }
