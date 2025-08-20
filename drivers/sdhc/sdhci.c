@@ -272,7 +272,7 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
 
 #else /* CONFIG_DIV_REG_VAILD */
 
-extern void lsqsh_emmc_txck_rxck_config(uint32_t base_clock, uint32_t target_clock);
+extern void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock);
 
 void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
 {
@@ -293,7 +293,7 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
         << SDHCI_DIVIDER_HI_SHIFT;
     val |= SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE;
 
-    lsqsh_emmc_txck_rxck_config(host->max_clk, clock);
+    lsqsh_emmc_txck_rxck_config(host->mapbase, host->max_clk, clock);
     sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
     while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
 }
