@@ -12,7 +12,7 @@
 #define CPU_CLOCK      DT_FREQ_M(600)
 #define PBUS0123_CLOCK DT_FREQ_M(300)
 #define PBUS4_CLOCK    DT_FREQ_M(75)
-#define SDHCI_CLOCK    DT_FREQ_M(25)
+#define SDHCI_CLOCK    DT_FREQ_M(200)
 
 / {
     #address-cells = <1>;
@@ -1095,8 +1095,8 @@
             clocks = <EMMC1_CLOCK>;
             resets = <EMMC1_RESET>;
             clock-frequency = <SDHCI_CLOCK>;
-            max-bus-freq = <5000000>;
-            min-bus-freq = <200000>;
+            max-bus-freq = <SDHCI_CLOCK>;
+            min-bus-freq = <50000>;
             status = "disabled";
         };
 
@@ -1107,8 +1107,8 @@
             clocks = <EMMC2_CLOCK>;
             resets = <EMMC2_RESET>;
             clock-frequency = <SDHCI_CLOCK>;
-            max-bus-freq = <5000000>;
-            min-bus-freq = <200000>;
+            max-bus-freq = <SDHCI_CLOCK>;
+            min-bus-freq = <50000>;
             status = "disabled";
         };
 
