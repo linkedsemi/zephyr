@@ -24,6 +24,10 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
         io_pull_write(pin, IO_PULL_DOWN);
     }
 
+    if (pin_desc.pin_attr.pull_up) {
+        io_pull_write(pin, IO_PULL_UP);
+    }
+
     if (pin_desc.pin_attr.pull_up0) {
         io_pull_write(pin, IO_PULL_UP0);
     }
@@ -66,8 +70,12 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
         io_clr_pin(pin);
     }
 
+    if (pin_desc.pin_attr.analog) {
+        gpio_ana_init(pin);
+    }
+
     /* only has effect if mode is push_pull */
-    // io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
+    io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
 
     if (pin_desc.pin_attr.gpio) {
         per_func_disable_all(pin);

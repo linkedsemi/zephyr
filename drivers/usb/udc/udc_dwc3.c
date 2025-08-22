@@ -333,6 +333,7 @@ LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define DWC3_DCTL_ULSTCHNG_LOOPBACK    (DWC3_DCTL_ULSTCHNGREQ(11))
 
 /* Device Event Enable Register */
+#define DWC3_DEVTEN_ECCERREN            BIT(16)
 #define DWC3_DEVTEN_VNDRDEVTSTRCVEDEN   BIT(12)
 #define DWC3_DEVTEN_EVNTOVERFLOWEN      BIT(11)
 #define DWC3_DEVTEN_CMDCMPLTEN          BIT(10)
@@ -532,6 +533,8 @@ LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 /* Control-only Status */
 #define DEPEVT_STATUS_CONTROL_DATA   1
 #define DEPEVT_STATUS_CONTROL_STATUS 2
+
+#define DWC3_GEVNTCOUNT_MASK    0xfffc
 
 struct dwc3_xhci_reg {
     volatile uint32_t CAPLENGTH;
@@ -840,13 +843,15 @@ struct udc_dwc3_data {
     struct k_msgq msgq;
     const struct device *dev;
     struct dwc3_msgq_type msgq_buf[DWC3_MSGQ_LENGTH];
-    uint8_t evt_buf_rd_idx;
     enum dwc3_ep0_state ep0_state;
     uint8_t ep0_expect_in;
     uint8_t three_stage_setup;
-    uint8_t ep_res_index[DWC_USB3_NUM_EPS];
+    uint16_t evt_buf_rd_idx;
+    uint32_t evt_count;
     enum udc_bus_speed speed;
     struct k_thread thread;
+    uint8_t ep_res_index[DWC_USB3_NUM_EPS];
+    union evt_buf_u evt_buf[EVT_BUF_LENGTH_WORDS];
 };
 
 static int dwc3_ctrl_feed_dout(const struct device *dev, const size_t length, enum TRB_Control trbctl);
@@ -1050,7 +1055,7 @@ static void ep_enqueue_handler(const struct device *dev, void *param)
                 __ASSERT(!(buf->len % ep_cfg->mps), "error");
                 /* buf->len max is 0xfffff, so use one trb is ok*/
                 dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->len), TRB_Normal, true);
-                dwc3_prepare_one_trb(trb++, NULL, 0, TRB_Normal_ZLP, false);
+                dwc3_prepare_one_trb(++trb, NULL, 0, TRB_Normal_ZLP, false);
             }
             sys_cache_data_flush_range(buf->data, buf->len);
         } else {
@@ -1061,7 +1066,7 @@ static void ep_enqueue_handler(const struct device *dev, void *param)
             } else {
                 /* align mps */
                 dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->size), TRB_Normal, true);
-                dwc3_prepare_one_trb(trb++, config->bounce_addr, ep_cfg->mps - remain, TRB_Normal, false);
+                dwc3_prepare_one_trb(++trb, config->bounce_addr, ep_cfg->mps - remain, TRB_Normal, false);
             }
         }
         dwc3_dep_start_transfer(dev, EP_ADDR_2_PHY_EP_IDX(addr), trb, 0);
@@ -1073,6 +1078,9 @@ static void ep_enqueue_handler(const struct device *dev, void *param)
                 dwc3_prepare_one_trb(trb, buf->data, buf->len, TRB_Control_Data, false);
                 sys_cache_data_flush_range(buf->data, buf->len);
             } else if (bi->status) {
+                /* If there is no delay, the hardware will report the 0xa0c2 event, and the zlp response must be determined by the USB protocol stack context */
+                if (!dwc3_data->three_stage_setup)
+                    k_usleep(1);
                 dwc3_prepare_one_trb(trb, NULL, 0, dwc3_data->three_stage_setup ? TRB_Control_Status_3 : TRB_Control_Status_2, false);
                 dwc3_ep0_in_state_update(dev, udc_buf_get(dev, USB_CONTROL_EP_IN));
             }
@@ -1400,6 +1408,10 @@ static void dwc3_dev_wakeup_detected_event(const struct device *dev, const union
     udc_submit_event(dev, UDC_EVT_RESUME, 0);
 }
 
+static void dwc3_dev_link_change_event(const struct device *dev, const union evt_buf_u *evt)
+{
+}
+
 static void dwc3_dev_event(const struct device *dev, const union evt_buf_u *evt)
 {
     /* Device-Specific Events */
@@ -1420,8 +1432,15 @@ static void dwc3_dev_event(const struct device *dev, const union evt_buf_u *evt)
     case DEVT_USBSuspendEntryEvt:
         dwc3_dev_suspend_entry_event(dev, evt);
         break;
+    case DEVT_ULStChng:
+        dwc3_dev_link_change_event(dev, evt);
+        break;
     case DEVT_HibernationRequestEvt:
-        /* TODO: ?? */
+        break;
+    case DEVT_CmdCmplt:
+        break;
+    case DEVT_EvntOverflow:
+        LOG_ERR("DEVT_EvntOverflow.\n");
         break;
     default:
         break;
@@ -1434,32 +1453,23 @@ static void event_handler(const struct device *dev, void *param)
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
 
-    while (1) {
-        uint16_t count = dwc3_gbl->GEVNT[0].COUNT;
-        if (count == 0)
-            break;
+    for (uint32_t i = 0; i < dwc3_data->evt_count; i += sizeof(union evt_buf_u)) {
+        union evt_buf_u evt = dwc3_data->evt_buf[dwc3_data->evt_buf_rd_idx];
+        LOG_DBG("evt = 0x%x, count = %d, dwc3_data->evt_buf_rd_idx = %d.\n", *(uint32_t *)&evt, dwc3_data->evt_count, dwc3_data->evt_buf_rd_idx);
 
-        sys_cache_data_invd_range(config->evt_buf, sizeof(union evt_buf_u) * EVT_BUF_LENGTH_WORDS);
-        for (uint16_t i = 0; i < count; i += sizeof(union evt_buf_u)) {
-            union evt_buf_u evt = config->evt_buf[dwc3_data->evt_buf_rd_idx];
-            LOG_DBG("evt = 0x%x, count = %d, dwc3_data->evt_buf_rd_idx = %d.", *(uint32_t *)&evt, count, dwc3_data->evt_buf_rd_idx);
-            if (!evt.dev_ep)
-                dwc3_endpoint_event(dev, &evt);
-            else
-                dwc3_dev_event(dev, &evt);
-
-            dwc3_data->evt_buf_rd_idx++;
-            if (dwc3_data->evt_buf_rd_idx == EVT_BUF_LENGTH_WORDS) {
-                dwc3_data->evt_buf_rd_idx = 0;
-            }
-        }
-        dwc3_gbl->GEVNT[0].COUNT = DWC3_GEVNT_HANDLER_BUSY | count;
+        if (!evt.dev_ep)
+            dwc3_endpoint_event(dev, &evt);
+        else
+            dwc3_dev_event(dev, &evt);
+        dwc3_data->evt_buf_rd_idx = (dwc3_data->evt_buf_rd_idx + 1) % EVT_BUF_LENGTH_WORDS;
     }
+
     dwc3_gbl->GEVNT[0].SIZ &= ~DWC3_GEVNTSIZ_INTMASK;
 }
 
 static void udc_dwc3_isr_handler(const struct device *dev)
 {
+    uint32_t count, remain;
     const struct udc_dwc3_config *config = dev->config;
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
@@ -1468,8 +1478,23 @@ static void udc_dwc3_isr_handler(const struct device *dev)
         .param = NULL,
     };
 
-    __ASSERT(!k_msgq_put(&dwc3_data->msgq, &msg, K_NO_WAIT), "dwc3 udc isr msgq error");
+    count = dwc3_gbl->GEVNT[0].COUNT;
+    count &= DWC3_GEVNTCOUNT_MASK;
+    if (!count)
+        return;
+
     dwc3_gbl->GEVNT[0].SIZ |= DWC3_GEVNTSIZ_INTMASK;
+    dwc3_data->evt_count = count;
+    remain = MIN(count, (EVT_BUF_LENGTH_WORDS - dwc3_data->evt_buf_rd_idx) * 4);
+
+    sys_cache_data_invd_range(config->evt_buf, sizeof(union evt_buf_u) * EVT_BUF_LENGTH_WORDS);
+    memcpy(dwc3_data->evt_buf + dwc3_data->evt_buf_rd_idx, config->evt_buf + dwc3_data->evt_buf_rd_idx, remain);
+    if (remain < count)
+        memcpy(dwc3_data->evt_buf, config->evt_buf, count - remain);
+
+    /* update count */
+    dwc3_gbl->GEVNT[0].COUNT = count;
+    __ASSERT(!k_msgq_put(&dwc3_data->msgq, &msg, K_NO_WAIT), "dwc3 udc isr msgq error");
 }
 
 static int dwc3_driver_preinit(const struct device *dev)
@@ -1537,49 +1562,9 @@ static int udc_dwc3_unlock(const struct device *dev)
     return udc_unlock_internal(dev);
 }
 
-static void phy_enable_dpll(void)
-{
-    /* TODO: wtf? */
-    SEC_PMU->PMU_SET_VAL = 0x7;
-    SEC_PMU->PMU_SET_VAL = 0x80000007;
-    SEC_PMU->PMU_SET_VAL = 0x7;
-    SYSC_SEC_AWO->DPLL1_CTRL1 = 0x1;
-    SYSC_SEC_AWO->DPLL2_CTRL1 = 0x1;
-}
-
 static int dwc3_phy_setup(const struct device *dev)
 {
-    const struct udc_dwc3_config *config = dev->config;
-    struct dwc3_global_reg *dwc3_glb = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
-    uint32_t reg = dwc3_glb->GUSB2PHYCFG[0];
-    uint32_t hwparams3 = dwc3_glb->GHWPARAMS3;
-
-    phy_enable_dpll();
-// TODO: move dts
-#define LS_CLK_SET(base, n) (*(volatile uint32_t *)((base) + (n)))
-    LS_CLK_SET(0x40022000, 0x10) = BIT(0xd);
-    LS_CLK_SET(0x40022000, 0x10) = BIT(0xc);
-    // ??
     *(uint32_t *)0x40058014 = 0x131; // pll_en
-
-    /* DWC_USB3_HSPHY_INTERFACE = 3 时，才能进行选择用什么接口的 phy, 否则只能读取, DWC_USB3_HSPHY_INTERFACE 是数字那边已经定好的 */
-    switch (DWC3_GHWPARAMS3_HSPHY_IFC(hwparams3)) {
-    case DWC3_GHWPARAMS3_HSPHY_IFC_UTMI_ULPI:
-        reg &= ~DWC3_GUSB2PHYCFG_ULPI_UTMI;
-        break;
-    case DWC3_GHWPARAMS3_HSPHY_IFC_ULPI:
-    default:
-        break;
-    }
-
-    reg &= ~(DWC3_GUSB2PHYCFG_PHYIF_MASK |
-             DWC3_GUSB2PHYCFG_USBTRDTIM_MASK);
-    reg |= DWC3_GUSB2PHYCFG_PHYIF(UTMI_PHYIF_16_BIT) |
-           DWC3_GUSB2PHYCFG_USBTRDTIM(UTMI_PHYIF_16_BIT);
-
-    /* phy cfg */
-    dwc3_glb->GUSB2PHYCFG[0] = 0x40002407;
-
     return 0;
 }
 
@@ -1624,6 +1609,7 @@ static int udc_dwc3_init(const struct device *dev)
         clock_control_on(clk_dev, (clock_control_subsys_t)&config->ccfg);
     }
 #endif
+
     /* phy init */
     dwc3_phy_setup(dev);
 
@@ -1631,14 +1617,19 @@ static int udc_dwc3_init(const struct device *dev)
     MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
     while (dwc3_dev->DCTL & DWC3_DCTL_CSFTRST);
 
+    dwc3_gbl->GUSB2PHYCFG[0] = 0x40002407;
+    dwc3_dev->DCFG = 0x480800; 
+    dwc3_gbl->GUCTL = 0xa400010;
+
     dwc3_gbl->GEVNT[0].ADRLO = (uint32_t)config->evt_buf;
     dwc3_gbl->GEVNT[0].ADRHI = 0;
     dwc3_gbl->GEVNT[0].SIZ = EVT_BUF_LENGTH_WORDS * sizeof(union evt_buf_u);
     dwc3_gbl->GEVNT[0].COUNT = 0;
-    dwc3_gbl->GCTL = 0x30c12234;
+    dwc3_gbl->GCTL = 0x30C12204;
 
-    dwc3_dev->DEVTEN = 0x1f;
-
+    dwc3_dev->DEVTEN = DWC3_DEVTEN_DISCONNEVTEN | DWC3_DEVTEN_USBRSTEN | DWC3_DEVTEN_CONNECTDONEEN 
+                    | DWC3_DEVTEN_WKUPEVTEN | DWC3_DEVTEN_HIBERNATIONREQEVTEN
+                    | DWC3_DEVTEN_ERRTICERREN | DWC3_DEVTEN_CMDCMPLTEN | DWC3_DEVTEN_EVNTOVERFLOWEN | DWC3_DEVTEN_ECCERREN;
     return 0;
 }
 
@@ -1787,15 +1778,18 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
     union dep_command_param param = {0};
     union dep_command end_trans = {
         .cmd = {
-            .commandparam = DWC3_DEPCMD_PARAM(dwc3_data->ep_res_index[phy_ep_idx]),
+            .commandparam = dwc3_data->ep_res_index[phy_ep_idx],
             .cmdact = 1,
+            .cmdioc = 1,
             .hipri_forcerm = 1,
             .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
         },
     };
 
-    dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
-    dwc3_data->ep_res_index[phy_ep_idx] = 0;
+    if (phy_ep_idx && dwc3_data->ep_res_index[phy_ep_idx]) {
+        dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
+        dwc3_data->ep_res_index[phy_ep_idx] = 0;
+    }
 
     if (cfg->stat.halted) {
         union dep_command clear_halt = {
@@ -1807,6 +1801,7 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
         dwc3_dep_command(dwc3_dev, phy_ep_idx, &clear_halt, &param);
         cfg->stat.halted = false;
     }
+    dwc3_dev->DALEPENA &= ~(1 << phy_ep_idx);
 
     return 0;
 }

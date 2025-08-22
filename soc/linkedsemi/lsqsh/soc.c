@@ -21,6 +21,8 @@
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sec_pmu_rg.h"
+#include "reg_sysc_sec_awo.h"
+#include "reg_sysc_app_awo.h"
 #include "reg_sysc_sec_cpu.h"
 #include "ls_hal_iwdgv2.h"
 #include "ls_soc_gpio.h"
@@ -211,6 +213,226 @@ extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 extern void psram_init(void);
 
+__ramfunc static void set_trim_params()
+{
+    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL, 0);
+    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL, 0);
+}
+
+__ramfunc static void enable_dpll()
+{
+    CLEAR_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_CLKREF_SEL_MASK); /* clkin */
+    SET_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_EN_MASK); /* clr reset */
+    SET_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_RSTN_MASK); /* enable pll1 */
+    while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK));
+
+    CLEAR_BIT(SYSC_SEC_AWO->DPLL2_CTRL1, SYSC_SEC_AWO_DPLL2_CTRL1_PLL2_CLKREF_SEL_MASK); /* clkin */
+    SET_BIT(SYSC_SEC_AWO->DPLL2_CTRL1, SYSC_SEC_AWO_DPLL2_CTRL1_PLL2_EN_MASK); /* clr reset */
+    SET_BIT(SYSC_SEC_AWO->DPLL2_CTRL1, SYSC_SEC_AWO_DPLL2_CTRL1_PLL2_RSTN_MASK); /* enable pll2 */
+    while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK));
+}
+
+__ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
+{
+    SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS2, 0x0)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS3, 0x0)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS4, 0x3)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_HBUS, 0x1)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_OTP, 0x1);
+    SYSC_SEC_AWO->CLKG_DIV_DPLL = SYSC_SEC_AWO_CLKG_DIV_DPLL_CLR_MASK;
+    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 = 
+                                  // FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_PARA_HBUS_M1, 0x1)
+                                     FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS, 0x1)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_M1, 0x1) /* set ahb_clk = 1/2 * cpu_clk */
+                                 //| FIELD_BUILD(SYSC_SEC_AWO_HSE_DCT_EN, 0)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_HBUS_FLT_CTRL, 0x9)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_QSPI_FLT_CTRL, 0x9)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x1)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
+    SYSC_SEC_AWO->CLKG_DIV_DPLL = SYSC_SEC_AWO_CLKG_DIV_DPLL_SET_MASK;
+    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 =
+                                  // FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_PARA_HBUS_M1, 0x1)
+                                     FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS, 0x10)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_M1, 0x1)
+                                 //| FIELD_BUILD(SYSC_SEC_AWO_HSE_DCT_EN, 0)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_HBUS_FLT_CTRL, 0x9)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_QSPI_FLT_CTRL, 0x9)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x10)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
+                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
+}
+
+static void peripheral_init()
+{
+    /* SYSC_APP_AWO->PD_AWO_CLK_CTRL1 */
+    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_PSRAM, 0x10); /* dpll_600M */
+    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_PSRAM_FLT, 0x2); /* bypass */
+    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_USB2, 0x4); /* dpll_48M */
+    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_I3C, 0x4); /* clk_pbus4 */
+    /* SYSC_APP_AWO->PD_AWO_CLK_CTRL1 */
+
+
+    /* SYSC_APP_AWO->ETH_EMMC_RST */
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_ETH1_CLK_TX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_ETH1_CLK_RX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_ETH1_CLK_RMII_RST_N_MASK);
+
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_ETH2_CLK_TX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_ETH2_CLK_RX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_ETH2_CLK_RMII_RST_N_MASK);
+    /* SYSC_APP_AWO->ETH_EMMC_RST */
+
+
+    /* SYSC_APP_AWO->ETH_EMMC_RST */
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_TX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_RX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_CORE_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_TIM_RST_N_MASK);
+
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC2_CLK_TX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC2_CLK_RX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC2_CLK_CORE_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC2_CLK_TIM_RST_N_MASK);
+
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_LPC1_CLK_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_LPC2_CLK_RST_N_MASK);
+    /* SYSC_APP_AWO->ETH_EMMC_RST */
+
+
+    /* SYSC_APP_AWO->ETH1_CLK_CFG */
+    REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_TX_DIV, 0); /* div = 2 */
+    REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_TX_SEL, 0x2); /* rxck pad */
+    SET_BIT(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_TX_CG_MASK);
+
+    REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_DIV, 0); /* div = 2 */
+    REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_SEL, 0x2); /* rxck pad */
+    SET_BIT(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_CG_MASK);
+
+    REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_DIV, 0);
+    REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_SEL, 0x2); /* rxck pad */
+    SET_BIT(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_CG_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_DIV, 0); /* div = 2 */
+    REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_SEL, 0x2); /* rxck pad */
+    SET_BIT(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_CG_MASK);
+    /* SYSC_APP_AWO->ETH1_CLK_CFG */
+
+
+    /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_DIV_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_SEL, 0x1);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_DIV_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_SEL, 0x1);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+    /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
+
+
+    /* SYSC_APP_AWO->EMMC1_CORE_TIM_CLK */
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_DIV, 0);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_SEL, 0x2); /* dpll 200M */
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_DIV, 0);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_SEL, 0x1); /* hsi */
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
+    /* SYSC_APP_AWO->EMMC1_CORE_TIM_CLK */
+
+
+    /* SYSC_APP_CPU->ETH1_PHY_CTRL */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_INTF_SEL, 0x1); /* rgmii */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_SEL, 0x1); /* rgmii */
+    /* SYSC_APP_CPU->ETH1_PHY_CTRL */
+
+
+    /* SYSC_APP_AWO->EMMC2_CORE_TIM_CLK */
+    CLEAR_BIT(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_CORE_CG_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_CORE_DIV, 0);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_CORE_SEL, 0x2); /* dpll 200M */
+    SET_BIT(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_CORE_CG_MASK);
+
+    CLEAR_BIT(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_TIM_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_TIM_DIV_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_TIM_SEL, 0x1); /* hsi */
+    SET_BIT(SYSC_APP_AWO->EMMC2_CORE_TIM_CLK, SYSC_APP_AWO_EMMC2_CLK_TIM_CG_MASK);
+    /* SYSC_APP_AWO->EMMC2_CORE_TIM_CLK */
+
+
+    /* SYSC_APP_AWO->LPC_CLK */
+    REG_FIELD_WR(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_DIV, 0x0);
+    REG_FIELD_WR(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_SEL, 0x8); /* dpll 50M */
+    SET_BIT(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_CG_MASK);
+
+    REG_FIELD_WR(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC2_CLK_DIV, 0x0);
+    REG_FIELD_WR(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC2_CLK_SEL, 0x8); /* dpll 50M */
+    SET_BIT(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_CG_MASK);
+    /* SYSC_APP_AWO->LPC_CLK */
+}
+
+void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
+{
+    ARG_UNUSED(base_clock);
+
+    __ASSERT_NO_MSG(target_clock);
+
+    uint16_t tx_div;
+    uint16_t rx_div;
+    uint8_t tx_sel;
+    uint8_t rx_sel;
+
+    if (target_clock >= (MHZ(200) / ((SYSC_APP_AWO_EMMC1_CLK_RX_DIV_MASK >> SYSC_APP_AWO_EMMC1_CLK_RX_DIV_POS) + 1))) {
+        /* dpll 200M */
+        tx_sel = 0x4;
+        rx_sel = 0x2;
+        tx_div = MHZ(200) / target_clock;
+        if (tx_div) {
+            tx_div--;
+        }
+        rx_div = tx_div;
+    } else {
+        /* dpll 50M */
+        tx_sel = 0x2;
+        rx_sel = 0x4;
+        tx_div = MHZ(50) / target_clock;
+        rx_div = 0;
+    }
+
+    if (dev == APP_EMMC1_CFG_ADDR) {
+        /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
+        CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_DIV, tx_div);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_SEL, tx_sel);
+        SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+
+        CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_DIV, rx_div);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_SEL, rx_sel);
+        SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+        /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
+    } else if (dev == APP_EMMC2_CFG_ADDR) {
+        /* SYSC_APP_AWO->EMMC2_TX_RX_CLK */
+        CLEAR_BIT(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_TX_CG_MASK);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_TX_DIV, tx_div);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_TX_SEL, tx_sel);
+        SET_BIT(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_TX_CG_MASK);
+
+        CLEAR_BIT(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_RX_CG_MASK);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_RX_DIV, rx_div);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_RX_SEL, rx_sel);
+        SET_BIT(SYSC_APP_AWO->EMMC2_TX_RX_CLK, SYSC_APP_AWO_EMMC2_CLK_RX_CG_MASK);
+        /* SYSC_APP_AWO->EMMC2_TX_RX_CLK */
+    } else {
+        while(1);
+    }
+}
+
 void soc_early_init_hook(void)
 {
     reset_reason_init();
@@ -225,6 +447,28 @@ void soc_early_init_hook(void)
 
 #if defined(CONFIG_IRQ_NESTED)
     CLIC->CLICCFG = 0x7f;
+#endif
+
+    if ((PWR_FULL_RESET == reset_reason_get())
+        || (SOFT_FULL_RESET == reset_reason_get())
+        || (CPU_FULL_RESET == reset_reason_get())
+        || (SYS_IWDT_FULL_RESET == reset_reason_get())
+        || (EXT_FULL_RESET == reset_reason_get())
+        || (SEC_IWDT_FULL_RESET == reset_reason_get())
+        || (SEC_WWDT_FULL_RESET == reset_reason_get())) {
+        memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
+    }
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    if (!is_app_cpu_running()) {
+        if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
+            && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
+            set_trim_params();
+            enable_dpll();
+            cpu_600M_ahb_300M_qspi_200M_init();
+        }
+        peripheral_init();
+    }
 #endif
 
     SystemInit();
@@ -255,29 +499,11 @@ void soc_early_init_hook(void)
     driver_init();
     arch_irq_lock();
 
+    if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
+       || (!IS_ENABLED(CONFIG_XIP))) {
 #if !defined(CONFIG_INIT_FLASH_FOR_DEBUG)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #if defined(CONFIG_FLASH)
-    flash1.reg = (void *)SEC_QSPI1_ADDR;
-    flash1.dual_mode_only = false;
-    flash1.continuous_mode_enable = false;
-    flash1.writing = false;
-    flash1.suspend_count = 0;
-    flash1.continuous_mode_on = false;
-    flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
-    qspiv2_global_int_ctrl_fn_init();
-    if (!is_app_cpu_running()) {
-        lscache_cache_enable(1);
-    }
-#endif
-#endif
-
-#else /* !CONFIG_INIT_FLASH_FOR_DEBUG */
-
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-    if (!is_app_cpu_running()) {
-        lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
-        pinmux_hal_flash_init();
         flash1.reg = (void *)SEC_QSPI1_ADDR;
         flash1.dual_mode_only = false;
         flash1.continuous_mode_enable = false;
@@ -285,11 +511,32 @@ void soc_early_init_hook(void)
         flash1.suspend_count = 0;
         flash1.continuous_mode_on = false;
         flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
-        hal_flash_init();
-
-        lscache_cache_enable(1);
-    }
+        qspiv2_global_int_ctrl_fn_init();
+        if (!is_app_cpu_running()) {
+            lscache_cache_enable(1);
+        }
 #endif
+#endif
+
+#else /* !CONFIG_INIT_FLASH_FOR_DEBUG */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+        if (!is_app_cpu_running()) {
+            lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
+            pinmux_hal_flash_quad_init();
+            flash1.reg = (void *)SEC_QSPI1_ADDR;
+            flash1.dual_mode_only = false;
+            flash1.continuous_mode_enable = false;
+            flash1.writing = false;
+            flash1.suspend_count = 0;
+            flash1.continuous_mode_on = false;
+            flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
+            hal_flash_init();
+
+            lscache_cache_enable(1);
+        }
+#endif
+    }
 
 #if defined(CONFIG_SOC_FLASH_LS)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
@@ -306,16 +553,14 @@ void soc_early_init_hook(void)
 #endif
 #endif /* !CONFIG_INIT_FLASH_FOR_DEBUG */
 
-#if defined(CONFIG_ETH_DRIVER)
-    SYSC_APP_CPU->ETH1_PHY_CTRL = 0x9;
-#endif
-
 #if defined(CONFIG_PECI)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
 #if defined(CONFIG_PSRAM)
-    psram_init();
+    if (!is_app_cpu_running()) {
+        psram_init();
+    }
 #endif
 
     return;

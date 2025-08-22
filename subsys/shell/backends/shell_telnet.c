@@ -7,17 +7,12 @@
 
 #include <zephyr/init.h>
 
-#include <zephyr/drivers/uart.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/socket_service.h>
 #include <zephyr/shell/shell_telnet.h>
 
 #include "shell_telnet_protocol.h"
-const struct device *const uart_dev = DEVICE_DT_GET(DT_NODELABEL(uart4));
-extern void uart_ns16550_poll_out_arr(const struct device *dev,
-					   const uint8_t *tx_data,
-				  	   int size);
 
 SHELL_TELNET_DEFINE(shell_transport_telnet);
 SHELL_DEFINE(shell_telnet, CONFIG_SHELL_PROMPT_TELNET, &shell_transport_telnet,
@@ -79,10 +74,6 @@ static void telnet_command_send_reply(uint8_t *msg, uint16_t len)
 	while (len > 0) {
 		int ret;
 
-		uart_ns16550_poll_out_arr(uart_dev, msg, len);
-		uart_ns16550_poll_out_arr(uart_dev, "\r\n", 2);
-		uart_ns16550_poll_out_arr(uart_dev, __func__, strlen(__func__));
-		uart_ns16550_poll_out_arr(uart_dev, "\r\n", 2);
 		ret = zsock_send(sh_telnet->fds[SOCK_ID_CLIENT].fd, msg, len, 0);
 		if (ret < 0) {
 			LOG_ERR("Failed to send command %d, shutting down", ret);
@@ -205,10 +196,6 @@ static int telnet_send(bool block)
 	}
 
 	while (len > 0) {
-		uart_ns16550_poll_out_arr(uart_dev, msg, len);
-		uart_ns16550_poll_out_arr(uart_dev, "\r\n", 2);
-		uart_ns16550_poll_out_arr(uart_dev, __func__, strlen(__func__));
-		uart_ns16550_poll_out_arr(uart_dev, "\r\n", 2);
 		ret = zsock_send(sh_telnet->fds[SOCK_ID_CLIENT].fd, msg, len,
 				 block ? 0 : ZSOCK_MSG_DONTWAIT);
 		if (!block && (ret < 0) && (errno == EAGAIN)) {

@@ -33,6 +33,7 @@ typedef struct __attribute__((packed)) {
         uint32_t value;
         struct {
             uint32_t lock          : 1,
+                              pull_up       : 1,
                               pull_up0      : 1,
                               pull_up1      : 1,
                               pull_up2      : 1,
@@ -46,7 +47,7 @@ typedef struct __attribute__((packed)) {
                               input_filter  : 1,
                               st            : 1,
                               sl            : 1,
-                              drive         : 3,
+                              drive         : 2,
                               out_high      : 1,
                               out_low       : 1,
                               gpio          : 1,
@@ -64,6 +65,7 @@ typedef struct __attribute__((packed)) {
     { \
         .pinmux.value           = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, pinmux), \
         .pin_attr.lock          = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, lock), \
+        .pin_attr.pull_up       = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up), \
         .pin_attr.pull_up0      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up0), \
         .pin_attr.pull_up1      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up1), \
         .pin_attr.pull_up2      = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up2), \
