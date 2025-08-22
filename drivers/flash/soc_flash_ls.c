@@ -131,7 +131,7 @@ static uint32_t get_guest_permission(const struct device *dev, uint32_t base, ui
 				if (start_idx != end_idx) {
 					attr &= cfg->attr[start_idx].attr;
 				}
-				if ((end >= cfg->attr[end_idx].base) && (end < cfg->attr[end_idx].end)) {
+				if ((end >= cfg->attr[end_idx].base) && (end <= cfg->attr[end_idx].end)) {
 					return attr;
 				}
 			}
