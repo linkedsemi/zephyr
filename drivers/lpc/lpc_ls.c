@@ -172,8 +172,8 @@ static void lpc_send_edge_irq(const struct device *dev,uint8_t idx)
     uint32_t serirq = reg->LPC_CTRL2;
     serirq |= 1<<idx;
     reg->LPC_CTRL2 = serirq;
-    k_spin_unlock(&dev_data->u.lpc.serirq_src_lock,key);
     serirq_int_set(dev,true);
+    k_spin_unlock(&dev_data->u.lpc.serirq_src_lock,key);
 }
 
 static void lpc_send_level_irq(const struct device *dev,uint8_t idx,uint8_t active)
