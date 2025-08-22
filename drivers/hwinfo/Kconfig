@@ -257,4 +257,11 @@ config HWINFO_NUMAKER_RMC
 	help
 	  Enable Nuvoton NuMaker hwinfo driver backed up by RMC
 
+config HWINFO_LINKEDSEMI
+	bool "Linkedsemi device ID"
+	default y
+	depends on SOC_LSQSH || SOC_LS1010
+	help
+	  Enable Linkedsemi hwinfo driver.
+
 endif
