@@ -1,6 +1,5 @@
 #include "udc_common.h"
 #include <zephyr/cache.h>
-#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/usb/udc.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
@@ -517,6 +516,16 @@ LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define DWC3_OSTS_VBUSVLD         BIT(1)
 #define DWC3_OSTS_CONIDSTS        BIT(0)
 
+/*
+ * Test Mode Selectors
+ * See USB 2.0 spec Table 9-7
+ */
+#define	TEST_J          1
+#define	TEST_K          2
+#define	TEST_SE0_NAK    3
+#define	TEST_PACKET     4
+#define	TEST_FORCE_EN   5
+
 /* Force Gen1 speed on Gen2 link */
 #define DWC3_LLUCTL_FORCE_GEN1 BIT(10)
 
@@ -816,7 +825,6 @@ struct udc_dwc3_config {
     struct dwc3_ep_trb *in_trb;
     struct dwc3_ep_trb *out_trb;
     uint32_t base;
-    const struct pinctrl_dev_config *const pcfg;
     void (*make_thread)(const struct device *dev);
     void (*irq_enable_func)(const struct device *dev);
     void (*irq_disable_func)(const struct device *dev);
@@ -839,7 +847,6 @@ enum dwc3_ep0_state {
 };
 
 struct udc_dwc3_data {
-    struct k_work drv_work;
     struct k_msgq msgq;
     const struct device *dev;
     struct dwc3_msgq_type msgq_buf[DWC3_MSGQ_LENGTH];
@@ -1078,7 +1085,7 @@ static void ep_enqueue_handler(const struct device *dev, void *param)
                 dwc3_prepare_one_trb(trb, buf->data, buf->len, TRB_Control_Data, false);
                 sys_cache_data_flush_range(buf->data, buf->len);
             } else if (bi->status) {
-                /* If there is no delay, the hardware will report the 0xa0c2 event, and the zlp response must be determined by the USB protocol stack context */
+                /* If there is no delay, the hardware may report the 0xa0c2 event, and the zlp response must be determined by the USB protocol stack context */
                 if (!dwc3_data->three_stage_setup)
                     k_usleep(1);
                 dwc3_prepare_one_trb(trb, NULL, 0, dwc3_data->three_stage_setup ? TRB_Control_Status_3 : TRB_Control_Status_2, false);
@@ -1353,6 +1360,7 @@ static void dwc3_dev_reset(const struct device *dev, const union evt_buf_u *evt)
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
 
+    dwc3_dev->DCTL &= ~DWC3_DCTL_TSTCTRL_MASK;
     /* Set DevAddr to 0 */
     MODIFY_REG(dwc3_dev->DCFG, DWC3_DCFG_DEVADDR_MASK, DWC3_DCFG_DEVADDR(0));
     udc_submit_event(dev, UDC_EVT_RESET, 0);
@@ -1393,11 +1401,13 @@ static void dwc3_dev_connect_done(const struct device *dev, const union evt_buf_
     dwc3_dep_config(dwc3_dev, 0, &cmd_param);
     cmd_param.cfg.EpDir = 1;
     dwc3_dep_config(dwc3_dev, 1, &cmd_param);
+
+    dwc3_dev->DEVTEN |= DWC3_DEVTEN_ULSTCNGEN;
 }
 
 static void dwc3_dev_suspend_entry_event(const struct device *dev, const union evt_buf_u *evt)
 {
-    /* This event is generated when hibernation mode is disabled. */
+    /* This event is generated when hibernation mode is disabled and host into sleep mode. */
     udc_submit_event(dev, UDC_EVT_SUSPEND, 0);
 }
 
@@ -1410,6 +1420,17 @@ static void dwc3_dev_wakeup_detected_event(const struct device *dev, const union
 
 static void dwc3_dev_link_change_event(const struct device *dev, const union evt_buf_u *evt)
 {
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+
+    switch (evt->devt.evt_info) {
+    case DWC3_LINK_STATE_U3:
+        dwc3_dev->DEVTEN &= ~DWC3_DEVTEN_ULSTCNGEN;
+        udc_submit_event(dev, UDC_EVT_SUSPEND, 0);
+        break;
+    default:
+        break;
+    }
 }
 
 static void dwc3_dev_event(const struct device *dev, const union evt_buf_u *evt)
@@ -1679,7 +1700,35 @@ static int udc_dwc3_set_address(const struct device *dev, const uint8_t addr)
 
 static int udc_dwc3_test_mode(const struct device *dev, const uint8_t mode, const bool dryrun)
 {
-    LOG_DBG("%s udc test mode,%d,%d", dev->name, mode, dryrun);
+    uint32_t reg = 0;
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    LOG_INF("%s udc test mode,%d,%d", dev->name, mode, dryrun);
+
+    if (mode == 0U || mode > TEST_FORCE_EN) {
+        return -EINVAL;
+    }
+
+    if (dryrun) {
+        return 0;
+    }
+
+    reg = dwc3_dev->DCTL;
+    reg &= ~DWC3_DCTL_TSTCTRL_MASK;
+
+    switch (mode) {
+    case TEST_J:
+    case TEST_K:
+    case TEST_SE0_NAK:
+    case TEST_PACKET:
+    case TEST_FORCE_EN:
+        reg |= mode << 1;
+        break;
+    default:
+        return -EINVAL;
+    }
+    dwc3_dev->DCTL = reg;
+
     return 0;
 }
 
@@ -1920,7 +1969,6 @@ static void udc_dwc3_thread_handler(void *dev)
 }
 
 #define UDC_DWC3_DEVICE_DEFINE(n)                                                                                                           \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                                                                                \
     K_THREAD_STACK_DEFINE(udc_dwc3_stack_##n, CONFIG_UDC_DWC3_STACK_SIZE);                                                                  \
     static void udc_dwc3_irq_enable_func_##n(const struct device *dev)                                                                      \
     {                                                                                                                                       \
@@ -1969,8 +2017,7 @@ static void udc_dwc3_thread_handler(void *dev)
         .in_trb = ep_in_trb_##n,                                                                                                            \
         .out_trb = ep_out_trb_##n,                                                                                                          \
         .base = DT_INST_REG_ADDR(n),                                                                                                        \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n), ))                                                           \
-            .make_thread = udc_dwc3_make_thread_##n,                                                                                        \
+        .make_thread = udc_dwc3_make_thread_##n,                                                                                            \
         .irq_enable_func = udc_dwc3_irq_enable_func_##n,                                                                                    \
         .irq_disable_func = udc_dwc3_irq_disable_func_##n,                                                                                  \
         .evt_buf = dwc3_evt_buf_##n,                                                                                                        \
