@@ -8,42 +8,29 @@
 #undef SRAM_TOTAL_SIZE
 #define SRAM_TOTAL_SIZE DT_SIZE_K(512 + 760)
 
-#undef SRAM_RO_SIZE
-#define SRAM_RO_SIZE    DT_SIZE_K(512)
-
-#undef SRAM_RW_SIZE
-#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
-
 / {
     chosen {
-        zephyr,flash = &sram1_ro;
+        zephyr,flash = &flash_xip_partition;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
     };
 
-    soc {
-        compatible = "simpe-bus";
-        #address-cells = <1>;
-        #size-cells = <1>;
-        interrupt-parent = <&intc>;
-
-        /delete-node/ memory@10000000;
-        sram1_ro: memory@10000000 {
-            compatible = "mmio-sram";
-            reg = <0x10000000 SRAM_RO_SIZE>;
-        };
-
-        sram1: memory@10040000 {
-            compatible = "mmio-sram";
-            reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
-        };
+    flash_xip_partition: flash@8010100 {
+        compatible = "soc-nv-flash";
+        reg = <0x8010100 DT_SIZE_M(12)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
     };
 };
 
 &cpu2 {
     status = "disabled";
+};
+
+&sram1 {
+    reg = <0x10000000 SRAM_TOTAL_SIZE>;
 };
 
 &sram2 {
