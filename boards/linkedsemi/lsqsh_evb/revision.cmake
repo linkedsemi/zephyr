@@ -1,6 +1,7 @@
 set(BOARD_REVISIONS "2os"
                     "2os_xip"
-                    "1os")
+                    "1os"
+                    "1os_xip")
 if(NOT DEFINED BOARD_REVISION)
   set(BOARD_REVISION "2os")
 else()
