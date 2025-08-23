@@ -297,4 +297,8 @@ config THREAD_ERROR_ISOLATION
 	bool "THREAD_ERROR_ISOLATION"
 	default y
 
+config QSPI1_FREQ
+	int "QSPI1_FREQ"
+	default 50000000
+
 endif
