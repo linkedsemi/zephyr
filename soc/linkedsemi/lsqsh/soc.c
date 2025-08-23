@@ -340,7 +340,7 @@ static void peripheral_init()
     SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
 
     CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
-    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_DIV, 0);
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_DIV_MASK);
     REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_SEL, 0x1); /* hsi */
     SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
     /* SYSC_APP_AWO->EMMC1_CORE_TIM_CLK */
@@ -405,6 +405,30 @@ void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t tar
     }
 
     if (dev == APP_EMMC1_CFG_ADDR) {
+        /* SYSC_APP_AWO->EMMC1_CORE_TIM_CLK */
+        CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+        int core_clk_sel;
+        int core_clk_div;
+        core_clk_div = MHZ(200) / target_clock;
+        if (core_clk_div) {
+            core_clk_div--;
+        }
+        core_clk_sel = 0x2;
+        if (core_clk_div > (SYSC_APP_AWO_EMMC1_CLK_CORE_DIV_MASK >> SYSC_APP_AWO_EMMC1_CLK_CORE_DIV_POS)) {
+            core_clk_div = MHZ(25) / target_clock;
+            if (core_clk_div) {
+                core_clk_div--;
+            }
+            core_clk_sel = 0x1;
+        }
+        if (core_clk_div > (SYSC_APP_AWO_EMMC1_CLK_CORE_DIV_MASK >> SYSC_APP_AWO_EMMC1_CLK_CORE_DIV_POS)) {
+            core_clk_div = SYSC_APP_AWO_EMMC1_CLK_CORE_DIV_MASK >> SYSC_APP_AWO_EMMC1_CLK_CORE_DIV_POS;
+        }
+
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_DIV, core_clk_div);
+        REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_SEL, 0x2); /* dpll 200M */
+        SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+
         /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
         CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
         REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_DIV, tx_div);
