@@ -481,6 +481,10 @@
 
             vuart1: vuart1@40087800 {
                 compatible = "linkedsemi,ls-vuart";
+                reg = <0x40087800 0x400>;
+                interrupts = <UART3_IRQN 3>;
+                clocks = <UART3_CLOCK>;
+                resets = <UART3_RESET>;
                 port = <0x3f8>;
                 up-irq = <0x4 0>;
                 status = "disabled";
