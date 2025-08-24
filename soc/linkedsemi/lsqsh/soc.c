@@ -350,6 +350,12 @@ static void peripheral_init()
     /* SYSC_APP_CPU->ETH1_PHY_CTRL */
     REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_INTF_SEL, 0x1); /* rgmii */
     REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_SEL, 0x1); /* rgmii */
+
+    /* tx delay */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_TX_DELAY_SEL, 0x2); // Y 0x0 0x1 0x2 0x3 0x4 0x5 0x6 0x7
+    /* rx delay */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_RX_DELAY_SEL, 0x2); // Y     0x1 0x2 0x3 0x4
+                                                                                          // X 0x0                  0x5 0x6 0x7
     /* SYSC_APP_CPU->ETH1_PHY_CTRL */
 
 
