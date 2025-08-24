@@ -38,10 +38,6 @@
 };
 
 &vuart1 {
-    reg = <0x40087800 0x400>;
-    interrupts = <UART3_IRQN 3>;
-    clocks = <UART3_CLOCK>;
-    resets = <UART3_RESET>;
     pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
     pinctrl-names = "default";
     status = "okay";
