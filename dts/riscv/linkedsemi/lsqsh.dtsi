@@ -475,12 +475,14 @@
             interrupts = <ESPI1_IRQN 3>;
             clocks = <ESPI1_CLOCK>;
             resets = <ESPI1_RESET>;
+            #address-cells = <1>;
+            #size-cells = <1>;
             status = "disabled";
 
-            vuart1: vuart1 {
+            vuart1: vuart1@40087800 {
                 compatible = "linkedsemi,ls-vuart";
                 port = <0x3f8>;
-                up-irq = <0x4 IRQ_TYPE_LEVEL_HIGH>;
+                up-irq = <0x4 0>;
                 status = "disabled";
             };
 

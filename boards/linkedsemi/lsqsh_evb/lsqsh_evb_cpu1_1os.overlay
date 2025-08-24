@@ -19,8 +19,6 @@
         zephyr,flash = &sram1_ro;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
-        zephyr,console = &uart1;
-        zephyr,shell-uart = &uart1;
     };
 
     soc {
