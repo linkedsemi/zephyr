@@ -525,11 +525,11 @@ void soc_early_init_hook(void)
     driver_init();
     arch_irq_lock();
 
-    if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
-       || (!IS_ENABLED(CONFIG_XIP))) {
 #if !defined(CONFIG_INIT_FLASH_FOR_DEBUG)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #if defined(CONFIG_FLASH)
+    if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
+       || (!IS_ENABLED(CONFIG_XIP))) {
         flash1.reg = (void *)SEC_QSPI1_ADDR;
         flash1.dual_mode_only = false;
         flash1.continuous_mode_enable = false;
@@ -541,12 +541,15 @@ void soc_early_init_hook(void)
         if (!is_app_cpu_running()) {
             lscache_cache_enable(1);
         }
+    }
 #endif
 #endif
 
 #else /* !CONFIG_INIT_FLASH_FOR_DEBUG */
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
+       || (!IS_ENABLED(CONFIG_XIP))) {
         if (!is_app_cpu_running()) {
             lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
             pinmux_hal_flash_quad_init();
@@ -561,8 +564,8 @@ void soc_early_init_hook(void)
 
             lscache_cache_enable(1);
         }
-#endif
     }
+#endif
 
 #if defined(CONFIG_SOC_FLASH_LS)
 #if !defined(CONFIG_CPU2_BOOT_ADDR) && !defined(CONFIG_XIP)
