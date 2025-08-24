@@ -5,16 +5,46 @@
  */
 
 #include <stdio.h>
+#include <zephyr/drivers/i2c.h>
 
 #include "peci.c"
+#include "ls_soc_gpio.h"
+
+int set_cpld_power_on(void)
+{
+    const struct device *const i2c_master = DEVICE_DT_GET(DT_NODELABEL(i2c8));
+
+    uint16_t dev_addr = 0x10;
+    uint8_t wdata[] = {0x1, 0x30, 0x2};
+
+    printf("Hello World! %s\n", CONFIG_BOARD_TARGET);
+
+    if (!device_is_ready(i2c_master)) {
+        __ASSERT(0,"I2C device is not ready\n");
+    }
+    if (i2c_configure(i2c_master, I2C_SPEED_SET(I2C_SPEED_STANDARD) | I2C_MODE_CONTROLLER) )
+    {
+        __ASSERT(0,"I2C device config failed\n");
+    }
+
+    i2c_write(i2c_master, wdata, sizeof(wdata), dev_addr);
+
+    return 0;
+}
 
 int main(void)
 {
+    // set_cpld_power_on();
     printf("boot...");
     printf("espi done");
 
     printf("peci start");
     peci_main();
+
+    // while(1) {
+    //     printf("cs %d\n", io_get_input_val(PI10));
+    //     printf("clk %d\n", io_get_input_val(PI11));
+    // }
 
     return 0;
 }

@@ -28,6 +28,16 @@
         input-enable;
     };
 
+    /omit-if-no-ref/uart3_tx_pb01: uart3_tx_pb01 {
+        pinmux = <UART3_TXD_FUNC4_PB01_PINMUX>;
+        drive-strength = "quarter max driver";
+    };
+    /omit-if-no-ref/uart3_rx_pb03: uart3_rx_pb03 {
+        pinmux = <UART3_RXD_FUNC4_PB03_PINMUX>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+
     /omit-if-no-ref/uart4_tx_pa12: uart4_tx_pa12 {
         pinmux = <UART4_TXD_FUNC4_PA12_PINMUX>;
         drive-strength = "quarter max driver";
@@ -180,10 +190,10 @@
     pinctrl-names = "default";
 };
 
-&uart3 {
-    pinctrl-0 = <&uart3_tx_pn04 &uart3_rx_pn03>;
-    pinctrl-names = "default";
-};
+//&uart3 {
+//    pinctrl-0 = <&uart3_tx_pn04 &uart3_rx_pn03>;
+//    pinctrl-names = "default";
+//};
 
 &uart4 {
     pinctrl-0 = <&uart4_tx_pa12 &uart4_rx_pa13>;
