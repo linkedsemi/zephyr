@@ -189,8 +189,17 @@
 };
 
 &uart3 {
+    /delete-property/ interrupts;
+    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
+    pinctrl-names = "default";
     current-speed = <115200>;
-    status = "disabled";
+    status = "okay";
+};
+
+&vuart1 {
+    interrupts = <UART3_IRQN 3>;
+    uart = <&uart3>;
+    status = "okay";
 };
 
 &uart4 {
@@ -378,4 +387,12 @@
     kcs_chan = <&espi1_kcs_ca2>;
     status = "okay";
     label = "ipmi-kcs";
+};
+
+&sio1 {
+    status = "okay";
+};
+
+&mmbi1 {
+    status = "okay";
 };
