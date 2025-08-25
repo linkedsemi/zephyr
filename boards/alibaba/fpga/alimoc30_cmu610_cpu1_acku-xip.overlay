@@ -35,7 +35,7 @@
         a_rofs_partition: partition@d00000 {
             label = "a_rofs";
             reg = <0x00d00000 DT_SIZE_M(2)>;
-            attr = <PMP_R>;
+            attr = <(PMP_R | PMP_W)>;
         };
 
         /* common */
@@ -59,7 +59,7 @@
         b_rofs_partition: partition@1e00000 {
             label = "b_rofs";
             reg = <0x01e00000 DT_SIZE_M(2)>;
-            attr = <PMP_R>;
+            attr = <(PMP_R | PMP_W)>;
         };
     };
 };
