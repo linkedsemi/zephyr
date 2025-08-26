@@ -859,6 +859,7 @@ struct udc_dwc3_data {
     struct k_thread thread;
     uint8_t ep_res_index[DWC_USB3_NUM_EPS];
     union evt_buf_u evt_buf[EVT_BUF_LENGTH_WORDS];
+    struct k_sem ep0_sync;
 };
 
 static int dwc3_ctrl_feed_dout(const struct device *dev, const size_t length, enum TRB_Control trbctl);
@@ -947,7 +948,7 @@ static void dwc3_dep_config(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, const 
     dwc3_dep_command(reg, phy_ep_idx, &cmd, param);
 }
 
-static void dwc3_dep_xfer_config(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, const union dep_command_param *param)
+static void dwc3_dep_xfer_resource(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, const union dep_command_param *param)
 {
     union dep_command cmd = {
         .cmd = {
@@ -1018,82 +1019,6 @@ static int dwc3_ctrl_feed_dout(const struct device *dev, const size_t length, en
     dwc3_dep_start_transfer(dev, 0, config->out_trb[0].trb, 0);
 
     return 0;
-}
-
-static int dwc3_ep0_in_state_update(const struct device *dev, struct net_buf *const buf);
-
-static void ep_enqueue_handler(const struct device *dev, void *param)
-{
-    __ASSERT(!udc_ep_is_busy(dev, (uint32_t)param), "ep %x is busy", (uint32_t)param);
-    const struct udc_dwc3_config *config = dev->config;
-    uint8_t addr = (uint32_t)param;
-    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
-    uint8_t ep_idx = USB_EP_GET_IDX(addr);
-    struct net_buf *buf = udc_buf_peek(dev, addr);
-    struct udc_buf_info *bi = udc_get_buf_info(buf);
-    struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, addr);
-    struct dwc3_trb *trb;
-    LOG_DBG("ep: %x buf:%p, buf-len: %d, buf->size = %d, bi->data:%d bi->status %d", addr, buf, buf->len, buf->size, bi->data, bi->status);
-
-    if (ep_idx) {
-        /*
-            For OUT endpoints, the following rules apply:
-            ■ The BUFSIZ field must be ≥ 1 byte.
-            ■ The total size of a Buffer Descriptor must be a multiple of MaxPacketSize.
-            ■ For setup stage of control transfer, BUFSIZ field must be 8 bytes.
-            ■ A received zero-length packet still requires a MaxPacketSize buffer. Therefore, if the expected amount
-            of data to be received is a multiple of MaxPacketSize, software should add MaxPacketSize bytes to the
-            buffer to sink a possible zero-length packet at the end of the transfer.
-
-            For IN endpoints, the following rules apply:
-            ■ The number of chained TRBs necessary to construct a single packet must never exceed (DWC_USB3_-
-            CACHE_TRBS_PER_TRANSFER – 1). A maximum of one Link TRB can be present in the chain.
-            ■ If software wants to indicate a transfer completion to the host by sending a zero-length packet after a
-            multiple of MaxPacketSize, it must set up a zero-length TRB following the last TRB in the transfer.
-        */
-        if (USB_EP_DIR_IS_IN(addr)) {
-            trb = config->in_trb[ep_idx].trb;
-            if (!udc_ep_buf_has_zlp(buf)) {
-                if (buf->len)
-                    dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->len), TRB_Normal, false);
-                else
-                    dwc3_prepare_one_trb(trb, NULL, 0, TRB_Normal_ZLP, false);
-            } else {
-                __ASSERT(!(buf->len % ep_cfg->mps), "error");
-                /* buf->len max is 0xfffff, so use one trb is ok*/
-                dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->len), TRB_Normal, true);
-                dwc3_prepare_one_trb(++trb, NULL, 0, TRB_Normal_ZLP, false);
-            }
-            sys_cache_data_flush_range(buf->data, buf->len);
-        } else {
-            uint16_t remain = buf->size % ep_cfg->mps;
-            trb = config->out_trb[ep_idx].trb;
-            if (!remain) {
-                dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->size), TRB_Normal, false);
-            } else {
-                /* align mps */
-                dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->size), TRB_Normal, true);
-                dwc3_prepare_one_trb(++trb, config->bounce_addr, ep_cfg->mps - remain, TRB_Normal, false);
-            }
-        }
-        dwc3_dep_start_transfer(dev, EP_ADDR_2_PHY_EP_IDX(addr), trb, 0);
-    } else {
-        if (USB_EP_DIR_IS_IN(addr)) {
-            trb = config->in_trb[0].trb;
-            if (bi->data) {
-                udc_ep_set_busy(dev, addr, true);
-                dwc3_prepare_one_trb(trb, buf->data, buf->len, TRB_Control_Data, false);
-                sys_cache_data_flush_range(buf->data, buf->len);
-            } else if (bi->status) {
-                /* If there is no delay, the hardware may report the 0xa0c2 event, and the zlp response must be determined by the USB protocol stack context */
-                if (!dwc3_data->three_stage_setup)
-                    k_usleep(1);
-                dwc3_prepare_one_trb(trb, NULL, 0, dwc3_data->three_stage_setup ? TRB_Control_Status_3 : TRB_Control_Status_2, false);
-                dwc3_ep0_in_state_update(dev, udc_buf_get(dev, USB_CONTROL_EP_IN));
-            }
-            dwc3_dep_start_transfer(dev, 1, trb, 0);
-        }
-    }
 }
 
 static void dwc3_ep0_setup_phase(const struct device *dev, const union evt_buf_u *evt)
@@ -1289,6 +1214,9 @@ static void dwc3_ep0_xfer_notready(const struct device *dev, const union evt_buf
             /* Three stage, receive zlp. */
             dwc3_prepare_one_trb(config->out_trb[0].trb, NULL, 0, TRB_Control_Status_3, false);
             dwc3_dep_start_transfer(dev, ep_num, config->out_trb[0].trb, 0);
+        }
+        else {
+            k_sem_give(&dwc3_data->ep0_sync);
         }
     } break;
     }
@@ -1598,6 +1526,8 @@ static int udc_dwc3_init(const struct device *dev)
     struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
 
     k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
+    k_sem_init(&dwc3_data->ep0_sync, 0, 1);
+
     dwc3_data->dev = dev;
     dwc3_data->ep0_state = EP0_SETUP_PHASE;
     config->make_thread(dev);
@@ -1659,9 +1589,21 @@ static int udc_dwc3_enable(const struct device *dev)
     LOG_DBG("%s udc enable", dev->name);
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    union dep_command_param cmd_param = {
+        .xfercfg.NumXferRes = 1
+    };
 
     config->irq_enable_func(dev);
     dwc3_dep_start_config(dwc3_dev, 0);
+
+    /* 
+       There must be only one transfer resource allocated per endpoint.
+       Start Transfer causes the use of the transfer resource.
+       End Transfer or an XferComplete event releases the transfer resource.
+    */
+    for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
+        dwc3_dep_xfer_resource(dwc3_dev, i, &cmd_param);
+    }
 
     if (udc_ep_enable_internal(dev, USB_CONTROL_EP_OUT,
                                USB_EP_TYPE_CONTROL, 64, 0)) {
@@ -1792,23 +1734,17 @@ static int udc_dwc3_ep_activate(const struct device *dev, struct udc_ep_config *
             return -EINVAL;
         }
         dwc3_dep_config(dwc3_dev, phy_ep_idx, &cmd_param);
-        cmd_param.xfercfg.NumXferRes = 1;
-        dwc3_dep_xfer_config(dwc3_dev, phy_ep_idx, &cmd_param);
         dwc3_dev->DALEPENA |= 1 << phy_ep_idx;
     } else {
         cmd_param = DEPCFG_POR(USB_EP_DIR_OUT);
         if (ep_dir == USB_EP_DIR_OUT) {
             dwc3_dep_config(dwc3_dev, 0, &cmd_param);
-            cmd_param.xfercfg.NumXferRes = 1;
-            dwc3_dep_xfer_config(dwc3_dev, 0, &cmd_param);
             dwc3_dev->DALEPENA |= 0x1;
             /* begin to receive SETUP packets */
             dwc3_ctrl_feed_dout(dev, 8, TRB_Control_Setup);
         } else {
             cmd_param.cfg.EpDir = !USB_EP_DIR_OUT;
             dwc3_dep_config(dwc3_dev, 1, &cmd_param);
-            cmd_param.xfercfg.NumXferRes = 1;
-            dwc3_dep_xfer_config(dwc3_dev, 1, &cmd_param);
             dwc3_dev->DALEPENA |= 0x2;
         }
     }
@@ -1904,7 +1840,6 @@ static int udc_dwc3_ep_clear_halt(const struct device *dev, struct udc_ep_config
     };
 
     if (USB_EP_GET_IDX(cfg->addr)) {
-        /* TODO: end */
         dwc3_dep_command(dwc3_dev, EP_ADDR_2_PHY_EP_IDX(cfg->addr), &cmd, &param);
     }
 
@@ -1914,15 +1849,77 @@ static int udc_dwc3_ep_clear_halt(const struct device *dev, struct udc_ep_config
 
 static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *const cfg, struct net_buf *const buf)
 {
-    LOG_DBG("%s ep: %x buf:%p, buf-len: %d", dev->name, cfg->addr, buf, buf->len);
+    __ASSERT(!udc_ep_is_busy(dev, cfg->addr), "ep %x is busy", cfg->addr);
+    const struct udc_dwc3_config *config = dev->config;
+    uint8_t addr = cfg->addr;
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
-    struct dwc3_msgq_type msg = {
-        .handler = ep_enqueue_handler,
-        .param = (void *)(uint32_t)cfg->addr,
-    };
-    udc_buf_put(cfg, buf);
+    uint8_t ep_idx = USB_EP_GET_IDX(addr);
+    struct udc_buf_info *bi = udc_get_buf_info(buf);
+    struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, addr);
+    struct dwc3_trb *trb;
 
-    return k_msgq_put(&dwc3_data->msgq, &msg, K_FOREVER);
+    LOG_DBG("ep: %x buf:%p, buf-len: %d, buf->size = %d, bi->data:%d bi->status %d", addr, buf, buf->len, buf->size, bi->data, bi->status);
+
+    udc_buf_put(cfg, buf);
+    if (ep_idx) {
+        /*
+            For OUT endpoints, the following rules apply:
+            ■ The BUFSIZ field must be ≥ 1 byte.
+            ■ The total size of a Buffer Descriptor must be a multiple of MaxPacketSize.
+            ■ For setup stage of control transfer, BUFSIZ field must be 8 bytes.
+            ■ A received zero-length packet still requires a MaxPacketSize buffer. Therefore, if the expected amount
+            of data to be received is a multiple of MaxPacketSize, software should add MaxPacketSize bytes to the
+            buffer to sink a possible zero-length packet at the end of the transfer.
+
+            For IN endpoints, the following rules apply:
+            ■ The number of chained TRBs necessary to construct a single packet must never exceed (DWC_USB3_-
+            CACHE_TRBS_PER_TRANSFER – 1). A maximum of one Link TRB can be present in the chain.
+            ■ If software wants to indicate a transfer completion to the host by sending a zero-length packet after a
+            multiple of MaxPacketSize, it must set up a zero-length TRB following the last TRB in the transfer.
+        */
+        if (USB_EP_DIR_IS_IN(addr)) {
+            trb = config->in_trb[ep_idx].trb;
+            if (!udc_ep_buf_has_zlp(buf)) {
+                if (buf->len)
+                    dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->len), TRB_Normal, false);
+                else
+                    dwc3_prepare_one_trb(trb, NULL, 0, TRB_Normal_ZLP, false);
+            } else {
+                __ASSERT(!(buf->len % ep_cfg->mps), "error");
+                /* buf->len max is 0xfffff, so use one trb is ok*/
+                dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->len), TRB_Normal, true);
+                dwc3_prepare_one_trb(++trb, NULL, 0, TRB_Normal_ZLP, false);
+            }
+            sys_cache_data_flush_range(buf->data, buf->len);
+        } else {
+            uint16_t remain = buf->size % ep_cfg->mps;
+            trb = config->out_trb[ep_idx].trb;
+            if (!remain) {
+                dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->size), TRB_Normal, false);
+            } else {
+                /* align mps */
+                dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->size), TRB_Normal, true);
+                dwc3_prepare_one_trb(++trb, config->bounce_addr, ep_cfg->mps - remain, TRB_Normal, false);
+            }
+        }
+        dwc3_dep_start_transfer(dev, EP_ADDR_2_PHY_EP_IDX(addr), trb, 0);
+    } else {
+        if (USB_EP_DIR_IS_IN(addr)) {
+            trb = config->in_trb[0].trb;
+            if (bi->data) {
+                udc_ep_set_busy(dev, addr, true);
+                dwc3_prepare_one_trb(trb, buf->data, buf->len, TRB_Control_Data, false);
+                sys_cache_data_flush_range(buf->data, buf->len);
+            } else if (bi->status) {
+                k_sem_take(&dwc3_data->ep0_sync, K_FOREVER);
+                dwc3_prepare_one_trb(trb, NULL, 0, dwc3_data->three_stage_setup ? TRB_Control_Status_3 : TRB_Control_Status_2, false);
+                dwc3_ep0_in_state_update(dev, udc_buf_get(dev, USB_CONTROL_EP_IN));
+            }
+            dwc3_dep_start_transfer(dev, 1, trb, 0);
+        }
+    }
+
+    return 0;
 }
 
 static int udc_dwc3_ep_dequeue(const struct device *dev, struct udc_ep_config *const cfg)
