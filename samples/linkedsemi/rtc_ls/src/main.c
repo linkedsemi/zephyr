@@ -4,33 +4,14 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/logging/log.h>
 #include <stdint.h>
-#include "reg_base_addr.h"
-#include "stdlib.h"
-#include "math.h"
-#include <stdio.h>
 
-#define DT_DRV_COMPAT linkedsemi_ls_rtc  
+#define DT_DRV_COMPAT linkedsemi_ls_rtc
 const struct device *rtc = DEVICE_DT_INST_GET(0);
 LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 static const char *weekday_str[] = {
     "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday","Sunday"
 };
-
-struct rtc_regs {
-
-    volatile uint32_t CTRL;    //0x000
-    volatile uint32_t CALIB;   //0x004
-    volatile uint32_t TIME;    // 0x008
-    volatile uint32_t CAL;     // 0x00C
-    volatile uint32_t CURTIME; // 0x010
-    volatile uint32_t CURCAL;  // 0x014
-    volatile uint32_t INTR;    // 0x018
-};
-
-#define RTC_BASE_ADDR LSRTC_BASE_ADDR
-#define RTC ((volatile struct rtc_regs *)RTC_BASE_ADDR)
-
 
 static void alarm_callback(const struct device *dev, uint16_t id, void *user_data)
 {
@@ -44,7 +25,7 @@ static void alarm_callback(const struct device *dev, uint16_t id, void *user_dat
 
 static void update_alarm_callback(const struct device *dev, void *user_data)
 {
-    ARG_UNUSED(dev);  
+    ARG_UNUSED(dev);
     ARG_UNUSED(user_data);
     LOG_INF("================================");
     LOG_INF("Update alarm callback triggered!");
@@ -53,10 +34,10 @@ static void update_alarm_callback(const struct device *dev, void *user_data)
 
 void main(void)
 {
-    struct rtc_time now; 
+    struct rtc_time now;
     const struct device *rtc_dev = DEVICE_DT_GET(DT_NODELABEL(rtc0));
 
-    //get rtc_driver_api 
+    //get rtc_driver_api
     const struct rtc_driver_api *api = (const struct rtc_driver_api *)rtc_dev->api;
 
     //alarm pending
@@ -79,11 +60,11 @@ void main(void)
     // ============  set_time  =============
     struct rtc_time set_tm = {
 
-        .tm_year = 123,     
-        .tm_mon  = 02,   
-        .tm_mday = 28,     
-        .tm_wday = 7,      
-        .tm_hour = 23,    
+        .tm_year = 123,
+        .tm_mon  = 02,
+        .tm_mday = 28,
+        .tm_wday = 7,
+        .tm_hour = 23,
         .tm_min  = 59,
         .tm_sec  = 55
     };
@@ -98,24 +79,16 @@ void main(void)
            set_tm.tm_year + 1900, set_tm.tm_mon, set_tm.tm_mday, weekday_str[set_tm.tm_wday-1],
            set_tm.tm_hour, set_tm.tm_min, set_tm.tm_sec);
 
-                   LOG_INF("rtc_ctrl     = %08x[%08x]", (uint32_t)&RTC->CTRL, RTC->CTRL);
-                   LOG_INF("rtc_calib    = %08x[%08x]", (uint32_t)&RTC->CALIB, RTC->CALIB);
-                   LOG_INF("rtc_set_tgt0 = %08x[%08x]", (uint32_t)&RTC->TIME, RTC->TIME);
-                   LOG_INF("rtc_set_tgt1 = %08x[%08x]", (uint32_t)&RTC->CAL, RTC->CAL);
-                   LOG_INF("rtc_cur0     = %08x[%08x]", (uint32_t)&RTC->CURTIME, RTC->CURTIME);
-                   LOG_INF("rtc_cur1     = %08x[%08x]", (uint32_t)&RTC->CURCAL, RTC->CURCAL);
-                   LOG_INF("rtc_intr     = %08x[%08x]\n", (uint32_t)&RTC->INTR, RTC->INTR);
+           k_sleep(K_SECONDS(1));
 
-    k_sleep(K_SECONDS(1));
-    
     // ============ alarm_set_time =============
     struct rtc_time alarm_tm ={
 
-        .tm_year = 123,     
-        .tm_mon  = 3,     
-        .tm_mday = 1,     
-        .tm_wday = 1,    
-        .tm_hour = 0,     
+        .tm_year = 123,
+        .tm_mon  = 3,
+        .tm_mday = 1,
+        .tm_wday = 1,
+        .tm_hour = 0,
         .tm_min  = 0,
         .tm_sec  = 0
     };
@@ -134,7 +107,7 @@ void main(void)
     LOG_INF("Alarm time set to:  %04d.%02d.%02d %s %02d:%02d:%02d\n",
            alarm_tm.tm_year + 1900, alarm_tm.tm_mon, alarm_tm.tm_mday, weekday_str[alarm_tm.tm_wday-1],
            alarm_tm.tm_hour, alarm_tm.tm_min, alarm_tm.tm_sec);
-    
+
     struct rtc_time alarm_readback;
     uint16_t alarm_mask_read;
 
@@ -158,13 +131,13 @@ void main(void)
 
         LOG_ERR("rtc_update_set_callback=0x%04x\n",ret);
     }
-    
+
     // ============ set_calibration =============
     int ret_setcali = rtc_set_calibration(rtc_dev, -1300000000);
     if (ret_setcali == 0) {
 
         LOG_INF("RTC calibration set successfully.");
-    } 
+    }
     else if (ret_setcali == -ENOTSUP) {
 
         LOG_ERR("RTC hardware does not support calibration.");
@@ -175,7 +148,6 @@ void main(void)
 
     int32_t calibration_value = 0;
 
- 
 
     while(1){
 
@@ -189,22 +161,14 @@ void main(void)
         // ============ alarm_is_pending =============
         if (api->alarm_is_pending) {
 
-        pending = api->alarm_is_pending(rtc_dev, 0); 
+        pending = api->alarm_is_pending(rtc_dev, 0);
         LOG_INF("Alarm pending: %s\n", pending ? "YES" : "NO");
         } else {
 
         LOG_INF("alarm_is_pending() not implemented in driver\n");
         }
 
-        LOG_INF("rtc_ctrl     = %08x[%08x]", (uint32_t)&RTC->CTRL, RTC->CTRL);
-        LOG_INF("rtc_calib    = %08x[%08x]", (uint32_t)&RTC->CALIB, RTC->CALIB);
-        LOG_INF("rtc_set_tgt0 = %08x[%08x]", (uint32_t)&RTC->TIME, RTC->TIME);
-        LOG_INF("rtc_set_tgt1 = %08x[%08x]", (uint32_t)&RTC->CAL, RTC->CAL);
-        LOG_INF("rtc_cur0     = %08x[%08x]", (uint32_t)&RTC->CURTIME, RTC->CURTIME);
-        LOG_INF("rtc_cur1     = %08x[%08x]", (uint32_t)&RTC->CURCAL, RTC->CURCAL);
-        LOG_INF("rtc_intr     = %08x[%08x]\n", (uint32_t)&RTC->INTR, RTC->INTR);
-
-        //rtc_ls_get_calibration 
+        //rtc_ls_get_calibration
         int result = rtc_get_calibration(rtc, &calibration_value);
         k_sleep(K_SECONDS(1));
         if (result == 0) {
@@ -216,5 +180,5 @@ void main(void)
         }
 
         k_sleep(K_SECONDS(1));
-    } 
+    }
 }
