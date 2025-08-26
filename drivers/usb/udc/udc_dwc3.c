@@ -1212,8 +1212,7 @@ static void dwc3_ep0_xfer_notready(const struct device *dev, const union evt_buf
             /* Three stage, receive zlp. */
             dwc3_prepare_one_trb(config->out_trb[0].trb, NULL, 0, TRB_Control_Status_3, false);
             dwc3_dep_start_transfer(dev, ep_num, config->out_trb[0].trb, 0);
-        }
-        else {
+        } else {
             k_sem_give(&dwc3_data->ep0_sync);
         }
     } break;
