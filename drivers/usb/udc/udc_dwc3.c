@@ -13,8 +13,6 @@
 #endif
 
 #include "field_manipulate.h"
-#include "reg_sec_pmu_rg.h"
-#include "reg_sysc_sec_awo.h"
 
 LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 
