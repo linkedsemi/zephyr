@@ -850,6 +850,18 @@
             status = "disabled";
         };
 
+        pmu_rtc0: pmu_rtc0@4006fc00{
+            compatible = "linkedsemi,ls-rtc";
+            reg = <0x4006fc00 0x400>;
+            interrupts = <PMU_RTC_IRQN 3>;
+            clock-frequency = <PBUS0123_CLOCK>;
+            clocks = <RTC_CLOCK>;
+            cyc-1hz = <32768>;     // 实际频率
+            calib-cyc = <0>;          // 校准补偿周期数，单位是时钟周期
+            calib-enable;             // 若存在此属性，则表示启用校准
+            status = "disabled";
+        };
+
         uart1: uart@400a1000 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x400a1000 0x400>;

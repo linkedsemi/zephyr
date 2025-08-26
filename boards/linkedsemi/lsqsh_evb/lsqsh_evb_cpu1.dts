@@ -189,6 +189,10 @@
     status = "okay";
 };
 
+&pmu_rtc0 {
+    status = "okay";
+};
+
 &uart1 {
     current-speed = <115200>;
     status = "okay";
