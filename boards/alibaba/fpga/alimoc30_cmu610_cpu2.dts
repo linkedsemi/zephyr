@@ -153,10 +153,12 @@
     label = "i2c-5";
 };
 
+#if !ENABLE_ESPI_VUART_ON_CPU1
 &i2c8 {
     status = "okay";
     label = "i2c-8";
 };
+#endif
 
 &smbus2 {
     status = "okay";
@@ -166,9 +168,11 @@
     status = "okay";
 };
 
+#if !ENABLE_ESPI_VUART_ON_CPU1
 &smbus8 {
     status = "okay";
 };
+#endif
 
 &sram1 {
     status = "disabled";
@@ -193,14 +197,17 @@
     pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
     pinctrl-names = "default";
     current-speed = <115200>;
-    status = "okay";
+    status = "disabled";
 };
 
+#if !ENABLE_ESPI_VUART_ON_CPU1
 &vuart1 {
     interrupts = <UART3_IRQN 3>;
-    uart = <&uart3>;
+    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
+    pinctrl-names = "default";
     status = "okay";
 };
+#endif
 
 &uart4 {
     current-speed = <115200>;
@@ -374,6 +381,7 @@
     status = "okay";
 };
 
+#if !ENABLE_ESPI_VUART_ON_CPU1
 &espi1 {
     espi1_kcs_ca2: espi1_kcs_ca2 {
         compatible = "linkedsemi,ls-kcs";
@@ -396,3 +404,4 @@
 &mmbi1 {
     status = "okay";
 };
+#endif

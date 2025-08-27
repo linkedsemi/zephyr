@@ -36,7 +36,7 @@
     leds {
         compatible = "gpio-leds";
         led0: led_0{
-            gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpioh 6 GPIO_ACTIVE_HIGH>;
             label = "Red LED";
         };
     };
@@ -120,6 +120,7 @@
     status = "disabled";
 };
 
+#if ENABLE_ESPI_VUART_ON_CPU1
 &i2c8 {
     status = "okay";
 };
@@ -127,6 +128,7 @@
 &smbus8 {
     status = "okay";
 };
+#endif
 
 &gpioa {
     status = "okay";
@@ -314,15 +316,34 @@
     };
 };
 
+#if ENABLE_ESPI_VUART_ON_CPU1
+&vuart1 {
+    interrupts = <UART3_IRQN 3>;
+    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
 &espi1 {
     espi1_kcs_ca2: espi1_kcs_ca2 {
         compatible = "linkedsemi,ls-kcs";
         port = <0xca2 0xca3>;
         status = "okay";
     };
+    status = "okay";
 };
 
 &ipmi_kcs {
     kcs_chan = <&espi1_kcs_ca2>;
     status = "okay";
+    label = "ipmi-kcs";
 };
+
+&sio1 {
+    status = "okay";
+};
+
+&mmbi1 {
+    status = "okay";
+};
+#endif
