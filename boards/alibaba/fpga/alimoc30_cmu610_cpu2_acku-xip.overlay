@@ -16,6 +16,7 @@
     };
     aliases {
         led0 = &led0;
+        bmcreadyn = &bmc_ready;
     };
 
     leds: leds {
@@ -24,7 +25,13 @@
             gpios = <&gpioe 15 GPIO_ACTIVE_HIGH>;
             label = "LED0";
         };
+
+        bmc_ready: bmc_ready {
+            gpios = <&gpioa 11 (GPIO_ACTIVE_HIGH)>;
+            label = "BMC_READY";
+        };
     };
+
 };
 
 &qspi1 {
