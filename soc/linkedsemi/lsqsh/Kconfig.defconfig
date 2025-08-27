@@ -143,6 +143,12 @@ config NET_PHY_FORCE_1000M
 	bool "NET_PHY_FORCE_1000M"
 	default n
 
+config NET_TCP_MAX_SEND_WINDOW_SIZE
+	default 4096
+
+config NET_TCP_MAX_RECV_WINDOW_SIZE
+	default 4096
+
 endif # NETWORKING
 
 if CACHE
