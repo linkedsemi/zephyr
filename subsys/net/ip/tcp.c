@@ -2123,7 +2123,7 @@ static struct tcp *tcp_conn_alloc(void)
 
 	conn->in_connect = false;
 	conn->state = TCP_LISTEN;
-	conn->recv_win_max = tcp_rx_window;
+	conn->recv_win_max = tcp_rx_window>UINT16_MAX?UINT16_MAX:tcp_rx_window;
 	conn->recv_win = conn->recv_win_max;
 	conn->recv_win_sent = conn->recv_win_max;
 	conn->send_win_max = MAX(tcp_tx_window, NET_IPV6_MTU);
