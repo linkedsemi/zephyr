@@ -120,15 +120,13 @@
     status = "disabled";
 };
 
-#if ENABLE_ESPI_VUART_ON_CPU1
-&i2c8 {
-    status = "okay";
-};
+// &i2c8 {
+//     status = "okay";
+// };
 
-&smbus8 {
-    status = "okay";
-};
-#endif
+// &smbus8 {
+//     status = "okay";
+// };
 
 &gpioa {
     status = "okay";

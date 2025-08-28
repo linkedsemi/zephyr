@@ -153,12 +153,10 @@
     label = "i2c-5";
 };
 
-#if !ENABLE_ESPI_VUART_ON_CPU1
 &i2c8 {
     status = "okay";
     label = "i2c-8";
 };
-#endif
 
 &smbus2 {
     status = "okay";
@@ -168,11 +166,9 @@
     status = "okay";
 };
 
-#if !ENABLE_ESPI_VUART_ON_CPU1
 &smbus8 {
     status = "okay";
 };
-#endif
 
 &sram1 {
     status = "disabled";
