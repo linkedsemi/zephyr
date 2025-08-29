@@ -301,7 +301,7 @@
 //     status = "okay";
 // };
 
-zephyr_udc0: &usb_dwc3 {
+zephyr_udc0: &usb2 {
     status = "okay";
 };
 

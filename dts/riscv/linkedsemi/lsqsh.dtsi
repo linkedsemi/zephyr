@@ -1323,7 +1323,7 @@
             status = "disabled";
         };
 
-        usb_dwc3: usb@40050000 {
+        usb2: usb@40050000 {
             compatible = "snps,dwc3";
             reg = <0x40050000 0xe000>;
             interrupts = <USB2_IRQN 3>;
