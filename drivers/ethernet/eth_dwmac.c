@@ -67,6 +67,12 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define RXDESC_PHYS_L(idx) phys_lo32(&p->rx_descs[idx])
 #endif
 
+#if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
+#define RX_REFILL_THREAD_PRIORITY K_PRIO_COOP(CONFIG_NET_TCP_WORKER_PRIO-1)
+#else
+#define RX_REFILL_THREAD_PRIORITY K_PRIO_PREEMPT(CONFIG_NET_TCP_WORKER_PRIO-1)
+#endif
+
 static inline uint32_t hi32(uintptr_t val)
 {
 	/* trickery to avoid compiler warnings on 32-bit build targets */
@@ -559,7 +565,7 @@ static void dwmac_iface_init(struct net_if *iface)
 	k_thread_create(&p->rx_refill_thread, p->rx_refill_thread_stack,
 			K_KERNEL_STACK_SIZEOF(p->rx_refill_thread_stack),
 			dwmac_rx_refill_thread, p, NULL, NULL,
-			K_PRIO_COOP(1), 0, K_NO_WAIT);
+			RX_REFILL_THREAD_PRIORITY, 0, K_NO_WAIT);
 	k_thread_name_set(&p->rx_refill_thread, "dwmac_rx_refill");
 
 	/* start up TX/RX */
