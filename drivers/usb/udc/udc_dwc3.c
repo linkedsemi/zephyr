@@ -1508,6 +1508,41 @@ static int udc_dwc3_unlock(const struct device *dev)
     return udc_unlock_internal(dev);
 }
 
+#if 0
+static uint8_t dwc3_phy_cfg_write_and_read(uint8_t reg_addr, uint8_t write_data)
+{
+    uint32_t res;
+    uint32_t phy_cfg = *(uint32_t *)0x40058010;
+
+    /* rst en */
+    *(uint32_t *)0x40058010 |= BIT(25);
+    k_usleep(1);
+
+    /* set reg_addr and write_data*/
+    *(uint32_t *)0x40058010 |= ((reg_addr << 2) | (write_data << 16));
+    k_usleep(1);
+    /* enable write */
+    *(uint32_t *)0x40058010 |= (0x1 << 1);
+    k_usleep(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 1);
+    /* wait write success */
+    k_usleep(1);
+
+    /* enable read */
+    *(uint32_t *)0x40058010 |= (0x1 << 0);
+    k_usleep(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 0);
+    k_usleep(1);
+    res = *(uint32_t *)0x40058010;
+    k_usleep(1);
+
+    /* reset phy cfg reg */
+    *(uint32_t *)0x40058010 = phy_cfg;
+
+    return (res >> 8) & 0xff;
+}
+#endif
+
 static int dwc3_phy_setup(const struct device *dev)
 {
     *(uint32_t *)0x40058014 = 0x131; // pll_en
