@@ -1557,24 +1557,30 @@ static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
 
 static int usb_phy_reg_write(const struct shell *sh, size_t argc, char **argv) 
 {
+    uint8_t addr, data;
     if (argc < 3) {
         printk("%s <address> <data>\n", argv[0]);
         return 0;
     }
-    dwc3_phy_cfg_write(atoi(argv[1]), atoi(argv[2]));
+    addr = strtoul(argv[1], NULL, 16);
+    data = strtoul(argv[2], NULL, 16);
+
+    dwc3_phy_cfg_write(addr, data);
     return 0;
 }
 SHELL_CMD_REGISTER(usb_phy_reg_write, NULL, "naneng phy write reg", usb_phy_reg_write);
 
 static int usb_phy_reg_read(const struct shell *sh, size_t argc, char **argv) 
 {
-    uint8_t res = 0;
+    uint8_t res, addr;
     if (argc < 2) {
         printk("%s <address>\n", argv[0]);
         return 0;
     }
-    res = dwc3_phy_cfg_read(atoi(argv[1]));
-    printk("reg_%x value: 0x%x\n", atoi(argv[1]), res);
+    addr = strtoul(argv[1], NULL, 16);
+    res = dwc3_phy_cfg_read(addr);
+
+    printk("reg_0x%x value: 0x%x\n", atoi(argv[1]), res);
     return 0;
 }
 SHELL_CMD_REGISTER(usb_phy_reg_read, NULL, "naneng phy read reg", usb_phy_reg_read);
