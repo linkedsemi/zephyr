@@ -57,13 +57,13 @@ struct mmbi_struct {
 struct mmbi_ls_data {
     struct mmbi_struct *mmbi;
     uint32_t size;
+    struct peri_mem mem[PORT_NUM];
 };
 
 struct mmbi_ls_config {
     const struct device *parent;
     uint32_t host_addr;
     uint32_t size_order;
-    struct peri_mem mem[PORT_NUM];
 };
 
 static bool host_mmbi_mem_read(struct peri_mem_content *mem, uint32_t addr, uint8_t size, void *res)
@@ -122,6 +122,7 @@ static bool host_mmbi_mem_write(struct peri_mem_content *mem, uint32_t addr, uin
 static int mmbi_ls_init(const struct device *dev)
 {
     const struct mmbi_ls_config *dev_cfg = dev->config;
+    const struct mmbi_ls_data *dev_data = dev->data;
 
     if (!device_is_ready(dev_cfg->parent)) {
         __ASSERT(0, "%s device not ready", dev_cfg->parent->name);
@@ -129,7 +130,7 @@ static int mmbi_ls_init(const struct device *dev)
     }
 
     for (uint32_t i = 0; i < PORT_NUM; i++) {
-        espi_lpc_add_mem(dev_cfg->parent, (struct peri_mem *)(&dev_cfg->mem[i]));
+        espi_lpc_add_mem(dev_cfg->parent, (struct peri_mem *)(&dev_data->mem[i]));
     }
 
     return 0;
@@ -146,10 +147,6 @@ static int mmbi_ls_init(const struct device *dev)
                                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, \
                                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xb9};\
     static struct mmbi_ls_data mmbi_ls_data_##idx = {                                \
-        .mmbi = (struct mmbi_struct *)mmbi_buf##idx,                                 \
-        .size = PAGE_SIZE * (1 << DT_INST_PROP(idx, size_order)),                    \
-    };                                                                               \
-    static const struct mmbi_ls_config mmbi_ls_cfg_##idx = {                         \
         .mem = {                                                                     \
             [0] = {                                                                  \
                 .content = &(struct peri_mem_content){                               \
@@ -159,6 +156,10 @@ static int mmbi_ls_init(const struct device *dev)
                 },                                                                   \
             },                                                                       \
         },                                                                           \
+        .mmbi = (struct mmbi_struct *)mmbi_buf##idx,                                 \
+        .size = PAGE_SIZE * (1 << DT_INST_PROP(idx, size_order)),                    \
+    };                                                                               \
+    static struct mmbi_ls_config mmbi_ls_cfg_##idx = {                               \
         .parent = DEVICE_DT_GET(DT_INST_PARENT(idx)),                                \
         .host_addr = DT_INST_PROP(idx, host_addr),                                   \
         .size_order = DT_INST_PROP(idx, size_order),                                 \

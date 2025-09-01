@@ -17,7 +17,7 @@
 struct peri_ioport_content {
     void (*io_read)(const struct peri_ioport_content *ioport,uint8_t size,void *res);
     void (*io_write)(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data);
-    void *ctx;
+    struct device *ctx;
     uint16_t addr;
 };
 
