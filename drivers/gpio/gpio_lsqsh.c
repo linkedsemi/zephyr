@@ -162,54 +162,67 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 
     switch (flags & (GPIO_INPUT | GPIO_OUTPUT)) {
     case GPIO_OUTPUT:
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, false);))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+        do {
+            io_cfg_lock(pincode, false);
             io_cfg_output(pincode);
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, true);))
+            io_cfg_lock(pincode, true);
             ret = io_is_output(pincode);
-            IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
+        } while (!ret);
+#else
+        io_cfg_output(pincode);
+        ret = io_is_output(pincode);
+        if (!ret) {
+            LOG_ERROR("%s:%d: operation fail", __func__, __LINE__);
+        }
+#endif
         break;
     case GPIO_DISCONNECTED:
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, false);))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+        do {
+            io_cfg_lock(pincode, false);
             io_pull_write(pincode, IO_PULL_DISABLE);
             io_cfg_disable(pincode);
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, true);))
+            io_cfg_lock(pincode, true);
             ret = (!io_is_output(pincode)) && (!io_is_input(pincode));
-            IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
+        } while (!ret);
+#else
+        io_pull_write(pincode, IO_PULL_DISABLE);
+        io_cfg_disable(pincode);
+        ret = (!io_is_output(pincode)) && (!io_is_input(pincode));
+#endif
         break;
     case GPIO_INPUT:
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, false);))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+        do {
+            io_cfg_lock(pincode, false);
             io_cfg_input(pincode);
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pincode, true);))
-            IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_app_input_lock(pincode, true);))
+            io_cfg_lock(pincode, true);
+            io_cfg_app_input_lock(pincode, true);
             ret = io_is_input(pincode);
-            IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
+        } while (!ret);
+#else
+        io_cfg_input(pincode);
+        ret = io_is_input(pincode);
+#endif
         break;
     default:
         return -ENOTSUP;
     }
 
-    // switch (flags & (GPIO_PULL_UP | GPIO_PULL_DOWN)) {
-    // case 0:
-    //     io_pull_write(pincode, IO_PULL_DISABLE);
-    //     break;
-    // case GPIO_PULL_UP:
-    //     io_pull_write(pincode, IO_PULL_UP);
-    //     break;
-    // case GPIO_PULL_DOWN:
-    //     io_pull_write(pincode, IO_PULL_DOWN);
-    //     break;
-    // default:
-    //     return -EINVAL;
-    // }
+    switch (flags & (GPIO_PULL_UP | GPIO_PULL_DOWN)) {
+    case 0:
+        io_pull_write(pincode, IO_PULL_DISABLE);
+        break;
+    case GPIO_PULL_UP:
+        io_pull_write(pincode, IO_PULL_UP);
+        break;
+    case GPIO_PULL_DOWN:
+        io_pull_write(pincode, IO_PULL_DOWN);
+        break;
+    default:
+        return -EINVAL;
+    }
 
     // switch (flags & LS_GPIO_DS_MASK) {
     // case LS_GPIO_DS_QUARTER_DRIVE:
@@ -325,14 +338,22 @@ static int gpio_ls_port_set_masked_raw(const struct device *dev, gpio_port_pins_
     const uint16_t dos = target_pins | (port_value & ~mask);
     bool ret;
 
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (CLEAR_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    do {
+        CLEAR_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);
         gpio_val->DOC_DOS = dos | (~dos << 16);
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);))
+        SET_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);
         ret = ((gpio_val->DOC_DOS & target_pins) == target_pins);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-            (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
+                    (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
+    } while (!ret);
+#else
+    gpio_val->DOC_DOS = dos | (~dos << 16);
+    ret = ((gpio_val->DOC_DOS & target_pins) == target_pins);
+    if (!ret) {
+        LOG_ERROR("%s:%d: operation fail", __func__, __LINE__);
+    }
+#endif
 
     return 0;
 }
@@ -348,17 +369,28 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
     __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     bool ret;
 
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    do {
+        CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         if ((pins << 16) & gpio_cfg->OD_FIR) {
             gpio_val->OE_DIN &= ~((pins << 16) & gpio_cfg->OD_FIR);
         }
         gpio_val->DOC_DOS = pins & 0xffff;
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
+        SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         ret = ((gpio_val->DOC_DOS & pins) == pins);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-            (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
+                    (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
+    } while (!ret);
+#else
+    if ((pins << 16) & gpio_cfg->OD_FIR) {
+        gpio_val->OE_DIN &= ~((pins << 16) & gpio_cfg->OD_FIR);
+    }
+    gpio_val->DOC_DOS = pins & 0xffff;
+    ret = ((gpio_val->DOC_DOS & pins) == pins);
+    if (!ret) {
+        LOG_ERROR("%s:%d: operation fail", __func__, __LINE__);
+    }
+#endif
 
     return 0;
 }
@@ -374,17 +406,28 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
     __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     bool ret;
 
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (do {))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    do {
+        CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         gpio_val->DOC_DOS = pins << 16;
         if ((pins << 16) & gpio_cfg->OD_FIR) {
             gpio_val->OE_DIN |= (pins << 16) & gpio_cfg->OD_FIR;
         }
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);))
+        SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         ret = ((gpio_val->DOC_DOS & pins) == 0);
         IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-            (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (} while(!ret);))
+                    (if (!ret) { LOG_ERROR("%s:%d: operation fail", __func__, __LINE__); }))
+    } while (!ret);
+#else
+    gpio_val->DOC_DOS = pins << 16;
+    if ((pins << 16) & gpio_cfg->OD_FIR) {
+        gpio_val->OE_DIN |= (pins << 16) & gpio_cfg->OD_FIR;
+    }
+    ret = ((gpio_val->DOC_DOS & pins) == 0);
+    if (!ret) {
+        LOG_ERROR("%s:%d: operation fail", __func__, __LINE__);
+    }
+#endif
 
     return 0;
 }
@@ -409,11 +452,14 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
                                            enum gpio_int_trig trig)
 {
     const struct gpio_ls_config *cfg = dev->config;
+    struct gpio_ls_data *data = dev->data;
     __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
     __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     uint8_t pincode;
     uint8_t port;
     exti_edge_t edge;
+    gpio_port_value_t value;
+    bool fire_callback = false;
 
     port = get_gpio_port_id((uint32_t)gpio_cfg);
     pincode = LSPIN(port, pin);
@@ -422,10 +468,19 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
         if (mode == GPIO_INT_MODE_EDGE) {
             if (trig == GPIO_INT_TRIG_BOTH) {
                 edge = INT_EDGE_BOTH;
+                fire_callback = true;
             } else if (trig == GPIO_INT_TRIG_HIGH) {
                 edge = INT_EDGE_RISING;
+                gpio_port_get_raw(dev, &value);
+                if (value & BIT(pin)) {
+                    fire_callback = true;
+                }
             } else {
                 edge = INT_EDGE_FALLING;
+                gpio_port_get_raw(dev, &value);
+                if (0 == (value & BIT(pin))) {
+                    fire_callback = true;
+                }
             }
         } else {
             return -ENOTSUP;
@@ -435,8 +490,12 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
     }
 
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_exti_clr_cfg_lock(pincode, edge, false);))
-    io_sec_exti_config(pincode, edge);
+    COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_sec_exti_config(pincode, edge);), (io_app_exti_config(pincode, edge);))
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_exti_clr_cfg_lock(pincode, edge, true);))
+
+    if (fire_callback && (!sys_slist_is_empty(&data->callbacks))) {
+        gpio_fire_callbacks(&data->callbacks, dev, edge);
+    }
 
     return 0;
 }
