@@ -174,8 +174,9 @@ SECTIONS
 
 		__text_region_start = .;
 
+		*(.text.z_early_memset .text.z_early_memcpy .text.z_bss_zero .text.z_data_copy)
 		*(.text)
-		*(".text.*")
+		*(EXCLUDE_FILE (*libkernel.a *lib*net* *eth_dwmac* *zperf*)".text.*")
 		*(.gnu.linkonce.t.*)
 #include <zephyr/linker/kobject-text.ld>
 	} GROUP_LINK_IN(ROMABLE_REGION)
@@ -196,7 +197,7 @@ SECTIONS
 		 *(.srodata)
 		 *(".srodata.*")
 		 *(.rodata)
-		 *(".rodata.*")
+		 *(EXCLUDE_FILE (*libkernel.a *lib*net* *eth_dwmac* *zperf*)".rodata.*")
 		 *(.gnu.linkonce.r.*)
 		 *(.sdata2 .sdata2.* .gnu.linkonce.s2.*)
 
