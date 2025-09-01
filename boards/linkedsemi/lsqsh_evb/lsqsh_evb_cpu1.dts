@@ -29,6 +29,8 @@
     aliases {
         peci-0 = &peci1;
         sdhc0 = &sdhci1;
+        sw0 = &btn1;
+        led0 = &led1;
     };
 
     soc {
@@ -90,29 +92,29 @@
 
     leds: leds {
         compatible = "gpio-leds";
-        led5: led5 {
-            gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
-            label = "LED5";
-        };
         led1: led1 {
-            gpios = <&gpioh 7 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
             label = "LED1";
         };
         led2: led2 {
-            gpios = <&gpioh 0 GPIO_ACTIVE_HIGH>;
+            gpios = <&gpioh 7 GPIO_ACTIVE_HIGH>;
             label = "LED2";
+        };
+        led3: led3 {
+            gpios = <&gpioh 0 GPIO_ACTIVE_HIGH>;
+            label = "LED3";
         };
     };
 
     keys: keys {
         compatible = "gpio-keys";
-        btn2: btn2 {
-            gpios = <&gpiog 4 BTN_GPIO_FLAGS>;
-            label = "Push button 2";
-        };
         btn1: btn1 {
-            gpios = <&gpioh 1 BTN_GPIO_FLAGS>;
+            gpios = <&gpiog 4 BTN_GPIO_FLAGS>;
             label = "Push button 1";
+        };
+        btn2: btn2 {
+            gpios = <&gpioh 1 BTN_GPIO_FLAGS>;
+            label = "Push button 2";
         };
         btn3: btn3 {
             gpios = <&gpioh 4 BTN_GPIO_FLAGS>;
@@ -251,11 +253,19 @@
 // };
 
 &eth1 {
+    phy-handle = <&eth1_phy>;
     status = "okay";
 };
 
 &mdio1 {
     status = "okay";
+    eth1_phy: ethernet-phy@0 {
+        compatible = "realtek,rtl8211f";
+        reg = <0>;
+        reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+        int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+        status = "okay";
+    };
 };
 
 // &peci1 {
