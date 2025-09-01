@@ -6,4 +6,4 @@ description: SNPS DWMAC MDIO Features
 
 compatible: "snps,dwmac-mdio"
 
-include: [mdio-controller.yaml, pinctrl-device.yaml]
+include: [mdio-controller.yaml, pinctrl-device.yaml, reset-device.yaml]

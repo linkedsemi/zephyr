@@ -8,12 +8,20 @@
 #include <errno.h>
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
-#if defined(CONFIG_PINCTRL)
-    #include <zephyr/drivers/pinctrl.h>
-#endif
 #include <zephyr/drivers/mdio.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/mdio.h>
+
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mdio_dwmac, CONFIG_MDIO_LOG_LEVEL);
@@ -22,6 +30,9 @@ LOG_MODULE_REGISTER(mdio_dwmac, CONFIG_MDIO_LOG_LEVEL);
 
 #define MAC_MDIO_ADDRESS 0x0200
 #define MAC_MDIO_DATA    0x0204
+
+#define DMA_MODE         0x1000
+#define DMA_MODE_SWR     BIT(0)
 
 /* MDC Clock Selection define*/
 #define STMMAC_CSR_60_100M  0x0 /* MDC = clk_scr_i/42 */
@@ -71,7 +82,9 @@ struct mdio_dwmac_data {
 struct mdio_dwmac_config {
     mem_addr_t base;
     uint32_t clock_frequency;
-    const struct pinctrl_dev_config *pincfg;
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 static bool check_busy(const struct device *dev)
@@ -178,40 +191,79 @@ static int mdio_dwmac_init(const struct device *dev)
 {
     const struct mdio_dwmac_config *const dev_config = dev->config;
     struct mdio_dwmac_data *const dev_data = dev->data;
+	k_timepoint_t timeout;
+    __maybe_unused int ret;
 
     k_mutex_init(&dev_data->mdio_mutex);
 
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (dev_config->reset.dev != NULL) {
+        if (!device_is_ready(dev_config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+    }
+#endif
+
 #if defined(CONFIG_PINCTRL)
-    int ret = pinctrl_apply_state(dev_config->pincfg, PINCTRL_STATE_DEFAULT);
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
         LOG_WRN("pinctrl_apply_state fail");
     }
 #endif
 
-    dev_data->divider = 0xf;
+    /* resets all of the MAC internal registers and logic */
+    sys_write32(DMA_MODE_SWR, dev_config->base + DMA_MODE);
+    timeout = sys_timepoint_calc(K_MSEC(100));
+    while (sys_read32(dev_config->base + DMA_MODE) & DMA_MODE_SWR) {
+        if (sys_timepoint_expired(timeout)) {
+            __ASSERT(0, "unable to reset hardware");
+            return -EIO;
+        }
+    }
+
     if (dev_config->clock_frequency < MHZ(35)) {
         dev_data->divider = STMMAC_CSR_20_35M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(35)) && (dev_config->clock_frequency < MHZ(60))) {
+    } else if ((dev_config->clock_frequency >= MHZ(35)) && (dev_config->clock_frequency < MHZ(60))) {
         dev_data->divider = STMMAC_CSR_35_60M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(60)) && (dev_config->clock_frequency < MHZ(100))) {
+    } else if ((dev_config->clock_frequency >= MHZ(60)) && (dev_config->clock_frequency < MHZ(100))) {
         dev_data->divider = STMMAC_CSR_60_100M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(100)) && (dev_config->clock_frequency < MHZ(150))) {
+    } else if ((dev_config->clock_frequency >= MHZ(100)) && (dev_config->clock_frequency < MHZ(150))) {
         dev_data->divider = STMMAC_CSR_100_150M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(150)) && (dev_config->clock_frequency < MHZ(250))) {
+    } else if ((dev_config->clock_frequency >= MHZ(150)) && (dev_config->clock_frequency < MHZ(250))) {
         dev_data->divider = STMMAC_CSR_150_250M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(250)) && (dev_config->clock_frequency < MHZ(300))) {
+    } else if ((dev_config->clock_frequency >= MHZ(250)) && (dev_config->clock_frequency < MHZ(300))) {
         dev_data->divider = STMMAC_CSR_250_300M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(300)) && (dev_config->clock_frequency < MHZ(500))) {
+    } else if ((dev_config->clock_frequency >= MHZ(300)) && (dev_config->clock_frequency < MHZ(500))) {
         dev_data->divider = STMMAC_CSR_300_500M;
-    }
-    else if ((dev_config->clock_frequency >= MHZ(500)) && (dev_config->clock_frequency <= MHZ(800))) {
+    } else if ((dev_config->clock_frequency >= MHZ(500)) && (dev_config->clock_frequency <= MHZ(800))) {
         dev_data->divider = STMMAC_CSR_500_800M;
+    } else {
+        dev_data->divider = 0xf;
     }
 
     return 0;
@@ -224,22 +276,27 @@ static const struct mdio_driver_api mdio_dwmac_api = {
     .write_c45 = mdio_dwmac_write_c45,
 };
 
-#define MDIO_DWMAC_DEVICE(inst)                                                        \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                        \
-                                                                                       \
-    static struct mdio_dwmac_data mdio_dwmac_data_##inst = {};                         \
-    static struct mdio_dwmac_config mdio_dwmac_config_##inst = {                       \
-        .base = DT_REG_ADDR(DT_INST_PARENT(inst)),                                     \
-        .clock_frequency = DT_PROP(DT_INST_PARENT(inst), clock_frequency),             \
-        IF_ENABLED(CONFIG_PINCTRL, (.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), )) \
-    };                                                                                 \
-    DEVICE_DT_INST_DEFINE(inst,                                                        \
-                          &mdio_dwmac_init,                                            \
-                          NULL,                                                        \
-                          &mdio_dwmac_data_##inst,                                     \
-                          &mdio_dwmac_config_##inst,                                   \
-                          POST_KERNEL,                                                 \
-                          CONFIG_ETH_INIT_PRIORITY,                                    \
+#define MDIO_DWMAC_DEVICE(inst)                                                                      \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                                      \
+                                                                                                     \
+    static struct mdio_dwmac_data mdio_dwmac_data_##inst = {};                                       \
+    static struct mdio_dwmac_config mdio_dwmac_config_##inst = {                                     \
+        .base = (uint32_t)DT_INST_REG_ADDR(inst),                                                    \
+        .clock_frequency = COND_CODE_1(                                                              \
+            DT_NODE_HAS_PROP(DT_INST_PHANDLE(inst, clocks), clock_frequency),                        \
+            (DT_INST_PROP_BY_PHANDLE(inst, clocks, clock_frequency)),                                \
+            (DT_INST_PROP(inst, clock_frequency))),                                                  \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                 \
+        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                        \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))   \
+    };                                                                                               \
+    DEVICE_DT_INST_DEFINE(inst,                                                                      \
+                          &mdio_dwmac_init,                                                          \
+                          NULL,                                                                      \
+                          &mdio_dwmac_data_##inst,                                                   \
+                          &mdio_dwmac_config_##inst,                                                 \
+                          POST_KERNEL,                                                               \
+                          CONFIG_MDIO_INIT_PRIORITY,                                                 \
                           &mdio_dwmac_api);
 
 DT_INST_FOREACH_STATUS_OKAY(MDIO_DWMAC_DEVICE)
