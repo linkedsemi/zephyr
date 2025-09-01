@@ -2547,6 +2547,131 @@
         input-enable;
         drive-strength = "max driver";
     };
+
+    /omit-if-no-ref/adc1_ain1_pc04: adc1_ain1_pc04 {
+        pinmux = <PC04>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain2_pc05: adc1_ain2_pc05 {
+        pinmux = <PC05>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain3_pc06: adc1_ain3_pc06 {
+        pinmux = <PC06>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain4_pc07: adc1_ain4_pc07 {
+        pinmux = <PC07>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain5_pc08: adc1_ain5_pc08 {
+        pinmux = <PC08>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain6_pc09: adc1_ain6_pc09 {
+        pinmux = <PC09>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain7_pc10: adc1_ain7_pc10 {
+        pinmux = <PC10>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain8_pc11: adc1_ain8_pc11 {
+        pinmux = <PC11>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain9_pc12: adc1_ain9_pc12 {
+        pinmux = <PC12>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain10_pc13: adc1_ain10_pc13 {
+        pinmux = <PC13>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain11_pc14: adc1_ain11_pc14 {
+        pinmux = <PC14>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc1_ain12_pc15: adc1_ain12_pc15 {
+        pinmux = <PC15>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain0_pd00: adc2_ain0_pd00 {
+        pinmux = <PD00>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain1_pd01: adc2_ain1_pd01 {
+        pinmux = <PD01>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain2_pd02: adc2_ain2_pd02 {
+        pinmux = <PD02>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain3_pd03: adc2_ain3_pd03 {
+        pinmux = <PD03>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain4_pd04: adc2_ain4_pd04 {
+        pinmux = <PD04>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain5_pd05: adc2_ain5_pd05 {
+        pinmux = <PD05>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain6_pd06: adc2_ain6_pd06 {
+        pinmux = <PD06>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain7_pd07: adc2_ain7_pd07 {
+        pinmux = <PD07>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain8_pd08: adc2_ain8_pd08 {
+        pinmux = <PD08>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain9_pd09: adc2_ain9_pd09 {
+        pinmux = <PD09>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain10_pd10: adc2_ain10_pd10 {
+        pinmux = <PD10>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain11_pd11: adc2_ain11_pd11 {
+        pinmux = <PD11>;
+        analog;
+    };
+
+    /omit-if-no-ref/adc2_ain12_pd12: adc2_ain12_pd12 {
+        pinmux = <PD12>;
+        analog;
+    };
 };
 
 // &i2c15 {

@@ -1,0 +1,28 @@
+#include <zephyr/dt-bindings/adc/ls-adc.h>
+
+/ {
+    aliases {
+        testadc = &adc1;
+    };
+};
+
+&adc1 {
+    status = "okay";
+    #address-cells = <1>;
+    #size-cells = <0>;
+    pinctrl-0 = <&adc1_in5_pa14 &adc1_in6_pa15 &adc1_in7_pb00>;
+    // conversion_mode = <regular_mode>;
+    conversion_mode = <inject_mode>;
+    // conversion_mode = <loop_mode>;
+    data_align = <ADC_DATAALIGN_RIGHT>;
+    continuous_conv_mode = <continuous>;
+    nbr_of_conversion = <3>;
+    discontinuous_conv_mode = <discontinuous>;
+    nbr_of_disc_conversion = <0>;
+    trig_type = <ADC_SOFTWARE_TRIGT>;
+    adc_drive_type = <BINBUF_DIRECT_DRIVE_ADC>;
+    adc_clk_div = <256>;
+    clk_cfg = <ADC_CH_CLOCK_DIV8>;
+    injected_offset = <0>;
+    fif_ctrl1 = <0xFFFF>;
+};

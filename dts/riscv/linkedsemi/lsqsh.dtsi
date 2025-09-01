@@ -1335,6 +1335,24 @@
             num-out-eps = <4>;
             status = "disabled";
         };
+
+        adc1: adc@4008b000 {
+            compatible = "linkedsemi,ls-adc";
+            reg = <0x4008b000 0x400>;
+            interrupts = <ADC1_IRQN 3>;
+            clocks = <ADC1_CLOCK>;
+            resets = <ADC1_RESET>;
+            status = "disabled";
+        };
+
+        adc2: adc@4008b400 {
+            compatible = "linkedsemi,ls-adc";
+            reg = <0x4008b400 0x400>;
+            interrupts = <ADC2_IRQN 3>;
+            clocks = <ADC2_CLOCK>;
+            resets = <ADC2_RESET>;
+            status = "disabled";
+        };
     };
 
     power-states {
