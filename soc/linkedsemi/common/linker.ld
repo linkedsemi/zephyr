@@ -176,7 +176,7 @@ SECTIONS
 
 		*(.text.z_early_memset .text.z_early_memcpy .text.z_bss_zero .text.z_data_copy)
 		*(.text)
-		*(EXCLUDE_FILE (*libkernel.a *lib*net* *eth_dwmac*)".text.*")
+		*(EXCLUDE_FILE (*libkernel.a *libdrivers__ethernet.a *liblib__net_buf.a *libsubsys__net__ip.a *libsubsys__net__l2__ethernet.a *libsubsys__net__lib__config.a *libsubsys__net.a *eth_dwmac*)".text.*")
 		*(.gnu.linkonce.t.*)
 #include <zephyr/linker/kobject-text.ld>
 	} GROUP_LINK_IN(ROMABLE_REGION)
