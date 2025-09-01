@@ -4,7 +4,6 @@ config SOC_SERIES_LSQSH
     select TICKLESS_CAPABLE
     select INCLUDE_RESET_VECTOR
     select RISCV_PRIVILEGED
-    select BUILD_OUTPUT_HEX
     select CPU_HAS_FPU
     select FPU
     select CPU_HAS_FPU_DOUBLE_PRECISION if !$(dt_path_enabled,/cpus/cpu@1)
