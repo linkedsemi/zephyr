@@ -17,7 +17,7 @@ struct ls_ldn_dev {
     uint8_t enable;
 };
 
-struct ls_sio {
+struct sio_ls_data {
     struct ls_espi_lpc_struct *parent;
     struct peri_ioport_content io_2e;
     struct peri_ioport_content io_2f;
@@ -34,20 +34,16 @@ struct ls_sio {
     uint8_t index;
     uint8_t ldn_num;
     uint8_t reg_2x[16];
-};
-
-struct sio_ls_data {
-    bool is_lcr_avoid;
+    struct peri_ioport ioport[PORT_NUM];
 };
 
 struct sio_ls_config {
     const struct device *parent;
     uint16_t host_sio_reg;
     mem_addr_t reg;
-    struct peri_ioport ioport[PORT_NUM];
 };
 
-static void select_ldn(struct ls_sio *sio, uint8_t ldn_num)
+static void select_ldn(struct sio_ls_data *sio, uint8_t ldn_num)
 {
     switch (ldn_num) {
     case 0x2:
@@ -82,17 +78,20 @@ static void select_ldn(struct ls_sio *sio, uint8_t ldn_num)
 
 static void io_2e_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
-    struct ls_sio *priv = ioport->ctx;
+    struct device *dev = ioport->ctx;
+    struct sio_ls_data *dev_data = dev->data;
+
     uint8_t *val = res;
 
-    *val = priv->index;
+    *val = dev_data->index;
 }
 
 static void io_2e_write(const struct peri_ioport_content *ioport, uint8_t size, uint8_t *data)
 {
-    struct ls_sio *priv = ioport->ctx;
+    struct device *dev = ioport->ctx;
+    struct sio_ls_data *dev_data = dev->data;
 
-    priv->index = *data;
+    dev_data->index = *data;
 }
 
 static uint8_t ldn_dev_read(struct ls_ldn_dev *ldn, uint8_t index)
@@ -115,18 +114,20 @@ static uint8_t ldn_dev_read(struct ls_ldn_dev *ldn, uint8_t index)
 
 static void io_2f_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
-    struct ls_sio *sio = ioport->ctx;
+    struct device *dev = ioport->ctx;
+    struct sio_ls_data *dev_data = dev->data;
+
     uint8_t *val = res;
 
-    if (sio->index == 0x7) {
-        *val = sio->ldn_num;
-    } else if (sio->index == 0x20) {
+    if (dev_data->index == 0x7) {
+        *val = dev_data->ldn_num;
+    } else if (dev_data->index == 0x20) {
         *val = 0x26;
-    } else if (sio->index >= 0x20 && sio->index < 0x30) {
-        *val = sio->reg_2x[sio->index & 0xf];
+    } else if (dev_data->index >= 0x20 && dev_data->index < 0x30) {
+        *val = dev_data->reg_2x[dev_data->index & 0xf];
     } else {
-        __ASSERT_NO_MSG(sio->ldn != NULL);
-        *val = ldn_dev_read(sio->ldn, sio->index);
+        __ASSERT_NO_MSG(dev_data->ldn != NULL);
+        *val = ldn_dev_read(dev_data->ldn, dev_data->index);
     }
 }
 
@@ -147,22 +148,24 @@ static void ldn_dev_write(struct ls_ldn_dev *ldn, uint8_t index, uint8_t val)
 
 static void io_2f_write(const struct peri_ioport_content *ioport, uint8_t size, uint8_t *data)
 {
-    struct ls_sio *sio = ioport->ctx;
+    struct device *dev = ioport->ctx;
+    struct sio_ls_data *dev_data = dev->data;
 
-    if (sio->index == 0x7) {
-        sio->ldn_num = *data;
-        select_ldn(sio, sio->ldn_num);
-    } else if (sio->index >= 0x20 && sio->index < 0x30) {
-        sio->reg_2x[sio->index & 0xf] = *data;
+    if (dev_data->index == 0x7) {
+        dev_data->ldn_num = *data;
+        select_ldn(dev_data, dev_data->ldn_num);
+    } else if (dev_data->index >= 0x20 && dev_data->index < 0x30) {
+        dev_data->reg_2x[dev_data->index & 0xf] = *data;
     } else {
-        __ASSERT_NO_MSG(sio->ldn != NULL);
-        ldn_dev_write(sio->ldn, sio->index, *data);
+        __ASSERT_NO_MSG(dev_data->ldn != NULL);
+        ldn_dev_write(dev_data->ldn, dev_data->index, *data);
     }
 }
 
 static int sio_ls_init(const struct device *dev)
 {
     const struct sio_ls_config *dev_cfg = dev->config;
+    const struct sio_ls_data *dev_data = dev->data;
 
     if (!device_is_ready(dev_cfg->parent)) {
         __ASSERT(0, "%s device not ready", dev_cfg->parent->name);
@@ -170,15 +173,14 @@ static int sio_ls_init(const struct device *dev)
     }
 
     for (uint32_t i = 0; i < PORT_NUM; i++) {
-        espi_lpc_add_ioport(dev_cfg->parent, (struct peri_ioport *)(&dev_cfg->ioport[i]));
+        espi_lpc_add_ioport(dev_cfg->parent, (struct peri_ioport *)(&dev_data->ioport[i]));
     }
 
     return 0;
 }
 
 #define LS_SIO_INIT(idx)                                      \
-    static struct sio_ls_data sio_ls_data_##idx;              \
-    static const struct sio_ls_config sio_ls_cfg_##idx = {    \
+    static struct sio_ls_data sio_ls_data_##idx = {           \
         .ioport = {                                           \
             [0] = {                                           \
                 .content = &(struct peri_ioport_content){     \
@@ -197,6 +199,8 @@ static int sio_ls_init(const struct device *dev)
                 },                                            \
             },                                                \
         },                                                    \
+    };                                                        \
+    static const struct sio_ls_config sio_ls_cfg_##idx = {    \
         .parent = DEVICE_DT_GET(DT_INST_PARENT(idx)),         \
         .host_sio_reg = DT_INST_PROP(idx, port),              \
     };                                                        \

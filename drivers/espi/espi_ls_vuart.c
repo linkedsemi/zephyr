@@ -20,6 +20,7 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct vuart_ls_data {
     bool is_lcr_avoid;
+    struct peri_ioport ioport[PORT_NUM];
 };
 
 struct vuart_ls_config {
@@ -27,7 +28,6 @@ struct vuart_ls_config {
     uint16_t host_vuart_reg;
     uint16_t irq;
     mem_addr_t reg;
-    struct peri_ioport ioport[PORT_NUM];
     const struct upstream_irq_type *up_irq;
     irq_cfg_func_t irq_config_func;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
@@ -127,6 +127,7 @@ static void host_vuart_reg3_write(const struct peri_ioport_content *ioport, uint
 static int vuart_ls_init(const struct device *dev)
 {
     const struct vuart_ls_config *dev_cfg = dev->config;
+    const struct vuart_ls_data *dev_data = dev->data;
     int ret = 0;
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -172,7 +173,7 @@ static int vuart_ls_init(const struct device *dev)
     dev_cfg->irq_config_func(dev);
 
     for (uint32_t i = 0; i < PORT_NUM; i++) {
-        espi_lpc_add_ioport(dev_cfg->parent, (struct peri_ioport *)(&dev_cfg->ioport[i]));
+        espi_lpc_add_ioport(dev_cfg->parent, (struct peri_ioport *)(&dev_data->ioport[i]));
     }
 
     return 0;
@@ -186,8 +187,7 @@ static int vuart_ls_init(const struct device *dev)
     }                                                                                                         \
     IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(idx)));                                                 \
     IF_ENABLED(DT_HAS_UP_IRQ(idx), (UPSTREAM_IRQ_DT_INST_DEFINE(idx)))                                        \
-    static struct vuart_ls_data vuart_ls_data_##idx;                                                          \
-    static const struct vuart_ls_config vuart_ls_cfg_##idx = {                                                \
+    static struct vuart_ls_data vuart_ls_data_##idx = {                                                       \
         .ioport = {                                                                                           \
             [0] = {                                                                                           \
                 .content = &(struct peri_ioport_content){                                                     \
@@ -254,6 +254,8 @@ static int vuart_ls_init(const struct device *dev)
                 },                                                                                            \
             },                                                                                                \
         },                                                                                                    \
+    };                                                                                                        \
+    static const struct vuart_ls_config vuart_ls_cfg_##idx = {                                                \
         .irq = DT_INST_IRQN(idx),                                                                             \
         .irq_config_func = vuart_ls_irq_config_func_##idx,                                                    \
         .parent = DEVICE_DT_GET(DT_INST_PARENT(idx)),                                                         \
