@@ -3,7 +3,7 @@ set(BOARD_REVISIONS "2os"
                     "1os"
                     "1os_xip")
 if(NOT DEFINED BOARD_REVISION)
-  set(BOARD_REVISION "2os")
+  set(BOARD_REVISION "1os")
 else()
   if(NOT BOARD_REVISION IN_LIST BOARD_REVISIONS)
     message(FATAL_ERROR "${BOARD_REVISION} is not a valid revision for lsqsh_evb.
