@@ -303,6 +303,7 @@
             status = "disabled";
             // lable = "ADC1";
             interrupts = <60 3>;
+          	clocks = <&per_cctl LS_CCTL_CLKG2 LS_CLKG_SET_ADC1_POS LS_CLKG_CLR_ADC1_POS>;
         };
 
         adc2: adc@40089400 {
@@ -311,6 +312,7 @@
             status = "disabled";
             // lable = "ADC2";
             interrupts = <61 3>;
+          	clocks = <&per_cctl LS_CCTL_CLKG2 LS_CLKG_SET_ADC2_POS LS_CLKG_CLR_ADC2_POS>;
         };
 
         cap:cap@40082800 {

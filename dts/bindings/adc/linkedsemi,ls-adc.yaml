@@ -1,0 +1,67 @@
+description: LINKEDSEMI LS ADC
+
+compatible: "linkedsemi,ls-adc"
+
+include: [base.yaml,pinctrl-device.yaml, reset-device.yaml]
+
+properties:
+
+  conversion_mode:
+    type: int
+    required: true
+    description: "Specifies ADC conversion mode"
+
+  data_align:
+    type: int
+    required: true
+    description: "Specifies ADC data alignment"
+
+  continuous_conv_mode:
+    type: int
+    required: true
+    description: "Specifies whether the conversion is performed in single mode (one conversion) or continuous mode for regular group"
+
+  nbr_of_conversion:
+    type: int
+    required: true
+    description: "Conversion count"
+
+  discontinuous_conv_mode:
+    type: int
+    required: true
+    description: "Specifies whether the conversions sequence of regular group is performed in Complete-sequence/Discontinuous-sequence (main sequence subdivided in successive parts)."
+
+  nbr_of_disc_conversion:
+    type: int
+    required: true
+    description: ""
+
+  trig_type:
+    type: int
+    required: true
+    description: ""
+
+  adc_drive_type:
+    type: int
+    required: true
+    description: ""
+
+  adc_clk_div:
+    type: int
+    required: true
+    description: ""
+
+  clk_cfg:
+    type: int
+    required: true
+    description: ""
+
+  injected_offset:
+    type: int
+    required: true
+    description: "Only valid in the injection mode"
+
+  fif_ctrl1:
+    type: int
+    required: true
+    description: "Only valid in the loop mode"

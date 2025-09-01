@@ -257,13 +257,68 @@
         input-enable;
     };
 
+	/omit-if-no-ref/ adc1_in0_pa09: adc1_in0_pa09 {
+        pinmux = <LS_PINMUX_SET('A', 9, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc1_in1_pa10: adc1_in1_pa10 {
+        pinmux = <LS_PINMUX_SET('A', 10, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc1_in2_pa11: adc1_in2_pa11 {
+        pinmux = <LS_PINMUX_SET('A', 11, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc1_in3_pa12: adc1_in3_pa12 {
+        pinmux = <LS_PINMUX_SET('A', 12, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc1_in4_pa13: adc1_in4_pa13 {
+        pinmux = <LS_PINMUX_SET('A', 13, FIO_ADC)>;
+    };
 	
 	/omit-if-no-ref/ adc1_in5_pa14: adc1_in5_pa14 {
         pinmux = <LS_PINMUX_SET('A', 14, FIO_ADC)>;
     };
 
+	/omit-if-no-ref/ adc1_in6_pa15: adc1_in6_pa15 {
+        pinmux = <LS_PINMUX_SET('A', 15, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc1_in7_pb00: adc1_in7_pb00 {
+        pinmux = <LS_PINMUX_SET('B', 0, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in0_ph08: adc2_in0_ph08 {
+        pinmux = <LS_PINMUX_SET('H', 8, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in1_ph09: adc2_in1_ph09 {
+        pinmux = <LS_PINMUX_SET('H', 9, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in2_ph10: adc2_in2_ph10 {
+        pinmux = <LS_PINMUX_SET('H', 10, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in3_ph11: adc2_in3_ph11 {
+        pinmux = <LS_PINMUX_SET('H', 11, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in4_ph12: adc2_in4_ph12 {
+        pinmux = <LS_PINMUX_SET('H', 12, FIO_ADC)>;
+    };
+
 	/omit-if-no-ref/ adc2_in5_ph13: adc2_in5_ph13 {
         pinmux = <LS_PINMUX_SET('H', 13, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in6_ph14: adc2_in6_ph14 {
+        pinmux = <LS_PINMUX_SET('H', 14, FIO_ADC)>;
+    };
+
+	/omit-if-no-ref/ adc2_in7_ph15: adc2_in7_ph15 {
+        pinmux = <LS_PINMUX_SET('H', 15, FIO_ADC)>;
     };
 
 	/omit-if-no-ref/ amic_pa00: amic_pa00 {
