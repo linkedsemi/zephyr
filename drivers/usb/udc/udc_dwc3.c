@@ -1522,7 +1522,8 @@ static uint8_t dwc3_phy_cfg_read(uint8_t reg_addr)
     k_usleep(1);
 
     /* set reg_addr and write_data*/
-    *(uint32_t *)0x40058010 |= ((reg_addr << 2));
+    *(uint32_t *)0x40058010 &= ~(0xff << 2);
+    *(uint32_t *)0x40058010 |= (reg_addr << 2);
     k_usleep(1);
     /* enable read */
     *(uint32_t *)0x40058010 |= (0x1 << 0);
@@ -1542,7 +1543,11 @@ static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
     k_usleep(1);
 
     /* set reg_addr and write_data*/
-    *(uint32_t *)0x40058010 |= ((reg_addr << 2) | (write_data << 16));
+    *(uint32_t *)0x40058010 &= ~(0xff << 2);
+    *(uint32_t *)0x40058010 |= (reg_addr << 2);
+    *(uint32_t *)0x40058010 &= ~(0xff << 16);
+    *(uint32_t *)0x40058010 |= (write_data << 16);
+
     k_usleep(1);
     /* enable write */
     *(uint32_t *)0x40058010 |= (0x1 << 1);
