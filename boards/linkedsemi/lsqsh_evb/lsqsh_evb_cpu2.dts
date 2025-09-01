@@ -177,11 +177,19 @@
 };
 
 &eth1 {
+    phy-handle = <&eth1_phy>;
     status = "okay";
 };
 
 &mdio1 {
     status = "okay";
+    eth1_phy: ethernet-phy@0 {
+        compatible = "realtek,rtl8211f";
+        reg = <0>;
+        reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+        int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+        status = "okay";
+    };
 };
 
 &sdhci1 {
