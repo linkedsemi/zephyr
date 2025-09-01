@@ -174,15 +174,15 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 			p->tx_desc_head, p->tx_desc_tail);
 
 		/* reserve a free descriptor for this fragment */
-		if (k_sem_take(&p->free_tx_descs, TX_AVAIL_WAIT) != 0) {
-			LOG_DBG("no more free tx descriptors");
+		if (k_sem_take(&p->free_tx_descs, K_NO_WAIT) != 0) {
+			LOG_WRN("no more free tx descriptors");
 			goto abort;
 		}
 
 		/* pin this fragment */
-		pinned = net_buf_clone(frag, TX_AVAIL_WAIT);
+		pinned = net_buf_clone(frag, K_NO_WAIT);
 		if (!pinned) {
-			LOG_DBG("net_buf_clone() returned NULL");
+			LOG_WRN("net_buf_clone() returned NULL");
 			k_sem_give(&p->free_tx_descs);
 			goto abort;
 		}
