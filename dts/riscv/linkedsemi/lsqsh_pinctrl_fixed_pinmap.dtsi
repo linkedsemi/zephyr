@@ -3808,7 +3808,25 @@
 //     pinctrl-names = "default";
 // };
 
-&eth1 {
+// &eth1 {
+//     pinctrl-0 = <
+//         &rgmii1_txck_pt03
+//         &rgmii1_txctl_pt04
+//         &rgmii1_txd0_pt05
+//         &rgmii1_txd1_pt06
+//         &rgmii1_txd2_pt07
+//         &rgmii1_txd3_pt08
+//         &rgmii1_rxck_pt10
+//         &rgmii1_rxctl_pt11
+//         &rgmii1_rxd0_pt12
+//         &rgmii1_rxd1_pt13
+//         &rgmii1_rxd2_pt14
+//         &rgmii1_rxd3_pt15
+//     >;
+//     pinctrl-names = "default";
+// };
+
+&mdio1 {
     pinctrl-0 = <
         &rgmii1_txck_pt03
         &rgmii1_txctl_pt04
@@ -3822,12 +3840,7 @@
         &rgmii1_rxd1_pt13
         &rgmii1_rxd2_pt14
         &rgmii1_rxd3_pt15
-    >;
-    pinctrl-names = "default";
-};
 
-&mdio1 {
-    pinctrl-0 = <
         &rgmii1_mdc_pk04
         &rgmii1_mdio_pk05
         // &rgmii1_mdio_pe12
