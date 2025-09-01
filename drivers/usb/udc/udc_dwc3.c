@@ -1509,11 +1509,34 @@ static int udc_dwc3_unlock(const struct device *dev)
 }
 
 #if 0
-static uint8_t dwc3_phy_cfg_write_and_read(uint8_t reg_addr, uint8_t write_data)
+
+#include <zephyr/shell/shell.h>
+#include <stdlib.h>
+
+static uint8_t dwc3_phy_cfg_read(uint8_t reg_addr)
 {
     uint32_t res;
-    uint32_t phy_cfg = *(uint32_t *)0x40058010;
 
+    /* rst en */
+    *(uint32_t *)0x40058010 |= BIT(25);
+    k_usleep(1);
+
+    /* set reg_addr and write_data*/
+    *(uint32_t *)0x40058010 |= ((reg_addr << 2));
+    k_usleep(1);
+    /* enable read */
+    *(uint32_t *)0x40058010 |= (0x1 << 0);
+    k_usleep(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 0);
+    k_usleep(1);
+    res = *(uint32_t *)0x40058010;
+    k_usleep(1);
+
+    return (res >> 8) & 0xff;
+}
+
+static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
+{
     /* rst en */
     *(uint32_t *)0x40058010 |= BIT(25);
     k_usleep(1);
@@ -1525,22 +1548,32 @@ static uint8_t dwc3_phy_cfg_write_and_read(uint8_t reg_addr, uint8_t write_data)
     *(uint32_t *)0x40058010 |= (0x1 << 1);
     k_usleep(1);
     *(uint32_t *)0x40058010 &= ~(0x1 << 1);
-    /* wait write success */
-    k_usleep(1);
-
-    /* enable read */
-    *(uint32_t *)0x40058010 |= (0x1 << 0);
-    k_usleep(1);
-    *(uint32_t *)0x40058010 &= ~(0x1 << 0);
-    k_usleep(1);
-    res = *(uint32_t *)0x40058010;
-    k_usleep(1);
-
-    /* reset phy cfg reg */
-    *(uint32_t *)0x40058010 = phy_cfg;
-
-    return (res >> 8) & 0xff;
 }
+
+static int usb_phy_reg_write(const struct shell *sh, size_t argc, char **argv) 
+{
+    if (argc < 3) {
+        printk("%s <address> <data>\n", argv[0]);
+        return 0;
+    }
+    dwc3_phy_cfg_write(atoi(argv[1]), atoi(argv[2]));
+    return 0;
+}
+SHELL_CMD_REGISTER(usb_phy_reg_write, NULL, "naneng phy write reg", usb_phy_reg_write);
+
+static int usb_phy_reg_read(const struct shell *sh, size_t argc, char **argv) 
+{
+    uint8_t res = 0;
+    if (argc < 2) {
+        printk("%s <address>\n", argv[0]);
+        return 0;
+    }
+    res = dwc3_phy_cfg_read(atoi(argv[1]));
+    printk("reg_%x value: 0x%x\n", atoi(argv[1]), res);
+    return 0;
+}
+SHELL_CMD_REGISTER(usb_phy_reg_read, NULL, "naneng phy read reg", usb_phy_reg_read);
+
 #endif
 
 static int dwc3_phy_setup(const struct device *dev)
