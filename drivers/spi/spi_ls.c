@@ -28,21 +28,12 @@ LOG_MODULE_REGISTER(spi_ls);
 
 #include <soc_clock.h>
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu0), okay)
-#define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency)
-#elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-#define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency)
-#elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay)
-#define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_2), clock_frequency)
-#else
-#error can not get peripheral frequence from dts
-#endif
-
 typedef void (*irq_config_func_t)(const struct device *port);
 
 struct spi_ls_config {
 	reg_spi_t *instance;
 	irq_config_func_t irq_config;
+	uint32_t clock_frequency;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -60,7 +51,7 @@ static int spi_ls_configure(const struct device *dev,
 	struct spi_context *ctx = &data->ctx;
 	reg_spi_t *spi = cfg->instance;
 	int err;
-	uint32_t clock = CPU_FREQ;
+	uint32_t clock = cfg-> clock_frequency;
 	const uint32_t scaler[] = {
 		SPI_BAUDRATEPRESCALER_8,
 		SPI_BAUDRATEPRESCALER_16,
@@ -72,6 +63,7 @@ static int spi_ls_configure(const struct device *dev,
 
 	/* Disable the selected SPI peripheral */
 	REG_FIELD_WR(spi->CR1, SPI_CR1_SPE, 0);
+	MODIFY_REG(spi->CR1, SPI_CR1_BR_MASK, scaler[0]);
 
 	if (spi_context_configured(ctx, config)) {
 		return 0;
@@ -82,21 +74,8 @@ static int spi_ls_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-<<<<<<< HEAD
-    if (config->operation & SPI_FRAME_FORMAT_TI) {
-        LOG_ERROR("TI mode is not supported");
-        return -ENOTSUP;
-    }
-
-    if (SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_MASTER) {
-        MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_MASTER);
-        /* Hardware chip select mode */
-        if (!spi_cs_is_gpio(config)) {
-            MODIFY_REG(spi->CR2, SPI_CR2_SSOE_MASK, SPI_CR2_SSOE_MASK);
-        }
-=======
 	if (config->operation & SPI_FRAME_FORMAT_TI) {
-		LOG_ERR("TI mode is not supported");
+		LOG_ERROR("TI mode is not supported");
 		return -ENOTSUP;
 	}
 
@@ -107,7 +86,6 @@ static int spi_ls_configure(const struct device *dev,
 		if (!spi_cs_is_gpio(config)) {
 			MODIFY_REG(spi->CR2, SPI_CR2_SSOE_MASK, SPI_CR2_SSOE_MASK);
 		}
->>>>>>> 25ccb2b4646... spi_ls 501x&101x  combine
 	} else {
 		MODIFY_REG(spi->CR1, SPI_CR1_MSTR_MASK, SPI_MODE_SLAVE);
 	}
@@ -121,9 +99,9 @@ static int spi_ls_configure(const struct device *dev,
 	/* Word sizes other than 8 bits and 16 bits has not been implemented */
 	if (SPI_WORD_SIZE_GET(config->operation) == 8) {
 		MODIFY_REG(spi->CR2, SPI_CR2_DS_MASK, SPI_DATASIZE_8BIT);
-	} else { 
+	} else {
 		MODIFY_REG(spi->CR2, SPI_CR2_DS_MASK, SPI_DATASIZE_16BIT);
-	} 
+	}
 
 	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPOL) {
 		MODIFY_REG(spi->CR1, SPI_CR1_CPOL_MASK, SPI_POLARITY_HIGH);
@@ -137,7 +115,7 @@ static int spi_ls_configure(const struct device *dev,
 		MODIFY_REG(spi->CR1, SPI_CR1_CPHA_MASK, SPI_PHASE_1EDGE);
 	}
 
-	if (8 * config->frequency > CPU_FREQ) {
+	if (8 * config->frequency > (cfg-> clock_frequency)) {
 		LOG_ERROR("Frequency greater than supported in master mode");
 		return -EINVAL;
 	}
@@ -170,31 +148,17 @@ static int spi_ls_get_err(reg_spi_t *spi)
 	uint32_t sr = READ_REG(spi->IFM);
 
 	if (sr & SPI_IFM_MODFFM_MASK) {
-<<<<<<< HEAD
-        LOG_ERROR("master mode fault");
-		return -EIO;
-	}
-
-    if (sr & SPI_IFM_OVRFM_MASK) {
-        LOG_ERROR("fifo overrun error");
-		return -EIO;
-	}
-
-    if (sr & SPI_IFM_FREFM_MASK) {
-        LOG_ERROR("frame format error");
-=======
-		LOG_ERR("master mode fault");
+		LOG_ERROR("master mode fault");
 		return -EIO;
 	}
 
 	if (sr & SPI_IFM_OVRFM_MASK) {
-		LOG_ERR("fifo overrun error");
+		LOG_ERROR("fifo overrun error");
 		return -EIO;
 	}
 
 	if (sr & SPI_IFM_FREFM_MASK) {
-		LOG_ERR("frame format error");
->>>>>>> 25ccb2b4646... spi_ls 501x&101x  combine
+		LOG_ERROR("frame format error");
 		return -EIO;
 	}
 
@@ -473,13 +437,13 @@ static int spi_ls_init(const struct device *dev)
 #if defined(CONFIG_RESET)
 	if (dev_config->reset.dev != NULL) {
 		if (!device_is_ready(dev_config->reset.dev)) {
-			LOG_ERR("Reset controller device is not ready");
+			LOG_ERROR("Reset controller device is not ready");
 			return -ENODEV;
 		}
 
 		ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
 		if (ret != 0) {
-			LOG_ERR("toggle reset line failed");
+			LOG_ERROR("toggle reset line failed");
 			return ret;
 		}
 	}
@@ -493,17 +457,10 @@ static int spi_ls_init(const struct device *dev)
 #endif
 
 #if defined(CONFIG_PINCTRL)
-<<<<<<< HEAD
-    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret < 0) {
-        LOG_ERROR("Could not configure pins");
-    }
-=======
 	ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
 	if (ret < 0) {
-		LOG_ERR("Could not configure pins");
+		LOG_ERROR("Could not configure pins");
 	}
->>>>>>> 25ccb2b4646... spi_ls 501x&101x  combine
 #endif
 
 	err = spi_context_cs_configure_all(&data->ctx);
@@ -526,6 +483,10 @@ static const struct spi_ls_config spi_ls_cfg_##id = {		\
 	IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id), ))                 \
 	IF_ENABLED(DT_HAS_CLOCKS(id), (.ccfg = LS_DT_CLK_CFG_ITEM(id), ))                       \
 	IF_ENABLED(DT_INST_NODE_HAS_PROP(id, resets), (.reset = RESET_DT_SPEC_INST_GET(id), ))  \
+	.clock_frequency = COND_CODE_1(                                             \
+			DT_NODE_HAS_PROP(DT_INST_PHANDLE(id, clocks), clock_frequency),   \
+			(DT_INST_PROP_BY_PHANDLE(id, clocks, clock_frequency)),           \
+			(DT_INST_PROP(id, clock_frequency))),                             \
 };									\
 									\
 static struct spi_ls_data spi_ls_dev_data_##id = {		    \
