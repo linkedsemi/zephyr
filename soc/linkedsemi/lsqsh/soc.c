@@ -630,7 +630,8 @@ static void boot_cpu2()
     app_cpu_reset_hold_clr();
 #else
 #if (DT_REG_SIZE(DT_CHOSEN(zephyr_internal_flash)) > (16 << 20))
-    if (CONFIG_CPU2_BOOT_ADDR < SRAM1_ADDR) {
+    if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((CONFIG_CPU2_BOOT_ADDR >= CACHE2_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
         if (1) {
             printk("boot a_app_image_partition\n");
             hal_flashx_write_ear(&flash1, 0x0);
