@@ -570,7 +570,7 @@ static void dwmac_iface_init(struct net_if *iface)
 
 	/* start up TX/RX */
 	reg_val = REG_READ(DMA_CHn_TX_CTRL(0));
-	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St);
+	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St | (32 << DMA_CHn_TX_CTRL_PBL_POS));
 	reg_val = REG_READ(DMA_CHn_RX_CTRL(0));
 	REG_WRITE(DMA_CHn_RX_CTRL(0), reg_val | DMA_CHn_RX_CTRL_SR);
 	reg_val = REG_READ(MAC_CONF);
@@ -600,7 +600,7 @@ static void dwmac_iface_reinit(struct net_if *iface)
 	k_sem_init(&p->free_rx_descs, NB_RX_DESCS - 1, NB_RX_DESCS - 1);
 	/* start up TX/RX */
 	reg_val = REG_READ(DMA_CHn_TX_CTRL(0));
-	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St);
+	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St | (32 << DMA_CHn_TX_CTRL_PBL_POS));
 	reg_val = REG_READ(DMA_CHn_RX_CTRL(0));
 	REG_WRITE(DMA_CHn_RX_CTRL(0), reg_val | DMA_CHn_RX_CTRL_SR);
 	reg_val = REG_READ(MAC_CONF);
