@@ -99,6 +99,7 @@ enum net_event_ipv4_cmd {
 	NET_EVENT_IPV4_CMD_ACD_SUCCEED,
 	NET_EVENT_IPV4_CMD_ACD_FAILED,
 	NET_EVENT_IPV4_CMD_ACD_CONFLICT,
+	NET_EVENT_IPV4_CMD_GW_SET,
 };
 
 /* L4 network events */
@@ -295,6 +296,10 @@ enum net_event_l4_cmd {
  */
 #define NET_EVENT_IPV4_ACD_CONFLICT				\
 	(_NET_EVENT_IPV4_BASE | NET_EVENT_IPV4_CMD_ACD_CONFLICT)
+
+/** Event emitted when an IPv4 gateway is set. */
+#define NET_EVENT_IPV4_GW_SET					\
+	(_NET_EVENT_IPV4_BASE | NET_EVENT_IPV4_CMD_GW_SET)
 
 /** Event emitted when the system is considered to be connected.
  * The connected in this context means that the network interface is up,

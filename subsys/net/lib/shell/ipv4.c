@@ -238,6 +238,7 @@ static int cmd_net_ip_gateway(const struct shell *sh, size_t argc, char *argv[])
 	}
 
 	net_if_ipv4_set_gw(iface, &addr);
+	net_mgmt_event_notify(NET_EVENT_IPV4_GW_SET, iface);
 
 #else /* CONFIG_NET_IPV4 */
 	PR_INFO("Set %s to enable %s support.\n", "CONFIG_NET_IPV4", "IPv4");
