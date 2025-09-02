@@ -305,6 +305,6 @@ config THREAD_ERROR_ISOLATION
 
 config QSPI1_FREQ
 	int "QSPI1_FREQ"
-	default 50000000
+	default 100000000
 
 endif
