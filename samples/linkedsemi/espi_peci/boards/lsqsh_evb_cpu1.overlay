@@ -37,13 +37,17 @@
     status = "okay";
 };
 
-&vuart1 {
-    reg = <0x40087800 0x400>;
-    interrupts = <UART3_IRQN 3>;
-    clocks = <UART3_CLOCK>;
-    resets = <UART3_RESET>;
+&uart3 {
+    /delete-property/ interrupts;
     pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
     pinctrl-names = "default";
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&vuart1 {
+    interrupts = <UART3_IRQN 3>;
+    uart = <&uart3>;
     status = "okay";
 };
 

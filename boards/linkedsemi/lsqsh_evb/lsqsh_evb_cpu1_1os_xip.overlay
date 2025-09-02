@@ -13,6 +13,8 @@
         zephyr,flash = &flash_xip_partition;
         zephyr,flash-controller = &qspi1;
         zephyr,sram = &sram1;
+        zephyr,console = &uart1;
+        zephyr,shell-uart = &uart1;
     };
 
     flash_xip_partition: flash@8010100 {
