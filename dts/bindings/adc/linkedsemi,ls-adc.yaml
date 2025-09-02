@@ -24,7 +24,7 @@ properties:
   nbr_of_conversion:
     type: int
     required: true
-    description: "Conversion count"
+    description: "Continuous capture item number for every capture start trigger in regular mode or injection mode"
 
   discontinuous_conv_mode:
     type: int
@@ -34,27 +34,27 @@ properties:
   nbr_of_disc_conversion:
     type: int
     required: true
-    description: ""
+    description: "Specify the number of discontinuous transitions that occur in the main sequences of the regular group and the injection group. If the parameter 'DiscontinuousConvMode' is disabled, this parameter will be ignored."
 
   trig_type:
     type: int
     required: true
-    description: ""
+    description: "Selects the external event used to trigger the conversion start of regular group."
 
   adc_drive_type:
     type: int
     required: true
-    description: ""
+    description: " Select ADC Driving mode"
 
   adc_clk_div:
     type: int
     required: true
-    description: ""
+    description: "ADC division coefficient ranges from 1 to 0x1FFFF"
 
   clk_cfg:
     type: int
     required: true
-    description: ""
+    description: "ADC Clock Division"
 
   injected_offset:
     type: int
