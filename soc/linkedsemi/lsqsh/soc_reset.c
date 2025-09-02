@@ -62,6 +62,8 @@ void reset_reason_init(void)
         if (SEC_PMU_RG_RST_SRC_MASK == reset_src) {
             ret = PWR_FULL_RESET;
         } else if (SEC_PMU_RG_RST_SRC_CPU_MASK & reset_src) {
+            ret = CPU_FULL_RESET;
+        } else if (SEC_PMU_RG_RST_SRC_SOFTWARE_MASK & reset_src) {
             ret = SOFT_FULL_RESET;
         } else if (SEC_PMU_RG_RST_SRC_IWDT_MASK & reset_src) {
             ret = SYS_IWDT_FULL_RESET;
