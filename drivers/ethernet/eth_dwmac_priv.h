@@ -962,6 +962,7 @@ extern const struct ethernet_api dwmac_api;
 #define DMA_CHn_TX_CTRL_TQOS			GENMASK(27, 24)
 #define DMA_CHn_TX_CTRL_ETIC			BIT(22)
 #define DMA_CHn_TX_CTRL_PBL			GENMASK(21, 16)
+#define DMA_CHn_TX_CTRL_PBL_POS			16
 #define DMA_CHn_TX_CTRL_IPBL			BIT(15)
 #define DMA_CHn_TX_CTRL_TSE_MODE		GENMASK(14, 13)
 #define DMA_CHn_TX_CTRL_TSE			BIT(12)
