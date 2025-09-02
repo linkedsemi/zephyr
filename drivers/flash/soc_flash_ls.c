@@ -45,6 +45,7 @@ struct flash_ls_config {
 	uint8_t attr_num;
 };
 
+uint8_t flash_ls_read_ear(const struct device *dev);
 
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 static void flash_delegation_server_operation_sync(const struct device *dev)
@@ -222,6 +223,9 @@ static void delegation_server_work_handler(struct k_work *work)
 			param.ret.value = -EINVAL;
 		}
 	break;
+	case FLASH_DELEGATE_SERVER_READ_EAR:
+		param.ret.value = flash_ls_read_ear(priv->dev);
+	break;
 	default:
 		LOG_ERR("delegation_server_work_handler opcode error");
 	break;
@@ -373,6 +377,23 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 	k_sem_give(&priv->sem);
 
 	return 0;
+}
+
+uint8_t flash_ls_read_ear(const struct device *dev)
+{
+	struct flash_ls_data *priv = dev->data;
+	uint8_t ret = 0;
+
+	if (k_sem_take(&priv->sem, K_FOREVER)) {
+		return -EACCES;
+	}
+
+	flash_delegation_server_operation_sync(dev);
+	ret = hal_flashx_read_ear(&priv->env);
+
+	k_sem_give(&priv->sem);
+
+	return ret;
 }
 
 static const struct flash_parameters *

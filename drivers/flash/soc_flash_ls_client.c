@@ -182,6 +182,28 @@ static int flash_ls_client_read(const struct device *dev, off_t offset,
 	return ret;
 }
 
+uint8_t flash_ls_client_read_ear(const struct device *dev)
+{
+	struct flash_ls_client_data *priv = dev->data;
+	const struct flash_ls_client_config *cfg = dev->config;
+
+	if (k_sem_take(&priv->sem, K_FOREVER)) {
+		return -EACCES;
+	}
+	struct delegate_c2s_params param = {
+		.reg = cfg->reg,
+		.op = FLASH_DELEGATE_SERVER_READ_EAR
+	};
+	struct mbox_msg msg = {
+		.data = &param,
+		.size = sizeof(param),
+	};
+	mbox_send_dt(&cfg->mbox_tx,&msg);
+	k_sem_take(&priv->op_return_sem,K_FOREVER);
+	int ret = priv->ret.value;
+	k_sem_give(&priv->sem);
+	return ret;
+}
 
 static const struct flash_parameters *
 flash_ls_client_get_parameters(const struct device *dev)
