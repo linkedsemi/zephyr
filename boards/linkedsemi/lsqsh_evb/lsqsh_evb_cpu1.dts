@@ -401,17 +401,17 @@ zephyr_udc0: &usb2 {
 // };
 
 // #if 0
-// &spi1 {
-//     status = "okay";
+//&spi1 {
+//   status = "okay";
 //     flash1_1: flash@0 {
 //         compatible = "jedec,spi-nor";
 //         reg = <0>;
 //         spi-max-frequency = <DT_FREQ_M(50)>;
 //     };
-// };
+//};
 
 // &spi2 {
-//     status = "okay";
+//   status = "okay";
 //     flash2_1: flash@0 {
 //         compatible = "jedec,spi-nor";
 //         reg = <0>;
