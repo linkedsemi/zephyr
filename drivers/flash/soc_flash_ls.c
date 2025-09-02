@@ -48,6 +48,11 @@ struct flash_ls_config {
 uint8_t flash_ls_read_ear(const struct device *dev);
 
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
+static bool is_app_cpu_xip_in_sec_flash(void)
+{
+	return (CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE));
+}
+
 static void flash_delegation_server_operation_sync(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
@@ -61,7 +66,7 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 		.size = sizeof(param),
 	};
 
-	if ((!is_app_cpu_running()) || (!IS_ENABLED(CONFIG_CPU2_XIP))) {
+	if ((!is_app_cpu_running()) || (!is_app_cpu_xip_in_sec_flash())) {
 		return;
 	}
 
