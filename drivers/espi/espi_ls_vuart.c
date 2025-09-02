@@ -12,7 +12,7 @@
 
 LOG_MODULE_REGISTER(vuart, CONFIG_ESPI_LOG_LEVEL);
 
-#define PORT_NUM 8
+#define PORT_NUM 7
 
 #define LCR_DLAB 0x80 /* divisor latch access enable */
 
@@ -30,9 +30,6 @@ struct vuart_ls_config {
     struct peri_ioport ioport[PORT_NUM];
     const struct upstream_irq_type *up_irq;
     irq_cfg_func_t irq_config_func;
-    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
-    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
-    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 static void ls_vuart_isr(struct device *dev)
@@ -97,13 +94,6 @@ static void host_vuart_reg_is_lcr_avoid_write(const struct peri_ioport_content *
 
     if (!dev_data->is_lcr_avoid) {
         sys_write8(*data, dev_cfg->reg + offset);
-    } else {
-        /* 75M clock 115200 buadrate magic */
-        if (0 == offset) {
-            sys_write8(0x29, dev_cfg->reg + offset);
-        } else if (0x4 == offset) {
-            sys_write8(0x0, dev_cfg->reg + offset);
-        }
     }
     irq_state_update(dev);
 }
@@ -127,47 +117,11 @@ static void host_vuart_reg3_write(const struct peri_ioport_content *ioport, uint
 static int vuart_ls_init(const struct device *dev)
 {
     const struct vuart_ls_config *dev_cfg = dev->config;
-    int ret = 0;
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_cfg->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_cfg->ccfg.cctl_dev;
-        if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
-            return -ENODEV;
-        }
-        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_cfg->ccfg);
+    if (!device_is_ready(dev_cfg->parent)) {
+        __ASSERT(0, "%s device not ready", dev_cfg->parent->name);
+        return -ENODEV;
     }
-#endif
-
-#if defined(CONFIG_RESET)
-    if (dev_cfg->reset.dev != NULL) {
-        if (!device_is_ready(dev_cfg->reset.dev)) {
-            LOG_ERROR("Reset controller device is not ready");
-            return -ENODEV;
-        }
-
-        ret = reset_line_toggle(dev_cfg->reset.dev, dev_cfg->reset.id);
-        if (ret != 0) {
-            LOG_ERROR("toggle reset line failed");
-            return ret;
-        }
-    }
-#endif
-
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_cfg->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_cfg->ccfg.cctl_dev;
-        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_cfg->ccfg);
-    }
-#endif
-
-#if defined(CONFIG_PINCTRL)
-    ret = pinctrl_apply_state(dev_cfg->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret < 0) {
-        LOG_ERROR("Could not configure pins");
-    }
-#endif
 
     dev_cfg->irq_config_func(dev);
 
@@ -184,7 +138,6 @@ static int vuart_ls_init(const struct device *dev)
         IRQ_CONNECT(DT_INST_IRQN(idx), DT_INST_IRQ(idx, priority), ls_vuart_isr, DEVICE_DT_INST_GET(idx), 0); \
         irq_enable(DT_INST_IRQN(idx));                                                                        \
     }                                                                                                         \
-    IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(idx)));                                                 \
     IF_ENABLED(DT_HAS_UP_IRQ(idx), (UPSTREAM_IRQ_DT_INST_DEFINE(idx)))                                        \
     static struct vuart_ls_data vuart_ls_data_##idx;                                                          \
     static const struct vuart_ls_config vuart_ls_cfg_##idx = {                                                \
@@ -245,24 +198,13 @@ static int vuart_ls_init(const struct device *dev)
                     .addr = DT_INST_PROP(idx, port) + 6,                                                      \
                 },                                                                                            \
             },                                                                                                \
-            [7] = {                                                                                           \
-                .content = &(struct peri_ioport_content){                                                     \
-                    .io_read = host_vuart_reg_read,                                                           \
-                    .io_write = host_vuart_reg_write,                                                         \
-                    .ctx = (void *)DEVICE_DT_INST_GET(idx),                                                   \
-                    .addr = DT_INST_PROP(idx, port) + 7,                                                      \
-                },                                                                                            \
-            },                                                                                                \
         },                                                                                                    \
         .irq = DT_INST_IRQN(idx),                                                                             \
         .irq_config_func = vuart_ls_irq_config_func_##idx,                                                    \
         .parent = DEVICE_DT_GET(DT_INST_PARENT(idx)),                                                         \
-        .reg = DT_INST_REG_ADDR(idx),                                                                         \
+        .reg = DT_REG_ADDR(DT_INST_PHANDLE(idx, uart)),                                                       \
         .host_vuart_reg = DT_INST_PROP(idx, port),                                                            \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), ))                           \
-        IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), ))                                   \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), ))              \
-        IF_ENABLED(DT_HAS_UP_IRQ(idx), (.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx),))                     \
+        IF_ENABLED(DT_HAS_UP_IRQ(idx), (.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx)))                      \
     };                                                                                                        \
     DEVICE_DT_INST_DEFINE(idx,                                                                                \
                           &vuart_ls_init,                                                                     \

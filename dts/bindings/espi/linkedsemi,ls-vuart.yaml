@@ -2,7 +2,7 @@ description: Linkedsemi eSPI slave to vuart
 
 compatible: "linkedsemi,ls-vuart"
 
-include: [uart-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
+include: [uart-controller.yaml, pinctrl-device.yaml]
 
 properties:
   port:
@@ -12,3 +12,6 @@ properties:
   up-irq:
     type: array
     required: true
+
+  uart:
+    type: phandle
