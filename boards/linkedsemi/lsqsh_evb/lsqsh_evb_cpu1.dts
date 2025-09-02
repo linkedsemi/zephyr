@@ -195,10 +195,8 @@
 };
 
 &uart3 {
-    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
-    pinctrl-names = "default";
     current-speed = <115200>;
-    status = "okay";
+    status = "disabled";
 };
 
 &uart4 {
@@ -286,9 +284,22 @@
 //     };
 // };
 
-// zephyr_udc0: &usb_dwc3 {
+// &espi1 {
+//     espi1_kcs_ca2: espi1_kcs_ca2 {
+//         compatible = "linkedsemi,ls-kcs";
+//         port = <0xca2 0xca3>;
+//         status = "okay";
+//     };
+// };
+
+// &ipmi_kcs {
+//     kcs_chan = <&espi1_kcs_ca2>;
 //     status = "okay";
 // };
+
+zephyr_udc0: &usb_dwc3 {
+    status = "okay";
+};
 
 // &i2c5 {
 //     status = "okay";
@@ -325,17 +336,17 @@
 //     };
 // };
 
-&i2c8 {
-    status = "okay";
-//    eeprom_8_1: eeprom@50 {
-//        compatible = "atmel,at24";
-//        reg = <0x50>;
-//        size = <4096>;
-//        pagesize = <32>;
-//        address-width = <16>;
-//        timeout = <5>;
-//    };
-};
+// &i2c8 {
+//     status = "okay";
+//     eeprom_8_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
 
 // &i2c9 {
 //     status = "okay";
