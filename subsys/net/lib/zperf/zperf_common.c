@@ -41,9 +41,7 @@ struct sockaddr_in *zperf_get_sin(void)
 	return &in4_addr_my;
 }
 
-#define ZPERF_WORK_Q_THREAD_PRIORITY                                                               \
-	CLAMP(CONFIG_ZPERF_WORK_Q_THREAD_PRIORITY, K_HIGHEST_APPLICATION_THREAD_PRIO,              \
-	      K_LOWEST_APPLICATION_THREAD_PRIO)
+#define ZPERF_WORK_Q_THREAD_PRIORITY 0
 K_THREAD_STACK_DEFINE(zperf_work_q_stack, CONFIG_ZPERF_WORK_Q_STACK_SIZE);
 
 static struct k_work_q zperf_work_q;
