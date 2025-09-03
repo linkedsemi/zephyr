@@ -275,162 +275,62 @@ static int host_vuart_init(const struct device *dev)
 	return 0;
 }
 
-#define HOST_VUART_INIT(inst)                                                                                                       \
-	IF_ENABLED(DT_HAS_UP_IRQ(inst), (UPSTREAM_IRQ_DT_INST_DEFINE(inst))) static struct host_vuart_data                                          \
-				host_vuart_data_##inst =                                                                            \
-					{                                                                                           \
-						.ioport =                                                                           \
-							{                                                                           \
-								[0] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg0_read,       \
-												.io_write = host_vuart_reg0_write,  \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-													inst,                       \
-													port),                      \
-											},                                          \
-									},                                                          \
-								[1] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg1_read,       \
-												.io_write =                         \
-													host_vuart_reg1_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													1,                          \
-											},                                          \
-									},                                                          \
-								[2] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg2_read,       \
-												.io_write =                         \
-													host_vuart_reg2_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													2,                          \
-											},                                          \
-									},                                                          \
-								[3] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg3_read,       \
-												.io_write =                         \
-													host_vuart_reg3_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													3,                          \
-											},                                          \
-									},                                                          \
-								[4] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg4_read,       \
-												.io_write =                         \
-													host_vuart_reg4_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													4,                          \
-											},                                          \
-									},                                                          \
-								[5] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg5_read,       \
-												.io_write =                         \
-													host_vuart_reg5_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													5,                          \
-											},                                          \
-									},                                                          \
-								[6] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg6_read,       \
-												.io_write =                         \
-													host_vuart_reg6_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													6,                          \
-											},                                          \
-									},                                                          \
-								[7] =                                                               \
-									{                                                           \
-										.content =                                          \
-											&(struct                                    \
-											  peri_ioport_content){                     \
-												.io_read =                          \
-													host_vuart_reg7_read,       \
-												.io_write =                         \
-													host_vuart_reg7_write,      \
-												.ctx =                              \
-													(void *)DEVICE_DT_INST_GET( \
-														inst),              \
-												.addr = DT_INST_PROP(               \
-														inst,               \
-														port) +             \
-													7,                          \
-											},                                          \
-									},                                                          \
-							},                                                                          \
-	};                                                                                                                          \
-	static const struct host_vuart_cfg host_vuart_cfg_##inst = {                                                                \
-		.parent = DEVICE_DT_GET(DT_INST_PARENT(inst)),                                                                      \
-		.vuart = DEVICE_DT_GET(DT_INST_PHANDLE(inst, target)),                                                              \
-		.host_vuart_reg = DT_INST_PROP(inst, port),                                                                         \
-		IF_ENABLED(DT_HAS_UP_IRQ(inst), (.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst))) };                                  \
-	DEVICE_DT_INST_DEFINE(inst, &host_vuart_init, NULL, &host_vuart_data_##inst,                                                \
+#define HOST_VUART_INIT(inst)                                                                      \
+	IF_ENABLED(DT_HAS_UP_IRQ(inst), (UPSTREAM_IRQ_DT_INST_DEFINE(inst)))                                                                                 \
+	static struct host_vuart_data host_vuart_data_##inst = {                                   \
+		.ioport = {[0] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg0_read,                 \
+						  .io_write = host_vuart_reg0_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port)}},              \
+			   [1] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg1_read,                 \
+						  .io_write = host_vuart_reg1_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port) + 1}},          \
+			   [2] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg2_read,                 \
+						  .io_write = host_vuart_reg2_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port) + 2 / }},       \
+			   [3] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg3_read,                 \
+						  .io_write = host_vuart_reg3_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port) + 3}},          \
+			   [4] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg4_read,                 \
+						  .io_write = host_vuart_reg4_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port) + 4}},          \
+			   [5] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg5_read,                 \
+						  .io_write = host_vuart_reg5_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port) + 5}},          \
+			   [6] = {.content =                                                       \
+					  &(struct peri_ioport_content){                           \
+						  .io_read = host_vuart_reg6_read,                 \
+						  .io_write = host_vuart_reg6_write,               \
+						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
+						  .addr = DT_INST_PROP(inst, port) + 6}},          \
+			   [7] = {.content = &(struct peri_ioport_content){                        \
+					  .io_read = host_vuart_reg7_read,                         \
+					  .io_write = host_vuart_reg7_write,                       \
+					  .ctx = (void *)DEVICE_DT_INST_GET(inst),                 \
+					  .addr = DT_INST_PROP(inst, port) + 7}}}};                \
+	static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
+		.parent = DEVICE_DT_GET(DT_INST_PARENT(inst)),                                     \
+		.vuart = DEVICE_DT_GET(DT_INST_PHANDLE(inst, target)),                             \
+		.host_vuart_reg = DT_INST_PROP(inst, port),                                        \
+		IF_ENABLED(DT_HAS_UP_IRQ(inst), (.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst))) }; \
+	DEVICE_DT_INST_DEFINE(inst, &host_vuart_init, NULL, &host_vuart_data_##inst,               \
 			      &host_vuart_cfg_##inst, POST_KERNEL, CONFIG_ESPI_INIT_PRIORITY, 0);
 
 DT_INST_FOREACH_STATUS_OKAY(HOST_VUART_INIT)
