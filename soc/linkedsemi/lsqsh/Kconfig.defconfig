@@ -297,4 +297,8 @@ config QSPI1_FREQ
 	int "QSPI1_FREQ"
 	default 100000000
 
+config FORCE_CLOCK_HSI
+	bool "FORCE_CLOCK_HSI(25MHz)"
+	default n
+
 endif

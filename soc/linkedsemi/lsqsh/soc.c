@@ -215,13 +215,13 @@ extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 extern void psram_init(void);
 
-__ramfunc static void set_trim_params()
+__maybe_unused __ramfunc static void set_trim_params()
 {
     REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL, 0);
     REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL, 0);
 }
 
-__ramfunc static void enable_dpll()
+__maybe_unused __ramfunc static void enable_dpll()
 {
     CLEAR_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_CLKREF_SEL_MASK); /* clkin */
     SET_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_EN_MASK); /* clr reset */
@@ -234,7 +234,7 @@ __ramfunc static void enable_dpll()
     while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK));
 }
 
-__ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
+__maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
 {
     SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
@@ -267,7 +267,7 @@ __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
 }
 
-static void peripheral_init()
+__maybe_unused static void peripheral_init()
 {
     /* SYSC_APP_AWO->PD_AWO_CLK_CTRL1 */
     REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_PSRAM, 0x10); /* dpll_600M */
@@ -378,7 +378,7 @@ static void peripheral_init()
     /* SYSC_APP_AWO->LPC_CLK */
 }
 
-void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
+__maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
 {
     ARG_UNUSED(base_clock);
 
@@ -485,6 +485,7 @@ void soc_early_init_hook(void)
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
     }
 
+#if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
         if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
@@ -496,6 +497,7 @@ void soc_early_init_hook(void)
         peripheral_init();
     }
 #endif
+#endif /* CONFIG_FORCE_CLOCK_HSI */
 
     SystemInit();
     // sys_init_none();
