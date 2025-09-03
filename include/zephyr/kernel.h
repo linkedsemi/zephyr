@@ -5219,7 +5219,7 @@ struct k_mem_slab {
  * @param slab_align Alignment of the memory slab's buffer (power of 2).
  */
 #define K_MEM_SLAB_DEFINE(name, slab_block_size, slab_num_blocks, slab_align) \
-	char __noinit_named(k_mem_slab_buf_##name) \
+	char __attribute__((section("PSRAM"))) \
 	   __aligned(WB_UP(slab_align)) \
 	   _k_mem_slab_buf_##name[(slab_num_blocks) * WB_UP(slab_block_size)]; \
 	STRUCT_SECTION_ITERABLE(k_mem_slab, name) = \

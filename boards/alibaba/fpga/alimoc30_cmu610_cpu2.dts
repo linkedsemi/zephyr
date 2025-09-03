@@ -175,7 +175,7 @@
 };
 
 &sram2 {
-    reg = <0x10070000 DT_SIZE_K(824)>;
+    reg = <0x10060000 DT_SIZE_K(888)>;
 };
 
 &uart1 {

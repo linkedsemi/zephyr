@@ -3,3 +3,6 @@
 
 config BOARD_ALIMOC30
 	select SOC_LSQSH
+
+config BOARD_LATE_INIT_HOOK
+    default y
