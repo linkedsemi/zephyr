@@ -340,16 +340,15 @@ static int udc_ls_enqueue(const struct device *dev, struct udc_ep_config *const 
         struct net_buf *const buf)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
-    udc_buf_put(cfg, buf);
     LOG_DBG("%p enqueue %x %p, len = %d.\n", dev, cfg->addr, buf, buf->len);
 
     if (USB_EP_GET_IDX(cfg->addr))
     {
         if (USB_EP_DIR_IS_IN(cfg->addr))
         {
-            if (buf == NULL || udc_ep_is_busy(dev, cfg->addr))
+            if (udc_ep_is_busy(dev, cfg->addr))
                 return 0;
-
+            udc_buf_put(cfg, buf);
             udc_ep_set_busy(dev, cfg->addr, true);
             usb_data->ep_tx[USB_EP_GET_IDX(cfg->addr)].buf = buf;
             usb_data->ep_tx[USB_EP_GET_IDX(cfg->addr)].priv = dev;
@@ -363,6 +362,7 @@ static int udc_ls_enqueue(const struct device *dev, struct udc_ep_config *const 
 
             /* disable rx irq */
             usb_instance->RXIE &= ~BIT(USB_EP_GET_IDX(cfg->addr));
+            udc_buf_put(cfg, buf);
             if (usb_instance->RXCOUNT)
                 udc_ls_rx(dev, USB_EP_GET_IDX(cfg->addr), buf);
             usb_instance->RXIE |= BIT(USB_EP_GET_IDX(cfg->addr));
@@ -375,6 +375,7 @@ static int udc_ls_enqueue(const struct device *dev, struct udc_ep_config *const 
             .ep = cfg->addr
         };
         /* post event */
+        udc_buf_put(cfg, buf);
         k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
     }
     return 0;
