@@ -1342,6 +1342,18 @@
             status = "disabled";
         };
 
+        usb1: usb@40043000 {
+            compatible = "linkedsemi,ls-fs-usb";
+            reg = <0x40043000 0x1000>;
+            clocks = <USB1_CLOCK>;
+            resets = <USB1_RESET>;
+            interrupts = <USB1_IRQN 3>;
+            num-bidir-endpoints = <8>;
+            maximum-speed = "full-speed";
+            ram-size = <64>;
+            status = "disabled";
+        };
+
         adc1: adc@4008b000 {
             compatible = "linkedsemi,ls-adc";
             reg = <0x4008b000 0x400>;

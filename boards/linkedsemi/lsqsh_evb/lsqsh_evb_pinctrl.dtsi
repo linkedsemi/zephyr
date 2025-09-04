@@ -173,6 +173,16 @@
         input-enable;
         bias-pull-up;
     };
+    /omit-if-no-ref/usb1_dp_ph14: usb1_dp_ph14 {
+        pinmux = <USB1_DP_FUNC1_IDX23_PINMUX_PH(14)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
+    /omit-if-no-ref/usb1_dm_ph15: usb1_dm_ph15 {
+        pinmux = <USB1_DM_FUNC1_IDX24_PINMUX_PH(15)>;
+        drive-strength = "quarter max driver";
+        input-enable;
+    };
 };
 
 &uart1 {
@@ -281,5 +291,10 @@
         &spi4_io2_pq05
         &spi4_io3_pq06
     >;
+    pinctrl-names = "default";
+};
+
+&usb1 {
+    pinctrl-0 = <&usb1_dp_ph14 &usb1_dm_ph15>;
     pinctrl-names = "default";
 };
