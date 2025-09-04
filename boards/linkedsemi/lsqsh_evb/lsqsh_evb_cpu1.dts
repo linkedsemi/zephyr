@@ -315,6 +315,10 @@ zephyr_udc0: &usb2 {
     status = "okay";
 };
 
+zephyr_udc1: &usb1 {
+    status = "okay";
+};
+
 // &i2c5 {
 //     status = "okay";
 //     eeprom_5_1: eeprom@50 {

@@ -331,9 +331,13 @@
 
     /omit-if-no-ref/ usb_dp_pd0: usb_dp_pd0 {
         pinmux = <LS_PINMUX_SET('D', 0, FIO_USB_DP)>;
+		bias-pull-up;
+		input-enable;
     };
 
     /omit-if-no-ref/ usb_dm_pd1: usb_dm_pd1 {
         pinmux = <LS_PINMUX_SET('D', 1, FIO_USB_DM)>;
+		bias-pull-down;
+		input-enable;
     };
 };
