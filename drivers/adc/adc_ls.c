@@ -71,6 +71,7 @@ struct adc_ls_config {
     uint8_t clk_cfg;
     uint16_t injected_offset;
     uint16_t fif_ctrl1;
+    uint32_t clock_source;
 };
 struct adc_ls_data {
     struct adc_context ctx;
@@ -372,8 +373,10 @@ static int adc_ls_init(const struct device *dev)
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (config->ccfg.cctl_dev) {
+        uint32_t rate;
         const struct device *clk_dev = config->ccfg.cctl_dev;
         clock_control_on(clk_dev, (clock_control_subsys_t)&config->ccfg);
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
     }
 #endif
 
@@ -724,6 +727,7 @@ static const struct adc_ls_config adc_ls_cfg_##index = {        \
     .clk_cfg = DT_INST_PROP(index, clk_cfg),                                \
     .injected_offset = DT_INST_PROP(index, injected_offset),                \
     .fif_ctrl1 = DT_INST_PROP(index, fif_ctrl1),                \
+    .clock_source = DT_INST_PROP(index, clock_source),                \
     .irq_config_func = adc_ls_irq_config_func_##index,          \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), )) \
     IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))       \

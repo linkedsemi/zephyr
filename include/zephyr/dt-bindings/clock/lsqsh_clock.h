@@ -7,7 +7,13 @@
 #ifndef ZEPHYR_INCLUDE_DT_BINDINGS_CLOCK_LSQSH_CLOCK_H_
 #define ZEPHYR_INCLUDE_DT_BINDINGS_CLOCK_LSQSH_CLOCK_H_
 
-#define FPGA_CLOCK_FREQ   25000000
+#define clk_src_pbus0 0
+#define clk_src_pbus1 1
+#define clk_src_pbus2 2
+#define clk_src_pbus3 3
+#define clk_src_pbus4 4
+#define clk_src_hbus  5
+
 #define CCTL_PHANDLE(DOMAIN)   &cctl_##DOMAIN
 #define GEN_CLOCK_EXPAND(FUNC) CCTL_PHANDLE(FUNC)
 #define GEN_CLOCK(FUNC)           GEN_CLOCK_EXPAND(FUNC##_CLK_BASE) \
