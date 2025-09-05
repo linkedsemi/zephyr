@@ -4,14 +4,17 @@
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/dt-bindings/clock/lsqsh_clock.h>
-#include "reg_sysc_sec_awo.h"
 #include "field_manipulate.h"
 
 LOG_MODULE_REGISTER(clock_control_ls, LOG_LEVEL_DBG);
 
 #define LS_CLK_SET(base, n)   (*(volatile uint32_t *)((base) + (n)))
+
+#if(CONFIG_SOC_LSQSH)
+#include <zephyr/dt-bindings/clock/lsqsh_clock.h>
+#include "reg_sysc_sec_awo.h"
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency)
+#endif
 
 struct cctl_ls_cfg {
 	uint32_t reg;
@@ -39,6 +42,7 @@ static inline int ls_clock_control_off(const struct device *dev,
 
 static int ls_clock_control_get_rate(const struct device *dev, clock_control_subsys_t sub_system, uint32_t *rate)
 {
+#if(CONFIG_SOC_LSQSH)
 	ARG_UNUSED(dev);
 	uint32_t *clock_source = (uint32_t *)(sub_system);
 	switch (*clock_source) {
@@ -64,6 +68,7 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 		*rate = 0U;
 		return -EINVAL;
 	}
+#endif
 	return 0;
 }
 

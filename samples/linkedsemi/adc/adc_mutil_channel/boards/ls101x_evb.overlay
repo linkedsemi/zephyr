@@ -25,4 +25,5 @@
     clk_cfg = <ADC_CH_CLOCK_DIV8>;
     injected_offset = <0>;
     fif_ctrl1 = <0xFFFF>;
+    clock-source = <0>; //ls1010中暂不支持
 };
