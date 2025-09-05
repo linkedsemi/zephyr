@@ -42,22 +42,22 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 	ARG_UNUSED(dev);
 	uint32_t *clock_source = (uint32_t *)(sub_system);
 	switch (*clock_source) {
-	case clk_src_pbus0:
+	case CLK_SRC_PBUS0:
 		*rate = (CPU_FREQ / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_DIV_HBUS) + 1));
 		break;
-	case clk_src_pbus1:
+	case CLK_SRC_PBUS1:
 		*rate = (CPU_FREQ / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_DIV_HBUS) + 1)) / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_SEL_PBUS1) + 1);
 		break;
-	case clk_src_pbus2:
+	case CLK_SRC_PBUS2:
 		*rate = (CPU_FREQ / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_DIV_HBUS) + 1));
 		break;
-	case clk_src_pbus3:
+	case CLK_SRC_PBUS3:
 		*rate = (CPU_FREQ / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_DIV_HBUS) + 1)) / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_SEL_PBUS3) + 1);
 		break;
-	case clk_src_pbus4:
+	case CLK_SRC_PBUS4:
 		*rate = (CPU_FREQ / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_DIV_HBUS) + 1)) / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_SEL_PBUS4) + 1);
 		break;
-	case clk_src_hbus:
+	case CLK_SRC_HBUS:
 		*rate = (CPU_FREQ / (REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_CLK_CTRL1, SYSC_SEC_AWO_CLK_DIV_HBUS) + 1));
 		break;
 	default:
