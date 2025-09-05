@@ -373,10 +373,12 @@ static int adc_ls_init(const struct device *dev)
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (config->ccfg.cctl_dev) {
-        uint32_t rate;
         const struct device *clk_dev = config->ccfg.cctl_dev;
         clock_control_on(clk_dev, (clock_control_subsys_t)&config->ccfg);
+    #if(CONFIG_SOC_LSQSH)
+        uint32_t rate;
         clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
+    #endif
     }
 #endif
 
