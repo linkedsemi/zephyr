@@ -222,7 +222,9 @@ struct spi_nor_data {
 
 	bool init_4b_mode_once;
 	bool re_init_support;
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
 	bool init_ok;
+#endif
 };
 
 #define SPI_NOR_PROT_NUM 8
@@ -1281,14 +1283,25 @@ static int mxicy_configure(const struct device *dev, const uint8_t *jedec_id)
 static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 			size_t size)
 {
+	int ret;
 	struct spi_nor_data *data = dev->data;
+
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
+	if (!data->init_ok) {
+		ret = spi_nor_re_init(dev);
+		if (ret) {
+			return ret;
+		}
+	}
+#endif
+
 	struct spi_nor_cmd_info cmd_info = data->cmd_info;
 	const size_t flash_size = dev_flash_size(dev);
-	int ret;
 	struct spi_nor_op_info op_info =
 			SPI_NOR_OP_INFO(cmd_info.read_mode, cmd_info.read_opcode,
 				addr, data->flag_access_32bit ? 4 : 3, cmd_info.read_dummy,
 				dest, size, SPI_NOR_DATA_DIRECT_IN);
+
 
 	/* should be between 0 and flash size */
 	if ((addr < 0) || ((addr + size) > flash_size)) {
@@ -1361,15 +1374,25 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 			 const void *src,
 			 size_t size)
 {
+	int ret = 0;
+	struct spi_nor_data *data = dev->data;
+
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
+	if (!data->init_ok) {
+		ret = spi_nor_re_init(dev);
+		if (ret) {
+			return ret;
+		}
+	}
+#endif
+
 	const size_t flash_size = dev_flash_size(dev);
 	const uint16_t page_size = dev_page_size(dev);
-	struct spi_nor_data *data = dev->data;
 	struct spi_nor_cmd_info cmd_info = data->cmd_info;
 	struct spi_nor_op_info op_info =
 			SPI_NOR_OP_INFO(cmd_info.pp_mode, cmd_info.pp_opcode,
 				addr, data->flag_access_32bit ? 4 : 3, 0,
 				(void *)src, size, SPI_NOR_DATA_DIRECT_OUT);
-	int ret = 0;
 
 	/* should be between 0 and flash size */
 	if ((addr < 0) || ((size + addr) > flash_size)) {
@@ -1449,14 +1472,24 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 
 static int spi_nor_erase(const struct device *dev, off_t addr, size_t size)
 {
-	const size_t flash_size = dev_flash_size(dev);
+	int ret;
 	struct spi_nor_data *data = dev->data;
+
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
+	if (!data->init_ok) {
+		ret = spi_nor_re_init(dev);
+		if (ret) {
+			return ret;
+		}
+	}
+#endif
+
+	const size_t flash_size = dev_flash_size(dev);
 	struct spi_nor_cmd_info cmd_info = data->cmd_info;
 	struct spi_nor_op_info op_info =
 			SPI_NOR_OP_INFO(cmd_info.se_mode, cmd_info.se_opcode,
 					addr, data->flag_access_32bit ? 4 : 3, 0,
 					NULL, 0, SPI_NOR_DATA_DIRECT_OUT);
-	int ret;
 
 	/* erase area must be subregion of device */
 	if ((addr < 0) || ((size + addr) > flash_size)) {
@@ -1546,9 +1579,19 @@ static int spi_nor_erase(const struct device *dev, off_t addr, size_t size)
 int spi_nor_erase_by_cmd(const struct device *dev, off_t addr,
 			 size_t size, uint8_t cmd)
 {
-	const size_t flash_size = dev_flash_size(dev);
 	int ret = 0;
 	struct spi_nor_data *data = dev->data;
+
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
+	if (!data->init_ok) {
+		ret = spi_nor_re_init(dev);
+		if (ret) {
+			return ret;
+		}
+	}
+#endif
+
+	const size_t flash_size = dev_flash_size(dev);
 	struct spi_nor_cmd_info cmd_info = data->cmd_info;
 	struct spi_nor_op_info op_info =
 		SPI_NOR_OP_INFO(cmd_info.se_mode, cmd_info.se_opcode,
@@ -1696,6 +1739,28 @@ static int spi_nor_read_jedec_id(const struct device *dev,
 	(void)pm_device_runtime_put_async(dev, K_MSEC(ACTIVE_DWELL_MS));
 
 	return ret;
+}
+
+int spi_nor_set_freq(const struct device *dev, uint32_t freq)
+{
+	if (!dev) {
+		return -EINVAL;
+	}
+	struct spi_nor_config *cfg = (struct spi_nor_config *)dev->config;
+	cfg->spi.config.frequency = freq;
+	LOG_DBG("spi_nor_change_freq:%d", freq);
+	return 0;
+}
+
+int spi_nor_set_line_width(const struct device *dev, uint32_t buswidth)
+{
+	if (!dev || buswidth > 4) {
+		return -EINVAL;
+	}
+	struct spi_nor_config *cfg = (struct spi_nor_config *)dev->config;
+	cfg->spi_max_buswidth = buswidth;
+	LOG_DBG("spi_nor_change_line_width:%d", buswidth);
+	return 0;
 }
 
 int spi_nor_get_jedec_id(const struct device *dev, uint8_t *id)
@@ -2313,10 +2378,19 @@ static void spi_nor_info_init_params(const struct device *dev)
  */
 static int spi_nor_configure(const struct device *dev)
 {
-	const struct spi_nor_config *cfg = dev->config;
-	int rc;
 	int ret = 0;
+	int rc;
+	const struct spi_nor_config *cfg = dev->config;
 	struct spi_nor_data *data = dev->data;
+
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
+	if (data->re_init_support) {
+		data->re_init_support = false;
+		LOG_DBG("not init %s", dev->name);
+		return 0;
+	}
+	LOG_INF("init %s", dev->name);
+#endif
 
 	/* Validate bus and CS is ready */
 	if (!spi_is_ready_dt(&cfg->spi)) {
@@ -2518,6 +2592,10 @@ static int spi_nor_configure(const struct device *dev)
 	}
 #endif /* ANY_INST_HAS_MXICY_MX25R_POWER_MODE */
 
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
+	data->init_ok = true;
+#endif
+
 end:
 	if (ret != 0 && data->re_init_support) {
 		ret = 0;
@@ -2565,23 +2643,22 @@ static int spi_nor_pm_control(const struct device *dev, enum pm_device_action ac
 
 int spi_nor_init_check(const struct device *dev)
 {
+#if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
 	int ret;
 	struct spi_nor_data *data = dev->data;
-
 	if (!data->init_ok) {
 		ret = spi_nor_re_init(dev);
 		if (ret) {
 			return ret;
 		}
 	}
+#endif
 
 	return 0;
 }
 
 int spi_nor_re_init(const struct device *dev)
 {
-	struct spi_nor_data *const data = dev->data;
-
 #if ANY_INST_HAS_WP_GPIOS
 	if (DEV_CFG(dev)->wp_gpios_exist) {
 		if (!device_is_ready(DEV_CFG(dev)->wp.port)) {
@@ -2607,12 +2684,7 @@ int spi_nor_re_init(const struct device *dev)
 	}
 #endif /* ANY_INST_HAS_HOLD_GPIOS */
 
-	int ret = pm_device_driver_init(dev, spi_nor_pm_control);
-	if (!ret) {
-		data->init_ok = true;
-	}
-
-	return ret;
+	return pm_device_driver_init(dev, spi_nor_pm_control);
 }
 
 /**
@@ -2812,7 +2884,7 @@ static const struct flash_driver_api spi_nor_api = {
 		},	\
 		.init_4b_mode_once = false,	\
 		.re_init_support = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), re_init_support),	\
-		.init_ok = false,	\
+		IF_ENABLED(CONFIG_SPI_NOR_REINIT_INIT_OK, (.init_ok = false,))	\
 	};	\
 	DEVICE_DT_INST_DEFINE(idx, &spi_nor_init, PM_DEVICE_DT_INST_GET(idx),	\
 			&spi_nor_##idx##_data, &spi_nor_##idx##_config,		\

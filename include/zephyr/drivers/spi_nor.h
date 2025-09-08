@@ -207,6 +207,8 @@ int spi_nor_erase_by_cmd(const struct device *dev, off_t addr,
 			 size_t size, uint8_t cmd);
 int spi_nor_get_erase_sz(const struct device *dev, uint8_t cmd);
 int spi_nor_rst_by_cmd(const struct device *dev);
+int spi_nor_set_freq(const struct device *dev, uint32_t freq);
+int spi_nor_set_line_width(const struct device *dev, uint32_t buswidth);
 /* get jedec id from buffer */
 int spi_nor_get_jedec_id(const struct device *dev, uint8_t *id);
 int spi_nor_get_4byte_mode(const struct device *dev, bool* en4b);
