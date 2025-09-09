@@ -1,6 +1,6 @@
 description: LINKEDSEMI OTBN MODULE
 
-compatible: "linkedsemi,otbn-p384-ecdsa"
+compatible: "linkedsemi,otbn-ecc-p384"
 
 include: [base.yaml, reset-device.yaml]
 

@@ -3,14 +3,13 @@
  *
  * Copyright (c) 2025 LINKEDSEMI Technology Inc.
  */
-#define DT_DRV_COMPAT linkedsemi_otbn_ecc_p256
+#define DT_DRV_COMPAT linkedsemi_otbn_ecc_p384
 
 #include <string.h>
 #include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
-// #include <zephyr/crypto/ecc_p256.h>
 #include "ls_hal_otbn.h"
 #include "ls_msp_otbn.h"
 #include "field_manipulate.h"
@@ -19,17 +18,17 @@
 #include <zephyr/crypto/crypto_linkedsemi_otbn.h>
 #include "qsh.h"
 
-#include <zephyr/crypto/ls_otbn_ecc_p256.h>
+#include <zephyr/crypto/ls_otbn_ecc_p384.h>
 #include "crypto_linkedsemi_otbn_fireware.h"
 LOG_MODULE_DECLARE(otbn,LOG_LEVEL_DBG);
 extern int otbn_get_random(uint8_t *buf, uint16_t buf_len);
-#define SM2_MSG_DIGSET_BYTES 32
+#define SM2_MSG_DIGSET_BYTES 48
 
-struct otbn_ecc_p256_data{
+struct otbn_ecc_p384_data{
     struct k_sem *otbn_mutex;
 
     // OTBN app.
-    // otbn_app_t kOtbnAppP256Ecdsa;
+    // otbn_app_t kOtbnAppP384Ecdsa;
     // Record offsets for input and output buffers of imem or dmem.
     otbn_addr_t kOtbnVarEcdsaMode;
     otbn_addr_t kOtbnVarEcdsaMsg;
@@ -52,7 +51,7 @@ struct otbn_ecc_p256_data{
 };
 
 
-struct otbn_ecc_p256_config
+struct otbn_ecc_p384_config
 {
     reg_otbn_t *otbn_reg_addr;     // SEC_OTBN_ADDR
     uint32_t otbn_imem_addr;    // otbn_reg_addr + 0x4000
@@ -61,23 +60,26 @@ struct otbn_ecc_p256_config
     void (*irq_config_func)(const struct device *);
 };
 
-static int ls_otbn_ecc_p256_sign(struct ecc_p256_ctx *ctx, struct ecc_p256_key *key, struct ecc_p256_pkt *pkt)
+
+
+
+static int ls_otbn_ecc_p384_sign(struct ecc_p384_ctx *ctx, struct ecc_p384_key *key, struct ecc_p384_pkt *pkt)
 {
     int error = 0;
-    struct otbn_ecc_p256_config *cfg_info = (struct otbn_ecc_p256_config *)ctx->device->config;
-    struct otbn_ecc_p256_data *data = ctx->device->data;   
+    struct otbn_ecc_p384_config *cfg_info = (struct otbn_ecc_p384_config *)ctx->device->config;
+    struct otbn_ecc_p384_data *data = ctx->device->data;   
     const struct device *otbn = cfg_info->otbn;
     const struct otbn_ops_api_t *otbn_func = otbn->api;
     uint32_t mode = data->kOtbnEcdsaModeSign;
     struct ls_otbn_data *otbn_data = otbn->data;
-    if(otbn_data->mode != OTBN_ECC_P256)
+    if(otbn_data->mode != OTBN_ECC_P384)
     {
         return -1;
     }
 
     if(pkt->m == NULL || pkt->m_len != SM2_MSG_DIGSET_BYTES)
     {
-        LOG_ERR("input the message digest len is not 32");
+        LOG_ERR("input the message digest len is not 48");
         return -1;
     }
 
@@ -102,12 +104,13 @@ static int ls_otbn_ecc_p256_sign(struct ecc_p256_ctx *ctx, struct ecc_p256_key *
 
     k_sem_take(data->otbn_mutex, K_FOREVER);
 
-    error = otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)key->d,data->kOtbnVarEcdsaD0);
-    uint8_t rand[256];
-    otbn_get_random(rand,256);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)key->d,data->kOtbnVarEcdsaD0);
+    error |= otbn_func->otbn_dmem_set(otbn,12,0,data->kOtbnVarEcdsaD1);
+    uint8_t rand[384];
+    otbn_get_random(rand,384);
     error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)rand,data->kOtbnVarEcdsaRandomSeed);
 
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)pkt->m,data->kOtbnVarEcdsaMsg);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)pkt->m,data->kOtbnVarEcdsaMsg);
 
     error |= otbn_func->otbn_execute(otbn);
     if(error != 0)
@@ -123,8 +126,8 @@ static int ls_otbn_ecc_p256_sign(struct ecc_p256_ctx *ctx, struct ecc_p256_key *
         goto exit;
     }
 
-    otbn_func->otbn_dmem_read(otbn,8,data->kOtbnVarEcdsaR,(uint32_t *)pkt->r);
-    otbn_func->otbn_dmem_read(otbn,8,data->kOtbnVarEcdsaS,(uint32_t *)pkt->s);
+    otbn_func->otbn_dmem_read(otbn,12,data->kOtbnVarEcdsaR,(uint32_t *)pkt->r);
+    otbn_func->otbn_dmem_read(otbn,12,data->kOtbnVarEcdsaS,(uint32_t *)pkt->s);
     
 exit:
     otbn_func->otbn_dmem_sec_wipe(otbn);
@@ -132,24 +135,24 @@ exit:
     return error;
 }
 
-static int ls_otbn_ecc_p256_verify(struct ecc_p256_ctx *ctx, struct ecc_p256_key *key, struct ecc_p256_pkt *pkt)
+static int ls_otbn_ecc_p384_verify(struct ecc_p384_ctx *ctx, struct ecc_p384_key *key, struct ecc_p384_pkt *pkt)
 {
     int error = 0;
-    struct otbn_ecc_p256_config *cfg_info = (struct otbn_ecc_p256_config *)ctx->device->config;
-    struct otbn_ecc_p256_data *data = ctx->device->data;   
+    struct otbn_ecc_p384_config *cfg_info = (struct otbn_ecc_p384_config *)ctx->device->config;
+    struct otbn_ecc_p384_data *data = ctx->device->data;   
     const struct device *otbn = cfg_info->otbn;
     const struct otbn_ops_api_t *otbn_func = otbn->api;
     uint32_t mode = data->kOtbnEcdsaModeVerify;
     struct ls_otbn_data *otbn_data = otbn->data;
-    uint8_t r_x[32] = {0};
-    if(otbn_data->mode != OTBN_ECC_P256)
+    uint8_t r_x[48] = {0};
+    if(otbn_data->mode != OTBN_ECC_P384)
     {
         return -1;
     }
 
     if(pkt->m == NULL || pkt->m_len != SM2_MSG_DIGSET_BYTES)
     {
-        LOG_ERR("input the message digest len is not 32");
+        LOG_ERR("input the message digest len is not 48");
         return -1;
     }
 
@@ -174,12 +177,12 @@ static int ls_otbn_ecc_p256_verify(struct ecc_p256_ctx *ctx, struct ecc_p256_key
         goto exit;
     }
     
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)key->qy,data->kOtbnVarEcdsaY);
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)key->qx,data->kOtbnVarEcdsaX);
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)pkt->r,data->kOtbnVarEcdsaR);
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)pkt->s,data->kOtbnVarEcdsaS);
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)pkt->m,data->kOtbnVarEcdsaMsg);
-    error |= otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)r_x,data->kOtbnVarEcdsaXr);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)key->qy,data->kOtbnVarEcdsaY);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)key->qx,data->kOtbnVarEcdsaX);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)pkt->r,data->kOtbnVarEcdsaR);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)pkt->s,data->kOtbnVarEcdsaS);
+    error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)pkt->m,data->kOtbnVarEcdsaMsg);
+    // error |= otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)r_x,data->kOtbnVarEcdsaXr);
     if(error != 0)
     {
         LOG_ERR("otbn is running, do not write data to dmem");
@@ -201,9 +204,9 @@ static int ls_otbn_ecc_p256_verify(struct ecc_p256_ctx *ctx, struct ecc_p256_key
     }
 
 
-    otbn_func->otbn_dmem_read(otbn,8,data->kOtbnVarEcdsaXr,(uint32_t *)r_x);
+    otbn_func->otbn_dmem_read(otbn,12,data->kOtbnVarEcdsaXr,(uint32_t *)r_x);
 
-    if(memcmp(r_x, pkt->r, 32))
+    if(memcmp(r_x, pkt->r, 48))
     {
         error = -1;
     }
@@ -213,16 +216,16 @@ exit:
     return error;
 }
 
-static int ls_otbn_ecc_p256_keygen(struct ecc_p256_ctx *ctx, struct ecc_p256_key *key)
+static int ls_otbn_ecc_p384_keygen(struct ecc_p384_ctx *ctx, struct ecc_p384_key *key)
 {
     int error = 0;
-    struct otbn_ecc_p256_config *cfg_info = (struct otbn_ecc_p256_config *)ctx->device->config;
-    struct otbn_ecc_p256_data *data = ctx->device->data;   
+    struct otbn_ecc_p384_config *cfg_info = (struct otbn_ecc_p384_config *)ctx->device->config;
+    struct otbn_ecc_p384_data *data = ctx->device->data;   
     const struct device *otbn = cfg_info->otbn;
     const struct otbn_ops_api_t *otbn_func = otbn->api;
     uint32_t mode = data->kOtbnEcdsaModeKeygen;
     struct ls_otbn_data *otbn_data = otbn->data;
-    if(otbn_data->mode != OTBN_ECC_P256)
+    if(otbn_data->mode != OTBN_ECC_P384)
     {
         return -1;
     }
@@ -235,13 +238,13 @@ static int ls_otbn_ecc_p256_keygen(struct ecc_p256_ctx *ctx, struct ecc_p256_key
 
     k_sem_take(data->otbn_mutex, K_FOREVER);
 
-    otbn_func->otbn_dmem_set(otbn,32,0,data->kOtbnVarEcdsaX);
-    otbn_func->otbn_dmem_set(otbn,32,0,data->kOtbnVarEcdsaY);
-    otbn_func->otbn_dmem_set(otbn,32,0,data->kOtbnVarEcdsaD0);
+    // otbn_func->otbn_dmem_set(otbn,48,0,data->kOtbnVarEcdsaX);
+    // otbn_func->otbn_dmem_set(otbn,48,0,data->kOtbnVarEcdsaY);
+    // otbn_func->otbn_dmem_set(otbn,48,0,data->kOtbnVarEcdsaD0);
 
-    uint8_t rand[256];
-    otbn_get_random(rand,256);
-    otbn_func->otbn_dmem_write(otbn,8,(uint32_t *)rand,data->kOtbnVarEcdsaRandomSeed);
+    uint8_t rand[384];
+    otbn_get_random(rand,384);
+    otbn_func->otbn_dmem_write(otbn,12,(uint32_t *)rand,data->kOtbnVarEcdsaRandomSeed);
 
     error = otbn_func->otbn_dmem_write(otbn,1,(uint32_t *)&mode,data->kOtbnVarEcdsaMode);
     if(error != 0)
@@ -271,10 +274,10 @@ static int ls_otbn_ecc_p256_keygen(struct ecc_p256_ctx *ctx, struct ecc_p256_key
         goto exit;
     }
 
-    otbn_func->otbn_dmem_read(otbn,8,data->kOtbnVarEcdsaD0,(uint32_t *)key->d);
-    otbn_func->otbn_dmem_read(otbn,8,data->kOtbnVarEcdsaX,(uint32_t *)key->qx);
-    otbn_func->otbn_dmem_read(otbn,8,data->kOtbnVarEcdsaY,(uint32_t *)key->qy);
-    LOG_INF("get ecc_p256 key succeed");
+    otbn_func->otbn_dmem_read(otbn,12,data->kOtbnVarEcdsaD0,(uint32_t *)key->d);
+    otbn_func->otbn_dmem_read(otbn,12,data->kOtbnVarEcdsaX,(uint32_t *)key->qx);
+    otbn_func->otbn_dmem_read(otbn,12,data->kOtbnVarEcdsaY,(uint32_t *)key->qy);
+    LOG_INF("get ecc_p384 key succeed");
 
 exit:
     otbn_func->otbn_dmem_sec_wipe(otbn);
@@ -282,14 +285,19 @@ exit:
     return error;
 }
 
+int ls_otbn_ecc_p384_session_free(const struct device *dev, struct ecc_p384_ctx *ctx)
+{
+    // NOT TO DO
+    return 0;
+}
 
-static int ls_otbn_ecc_p256_session_setup(const struct device *dev,
-				      struct ecc_p256_ctx *ctx,
-				      struct ecc_p256_key *key)
+static int ls_otbn_ecc_p384_session_setup(const struct device *dev,
+				      struct ecc_p384_ctx *ctx,
+				      struct ecc_p384_key *key)
 {
     int error = 0;
-    struct otbn_ecc_p256_config *cfg_info = (struct otbn_ecc_p256_config *)dev->config;
-    const struct otbn_ecc_p256_data *data = dev->data;   
+    struct otbn_ecc_p384_config *cfg_info = (struct otbn_ecc_p384_config *)dev->config;
+    const struct otbn_ecc_p384_data *data = dev->data;   
     const struct device *otbn = cfg_info->otbn;
     const struct otbn_ops_api_t *otbn_func = otbn->api;
     struct ls_otbn_data *otbn_data = otbn->data;
@@ -304,99 +312,74 @@ static int ls_otbn_ecc_p256_session_setup(const struct device *dev,
         goto exti;
     }
 
-    otbn_data->mode = OTBN_ECC_P256;
+    otbn_data->mode = OTBN_ECC_P384;
     ctx->device = dev;
-    ctx->ops.keygen = ls_otbn_ecc_p256_keygen;
-    ctx->ops.sign = ls_otbn_ecc_p256_sign;
-    ctx->ops.verify = ls_otbn_ecc_p256_verify;
-// {kOtbnAppP256Ecdsa = {imem_start = 0x1000cd8c, 
-//     imem_end = 0x1000d680, 
-//     dmem_data_start = 0x1000ac40, 
-//     dmem_data_end = 0x1000af60, 
-//     dmem_data_start_addr = 0x0, 
-//     checksum = 0xf731f8c4}, 
-//     kOtbnVarEcdsaMode = 0x0, 
-//     kOtbnVarEcdsaMsg = 0xa0, 
-//     kOtbnVarEcdsaR = 0xc0, 
-//     kOtbnVarEcdsaS = 0xe0, 
-//     kOtbnVarEcdsaX = 0x100, 
-//     kOtbnVarEcdsaY = 0x120, 
-//     kOtbnVarEcdsaD0 = 0x20, 
-//     kOtbnVarEcdsaXr = 0x140, 
-//     kOtbnVarEcdsaRand1 = 0x0, 
-//     kOtbnEcdsaModeKeygen = 0x3d4, 
-//     kOtbnEcdsaModeSign = 0x15b, 
-//     kOtbnEcdsaModeVerify = 0x727, 
-//     otbn_reg_addr = 0x0, 
-//     otbn_imem_addr = 0x4000, 
-//     otbn_dmem_addr = 0x8000, 
-//     otbn = 0x1000a4e8 <__device_dts_ord_195>, 
-//     irq_config_func = 0x100060a2 <ecc_p256_irq_config_func_0>}
+    ctx->ops.keygen = ls_otbn_ecc_p384_keygen;
+    ctx->ops.sign = ls_otbn_ecc_p384_sign;
+    ctx->ops.verify = ls_otbn_ecc_p384_verify;
 
 exti:
     k_sem_give(data->otbn_mutex);
     return error;
 }
 
-static int ls_ecc_p256_init(const struct device *dev)
+static int ls_ecc_p384_init(const struct device *dev)
 {
-    struct otbn_ecc_p256_config *cfg_info = (struct otbn_ecc_p256_config *)dev->config;
-    struct otbn_ecc_p256_data *data = dev->data;   
+    struct otbn_ecc_p384_config *cfg_info = (struct otbn_ecc_p384_config *)dev->config;
+    struct otbn_ecc_p384_data *data = dev->data;   
     const struct device *otbn = cfg_info->otbn;
     struct ls_otbn_data *otbn_data = otbn->data;
 
     /*通过指针获取otbn的锁，多个加密驱动共用这个锁*/
     data->otbn_mutex = &otbn_data->mutex;
 
-    data->kOtbnVarEcdsaMode = LS_OTBN_ECDSA_P256_MODE_OFFSET;
-    data->kOtbnVarEcdsaMsg = LS_OTBN_ECDSA_P256_MSG_OFFSET;
-    data->kOtbnVarEcdsaR = LS_OTBN_ECDSA_P256_R_OFFSET;
-    data->kOtbnVarEcdsaS = LS_OTBN_ECDSA_P256_S_OFFSET;
-    data->kOtbnVarEcdsaX = LS_OTBN_ECDSA_P256_X_OFFSET;
-    data->kOtbnVarEcdsaY = LS_OTBN_ECDSA_P256_Y_OFFSET;
-    data->kOtbnVarEcdsaD0 = LS_OTBN_ECDSA_P256_D0_OFFSET;
-    data->kOtbnVarEcdsaD1 = LS_OTBN_ECDSA_P256_D1_OFFSET;
-    data->kOtbnVarEcdsaXr = LS_OTBN_ECDSA_P256_X_R_OFFSET;
-    data->kOtbnVarEcdsaOk = LS_OTBN_ECDSA_P256_OK;
-    data->kOtbnVarEcdsaRandomSeed = LS_OTBN_ECDSA_P256_RANDOM_SEED_OFFSET;
+    data->kOtbnVarEcdsaMode = LS_OTBN_ECDSA_P384_MODE_OFFSET;
+    data->kOtbnVarEcdsaMsg = LS_OTBN_ECDSA_P384_MSG_OFFSET;
+    data->kOtbnVarEcdsaR = LS_OTBN_ECDSA_P384_R_OFFSET;
+    data->kOtbnVarEcdsaS = LS_OTBN_ECDSA_P384_S_OFFSET;
+    data->kOtbnVarEcdsaX = LS_OTBN_ECDSA_P384_X_OFFSET;
+    data->kOtbnVarEcdsaY = LS_OTBN_ECDSA_P384_Y_OFFSET;
+    data->kOtbnVarEcdsaD0 = LS_OTBN_ECDSA_P384_D0_OFFSET;
+    data->kOtbnVarEcdsaD1 = LS_OTBN_ECDSA_P384_D1_OFFSET;
+    data->kOtbnVarEcdsaXr = LS_OTBN_ECDSA_P384_X_R_OFFSET;
+    // data->kOtbnVarEcdsaOk = LS_OTBN_ECDSA_P384_OK;
+    data->kOtbnVarEcdsaRandomSeed = LS_OTBN_ECDSA_P384_RANDOM_SEED_OFFSET;
     // mode constants.
-    data->kOtbnEcdsaModeKeygen = LS_OTBN_ECDSA_P256_MODE_KEYGEN;
-    data->kOtbnEcdsaModeSign = LS_OTBN_ECDSA_P256_MODE_SIGN;
-    data->kOtbnEcdsaModeVerify = LS_OTBN_ECDSA_P256_MODE_VERIFY;
-    data->kOtbnEcdsaModeSharedKey =LS_OTBN_ECDSA_P256_MODE_SHARED_KEY;
-
-    data->app_info.curve = OTBN_ECC_P256;
-    data->app_info.kOtbnAppImemSize = LS_OTBN_ECDSA_P256_IMEM_SIZE;
-    data->app_info.kOtbnAppDmemSize = LS_OTBN_ECDSA_P256_DMEM_SIZE;
-    data->app_info.kOtbnAppDmemEnd = LS_OTBN_ECDSA_P256_DMEM_END;
-    data->app_info.dmem_image = p256_dmem;
-    data->app_info.imem_image = p256_imem;
+    data->kOtbnEcdsaModeKeygen = LS_OTBN_ECDSA_P384_MODE_KEYGEN;
+    data->kOtbnEcdsaModeSign = LS_OTBN_ECDSA_P384_MODE_SIGN;
+    data->kOtbnEcdsaModeVerify = LS_OTBN_ECDSA_P384_MODE_VERIFY;
+    data->kOtbnEcdsaModeSharedKey =LS_OTBN_ECDSA_P384_MODE_SHARED_KEY;
+    
+    data->app_info.curve = OTBN_ECC_P384;
+    data->app_info.kOtbnAppImemSize = LS_OTBN_ECDSA_P384_IMEM_SIZE;
+    data->app_info.kOtbnAppDmemSize = LS_OTBN_ECDSA_P384_DMEM_SIZE;
+    data->app_info.kOtbnAppDmemEnd = LS_OTBN_ECDSA_P384_DMEM_END;
+    data->app_info.dmem_image = p384_dmem;
+    data->app_info.imem_image = p384_imem;
     return 0;
 }
 
-
-
-static struct ecc_p256_driver_api  ls_ecc_p256_driver_api = {
-    .begin_session = ls_otbn_ecc_p256_session_setup,
-    // .free_session = ls_otbn_ecc_p256_session_free,
+static struct ecc_p384_driver_api  ls_ecc_p384_driver_api = {
+    .begin_session = ls_otbn_ecc_p384_session_setup,
+    .free_session = ls_otbn_ecc_p384_session_free,
     .query_hw_caps = NULL,
 };
 
 
-#define LS_OTBN_P256_ECDSA_INIT(idx)                    \
+#define LS_OTBN_P384_ECDSA_INIT(idx)                    \
     \
-	static void ecc_p256_irq_config_func_##idx(const struct device *dev){}              \
-	static struct otbn_ecc_p256_data otbn_ecc_p256_data_##idx;                         \
-	static const struct otbn_ecc_p256_config otbn_ecc_p256_config_##idx = {            \
+	static void ecc_p384_irq_config_func_##idx(const struct device *dev){}              \
+	static struct otbn_ecc_p384_data otbn_ecc_p384_data_##idx;                         \
+	static const struct otbn_ecc_p384_config otbn_ecc_p384_config_##idx = {            \
         .otbn_imem_addr = 0x4000,   \
         .otbn_dmem_addr = 0x8000,   \
-		.irq_config_func = ecc_p256_irq_config_func_##idx,                        \
+		.irq_config_func = ecc_p384_irq_config_func_##idx,                        \
         .otbn = DEVICE_DT_GET(DT_INST_PARENT(idx)), \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(idx, ls_ecc_p256_init, NULL, &otbn_ecc_p256_data_##idx,    \
-			      &otbn_ecc_p256_config_##idx, POST_KERNEL,                        \
-			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, (void *)&ls_ecc_p256_driver_api);
+	DEVICE_DT_INST_DEFINE(idx, ls_ecc_p384_init, NULL, &otbn_ecc_p384_data_##idx,    \
+			      &otbn_ecc_p384_config_##idx, POST_KERNEL,                        \
+			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, (void *)&ls_ecc_p384_driver_api);
 
 
 
-DT_INST_FOREACH_STATUS_OKAY(LS_OTBN_P256_ECDSA_INIT)
+DT_INST_FOREACH_STATUS_OKAY(LS_OTBN_P384_ECDSA_INIT)

@@ -1,0 +1,22 @@
+
+
+&otbn {
+
+    status = "okay";
+
+    sm2: otbn-sm2 {
+        compatible = "linkedsemi,otbn-sm2";
+        otbn-parent = <&otbn>;
+        status = "disabled";
+    };
+    ecc_p256: otbn-p256 {
+        compatible = "linkedsemi,otbn-ecc-p256";
+        otbn-parent = <&otbn>;
+        status = "disabled";
+    };
+    ecc_p384: otbn-p384 {
+        compatible = "linkedsemi,otbn-ecc-p384";
+        otbn-parent = <&otbn>;
+        status = "okay";
+    };
+};

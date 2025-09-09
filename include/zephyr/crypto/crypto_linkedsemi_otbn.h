@@ -93,52 +93,60 @@ typedef uint32_t otbn_addr_t;
  * Use `OTBN_DECLARE_APP_SYMBOLS()` together with `OTBN_APP_T_INIT()` to
  * initialize this structure.
  */
+// typedef struct otbn_app {
+//   /**
+//    * Start of OTBN instruction memory in the embedded program.
+//    *
+//    * This pointer references Ibex's memory.
+//    */
+//   const uint32_t *imem_start;
+//   /**
+//    * The first word after OTBN instruction memory in the embedded program.
+//    *
+//    * This pointer references Ibex's memory.
+//    *
+//    * This address satifies `imem_start < imem_end`.
+//    */
+//   const uint32_t *imem_end;
+//   /**
+//    * Start of initialized OTBN data in the embedded program.
+//    *
+//    * This pointer references Ibex's memory.
+//    *
+//    * Data in between `dmem_data_start` and `dmem_data_end` will be copied to
+//    * OTBN at app load time.
+//    */
+//   const uint32_t *dmem_data_start;
+//   /**
+//    * The first word after initialized OTBN data in the embedded program.
+//    *
+//    * This pointer references Ibex's memory.
+//    *
+//    * Should satisfy `dmem_data_start <= dmem_data_end`.
+//    */
+//   const uint32_t *dmem_data_end;
+//   /**
+//    * Start of initialized data section in OTBN's DMEM.
+//    *
+//    * This pointer references OTBN's memory and is used to copy data at app load
+//    * time.
+//    */
+//   const otbn_addr_t dmem_data_start_addr;
+//   /**
+//    * Application checksum.
+//    *
+//    * This value represents a CRC32 checksum over IMEM and the `.data` portion
+//    * of DMEM.
+//    */
+//   const uint32_t checksum;
+// } otbn_app_t;
 typedef struct otbn_app {
-  /**
-   * Start of OTBN instruction memory in the embedded program.
-   *
-   * This pointer references Ibex's memory.
-   */
-  const uint32_t *imem_start;
-  /**
-   * The first word after OTBN instruction memory in the embedded program.
-   *
-   * This pointer references Ibex's memory.
-   *
-   * This address satifies `imem_start < imem_end`.
-   */
-  const uint32_t *imem_end;
-  /**
-   * Start of initialized OTBN data in the embedded program.
-   *
-   * This pointer references Ibex's memory.
-   *
-   * Data in between `dmem_data_start` and `dmem_data_end` will be copied to
-   * OTBN at app load time.
-   */
-  const uint32_t *dmem_data_start;
-  /**
-   * The first word after initialized OTBN data in the embedded program.
-   *
-   * This pointer references Ibex's memory.
-   *
-   * Should satisfy `dmem_data_start <= dmem_data_end`.
-   */
-  const uint32_t *dmem_data_end;
-  /**
-   * Start of initialized data section in OTBN's DMEM.
-   *
-   * This pointer references OTBN's memory and is used to copy data at app load
-   * time.
-   */
-  const otbn_addr_t dmem_data_start_addr;
-  /**
-   * Application checksum.
-   *
-   * This value represents a CRC32 checksum over IMEM and the `.data` portion
-   * of DMEM.
-   */
-  const uint32_t checksum;
+    uint16_t curve;
+    uint8_t *dmem_image;
+    uint8_t *imem_image;
+    uint32_t kOtbnAppImemSize;
+    uint32_t kOtbnAppDmemSize;
+    uint32_t kOtbnAppDmemEnd;
 } otbn_app_t;
 
 /**
@@ -207,6 +215,14 @@ enum{
   kOtbnErrBitsNoError = 0,
 };
 
+enum currnt_imem_image_t
+{
+    OTBN_FREE,
+    OTBN_SM2,
+    OTBN_ECC_P256,
+    OTBN_ECC_P384,
+
+};
 
 struct otbn_ops_api_t{
     status_t (*otbn_imem_sec_wipe)(const struct device *dev);
@@ -217,28 +233,13 @@ struct otbn_ops_api_t{
     int (*otbn_dmem_read)(const struct device *dev, uint16_t num_words, otbn_addr_t src, uint32_t *dest);
     int (*otbn_dmem_set)(const struct device *dev, uint16_t num_words, const uint32_t data, otbn_addr_t dest);
     int (*otbn_dmem_write)(const struct device *dev, uint16_t num_words, const uint32_t *src, otbn_addr_t dest);
-    status_t (*otbn_load_app)(const struct device *dev, const otbn_app_t *app);
+    status_t (*otbn_load_app)(const struct device *dev, const otbn_app_t *app_info);
 };
 
-enum currnt_imem_image_t
-{
-    OTBN_FREE,
-    OTBN_SM2,
-    OTBN_ECC_P256,
-    OTBN_P384_ECDSA,
-
-};
 
 struct ls_otbn_data{
-    struct k_sem mutex;         // 互斥锁
-    struct k_sem completion_sem; //信号量
+    struct k_sem mutex;
+    struct k_sem completion_sem;
     enum currnt_imem_image_t mode;
     void (*app_callback)(const struct device *dev);
 };
-
-// static void otbn_test(const struct device *dev)
-// {
-//   struct otbn_ops_api_t *api = (struct otbn_ops_api_t *)dev->api;
-
-//   api->otbn_execute(dev);
-// }
