@@ -127,22 +127,6 @@ config NET_DRIVERS
 config MDIO
 	default y
 
-config NET_PHY_AUTO_NEGOTIATION
-	bool "NET_PHY_AUTO_NEGOTIATION"
-	default y
-
-config NET_PHY_FORCE_10M
-	bool "NET_PHY_FORCE_10M"
-	default n
-
-config NET_PHY_FORCE_100M
-	bool "NET_PHY_FORCE_100M"
-	default n
-
-config NET_PHY_FORCE_1000M
-	bool "NET_PHY_FORCE_1000M"
-	default n
-
 endif # NETWORKING
 
 if CACHE
