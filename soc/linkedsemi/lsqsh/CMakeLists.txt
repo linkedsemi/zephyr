@@ -14,13 +14,3 @@ function(add_prebuilt_library lib_name prebuilt_path)
   )
   zephyr_link_libraries(${lib_name})
 endfunction()
-
-
-add_library(ls_otbn STATIC IMPORTED GLOBAL)
-set_target_properties(ls_otbn PROPERTIES
-    IMPORTED_LOCATION ${CMAKE_CURRENT_SOURCE_DIR}
-)
-zephyr_link_libraries(${CMAKE_CURRENT_SOURCE_DIR}/otbn/sm2.rv32embed.a)
-# zephyr_link_libraries(${CMAKE_CURRENT_SOURCE_DIR}/otbn/p256_ecdsa.rv32 embed.a)
-zephyr_link_libraries(${CMAKE_CURRENT_SOURCE_DIR}/otbn/p384_ecdsa.rv32embed.a)
-zephyr_link_libraries(${CMAKE_CURRENT_SOURCE_DIR}/otbn/ecc_p256.rv32embed.a)
