@@ -12,6 +12,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/cache.h>
+#include <zephyr/sys/bitarray.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
 #endif
@@ -24,6 +25,8 @@
 #endif
 #include "platform.h"
 #include "sdhci.h"
+#include "reg_sysc_app_awo.h"
+#include "reg_sysc_app_cpu.h"
 
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
@@ -70,7 +73,9 @@ static void linkedsemi_sdhci_isr(const void *arg)
                 | SDHCI_INT_ERROR)) {
         host->error_code = (status >> 16) & 0xffff;
         if (host->error_code) {
-            LOG_ERROR("error: %#4.4x\n", host->error_code);
+            if (!host->execute_tuning) {
+                LOG_ERROR("error: %#4.4x\n", host->error_code);
+            }
         }
         host->irq_status |= status;
         if (status & SDHCI_INT_ERROR) {
@@ -121,10 +126,13 @@ static int linkedsemi_sdhci_get_host_props(const struct device *dev, struct sdhc
     props->power_delay = 500;
     props->host_caps.high_spd_support = false;
     props->host_caps.suspend_res_support = true;
-    props->host_caps.vol_330_support = true;
+    props->host_caps.vol_180_support = true;
     props->host_caps.bus_4_bit_support = true;
     props->host_caps.bus_8_bit_support = true;
+    props->host_caps.hs200_support = false;
+    props->host_caps.hs400_support = false;
     props->max_current_330 = 1024;
+
     return 0;
 }
 
@@ -156,6 +164,15 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
             uint8_t val = sdhci_readb(host, SDHCI_POWER_CONTROL);
             val &= ~(SDHCI_POWER_ON);
             sdhci_writeb(host, val, SDHCI_POWER_CONTROL);
+            // tx inv
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_TX_CLK_DELAY_MASK);
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_SD_CLK_OUT_MASK);
+            // rx delay
+            SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_MASK);
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
+            // clear delay
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+            REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, 0);
         } else if (ios->power_mode == SDHC_POWER_ON) {
             uint8_t val = sdhci_readb(host, SDHCI_POWER_CONTROL);
             val |= SDHCI_POWER_ON;
@@ -168,17 +185,22 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
     ctrl &= ~(SDHCI_CTRL_4BITBUS | SDHCI_CTRL_8BITBUS);
     switch (ios->bus_width) {
     case SDHC_BUS_WIDTH1BIT:
+        host->bus_width = SDHC_BUS_WIDTH1BIT;
         break;
     case SDHC_BUS_WIDTH4BIT:
+        host->bus_width = SDHCI_CTRL_4BITBUS;
         ctrl |= SDHCI_CTRL_4BITBUS;
         break;
     case SDHC_BUS_WIDTH8BIT:
+        host->bus_width = SDHCI_CTRL_8BITBUS;
         ctrl |= SDHCI_CTRL_8BITBUS;
         break;
     default:
         return -ENOTSUP;
     }
     sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
+
+    host->timing = ios->timing;
 
     return 0;
 }
@@ -223,7 +245,9 @@ static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struc
     /* Wait command complete or SDHC encounters error. */
     k_sem_take(&host->transfer_sem, K_FOREVER);
     if (host->error_code & SDHCI_INT_ERROR) {
-        LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, host->error_code);
+        if (!host->execute_tuning) {
+            LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, host->error_code);
+        }
         host->error_code = 0;
         return -1;
     }
@@ -240,7 +264,9 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             k_sem_take(&host->transfer_sem, K_FOREVER);
             stat = host->irq_status;
             if (stat & SDHCI_INT_ERROR) {
-                LOG_ERROR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
+                if (!host->execute_tuning) {
+                    LOG_ERROR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
+                }
                 sdhci_reg_display(host);
                 return -1;
             }
@@ -263,7 +289,9 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             k_sem_take(&host->transfer_sem, K_FOREVER);
             stat = host->irq_status;
             if (stat & SDHCI_INT_ERROR) {
-                LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, stat);
+                if (!host->execute_tuning) {
+                    LOG_ERROR("%s: Error detected in status(0x%X)!\n", __func__, stat);
+                }
                 sdhci_reg_display(host);
                 return -1;
             }
@@ -342,13 +370,11 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     /* wait command done */
     ret = linkedsemi_sdhci_wait_command_done(host, sdhci_command, ((sdhci_data == NULL) ? false : sdhci_data->execute_tuning));
     /* transfer data */
-    if ((sdhci_data != NULL) && (ret == 0)) {
+    if ((sdhci_data != NULL) && (ret == 0) && (!(host->irq_status & SDHCI_INT_ERROR))) {
         ret = linkedsemi_sdhci_transfer_data_blocking(host, sdhci_data, use_dma);
     }
-    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
-    }
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG)) {
-    }
+    while ((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR)));
+    while ((sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR))));
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
     sdhci_reset(host, SDHCI_RESET_CMD);
@@ -374,13 +400,16 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
 
     ret = k_mutex_lock(&dev_data->access_mutex, K_FOREVER);
     if (ret) {
-        LOG_ERROR("Could not access card");
+        if (!host->execute_tuning) {
+            LOG_ERROR("Could not access card");
+        }
         return -EBUSY;
     }
 
     host->irq_status = 0;
     sdhci_command.index = cmd->opcode;
     sdhci_command.argument = cmd->arg;
+
     /* Mask out part of response type field used for SPI commands */
     sdhci_command.response_type = (cmd->response_type & SDHC_NATIVE_RESPONSE_MASK);
     if (cmd->opcode == SD_STOP_TRANSMISSION) {
@@ -431,6 +460,7 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         case SD_APP_SEND_NUM_WRITTEN_BLK:
         case MMC_CHECK_BUS_TEST:
         case MMC_SEND_EXT_CSD:
+        case MMC_SEND_TUNING_BLOCK:
             sdhci_data.rx_data = data->data;
             break;
         default:
@@ -472,6 +502,204 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
     k_mutex_unlock(&dev_data->access_mutex);
 
     return 0;
+}
+
+static const uint8_t tuning_blk_pattern_4bit[] = {
+    0xff, 0x0f, 0xff, 0x00, 0xff, 0xcc, 0xc3, 0xcc,
+    0xc3, 0x3c, 0xcc, 0xff, 0xfe, 0xff, 0xfe, 0xef,
+    0xff, 0xdf, 0xff, 0xdd, 0xff, 0xfb, 0xff, 0xfb,
+    0xbf, 0xff, 0x7f, 0xff, 0x77, 0xf7, 0xbd, 0xef,
+    0xff, 0xf0, 0xff, 0xf0, 0x0f, 0xfc, 0xcc, 0x3c,
+    0xcc, 0x33, 0xcc, 0xcf, 0xff, 0xef, 0xff, 0xee,
+    0xff, 0xfd, 0xff, 0xfd, 0xdf, 0xff, 0xbf, 0xff,
+    0xbb, 0xff, 0xf7, 0xff, 0xf7, 0x7f, 0x7b, 0xde,
+};
+
+static const uint8_t tuning_blk_pattern_8bit[] = {
+    0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00,
+    0xff, 0xff, 0xcc, 0xcc, 0xcc, 0x33, 0xcc, 0xcc,
+    0xcc, 0x33, 0x33, 0xcc, 0xcc, 0xcc, 0xff, 0xff,
+    0xff, 0xee, 0xff, 0xff, 0xff, 0xee, 0xee, 0xff,
+    0xff, 0xff, 0xdd, 0xff, 0xff, 0xff, 0xdd, 0xdd,
+    0xff, 0xff, 0xff, 0xbb, 0xff, 0xff, 0xff, 0xbb,
+    0xbb, 0xff, 0xff, 0xff, 0x77, 0xff, 0xff, 0xff,
+    0x77, 0x77, 0xff, 0x77, 0xbb, 0xdd, 0xee, 0xff,
+    0xff, 0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0x00,
+    0x00, 0xff, 0xff, 0xcc, 0xcc, 0xcc, 0x33, 0xcc,
+    0xcc, 0xcc, 0x33, 0x33, 0xcc, 0xcc, 0xcc, 0xff,
+    0xff, 0xff, 0xee, 0xff, 0xff, 0xff, 0xee, 0xee,
+    0xff, 0xff, 0xff, 0xdd, 0xff, 0xff, 0xff, 0xdd,
+    0xdd, 0xff, 0xff, 0xff, 0xbb, 0xff, 0xff, 0xff,
+    0xbb, 0xbb, 0xff, 0xff, 0xff, 0x77, 0xff, 0xff,
+    0xff, 0x77, 0x77, 0xff, 0x77, 0xbb, 0xdd, 0xee,
+};
+
+static int dll_lock()
+{
+    REG_FIELD_WR(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R, 0);
+    for (uint8_t phase_detect_sel = 1; phase_detect_sel <= 0x7; phase_detect_sel++) {
+        LOG_DBG("phase_detect_sel: %x", phase_detect_sel);
+        REG_FIELD_WR(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_PHASE_DETECT_SEL_N, phase_detect_sel);
+        for (uint16_t num = 0; num <= 0x7f; num++) {
+            k_msleep(10);
+            bool lock = READ_BIT(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_RD_LOCK_MASK) > 0;
+            if (lock) {
+                LOG_DBG("lock: EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
+                return 0;
+            } else {
+                LOG_DBG("EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
+                REG_FIELD_WR(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R, num);
+            }
+        }
+    }
+
+    return -EIO;
+}
+
+static int find_max_consecutive_ones_region(sys_bitarray_t *bitarray, size_t *start_pos) {
+    int ret_val;
+    int current_val;
+    size_t current_length = 0;
+    size_t max_length = 0;
+    size_t current_start = 0;
+    size_t best_start = 0;
+
+    if (bitarray == NULL) {
+        return -1;
+    }
+
+    size_t num_bits = bitarray->num_bits;
+
+    for (size_t i = 0; i < num_bits; i++) {
+        ret_val = sys_bitarray_test_bit(bitarray, i, &current_val);
+        if (ret_val != 0) {
+            return ret_val;
+        }
+
+        if (current_val == 1) {
+            if (current_length == 0) {
+                current_start = i;
+            }
+            current_length++;
+            if (current_length > max_length) {
+                max_length = current_length;
+                best_start = current_start;
+            }
+        } else {
+            current_length = 0;
+        }
+    }
+
+    if (start_pos != NULL) {
+        *start_pos = best_start;
+    }
+
+    return max_length;
+}
+
+static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
+{
+    int ret = 0;
+    struct sdhc_command cmd = { 0 };
+    struct sdhc_data data = {0};
+    uint8_t block_size;
+    const uint8_t *tuning_data_cmp;
+    uint8_t tuning_data[sizeof(tuning_blk_pattern_8bit)] __aligned(32);
+    SYS_BITARRAY_DEFINE(delay_bitmap, (SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS) + 1);
+
+    struct linkedsemi_sdhci_data *dev_data = dev->data;
+    struct sdhci_host *host = &dev_data->host;
+
+    if (SDHCI_CTRL_8BITBUS == host->bus_width) {
+        block_size = sizeof(tuning_blk_pattern_8bit);
+        tuning_data_cmp = tuning_blk_pattern_8bit;
+    } else if (SDHCI_CTRL_4BITBUS == host->bus_width) {
+        block_size = sizeof(tuning_blk_pattern_4bit);
+        tuning_data_cmp = tuning_blk_pattern_4bit;
+    } else {
+        return -ENOTSUP;
+    }
+
+    cmd.opcode = MMC_SEND_TUNING_BLOCK;
+    cmd.arg = 0;
+    cmd.response_type = SD_RSP_TYPE_R1;
+    cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
+
+    data.block_size = block_size;
+    data.blocks = 1;
+    data.data = tuning_data;
+    data.timeout_ms = CONFIG_SD_DATA_TIMEOUT;
+
+    if(dll_lock()) {
+        return -EIO;
+    }
+    LOG_DBG("EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
+    LOG_DBG("%s: tuning begin", __func__);
+    host->execute_tuning = true;
+
+    if (SDHC_TIMING_HS200 == host->timing) {
+        // tx inv
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_TX_CLK_DELAY_MASK);
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_SD_CLK_OUT_MASK);
+        // rx delay
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_MASK);
+        SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
+    } else if (SDHC_TIMING_HS400 == host->timing) {
+        // tx no inv
+        // tx dll delay
+        // rx dll delay
+        while(1);
+    } else {
+        // error
+        while(1);
+    }
+
+    uint8_t emmc1_dll_ctrl_decoder_r = REG_FIELD_RD(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R);
+    /* __ASSERT_NO_MSG((SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS) >= emmc1_dll_ctrl_decoder_r); */
+    for (uint16_t delay = 0; delay <= emmc1_dll_ctrl_decoder_r; delay++) {
+        for (int i = 0; i < 5; i++) {
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+            REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, delay);
+            SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+
+            memset(tuning_data, 0, sizeof(tuning_data));
+            sys_cache_data_flush_range(tuning_data, sizeof(tuning_data));
+            ret = sdhc_request(dev, &cmd, &data);
+            if (ret) {
+                LOG_ERROR("CMD21 (MMC_SEND_TUNING_BLOCK) failed: %d", ret);
+                host->execute_tuning = false;
+                return ret;
+            }
+            if (memcmp(tuning_data, tuning_data_cmp, block_size)) {
+                LOG_DBG("bad delay: %x", delay);
+            } else {
+                sys_bitarray_set_bit(&delay_bitmap, delay);
+                LOG_DBG("ok delay: %x", delay);
+            }
+        }
+
+    }
+
+    size_t max_consecutive_start = 0;
+    int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
+    CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+    if (max_length >= 0) {
+        LOG_DBG("len: %d start bit: %zu", max_length, max_consecutive_start);
+        LOG_DBG("%s: delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
+        LOG_DBG("%s: tuning success", __func__);
+        REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, max_consecutive_start + (max_length >> 1));
+        ret = 0;
+    } else {
+        LOG_DBG("err: %d", max_length);
+        LOG_DBG("%s: tuning fail", __func__);
+        REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, 0);
+        ret = -EIO;
+    }
+    SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+
+    host->execute_tuning = false;
+
+    return ret;
 }
 
 /*
@@ -569,6 +797,7 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
     .get_card_present = linkedsemi_sdhci_get_card_present,
     .request = linkedsemi_sdhci_request,
     .card_busy = linkedsemi_sdhci_card_busy,
+    .execute_tuning = linkedsemi_sdhci_execute_tuning,
 };
 
 #define LINKEDSEMI_SDHCI_INIT(n)                                                                                \
@@ -599,6 +828,8 @@ static const struct sdhc_driver_api linkedsemi_sdhci_api = {
         .host = {                                                                                               \
             .mapbase = DT_INST_REG_ADDR(n),                                                                     \
             .max_clk = DT_INST_PROP(n, clock_frequency),                                                        \
+            .bus_width = 1,                                                                                     \
+            .execute_tuning = false,                                                                            \
         },                                                                                                      \
         .clock_frequency = DT_INST_PROP(n, clock_frequency),                                                    \
     };                                                                                                          \

@@ -10,6 +10,9 @@ LOG_MODULE_REGISTER(sdhci, CONFIG_SDHC_LOG_LEVEL);
 
 void sdhci_reg_display(struct sdhci_host *host)
 {
+    if (host->execute_tuning) {
+        return;
+    }
     LOG_INF("SD_MASA_R:%x\n", sdhci_readl(host, SDHCI_DMA_ADDRESS));
     LOG_INF("BLCOKSIZE_R:%x\n", sdhci_readw(host, SDHCI_BLOCK_SIZE));
     LOG_INF("BLOCKCOUNT_R:%x\n", sdhci_readw(host, SDHCI_BLOCK_COUNT));
