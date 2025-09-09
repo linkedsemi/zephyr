@@ -33,3 +33,26 @@ config CRYPTO_LINKEDSEMI_MAX_SESSION
     help
       This can be used to tweak the amount of sessions the driver
       can handle in parallel.
+
+
+config CRYPTO_LINKEDSEMI_OTBN
+  bool "linkedsemi otbn driver"
+  depends on DT_HAS_LINKEDSEMI_OTBN_CRYPTO_ENABLED
+
+config CRYPTO_LINKEDSEMI_OTBN_SM2
+  bool "linkedsemi otbn driver"
+  select CRYPTO_LINKEDSEMI_OTBN
+  default y
+  depends on DT_HAS_LINKEDSEMI_OTBN_SM2_ENABLED
+
+config CRYPTO_LINKEDSEMI_OTBN_ECC_P256
+  bool "linkedsemi otbn driver"
+  select CRYPTO_LINKEDSEMI_OTBN
+  default y
+  depends on DT_HAS_LINKEDSEMI_OTBN_ECC_P256_ENABLED
+
+config CRYPTO_LINKEDSEMI_OTBN_P384_ECDSA
+  bool "linkedsemi otbn driver"
+  select CRYPTO_LINKEDSEMI_OTBN
+  default y
+  depends on DT_HAS_LINKEDSEMI_OTBN_P384_ECDSA_ENABLED

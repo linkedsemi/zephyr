@@ -14,8 +14,9 @@
 #include <zephyr/drivers/i3c.h>
 
 
-static const struct device *i3c_dev_controller = DEVICE_DT_GET(DT_NODELABEL(i3c10));
-static const struct device *i3c_dev_target1 = DEVICE_DT_GET(DT_NODELABEL(i3c9));
+#include "core_rv32.h"
+static const struct device *i3c_dev_controller = DEVICE_DT_GET(DT_NODELABEL(i3c13));
+static const struct device *i3c_dev_target1 = DEVICE_DT_GET(DT_NODELABEL(i3c14));
 
 volatile bool ibi_recived = false;
 int target1_ibi_callback(struct i3c_device_desc *target,struct i3c_ibi_payload *payload);
@@ -131,7 +132,6 @@ while(1)
     uint8_t target1_addr = 0x32;
     target1_cfg.address = target1_addr;
     target1_cfg.callbacks = &target1_callbacks;
-
     test_idx = 1;
     /* target */
     i3c_target_register(i3c_dev_target1,&target1_cfg);

@@ -2,7 +2,7 @@
 
 cmake_minimum_required(VERSION 3.20.0)
 
-# set(DTC_OVERLAY_FILE boards/fpga.overlay)
+set(DTC_OVERLAY_FILE boards/lsqsh_evb_cpu1.overlay)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(i3c_test)
 
