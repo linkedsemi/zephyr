@@ -354,6 +354,16 @@
     /*B0-B7*/	"","","","","","","","";
 };
 
+&spi3 {
+    status = "okay";
+    flash3_0: flash3@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(10)>;
+        re-init-support;
+    };
+};
+
 &eth1 {
     status = "okay";
 };
