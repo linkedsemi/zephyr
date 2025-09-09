@@ -1,8 +1,8 @@
 
-&i3c9 {
+&i3c14 {
     // i3c-scl-hz = <1000000>;
     // i2c-scl-hz = <400000>;
-    interrupts = <120 4>;
+    interrupts = <I3C14_IRQN 4>;
     is-secondary;
     status = "okay";
 
@@ -11,10 +11,15 @@
     dcr = <0x4>;
     bcr = <0x06>;
 
+    pinctrl-0 = <
+        &i3c14_scl_pk10
+        &i3c14_sda_pk11
+    >;
+    pinctrl-names = "default";
 };
 
-&i3c10 {
-    i3c-scl-hz = <600000>;
+&i3c13 {
+    i3c-scl-hz = <1000000>;
     // i2c-scl-hz = <400000>;
     status = "okay";
     
@@ -23,10 +28,18 @@
     dcr = <0x4>;
     bcr = <0x42>;
 
+
+    pinctrl-0 = <
+        &i3c13_scl_pk08
+        &i3c13_sda_pk09
+    >;
+    pinctrl-names = "default";
+
     i3ctarget1: i3ctarget@20813811000 {
         compatible = "vnd,i3c-device";
         reg = < 0 0x0208 0x13811000>;
         assigned-address = <0x32>;
         status = "okay";
     };
+
 };

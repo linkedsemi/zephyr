@@ -7,13 +7,16 @@ description:  LINKEDSEMI I3C CONFIG
 
 compatible: "linkedsemi,i3c"
 
-include: [i3c-controller.yaml, reset-device.yaml]
+include: [pinctrl-device.yaml, i3c-controller.yaml, reset-device.yaml]
 
 properties:
   reg:
     required: true
 
   interrupts:
+    required: true
+
+  pinctrl-0:
     required: true
 
   is-secondary:
@@ -66,3 +69,8 @@ properties:
     description: |
       Maximum number of bytes that I3C controller may read from to I3C target per message.
       Range: 8 to 4095.
+
+  clock-frequency:
+    type: int
+    description: high peripheral clock frequency (Hz)
+    required: true

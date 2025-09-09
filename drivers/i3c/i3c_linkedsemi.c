@@ -34,7 +34,7 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 #include "reg_sysc_app_per.h"
 #include "HAL_def.h"
 #include <zephyr/sys/util.h>
-
+#include "core_rv32.h"
 // #include "field_manipulate.h"
 // #include <math.h>
 
@@ -174,6 +174,7 @@ struct ls_i3c_config {
 
     /* Pointer to controller registers. */
 	I3C_TypeDef   *base;
+	uint32_t clock_frequency;
     void (*irq_config_func)(const struct device *dev);
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
@@ -240,7 +241,7 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 	uint64_t scll_pp = 0;
 	uint64_t sclh_i3c = 0;
 	uint32_t clk_wave = 0;
-	LOG_DBG("CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC = %d\r\n",CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC);
+	LOG_DBG("config->clock_frequency = %d\r\n",config->clock_frequency);
 	LOG_DBG("i2c hz= 0x%x ,i3c hz= 0x%x \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
 
 	if(data->common.ctrl_config.scl.i2c > 0)
@@ -248,10 +249,10 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 		if(data->common.ctrl_config.scl.i2c >= 400000)
 		{
 			/* I2C bus is FM+ */
-			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FMP_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,1000000000ull) - 1;
-			sclh_i2c = DIV_ROUND_UP(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, data->common.ctrl_config.scl.i2c) - scll_od - 2;
+			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FMP_NS * config->clock_frequency,1000000000ull) - 1;
+			sclh_i2c = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i2c) - scll_od - 2;
 			if (sclh_i2c <
-			DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FMP_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, 1000000000ull) -
+			DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FMP_NS * config->clock_frequency, 1000000000ull) -
 				1) {
 			LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at "
 				"current I3C clock "
@@ -259,12 +260,12 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 			return -EINVAL;
 		} else {
 			/* I2C bus is FM */
-			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FM_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC,1000000000ull) - 1;
-			sclh_i2c = DIV_ROUND_UP(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, data->common.ctrl_config.scl.i2c) - scll_od - 2;
+			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FM_NS * config->clock_frequency,1000000000ull) - 1;
+			sclh_i2c = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i2c) - scll_od - 2;
 		}
 		}
 		if (sclh_i2c <
-		    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FM_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, 1000000000ull) - 1) {
+		    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FM_NS * config->clock_frequency, 1000000000ull) - 1) {
 			LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at current I3C "
 				"clock "
 				"frequency for FM I2C bus");
@@ -279,17 +280,17 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 		}
 			/* Assume no I2C devices on the bus */
 			scll_od = 0;
-			// sclh_i2c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, 1000000000ull) - 1;
+			// sclh_i2c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency, 1000000000ull) - 1;
 			// scll_od = scll_od;
 	}
 
-	sclh_i3c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, 1000000000ull) - 1;
-	scll_pp = DIV_ROUND_UP(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, data->common.ctrl_config.scl.i3c) - sclh_i3c - 2;
+	sclh_i3c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency, 1000000000ull) - 1;
+	scll_pp = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i3c) - sclh_i3c - 2;
 	if(scll_od == 0)
 	{
 		scll_od = scll_pp;
 	}
-	// if (scll_pp < DIV_ROUND_UP(I3C_SCLL_PP_MIN_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, 1000000000ull) - 1) {
+	// if (scll_pp < DIV_ROUND_UP(I3C_SCLL_PP_MIN_NS * config->clock_frequency, 1000000000ull) - 1) {
 	// 	LOG_ERR("Cannot find a combination of SCLL_PP and SCLH_I3C at current I3C clock "
 	// 		"frequency for specified I3C bus speed");
 	// 	return -EINVAL;
@@ -305,17 +306,17 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 		if (data->common.ctrl_config.scl.i2c > 400000) {
 			/* Mixed bus with I2C FM+ device */
 			free_timing = (uint8_t)(
-				(I3C_TBUF_FMP_MIN_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1e9 - 0.5) / 2);
+				(I3C_TBUF_FMP_MIN_NS * config->clock_frequency / 1e9 - 0.5) / 2);
 		} else {
 			/* Mixed bus with I2C FM device */
 			free_timing = (uint8_t)(
-				(I3C_TBUF_FM_MIN_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1e9 - 0.5) / 2);
+				(I3C_TBUF_FM_MIN_NS * config->clock_frequency / 1e9 - 0.5) / 2);
 		}
 	}else
 	{
 		/* Pure I3C bus */
 		free_timing =
-			(uint8_t)((I3C_TCAS_MIN_NS * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1e9 - 0.5) / 2);
+			(uint8_t)((I3C_TCAS_MIN_NS * config->clock_frequency / 1e9 - 0.5) / 2);
 	}
 
 
@@ -323,7 +324,7 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
     REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_SDA_HD,1);
     REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_ASNCR,0);
 
-	aval = DIV_ROUND_UP(1000ull * CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC, 1000000000ull) - 1;
+	aval = (uint8_t)(DIV_ROUND_UP(1000ull * config->clock_frequency, 1000000000ull) - 1);
 	REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_AVAL,aval);
 
     REG_FIELD_WR(base->TIMINGR2,I3C_TIMINGR2_STALL,0);
@@ -458,7 +459,7 @@ static void ls_i3c_dev_init(const struct device *dev)
 	REG_FIELD_WR(base->SCONFIG2,I3C_SCONFIG2_CONTROLLER_RESET_PATTERN_DELAY,1);
 
 	ls_i3c_target_config(dev);
-	uint8_t matchCount = (uint8_t)(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC/1e6);
+	uint8_t matchCount = (uint8_t)(config->clock_frequency/1e6);
 	uint32_t sconfigvalue = 0;
 	sconfigvalue = base->SCONFIG;
 	sconfigvalue &= 
@@ -538,6 +539,20 @@ static int ls_i3c_init(const struct device *dev)
 	// 	LOG_ERR("Turn on I3C clock fail %d", ret);
 	// 	return ret;
 	// }
+		// io_cfg_output(PK08);
+		// io_cfg_output(PK09);
+		// io_cfg_output(PK10);
+		// io_cfg_output(PK11);
+		// while(1) {
+		// 	io_toggle_pin(PK08);
+		// 	io_toggle_pin(PK09);
+		// 	io_toggle_pin(PK10);
+		// 	io_toggle_pin(PK11);
+		// 	// io_toggle_pin(PH00);
+		// 	// c_delay(1000000);
+		// }
+
+
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
@@ -585,15 +600,15 @@ static int ls_i3c_init(const struct device *dev)
 	data->fifo_info.TargetTxFifoSize = 16;
 	data->fifo_info.TargetRxFifoSize = 8;
 
-	//I3C时钟使能
-    per_func_enable(I3C10_SCL,PINMUX_FUNC3);
-    per_func_enable(I3C10_SDA,PINMUX_FUNC3);
-    per_func_enable(I3C9_SCL,PINMUX_FUNC3);
-    per_func_enable(I3C9_SDA,PINMUX_FUNC3);
+	// //I3C时钟使能
+    // per_func_enable(I3C10_SCL,PINMUX_FUNC3);
+    // per_func_enable(I3C10_SDA,PINMUX_FUNC3);
+    // per_func_enable(I3C9_SCL,PINMUX_FUNC3);
+    // per_func_enable(I3C9_SDA,PINMUX_FUNC3);
 
-    /*时钟使能*/
-    SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C10_MASK;
-    SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C9_MASK;
+    // /*时钟使能*/
+    // SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C13_MASK;
+    // SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C14_MASK;
 
 #if defined(CONFIG_I3C_USE_IBI)
 	base->IER = I3C_IER_IBIIE_MASK;
@@ -603,7 +618,6 @@ static int ls_i3c_init(const struct device *dev)
 #endif
 
 	dev_config->irq_config_func(dev);
-
 	/* Initial I3C device as controller or target */
 	ls_i3c_dev_init(dev);
 
@@ -1034,12 +1048,16 @@ static int ls_i3c_do_daa(const struct device *dev)
 			*/
 			ret = i3c_dev_list_daa_addr_helper(&data->common.attached_dev.addr_slots,
 							   &config->common.dev_list, pid,
-							   false, false,
+							   true, false,
 							   &target, &dyn_addr);
 			if (ret != 0) {
+				LOG_ERR("TARGET device address dose not match");
 				goto out_daa;
 			}
-			
+			// if(dyn_addr != 0x32)
+			// {
+			// 	while(1);
+			// }
 			/* Update target descriptor */
 			target->dynamic_addr = dyn_addr;
 			target->bcr = rx_buf[6];
@@ -1074,7 +1092,7 @@ static int ls_i3c_do_daa(const struct device *dev)
 			// }
 		}
 	} while (__LS_I3C_GET_FLAG(base,I3C_EVR_FCF_MASK) != SET
-		&& __LS_I3C_GET_FLAG(base,I3C_EVR_ERRF_MASK) != SET );
+		&& __LS_I3C_GET_FLAG(base,I3C_EVR_ERRF_MASK) != SET);
 	
 
 out_daa:
@@ -1153,6 +1171,7 @@ static int ls_i3c_do_ccc(const struct device *dev,
 	}
 
 	k_mutex_lock(&data->lock, K_FOREVER);
+	// unsigned int k = arch_irq_lock();
 
 	LOG_DBG("CCC[0x%02x]", payload->ccc.id);
 	LOG_DBG("CCC len  :  %d", payload->ccc.data_len);
@@ -1226,7 +1245,7 @@ static int ls_i3c_do_ccc(const struct device *dev,
 			goto out_ccc_stop;
 		}
 		start_time = arch_k_cycle_get_64(); 
-		exp_time = LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT * num_target + start_time;	
+		exp_time = 2*(LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT * num_target) + start_time;	// 这里要修改成系统时间
 		LL_I3C_ControllerHandleCCC(base,payload->ccc.id,payload->ccc.data_len,LL_I3C_GENERATE_RESTART);
 		do{
 			/*tx-fifo depth is 16 ,so broadcast tx data can be fully input, broadcast tx data is not too long*/
@@ -1402,6 +1421,7 @@ out_ccc_stop:
 	ls_i3c_xfer_reset(base);
 
 	k_mutex_unlock(&data->lock);
+	// arch_irq_unlock(k);
 
 	return ret;
 }
@@ -1459,6 +1479,7 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 	LL_I3C_EnableIT_SFNE(base);
 	LL_I3C_EnableIT_RXFNE(base);
 	LL_I3C_EnableIT_TXFNF(base);
+	LL_I3C_ClearFlag_ERR(base);
 	LL_I3C_EnableIT_ERR(base);
 
 
@@ -2187,6 +2208,7 @@ static const struct i3c_driver_api ls_i3c_driver_api = {
 		I3C_I2C_DEVICE_ARRAY_DT_INST(id);                                                  \
 	static const struct ls_i3c_config ls_i3c_config_##id = {                               \
 		.base = (I3C_TypeDef *)DT_INST_REG_ADDR(id),                                    \
+		.clock_frequency = (DT_INST_PROP(id, clock_frequency))*2,\
 		.irq_config_func = ls_i3c_config_func_##id,                                      \
 		.common.dev_list.i3c = ls_i3c_device_array_##id,                                 \
 		.common.dev_list.num_i3c = ARRAY_SIZE(ls_i3c_device_array_##id),                 \
