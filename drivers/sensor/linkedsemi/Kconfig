@@ -1,17 +1,23 @@
-# Linkedsemi CAP Sensor Kconfig
+# Linkedsemi CAP Sensor Driver Configuration
 
-menuconfig CAP_LS
-    bool "Linkedsemi CAP sensor driver"
-    default y
-    depends on SENSOR && PINCTRL
-    help
-      Enable the Linkedsemi CAP function sensor driver.
+config CAP_LS
+	bool "Linkedsemi CAP sensor driver"
+	default y
+	depends on SENSOR && PINCTRL
+	depends on DT_HAS_LINKEDSEMI_LS_CAP_ENABLED
+	help
+	  Enable the Linkedsemi capacitive touch sensor driver.
+	  This driver supports various CAP sensors from Linkedsemi.
+	  Say Y here if you have such a sensor connected to your system.
 
 if CAP_LS
 
-# drivers/sensor/linkedsemi/Kconfig
 
-module = CAP
-source "subsys/logging/Kconfig.template.log_config"
+config CAP_LS_V2
+	bool "Enable CAP V2 mode support"
+	default n
+	help
+	  Enable this option to add support for the newer QSH hardware variant
+	  of the Linkedsemi CAP sensor. Leave disabled if using older hardware.
 
 endif # CAP_LS
