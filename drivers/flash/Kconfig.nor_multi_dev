@@ -93,7 +93,7 @@ config SPI_NOR_ACTIVE_DWELL_MS
 
 config SPI_NOR_REINIT_INIT_OK
 	bool "SPI_NOR_REINIT_INIT_OK"
-	default n
+	default y
 	help
 	  SPI_NOR_REINIT_INIT_OK
 
