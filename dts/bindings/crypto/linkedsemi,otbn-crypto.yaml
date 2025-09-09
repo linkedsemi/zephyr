@@ -1,0 +1,7 @@
+description: LINKEDSEMI OTBN MODULE
+
+compatible: "linkedsemi,otbn-crypto"
+
+include: [base.yaml, reset-device.yaml]
+
+
