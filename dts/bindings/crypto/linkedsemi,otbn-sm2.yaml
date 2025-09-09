@@ -1,0 +1,12 @@
+description: LINKEDSEMI OTBN MODULE
+
+compatible: "linkedsemi,otbn-sm2"
+
+include: [base.yaml, reset-device.yaml]
+
+
+properties:
+  otbn-parent:
+    type: phandle
+    description: phandle to otbn module node
+
