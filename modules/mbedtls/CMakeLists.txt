@@ -142,6 +142,12 @@ zephyr_interface_library_named(mbedTLS)
       )
     endif()
 
+    if(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/sm4_alt.c
+      )
+    endif()
+
     zephyr_library_sources(${mbedtls_base_src})
 
     zephyr_library_sources_ifdef(CONFIG_MBEDTLS_DEBUG debug.c)

@@ -14,6 +14,7 @@ typedef struct testVector {
 #include "mbedtls/sha256.h"
 #define SHA224_DIGEST_SIZE 28
 #define SHA256_DIGEST_SIZE 32
+#define SM3_DIGEST_SIZE 32
 
 int test_sha224()
 {
@@ -153,6 +154,72 @@ exit:
     {
         mbedtls_sha256_free(&sha[j]);
     }
+    return ret;
+}
+
+int test_sm3()
+{
+    mbedtls_sha256_context sm3[3];
+    uint8_t   hash[SM3_DIGEST_SIZE];
+    int ret = 0;
+
+    testVector a, b, c;
+    testVector test_sm3[3];
+    int times = sizeof(test_sm3) / sizeof(struct testVector), i, j;
+
+    a.input  = "";
+    a.output = "\x1a\xb2\x1d\x83\x55\xcf\xa1\x7f\x8e\x61\x19\x48\x31\xe8\x1a"
+               "\x8f\x22\xbe\xc8\xc7\x28\xfe\xfb\x74\x7e\xd0\x35\xeb\x50\x82"
+               "\xaa\x2b";
+    a.inLen  = strlen(a.input);
+    a.outLen = SM3_DIGEST_SIZE;
+
+    b.input  = "abc";
+    b.output = "\x66\xc7\xf0\xf4\x62\xee\xed\xd9\xd1\xf2\xd4\x6b\xdc\x10\xe4"
+               "\xe2\x41\x67\xc4\x87\x5c\xf2\xf7\xa2\x29\x7d\xa0\x2b\x8f\x4b"
+               "\xa8\xe0";
+    b.inLen  = strlen(b.input);
+    b.outLen = SM3_DIGEST_SIZE;
+
+    c.input  = "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq";
+    c.output = "\x63\x9b\x6c\xc5\xe6\x4d\x9e\x37\xa3\x90\xb1\x92\xdf\x4f\xa1"
+               "\xea\x07\x20\xab\x74\x7f\xf6\x92\xb9\xf3\x8c\x4e\x66\xad\x7b"
+               "\x8c\x05";
+    c.inLen  = strlen(c.input);
+    c.outLen = SM3_DIGEST_SIZE;
+
+    test_sm3[0] = a;
+    test_sm3[1] = b;
+    test_sm3[2] = c;
+
+    /* Test all the KATs. */
+    for (i = 0; i < times; ++i) {
+
+        mbedtls_sm3_init(&sm3[i]);
+
+        if ((ret = mbedtls_sm3_starts(&sm3[i])) != 0) {
+
+            goto exit;
+        }
+
+        if ((ret = mbedtls_sm3_update(&sm3[i], (char*)test_sm3[i].input, (size_t)test_sm3[i].inLen)) != 0) {
+            goto exit;
+        }
+
+        if ((ret = mbedtls_sm3_finish(&sm3[i], hash)) != 0) {
+            goto exit;
+        }
+
+        if (memcmp(hash, test_sm3[i].output, SM3_DIGEST_SIZE) != 0) {
+            goto exit;
+        }
+    }
+exit:
+    for(j = 0; j < i; ++j)
+    {
+        mbedtls_sm3_free(&sm3[j]);
+    }
+
     return ret;
 }
 #endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
@@ -507,6 +574,146 @@ exit:
 }
 #endif /* CONFIG_MBEDTLS_SHA512_LINKEDSEMI */
 
+#if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
+#include "mbedtls/sm4_alt.h"
+#define SM4_BLOCK_SIZE 16
+int test_sm4()
+{
+    /* draft-ribose-cfrg-sm4-10 A.2.1.1 */
+    static const uint8_t k1[] = {
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10
+    };
+    static const uint8_t p1[] = {
+        0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB,
+        0xCC, 0xCC, 0xCC, 0xCC, 0xDD, 0xDD, 0xDD, 0xDD,
+        0xEE, 0xEE, 0xEE, 0xEE, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB
+    };
+    static const uint8_t c1_ecb[] = {
+        0x5E, 0xC8, 0x14, 0x3D, 0xE5, 0x09, 0xCF, 0xF7,
+        0xB5, 0x17, 0x9F, 0x8F, 0x47, 0x4B, 0x86, 0x19,
+        0x2F, 0x1D, 0x30, 0x5A, 0x7F, 0xB1, 0x7D, 0xF9,
+        0x85, 0xF8, 0x1C, 0x84, 0x82, 0x19, 0x23, 0x04
+    };
+
+    mbedtls_sm4_context sm4;
+    uint8_t enc[SM4_BLOCK_SIZE * 4];
+    uint8_t dec[SM4_BLOCK_SIZE * 4];
+    int ret;
+
+    memset(enc, 0, SM4_BLOCK_SIZE * 4);
+    memset(dec, 0, SM4_BLOCK_SIZE * 4);
+
+    mbedtls_sm4_init(&sm4);
+
+    /* Encrypt and decrypt with ECB. */
+    if((ret = mbedtls_sm4_setkey(k1)) !=0 ) {
+        goto exit;
+    }
+
+    if((ret = mbedtls_sm4_ecb_encrypt(&sm4, enc, p1, sizeof(p1))) !=0 ){
+        goto exit;
+    }
+
+    if (memcmp(enc, c1_ecb, sizeof(c1_ecb)) != 0) {
+       goto exit;
+    }
+
+    if((ret = mbedtls_sm4_ecb_decrypt(&sm4, dec, enc, sizeof(c1_ecb))) !=0 ) {
+        goto exit;
+    }
+
+    if (memcmp(dec, p1, sizeof(p1)) != 0) {
+        goto exit;
+    }
+
+exit:
+    mbedtls_sm4_free(&sm4);
+
+    return ret;
+}
+
+int sm4_ctr_test()
+{
+    /* draft-ribose-cfrg-sm4-10 A.2.5.1 */
+    static const uint8_t k1[] = {
+        0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
+        0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10
+    };
+    static const uint8_t i1[] = {
+        0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+        0x08, 0x09, 0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F
+    };
+    static const uint8_t p2[] = {
+        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+        0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB,
+        0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC, 0xCC,
+        0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD, 0xDD,
+        0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE, 0xEE,
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA,
+        0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB
+    };
+    static const uint8_t c2_ctr[] = {
+        0xAC, 0x32, 0x36, 0xCB, 0x97, 0x0C, 0xC2, 0x07,
+        0x91, 0x36, 0x4C, 0x39, 0x5A, 0x13, 0x42, 0xD1,
+        0xA3, 0xCB, 0xC1, 0x87, 0x8C, 0x6F, 0x30, 0xCD,
+        0x07, 0x4C, 0xCE, 0x38, 0x5C, 0xDD, 0x70, 0xC7,
+        0xF2, 0x34, 0xBC, 0x0E, 0x24, 0xC1, 0x19, 0x80,
+        0xFD, 0x12, 0x86, 0x31, 0x0C, 0xE3, 0x7B, 0x92,
+        0x6E, 0x02, 0xFC, 0xD0, 0xFA, 0xA0, 0xBA, 0xF3,
+        0x8B, 0x29, 0x33, 0x85, 0x1D, 0x82, 0x45, 0x14
+    };
+
+    mbedtls_sm4_context sm4;
+    uint8_t enc[SM4_BLOCK_SIZE * 4];
+    uint8_t dec[SM4_BLOCK_SIZE * 4];
+    int ret;
+
+    mbedtls_sm4_init(&sm4);
+
+    /* Encrypt and decrypt using encrypt with CTR. */
+    if((ret = mbedtls_sm4_setkey(k1)) !=0 ) {
+        goto exit;
+    }
+
+    if((ret = mbedtls_sm4_setiv(&sm4, i1)) !=0 ) {
+        goto exit;
+    }
+            
+    if((ret = mbedtls_sm4_ctr_crypto(&sm4, enc, p2, sizeof(p2)))!=0 ) {
+        goto exit;
+    }
+
+    if (memcmp(enc, c2_ctr, sizeof(c2_ctr)) != 0)
+        goto exit;
+
+    mbedtls_sm4_init(&sm4);
+
+    /* Encrypt and decrypt using encrypt with CTR. */
+    if((ret = mbedtls_sm4_setkey(k1)) !=0 ) {
+        goto exit;
+    }
+
+    if((ret = mbedtls_sm4_setiv(&sm4, i1)) !=0 ) {
+        goto exit;
+    }
+
+    if((ret = mbedtls_sm4_ctr_crypto(&sm4, dec, enc, sizeof(c2_ctr))) !=0 ) {
+        goto exit;
+    }
+
+    if (memcmp(dec, p2, sizeof(p2)) != 0)
+        goto exit;
+
+exit:
+    mbedtls_sm4_free(&sm4);
+
+    return 0;
+}
+#endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI */
+
 int main(void)
 {
 #if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)
@@ -523,6 +730,14 @@ int main(void)
     }else{
         printf("SHA-256  test passed!\n");
     }
+
+    if(test_sm3() != 0)
+    {
+        printf("SM3  test failed!\n");
+    }else{
+        printf("SM3  test passed!\n");
+    }
+
 #endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
 
 #if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
@@ -549,6 +764,23 @@ int main(void)
         printf("SHA-512  test passed!\n");
     }
 #endif /* CONFIG_MBEDTLS_SHA512_LINKEDSEMI */
+
+#if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
+    if(test_sm4() != 0)
+    {
+        printf("sm4 test failed!\n");
+    }else{
+        printf("sm4  test passed!\n");
+    }
+
+    if(sm4_ctr_test() != 0)
+    {
+        printf("sm4_ctr_test failed!\n");
+    }else{
+        printf("sm4_ctr_test passed!\n");
+    }
+
+#endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI */
 
     return 0;
 }
