@@ -1,3 +1,9 @@
+#define CLK_SRC_PBUS1 1
+#define CLK_SRC_PBUS2 2
+#define CLK_SRC_PBUS3 3
+#define CLK_SRC_PBUS4 4
+#define CLK_SRC_HBUS  5
+
 #define    LS_CCTL_CLKG0     0x0
 #define    LS_CCTL_CLKG1     0x4
 #define    LS_CCTL_CLKG2     0x8
