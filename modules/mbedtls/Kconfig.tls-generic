@@ -360,6 +360,10 @@ config MBEDTLS_SHA512_LINKEDSEMI
 	default n
 	select MBEDTLS_SHA512
 
+config MBEDTLS_SM4_LINKEDSEMI
+	bool "LINKEDSEMI's hardware sm4"
+	default n
+
 config MBEDTLS_POLY1305
 	bool "Poly1305 hash family"
 
