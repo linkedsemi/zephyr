@@ -10,6 +10,12 @@ LOG_MODULE_REGISTER(clock_control_ls, LOG_LEVEL_DBG);
 
 #define LS_CLK_SET(base, n)   (*(volatile uint32_t *)((base) + (n)))
 
+#if(CONFIG_SOC_LS1010)
+#include <zephyr/dt-bindings/clock/ls101x_clock.h>
+#include "reg_sysc_awo.h"
+#define CPU_FREQ DT_PROP(DT_NODELABEL(cpu0), clock_frequency)
+#endif
+
 #if(CONFIG_SOC_LSQSH)
 #include <zephyr/dt-bindings/clock/lsqsh_clock.h>
 #include "reg_sysc_sec_awo.h"
@@ -40,9 +46,38 @@ static inline int ls_clock_control_off(const struct device *dev,
 	return 0;
 }
 
+#if(CONFIG_SOC_LS1010)
 static int ls_clock_control_get_rate(const struct device *dev, clock_control_subsys_t sub_system, uint32_t *rate)
 {
+	ARG_UNUSED(dev);
+	uint32_t *clock_source = (uint32_t *)(sub_system);
+	switch (*clock_source) {
+	case CLK_SRC_PBUS1:
+		*rate = CPU_FREQ / (REG_FIELD_RD(SYSC_AWO->PD_AWO_CLK_CTRL, SYSC_AWO_CLK_PBUS1_DIV4) + 1);
+		break;
+	case CLK_SRC_PBUS2:
+		*rate = CPU_FREQ / (REG_FIELD_RD(SYSC_AWO->PD_AWO_CLK_CTRL, SYSC_AWO_CLK_SEL_PBUS2) + 1);;
+		break;
+	case CLK_SRC_PBUS3:
+		*rate = CPU_FREQ / (REG_FIELD_RD(SYSC_AWO->PD_AWO_CLK_CTRL, SYSC_AWO_CLK_SEL_PBUS3) + 1);
+		break;
+	case CLK_SRC_PBUS4:
+		*rate = CPU_FREQ  / (REG_FIELD_RD(SYSC_AWO->PD_AWO_CLK_CTRL, SYSC_AWO_CLK_SEL_PBUS4) + 1);
+		break;
+	case CLK_SRC_HBUS:
+		*rate = CPU_FREQ;
+		break;
+	default:
+		*rate = 0U;
+		return -EINVAL;
+	}
+	return 0;
+}
+#endif
+
 #if(CONFIG_SOC_LSQSH)
+static int ls_clock_control_get_rate(const struct device *dev, clock_control_subsys_t sub_system, uint32_t *rate)
+{
 	ARG_UNUSED(dev);
 	uint32_t *clock_source = (uint32_t *)(sub_system);
 	switch (*clock_source) {
@@ -68,9 +103,9 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 		*rate = 0U;
 		return -EINVAL;
 	}
-#endif
 	return 0;
 }
+#endif
 
 /* Clock controller driver registration */
 static const struct clock_control_driver_api ls_clock_control_api = {
