@@ -1,6 +1,7 @@
 #include <zephyr/init.h>
 #include <zephyr/platform/hooks.h>
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/cache.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/crc.h>
@@ -21,6 +22,7 @@
 #include "qsh.h"
 #include <zephyr/irq.h>
 #include "reg_sec_pmu_rg.h"
+#include "reg_app_pmu_rg.h"
 #include "reg_sysc_sec_awo.h"
 #include "reg_sysc_app_awo.h"
 #include "reg_sysc_sec_cpu.h"
@@ -32,6 +34,8 @@
 #include "soc.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
+
+LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
 #define MHINT_AEE_POS 20
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
@@ -376,6 +380,7 @@ __maybe_unused static void peripheral_init()
     /* SYSC_APP_AWO->LPC_CLK */
 }
 
+#define EMMC_WORKAROUND
 __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
 {
     ARG_UNUSED(base_clock);
@@ -387,6 +392,12 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
     uint8_t tx_sel;
     uint8_t rx_sel;
 
+#if defined(EMMC_WORKAROUND)
+    if (target_clock > MHZ(100)) {
+        target_clock >>= 1;
+    }
+#endif
+
     if (target_clock >= (MHZ(200) / ((SYSC_APP_AWO_EMMC1_CLK_RX_DIV_MASK >> SYSC_APP_AWO_EMMC1_CLK_RX_DIV_POS) + 1))) {
         /* dpll 200M */
         tx_sel = 0x4;
@@ -395,7 +406,12 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
         if (tx_div) {
             tx_div--;
         }
+        while ((MHZ(200) / (tx_div + 1)) > target_clock) {
+            tx_div++;
+        }
         rx_div = tx_div;
+        LOG_DBG("target_clock: %d  div: %d", target_clock, tx_div);
+        LOG_DBG("real_clock: %d", base_clock / (tx_div + 1));
     } else {
         /* dpll 50M */
         tx_sel = 0x2;

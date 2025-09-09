@@ -473,6 +473,9 @@ struct sdhci_host {
     uint32_t rx_delay_line;
     uint32_t tx_delay_line;
     uint32_t transfer_status;
+    uint8_t bus_width;
+    enum sdhc_timing_mode timing;
+    bool execute_tuning;
 };
 
 
