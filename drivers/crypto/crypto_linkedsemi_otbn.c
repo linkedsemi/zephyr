@@ -170,42 +170,22 @@ int ls_otbn_imem_write(const struct device *dev, uint16_t num_words, const uint3
     return HAL_OK;
 }
 
-status_t ls_otbn_load_app(const struct device *dev, const otbn_app_t *app)
+status_t ls_otbn_load_app(const struct device *dev, const otbn_app_t *app_info)
 {
     struct ls_otbn_config *cfg_info = (struct ls_otbn_config *)dev->config;
     uint32_t status;
-    if (app->imem_end <= app->imem_start) {
-        LOG_ERR("IMEM must not be backwards or empty.");
-        return -1;
-    }
-    // DMEM data section must not be backwards.
-    if (app->dmem_data_end < app->dmem_data_start) {
-        LOG_ERR("DMEM data section must not be backwards.");
-        return -1;
-    }
-
     status = otbn_assert_idle(dev);
     if(!status)
     {
         LOG_ERR("OTBN is busy");
     }
-    const uint16_t imen_num_words = app->imem_end - app->imem_start;
-    const uint16_t dmen_num_words = app->dmem_data_end - app->dmem_data_start;
- 
+
     ls_otbn_imem_sec_wipe(dev);
     ls_otbn_dmem_sec_wipe(dev);
-    // Reset the LOAD_CHECKSUM register.
-    cfg_info->otbn_reg_addr->LOAD_CHECKSUM = 0;
 
-    ls_otbn_imem_write(dev,imen_num_words,(uint32_t *)app->imem_start,0);
-    ls_otbn_dmem_write(dev,dmen_num_words,(uint32_t *)app->dmem_data_start,0);
-
-    uint32_t checksum = cfg_info->otbn_reg_addr->LOAD_CHECKSUM;
-    if(checksum != app->checksum)
-    {
-        LOG_ERR("otbn: the checksum is not matched expectations.");
-        return -1;
-    }
+    ls_otbn_dmem_set(dev,(app_info->kOtbnAppDmemEnd+3)/4,0,0);
+    ls_otbn_imem_write(dev,(app_info->kOtbnAppImemSize+3)/4,(uint32_t *)app_info->imem_image,0);
+    ls_otbn_dmem_write(dev,(app_info->kOtbnAppDmemSize+3)/4,(uint32_t *)app_info->dmem_image,0);
 
     return 0;
 }
@@ -249,7 +229,6 @@ static int ls_otbn_init(const struct device *dev)
 
 void ls_otbn_isr(const struct device *dev)
 {
-    while(1);
     struct ls_otbn_data *data = dev->data;
     if (LSOTBN->INTR_STATE)
     {
@@ -258,24 +237,15 @@ void ls_otbn_isr(const struct device *dev)
     }
 }
 
-/*子节点可以通过类似方式获取这个节点*/
-// #define OTBN_PARENT DT_PHANDLE(DT_DRV_INST(0), otbn_parent)
-// static int ls_otbn_init(const struct device *dev)
-// {
-//     // 获取父节点设备
-//     const struct device *parent = DEVICE_DT_GET(OTBN_PARENT); 
-    
-//     if (!device_is_ready(parent)) {
-//         LOG_ERR("OTBN parent device %s not ready", parent->name);
-//         return -ENODEV;
-//     }
 
-//     // 存储父设备指针在设备数据中
-//     struct sm2_data *data = dev->data;
-//     data->parent = parent;
-    
-//     return 0;
-// }
+int otbn_get_random(uint8_t *buf, uint16_t buf_len)
+{
+    for(uint16_t i = 0; i < buf_len; i++)
+    {
+        buf[i] = i * 0xfc;
+    }
+    return 0;
+} 
 
 static struct otbn_ops_api_t  otbn_ops_api = {
     .otbn_imem_sec_wipe = ls_otbn_imem_sec_wipe,

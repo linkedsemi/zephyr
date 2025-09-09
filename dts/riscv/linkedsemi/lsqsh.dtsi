@@ -458,8 +458,8 @@
                 otbn-parent = <&otbn>;
                 status = "disabled";
             };
-            p384_ecdsa: otbn-p384 {
-                compatible = "linkedsemi,otbn-p384-ecdsa";
+            ecc_p384: otbn-p384 {
+                compatible = "linkedsemi,otbn-ecc-p384";
                 otbn-parent = <&otbn>;
                 status = "disabled";
             };
