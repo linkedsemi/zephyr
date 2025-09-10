@@ -129,7 +129,7 @@ static int linkedsemi_sdhci_get_host_props(const struct device *dev, struct sdhc
     props->host_caps.vol_180_support = true;
     props->host_caps.bus_4_bit_support = true;
     props->host_caps.bus_8_bit_support = true;
-    props->host_caps.hs200_support = false;
+    props->host_caps.hs200_support = true;
     props->host_caps.hs400_support = false;
     props->max_current_330 = 1024;
 
@@ -168,7 +168,7 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
             CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_TX_CLK_DELAY_MASK);
             CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_SD_CLK_OUT_MASK);
             // rx delay
-            SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_MASK);
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S0_CCLK_RX_MASK);
             CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
             // clear delay
             CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
@@ -642,7 +642,7 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
         CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_TX_CLK_DELAY_MASK);
         CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_SD_CLK_OUT_MASK);
         // rx delay
-        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_MASK);
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S0_CCLK_RX_MASK);
         SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
     } else if (SDHC_TIMING_HS400 == host->timing) {
         // tx no inv

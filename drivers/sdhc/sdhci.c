@@ -290,6 +290,8 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
     val &= ~(SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE);
     sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
 
+    k_msleep(1);
+
     val &= ~((SDHCI_DIV_MASK << SDHCI_DIVIDER_SHIFT) | SDHCI_DIV_HI_MASK);
     val |= (div & SDHCI_DIV_MASK) << SDHCI_DIVIDER_SHIFT;
     val |= ((div & SDHCI_DIV_HI_MASK) >> SDHCI_DIV_MASK_LEN)
