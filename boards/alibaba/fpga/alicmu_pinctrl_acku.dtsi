@@ -6,7 +6,7 @@
 
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 
-#define ENABLE_ESPI_VUART_ON_CPU1 1
+#define ENABLE_ESPI_VUART_ON_CPU1 0
 
 &pinctrl {
     /* UART */
