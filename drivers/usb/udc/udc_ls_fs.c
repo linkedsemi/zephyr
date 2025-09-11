@@ -217,7 +217,7 @@ static int udc_ls_init(const struct device *dev)
 
 #if defined(CONFIG_PINCTRL)
     if (pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_DEFAULT) < 0) {
-        LOG_ERR("Could not configure pins");
+        LOG_DBG("%s: Could not configure pins", dev->name);
     }
 #ifdef CONFIG_SOC_LS1010
     PD00_PD01_PowerOn();
