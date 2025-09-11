@@ -1,8 +1,9 @@
-#define CLK_SRC_PBUS1 1
-#define CLK_SRC_PBUS2 2
-#define CLK_SRC_PBUS3 3
-#define CLK_SRC_PBUS4 4
-#define CLK_SRC_HBUS  5
+#define CLK_SRC_RESERVED 0
+#define CLK_SRC_PBUS1    2
+#define CLK_SRC_PBUS2    3
+#define CLK_SRC_PBUS3    4
+#define CLK_SRC_PBUS4    5
+#define CLK_SRC_HBUS     6
 
 #define    LS_CCTL_CLKG0     0x0
 #define    LS_CCTL_CLKG1     0x4
