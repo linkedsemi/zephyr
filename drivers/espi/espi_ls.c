@@ -645,7 +645,7 @@ static int espi_ls_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERROR("Could not configure pins");
+        LOG_DBG("%s: Could not configure pins", dev->name);
     }
 #endif
 

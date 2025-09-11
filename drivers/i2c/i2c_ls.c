@@ -581,7 +581,7 @@ int i2c_ls_pinctrl(const struct device *dev, uint32_t pinctrl_state)
 	/* Configure dt provided device signals when available */
 	ret = pinctrl_apply_state(dev_config->pcfg, pinctrl_state);
 	if (ret < 0) {
-		LOG_ERROR("%s: Could not configure pins", dev->name);
+		LOG_DBG("%s: Could not configure pins", dev->name);
 	}
 	i2c_idle_check_prepare(dev, dev_config->pcfg, pinctrl_state);
 
