@@ -1115,8 +1115,10 @@
             #address-cells= <1>;
             #size-cells = <0>;
             interrupts = <PECI1_IRQN 3>;
+            clock-source = <CLK_SRC_PBUS4>;
             clocks = <PECI1_CLOCK>;
             resets = <PECI1_RESET>;
+            peci-frequence = <200000>;
             status = "disabled";
         };
 
@@ -1125,9 +1127,11 @@
             reg = <0x4008dc00 0x400>;
             #address-cells= <1>;
             #size-cells = <0>;
+            clock-source = <CLK_SRC_PBUS4>;
             interrupts = <PECI2_IRQN 3>;
             clocks = <PECI2_CLOCK>;
             resets = <PECI2_RESET>;
+            peci-frequence = <200000>;
             status = "disabled";
         };
 
