@@ -6,3 +6,12 @@ description: LINKEDSEMI LS PECI
 compatible: "linkedsemi,ls-peci"
 
 include: [peci.yaml, pinctrl-device.yaml, reset-device.yaml]
+
+properties:
+  clock-source:
+    type: int
+    description: "System clock source"
+
+  peci-frequence:
+    type: int
+    description: "peci bus mafrequence"

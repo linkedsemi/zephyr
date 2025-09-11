@@ -40,7 +40,7 @@
 #define PECI_LS_MAX_XFER_LEN 1024
 
 /* reg val */
-#define PECI_PRE_DIV_VAL    0xff
+
 #define PECI_A_BIT_CYC_VAL  11
 #define PECI_A_TGT_IDX0_VAL 3
 #define PECI_M_TGT_IDX0_VAL 3
@@ -57,6 +57,8 @@ struct peci_ls_config {
     /* peci controller base address */
     reg_peci_t *reg;
     uint8_t irq_num;
+    uint32_t clock_source;
+    uint32_t peci_frequence;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -168,7 +170,28 @@ static int peci_ls_init(struct device *dev)
     }
 #endif
 
-    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, PECI_PRE_DIV_VAL);
+    const uint32_t max_div = PECI_PRE_DIV_MASK >> PECI_PRE_DIV_POS;
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        uint32_t rate;
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&dev_config->clock_source, &rate);
+
+        uint32_t div = dev_config->peci_frequence ?
+                        ((rate / dev_config->peci_frequence) / (PECI_A_BIT_CYC_VAL + 1)) : max_div;
+
+        if (div > max_div) {
+            LOG_ERR("peci_frequence value: %d error", dev_config->peci_frequence);
+            return -EINVAL;
+        }
+        while((((rate / (div + 1)) / (PECI_A_BIT_CYC_VAL + 1)) > dev_config->peci_frequence) && (div > 0)) {
+            div++;
+        }
+        reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, div);
+    }
+#else
+    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, max_div);
+#endif
 
     k_sem_init(&dev_data->xfer_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_sem_init(&dev_data->lock, 1, 1);
@@ -555,6 +578,8 @@ static const struct peci_driver_api peci_ls_driver_api = {
         .reg = (reg_peci_t *)DT_INST_REG_ADDR(index),                                                 \
         .irq_num = DT_INST_IRQN(index),                                                               \
         .irq_config_func = peci_ls_irq_config_func_##index,                                           \
+        .clock_source = DT_INST_PROP_OR(index, clock_source, 0),                                      \
+        .peci_frequence = DT_INST_PROP_OR(index, peci_frequence, 0),                          \
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), ))                 \
         IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                       \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))  \
