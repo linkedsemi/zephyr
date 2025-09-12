@@ -898,6 +898,7 @@
             clock-frequency = <PBUS4_CLOCK>;
             clocks = <UART1_CLOCK>;
             resets = <UART1_RESET>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -908,6 +909,7 @@
             clock-frequency = <PBUS4_CLOCK>;
             clocks = <UART2_CLOCK>;
             resets = <UART2_RESET>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -919,6 +921,7 @@
             clocks = <UART3_CLOCK>;
             resets = <UART3_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -930,6 +933,7 @@
             clocks = <UART4_CLOCK>;
             resets = <UART4_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -941,6 +945,7 @@
             clocks = <UART5_CLOCK>;
             resets = <UART5_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -952,6 +957,7 @@
             clocks = <UART6_CLOCK>;
             resets = <UART6_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -963,6 +969,7 @@
             clocks = <UART7_CLOCK>;
             resets = <UART7_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -974,6 +981,7 @@
             clocks = <UART8_CLOCK>;
             resets = <UART8_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -985,6 +993,7 @@
             clocks = <UART9_CLOCK>;
             resets = <UART9_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -996,6 +1005,7 @@
             clocks = <UART10_CLOCK>;
             resets = <UART10_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -1007,6 +1017,7 @@
             clocks = <UART11_CLOCK>;
             resets = <UART11_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
@@ -1018,6 +1029,7 @@
             clocks = <UART12_CLOCK>;
             resets = <UART12_RESET>;
             reg-shift = <2>;
+            current-speed = <115200>;
             status = "disabled";
         };
 
