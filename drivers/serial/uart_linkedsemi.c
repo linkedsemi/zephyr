@@ -187,6 +187,33 @@ static int uart_ls_init(const struct device *dev)
 	return ret; 
 }
 
+
+static int uart_ls_err_check(const struct device *dev)
+{
+	const struct uart_ls_config_t *dev_config = dev->config;
+	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
+	uint32_t status = ((reg_uart_t *)uart_handle->UARTX)->SR;
+	int errors = 0;
+
+	if (status & UART_SR_OE) {
+		errors |= UART_ERROR_OVERRUN;
+	}
+
+	if (status & UART_SR_PE_MASK) {
+		errors |= UART_ERROR_PARITY;
+	}
+
+	if (status & UART_SR_RFE_MASK) {
+		errors |= UART_ERROR_FRAMING;
+	}
+
+	if (status & UART_SR_FE_MASK) {
+		errors |= UART_ERROR_FRAMING;
+	}
+
+	return errors;
+}
+
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 void uart_ls_isr(const struct device *dev);
 static void uart_ls_irq_tx_enable(const struct device *dev)
@@ -341,7 +368,7 @@ int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 static const  struct uart_driver_api uart_ls_api = {
 	.poll_in = uart_ls_poll_in,
 	.poll_out = uart_ls_poll_out,
-	.err_check = uart_ls_init,
+	.err_check = uart_ls_err_check,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	.fifo_fill = uart_ls_fifo_fill,
 	.fifo_read = uart_ls_fifo_read,
