@@ -455,7 +455,6 @@ __maybe_unused static void peripheral_init()
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x2);
 }
 
-#define EMMC_WORKAROUND
 __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
 {
     ARG_UNUSED(base_clock);
@@ -466,12 +465,6 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
     uint16_t rx_div;
     uint8_t tx_sel;
     uint8_t rx_sel;
-
-#if defined(EMMC_WORKAROUND)
-    if (target_clock > MHZ(100)) {
-        target_clock >>= 1;
-    }
-#endif
 
     if (target_clock >= (MHZ(200) / ((SYSC_APP_AWO_EMMC1_CLK_RX_DIV_MASK >> SYSC_APP_AWO_EMMC1_CLK_RX_DIV_POS) + 1))) {
         /* dpll 200M */
