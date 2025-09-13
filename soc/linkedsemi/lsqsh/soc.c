@@ -219,10 +219,78 @@ extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 extern void psram_init(void);
 
+struct trim_parm {
+    uint32_t sec_pmu_rg_lpldo_trim_val;
+    uint32_t sec_pmu_rg_hpldo_trim_val;
+    uint32_t sec_pmu_rg_bg_vref_trim_val;
+    uint32_t sec_pmu_rg_bg_vref_fine_val;
+    uint32_t sec_pmu_rg_bg_ibg_trim_val;
+    uint32_t sec_pmu_rg_clk_ldo1_vsel_val;
+    uint32_t sec_pmu_rg_clk_ldo2_vsel_val;
+    uint32_t sec_pmu_rg_spi_code_val;
+    uint32_t sec_pmu_rg_ldo_peci_vsel_val;
+    uint32_t sec_pmu_rg_msi_cal_val;
+    uint32_t sysc_sec_awo_osscrc_cal_val;
+    uint32_t sysc_sec_awo_osscrc_cap_val;
+};
+
+#if 0
+volatile struct trim_parm trim_parm = {};
+
+__maybe_unused __ramfunc static void get_trim_params()
+{
+    trim_parm.sec_pmu_rg_lpldo_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_LPLDO_TRIM);
+    trim_parm.sec_pmu_rg_hpldo_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_HPLDO_TRIM);
+    trim_parm.sec_pmu_rg_bg_vref_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_TRIM);
+    trim_parm.sec_pmu_rg_bg_vref_fine_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_FINE);
+    trim_parm.sec_pmu_rg_bg_ibg_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_IBG_TRIM);
+
+    trim_parm.sec_pmu_rg_clk_ldo1_vsel_val = REG_FIELD_RD(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL);
+    trim_parm.sec_pmu_rg_clk_ldo2_vsel_val = REG_FIELD_RD(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL);
+
+    trim_parm.sec_pmu_rg_spi_code_val = REG_FIELD_RD(SEC_PMU->TRIM0, SEC_PMU_RG_SPI_CODE);
+    trim_parm.sec_pmu_rg_ldo_peci_vsel_val = REG_FIELD_RD(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_VSEL);
+    trim_parm.sec_pmu_rg_msi_cal_val = REG_FIELD_RD(SEC_PMU->TRIM0, SEC_PMU_RG_MSI_CAL);
+
+    trim_parm.sysc_sec_awo_osscrc_cal_val = REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAL);
+    trim_parm.sysc_sec_awo_osscrc_cap_val = REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAP);
+}
+#endif
+
 __maybe_unused __ramfunc static void set_trim_params()
 {
-    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL, 0);
-    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL, 0);
+    struct trim_parm trim_parm  = {
+        .sec_pmu_rg_lpldo_trim_val = 0x9,
+        .sec_pmu_rg_hpldo_trim_val = 0x9,
+        .sec_pmu_rg_bg_vref_trim_val = 0x2a,
+        .sec_pmu_rg_bg_vref_fine_val = 0x1,
+        .sec_pmu_rg_bg_ibg_trim_val = 0x5,
+        .sec_pmu_rg_clk_ldo1_vsel_val = 0x0,
+        .sec_pmu_rg_clk_ldo2_vsel_val = 0x0,
+        .sec_pmu_rg_spi_code_val = 0xae0,
+        .sec_pmu_rg_ldo_peci_vsel_val = 0x7,
+        .sec_pmu_rg_msi_cal_val = 0xa,
+        .sysc_sec_awo_osscrc_cal_val = 0x6e8,
+        .sysc_sec_awo_osscrc_cap_val = 0x1
+    };
+
+    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_LPLDO_TRIM, trim_parm.sec_pmu_rg_lpldo_trim_val);
+    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_HPLDO_TRIM, trim_parm.sec_pmu_rg_hpldo_trim_val);
+    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_TRIM, trim_parm.sec_pmu_rg_bg_vref_trim_val);
+    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_FINE, trim_parm.sec_pmu_rg_bg_vref_fine_val);
+    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_IBG_TRIM, trim_parm.sec_pmu_rg_bg_ibg_trim_val);
+
+    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL, trim_parm.sec_pmu_rg_clk_ldo1_vsel_val);
+    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL, trim_parm.sec_pmu_rg_clk_ldo2_vsel_val);
+
+    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_SPI_CODE, trim_parm.sec_pmu_rg_spi_code_val);
+#if 0
+    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_VSEL, trim_parm.sec_pmu_rg_ldo_peci_vsel_val);
+#endif
+    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_MSI_CAL, trim_parm.sec_pmu_rg_msi_cal_val);
+
+    REG_FIELD_WR(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAL, trim_parm.sysc_sec_awo_osscrc_cal_val);
+    REG_FIELD_WR(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAP, trim_parm.sysc_sec_awo_osscrc_cap_val);
 }
 
 __maybe_unused __ramfunc static void enable_dpll()
@@ -520,6 +588,8 @@ void soc_early_init_hook(void)
         peripheral_init();
     }
 #endif
+#else
+    set_trim_params();
 #endif /* CONFIG_FORCE_CLOCK_HSI */
 
     SystemInit();
@@ -701,7 +771,7 @@ static void boot_cpu2()
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 void soc_late_init_hook(void)
 {
-    HAL_IWDG_DeInit(SEC_IWDG);
+    REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
 #if defined(CONFIG_BOOT_CPU2)
     boot_cpu2();
