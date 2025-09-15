@@ -285,4 +285,8 @@ config FORCE_CLOCK_HSI
 	bool "FORCE_CLOCK_HSI(25MHz)"
 	default n
 
+config UART_SHARE_REGISTER
+	bool "UART_SHARE_REGISTER"
+	default n
+
 endif
