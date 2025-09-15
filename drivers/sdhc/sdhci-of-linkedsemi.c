@@ -198,9 +198,36 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
     default:
         return -ENOTSUP;
     }
+
     sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
+    sdhci_writew(host, sdhci_readw(host, 0x52c) | 0x1, 0x52c);
+    uint8_t mshc_ctrl_r = sdhci_readb(host, MSHC_CTRL_R);
+    if (ios->clock > MHZ(100)) {
+        mshc_ctrl_r &= ~CMD_CONFLICT_CHECK_MASK;
+        sdhci_writeb(host, 0, MSHC_CTRL_R);
+    } else {
+        sdhci_writeb(host, 1, MSHC_CTRL_R);
+    }
 
     host->timing = ios->timing;
+
+    uint8_t host_control2 = sdhci_readw(host, SDHCI_HOST_CONTROL2);
+    if (SDHC_TIMING_HS400 == ios->timing) {
+        host_control2 &= ~(SDHCI_CTRL_UHS_MASK);
+        host_control2 |= SDHCI_CTRL_EMMC_HS400;
+    } else {
+        host_control2 &= ~(SDHCI_CTRL_UHS_MASK);
+
+        if ((ios->clock > MMC_CLOCK_26MHZ) && (ios->clock < MMC_CLOCK_HS200)) {
+            // tx inv
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_TX_CLK_DELAY_MASK);
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_SD_CLK_OUT_MASK);
+            // rx delay
+            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S0_CCLK_RX_MASK);
+            SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
+        }
+    }
+    sdhci_writew(host, host_control2, SDHCI_HOST_CONTROL2);
 
     return 0;
 }
@@ -683,7 +710,7 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     size_t max_consecutive_start = 0;
     int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
     CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
-    if (max_length >= 0) {
+    if (max_length > 0) {
         LOG_DBG("len: %d start bit: %zu", max_length, max_consecutive_start);
         LOG_DBG("%s: delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
         LOG_DBG("%s: tuning success", __func__);

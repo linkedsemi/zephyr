@@ -158,14 +158,19 @@
 #define SDHCI_AUTO_CMD_END_BIT 0x00000008
 #define SDHCI_AUTO_CMD_INDEX   0x00000010
 
-#define SDHCI_HOST_CONTROL2          0x3E
-#define SDHCI_CTRL_UHS_MASK          0x0007
-#define SDHCI_CTRL_UHS_SDR12         0x0000
-#define SDHCI_CTRL_UHS_SDR25         0x0001
-#define SDHCI_CTRL_UHS_SDR50         0x0002
-#define SDHCI_CTRL_UHS_SDR104        0x0003
-#define SDHCI_CTRL_UHS_DDR50         0x0004
-#define SDHCI_CTRL_HS400             0x0005 /* Non-standard */
+#define SDHCI_HOST_CONTROL2            0x3E
+#define SDHCI_CTRL_UHS_MASK            0x0007
+#define SDHCI_CTRL_UHS_SDR12           0x0000
+#define SDHCI_CTRL_UHS_SDR25           0x0001
+#define SDHCI_CTRL_UHS_SDR50           0x0002
+#define SDHCI_CTRL_UHS_SDR104          0x0003
+#define SDHCI_CTRL_UHS_DDR50           0x0004
+#define SDHCI_CTRL_EMMC_LEGACY         0x0000
+#define SDHCI_CTRL_EMMC_HIGH_SPEED_SDR 0x0001
+#define SDHCI_CTRL_EMMC_HS200          0x0003
+#define SDHCI_CTRL_EMMC_HIGH_SPEED_DDR 0x0004
+#define SDHCI_CTRL_EMMC_HS400          0x0007
+
 #define SDHCI_CTRL_VDD_180           0x0008
 #define SDHCI_CTRL_DRV_TYPE_MASK     0x0030
 #define SDHCI_CTRL_DRV_TYPE_B        0x0000
@@ -210,7 +215,7 @@
 #define SDHCI_RETUNING_MODE_MASK        GENMASK(15, 14)
 #define SDHCI_CLOCK_MUL_MASK            GENMASK(23, 16)
 #define SDHCI_CAN_DO_ADMA3              0x08000000
-#define SDHCI_SUPPORT_HS400             0x80000000 /* Non-standard */
+#define SDHCI_SUPPORT_HS400             0x80000000
 
 #define SDHCI_MAX_CURRENT            0x48
 #define SDHCI_MAX_CURRENT_LIMIT      GENMASK(7, 0)
@@ -239,7 +244,7 @@
 #define SDHCI_PRESET_FOR_SDR50       0x6A
 #define SDHCI_PRESET_FOR_SDR104      0x6C
 #define SDHCI_PRESET_FOR_DDR50       0x6E
-#define SDHCI_PRESET_FOR_HS400       0x74 /* Non-standard */
+#define SDHCI_PRESET_FOR_HS400       0x74
 #define SDHCI_PRESET_DRV_MASK        GENMASK(15, 14)
 #define SDHCI_PRESET_CLKGEN_SEL      BIT(10)
 #define SDHCI_PRESET_SDCLK_FREQ_MASK GENMASK(9, 0)
@@ -257,6 +262,18 @@
 #define SDHCI_SPEC_400         3
 #define SDHCI_SPEC_410         4
 #define SDHCI_SPEC_420         5
+
+#define DWC_MSHC_PTR_VENDOR1    0x500
+#define MSHC_CTRL_R             (DWC_MSHC_PTR_VENDOR1 + 0x08)
+#define CMD_CONFLICT_CHECK_POS  0
+#define CMD_CONFLICT_CHECK_MASK 0x1
+#define EMMC_CTRL_R             (DWC_MSHC_PTR_VENDOR1 + 0x2c)
+#define CARD_IS_EMMC_POS        0
+#define CARD_IS_EMMC_MASK       0x1
+#define EMMC_RST_N_POS          2
+#define EMMC_RST_N_MASK         0x4
+#define EMMC_RST_N_OE_POS       3
+#define EMMC_RST_N_OE_MASK      0x8
 
 /*
  * End of controller registers.
