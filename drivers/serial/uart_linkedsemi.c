@@ -204,8 +204,10 @@ static int uart_ls_reinit(const struct device *dev)
 
 static int uart_ls_init(const struct device *dev)
 {
+#if defined(CONFIG_UART_SHARE_REGISTER)
     struct uart_ls_data_t *dev_data = dev->data;
-    IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (k_sem_init(&dev_data->reg_sem, 1, 1);))
+    k_sem_init(&dev_data->reg_sem, 1, 1);
+#endif
     return uart_ls_reinit(dev);
 }
 
