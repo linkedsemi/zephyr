@@ -1,6 +1,8 @@
 #include <string.h>
 #include <stdio.h>
 
+#include "mbedtls/threading.h"
+
 #if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI) || defined(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
 typedef struct testVector {
     const char*  input;
@@ -714,8 +716,23 @@ exit:
 }
 #endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI */
 
+int ecdsa_test(void);
 int main(void)
 {
+
+    mbedtls_zephyr_threading_init();
+
+#if defined(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI)
+    if(ecdsa_test() !=0)
+    {
+        printf("ECDSA  test failed!\n");
+    }else
+    {
+        printf("ECDSA  test passed!\n");
+    }
+
+#endif
+
 #if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)
     if(test_sha224() != 0)
     {
