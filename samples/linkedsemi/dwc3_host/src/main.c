@@ -278,7 +278,7 @@ volatile uint32_t connect_done = 0;
 
 static int xhci_get_dev_desc(const struct shell *sh, size_t argc, char **argv)
 {
-	static uint8_t dev_desc[64];
+	static __attribute__((aligned(32)))  uint8_t dev_desc[64];
 	int xfer_len = 0;
 	struct usb_setup_packet setup = {
 		.bmRequestType = 0x80,
@@ -288,6 +288,7 @@ static int xhci_get_dev_desc(const struct shell *sh, size_t argc, char **argv)
 		.wLength = 64,
 	};
 	xfer_len = xhci_send_control_data(&hcd, slot_id, &setup, dev_desc, 64);
+	xhci_cache_invalid(dev_desc, 64);
 
 	if (xfer_len >= 0)
 	{
@@ -304,7 +305,7 @@ SHELL_CMD_REGISTER(xhci_get_dev_desc, NULL, "get device desc", xhci_get_dev_desc
 
 static int xhci_get_config_desc(const struct shell *sh, size_t argc, char **argv)
 {
-	static uint8_t config_desc[255];
+	static __attribute__((aligned(32)))  uint8_t config_desc[255];
 	int xfer_len = 0;
 
 	struct usb_setup_packet setup = {
@@ -315,6 +316,7 @@ static int xhci_get_config_desc(const struct shell *sh, size_t argc, char **argv
 		.wLength = 255,
 	};
 	xfer_len = xhci_send_control_data(&hcd, slot_id, &setup, config_desc, 255);
+	xhci_cache_invalid(config_desc, 255);
 
 	if (xfer_len >= 0)
 	{
@@ -348,7 +350,7 @@ static size_t usb_string_desc_inplace(uint8_t *buf, size_t buf_len)
 
 static int xhci_get_string_desc(const struct shell *sh, size_t argc, char **argv)
 {
-	static uint8_t string_desc[255];
+	static __attribute__((aligned(32))) uint8_t string_desc[255];
 	int xfer_len = 0;
 
 	if (argc < 2)
@@ -365,6 +367,7 @@ static int xhci_get_string_desc(const struct shell *sh, size_t argc, char **argv
 		.wLength = 255,
 	};
 	xfer_len = xhci_send_control_data(&hcd, slot_id, &setup, string_desc, 255);
+	xhci_cache_invalid(string_desc, 255);
 
 	if (xfer_len >= 0)
 	{

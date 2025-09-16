@@ -146,9 +146,11 @@ void xhci_isr(struct xhci_hcd *hcd)
     hcd->op_reg->status |= XHCI_USBSTS_EINT;
     hcd->runtime_reg->ir_set[0].iman |= XHCI_IMAIN_IP;
 
+    /* Invalidate all TRBs to prevent any single TRB from being misaligned with a cache line */
+    xhci_cache_invalid(hcd->event_ring.trb, hcd->event_ring.num_trb * sizeof(struct xhci_trb));
+
     while (1)
     {
-        xhci_cache_invalid(event_trb, sizeof (struct xhci_trb));
         if ((event_trb->control & TRB_CYCLE) != hcd->event_ring.cycle_bit)
             break;
 
@@ -239,7 +241,8 @@ static void xhci_enqueue_trb(struct xhci_hcd *xhci, struct xhci_ring *ring, stru
     *ring_trb = *trb;
     /* update write point */
     ring->write_index++;
-    xhci_cache_flush(ring_trb, sizeof (struct xhci_trb));
+    /* Flush all TRBs to prevent any single TRB from being misaligned with a cache line */
+    xhci_cache_flush(ring->trb, ring->num_trb * sizeof(struct xhci_trb));
 
     if (ring->type != EVENT_RING && ring->write_index == ring->num_trb - 1)
     {
