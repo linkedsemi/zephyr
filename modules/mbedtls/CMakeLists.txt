@@ -130,13 +130,19 @@ zephyr_interface_library_named(mbedTLS)
       )
     endif()
 
+    if(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI)
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/ecdsa_alt.c
+      )
+    endif()
+
     if(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes_alt.c
       )
     endif()
 
-    if((CONFIG_MBEDTLS_SHA512_LINKEDSEMI) OR (CONFIG_MBEDTLS_SHA256_LINKEDSEMI)) 
+    if((CONFIG_SOC_LSQSH) OR (CONFIG_SOC_LS1010)) 
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading_alt.c
       )

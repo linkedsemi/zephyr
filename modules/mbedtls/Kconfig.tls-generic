@@ -339,6 +339,11 @@ config MBEDTLS_SHA256
 config MBEDTLS_SHA256_LINKEDSEMI
 	bool "LINKEDSEMI's hardware sha224 and sha256"
 	default n
+	select MBEDTLS_ECDSA_C
+
+config MBEDTLS_ECDSA_LINKEDSEMI
+	bool "LINKEDSEMI's P256, P384, SM2 curve, ECDSA implementation based on OTBN"
+	default n
 	select MBEDTLS_SHA256
 
 config MBEDTLS_SHA256_SMALLER
