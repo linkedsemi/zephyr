@@ -76,6 +76,7 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 #endif
 
 #if(CONFIG_SOC_LSQSH)
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 static int ls_clock_control_get_rate(const struct device *dev, clock_control_subsys_t sub_system, uint32_t *rate)
 {
 	ARG_UNUSED(dev);
@@ -105,6 +106,29 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 	}
 	return 0;
 }
+#else
+static int ls_clock_control_get_rate(const struct device *dev, clock_control_subsys_t sub_system, uint32_t *rate)
+{
+	ARG_UNUSED(dev);
+	uint32_t *clock_source = (uint32_t *)(sub_system);
+	switch (*clock_source) {
+	case CLK_SRC_PBUS0:
+	case CLK_SRC_PBUS1:
+	case CLK_SRC_PBUS2:
+	case CLK_SRC_PBUS3:
+	case CLK_SRC_HBUS:
+		*rate = MHZ(300);
+		break;
+	case CLK_SRC_PBUS4:
+		*rate = MHZ(75);
+		break;
+	default:
+		*rate = 0U;
+		return -EINVAL;
+	}
+	return 0;
+}
+#endif
 #endif
 
 /* Clock controller driver registration */
