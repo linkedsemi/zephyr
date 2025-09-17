@@ -306,14 +306,12 @@
 #define DEFINE_PINCTRL_PRODUCER_I2C(NAME, PIN_SCL, PIN_SDA, PINMUX_SCL, PINMUX_SDA)\
     /omit-if-no-ref/NAME##_scl_##PIN_SCL: NAME##_scl_##PIN_SCL {\
         pinmux = <PINMUX_SCL>;\
-        drive-strength = "quarter max driver";\
         bias-pull-up;\
         drive-open-drain;\
         input-enable;\
     };\
     /omit-if-no-ref/NAME##_sda_##PIN_SDA: NAME##_sda_##PIN_SDA {\
         pinmux = <PINMUX_SDA>;\
-        drive-strength = "quarter max driver";\
         bias-pull-up;\
         drive-open-drain;\
         input-enable;\

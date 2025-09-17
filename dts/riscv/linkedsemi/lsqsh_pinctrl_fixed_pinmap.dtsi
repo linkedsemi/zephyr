@@ -793,22 +793,7 @@
     };
     /omit-if-no-ref/mjtag1_trst_pn10: mjtag1_trst_pn10 {
         pinmux = <MJTAG1_TRST_FUNC2_PN10_PINMUX>;
-        output-enable;
-    };
-    /omit-if-no-ref/mjtag1_gpio_pn06: mjtag1_gpio_pn06 {
-        pinmux = <PN06>;
-        gpio;
-        output-enable;
-    };
-    /omit-if-no-ref/mjtag1_gpio_pn07: mjtag1_gpio_pn07 {
-        pinmux = <PN07>;
-        gpio;
-        output-enable;
-    };
-    /omit-if-no-ref/mjtag1_gpio_pn09: mjtag1_gpio_pn09 {
-        pinmux = <PN09>;
-        gpio;
-        output-enable;
+        input-enable;
     };
     /omit-if-no-ref/ltpi_nl_gpo2_pn11: ltpi_nl_gpo2_pn11 {
         pinmux = <LTPI_NL_GPO2_FUNC2_PN11_PINMUX>;
@@ -1117,37 +1102,6 @@
     /omit-if-no-ref/mjtag3_tck_pc15: mjtag3_tck_pc15 {
         pinmux = <MJTAG3_TCK_FUNC3_PC15_PINMUX>;
         input-enable;
-    };
-    /omit-if-no-ref/mjtag3_tdi_pf06: mjtag3_tdi_pf06 {
-        pinmux = <MJTAG3_TDI_FUNC1_IDX24_PINMUX_PF(06)>;
-        input-enable;
-    };
-    /omit-if-no-ref/mjtag3_tdo_pf10: mjtag3_tdo_pf10 {
-        pinmux = <MJTAG3_TDO_FUNC1_IDX27_PINMUX_PF(10)>;
-        input-enable;
-    };
-    /omit-if-no-ref/mjtag3_tms_pf08: mjtag3_tms_pf08 {
-        pinmux = <MJTAG3_TMS_FUNC1_IDX26_PINMUX_PF(08)>;
-        input-enable;
-    };
-    /omit-if-no-ref/mjtag3_tck_pf04: mjtag3_tck_pf04 {
-        pinmux = <MJTAG3_TCK_FUNC1_IDX25_PINMUX_PF(04)>;
-        input-enable;
-    };
-    /omit-if-no-ref/mjtag3_gpio_pf04: mjtag3_gpio_pf04 {
-        pinmux = <PF04>;
-        gpio;
-        output-enable;
-    };
-    /omit-if-no-ref/mjtag3_gpio_pf08: mjtag3_gpio_pf08 {
-        pinmux = <PF08>;
-        gpio;
-        output-enable;
-    };
-    /omit-if-no-ref/mjtag3_gpio_pf06: mjtag3_gpio_pf06 {
-        pinmux = <PF06>;
-        gpio;
-        output-enable;
     };
     /omit-if-no-ref/ltpi_nl_gpi0_pd00: ltpi_nl_gpi0_pd00 {
         pinmux = <LTPI_NL_GPI0_FUNC3_PD00_PINMUX>;
@@ -1916,12 +1870,12 @@
     /omit-if-no-ref/rgmii2_mdc_pa10: rgmii2_mdc_pa10 {
         pinmux = <RGMII2_MDC_FUNC4_PA10_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_mdio_pa11: rgmii2_mdio_pa11 {
         pinmux = <RGMII2_MDIO_FUNC4_PA11_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/uart4_txd_pa12: uart4_txd_pa12 {
         pinmux = <UART4_TXD_FUNC4_PA12_PINMUX>;
@@ -2182,7 +2136,7 @@
     /omit-if-no-ref/rgmii1_mdio_pe12: rgmii1_mdio_pe12 {
         pinmux = <RGMII1_MDIO_FUNC4_PE12_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/thruin4_pe13: thruin4_pe13 {
         pinmux = <THRUIN4_FUNC4_PE13_PINMUX>;
@@ -2195,7 +2149,7 @@
     /omit-if-no-ref/rgmii1_mdc_pe15: rgmii1_mdc_pe15 {
         pinmux = <RGMII1_MDC_FUNC4_PE15_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/espi2_dat0_tst_pf00: espi2_dat0_tst_pf00 {
         pinmux = <ESPI2_DAT0_TST_FUNC4_PF00_PINMUX>;
@@ -2288,22 +2242,22 @@
     /omit-if-no-ref/rgmii1_mdc_pk04: rgmii1_mdc_pk04 {
         pinmux = <RGMII1_MDC_FUNC4_PK04_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_mdio_pk05: rgmii1_mdio_pk05 {
         pinmux = <RGMII1_MDIO_FUNC4_PK05_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_mdc_pk06: rgmii2_mdc_pk06 {
         pinmux = <RGMII2_MDC_FUNC4_PK06_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_mdio_pk07: rgmii2_mdio_pk07 {
         pinmux = <RGMII2_MDIO_FUNC4_PK07_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/sgpio2_mst_ck_pk08: sgpio2_mst_ck_pk08 {
         pinmux = <SGPIO2_MST_CK_FUNC4_PK08_PINMUX>;
@@ -2325,73 +2279,73 @@
         pinmux = <EMMC_DAT0_FUNC4_PM04_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat1_pm05: emmc_dat1_pm05 {
         pinmux = <EMMC_DAT1_FUNC4_PM05_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat2_pm06: emmc_dat2_pm06 {
         pinmux = <EMMC_DAT2_FUNC4_PM06_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat3_pm07: emmc_dat3_pm07 {
         pinmux = <EMMC_DAT3_FUNC4_PM07_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat4_pm08: emmc_dat4_pm08 {
         pinmux = <EMMC_DAT4_FUNC4_PM08_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat5_pm09: emmc_dat5_pm09 {
         pinmux = <EMMC_DAT5_FUNC4_PM09_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat6_pm10: emmc_dat6_pm10 {
         pinmux = <EMMC_DAT6_FUNC4_PM10_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_dat7_pm11: emmc_dat7_pm11 {
         pinmux = <EMMC_DAT7_FUNC4_PM11_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_clk_pm12: emmc_clk_pm12 {
         pinmux = <EMMC_CLK_FUNC4_PM12_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_cmd_pm13: emmc_cmd_pm13 {
         pinmux = <EMMC_CMD_FUNC4_PM13_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_ds_pm14: emmc_ds_pm14 {
         pinmux = <EMMC_DS_FUNC4_PM14_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/emmc_rstn_pm15: emmc_rstn_pm15 {
         pinmux = <EMMC_RSTN_FUNC4_PM15_PINMUX>;
         input-enable;
         bias-pull-up;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/paral_busy_pn00: paral_busy_pn00 {
         pinmux = <PARAL_BUSY_FUNC4_PN00_PINMUX>;
@@ -2476,122 +2430,122 @@
     /omit-if-no-ref/rgmii2_txck_pq07: rgmii2_txck_pq07 {
         pinmux = <RGMII2_TXCK_FUNC4_PQ07_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_txctl_pq08: rgmii2_txctl_pq08 {
         pinmux = <RGMII2_TXCTL_FUNC4_PQ08_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_txd0_pq09: rgmii2_txd0_pq09 {
         pinmux = <RGMII2_TXD0_FUNC4_PQ09_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_txd1_pq10: rgmii2_txd1_pq10 {
         pinmux = <RGMII2_TXD1_FUNC4_PQ10_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_txd2_pq11: rgmii2_txd2_pq11 {
         pinmux = <RGMII2_TXD2_FUNC4_PQ11_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_txd3_pq12: rgmii2_txd3_pq12 {
         pinmux = <RGMII2_TXD3_FUNC4_PQ12_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_rxck_pq13: rgmii2_rxck_pq13 {
         pinmux = <RGMII2_RXCK_FUNC4_PQ13_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_rxctl_pq14: rgmii2_rxctl_pq14 {
         pinmux = <RGMII2_RXCTL_FUNC4_PQ14_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_rxd0_pq15: rgmii2_rxd0_pq15 {
         pinmux = <RGMII2_RXD0_FUNC4_PQ15_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_rxd1_pt00: rgmii2_rxd1_pt00 {
         pinmux = <RGMII2_RXD1_FUNC4_PT00_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_rxd2_pt01: rgmii2_rxd2_pt01 {
         pinmux = <RGMII2_RXD2_FUNC4_PT01_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii2_rxd3_pt02: rgmii2_rxd3_pt02 {
         pinmux = <RGMII2_RXD3_FUNC4_PT02_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_txck_pt03: rgmii1_txck_pt03 {
         pinmux = <RGMII1_TXCK_FUNC4_PT03_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_txctl_pt04: rgmii1_txctl_pt04 {
         pinmux = <RGMII1_TXCTL_FUNC4_PT04_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_txd0_pt05: rgmii1_txd0_pt05 {
         pinmux = <RGMII1_TXD0_FUNC4_PT05_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_txd1_pt06: rgmii1_txd1_pt06 {
         pinmux = <RGMII1_TXD1_FUNC4_PT06_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_txd2_pt07: rgmii1_txd2_pt07 {
         pinmux = <RGMII1_TXD2_FUNC4_PT07_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_txd3_pt08: rgmii1_txd3_pt08 {
         pinmux = <RGMII1_TXD3_FUNC4_PT08_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_rxck_pt10: rgmii1_rxck_pt10 {
         pinmux = <RGMII1_RXCK_FUNC4_PT10_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_rxctl_pt11: rgmii1_rxctl_pt11 {
         pinmux = <RGMII1_RXCTL_FUNC4_PT11_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_rxd0_pt12: rgmii1_rxd0_pt12 {
         pinmux = <RGMII1_RXD0_FUNC4_PT12_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_rxd1_pt13: rgmii1_rxd1_pt13 {
         pinmux = <RGMII1_RXD1_FUNC4_PT13_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_rxd2_pt14: rgmii1_rxd2_pt14 {
         pinmux = <RGMII1_RXD2_FUNC4_PT14_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
     /omit-if-no-ref/rgmii1_rxd3_pt15: rgmii1_rxd3_pt15 {
         pinmux = <RGMII1_RXD3_FUNC4_PT15_PINMUX>;
         input-enable;
-        drive-strength = "max driver";
+        drive-strength = <3>;
     };
 
     /omit-if-no-ref/adc1_ain1_pc04: adc1_ain1_pc04 {
