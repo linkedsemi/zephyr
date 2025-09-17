@@ -10,71 +10,57 @@
     /* UART */
     /omit-if-no-ref/uart1_tx_pn04: uart1_tx_pn04 {
         pinmux = <UART1_TXD_FUNC1_IDX16_PINMUX_PN(04)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart1_rx_pn03: uart1_rx_pn03 {
         pinmux = <UART1_RXD_FUNC1_IDX17_PINMUX_PN(03)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart3_tx_pn04: uart3_tx_pn04 {
         pinmux = <UART3_TXD_FUNC1_IDX20_PINMUX_PN(04)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart3_rx_pn03: uart3_rx_pn03 {
         pinmux = <UART3_RXD_FUNC1_IDX21_PINMUX_PN(03)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart4_tx_pa12: uart4_tx_pa12 {
         pinmux = <UART4_TXD_FUNC4_PA12_PINMUX>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart4_rx_pa13: uart4_rx_pa13 {
         pinmux = <UART4_RXD_FUNC4_PA13_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart6_tx_pf13: uart6_tx_pf13 {
         pinmux = <UART6_TXD_FUNC1_IDX08_PINMUX_PF(13)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart6_rx_pf14: uart6_rx_pf14 {
         pinmux = <UART6_RXD_FUNC1_IDX09_PINMUX_PF(14)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart7_tx_pg08: uart7_tx_pg08 {
         pinmux = <UART7_TXD_FUNC1_IDX13_PINMUX_PG(08)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart7_rx_pg06: uart7_rx_pg06 {
         pinmux = <UART7_RXD_FUNC1_IDX14_PINMUX_PG(06)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart8_tx_ph02: uart8_tx_ph02 {
         pinmux = <UART8_TXD_FUNC1_IDX13_PINMUX_PH(02)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart8_rx_ph03: uart8_rx_ph03 {
         pinmux = <UART8_RXD_FUNC1_IDX14_PINMUX_PH(03)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
     /omit-if-no-ref/uart11_tx_pk02: uart11_tx_pk02 {
         pinmux = <UART11_TXD_FUNC1_IDX12_PINMUX_PK(02)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/uart11_rx_pk03: uart11_rx_pk03 {
         pinmux = <UART11_RXD_FUNC1_IDX13_PINMUX_PK(03)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
 
@@ -94,94 +80,108 @@
 
     /omit-if-no-ref/spi1_clk_pa00: spi1_clk_pa00 {
         pinmux = <SPI1_SCK_FUNC1_IDX18_PINMUX_PA(00)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/spi1_miso_pa02: spi1_miso_pa02 {
         pinmux = <SPI1_MISO_FUNC1_IDX21_PINMUX_PA(02)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/spi1_mosi_pa01: spi1_mosi_pa01 {
         pinmux = <SPI1_MOSI_FUNC1_IDX20_PINMUX_PA(01)>;
-        drive-strength = "quarter max driver";
     };
 
     /omit-if-no-ref/spi2_clk_pj12: spi2_clk_pj12 {
         pinmux = <SPI2_SCK_FUNC1_IDX19_PINMUX_PJ(12)>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/spi2_miso_pj14: spi2_miso_pj14 {
         pinmux = <SPI2_MISO_FUNC1_IDX22_PINMUX_PJ(14)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/spi2_mosi_pj13: spi2_mosi_pj13 {
         pinmux = <SPI2_MOSI_FUNC1_IDX21_PINMUX_PJ(13)>;
-        drive-strength = "quarter max driver";
     };
 
     /omit-if-no-ref/spi3_clk_pg14: spi3_clk_pg14 {
         pinmux = <SPI3_SCK_FUNC3_PG14_PINMUX>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/spi3_io0_pg15: spi3_io0_pg15 {
         pinmux = <SPI3_DAT0_FUNC2_PG15_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/spi3_io1_pg03: spi3_io1_pg03 {
         pinmux = <SPI3_DAT1_FUNC4_PG03_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/spi3_io2_pe01: spi3_io2_pe01 {
         pinmux = <SPI3_DAT2_FUNC4_PE01_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
         bias-pull-up;
     };
     /omit-if-no-ref/spi3_io3_pe00: spi3_io3_pe00 {
         pinmux = <SPI3_DAT3_FUNC4_PE00_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
         bias-pull-up;
     };
 
     /omit-if-no-ref/spi4_clk_pq00: spi4_clk_pq00 {
         pinmux = <SPI4_SCK_FUNC4_PQ00_PINMUX>;
-        drive-strength = "quarter max driver";
     };
     /omit-if-no-ref/spi4_io0_pq03: spi4_io0_pq03 {
         pinmux = <SPI4_DAT0_FUNC4_PQ03_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/spi4_io1_pq04: spi4_io1_pq04 {
         pinmux = <SPI4_DAT1_FUNC4_PQ04_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/spi4_io2_pq05: spi4_io2_pq05 {
         pinmux = <SPI4_DAT2_FUNC4_PQ05_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
         bias-pull-up;
     };
     /omit-if-no-ref/spi4_io3_pq06: spi4_io3_pq06 {
         pinmux = <SPI4_DAT3_FUNC4_PQ06_PINMUX>;
-        drive-strength = "quarter max driver";
         input-enable;
         bias-pull-up;
     };
     /omit-if-no-ref/usb1_dp_ph14: usb1_dp_ph14 {
         pinmux = <USB1_DP_FUNC1_IDX23_PINMUX_PH(14)>;
-        drive-strength = "quarter max driver";
         input-enable;
     };
     /omit-if-no-ref/usb1_dm_ph15: usb1_dm_ph15 {
         pinmux = <USB1_DM_FUNC1_IDX24_PINMUX_PH(15)>;
-        drive-strength = "quarter max driver";
         input-enable;
+    };
+
+    /omit-if-no-ref/mjtag3_tdi_pf06: mjtag3_tdi_pf06 {
+        pinmux = <MJTAG3_TDI_FUNC1_IDX24_PINMUX_PF(06)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tdo_pf10: mjtag3_tdo_pf10 {
+        pinmux = <MJTAG3_TDO_FUNC1_IDX27_PINMUX_PF(10)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tms_pf08: mjtag3_tms_pf08 {
+        pinmux = <MJTAG3_TMS_FUNC1_IDX26_PINMUX_PF(08)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tck_pf04: mjtag3_tck_pf04 {
+        pinmux = <MJTAG3_TCK_FUNC1_IDX25_PINMUX_PF(04)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_gpio_pf04: mjtag3_gpio_pf04 {
+        pinmux = <PF04>;
+        gpio;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag3_gpio_pf08: mjtag3_gpio_pf08 {
+        pinmux = <PF08>;
+        gpio;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag3_gpio_pf06: mjtag3_gpio_pf06 {
+        pinmux = <PF06>;
+        gpio;
+        output-enable;
     };
 };
 
