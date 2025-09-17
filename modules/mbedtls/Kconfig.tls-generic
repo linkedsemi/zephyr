@@ -341,10 +341,14 @@ config MBEDTLS_SHA256_LINKEDSEMI
 	default n
 	select MBEDTLS_ECDSA_C
 
+config MBEDTLS_LINKEDSEMI_OTBN
+	bool "LINKEDSEMI's otbn module enable"
+	default n
+
 config MBEDTLS_ECDSA_LINKEDSEMI
 	bool "LINKEDSEMI's P256, P384, SM2 curve, ECDSA implementation based on OTBN"
 	default n
-	select MBEDTLS_SHA256
+	select MBEDTLS_LINKEDSEMI_OTBN
 
 config MBEDTLS_SHA256_SMALLER
 	bool "Smaller SHA-256 implementation"
@@ -353,6 +357,11 @@ config MBEDTLS_SHA256_SMALLER
 	help
 	  Enable an implementation of SHA-256 that has a
 	  smaller ROM footprint but also lower performance.
+
+config ENABLE_LS_OTBN_HASH
+	bool "Replace the hardware hash with the otbn module"
+	select MBEDTLS_LINKEDSEMI_OTBN
+	default n
 
 config MBEDTLS_SHA384
 	bool "SHA-384 hash algorithm"
