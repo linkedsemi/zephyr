@@ -793,7 +793,22 @@
     };
     /omit-if-no-ref/mjtag1_trst_pn10: mjtag1_trst_pn10 {
         pinmux = <MJTAG1_TRST_FUNC2_PN10_PINMUX>;
-        input-enable;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag1_gpio_pn06: mjtag1_gpio_pn06 {
+        pinmux = <PN06>;
+        gpio;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag1_gpio_pn07: mjtag1_gpio_pn07 {
+        pinmux = <PN07>;
+        gpio;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag1_gpio_pn09: mjtag1_gpio_pn09 {
+        pinmux = <PN09>;
+        gpio;
+        output-enable;
     };
     /omit-if-no-ref/ltpi_nl_gpo2_pn11: ltpi_nl_gpo2_pn11 {
         pinmux = <LTPI_NL_GPO2_FUNC2_PN11_PINMUX>;
@@ -1102,6 +1117,37 @@
     /omit-if-no-ref/mjtag3_tck_pc15: mjtag3_tck_pc15 {
         pinmux = <MJTAG3_TCK_FUNC3_PC15_PINMUX>;
         input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tdi_pf06: mjtag3_tdi_pf06 {
+        pinmux = <MJTAG3_TDI_FUNC1_IDX24_PINMUX_PF(06)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tdo_pf10: mjtag3_tdo_pf10 {
+        pinmux = <MJTAG3_TDO_FUNC1_IDX27_PINMUX_PF(10)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tms_pf08: mjtag3_tms_pf08 {
+        pinmux = <MJTAG3_TMS_FUNC1_IDX26_PINMUX_PF(08)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_tck_pf04: mjtag3_tck_pf04 {
+        pinmux = <MJTAG3_TCK_FUNC1_IDX25_PINMUX_PF(04)>;
+        input-enable;
+    };
+    /omit-if-no-ref/mjtag3_gpio_pf04: mjtag3_gpio_pf04 {
+        pinmux = <PF04>;
+        gpio;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag3_gpio_pf08: mjtag3_gpio_pf08 {
+        pinmux = <PF08>;
+        gpio;
+        output-enable;
+    };
+    /omit-if-no-ref/mjtag3_gpio_pf06: mjtag3_gpio_pf06 {
+        pinmux = <PF06>;
+        gpio;
+        output-enable;
     };
     /omit-if-no-ref/ltpi_nl_gpi0_pd00: ltpi_nl_gpi0_pd00 {
         pinmux = <LTPI_NL_GPI0_FUNC3_PD00_PINMUX>;

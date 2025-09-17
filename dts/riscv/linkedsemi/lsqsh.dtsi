@@ -1181,6 +1181,8 @@
             interrupts = <MJTAG1_IRQN 3>;
             clocks = <MJTAG1_CLOCK>;
             resets = <MJTAG1_RESET>;
+            clock-source = <CLK_SRC_PBUS4>;
+            bus-frequency = <1000000>;
             status = "disabled";
         };
 
@@ -1190,6 +1192,8 @@
             interrupts = <MJTAG2_IRQN 3>;
             clocks = <MJTAG2_CLOCK>;
             resets = <MJTAG2_RESET>;
+            clock-source = <CLK_SRC_PBUS4>;
+            bus-frequency = <1000000>;
             status = "disabled";
         };
 
@@ -1199,6 +1203,8 @@
             interrupts = <MJTAG3_IRQN 3>;
             clocks = <MJTAG3_CLOCK>;
             resets = <MJTAG3_RESET>;
+            clock-source = <CLK_SRC_PBUS4>;
+            bus-frequency = <1000000>;
             status = "disabled";
         };
 
