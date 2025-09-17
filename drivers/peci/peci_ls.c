@@ -181,7 +181,7 @@ static int peci_ls_init(struct device *dev)
                         ((rate / dev_config->peci_frequence) / (PECI_A_BIT_CYC_VAL + 1)) : max_div;
 
         if (div > max_div) {
-            LOG_ERR("peci_frequence value: %d error", dev_config->peci_frequence);
+            LOG_ERROR("peci_frequence value: %d error", dev_config->peci_frequence);
             return -EINVAL;
         }
         while((((rate / (div + 1)) / (PECI_A_BIT_CYC_VAL + 1)) > dev_config->peci_frequence) && (div > 0)) {

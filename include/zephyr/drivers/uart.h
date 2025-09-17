@@ -26,9 +26,9 @@
 #include <stddef.h>
 
 #include <zephyr/device.h>
-#if defined(CONFIG_UART_SHARE_REGISTER)
+// #if defined(CONFIG_UART_SHARE_REGISTER)
 #include <zephyr/sys_clock.h>
-#endif
+// #endif
 
 #ifdef __cplusplus
 extern "C" {
