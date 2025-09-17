@@ -20,14 +20,26 @@ LOG_MODULE_REGISTER(jtag_ls, LOG_LEVEL_DBG);
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/irq.h>
 #include <reg_mjtag_type.h>
+#include <field_manipulate.h>
 #include "jtag_ls.h"
 #include "ls_soc_gpio.h"
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
 #endif
 
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
+
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+
 #define JTAG_WRITE_DATA_ENABLE	(1)
 #define JTAG_START_SEND_DATA	(0)
+#define JTAG_TXD_CAP_DLY        (1)
+#define JTAG_RXD_CAP_DLY        (1)
 
 struct jtag_info {
 	enum jtag_ls_tap_states tap_state;
@@ -38,13 +50,15 @@ static struct jtag_info gjtag;
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct jtag_ls_config {
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
     irq_cfg_func_t irq_config_func;
 	/* jtag controller base address */
 	reg_mjtag_t *reg;
     uint8_t irq_num;
-#if defined(CONFIG_PINCTRL)
-    const struct pinctrl_dev_config *pcfg;
-#endif
+    uint32_t clock_source;
+    uint32_t bus_frequency;
 };
 
 struct jtag_ls_data {
@@ -85,9 +99,42 @@ static int jtag_ls_init(const struct device *dev)
     const struct jtag_ls_config *const config = dev->config;
     struct jtag_ls_data *const data = dev->data;
     reg_mjtag_t *const reg = config->reg;
+    __maybe_unused int ret;
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (config->ccfg.cctl_dev) {
+        const struct device *clk_dev = config->ccfg.cctl_dev;
+        if (!device_is_ready(clk_dev)) {
+            LOG_DBG("%s device not ready", clk_dev->name);
+            return -ENODEV;
+        }
+        clock_control_off(clk_dev, (clock_control_subsys_t)&config->ccfg);
+    }
+#endif
+
+#if defined(CONFIG_RESET)
+    if (config->reset.dev != NULL) {
+        if (!device_is_ready(config->reset.dev)) {
+            LOG_ERR("Reset controller device is not ready");
+            return -ENODEV;
+        }
+
+        ret = reset_line_toggle(config->reset.dev, config->reset.id);
+        if (ret != 0) {
+            LOG_ERR("toggle reset line failed");
+            return ret;
+        }
+    }
+#endif
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (config->ccfg.cctl_dev) {
+        const struct device *clk_dev = config->ccfg.cctl_dev;
+        clock_control_on(clk_dev, (clock_control_subsys_t)&config->ccfg);
+    }
+#endif
 
 #if defined(CONFIG_PINCTRL)
-    int ret;
 	const struct pinctrl_state *state;
 	const pinctrl_soc_pin_t *pins;
     ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
@@ -111,12 +158,33 @@ static int jtag_ls_init(const struct device *dev)
 	data->tdo_dev = data->pinmux[3];
 #endif
 
+    const uint32_t max_div = MJTAG_CTRL_TCK_DIVIDER_MASK >> MJTAG_CTRL_TCK_DIVIDER_POS;
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (config->ccfg.cctl_dev) {
+        const struct device *clk_dev = config->ccfg.cctl_dev;
+        uint32_t rate;
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
+
+        uint32_t div = config->bus_frequency ?
+                        (rate / config->bus_frequency) : max_div;
+
+        if (div > max_div) {
+            LOG_ERR("bus_frequence value: %d error", config->bus_frequency);
+            return -EINVAL;
+        }
+
+        reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, div);
+    }
+#else
+    reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, max_div);
+#endif
+
     k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->lock, 1, 1);
     config->irq_config_func(dev);
     reg->INTR_MSK = 0x0;
     reg->INTR_CLR = MJTAG_INTR_ALL_MASK;
-    reg->CTRL = 0x1010008;
+    reg->CTRL = READ_REG(reg->CTRL) | FIELD_BUILD(MJTAG_CTRL_TXD_CAP_DLY, JTAG_TXD_CAP_DLY) | FIELD_BUILD(MJTAG_CTRL_RXD_CAP_DLY, JTAG_RXD_CAP_DLY);
     reg->TDO_FT = 0;
 	/* Test-Logic Reset state */
 	gjtag.tap_state = LS_TAP_RESET;
@@ -594,7 +662,11 @@ static const struct jtag_ls_config jtag_ls_cfg_##index = {  \
     .reg = (reg_mjtag_t *)DT_INST_REG_ADDR(index),   \
     .irq_num = DT_INST_IRQN(index),                         \
     .irq_config_func = jtag_ls_irq_config_func_##index,      \
+    .clock_source = DT_INST_PROP(index, clock_source),                            \
+    .bus_frequency = DT_INST_PROP(index, bus_frequency),                          \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
+    IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))       \
+    IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
 };                                                          \
                                                             \
 static struct jtag_ls_data jtag_ls_dev_data_##index = {     \

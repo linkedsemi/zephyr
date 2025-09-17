@@ -1,9 +1,19 @@
 / {
     aliases {
-        testjtag = &jtag1;
+        testjtag = &jtag3;
     };
 };
 
-&jtag1 {
+&jtag3 {
+    pinctrl-0 = <&mjtag3_tck_pf04 &mjtag3_tms_pf08 &mjtag3_tdi_pf06 &mjtag3_tdo_pf10>;
+    pinctrl-1 = <&mjtag3_gpio_pf04 &mjtag3_gpio_pf08 &mjtag3_gpio_pf06>;
+    pinctrl-names = "default", "priv_start";
     status = "okay";
 };
+
+// &jtag1 {
+//     pinctrl-0 = <&mjtag1_tck_pn06 &mjtag1_tms_pn07 &mjtag1_tdi_pn09 &mjtag1_tdo_pn08>;
+//     pinctrl-1 = <&mjtag1_gpio_pn06 &mjtag1_gpio_pn07 &mjtag1_gpio_pn09>;
+//     pinctrl-names = "default", "priv_start";
+//     status = "disabled";
+// };

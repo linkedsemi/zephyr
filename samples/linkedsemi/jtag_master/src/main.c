@@ -24,7 +24,7 @@ int main(void)
 
 	if (!device_is_ready(jtag))
 	{
-		__ASSERT(0,"JTAG2 device is not ready");
+		__ASSERT(0,"JTAG device is not ready");
 	}
 
 	state = true;
