@@ -1,0 +1,8 @@
+
+
+when building lsqsh_evb, the default config file used is boards/lsqsh_evb_cpu1.conf.
+
+Only in the lsqsh_evb, the otbn module can be used to execute the ecdsa or sm2 algorithms. Otherwise, the default software ecdsa and sm2 must be used.
+
+If you want to use the SHA function of the hardware, set CONFIG_ENABLE_LS_OTBN_HASH=n
+If you want to use the SHA function of the otbn moudle, set CONFIG_ENABLE_LS_OTBN_HASH=y

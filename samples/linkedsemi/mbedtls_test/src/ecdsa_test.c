@@ -82,8 +82,6 @@ int runIt_unhexify(unsigned char *obuf, const char *ibuf)
 int ecdsa_p256_test(void)
 {
     int rc = 0;
-
-// #if defined(MBEDTLS_ECP_DP_SECP256R1_ENABLED)
     static const char *d_str = "DC51D3866A15BACDE33D96F992FCA99DA7E6EF0934E7097559C27F1614C88A7F";
     static const char *xQ_str = "2442A5CC0ECD015FA3CA31DC8E2BBC70BF42D60CBCA20085E0822CB04235E970";
     static const char *yQ_str = "6FC98BD7E50211A4A27102FA3549DF79EBCB4BF246B80945CDDFE7D509BBFD7D";
@@ -240,7 +238,7 @@ exit_test:
 int ecdsa_test(void)
 {
     int ret = 0;
-    mbedtls_ls_otbn_moudle_init();
+    mbedtls_ls_otbn_ecdsa_init();
 
     if(ecdsa_test_curve(MBEDTLS_ECP_DP_BP384R1) != 0)
     {
@@ -264,7 +262,7 @@ int ecdsa_test(void)
         printf("sm2  test passed!\n");
     }
 
-    mbedtls_ls_otbn_moudle_deinit();
+    mbedtls_ls_otbn_ecdsa_deinit();
 
     return ret;
 }
