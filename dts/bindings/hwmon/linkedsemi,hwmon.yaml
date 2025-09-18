@@ -5,13 +5,13 @@ description: linkedsemi Hwmon
 
 compatible: "linkedsemi,hwmon"
 
-include: [base.yaml]
+include: [hwmon-controller.yaml]
 
 properties:
   class:
     type: int
     required: true
-  hwmons:
+  hwmon-ins:
     type: phandle-array
-    required: true
-
+  hwmon-outs:
+    type: phandle-array
