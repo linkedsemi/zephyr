@@ -27,5 +27,6 @@ assert(CROSS_COMPILE "CROSS_COMPILE is not set")
 set(COMPILER gcc)
 set(LINKER ld)
 set(BINTOOLS gnu)
+set(TOOLCHAIN_HAS_NEWLIB ON CACHE BOOL "True if toolchain supports newlib")
 
 message(STATUS "Found toolchain: cross-compile (${CROSS_COMPILE})")

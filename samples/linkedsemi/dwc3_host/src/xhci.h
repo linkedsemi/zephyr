@@ -5,6 +5,10 @@
 #include <stddef.h>
 #include "xhci_def.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* init */
 int xhci_init(struct xhci_hcd *hcd, uint32_t xhci_base_addr);
 
@@ -44,5 +48,9 @@ void *xhci_mem_alloc(size_t align, size_t size);
 void xhci_mem_free(void *ptr);
 void xhci_cache_flush(void *buf, size_t size);
 void xhci_cache_invalid(void *buf, size_t size);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif // __XHCI_H__
