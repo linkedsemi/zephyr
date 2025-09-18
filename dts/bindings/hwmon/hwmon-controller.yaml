@@ -4,9 +4,17 @@
 # Common fields for hwmon controller
 
 properties:
-  "#hwmon-cells":
+  "#hwmon-in-cells":
+    const: 1
     type: int
-    description: Number of items to expect in a hwmon specifier
+    description: Number of items to expect in a hwmon input specifier
+  "#hwmon-out-cells":
+    const: 1
+    type: int
+    description: Number of items to expect in a hwmon output specifier
 
-hwmon-cells:
+hwmon-in-cells:
+  - channel
+
+hwmon-out-cells:
   - channel
