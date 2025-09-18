@@ -7,6 +7,7 @@
 #include <riscv/linkedsemi/lsqsh.dtsi>
 #include <arch/riscv/csr.h>
 #include "lsqsh_evb_pinctrl.dtsi"
+#include <zephyr/dt-bindings/adc/ls-adc.h>
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
 #define SRAM_TOTAL_SIZE DT_SIZE_K(512)
@@ -450,4 +451,24 @@ zephyr_udc1: &usb1 {
 //         reg = <0>;
 //         spi-max-frequency = <DT_FREQ_M(50)>;
 //     };
+// };
+
+// &adc1 {
+//     status = "okay";
+//     #address-cells = <1>;
+//     #size-cells = <0>;
+//     pinctrl-0 = <&adc1_ain1_pc04>;
+//     pinctrl-names = "default";
+//     conversion_mode = <regular_mode>;
+//     data_align = <ADC_DATAALIGN_RIGHT>;
+//     continuous_conv_mode = <discontinuous>;
+//     nbr_of_conversion = <1>;
+//     discontinuous_conv_mode = <discontinuous>;
+//     nbr_of_disc_conversion = <0>;
+//     trig_type = <ADC_SOFTWARE_TRIGT>;
+//     adc_drive_type = <BINBUF_DIRECT_DRIVE_ADC>;
+//     adc_clk_div = <74>;
+//     clk_cfg = <ADC_CH_CLOCK_DIV1>;
+//     injected_offset = <0>;
+//     fif_ctrl1 = <0xFFFF>;
 // };

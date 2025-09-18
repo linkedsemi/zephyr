@@ -22,8 +22,8 @@
     nbr_of_disc_conversion = <0>;
     trig_type = <ADC_SOFTWARE_TRIGT>;
     adc_drive_type = <BINBUF_DIRECT_DRIVE_ADC>;
-    adc_clk_div = <256>;
-    clk_cfg = <ADC_CH_CLOCK_DIV8>;
+    adc_clk_div = <74>;
+    clk_cfg = <ADC_CH_CLOCK_DIV1>;
     injected_offset = <0>;
     fif_ctrl1 = <0xFFFF>;
 };
