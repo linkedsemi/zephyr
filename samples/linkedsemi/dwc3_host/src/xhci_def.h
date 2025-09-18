@@ -5,7 +5,19 @@
 extern "C" {
 #endif
 
-#define XHCI_LOG_DBG(...)      printf("XHCI: ");printf(__VA_ARGS__)
+#ifndef XHCI_LOG_DBG
+#define XHCI_LOG_DBG(...)           printf("XHCI: ");printf(__VA_ARGS__)
+#endif 
+
+#if defined(__GNUC__) || defined(__clang__)
+#define XHCI_MEM_ALIGN(n)           __attribute__((aligned(n)))
+#else
+#define XHCI_MEM_ALIGN(n)
+#endif
+
+#define XHCI_RING_TRB_MAX_NUM       32
+#define XHCI_ALIGN                  64
+#define XHCI_SLOT_MAX               16
 
 /* TRB bit mask */
 #define TRB_TYPE_BITMASK     (0xfc00)
@@ -26,47 +38,12 @@ extern "C" {
 #define TRB_CYCLE            (1<<0)
 #define LINK_TOGGLE          (0x1<<1)
 
-/* USBSTS - USB status - status bitmasks */
-/* HC not running - set to 1 when run/stop bit is cleared. */
-#define STS_HALT     (1 << 0)
-/* serious error, e.g. PCI parity error.  The HC will clear the run/stop bit. */
-#define STS_FATAL     (1 << 2)
-/* event interrupt - clear this prior to clearing any IP flags in IR set*/
-#define STS_EINT     (1 << 3)
-/* port change detect */
-#define STS_PORT     (1 << 4)
-/* bits 5:7 reserved and zeroed */
-/* save state status - '1' means xHC is saving state */
-#define STS_SAVE     (1 << 8)
-/* restore state status - '1' means xHC is restoring state */
-#define STS_RESTORE     (1 << 9)
-/* true: save or restore error */
-#define STS_SRE        (1 << 10)
-/* true: Controller Not Ready to accept doorbell or op reg writes after reset */
-#define STS_CNR        (1 << 11)
-/* true: internal Host Controller Error - SW needs to reset and reinitialize */
-#define STS_HCE        (1 << 12)
+#define STS_HALT        (1 << 0)
+#define STS_CNR         (1 << 11)
 
-/* USBCMD - USB command - command bitmasks */
-/* start/stop HC execution - do not write unless HC is halted*/
 #define CMD_RUN        (1 << 0)
-/* Reset HC - resets internal HC state machine and all registers (except
- * PCI config regs).  HC does NOT drive a USB reset on the downstream ports.
- * The xHCI driver must reinitialize the xHC after setting this bit.
- */
 #define CMD_RESET     (1 << 1)
-/* Event Interrupt Enable - a '1' allows interrupts from the host controller */
 #define CMD_EIE        (1 << 2)
-/* Host System Error Interrupt Enable - get out-of-band signal for HC errors */
-#define CMD_HSEIE     (1 << 3)
-/* bits 4:6 are reserved (and should be preserved on writes). */
-/* light reset (port status stays unchanged) - reset completed when this is 0 */
-#define CMD_LRESET     (1 << 7)
-/* host controller save/restore state. */
-#define CMD_CSS        (1 << 8)
-#define CMD_CRS        (1 << 9)
-/* Enable Wrap Event - '1' means xHC generates an event when MFINDEX wraps. */
-#define CMD_EWE        (1 << 10)
 
 #define ERST_EHB        (1 << 3)
 #define ERST_PTR_MASK        (0xf)
@@ -75,45 +52,8 @@ extern "C" {
 #define SLOT_FLAG             (1 << 0)
 #define EP0_FLAG              (1 << 1)
 
-/* Completion Code - only applicable for some types of TRBs */
 #define COMP_CODE_MASK        (0xff << 24)
 #define GET_COMP_CODE(p)     (((p) & COMP_CODE_MASK) >> 24)
-#define COMP_INVALID                0
-#define COMP_SUCCESS                1
-#define COMP_DATA_BUFFER_ERROR             2
-#define COMP_BABBLE_DETECTED_ERROR        3
-#define COMP_USB_TRANSACTION_ERROR        4
-#define COMP_TRB_ERROR                5
-#define COMP_STALL_ERROR             6
-#define COMP_RESOURCE_ERROR             7
-#define COMP_BANDWIDTH_ERROR             8
-#define COMP_NO_SLOTS_AVAILABLE_ERROR        9
-#define COMP_INVALID_STREAM_TYPE_ERROR        10
-#define COMP_SLOT_NOT_ENABLED_ERROR        11
-#define COMP_ENDPOINT_NOT_ENABLED_ERROR        12
-#define COMP_SHORT_PACKET             13
-#define COMP_RING_UNDERRUN             14
-#define COMP_RING_OVERRUN             15
-#define COMP_VF_EVENT_RING_FULL_ERROR        16
-#define COMP_PARAMETER_ERROR             17
-#define COMP_BANDWIDTH_OVERRUN_ERROR        18
-#define COMP_CONTEXT_STATE_ERROR        19
-#define COMP_NO_PING_RESPONSE_ERROR        20
-#define COMP_EVENT_RING_FULL_ERROR        21
-#define COMP_INCOMPATIBLE_DEVICE_ERROR        22
-#define COMP_MISSED_SERVICE_ERROR        23
-#define COMP_COMMAND_RING_STOPPED        24
-#define COMP_COMMAND_ABORTED            25
-#define COMP_STOPPED                26
-#define COMP_STOPPED_LENGTH_INVALID        27
-#define COMP_STOPPED_SHORT_PACKET        28
-#define COMP_MAX_EXIT_LATENCY_TOO_LARGE_ERROR     29
-#define COMP_ISOCH_BUFFER_OVERRUN        31
-#define COMP_EVENT_LOST_ERROR           32
-#define COMP_UNDEFINED_ERROR            33
-#define COMP_INVALID_STREAM_ID_ERROR        34
-#define COMP_SECONDARY_BANDWIDTH_ERROR        35
-#define COMP_SPLIT_TRANSACTION_ERROR        36
 
 #define TRB_TO_SLOT_ID(p)      (((p) & (0xff<<24)) >> 24)
 #define SLOT_ID_FOR_TRB(p)     (((p) & 0xff) << 24)
@@ -179,6 +119,46 @@ enum XHCI_TRB_TYPE
     TRB_TYPE_MAX
 };
 
+enum XHCI_COMP_CODE
+{
+    COMP_INVALID,
+    COMP_SUCCESS,
+    COMP_DATA_BUFFER_ERROR,
+    COMP_BABBLE_DETECTED_ERROR,
+    COMP_USB_TRANSACTION_ERROR,
+    COMP_TRB_ERROR,
+    COMP_STALL_ERROR,
+    COMP_RESOURCE_ERROR,
+    COMP_BANDWIDTH_ERROR,
+    COMP_NO_SLOTS_AVAILABLE_ERROR,
+    COMP_INVALID_STREAM_TYPE_ERROR,
+    COMP_SLOT_NOT_ENABLED_ERROR,
+    COMP_ENDPOINT_NOT_ENABLED_ERROR,
+    COMP_SHORT_PACKET,
+    COMP_RING_UNDERRUN,
+    COMP_RING_OVERRUN,
+    COMP_VF_EVENT_RING_FULL_ERROR,
+    COMP_PARAMETER_ERROR,
+    COMP_BANDWIDTH_OVERRUN_ERROR,
+    COMP_CONTEXT_STATE_ERROR,
+    COMP_NO_PING_RESPONSE_ERROR,
+    COMP_EVENT_RING_FULL_ERROR,
+    COMP_INCOMPATIBLE_DEVICE_ERROR,
+    COMP_MISSED_SERVICE_ERROR,
+    COMP_COMMAND_RING_STOPPED,
+    COMP_COMMAND_ABORTED,
+    COMP_STOPPED,
+    COMP_STOPPED_LENGTH_INVALID,
+    COMP_STOPPED_SHORT_PACKET,
+    COMP_MAX_EXIT_LATENCY_TOO_LARGE_ERROR,
+    COMP_ISOCH_BUFFER_OVERRUN = 31,
+    COMP_EVENT_LOST_ERROR,
+    COMP_UNDEFINED_ERROR,
+    COMP_INVALID_STREAM_ID_ERROR,
+    COMP_SECONDARY_BANDWIDTH_ERROR,
+    COMP_SPLIT_TRANSACTION_ERROR
+};
+
 enum xhci_usb_speed
 {
     USB_SPEED_UNKNOWN = 0,
@@ -239,24 +219,23 @@ struct xhci_doorbell_arry
     volatile uint32_t doorbell[256];
 };
 
-/* 一个 event ring */
 struct xhci_erst_entry
 {
-    uint64_t seg_addr; // 64 bytes align 指向 event_ring
+    uint64_t seg_addr;
     uint32_t seg_size;
     uint32_t rsvd;
 };
 
 struct xhci_erst
 {
-    struct xhci_erst_entry *entry; // 一个
+    struct xhci_erst_entry *entry;
 };
 
 struct xhci_runtime_regs
 {
     volatile uint32_t micro_frame;
     volatile uint32_t rsvd[7];
-    volatile struct interrupter_regs ir_set[1]; // current ip support one irq set
+    volatile struct interrupter_regs ir_set[1];
 };
 
 struct xhci_trb
@@ -354,7 +333,7 @@ struct xhci_ctx
 {
 #define XHCI_CTX_TYPE_DEVICE  0x1
 #define XHCI_CTX_TYPE_INPUT   0x2
-    int type; // ctx type
+    int type;
     int size;
     uint8_t *ctx;
 };
@@ -367,14 +346,6 @@ struct xhci_device
     struct xhci_hcd *hcd;
     struct xhci_ep ep[31];
     enum xhci_usb_speed speed;
-    int state;
-};
-
-struct scratchpad_buffer
-{
-    uint64_t *scratchpad_array;
-    uint16_t scratchpad_num;
-    uint16_t scratchpad_size;
 };
 
 struct xhci_hcd
@@ -392,16 +363,18 @@ struct xhci_hcd
     struct xhci_ring cmd_ring;
 
     /* device struct */
-    struct xhci_device device[8]; // max slots
+    struct xhci_device device[XHCI_SLOT_MAX];
+    uint64_t *dev_ctx_tab;
+    uint64_t *scratchpad_tab;
+    uint8_t *scratchpad_buf;
+    struct xhci_trb *command_trb;
+    struct xhci_trb *event_trb;
     struct xhci_trb evt_trb;
 
-    /* scratchpad buffer info */
-    struct scratchpad_buffer scrapad_buf;
-
     uint32_t version;
+    uint16_t page_size;
     uint8_t max_slots;
     uint8_t max_port;
-    uint8_t ctx_64;
 };
 
 #ifdef __cplusplus

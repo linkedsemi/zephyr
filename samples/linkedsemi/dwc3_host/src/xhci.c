@@ -2,21 +2,6 @@
 #include <string.h>
 #include <stdio.h>
 
-#define XHCI_SLOT_MAX       (8)
-
-// event Ring segment shall contain at least 16 entries.
-static __attribute__((aligned(64))) struct xhci_trb event_trb[32];
-static __attribute__((aligned(64))) struct xhci_trb command_trb[32];
-
-static __attribute__((aligned(64))) struct xhci_trb ep0_trb[32]; // ep0 transfer ring
-
-static __attribute__((aligned(64))) uint8_t out_ctx[XHCI_SLOT_MAX][2048]; // 用时申请即可，这里暂时先开出来
-static __attribute__((aligned(64))) uint8_t in_ctx[XHCI_SLOT_MAX][2112]; // 用时申请即可
-static __attribute__((aligned(64))) uint64_t dev_context_ptrs[XHCI_SLOT_MAX+1]; // 存放 device contex 的地址, 64 字节对齐, index = 0 为 Scratchpad Buffer Array Base Address，指向一个表，这
-static __attribute__((aligned(64))) struct xhci_erst_entry erst_table[1]; // event ring table
-static __attribute__((aligned(64))) uint64_t scratchpad_buf_arr[1]; // 其中每一项存放 scratchpad buffer 的地址，该地址为 page size 对齐的，有多少个，由硬件参数决定
-static __attribute__((aligned(4096))) uint8_t scratchpad_buf[4096];
-
 #define	XHCI_PORT_RO    ((1<<0) | (1<<3) | (0xf<<10) | (1<<30))
 #define XHCI_PORT_RWS   ((0xf<<5) | (1<<9) | (0x3<<14) | (0x7<<25))
 
@@ -29,7 +14,6 @@ static __attribute__((aligned(4096))) uint8_t scratchpad_buf[4096];
 #define SLOT_CTX_ROOT_STR(n)                    ((n) << 0)
 #define SLOT_CTX_SPEED(n)                       ((n) << 20)
 #define SLOT_CTX_ROOTHUB_PORT_NUM(n)            ((n) << 16)
-
 #define EP_ADDR_2_EP_IDX(addr) ((((addr & 0x0F) << 1)) + !!(addr & 0x80))
 
 enum EP_CTX_TYPE
@@ -142,7 +126,6 @@ void xhci_isr(struct xhci_hcd *hcd)
     struct xhci_trb *event_trb = &hcd->event_ring.trb[cur_rd_index];
     uint64_t erdp = hcd->runtime_reg->ir_set[0].erdp;
 
-    /* clear interrupt */
     hcd->op_reg->status |= XHCI_USBSTS_EINT;
     hcd->runtime_reg->ir_set[0].iman |= XHCI_IMAIN_IP;
 
@@ -259,9 +242,7 @@ static int xhci_command_submit(struct xhci_hcd *xhci, struct xhci_trb *trb)
 
     xhci_enqueue_trb(xhci, &xhci->cmd_ring, trb);
     xhci_ring_cmd_doorbell(xhci);
-    /* wait command complete */
     xhci_event_wait();
-    /* copy evt trb */
     *trb = xhci->evt_trb;
     xhci_enqueue_unlock();
     return 0;
@@ -319,30 +300,39 @@ struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_hcd *hcd, struct xhci_ctx *ctx, 
     return (struct xhci_ep_ctx *)(ctx->ctx + ep_index * CTX_SIZE(hcd->cap_reg->hccparams1));
 }
 
-/* setup2: Port reset ok, now we can alloc slot_id */
 int xhci_alloc_device(struct xhci_hcd *xhci)
 {
     /* enable slot */
     int slot_id = xhci_cmd_enable_slot(xhci);
 
-    /* create device ctx、int ctx */
-    /* ctrl transfer */
-    xhci->device[slot_id].device_ctx.ctx = out_ctx[slot_id];
+    uint8_t *out_ctx = xhci_mem_alloc(XHCI_ALIGN, 2048);
+    uint8_t *in_ctx = xhci_mem_alloc(XHCI_ALIGN, 2112);
+    struct xhci_trb *ep0_trb = xhci_mem_alloc(XHCI_ALIGN, XHCI_RING_TRB_MAX_NUM * sizeof (struct xhci_trb));
+
+    if (!out_ctx || !in_ctx || !ep0_trb)
+    {
+        xhci_mem_free(out_ctx);
+        xhci_mem_free(in_ctx);
+        xhci_mem_free(ep0_trb);
+        XHCI_LOG_DBG("alloc device fail, can't alloc memory!!\n");
+        return -1;
+    }
+    xhci->device[slot_id].device_ctx.ctx = out_ctx;
     xhci->device[slot_id].device_ctx.type = XHCI_CTX_TYPE_DEVICE;
-    xhci->device[slot_id].device_ctx.size = xhci->ctx_64 ? 2048 : 1024;
+    xhci->device[slot_id].device_ctx.size = HCC_64BYTE_CONTEXT(xhci->cap_reg->hccparams1) ? 2048 : 1024;
 
-    /* alloc out_ctx */
-    dev_context_ptrs[slot_id] = (size_t)out_ctx[slot_id];
+    /* pust device contex table */
+    xhci->dev_ctx_tab[slot_id] = (size_t)out_ctx;
 
-    xhci->device[slot_id].input_ctx.ctx = in_ctx[slot_id];
-    xhci->device[slot_id].input_ctx.size = xhci->ctx_64 ? 2112 : 1056;
+    xhci->device[slot_id].input_ctx.ctx = in_ctx;
+    xhci->device[slot_id].input_ctx.size = HCC_64BYTE_CONTEXT(xhci->cap_reg->hccparams1) ? 2112 : 1056;
     xhci->device[slot_id].input_ctx.type = XHCI_CTX_TYPE_INPUT;
 
     memset(xhci->device[slot_id].device_ctx.ctx, 0, xhci->device[slot_id].device_ctx.size);
     memset(xhci->device[slot_id].input_ctx.ctx, 0, xhci->device[slot_id].input_ctx.size);
 
     /* ep0 transfer ring init */
-    xhci_ring_init(&xhci->device[slot_id].ep[0].ep_ring, ep0_trb, sizeof(ep0_trb) / sizeof(*ep0_trb), CTRL_RING);
+    xhci_ring_init(&xhci->device[slot_id].ep[0].ep_ring, ep0_trb, XHCI_RING_TRB_MAX_NUM, CTRL_RING);
 
     /* prepare input ctx for address device command */
     xhci->device[slot_id].slot_id = slot_id;
@@ -414,7 +404,6 @@ int xhci_cmd_address_device(struct xhci_hcd *xhci, int slot, xhci_addr_dev_type_
     trb.paramater = (size_t)control_ctx;
     trb.status = 0;
     trb.control = SLOT_ID_FOR_TRB(slot) | TRB_TYPE(TRB_ADDR_DEV) | (type == DEFAULT_TYPE ? TRB_BSR : 0) | xhci->cmd_ring.cycle_bit;
-    /* send command */
     xhci_command_submit(xhci, &trb);
     /* check command exec resule */
     return GET_COMP_CODE(trb.status) == COMP_SUCCESS ? 0 : -1;
@@ -434,10 +423,9 @@ int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_pac
 {
     int xfer_len = -1;
     struct xhci_ring *ep0_ring = &xhci->device[slot].ep[0].ep_ring;
-
-    /* if data is null, two stage */
     struct xhci_generic_trb trb = {0};
 
+    xhci_enqueue_lock();
     trb.field[0] = req->bmRequestType | req->bRequest << 8 | req->wValue << 16;
     trb.field[1] = req->wIndex | req->wLength << 16;
     trb.field[2] = 8;
@@ -477,10 +465,12 @@ int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_pac
         trb.field[3] |= TRB_ISP | TRB_DIR_IN;
 
     xhci_enqueue_trb(xhci, ep0_ring, (struct xhci_trb *)&trb);
-    /* ring doorbell */
+    /* ring ep0 doorbell */
     xhci_ring_ep_doorbell(xhci, slot, 1, 0);
-    xhci_event_wait();
     /* wait data stage transfer event */
+    xhci_event_wait();
+    xhci_enqueue_unlock();
+
     trb = *(struct xhci_generic_trb *)&xhci->evt_trb;
 
     if (GET_COMP_CODE(trb.field[2]) == COMP_SHORT_PACKET)
@@ -498,13 +488,13 @@ int xhci_send_noop(struct xhci_hcd *xhci, int slot, uint8_t ep_addr)
     struct xhci_ring *ep_ring = &xhci->device[slot].ep[ep_num].ep_ring;
     trb.control = TRB_TYPE(TRB_TR_NOOP) | 1 << 5 | ep_ring->cycle_bit;
 
-    /* TODO: lock */
+    xhci_enqueue_lock();
     xhci_enqueue_trb(xhci, ep_ring, &trb);
     /* ring doorbell */
     xhci_ring_ep_doorbell(xhci, slot, ep_num + 1, 0);
     xhci_event_wait();
-    /* copy evt trb */
     trb = xhci->evt_trb;
+    xhci_enqueue_unlock();
 
     return GET_COMP_CODE(trb.status) == COMP_SUCCESS ? 0 : -1;
 }
@@ -531,19 +521,20 @@ int xhci_cmd_reset_device(struct xhci_hcd *xhci, int slot_id)
     return 0;
 }
 
-int xhci_command_ring_init(struct xhci_hcd *hcd)
+static int xhci_command_ring_init(struct xhci_hcd *hcd)
 {
-    xhci_ring_init(&hcd->cmd_ring, command_trb, 32, COMMAND_RING);
+    xhci_ring_init(&hcd->cmd_ring, hcd->command_trb, XHCI_RING_TRB_MAX_NUM, COMMAND_RING);
     hcd->op_reg->cmd_ring = (size_t)hcd->cmd_ring.trb | hcd->cmd_ring.cycle_bit;
+
     return 0;
 }
 
-int xhci_event_ring_init(struct xhci_hcd *hcd)
+static int xhci_event_ring_init(struct xhci_hcd *hcd)
 {
-    xhci_ring_init(&hcd->event_ring, event_trb, sizeof(event_trb)/sizeof(*event_trb), EVENT_RING);
+    static XHCI_MEM_ALIGN(64) struct xhci_erst_entry erst_table[1];
 
+    xhci_ring_init(&hcd->event_ring, hcd->event_trb, XHCI_RING_TRB_MAX_NUM, EVENT_RING);
     hcd->erst.entry = erst_table;
-
     hcd->erst.entry[0].seg_addr = (size_t)hcd->event_ring.trb;
     hcd->erst.entry[0].seg_size = hcd->event_ring.num_trb;
     xhci_cache_flush(hcd->erst.entry, sizeof (struct xhci_erst_entry));
@@ -563,7 +554,7 @@ int xhci_device_ctx_show(struct xhci_hcd *hcd, size_t slot_id)
     xhci_cache_invalid(ep_ctx, sizeof(struct xhci_ep_ctx));
 
     XHCI_LOG_DBG("slot_ctx: %x %x %x %x.\n", slot_ctx->dev_info, slot_ctx->dev_info2, slot_ctx->tt_info, slot_ctx->dev_state);
-    XHCI_LOG_DBG("ep_ctx: %x %x %x %x.\n", ep_ctx->ep_info[0], ep_ctx->ep_info[1], (size_t)ep_ctx->deq, ep_ctx->tx_info);
+    XHCI_LOG_DBG("ep0_ctx: %x %x %x %x.\n", ep_ctx->ep_info[0], ep_ctx->ep_info[1], (size_t)ep_ctx->deq, ep_ctx->tx_info);
     return 0;
 }
 
@@ -602,7 +593,7 @@ static int xhci_reset(struct xhci_hcd *hcd)
     return 0;
 }
 
-int xhci_ext_cap_scan(struct xhci_hcd *hcd)
+static int xhci_ext_cap_dump(struct xhci_hcd *hcd)
 {
     size_t ext_cap_addr = (((hcd->cap_reg->hccparams1 >> 16) & 0xffff) << 2) + hcd->base_addr;
     uint16_t next_point = 0;
@@ -643,24 +634,38 @@ int xhci_init(struct xhci_hcd *hcd, uint32_t xhci_base_addr)
     hcd->version = (hcd->cap_reg->caplength >> 16) & 0xfffff;
     hcd->max_slots = hcd->cap_reg->hcsparams1 & 0xff;
     hcd->max_port = hcd->cap_reg->hcsparams1 >> 24;
-    hcd->ctx_64 = HCC_64BYTE_CONTEXT(hcd->cap_reg->hccparams1);
+    hcd->page_size = 1 << (hcd->op_reg->page_size + 11);
+
+    hcd->dev_ctx_tab = xhci_mem_alloc(XHCI_ALIGN, sizeof(uint64_t) * hcd->max_slots);
+    hcd->scratchpad_tab = xhci_mem_alloc(XHCI_ALIGN, sizeof(uint64_t) * HCSPARAMS2_SCRATPAD_NUM(hcd->cap_reg->hcsparams2));
+    hcd->scratchpad_buf = xhci_mem_alloc(hcd->page_size, hcd->page_size * HCSPARAMS2_SCRATPAD_NUM(hcd->cap_reg->hcsparams2));
+    hcd->command_trb = xhci_mem_alloc(XHCI_ALIGN, XHCI_RING_TRB_MAX_NUM * sizeof (struct xhci_trb));
+    hcd->event_trb = xhci_mem_alloc(XHCI_ALIGN, XHCI_RING_TRB_MAX_NUM * sizeof (struct xhci_trb));
+
+    if (!hcd->dev_ctx_tab || !hcd->scratchpad_tab || !hcd->scratchpad_buf || !hcd->command_trb || !hcd->event_trb)
+    {
+        XHCI_LOG_DBG("xhci init fail, can't alloc memory!!");
+        xhci_mem_free(hcd->dev_ctx_tab);
+        xhci_mem_free(hcd->scratchpad_tab);
+        xhci_mem_free(hcd->scratchpad_buf);
+        xhci_mem_free(hcd->command_trb);
+        xhci_mem_free(hcd->event_trb);
+        return -1;
+    }
 
     /* xhci reset */
     xhci_reset(hcd);
-    xhci_ext_cap_scan(hcd);
+    xhci_ext_cap_dump(hcd);
 
-    hcd->op_reg->config_reg &= ~0xff;
-    hcd->op_reg->config_reg |= hcd->max_slots;
-
-    dev_context_ptrs[0] = (size_t)scratchpad_buf_arr;
-    hcd->op_reg->dcbaa_ptr = (size_t)dev_context_ptrs;
+    hcd->op_reg->config_reg = hcd->max_slots;
+    hcd->dev_ctx_tab[0] = (size_t)hcd->scratchpad_tab;
+    hcd->op_reg->dcbaa_ptr = (size_t)hcd->dev_ctx_tab;
 
     for (int i = 0; i < HCSPARAMS2_SCRATPAD_NUM(hcd->cap_reg->hcsparams2); i++)
-        scratchpad_buf_arr[i] = (size_t)scratchpad_buf;
+        hcd->scratchpad_tab[i] = (size_t)hcd->scratchpad_buf[i * hcd->page_size];
 
     xhci_command_ring_init(hcd);
     xhci_event_ring_init(hcd);
-    /* xhci run */
     xhci_run(hcd);
 
     return 0;
