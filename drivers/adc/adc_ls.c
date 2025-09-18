@@ -24,6 +24,11 @@
     #include "reg_v33_rg.h"
 #endif
 
+#if(CONFIG_SOC_LSQSH)
+    #include "reg_sec_pmu_rg.h"
+    #define temperature_sensing_channel 13
+#endif
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(adc_ls, LOG_LEVEL_DBG);
 #include <zephyr/drivers/gpio.h>
@@ -526,6 +531,14 @@ static int adc_ls_channel_setup(const struct device *dev, const struct adc_chann
 
     // Configure the clock of the channel
     reg->CLK_CFG |= ADC_CH_CLK_CFG(config->clk_cfg, channel_cfg->channel_id);
+
+#if(CONFIG_SOC_LSQSH)
+    if(channel_cfg->channel_id == temperature_sensing_channel)
+    {
+        // When using the temperature sensor, the bg_ibg_trim value needs to be set to 0xf
+        REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_IBG_TRIM, 0xf);
+    }
+#endif
 
     // Configure the sampling interval of the channel
     reg->TSMP |= ADC_TSMP(channel_cfg->acquisition_time, channel_cfg->channel_id);

@@ -31,7 +31,7 @@ static enum adc_action ls_completed_callback(const struct device *dev,
 void ADC_Channel_setCfg(const struct device* adc)
 {
     struct adc_channel_cfg channel_config;
-    channel_config.channel_id = 1;  //要和设备树中 “pinctrl-0” 节点所对应的通道一致
+    channel_config.channel_id = 1;  //要和设备树中 “pinctrl-0” 节点所对应的通道一致, 测试温感这里必须配置为13（13通道专用测温感）
     channel_config.reference = ADC_REF_INTERNAL;
     channel_config.acquisition_time = ADC_SAMPLETIME_15CYCLES;
     adc_channel_setup(adc, &channel_config);
