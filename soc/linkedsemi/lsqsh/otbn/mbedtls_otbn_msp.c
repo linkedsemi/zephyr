@@ -13,7 +13,7 @@ static void *p_otbn_param;
 static void MBEDTLS_LS_OTBN_IRQHandler(void *parm)
 {
     if(p_otbn_func)
-        p_otbn_func(NULL);
+        p_otbn_func(p_otbn_param);
 }
 
 void ls_otbn_mbedtls_update_callback(void (*func)(void*),void *param)
