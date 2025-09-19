@@ -238,6 +238,25 @@ struct xhci_runtime_regs
     volatile struct interrupter_regs ir_set[1];
 };
 
+typedef enum
+{
+    EP_ISO_OUT = 1,
+    EP_BULK_OUT,
+    EP_INT_OUT,
+    EP_CONTROL_BIDIR,
+    EP_ISO_IN,
+    EP_BULK_IN,
+    EP_INT_IN
+} xhci_ep_type_t;
+
+struct xhci_ep_config
+{
+    xhci_ep_type_t ep_type;
+    uint8_t ep_addr;
+    uint8_t ep_interval;
+    uint16_t ep_mps;
+};
+
 struct xhci_trb
 {
     uint64_t paramater;
@@ -319,6 +338,7 @@ struct xhci_hcd;
 struct xhci_ep
 {
     struct xhci_ring ep_ring;
+    uint8_t state;
 };
 
 struct usb_setup_packet
@@ -340,7 +360,7 @@ struct xhci_ctx
 
 struct xhci_device
 {
-    uint32_t slot_id;
+    uint32_t slot;
     struct xhci_ctx device_ctx;
     struct xhci_ctx input_ctx;
     struct xhci_hcd *hcd;
