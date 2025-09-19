@@ -20,9 +20,18 @@
 #include "qsh.h"
 
 #include <zephyr/crypto/ls_otbn_ecc_p256.h>
-#include "crypto_linkedsemi_otbn_fireware.h"
+#include "ls_otbn_ecc.h"
 LOG_MODULE_DECLARE(otbn,LOG_LEVEL_DBG);
-extern int otbn_get_random(uint8_t *buf, uint16_t buf_len);
+static int otbn_get_random(uint8_t *buf, uint16_t buf_len)
+{
+    static uint16_t c = 0xff;
+    for(uint16_t i = 0; i < buf_len; i++)
+    {
+        buf[i] = i*c + c;
+        c++;
+    }
+    return 0;
+}
 #define SM2_MSG_DIGSET_BYTES 32
 
 struct otbn_ecc_p256_data{
@@ -369,8 +378,8 @@ static int ls_ecc_p256_init(const struct device *dev)
     data->app_info.kOtbnAppImemSize = LS_OTBN_ECDSA_P256_IMEM_SIZE;
     data->app_info.kOtbnAppDmemSize = LS_OTBN_ECDSA_P256_DMEM_SIZE;
     data->app_info.kOtbnAppDmemEnd = LS_OTBN_ECDSA_P256_DMEM_END;
-    data->app_info.dmem_image = p256_dmem;
-    data->app_info.imem_image = p256_imem;
+    data->app_info.dmem_image = (uint8_t *)p256_dmem;
+    data->app_info.imem_image = (uint8_t *)p256_imem;
     return 0;
 }
 

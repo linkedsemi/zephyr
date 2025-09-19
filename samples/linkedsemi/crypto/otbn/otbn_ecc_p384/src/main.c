@@ -40,19 +40,6 @@ static struct ecc_p384_key key_p384 =
 	.qy = public_y,
 };
 
-static struct ecc_p384_key key2_p384 =
-{
-	.d = private_k2,
-	.qx = public_x2,
-	.qy = public_y2,
-};
-
-static struct ecc_p384_key key3_p384 =
-{
-	.d = private_k3,
-	.qx = public_x3,
-	.qy = public_y3,
-};
 
 uint8_t msg_e[64] = 
 {
