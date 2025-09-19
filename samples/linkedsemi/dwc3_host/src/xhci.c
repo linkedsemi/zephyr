@@ -16,17 +16,6 @@
 #define SLOT_CTX_ROOTHUB_PORT_NUM(n)            ((n) << 16)
 #define EP_ADDR_2_EP_IDX(addr) ((((addr & 0x0F) << 1)) + !!(addr & 0x80))
 
-enum EP_CTX_TYPE
-{
-    EP_ISO_OUT = 1,
-    EP_BULK_OUT,
-    EP_INT_OUT,
-    EP_CONTROL_BIDIR,
-    EP_ISO_IN,
-    EP_BULK_IN,
-    EP_INT_IN
-};
-
 enum XHCI_PLS
 {
     PLS_U0_STATE,
@@ -212,9 +201,9 @@ void xhci_ring_cmd_doorbell(struct xhci_hcd *xhci)
     xhci->db_reg->doorbell[0] = 0x0;
 }
 
-void xhci_ring_ep_doorbell(struct xhci_hcd *xhci, size_t slot_id, size_t ep_num, size_t stream_id)
+void xhci_ring_ep_doorbell(struct xhci_hcd *xhci, size_t slot, size_t ep_num, size_t stream_id)
 {
-    xhci->db_reg->doorbell[slot_id] = ep_num | stream_id << 16;
+    xhci->db_reg->doorbell[slot] = ep_num | stream_id << 16;
 }
 
 static void xhci_enqueue_trb(struct xhci_hcd *xhci, struct xhci_ring *ring, struct xhci_trb *trb)
@@ -248,12 +237,12 @@ static int xhci_command_submit(struct xhci_hcd *xhci, struct xhci_trb *trb)
     return 0;
 }
 
-int xhci_cmd_disable_slot(struct xhci_hcd *xhci, int slot_id)
+int xhci_cmd_disable_slot(struct xhci_hcd *xhci, int slot)
 {
     struct xhci_trb trb = {
         .paramater = 0,
         .status = 0,
-        .control = TRB_TYPE(TRB_DISABLE_SLOT) | SLOT_ID_FOR_TRB(slot_id) | xhci->cmd_ring.cycle_bit
+        .control = TRB_TYPE(TRB_DISABLE_SLOT) | SLOT_ID_FOR_TRB(slot) | xhci->cmd_ring.cycle_bit
     };
     xhci_command_submit(xhci, &trb);
 
@@ -303,7 +292,7 @@ struct xhci_ep_ctx *xhci_get_ep_ctx(struct xhci_hcd *hcd, struct xhci_ctx *ctx, 
 int xhci_alloc_device(struct xhci_hcd *xhci)
 {
     /* enable slot */
-    int slot_id = xhci_cmd_enable_slot(xhci);
+    int slot = xhci_cmd_enable_slot(xhci);
 
     uint8_t *out_ctx = xhci_mem_alloc(XHCI_ALIGN, 2048);
     uint8_t *in_ctx = xhci_mem_alloc(XHCI_ALIGN, 2112);
@@ -317,27 +306,32 @@ int xhci_alloc_device(struct xhci_hcd *xhci)
         XHCI_LOG_DBG("alloc device fail, can't alloc memory!!\n");
         return -1;
     }
-    xhci->device[slot_id].device_ctx.ctx = out_ctx;
-    xhci->device[slot_id].device_ctx.type = XHCI_CTX_TYPE_DEVICE;
-    xhci->device[slot_id].device_ctx.size = HCC_64BYTE_CONTEXT(xhci->cap_reg->hccparams1) ? 2048 : 1024;
+    xhci->device[slot].device_ctx.ctx = out_ctx;
+    xhci->device[slot].device_ctx.type = XHCI_CTX_TYPE_DEVICE;
+    xhci->device[slot].device_ctx.size = HCC_64BYTE_CONTEXT(xhci->cap_reg->hccparams1) ? 2048 : 1024;
 
     /* pust device contex table */
-    xhci->dev_ctx_tab[slot_id] = (size_t)out_ctx;
+    xhci->dev_ctx_tab[slot] = (size_t)out_ctx;
 
-    xhci->device[slot_id].input_ctx.ctx = in_ctx;
-    xhci->device[slot_id].input_ctx.size = HCC_64BYTE_CONTEXT(xhci->cap_reg->hccparams1) ? 2112 : 1056;
-    xhci->device[slot_id].input_ctx.type = XHCI_CTX_TYPE_INPUT;
+    xhci->device[slot].input_ctx.ctx = in_ctx;
+    xhci->device[slot].input_ctx.size = HCC_64BYTE_CONTEXT(xhci->cap_reg->hccparams1) ? 2112 : 1056;
+    xhci->device[slot].input_ctx.type = XHCI_CTX_TYPE_INPUT;
 
-    memset(xhci->device[slot_id].device_ctx.ctx, 0, xhci->device[slot_id].device_ctx.size);
-    memset(xhci->device[slot_id].input_ctx.ctx, 0, xhci->device[slot_id].input_ctx.size);
+    memset(xhci->device[slot].device_ctx.ctx, 0, xhci->device[slot].device_ctx.size);
+    memset(xhci->device[slot].input_ctx.ctx, 0, xhci->device[slot].input_ctx.size);
 
     /* ep0 transfer ring init */
-    xhci_ring_init(&xhci->device[slot_id].ep[0].ep_ring, ep0_trb, XHCI_RING_TRB_MAX_NUM, CTRL_RING);
+    xhci_ring_init(&xhci->device[slot].ep[0].ep_ring, ep0_trb, XHCI_RING_TRB_MAX_NUM, CTRL_RING);
 
     /* prepare input ctx for address device command */
-    xhci->device[slot_id].slot_id = slot_id;
+    xhci->device[slot].slot = slot;
 
-    return slot_id;
+    return slot;
+}
+
+int xhci_free_device(struct xhci_hcd *xhci, int slot)
+{
+    return 0;
 }
 
 int xhci_cmd_address_device(struct xhci_hcd *xhci, int slot, xhci_addr_dev_type_t type)
@@ -409,9 +403,9 @@ int xhci_cmd_address_device(struct xhci_hcd *xhci, int slot, xhci_addr_dev_type_
     return GET_COMP_CODE(trb.status) == COMP_SUCCESS ? 0 : -1;
 }
 
-void xhci_set_dev_speed(struct xhci_hcd *xhci, int slot_id, enum xhci_usb_speed speed)
+void xhci_set_dev_speed(struct xhci_hcd *xhci, int slot, enum xhci_usb_speed speed)
 {
-    xhci->device[slot_id].speed = speed;
+    xhci->device[slot].speed = speed;
 }
 
 enum xhci_usb_speed xhci_get_port_speed(struct xhci_hcd *xhci, int port_id)
@@ -509,12 +503,62 @@ int xhci_send_intr_data(struct xhci_hcd *xhci, int slot, int ep, void *data, int
     return 0;
 }
 
-int xhci_cmd_reset_device(struct xhci_hcd *xhci, int slot_id)
+void xhci_slot_ctx_copy(struct xhci_hcd *xhci, int slot)
+{
+    struct xhci_slot_ctx *in, *out;
+
+    in = xhci_get_slot_ctx(xhci, &xhci->device[slot].input_ctx);
+    out = xhci_get_slot_ctx(xhci, &xhci->device[slot].device_ctx);
+    in->dev_info = out->dev_info;
+    in->dev_info2 = out->dev_info2;
+    in->tt_info = out->tt_info;
+    in->dev_state = out->dev_state;
+}
+
+int xhci_cmd_add_endpoint(struct xhci_hcd *xhci, int slot, struct xhci_ep_config *ep_config)
+{
+    struct xhci_trb trb;
+
+    struct xhci_input_control_ctx *control_ctx;
+    struct xhci_ep_ctx *ep_ctx;
+    /* TODO: check ep_index */
+    uint8_t ep_index = EP_ADDR_2_EP_IDX(ep_config->ep_addr) - 1;
+
+    control_ctx = (struct xhci_input_control_ctx *)xhci->device[slot].input_ctx.ctx;
+    control_ctx->add_flags &= ~(1 << 1);
+    control_ctx->drop_flags &= ~0x3;
+    control_ctx->add_flags |= 1 << ep_index;
+    /* slot ctx no update */
+    xhci_slot_ctx_copy(xhci, slot);
+
+    ep_ctx = xhci_get_ep_ctx(xhci, &xhci->device[slot].input_ctx, ep_index);
+
+    ep_ctx->ep_info[0] = ep_config->ep_interval << 16;
+    ep_ctx->ep_info[1] = ep_config->ep_mps << 16 | EP_CTX_TYPE(ep_config->ep_type) | EP_CTX_ERR_CNT(3);
+    ep_ctx->deq = (size_t)xhci->device[slot].ep[ep_index].ep_ring.trb | xhci->device[slot].ep[ep_index].ep_ring.cycle_bit;
+    ep_ctx->tx_info = 0;
+
+    trb.paramater = (size_t)control_ctx;
+    trb.status = 0;
+    trb.control = SLOT_ID_FOR_TRB(slot) | TRB_TYPE(TRB_CONFIG_EP) | xhci->cmd_ring.cycle_bit;
+
+    /* config endpoint command */
+    xhci_command_submit(xhci, &trb);
+    /* check command exec resule */
+    return GET_COMP_CODE(trb.status) == COMP_SUCCESS ? 0 : -1;
+}
+
+int xhci_cmd_drop_endpoint(struct xhci_hcd *xhci, int slot, uint8_t ep_addr)
+{
+    return 0;
+}
+
+int xhci_cmd_reset_device(struct xhci_hcd *xhci, int slot)
 {
     struct xhci_trb trb = {
         .paramater = 0,
         .control = 0,
-        .status = TRB_TYPE(TRB_RESET_DEV) | SLOT_ID_FOR_TRB(slot_id) | xhci->cmd_ring.cycle_bit
+        .status = TRB_TYPE(TRB_RESET_DEV) | SLOT_ID_FOR_TRB(slot) | xhci->cmd_ring.cycle_bit
     };
     xhci_command_submit(xhci, &trb);
 
@@ -546,15 +590,21 @@ static int xhci_event_ring_init(struct xhci_hcd *hcd)
     return 0;
 }
 
-int xhci_device_ctx_show(struct xhci_hcd *hcd, size_t slot_id)
+int xhci_device_ctx_show(struct xhci_hcd *hcd, size_t slot)
 {
-    struct xhci_slot_ctx *slot_ctx = xhci_get_slot_ctx(hcd, &hcd->device[slot_id].device_ctx);
-    struct xhci_ep_ctx *ep_ctx = xhci_get_ep_ctx(hcd, &hcd->device[slot_id].device_ctx, 0);
+    struct xhci_slot_ctx *slot_ctx = xhci_get_slot_ctx(hcd, &hcd->device[slot].device_ctx);
+    struct xhci_ep_ctx *ep_ctx = xhci_get_ep_ctx(hcd, &hcd->device[slot].device_ctx, 0);
     xhci_cache_invalid(slot_ctx, sizeof(struct xhci_slot_ctx));
     xhci_cache_invalid(ep_ctx, sizeof(struct xhci_ep_ctx));
 
-    XHCI_LOG_DBG("slot_ctx: %x %x %x %x.\n", slot_ctx->dev_info, slot_ctx->dev_info2, slot_ctx->tt_info, slot_ctx->dev_state);
-    XHCI_LOG_DBG("ep0_ctx: %x %x %x %x.\n", ep_ctx->ep_info[0], ep_ctx->ep_info[1], (size_t)ep_ctx->deq, ep_ctx->tx_info);
+    XHCI_LOG_DBG("slot_ctx: %x %x %x %x\n", slot_ctx->dev_info, slot_ctx->dev_info2, slot_ctx->tt_info, slot_ctx->dev_state);
+    XHCI_LOG_DBG("ep0_bidir_ctx: %x %x %x %x\n", ep_ctx->ep_info[0], ep_ctx->ep_info[1], (size_t)ep_ctx->deq, ep_ctx->tx_info);
+    for (uint8_t i = 0; i < 30; i++)
+    {
+        ep_ctx = xhci_get_ep_ctx(hcd, &hcd->device[slot].device_ctx, i+1);
+        XHCI_LOG_DBG("ep%d_%s_ctx: %x %x %x %x\n", (i/2)+1, i%2 ? "in":"out", ep_ctx->ep_info[0], ep_ctx->ep_info[1], (size_t)ep_ctx->deq, ep_ctx->tx_info);
+    }
+
     return 0;
 }
 

@@ -410,6 +410,42 @@ static int xhci_reset_port(const struct shell *sh, size_t argc, char **argv)
 }
 SHELL_CMD_REGISTER(xhci_reset_port, NULL, "xhci reset port", xhci_reset_port);
 
+static uint8_t dwc3_phy_cfg_read(uint8_t reg_addr)
+{
+    uint32_t res;
+    /* rst en */
+    *(uint32_t *)0x40058010 |= BIT(25);
+    k_usleep(1);
+    /* set reg_addr and write_data*/
+    *(uint32_t *)0x40058010 &= ~(0xff << 2);
+    *(uint32_t *)0x40058010 |= (reg_addr << 2);
+    k_usleep(1);
+    /* enable read */
+    *(uint32_t *)0x40058010 |= (0x1 << 0);
+    k_usleep(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 0);
+    k_usleep(1);
+    res = *(uint32_t *)0x40058010;
+    return (res >> 8) & 0xff;
+}
+
+static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
+{
+    /* rst en */
+    *(uint32_t *)0x40058010 |= BIT(25);
+    k_usleep(1);
+    /* set reg_addr and write_data*/
+    *(uint32_t *)0x40058010 &= ~(0xff << 2);
+    *(uint32_t *)0x40058010 |= (reg_addr << 2);
+    *(uint32_t *)0x40058010 &= ~(0xff << 16);
+    *(uint32_t *)0x40058010 |= (write_data << 16);
+    k_usleep(1);
+    /* enable write */
+    *(uint32_t *)0x40058010 |= (0x1 << 1);
+    k_usleep(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 1);
+}
+
 int main(void)
 {
 	/* clock gate */
@@ -433,6 +469,11 @@ int main(void)
 	gctl &= ~(0x3 << 12);
 	gctl |= 0x1 << 12; // device mode
 	dwc3_gbl->GCTL = gctl;
+
+	/* The disconnect detection voltage threshold is set to 490mv */
+	uint8_t value = dwc3_phy_cfg_read(0xb);
+	value &= ~BIT(6);
+	dwc3_phy_cfg_write(0xb, value);
 
 	xhci_init(&hcd, USB_BASE);
 
