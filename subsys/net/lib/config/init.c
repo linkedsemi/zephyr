@@ -90,15 +90,6 @@ static void print_dhcpv4_info(struct net_if *iface)
 			 net_addr_ntop(AF_INET, &iface->config.ip.ipv4->gw,
 				       hr_addr, sizeof(hr_addr)));
 #endif
-
-		// Release semaphore - Network is Ready
-		static bool dhcp_sem_released = false;
-		if (!dhcp_sem_released) {
-			extern struct k_sem net_config_init_ready_sem;
-			k_sem_give(&net_config_init_ready_sem);
-			dhcp_sem_released = true;
-			NET_INFO("DHCP configuration complete, releasing semaphore");
-		}
 		break;
 	}
 }
