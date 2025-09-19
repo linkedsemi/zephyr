@@ -29,11 +29,10 @@
 #define SHA512_BLOCK_WORD_SIZE      (SHA512_BLOCK_BYTE_SIZE / sizeof(uint32_t))
 #define SHA512_FIANL_LENGTH         (SHA512_BLOCK_BYTE_SIZE - SHA512_TOTAL_LEN_BYTE)
 
-struct sha512_linkedsemi_data {
+__attribute__((aligned(32))) struct sha512_linkedsemi_data {
+	uint32_t buffer[SHA512_BLOCK_WORD_SIZE];
 	struct k_mutex sha512_engine_mutex;
 	struct k_sem calc_end_sem;
-
-	uint32_t buffer[SHA512_BLOCK_WORD_SIZE];
 	uint32_t buf_idx;
 	uint32_t total_len;
 	uint8_t result_word_num;
