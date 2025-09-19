@@ -532,7 +532,7 @@ static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c
 
 	scldel = (scll >> 1) > 16 ? 15 : (scll >> 1);
 	sclh = scll;
-	sdadel = 0;
+	sdadel = 2;
     MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK),
         (prescalar - 1)<<I2C_TIMINGR_PRESC_POS|sclh<<I2C_TIMINGR_SCLH_POS|scll<<I2C_TIMINGR_SCLL_POS|sdadel<<I2C_TIMINGR_SDADEL_POS|scldel<<I2C_TIMINGR_SCLDEL_POS);
 }
