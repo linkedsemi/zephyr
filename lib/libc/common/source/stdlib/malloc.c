@@ -319,3 +319,15 @@ void *reallocarray(void *ptr, size_t nmemb, size_t size)
 	return realloc(ptr, size);
 }
 #endif /* CONFIG_COMMON_LIBC_REALLOCARRAY */
+
+int libc_heap_runtime_stats_get(struct sys_memory_stats *stats)
+{
+#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
+    if (stats == NULL) {
+        return -EINVAL;
+    }
+    return sys_heap_runtime_stats_get(&z_malloc_heap, stats);
+#else
+    return -ENOSYS;
+#endif
+}
