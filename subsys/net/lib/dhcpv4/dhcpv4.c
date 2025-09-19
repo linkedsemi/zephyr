@@ -1830,12 +1830,14 @@ void net_dhcpv4_stop(struct net_if *iface)
 
 	case NET_DHCPV4_RENEWING:
 	case NET_DHCPV4_BOUND:
+#if 0
 		if (!net_if_ipv4_addr_rm(iface,
 					 &iface->config.dhcpv4.requested_ip)) {
 			NET_DBG("Failed to remove addr from iface");
 		}
 
 		__fallthrough;
+#endif
 	case NET_DHCPV4_INIT:
 	case NET_DHCPV4_SELECTING:
 	case NET_DHCPV4_REQUESTING:
