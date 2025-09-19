@@ -255,12 +255,12 @@ static struct crypto_driver_api sha512_driver_api = {
 			    DEVICE_DT_INST_GET(idx), 0);                                           \
 		irq_enable(DT_INST_IRQN(idx));                                                     \
 	}                                                                                          \
-	static struct sha512_linkedsemi_data sha512_linkedsemi_data_##idx;                         \
+	__attribute__((aligned(32))) static struct sha512_linkedsemi_data sha512_linkedsemi_data_##idx;                         \
 	static const struct sha512_linkedsemi_config sha512_linkedsemi_config_##idx = {            \
 		.reg = (void *)DT_INST_REG_ADDR(idx),                                              \
 		.irq_config_func = sha512_linkedsemi_irq_config_func_##idx,                        \
-        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                       \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))  \
+        IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), ))                       \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), ))  \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(idx, sha512_linkedsemi_init, NULL, &sha512_linkedsemi_data_##idx,    \
 			      &sha512_linkedsemi_config_##idx, POST_KERNEL,                        \
