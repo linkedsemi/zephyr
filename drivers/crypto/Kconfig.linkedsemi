@@ -3,18 +3,21 @@
 
 config CRYPTO_LINKEDSEMI_SHA256
     bool "linkedsemi SHA256 driver"
+    depends on DT_HAS_LINKEDSEMI_SHA256_ENABLED
     default y
     help
       Enable linkedsemi SHA256 driver.
 
 config CRYPTO_LINKEDSEMI_SHA512
     bool "linkedsemi SHA512 driver"
+    depends on DT_HAS_LINKEDSEMI_SHA512_ENABLED
     default y
     help
       Enable linkedsemi SHA512 driver.
 
 config CRYPTO_LINKEDSEMI_SM4
     bool "linkedsemi SM4 driver"
+    depends on DT_HAS_LINKEDSEMI_SM4_ENABLED
     default y
     help
       Enable linkedsemi SM4 driver.

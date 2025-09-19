@@ -172,7 +172,6 @@ int ls_otbn_imem_write(const struct device *dev, uint16_t num_words, const uint3
 
 status_t ls_otbn_load_app(const struct device *dev, const otbn_app_t *app_info)
 {
-    struct ls_otbn_config *cfg_info = (struct ls_otbn_config *)dev->config;
     uint32_t status;
     status = otbn_assert_idle(dev);
     if(!status)

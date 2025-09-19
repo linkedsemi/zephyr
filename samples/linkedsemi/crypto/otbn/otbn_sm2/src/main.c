@@ -40,20 +40,6 @@ static struct sm2_key key_sm2 =
 	.qy = public_y,
 };
 
-static struct sm2_key key2_sm2 =
-{
-	.d = private_k2,
-	.qx = public_x2,
-	.qy = public_y2,
-};
-
-static struct sm2_key key3_sm2 =
-{
-	.d = private_k3,
-	.qx = public_x3,
-	.qy = public_y3,
-};
-
 uint8_t msg_e[64] = 
 {
 	0x0,0x1,0x2,0x3,0x4,0x5,0x6,0x7,
