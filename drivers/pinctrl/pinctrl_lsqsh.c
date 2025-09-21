@@ -20,78 +20,77 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_app_input_lock(pin, false);))
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_func_cfg_lock(pin, false);))
 
-    if (pin_desc.pin_attr.pull_down) {
+    if (pin_desc.pin_attr.bias_pull_down) {
         io_pull_write(pin, IO_PULL_DOWN);
     }
 
-    if (pin_desc.pin_attr.pull_up) {
+    if (pin_desc.pin_attr.bias_pull_up) {
         io_pull_write(pin, IO_PULL_UP);
     }
 
-    if (pin_desc.pin_attr.pull_up0) {
+    if (pin_desc.pin_attr.bias_pull_up0) {
         io_pull_write(pin, IO_PULL_UP0);
     }
 
-    if (pin_desc.pin_attr.pull_up1) {
+    if (pin_desc.pin_attr.bias_pull_up1) {
         io_pull_write(pin, IO_PULL_UP1);
     }
 
-    if (pin_desc.pin_attr.pull_up2) {
+    if (pin_desc.pin_attr.bias_pull_up2) {
         io_pull_write(pin, IO_PULL_UP2);
     }
 
-    if (pin_desc.pin_attr.cfg_input) {
+    if (pin_desc.pin_attr.input_enable) {
         io_cfg_input_pure(pin);
+    } else {
+        io_cfg_disable_input(pin);
     }
 
-    // if (pin_desc.pin_attr.cfg_input_1v8) {
+    // if (pin_desc.pin_attr.input_1v8_enable) {
     //     io_cfg_input_1v8_pure(pin);
     // }
 
-    if (pin_desc.pin_attr.cfg_output) {
+    if (pin_desc.pin_attr.output_enable) {
         io_cfg_output(pin);
+    } else {
+        io_cfg_disable_output(pin);
     }
 
-    if (pin_desc.pin_attr.open_drain) {
+    if (pin_desc.pin_attr.drive_open_drain) {
         io_cfg_opendrain(pin);
     }
 
-    if (pin_desc.pin_attr.push_pull) {
+    if (pin_desc.pin_attr.drive_push_pull) {
         io_cfg_pushpull(pin);
     }
 
-    /* only has effect if mode is push_pull */
-    if (pin_desc.pin_attr.out_high) {
+    /* only has effect if mode is drive_push_pull */
+    if (pin_desc.pin_attr.output_high) {
         io_set_pin(pin);
     }
 
-    /* only has effect if mode is push_pull */
-    if (pin_desc.pin_attr.out_low) {
+    /* only has effect if mode is drive_push_pull */
+    if (pin_desc.pin_attr.output_low) {
         io_clr_pin(pin);
     }
 
     if (pin_desc.pin_attr.analog) {
         gpio_ana_init(pin);
+    } else {
+        gpio_ana_deinit(pin);
     }
 
-    /* only has effect if mode is push_pull */
-    io_drive_capacity_write(pin, pin_desc.pin_attr.drive);
+    /* only has effect if mode is drive_push_pull */
+    io_drive_capacity_write(pin, pin_desc.pin_attr.drive_strength);
 
-    if (pin_desc.pin_attr.gpio || pin_desc.pin_attr.analog) {
-        per_func_disable_all(pin);
-        goto end;
-    } else if (pin_desc.pin_attr.disable_all) {
-        per_func_disable_all(pin);
-        io_cfg_disable(pin);
-        goto end;
-    } else {
+    if (pin_desc.pinmux.func_valid) {
         pinmux_cfg_pin_func_alt(pin,
                                     pin_desc.pinmux.func,
                                     pin_desc.pinmux.alt);
-        goto end;
+    } else {
+        per_func_disable_all(pin);
     }
 
-end:
     /* TODO: check */
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_func_cfg_lock(pin, true);))
     IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pin, true);))

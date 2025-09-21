@@ -20,7 +20,10 @@
 #define LS_FUNC_MASK 0x3
 
 #define LS_ALT_POS  10
-#define LS_ALT_MASK 0x3f
+#define LS_ALT_MASK 0x1f
+
+#define LS_FUNC_VALID_POS  15
+#define LS_FUNC_VALID_MASK 0x20
 
 //GPIOA
 #define GPIO_PORT_PA00 gpioa
@@ -322,6 +325,7 @@
         bias-pull-up;\
         drive-open-drain;\
         input-enable;\
+        output-enable;\
     };\
     /omit-if-no-ref/NAME##_sda_gpio_##PIN_SDA: NAME##_sda_gpio_##PIN_SDA {\
         pinmux = <PIN_SDA>;\
@@ -329,6 +333,7 @@
         bias-pull-up;\
         drive-open-drain;\
         input-enable;\
+        output-enable;\
     };
 
 #define GPIO_NUM_GEN(PIN) (PIN & 0xf)
