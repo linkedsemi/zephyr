@@ -59,6 +59,10 @@ struct jtag_ls_config {
     uint8_t irq_num;
     uint32_t clock_source;
     uint32_t bus_frequency;
+    struct gpio_dt_spec tck_gpios;
+    struct gpio_dt_spec tms_gpios;
+    struct gpio_dt_spec tdi_gpios;
+    struct gpio_dt_spec tdo_gpios;
 };
 
 struct jtag_ls_data {
@@ -135,28 +139,29 @@ static int jtag_ls_init(const struct device *dev)
 #endif
 
 #if defined(CONFIG_PINCTRL)
-    const struct pinctrl_state *state;
-    const pinctrl_soc_pin_t *pins;
     ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
     if(ret != 0) {
         LOG_ERR("JTAG pinctrl init failed (%d)", ret);
         return ret;
     }
-
-    ret = pinctrl_lookup_state(config->pcfg, PINCTRL_STATE_DEFAULT, &state);
-    if (ret < 0) {
-        return ret;
-    }
-    pins = state->pins;
-    for(int i = 0; i< state->pin_cnt; i++)
-    {
-        data->pinmux[i] = (*pins++).pinmux.pin;
-    }
-    data->tck_dev = data->pinmux[0];
-    data->tms_dev = data->pinmux[1];
-    data->tdi_dev = data->pinmux[2];
-    data->tdo_dev = data->pinmux[3];
 #endif
+
+    if (!gpio_is_ready_dt(&config->tck_gpios)) {
+        LOG_ERR("TCK GPIO device not ready");
+        return -EIO;
+    }
+    if (!gpio_is_ready_dt(&config->tms_gpios)) {
+        LOG_ERR("TMS GPIO device not ready");
+        return -EIO;
+    }
+    if (!gpio_is_ready_dt(&config->tdi_gpios)) {
+        LOG_ERR("TDI GPIO device not ready");
+        return -EIO;
+    }
+    if (!gpio_is_ready_dt(&config->tdo_gpios)) {
+        LOG_ERR("TDO GPIO device not ready");
+        return -EIO;
+    }
 
     const uint32_t max_div = MJTAG_CTRL_TCK_DIVIDER_MASK >> MJTAG_CTRL_TCK_DIVIDER_POS;
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -595,22 +600,13 @@ static int jtag_ls_sw_xfer(const struct device *dev, enum jtag_pin pin,
 
     switch (pin) {
         case JTAG_TDI:
-            if (value == 0)
-                io_clr_pin(data->tdi_dev);
-            else
-                io_set_pin(data->tdi_dev);
+            gpio_pin_set_dt(&config->tdi_gpios, value);
             break;
         case JTAG_TCK:
-            if (value == 0)
-                io_clr_pin(data->tck_dev);
-            else
-                io_set_pin(data->tck_dev);
+            gpio_pin_set_dt(&config->tck_gpios, value);
             break;
         case JTAG_TMS:
-            if (value == 0)
-                io_clr_pin(data->tms_dev);
-            else
-                io_set_pin(data->tms_dev);
+            gpio_pin_set_dt(&config->tms_gpios, value);
             break;
         default:
             return -EINVAL;
@@ -628,8 +624,8 @@ static int jtag_ls_sw_xfer(const struct device *dev, enum jtag_pin pin,
 
 static int jtag_ls_tdo_get(const struct device *dev, uint8_t *value)
 {
-    struct jtag_ls_data *const data = dev->data;
-    *value = io_read_pin(data->tdo_dev);
+    const struct jtag_ls_config *const config = dev->config;
+    *value = gpio_pin_get_dt(&config->tdo_gpios);
     return 0;
 }
 
@@ -661,9 +657,13 @@ static void jtag_ls_irq_config_func_##index(const struct device *dev)   \
 static const struct jtag_ls_config jtag_ls_cfg_##index = {  \
     .reg = (reg_mjtag_t *)DT_INST_REG_ADDR(index),   \
     .irq_num = DT_INST_IRQN(index),                         \
-    .irq_config_func = jtag_ls_irq_config_func_##index,      \
-    .clock_source = DT_INST_PROP(index, clock_source),                            \
-    .bus_frequency = DT_INST_PROP(index, bus_frequency),                          \
+    .irq_config_func = jtag_ls_irq_config_func_##index,     \
+    .clock_source = DT_INST_PROP(index, clock_source),      \
+    .bus_frequency = DT_INST_PROP(index, bus_frequency),    \
+    .tck_gpios = GPIO_DT_SPEC_INST_GET(index, tck_gpios),   \
+    .tms_gpios = GPIO_DT_SPEC_INST_GET(index, tms_gpios),   \
+    .tdi_gpios = GPIO_DT_SPEC_INST_GET(index, tdi_gpios),   \
+    .tdo_gpios = GPIO_DT_SPEC_INST_GET(index, tdo_gpios),   \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
     IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))       \
     IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
