@@ -10,6 +10,8 @@
 #ifndef ZEPHYR_DRIVERS_SPI_SPI_DW_H_
 #define ZEPHYR_DRIVERS_SPI_SPI_DW_H_
 
+#include <stdbool.h>
+#include <stdint.h>
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
@@ -216,6 +218,11 @@ static int reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 #define DW_SPI_CTRLR0_TMOD_EEPROM	(3 << DW_SPI_CTRLR0_TMOD_SHIFT)
 #define DW_SPI_CTRLR0_TMOD_RESET	(3 << DW_SPI_CTRLR0_TMOD_SHIFT)
 
+#define DW_SPI_CTRLR0_SPI_FRF_BIT	(21)
+#define DW_SPI_CTRLR0_SPI_FRF_MASK	(0x3 << DW_SPI_CTRLR0_SPI_FRF_BIT)
+#define DW_SPI_CTRLR0_FRF_STD		(0)
+#define DW_SPI_CTRLR0_FRF_QUAD		(2 << DW_SPI_CTRLR0_SPI_FRF_BIT)
+
 #define DW_SPI_CTRLR0_DFS_16(__bpw)	((__bpw) - 1)
 #define DW_SPI_CTRLR0_DFS_32(__bpw)	(((__bpw) - 1) << 16)
 
@@ -285,6 +292,47 @@ static int reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 #define DW_SPI_IMR_MASK_RX		(~(DW_SPI_IMR_RXUIM | \
 					   DW_SPI_IMR_RXOIM | \
 					   DW_SPI_IMR_RXFIM))
+#define DW_SPI_IMR_RX_ONLY		(DW_SPI_IMR_RXUIM | \
+					   DW_SPI_IMR_RXOIM | \
+					   DW_SPI_IMR_RXFIM)
+#define DW_SPI_IMR_TX_ONLY		(DW_SPI_IMR_TXEIM | \
+					   DW_SPI_IMR_TXOIM )
+#define DW_SPI_IMR_RX_MODE		(DW_SPI_ISR_MSTIS|\
+					   DW_SPI_IMR_RXUIM | \
+					   DW_SPI_IMR_RXOIM | \
+					   DW_SPI_IMR_RXFIM | \
+					   DW_SPI_IMR_TXOIM)
+#define DW_SPI_IMR_TX_MODE		(DW_SPI_IMR_TXEIM | \
+					   DW_SPI_IMR_TXOIM | \
+					   DW_SPI_ISR_MSTIS | \
+					   DW_SPI_IMR_RXUIM | \
+					   DW_SPI_IMR_RXOIM)
+
+/* DMACR Bit */
+#define DW_SPI_DMACR_MASK			(0x0)
+
+#define DW_SPI_RDMAE_BIT			BIT(0)
+#define DW_SPI_TDMAE_BIT			BIT(1)
+
+
+/* SPI_CTRLR0 */
+#define DW_SPI_SPI_CTRLR0_TRANS_TYPE_SHIFT	(0)
+#define DW_SPI_SPI_CTRLR0_ADDR_L_SHIFT		(2)
+#define DW_SPI_SPI_CTRLR0_INST_L_SHIFT		(8)
+#define DW_SPI_SPI_CTRLR0_WAIT_CYCLES_SHIFT	(11)
+
+#define DW_SPI_SPI_CTRLR0_TRANS_TYPE_MASK		(0x3U << DW_SPI_SPI_CTRLR0_TRANS_TYPE_SHIFT)
+#define DW_SPI_SPI_CTRLR0_TRANS_TYPE(n)			(((n) & 0x3U) << DW_SPI_SPI_CTRLR0_TRANS_TYPE_SHIFT)
+#define DW_SPI_SPI_CTRLR0_ADDR_L_MASK			(0xFU << DW_SPI_SPI_CTRLR0_ADDR_L_SHIFT)
+#define DW_SPI_SPI_CTRLR0_ADDR_L(byte)			(((byte)*2) << DW_SPI_SPI_CTRLR0_ADDR_L_SHIFT)
+
+#define DW_SPI_SPI_CTRLR0_INST_L_MASK			(0x3U << DW_SPI_SPI_CTRLR0_INST_L_SHIFT)
+#define DW_SPI_SPI_CTRLR0_INST_L_0BIT			(0x0U << DW_SPI_SPI_CTRLR0_INST_L_SHIFT)
+#define DW_SPI_SPI_CTRLR0_INST_L_8BIT			(0x2U << DW_SPI_SPI_CTRLR0_INST_L_SHIFT)
+
+#define DW_SPI_SPI_CTRLR0_WAIT_CYCLES_MASK		(0x1FU << DW_SPI_SPI_CTRLR0_WAIT_CYCLES_SHIFT)
+#define DW_SPI_SPI_CTRLR0_WAIT_CYCLES(n)		(((n) & 0x1FU) << DW_SPI_SPI_CTRLR0_WAIT_CYCLES_SHIFT)
+
 
 /*
  * Including the right register definition file
