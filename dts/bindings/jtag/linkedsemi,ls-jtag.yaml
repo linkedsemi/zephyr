@@ -12,3 +12,19 @@ properties:
   bus-frequency:
     type: int
     description: "jtag master bus frequency"
+
+  tck-gpios:
+    type: phandle-array
+    description: "tck simulated by gpio"
+
+  tms-gpios:
+    type: phandle-array
+    description: "tms simulated by gpio"
+
+  tdi-gpios:
+    type: phandle-array
+    description: "tdi simulated by gpio"
+
+  tdo-gpios:
+    type: phandle-array
+    description: "tdo simulated by gpio"
