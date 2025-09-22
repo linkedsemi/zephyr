@@ -718,6 +718,7 @@ static void boot_cpu2()
         flash_read(flash_dev,
                 (CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS) + image_header.offset + LSQSPIV2->BACKUP_OFFSET,
                 (uint8_t *)image_header.exe_addr, image_header.length);
+        sys_cache_data_flush_range((void *)image_header.exe_addr, image_header.length);
     }
 
     app_cpu_dereset_by_addr(exe_addr);
