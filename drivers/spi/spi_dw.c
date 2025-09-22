@@ -28,7 +28,8 @@ LOG_MODULE_REGISTER(spi_dw);
 
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
-
+#include <stdbool.h>
+#include <stdint.h>
 
 #ifdef CONFIG_IOAPIC
 #include <zephyr/drivers/interrupt_controller/ioapic.h>
@@ -295,6 +296,132 @@ static int spi_dw_configure(const struct device *dev,
 
 	return 0;
 }
+static int spi_dw_configure_144(const struct device *dev,
+			    struct spi_dw_data *spi,
+			    const struct spi_config *config)
+{
+	const struct spi_dw_config *info = dev->config;
+	uint32_t ctrlr0 = 0U;
+
+	LOG_DBG("%p (prev %p)", config, spi->ctx.config);
+
+	if (spi_context_configured(&spi->ctx, config)) {
+		/* Nothing to do */
+		return 0;
+	}
+
+	if (config->operation & SPI_HALF_DUPLEX) {
+		LOG_ERR("Half-duplex not supported");
+		return -ENOTSUP;
+	}
+
+	/* Verify if requested op mode is relevant to this controller */
+	if (config->operation & SPI_OP_MODE_SLAVE) {
+		if (!(info->serial_target)) {
+			LOG_ERR("Slave mode not supported");
+			return -ENOTSUP;
+		}
+	} else {
+		if (info->serial_target) {
+			LOG_ERR("Master mode not supported");
+			return -ENOTSUP;
+		}
+	}
+
+	if (config->operation & SPI_TRANSFER_LSB) {
+		LOG_ERR("LSB-first not supported");
+		return -EINVAL;
+	}
+
+	if (IS_ENABLED(CONFIG_SPI_EXTENDED_MODES)) {
+		if ((config->operation & SPI_LINES_MASK)==SPI_LINES_QUAD) {
+			ctrlr0 |= DW_SPI_CTRLR0_FRF_QUAD;
+			LOG_ERR("Quad Line");
+		}else if ((config->operation & SPI_LINES_MASK)==SPI_LINES_SINGLE) {
+			ctrlr0 |= DW_SPI_CTRLR0_FRF_STD;
+			LOG_ERR("Single Line");
+		}else if((config->operation & SPI_LINES_MASK)==SPI_LINES_DUAL ||
+					(config->operation & SPI_LINES_MASK)==SPI_LINES_OCTAL ) {
+			LOG_ERR("Dual or Octal not supported yet");
+			return -EINVAL;
+		}else {
+			LOG_ERR(" Extra Unsupported configuration");
+			return -EINVAL;
+		}
+	}
+
+
+	if (info->max_xfer_size < SPI_WORD_SIZE_GET(config->operation)) {
+		LOG_ERR("Max xfer size is %u, word size of %u not allowed",
+			info->max_xfer_size, SPI_WORD_SIZE_GET(config->operation));
+		return -ENOTSUP;
+	}
+
+	/* Word size */
+	if (info->max_xfer_size == 32) {
+		ctrlr0 |= DW_SPI_CTRLR0_DFS_32(SPI_WORD_SIZE_GET(config->operation));
+	} else {
+		ctrlr0 |= DW_SPI_CTRLR0_DFS_16(SPI_WORD_SIZE_GET(config->operation));
+	}
+
+	/* Determine how many bytes are required per-frame */
+	spi->dfs = SPI_WS_TO_DFS(SPI_WORD_SIZE_GET(config->operation));
+
+	/* SPI mode */
+	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPOL) {
+		ctrlr0 |= DW_SPI_CTRLR0_SCPOL;
+	}
+
+	if (SPI_MODE_GET(config->operation) & SPI_MODE_CPHA) {
+		ctrlr0 |= DW_SPI_CTRLR0_SCPH;
+	}
+
+	if (SPI_MODE_GET(config->operation) & SPI_MODE_LOOP) {
+		ctrlr0 |= DW_SPI_CTRLR0_SRL;
+	}
+
+	/* Installing the configuration */
+	write_ctrlr0(dev, ctrlr0);
+
+	/* At this point, it's mandatory to set this on the context! */
+	spi->ctx.config = config;
+
+	if (!spi_dw_is_slave(spi)) {
+		/* Baud rate and Slave select, for master only */
+		write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency,
+						    config->frequency));
+		write_ser(dev, 0);
+	}
+
+	if (spi_dw_is_slave(spi)) {
+		LOG_DBG("Installed slave config %p:"
+			    " ws/dfs %u/%u, mode %u/%u/%u",
+			    config,
+			    SPI_WORD_SIZE_GET(config->operation), spi->dfs,
+			    (SPI_MODE_GET(config->operation) &
+			     SPI_MODE_CPOL) ? 1 : 0,
+			    (SPI_MODE_GET(config->operation) &
+			     SPI_MODE_CPHA) ? 1 : 0,
+			    (SPI_MODE_GET(config->operation) &
+			     SPI_MODE_LOOP) ? 1 : 0);
+	} else {
+		LOG_DBG("Installed master config %p: freq %uHz (div = %u),"
+			    " ws/dfs %u/%u, mode %u/%u/%u, slave %u",
+			    config, config->frequency,
+			    SPI_DW_CLK_DIVIDER(info->clock_frequency,
+					       config->frequency),
+			    SPI_WORD_SIZE_GET(config->operation), spi->dfs,
+			    (SPI_MODE_GET(config->operation) &
+			     SPI_MODE_CPOL) ? 1 : 0,
+			    (SPI_MODE_GET(config->operation) &
+			     SPI_MODE_CPHA) ? 1 : 0,
+			    (SPI_MODE_GET(config->operation) &
+			     SPI_MODE_LOOP) ? 1 : 0,
+			    config->slave);
+	}
+
+	return 0;
+}
 
 static uint32_t spi_dw_compute_ndf(const struct spi_buf *rx_bufs,
 				   size_t rx_count, uint8_t dfs)
@@ -463,6 +590,209 @@ out:
 	return ret;
 }
 
+static int transceive_144_read(const struct device *dev,
+		      const struct spi_config *config,
+		      const struct spi_buf_set *tx_bufs,
+		      const struct spi_buf_set *rx_bufs,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata,uint32_t opcode,uint32_t addr)
+{
+	const struct spi_dw_config *info = dev->config;
+	struct spi_dw_data *spi = dev->data;
+	uint32_t tmod = DW_SPI_CTRLR0_TMOD_TX_RX;
+
+	uint32_t reg_data;
+	int ret;
+
+	spi_context_lock(&spi->ctx, asynchronous, cb, userdata, config);
+
+#ifdef CONFIG_PM_DEVICE
+	if (!pm_device_is_busy(dev)) {
+		pm_device_busy_set(dev);
+	}
+#endif /* CONFIG_PM_DEVICE */
+
+	/* Configure */
+	ret = spi_dw_configure_144(dev, spi, config);
+	if (ret) {
+		goto out;
+	}
+
+	tmod = DW_SPI_CTRLR0_TMOD_RX;
+
+	if (spi_dw_is_slave(spi)) {
+		/* Enabling MISO line relevantly */
+
+		tmod |= DW_SPI_CTRLR0_SLV_OE;
+	}
+
+	/* Updating TMOD in CTRLR0 register */
+	reg_data = read_ctrlr0(dev);
+	reg_data &= ~DW_SPI_CTRLR0_TMOD_RESET;
+	reg_data |= tmod;
+
+	write_ctrlr0(dev, reg_data);
+
+	if (tmod >= DW_SPI_CTRLR0_TMOD_RX &&
+			!spi_dw_is_slave(spi)) {
+			reg_data = spi_dw_compute_ndf(rx_bufs->buffers,
+					      rx_bufs->count,
+					      spi->dfs);
+			if (reg_data == UINT32_MAX) {
+				ret = -EINVAL;
+				goto out;
+			}
+			write_ctrlr1(dev,reg_data);
+	} else {
+		write_ctrlr1(dev, 0);
+	}
+
+	write_dmacr(dev, 0);
+
+	/* Set buffers info */
+	spi_context_buffers_setup(&spi->ctx, tx_bufs, rx_bufs, spi->dfs);
+
+
+	/* Tx Threshold */
+	uint32_t dw_spi_txftlr_dflt = (info->fifo_depth * 3) / 4;
+	write_txftlr(dev, dw_spi_txftlr_dflt);
+
+	/* Rx Threshold */
+	write_rxftlr(dev, 0);
+
+	/* Enable interrupts */
+
+	reg_data=DW_SPI_IMR_RX_MODE;
+
+	write_imr(dev, reg_data);
+
+	set_bit_ssienr(dev);
+
+	write_dr(dev, opcode);
+	write_dr(dev, addr);
+
+	if (!spi_dw_is_slave(spi)) {
+		/* if cs is not defined as gpio, use hw cs */
+		if (spi_cs_is_gpio(config)) {
+			spi_context_cs_control(&spi->ctx, true);
+			write_ser(dev, BIT(config->slave));
+		} else {
+			write_ser(dev, BIT(config->slave));
+		}
+	}
+
+
+	ret = spi_context_wait_for_completion(&spi->ctx);
+
+#ifdef CONFIG_SPI_SLAVE
+	if (spi_context_is_slave(&spi->ctx) && !ret) {
+		ret = spi->ctx.recv_frames;
+	}
+#endif /* CONFIG_SPI_SLAVE */
+
+out:
+	spi_context_release(&spi->ctx, ret);
+
+	pm_device_busy_clear(dev);
+
+	return ret;
+}
+
+static int transceive_144_write(const struct device *dev,
+		      const struct spi_config *config,
+		      const struct spi_buf_set *tx_bufs,
+		      const struct spi_buf_set *rx_bufs,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata,uint32_t opcode,uint32_t addr)
+{
+	const struct spi_dw_config *info = dev->config;
+	struct spi_dw_data *spi = dev->data;
+	uint32_t tmod = DW_SPI_CTRLR0_TMOD_TX_RX;
+	uint32_t reg_data;
+	int ret;
+
+	spi_context_lock(&spi->ctx, asynchronous, cb, userdata, config);
+
+#ifdef CONFIG_PM_DEVICE
+	if (!pm_device_is_busy(dev)) {
+		pm_device_busy_set(dev);
+	}
+#endif /* CONFIG_PM_DEVICE */
+
+	/* Configure */
+	ret = spi_dw_configure_144(dev, spi, config);
+	if (ret) {
+		goto out;
+	}
+
+	tmod = DW_SPI_CTRLR0_TMOD_TX;
+
+	if (spi_dw_is_slave(spi)) {
+		/* Enabling MISO line relevantly */
+			tmod &= ~DW_SPI_CTRLR0_SLV_OE;
+	}
+
+	/* Updating TMOD in CTRLR0 register */
+	reg_data = read_ctrlr0(dev);
+	reg_data &= ~DW_SPI_CTRLR0_TMOD_RESET;
+	reg_data |= tmod;
+
+	write_ctrlr0(dev, reg_data);
+
+
+	/* Set buffers info */
+	spi_context_buffers_setup(&spi->ctx, tx_bufs, rx_bufs, spi->dfs);
+
+	set_bit_ssienr(dev);
+	write_dr(dev, opcode);
+	write_dr(dev, addr);
+
+	write_dmacr(dev, 0);
+	/* Tx Threshold */
+	uint32_t dw_spi_txftlr_dflt = (info->fifo_depth * 3) / 4;
+	write_txftlr(dev, dw_spi_txftlr_dflt);
+
+
+	/* Rx Threshold */
+	write_rxftlr(dev, 0);
+
+
+	if (!spi_dw_is_slave(spi)) {
+		/* if cs is not defined as gpio, use hw cs */
+		if (spi_cs_is_gpio(config)) {
+			spi_context_cs_control(&spi->ctx, true);
+			write_ser(dev, BIT(config->slave));
+		} else {
+			write_ser(dev, BIT(config->slave));
+		}
+	}
+
+	/* Enable interrupts */
+
+	reg_data=DW_SPI_IMR_TX_MODE;
+
+	write_imr(dev, reg_data);
+
+
+	ret = spi_context_wait_for_completion(&spi->ctx);
+
+#ifdef CONFIG_SPI_SLAVE
+	if (spi_context_is_slave(&spi->ctx) && !ret) {
+		ret = spi->ctx.recv_frames;
+	}
+#endif /* CONFIG_SPI_SLAVE */
+
+out:
+	spi_context_release(&spi->ctx, ret);
+
+	pm_device_busy_clear(dev);
+
+	return ret;
+}
+
+
 static int spi_dw_transceive(const struct device *dev,
 			     const struct spi_config *config,
 			     const struct spi_buf_set *tx_bufs,
@@ -539,6 +869,9 @@ static int spi_dw_nor_transceive(const struct device *dev,
 	bool is_addressed = (op_info->addr_len > 0);
 	bool is_write = (SPI_NOR_DATA_DIRECT_OUT == op_info->data_direct);
 	uint8_t buf[5 + SPI_NOR_DUMMY_CYCLE_MAX] = { 0 };
+	uint32_t spi_ctrlr0=0;
+	uint32_t dr_addr_144=0;
+
 	struct spi_buf spi_buf[2] = {
 		{
 			.buf = buf,
@@ -549,6 +882,16 @@ static int spi_dw_nor_transceive(const struct device *dev,
 			.len = op_info->data_len,
 		}
 	};
+
+	struct spi_buf spi_buf_144[1] = {
+
+		{
+			.buf = op_info->buf,
+			.len = op_info->data_len,
+		},
+
+	};
+
 
 	buf[0] = op_info->opcode;
 	if (is_addressed) {
@@ -564,9 +907,11 @@ static int spi_dw_nor_transceive(const struct device *dev,
 
 		if (use_32bit) {
 			memcpy(&buf[1], &addr32.u8[0], 4);
+			dr_addr_144 =buf[1]<<24|buf[2]<<16|buf[3]<<8|buf[4];
 			spi_buf[0].len += 4;
 		} else {
 			memcpy(&buf[1], &addr32.u8[1], 3);
+			dr_addr_144 =buf[1]<<16|buf[2]<<8|buf[3];
 			spi_buf[0].len += 3;
 		}
 
@@ -584,8 +929,55 @@ static int spi_dw_nor_transceive(const struct device *dev,
 		.count = 2,
 	};
 
+	const struct spi_buf_set tx_set_144 = {
+		.buffers = spi_buf_144,
+		.count = 1,
+	};
+
+	const struct spi_buf_set rx_set_144read = {
+		.buffers = spi_buf_144,
+		.count = 1,
+	};
+
+	if (!is_write && op_info->mode == JESD216_MODE_144) {
+
+		struct spi_config config_copy = *config;
+		// spi->is_write_144 =0;
+		/* Set QUAD lines (preserve other flags) */
+		config_copy.operation &= ~SPI_LINES_MASK;
+		config_copy.operation |= SPI_LINES_QUAD;
+		const struct spi_config *config_copy_const = &config_copy;
+
+		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(1);  /* cmd 1bit address 4 bit*/
+		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_INST_L_8BIT;
+		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L((op_info->addr_len));
+		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_WAIT_CYCLES(6);
+
+		write_spi_ctrlr0(dev,spi_ctrlr0);
+
+		return transceive_144_read(dev, config_copy_const,NULL, &rx_set_144read, false, NULL, NULL,op_info->opcode,dr_addr_144);
+	}
+
 	if (is_write) {
-		return transceive(dev, config, &tx_set, NULL, false, NULL, NULL);
+		if(op_info->mode == JESD216_MODE_144){
+			// spi->is_write_144 =1;
+			struct spi_config config_copy = *config;
+			/* Set QUAD lines (preserve other flags) */
+			config_copy.operation &= ~SPI_LINES_MASK;
+			config_copy.operation |= SPI_LINES_QUAD;
+			const struct spi_config *config_copy_const = &config_copy;
+
+			spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(1);  /* cmd 1bit address 4 bit*/
+			spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_INST_L_8BIT;
+			spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L((op_info->addr_len));
+
+			write_spi_ctrlr0(dev,spi_ctrlr0);
+
+			return transceive_144_write(dev, config_copy_const,&tx_set_144, NULL, false, NULL, NULL,op_info->opcode,dr_addr_144);
+
+		}else{
+			return transceive(dev, config, &tx_set, NULL, false, NULL, NULL);
+		}
 	}
 
 	return transceive(dev, config, &tx_set, &rx_set, false, NULL, NULL);;
