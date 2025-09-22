@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config ENTROPY_LS_DWTRNG
+	bool "linkedsemi DWTRNG entropy driver"
+	depends on DT_HAS_LINKEDSEMI_LS_DWTRNG_ENABLED
+	select ENTROPY_HAS_DRIVER
+	help
+	  Enable linkedsemi DWTRNG driver.
+	  HW produces 128-bit per command; driver caches 16 bytes and
+	  serves byte-wise; after ~524k bits the state is advanced.

@@ -474,6 +474,16 @@
             status = "disabled";
         };
 
+      trng0: dwtrng@40004000 {
+            compatible = "linkedsemi,ls-dwtrng";
+            reg = <0x40004000 0x400>;
+            status = "okay";
+            clocks = <NIST_TRNG_CLOCK>;
+            resets = <NIST_TRNG_RESET>;
+            interrupts = <NIST_TRNG_IRQN 3>;
+        };
+
+
         aes256: aes256@40029000 {
             compatible = "linkedsemi,aes256";
             reg = <0x40029000 0x400>;
@@ -525,6 +535,32 @@
                 size-order = <0>;
                 status = "disabled";
             };
+        };
+
+     iwdgtcpu1: watchdog@400a1800 {
+          compatible = "linkedsemi,ls-watchdog";
+          reg = <0x400a1800 0x400>;
+          interrupts = <IWDT1_IRQN  4>;
+          status = "disabled";
+          clocks = <IWDT1_CLOCK>;
+          resets = <IWDT1_RESET>;
+          clock-frequency = <32768>;
+        };
+    iwdgtcpu2: watchdog@40099000{
+          compatible = "linkedsemi,ls-watchdog";
+          reg = <0x40099000 0x400>;
+          interrupts = <IWDT2_IRQN 4>;
+          status = "disabled";
+          clocks = <IWDT2_CLOCK>;
+          clock-frequency = <32768>;
+        };
+    iwdgtcpu: watchdog@4002f800{
+          compatible = "linkedsemi,ls-watchdog";
+          reg = <0x4002f800 0x400>;
+          interrupts = <PMU_WDT_IRQN 4>;
+          status = "disabled";
+          clocks = <WDT_CLOCK>;
+          clock-frequency = <32768>;
         };
 
         espi2: espi@40046000 {
