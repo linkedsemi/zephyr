@@ -50,7 +50,9 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     //     io_cfg_input_1v8_pure(pin);
     // }
 
-    if (pin_desc.pin_attr.output_enable) {
+    if (pin_desc.pin_attr.output_enable
+        && (!pin_desc.pin_attr.analog)
+        && (!pin_desc.pinmux.func_valid)) {
         io_cfg_output(pin);
     } else {
         io_cfg_disable_output(pin);
@@ -75,7 +77,6 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     }
 
     if (pin_desc.pin_attr.analog) {
-        io_cfg_disable_output(pin);
         gpio_ana_init(pin);
     } else {
         gpio_ana_deinit(pin);
