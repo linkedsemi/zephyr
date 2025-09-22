@@ -75,6 +75,7 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     }
 
     if (pin_desc.pin_attr.analog) {
+        io_cfg_disable_output(pin);
         gpio_ana_init(pin);
     } else {
         gpio_ana_deinit(pin);
