@@ -1,0 +1,29 @@
+# dts/bindings/entropy/linkedsemi,ls-dwtrng.yaml
+# SPDX-License-Identifier: Apache-2.0
+description: linkedsemi digital-whitening true random number generator
+
+compatible: "linkedsemi,ls-dwtrng"
+
+include: [base.yaml, reset-device.yaml]
+
+properties:
+  reg:
+    type: array
+    required: true
+    description: MMIO base address and size
+
+  interrupts:
+    required: true
+    description: Independent Watchdog interrupt
+  clocks:
+    type: phandle-array
+    required: false
+    description: Optional clock(s) controlling the DWTRNG
+
+  resets:
+    type: phandle-array
+    required: false
+    description: Optional reset line(s) for the DWTRNG block
+
+  status:
+    required: true
