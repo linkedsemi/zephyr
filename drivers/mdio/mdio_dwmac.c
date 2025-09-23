@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#define DT_DRV_COMPAT snps_dwmac_mdio
+
 #include <stdint.h>
 #include <errno.h>
 #include <zephyr/device.h>
@@ -11,6 +13,9 @@
 #include <zephyr/drivers/mdio.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/mdio.h>
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
+#include <zephyr/drivers/gpio.h>
+#endif
 
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
@@ -25,8 +30,6 @@
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(mdio_dwmac, CONFIG_MDIO_LOG_LEVEL);
-
-#define DT_DRV_COMPAT snps_dwmac_mdio
 
 #define MAC_MDIO_ADDRESS 0x0200
 #define MAC_MDIO_DATA    0x0204
@@ -82,6 +85,11 @@ struct mdio_dwmac_data {
 struct mdio_dwmac_config {
     mem_addr_t base;
     uint32_t clock_frequency;
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
+    const struct gpio_dt_spec reset_gpio;
+    uint32_t reset_hold_ms;
+    uint32_t circuits_set_ms;
+#endif
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -187,14 +195,64 @@ static int mdio_dwmac_write_c45(const struct device *dev, uint8_t prtad, uint8_t
     return mdio_dwmac_transfer(dev, prtad, devad, regad, &data, MDIO_OP_C45_WRITE);
 }
 
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
+static int phy_reset(const struct device *dev)
+{
+    const struct mdio_dwmac_config *const dev_config = dev->config;
+    int ret = 0;
+
+    if (dev_config->reset_gpio.port) {
+        /* Configure reset pin */
+        if (dev_config->reset_gpio.port) {
+            ret = gpio_pin_configure_dt(&dev_config->reset_gpio, GPIO_OUTPUT_ACTIVE);
+            if (ret) {
+                return ret;
+            }
+        }
+
+        /* Start reset */
+        ret = gpio_pin_set_dt(&dev_config->reset_gpio, 0);
+        if (ret) {
+            return ret;
+        }
+
+        if (dev_config->reset_hold_ms) {
+            k_busy_wait(USEC_PER_MSEC * dev_config->reset_hold_ms);
+        } else {
+            /* Hold reset for the minimum time specified by datasheet */
+            k_busy_wait(USEC_PER_MSEC * 10);
+        }
+
+        /* Reset over */
+        ret = gpio_pin_set_dt(&dev_config->reset_gpio, 1);
+        if (ret) {
+            return ret;
+        }
+
+        if (dev_config->circuits_set_ms) {
+            k_busy_wait(USEC_PER_MSEC * dev_config->circuits_set_ms);
+        } else {
+            /* Wait another 30 ms (circuits settling time) before accessing registers */
+            k_busy_wait(USEC_PER_MSEC * 30);
+        }
+    }
+
+    return ret;
+}
+#endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios) */
+
 static int mdio_dwmac_init(const struct device *dev)
 {
     const struct mdio_dwmac_config *const dev_config = dev->config;
     struct mdio_dwmac_data *const dev_data = dev->data;
-	k_timepoint_t timeout;
+    k_timepoint_t timeout;
     __maybe_unused int ret;
 
     k_mutex_init(&dev_data->mdio_mutex);
+
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
+    phy_reset(dev);
+#endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios) */
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
@@ -238,7 +296,7 @@ static int mdio_dwmac_init(const struct device *dev)
 
     /* resets all of the MAC internal registers and logic */
     sys_write32(DMA_MODE_SWR, dev_config->base + DMA_MODE);
-    timeout = sys_timepoint_calc(K_MSEC(100));
+    timeout = sys_timepoint_calc(K_MSEC(1000));
     while (sys_read32(dev_config->base + DMA_MODE) & DMA_MODE_SWR) {
         if (sys_timepoint_expired(timeout)) {
             __ASSERT(0, "unable to reset hardware");
@@ -286,6 +344,9 @@ static const struct mdio_driver_api mdio_dwmac_api = {
             DT_NODE_HAS_PROP(DT_INST_PHANDLE(inst, clocks), clock_frequency),                        \
             (DT_INST_PROP_BY_PHANDLE(inst, clocks, clock_frequency)),                                \
             (DT_INST_PROP(inst, clock_frequency))),                                                  \
+        .reset_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, reset_gpios, {0}),                              \
+        .reset_hold_ms = DT_INST_PROP(inst, reset_hold_ms),                                          \
+        .circuits_set_ms = DT_INST_PROP(inst, circuits_set_ms),                                      \
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                 \
         IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                        \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))   \
