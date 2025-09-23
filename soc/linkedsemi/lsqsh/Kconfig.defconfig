@@ -287,18 +287,18 @@ config UART_SHARE_REGISTER
 
 config SHA256_CLOCK_RESET
 	bool "SHA256_CLOCK_RESET"
-	default n
+	default y
 
 config SHA512_CLOCK_RESET
 	bool "SHA512_CLOCK_RESET"
-	default n
+	default y
 
 config SM4_CLOCK_RESET
 	bool "SM4_CLOCK_RESET"
-	default n
+	default y
 
 config AES_CLOCK_RESET
 	bool "AES_CLOCK_RESET"
-	default n
+	default y
 
 endif
