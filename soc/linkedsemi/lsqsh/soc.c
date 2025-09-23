@@ -199,15 +199,13 @@ void iopmp_region_init(void)
     ls_clock_control_on(IOPMP_CLOCK);
     for (uint32_t idx = 0; idx < 2; idx++) {
         uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
-        iopmp_config_region_napot4(dev, 0, 0x1000000, KB(64), false, false, false, false);
-#if 0
-        iopmp_config_region_napot4(dev, 1, 0x8000000, MB(2), false, false, false, false);
-#endif
-        iopmp_config_region_napot4(dev, 2, 0x10000000, KB(512), false, false, false, false);
+        iopmp_config_region_napot4(dev, 0, 0x10000000, KB(512), false, false, false, false);
+        iopmp_config_region_napot4(dev, 1, 0x40002800, KB(1), true, true, true, false);
+        iopmp_config_region_napot4(dev, 2, 0x40005000, KB(1), true, true, true, false);
         iopmp_config_region_napot4(dev, 3, SEC_SYSC_CPU_SEC_ADDR + 0x28 /* sec_cpu_intr */, 4, true, true, true, false);
-        iopmp_config_region_napot4(dev, 4, 0x40000000, KB(256), false, false, false, false);
-        iopmp_config_region_napot4(dev, 5, 0x400A0000, KB(32), false, false, false, false);
-
+        iopmp_config_region_napot4(dev, 4, 0x40028000, KB(8), true, true, true, false);
+        iopmp_config_region_napot4(dev, 5, 0x40000000, KB(256), false, false, false, false);
+        iopmp_config_region_napot4(dev, 6, 0x400A0000, KB(32), false, false, false, false);
         iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
         iopmp_config_enable(dev, true);
     }
@@ -453,6 +451,22 @@ __maybe_unused static void peripheral_init()
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x1);
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x2);
+
+    ls_clock_control_off(CALC_SHA_CLOCK);
+    ls_reset_line_toggle(CALC_SHA_RESET);
+    ls_clock_control_on(CALC_SHA_CLOCK);
+
+    ls_clock_control_off(SHA512_CLOCK);
+    ls_reset_line_toggle(SHA512_RESET);
+    ls_clock_control_on(SHA512_CLOCK);
+
+    ls_clock_control_off(CALC_SM4_CLOCK);
+    ls_reset_line_toggle(CALC_SM4_RESET);
+    ls_clock_control_on(CALC_SM4_CLOCK);
+
+    ls_clock_control_off(CRYPT_CLOCK);
+    ls_reset_line_toggle(CRYPT_RESET);
+    ls_clock_control_on(CRYPT_CLOCK);
 }
 
 __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
