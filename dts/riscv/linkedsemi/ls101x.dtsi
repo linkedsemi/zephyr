@@ -328,6 +328,15 @@
             #hwmon-in-cells = <1>;
           };
           
+        pwm:pwm@40082400 {
+            compatible = "linkedsemi,ls-pwm";
+            reg = <0x40082400 0x100>;
+            status = "okay";
+            clocks = <&per_cctl LS_CCTL_CLKG0 LS_CLKG_SET_PWM_POS LS_CLKG_CLR_PWM_POS>;
+            clock-frequency = <144000000>;
+            #pwm-cells = <3>;
+        };
+
         dac12: dac@4008d400 {
             compatible = "linkedsemi,ls-dac";
             reg = <0x4008d400 0x400>;
