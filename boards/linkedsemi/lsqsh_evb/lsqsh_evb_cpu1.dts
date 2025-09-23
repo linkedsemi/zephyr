@@ -281,6 +281,9 @@
 
 &mdio1 {
     status = "okay";
+    reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+    reset-hold-ms = <10>;
+    circuits-set-ms = <30>;
     eth1_phy: ethernet-phy@0 {
         compatible = "realtek,rtl8211f";
         reg = <0>;
