@@ -85,11 +85,9 @@ struct mdio_dwmac_data {
 struct mdio_dwmac_config {
     mem_addr_t base;
     uint32_t clock_frequency;
-#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
-    const struct gpio_dt_spec reset_gpio;
-    uint32_t reset_hold_ms;
-    uint32_t circuits_set_ms;
-#endif
+    IF_ENABLED(DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios), (const struct gpio_dt_spec reset_gpio;))
+    IF_ENABLED(DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_hold_ms), (uint32_t reset_hold_ms;))
+    IF_ENABLED(DT_ANY_INST_HAS_PROP_STATUS_OKAY(circuits_set_ms), (uint32_t circuits_set_ms;))
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -334,30 +332,30 @@ static const struct mdio_driver_api mdio_dwmac_api = {
     .write_c45 = mdio_dwmac_write_c45,
 };
 
-#define MDIO_DWMAC_DEVICE(inst)                                                                      \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                                      \
-                                                                                                     \
-    static struct mdio_dwmac_data mdio_dwmac_data_##inst = {};                                       \
-    static struct mdio_dwmac_config mdio_dwmac_config_##inst = {                                     \
-        .base = (uint32_t)DT_INST_REG_ADDR(inst),                                                    \
-        .clock_frequency = COND_CODE_1(                                                              \
-            DT_NODE_HAS_PROP(DT_INST_PHANDLE(inst, clocks), clock_frequency),                        \
-            (DT_INST_PROP_BY_PHANDLE(inst, clocks, clock_frequency)),                                \
-            (DT_INST_PROP(inst, clock_frequency))),                                                  \
-        .reset_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, reset_gpios, {0}),                              \
-        .reset_hold_ms = DT_INST_PROP(inst, reset_hold_ms),                                          \
-        .circuits_set_ms = DT_INST_PROP(inst, circuits_set_ms),                                      \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                 \
-        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                        \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))   \
-    };                                                                                               \
-    DEVICE_DT_INST_DEFINE(inst,                                                                      \
-                          &mdio_dwmac_init,                                                          \
-                          NULL,                                                                      \
-                          &mdio_dwmac_data_##inst,                                                   \
-                          &mdio_dwmac_config_##inst,                                                 \
-                          POST_KERNEL,                                                               \
-                          CONFIG_MDIO_INIT_PRIORITY,                                                 \
+#define MDIO_DWMAC_DEVICE(inst)                                                                                                          \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                                                                          \
+                                                                                                                                         \
+    static struct mdio_dwmac_data mdio_dwmac_data_##inst = {};                                                                           \
+    static struct mdio_dwmac_config mdio_dwmac_config_##inst = {                                                                         \
+        .base = (uint32_t)DT_INST_REG_ADDR(inst),                                                                                        \
+        .clock_frequency = COND_CODE_1(                                                                                                  \
+            DT_NODE_HAS_PROP(DT_INST_PHANDLE(inst, clocks), clock_frequency),                                                            \
+            (DT_INST_PROP_BY_PHANDLE(inst, clocks, clock_frequency)),                                                                    \
+            (DT_INST_PROP(inst, clock_frequency))),                                                                                      \
+        IF_ENABLED(DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios), (.reset_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, reset_gpios, {0}),))     \
+        IF_ENABLED(DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_hold_ms), (.reset_hold_ms = DT_INST_PROP_OR(inst, reset_hold_ms, {0}),))       \
+        IF_ENABLED(DT_ANY_INST_HAS_PROP_STATUS_OKAY(circuits_set_ms), (.circuits_set_ms = DT_INST_PROP_OR(inst, circuits_set_ms, {0}),)) \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                                                     \
+        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                                                            \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))                                       \
+    };                                                                                                                                   \
+    DEVICE_DT_INST_DEFINE(inst,                                                                                                          \
+                          &mdio_dwmac_init,                                                                                              \
+                          NULL,                                                                                                          \
+                          &mdio_dwmac_data_##inst,                                                                                       \
+                          &mdio_dwmac_config_##inst,                                                                                     \
+                          POST_KERNEL,                                                                                                   \
+                          CONFIG_MDIO_INIT_PRIORITY,                                                                                     \
                           &mdio_dwmac_api);
 
 DT_INST_FOREACH_STATUS_OKAY(MDIO_DWMAC_DEVICE)
