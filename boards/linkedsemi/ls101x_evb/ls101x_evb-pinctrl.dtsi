@@ -208,6 +208,47 @@
        	input-enable;
     };
 
+    /* PWM */
+    /omit-if-no-ref/pwm1_tx_pe06: pwm1_tx_pe06 {
+        pinmux = <LS_PINMUX_SET('E', 6, FIO_PWM1)>;
+        output-enable;
+        output-low;
+	};
+    /omit-if-no-ref/pwm2_tx_pe07: pwm2_tx_pe07 {
+        pinmux = <LS_PINMUX_SET('E', 7, FIO_PWM2)>;
+        output-enable;
+        output-low;
+	};
+    /omit-if-no-ref/pwm3_tx_pe08: pwm3_tx_pe08 {
+        pinmux = <LS_PINMUX_SET('E', 8, FIO_PWM3)>;
+        output-enable;
+        output-low;
+	};
+     /omit-if-no-ref/pwm4_tx_pe09: pwm4_tx_pe09 {
+        pinmux = <LS_PINMUX_SET('E', 9, FIO_PWM4)>;
+        output-enable;
+        output-low;
+	};
+     /omit-if-no-ref/pwm5_tx_pe10: pwm5_tx_pe10 {
+        pinmux = <LS_PINMUX_SET('E', 10, FIO_PWM5)>;
+        output-enable;
+        output-low;
+	};
+     /omit-if-no-ref/pwm6_tx_pe11: pwm6_tx_pe11 {
+        pinmux = <LS_PINMUX_SET('E', 11, FIO_PWM6)>;
+        output-enable;
+        output-low;
+	};
+     /omit-if-no-ref/pwm7_tx_pe12: pwm7_tx_pe12 {
+        pinmux = <LS_PINMUX_SET('E', 12, FIO_PWM7)>;
+        output-enable;
+        output-low;
+	};
+	 /omit-if-no-ref/ pwm8_tx_pe15: pwm8_tx_pe15 {
+        pinmux = <LS_PINMUX_SET('E', 15, FIO_PWM8)>;
+        output-enable;
+        output-low;
+	};
     /omit-if-no-ref/ spi2_nss_pb13: spi2_nss_pb13 {
 		pinmux = <LS_PINMUX_SET('B', 13, SPI2_NSS)>;
 		bias-pull-up;

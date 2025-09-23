@@ -143,6 +143,22 @@
         input-enable;
         bias-pull-up;
     };
+    /* PWM */
+    /omit-if-no-ref/pwm1_pa04: pwm1_pa04 {
+        pinmux = <PWM1_FUNC1_IDX27_PINMUX_PA(04)>;
+    };
+    /omit-if-no-ref/pwm2_ph05: pwm2_ph05 {
+        pinmux = <PWM2_FUNC1_IDX28_PINMUX_PH(05)>;
+        input-enable;
+    };
+    /omit-if-no-ref/pwm4_ph05: pwm4_ph05 {
+        pinmux = <PWM4_FUNC1_IDX29_PINMUX_PH(05)>;
+        input-enable;
+    };
+    /omit-if-no-ref/pwm7_pg02: pwm7_pg02 {
+        pinmux = <PWM7_FUNC1_IDX27_PINMUX_PG(02)>;
+        input-enable;
+    };
     /omit-if-no-ref/usb1_dp_ph14: usb1_dp_ph14 {
         pinmux = <USB1_DP_FUNC1_IDX23_PINMUX_PH(14)>;
         input-enable;

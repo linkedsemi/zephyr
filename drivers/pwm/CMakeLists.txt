@@ -50,3 +50,5 @@ zephyr_library_sources_ifdef(CONFIG_PWM_INFINEON_CAT1	pwm_ifx_cat1.c)
 zephyr_library_sources_ifdef(CONFIG_USERSPACE   pwm_handlers.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_CAPTURE pwm_capture.c)
 zephyr_library_sources_ifdef(CONFIG_PWM_SHELL   pwm_shell.c)
+zephyr_library_sources_ifdef(CONFIG_PWM_LS	pwm_ls.c)
+
