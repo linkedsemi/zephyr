@@ -716,12 +716,16 @@ exit:
 }
 #endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI */
 
-int ecdsa_test(void);
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    int ecdsa_test(void);
+#endif
+
 int main(void)
 {
 
     mbedtls_zephyr_threading_init();
 
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 #if defined(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI)
     if(ecdsa_test() !=0)
     {
@@ -731,6 +735,7 @@ int main(void)
         printf("ECDSA  test passed!\n");
     }
 
+#endif
 #endif
 
 #if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)

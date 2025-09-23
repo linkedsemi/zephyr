@@ -289,4 +289,20 @@ config UART_SHARE_REGISTER
 	bool "UART_SHARE_REGISTER"
 	default n
 
+config SHA256_CLOCK_RESET
+	bool "SHA256_CLOCK_RESET"
+	default n
+
+config SHA512_CLOCK_RESET
+	bool "SHA512_CLOCK_RESET"
+	default n
+
+config SM4_CLOCK_RESET
+	bool "SM4_CLOCK_RESET"
+	default n
+
+config AES_CLOCK_RESET
+	bool "AES_CLOCK_RESET"
+	default n
+
 endif
