@@ -1,0 +1,23 @@
+# Copyright (c) 2024 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+config PWM_LS
+	bool "Linkedsemi 101x PWM driver"
+	default y
+	depends on DT_HAS_LINKEDSEMI_LS_PWM_ENABLED
+	depends on CLOCK_CONTROL
+	select PINCTRL
+	help
+	  Enable 101x PWM driver.
+
+if PWM_LS
+
+config PWM_LS_V2
+    bool "Enable PWM V2 mode support"
+	default y
+	depends on SOC_SERIES_LSQSH
+	help
+	  Enable this option to add support for the newer QSH hardware variant of the Linkedsemi PWM. Leave disabled if using older hardware.
+
+endif # PWM_LS
+
