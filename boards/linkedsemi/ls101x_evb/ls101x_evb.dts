@@ -69,7 +69,7 @@
 	hwmon0 {
 		compatible = "linkedsemi,hwmon";
 		class = <0>;
-		hwmons = <&cap 0>;//,<&pwm 1>;
+		hwmon-ins = <&cap 0>;//,<&pwm 1>;
 	};
 };
 
