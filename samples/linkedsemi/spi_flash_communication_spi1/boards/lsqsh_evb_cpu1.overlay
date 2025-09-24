@@ -1,0 +1,10 @@
+&spi3 {
+    status = "okay";
+    flash3: flash3@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <50000000>;
+        status = "okay";
+        //spi-max-buswidth = <4>; //支持 Quad 模式，spi_nor_multi_dev.c：spi_nor_info_init_params
+    };
+};
