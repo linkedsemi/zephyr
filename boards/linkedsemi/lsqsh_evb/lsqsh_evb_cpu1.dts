@@ -41,6 +41,7 @@
         compatible = "pwm-leds";
         pwm_led0: pwm_led_0 {
             pwms = <&pwm 10 PWM_USEC(1) 0>;
+        };
     };
 
 
