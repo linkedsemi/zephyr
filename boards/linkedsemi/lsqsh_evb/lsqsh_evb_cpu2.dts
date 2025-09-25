@@ -23,6 +23,7 @@
 
     aliases {
         sdhc0 = &sdhci1;
+        watchdog0=&app_iwdg;
     };
 
     soc {
@@ -110,6 +111,10 @@
 &uart5 {
     current-speed = <115200>;
     status = "disabled";
+};
+
+&app_iwdg {
+    status = "okay";
 };
 
 &psram {

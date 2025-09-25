@@ -35,6 +35,7 @@
         sw0 = &btn1;
         led0 = &led1;
         pwm-led0 = &pwm_led0;
+        watchdog0 = &sec_iwdg;
     };
 
     pwmleds {
@@ -224,6 +225,14 @@
 &uart4 {
     current-speed = <115200>;
     status = "disabled";
+};
+
+&sec_iwdg {
+    status = "okay";
+};
+
+&pmu_iwdg {
+    status = "okay";
 };
 
 &pwm{
