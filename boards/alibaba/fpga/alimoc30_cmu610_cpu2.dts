@@ -201,12 +201,14 @@
     interrupts = <UART3_IRQN 3>;
     pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
     pinctrl-names = "default";
+    label = "vttyS1";
     status = "okay";
 };
 #endif
 
 &uart4 {
     current-speed = <115200>;
+    label = "ttyS0";
     status = "okay";
 };
 
