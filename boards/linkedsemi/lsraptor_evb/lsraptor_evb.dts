@@ -1,0 +1,20 @@
+
+/dts-v1/;
+#include <riscv/linkedsemi/lsraptor.dtsi>
+
+/ {
+	model = "linkedsemi LSRAPTOR_EVB";
+	compatible = "linkedsemi,lsraptor_evb";
+
+	chosen {
+		zephyr,sram = &sram0;
+		zephyr,shell-uart = &dwuart1;
+		zephyr,console = &dwuart1;
+	};
+
+};
+
+&dwuart1 {
+	status = "okay";
+	current-speed = <921600>;
+};

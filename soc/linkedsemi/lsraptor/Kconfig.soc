@@ -1,0 +1,15 @@
+
+
+config SOC_LSRAPTOR_E906
+    bool
+    select SOC_SERIES_LSRAPTOR
+
+config SOC_SERIES_LSRAPTOR
+    bool
+    select SOC_FAMILY_LS_MCU
+
+config SOC_SERIES
+    default "lsraptor" if SOC_SERIES_LSRAPTOR
+
+config SOC
+    default "lsraptor_e906" if SOC_LSRAPTOR_E906

@@ -13,3 +13,6 @@ family:
       cpuclusters:
       - name: cpu1
       - name: cpu2
+  - name: lsraptor
+    socs:
+      - name: lsraptor_e906

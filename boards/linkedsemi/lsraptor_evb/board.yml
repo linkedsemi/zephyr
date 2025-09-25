@@ -1,0 +1,5 @@
+board:
+  name: lsraptor_evb
+  vendor: linkedsemi
+  socs:
+  - name: lsraptor_e906

@@ -1,0 +1,48 @@
+
+/ {
+    #address-cells = <1>;
+    #size-cells = <1>;
+
+    cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		cpu0: cpu@0 {
+            device_type = "cpu";
+            compatible = "linkedsemi,riscv";
+            riscv,isa = "e906";
+            clock-frequency = <3500000>;
+			reg = <0>;
+		};
+    };
+
+    sram0: memory@500000{
+        compatible = "mmio-sram";
+        reg = <0x00500000 0x40000>;
+    };
+    soc {
+        #address-cells = <1>;
+        #size-cells = <1>;
+        compatible = "simpe-bus";
+        interrupt-parent = <&intc>;
+        intc: interrupt-controller {
+            compatible = "linkedsemi,riscv,e906-intc";
+            #address-cells = <0>;
+            #interrupt-cells = <2>;
+            interrupt-controller;
+        };
+        mtimer: machine-timer@e0004000 {
+			compatible = "linkedsemi,machine-timer";
+			reg = <0xe0004000 0x8000>;
+			interrupts = <7 0>;
+		};
+        dwuart1: dwuart@60503000 {
+            compatible = "ns16550","snps,dw-apb-uart";
+            reg = <0x60503000 0x400>;
+			status = "disabled";
+            clock-frequency = <3500000>;
+            // label = "DWUART1";
+            interrupts = <142 3> ;
+			reg-shift = <2>;
+        };
+    };
+};

@@ -1,0 +1,42 @@
+if SOC_SERIES_LSRAPTOR
+
+config RISCV_HAS_PLIC
+	default n
+
+config RISCV_HAS_CLIC
+	default y
+
+config XUANTIE_E906_CLIC
+	bool
+	default y
+
+config RISCV_MCAUSE_EXCEPTION_MASK
+	default 0xfff
+
+config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency)
+	
+config NUM_IRQS
+	default 240
+
+config MAIN_STACK_SIZE
+	default 2048
+
+config USERSPACE
+	default n
+
+config RISCV_PMP
+	default n
+	
+config PMP_SLOTS
+	default 16
+
+config PMP_GRANULARITY
+	default 128
+
+config PMP_NO_NA4
+	default y
+
+config RISCV_SOC_HAS_ISR_STACKING
+	default y
+endif
