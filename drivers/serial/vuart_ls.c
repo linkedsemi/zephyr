@@ -1,6 +1,6 @@
 #define DT_DRV_COMPAT linkedsemi_vuart
-#include <zephyr/drivers/uart.h>
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/uart.h>
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
@@ -30,7 +30,6 @@ struct vuart_ls_config {
 	struct k_pipe *h2b_pipe;
 	struct k_pipe *b2h_pipe;
 };
-
 static void vuart_irq_thread(void *dev_ptr, void *p2, void *p3)
 {
 	const struct device *dev = (const struct device *)dev_ptr;
@@ -214,9 +213,9 @@ int ls_vuart_get_tx_char(const struct device *dev, uint8_t *out_char)
 	return 0;
 }
 
-bool ls_vuart_tx_ready(const struct device *dev)
+bool host_vuart_rx_available(const struct device *dev)
 {
-	return vuart_ls_irq_tx_complete(dev);
+	return !vuart_ls_irq_tx_complete(dev);
 }
 
 void ls_vuart_put_rx_char(const struct device *dev, uint8_t c)
@@ -266,8 +265,8 @@ void ls_vuart_register_tx_start_callback(const struct device *vuart,
 	K_PIPE_DEFINE(m_rx_pipe_##inst, FIFO_QUEUE_COUNT, 4);                                      \
 	static struct vuart_ls_data vuart_ls_data_##inst;                                          \
 	static const struct vuart_ls_config vuart_ls_cfg_##inst = {                                \
-		.h2b_pipe = &m_tx_pipe_##inst,                                                     \
-		.b2h_pipe = &m_rx_pipe_##inst,                                                     \
+		.h2b_pipe = &m_rx_pipe_##inst,                                                     \
+		.b2h_pipe = &m_tx_pipe_##inst,                                                     \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, &vuart_init, NULL, &vuart_ls_data_##inst,                      \
 			      &vuart_ls_cfg_##inst, POST_KERNEL,                                   \

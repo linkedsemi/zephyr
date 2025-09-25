@@ -26,7 +26,6 @@ LOG_MODULE_REGISTER(host_vuart, CONFIG_ESPI_LOG_LEVEL);
 struct host_vuart_cfg {
 	const struct device *parent; /* eSPI 控制器 */
 	const struct device *vuart;
-	uint16_t host_vuart_reg;
 	const struct upstream_irq_type *up_irq;
 };
 
@@ -58,7 +57,7 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
 
 	iir = (ptr_data->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
 
-	if ((ptr_data->data_reg.ier & 0x01) && ls_vuart_tx_ready(cfg->vuart)) {
+	if ((ptr_data->data_reg.ier & 0x01) && host_vuart_rx_available(cfg->vuart)) {
 		iir |= IIR_RDA;
 	} else if ((ptr_data->data_reg.ier & 0x02)) {
 		iir |= IIR_THRE;
@@ -90,7 +89,7 @@ static void host_vuart_report_active_edge_level_up_irq(const struct device *dev)
 	const struct host_vuart_cfg *cfg = dev->config;
 	struct host_vuart_data *ptr_data = dev->data;
 
-	if (host_vuart_calc_iir(dev) == IIR_NOPEND) {
+	if ((host_vuart_calc_iir(dev) & 0xf)  == IIR_NOPEND) {
 		return;
 	}
 
@@ -217,7 +216,7 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
 	const struct host_vuart_cfg *cfg = dev->config;
 	uint8_t *val = res;
 	*val = 0x60;
-	if (ls_vuart_tx_ready(cfg->vuart)) {
+	if (host_vuart_rx_available(cfg->vuart)) {
 		*val |= 0x01;
 	}
 }
@@ -295,7 +294,7 @@ static int host_vuart_init(const struct device *dev)
 						  .io_read = host_vuart_reg2_read,                 \
 						  .io_write = host_vuart_reg2_write,               \
 						  .ctx = (void *)DEVICE_DT_INST_GET(inst),         \
-						  .addr = DT_INST_PROP(inst, port) + 2 / }},       \
+						  .addr = DT_INST_PROP(inst, port) + 2  }},       \
 			   [3] = {.content =                                                       \
 					  &(struct peri_ioport_content){                           \
 						  .io_read = host_vuart_reg3_read,                 \
@@ -328,7 +327,6 @@ static int host_vuart_init(const struct device *dev)
 	static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
 		.parent = DEVICE_DT_GET(DT_INST_PARENT(inst)),                                     \
 		.vuart = DEVICE_DT_GET(DT_INST_PHANDLE(inst, target)),                             \
-		.host_vuart_reg = DT_INST_PROP(inst, port),                                        \
 		IF_ENABLED(DT_HAS_UP_IRQ(inst), (.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst))) }; \
 	DEVICE_DT_INST_DEFINE(inst, &host_vuart_init, NULL, &host_vuart_data_##inst,               \
 			      &host_vuart_cfg_##inst, POST_KERNEL, CONFIG_ESPI_INIT_PRIORITY, 0);

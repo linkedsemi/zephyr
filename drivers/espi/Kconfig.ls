@@ -18,7 +18,6 @@ config ESPI_LS_HOST_VUART
     bool "Linkedsemi Host VUART (Zephyr port of linux_espi-master)"
     default y
     depends on DT_HAS_LINKEDSEMI_LS_HOST_VUART_ENABLED  
-    depends on DT_HAS_LINKEDSEMI_VUART_ENABLED
     help
         Enable Host-side VUART using Zephyr APIs, ported from linux_espi-master.
 
