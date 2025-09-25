@@ -484,7 +484,7 @@
             status = "disabled";
         };
 
-      trng0: dwtrng@40004000 {
+        trng0: dwtrng@40004000 {
             compatible = "linkedsemi,ls-dwtrng";
             reg = <0x40004000 0x400>;
             status = "okay";
@@ -547,7 +547,7 @@
             };
         };
 
-     iwdgtcpu1: watchdog@400a1800 {
+        sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x400a1800 0x400>;
           interrupts = <IWDT1_IRQN  4>;
@@ -556,15 +556,16 @@
           resets = <IWDT1_RESET>;
           clock-frequency = <32768>;
         };
-    iwdgtcpu2: watchdog@40099000{
+        app_iwdg: watchdog@40099000{
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x40099000 0x400>;
           interrupts = <IWDT2_IRQN 4>;
           status = "disabled";
           clocks = <IWDT2_CLOCK>;
+          resets = <IWDT2_RESET>;
           clock-frequency = <32768>;
         };
-    iwdgtcpu: watchdog@4002f800{
+        pmu_iwdg: watchdog@4002f800{
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x4002f800 0x400>;
           interrupts = <PMU_WDT_IRQN 4>;
