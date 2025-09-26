@@ -174,6 +174,7 @@ static int udc_ls_init(const struct device *dev)
     /* If the dp is externally pulled up, a low level will be output here to make the host initiate a reset. */
     io_cfg_output(PH14);
     io_write_pin(PH14, 0);
+    k_usleep(1);
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
