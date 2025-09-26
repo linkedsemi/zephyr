@@ -141,11 +141,11 @@ void wrapper_input_report_done(const struct device *dev)
 void wrapper_output_report(const struct device *dev,
 			   const uint16_t len, const uint8_t *const buf)
 {
-	ARG_UNUSED(dev);
-	ARG_UNUSED(len);
-	ARG_UNUSED(buf);
+	const struct hid_ops *legacy_ops = get_legacy_ops(dev);
 
-	__ASSERT(false, "Output report callback is not supported");
+	if (legacy_ops != NULL && legacy_ops->int_out_ready != NULL) {
+		legacy_ops->int_out_ready(dev, buf, len);
+	}
 }
 
 static struct hid_device_ops wrapper_ops = {
