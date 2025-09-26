@@ -1,0 +1,59 @@
+config USBD_MANUFACTURER
+    string "USB device manufacturer string"
+    default "Zephyr Project"
+    help
+      USB device manufacturer string.
+
+config USBD_PRODUCT
+    string "USB device product string"
+    default "USBD"
+    help
+      USB device product stringa.
+
+config USBD_PID
+    hex "USB device Product ID"
+    default 0x0001
+    help
+      USB device Product ID.
+
+config USBD_VID
+    hex "USB device Vendor ID"
+    default 0x2fe3
+    help
+      USB device Vendor ID.
+
+config USBD_SELF_POWERED
+    bool "USB device Self-powered attribute"
+    default y
+    help
+      Set the Self-powered attribute in the configuration.
+
+config USBD_REMOTE_WAKEUP
+    bool "USB device Remote Wakeup attribute"
+    help
+      Set the Remote Wakeup attribute in the configuration.
+
+config USBD_MAX_POWER
+    int "USB device bMaxPower value"
+    default 125
+    range 0 250
+    help
+      bMaxPower value in the configuration in 2 mA units.
+
+choice
+    prompt "USB Device Controller"
+    default USB_DEVICE_HS_CONTROLLER
+
+config USB_DEVICE_HS_CONTROLLER
+    bool "Use zephyr_udc0"
+    help
+      Use the High Speed USB device controller (zephyr_udc0).
+
+config USB_DEVICE_FS_CONTROLLER
+    bool "Use zephyr_udc1"
+    help
+      Use the Full Speed USB device controller (zephyr_udc1).
+
+endchoice
+
+source "Kconfig.zephyr"
