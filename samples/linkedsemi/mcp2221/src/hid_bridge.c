@@ -91,7 +91,7 @@ static uint8_t i2c_current_state = 0;
 
 static int mcp2221_i2c_write_handle(struct hid_bridge *hid, mcp2221_command *command)
 {
-    mcp2221_response response = {0};
+    static __attribute__((aligned(32))) mcp2221_response response = {0};
     /* TODO: 解 command，然后执行相关动作 */
 
     response.mcp2221_i2c.response_echo = command->mcp2221_i2c.command;

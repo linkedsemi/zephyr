@@ -171,10 +171,21 @@ static int udc_ls_init(const struct device *dev)
     reg_usb_t *usb_reg = usb_data->usb_instance;
 
 #ifdef CONFIG_SOC_LSQSH
+    const struct pinctrl_state *state = NULL;
     /* If the dp is externally pulled up, a low level will be output here to make the host initiate a reset. */
-    io_cfg_output(PH14);
-    io_write_pin(PH14, 0);
-    k_usleep(1);
+    pinctrl_lookup_state(usb_cfg->pcfg, PINCTRL_STATE_DEFAULT, &state);
+    if (state && state->pins)
+    {
+        const pinctrl_soc_pin_t *dp = state->pins;
+        const pinctrl_soc_pin_t *dm = state->pins+1;
+
+        /* The first member of dts pinctrl must be dp */
+        io_cfg_output(dp->pinmux.pin);
+        io_write_pin(dp->pinmux.pin, 0);
+        k_usleep(1);
+        io_sl_st_init(dp->pinmux.pin);
+        io_sl_st_init(dm->pinmux.pin);
+    }
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
