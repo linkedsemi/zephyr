@@ -179,7 +179,7 @@ int ecdsa_test_curve(mbedtls_ecp_group_id curve)
     mbedtls_mpi s;
     static const char *hash_str = "BA7816BF8F01CFEA414140DE5DAE2223B00361A396177A9CB410FF61F20015AD";
 
-    if(!(curve == MBEDTLS_ECP_DP_BP384R1 || curve == MBEDTLS_ECP_DP_SECP256R1 || curve == MBEDTLS_ECP_DP_SM2))
+    if(!(curve == MBEDTLS_ECP_DP_SECP384R1 || curve == MBEDTLS_ECP_DP_SECP256R1 || curve == MBEDTLS_ECP_DP_SM2))
     {
         printf("This curve is not supported.");
     }
@@ -240,7 +240,7 @@ int ecdsa_test(void)
     int ret = 0;
     mbedtls_ls_otbn_ecdsa_init();
 
-    if(ecdsa_test_curve(MBEDTLS_ECP_DP_BP384R1) != 0)
+    if(ecdsa_test_curve(MBEDTLS_ECP_DP_SECP384R1) != 0)
     {
         ret = -1;
         printf("ecc p384 test failed! \n");
