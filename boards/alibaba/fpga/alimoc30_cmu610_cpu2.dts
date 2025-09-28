@@ -124,6 +124,11 @@
         mboxes = <&mbox 4>, <&mbox 5>;
         mbox-names = "tx", "rx";
     };
+
+	cdc_ncm_eth0: cdc_ncm_eth0 {
+		compatible = "zephyr,cdc-ncm-ethernet";
+		remote-mac-address = "00005E005301";
+	};
 };
 
 &cpu1 {
@@ -364,6 +369,14 @@
         spi-max-frequency = <DT_FREQ_M(10)>;
         re-init-support;
     };
+};
+
+zephyr_udc0: &usb2 {
+    status = "okay";
+};
+
+zephyr_udc1: &usb1 {
+    status = "disabled";
 };
 
 &eth1 {

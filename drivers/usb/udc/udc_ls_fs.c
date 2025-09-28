@@ -194,14 +194,14 @@ static int udc_ls_init(const struct device *dev)
     {
         if (!device_is_ready(usb_cfg->reset.dev))
         {
-            LOG_ERR("Reset controller device is not ready");
+            LOG_ERROR("Reset controller device is not ready");
             return -ENODEV;
         }
 
         int ret = reset_line_toggle(usb_cfg->reset.dev, usb_cfg->reset.id);
         if (ret != 0)
         {
-            LOG_ERR("toggle reset line failed");
+            LOG_ERROR("toggle reset line failed");
             return ret;
         }
     }
@@ -248,7 +248,7 @@ static int udc_ls_enable(const struct device *dev)
     if (udc_ep_enable_internal(dev, USB_CONTROL_EP_OUT, USB_EP_TYPE_CONTROL, 64, 0) || \
                 udc_ep_enable_internal(dev, USB_CONTROL_EP_IN, USB_EP_TYPE_CONTROL, 64, 0))
     {
-        LOG_ERR("Failed to enable control endpoint");
+        LOG_ERROR("Failed to enable control endpoint");
         return -EIO;
     }
 
@@ -268,7 +268,7 @@ static int udc_ls_disable(const struct device *dev)
 
     if (udc_ep_disable_internal(dev, USB_CONTROL_EP_OUT) || udc_ep_disable_internal(dev, USB_CONTROL_EP_IN))
     {
-        LOG_ERR("Failed to disable control endpoint");
+        LOG_ERROR("Failed to disable control endpoint");
         return -EIO;
     }
     usb_reg->POWER &= ~USB_POWER_SOFTCONN;
@@ -1103,7 +1103,7 @@ static int udc_ls_driver_preinit(const struct device *dev)
         err = udc_register_ep(dev, &ep_cfg_out[i]);
         if (err != 0)
         {
-            LOG_ERR("Failed to register endpoint");
+            LOG_ERROR("Failed to register endpoint");
             return err;
         }
     }
@@ -1129,7 +1129,7 @@ static int udc_ls_driver_preinit(const struct device *dev)
         err = udc_register_ep(dev, &ep_cfg_in[i]);
         if (err != 0)
         {
-            LOG_ERR("Failed to register endpoint");
+            LOG_ERROR("Failed to register endpoint");
             return err;
         }
     }

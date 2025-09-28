@@ -572,8 +572,9 @@ int net_config_init_app(const struct device *dev, const char *app_info)
 #if defined(CONFIG_NET_CONFIG_AUTO_INIT)
 static int init_app(void)
 {
+    const struct device* eth1_dev = DEVICE_DT_GET(DT_NODELABEL(eth1));
 
-	(void)net_config_init_app(NULL, "Initializing network");
+	(void)net_config_init_app(eth1_dev, "Initializing network");
 
 	return 0;
 }

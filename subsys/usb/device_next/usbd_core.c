@@ -52,7 +52,7 @@ static int event_handler_ep_request(struct usbd_context *const uds_ctx,
 	}
 
 	if (ret) {
-		LOG_ERR("unrecoverable error %d, ep 0x%02x, buf %p",
+		LOG_ERROR("unrecoverable error %d, ep 0x%02x, buf %p",
 			ret, bi->ep, event->buf);
 	}
 
@@ -71,7 +71,7 @@ static void usbd_class_bcast_event(struct usbd_context *const uds_ctx,
 
 	cfg_nd = usbd_config_get_current(uds_ctx);
 	if (cfg_nd == NULL) {
-		LOG_ERR("Failed to get cfg_nd, despite configured state");
+		LOG_ERROR("Failed to get cfg_nd, despite configured state");
 		return;
 	}
 
@@ -100,19 +100,19 @@ static int event_handler_bus_reset(struct usbd_context *const uds_ctx)
 	usbd_status_suspended(uds_ctx, false);
 	ret = udc_set_address(uds_ctx->dev, 0);
 	if (ret) {
-		LOG_ERR("Failed to set default address after bus reset");
+		LOG_ERROR("Failed to set default address after bus reset");
 		return ret;
 	}
 
 	ret = usbd_config_set(uds_ctx, 0);
 	if (ret) {
-		LOG_ERR("Failed to set default state after bus reset");
+		LOG_ERROR("Failed to set default state after bus reset");
 		return ret;
 	}
 
 	/* There might be pending data stage transfer */
 	if (usbd_ep_dequeue(uds_ctx, USB_CONTROL_EP_IN)) {
-		LOG_ERR("Failed to dequeue control IN");
+		LOG_ERROR("Failed to dequeue control IN");
 	}
 
 	LOG_INF("Actual device speed %u", udc_device_speed(uds_ctx->dev));
@@ -171,7 +171,7 @@ static ALWAYS_INLINE void usbd_event_handler(struct usbd_context *const uds_ctx,
 		err = event_handler_ep_request(uds_ctx, event);
 		break;
 	case UDC_EVT_ERROR:
-		LOG_ERR("UDC error event");
+		LOG_ERROR("UDC error event");
 		usbd_msg_pub_simple(uds_ctx, USBD_MSG_UDC_ERROR, event->status);
 		break;
 	default:
@@ -208,7 +208,7 @@ int usbd_device_init_core(struct usbd_context *const uds_ctx)
 
 	ret = udc_init(uds_ctx->dev, usbd_event_carrier, uds_ctx);
 	if (ret != 0) {
-		LOG_ERR("Failed to init device driver");
+		LOG_ERROR("Failed to init device driver");
 		return ret;
 	}
 
@@ -233,7 +233,7 @@ int usbd_device_shutdown_core(struct usbd_context *const uds_ctx)
 
 		ret = usbd_class_remove_all(uds_ctx, USBD_SPEED_HS, cfg_value);
 		if (ret) {
-			LOG_ERR("Failed to cleanup registered classes, %d", ret);
+			LOG_ERROR("Failed to cleanup registered classes, %d", ret);
 		}
 	}
 
@@ -242,13 +242,13 @@ int usbd_device_shutdown_core(struct usbd_context *const uds_ctx)
 
 		ret = usbd_class_remove_all(uds_ctx, USBD_SPEED_FS, cfg_value);
 		if (ret) {
-			LOG_ERR("Failed to cleanup registered classes, %d", ret);
+			LOG_ERROR("Failed to cleanup registered classes, %d", ret);
 		}
 	}
 
 	ret = usbd_desc_remove_all(uds_ctx);
 	if (ret) {
-		LOG_ERR("Failed to cleanup descriptors, %d", ret);
+		LOG_ERROR("Failed to cleanup descriptors, %d", ret);
 	}
 
 	return udc_shutdown(uds_ctx->dev);

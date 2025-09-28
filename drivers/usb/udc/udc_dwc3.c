@@ -1386,7 +1386,7 @@ static void dwc3_dev_event(const struct device *dev, const union evt_buf_u *evt)
     case DEVT_CmdCmplt:
         break;
     case DEVT_EvntOverflow:
-        LOG_ERR("DEVT_EvntOverflow.\n");
+        LOG_ERROR("DEVT_EvntOverflow.\n");
         break;
     default:
         break;
@@ -1470,7 +1470,7 @@ static int dwc3_driver_preinit(const struct device *dev)
         config->ep_cfg_out[i].addr = USB_EP_DIR_OUT | i;
         err = udc_register_ep(dev, &config->ep_cfg_out[i]);
         if (err != 0) {
-            LOG_ERR("Failed to register endpoint");
+            LOG_ERROR("Failed to register endpoint");
             return err;
         }
     }
@@ -1490,7 +1490,7 @@ static int dwc3_driver_preinit(const struct device *dev)
         config->ep_cfg_in[i].addr = USB_EP_DIR_IN | i;
         err = udc_register_ep(dev, &config->ep_cfg_in[i]);
         if (err != 0) {
-            LOG_ERR("Failed to register endpoint");
+            LOG_ERROR("Failed to register endpoint");
             return err;
         }
     }
@@ -1622,7 +1622,7 @@ static int udc_dwc3_init(const struct device *dev)
 #if defined(CONFIG_RESET)
     if (config->reset.dev != NULL) {
         if (!device_is_ready(config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
+            LOG_ERROR("Reset controller device is not ready");
             return -ENODEV;
         }
 
@@ -1683,13 +1683,13 @@ static int udc_dwc3_enable(const struct device *dev)
 
     if (udc_ep_enable_internal(dev, USB_CONTROL_EP_OUT,
                                USB_EP_TYPE_CONTROL, 64, 0)) {
-        LOG_ERR("Failed to enable control endpoint");
+        LOG_ERROR("Failed to enable control endpoint");
         return -EIO;
     }
 
     if (udc_ep_enable_internal(dev, USB_CONTROL_EP_IN,
                                USB_EP_TYPE_CONTROL, 64, 0)) {
-        LOG_ERR("Failed to enable control endpoint");
+        LOG_ERROR("Failed to enable control endpoint");
         return -EIO;
     }
     /* allow the device to attach to the host. */
