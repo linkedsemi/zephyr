@@ -25,7 +25,7 @@
 LOG_MODULE_REGISTER(udc_ls_fs, CONFIG_UDC_DRIVER_LOG_LEVEL);
 
 #define USB_EP0_SIZE            (64)
-#define USB_TX_BUF_ADDR         (8)
+#define USB_TX_BUF_ADDR         (0)
 #define USB_TX_FIFO_SZ          (2)
 #define USB_TX_BUF_SIZE         (1<<(3+USB_TX_FIFO_SZ))
 #define USB_RX_BUF_ADDR         (USB_TX_BUF_ADDR + USB_TX_BUF_SIZE / 8)
@@ -477,7 +477,7 @@ static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *con
             usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
         usb_reg->TXFIFO_SIZE[0]  = 0;
         usb_reg->TXFIFO_SIZE[1]  = 0;
-        usb_data->rx_fifo_addr = USB_TX_BUF_ADDR;
+        usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
     }
     else
     {
@@ -1228,7 +1228,7 @@ static const struct udc_api udc_ls_api = {
         .ep_cfg_in = ep_cfg_in_##n,                 \
         .ep_cfg_out = ep_cfg_out_##n,               \
         .ep_tx = ep_tx_##n,                         \
-        .rx_fifo_addr = USB_TX_BUF_ADDR,        \
+        .rx_fifo_addr = USB_RX_BUF_ADDR,        \
         .ep0_state = USB_EP0_STAGE_SETUP,        \
         .is_set_addr = false                    \
     };          \
