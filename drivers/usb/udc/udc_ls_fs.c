@@ -97,6 +97,7 @@ struct udc_ls_data
     uint16_t rx_fifo_addr;
     struct k_msgq msgq;
     struct ls_event msgq_buf[USB_MSGQ_LENGTH];
+    uint8_t addr;
 };
 
 static void fifo_write(volatile void *fifo, void *buf, unsigned len)
@@ -594,7 +595,7 @@ static int udc_ls_shutdown(const struct device *dev)
 static int udc_ls_set_address(const struct device *dev, const uint8_t addr)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
-    usb_data->usb_instance->FADDR = addr;
+    usb_data->addr = addr;
     return 0;
 }
 
@@ -848,7 +849,7 @@ static void _usbd_process_ep0(const struct device *dev)
     if (csr & USB_CSRL0_STALLED) {
         /* Returned STALL packet to HOST. */
         usb_instance->CSRL0 = csr & ~USB_CSRL0_STALLED;
-        usb_data->ep0_state         = USB_EP0_STAGE_IDLE;
+        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
         csr = usb_instance->CSRL0;
     }
 
@@ -900,9 +901,7 @@ static void _usbd_process_ep0(const struct device *dev)
             request has completed */
         if (usb_data->is_set_addr) {
             usb_data->is_set_addr = false;
-            if (usb_data->setup.bRequest == USB_SREQ_SET_ADDRESS && usb_data->setup.bmRequestType == 0x00) {
-                usb_instance->FADDR = usb_data->setup.wValue;
-            }
+            usb_instance->FADDR = usb_data->addr;
         }
     case USB_EP0_STAGE_STATUSOUT:
         /* end of sequence #1, host move status stage, the interrupt is just a confirmation that the request
