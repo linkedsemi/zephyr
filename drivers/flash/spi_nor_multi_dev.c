@@ -2833,12 +2833,6 @@ static const struct flash_driver_api spi_nor_api = {
 #define INST_CONFIG_STRUCT_GEN(idx)								\
 	DEFINE_PAGE_LAYOUT(idx)									\
 	.flash_size = DT_INST_PROP(idx, size) / 8,						\
-	.broken_sfdp = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), broken_sfdp),	\
-	.spi_max_buswidth = DT_INST_PROP_OR(idx, spi_max_buswidth, 1),	\
-	.spi_ctrl_caps_mask =	\
-		DT_PROP_OR(DT_PARENT(DT_INST(idx, DT_DRV_COMPAT)),	\
-			spi_ctrl_caps_mask, 0),	\
-	.spi_nor_caps_mask = DT_INST_PROP_OR(idx, spi_nor_caps_mask, 0),	\
 	.jedec_id = DT_INST_PROP(idx, jedec_id),						\
 	IF_ENABLED(CONFIG_SPI_NOR_SFDP_MINIMAL, (CONFIGURE_4BYTE_ADDR(idx)))			\
 	IF_ENABLED(CONFIG_SPI_NOR_SFDP_DEVICETREE,						\
@@ -2856,6 +2850,11 @@ static const struct flash_driver_api spi_nor_api = {
 		.requires_ulbpr_exist = DT_INST_PROP(idx, requires_ulbpr),			\
 		.wp_gpios_exist = DT_INST_NODE_HAS_PROP(idx, wp_gpios),				\
 		.hold_gpios_exist = DT_INST_NODE_HAS_PROP(idx, hold_gpios),			\
+		.broken_sfdp = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), broken_sfdp),		\
+		.spi_max_buswidth = DT_INST_PROP_OR(idx, spi_max_buswidth, 1),			\
+		.spi_ctrl_caps_mask = DT_PROP_OR(DT_PARENT(DT_INST(idx, DT_DRV_COMPAT)),	\
+				spi_ctrl_caps_mask, 0),						\
+		.spi_nor_caps_mask = DT_INST_PROP_OR(idx, spi_nor_caps_mask, 0),		\
 		IF_ENABLED(INST_HAS_LOCK(idx), (.has_lock = DT_INST_PROP(idx, has_lock),))	\
 		IF_ENABLED(ANY_INST_HAS_DPD, (INIT_T_ENTER_DPD(idx),))				\
 		IF_ENABLED(UTIL_AND(ANY_INST_HAS_DPD, ANY_INST_HAS_T_EXIT_DPD),			\
