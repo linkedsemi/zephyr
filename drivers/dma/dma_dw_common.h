@@ -298,7 +298,11 @@ struct dw_dma_dev_data {
 	struct dma_context dma_ctx;
 	struct dw_drv_plat_data *channel_data;
 	struct dw_dma_chan_data chan[DW_CHAN_COUNT];
+#if defined(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL)
+	struct dw_lli (*lli_pool)[CONFIG_DMA_DW_LLI_POOL_SIZE];
+#else
 	struct dw_lli lli_pool[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);
+#endif
 
 	ATOMIC_DEFINE(channels_atomic, DW_CHAN_COUNT);
 };

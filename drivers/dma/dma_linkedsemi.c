@@ -155,8 +155,10 @@ static const struct dma_driver_api dw_dma_driver_api = {
         IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))    \
     };                                                                                                \
                                                                                                       \
+    __nocache struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);\
     static struct dw_dma_dev_data dw_dma##inst##_data = {                                             \
         .channel_data = &dmac##inst,                                                                  \
+        .lli_pool = lli_pool_##inst, \
     };                                                                                                \
                                                                                                       \
     DEVICE_DT_INST_DEFINE(inst,                                                                       \
