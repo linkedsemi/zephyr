@@ -311,7 +311,7 @@ config VENDER_DEFINE_DMA_DW_LLI_POOL
 
 if DMA_DW
 	config DMA_DW_LLI_POOL_SIZE
-		default 64
+		default 8
 endif
 
 endif
