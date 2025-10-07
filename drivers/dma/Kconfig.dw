@@ -17,6 +17,12 @@ config DMA_DW_2_20A
 	help
 	  DesignWare DMA driver.
 
+config VENDER_DEFINE_DMA_DW_LLI_POOL
+	bool "vender define dma dw lli pool"
+	default n
+	help
+	  vender define dma dw lli pool
+
 config DMA_LINKEDSEMI
 	bool "linkedsemi DMA driver"
 	default y
