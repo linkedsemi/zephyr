@@ -305,4 +305,13 @@ config AES_CLOCK_RESET
 	bool "AES_CLOCK_RESET"
 	default y
 
+config VENDER_DEFINE_DMA_DW_LLI_POOL
+	bool "VENDER_DEFINE_DMA_DW_LLI_POOL"
+	default y
+
+if DMA_DW
+	config DMA_DW_LLI_POOL_SIZE
+		default 64
+endif
+
 endif
