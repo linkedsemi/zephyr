@@ -42,6 +42,8 @@ extern "C" {
 #define DW_SPI_REG_RX_SAMPLE_DLY	(0xf0)
 #define DW_SPI_REG_SPI_CTRLR0	(0xf4)
 
+#define DW_SPI_DR_REVERSED		(0xec)
+
 /* Register helpers */
 DEFINE_MM_REG_WRITE(ctrlr0, DW_SPI_REG_CTRLR0, 32)
 DEFINE_MM_REG_READ(ctrlr0, DW_SPI_REG_CTRLR0, 32)
