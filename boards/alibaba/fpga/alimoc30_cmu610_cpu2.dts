@@ -142,15 +142,15 @@
 &i2c2 {
     status = "okay";
     label = "i2c-2";
-    eeprom: eeprom@55 {
-		compatible = "atmel,at24";
-		reg = <0x55>;
-		status = "okay";
-		size = <256>;
-		pagesize = <8>;
-		address-width = <8>;
-		timeout = <5>;
-	};
+    eeprom: eeprom@50 {
+        compatible = "atmel,at24";
+        reg = <0x50>;
+        status = "okay";
+        size = <4096>;
+        pagesize = <32>;
+        address-width = <16>;
+        timeout = <5>;
+    };
 };
 
 &i2c5 {
