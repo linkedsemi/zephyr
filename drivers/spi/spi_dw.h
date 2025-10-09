@@ -15,6 +15,7 @@
 #include <string.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/dma.h>
 
 #include "spi_context.h"
 
@@ -53,6 +54,12 @@ struct spi_dw_config {
 	spi_dw_set_bit_t set_bit_func;
 	spi_dw_clear_bit_t clear_bit_func;
 	spi_dw_test_bit_t test_bit_func;
+	const struct device *dev_dma_rx;
+	uint32_t dma_channel_rx;
+	uint32_t dma_handshake_rx;
+	const struct device *dev_dma_tx;
+	uint32_t dma_channel_tx;
+	uint32_t dma_handshake_tx;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -61,6 +68,10 @@ struct spi_dw_config {
 struct spi_dw_data {
 	DEVICE_MMIO_RAM;
 	struct spi_context ctx;
+	struct dma_config dma_cfg_rx;
+	struct dma_block_config dma_block_rx;
+	struct k_sem dma_rx_sem;
+	struct k_sem dma_tx_sem;
 	uint8_t dfs;	/* dfs in bytes: 1,2 or 4 */
 	uint8_t fifo_diff;	/* cannot be bigger than FIFO depth */
 };
@@ -221,6 +232,7 @@ static int reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 #define DW_SPI_CTRLR0_SPI_FRF_BIT	(21)
 #define DW_SPI_CTRLR0_SPI_FRF_MASK	(0x3 << DW_SPI_CTRLR0_SPI_FRF_BIT)
 #define DW_SPI_CTRLR0_FRF_STD		(0)
+#define DW_SPI_CTRLR0_FRF_DUAL		(1 << DW_SPI_CTRLR0_SPI_FRF_BIT)
 #define DW_SPI_CTRLR0_FRF_QUAD		(2 << DW_SPI_CTRLR0_SPI_FRF_BIT)
 
 #define DW_SPI_CTRLR0_DFS_16(__bpw)	((__bpw) - 1)
