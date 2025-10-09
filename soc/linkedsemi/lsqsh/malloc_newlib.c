@@ -162,11 +162,11 @@ void *_malloc_r (struct _reent *r, size_t size)
 	malloc_lock();
 
 	void *ret = NULL;
-	ret = sys_heap_aligned_alloc(&z_malloc_heap,
-								COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-									(CONFIG_DCACHE_LINE_SIZE),
-									(__alignof__(z_max_align_t))),
-								size);
+	// ret = sys_heap_aligned_alloc(&z_malloc_heap,
+	// 							COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
+	// 								(CONFIG_DCACHE_LINE_SIZE),
+	// 								(__alignof__(z_max_align_t))),
+	// 							size);
 	if (ret == NULL && size != 0) {
 		ret = sys_heap_aligned_alloc(&z_malloc_heap_2,
 									COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
@@ -188,9 +188,9 @@ void *aligned_alloc(size_t alignment, size_t size)
 	malloc_lock();
 
 	void *ret = NULL;
-	ret = sys_heap_aligned_alloc(&z_malloc_heap,
-					alignment,
-					size);
+	// ret = sys_heap_aligned_alloc(&z_malloc_heap,
+	// 				alignment,
+	// 				size);
 	if (ret == NULL && size != 0) {
 		ret = sys_heap_aligned_alloc(&z_malloc_heap_2,
 						alignment,
@@ -290,11 +290,12 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t requested_size)
 	} else {
 		malloc_lock();
 
-		if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
-			ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr,
-							__alignof__(z_max_align_t),
-							requested_size);
-		} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
+		// if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
+		// 	ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr,
+		// 					__alignof__(z_max_align_t),
+		// 					requested_size);
+		// } else 
+		if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
 			ret = sys_heap_aligned_realloc(&z_malloc_heap_2, ptr,
 							__alignof__(z_max_align_t),
 							requested_size);
@@ -313,9 +314,10 @@ void _free_r(struct _reent *r, void *ptr)
 {
 	if (ptr != NULL) {
 		malloc_lock();
-		if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
-			sys_heap_free(&z_malloc_heap, ptr);
-		} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
+		// if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
+		// 	sys_heap_free(&z_malloc_heap, ptr);
+		// } else 
+		if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
 			sys_heap_free(&z_malloc_heap_2, ptr);
 		}
 		malloc_unlock();
