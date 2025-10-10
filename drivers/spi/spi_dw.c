@@ -52,7 +52,7 @@ LOG_MODULE_REGISTER(spi_dw);
 #endif
 
 #define SPI_DW_DMA_WAIT_TIMEOUT_MS 100000
-
+#define SCKDV_BIT 0xfe
 static inline bool spi_dw_is_slave(struct spi_dw_data *spi)
 {
 	return (IS_ENABLED(CONFIG_SPI_SLAVE) &&
@@ -283,6 +283,10 @@ static int spi_dw_configure(const struct device *dev,
 		/* Baud rate and Slave select, for master only */
 		write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency,
 						    config->frequency));
+		if ((info->clock_frequency % config->frequency)!=0) {
+			LOG_INF("The hardware design results in the actual frequency not being equal to the set frequency,actual freq %u",
+				   (info->clock_frequency)/(((SPI_DW_CLK_DIVIDER(info->clock_frequency,config->frequency)))&SCKDV_BIT));
+		}
 		write_ser(dev, 1 << config->slave);
 	}
 
@@ -356,15 +360,15 @@ static int spi_dw_configure_support_all(const struct device *dev,
 	if (IS_ENABLED(CONFIG_SPI_EXTENDED_MODES)) {
 		if ((config->operation & SPI_LINES_MASK)==SPI_LINES_QUAD) {
 			ctrlr0 |= DW_SPI_CTRLR0_FRF_QUAD;
-			LOG_ERR("Quad Line");
+			LOG_DBG("Quad Line");
 		}else if ((config->operation & SPI_LINES_MASK)==SPI_LINES_SINGLE) {
 			ctrlr0 |= DW_SPI_CTRLR0_FRF_STD;
-			LOG_ERR("Single Line");
+			LOG_DBG("Single Line");
 		}else if((config->operation & SPI_LINES_MASK)==SPI_LINES_DUAL) {
 			ctrlr0 |= DW_SPI_CTRLR0_FRF_DUAL;
-			LOG_ERR("Dual Line");
+			LOG_DBG("Dual Line");
 		}else {
-			LOG_ERR("  Unsupported configuration");
+			LOG_DBG("  Unsupported configuration");
 			return -EINVAL;
 		}
 	}
@@ -408,6 +412,10 @@ static int spi_dw_configure_support_all(const struct device *dev,
 		/* Baud rate and Slave select, for master only */
 		write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency,
 						    config->frequency));
+		if ((info->clock_frequency % config->frequency)!=0) {
+			LOG_INF("The hardware design results in the actual frequency not being equal to the set frequency,actual freq %u",
+				   (info->clock_frequency)/(((SPI_DW_CLK_DIVIDER(info->clock_frequency,config->frequency)))&SCKDV_BIT));
+		}
 		write_ser(dev, 0);
 	}
 
@@ -716,8 +724,7 @@ out:
 	return ret;
 }
 
-#define DW_DMA_MAX_BLOCK_WORDS 2047
-#define SPI_DMA_LLI_BLOCK_WORDS 1024
+#define SPI_DMA_LLI_BLOCK_WORDS 2047
 static int build_rx_lli_chain(struct spi_dw_data *spi,
 			      struct dma_block_config *blk,
 			      uint32_t *blk_cnt,
@@ -730,7 +737,6 @@ static int build_rx_lli_chain(struct spi_dw_data *spi,
 
 	uint32_t words = len_bytes / spi->dfs;
 	uint32_t wpb   = SPI_DMA_LLI_BLOCK_WORDS;
-	if (wpb > DW_DMA_MAX_BLOCK_WORDS) wpb = DW_DMA_MAX_BLOCK_WORDS;
 
 	uint32_t need  = (words + wpb - 1) / wpb;
 	if (need > CONFIG_DMA_DW_LLI_POOL_SIZE) return -E2BIG;
@@ -823,7 +829,7 @@ static int transceive_read_144(const struct device *dev,
 	}
 	struct dma_block_config blk[CONFIG_DMA_DW_LLI_POOL_SIZE];
 	uint32_t blk_cnt = 0;
-	uintptr_t dr_addr  = (uintptr_t)(DEVICE_MMIO_GET(dev) + DW_SPI_DR_REVERSED);
+	uintptr_t dr_addr  = (uintptr_t)(DEVICE_MMIO_GET(dev) + ((spi->dfs==4)?DW_SPI_DR_REVERSED:DW_SPI_REG_DR));
 	uintptr_t dst_addr = (uintptr_t)rx_bufs->buffers[0].buf;
 	size_t len_bytes   = rx_bufs->buffers[0].len;
 
@@ -847,7 +853,7 @@ static int transceive_read_144(const struct device *dev,
 	spi->dma_cfg_rx.head_block        = &blk[0];
 	spi->dma_cfg_rx.user_data         = (void *)dev;
 	spi->dma_cfg_rx.dma_callback      = spi_dw_dma_rx_callback;
-	
+
 	k_sem_reset(&spi->dma_rx_sem);
 
 	/* Config DMA controller */
@@ -1079,6 +1085,7 @@ static int spi_dw_nor_transceive(const struct device *dev,
 						const struct spi_config *config,
 						struct spi_nor_op_info *op_info)
 {
+	const struct spi_dw_config *info = dev->config;
 	bool is_addressed = (op_info->addr_len > 0);
 	bool is_write = (SPI_NOR_DATA_DIRECT_OUT == op_info->data_direct);
 	uint8_t buf[5 + SPI_NOR_DUMMY_CYCLE_MAX] = { 0 };
@@ -1159,7 +1166,8 @@ static int spi_dw_nor_transceive(const struct device *dev,
 		config_copy.operation &= ~SPI_LINES_MASK;
 		config_copy.operation |= SPI_LINES_QUAD;
 		config_copy.operation &= ~SPI_WORD_SIZE_MASK;
-		config_copy.operation |= (32U<<SPI_WORD_SIZE_SHIFT);
+		uint32_t dfs_bit = (op_info->data_len < info->fifo_depth) ? 8U : 32U;
+		config_copy.operation |= (dfs_bit<<SPI_WORD_SIZE_SHIFT);
 		const struct spi_config *config_copy_const = &config_copy;
 
 		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(1); // Instruction in Standard，Address in QUAD
