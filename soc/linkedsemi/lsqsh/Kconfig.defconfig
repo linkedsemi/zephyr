@@ -309,9 +309,4 @@ config VENDER_DEFINE_DMA_DW_LLI_POOL
 	bool "VENDER_DEFINE_DMA_DW_LLI_POOL"
 	default y
 
-if DMA_DW
-	config DMA_DW_LLI_POOL_SIZE
-		default 8
-endif
-
 endif
