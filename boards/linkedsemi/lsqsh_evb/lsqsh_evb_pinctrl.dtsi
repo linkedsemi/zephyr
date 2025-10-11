@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
+#include <zephyr/dt-bindings/sensor/linkedsemi-cap.h>
 
 &pinctrl {
     /* UART */
@@ -63,6 +64,72 @@
         pinmux = <UART11_RXD_FUNC1_IDX13_PINMUX_PK(03)>;
         input-enable;
     };
+
+  /omit-if-no-ref/cap1_rx_pa08: cap1_rx_pa08 {
+        pinmux = <CAP1_FUNC1_IDX28_PINMUX_PA(08)>;
+        input-enable;
+    };
+    /omit-if-no-ref/cap2_rx_pb01: cap2_rx_pb01 {
+        pinmux = <CAP2_FUNC1_IDX29_PINMUX_PB(00)>;
+        input-enable;
+    };
+    /omit-if-no-ref/cap3_rx_pc02: cap3_rx_pc02 {
+        pinmux = <CAP3_FUNC1_IDX29_PINMUX_PC(00)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap4_rx_pc03: cap4_rx_pc03 {
+        pinmux = <CAP4_FUNC1_IDX30_PINMUX_PC(01)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap5_rx_pf04: cap5_rx_pf04 {
+        pinmux = <CAP5_FUNC1_IDX30_PINMUX_PF(00)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap6_rx_pf05: cap6_rx_pf05 {
+        pinmux = <CAP6_FUNC1_IDX31_PINMUX_PF(01)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap7_rx_pg02: cap7_rx_pg02 {
+        pinmux = <CAP7_FUNC1_IDX28_PINMUX_PG(02)>;
+        input-enable;
+    };
+     /omit-if-no-ref/cap8_rx_pm07: cap8_rx_pm07 {
+        pinmux = <CAP8_FUNC1_IDX29_PINMUX_PM(00)>;
+        input-enable;
+    };
+
+     /omit-if-no-ref/cap9_rx_pi00: cap9_rx_pi00 {
+         pinmux = <CAP9_FUNC1_IDX29_PINMUX_PI(00)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap10_rx_pi01: cap10_rx_pi01 {
+         pinmux = <CAP10_FUNC1_IDX30_PINMUX_PI(01)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap11_rx_pn14: cap11_rx_pn14 {
+         pinmux = <CAP11_FUNC1_IDX27_PINMUX_PN(14)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap12_rx_pn15: cap12_rx_pn15 {
+         pinmux = <CAP12_FUNC1_IDX28_PINMUX_PN(15)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap13_rx_pn02: cap13_rx_pn02 {
+         pinmux = <CAP13_FUNC1_IDX29_PINMUX_PN(02)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap14_rx_pq00: cap14_rx_pq00 {
+         pinmux = <CAP14_FUNC1_IDX27_PINMUX_PQ(00)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap15_rx_pq01: cap15_rx_pq01 {
+         pinmux = <CAP15_FUNC1_IDX28_PINMUX_PQ(01)>;
+         input-enable;
+     };
+     /omit-if-no-ref/cap16_rx_pq02: cap16_rx_pq02 {
+         pinmux = <CAP16_FUNC1_IDX29_PINMUX_PQ(02)>;
+         input-enable;
+     };
 
     // /* I2C */
     DEFINE_PINCTRL_PRODUCER_I2C(I2C1, PB06, PB10, I2C1_SCL_FUNC2_PB06_PINMUX, I2C1_SDA_FUNC2_PB10_PINMUX)
@@ -238,6 +305,16 @@
 
 &uart7 {
     pinctrl-0 = <&uart7_tx_pg08 &uart6_rx_pf14>;
+    pinctrl-names = "default";
+};
+
+&cap {
+    prescaler = <7>;
+    channels = <CAP_MODE1 CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_MODE1 CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_MODE1 CAP_MODE1 CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_DISABLED>;//cap_mode
+    pinctrl-0 = <&cap1_rx_pa08 &cap2_rx_pb01 &cap3_rx_pc02 &cap4_rx_pc03 &cap5_rx_pf04
+                 &cap6_rx_pf05 &cap7_rx_pg02 &cap8_rx_pm07 &cap9_rx_pi00 &cap10_rx_pi01
+                 &cap11_rx_pn14 &cap12_rx_pn15 &cap13_rx_pn02 &cap14_rx_pq00 &cap15_rx_pq01
+                 &cap16_rx_pq02>;
     pinctrl-names = "default";
 };
 
