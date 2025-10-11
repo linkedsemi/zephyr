@@ -2,7 +2,7 @@ description: PWM controller for Linkedsemi 101x
 
 compatible: "linkedsemi,ls-pwm"
 
-include: [base.yaml, pwm-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
+include: [base.yaml, pwm-controller.yaml, pinctrl-device.yaml, reset-device.yaml,hwmon-controller.yaml]
 
 properties:
   reg:
