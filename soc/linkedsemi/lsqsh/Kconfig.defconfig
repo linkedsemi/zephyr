@@ -194,6 +194,8 @@ config INIT_FLASH_FOR_DEBUG
 config FLASH
 	default y
 
+config CAP_V2
+	default y
 
 config CRC
 	default y
