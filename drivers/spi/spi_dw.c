@@ -726,11 +726,11 @@ out:
 
 #define SPI_DMA_LLI_BLOCK_WORDS 2047
 static int build_rx_lli_chain(struct spi_dw_data *spi,
-			      struct dma_block_config *blk,
-			      uint32_t *blk_cnt,
-			      uintptr_t dr_addr,
-			      uintptr_t dst_addr,
-			      size_t len_bytes)
+		      struct dma_block_config *blk,
+		      uint32_t *blk_cnt,
+		      uintptr_t dr_addr,
+		      uintptr_t dst_addr,
+		      size_t len_bytes)
 {
 	if (len_bytes == 0) { *blk_cnt = 0; return 0; }
 	if (len_bytes % spi->dfs) { return -EINVAL; }
@@ -816,6 +816,7 @@ static int transceive_read_144(const struct device *dev,
 		write_ctrlr1(dev, 0);
 	}
 	write_imr(dev, DW_SPI_ISR_ERRORS_MASK);
+	clear_interrupts(dev);
 
 	set_bit_ssienr(dev);
 
@@ -896,6 +897,9 @@ static int transceive_read_144(const struct device *dev,
 	sys_cache_data_invd_range((void *)(rx_bufs->buffers[0].buf), rx_bufs->buffers[0].len);
 
 	write_dmacr(dev, 0);
+	write_imr(dev, DW_SPI_IMR_MASK);
+	clear_interrupts(dev);
+	clear_bit_ssienr(dev);
 end_xfer:
 	if (!spi_dw_is_slave(spi)) {
 		/* if cs is not defined as gpio, use hw cs */
@@ -1007,6 +1011,200 @@ out:
 	spi_context_release(&spi->ctx, ret);
 
 	pm_device_busy_clear(dev);
+
+	return ret;
+}
+static void spi_dw_dma_tx_callback(const struct device *dev_dma,
+				   void *user, uint32_t channel, int status)
+{
+	const struct device *dev = (const struct device *)user;
+	struct spi_dw_data *spi = dev->data;
+
+	if (status == DMA_STATUS_COMPLETE || status < 0) {
+	k_sem_give(&spi->dma_tx_sem);
+	}
+}
+static int build_tx_lli_chain(struct spi_dw_data *spi,
+		      struct dma_block_config *blk,
+		      uint32_t *blk_cnt,
+		      uintptr_t src_addr,
+		      uintptr_t dr_addr,
+		      size_t len_bytes)
+{
+	if (len_bytes == 0) { *blk_cnt = 0; return 0; }
+	if (len_bytes % spi->dfs) { return -EINVAL; }
+
+	uint32_t words = len_bytes / spi->dfs;
+	uint32_t wpb   = SPI_DMA_LLI_BLOCK_WORDS;
+	uint32_t need  = (words + wpb - 1) / wpb;
+	if (need > CONFIG_DMA_DW_LLI_POOL_SIZE) return -E2BIG;
+
+	size_t step_bytes = (size_t)wpb * spi->dfs;
+	uint32_t remain = words;
+
+	for (uint32_t i = 0; i < need; i++) {
+	uint32_t w = (remain > wpb) ? wpb : remain;
+	memset(&blk[i], 0, sizeof(struct dma_block_config));
+	blk[i].block_size      = w;
+	blk[i].source_address  = (uint32_t)(src_addr + (size_t)i * step_bytes);
+	blk[i].dest_address    = (uint32_t)dr_addr;
+	blk[i].source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
+	blk[i].dest_addr_adj   = DMA_ADDR_ADJ_NO_CHANGE;
+	blk[i].next_block      = (i + 1 < need) ? &blk[i + 1] : NULL;
+	remain -= w;
+	}
+
+	*blk_cnt = need;
+	return 0;
+}
+static int transceive_write_144(const struct device *dev,
+		      const struct spi_config *config,
+		      const struct spi_buf_set *tx_bufs,
+		      const struct spi_buf_set *rx_bufs,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata,uint32_t opcode,uint32_t addr)
+{
+	const struct spi_dw_config *info = dev->config;
+	struct spi_dw_data *spi = dev->data;
+	uint32_t tmod = DW_SPI_CTRLR0_TMOD_TX_RX;
+	uint32_t reg_data;
+	int ret;
+
+	spi_context_lock(&spi->ctx, asynchronous, cb, userdata, config);
+
+#ifdef CONFIG_PM_DEVICE
+	if (!pm_device_is_busy(dev)) {
+		pm_device_busy_set(dev);
+	}
+#endif /* CONFIG_PM_DEVICE */
+
+	/* Configure */
+	ret = spi_dw_configure_support_all(dev, spi, config);
+	if (ret) {
+		goto out;
+	}
+
+	tmod = DW_SPI_CTRLR0_TMOD_TX;
+
+	if (spi_dw_is_slave(spi)) {
+		/* Enabling MISO line relevantly */
+			tmod &= ~DW_SPI_CTRLR0_SLV_OE;
+	}
+
+	/* Updating TMOD in CTRLR0 register */
+	reg_data = read_ctrlr0(dev);
+	reg_data &= ~DW_SPI_CTRLR0_TMOD_RESET;
+	reg_data |= tmod;
+
+	write_ctrlr0(dev, reg_data);
+
+	write_imr(dev, DW_SPI_ISR_ERRORS_MASK);
+	clear_interrupts(dev);
+
+	set_bit_ssienr(dev);
+	write_dr(dev, opcode);
+	write_dr(dev, addr);
+
+	if (info->dev_dma_tx == NULL || !device_is_ready(info->dev_dma_tx)) {
+		LOG_ERR("TX DMA device not ready");
+		ret = -ENODEV;
+		goto end_xfer;
+	}
+	struct dma_block_config blk[CONFIG_DMA_DW_LLI_POOL_SIZE];
+	uint32_t blk_cnt = 0;
+	uintptr_t dr_addr  = (uintptr_t)(DEVICE_MMIO_GET(dev) +
+			     ((spi->dfs==4) ? DW_SPI_DR_REVERSED : DW_SPI_REG_DR));
+	uintptr_t src_addr = (uintptr_t)tx_bufs->buffers[0].buf;
+	size_t len_bytes= tx_bufs->buffers[0].len;
+
+	ret = build_tx_lli_chain(spi, blk, &blk_cnt, src_addr, dr_addr, len_bytes);
+	if (ret) {
+		LOG_ERR("build_tx_lli_chain failed: %d (len=%u, dfs=%u)",
+			      ret, (unsigned)len_bytes, spi->dfs);
+	goto end_xfer;
+	}
+
+	/* clear cache，Prevent DMA from not reading the latest data */
+	sys_cache_data_flush_range((void *)(uintptr_t)src_addr, len_bytes);
+
+	/* Config DMA Config */
+	memset(&spi->dma_cfg_tx, 0, sizeof(spi->dma_cfg_tx));
+	spi->dma_cfg_tx.dma_slot            = info->dma_handshake_tx;
+	spi->dma_cfg_tx.channel_direction   = MEMORY_TO_PERIPHERAL;
+	spi->dma_cfg_tx.complete_callback_en= 0;
+	spi->dma_cfg_tx.channel_priority    = 0;
+	spi->dma_cfg_tx.source_data_size    = spi->dfs;
+	spi->dma_cfg_tx.dest_data_size      = spi->dfs;
+	spi->dma_cfg_tx.source_burst_length = 0;
+	spi->dma_cfg_tx.dest_burst_length   = 0;
+	spi->dma_cfg_tx.block_count         = blk_cnt;
+	spi->dma_cfg_tx.head_block          = &blk[0];
+	spi->dma_cfg_tx.user_data           = (void *)dev;
+	spi->dma_cfg_tx.dma_callback        = spi_dw_dma_tx_callback;
+
+	k_sem_reset(&spi->dma_tx_sem);
+
+	/* Config DMA controller */
+	ret = dma_config(info->dev_dma_tx, info->dma_channel_tx, &spi->dma_cfg_tx);
+	if (ret < 0) {
+		LOG_ERR("dma_config tx failed %d", ret);
+		goto end_xfer;
+	}
+
+	/* Start DMA */
+	ret = dma_start(info->dev_dma_tx, info->dma_channel_tx);
+	if (ret < 0) {
+		LOG_ERR("dma_start tx failed %d", ret);
+		goto end_xfer;
+	}
+
+	/* Open SPI DMA */
+	write_dmatdlr(dev, 0);
+	write_dmacr(dev, DW_SPI_TDMAE_BIT);    /* Enable TX DMA */
+
+	if (!spi_dw_is_slave(spi)) {
+		/* if cs is not defined as gpio, use hw cs */
+		if (spi_cs_is_gpio(config)) {
+			spi_context_cs_control(&spi->ctx, true);
+			write_ser(dev, BIT(config->slave));
+		} else {
+			write_ser(dev, BIT(config->slave));
+		}
+	}
+	/* Wait DMA finish */
+	ret = k_sem_take(&spi->dma_tx_sem, K_MSEC(SPI_DW_DMA_WAIT_TIMEOUT_MS));
+	if (ret < 0) {
+		LOG_ERR("DMA TX timeout");
+		ret = -ETIMEDOUT;
+	} else {
+		ret = 0;
+	}
+
+	LOG_ERR("daolema");
+
+	write_dmacr(dev, 0);
+	write_imr(dev, DW_SPI_IMR_MASK);
+	clear_interrupts(dev);
+	clear_bit_ssienr(dev);
+end_xfer:
+	if (!spi_dw_is_slave(spi)) {
+		/* if cs is not defined as gpio, use hw cs */
+		if (spi_cs_is_gpio(config)) {
+			spi_context_cs_control(&spi->ctx, false);
+			write_ser(dev, 0);
+		} else {
+			write_ser(dev, 0);
+		}
+	}
+	spi_context_complete(&spi->ctx, dev, 0);
+
+out:
+	spi_context_release(&spi->ctx, ret);
+
+#ifdef CONFIG_PM_DEVICE
+	pm_device_busy_clear(dev);
+#endif
 
 	return ret;
 }
@@ -1233,6 +1431,8 @@ static int spi_dw_nor_transceive(const struct device *dev,
 			/* Set QUAD lines (preserve other flags) */
 			config_copy.operation &= ~SPI_LINES_MASK;
 			config_copy.operation |= SPI_LINES_QUAD;
+			config_copy.operation &= ~SPI_WORD_SIZE_MASK;
+			config_copy.operation |= (32U<<SPI_WORD_SIZE_SHIFT);
 			const struct spi_config *config_copy_const = &config_copy;
 
 			spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(1);  // Instruction in Standard，Address in QUAD
@@ -1241,7 +1441,7 @@ static int spi_dw_nor_transceive(const struct device *dev,
 
 			write_spi_ctrlr0(dev,spi_ctrlr0);
 
-			return transceive_write(dev, config_copy_const,&tx_set_dual_quad, NULL, false, NULL, NULL,op_info->opcode,dr_addr_dual_quad);
+			return transceive_write_144(dev, config_copy_const,&tx_set_dual_quad, NULL, false, NULL, NULL,op_info->opcode,dr_addr_dual_quad);
 
 		}else if (op_info->mode == JESD216_MODE_114) {
 			struct spi_config config_copy = *config;

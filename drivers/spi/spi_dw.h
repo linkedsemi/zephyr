@@ -69,6 +69,7 @@ struct spi_dw_data {
 	DEVICE_MMIO_RAM;
 	struct spi_context ctx;
 	struct dma_config dma_cfg_rx;
+	struct dma_config dma_cfg_tx;
 	struct dma_block_config dma_block_rx;
 	struct k_sem dma_rx_sem;
 	struct k_sem dma_tx_sem;
