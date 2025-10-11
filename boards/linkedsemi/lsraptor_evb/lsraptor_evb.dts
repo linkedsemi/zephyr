@@ -16,5 +16,5 @@
 
 &dwuart1 {
 	status = "okay";
-	current-speed = <921600>;
+	current-speed = <250000>;
 };

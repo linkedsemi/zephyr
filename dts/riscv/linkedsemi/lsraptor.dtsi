@@ -10,7 +10,7 @@
             device_type = "cpu";
             compatible = "linkedsemi,riscv";
             riscv,isa = "e906";
-            clock-frequency = <3500000>;
+            clock-frequency = <4000000>;
 			reg = <0>;
 		};
     };
@@ -39,7 +39,7 @@
             compatible = "ns16550","snps,dw-apb-uart";
             reg = <0x60503000 0x400>;
 			status = "disabled";
-            clock-frequency = <3500000>;
+            clock-frequency = <4000000>;
             // label = "DWUART1";
             interrupts = <142 3> ;
 			reg-shift = <2>;
