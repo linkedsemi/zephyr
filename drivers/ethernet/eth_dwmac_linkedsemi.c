@@ -214,6 +214,8 @@ BUILD_ASSERT(CONFIG_NOCACHE_MEMORY, "descriptors are placed in nocache section")
         .base_addr = (uint32_t)DT_INST_REG_ADDR(index),                                              \
         .tx_descs = dwmac_tx_descs_##index,                                                          \
         .rx_descs = dwmac_rx_descs_##index,                                                          \
+        .mdio_reset_mac = DT_NODE_HAS_COMPAT(DT_INST_PARENT(index), snps_dwmac_mdio)                 \
+                       && DT_NODE_HAS_STATUS_OKAY(DT_INST_PARENT(index)),                            \
     };                                                                                               \
     ETH_NET_DEVICE_DT_INST_DEFINE(index,                                                             \
                                   dwmac_init,                                                        \

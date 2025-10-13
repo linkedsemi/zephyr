@@ -91,6 +91,7 @@ struct mdio_dwmac_config {
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+    bool mac_enabled;
 };
 
 static bool check_busy(const struct device *dev)
@@ -292,13 +293,15 @@ static int mdio_dwmac_init(const struct device *dev)
     }
 #endif
 
-    /* resets all of the MAC internal registers and logic */
-    sys_write32(DMA_MODE_SWR, dev_config->base + DMA_MODE);
-    timeout = sys_timepoint_calc(K_MSEC(1000));
-    while (sys_read32(dev_config->base + DMA_MODE) & DMA_MODE_SWR) {
-        if (sys_timepoint_expired(timeout)) {
-            __ASSERT(0, "unable to reset hardware");
-            return -EIO;
+    if (dev_config->mac_enabled) {
+        /* resets all of the MAC internal registers and logic */
+        sys_write32(DMA_MODE_SWR, dev_config->base + DMA_MODE);
+        timeout = sys_timepoint_calc(K_MSEC(1000));
+        while (sys_read32(dev_config->base + DMA_MODE) & DMA_MODE_SWR) {
+            if (sys_timepoint_expired(timeout)) {
+                __ASSERT(0, "unable to reset hardware");
+                return -EIO;
+            }
         }
     }
 
@@ -332,6 +335,8 @@ static const struct mdio_driver_api mdio_dwmac_api = {
     .write_c45 = mdio_dwmac_write_c45,
 };
 
+#define CHECK_MAC_CHILD_(child) DT_NODE_HAS_COMPAT(child, snps_designware_ethernet)
+
 #define MDIO_DWMAC_DEVICE(inst)                                                                                                          \
     IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                                                                          \
                                                                                                                                          \
@@ -348,6 +353,7 @@ static const struct mdio_driver_api mdio_dwmac_api = {
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                                                     \
         IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                                                            \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))                                       \
+        .mac_enabled = DT_INST_FOREACH_CHILD_STATUS_OKAY_SEP(inst, CHECK_MAC_CHILD_, (||)),                                              \
     };                                                                                                                                   \
     DEVICE_DT_INST_DEFINE(inst,                                                                                                          \
                           &mdio_dwmac_init,                                                                                              \

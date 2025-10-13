@@ -635,15 +635,19 @@ int dwmac_probe(const struct device *dev)
 	LOG_INF("HW version %u.%u0", (reg_val >> 4) & 0xf, reg_val & 0xf);
 	__ASSERT(FIELD_GET(MAC_VERSION_SNPSVER, reg_val) >= 0x40,
 		 "This driver expects DWC-ETHERNET version >= 4.00");
-#if !defined(CONFIG_MDIO_DWMAC)
-	/* resets all of the MAC internal registers and logic */
-	REG_WRITE(DMA_MODE, DMA_MODE_SWR);
-	timeout = sys_timepoint_calc(K_MSEC(100));
-	while (REG_READ(DMA_MODE) & DMA_MODE_SWR) {
-		if (sys_timepoint_expired(timeout)) {
-			__ASSERT(0, "unable to reset hardware");
-			return -EIO;
+#if defined(CONFIG_MDIO_RESET_MAC)
+	if (!p->mdio_reset_mac) {
+#endif
+		/* resets all of the MAC internal registers and logic */
+		REG_WRITE(DMA_MODE, DMA_MODE_SWR);
+		timeout = sys_timepoint_calc(K_MSEC(100));
+		while (REG_READ(DMA_MODE) & DMA_MODE_SWR) {
+			if (sys_timepoint_expired(timeout)) {
+				__ASSERT(0, "unable to reset hardware");
+				return -EIO;
+			}
 		}
+#if defined(CONFIG_MDIO_RESET_MAC)
 	}
 #endif
 	/* get configured hardware features */
