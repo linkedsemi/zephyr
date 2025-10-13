@@ -289,19 +289,19 @@ config UART_SHARE_REGISTER
 
 config SHA256_CLOCK_RESET
 	bool "SHA256_CLOCK_RESET"
-	default y
+	default n
 
 config SHA512_CLOCK_RESET
 	bool "SHA512_CLOCK_RESET"
-	default y
+	default n
 
 config SM4_CLOCK_RESET
 	bool "SM4_CLOCK_RESET"
-	default y
+	default n
 
 config AES_CLOCK_RESET
 	bool "AES_CLOCK_RESET"
-	default y
+	default n
 
 config VENDER_DEFINE_DMA_DW_LLI_POOL
 	bool "VENDER_DEFINE_DMA_DW_LLI_POOL"
