@@ -488,7 +488,7 @@
         trng0: dwtrng@40004000 {
             compatible = "linkedsemi,ls-dwtrng";
             reg = <0x40004000 0x400>;
-            status = "okay";
+            status = "disabled";
             clocks = <NIST_TRNG_CLOCK>;
             resets = <NIST_TRNG_RESET>;
             interrupts = <NIST_TRNG_IRQN 3>;
@@ -507,7 +507,7 @@
         cap:cap@40082400 {
             compatible = "linkedsemi,ls-cap";
             reg = <0x40082400 0x400>;
-            status = "okay";
+            status = "disabled";
             interrupts = <CAP_IRQN 3>;  
             clocks = <CAP_CLOCK>;
             clock-frequency = <PBUS4_CLOCK>;
