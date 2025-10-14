@@ -379,23 +379,32 @@ zephyr_udc1: &usb1 {
     status = "disabled";
 };
 
-&eth1 {
-    phy-handle = <&eth1_phy>;
+&mdio1 {
+    pinctrl-0 = <
+        PINCTRL_RGMII2
+        &rgmii1_mdio_pe12
+        &rgmii1_mdc_pe15
+    >;
+    pinctrl-names = "default";
     status = "okay";
 };
 
-&mdio1 {
+&eth1 {
+    pinctrl-0 = <>;
+    pinctrl-names = "default";
+    status = "disabled";
+};
+
+&mdio2 {
+    pinctrl-0 = <>;
+    pinctrl-names = "default";
+    status = "disabled";
+};
+
+&eth2 {
+    pinctrl-0 = <>;
+    pinctrl-names = "default";
     status = "okay";
-    reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
-    reset-hold-ms = <10>;
-    circuits-set-ms = <30>;
-    eth1_phy: ethernet-phy@0 {
-        compatible = "realtek,rtl8211f";
-        reg = <0>;
-        reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
-        int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
-        status = "okay";
-    };
 };
 
 &sdhci1 {

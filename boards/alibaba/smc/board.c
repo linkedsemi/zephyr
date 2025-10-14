@@ -16,12 +16,12 @@ extern void dwmac_tx_unlock(const struct device *dev);
 void board_late_init_hook(void)
 {
 #if defined(CONFIG_ETH_DWMAC_LINKEDSEMI)
-    const struct device *const eth_dev = DEVICE_DT_GET(DT_NODELABEL(eth1));
+    const struct device *const eth_dev = DEVICE_DT_GET(DT_NODELABEL(eth2));
 #if 1
     /* tx delay */
-    REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_TX_DELAY_SEL, 0x2);
+    REG_FIELD_WR(SYSC_APP_CPU->ETH2_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_TX_DELAY_SEL, 0x2);
     /* rx delay */
-    REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_RX_DELAY_SEL, 0x2);
+    REG_FIELD_WR(SYSC_APP_CPU->ETH2_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_RX_DELAY_SEL, 0x2);
 
     dwmac_1000M_2500M_speed_cofig(eth_dev);
 #else
