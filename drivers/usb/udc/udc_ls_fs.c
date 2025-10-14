@@ -25,7 +25,7 @@
 LOG_MODULE_REGISTER(udc_ls_fs, CONFIG_UDC_DRIVER_LOG_LEVEL);
 
 #define USB_EP0_SIZE            (64)
-#define USB_TX_BUF_ADDR         (8)
+#define USB_TX_BUF_ADDR         (0)
 #define USB_TX_FIFO_SZ          (2)
 #define USB_TX_BUF_SIZE         (1<<(3+USB_TX_FIFO_SZ))
 #define USB_RX_BUF_ADDR         (USB_TX_BUF_ADDR + USB_TX_BUF_SIZE / 8)
@@ -97,6 +97,7 @@ struct udc_ls_data
     uint16_t rx_fifo_addr;
     struct k_msgq msgq;
     struct ls_event msgq_buf[USB_MSGQ_LENGTH];
+    uint8_t addr;
 };
 
 static void fifo_write(volatile void *fifo, void *buf, unsigned len)
@@ -171,9 +172,21 @@ static int udc_ls_init(const struct device *dev)
     reg_usb_t *usb_reg = usb_data->usb_instance;
 
 #ifdef CONFIG_SOC_LSQSH
+    const struct pinctrl_state *state = NULL;
     /* If the dp is externally pulled up, a low level will be output here to make the host initiate a reset. */
-    io_cfg_output(PH14);
-    io_write_pin(PH14, 0);
+    pinctrl_lookup_state(usb_cfg->pcfg, PINCTRL_STATE_DEFAULT, &state);
+    if (state && state->pins)
+    {
+        const pinctrl_soc_pin_t *dp = state->pins;
+        const pinctrl_soc_pin_t *dm = state->pins+1;
+
+        /* The first member of dts pinctrl must be dp */
+        io_cfg_output(dp->pinmux.pin);
+        io_write_pin(dp->pinmux.pin, 0);
+        k_usleep(1);
+        io_sl_st_init(dp->pinmux.pin);
+        io_sl_st_init(dm->pinmux.pin);
+    }
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -464,7 +477,7 @@ static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *con
             usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
         usb_reg->TXFIFO_SIZE[0]  = 0;
         usb_reg->TXFIFO_SIZE[1]  = 0;
-        usb_data->rx_fifo_addr = USB_TX_BUF_ADDR;
+        usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
     }
     else
     {
@@ -582,7 +595,7 @@ static int udc_ls_shutdown(const struct device *dev)
 static int udc_ls_set_address(const struct device *dev, const uint8_t addr)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
-    usb_data->usb_instance->FADDR = addr;
+    usb_data->addr = addr;
     return 0;
 }
 
@@ -836,7 +849,7 @@ static void _usbd_process_ep0(const struct device *dev)
     if (csr & USB_CSRL0_STALLED) {
         /* Returned STALL packet to HOST. */
         usb_instance->CSRL0 = csr & ~USB_CSRL0_STALLED;
-        usb_data->ep0_state         = USB_EP0_STAGE_IDLE;
+        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
         csr = usb_instance->CSRL0;
     }
 
@@ -888,9 +901,7 @@ static void _usbd_process_ep0(const struct device *dev)
             request has completed */
         if (usb_data->is_set_addr) {
             usb_data->is_set_addr = false;
-            if (usb_data->setup.bRequest == USB_SREQ_SET_ADDRESS && usb_data->setup.bmRequestType == 0x00) {
-                usb_instance->FADDR = usb_data->setup.wValue;
-            }
+            usb_instance->FADDR = usb_data->addr;
         }
     case USB_EP0_STAGE_STATUSOUT:
         /* end of sequence #1, host move status stage, the interrupt is just a confirmation that the request
@@ -1217,7 +1228,7 @@ static const struct udc_api udc_ls_api = {
         .ep_cfg_in = ep_cfg_in_##n,                 \
         .ep_cfg_out = ep_cfg_out_##n,               \
         .ep_tx = ep_tx_##n,                         \
-        .rx_fifo_addr = USB_TX_BUF_ADDR,        \
+        .rx_fifo_addr = USB_RX_BUF_ADDR,        \
         .ep0_state = USB_EP0_STAGE_SETUP,        \
         .is_set_addr = false                    \
     };          \

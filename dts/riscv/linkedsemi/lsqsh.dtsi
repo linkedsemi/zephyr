@@ -4,6 +4,7 @@
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <mem.h>
 #include <freq.h>
+#include <dmac_config.h>
 
 #include <zephyr/dt-bindings/memory-attr/memory-attr.h>
 #include <zephyr/dt-bindings/memory-attr/memory-attr-riscv.h>
@@ -156,7 +157,7 @@
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
-            status = "disabled";
+            status = "okay";
         };
 
         dmac2: dmac@40042000 {
@@ -169,7 +170,7 @@
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
-            status = "disabled";
+            status = "okay";
         };
 
         pinctrl: pin-controller@4006f080 {
@@ -484,10 +485,10 @@
             status = "disabled";
         };
 
-      trng0: dwtrng@40004000 {
+        trng0: dwtrng@40004000 {
             compatible = "linkedsemi,ls-dwtrng";
             reg = <0x40004000 0x400>;
-            status = "okay";
+            status = "disabled";
             clocks = <NIST_TRNG_CLOCK>;
             resets = <NIST_TRNG_RESET>;
             interrupts = <NIST_TRNG_IRQN 3>;
@@ -501,6 +502,15 @@
             clocks = <CRYPT_CLOCK>;
             resets = <CRYPT_RESET>;
             status = "disabled";
+        };
+        
+        cap:cap@40082400 {
+            compatible = "linkedsemi,ls-cap";
+            reg = <0x40082400 0x400>;
+            status = "disabled";
+            interrupts = <CAP_IRQN 3>;  
+            clocks = <CAP_CLOCK>;
+            clock-frequency = <PBUS4_CLOCK>;
         };
 
         sm4:sm4@40029400 {
@@ -547,7 +557,7 @@
             };
         };
 
-     iwdgtcpu1: watchdog@400a1800 {
+        sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x400a1800 0x400>;
           interrupts = <IWDT1_IRQN  4>;
@@ -556,15 +566,16 @@
           resets = <IWDT1_RESET>;
           clock-frequency = <32768>;
         };
-    iwdgtcpu2: watchdog@40099000{
+        app_iwdg: watchdog@40099000{
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x40099000 0x400>;
           interrupts = <IWDT2_IRQN 4>;
           status = "disabled";
           clocks = <IWDT2_CLOCK>;
+          resets = <IWDT2_RESET>;
           clock-frequency = <32768>;
         };
-    iwdgtcpu: watchdog@4002f800{
+        pmu_iwdg: watchdog@4002f800{
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x4002f800 0x400>;
           interrupts = <PMU_WDT_IRQN 4>;
@@ -1150,6 +1161,8 @@
             resets = <SPI3_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
+            dmas =<&dmac1 0 DMA_SPI3_RX>,<&dmac1 1 DMA_SPI3_TX>;
+            dma-names ="rx","tx";
             status = "disabled";
         };
 
@@ -1164,6 +1177,8 @@
             resets = <SPI4_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
+            dmas =<&dmac2 0 DMA_SPI4_RX>,<&dmac2 1 DMA_SPI4_TX>;
+            dma-names ="rx","tx";
             status = "disabled";
         };
 

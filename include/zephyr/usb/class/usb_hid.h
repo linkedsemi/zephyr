@@ -37,7 +37,9 @@ extern "C" {
 typedef int (*hid_cb_t)(const struct device *dev,
 			struct usb_setup_packet *setup, int32_t *len,
 			uint8_t **data);
-typedef void (*hid_int_ready_callback)(const struct device *dev);
+typedef void (*hid_in_ready_callback)(const struct device *dev);
+typedef void (*hid_out_ready_callback)(const struct device *dev, const uint8_t *buf, const uint16_t len);
+
 typedef void (*hid_protocol_cb_t)(const struct device *dev, uint8_t protocol);
 typedef void (*hid_idle_cb_t)(const struct device *dev, uint16_t report_id);
 
@@ -55,8 +57,8 @@ struct hid_ops {
 	 * be used to wait for the endpoint to go idle or to trigger
 	 * the next transfer.
 	 */
-	hid_int_ready_callback int_in_ready;
-	hid_int_ready_callback int_out_ready;
+	hid_in_ready_callback int_in_ready;
+	hid_out_ready_callback int_out_ready;
 };
 
 /**

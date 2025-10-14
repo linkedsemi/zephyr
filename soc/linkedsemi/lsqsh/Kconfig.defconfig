@@ -190,6 +190,8 @@ config INIT_FLASH_FOR_DEBUG
 config FLASH
 	default y
 
+config CAP_V2
+	default y
 
 config CRC
 	default y
@@ -287,18 +289,27 @@ config UART_SHARE_REGISTER
 
 config SHA256_CLOCK_RESET
 	bool "SHA256_CLOCK_RESET"
-	default y
+	default n
 
 config SHA512_CLOCK_RESET
 	bool "SHA512_CLOCK_RESET"
-	default y
+	default n
 
 config SM4_CLOCK_RESET
 	bool "SM4_CLOCK_RESET"
-	default y
+	default n
 
 config AES_CLOCK_RESET
 	bool "AES_CLOCK_RESET"
+	default n
+
+config VENDER_DEFINE_DMA_DW_LLI_POOL
+	bool "VENDER_DEFINE_DMA_DW_LLI_POOL"
 	default y
+
+if DMA_DW
+	config DMA_DW_LLI_POOL_SIZE
+		default 8
+endif
 
 endif

@@ -17,17 +17,21 @@
 #include <zephyr/devicetree.h>
 #include "reg_cap_type.h"
 #if defined(CONFIG_PINCTRL)
-    #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/pinctrl.h>
 #endif
 #if defined(CONFIG_RESET)
-    #include <zephyr/drivers/reset.h>
+#include <zephyr/drivers/reset.h>
 #endif
 #if defined(CONFIG_CLOCK_CONTROL)
-    #include <zephyr/drivers/clock_control.h>
-    #include <soc_clock.h>
+#include <zephyr/drivers/clock_control.h>
+#include <soc_clock.h>
 #endif
 
+#if defined(CONFIG_CAP_V2)
+#define CHAN_CONT 16
+#else
 #define CHAN_CONT 8
+#endif
 
 LOG_MODULE_REGISTER(cap_ls, LOG_LEVEL_DBG);
 
@@ -88,11 +92,28 @@ static void cap_intr_mask_atomic(struct cap_data *data, reg_cap_t *cap, uint8_t 
 {
 	k_spinlock_key_t key = k_spin_lock(&data->cap_spinlock);
 
+#if defined(CONFIG_CAP_V2)
+	if (channel < 8) {
+		if (enable) {
+			cap->INTR1_MSK |= BIT(channel) | BIT(channel + 8) | BIT(channel + 16);
+		} else {
+			cap->INTR1_MSK &= ~(BIT(channel) | BIT(channel + 8) | BIT(channel + 16));
+		}
+	} else {
+		uint8_t local = channel - 8;
+		if (enable) {
+			cap->INTR2_MSK |= BIT(local) | BIT(local + 8) | BIT(local + 16);
+		} else {
+			cap->INTR2_MSK &= ~(BIT(local) | BIT(local + 8) | BIT(local + 16));
+		}
+	}
+#else
 	if (enable) {
 		cap->INTR_MSK |= BIT(channel) | BIT(channel + 8) | BIT(channel + 16);
 	} else {
 		cap->INTR_MSK &= ~(BIT(channel) | BIT(channel + 8) | BIT(channel + 16));
 	}
+#endif
 
 	k_spin_unlock(&data->cap_spinlock, key);
 }
@@ -103,10 +124,57 @@ void ls_cap_isr(void *arg)
 	const struct cap_config *const cfg = dev->config;
 	struct cap_data *const data = dev->data;
 	reg_cap_t *const cap = cfg->regs;
+
+#if defined(CONFIG_CAP_V2)
+	uint32_t isrflags1 = cap->INTR1_STT;
+	uint32_t isrflags2 = cap->INTR2_STT;
+
+	for (uint8_t channel = 0; channel < CHAN_CONT; channel++) {
+		if (channel < 8) {
+			if (isrflags1 & BIT(channel)) {
+				cap->INTR1_CLR = BIT(channel);
+				cap_intr_mask_atomic(data, cap, channel, false);
+				data->ch_data[channel].cap_high = cap->CAP_COUNT[channel * 2];
+				data->ch_data[channel].cap_low = cap->CAP_COUNT[channel * 2 + 1];
+				data->ch_data[channel].data_err = 0;
+				k_sem_give(&data->data_sem[channel]);
+			} else if (BIT(channel) & (isrflags1 >> 8)) {
+				cap->INTR1_CLR = BIT(channel + 8);
+				cap_intr_mask_atomic(data, cap, channel, false);
+				data->ch_data[channel].data_err = 1;
+				k_sem_give(&data->data_sem[channel]);
+			} else if (BIT(channel) & (isrflags1 >> 16)) {
+				cap->INTR1_CLR = BIT(channel + 16);
+				cap_intr_mask_atomic(data, cap, channel, false);
+				data->ch_data[channel].data_err = 2;
+				k_sem_give(&data->data_sem[channel]);
+			}
+		} else {
+			uint8_t local = channel - 8;
+			if (isrflags2 & BIT(local)) {
+				cap->INTR2_CLR = BIT(local);
+				cap_intr_mask_atomic(data, cap, channel, false);
+				data->ch_data[channel].cap_high = cap->CAP_COUNT[channel * 2];
+				data->ch_data[channel].cap_low = cap->CAP_COUNT[channel * 2 + 1];
+				data->ch_data[channel].data_err = 0;
+				k_sem_give(&data->data_sem[channel]);
+			} else if (BIT(local) & (isrflags2 >> 8)) {
+				cap->INTR2_CLR = BIT(local + 8);
+				cap_intr_mask_atomic(data, cap, channel, false);
+				data->ch_data[channel].data_err = 1;
+				k_sem_give(&data->data_sem[channel]);
+			} else if (BIT(local) & (isrflags2 >> 16)) {
+				cap->INTR2_CLR = BIT(local + 16);
+				cap_intr_mask_atomic(data, cap, channel, false);
+				data->ch_data[channel].data_err = 2;
+				k_sem_give(&data->data_sem[channel]);
+			}
+		}
+	}
+#else
 	uint32_t isrflags = cap->INTR_STT;
 
 	for (uint8_t channel = 0; channel < CHAN_CONT; channel++) {
-
 		if (isrflags & BIT(channel)) {
 			cap->INTR_CLR = BIT(channel);
 			cap_intr_mask_atomic(data, cap, channel, false);
@@ -114,7 +182,6 @@ void ls_cap_isr(void *arg)
 			data->ch_data[channel].cap_low = cap->CAP_COUNT[channel * 2 + 1];
 			data->ch_data[channel].data_err = 0;
 			k_sem_give(&data->data_sem[channel]);
-
 		} else if (BIT(channel) & (isrflags >> 8)) {
 			cap->INTR_CLR = BIT(channel + 8);
 			cap_intr_mask_atomic(data, cap, channel, false);
@@ -127,6 +194,7 @@ void ls_cap_isr(void *arg)
 			k_sem_give(&data->data_sem[channel]);
 		}
 	}
+#endif
 }
 
 static int cap_init(const struct device *dev)
@@ -194,7 +262,12 @@ static int cap_init(const struct device *dev)
 
 	cap->CAP_CNT_EN = 1;
 	cap->CAP_PRE_DIV = cfg->prescaler;
+#if defined(CONFIG_CAP_V2)
+	cap->INTR1_CLR = 0xffffff;
+	cap->INTR2_CLR = 0xffffff;
+#else
 	cap->INTR_CLR = 0xffffff;
+#endif
 
 	for (size_t i = 0; i < CHAN_CONT; i++) {
 		cap->CAP_CTRL[i] = cfg->channels[i];
@@ -210,16 +283,17 @@ static int cap_sample_fetch(const struct device *dev, enum sensor_channel chan)
 	reg_cap_t *const cap = cfg->regs;
 	int ret;
 
-	if (chan < SENSOR_CHAN_CAP_01 || chan > SENSOR_CHAN_CAP_08) {
-		LOG_WRN("Can't accept this commond. chan=%d, CAP_00=%d, CAP_07=%d", chan,
-			SENSOR_CHAN_CAP_01, SENSOR_CHAN_CAP_08);
+	if (chan < SENSOR_CHAN_CAP_01 || chan > (SENSOR_CHAN_CAP_01 + CHAN_CONT - 1)) {
+		LOG_WRN("Can't accept this command. chan=%d, supported CAP_01..CAP_%02d", chan,
+			CHAN_CONT);
 		return -ENOTSUP;
 	}
 
 	uint8_t channel = chan - SENSOR_CHAN_CAP_01;
 
 	if (cap->CAP_CTRL[channel] == 0) {
-		LOG_WRN("Channel %d is not enabled in CAP_CTRL register", channel);
+		LOG_WRN("Channel %d is not enabled in CAP_CTRL register reg:%x", channel,
+			cap->CAP_CTRL[channel]);
 		return -ENODEV;
 	}
 
@@ -244,9 +318,9 @@ static int cap_channel_get(const struct device *dev, enum sensor_channel chan,
 	struct cap_data *const data = dev->data;
 	const struct cap_config *const cfg = dev->config;
 
-	if (chan < SENSOR_CHAN_CAP_01 || chan > SENSOR_CHAN_CAP_08) {
-		LOG_WRN("Can't accept this commond. chan=%d, CAP_01=%d, CAP_08=%d", chan,
-			SENSOR_CHAN_CAP_01, SENSOR_CHAN_CAP_08);
+	if (chan < SENSOR_CHAN_CAP_01 || chan > (SENSOR_CHAN_CAP_01 + CHAN_CONT - 1)) {
+		LOG_WRN("Can't accept this command. chan=%d, supported CAP_01..CAP_%02d", chan,
+			CHAN_CONT);
 		return -ENOTSUP;
 	}
 
@@ -263,7 +337,7 @@ static const struct sensor_driver_api cap_driver_api = {
 
 #define CAP_DEFINE(inst)                                                                           \
 	static struct cap_data cap_data_##inst;                                                    \
-	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                              \
+	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                                                                                 \
 	static void cap_irq_config_##inst(const struct device *dev)                                \
 	{                                                                                          \
 		IRQ_CONNECT(DT_INST_IRQN(inst), DT_INST_IRQ(inst, priority), ls_cap_isr,           \
@@ -276,10 +350,9 @@ static const struct sensor_driver_api cap_driver_api = {
 		.channels = DT_INST_PROP(inst, channels),                                          \
 		.hclk_hz = DT_INST_PROP(inst, clock_frequency),                                    \
 		.irq_config_func = cap_irq_config_##inst,                                          \
-		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), )) \
-        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), )) \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) \
-	};                                                                                         \
+		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                                                                         \
+				    IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                                                     \
+							   IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) };            \
 	SENSOR_DEVICE_DT_INST_DEFINE(inst, cap_init, NULL, &cap_data_##inst, &cap_config_##inst,   \
 				     POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY, &cap_driver_api);
 

@@ -205,7 +205,7 @@ static size_t cdc_acm_get_bulk_mps(struct usbd_class_data *const c_data)
 		return 512U;
 	}
 
-	return 64U;
+	return 32U;
 }
 
 static int usbd_cdc_acm_request(struct usbd_class_data *const c_data,
@@ -587,6 +587,17 @@ static void cdc_acm_tx_fifo_handler(struct k_work *work)
 	}
 }
 
+static uint16_t cdc_acm_out_ep_mps(struct cdc_acm_uart_data *data)
+{
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(data->c_data);
+
+	if (usbd_bus_speed(uds_ctx) == USBD_SPEED_HS) {
+		return data->desc->if1_hs_out_ep.wMaxPacketSize;
+	}
+
+	return data->desc->if1_out_ep.wMaxPacketSize;
+}
+
 /*
  * RX handler should be conditionally triggered at:
  *  - (x) cdc_acm_irq_rx_enable()
@@ -612,7 +623,7 @@ static void cdc_acm_rx_fifo_handler(struct k_work *work)
 		return;
 	}
 
-	if (ring_buf_space_get(data->rx_fifo.rb) < cdc_acm_get_bulk_mps(c_data)) {
+	if (ring_buf_space_get(data->rx_fifo.rb) < cdc_acm_out_ep_mps(data)) {
 		LOG_INF("RX buffer to small, throttle");
 		return;
 	}
@@ -629,8 +640,7 @@ static void cdc_acm_rx_fifo_handler(struct k_work *work)
 	}
 
 	/* Shrink the buffer size if operating on a full speed bus */
-	buf->size = MIN(cdc_acm_get_bulk_mps(c_data), buf->size);
-
+	buf->size = MIN(cdc_acm_out_ep_mps(data), buf->size);
 	ret = usbd_ep_enqueue(c_data, buf);
 	if (ret) {
 		LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
@@ -1159,7 +1169,7 @@ static struct usbd_cdc_acm_desc cdc_acm_desc_##n = {				\
 	.if0_hs_int_ep = {							\
 		.bLength = sizeof(struct usb_ep_descriptor),			\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
-		.bEndpointAddress = 0x81,					\
+		.bEndpointAddress = 0x82,					\
 		.bmAttributes = USB_EP_TYPE_INTERRUPT,				\
 		.wMaxPacketSize = sys_cpu_to_le16(CDC_ACM_DEFAULT_INT_EP_MPS),	\
 		.bInterval = CDC_ACM_HS_INT_EP_INTERVAL,			\
@@ -1182,7 +1192,7 @@ static struct usbd_cdc_acm_desc cdc_acm_desc_##n = {				\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
 		.bEndpointAddress = 0x82,					\
 		.bmAttributes = USB_EP_TYPE_BULK,				\
-		.wMaxPacketSize = sys_cpu_to_le16(64U),				\
+		.wMaxPacketSize = sys_cpu_to_le16(32U),				\
 		.bInterval = 0,							\
 	},									\
 										\
@@ -1191,14 +1201,14 @@ static struct usbd_cdc_acm_desc cdc_acm_desc_##n = {				\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
 		.bEndpointAddress = 0x01,					\
 		.bmAttributes = USB_EP_TYPE_BULK,				\
-		.wMaxPacketSize = sys_cpu_to_le16(64U),				\
+		.wMaxPacketSize = sys_cpu_to_le16(16U),				\
 		.bInterval = 0,							\
 	},									\
 										\
 	.if1_hs_in_ep = {							\
 		.bLength = sizeof(struct usb_ep_descriptor),			\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
-		.bEndpointAddress = 0x82,					\
+		.bEndpointAddress = 0x83,					\
 		.bmAttributes = USB_EP_TYPE_BULK,				\
 		.wMaxPacketSize = sys_cpu_to_le16(512U),			\
 		.bInterval = 0,							\
@@ -1207,7 +1217,7 @@ static struct usbd_cdc_acm_desc cdc_acm_desc_##n = {				\
 	.if1_hs_out_ep = {							\
 		.bLength = sizeof(struct usb_ep_descriptor),			\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
-		.bEndpointAddress = 0x01,					\
+		.bEndpointAddress = 0x02,					\
 		.bmAttributes = USB_EP_TYPE_BULK,				\
 		.wMaxPacketSize = sys_cpu_to_le16(512U),			\
 		.bInterval = 0,							\

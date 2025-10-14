@@ -36,7 +36,7 @@
 		peci-0 = &peci0;
 		pwm-led0 = &pwm_led0;
     rtc0 = &rtc0;	
-    watchdog0 = &iwdgt;
+    watchdog0 = &iwdg;
 	};
 
 	leds{
@@ -69,7 +69,8 @@
 	hwmon0 {
 		compatible = "linkedsemi,hwmon";
 		class = <0>;
-		hwmon-ins = <&cap 0>;//,<&pwm 1>;
+		hwmon-ins = <&cap 0>;
+		hwmon-outs = <&pwm 1>;
 	};
 };
 
@@ -221,7 +222,7 @@ zephyr_udc0: &usb {
 	cs-gpios = <&gpioa 13 GPIO_ACTIVE_LOW>;
 };
 
-&iwdgt
+&iwdg
 {
 	status = "okay";
 };

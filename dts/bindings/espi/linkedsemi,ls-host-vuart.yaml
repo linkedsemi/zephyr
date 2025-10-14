@@ -11,21 +11,6 @@ properties:
     required: true
     description: "Base I/O port address for the host VUART"
 
-  host_vuart_reg:
-    type: int
-    required: true
-    description: "Host VUART register address"
-
-  host_irq:
-    type: int
-    required: true
-    description: "Host interrupt number for the VUART"
-
-  level_irq:
-    type: boolean
-    required: false
-    description: "Whether the interrupt is level-triggered (true) or edge-triggered (false)"
-
   target:
     type: phandle
     required: true
@@ -33,5 +18,5 @@ properties:
 
   up-irq:
     type: array
-    required: false
+    required: true
     description: "Upstream interrupt specification"
