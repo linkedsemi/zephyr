@@ -1,0 +1,13 @@
+# Copyright (c) 2024, Alibaba
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: alismc@xip/cmu610/cpu2
+name: cmu610
+type: mcu
+arch: riscv32
+ram: 768
+toolchain:
+  - cross-compile
+  - zephyr
+supported:
+  - uart

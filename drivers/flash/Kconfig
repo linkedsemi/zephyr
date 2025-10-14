@@ -204,7 +204,9 @@ source "drivers/flash/Kconfig.stm32_ospi"
 source "drivers/flash/Kconfig.stm32_qspi"
 source "drivers/flash/Kconfig.stm32_xspi"
 source "drivers/flash/Kconfig.xmc4xxx"
+if BOARD_ALIMOC30_CMU610_CPU2
 source "drivers/flash/Kconfig.nor_multi_dev"
+endif
 # zephyr-keep-sorted-stop
 
 module = FLASH

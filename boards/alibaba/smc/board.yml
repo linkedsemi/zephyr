@@ -1,0 +1,11 @@
+board:
+  name: alismc
+  vendor: alibaba
+  socs:
+  - name: cmu610
+  revision:
+    format: "custom"
+    default: "xip"
+    revisions:
+      - name: "acku"
+      - name: "xip"

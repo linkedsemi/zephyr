@@ -1,0 +1,447 @@
+/*
+ * Copyright (c) 2024, Alibaba
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <riscv/linkedsemi/lsqsh.dtsi>
+#include "alismc_pinctrl.dtsi"
+
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
+/ {
+    model = "linkedsemi LSQSH_EVB";
+    compatible = "linkedsemi,lsqsh_app_evb";
+
+    chosen {
+        zephyr,sram = &sram2;
+        zephyr,console = &uart7;
+        zephyr,shell-uart = &uart7;
+        zephyr,flash-controller = &qspi1;
+        zephyr,internal-flash = &flash1;
+    };
+
+    aliases {
+        peci0 = &peci1;
+        sdhc0 = &sdhci1;
+        watchdog0=&app_iwdg;
+    };
+
+    fstab {
+        compatible = "zephyr,fstab";
+        ro_lfs_a: ro_lfs_a{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/ro";
+            partition = <&a_rofs_partition>;
+            // automount;
+            no-format;
+            read-only;
+            read-size = <32>;
+            prog-size = <32>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+        ro_lfs_b: ro_lfs_b{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/ro";
+            partition = <&b_rofs_partition>;
+            // automount;
+            no-format;
+            read-only;
+            read-size = <32>;
+            prog-size = <32>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+        rw_lfs: rw_lfs{
+            compatible = "zephyr,fstab,littlefs";
+            mount-point = "/rw";
+            partition = <&rwfs_partition>;
+            // automount;
+            // no-format;
+            read-size = <32>;
+            prog-size = <32>;
+            cache-size = <4096>;
+            lookahead-size = <256>;
+            block-cycles = <512>;
+        };
+    };
+
+    soc {
+        compatible = "simpe-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        interrupt-parent = <&intc>;
+
+        share_memory: share-memory@1013e000 {
+            compatible = "zephyr,memory-region", "mmio-sram";
+            reg = <0x1013e000 DT_SIZE_K(4)>;
+            zephyr,memory-region = "SHMEM";
+        };
+
+        mbox: mbox@1013f000 {
+            compatible = "linkedsemi,mbox";
+            reg = <0x1013f000 DT_SIZE_K(4)>;
+            interrupts = <SYSC_APP_CPU_IRQN 3>;
+            fifo-deepth = <8>;
+            fifo-width = <64>;
+            #mbox-cells = <1>;
+        };
+
+        qspi1: flash-client@40000000 {
+            compatible = "linkedsemi,ls-flash-delegation-client";
+            reg = <0x40000000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <1>;
+            interrupts = <3 3>;
+            mbox = <&mbox_consumer_qspi1>;
+
+            flash1: flash@8000000 {
+                compatible = "soc-nv-flash";
+                reg = <0x8000000 DT_SIZE_M(32)>;
+                erase-block-size = <4096>;
+                write-block-size = <4>;
+            };
+        };
+    };
+
+    mbox_consumer1: mbox-consumer1 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 0>, <&mbox 1>;
+        mbox-names = "tx", "rx";
+    };
+
+    mbox_consumer2: mbox-consumer2 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 2>, <&mbox 3>;
+        mbox-names = "tx", "rx";
+    };
+
+    /* func call */
+    mbox_consumer_qspi1: mbox-consumer3 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 4>, <&mbox 5>;
+        mbox-names = "tx", "rx";
+    };
+
+	cdc_ncm_eth0: cdc_ncm_eth0 {
+		compatible = "zephyr,cdc-ncm-ethernet";
+		remote-mac-address = "00005E005301";
+	};
+};
+
+&cpu1 {
+    status = "disabled";
+};
+
+&cpu2 {
+    status = "okay";
+};
+
+&i2c2 {
+    status = "okay";
+    label = "i2c-2";
+    eeprom: eeprom@50 {
+        compatible = "atmel,at24";
+        reg = <0x50>;
+        status = "okay";
+        size = <4096>;
+        pagesize = <32>;
+        address-width = <16>;
+        timeout = <5>;
+    };
+};
+
+&i2c5 {
+    status = "okay";
+    label = "i2c-5";
+};
+
+&i2c8 {
+    status = "okay";
+    label = "i2c-8";
+};
+
+&smbus2 {
+    status = "okay";
+};
+
+&smbus5 {
+    status = "okay";
+};
+
+&smbus8 {
+    status = "okay";
+};
+
+&sram1 {
+    status = "disabled";
+};
+
+&sram2 {
+    reg = <0x10060000 DT_SIZE_K(888)>;
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    /delete-property/ interrupts;
+    pinctrl-0 = <&uart3_txd_pb01 &uart3_rxd_pb03>;
+    pinctrl-names = "default";
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    label = "ttyS0";
+    status = "disabled";
+};
+
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart7 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&app_iwdg {
+    status = "okay";
+};
+
+&psram {
+    status = "okay";
+};
+
+&gpioa {
+    label = "gpiochip0";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","BMC_READY_OUT_N","","","","";
+};
+
+&gpiob {
+    label = "gpiochip1";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpioc {
+    label = "gpiochip2";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpiod {
+    label = "gpiochip3";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpioe {
+    label = "gpiochip4";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpiof {
+    label = "gpiochip5";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpiog {
+    label = "gpiochip6";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpioh {
+    label = "gpiochip7";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpioi {
+    label = "gpiochip8";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpioj {
+    label = "gpiochip9";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpiok {
+    label = "gpiochip10";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpiom {
+    label = "gpiochip11";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpion {
+    label = "gpiochip12";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpioq {
+    label = "gpiochip13";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&gpiot {
+    label = "gpiochip14";
+    ngpios = <16>;
+    status = "okay";
+    gpio-line-names =
+    /*A0-A7*/	"","","","","","","","",
+    /*B0-B7*/	"","","","","","","","";
+};
+
+&spi3 {
+    status = "disabled";
+    flash3_0: flash3@0 {
+        compatible = "jedec,spi-nor";
+        reg = <0>;
+        spi-max-frequency = <DT_FREQ_M(10)>;
+        re-init-support;
+    };
+};
+
+zephyr_udc0: &usb2 {
+    status = "okay";
+};
+
+zephyr_udc1: &usb1 {
+    status = "disabled";
+};
+
+&eth1 {
+    phy-handle = <&eth1_phy>;
+    status = "okay";
+};
+
+&mdio1 {
+    status = "okay";
+    reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+    reset-hold-ms = <10>;
+    circuits-set-ms = <30>;
+    eth1_phy: ethernet-phy@0 {
+        compatible = "realtek,rtl8211f";
+        reg = <0>;
+        reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+        int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+        status = "okay";
+    };
+};
+
+&sdhci1 {
+    status = "okay";
+
+    mmc_disk1: disk {
+        compatible = "zephyr,mmc-disk";
+        disk-name = "mnt";
+        bus-width = <1>;
+        status = "okay";
+    };
+};
+
+&peci1 {
+    status = "okay";
+};
+
+#if !ENABLE_ESPI_VUART_ON_CPU1
+&vuart1 {
+    interrupts = <UART3_IRQN 3>;
+    pinctrl-0 = <&uart3_txd_pb01 &uart3_rxd_pb03>;
+    pinctrl-names = "default";
+    label = "vttyS1";
+    status = "okay";
+};
+
+&espi1 {
+    espi1_kcs_ca2: espi1_kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "okay";
+    };
+    status = "okay";
+};
+
+&ipmi_kcs {
+    kcs_chan = <&espi1_kcs_ca2>;
+    status = "okay";
+    label = "ipmi-kcs";
+};
+
+&sio1 {
+    status = "okay";
+};
+
+&mmbi1 {
+    status = "okay";
+};
+#endif

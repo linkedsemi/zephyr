@@ -1,0 +1,357 @@
+/*
+ * Copyright (c) 2024, Alibaba
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <riscv/linkedsemi/lsqsh.dtsi>
+#include <arch/riscv/csr.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+#include "alismc_pinctrl.dtsi"
+#include <zephyr/dt-bindings/adc/ls-adc.h>
+
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
+#define SRAM_TOTAL_SIZE DT_SIZE_K(384)
+#define SRAM_RO_SIZE    DT_SIZE_K(270)
+#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
+
+/ {
+    model = "linkedsemi lsqsh_evb";
+    compatible = "linkedsemi,lsqsh_evb";
+
+    chosen {
+        zephyr,flash = &sram1_ro;
+        zephyr,flash-controller = &qspi1;
+        zephyr,sram = &sram1;
+        zephyr,console = &uart1;
+        zephyr,shell-uart = &uart1;
+        zephyr,internal-flash = &flash1;
+        zephyr,entropy = &trng0;
+    };
+
+    aliases {
+        // peci-0 = &peci1;
+        sdhc0 = &sdhci1;
+        // sw0 = &btn1;
+        led0 = &led0;
+        pwm-led0 = &pwm_led0;
+        watchdog0 = &sec_iwdg;
+    };
+
+    leds {
+        compatible = "gpio-leds";
+        led0: led_0{
+            gpios = <&gpioh 6 GPIO_ACTIVE_HIGH>;
+            label = "Red LED";
+        };
+    };
+
+    pwmleds {
+        compatible = "pwm-leds";
+        pwm_led0: pwm_led_0 {
+            pwms = <&pwm 10 PWM_USEC(1) 0>;
+        };
+    };
+
+    soc {
+        compatible = "simpe-bus";
+        #address-cells = <1>;
+        #size-cells = <1>;
+        interrupt-parent = <&intc>;
+
+        /delete-node/ memory@10000000;
+        sram1_ro: memory@10000000 {
+            compatible = "mmio-sram";
+            reg = <0x10000000 SRAM_RO_SIZE>;
+        };
+
+        sram1: memory@10040000 {
+            compatible = "mmio-sram";
+            reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+        };
+
+        share_memory: share-memory@1013e000 {
+            compatible = "zephyr,memory-region", "mmio-sram";
+            reg = <0x1013e000 DT_SIZE_K(4)>;
+            zephyr,memory-region = "SHMEM";
+        };
+
+        mbox: mbox@1013f000 {
+            compatible = "linkedsemi,mbox";
+            reg = <0x1013f000 DT_SIZE_K(4)>;
+            interrupts = <SYSC_SEC_CPU_IRQN 3>;
+            fifo-deepth = <8>;
+            fifo-width = <64>;
+            #mbox-cells = <1>;
+        };
+
+        qspi1: qspi@40000000 {
+            compatible = "linkedsemi,ls-flash-controller";
+            reg = <0x40000000 0x400>;
+            #address-cells = <1>;
+            #size-cells = <1>;
+            interrupts = <3 3>;
+            quad_mode;
+            addr4b;
+            mbox = <&mbox_consumer_qspi1>;
+
+            flash1: flash@8000000 {
+                compatible = "soc-nv-flash";
+                reg = <0x8000000 DT_SIZE_M(32)>;
+                erase-block-size = <4096>;
+                write-block-size = <4>;
+            };
+        };
+    };
+
+    mbox_consumer1: mbox-consumer1 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 1>, <&mbox 0>;
+        mbox-names = "tx", "rx";
+    };
+
+    mbox_consumer2: mbox-consumer2 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 3>, <&mbox 2>;
+        mbox-names = "tx", "rx";
+    };
+
+    /* func call */
+    mbox_consumer_qspi1: mbox-consumer3 {
+        compatible = "vnd,mbox-consumer";
+        mboxes = <&mbox 5>, <&mbox 4>;
+        mbox-names = "tx", "rx";
+    };
+};
+
+&trng0 {
+    status = "okay";
+};
+
+&cpu1 {
+    status = "okay";
+};
+
+&cpu2 {
+    status = "disabled";
+};
+
+// &i2c8 {
+//     status = "okay";
+// };
+
+// &smbus8 {
+//     status = "okay";
+// };
+
+&gpioa {
+    status = "okay";
+};
+
+&gpiob {
+    status = "okay";
+};
+
+&gpioc {
+    status = "okay";
+};
+
+&gpiod {
+    status = "okay";
+};
+
+&gpioe {
+    status = "okay";
+};
+
+&gpiof {
+    status = "okay";
+};
+
+&gpiog {
+    status = "okay";
+};
+
+&gpioh {
+    status = "okay";
+};
+
+&gpioi {
+    status = "okay";
+};
+
+&gpioj {
+    status = "okay";
+};
+
+&gpiok {
+    status = "okay";
+};
+
+&gpiom {
+    status = "okay";
+};
+
+&gpion {
+    status = "okay";
+};
+
+&gpioq {
+    status = "okay";
+};
+
+&gpiot {
+    status = "okay";
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&sec_iwdg {
+    status = "okay";
+};
+
+&pmu_iwdg {
+    status = "okay";
+};
+
+&pwm{
+    status = "okay";
+    prescaler = <3>;
+    pinctrl-0 = <&pwm1_pa04 &pwm7_pg02 &fan_pwm10_ph05>;
+    pinctrl-names = "default";
+};
+
+// &sgpiom {
+//     ngpios = <128>;
+//     status = "okay";
+// };
+
+// &sgpiom_a_d {
+//     status = "okay";
+// };
+
+// &sgpiom_e_h {
+//     status = "okay";
+// };
+
+// &sgpiom_i_l {
+//     status = "okay";
+// };
+
+// &sgpiom_m_p {
+//     status = "okay";
+// };
+
+// &sgpiom2 {
+//     ngpios = <128>;
+//     status = "okay";
+// };
+
+// &sgpiom2_a_d {
+//     status = "okay";
+// };
+
+// &sgpiom2_e_h {
+//     status = "okay";
+// };
+
+// &sgpiom2_i_l {
+//     status = "okay";
+// };
+
+// &sgpiom2_m_p {
+//     status = "okay";
+// };
+
+&eth1 {
+    status = "okay";
+};
+
+&mdio1 {
+    status = "okay";
+};
+
+&peci1 {
+    status = "okay";
+};
+
+&sdhci1 {
+    status = "okay";
+
+    mmc_disk1: disk {
+        compatible = "zephyr,mmc-disk";
+        disk-name = "mnt";
+        bus-width = <1>;
+        status = "okay";
+    };
+};
+
+// tst_dma0: &dma0 {
+//     status = "okay";
+// };
+
+&lpc1 {
+    status = "disabled";
+
+    lpc_kcs_ca2: lpc_kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "disabled";
+    };
+};
+
+#if ENABLE_ESPI_VUART_ON_CPU1
+&vuart1 {
+    interrupts = <UART3_IRQN 3>;
+    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
+    pinctrl-names = "default";
+    status = "okay";
+};
+
+&espi1 {
+    espi1_kcs_ca2: espi1_kcs_ca2 {
+        compatible = "linkedsemi,ls-kcs";
+        port = <0xca2 0xca3>;
+        status = "okay";
+    };
+    status = "okay";
+};
+
+&ipmi_kcs {
+    kcs_chan = <&espi1_kcs_ca2>;
+    status = "okay";
+    label = "ipmi-kcs";
+};
+
+&sio1 {
+    status = "okay";
+};
+
+&mmbi1 {
+    status = "okay";
+};
+#endif

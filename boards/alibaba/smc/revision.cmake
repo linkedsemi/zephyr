@@ -1,0 +1,10 @@
+set(BOARD_REVISIONS "acku"
+                    "xip")
+if (NOT DEFINED BOARD_REVISION)
+  set(BOARD_REVISION "xip")
+else ()
+  if (NOT (BOARD_REVISION STREQUAL "acku") 
+      AND NOT (BOARD_REVISION STREQUAL "xip"))
+    message(FATAL_ERROR "Invalid board revision, ${BOARD_REVISION}, valid revisions are: acku, xip")
+  endif()
+endif()

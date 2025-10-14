@@ -1,0 +1,8 @@
+# Copyright (c) 2024, Alibaba
+# SPDX-License-Identifier: Apache-2.0
+
+config BOARD_ALISMC
+	select SOC_LSQSH
+
+config BOARD_LATE_INIT_HOOK
+    default n
