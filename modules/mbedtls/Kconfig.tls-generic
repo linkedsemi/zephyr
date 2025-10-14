@@ -298,6 +298,14 @@ config MBEDTLS_CIPHER_MODE_CBC_ENABLED
 	bool "Cipher Block Chaining mode (CBC) for symmetric ciphers"
 	default y if !NET_L2_OPENTHREAD
 
+config MBEDTLS_CIPHER_MODE_CFB_ENABLED
+	bool "Cipher Block Chaining mode (CFB) for symmetric ciphers"
+	default y if !NET_L2_OPENTHREAD
+
+config MBEDTLS_CIPHER_MODE_OFB_ENABLED
+	bool "Cipher Block Chaining mode (OFB) for symmetric ciphers"
+	default y if !NET_L2_OPENTHREAD
+
 config MBEDTLS_CIPHER_MODE_CTR_ENABLED
 	bool "Counter Block Cipher mode (CTR) for symmetric ciphers"
 

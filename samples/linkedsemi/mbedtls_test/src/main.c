@@ -69,7 +69,7 @@ int test_sha224()
             goto exit;
         }
 
-        if (memcmp(hash, test_sha[i].output, SHA256_DIGEST_SIZE) != 0) {
+        if ((ret = memcmp(hash, test_sha[i].output, SHA224_DIGEST_SIZE)) != 0) {
             goto exit;
         }
     }
@@ -146,7 +146,7 @@ int test_sha256()
             goto exit;
         }
 
-        if (memcmp(hash, test_sha[i].output, SHA256_DIGEST_SIZE) != 0) {
+        if ((ret = memcmp(hash, test_sha[i].output, SHA256_DIGEST_SIZE)) != 0) {
             goto exit;
         }
     }
@@ -212,7 +212,7 @@ int test_sm3()
             goto exit;
         }
 
-        if (memcmp(hash, test_sm3[i].output, SM3_DIGEST_SIZE) != 0) {
+        if ((ret = memcmp(hash, test_sm3[i].output, SM3_DIGEST_SIZE)) != 0) {
             goto exit;
         }
     }
@@ -226,7 +226,6 @@ exit:
 }
 #endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
 
-#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
 #include "mbedtls/aes.h"
 #define MTLS_AES_192
 #define MTLS_AES_256
@@ -238,6 +237,7 @@ static int aes_ecb_test()
     uint8_t plain [AES_BLOCK_SIZE];
     int ret = 0;
 
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
     const uint32_t key_128[] = {
     0x63646566,
     0x38396162,
@@ -263,13 +263,44 @@ static int aes_ecb_test()
     0x34353637,
     0x30313233};
 #endif
-    const uint32_t iv[] = {
-    0x63646566,
-    0x39306162,
-    0x35363738,
-    0x31323334};
 
-    const uint8_t msg[] = {
+    const uint32_t niKey[] = {
+    0x0914dff4,
+    0x2d9810a3,
+    0x3b6108d7,
+    0x1f352c07,
+    0x857d7781,
+    0x2b73aef0,
+    0x15ca71be,
+    0x603deb10};
+
+#else /*software*/
+    const unsigned char key_128[] = {
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+    0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66};
+#ifdef MTLS_AES_192
+    const unsigned char key_192[] = {
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+    0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37};
+#endif
+#ifdef MTLS_AES_256
+    const unsigned char key_256[] = {
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+    0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+    0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66};
+#endif
+
+   const unsigned char niKey[] = {
+    0x60, 0x3d, 0xeb, 0x10, 0x15, 0xca, 0x71, 0xbe, 
+    0x2b, 0x73, 0xae, 0xf0, 0x85, 0x7d, 0x77, 0x81,
+    0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7,
+    0x2d, 0x98, 0x10, 0xa3, 0x09, 0x14, 0xdf, 0xf4};
+
+#endif /* CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI */
+
+    __attribute__((aligned(4))) const uint8_t msg[] = {
         0x6e, 0x6f, 0x77, 0x20, 0x69, 0x73, 0x20, 0x74,
         0x68, 0x65, 0x20, 0x74, 0x69, 0x6d, 0x65, 0x20
     };
@@ -288,15 +319,7 @@ static int aes_ecb_test()
         0xcd, 0xf2, 0x81, 0x3e, 0x73, 0x3e, 0xf7, 0x33,
         0x3d, 0x18, 0xfd, 0x41, 0x85, 0x37, 0x04, 0x82
     };
-    const uint32_t niKey[] = {
-    0x0914dff4,
-    0x2d9810a3,
-    0x3b6108d7,
-    0x1f352c07,
-    0x857d7781,
-    0x2b73aef0,
-    0x15ca71be,
-    0x603deb10};
+
     const uint8_t niPlain[] = {
         0x6b,0xc1,0xbe,0xe2,0x2e,0x40,0x9f,0x96,
         0xe9,0x3d,0x7e,0x11,0x73,0x93,0x17,0x2a
@@ -309,19 +332,22 @@ static int aes_ecb_test()
 
     int i;
     struct {
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
         const uint32_t* key;
-        int         keySz;
-        const uint32_t* iv; /* null uses 0's */
+#else
+        const unsigned char * key;
+#endif
+        int         keybits;
         const uint8_t* plain;
         const uint8_t* verify;
     } testVec[] = {
-        { key_128, 16, iv,   msg,     verify_ecb_128 },
+        { key_128, 128,  msg,     verify_ecb_128 },
 #ifdef MTLS_AES_192
-        { key_192, 24, iv,   msg,     verify_ecb_192 },
+        { key_192, 192,  msg,     verify_ecb_192 },
 #endif
 #ifdef MTLS_AES_256
-        { key_256, 32, iv,   msg,     verify_ecb_256 },
-        { niKey,   32, NULL, niPlain, niCipher }
+        { key_256, 256,  msg,     verify_ecb_256 },
+        { niKey,   256,  niPlain, niCipher }
 #endif
     };
     #define AES_ECB_TEST_LEN (int)(sizeof(testVec) / sizeof(*testVec))
@@ -330,7 +356,7 @@ static int aes_ecb_test()
 
         mbedtls_aes_init(&aes);
 
-        if((ret = mbedtls_aes_setkey_enc(&aes, (char *)testVec[i].key, testVec[i].keySz)) != 0 ) {
+        if((ret = mbedtls_aes_setkey_enc(&aes, (char *)testVec[i].key, testVec[i].keybits)) != 0 ) {
             goto exit;
         }
 
@@ -343,6 +369,11 @@ static int aes_ecb_test()
         }
 
         memset(plain, 0, AES_BLOCK_SIZE);
+        mbedtls_aes_init(&aes);
+
+        if ((ret = mbedtls_aes_setkey_dec(&aes, (char *)testVec[i].key, testVec[i].keybits)) != 0 ) {
+            goto exit;
+        }
         if((ret = mbedtls_aes_crypt_ecb(&aes, MBEDTLS_AES_DECRYPT, cipher, plain)) != 0) {
             goto exit;
         }
@@ -371,25 +402,48 @@ static int aes_cbc_test()
         0x95,0x94,0x92,0x57,0x5f,0x42,0x81,0x53,
         0x2c,0xcc,0x9d,0x46,0x77,0xa2,0x33,0xcb
     };
+
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
     static const uint32_t key[] = {
     0x63646566,
     0x38396162,
     0x34353637,
     0x30313233};
-    static const uint32_t iv[] = {
+
+    static const uint32_t enc_iv[] = {
     0x63646566,
     0x39306162,
     0x35363738,
     0x31323334};
 
+    static const uint32_t dec_iv[] = {
+    0x63646566,
+    0x39306162,
+    0x35363738,
+    0x31323334};
+
+#else
+    const unsigned char key[] = {
+    0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37,
+    0x38, 0x39, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66};
+
+    unsigned char enc_iv[] = {
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+    0x39, 0x30, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66};
+    unsigned char dec_iv[] = {
+    0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38,
+    0x39, 0x30, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66};
+
+#endif
+
     mbedtls_aes_init(&aes);
 
-    if((ret = mbedtls_aes_setkey_enc(&aes, (char *)key, AES_BLOCK_SIZE)) != 0) {
+    if((ret = mbedtls_aes_setkey_enc(&aes, (char *)key, AES_BLOCK_SIZE*8)) != 0) {
         goto exit;
     }
 
     memset(cipher, 0, sizeof(cipher));
-    if((ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, AES_BLOCK_SIZE, (char *)iv, msg, cipher)) != 0) {
+    if((ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_ENCRYPT, AES_BLOCK_SIZE, (char *)enc_iv, msg, cipher)) != 0) {
         goto exit;
     }
     if ((ret = memcmp(cipher, verify, AES_BLOCK_SIZE)) != 0) {
@@ -397,10 +451,272 @@ static int aes_cbc_test()
     }
 
     memset(plain, 0, sizeof(plain));
-    if((ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, AES_BLOCK_SIZE, (char *)iv, cipher, plain)) != 0) {
+    if ((ret = mbedtls_aes_setkey_dec(&aes, (char *)key, AES_BLOCK_SIZE*8)) != 0) {
         goto exit;
     }
-    if (memcmp(plain, msg, AES_BLOCK_SIZE)) {
+    if((ret = mbedtls_aes_crypt_cbc(&aes, MBEDTLS_AES_DECRYPT, AES_BLOCK_SIZE, (char *)dec_iv, cipher, plain)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(plain, msg, AES_BLOCK_SIZE)) !=0) {
+        goto exit;
+    }
+exit:
+    return ret;
+}
+
+static int aes_ctr_test()
+{
+    mbedtls_aes_context aes;
+    uint8_t ctr_plaintext[] = {
+        //Block #1
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        //Block #2
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c, 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51,
+        //Block #3
+        0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11, 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef,
+        //Block #4
+        0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17, 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10};
+
+    uint8_t ctr_ciphertext_128[] = {
+        0x87, 0x4d, 0x61, 0x91, 0xb6, 0x20, 0xe3, 0x26, 0x1b, 0xef, 0x68, 0x64, 0x99, 0x0d, 0xb6, 0xce,
+        0x98, 0x06, 0xf6, 0x6b, 0x79, 0x70, 0xfd, 0xff, 0x86, 0x17, 0x18, 0x7b, 0xb9, 0xff, 0xfd, 0xff,
+        0x5a, 0xe4, 0xdf, 0x3e, 0xdb, 0xd5, 0xd3, 0x5e, 0x5b, 0x4f, 0x09, 0x02, 0x0d, 0xb0, 0x3e, 0xab,
+        0x1e, 0x03, 0x1d, 0xda, 0x2f, 0xbe, 0x03, 0xd1, 0x79, 0x21, 0x70, 0xa0, 0xf3, 0x00, 0x9c, 0xee};
+
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+    uint32_t ctr_key_128[] = {
+        0x09cf4f3c,
+        0xabf71588,
+        0x28aed2a6,
+        0x2b7e1516};
+
+#else
+    const unsigned char ctr_key_128[] = {
+    0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+    0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+#endif
+
+    uint8_t ciphertext_buff[64];
+    uint8_t plaintext_buff[64];
+    int ret = 0;
+    size_t current_nc_off = 0;
+    size_t *nc_off_ptr = &current_nc_off;
+    unsigned char nonce_counter_enc[16] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff};
+    unsigned char nonce_counter_dec[16] = {0xf0, 0xf1, 0xf2, 0xf3, 0xf4, 0xf5, 0xf6, 0xf7, 0xf8, 0xf9, 0xfa, 0xfb, 0xfc, 0xfd, 0xfe, 0xff};
+    unsigned char stream_block[16] = { 0 };
+
+    mbedtls_aes_init(&aes);
+
+    if((ret = mbedtls_aes_setkey_enc(&aes, (char *)ctr_key_128, AES_BLOCK_SIZE*8)) != 0) {
+        goto exit;
+    }
+
+    memset(ciphertext_buff, 0, sizeof(ciphertext_buff));
+    if((ret = mbedtls_aes_crypt_ctr(&aes, sizeof(ctr_plaintext), nc_off_ptr, nonce_counter_enc, stream_block, ctr_plaintext, ciphertext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(ciphertext_buff, ctr_ciphertext_128,  sizeof(ctr_ciphertext_128))) != 0) {
+       goto exit;
+    }
+
+    memset(plaintext_buff, 0, sizeof(plaintext_buff));
+    if ((ret = mbedtls_aes_crypt_ctr(&aes, sizeof(ctr_ciphertext_128), nc_off_ptr, nonce_counter_dec, stream_block, ctr_ciphertext_128, plaintext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(plaintext_buff, ctr_plaintext, sizeof(ctr_plaintext))) != 0) {
+        goto exit;
+    }
+exit:
+    return ret;
+}
+
+static int aes_cfb128_test()
+{
+    mbedtls_aes_context aes;
+    uint8_t cfb128_plaintext[] = {
+        //Block #1
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        //Block #2
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c, 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51,
+        //Block #3
+        0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11, 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef,
+        //Block #4
+        0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17, 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10};
+
+    uint8_t cfb128_ciphertext[] = {
+        0x3b, 0x3f, 0xd9, 0x2e, 0xb7, 0x2d, 0xad, 0x20, 0x33, 0x34, 0x49, 0xf8, 0xe8, 0x3c, 0xfb, 0x4a,
+        0xc8, 0xa6, 0x45, 0x37, 0xa0, 0xb3, 0xa9, 0x3f, 0xcd, 0xe3, 0xcd, 0xad, 0x9f, 0x1c, 0xe5, 0x8b,
+        0x26, 0x75, 0x1f, 0x67, 0xa3, 0xcb, 0xb1, 0x40, 0xb1, 0x80, 0x8c, 0xf1, 0x87, 0xa4, 0xf4, 0xdf,
+        0xc0, 0x4b, 0x05, 0x35, 0x7c, 0x5d, 0x1c, 0x0e, 0xea, 0xc4, 0xc6, 0x6f, 0x9f, 0xf7, 0xf2, 0xe6};
+
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+    uint32_t cfb128_key[] = {
+        0x09cf4f3c,
+        0xabf71588,
+        0x28aed2a6,
+        0x2b7e1516};
+#else
+    const unsigned char cfb128_key[] = {
+    0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+    0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+#endif
+    unsigned char cfb128_enc_iv[] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
+    unsigned char cfb128_dec_iv[] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
+    uint8_t ciphertext_buff[64];
+    uint8_t plaintext_buff[64];
+    int ret = 0;
+    size_t iv_off = 0;
+
+    mbedtls_aes_init(&aes);
+
+    if((ret = mbedtls_aes_setkey_enc(&aes, (char *)cfb128_key, AES_BLOCK_SIZE*8)) != 0) {
+        goto exit;
+    }
+
+    memset(ciphertext_buff, 0, sizeof(ciphertext_buff));
+    if((ret = mbedtls_aes_crypt_cfb128(&aes, MBEDTLS_AES_ENCRYPT, sizeof(cfb128_plaintext), &iv_off , cfb128_enc_iv, cfb128_plaintext, ciphertext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(ciphertext_buff, cfb128_ciphertext,  sizeof(cfb128_ciphertext))) != 0) {
+       goto exit;
+    }
+
+    memset(plaintext_buff, 0, sizeof(plaintext_buff));
+    if ((ret = mbedtls_aes_crypt_cfb128(&aes, MBEDTLS_AES_DECRYPT, sizeof(cfb128_ciphertext), &iv_off, cfb128_dec_iv, cfb128_ciphertext, plaintext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(plaintext_buff, cfb128_plaintext, sizeof(cfb128_plaintext))) != 0) {
+        goto exit;
+    }
+exit:
+    return ret;
+}
+
+static int aes_cfb8_test()
+{
+    mbedtls_aes_context aes;
+    uint8_t cfb8_plaintext[] = {
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a, 0xae, 0x2d};
+
+    uint8_t cfb8_ciphertext[] = {
+        0x3b, 0x79, 0x42, 0x4c, 0x9c, 0x0d, 0xd4, 0x36, 0xba, 0xce, 0x9e, 0x0e, 0xd4, 0x58, 0x6a, 0x4f, 0x32, 0xb9};
+
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+    uint32_t cfb8_key[] = {
+        0x09cf4f3c,
+        0xabf71588,
+        0x28aed2a6,
+        0x2b7e1516};
+#else
+    const unsigned char cfb8_key[] = {
+    0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+    0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+#endif
+    unsigned char cfb8_enc_iv[] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
+    unsigned char cfb8_dec_iv[] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
+    uint8_t ciphertext_buff[64];
+    uint8_t plaintext_buff[64];
+    int ret = 0;
+
+    mbedtls_aes_init(&aes);
+
+    if((ret = mbedtls_aes_setkey_enc(&aes, (char *)cfb8_key, AES_BLOCK_SIZE*8)) != 0) {
+        goto exit;
+    }
+
+    memset(ciphertext_buff, 0, sizeof(ciphertext_buff));
+    if((ret = mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_ENCRYPT, sizeof(cfb8_plaintext), cfb8_enc_iv, cfb8_plaintext, ciphertext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(ciphertext_buff, cfb8_ciphertext,  sizeof(cfb8_ciphertext))) != 0) {
+       goto exit;
+    }
+
+    memset(plaintext_buff, 0, sizeof(plaintext_buff));
+    if ((ret = mbedtls_aes_crypt_cfb8(&aes, MBEDTLS_AES_DECRYPT, sizeof(cfb8_ciphertext), cfb8_dec_iv, cfb8_ciphertext, plaintext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(plaintext_buff, cfb8_plaintext, sizeof(cfb8_plaintext))) != 0) {
+        goto exit;
+    }
+exit:
+    return ret;
+}
+
+static int aes_ofb_test()
+{
+    mbedtls_aes_context aes;
+    uint8_t ofb_plaintext[] = {
+        //Block #1
+        0x6b, 0xc1, 0xbe, 0xe2, 0x2e, 0x40, 0x9f, 0x96, 0xe9, 0x3d, 0x7e, 0x11, 0x73, 0x93, 0x17, 0x2a,
+        //Block #2
+        0xae, 0x2d, 0x8a, 0x57, 0x1e, 0x03, 0xac, 0x9c, 0x9e, 0xb7, 0x6f, 0xac, 0x45, 0xaf, 0x8e, 0x51,
+        //Block #3
+        0x30, 0xc8, 0x1c, 0x46, 0xa3, 0x5c, 0xe4, 0x11, 0xe5, 0xfb, 0xc1, 0x19, 0x1a, 0x0a, 0x52, 0xef,
+        //Block #4
+        0xf6, 0x9f, 0x24, 0x45, 0xdf, 0x4f, 0x9b, 0x17, 0xad, 0x2b, 0x41, 0x7b, 0xe6, 0x6c, 0x37, 0x10};
+
+    uint8_t ofb_ciphertext[] = {
+        0x3b, 0x3f, 0xd9, 0x2e, 0xb7, 0x2d, 0xad, 0x20, 0x33, 0x34, 0x49, 0xf8, 0xe8, 0x3c, 0xfb, 0x4a,
+        0x77, 0x89, 0x50, 0x8d, 0x16, 0x91, 0x8f, 0x03, 0xf5, 0x3c, 0x52, 0xda, 0xc5, 0x4e, 0xd8, 0x25,
+        0x97, 0x40, 0x05, 0x1e, 0x9c, 0x5f, 0xec, 0xf6, 0x43, 0x44, 0xf7, 0xa8, 0x22, 0x60, 0xed, 0xcc,
+        0x30, 0x4c, 0x65, 0x28, 0xf6, 0x59, 0xc7, 0x78, 0x66, 0xa5, 0x10, 0xd9, 0xc1, 0xd6, 0xae, 0x5e};
+
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+    uint32_t ofb_key[] = {
+        0x09cf4f3c,
+        0xabf71588,
+        0x28aed2a6,
+        0x2b7e1516};
+#else
+    const unsigned char ofb_key[] = {
+    0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
+    0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c};
+#endif
+    unsigned char ofb_enc_iv[] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
+    unsigned char ofb_dec_iv[] = {
+    0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
+    size_t iv_off = 0;
+    uint8_t ciphertext_buff[64];
+    uint8_t plaintext_buff[64];
+    int ret = 0;
+
+    mbedtls_aes_init(&aes);
+
+    if((ret = mbedtls_aes_setkey_enc(&aes, (char *)ofb_key, AES_BLOCK_SIZE*8)) != 0) {
+        goto exit;
+    }
+
+    memset(ciphertext_buff, 0, sizeof(ciphertext_buff));
+    if((ret = mbedtls_aes_crypt_ofb(&aes, sizeof(ofb_plaintext), &iv_off, ofb_enc_iv, ofb_plaintext, ciphertext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(ciphertext_buff, ofb_ciphertext,  sizeof(ofb_ciphertext))) != 0) {
+       goto exit;
+    }
+
+    memset(plaintext_buff, 0, sizeof(plaintext_buff));
+    if ((ret = mbedtls_aes_crypt_ofb(&aes, sizeof(ofb_ciphertext), &iv_off, ofb_dec_iv, ofb_ciphertext, plaintext_buff)) != 0) {
+        goto exit;
+    }
+    if ((ret = memcmp(plaintext_buff, ofb_plaintext, sizeof(ofb_plaintext))) != 0) {
         goto exit;
     }
 exit:
@@ -424,9 +740,36 @@ int aes_test()
         printf("aes_cbc_test  test passed!\n");
     }
 
+    if((ret = aes_cfb128_test()) !=0)
+    {
+        printf("aes_cfb128_test  test failed!\n");
+    }else{
+        printf("aes_cfb128_test  test passed!\n");
+    }
+
+    if((ret = aes_cfb8_test()) !=0)
+    {
+        printf("aes_cfb8_test  test failed!\n");
+    }else{
+        printf("aes_cfb8_test  test passed!\n");
+    }
+
+    if((ret = aes_ofb_test()) !=0)
+    {
+        printf("aes_ofb_test  test failed!\n");
+    }else{
+        printf("aes_ofb_test  test passed!\n");
+    }
+
+    if((ret = aes_ctr_test()) !=0)
+    {
+        printf("aes_ctr_test  test failed!\n");
+    }else{
+        printf("aes_ctr_test  test passed!\n");
+    }
+
     return ret;
 }
-#endif /* CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI */
 
 #if defined(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
 #include "mbedtls/sha512.h"
@@ -490,7 +833,7 @@ int test_sha384()
             goto exit;
         }
 
-        if (memcmp(hash, test_sha[i].output, SHA384_DIGEST_SIZE) != 0) {
+        if ((ret = memcmp(hash, test_sha[i].output, SHA384_DIGEST_SIZE)) != 0) {
             goto exit;
         }
     }
@@ -563,7 +906,7 @@ int test_sha512()
             goto exit;
         }
 
-        if (memcmp(hash, test_sha[i].output, SHA512_DIGEST_SIZE) != 0) {
+        if ((ret = memcmp(hash, test_sha[i].output, SHA512_DIGEST_SIZE)) != 0) {
             goto exit;
         }
     }
@@ -618,7 +961,7 @@ int test_sm4()
         goto exit;
     }
 
-    if (memcmp(enc, c1_ecb, sizeof(c1_ecb)) != 0) {
+    if ((ret = memcmp(enc, c1_ecb, sizeof(c1_ecb))) != 0) {
        goto exit;
     }
 
@@ -626,7 +969,7 @@ int test_sm4()
         goto exit;
     }
 
-    if (memcmp(dec, p1, sizeof(p1)) != 0) {
+    if ((ret = memcmp(dec, p1, sizeof(p1))) != 0) {
         goto exit;
     }
 
@@ -688,7 +1031,7 @@ int sm4_ctr_test()
         goto exit;
     }
 
-    if (memcmp(enc, c2_ctr, sizeof(c2_ctr)) != 0)
+    if ((ret = memcmp(enc, c2_ctr, sizeof(c2_ctr))) != 0)
         goto exit;
 
     mbedtls_sm4_init(&sm4);
@@ -706,7 +1049,7 @@ int sm4_ctr_test()
         goto exit;
     }
 
-    if (memcmp(dec, p2, sizeof(p2)) != 0)
+    if ((ret = memcmp(dec, p2, sizeof(p2))) != 0)
         goto exit;
 
 exit:
@@ -762,14 +1105,14 @@ int main(void)
 
 #endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
 
-#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+
     if(aes_test() != 0)
     {
         printf("AES  test failed!\n");
     }else{
         printf("AES  test passed!\n");
     }
-#endif /* CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI */
+
 
 #if defined(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
     if(test_sha384() != 0)
