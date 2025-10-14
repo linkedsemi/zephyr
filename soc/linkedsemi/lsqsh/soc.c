@@ -632,7 +632,7 @@ void soc_early_init_hook(void)
     if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
        || (!IS_ENABLED(CONFIG_XIP))) {
         flash1.reg = (void *)SEC_QSPI1_ADDR;
-        flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad));
+        flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad_mode));
         flash1.continuous_mode_enable = false;
         flash1.writing = false;
         flash1.suspend_count = 0;
@@ -658,7 +658,7 @@ void soc_early_init_hook(void)
             lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
             pinmux_hal_flash_quad_init();
             flash1.reg = (void *)SEC_QSPI1_ADDR;
-            flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad));
+            flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad_mode));
             flash1.continuous_mode_enable = false;
             flash1.writing = false;
             flash1.suspend_count = 0;

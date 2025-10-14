@@ -335,25 +335,25 @@ static int spi_dw_configure_support_all(const struct device *dev,
 	}
 
 	if (config->operation & SPI_HALF_DUPLEX) {
-		LOG_ERR("Half-duplex not supported");
+		LOG_ERROR("Half-duplex not supported");
 		return -ENOTSUP;
 	}
 
 	/* Verify if requested op mode is relevant to this controller */
 	if (config->operation & SPI_OP_MODE_SLAVE) {
 		if (!(info->serial_target)) {
-			LOG_ERR("Slave mode not supported");
+			LOG_ERROR("Slave mode not supported");
 			return -ENOTSUP;
 		}
 	} else {
 		if (info->serial_target) {
-			LOG_ERR("Master mode not supported");
+			LOG_ERROR("Master mode not supported");
 			return -ENOTSUP;
 		}
 	}
 
 	if (config->operation & SPI_TRANSFER_LSB) {
-		LOG_ERR("LSB-first not supported");
+		LOG_ERROR("LSB-first not supported");
 		return -EINVAL;
 	}
 
@@ -374,7 +374,7 @@ static int spi_dw_configure_support_all(const struct device *dev,
 	}
 
 	if (info->max_xfer_size < SPI_WORD_SIZE_GET(config->operation)) {
-		LOG_ERR("Max xfer size is %u, word size of %u not allowed",
+		LOG_ERROR("Max xfer size is %u, word size of %u not allowed",
 			info->max_xfer_size, SPI_WORD_SIZE_GET(config->operation));
 		return -ENOTSUP;
 	}
@@ -824,7 +824,7 @@ static int transceive_read_144(const struct device *dev,
 	write_dr(dev, addr);
 
 	if (info->dev_dma_rx == NULL || !device_is_ready(info->dev_dma_rx)) {
-		LOG_ERR("RX DMA device not ready");
+		LOG_ERROR("RX DMA device not ready");
 		ret = -ENODEV;
 		goto end_xfer;
 	}
@@ -836,7 +836,7 @@ static int transceive_read_144(const struct device *dev,
 
 	ret = build_rx_lli_chain(spi, blk, &blk_cnt, dr_addr, dst_addr, len_bytes);
 	if (ret) {
-		LOG_ERR("build_rx_lli_chain failed: %d (len=%u, dfs=%u)", ret, (unsigned)len_bytes, spi->dfs);
+		LOG_ERROR("build_rx_lli_chain failed: %d (len=%u, dfs=%u)", ret, (unsigned)len_bytes, spi->dfs);
 		goto end_xfer;
 	}
 
@@ -860,14 +860,14 @@ static int transceive_read_144(const struct device *dev,
 	/* Config DMA controller */
 	ret = dma_config(info->dev_dma_rx, info->dma_channel_rx, &spi->dma_cfg_rx);
 	if (ret < 0) {
-		LOG_ERR("dma_config rx failed %d", ret);
+		LOG_ERROR("dma_config rx failed %d", ret);
 		return ret;
 	}
 
 	/* Start DMA */
 	ret = dma_start(info->dev_dma_rx, info->dma_channel_rx);
 	if (ret < 0) {
-		LOG_ERR("dma_start rx failed %d", ret);
+		LOG_ERROR("dma_start rx failed %d", ret);
 		return ret;
 	}
 
@@ -888,7 +888,7 @@ static int transceive_read_144(const struct device *dev,
 	/* Wait DMA finish */
 	ret = k_sem_take(&spi->dma_rx_sem, K_MSEC(SPI_DW_DMA_WAIT_TIMEOUT_MS));
 	if (ret < 0) {
-		LOG_ERR("DMA RX timeout");
+		LOG_ERROR("DMA RX timeout");
 		ret = -ETIMEDOUT;
 	} else {
 		ret = 0;
@@ -1107,7 +1107,7 @@ static int transceive_write_144(const struct device *dev,
 	write_dr(dev, addr);
 
 	if (info->dev_dma_tx == NULL || !device_is_ready(info->dev_dma_tx)) {
-		LOG_ERR("TX DMA device not ready");
+		LOG_ERROR("TX DMA device not ready");
 		ret = -ENODEV;
 		goto end_xfer;
 	}
@@ -1120,7 +1120,7 @@ static int transceive_write_144(const struct device *dev,
 
 	ret = build_tx_lli_chain(spi, blk, &blk_cnt, src_addr, dr_addr, len_bytes);
 	if (ret) {
-		LOG_ERR("build_tx_lli_chain failed: %d (len=%u, dfs=%u)",
+		LOG_ERROR("build_tx_lli_chain failed: %d (len=%u, dfs=%u)",
 			      ret, (unsigned)len_bytes, spi->dfs);
 	goto end_xfer;
 	}
@@ -1148,14 +1148,14 @@ static int transceive_write_144(const struct device *dev,
 	/* Config DMA controller */
 	ret = dma_config(info->dev_dma_tx, info->dma_channel_tx, &spi->dma_cfg_tx);
 	if (ret < 0) {
-		LOG_ERR("dma_config tx failed %d", ret);
+		LOG_ERROR("dma_config tx failed %d", ret);
 		goto end_xfer;
 	}
 
 	/* Start DMA */
 	ret = dma_start(info->dev_dma_tx, info->dma_channel_tx);
 	if (ret < 0) {
-		LOG_ERR("dma_start tx failed %d", ret);
+		LOG_ERROR("dma_start tx failed %d", ret);
 		goto end_xfer;
 	}
 
@@ -1175,13 +1175,13 @@ static int transceive_write_144(const struct device *dev,
 	/* Wait DMA finish */
 	ret = k_sem_take(&spi->dma_tx_sem, K_MSEC(SPI_DW_DMA_WAIT_TIMEOUT_MS));
 	if (ret < 0) {
-		LOG_ERR("DMA TX timeout");
+		LOG_ERROR("DMA TX timeout");
 		ret = -ETIMEDOUT;
 	} else {
 		ret = 0;
 	}
 
-	LOG_ERR("daolema");
+	LOG_ERROR("daolema");
 
 	write_dmacr(dev, 0);
 	write_imr(dev, DW_SPI_IMR_MASK);

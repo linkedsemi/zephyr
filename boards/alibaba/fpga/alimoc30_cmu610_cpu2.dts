@@ -24,6 +24,7 @@
     aliases {
         peci0 = &peci1;
         sdhc0 = &sdhci1;
+        watchdog0=&app_iwdg;
     };
 
     fstab {
@@ -195,21 +196,11 @@
 
 &uart3 {
     /delete-property/ interrupts;
-    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
+    pinctrl-0 = <&uart3_txd_pb01 &uart3_rxd_pb03>;
     pinctrl-names = "default";
     current-speed = <115200>;
     status = "disabled";
 };
-
-#if !ENABLE_ESPI_VUART_ON_CPU1
-&vuart1 {
-    interrupts = <UART3_IRQN 3>;
-    pinctrl-0 = <&uart3_tx_pb01 &uart3_rx_pb03>;
-    pinctrl-names = "default";
-    label = "vttyS1";
-    status = "okay";
-};
-#endif
 
 &uart4 {
     current-speed = <115200>;
@@ -220,6 +211,10 @@
 &uart5 {
     current-speed = <115200>;
     status = "disabled";
+};
+
+&app_iwdg {
+    status = "okay";
 };
 
 &psram {
@@ -403,6 +398,14 @@ zephyr_udc1: &usb1 {
 };
 
 #if !ENABLE_ESPI_VUART_ON_CPU1
+&vuart1 {
+    interrupts = <UART3_IRQN 3>;
+    pinctrl-0 = <&uart3_txd_pb01 &uart3_rxd_pb03>;
+    pinctrl-names = "default";
+    label = "vttyS1";
+    status = "okay";
+};
+
 &espi1 {
     espi1_kcs_ca2: espi1_kcs_ca2 {
         compatible = "linkedsemi,ls-kcs";

@@ -6,7 +6,9 @@
 /dts-v1/;
 #include <riscv/linkedsemi/lsqsh.dtsi>
 #include <arch/riscv/csr.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
 #include "alicmu_pinctrl_acku.dtsi"
+#include <zephyr/dt-bindings/adc/ls-adc.h>
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
@@ -25,12 +27,16 @@
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
         zephyr,internal-flash = &flash1;
+        zephyr,entropy = &trng0;
     };
 
     aliases {
         // peci-0 = &peci1;
         sdhc0 = &sdhci1;
+        // sw0 = &btn1;
         led0 = &led0;
+        pwm-led0 = &pwm_led0;
+        watchdog0 = &sec_iwdg;
     };
 
     leds {
@@ -38,6 +44,13 @@
         led0: led_0{
             gpios = <&gpioh 6 GPIO_ACTIVE_HIGH>;
             label = "Red LED";
+        };
+    };
+
+    pwmleds {
+        compatible = "pwm-leds";
+        pwm_led0: pwm_led_0 {
+            pwms = <&pwm 10 PWM_USEC(1) 0>;
         };
     };
 
@@ -110,6 +123,10 @@
         mboxes = <&mbox 5>, <&mbox 4>;
         mbox-names = "tx", "rx";
     };
+};
+
+&trng0 {
+    status = "okay";
 };
 
 &cpu1 {
@@ -213,10 +230,19 @@
     status = "disabled";
 };
 
-&uart7 {
-    /delete-property/ interrupts;
-    current-speed = <115200>;
+&sec_iwdg {
     status = "okay";
+};
+
+&pmu_iwdg {
+    status = "okay";
+};
+
+&pwm{
+    status = "okay";
+    prescaler = <3>;
+    pinctrl-0 = <&pwm1_pa04 &pwm7_pg02 &fan_pwm10_ph05>;
+    pinctrl-names = "default";
 };
 
 // &sgpiom {
@@ -282,22 +308,6 @@
         bus-width = <1>;
         status = "okay";
     };
-};
-
-&aes256 {
-    status = "okay";
-};
-
-&sha256 {
-    status = "okay";
-};
-
-&sha512 {
-    status = "okay";
-};
-
-&sm4 {
-    status = "okay";
 };
 
 // tst_dma0: &dma0 {
