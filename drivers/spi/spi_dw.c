@@ -111,10 +111,12 @@ static bool spi_calibriation_enable(const uint8_t *buf, uint32_t sz)
 	uint32_t valid_count = 0;
 
 	for (i = 0; i < (sz >> 2); i++) {
-		if (buf_32[i] != 0 && buf_32[i] != 0xffffffff)
+		if (buf_32[i] != 0 && buf_32[i] != 0xffffffff) {
 			valid_count++;
-		if (valid_count >= (SPI_CALIB_LEN >> 2))
+		}
+		if (valid_count > (SPI_CALIB_LEN >> 3)) {
 			return true;
+		}
 	}
 
 	return false;
@@ -130,9 +132,12 @@ int spi_timing_calibration(const struct device *dev,
 	uint32_t cs = ctx->config->slave;
 	const struct spi_driver_api *api = (const struct spi_driver_api *)dev->api;
 	IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) uint8_t check_buf[SPI_CALIB_LEN];
+	const uint32_t flash_size = op_info->data_len; /* from spi_nor_configure() */
 	uint32_t reg_val;
 	SYS_BITARRAY_DEFINE(delay_bitmap, RX_SAMPLE_DLY_MAX + 1);
 	int ret = 0;
+
+	__ASSERT_NO_MSG(flash_size);
 
 	if (info->timing_calibration_disabled) {
 		goto no_calibration;
@@ -140,21 +145,44 @@ int spi_timing_calibration(const struct device *dev,
 
 	reg_val = read_rx_sample_dly(dev);
 	if (reg_val != 0) {
-		LOG_DBG("Already executed calibration.");
+		LOG_INF("Already executed calibration.");
 		goto no_calibration;
 	}
 
 	write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, info->timing_calibration_clock_frequency));
-	op_info->addr = info->timing_calibration_start_off;
 	op_info->buf = check_buf;
 	op_info->data_len = SPI_CALIB_LEN;
-	ret = api->spi_nor_op->transceive(dev, config, op_info);
-	if (ret) {
-		goto no_calibration;
-	}
-	if (!spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
-		LOG_DBG("Flash data is monotonous, skip calibration.");
-		goto no_calibration;
+
+	if (info->timing_calibration_auto_detect_content_disable) {
+		op_info->addr = info->timing_calibration_start_off;
+		ret = api->spi_nor_op->transceive(dev, config, op_info);
+		if (ret) {
+			goto no_calibration;
+		}
+		if (!spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
+			LOG_ERR("Flash data is monotonous, skip calibration.");
+			ret = -EINVAL;
+			goto no_calibration;
+		}
+	} else {
+		bool detect_success = false;
+		for (int off = 0; off < flash_size; off += SPI_CALIB_LEN) {
+			op_info->addr = off;
+			ret = api->spi_nor_op->transceive(dev, config, op_info);
+			if (ret) {
+				goto no_calibration;
+			}
+			if (spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
+				LOG_DBG("Flash address: %#x data is valid, continue calibration.", off);
+				detect_success = true;
+				break;
+			}
+		}
+		if (!detect_success) {
+			LOG_ERR("All flash data is monotonous, skip calibration.");
+			ret = -EINVAL;
+			goto no_calibration;
+		}
 	}
 
 	write_rx_sample_dly(dev, 0);
@@ -898,6 +926,9 @@ static int transceive_read(const struct device *dev,
 		LOG_ERR("build_rx_lli_chain failed: %d (len=%u, dfs=%u)", ret, (unsigned)len_bytes, spi->dfs);
 		goto end_xfer;
 	}
+
+	sys_cache_data_invd_range((void *)(rx_bufs->buffers[0].buf), rx_bufs->buffers[0].len);
+
 	struct dma_config dma_cfg_rx;
 	/* Config DMA Config */
 	memset(&dma_cfg_rx, 0, sizeof(dma_cfg_rx));
@@ -952,8 +983,6 @@ static int transceive_read(const struct device *dev,
 	} else {
 		ret = 0;
 	}
-
-	sys_cache_data_invd_range((void *)(rx_bufs->buffers[0].buf), rx_bufs->buffers[0].len);
 
 	write_dmacr(dev, 0);
 	write_imr(dev, DW_SPI_IMR_MASK);
@@ -1662,6 +1691,7 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 		.timing_calibration_delay_arr = timing_calibration_delay_arr_##inst,                                \
 		.timing_calibration_clock_frequency = DT_INST_PROP_OR(inst, timing_calibration_clock_frequency, 0), \
 		.timing_calibration_disabled = DT_INST_PROP_OR(inst, timing_calibration_disabled, false),           \
+		.timing_calibration_auto_detect_content_disable = DT_INST_PROP_OR(inst, timing_calibration_auto_detect_content_disable, false), \
 		.timing_calibration_start_off = DT_INST_PROP_OR(inst, timing_calibration_start_offset, 0),          \
 		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),)) \
 		COND_CODE_1(DT_INST_PROP(inst, aux_reg),                                    \
