@@ -64,6 +64,7 @@ struct spi_dw_config {
 	uint32_t timing_calibration_clock_frequency;
 	uint32_t timing_calibration_start_off;
 	bool timing_calibration_disabled;
+	bool timing_calibration_auto_detect_content_disable;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))

@@ -51,6 +51,12 @@ properties:
     description: |
       Disable SPI controller timing calibration capability.
 
+  timing-calibration-auto-detect-content-disable:
+    type: boolean
+    required: false
+    description: |
+      Disable SPI controller timing calibration auto detect flash valid content capability.
+
   timing-calibration-start-offset:
     type: int
     required: false
