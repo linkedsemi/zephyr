@@ -197,6 +197,8 @@ int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_co
 }
 #endif
 
+static void i2c_reenable(const struct device *dev ,bool master);
+
 static void i2c_slave_addr_reenable(reg_i2c_t *reg)
 {
     uint32_t oar1 = reg->OAR1;
@@ -421,6 +423,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 	}
 #endif
 	data->errs = 0;
+	i2c_reenable(dev,true);
 	config->reg->SR = I2C_SR_TXE_MASK;//clear tx fifo
 	uint32_t cr2_0_1 = msg->flags&I2C_MSG_ADDR_10_BITS? I2C_CR2_SADD10_MASK|slave<<I2C_CR2_SADD0_POS :slave<<I2C_CR2_SADD1_7_POS;
 	for(data->current = msg;data->current<&msg[num_msgs];data->current++)
@@ -496,8 +499,8 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 		}
 	}
 err:
+	i2c_reenable(dev,false);
 	data->current = NULL;
-	slv_single_byte(config);
 	k_sem_give(&data->bus_mutex);
 	return ret;
 }
@@ -537,10 +540,40 @@ static void i2c_timing_param_set(const struct i2c_ls_config *config,uint32_t i2c
         (prescalar - 1)<<I2C_TIMINGR_PRESC_POS|sclh<<I2C_TIMINGR_SCLH_POS|scll<<I2C_TIMINGR_SCLL_POS|sdadel<<I2C_TIMINGR_SDADEL_POS|scldel<<I2C_TIMINGR_SCLDEL_POS);
 }
 
-static void i2c_reenable(const struct i2c_ls_config *config ,uint32_t i2c_clk)
+static void i2c_slave_timing_param_set(const struct i2c_ls_config *config)
 {
+    MODIFY_REG(config->reg->TIMINGR, (I2C_TIMINGR_PRESC_MASK |I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK),
+        0<<I2C_TIMINGR_PRESC_POS|0<<I2C_TIMINGR_SCLH_POS|3<<I2C_TIMINGR_SCLL_POS|0<<I2C_TIMINGR_SDADEL_POS|0<<I2C_TIMINGR_SCLDEL_POS);
+}
+
+static void i2c_reenable(const struct device *dev ,bool master)
+{
+	const struct i2c_ls_config *config = dev->config;
+	struct i2c_ls_data *data = dev->data;
 	config->reg->CR1 &= ~I2C_CR1_PE_MASK;
-	i2c_timing_param_set(config,i2c_clk);
+	if(master)
+	{
+		uint32_t i2c_clk = 0;
+		switch(I2C_SPEED_GET(data->dev_config))
+		{
+		case I2C_SPEED_STANDARD:
+			i2c_clk = 100000;
+		break;
+		case I2C_SPEED_FAST:
+			i2c_clk = 400000;
+		break;
+		case I2C_SPEED_FAST_PLUS:
+			i2c_clk = 1000000;
+		break;
+		default:
+			__ASSERT(0,"i2c speed not supported\n");
+		break;
+		}
+		i2c_timing_param_set(config,i2c_clk);
+	}else
+	{
+		i2c_slave_timing_param_set(config);
+	}
     config->reg->CFR = 0xffff;
 	config->reg->CR1 |= I2C_CR1_SBC_MASK|I2C_CR1_PE_MASK;
 	slv_single_byte(config);
@@ -548,26 +581,8 @@ static void i2c_reenable(const struct i2c_ls_config *config ,uint32_t i2c_clk)
 
 static int i2c_runtime_configure(const struct device *dev, uint32_t dev_config)
 {
-	const struct i2c_ls_config *config = dev->config;
-	struct i2c_ls_data *data = (struct i2c_ls_data *const)(dev)->data;  
-	uint32_t i2c_clk = 0;
-	switch(I2C_SPEED_GET(dev_config))
-	{
-	case I2C_SPEED_STANDARD:
-		i2c_clk = 100000;
-	break;
-	case I2C_SPEED_FAST:
-		i2c_clk = 400000;
-	break;
-	case I2C_SPEED_FAST_PLUS:
-		i2c_clk = 1000000;
-	break;
-	default:
-		__ASSERT(0,"i2c speed not supported\n");
-	break;
-	}
+	struct i2c_ls_data *data = dev->data;
 	data->dev_config = dev_config;
-	i2c_reenable(config,i2c_clk);
     return  0;
 }
 
@@ -638,7 +653,7 @@ static int i2c_ls_init(const struct device *dev)
 	}
 #endif
 
-	i2c_reenable(dev_config,100000);
+	i2c_reenable(dev,false);
 	dev_config->reg->CR2_3 |= 1<<3; // slv nbytes upd hw workaround
 	dev_config->reg->ICR = 0xffff;
 	dev_config->reg->IER = I2C_INT_STOP_MASK|I2C_INT_NACK_MASK|I2C_INT_BERR_MASK
