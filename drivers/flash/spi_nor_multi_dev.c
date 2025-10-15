@@ -2415,6 +2415,8 @@ static int spi_nor_configure(const struct device *dev)
 	}
 #endif
 
+	spi_nor_rst_by_cmd(dev);
+
 	/* After a soft-reset the flash might be in DPD or busy writing/erasing.
 	 * Exit DPD and wait until flash is ready.
 	 */
@@ -2429,8 +2431,8 @@ static int spi_nor_configure(const struct device *dev)
 
 	rc = spi_nor_rdsr(dev);
 	if (rc > 0 && (rc & SPI_NOR_WIP_BIT)) {
-		LOG_WRN("Waiting until flash is ready");
-		rc = spi_nor_wait_until_ready(dev, WAIT_READY_REGISTER);
+		LOG_ERR("%s: flash maybe not present", dev->name);
+		return -ENODEV;
 	}
 	release_device(dev);
 	if (rc < 0) {
