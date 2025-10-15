@@ -60,6 +60,10 @@ struct spi_dw_config {
 	const struct device *dev_dma_tx;
 	uint32_t dma_channel_tx;
 	uint32_t dma_handshake_tx;
+	uint8_t *timing_calibration_delay_arr;
+	uint32_t timing_calibration_clock_frequency;
+	uint32_t timing_calibration_start_off;
+	bool timing_calibration_disabled;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
