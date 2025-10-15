@@ -25,6 +25,7 @@ LOG_MODULE_REGISTER(spi_dw);
 
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/crc.h>
 
 #include <zephyr/drivers/clock_control.h>
 #include <soc_clock.h>
@@ -53,6 +54,155 @@ LOG_MODULE_REGISTER(spi_dw);
 
 #define SPI_DW_DMA_WAIT_TIMEOUT_MS 100000
 #define SCKDV_BIT 0xfe
+#define SPI_CALIB_LEN 64
+#define TIMING_CALIBRATION_INVALID UINT8_MAX
+#define RX_SAMPLE_DLY_MAX 4
+
+static int find_max_consecutive_ones_region(sys_bitarray_t *bitarray, size_t *start_pos)
+{
+	int ret_val;
+	int current_val;
+	size_t current_length = 0;
+	size_t max_length = 0;
+	size_t current_start = 0;
+	size_t best_start = 0;
+
+	if (bitarray == NULL) {
+		return -1;
+	}
+
+	size_t num_bits = bitarray->num_bits;
+
+	for (size_t i = 0; i < num_bits; i++) {
+		ret_val = sys_bitarray_test_bit(bitarray, i, &current_val);
+		if (ret_val != 0) {
+		return ret_val;
+		}
+
+		if (current_val == 1) {
+		if (current_length == 0) {
+			current_start = i;
+		}
+		current_length++;
+		if (current_length > max_length) {
+			max_length = current_length;
+			best_start = current_start;
+		}
+		} else {
+		current_length = 0;
+		}
+	}
+
+	if (start_pos != NULL) {
+		*start_pos = best_start;
+	}
+
+	return max_length;
+}
+
+/*
+ * Check whether the data is not all 0 or 1 in order to
+ * avoid calibriate umount spi-flash.
+ */
+static bool spi_calibriation_enable(const uint8_t *buf, uint32_t sz)
+{
+	const uint32_t *buf_32 = (const uint32_t *)buf;
+	uint32_t i;
+	uint32_t valid_count = 0;
+
+	for (i = 0; i < (sz >> 2); i++) {
+		if (buf_32[i] != 0 && buf_32[i] != 0xffffffff)
+			valid_count++;
+		if (valid_count >= (SPI_CALIB_LEN >> 2))
+			return true;
+	}
+
+	return false;
+}
+
+int spi_timing_calibration(const struct device *dev,
+				const struct spi_config *config,
+				struct spi_nor_op_info *op_info)
+{
+	const struct spi_dw_config *info = dev->config;
+	struct spi_dw_data *data = dev->data;
+	struct spi_context *ctx = &data->ctx;
+	uint32_t cs = ctx->config->slave;
+	const struct spi_driver_api *api = (const struct spi_driver_api *)dev->api;
+	IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) uint8_t check_buf[SPI_CALIB_LEN];
+	uint32_t reg_val;
+	SYS_BITARRAY_DEFINE(delay_bitmap, RX_SAMPLE_DLY_MAX + 1);
+	int ret = 0;
+
+	if (info->timing_calibration_disabled) {
+		goto no_calibration;
+	}
+
+	reg_val = read_rx_sample_dly(dev);
+	if (reg_val != 0) {
+		LOG_DBG("Already executed calibration.");
+		goto no_calibration;
+	}
+
+	write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, info->timing_calibration_clock_frequency));
+	op_info->addr = info->timing_calibration_start_off;
+	op_info->buf = check_buf;
+	op_info->data_len = SPI_CALIB_LEN;
+	ret = api->spi_nor_op->transceive(dev, config, op_info);
+	if (ret) {
+		goto no_calibration;
+	}
+	if (!spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
+		LOG_DBG("Flash data is monotonous, skip calibration.");
+		goto no_calibration;
+	}
+
+	write_rx_sample_dly(dev, 0);
+	int low_speed_check_sum = crc32_ieee(check_buf, SPI_CALIB_LEN);
+
+	write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, config->frequency));
+	for (uint8_t delay = 0; delay <= RX_SAMPLE_DLY_MAX; delay++) {
+		write_rx_sample_dly(dev, delay);
+		ret = api->spi_nor_op->transceive(dev, config, op_info);
+		if (ret) {
+			goto no_calibration;
+		}
+		int high_speed_check_sum = crc32_ieee(check_buf, SPI_CALIB_LEN);
+		if (low_speed_check_sum == high_speed_check_sum) {
+			sys_bitarray_set_bit(&delay_bitmap, delay);
+		}
+	}
+
+	size_t max_consecutive_start = 0;
+	int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
+	if ((RX_SAMPLE_DLY_MAX + 1) == max_length) {
+		LOG_INF("useless calibration, all delay is ok");
+		write_rx_sample_dly(dev, 0);
+		info->timing_calibration_delay_arr[cs] = 0;
+		ret = 0;
+	} else if ((0 < max_length) && ((RX_SAMPLE_DLY_MAX + 1) > max_length)) {
+		LOG_DBG("len: %d start bit: %zu", max_length, max_consecutive_start);
+		LOG_INF("%s: calibration delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
+		LOG_INF("%s: calibration success", __func__);
+		write_rx_sample_dly(dev, max_consecutive_start + (max_length >> 1));
+		info->timing_calibration_delay_arr[cs] = max_consecutive_start + (max_length >> 1);
+		ret = 0;
+	} else {
+		LOG_ERR("err: %d", max_length);
+		LOG_ERR("%s: calibration fail", __func__);
+		write_rx_sample_dly(dev, 0);
+		info->timing_calibration_delay_arr[cs] = TIMING_CALIBRATION_INVALID;
+		ret = -EIO;
+	}
+
+no_calibration:
+	if (ret) {
+		write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, info->timing_calibration_clock_frequency));
+	}
+
+	return ret;
+}
+
 static inline bool spi_dw_is_slave(struct spi_dw_data *spi)
 {
 	return (IS_ENABLED(CONFIG_SPI_SLAVE) &&
@@ -281,8 +431,17 @@ static int spi_dw_configure(const struct device *dev,
 
 	if (!spi_dw_is_slave(spi)) {
 		/* Baud rate and Slave select, for master only */
-		write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency,
-						    config->frequency));
+		if (info->timing_calibration_disabled) {
+			write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, config->frequency));
+			write_rx_sample_dly(dev, 0);
+		} else if (TIMING_CALIBRATION_INVALID != info->timing_calibration_delay_arr[config->slave]) {
+			write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, config->frequency));
+			write_rx_sample_dly(dev, info->timing_calibration_delay_arr[config->slave]);
+		} else {
+			write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, info->timing_calibration_clock_frequency));
+			write_rx_sample_dly(dev, 0);
+		}
+
 		if ((info->clock_frequency % config->frequency)!=0) {
 			LOG_INF("The hardware design results in the actual frequency not being equal to the set frequency,actual freq %u",
 				   (info->clock_frequency)/(((SPI_DW_CLK_DIVIDER(info->clock_frequency,config->frequency)))&SCKDV_BIT));
@@ -410,8 +569,16 @@ static int spi_dw_configure_support_all(const struct device *dev,
 
 	if (!spi_dw_is_slave(spi)) {
 		/* Baud rate and Slave select, for master only */
-		write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency,
-						    config->frequency));
+		if (info->timing_calibration_disabled) {
+			write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, config->frequency));
+			write_rx_sample_dly(dev, 0);
+		} else if (TIMING_CALIBRATION_INVALID != info->timing_calibration_delay_arr[config->slave]) {
+			write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, config->frequency));
+			write_rx_sample_dly(dev, info->timing_calibration_delay_arr[config->slave]);
+		} else {
+			write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, info->timing_calibration_clock_frequency));
+			write_rx_sample_dly(dev, 0);
+		}
 		if ((info->clock_frequency % config->frequency)!=0) {
 			LOG_INF("The hardware design results in the actual frequency not being equal to the set frequency,actual freq %u",
 				   (info->clock_frequency)/(((SPI_DW_CLK_DIVIDER(info->clock_frequency,config->frequency)))&SCKDV_BIT));
@@ -1287,6 +1454,8 @@ static int spi_dw_nor_read_init(const struct device *dev,
 		op_info->mode, op_info->opcode, op_info->dummy_cycle,
 		config->frequency);
 
+	ret = spi_timing_calibration(dev, config, op_info);
+
 	return ret;
 }
 
@@ -1392,6 +1561,8 @@ int spi_dw_init(const struct device *dev)
 	return 0;
 }
 
+#define TIMING_CALIBRATION_INV_(inst)  TIMING_CALIBRATION_INVALID
+
 #define SPI_CFG_IRQS_SINGLE_ERR_LINE(inst)					\
 		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(inst, rx_avail, irq),		\
 			    DT_INST_IRQ_BY_NAME(inst, rx_avail, priority),	\
@@ -1458,6 +1629,9 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 #define SPI_DW_INIT(inst)                                                                   \
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                         \
 	SPI_DW_IRQ_HANDLER(inst);                                                           \
+	uint8_t timing_calibration_delay_arr_##inst[] = {                                   \
+		DT_INST_FOREACH_CHILD_STATUS_OKAY_SEP(inst, TIMING_CALIBRATION_INV_, (,))   \
+	};                                                                                  \
 	static struct spi_dw_data spi_dw_data_##inst = {                                    \
 		SPI_CONTEXT_INIT_LOCK(spi_dw_data_##inst, ctx),                             \
 		SPI_CONTEXT_INIT_SYNC(spi_dw_data_##inst, ctx),                             \
@@ -1485,6 +1659,10 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 			(.dma_handshake_tx = DT_INST_DMAS_CELL_BY_NAME(inst, tx, handshake),))       \
 		.fifo_depth = DT_INST_PROP(inst, fifo_depth),                               \
 		.max_xfer_size = DT_INST_PROP(inst, max_xfer_size),                         \
+		.timing_calibration_delay_arr = timing_calibration_delay_arr_##inst,                                \
+		.timing_calibration_clock_frequency = DT_INST_PROP_OR(inst, timing_calibration_clock_frequency, 0), \
+		.timing_calibration_disabled = DT_INST_PROP_OR(inst, timing_calibration_disabled, false),           \
+		.timing_calibration_start_off = DT_INST_PROP_OR(inst, timing_calibration_start_offset, 0),          \
 		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),)) \
 		COND_CODE_1(DT_INST_PROP(inst, aux_reg),                                    \
 			(.read_func = aux_reg_read,                                         \

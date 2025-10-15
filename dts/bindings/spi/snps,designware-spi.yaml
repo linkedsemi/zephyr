@@ -44,3 +44,23 @@ properties:
     enum:
       - 16
       - 32
+
+  timing-calibration-disabled:
+    type: boolean
+    required: false
+    description: |
+      Disable SPI controller timing calibration capability.
+
+  timing-calibration-start-offset:
+    type: int
+    required: false
+    description: |
+      The flash data offset for timing calibration.
+    default: 0
+
+  timing-calibration-clock-frequency:
+    type: int
+    required: false
+    description: |
+      low clock frequency for calibration.
+    default: 10000000
