@@ -1109,9 +1109,12 @@
             };
         };
 
-        mdio2: mdio {
+        mdio2: mdio@40066000 {
             compatible = "snps,dwmac-mdio";
             reg = <0x40066000 0x2000>;
+            clock-frequency = <PBUS0123_CLOCK>;
+            clocks = <ETH2_CLOCK>;
+            resets = <ETH2_RESET>;
             #address-cells = <1>;
             #size-cells = <0>;
             status = "disabled";
@@ -1120,8 +1123,6 @@
                 compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
                 reg = <0x40066000 0x2000>;
                 interrupts = <ETH2_IRQN 3>;
-                clocks = <ETH2_CLOCK>;
-                resets = <ETH2_RESET>;
                 clock-frequency = <PBUS0123_CLOCK>;
                 status = "disabled";
             };
