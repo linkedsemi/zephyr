@@ -51,36 +51,42 @@ int dwmac_bus_init(struct dwmac_priv *p)
     const struct eth_linkedsemi_config *dev_config = dev->config;
     __maybe_unused int ret;
 
+#if defined(CONFIG_MDIO_RESET_MAC)
+    if (!p->mdio_reset_mac) {
+#endif
 #if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
-            return -ENODEV;
+        if (dev_config->ccfg.cctl_dev) {
+            const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+            if (!device_is_ready(clk_dev)) {
+                LOG_DBG("%s device not ready", clk_dev->name);
+                return -ENODEV;
+            }
+            clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
         }
-        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-    }
 #endif
 
 #if defined(CONFIG_RESET)
-    if (dev_config->reset.dev != NULL) {
-        if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
-            return -ENODEV;
-        }
+        if (dev_config->reset.dev != NULL) {
+            if (!device_is_ready(dev_config->reset.dev)) {
+                LOG_ERR("Reset controller device is not ready");
+                return -ENODEV;
+            }
 
-        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
-        if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
-            return ret;
+            ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+            if (ret != 0) {
+                LOG_ERR("toggle reset line failed");
+                return ret;
+            }
         }
-    }
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+        if (dev_config->ccfg.cctl_dev) {
+            const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+            clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+        }
+#endif
+#if defined(CONFIG_MDIO_RESET_MAC)
     }
 #endif
 
