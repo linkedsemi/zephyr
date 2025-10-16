@@ -1111,6 +1111,7 @@
 
         mdio2: mdio {
             compatible = "snps,dwmac-mdio";
+            reg = <0x40066000 0x2000>;
             #address-cells = <1>;
             #size-cells = <0>;
             status = "disabled";
