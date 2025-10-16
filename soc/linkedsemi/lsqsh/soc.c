@@ -703,10 +703,12 @@ void soc_early_init_hook(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) && defined(CONFIG_PSRAM)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_PSRAM)
     if (!is_app_cpu_running()) {
         psram_init();
     }
+#endif
 #endif
 
     return;
