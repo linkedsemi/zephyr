@@ -1105,6 +1105,8 @@
                 reg = <0x40064000 0x2000>;
                 interrupts = <ETH1_IRQN 3>;
                 clock-frequency = <PBUS0123_CLOCK>;
+                clocks = <ETH1_CLOCK>;
+                resets = <ETH1_RESET>;
                 status = "disabled";
             };
         };
@@ -1124,6 +1126,8 @@
                 reg = <0x40066000 0x2000>;
                 interrupts = <ETH2_IRQN 3>;
                 clock-frequency = <PBUS0123_CLOCK>;
+                clocks = <ETH2_CLOCK>;
+                resets = <ETH2_RESET>;
                 status = "disabled";
             };
         };
