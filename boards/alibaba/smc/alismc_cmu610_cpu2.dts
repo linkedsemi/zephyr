@@ -371,13 +371,13 @@
     };
 };
 
-zephyr_udc0: &usb2 {
-    status = "okay";
-};
+// zephyr_udc0: &usb2 {
+//     status = "okay";
+// };
 
-zephyr_udc1: &usb1 {
-    status = "disabled";
-};
+// zephyr_udc1: &usb1 {
+//     status = "disabled";
+// };
 
 &mdio1 {
     pinctrl-0 = <

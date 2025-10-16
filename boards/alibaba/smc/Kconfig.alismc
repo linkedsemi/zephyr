@@ -5,4 +5,4 @@ config BOARD_ALISMC
 	select SOC_LSQSH
 
 config BOARD_LATE_INIT_HOOK
-    default n
+    default y
