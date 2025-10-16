@@ -143,6 +143,11 @@ int spi_timing_calibration(const struct device *dev,
 		goto no_calibration;
 	}
 
+	if (info->timing_calibration_clock_frequency > config->frequency) {
+		info->timing_calibration_delay_arr[cs] = 0;
+		goto no_calibration;
+	}
+
 	reg_val = read_rx_sample_dly(dev);
 	if (reg_val != 0) {
 		LOG_INF("Already executed calibration.");
