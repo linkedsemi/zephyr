@@ -3945,7 +3945,7 @@
             &rgmii1_rxd0_pt12  \
             &rgmii1_rxd1_pt13  \
             &rgmii1_rxd2_pt14  \
-            &rgmii1_rxd3_pt15  \
+            &rgmii1_rxd3_pt15
 
 #define PINCTRL_RGMII2         \
             &rgmii2_txck_pq07  \
@@ -3959,7 +3959,7 @@
             &rgmii2_rxd0_pq15  \
             &rgmii2_rxd1_pt00  \
             &rgmii2_rxd2_pt01  \
-            &rgmii2_rxd3_pt02  \
+            &rgmii2_rxd3_pt02
 
 &eth1 {
     pinctrl-0 = <>;
