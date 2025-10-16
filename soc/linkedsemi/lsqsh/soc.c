@@ -380,14 +380,16 @@ __maybe_unused static void peripheral_init()
     REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_DIV, 0); /* div = 2 */
     REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_SEL, 0x2); /* rxck pad */
     SET_BIT(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_CG_MASK);
+    /* SYSC_APP_AWO->ETH1_CLK_CFG */
 
+    /* SYSC_APP_AWO->ETH2_CLK_CFG */
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_DIV, 0);
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_SEL, 0x2); /* rxck pad */
     SET_BIT(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_CG_MASK);
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_DIV, 0); /* div = 2 */
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_SEL, 0x2); /* rxck pad */
     SET_BIT(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_CG_MASK);
-    /* SYSC_APP_AWO->ETH1_CLK_CFG */
+    /* SYSC_APP_AWO->ETH2_CLK_CFG */
 
 
     /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
@@ -420,6 +422,11 @@ __maybe_unused static void peripheral_init()
     REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_INTF_SEL, 0x1); /* rgmii */
     REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_SEL, 0x1); /* rgmii */
     /* SYSC_APP_CPU->ETH1_PHY_CTRL */
+
+    /* SYSC_APP_CPU->ETH2_PHY_CTRL */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH2_PHY_CTRL, SYSC_APP_CPU_ETH2_PHY_INTF_SEL, 0x1); /* rgmii */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH2_PHY_CTRL, SYSC_APP_CPU_ETH2_PHY_SEL, 0x1); /* rgmii */
+    /* SYSC_APP_CPU->ETH2_PHY_CTRL */
 
 
     /* SYSC_APP_AWO->EMMC2_CORE_TIM_CLK */
@@ -692,10 +699,12 @@ void soc_early_init_hook(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #if defined(CONFIG_PSRAM)
     if (!is_app_cpu_running()) {
         psram_init();
     }
+#endif
 #endif
 
     return;
