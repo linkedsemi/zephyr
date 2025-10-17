@@ -17,8 +17,10 @@
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/util.h>
 
+#define CACHE_BUF_ALIGNMENT COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4)))
+
 /* Buffer is only needed for bytes that follow command and offset */
-#define BUF_ARRAY_CNT (CONFIG_SHELL_ARGC_MAX - 2)
+#define BUF_ARRAY_CNT COND_CODE_1(CONFIG_DCACHE, (CONFIG_DCACHE_LINE_SIZE), (CONFIG_SHELL_ARGC_MAX - 2))
 
 #define FLASH_LOAD_BUF_MAX 256
 
@@ -30,21 +32,25 @@ static uint32_t flash_load_written;
 static uint32_t flash_load_chunk;
 
 static uint32_t flash_load_boff;
-IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) \
-static uint8_t flash_load_buf[FLASH_LOAD_BUF_MAX];
+static uint8_t CACHE_BUF_ALIGNMENT flash_load_buf[FLASH_LOAD_BUF_MAX];
 
 /* This only issues compilation error when it would not be possible
  * to extract at least one byte from command line arguments, yet
  * it does not warrant successful writes if BUF_ARRAY_CNT
  * is smaller than flash write alignment.
  */
-BUILD_ASSERT(BUF_ARRAY_CNT >= 1);
+#if defined(CONFIG_DCACHE)
+BUILD_ASSERT(0 < CONFIG_DCACHE_LINE_SIZE);
+#endif
+BUILD_ASSERT(1 <= BUF_ARRAY_CNT);
+BUILD_ASSERT(0 == (CONFIG_FLASH_SHELL_BUFFER_SIZE % CONFIG_DCACHE_LINE_SIZE));
+BUILD_ASSERT(0 == (BUF_ARRAY_CNT % CONFIG_DCACHE_LINE_SIZE));
+BUILD_ASSERT(0 == (FLASH_LOAD_BUF_MAX % CONFIG_DCACHE_LINE_SIZE));
 
 static const struct device *const zephyr_flash_controller =
 	DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
-COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
-static uint8_t test_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
+static uint8_t CACHE_BUF_ALIGNMENT test_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
 
 static int parse_helper(const struct shell *sh, size_t *argc,
 		char **argv[], const struct device * *flash_dev,
@@ -131,10 +137,8 @@ static int cmd_erase(const struct shell *sh, size_t argc, char *argv[])
 
 static int cmd_write(const struct shell *sh, size_t argc, char *argv[])
 {
-	COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
-	uint32_t check_array[BUF_ARRAY_CNT];
-	COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
-	uint32_t buf_array[BUF_ARRAY_CNT];
+	uint32_t CACHE_BUF_ALIGNMENT check_array[BUF_ARRAY_CNT];
+	uint32_t CACHE_BUF_ALIGNMENT buf_array[BUF_ARRAY_CNT];
 	const struct device *flash_dev;
 	uint32_t w_addr;
 	int ret;
@@ -217,6 +221,7 @@ static int cmd_copy(const struct shell *sh, size_t argc, char *argv[])
 	return 0;
 }
 
+#define CMD_READ_BUF_SIZE COND_CODE_1(CONFIG_DCACHE, (CONFIG_DCACHE_LINE_SIZE), (SHELL_HEXDUMP_BYTES_IN_LINE))
 static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 {
 	const struct device *flash_dev;
@@ -225,6 +230,7 @@ static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 	int upto;
 	int cnt;
 	int ret;
+	size_t line_len = MIN(CMD_READ_BUF_SIZE, SHELL_HEXDUMP_BYTES_IN_LINE);
 
 	ret = parse_helper(sh, &argc, &argv, &flash_dev, &addr);
 	if (ret) {
@@ -238,16 +244,21 @@ static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 	}
 
 	for (upto = 0; upto < cnt; upto += todo) {
-		IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) \
-		uint8_t data[SHELL_HEXDUMP_BYTES_IN_LINE];
+		uint8_t CACHE_BUF_ALIGNMENT data[CMD_READ_BUF_SIZE];
 
-		todo = MIN(cnt - upto, SHELL_HEXDUMP_BYTES_IN_LINE);
+		todo = MIN(cnt - upto, CMD_READ_BUF_SIZE);
 		ret = flash_read(flash_dev, addr, data, todo);
 		if (ret != 0) {
 			shell_error(sh, "Read ERROR!");
 			return -EIO;
 		}
+#if defined(CONFIG_DCACHE)
+		for (int off = 0; off < todo; off += line_len) {
+			shell_hexdump_line(sh, addr + off, data + off, line_len);
+		}
+#else
 		shell_hexdump_line(sh, addr, data, todo);
+#endif
 		addr += todo;
 	}
 
@@ -265,8 +276,7 @@ static int cmd_test(const struct shell *sh, size_t argc, char *argv[])
 	uint32_t size;
 
 	
-	COND_CODE_1(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)), (__aligned(4))) \
-	static uint8_t check_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
+	static uint8_t CACHE_BUF_ALIGNMENT check_arr[CONFIG_FLASH_SHELL_BUFFER_SIZE];
 
 	result = parse_helper(sh, &argc, &argv, &flash_dev, &addr);
 	if (result) {
