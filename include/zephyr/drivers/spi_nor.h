@@ -80,6 +80,7 @@
 
 #define SPI_NOR_CMD_RDSFDP          0x5A    /* Read SFDP */
 #define SPI_NOR_CMD_RDFR            0x70    /* Read flag register  */
+#define SPI_NOR_CMD_NOP             0xFF    /* No operation */
 
 #define SPI_NOR_CMD_MXIC_ENQPI      0x35
 #define SPI_NOR_CMD_WINBOND_ENQPI   0x38
@@ -206,6 +207,7 @@ int spi_nor_re_init(const struct device *dev);
 int spi_nor_erase_by_cmd(const struct device *dev, off_t addr,
 			 size_t size, uint8_t cmd);
 int spi_nor_get_erase_sz(const struct device *dev, uint8_t cmd);
+int spi_nor_exit_continuous_mode(const struct device *dev);
 int spi_nor_rst_by_cmd(const struct device *dev);
 int spi_nor_set_freq(const struct device *dev, uint32_t freq);
 int spi_nor_set_line_width(const struct device *dev, uint32_t buswidth);
