@@ -1,0 +1,14 @@
+/*
+ * Copyright (c) 2023 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/ {
+	vmdisk0 {
+		compatible = "zephyr,virtual-media";
+		disk-name = "vmdisk";
+		sector-size = <512>;
+		sector-count = <192>;
+	};
+};

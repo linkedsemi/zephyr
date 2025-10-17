@@ -575,6 +575,7 @@ static void usbd_msc_handle_request(struct usbd_class_data *c_data,
 		if (err == -ECONNABORTED) {
 			LOG_WRN("request ep 0x%02x, len %u cancelled",
 				bi->ep, buf->len);
+			atomic_clear_bit(&ctx->bits, MSC_CLASS_ENABLED);
 		} else {
 			LOG_ERR("request ep 0x%02x, len %u failed",
 				bi->ep, buf->len);
