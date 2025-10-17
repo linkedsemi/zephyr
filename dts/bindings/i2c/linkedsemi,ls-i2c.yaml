@@ -16,8 +16,13 @@ properties:
 
     clock-frequency:
       type: int
-      description: output clock frequency (Hz)
+      description: i2c clock frequency (Hz)
       required: true
+
+    bus-frequency:
+      type: int
+      enum: [100000, 400000, 1000000]
+      description: output clock frequency (Hz)
 
     scl-gpios:
       type: phandle-array

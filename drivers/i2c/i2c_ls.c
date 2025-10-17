@@ -34,6 +34,7 @@ struct i2c_ls_config{
 	irq_cfg_func_t irq_config_func;
 	reg_i2c_t *reg;
 	uint32_t clock_frequency;
+	uint32_t init_bus_frequency;
 	struct gpio_dt_spec scl;
 	struct gpio_dt_spec sda;
 	bool pinctrl_noinit;
@@ -660,6 +661,10 @@ static int i2c_ls_init(const struct device *dev)
 		|I2C_INT_ARLO_MASK|I2C_INT_OVR_MASK|I2C_INT_PECE_MASK
 		|I2C_INT_TOUT_MASK|I2C_INT_ALERT_MASK;
 
+	if (i2c_configure(dev, i2c_map_dt_bitrate(dev_config->init_bus_frequency) | I2C_MODE_CONTROLLER) ) {
+		__ASSERT(0,"%s: config failed", dev->name);
+	}
+
 	return 0;
 }
 
@@ -728,6 +733,7 @@ static void i2c_ls_irq_config_func_##index(const struct device *dev)	\
 			DT_NODE_HAS_PROP(DT_INST_PHANDLE(index, clocks), clock_frequency),\
 			(DT_INST_PROP_BY_PHANDLE(index, clocks, clock_frequency)),\
 			(DT_INST_PROP(index, clock_frequency))),\
+		.init_bus_frequency = DT_INST_PROP_OR(index, bus_frequency, I2C_BITRATE_STANDARD),\
 		.scl =	GPIO_DT_SPEC_INST_GET_OR(index, scl_gpios, {0}),\
 		.sda = GPIO_DT_SPEC_INST_GET_OR(index, sda_gpios, {0}),\
 		.pinctrl_noinit = DT_INST_PROP_OR(index, pinctrl_noinit, 0),\
