@@ -1876,8 +1876,13 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
         },
     };
 
-    dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
-    dwc3_data->ep_res_index[phy_ep_idx] = 0;
+    /* Only endpoints that have previously issued a Start Transfer can issue an End Transfer, 
+        to avoid releasing the resource index of EP0 */
+    if (dwc3_data->ep_res_index[phy_ep_idx])
+    {
+        dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
+        dwc3_data->ep_res_index[phy_ep_idx] = 0;
+    }
 
     if (cfg->stat.halted) {
         union dep_command clear_halt = {
