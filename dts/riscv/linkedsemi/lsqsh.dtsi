@@ -1090,14 +1090,6 @@
             status = "disabled";
         };
 
-        eth1: ethernet@40064000 {
-            compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
-            reg = <0x40064000 0x2000>;
-            interrupts = <ETH1_IRQN 3>;
-            clock-frequency = <PBUS0123_CLOCK>;
-            status = "disabled";
-        };
-
         mdio1: mdio@40064000 {
             compatible = "snps,dwmac-mdio";
             reg = <0x40064000 0x2000>;
@@ -1107,21 +1099,35 @@
             #address-cells = <1>;
             #size-cells = <0>;
             status = "disabled";
+
+            eth1: ethernet@40064000 {
+                compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+                reg = <0x40064000 0x2000>;
+                interrupts = <ETH1_IRQN 3>;
+                clock-frequency = <PBUS0123_CLOCK>;
+                clocks = <ETH1_CLOCK>;
+                resets = <ETH1_RESET>;
+                status = "disabled";
+            };
         };
 
-        eth2: ethernet@40066000 {
-            compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+        mdio2: mdio@40066000 {
+            compatible = "snps,dwmac-mdio";
             reg = <0x40066000 0x2000>;
-            interrupts = <ETH2_IRQN 3>;
+            clock-frequency = <PBUS0123_CLOCK>;
             clocks = <ETH2_CLOCK>;
             resets = <ETH2_RESET>;
-            clock-frequency = <PBUS0123_CLOCK>;
+            #address-cells = <1>;
+            #size-cells = <0>;
             status = "disabled";
 
-            mdio2: mdio {
-                compatible = "snps,dwmac-mdio";
-                #address-cells = <1>;
-                #size-cells = <0>;
+            eth2: ethernet@40066000 {
+                compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+                reg = <0x40066000 0x2000>;
+                interrupts = <ETH2_IRQN 3>;
+                clock-frequency = <PBUS0123_CLOCK>;
+                clocks = <ETH2_CLOCK>;
+                resets = <ETH2_RESET>;
                 status = "disabled";
             };
         };

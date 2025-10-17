@@ -3819,43 +3819,64 @@
 //     pinctrl-names = "default";
 // };
 
-// &eth1 {
-//     pinctrl-0 = <
-//         &rgmii1_txck_pt03
-//         &rgmii1_txctl_pt04
-//         &rgmii1_txd0_pt05
-//         &rgmii1_txd1_pt06
-//         &rgmii1_txd2_pt07
-//         &rgmii1_txd3_pt08
-//         &rgmii1_rxck_pt10
-//         &rgmii1_rxctl_pt11
-//         &rgmii1_rxd0_pt12
-//         &rgmii1_rxd1_pt13
-//         &rgmii1_rxd2_pt14
-//         &rgmii1_rxd3_pt15
-//     >;
-//     pinctrl-names = "default";
-// };
+#define PINCTRL_RGMII1         \
+            &rgmii1_txck_pt03  \
+            &rgmii1_txctl_pt04 \
+            &rgmii1_txd0_pt05  \
+            &rgmii1_txd1_pt06  \
+            &rgmii1_txd2_pt07  \
+            &rgmii1_txd3_pt08  \
+            &rgmii1_rxck_pt10  \
+            &rgmii1_rxctl_pt11 \
+            &rgmii1_rxd0_pt12  \
+            &rgmii1_rxd1_pt13  \
+            &rgmii1_rxd2_pt14  \
+            &rgmii1_rxd3_pt15
+
+#define PINCTRL_RGMII2         \
+            &rgmii2_txck_pq07  \
+            &rgmii2_txctl_pq08 \
+            &rgmii2_txd0_pq09  \
+            &rgmii2_txd1_pq10  \
+            &rgmii2_txd2_pq11  \
+            &rgmii2_txd3_pq12  \
+            &rgmii2_rxck_pq13  \
+            &rgmii2_rxctl_pq14 \
+            &rgmii2_rxd0_pq15  \
+            &rgmii2_rxd1_pt00  \
+            &rgmii2_rxd2_pt01  \
+            &rgmii2_rxd3_pt02
+
+&eth1 {
+    pinctrl-0 = <>;
+    pinctrl-names = "default";
+};
 
 &mdio1 {
     pinctrl-0 = <
-        &rgmii1_txck_pt03
-        &rgmii1_txctl_pt04
-        &rgmii1_txd0_pt05
-        &rgmii1_txd1_pt06
-        &rgmii1_txd2_pt07
-        &rgmii1_txd3_pt08
-        &rgmii1_rxck_pt10
-        &rgmii1_rxctl_pt11
-        &rgmii1_rxd0_pt12
-        &rgmii1_rxd1_pt13
-        &rgmii1_rxd2_pt14
-        &rgmii1_rxd3_pt15
+        PINCTRL_RGMII1
 
         &rgmii1_mdc_pk04
         &rgmii1_mdio_pk05
         // &rgmii1_mdio_pe12
         // &rgmii1_mdc_pe15
+    >;
+    pinctrl-names = "default";
+};
+
+&eth2 {
+    pinctrl-0 = <>;
+    pinctrl-names = "default";
+};
+
+&mdio2 {
+    pinctrl-0 = <
+        PINCTRL_RGMII2
+
+        &rgmii2_mdc_pa10
+        &rgmii2_mdio_pa11
+        // &rgmii2_mdc_pk06
+        // &rgmii2_mdio_pk07
     >;
     pinctrl-names = "default";
 };

@@ -178,6 +178,9 @@ config NET_DRIVERS
 config MDIO
 	default y
 
+config MDIO_RESET_MAC
+	default y
+
 endif # NETWORKING
 
 if CACHE
