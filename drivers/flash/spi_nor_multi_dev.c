@@ -87,9 +87,6 @@ LOG_MODULE_REGISTER(spi_nor, CONFIG_FLASH_LOG_LEVEL);
 
 /* Build-time data associated with the device. */
 struct spi_nor_config {
-	/* Devicetree SPI configuration */
-	struct spi_dt_spec spi;
-
 #if ANY_INST_HAS_RESET_GPIOS
 	const struct gpio_dt_spec reset;
 #endif
@@ -166,7 +163,6 @@ struct spi_nor_config {
 	bool wp_gpios_exist:1;
 	bool hold_gpios_exist:1;
 	bool broken_sfdp;
-	uint32_t spi_max_buswidth;
 	uint32_t spi_ctrl_caps_mask;
 	uint32_t spi_nor_caps_mask;
 };
@@ -176,6 +172,9 @@ struct spi_nor_config {
  * @sem: The semaphore to access to the flash
  */
 struct spi_nor_data {
+	/* Devicetree SPI configuration */
+	struct spi_dt_spec spi;
+
 	uint8_t jedec_id[SPI_NOR_MAX_ID_LEN];
 	struct k_sem sem;
 #if ANY_INST_HAS_DPD
@@ -222,6 +221,7 @@ struct spi_nor_data {
 
 	bool init_4b_mode_once;
 	bool re_init_support;
+	uint8_t spi_max_buswidth;
 #if defined(CONFIG_SPI_NOR_REINIT_INIT_OK)
 	bool init_ok;
 #endif
@@ -274,7 +274,7 @@ dev_erase_types(const struct device *dev)
 #ifdef CONFIG_SPI_NOR_SFDP_MINIMAL
 	return minimal_erase_types;
 #else /* CONFIG_SPI_NOR_SFDP_MINIMAL */
-	const struct spi_nor_data *data = dev->data;
+	struct spi_nor_data *data = dev->data;
 
 	return data->erase_types;
 #endif /* CONFIG_SPI_NOR_SFDP_MINIMAL */
@@ -286,7 +286,7 @@ dev_erase_types(const struct device *dev)
 static inline uint32_t dev_flash_size(const struct device *dev)
 {
 #ifdef CONFIG_SPI_NOR_SFDP_RUNTIME
-	const struct spi_nor_data *data = dev->data;
+	struct spi_nor_data *data = dev->data;
 
 	return data->flash_size;
 #else /* CONFIG_SPI_NOR_SFDP_RUNTIME */
@@ -304,7 +304,7 @@ static inline uint16_t dev_page_size(const struct device *dev)
 #ifdef CONFIG_SPI_NOR_SFDP_MINIMAL
 	return DT_INST_PROP_OR(0, page_size, 256);
 #else /* CONFIG_SPI_NOR_SFDP_MINIMAL */
-	const struct spi_nor_data *data = dev->data;
+	struct spi_nor_data *data = dev->data;
 
 	return data->page_size;
 #endif /* CONFIG_SPI_NOR_SFDP_MINIMAL */
@@ -400,7 +400,6 @@ static int spi_nor_access(const struct device *const dev,
 			  uint8_t opcode, unsigned int access,
 			  off_t addr, void *data, size_t length)
 {
-	const struct spi_nor_config *const driver_cfg = dev->config;
 	struct spi_nor_data *const driver_data = dev->data;
 	bool is_addressed = (access & NOR_ACCESS_ADDRESSED) != 0U;
 	bool is_write = (access & NOR_ACCESS_WRITE) != 0U;
@@ -450,10 +449,10 @@ static int spi_nor_access(const struct device *const dev,
 	};
 
 	if (is_write) {
-		return spi_write_dt(&driver_cfg->spi, &tx_set);
+		return spi_write_dt(&driver_data->spi, &tx_set);
 	}
 
-	return spi_transceive_dt(&driver_cfg->spi, &tx_set, &rx_set);
+	return spi_transceive_dt(&driver_data->spi, &tx_set, &rx_set);
 }
 
 #define spi_nor_cmd_read(dev, opcode, dest, length) \
@@ -551,14 +550,14 @@ static int spi_nor_op_exec(const struct device *dev,
 	struct spi_nor_op_info *op_info)
 {
 	int ret = 0;
-	const struct spi_nor_config *const driver_cfg = dev->config;
+	struct spi_nor_data *const driver_data = dev->data;
 	const struct spi_driver_api *api =
-		(const struct spi_driver_api *)driver_cfg->spi.bus->api;
+		(const struct spi_driver_api *)driver_data->spi.bus->api;
 
 	if (api->spi_nor_op && api->spi_nor_op->transceive) {
 		LOG_DBG("Using spi_nor op framework");
-		ret = api->spi_nor_op->transceive(driver_cfg->spi.bus,
-				&driver_cfg->spi.config, op_info);
+		ret = api->spi_nor_op->transceive(driver_data->spi.bus,
+				&driver_data->spi.config, op_info);
 		goto end;
 	}
 
@@ -649,9 +648,9 @@ static int read_sfdp(const struct device *const dev,
 	 * address by shifting the 24-bit address up 8 bits.
 	 */
 	int ret;
-	const struct spi_nor_config *const driver_cfg = dev->config;
+	struct spi_nor_data *const driver_data = dev->data;
 	const struct spi_driver_api *api =
-		(const struct spi_driver_api *)driver_cfg->spi.bus->api;
+		(const struct spi_driver_api *)driver_data->spi.bus->api;
 
 	if (api->spi_nor_op && api->spi_nor_op->transceive) {
 		LOG_DBG("Using spi_nor op framework");
@@ -659,8 +658,8 @@ static int read_sfdp(const struct device *const dev,
 			SPI_NOR_OP_INFO(JESD216_MODE_111, JESD216_CMD_READ_SFDP,
 				addr, 3, 8, data, length, SPI_NOR_DATA_DIRECT_IN);
 
-		ret = api->spi_nor_op->transceive(driver_cfg->spi.bus,
-				&driver_cfg->spi.config, &op_info);
+		ret = api->spi_nor_op->transceive(driver_data->spi.bus,
+				&driver_data->spi.config, &op_info);
 		return ret;
 	}
 
@@ -727,28 +726,24 @@ static int exit_dpd(const struct device *const dev)
 /* Everything necessary to acquire owning access to the device. */
 static void acquire_device(const struct device *dev)
 {
-	const struct spi_nor_config *cfg = dev->config;
+	struct spi_nor_data *const data = dev->data;
 
 	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
-		struct spi_nor_data *const driver_data = dev->data;
-
-		k_sem_take(&driver_data->sem, K_FOREVER);
+		k_sem_take(&data->sem, K_FOREVER);
 	}
 
-	(void)pm_device_runtime_get(cfg->spi.bus);
+	(void)pm_device_runtime_get(data->spi.bus);
 }
 
 /* Everything necessary to release access to the device. */
 static void release_device(const struct device *dev)
 {
-	const struct spi_nor_config *cfg = dev->config;
+	struct spi_nor_data *const data = dev->data;
 
-	(void)pm_device_runtime_put(cfg->spi.bus);
+	(void)pm_device_runtime_put(data->spi.bus);
 
 	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
-		struct spi_nor_data *const driver_data = dev->data;
-
-		k_sem_give(&driver_data->sem);
+		k_sem_give(&data->sem);
 	}
 }
 
@@ -999,6 +994,24 @@ int spi_nor_sr_cr_bit1_config(const struct device *dev)
 		return ret;
 
 	return 0;
+}
+
+int spi_nor_exit_continuous_mode(const struct device *dev)
+{
+	int ret;
+	struct spi_nor_op_info op_info_nop =
+			SPI_NOR_OP_INFO(JESD216_MODE_111, SPI_NOR_CMD_NOP,
+					0, 0, 0, NULL, 0, SPI_NOR_DATA_DIRECT_OUT);
+	acquire_device(dev);
+
+	ret = spi_nor_op_exec(dev, &op_info_nop);
+	if (ret)
+		goto end;
+
+	release_device(dev);
+
+end:
+	return ret;
 }
 
 int spi_nor_rst_by_cmd(const struct device *dev)
@@ -1746,8 +1759,8 @@ int spi_nor_set_freq(const struct device *dev, uint32_t freq)
 	if (!dev) {
 		return -EINVAL;
 	}
-	struct spi_nor_config *cfg = (struct spi_nor_config *)dev->config;
-	cfg->spi.config.frequency = freq;
+	struct spi_nor_data *data = dev->data;
+	data->spi.config.frequency = freq;
 	LOG_DBG("spi_nor_change_freq:%d", freq);
 	return 0;
 }
@@ -1757,8 +1770,8 @@ int spi_nor_set_line_width(const struct device *dev, uint32_t buswidth)
 	if (!dev || buswidth > 4) {
 		return -EINVAL;
 	}
-	struct spi_nor_config *cfg = (struct spi_nor_config *)dev->config;
-	cfg->spi_max_buswidth = buswidth;
+	struct spi_nor_data *data = dev->data;
+	data->spi_max_buswidth = buswidth;
 	LOG_DBG("spi_nor_change_line_width:%d", buswidth);
 	return 0;
 }
@@ -2351,9 +2364,9 @@ static void spi_nor_info_init_params(const struct device *dev)
 	/* 4-4-4 QPI format is not supported */
 	data->cap_mask &= ~SPI_NOR_MODE_4_4_4_CAP;
 
-	if (cfg->spi_max_buswidth < 2)
+	if (data->spi_max_buswidth < 2)
 		data->cap_mask &= ~(SPI_NOR_DUAL_CAP_MASK | SPI_NOR_QUAD_CAP_MASK);
-	else if (cfg->spi_max_buswidth < 4)
+	else if (data->spi_max_buswidth < 4)
 		data->cap_mask &= ~SPI_NOR_QUAD_CAP_MASK;
 
 	/* initial basic command */
@@ -2393,7 +2406,7 @@ static int spi_nor_configure(const struct device *dev)
 #endif
 
 	/* Validate bus and CS is ready */
-	if (!spi_is_ready_dt(&cfg->spi)) {
+	if (!spi_is_ready_dt(&data->spi)) {
 		return -ENODEV;
 	}
 
@@ -2414,6 +2427,8 @@ static int spi_nor_configure(const struct device *dev)
 		}
 	}
 #endif
+
+	spi_nor_exit_continuous_mode(dev);
 
 	spi_nor_rst_by_cmd(dev);
 
@@ -2443,18 +2458,19 @@ static int spi_nor_configure(const struct device *dev)
 	/* now the spi bus is configured, we can verify SPI
 	 * connectivity by reading the JEDEC ID.
 	 */
-	memset(data->jedec_id, 0x0, SPI_NOR_MAX_ID_LEN);
-	if (cfg->jedec_id[0] != 0) {
-		LOG_WRN("Using pseudo flash node info %02x %02x %02x",
-			cfg->jedec_id[0], cfg->jedec_id[1], cfg->jedec_id[2]);
-		memcpy(data->jedec_id, cfg->jedec_id, SPI_NOR_MAX_ID_LEN);
-	} else {
-		rc = spi_nor_read_jedec_id(dev, data->jedec_id);
-		if (rc != 0) {
-			LOG_ERROR("JEDEC ID read failed: %d", rc);
-			ret = -ENODEV;
-			goto end;
-		}
+	rc = spi_nor_read_jedec_id(dev, data->jedec_id);
+	if (rc != 0) {
+		LOG_ERR("JEDEC ID read failed: %d", rc);
+		ret = -ENODEV;
+		goto end;
+	}
+
+	if (((0x00 == data->jedec_id[0]) && (0x00 == data->jedec_id[1]) && (0x00 == data->jedec_id[2]))
+		|| ((0xff == data->jedec_id[0]) && (0xff == data->jedec_id[1]) && (0xff == data->jedec_id[2]))) {
+		LOG_ERROR("%s: invalid jedec id %02x %02x %02x", dev->name,
+			data->jedec_id[0], data->jedec_id[1], data->jedec_id[2]);
+		ret = -ENODEV;
+		goto end;
 	}
 
 #ifndef CONFIG_SPI_NOR_SFDP_RUNTIME
@@ -2549,7 +2565,7 @@ static int spi_nor_configure(const struct device *dev)
 	}
 
 	const struct spi_driver_api *api =
-			(const struct spi_driver_api *)cfg->spi.bus->api;
+			(const struct spi_driver_api *)data->spi.bus->api;
 
 	if (api->spi_nor_op && api->spi_nor_op->read_init) {
 		struct spi_nor_op_info read_op_info =
@@ -2557,8 +2573,8 @@ static int spi_nor_configure(const struct device *dev)
 				0, data->flag_access_32bit ? 4 : 3, data->cmd_info.read_dummy,
 				NULL, dev_flash_size(dev), SPI_NOR_DATA_DIRECT_IN);
 
-		rc = api->spi_nor_op->read_init(cfg->spi.bus,
-				&cfg->spi.config, &read_op_info);
+		rc = api->spi_nor_op->read_init(data->spi.bus,
+				&data->spi.config, &read_op_info);
 		if (rc != 0) {
 			ret = -ENODEV;
 			goto end;
@@ -2571,8 +2587,8 @@ static int spi_nor_configure(const struct device *dev)
 				0, data->flag_access_32bit ? 4 : 3, 0,
 				NULL, dev_flash_size(dev), SPI_NOR_DATA_DIRECT_OUT);
 
-		rc = api->spi_nor_op->write_init(cfg->spi.bus,
-				&cfg->spi.config, &write_op_info);
+		rc = api->spi_nor_op->write_init(data->spi.bus,
+				&data->spi.config, &write_op_info);
 		if (rc != 0) {
 			ret = -ENODEV;
 			goto end;
@@ -2580,7 +2596,7 @@ static int spi_nor_configure(const struct device *dev)
 	}
 
 	LOG_DBG("%s: %d MB flash", dev->name, dev_flash_size(dev) >> 20);
-	LOG_DBG("bus_width: %d, cap: %08x", cfg->spi_max_buswidth, data->cap_mask);
+	LOG_DBG("bus_width: %d, cap: %08x", data->spi_max_buswidth, data->cap_mask);
 	LOG_DBG("read: %08x, write: %08x, erase: %08x",
 		data->cmd_info.read_mode, data->cmd_info.pp_mode, data->cmd_info.se_mode);
 	LOG_DBG("read op: %02xh (%d), write op: %02xh, erase op: %02xh(%dKB)",
@@ -2714,7 +2730,7 @@ static void spi_nor_pages_layout(const struct device *dev,
 {
 	/* Data for runtime, const for devicetree and minimal. */
 #ifdef CONFIG_SPI_NOR_SFDP_RUNTIME
-	const struct spi_nor_data *data = dev->data;
+	struct spi_nor_data *data = dev->data;
 
 	*layout = &data->layout;
 #else /* CONFIG_SPI_NOR_SFDP_RUNTIME */
@@ -2731,7 +2747,7 @@ static void spi_nor_pages_layout(const struct device *dev,
 static const struct flash_parameters *
 flash_nor_get_parameters(const struct device *dev)
 {
-	const struct spi_nor_data *data = dev->data;
+	struct spi_nor_data *data = dev->data;
 
 	return &data->flash_nor_parameter;
 }
@@ -2843,7 +2859,6 @@ static const struct flash_driver_api spi_nor_api = {
 
 #define GENERATE_CONFIG_STRUCT(idx)								\
 	static const struct spi_nor_config spi_nor_##idx##_config = {				\
-		.spi = SPI_DT_SPEC_INST_GET(idx, SPI_WORD_SET(8), CONFIG_SPI_NOR_CS_WAIT_DELAY),\
 		.dpd_exist = DT_INST_PROP(idx, has_dpd),					\
 		.dpd_wakeup_sequence_exist = DT_INST_NODE_HAS_PROP(idx, dpd_wakeup_sequence),	\
 		.mxicy_mx25r_power_mode_exist =							\
@@ -2853,7 +2868,6 @@ static const struct flash_driver_api spi_nor_api = {
 		.wp_gpios_exist = DT_INST_NODE_HAS_PROP(idx, wp_gpios),				\
 		.hold_gpios_exist = DT_INST_NODE_HAS_PROP(idx, hold_gpios),			\
 		.broken_sfdp = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), broken_sfdp),		\
-		.spi_max_buswidth = DT_INST_PROP_OR(idx, spi_max_buswidth, 1),			\
 		.spi_ctrl_caps_mask = DT_PROP_OR(DT_PARENT(DT_INST(idx, DT_DRV_COMPAT)),	\
 				spi_ctrl_caps_mask, 0),						\
 		.spi_nor_caps_mask = DT_INST_PROP_OR(idx, spi_nor_caps_mask, 0),		\
@@ -2878,6 +2892,7 @@ static const struct flash_driver_api spi_nor_api = {
 	LOCK_DEFINE(idx)							\
 	GENERATE_CONFIG_STRUCT(idx)						\
 	static struct spi_nor_data spi_nor_##idx##_data = {	\
+		.spi = SPI_DT_SPEC_INST_GET(idx, SPI_WORD_SET(8), CONFIG_SPI_NOR_CS_WAIT_DELAY),\
 		.flash_nor_parameter = {	\
 			.write_block_size = DT_INST_PROP_OR(idx, write_block_size, 0x1000),	\
 			.erase_value = 0xff,	\
@@ -2885,6 +2900,7 @@ static const struct flash_driver_api spi_nor_api = {
 		},	\
 		.init_4b_mode_once = false,	\
 		.re_init_support = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), re_init_support),	\
+		.spi_max_buswidth = DT_INST_PROP_OR(idx, spi_max_buswidth, 1),			\
 		IF_ENABLED(CONFIG_SPI_NOR_REINIT_INIT_OK, (.init_ok = false,))	\
 	};	\
 	DEVICE_DT_INST_DEFINE(idx, &spi_nor_init, PM_DEVICE_DT_INST_GET(idx),	\
