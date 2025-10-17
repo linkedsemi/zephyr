@@ -858,6 +858,7 @@ struct udc_dwc3_data {
     uint8_t ep_res_index[DWC_USB3_NUM_EPS];
     union evt_buf_u evt_buf[EVT_BUF_LENGTH_WORDS];
     struct k_sem ep0_sync;
+    bool connect;
 };
 
 static int dwc3_ctrl_feed_dout(const struct device *dev, const size_t length, enum TRB_Control trbctl);
@@ -1600,6 +1601,9 @@ static int udc_dwc3_init(const struct device *dev)
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
+    union dep_command_param cmd_param = {
+        .xfercfg.NumXferRes = 1
+    };
 
     k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
     k_sem_init(&dwc3_data->ep0_sync, 0, 1);
@@ -1657,21 +1661,8 @@ static int udc_dwc3_init(const struct device *dev)
     dwc3_dev->DEVTEN = DWC3_DEVTEN_DISCONNEVTEN | DWC3_DEVTEN_USBRSTEN | DWC3_DEVTEN_CONNECTDONEEN 
                     | DWC3_DEVTEN_WKUPEVTEN | DWC3_DEVTEN_HIBERNATIONREQEVTEN
                     | DWC3_DEVTEN_ERRTICERREN | DWC3_DEVTEN_CMDCMPLTEN | DWC3_DEVTEN_EVNTOVERFLOWEN | DWC3_DEVTEN_ECCERREN;
-    return 0;
-}
 
-static int udc_dwc3_enable(const struct device *dev)
-{
-    LOG_DBG("%s udc enable", dev->name);
-    const struct udc_dwc3_config *config = dev->config;
-    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
-    union dep_command_param cmd_param = {
-        .xfercfg.NumXferRes = 1
-    };
-
-    config->irq_enable_func(dev);
     dwc3_dep_start_config(dwc3_dev, 0);
-
     /* 
        There must be only one transfer resource allocated per endpoint.
        Start Transfer causes the use of the transfer resource.
@@ -1681,17 +1672,30 @@ static int udc_dwc3_enable(const struct device *dev)
         dwc3_dep_xfer_resource(dwc3_dev, i, &cmd_param);
     }
 
+    if (udc_ep_enable_internal(dev, USB_CONTROL_EP_IN,
+                               USB_EP_TYPE_CONTROL, 64, 0)) {
+        LOG_ERROR("Failed to enable control endpoint");
+        return -EIO;
+    }
+
     if (udc_ep_enable_internal(dev, USB_CONTROL_EP_OUT,
                                USB_EP_TYPE_CONTROL, 64, 0)) {
         LOG_ERROR("Failed to enable control endpoint");
         return -EIO;
     }
 
-    if (udc_ep_enable_internal(dev, USB_CONTROL_EP_IN,
-                               USB_EP_TYPE_CONTROL, 64, 0)) {
-        LOG_ERROR("Failed to enable control endpoint");
-        return -EIO;
-    }
+    return 0;
+}
+
+static int udc_dwc3_enable(const struct device *dev)
+{
+    LOG_DBG("%s udc enable", dev->name);
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+
+    dwc3_data->connect = true;
+    config->irq_enable_func(dev);
     /* allow the device to attach to the host. */
     MODIFY_REG(dwc3_dev->DCTL, 0, DWC3_DCTL_RUN_STOP);
 
@@ -1707,6 +1711,32 @@ static int udc_dwc3_shutdown(const struct device *dev)
 static int udc_dwc3_disable(const struct device *dev)
 {
     LOG_DBG("%s udc disable", dev->name);
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
+    uint32_t count = 0;
+
+    /* wait ep0 setup state */
+    while (dwc3_data->ep0_state != EP0_SETUP_PHASE);
+    /* clear msg queue */
+    dwc3_data->connect = false;
+    /* disable irq */
+    config->irq_disable_func(dev);
+    /* clear event queue */
+    count = dwc3_gbl->GEVNT[0].COUNT;
+    count &= DWC3_GEVNTCOUNT_MASK;
+    if (count)
+    {
+        dwc3_gbl->GEVNT[0].COUNT = count;
+        dwc3_data->evt_buf_rd_idx = (dwc3_data->evt_buf_rd_idx + count) % EVT_BUF_LENGTH_WORDS;
+    }
+
+    dwc3_data->ep0_state = EP0_SETUP_PHASE;
+    /* soft disconnect host */
+    MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, 0);
+    while (!(dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT));
+
     return 0;
 }
 
@@ -1834,23 +1864,20 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
 
-    LOG_DBG("%s udc ep deactivate, ep : %x, phy_ep_idx : %d", dev->name, cfg->addr, phy_ep_idx);
+    LOG_DBG("%s udc ep deactivate, ep : %x, phy_ep_idx : %d, ep_res_index = %d", dev->name, cfg->addr, phy_ep_idx, dwc3_data->ep_res_index[phy_ep_idx]);
 
     union dep_command_param param = {0};
     union dep_command end_trans = {
         .cmd = {
             .commandparam = dwc3_data->ep_res_index[phy_ep_idx],
             .cmdact = 1,
-            .cmdioc = 1,
             .hipri_forcerm = 1,
             .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
         },
     };
 
-    if (phy_ep_idx && dwc3_data->ep_res_index[phy_ep_idx]) {
-        dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
-        dwc3_data->ep_res_index[phy_ep_idx] = 0;
-    }
+    dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
+    dwc3_data->ep_res_index[phy_ep_idx] = 0;
 
     if (cfg->stat.halted) {
         union dep_command clear_halt = {
@@ -2037,7 +2064,8 @@ static void udc_dwc3_thread_handler(void *dev)
     struct dwc3_msgq_type evt;
     while (1) {
         k_msgq_get(&usb_data->msgq, &evt, K_FOREVER);
-        evt.handler(dev, evt.param);
+        if (usb_data->connect)
+            evt.handler(dev, evt.param);
     }
 }
 
