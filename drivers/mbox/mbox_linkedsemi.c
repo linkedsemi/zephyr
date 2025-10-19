@@ -48,6 +48,24 @@ struct mbox_linkedsemi_data {
 
 static struct mbox_linkedsemi_data linkedsemi_mbox_data;
 
+#define GET_WR_IDX(fifo) ((fifo)->wr_idx>=(fifo)->length?(fifo)->wr_idx - (fifo)->length:(fifo)->wr_idx)
+__ramfunc static bool general_fifo_put_size(struct fifo_env *ptr, void *data, size_t size)
+{
+    if(sw_fifo_full(ptr)) {
+        return false;
+    } else {
+        uint8_t *elem = ptr->buf;
+        __ASSERT_NO_MSG(size <= ptr->item_size);
+        memcpy((void*)(elem + ptr->item_size * GET_WR_IDX(ptr)), data, size);
+        if(ptr->wr_idx + 1 == 2*ptr->length) {
+            ptr->wr_idx = 0;
+        } else {
+            ptr->wr_idx = ptr->wr_idx + 1;
+        }
+        return true;
+    }
+}
+
 static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_t rx_channel)
 {
     /* handle events of all rx channels */
@@ -102,7 +120,7 @@ __ramfunc static int mbox_linkedsemi_send(const struct device *dev, uint32_t cha
 #endif
 
     if (msg) {
-        ret = general_fifo_put(dev_data->fifo[channel], (void *)msg->data);
+        ret = general_fifo_put_size(dev_data->fifo[channel], (void *)msg->data, msg->size);
         if (ret == false) {
             LOG_ERROR("ENOSPC\n");
             return -ENOSPC;
