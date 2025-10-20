@@ -637,6 +637,11 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
 
+    if (host->current_speed < CONFIG_SDHCI_LINKEDSEMI_TUNING_LOWEST_FREQUENCY) {
+        LOG_DBG("%s: current speed %d is too low for tuning, skip tuning", __func__, host->current_speed);
+        return 0;
+    }
+
     if (SDHCI_CTRL_8BITBUS == host->bus_width) {
         block_size = sizeof(tuning_blk_pattern_8bit);
         tuning_data_cmp = tuning_blk_pattern_8bit;

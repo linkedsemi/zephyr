@@ -282,6 +282,8 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
     uint32_t div;
     uint32_t val;
 
+    host->current_speed = clock;
+
     if (clock == 0)
         return;
 
