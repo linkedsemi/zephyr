@@ -344,7 +344,7 @@ config MBEDTLS_SHA256
 	bool "SHA-256 hash algorithm"
 	default y
 
-config MBEDTLS_SHA256_LINKEDSEMI
+config MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI
 	bool "LINKEDSEMI's hardware sha224 and sha256"
 	default n
 	select MBEDTLS_ECDSA_C
@@ -377,7 +377,7 @@ config MBEDTLS_SHA384
 config MBEDTLS_SHA512
 	bool "SHA-512 hash algorithm"
 
-config MBEDTLS_SHA512_LINKEDSEMI
+config MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI
 	bool "LINKEDSEMI's hardware sha384 and sha512"
 	default n
 	select MBEDTLS_SHA512
