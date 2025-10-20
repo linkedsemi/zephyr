@@ -45,4 +45,10 @@ config SDHCI_LINKEDSEMI_DMA_BUFFER_SIZE
 
 endif #SDHCI_LINKEDSEMI_DMA_SUPPORT
 
+config SDHCI_LINKEDSEMI_TUNING_LOWEST_FREQUENCY
+    int "sdhci linkedsemi tuning lowest frequency"
+    default 100000000
+    help
+      sdhci linkedsemi tuning lowest frequency
+
 endif #SDHCI_LINKEDSEMI
