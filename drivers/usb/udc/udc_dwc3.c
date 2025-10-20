@@ -855,7 +855,7 @@ struct udc_dwc3_data {
     uint32_t evt_count;
     enum udc_bus_speed speed;
     struct k_thread thread;
-    uint8_t ep_res_index[DWC_USB3_NUM_EPS];
+    int8_t ep_res_index[DWC_USB3_NUM_EPS];
     union evt_buf_u evt_buf[EVT_BUF_LENGTH_WORDS];
     struct k_sem ep0_sync;
     bool connect;
@@ -1169,7 +1169,7 @@ static void dwc3_ep0_end_control_data(const struct device *dev)
     };
 
     dwc3_dep_command(dwc3_dev, 0, &cmd, &param);
-    dwc3_data->ep_res_index[0] = 0;
+    dwc3_data->ep_res_index[0] = -1;
 }
 
 static void dwc3_ep0_stall_and_restart(const struct device *dev)
@@ -1670,6 +1670,7 @@ static int udc_dwc3_init(const struct device *dev)
     */
     for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
         dwc3_dep_xfer_resource(dwc3_dev, i, &cmd_param);
+        dwc3_data->ep_res_index[i] = -1;
     }
 
     if (udc_ep_enable_internal(dev, USB_CONTROL_EP_IN,
@@ -1863,25 +1864,21 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
-
+    union dep_command_param param = {0};
     LOG_DBG("%s udc ep deactivate, ep : %x, phy_ep_idx : %d, ep_res_index = %d", dev->name, cfg->addr, phy_ep_idx, dwc3_data->ep_res_index[phy_ep_idx]);
 
-    union dep_command_param param = {0};
-    union dep_command end_trans = {
+    if (dwc3_data->ep_res_index[phy_ep_idx] >= 0)
+    {    
+        union dep_command end_trans = {
         .cmd = {
             .commandparam = dwc3_data->ep_res_index[phy_ep_idx],
             .cmdact = 1,
             .hipri_forcerm = 1,
             .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
-        },
-    };
-
-    /* Only endpoints that have previously issued a Start Transfer can issue an End Transfer, 
-        to avoid releasing the resource index of EP0 */
-    if (dwc3_data->ep_res_index[phy_ep_idx])
-    {
+            },
+        };
         dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
-        dwc3_data->ep_res_index[phy_ep_idx] = 0;
+        dwc3_data->ep_res_index[phy_ep_idx] = -1;
     }
 
     if (cfg->stat.halted) {
