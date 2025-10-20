@@ -43,11 +43,17 @@ static void init_heap(void)
 #else
 #define init_heap(...)
 #endif /* CONFIG_MBEDTLS_ENABLE_HEAP && MBEDTLS_MEMORY_BUFFER_ALLOC_C */
-
+#if defined(MBEDTLS_THREADING_ALT)
+void mbedtls_zephyr_threading_init(void);
+#endif
 static int _mbedtls_init(void)
 {
 
 	init_heap();
+
+#if defined(MBEDTLS_THREADING_ALT)
+    mbedtls_zephyr_threading_init();
+#endif
 
 #if defined(CONFIG_MBEDTLS_DEBUG_LEVEL)
 	mbedtls_debug_set_threshold(CONFIG_MBEDTLS_DEBUG_LEVEL);

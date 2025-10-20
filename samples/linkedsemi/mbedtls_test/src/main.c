@@ -3,16 +3,13 @@
 
 #include "mbedtls/threading.h"
 
-#if defined(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI) || defined(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
 typedef struct testVector {
     const char*  input;
     const char*  output;
     size_t inLen;
     size_t outLen;
 } testVector;
-#endif /* CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI || CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI */
 
-#if defined(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI)
 #include "mbedtls/sha256.h"
 #define SHA224_DIGEST_SIZE 28
 #define SHA256_DIGEST_SIZE 32
@@ -224,7 +221,6 @@ exit:
 
     return ret;
 }
-#endif /* CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI */
 
 #include "mbedtls/aes.h"
 #define MTLS_AES_192
@@ -910,7 +906,6 @@ int aes_test()
     return ret;
 }
 
-#if defined(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
 #include "mbedtls/sha512.h"
 #define SHA384_DIGEST_SIZE 48
 #define SHA512_DIGEST_SIZE 64
@@ -1056,9 +1051,8 @@ exit:
     }
     return ret;
 }
-#endif /* CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI */
 
-#if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT)
 #include "mbedtls/sm4_alt.h"
 #define SM4_BLOCK_SIZE 16
 int test_sm4()
@@ -1196,7 +1190,7 @@ exit:
 
     return 0;
 }
-#endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI */
+#endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT */
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     int ecdsa_test(void);
@@ -1205,10 +1199,8 @@ exit:
 int main(void)
 {
 
-    mbedtls_zephyr_threading_init();
-
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-#if defined(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT)
     if(ecdsa_test() !=0)
     {
         printf("ECDSA  test failed!\n");
@@ -1216,14 +1208,15 @@ int main(void)
     {
         printf("ECDSA  test passed!\n");
     }
-
 #endif
 #endif
 
-#if defined(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI)
     if(test_sha224() != 0)
     {
         printf("SHA-224  test failed!\n");
+#if defined(CONFIG_MBEDTLS_SHA256_SM3_LINKEDSEMI_OTBN_ALT)
+        printf("otbn not sopported sha224\n");
+#endif
     }else{
         printf("SHA-224  test passed!\n");
     }
@@ -1242,8 +1235,6 @@ int main(void)
         printf("SM3  test passed!\n");
     }
 
-#endif /* CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI */
-
 
     if(aes_test() != 0)
     {
@@ -1253,7 +1244,6 @@ int main(void)
     }
 
 
-#if defined(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
     if(test_sha384() != 0)
     {
         printf("SHA-384  test failed!\n");
@@ -1267,9 +1257,7 @@ int main(void)
     }else{
         printf("SHA-512  test passed!\n");
     }
-#endif /* CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI */
 
-#if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
     if(test_sm4() != 0)
     {
         printf("sm4 test failed!\n");
@@ -1283,8 +1271,6 @@ int main(void)
     }else{
         printf("sm4_ctr_test passed!\n");
     }
-
-#endif /* CONFIG_MBEDTLS_SM4_LINKEDSEMI */
 
     return 0;
 }

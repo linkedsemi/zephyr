@@ -118,19 +118,21 @@ zephyr_interface_library_named(mbedTLS)
       zephyr_entropy.c
     )
 
-    if(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI)
+    if((CONFIG_MBEDTLS_SHA224_SHA256_SM3_LINKEDSEMI_HARDWARE_ALT)
+      OR (CONFIG_MBEDTLS_SHA256_SM3_LINKEDSEMI_OTBN_ALT))
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha256_alt.c
       )
     endif()
 
-    if(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
+    if((CONFIG_MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT)
+      OR (CONFIG_MBEDTLS_SHA384_SHA512_LINKEDSEMI_OTBN_ALT))
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/sha512_alt.c
       )
     endif()
 
-    if(CONFIG_MBEDTLS_ECDSA_LINKEDSEMI)
+    if(CONFIG_MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT)
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/ecdsa_alt.c
       )
@@ -142,13 +144,13 @@ zephyr_interface_library_named(mbedTLS)
       )
     endif()
 
-    if((CONFIG_SOC_LSQSH) OR (CONFIG_SOC_LS1010)) 
+    if((CONFIG_MBEDTLS_THREADING_LINKEDSEMI_ALT))
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/threading_alt.c
       )
     endif()
 
-    if(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
+    if(CONFIG_MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT)
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/sm4_alt.c
       )
