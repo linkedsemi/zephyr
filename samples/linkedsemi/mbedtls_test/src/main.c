@@ -3,16 +3,16 @@
 
 #include "mbedtls/threading.h"
 
-#if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI) || defined(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI) || defined(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
 typedef struct testVector {
     const char*  input;
     const char*  output;
     size_t inLen;
     size_t outLen;
 } testVector;
-#endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI || CONFIG_MBEDTLS_SHA512_LINKEDSEMI */
+#endif /* CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI || CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI */
 
-#if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI)
 #include "mbedtls/sha256.h"
 #define SHA224_DIGEST_SIZE 28
 #define SHA256_DIGEST_SIZE 32
@@ -224,7 +224,7 @@ exit:
 
     return ret;
 }
-#endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
+#endif /* CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI */
 
 #include "mbedtls/aes.h"
 #define MTLS_AES_192
@@ -723,6 +723,138 @@ exit:
     return ret;
 }
 
+static int aes_xts_test()
+{
+    int ret = 0;
+
+#if defined(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
+    uint32_t aes_test_xts_key[][32] =
+    {
+        { 0x00000000, 0x00000000, 0x00000000, 0x00000000,
+          0x00000000, 0x00000000, 0x00000000, 0x00000000},
+        { 0x11111111, 0x11111111, 0x11111111, 0x11111111, 
+          0x22222222, 0x22222222, 0x22222222, 0x22222222},
+        { 0xf3f2f1f0, 0xf7f6f5f4, 0xfbfaf9f8, 0xfffefdfc,
+          0x22222222, 0x22222222, 0x22222222, 0x22222222},
+    };
+#else
+    static const unsigned char aes_test_xts_key[][32] =
+    {
+        { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+          0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+          0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+          0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22 },
+        { 0xff, 0xfe, 0xfd, 0xfc, 0xfb, 0xfa, 0xf9, 0xf8,
+          0xf7, 0xf6, 0xf5, 0xf4, 0xf3, 0xf2, 0xf1, 0xf0,
+          0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+          0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22 },
+    };
+#endif
+
+    static const unsigned char aes_test_xts_data_unit[][16] =
+    {
+        { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0x33, 0x33, 0x33, 0x33, 0x33, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0x33, 0x33, 0x33, 0x33, 0x33, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+    };
+
+    static const unsigned char aes_test_xts_ct32[][32] =
+    {
+        { 0x91, 0x7c, 0xf6, 0x9e, 0xbd, 0x68, 0xb2, 0xec,
+          0x9b, 0x9f, 0xe9, 0xa3, 0xea, 0xdd, 0xa6, 0x92,
+          0xcd, 0x43, 0xd2, 0xf5, 0x95, 0x98, 0xed, 0x85,
+          0x8c, 0x02, 0xc2, 0x65, 0x2f, 0xbf, 0x92, 0x2e },
+        { 0xc4, 0x54, 0x18, 0x5e, 0x6a, 0x16, 0x93, 0x6e,
+          0x39, 0x33, 0x40, 0x38, 0xac, 0xef, 0x83, 0x8b,
+          0xfb, 0x18, 0x6f, 0xff, 0x74, 0x80, 0xad, 0xc4,
+          0x28, 0x93, 0x82, 0xec, 0xd6, 0xd3, 0x94, 0xf0 },
+        { 0xaf, 0x85, 0x33, 0x6b, 0x59, 0x7a, 0xfc, 0x1a,
+          0x90, 0x0b, 0x2e, 0xb2, 0x1e, 0xc9, 0x49, 0xd2,
+          0x92, 0xdf, 0x4c, 0x04, 0x7e, 0x0b, 0x21, 0x53,
+          0x21, 0x86, 0xa5, 0x97, 0x1a, 0x22, 0x7a, 0x89 },
+    };
+
+    static const unsigned char aes_test_xts_pt32[][32] =
+    {
+        { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+          0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 },
+        { 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,
+          0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,
+          0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,
+          0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44 },
+        { 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,
+          0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,
+          0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44,
+          0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44, 0x44 },
+    };
+
+    static const int num_tests =
+        sizeof(aes_test_xts_key) / sizeof(*aes_test_xts_key);
+    mbedtls_aes_xts_context ctx_xts;
+
+    mbedtls_aes_xts_init(&ctx_xts);
+
+    for (uint8_t i = 0; i < num_tests << 1; i++) {
+        mbedtls_aes_xts_init(&ctx_xts);
+
+        const unsigned char *data_unit;
+        uint8_t u = i >> 1;
+        uint8_t mode = i & 1;
+        unsigned char key[32];
+        unsigned char buf[64];
+        const unsigned char *aes_tests;
+
+        memset(key, 0, sizeof(key));
+        memcpy(key, aes_test_xts_key[u], 32);
+        data_unit = aes_test_xts_data_unit[u];
+
+        uint32_t len = sizeof(*aes_test_xts_ct32);
+
+        if (mode == MBEDTLS_AES_DECRYPT) {
+            ret = mbedtls_aes_xts_setkey_dec(&ctx_xts, key, 256);
+            if (ret != 0) {
+                goto exit;
+            }
+            memcpy(buf, aes_test_xts_ct32[u], len);
+            aes_tests = aes_test_xts_pt32[u];
+        } else {
+            ret = mbedtls_aes_xts_setkey_enc(&ctx_xts, key, 256);
+            if (ret != 0) {
+                goto exit;
+            }
+            memcpy(buf, aes_test_xts_pt32[u], len);
+            aes_tests = aes_test_xts_ct32[u];
+        }
+
+        ret = mbedtls_aes_crypt_xts(&ctx_xts, mode, len, data_unit,
+                                    buf, buf);
+        if (ret != 0) {
+            goto exit;
+        }
+
+        if (memcmp(buf, aes_tests, len) != 0) {
+            ret = 1;
+            goto exit;
+        }
+    }
+
+    mbedtls_aes_xts_free(&ctx_xts);
+
+    ret = 0;
+
+exit:
+    return ret;
+}
+
 int aes_test()
 {
     int ret = 0;
@@ -768,10 +900,17 @@ int aes_test()
         printf("aes_ctr_test  test passed!\n");
     }
 
+    if((ret = aes_xts_test()) !=0)
+    {
+        printf("aes_xts_test  test failed!\n");
+    }else{
+        printf("aes_xts_test  test passed!\n");
+    }
+
     return ret;
 }
 
-#if defined(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
 #include "mbedtls/sha512.h"
 #define SHA384_DIGEST_SIZE 48
 #define SHA512_DIGEST_SIZE 64
@@ -917,7 +1056,7 @@ exit:
     }
     return ret;
 }
-#endif /* CONFIG_MBEDTLS_SHA512_LINKEDSEMI */
+#endif /* CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI */
 
 #if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
 #include "mbedtls/sm4_alt.h"
@@ -1081,7 +1220,7 @@ int main(void)
 #endif
 #endif
 
-#if defined(CONFIG_MBEDTLS_SHA256_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI)
     if(test_sha224() != 0)
     {
         printf("SHA-224  test failed!\n");
@@ -1103,7 +1242,7 @@ int main(void)
         printf("SM3  test passed!\n");
     }
 
-#endif /* CONFIG_MBEDTLS_SHA256_LINKEDSEMI */
+#endif /* CONFIG_MBEDTLS_HARDWARE_SHA224_SHA256_SM3_LINKEDSEMI */
 
 
     if(aes_test() != 0)
@@ -1114,7 +1253,7 @@ int main(void)
     }
 
 
-#if defined(CONFIG_MBEDTLS_SHA512_LINKEDSEMI)
+#if defined(CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI)
     if(test_sha384() != 0)
     {
         printf("SHA-384  test failed!\n");
@@ -1128,7 +1267,7 @@ int main(void)
     }else{
         printf("SHA-512  test passed!\n");
     }
-#endif /* CONFIG_MBEDTLS_SHA512_LINKEDSEMI */
+#endif /* CONFIG_MBEDTLS_HARDWARE_SHA384_SHA512_LINKEDSEMI */
 
 #if defined(CONFIG_MBEDTLS_SM4_LINKEDSEMI)
     if(test_sm4() != 0)

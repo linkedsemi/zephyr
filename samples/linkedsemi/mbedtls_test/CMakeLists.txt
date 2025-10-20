@@ -7,3 +7,4 @@ project(mbedtls_test)
 
 target_sources(app PRIVATE src/main.c)
 target_sources(app PRIVATE src/ecdsa_test.c)
+# target_sources(app PRIVATE src/aes_performance.c)
