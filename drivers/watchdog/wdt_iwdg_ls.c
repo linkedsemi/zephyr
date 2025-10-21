@@ -142,7 +142,7 @@ static int iwdt_init(const struct device *dev)
 	if (cfg->ccfg.cctl_dev) {
 		const struct device *clk_dev = cfg->ccfg.cctl_dev;
 		if (!device_is_ready(clk_dev)) {
-			LOG_ERR("%s: %s device not ready", dev->name, clk_dev->name);
+			LOG_ERROR("%s: %s device not ready", dev->name, clk_dev->name);
 			return -ENODEV;
 		}
 		clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
@@ -152,13 +152,13 @@ static int iwdt_init(const struct device *dev)
 #if defined(CONFIG_RESET)
 	if (cfg->reset.dev != NULL) {
 		if (!device_is_ready(cfg->reset.dev)) {
-			LOG_ERR("%s: Reset controller device is not ready", dev->name);
+			LOG_ERROR("%s: Reset controller device is not ready", dev->name);
 			return -ENODEV;
 		}
 
 		int ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
 		if (ret != 0) {
-			LOG_ERR("%s: toggle reset line failed", dev->name);
+			LOG_ERROR("%s: toggle reset line failed", dev->name);
 			return ret;
 		}
 	}

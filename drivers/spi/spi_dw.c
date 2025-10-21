@@ -165,7 +165,7 @@ int spi_timing_calibration(const struct device *dev,
 			goto no_calibration;
 		}
 		if (!spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
-			LOG_ERR("Flash data is monotonous, skip calibration.");
+			LOG_ERROR("Flash data is monotonous, skip calibration.");
 			ret = -EINVAL;
 			goto no_calibration;
 		}
@@ -184,7 +184,7 @@ int spi_timing_calibration(const struct device *dev,
 			}
 		}
 		if (!detect_success) {
-			LOG_ERR("All flash data is monotonous, skip calibration.");
+			LOG_ERROR("All flash data is monotonous, skip calibration.");
 			ret = -EINVAL;
 			goto no_calibration;
 		}
@@ -221,8 +221,8 @@ int spi_timing_calibration(const struct device *dev,
 		info->timing_calibration_delay_arr[cs] = max_consecutive_start + (max_length >> 1);
 		ret = 0;
 	} else {
-		LOG_ERR("err: %d", max_length);
-		LOG_ERR("%s: calibration fail", __func__);
+		LOG_ERROR("err: %d", max_length);
+		LOG_ERROR("%s: calibration fail", __func__);
 		write_rx_sample_dly(dev, 0);
 		info->timing_calibration_delay_arr[cs] = TIMING_CALIBRATION_INVALID;
 		ret = -EIO;

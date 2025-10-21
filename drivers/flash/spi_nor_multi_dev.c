@@ -2446,7 +2446,7 @@ static int spi_nor_configure(const struct device *dev)
 
 	rc = spi_nor_rdsr(dev);
 	if (rc > 0 && (rc & SPI_NOR_WIP_BIT)) {
-		LOG_ERR("%s: flash maybe not present", dev->name);
+		LOG_ERROR("%s: flash maybe not present", dev->name);
 		return -ENODEV;
 	}
 	release_device(dev);
@@ -2460,7 +2460,7 @@ static int spi_nor_configure(const struct device *dev)
 	 */
 	rc = spi_nor_read_jedec_id(dev, data->jedec_id);
 	if (rc != 0) {
-		LOG_ERR("JEDEC ID read failed: %d", rc);
+		LOG_ERROR("JEDEC ID read failed: %d", rc);
 		ret = -ENODEV;
 		goto end;
 	}

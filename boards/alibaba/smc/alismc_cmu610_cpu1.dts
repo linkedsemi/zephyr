@@ -295,9 +295,9 @@
     status = "okay";
 };
 
-&peci1 {
-    status = "okay";
-};
+// &peci1 {
+//     status = "okay";
+// };
 
 &sdhci1 {
     status = "okay";

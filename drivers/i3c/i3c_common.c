@@ -412,7 +412,7 @@ int i3c_dev_list_daa_addr_helper(struct i3c_addr_slots *addr_slots,
 			 * This is probably due to having the same PIDs for multiple targets
 			 * in the device tree.
 			 */
-			LOG_ERR("PID 0x%04x%08x already has "
+			LOG_ERROR("PID 0x%04x%08x already has "
 				"dynamic address (0x%02x) assigned",
 				vendor_id, part_no, desc->dynamic_addr);
 			ret = -EINVAL;
@@ -593,7 +593,7 @@ static int i3c_bus_setdasa(const struct device *dev,
 			if (!i3c_addr_slots_is_free(&bus_data->attached_dev.addr_slots,
 				desc->init_dynamic_addr)) {
 				if (i3c_detach_i3c_device(desc) != 0) {
-					LOG_ERR("Failed to detach %s", desc->dev->name);
+					LOG_ERROR("Failed to detach %s", desc->dev->name);
 				}
 				continue;
 			}
@@ -611,15 +611,15 @@ static int i3c_bus_setdasa(const struct device *dev,
 			desc->dynamic_addr = dyn_addr.addr >> 1;
 			if (desc->dynamic_addr != desc->static_addr) {
 				if (i3c_reattach_i3c_device(desc, desc->static_addr) != 0) {
-					LOG_ERR("Failed to reattach %s (%d)", desc->dev->name, ret);
+					LOG_ERROR("Failed to reattach %s (%d)", desc->dev->name, ret);
 				}
 			}
 		} else {
 			/* SETDASA failed, detach it from the controller */
 			if (i3c_detach_i3c_device(desc) != 0) {
-				LOG_ERR("Failed to detach %s (%d)", desc->dev->name, ret);
+				LOG_ERROR("Failed to detach %s (%d)", desc->dev->name, ret);
 			}
-			LOG_ERR("SETDASA error on address 0x%x (%d)",
+			LOG_ERROR("SETDASA error on address 0x%x (%d)",
 				desc->static_addr, ret);
 		}
 	}
@@ -660,7 +660,7 @@ int i3c_bus_deftgts(const struct device *dev)
 	 */
 	ret = i3c_config_get(dev, I3C_CONFIG_TARGET, &config_target);
 	if (ret != 0) {
-		LOG_ERR("Failed to retrieve active controller info");
+		LOG_ERROR("Failed to retrieve active controller info");
 		return ret;
 	}
 
@@ -808,7 +808,7 @@ int i3c_bus_init(const struct device *dev, const struct i3c_dev_list *dev_list)
 				 * Continue on so the devices already have
 				 * addresses can still function.
 				 */
-				LOG_ERR("DAA was not successful.");
+				LOG_ERROR("DAA was not successful.");
 			}
 		}
 	}
@@ -826,7 +826,7 @@ int i3c_bus_init(const struct device *dev, const struct i3c_dev_list *dev_list)
 
 		ret = i3c_device_basic_info_get(desc);
 		if (ret != 0) {
-			LOG_ERR("Error getting basic device info for 0x%02x",
+			LOG_ERROR("Error getting basic device info for 0x%02x",
 				desc->static_addr);
 		} else {
 			LOG_DBG("Target 0x%02x, BCR 0x%02x, DCR 0x%02x, MRL %d, MWL %d, IBI %d",
@@ -839,7 +839,7 @@ int i3c_bus_init(const struct device *dev, const struct i3c_dev_list *dev_list)
 	if (i3c_bus_has_sec_controller(dev)) {
 		ret = i3c_bus_deftgts(dev);
 		if (ret != 0) {
-			LOG_ERR("Error sending DEFTGTS");
+			LOG_ERROR("Error sending DEFTGTS");
 		}
 	}
 

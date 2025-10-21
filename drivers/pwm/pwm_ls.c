@@ -107,13 +107,13 @@ static int ls_pwm_init(const struct device *dev)
 #if defined(CONFIG_RESET)
 	if (cfg->reset.dev != NULL) {
 		if (!device_is_ready(cfg->reset.dev)) {
-			LOG_ERR("%s: Reset controller device is not ready", dev->name);
+			LOG_ERROR("%s: Reset controller device is not ready", dev->name);
 			return -ENODEV;
 		}
 
 		ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
 		if (ret != 0) {
-			LOG_ERR("%s: toggle reset line failed", dev->name);
+			LOG_ERROR("%s: toggle reset line failed", dev->name);
 			return ret;
 		}
 	}
@@ -129,7 +129,7 @@ static int ls_pwm_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
 	ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
 	if (ret != 0) {
-		LOG_ERR("Failed to apply 'pin' state (%d)", ret);
+		LOG_ERROR("Failed to apply 'pin' state (%d)", ret);
 		return ret;
 	}
 #endif
