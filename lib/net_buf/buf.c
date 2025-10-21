@@ -13,6 +13,7 @@
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <stdio.h>
+#include <malloc.h>
 #include <errno.h>
 #include <stddef.h>
 #include <string.h>
@@ -173,7 +174,7 @@ static uint8_t *heap_data_alloc(struct net_buf *buf, size_t *size,
 {
 	uint8_t *ref_count;
 
-	ref_count = k_malloc(sizeof(void *) + *size);
+	ref_count = malloc(sizeof(void *) + *size);
 	if (!ref_count) {
 		return NULL;
 	}
@@ -192,7 +193,7 @@ static void heap_data_unref(struct net_buf *buf, uint8_t *data)
 		return;
 	}
 
-	k_free(ref_count);
+	free(ref_count);
 }
 
 static const struct net_buf_data_cb net_buf_heap_cb = {
