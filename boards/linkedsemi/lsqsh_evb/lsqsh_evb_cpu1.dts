@@ -208,7 +208,7 @@
     status = "okay";
 };
 
-&pmu_rtc0 {
+&rtc0 {
     status = "okay";
 };
 
