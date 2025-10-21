@@ -503,12 +503,12 @@
             resets = <CRYPT_RESET>;
             status = "disabled";
         };
-        
+
         cap:cap@40082400 {
             compatible = "linkedsemi,ls-cap";
             reg = <0x40082400 0x400>;
             status = "disabled";
-            interrupts = <CAP_IRQN 3>;  
+            interrupts = <CAP_IRQN 3>;
             clocks = <CAP_CLOCK>;
             clock-frequency = <PBUS4_CLOCK>;
         };
@@ -936,7 +936,7 @@
             status = "disabled";
         };
 
-        pmu_rtc0: pmu_rtc0@4006fc00{
+        rtc0: rtc0@4006fc00{
             compatible = "linkedsemi,ls-rtc";
             reg = <0x4006fc00 0x400>;
             interrupts = <PMU_RTC_IRQN 3>;
