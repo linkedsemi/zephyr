@@ -124,6 +124,8 @@ struct zbus_observer_data {
 	/** Subscriber attached thread priority. */
 	int priority;
 #endif /* CONFIG_ZBUS_PRIORITY_BOOST */
+
+        int fd;
 };
 
 /**
@@ -879,6 +881,7 @@ struct zbus_observer_node {
  * function only returns this value when the @kconfig{CONFIG_ZBUS_ASSERT_MOCK} is enabled.
  */
 int zbus_obs_set_enable(const struct zbus_observer *obs, bool enabled);
+int zbus_obs_set_eventfd(const struct zbus_observer *obs, int eventfd);
 
 /**
  * @brief Get the observer state.

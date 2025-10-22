@@ -10,6 +10,7 @@
 #include <zephyr/sys/printk.h>
 #include <zephyr/net_buf.h>
 #include <zephyr/zbus/zbus.h>
+#include <zephyr/zvfs/eventfd.h>
 LOG_MODULE_REGISTER(zbus, CONFIG_ZBUS_LOG_LEVEL);
 
 #if defined(CONFIG_ZBUS_PRIORITY_BOOST)
@@ -101,6 +102,14 @@ static inline int _zbus_notify_observer(const struct zbus_channel *chan,
 
 		k_fifo_put(obs->message_fifo, cloned_buf);
 
+                if(obs->data->fd > 0)
+                {
+                    int write_ret = zvfs_eventfd_write(obs->data->fd, 1);
+                }
+                else
+                {
+                    printk_thread("zvfs_eventfd_write invalid fd=%d", obs->data->fd);
+                }
 		break;
 	}
 #endif /* CONFIG_ZBUS_MSG_SUBSCRIBER */
@@ -577,7 +586,9 @@ int zbus_sub_wait_msg(const struct zbus_observer *sub, const struct zbus_channel
 	struct net_buf *buf = k_fifo_get(sub->message_fifo, timeout);
 
 	if (buf == NULL) {
-		return -ENOMSG;
+            zvfs_eventfd_t value;
+            zvfs_eventfd_read(sub->data->fd, &value);
+            return -ENOMSG;
 	}
 
 	*chan = *((struct zbus_channel **)net_buf_user_data(buf));
@@ -671,6 +682,17 @@ int zbus_obs_set_enable(const struct zbus_observer *obs, bool enabled)
 
 			update_all_channels_hop(obs);
 		}
+	}
+
+	return 0;
+}
+
+int zbus_obs_set_eventfd(const struct zbus_observer *obs, int eventfd)
+{
+	_ZBUS_ASSERT(obs != NULL, "obs is required");
+
+	K_SPINLOCK(&obs_slock) {
+		obs->data->fd = eventfd;
 	}
 
 	return 0;
