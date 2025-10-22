@@ -5,6 +5,7 @@
 
 config GPIO_LSQSH
     bool "Linkedsemi lsqsh GPIO driver"
+    select GPIO_ENABLE_DISABLE_INTERRUPT
     default y
     depends on DT_HAS_LINKEDSEMI_LSQSH_GPIO_ENABLED
     help
