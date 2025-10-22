@@ -36,12 +36,9 @@ LOG_MODULE_REGISTER(gpio_lsqsh);
 
 #define LSPIN(_port, _pin) (_port << 4 | _pin)
 
-static struct gpio_ls_common_data gpio_ls_common_data;
+static struct gpio_ls_exti_data gpio_ls_exti_data;
 
-struct gpio_ls_common_config {
-};
-
-struct gpio_ls_common_data {
+struct gpio_ls_exti_data {
     /* a list of all ports */
     const struct device *ports[NUMBER_OF_PORTS];
     size_t count;
@@ -64,7 +61,7 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev,
 static int gpio_ls_port_clear_bits_raw(const struct device *dev,
                                        gpio_port_pins_t pins);
 
-static inline void gpio_ls_add_port(struct gpio_ls_common_data *data,
+static inline void gpio_ls_add_port(struct gpio_ls_exti_data *data,
                                     const struct device *dev)
 {
     __ASSERT(dev, "No port device!");
@@ -162,7 +159,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 
     switch (flags & (GPIO_INPUT | GPIO_OUTPUT)) {
     case GPIO_OUTPUT:
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_GPIO_CFG_LOCK)
         do {
             io_cfg_lock(pincode, false);
             io_cfg_output(pincode);
@@ -178,7 +175,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 #endif
         break;
     case GPIO_DISCONNECTED:
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_GPIO_CFG_LOCK)
         do {
             io_cfg_lock(pincode, false);
             io_pull_write(pincode, IO_PULL_DISABLE);
@@ -193,7 +190,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 #endif
         break;
     case GPIO_INPUT:
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_GPIO_CFG_LOCK)
         do {
             io_cfg_lock(pincode, false);
             io_cfg_input(pincode);
@@ -262,7 +259,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 
 static void gpio_vcore_isr(const struct device *dev)
 {
-    struct gpio_ls_common_data *data = (struct gpio_ls_common_data *)DEVICE_DT_GET(DT_INST(0, linkedsemi_lsqsh_pinctrl))->data;
+    struct gpio_ls_exti_data *data = (struct gpio_ls_exti_data *)DEVICE_DT_GET(DT_INST(0, linkedsemi_lsqsh_pinctrl))->data;
     const struct device *port_dev;
     struct gpio_ls_data *port_data;
     uint32_t interrupt_status = 0;
@@ -275,14 +272,14 @@ static void gpio_vcore_isr(const struct device *dev)
     for (uint8_t i = 0; i < NUMBER_OF_PORTS; ++i) {
         volatile uint32_t *INT_STAT_REG = &INT_STAT_BASE[i];
         volatile uint32_t *INT_CLR_REG = &INT_CLR_BASE[i];
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
+        IF_ENABLED(CONFIG_GPIO_INTR_LOCK,
                    (volatile uint32_t *INT_LOCK_REG = (volatile uint32_t *)((uint32_t)(&INT_CLR_BASE[i]) - (APP_PMU_RG_APP_ADDR - SEC_PMU_RG_SEC_ADDR));))
         uint32_t int_stat = *INT_STAT_REG;
         if (int_stat == 0) {
             continue;
         }
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (uint32_t intr_lock_stat = (*INT_LOCK_REG) & int_stat;))
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (CLEAR_BIT(*INT_LOCK_REG, intr_lock_stat);))
+        IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (uint32_t intr_lock_stat = (*INT_LOCK_REG) & int_stat;))
+        IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (CLEAR_BIT(*INT_LOCK_REG, intr_lock_stat);))
         for (uint8_t j = 0; j < 16; ++j) {
             exti_edge_t edge = INT_EDGE_NONE;
             if ((1 << j) & int_stat) {
@@ -299,7 +296,7 @@ static void gpio_vcore_isr(const struct device *dev)
                 *INT_CLR_REG = 0;
             }
         }
-        IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (SET_BIT(*INT_LOCK_REG, intr_lock_stat);))
+        IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (SET_BIT(*INT_LOCK_REG, intr_lock_stat);))
     }
     for (uint8_t i = 0; i < data->count; i++) {
         port_dev = data->ports[i];
@@ -338,14 +335,12 @@ static int gpio_ls_port_set_masked_raw(const struct device *dev, gpio_port_pins_
     const uint16_t dos = target_pins | (port_value & ~mask);
     bool ret;
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_GPIO_CFG_LOCK)
     do {
         CLEAR_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);
         gpio_val->DOC_DOS = dos | (~dos << 16);
         SET_BIT(sec_gpio_cfg->LOCK, mask & 0xffff);
         ret = ((gpio_val->DOC_DOS & target_pins) == target_pins);
-        IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                    (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
     } while (!ret);
 #else
     gpio_val->DOC_DOS = dos | (~dos << 16);
@@ -369,7 +364,7 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
     __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     bool ret;
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_GPIO_CFG_LOCK)
     do {
         CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         if ((pins << 16) & gpio_cfg->OD_FIR) {
@@ -378,8 +373,6 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
         gpio_val->DOC_DOS = pins & 0xffff;
         SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         ret = ((gpio_val->DOC_DOS & pins) == pins);
-        IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                    (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
     } while (!ret);
 #else
     if ((pins << 16) & gpio_cfg->OD_FIR) {
@@ -406,7 +399,7 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
     __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     bool ret;
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+#if defined(CONFIG_GPIO_CFG_LOCK)
     do {
         CLEAR_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         gpio_val->DOC_DOS = pins << 16;
@@ -415,8 +408,6 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
         }
         SET_BIT(sec_gpio_cfg->LOCK, pins & 0xffff);
         ret = ((gpio_val->DOC_DOS & pins) == 0);
-        IF_DISABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay),
-                    (if (!ret) { LOG_ERR("%s:%d: operation fail", __func__, __LINE__); }))
     } while (!ret);
 #else
     gpio_val->DOC_DOS = pins << 16;
@@ -451,59 +442,72 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
                                            enum gpio_int_mode mode,
                                            enum gpio_int_trig trig)
 {
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    reg_sec_pmu_rg_t *PMU = SEC_PMU;
+#else
+    reg_app_pmu_rg_t *PMU = APP_PMU;
+#endif
     const struct gpio_ls_config *cfg = dev->config;
-    struct gpio_ls_data *data = dev->data;
     __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
     __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
     uint8_t pincode;
     uint8_t port;
-    exti_edge_t edge;
-    gpio_port_value_t value;
-    bool fire_callback = false;
 
     port = get_gpio_port_id((uint32_t)gpio_cfg);
     pincode = LSPIN(port, pin);
 
-    if (mode != GPIO_INT_MODE_DISABLED) {
-        if (mode == GPIO_INT_MODE_EDGE) {
+    if (!(mode & GPIO_INT_DISABLE)) {
+        if (mode & GPIO_INT_EDGE) {
             if (trig == GPIO_INT_TRIG_BOTH) {
-                edge = INT_EDGE_BOTH;
-                fire_callback = true;
+                IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (CLEAR_BIT(SEC_PMU->GPIO_INTR_LOCK[port], 1<<port|1<<16<<port);))
+                if (!(mode & GPIO_INT_ENABLE_DISABLE_ONLY)) {
+                    SET_BIT(APP_PMU->GPIO_INTR_CLR[port], 1<<pin|1<<16<<pin);
+                }
+                SET_BIT(PMU->GPIO_INTR_MSK[port], 1<<pin|1<<16<<pin);
             } else if (trig == GPIO_INT_TRIG_HIGH) {
-                edge = INT_EDGE_RISING;
-                gpio_port_get_raw(dev, &value);
-                if (value & BIT(pin)) {
-                    fire_callback = true;
+                IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (CLEAR_BIT(SEC_PMU->GPIO_INTR_LOCK[port], 1<<port);))
+                if (!(mode & GPIO_INT_ENABLE_DISABLE_ONLY)) {
+                    SET_BIT(APP_PMU->GPIO_INTR_CLR[port], 1<<pin);
                 }
+                MODIFY_REG(PMU->GPIO_INTR_MSK[port], 1<<16<<pin, 1<<pin);
             } else {
-                edge = INT_EDGE_FALLING;
-                gpio_port_get_raw(dev, &value);
-                if (0 == (value & BIT(pin))) {
-                    fire_callback = true;
+                IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (CLEAR_BIT(SEC_PMU->GPIO_INTR_LOCK[port], 1<<16<<port);))
+                if (!(mode & GPIO_INT_ENABLE_DISABLE_ONLY)) {
+                    SET_BIT(APP_PMU->GPIO_INTR_CLR[port], 1<<16<<pin);
                 }
+                MODIFY_REG(PMU->GPIO_INTR_MSK[port], 1<<pin, 1<<16<<pin);
             }
         } else {
+            LOG_ERR("level interrupt is not support");
             return -ENOTSUP;
         }
     } else {
-        edge = INT_EDGE_DISABLE;
+        CLEAR_BIT(PMU->GPIO_INTR_MSK[port], 1<<pin|1<<16<<pin);
     }
 
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_exti_clr_cfg_lock(pincode, edge, false);))
-    COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_sec_exti_config(pincode, edge);), (io_app_exti_config(pincode, edge);))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_exti_clr_cfg_lock(pincode, edge, true);))
-
-    if (fire_callback && (!sys_slist_is_empty(&data->callbacks))) {
-        gpio_fire_callbacks(&data->callbacks, dev, edge);
+    if (!(mode & GPIO_INT_ENABLE_DISABLE_ONLY)) {
+        WRITE_REG(APP_PMU->GPIO_INTR_CLR[port], 0);
     }
+
+#if defined(CONFIG_GPIO_INTR_LOCK)
+    if (mode & GPIO_INT_EDGE) {
+        if (trig == GPIO_INT_TRIG_BOTH) {
+            SET_BIT(SEC_PMU->GPIO_INTR_LOCK[port], 1<<port|1<<16<<port);
+        } else if (trig == GPIO_INT_TRIG_HIGH) {
+            SET_BIT(SEC_PMU->GPIO_INTR_LOCK[port], 1<<port);
+        } else {
+            SET_BIT(SEC_PMU->GPIO_INTR_LOCK[port], 1<<16<<port);
+        }
+    }
+#endif
 
     return 0;
 }
 
-static int gpio_ls_common_init(const struct device *dev)
+static int gpio_ls_exti_init(const struct device *dev)
 {
     ARG_UNUSED(dev);
-    gpio_ls_common_data.count = 0;
+    gpio_ls_exti_data.count = 0;
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     IRQ_CONNECT(DT_IRQ_BY_NAME(DT_INST(0, linkedsemi_lsqsh_pinctrl), cpu1, irq),
@@ -544,20 +548,18 @@ static const struct gpio_driver_api gpio_ls_driver_api = {
     .manage_callback = gpio_ls_manage_callback,
 };
 
-static const struct gpio_driver_api gpio_ls_common_driver_api = {
+static const struct gpio_driver_api gpio_ls_exti_driver_api = {
     .manage_callback = gpio_ls_manage_callback,
 };
 
-static const struct gpio_ls_common_config gpio_ls_common_config = {};
-
 DEVICE_DT_DEFINE(DT_INST(0, linkedsemi_lsqsh_pinctrl),
-                 gpio_ls_common_init,
+                 gpio_ls_exti_init,
                  NULL,
-                 &gpio_ls_common_data,
-                 &gpio_ls_common_config,
+                 &gpio_ls_exti_data,
+                 NULL,
                  PRE_KERNEL_1,
                  CONFIG_GPIO_INIT_PRIORITY,
-                 &gpio_ls_common_driver_api);
+                 &gpio_ls_exti_driver_api);
 
 #define GPIO_LS_DEFINE(index)                                                 \
     static struct gpio_ls_data ls_data_##index;                               \
@@ -570,7 +572,7 @@ DEVICE_DT_DEFINE(DT_INST(0, linkedsemi_lsqsh_pinctrl),
                                                                               \
     static int gpio_ls_port_init_##index(const struct device *dev)            \
     {                                                                         \
-        gpio_ls_add_port(&gpio_ls_common_data, dev);                          \
+        gpio_ls_add_port(&gpio_ls_exti_data, dev);                            \
         return 0;                                                             \
     }                                                                         \
                                                                               \

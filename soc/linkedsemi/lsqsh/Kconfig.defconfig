@@ -366,4 +366,18 @@ if DMA_DW
 		default 8
 endif
 
+if $(dt_path_enabled,/cpus/cpu@1)
+	config GPIO_CFG_LOCK
+		bool "GPIO_CFG_LOCK"
+		default y
+		help
+		GPIO_CFG_LOCK
+
+	config GPIO_INTR_LOCK
+		bool "GPIO_INTR_LOCK"
+		default y
+		help
+		GPIO_INTR_LOCK
+endif
+
 endif
