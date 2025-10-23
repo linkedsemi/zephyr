@@ -564,8 +564,8 @@
             };
 
         };
-        
-  
+
+
         sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x400a1800 0x400>;
@@ -1176,7 +1176,7 @@
             resets = <SPI3_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
-            dmas =<&dmac1 0 DMA_SPI3_RX>,<&dmac1 1 DMA_SPI3_TX>;
+            dmas =<&dmac1 0 DMA_SPI3_RX>,<&dmac1 0 DMA_SPI3_TX>;
             dma-names ="rx","tx";
             status = "disabled";
         };
