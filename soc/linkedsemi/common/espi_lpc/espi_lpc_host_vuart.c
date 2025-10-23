@@ -6,10 +6,9 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/sys/util.h>
-#include <core_rv32.h>
 #include <stdint.h>
 #include <espi_lpc_common.h>
-
+#include "cpu.h"
 #include "vuart_ls.h"
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
@@ -63,7 +62,6 @@ struct host_vuart_data {
   struct peri_ioport ioport[PORT_NUM];
   struct host_vuart_reg data_reg;
   struct k_spinlock lock;
-  atomic_t level_up_irq_active;
   bool is_lcr_avoid;
   bool use_virtual;
 };
@@ -97,29 +95,6 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
     return iir;
 }
 
-
-static void host_vuart_report_inactive_level_up_irq(const struct device *dev)
-{
-  const struct host_vuart_cfg *cfg = dev->config;
-  struct host_vuart_data *ptr_data = dev->data;
-
-    if (!ptr_data->use_virtual) {
-        return;
-    }
-
-    if ((host_vuart_calc_iir(dev) & 0xf) == IIR_NOPEND) {
-        if (cfg->up_irq && cfg->up_irq->type) {
-            if (atomic_test_and_clear_bit(&ptr_data->level_up_irq_active, 0)) {
-                espi_lpc_set_level_irq(cfg->parent, cfg->up_irq->idx, 0);
-            }
-        }
-    }
-}
-
-
-
-
-
 static void host_vuart_report_active_edge_level_up_irq(const struct device *dev)
 {
   const struct host_vuart_cfg *cfg = dev->config;
@@ -133,11 +108,7 @@ static void host_vuart_report_active_edge_level_up_irq(const struct device *dev)
         return;
     }
 
-    if (cfg->up_irq && (cfg->up_irq->type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH))) {
-        if (!atomic_test_and_set_bit(&ptr_data->level_up_irq_active, 0)) {
-            espi_lpc_set_level_irq(cfg->parent, cfg->up_irq->idx, 1);
-        }
-    } else if (cfg->up_irq) {
+    if (cfg->up_irq) {
         espi_lpc_raise_edge_irq(cfg->parent, cfg->up_irq->idx);
     }
 }
@@ -168,15 +139,13 @@ static void host_phy_irq_state_update(const struct device *dev)
         return;
     }
 
-    irq_disable(cfg->phy_irq);
+    clr_pending_irq(cfg->phy_irq);
 
-    pending = csi_vic_get_pending_irq(cfg->phy_irq) ? true : false;
+    pending = get_pending_irq(cfg->phy_irq) ? true : false;
     if (!pending) {
-        if (cfg->up_irq->type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH)) {
-            espi_lpc_set_level_irq(cfg->parent, cfg->up_irq->idx, 0);
-        }
+
+        irq_enable(cfg->phy_irq);
     }
-    irq_enable(cfg->phy_irq);
 }
 
 
@@ -189,11 +158,7 @@ static void host_phy_isr(const void *arg)
     if (!cfg->up_irq) {
         return;
     }
-    if (cfg->up_irq->type & (IRQ_TYPE_LEVEL_LOW | IRQ_TYPE_LEVEL_HIGH)) {
-        espi_lpc_set_level_irq(cfg->parent, cfg->up_irq->idx, 1);
-    } else {
-        espi_lpc_raise_edge_irq(cfg->parent, cfg->up_irq->idx);
-    }
+    espi_lpc_raise_edge_irq(cfg->parent, cfg->up_irq->idx);
 }
 
 
@@ -211,7 +176,6 @@ int host_vuart_set_mode(const struct device *dev, bool virtual)
         if (cfg->phy_irq) {
             irq_disable(cfg->phy_irq);
         }
-        atomic_clear_bit(&d->level_up_irq_active, 0);
     } else {
         if (!cfg->reg || !cfg->phy_irq) {
             ret = -ENODEV;
@@ -257,7 +221,6 @@ static void host_vuart_reg0_read(const struct peri_ioport_content *ioport, uint8
         *val = ptr_data->data_reg.dll;
     } else if (host_vuart_rx_available(cfg->vuart)) {
         ls_vuart_get_tx_char(cfg->vuart, val);
-        host_vuart_report_inactive_level_up_irq(dev);
     }
 }
 
@@ -563,15 +526,14 @@ static void host_vuart_reg7_write(const struct peri_ioport_content *ioport, uint
 
 static int host_vuart_init(const struct device *dev)
 {
-  const struct host_vuart_cfg *cfg = dev->config;
-  struct host_vuart_data *ptr_data = dev->data;
+    const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
 
-  if (!device_is_ready(cfg->parent) || !device_is_ready(cfg->vuart)) {
-    LOG_ERR("parent or vuart not ready");
-    return -ENODEV;
+    if (!device_is_ready(cfg->parent) || !device_is_ready(cfg->vuart)) {
+        LOG_ERR("parent or vuart not ready");
+        return -ENODEV;
 	}
- int ret = 0;
-    ptr_data->level_up_irq_active = ATOMIC_INIT(0);
+    int ret = 0;
 
     ptr_data->use_virtual = true;
     ptr_data->is_lcr_avoid = false;

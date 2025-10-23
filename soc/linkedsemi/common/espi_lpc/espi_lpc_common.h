@@ -57,8 +57,6 @@ struct upstream_irq_type {
 
 #define UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst) UPSTREAM_IRQ_DT_CONFIG_GET(DT_DRV_INST(inst))
 
-#define UP_IRQ_EDGE_TYPE 0
-
 struct espi_lpc_ls_config {
 	void (*irq_config_func)(const struct device *);
     void *reg;
