@@ -77,13 +77,7 @@ static int kcs_ls_write_data(const struct device *dev,uint8_t data)
     k_spin_unlock(&dev_data->lock,key);
     if(ret == 0 && cfg->up_irq)
     {
-        if(cfg->up_irq->type == UP_IRQ_EDGE_TYPE)
-        {
-            espi_lpc_raise_edge_irq(dev,cfg->up_irq->idx);
-        }else
-        {
-            espi_lpc_set_level_irq(dev,cfg->up_irq->idx,1);
-        }
+        espi_lpc_raise_edge_irq(dev,cfg->up_irq->idx);
     }
     return ret;
 }
@@ -145,15 +139,10 @@ static void data_io_read(const struct peri_ioport_content *ioport,uint8_t size,v
     uint8_t *val = res;
     struct device *dev = ioport->ctx;
     struct kcs_ls_data *dev_data = dev->data;
-    const struct kcs_ls_config *cfg = dev->config;
     k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
 	*val = dev_data->data_out;
 	dev_data->status &= ~KCS_OBF;
     k_spin_unlock(&dev_data->lock,key);
-    if(cfg->up_irq&&cfg->up_irq->type!=UP_IRQ_EDGE_TYPE)
-    {
-        espi_lpc_set_level_irq(dev,cfg->up_irq->idx,0);
-    }
 }
 
 static void data_io_write(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
