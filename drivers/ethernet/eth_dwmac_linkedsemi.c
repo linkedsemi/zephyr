@@ -37,6 +37,10 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #endif
 
 struct eth_linkedsemi_config {
+    mem_addr_t base_addr;
+    struct dwmac_dma_desc *tx_descs;
+    struct dwmac_dma_desc *rx_descs;
+    bool mdio_reset_mac;
     void (*irq_config_func)(const struct device *dev);
     void (*irq_deconfig_func)(const struct device *dev);
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
@@ -50,6 +54,11 @@ int dwmac_bus_init(struct dwmac_priv *p)
     const struct device *const dev = p->dev;
     const struct eth_linkedsemi_config *dev_config = dev->config;
     __maybe_unused int ret;
+
+    p->base_addr = dev_config->base_addr;
+    p->tx_descs = dev_config->tx_descs;
+    p->rx_descs = dev_config->rx_descs;
+    p->mdio_reset_mac = dev_config->mdio_reset_mac;
 
 #if defined(CONFIG_MDIO_RESET_MAC)
     if (!p->mdio_reset_mac) {
@@ -209,6 +218,11 @@ BUILD_ASSERT(CONFIG_NOCACHE_MEMORY, "descriptors are placed in nocache section")
     IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(index)));                                     \
     LINKEDSEMI_ETH_IRQ_HANDLER(index)                                                                \
     static const struct eth_linkedsemi_config eth_linkedsemi_cfg_##index = {                         \
+        .base_addr = (uint32_t)DT_INST_REG_ADDR(index),                                              \
+        .tx_descs = dwmac_tx_descs_##index,                                                          \
+        .rx_descs = dwmac_rx_descs_##index,                                                          \
+        .mdio_reset_mac = DT_NODE_HAS_COMPAT(DT_INST_PARENT(index), snps_dwmac_mdio)                 \
+                       && DT_NODE_HAS_STATUS_OKAY(DT_INST_PARENT(index)),                            \
         .irq_config_func = eth_linkedsemi_irq_config_func_##index,                                   \
         .irq_deconfig_func = eth_linkedsemi_irq_deconfig_func_##index,                               \
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), ))                \
@@ -216,13 +230,7 @@ BUILD_ASSERT(CONFIG_NOCACHE_MEMORY, "descriptors are placed in nocache section")
         IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
         .phy_dev = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(index, phy_handle)),                        \
     };                                                                                               \
-    static struct dwmac_priv dwmac_instance_##index = {                                              \
-        .base_addr = (uint32_t)DT_INST_REG_ADDR(index),                                              \
-        .tx_descs = dwmac_tx_descs_##index,                                                          \
-        .rx_descs = dwmac_rx_descs_##index,                                                          \
-        .mdio_reset_mac = DT_NODE_HAS_COMPAT(DT_INST_PARENT(index), snps_dwmac_mdio)                 \
-                       && DT_NODE_HAS_STATUS_OKAY(DT_INST_PARENT(index)),                            \
-    };                                                                                               \
+    static struct dwmac_priv dwmac_instance_##index;                                                 \
     ETH_NET_DEVICE_DT_INST_DEFINE(index,                                                             \
                                   dwmac_init,                                                        \
                                   NULL,                                                              \
