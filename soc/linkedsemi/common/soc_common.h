@@ -27,16 +27,11 @@ struct delegate_c2s_params
 	enum delegate_server_op op;
 };
 
-struct flash_ls_data {
-	struct hal_flash_env env;
-	struct k_sem sem;
-	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
-    struct k_sem delegate_sem;
-	struct k_work worker;
-	const struct device *dev;
-	struct delegate_c2s_params req_param;
-	bool requested_suspending;
-	#endif
+struct flash_ls_shared_data
+{
+	void *reg;
+	volatile bool busy;
+	volatile bool suspend_request;
 };
 
 enum delegate_client_op
@@ -54,11 +49,12 @@ struct flash_op_return
 
 struct delegate_s2c_params
 {
-	struct flash_ls_data *server;
+	struct flash_ls_shared_data *shared;
 	struct flash_op_return ret;
 	enum delegate_client_op op;
 };
 
 #define FLASH_DRIVER_SUSPEND_OPCODE 0x8001
 #define FLASH_DRIVER_RESUME_OPCODE 0x8002
+#define FLASH_DRIVER_CLIENT_XIP_ACTIVE 0x8003
 #endif
