@@ -270,6 +270,6 @@ void ls_vuart_register_tx_start_callback(const struct device *vuart,
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, &vuart_init, NULL, &vuart_ls_data_##inst,                      \
 			      &vuart_ls_cfg_##inst, POST_KERNEL,                                   \
-			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &vuart_api);
+			      CONFIG_VUART_INIT_PRIORITY, &vuart_api);
 
 DT_INST_FOREACH_STATUS_OKAY(VUART_INIT)

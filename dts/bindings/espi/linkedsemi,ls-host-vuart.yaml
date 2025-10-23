@@ -1,9 +1,9 @@
 # linkedsemi,ls-host-vuart.yaml
-description: LINKEDSEMI eSPI Host vUART
+description: LINKEDSEMI Host vUART
 
 compatible: "linkedsemi,ls-host-vuart"
 
-include: [base.yaml]
+include: [uart-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   port:
@@ -14,7 +14,7 @@ properties:
   target:
     type: phandle
     required: true
-    description: "Phandle to the target virtual UART device"
+    description: "Phandle to the target virtual host UART device"
 
   up-irq:
     type: array

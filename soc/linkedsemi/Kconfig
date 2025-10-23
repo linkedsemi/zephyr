@@ -5,6 +5,15 @@ config ESPI_LPC
     bool
     default y if ESPI || LPC
 
+config ESPI_LPC_HOST_VUART
+    bool "Linkedsemi ESPI_LPC_HOST_VUART VUART (Zephyr port of linux_espi-master)"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LS_HOST_VUART_ENABLED
+    depends on ESPI_LPC
+
+    help
+        Enable Host-side VUART using Zephyr APIs, ported from linux_espi-master.
+
 rsource "*/Kconfig"
 
 endif
