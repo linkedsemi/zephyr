@@ -32,6 +32,7 @@ struct flash_ls_config {
 	#if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 	const struct mbox_dt_spec mbox_tx;
 	const struct mbox_dt_spec mbox_rx;
+	struct flash_ls_shared_data *shared;
 	#endif
 	struct flash_parameters params;
 	void *reg;
@@ -45,20 +46,28 @@ struct flash_ls_config {
 	uint8_t attr_num;
 };
 
+struct flash_ls_data {
+	struct hal_flash_env env;
+	struct k_sem sem;
+	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
+    struct k_sem delegate_sem;
+	struct k_work worker;
+	const struct device *dev;
+	struct delegate_c2s_params req_param;
+	bool client_xip_active;
+	#endif
+};
+
 uint8_t flash_ls_read_ear(const struct device *dev);
 
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
-static bool is_app_cpu_xip_in_sec_flash(void)
-{
-	return (CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE));
-}
 
 static void flash_delegation_server_operation_sync(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
 	const struct flash_ls_config *cfg = dev->config;
 	struct delegate_s2c_params param = {
-		.server = priv,
+		.shared = cfg->shared,
 		.op = FLASH_DELEGATE_CLIENT_HOLD,
 	};
 	struct mbox_msg msg = {
@@ -66,12 +75,15 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 		.size = sizeof(param),
 	};
 
-	if ((!is_app_cpu_running()) || (!is_app_cpu_xip_in_sec_flash())) {
+	if (!priv->client_xip_active) {
 		return;
 	}
 
 	mbox_send_dt(&cfg->mbox_tx,&msg);
-	k_sem_take(&priv->delegate_sem,K_FOREVER);
+	if(k_sem_take(&priv->delegate_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT))==-EAGAIN)
+	{
+		priv->client_xip_active = false;
+	}
 }
 
 int flash_ls_get_part_info(const struct device *dev, uint8_t idx, uint32_t *base,
@@ -164,7 +176,7 @@ static void delegation_server_work_handler(struct k_work *work)
 	struct flash_ls_data *priv = CONTAINER_OF(work,struct flash_ls_data,worker);
 	struct delegate_s2c_params param;
 	const struct flash_ls_config *cfg = priv->dev->config;
-	param.server = priv;
+	param.shared = cfg->shared;
 	param.op = FLASH_DELEGATE_CLIENT_OP_RETURN;
 	switch(priv->req_param.op)
 	{
@@ -242,6 +254,28 @@ static void delegation_server_work_handler(struct k_work *work)
 	mbox_send_dt(&cfg->mbox_tx,&msg);
 }
 
+static int busy_poll_false(volatile bool *ptr,uint32_t usec_to_wait)
+{
+	uint32_t start_cycles = k_cycle_get_32();
+	uint32_t cycles_to_wait = k_us_to_cyc_ceil32(usec_to_wait);
+	int ret;
+	for (;;) {
+		uint32_t current_cycles = k_cycle_get_32();
+
+		/* this handles the rollover on an unsigned 32-bit value */
+		if ((current_cycles - start_cycles) >= cycles_to_wait) {
+			ret = -ETIME;
+			break;
+		}
+		if(!*ptr)
+		{
+			ret = 0;
+			break;
+		}
+	}
+	return ret;
+}
+
 static void delegation_server_mbox_handler(const struct device *dev,struct mbox_msg *data)
 {
 	const struct delegate_c2s_params *req = data->data;
@@ -255,8 +289,8 @@ static void delegation_server_mbox_handler(const struct device *dev,struct mbox_
 	switch(priv->req_param.op)
 	{
 	case FLASH_DELEGATE_SERVER_SUSPEND:
-		priv->requested_suspending = true;
-		while(priv->requested_suspending);
+		cfg->shared->suspend_request = true;
+		busy_poll_false(&cfg->shared->suspend_request,CONFIG_FLASH_DELEGATION_SUSPEND_TIMEOUT);
 	break;
 	case FLASH_DELEGATE_SERVER_HOLD_ACK:
 		k_sem_give(&priv->delegate_sem);
@@ -277,8 +311,22 @@ static void delegation_server_mbox_callback(const struct device *dev,
 {
 	DT_INST_FOREACH_STATUS_OKAY(DELEGATION_SERVER_MBOX_CALLBACK);
 }
+#define DELEGATE_SERVER_OP_START(dev)\
+	do{\
+		const struct flash_ls_config *cfg = dev->config;\
+		cfg->shared->busy = true;\
+		flash_delegation_server_operation_sync(dev);\
+	}while(0);
+
+#define DELEGATE_SERVER_OP_END(dev)\
+	do{\
+		const struct flash_ls_config *cfg = dev->config;\
+		cfg->shared->busy = false;\
+	}while(0);
+
 #else
-static void flash_delegation_server_operation_sync(const struct device *dev){}
+#define DELEGATE_SERVER_OP_START(dev)
+#define DELEGATE_SERVER_OP_END(dev)
 #endif
 
 static int flash_ls_init(const struct device *dev)
@@ -298,6 +346,7 @@ static int flash_ls_init(const struct device *dev)
 	mbox_set_enabled_dt(&cfg->mbox_tx,true);
 	mbox_register_callback_dt(&cfg->mbox_rx,delegation_server_mbox_callback,NULL);
 	mbox_set_enabled_dt(&cfg->mbox_rx,true);
+	cfg->shared->reg = cfg->reg;
 	priv->dev = dev;
 	#endif
     IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, 0);
@@ -318,12 +367,12 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
-	flash_delegation_server_operation_sync(dev);
+	DELEGATE_SERVER_OP_START(dev);
 	/* Erase sector one by one*/
     for (off_t addr = offset; addr < offset + size; addr += FLASH_SECTOR_SIZE) {
         hal_flashx_sector_erase(&priv->env,addr);
     }
-    
+    DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -344,7 +393,7 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
-	flash_delegation_server_operation_sync(dev);
+	DELEGATE_SERVER_OP_START(dev);
     while (size) {
 		/* If the offset isn't a multiple of the page size, we first need
 		 * to write the remaining part that fits, otherwise the write could
@@ -357,6 +406,7 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 		offset += len;
 		size -= len;
 	}
+    DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
 
@@ -376,8 +426,9 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
-	flash_delegation_server_operation_sync(dev);
+	DELEGATE_SERVER_OP_START(dev);
     hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
+    DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
 
@@ -393,8 +444,9 @@ uint8_t flash_ls_read_ear(const struct device *dev)
 		return -EACCES;
 	}
 
-	flash_delegation_server_operation_sync(dev);
+	DELEGATE_SERVER_OP_START(dev);
 	ret = hal_flashx_read_ear(&priv->env);
+    DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
 
@@ -432,8 +484,9 @@ static int flash_ls_read_jedec_id(const struct device *dev,
 		return -EACCES;
 	}
 
-	flash_delegation_server_operation_sync(dev);
+	DELEGATE_SERVER_OP_START(dev);
 	hal_flashx_read_id(&priv->env,id);
+    DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -447,8 +500,9 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
-	flash_delegation_server_operation_sync(dev);
+	DELEGATE_SERVER_OP_START(dev);
 	hal_flashx_read_sfdp(&priv->env,offset,data,len);
+    DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -468,6 +522,11 @@ __ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
 	case FLASH_DRIVER_RESUME_OPCODE:
 		hal_flashx_prog_erase_resume_isr(&priv->env);
 	break;
+#if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
+	case FLASH_DRIVER_CLIENT_XIP_ACTIVE:
+		priv->client_xip_active = true;
+	break;
+#endif
 	}
 	return 0;
 }
@@ -515,6 +574,8 @@ static struct flash_driver_api flash_ls_api = {
 #define LS_FLASH_INIT(idx) \
 	struct flash_partition_attr attr_partition_##idx[] =\
 		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};\
+	IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (__attribute__((section("SHMEM")))\
+	static struct flash_ls_shared_data flash_ls_shared_data_##idx;)) \
 	static const struct flash_ls_config flash_ls_cfg_##idx = {\
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
 		.dual_mode_only = !DT_INST_PROP(idx,quad),\
@@ -527,8 +588,8 @@ static struct flash_driver_api flash_ls_api = {
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CHILD)\
 		.attr = attr_partition_##idx,\
 		.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions)),\
+		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (.shared = &flash_ls_shared_data_##idx,))\
 	};\
-	IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (__attribute__((section("SHMEM"))))) \
 	static struct flash_ls_data flash_ls_data_##idx;\
 	DEVICE_DT_INST_DEFINE(idx,flash_ls_init,NULL,\
 		&flash_ls_data_##idx,&flash_ls_cfg_##idx,POST_KERNEL,\

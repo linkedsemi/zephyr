@@ -27,6 +27,17 @@ endif
 config FLASH_OP_DELEGATION_SERVER
 	bool "Flash Operation Delegation Server"
 
+config FLASH_DELEGATION_SYNC_TIMEOUT
+	int "Flash Delegation Sync Timeout (ms)"
+	default 100
+	depends on FLASH_OP_DELEGATION_SERVER
+
+config FLASH_DELEGATION_SUSPEND_TIMEOUT
+	int "Flash Delegation Suspend Timeout (us)"
+	default 5000
+	depends on FLASH_OP_DELEGATION_SERVER
+
+
 config SOC_FLASH_LS_DELEGATION_CLIENT
 	default y
 	bool "linkedsemi ls flash delegation client"
@@ -39,3 +50,8 @@ config SOC_FLASH_LS_DELEGATION_CLIENT
 	select FLASH_HAS_EX_OP
 	select FLASH_EX_OP_ENABLED
 	select FLASH_OP_DELEGATION_SERVER
+
+config FLASH_DELEGATION_CLIENT_SUSPEND_REQUEST
+	default y
+	bool "delegation client flash suspend request"
+	depends on SOC_FLASH_LS_DELEGATION_CLIENT

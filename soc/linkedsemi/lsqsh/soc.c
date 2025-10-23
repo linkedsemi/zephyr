@@ -710,8 +710,13 @@ void soc_early_init_hook(void)
     return;
 }
 
-__maybe_unused
-static void boot_cpu2()
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+__maybe_unused static bool is_app_cpu_xip_in_sec_flash(void)
+{
+    return (CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE));
+}
+
+__maybe_unused static void boot_cpu2()
 {
     if (is_app_cpu_running()) {
         return;
@@ -786,12 +791,14 @@ static void boot_cpu2()
 #endif /* CONFIG_IMAGE_HEADER */
 }
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-void soc_late_init_hook(void)
+__maybe_unused void soc_late_init_hook(void)
 {
     REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
 #if defined(CONFIG_BOOT_CPU2)
+    if (is_app_cpu_xip_in_sec_flash()) {
+        flash_ex_op(DEVICE_DT_GET(DT_NODELABEL(qspi1)),FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
+    }
     boot_cpu2();
 #endif /* CONFIG_BOOT_CPU2 */
 }

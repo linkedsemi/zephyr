@@ -19,14 +19,14 @@ struct flash_ls_client_config {
 struct flash_ls_client_data {
     struct k_sem sem;
     struct k_sem op_return_sem;
-    struct flash_ls_data *server;
+    struct flash_ls_shared_data *shared;
 	struct flash_op_return ret;
     uint8_t suspend_count;
 };
 
 __ramfunc static void client_polling(struct flash_ls_client_data *priv)
 {
-    while(k_sem_count_get(&priv->server->sem)==0);
+    while(priv->shared->busy);
 }
 
 static void delegation_client_mbox_handler(const struct device *dev,struct mbox_msg *data)
@@ -34,7 +34,7 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
 	const struct delegate_s2c_params *req = data->data;
 	struct flash_ls_client_data *priv = dev->data;
 	const struct flash_ls_client_config *cfg = dev->config;
-	if(cfg->reg != req->server->env.reg)
+	if(cfg->reg != req->shared->reg)
 	{
 		return;
 	}
@@ -43,7 +43,7 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
 	{
 	case FLASH_DELEGATE_CLIENT_HOLD:
 	{
-        priv->server = req->server;
+        priv->shared = req->shared;
 		struct delegate_c2s_params param = {
 			.reg = cfg->reg,
 			.op = FLASH_DELEGATE_SERVER_HOLD_ACK,
@@ -54,7 +54,7 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
 		};
 		mbox_send_dt(&cfg->mbox_tx,&msg);
 		client_polling(priv);
-        priv->server = NULL;
+        priv->shared = NULL;
 	}break;
 	case FLASH_DELEGATE_CLIENT_OP_RETURN:
         k_sem_give(&priv->op_return_sem);
@@ -303,6 +303,7 @@ static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
 #endif /* CONFIG_FLASH_JESD216_API */
 
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
+#if defined(CONFIG_FLASH_DELEGATION_CLIENT_SUSPEND_REQUEST)
 __ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t code,
 			  const uintptr_t in, void *out)
 {
@@ -311,7 +312,7 @@ __ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t co
 	switch(code)
 	{
 	case FLASH_DRIVER_SUSPEND_OPCODE:
-        if(priv->server)
+        if(priv->shared)
         {
             if(priv->suspend_count==0)
             {
@@ -324,24 +325,31 @@ __ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t co
 					.size = sizeof(param),
 				};
 				mbox_send_dt(&cfg->mbox_tx,&msg);
-                while(priv->server->requested_suspending==false);
+                while(priv->shared->suspend_request==false);
             }
             priv->suspend_count++;
         }
 	break;
 	case FLASH_DRIVER_RESUME_OPCODE:
-        if(priv->server)
+        if(priv->shared)
         {
             priv->suspend_count--;
             if(priv->suspend_count==0)
             {
-                priv->server->requested_suspending = false;
+                priv->shared->suspend_request = false;
             }
         }
 	break;
 	}
 	return 0;
 }
+#else
+__ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t code,
+			  const uintptr_t in, void *out)
+{
+	return 0;
+}
+#endif
 #endif
 
 static struct flash_driver_api flash_ls_client_api = {
