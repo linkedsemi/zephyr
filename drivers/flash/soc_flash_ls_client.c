@@ -139,7 +139,6 @@ static int flash_ls_client_write(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-    sys_cache_data_flush_range((void *)data, size);
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
@@ -170,16 +169,103 @@ static int flash_ls_client_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-	if (IS_ALIGNED((uint32_t)data, CONFIG_DCACHE_LINE_SIZE) && IS_ALIGNED(size, CONFIG_DCACHE_LINE_SIZE)) {
-		sys_cache_data_invd_range((void *)data, size);
-	} else {
-		sys_cache_data_flush_and_invd_range((void *)data, size);
-	}
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
 	k_sem_give(&priv->sem);
 	return ret;
+}
+
+static int flash_op_align(const struct device *dev, off_t offset, void *data, size_t len, bool is_write)
+{
+    __aligned(CONFIG_DCACHE_LINE_SIZE) uint8_t buf_align[CONFIG_DCACHE_LINE_SIZE];
+    uint8_t *user_ptr = (uint8_t *)data;
+    size_t remain = len;
+    off_t current_offset = offset;
+    int ret;
+
+    /* Handle misaligned start portion */
+    if (((uintptr_t)user_ptr % CONFIG_DCACHE_LINE_SIZE) != 0) {
+        size_t misaligned = CONFIG_DCACHE_LINE_SIZE - ((uintptr_t)user_ptr % CONFIG_DCACHE_LINE_SIZE);
+        size_t chunk = (remain < misaligned) ? remain : misaligned;
+
+        /* only require (0 == (buf size % CONFIG_DCACHE_LINE_SIZE)).  do not require (0 == (chunk size % CONFIG_DCACHE_LINE_SIZE)) */
+        if (is_write) {
+            memcpy(buf_align, user_ptr, chunk);
+            sys_cache_data_flush_range((void *)buf_align, sizeof(buf_align));
+            ret = flash_ls_client_write(dev, current_offset, buf_align, chunk);
+        } else {
+            sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+            ret = flash_ls_client_read(dev, current_offset, buf_align, chunk);
+            if (!ret) {
+                sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+                memcpy(user_ptr, buf_align, chunk);
+            }
+        }
+        if (ret) {
+            return ret;
+        }
+
+        user_ptr += chunk;
+        current_offset += chunk;
+        remain -= chunk;
+
+        if (0 == remain) {
+            return 0;
+        }
+    }
+
+    /* Handle aligned middle portion */
+    size_t aligned_len = remain & (~(CONFIG_DCACHE_LINE_SIZE - 1));
+    if (aligned_len > 0) {
+        if (is_write) {
+                sys_cache_data_flush_range((void *)user_ptr, aligned_len);
+                ret = flash_ls_client_write(dev, current_offset, user_ptr, aligned_len);
+        } else {
+                sys_cache_data_invd_range((void *)user_ptr, aligned_len);
+                ret = flash_ls_client_read(dev, current_offset, user_ptr, aligned_len);
+                sys_cache_data_invd_range((void *)user_ptr, aligned_len);
+        }
+        if (ret != 0) {
+            return ret;
+        }
+
+        user_ptr += aligned_len;
+        current_offset += aligned_len;
+        remain -= aligned_len;
+    }
+
+    /* Handle remain unaligned end portion */
+    if (remain > 0) {
+        if (is_write) {
+            memcpy(buf_align, user_ptr, remain);
+            sys_cache_data_flush_range((void *)buf_align, sizeof(buf_align));
+            ret = flash_ls_client_write(dev, current_offset, buf_align, remain);
+        } else {
+            sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+            ret = flash_ls_client_read(dev, current_offset, buf_align, remain);
+            if (0 == ret) {
+                sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+                memcpy(user_ptr, buf_align, remain);
+            }
+        }
+        if (ret != 0) {
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
+static int flash_ls_client_read_align(const struct device *dev, off_t offset, void *data, size_t len)
+{
+    return flash_op_align(dev, offset, data, len, false);
+}
+
+static int flash_ls_client_write_align(const struct device *dev, off_t offset, const void *data, size_t len)
+{
+    /* Note: const qualifier removed safely for internal operation */
+    return flash_op_align(dev, offset, (void *)data, len, true);
 }
 
 uint8_t flash_ls_client_read_ear(const struct device *dev)
@@ -240,33 +326,38 @@ static void flash_ls_client_layout(const struct device *dev,
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
 #if defined(CONFIG_FLASH_JESD216_API)
-static int flash_ls_client_read_jedec_id(const struct device *dev,
-								uint8_t *id)
+static int flash_ls_client_read_jedec_id(const struct device *dev, uint8_t *id)
 {
-	struct flash_ls_client_data *priv = dev->data;
-	const struct flash_ls_client_config *cfg = dev->config;
+    struct flash_ls_client_data *priv = dev->data;
+    const struct flash_ls_client_config *cfg = dev->config;
+    __aligned(CONFIG_DCACHE_LINE_SIZE) uint8_t buf_align[CONFIG_DCACHE_LINE_SIZE];
 
-	if (id == NULL) {
-		return -EINVAL;
-	}
-	if (k_sem_take(&priv->sem, K_FOREVER)) {
-		return -EACCES;
-	}
+    if (id == NULL) {
+        return -EINVAL;
+    }
+    if (k_sem_take(&priv->sem, K_FOREVER)) {
+        return -EACCES;
+    }
     struct delegate_c2s_params param = {
-		.reg = cfg->reg,
-		.data = id,
-		.op = FLASH_DELEGATE_SERVER_READ_JEDEC_ID
-	};
-	struct mbox_msg msg = {
-		.data = &param,
-		.size = sizeof(param),
-	};
-	sys_cache_data_flush_and_invd_range((void *)id, 3);
-	mbox_send_dt(&cfg->mbox_tx,&msg);
-	k_sem_take(&priv->op_return_sem,K_FOREVER);
-	int ret = priv->ret.value;
-	k_sem_give(&priv->sem);
-	return ret;
+        .reg = cfg->reg,
+        .data = buf_align,
+        .op = FLASH_DELEGATE_SERVER_READ_JEDEC_ID
+    };
+    struct mbox_msg msg = {
+        .data = &param,
+        .size = sizeof(param),
+    };
+    sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+    mbox_send_dt(&cfg->mbox_tx,&msg);
+    k_sem_take(&priv->op_return_sem,K_FOREVER);
+    int ret = priv->ret.value;
+    k_sem_give(&priv->sem);
+    if (0 == ret) {
+        sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+        memcpy(id, buf_align, 3);
+    }
+
+    return ret;
 }
 
 static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
@@ -288,11 +379,6 @@ static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-	if (IS_ALIGNED((uint32_t)data, CONFIG_DCACHE_LINE_SIZE) && IS_ALIGNED(len, CONFIG_DCACHE_LINE_SIZE)) {
-		sys_cache_data_invd_range((void *)data, len);
-	} else {
-		sys_cache_data_flush_and_invd_range((void *)data, len);
-	}
 	mbox_send_dt(&cfg->mbox_tx,&msg);
     k_sem_take(&priv->op_return_sem,K_FOREVER);
 	int ret = priv->ret.value;
@@ -300,6 +386,36 @@ static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
 	return ret;
 }
 
+static int flash_ls_client_sfdp_read_align(const struct device *dev, off_t offset,
+                   void *data, size_t len)
+{
+    int ret = 0;
+
+    if ((0 == ((uintptr_t)data % CONFIG_DCACHE_LINE_SIZE)) && (0 == (len % CONFIG_DCACHE_LINE_SIZE))) {
+        sys_cache_data_invd_range((void *)data, len);
+        ret = flash_ls_client_sfdp_read(dev,offset,data,len);
+        sys_cache_data_invd_range((void *)data, len);
+    } else {
+        __aligned(CONFIG_DCACHE_LINE_SIZE) uint8_t buf_align[CONFIG_DCACHE_LINE_SIZE];
+        size_t read_len = 0;
+        size_t remain_len = len;
+        uint8_t *data_ptr = (uint8_t *)data;
+        while (remain_len) {
+            read_len = MIN(sizeof(buf_align), remain_len);
+            sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+            ret = flash_ls_client_sfdp_read(dev,offset,buf_align,read_len);
+            if (0 == ret) {
+                sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
+                memcpy(data_ptr, buf_align, read_len);
+            }
+            data_ptr += read_len;
+            offset += read_len;
+            remain_len -= read_len;
+        }
+    }
+
+    return ret;
+}
 #endif /* CONFIG_FLASH_JESD216_API */
 
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
@@ -354,15 +470,15 @@ __ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t co
 
 static struct flash_driver_api flash_ls_client_api = {
 	.erase = flash_ls_client_erase,
-	.write = flash_ls_client_write,
-	.read = flash_ls_client_read,
+	.write = flash_ls_client_write_align,
+	.read = flash_ls_client_read_align,
 	.get_parameters = flash_ls_client_get_parameters,
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 	.page_layout = flash_ls_client_layout,
 #endif
 #if defined(CONFIG_FLASH_JESD216_API)
 	.read_jedec_id = flash_ls_client_read_jedec_id,
-	.sfdp_read = flash_ls_client_sfdp_read,
+	.sfdp_read = flash_ls_client_sfdp_read_align,
 #endif
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
 	.ex_op = flash_ls_client_ex_op,
