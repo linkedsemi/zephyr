@@ -231,7 +231,6 @@ static int xhci_noop_command(const struct shell *sh, size_t argc, char **argv)
 }
 SHELL_CMD_REGISTER(xhci_noop_command, NULL, "test command ring and event ring", xhci_noop_command);
 
-
 static int slot_id = 0;
 
 static int xhci_alloc_dev(const struct shell *sh, size_t argc, char **argv)
@@ -247,7 +246,7 @@ SHELL_CMD_REGISTER(xhci_alloc_dev, NULL, "alloc device", xhci_alloc_dev);
 #include <stdlib.h>
 static int xhci_address_dev(const struct shell *sh, size_t argc, char **argv)
 {
-	int res = xhci_cmd_address_device(&hcd, slot_id, atoi(argv[1]));
+	int res = xhci_cmd_address_device(&hcd, slot_id, 1);
 	printk("xhci_address_dev res = %d.\n", res);
 	return 0;
 }
@@ -287,7 +286,7 @@ static int xhci_get_dev_desc(const struct shell *sh, size_t argc, char **argv)
 		.wIndex = 0x0,
 		.wLength = 64,
 	};
-	xfer_len = xhci_send_control_data(&hcd, slot_id, &setup, dev_desc, 64);
+	xfer_len = xhci_xfer_control(&hcd, slot_id, 0, &setup, dev_desc, 64);
 	xhci_cache_invalid(dev_desc, 64);
 
 	if (xfer_len >= 0)
@@ -315,7 +314,7 @@ static int xhci_get_config_desc(const struct shell *sh, size_t argc, char **argv
 		.wIndex = 0x0,
 		.wLength = 255,
 	};
-	xfer_len = xhci_send_control_data(&hcd, slot_id, &setup, config_desc, 255);
+	xfer_len = xhci_xfer_control(&hcd, slot_id, 0, &setup, config_desc, 255);
 	xhci_cache_invalid(config_desc, 255);
 
 	if (xfer_len >= 0)
@@ -366,7 +365,7 @@ static int xhci_get_string_desc(const struct shell *sh, size_t argc, char **argv
 		.wIndex = 0x409,
 		.wLength = 255,
 	};
-	xfer_len = xhci_send_control_data(&hcd, slot_id, &setup, string_desc, 255);
+	xfer_len = xhci_xfer_control(&hcd, slot_id, 0, &setup, string_desc, 255);
 	xhci_cache_invalid(string_desc, 255);
 
 	if (xfer_len >= 0)
@@ -378,6 +377,97 @@ static int xhci_get_string_desc(const struct shell *sh, size_t argc, char **argv
 }
 SHELL_CMD_REGISTER(xhci_get_string_desc, NULL, "xhci_get_string_desc", xhci_get_string_desc);
 
+static int xhci_control_transfer(const struct shell *sh, size_t argc, char **argv)
+{
+	static __attribute__((aligned(32)))  uint8_t dev_desc[64];
+	int xfer_len = 0;
+	struct usb_setup_packet setup = {
+		.bmRequestType = 0x81,
+		.bRequest = 0x6,
+		.wValue = 0x100,
+		.wIndex = 0x0,
+		.wLength = 64,
+	};
+
+	struct xhci_ep_config ep_config = {
+		.ep_addr = 0x82,
+		.ep_interval = 3,
+		.ep_mps = 64,
+		.ep_type = EP_CONTROL_BIDIR
+	};
+	xhci_cmd_add_endpoint(&hcd, slot_id, &ep_config);
+
+	xfer_len = xhci_xfer_control(&hcd, slot_id, 0x82, &setup, dev_desc, 64);
+	xhci_cache_invalid(dev_desc, 64);
+
+	if (xfer_len >= 0)
+	{
+		printk("device desc: ");
+		for (int i = 0; i < 64 - xfer_len; i++)
+		{
+			printk("0x%x ", dev_desc[i]);
+		}
+		printk("\n");
+	}
+	return 0;
+}
+SHELL_CMD_REGISTER(xhci_control_transfer, NULL, "xhci_control_transfer", xhci_control_transfer);
+
+static int xhci_bulk_in_transfer(const struct shell *sh, size_t argc, char **argv)
+{
+	/* Allowed to begin on a byte address boundary, However, user may find other alignments, such as 64-byte or 128-byte
+	alignments, to be more efficient and provide better performance */
+
+	static __attribute__((aligned(64))) uint8_t dev_desc[128];
+	int xfer_len = 0;
+
+	struct xhci_ep_config ep_config = {
+		.ep_addr = 0x83,
+		.ep_interval = 3,
+		.ep_mps = 512,
+		.ep_type = EP_BULK_IN
+	};
+	xhci_cmd_add_endpoint(&hcd, slot_id, &ep_config);
+	xfer_len = xhci_xfer_bulk(&hcd, slot_id, 0x83, dev_desc, 128);
+	xhci_cache_invalid(dev_desc, 128);
+
+	printk("xfer_len = %d.\n", xfer_len);
+	if (xfer_len >= 0)
+	{
+		printk("IN Data: ");
+		for (int i = 0; i < 128 - xfer_len; i++)
+		{
+			printk("0x%x ", dev_desc[i]);
+		}
+		printk("\n");
+	}
+
+	return 0;
+}
+SHELL_CMD_REGISTER(xhci_bulk_in_transfer, NULL, "xhci_bulk_in_transfer", xhci_bulk_in_transfer);
+
+static int xhci_bulk_out_transfer(const struct shell *sh, size_t argc, char **argv)
+{
+	uint8_t dev_desc[64];
+
+	for (int i = 0; i < 64; i++)
+	{
+		dev_desc[i] = i;
+	}
+
+	struct xhci_ep_config ep_config = {
+		.ep_addr = 0x4,
+		.ep_interval = 3,
+		.ep_mps = 512,
+		.ep_type = EP_BULK_OUT
+	};
+	xhci_cmd_add_endpoint(&hcd, slot_id, &ep_config);
+	xhci_xfer_bulk(&hcd, slot_id, 0x4, dev_desc, 64);
+
+	return 0;
+}
+SHELL_CMD_REGISTER(xhci_bulk_out_transfer, NULL, "xhci_bulk_out_transfer", xhci_bulk_out_transfer);
+
 static int xhci_show_dev_ctx(const struct shell *sh, size_t argc, char **argv)
 {
 	xhci_device_ctx_show(&hcd, slot_id);
@@ -388,7 +478,7 @@ SHELL_CMD_REGISTER(xhci_show_dev_ctx, NULL, "xhci_show_dev_ctx", xhci_show_dev_c
 static int xhci_noop_transfer(const struct shell *sh, size_t argc, char **argv)
 {	
 	/* test ep0 transfer ring */
-	if (xhci_send_noop(&hcd, slot_id, 0x80) == 0)
+	if (xhci_xfer_noop(&hcd, slot_id, 0x80, EP_CONTROL_BIDIR) == 0)
 		printk("transfer ring ok!!\n");
 	else
 		printk("transfer ring error!!\n");

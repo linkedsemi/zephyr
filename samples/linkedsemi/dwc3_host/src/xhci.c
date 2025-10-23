@@ -14,7 +14,7 @@
 #define SLOT_CTX_ROOT_STR(n)                    ((n) << 0)
 #define SLOT_CTX_SPEED(n)                       ((n) << 20)
 #define SLOT_CTX_ROOTHUB_PORT_NUM(n)            ((n) << 16)
-#define EP_ADDR_2_EP_IDX(addr) ((((addr & 0x0F) << 1)) + !!(addr & 0x80))
+#define EP_DIR_IN(ep)                           ((ep & 0x80) ? 1 : 0)
 
 enum XHCI_PLS
 {
@@ -228,12 +228,12 @@ static void xhci_enqueue_trb(struct xhci_hcd *xhci, struct xhci_ring *ring, stru
 static int xhci_command_submit(struct xhci_hcd *xhci, struct xhci_trb *trb)
 {
     xhci_enqueue_lock();
-
     xhci_enqueue_trb(xhci, &xhci->cmd_ring, trb);
     xhci_ring_cmd_doorbell(xhci);
     xhci_event_wait();
     *trb = xhci->evt_trb;
     xhci_enqueue_unlock();
+
     return 0;
 }
 
@@ -413,17 +413,28 @@ enum xhci_usb_speed xhci_get_port_speed(struct xhci_hcd *xhci, int port_id)
     return XHCI_OP_PORTSC_SPEED(xhci->op_reg->port[port_id].portsc);
 }
 
-int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_packet *req, void *data, uint32_t length)
+static int xhci_ep_2_index(uint8_t ep, xhci_ep_type_t type)
+{
+    /* index of endpoint contex */
+    if (type == EP_CONTROL_BIDIR)
+        ep = (ep & 0xf) * 2;
+    else
+        ep = (ep & 0xf) * 2 - (ep & 0x80 ? 0 : 1);
+    return ep;
+}
+
+int xhci_xfer_control(struct xhci_hcd *xhci, int slot, int ep, struct usb_setup_packet *req, void *data, uint32_t length)
 {
     int xfer_len = -1;
-    struct xhci_ring *ep0_ring = &xhci->device[slot].ep[0].ep_ring;
+    uint8_t ep_index = xhci_ep_2_index(ep, EP_CONTROL_BIDIR);
+    struct xhci_ring *ep_ring = &xhci->device[slot].ep[ep_index].ep_ring;
     struct xhci_generic_trb trb = {0};
 
     xhci_enqueue_lock();
     trb.field[0] = req->bmRequestType | req->bRequest << 8 | req->wValue << 16;
     trb.field[1] = req->wIndex | req->wLength << 16;
     trb.field[2] = 8;
-    trb.field[3] = TRB_TYPE(TRB_SETUP) | TRB_IDT | ep0_ring->cycle_bit;
+    trb.field[3] = TRB_TYPE(TRB_SETUP) | TRB_IDT | ep_ring->cycle_bit;
 
     if (data && length)
     {
@@ -432,7 +443,7 @@ int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_pac
         else
             trb.field[3] |= TRB_TRT(TRB_DATA_OUT);
     }
-    xhci_enqueue_trb(xhci, ep0_ring, (struct xhci_trb *)&trb);
+    xhci_enqueue_trb(xhci, ep_ring, (struct xhci_trb *)&trb);
 
     if (data && length)
     {
@@ -440,27 +451,27 @@ int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_pac
         trb.field[0] = (size_t)data;
         trb.field[1] = 0;
         trb.field[2] = length;
-        trb.field[3] = TRB_TYPE(TRB_DATA) | ep0_ring->cycle_bit;
+        trb.field[3] = TRB_TYPE(TRB_DATA) | ep_ring->cycle_bit;
 
         if (req->bmRequestType & 0x80)
             trb.field[3] |= (TRB_ISP | TRB_DIR_IN);
-        xhci_enqueue_trb(xhci, ep0_ring, (struct xhci_trb *)&trb);
+        xhci_enqueue_trb(xhci, ep_ring, (struct xhci_trb *)&trb);
     }
 
     /* Status Stage TRB */
     trb.field[0] = 0;
     trb.field[1] = 0;
     trb.field[2] = 0;
-    trb.field[3] = TRB_TYPE(TRB_STATUS) | ep0_ring->cycle_bit;
+    trb.field[3] = TRB_TYPE(TRB_STATUS) | ep_ring->cycle_bit;
 
     if (data && length && req->bmRequestType & 0x80)
         trb.field[3] |= TRB_ISP;
     else
         trb.field[3] |= TRB_ISP | TRB_DIR_IN;
 
-    xhci_enqueue_trb(xhci, ep0_ring, (struct xhci_trb *)&trb);
+    xhci_enqueue_trb(xhci, ep_ring, (struct xhci_trb *)&trb);
     /* ring ep0 doorbell */
-    xhci_ring_ep_doorbell(xhci, slot, 1, 0);
+    xhci_ring_ep_doorbell(xhci, slot, ep_index + 1, 0);
     /* wait data stage transfer event */
     xhci_event_wait();
     xhci_enqueue_unlock();
@@ -475,17 +486,17 @@ int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_pac
     return xfer_len;
 }
 
-int xhci_send_noop(struct xhci_hcd *xhci, int slot, uint8_t ep_addr)
+int xhci_xfer_noop(struct xhci_hcd *xhci, int slot, uint8_t ep, xhci_ep_type_t type)
 {
     struct xhci_trb trb = {0};
-    uint8_t ep_num = (ep_addr & 0x7f) ? EP_ADDR_2_EP_IDX(ep_addr) - 1 : 0;
-    struct xhci_ring *ep_ring = &xhci->device[slot].ep[ep_num].ep_ring;
+    uint8_t ep_index = xhci_ep_2_index(ep, type);
+    struct xhci_ring *ep_ring = &xhci->device[slot].ep[ep_index].ep_ring;
     trb.control = TRB_TYPE(TRB_TR_NOOP) | 1 << 5 | ep_ring->cycle_bit;
 
     xhci_enqueue_lock();
     xhci_enqueue_trb(xhci, ep_ring, &trb);
     /* ring doorbell */
-    xhci_ring_ep_doorbell(xhci, slot, ep_num + 1, 0);
+    xhci_ring_ep_doorbell(xhci, slot, ep_index + 1, 0);
     xhci_event_wait();
     trb = xhci->evt_trb;
     xhci_enqueue_unlock();
@@ -493,12 +504,69 @@ int xhci_send_noop(struct xhci_hcd *xhci, int slot, uint8_t ep_addr)
     return GET_COMP_CODE(trb.status) == COMP_SUCCESS ? 0 : -1;
 }
 
-int xhci_send_bulk_data(struct xhci_hcd *xhci, int slot, int ep, void *data, int legth)
+/* 
+* After the xHCI retrieves this TRB, it can know how much data remains to be transferred 
+* based on the TD_SIZE field, which helps improve data transfer efficiency inside the xHCI controller.
+* 
+* What is TD_SIZE? How to calculate it?
+*     TD_SIZE: After processing the current TRB, the entire TD (Transfer Descriptor) still has 
+*              TD_SIZE number of packets remaining to be transferred.
+*
+*     Three elements are needed:
+*         total_data_len --> Total data size
+*         maxpacket      --> Maximum data per transfer for this endpoint
+*         number of trb  --> Number of TRBs required to form the TD (these TRBs will share the total_data_len)
+*
+*     Example:
+*         total_data_len --> 8192
+*         maxpacket      --> 512
+*         number of trb  --> 4
+*
+*         TD Packet count = ROUNDUP(8192 / 512) = 16
+*
+*         If each TRB equally shares 8192, then one TRB transfers: 8192 / 4 = 2048
+*
+*         Calculation for each TRB:
+*         First TRB TD_SIZE:  16 - ROUNDDOWN(2048 / 512) = 16 - 4 = 12
+*         Second TRB TD_SIZE: 16 - ROUNDDOWN((2048 + 2048) / 512) = 16 - 8 = 8
+*         Third TRB TD_SIZE:  16 - ROUNDDOWN((2048 + 2048 + 2048) / 512) = 16 - 12 = 4
+*         Fourth TRB TD_SIZE: 0 (always 0 for the last TRB in TD)
+*
+* For simplicity, this function uses only one TRB to transfer data, so the TD_SIZE field does not need to be considered.
+*/
+int xhci_xfer_bulk(struct xhci_hcd *xhci, int slot, int ep, void *data, int length)
 {
-    return 0;
+    int xfer_len = -1;
+    struct xhci_generic_trb trb = {0};
+    uint8_t ep_index = xhci_ep_2_index(ep, EP_BULK_IN);
+    struct xhci_ring *ep_ring = &xhci->device[slot].ep[ep_index].ep_ring;
+
+    trb.field[0] = (size_t)data;
+    trb.field[1] = 0;
+    trb.field[2] = length;
+    trb.field[3] = TRB_IOC | TRB_TYPE(TRB_NORMAL) | ep_ring->cycle_bit;
+
+    /* Set the TRB_ISP only for IN direction. */
+    if (EP_DIR_IN(ep))
+        trb.field[3] |= TRB_ISP;
+
+    xhci_enqueue_lock();
+    xhci_enqueue_trb(xhci, ep_ring, (struct xhci_trb *)&trb);
+    xhci_ring_ep_doorbell(xhci, slot, ep_index + 1, 0);
+    xhci_event_wait();
+    xhci_enqueue_unlock();
+
+    trb = *(struct xhci_generic_trb *)&xhci->evt_trb;
+
+    if (GET_COMP_CODE(trb.field[2]) == COMP_SHORT_PACKET)
+        xfer_len = trb.field[2] & 0xffffff;
+    else if (GET_COMP_CODE(trb.field[2]) == COMP_SUCCESS)
+        xfer_len = 0;
+
+    return xfer_len;
 }
 
-int xhci_send_intr_data(struct xhci_hcd *xhci, int slot, int ep, void *data, int legth)
+int xhci_xfer_interrupt(struct xhci_hcd *xhci, int slot, int ep, void *data, int legth)
 {
     return 0;
 }
@@ -518,37 +586,48 @@ void xhci_slot_ctx_copy(struct xhci_hcd *xhci, int slot)
 int xhci_cmd_add_endpoint(struct xhci_hcd *xhci, int slot, struct xhci_ep_config *ep_config)
 {
     struct xhci_trb trb;
-
     struct xhci_input_control_ctx *control_ctx;
     struct xhci_ep_ctx *ep_ctx;
-    /* TODO: check ep_index */
-    uint8_t ep_index = EP_ADDR_2_EP_IDX(ep_config->ep_addr) - 1;
+    struct xhci_slot_ctx *in;
+    uint8_t ep_index =  xhci_ep_2_index(ep_config->ep_addr, ep_config->ep_type);
+    struct xhci_trb *ep_trb = xhci_mem_alloc(XHCI_ALIGN, XHCI_RING_TRB_MAX_NUM * sizeof (struct xhci_trb));
 
     control_ctx = (struct xhci_input_control_ctx *)xhci->device[slot].input_ctx.ctx;
-    control_ctx->add_flags &= ~(1 << 1);
-    control_ctx->drop_flags &= ~0x3;
-    control_ctx->add_flags |= 1 << ep_index;
+    control_ctx->add_flags = SLOT_FLAG;
+    control_ctx->drop_flags = 0;
     /* slot ctx no update */
     xhci_slot_ctx_copy(xhci, slot);
 
+    in = xhci_get_slot_ctx(xhci, &xhci->device[slot].input_ctx);
+    in->dev_info &= ~SLOT_CTX_ENTRIES(0x1f);
+    // This field indicates the size of the Device Context structure.
+    // For example, ((Context Entries + 1) * 32 bytes) = Total bytes for this structure.
+    in->dev_info |= SLOT_CTX_ENTRIES(ep_index + 1);
+    control_ctx->add_flags |= 1 << (ep_index + 1);
+
     ep_ctx = xhci_get_ep_ctx(xhci, &xhci->device[slot].input_ctx, ep_index);
+    xhci_ring_init(&xhci->device[slot].ep[ep_index].ep_ring, ep_trb, XHCI_RING_TRB_MAX_NUM, CTRL_RING);
 
     ep_ctx->ep_info[0] = ep_config->ep_interval << 16;
-    ep_ctx->ep_info[1] = ep_config->ep_mps << 16 | EP_CTX_TYPE(ep_config->ep_type) | EP_CTX_ERR_CNT(3);
+    ep_ctx->ep_info[1] = EP_CTX_MAX_PACKET(ep_config->ep_mps) | EP_CTX_TYPE(ep_config->ep_type) | EP_CTX_ERR_CNT(3); // retry 3 times
     ep_ctx->deq = (size_t)xhci->device[slot].ep[ep_index].ep_ring.trb | xhci->device[slot].ep[ep_index].ep_ring.cycle_bit;
     ep_ctx->tx_info = 0;
+    xhci_cache_flush(control_ctx, xhci->device[slot].input_ctx.size);
 
     trb.paramater = (size_t)control_ctx;
     trb.status = 0;
     trb.control = SLOT_ID_FOR_TRB(slot) | TRB_TYPE(TRB_CONFIG_EP) | xhci->cmd_ring.cycle_bit;
 
-    /* config endpoint command */
+    /*
+        With reference to Section 4.5.3 "Slot States" in the xHCI specification, 
+        the slot must be in the Addressed state to use the Configure Endpoint command.
+    */
     xhci_command_submit(xhci, &trb);
     /* check command exec resule */
     return GET_COMP_CODE(trb.status) == COMP_SUCCESS ? 0 : -1;
 }
 
-int xhci_cmd_drop_endpoint(struct xhci_hcd *xhci, int slot, uint8_t ep_addr)
+int xhci_cmd_drop_endpoint(struct xhci_hcd *xhci, int slot, uint8_t ep)
 {
     return 0;
 }
