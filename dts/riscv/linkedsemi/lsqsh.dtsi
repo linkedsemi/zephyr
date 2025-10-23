@@ -533,13 +533,14 @@
             status = "disabled";
 
             vuart1: vuart1@40087800 {
-                compatible = "linkedsemi,ls-vuart";
+                compatible = "linkedsemi,ls-host-vuart";
                 reg = <0x40087800 0x400>;
                 interrupts = <UART3_IRQN 3>;
                 clocks = <UART3_CLOCK>;
                 resets = <UART3_RESET>;
                 port = <0x3f8>;
                 up-irq = <0x4 0>;
+                target = <&vuart_v0>;
                 status = "disabled";
             };
 
@@ -555,8 +556,16 @@
                 size-order = <0>;
                 status = "disabled";
             };
-        };
 
+            vuart_v0: vuart@0 {
+                compatible = "linkedsemi,vuart";
+                status = "disabled";
+                reg = <0x0 0x10>;
+            };
+
+        };
+        
+  
         sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
           reg = <0x400a1800 0x400>;

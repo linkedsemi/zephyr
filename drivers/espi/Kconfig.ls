@@ -7,20 +7,6 @@ config ESPI_LS
 
 if ESPI_LS
 
-config ESPI_LS_VUART
-    bool "Linkedsemi ESPI slave to uart driver"
-    default y
-    depends on DT_HAS_LINKEDSEMI_LS_VUART_ENABLED
-    help
-        Enable Linkedsemi ESPI slave to uart driver.
-
-config ESPI_LS_HOST_VUART
-    bool "Linkedsemi Host VUART (Zephyr port of linux_espi-master)"
-    default y
-    depends on DT_HAS_LINKEDSEMI_LS_HOST_VUART_ENABLED  
-    help
-        Enable Host-side VUART using Zephyr APIs, ported from linux_espi-master.
-
 config ESPI_LS_SIO
     bool "Linkedsemi ESPI slave to sio driver"
     default y
