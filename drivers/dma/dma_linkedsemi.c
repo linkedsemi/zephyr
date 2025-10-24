@@ -23,10 +23,13 @@ LOG_MODULE_REGISTER(dma_dw, CONFIG_DMA_LOG_LEVEL);
 #include <soc_dma.h>
 #include "dma_dw_common.h"
 
+BUILD_ASSERT(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL,
+    "VENDER_DEFINE_DMA_DW_LLI_POOL must be enabled for nocache lli_pool");
+
 /* Device constant configuration parameters */
 struct dw_dma_cfg {
     struct dw_dma_dev_cfg dw_cfg;
-    void (*irq_config)(void);
+    struct dw_lli (*lli_pool)[CONFIG_DMA_DW_LLI_POOL_SIZE];
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -35,7 +38,10 @@ struct dw_dma_cfg {
 static int dw_dma_init(const struct device *dev)
 {
     const struct dw_dma_cfg *const dev_config = dev->config;
+    struct dw_dma_dev_data *dev_data = dev->data;
     int ret;
+
+    dev_data->lli_pool = dev_config->lli_pool;
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
@@ -79,7 +85,7 @@ static int dw_dma_init(const struct device *dev)
     }
 
     /* Configure interrupts */
-    dev_config->irq_config();
+    dev_config->dw_cfg.irq_config();
 
     LOG_INF("Device %s initialized", dev->name);
 
@@ -109,57 +115,21 @@ static const struct dma_driver_api dw_dma_driver_api = {
 
 #define DW_DMAC_INIT(inst)                                                                            \
                                                                                                       \
-    static struct dw_drv_plat_data dmac##inst = {                                                     \
-        .chan[0] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[1] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[2] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[3] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[4] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[5] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[6] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-        .chan[7] = {                                                                                  \
-            .class = 6,                                                                               \
-            .weight = 0,                                                                              \
-        },                                                                                            \
-    };                                                                                                \
-                                                                                                      \
     static void dw_dma##inst##_irq_config(void);                                                      \
+                                                                                                      \
+    __nocache struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);\
                                                                                                       \
     static const struct dw_dma_cfg dw_dma##inst##_config = {                                          \
         .dw_cfg = {                                                                                   \
             .base = DT_INST_REG_ADDR(inst),                                                           \
+            .irq_config = dw_dma##inst##_irq_config,                                                  \
         },                                                                                            \
-        .irq_config = dw_dma##inst##_irq_config,                                                      \
+        .lli_pool = lli_pool_##inst,                                                                  \
         IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                         \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))    \
     };                                                                                                \
                                                                                                       \
-    __nocache struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);\
-    static struct dw_dma_dev_data dw_dma##inst##_data = {                                             \
-        .channel_data = &dmac##inst,                                                                  \
-        .lli_pool = lli_pool_##inst,                                                                  \
-    };                                                                                                \
+    static struct dw_dma_dev_data dw_dma##inst##_data;                                                \
                                                                                                       \
     DEVICE_DT_INST_DEFINE(inst,                                                                       \
                           &dw_dma_init,                                                               \
