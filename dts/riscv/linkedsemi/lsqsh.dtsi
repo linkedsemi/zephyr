@@ -157,7 +157,7 @@
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
-            status = "okay";
+            status = "disabled";
         };
 
         dmac2: dmac@40042000 {
@@ -170,7 +170,7 @@
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
-            status = "okay";
+            status = "disabled";
         };
 
         pinctrl: pin-controller@4006f080 {
