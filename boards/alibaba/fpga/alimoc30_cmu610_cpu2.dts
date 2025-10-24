@@ -37,7 +37,7 @@
             read-only;
             read-size = <32>;
             prog-size = <32>;
-            cache-size = <4096>;
+            cache-size = <64>;
             lookahead-size = <256>;
             block-cycles = <512>;
         };
@@ -50,7 +50,7 @@
             read-only;
             read-size = <32>;
             prog-size = <32>;
-            cache-size = <4096>;
+            cache-size = <64>;
             lookahead-size = <256>;
             block-cycles = <512>;
         };
@@ -62,7 +62,7 @@
             // no-format;
             read-size = <32>;
             prog-size = <32>;
-            cache-size = <4096>;
+            cache-size = <64>;
             lookahead-size = <256>;
             block-cycles = <512>;
         };
