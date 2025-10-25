@@ -610,9 +610,11 @@ static int spi_nor_wait_until_ready(const struct device *dev, k_timeout_t poll_d
 {
 	int ret;
 	uint8_t reg;
+	k_timepoint_t timeout;
 
 	ARG_UNUSED(poll_delay);
 
+	timeout = sys_timepoint_calc(K_MSEC(CONFIG_SPI_NOR_WAIT_UNTIL_READY_TIMEOUT_MS));
 	while (true) {
 		ret = spi_nor_cmd_read(dev, SPI_NOR_CMD_RDSR, &reg, sizeof(reg));
 		/* Exit on error or no longer WIP */
@@ -623,6 +625,11 @@ static int spi_nor_wait_until_ready(const struct device *dev, k_timeout_t poll_d
 		/* Don't monopolise the CPU while waiting for ready */
 		k_sleep(poll_delay);
 #endif /* CONFIG_SPI_NOR_SLEEP_WHILE_WAITING_UNTIL_READY */
+		if (sys_timepoint_expired(timeout)) {
+			LOG_ERR( "%s %s: wait wip deassert fail", __func__, dev->name);
+			ret = -EIO;
+			break;
+		}
 	}
 	return ret;
 }
