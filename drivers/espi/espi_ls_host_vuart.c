@@ -260,7 +260,7 @@ static int host_vuart_init(const struct device *dev)
 	struct host_vuart_data *ptr_data = dev->data;
 
 	if (!device_is_ready(cfg->parent) || !device_is_ready(cfg->vuart)) {
-		LOG_ERR("parent or vuart not ready");
+		LOG_ERROR("parent or vuart not ready");
 		return -ENODEV;
 	}
 
