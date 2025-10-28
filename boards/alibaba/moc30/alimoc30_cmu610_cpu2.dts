@@ -383,12 +383,13 @@ zephyr_udc1: &usb1 {
 };
 
 &sdhci1 {
+    max-bus-freq = <DT_FREQ_M(52)>;
     status = "okay";
 
     mmc_disk1: disk {
         compatible = "zephyr,mmc-disk";
         disk-name = "mnt";
-        bus-width = <1>;
+        bus-width = <8>;
         status = "okay";
     };
 };
