@@ -859,6 +859,7 @@ static int build_rx_lli_chain(struct spi_dw_data *spi,
 
 static int transceive_read(const struct device *dev,
 		      const struct spi_config *config,
+		      struct spi_nor_op_info *op_info,
 		      const struct spi_buf_set *tx_bufs,
 		      const struct spi_buf_set *rx_bufs,
 		      bool asynchronous,
@@ -918,8 +919,22 @@ static int transceive_read(const struct device *dev,
 
 	set_bit_ssienr(dev);
 
-	write_dr(dev, opcode);
-	write_dr(dev, addr);
+	if ((op_info->mode==JESD216_MODE_144||op_info->mode==JESD216_MODE_122)) {
+		if (op_info->addr_len==3) {
+			uint32_t addr_bit =0;
+			addr_bit=addr<<8;
+			write_dr(dev, opcode);
+			write_dr(dev, addr_bit);
+
+		}else {
+			write_dr(dev, opcode);
+			write_dr(dev, addr);
+			write_dr(dev, 0);
+		}
+	}else {
+		write_dr(dev, opcode);
+		write_dr(dev, addr);
+	}
 
 	uintptr_t start = (uintptr_t)rx_bufs->buffers[0].buf;
 	uintptr_t end   = start + rx_bufs->buffers[0].len;
@@ -1304,7 +1319,13 @@ static void spi_dw_spi_ctrlr0_config(const struct device *dev,
 
 	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(trans_type);
 	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_INST_L_8BIT;
-	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L(op_info->addr_len);
+
+	if ((op_info->mode==JESD216_MODE_144)||(op_info->mode==JESD216_MODE_122)) {
+		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L((op_info->addr_len+1));
+	}else {
+		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L(op_info->addr_len);
+	}
+
 	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_WAIT_CYCLES(wait_cycles);
 
 	write_spi_ctrlr0(dev, spi_ctrlr0);
@@ -1331,17 +1352,16 @@ static int spi_dw_read_multi_addr_align(const struct device *dev,
 	const struct spi_config *config_copy_const = &config_copy;
 
 	if ((op_info->data_len > info->fifo_depth) && (op_info->data_len % DFS_4 != 0)) {
-		transceive_read(dev, config_copy_const, NULL, set_front,
+		transceive_read(dev, config_copy_const, op_info,NULL, set_front,
 				false, NULL, NULL, op_info->opcode, dr_addr);
-
 		struct spi_config config_copy_after = *config_copy_const;
 		config_copy_after.operation &= ~SPI_WORD_SIZE_MASK;
 		config_copy_after.operation |= (8U << SPI_WORD_SIZE_SHIFT);
 		const struct spi_config *config_copy_const_after = &config_copy_after;
-		return transceive_read(dev, config_copy_const_after, NULL, set_behind,
+		return transceive_read(dev, config_copy_const_after,op_info, NULL, set_behind,
 				false, NULL, NULL, op_info->opcode, dr_addr_after);
 	}else {
-		return transceive_read(dev, config_copy_const, NULL, set_main,
+		return transceive_read(dev, config_copy_const, op_info, NULL, set_main,
 				false, NULL, NULL, op_info->opcode, dr_addr);
 	}
 
@@ -1349,6 +1369,7 @@ static int spi_dw_read_multi_addr_align(const struct device *dev,
 
 static int spi_dw_read_split_4align(const struct device *dev,
 			   const struct spi_config *config,
+			   struct spi_nor_op_info *op_info,
 			   uint32_t opcode, uint32_t flash_addr,
 			   void *dst0, size_t len0,uint32_t spi_lines)
 {
@@ -1375,7 +1396,8 @@ static int spi_dw_read_split_4align(const struct device *dev,
 		head = MIN(4 - head, len);
 		struct spi_buf b = { .buf = dst, .len = head };
 		struct spi_buf_set r = { .buffers = &b, .count = 1 };
-		ret = transceive_read(dev, &config_dfs1, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+		ret = transceive_read(dev, &config_dfs1, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+
 		if (ret) return ret;
 
 		dst += head;
@@ -1388,7 +1410,8 @@ static int spi_dw_read_split_4align(const struct device *dev,
 	if (mid > 0) {
 		struct spi_buf b = { .buf = dst, .len = mid };
 		struct spi_buf_set r = { .buffers = &b, .count = 1 };
-		ret = transceive_read(dev, &config_dfs4, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+		ret = transceive_read(dev, &config_dfs4, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+
 		if (ret) return ret;
 
 		dst += mid;
@@ -1399,7 +1422,8 @@ static int spi_dw_read_split_4align(const struct device *dev,
 	if (len > 0) {
 		struct spi_buf b = { .buf = dst, .len = len };
 		struct spi_buf_set r = { .buffers = &b, .count = 1 };
-		ret = transceive_read(dev, &config_dfs1, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+		ret = transceive_read(dev, &config_dfs1, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+
 		if (ret) return ret;
 	}
 
@@ -1426,7 +1450,7 @@ static int spi_dw_read_multi_mode_any_addr(const struct device *dev,
 						set_main, set_front, set_behind,
 						dr_addr, dr_addr_after, spi_lines);
 	} else {
-		return spi_dw_read_split_4align(dev, config, op_info->opcode,
+		return spi_dw_read_split_4align(dev, config, op_info, op_info->opcode,
 						dr_addr, op_info->buf,
 						op_info->data_len, spi_lines);
 	}
@@ -1485,9 +1509,6 @@ static int spi_dw_write_split_4align(const struct device *dev,
 	config_dfs1.operation &= ~SPI_WORD_SIZE_MASK;
 	config_dfs1.operation |= (8U  << SPI_WORD_SIZE_SHIFT);
 
-	struct spi_config config_rdsr = *config;
-	config_rdsr.operation &= ~SPI_LINES_MASK;
-	config_rdsr.operation |= SPI_LINES_SINGLE;
 
 	if (len0 == 0)
 		return 0;
@@ -1709,18 +1730,16 @@ static int spi_dw_nor_transceive(const struct device *dev,
 	switch (op_info->mode) {
 		case JESD216_MODE_144:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,1, 6, SPI_LINES_QUAD);
+				dr_addr_dual_quad, dr_addr_dual_quad_after,1, (op_info->dummy_cycle-2), SPI_LINES_QUAD);
 			/* 1: Instruction in Standard, Address in QUAD */
-			/* 6: dummy_cycle */
 		case JESD216_MODE_114:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
 				dr_addr_dual_quad, dr_addr_dual_quad_after,0, op_info->dummy_cycle, SPI_LINES_QUAD);
 			/* 0: Standard, Standard */
 		case JESD216_MODE_122:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,1, 4, SPI_LINES_DUAL);
+				dr_addr_dual_quad, dr_addr_dual_quad_after,1, (op_info->dummy_cycle-4), SPI_LINES_DUAL);
 			/* 1: Instruction in Standard, Address in DUAL */
-			/* 6: dummy_cycle */
 		case JESD216_MODE_112:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
 				dr_addr_dual_quad, dr_addr_dual_quad_after,0, op_info->dummy_cycle, SPI_LINES_DUAL);
