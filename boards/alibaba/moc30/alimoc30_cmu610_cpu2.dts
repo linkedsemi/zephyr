@@ -403,6 +403,11 @@ zephyr_udc1: &usb1 {
     pinctrl-0 = <&uart3_txd_pb01 &uart3_rxd_pb03>;
     pinctrl-names = "default";
     label = "vttyS1";
+    status = "disabled";
+};
+
+&vuart_v0 {
+    label = "vttyS2";
     status = "okay";
 };
 
@@ -412,6 +417,15 @@ zephyr_udc1: &usb1 {
         port = <0xca2 0xca3>;
         status = "okay";
     };
+
+      espi1_host_vuart: host-vuart {
+      compatible = "linkedsemi,ls-host-vuart";
+      port = <0x3f8>;
+      target = <&vuart_v0>;
+      up-irq = <0x4 0>;
+      status = "okay";
+    };
+
     status = "okay";
 };
 

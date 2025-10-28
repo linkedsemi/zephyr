@@ -1089,6 +1089,11 @@
             current-speed = <115200>;
             status = "disabled";
         };
+	vuart_v0: vuart@0 {
+            compatible = "linkedsemi,vuart";
+            status = "disabled";
+            reg = <0x0 0x10>;
+         };
 
         mdio1: mdio@40064000 {
             compatible = "snps,dwmac-mdio";

@@ -7,3 +7,8 @@ config VIRTUAL_UART
       Enable the virtual  UART driver which emulates a UART device with no 
       physical UART hardware. This can be used in conjunction with an eSPI host 
       bridge to provide a host-visible serial port.
+config VUART_INIT_PRIORITY
+	int "Vuart driver initialization priority"
+	default 1
+	help
+	  Driver initialization priority for eSPI driver.
