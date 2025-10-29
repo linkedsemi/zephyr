@@ -17,12 +17,15 @@
 #include "ls_hal_otbn_sha.h"
 #include "ls_msp_otbn.h"
 #include "log.h"
+#include <zephyr/drivers/entropy.h>
 /************************************************************
  *
  * defines
  *
  ************************************************************/
 #define DIGEST_SIZE         64
+
+const static struct device *trng = DEVICE_DT_GET(DT_NODELABEL(trng0));
 
 #define STACK_SIZE (1024)
 static struct k_thread otbn_thread1;
@@ -33,21 +36,10 @@ K_THREAD_STACK_DEFINE(tstack2, STACK_SIZE);
 static uint8_t fix_trng_output[DIGEST_SIZE];
 int ecdsa_test(void);
 
-int ls_trng(void *null, unsigned char *buf, size_t size)
+int ls_trng_get_random(void *null, unsigned char *buf, size_t size)
 {
-    memcpy(buf,fix_trng_output,size);
-    return 0;
-}
-
-int ls_trng2(void *null, unsigned char *buf, size_t size)
-{
-    static uint16_t a = 0;
-    for(uint16_t i=0; i<size; i++)
-    {
-        buf[i] = (a * 0xfe) + i;
-        a++;
-    }
-    return 0;
+    (void)null;
+    return entropy_get_entropy(trng, buf, size);
 }
 
 void otbn_task1_func(void *p1, void *p2, void *p3)
@@ -178,7 +170,7 @@ int ecdsa_p256_test(void)
     memcpy(fix_trng_output,pRndBuf,DIGEST_SIZE);
 
 
-    if(mbedtls_ecdsa_sign(&pGrp, &r, &s, &d, pHash, hlen, ls_trng, NULL) != 0)
+    if(mbedtls_ecdsa_sign(&pGrp, &r, &s, &d, pHash, hlen, ls_trng_get_random, NULL) != 0)
     {
         while(1);
     }
@@ -232,7 +224,7 @@ int ecdsa_test_curve(mbedtls_ecp_group_id curve)
     mbedtls_mpi_init(&s);
 
     // generator key pairs 
-    err = mbedtls_ecdsa_genkey(&ctx,curve,ls_trng2,NULL);
+    err = mbedtls_ecdsa_genkey(&ctx,curve,ls_trng_get_random,NULL);
     if(err)
     {
         printf(" ecc keygen failed \r\n");
@@ -243,7 +235,7 @@ int ecdsa_test_curve(mbedtls_ecp_group_id curve)
     size_t hlen;
     hlen = runIt_unhexify(pHash, hash_str);
     // sign
-    if(mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d, pHash, hlen, ls_trng2, NULL) != 0)
+    if(mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d, pHash, hlen, ls_trng_get_random, NULL) != 0)
     {
         err = -1;
         printf(" ecdsa sign failed\n");

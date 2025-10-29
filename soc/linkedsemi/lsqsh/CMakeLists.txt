@@ -3,9 +3,12 @@ zephyr_sources(soc.c)
 zephyr_sources(psram.c)
 zephyr_sources(dma.c)
 zephyr_sources(soc_reset.c)
+zephyr_sources(otbn/otbn_crypto_mbox.c)
+
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH malloc_newlib.c)
 
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN otbn/mbedtls_otbn_msp.c)
+zephyr_library_sources_ifdef(CONFIG_WOLFSSL otbn/wolfssl_otbn_msp.c)
 
 set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/soc/linkedsemi/common/linker.ld CACHE INTERNAL "")
 
