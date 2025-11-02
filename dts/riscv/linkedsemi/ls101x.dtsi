@@ -37,7 +37,7 @@
             #address-cells = <1>;
             #size-cells = <1>;
             interrupts = <3 3>;
-            quad;
+            quad_mode;
             continuous_mode;
 
             flash0: flash@8000000 {

@@ -638,12 +638,13 @@ void soc_early_init_hook(void)
     if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
        || (!IS_ENABLED(CONFIG_XIP))) {
         flash1.reg = (void *)SEC_QSPI1_ADDR;
-        flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad));
-        flash1.continuous_mode_enable = false;
+        flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad_mode));
+        flash1.continuous_mode_enable = DT_PROP(DT_NODELABEL(qspi1), continuous_mode);
         flash1.writing = false;
         flash1.suspend_count = 0;
         flash1.continuous_mode_on = false;
         flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
+        hal_flash_continuous_mode_start();
         qspiv2_global_int_ctrl_fn_init();
         if (!flash1.dual_mode_only) {
             hal_flash_qe_status_read_and_set();
@@ -664,13 +665,14 @@ void soc_early_init_hook(void)
             lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
             pinmux_hal_flash_quad_init();
             flash1.reg = (void *)SEC_QSPI1_ADDR;
-            flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad));
-            flash1.continuous_mode_enable = false;
+            flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad_mode));
+            flash1.continuous_mode_enable = true;
             flash1.writing = false;
             flash1.suspend_count = 0;
             flash1.continuous_mode_on = false;
             flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
             hal_flash_init();
+            hal_flash_continuous_mode_start();
             if (!flash1.dual_mode_only) {
                 hal_flash_qe_status_read_and_set();
             }
