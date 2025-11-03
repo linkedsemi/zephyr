@@ -11,10 +11,9 @@ properties:
     required: true
     description: "Base I/O port address for the host VUART"
 
-  target:
-    type: phandle
-    required: true
-    description: "Phandle to the target virtual host UART device"
+  clock-source:
+    type: int
+    description: "System clock source"
 
   up-irq:
     type: array
