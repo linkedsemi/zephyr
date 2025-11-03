@@ -1,9 +1,0 @@
-description: LINKEDSEMI vUART
-
-compatible: "linkedsemi,vuart"
-
-include: [uart-controller.yaml]
-
-properties:
-  reg:
-    required: true

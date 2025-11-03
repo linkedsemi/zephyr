@@ -538,9 +538,9 @@
                 interrupts = <UART3_IRQN 3>;
                 clocks = <UART3_CLOCK>;
                 resets = <UART3_RESET>;
+                clock-source = <CLK_SRC_PBUS4>;
                 port = <0x3f8>;
                 up-irq = <0x4 0>;
-                target = <&vuart_v0>;
                 status = "disabled";
             };
 
@@ -555,12 +555,6 @@
                 host-addr = <0xf6810000>;
                 size-order = <0>;
                 status = "disabled";
-            };
-
-            vuart_v0: vuart@0 {
-                compatible = "linkedsemi,vuart";
-                status = "disabled";
-                reg = <0x0 0x10>;
             };
 
         };

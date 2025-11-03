@@ -14,6 +14,10 @@ config ESPI_LPC_HOST_VUART
     help
         Enable Host-side VUART using Zephyr APIs, ported from linux_espi-master.
 
+config VUART_IRQ_THREAD_PRIORITY
+    int "VUART IRQ thread priority"
+    default -2
+
 rsource "*/Kconfig"
 
 endif
