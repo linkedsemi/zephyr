@@ -578,7 +578,7 @@ static struct flash_driver_api flash_ls_api = {
 	static struct flash_ls_shared_data flash_ls_shared_data_##idx;)) \
 	static const struct flash_ls_config flash_ls_cfg_##idx = {\
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
-		.dual_mode_only = !DT_INST_PROP(idx,quad),\
+		.dual_mode_only = !DT_INST_PROP(idx,quad_mode),\
 		.continuous_mode_enable = DT_INST_PROP(idx,continuous_mode),\
 		.addr4b = DT_INST_PROP(idx,addr4b),\
 		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER,(\
