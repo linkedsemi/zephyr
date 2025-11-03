@@ -18,10 +18,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/net/ethernet.h>
 #include "eth.h"
 #include <zephyr/irq.h>
-#include <zephyr/net/phy.h>
-#include <zephyr/net/phy.h>
-#include <field_manipulate.h>
-#include <reg_sysc_app_cpu.h>
 
 #include "eth_dwmac_priv.h"
 
@@ -36,32 +32,39 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
     #include <soc_clock.h>
 #endif
 
+#include <platform.h>
+
 struct eth_linkedsemi_config {
     mem_addr_t base_addr;
     struct dwmac_dma_desc *tx_descs;
     struct dwmac_dma_desc *rx_descs;
-    bool mdio_reset_mac;
+    bool is_mdio_reset_mac;
+    bool is_fixed_link;
     void (*irq_config_func)(const struct device *dev);
     void (*irq_deconfig_func)(const struct device *dev);
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
     const struct device *phy_dev;
+    uint8_t tx_delay;
+    uint8_t rx_delay;
 };
 
 int dwmac_bus_init(struct dwmac_priv *p)
 {
     const struct device *const dev = p->dev;
     const struct eth_linkedsemi_config *dev_config = dev->config;
-    __maybe_unused int ret;
+    int ret = 0;
 
     p->base_addr = dev_config->base_addr;
     p->tx_descs = dev_config->tx_descs;
     p->rx_descs = dev_config->rx_descs;
-    p->mdio_reset_mac = dev_config->mdio_reset_mac;
+    p->phy_dev = dev_config->phy_dev;
+    p->is_mdio_reset_mac = dev_config->is_mdio_reset_mac;
+    p->is_fixed_link = dev_config->is_fixed_link;
 
 #if defined(CONFIG_MDIO_RESET_MAC)
-    if (!p->mdio_reset_mac) {
+    if (!p->is_mdio_reset_mac) {
 #endif
 #if defined(CONFIG_CLOCK_CONTROL)
         if (dev_config->ccfg.cctl_dev) {
@@ -106,62 +109,16 @@ int dwmac_bus_init(struct dwmac_priv *p)
     }
 #endif
 
-    return 0;
-}
-
-void dwmac_10M_100M_speed_cofig(const struct device *const dev)
-{
-    struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
-
-    uint32_t val = REG_READ(MAC_CONF);
-    val &= ~(MAC_CONF_FES);
-    val |= MAC_CONF_PS;
-    REG_WRITE(MAC_CONF, val);
-}
-
-void dwmac_1000M_2500M_speed_cofig(const struct device *const dev)
-{
-    struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
-
-    uint32_t val = REG_READ(MAC_CONF);
-    val &= ~(MAC_CONF_FES | MAC_CONF_PS);
-    REG_WRITE(MAC_CONF, val);
-}
-
-static void phy_link_state_change_callback(const struct device *phy_dev,
-                       struct phy_link_state *state, void *user_data)
-{
-    ARG_UNUSED(phy_dev);
-    const struct device *mac_dev = (const struct device *)user_data;
-    bool is_up = state->is_up;
-
-    if (is_up) {
-        /* Announce link up status */
-        switch (state->speed) {
-        case LINK_HALF_1000BASE_T:
-        case LINK_FULL_1000BASE_T:
-            dwmac_1000M_2500M_speed_cofig(mac_dev);
-            break;
-        case LINK_HALF_100BASE_T:
-        case LINK_FULL_100BASE_T:
-        case LINK_HALF_10BASE_T:
-        case LINK_FULL_10BASE_T:
-#if 1
-            /* max tx delay */
-            SET_BIT(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_TX_DELAY_SEL_MASK);
-            /* max tx delay */
-            SET_BIT(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_RX_DELAY_SEL_MASK);
-#else
-            /* tx delay */
-            REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_TX_DELAY_SEL, 0x3);
-            /* rx delay */
-            REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_RGMII_RX_DELAY_SEL, 0x3);
-#endif
-            dwmac_10M_100M_speed_cofig(mac_dev);
-        default:
-            break;
-        }
+    ret = soc_eth_tx_delay_set(p->base_addr, dev_config->tx_delay);
+    if (ret) {
+        return ret;
     }
+    ret = soc_eth_rx_delay_set(p->base_addr, dev_config->rx_delay);
+    if (ret) {
+        return ret;
+    }
+
+    return ret;
 }
 
 void dwmac_platform_init(struct dwmac_priv *p)
@@ -170,12 +127,6 @@ void dwmac_platform_init(struct dwmac_priv *p)
     const struct eth_linkedsemi_config *dev_config = dev->config;
 
     REG_WRITE(MAC_CONF, MAC_CONF_DM);
-
-    if (dev_config->phy_dev) {
-        if (device_is_ready(dev_config->phy_dev)) {
-            phy_link_callback_set(dev_config->phy_dev, &phy_link_state_change_callback, (void *)dev);
-        }
-    }
 
     REG_WRITE(DMA_SYSBUS_MODE, DMA_SYSBUS_MODE_AAL | DMA_SYSBUS_MODE_FB);
 
@@ -221,14 +172,17 @@ BUILD_ASSERT(CONFIG_NOCACHE_MEMORY, "descriptors are placed in nocache section")
         .base_addr = (uint32_t)DT_INST_REG_ADDR(index),                                              \
         .tx_descs = dwmac_tx_descs_##index,                                                          \
         .rx_descs = dwmac_rx_descs_##index,                                                          \
-        .mdio_reset_mac = DT_NODE_HAS_COMPAT(DT_INST_PARENT(index), snps_dwmac_mdio)                 \
+        .is_mdio_reset_mac = DT_NODE_HAS_COMPAT(DT_INST_PARENT(index), snps_dwmac_mdio)              \
                        && DT_NODE_HAS_STATUS_OKAY(DT_INST_PARENT(index)),                            \
+        .is_fixed_link = DT_NODE_HAS_PROP(DT_INST_PHANDLE(index, phy_handle), fixed_link),           \
         .irq_config_func = eth_linkedsemi_irq_config_func_##index,                                   \
         .irq_deconfig_func = eth_linkedsemi_irq_deconfig_func_##index,                               \
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), ))                \
         IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                      \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
         .phy_dev = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(index, phy_handle)),                        \
+        .tx_delay = DT_INST_PROP_OR(index, tx_delay, 0),                                             \
+        .rx_delay = DT_INST_PROP_OR(index, rx_delay, 0),                                             \
     };                                                                                               \
     static struct dwmac_priv dwmac_instance_##index;                                                 \
     ETH_NET_DEVICE_DT_INST_DEFINE(index,                                                             \
