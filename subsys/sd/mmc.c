@@ -181,6 +181,14 @@ int mmc_card_init(struct sd_card *card)
 		return ret;
 	}
 
+#if defined(CONFIG_MMC_LEGACY_TIMING_TUNING)
+	ret = sdhc_execute_tuning(card->sdhc);
+	if (ret) {
+		LOG_ERROR("MMC Tuning failed: %d", ret);
+		return ret;
+	}
+#endif
+
 	/* CMD8 */
 	ret = mmc_read_ext_csd(card, &card_ext_csd);
 	if (ret) {
@@ -475,11 +483,13 @@ static int mmc_set_timing(struct sd_card *card, struct mmc_ext_csd *ext)
 			return ret;
 		}
 
+#if defined(CONFIG_MMC_HS_TIMING_TUNING)
 		ret = sdhc_execute_tuning(card->sdhc);
 		if (ret) {
 			LOG_ERROR("MMC Tuning failed: %d", ret);
 			return ret;
 		}
+#endif
 		return ret;
 	} else if (ext->device_type.MMC_HS_26_DV) {
 		/* Nothing to do, card is already configured for this */
