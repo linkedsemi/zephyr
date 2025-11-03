@@ -78,7 +78,7 @@ config RX_REFILL_STACK_SIZE
 
 config MDIO_RESET_MAC
 	bool "MDIO_RESET_MAC"
-	default n
+	default y
 	help
 	  MDIO_RESET_MAC
 
