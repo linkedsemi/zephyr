@@ -72,7 +72,7 @@ uint32_t sdhci_get_present_status_flag(struct sdhci_host *sdhci_host)
 
 uint32_t sdhci_card_busy(struct sdhci_host *sdhci_host)
 {
-    return sdhci_get_present_status_flag(sdhci_host) & SDHCI_COMMAND_INHIBIT_FLAG;
+    return (!(sdhci_get_present_status_flag(sdhci_host) & SDHCI_DATA0_LINE_LEVEL_FLAG));
 }
 
 uint32_t sdhci_get_int_status_flag(struct sdhci_host *sdhci_host)
@@ -282,6 +282,9 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
     uint32_t div;
     uint32_t val;
 
+    if (!host->execute_tuning) {
+        LOG_INF("%s: %d(HZ)\n", __func__, clock);
+    }
     host->current_speed = clock;
 
     if (clock == 0)

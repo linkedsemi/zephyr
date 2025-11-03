@@ -160,15 +160,6 @@ int mmc_card_init(struct sd_card *card)
 		return ret;
 	}
 
-	/* Set max bus clock in legacy timing to speed up initialization
-	 * Currently only eMMC is supported for this command
-	 * Legacy MMC cards will initialize slowly
-	 */
-	ret = mmc_set_max_freq(card, &card_csd);
-	if (ret) {
-		return ret;
-	}
-
 	/* CMD7 */
 	ret = sdmmc_select_card(card);
 	if (ret) {
@@ -177,6 +168,15 @@ int mmc_card_init(struct sd_card *card)
 
 	/* CMD6: Set bus width to max supported*/
 	ret = mmc_set_bus_width(card);
+	if (ret) {
+		return ret;
+	}
+
+	/* Set max bus clock in legacy timing to speed up initialization
+	 * Currently only eMMC is supported for this command
+	 * Legacy MMC cards will initialize slowly
+	 */
+	ret = mmc_set_max_freq(card, &card_csd);
 	if (ret) {
 		return ret;
 	}
@@ -469,17 +469,36 @@ static int mmc_set_timing(struct sd_card *card, struct mmc_ext_csd *ext)
 		if (ret) {
 			return ret;
 		}
-		cmd.arg = MMC_SWITCH_HS200_TIMING_ARG;
-		card->bus_io.clock = MMC_CLOCK_HS200;
-		card->bus_io.timing = SDHC_TIMING_HS200;
 	} else if (ext->device_type.MMC_HS_52_DV) {
-		return mmc_set_hs_timing(card);
+		ret = mmc_set_hs_timing(card);
+		if (ret) {
+			return ret;
+		}
+
+		ret = sdhc_execute_tuning(card->sdhc);
+		if (ret) {
+			LOG_ERROR("MMC Tuning failed: %d", ret);
+			return ret;
+		}
+		return ret;
 	} else if (ext->device_type.MMC_HS_26_DV) {
 		/* Nothing to do, card is already configured for this */
 		return 0;
 	} else {
 		return -ENOTSUP;
 	}
+
+#if defined(CONFIG_MMC_HS_TIMING_TUNING)
+	ret = sdhc_execute_tuning(card->sdhc);
+	if (ret) {
+		LOG_ERROR("MMC Tuning failed: %d", ret);
+		return ret;
+	}
+#endif
+
+	cmd.arg = MMC_SWITCH_HS200_TIMING_ARG;
+	card->bus_io.clock = MMC_CLOCK_HS200;
+	card->bus_io.timing = SDHC_TIMING_HS200;
 
 	/* Set card timing mode */
 	cmd.opcode = SD_SWITCH;
