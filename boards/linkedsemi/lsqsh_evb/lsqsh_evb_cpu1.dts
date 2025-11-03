@@ -95,7 +95,8 @@
             #address-cells = <1>;
             #size-cells = <1>;
             interrupts = <3 3>;
-            quad;
+            quad_mode;
+            continuous_mode;
             addr4b;
             mbox = <&mbox_consumer_qspi1>;
 
@@ -140,10 +141,6 @@
         };
     };
 };
-&trng0 {
-    status = "okay";
-};
-
 
 &cpu1 {
     status = "okay";
@@ -240,12 +237,16 @@
     status = "okay";
 };
 
-&pwm{
+&trng0 {
     status = "okay";
-    prescaler = <3>;
-    pinctrl-0 = <&pwm1_pa04 &pwm7_pg02 &fan_pwm10_ph05>;
-    pinctrl-names = "default";
 };
+
+// &pwm{
+//     status = "okay";
+//     prescaler = <3>;
+//     pinctrl-0 = <&pwm1_pa04 &pwm7_pg02 &fan_pwm10_ph05>;
+//     pinctrl-names = "default";
+// };
 
 // &sgpiom {
 //     ngpios = <128>;
@@ -355,9 +356,9 @@ zephyr_udc0: &usb2 {
     status = "okay";
 };
 
-zephyr_udc1: &usb1 {
-    status = "okay";
-};
+// zephyr_udc1: &usb1 {
+//     status = "okay";
+// };
 
 // &i2c5 {
 //     status = "okay";
