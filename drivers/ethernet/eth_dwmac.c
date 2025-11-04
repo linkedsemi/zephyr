@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
 #include <zephyr/net/ethernet.h>
+#include <zephyr/net/phy.h>
 #include <zephyr/sys/barrier.h>
 #include <ethernet/eth_stats.h>
 
@@ -537,15 +538,114 @@ static int dwmac_set_config(const struct device *dev,
 	return ret;
 }
 
+static const struct device *dwmac_get_phy(const struct device *dev)
+{
+	struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
+
+	return p->phy_dev;
+}
+
+void dwmac_10M_100M_speed_cofig(const struct device *const dev)
+{
+	struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
+
+	uint32_t val = REG_READ(MAC_CONF);
+	val &= ~(MAC_CONF_FES);
+	val |= MAC_CONF_PS;
+	REG_WRITE(MAC_CONF, val);
+}
+
+void dwmac_1000M_2500M_speed_cofig(const struct device *const dev)
+{
+	struct dwmac_priv *p = (struct dwmac_priv *)dev->data;
+
+	uint32_t val = REG_READ(MAC_CONF);
+	val &= ~(MAC_CONF_FES | MAC_CONF_PS);
+	REG_WRITE(MAC_CONF, val);
+}
+
+static void phy_link_state_changed(const struct device *phy_dev,
+				   struct phy_link_state *state,
+				   void *user_data)
+{
+	const struct device *dev = (const struct device *)user_data;
+	struct dwmac_priv *p = dev->data;
+
+	ARG_UNUSED(phy_dev);
+
+	if (state->is_up) {
+		/* Announce link up status */
+		switch (state->speed) {
+		case LINK_HALF_1000BASE_T:
+		case LINK_FULL_1000BASE_T:
+			dwmac_1000M_2500M_speed_cofig(dev);
+			break;
+		case LINK_HALF_100BASE_T:
+		case LINK_FULL_100BASE_T:
+		case LINK_HALF_10BASE_T:
+		case LINK_FULL_10BASE_T:
+			dwmac_10M_100M_speed_cofig(dev);
+		default:
+			break;
+		}
+		if (!p->is_fixed_link) {
+			net_eth_carrier_on(p->iface);
+		}
+	} else {
+		if (!p->is_fixed_link) {
+			net_eth_carrier_off(p->iface);
+		}
+	}
+}
+
 static void dwmac_iface_init(struct net_if *iface)
 {
 	struct dwmac_priv *p = net_if_get_device(iface)->data;
+	const struct device *const dev = p->dev;
 	uint32_t reg_val;
 
 	__ASSERT(!p->iface, "interface already initialized?");
 	p->iface = iface;
 
 	ethernet_init(iface);
+
+	if (device_is_ready(p->phy_dev)) {
+		struct phy_link_state link_state;
+		int ret;
+		if (p->is_fixed_link) {
+			ret = phy_get_link_state(p->phy_dev, &link_state);
+			if (ret != 0) {
+				LOG_ERR("Failed to get fixed link state: %d", ret);
+				return;
+			}
+			phy_link_state_changed(p->phy_dev, &link_state, (void *)dev);
+		} else {
+			bool net_if_carrier_off_flag = false;
+			ret = phy_get_link_state(p->phy_dev, &link_state);
+			if (ret != 0) {
+				LOG_ERR("Failed to get fixed link state: %d", ret);
+				return;
+			}
+			if (!link_state.is_up) {
+				net_if_carrier_off_flag = true;
+				/* Do not start the interface until PHY link is up */
+				net_if_carrier_off(iface);
+			}
+			phy_link_callback_set(p->phy_dev, phy_link_state_changed, (void *)dev);
+			if (net_if_carrier_off_flag) {
+				ret = phy_get_link_state(p->phy_dev, &link_state);
+				if (ret != 0) {
+					LOG_ERR("Failed to get fixed link state: %d", ret);
+					return;
+				}
+				if (link_state.is_up) {
+					net_if_carrier_on(iface);
+				}
+			}
+		}
+	} else {
+		LOG_ERR("PHY device not ready");
+	}
 
 	net_if_set_link_addr(iface, p->mac_addr, sizeof(p->mac_addr),
 			     NET_LINK_ETHERNET);
@@ -635,15 +735,19 @@ int dwmac_probe(const struct device *dev)
 	LOG_INF("HW version %u.%u0", (reg_val >> 4) & 0xf, reg_val & 0xf);
 	__ASSERT(FIELD_GET(MAC_VERSION_SNPSVER, reg_val) >= 0x40,
 		 "This driver expects DWC-ETHERNET version >= 4.00");
-#if !defined(CONFIG_MDIO_DWMAC)
-	/* resets all of the MAC internal registers and logic */
-	REG_WRITE(DMA_MODE, DMA_MODE_SWR);
-	timeout = sys_timepoint_calc(K_MSEC(100));
-	while (REG_READ(DMA_MODE) & DMA_MODE_SWR) {
-		if (sys_timepoint_expired(timeout)) {
-			__ASSERT(0, "unable to reset hardware");
-			return -EIO;
+#if defined(CONFIG_MDIO_RESET_MAC)
+	if (!p->is_mdio_reset_mac) {
+#endif
+		/* resets all of the MAC internal registers and logic */
+		REG_WRITE(DMA_MODE, DMA_MODE_SWR);
+		timeout = sys_timepoint_calc(K_MSEC(100));
+		while (REG_READ(DMA_MODE) & DMA_MODE_SWR) {
+			if (sys_timepoint_expired(timeout)) {
+				__ASSERT(0, "unable to reset hardware");
+				return -EIO;
+			}
 		}
+#if defined(CONFIG_MDIO_RESET_MAC)
 	}
 #endif
 	/* get configured hardware features */
@@ -724,4 +828,5 @@ const struct ethernet_api dwmac_api = {
 	.get_capabilities	= dwmac_caps,
 	.set_config		= dwmac_set_config,
 	.send			= dwmac_send,
+	.get_phy		= dwmac_get_phy,
 };

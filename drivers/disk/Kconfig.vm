@@ -1,0 +1,14 @@
+config DISK_DRIVER_VIRTUAL_MEDIA
+	bool "Virtual Media"
+	depends on DT_HAS_ZEPHYR_VIRTUAL_MEDIA_ENABLED
+	default y
+	help
+	  virtual media
+
+if DISK_DRIVER_VIRTUAL_MEDIA
+
+module = VIRTUAL_MEDIA
+module-str = virtual_media
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # DISK_DRIVER_VIRTUAL_MEDIA

@@ -16,9 +16,9 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
 
     pin = pin_desc.pinmux.pin;
 
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pin, false);))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_app_input_lock(pin, false);))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_func_cfg_lock(pin, false);))
+    IF_ENABLED(CONFIG_GPIO_CFG_LOCK, (io_cfg_lock(pin, false);))
+    IF_ENABLED(CONFIG_GPIO_CFG_LOCK, (io_cfg_app_input_lock(pin, false);))
+    IF_ENABLED(CONFIG_GPIO_CFG_LOCK, (io_func_cfg_lock(pin, false);))
 
     if (pin_desc.pin_attr.bias_pull_down) {
         io_pull_write(pin, IO_PULL_DOWN);
@@ -94,9 +94,9 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
     }
 
     /* TODO: check */
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_func_cfg_lock(pin, true);))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_lock(pin, true);))
-    IF_ENABLED(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay), (io_cfg_app_input_lock(pin, true);))
+    IF_ENABLED(CONFIG_GPIO_CFG_LOCK, (io_func_cfg_lock(pin, true);))
+    IF_ENABLED(CONFIG_GPIO_CFG_LOCK, (io_cfg_lock(pin, true);))
+    IF_ENABLED(CONFIG_GPIO_CFG_LOCK, (io_cfg_app_input_lock(pin, true);))
 
     return 0;
 }

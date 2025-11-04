@@ -157,7 +157,7 @@
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
-            status = "okay";
+            status = "disabled";
         };
 
         dmac2: dmac@40042000 {
@@ -170,7 +170,7 @@
             interrupt-parent = <&intc>;
             dma-channels = <8>;
             dma-buf-addr-alignment = <4>;
-            status = "okay";
+            status = "disabled";
         };
 
         pinctrl: pin-controller@4006f080 {
@@ -503,12 +503,12 @@
             resets = <CRYPT_RESET>;
             status = "disabled";
         };
-        
+
         cap:cap@40082400 {
             compatible = "linkedsemi,ls-cap";
             reg = <0x40082400 0x400>;
             status = "disabled";
-            interrupts = <CAP_IRQN 3>;  
+            interrupts = <CAP_IRQN 3>;
             clocks = <CAP_CLOCK>;
             clock-frequency = <PBUS4_CLOCK>;
         };
@@ -533,11 +533,12 @@
             status = "disabled";
 
             vuart1: vuart1@40087800 {
-                compatible = "linkedsemi,ls-vuart";
+                compatible = "linkedsemi,ls-host-vuart";
                 reg = <0x40087800 0x400>;
                 interrupts = <UART3_IRQN 3>;
                 clocks = <UART3_CLOCK>;
                 resets = <UART3_RESET>;
+                clock-source = <CLK_SRC_PBUS4>;
                 port = <0x3f8>;
                 up-irq = <0x4 0>;
                 status = "disabled";
@@ -555,7 +556,9 @@
                 size-order = <0>;
                 status = "disabled";
             };
+
         };
+
 
         sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
@@ -936,7 +939,7 @@
             status = "disabled";
         };
 
-        pmu_rtc0: pmu_rtc0@4006fc00{
+        rtc0: rtc0@4006fc00{
             compatible = "linkedsemi,ls-rtc";
             reg = <0x4006fc00 0x400>;
             interrupts = <PMU_RTC_IRQN 3>;
@@ -1090,14 +1093,6 @@
             status = "disabled";
         };
 
-        eth1: ethernet@40064000 {
-            compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
-            reg = <0x40064000 0x2000>;
-            interrupts = <ETH1_IRQN 3>;
-            clock-frequency = <PBUS0123_CLOCK>;
-            status = "disabled";
-        };
-
         mdio1: mdio@40064000 {
             compatible = "snps,dwmac-mdio";
             reg = <0x40064000 0x2000>;
@@ -1107,21 +1102,35 @@
             #address-cells = <1>;
             #size-cells = <0>;
             status = "disabled";
+
+            eth1: ethernet@40064000 {
+                compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+                reg = <0x40064000 0x2000>;
+                interrupts = <ETH1_IRQN 3>;
+                clock-frequency = <PBUS0123_CLOCK>;
+                clocks = <ETH1_CLOCK>;
+                resets = <ETH1_RESET>;
+                status = "disabled";
+            };
         };
 
-        eth2: ethernet@40066000 {
-            compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+        mdio2: mdio@40066000 {
+            compatible = "snps,dwmac-mdio";
             reg = <0x40066000 0x2000>;
-            interrupts = <ETH2_IRQN 3>;
+            clock-frequency = <PBUS0123_CLOCK>;
             clocks = <ETH2_CLOCK>;
             resets = <ETH2_RESET>;
-            clock-frequency = <PBUS0123_CLOCK>;
+            #address-cells = <1>;
+            #size-cells = <0>;
             status = "disabled";
 
-            mdio2: mdio {
-                compatible = "snps,dwmac-mdio";
-                #address-cells = <1>;
-                #size-cells = <0>;
+            eth2: ethernet@40066000 {
+                compatible = "linkedsemi,ethernet", "snps,designware-ethernet";
+                reg = <0x40066000 0x2000>;
+                interrupts = <ETH2_IRQN 3>;
+                clock-frequency = <PBUS0123_CLOCK>;
+                clocks = <ETH2_CLOCK>;
+                resets = <ETH2_RESET>;
                 status = "disabled";
             };
         };
@@ -1161,7 +1170,7 @@
             resets = <SPI3_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
-            dmas =<&dmac1 0 DMA_SPI3_RX>,<&dmac1 1 DMA_SPI3_TX>;
+            dmas =<&dmac1 0 DMA_SPI3_RX>,<&dmac1 0 DMA_SPI3_TX>;
             dma-names ="rx","tx";
             status = "disabled";
         };

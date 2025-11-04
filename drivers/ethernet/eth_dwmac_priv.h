@@ -67,6 +67,9 @@ struct dwmac_priv {
 	struct k_thread rx_refill_thread;
 	struct k_mutex tx_mutex;
 	bool need_tx_mutex;
+	const struct device *phy_dev;
+	bool is_mdio_reset_mac;
+	bool is_fixed_link;
 };
 
 /*

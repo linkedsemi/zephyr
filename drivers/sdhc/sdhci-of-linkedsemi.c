@@ -34,6 +34,8 @@ LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
 #define LINKEDSEMI_SDHCI_DEFAULT_TIMEOUT (5000U)
 
+#define LINKEDSEMI_SDHCI_TUNING_DELAY_MAX (SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS)
+
 struct linkedsemi_sdhci_config {
     uint32_t response_timeout;
     uint32_t cd_debounce_clocks;
@@ -74,7 +76,8 @@ static void linkedsemi_sdhci_isr(const void *arg)
         host->error_code = (status >> 16) & 0xffff;
         if (host->error_code) {
             if (!host->execute_tuning) {
-                LOG_ERR("error: %#4.4x\n", host->error_code);
+                uint32_t cmd_r = sdhci_readw(host, SDHCI_COMMAND);
+                LOG_ERR("error: %#4.4x  CMD_R: %#x", host->error_code, cmd_r);
             }
         }
         host->irq_status |= status;
@@ -150,7 +153,7 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
     }
 #endif
 
-    LOG_DBG("%s: sdhci_clk=%d, bus_width:%d\n", __func__, ios->clock, ios->bus_width);
+    LOG_DBG("%s: sdhci_clk=%d, bus_width:%d", __func__, ios->clock, ios->bus_width);
 
     if (ios->clock != 0
         && (ios->clock <= dev_config->max_bus_freq)
@@ -185,19 +188,17 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
     ctrl &= ~(SDHCI_CTRL_4BITBUS | SDHCI_CTRL_8BITBUS);
     switch (ios->bus_width) {
     case SDHC_BUS_WIDTH1BIT:
-        host->bus_width = SDHC_BUS_WIDTH1BIT;
         break;
     case SDHC_BUS_WIDTH4BIT:
-        host->bus_width = SDHCI_CTRL_4BITBUS;
         ctrl |= SDHCI_CTRL_4BITBUS;
         break;
     case SDHC_BUS_WIDTH8BIT:
-        host->bus_width = SDHCI_CTRL_8BITBUS;
         ctrl |= SDHCI_CTRL_8BITBUS;
         break;
     default:
         return -ENOTSUP;
     }
+    host->bus_width = ios->bus_width;
 
     sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
     sdhci_writew(host, sdhci_readw(host, 0x52c) | 0x1, 0x52c);
@@ -273,7 +274,7 @@ static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struc
     k_sem_take(&host->transfer_sem, K_FOREVER);
     if (host->error_code & SDHCI_INT_ERROR) {
         if (!host->execute_tuning) {
-            LOG_ERR("%s: Error detected in status(0x%X)!\n", __func__, host->error_code);
+            LOG_ERR("%s: Error detected in status(0x%X)!", __func__, host->error_code);
         }
         host->error_code = 0;
         return -1;
@@ -292,7 +293,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             stat = host->irq_status;
             if (stat & SDHCI_INT_ERROR) {
                 if (!host->execute_tuning) {
-                    LOG_ERR("%s: Error detected in status(0x%x)!\n", __func__, host->error_code);
+                    LOG_ERR("%s: Error detected in status(0x%x)!", __func__, host->error_code);
                 }
                 sdhci_reg_display(host);
                 return -1;
@@ -302,6 +303,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
                 sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
             }
             if (stat & SDHCI_INT_DATA_END) {
+                sys_cache_data_invd_range((void *)data->rx_data, data->block_size * data->block_count);
                 return 0;
             }
         }
@@ -317,7 +319,7 @@ static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, 
             stat = host->irq_status;
             if (stat & SDHCI_INT_ERROR) {
                 if (!host->execute_tuning) {
-                    LOG_ERR("%s: Error detected in status(0x%X)!\n", __func__, stat);
+                    LOG_ERR("%s: Error detected in status(0x%X)!", __func__, stat);
                 }
                 sdhci_reg_display(host);
                 return -1;
@@ -448,26 +450,6 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
     host->sdhci_command = &sdhci_command;
 
     if (data) {
-        sdhci_command.flags |= SDHCI_ENABLE_CMD_DATA_PRESENT_FLAG;
-        sdhci_command.flags2 |= SDHCI_ENABLE_BLOCK_COUNT_FLAG;
-
-        if (sdhci_data.rx_data) {
-            sdhci_command.flags2 |= SDHCI_DATA_READ_FLAG;
-        }
-
-        if (sdhci_data.block_count > 1U) {
-            sdhci_command.flags2 |= (SDHCI_MULTIPLE_BLOCK_FLAG);
-            /* auto command 12 */
-            if (sdhci_data.enable_auto_command12) {
-                /* Enable Auto command 12. */
-                sdhci_command.flags2 |= SDHCI_ENABLE_AUTO_COMMAND12_FLAG;
-            }
-            /* auto command 23 */
-            if (sdhci_data.enable_auto_command23) {
-                sdhci_command.flags2 |= SDHCI_ENABLE_AUTO_COMMAND23_FLAG;
-            }
-        }
-
         sdhci_data.block_size = data->block_size;
         sdhci_data.block_count = data->blocks;
 
@@ -475,6 +457,9 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         case SD_WRITE_SINGLE_BLOCK:
         case SD_WRITE_MULTIPLE_BLOCK:
             sdhci_data.enable_auto_command12 = true;
+            sdhci_data.tx_data = data->data;
+            break;
+        case MMC_SEND_BUS_TEST:
             sdhci_data.tx_data = data->data;
             break;
         case SD_READ_SINGLE_BLOCK:
@@ -491,6 +476,7 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
             sdhci_data.rx_data = data->data;
             break;
         default:
+            LOG_ERR("invalid opcode: %#x", cmd->opcode);
             return -ENOTSUP;
         }
 
@@ -624,23 +610,140 @@ static int find_max_consecutive_ones_region(sys_bitarray_t *bitarray, size_t *st
     return max_length;
 }
 
-static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
+static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev)
 {
+    struct linkedsemi_sdhci_data *dev_data = dev->data;
+    struct sdhci_host *host = &dev_data->host;
+    struct sdhc_command cmd = { 0 };
+    struct sdhc_data data = {0};
+    uint8_t block_size = host->bus_width;
+    const uint8_t *tuning_data_wr;
+    bool need_tuning;
+    __aligned(MAX(4, CONFIG_SDHC_BUFFER_ALIGNMENT)) const uint8_t bus_test_pattern_8bit[CONFIG_SDHC_BUFFER_ALIGNMENT] = { 0x55, 0xaa, 0, 0, 0, 0, 0, 0 };
+    __aligned(MAX(4, CONFIG_SDHC_BUFFER_ALIGNMENT)) const uint8_t bus_test_pattern_4bit[CONFIG_SDHC_BUFFER_ALIGNMENT] = { 0x5a, 0, 0, 0 };
+    __aligned(MAX(4, CONFIG_SDHC_BUFFER_ALIGNMENT)) uint8_t tuning_data_rd[CONFIG_SDHC_BUFFER_ALIGNMENT];
+
+    SYS_BITARRAY_DEFINE(delay_bitmap, LINKEDSEMI_SDHCI_TUNING_DELAY_MAX + 1);
     int ret = 0;
+
+    if (SDHC_BUS_WIDTH8BIT == host->bus_width) {
+        tuning_data_wr = bus_test_pattern_8bit;
+    } else if (SDHC_BUS_WIDTH4BIT == host->bus_width) {
+        tuning_data_wr = bus_test_pattern_4bit;
+    } else {
+        return -ENOTSUP;
+    }
+
+    LOG_DBG("%s: tuning %d(HZ) begin", __func__, host->current_speed);
+    host->execute_tuning = true;
+
+    // tx inv
+    CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_TX_CLK_DELAY_MASK);
+    CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_TX_CLK_SEL_SD_CLK_OUT_MASK);
+    // rx delay
+    CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S0_CCLK_RX_MASK);
+    SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
+
+    need_tuning = true;
+    uint8_t emmc1_dll_ctrl_decoder_r = LINKEDSEMI_SDHCI_TUNING_DELAY_MAX;
+    for (uint16_t delay = 0; delay <= emmc1_dll_ctrl_decoder_r; delay++) {
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+        REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, delay);
+        SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+
+        sys_cache_data_flush_range((void *)tuning_data_wr, CONFIG_SDHC_BUFFER_ALIGNMENT);
+
+        cmd.opcode = MMC_SEND_BUS_TEST;
+        cmd.arg = 0;
+        cmd.response_type = SD_RSP_TYPE_R1;
+        cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
+
+        data.block_size = block_size;
+        data.blocks = 1;
+        data.data = (void *)tuning_data_wr;
+        data.timeout_ms = CONFIG_SD_DATA_TIMEOUT;
+
+        ret = sdhc_request(dev, &cmd, &data);
+        if (ret) {
+            LOG_ERR("CMD19 (MMC_SEND_BUS_TEST) failed: %d", ret);
+            host->execute_tuning = false;
+            return ret;
+        }
+
+        memset(tuning_data_rd, 0, sizeof(tuning_data_rd));
+        sys_cache_data_invd_range(tuning_data_rd, sizeof(tuning_data_rd));
+
+        cmd.opcode = MMC_CHECK_BUS_TEST;
+        data.data = tuning_data_rd;
+
+        ret = sdhc_request(dev, &cmd, &data);
+        if (ret) {
+            LOG_ERR("CMD14 (MMC_CHECK_BUS_TEST) failed: %d", ret);
+            host->execute_tuning = false;
+            return ret;
+        }
+        sys_cache_data_invd_range(tuning_data_rd, sizeof(tuning_data_rd));
+
+        bool delay_good = true;
+        for (int i = 0; i < block_size >> 2; i++) {
+            if ((tuning_data_rd[i] ^ tuning_data_wr[i]) != 0xff) {
+                LOG_DBG("bad delay: %x", delay);
+                delay_good = false;
+                break;
+            }
+        }
+        if (delay_good) {
+            if (0 == delay) {
+                need_tuning = false;
+                break;
+            }
+            sys_bitarray_set_bit(&delay_bitmap, delay);
+            LOG_DBG("ok delay: %x", delay);
+        }
+    }
+
+    if (need_tuning) {
+        size_t max_consecutive_start = 0;
+        int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+        if (max_length > 0) {
+            LOG_INF("%s: tuning len: %d start bit: %zu", __func__, max_length, max_consecutive_start);
+            LOG_INF("%s: tuning delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
+            LOG_INF("%s: tuning %d(HZ) success", __func__, host->current_speed);
+            REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, max_consecutive_start + (max_length >> 1));
+            ret = 0;
+        } else {
+            LOG_ERR("%s: tuning err: %d", __func__, max_length);
+            LOG_ERR("%s: tuning %d(HZ) fail", __func__, host->current_speed);
+            REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, 0);
+            ret = -EIO;
+        }
+        SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+    } else {
+        LOG_INF("%s: tuning %d(HZ) is needless", __func__, host->current_speed);
+    }
+
+    host->execute_tuning = false;
+
+    return ret;
+}
+
+static int linkedsemi_sdhci_execute_hs200_tuning(const struct device *dev)
+{
+    struct linkedsemi_sdhci_data *dev_data = dev->data;
+    struct sdhci_host *host = &dev_data->host;
     struct sdhc_command cmd = { 0 };
     struct sdhc_data data = {0};
     uint8_t block_size;
     const uint8_t *tuning_data_cmp;
-    uint8_t tuning_data[sizeof(tuning_blk_pattern_8bit)] __aligned(32);
-    SYS_BITARRAY_DEFINE(delay_bitmap, (SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS) + 1);
+    uint8_t tuning_data[sizeof(tuning_blk_pattern_8bit)] __aligned(MAX(4, CONFIG_SDHC_BUFFER_ALIGNMENT));
+    SYS_BITARRAY_DEFINE(delay_bitmap, LINKEDSEMI_SDHCI_TUNING_DELAY_MAX + 1);
+    int ret = 0;
 
-    struct linkedsemi_sdhci_data *dev_data = dev->data;
-    struct sdhci_host *host = &dev_data->host;
-
-    if (SDHCI_CTRL_8BITBUS == host->bus_width) {
+    if (SDHC_BUS_WIDTH8BIT == host->bus_width) {
         block_size = sizeof(tuning_blk_pattern_8bit);
         tuning_data_cmp = tuning_blk_pattern_8bit;
-    } else if (SDHCI_CTRL_4BITBUS == host->bus_width) {
+    } else if (SDHC_BUS_WIDTH4BIT == host->bus_width) {
         block_size = sizeof(tuning_blk_pattern_4bit);
         tuning_data_cmp = tuning_blk_pattern_4bit;
     } else {
@@ -660,8 +763,8 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     if(dll_lock()) {
         return -EIO;
     }
-    LOG_DBG("EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
-    LOG_DBG("%s: tuning begin", __func__);
+    LOG_DBG("%s: tuning EMMC1_DLL_CTRL: %x", __func__, SYSC_APP_CPU->EMMC1_DLL_CTRL);
+    LOG_DBG("%s: tuning %d(HZ) begin", __func__, host->current_speed);
     host->execute_tuning = true;
 
     if (SDHC_TIMING_HS200 == host->timing) {
@@ -684,41 +787,38 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     uint8_t emmc1_dll_ctrl_decoder_r = REG_FIELD_RD(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R);
     /* __ASSERT_NO_MSG((SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS) >= emmc1_dll_ctrl_decoder_r); */
     for (uint16_t delay = 0; delay <= emmc1_dll_ctrl_decoder_r; delay++) {
-        for (int i = 0; i < 5; i++) {
-            CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
-            REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, delay);
-            SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+        CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
+        REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, delay);
+        SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
 
-            memset(tuning_data, 0, sizeof(tuning_data));
-            sys_cache_data_flush_range(tuning_data, sizeof(tuning_data));
-            ret = sdhc_request(dev, &cmd, &data);
-            if (ret) {
-                LOG_ERR("CMD21 (MMC_SEND_TUNING_BLOCK) failed: %d", ret);
-                host->execute_tuning = false;
-                return ret;
-            }
-            if (memcmp(tuning_data, tuning_data_cmp, block_size)) {
-                LOG_DBG("bad delay: %x", delay);
-            } else {
-                sys_bitarray_set_bit(&delay_bitmap, delay);
-                LOG_DBG("ok delay: %x", delay);
-            }
+        memset(tuning_data, 0, sizeof(tuning_data));
+        sys_cache_data_flush_range(tuning_data, sizeof(tuning_data));
+        ret = sdhc_request(dev, &cmd, &data);
+        if (ret) {
+            LOG_ERR("CMD21 (MMC_SEND_TUNING_BLOCK) failed: %d", ret);
+            host->execute_tuning = false;
+            return ret;
         }
-
+        if (memcmp(tuning_data, tuning_data_cmp, block_size)) {
+            LOG_DBG("bad delay: %x", delay);
+        } else {
+            sys_bitarray_set_bit(&delay_bitmap, delay);
+            LOG_DBG("ok delay: %x", delay);
+        }
     }
 
     size_t max_consecutive_start = 0;
     int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
     CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
     if (max_length > 0) {
-        LOG_DBG("len: %d start bit: %zu", max_length, max_consecutive_start);
-        LOG_DBG("%s: delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
-        LOG_DBG("%s: tuning success", __func__);
+        LOG_INF("%s: tuning len: %d start bit: %zu", __func__, max_length, max_consecutive_start);
+        LOG_INF("%s: tuning delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
+        LOG_INF("%s: tuning %d(HZ) success", __func__, host->current_speed);
         REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, max_consecutive_start + (max_length >> 1));
         ret = 0;
     } else {
-        LOG_DBG("err: %d", max_length);
-        LOG_DBG("%s: tuning fail", __func__);
+        LOG_ERR("%s: tuning err: %d", __func__, max_length);
+        LOG_ERR("%s: tuning %d(HZ) fail", __func__, host->current_speed);
         REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, 0);
         ret = -EIO;
     }
@@ -727,6 +827,20 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     host->execute_tuning = false;
 
     return ret;
+}
+
+static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
+{
+    struct linkedsemi_sdhci_data *dev_data = dev->data;
+    struct sdhci_host *host = &dev_data->host;
+
+    if (host->current_speed < CONFIG_SDHCI_LINKEDSEMI_TUNING_LOWEST_FREQUENCY) {
+        return linkedsemi_sdhci_execute_mmc_bus_test_tuning(dev);
+    } else if (host->current_speed <= MMC_CLOCK_HS200) {
+        return linkedsemi_sdhci_execute_hs200_tuning(dev);
+    } else {
+        __ASSERT_NO_MSG(0);
+    }
 }
 
 /*

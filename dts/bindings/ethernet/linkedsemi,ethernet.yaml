@@ -13,3 +13,13 @@ properties:
     required: true
     description: |
       clock frequency in Hz
+
+  tx-delay:
+    type: int
+    description: |
+      mac internal tx clock delay
+
+  rx-delay:
+    type: int
+    description: |
+      mac internal rx clock delay

@@ -7,42 +7,71 @@
 #include <string.h>
 
 #include <limits.h>
-
+#include <zephyr/kernel.h>
 #include "mbedtls/bignum.h"
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ecdsa_alt.h"
 #include "mbedtls/ecp.h"
-
-
+#include "mbedtls/pk.h"
+#include "mbedtls/md.h"
+#include "ls_hal_otbn_sha.h"
+#include "ls_msp_otbn.h"
+#include "log.h"
+#include <zephyr/drivers/entropy.h>
 /************************************************************
  *
  * defines
  *
  ************************************************************/
 #define DIGEST_SIZE         64
-#define ECP_GROUP_ID        MBEDTLS_ECP_DP_SECP256R1
-#define ECP_GROUP_ID_STR    "DP_SECP256R1"
 
+const static struct device *trng = DEVICE_DT_GET(DT_NODELABEL(trng0));
+
+#define STACK_SIZE (1024)
+static struct k_thread otbn_thread1;
+static struct k_thread otbn_thread2;
+K_THREAD_STACK_DEFINE(tstack1, STACK_SIZE);
+K_THREAD_STACK_DEFINE(tstack2, STACK_SIZE);
 
 static uint8_t fix_trng_output[DIGEST_SIZE];
+int ecdsa_test(void);
 
-int ls_trng(void *null, unsigned char *buf, size_t size)
+int ls_trng_get_random(void *null, unsigned char *buf, size_t size)
 {
-    memcpy(buf,fix_trng_output,size);
-    return 0;
+    (void)null;
+    return entropy_get_entropy(trng, buf, size);
 }
 
-int ls_trng2(void *null, unsigned char *buf, size_t size)
+void otbn_task1_func(void *p1, void *p2, void *p3)
 {
-    static uint16_t a = 0;
-    for(uint16_t i=0; i<size; i++)
+    while(1)
     {
-        buf[i] = (a * 0xfe) + i;
-        a++;
+        ecdsa_test();
     }
-    return 0;
+
 }
 
+void otbn_task2_fun(void *p1, void *p2, void *p3)
+{
+    while(1)
+    {
+        ecdsa_test();
+    }
+
+}
+
+void multiple_otbn_thread_test(void)
+{
+    k_tid_t tid[2];
+	/* the highest-priority thread that has waited the longest */
+	tid[0] = k_thread_create(&otbn_thread1, tstack1, STACK_SIZE,
+			otbn_task1_func, NULL, NULL, NULL,
+			K_PRIO_PREEMPT(0), 0, K_MSEC(10));
+	/* the lowest-priority thread that has waited the shorter */
+	tid[1] = k_thread_create(&otbn_thread2, tstack2, STACK_SIZE,
+			otbn_task2_fun, NULL, NULL, NULL,
+			K_PRIO_PREEMPT(1), 0, K_MSEC(20));
+}
 
 int runIt_unhexify(unsigned char *obuf, const char *ibuf)
 {
@@ -114,7 +143,7 @@ int ecdsa_p256_test(void)
     memset(pHash, 0, 66);
     memset(pRndBuf, 0, 66);
 
-    mbedtls_ecp_group_load(&pGrp, ECP_GROUP_ID);
+    mbedtls_ecp_group_load(&pGrp, MBEDTLS_ECP_DP_SECP256R1);
     mbedtls_ecp_point_read_string(&pQ, 16, xQ_str, yQ_str);
 
     mbedtls_mpi_read_string(&d, 16, d_str);
@@ -141,7 +170,7 @@ int ecdsa_p256_test(void)
     memcpy(fix_trng_output,pRndBuf,DIGEST_SIZE);
 
 
-    if(mbedtls_ecdsa_sign(&pGrp, &r, &s, &d, pHash, hlen, ls_trng, NULL) != 0)
+    if(mbedtls_ecdsa_sign(&pGrp, &r, &s, &d, pHash, hlen, ls_trng_get_random, NULL) != 0)
     {
         while(1);
     }
@@ -181,11 +210,11 @@ int ecdsa_test_curve(mbedtls_ecp_group_id curve)
 
     if(!(curve == MBEDTLS_ECP_DP_SECP384R1 || curve == MBEDTLS_ECP_DP_SECP256R1 || curve == MBEDTLS_ECP_DP_SM2))
     {
-        printf("This curve is not supported.");
+        printf("This curve is not supported.\n");
     }
 
     mbedtls_ecp_group_init(&ctx.private_grp);
-    mbedtls_ecp_group_load(&ctx.private_grp, ECP_GROUP_ID);
+    mbedtls_ecp_group_load(&ctx.private_grp, curve);
 
     mbedtls_mpi_init(&ctx.private_Q.private_X);
     mbedtls_mpi_init(&ctx.private_Q.private_Y);
@@ -194,8 +223,8 @@ int ecdsa_test_curve(mbedtls_ecp_group_id curve)
     mbedtls_mpi_init(&r);
     mbedtls_mpi_init(&s);
 
-    //generator key pairs 
-    err = mbedtls_ecdsa_genkey(&ctx,ECP_GROUP_ID,ls_trng2,NULL);
+    // generator key pairs 
+    err = mbedtls_ecdsa_genkey(&ctx,curve,ls_trng_get_random,NULL);
     if(err)
     {
         printf(" ecc keygen failed \r\n");
@@ -205,20 +234,18 @@ int ecdsa_test_curve(mbedtls_ecp_group_id curve)
     unsigned char *pHash = hash_buf;
     size_t hlen;
     hlen = runIt_unhexify(pHash, hash_str);
-
     // sign
-    if(mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d, pHash, hlen, ls_trng2, NULL) != 0)
+    if(mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d, pHash, hlen, ls_trng_get_random, NULL) != 0)
     {
         err = -1;
-        printf(" ecdsa sign failed");
+        printf(" ecdsa sign failed\n");
         goto exit_test;
     }
-
     // verify
     if(mbedtls_ecdsa_verify(&ctx.private_grp, pHash, hlen, &ctx.private_Q, &r, &s) != 0)
     {
         err = -1;
-        printf(" ecdsa verify failed");
+        printf(" ecdsa verify failed\n");
         goto exit_test;
     }
 
@@ -238,12 +265,12 @@ exit_test:
 int ecdsa_test(void)
 {
     int ret = 0;
-    mbedtls_ls_otbn_ecdsa_init();
 
     if(ecdsa_test_curve(MBEDTLS_ECP_DP_SECP384R1) != 0)
     {
         ret = -1;
         printf("ecc p384 test failed! \n");
+        goto exit;
     }else{
         printf("ecc p384 test passed!\n");
     }
@@ -251,6 +278,7 @@ int ecdsa_test(void)
     {
         ret = -1;
         printf("ecc p256 test failed! \n");
+        goto exit;
     }else{
         printf("ecc p256 test passed!\n");
     }
@@ -258,11 +286,11 @@ int ecdsa_test(void)
     {
         ret = -1;
         printf("sm2 test failed! \n");
+        goto exit;
     }else{
         printf("sm2  test passed!\n");
     }
 
-    mbedtls_ls_otbn_ecdsa_deinit();
-
+exit:
     return ret;
 }

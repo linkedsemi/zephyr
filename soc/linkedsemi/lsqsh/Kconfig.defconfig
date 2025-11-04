@@ -16,6 +16,14 @@ config XUANTIE_E906_CLIC
 config RISCV_MCAUSE_EXCEPTION_MASK
 	default 0xfff
 
+config LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT
+	bool "LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT"
+
+if LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT
+	config ARCH_HAS_CUSTOM_BUSY_WAIT
+		default y
+endif
+
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default $(dt_node_int_prop_int,/cpus/cpu@1,clock-frequency) if $(dt_path_enabled,/cpus/cpu@1)
 	default $(dt_node_int_prop_int,/cpus/cpu@2,clock-frequency) if $(dt_path_enabled,/cpus/cpu@2)
@@ -23,6 +31,57 @@ config SYS_CLOCK_HW_CYCLES_PER_SEC
 
 config NUM_IRQS
 	default 176
+
+config ADC
+	default y
+
+config CRYPTO
+	default y
+
+config DMA
+	default y
+
+config ENTROPY_GENERATOR
+	default y
+
+config ESPI
+	default y
+
+config I2C
+	default y
+
+config I3C
+	default y
+
+config IPMI
+	default y
+
+config JTAG
+	default y
+
+config KCS
+	default y
+
+config LPC
+	default y
+
+config PECI
+	default y
+
+config PWM
+	default y
+
+config SENSOR
+	default y
+
+config SMBUS
+	default y
+
+config SPI
+	default y
+
+config WATCHDOG
+	default y
 
 if MINIMAL_LIBC
 	config MINIMAL_LIBC_RAND
@@ -125,6 +184,9 @@ config NET_DRIVERS
 	default y
 
 config MDIO
+	default y
+
+config MDIO_RESET_MAC
 	default y
 
 endif # NETWORKING
@@ -310,6 +372,20 @@ config VENDER_DEFINE_DMA_DW_LLI_POOL
 if DMA_DW
 	config DMA_DW_LLI_POOL_SIZE
 		default 8
+endif
+
+if $(dt_path_enabled,/cpus/cpu@1)
+	config GPIO_CFG_LOCK
+		bool "GPIO_CFG_LOCK"
+		default y
+		help
+		GPIO_CFG_LOCK
+
+	config GPIO_INTR_LOCK
+		bool "GPIO_INTR_LOCK"
+		default y
+		help
+		GPIO_INTR_LOCK
 endif
 
 endif

@@ -5,7 +5,7 @@ compatible: "linkedsemi,ls-flash-controller"
 include: [flash-controller.yaml,pinctrl-device.yaml]
 
 properties:
-  quad:
+  quad_mode:
     type: boolean
 
   continuous_mode:

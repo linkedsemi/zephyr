@@ -7,7 +7,8 @@ config SDHCI_LINKEDSEMI
     depends on DT_HAS_LINKEDSEMI_SDHCI_ENABLED
     select SDHC_SUPPORTS_NATIVE_MODE
     select SDHCI
-    select EVENTS
+    select MMC_LEGACY_TIMING_TUNING
+    select MMC_HS_TIMING_TUNING
     help
       Enable the LINKEDSEMI SDHCI Host controller driver
 
@@ -44,5 +45,11 @@ config SDHCI_LINKEDSEMI_DMA_BUFFER_SIZE
       Size of SDHCI DMA descriptor buffer in bytes
 
 endif #SDHCI_LINKEDSEMI_DMA_SUPPORT
+
+config SDHCI_LINKEDSEMI_TUNING_LOWEST_FREQUENCY
+    int "sdhci linkedsemi tuning lowest frequency"
+    default 100000000
+    help
+      sdhci linkedsemi tuning lowest frequency
 
 endif #SDHCI_LINKEDSEMI

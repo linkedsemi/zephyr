@@ -201,9 +201,9 @@ void iopmp_region_init(void)
         uint32_t dev = SEC_IOPMP1_ADDR + (idx * 0x400);
         iopmp_config_region_napot4(dev, 0, 0x10000000, KB(512), false, false, false, false);
         iopmp_config_region_napot4(dev, 1, 0x40002800, KB(1), true, true, true, false);
-        iopmp_config_region_napot4(dev, 2, 0x40005000, KB(1), true, true, true, false);
+        iopmp_config_region_napot4(dev, 2, 0x40004000, KB(16), true, true, true, false);
         iopmp_config_region_napot4(dev, 3, SEC_SYSC_CPU_SEC_ADDR + 0x28 /* sec_cpu_intr */, 4, true, true, true, false);
-        iopmp_config_region_napot4(dev, 4, 0x40028000, KB(8), true, true, true, false);
+        iopmp_config_region_napot4(dev, 4, 0x40029400, KB(1), true, true, true, false);
         iopmp_config_region_napot4(dev, 5, 0x40000000, KB(256), false, false, false, false);
         iopmp_config_region_napot4(dev, 6, 0x400A0000, KB(32), false, false, false, false);
         iopmp_config_region_napot4(dev, 7, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
@@ -380,14 +380,16 @@ __maybe_unused static void peripheral_init()
     REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_DIV, 0); /* div = 2 */
     REG_FIELD_WR(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_SEL, 0x2); /* rxck pad */
     SET_BIT(SYSC_APP_AWO->ETH1_CLK_CFG, SYSC_APP_AWO_ETH1_CLK_RX_CG_MASK);
+    /* SYSC_APP_AWO->ETH1_CLK_CFG */
 
+    /* SYSC_APP_AWO->ETH2_CLK_CFG */
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_DIV, 0);
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_SEL, 0x2); /* rxck pad */
     SET_BIT(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_TX_CG_MASK);
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_DIV, 0); /* div = 2 */
     REG_FIELD_WR(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_SEL, 0x2); /* rxck pad */
     SET_BIT(SYSC_APP_AWO->ETH2_CLK_CFG, SYSC_APP_AWO_ETH2_CLK_RX_CG_MASK);
-    /* SYSC_APP_AWO->ETH1_CLK_CFG */
+    /* SYSC_APP_AWO->ETH2_CLK_CFG */
 
 
     /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
@@ -420,6 +422,11 @@ __maybe_unused static void peripheral_init()
     REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_INTF_SEL, 0x1); /* rgmii */
     REG_FIELD_WR(SYSC_APP_CPU->ETH1_PHY_CTRL, SYSC_APP_CPU_ETH1_PHY_SEL, 0x1); /* rgmii */
     /* SYSC_APP_CPU->ETH1_PHY_CTRL */
+
+    /* SYSC_APP_CPU->ETH2_PHY_CTRL */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH2_PHY_CTRL, SYSC_APP_CPU_ETH2_PHY_INTF_SEL, 0x1); /* rgmii */
+    REG_FIELD_WR(SYSC_APP_CPU->ETH2_PHY_CTRL, SYSC_APP_CPU_ETH2_PHY_SEL, 0x1); /* rgmii */
+    /* SYSC_APP_CPU->ETH2_PHY_CTRL */
 
 
     /* SYSC_APP_AWO->EMMC2_CORE_TIM_CLK */
@@ -631,12 +638,13 @@ void soc_early_init_hook(void)
     if ((IS_ENABLED(CONFIG_XIP) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= SRAM1_ADDR))
        || (!IS_ENABLED(CONFIG_XIP))) {
         flash1.reg = (void *)SEC_QSPI1_ADDR;
-        flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad));
-        flash1.continuous_mode_enable = false;
+        flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad_mode));
+        flash1.continuous_mode_enable = DT_PROP(DT_NODELABEL(qspi1), continuous_mode);
         flash1.writing = false;
         flash1.suspend_count = 0;
         flash1.continuous_mode_on = false;
         flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
+        hal_flash_continuous_mode_start();
         qspiv2_global_int_ctrl_fn_init();
         if (!flash1.dual_mode_only) {
             hal_flash_qe_status_read_and_set();
@@ -657,13 +665,14 @@ void soc_early_init_hook(void)
             lsqspiv2_msp_init((reg_lsqspiv2_t *)SEC_QSPI1_ADDR);
             pinmux_hal_flash_quad_init();
             flash1.reg = (void *)SEC_QSPI1_ADDR;
-            flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad));
-            flash1.continuous_mode_enable = false;
+            flash1.dual_mode_only = !(DT_PROP(DT_NODELABEL(qspi1), quad_mode));
+            flash1.continuous_mode_enable = true;
             flash1.writing = false;
             flash1.suspend_count = 0;
             flash1.continuous_mode_on = false;
             flash1.addr4b = DT_PROP(DT_NODELABEL(qspi1), addr4b);
             hal_flash_init();
+            hal_flash_continuous_mode_start();
             if (!flash1.dual_mode_only) {
                 hal_flash_qe_status_read_and_set();
             }
@@ -692,17 +701,24 @@ void soc_early_init_hook(void)
     sys_write32(0x0, APP_PMU_RG_APP_ADDR + 0x3e8);
 #endif
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
 #if defined(CONFIG_PSRAM)
     if (!is_app_cpu_running()) {
         psram_init();
     }
 #endif
+#endif
 
     return;
 }
 
-__maybe_unused
-static void boot_cpu2()
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+__maybe_unused static bool is_app_cpu_xip_in_sec_flash(void)
+{
+    return (CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE));
+}
+
+__maybe_unused static void boot_cpu2()
 {
     if (is_app_cpu_running()) {
         return;
@@ -777,12 +793,14 @@ static void boot_cpu2()
 #endif /* CONFIG_IMAGE_HEADER */
 }
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-void soc_late_init_hook(void)
+__maybe_unused void soc_late_init_hook(void)
 {
     REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
     SEC_PMU->SFT_CTRL[2] &= ~0xf;
 #if defined(CONFIG_BOOT_CPU2)
+    if (is_app_cpu_xip_in_sec_flash()) {
+        flash_ex_op(DEVICE_DT_GET(DT_NODELABEL(qspi1)),FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
+    }
     boot_cpu2();
 #endif /* CONFIG_BOOT_CPU2 */
 }

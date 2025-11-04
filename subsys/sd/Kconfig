@@ -106,6 +106,18 @@ config MMC_RCA
 	help
 	  Relative card address to publish to MMC card.
 
+config MMC_LEGACY_TIMING_TUNING
+	bool "MMC_LEGACY_TIMING_TUNING"
+	default n
+	help
+	  MMC_LEGACY_TIMING_TUNING
+
+config MMC_HS_TIMING_TUNING
+	bool "MMC_HS_TIMING_TUNING"
+	default n
+	help
+	  MMC_HS_TIMING_TUNING
+
 endif # SD_STACK
 
 endmenu

@@ -1,0 +1,11 @@
+sample:
+  description: crypto software and hardware alignment test
+    application
+  name: crypto_sw_hw_alignment_test
+common:
+  tags: introduction
+  integration_platforms:
+    - native_sim
+  harness: console
+  harness_config:
+    type: one_line

@@ -1,9 +1,9 @@
 # linkedsemi,ls-host-vuart.yaml
-description: LINKEDSEMI eSPI Host vUART
+description: LINKEDSEMI Host vUART
 
 compatible: "linkedsemi,ls-host-vuart"
 
-include: [base.yaml]
+include: [uart-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   port:
@@ -11,10 +11,9 @@ properties:
     required: true
     description: "Base I/O port address for the host VUART"
 
-  target:
-    type: phandle
-    required: true
-    description: "Phandle to the target virtual UART device"
+  clock-source:
+    type: int
+    description: "System clock source"
 
   up-irq:
     type: array

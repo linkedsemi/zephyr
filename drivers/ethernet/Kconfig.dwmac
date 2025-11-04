@@ -76,4 +76,10 @@ config RX_REFILL_STACK_SIZE
 	help
 	  stack size for RX refill thread
 
+config MDIO_RESET_MAC
+	bool "MDIO_RESET_MAC"
+	default y
+	help
+	  MDIO_RESET_MAC
+
 endif # ETH_DWMAC
