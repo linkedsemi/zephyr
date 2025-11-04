@@ -58,7 +58,9 @@ LOG_MODULE_REGISTER(spi_dw);
 #define TIMING_CALIBRATION_INVALID UINT8_MAX
 #define RX_SAMPLE_DLY_MAX 4
 #define DFS_4     4
-
+#define Both_Single_Mode 0
+#define Single_And_Specific_Mode 1
+#define Both_Specific_Mode 2
 static int find_max_consecutive_ones_region(sys_bitarray_t *bitarray, size_t *start_pos)
 {
 	int ret_val;
@@ -919,7 +921,7 @@ static int transceive_read(const struct device *dev,
 
 	set_bit_ssienr(dev);
 
-	if ((op_info->mode==JESD216_MODE_144||op_info->mode==JESD216_MODE_122)) {
+	if ((op_info->mode==JESD216_MODE_144)||(op_info->mode==JESD216_MODE_122)||((op_info->mode==JESD216_MODE_444) &&(op_info->addr_len!=0))) {
 		if (op_info->addr_len==3) {
 			uint32_t addr_bit =0;
 			addr_bit=addr<<8;
@@ -931,7 +933,9 @@ static int transceive_read(const struct device *dev,
 			write_dr(dev, addr);
 			write_dr(dev, 0);
 		}
-	}else {
+	}else if (((op_info->mode==JESD216_MODE_444) &&(op_info->addr_len==0))) {
+		write_dr(dev, opcode);
+	}else{
 		write_dr(dev, opcode);
 		write_dr(dev, addr);
 	}
@@ -1085,6 +1089,111 @@ static int build_tx_lli_chain(struct spi_dw_data *spi,
 	*blk_cnt = need;
 	return 0;
 }
+
+static void spi_dw_spi_ctrlr0_write_config(const struct device *dev,
+			   struct spi_nor_op_info *op_info,
+			   uint8_t trans_type)
+{
+	uint32_t spi_ctrlr0 = 0;
+
+	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(trans_type);
+	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_INST_L_8BIT;
+	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L(op_info->addr_len);
+
+	write_spi_ctrlr0(dev, spi_ctrlr0);
+}
+
+
+static int transceive_write_opcode_addr(const struct device *dev,
+		      const struct spi_config *config,
+		      struct spi_nor_op_info *op_info,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata)
+{
+	struct spi_dw_data *spi = dev->data;
+	uint32_t tmod = DW_SPI_CTRLR0_TMOD_TX_RX;
+	uint32_t reg_data;
+	int ret;
+
+	struct spi_config config_quad = *config;
+	config_quad.operation &= ~SPI_LINES_MASK;
+	config_quad.operation |= SPI_LINES_QUAD;
+	config_quad.operation &= ~SPI_WORD_SIZE_MASK;
+	config_quad.operation |= (8U << SPI_WORD_SIZE_SHIFT);
+	spi_context_lock(&spi->ctx, asynchronous, cb, userdata, &config_quad);
+#ifdef CONFIG_PM_DEVICE
+	if (!pm_device_is_busy(dev)) {
+		pm_device_busy_set(dev);
+	}
+#endif /* CONFIG_PM_DEVICE */
+
+
+	/* Configure */
+	ret = spi_dw_configure_support_all(dev, spi, &config_quad);
+	if (ret) {
+		goto out;
+	}
+
+	tmod = DW_SPI_CTRLR0_TMOD_TX;
+
+	if (spi_dw_is_slave(spi)) {
+		/* Enabling MISO line relevantly */
+			tmod &= ~DW_SPI_CTRLR0_SLV_OE;
+	}
+
+	/* Updating TMOD in CTRLR0 register */
+	reg_data = read_ctrlr0(dev);
+	reg_data &= ~DW_SPI_CTRLR0_TMOD_RESET;
+	reg_data |= tmod;
+
+	write_ctrlr0(dev, reg_data);
+
+	spi_dw_spi_ctrlr0_write_config(dev,op_info,Both_Specific_Mode);
+
+	write_imr(dev, DW_SPI_ISR_ERRORS_MASK);
+
+	while (read_txflr(dev) != 0);
+	set_bit_ssienr(dev);
+
+	write_dr(dev, op_info->opcode);
+	if (op_info->addr_len!=0) {
+		write_dr(dev, op_info->addr);
+	}
+
+	if (!spi_dw_is_slave(spi)) {
+		/* if cs is not defined as gpio, use hw cs */
+		if (spi_cs_is_gpio(config)) {
+			spi_context_cs_control(&spi->ctx, true);
+			write_ser(dev, BIT(config->slave));
+		} else {
+			write_ser(dev, BIT(config->slave));
+		}
+	}
+
+	while (test_bit_sr_busy(dev) | (!test_bit_sr_tfe(dev))) {
+	}
+
+	if (!spi_dw_is_slave(spi)) {
+		/* if cs is not defined as gpio, use hw cs */
+		if (spi_cs_is_gpio(config)) {
+			spi_context_cs_control(&spi->ctx, false);
+			write_ser(dev, 0);
+		} else {
+			write_ser(dev, 0);
+		}
+	}
+	clear_bit_ssienr(dev);
+out:
+	spi_context_release(&spi->ctx, ret);
+
+#ifdef CONFIG_PM_DEVICE
+	pm_device_busy_clear(dev);
+#endif
+
+	return ret;
+}
+
 static int transceive_write(const struct device *dev,
 		      const struct spi_config *config,
 		      const struct spi_buf_set *tx_bufs,
@@ -1193,7 +1302,7 @@ static int transceive_write(const struct device *dev,
 	}
 
 	/* Open SPI DMA */
-	write_dmatdlr(dev, 2);
+	write_dmatdlr(dev, 0);
 	write_dmacr(dev, DW_SPI_TDMAE_BIT);    /* Enable TX DMA */
 
 	if (!spi_dw_is_slave(spi)) {
@@ -1320,7 +1429,7 @@ static void spi_dw_spi_ctrlr0_config(const struct device *dev,
 	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(trans_type);
 	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_INST_L_8BIT;
 
-	if ((op_info->mode==JESD216_MODE_144)||(op_info->mode==JESD216_MODE_122)) {
+	if ((op_info->mode==JESD216_MODE_144)||(op_info->mode==JESD216_MODE_122)||((op_info->mode==JESD216_MODE_444)&&(op_info->addr_len!=0))) {
 		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L((op_info->addr_len+1));
 	}else {
 		spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L(op_info->addr_len);
@@ -1456,8 +1565,10 @@ static int spi_dw_read_multi_mode_any_addr(const struct device *dev,
 	}
 }
 
+
 static void spi_dw_wait_wip_and_wren(const struct device *dev,
-			   const struct spi_config *config)
+			   const struct spi_config *config,
+			   struct spi_nor_op_info *op_info)
 {
 	struct spi_config cfg_single = *config;
 	cfg_single.operation &= ~SPI_LINES_MASK;
@@ -1469,7 +1580,7 @@ static void spi_dw_wait_wip_and_wren(const struct device *dev,
 	while (1) {
 		uint8_t reg = 0;
 		struct spi_nor_op_info op_info_rdsr =
-		SPI_NOR_OP_INFO(JESD216_MODE_111, SPI_NOR_CMD_RDSR,
+		SPI_NOR_OP_INFO(((op_info->mode==JESD216_MODE_444)?JESD216_MODE_444:JESD216_MODE_111), SPI_NOR_CMD_RDSR,
 				0, 0, 0, &reg, sizeof(reg), SPI_NOR_DATA_DIRECT_IN);
 
 		int ret_rdsr = api->spi_nor_op->transceive(dev, &cfg_single, &op_info_rdsr);
@@ -1484,7 +1595,7 @@ static void spi_dw_wait_wip_and_wren(const struct device *dev,
 	}
 
 	struct spi_nor_op_info op_info_wren =
-		SPI_NOR_OP_INFO(JESD216_MODE_111, SPI_NOR_CMD_WREN,
+		SPI_NOR_OP_INFO(((op_info->mode==JESD216_MODE_444)?JESD216_MODE_444:JESD216_MODE_111), SPI_NOR_CMD_WREN,
 				0, 0, 0, NULL, 0, SPI_NOR_DATA_DIRECT_OUT);
 
 	int ret_wren = api->spi_nor_op->transceive(dev, &cfg_single, &op_info_wren);
@@ -1496,8 +1607,10 @@ static void spi_dw_wait_wip_and_wren(const struct device *dev,
 
 static int spi_dw_write_split_4align(const struct device *dev,
 			   const struct spi_config *config,
+			   struct spi_nor_op_info *op_info,
 			   uint32_t opcode, uint32_t addr,
-			   const void *src0, size_t len0,uint32_t spi_lines)
+			   const void *src0, size_t len0,
+			   uint8_t trans_type,uint32_t spi_lines)
 {
 	struct spi_config config_dfs4 = *config;
 	config_dfs4.operation &= ~SPI_LINES_MASK;
@@ -1534,7 +1647,8 @@ static int spi_dw_write_split_4align(const struct device *dev,
 	if (mid > 0) {
 		struct spi_buf b = { .buf = (void *)src, .len = mid };
 		struct spi_buf_set t = { .buffers = &b, .count = 1 };
-		spi_dw_wait_wip_and_wren(dev, config);
+		spi_dw_wait_wip_and_wren(dev, config,op_info);
+		spi_dw_spi_ctrlr0_write_config(dev,op_info,trans_type);
 		ret = transceive_write(dev, &config_dfs4, &t, NULL, false, NULL, NULL, opcode, addr);
 		if (ret) return ret;
 
@@ -1546,7 +1660,8 @@ static int spi_dw_write_split_4align(const struct device *dev,
 	if (len > 0) {
 		struct spi_buf b = { .buf = (void *)src, .len = len };
 		struct spi_buf_set t = { .buffers = &b, .count = 1 };
-		spi_dw_wait_wip_and_wren(dev, config);
+		spi_dw_wait_wip_and_wren(dev, config,op_info);
+		spi_dw_spi_ctrlr0_write_config(dev,op_info,trans_type);
 		ret = transceive_write(dev, &config_dfs1, &t, NULL, false, NULL, NULL, opcode, addr);
 		if (ret) return ret;
 	}
@@ -1563,6 +1678,7 @@ static int spi_dw_write_multi_addr_align(const struct device *dev,
 			   const struct spi_buf_set *set_behind,
 			   uint32_t dr_addr,
 			   uint32_t dr_addr_after,
+			   uint8_t trans_type,
 			   uint32_t spi_lines)
 {
 	struct spi_config config_copy = *config;
@@ -1578,12 +1694,13 @@ static int spi_dw_write_multi_addr_align(const struct device *dev,
 		transceive_write(dev, config_copy_const, set_front, NULL, false,
 				NULL, NULL, op_info->opcode, dr_addr);
 
+		spi_dw_wait_wip_and_wren(dev, config,op_info);
+
 		struct spi_config config_copy_after = *config_copy_const;
 		config_copy_after.operation &= ~SPI_WORD_SIZE_MASK;
 		config_copy_after.operation |= (8U << SPI_WORD_SIZE_SHIFT);
 		const struct spi_config *config_copy_const_after = &config_copy_after;
-
-		spi_dw_wait_wip_and_wren(dev, config);
+		spi_dw_spi_ctrlr0_write_config(dev,op_info,trans_type);
 
 		return transceive_write(dev, config_copy_const_after, set_behind, NULL,
 					false, NULL, NULL, op_info->opcode, dr_addr_after);
@@ -1606,20 +1723,16 @@ static int spi_dw_write_multi_mode_any_addr(const struct device *dev,
 			   uint8_t trans_type,
 			   uint32_t spi_lines)
 {
-	uint32_t spi_ctrlr0 = 0;
-	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_TRANS_TYPE(trans_type);
-	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_INST_L_8BIT;
-	spi_ctrlr0 |= DW_SPI_SPI_CTRLR0_ADDR_L(op_info->addr_len);
-	write_spi_ctrlr0(dev, spi_ctrlr0);
+	spi_dw_spi_ctrlr0_write_config(dev,op_info,trans_type);
 
 	if (!((uintptr_t)op_info->buf % 4)) {
 		return spi_dw_write_multi_addr_align(dev, config, info, op_info,
 						set_main, set_front, set_behind,
-						dr_addr, dr_addr_after, spi_lines);
+						dr_addr, dr_addr_after,trans_type,spi_lines);
 	} else {
-		return spi_dw_write_split_4align(dev, config, op_info->opcode,
+		return spi_dw_write_split_4align(dev, config,op_info,op_info->opcode,
 						dr_addr, op_info->buf,
-						op_info->data_len, spi_lines);
+						op_info->data_len,trans_type,spi_lines);
 	}
 }
 
@@ -1717,10 +1830,18 @@ static int spi_dw_nor_transceive(const struct device *dev,
 	if (is_write) {
 		if(op_info->mode == JESD216_MODE_144){
 			return spi_dw_write_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,1, SPI_LINES_QUAD);/*1:Instruction in Standard，Address in QUAD*/
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Single_And_Specific_Mode, SPI_LINES_QUAD);/*1:Instruction in Standard，Address in QUAD*/
 		}else if (op_info->mode == JESD216_MODE_114) {
 			return spi_dw_write_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,0, SPI_LINES_QUAD);/*0:Instruction in Standard，Address in Standard*/
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Both_Single_Mode, SPI_LINES_QUAD);/*0:Instruction in Standard，Address in Standard*/
+		}else if (op_info->mode == JESD216_MODE_444) {
+			if (op_info->data_len == 0) {//NO data(opcode only and opcode_addr)
+				return transceive_write_opcode_addr(dev,config,op_info,false,NULL,NULL);
+			}
+			else {
+				return spi_dw_write_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Both_Specific_Mode, SPI_LINES_QUAD);/*2:Instruction in QUAD，Address in QUAD*/
+			}
 		}else{
 			return transceive(dev, config, &tx_set, NULL, false, NULL, NULL);
 		}
@@ -1730,20 +1851,29 @@ static int spi_dw_nor_transceive(const struct device *dev,
 	switch (op_info->mode) {
 		case JESD216_MODE_144:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,1, (op_info->dummy_cycle-2), SPI_LINES_QUAD);
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Single_And_Specific_Mode, (op_info->dummy_cycle-2), SPI_LINES_QUAD);
 			/* 1: Instruction in Standard, Address in QUAD */
 		case JESD216_MODE_114:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,0, op_info->dummy_cycle, SPI_LINES_QUAD);
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Both_Single_Mode, op_info->dummy_cycle, SPI_LINES_QUAD);
 			/* 0: Standard, Standard */
 		case JESD216_MODE_122:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,1, (op_info->dummy_cycle-4), SPI_LINES_DUAL);
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Single_And_Specific_Mode, (op_info->dummy_cycle-4), SPI_LINES_DUAL);
 			/* 1: Instruction in Standard, Address in DUAL */
 		case JESD216_MODE_112:
 			return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
-				dr_addr_dual_quad, dr_addr_dual_quad_after,0, op_info->dummy_cycle, SPI_LINES_DUAL);
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Both_Single_Mode, op_info->dummy_cycle, SPI_LINES_DUAL);
 			/* 0: Standard, Standard */
+		case JESD216_MODE_444:
+			if (op_info->addr_len==0) {
+				return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
+				dr_addr_dual_quad, dr_addr_dual_quad_after,Both_Specific_Mode, 0, SPI_LINES_QUAD);
+			}else {
+				return spi_dw_read_multi_mode_any_addr(dev, config, info, op_info,&set_dual_quad, &set_dual_quad_front, &set_dual_quad_behind,
+			 dr_addr_dual_quad, dr_addr_dual_quad_after,Both_Specific_Mode, op_info->dummy_cycle-2, SPI_LINES_QUAD);
+			}
+			/* 2: Quad, Quad */
 		default:
 			break;
 		}
