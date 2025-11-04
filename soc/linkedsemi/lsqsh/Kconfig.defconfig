@@ -16,6 +16,14 @@ config XUANTIE_E906_CLIC
 config RISCV_MCAUSE_EXCEPTION_MASK
 	default 0xfff
 
+config LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT
+	bool "LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT"
+
+if LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT
+	config ARCH_HAS_CUSTOM_BUSY_WAIT
+		default y
+endif
+
 config SYS_CLOCK_HW_CYCLES_PER_SEC
 	default $(dt_node_int_prop_int,/cpus/cpu@1,clock-frequency) if $(dt_path_enabled,/cpus/cpu@1)
 	default $(dt_node_int_prop_int,/cpus/cpu@2,clock-frequency) if $(dt_path_enabled,/cpus/cpu@2)
