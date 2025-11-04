@@ -300,7 +300,7 @@
 // };
 
 &sdhci1 {
-    max-bus-freq = <DT_FREQ_M(52)>;
+    max-bus-freq = <DT_FREQ_M(200)>;
     status = "okay";
 
     mmc_disk1: disk {
