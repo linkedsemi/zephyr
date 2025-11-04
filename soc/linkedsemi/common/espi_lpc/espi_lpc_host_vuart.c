@@ -316,7 +316,7 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     *val = 0;
     if ((lsr & (LSR_THRE | LSR_TEMT)) == (LSR_THRE | LSR_TEMT))
     {
-        if(ptr_data->host_tx_to_vuart && host_vuart_tx_empty(dev))
+        if((ptr_data->host_tx_to_vuart && host_vuart_tx_empty(dev) )|| !ptr_data->host_tx_to_vuart)
         {
             *val |= LSR_THRE|LSR_TEMT;
         }
