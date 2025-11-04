@@ -35,13 +35,22 @@
 			reg = <0xe0004000 0x8000>;
 			interrupts = <7 0>;
 		};
-        dwuart1: dwuart@60503000 {
+        dwuart0: dwuart@60503000 {
             compatible = "ns16550","snps,dw-apb-uart";
             reg = <0x60503000 0x400>;
 			status = "disabled";
             clock-frequency = <4000000>;
-            // label = "DWUART1";
+            // label = "DWUART0";
             interrupts = <142 3> ;
+			reg-shift = <2>;
+        };
+        dwuart8: dwuart@42100000 {
+            compatible = "ns16550","snps,dw-apb-uart";
+            reg = <0x42100000 0x400>;
+			status = "disabled";
+            clock-frequency = <4000000>;
+            // label = "DWUART8";
+            interrupts = <134 3> ;
 			reg-shift = <2>;
         };
     };

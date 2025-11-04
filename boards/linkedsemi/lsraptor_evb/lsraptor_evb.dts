@@ -8,13 +8,13 @@
 
 	chosen {
 		zephyr,sram = &sram0;
-		zephyr,shell-uart = &dwuart1;
-		zephyr,console = &dwuart1;
+		zephyr,shell-uart = &dwuart8;
+		zephyr,console = &dwuart8;
 	};
 
 };
 
-&dwuart1 {
+&dwuart8 {
 	status = "okay";
 	current-speed = <250000>;
 };
