@@ -66,7 +66,7 @@ void dw_dma_isr(const struct device *dev)
 		chan_data = &dev_data->chan[channel];
 
 		if (chan_data->dma_dsttrancallback) {
-			LOG_DBG("%s: Dispatching dsttran complete callback fro channel %d\n", dev->name,
+			LOG_DBG("%s: Dispatching dsttran complete callback for channel %d\n", dev->name,
 				channel);
 
 			/* Ensure the linked list (chan_data->lli) is
@@ -85,7 +85,7 @@ void dw_dma_isr(const struct device *dev)
 		chan_data = &dev_data->chan[channel];
 
 		if (chan_data->dma_blkcallback) {
-			LOG_DBG("%s: Dispatching block complete callback fro channel %d", dev->name,
+			LOG_DBG("%s: Dispatching block complete callback for channel %d", dev->name,
 				channel);
 
 			/* Ensure the linked list (chan_data->lli) is
@@ -154,11 +154,8 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	struct dw_lli *lli_desc;
 	struct dw_lli *lli_desc_head;
 	struct dw_lli *lli_desc_tail;
-#if defined(CONFIG_DMA_DW_2_20A)
-	int32_t msize = 3;/* default msize, 8 bytes */
-#else
-	uint32_t msize = 3;/* default msize, 8 bytes */
-#endif /* CONFIG_DMA_DW_2_20A */
+	uint32_t msize;
+	uint32_t block_size = 0;
 	int ret = 0;
 
 	if (channel >= DW_CHAN_COUNT) {
@@ -179,6 +176,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	LOG_DBG("%s: channel %d config", dev->name, channel);
 
 	__ASSERT_NO_MSG(cfg->source_data_size == cfg->dest_data_size);
+	__ASSERT_NO_MSG(cfg->source_burst_length > 0);
 	__ASSERT_NO_MSG(cfg->source_burst_length == cfg->dest_burst_length);
 	__ASSERT_NO_MSG(cfg->block_count > 0);
 	__ASSERT_NO_MSG(cfg->head_block != NULL);
@@ -200,15 +198,14 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 		goto out;
 	}
 
+#if defined(CONFIG_DMA_DW_2_20A)
+	msize = (cfg->source_burst_length > 1) ? (find_msb_set(cfg->source_burst_length) - 2) : 0;
+#else
 	/* burst_size = (2 ^ msize) */
 	msize = find_msb_set(cfg->source_burst_length) - 1;
-#if defined(CONFIG_DMA_DW_2_20A)
-	if(msize < 0) {
-		msize = 0;
-	}
-#endif /* CONFIG_DMA_DW_2_20A */
+#endif
 	LOG_DBG("%s: channel %d m_size=%d", dev->name, channel, msize);
-	__ASSERT_NO_MSG(msize < 5);
+	__ASSERT_NO_MSG(msize <= DW_MSIZE_MAX);
 
 	/* default channel config */
 	chan_data->direction = cfg->channel_direction;
@@ -394,9 +391,13 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			chan_data->cfg_hi |= DW_CFGH_PROTCTL;
 #endif /* CONFIG_DMA_DW_2_20A */
 
-		/* force no reload */
-		chan_data->cfg_lo &= ~DW_CFGL_RELOAD_SRC;
-		chan_data->cfg_lo &= ~DW_CFGL_RELOAD_DST;
+		if (cfg->cyclic) {
+			chan_data->cfg_lo |= DW_CFGL_RELOAD_SRC;
+			chan_data->cfg_lo |= DW_CFGL_RELOAD_DST;
+		} else {
+			chan_data->cfg_lo &= ~DW_CFGL_RELOAD_SRC;
+			chan_data->cfg_lo &= ~DW_CFGL_RELOAD_DST;
+		}
 
 		LOG_DBG("%s: direction: lli_desc %p, ctrl_lo %x, cfg_hi %x, cfg_lo %x", dev->name,
 			lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi, chan_data->cfg_lo);
@@ -426,7 +427,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			dev->name, lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi,
 			chan_data->cfg_lo);
 
-		chan_data->ptr_data.buffer_bytes += block_cfg->block_size;
+		block_size += block_cfg->block_size;
 
 		/* set next descriptor in list */
 		lli_desc->llp = (uintptr_t)(lli_desc + 1);
@@ -438,6 +439,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 
 		block_cfg = block_cfg->next_block;
 	}
+	chan_data->ptr_data.buffer_bytes = block_size * cfg->source_data_size;
 
 #if !defined(CONFIG_DMA_DW_2_20A)
 #if CONFIG_DMA_DW_HW_LLI
@@ -446,7 +448,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 #endif /* ! CONFIG_DMA_DW_2_20A */
 
 	/* end of list or cyclic buffer */
-	if (cfg->cyclic) {
+	if (cfg->head_block == cfg->head_block->next_block) {
 		lli_desc_tail->llp = (uintptr_t)lli_desc_head;
 	} else {
 		lli_desc_tail->llp = 0;
@@ -465,8 +467,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	/* initialize pointers */
 	chan_data->ptr_data.start_ptr = DW_DMA_LLI_ADDRESS(chan_data->lli,
 							 chan_data->direction);
-	chan_data->ptr_data.end_ptr = chan_data->ptr_data.start_ptr +
-				    chan_data->ptr_data.buffer_bytes;
+	chan_data->ptr_data.end_ptr = chan_data->ptr_data.start_ptr + block_size;
 	chan_data->ptr_data.current_ptr = chan_data->ptr_data.start_ptr;
 	chan_data->ptr_data.hw_ptr = chan_data->ptr_data.start_ptr;
 
