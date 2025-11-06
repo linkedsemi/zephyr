@@ -18,7 +18,7 @@ int xhci_cmd_enable_slot(struct xhci_hcd *xhci);
 int xhci_cmd_address_device(struct xhci_hcd *xhci, int slot, xhci_addr_dev_type_t type);
 int xhci_cmd_reset_device(struct xhci_hcd *xhci, int slot);
 int xhci_cmd_add_endpoint(struct xhci_hcd *xhci, int slot, struct xhci_ep_config *ep_config);
-int xhci_cmd_drop_endpoint(struct xhci_hcd *xhci, int slot, uint8_t ep_addr);
+int xhci_cmd_drop_endpoint(struct xhci_hcd *xhci, int slot, uint8_t ep);
 int xhci_cmd_noop(struct xhci_hcd *xhci);
 
 /* function */
@@ -34,10 +34,10 @@ enum xhci_usb_speed xhci_get_port_speed(struct xhci_hcd *xhci, int port_id);
 void xhci_set_dev_speed(struct xhci_hcd *xhci, int slot, enum xhci_usb_speed speed);
 
 /* transfer */
-int xhci_send_control_data(struct xhci_hcd *xhci, int slot, struct usb_setup_packet *req, void *data, uint32_t length);
-int xhci_send_bulk_data(struct xhci_hcd *xhci, int slot, int ep, void *data, int length);
-int xhci_send_intr_data(struct xhci_hcd *xhci, int slot, int ep, void *data, int length);
-int xhci_send_noop(struct xhci_hcd *xhci, int slot, uint8_t ep_addr);
+int xhci_xfer_control(struct xhci_hcd *xhci, int slot, int ep, struct usb_setup_packet *req, void *data, uint32_t length);
+int xhci_xfer_bulk(struct xhci_hcd *xhci, int slot, int ep, void *data, int length);
+int xhci_xfer_interrupt(struct xhci_hcd *xhci, int slot, int ep, void *data, int length);
+int xhci_xfer_noop(struct xhci_hcd *xhci, int slot, uint8_t ep, xhci_ep_type_t type);
 
 /* isr */
 void xhci_isr(struct xhci_hcd *hcd);
