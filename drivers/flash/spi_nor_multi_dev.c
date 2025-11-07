@@ -2427,13 +2427,6 @@ static void spi_nor_info_init_params(const struct device *dev)
 
 	data->cap_mask = ~(cfg->spi_ctrl_caps_mask | cfg->spi_nor_caps_mask);
 
-	if (cfg->spi_nor_caps_mask & SPI_NOR_MODE_4_4_4_CAP) {
-		data->cap_mask |= SPI_NOR_MODE_4_4_4_CAP;
-	} else {
-		LOG_INF("QPI (4-4-4) mode disabled by DT config");
-		data->cap_mask &= ~SPI_NOR_MODE_4_4_4_CAP;
-	}
-
 	if (data->spi_max_buswidth < 2)
 		data->cap_mask &= ~(SPI_NOR_DUAL_CAP_MASK | SPI_NOR_QUAD_CAP_MASK);
 	else if (data->spi_max_buswidth < 4)
@@ -2504,9 +2497,8 @@ static int spi_nor_configure(const struct device *dev)
 		}
 	}
 #endif
-
-	spi_nor_exit_continuous_mode(dev);
 	spi_nor_exit_qpi_mode(dev);
+	spi_nor_exit_continuous_mode(dev);
 	spi_nor_rst_by_cmd(dev);
 
 	/* After a soft-reset the flash might be in DPD or busy writing/erasing.
@@ -2607,6 +2599,7 @@ static int spi_nor_configure(const struct device *dev)
 	spi_nor_info_init_params(dev);
 
 	if (data->cap_mask & SPI_NOR_MODE_4_4_4_CAP) {
+		LOG_INF("QPI (4-4-4) mode enable by DT config");
 		spi_nor_enter_qpi_mode(dev);
 	}
 
