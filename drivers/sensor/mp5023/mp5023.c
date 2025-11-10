@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT monolithic_power_mp5023
+#define DT_DRV_COMPAT mps_mp5023
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/sensor.h>

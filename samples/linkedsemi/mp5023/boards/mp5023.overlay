@@ -13,7 +13,7 @@
     status = "okay";
     
     mp5023: mp5023@58 {
-        compatible = "monolithic-power,mp5023";
+        compatible = "mps,mp5023";
         reg = <0x58>;
         status = "okay";
         smbus-max-frequency = <100000>;

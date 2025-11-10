@@ -1,6 +1,6 @@
 # MP5023 PMBus Sensor
 
-compatible: "monolithic-power,mp5023"
+compatible: "mps,mp5023"
 
 include: [sensor-device.yaml, smbus-device.yaml]
 
