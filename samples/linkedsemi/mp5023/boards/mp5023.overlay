@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) 2018 Jan Van Winkel <jan.van_winkel@dxplore.eu>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&i2c1 {
+    status = "okay";
+    clock-frequency = <100000>;
+};
+
+&smbus1 {
+    status = "okay";
+    
+    mp5023: mp5023@58 {
+        compatible = "monolithic-power,mp5023";
+        reg = <0x58>;
+        status = "okay";
+        smbus-max-frequency = <100000>;
+    };
+};

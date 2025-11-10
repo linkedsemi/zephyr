@@ -1,0 +1,10 @@
+#包含Zephyr的基础Kconfig文件
+source "${ZEPHYR_BASE}/Kconfig"
+
+#添加我们自己的I2C_LSQSH定义
+config I2C_LSQSH
+    bool "LSQSH I2C driver support"
+    default n
+    depends on I2C
+    help
+      Enable support for LSQSH I2C driver.
