@@ -42,11 +42,6 @@
 #define PMBUS_CMD_MFR_MODEL                  0x9A
 #define PMBUS_CMD_MFR_REVISION               0x9B
 #define PMBUS_CMD_MFR_DATE                   0x9D
-#define PMBUS_CMD_MFR_CTRL                   0xF0
-#define PMBUS_CMD_MFR_ADDR_PMBUS             0xF1
-#define PMBUS_CMD_CONFIG_ID                  0xF2
-#define PMBUS_CMD_MFR_SPECIFIC_STARTUP_CURRENT_LIMIT   0xF6
-#define PMBUS_CMD_MFR_OTP_LEFT               0xFE
 
 /* PMBus Data Format Definitions */
 #define PMBUS_LINEAR11_EXPONENT_MASK         0xE000

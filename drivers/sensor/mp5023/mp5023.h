@@ -18,6 +18,13 @@
 #define MP5023_DEFAULT_TIMEOUT_MS            CONFIG_MP5023_TIMEOUT_MS
 #define MP5023_DEFAULT_PEC_EN                CONFIG_MP5023_PEC_EN
 
+/* Manufacturer-specific commands */
+#define PMBUS_CMD_MFR_CTRL                   0xF0
+#define PMBUS_CMD_MFR_ADDR_PMBUS             0xF1
+#define PMBUS_CMD_CONFIG_ID                  0xF2
+#define PMBUS_CMD_MFR_SPECIFIC_STARTUP_CURRENT_LIMIT   0xF6
+#define PMBUS_CMD_MFR_OTP_LEFT               0xFE
+
 struct mp5023_data {
     uint8_t current_page;              /* Current PMBus page */
     uint16_t status_word;              /* Status word from device */
