@@ -27,7 +27,7 @@
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
         zephyr,internal-flash = &flash1;
-        zephyr,entropy = &trng0;
+        // zephyr,entropy = &trng0;
     };
 
     aliases {
@@ -125,9 +125,9 @@
     };
 };
 
-&trng0 {
-    status = "okay";
-};
+// &trng0 {
+//     status = "okay";
+// };
 
 &cpu1 {
     status = "okay";
