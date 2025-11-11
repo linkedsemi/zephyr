@@ -153,7 +153,7 @@ static void set_divider(void)
 #endif
 }
 
-static uint64_t mtime(void)
+__ramfunc static uint64_t mtime(void)
 {
 #ifdef CONFIG_64BIT
 	return *(volatile uint64_t *)MTIME_REG;
@@ -235,7 +235,7 @@ uint32_t sys_clock_elapsed(void)
 	return dticks;
 }
 
-uint32_t sys_clock_cycle_get_32(void)
+__ramfunc uint32_t sys_clock_cycle_get_32(void)
 {
 	return ((uint32_t)mtime()) << CONFIG_RISCV_MACHINE_TIMER_SYSTEM_CLOCK_DIVIDER;
 }

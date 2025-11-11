@@ -13,7 +13,6 @@ enum delegate_server_op
 	FLASH_DELEGATE_SERVER_READ_JEDEC_ID,
 	FLASH_DELEGATE_SERVER_SFDP_READ,
 	FLASH_DELEGATE_SERVER_SUSPEND,
-	FLASH_DELEGATE_SERVER_HOLD_ACK,
 	FLASH_DELEGATE_SERVER_READ_EAR,
 	FLASH_DELEGATE_SERVER_MAX
 };
@@ -32,6 +31,7 @@ struct flash_ls_shared_data
 	void *reg;
 	volatile bool busy;
 	volatile bool suspend_request;
+	volatile bool hold_ack;
 };
 
 enum delegate_client_op
@@ -57,4 +57,6 @@ struct delegate_s2c_params
 #define FLASH_DRIVER_SUSPEND_OPCODE 0x8001
 #define FLASH_DRIVER_RESUME_OPCODE 0x8002
 #define FLASH_DRIVER_CLIENT_XIP_ACTIVE 0x8003
+
+int busy_poll(bool (*poll_fn)(void *),void *param,uint32_t usec_to_wait);
 #endif
