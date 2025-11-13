@@ -21,7 +21,6 @@
 #endif
 #include "reg_dwtrng_type.h"
 
-
 #define CMD_GEN_NOISE       0x1
 #define CMD_CREATE_STATE    0x3
 #define CMD_RENEW_STATE     0x4
@@ -61,15 +60,26 @@ struct rng_pool {
 	uint8_t threshold;
 	FLEXIBLE_ARRAY_DECLARE(uint8_t, buffer);
 };
-
 #define RNG_POOL_DEFINE(name, len) uint8_t name[sizeof(struct rng_pool) + (len)]
+
+enum trng_state {
+	TRNG_S_INIT_NOISE = 0,
+	TRNG_S_INIT_CREATE,
+	TRNG_S_READY,
+};
+
+enum trng_busy
+{
+	TRNG_S_NOWAIT = 0,
+	TRNG_S_WAIT
+};
 
 struct trng_ls_data {
 	uint32_t req_bits;
 	RNG_POOL_DEFINE(pool_mem, CONFIG_ENTROPY_LS_POOL_SIZE);
-	bool no_data_cmd_pending;
 	struct k_sem sem_data;
 	struct k_sem sem_cmd;
+	enum trng_state state;
 };
 
 struct trng_ls_config {
@@ -89,33 +99,55 @@ static inline uint8_t rng_pool_avail(struct rng_pool *rngp)
 	return avail;
 }
 
-
-static void no_data_cmd(const struct trng_ls_config *cfg,
-				       struct trng_ls_data *data,
-				       uint8_t cmd)
+static bool no_data_cmd(const struct trng_ls_config *cfg,struct trng_ls_data *data, uint8_t cmd,enum trng_busy state)
 {
 	reg_dwtrng_t *regs = cfg->regs;
+	if(state == TRNG_S_NOWAIT && (regs->STAT & BIT(31))){
+		return false;
+	}
 	while (regs->STAT & BIT(31)) {}
-	data->no_data_cmd_pending = true;
 	regs->CTRL = cmd;
-	k_sem_take(&data->sem_cmd, K_FOREVER);
+	return true;
 }
 
 
-static inline void trigger_gen_random(const struct trng_ls_config *cfg, struct trng_ls_data *data)
+static inline void trigger_gen_random(const struct trng_ls_config *cfg, struct trng_ls_data *data,enum trng_busy state)
 {
-	reg_dwtrng_t *regs = cfg->regs;
 
+	if(data->state != TRNG_S_READY){
+		return ;
+	}
 	if (data->req_bits + GEN_BITS_PER_CMD > MAX_BITS_PER_REQUEST) {
-		no_data_cmd(cfg, data, CMD_ADVANCE_STATE);
-		data->req_bits = 0;
+  	 
+		if(!no_data_cmd(cfg, data, CMD_ADVANCE_STATE,state))return ;
+		data->req_bits = 0; 
 	}
-	if ((regs->STAT & BIT(31)) == 0) {
-		regs->CTRL = CMD_GEN_RANDOM;
-	}
+   no_data_cmd(cfg, data, CMD_GEN_RANDOM,state);
+
 }
 
+static int rng_pool_put(struct rng_pool *rngp, uint8_t byte)
+{
+	uint8_t first = rngp->first_read;
+	uint8_t last  = rngp->last;
+	uint8_t mask  = rngp->mask;
 
+	if (((last - first) & mask) == mask) {
+		return -ENOBUFS;
+	}
+	rngp->buffer[last] = byte;
+	rngp->last = (last + 1) & mask;
+	return 0;
+}
+
+static void rng_pool_init(struct rng_pool *rngp, uint16_t size, uint8_t threshold)
+{
+	rngp->first_alloc = 0U;
+	rngp->first_read  = 0U;
+	rngp->last        = 0U;
+	rngp->mask        = size - 1;
+	rngp->threshold   = threshold;
+}
 
 static uint16_t rng_pool_get(struct rng_pool *rngp, uint8_t *buf, uint16_t len, const struct trng_ls_config *cfg,struct trng_ls_data *data)
 {
@@ -150,36 +182,10 @@ static uint16_t rng_pool_get(struct rng_pool *rngp, uint8_t *buf, uint16_t len, 
 
 	available = (available >= copied) ? (available - copied) : 0U;
 	if (available <= rngp->threshold) {
-
-		trigger_gen_random(cfg, data);
+		trigger_gen_random(cfg, data,TRNG_S_NOWAIT);
 	}
-
 	return copied;
 }
-
-static int rng_pool_put(struct rng_pool *rngp, uint8_t byte)
-{
-	uint8_t first = rngp->first_read;
-	uint8_t last  = rngp->last;
-	uint8_t mask  = rngp->mask;
-
-	if (((last - first) & mask) == mask) {
-		return -ENOBUFS;
-	}
-	rngp->buffer[last] = byte;
-	rngp->last = (last + 1) & mask;
-	return 0;
-}
-
-static void rng_pool_init(struct rng_pool *rngp, uint16_t size, uint8_t threshold)
-{
-	rngp->first_alloc = 0U;
-	rngp->first_read  = 0U;
-	rngp->last        = 0U;
-	rngp->mask        = size - 1;
-	rngp->threshold   = threshold;
-}
-
 
 
 
@@ -200,11 +206,18 @@ static void trng_ls_isr(void *arg)
 	reg_dwtrng_t *regs = cfg->regs;
 
 	if (regs->ISTAT & BIT(4)) {
-		regs->ISTAT = BIT(4);
+		__ASSERT(!(regs->STAT & BIT(31)), "TRNG Core BUSY");
 
-		if (data->no_data_cmd_pending) {
-			data->no_data_cmd_pending = false;
-			k_sem_give(&data->sem_cmd);
+		if (data->state == TRNG_S_INIT_NOISE) {
+				regs->CTRL = CMD_CREATE_STATE;
+				data->state = TRNG_S_INIT_CREATE;
+				regs->ISTAT = BIT(4);
+			return;
+		} else if (data->state == TRNG_S_INIT_CREATE) {
+				regs->CTRL = CMD_GEN_RANDOM;	
+				data->state = TRNG_S_READY;
+				k_sem_give(&data->sem_cmd);
+				regs->ISTAT = BIT(4);
 			return;
 		}
 
@@ -234,6 +247,7 @@ static void trng_ls_isr(void *arg)
 				}
 			}
 		}
+		regs->ISTAT = BIT(4);
 	}
 }
 
@@ -249,13 +263,20 @@ static int ls_trng_get_entropy(const struct device *dev, uint8_t *buf, uint16_t 
 	struct rng_pool *pool = (struct rng_pool *)data->pool_mem;
 	uint16_t copied = 0;
 
+	
+	if(data->state != TRNG_S_READY){
+			k_sem_take(&data->sem_cmd, K_FOREVER);
+	}
+
+
 	while (copied < len) {
 		uint16_t got = rng_pool_get(pool, &buf[copied], len - copied, cfg, data);
 		if (got) {
 			copied += got;
       continue;
 		}
-		trigger_gen_random(cfg, data);
+
+		trigger_gen_random(cfg, data,TRNG_S_WAIT);
 		k_sem_take(&data->sem_data, K_FOREVER);
 	}
 	return 0;
@@ -272,6 +293,12 @@ static int ls_trng_get_entropy_isr(const struct device *dev, uint8_t *buf, uint1
 
 	if ((flags & ENTROPY_BUSYWAIT) == 0U) {
 		return rng_pool_get((struct rng_pool *)data->pool_mem, buf, len, cfg, data);
+	}
+
+	if (data->state != TRNG_S_READY) {
+		send_cmd_busywait(cfg->regs, CMD_GEN_NOISE);
+		send_cmd_busywait(cfg->regs, CMD_CREATE_STATE);
+		data->state = TRNG_S_READY;
 	}
 
 	uint16_t remaining = len;
@@ -299,9 +326,9 @@ static int ls_trng_get_entropy_isr(const struct device *dev, uint8_t *buf, uint1
 		remaining -= take;
 		data->req_bits += GEN_BITS_PER_CMD;
 	}
-
 	return len;
 }
+
 
 static int ls_trng_init(const struct device *dev)
 {
@@ -337,24 +364,18 @@ static int ls_trng_init(const struct device *dev)
 
 	rng_pool_init((struct rng_pool *)data->pool_mem, CONFIG_ENTROPY_LS_POOL_SIZE, CONFIG_ENTROPY_LS_POOL_THRESHOLD);
 	data->req_bits = 0;
-	data->no_data_cmd_pending = false;
 
 	k_sem_init(&data->sem_data, 0, UINT_MAX);
 	k_sem_init(&data->sem_cmd, 0, UINT_MAX);
 
 	cfg->regs->IE |= (BIT(31) | BIT(4));
-
 	if (cfg->irq_config_func) {
 		cfg->irq_config_func(dev);
 	}
 
-no_data_cmd(cfg, data, CMD_GEN_NOISE);
-no_data_cmd(cfg, data, CMD_CREATE_STATE);
-
-	if ((cfg->regs->STAT & BIT(31)) == 0) {
-		cfg->regs->CTRL = CMD_GEN_RANDOM;
-	}
-
+	data->state = TRNG_S_INIT_NOISE;
+	while (cfg->regs->STAT & BIT(31)) {}
+	cfg->regs->CTRL = CMD_GEN_NOISE;
 	return 0;
 }
 
