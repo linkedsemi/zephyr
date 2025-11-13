@@ -388,4 +388,10 @@ if $(dt_path_enabled,/cpus/cpu@1)
 		GPIO_INTR_LOCK
 endif
 
+config WORKAROUND_CONFLICT_LOG_ERR
+	bool "WORKAROUND_CONFLICT_LOG_ERR"
+	default y
+	help
+	WORKAROUND_CONFLICT_LOG_ERR
+
 endif

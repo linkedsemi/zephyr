@@ -3,6 +3,7 @@
 #include "core_rv32.h"
 #include <zephyr/irq.h>
 #include "cpu.h"
+#include <soc.h>
 #include "field_manipulate.h"
 
 
@@ -36,6 +37,19 @@ int riscv_clic_irq_is_enabled(uint32_t irq)
 void riscv_clic_irq_priority_set(uint32_t irq, uint32_t pri, uint32_t flags)
 {
     csi_vic_set_prio(irq,pri);
+    switch (flags) {
+    case IRQ_TYPE_LEVEL_HIGH:
+        CLIC->CLICINT[irq].ATTR = CLIC_INTATTR_TRIG_LEVEL << CLIC_INTATTR_TRIG_Pos;
+        break;
+    case IRQ_TYPE_EDGE_RISING:
+        CLIC->CLICINT[irq].ATTR = CLIC_INTATTR_TRIG_EDGE_RISING << CLIC_INTATTR_TRIG_Pos;
+        break;
+    case IRQ_TYPE_EDGE_FALLING:
+        CLIC->CLICINT[irq].ATTR = CLIC_INTATTR_TRIG_EDGE_FALLING << CLIC_INTATTR_TRIG_Pos;
+        break;
+    default:
+        break;
+    };
 }
 
 
