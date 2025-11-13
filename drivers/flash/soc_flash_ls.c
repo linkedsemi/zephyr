@@ -14,7 +14,7 @@
 #include <zephyr/logging/log.h>
 #include <string.h>
 #include "platform.h"
-#include "soc_common.h"
+#include <soc.h>
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 #include <zephyr/drivers/mbox.h>
 #endif
@@ -84,7 +84,7 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 	}
 
 	mbox_send_dt(&cfg->mbox_tx,&msg);
-	if(busy_poll(server_polling,cfg,CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT*1000)!=0)
+	if(busy_poll(server_polling,(void *)cfg,CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT*1000)!=0)
 	{
 		priv->client_xip_active = false;
 	}
@@ -279,7 +279,7 @@ static void delegation_server_mbox_handler(const struct device *dev,struct mbox_
 	{
 	case FLASH_DELEGATE_SERVER_SUSPEND:
 		cfg->shared->suspend_request = true;
-		busy_poll(poll_suspend_request_false,cfg,CONFIG_FLASH_DELEGATION_SUSPEND_TIMEOUT);
+		busy_poll(poll_suspend_request_false,(void *)cfg,CONFIG_FLASH_DELEGATION_SUSPEND_TIMEOUT);
 	break;
 	default:
 		k_work_submit(&priv->worker);
@@ -343,7 +343,7 @@ static int flash_ls_init(const struct device *dev)
 	cfg->shared->hold_ack = false;
 	priv->dev = dev;
 	#endif
-	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, 0);
+	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM);
 	return 0;
 }
@@ -440,6 +440,24 @@ uint8_t flash_ls_read_ear(const struct device *dev)
 
 	DELEGATE_SERVER_OP_START(dev);
 	ret = hal_flashx_read_ear(&priv->env);
+	DELEGATE_SERVER_OP_END(dev);
+
+	k_sem_give(&priv->sem);
+
+	return ret;
+}
+
+uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear)
+{
+	struct flash_ls_data *priv = dev->data;
+	uint8_t ret = 0;
+
+	if (k_sem_take(&priv->sem, K_FOREVER)) {
+		return -EACCES;
+	}
+
+	DELEGATE_SERVER_OP_START(dev);
+	hal_flashx_write_ear(&priv->env, ear);
 	DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
