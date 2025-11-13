@@ -26,7 +26,6 @@
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
         zephyr,internal-flash = &flash1;
-        zephyr,entropy = &trng0;
     };
 
     aliases {
@@ -210,10 +209,6 @@
     status = "okay";
 };
 
-&rtc0 {
-    status = "okay";
-};
-
 &uart1 {
     current-speed = <115200>;
     status = "okay";
@@ -234,10 +229,6 @@
 };
 
 &pmu_iwdg {
-    status = "okay";
-};
-
-&trng0 {
     status = "okay";
 };
 
