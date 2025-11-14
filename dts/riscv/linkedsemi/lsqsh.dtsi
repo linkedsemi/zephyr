@@ -485,7 +485,7 @@
             status = "disabled";
         };
 
-        trng0: dwtrng@40004000 {
+        trng1: dwtrng@40004000 {
             compatible = "linkedsemi,ls-dwtrng";
             reg = <0x40004000 0x400>;
             status = "disabled";

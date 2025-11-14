@@ -29,6 +29,10 @@
 #define CMD_ADVANCE_STATE   0x7
 #define CMD_RUN_KAT         0x8
 #define CMD_ZEROIZE         0xF
+#define DWTRNG_STAT_BUSY_Msk   (1u << 31)
+#define DWTRNG_ISTAT_DONE_Msk  (1u << 4)
+#define DWTRNG_IE_GLBL_Msk     (1u << 31)
+#define DWTRNG_IE_DONE_Msk     (1u << 4)
 
 #define GEN_BITS_PER_CMD      128u
 #define GEN_BYTES_PER_CMD     (GEN_BITS_PER_CMD / 8u)
@@ -102,10 +106,10 @@ static inline uint8_t rng_pool_avail(struct rng_pool *rngp)
 static bool no_data_cmd(const struct trng_ls_config *cfg,struct trng_ls_data *data, uint8_t cmd,enum trng_busy state)
 {
 	reg_dwtrng_t *regs = cfg->regs;
-	if(state == TRNG_S_NOWAIT && (regs->STAT & BIT(31))){
+	if(state == TRNG_S_NOWAIT && (regs->STAT & DWTRNG_STAT_BUSY_Msk)){
 		return false;
 	}
-	while (regs->STAT & BIT(31)) {}
+	while (regs->STAT & DWTRNG_STAT_BUSY_Msk) {}
 	regs->CTRL = cmd;
 	return true;
 }
@@ -191,10 +195,10 @@ static uint16_t rng_pool_get(struct rng_pool *rngp, uint8_t *buf, uint16_t len, 
 
 static inline void send_cmd_busywait(reg_dwtrng_t *regs, uint8_t cmd)
 {
-	while (regs->STAT & BIT(31)) {}
+	while (regs->STAT & DWTRNG_STAT_BUSY_Msk) {}
 	regs->CTRL = cmd;
-	while ((regs->ISTAT & BIT(4)) == 0) {}
-	regs->ISTAT = BIT(4);
+	while ((regs->ISTAT & DWTRNG_ISTAT_DONE_Msk) == 0) {}
+	regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
 }
 
 
@@ -205,19 +209,19 @@ static void trng_ls_isr(void *arg)
 	struct trng_ls_data *data = dev->data;
 	reg_dwtrng_t *regs = cfg->regs;
 
-	if (regs->ISTAT & BIT(4)) {
-		__ASSERT(!(regs->STAT & BIT(31)), "TRNG Core BUSY");
+	if (regs->ISTAT & DWTRNG_ISTAT_DONE_Msk) {
+		__ASSERT(!(regs->STAT & DWTRNG_STAT_BUSY_Msk), "TRNG Core BUSY");
 
 		if (data->state == TRNG_S_INIT_NOISE) {
 				regs->CTRL = CMD_CREATE_STATE;
 				data->state = TRNG_S_INIT_CREATE;
-				regs->ISTAT = BIT(4);
+				regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
 			return;
 		} else if (data->state == TRNG_S_INIT_CREATE) {
 				regs->CTRL = CMD_GEN_RANDOM;	
 				data->state = TRNG_S_READY;
 				k_sem_give(&data->sem_cmd);
-				regs->ISTAT = BIT(4);
+				regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
 			return;
 		}
 
@@ -242,12 +246,12 @@ static void trng_ls_isr(void *arg)
 		struct rng_pool *pool = (struct rng_pool *)data->pool_mem;
 		if (rng_pool_avail(pool) <= pool->threshold) {
 			if (data->req_bits + GEN_BITS_PER_CMD <= MAX_BITS_PER_REQUEST) {
-				if ((regs->STAT & BIT(31)) == 0) {
+				if ((regs->STAT & DWTRNG_STAT_BUSY_Msk) == 0) {
 					regs->CTRL = CMD_GEN_RANDOM;
 				}
 			}
 		}
-		regs->ISTAT = BIT(4);
+		regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
 	}
 }
 
@@ -368,13 +372,13 @@ static int ls_trng_init(const struct device *dev)
 	k_sem_init(&data->sem_data, 0, UINT_MAX);
 	k_sem_init(&data->sem_cmd, 0, UINT_MAX);
 
-	cfg->regs->IE |= (BIT(31) | BIT(4));
+	cfg->regs->IE |= (DWTRNG_IE_GLBL_Msk  | DWTRNG_IE_DONE_Msk);
 	if (cfg->irq_config_func) {
 		cfg->irq_config_func(dev);
 	}
 
 	data->state = TRNG_S_INIT_NOISE;
-	while (cfg->regs->STAT & BIT(31)) {}
+	while (cfg->regs->STAT & DWTRNG_STAT_BUSY_Msk) {}
 	cfg->regs->CTRL = CMD_GEN_NOISE;
 	return 0;
 }
