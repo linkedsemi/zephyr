@@ -76,13 +76,12 @@
             fifo-width = <256>;
             #mbox-cells = <1>;
             interrupts = <SYSC_SEC_CPU_IRQN 3>;
-            
             mbox_consumer_qspi1: mbox-consumer_qspi1 {
                 compatible = "vnd,mbox-consumer";
                 mboxes = <&mbox 1>, <&mbox 0>;
                 mbox-names = "tx", "rx";
             };
-            mbox_consumer_mbedtls: mbox-consumer_mbedtls {
+            mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
                 compatible = "vnd,mbox-consumer";
                 mboxes = <&mbox 3>, <&mbox 2>;
                 mbox-names = "tx", "rx";

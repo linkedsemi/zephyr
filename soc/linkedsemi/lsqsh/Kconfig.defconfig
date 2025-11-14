@@ -365,4 +365,31 @@ config VENDER_DEFINE_DMA_DW_LLI_POOL
 	bool "VENDER_DEFINE_DMA_DW_LLI_POOL"
 	default y
 
+if DMA_DW
+	config DMA_DW_LLI_POOL_SIZE
+		default 8
+endif
+
+if $(dt_path_enabled,/cpus/cpu@1)
+	config GPIO_CFG_LOCK
+		bool "GPIO_CFG_LOCK"
+		default y
+		help
+		GPIO_CFG_LOCK
+
+	config GPIO_INTR_LOCK
+		bool "GPIO_INTR_LOCK"
+		default y
+		help
+		GPIO_INTR_LOCK
+endif
+
+config WORKAROUND_CONFLICT_LOG_ERR
+	bool "WORKAROUND_CONFLICT_LOG_ERR"
+	default y
+	help
+	WORKAROUND_CONFLICT_LOG_ERR
+
+rsource "otbn/Kconfig.defconfig"
+
 endif
