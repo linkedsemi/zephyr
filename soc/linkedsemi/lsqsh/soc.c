@@ -33,6 +33,7 @@
 #include "soc.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
+#include "otbn/otbn_mbox.h"
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
@@ -813,9 +814,16 @@ __maybe_unused void soc_late_init_hook(void)
 #else
     flash_xip_prepare();
 #endif /* CONFIG_BOOT_CPU2 */
+
+#if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER)
+    ls_otbn_delegation_server_chanels_init();
+#endif
 }
 #else
 void soc_late_init_hook(void)
 {
+#if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
+    ls_otbn_delegation_client_chanels_init();
+#endif
 }
 #endif

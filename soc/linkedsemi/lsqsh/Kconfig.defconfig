@@ -394,4 +394,6 @@ config WORKAROUND_CONFLICT_LOG_ERR
 	help
 	WORKAROUND_CONFLICT_LOG_ERR
 
+rsource "otbn/Kconfig.defconfig"
+
 endif
