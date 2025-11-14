@@ -29,7 +29,7 @@ void main(void)
   SEC_PMU->SFT_CTRL[2] &= ~0xf;
 	printf("TRNG device testing start\n");
 
-	const struct device *trng = DEVICE_DT_GET(DT_NODELABEL(trng0));
+	const struct device *trng = DEVICE_DT_GET(DT_NODELABEL(trng1));
 	if (!device_is_ready(trng)) {
 		printf("TRNG device not ready\n");
 		return;

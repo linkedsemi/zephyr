@@ -26,6 +26,7 @@
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
         zephyr,internal-flash = &flash1;
+        zephyr,entropy = &trng1;
     };
 
     aliases {
@@ -228,6 +229,10 @@
 };
 
 &pmu_iwdg {
+    status = "okay";
+};
+
+&trng1 {
     status = "okay";
 };
 
