@@ -66,6 +66,8 @@ static bool server_polling(void *param)
 	return cfg->shared->hold_ack;
 }
 
+__attribute__((weak)) void flash_delegation_server_sync_fail(const struct device *dev,struct flash_ls_shared_data *shared){}
+
 static void flash_delegation_server_operation_sync(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
@@ -87,6 +89,7 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 	if(busy_poll(server_polling,(void *)cfg,CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT*1000)!=0)
 	{
 		priv->client_xip_active = false;
+		flash_delegation_server_sync_fail(dev,cfg->shared);
 	}
 	cfg->shared->hold_ack = false;
 }
