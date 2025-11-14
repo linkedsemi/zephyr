@@ -351,6 +351,12 @@ static int flash_ls_init(const struct device *dev)
 	return 0;
 }
 
+struct hal_flash_env *flash_ls_env(const struct device *dev)
+{
+	struct flash_ls_data *priv = dev->data;
+	return &priv->env;
+}
+
 static int flash_ls_erase(const struct device *dev, off_t offset,
 					 size_t size)
 {
