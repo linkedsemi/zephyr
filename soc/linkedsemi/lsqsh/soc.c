@@ -41,7 +41,7 @@ LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 BUILD_ASSERT(CONFIG_FLASH);
-BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(qspi1)));
+BUILD_ASSERT(DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash_controller)));
 #if defined(CONFIG_CACHE)
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
@@ -685,12 +685,6 @@ void soc_early_init_hook(void)
 #endif
 #endif
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-    if (!is_app_cpu_running()) {
-        pinmux_hal_flash_quad_init();
-    }
-#endif
-
     return;
 }
 
@@ -698,7 +692,7 @@ void soc_early_init_hook(void)
 static int flash_xip_prepare()
 {
     if (is_app_cpu_xip_in_sec_flash()) {
-        flash_ex_op(DEVICE_DT_GET(DT_NODELABEL(qspi1)),FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
+        flash_ex_op(DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller)),FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
         if (!is_app_cpu_running()) {
             lscache_cache_disable();
             lscache_cache_enable(1);
@@ -710,6 +704,7 @@ static int flash_xip_prepare()
 
 extern uint8_t flash_ls_read_ear(const struct device *dev);
 extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
+extern struct hal_flash_env *flash_ls_env(const struct device *dev);
 
 __maybe_unused static int boot_cpu2()
 {
@@ -806,6 +801,11 @@ __maybe_unused void soc_late_init_hook(void)
 {
     REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
     SEC_PMU->SFT_CTRL[2] &= ~0xff;
+    if (!is_app_cpu_running()) {
+        pinmux_hal_flash_quad_init();
+        struct hal_flash_env *env = flash_ls_env(DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller)));
+        hal_flashx_qe_status_read_and_set(env);
+    }
 #if defined(CONFIG_BOOT_CPU2)
     int ret = boot_cpu2();
     if (ret) {

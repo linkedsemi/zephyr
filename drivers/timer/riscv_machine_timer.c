@@ -240,7 +240,7 @@ __ramfunc uint32_t sys_clock_cycle_get_32(void)
 	return ((uint32_t)mtime()) << CONFIG_RISCV_MACHINE_TIMER_SYSTEM_CLOCK_DIVIDER;
 }
 
-uint64_t sys_clock_cycle_get_64(void)
+__ramfunc uint64_t sys_clock_cycle_get_64(void)
 {
 	return mtime() << CONFIG_RISCV_MACHINE_TIMER_SYSTEM_CLOCK_DIVIDER;
 }
