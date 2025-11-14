@@ -186,6 +186,7 @@ static void delegation_server_work_handler(struct k_work *work)
 	switch(priv->req_param.op)
 	{
 	case FLASH_DELEGATE_SERVER_READ:
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ offset:0x%08lx size:0x%08x data:0x%08lx",priv->req_param.offset,priv->req_param.size,(uintptr_t)priv->req_param.data);
 		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R)
 			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
 			int data_addr = (uint32_t)priv->req_param.data;
@@ -199,6 +200,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_WRITE:
+		LOG_DBG("FLASH_DELEGATE_SERVER_WRITE offset:0x%08lx size:0x%08x data:0x%08lx",priv->req_param.offset,priv->req_param.size,(uintptr_t)priv->req_param.data);
 		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_W)
 			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
 			if (is_psram((uint32_t)priv->req_param.data)) {
@@ -210,6 +212,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_ERASE:
+		LOG_DBG("FLASH_DELEGATE_SERVER_ERASE offset:0x%08lx size:0x%08x",priv->req_param.offset,priv->req_param.size);
 		if (get_guest_permission(priv->dev, priv->req_param.offset,priv->req_param.size) & PMP_W) {
 			param.ret.value = flash_erase(priv->dev,priv->req_param.offset,priv->req_param.size);
 		} else {
@@ -346,6 +349,12 @@ static int flash_ls_init(const struct device *dev)
 	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM);
 	return 0;
+}
+
+struct hal_flash_env *flash_ls_env(const struct device *dev)
+{
+	struct flash_ls_data *priv = dev->data;
+	return &priv->env;
 }
 
 static int flash_ls_erase(const struct device *dev, off_t offset,
