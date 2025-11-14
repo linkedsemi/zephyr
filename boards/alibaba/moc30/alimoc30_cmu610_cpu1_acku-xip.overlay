@@ -13,12 +13,12 @@
         sbl_partition: partition@0 {
             label = "sbl";
             reg = <0x0 DT_SIZE_K(56)>;
-            attr = <0>;
+            attr = <(PMP_R | PMP_W)>;
         };
         sbl_env_partition: partition@e000 {
             label = "sbl_env";
             reg = <0x0000e000 DT_SIZE_K(8)>;
-            attr = <PMP_R>;
+            attr = <(PMP_R | PMP_W)>;
         };
 
         /* a */

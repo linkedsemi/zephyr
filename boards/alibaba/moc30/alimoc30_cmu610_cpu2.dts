@@ -164,10 +164,10 @@
     label = "i2c-8";
 };
 
-&i2c12 {
-    status = "okay";
-    label = "i2c-12";
-};
+// &i2c12 {
+//     status = "okay";
+//     label = "i2c-12";
+// };
 
 &smbus2 {
     status = "okay";
@@ -181,9 +181,9 @@
     status = "okay";
 };
 
-&smbus12 {
-    status = "okay";
-};
+// &smbus12 {
+//     status = "okay";
+// };
 
 &sram1 {
     status = "disabled";
