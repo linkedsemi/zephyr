@@ -797,13 +797,24 @@ __maybe_unused static int boot_cpu2()
     return 0;
 }
 
+#define SFT_CTRL_REG_NUM_RESET_FLAG          (0x2)
+#define FLASH_XIP_MODE_RESET_BIT             (4)
+
+#define SFT_CTRL_REG_NUM_BOOT_RAM_RESET_FLAG (0x5)
+#define BOOTRAM_STARTUP_PART_FLAG_MASK       (0xF)
+#define BOOTRAM_STARTUP_PART_FLAG_POS        (0)
+
 __maybe_unused void soc_late_init_hook(void)
 {
+    struct hal_flash_env *env = flash_ls_env(DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller)));
     REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
-    SEC_PMU->SFT_CTRL[2] &= ~0xff;
+    SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG] &= ~0xf;
+    SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_BOOT_RAM_RESET_FLAG] &= ~BOOTRAM_STARTUP_PART_FLAG_MASK;
+    if (env->continuous_mode_enable) {
+        SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
+    }
     if (!is_app_cpu_running()) {
         pinmux_hal_flash_quad_init();
-        struct hal_flash_env *env = flash_ls_env(DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller)));
         hal_flashx_qe_status_read_and_set(env);
     }
 #if defined(CONFIG_BOOT_CPU2)
