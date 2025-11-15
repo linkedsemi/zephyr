@@ -369,15 +369,31 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 		return 0;
 	}
 
+	if (((offset % KB(4)) != 0) || ((size % KB(4)) != 0)) {
+		LOG_ERR("Erase address 0x%08lx is not aligned to sector size", offset);
+		return -EINVAL;
+	}
+
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
 
 	DELEGATE_SERVER_OP_START(dev);
 	/* Erase sector one by one*/
-	for (off_t addr = offset; addr < offset + size; addr += FLASH_SECTOR_SIZE) {
-		hal_flashx_sector_erase(&priv->env,addr);
+
+	for (off_t addr = offset; addr < (offset + size);) {
+		if (((addr % KB(64)) == 0) && ((offset + size - addr) >= KB(64))) {
+			hal_flashx_block_64K_erase(&priv->env, addr);
+			addr += KB(64);
+		} else if (((addr % KB(32)) == 0) && ((offset + size - addr) >= KB(32))) {
+			hal_flashx_block_32K_erase(&priv->env, addr);
+			addr += KB(32);
+		} else if ((offset + size - addr) >= KB(4)) {
+			hal_flashx_sector_erase(&priv->env, addr);
+			addr += KB(4);
+		}
 	}
+
 	DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
