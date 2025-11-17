@@ -47,6 +47,10 @@ properties:
     type: int
     required: false
 
+  erase-block-size:
+    type: int
+    required: false
+
   re-init-support:
     type: boolean
     required: false
