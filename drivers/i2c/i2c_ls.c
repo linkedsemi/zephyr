@@ -54,6 +54,7 @@ struct i2c_ls_data {
 	uint8_t xfer_remain;
 	uint8_t errs;
 	bool stop_pending;
+	bool quick_command;
 	uint8_t pin[2];
 };
 
@@ -295,7 +296,7 @@ void ls_i2c_isr(void *arg)
 	if(irq&I2C_INT_NACK_MASK)
 	{
 		cfg->reg->ICR = I2C_INT_NACK_MASK;
-		if(data->current)
+		if(data->current&&data->xfer_remain)
 		{
 			data->errs |= MASTER_NACK_RECVIED;
 			// if(data->xfer_remain)
@@ -314,7 +315,7 @@ void ls_i2c_isr(void *arg)
 			{
 				data->stop_pending = false;
 				k_sem_give(&data->stop_sem);
-			}else if(data->xfer_remain||(cfg->reg->SR&I2C_SR_TXFLV_MASK)||(data->current->len == 0))
+			}else if(data->xfer_remain||(cfg->reg->SR&I2C_SR_TXFLV_MASK)||data->quick_command)
 			{
 				k_sem_give(&data->device_sync_sem);
 			}
@@ -432,6 +433,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 		bool read = (data->current->flags&I2C_MSG_RW_MASK)==I2C_MSG_READ;
 		if(data->current->len == 0)
 		{
+			data->quick_command = true;
 			if(read)
 			{
 				config->reg->CR2_3 |= 0x30;
@@ -448,6 +450,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			}
 			break;
 		}
+		data->quick_command = false;
 		if(read)
 		{
 			cr2_0_1 |= I2C_CR2_RD_WEN_MASK;
@@ -502,6 +505,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 err:
 	i2c_reenable(dev,false);
 	data->current = NULL;
+	__ASSERT(k_sem_count_get(&data->device_sync_sem) == 0, "P: %d\n", __LINE__);
 	k_sem_give(&data->bus_mutex);
 	return ret;
 }
