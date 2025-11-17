@@ -296,7 +296,7 @@ void ls_i2c_isr(void *arg)
 	if(irq&I2C_INT_NACK_MASK)
 	{
 		cfg->reg->ICR = I2C_INT_NACK_MASK;
-		if(data->current&&data->xfer_remain)
+		if(data->current)
 		{
 			data->errs |= MASTER_NACK_RECVIED;
 			// if(data->xfer_remain)
