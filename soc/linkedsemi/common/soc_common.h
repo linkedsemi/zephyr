@@ -57,6 +57,7 @@ struct delegate_s2c_params
 #define FLASH_DRIVER_SUSPEND_OPCODE 0x8001
 #define FLASH_DRIVER_RESUME_OPCODE 0x8002
 #define FLASH_DRIVER_CLIENT_XIP_ACTIVE 0x8003
+#define FLASH_DRIVER_CLIENT_XIP_INACTIVE 0x8004
 
 int busy_poll(bool (*poll_fn)(void *),void *param,uint32_t usec_to_wait);
 #endif
