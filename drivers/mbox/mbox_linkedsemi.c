@@ -17,17 +17,16 @@ LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
 
 #define DT_DRV_COMPAT linkedsemi_mbox
 
-#define MBOX_BASE_ADDRESS  (DT_INST_REG_ADDR(0))
-#define MBOX_SIZE          (DT_INST_REG_SIZE(0))
-#define MBOX_NCHANNELS     (DT_NUM_INST_STATUS_OKAY(vnd_mbox_consumer))
-#define MBOX_FIFO_DEEPTH   (DT_INST_PROP(0, fifo_deepth))
-#define MBOX_FIFO_WIDTH    (DT_INST_PROP(0, fifo_width))
-#define MBOX_CONSUMER_REFERENCE mbox_consumer_qspi1
-BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(MBOX_CONSUMER_REFERENCE)), "MBOX_CONSUMER_REFERENCE not found");
-#define MBOX_RX_CHANNEL_ID (DT_MBOX_CHANNEL_BY_NAME(DT_NODELABEL(MBOX_CONSUMER_REFERENCE), rx))
-
-#define CALC_MBOX_SIZE (((MBOX_FIFO_DEEPTH * MBOX_FIFO_WIDTH) + sizeof(struct fifo_env)) * MBOX_NCHANNELS * 2)
-BUILD_ASSERT(CALC_MBOX_SIZE <= MBOX_SIZE, "fifo size overflow\n");
+#define MBOX_BASE_ADDRESS     DT_INST_REG_ADDR(0)
+#define MBOX_SIZE             DT_INST_REG_SIZE(0)
+#define MBOX_NCHANNELS        DT_NUM_INST_STATUS_OKAY(vnd_mbox_consumer)
+#define MBOX_FIFO_DEEPTH      DT_INST_PROP(0, fifo_deepth)
+#define MBOX_FIFO_WIDTH       DT_INST_PROP(0, fifo_width)
+#define MBOX_CONSUMER_NODE_ID DT_COMPAT_GET_ANY_STATUS_OKAY(vnd_mbox_consumer)
+#define MBOX_RX_CHANNEL_ID    (DT_MBOX_CHANNEL_BY_NAME(MBOX_CONSUMER_NODE_ID, rx) % 2)
+#define MBOX_SIZE_RAM         (((MBOX_FIFO_DEEPTH * MBOX_FIFO_WIDTH) + sizeof(struct fifo_env)) * MBOX_NCHANNELS * 2)
+BUILD_ASSERT(MBOX_NCHANNELS > 0, "vnd,mbox-consumer not found");
+BUILD_ASSERT(MBOX_SIZE_RAM <= MBOX_SIZE, "fifo size overflow\n");
 
 enum mbox_channel_number {
     MBOX_CH0,
