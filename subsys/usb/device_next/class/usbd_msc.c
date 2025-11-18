@@ -170,6 +170,18 @@ static uint8_t msc_get_bulk_out(struct usbd_class_data *const c_data)
 	return desc->if0_out_ep.bEndpointAddress;
 }
 
+static uint16_t msc_out_ep_mps(struct usbd_class_data *const c_data)
+{
+	struct msc_bot_ctx *ctx = usbd_class_get_private(c_data);
+	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
+
+	if (usbd_bus_speed(uds_ctx) == USBD_SPEED_HS) {
+		return ctx->desc->if0_hs_out_ep.wMaxPacketSize;
+	}
+
+	return ctx->desc->if0_out_ep.wMaxPacketSize;
+}
+
 static void msc_queue_bulk_out_ep(struct usbd_class_data *const c_data)
 {
 	struct msc_bot_ctx *ctx = usbd_class_get_private(c_data);
@@ -189,7 +201,8 @@ static void msc_queue_bulk_out_ep(struct usbd_class_data *const c_data)
 	 * indicates either a memory leak or logic error.
 	 */
 	__ASSERT_NO_MSG(buf);
-
+	/* Avoid the host from failing to send a ZLP packet, which would prevent the driver layer from reporting the OUT completion event to the upper layer. */
+	buf->size = MIN(msc_out_ep_mps(c_data), buf->size);
 	ret = usbd_ep_enqueue(c_data, buf);
 	if (ret) {
 		LOG_ERR("Failed to enqueue net_buf for 0x%02x", ep);
@@ -804,7 +817,7 @@ static struct msc_bot_desc msc_bot_desc_##n = {					\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
 		.bEndpointAddress = 0x81,					\
 		.bmAttributes = USB_EP_TYPE_BULK,				\
-		.wMaxPacketSize = sys_cpu_to_le16(64U),				\
+		.wMaxPacketSize = sys_cpu_to_le16(32U),				\
 		.bInterval = 0,							\
 	},									\
 	.if0_out_ep = {								\
@@ -812,7 +825,7 @@ static struct msc_bot_desc msc_bot_desc_##n = {					\
 		.bDescriptorType = USB_DESC_ENDPOINT,				\
 		.bEndpointAddress = 0x01,					\
 		.bmAttributes = USB_EP_TYPE_BULK,				\
-		.wMaxPacketSize = sys_cpu_to_le16(64U),				\
+		.wMaxPacketSize = sys_cpu_to_le16(32U),				\
 		.bInterval = 0,							\
 	},									\
 	.if0_hs_in_ep = {							\
