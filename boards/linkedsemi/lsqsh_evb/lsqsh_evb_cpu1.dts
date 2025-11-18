@@ -25,8 +25,6 @@
         zephyr,sram = &sram1;
         zephyr,console = &uart1;
         zephyr,shell-uart = &uart1;
-        zephyr,internal-flash = &flash1;
-        zephyr,entropy = &trng1;
     };
 
     aliases {
@@ -96,7 +94,6 @@
             interrupts = <3 3>;
             quad_mode;
             continuous_mode;
-            addr4b;
             mbox = <&mbox_consumer_qspi1>;
 
             flash1: flash@8000000 {
@@ -229,10 +226,6 @@
 };
 
 &pmu_iwdg {
-    status = "okay";
-};
-
-&trng1 {
     status = "okay";
 };
 
