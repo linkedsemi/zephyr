@@ -566,6 +566,9 @@ __ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
 	case FLASH_DRIVER_CLIENT_XIP_ACTIVE:
 		priv->client_xip_active = true;
 	break;
+	case FLASH_DRIVER_CLIENT_XIP_INACTIVE:
+		priv->client_xip_active = false;
+	break;
 #endif
 	}
 	return 0;
@@ -611,6 +614,9 @@ static struct flash_driver_api flash_ls_api = {
 			.pages_size = FLASH_SECTOR_SIZE,\
 		},))
 
+#define LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE(node_id) \
+		IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
+
 #define LS_FLASH_INIT(idx) \
 	struct flash_partition_attr attr_partition_##idx[] =\
 		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};\
@@ -620,7 +626,7 @@ static struct flash_driver_api flash_ls_api = {
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
 		.dual_mode_only = !DT_INST_PROP(idx,quad_mode),\
 		.continuous_mode_enable = DT_INST_PROP(idx,continuous_mode),\
-		.addr4b = DT_INST_PROP(idx,addr4b),\
+		.addr4b = (DT_INST_FOREACH_CHILD_STATUS_OKAY(idx, LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20)),\
 		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER,(\
 		.mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
 		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
