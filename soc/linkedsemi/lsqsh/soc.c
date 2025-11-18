@@ -29,6 +29,7 @@
 #include "ls_hal_iwdgv2.h"
 #include "ls_soc_gpio.h"
 #include "ls_hal_cache.h"
+#include "ls_hal_qspiv2.h"
 #include "ls_msp_qspiv2.h"
 #include "soc.h"
 #include "soc_reset.h"
@@ -689,141 +690,167 @@ void soc_early_init_hook(void)
 }
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-static int flash_xip_prepare()
+extern uint8_t flash_ls_read_ear(const struct device *dev);
+extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
+extern struct hal_flash_env *flash_ls_env(const struct device *dev);
+
+int flash_xip_prepare(const struct device *flash_dev)
 {
-    if (is_app_cpu_xip_in_sec_flash()) {
-        flash_ex_op(DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller)),FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
-        if (!is_app_cpu_running()) {
-            lscache_cache_disable();
-            lscache_cache_enable(1);
+    flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
+    if (!is_app_cpu_running()) {
+        lscache_cache_disable();
+        lscache_cache_enable(1);
+    }
+
+    return 0;
+}
+
+__maybe_unused static int flash_read_cpu2_image(const struct device *flash_dev, uint32_t cpu2_boot_addr, uint32_t *addr)
+{
+    image_header_t image_header = {};
+    flash_read(flash_dev, cpu2_boot_addr - CACHE1_ADDR, &image_header, sizeof(image_header_t));
+
+    if (image_header.test_word[0] != TEST_WORD0 || image_header.test_word[1] != TEST_WORD1) {
+        LOG_ERR("test_word fail");
+        return -EINVAL;
+    }
+
+    uint32_t crc = crc32_ieee((uint8_t *)&image_header, sizeof(image_header_t) - sizeof(uint32_t));
+    if (crc != image_header.header_crc) {
+        LOG_ERR("header_crc fail");
+        return -EINVAL;
+    }
+
+    if ((image_header.exe_addr >= SRAM1_ADDR)
+        && (image_header.exe_addr < (SRAM1_ADDR + SRAM_SIZE))) {
+        /* copy zephyr.bin from flash to ram */
+        flash_read(flash_dev,
+                (cpu2_boot_addr - CACHE1_ADDR) + image_header.offset,
+                (uint8_t *)image_header.exe_addr, image_header.length);
+        sys_cache_data_flush_range((void *)image_header.exe_addr, image_header.length);
+    }
+
+    *addr = image_header.exe_addr;
+
+    if (((*addr >= CACHE1_ADDR) && (*addr < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((*addr >= CACHE2_ADDR) && (*addr < (CACHE2_ADDR + QSPI_CACHE_SIZE)))
+        || ((*addr >= SRAM1_ADDR) && (*addr < (SRAM1_ADDR + SRAM_SIZE)))) {
+        return 0;
+    } else {
+        return -EINVAL;
+    }
+}
+
+__maybe_unused static int flash_ear_offset_set(const struct device *flash_dev, uint32_t addr)
+{
+    struct hal_flash_env *env = flash_ls_env(flash_dev);
+    if ((addr - CACHE1_ADDR) < MB(16)) {
+        LOG_INF("boot a_app_image_partition");
+        flash_ls_write_ear(flash_dev, 0);
+        uint8_t ear = flash_ls_read_ear(flash_dev);
+        if (0x0 != ear) {
+            LOG_ERR("flash_ls_write_ear err");
+            while(1);
+        }
+        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, 0);
+        if (ret) {
+            LOG_ERR("lsqspiv2_backup_offset_set err: offset: %#x", 0);
+            return ret;
+        }
+    } else {
+        LOG_INF("boot b_app_image_partition");
+        flash_ls_write_ear(flash_dev, 0x1);
+        uint8_t ear = flash_ls_read_ear(flash_dev);
+        if (0x1 != ear) {
+            LOG_ERR("flash_ls_write_ear err");
+            while(1);
+        }
+        const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
+        const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
+        const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
+        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, offset);
+        if (ret) {
+            LOG_ERR("lsqspiv2_backup_offset_set err: offset: %#x", offset);
+            return ret;
         }
     }
 
     return 0;
 }
 
-extern uint8_t flash_ls_read_ear(const struct device *dev);
-extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
-extern struct hal_flash_env *flash_ls_env(const struct device *dev);
+#define LS_FLASH_CONTROLLER_CHILD(node_id) IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
+#define ZEPHYR_INTERNAL_FLASH_SIZE         DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD)
 
-__maybe_unused static int boot_cpu2()
+__maybe_unused int boot_cpu2(const struct device *flash_dev, uint32_t cpu2_boot_addr)
 {
-    if (is_app_cpu_running()) {
-        flash_xip_prepare();
-        return 0;
-    }
     app_cpu_reset();
-#if (CONFIG_IMAGE_HEADER) \
-    && (CONFIG_CPU2_LOAD_ADDR >= CACHE1_ADDR) \
-    && (CONFIG_CPU2_LOAD_ADDR < (CACHE1_ADDR + (64 << 20)))
-
-    image_header_t image_header = {};
-    const struct device *flash_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
-    flash_read(flash_dev, CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS, &image_header, sizeof(image_header_t));
-
-    if (image_header.test_word[0] != TEST_WORD0 || image_header.test_word[1] != TEST_WORD1) {
-        return -EINVAL;
-    }
-    // LOG_I("\t test_word pass");
-
-    uint32_t crc = crc32_ieee((uint8_t *)&image_header, sizeof(image_header_t) - sizeof(uint32_t));
-    if (crc != image_header.header_crc) {
-        return -EINVAL;
-    }
-    // LOG_I("\t header_crc pass");
-
-    uint32_t exe_addr = 0;
-    if (image_header.exe_addr == 0x0) {
-        exe_addr = CONFIG_CPU2_LOAD_ADDR + image_header.offset;
+    flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_INACTIVE,0,NULL);
+#if (CONFIG_CPU2_IMAGE_HEADER)
+    uint32_t exe_addr;
+    if (((cpu2_boot_addr >= CACHE1_ADDR) && (cpu2_boot_addr < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((cpu2_boot_addr >= CACHE2_ADDR) && (cpu2_boot_addr < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
+        int ret = flash_read_cpu2_image(flash_dev, cpu2_boot_addr, &exe_addr);
+        if (ret) {
+            return ret;
+        }
     } else {
-        exe_addr = image_header.exe_addr;
-        flash_read(flash_dev,
-                (CONFIG_CPU2_LOAD_ADDR - CONFIG_FLASH_BASE_ADDRESS) + image_header.offset + LSQSPIV2->BACKUP_OFFSET,
-                (uint8_t *)image_header.exe_addr, image_header.length);
-        sys_cache_data_flush_range((void *)image_header.exe_addr, image_header.length);
+        __ASSERT_NO_MSG(0);
     }
+#else
+    uint32_t exe_addr = cpu2_boot_addr;
+#endif /* CONFIG_CPU2_IMAGE_HEADER */
 
+    if (is_app_cpu_xip_in_sec_flash()) {
+#if (ZEPHYR_INTERNAL_FLASH_SIZE > (16 << 20))
+        /* do not need to calculate offset cause it is fixed */
+        flash_ear_offset_set(flash_dev, cpu2_boot_addr);
+#endif
+        flash_xip_prepare(flash_dev);
+    }
+    LOG_INF("%s: address: %#x", __func__, exe_addr);
     app_cpu_dereset_by_addr(exe_addr);
     app_cpu_reset_hold_clr();
-#else
-#if (DT_REG_SIZE(DT_CHOSEN(zephyr_internal_flash)) > (16 << 20))
-    if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
-        || ((CONFIG_CPU2_BOOT_ADDR >= CACHE2_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
-        const struct device *flash_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
-        uint8_t jedec_id[3] = {};
-        flash_read_jedec_id(flash_dev, jedec_id);
-        if ((jedec_id[0] != 0) && (jedec_id[1] != 0) && (jedec_id[2] != 0)) {
-            uint32_t flash_size = 2 << (jedec_id[2] - 1);
-            if (flash_size > MB(16)) {
-                if (1) {
-                    printk("boot a_app_image_partition\n");
-                    flash_ls_write_ear(flash_dev, 0x0);
-                    uint8_t ear = flash_ls_read_ear(flash_dev);
-                    if (0x0 != ear) {
-                        printk("flash_ls_write_ear err\n");
-                        while(1);
-                    }
-                } else {
-                    printk("boot b_app_image_partition_offset\n");
-                    flash_ls_write_ear(flash_dev, 0x1);
-                    uint8_t ear = flash_ls_read_ear(flash_dev);
-                    if (0x1 != ear) {
-                        printk("flash_ls_write_ear err\n");
-                        while(1);
-                    }
-                    const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
-                    const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
-                    const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
-                    __ASSERT_NO_MSG(offset >= 0);
-                    if (0 != offset) {
-                        if (0 == (offset % KB(16))) {
-                            LSQSPIV2->BACKUP_OFFSET = offset >> 14;
-                        } else {
-                            // while(1);
-                            printk("0 != ((b_app_image_partition_offset - a_app_image_partition_offset) %% 16KB)\n");
-                        }
-                    }
-                }
-            }
-        } else {
-            return -EIO;
-        }
-    }
-#endif
-    flash_xip_prepare();
-    app_cpu_dereset_by_addr(CONFIG_CPU2_BOOT_ADDR);
-    app_cpu_reset_hold_clr();
-#endif /* CONFIG_IMAGE_HEADER */
+
     return 0;
 }
 
 #define SFT_CTRL_REG_NUM_RESET_FLAG          (0x2)
 #define FLASH_XIP_MODE_RESET_BIT             (4)
 
+#define STARTUP_PART_FLAG_MASK               (0xf)
 #define SFT_CTRL_REG_NUM_BOOT_RAM_RESET_FLAG (0x5)
-#define BOOTRAM_STARTUP_PART_FLAG_MASK       (0xF)
+#define BOOTRAM_STARTUP_PART_FLAG_MASK       (0xf)
 #define BOOTRAM_STARTUP_PART_FLAG_POS        (0)
 
 __maybe_unused void soc_late_init_hook(void)
 {
-    struct hal_flash_env *env = flash_ls_env(DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller)));
+    const struct device *flash_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
+    struct hal_flash_env *env = flash_ls_env(flash_dev);
     REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
-    SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG] &= ~0xf;
+    SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG] &= ~STARTUP_PART_FLAG_MASK;
     SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_BOOT_RAM_RESET_FLAG] &= ~BOOTRAM_STARTUP_PART_FLAG_MASK;
     if (env->continuous_mode_enable) {
         SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     }
-    if (!is_app_cpu_running()) {
+
+    if (is_app_cpu_running()) {
+        flash_xip_prepare(flash_dev);
+        return;
+    } else {
         pinmux_hal_flash_quad_init();
-        hal_flashx_qe_status_read_and_set(env);
     }
 #if defined(CONFIG_BOOT_CPU2)
-    int ret = boot_cpu2();
-    if (ret) {
+    if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((CONFIG_CPU2_BOOT_ADDR >= CACHE2_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE2_ADDR + QSPI_CACHE_SIZE)))
+        || ((CONFIG_CPU2_BOOT_ADDR >= SRAM1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (SRAM1_ADDR + SRAM_SIZE)))) {
+        int ret = boot_cpu2(flash_dev, CONFIG_CPU2_BOOT_ADDR);
+        if (ret) {
+            __ASSERT_NO_MSG(0);
+        }
+    } else {
+        LOG_ERR("invalid cpu2 boot address: %#x", CONFIG_CPU2_BOOT_ADDR);
         __ASSERT_NO_MSG(0);
     }
-#else
-    flash_xip_prepare();
 #endif /* CONFIG_BOOT_CPU2 */
 
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER)

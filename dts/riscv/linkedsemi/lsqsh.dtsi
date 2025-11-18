@@ -1226,11 +1226,7 @@
             clocks = <EMMC1_CLOCK>;
             resets = <EMMC1_RESET>;
             clock-frequency = <SDHCI_CLOCK>;
-#if 0
             max-bus-freq = <SDHCI_CLOCK>;
-#else
-            max-bus-freq = <5000000>;
-#endif
             min-bus-freq = <50000>;
             status = "disabled";
         };
