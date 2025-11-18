@@ -217,6 +217,7 @@ struct spi_nor_data {
 #endif /* CONFIG_SPI_NOR_SFDP_RUNTIME */
 #endif /* CONFIG_SPI_NOR_SFDP_MINIMAL */
 	struct flash_parameters flash_nor_parameter;
+	int erase_block_size;
 	int (*fixup_read)(const struct device *dev,
 			  struct spi_nor_op_info *op_info);
 
@@ -2164,7 +2165,7 @@ static int spi_nor_process_4bai(const struct device *dev,
 			if (rv < 0)
 				continue;
 			data->erase_types[ti].cmd = cmd;
-			if (data->flash_nor_parameter.write_block_size ==
+			if (data->erase_block_size ==
 				BIT(data->erase_types[ti].exp)) {
 				se_cmd_found = 1;
 			}
@@ -2274,7 +2275,7 @@ static int spi_nor_process_sfdp(const struct device *dev)
 	for (ti = 0; ti < JESD216_NUM_ERASE_TYPES; ti++) {
 		if (data->erase_types[ti].exp != 0 &&
 		    (BIT(data->erase_types[ti].exp) ==
-		     data->flash_nor_parameter.write_block_size))
+		     data->erase_block_size))
 			break;
 	}
 
@@ -2972,6 +2973,7 @@ static const struct flash_driver_api spi_nor_api = {
 			.erase_value = 0xff,	\
 			.flash_size = 0,	\
 		},	\
+		.erase_block_size = DT_INST_PROP_OR(idx, erase_block_size, 0x1000),	\
 		.init_4b_mode_once = false,	\
 		.re_init_support = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), re_init_support),	\
 		.spi_max_buswidth = DT_INST_PROP_OR(idx, spi_max_buswidth, 1),			\
