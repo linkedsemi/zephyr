@@ -11,6 +11,8 @@
 
 #define MBEDTLS_ERR_LS_OTBN_BUSY -0x135
 
+// static bool sem_initailed = false;
+static struct k_sem wait_complete;
 static struct k_mutex mbedtls_otbn_doneLock;
 static ls_otbn_fireware_t current_obtn_fireware = OTBN_UNUSED;
 static bool mbedtls_enabled = false;
@@ -24,6 +26,17 @@ static void MBEDTLS_LS_OTBN_IRQHandler(void *parm)
 {
     if(p_otbn_func)
         p_otbn_func(p_otbn_param);
+    
+    if (LSOTBN->INTR_STATE)
+    {
+        LSOTBN->INTR_STATE = OTBN_INTR_STATE_DONE_MASK;
+        k_sem_give(&wait_complete);
+        // printf("k_sem_give(&wait_complete);\n");
+
+    }else
+    {
+        printf("unexpected state: LSOTBN->INTR_STATE : 0x%x",LSOTBN->INTR_STATE);
+    }
 }
 
 void ls_otbn_mbedtls_update_callback(void (*func)(void*),void *param)
@@ -31,6 +44,17 @@ void ls_otbn_mbedtls_update_callback(void (*func)(void*),void *param)
     p_otbn_func = func;
     p_otbn_param = param;
 }
+
+void ls_otbn_cmd(enum HAL_OTBN_CMD cmd)
+{
+    if (LSOTBN->INTR_STATE)
+        LSOTBN->INTR_STATE = OTBN_INTR_STATE_DONE_MASK;
+    LSOTBN->TNSN_CNT = 0;
+    LSOTBN->INTR_ENABLE = OTBN_INTR_ENABLE_EN_MASK;
+    LSOTBN->CMD = cmd;
+    (void)k_sem_take(&wait_complete, K_FOREVER);
+}
+
 
 /* 
 不同的线程，调用otbn的时候，这里返回true，通过互斥量mbedtls_otbn_doneLock来管理进程
@@ -91,8 +115,13 @@ int mbedtls_ls_otbn_operation_init(ls_otbn_fireware_t fireware_id)
     {
         k_mutex_init(&mbedtls_otbn_doneLock);
         mbedtls_otbn_mutex_initailed = true;
+        k_sem_init(&wait_complete,0,1);
     }
-
+    // if(!sem_initailed)
+    // {
+    //     k_sem_init(&wait_complete,0,1);
+    //     sem_initailed = true;
+    // }
     k_mutex_lock(&mbedtls_otbn_doneLock,K_FOREVER);
 
     if(current_otbn_thread == NULL)
