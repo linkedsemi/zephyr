@@ -41,33 +41,22 @@
         };
     };
 
-    soc {
+    soc: soc {
         compatible = "simpe-bus";
         #address-cells = <1>;
         #size-cells = <1>;
         interrupt-parent = <&intc>;
 
-        sram1: memory@10000000 {
+        sram: memory@10000000{
             compatible = "mmio-sram";
-            reg = <0x10000000 DT_SIZE_K(512)>;
+            reg = <0x10000000 DT_SIZE_K(1280)>;
         };
 
-        sram2: memory@10080000{
-            compatible = "mmio-sram";
-            reg = <0x10080000 DT_SIZE_K(768)>;
-        };
-
-/*
-        share_memory0: memory@1013f000{
-            compatible = "mmio-sram";
-            reg = <0x1013f000 0x1000>;
-        };
-*/
         psram: memory@18000000 {
             compatible = "zephyr,memory-region", "mmio-sram";
             reg = <0x18000000 DT_SIZE_M(8)>;
             zephyr,memory-region = "PSRAM";
-            status = "okay";
+            status = "disabled";
         };
 
         intc: interrupt-controller {
@@ -1513,6 +1502,10 @@
             power-state-name = "standby";
         };
     };
+
+    chosen: chosen {};
+
+    aliases: aliases {};
 };
 
 #include "lsqsh_pinctrl_fixed_pinmap.dtsi"

@@ -14,45 +14,31 @@
 #undef SRAM_RW_SIZE
 #define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
 
-/ {
-    chosen {
-        zephyr,flash = &sram1_ro;
-        zephyr,flash-controller = &qspi1;
-        zephyr,sram = &sram1;
-        zephyr,console = &uart1;
-        zephyr,shell-uart = &uart1;
+&chosen {
+    zephyr,flash = &sram_ro;
+    zephyr,flash-controller = &qspi1;
+    zephyr,sram = &sram;
+    zephyr,console = &uart1;
+    zephyr,shell-uart = &uart1;
+};
+
+&soc {
+    /delete-node/ memory@10000000;
+    /delete-node/ memory@100c0000;
+    /delete-node/ memory@10100000;
+    sram_ro: memory@10000000 {
+        compatible = "mmio-sram";
+        reg = <0x10000000 SRAM_RO_SIZE>;
     };
 
-    soc {
-        compatible = "simpe-bus";
-        #address-cells = <1>;
-        #size-cells = <1>;
-        interrupt-parent = <&intc>;
-
-        /delete-node/ memory@10000000;
-        sram1_ro: memory@10000000 {
-            compatible = "mmio-sram";
-            reg = <0x10000000 SRAM_RO_SIZE>;
-        };
-
-        sram1: memory@10040000 {
-            compatible = "mmio-sram";
-            reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
-        };
+    sram: memory@10040000 {
+        compatible = "mmio-sram";
+        reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
     };
 };
 
 &cpu2 {
     status = "disabled";
-};
-
-&sram2 {
-    status = "disabled";
-};
-
-&qspi1 {
-    compatible = "linkedsemi,ls-flash-controller";
-    status = "okay";
 };
 
 &qspi1 {

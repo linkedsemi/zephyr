@@ -1,5 +1,4 @@
 &qspi1 {
-    /delete-property/ addr4b;
     flash1_partitions: partitions {
         compatible = "fixed-partitions";
         #address-cells = <1>;

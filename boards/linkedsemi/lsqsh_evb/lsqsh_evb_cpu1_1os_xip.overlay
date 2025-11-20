@@ -8,21 +8,12 @@
 #undef SRAM_TOTAL_SIZE
 #define SRAM_TOTAL_SIZE DT_SIZE_K(512 + 760)
 
-/ {
-    chosen {
-        zephyr,flash = &flash_xip_partition;
-        zephyr,flash-controller = &qspi1;
-        zephyr,sram = &sram1;
-        zephyr,console = &uart1;
-        zephyr,shell-uart = &uart1;
-    };
-
-    flash_xip_partition: flash@8010100 {
-        compatible = "soc-nv-flash";
-        reg = <0x8010100 DT_SIZE_M(12)>;
-        erase-block-size = <4096>;
-        write-block-size = <4>;
-    };
+&chosen {
+    zephyr,flash = &flash_xip_partition;
+    zephyr,flash-controller = &qspi1;
+    zephyr,sram = &sram1;
+    zephyr,console = &uart1;
+    zephyr,shell-uart = &uart1;
 };
 
 &cpu2 {
@@ -43,6 +34,13 @@
 };
 
 &qspi1 {
+    flash_xip_partition: flash@8010100 {
+        compatible = "soc-nv-flash";
+        reg = <0x8011000 DT_SIZE_M(12)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
+    };
+
     flash1_partitions: partitions {
         compatible = "fixed-partitions";
         #address-cells = <1>;
