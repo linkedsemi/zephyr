@@ -18,4 +18,9 @@
 #define IRQ_TYPE_LEVEL_HIGH   4
 #define IRQ_TYPE_LEVEL_LOW    8
 
+#if defined(CONFIG_WORKAROUND_CONFLICT_LOG_ERR)
+#undef LOG_ERR
+#define LOG_ERR LOG_ERROR
+#endif
+
 #endif /* _SOC_H_ */
