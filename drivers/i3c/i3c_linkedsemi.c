@@ -47,7 +47,8 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 #define I3C_SCLL_OD_MIN_I3C_NS  200ull
 
 #define I3C_SCLL_PP_MIN_NS  32ull
-#define I3C_SCLH_I3C_MIN_NS 64ull
+#define I3C_SCLH_I3C_MIN_NS 32ull
+// #define I3C_SCLH_I3C_MIN_NS 64ull
 // #define I3C_SCLH_I3C_MIN_NS 128ull
 
 #define I3C_TBUF_FMP_MIN_NS 500.0
@@ -244,7 +245,7 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 	LOG_DBG("config->clock_frequency = %d\r\n",config->clock_frequency);
 	LOG_DBG("i2c hz= 0x%x ,i3c hz= 0x%x \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
 
-	if(data->common.ctrl_config.scl.i2c > 0)
+	if(data->common.ctrl_config.scl.i2c > 0 && config->common.dev_list.num_i2c > 0)
 	{
 		if(data->common.ctrl_config.scl.i2c >= 400000)
 		{
@@ -277,24 +278,28 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 		{
 			LOG_ERR("have i2c device on bus,but not set frequence");
 			return -EINVAL;
-		}
+		}else
+		{
 			/* Assume no I2C devices on the bus */
-			scll_od = 0;
-			// sclh_i2c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency, 1000000000ull) - 1;
-			// scll_od = scll_od;
+			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_I3C_NS * config->clock_frequency,
+						1000000000ull) -
+				   1;
+			sclh_i2c = 0;	
+		}
+
 	}
 
 	sclh_i3c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency, 1000000000ull) - 1;
 	scll_pp = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i3c) - sclh_i3c - 2;
-	if(scll_od == 0)
-	{
-		scll_od = scll_pp;
-	}
-	// if (scll_pp < DIV_ROUND_UP(I3C_SCLL_PP_MIN_NS * config->clock_frequency, 1000000000ull) - 1) {
-	// 	LOG_ERR("Cannot find a combination of SCLL_PP and SCLH_I3C at current I3C clock "
-	// 		"frequency for specified I3C bus speed");
-	// 	return -EINVAL;
+	// if(scll_od == 0)
+	// {
+	// 	scll_od = scll_pp;
 	// }
+	if (scll_pp < DIV_ROUND_UP(I3C_SCLL_PP_MIN_NS * config->clock_frequency, 1000000000ull) - 1) {
+		LOG_ERR("Cannot find a combination of SCLL_PP and SCLH_I3C at current I3C clock "
+			"frequency for specified I3C bus speed");
+		return -EINVAL;
+	}
 	LOG_DBG("sclh_i2c = %lld,  scll_od = %lld,  sclh_i3c = %lld,  scll_pp = %lld,  \r\n",sclh_i2c,scll_od,sclh_i3c,scll_pp);
 	clk_wave = ((uint32_t)sclh_i2c << 24) | ((uint32_t)scll_od << 16) |
 		   ((uint32_t)sclh_i3c << 8) | (scll_pp);
@@ -527,11 +532,6 @@ static int ls_i3c_init(const struct device *dev)
 	}
 
 	(void)ctrl_config;
-	/* Check clock device ready */
-	// if (!device_is_ready(clk_dev)) {
-	// 	LOG_ERR("%s Clk device not ready", clk_dev->name);
-	// 	return -ENODEV;
-	// }
 
 	/* Set I3C_PD operational */
 	// ret = clock_control_on(clk_dev, (clock_control_subsys_t)&config->clock_subsys);
@@ -539,26 +539,13 @@ static int ls_i3c_init(const struct device *dev)
 	// 	LOG_ERR("Turn on I3C clock fail %d", ret);
 	// 	return ret;
 	// }
-		// io_cfg_output(PK08);
-		// io_cfg_output(PK09);
-		// io_cfg_output(PK10);
-		// io_cfg_output(PK11);
-		// while(1) {
-		// 	io_toggle_pin(PK08);
-		// 	io_toggle_pin(PK09);
-		// 	io_toggle_pin(PK10);
-		// 	io_toggle_pin(PK11);
-		// 	// io_toggle_pin(PH00);
-		// 	// c_delay(1000000);
-		// }
-
 
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
         if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
+            LOG_ERR("%s device not ready", clk_dev->name);
             return -ENODEV;
         }
         clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
@@ -590,7 +577,7 @@ static int ls_i3c_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_DBG("%s: Could not configure pins", dev->name);
+        LOG_ERR("%s: Could not configure pins", dev->name);
     }
 #endif
 
@@ -599,16 +586,6 @@ static int ls_i3c_init(const struct device *dev)
 	data->fifo_info.ControllerRxFifoSize = 16;
 	data->fifo_info.TargetTxFifoSize = 16;
 	data->fifo_info.TargetRxFifoSize = 8;
-
-	// //I3C时钟使能
-    // per_func_enable(I3C10_SCL,PINMUX_FUNC3);
-    // per_func_enable(I3C10_SDA,PINMUX_FUNC3);
-    // per_func_enable(I3C9_SCL,PINMUX_FUNC3);
-    // per_func_enable(I3C9_SDA,PINMUX_FUNC3);
-
-    // /*时钟使能*/
-    // SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C13_MASK;
-    // SYSC_APP_PER->PD_PER_CLKG3 |=SYSC_APP_PER_CLKG_SET_I3C14_MASK;
 
 #if defined(CONFIG_I3C_USE_IBI)
 	base->IER = I3C_IER_IBIIE_MASK;
@@ -1040,28 +1017,27 @@ static int ls_i3c_do_daa(const struct device *dev)
 			/* ... and combine into one Provisioned ID */
 			pid = (uint64_t)vendor_id << 32U | (uint64_t)part_no;
 
-			// LOG_DBG("DAA: Rcvd PID 0x%04x%08x", vendor_id, part_no);
-			/*
-				如果ret为 0，表示 target -dyn_addr 两个元素从addr_slots 和 dev_list顺利找到位置
-				addr_slots： 随机分配的地址节点，每个节点有个地址
-				dev_list： 用户设备树中定义的设备信息
-			*/
 			ret = i3c_dev_list_daa_addr_helper(&data->common.attached_dev.addr_slots,
 							   &config->common.dev_list, pid,
-							   true, false,
+							   false, false,
 							   &target, &dyn_addr);
 			if (ret != 0) {
 				LOG_ERR("TARGET device address dose not match");
+				LOG_ERR("DAA: Rcvd PID 0x%04x%08x", vendor_id, part_no);
 				goto out_daa;
 			}
-			// if(dyn_addr != 0x32)
-			// {
-			// 	while(1);
-			// }
-			/* Update target descriptor */
-			target->dynamic_addr = dyn_addr;
-			target->bcr = rx_buf[6];
-			target->dcr = rx_buf[7];
+
+			if (target == NULL) {
+				/* 设备树中没有注册对应的从机设备子节点，使用随机分配地址来保证后续的其他设备能够继续正常走通 */
+				LOG_DBG("%s: PID 0x%04x%08x is not in registered device "
+					"list, given dynamic address 0x%02x",
+					dev->name, vendor_id, part_no, dyn_addr);
+			} else {
+				/* Update target descriptor */
+				target->dynamic_addr = dyn_addr;
+				target->bcr = rx_buf[6];
+				target->dcr = rx_buf[7];
+			}
 
 			/* Mark the address as I3C device */
 			i3c_addr_slots_mark_i3c(&data->common.attached_dev.addr_slots, dyn_addr);
@@ -1072,7 +1048,7 @@ static int ls_i3c_do_daa(const struct device *dev)
 			 * So free the static one from address slots if different from
 			 * newly assigned one.
 			 */
-			if ((target->static_addr != 0U) && (dyn_addr != target->static_addr)) {
+			if ((target != NULL) &&(target->static_addr != 0U) && (dyn_addr != target->static_addr)) {
 				i3c_addr_slots_mark_free(&data->common.attached_dev.addr_slots,
 							 target->static_addr);
 			}
@@ -1082,8 +1058,8 @@ static int ls_i3c_do_daa(const struct device *dev)
 			{
 				/* Write device address in the TDR register */
 				LL_I3C_TransmitData8(base, dyn_addr<<1);
-				// LOG_DBG("PID 0x%04x%08x assigned dynamic address 0x%02x",
-				// 	vendor_id, part_no, dyn_addr);
+				LOG_INF("PID 0x%04x%08x assigned dynamic address 0x%02x",
+					vendor_id, part_no, dyn_addr);
 			}
 			// else
 			// {
@@ -1096,11 +1072,13 @@ static int ls_i3c_do_daa(const struct device *dev)
 	
 
 out_daa:
+	// wait transfer complete
+	while((READ_REG(base->EVR) & (I3C_EVR_FCF | I3C_EVR_ERRF)) == 0);
 
 	if(__LS_I3C_GET_FLAG(base,I3C_EVR_ERRF_MASK))
 	{
 		ret = -EIO;
-		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
+		LOG_ERR("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
 		LL_I3C_ClearFlag_ERR(base);
 		ls_i3c_xfer_reset(base);
 	}
@@ -1245,7 +1223,7 @@ static int ls_i3c_do_ccc(const struct device *dev,
 			goto out_ccc_stop;
 		}
 		start_time = arch_k_cycle_get_64(); 
-		exp_time = 2*(LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT * num_target) + start_time;	// 这里要修改成系统时间
+		exp_time = LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT * num_target + start_time;
 		LL_I3C_ControllerHandleCCC(base,payload->ccc.id,payload->ccc.data_len,LL_I3C_GENERATE_RESTART);
 		do{
 			/*tx-fifo depth is 16 ,so broadcast tx data can be fully input, broadcast tx data is not too long*/
@@ -1394,12 +1372,13 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 		if(transfer_num != 0)
 		{
-			LOG_ERR("CCC[0x%02x]: the amount of data transmitted does not match",payload->ccc.id);
+			LOG_ERR("CCC[0x%02x]: the amount of data transmitted does not match, the remaining amount of data is %d ",payload->ccc.id, transfer_num);
 			ret = -EIO;
 		}
 	}
 
 out_ccc_stop:
+	// wait transfer complete
 	while((READ_REG(base->EVR) & (I3C_EVR_FCF | I3C_EVR_ERRF)) == 0);
 	
 	if (__LS_I3C_GET_FLAG(base, LL_I3C_EVR_FCF) == SET)
@@ -1412,7 +1391,7 @@ out_ccc_stop:
 	{
 		/* Clear error flag */
 
-		LOG_DBG("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
+		LOG_ERR("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
 		LL_I3C_ClearFlag_ERR(base);
 		/* Update returned status value */
 		ret = -EIO;
@@ -1482,14 +1461,8 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 	LL_I3C_ClearFlag_ERR(base);
 	LL_I3C_EnableIT_ERR(base);
 
-
-	// int key = arch_irq_lock();
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	// uint8_t new_msg_idx = 0;
-	// uint8_t cur_msg_idx = 0;
-	// uint32_t transfer_num = 0;
-	// (void)transfer_num;
 	ret = i3c_ls_curr_msg_init(dev, msgs, NULL, num_msgs, target->dynamic_addr);
 
 	ret = ls_i3c_request_transfer_flag(dev);
@@ -1576,7 +1549,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 		}
 
 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTSET_SLVRST_MASK)) {
-			LOG_DBG("%s : Slave reset",__func__);
+			LOG_ERR("%s : Slave reset",__func__);
 			base->SSTATUS = I3C_SSTATUS_SLVRST_MASK;
 		}
 		
@@ -1883,7 +1856,7 @@ static void ls_i3c_isr(const struct device *dev)
 		target = i3c_dev_list_i3c_addr_find(dev, (uint8_t)IBICRTgtAddr);
 		ret = i3c_ibi_work_enqueue_target_irq(target,(uint8_t *)&IBITgtPayload,IBITgtNbPayload);
 		if (ret < 0) {
-		LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
+			LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
 		}
 	}
 	if (I3C_CHECK_FLAG(it_masks, I3C_EVR_CRF) != RESET)
@@ -1898,7 +1871,7 @@ static void ls_i3c_isr(const struct device *dev)
 		LL_I3C_ClearFlag_HJ(base);
 		ret = i3c_ibi_work_enqueue_hotjoin(dev);
 		if (ret < 0) {
-		LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
+			LOG_ERR("Enqueuing ibi work fail, ret %d", ret);
 		}
 	}
 

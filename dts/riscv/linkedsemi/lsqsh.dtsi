@@ -1281,7 +1281,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x400a0800 0x2000>;
-            interrupts = <I3C1_IRQN 3>;
+            interrupts = <I3C1_IRQN 7>;
             clocks = <I3C1_CLOCK>;
             resets = <I3C1_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1294,7 +1294,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40093400 0x2000>;
-            interrupts = <I3C2_IRQN 3>;
+            interrupts = <I3C2_IRQN 7>;
             clocks = <I3C2_CLOCK>;
             resets = <I3C2_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1307,7 +1307,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40093800 0x2000>;
-            interrupts = <I3C3_IRQN 3>;
+            interrupts = <I3C3_IRQN 7>;
             clocks = <I3C3_CLOCK>;
             resets = <I3C3_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1320,7 +1320,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40093c00 0x2000>;
-            interrupts = <I3C4_IRQN 3>;
+            interrupts = <I3C4_IRQN 7>;
             clocks = <I3C4_CLOCK>;
             resets = <I3C4_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1333,7 +1333,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094000 0x2000>;
-            interrupts = <I3C5_IRQN 3>;
+            interrupts = <I3C5_IRQN 7>;
             clocks = <I3C5_CLOCK>;
             resets = <I3C5_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1346,7 +1346,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094400 0x2000>;
-            interrupts = <I3C6_IRQN 3>;
+            interrupts = <I3C6_IRQN 7>;
             clocks = <I3C6_CLOCK>;
             resets = <I3C6_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1359,7 +1359,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094800 0x2000>;
-            interrupts = <I3C7_IRQN 3>;
+            interrupts = <I3C7_IRQN 7>;
             clocks = <I3C7_CLOCK>;
             resets = <I3C7_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1372,7 +1372,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094c00 0x2000>;
-            interrupts = <I3C8_IRQN 3>;
+            interrupts = <I3C8_IRQN 7>;
             clocks = <I3C8_CLOCK>;
             resets = <I3C8_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1385,7 +1385,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095000 0x2000>;
-            interrupts = <I3C9_IRQN 3>;
+            interrupts = <I3C9_IRQN 7>;
             clocks = <I3C9_CLOCK>;
             resets = <I3C9_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1398,7 +1398,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095400 0x2000>;
-            interrupts = <I3C10_IRQN 3>;
+            interrupts = <I3C10_IRQN 7>;
             clocks = <I3C10_CLOCK>;
             resets = <I3C10_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1411,7 +1411,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095800 0x2000>;
-            interrupts = <I3C11_IRQN 3>;
+            interrupts = <I3C11_IRQN 7>;
             clocks = <I3C11_CLOCK>;
             resets = <I3C11_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1424,7 +1424,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095c00 0x2000>;
-            interrupts = <I3C12_IRQN 3>;
+            interrupts = <I3C12_IRQN 7>;
             clocks = <I3C12_CLOCK>;
             resets = <I3C12_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1437,7 +1437,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40096000 0x2000>;
-            interrupts = <I3C13_IRQN 3>;
+            interrupts = <I3C13_IRQN 7>;
             clocks = <I3C13_CLOCK>;
             resets = <I3C13_RESET>;
             i3c-scl-hz = <1000000>;
@@ -1450,7 +1450,7 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40096400 0x2000>;
-            interrupts = <I3C14_IRQN 3>;
+            interrupts = <I3C14_IRQN 7>;
             clocks = <I3C14_CLOCK>;
             resets = <I3C14_RESET>;
             i3c-scl-hz = <1000000>;
