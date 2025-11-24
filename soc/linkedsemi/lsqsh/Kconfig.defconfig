@@ -386,7 +386,7 @@ endif
 
 config WORKAROUND_CONFLICT_LOG_ERR
 	bool "WORKAROUND_CONFLICT_LOG_ERR"
-	default y
+	default n
 	help
 	WORKAROUND_CONFLICT_LOG_ERR
 
