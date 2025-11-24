@@ -161,6 +161,10 @@ config IOPMP
 	bool "IOPMP"
 	default y
 
+config IOPMP_DMA
+	bool "IOPMP_DMA"
+	default y
+
 config RV_BOOT_HART_MRADDR
 	hex
 	default 0x1000000
@@ -389,6 +393,12 @@ config WORKAROUND_CONFLICT_LOG_ERR
 	default n
 	help
 	WORKAROUND_CONFLICT_LOG_ERR
+
+config IOPMP_WHITELIST_I2C1_I3C1
+	bool "IOPMP_WHITELIST_I2C1_I3C1"
+	default n
+	help
+	IOPMP_WHITELIST_I2C1_I3C1
 
 rsource "otbn/Kconfig.defconfig"
 
