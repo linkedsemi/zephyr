@@ -61,6 +61,9 @@ enum {
 	/** Identifier for in-tree Ext2 file system. */
 	FS_EXT2,
 
+	/** Identifier for in-tree jtagm file system. */
+	FS_JTAGM,
+
 	/** Base identifier for external file systems. */
 	FS_TYPE_EXTERNAL_BASE,
 };
