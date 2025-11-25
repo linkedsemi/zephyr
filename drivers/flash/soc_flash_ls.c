@@ -224,10 +224,12 @@ static void delegation_server_work_handler(struct k_work *work)
 	break;
 	case FLASH_DELEGATE_SERVER_GET_PARAMS:
 	{
+		LOG_DBG("FLASH_DELEGATE_SERVER_GET_PARAMS");
 		const struct flash_parameters *flash_params = flash_get_parameters(priv->dev);
 		memcpy(&param.ret.flash_params,flash_params,sizeof(struct flash_parameters));
 	}break;
 	case FLASH_DELEGATE_SERVER_READ_JEDEC_ID:
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ_JEDEC_ID");
 		if (!is_own_ram((uint32_t)priv->req_param.data)) {
 			int data_addr = (uint32_t)priv->req_param.data;
 			int data_size = (uint32_t)priv->req_param.size;
@@ -240,6 +242,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_SFDP_READ:
+		LOG_DBG("FLASH_DELEGATE_SERVER_SFDP_READ");
 		if (!is_own_ram((uint32_t)priv->req_param.data)) {
 			int data_addr = (uint32_t)priv->req_param.data;
 			int data_size = (uint32_t)priv->req_param.size;
@@ -252,6 +255,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_READ_EAR:
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ_EAR");
 		param.ret.value = flash_ls_read_ear(priv->dev);
 	break;
 	default:
