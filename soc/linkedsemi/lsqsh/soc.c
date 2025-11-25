@@ -728,9 +728,7 @@ int flash_xip_prepare(const struct device *flash_dev)
     return 0;
 }
 
-#if defined(CONFIG_CPU2_IMAGE_HEADER)
 __maybe_unused static uint32_t cpu2_exe_addr;
-#endif
 __maybe_unused static bool is_app_cpu_xip_in_sec_flash(void)
 {
 #if defined(CONFIG_CPU2_IMAGE_HEADER)
