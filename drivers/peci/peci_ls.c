@@ -45,7 +45,7 @@
 #define PECI_A_TGT_IDX1_VAL 8
 #define PECI_M_TGT_IDX1_VAL 8
 
-LOG_MODULE_REGISTER(peci_ls, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(peci_ls, CONFIG_PECI_LOG_LEVEL);
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
@@ -115,7 +115,6 @@ static int peci_ls_init(const struct device *dev)
 {
     const struct peci_ls_config *const dev_config = dev->config;
     struct peci_ls_data *const dev_data = dev->data;
-    reg_peci_t *const reg = dev_config->reg;
     __maybe_unused int ret;
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -158,32 +157,12 @@ static int peci_ls_init(const struct device *dev)
     }
 #endif
 
-    const uint32_t max_div = PECI_PRE_DIV_MASK >> PECI_PRE_DIV_POS;
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        uint32_t rate;
-        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&dev_config->clock_source, &rate);
-
-        uint32_t div = dev_config->peci_frequence ?
-                        ((rate / dev_config->peci_frequence) / (PECI_A_BIT_CYC_VAL + 1)) : max_div;
-
-        if (div > max_div) {
-            LOG_ERR("peci_frequence value: %d error", dev_config->peci_frequence);
-            return -EINVAL;
-        }
-        while((((rate / (div + 1)) / (PECI_A_BIT_CYC_VAL + 1)) > dev_config->peci_frequence) && (div > 0)) {
-            div++;
-        }
-        reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, div);
-    }
-#else
-    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, max_div);
-#endif
-
     k_sem_init(&dev_data->xfer_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_sem_init(&dev_data->lock, 1, 1);
     dev_config->irq_config_func(dev);
+
+    peci_config(dev, dev_config->peci_frequence);
+    peci_enable(dev);
 
     return 0;
 }
@@ -200,6 +179,29 @@ static int peci_ls_configure(const struct device *dev, uint32_t bitrate)
     reg->PECI_A_TIM1 = FIELD_BUILD(PECI_A_TGT_IDX0, PECI_A_TGT_IDX0_VAL) | FIELD_BUILD(PECI_A_TGT_IDX1, PECI_A_TGT_IDX1_VAL);
     reg->PECI_M_TIM0 = FIELD_BUILD(PECI_A_BIT_CYC, PECI_A_BIT_CYC_VAL) | FIELD_BUILD(PECI_A_SMP_IDX, PECI_A_SMP_IDX_VAL);
     reg->PECI_M_TIM1 = FIELD_BUILD(PECI_M_TGT_IDX0, PECI_M_TGT_IDX0_VAL) | FIELD_BUILD(PECI_M_TGT_IDX1, PECI_M_TGT_IDX1_VAL);
+
+    const uint32_t max_div = PECI_PRE_DIV_MASK >> PECI_PRE_DIV_POS;
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (dev_config->ccfg.cctl_dev) {
+        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+        uint32_t rate;
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&dev_config->clock_source, &rate);
+
+        uint32_t div = bitrate ?
+                        ((rate / bitrate) / (PECI_A_BIT_CYC_VAL + 1)) : max_div;
+
+        if (div > max_div) {
+            LOG_ERR("peci_frequence value: %d error", bitrate);
+            return -EINVAL;
+        }
+        while((((rate / (div + 1)) / (PECI_A_BIT_CYC_VAL + 1)) > bitrate) && (div > 0)) {
+            div++;
+        }
+        reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, div);
+    }
+#else
+    reg->PECI_CTRL = FIELD_BUILD(PECI_PRE_DIV, max_div);
+#endif
 
     k_sem_give(&dev_data->lock);
 
@@ -326,20 +328,28 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     if (xfer_len > PECI_LS_MAX_XFER_LEN) {
         ret = -EINVAL;
+        goto error;
     }
+
+    if ((0 == xfer_rx_len) && (msg->cmd_code != PECI_CMD_PING)) {
+        ret = -EINVAL;
+        goto error;
+    }
+
+    k_sem_take(&dev_data->lock, K_FOREVER);
 
     /* initialize device state */
     dev_data->buf_idx = 0;
 
-    k_sem_take(&dev_data->lock, K_FOREVER);
-
     /* configure registers */
+    CLEAR_BIT(reg->INTR_MSK, PECI_INTR_MSK_MASK | PECI_INTR_32BYTES_END_MSK_MASK);
     SET_BIT(reg->INTR_CLR, PECI_INTR_MSK_MASK | PECI_INTR_32BYTES_END_MSK_MASK);
     if (xfer_len > 32) {
         SET_BIT(reg->INTR_MSK, PECI_INTR_32BYTES_END_MSK_MASK);
         SET_BIT(reg->PECI_CTRL, PECI_WT_MODE_MASK);
         MODIFY_REG(reg->PECI_CTRL, PECI_DAT_WLEN_MASK, xfer_tx_len << PECI_DAT_WLEN_POS);
     }
+    SET_BIT(reg->INTR_MSK, PECI_INTR_MSK_MASK);
     MODIFY_REG(reg->PECI_CTRL, PECI_DAT_LEN_MASK, (xfer_len - PECI_ADDR_LEN - PECI_WRLEN_LEN) << PECI_DAT_LEN_POS);
 
     /* send header */
@@ -381,8 +391,11 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
         }
     }
 
-    /* send crc */
-    peci_tx_byte(dev, buf.u8, crc_result);
+    if (msg->cmd_code == PECI_CMD_PING) {
+        peci_tx_byte(dev, buf.u8, 0);
+    } else {
+        peci_tx_byte(dev, buf.u8, crc_result);
+    }
     peci_wr_pingpong_buf(dev, buf.u32, pingpong);
     if (is_to_req) {
         WRITE_REG(reg->TXRX_REQ, PECI_TXRX_REQ_MASK);
@@ -401,24 +414,34 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
             k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
             peci_rd_pingpong_buf(dev, buf.u32, pingpong);
             rx_valid = is_first_rx ? (32 - reg_tx_tail_len) : 32;
-            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_valid);
+            void *rx_src = buf.u8 + (is_first_rx ? reg_tx_tail_len : 0);
+            memcpy(rx_dest, rx_src, rx_valid);
             rx_dest += rx_valid;
             is_first_rx = false;
             pingpong ^= true;
         }
-
-        MODIFY_REG(reg->INTR_MSK, PECI_INTR_32BYTES_END_MSK_MASK | PECI_INTR_MSK_MASK, PECI_INTR_MSK_MASK);
 
         /* handle remaining bytes */
         const uint8_t rx_remain = reg_rx_len % 32;
         if (rx_remain) {
             k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
             peci_rd_pingpong_buf(dev, buf.u32, pingpong);
-            memcpy(rx_dest, buf.u8 + (is_first_rx ? reg_tx_tail_len : 0), rx_remain - (is_first_rx ? reg_tx_tail_len : 0));
+            void *rx_src = buf.u8 + (is_first_rx ? reg_tx_tail_len : 0);
+            int rx_size = rx_remain - (is_first_rx ? reg_tx_tail_len : 0);
+            memcpy(rx_dest, rx_src, rx_size);
             /* is_first_rx = false; */
         }
+    } else if (msg->cmd_code == PECI_CMD_PING) {
+        k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
+        buf.u32[0] = reg->RX_DAT0;
+        if (crc_result == buf.u8[3]) {
+            LOG_DBG("ping ok: addr: %#x, fcs: %#x", msg->addr, crc_result);
+        } else if (0 != buf.u8[3]) {
+            LOG_WRN("rx fcs: %#x is expected to be %#x", buf.u8[3], crc_result);
+        } else {
+            ret = -ENODEV;
+        }
     } else {
-        MODIFY_REG(reg->INTR_MSK, PECI_INTR_32BYTES_END_MSK_MASK | PECI_INTR_MSK_MASK, PECI_INTR_MSK_MASK);
         k_sem_take(&dev_data->xfer_sync_sem, K_FOREVER);
     }
 
@@ -426,6 +449,7 @@ static int peci_ls_transfer(const struct device *dev, struct peci_msg *msg)
 
     k_sem_give(&dev_data->lock);
 
+error:
     return ret;
 }
 
