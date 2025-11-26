@@ -228,13 +228,56 @@ static int smbus_linkedsemi_block_write(const struct device *dev, uint16_t perip
             .flags = 0,
         },
         {
+            .buf = &count,
+            .len = 1,
+            .flags = 0,
+        },
+        {
             .buf = buf,
             .len = count,
             .flags = 0,
         },
     };
+    if ((count <= 0) || (count > SMBUS_BLOCK_BYTES_MAX)) {
+        return -EINVAL;
+    }
 
     return i2c_transfer(config->i2c_dev, messages, ARRAY_SIZE(messages), periph_addr);
+}
+
+static int smbus_linkedsemi_block_read(const struct device *dev,
+                                        uint16_t addr, uint8_t cmd,
+                                        uint8_t *count, uint8_t *buf)
+{
+    const struct smbus_linkedsemi_config *config = dev->config;
+    uint8_t smbus_data[SMBUS_BLOCK_BYTES_MAX + 1];
+    struct i2c_msg messages[] = {
+        {
+            .buf = &cmd,
+            .len = sizeof(cmd),
+            .flags = 0,
+        },
+        {
+            .buf = smbus_data,
+            .len = sizeof(smbus_data),
+            .flags = 0,
+        },
+    };
+    int ret;
+
+    smbus_data[0] = 0;
+
+    i2c_transfer(config->i2c_dev, messages, ARRAY_SIZE(messages), addr);
+    if ((smbus_data[0] <= 0) || (smbus_data[0] > SMBUS_BLOCK_BYTES_MAX)) {
+        *count = 0;
+        ret = -EIO;
+    } else {
+        memcpy(buf, &smbus_data[1], smbus_data[0]);
+        *count = smbus_data[0];
+        ret = 0;
+    }
+
+    return ret;
 }
 
 static const struct smbus_driver_api smbus_linkedsemi_api = {
@@ -256,7 +299,7 @@ static const struct smbus_driver_api smbus_linkedsemi_api = {
     .smbus_smbalert_set_cb = NULL,
     .smbus_smbalert_remove_cb = NULL,
 #endif /* CONFIG_SMBUS_LINKEDSEMI_SMBALERT */
-    .smbus_block_read = NULL,
+    .smbus_block_read = smbus_linkedsemi_block_read,
     .smbus_block_pcall = NULL,
     .smbus_host_notify_set_cb = NULL,
     .smbus_host_notify_remove_cb = NULL,
