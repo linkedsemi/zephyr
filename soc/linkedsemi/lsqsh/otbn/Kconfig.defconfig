@@ -21,11 +21,11 @@ config WOLFSSL_LINKEDSEMI_OTBN_ECC_ALT
     bool "Replace the original software encryption function with the ECC encryption provided by OTBN. However, it only supports SM2, P256, and P384."
     default n
 
-config WOLFSSL_LINKEDSEMI_HARDWARE_HASH_ALT
+config WOLFSSL_LINKEDSEMI_HARDWARE_SHA224_SHA256_SM3_ALT
     bool "Replace the software sha224、 sha256 and sm3 hash calculate of wolfssl with the hardware hash of linkedsemi"
     default n
 
-config WOLFSSL_LINKEDSEMI_HARDWARE_SHA512_ALT
+config WOLFSSL_LINKEDSEMI_HARDWARE_SHA384_SHA512_ALT
     bool "Replace the software sha512 and sha384 hash calculate of wolfssl with the hardware hash of linkedsemi"
     default n
 
