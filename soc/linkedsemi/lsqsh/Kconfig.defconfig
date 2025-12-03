@@ -400,6 +400,12 @@ config IOPMP_WHITELIST_I2C1_I3C1
 	help
 	IOPMP_WHITELIST_I2C1_I3C1
 
+config POSIX_USLEEP_WORKAROUND
+	bool "POSIX_USLEEP_WORKAROUND"
+	default n
+	help
+		POSIX_USLEEP_WORKAROUND
+
 rsource "otbn/Kconfig.defconfig"
 
 endif
