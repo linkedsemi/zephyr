@@ -406,6 +406,16 @@ config POSIX_USLEEP_WORKAROUND
 	help
 		POSIX_USLEEP_WORKAROUND
 
+config SD_BUFFER_SIZE_OVERLAY
+	int "SD_BUFFER_SIZE_OVERLAY"
+	default 512
+	help
+		SD_BUFFER_SIZE_OVERLAY
+
+config SD_BUFFER_SIZE
+	int
+	default SD_BUFFER_SIZE_OVERLAY
+
 rsource "otbn/Kconfig.defconfig"
 
 endif
