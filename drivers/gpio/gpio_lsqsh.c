@@ -262,7 +262,9 @@ static void gpio_vcore_isr(const struct device *dev)
     struct gpio_ls_exti_data *data = (struct gpio_ls_exti_data *)DEVICE_DT_GET(DT_INST(0, linkedsemi_lsqsh_pinctrl))->data;
     const struct device *port_dev;
     struct gpio_ls_data *port_data;
-    uint32_t interrupt_status = 0;
+    uint32_t pin_mask[NUMBER_OF_PORTS] = {0};
+    uint32_t port_mask = 0;
+
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     volatile uint32_t *INT_STAT_BASE = SEC_PMU->GPIO_INTR_STT;
 #elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay)
@@ -284,12 +286,14 @@ static void gpio_vcore_isr(const struct device *dev)
             exti_edge_t edge = INT_EDGE_NONE;
             if ((1 << j) & int_stat) {
                 *INT_CLR_REG = 1 << j;
-                interrupt_status = 1 << j;
+                pin_mask[i] |= 1 << j;
+                port_mask |= 1 << i;
                 edge |= INT_EDGE_RISING;
             }
             if ((1 << 16 << j) & int_stat) {
                 *INT_CLR_REG = 1 << 16 << j;
-                interrupt_status = 1 << j;
+                pin_mask[i] |= 1 << j;
+                port_mask |= 1 << i;
                 edge |= INT_EDGE_FALLING;
             }
             if (edge) {
@@ -298,10 +302,19 @@ static void gpio_vcore_isr(const struct device *dev)
         }
         IF_ENABLED(CONFIG_GPIO_INTR_LOCK, (SET_BIT(*INT_LOCK_REG, intr_lock_stat);))
     }
-    for (uint8_t i = 0; i < data->count; i++) {
-        port_dev = data->ports[i];
+
+    while (port_mask) {
+        const struct gpio_ls_config *cfg;
+        int bit = __builtin_ctz(port_mask);
+        for (int i = 0; i < NUMBER_OF_PORTS; i++) {
+            port_dev = data->ports[i];
+            cfg = port_dev->config;
+            if (get_gpio_port_id((uint32_t)cfg->base_io_cfg) == bit)
+                break;
+        }
         port_data = port_dev->data;
-        gpio_fire_callbacks(&port_data->callbacks, port_dev, interrupt_status);
+        gpio_fire_callbacks(&port_data->callbacks, port_dev, pin_mask[bit]);
+        port_mask &= (port_mask - 1);
     }
 }
 
