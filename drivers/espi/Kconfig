@@ -36,6 +36,12 @@ config ESPI_INIT_PRIORITY
 	help
 	  Driver initialization priority for eSPI driver.
 
+config VUART_IRQ_THREAD_STACK_SIZE
+	int "ESPI VUART driver irq thread stack size"
+	default 1024
+	help
+	  Driver irq thread stack size.
+      
 config ESPI_PERIPHERAL_CHANNEL
 	bool "eSPI peripheral channel"
 	default y

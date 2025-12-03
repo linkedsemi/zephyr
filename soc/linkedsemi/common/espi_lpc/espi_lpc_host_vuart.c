@@ -19,7 +19,6 @@ typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 LOG_MODULE_REGISTER(ls_host_vuart, CONFIG_ESPI_LOG_LEVEL);
 
-#define VUART_IRQ_THREAD_STACK_SIZE 512
 #define VUART_FIFO_SIZE 16
 #define PORT_NUM   8
 #define IER_RDA    0x01
@@ -68,7 +67,7 @@ struct host_vuart_data {
   struct peri_ioport ioport[PORT_NUM];
   uart_irq_callback_user_data_t irq_cb;
   void *irq_user_data;
-  K_KERNEL_STACK_MEMBER(irq_thread_stack, VUART_IRQ_THREAD_STACK_SIZE);
+  K_KERNEL_STACK_MEMBER(irq_thread_stack, CONFIG_VUART_IRQ_THREAD_STACK_SIZE);
   struct k_thread irq_thread;
   struct k_sem irq_sem;
   struct host_vuart_reg data_reg;
