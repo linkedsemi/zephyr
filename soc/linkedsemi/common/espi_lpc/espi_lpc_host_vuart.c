@@ -266,6 +266,7 @@ static void host_vuart_reg2_read(const struct peri_ioport_content *ioport, uint8
     const struct device *dev = ioport->ctx;
     uint8_t *val = (uint8_t *)res;
     *val = host_vuart_calc_iir(dev);
+    local_irq_state_update(dev);
 }
 
 static void host_vuart_reg2_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
@@ -329,6 +330,7 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
             *val |= LSR_DR;
         }
     }
+    local_irq_state_update(dev);
 }
 static void host_vuart_reg5_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
 {
@@ -474,6 +476,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
     }
     k_spin_unlock(&ptr_data->lock, key);
     ptr_data->host_tx_to_vuart = host_tx_to_vuart;
+    local_irq_state_update(dev);
 }
 
 
