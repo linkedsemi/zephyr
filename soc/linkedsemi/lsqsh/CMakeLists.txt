@@ -5,6 +5,8 @@ zephyr_sources(dma.c)
 zephyr_sources(soc_reset.c)
 
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH malloc_newlib.c)
+zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_TLSF_LSQSH malloc_newlib_tlsf.c tlsf/tlsf.c)
+
 
 add_subdirectory(otbn)
 
