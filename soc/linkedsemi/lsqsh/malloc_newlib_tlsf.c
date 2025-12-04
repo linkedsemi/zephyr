@@ -53,7 +53,7 @@ struct tlsf_mem_info
     void* heap_addr;
     size_t heap_size;
     size_t used_size;
-    size_t free_size;
+    size_t max_size;
 };
 
 Z_LIBC_DATA static struct tlsf_mem_info tlsf_heap_psram;
@@ -87,8 +87,19 @@ void *_malloc_r (struct _reent *r, size_t size)
                                     (CONFIG_DCACHE_LINE_SIZE),
                                     (__alignof__(z_max_align_t))),
                         size);
-    if (ptr == NULL && size != 0)
+
+    if (ptr)
+    {
+        tlsf_heap_psram.used_size += tlsf_block_size(ptr);
+        if (tlsf_heap_psram.used_size > tlsf_heap_psram.max_size)
+        {
+            tlsf_heap_psram.max_size = tlsf_heap_psram.used_size;
+        }
+    }
+    else if (ptr == NULL && size != 0)
+    {
         errno = ENOMEM;
+    }
     malloc_unlock();
 
     return ptr;
@@ -109,6 +120,7 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t requested_size)
     else
     {
         malloc_lock();
+        size_t old_size = tlsf_block_size(ptr);
 
         ret = tlsf_realloc(tlsf_heap_psram.tlsf, ptr, requested_size);
         if (ret && !IS_ALIGNED(ret, COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
@@ -119,13 +131,25 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t requested_size)
              if (align_ptr)
              {
                 memcpy(align_ptr, ret, requested_size);
+                _free_r(r, ret);
+                old_size = 0;
              }
-             _free_r(r, ret);
              ret = align_ptr;
         }
 
-        if (ret == NULL && requested_size != 0)
+        if (ret)
+        {
+            tlsf_heap_psram.used_size -= old_size;
+            tlsf_heap_psram.used_size += tlsf_block_size(ret);
+            if (tlsf_heap_psram.used_size > tlsf_heap_psram.max_size)
+            {
+                tlsf_heap_psram.max_size = tlsf_heap_psram.used_size;
+            }
+        }
+        else if (ret == NULL && requested_size != 0)
+        {
             errno = ENOMEM;
+        }
 
         malloc_unlock();
     }
@@ -138,6 +162,7 @@ void _free_r(struct _reent *r, void *ptr)
     if (ptr != NULL)
     {
         malloc_lock();
+        tlsf_heap_psram.used_size -= tlsf_block_size(ptr);
         tlsf_free(tlsf_heap_psram.tlsf, ptr);
         malloc_unlock();
     }
@@ -165,7 +190,16 @@ void *aligned_alloc(size_t alignment, size_t size)
     void *ptr;
     malloc_lock();
     ptr = tlsf_memalign(tlsf_heap_psram.tlsf, alignment, size);
-    if (ptr == NULL && size != 0) {
+    if (ptr)
+    {
+        tlsf_heap_psram.used_size += tlsf_block_size(ptr);
+        if (tlsf_heap_psram.used_size > tlsf_heap_psram.max_size)
+        {
+            tlsf_heap_psram.max_size = tlsf_heap_psram.used_size;
+        }
+    }
+    else if (ptr == NULL && size != 0)
+    {
         errno = ENOMEM;
     }
     malloc_unlock();
@@ -213,36 +247,48 @@ static int malloc_prepare(void)
 }
 SYS_INIT(malloc_prepare, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_LIBC);
 
+struct heap_info
+{
+    size_t used_size;
+    size_t free_size;
+};
+
 static void tlsf_walker_cb(void* ptr, size_t size, int used, void* user)
 {
-    struct tlsf_mem_info *info_ptr = user;
+    struct heap_info *info_ptr = user;
 
-    printk("[0x%08x - ", (size_t)ptr);
+    printf("[0x%08x - ", (size_t)ptr);
     if (size < 1024)
-        printk("%5d", size);
+        printf("%5d", size);
     else if (size < 1024 * 1024)
-        printk("%4dK", size / 1024);
+        printf("%4dK", size / 1024);
     else
-        printk("%4dM", size / (1024 * 1024));
+        printf("%4dM", size / (1024 * 1024));
 
     if (used)
     {
         info_ptr->used_size += size;
-        printk("    USED\n");
+        printf("    USED\n");
     }
     else
     {
         info_ptr->free_size += size;
-        printk("\n");
+        printf("\n");
     }
 }
 
 void tlsf_heap_info(void)
 {
-    tlsf_walk_pool(tlsf_heap_psram.tlsf_pool, tlsf_walker_cb, &tlsf_heap_psram);
-    printk("\n-- used:%d  free:%d --\n", tlsf_heap_psram.used_size, tlsf_heap_psram.free_size);
-    tlsf_heap_psram.used_size = 0;
-    tlsf_heap_psram.free_size = 0;
+    struct heap_info info = {0};
+    tlsf_walk_pool(tlsf_heap_psram.tlsf_pool, tlsf_walker_cb, &info);
+    printf("\n-- used:%d  free:%d --\n", info.used_size, info.free_size);
+}
+
+void print_sys_memory_stats(void)
+{
+    printf("heap size   : %u\n", tlsf_heap_psram.heap_size);
+    printf("used        : %u\n", tlsf_heap_psram.used_size);
+    printf("max used    : %u\n", tlsf_heap_psram.max_size);
 }
 
 #else /* No malloc arena */
