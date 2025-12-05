@@ -6,7 +6,7 @@ zephyr_sources(soc_reset.c)
 
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH malloc_newlib.c)
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_TLSF_LSQSH malloc_newlib_tlsf.c tlsf/tlsf.c)
-
+zephyr_library_sources_ifdef(CONFIG_CXX_OPERATOR_NEW_DELETE cxx_crt_init.cpp)
 
 add_subdirectory(otbn)
 
