@@ -1,7 +1,9 @@
 #define DT_DRV_COMPAT linkedsemi_ls_host_vuart
+#define HOST_VUART_DEV DEVICE_DT_GET_ONE(DT_DRV_COMPAT)
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/shell/shell.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/logging/log.h>
@@ -683,3 +685,32 @@ static const struct uart_driver_api vuart_api = {
   DEVICE_DT_INST_DEFINE(inst, &host_vuart_init, NULL, &host_vuart_data_##inst,               \
             &host_vuart_cfg_##inst, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &vuart_api);
 DT_INST_FOREACH_STATUS_OKAY(HOST_VUART_INIT)
+
+
+static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
+{
+    bool host_rx_from_vuart,host_tx_to_vuart;
+    if (argc < 3) {
+        shell_error(sh, "Usage: %s <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>" ,argv[0]);
+        return -EINVAL;
+    }
+
+    const struct device *dev = HOST_VUART_DEV;
+    if (!device_is_ready(dev)) {
+        shell_error(sh, "ls-host-vuart device not ready");
+        return -ENODEV;
+    }
+
+    host_rx_from_vuart = (strcmp(argv[1], "true") == 0);
+    host_tx_to_vuart   = (strcmp(argv[2], "true") == 0);
+
+    host_vuart_mode_set(dev,host_rx_from_vuart,host_tx_to_vuart);
+
+    shell_print(sh, "VUART mode set: host_rx_from_vuart=%s, host_tx_to_vuart=%s",
+                host_rx_from_vuart ? "true" : "false",
+                host_tx_to_vuart ? "true" : "false");
+    return 0;
+}
+
+SHELL_CMD_ARG_REGISTER(chmode, NULL, "chmod usage: <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>",  cmd_mode,  0, 3);
+
