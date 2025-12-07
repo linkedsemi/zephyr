@@ -238,7 +238,11 @@ SYS_INIT(enable_shell_wolfssh,APPLICATION,CONFIG_APPLICATION_INIT_PRIORITY);
 
 static int cmd_exit(const struct shell *sh, size_t argc, char **argv)
 {
-    return k_poll_signal_raise(&sh->ctx->signals[SHELL_SIGNAL_KILL], 0);
+    if(sh == &shell_wolfssh)
+    {
+        return k_poll_signal_raise(&sh->ctx->signals[SHELL_SIGNAL_KILL], 0);
+    }
+    return 0;
 }
 
 #define SHELL_HELP_EXIT			"Exit SSH"
