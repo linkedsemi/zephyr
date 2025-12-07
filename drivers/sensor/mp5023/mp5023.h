@@ -14,9 +14,8 @@
 #include <zephyr/sys/atomic.h>
 
 /* Default configuration values */
-#define MP5023_DEFAULT_PAGE                  CONFIG_MP5023_DEFAULT_PAGE
 #define MP5023_DEFAULT_TIMEOUT_MS            CONFIG_MP5023_TIMEOUT_MS
-#define MP5023_DEFAULT_PEC_EN                CONFIG_MP5023_PEC_EN
+#define MP5023_DEFAULT_PEC_EN                0
 
 /* Manufacturer-specific commands */
 #define PMBUS_CMD_MFR_CTRL                   0xF0
@@ -26,10 +25,9 @@
 #define PMBUS_CMD_MFR_OTP_LEFT               0xFE
 
 struct mp5023_data {
-    uint8_t current_page;              /* Current PMBus page */
     uint16_t status_word;              /* Status word from device */
     uint8_t status_input;              /* Input voltage status */
-    uint16_t status_temp;              /* Over-temperature fault or warning */
+    uint8_t status_temp;              /* Over-temperature fault or warning */
     uint8_t status_cml;                /* Command, data, PEC communication faults */
     float vout;                        /* Measured value of the output voltage (V) */
     float iout;                        /* Measured value of the output current. (A) */
@@ -40,19 +38,16 @@ struct mp5023_data {
 
 struct mp5023_config {
     struct smbus_dt_spec smbus;        /* SMBus specification from DT */
-    uint8_t default_page;              /* Default PMBus page */
     uint32_t timeout_ms;               /* Operation timeout */
     bool pec_en;                       /* PEC mode enalbe */
 }; 
                   
-
 /* Public API Functions */
 int mp5023_init(const struct device *dev);
 int mp5023_read_byte(const struct device *dev, uint8_t cmd, uint8_t *value);
 int mp5023_read_word(const struct device *dev, uint8_t cmd, uint16_t *value);
 int mp5023_write_word(const struct device *dev, uint8_t cmd, uint16_t value);
 int mp5023_write_byte(const struct device *dev, uint8_t cmd, uint8_t value);
-int mp5023_select_page(const struct device *dev, uint8_t page);
 int mp5023_clear_faults(const struct device *dev);
 
 /* MP5023-specific direct format conversion function */

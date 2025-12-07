@@ -107,20 +107,12 @@ int mp5023_init(const struct device *dev)
 
     /* Copy configuration to data structure */
     // data->smbus = config->smbus;
-    data->current_page = config->default_page;
     data->timeout_ms = config->timeout_ms;
 
     /* Verify device presence */
     ret = pmbus_verify_device(&config->smbus);
     if (ret < 0) {
         LOG_ERR("Failed to verify MP5023 device: %d", ret);
-        return ret;
-    }
-
-    /* Select default page */
-    ret = pmbus_select_page(&config->smbus, config->default_page);
-    if (ret < 0) {
-        LOG_ERR("Failed to select default page: %d", ret);
         return ret;
     }
 
@@ -143,7 +135,8 @@ int mp5023_init(const struct device *dev)
         LOG_WRN("Failed to read initial status: %d", ret);
     }
 
-    LOG_INF("MP5023 PMBus sensor initialized successfully");
+    LOG_INF("MP5023 PMBus sensor initialized successfully, status word 0x%x",
+            data->status_word);
     return 0;
 }
 
@@ -169,7 +162,7 @@ int mp5023_read_byte(const struct device *dev, uint8_t cmd, uint8_t *value)
         return ret;
     }
 
-    LOG_DBG("Read command 0x%02X: 0x%04X", cmd, *value);
+    LOG_DBG("Read command 0x%02X: 0x%02X", cmd, *value);
     return 0;
 }
 
@@ -240,30 +233,6 @@ int mp5023_write_byte(const struct device *dev, uint8_t cmd, uint8_t value)
     }
 
     LOG_DBG("Wrote byte command 0x%02X: 0x%02X", cmd, value);
-    return 0;
-}
-
-int mp5023_select_page(const struct device *dev, uint8_t page)
-{
-    struct mp5023_data *data;
-    const struct mp5023_config *config;
-    int ret;
-
-    if (!dev) {
-        LOG_ERR("Device pointer is NULL");
-        return -ENODEV;
-    }
-
-    data = dev->data;
-    config = dev->config;
-    ret = pmbus_select_page(&config->smbus, page);
-    if (ret < 0) {
-        LOG_ERR("Failed to select page %d: %d", page, ret);
-        return ret;
-    }
-
-    data->current_page = page;
-    LOG_DBG("Selected page %d", page);
     return 0;
 }
 
@@ -347,7 +316,7 @@ int mp5023_sample_fetch(const struct device *dev, enum sensor_channel chan)
     if (chan == SENSOR_CHAN_ALL) {
         mp5023_read_word(dev, PMBUS_CMD_STATUS_WORD, &data->status_word);
         mp5023_read_byte(dev, PMBUS_CMD_STATUS_INPUT, &data->status_input);
-        mp5023_read_word(dev, PMBUS_CMD_STATUS_TEMP, &data->status_temp);
+        mp5023_read_byte(dev, PMBUS_CMD_STATUS_TEMP, &data->status_temp);
         mp5023_read_byte(dev, PMBUS_CMD_STATUS_CML, &data->status_cml);
     }
 
@@ -382,20 +351,29 @@ int mp5023_channel_get(const struct device *dev, enum sensor_channel chan,
     switch (chan) {
     case SENSOR_CHAN_VOLTAGE:
         val->val1 = (int32_t)data->vout;
-        val->val2 = (int32_t)(val->val1 - data->vout) >= 0 ? 
-            (int32_t)(val->val1 - data->vout) * 1000000 : (int32_t)(data->vout - val->val1) * 1000000;
+        if((val->val1 > 0) && (val->val1 > data->vout))
+        {
+            val->val1--;
+        }
+        val->val2 = (int32_t)((data->vout - val->val1) * 1000000);
         break;
     
     case SENSOR_CHAN_CURRENT:
         val->val1 = (int32_t)data->iout;
-        val->val2 = (int32_t)(val->val1 - data->iout) >= 0 ? 
-            (int32_t)(val->val1 - data->iout) * 1000000 : (int32_t)(data->iout - val->val1) * 1000000;
+        if((val->val1 > 0) && (val->val1 > data->iout))
+        {
+            val->val1--;
+        }
+        val->val2 = (int32_t)((data->iout - val->val1) * 1000000);
         break;
     
     case SENSOR_CHAN_GAUGE_TEMP:
         val->val1 = (int32_t)data->temperature;
-        val->val2 = (int32_t)(val->val1 - data->temperature) >= 0 ? 
-            (int32_t)(val->val1 - data->temperature) * 1000000 : (int32_t)(data->temperature - val->val1) * 1000000;
+        if((val->val1 > 0) && (val->val1 > data->temperature))
+        {
+            val->val1--;
+        }
+        val->val2 = (int32_t)((data->temperature - val->val1) * 1000000);
         break;
     
     default:
@@ -441,9 +419,7 @@ int mp5023_attr_get(const struct device *dev,
     static struct mp5023_data mp5023_data_##inst;                        \
     static const struct mp5023_config mp5023_config_##inst = {           \
         .smbus = SMBUS_DT_SPEC_INST_GET(inst),                           \
-        .default_page = MP5023_DEFAULT_PAGE,                             \
         .timeout_ms = MP5023_DEFAULT_TIMEOUT_MS,                         \
-        .pec_en = MP5023_DEFAULT_PEC_EN,                                 \
     };                                                                   \
     DEVICE_DT_INST_DEFINE(inst, mp5023_init, NULL,                       \
                           &mp5023_data_##inst,                           \

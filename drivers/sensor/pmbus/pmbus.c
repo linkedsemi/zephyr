@@ -71,8 +71,20 @@ int pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t va
     return api->smbus_word_data_write(smbus->bus, smbus->addr, cmd, value);
 }
 
-/* Write a byte using PMBus protocol */
-int pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value)
+/* Write a byte command using PMBus protocol */
+int pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd)
+{
+    /* 直接使用SMBus API，避免通过宏间接调用 */
+    const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
+    if (api->smbus_byte_write == NULL) {
+        return -ENOSYS;
+    }
+    /* Use SMBus Byte Write protocol */
+    return api->smbus_byte_write(smbus->bus, smbus->addr, cmd);
+}
+
+/* Write a byte data using PMBus protocol */
+int pmbus_write_byte_data(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value)
 {
     /* 直接使用SMBus API，避免通过宏间接调用 */
     const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
@@ -164,7 +176,7 @@ int pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page)
     }
 
     LOG_DBG("Selecting PMBus page: %d", page);
-    ret = pmbus_write_byte(smbus, PMBUS_CMD_PAGE, page);
+    ret = pmbus_write_byte_data(smbus, PMBUS_CMD_PAGE, page);
     if (ret < 0) {
         LOG_ERR("Failed to select page: %d", page);
         return ret;
@@ -185,9 +197,9 @@ int pmbus_clear_faults(const struct smbus_dt_spec *smbus)
     }
 
     LOG_DBG("Clearing PMBus faults");
-    ret = pmbus_write_byte(smbus, PMBUS_CMD_CLEAR_FAULTS, 0x00);
+    ret = pmbus_write_byte(smbus, PMBUS_CMD_CLEAR_FAULTS);
     if (ret < 0) {
-        LOG_ERR("Failed to clear faults");
+        LOG_ERR("Failed to clear faults, ret: %d", ret);
         return ret;
     }
 
