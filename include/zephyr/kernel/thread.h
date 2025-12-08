@@ -374,15 +374,6 @@ struct k_thread {
 
 	/** arch-specifics: must always be at the end */
 	struct _thread_arch arch;
-
-	size_t malloc_size;
-	size_t free_size;
-
-	size_t malloc_count;
-	size_t free_count;
-	size_t realloc_count;
-	size_t calloc_count;
-	size_t aligned_alloc_count;
 };
 
 typedef struct k_thread _thread_t;
