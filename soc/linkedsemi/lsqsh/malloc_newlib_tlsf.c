@@ -17,6 +17,8 @@
 #include <zephyr/sys/libc-hooks.h>
 #include <zephyr/types.h>
 #include "tlsf/tlsf.h"
+#include <zephyr/arch/arch_interface.h>
+#include <zephyr/shell/shell.h>
 
 #define LOG_LEVEL CONFIG_KERNEL_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -57,6 +59,8 @@ struct tlsf_mem_info
 };
 
 Z_LIBC_DATA static struct tlsf_mem_info tlsf_heap_psram;
+static int print_callstack = 0;
+
 
 #ifdef CONFIG_MULTITHREADING
 Z_LIBC_DATA SYS_MUTEX_DEFINE(z_malloc_heap_mutex);
@@ -73,33 +77,83 @@ static inline void malloc_unlock(void)
     (void) sys_mutex_unlock(&z_malloc_heap_mutex);
 }
 
+void tlsf_heap_info(void);
+
 #else
 #define malloc_lock()
 #define malloc_unlock()
 #endif
 
-void *_malloc_r (struct _reent *r, size_t size)
+static void tlsf_print_info();
+
+static bool print_trace_address(void *arg, unsigned long ra)
 {
-    void *ptr;
-    malloc_lock();
-    ptr = tlsf_memalign(tlsf_heap_psram.tlsf,
-                        COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-                                    (CONFIG_DCACHE_LINE_SIZE),
-                                    (__alignof__(z_max_align_t))),
-                        size);
+    printf("ra: %p\n", (void *)ra);
+    return true;
+}
+
+static void get_cur_callstack(const char *func, size_t size)
+{
+    if (print_callstack == 0)
+        return;
+
+    printf("============== call stack start ====================\n");
+    printf("thread: %p, name: %s, func: %s, size: %d\n", k_current_get(), k_current_get()->name, func, size);
+    arch_stack_walk(print_trace_address, NULL, k_current_get(), NULL);
+    printf("============== call stack end ====================\n");
+}
+
+static void *tlsf_mem_alloc(size_t align, size_t size)
+{
+    void *ptr = tlsf_memalign(tlsf_heap_psram.tlsf, align, size);
 
     if (ptr)
     {
-        tlsf_heap_psram.used_size += tlsf_block_size(ptr);
+        k_tid_t tid = k_current_get();
+        size_t block_size = tlsf_block_size(ptr);
+        tid->malloc_size += block_size;
+        tlsf_heap_psram.used_size += block_size;
         if (tlsf_heap_psram.used_size > tlsf_heap_psram.max_size)
         {
             tlsf_heap_psram.max_size = tlsf_heap_psram.used_size;
         }
     }
-    else if (ptr == NULL && size != 0)
+
+    return ptr;
+}
+
+static void tlsf_mem_free(void* ptr)
+{
+    k_tid_t tid = k_current_get();
+    size_t block_size = tlsf_block_size(ptr);
+
+    tid->free_size += block_size;
+    tlsf_heap_psram.used_size -= block_size;
+    tlsf_free(tlsf_heap_psram.tlsf, ptr);
+}
+
+void *_malloc_r (struct _reent *r, size_t size)
+{
+    void *ptr;
+    malloc_lock();
+
+    k_tid_t tid = k_current_get();
+    tid->malloc_count += 1;
+
+    get_cur_callstack("_malloc_r", size);
+
+    ptr = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
+                                    (CONFIG_DCACHE_LINE_SIZE),
+                                    (__alignof__(z_max_align_t))),
+                   size);
+
+    if (ptr == NULL && size != 0)
     {
+        printf("%s size = %u fail\n", __FUNCTION__, size);
+        tlsf_print_info();
         errno = ENOMEM;
     }
+
     malloc_unlock();
 
     return ptr;
@@ -108,51 +162,49 @@ void *_malloc_r (struct _reent *r, size_t size)
 void *_realloc_r(struct _reent *r, void *ptr, size_t requested_size)
 {
     void *ret = NULL;
+    k_tid_t tid = k_current_get();
+    tid->realloc_count += 1;
+
+    malloc_lock();
+    get_cur_callstack("_realloc_r", requested_size);
 
     if (NULL == ptr)
     {
-        ret = _malloc_r(r, requested_size);
+        ret = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
+                                        (CONFIG_DCACHE_LINE_SIZE),
+                                        (__alignof__(z_max_align_t))),
+                            requested_size);
     }
     else if (0 == requested_size)
     {
-        _free_r(r, ptr);
+        tlsf_mem_free(ptr);
     }
     else
     {
-        malloc_lock();
         size_t old_size = tlsf_block_size(ptr);
 
-        ret = tlsf_realloc(tlsf_heap_psram.tlsf, ptr, requested_size);
-        if (ret && !IS_ALIGNED(ret, COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
+        void *align_ptr = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
                                     (CONFIG_DCACHE_LINE_SIZE),
-                                    (__alignof__(z_max_align_t)))) )
-        {
-             void *align_ptr = _malloc_r(r, requested_size);
-             if (align_ptr)
-             {
-                memcpy(align_ptr, ret, requested_size);
-                _free_r(r, ret);
-                old_size = 0;
-             }
-             ret = align_ptr;
-        }
+                                    (__alignof__(z_max_align_t))),
+                                    requested_size);
 
-        if (ret)
+        if (align_ptr)
         {
-            tlsf_heap_psram.used_size -= old_size;
-            tlsf_heap_psram.used_size += tlsf_block_size(ret);
-            if (tlsf_heap_psram.used_size > tlsf_heap_psram.max_size)
-            {
-                tlsf_heap_psram.max_size = tlsf_heap_psram.used_size;
-            }
+            size_t cp_size = requested_size > old_size ? old_size : requested_size;
+            memcpy(align_ptr, ptr, cp_size);
+            tlsf_mem_free(ptr);
         }
-        else if (ret == NULL && requested_size != 0)
-        {
-            errno = ENOMEM;
-        }
-
-        malloc_unlock();
+        ret = align_ptr;
     }
+
+    if (ret == NULL && requested_size != 0)
+    {
+        printf("%s size = %u fail\n", __FUNCTION__, requested_size);
+        tlsf_print_info();
+        errno = ENOMEM;
+    }
+
+    malloc_unlock();
 
     return ret;
 }
@@ -161,9 +213,10 @@ void _free_r(struct _reent *r, void *ptr)
 {
     if (ptr != NULL)
     {
+        k_tid_t tid = k_current_get();
+        tid->free_count += 1;
         malloc_lock();
-        tlsf_heap_psram.used_size -= tlsf_block_size(ptr);
-        tlsf_free(tlsf_heap_psram.tlsf, ptr);
+        tlsf_mem_free(ptr);
         malloc_unlock();
     }
 }
@@ -177,7 +230,18 @@ void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
         errno = ENOMEM;
         return NULL;
     }
-    ret = _malloc_r(r, size);
+
+    k_tid_t tid = k_current_get();
+    tid->calloc_count += 1;
+
+    malloc_lock();
+
+    ret = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
+                                    (CONFIG_DCACHE_LINE_SIZE),
+                                    (__alignof__(z_max_align_t))),
+                        size);
+
+    malloc_unlock();
 
     if (ret != NULL)
         memset(ret, 0, size);
@@ -188,18 +252,18 @@ void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
 void *aligned_alloc(size_t alignment, size_t size)
 {
     void *ptr;
+    k_tid_t tid = k_current_get();
+
     malloc_lock();
-    ptr = tlsf_memalign(tlsf_heap_psram.tlsf, alignment, size);
-    if (ptr)
+    get_cur_callstack("aligned_alloc", size);
+    tid->aligned_alloc_count += 1;
+
+    ptr = tlsf_mem_alloc(alignment, size);
+
+    if (ptr == NULL && size != 0)
     {
-        tlsf_heap_psram.used_size += tlsf_block_size(ptr);
-        if (tlsf_heap_psram.used_size > tlsf_heap_psram.max_size)
-        {
-            tlsf_heap_psram.max_size = tlsf_heap_psram.used_size;
-        }
-    }
-    else if (ptr == NULL && size != 0)
-    {
+        printf("%s size = %u fail\n", __FUNCTION__, size);
+        tlsf_print_info();
         errno = ENOMEM;
     }
     malloc_unlock();
@@ -277,6 +341,14 @@ static void tlsf_walker_cb(void* ptr, size_t size, int used, void* user)
     }
 }
 
+static void thread_list(const struct k_thread *cthread, void *user_data)
+{
+    printf("======== thread: %p, name: %s, dynamic memory use info ====== \n", cthread, cthread->name);
+    printf("m_c: %u, f_c: %u, r_c: %u, c_c: %u, a_a_c: %u\n", cthread->malloc_count, cthread->free_count, cthread->realloc_count, \
+        cthread->calloc_count, cthread->aligned_alloc_count);
+    printf("m_size: %u, f_size: %u\n", cthread->malloc_size, cthread->free_size);
+}
+
 void tlsf_heap_info(void)
 {
     struct heap_info info = {0};
@@ -284,12 +356,47 @@ void tlsf_heap_info(void)
     printf("\n-- used:%d  free:%d --\n", info.used_size, info.free_size);
 }
 
+static void tlsf_print_info()
+{
+    irq_lock();
+    printf("alloc fail, irq lock, current thread: %p, name: %s\n", k_current_get(), k_current_get()->name);
+    k_thread_foreach_unlocked(thread_list, NULL);
+    printf("============== call stack start ====================\n");
+    printf("thread: %p, name: %s, func: %s, size: %d\n", k_current_get(), k_current_get()->name, "tlsf_print_info", 0);
+    arch_stack_walk(print_trace_address, NULL, k_current_get(), NULL);
+    printf("============== call stack end ====================\n");
+    tlsf_heap_info();
+    while (1);
+}
+
 void print_sys_memory_stats(void)
 {
-    printf("heap size   : %u\n", tlsf_heap_psram.heap_size);
-    printf("used        : %u\n", tlsf_heap_psram.used_size);
-    printf("max used    : %u\n", tlsf_heap_psram.max_size);
+    printf("heap size : %u, used : %u, max used : %u\n", tlsf_heap_psram.heap_size, \
+            tlsf_heap_psram.used_size, tlsf_heap_psram.max_size);
+    k_thread_foreach_unlocked(thread_list, NULL);
 }
+
+static int tlsf_print_callstack(const struct shell *shell, size_t argc, char **argv, void *data)
+{
+    if (argc < 2)
+    {
+        printf("argv invalid\n");
+        return 0;
+    }
+
+    printf("tlsf print callstack %s.\n", atoi(argv[1]) ? "open" : "close");
+    print_callstack = atoi(argv[1]);
+
+    return 0;
+}
+SHELL_CMD_REGISTER(tlsf_print_callstack, NULL, "tlsf_print_callstack", tlsf_print_callstack);
+
+static int tlsf_thread_dynamic_memory(const struct shell *shell, size_t argc, char **argv, void *data)
+{
+    k_thread_foreach_unlocked(thread_list, NULL);
+    return 0;
+}
+SHELL_CMD_REGISTER(tlsf_thread_dynamic_memory, NULL, "tlsf_thread_dynamic_memory", tlsf_thread_dynamic_memory);
 
 #else /* No malloc arena */
 void *malloc(size_t size)
