@@ -14,6 +14,7 @@
 LOG_MODULE_REGISTER(devfs, LOG_LEVEL_INF);
 
 #define DEVFS_FILE_DIR_NAME_MAX         (CONFIG_DEVFS_FILE_DIR_NAME_MAX+1)
+#define DEVFS_FILE_NUM_MAX              (CONFIG_DEVFS_FILE_NUM_MAX)
 
 struct devfs_dir
 {
@@ -40,6 +41,9 @@ struct devfs
 };
 
 static struct devfs devfs;
+
+K_MEM_SLAB_DEFINE(filp_mem_pool, sizeof(struct fs_file_t), DEVFS_FILE_NUM_MAX, 4);
+K_MEM_SLAB_DEFINE(node_mem_pool, sizeof(struct devfs_node), DEVFS_FILE_NUM_MAX, 4);
 
 struct devfs_node* devfs_lookup(const char *path)
 {
@@ -83,14 +87,12 @@ static int devfs_open(struct fs_file_t *zfp, const char *path, fs_mode_t flags)
 {
     int rc = -ENOTSUP;
     struct devfs_node *node = devfs_lookup(path);
-    if (!node || node->is_dir)
+    if (!node || node->is_dir || !node->ops->open || node->filp)
         return -EINVAL;
 
-    if (!(node->filp = k_malloc(sizeof (struct fs_file_t))))
+    int ret = k_mem_slab_alloc(&filp_mem_pool, (void **)&node->filp, K_NO_WAIT);
+    if (ret != 0 || node->filp == NULL)
         return -ENOMEM;
-
-    if (node->ops->open == NULL)
-        return rc;
 
     node->filp->filep = NULL;
     node->filp->mp = NULL;
@@ -100,7 +102,8 @@ static int devfs_open(struct fs_file_t *zfp, const char *path, fs_mode_t flags)
     if (rc < 0)
     {
         LOG_ERR("file open failed (%d)", rc);
-        k_free(node->filp);
+        k_mem_slab_free(&filp_mem_pool, node->filp);
+        node->filp = NULL;
         return rc;
     }
 
@@ -124,7 +127,7 @@ static int devfs_close(struct fs_file_t *zfp)
         LOG_ERR("file close error (%d)", rc);
         return rc;
     }
-    k_free(node->filp);
+    k_mem_slab_free(&filp_mem_pool, node->filp);
     node->filp = NULL;
 
     return rc;
@@ -203,13 +206,14 @@ static void devfs_free_node(struct devfs_node *node)
     devfs_free_node(node->brother);
 
     if (node != &devfs.root)
-        k_free(node);
+        k_mem_slab_free(&node_mem_pool, node);
 }
 
 static int devfs_unmount(struct fs_mount_t *mountp)
 {
     /* free dir tree */
     devfs_free_node(devfs.root.child);
+    devfs.root.child = NULL;
     return 0;
 }
 
@@ -327,7 +331,7 @@ int devfs_unregister(const char *path)
     else
         parent->child = cur->brother;
 
-    k_free(cur);
+    k_mem_slab_free(&node_mem_pool, cur);
 
     return 0;
 }
@@ -369,8 +373,8 @@ int devfs_register(const char *path, const struct fs_file_system_t *ops)
         if (!child)
         {
             /* no brother node, alloc new node */
-            child = k_malloc(sizeof(struct devfs_node));
-            if (!child)
+            int ret = k_mem_slab_alloc(&node_mem_pool, (void **)&child, K_NO_WAIT);
+            if (ret || !child)
                 return -ENOMEM;
 
             memset(child, 0, sizeof(*child));
