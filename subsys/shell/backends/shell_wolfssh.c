@@ -45,6 +45,10 @@ __attribute__((weak)) void wsGetEccKeyDer(const unsigned char **ecc_key_der, int
     *size = sizeof_ecc_key_der_256;
 }
 
+static void wolfssh_server_cb(struct net_socket_service_event *evt);
+
+NET_SOCKET_SERVICE_SYNC_DEFINE_STATIC(wolfssh_server, wolfssh_server_cb, 1);
+
 static void wolfssh_server_cb(struct net_socket_service_event *evt)
 {
     struct shell_wolfssh *sh_ssh = evt->user_data;
@@ -61,11 +65,10 @@ static void wolfssh_server_cb(struct net_socket_service_event *evt)
     }else if(ret != WS_CHANNEL_CLOSED && ret != WS_WANT_READ)
     {
         struct shell *sh = sh_ssh->shell_context;
-	    k_poll_signal_raise(&sh->ctx->signals[SHELL_SIGNAL_KILL], 0);
+        net_socket_service_unregister(&wolfssh_server);
+        k_poll_signal_raise(&sh->ctx->signals[SHELL_SIGNAL_KILL], 0);
     }
 }
-
-NET_SOCKET_SERVICE_SYNC_DEFINE_STATIC(wolfssh_server, wolfssh_server_cb, 1);
 
 static void ssh_timeout_handler(struct k_timer *timer)
 {
@@ -77,7 +80,7 @@ static void ssh_timeout_handler(struct k_timer *timer)
     }
 }
 
-static int init(const struct shell_transport *transport,
+static int shell_ssh_init(const struct shell_transport *transport,
     const void *config,shell_transport_handler_t evt_handler,void *context)
 {
     struct shell_wolfssh *sh_ssh = transport->ctx;
@@ -91,18 +94,19 @@ static int init(const struct shell_transport *transport,
             .events = POLLIN,
         },
     };
+    k_mutex_init(&sh_ssh->ssh_lock);
     k_timer_init(&sh_ssh->timer,ssh_timeout_handler,NULL);
     k_timer_start(&sh_ssh->timer,K_SECONDS(CONFIG_SHELL_WOLFSSH_TIMEOUT),K_NO_WAIT);
     net_socket_service_register(&wolfssh_server,poll_fds,ARRAY_SIZE(poll_fds),sh_ssh);
     return 0;
 }
 
-static int enable(const struct shell_transport *transport, bool blocking_tx)
+static int shell_ssh_enable(const struct shell_transport *transport, bool blocking_tx)
 {
     return 0;
 }
 
-static int read(const struct shell_transport *transport,void *data, size_t length, size_t *cnt)
+static int shell_ssh_read(const struct shell_transport *transport,void *data, size_t length, size_t *cnt)
 {
     struct shell_wolfssh *sh_ssh = transport->ctx;
     k_mutex_lock(&sh_ssh->ssh_lock,K_FOREVER);
@@ -111,16 +115,17 @@ static int read(const struct shell_transport *transport,void *data, size_t lengt
     return 0;
 }
 
-static int write(const struct shell_transport *transport,const void *data, size_t length, size_t *cnt)
+static int shell_ssh_write(const struct shell_transport *transport,const void *data, size_t length, size_t *cnt)
 {
     struct shell_wolfssh *sh_ssh = transport->ctx;
     k_mutex_lock(&sh_ssh->ssh_lock,K_FOREVER);
-    *cnt = wolfSSH_ChannelSend(sh_ssh->local_channel,data,length);
+    wolfSSH_ChannelSend(sh_ssh->local_channel,data,length);
     k_mutex_unlock(&sh_ssh->ssh_lock);
+    *cnt = length;
     return 0;
 }
 
-static int uninit(const struct shell_transport *transport)
+static int shell_ssh_uninit(const struct shell_transport *transport)
 {
     struct shell_wolfssh *sh_ssh = transport->ctx;
     WOLFSSH *ssh = sh_ssh->ssh;
@@ -134,11 +139,11 @@ static int uninit(const struct shell_transport *transport)
 }
 
 const struct shell_transport_api shell_wolfssh_transport_api = {
-    .init = init,
-    .enable = enable,
-    .read = read,
-    .write = write,
-    .uninit = uninit,
+    .init = shell_ssh_init,
+    .enable = shell_ssh_enable,
+    .read = shell_ssh_read,
+    .write = shell_ssh_write,
+    .uninit = shell_ssh_uninit,
 };
 SHELL_WOLFSSH_DEFINE(shell_transport_wolfssh);
 SHELL_DEFINE(shell_wolfssh,CONFIG_SHELL_PROMPT_WOLFSSH,&shell_transport_wolfssh,
@@ -228,6 +233,7 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
 
 static int enable_shell_wolfssh(void)
 {
+    k_thread_name_set(&ssh_daemon_thread,"ssh_daemon_thread");
     k_thread_create(&ssh_daemon_thread,ssh_daemon_stack,K_KERNEL_STACK_SIZEOF(ssh_daemon_stack),
         ssh_daemon_func,NULL,NULL,NULL,SHELL_SSH_DAEMON_THREAD_PRIORITY,0,K_NO_WAIT);
     return 0;
