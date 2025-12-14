@@ -1191,6 +1191,13 @@ static inline ssize_t zsock_recv_dgram(struct net_context *ctx,
 	if (msg != NULL) {
 		if (msg->msg_control != NULL) {
 			if (msg->msg_controllen > 0) {
+				if(msg->msg_controllen >= sizeof(struct cmsghdr)) {
+					struct cmsghdr *cmsg = (struct cmsghdr *)msg->msg_control;
+					cmsg->cmsg_len = 0;
+					cmsg->cmsg_level = 0;
+					cmsg->cmsg_type = 0;
+				}
+
 				if (IS_ENABLED(CONFIG_NET_CONTEXT_TIMESTAMPING) &&
 				    net_context_is_timestamping_set(ctx)) {
 					if (add_timestamping(ctx, pkt, msg) < 0) {
