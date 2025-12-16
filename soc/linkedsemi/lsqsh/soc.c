@@ -666,7 +666,10 @@ void soc_prep_hook(void)
 #if defined(CONFIG_IRQ_NESTED)
     CLIC->CLICCFG = 0x7f;
 #endif
+}
 
+void soc_early_init_hook(void)
+{
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
@@ -682,10 +685,7 @@ void soc_prep_hook(void)
 #else
     set_trim_params();
 #endif /* CONFIG_FORCE_CLOCK_HSI */
-}
 
-void soc_early_init_hook(void)
-{
     reset_reason_init();
 
     if ((PWR_FULL_RESET == reset_reason_get())
