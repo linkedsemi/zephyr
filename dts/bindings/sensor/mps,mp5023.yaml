@@ -2,7 +2,7 @@
 
 compatible: "mps,mp5023"
 
-include: [sensor-device.yaml, smbus-device.yaml]
+include: [sensor-device.yaml, smbus-device.yaml, hwmon-controller.yaml]
 
 properties:
   reg:
