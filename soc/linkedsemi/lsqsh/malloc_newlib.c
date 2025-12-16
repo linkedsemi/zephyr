@@ -104,6 +104,10 @@ static void *__malloc_r(size_t size)
 
     SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _malloc_r, _APP_HEAP, ret);
 
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    heap_debug_ptr_push(ret, size);
+#endif
+
     return ret;
 }
 
@@ -121,6 +125,10 @@ static void __free_r(void *ptr)
         k_heap_free(*heap_ref, ptr);
 
         SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _free_r, *heap_ref, heap_ref);
+
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+        heap_debug_ptr_pop(ptr);
+#endif
     }
 }
 
