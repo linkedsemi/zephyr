@@ -215,6 +215,10 @@ config SHELL_WOLFSSH_TIMEOUT
 	int "SSH Shell Timeout (s)"
 	default 120
 
+config WOLFSSH_SETTINGS_FILE
+	string "wolfSSH settings file"
+	default "${ZEPHYR_BASE}/subsys/shell/backends/wolfssh_user_settings.h"
+
 module = SHELL_BACKEND_WOLFSSH
 default-timeout = 100
 source "subsys/shell/Kconfig.template.shell_log_queue_timeout"
