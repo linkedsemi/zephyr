@@ -46,7 +46,6 @@ config ETH_DWMAC_LINKEDSEMI
 config DWMAC_NB_TX_DESCS
 	int "Number of entries in the transmit descriptor ring"
 	default 16
-	range 4 128
 	help
 	  A higher number allows for more packets to be queued which may
 	  improve throughput, but that requires more transient memory.
@@ -59,7 +58,6 @@ config DWMAC_NB_TX_DESCS
 config DWMAC_NB_RX_DESCS
 	int "Number of entries in the receive descriptor ring"
 	default 16
-	range 4 128
 	help
 	  Received packets are spread across the required number of fragment
 	  buffers. Each RX fragment has a size of CONFIG_NET_BUF_DATA_SIZE.
