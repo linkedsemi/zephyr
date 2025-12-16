@@ -28,17 +28,6 @@ struct shell_wolfssh {
 	struct k_mutex ssh_lock;
 
 	struct k_timer timer;
-	// /** Array for sockets used by the wolfssh service. */
-	// struct zsock_pollfd fds[SHELL_WOLFSSH_POLLFD_COUNT];
-
-	// /** Number of data bytes within the input buffer. */
-	// size_t rx_len;
-
-	/** Input buffer. */
-	// byte rx_buf[SHELL_WOLFSSH_RX_BUF_SIZE];
-
-	// /** Mutex protecting the input buffer access. */
-	// struct k_mutex rx_lock;
 };
 
 #define SHELL_WOLFSSH_DEFINE(_name)	\
@@ -47,6 +36,16 @@ struct shell_wolfssh {
 		.api = &shell_wolfssh_transport_api,		\
 		.ctx = (struct shell_wolfssh *)&_name##_shell_wolfssh	\
 	}
+
+void enable_ssh_shell();
+
+void disable_ssh_shell();
+
+bool is_ssh_shell_disabled();
+
+void set_ssh_port(uint16_t port);
+
+uint16_t get_ssh_port();
 
 #ifdef __cplusplus
 }
