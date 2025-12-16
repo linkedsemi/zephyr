@@ -150,11 +150,17 @@ SHELL_DEFINE(shell_wolfssh,CONFIG_SHELL_PROMPT_WOLFSSH,&shell_transport_wolfssh,
     CONFIG_SHELL_BACKEND_WOLFSSH_LOG_MESSAGE_QUEUE_SIZE,
     CONFIG_SHELL_BACKEND_WOLFSSH_LOG_MESSAGE_QUEUE_TIMEOUT,
     SHELL_FLAG_OLF_CRLF);
+static int sockFd;
+static uint16_t ssh_server_port;
+static bool ssh_shell_disabled;
+static struct k_mutex ssh_shell_enabled_mutex;
+static struct k_condvar ssh_shell_enabled_condvar;
 
 static void ssh_daemon_func(void *p1,void *p2,void *p3)
 {
     void *heap = NULL;
     WOLFSSH_CTX* ctx = NULL;
+    ssh_server_port = CONFIG_SHELL_WOLFSSH_PORT;
     #ifdef DEBUG_WOLFSSH
         wolfSSL_Debugging_ON();
         wolfSSH_Debugging_ON();
@@ -170,68 +176,86 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
     wsGetEccKeyDer(&ecc_key_der,&key_der_size);
     ret = wolfSSH_CTX_UsePrivateKey_buffer(ctx, ecc_key_der, key_der_size,WOLFSSH_FORMAT_ASN1);
     __ASSERT_NO_MSG(ret == WS_SUCCESS);
-    int sockFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	struct sockaddr_in bind_addr4 = {
-		.sin_family = AF_INET,
-		.sin_port = htons(CONFIG_SHELL_WOLFSSH_PORT),
-		.sin_addr = {
-			.s_addr = htonl(INADDR_ANY),
-		},
-	};
-	ret = bind(sockFd, (struct sockaddr *)&bind_addr4, sizeof(bind_addr4));
-    __ASSERT_NO_MSG(ret == 0);
-    ret = listen(sockFd, 2);
-    __ASSERT_NO_MSG(ret == 0);
+    k_mutex_init(&ssh_shell_enabled_mutex);
+    k_condvar_init(&ssh_shell_enabled_condvar);
     while(1)
     {
-        struct sockaddr_in client_addr;
-        socklen_t client_addr_len = sizeof(client_addr);
-        int client_fd = accept(sockFd,(struct sockaddr *)&client_addr,&client_addr_len);
-        WOLFSSH *ssh = wolfSSH_new(ctx);
-        int error;
-        // wolfSSH_SetUserAuthCtx(ssh,&pwMapList);
-        // wolfSSH_SetKeyingCompletionCbCtx(ssh, (void*)ssh);
-        // /* Use the session object for its own highwater callback ctx */
-        // if (defaultHighwater > 0) {
-        //     wolfSSH_SetHighwaterCtx(ssh, (void*)ssh);
-        //     wolfSSH_SetHighwater(ssh, defaultHighwater);
-        // }
-        wolfSSH_set_fd(ssh,client_fd);
-        ret = wolfSSH_accept(ssh);
-        if(ret == WS_SUCCESS)
+        k_mutex_lock(&ssh_shell_enabled_mutex,K_FOREVER);
+        if(ssh_shell_disabled)
         {
-            k_tid_t tid = shell_wolfssh.ctx->tid;
-            if(tid)
-            {
-	            k_poll_signal_raise(&shell_wolfssh.ctx->signals[SHELL_SIGNAL_KILL], 0);
-                k_thread_join(tid,K_FOREVER);
-                // LOG_INF("old session killed\n");
-            }
-            // LOG_INF("new session request\n");
-            bool log_backend = CONFIG_SHELL_WOLFSSH_LOG_LEVEL > 0;
-            uint32_t level =
-                (CONFIG_SHELL_WOLFSSH_LOG_LEVEL > LOG_LEVEL_DBG) ?
-                CONFIG_LOG_MAX_LEVEL : CONFIG_SHELL_WOLFSSH_LOG_LEVEL;
-            static const struct shell_backend_config_flags cfg_flags =
-                            SHELL_DEFAULT_BACKEND_CONFIG_FLAGS;
-            shell_init(&shell_wolfssh,ssh,cfg_flags,log_backend,level);
-        }else
+            k_condvar_wait(&ssh_shell_enabled_condvar, &ssh_shell_enabled_mutex, K_FOREVER);
+            k_mutex_unlock(&ssh_shell_enabled_mutex);
+            continue;
+        }
+        k_mutex_unlock(&ssh_shell_enabled_mutex);
+        sockFd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        struct sockaddr_in bind_addr4 = {
+            .sin_family = AF_INET,
+            .sin_port = htons(ssh_server_port),
+            .sin_addr = {
+                .s_addr = htonl(INADDR_ANY),
+            },
+        };
+        ret = bind(sockFd, (struct sockaddr *)&bind_addr4, sizeof(bind_addr4));
+        __ASSERT_NO_MSG(ret == 0);
+        ret = listen(sockFd, 2);
+        __ASSERT_NO_MSG(ret == 0);
+        while(1)
         {
-            error = wolfSSH_get_error(ssh);
-            const char *errorStr = wolfSSH_ErrorToName(error);
-            LOG_WRN("%s\n",errorStr);
-            if(error == WS_USER_AUTH_E)
+            struct sockaddr_in client_addr;
+            socklen_t client_addr_len = sizeof(client_addr);
+            int client_fd = accept(sockFd,(struct sockaddr *)&client_addr,&client_addr_len);
+            if(client_fd < 0)
             {
-                wolfSSH_SendDisconnect(ssh,WOLFSSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE);
+                break;
             }
-            wolfSSH_shutdown(ssh);
-            wolfSSH_free(ssh);
-            close(client_fd);
+            WOLFSSH *ssh = wolfSSH_new(ctx);
+            int error;
+            // wolfSSH_SetUserAuthCtx(ssh,&pwMapList);
+            // wolfSSH_SetKeyingCompletionCbCtx(ssh, (void*)ssh);
+            // /* Use the session object for its own highwater callback ctx */
+            // if (defaultHighwater > 0) {
+            //     wolfSSH_SetHighwaterCtx(ssh, (void*)ssh);
+            //     wolfSSH_SetHighwater(ssh, defaultHighwater);
+            // }
+            wolfSSH_set_fd(ssh,client_fd);
+            ret = wolfSSH_accept(ssh);
+            if(ret == WS_SUCCESS)
+            {
+                k_tid_t tid = shell_wolfssh.ctx->tid;
+                if(tid)
+                {
+                    k_poll_signal_raise(&shell_wolfssh.ctx->signals[SHELL_SIGNAL_KILL], 0);
+                    k_thread_join(tid,K_FOREVER);
+                    // LOG_INF("old session killed\n");
+                }
+                // LOG_INF("new session request\n");
+                bool log_backend = CONFIG_SHELL_WOLFSSH_LOG_LEVEL > 0;
+                uint32_t level =
+                    (CONFIG_SHELL_WOLFSSH_LOG_LEVEL > LOG_LEVEL_DBG) ?
+                    CONFIG_LOG_MAX_LEVEL : CONFIG_SHELL_WOLFSSH_LOG_LEVEL;
+                static const struct shell_backend_config_flags cfg_flags =
+                                SHELL_DEFAULT_BACKEND_CONFIG_FLAGS;
+                shell_init(&shell_wolfssh,ssh,cfg_flags,log_backend,level);
+            }else
+            {
+                error = wolfSSH_get_error(ssh);
+                const char *errorStr = wolfSSH_ErrorToName(error);
+                LOG_WRN("%s\n",errorStr);
+                if(error == WS_USER_AUTH_E)
+                {
+                    wolfSSH_SendDisconnect(ssh,WOLFSSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE);
+                }
+                wolfSSH_shutdown(ssh);
+                wolfSSH_free(ssh);
+                close(client_fd);
+            }
         }
     }
+
 }
 
-static int enable_shell_wolfssh(void)
+static int create_wolfssh_shell_daemon(void)
 {
     k_thread_name_set(&ssh_daemon_thread,"ssh_daemon_thread");
     k_thread_create(&ssh_daemon_thread,ssh_daemon_stack,K_KERNEL_STACK_SIZEOF(ssh_daemon_stack),
@@ -239,8 +263,43 @@ static int enable_shell_wolfssh(void)
     return 0;
 }
 
-SYS_INIT(enable_shell_wolfssh,APPLICATION,CONFIG_APPLICATION_INIT_PRIORITY);
+SYS_INIT(create_wolfssh_shell_daemon,APPLICATION,CONFIG_APPLICATION_INIT_PRIORITY);
 
+
+static void ssh_shell_disabled_set(bool disabled)
+{
+    k_mutex_lock(&ssh_shell_enabled_mutex, K_FOREVER);
+    ssh_shell_disabled = disabled;
+    k_condvar_signal(&ssh_shell_enabled_condvar);
+    k_mutex_unlock(&ssh_shell_enabled_mutex);
+}
+
+void enable_ssh_shell()
+{
+    ssh_shell_disabled_set(false);
+}
+
+void disable_ssh_shell()
+{
+    ssh_shell_disabled_set(true);
+    close(sockFd);
+}
+
+bool is_ssh_shell_disabled()
+{
+    return ssh_shell_disabled;
+}
+
+void set_ssh_port(uint16_t port)
+{
+    ssh_server_port = port;
+    close(sockFd);
+}
+
+uint16_t get_ssh_port()
+{
+    return ssh_server_port;
+}
 
 static int cmd_exit(const struct shell *sh, size_t argc, char **argv)
 {
@@ -254,3 +313,62 @@ static int cmd_exit(const struct shell *sh, size_t argc, char **argv)
 #define SHELL_HELP_EXIT			"Exit SSH"
 SHELL_COND_CMD_ARG_REGISTER(CONFIG_SHELL_VT100_COMMANDS, exit, NULL,
 			    SHELL_HELP_EXIT, cmd_exit, 1, 0);
+
+static int cmd_ssh_port(const struct shell *sh, size_t argc, char **argv)
+{   
+    int err = 0;
+    int port = CONFIG_SHELL_WOLFSSH_PORT;
+    if(argc==2) 
+    {
+        port = shell_strtol(argv[1],10,&err);
+    }
+    if(err)
+    {
+        shell_print(sh,"Invalid Arguments");
+    }else
+    {   
+        if(argc==2)
+        {
+            set_ssh_port(port);
+        }
+        shell_print(sh,"SSH Port:%d",get_ssh_port());
+    }
+    return 0;
+}
+
+#define SHELL_HELP_SSH_PORT		"SSH Port"
+SHELL_COND_CMD_ARG_REGISTER(CONFIG_SHELL_VT100_COMMANDS, ssh_port, NULL,
+			    SHELL_HELP_SSH_PORT, cmd_ssh_port, 1, 1);
+
+static int cmd_ssh_enable(const struct shell *sh, size_t argc, char **argv)
+{
+    int err = 0;
+    int current_disabled = is_ssh_shell_disabled();
+    int enabled = !current_disabled;
+    if(argc==2) 
+    {
+        enabled = shell_strtol(argv[1],10,&err);
+    }
+    if(err)
+    {
+        shell_print(sh,"Invalid Arguments");
+    }else
+    {
+        if(enabled == current_disabled)
+        {
+            if(enabled)
+            {
+                enable_ssh_shell();
+            }else
+            {
+                disable_ssh_shell();
+            }
+        }
+        shell_print(sh,"SSH Enabled:%d",enabled);
+    }
+    return 0;
+}
+
+#define SHELL_HELP_SSH_ENABLE		"SSH Enable"
+SHELL_COND_CMD_ARG_REGISTER(CONFIG_SHELL_VT100_COMMANDS, ssh_enable, NULL,
+			    SHELL_HELP_SSH_ENABLE, cmd_ssh_enable, 1, 1);
