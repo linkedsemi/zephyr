@@ -73,6 +73,11 @@ static int heap_debug_cs_disable(const struct shell *sh, size_t argc, char **arg
     return 0;
 }
 
+bool heap_debug_cs_is_enable(void)
+{
+    return heap_debug.cs_enable;
+}
+
 static enum cmp_op parse_cmp(const char *s)
 {
     if (!strcmp(s, ">"))  return CMP_GT;
