@@ -627,11 +627,17 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
     }
 }
 
-void soc_early_init_hook(void)
+void soc_prep_hook(void)
 {
-    reset_reason_init();
+    uint32_t value = __get_MSTATUS();
+    MODIFY_REG(value, 0x6000, 0x2000);
+    __set_MSTATUS(value);//enable fpu
+    value = __get_MHCR();
+    value |= (CACHE_MHCR_RS_Msk | CACHE_MHCR_BPE_Msk | CACHE_MHCR_L0BTB_Msk);
+    __set_MHCR(value);
 
     __set_MTVT((uint32_t)0);
+
 #if defined(CONFIG_PRECISE_EXCEPTION)
     __set_MHINT(__get_MHINT() | BIT(MHINT_AEE_POS));
     if (BIT(MHINT_AEE_POS) != (__get_MHINT() & BIT(MHINT_AEE_POS))) {
@@ -639,19 +645,27 @@ void soc_early_init_hook(void)
     }
 #endif
 
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    cpu1_cache_region_init();
+#else
+    cpu2_cache_region_init();
+#endif
+
+#if defined(CONFIG_CACHE)
+#if !defined(CONFIG_SMP)
+    csi_dcache_enable();
+#endif
+    csi_icache_enable();
+
+#if !defined(CONFIG_SMP)
+    csi_dcache_invalid();
+#endif
+    csi_icache_invalid();
+#endif
+
 #if defined(CONFIG_IRQ_NESTED)
     CLIC->CLICCFG = 0x7f;
 #endif
-
-    if ((PWR_FULL_RESET == reset_reason_get())
-        || (SOFT_FULL_RESET == reset_reason_get())
-        || (CPU_FULL_RESET == reset_reason_get())
-        || (SYS_IWDT_FULL_RESET == reset_reason_get())
-        || (EXT_FULL_RESET == reset_reason_get())
-        || (SEC_IWDT_FULL_RESET == reset_reason_get())
-        || (SEC_WWDT_FULL_RESET == reset_reason_get())) {
-        memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
-    }
 
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
@@ -668,29 +682,24 @@ void soc_early_init_hook(void)
 #else
     set_trim_params();
 #endif /* CONFIG_FORCE_CLOCK_HSI */
+}
 
-    SystemInit();
-    // sys_init_none();
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-    cpu1_cache_region_init();
-#else
-    cpu2_cache_region_init();
-#endif
+void soc_early_init_hook(void)
+{
+    reset_reason_init();
+
+    if ((PWR_FULL_RESET == reset_reason_get())
+        || (SOFT_FULL_RESET == reset_reason_get())
+        || (CPU_FULL_RESET == reset_reason_get())
+        || (SYS_IWDT_FULL_RESET == reset_reason_get())
+        || (EXT_FULL_RESET == reset_reason_get())
+        || (SEC_IWDT_FULL_RESET == reset_reason_get())
+        || (SEC_WWDT_FULL_RESET == reset_reason_get())) {
+        memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
+    }
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
-#endif
-
-#if defined(CONFIG_CACHE)
-#if !defined(CONFIG_SMP)
-    csi_dcache_enable();
-#endif
-    csi_icache_enable();
-
-#if !defined(CONFIG_SMP)
-    csi_dcache_invalid();
-#endif
-    csi_icache_invalid();
 #endif
 
     cpu_sleep_mode_config(0);

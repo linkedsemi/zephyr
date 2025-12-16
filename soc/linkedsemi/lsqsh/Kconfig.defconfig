@@ -173,6 +173,9 @@ choice CACHE_TYPE
 	default EXTERNAL_CACHE
 endchoice
 
+config SOC_PREP_HOOK
+	default y
+
 config SOC_EARLY_INIT_HOOK
 	default y
 
