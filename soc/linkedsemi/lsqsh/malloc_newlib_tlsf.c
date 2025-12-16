@@ -115,10 +115,7 @@ void *_malloc_r (struct _reent *r, size_t size)
 
     malloc_lock();
 
-    ptr = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-                                    (CONFIG_DCACHE_LINE_SIZE),
-                                    (__alignof__(z_max_align_t))),
-                   size);
+    ptr = tlsf_mem_alloc(sizeof(size_t), size);
 
     if (ptr == NULL && size != 0)
     {
@@ -142,10 +139,7 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t size)
 
     if (NULL == ptr)
     {
-        ret = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-                                        (CONFIG_DCACHE_LINE_SIZE),
-                                        (__alignof__(z_max_align_t))),
-                            size);
+        ret = tlsf_mem_alloc(sizeof(size_t), size);
     }
     else if (0 == size)
     {
@@ -155,10 +149,7 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t size)
     {
         size_t old_size = tlsf_block_size(ptr);
 
-        void *align_ptr = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-                                    (CONFIG_DCACHE_LINE_SIZE),
-                                    (__alignof__(z_max_align_t))),
-                                    size);
+        void *align_ptr = tlsf_mem_alloc(sizeof(size_t), size);
 
         if (align_ptr)
         {
@@ -205,10 +196,7 @@ void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
     }
     malloc_lock();
 
-    ret = tlsf_mem_alloc(COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-                                    (CONFIG_DCACHE_LINE_SIZE),
-                                    (__alignof__(z_max_align_t))),
-                        size);
+    ret = tlsf_mem_alloc(sizeof(size_t), size);
 
     heap_debug_callstack("_calloc_r", (size_t)ret, size);
 
