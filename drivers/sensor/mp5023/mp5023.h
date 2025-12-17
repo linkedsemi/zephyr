@@ -29,9 +29,9 @@ struct mp5023_data {
     uint8_t status_input;              /* Input voltage status */
     uint8_t status_temp;              /* Over-temperature fault or warning */
     uint8_t status_cml;                /* Command, data, PEC communication faults */
-    float vout;                        /* Measured value of the output voltage (V) */
-    float iout;                        /* Measured value of the output current. (A) */
-    float temperature;                 /* Internal sensed temperature (°C) */
+    uint32_t vin;                        /* Measured value of the input voltage (V) */
+    uint32_t power_in;                    /* Measured value of the input power (W) */
+    uint32_t temperature;                 /* Internal sensed temperature (°C) */
     uint32_t last_update;              /* Last update timestamp */
     uint32_t timeout_ms;               /* 添加timeout_ms成员 */
 };

@@ -277,29 +277,29 @@ int mp5023_sample_fetch(const struct device *dev, enum sensor_channel chan)
     }
 
     if (chan != SENSOR_CHAN_ALL && chan != SENSOR_CHAN_VOLTAGE &&
-        chan != SENSOR_CHAN_CURRENT && chan != SENSOR_CHAN_GAUGE_TEMP) {
+        chan != SENSOR_CHAN_GAUGE_TEMP && chan != SENSOR_CHAN_POWER) {
         return -ENOTSUP;
     }
 
     data = dev->data;
     /* Read voltage if requested or all channels */
     if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_VOLTAGE) {
-        ret = mp5023_read_word(dev, PMBUS_CMD_READ_VOUT, &raw_value);
+        ret = mp5023_read_word(dev, PMBUS_CMD_READ_VIN, &raw_value);
         if (ret < 0) {
             return ret;
         }
         
-        data->vout = mp5023_convert_direct(raw_value, PMBUS_CMD_READ_VOUT);
+        data->vin = mp5023_convert_direct(raw_value, PMBUS_CMD_READ_VIN) * 1000;
     }
 
-    /* Read current if requested or all channels */
-    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_CURRENT) {
-        ret = mp5023_read_word(dev, PMBUS_CMD_READ_IOUT, &raw_value);
+    /* Read power if requested or all channels */
+    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_POWER) {
+        ret = mp5023_read_word(dev, PMBUS_CMD_READ_PIN, &raw_value);
         if (ret < 0) {
             return ret;
         }
         
-        data->iout = mp5023_convert_direct(raw_value, PMBUS_CMD_READ_IOUT);
+        data->power_in = mp5023_convert_direct(raw_value, PMBUS_CMD_READ_PIN) * 1000 * 1000;
     }
 
     /* Read temperature if requested or all channels */
@@ -309,7 +309,7 @@ int mp5023_sample_fetch(const struct device *dev, enum sensor_channel chan)
             return ret;
         }
         
-        data->temperature = mp5023_convert_direct(raw_value, PMBUS_CMD_READ_TEMPERATURE_1);
+        data->temperature = mp5023_convert_direct(raw_value, PMBUS_CMD_READ_TEMPERATURE_1) * 1000;
     }
 
     /* Read status registers */
@@ -321,8 +321,8 @@ int mp5023_sample_fetch(const struct device *dev, enum sensor_channel chan)
     }
 
     data->last_update = k_uptime_get_32();
-    LOG_DBG("Fetched samples: voltage=%fV, current=%fA, temp=%f°C",
-            (double)data->vout, (double)data->iout, (double)data->temperature);
+    LOG_DBG("Fetched samples: voltage=%dmV, power=%dvW, temp=%dm°C",
+             data->vin, data->power_in, data->temperature);
 
     return 0;
 }
@@ -350,30 +350,36 @@ int mp5023_channel_get(const struct device *dev, enum sensor_channel chan,
     /* Sensor value consists of val1 (integer part) and val2 (fractional part) */
     switch (chan) {
     case SENSOR_CHAN_VOLTAGE:
-        val->val1 = (int32_t)data->vout;
-        if((val->val1 > 0) && (val->val1 > data->vout))
-        {
-            val->val1--;
-        }
-        val->val2 = (int32_t)((data->vout - val->val1) * 1000000);
+        // val->val1 = (int32_t)data->vin;
+        // if((val->val1 > 0) && (val->val1 > data->vin))
+        // {
+        //     val->val1--;
+        // }
+        // val->val2 = (int32_t)((data->vin - val->val1) * 1000000);
+        val->val1 = (int32_t)data->vin;
+        val->val2 = 0;
         break;
     
-    case SENSOR_CHAN_CURRENT:
-        val->val1 = (int32_t)data->iout;
-        if((val->val1 > 0) && (val->val1 > data->iout))
-        {
-            val->val1--;
-        }
-        val->val2 = (int32_t)((data->iout - val->val1) * 1000000);
+    case SENSOR_CHAN_POWER:
+        // val->val1 = (int32_t)data->power_in;
+        // if((val->val1 > 0) && (val->val1 > data->power_in))
+        // {
+        //     val->val1--;
+        // }
+        // val->val2 = (int32_t)((data->power_in - val->val1) * 1000000);
+        val->val1 = (int32_t)data->power_in;
+        val->val2 = 0;
         break;
     
-    case SENSOR_CHAN_GAUGE_TEMP:
+     case SENSOR_CHAN_GAUGE_TEMP:
+        // val->val1 = (int32_t)data->temperature;
+        // if((val->val1 > 0) && (val->val1 > data->temperature))
+        // {
+        //     val->val1--;
+        // }
+        // val->val2 = (int32_t)((data->temperature - val->val1) * 1000000);
         val->val1 = (int32_t)data->temperature;
-        if((val->val1 > 0) && (val->val1 > data->temperature))
-        {
-            val->val1--;
-        }
-        val->val2 = (int32_t)((data->temperature - val->val1) * 1000000);
+        val->val2 = 0;
         break;
     
     default:
