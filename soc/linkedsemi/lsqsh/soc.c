@@ -666,6 +666,10 @@ void soc_prep_hook(void)
 #if defined(CONFIG_IRQ_NESTED)
     CLIC->CLICCFG = 0x7f;
 #endif
+
+    for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
+        irq_disable(irq);
+    }
 }
 
 void soc_early_init_hook(void)
