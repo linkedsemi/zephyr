@@ -10,13 +10,13 @@
 extern "C" {
 #endif
 
-typedef int (*impi_read_t)(const struct device *,uint8_t *,uint32_t);
+typedef int (*ipmi_read_t)(const struct device *,uint8_t *,uint32_t);
 
-typedef int (*impi_write_t)(const struct device *,uint8_t *,uint32_t);
+typedef int (*ipmi_write_t)(const struct device *,uint8_t *,uint32_t);
 
 __subsystem struct ipmi_driver_api {
-    impi_read_t read;
-    impi_write_t write;
+    ipmi_read_t read;
+    ipmi_write_t write;
 };
 
 __syscall int ipmi_read(const struct device *dev,uint8_t *data,uint32_t size);
