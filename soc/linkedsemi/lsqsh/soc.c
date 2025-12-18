@@ -629,6 +629,15 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
 
 void soc_prep_hook(void)
 {
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    cpu1_cache_region_init();
+#else
+    cpu2_cache_region_init();
+#endif
+}
+
+void soc_early_init_hook(void)
+{
     uint32_t value = __get_MSTATUS();
     MODIFY_REG(value, 0x6000, 0x2000);
     __set_MSTATUS(value);//enable fpu
@@ -637,7 +646,6 @@ void soc_prep_hook(void)
     __set_MHCR(value);
 
     __set_MTVT((uint32_t)0);
-
 #if defined(CONFIG_PRECISE_EXCEPTION)
     __set_MHINT(__get_MHINT() | BIT(MHINT_AEE_POS));
     if (BIT(MHINT_AEE_POS) != (__get_MHINT() & BIT(MHINT_AEE_POS))) {
@@ -645,11 +653,13 @@ void soc_prep_hook(void)
     }
 #endif
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-    cpu1_cache_region_init();
-#else
-    cpu2_cache_region_init();
+#if defined(CONFIG_IRQ_NESTED)
+    CLIC->CLICCFG = 0x7f;
 #endif
+
+    for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
+        irq_disable(irq);
+    }
 
 #if defined(CONFIG_CACHE)
 #if !defined(CONFIG_SMP)
@@ -663,17 +673,6 @@ void soc_prep_hook(void)
     csi_icache_invalid();
 #endif
 
-#if defined(CONFIG_IRQ_NESTED)
-    CLIC->CLICCFG = 0x7f;
-#endif
-
-    for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
-        irq_disable(irq);
-    }
-}
-
-void soc_early_init_hook(void)
-{
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
