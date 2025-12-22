@@ -184,8 +184,13 @@ static int flash_op_align(const struct device *dev, off_t offset, void *data, si
 
 	/* Handle misaligned start portion */
 	if (((uintptr_t)user_ptr % CONFIG_DCACHE_LINE_SIZE) != 0) {
-		size_t misaligned = CONFIG_DCACHE_LINE_SIZE - ((uintptr_t)user_ptr % CONFIG_DCACHE_LINE_SIZE);
-		size_t chunk = (remain < misaligned) ? remain : misaligned;
+		size_t chunk;
+		if (len > CONFIG_DCACHE_LINE_SIZE) {
+			size_t misaligned = CONFIG_DCACHE_LINE_SIZE - ((uintptr_t)user_ptr % CONFIG_DCACHE_LINE_SIZE);
+			chunk = (remain < misaligned) ? remain : misaligned;
+		} else {
+			chunk = remain;
+		}
 
 		/* only require (0 == (buf size % CONFIG_DCACHE_LINE_SIZE)).  do not require (0 == (chunk size % CONFIG_DCACHE_LINE_SIZE)) */
 		if (is_write) {
