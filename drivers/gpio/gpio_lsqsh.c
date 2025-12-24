@@ -594,7 +594,7 @@ DEVICE_DT_DEFINE(DT_INST(0, linkedsemi_lsqsh_pinctrl),
                           NULL,                                               \
                           &ls_data_##index,                                   \
                           &ls_config_##index,                                 \
-                          POST_KERNEL,                                        \
+                          PRE_KERNEL_1,                                        \
                           CONFIG_GPIO_INIT_PRIORITY,                          \
                           &gpio_ls_driver_api);
 

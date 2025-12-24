@@ -38,6 +38,21 @@ LOG_MODULE_REGISTER(ls_host_vuart, CONFIG_ESPI_LOG_LEVEL);
 #define LSR_TEMT   0x40
 #define LSR_RESET_VAL 0x60
 
+struct host_vuart_reg {
+  uint8_t dll;
+  uint8_t dlh;
+  uint8_t ier;
+  uint8_t fcr;
+  uint8_t lcr;
+  uint8_t mcr;
+  uint8_t scr;
+};
+
+struct retain_uart_var {
+    struct host_vuart_reg data_reg;
+    bool host_rx_from_vuart;
+};
+
 struct host_vuart_cfg {
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -50,19 +65,10 @@ struct host_vuart_cfg {
     struct k_pipe *b2h_pipe;
     irq_cfg_func_t irq_config_func;
     reg_dwuart_t *reg;
+    struct retain_uart_var *retain;
     uint32_t clock_source;
     uint32_t baudrate;
     uint16_t local_irq;
-};
-
-struct host_vuart_reg {
-  uint8_t dll;
-  uint8_t dlh;
-  uint8_t ier;
-  uint8_t fcr;
-  uint8_t lcr;
-  uint8_t mcr;
-  uint8_t scr;
 };
 
 struct host_vuart_data {
@@ -72,11 +78,9 @@ struct host_vuart_data {
   K_KERNEL_STACK_MEMBER(irq_thread_stack, CONFIG_VUART_IRQ_THREAD_STACK_SIZE);
   struct k_thread irq_thread;
   struct k_sem irq_sem;
-  struct host_vuart_reg data_reg;
   struct k_spinlock lock;
   bool rx_irq_enabled;
   bool tx_irq_enabled;
-  bool host_rx_from_vuart;
   bool host_tx_to_vuart;
 };
 
@@ -98,25 +102,38 @@ static inline bool host_vuart_tx_empty(const struct device *dev)
 	return !uart_irq_rx_ready(dev);
 }
 
+static inline bool lsr_tx_empty(uint8_t lsr)
+{
+    return (lsr & (LSR_THRE | LSR_TEMT)) == (LSR_THRE | LSR_TEMT);
+}
+
+static inline bool lsr_rx_avail(uint8_t lsr)
+{
+    return lsr & LSR_DR;
+}
+
 static uint8_t host_vuart_calc_iir(const struct device *dev)
 {
     const struct host_vuart_cfg *cfg = dev->config;
     struct host_vuart_data *ptr_data = dev->data;
     k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
-    uint8_t iir = (ptr_data->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
-    if (ptr_data->data_reg.ier & 0x01) {
-        if(ptr_data->host_rx_from_vuart) {
-            if(host_vuart_rx_available(dev)) {
-                iir |= IIR_RDA;
-            }
-        }else {
-            if(cfg->reg->LSR & LSR_DR) {
-                 iir |= IIR_RDA;
-            }
+    uint8_t iir = (cfg->retain->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
+    uint8_t lsr = cfg->reg->LSR;
+    if(cfg->retain->host_rx_from_vuart) {
+        if(host_vuart_rx_available(dev)) {
+            iir |= IIR_RDA;
         }
-    } else if ((ptr_data->data_reg.ier & 0x02)) {
+    }else {
+        if(lsr_rx_avail(lsr)) {
+            iir |= IIR_RDA;
+        }
+    }
+    if(!(iir&IIR_RDA) && lsr_tx_empty(lsr))
+    {
         iir |= IIR_THRE;
-    } else {
+    }
+    if(!(iir&(IIR_RDA|IIR_THRE)))
+    {
         iir |= IIR_NOPEND;
     }
     k_spin_unlock(&ptr_data->lock,key);
@@ -126,13 +143,12 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
 static void host_vuart_report_active_edge_level_up_irq(const struct device *dev)
 {
     const struct host_vuart_cfg *cfg = dev->config;
-
-    if ((host_vuart_calc_iir(dev) & 0xf)  == IIR_NOPEND) {
-        return;
-    }
-
-    if (cfg->up_irq) {
-        espi_lpc_raise_edge_irq(cfg->parent, cfg->up_irq->idx);
+    uint8_t iir = host_vuart_calc_iir(dev);
+    if(((iir&IIR_RDA) && (cfg->retain->data_reg.ier&IER_RDA)) ||
+       ((iir&IIR_THRE) && (cfg->retain->data_reg.ier&IER_THRE))) {
+        if (cfg->up_irq) {
+            espi_lpc_raise_edge_irq(cfg->parent, cfg->up_irq->idx);
+        }
     }
 }
 
@@ -142,13 +158,11 @@ static void local_irq_state_update(const struct device *dev)
     if (cfg->up_irq == NULL) {
         return;
     }
-    bool masked,pending;
-    masked = irq_is_enabled(cfg->local_irq) ? true : false;
-    if (!masked) {
+    if (irq_is_enabled(cfg->local_irq)) {
         return;
     }
     clr_pending_irq(cfg->local_irq);
-    pending = get_pending_irq(cfg->local_irq) ? true : false;
+    bool pending = get_pending_irq(cfg->local_irq) ? true : false;
     if (!pending) {
         irq_enable(cfg->local_irq);
     }
@@ -187,17 +201,16 @@ static void host_vuart_reg0_read(const struct peri_ioport_content *ioport, uint8
 {
     struct device *dev = ioport->ctx;
     const struct host_vuart_cfg *cfg = dev->config;
-    struct host_vuart_data *ptr_data = dev->data;
     uint8_t *val = (uint8_t *)res;
-    if (ptr_data->data_reg.lcr & LCR_DLAB) {
-        *val = ptr_data->data_reg.dll;
+    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
+        *val = cfg->retain->data_reg.dll;
     } else{
         uint8_t val1,val2=0;
         val1 = cfg->reg->RBR_THR_DLL;
         if (host_vuart_rx_available(dev)) {
             vuart_get_char_b2h(dev, &val2);
         }
-        *val = ptr_data->host_rx_from_vuart?val2:val1;
+        *val = cfg->retain->host_rx_from_vuart?val2:val1;
         local_irq_state_update(dev);
     }
 }
@@ -221,9 +234,8 @@ static void host_vuart_reg0_write(const struct peri_ioport_content *ioport, uint
 {
     struct device *dev = ioport->ctx;
     const struct host_vuart_cfg *cfg = dev->config;
-    struct host_vuart_data *ptr_data = dev->data;
-    if (ptr_data->data_reg.lcr & LCR_DLAB) {
-        ptr_data->data_reg.dll = *val;
+    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
+        cfg->retain->data_reg.dll = *val;
     } else {
         cfg->reg->RBR_THR_DLL = *val;
         vuart_send_char_h2b(dev,*val);
@@ -234,12 +246,12 @@ static void host_vuart_reg0_write(const struct peri_ioport_content *ioport, uint
 static void host_vuart_reg1_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
+    const struct host_vuart_cfg *cfg = dev->config;
     uint8_t *val = (uint8_t *)res;
-    if (ptr_data->data_reg.lcr & LCR_DLAB) {
-        *val = ptr_data->data_reg.dlh;
+    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
+        *val = cfg->retain->data_reg.dlh;
     } else {
-        *val = ptr_data->data_reg.ier;
+        *val = cfg->retain->data_reg.ier;
     }
 }
 
@@ -247,13 +259,12 @@ static void host_vuart_reg1_read(const struct peri_ioport_content *ioport, uint8
 static void host_vuart_reg1_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
 {
     struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
     const struct host_vuart_cfg *cfg = dev->config;
-    if (ptr_data->data_reg.lcr & LCR_DLAB) {
-        ptr_data->data_reg.dlh = *val;
+    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
+        cfg->retain->data_reg.dlh = *val;
     } else {
-        ptr_data->data_reg.ier = *val;
-        if(ptr_data->host_rx_from_vuart) {
+        cfg->retain->data_reg.ier = *val;
+        if(cfg->retain->host_rx_from_vuart) {
             cfg->reg->DLH_IER = *val & IER_THRE;
         }else {
             cfg->reg->DLH_IER = *val & (IER_THRE|IER_RDA);
@@ -274,38 +285,38 @@ static void host_vuart_reg2_read(const struct peri_ioport_content *ioport, uint8
 static void host_vuart_reg2_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
-    ptr_data->data_reg.fcr = *val;
+    const struct host_vuart_cfg *cfg = dev->config;
+    cfg->retain->data_reg.fcr = *val;
 }
 
 static void host_vuart_reg3_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
+    const struct host_vuart_cfg *cfg = dev->config;
     uint8_t *val = (uint8_t *)res;
-    *val = ptr_data->data_reg.lcr;
+    *val = cfg->retain->data_reg.lcr;
 }
 
 static void host_vuart_reg3_write(const struct peri_ioport_content *ioport, uint8_t size, uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
-    ptr_data->data_reg.lcr = *val;
+    const struct host_vuart_cfg *cfg = dev->config;
+    cfg->retain->data_reg.lcr = *val;
 }
 
 static void host_vuart_reg4_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
+    const struct host_vuart_cfg *cfg = dev->config;
     uint8_t *val = (uint8_t *)res;
-    *val = ptr_data->data_reg.mcr;
+    *val = cfg->retain->data_reg.mcr;
 }
 
 static void host_vuart_reg4_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
-    ptr_data->data_reg.mcr = *val;
+    const struct host_vuart_cfg *cfg = dev->config;
+    cfg->retain->data_reg.mcr = *val;
 }
 
 static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
@@ -316,19 +327,19 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     uint8_t *val = (uint8_t *)res;
     uint8_t lsr = cfg->reg->LSR;
     *val = 0;
-    if ((lsr & (LSR_THRE | LSR_TEMT)) == (LSR_THRE | LSR_TEMT))
+    if (lsr_tx_empty(lsr))
     {
         if((ptr_data->host_tx_to_vuart && host_vuart_tx_empty(dev) )|| !ptr_data->host_tx_to_vuart)
         {
             *val |= LSR_THRE|LSR_TEMT;
         }
     }
-    if (ptr_data->host_rx_from_vuart) {
+    if (cfg->retain->host_rx_from_vuart) {
         if(host_vuart_rx_available(dev)) {
             *val |= LSR_DR;
         }
     }else {
-        if(lsr & LSR_DR) {
+        if(lsr_rx_avail(lsr)) {
             *val |= LSR_DR;
         }
     }
@@ -354,17 +365,17 @@ static void host_vuart_reg6_write(const struct peri_ioport_content *ioport, uint
 static void host_vuart_reg7_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
+    const struct host_vuart_cfg *cfg = dev->config;
     uint8_t *val = (uint8_t *)res;
-    *val = ptr_data->data_reg.scr;
+    *val = cfg->retain->data_reg.scr;
 }
 
 static void host_vuart_reg7_write(const struct peri_ioport_content *ioport, uint8_t size,
 				  uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    struct host_vuart_data *ptr_data = dev->data;
-    ptr_data->data_reg.scr = *val;
+    const struct host_vuart_cfg *cfg = dev->config;
+    cfg->retain->data_reg.scr = *val;
 }
 
 
@@ -436,7 +447,10 @@ static int host_vuart_init(const struct device *dev)
         LOG_DBG("%s: Could not configure pins", dev->name);
     }
 #endif
-
+    ptr_data->irq_cb = NULL;
+    ptr_data->rx_irq_enabled = false;
+    ptr_data->tx_irq_enabled = false;
+    ptr_data->host_tx_to_vuart = false;
     k_sem_init(&ptr_data->irq_sem, 0, 1);
     k_thread_create(&ptr_data->irq_thread, ptr_data->irq_thread_stack, K_KERNEL_STACK_SIZEOF(ptr_data->irq_thread_stack),
       vuart_irq_thread, (void *)dev, NULL, NULL, CONFIG_VUART_IRQ_THREAD_PRIORITY, 0, K_NO_WAIT);
@@ -453,10 +467,12 @@ static int host_vuart_init(const struct device *dev)
         cfg->irq_config_func(dev);
     }
 
+    k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
     for (uint32_t i = 0; i < PORT_NUM; i++) {
         ptr_data->ioport[i].content = &cfg->ioport_content[i];
         espi_lpc_add_ioport(cfg->parent, (struct peri_ioport *)(&ptr_data->ioport[i]));
     }
+    k_spin_unlock(&ptr_data->lock, key);
     return 0;
 }
 
@@ -465,8 +481,8 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
     const struct host_vuart_cfg *cfg = dev->config;
     struct host_vuart_data *ptr_data = dev->data;
     k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
-    ptr_data->host_rx_from_vuart = host_rx_from_vuart;
-    if(ptr_data->data_reg.ier & IER_RDA)
+    cfg->retain->host_rx_from_vuart = host_rx_from_vuart;
+    if(cfg->retain->data_reg.ier & IER_RDA)
     {
         if(host_rx_from_vuart)
         {
@@ -528,10 +544,9 @@ static int vuart_fifo_read(const struct device *dev, uint8_t *rx_data, const int
 
 static void vuart_poll_out(const struct device *dev, unsigned char c)
 {
-	struct host_vuart_data *ptr_data = dev->data;
 	const struct host_vuart_cfg *cfg = dev->config;
 	size_t bytes_written;
-    if(ptr_data->host_rx_from_vuart) {
+    if(cfg->retain->host_rx_from_vuart) {
         k_pipe_put(cfg->b2h_pipe, &c, 1, &bytes_written, 1, K_FOREVER);
         host_vuart_report_active_edge_level_up_irq(dev);
     }
@@ -539,9 +554,8 @@ static void vuart_poll_out(const struct device *dev, unsigned char c)
 
 static int vuart_fifo_fill(const struct device *dev, const uint8_t *tx_data, int len)
 {
-	struct host_vuart_data *ptr_data = dev->data;
 	const struct host_vuart_cfg *cfg = dev->config;
-    if(ptr_data->host_rx_from_vuart){
+    if(cfg->retain->host_rx_from_vuart){
     	size_t bytes_written;
         k_pipe_put(cfg->b2h_pipe, tx_data, len, &bytes_written, 1, K_NO_WAIT);
         if (bytes_written < len) {
@@ -664,11 +678,13 @@ static const struct uart_driver_api vuart_api = {
               .ctx = (void *)DEVICE_DT_INST_GET(inst),                 \
               .addr = DT_INST_PROP(inst, port) + 7},\
   };\
-  static struct host_vuart_data host_vuart_data_##inst; \
+  static struct retain_uart_var host_vuart_retain_var_##inst __attribute__((section(".var_retain.98."#inst)));  \
+  static struct host_vuart_data host_vuart_data_##inst __noinit; \
   K_PIPE_DEFINE(b2h_pipe_##inst, VUART_FIFO_SIZE, 4);                                      \
   K_PIPE_DEFINE(h2b_pipe_##inst, VUART_FIFO_SIZE, 4);                                      \
   static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
     .vuart_irq_thread_name = "vuart_irq_thread_" #inst,                               \
+    .retain = &host_vuart_retain_var_##inst,                                            \
     .local_irq = DT_INST_IRQN(inst),                                                                             \
     .irq_config_func = vuart_ls_irq_config_func_##inst,     \
     .ioport_content = host_vuart_ioport_##inst,             \
