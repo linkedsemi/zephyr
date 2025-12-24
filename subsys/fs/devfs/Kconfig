@@ -9,11 +9,6 @@ config DEVFS
 
 if DEVFS
 
-config DEVFS_FILE_DIR_NAME_MAX
-	int "file and dir name max"
-	default 16
-	range 1 128
-
 config DEVFS_FILE_NUM_MAX
 	int "maximum number of files supported by devfs"
 	default 256
