@@ -4,6 +4,7 @@
 #include <zephyr/drivers/i2c.h>
 #include <string.h>
 #include <zephyr/kernel.h>
+#include <stdio.h>
 #define LOG_LEVEL LOG_LEVEL_DBG
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(i2c_ls);
@@ -27,6 +28,9 @@ LOG_MODULE_REGISTER(i2c_ls);
 #define DT_DRV_COMPAT linkedsemi_ls_i2c
 
 #define MASTER_NACK_RECVIED BIT(0)
+#define I2C_BUS_TIMOUT 		BIT(1)
+
+#define I2C_BUS_TIMOUT_MS	CONFIG_LS_I2C_BUS_TIMEOUT_MS
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
@@ -419,6 +423,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 				}
 			} else {
 				LOG_DBG("%s: scl: %d.  sda: %d.\n", dev->name, scl_val, sda_val);
+				ret = -EIO;
 				goto err;
 			}
 		}
@@ -442,7 +447,12 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 				config->reg->CR2_3 &= ~0x30;
 			}
 			config->reg->CR2_0_1 = cr2_0_1|I2C_CR2_START_MASK|I2C_CR2_STOP_MASK;
-			k_sem_take(&data->device_sync_sem, K_FOREVER);
+			if(k_sem_take(&data->device_sync_sem, K_MSEC(I2C_BUS_TIMOUT_MS)) == (-EAGAIN))
+			{
+				data->errs |= I2C_BUS_TIMOUT;
+				LOG_ERR("i2c scl timeout\n");
+			}
+			// k_sem_take(&data->device_sync_sem, K_FOREVER);
 			config->reg->CR2_3 &= ~0x30;
 			if(data->errs)
 			{
@@ -489,6 +499,12 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 				config->reg->IER = I2C_INT_TXE_MASK;
 			}
 			k_sem_take(&data->device_sync_sem, K_FOREVER);
+			if(k_sem_take(&data->device_sync_sem, K_MSEC(I2C_BUS_TIMOUT_MS)) == (-EAGAIN))
+			{
+				data->errs |= I2C_BUS_TIMOUT;
+				LOG_ERR("i2c scl timeout\n");
+			}
+			// k_sem_take(&data->device_sync_sem, K_FOREVER);
 			if(data->errs)
 			{
 				ret = -EIO;
@@ -580,6 +596,8 @@ static void i2c_reenable(const struct device *dev ,bool master)
 		i2c_slave_timing_param_set(config);
 	}
     config->reg->CFR = 0xffff;
+	config->reg->ICR = 0xffff; // clear pending irq
+	config->reg->SR = I2C_SR_TXE_MASK;//clear tx fifo
 	config->reg->CR1 |= I2C_CR1_SBC_MASK|I2C_CR1_PE_MASK;
 	slv_single_byte(config);
 }

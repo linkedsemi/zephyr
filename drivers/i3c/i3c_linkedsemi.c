@@ -601,9 +601,17 @@ static int ls_i3c_init(const struct device *dev)
 	k_sem_init(&data->target_event_lock_sem, 1, 1);
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_mutex_init(&data->lock);
-
-	/* Perform bus initialization */
-	ret = i3c_bus_init(dev, &dev_config->common.dev_list);
+	
+	if(data->cur_role == I3C_ROLE_CONTROLLER)
+	{
+		LOG_DBG("I3C_ROLE_CONTROLLER started\n");
+		/* Perform bus initialization */
+		ret = i3c_bus_init(dev, &dev_config->common.dev_list);
+	}else
+	{
+		LOG_DBG("I3C_ROLE_TARGET started\n");
+	}
+	
 	return ret;
 }
 
@@ -1136,6 +1144,12 @@ static int ls_i3c_do_ccc(const struct device *dev,
 	uint8_t timeout = false;	
 
 	if (payload == NULL) {
+		return -EINVAL;
+	}
+
+	if(data->cur_role != I3C_ROLE_CONTROLLER)
+	{
+		LOG_ERR("the i3c device currnet role is not controller \n");
 		return -EINVAL;
 	}
 

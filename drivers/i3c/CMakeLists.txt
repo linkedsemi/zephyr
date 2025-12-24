@@ -49,4 +49,5 @@ zephyr_library_sources_ifdef(
 zephyr_library_sources_ifdef(
   CONFIG_I3C_LINKEDSEMI
   i3c_linkedsemi.c
+  i3c_target_linkedsemi.c
 )
