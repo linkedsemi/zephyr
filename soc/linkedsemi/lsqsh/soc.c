@@ -65,9 +65,13 @@ static void driver_init(void)
 
 void sys_arch_reboot(int type)
 {
-    if (type == SYS_REBOOT_COLD) {
+    if (SYS_REBOOT_COLD == type) {
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
         REG_FIELD_WR(SEC_PMU->RST_SFT, SEC_PMU_RG_RST_FROM_SFT, 0x1);
-    } else if (type == SYS_REBOOT_WARM) {
+#else
+        printk("%s: SYS_REBOOT_COLD is not supported\n");
+#endif
+    } else if (SYS_REBOOT_WARM == type) {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
         disable_global_irq();
         reset_reason_magic_set();
