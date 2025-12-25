@@ -104,7 +104,7 @@ static inline bool host_vuart_tx_empty(const struct device *dev)
 
 static inline bool lsr_tx_empty(uint8_t lsr)
 {
-    return (lsr & (LSR_THRE | LSR_TEMT)) == (LSR_THRE | LSR_TEMT);
+    return lsr & LSR_THRE;
 }
 
 static inline bool lsr_rx_avail(uint8_t lsr)
