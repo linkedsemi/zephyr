@@ -28,3 +28,7 @@ properties:
   tdo-gpios:
     type: phandle-array
     description: "tdo simulated by gpio"
+
+  trst-gpios:
+    type: phandle-array
+    description: "trst simulated by gpio"
