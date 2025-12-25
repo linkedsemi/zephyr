@@ -10,11 +10,6 @@
 #include <zephyr/dt-bindings/memory-attr/memory-attr-riscv.h>
 #include <qsh.h>
 
-// #define CPU_CLOCK      DT_FREQ_M(25)
-// #define PBUS0123_CLOCK DT_FREQ_M(25)
-// #define PBUS4_CLOCK    DT_FREQ_M(25)
-// #define SDHCI_CLOCK    DT_FREQ_M(25)
-
 #define CPU_CLOCK      DT_FREQ_M(600)
 #define PBUS0123_CLOCK DT_FREQ_M(300)
 #define PBUS4_CLOCK    DT_FREQ_M(75)

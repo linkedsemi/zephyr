@@ -601,7 +601,7 @@ static int ls_i3c_init(const struct device *dev)
 	k_sem_init(&data->target_event_lock_sem, 1, 1);
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_mutex_init(&data->lock);
-	
+
 	if(data->cur_role == I3C_ROLE_CONTROLLER)
 	{
 		LOG_DBG("I3C_ROLE_CONTROLLER started\n");
@@ -611,7 +611,7 @@ static int ls_i3c_init(const struct device *dev)
 	{
 		LOG_DBG("I3C_ROLE_TARGET started\n");
 	}
-	
+
 	return ret;
 }
 
