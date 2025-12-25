@@ -928,7 +928,7 @@
             status = "disabled";
         };
 
-        rtc0: rtc0@4006fc00{
+        rtc: rtc@4006fc00{
             compatible = "linkedsemi,ls-rtc";
             reg = <0x4006fc00 0x400>;
             interrupts = <PMU_RTC_IRQN 3>;
