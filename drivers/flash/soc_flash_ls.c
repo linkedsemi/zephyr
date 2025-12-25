@@ -5,6 +5,7 @@
  */
 #define DT_DRV_COMPAT		linkedsemi_ls_flash_controller
 
+#include <stdio.h>
 #include <zephyr/device.h>
 #include <zephyr/cache.h>
 #include <zephyr/drivers/flash.h>
@@ -179,6 +180,28 @@ static bool is_psram(uint32_t addr)
 			&& (addr < (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram)))));
 }
 
+#if 0
+static void flash_op_align_debug(struct flash_xfer_buf *buf)
+{
+	for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+		if (buf[i].len > 0) {
+			printf("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx\n",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+#if 0
+			int data_addr = (uint32_t)buf[i].buf;
+			int data_size = buf[i].len;
+			off_t offset = buf[i].offset;
+			for (int idx = 0; idx < data_size; idx += 16) {
+				for (int jdx = 0; jdx < 16; jdx++) {
+					printf("%2.2x ", ((uint8_t *)data_addr)[idx + jdx]);
+				}
+				printf("\n");
+			}
+#endif
+		}
+	}
+}
+#endif
+
 static void delegation_server_work_handler(struct k_work *work)
 {
 	struct flash_ls_data *priv = CONTAINER_OF(work,struct flash_ls_data,worker);
@@ -188,6 +211,128 @@ static void delegation_server_work_handler(struct k_work *work)
 	param.op = FLASH_DELEGATE_CLIENT_OP_RETURN;
 	switch(priv->req_param.op)
 	{
+	case FLASH_DELEGATE_SERVER_READ_ALIGN:
+	{
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ_ALIGN");
+		flash_op_align_buf_t *flash_op_align_buf = (flash_op_align_buf_t *)priv->req_param.data;
+		sys_cache_data_invd_range((void *)flash_op_align_buf, sizeof(flash_op_align_buf_t));
+		struct flash_xfer_buf *buf = flash_op_align_buf->buf;
+		sys_cache_data_invd_range((void *)buf, sizeof(flash_op_align_buf_t));
+		param.ret.value = 0;
+		if (is_own_ram((uint32_t)priv->req_param.data)) {
+			param.ret.value = -EINVAL;
+			break;
+		} else {
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					LOG_DBG("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+					if (!((get_guest_permission(priv->dev,buf[i].offset,buf[i].len) & PMP_R) && (!is_own_ram((uint32_t)buf[i].buf)))) {
+#if 0
+						printf("%s\n", "invalid r");
+						flash_op_align_debug(buf);
+#endif
+						param.ret.value = -EINVAL;
+						break;
+					}
+				}
+			}
+			if (param.ret.value) {
+				break;
+			}
+
+			if (k_sem_take(&priv->sem, K_FOREVER)) {
+				param.ret.value = -EACCES;
+				break;
+			}
+
+			cfg->shared->busy = true;
+			flash_delegation_server_operation_sync(priv->dev);
+
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					int data_addr = (uint32_t)buf[i].buf;
+					int data_size = buf[i].len;
+					off_t offset = buf[i].offset;
+					hal_flashx_multi_io_read(&priv->env,offset,(uint8_t *)data_addr, data_size);
+					if (is_psram(data_addr)) {
+						sys_cache_data_flush_range((void *)data_addr, data_size);
+					}
+				}
+			}
+#if 0
+			printf("%s\n", "r");
+			flash_op_align_debug(buf);
+#endif
+			cfg->shared->busy = false;
+
+			k_sem_give(&priv->sem);
+		}
+	}break;
+	case FLASH_DELEGATE_SERVER_WRITE_ALIGN:
+	{
+		LOG_DBG("FLASH_DELEGATE_SERVER_WRITE_ALIGN");
+		flash_op_align_buf_t *flash_op_align_buf = (flash_op_align_buf_t *)priv->req_param.data;
+		sys_cache_data_invd_range((void *)flash_op_align_buf, sizeof(flash_op_align_buf_t));
+		struct flash_xfer_buf *buf = flash_op_align_buf->buf;
+		param.ret.value = 0;
+		if (is_own_ram((uint32_t)priv->req_param.data)) {
+			param.ret.value = -EINVAL;
+			break;
+		} else {
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					LOG_DBG("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+					if (!((get_guest_permission(priv->dev,buf[i].offset,buf[i].len) & PMP_W) && (!is_own_ram((uint32_t)buf[i].buf)))) {
+#if 0
+						printf("%s\n", "invalid w");
+						flash_op_align_debug(buf);
+#endif
+						param.ret.value = -EINVAL;
+						break;
+					}
+				}
+			}
+
+			if (k_sem_take(&priv->sem, K_FOREVER)) {
+				param.ret.value = -EACCES;
+				break;
+			}
+
+			cfg->shared->busy = true;
+			flash_delegation_server_operation_sync(priv->dev);
+#if 0
+			printf("%s\n", "w");
+			flash_op_align_debug(buf);
+#endif
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					int data_addr = (uint32_t)buf[i].buf;
+					int data_size = buf[i].len;
+					off_t offset = buf[i].offset;
+					if (is_psram(data_addr)) {
+						sys_cache_data_invd_range((void *)data_addr, data_size);
+					}
+					uint8_t *write_data = (uint8_t *)data_addr;
+					while (data_size) {
+						/* If the offset isn't a multiple of the page size, we first need
+						* to write the remaining part that fits, otherwise the write could
+						* be wrapped around within the same page
+						*/
+						int len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), data_size);
+						hal_flashx_page_program(&priv->env, offset, write_data, len);
+
+						write_data += len;
+						offset += len;
+						data_size -= len;
+					}
+				}
+			}
+
+			cfg->shared->busy = false;
+
+			k_sem_give(&priv->sem);
+		}
+	}break;
 	case FLASH_DELEGATE_SERVER_READ:
 		LOG_DBG("FLASH_DELEGATE_SERVER_READ offset:0x%08lx size:0x%08x data:0x%08lx",priv->req_param.offset,priv->req_param.size,(uintptr_t)priv->req_param.data);
 		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R)

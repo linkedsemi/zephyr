@@ -1,13 +1,16 @@
 #define DT_DRV_COMPAT		linkedsemi_ls_flash_delegation_client
 
+#include <stdio.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/kernel.h>
 #include <string.h>
 #include "platform.h"
-#include "soc_common.h"
+#include "soc.h"
 #include <zephyr/cache.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(linkedsemi_ls_flash_delegation_client, CONFIG_FLASH_LOG_LEVEL);
 
 struct flash_ls_client_config {
 	void *reg;
@@ -114,8 +117,8 @@ static int flash_ls_client_erase(const struct device *dev, off_t offset,
 	return ret;
 }
 
-static int flash_ls_client_write(const struct device *dev, off_t offset,
-					 const void *data, size_t size)
+static int flash_ls_client_write_op(const struct device *dev, off_t offset,
+					 const void *data, size_t size, bool flag_align)
 {
 	struct flash_ls_client_data *priv = dev->data;
 	const struct flash_ls_client_config *cfg = dev->config;
@@ -131,7 +134,7 @@ static int flash_ls_client_write(const struct device *dev, off_t offset,
 		.offset = offset,
 		.data = (void *)data,
 		.size = size,
-		.op = FLASH_DELEGATE_SERVER_WRITE
+		.op = flag_align ? FLASH_DELEGATE_SERVER_WRITE_ALIGN : FLASH_DELEGATE_SERVER_WRITE,
 	};
 	struct mbox_msg msg = {
 		.data = &param,
@@ -144,8 +147,8 @@ static int flash_ls_client_write(const struct device *dev, off_t offset,
 	return ret;
 }
 
-static int flash_ls_client_read(const struct device *dev, off_t offset,
-					void *data, size_t size)
+static int flash_ls_client_read_op(const struct device *dev, off_t offset,
+					void *data, size_t size, bool flag_align)
 {
 	struct flash_ls_client_data *priv = dev->data;
 	const struct flash_ls_client_config *cfg = dev->config;
@@ -161,7 +164,7 @@ static int flash_ls_client_read(const struct device *dev, off_t offset,
 		.offset = offset,
 		.data = data,
 		.size = size,
-		.op = FLASH_DELEGATE_SERVER_READ
+		.op = flag_align ? FLASH_DELEGATE_SERVER_READ_ALIGN : FLASH_DELEGATE_SERVER_READ,
 	};
 	struct mbox_msg msg = {
 		.data = &param,
@@ -174,13 +177,42 @@ static int flash_ls_client_read(const struct device *dev, off_t offset,
 	return ret;
 }
 
+#if 0
+static void flash_op_align_debug(struct flash_xfer_buf *buf)
+{
+	for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+		if (buf[i].len > 0) {
+			printf("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx\n",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+#if 0
+			int data_addr = (uint32_t)buf[i].buf;
+			int data_size = buf[i].len;
+			off_t offset = buf[i].offset;
+			for (int idx = 0; idx < data_size; idx += 16) {
+				for (int jdx = 0; jdx < 16; jdx++) {
+					printf("%2.2x ", ((uint8_t *)data_addr)[idx + jdx]);
+				}
+				printf("\n");
+			}
+#endif
+		}
+	}
+}
+#endif
+
 static int flash_op_align(const struct device *dev, off_t offset, void *data, size_t len, bool is_write)
 {
-	__aligned(CONFIG_DCACHE_LINE_SIZE) uint8_t buf_align[CONFIG_DCACHE_LINE_SIZE];
+	uint8_t buf_align_head[CONFIG_DCACHE_LINE_SIZE] __aligned(CONFIG_DCACHE_LINE_SIZE);
+	uint8_t buf_align_tail[CONFIG_DCACHE_LINE_SIZE] __aligned(CONFIG_DCACHE_LINE_SIZE);
+	flash_op_align_buf_t flash_op_align_buf __aligned(CONFIG_DCACHE_LINE_SIZE);
+	struct flash_xfer_buf *buf = flash_op_align_buf.buf;
 	uint8_t *user_ptr = (uint8_t *)data;
 	size_t remain = len;
 	off_t current_offset = offset;
 	int ret;
+
+	buf[FLASH_XFER_BUF_IDX_HEAD].len = 0;
+	buf[FLASH_XFER_BUF_IDX_MIDDLE].len = 0;
+	buf[FLASH_XFER_BUF_IDX_TAIL].len = 0;
 
 	/* Handle misaligned start portion */
 	if (((uintptr_t)user_ptr % CONFIG_DCACHE_LINE_SIZE) != 0) {
@@ -192,46 +224,33 @@ static int flash_op_align(const struct device *dev, off_t offset, void *data, si
 			chunk = remain;
 		}
 
-		/* only require (0 == (buf size % CONFIG_DCACHE_LINE_SIZE)).  do not require (0 == (chunk size % CONFIG_DCACHE_LINE_SIZE)) */
+		buf[FLASH_XFER_BUF_IDX_HEAD].offset = offset;
+		buf[FLASH_XFER_BUF_IDX_HEAD].buf = (void *)buf_align_head;
+		buf[FLASH_XFER_BUF_IDX_HEAD].len = chunk;
 		if (is_write) {
-			memcpy(buf_align, user_ptr, chunk);
-			sys_cache_data_flush_range((void *)buf_align, sizeof(buf_align));
-			ret = flash_ls_client_write(dev, current_offset, buf_align, chunk);
+			memcpy(buf_align_head, user_ptr, chunk);
+			sys_cache_data_flush_range((void *)buf_align_head, sizeof(buf_align_head));
 		} else {
-			sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
-			ret = flash_ls_client_read(dev, current_offset, buf_align, chunk);
-			if (!ret) {
-				sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
-				memcpy(user_ptr, buf_align, chunk);
-			}
-		}
-		if (ret) {
-			return ret;
+			sys_cache_data_invd_range((void *)buf_align_head, sizeof(buf_align_head));
 		}
 
 		user_ptr += chunk;
 		current_offset += chunk;
 		remain -= chunk;
-
-		if (0 == remain) {
-			return 0;
-		}
 	}
 
 	/* Handle aligned middle portion */
 	size_t aligned_len = remain & (~(CONFIG_DCACHE_LINE_SIZE - 1));
 	if (aligned_len > 0) {
 		if (is_write) {
-				sys_cache_data_flush_range((void *)user_ptr, aligned_len);
-				ret = flash_ls_client_write(dev, current_offset, user_ptr, aligned_len);
+			sys_cache_data_flush_range((void *)user_ptr, aligned_len);
 		} else {
-				sys_cache_data_invd_range((void *)user_ptr, aligned_len);
-				ret = flash_ls_client_read(dev, current_offset, user_ptr, aligned_len);
-				sys_cache_data_invd_range((void *)user_ptr, aligned_len);
+			sys_cache_data_invd_range((void *)user_ptr, aligned_len);
 		}
-		if (ret != 0) {
-			return ret;
-		}
+
+		buf[FLASH_XFER_BUF_IDX_MIDDLE].offset = offset + ((uintptr_t)user_ptr - (uintptr_t)data);
+		buf[FLASH_XFER_BUF_IDX_MIDDLE].buf = (void *)user_ptr;
+		buf[FLASH_XFER_BUF_IDX_MIDDLE].len = aligned_len;
 
 		user_ptr += aligned_len;
 		current_offset += aligned_len;
@@ -240,20 +259,42 @@ static int flash_op_align(const struct device *dev, off_t offset, void *data, si
 
 	/* Handle remain unaligned end portion */
 	if (remain > 0) {
+		buf[FLASH_XFER_BUF_IDX_TAIL].offset = offset + ((uintptr_t)user_ptr - (uintptr_t)data);
+		buf[FLASH_XFER_BUF_IDX_TAIL].buf = (void *)buf_align_tail;
+		buf[FLASH_XFER_BUF_IDX_TAIL].len = remain;
 		if (is_write) {
-			memcpy(buf_align, user_ptr, remain);
-			sys_cache_data_flush_range((void *)buf_align, sizeof(buf_align));
-			ret = flash_ls_client_write(dev, current_offset, buf_align, remain);
+			memcpy(buf_align_tail, user_ptr, remain);
+			sys_cache_data_flush_range((void *)buf_align_tail, sizeof(buf_align_tail));
 		} else {
-			sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
-			ret = flash_ls_client_read(dev, current_offset, buf_align, remain);
-			if (0 == ret) {
-				sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
-				memcpy(user_ptr, buf_align, remain);
-			}
+			sys_cache_data_invd_range((void *)buf_align_tail, sizeof(buf_align_tail));
 		}
-		if (ret != 0) {
-			return ret;
+	}
+
+#if 0
+	printf("%s\n", is_write ? "w" : "r");
+	flash_op_align_debug(buf);
+#endif
+
+	sys_cache_data_flush_range((void *)&flash_op_align_buf, sizeof(flash_op_align_buf));
+	if (is_write) {
+		ret = flash_ls_client_write_op(dev, current_offset, buf, (size_t)-1, true);
+	} else {
+		ret = flash_ls_client_read_op(dev, current_offset, buf, (size_t)-1, true);
+	}
+	if (ret != 0) {
+		printf("flash_ls_client_%s_op align failed ret:%d\n", is_write ? "write" : "read", ret);
+		return ret;
+	}
+
+	if (!is_write) {
+		if (buf[FLASH_XFER_BUF_IDX_HEAD].len > 0) {
+			sys_cache_data_invd_range(buf_align_head, sizeof(buf_align_head));
+			memcpy(data, buf_align_head, buf[FLASH_XFER_BUF_IDX_HEAD].len);
+		}
+		if (buf[FLASH_XFER_BUF_IDX_TAIL].len > 0) {
+			sys_cache_data_invd_range(buf_align_tail, sizeof(buf_align_tail));
+			void *user_ptr_tail = (void *)((uintptr_t)data + (len - buf[FLASH_XFER_BUF_IDX_TAIL].len));
+			memcpy(user_ptr_tail, buf_align_tail, buf[FLASH_XFER_BUF_IDX_TAIL].len);
 		}
 	}
 
