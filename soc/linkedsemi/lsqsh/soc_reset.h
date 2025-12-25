@@ -3,6 +3,7 @@
 #define _SOC_RESET_H_
 
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/watchdog.h>
 
 enum reset_reason {
     NO_RESET_REASON,
@@ -206,5 +207,23 @@ struct wdt_reset_en * wdt_reset_en_val_get(void);
 int sec_iwdt_reset_en_get(struct wdt_reset_en *wdt_reset_en);
 int sec_iwdt_reset_en_set(struct wdt_reset_en *wdt_reset_en);
 int wdt_reset_en_print(struct wdt_reset_en *wdt_reset_en);
+
+static inline int wdt_setup_linkedsemi(const struct device *dev, struct wdt_reset_en *wdt_reset_en)
+{
+#if DT_NODE_HAS_STATUS_OKAY(DT_PATH(soc, watchdog_400a1800))
+    if (DEVICE_DT_GET(DT_PATH(soc, watchdog_400a1800)) == dev) {
+        struct wdt_reset_en *noinit_wdt_reset_en = wdt_reset_en_val_get();
+        *noinit_wdt_reset_en = *wdt_reset_en;
+        sec_iwdt_reset_en_set(wdt_reset_en);
+        wdt_setup(dev, 0);
+    } else {
+        return -ENOTSUP;
+    }
+#else
+    ARG_UNUSED(dev);
+    ARG_UNUSED(wdt_reset_en);
+    return -ENOTSUP;
+#endif
+}
 
 #endif /* _SOC_RESET_H_ */
