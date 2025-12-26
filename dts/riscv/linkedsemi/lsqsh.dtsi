@@ -520,7 +520,8 @@
             #address-cells = <1>;
             #size-cells = <1>;
             status = "disabled";
-
+            cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
+            
             vuart1: vuart1@40087800 {
                 compatible = "linkedsemi,ls-host-vuart";
                 reg = <0x40087800 0x400>;
