@@ -215,6 +215,10 @@ config SHELL_WOLFSSH_TIMEOUT
 	int "SSH Shell Timeout (s)"
 	default 120
 
+config SHELL_WOLFSSH_LOGIN_TIMEOUT
+	int "SSH Shell Login Timeout (s)"
+	default 60
+
 config WOLFSSH_SETTINGS_FILE
 	string "wolfSSH settings file"
 	default "${ZEPHYR_BASE}/subsys/shell/backends/wolfssh_user_settings.h"

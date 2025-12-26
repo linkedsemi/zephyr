@@ -6,6 +6,11 @@
 #include <zephyr/kernel.h>
 #include <zephyr/shell/shell_wolfssh.h>
 
+#define WFD_SET_TYPE fd_set
+#define WFD_SET FD_SET
+#define WFD_ZERO FD_ZERO
+#define WFD_ISSET FD_ISSET
+
 LOG_MODULE_REGISTER(shell_wolfssh_backend);
 
 static K_KERNEL_STACK_DEFINE(ssh_daemon_stack,CONFIG_SHELL_WOLFSSH_DAEMON_STACK_SIZE);
@@ -156,6 +161,74 @@ static bool ssh_shell_disabled;
 static struct k_mutex ssh_shell_enabled_mutex;
 static struct k_condvar ssh_shell_enabled_condvar;
 
+static void set_password_suite(WOLFSSH_CTX* ctx)
+{
+    const char* kex_list = 
+        "ecdh-sha2-nistp256,"
+        "ecdh-sha2-nistp384";
+    if(wolfSSH_CTX_SetAlgoListKex(ctx, kex_list) != WS_SUCCESS)
+        LOG_WRN("Failed to set Kex list\n");
+
+    const char* key_list = 
+        "ecdsa-sha2-nistp256,"
+        "ecdsa-sha2-nistp384";
+    if(wolfSSH_CTX_SetAlgoListKey(ctx, key_list) != WS_SUCCESS)
+        LOG_WRN("Failed to set Key list\n");
+
+    const char* cipher_list = 
+        "aes256-gcm@openssh.com,"
+        "aes192-gcm@openssh.com,"
+        "aes128-gcm@openssh.com,"
+        "aes256-ctr,"
+        "aes192-ctr,"
+        "aes128-ctr,"
+        "aes256-cbc,"
+        "aes192-cbc,"
+        "aes128-cbc";
+    if(wolfSSH_CTX_SetAlgoListCipher(ctx, cipher_list) != WS_SUCCESS)
+        LOG_WRN("Failed to set cipher list\n");
+}
+
+static int tcp_select(SOCKET_T socketfd, int to_sec)
+{
+    WFD_SET_TYPE recvfds, errfds;
+    int nfds = (int)socketfd + 1;
+    struct timeval timeout = {(to_sec > 0) ? to_sec : 0, 0};
+    int result;
+
+    WFD_ZERO(&recvfds);
+    WFD_SET(socketfd, &recvfds);
+    WFD_ZERO(&errfds);
+    WFD_SET(socketfd, &errfds);
+
+    /* returns 1 or greater when something is ready to be read */
+    result = select(nfds, &recvfds, NULL, &errfds, &timeout);
+
+    if (result == 0)
+        return WS_CBIO_ERR_TIMEOUT;
+    else
+        return result;
+}
+
+static int NonBlockSSH_accept(WOLFSSH* ssh)
+{
+    int ret, select_ret;
+    WS_SOCKET_T sockfd;
+    sockfd = (WS_SOCKET_T)wolfSSH_get_fd(ssh);
+    ret = wolfSSH_accept(ssh);
+    while (ret != WS_SUCCESS) {
+        select_ret = tcp_select(sockfd, CONFIG_SHELL_WOLFSSH_LOGIN_TIMEOUT);
+        if(select_ret == WS_CBIO_ERR_TIMEOUT)
+        {
+            ret = WS_CBIO_ERR_TIMEOUT;
+            break;
+        }else{
+            ret = wolfSSH_accept(ssh);
+        }
+    }
+    return ret;
+}
+
 static void ssh_daemon_func(void *p1,void *p2,void *p3)
 {
     void *heap = NULL;
@@ -169,6 +242,9 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
     __ASSERT_NO_MSG(ret == WS_SUCCESS);
     ctx = wolfSSH_CTX_new(WOLFSSH_ENDPOINT_SERVER, heap);
     __ASSERT_NO_MSG(ctx);
+
+    set_password_suite(ctx);
+
     wolfSSH_SetUserAuth(ctx, wsUserAuth);
     wolfSSH_CTX_SetBanner(ctx, CONFIG_SHELL_WOLFSSH_BANNER"\n");
     const unsigned char *ecc_key_der;
@@ -218,8 +294,18 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
             //     wolfSSH_SetHighwaterCtx(ssh, (void*)ssh);
             //     wolfSSH_SetHighwater(ssh, defaultHighwater);
             // }
+
+            // Save the original socket flag
+            int flags = zsock_fcntl(client_fd, F_GETFL, 0);
+            if (flags < 0)
+                LOG_ERR("fcntl get failed");
+            // Set the client fd non-blocking flag
+            flags = zsock_fcntl(client_fd, F_SETFL, flags | O_NONBLOCK);
+            if (flags < 0)
+                LOG_ERR("fcntl set failed");
+
             wolfSSH_set_fd(ssh,client_fd);
-            ret = wolfSSH_accept(ssh);
+            ret = NonBlockSSH_accept(ssh);
             if(ret == WS_SUCCESS)
             {
                 k_tid_t tid = shell_wolfssh.ctx->tid;
@@ -242,7 +328,7 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
                 error = wolfSSH_get_error(ssh);
                 const char *errorStr = wolfSSH_ErrorToName(error);
                 LOG_WRN("%s\n",errorStr);
-                if(error == WS_USER_AUTH_E)
+                if(error == WS_USER_AUTH_E || ret == WS_CBIO_ERR_TIMEOUT)
                 {
                     wolfSSH_SendDisconnect(ssh,WOLFSSH_DISCONNECT_NO_MORE_AUTH_METHODS_AVAILABLE);
                 }
