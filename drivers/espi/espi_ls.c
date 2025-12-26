@@ -589,7 +589,8 @@ static void espi_cs_callback(const struct device *port,struct gpio_callback *cb,
     struct espi_data *espi = CONTAINER_OF(cb,struct espi_data,cs_cb);
     struct espi_lpc_ls_data *data = CONTAINER_OF(espi,struct espi_lpc_ls_data,u.espi);
     const struct espi_lpc_ls_config *cfg = data->cfg;
-    cfg->reg->CFG_RECOVER_CTL = ESPI_CFG_ECLK_EN_MASK;
+    reg_espi_t *reg = cfg->reg;
+    reg->CFG_RECOVER_CTL = ESPI_CFG_ECLK_EN_MASK;
     gpio_pin_interrupt_configure_dt(&cfg->cs,GPIO_INT_DISABLE);
     gpio_remove_callback_dt(&cfg->cs,&data->u.espi.cs_cb);
 }
