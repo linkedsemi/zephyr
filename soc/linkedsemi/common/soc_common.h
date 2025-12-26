@@ -8,6 +8,8 @@ enum delegate_server_op
 {
 	FLASH_DELEGATE_SERVER_READ,
 	FLASH_DELEGATE_SERVER_WRITE,
+	FLASH_DELEGATE_SERVER_WRITE_ALIGN,
+	FLASH_DELEGATE_SERVER_READ_ALIGN,
 	FLASH_DELEGATE_SERVER_ERASE,
 	FLASH_DELEGATE_SERVER_GET_PARAMS,
 	FLASH_DELEGATE_SERVER_READ_JEDEC_ID,
@@ -53,6 +55,23 @@ struct delegate_s2c_params
 	struct flash_op_return ret;
 	enum delegate_client_op op;
 };
+
+struct flash_xfer_buf {
+	off_t offset;
+	void *buf;
+	size_t len;
+};
+
+enum {
+	FLASH_XFER_BUF_IDX_HEAD = 0,
+	FLASH_XFER_BUF_IDX_MIDDLE = 1,
+	FLASH_XFER_BUF_IDX_TAIL = 2,
+	FLASH_XFER_BUF_IDX_MAX = 3,
+};
+
+typedef struct __aligned(CONFIG_DCACHE_LINE_SIZE) flash_op_align_buf {
+	struct flash_xfer_buf buf[FLASH_XFER_BUF_IDX_MAX];
+} flash_op_align_buf_t;
 
 #define FLASH_DRIVER_SUSPEND_OPCODE 0x8001
 #define FLASH_DRIVER_RESUME_OPCODE 0x8002
