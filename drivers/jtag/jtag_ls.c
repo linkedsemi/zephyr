@@ -63,6 +63,7 @@ struct jtag_ls_config {
     struct gpio_dt_spec tms_gpios;
     struct gpio_dt_spec tdi_gpios;
     struct gpio_dt_spec tdo_gpios;
+    struct gpio_dt_spec trst_gpios;
 };
 
 struct jtag_ls_data {
@@ -163,6 +164,10 @@ static int jtag_ls_init(const struct device *dev)
         LOG_ERR("TDO GPIO device not ready");
         return -EIO;
     }
+    if (!gpio_is_ready_dt(&config->trst_gpios)) {
+        LOG_ERR("TRST GPIO device not ready");
+        return -EIO;
+    }
 
     const uint32_t max_div = MJTAG_CTRL_TCK_DIVIDER_MASK >> MJTAG_CTRL_TCK_DIVIDER_POS;
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -192,6 +197,7 @@ static int jtag_ls_init(const struct device *dev)
     reg->INTR_CLR = MJTAG_INTR_ALL_MASK;
     reg->CTRL = READ_REG(reg->CTRL) | FIELD_BUILD(MJTAG_CTRL_TXD_CAP_DLY, JTAG_TXD_CAP_DLY) | FIELD_BUILD(MJTAG_CTRL_RXD_CAP_DLY, JTAG_RXD_CAP_DLY);
     reg->TDO_FT = 0;
+    reg->TRST = 0x01;
     /* Test-Logic Reset state */
     gjtag.tap_state = LS_TAP_RESET;
     return 0;
@@ -694,6 +700,7 @@ static const struct jtag_ls_config jtag_ls_cfg_##index = {  \
     .tms_gpios = GPIO_DT_SPEC_INST_GET(index, tms_gpios),   \
     .tdi_gpios = GPIO_DT_SPEC_INST_GET(index, tdi_gpios),   \
     .tdo_gpios = GPIO_DT_SPEC_INST_GET(index, tdo_gpios),   \
+    .trst_gpios = GPIO_DT_SPEC_INST_GET(index, trst_gpios), \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
     IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))       \
     IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
