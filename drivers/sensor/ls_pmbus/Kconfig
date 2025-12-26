@@ -1,0 +1,6 @@
+# LS PMBus Common Library
+
+config LS_PMBUS
+    bool "LS PMBus Common Library"
+    help
+      Enable common LS PMBus library.

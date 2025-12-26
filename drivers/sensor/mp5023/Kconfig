@@ -3,7 +3,7 @@
 config MP5023
     bool "MP5023 PMBus Sensor Driver"
     depends on SMBUS && SENSOR
-    select PMBUS
+    select LS_PMBUS
     help
       Enable driver for MP5023 PMBus sensor.
 

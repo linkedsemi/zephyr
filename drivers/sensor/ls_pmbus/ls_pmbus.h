@@ -1,8 +1,3 @@
-/*
- * Copyright (c) 2023 Jory Engineering
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include <zephyr/device.h>
 #include <zephyr/drivers/smbus.h>
 #include <zephyr/drivers/i2c.h>

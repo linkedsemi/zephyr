@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "pmbus.h"
+#include "ls_pmbus.h"
 
 /* Log configuration */
-LOG_MODULE_REGISTER(PMBUS, CONFIG_SENSOR_LOG_LEVEL);
+LOG_MODULE_REGISTER(LS_PMBUS, CONFIG_SENSOR_LOG_LEVEL);
 
 float my_powf(float base, int exponent)
 {
@@ -26,7 +26,7 @@ float my_powf(float base, int exponent)
 }
 
 /* Read a 16-bit value using PMBus protocol */
-int pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *value)
+int ls_pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *value)
 {
     int ret;
     uint8_t retry = 0;
@@ -60,7 +60,7 @@ int pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *va
 }
 
 /* Write a 16-bit value using PMBus protocol */
-int pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t value)
+int ls_pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t value)
 {
     /* 直接使用SMBus API，避免通过宏间接调用 */
     const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
@@ -72,7 +72,7 @@ int pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t va
 }
 
 /* Write a byte command using PMBus protocol */
-int pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd)
+int ls_pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd)
 {
     /* 直接使用SMBus API，避免通过宏间接调用 */
     const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
@@ -84,7 +84,7 @@ int pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd)
 }
 
 /* Write a byte data using PMBus protocol */
-int pmbus_write_byte_data(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value)
+int ls_pmbus_write_byte_data(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value)
 {
     /* 直接使用SMBus API，避免通过宏间接调用 */
     const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
@@ -96,7 +96,7 @@ int pmbus_write_byte_data(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_
 }
 
 /* Read a byte using PMBus protocol */
-int pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *value)
+int ls_pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *value)
 {
     int ret;
     uint8_t retry = 0;
@@ -121,7 +121,7 @@ int pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *val
 }
 
 /* Read a block of data using PMBus protocol */
-int pmbus_read_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *len, uint8_t *data)
+int ls_pmbus_read_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *len, uint8_t *data)
 {
     int ret;
     uint8_t retry = 0;
@@ -145,7 +145,7 @@ int pmbus_read_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *le
 }
 
 /* Write a block of data using PMBus protocol */
-int pmbus_write_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t len, const uint8_t *data)
+int ls_pmbus_write_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t len, const uint8_t *data)
 {
     /* 直接使用SMBus API，避免通过宏间接调用 */
     const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
@@ -156,7 +156,7 @@ int pmbus_write_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t le
 }
 
 /* Process call using PMBus protocol */
-int pmbus_process_call(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t send_word, uint16_t *recv_word)
+int ls_pmbus_process_call(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t send_word, uint16_t *recv_word)
 {
     /* 直接使用SMBus API，避免通过宏间接调用 */
     const struct smbus_driver_api *api = (const struct smbus_driver_api *)smbus->bus->api;
@@ -167,7 +167,7 @@ int pmbus_process_call(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t 
 }
 
 /* Select PMBus page */
-int pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page)
+int ls_pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page)
 {
     int ret;
 
@@ -176,7 +176,7 @@ int pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page)
     }
 
     LOG_DBG("Selecting PMBus page: %d", page);
-    ret = pmbus_write_byte_data(smbus, PMBUS_CMD_PAGE, page);
+    ret = ls_pmbus_write_byte_data(smbus, PMBUS_CMD_PAGE, page);
     if (ret < 0) {
         LOG_ERR("Failed to select page: %d", page);
         return ret;
@@ -188,7 +188,7 @@ int pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page)
 }
 
 /* Clear all faults */
-int pmbus_clear_faults(const struct smbus_dt_spec *smbus)
+int ls_pmbus_clear_faults(const struct smbus_dt_spec *smbus)
 {
     int ret;
 
@@ -197,7 +197,7 @@ int pmbus_clear_faults(const struct smbus_dt_spec *smbus)
     }
 
     LOG_DBG("Clearing PMBus faults");
-    ret = pmbus_write_byte(smbus, PMBUS_CMD_CLEAR_FAULTS);
+    ret = ls_pmbus_write_byte(smbus, PMBUS_CMD_CLEAR_FAULTS);
     if (ret < 0) {
         LOG_ERR("Failed to clear faults, ret: %d", ret);
         return ret;
@@ -209,7 +209,7 @@ int pmbus_clear_faults(const struct smbus_dt_spec *smbus)
 }
 
 /* Verify device presence and identity */
-int pmbus_verify_device(const struct smbus_dt_spec *smbus)
+int ls_pmbus_verify_device(const struct smbus_dt_spec *smbus)
 {
     uint16_t value;
     int ret;
@@ -219,7 +219,7 @@ int pmbus_verify_device(const struct smbus_dt_spec *smbus)
     }
 
     /* Try to read STATUS_WORD as a basic presence check */
-    ret = pmbus_read_word(smbus, PMBUS_CMD_STATUS_WORD, &value);
+    ret = ls_pmbus_read_word(smbus, PMBUS_CMD_STATUS_WORD, &value);
     if (ret < 0) {
         LOG_ERR("Device not responding to STATUS_WORD command");
         return ret;
@@ -234,7 +234,7 @@ int pmbus_verify_device(const struct smbus_dt_spec *smbus)
 }
 
 /* Parse Linear-11 format value */
-float pmbus_parse_linear11(uint16_t value)
+float ls_pmbus_parse_linear11(uint16_t value)
 {
     int8_t exponent;
     int16_t mantissa;
@@ -256,7 +256,7 @@ float pmbus_parse_linear11(uint16_t value)
 }
 
 /* Parse Linear-16 format value */
-float pmbus_parse_linear16(uint16_t value)
+float ls_pmbus_parse_linear16(uint16_t value)
 {
     int8_t exponent;
     int8_t mantissa;
@@ -273,7 +273,7 @@ float pmbus_parse_linear16(uint16_t value)
 }
 
 /* Configure SMBus PEC (Packet Error Checking) */
-int pmbus_configure_pec(const struct smbus_dt_spec *smbus, bool enable)
+int ls_pmbus_configure_pec(const struct smbus_dt_spec *smbus, bool enable)
 {
     int ret;
     uint32_t config;
