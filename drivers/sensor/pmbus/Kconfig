@@ -1,6 +1,0 @@
-# PMBus Common Library
-
-config PMBUS
-    bool "PMBus Common Library"
-    help
-      Enable common PMBus library.

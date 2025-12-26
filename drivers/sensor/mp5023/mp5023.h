@@ -47,7 +47,7 @@ int mp5023_init(const struct device *dev);
 int mp5023_read_byte(const struct device *dev, uint8_t cmd, uint8_t *value);
 int mp5023_read_word(const struct device *dev, uint8_t cmd, uint16_t *value);
 int mp5023_write_word(const struct device *dev, uint8_t cmd, uint16_t value);
-int mp5023_write_byte(const struct device *dev, uint8_t cmd, uint8_t value);
+int mp5023_write_byte(const struct device *dev, uint8_t cmd);
 int mp5023_clear_faults(const struct device *dev);
 
 /* MP5023-specific direct format conversion function */

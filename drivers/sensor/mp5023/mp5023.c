@@ -13,20 +13,20 @@
 #include <zephyr/sys/__assert.h>
 
 #include "mp5023.h"
-#include "../pmbus/pmbus.h"
+#include "../ls_pmbus/ls_pmbus.h"
 
 /* Log configuration */
 LOG_MODULE_REGISTER(MP5023, CONFIG_SENSOR_LOG_LEVEL);
 
 /* PMBus protocol implementation functions */
-extern int pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *value);
-extern int pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *value);
-extern int pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t value);
-extern int pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value);
-extern int pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page);
-extern int pmbus_clear_faults(const struct smbus_dt_spec *smbus);
-extern int pmbus_verify_device(const struct smbus_dt_spec *smbus);
-extern int pmbus_configure_pec(const struct smbus_dt_spec *smbus, bool enable);
+extern int ls_pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *value);
+extern int ls_pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *value);
+extern int ls_pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t value);
+extern int ls_pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd);
+extern int ls_pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page);
+extern int ls_pmbus_clear_faults(const struct smbus_dt_spec *smbus);
+extern int ls_pmbus_verify_device(const struct smbus_dt_spec *smbus);
+extern int ls_pmbus_configure_pec(const struct smbus_dt_spec *smbus, bool enable);
 
 /* MP5023-specific direct format conversion function */
 static float mp5023_convert_direct(uint16_t raw_value, uint8_t cmd)
@@ -110,27 +110,27 @@ int mp5023_init(const struct device *dev)
     data->timeout_ms = config->timeout_ms;
 
     /* Verify device presence */
-    ret = pmbus_verify_device(&config->smbus);
+    ret = ls_pmbus_verify_device(&config->smbus);
     if (ret < 0) {
         LOG_ERR("Failed to verify MP5023 device: %d", ret);
         return ret;
     }
 
-    ret = pmbus_configure_pec(&config->smbus, MP5023_DEFAULT_PEC_EN);
+    ret = ls_pmbus_configure_pec(&config->smbus, MP5023_DEFAULT_PEC_EN);
     if (ret < 0) {
         LOG_ERR("Failed to configure PEC: %d", ret);
         return ret;
     }
 
     /* Clear any existing faults */
-    ret = pmbus_clear_faults(&config->smbus);
+    ret = ls_pmbus_clear_faults(&config->smbus);
     if (ret < 0) {
         LOG_WRN("Failed to clear faults: %d", ret);
         /* Continue initialization despite warning */
     }
 
     /* Read initial status */
-    ret = pmbus_read_word(&config->smbus, PMBUS_CMD_STATUS_WORD, &data->status_word);
+    ret = ls_pmbus_read_word(&config->smbus, PMBUS_CMD_STATUS_WORD, &data->status_word);
     if (ret < 0) {
         LOG_WRN("Failed to read initial status: %d", ret);
     }
@@ -156,7 +156,7 @@ int mp5023_read_byte(const struct device *dev, uint8_t cmd, uint8_t *value)
     }
 
     config = dev->config;
-    ret = pmbus_read_byte(&config->smbus, cmd, value);
+    ret = ls_pmbus_read_byte(&config->smbus, cmd, value);
     if (ret < 0) {
         LOG_ERR("Failed to read command 0x%02X: %d", cmd, ret);
         return ret;
@@ -182,7 +182,7 @@ int mp5023_read_word(const struct device *dev, uint8_t cmd, uint16_t *value)
     }
 
     config = dev->config;
-    ret = pmbus_read_word(&config->smbus, cmd, value);
+    ret = ls_pmbus_read_word(&config->smbus, cmd, value);
     if (ret < 0) {
         LOG_ERR("Failed to read command 0x%02X: %d", cmd, ret);
         return ret;
@@ -204,7 +204,7 @@ int mp5023_write_word(const struct device *dev, uint8_t cmd, uint16_t value)
     }
 
     config = dev->config;
-    ret = pmbus_write_word(&config->smbus, cmd, value);
+    ret = ls_pmbus_write_word(&config->smbus, cmd, value);
     if (ret < 0) {
         LOG_ERR("Failed to write command 0x%02X: 0x%04X, error: %d", cmd, value, ret);
         return ret;
@@ -214,7 +214,7 @@ int mp5023_write_word(const struct device *dev, uint8_t cmd, uint16_t value)
     return 0;
 }
 
-int mp5023_write_byte(const struct device *dev, uint8_t cmd, uint8_t value)
+int mp5023_write_byte(const struct device *dev, uint8_t cmd)
 {
     // struct mp5023_data *data = dev->data;
     const struct mp5023_config *config;
@@ -226,13 +226,13 @@ int mp5023_write_byte(const struct device *dev, uint8_t cmd, uint8_t value)
     }
 
     config = dev->config;
-    ret = pmbus_write_byte(&config->smbus, cmd, value);
+    ret = ls_pmbus_write_byte(&config->smbus, cmd);
     if (ret < 0) {
-        LOG_ERR("Failed to write byte command 0x%02X: 0x%02X, error: %d", cmd, value, ret);
+        LOG_ERR("Failed to write byte command 0x%02X, error: %d", cmd, ret);
         return ret;
     }
 
-    LOG_DBG("Wrote byte command 0x%02X: 0x%02X", cmd, value);
+    LOG_DBG("Wrote byte command 0x%02X", cmd);
     return 0;
 }
 
@@ -249,7 +249,7 @@ int mp5023_clear_faults(const struct device *dev)
 
     data = dev->data;
     config = dev->config;
-    ret = pmbus_clear_faults(&config->smbus);
+    ret = ls_pmbus_clear_faults(&config->smbus);
     if (ret < 0) {
         LOG_ERR("Failed to clear faults: %d", ret);
         return ret;
