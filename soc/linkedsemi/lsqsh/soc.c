@@ -113,7 +113,7 @@ __no_optimization void cpu1_cache_region_init(void)
 
 #if defined(CONFIG_NOCACHE_MEMORY)
     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
-        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_PMP_GRANULARITY));
+        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_SYSMAP_GRANULARITY));
         if (__image_ram_start != __nocache_ram_start) {
             csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
         }
@@ -157,7 +157,7 @@ __no_optimization void cpu2_cache_region_init(void)
 
 #if defined(CONFIG_NOCACHE_MEMORY)
     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
-        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_PMP_GRANULARITY));
+        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_SYSMAP_GRANULARITY));
         if (__image_ram_start != __nocache_ram_start) {
             csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
         }

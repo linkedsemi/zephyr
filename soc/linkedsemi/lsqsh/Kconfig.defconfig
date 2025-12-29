@@ -112,9 +112,6 @@ config NOCACHE_MEMORY
 config RISCV_PMP
 	default y
 
-config PMP_GRANULARITY
-	default 4096
-
 config ASSERT
 	default y
 
@@ -272,6 +269,14 @@ config PMP_SLOTS
 
 config PMP_GRANULARITY
 	default 128
+
+config SYSMAP_GRANULARITY
+	int
+	default 4096
+
+config NOCACHE_GRANULARITY
+	int
+	default SYSMAP_GRANULARITY
 
 config PMP_NO_NA4
 	default y
