@@ -451,6 +451,7 @@ static int host_vuart_init(const struct device *dev)
     ptr_data->rx_irq_enabled = false;
     ptr_data->tx_irq_enabled = false;
     ptr_data->host_tx_to_vuart = false;
+    memset(&ptr_data->lock,0,sizeof(ptr_data->lock));
     k_sem_init(&ptr_data->irq_sem, 0, 1);
     k_thread_create(&ptr_data->irq_thread, ptr_data->irq_thread_stack, K_KERNEL_STACK_SIZEOF(ptr_data->irq_thread_stack),
       vuart_irq_thread, (void *)dev, NULL, NULL, CONFIG_VUART_IRQ_THREAD_PRIORITY, 0, K_NO_WAIT);
