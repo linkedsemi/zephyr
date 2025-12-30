@@ -91,9 +91,6 @@ static int iwdt_ls_setup(const struct device *dev, uint8_t options)
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 	config->iwdg_reg->IWDT_CTRL = FIELD_BUILD(IWDT_RST_EN, 1) | FIELD_BUILD(IWDT_EN, 1);
 	k_spin_unlock(&data->lock, key);
-
-
-
 	return 0;
 }
 
@@ -107,6 +104,12 @@ static int iwdt_ls_install_timeout(const struct device *dev, const struct wdt_ti
 		return -EINVAL;
 	}
 
+	if(!HAL_IWDG_IS_MATCH(config->iwdg_reg, cfg->flags))
+	{
+		LOG_INF("wdt_ls_install_timeout: flags error or not support  %d",cfg->flags);
+		return -EINVAL;
+	}
+
 	data->callback = cfg->callback;
 
 	config->iwdg_reg->IWDT_CTRL = 0x0;
@@ -114,6 +117,7 @@ static int iwdt_ls_install_timeout(const struct device *dev, const struct wdt_ti
 	uint32_t ticks = iwdt_calculate_load(cfg->window.max, config->hclk_hz);
 
 	config->iwdg_reg->IWDT_LOAD = ticks;
+
 	return 0;
 }
 
