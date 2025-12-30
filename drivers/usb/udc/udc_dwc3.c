@@ -1581,10 +1581,39 @@ static int usb_phy_reg_read(const struct shell *sh, size_t argc, char **argv)
     addr = strtoul(argv[1], NULL, 16);
     res = dwc3_phy_cfg_read(addr);
 
-    printk("reg_0x%x value: 0x%x\n", atoi(argv[1]), res);
+    printk("reg_0x%x value: 0x%x\n", addr, res);
     return 0;
 }
 SHELL_CMD_REGISTER(usb_phy_reg_read, NULL, "naneng phy read reg", usb_phy_reg_read);
+
+static int usb2_device_phy_self_test(const struct shell *sh, size_t argc, char **argv)
+{
+    uint32_t value = *(volatile uint32_t *)0x40058014;
+    value |= BIT(2);
+    *(volatile uint32_t *)0x40058014 = value;
+
+    while (1)
+    {
+        value = *(volatile uint32_t *)0x40058014;
+        if (value & BIT(1))
+            break;
+    }
+
+    return 0;
+}
+SHELL_CMD_REGISTER(usb2_device_phy_self_test, NULL, "usb2_device_phy_self_test", usb2_device_phy_self_test);
+
+static int usb2_device_ctrl_test_packet(const struct shell *sh, size_t argc, char **argv)
+{
+    uint32_t reg = 0;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(0x40050000 + DWC3_DEVICE_REGS_START);
+    reg = dwc3_dev->DCTL;
+    reg &= ~DWC3_DCTL_TSTCTRL_MASK;
+    reg |= (TEST_PACKET << 1);
+    dwc3_dev->DCTL = reg;
+    return 0;
+}
+SHELL_CMD_REGISTER(usb2_device_ctrl_test_packet, NULL, "usb2_device_ctrl_test_packet", usb2_device_ctrl_test_packet);
 
 #endif
 
@@ -2108,8 +2137,8 @@ static void udc_dwc3_thread_handler(void *dev)
     }                                                                                                                                       \
     static struct udc_ep_config ep_cfg_out_##n[DT_INST_PROP(n, num_out_eps)];                                                               \
     static struct udc_ep_config ep_cfg_in_##n[DT_INST_PROP(n, num_in_eps)];                                                                 \
-    __nocache static struct dwc3_ep_trb ep_in_trb_##n[DT_INST_PROP(n, num_in_eps)];                                                         \
-    __nocache static struct dwc3_ep_trb ep_out_trb_##n[DT_INST_PROP(n, num_out_eps)];                                                       \
+    __nocache static __attribute__((aligned(sizeof (struct dwc3_trb)))) struct dwc3_ep_trb ep_in_trb_##n[DT_INST_PROP(n, num_in_eps)];      \
+    __nocache static __attribute__((aligned(sizeof (struct dwc3_trb)))) struct dwc3_ep_trb ep_out_trb_##n[DT_INST_PROP(n, num_out_eps)];    \
     static __attribute__((aligned(EVT_BUF_LENGTH_WORDS * sizeof(union evt_buf_u)))) union evt_buf_u dwc3_evt_buf_##n[EVT_BUF_LENGTH_WORDS]; \
     static uint8_t bounce_addr[BOUNCE_ADDR_SIZE];                                                                                           \
     static const struct udc_dwc3_config udc_dwc3_config_##n = {                                                                             \
