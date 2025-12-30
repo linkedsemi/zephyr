@@ -498,7 +498,6 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 			{
 				config->reg->IER = I2C_INT_TXE_MASK;
 			}
-			k_sem_take(&data->device_sync_sem, K_FOREVER);
 			if(k_sem_take(&data->device_sync_sem, K_MSEC(I2C_BUS_TIMOUT_MS)) == (-EAGAIN))
 			{
 				data->errs |= I2C_BUS_TIMOUT;
