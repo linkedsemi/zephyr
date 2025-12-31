@@ -1,0 +1,5 @@
+description: Linkedsemi IPMB Device
+
+compatible: "linkedsemi,ls-ipmb-target"
+
+include: [i2c-device.yaml]
