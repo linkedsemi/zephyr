@@ -8,6 +8,7 @@
 #include "soc.h"
 #include "field_manipulate.h"
 
+#define LSQSH_BOOT_ADDR (0x1000000)
 uint32_t irq_nested_level = 0;
 static uint32_t irq_nested_mcause[IRQ_NESTED_MAX] = {0,0,0,0,0,0,0,0,0,0};
 
@@ -17,6 +18,11 @@ static const struct device *const zephyr_flash_controller =
 
 __ramfunc void isr_stacking_mcause(void)
 {
+    if(csr_read(mraddr) != LSQSH_BOOT_ADDR)
+    {
+        // cpu2 irq~ 这里可能要重新实现一套压栈的mcause保存
+        return;
+    }
     flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,0,NULL);
     if(irq_nested_level < IRQ_NESTED_MAX)
     {
@@ -36,6 +42,10 @@ __ramfunc void isr_unstacking_mcause(void)
 {
     uint32_t current_mcause;
     uint32_t restore_mcause;
+    if(csr_read(mraddr) != LSQSH_BOOT_ADDR)
+    {
+        return;
+    }
     if(irq_nested_level > 0 && irq_nested_level <= IRQ_NESTED_MAX)
     {
         irq_nested_level--;

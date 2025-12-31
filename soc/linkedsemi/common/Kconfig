@@ -1,3 +1,9 @@
 
 config ATOMIC_OPERATIONS_E906_SMP
     bool
+    
+if SMP && SOC_SERIES_LSQSH
+
+rsource "e906/Kconfig"
+
+endif

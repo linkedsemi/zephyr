@@ -12,7 +12,10 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/drivers/pm_cpu_ops.h>
-
+#ifdef CONFIG_SMP
+/* ls_qsh platform */
+#include "platform.h"
+#endif
 volatile struct {
 	arch_cpustart_t fn;
 	void *arg;
@@ -73,7 +76,10 @@ void arch_secondary_cpu_init(int hartid)
 	z_riscv_pmp_init();
 #endif
 #ifdef CONFIG_SMP
-	irq_enable(RISCV_IRQ_MSOFT);
+	// irq_enable(RISCV_IRQ_MSOFT);
+	irq_enable(SYSC_APP_CPU_IRQN);
+	irq_disable(SYSC_SEC_CPU_IRQN);
+	irq_enable(RV_TIME_IRQN);
 #endif /* CONFIG_SMP */
 #ifdef CONFIG_PLIC_IRQ_AFFINITY
 	/* Enable on secondary cores so that they can respond to PLIC */
@@ -83,8 +89,7 @@ void arch_secondary_cpu_init(int hartid)
 }
 
 #ifdef CONFIG_SMP
-
-#define MSIP_BASE 0x2000000UL
+#define MSIP_BASE 0x2000000UL  //机器模式软件中断
 #define MSIP(hartid) ((volatile uint32_t *)MSIP_BASE)[hartid]
 
 static atomic_val_t cpu_pending_ipi[CONFIG_MP_MAX_NUM_CPUS];
@@ -99,9 +104,23 @@ void arch_sched_directed_ipi(uint32_t cpu_bitmap)
 
 	for (unsigned int i = 0; i < num_cpus; i++) {
 		if ((i != id) && _kernel.cpus[i].arch.online &&
-		    ((cpu_bitmap & BIT(i)) != 0)) {
+		 ((cpu_bitmap & BIT(i)) != 0)) {
 			atomic_set_bit(&cpu_pending_ipi[i], IPI_SCHED);
-			MSIP(_kernel.cpus[i].arch.hartid) = 1;
+			// MSIP(_kernel.cpus[i].arch.hartid) = 1;
+			if(i == 0)
+			{
+				/* set cpu1 irq */
+				cpu_intr_sec_activate();
+			}
+			else if(i == 1)
+			{
+				/* set cpu2 irq */
+				cpu_intr_app_activate();
+			}
+			else
+			{
+				// while(1);
+			}
 		}
 	}
 
@@ -124,8 +143,17 @@ void arch_flush_fpu_ipi(unsigned int cpu)
 static void sched_ipi_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
+	unsigned int id = _current_cpu->id;
+	/* clear pending irq , ls_qsh unuesd this register*/
+	// MSIP(csr_read(mhartid)) = 0;
+	if(id == 0)
+	{
+		cpu_intr_sec_clr();
+	}else
+	{
+		cpu_intr_app_clr();
+	}
 
-	MSIP(csr_read(mhartid)) = 0;
 
 	atomic_val_t pending_ipi = atomic_clear(&cpu_pending_ipi[_current_cpu->id]);
 
@@ -168,11 +196,16 @@ void arch_spin_relax(void)
 }
 #endif
 
+/* cpu1 api*/
 int arch_smp_init(void)
 {
-
-	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
-	irq_enable(RISCV_IRQ_MSOFT);
+	// IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
+	IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
+	IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
+	irq_enable(SYSC_SEC_CPU_IRQN);
+	irq_disable(SYSC_APP_CPU_IRQN);
+	/* now , the cpu2 is not initailed*/
+	// irq_enable(SYSC_APP_CPU_IRQN);
 
 	return 0;
 }

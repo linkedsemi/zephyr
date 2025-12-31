@@ -1,0 +1,7 @@
+
+if SMP && SOC_SERIES_LSQSH
+
+config MP_MAX_NUM_CPUS
+    default 2
+
+endif

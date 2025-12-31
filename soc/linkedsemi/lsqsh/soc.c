@@ -576,10 +576,12 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
 
 void soc_prep_hook(void)
 {
+#if !defined(CONFIG_SMP)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     cpu1_cache_region_init();
 #else
     cpu2_cache_region_init();
+#endif
 #endif
 }
 
@@ -647,8 +649,10 @@ void soc_early_init_hook(void)
     }
 #endif
 
+#if !defined(CONFIG_SMP)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
+#endif
 #endif
 
     cpu_sleep_mode_config(0);
@@ -683,6 +687,7 @@ int flash_xip_prepare(const struct device *flash_dev)
     return 0;
 }
 
+#if !defined(CONFIG_SMP)
 __maybe_unused static uint32_t cpu2_exe_addr;
 __maybe_unused static bool is_app_cpu_xip_in_sec_flash(void)
 {
@@ -803,6 +808,7 @@ __maybe_unused int boot_cpu2(const struct device *flash_dev, uint32_t cpu2_boot_
     return 0;
 }
 
+#endif //!defined(CONFIG_SMP)
 
 #define STARTUP_PART_FLAG_MASK               (0xf)
 #define SFT_CTRL_REG_NUM_BOOT_RAM_RESET_FLAG (0x5)
@@ -820,12 +826,18 @@ __maybe_unused void soc_late_init_hook(void)
         SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     }
 
+#if !defined(CONFIG_SMP)
     if (is_app_cpu_running()) {
         flash_xip_prepare(flash_dev);
         return;
-    } else {
+    } 
+    else 
+#endif //!defined(CONFIG_SMP)
+    {
+
         pinmux_hal_flash_quad_init();
     }
+#if !defined(CONFIG_SMP)
 #if defined(CONFIG_BOOT_CPU2)
     if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
         || ((CONFIG_CPU2_BOOT_ADDR >= CACHE2_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE2_ADDR + QSPI_CACHE_SIZE)))
@@ -843,12 +855,39 @@ __maybe_unused void soc_late_init_hook(void)
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER)
     ls_otbn_delegation_server_chanels_init();
 #endif
+
+#endif //!defined(CONFIG_SMP)
 }
 #else
+
 void soc_late_init_hook(void)
 {
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
     ls_otbn_delegation_client_chanels_init();
 #endif
+}
+#endif
+
+#if defined(CONFIG_SMP)
+void secondary_cpu_init(void)
+{
+    cpu_sleep_mode_config(0);
+    cpu_intr_sec_unmask();
+    cpu_intr_app_unmask();
+    // csi_vic_disable_irq(SYSC_APP_CPU_IRQN);
+}
+
+
+void __scondary_cpu_reset(void);
+int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point)
+{
+    if(cpuid == 1) //cpu1
+    {
+        // MRADDR cp1 固定rom值，cpu2 由 app_cpu_dereset_by_addr 输入
+        app_cpu_dereset_by_addr((int)__scondary_cpu_reset); // set cpu2 pc
+        app_cpu_reset_hold_clr();
+    }
+
+    return 0;
 }
 #endif
