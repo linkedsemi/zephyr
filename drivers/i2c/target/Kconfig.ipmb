@@ -1,0 +1,5 @@
+
+config I2C_IPMB_TARGET
+	bool "I2C Target IPMB driver"
+	help
+	  Enable IPMB driver
