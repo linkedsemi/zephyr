@@ -1509,6 +1509,25 @@ static int udc_dwc3_unlock(const struct device *dev)
     return udc_unlock_internal(dev);
 }
 
+static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
+{
+    /* rst en */
+    *(uint32_t *)0x40058010 |= BIT(25);
+    k_busy_wait(1);
+
+    /* set reg_addr and write_data*/
+    *(uint32_t *)0x40058010 &= ~(0xff << 2);
+    *(uint32_t *)0x40058010 |= (reg_addr << 2);
+    *(uint32_t *)0x40058010 &= ~(0xff << 16);
+    *(uint32_t *)0x40058010 |= (write_data << 16);
+
+    k_busy_wait(1);
+    /* enable write */
+    *(uint32_t *)0x40058010 |= (0x1 << 1);
+    k_busy_wait(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 1);
+}
+
 #if 0
 
 #include <zephyr/shell/shell.h>
@@ -1520,40 +1539,21 @@ static uint8_t dwc3_phy_cfg_read(uint8_t reg_addr)
 
     /* rst en */
     *(uint32_t *)0x40058010 |= BIT(25);
-    k_usleep(1);
+    k_busy_wait(1);
 
     /* set reg_addr and write_data*/
     *(uint32_t *)0x40058010 &= ~(0xff << 2);
     *(uint32_t *)0x40058010 |= (reg_addr << 2);
-    k_usleep(1);
+    k_busy_wait(1);
     /* enable read */
     *(uint32_t *)0x40058010 |= (0x1 << 0);
-    k_usleep(1);
+    k_busy_wait(1);
     *(uint32_t *)0x40058010 &= ~(0x1 << 0);
-    k_usleep(1);
+    k_busy_wait(1);
     res = *(uint32_t *)0x40058010;
-    k_usleep(1);
+    k_busy_wait(1);
 
     return (res >> 8) & 0xff;
-}
-
-static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
-{
-    /* rst en */
-    *(uint32_t *)0x40058010 |= BIT(25);
-    k_usleep(1);
-
-    /* set reg_addr and write_data*/
-    *(uint32_t *)0x40058010 &= ~(0xff << 2);
-    *(uint32_t *)0x40058010 |= (reg_addr << 2);
-    *(uint32_t *)0x40058010 &= ~(0xff << 16);
-    *(uint32_t *)0x40058010 |= (write_data << 16);
-
-    k_usleep(1);
-    /* enable write */
-    *(uint32_t *)0x40058010 |= (0x1 << 1);
-    k_usleep(1);
-    *(uint32_t *)0x40058010 &= ~(0x1 << 1);
 }
 
 static int usb_phy_reg_write(const struct shell *sh, size_t argc, char **argv) 
@@ -1620,6 +1620,7 @@ SHELL_CMD_REGISTER(usb2_device_ctrl_test_packet, NULL, "usb2_device_ctrl_test_pa
 static int dwc3_phy_setup(const struct device *dev)
 {
     *(uint32_t *)0x40058014 = 0x131; // pll_en
+    dwc3_phy_cfg_write(0x9, 0xf0);
     return 0;
 }
 
