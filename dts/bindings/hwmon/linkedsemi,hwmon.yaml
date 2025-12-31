@@ -5,7 +5,7 @@ description: linkedsemi Hwmon
 
 compatible: "linkedsemi,hwmon"
 
-include: [hwmon-controller.yaml]
+include: [base.yaml, hwmon-controller.yaml]
 
 properties:
   class:

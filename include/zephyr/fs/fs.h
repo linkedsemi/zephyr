@@ -64,8 +64,8 @@ enum {
 	/** Identifier for in-tree device file system. */
 	FS_DEVFS,
 
-	/** Identifier for in-tree jtagm file system. */
-	FS_JTAGM,
+	/** Identifier for in-tree sys file system. */
+	FS_SYSFS,
 
 	/** Base identifier for external file systems. */
 	FS_TYPE_EXTERNAL_BASE,
