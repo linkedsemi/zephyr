@@ -65,6 +65,7 @@ add_subdirectory_ifdef(CONFIG_VOLTAGE_DIVIDER voltage_divider)
 add_subdirectory_ifdef(CONFIG_TACH_ENE_KB1200 ene_tach_kb1200)
 add_subdirectory_ifdef(CONFIG_LS_PMBUS ls_pmbus)
 add_subdirectory_ifdef(CONFIG_MP5023 mp5023)
+add_subdirectory_ifdef(CONFIG_ALIPSU alipsu)
 
 zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/sensor.h)
 

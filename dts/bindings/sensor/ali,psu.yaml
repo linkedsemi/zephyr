@@ -1,0 +1,19 @@
+# ALI PSU Sensor
+
+compatible: "ali,psu"
+
+include: [sensor-device.yaml, smbus-device.yaml, hwmon-controller.yaml]
+
+properties:
+  reg:
+    required: true
+
+  alert-gpios:
+    type: phandle-array
+    description: Alert pin
+    # Optional
+
+  smbus-max-frequency:
+    type: int
+    description: Maximum frequency of the SMBus interface
+    default: 100000

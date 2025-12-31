@@ -1,0 +1,8 @@
+# ALIPSU Sensor Driver Configuration
+
+config ALIPSU
+    bool "ALIPSU Sensor Driver"
+    depends on SMBUS && SENSOR
+    select LS_PMBUS
+    help
+      Enable driver for ALIPSU sensor.

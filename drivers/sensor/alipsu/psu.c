@@ -1,0 +1,807 @@
+/*
+ * Copyright (c) 2023 Jory Engineering
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+#define DT_DRV_COMPAT ali_psu
+
+#include <zephyr/device.h>
+#include <zephyr/drivers/sensor.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/__assert.h>
+#include <stdio.h>
+#include <string.h>
+
+#include "psu.h"
+// #include "../ls_pmbus/ls_pmbus.h"
+
+/* Log configuration */
+LOG_MODULE_REGISTER(ALIPSU, CONFIG_SENSOR_LOG_LEVEL);
+
+#define I2C_SMBUS_BLOCK_MAX  32
+
+/* PMBus protocol implementation functions */
+// extern int ls_pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *value);
+// extern int ls_pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *value);
+// extern int ls_pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t value);
+// extern int ls_pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd);
+// extern int ls_pmbus_write_byte_data(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value);
+// extern int ls_pmbus_read_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *len, uint8_t *data);
+// extern int ls_pmbus_write_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t len, const uint8_t *data);
+
+static const struct sensor_driver_api ali_psu_api = {};
+
+int ali_psu_init(const struct device *dev)
+{
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    struct ali_psu_data *data = dev->data;
+    const struct ali_psu_config *config = dev->config;
+
+    LOG_DBG("Initializing ALIPSU PMBus sensor");
+
+    /* Check if i2c device is ready */
+    if (!device_is_ready(config->smbus.bus)) {
+        LOG_ERR("i2c device not ready: %s", dev->name);
+        return -ENODEV;
+    }
+
+    data->model = alipsu;
+    data->fw_update = psu_fw_update;
+    data->mfr_page = 0x00;
+    k_mutex_init(&data->update_lock);
+
+    LOG_INF("ALIPSU PMBus sensor initialized successfully");
+    return 0;
+}
+
+int ali_psu_read_byte(const struct device *dev, uint8_t cmd, uint8_t *value)
+{
+    const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    if (!value) {
+        return -EINVAL;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_read_byte(&config->smbus, cmd, value);
+    if (ret < 0) {
+        LOG_ERR("Failed to read command 0x%02X: %d", cmd, ret);
+        return ret;
+    }
+
+    LOG_DBG("Read command 0x%02X: 0x%02X", cmd, *value);
+    return 0;
+}
+
+int ali_psu_read_word(const struct device *dev, uint8_t cmd, uint16_t *value)
+{
+    const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    if (!value) {
+        return -EINVAL;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_read_word(&config->smbus, cmd, value);
+    if (ret < 0) {
+        LOG_ERR("Failed to read command 0x%02X: %d", cmd, ret);
+        return ret;
+    }
+
+    LOG_DBG("Read command 0x%02X: 0x%04X", cmd, *value);
+    return 0;
+}
+
+int ali_psu_write_word(const struct device *dev, uint8_t cmd, uint16_t value)
+{
+    const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_write_word(&config->smbus, cmd, value);
+    if (ret < 0) {
+        LOG_ERR("Failed to write command 0x%02X: 0x%04X, error: %d", cmd, value, ret);
+        return ret;
+    }
+
+    LOG_DBG("Wrote command 0x%02X: 0x%04X", cmd, value);
+    return 0;
+}
+
+int ali_psu_write_byte(const struct device *dev, uint8_t cmd)
+{
+    const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_write_byte(&config->smbus, cmd);
+    if (ret < 0) {
+        LOG_ERR("Failed to write byte command 0x%02X, error: %d", cmd, ret);
+        return ret;
+    }
+
+    LOG_DBG("Wrote byte command 0x%02X", cmd);
+    return 0;
+}
+
+int ali_psu_write_byte_data(const struct device *dev, uint8_t cmd, uint8_t value)
+{
+    const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_write_byte_data(&config->smbus, cmd, value);
+    if (ret < 0) {
+        LOG_ERR("Failed to write byte data command 0x%02X, value 0x%02X, error: %d", cmd, value, ret);
+        return ret;
+    }
+
+    LOG_DBG("Wrote byte data command 0x%02X: 0x%02X", cmd, value);
+    return 0;
+}
+
+int ali_psu_read_block_data(const struct device *dev, uint8_t cmd, uint8_t *buffer, uint8_t *len)
+{
+   const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_read_block(&config->smbus, cmd, len, buffer);
+    if (ret < 0) {
+        LOG_ERR("Failed to read block command 0x%02X, error: %d", cmd, ret);
+        return ret;
+    }
+
+    LOG_DBG("Read block command 0x%02X: 0x%04X", cmd, *buffer);
+    return 0;
+}
+
+int ali_psu_write_block_data(const struct device *dev, uint8_t cmd, uint8_t *buffer, uint8_t len)
+{
+   const struct ali_psu_config *config;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    config = dev->config;
+    ret = ls_pmbus_write_block(&config->smbus, cmd, len, buffer);
+    if (ret < 0) {
+        LOG_ERR("Failed to write block command 0x%02X, error: %d", cmd, ret);
+        return ret;
+    }
+
+    LOG_DBG("Wrote block command 0x%02X: 0x%04X", cmd, *buffer);
+    return 0;
+}
+
+#if 0
+static const char *buf2str_extended(const uint8_t *buf, int len,
+				    const char *sep)
+{
+	static char str[4096];
+	char *cur;
+	int i;
+	int sz;
+	int left;
+	int sep_len;
+
+	if (!buf) {
+		LOG_ERR("Buffer pointer is NULL");
+		return (const char *)str;
+	}
+	cur = str;
+	left = sizeof(str);
+	if (sep)
+		sep_len = strlen(sep);
+	else
+		sep_len = 0;
+
+	for (i = 0; i < len; i++) {
+		/* may return more than 2, depending on locale */
+		sz = snprintf(cur, left, "%2.2x", buf[i]);
+		if (sz >= left) {
+			/* buffer overflow, truncate */
+			break;
+		}
+		cur += sz;
+		left -= sz;
+		/* do not write separator after last byte */
+		if (sep && i != (len - 1)) {
+			if (sep_len >= left)
+				break;
+
+			strncpy(cur, sep, left - sz);
+			cur += sep_len;
+			left -= sep_len;
+		}
+	}
+	*cur = '\0';
+
+	return (const char *)str;
+}
+#endif
+
+int ali_psu_read_word_data(const struct device *dev, uint8_t cmd, uint16_t *value)
+{
+	struct ali_psu_data *data = dev->data;
+	if (!data || data->fw_update)
+		return -EPERM;
+
+	if (cmd >= PMBUS_VIRT_BASE)
+		return -ENODATA;
+    return ali_psu_read_word(dev, cmd, value);;
+}
+
+int ali_psu_write_word_data(const struct device *dev, uint8_t cmd, uint16_t value)
+{
+	struct ali_psu_data *data = dev->data;
+	if (!data || data->fw_update)
+		return -EPERM;
+
+	if (cmd >= PMBUS_VIRT_BASE)
+		return -ENODATA;
+	return ali_psu_write_word(dev, cmd, value);
+}
+
+int ali_psu_read_byte_data(const struct device *dev, uint8_t cmd, uint8_t *value)
+{
+	struct ali_psu_data *data = dev->data;
+	if (!data || data->fw_update)
+		return -EPERM;
+
+	return ali_psu_read_byte(dev, cmd, value);
+}
+
+int ali_psu_word_show(const struct device *dev, uint8_t reg, uint16_t *word)
+{
+	int rc;
+
+	struct ali_psu_data *data = dev->data;
+	k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_read_word_data(dev, reg, word);
+	k_mutex_unlock(&data->update_lock);
+	if (rc < 0) {
+        LOG_ERR("Failed to read word data command 0x%02X, error: %d", reg, rc);
+	}
+    LOG_DBG("show psu_word: 0x%04x", *word);
+    return rc;
+}
+
+int ali_psu_word_store(const struct device *dev, uint8_t reg, uint16_t word)
+{
+	int rc;
+
+	struct ali_psu_data *data = dev->data;
+    k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_write_word_data(dev, reg, word);
+	k_mutex_unlock(&data->update_lock);
+	if (rc < 0) {
+		LOG_ERR("Failed to write word data command 0x%02X, error: %d", reg, rc);
+	}
+    return rc;
+}
+
+int ali_psu_byte_show(const struct device *dev, uint8_t reg, uint8_t *byte)
+{
+	int rc;
+
+	struct ali_psu_data *data = dev->data;
+    k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_read_byte_data(dev, reg, byte);
+	k_mutex_unlock(&data->update_lock);
+	if (rc < 0) {
+		LOG_ERR("Failed to read byte data command 0x%02X, error: %d", reg, rc);
+	}
+    LOG_DBG("show psu_byte: 0x%02x", *byte);
+    return rc;
+}
+
+int ali_psu_byte_store(const struct device *dev, uint8_t reg, uint8_t byte)
+{
+	int rc;
+
+	struct ali_psu_data *data = dev->data;
+    k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_write_byte_data(dev, reg, byte);
+	k_mutex_unlock(&data->update_lock);
+	if (rc < 0) {
+		LOG_ERR("Failed to write byte data command 0x%02X, error: %d", reg, rc);
+	}
+    return rc;
+}
+
+int ali_psu_sensor_show(const struct device *dev, uint8_t reg, int64_t *val)
+{
+	int rc;
+    uint16_t word;
+
+	struct ali_psu_data *data = dev->data;
+    k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_read_word_data(dev, reg, &word);
+	k_mutex_unlock(&data->update_lock);
+
+	if (rc < 0) {
+        LOG_ERR("Failed to read word data command 0x%02X, error: %d", reg, rc);
+		return rc;
+	}
+
+	/* Now we only support LINEAR11 */
+	int16_t exponent = ((int16_t)word) >> 11;
+	int32_t mantissa = ((int16_t)((word & 0x7ff) << 5)) >> 5;
+	*val = mantissa;
+
+	/* scale result to milli-units for all sensors except fans */
+	// if (sensor->class != PSC_FAN)
+	*val = *val * 1000LL;
+
+	/* scale result to micro-units for power sensors */
+	//if (sensor->class == PSC_POWER)
+	//val = val * 1000LL;
+
+	*val = (exponent >= 0) ? (*val << exponent) : (*val >> -exponent);
+    LOG_DBG("show sensor: 0x%lld", *val);
+	return rc;
+}
+
+int ali_psu_mfr_page_show(const struct device *dev, uint8_t *page)
+{
+	int ret;
+
+	struct ali_psu_data *data = dev->data;
+    k_mutex_lock(&data->update_lock, K_FOREVER);
+	ret = ali_psu_read_byte_data(dev, ALI_PS_REG_MFR_PAGE, page);
+	k_mutex_unlock(&data->update_lock);
+	if (ret < 0)
+        LOG_ERR("Failed to read MFR_PAGE, error: %d", ret);
+
+	LOG_DBG("MFR_PAGE: 0x%02x", *page);
+    return ret;
+}
+
+static inline int switch_page(const struct device *dev, uint8_t value);
+
+int ali_psu_mfr_page_store(const struct device *dev, uint8_t num)
+{
+	int rc;
+	struct ali_psu_data *data = dev->data;
+
+	if ((num >= 0 && num < 15) || num == 0xff) {
+		rc = switch_page(dev, num);
+		if (rc < 0)
+        {
+            LOG_ERR("Failed to switch MFR_PAGE to 0x%02x, error: %d", num, rc);
+            return rc;
+        }
+		data->mfr_page = num;
+	} 
+    else {
+		LOG_ERR("alipsu mfr_page: %d, beyond range!\n", num);
+		return -EINVAL;
+	}
+
+	return rc;
+}
+
+int ali_psu_ac_cycle_store(const struct device *dev)
+{
+	int rc;
+    uint8_t read;
+	struct ali_psu_data *data = dev->data;
+	if (data->fw_update){
+		return -EPERM;
+    }
+
+    k_mutex_lock(&data->update_lock, K_FOREVER);
+	// Restore to default mode
+	rc = ali_psu_write_byte_data(
+		dev, ali_psu_regs[on_off_config], 0x88);
+	if (rc < 0)
+		goto exit;
+	rc = ali_psu_write_byte_data(dev, ali_psu_regs[operation],
+				       0x00);
+	if (rc < 0)
+		goto exit;
+
+	// Wait 10ms for PSU to handle.
+	k_msleep(10);
+
+	// Check if psu is in default mode
+	rc = ali_psu_read_byte_data(dev, ali_psu_regs[on_off_config], &read);
+	if (rc < 0 || read != 0x88) {
+		LOG_ERR("Failed to read on_off_config reg, error: %d", rc);
+		goto exit;
+	}
+	rc = ali_psu_read_byte_data(dev, ali_psu_regs[operation], &read);
+	if (rc < 0 || read != 0x0) {
+		LOG_ERR("Failed to read operation reg, error: %d", rc);
+		goto exit;
+	}
+
+	// Set auto turn on mode as PSU required
+	rc = ali_psu_write_byte_data(
+		dev, ali_psu_regs[on_off_config], 0x48);
+	if (rc < 0)
+		goto exit;
+	rc = ali_psu_write_byte_data(dev, ali_psu_regs[operation],
+				       0x40);
+	if (rc < 0)
+		goto exit;
+
+	rc = 0;
+exit:
+	k_mutex_unlock(&data->update_lock);
+	return rc;
+}
+
+int ali_psu_block_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len)
+{
+	int rc;
+    struct ali_psu_data *data = dev->data;
+    if (!len || *len > I2C_SMBUS_BLOCK_MAX) {
+        LOG_ERR("alipsu block show: len is NULL or beyond max size");
+        return -EINVAL;
+    }
+
+	k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_read_block_data(dev, reg, buf, len);
+	k_mutex_unlock(&data->update_lock);
+	if (rc < 0) {
+		LOG_ERR(
+			"alipsu read block fail: cmd %d, rc %d\n", reg, rc);
+    }
+    LOG_DBG("show psu_block: 0x%x, len %d", *buf, *len);
+    return rc;
+}
+
+int ali_psu_fw_version_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len)
+{
+	int rc;
+	struct ali_psu_data *psu_data = dev->data;
+
+	/* We don't check the return value given FW version reg always return
+	 * negative value no matter i2c reading succeeds or not.
+	 */
+    if (!len || *len > I2C_SMBUS_BLOCK_MAX) {
+        LOG_ERR("alipsu fw version show: len is NULL or beyond max size");
+        return -EINVAL;
+    }
+
+	k_mutex_lock(&psu_data->update_lock, K_FOREVER);
+	if (psu_data->model == powerbrick) {
+		reg = ALI_BRICK_PS_REG_FW_REV;
+		rc = ali_psu_read_block_data(dev, reg, buf, len);
+		/* Data format in PowerBrick: [length][value].
+		 * i2c_smbus_read_block_data returns the length of the value.
+		 */
+		// *len = *len + 1;
+	} else {
+		rc = ali_psu_read_block_data(dev, reg, buf, len);
+	}
+	k_mutex_unlock(&psu_data->update_lock);
+
+	if (rc < 0){
+		LOG_ERR("Failed to read FW version, error: %d", rc);
+    }
+
+	LOG_DBG("FW version: 0x%x, len %d", *buf, *len);
+    return rc;
+}
+
+int ali_psu_bootloader_str_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len)
+{
+	int rc;
+
+	/* We don't check the return value given some reg always return
+	 * negative value no matter i2c reading succeeds or not.
+	 */
+    if (!len || *len > I2C_SMBUS_BLOCK_MAX) {
+        LOG_ERR("alipsu bootloader str show: len is NULL or beyond max size");
+        return -EINVAL;
+    }
+    
+    struct ali_psu_data *psu_data = dev->data;
+    k_mutex_lock(&psu_data->update_lock, K_FOREVER);
+	rc = ali_psu_read_block_data(dev, reg, buf, len);
+	if (rc < 0) {
+		LOG_ERR("Failed to read bootloader string, error: %d", rc);
+		return rc;
+	}
+	k_mutex_unlock(&psu_data->update_lock);
+
+	if (rc < 0){
+		LOG_ERR("Failed to read bootloader string, error: %d", rc);
+    }
+
+	// if (reg == ALI_PS_REG_MFR_POS_TOTAL || reg == ALI_PS_REG_MFR_POS_LAST)
+	// 	return snprintf(buf, PAGE_SIZE, "0x%08x\n", *(uint32_t*)(data));
+    LOG_DBG("show psu_bootloader_str: 0x%x, len %d", *buf, *len);
+	return rc;
+}
+
+int ali_psu_bootloader_str_store(const struct device *dev,uint8_t reg, uint8_t *buf, uint8_t len)
+{
+	int rc;
+
+	/* We don't check the return value given some reg always return
+	 * negative value no matter i2c writing succeeds or not.
+	 */
+    if (len > I2C_SMBUS_BLOCK_MAX) {
+        LOG_ERR("alipsu bootloader str store: len is beyond max size");
+        return -EINVAL;
+    }
+
+	struct ali_psu_data *psu_data = dev->data;
+	k_mutex_lock(&psu_data->update_lock, K_FOREVER);
+	rc = ali_psu_write_block_data(dev, reg, buf, len);
+	k_mutex_unlock(&psu_data->update_lock);
+
+	if (rc < 0){
+        LOG_ERR("Failed to write bootloader string, error: %d", rc);
+    }
+
+	return rc;
+}
+
+int ali_psu_bootloader_hex_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len)
+{
+	int rc;
+
+	/* We don't check the return value given some reg always return
+	 * negative value no matter i2c reading succeeds or not.
+	 */
+    if (!len || *len > I2C_SMBUS_BLOCK_MAX) {
+        LOG_ERR("alipsu bootloader hex show: len is NULL or beyond max size");
+        return -EINVAL;
+    }
+
+	struct ali_psu_data *psu_data = dev->data;
+	k_mutex_lock(&psu_data->update_lock, K_FOREVER);
+	rc = ali_psu_read_block_data(dev, reg, buf, len);
+	k_mutex_unlock(&psu_data->update_lock);
+
+	if (rc < 0){
+        LOG_ERR("Failed to read bootloader hex, error: %d", rc);
+    }
+
+    LOG_DBG("show psu_bootloader_hex: 0x%x, len %d", *buf, *len);
+    return rc;
+}
+
+int ali_psu_bootloader_hex_store(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t len)
+{
+	int rc;
+
+    if (len > I2C_SMBUS_BLOCK_MAX) {
+        LOG_ERR("alipsu bootloader hex store: len is beyond max size");
+        return -EINVAL;
+    }
+
+	/* We don't check the return value given some reg always return
+	 * negative value no matter i2c writing succeeds or not.
+	 */
+    struct ali_psu_data *psu_data = dev->data;
+	k_mutex_lock(&psu_data->update_lock, K_FOREVER);
+	rc = ali_psu_write_block_data(dev, reg, buf, len);
+	k_mutex_unlock(&psu_data->update_lock);
+
+	if (rc != 0){
+        LOG_ERR("Failed to write bootloader hex, error: %d", rc);
+    }
+		
+	return rc;
+}
+
+static inline int switch_page(const struct device *dev, uint8_t value)
+{
+	int ret;
+    uint8_t current_page;
+	struct ali_psu_data *data = dev->data;
+
+	k_mutex_lock(&data->update_lock, K_FOREVER);
+	ret = ali_psu_read_byte_data(dev, ALI_PS_REG_MFR_PAGE, &current_page);
+	if (ret < 0)
+		goto exit;
+	if (current_page == value) {
+		ret = 0;
+		goto exit;
+	}
+
+	ret = ali_psu_write_byte_data(dev, ALI_PS_REG_MFR_PAGE, value);
+	k_msleep(100);
+
+exit:
+	k_mutex_unlock(&data->update_lock);
+	return ret;
+}
+
+int ali_psu_byte_word_read_his(const struct device *dev, uint8_t reg, uint8_t *buf, int mode)
+{
+	int rc;
+	struct ali_psu_data *data = dev->data;
+
+	if ((data->fw_update != psu_fw_blackbox) || (data->mfr_page >= 15))
+		return -EPERM;
+
+	k_mutex_lock(&data->update_lock, K_FOREVER);
+	// read data
+	if (mode == 0)
+	{
+		rc = ali_psu_read_byte_data(dev, reg, buf);
+	}
+	else
+	{
+		rc = ali_psu_read_word_data(dev, reg, (uint16_t *)buf);
+	}
+	k_mutex_unlock(&data->update_lock);
+
+	if (rc < 0){
+        LOG_ERR("Failed to read history data, mode: %d, error: %d", mode, rc);
+    }
+
+	LOG_DBG("show psu_bootloader_hex: 0x%x, mode %d", *buf, mode);
+	return rc;
+}
+
+int ali_psu_byte_word_read_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, int mode)
+{
+	int rc = ali_psu_byte_word_read_his(dev, reg, buf, mode);
+
+	if (rc < 0)
+		return rc;
+
+	if (mode == 0)
+	{
+		LOG_DBG("show byte: 0x%02x", *buf);
+	}
+	else
+	{
+		LOG_DBG("show word: 0x%04x", *buf);
+	}
+	return rc;
+}
+
+int ali_psu_word_his_show(const struct device *dev, uint8_t reg, uint8_t *buf)
+{
+	return ali_psu_byte_word_read_his_show(dev, reg, buf, 1);
+}
+
+int ali_psu_byte_his_show(const struct device *dev, uint8_t reg, uint8_t *buf)
+{
+	return ali_psu_byte_word_read_his_show(dev, reg, buf, 0);
+}
+
+int ali_psu_sensor_his_show(const struct device *dev, uint8_t reg, int64_t *val)
+{
+	int rc;
+    uint8_t byte;
+	int16_t exponent;
+    uint16_t read_word;
+	int32_t mantissa;
+	struct ali_psu_data *data = dev->data;
+
+	if ((data->fw_update != psu_fw_blackbox) || (data->mfr_page >= 15))
+		return -EPERM;
+
+	rc = ali_psu_byte_word_read_his(dev, reg, (uint8_t *)&read_word, 1);
+	if (rc < 0)
+		return rc;
+
+	if (reg == ALI_PS_REG_READ_VOUT) { /* LINEAR16 */
+        rc = ali_psu_read_byte_data(dev, PMBUS_CMD_VOUT_MODE, &byte);
+		exponent = byte & 0x1F;
+		mantissa = read_word;
+	} else {				/* LINEAR11 */
+		exponent = read_word >> 11;
+		mantissa = ((read_word & 0x7ff) << 5) >> 5;
+	}
+
+	*val = mantissa;
+
+	/* scale result to milli-units for all sensors except fans */
+	if (reg != ALI_PS_REG_READ_FAN_SPEED1)
+		*val = *val * 1000LL;
+
+	/* scale result to micro-units for power sensors */
+	if (reg == ALI_PS_REG_READ_POUT || reg == ALI_PS_REG_READ_PIN)
+		*val = *val * 1000LL;
+
+	if (exponent >= 0)
+		*val <<= exponent;
+	else
+		*val >>= -exponent;
+
+	LOG_DBG("psu sensor hist show: val = %lld", *val);
+    return rc;
+}
+
+int ali_psu_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len)
+{
+	int rc;
+	struct ali_psu_data *data = dev->data;
+
+	if ((data->fw_update != psu_fw_blackbox) || (data->mfr_page >= 15))
+		return -EPERM;
+
+	k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_read_block_data(dev, reg, buf, len);
+	k_mutex_unlock(&data->update_lock);
+
+	if (rc < 0){
+        LOG_ERR("psu_block_hex_his_show failed to read: cmd %d, rc %d", reg, rc);
+    }
+            
+    LOG_DBG("psu_block_hex_his_show: block data 0x%x, len %d", *buf, *len);
+	return rc;
+}
+
+int ali_powerbrick_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len)
+{
+	int rc;
+	struct ali_psu_data *data = dev->data;
+
+	k_mutex_lock(&data->update_lock, K_FOREVER);
+	rc = ali_psu_read_block_data(dev, reg, buf, len);
+	k_mutex_unlock(&data->update_lock);
+
+	if (rc < 0){
+        LOG_ERR("Failed to read block data, reg: 0x%02x, error: %d", reg, rc);
+	}
+	
+	LOG_DBG("psu_block_hex_his_show: block data 0x%x, len %d", *buf, *len);
+	return rc;
+}
+
+
+/* Device registration */
+#define ALIPSU_INIT(inst)                                                \
+    static struct ali_psu_data ali_psu_data_##inst;                        \
+    static const struct ali_psu_config ali_psu_config_##inst = {           \
+        .smbus = SMBUS_DT_SPEC_INST_GET(inst),                           \
+    };                                                                   \
+    DEVICE_DT_INST_DEFINE(inst, ali_psu_init, NULL,                       \
+                          &ali_psu_data_##inst,                           \
+                          &ali_psu_config_##inst, POST_KERNEL,            \
+                          CONFIG_SENSOR_INIT_PRIORITY, &ali_psu_api);
+
+DT_INST_FOREACH_STATUS_OKAY(ALIPSU_INIT)
