@@ -634,7 +634,6 @@ static int i2c_ls_init(const struct device *dev)
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->stop_sem, 0, K_SEM_MAX_LIMIT);
 	k_sem_init(&data->bus_mutex, 1, 1);
-	dev_config->irq_config_func(dev);
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
@@ -685,6 +684,8 @@ static int i2c_ls_init(const struct device *dev)
 	if (i2c_configure(dev, i2c_map_dt_bitrate(dev_config->init_bus_frequency) | I2C_MODE_CONTROLLER) ) {
 		__ASSERT(0,"%s: config failed", dev->name);
 	}
+
+	dev_config->irq_config_func(dev);
 
 	return 0;
 }
