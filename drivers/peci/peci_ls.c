@@ -159,10 +159,11 @@ static int peci_ls_init(const struct device *dev)
 
     k_sem_init(&dev_data->xfer_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_sem_init(&dev_data->lock, 1, 1);
-    dev_config->irq_config_func(dev);
 
     peci_config(dev, dev_config->peci_frequence);
     peci_enable(dev);
+
+    dev_config->irq_config_func(dev);
 
     return 0;
 }
