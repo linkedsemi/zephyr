@@ -12,8 +12,6 @@ bool atomic_cas(atomic_t *target, atomic_val_t old_value,
 	k_spinlock_key_t key;
 	int ret = false;
 
-	BUILD_ASSERT(IS_ENABLED(CONFIG_TICKET_SPINLOCKS));
-
 	key = k_spin_lock(&lock);
 
 	if (*target == old_value) {
@@ -25,9 +23,6 @@ bool atomic_cas(atomic_t *target, atomic_val_t old_value,
 
 	return ret;
 }
-
-// bool atomic_ptr_cas(atomic_ptr_t *target, atomic_ptr_val_t old_value,
-// 				  atomic_ptr_val_t new_value) __attribute__ ((weak, alias (atomic_cas)));
 
 bool atomic_ptr_cas(atomic_ptr_t *target, atomic_ptr_val_t old_value,
 				  atomic_ptr_val_t new_value)
