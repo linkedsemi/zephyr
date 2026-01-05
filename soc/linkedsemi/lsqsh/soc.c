@@ -224,6 +224,50 @@ __no_optimization void smp_mode_cache_region_init(void)
     }
 }
 
+/* smp模式下，两个cpu均会调用该函数来初始化相同的cache范围， smp只允许打开icache，不能打开dcache */
+__no_optimization void smp_mode_cache_region_init(void)
+{
+    __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+    __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+    __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+    __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
+    __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
+    __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
+    uint8_t idx = 0;
+
+#if defined(CONFIG_XIP)
+    if (((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
+        csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
+        csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
+    }
+#endif
+
+    csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
+
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
+        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_PMP_GRANULARITY));
+        if (__image_ram_start != __nocache_ram_start) {
+            csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
+        csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
+    }
+#endif
+
+    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+#if DT_NODE_EXISTS(DT_NODELABEL(psram))
+    csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+#endif
+    if (idx < 8) {
+        csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+    }
+}
+
 enum iopmp_channel {
     IOPMP_APP_CPUI_APP_CPUD,
     IOPMP_APP_CPUS,
@@ -270,7 +314,7 @@ void iopmp_region_init(void)
 
     iopmp_config_enable(dev, true);
 
-#if defined(CONFIG_IOPMP_DMA)
+// #if defined(CONFIG_IOPMP_DMA)
     for (chn = IOPMP_DMA_CHANNEL_MIN; chn <= IOPMP_DMA_CHANNEL_MAX; chn++) {
         idx = 0;
         dev = SEC_IOPMP1_ADDR + (chn * 0x400);
@@ -291,7 +335,7 @@ void iopmp_region_init(void)
 
         iopmp_config_enable(dev, true);
     }
-#endif
+// #endif
 }
 
 extern void SWINT_Handler_ASM(void);
@@ -672,26 +716,11 @@ void cpu_early_common_config(void)
         irq_disable(irq);
     }
 
-
-
-#if !defined(CONFIG_FORCE_CLOCK_HSI)
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-    if (!is_app_cpu_running()) {
-        if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
-            && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
-            enable_dpll();
-            cpu_600M_ahb_300M_qspi_200M_init();
-        }
-        peripheral_init();
-    }
-#endif
-#endif /* CONFIG_FORCE_CLOCK_HSI */
-
-#if defined(CONFIG_CACHE)
-#if !defined(CONFIG_SMP)
-    csi_dcache_enable();
-#endif
-    csi_icache_enable();
+    #if defined(CONFIG_CACHE)
+    #if !defined(CONFIG_SMP)
+        csi_dcache_enable();
+    #endif
+        csi_icache_enable();
 
     #if !defined(CONFIG_SMP)
         csi_dcache_invalid();
@@ -938,6 +967,90 @@ __maybe_unused static int flash_ear_offset_set(const struct device *flash_dev, u
     return 0;
 }
 
+__maybe_unused static uint32_t cpu2_exe_addr;
+__maybe_unused static bool is_app_cpu_xip_in_sec_flash(void)
+{
+#if defined(CONFIG_CPU2_IMAGE_HEADER)
+    return (cpu2_exe_addr >= CACHE1_ADDR) && (cpu2_exe_addr < (CACHE1_ADDR + QSPI_CACHE_SIZE));
+#else
+    return (CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE));
+#endif
+}
+
+__maybe_unused static int flash_read_cpu2_image(const struct device *flash_dev, uint32_t cpu2_boot_addr, uint32_t *addr)
+{
+    image_header_t image_header = {};
+    flash_read(flash_dev, cpu2_boot_addr - CACHE1_ADDR, &image_header, sizeof(image_header_t));
+
+    if (image_header.test_word[0] != TEST_WORD0 || image_header.test_word[1] != TEST_WORD1) {
+        LOG_ERR("test_word fail");
+        return -EINVAL;
+    }
+
+    uint32_t crc = crc32_ieee((uint8_t *)&image_header, sizeof(image_header_t) - sizeof(uint32_t));
+    if (crc != image_header.header_crc) {
+        LOG_ERR("header_crc fail");
+        return -EINVAL;
+    }
+
+    if ((image_header.exe_addr >= SRAM1_ADDR)
+        && (image_header.exe_addr < (SRAM1_ADDR + SRAM_SIZE))) {
+        /* copy zephyr.bin from flash to ram */
+        flash_read(flash_dev,
+                (cpu2_boot_addr - CACHE1_ADDR) + image_header.offset,
+                (uint8_t *)image_header.exe_addr, image_header.length);
+        sys_cache_data_flush_range((void *)image_header.exe_addr, image_header.length);
+    }
+
+    *addr = image_header.exe_addr;
+    cpu2_exe_addr = image_header.exe_addr;
+
+    if (((*addr >= CACHE1_ADDR) && (*addr < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((*addr >= CACHE2_ADDR) && (*addr < (CACHE2_ADDR + QSPI_CACHE_SIZE)))
+        || ((*addr >= SRAM1_ADDR) && (*addr < (SRAM1_ADDR + SRAM_SIZE)))) {
+        return 0;
+    } else {
+        return -EINVAL;
+    }
+}
+
+__maybe_unused static int flash_ear_offset_set(const struct device *flash_dev, uint32_t addr)
+{
+    struct hal_flash_env *env = flash_ls_env(flash_dev);
+    if ((addr - CACHE1_ADDR) < MB(16)) {
+        LOG_INF("boot a_app_image_partition");
+        flash_ls_write_ear(flash_dev, 0);
+        uint8_t ear = flash_ls_read_ear(flash_dev);
+        if (0x0 != ear) {
+            LOG_ERR("flash_ls_write_ear err");
+            while(1);
+        }
+        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, 0);
+        if (ret) {
+            LOG_ERR("lsqspiv2_backup_offset_set err: offset: %#x", 0);
+            return ret;
+        }
+    } else {
+        LOG_INF("boot b_app_image_partition");
+        flash_ls_write_ear(flash_dev, 0x1);
+        uint8_t ear = flash_ls_read_ear(flash_dev);
+        if (0x1 != ear) {
+            LOG_ERR("flash_ls_write_ear err");
+            while(1);
+        }
+        const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
+        const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
+        const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
+        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, offset);
+        if (ret) {
+            LOG_ERR("lsqspiv2_backup_offset_set err: offset: %#x", offset);
+            return ret;
+        }
+    }
+
+    return 0;
+}
+
 #define LS_FLASH_CONTROLLER_CHILD(node_id) IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
 #define ZEPHYR_INTERNAL_FLASH_SIZE         DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD)
 
@@ -1049,10 +1162,9 @@ void secondary_cpu_init(void)
 void __scondary_cpu_reset(void);
 int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point)
 {
-    if(cpuid == 1) //cpu1
+    if(cpuid == 1)
     {
-        // MRADDR cp1 固定rom值，cpu2 由 app_cpu_dereset_by_addr 输入
-        app_cpu_dereset_by_addr((int)__scondary_cpu_reset); // set cpu2 pc
+        app_cpu_dereset_by_addr((int)__scondary_cpu_reset);
         app_cpu_reset_hold_clr();
     }
 
