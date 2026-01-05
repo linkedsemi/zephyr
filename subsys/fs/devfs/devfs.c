@@ -7,8 +7,6 @@
 #include <stdarg.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/fs/fs_sys.h>
-#include <zephyr/kernel.h>
-#include <string.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/fdtable.h>
@@ -21,13 +19,11 @@ LOG_MODULE_REGISTER(devfs, LOG_LEVEL_INF);
 struct devfs_dir
 {
     struct devfs_node *cur;
-    struct devfs_node *next;
 };
 
 struct devfs_node
 {
     const struct fs_file_system_t *ops;
-    struct fs_file_t *filp;
     struct devfs_node *parent;
     struct devfs_node *child;
     struct devfs_node *brother;
@@ -52,13 +48,13 @@ struct devfs
 
 static struct devfs devfs;
 
-K_MEM_SLAB_DEFINE(file_obj_pool, sizeof(struct devfs_file_object), DEVFS_FILE_NUM_MAX, 4);
-K_MEM_SLAB_DEFINE(node_pool, sizeof(struct devfs_node), DEVFS_FILE_NUM_MAX, 4);
-K_MEM_SLAB_DEFINE(dir_pool, sizeof(struct devfs_dir), DEVFS_OPENDIR_NUM_MAX, 4);
+K_MEM_SLAB_DEFINE_STATIC(file_obj_pool, sizeof(struct devfs_file_object), DEVFS_FILE_NUM_MAX, 4);
+K_MEM_SLAB_DEFINE_STATIC(node_pool, sizeof(struct devfs_node), DEVFS_FILE_NUM_MAX, 4);
+K_MEM_SLAB_DEFINE_STATIC(dir_pool, sizeof(struct devfs_dir), DEVFS_OPENDIR_NUM_MAX, 4);
 
 static int devfs_path_valid_check(const char *path)
 {
-    const char *p = path;
+    const char *p = path + 5; // skip /dev/
 
     while (*p)
     {
@@ -80,49 +76,82 @@ static int devfs_path_valid_check(const char *path)
     return 0;
 }
 
-static struct devfs_node* devfs_lookup_node(struct devfs_node *root_node, const char *path)
+static int devfs_walk_path(struct devfs_node *root, const char *path,
+    struct devfs_node **parent,
+    struct devfs_node **cur,
+    struct devfs_node **prev)
 {
-    if (!path || devfs_path_valid_check(path))
-    {
-        LOG_ERR("path '%s' is invalid", path);
-        return NULL;
-    }
+    const char *p;
+    struct devfs_node *c;
+    struct devfs_node *pnode = NULL;
+    struct devfs_node *pprev = NULL;
+    char name[MAX_FILE_NAME + 1];
 
-    if (strncmp(path, "/dev", 4) == 0 && 
+    if (!path)
+        return -EINVAL;
+
+    if (strncmp(path, "/dev", 4) == 0 &&
         (path[4] == '\0' || (path[4] == '/' && path[5] == '\0')))
     {
-        return root_node;
+        *parent = NULL;
+        *cur = root;
+        *prev = NULL;
+        return 0;
     }
 
-    const char *p = path + 5;
-    struct devfs_node *cur = root_node;
-    char name[MAX_FILE_NAME];
-    k_spinlock_key_t key = k_spin_lock(&devfs.lock);
+    if (devfs_path_valid_check(path) != 0)
+        return -EINVAL;
+
+    p = path + 5;
+    c = root;
 
     while (*p)
     {
         size_t len = 0;
+
         while (*p && *p != '/')
+        {
             name[len++] = *p++;
+        }
         name[len] = '\0';
 
-        struct devfs_node *c = cur->child;
-        while (c && strcmp(c->name, name) != 0)
-            c = c->brother;
+        pnode = c;
+        pprev = NULL;
+        c = c->child;
 
-        if (!c)
+        while (c && strcmp(c->name, name) != 0)
         {
-            k_spin_unlock(&devfs.lock, key);
-            return NULL;
+            pprev = c;
+            c = c->brother;
         }
 
-        cur = c;
+        if (!c)
+            return -ENOENT;
+
         if (*p == '/')
             p++;
     }
+
+    *parent = pnode;
+    *cur = c;
+    *prev = pprev;
+    return 0;
+}
+
+static struct devfs_node *devfs_lookup_node(struct devfs_node *root, const char *path)
+{
+    struct devfs_node *cur;
+    struct devfs_node *parent;
+    struct devfs_node *prev;
+    int ret;
+
+    k_spinlock_key_t key = k_spin_lock(&devfs.lock);
+
+    ret = devfs_walk_path(root, path, &parent, &cur, &prev);
+
     k_spin_unlock(&devfs.lock, key);
 
-    return cur;
+    return ret == 0 ? cur : NULL;
 }
 
 static struct devfs_node* devfs_lookup(const char *path)
@@ -163,7 +192,6 @@ static int devfs_open(struct fs_file_t *zfp, const char *path, fs_mode_t flags)
     {
         LOG_ERR("file open failed (%d)", rc);
         k_mem_slab_free(&file_obj_pool, file_obj);
-        node->filp = NULL;
         return rc;
     }
 
@@ -302,34 +330,28 @@ static int devfs_opendir(struct fs_dir_t *dirp, const char *fs_path)
     }
 
     struct devfs_dir *dir = NULL;
-    if (k_mem_slab_alloc(&dir_pool, (void **)&dir, K_FOREVER))
+    if (k_mem_slab_alloc(&dir_pool, (void **)&dir, K_NO_WAIT))
     {
         LOG_ERR("dir pool full , opendir '%s' fail", fs_path);
         return -ENOMEM;
     }
 
     dirp->dirp = dir;
-    dir->cur = node;
-    dir->next = NULL;
+    dir->cur = node->child;
 
     return 0;
 }
 
 static int devfs_readdir(struct fs_dir_t *dirp, struct fs_dirent *entry)
 {
-    struct devfs_dir *d  = dirp->dirp;
-    struct devfs_node *cur;
-
-    if (d->next)
-        cur = d->next->brother;
-    else
-        cur = d->cur->child;
+    struct devfs_dir *d = dirp->dirp;
+    struct devfs_node *cur = d->cur;
 
     if (cur)
     {
         strncpy(entry->name, cur->name, MAX_FILE_NAME);
         entry->type = cur->is_dir ? FS_DIR_ENTRY_DIR : FS_DIR_ENTRY_FILE;
-        d->next = cur;
+        d->cur = cur->brother;
     }
     else
     {
@@ -381,59 +403,28 @@ static int devfs_statvfs(struct fs_mount_t *mountp, const char *path, struct fs_
 
 static int devfs_node_remove(const char *path, bool is_visible)
 {
-    if (!path || strncmp(path, "/dev/", 5) != 0 || devfs_path_valid_check(path))
-    {
-        LOG_ERR("invalid path '%s'", path); 
-        return -EINVAL;
-    }
+    struct devfs_node *root = is_visible ? &devfs.root : &devfs.anon_root;
+    struct devfs_node *cur;
+    struct devfs_node *parent;
+    struct devfs_node *prev;
+    int ret;
 
-    const char *p = path + 5;
-    struct devfs_node *cur = is_visible ? &devfs.root : &devfs.anon_root;
-    struct devfs_node *parent = NULL;
-    struct devfs_node *prev = NULL;
-    char name[MAX_FILE_NAME];
     k_spinlock_key_t key = k_spin_lock(&devfs.lock);
 
-    while (*p)
+    ret = devfs_walk_path(root, path, &parent, &cur, &prev);
+    if (ret)
+        goto out;
+
+    if (!parent)
     {
-        size_t len = 0;
-        while (*p && *p != '/')
-            name[len++] = *p++;
-        name[len] = '\0';
-
-        parent = cur;
-        prev = NULL;
-        cur = cur->child;
-
-        while (cur && strcmp(cur->name, name) != 0)
-        {
-            prev = cur;
-            cur = cur->brother;
-        }
-
-        if (!cur)
-        {
-            k_spin_unlock(&devfs.lock, key);
-            LOG_ERR("node '%s' not found", name);
-            return -ENOENT;
-        }
-
-        if (*p == '/')
-            p++;
+        ret = -EINVAL;
+        goto out;
     }
 
-    if (cur == &devfs.root)
+    if (cur->is_dir && cur->child)
     {
-        k_spin_unlock(&devfs.lock, key);
-        LOG_ERR("cannot remove root");
-        return -EINVAL;
-    }
-
-    if (cur->is_dir && cur->child != NULL)
-    {
-        k_spin_unlock(&devfs.lock, key);
-        LOG_ERR("directory not empty '%s'", cur->name); 
-        return -ENOTEMPTY;
+        ret = -ENOTEMPTY;
+        goto out;
     }
 
     if (prev)
@@ -441,30 +432,28 @@ static int devfs_node_remove(const char *path, bool is_visible)
     else
         parent->child = cur->brother;
 
+out:
     k_spin_unlock(&devfs.lock, key);
-    k_mem_slab_free(&node_pool, cur);
 
-    return 0;
+    if (ret == 0)
+        k_mem_slab_free(&node_pool, cur);
+
+    return ret;
 }
 
-/*
-                           /dev
-                           /|\
-    jtag0  jtag1    i2c/        uart/  spi1 spi2     spi
-                    /|\         /|\                 /|\
-                i2c1 i2c2    uart0 uart1        sp1 sp2 sp3
-*/
 static int devfs_node_create(const char *path, bool is_visible, const struct fs_file_system_t *ops)
 {
     if (!path || strncmp(path, "/dev/", 5) != 0 || devfs_path_valid_check(path))
     {
-        LOG_ERR("invalid path '%s'", path); 
+        LOG_ERR("invalid path '%s'", path);
         return -EINVAL;
     }
 
+    int ret = 0;
     const char *p = path + 5;
     struct devfs_node *cur = is_visible ? &devfs.root : &devfs.anon_root;
-    char name[MAX_FILE_NAME];
+
+    char name[MAX_FILE_NAME + 1];
     k_spinlock_key_t key = k_spin_lock(&devfs.lock);
 
     while (*p)
@@ -490,32 +479,32 @@ static int devfs_node_create(const char *path, bool is_visible, const struct fs_
         {
             if (is_last)
             {
-                k_spin_unlock(&devfs.lock, key);
                 LOG_ERR("file already exists '%s'", path);
-                return -EEXIST;
+                ret = -EEXIST;
+                goto out;
             }
 
             if (!child->is_dir)
             {
-                k_spin_unlock(&devfs.lock, key);
                 LOG_ERR("'%s' is not a directory", child->name);
-                return -ENOTDIR;
+                ret = -ENOTDIR;
+                goto out;
             }
         }
         else
         {
-            int ret = k_mem_slab_alloc(&node_pool, (void **)&child, K_NO_WAIT);
+            ret = k_mem_slab_alloc(&node_pool,
+                                   (void **)&child,
+                                   K_NO_WAIT);
             if (ret || !child)
             {
-                k_spin_unlock(&devfs.lock, key);
-                LOG_ERR("node pool full , node '%s' create fail", path);
-                return -ENOMEM;
+                LOG_ERR("node pool full, create '%s' failed", path);
+                ret = -ENOMEM;
+                goto out;
             }
 
             memset(child, 0, sizeof(*child));
-
-            strncpy(child->name, name, MAX_FILE_NAME);
-            child->name[MAX_FILE_NAME] = '\0';
+            memcpy(child->name, name, len + 1);
             child->parent = cur;
 
             if (prev)
@@ -540,9 +529,10 @@ static int devfs_node_create(const char *path, bool is_visible, const struct fs_
         if (*p == '/')
             p++;
     }
-    k_spin_unlock(&devfs.lock, key);
 
-    return 0;
+out:
+    k_spin_unlock(&devfs.lock, key);
+    return ret;
 }
 
 static void devfs_print_node(struct devfs_node *node, int depth)

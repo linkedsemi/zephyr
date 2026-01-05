@@ -1,0 +1,21 @@
+#Copyright (c) 2024 BayLibre SAS
+
+#SPDX-License-Identifier: Apache-2.0
+
+config SYSFS
+	bool "Sys Filesystem"
+	help
+	  Enable support of Sys Filesystem.
+
+if SYSFS
+
+config SYSFS_FILE_NUM_MAX
+	int "maximum number of files supported by sysfs"
+	default 256
+	range 1 512
+
+module = SYSFS
+module-str = sysfs
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # SYSFS
