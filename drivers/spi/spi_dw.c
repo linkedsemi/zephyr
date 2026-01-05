@@ -2018,8 +2018,6 @@ int spi_dw_init(const struct device *dev)
 
 	DEVICE_MMIO_MAP(dev, K_MEM_CACHE_NONE);
 
-	info->config_func();
-
 	/* Masking interrupt and making sure controller is disabled */
 	write_imr(dev, DW_SPI_IMR_MASK);
 	clear_bit_ssienr(dev);
@@ -2036,6 +2034,8 @@ int spi_dw_init(const struct device *dev)
 	}
 
 	spi_context_unlock_unconditionally(&spi->ctx);
+
+	info->config_func();
 
 	return 0;
 }
