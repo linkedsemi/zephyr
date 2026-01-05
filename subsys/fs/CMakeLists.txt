@@ -29,6 +29,7 @@ add_subdirectory_ifdef(CONFIG_FCB  ./fcb)
 add_subdirectory_ifdef(CONFIG_NVS  ./nvs)
 add_subdirectory_ifdef(CONFIG_ZMS  ./zms)
 add_subdirectory_ifdef(CONFIG_DEVFS  ./devfs)
+add_subdirectory_ifdef(CONFIG_SYSFS  ./sysfs)
 
 if(CONFIG_FUSE_FS_ACCESS)
   zephyr_library_named(FS_FUSE)

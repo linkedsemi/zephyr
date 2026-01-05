@@ -112,5 +112,6 @@ rsource "fcb/Kconfig"
 rsource "nvs/Kconfig"
 rsource "zms/Kconfig"
 rsource "devfs/Kconfig"
+rsource "sysfs/Kconfig"
 
 endmenu
