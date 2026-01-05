@@ -91,6 +91,15 @@ config SPI_NOR_ACTIVE_DWELL_MS
 	  call, eliminating the active->idle->active transition sequence if another
 	  transaction occurs before the dwell period expires.
 
+config SPI_NOR_ADDR_MODE_FALLBACK_DISABLED
+	bool "Address mode fallback disable"
+	default n
+	help
+	  If this configuration is enabled and the flash was ever set
+	  to 4-byte mode before, the driver will force to set the flash
+	  to 4-byte mode before read, write or erase flash memory
+	  operation no matter the current address mode of the flash is.
+
 config SPI_NOR_REINIT_INIT_OK
 	bool "SPI_NOR_REINIT_INIT_OK"
 	default y
