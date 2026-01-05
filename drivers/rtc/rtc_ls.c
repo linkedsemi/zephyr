@@ -426,10 +426,10 @@ static int rtc_ls_init(const struct device *dev){
     }
 #endif
 
-    cfg->irq_config_func(dev);
     rtc_cycle_config(dev, cfg->cyc_1hz, cfg->calib_cyc,true);
     RTC_REGS(dev)->CTRL &= ~RTC_CTRL_ALARM_EN_MASK;//Alarm Disable
     RTC_REGS(dev)->CTRL |= RTC_CTRL_ENABLE_MASK;
+    cfg->irq_config_func(dev);
     return 0;
 }
 
