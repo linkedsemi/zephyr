@@ -277,6 +277,15 @@ struct ali_psu_data {
     int model;
     uint8_t mfr_page;
     uint8_t fw_update;
+	uint32_t vin;
+	uint32_t vin1;
+	uint32_t vout;
+	uint32_t iin;
+	uint32_t iout;
+	uint32_t pin;
+	uint32_t temp1;
+	uint32_t fan1;
+	uint32_t fan2;
 };
 
 struct ali_psu_config {
@@ -323,5 +332,12 @@ int ali_psu_sensor_his_show(const struct device *dev, uint8_t reg, int64_t *val)
 int ali_psu_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len);
 int ali_powerbrick_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len);
 
+/* direct format conversion function */
+float ali_psu_convert_direct(uint16_t raw_value, uint8_t cmd);
+
+/* Sensor API Functions */
+int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan);
+int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
+                       struct sensor_value *val);
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_ALIPSU_PSU_H_ */
