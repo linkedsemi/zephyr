@@ -38,7 +38,7 @@ config ESPI_INIT_PRIORITY
 
 config VUART_IRQ_THREAD_STACK_SIZE
 	int "ESPI VUART driver irq thread stack size"
-	default 1024
+	default 2048
 	help
 	  Driver irq thread stack size.
       
