@@ -39,6 +39,8 @@
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
 #define MHINT_AEE_POS 20
+#define SFT_CTRL_REG_NUM_RESET_FLAG (0x2)
+#define FLASH_XIP_MODE_RESET_BIT     (4)
 BUILD_ASSERT(CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU, "CONFIG_NUM_OS <= CONFIG_NUM_USE_CPU");
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY);
 BUILD_ASSERT(CONFIG_FLASH);
@@ -714,6 +716,7 @@ void soc_early_init_hook(void)
 #endif
 
     cpu_sleep_mode_config(0);
+    SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     driver_init();
     arch_irq_lock();
 
@@ -868,8 +871,6 @@ __maybe_unused int boot_cpu2(const struct device *flash_dev, uint32_t cpu2_boot_
     return 0;
 }
 
-#define SFT_CTRL_REG_NUM_RESET_FLAG          (0x2)
-#define FLASH_XIP_MODE_RESET_BIT             (4)
 
 #define STARTUP_PART_FLAG_MASK               (0xf)
 #define SFT_CTRL_REG_NUM_BOOT_RAM_RESET_FLAG (0x5)
