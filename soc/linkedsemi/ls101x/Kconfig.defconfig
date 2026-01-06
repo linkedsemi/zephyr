@@ -39,4 +39,15 @@ config PMP_NO_NA4
 
 config RISCV_SOC_HAS_ISR_STACKING
 	default y
+
+if SMP
+
+config TICKET_SPINLOCKS
+	default y
+
+config ATOMIC_OPERATIONS_E906_SMP
+	default y
+
+endif
+
 endif

@@ -179,6 +179,16 @@ config SOC_EARLY_INIT_HOOK
 config SOC_LATE_INIT_HOOK
 	default y
 
+if SMP
+
+config TICKET_SPINLOCKS
+	default y
+
+config ATOMIC_OPERATIONS_E906_SMP
+	default y
+
+endif
+
 if NETWORKING
 
 config NET_L2_ETHERNET
