@@ -22,16 +22,10 @@ LOG_MODULE_REGISTER(ALIPSU, CONFIG_SENSOR_LOG_LEVEL);
 
 #define I2C_SMBUS_BLOCK_MAX  32
 
-/* PMBus protocol implementation functions */
-// extern int ls_pmbus_read_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t *value);
-// extern int ls_pmbus_read_byte(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *value);
-// extern int ls_pmbus_write_word(const struct smbus_dt_spec *smbus, uint8_t cmd, uint16_t value);
-// extern int ls_pmbus_write_byte(const struct smbus_dt_spec *smbus, uint8_t cmd);
-// extern int ls_pmbus_write_byte_data(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t value);
-// extern int ls_pmbus_read_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t *len, uint8_t *data);
-// extern int ls_pmbus_write_block(const struct smbus_dt_spec *smbus, uint8_t cmd, uint8_t len, const uint8_t *data);
-
-static const struct sensor_driver_api ali_psu_api = {};
+static const struct sensor_driver_api ali_psu_api = {
+	.sample_fetch = ali_psu_sample_fetch,
+    .channel_get  = ali_psu_channel_get,
+};
 
 int ali_psu_init(const struct device *dev)
 {
@@ -792,6 +786,218 @@ int ali_powerbrick_block_hex_his_show(const struct device *dev, uint8_t reg, uin
 	return rc;
 }
 
+/* Alipsu-specific direct format conversion function, m = 1 for all now. */
+float ali_psu_convert_direct(uint16_t raw_value, uint8_t cmd)
+{
+    int8_t m, b, R;
+    float result;
+    m = b = R = 0;
+
+    switch (cmd)
+    {
+        case PMBUS_CMD_READ_VOUT:
+        case PMBUS_CMD_READ_VIN:
+		case PMBUS_CMD_READ_VIN1:
+            m = 1 /*32*/;
+            break;
+        case PMBUS_CMD_READ_IOUT:
+		case PMBUS_CMD_READ_IIN:
+            m = 1  /*16*/;
+            break;
+        case PMBUS_CMD_READ_PIN:
+            m = 1;
+            break;
+        case PMBUS_CMD_READ_TEMPERATURE_1:
+            m = 1 /*2*/;
+            break;
+        case PMBUS_CMD_FAN_COMMAND_1:
+		case PMBUS_CMD_FAN_COMMAND_2:
+            m = 1;
+            break;
+        default:
+            break;
+    }
+
+    /* Calculate result = (raw * 10^-R - b) / m */
+    if (m != 0)
+    {
+        result = (my_powf(10.0f, -R) * (float)raw_value - (float)b) / (float)m;
+    }
+    else
+    {
+        LOG_ERR("Command %d not supported", cmd);
+        result = 0.0f;
+    }
+    
+    return result;	
+}
+
+/* Sensor API Functions */
+int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan)
+{
+	struct ali_psu_data *data;
+    uint16_t raw_value;
+    int ret;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    if (chan != SENSOR_CHAN_ALL && chan != SENSOR_CHAN_VOLTAGE &&
+        chan != SENSOR_CHAN_GAUGE_TEMP && chan != SENSOR_CHAN_POWER &&
+		chan != SENSOR_CHAN_CURRENT) {
+        return -ENOTSUP;
+    }
+
+    data = dev->data;
+    /* Read voltage if requested or all channels */
+    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_VOLTAGE) {
+        ret = ali_psu_read_word(dev, PMBUS_CMD_READ_VIN, &raw_value);
+        if (ret < 0) {
+            return ret;
+        }
+        
+        // data->vin = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_VIN) * 1000;
+        data->vin = ls_pmbus_parse_linear11(raw_value) * 1000;
+
+		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_VIN1, &raw_value);
+        if (ret < 0) {
+            return ret;
+        }
+        
+        // data->vin1 = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_VIN1) * 1000;
+        data->vin1 = ls_pmbus_parse_linear11(raw_value) * 1000;
+
+		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_VOUT, &raw_value);
+        if (ret < 0) {
+            return ret;
+        }
+        
+        // data->vout = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_VOUT) * 1000;
+        data->vout = ls_pmbus_parse_linear16(raw_value) * 1000;
+    }
+	
+    /* Read current if requested or all channels */
+    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_CURRENT) {
+		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_IIN, &raw_value);
+        if (ret < 0) {
+			return ret;
+        }
+        
+        // data->iin = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_IIN) * 1000;
+        data->iin = ls_pmbus_parse_linear11(raw_value) * 1000;
+		
+		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_IOUT, &raw_value);
+        if (ret < 0) {
+			return ret;
+        }
+        
+        // data->iout = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_IOUT) * 1000;
+        data->iout = ls_pmbus_parse_linear11(raw_value) * 1000;
+    }
+
+	/* Read power if requested or all channels */
+	if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_POWER) {
+		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_PIN, &raw_value);
+		if (ret < 0) {
+			return ret;
+		}
+		
+		// data->pin = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_PIN) * 1000 * 1000;
+        data->pin = ls_pmbus_parse_linear11(raw_value) * 1000 * 1000;
+	}
+
+    /* Read temperature if requested or all channels */
+    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_GAUGE_TEMP) {
+        ret = ali_psu_read_word(dev, PMBUS_CMD_READ_TEMPERATURE_1, &raw_value);
+        if (ret < 0) {
+            return ret;
+        }
+        
+        // data->temp1 = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_TEMPERATURE_1) * 1000;
+        data->temp1 = ls_pmbus_parse_linear11(raw_value) * 1000;
+    }
+
+    /* Read status registers */
+    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_RPM) {
+        ret = ali_psu_read_word(dev, PMBUS_CMD_FAN_COMMAND_1, &raw_value);
+        if (ret < 0) {
+            return ret;
+        }
+
+		// data->fan1 = ali_psu_convert_direct(raw_value, PMBUS_CMD_FAN_COMMAND_1);
+		data->fan1 = ls_pmbus_parse_linear11(raw_value);
+        
+        ret = ali_psu_read_word(dev, PMBUS_CMD_FAN_COMMAND_2, &raw_value);
+        if (ret < 0) {
+            return ret;
+        }
+        
+		data->fan2 = ls_pmbus_parse_linear11(raw_value);
+    }
+
+    LOG_DBG("Fetched samples: input voltage=%dmV, input current=%dmA, input voltage1=%dmV, \
+		     output voltage=%dmV, output current=%dmA, power=%dvW, temp=%dm°C, fan1=%dmHz, fan2=%dmHz.\n",
+             data->vin, data->iin, data->vin1, data->vout, data->iout, data->pin, data->temp1, data->fan1, data->fan2);
+
+    return 0;
+}
+
+int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
+                       struct sensor_value *val)
+{
+    struct ali_psu_data *data = dev->data;
+
+    if (!val) {
+        return -EINVAL;
+    }
+
+    switch (chan) {
+    case SENSOR_CHAN_VOLTAGE:
+		if (val->val2 == 0) {
+			val->val1 = data->vin;
+			val->val2 = 0;
+		} else if (val->val2 == 1) {
+			val->val1 = data->vin1;
+			val->val2 = 0;
+		} else if (val->val2 == 2) {
+			val->val1 = data->vout;
+			val->val2 = 0;
+		}
+        break;
+    case SENSOR_CHAN_CURRENT:
+		if (val->val2 == 0) {
+			val->val1 = data->iin;
+			val->val2 = 0;
+		} else if (val->val2 == 1) {
+			val->val1 = data->iout;
+			val->val2 = 0;
+		}
+        break;
+    case SENSOR_CHAN_POWER:
+        val->val1 = data->pin;
+        val->val2 = 0;
+        break;
+    case SENSOR_CHAN_GAUGE_TEMP:
+        val->val1 = data->temp1;
+        val->val2 = 0;
+        break;
+	case SENSOR_CHAN_RPM:
+		if (val->val2 == 0) {
+			val->val1 = data->fan1;
+			val->val2 = 0;
+		} else if (val->val2 == 1) {
+			val->val1 = data->fan2;
+			val->val2 = 0;
+		}
+		break;
+    default:
+        return -ENOTSUP;
+    }
+
+    return 0;
+}
 
 /* Device registration */
 #define ALIPSU_INIT(inst)                                                \
