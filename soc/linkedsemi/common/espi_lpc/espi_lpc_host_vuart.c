@@ -565,7 +565,7 @@ static int vuart_fifo_fill(const struct device *dev, const uint8_t *tx_data, int
         host_vuart_report_active_edge_level_up_irq(dev);
         return bytes_written;
     }else{
-        return 0;
+        return len;
     }
 }
 
