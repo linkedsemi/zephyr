@@ -876,6 +876,9 @@ int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan)
 	if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_POWER) {
 		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_PIN, &raw_value);
         data->pin = ls_pmbus_parse_linear11(raw_value) * 1000 * 1000;
+
+		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_POUT, &raw_value);
+        data->pout = ls_pmbus_parse_linear11(raw_value) * 1000 * 1000;
 	}
 
     /* Read temperature if requested or all channels */
@@ -950,8 +953,13 @@ int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
 		}
         break;
     case SENSOR_CHAN_POWER:
-        val->val1 = data->pin;
-        val->val2 = 0;
+		if (val->val2 == 0) {
+			val->val1 = data->pin;
+			val->val2 = 0;
+		} else if (val->val2 == 1) {
+			val->val1 = data->pout;
+			val->val2 = 0;
+		}
         break;
     case SENSOR_CHAN_GAUGE_TEMP:
         val->val1 = data->temp1;
