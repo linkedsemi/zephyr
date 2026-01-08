@@ -854,92 +854,66 @@ int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan)
     /* Read voltage if requested or all channels */
     if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_VOLTAGE) {
         ret = ali_psu_read_word(dev, PMBUS_CMD_READ_VIN, &raw_value);
-        if (ret < 0) {
-            return ret;
-        }
-        
-        // data->vin = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_VIN) * 1000;
         data->vin = ls_pmbus_parse_linear11(raw_value) * 1000;
 
 		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_VIN1, &raw_value);
-        if (ret < 0) {
-            return ret;
-        }
-        
-        // data->vin1 = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_VIN1) * 1000;
         data->vin1 = ls_pmbus_parse_linear11(raw_value) * 1000;
 
 		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_VOUT, &raw_value);
-        if (ret < 0) {
-            return ret;
-        }
-        
-        // data->vout = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_VOUT) * 1000;
         data->vout = ls_pmbus_parse_linear16(raw_value) * 1000;
     }
 	
     /* Read current if requested or all channels */
     if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_CURRENT) {
 		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_IIN, &raw_value);
-        if (ret < 0) {
-			return ret;
-        }
-        
-        // data->iin = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_IIN) * 1000;
         data->iin = ls_pmbus_parse_linear11(raw_value) * 1000;
 		
 		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_IOUT, &raw_value);
-        if (ret < 0) {
-			return ret;
-        }
-        
-        // data->iout = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_IOUT) * 1000;
         data->iout = ls_pmbus_parse_linear11(raw_value) * 1000;
     }
 
 	/* Read power if requested or all channels */
 	if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_POWER) {
 		ret = ali_psu_read_word(dev, PMBUS_CMD_READ_PIN, &raw_value);
-		if (ret < 0) {
-			return ret;
-		}
-		
-		// data->pin = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_PIN) * 1000 * 1000;
         data->pin = ls_pmbus_parse_linear11(raw_value) * 1000 * 1000;
 	}
 
     /* Read temperature if requested or all channels */
     if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_GAUGE_TEMP) {
         ret = ali_psu_read_word(dev, PMBUS_CMD_READ_TEMPERATURE_1, &raw_value);
-        if (ret < 0) {
-            return ret;
-        }
-        
-        // data->temp1 = ali_psu_convert_direct(raw_value, PMBUS_CMD_READ_TEMPERATURE_1) * 1000;
         data->temp1 = ls_pmbus_parse_linear11(raw_value) * 1000;
     }
 
     /* Read status registers */
     if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_RPM) {
         ret = ali_psu_read_word(dev, PMBUS_CMD_FAN_COMMAND_1, &raw_value);
-        if (ret < 0) {
-            return ret;
-        }
-
-		// data->fan1 = ali_psu_convert_direct(raw_value, PMBUS_CMD_FAN_COMMAND_1);
 		data->fan1 = ls_pmbus_parse_linear11(raw_value);
         
         ret = ali_psu_read_word(dev, PMBUS_CMD_FAN_COMMAND_2, &raw_value);
-        if (ret < 0) {
-            return ret;
-        }
-        
 		data->fan2 = ls_pmbus_parse_linear11(raw_value);
     }
+
+	if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_GAUGE_STATE_OF_HEALTH) {
+		ret = ali_psu_read_word(dev, PMBUS_CMD_STATUS_WORD, &data->status_word);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_CML, &data->status_cml);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_FAN_12, &data->status_fans12);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_INPUT, &data->status_input);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_IOUT, &data->status_iout);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_MFR_SPECIFIC, &data->status_mfr_spec);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_OTHER, &data->status_other);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_TEMP, &data->status_temp);
+		ret = ali_psu_read_byte(dev, PMBUS_CMD_STATUS_VOUT, &data->status_vout);
+	}
 
     LOG_DBG("Fetched samples: input voltage=%dmV, input current=%dmA, input voltage1=%dmV, \
 		     output voltage=%dmV, output current=%dmA, power=%dvW, temp=%dm°C, fan1=%dmHz, fan2=%dmHz.\n",
              data->vin, data->iin, data->vin1, data->vout, data->iout, data->pin, data->temp1, data->fan1, data->fan2);
+
+	LOG_DBG("Fetched status: status_word=0x%04x, status_cml=0x%02x, status_fans12=0x%02x, \
+		     status_input=0x%02x, status_iout=0x%02x, status_mfr_spec=0x%02x, status_other=0x%02x, \
+			 status_temp=0x%02x, status_vout=0x%02x.\n",
+             data->status_word, data->status_cml, data->status_fans12, data->status_input, 
+			 data->status_iout, data->status_mfr_spec, data->status_other, data->status_temp, data->status_vout);
 
     return 0;
 }
@@ -989,6 +963,36 @@ int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
 			val->val2 = 0;
 		} else if (val->val2 == 1) {
 			val->val1 = data->fan2;
+			val->val2 = 0;
+		}
+		break;
+	case SENSOR_CHAN_GAUGE_STATE_OF_HEALTH:
+		if (val->val2 == 0) {
+			val->val1 = data->status_word;
+			val->val2 = 0;
+		} else if (val->val2 == 1) {
+			val->val1 = data->status_cml;
+			val->val2 = 0;
+		} else if (val->val2 == 2) {
+			val->val1 = data->status_fans12;
+			val->val2 = 0;
+		} else if (val->val2 == 3) {
+			val->val1 = data->status_input;
+			val->val2 = 0;
+		} else if (val->val2 == 4) {
+			val->val1 = data->status_iout;
+			val->val2 = 0;
+		} else if (val->val2 == 5) {
+			val->val1 = data->status_mfr_spec;
+			val->val2 = 0;
+		} else if (val->val2 == 6) {
+			val->val1 = data->status_other;
+			val->val2 = 0;
+		} else if (val->val2 == 7) {
+			val->val1 = data->status_temp;
+			val->val2 = 0;
+		} else if (val->val2 == 8) {
+			val->val1 = data->status_vout;
 			val->val2 = 0;
 		}
 		break;

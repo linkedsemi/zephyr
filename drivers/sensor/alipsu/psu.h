@@ -286,6 +286,15 @@ struct ali_psu_data {
 	uint32_t temp1;
 	uint32_t fan1;
 	uint32_t fan2;
+	uint16_t status_word;
+	uint8_t status_cml;
+	uint8_t status_fans12;
+	uint8_t status_input;
+	uint8_t status_iout;
+	uint8_t status_mfr_spec;
+	uint8_t status_other;
+	uint8_t status_temp;
+	uint8_t status_vout;
 };
 
 struct ali_psu_config {
