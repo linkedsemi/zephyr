@@ -716,7 +716,6 @@ void soc_early_init_hook(void)
 #endif
 
     cpu_sleep_mode_config(0);
-    SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     driver_init();
     arch_irq_lock();
 
@@ -725,6 +724,7 @@ void soc_early_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
 #if defined(CONFIG_PSRAM)
     if (!is_app_cpu_running()) {
         psram_init();
