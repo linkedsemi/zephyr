@@ -225,17 +225,17 @@ static int smbus_linkedsemi_block_write(const struct device *dev, uint16_t perip
         {
             .buf = &command,
             .len = sizeof(command),
-            .flags = 0,
+            .flags = I2C_MSG_WRITE,
         },
         {
             .buf = &count,
             .len = 1,
-            .flags = 0,
+            .flags = I2C_MSG_WRITE,
         },
         {
             .buf = buf,
             .len = count,
-            .flags = 0,
+            .flags = = I2C_MSG_WRITE | I2C_MSG_STOP,
         },
     };
     if ((count <= 0) || (count > SMBUS_BLOCK_BYTES_MAX)) {
@@ -255,12 +255,12 @@ static int smbus_linkedsemi_block_read(const struct device *dev,
         {
             .buf = &cmd,
             .len = sizeof(cmd),
-            .flags = 0,
+            .flags = I2C_MSG_WRITE,
         },
         {
             .buf = smbus_data,
             .len = sizeof(smbus_data),
-            .flags = 0,
+            .flags = I2C_MSG_RESTART | I2C_MSG_READ | I2C_MSG_STOP,
         },
     };
     int ret;
