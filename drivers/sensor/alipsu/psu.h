@@ -283,6 +283,7 @@ struct ali_psu_data {
 	uint32_t iin;
 	uint32_t iout;
 	uint32_t pin;
+	uint32_t pout;
 	uint32_t temp1;
 	uint32_t fan1;
 	uint32_t fan2;
