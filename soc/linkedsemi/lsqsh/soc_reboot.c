@@ -27,13 +27,11 @@ void sys_arch_reboot(int type)
         void (* goto_rom_region_start)();
         goto_rom_region_start = (void *)__rom_region_start;
         goto_rom_region_start();
-#else
-        csi_core_reset();
 #endif
         break;
     default:
         printf("type: %d is not supported\n", type);
-        csi_core_reset();
         break;
     };
+    csi_core_reset();
 }
