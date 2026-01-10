@@ -3,7 +3,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/cache.h>
-#include <zephyr/sys/reboot.h>
 #include <zephyr/sys/crc.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
@@ -63,34 +62,6 @@ void sw_timer_module_init(void){};
 
 static void driver_init(void)
 {
-}
-
-void sys_arch_reboot(int type)
-{
-    if (SYS_REBOOT_COLD == type) {
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-        REG_FIELD_WR(SEC_PMU->RST_SFT, SEC_PMU_RG_RST_FROM_SFT, 0x1);
-#else
-        printk("%s: SYS_REBOOT_COLD is not supported\n");
-#endif
-    } else if (SYS_REBOOT_WARM == type) {
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-        disable_global_irq();
-        reset_reason_magic_set();
-        sys_cache_data_flush_all();
-        sys_cache_data_disable();
-        sys_cache_instr_disable();
-        for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
-            irq_disable(irq);
-        }
-        void (* goto_rom_region_start)();
-        goto_rom_region_start = (void *)__rom_region_start;
-        goto_rom_region_start();
-#else
-        sys_cache_data_flush_all();
-        csi_core_reset();
-#endif
-    }
 }
 
 #define CPU0_FW_REGION_SIZE MB(2)
