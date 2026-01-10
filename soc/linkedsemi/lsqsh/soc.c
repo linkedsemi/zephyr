@@ -3,7 +3,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/cache.h>
-#include <zephyr/sys/reboot.h>
 #include <zephyr/sys/crc.h>
 #include <zephyr/linker/linker-defs.h>
 #include <zephyr/drivers/timer/system_timer.h>
@@ -63,34 +62,6 @@ void sw_timer_module_init(void){};
 
 static void driver_init(void)
 {
-}
-
-void sys_arch_reboot(int type)
-{
-    if (SYS_REBOOT_COLD == type) {
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-        REG_FIELD_WR(SEC_PMU->RST_SFT, SEC_PMU_RG_RST_FROM_SFT, 0x1);
-#else
-        printk("%s: SYS_REBOOT_COLD is not supported\n");
-#endif
-    } else if (SYS_REBOOT_WARM == type) {
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-        disable_global_irq();
-        reset_reason_magic_set();
-        sys_cache_data_flush_all();
-        sys_cache_data_disable();
-        sys_cache_instr_disable();
-        for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
-            irq_disable(irq);
-        }
-        void (* goto_rom_region_start)();
-        goto_rom_region_start = (void *)__rom_region_start;
-        goto_rom_region_start();
-#else
-        sys_cache_data_flush_all();
-        csi_core_reset();
-#endif
-    }
 }
 
 #define CPU0_FW_REGION_SIZE MB(2)
@@ -210,10 +181,8 @@ void iopmp_region_init(void)
     idx = 0;
     dev = SEC_IOPMP1_ADDR + (chn * 0x400);
     iopmp_config_region_napot4(dev, idx++, 0x1000000, KB(64), false, false, false, false);
-
-    iopmp_config_region_napot4(dev, idx++, 0x10000000, KB(768), true, true, true, false);
-    iopmp_config_region_napot4(dev, idx++, 0x10000000, KB(1280), false, false, false, false);
-
+    iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
+    iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
     iopmp_config_region_napot4(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
 
     iopmp_config_enable(dev, true);
@@ -246,8 +215,8 @@ void iopmp_region_init(void)
     for (chn = IOPMP_DMA_CHANNEL_MIN; chn <= IOPMP_DMA_CHANNEL_MAX; chn++) {
         idx = 0;
         dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-        iopmp_config_region_napot4(dev, idx++, 0x10000000, KB(768), true, true, true, false);
-        iopmp_config_region_napot4(dev, idx++, 0x10000000, KB(1280), false, false, false, false);
+        iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
+        iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
 
         iopmp_config_region_napot4(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
         iopmp_config_region_napot4(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K

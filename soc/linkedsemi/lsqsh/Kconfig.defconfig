@@ -443,6 +443,11 @@ if $(dt_path_enabled,/cpus/cpu@1)
 		default y
 		help
 		GPIO_INTR_LOCK
+
+	config EMUL_SOFT_RESET
+		bool "EMUL_SOFT_RESET"
+		default n
+
 endif
 
 config WORKAROUND_CONFLICT_LOG_ERR
