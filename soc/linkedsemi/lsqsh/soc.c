@@ -180,34 +180,34 @@ void iopmp_region_init(void)
     chn = IOPMP_APP_CPUI_APP_CPUD;
     idx = 0;
     dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-    iopmp_config_region_napot4(dev, idx++, 0x1000000, KB(64), false, false, false, false);
-    iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
-    iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
-    iopmp_config_region_napot4(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
+    iopmp_config_region_napot(dev, idx++, 0x1000000, KB(64), false, false, false, false);
+    iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
+    iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
+    iopmp_config_region_napot(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
 
     iopmp_config_enable(dev, true);
 
     chn = IOPMP_APP_CPUS;
     idx = 0;
     dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-    iopmp_config_region_napot4(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
-    iopmp_config_region_napot4(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K
+    iopmp_config_region_napot(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
+    iopmp_config_region_napot(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K
                                                                                                                                     sha512    0x40005000 0x40005FFF 4K
                                                                                                                                     otfad_aes 0x40006000 0x40006FFF 4K
                                                                                                                                     nouse     0x40007000 0x40007FFF 4K */
-    iopmp_config_region_napot4(dev, idx++, 0x40022000 + 0x28, 4, true, true, true, false); /* sec_cpu_intr */
-    iopmp_config_region_napot4(dev, idx++, 0x40029000, KB(2), true, true, true, false);    /* calc_aes  0x40029000 0x400293FF 1K
+    iopmp_config_region_napot(dev, idx++, 0x40022000 + 0x28, 4, true, true, true, false); /* sec_cpu_intr */
+    iopmp_config_region_napot(dev, idx++, 0x40029000, KB(2), true, true, true, false);    /* calc_aes  0x40029000 0x400293FF 1K
                                                                                                                                     calc_sm4  0x40029400 0x400297FF 1K */
 #if defined(CONFIG_IOPMP_WHITELIST_I2C1_I3C1)
-    iopmp_config_region_napot4(dev, idx++, 0x400a0000, KB(4), true, true, true, false);                                          /* i2c1      0x400A0000 0x400A03FF 1K
+    iopmp_config_region_napot(dev, idx++, 0x400a0000, KB(4), true, true, true, false);                                          /* i2c1      0x400A0000 0x400A03FF 1K
                                                                                                                                     nouse     0x400A0400 0x400A07FF 1K
                                                                                                                                     i3c1      0x400A0800 0x400A0BFF 1K
                                                                                                                                     nouse     0x400A0C00 0x400A0FFF 1K */
 #endif
-    iopmp_config_region_napot4(dev, idx++, 0x40000000, KB(256), false, false, false, false);
-    iopmp_config_region_napot4(dev, idx++, 0x400a0000, KB(32), false, false, false, false);
+    iopmp_config_region_napot(dev, idx++, 0x40000000, KB(256), false, false, false, false);
+    iopmp_config_region_napot(dev, idx++, 0x400a0000, KB(32), false, false, false, false);
 
-    iopmp_config_region_napot4(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
+    iopmp_config_region_napot(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
 
     iopmp_config_enable(dev, true);
 
@@ -215,20 +215,20 @@ void iopmp_region_init(void)
     for (chn = IOPMP_DMA_CHANNEL_MIN; chn <= IOPMP_DMA_CHANNEL_MAX; chn++) {
         idx = 0;
         dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-        iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
-        iopmp_config_region_napot4(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
+        iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
+        iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
 
-        iopmp_config_region_napot4(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
-        iopmp_config_region_napot4(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K
+        iopmp_config_region_napot(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
+        iopmp_config_region_napot(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K
                                                                                                   sha512    0x40005000 0x40005FFF 4K
                                                                                                   otfad_aes 0x40006000 0x40006FFF 4K
                                                                                                   nouse     0x40007000 0x40007FFF 4K */
-        iopmp_config_region_napot4(dev, idx++, 0x40029000, KB(2), true, true, true, false);    /* calc_aes  0x40029000 0x400293FF 1K
+        iopmp_config_region_napot(dev, idx++, 0x40029000, KB(2), true, true, true, false);    /* calc_aes  0x40029000 0x400293FF 1K
                                                                                                   calc_sm4  0x40029400 0x400297FF 1K */
-        iopmp_config_region_napot4(dev, idx++, 0x40000000, KB(256), false, false, false, false);
-        iopmp_config_region_napot4(dev, idx++, 0x400a0000, KB(32), false, false, false, false);
+        iopmp_config_region_napot(dev, idx++, 0x40000000, KB(256), false, false, false, false);
+        iopmp_config_region_napot(dev, idx++, 0x400a0000, KB(32), false, false, false, false);
 
-        iopmp_config_region_napot4(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
+        iopmp_config_region_napot(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
 
         iopmp_config_enable(dev, true);
     }
@@ -238,80 +238,6 @@ void iopmp_region_init(void)
 extern void SWINT_Handler_ASM(void);
 extern void SystemInit();
 extern void psram_init(void);
-
-struct trim_parm {
-    uint32_t sec_pmu_rg_lpldo_trim_val;
-    uint32_t sec_pmu_rg_hpldo_trim_val;
-    uint32_t sec_pmu_rg_bg_vref_trim_val;
-    uint32_t sec_pmu_rg_bg_vref_fine_val;
-    uint32_t sec_pmu_rg_bg_ibg_trim_val;
-    uint32_t sec_pmu_rg_clk_ldo1_vsel_val;
-    uint32_t sec_pmu_rg_clk_ldo2_vsel_val;
-    uint32_t sec_pmu_rg_spi_code_val;
-    uint32_t sec_pmu_rg_ldo_peci_vsel_val;
-    uint32_t sec_pmu_rg_msi_cal_val;
-    uint32_t sysc_sec_awo_osscrc_cal_val;
-    uint32_t sysc_sec_awo_osscrc_cap_val;
-};
-
-#if 0
-volatile struct trim_parm trim_parm = {};
-
-__maybe_unused __ramfunc static void get_trim_params()
-{
-    trim_parm.sec_pmu_rg_lpldo_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_LPLDO_TRIM);
-    trim_parm.sec_pmu_rg_hpldo_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_HPLDO_TRIM);
-    trim_parm.sec_pmu_rg_bg_vref_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_TRIM);
-    trim_parm.sec_pmu_rg_bg_vref_fine_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_FINE);
-    trim_parm.sec_pmu_rg_bg_ibg_trim_val = REG_FIELD_RD(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_IBG_TRIM);
-
-    trim_parm.sec_pmu_rg_clk_ldo1_vsel_val = REG_FIELD_RD(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL);
-    trim_parm.sec_pmu_rg_clk_ldo2_vsel_val = REG_FIELD_RD(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL);
-
-    trim_parm.sec_pmu_rg_spi_code_val = REG_FIELD_RD(SEC_PMU->TRIM0, SEC_PMU_RG_SPI_CODE);
-    trim_parm.sec_pmu_rg_ldo_peci_vsel_val = REG_FIELD_RD(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_VSEL);
-    trim_parm.sec_pmu_rg_msi_cal_val = REG_FIELD_RD(SEC_PMU->TRIM0, SEC_PMU_RG_MSI_CAL);
-
-    trim_parm.sysc_sec_awo_osscrc_cal_val = REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAL);
-    trim_parm.sysc_sec_awo_osscrc_cap_val = REG_FIELD_RD(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAP);
-}
-#endif
-
-__maybe_unused __ramfunc static void set_trim_params()
-{
-    struct trim_parm trim_parm  = {
-        .sec_pmu_rg_lpldo_trim_val = 0x9,
-        .sec_pmu_rg_hpldo_trim_val = 0x9,
-        .sec_pmu_rg_bg_vref_trim_val = 0x2a,
-        .sec_pmu_rg_bg_vref_fine_val = 0x1,
-        .sec_pmu_rg_bg_ibg_trim_val = 0x5,
-        .sec_pmu_rg_clk_ldo1_vsel_val = 0x0,
-        .sec_pmu_rg_clk_ldo2_vsel_val = 0x0,
-        .sec_pmu_rg_spi_code_val = 0xae0,
-        .sec_pmu_rg_ldo_peci_vsel_val = 0x7,
-        .sec_pmu_rg_msi_cal_val = 0xa,
-        .sysc_sec_awo_osscrc_cal_val = 0x6e8,
-        .sysc_sec_awo_osscrc_cap_val = 0x1
-    };
-
-    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_LPLDO_TRIM, trim_parm.sec_pmu_rg_lpldo_trim_val);
-    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_HPLDO_TRIM, trim_parm.sec_pmu_rg_hpldo_trim_val);
-    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_TRIM, trim_parm.sec_pmu_rg_bg_vref_trim_val);
-    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_VREF_FINE, trim_parm.sec_pmu_rg_bg_vref_fine_val);
-    REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_IBG_TRIM, trim_parm.sec_pmu_rg_bg_ibg_trim_val);
-
-    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO1_VSEL, trim_parm.sec_pmu_rg_clk_ldo1_vsel_val);
-    REG_FIELD_WR(SEC_PMU->MISC_CTRL0, SEC_PMU_RG_CLK_LDO2_VSEL, trim_parm.sec_pmu_rg_clk_ldo2_vsel_val);
-
-    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_SPI_CODE, trim_parm.sec_pmu_rg_spi_code_val);
-#if 0
-    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_VSEL, trim_parm.sec_pmu_rg_ldo_peci_vsel_val);
-#endif
-    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_MSI_CAL, trim_parm.sec_pmu_rg_msi_cal_val);
-
-    REG_FIELD_WR(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAL, trim_parm.sysc_sec_awo_osscrc_cal_val);
-    REG_FIELD_WR(SYSC_SEC_AWO->PD_AWO_ANA1, SYSC_SEC_AWO_OSSCRC_CAP, trim_parm.sysc_sec_awo_osscrc_cap_val);
-}
 
 __maybe_unused __ramfunc static void enable_dpll()
 {
@@ -478,8 +404,6 @@ __maybe_unused static void peripheral_init()
     SET_BIT(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_CG_MASK);
     /* SYSC_APP_AWO->LPC_CLK */
 
-    REG_FIELD_WR(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_VSEL, 0x5); /* 0.910V */
-    SET_BIT(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_EN_MASK);
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x1 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x1);
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
@@ -657,15 +581,12 @@ void soc_early_init_hook(void)
     if (!is_app_cpu_running()) {
         if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
             && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
-            set_trim_params();
             enable_dpll();
             cpu_600M_ahb_300M_qspi_200M_init();
         }
         peripheral_init();
     }
 #endif
-#else
-    set_trim_params();
 #endif /* CONFIG_FORCE_CLOCK_HSI */
 
     reset_reason_init();
