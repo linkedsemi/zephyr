@@ -595,9 +595,7 @@ void soc_early_init_hook(void)
         || (SOFT_FULL_RESET == reset_reason_get())
         || (CPU_FULL_RESET == reset_reason_get())
         || (SYS_IWDT_FULL_RESET == reset_reason_get())
-        || (EXT_FULL_RESET == reset_reason_get())
-        || (SEC_IWDT_FULL_RESET == reset_reason_get())
-        || (SEC_WWDT_FULL_RESET == reset_reason_get())) {
+        || (EXT_FULL_RESET == reset_reason_get())) {
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
     }
 

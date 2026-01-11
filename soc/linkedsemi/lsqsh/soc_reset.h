@@ -16,12 +16,15 @@ enum reset_reason {
     EXT_FULL_RESET, /* reset source: 1. EXTRST/SRST RESET pin */
 
     /* sec per reg && sec iwdt/wwdt reg indicate */
+#if defined(CONFIG_WDT_RESET_REASON_DETAIL)
     SEC_IWDT_FULL_RESET, /* reset source: 1. SEC_IWDT && all peripherals */
     SEC_WWDT_FULL_RESET, /* reset source: 1. SEC_WWDT && all peripherals */
     SEC_IWDT_PARTIAL_RESET, /* reset source: 1. SEC_IWDT && partial peripherals */
     SEC_WWDT_PARTIAL_RESET, /* reset source: 1. SEC_WWDT && partial peripherals */
+#endif
     SEC_IWDT_HART_RESET, /* reset source: 1. SEC_IWDT && only hart */
     SEC_WWDT_HART_RESET, /* reset source: 1. SEC_WWDT && only hart */
+
     /* sec per/app per reg && sec per/app per reg indicate */
     SOFT_HART_RESET, /* reset source: write cpu1/cpu2 core reset reg */
 

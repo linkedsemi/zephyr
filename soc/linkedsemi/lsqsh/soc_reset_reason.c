@@ -74,6 +74,7 @@ void reset_reason_init(void)
         reset_src = SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK;
         sec_wdt_reset_reason_clean();
         if (SYSC_SEC_PER_RST_FROM_IWDT1_MASK & reset_src) {
+#if defined(CONFIG_WDT_RESET_REASON_DETAIL)
             wdt_reset_en.value1 &= IWDT_RSTEN1_ALL_MASK;
             wdt_reset_en.value2 &= IWDT_RSTEN2_ALL_MASK;
             wdt_reset_en.value3 &= IWDT_RSTEN3_ALL_MASK;
@@ -97,9 +98,6 @@ void reset_reason_init(void)
                 || (0 != wdt_reset_en.value4)
                 || (0 != wdt_reset_en.value5)) {
                 ret = SEC_IWDT_PARTIAL_RESET;
-            } else {
-                /* unreachable */
-                for (;;) {}
             }
 
             if (wdt_reset_en.PSRAM) {
@@ -108,6 +106,9 @@ void reset_reason_init(void)
                 psram_cfg &= ~BIT(0);
                 sys_write32(psram_cfg, APP_SYSC_CPU_APP_ADDR + 0x80);
             }
+#else
+            ret = SEC_IWDT_HART_RESET;
+#endif
         }
     #if 0
         else if (SYSC_SEC_PER_RST_FROM_WWDT1_MASK & reset_src) {
