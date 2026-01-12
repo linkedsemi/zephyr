@@ -235,7 +235,7 @@ static int smbus_linkedsemi_block_write(const struct device *dev, uint16_t perip
         {
             .buf = buf,
             .len = count,
-            .flags = = I2C_MSG_WRITE | I2C_MSG_STOP,
+            .flags = I2C_MSG_WRITE | I2C_MSG_STOP,
         },
     };
     if ((count <= 0) || (count > SMBUS_BLOCK_BYTES_MAX)) {
