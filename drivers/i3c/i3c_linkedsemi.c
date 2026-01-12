@@ -39,6 +39,8 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 
 #define DT_DRV_COMPAT linkedsemi_i3c
 
+#define PINCTRL_STATE_PINMUX_I2C PINCTRL_STATE_PRIV_START
+
 #define I3C_SCLH_I2C_MIN_FM_NS  600ull
 #define I3C_SCLH_I2C_MIN_FMP_NS 260ull
 #define I3C_SCLL_OD_MIN_FM_NS   1320ull
@@ -578,7 +580,7 @@ static int ls_i3c_init(const struct device *dev)
 #endif
 
 #if defined(CONFIG_PINCTRL)
-    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+    ret = pinctrl_apply_state(&dev_config->pcfg[0], PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
         LOG_ERR("%s: Could not configure pins", dev->name);
     }

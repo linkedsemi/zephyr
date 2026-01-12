@@ -7,7 +7,7 @@
 
 #define DT_DRV_COMPAT vnd_i3c_device
 
-static int i3c_senser_init(const struct device *dev)
+__maybe_unused static int i3c_senser_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
     /*if want to do something, must after controller initailed*/
