@@ -1275,7 +1275,6 @@
             clocks = <I3C1_CLOCK>;
             resets = <I3C1_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1289,7 +1288,6 @@
             clocks = <I3C2_CLOCK>;
             resets = <I3C2_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1303,7 +1301,6 @@
             clocks = <I3C3_CLOCK>;
             resets = <I3C3_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1317,7 +1314,6 @@
             clocks = <I3C4_CLOCK>;
             resets = <I3C4_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1331,7 +1327,6 @@
             clocks = <I3C5_CLOCK>;
             resets = <I3C5_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1345,7 +1340,6 @@
             clocks = <I3C6_CLOCK>;
             resets = <I3C6_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1359,7 +1353,6 @@
             clocks = <I3C7_CLOCK>;
             resets = <I3C7_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1373,7 +1366,6 @@
             clocks = <I3C8_CLOCK>;
             resets = <I3C8_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1387,7 +1379,6 @@
             clocks = <I3C9_CLOCK>;
             resets = <I3C9_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1401,7 +1392,6 @@
             clocks = <I3C10_CLOCK>;
             resets = <I3C10_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1415,7 +1405,6 @@
             clocks = <I3C11_CLOCK>;
             resets = <I3C11_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1429,7 +1418,6 @@
             clocks = <I3C12_CLOCK>;
             resets = <I3C12_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1443,7 +1431,6 @@
             clocks = <I3C13_CLOCK>;
             resets = <I3C13_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
@@ -1457,7 +1444,6 @@
             clocks = <I3C14_CLOCK>;
             resets = <I3C14_RESET>;
             i3c-scl-hz = <12500000>;
-            i2c-scl-hz = <0>;
             clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
