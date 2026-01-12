@@ -36,7 +36,6 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 #include <zephyr/sys/util.h>
 #include "core_rv32.h"
 // #include "field_manipulate.h"
-// #include <math.h>
 
 #define DT_DRV_COMPAT linkedsemi_i3c
 
@@ -63,7 +62,6 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
 #define I3C_TARGET_MATCH_START_STOP 1
 #define I3C_TARGET_NACK_REQUEST 0
 #define I3C_TARGET_ONCE_WRITE_TX_LEN 4
-
 
 /* target event status  */
 #define STATUS_EVDET_NONE            0
@@ -157,6 +155,7 @@ struct ls_i3c_msg {
 	size_t ctrl_msg_idx;              /* Current control message index */
 	size_t status_msg_idx;            /* Current status message index */
 	size_t xfer_msg_idx;              /* Current trasnfer message index */
+	uint32_t cur_num_xfer;			  /* Current transffered data number*/
 	uint32_t msg_type;                /* Either LL_I3C_CONTROLLER_MTYPE_PRIVATE or
 					   * LL_I3C_CONTROLLER_MTYPE_LEGACY_I2C
 					   */
@@ -214,22 +213,8 @@ struct ls_i3c_data {
 #endif
 };
 
-// static int reg32_poll_timeout(volatile uint32_t *reg,
-// 			      uint32_t mask, uint32_t match,
-// 			      uint32_t timeout_us)
-// {
-// 	/*
-// 	 * These polling checks are typically satisfied
-// 	 * quickly (some sub-microseconds) so no extra
-// 	 * delay between checks.
-// 	 */
-// 	if (!WAIT_FOR((*reg & mask) == match, timeout_us, /*nop*/)) {
-// 		return ETIMEDOUT;
-// 	}
-// 	return 0;
-// }
-
 static inline void ls_i3c_xfer_reset(I3C_TypeDef *base);
+
 static int ls_i3c_cntlr_wave_init(const struct device *dev)
 {
 	const struct ls_i3c_config *config = dev->config;
@@ -243,9 +228,10 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 	uint64_t sclh_i3c = 0;
 	uint32_t clk_wave = 0;
 	LOG_DBG("config->clock_frequency = %d\r\n",config->clock_frequency);
-	LOG_DBG("i2c hz= 0x%x ,i3c hz= 0x%x \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
+	LOG_DBG("i2c hz= %d ,i3c hz= %d \r\n",data->common.ctrl_config.scl.i2c,data->common.ctrl_config.scl.i3c);
 
-	if(data->common.ctrl_config.scl.i2c > 0 && config->common.dev_list.num_i2c > 0)
+	// if(data->common.ctrl_config.scl.i2c > 0 && config->common.dev_list.num_i2c > 0)
+	if(data->common.ctrl_config.scl.i2c)
 	{
 		if(data->common.ctrl_config.scl.i2c >= 400000)
 		{
@@ -253,30 +239,39 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FMP_NS * config->clock_frequency,1000000000ull) - 1;
 			sclh_i2c = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i2c) - scll_od - 2;
 			if (sclh_i2c <
-			DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FMP_NS * config->clock_frequency, 1000000000ull) -
-				1) {
-			LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at "
-				"current I3C clock "
-				"frequency for FM+ I2C bus");
-			return -EINVAL;
-		} else {
+			DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FMP_NS * config->clock_frequency, 1000000000ull) - 1) {
+				LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at "
+					"current I3C clock "
+					"frequency for FM+ I2C bus");
+				return -EINVAL;
+			}
+		}
+		else
+		{
 			/* I2C bus is FM */
 			scll_od = DIV_ROUND_UP(I3C_SCLL_OD_MIN_FM_NS * config->clock_frequency,1000000000ull) - 1;
 			sclh_i2c = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i2c) - scll_od - 2;
-		}
-		}
-		if (sclh_i2c <
+			if (sclh_i2c <
 		    DIV_ROUND_UP(I3C_SCLH_I2C_MIN_FM_NS * config->clock_frequency, 1000000000ull) - 1) {
 			LOG_ERR("Cannot find a combination of SCLL_OD and SCLH_I2C at current I3C "
 				"clock "
 				"frequency for FM I2C bus");
 			return -EINVAL;
+			}
 		}
+		/* 临时性修改，后续看用户对i2c的波形有什么需求。 按I3C spec中计算的波形，占空比很大， 并且scll_od会对I3C波形开漏模式下的速率存在影响*/
+		while(scll_od < sclh_i2c)
+		{
+			scll_od++;
+			sclh_i2c--;
+		}
+		sclh_i2c = 255;
+		scll_od = 255;
 	}else
 	{
 		if(config->common.dev_list.num_i2c > 0)
 		{
-			LOG_ERR("have i2c device on bus,but not set frequence");
+			__ASSERT(0, "have i2c device on bus,but not set frequence\n");
 			return -EINVAL;
 		}else
 		{
@@ -291,10 +286,6 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 
 	sclh_i3c = DIV_ROUND_UP(I3C_SCLH_I3C_MIN_NS * config->clock_frequency, 1000000000ull) - 1;
 	scll_pp = DIV_ROUND_UP(config->clock_frequency, data->common.ctrl_config.scl.i3c) - sclh_i3c - 2;
-	// if(scll_od == 0)
-	// {
-	// 	scll_od = scll_pp;
-	// }
 	if (scll_pp < DIV_ROUND_UP(I3C_SCLL_PP_MIN_NS * config->clock_frequency, 1000000000ull) - 1) {
 		LOG_ERR("Cannot find a combination of SCLL_PP and SCLH_I3C at current I3C clock "
 			"frequency for specified I3C bus speed");
@@ -307,7 +298,8 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 	
 	uint8_t free_timing = 0;
 	uint8_t aval = 0;
-	if(config->common.dev_list.num_i2c > 0){
+	// if(config->common.dev_list.num_i2c > 0){
+	if(data->common.ctrl_config.scl.i2c) {
 		if (data->common.ctrl_config.scl.i2c > 400000) {
 			/* Mixed bus with I2C FM+ device */
 			free_timing = (uint8_t)(
@@ -372,7 +364,7 @@ static int ls_i3c_configure(const struct device *dev, enum i3c_config_type type,
 	I3C_TypeDef *base = dev_config->base;
 	
 	int ret = 0;
-
+	k_mutex_lock(&dev_data->lock, K_FOREVER);
 	if (type == I3C_CONFIG_CONTROLLER) {
 		struct i3c_config_controller *cntlr_cfg = config;
 
@@ -390,12 +382,13 @@ static int ls_i3c_configure(const struct device *dev, enum i3c_config_type type,
 
 		ls_i3c_xfer_reset(base);
 
-		// uint32_t contr_en = REG_FIELD_RD(base->CFGR,I3C_CFGR_MASTER_EN);
+		uint32_t contr_en = REG_FIELD_RD(base->CFGR,I3C_CFGR_MASTER_EN);
+		REG_FIELD_WR(base->CFGR,I3C_CFGR_MASTER_EN,0);
 		ret = ls_i3c_cntlr_wave_init(dev);
-		// if(contr_en)
-		// {
-		// 	REG_FIELD_WR(base->CFGR,I3C_CFGR_MASTER_EN,1);
-		// }
+		if(contr_en)
+		{
+			REG_FIELD_WR(base->CFGR,I3C_CFGR_MASTER_EN,1);
+		}
 	}
 	else
 	{
@@ -403,7 +396,7 @@ static int ls_i3c_configure(const struct device *dev, enum i3c_config_type type,
 		memcpy(&dev_data->config_target,config_target,sizeof(struct i3c_config_target));
 		ret = ls_i3c_target_config(dev);
 	}
-
+	k_mutex_unlock(&dev_data->lock);
 	return ret;
 }
 
@@ -481,7 +474,17 @@ static void ls_i3c_dev_init(const struct device *dev)
 
 	if (I3C_BCR_DEVICE_ROLE(config_target->bcr) == I3C_BCR_DEVICE_ROLE_I3C_CONTROLLER_CAPABLE)
 	{
-		ls_i3c_cntlr_wave_init(dev);
+		uint32_t contr_en = REG_FIELD_RD(base->CFGR,I3C_CFGR_MASTER_EN);
+		if(ls_i3c_cntlr_wave_init(dev) != 0)
+		{
+			LOG_ERR("i3c initialization failed : %s",__func__);
+			return;
+		}
+		if(contr_en)
+		{
+			REG_FIELD_WR(base->CFGR,I3C_CFGR_MASTER_EN,1);
+		}
+
 		if(ctrl_config->is_secondary == true)
 		{
 			/*secondary controller(target)*/
@@ -589,12 +592,9 @@ static int ls_i3c_init(const struct device *dev)
 
 #if defined(CONFIG_I3C_USE_IBI)
 	base->IER = I3C_IER_IBIIE_MASK;
-
 #else
 	base->IER = 0;
 #endif
-
-	dev_config->irq_config_func(dev);
 	/* Initial I3C device as controller or target */
 	ls_i3c_dev_init(dev);
 
@@ -602,11 +602,16 @@ static int ls_i3c_init(const struct device *dev)
 	k_sem_init(&data->device_sync_sem, 0, K_SEM_MAX_LIMIT);
     k_mutex_init(&data->lock);
 
+	dev_config->irq_config_func(dev);
+
 	if(data->cur_role == I3C_ROLE_CONTROLLER)
 	{
 		LOG_DBG("I3C_ROLE_CONTROLLER started\n");
 		/* Perform bus initialization */
-		ret = i3c_bus_init(dev, &dev_config->common.dev_list);
+		if(dev_config->common.dev_list.num_i3c > 0)
+		{
+			ret = i3c_bus_init(dev, &dev_config->common.dev_list);
+		}
 	}else
 	{
 		LOG_DBG("I3C_ROLE_TARGET started\n");
@@ -634,7 +639,7 @@ static int i3c_ls_curr_msg_init(const struct device *dev, struct i3c_msg *i3c_ms
 	curr_msg->ctrl_msg_idx = 0;
 	curr_msg->status_msg_idx = 0;
 	curr_msg->xfer_msg_idx = 0;
-
+	curr_msg->cur_num_xfer = 0;
 	/* I3C private message */
 	if (i2c_msgs == NULL) {
 		curr_msg->msg_type = LL_I3C_CONTROLLER_MTYPE_PRIVATE;
@@ -652,14 +657,18 @@ static int i3c_ls_curr_msg_init(const struct device *dev, struct i3c_msg *i3c_ms
 	{
 		if(i3c_msgs->flags & I3C_MSG_NBCH)
 		{
-		/* Disable arbitration header */
-		LL_I3C_DisableArbitrationHeader(base);
+			/* Disable arbitration header */
+			LL_I3C_DisableArbitrationHeader(base);
 		}
 		else
 		{
-		/* Enable arbitration header */
-		LL_I3C_EnableArbitrationHeader(base);
+			/* Enable arbitration header */
+			LL_I3C_EnableArbitrationHeader(base);
 		}
+	}else
+	{
+		/* 验证时发现，有些I3C兼容I2C的主机，如果帧开始处添加了仲裁头，会导致与I2C通信失败*/
+		LL_I3C_DisableArbitrationHeader(base);
 	}
 	return 0;
 }
@@ -705,9 +714,11 @@ static bool ls_i3c_fill_tx_fifo(const struct device *dev)
 	}
 
 	while (LL_I3C_IsActiveFlag_TXFNF(base)) {
-		LL_I3C_TransmitData8(base, buf[curr_msg->i3c_msg_ptr->num_xfer]);
-		curr_msg->i3c_msg_ptr->num_xfer++;
-		if(curr_msg->i3c_msg_ptr->num_xfer == curr_msg->i3c_msg_ptr->len)
+
+		LL_I3C_TransmitData8(base, buf[curr_msg->cur_num_xfer]);
+		// curr_msg->i3c_msg_ptr->num_xfer++;
+		curr_msg->cur_num_xfer++;
+		if(curr_msg->cur_num_xfer == len)
 		{
 			return true;
 		}
@@ -749,9 +760,10 @@ static bool ls_i3c_drain_rx_fifo(const struct device *dev)
 	}
 
 	if (LL_I3C_IsActiveFlag_RXFNE(base)) {
-		buf[curr_msg->i3c_msg_ptr->num_xfer] = LL_I3C_ReceiveData8(base);
-		curr_msg->i3c_msg_ptr->num_xfer++;
-		if(curr_msg->i3c_msg_ptr->num_xfer == curr_msg->i3c_msg_ptr->len)
+		buf[curr_msg->cur_num_xfer] = LL_I3C_ReceiveData8(base);
+		// curr_msg->i3c_msg_ptr->num_xfer++;
+		curr_msg->cur_num_xfer++;
+		if(curr_msg->cur_num_xfer == len)
 		{
 			return true;
 		}
@@ -771,13 +783,14 @@ static int ls_i3c_curr_msg_xfer_next(const struct device *dev)
 	}
 
 	if (ls_i3c_curr_msg_is_i3c(dev)) {
+		curr_msg->i3c_msg_ptr->num_xfer = curr_msg->cur_num_xfer;
 		curr_msg->i3c_msg_ptr++;
 	} else {
 		curr_msg->i2c_msg_ptr++;
 	}
 
 	curr_msg->xfer_msg_idx++;
-
+	curr_msg->cur_num_xfer = 0;
 	return 0;
 }
 
@@ -848,9 +861,10 @@ static int ls_i3c_curr_msg_status_next(const struct device *dev)
 
 	if (ls_i3c_curr_msg_is_i3c(dev)) {
 		curr_msg->i3c_msg_status_ptr++;
-		curr_msg->status_msg_idx++;
+	}else {
+		curr_msg->i2c_msg_ctrl_ptr++;
 	}
-
+	curr_msg->status_msg_idx++;
 	return 0;
 }
 
@@ -878,12 +892,12 @@ static int ls_i3c_curr_msg_control_get_dir(const struct device *dev)
 	struct ls_i3c_msg *curr_msg = &data->curr_msg;
 
 	if (ls_i3c_curr_msg_is_i3c(dev)) {
-		return (((curr_msg->i3c_msg_ctrl_ptr->flags & I3C_MSG_RW_MASK) == I3C_MSG_READ)
+		return (((curr_msg->i3c_msg_ctrl_ptr->flags & I3C_MSG_READ) == I3C_MSG_READ)
 				? LL_I3C_DIRECTION_READ
 				: LL_I3C_DIRECTION_WRITE);
 	}
 
-	return (((curr_msg->i2c_msg_ctrl_ptr->flags & I2C_MSG_RW_MASK) == I2C_MSG_READ)
+	return (((curr_msg->i2c_msg_ctrl_ptr->flags & I2C_MSG_READ) == I2C_MSG_READ)
 			? LL_I3C_DIRECTION_READ
 			: LL_I3C_DIRECTION_WRITE);
 }
@@ -901,9 +915,24 @@ static int ls_i3c_curr_msg_control_get_end(const struct device *dev)
 {
 	struct ls_i3c_data *data = dev->data;
 	struct ls_i3c_msg *curr_msg = &data->curr_msg;
+	if (ls_i3c_curr_msg_is_i3c(dev))
+	{
+		return ((curr_msg->ctrl_msg_idx < (curr_msg->num_msgs - 1)) ? LL_I3C_GENERATE_RESTART
+										: LL_I3C_GENERATE_STOP);
+	}else
+	{
+		if (curr_msg->ctrl_msg_idx >= (curr_msg->num_msgs -1)) {
+			return LL_I3C_GENERATE_STOP;
+		}
+		/* 获取下一个I2C执行中的flag信息，但是指针不能在此处变动 */
+		struct i2c_msg *next_i2c_msg = &curr_msg->i2c_msg_ctrl_ptr[1];
+		return (((next_i2c_msg->flags & I2C_MSG_RESTART) == I2C_MSG_RESTART) ? LL_I3C_GENERATE_RESTART
+										: LL_I3C_GENERATE_STOP);
 
-	return ((curr_msg->ctrl_msg_idx < (curr_msg->num_msgs - 1)) ? LL_I3C_GENERATE_RESTART
-								    : LL_I3C_GENERATE_STOP);
+		// return ((curr_msg->ctrl_msg_idx < (curr_msg->num_msgs - 1)) ? LL_I3C_GENERATE_RESTART
+										// : LL_I3C_GENERATE_STOP);
+	}
+
 }
 
 static int ls_i3c_curr_msg_control_next(const struct device *dev)
@@ -1466,6 +1495,7 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 			return -EINVAL;
 		}
 	}
+	k_mutex_lock(&data->lock, K_FOREVER);
 	
 	LL_I3C_EnableIT_FC(base);
 	LL_I3C_EnableIT_CFNF(base);
@@ -1474,8 +1504,6 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 	LL_I3C_EnableIT_TXFNF(base);
 	LL_I3C_ClearFlag_ERR(base);
 	LL_I3C_EnableIT_ERR(base);
-
-	k_mutex_lock(&data->lock, K_FOREVER);
 
 	ret = i3c_ls_curr_msg_init(dev, msgs, NULL, num_msgs, target->dynamic_addr);
 
@@ -1493,23 +1521,6 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 
 	return ret;
 }
-
-// static void ls_i3c_target_read_rx_fifo(const struct device *dev)
-// {
-
-// }
-
-// static void ls_i3c_target_write_tx_fifo(const struct ls_i3c_config *config, const void *buf,
-// 				   uint8_t len)
-// {
-// 	uint8_t *tx_buf = buf;
-// 	uint8_t remain;
-// 	for(uint8_t j = 0; j < len; j++)
-// 	{
-// 		config->base->SWDATAB = tx_buf[j];
-// 	}
-	
-// }
 
 /*
  * brief:  Find a registered I3C target device.
@@ -1583,7 +1594,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 			}
 		}
 
-		// /* Check incoming header matched target dynamic address */
+		/* Check incoming header matched target dynamic address */
 		if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SINTCLR_MATCHED_MASK))
 		{
 			if(data->state != LS_I3C_OP_STATE_IBI)
@@ -1652,9 +1663,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 			}
 		}
 
-
-
-		// /* Check START or Sr detected */
+		/* Check START or Sr detected */
 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_START_MASK)) {
 			/* The end of xfer is a Sr */
 			if ((data->state == LS_I3C_OP_STATE_WR) ||
@@ -1775,7 +1784,7 @@ static void ls_i3c_isr(const struct device *dev)
 	struct ls_i3c_data *data = dev->data;
 	I3C_TypeDef *base = config->base;
 	struct i3c_device_desc *target = NULL;
-
+	struct ls_i3c_msg *curr_msg = &data->curr_msg;
 	int ret;
 	
 	if(READ_BIT(base->SCONFIG,I3C_SCONFIG_SLVENA_MASK) && data->cur_role == I3C_ROLE_TARGET)
@@ -1845,6 +1854,14 @@ static void ls_i3c_isr(const struct device *dev)
 	/* Frame complete handler */
 	if (LL_I3C_IsActiveFlag_FC(base) && LL_I3C_IsEnabledIT_FC(base)) {
 		LL_I3C_ClearFlag_FC(base);
+
+		if((data->msg_state == LS_I3C_MSG)  && (curr_msg->ctrl_msg_idx < curr_msg->num_msgs))
+		{
+			LL_I3C_RequestTransfer(base);
+			return;
+		}
+
+
 		k_sem_give(&data->device_sync_sem);
 
 		// (void)pm_device_runtime_put(dev);
@@ -1891,8 +1908,8 @@ static void ls_i3c_isr(const struct device *dev)
 
 #endif
 }
-#ifdef CONFIG_I3C_USE_IBI
 
+#ifdef CONFIG_I3C_USE_IBI
 static int ls_i3c_ibi_enable(const struct device *dev, struct i3c_device_desc *target)
 {
 	const struct ls_i3c_config *config = dev->config;
@@ -1930,6 +1947,7 @@ static int ls_i3c_ibi_enable(const struct device *dev, struct i3c_device_desc *t
 	uint32_t controller_capable = i3c_device_is_controller_capable(target);
 	if(controller_capable)
 	{
+		// 当前版本zephyr设备驱动框架还不支持crr功能
 		i3c_events.events |= I3C_CCC_EVT_CR;
 	}
 	/* config DEVICEx register */
@@ -2150,9 +2168,70 @@ static int ls_i3c_target_tx_write(const struct device *dev, uint8_t *buf, uint16
 	return i;
 }
 
+static int ls_i3c_i2c_api_configure(const struct device *dev, uint32_t dev_config)
+{
+	return -ENOSYS;
+}
+
+static int ls_i3c_i2c_api_transfer(const struct device *dev,
+				     struct i2c_msg *msgs,
+				     uint8_t num_msgs,
+				     uint16_t addr)
+{
+	const struct ls_i3c_config *config = dev->config;
+	struct ls_i3c_data *data = dev->data;
+	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
+	int ret = 0;
+
+	if (msgs == NULL) {
+		return -EINVAL;
+	}
+
+	if (addr == 0U) {
+		return -EINVAL;
+	}
+
+	if(num_msgs < 1)
+	{
+		return -EINVAL;
+	}
+
+	if(data->common.ctrl_config.scl.i2c == 0)
+	{
+		LOG_ERR(" %s : I2C clock is not configured !", __func__);
+		return -ENOSYS;
+	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+
+	LL_I3C_EnableIT_FC(base);
+	LL_I3C_EnableIT_CFNF(base);
+	LL_I3C_EnableIT_SFNE(base);
+	LL_I3C_EnableIT_RXFNE(base);
+	LL_I3C_EnableIT_TXFNF(base);
+	LL_I3C_ClearFlag_ERR(base);
+	LL_I3C_EnableIT_ERR(base);
+	ret = i3c_ls_curr_msg_init(dev, NULL, msgs, num_msgs, addr);
+
+	ret = ls_i3c_request_transfer_flag(dev);
+	if(ret !=0){
+		LOG_ERR("Failed to transfer messages, err=%d", ret);
+	}
+	LL_I3C_DisableIT_FC(base);
+	LL_I3C_DisableIT_CFNF(base);
+	// LL_I3C_DisableIT_SFNE(base);
+	LL_I3C_DisableIT_RXFNE(base);
+	LL_I3C_DisableIT_TXFNF(base);
+	LL_I3C_DisableIT_ERR(base);
+
+	k_mutex_unlock(&data->lock);
+
+	return ret;
+}
 static const struct i3c_driver_api ls_i3c_driver_api = {
 	.configure = ls_i3c_configure,
 	.config_get = ls_i3c_config_get,
+	// .recover_bus = ls_i3c_recover_bus,
 
 	.do_daa = ls_i3c_do_daa,
 	.do_ccc = ls_i3c_do_ccc,
@@ -2165,7 +2244,9 @@ static const struct i3c_driver_api ls_i3c_driver_api = {
 	.target_register = ls_i3c_target_register,
 	.target_unregister = ls_i3c_target_unregister,
 
-
+	.i2c_api.configure = ls_i3c_i2c_api_configure,
+	.i2c_api.transfer = ls_i3c_i2c_api_transfer,
+	// .i2c_api.recover_bus = ls_i3c_recover_bus,
 #ifdef CONFIG_I3C_USE_IBI
 	.ibi_enable = ls_i3c_ibi_enable,
 	.ibi_disable = ls_i3c_ibi_disable,
