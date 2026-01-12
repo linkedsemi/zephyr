@@ -22,10 +22,10 @@
     #include <zephyr/drivers/reset.h>
 #endif
 
-LOG_MODULE_REGISTER(udc_ls_fs, CONFIG_UDC_DRIVER_LOG_LEVEL);
+LOG_MODULE_REGISTER(udc_ls_fs, LOG_LEVEL_WRN);
 
 #define USB_EP0_SIZE            (64)
-#define USB_TX_BUF_ADDR         (0)
+#define USB_TX_BUF_ADDR         (8)
 #define USB_TX_FIFO_SZ          (2)
 #define USB_TX_BUF_SIZE         (1<<(3+USB_TX_FIFO_SZ))
 #define USB_RX_BUF_ADDR         (USB_TX_BUF_ADDR + USB_TX_BUF_SIZE / 8)
@@ -34,6 +34,14 @@ LOG_MODULE_REGISTER(udc_ls_fs, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define USB_DIR_IN              0x80    /* to host */
 
 #define USB_MSGQ_LENGTH         (16)
+
+/* TXCSR bits to avoid zeroing (write zero clears, write 1 ignored) */
+#define MUSB_TXCSR_P_WZC_BITS   \
+    (USB_TXCSRL1_STALLED | USB_TXCSRL1_UNDRN | USB_TXCSRL1_FIFONE)
+
+/* RXCSR bits to avoid zeroing (write zero clears, write 1 ignored) */
+#define MUSB_RXCSR_P_WZC_BITS   \
+    (USB_RXCSRL1_STALLED | USB_RXCSRL1_OVER | USB_RXCSRL1_RXRDY)
 
 typedef enum {
     USB_EP0_STAGE_IDLE,         /* idle, waiting for SETUP */
@@ -99,6 +107,7 @@ struct udc_ls_data
     struct k_msgq msgq;
     struct ls_event msgq_buf[USB_MSGQ_LENGTH];
     struct k_sem out_buf_valid;
+    struct k_sem send_stall;
     uint8_t addr;
 };
 
@@ -248,6 +257,7 @@ static int udc_ls_init(const struct device *dev)
         usb_reg->RXFIFO_SIZE[1] = 0;
     }
     k_sem_init(&usb_data->out_buf_valid, 0, 1);
+    k_sem_init(&usb_data->send_stall, 0, 1);
 
     k_msgq_init(&usb_data->msgq, (char *)usb_data->msgq_buf, sizeof(struct ls_event), USB_MSGQ_LENGTH);
     usb_cfg->make_thread(dev);
@@ -303,14 +313,20 @@ static int udc_ls_tx(const struct device *dev, uint8_t ep_index,
     uint16_t len = MIN(buf->len, ep_cfg->mps);
 
     musb_set_active_ep(usb_reg, ep_index);
+
+    uint8_t csr = usb_reg->TXCSRL;
     usb_reg->TXCSRH |= USB_TXCSRH1_MODE;
+
     if (len)
     {
         fifo_write(&usb_reg->FIFO0_WORD + ep_index, buf->data, len);
         net_buf_pull(buf, len);
     }
+
+    csr |= USB_TXCSRL1_TXRDY;
+    csr &= ~USB_TXCSRL1_UNDRN;
     /* trigger irq */
-    usb_reg->TXCSRL = USB_TXCSRL1_TXRDY;
+    usb_reg->TXCSRL = csr;
 
     return 0;
 }
@@ -410,14 +426,27 @@ static int udc_ls_ep_set_halt(const struct device *dev,struct udc_ep_config *con
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     reg_usb_t *usb_reg = usb_data->usb_instance;
     uint8_t ep_index = USB_EP_GET_IDX(cfg->addr);
+
     musb_set_active_ep(usb_reg, ep_index);
 
     if (ep_index)
     {
         if (USB_EP_DIR_IS_IN(cfg->addr))
-            usb_reg->TXCSRL |= USB_TXCSRL1_STALL;
+        {
+            uint8_t csr = usb_reg->TXCSRL;
+            csr |= MUSB_TXCSR_P_WZC_BITS | USB_TXCSRL1_CLRDT | USB_TXCSRL1_STALL;
+            csr &= ~USB_TXCSRL1_TXRDY;
+            usb_reg->TXCSRL = csr;
+            /* wait send stall irq */
+            k_sem_take(&usb_data->send_stall, K_FOREVER);
+        }
         else
-            usb_reg->RXCSRL |= USB_RXCSRL1_STALL;
+        {
+            uint8_t csr = usb_reg->RXCSRL;
+            csr |= MUSB_RXCSR_P_WZC_BITS | USB_RXCSRL1_CLRDT | USB_RXCSRL1_FLUSH;
+            csr |= USB_RXCSRL1_STALL;
+            usb_reg->RXCSRL = csr;
+        }
     }
     else
     {
@@ -441,9 +470,20 @@ static int udc_ls_ep_clear_halt(const struct device *dev, struct udc_ep_config *
     if (ep_index)
     {
         if (USB_EP_DIR_IS_IN(cfg->addr))
-            usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
+        {
+            uint8_t csr = usb_reg->TXCSRL;
+            csr |= MUSB_TXCSR_P_WZC_BITS | USB_TXCSRL1_CLRDT;
+            csr &= ~(USB_TXCSRL1_STALL | USB_TXCSRL1_STALLED);
+            csr &= ~USB_TXCSRL1_TXRDY;
+            usb_reg->TXCSRL = csr;
+        }
         else
-            usb_reg->RXCSRL = USB_RXCSRL1_CLRDT;
+        {
+            uint8_t csr = usb_reg->RXCSRL;
+            csr |= MUSB_RXCSR_P_WZC_BITS | USB_RXCSRL1_CLRDT | USB_RXCSRL1_FLUSH;
+            csr &= ~(USB_RXCSRL1_STALL | USB_RXCSRL1_STALLED);
+            usb_reg->RXCSRL = csr;
+        }
     }
     else
     {
@@ -970,10 +1010,24 @@ static void endpoint_tx_handler(const struct device *dev, reg_usb_t *reg, uint8_
     };
 
     musb_set_active_ep(reg, ep_num);
-    if (reg->TXCSRL & USB_TXCSRL1_STALLED)
+
+    uint8_t csr = reg->TXCSRL;
+
+    if (csr & USB_TXCSRL1_STALLED)
     {
-        reg->TXCSRL &= ~(USB_TXCSRL1_STALLED | USB_TXCSRL1_UNDRN);
+        csr |= MUSB_TXCSR_P_WZC_BITS;
+        csr &= ~USB_TXCSRL1_STALLED;
+        reg->TXCSRL = csr;
+        k_sem_give(&usb_data->send_stall);
         return;
+    }
+
+    if (csr & USB_TXCSRL1_UNDRN)
+    {
+        csr |= MUSB_TXCSR_P_WZC_BITS;
+        csr &= ~(USB_TXCSRL1_UNDRN | USB_TXCSRL1_TXRDY);
+        reg->TXCSRL = csr;
+        LOG_WRN("underrun on ep%d \n", ep_num);
     }
 
     if (!buf->len && udc_ep_buf_has_zlp(buf))
