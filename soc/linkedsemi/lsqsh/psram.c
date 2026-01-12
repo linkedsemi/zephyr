@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include <reg_base_addr.h>
 #include <per_func_mux.h>
 #include <ls_soc_gpio.h>
@@ -7,6 +8,8 @@
 #include <ls_hal_ssi.h>
 #include <core_rv32.h>
 #include <platform.h>
+
+LOG_MODULE_REGISTER(psram, CONFIG_SOC_LOG_LEVEL);
 
 #if !defined(DW_FIELD_BUILD)
 #define DW_FIELD_BUILD(field,val) \
@@ -83,9 +86,13 @@ void psram_init(void) {
     ls_clock_control_off(PSRAM_CLOCK);
     ls_reset_line_toggle(PSRAM_RESET);
     ls_clock_control_on(PSRAM_CLOCK);
-    if (SSIC_VERSION_ID != sys_read32(APP_PSRAM_CFG_ADDR + SSIV2_SSIC_VERSION_ID)) {
-        return; /* it has been initialized */
+
+    val = sys_read32(APP_SYSC_CPU_APP_ADDR + 0x80);
+    if ((val & BIT(0))) {
+        LOG_DBG("PSRAM has been initialized");
+        return;
     }
+
     psram_pin_init();
     psram_reset();
 
