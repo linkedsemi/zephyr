@@ -254,6 +254,9 @@ __maybe_unused __ramfunc static void enable_dpll()
 
 __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
 {
+    LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
+    MODIFY_REG(LSQSPIV2->QSPI_CTRL1,LSQSPIV2_MODE_DAC_MASK|LSQSPIV2_CAP_DLY_MASK|LSQSPIV2_CAP_NEG_MASK,
+                1<<LSQSPIV2_MODE_DAC_POS|QSPI_CAPTURE_DELAY<<LSQSPIV2_CAP_DLY_POS|QSPI_CAPTURE_NEG<<LSQSPIV2_CAP_NEG_POS);
     SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS2, 0x0)
@@ -283,6 +286,7 @@ __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x10)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
+    lscache_cache_enable(1);
 }
 
 __maybe_unused static void peripheral_init()
@@ -564,17 +568,7 @@ void soc_early_init_hook(void)
         irq_disable(irq);
     }
 
-#if defined(CONFIG_CACHE)
-#if !defined(CONFIG_SMP)
-    csi_dcache_enable();
-#endif
-    csi_icache_enable();
 
-#if !defined(CONFIG_SMP)
-    csi_dcache_invalid();
-#endif
-    csi_icache_invalid();
-#endif
 
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
@@ -588,6 +582,18 @@ void soc_early_init_hook(void)
     }
 #endif
 #endif /* CONFIG_FORCE_CLOCK_HSI */
+
+#if defined(CONFIG_CACHE)
+#if !defined(CONFIG_SMP)
+    csi_dcache_enable();
+#endif
+    csi_icache_enable();
+
+#if !defined(CONFIG_SMP)
+    csi_dcache_invalid();
+#endif
+    csi_icache_invalid();
+#endif
 
     reset_reason_init();
 
