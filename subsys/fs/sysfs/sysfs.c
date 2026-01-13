@@ -323,11 +323,12 @@ static int sysfs_open(struct fs_file_t *filp, const char *fs_path, fs_mode_t fla
     }
 
     struct sysfs_attribute *attr = NULL;
+    int name_len = strlen(attr_name);
 
     SYS_DLIST_FOR_EACH_NODE(&node->attributes, n)
     {
         struct sysfs_attribute *_attr = CONTAINER_OF(n, struct sysfs_attribute, node);
-        if (strncmp(_attr->name, attr_name, strlen(attr_name)) == 0)
+        if ((strlen(_attr->name) == name_len) && strncmp(_attr->name, attr_name, name_len) == 0)
         {
             attr = _attr;
             break;
