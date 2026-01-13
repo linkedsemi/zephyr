@@ -437,8 +437,6 @@ static int udc_ls_ep_set_halt(const struct device *dev,struct udc_ep_config *con
             csr |= MUSB_TXCSR_P_WZC_BITS | USB_TXCSRL1_CLRDT | USB_TXCSRL1_STALL;
             csr &= ~USB_TXCSRL1_TXRDY;
             usb_reg->TXCSRL = csr;
-            /* wait send stall irq */
-            k_sem_take(&usb_data->send_stall, K_FOREVER);
         }
         else
         {
@@ -453,6 +451,9 @@ static int udc_ls_ep_set_halt(const struct device *dev,struct udc_ep_config *con
         usb_data->ep0_state = USB_EP0_STAGE_IDLE;
         usb_reg->TXCSRL |= (USB_CSRL0_STALL | USB_CSRL0_RXRDYC);
     }
+
+    /* wait send stall irq */
+    k_sem_take(&usb_data->send_stall, K_FOREVER);
 
     if (ep_index)
         cfg->stat.halted = true;
@@ -485,10 +486,7 @@ static int udc_ls_ep_clear_halt(const struct device *dev, struct udc_ep_config *
             usb_reg->RXCSRL = csr;
         }
     }
-    else
-    {
-        usb_reg->TXCSRL &= ~USB_CSRL0_STALL;
-    }
+
     cfg->stat.halted = false;
 
     return 0;
@@ -898,6 +896,7 @@ static void _usbd_process_ep0(const struct device *dev)
         usb_instance->CSRL0 = csr & ~USB_CSRL0_STALLED;
         usb_data->ep0_state = USB_EP0_STAGE_IDLE;
         csr = usb_instance->CSRL0;
+        k_sem_give(&usb_data->send_stall);
     }
 
     if (csr & USB_CSRL0_SETEND) {
@@ -1058,6 +1057,25 @@ static void endpoint_tx_handler(const struct device *dev, reg_usb_t *reg, uint8_
 static void endpoint_rx_handler(const struct device *dev, reg_usb_t *reg, uint8_t ep_num)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
+
+    uint8_t csr = reg->RXCSRL;
+
+    if (csr & USB_RXCSRL1_STALLED)
+    {
+        csr |= MUSB_RXCSR_P_WZC_BITS;
+        csr &= ~USB_RXCSRL1_STALLED;
+        reg->RXCSRL = csr;
+        k_sem_give(&usb_data->send_stall);
+        return;
+    }
+
+    if (csr & USB_RXCSRL1_OVER)
+    {
+        /* Note: This bit is only valid when the endpoint is operating in ISO mode. In Bulk mode, it always returns zero */
+        csr &= ~USB_RXCSRL1_OVER;
+        reg->RXCSRL = csr;
+    }
+
     struct ls_event evt = {
         .type = LS_EVT_OUT_XFER,
         .ep = ep_num
