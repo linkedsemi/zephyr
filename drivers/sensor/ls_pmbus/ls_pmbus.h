@@ -131,9 +131,9 @@
 
 
 /* PMBus Data Format Definitions */
-#define PMBUS_LINEAR11_EXPONENT_MASK         0xE000
-#define PMBUS_LINEAR11_EXPONENT_SHIFT        13
-#define PMBUS_LINEAR11_MANTISSA_MASK         0x1FFF
+#define PMBUS_LINEAR11_EXPONENT_MASK         0xF800
+#define PMBUS_LINEAR11_EXPONENT_SHIFT        11
+#define PMBUS_LINEAR11_MANTISSA_MASK         0x07FF
 #define PMBUS_LINEAR16_EXPONENT_MASK         0xFF00
 #define PMBUS_LINEAR16_EXPONENT_SHIFT        8
 #define PMBUS_LINEAR16_MANTISSA_MASK         0x00FF
@@ -158,5 +158,5 @@ int ls_pmbus_select_page(const struct smbus_dt_spec *smbus, uint8_t page);
 int ls_pmbus_clear_faults(const struct smbus_dt_spec *smbus);
 int ls_pmbus_verify_device(const struct smbus_dt_spec *smbus);
 float ls_pmbus_parse_linear11(uint16_t value);
-float ls_pmbus_parse_linear16(uint16_t value);
+float ls_pmbus_parse_linear16(uint16_t value, uint8_t exponent);
 int ls_pmbus_configure_pec(const struct smbus_dt_spec *smbus, bool enable);

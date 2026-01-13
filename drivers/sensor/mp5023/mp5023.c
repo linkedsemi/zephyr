@@ -34,6 +34,16 @@ static float mp5023_convert_direct(uint16_t raw_value, uint8_t cmd)
     int8_t m, b, R;
     float result;
     m = b = R = 0;
+    int16_t raw_value_signed;
+
+    if (raw_value & 0x200)
+    {
+        raw_value_signed = -((~raw_value & 0x1FF) + 1);
+    }
+    else
+    {
+        raw_value_signed = (int16_t)raw_value;
+    }
 
     switch (cmd)
     {
@@ -68,7 +78,7 @@ static float mp5023_convert_direct(uint16_t raw_value, uint8_t cmd)
     /* Calculate result = (raw * 10^-R - b) / m */
     if (m != 0)
     {
-        result = (my_powf(10.0f, -R) * (float)raw_value - (float)b) / (float)m;
+        result = (my_powf(10.0f, -R) * (float)raw_value_signed - (float)b) / (float)m;
     }
     else
     {

@@ -277,6 +277,7 @@ struct ali_psu_data {
     int model;
     uint8_t mfr_page;
     uint8_t fw_update;
+	uint8_t exponent;
 	uint32_t vin;
 	uint32_t vin1;
 	uint32_t vout;
@@ -300,6 +301,7 @@ struct ali_psu_data {
 
 struct ali_psu_config {
     struct smbus_dt_spec smbus;        /* SMBus specification from DT */
+	struct i2c_dt_spec i2c_bus;        /* I2C bus specification from DT */
 }; 
                   
 /* Public API Functions */
