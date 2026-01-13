@@ -76,7 +76,7 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
         if (ret) {
             struct mbox_msg msg = { (const void *)(dev_data->recv_data[callback_idx]), MBOX_FIFO_WIDTH };
             if (dev_data->cb[callback_idx]) {
-                dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data, &msg);
+                dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data[callback_idx], &msg);
             } else {
                 LOG_WRN("rx_channel: %d callback() is NULL", rx_channel);
                 return;
@@ -84,7 +84,7 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
         }
 #if defined(CONFIG_SIGNALLING_MODE_SUPPORT)
         else {
-            dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data, NULL);
+            dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data[callback_idx], NULL);
         }
 #endif
     } while (ret);
