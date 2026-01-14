@@ -240,13 +240,16 @@ float ls_pmbus_parse_linear11(uint16_t value)
     int16_t mantissa;
     float result;
 
-    /* Extract exponent (3 bits) and mantissa (13 bits) */
+    /* Extract exponent (5 bits) and mantissa (11 bits) */
     exponent = (int8_t)((value & PMBUS_LINEAR11_EXPONENT_MASK) >> PMBUS_LINEAR11_EXPONENT_SHIFT);
     mantissa = (int16_t)(value & PMBUS_LINEAR11_MANTISSA_MASK);
 
-    /* Sign extend the 13-bit mantissa to 16 bits */
-    if (mantissa & 0x1000) {
-        mantissa |= 0xE000;  /* 扩展符号位 */
+    if (exponent & 0x10) {
+        exponent = -((~exponent & 0x0F) + 1);
+    }
+
+    if (mantissa & 0x0400) {
+        mantissa = -((~mantissa & 0x3FF) + 1);
     }
 
     /* Calculate result: mantissa * 2^exponent */
@@ -256,18 +259,30 @@ float ls_pmbus_parse_linear11(uint16_t value)
 }
 
 /* Parse Linear-16 format value */
-float ls_pmbus_parse_linear16(uint16_t value)
+float ls_pmbus_parse_linear16(uint16_t value, uint8_t exponent)
 {
-    int8_t exponent;
-    int8_t mantissa;
     float result;
+    int8_t expo;
+    int16_t mantissa;
 
-    /* Extract exponent (8 bits) and mantissa (8 bits) */
-    exponent = (int8_t)((value & PMBUS_LINEAR16_EXPONENT_MASK) >> PMBUS_LINEAR16_EXPONENT_SHIFT);
-    mantissa = (int8_t)(value & PMBUS_LINEAR16_MANTISSA_MASK);
+    if (exponent & 0x10) {
+        expo = -((~exponent & 0x0F) + 1);
+    }
+    else
+    {
+        expo = (int8_t)exponent;
+    }
+
+    if (value & 0x8000) {
+        mantissa = -((~value & 0x7FFF) + 1);
+    }
+    else
+    {
+        mantissa = (int16_t)value;
+    }
 
     /* Calculate result: mantissa * 2^exponent */
-    result = (float)mantissa * my_powf(2.0f, exponent);
+    result = (float)mantissa * my_powf(2.0f, expo);
     
     return result;
 }
