@@ -51,7 +51,11 @@ LOG_MODULE_REGISTER(spi_dw);
 #ifdef CONFIG_PINCTRL
 #include <zephyr/drivers/pinctrl.h>
 #endif
+#include <zephyr/sys/__assert.h>
 
+BUILD_ASSERT(CONFIG_SPI_EXTENDED_MODES == 1,
+             "DesignWare SPI driver requires CONFIG_SPI_EXTENDED_MODES to be enabled\n"
+             "Please add CONFIG_SPI_EXTENDED_MODES=y to your prj.conf");
 #define SPI_DW_DMA_WAIT_TIMEOUT_MS 10000
 #define SCKDV_BIT 0xfe
 #define SPI_CALIB_LEN 64

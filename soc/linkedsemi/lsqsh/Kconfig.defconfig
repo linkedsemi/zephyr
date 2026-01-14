@@ -480,4 +480,8 @@ config SD_BUFFER_SIZE
 
 rsource "otbn/Kconfig.defconfig"
 
+if SPI_DW
+	config SPI_EXTENDED_MODES
+		default y
+endif
 endif
