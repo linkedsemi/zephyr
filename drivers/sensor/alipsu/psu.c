@@ -47,7 +47,7 @@ int ali_psu_init(const struct device *dev)
     }
 
     data->model = alipsu;
-    data->fw_update = psu_fw_update;
+    data->fw_update = 0;
     data->mfr_page = 0x00;
     k_mutex_init(&data->update_lock);
 
@@ -271,7 +271,7 @@ static const char *buf2str_extended(const uint8_t *buf, int len,
 int ali_psu_read_word_data(const struct device *dev, uint8_t cmd, uint16_t *value)
 {
 	struct ali_psu_data *data = dev->data;
-	if (!data/* || data->fw_update*/)
+	if (!data || data->fw_update)
 		return -EPERM;
 
 	if (cmd >= PMBUS_VIRT_BASE)
@@ -282,7 +282,7 @@ int ali_psu_read_word_data(const struct device *dev, uint8_t cmd, uint16_t *valu
 int ali_psu_write_word_data(const struct device *dev, uint8_t cmd, uint16_t value)
 {
 	struct ali_psu_data *data = dev->data;
-	if (!data/* || data->fw_update*/)
+	if (!data || data->fw_update)
 		return -EPERM;
 
 	if (cmd >= PMBUS_VIRT_BASE)
@@ -293,7 +293,7 @@ int ali_psu_write_word_data(const struct device *dev, uint8_t cmd, uint16_t valu
 int ali_psu_read_byte_data(const struct device *dev, uint8_t cmd, uint8_t *value)
 {
 	struct ali_psu_data *data = dev->data;
-	if (!data/* || data->fw_update*/)
+	if (!data || data->fw_update)
 		return -EPERM;
 
 	return ali_psu_read_byte(dev, cmd, value);
@@ -681,7 +681,7 @@ int ali_psu_byte_word_read_his(const struct device *dev, uint8_t reg, uint8_t *b
 	int rc;
 	struct ali_psu_data *data = dev->data;
 
-	if (/*(data->fw_update != psu_fw_blackbox) || */(data->mfr_page >= 15))
+	if ((data->fw_update != psu_fw_blackbox) || (data->mfr_page >= 15))
 		return -EPERM;
 
 	k_mutex_lock(&data->update_lock, K_FOREVER);
@@ -738,7 +738,7 @@ int ali_psu_sensor_his_show(const struct device *dev, uint8_t reg, int64_t *val)
     uint16_t read_word;
 	struct ali_psu_data *data = dev->data;
 
-	if (/*(data->fw_update != psu_fw_blackbox) || */(data->mfr_page >= 15))
+	if ((data->fw_update != psu_fw_blackbox) || (data->mfr_page >= 15))
 		return -EPERM;
 
 	rc = ali_psu_byte_word_read_his(dev, reg, (uint8_t *)&read_word, 1);
@@ -768,7 +768,7 @@ int ali_psu_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *b
 	int rc;
 	struct ali_psu_data *data = dev->data;
 
-	if (/*(data->fw_update != psu_fw_blackbox) || */(data->mfr_page >= 15))
+	if ((data->fw_update != psu_fw_blackbox) || (data->mfr_page >= 15))
 		return -EPERM;
 
 	const struct ali_psu_config *config = dev->config;
@@ -804,6 +804,23 @@ int ali_powerbrick_block_hex_his_show(const struct device *dev, uint8_t reg, uin
 	
 	LOG_INF("psu_block_hex_his_show: block data 0x%x, len %d", *buf, *len);
 	return rc;
+}
+
+int ali_psu_update_show(const struct device *dev, uint8_t *enable)
+{
+	struct ali_psu_data *data = dev->data;
+	*enable = data->fw_update;
+	return 0;
+}
+
+int ali_psu_update_store(const struct device *dev, uint8_t enable)
+{
+	struct ali_psu_data *data = dev->data;
+	if ((data->fw_update != enable) && (data->fw_update) && enable)
+		return -EPERM;
+
+	data->fw_update = enable;
+	return 0;
 }
 
 /* Alipsu-specific direct format conversion function, m = 1 for all now. */

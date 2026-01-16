@@ -343,6 +343,8 @@ int ali_psu_byte_his_show(const struct device *dev, uint8_t reg, uint8_t *buf);
 int ali_psu_sensor_his_show(const struct device *dev, uint8_t reg, int64_t *val);
 int ali_psu_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len);
 int ali_powerbrick_block_hex_his_show(const struct device *dev, uint8_t reg, uint8_t *buf, uint8_t *len);
+int ali_psu_update_show(const struct device *dev, uint8_t *enable);
+int ali_psu_update_store(const struct device *dev, uint8_t enable);
 
 /* direct format conversion function */
 float ali_psu_convert_direct(uint16_t raw_value, uint8_t cmd);
