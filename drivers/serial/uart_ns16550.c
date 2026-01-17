@@ -586,12 +586,6 @@ static int uart_ns16550_configure(const struct device *dev,
 
 	k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
 
-#if defined(CONFIG_PINCTRL)
-	if (dev_cfg->pincfg != NULL) {
-		pinctrl_apply_state(dev_cfg->pincfg, PINCTRL_STATE_DEFAULT);
-	}
-#endif
-
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	dev_data->iir_cache = 0U;
 #endif
@@ -905,6 +899,12 @@ static int uart_ns16550_init(const struct device *dev)
 	if (ret != 0) {
 		return ret;
 	}
+
+#if defined(CONFIG_PINCTRL)
+	if (dev_cfg->pincfg != NULL) {
+		pinctrl_apply_state(dev_cfg->pincfg, PINCTRL_STATE_DEFAULT);
+	}
+#endif
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	dev_cfg->irq_config_func(dev);
