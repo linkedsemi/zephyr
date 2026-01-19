@@ -19,6 +19,7 @@ config WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER
 
 config WOLFSSL_LINKEDSEMI_OTBN_ECC_ALT
     bool "Replace the original software encryption function with the ECC encryption provided by OTBN. However, it only supports SM2, P256, and P384."
+    select WOLFSSL_LINKEDSEMI_OTBN_ENABLE
     default n
 
 config WOLFSSL_LINKEDSEMI_HARDWARE_SHA224_SHA256_SM3_ALT
@@ -35,5 +36,14 @@ config WOLFSSL_LINKEDSEMI_HARDWARE_SM4_ALT
 
 config WOLFSSL_LINKEDSEMI_HARDWARE_AES_ALT
     bool "Replace the software aes of wolfssl with the hardware aes of linkedsemi"
+
+config WOLFSSL_LINKEDSEMI_OTBN_RSA_ALT
+    bool "Replace the software rsa of wolfssl with the otbn's rsa of linkedsemi"
+    select WOLFSSL_LINKEDSEMI_OTBN_ENABLE
+    default n
+
+config WOLFSSL_LINKEDSEMI_OTBN_ENABLE
+    bool "enable otbn moudule"
+    default n
 
 endif
