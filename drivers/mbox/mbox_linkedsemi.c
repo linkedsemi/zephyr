@@ -170,7 +170,7 @@ static uint32_t mbox_linkedsemi_max_channels_get(const struct device *dev)
 static int mbox_linkedsemi_fifo_init(const struct device *dev)
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
-    const uint32_t cell = (MBOX_SIZE / MBOX_NCHANNELS) >> 1;
+    const uint32_t cell = ROUND_DOWN(((MBOX_SIZE / MBOX_NCHANNELS) >> 1), sizeof(size_t));
 
     for (uint8_t i = 0; i < MBOX_NCHANNELS * 2; i++) {
         uint32_t env_addr = MBOX_BASE_ADDRESS + i * cell;
