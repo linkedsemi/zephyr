@@ -1,9 +1,8 @@
-# linkedsemi,ls-host-vuart.yaml
-description: LINKEDSEMI Host vUART
+description: LINKEDSEMI Host VUART
 
 compatible: "linkedsemi,ls-host-vuart"
 
-include: [uart-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
+include: [base.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   port:
@@ -13,9 +12,29 @@ properties:
 
   clock-source:
     type: int
-    description: "System clock source"
-
+    required: true
+    description: |
+      Clock source subsystem ID used for clock control configuration.
+      This value is passed to the clock control subsystem to get the rate.
+  
+  current-speed:
+    type: int
+    description: Initial baud rate setting for UART
+  
   up-irq:
     type: array
     required: true
     description: "Upstream interrupt specification"
+
+  fifo_base:
+    type: int
+    required: true
+    description: Virtual UART FIFO Base Addr
+
+  espi_lpc:
+    type: phandle
+    required: true
+    description: espi lpc device handle
+
+  mbox:
+    type: phandle

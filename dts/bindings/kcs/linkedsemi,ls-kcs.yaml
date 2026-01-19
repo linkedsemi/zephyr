@@ -5,10 +5,12 @@ compatible: "linkedsemi,ls-kcs"
 include: base.yaml
 
 properties:
+    kcs-env-addr:
+      type: int
+      required: true
     port:
       type: array
       required: true
 
-    up-irq:
-      type: array
-      
+    mbox:
+      type: phandle

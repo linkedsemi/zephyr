@@ -47,6 +47,12 @@
             mboxes = <&mbox 2>, <&mbox 3>;
             mbox-names = "tx", "rx";
         };
+
+       mbox_consumer_espi1: mbox-consumer_espi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 4>, <&mbox 5>;
+            mbox-names = "tx", "rx";
+        };
     };
 
     qspi1: qspi@40000000 {

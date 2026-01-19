@@ -4,6 +4,9 @@
 #include <zephyr/device.h>
 #include <zephyr/spinlock.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/drivers/mbox.h>
+#include <zephyr/sys/atomic.h>
+#include "fifo.h"
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
 #endif
@@ -58,24 +61,11 @@ struct upstream_irq_type {
 
 #define UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst) UPSTREAM_IRQ_DT_CONFIG_GET(DT_DRV_INST(inst))
 
-#define ESPI_RECOVER_MAGIC {'E','S','P','I','R','C','V','R'}
-
-struct espi_cfg_recover {
-    uint8_t magic[8];
-    uint32_t gen_cfg;
-    uint32_t per_ch0_cfg;
-    uint32_t vwir_ch1_cfg;
-    uint32_t oob_ch2_cfg;
-    uint32_t fls_ch3_cfg;
-};
-
 struct espi_lpc_ls_config {
 	void (*irq_config_func)(const struct device *);
     void *reg;
     void (*raise_edge_irq)(const struct device *,uint8_t);
     void (*set_level_irq)(const struct device *,uint8_t,uint8_t);
-    struct espi_cfg_recover *recover_data;
-    struct gpio_dt_spec cs;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -89,7 +79,6 @@ struct espi_lpc_ls_data {
     union{
         struct espi_data{
             struct k_spinlock vw_tx_lock;
-            struct gpio_callback cs_cb;
         }espi;
         struct {
             struct k_spinlock serirq_src_lock;
@@ -99,9 +88,68 @@ struct espi_lpc_ls_data {
     }u;
 };
 
-void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx);
+#define VUART_FIFO_SIZE 16
+struct host_vuart_fifo {
+    struct fifo_env b2h;
+    struct fifo_env h2b;
+    uint8_t b2h_buf[VUART_FIFO_SIZE];
+    uint8_t h2b_buf[VUART_FIFO_SIZE];
+};
 
-void espi_lpc_set_level_irq(const struct device *dev,uint8_t idx,uint8_t active);
+enum vuart_hb_msg_type {
+    B_RX_AVAIL,
+    B_TX_EMPTY,
+    H_RX_AVAIL,
+    H_TX_EMPTY,
+    VUART_MODE_SET,
+};
+
+struct vuart_hb_msg {
+    enum vuart_hb_msg_type type;
+    bool host_rx_from_vuart;
+    bool host_tx_to_vuart;
+};
+
+struct host_kcs_env {
+    atomic_t lock;
+    uint8_t status;
+    uint8_t data_out;
+    uint8_t data_in;
+};
+
+enum kcs_hb_msg_type {
+    KCS_IBF_EVENT,
+    KCS_OBF_EVENT,
+};
+
+#ifdef CONFIG_ESPI_LPC_MBOX
+struct host_bmc_msg_exch {
+    const struct device *dev;
+    void (*rx_callback)(const struct device *dev,void *msg);
+    const struct mbox_dt_spec mbox_tx;
+    const struct mbox_dt_spec mbox_rx;
+};
+#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb,is_host) {\
+    .dev = DEVICE_DT_GET(DT_DRV_INST(idx)),     \
+    .rx_callback = rx_cb,\
+    .mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
+    .mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
+    }
+#else
+struct host_bmc_msg_exch {
+    const struct device *peer;
+    void (*peer_rx_callback)(const struct device *dev,void *msg);
+};
+
+#define GET_PEER_DEV(node_id,local_node_id,...)     \
+    (DT_SAME_NODE(node_id,local_node_id)?0:(uint32_t)DEVICE_DT_GET(node_id))
+#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb,is_host) {\
+    .peer = (const struct device *)(DT_FOREACH_CHILD_STATUS_OKAY_SEP_VARGS(DT_INST_PARENT(idx),GET_PEER_DEV,(+),DT_DRV_INST(idx))),  \
+    .peer_rx_callback = peer_rx_cb, \
+    }
+#endif
+
+void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx);
 
 void espi_lpc_add_ioport(const struct device *dev,struct peri_ioport *ioport);
 
@@ -118,5 +166,27 @@ bool iowr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint16_t addr,uin
 bool memwr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,uint8_t *data);
 
 bool memrd_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,void *res);
+
+void host_bmc_msg_exch_init(const struct host_bmc_msg_exch *exch);
+
+void vuart_status_send(const struct host_bmc_msg_exch *exch,enum vuart_hb_msg_type vuart_msg_type);
+
+void vuart_b2h_mode_set(const struct host_bmc_msg_exch *exch,bool host_rx_from_vuart,bool host_tx_to_vuart);
+
+void kcs_env_lock(struct host_kcs_env *env);
+
+void kcs_env_unlock(struct host_kcs_env *env);
+
+void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch);
+
+void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch);
+
+void host_vuart_rx_callback(const struct device *dev,void *msg);
+
+void bmc_vuart_rx_callback(const struct device *dev, void *msg);
+
+void bmc_kcs_rx_callback(const struct device *dev,void *msg);
+
+void host_kcs_rx_callback(const struct device *dev,void *msg);
 
 #endif

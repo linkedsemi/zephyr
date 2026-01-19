@@ -11,3 +11,15 @@ config UART_LINKEDSEMI
 	help
 	  uart1 enable.
  
+config VIRTUAL_UART_LINKEDSEMI
+	default y
+	depends on DT_HAS_LINKEDSEMI_LS_VUART_ENABLED
+	select SERIAL_HAS_DRIVER
+	select SERIAL_SUPPORT_INTERRUPT
+	bool "LINKEDSEMI virtual uart driver"
+	help
+	  virtual uart enable.
+
+config VUART_IRQ_THREAD_PRIORITY
+    int "VUART IRQ thread priority"
+    default -2

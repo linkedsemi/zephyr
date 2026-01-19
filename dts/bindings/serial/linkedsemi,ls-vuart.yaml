@@ -1,0 +1,13 @@
+description: Linkedsemi virtual UART
+compatible: "linkedsemi,ls-vuart"
+
+include: [base.yaml]
+
+properties:
+  fifo_base:
+    type: int
+    required: true
+    description: Virtual UART FIFO Base Addr
+
+  mbox:
+    type: phandle

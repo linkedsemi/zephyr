@@ -517,23 +517,8 @@
             interrupts = <ESPI1_IRQN 3>;
             clocks = <ESPI1_CLOCK>;
             resets = <ESPI1_RESET>;
-            #address-cells = <1>;
-            #size-cells = <1>;
             status = "disabled";
-            cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
-            
-            vuart1: vuart1@40087800 {
-                compatible = "linkedsemi,ls-host-vuart";
-                reg = <0x40087800 0x400>;
-                interrupts = <UART3_IRQN 3>;
-                clocks = <UART3_CLOCK>;
-                resets = <UART3_RESET>;
-                clock-source = <CLK_SRC_PBUS4>;
-                port = <0x3f8>;
-                up-irq = <0x4 0>;
-                status = "disabled";
-            };
-
+        
             sio1: sio1 {
                 compatible = "linkedsemi,ls-sio";
                 port = <0x2e>;
@@ -549,6 +534,30 @@
 
         };
 
+        host_bmc_container1: host_bmc_container1 {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            host_vuart1: host_vuart1@40087800 {
+                compatible = "linkedsemi,ls-host-vuart";
+                reg = <0x40087800 0x400>;
+                interrupts = <UART3_IRQN 3>;
+                clocks = <UART3_CLOCK>;
+                resets = <UART3_RESET>;
+                clock-source = <CLK_SRC_PBUS4>;
+                port = <0x3f8>;
+                up-irq = <0x4 0>;
+                espi_lpc = <&espi1>;
+                fifo_base = <0x40045c00>;
+                status = "disabled";
+            };
+            vuart1: vuart1 {
+                compatible = "linkedsemi,ls-vuart";
+                fifo_base = <0x40045c00>;
+                status = "disabled";
+            };
+            status = "disabled";
+        };
 
         sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
@@ -608,7 +617,6 @@
             compatible = "linkedsemi,ls-ipmi-kcs";
             status = "disabled";
         };
-
         i2c1: i2c@400a0000 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x400a0000 0x400>;

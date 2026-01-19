@@ -1,0 +1,25 @@
+description: Linkedsemi HOST KCS controller
+
+compatible: "linkedsemi,ls-host-kcs"
+
+include: base.yaml
+
+properties:
+    port:
+      type: array
+      required: true
+
+    up-irq:
+      type: array
+
+    kcs-env-addr:
+      type: int
+      required: true
+
+    espi_lpc:
+      type: phandle
+      required: true
+      description: espi lpc device handle
+  
+    mbox:
+      type: phandle
