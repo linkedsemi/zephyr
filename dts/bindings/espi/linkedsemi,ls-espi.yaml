@@ -12,5 +12,3 @@ properties:
   interrupts:
     required: true
 
-  cs-gpios:
-    type: phandle-array
