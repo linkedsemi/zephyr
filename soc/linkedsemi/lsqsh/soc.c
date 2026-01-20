@@ -408,6 +408,7 @@ __maybe_unused static void peripheral_init()
     SET_BIT(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_CG_MASK);
     /* SYSC_APP_AWO->LPC_CLK */
 
+    SET_BIT(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_EN_MASK);
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x1 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x1);
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
