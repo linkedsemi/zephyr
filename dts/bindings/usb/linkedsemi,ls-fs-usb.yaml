@@ -24,3 +24,6 @@ properties:
   phys:
     type: phandle
     description: PHY provider specifier
+
+  dp-gpios:
+    type: phandle-array

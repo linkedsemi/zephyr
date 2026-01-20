@@ -13,6 +13,7 @@
 #include "linked_async_framework.h"
 #include "reg_usb_type.h"
 #include "ls_soc_gpio.h"
+#include <zephyr/drivers/gpio.h>
 
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
@@ -67,6 +68,7 @@ struct udc_ls_config
     void (*make_thread)(const struct device *dev);
     void (*irq_connect)(const struct device *dev);
     void (*irq_disconnect)(const struct device *dev);
+    struct gpio_dt_spec dp;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -183,21 +185,9 @@ static int udc_ls_init(const struct device *dev)
     reg_usb_t *usb_reg = usb_data->usb_instance;
 
 #ifdef CONFIG_SOC_LSQSH
-    const struct pinctrl_state *state = NULL;
-    /* If the dp is externally pulled up, a low level will be output here to make the host initiate a reset. */
-    pinctrl_lookup_state(usb_cfg->pcfg, PINCTRL_STATE_DEFAULT, &state);
-    if (state && state->pins)
-    {
-        const pinctrl_soc_pin_t *dp = state->pins;
-        const pinctrl_soc_pin_t *dm = state->pins+1;
-
-        /* The first member of dts pinctrl must be dp */
-        io_cfg_output(dp->pinmux.pin);
-        io_write_pin(dp->pinmux.pin, 0);
-        k_usleep(1);
-        io_sl_st_init(dp->pinmux.pin);
-        io_sl_st_init(dm->pinmux.pin);
-    }
+    pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_PRIV_START);
+    gpio_pin_configure_dt(&usb_cfg->dp, GPIO_OUTPUT_LOW);
+    k_busy_wait(1);
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -1282,6 +1272,7 @@ static const struct udc_api udc_ls_api = {
         .make_thread = udc_ls_make_thread_##n,      \
         .irq_connect = udc_ls_irq_connect##n,          \
         .irq_disconnect = udc_ls_irq_disconnect##n,    \
+        .dp = GPIO_DT_SPEC_INST_GET_OR(n, dp_gpios, {0}),\
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n), )) \
         IF_ENABLED(DT_HAS_CLOCKS(n), (.ccfg = LS_DT_CLK_CFG_ITEM(n), )) \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(n, resets), (.reset = RESET_DT_SPEC_INST_GET(n), )) \
