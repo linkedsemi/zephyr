@@ -61,11 +61,27 @@ struct upstream_irq_type {
 
 #define UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst) UPSTREAM_IRQ_DT_CONFIG_GET(DT_DRV_INST(inst))
 
+
+#define ESPI_RECOVER_MAGIC {'E','S','P','I','R','C','V','R'}
+
+#define UP_IRQ_EDGE_TYPE 0
+
+struct espi_cfg_recover {
+    uint8_t magic[8];
+    uint32_t gen_cfg;
+    uint32_t per_ch0_cfg;
+    uint32_t vwir_ch1_cfg;
+    uint32_t oob_ch2_cfg;
+    uint32_t fls_ch3_cfg;
+};
+
 struct espi_lpc_ls_config {
 	void (*irq_config_func)(const struct device *);
     void *reg;
     void (*raise_edge_irq)(const struct device *,uint8_t);
     void (*set_level_irq)(const struct device *,uint8_t,uint8_t);
+    struct espi_cfg_recover *recover_data;
+    struct gpio_dt_spec cs;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -79,6 +95,7 @@ struct espi_lpc_ls_data {
     union{
         struct espi_data{
             struct k_spinlock vw_tx_lock;
+            struct gpio_callback cs_cb;
         }espi;
         struct {
             struct k_spinlock serirq_src_lock;
