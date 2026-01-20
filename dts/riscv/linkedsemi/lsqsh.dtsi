@@ -518,7 +518,8 @@
             clocks = <ESPI1_CLOCK>;
             resets = <ESPI1_RESET>;
             status = "disabled";
-        
+            cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
+
             sio1: sio1 {
                 compatible = "linkedsemi,ls-sio";
                 port = <0x2e>;
