@@ -79,6 +79,8 @@ struct ipmi_kcs_ls_data{
 
 	uint32_t phase;
 	uint32_t error;
+	ipmi_callback_t cb;
+	void *param;
 };
 
 static void kcs_set_state(const struct device *dev,enum kcs_state stat)
@@ -228,6 +230,12 @@ static void kcs_ibf_cb(const struct device *dev,void *param)
     {
         ipmi_kcs_handle_data(ipmi_dev);
     }
+
+    struct ipmi_kcs_ls_data *ipmi_data = (struct ipmi_kcs_ls_data *)dev->data;
+    if (ipmi_data->phase == KCS_PHASE_WRITE_DONE && ipmi_data->cb)
+    {
+        ipmi_data->cb(ipmi_dev, ipmi_data->param, IPMI_RX_EVENT);
+    }
 }
 
 static int ipmi_kcs_ls_init(const struct device *dev)
@@ -300,9 +308,34 @@ static int ipmi_kcs_ls_write(const struct device *dev,uint8_t *data,uint32_t siz
 	return size;
 }
 
+static int ipmi_kcs_ls_update_status(const struct device *dev,uint8_t mask,uint8_t val)
+{
+    kcs_update_status(dev,mask,val);
+    return 0;
+}
+
+static int ipmi_kcs_ls_force_abort(const struct device *dev)
+{
+    kcs_force_abort(dev);
+    return 0;
+}
+
+static int ipmi_add_callback(const struct device *dev, ipmi_callback_t callback, void *param)
+{
+    struct ipmi_kcs_ls_data *ipmi_data = (struct ipmi_kcs_ls_data *)dev->data;
+
+    ipmi_data->cb = callback;
+    ipmi_data->param = param;
+
+    return 0;
+}
+
 static const struct ipmi_driver_api ipmi_kcs_ls_api = {
     .read = ipmi_kcs_ls_read,
     .write = ipmi_kcs_ls_write,
+    .update_status = ipmi_kcs_ls_update_status,
+    .force_abort = ipmi_kcs_ls_force_abort,
+    .callback = ipmi_add_callback,
 };
 
 #define IPMI_KCS_LS_INIT(n)						     \
