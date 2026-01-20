@@ -9,6 +9,7 @@
 #include "espi_lpc_common.h"
 
 LOG_MODULE_REGISTER(espi, CONFIG_ESPI_LOG_LEVEL);
+static const uint8_t espi_magic_num[] = ESPI_RECOVER_MAGIC;
 
 #define ESPI_SYS_EVT_2_SLP_S5_N	BIT(2)
 #define ESPI_SYS_EVT_2_SLP_S4_N BIT(1)
@@ -348,6 +349,20 @@ static int espi_ls_receive_vwire(const struct device *dev,enum espi_vwire_signal
     return 0;
 }
 
+
+static void espi_cs_callback(const struct device *port,struct gpio_callback *cb,gpio_port_pins_t pins)
+{
+    struct espi_data *espi = CONTAINER_OF(cb,struct espi_data,cs_cb);
+    struct espi_lpc_ls_data *data = CONTAINER_OF(espi,struct espi_lpc_ls_data,u.espi);
+    const struct espi_lpc_ls_config *cfg = data->cfg;
+    reg_espi_t *reg = cfg->reg;
+    reg->CFG_RECOVER_CTL = ESPI_CFG_ECLK_EN_MASK;
+    gpio_pin_interrupt_configure_dt(&cfg->cs,GPIO_INT_DISABLE);
+    gpio_remove_callback_dt(&cfg->cs,&data->u.espi.cs_cb);
+}
+
+
+
 static int espi_ls_send_oob(const struct device *dev,struct espi_oob_packet *pckt)
 {
     return 0;
@@ -469,12 +484,13 @@ static void espi_send_level_irq(const struct device *dev,uint8_t idx,uint8_t act
 static void espi_reg_init(const struct device *dev)
 {
 	const struct espi_lpc_ls_config *const cfg = dev->config;
+    struct espi_lpc_ls_data *data = dev->data;
     reg_espi_t *reg = cfg->reg;
     reg->DW_NPST_ADR = espi_buf_addr_to_reg(dev,np_rx_buf_get(dev));
     reg->DW_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_rx_buf_get(dev));
     reg->UP_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_tx_buf_get(dev));
     reg->UP_VWIR_ADR = espi_buf_addr_to_reg(dev,vw_tx_buf_get(dev));
-    reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
+    reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
                         |ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
 
     reg->GEN_CFG = 0<<ESPI_GEN_CFG_IO_MODE_SUPP_POS|0<<ESPI_GEN_CFG_OP_FREQ_POS|0xf<<ESPI_GEN_CFG_CH_SUPP_POS;
@@ -482,17 +498,33 @@ static void espi_reg_init(const struct device *dev)
     reg->VWIR_CH1_CFG = 0x1f<<ESPI_CH1_CFG_VWIR_MAX_CNT_SUPP_POS|ESPI_CH1_CFG_VWIR_CH_RDY_MASK;
     reg->OOB_CH2_CFG = 1<<ESPI_CH2_CFG_OOB_MAX_PLOAD_SUPP_POS|ESPI_CH2_CFG_OOB_CH_RDY_MASK;
     reg->FLS_CH3_CFG = 3<<ESPI_CH3_CFG_FLS_SHARE_MODE_POS|1<<ESPI_CH3_CFG_FLS_MAX_PLOAD_SUPP_POS|ESPI_CH3_CFG_FLS_CH_RDY_MASK;
-
-    reg->STATUS_SET = ESPI_STATUS_ALERT_CLEAR_MASK|ESPI_STATUS_SET_VWIRE_FREE_MASK
+    
+    if(!memcmp(cfg->recover_data->magic,espi_magic_num,sizeof(espi_magic_num)))
+    {
+        reg->CFG_RECOVER_CTL = ESPI_AHB_CFG_WR_MASK | ESPI_CFG_HCLK_EN_MASK;
+        reg->GEN_CFG_R = cfg->recover_data->gen_cfg;
+        reg->PER_CH0_CFG_R = cfg->recover_data->per_ch0_cfg;
+        reg->VWIR_CH1_CFG_R = cfg->recover_data->vwir_ch1_cfg;
+        reg->OOB_CH2_CFG_R = cfg->recover_data->oob_ch2_cfg;
+        reg->FLS_CH3_CFG_R = cfg->recover_data->fls_ch3_cfg;
+        gpio_init_callback(&data->u.espi.cs_cb,espi_cs_callback,1<<cfg->cs.pin);
+        gpio_add_callback_dt(&cfg->cs,&data->u.espi.cs_cb);
+        gpio_pin_interrupt_configure_dt(&cfg->cs,GPIO_INT_EDGE_RISING);
+        reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK|ESPI_STATUS_SET_VWIRE_FREE_MASK
                         |ESPI_STATUS_SET_OOB_FREE_MASK|ESPI_STATUS_SET_NP_FREE_MASK
                         |ESPI_STATUS_SET_PC_FREE_MASK|ESPI_STATUS_SET_FLASH_C_FREE_MASK
                         |ESPI_STATUS_SET_FLASH_NP_FREE_MASK;
-    espi_send_boot_done(dev);
-    reg->INTERRUPT_MASK = ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
+    }else
+    {
+        reg->STATUS_SET = ESPI_STATUS_ALERT_CLEAR_MASK|ESPI_STATUS_SET_VWIRE_FREE_MASK
+                        |ESPI_STATUS_SET_OOB_FREE_MASK|ESPI_STATUS_SET_NP_FREE_MASK
+                        |ESPI_STATUS_SET_PC_FREE_MASK|ESPI_STATUS_SET_FLASH_C_FREE_MASK
+                        |ESPI_STATUS_SET_FLASH_NP_FREE_MASK;
+        espi_send_boot_done(dev);
+    }
+    reg->INTERRUPT_MASK = ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
                         |ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
 }
-
-
 static int espi_reset(const struct device *dev)
 {
     const struct espi_lpc_ls_config *dev_config = dev->config;
@@ -588,6 +620,13 @@ static void ls_espi_isr(void *arg)
     }
     if(stt&ESPI_INTR_STT_DN_CNFG_MASK)
     {
+        cfg->recover_data->gen_cfg = reg->GEN_CFG;
+        cfg->recover_data->per_ch0_cfg = reg->PER_CH0_CFG;
+        cfg->recover_data->vwir_ch1_cfg = reg->VWIR_CH1_CFG;
+        cfg->recover_data->oob_ch2_cfg = reg->OOB_CH2_CFG;
+        cfg->recover_data->fls_ch3_cfg = reg->FLS_CH3_CFG;
+        memcpy(cfg->recover_data->magic,espi_magic_num,sizeof(espi_magic_num));
+        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_CNFG_MASK;
 
     }
     if(stt&ESPI_INTR_STT_DN_VWIR_02_MASK)
@@ -653,7 +692,7 @@ static int espi_ls_init(const struct device *dev)
         }
     }
 #endif
-    if(inited == false)
+ if(inited == false)
     {
 #if defined(CONFIG_PINCTRL)
         ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
@@ -677,11 +716,14 @@ static int espi_ls_init(const struct device *dev)
                 ls_espi_isr,DEVICE_DT_INST_GET(idx), 0);\
         irq_enable(DT_INST_IRQN(idx));\
     }\
+    static struct espi_cfg_recover espi_cfg_recover_data_##idx __attribute__((section(".var_retain.99."#idx)));\
     static const struct espi_lpc_ls_config espi_ls_cfg_##idx = {\
         .reg = (reg_espi_t *)DT_INST_REG_ADDR(idx),\
         .irq_config_func = espi_ls_irq_config_func_##idx,\
         .raise_edge_irq = espi_send_edge_irq,\
         .set_level_irq = espi_send_level_irq,\
+        .recover_data = &espi_cfg_recover_data_##idx,\
+        .cs = GPIO_DT_SPEC_INST_GET(idx,cs_gpios),\
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), )) \
         IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), )) \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), )) \
