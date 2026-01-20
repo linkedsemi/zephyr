@@ -235,6 +235,18 @@
         input-enable;
     };
 
+    /omit-if-no-ref/usb1_dp_gpio_ph14: usb1_dp_gpio_ph14 {
+        pinmux = <PH14>;
+        gpio;
+        output-enable;
+    };
+
+    /omit-if-no-ref/usb1_dm_gpio_ph15: usb1_dm_gpio_ph15 {
+        pinmux = <PH15>;
+        gpio;
+        output-enable;
+    };
+
     /omit-if-no-ref/mjtag1_gpio_pn06: mjtag1_gpio_pn06 {
         pinmux = <PN06>;
         gpio;
@@ -404,5 +416,7 @@
 
 &usb1 {
     pinctrl-0 = <&usb1_dp_ph14 &usb1_dm_ph15>;
-    pinctrl-names = "default";
+    pinctrl-1 = <&usb1_dp_gpio_ph14 &usb1_dm_gpio_ph15>;
+    dp-gpios = < &gpioh 14 GPIO_ACTIVE_LOW>;
+    pinctrl-names = "default", "priv_start";
 };

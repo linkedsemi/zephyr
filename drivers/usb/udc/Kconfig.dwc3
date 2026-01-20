@@ -9,12 +9,12 @@ config UDC_DWC3
 	help
 	  DWC3 USB device controller driver.
 
-config UDC_DWC3_DMA
-	bool "DWC3 USB DMA support"
-	default y
+config UDC_DWC3_DEBUG
+	bool "DWC3 USB DEBUG"
+	default n
 	depends on UDC_DWC3
 	help
-	  Enable Buffer DMA if DWC3 USB controller supports Internal DMA.
+	  DWC3 USB debug.
 
 config UDC_DWC3_STACK_SIZE
 	int "UDC DWC3 driver internal thread stack size"

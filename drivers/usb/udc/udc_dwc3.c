@@ -1528,7 +1528,7 @@ static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
     *(uint32_t *)0x40058010 &= ~(0x1 << 1);
 }
 
-#if 0
+#if CONFIG_UDC_DWC3_DEBUG
 
 #include <zephyr/shell/shell.h>
 #include <stdlib.h>
@@ -1617,12 +1617,49 @@ SHELL_CMD_REGISTER(usb2_device_ctrl_test_packet, NULL, "usb2_device_ctrl_test_pa
 
 #endif
 
+#define USB2_CLK_CTRL               (0x40058014)
+#define USB2_PLL_EN                 (1U << 0)
+#define USB2_TEST_BIST              (1U << 1)
+#define USB2_SELF_TEST              (1U << 2)
+#define USB2_REFCLK_DIV(x)          ((x) << 4)
+#define USB2_REFCLK_MODE(x)         ((x) << 8)  // 0: input clock is integer multiples of 5MHz, 1: input clock is integer multiples of 12MHz
+
 static int dwc3_phy_setup(const struct device *dev)
 {
-    *(uint32_t *)0x40058014 = 0x131; // pll_en
+    *(volatile uint32_t *)USB2_CLK_CTRL = USB2_PLL_EN | USB2_REFCLK_DIV(3) | USB2_REFCLK_MODE(1);
     dwc3_phy_cfg_write(0x9, 0xf0);
     return 0;
 }
+
+#if CONFIG_UDC_DWC3_DEBUG
+
+#include "ls_soc_gpio.h"
+#include "per_func_mux_type.h"
+
+#define USB2_DEBUG_SIGNAL_SEL (0x4005800c)
+
+enum usb20_dbg
+{
+    USB20_UTMI_CLK = 18,
+    USB20_UTMI_TXREADY
+};
+
+static int dwc3_debug_signal_setup(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
+
+    pinmux_cfg_pin_func_alt(PT13, PINMUX_FUNC1, USB20_UTMI_CLK); // gpio_t13 usb20_dbg0 utmi clk
+
+    uint32_t reg = dwc3_gbl->GDBGLSPMUX;
+    reg &= ~(0xff << 16);
+    reg |= (0x18 << 16);
+    dwc3_gbl->GDBGLSPMUX = reg;
+    *(volatile uint32_t *)USB2_DEBUG_SIGNAL_SEL = 0x1;
+
+    return 0;
+}
+#endif // CONFIG_UDC_DWC3_DEBUG
 
 static int udc_dwc3_init(const struct device *dev)
 {
@@ -1673,6 +1710,10 @@ static int udc_dwc3_init(const struct device *dev)
 
     /* phy init */
     dwc3_phy_setup(dev);
+
+#if CONFIG_UDC_DWC3_DEBUG
+    dwc3_debug_signal_setup(dev);
+#endif
 
     /* soft reset */
     MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
