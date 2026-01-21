@@ -210,7 +210,7 @@ static int ls_vuart_init(const struct device *dev)
 	static struct ls_vuart_data ls_vuart_data_##inst;                                   \
     K_KERNEL_STACK_DEFINE(vuart_irq_thread_stack_##inst, CONFIG_VUART_IRQ_THREAD_STACK_SIZE);\
     static const struct ls_vuart_cfg ls_vuart_cfg_##inst = {                            \
-		.hb_exch = HOST_BMC_MSG_EXCH_INIT(inst,bmc_vuart_rx_callback,host_vuart_rx_callback,0),\
+		.hb_exch = HOST_BMC_MSG_EXCH_INIT(inst,bmc_vuart_rx_callback,host_vuart_rx_callback),\
 		.vuart_irq_thread_name = "vuart_irq_thread_" #inst,                          \
         .irq_thread_stack = vuart_irq_thread_stack_##inst,                             \
         .irq_thread_stack_size = K_KERNEL_STACK_SIZEOF(vuart_irq_thread_stack_##inst),\
