@@ -146,7 +146,7 @@ struct host_bmc_msg_exch {
     const struct mbox_dt_spec mbox_tx;
     const struct mbox_dt_spec mbox_rx;
 };
-#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb,is_host) {\
+#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
     .dev = DEVICE_DT_GET(DT_DRV_INST(idx)),     \
     .rx_callback = rx_cb,\
     .mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
@@ -160,7 +160,7 @@ struct host_bmc_msg_exch {
 
 #define GET_PEER_DEV(node_id,local_node_id,...)     \
     (DT_SAME_NODE(node_id,local_node_id)?0:(uint32_t)DEVICE_DT_GET(node_id))
-#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb,is_host) {\
+#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
     .peer = (const struct device *)(DT_FOREACH_CHILD_STATUS_OKAY_SEP_VARGS(DT_INST_PARENT(idx),GET_PEER_DEV,(+),DT_DRV_INST(idx))),  \
     .peer_rx_callback = peer_rx_cb, \
     }
