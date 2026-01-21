@@ -116,7 +116,7 @@ static int host_kcs_ls_init(const struct device *dev)
         },\
         .espi_lpc = DEVICE_DT_GET(DT_INST_PHANDLE(idx,espi_lpc)),\
         .kcs_env = (struct host_kcs_env *)DT_INST_PROP(idx,kcs_env_addr),\
-        .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,host_kcs_rx_callback,bmc_kcs_rx_callback,1),\
+        .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,host_kcs_rx_callback,bmc_kcs_rx_callback),\
         IF_ENABLED(DT_HAS_UP_IRQ(idx),(.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx)))\
     };\
     DEVICE_DT_INST_DEFINE(idx,\

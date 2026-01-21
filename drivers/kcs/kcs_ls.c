@@ -110,7 +110,7 @@ static const struct kcs_driver_api kcs_ls_driver_api = {
     static struct kcs_ls_data kcs_ls_data_##idx;\
     static const struct kcs_ls_config kcs_ls_cfg_##idx = {\
         .kcs_env = (struct host_kcs_env *)DT_INST_PROP(idx,kcs_env_addr),\
-        .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,bmc_kcs_rx_callback,host_kcs_rx_callback,0),\
+        .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,bmc_kcs_rx_callback,host_kcs_rx_callback),\
     };\
     DEVICE_DT_INST_DEFINE(idx,\
         &kcs_ls_init,\

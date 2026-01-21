@@ -513,7 +513,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
     .clock_source = DT_INST_PROP(inst, clock_source),      \
     .baudrate = DT_INST_PROP_OR(inst, current_speed,115200), \
     .vuart_fifo_base = (struct host_vuart_fifo *)DT_INST_PROP(inst,fifo_base),\
-    .hb_exch = HOST_BMC_MSG_EXCH_INIT(inst,host_vuart_rx_callback,bmc_vuart_rx_callback,1),            \
+    .hb_exch = HOST_BMC_MSG_EXCH_INIT(inst,host_vuart_rx_callback,bmc_vuart_rx_callback),            \
     .irq_config_func = vuart_ls_irq_config_func_##inst,\
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                           \
     IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                                   \
