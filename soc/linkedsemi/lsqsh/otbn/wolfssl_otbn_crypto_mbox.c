@@ -22,21 +22,25 @@
 #include <wolfssl/wolfcrypt/wc_port.h>
 #include <wolfssl/wolfcrypt/ecc.h>
 #include <wolfssl/wolfcrypt/port/linkedsemi/ls-otbn-ecc.h>
-
+#include <wolfssl/wolfcrypt/port/linkedsemi/ls-rsa.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/drivers/entropy.h>
 #include <zephyr/cache.h>
 
 #include <zephyr/logging/log.h>
-// LOG_MODULE_DECLARE(wolfssl,CONFIG_WOLFSSL_LOG_LEVEL);
+LOG_MODULE_DECLARE(mbox_linkedsem_ipc);
 
 // #define ASSERT_WOLFSSL(error) {if(error){__ASSERT_//PRINT("wolfssl :stack is too small\n"); err = WOLFSSL_ERR_ECP_BUFFER_TOO_SMALL; goto exit;}}
 #define DELEGATE_ECDSA_GENE_KEY     0x11
 #define DELEGATE_ECDSA_SIGN         0x22
 #define DELEGATE_ECDSA_VERIFY       0x33
 #define DELEGATE_ECC_SHARED_KEY     0x44
+#define DELEGATE_RSA_MOD_EXP_ENCRY  0x55
+#define DELEGATE_RSA_MOD_EXP_DECRY  0x66
 #define DELEGATE_ERROR_OPERATION    0Xff
 // const struct device *otbn_mbox_dev = DEVICE_DT_GET(DT_NODELABEL(mbox_consumer_otbn_crypto));
+
+#define RSA_MAX_NUMER_SIZE (4096/8)
 
 struct otbn_delegate_params
 {
@@ -67,6 +71,9 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
         case DELEGATE_ECDSA_GENE_KEY:
         case DELEGATE_ECDSA_SIGN:
         case DELEGATE_ECDSA_VERIFY:
+        case DELEGATE_ECC_SHARED_KEY:
+        case DELEGATE_RSA_MOD_EXP_DECRY:
+        case DELEGATE_RSA_MOD_EXP_ENCRY:
             memcpy((void *)&recive_params,(void *)param,sizeof(struct otbn_delegate_params));
             // recive_params.op = param->op;
             // recive_params.data[0] = param->data[0];
@@ -75,7 +82,7 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
             // recive_params.data[3] = param->data[3];
             break;
         default:
-            printk("ecdsa error operation\n");
+            LOG_DBG("ecdsa error operation\n");
             break;
     }
     
@@ -96,8 +103,8 @@ static void delegation_client_mbox_callback(const struct device *dev,
 /* client : cpu1 secure*/
 void ls_otbn_delegation_client_chanels_init(void)
 {
-    printk("ls_otbn_tx channel_id= 0x%x\n",ls_otbn_client_tx.channel_id);
-    printk("ls_otbn_rx channel_id= 0x%x\n",ls_otbn_client_rx.channel_id);
+    LOG_DBG("ls_otbn_tx channel_id= 0x%x\n",ls_otbn_client_tx.channel_id);
+    LOG_DBG("ls_otbn_rx channel_id= 0x%x\n",ls_otbn_client_rx.channel_id);
     k_sem_init(&client_sem,1,1);
     k_sem_init(&client_op_return_sem,0,1);
 
@@ -264,6 +271,86 @@ int ls_otbn_shared_secret(uint32_t curve, uint32_t curve_size, uint8_t *private_
     return ret;
 }
 
+int ls_rsa_modexp_decrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
+    uint32_t* outLen, uint8_t *key_d, const uint8_t* key_n, uint32_t d_size)
+{
+    int ret = 0;
+    uint32_t num_bytes = d_size / 8;
+    if (k_sem_take(&client_sem, K_FOREVER)) {
+		return -EACCES;
+	}
+
+    sys_cache_data_flush_range((void *)in, num_bytes);
+    sys_cache_data_flush_range((void *)out, num_bytes);
+    sys_cache_data_flush_range((void *)key_d, num_bytes);
+    sys_cache_data_flush_range((void *)key_n, num_bytes);
+
+    struct otbn_delegate_params param = {
+        .op = DELEGATE_RSA_MOD_EXP_DECRY,
+        .data[0] = (uint8_t *)in,
+        .data[1] = (uint8_t *)key_d,
+        .data[2] = (uint8_t *)key_n,
+        .data[3] = (uint8_t *)out,
+        .param[0] = inLen,
+        .param[1] = d_size,
+    };
+    struct mbox_msg msg = {
+        .data = &param,
+        .size = sizeof(param),
+    };
+
+    mbox_send_dt(&ls_otbn_client_tx,&msg);
+    k_sem_take(&client_op_return_sem,K_FOREVER);
+    ret = recive_params.status;
+    if(ret == 0)
+    {
+        sys_cache_data_invd_range((void *)out, num_bytes);
+        *outLen = num_bytes;
+    }
+    k_sem_give(&client_sem);
+    return ret;
+}
+
+int ls_rsa_modexp_encrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
+    uint32_t* outLen, uint8_t *exp, const uint8_t* key_n, uint32_t n_size)
+{
+    int ret = 0;
+    uint32_t num_bytes = n_size / 8;
+    if (k_sem_take(&client_sem, K_FOREVER)) {
+		return -EACCES;
+	}
+    k_sem_give(&client_sem);
+
+    sys_cache_data_flush_range((void *)in, num_bytes);
+    sys_cache_data_flush_range((void *)out, num_bytes);
+    sys_cache_data_flush_range((void *)exp, num_bytes);
+    sys_cache_data_flush_range((void *)key_n, num_bytes);
+    struct otbn_delegate_params param = {
+        .op = DELEGATE_RSA_MOD_EXP_ENCRY,
+        .data[0] = (uint8_t *)in,
+        .data[1] = (uint8_t *)exp,
+        .data[2] = (uint8_t *)key_n,
+        .data[3] = (uint8_t *)out,
+        .param[0] = inLen,
+        .param[1] = n_size,
+    };
+    struct mbox_msg msg = {
+        .data = &param,
+        .size = sizeof(param),
+    };
+
+    mbox_send_dt(&ls_otbn_client_tx,&msg);
+    k_sem_take(&client_op_return_sem,K_FOREVER);
+    ret = recive_params.status;
+    if(ret == 0)
+    {
+        sys_cache_data_invd_range((void *)out, num_bytes);
+        *outLen = num_bytes;
+    }
+    k_sem_give(&client_sem);
+    return ret;
+}
+
 #else
 static void wolfssl_delegation_server_consumer(struct k_work *work);
 // K_THREAD_DEFINE(consumer_thread_id, 1024, wolfssl_delegation_server_consumer, NULL, NULL, NULL, 2, 0, 0);
@@ -281,13 +368,15 @@ static void delegation_server_mbox_handler(const struct device *dev,struct mbox_
     int err = 0;
     const struct otbn_delegate_params *param = data->data;
     struct mbox_msg msg;
-    printk("delegation_server_mbox_handler\n");
+    LOG_DBG("delegation_server_mbox_handler\n");
     switch(param->op)
     {
         case DELEGATE_ECDSA_GENE_KEY:
         case DELEGATE_ECDSA_SIGN:
         case DELEGATE_ECDSA_VERIFY:
         case DELEGATE_ECC_SHARED_KEY:
+        case DELEGATE_RSA_MOD_EXP_DECRY:
+        case DELEGATE_RSA_MOD_EXP_ENCRY:
             err = k_msgq_put(&msgq, param, K_NO_WAIT);
             if(err)
             {
@@ -297,14 +386,14 @@ static void delegation_server_mbox_handler(const struct device *dev,struct mbox_
                 };
                 msg.data = &rparam;
                 mbox_send_dt(&ls_otbn_server_tx,&msg);
-                printk("wolfssl mailbox fifo too small\n");
+                LOG_ERR("wolfssl mailbox fifo too small\n");
             }else
             {
                 k_work_submit(&worker);
             }
             break;
         default:
-            printk("error wolfssl mailbox operation\n");
+            LOG_ERR("error wolfssl mailbox operation\n");
             break;
     }
 }
@@ -322,8 +411,8 @@ static void delegation_server_mbox_callback(const struct device *dev,
 /* server : cpu1 app core*/
 void ls_otbn_delegation_server_chanels_init(void)
 {
-    printk("ls_otbn_tx channel_id= 0x%x\n",ls_otbn_server_tx.channel_id);
-    printk("ls_otbn_rx channel_id= 0x%x\n",ls_otbn_server_rx.channel_id);
+    LOG_DBG("ls_otbn_tx channel_id= 0x%x\n",ls_otbn_server_tx.channel_id);
+    LOG_DBG("ls_otbn_rx channel_id= 0x%x\n",ls_otbn_server_rx.channel_id);
     k_sem_init(&server_sem,1,1);
     k_sem_init(&server_op_return_sem,0,1);
     k_msgq_init(&msgq, (char *)msgq_buf, sizeof(struct otbn_delegate_params), WOLFSSL_MSGQ_LEN);
@@ -344,109 +433,145 @@ void ls_otbn_delegation_server_chanels_init(void)
 static void wolfssl_delegation_server_consumer(struct k_work *work)
 {
     int err = 0;
-    struct otbn_delegate_params ecc_param;
+    struct otbn_delegate_params mbox_server;
     struct otbn_delegate_params param = {0};
     struct mbox_msg msg = {0};
     uint32_t curve_id;
     uint32_t curve_size;
-    printk("thread :wolfssl_delegation_server_consumer started\n");
+    uint32_t nbyte;
+    uint32_t out_len;
+    LOG_DBG("thread :wolfssl_delegation_server_consumer started\n");
     do
     {
-        err = k_msgq_get(&msgq, &ecc_param, K_FOREVER);
+        err = k_msgq_get(&msgq, &mbox_server, K_FOREVER);
         if(err)
         {
-            printk("wolfssl work queue err\n");
+            LOG_ERR("wolfssl work queue err\n");
         }
-        curve_id = ecc_param.param[0];
-        curve_size = ecc_param.param[1];
+        curve_id = mbox_server.param[0];
+        curve_size = mbox_server.param[1];
         
-        printf("wolfssl get client request\n");
-        if(!(curve_id == ECC_SECP384R1 || curve_id == ECC_SECP256R1 || curve_id == ECC_SM2P256V1))
-        {
-            printk("wolfssl work queue:This curve is not supported.\n");
-            ecc_param.op = DELEGATE_ERROR_OPERATION;
-        }
+        // LOG_DBG("wolfssl get client request\n");
+        // if(!(curve_id == ECC_SECP384R1 || curve_id == ECC_SECP256R1 || curve_id == ECC_SM2P256V1))
+        // {
+        //     LOG_DBG("wolfssl work queue:This curve is not supported.\n");
+        //     mbox_server.op = DELEGATE_ERROR_OPERATION;
+        // }
 
-        switch(ecc_param.op)
+        switch(mbox_server.op)
         {
             case DELEGATE_ECDSA_GENE_KEY:
-                printf("DELEGATE_ECDSA_GENE_KEY\n");
-                sys_cache_data_invd_range((void *)ecc_param.data[0], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[2], curve_size);
-                err = ls_otbn_get_key_pair(curve_id,curve_size,ecc_param.data[0],ecc_param.data[1],ecc_param.data[2]);
+                LOG_DBG("DELEGATE_ECDSA_GENE_KEY\n");
+                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
+                err = ls_otbn_get_key_pair(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2]);
                 if(err)
                 {
-                    printk(" ecc keygen failed\n");
+                    LOG_ERR(" ecc keygen failed\n");
                 }
                 param.op = DELEGATE_ECDSA_GENE_KEY;
                 param.status = err;
-                param.data[0] = ecc_param.data[0];
-                param.data[1] = ecc_param.data[1];
-                param.data[2] = ecc_param.data[2];
-                sys_cache_data_flush_range((void *)ecc_param.data[0], curve_size);
-                sys_cache_data_flush_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_flush_range((void *)ecc_param.data[2], curve_size);
+                param.data[0] = mbox_server.data[0];
+                param.data[1] = mbox_server.data[1];
+                param.data[2] = mbox_server.data[2];
+                sys_cache_data_flush_range((void *)mbox_server.data[0], curve_size);
+                sys_cache_data_flush_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_flush_range((void *)mbox_server.data[2], curve_size);
                 break;
             case DELEGATE_ECDSA_SIGN:
-                printf("DELEGATE_ECDSA_SIGN\n");
-                sys_cache_data_invd_range((void *)ecc_param.data[0], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[2], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[3], curve_size);
-                err = ls_otbn_sign_hash(curve_id,curve_size,ecc_param.data[0],ecc_param.data[1],ecc_param.data[2],ecc_param.data[3]);
+                LOG_DBG("DELEGATE_ECDSA_SIGN\n");
+                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[3], curve_size);
+                err = ls_otbn_sign_hash(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2],mbox_server.data[3]);
                 if(err)
                 {
-                    printk(" ecdsa sign failed\n");
+                    LOG_ERR(" ecdsa sign failed\n");
                 }
                 param.op = DELEGATE_ECDSA_SIGN;
                 param.status = err;
-                param.data[0] = ecc_param.data[0];
-                param.data[1] = ecc_param.data[1];
-                param.data[2] = ecc_param.data[2];
-                param.data[3] = ecc_param.data[3];
-                sys_cache_data_flush_range((void *)ecc_param.data[0], curve_size);
-                sys_cache_data_flush_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_flush_range((void *)ecc_param.data[2], curve_size);
-                sys_cache_data_flush_range((void *)ecc_param.data[3], curve_size);
+                param.data[0] = mbox_server.data[0];
+                param.data[1] = mbox_server.data[1];
+                param.data[2] = mbox_server.data[2];
+                param.data[3] = mbox_server.data[3];
+                sys_cache_data_flush_range((void *)mbox_server.data[0], curve_size);
+                sys_cache_data_flush_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_flush_range((void *)mbox_server.data[2], curve_size);
+                sys_cache_data_flush_range((void *)mbox_server.data[3], curve_size);
                 break;
             case DELEGATE_ECDSA_VERIFY:
-                printf("DELEGATE_ECDSA_VERIFY\n");
-                sys_cache_data_invd_range((void *)ecc_param.data[0], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[2], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[3], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[4], curve_size);
-                err = ls_otbn_verify_hash(curve_id,curve_size,ecc_param.data[0],ecc_param.data[1],ecc_param.data[2],ecc_param.data[3],ecc_param.data[4]);
+                LOG_DBG("DELEGATE_ECDSA_VERIFY\n");
+                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[3], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[4], curve_size);
+                err = ls_otbn_verify_hash(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2],mbox_server.data[3],mbox_server.data[4]);
                 if(err)
                 {
-                    printk(" ecdsa verify failed\n");
+                    LOG_ERR(" ecdsa verify failed\n");
                 }
                 param.op = DELEGATE_ECDSA_VERIFY;
                 param.status = err;
-                param.data[0] = ecc_param.data[1];//r_x
+                param.data[0] = mbox_server.data[1];//r_x
                 sys_cache_data_flush_range((void *)param.data[0], curve_size);
                 break;
             case DELEGATE_ECC_SHARED_KEY:
-                printf("DELEGATE_ECC_SHARED_KEY\n");
-                sys_cache_data_invd_range((void *)ecc_param.data[0], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_invd_range((void *)ecc_param.data[2], curve_size);
-                err = ls_otbn_shared_secret(curve_id,curve_size,ecc_param.data[0],ecc_param.data[1],ecc_param.data[2]);
+                LOG_DBG("DELEGATE_ECC_SHARED_KEY\n");
+                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
+                err = ls_otbn_shared_secret(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2]);
                 if(err)
                 {
-                    printk(" ecc shared key failed\n");
+                    LOG_ERR(" ecc shared key failed\n");
                 }
                 param.op = DELEGATE_ECC_SHARED_KEY;
                 param.status = err;
-                param.data[1] = ecc_param.data[1];
-                param.data[2] = ecc_param.data[2];
-                sys_cache_data_flush_range((void *)ecc_param.data[1], curve_size);
-                sys_cache_data_flush_range((void *)ecc_param.data[2], curve_size);
+                param.data[1] = mbox_server.data[1];
+                param.data[2] = mbox_server.data[2];
+                sys_cache_data_flush_range((void *)mbox_server.data[1], curve_size);
+                sys_cache_data_flush_range((void *)mbox_server.data[2], curve_size);
+                break;
+            case DELEGATE_RSA_MOD_EXP_ENCRY:
+                nbyte = mbox_server.param[1]/8;
+                LOG_DBG("DELEGATE_RSA_MOD_EXP_ENCRY\n");
+                sys_cache_data_invd_range((void *)mbox_server.data[0], nbyte);
+                sys_cache_data_invd_range((void *)mbox_server.data[1], nbyte);
+                sys_cache_data_invd_range((void *)mbox_server.data[2], nbyte);
+                sys_cache_data_invd_range((void *)mbox_server.data[3], nbyte);
+                err = ls_rsa_modexp_encrypt(mbox_server.data[0],mbox_server.param[0],mbox_server.data[3],&out_len,mbox_server.data[1],mbox_server.data[2],mbox_server.param[1]);
+                if(err)
+                {
+                    LOG_ERR(" rsa mod exp failed\n");
+                }
+                param.op = DELEGATE_RSA_MOD_EXP_ENCRY;
+                param.status = err;
+                param.data[0] = mbox_server.data[3];
+                sys_cache_data_flush_range((void *)mbox_server.data[3], nbyte);
+                break;
+            case DELEGATE_RSA_MOD_EXP_DECRY:
+                LOG_DBG("DELEGATE_RSA_MOD_EXP_DECRY\n");
+                nbyte = mbox_server.param[1]/8;
+                sys_cache_data_invd_range((void *)mbox_server.data[0], nbyte);
+                sys_cache_data_invd_range((void *)mbox_server.data[1], nbyte);
+                sys_cache_data_invd_range((void *)mbox_server.data[2], nbyte);
+                sys_cache_data_invd_range((void *)mbox_server.data[3], nbyte);
+                err = ls_rsa_modexp_decrypt(mbox_server.data[0],mbox_server.param[0],mbox_server.data[3],&out_len,mbox_server.data[1],mbox_server.data[2],mbox_server.param[1]);
+                if(err)
+                {
+                    LOG_ERR(" rsa mod exp failed\n");
+                }
+                param.op = DELEGATE_RSA_MOD_EXP_DECRY;
+                param.status = err;
+                param.data[0] = mbox_server.data[3];
+                sys_cache_data_flush_range((void *)mbox_server.data[3], nbyte);
                 break;
             default:
                 param.status = -1;
-                printk("error operation\n");
+                LOG_ERR("error operation\n");
                 break;
         }
 // exit:
