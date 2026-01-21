@@ -580,7 +580,7 @@ static int ls_i3c_init(const struct device *dev)
 #endif
 
 #if defined(CONFIG_PINCTRL)
-    ret = pinctrl_apply_state(&dev_config->pcfg[0], PINCTRL_STATE_DEFAULT);
+    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
         LOG_ERR("%s: Could not configure pins", dev->name);
     }
@@ -1144,10 +1144,20 @@ out_daa:
  */
 static inline void ls_i3c_xfer_reset(I3C_TypeDef *base)
 {
-    LL_I3C_RequestRxFIFOFlush(base);
-    LL_I3C_RequestTxFIFOFlush(base);
     LL_I3C_RequestStatusFIFOFlush(base);
-    LL_I3C_RequestControlFIFOFlush(base);
+	while(LL_I3C_IsActiveFlag_RXFNE(base))
+	{
+    	LL_I3C_RequestRxFIFOFlush(base);
+	}
+	while(!LL_I3C_IsActiveFlag_TXFE(base))
+	{
+    	LL_I3C_RequestTxFIFOFlush(base);
+	}
+	while(!LL_I3C_IsActiveFlag_CFE(base))
+	{
+		LL_I3C_RequestControlFIFOFlush(base);
+	}
+	//i3c core_clk 和 pbus_clk之间可能存在时间差，需等待确保fifo状态为空
 }
 
 /**
