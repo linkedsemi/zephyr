@@ -231,7 +231,7 @@ static void kcs_ibf_cb(const struct device *dev,void *param)
         ipmi_kcs_handle_data(ipmi_dev);
     }
 
-    struct ipmi_kcs_ls_data *ipmi_data = (struct ipmi_kcs_ls_data *)dev->data;
+    struct ipmi_kcs_ls_data *ipmi_data = (struct ipmi_kcs_ls_data *)ipmi_dev->data;
     if (ipmi_data->phase == KCS_PHASE_WRITE_DONE && ipmi_data->cb)
     {
         ipmi_data->cb(ipmi_dev, ipmi_data->param, IPMI_RX_EVENT);
