@@ -215,6 +215,7 @@ struct ls_i3c_data {
 #endif
 };
 
+static void ls_i3c_log_err_type(const struct device *dev);
 static inline void ls_i3c_xfer_reset(I3C_TypeDef *base);
 
 static int ls_i3c_cntlr_wave_init(const struct device *dev)
@@ -1117,9 +1118,8 @@ out_daa:
 	if(__LS_I3C_GET_FLAG(base,I3C_EVR_ERRF_MASK))
 	{
 		ret = -EIO;
-		LOG_ERR("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
+		ls_i3c_log_err_type(dev);
 		LL_I3C_ClearFlag_ERR(base);
-		ls_i3c_xfer_reset(base);
 	}
 
 	if(__LS_I3C_GET_FLAG(base,I3C_EVR_FCF_MASK))
@@ -1127,7 +1127,7 @@ out_daa:
 		/* Clear frame complete flag */
 		LL_I3C_ClearFlag_FC(base);
 	}
-
+	ls_i3c_xfer_reset(base);
 	k_mutex_unlock(&data->lock);
 
 	return ret;
@@ -1445,8 +1445,7 @@ out_ccc_stop:
 	if (__LS_I3C_GET_FLAG(base, LL_I3C_EVR_ERRF) == SET)
 	{
 		/* Clear error flag */
-
-		LOG_ERR("ENTDAA ERROR , ERROR CODE = 0x%x",__LS_I3C_MASTER_GET_ERROR(base));
+		ls_i3c_log_err_type(dev);
 		LL_I3C_ClearFlag_ERR(base);
 		/* Update returned status value */
 		ret = -EIO;
