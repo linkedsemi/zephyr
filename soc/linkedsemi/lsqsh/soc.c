@@ -48,7 +48,9 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash_controller)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
 #endif
+#if !defined(CONFIG_SMP)
 BUILD_ASSERT(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
+#endif
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -638,7 +640,8 @@ void soc_early_init_hook(void)
 #endif
 
     reset_reason_init();
-
+    
+#if !defined(CONFIG_SMP)
 #if defined(CONFIG_MBOX)
     if ((PWR_FULL_RESET == reset_reason_get())
         || (SOFT_FULL_RESET == reset_reason_get())
@@ -647,13 +650,12 @@ void soc_early_init_hook(void)
         || (EXT_FULL_RESET == reset_reason_get())) {
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
     }
-#endif
 
-#if !defined(CONFIG_SMP)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
 #endif
-#endif
+#endif 
+#endif //!defined(CONFIG_SMP)
 
     cpu_sleep_mode_config(0);
     driver_init();
@@ -675,6 +677,7 @@ void soc_early_init_hook(void)
     return;
 }
 
+#if !defined(CONFIG_SMP)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 extern uint8_t flash_ls_read_ear(const struct device *dev);
 extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
@@ -858,15 +861,15 @@ __maybe_unused void soc_late_init_hook(void)
 
 #endif //!defined(CONFIG_SMP)
 }
-#else
-
+#else /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
 void soc_late_init_hook(void)
 {
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
     ls_otbn_delegation_client_chanels_init();
 #endif
 }
-#endif
+#endif /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
+#endif /*!defined(CONFIG_SMP)*/
 
 #if defined(CONFIG_SMP)
 void secondary_cpu_init(void)
