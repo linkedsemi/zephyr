@@ -111,6 +111,8 @@ struct host_vuart_fifo {
     struct fifo_env h2b;
     uint8_t b2h_buf[VUART_FIFO_SIZE];
     uint8_t h2b_buf[VUART_FIFO_SIZE];
+    bool host_rx_from_vuart;
+    bool host_tx_to_vuart;
 };
 
 enum vuart_hb_msg_type {
@@ -189,6 +191,8 @@ void host_bmc_msg_exch_init(const struct host_bmc_msg_exch *exch);
 void vuart_status_send(const struct host_bmc_msg_exch *exch,enum vuart_hb_msg_type vuart_msg_type);
 
 void vuart_b2h_mode_set(const struct host_bmc_msg_exch *exch,bool host_rx_from_vuart,bool host_tx_to_vuart);
+
+int get_host_vuart_mode_setting(const struct device *dev, uint8_t *rx_enable, uint8_t *tx_enable);
 
 void kcs_env_lock(struct host_kcs_env *env);
 
