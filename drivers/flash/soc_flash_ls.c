@@ -480,12 +480,6 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
 	priv->env.addr4b = cfg->addr4b;
 	priv->env.writing = false;
-	if(!hal_flashx_inited(&priv->env))
-	{
-		priv->env.continuous_mode_on = false;
-		hal_flashx_init(&priv->env);
-		hal_flashx_continuous_mode_start(&priv->env);
-	}
 	k_sem_init(&priv->sem, 1, 1);
 	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
 	k_work_init(&priv->worker,delegation_server_work_handler);
