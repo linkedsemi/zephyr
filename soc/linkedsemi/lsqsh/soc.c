@@ -252,11 +252,12 @@ __maybe_unused __ramfunc static void enable_dpll()
     while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK));
 }
 
+#define LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE(node_id) \
+    IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
+
 __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
 {
     LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
-    MODIFY_REG(LSQSPIV2->QSPI_CTRL1,LSQSPIV2_MODE_DAC_MASK|LSQSPIV2_CAP_DLY_MASK|LSQSPIV2_CAP_NEG_MASK,
-                1<<LSQSPIV2_MODE_DAC_POS|QSPI_CAPTURE_DELAY<<LSQSPIV2_CAP_DLY_POS|QSPI_CAPTURE_NEG<<LSQSPIV2_CAP_NEG_POS);
     SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS2, 0x0)
@@ -286,6 +287,17 @@ __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x10)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
+    struct hal_flash_env env;
+    env.reg = (void *)DT_REG_ADDR(DT_CHOSEN(zephyr_flash_controller));
+    env.dual_mode_only = !DT_PROP(DT_CHOSEN(zephyr_flash_controller), quad_mode);
+    env.continuous_mode_enable = DT_PROP(DT_CHOSEN(zephyr_flash_controller), continuous_mode);
+    env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
+    env.writing = false;
+    if(!hal_flashx_inited(&env)) {
+        env.continuous_mode_on = false;
+        hal_flashx_init(&env);
+        hal_flashx_continuous_mode_start(&env);
+    }
     lscache_cache_enable(1);
 }
 
@@ -638,10 +650,6 @@ extern struct hal_flash_env *flash_ls_env(const struct device *dev);
 int flash_xip_prepare(const struct device *flash_dev)
 {
     flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
-    if (!is_app_cpu_running()) {
-        lscache_cache_disable();
-        lscache_cache_enable(1);
-    }
 
     return 0;
 }
