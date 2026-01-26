@@ -277,6 +277,10 @@ config FS_FATFS_MULTI_PARTITION
 	  physical drive number and only an FAT volume found on the physical drive
 	  will be mounted.
 
+config FS_FATFS_TINY
+	bool "FS_FATFS_TINY"
+	default y
+
 endmenu
 
 endif # FAT_FILESYSTEM_ELM
