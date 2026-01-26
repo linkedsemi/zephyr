@@ -252,11 +252,11 @@ static void host_vuart_reg1_write(const struct peri_ioport_content *ioport, uint
         cfg->retain->data_reg.ier = *val;
         if(cfg->retain->host_rx_from_vuart) {
             cfg->reg->DLH_IER = *val & IER_THRE;
+            host_vuart_report_up_irq(dev);
         }else {
             cfg->reg->DLH_IER = *val & (IER_THRE|IER_RDA);
+            local_irq_state_update(dev);
         }
-        host_vuart_report_up_irq(dev);
-        local_irq_state_update(dev);
     }
 }
 
