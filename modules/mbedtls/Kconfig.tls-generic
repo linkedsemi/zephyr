@@ -247,11 +247,6 @@ config MBEDTLS_SOME_CIPHER_ENABLED
 config MBEDTLS_CIPHER_AES_ENABLED
 	bool "AES block cipher"
 
-config MBEDTLS_CIPHER_AES_LINKEDSEMI
-	bool "LINKEDSEMI's hardware AES"
-	default n
-	select MBEDTLS_CIPHER_AES_ENABLED
-
 config COMMON_LIBC_MALLOC_ARENA_SIZE
 	int
 	default 32768
@@ -348,43 +343,6 @@ config MBEDTLS_SHA256
 	bool "SHA-256 hash algorithm"
 	default y
 
-config MBEDTLS_LINKEDSEMI_OTBN
-	bool "LINKEDSEMI's otbn module enable"
-	default n
-
-config MBEDTLS_SHA224_SHA256_SM3_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sha224 and sha256"
-	default n
-
-config MBEDTLS_SHA256_SM3_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's otbn module calculate sm3 and sha256"
-	default n
-	select MBEDTLS_ECDSA_C
-
-config MBEDTLS_ECP_DP_SM2_ENABLED
-	bool "SM2 elliptic curve, implementation based on LINKEDSEMI’s OTBN moudle"
-
-config MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's P256, P384, SM2 curve, ECDSA implementation based on OTBN"
-	default n
-	select MBEDTLS_LINKEDSEMI_OTBN
-	select MBEDTLS_ECP_DP_SECP256R1_ENABLED
-	select MBEDTLS_ECP_DP_SECP384R1_ENABLED
-
-config MEBDTLS_LINKEDSEMI_OTBN_DELEGATION
-	bool "enable linedsemi's otbn delegation"
-	default n
-
-config MEBDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT
-	bool "Use the mailbox to control the authorization server in order to execute the OTBN ECDSA function of  LINKEDSEMI Company"
-	default n
-	select MEBDTLS_LINKEDSEMI_OTBN_DELEGATION
-
-config MEBDTLS_LINKEDSEMI_OTBN_DELEGATION_SERVER
-	bool "The specific implementation of OTBN ECDSA for the LINKEDSEMI Company"
-	default n
-	select MEBDTLS_LINKEDSEMI_OTBN_DELEGATION
-
 config MBEDTLS_SHA256_SMALLER
 	bool "Smaller SHA-256 implementation"
 	depends on MBEDTLS_SHA256
@@ -398,28 +356,6 @@ config MBEDTLS_SHA384
 
 config MBEDTLS_SHA512
 	bool "SHA-512 hash algorithm"
-
-config MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sha384 and sha512"
-	default n
-	select MBEDTLS_SHA512
-
-config MBEDTLS_SHA384_SHA512_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's otbn module calculate sha384 and sha512"
-	default n
-	select MBEDTLS_SHA512
-
-config MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sm4"
-	default n
-
-config MBEDTLS_THREADING_LINKEDSEMI_ALT
-	bool "MbedTLS runs in the Zephyr operating system."
-	default n
-	help
-	  "When compiling this file, it will run by 
-	  default in the zephyr os and requires the 
-	  thread mode to be enabled."
 
 config MBEDTLS_POLY1305
 	bool "Poly1305 hash family"
