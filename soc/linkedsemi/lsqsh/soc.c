@@ -637,6 +637,7 @@ void soc_early_init_hook(void)
 
     reset_reason_init();
 
+#if defined(CONFIG_MBOX)
     if ((PWR_FULL_RESET == reset_reason_get())
         || (SOFT_FULL_RESET == reset_reason_get())
         || (CPU_FULL_RESET == reset_reason_get())
@@ -644,6 +645,7 @@ void soc_early_init_hook(void)
         || (EXT_FULL_RESET == reset_reason_get())) {
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
     }
+#endif
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
     iopmp_region_init();
