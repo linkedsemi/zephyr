@@ -69,5 +69,7 @@
 #define MBEDTLS_AES_FEWER_TABLES
 #define MBEDTLS_AES_ROM_TABLES
 #define MBEDTLS_AES_C
+#define MBEDTLS_CCM_C
+#define MBEDTLS_GCM_C
 
 #endif /*_MBEDTLS_LS_CFG_ALT_*/
