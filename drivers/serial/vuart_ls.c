@@ -167,6 +167,22 @@ static int vuart_irq_update(const struct device *dev)
 	return 1;
 }
 
+int get_host_vuart_mode_setting(const struct device *dev, uint8_t *rx_enable, uint8_t *tx_enable)
+{
+    if (rx_enable == NULL || tx_enable == NULL) {
+        return -EFAULT; 
+    }
+
+    const struct ls_vuart_cfg *cfg = dev->config;
+    if (cfg->vuart_fifo_base == NULL) {
+        return -EIO; 
+    }
+
+    *rx_enable = (cfg->vuart_fifo_base->host_rx_from_vuart) ? 1 : 0;
+    *tx_enable = (cfg->vuart_fifo_base->host_tx_to_vuart) ? 1 : 0;
+
+    return 0;
+}
 static void vuart_irq_callback_set(const struct device *dev, uart_irq_callback_user_data_t cb,
 				   void *user_data)
 {
@@ -261,3 +277,24 @@ static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 
 SHELL_CMD_ARG_REGISTER(chmode, NULL, "chmod usage: <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>",  cmd_mode,  0, 3);
 #endif
+static int print_mode(const struct shell *sh, size_t argc, char **argv)
+{
+    const struct device *dev = VUART_DEV;
+    if (!device_is_ready(dev)) {
+        shell_error(sh, "ls-host-vuart device not ready");
+        return -ENODEV;
+    }
+    
+    uint8_t rx_enable , tx_enable = 0;
+    int ret;
+    ret = get_host_vuart_mode_setting(dev, &rx_enable, &tx_enable);
+    if (ret != 0) {
+        shell_error(sh, "Failed to get VUART mode, ret: %d", ret);
+        return ret;
+    }
+
+    shell_print(sh, "VUART Mode: RX Enable = %d, TX Enable = %d", rx_enable, tx_enable);
+    return 0;
+}
+
+SHELL_CMD_ARG_REGISTER(printmode, NULL, "printmode usage: show <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>",  print_mode,  1, 0);
