@@ -156,6 +156,12 @@ __no_optimization void cpu2_cache_region_init(void)
     }
 }
 
+extern void SWINT_Handler_ASM(void);
+extern void SystemInit();
+extern void psram_init(void);
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+
 enum iopmp_channel {
     IOPMP_APP_CPUI_APP_CPUD,
     IOPMP_APP_CPUS,
@@ -235,10 +241,6 @@ void iopmp_region_init(void)
 #endif
 }
 
-extern void SWINT_Handler_ASM(void);
-extern void SystemInit();
-extern void psram_init(void);
-
 __maybe_unused __ramfunc static void enable_dpll()
 {
     CLEAR_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_CLKREF_SEL_MASK); /* clkin */
@@ -257,7 +259,6 @@ __maybe_unused __ramfunc static void enable_dpll()
 
 __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
 {
-    LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
     SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS2, 0x0)
@@ -287,18 +288,6 @@ __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x10)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
-    struct hal_flash_env env;
-    env.reg = (void *)DT_REG_ADDR(DT_CHOSEN(zephyr_flash_controller));
-    env.dual_mode_only = !DT_PROP(DT_CHOSEN(zephyr_flash_controller), quad_mode);
-    env.continuous_mode_enable = DT_PROP(DT_CHOSEN(zephyr_flash_controller), continuous_mode);
-    env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
-    env.writing = false;
-    if(!hal_flashx_inited(&env)) {
-        env.continuous_mode_on = false;
-        hal_flashx_init(&env);
-        hal_flashx_continuous_mode_start(&env);
-    }
-    lscache_cache_enable(1);
 }
 
 __maybe_unused static void peripheral_init()
@@ -487,6 +476,27 @@ __maybe_unused static void peripheral_init()
     ls_clock_control_on(I3C1_CLOCK);
 #endif
 }
+__ramfunc static void high_frequency_init()
+{
+    LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
+    if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
+        && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
+        enable_dpll();
+        cpu_600M_ahb_300M_qspi_200M_init();
+    }
+    struct hal_flash_env env;
+    env.reg = (void *)DT_REG_ADDR(DT_CHOSEN(zephyr_flash_controller));
+    env.dual_mode_only = !DT_PROP(DT_CHOSEN(zephyr_flash_controller), quad_mode);
+    env.continuous_mode_enable = DT_PROP(DT_CHOSEN(zephyr_flash_controller), continuous_mode);
+    env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
+    env.writing = false;
+    env.continuous_mode_on = false;
+    hal_flashx_init(&env);
+    hal_flashx_continuous_mode_start(&env);
+    lscache_cache_enable(1);
+    peripheral_init();
+}
+#endif /*  DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) */
 
 __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
 {
@@ -613,12 +623,7 @@ void soc_early_init_hook(void)
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
-        if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
-            && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
-            enable_dpll();
-            cpu_600M_ahb_300M_qspi_200M_init();
-        }
-        peripheral_init();
+        high_frequency_init();
     }
 #endif
 #endif /* CONFIG_FORCE_CLOCK_HSI */
