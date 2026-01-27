@@ -63,6 +63,7 @@ struct jtag_ls_config {
     struct gpio_dt_spec tms_gpios;
     struct gpio_dt_spec tdi_gpios;
     struct gpio_dt_spec tdo_gpios;
+    struct gpio_dt_spec trst_gpios;
 };
 
 struct jtag_ls_data {
@@ -74,6 +75,7 @@ struct jtag_ls_data {
     uint8_t tdi_dev;
     uint8_t tdo_dev;
     uint8_t tms_dev;
+    uint32_t count;
 };
 
 void ls_jtag_isr(void *arg)
@@ -83,12 +85,12 @@ void ls_jtag_isr(void *arg)
     struct jtag_ls_data *data = dev->data;
     reg_mjtag_t *const reg = config->reg;
 
-    if(reg->INTR_STT & MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK)
+    if (reg->INTR_STT & MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK)
     {
-        if (data->tdo_value) {
-            *data->tdo_value = reg->TDO;
-            data->tdo_value++;
+        if (data->count && data->tdo_value) {
+            *data->tdo_value++ = reg->TDO;
         } else {
+            /* Not sure why the RX FIFO has data. */
             reg->TDO;
         }
 
@@ -162,6 +164,10 @@ static int jtag_ls_init(const struct device *dev)
         LOG_ERR("TDO GPIO device not ready");
         return -EIO;
     }
+    if (!gpio_is_ready_dt(&config->trst_gpios)) {
+        LOG_ERR("TRST GPIO device not ready");
+        return -EIO;
+    }
 
     const uint32_t max_div = MJTAG_CTRL_TCK_DIVIDER_MASK >> MJTAG_CTRL_TCK_DIVIDER_POS;
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -184,13 +190,14 @@ static int jtag_ls_init(const struct device *dev)
     reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, max_div);
 #endif
 
-    k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
+    k_sem_init(&data->trans_sync_sem, 0, 1);
     k_sem_init(&data->lock, 1, 1);
     config->irq_config_func(dev);
     reg->INTR_MSK = 0x0;
     reg->INTR_CLR = MJTAG_INTR_ALL_MASK;
     reg->CTRL = READ_REG(reg->CTRL) | FIELD_BUILD(MJTAG_CTRL_TXD_CAP_DLY, JTAG_TXD_CAP_DLY) | FIELD_BUILD(MJTAG_CTRL_RXD_CAP_DLY, JTAG_RXD_CAP_DLY);
     reg->TDO_FT = 0;
+    reg->TRST = 0x01;
     /* Test-Logic Reset state */
     gjtag.tap_state = LS_TAP_RESET;
     return 0;
@@ -267,8 +274,6 @@ static void jtag_ls_set_tap_state(const struct device *dev, enum jtag_ls_tap_sta
     reg_mjtag_t *const reg = config->reg;
     uint8_t tmsbits;
     uint8_t count;
-
-    k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
 
     reg->INTR_MSK = MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK;
 
@@ -388,11 +393,39 @@ static enum jtag_ls_tap_states jtag_ls_get_tap_state(void)
 
 int jtag_ls_freq_get(const struct device *dev, uint32_t *freq)
 {
+    const struct jtag_ls_config *const config = dev->config;
+    const struct device *clk_dev = config->ccfg.cctl_dev;
+    reg_mjtag_t *const reg = config->reg;
+    uint32_t rate, div;
+
+    if (clk_dev) {
+        div = REG_FIELD_RD(reg->CTRL, MJTAG_CTRL_TCK_DIVIDER);
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
+        *freq = rate / div;
+        return 0;
+    }
+
     return -ENOTSUP;
 }
 
 int jtag_ls_freq_set(const struct device *dev, uint32_t freq)
 {
+    const struct jtag_ls_config *const config = dev->config;
+    const struct device *clk_dev = config->ccfg.cctl_dev;
+    reg_mjtag_t *const reg = config->reg;
+    uint32_t rate, div;
+
+    if (clk_dev) {
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
+        div = rate / freq;
+        if (div > MJTAG_CTRL_TCK_DIVIDER_MASK) {
+            LOG_ERR("bus_frequence value: %d error", config->bus_frequency);
+            return -EINVAL;
+        }
+        reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, div);
+        return 0;
+    }
+
     return -ENOTSUP;
 }
 
@@ -452,8 +485,6 @@ static int jtag_ls_tck_run(const struct device *dev, uint32_t run_count)
         return ret;
     }
 
-    k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
-
     reg->INTR_MSK = MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK;
     reg->FIFO_WREN = JTAG_WRITE_DATA_ENABLE;
     reg->TMS = 0x0;
@@ -473,15 +504,15 @@ static void jtag_ls_xfer_gpio(const struct device *dev, uint32_t out_bits_len, c
     struct jtag_ls_data *const data = dev->data;
     reg_mjtag_t *const reg = config->reg;
     volatile uint32_t bits_len, count;
-    data->tdo_value = in_data;
 
     bits_len = (out_bits_len > in_bits_len) ? out_bits_len : in_bits_len;
     count = (bits_len % 8) ? (bits_len / 8 + 1) : (bits_len / 8);
-    
+
+    data->tdo_value = in_data;
+    data->count = count;
+
     for(uint32_t i = 0; i < count; i++)
     {
-        k_sem_init(&data->trans_sync_sem, 0, K_SEM_MAX_LIMIT);
-
         reg->FIFO_WREN = JTAG_WRITE_DATA_ENABLE;
 
         if (bits_len % 8) {
@@ -501,13 +532,18 @@ static void jtag_ls_xfer_gpio(const struct device *dev, uint32_t out_bits_len, c
             reg->DW = 0x8;
         }
 
-        reg->TDI = *out_data++;
+        if (out_data)
+            reg->TDI = *out_data++;
+        else
+            reg->TDI = 0;
         reg->FIFO_PUSH = MJTAG_FIFO_PUSH_ALL_MASK;
         reg->FIFO_WREN = JTAG_START_SEND_DATA;
         reg->INTR_MSK = MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK;
 
         k_sem_take(&data->trans_sync_sem, K_FOREVER);
+        data->count--;
     }
+    data->tdo_value = NULL;
 }
 
 static void jtag_ls_readwrite_scan(const struct device *dev, int bits_len, const uint8_t *out_data,
@@ -664,6 +700,7 @@ static const struct jtag_ls_config jtag_ls_cfg_##index = {  \
     .tms_gpios = GPIO_DT_SPEC_INST_GET(index, tms_gpios),   \
     .tdi_gpios = GPIO_DT_SPEC_INST_GET(index, tdi_gpios),   \
     .tdo_gpios = GPIO_DT_SPEC_INST_GET(index, tdo_gpios),   \
+    .trst_gpios = GPIO_DT_SPEC_INST_GET(index, trst_gpios), \
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index),)) \
     IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))       \
     IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \

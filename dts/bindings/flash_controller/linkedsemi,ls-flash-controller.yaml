@@ -11,8 +11,5 @@ properties:
   continuous_mode:
     type: boolean
 
-  addr4b:
-    type: boolean
-
   mbox:
     type: phandle

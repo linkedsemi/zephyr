@@ -1,3 +1,4 @@
 zephyr_include_directories(.)
 zephyr_sources_ifdef(CONFIG_ESPI_LPC espi_lpc_common.c)
 zephyr_library_sources_ifdef(CONFIG_ESPI_LPC_HOST_VUART  espi_lpc_host_vuart.c)
+zephyr_library_sources_ifdef(CONFIG_ESPI_LPC_HOST_KCS    espi_lpc_host_kcs.c)

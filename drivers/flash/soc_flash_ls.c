@@ -3,8 +3,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#define DT_DRV_COMPAT        linkedsemi_ls_flash_controller
+#define DT_DRV_COMPAT		linkedsemi_ls_flash_controller
 
+#include <stdio.h>
 #include <zephyr/device.h>
 #include <zephyr/cache.h>
 #include <zephyr/drivers/flash.h>
@@ -14,7 +15,7 @@
 #include <zephyr/logging/log.h>
 #include <string.h>
 #include "platform.h"
-#include "soc_common.h"
+#include <soc.h>
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 #include <zephyr/drivers/mbox.h>
 #endif
@@ -39,8 +40,8 @@ struct flash_ls_config {
 	uint32_t mem_base;
 	uint32_t mem_size;
 	struct flash_pages_layout layout;
-    bool dual_mode_only;
-    bool continuous_mode_enable;
+	bool dual_mode_only;
+	bool continuous_mode_enable;
 	bool addr4b;
 	struct flash_partition_attr *attr;
 	uint8_t attr_num;
@@ -50,7 +51,6 @@ struct flash_ls_data {
 	struct hal_flash_env env;
 	struct k_sem sem;
 	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
-    struct k_sem delegate_sem;
 	struct k_work worker;
 	const struct device *dev;
 	struct delegate_c2s_params req_param;
@@ -61,6 +61,13 @@ struct flash_ls_data {
 uint8_t flash_ls_read_ear(const struct device *dev);
 
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
+static bool server_polling(void *param)
+{
+	const struct flash_ls_config *cfg =param;
+	return cfg->shared->hold_ack;
+}
+
+__attribute__((weak)) void flash_delegation_server_sync_fail(const struct device *dev,struct flash_ls_shared_data *shared){}
 
 static void flash_delegation_server_operation_sync(const struct device *dev)
 {
@@ -80,14 +87,16 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 	}
 
 	mbox_send_dt(&cfg->mbox_tx,&msg);
-	if(k_sem_take(&priv->delegate_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT))==-EAGAIN)
+	if(busy_poll(server_polling,(void *)cfg,CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT*1000)!=0)
 	{
 		priv->client_xip_active = false;
+		flash_delegation_server_sync_fail(dev,cfg->shared);
 	}
+	cfg->shared->hold_ack = false;
 }
 
 int flash_ls_get_part_info(const struct device *dev, uint8_t idx, uint32_t *base,
-				   uint32_t *size, uint32_t *attr)
+					uint32_t *size, uint32_t *attr)
 {
 	const struct flash_ls_config *cfg = dev->config;
 	if (idx >= cfg->attr_num) {
@@ -109,7 +118,7 @@ int flash_ls_get_part_num(const struct device *dev)
 }
 
 int flash_ls_set_part_info(const struct device *dev, uint8_t idx, uint32_t base,
-				   uint32_t size, uint32_t attr)
+					uint32_t size, uint32_t attr)
 {
 	const struct flash_ls_config *cfg = dev->config;
 	if (idx >= cfg->attr_num) {
@@ -161,15 +170,37 @@ static uint32_t get_guest_permission(const struct device *dev, uint32_t base, ui
 
 static bool is_own_ram(uint32_t addr)
 {
-    return ((addr >= DT_REG_ADDR(DT_CHOSEN(zephyr_sram)))
-            && (addr < (DT_REG_ADDR(DT_CHOSEN(zephyr_sram)) + DT_REG_SIZE(DT_CHOSEN(zephyr_sram)))));
+	return ((addr >= DT_REG_ADDR(DT_CHOSEN(zephyr_sram)))
+			&& (addr < (DT_REG_ADDR(DT_CHOSEN(zephyr_sram)) + DT_REG_SIZE(DT_CHOSEN(zephyr_sram)))));
 }
 
 static bool is_psram(uint32_t addr)
 {
-    return ((addr >= DT_REG_ADDR(DT_NODELABEL(psram)))
-            && (addr < (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram)))));
+	return ((addr >= DT_REG_ADDR(DT_NODELABEL(psram)))
+			&& (addr < (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram)))));
 }
+
+#if 0
+static void flash_op_align_debug(struct flash_xfer_buf *buf)
+{
+	for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+		if (buf[i].len > 0) {
+			printf("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx\n",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+#if 0
+			int data_addr = (uint32_t)buf[i].buf;
+			int data_size = buf[i].len;
+			off_t offset = buf[i].offset;
+			for (int idx = 0; idx < data_size; idx += 16) {
+				for (int jdx = 0; jdx < 16; jdx++) {
+					printf("%2.2x ", ((uint8_t *)data_addr)[idx + jdx]);
+				}
+				printf("\n");
+			}
+#endif
+		}
+	}
+}
+#endif
 
 static void delegation_server_work_handler(struct k_work *work)
 {
@@ -180,7 +211,130 @@ static void delegation_server_work_handler(struct k_work *work)
 	param.op = FLASH_DELEGATE_CLIENT_OP_RETURN;
 	switch(priv->req_param.op)
 	{
+	case FLASH_DELEGATE_SERVER_READ_ALIGN:
+	{
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ_ALIGN");
+		flash_op_align_buf_t *flash_op_align_buf = (flash_op_align_buf_t *)priv->req_param.data;
+		sys_cache_data_invd_range((void *)flash_op_align_buf, sizeof(flash_op_align_buf_t));
+		struct flash_xfer_buf *buf = flash_op_align_buf->buf;
+		sys_cache_data_invd_range((void *)buf, sizeof(flash_op_align_buf_t));
+		param.ret.value = 0;
+		if (is_own_ram((uint32_t)priv->req_param.data)) {
+			param.ret.value = -EINVAL;
+			break;
+		} else {
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					LOG_DBG("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+					if (!((get_guest_permission(priv->dev,buf[i].offset,buf[i].len) & PMP_R) && (!is_own_ram((uint32_t)buf[i].buf)))) {
+#if 0
+						printf("%s\n", "invalid r");
+						flash_op_align_debug(buf);
+#endif
+						param.ret.value = -EINVAL;
+						break;
+					}
+				}
+			}
+			if (param.ret.value) {
+				break;
+			}
+
+			if (k_sem_take(&priv->sem, K_FOREVER)) {
+				param.ret.value = -EACCES;
+				break;
+			}
+
+			cfg->shared->busy = true;
+			flash_delegation_server_operation_sync(priv->dev);
+
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					int data_addr = (uint32_t)buf[i].buf;
+					int data_size = buf[i].len;
+					off_t offset = buf[i].offset;
+					hal_flashx_multi_io_read(&priv->env,offset,(uint8_t *)data_addr, data_size);
+					if (is_psram(data_addr)) {
+						sys_cache_data_flush_range((void *)data_addr, data_size);
+					}
+				}
+			}
+#if 0
+			printf("%s\n", "r");
+			flash_op_align_debug(buf);
+#endif
+			cfg->shared->busy = false;
+
+			k_sem_give(&priv->sem);
+		}
+	}break;
+	case FLASH_DELEGATE_SERVER_WRITE_ALIGN:
+	{
+		LOG_DBG("FLASH_DELEGATE_SERVER_WRITE_ALIGN");
+		flash_op_align_buf_t *flash_op_align_buf = (flash_op_align_buf_t *)priv->req_param.data;
+		sys_cache_data_invd_range((void *)flash_op_align_buf, sizeof(flash_op_align_buf_t));
+		struct flash_xfer_buf *buf = flash_op_align_buf->buf;
+		param.ret.value = 0;
+		if (is_own_ram((uint32_t)priv->req_param.data)) {
+			param.ret.value = -EINVAL;
+			break;
+		} else {
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					LOG_DBG("idx:%d offset:0x%08lx size:0x%08x data:0x%08lx",i,buf[i].offset,buf[i].len,(uintptr_t)buf[i].buf);
+					if (!((get_guest_permission(priv->dev,buf[i].offset,buf[i].len) & PMP_W) && (!is_own_ram((uint32_t)buf[i].buf)))) {
+#if 0
+						printf("%s\n", "invalid w");
+						flash_op_align_debug(buf);
+#endif
+						param.ret.value = -EINVAL;
+						break;
+					}
+				}
+			}
+
+			if (k_sem_take(&priv->sem, K_FOREVER)) {
+				param.ret.value = -EACCES;
+				break;
+			}
+
+			cfg->shared->busy = true;
+			flash_delegation_server_operation_sync(priv->dev);
+#if 0
+			printf("%s\n", "w");
+			flash_op_align_debug(buf);
+#endif
+			for (uint32_t i = 0; i < FLASH_XFER_BUF_IDX_MAX; i++) {
+				if (buf[i].len > 0) {
+					int data_addr = (uint32_t)buf[i].buf;
+					int data_size = buf[i].len;
+					off_t offset = buf[i].offset;
+					if (is_psram(data_addr)) {
+						sys_cache_data_invd_range((void *)data_addr, data_size);
+					}
+					uint8_t *write_data = (uint8_t *)data_addr;
+					while (data_size) {
+						/* If the offset isn't a multiple of the page size, we first need
+						* to write the remaining part that fits, otherwise the write could
+						* be wrapped around within the same page
+						*/
+						int len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), data_size);
+						hal_flashx_page_program(&priv->env, offset, write_data, len);
+
+						write_data += len;
+						offset += len;
+						data_size -= len;
+					}
+				}
+			}
+
+			cfg->shared->busy = false;
+
+			k_sem_give(&priv->sem);
+		}
+	}break;
 	case FLASH_DELEGATE_SERVER_READ:
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ offset:0x%08lx size:0x%08x data:0x%08lx",priv->req_param.offset,priv->req_param.size,(uintptr_t)priv->req_param.data);
 		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_R)
 			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
 			int data_addr = (uint32_t)priv->req_param.data;
@@ -194,10 +348,11 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_WRITE:
+		LOG_DBG("FLASH_DELEGATE_SERVER_WRITE offset:0x%08lx size:0x%08x data:0x%08lx",priv->req_param.offset,priv->req_param.size,(uintptr_t)priv->req_param.data);
 		if ((get_guest_permission(priv->dev,priv->req_param.offset,priv->req_param.size) & PMP_W)
 			&& (!is_own_ram((uint32_t)priv->req_param.data))) {
 			if (is_psram((uint32_t)priv->req_param.data)) {
-    			sys_cache_data_invd_range((void *)priv->req_param.data, priv->req_param.size);
+				sys_cache_data_invd_range((void *)priv->req_param.data, priv->req_param.size);
 			}
 			param.ret.value = flash_write(priv->dev,priv->req_param.offset,priv->req_param.data,priv->req_param.size);
 		} else {
@@ -205,6 +360,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_ERASE:
+		LOG_DBG("FLASH_DELEGATE_SERVER_ERASE offset:0x%08lx size:0x%08x",priv->req_param.offset,priv->req_param.size);
 		if (get_guest_permission(priv->dev, priv->req_param.offset,priv->req_param.size) & PMP_W) {
 			param.ret.value = flash_erase(priv->dev,priv->req_param.offset,priv->req_param.size);
 		} else {
@@ -213,10 +369,12 @@ static void delegation_server_work_handler(struct k_work *work)
 	break;
 	case FLASH_DELEGATE_SERVER_GET_PARAMS:
 	{
+		LOG_DBG("FLASH_DELEGATE_SERVER_GET_PARAMS");
 		const struct flash_parameters *flash_params = flash_get_parameters(priv->dev);
 		memcpy(&param.ret.flash_params,flash_params,sizeof(struct flash_parameters));
 	}break;
 	case FLASH_DELEGATE_SERVER_READ_JEDEC_ID:
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ_JEDEC_ID");
 		if (!is_own_ram((uint32_t)priv->req_param.data)) {
 			int data_addr = (uint32_t)priv->req_param.data;
 			int data_size = (uint32_t)priv->req_param.size;
@@ -229,6 +387,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_SFDP_READ:
+		LOG_DBG("FLASH_DELEGATE_SERVER_SFDP_READ");
 		if (!is_own_ram((uint32_t)priv->req_param.data)) {
 			int data_addr = (uint32_t)priv->req_param.data;
 			int data_size = (uint32_t)priv->req_param.size;
@@ -241,6 +400,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		}
 	break;
 	case FLASH_DELEGATE_SERVER_READ_EAR:
+		LOG_DBG("FLASH_DELEGATE_SERVER_READ_EAR");
 		param.ret.value = flash_ls_read_ear(priv->dev);
 	break;
 	default:
@@ -254,26 +414,10 @@ static void delegation_server_work_handler(struct k_work *work)
 	mbox_send_dt(&cfg->mbox_tx,&msg);
 }
 
-static int busy_poll_false(volatile bool *ptr,uint32_t usec_to_wait)
+static bool poll_suspend_request_false(void *param)
 {
-	uint32_t start_cycles = k_cycle_get_32();
-	uint32_t cycles_to_wait = k_us_to_cyc_ceil32(usec_to_wait);
-	int ret;
-	for (;;) {
-		uint32_t current_cycles = k_cycle_get_32();
-
-		/* this handles the rollover on an unsigned 32-bit value */
-		if ((current_cycles - start_cycles) >= cycles_to_wait) {
-			ret = -ETIME;
-			break;
-		}
-		if(!*ptr)
-		{
-			ret = 0;
-			break;
-		}
-	}
-	return ret;
+	const struct flash_ls_config *cfg = param;
+	return !cfg->shared->suspend_request;
 }
 
 static void delegation_server_mbox_handler(const struct device *dev,struct mbox_msg *data)
@@ -290,10 +434,7 @@ static void delegation_server_mbox_handler(const struct device *dev,struct mbox_
 	{
 	case FLASH_DELEGATE_SERVER_SUSPEND:
 		cfg->shared->suspend_request = true;
-		busy_poll_false(&cfg->shared->suspend_request,CONFIG_FLASH_DELEGATION_SUSPEND_TIMEOUT);
-	break;
-	case FLASH_DELEGATE_SERVER_HOLD_ACK:
-		k_sem_give(&priv->delegate_sem);
+		busy_poll(poll_suspend_request_false,(void *)cfg,CONFIG_FLASH_DELEGATION_SUSPEND_TIMEOUT);
 	break;
 	default:
 		k_work_submit(&priv->worker);
@@ -339,28 +480,47 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
 	priv->env.addr4b = cfg->addr4b;
 	priv->env.writing = false;
+	if(!hal_flashx_inited(&priv->env))
+	{
+		priv->env.continuous_mode_on = false;
+		hal_flashx_init(&priv->env);
+		hal_flashx_continuous_mode_start(&priv->env);
+	}
 	k_sem_init(&priv->sem, 1, 1);
 	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
-	k_sem_init(&priv->delegate_sem,0,1);
 	k_work_init(&priv->worker,delegation_server_work_handler);
 	mbox_set_enabled_dt(&cfg->mbox_tx,true);
 	mbox_register_callback_dt(&cfg->mbox_rx,delegation_server_mbox_callback,NULL);
 	mbox_set_enabled_dt(&cfg->mbox_rx,true);
 	cfg->shared->reg = cfg->reg;
+	cfg->shared->busy = false;
+	cfg->shared->suspend_request = false;
+	cfg->shared->hold_ack = false;
 	priv->dev = dev;
 	#endif
-    IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, 0);
+	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM);
 	return 0;
 }
 
-static int flash_ls_erase(const struct device *dev, off_t offset,
-				     size_t size)
+struct hal_flash_env *flash_ls_env(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
-    
+	return &priv->env;
+}
+
+static int flash_ls_erase(const struct device *dev, off_t offset,
+					 size_t size)
+{
+	struct flash_ls_data *priv = dev->data;
+	
 	if (!size) {
 		return 0;
+	}
+
+	if (((offset % KB(4)) != 0) || ((size % KB(4)) != 0)) {
+		LOG_ERR("Erase address 0x%08lx is not aligned to sector size", offset);
+		return -EINVAL;
 	}
 
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
@@ -369,21 +529,32 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 
 	DELEGATE_SERVER_OP_START(dev);
 	/* Erase sector one by one*/
-    for (off_t addr = offset; addr < offset + size; addr += FLASH_SECTOR_SIZE) {
-        hal_flashx_sector_erase(&priv->env,addr);
-    }
-    DELEGATE_SERVER_OP_END(dev);
+
+	for (off_t addr = offset; addr < (offset + size);) {
+		if (((addr % KB(64)) == 0) && ((offset + size - addr) >= KB(64))) {
+			hal_flashx_block_64K_erase(&priv->env, addr);
+			addr += KB(64);
+		} else if (((addr % KB(32)) == 0) && ((offset + size - addr) >= KB(32))) {
+			hal_flashx_block_32K_erase(&priv->env, addr);
+			addr += KB(32);
+		} else if ((offset + size - addr) >= KB(4)) {
+			hal_flashx_sector_erase(&priv->env, addr);
+			addr += KB(4);
+		}
+	}
+
+	DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
 	return 0;
 }
 
 static int flash_ls_write(const struct device *dev, off_t offset,
-				     const void *data, size_t size)
+					 const void *data, size_t size)
 {
 	struct flash_ls_data *priv = dev->data;
-    size_t len = size;
-    uint8_t *write_data = (uint8_t *)data;
+	size_t len = size;
+	uint8_t *write_data = (uint8_t *)data;
 
 	if (!size) {
 		return 0;
@@ -394,19 +565,19 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 	}
 
 	DELEGATE_SERVER_OP_START(dev);
-    while (size) {
+	while (size) {
 		/* If the offset isn't a multiple of the page size, we first need
 		 * to write the remaining part that fits, otherwise the write could
 		 * be wrapped around within the same page
 		 */
 		len = MIN(FLASH_PAGE_SIZE - (offset % FLASH_PAGE_SIZE), size);
-        hal_flashx_page_program(&priv->env,offset, write_data, len);
+		hal_flashx_page_program(&priv->env,offset, write_data, len);
 
 		write_data += len;
 		offset += len;
 		size -= len;
 	}
-    DELEGATE_SERVER_OP_END(dev);
+	DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
 
@@ -414,7 +585,7 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 }
 
 static int flash_ls_read(const struct device *dev, off_t offset,
-				    void *data, size_t size)
+					void *data, size_t size)
 {
 	struct flash_ls_data *priv = dev->data;
 
@@ -427,8 +598,8 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 	}
 
 	DELEGATE_SERVER_OP_START(dev);
-    hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
-    DELEGATE_SERVER_OP_END(dev);
+	hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
+	DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
 
@@ -446,7 +617,25 @@ uint8_t flash_ls_read_ear(const struct device *dev)
 
 	DELEGATE_SERVER_OP_START(dev);
 	ret = hal_flashx_read_ear(&priv->env);
-    DELEGATE_SERVER_OP_END(dev);
+	DELEGATE_SERVER_OP_END(dev);
+
+	k_sem_give(&priv->sem);
+
+	return ret;
+}
+
+uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear)
+{
+	struct flash_ls_data *priv = dev->data;
+	uint8_t ret = 0;
+
+	if (k_sem_take(&priv->sem, K_FOREVER)) {
+		return -EACCES;
+	}
+
+	DELEGATE_SERVER_OP_START(dev);
+	hal_flashx_write_ear(&priv->env, ear);
+	DELEGATE_SERVER_OP_END(dev);
 
 	k_sem_give(&priv->sem);
 
@@ -462,8 +651,8 @@ flash_ls_get_parameters(const struct device *dev)
 
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 static void flash_ls_layout(const struct device *dev,
-				       const struct flash_pages_layout **layout,
-				       size_t *layout_size)
+						const struct flash_pages_layout **layout,
+						size_t *layout_size)
 {
 	const struct flash_ls_config *cfg = dev->config;
 	*layout = &cfg->layout;
@@ -486,14 +675,14 @@ static int flash_ls_read_jedec_id(const struct device *dev,
 
 	DELEGATE_SERVER_OP_START(dev);
 	hal_flashx_read_id(&priv->env,id);
-    DELEGATE_SERVER_OP_END(dev);
+	DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
 	return 0;
 }
 
 static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
-				   void *data, size_t len)
+					void *data, size_t len)
 {
 	struct flash_ls_data *priv = dev->data;
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
@@ -502,7 +691,7 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 
 	DELEGATE_SERVER_OP_START(dev);
 	hal_flashx_read_sfdp(&priv->env,offset,data,len);
-    DELEGATE_SERVER_OP_END(dev);
+	DELEGATE_SERVER_OP_END(dev);
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -511,7 +700,7 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 #endif /* CONFIG_FLASH_JESD216_API */
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
 __ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
-			  const uintptr_t in, void *out)
+				const uintptr_t in, void *out)
 {
 	struct flash_ls_data *priv = dev->data;
 	switch(code)
@@ -525,6 +714,9 @@ __ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 	case FLASH_DRIVER_CLIENT_XIP_ACTIVE:
 		priv->client_xip_active = true;
+	break;
+	case FLASH_DRIVER_CLIENT_XIP_INACTIVE:
+		priv->client_xip_active = false;
 	break;
 #endif
 	}
@@ -571,6 +763,9 @@ static struct flash_driver_api flash_ls_api = {
 			.pages_size = FLASH_SECTOR_SIZE,\
 		},))
 
+#define LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE(node_id) \
+		IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
+
 #define LS_FLASH_INIT(idx) \
 	struct flash_partition_attr attr_partition_##idx[] =\
 		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};\
@@ -580,7 +775,7 @@ static struct flash_driver_api flash_ls_api = {
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
 		.dual_mode_only = !DT_INST_PROP(idx,quad_mode),\
 		.continuous_mode_enable = DT_INST_PROP(idx,continuous_mode),\
-		.addr4b = DT_INST_PROP(idx,addr4b),\
+		.addr4b = (DT_INST_FOREACH_CHILD_STATUS_OKAY(idx, LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20)),\
 		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER,(\
 		.mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
 		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\

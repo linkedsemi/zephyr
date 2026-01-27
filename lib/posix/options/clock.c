@@ -170,10 +170,12 @@ int usleep(useconds_t useconds)
 {
 	int32_t rem;
 
+#if !defined(CONFIG_POSIX_USLEEP_WORKAROUND)
 	if (useconds >= USEC_PER_SEC) {
 		errno = EINVAL;
 		return -1;
 	}
+#endif
 
 	rem = k_usleep(useconds);
 	__ASSERT_NO_MSG(rem >= 0);

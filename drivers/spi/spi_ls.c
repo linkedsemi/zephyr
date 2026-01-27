@@ -419,10 +419,6 @@ static int spi_ls_init(const struct device *dev)
 	__maybe_unused int ret;
 	int err;
 
-
-	dev_config->irq_config(dev);
-
-
 #if defined(CONFIG_CLOCK_CONTROL)
 	if (dev_config->ccfg.cctl_dev) {
 		const struct device *clk_dev = dev_config->ccfg.cctl_dev;
@@ -469,6 +465,8 @@ static int spi_ls_init(const struct device *dev)
 	}
 
 	spi_context_unlock_unconditionally(&data->ctx);
+
+	dev_config->irq_config(dev);
 
 	return 0;
 }

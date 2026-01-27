@@ -1,0 +1,39 @@
+# MP5023 PMBus Sensor Driver Configuration
+
+config MP5023
+    bool "MP5023 PMBus Sensor Driver"
+    depends on SMBUS && SENSOR
+    select LS_PMBUS
+    help
+      Enable driver for MP5023 PMBus sensor.
+
+if MP5023
+
+config MP5023_TRIGGER
+    bool "Enable trigger support for MP5023"
+    depends on MP5023
+    help
+      Enable trigger support for the MP5023 PMBus sensor.
+
+config MP5023_DEFAULT_PAGE
+    int "Default PMBus page for MP5023"
+    default 0
+    depends on MP5023
+    help
+      Default PMBus page to use for MP5023 operations.
+
+config MP5023_TIMEOUT_MS
+    int "Timeout for MP5023 operations in milliseconds"
+    default 100
+    depends on MP5023
+    help
+      Timeout value for MP5023 PMBus operations.
+
+config MP5023_PEC_EN
+    bool "Enable PEC (Packet Error Checking) for MP5023"
+    default n
+    depends on MP5023
+    help
+      Enable Packet Error Checking for MP5023 PMBus communication.
+
+endif # MP5023

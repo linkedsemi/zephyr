@@ -17,17 +17,16 @@ LOG_MODULE_REGISTER(mbox_linkedsem_ipc);
 
 #define DT_DRV_COMPAT linkedsemi_mbox
 
-#define MBOX_BASE_ADDRESS  (DT_INST_REG_ADDR(0))
-#define MBOX_SIZE          (DT_INST_REG_SIZE(0))
-#define MBOX_NCHANNELS     (DT_NUM_INST_STATUS_OKAY(vnd_mbox_consumer))
-#define MBOX_FIFO_DEEPTH   (DT_INST_PROP(0, fifo_deepth))
-#define MBOX_FIFO_WIDTH    (DT_INST_PROP(0, fifo_width))
-#define MBOX_CONSUMER_REFERENCE mbox_consumer_qspi1
-BUILD_ASSERT(DT_NODE_EXISTS(DT_NODELABEL(MBOX_CONSUMER_REFERENCE)), "MBOX_CONSUMER_REFERENCE not found");
-#define MBOX_RX_CHANNEL_ID (DT_MBOX_CHANNEL_BY_NAME(DT_NODELABEL(MBOX_CONSUMER_REFERENCE), rx))
-
-#define CALC_MBOX_SIZE (((MBOX_FIFO_DEEPTH * MBOX_FIFO_WIDTH) + sizeof(struct fifo_env)) * MBOX_NCHANNELS * 2)
-BUILD_ASSERT(CALC_MBOX_SIZE <= MBOX_SIZE, "fifo size overflow\n");
+#define MBOX_BASE_ADDRESS     DT_INST_REG_ADDR(0)
+#define MBOX_SIZE             DT_INST_REG_SIZE(0)
+#define MBOX_NCHANNELS        DT_NUM_INST_STATUS_OKAY(vnd_mbox_consumer)
+#define MBOX_FIFO_DEEPTH      DT_INST_PROP(0, fifo_deepth)
+#define MBOX_FIFO_WIDTH       DT_INST_PROP(0, fifo_width)
+#define MBOX_CONSUMER_NODE_ID DT_COMPAT_GET_ANY_STATUS_OKAY(vnd_mbox_consumer)
+#define MBOX_RX_CHANNEL_ID    (DT_MBOX_CHANNEL_BY_NAME(MBOX_CONSUMER_NODE_ID, rx) % 2)
+#define MBOX_SIZE_RAM         (((MBOX_FIFO_DEEPTH * MBOX_FIFO_WIDTH) + sizeof(struct fifo_env)) * MBOX_NCHANNELS * 2)
+BUILD_ASSERT(MBOX_NCHANNELS > 0, "vnd,mbox-consumer not found");
+BUILD_ASSERT(MBOX_SIZE_RAM <= MBOX_SIZE, "fifo size overflow\n");
 
 enum mbox_channel_number {
     MBOX_CH0,
@@ -77,7 +76,7 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
         if (ret) {
             struct mbox_msg msg = { (const void *)(dev_data->recv_data[callback_idx]), MBOX_FIFO_WIDTH };
             if (dev_data->cb[callback_idx]) {
-                dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data, &msg);
+                dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data[callback_idx], &msg);
             } else {
                 LOG_WRN("rx_channel: %d callback() is NULL", rx_channel);
                 return;
@@ -85,7 +84,7 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
         }
 #if defined(CONFIG_SIGNALLING_MODE_SUPPORT)
         else {
-            dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data, NULL);
+            dev_data->cb[callback_idx](dev, rx_channel, dev_data->user_data[callback_idx], NULL);
         }
 #endif
     } while (ret);
@@ -171,7 +170,7 @@ static uint32_t mbox_linkedsemi_max_channels_get(const struct device *dev)
 static int mbox_linkedsemi_fifo_init(const struct device *dev)
 {
     struct mbox_linkedsemi_data *dev_data = dev->data;
-    const uint32_t cell = (MBOX_SIZE / MBOX_NCHANNELS) >> 1;
+    const uint32_t cell = ROUND_DOWN(((MBOX_SIZE / MBOX_NCHANNELS) >> 1), sizeof(size_t));
 
     for (uint8_t i = 0; i < MBOX_NCHANNELS * 2; i++) {
         uint32_t env_addr = MBOX_BASE_ADDRESS + i * cell;

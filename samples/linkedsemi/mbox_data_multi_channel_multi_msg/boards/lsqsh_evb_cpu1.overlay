@@ -1,3 +1,0 @@
-&mbox {
-    fifo-width = <4>;
-};

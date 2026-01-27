@@ -10,91 +10,82 @@
 LOG_MODULE_REGISTER(kcs_ls, LOG_LEVEL_DBG);
 
 struct kcs_ls_config {
-    struct peri_ioport_content data;
-    struct peri_ioport_content cmd_stt;
-    const struct device *parent;
-    const struct upstream_irq_type *up_irq;
+    struct host_kcs_env *kcs_env;
+    struct host_bmc_msg_exch hb_exch;
 };
 
 struct kcs_ls_data {
-    struct peri_ioport io_data;
-    struct peri_ioport io_cmd_stt;
     ibf_callback_t callback;
     void *param;
-    struct k_spinlock lock;
-    uint8_t status;
-    uint16_t data_out;
-    uint16_t data_in;
 };
+
+void bmc_kcs_rx_callback(const struct device *dev,void *msg)
+{
+    struct kcs_ls_data *data = dev->data;
+    if(data->callback)
+    {
+        data->callback(dev,data->param);
+    }
+}
 
 static int kcs_ls_init(const struct device *dev)
 {
-    struct kcs_ls_data *data = dev->data;
     const struct kcs_ls_config *cfg = dev->config;
-    if(!device_is_ready(cfg->parent))
-    {
-		LOG_DBG("%s device not ready", cfg->parent->name);
-		return -ENODEV;
-    }
-    data->io_data.content = &cfg->data;
-    data->io_cmd_stt.content = &cfg->cmd_stt;
-    espi_lpc_add_ioport(cfg->parent,&data->io_data);
-    espi_lpc_add_ioport(cfg->parent,&data->io_cmd_stt);
+    host_bmc_msg_exch_init(&cfg->hb_exch);
     return 0;
 }
 
 static int kcs_ls_read_data(const struct device *dev,uint8_t *data)
 {
-    struct kcs_ls_data *dev_data = dev->data;
+    const struct kcs_ls_config *cfg = dev->config;
     int ret = 0;
-    k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-    if(dev_data->status & KCS_IBF)
+    kcs_env_lock(cfg->kcs_env);
+    if(cfg->kcs_env->status & KCS_IBF)
     {
-        dev_data->status &= ~KCS_IBF;
-        *data = dev_data->data_in;
+        cfg->kcs_env->status &= ~KCS_IBF;
+        *data = cfg->kcs_env->data_in;
     }else
     {
         ret = -EIO;
     }
-    k_spin_unlock(&dev_data->lock,key);
+    kcs_env_unlock(cfg->kcs_env);
     return ret;
 }
 
 static int kcs_ls_write_data(const struct device *dev,uint8_t data)
 {
-    struct kcs_ls_data *dev_data = dev->data;
     const struct kcs_ls_config *cfg = dev->config;
     int ret = 0;
-    k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-    if(dev_data->status & KCS_OBF)
+    kcs_env_lock(cfg->kcs_env);
+    if(cfg->kcs_env->status & KCS_OBF)
     {
         ret = -EIO;
     }else
     {
-        dev_data->status |= KCS_OBF;
-        dev_data->data_out = data;
+        cfg->kcs_env->status |= KCS_OBF;
+        cfg->kcs_env->data_out = data;
     }
-    k_spin_unlock(&dev_data->lock,key);
-    if(ret == 0 && cfg->up_irq)
+    kcs_env_unlock(cfg->kcs_env);
+    if(ret == 0)
     {
-        espi_lpc_raise_edge_irq(dev,cfg->up_irq->idx);
+        kcs_b2h_send_obf(&cfg->hb_exch);
     }
     return ret;
 }
 
 static int kcs_ls_read_status(const struct device *dev,uint8_t *status)
 {
-    struct kcs_ls_data *dev_data = dev->data;
-    *status = dev_data->status;
+    const struct kcs_ls_config *cfg = dev->config;
+    *status = cfg->kcs_env->status;
     return 0;
 }
 
 static int kcs_ls_update_status(const struct device *dev,uint8_t mask,uint8_t val)
 {
-    struct kcs_ls_data *dev_data = dev->data;
-    k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-    dev_data->status = (dev_data->status & ~mask) | val;
-    k_spin_unlock(&dev_data->lock,key);
+    const struct kcs_ls_config *cfg = dev->config;
+    kcs_env_lock(cfg->kcs_env);
+    cfg->kcs_env->status = (cfg->kcs_env->status & ~mask) | val;
+    kcs_env_unlock(cfg->kcs_env);
     return 0;
 }
 
@@ -114,75 +105,12 @@ static const struct kcs_driver_api kcs_ls_driver_api = {
     .set_ibf_callback = kcs_ls_set_ibf_callback,
 };
 
-static void data_cmd_stt_iowr(const struct device *dev,uint8_t size,uint8_t *data,bool is_data)
-{
-    struct kcs_ls_data *dev_data = dev->data;
-    k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-	dev_data->data_in = data[0];
-	dev_data->status |= KCS_IBF;
-	if(is_data)
-	{
-		dev_data->status &= ~KCS_CMD_DAT;
-	}else
-	{
-		dev_data->status |= KCS_CMD_DAT;
-	}
-    k_spin_unlock(&dev_data->lock,key);
-    if(dev_data->callback)
-    {
-        dev_data->callback(dev,dev_data->param);
-    }
-}
-
-static void data_io_read(const struct peri_ioport_content *ioport,uint8_t size,void *res)
-{
-    uint8_t *val = res;
-    struct device *dev = ioport->ctx;
-    struct kcs_ls_data *dev_data = dev->data;
-    k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-	*val = dev_data->data_out;
-	dev_data->status &= ~KCS_OBF;
-    k_spin_unlock(&dev_data->lock,key);
-}
-
-static void data_io_write(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
-{
-    data_cmd_stt_iowr(ioport->ctx,size,data,true);
-}
-
-static void cmd_stt_io_read(const struct peri_ioport_content *ioport,uint8_t size,void *res)
-{
-    uint8_t *val = res;
-    struct device *dev = ioport->ctx;
-    struct kcs_ls_data *dev_data = dev->data;
-    k_spinlock_key_t key = k_spin_lock(&dev_data->lock);
-	*val = dev_data->status;
-    k_spin_unlock(&dev_data->lock,key);
-}
-
-static void cmd_stt_io_write(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data)
-{
-    data_cmd_stt_iowr(ioport->ctx,size,data,false);
-}
-
 #define LS_KCS_INIT(idx)\
     IF_ENABLED(DT_HAS_UP_IRQ(idx),(UPSTREAM_IRQ_DT_INST_DEFINE(idx)))\
     static struct kcs_ls_data kcs_ls_data_##idx;\
     static const struct kcs_ls_config kcs_ls_cfg_##idx = {\
-        .data = {\
-            .io_read = data_io_read,\
-            .io_write = data_io_write,\
-            .ctx = (void *)DEVICE_DT_INST_GET(idx),\
-            .addr = DT_INST_PROP_BY_IDX(idx,port,0),\
-        },\
-        .cmd_stt = {\
-            .io_read = cmd_stt_io_read,\
-            .io_write = cmd_stt_io_write,\
-            .ctx = (void *)DEVICE_DT_INST_GET(idx),\
-            .addr = DT_INST_PROP_BY_IDX(idx,port,1),\
-        },\
-        .parent = DEVICE_DT_GET(DT_INST_PARENT(idx)),\
-        IF_ENABLED(DT_HAS_UP_IRQ(idx),(.up_irq = UPSTREAM_IRQ_DT_INST_CONFIG_GET(idx)))\
+        .kcs_env = (struct host_kcs_env *)DT_INST_PROP(idx,kcs_env_addr),\
+        .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,bmc_kcs_rx_callback,host_kcs_rx_callback),\
     };\
     DEVICE_DT_INST_DEFINE(idx,\
         &kcs_ls_init,\

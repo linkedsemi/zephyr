@@ -16,26 +16,24 @@ config SOC_FLASH_LS
 	help
 	  Enables linkedsemi ls flash driver.
 
-if SOC_FLASH_LS
-
 config FLASH_SWINT_PRIORITY
 	int "Flash Software Interrupt Priority"
 	default 1
-
-endif
+	depends on SOC_FLASH_LS
 
 config FLASH_OP_DELEGATION_SERVER
 	bool "Flash Operation Delegation Server"
+	depends on SOC_FLASH_LS
 
 config FLASH_DELEGATION_SYNC_TIMEOUT
 	int "Flash Delegation Sync Timeout (ms)"
-	default 100
-	depends on FLASH_OP_DELEGATION_SERVER
+	default 200000
+	depends on FLASH_OP_DELEGATION_SERVER || SOC_FLASH_LS_DELEGATION_CLIENT
 
 config FLASH_DELEGATION_SUSPEND_TIMEOUT
 	int "Flash Delegation Suspend Timeout (us)"
 	default 5000
-	depends on FLASH_OP_DELEGATION_SERVER
+	depends on FLASH_OP_DELEGATION_SERVER || SOC_FLASH_LS_DELEGATION_CLIENT
 
 
 config SOC_FLASH_LS_DELEGATION_CLIENT
@@ -49,7 +47,6 @@ config SOC_FLASH_LS_DELEGATION_CLIENT
 	select FLASH_HAS_EXPLICIT_ERASE
 	select FLASH_HAS_EX_OP
 	select FLASH_EX_OP_ENABLED
-	select FLASH_OP_DELEGATION_SERVER
 
 config FLASH_DELEGATION_CLIENT_SUSPEND_REQUEST
 	default y

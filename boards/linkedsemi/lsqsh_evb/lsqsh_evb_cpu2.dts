@@ -9,71 +9,65 @@
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
-/ {
-    model = "linkedsemi LSQSH_EVB";
-    compatible = "linkedsemi,lsqsh_app_evb";
+&chosen {
+    zephyr,flash-controller = &qspi1;
+    zephyr,console = &uart4;
+    zephyr,shell-uart = &uart4;
+};
 
-    chosen {
-        zephyr,sram = &sram2;
-        zephyr,console = &uart4;
-        zephyr,shell-uart = &uart4;
-        zephyr,flash-controller = &qspi1;
-        zephyr,internal-flash = &flash1;
+&aliases {
+    sdhc0 = &sdhci1;
+    watchdog0=&app_iwdg;
+};
+
+&soc {
+    driver_share_memory: memory@100be000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x100be000 0x1000>;
+        zephyr,memory-region = "SHMEM";
     };
 
-    aliases {
-        sdhc0 = &sdhci1;
-        watchdog0=&app_iwdg;
+    mbox: mbox@100bf000 {
+        compatible = "linkedsemi,mbox";
+        reg = <0x100bf000 DT_SIZE_K(4)>;
+        fifo-deepth = <2>;
+        fifo-width = <256>;
+        #mbox-cells = <1>;
+
+        interrupts = <SYSC_APP_CPU_IRQN 3>;
+
+        mbox_consumer_qspi1: mbox-consumer_qspi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 0>, <&mbox 1>;
+            mbox-names = "tx", "rx";
+        };
+
+        mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 2>, <&mbox 3>;
+            mbox-names = "tx", "rx";
+        };
+
+       mbox_consumer_espi1: mbox-consumer_espi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 4>, <&mbox 5>;
+            mbox-names = "tx", "rx";
+        };
     };
 
-    soc {
-        compatible = "simpe-bus";
+    qspi1: qspi@40000000 {
+        compatible = "linkedsemi,ls-flash-delegation-client";
+        reg = <0x40000000 0x400>;
         #address-cells = <1>;
         #size-cells = <1>;
-        interrupt-parent = <&intc>;
+        interrupts = <3 3>;
+        mbox = <&mbox_consumer_qspi1>;
 
-        share_memory: share-memory@1013e000 {
-            compatible = "zephyr,memory-region", "mmio-sram";
-            reg = <0x1013e000 DT_SIZE_K(4)>;
-            zephyr,memory-region = "SHMEM";
-        };
-
-        mbox: mbox@1013f000 {
-            compatible = "linkedsemi,mbox";
-            reg = <0x1013f000 DT_SIZE_K(4)>;
-            fifo-deepth = <2>;
-            fifo-width = <256>;
-            #mbox-cells = <1>;
-
-            interrupts = <SYSC_APP_CPU_IRQN 3>;
-
-            mbox_consumer_qspi1: mbox-consumer_qspi1 {
-                compatible = "vnd,mbox-consumer";
-                mboxes = <&mbox 0>, <&mbox 1>;
-                mbox-names = "tx", "rx";
-            };
-
-            mbox_consumer_mbedtls: mbox-consumer_mbedtls {
-                compatible = "vnd,mbox-consumer";
-                mboxes = <&mbox 2>, <&mbox 3>;
-                mbox-names = "tx", "rx";
-            };
-        };
-
-        qspi1: qspi@40000000 {
-            compatible = "linkedsemi,ls-flash-delegation-client";
-            reg = <0x40000000 0x400>;
-            #address-cells = <1>;
-            #size-cells = <1>;
-            interrupts = <3 3>;
-            mbox = <&mbox_consumer_qspi1>;
-
-            flash1: flash@8000000 {
-                compatible = "soc-nv-flash";
-                reg = <0x8000000 DT_SIZE_M(32)>;
-                erase-block-size = <4096>;
-                write-block-size = <4>;
-            };
+        flash1: flash@8000000 {
+            compatible = "soc-nv-flash";
+            reg = <0x8000000 DT_SIZE_M(32)>;
+            erase-block-size = <4096>;
+            write-block-size = <4>;
         };
     };
 };
@@ -84,14 +78,6 @@
 
 &cpu2 {
     status = "okay";
-};
-
-&sram1 {
-    status = "disabled";
-};
-
-&sram2 {
-    reg = <0x10080000 DT_SIZE_K(760)>;
 };
 
 &uart1 {

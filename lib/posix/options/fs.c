@@ -16,6 +16,7 @@
 #include <zephyr/posix/sys/stat.h>
 #include <zephyr/posix/fcntl.h>
 #include <zephyr/fs/fs.h>
+#include <zephyr/fs/fs_sys.h>
 
 int zvfs_fstat(int fd, struct stat *buf);
 
@@ -190,8 +191,12 @@ static int fs_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 		break;
 	}
 	default:
-		errno = EOPNOTSUPP;
-		return -1;
+		if (ptr->file.mp->fs->ioctl) {
+			rc = ptr->file.mp->fs->ioctl(&ptr->file, request, args);
+		} else {
+			errno = EOPNOTSUPP;
+			return -1;
+		}
 	}
 
 	if (rc < 0) {

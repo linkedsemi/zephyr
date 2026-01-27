@@ -1,24 +1,16 @@
-/*
- * Copyright (c) 2018 Intel Corporation
- *
- * SPDX-License-Identifier: Apache-2.0
- */
-
 #include <stdlib.h>
 #include <zephyr/kernel.h>
+#include <zephyr/shell/shell.h>
 #include <zephyr/init.h>
 #include <errno.h>
 #include <zephyr/sys/math_extras.h>
 #include <string.h>
-#include <zephyr/app_memory/app_memdomain.h>
-#ifdef CONFIG_MULTITHREADING
-#include <zephyr/sys/mutex.h>
-#endif
 #include <zephyr/sys/sys_heap.h>
 #include <zephyr/sys/libc-hooks.h>
 #include <zephyr/types.h>
-#ifdef CONFIG_MMU
-#include <zephyr/kernel/mm.h>
+#include "heap.h"
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+#include "heap_debug.h"
 #endif
 
 #define LOG_LEVEL CONFIG_KERNEL_LOG_LEVEL
@@ -33,166 +25,228 @@ LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 #if (CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE != 0)
 
-/* Figure out where the malloc variables live */
-# if Z_MALLOC_PARTITION_EXISTS
-K_APPMEM_PARTITION_DEFINE(z_malloc_partition);
-#  define POOL_SECTION Z_GENERIC_SECTION(K_APP_DMEM_SECTION(z_malloc_partition))
-# else
-#  define POOL_SECTION __noinit
-#  define POOL_SECTION_2 __attribute__((section("PSRAM")))
-# endif /* CONFIG_USERSPACE */
+#if defined(CONFIG_NEWLIB_LIBC_MALLOC_SECTION_NAME)
+#define POOL_SECTION __attribute__((section(CONFIG_NEWLIB_LIBC_MALLOC_SECTION_NAME)))
+#else
+#define POOL_SECTION __noinit
+#endif /* CONFIG_NEWLIB_LIBC_MALLOC_SECTION_NAME */
 
-# if defined(CONFIG_MMU) && CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE < 0
-#  define ALLOCATE_HEAP_AT_STARTUP
-# endif
+#ifndef HEAP_ALIGN
+#define HEAP_ALIGN    sizeof(double)
+#endif
 
-# ifndef ALLOCATE_HEAP_AT_STARTUP
-
-/* Figure out alignment requirement */
-#  ifdef Z_MALLOC_PARTITION_EXISTS
-
-#   ifdef CONFIG_MMU
-#    define HEAP_ALIGN CONFIG_MMU_PAGE_SIZE
-#   elif defined(CONFIG_MPU)
-#    if defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT) && \
-	(CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE > 0)
-#     if (CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE & (CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE - 1)) != 0
-#      error CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE must be power of two on this target
-#     endif
-#     define HEAP_ALIGN	CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE
-#    elif defined(CONFIG_ARM) || defined(CONFIG_ARM64)
-#     define HEAP_ALIGN	MAX(sizeof(double), CONFIG_ARM_MPU_REGION_MIN_ALIGN_AND_SIZE)
-#    elif defined(CONFIG_ARC)
-#     define HEAP_ALIGN	MAX(sizeof(double), Z_ARC_MPU_ALIGN)
-#    elif defined(CONFIG_RISCV)
-#     define HEAP_ALIGN	Z_POW2_CEIL(MAX(sizeof(double), Z_RISCV_STACK_GUARD_SIZE))
-#    else
-/* Default to 64-bytes; we'll get a run-time error if this doesn't work. */
-#     define HEAP_ALIGN	64
-#    endif /* CONFIG_<arch> */
-#   endif /* elif CONFIG_MPU */
-
-#  endif /* else Z_MALLOC_PARTITION_EXISTS */
-
-#  ifndef HEAP_ALIGN
-#   define HEAP_ALIGN	sizeof(double)
-#  endif
-
-#  if CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE > 0
-
-#  define HEAP_STATIC
+#define HEAP_STATIC
 
 /* Static allocation of heap in BSS */
 
-#   define HEAP_SIZE	ROUND_UP(CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE, HEAP_ALIGN)
-#   define HEAP_BASE	POINTER_TO_UINT(malloc_arena)
-#   define HEAP_2_SIZE	ROUND_UP(CONFIG_NEWLIB_LIBC_MALLOC_ARENA_2_SIZE, HEAP_ALIGN)
-#   define HEAP_2_BASE	POINTER_TO_UINT(malloc_arena_2)
+#define HEAP_SIZE    ROUND_UP(CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE, HEAP_ALIGN)
+#define HEAP_BASE    POINTER_TO_UINT(malloc_arena)
 
-POOL_SECTION unsigned char __aligned(HEAP_ALIGN) malloc_arena[HEAP_SIZE];
-POOL_SECTION_2 unsigned char __aligned(HEAP_ALIGN) malloc_arena_2[HEAP_2_SIZE];
+#if (CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE > 0)
 
-#  else /* CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE > 0 */
+Z_HEAP_DEFINE_IN_SECT(_app_heap, HEAP_SIZE, POOL_SECTION);
+#define _APP_HEAP (&_app_heap)
 
-/*
- * Heap base and size are determined based on the available unused SRAM, in the
- * interval from a properly aligned address after the linker symbol `_end`, to
- * the end of SRAM
- */
-
-#   define USED_RAM_END_ADDR   POINTER_TO_UINT(&_end)
-
-/*
- * No partition, heap can just start wherever _end is, with
- * suitable alignment
- */
-
-#   define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, HEAP_ALIGN)
-
-#   if defined(CONFIG_XTENSA) && (defined(CONFIG_SOC_FAMILY_INTEL_ADSP) \
-	|| defined(CONFIG_HAS_ESPRESSIF_HAL))
-extern char _heap_sentry[];
-#    define HEAP_SIZE  ROUND_DOWN((POINTER_TO_UINT(_heap_sentry) - HEAP_BASE), HEAP_ALIGN)
-#   else
-#    define HEAP_SIZE	ROUND_DOWN((KB((size_t) CONFIG_SRAM_SIZE) -	\
-		((size_t) HEAP_BASE - (size_t) CONFIG_SRAM_BASE_ADDRESS)), HEAP_ALIGN)
-#   endif /* else CONFIG_XTENSA */
-
-#  endif /* else CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE > 0 */
-
-# endif /* else ALLOCATE_HEAP_AT_STARTUP */
-
-Z_LIBC_DATA static struct sys_heap z_malloc_heap;
-Z_LIBC_DATA static struct sys_heap z_malloc_heap_2;
-
-#ifdef CONFIG_MULTITHREADING
-Z_LIBC_DATA SYS_MUTEX_DEFINE(z_malloc_heap_mutex);
-
-static inline void
-malloc_lock(void) {
-	int lock_ret;
-
-	lock_ret = sys_mutex_lock(&z_malloc_heap_mutex, K_FOREVER);
-	__ASSERT_NO_MSG(lock_ret == 0);
-}
-
-static inline void
-malloc_unlock(void)
+static void *z_heap_aligned_alloc(struct k_heap *heap, size_t align, size_t size)
 {
-	(void) sys_mutex_unlock(&z_malloc_heap_mutex);
+    void *mem;
+    struct k_heap **heap_ref;
+    size_t __align;
+
+    /*
+     * Adjust the size to make room for our heap reference.
+     * Merge a rewind bit with align value (see sys_heap_aligned_alloc()).
+     * This allows for storing the heap pointer right below the aligned
+     * boundary without wasting any memory.
+     */
+    if (size_add_overflow(size, sizeof(heap_ref), &size)) {
+        return NULL;
+    }
+    __align = align | sizeof(heap_ref);
+
+    mem = k_heap_aligned_alloc(heap, __align, size, Z_TIMEOUT_TICKS((k_ticks_t)CONFIG_NEWLIB_LIBC_MALLOC_TIMEOUT));
+    if (mem == NULL) {
+        return NULL;
+    }
+
+    heap_ref = mem;
+    *heap_ref = heap;
+    mem = ++heap_ref;
+    __ASSERT(align == 0 || ((uintptr_t)mem & (align - 1)) == 0,
+         "misaligned memory at %p (align = %zu)", mem, align);
+
+    return mem;
 }
-#else
-#define malloc_lock()
-#define malloc_unlock()
+
+static void *k_aligned_alloc_app(size_t align, size_t size)
+{
+    __ASSERT(align / sizeof(void *) >= 1
+        && (align % sizeof(void *)) == 0,
+        "align must be a multiple of sizeof(void *)");
+
+    __ASSERT((align & (align - 1)) == 0,
+        "align must be a power of 2");
+
+    SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap_app, k_aligned_alloc_app, _APP_HEAP);
+
+    void *ret = z_heap_aligned_alloc(_APP_HEAP, align, size);
+
+    SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, k_aligned_alloc_app, _APP_HEAP, ret);
+
+    return ret;
+}
+
+static void *__malloc_r(size_t size)
+{
+    SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap_app, _malloc_r, _APP_HEAP);
+
+    void *ret = k_aligned_alloc_app(sizeof(void *), size);
+
+    SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _malloc_r, _APP_HEAP, ret);
+
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    heap_debug_ptr_push(ret, size);
 #endif
 
-void *_malloc_r (struct _reent *r, size_t size)
+    return ret;
+}
+
+static void __free_r(void *ptr)
 {
-	malloc_lock();
+    struct k_heap **heap_ref;
 
-	void *ret = NULL;
-	ret = sys_heap_aligned_alloc(&z_malloc_heap,
-								COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-									(CONFIG_DCACHE_LINE_SIZE),
-									(__alignof__(z_max_align_t))),
-								size);
-	if (ret == NULL && size != 0) {
-		ret = sys_heap_aligned_alloc(&z_malloc_heap_2,
-									COND_CODE_1(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay),
-										(CONFIG_DCACHE_LINE_SIZE),
-										(__alignof__(z_max_align_t))),
-									size);
-		if (ret == NULL && size != 0) {
-			errno = ENOMEM;
-		}
-	}
+    if (ptr != NULL) {
+        heap_ref = ptr;
+        --heap_ref;
+        ptr = heap_ref;
 
-	malloc_unlock();
+        SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap_app, _free_r, *heap_ref, heap_ref);
 
-	return ret;
+        k_heap_free(*heap_ref, ptr);
+
+        SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _free_r, *heap_ref, heap_ref);
+
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+        heap_debug_ptr_pop(ptr);
+#endif
+    }
+}
+
+void *_malloc_r(struct _reent *r, size_t size)
+{
+    void *ret = __malloc_r(size);
+
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    heap_debug_callstack(__func__, (size_t)ret, size);
+#endif
+
+    return ret;
+}
+
+void _free_r(struct _reent *r, void *ptr)
+{
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    if ((ptr != NULL) && heap_debug_cs_is_enable()) {
+        struct k_heap **heap_ref;
+        void *_ptr;
+        heap_ref = ptr;
+        --heap_ref;
+        _ptr = heap_ref;
+
+        size_t size = sys_heap_usable_size(&((*heap_ref)->heap), _ptr);
+        heap_debug_callstack(__func__, (size_t)_ptr, size);
+    }
+#endif
+    __free_r(ptr);
+}
+
+void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
+{
+    void *ret;
+    size_t bounds;
+
+    SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap_app, _calloc_r, _APP_HEAP);
+
+    if (size_mul_overflow(nmemb, size, &bounds)) {
+        SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _calloc_r, _APP_HEAP, NULL);
+
+        return NULL;
+    }
+
+    ret = __malloc_r(bounds);
+    if (ret != NULL) {
+        (void)memset(ret, 0, bounds);
+    }
+
+    SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _calloc_r, _APP_HEAP, ret);
+
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    heap_debug_callstack(__func__, (size_t)ret, size);
+#endif
+
+    return ret;
+}
+
+void *_realloc_r(struct _reent *r, void *ptr, size_t size)
+{
+    struct k_heap *heap, **heap_ref;
+    void *ret;
+
+    if (size == 0) {
+        _free_r(NULL, ptr);
+        return NULL;
+    }
+    if (ptr == NULL) {
+        ret = __malloc_r(size);
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+        heap_debug_callstack(__func__, (size_t)ret, size);
+#endif
+        return ret;
+    }
+    heap_ref = ptr;
+    ptr = --heap_ref;
+    heap = *heap_ref;
+
+    SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap_app, _realloc_r, heap, ptr);
+
+    if (size_add_overflow(size, sizeof(heap_ref), &size)) {
+        SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _realloc_r, heap, ptr, NULL);
+        return NULL;
+    }
+
+    ret = k_heap_realloc(heap, ptr, size, K_NO_WAIT);
+
+    if (ret != NULL) {
+        heap_ref = ret;
+        ret = ++heap_ref;
+    }
+
+    SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, _realloc_r, heap, ptr, ret);
+
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    heap_debug_callstack(__func__, (size_t)ret, size);
+#endif
+
+    return ret;
 }
 
 void *aligned_alloc(size_t alignment, size_t size)
 {
-	malloc_lock();
+    SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_heap_app, aligned_alloc, _APP_HEAP);
 
-	void *ret = NULL;
-	ret = sys_heap_aligned_alloc(&z_malloc_heap,
-					alignment,
-					size);
-	if (ret == NULL && size != 0) {
-		ret = sys_heap_aligned_alloc(&z_malloc_heap_2,
-						alignment,
-						size);
-		if (ret == NULL && size != 0) {
-			errno = ENOMEM;
-		}
-	}
+    void *ret = k_aligned_alloc_app(alignment, size);
 
-	malloc_unlock();
+    SYS_PORT_TRACING_OBJ_FUNC_EXIT(k_heap_app, aligned_alloc, _APP_HEAP, ret);
 
-	return ret;
+#if defined(CONFIG_HEAP_DEBUG_LSQSH)
+    heap_debug_callstack(__func__, (size_t)ret, size);
+#endif
+
+    return ret;
 }
+#else
+#define _APP_HEAP    NULL
+#endif /* HEAP_SIZE */
 
 #ifdef CONFIG_GLIBCXX_LIBCPP
 
@@ -211,160 +265,136 @@ void *aligned_alloc(size_t alignment, size_t size)
 
 void *memalign(size_t alignment, size_t size)
 {
-	return aligned_alloc(alignment, size);
+    return aligned_alloc(alignment, size);
 }
 #endif
 
-static int malloc_prepare(void)
-{
-	void *heap_base = NULL;
-	size_t heap_size;
-
-#ifdef ALLOCATE_HEAP_AT_STARTUP
-	heap_size = k_mem_free_get();
-
-	if (heap_size != 0) {
-		heap_base = k_mem_map(heap_size, K_MEM_PERM_RW);
-		__ASSERT(heap_base != NULL,
-			 "failed to allocate heap of size %zu", heap_size);
-
-	}
-#elif defined(Z_MALLOC_PARTITION_EXISTS) && \
-	defined(CONFIG_MPU) && \
-	defined(CONFIG_MPU_REQUIRES_POWER_OF_TWO_ALIGNMENT)
-
-	/* Align size to power of two */
-	heap_size = 1;
-	while (heap_size * 2 <= HEAP_SIZE) {
-		heap_size *= 2;
-	}
-
-	/* Search for an aligned heap that fits within the available space */
-	while (heap_size >= HEAP_ALIGN) {
-		heap_base = UINT_TO_POINTER(ROUND_UP(HEAP_BASE, heap_size));
-		if (POINTER_TO_UINT(heap_base) + heap_size <= HEAP_BASE + HEAP_SIZE) {
-			break;
-		}
-		heap_size >>= 1;
-	}
-#else
-	heap_base = UINT_TO_POINTER(HEAP_BASE);
-	heap_size = HEAP_SIZE;
-#endif
-
-#if Z_MALLOC_PARTITION_EXISTS && !defined(HEAP_STATIC)
-	z_malloc_partition.start = POINTER_TO_UINT(heap_base);
-	z_malloc_partition.size = heap_size;
-	z_malloc_partition.attr = K_MEM_PARTITION_P_RW_U_RW;
-#endif
-
-	sys_heap_init(&z_malloc_heap, heap_base, heap_size);
-
-	heap_base = UINT_TO_POINTER(HEAP_2_BASE);
-	heap_size = HEAP_2_SIZE;
-
-	sys_heap_init(&z_malloc_heap_2, heap_base, heap_size);
-
-	return 0;
-}
-
-void *_realloc_r(struct _reent *r, void *ptr, size_t requested_size)
-{
-	void *ret = NULL;
-
-	if (NULL == ptr) {
-		ret = malloc(requested_size);
-	} else if (0 == requested_size) {
-		free(ptr);
-	} else {
-		malloc_lock();
-
-		if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
-			ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr,
-							__alignof__(z_max_align_t),
-							requested_size);
-		} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
-			ret = sys_heap_aligned_realloc(&z_malloc_heap_2, ptr,
-							__alignof__(z_max_align_t),
-							requested_size);
-		}
-		if (ret == NULL && requested_size != 0) {
-			errno = ENOMEM;
-		}
-
-		malloc_unlock();
-	}
-
-	return ret;
-}
-
-void _free_r(struct _reent *r, void *ptr)
-{
-	if (ptr != NULL) {
-		malloc_lock();
-		if ((ptr >= (void *)HEAP_BASE) && (ptr < (void *)(HEAP_BASE + HEAP_SIZE))) {
-			sys_heap_free(&z_malloc_heap, ptr);
-		} else if ((ptr >= (void *)HEAP_2_BASE) && (ptr < (void *)(HEAP_2_BASE + HEAP_2_SIZE))) {
-			sys_heap_free(&z_malloc_heap_2, ptr);
-		}
-		malloc_unlock();
-	}
-}
-
-SYS_INIT(malloc_prepare, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_LIBC);
 #else /* No malloc arena */
 void *malloc(size_t size)
 {
-	ARG_UNUSED(size);
+    ARG_UNUSED(size);
 
-	LOG_ERROR("CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE is 0");
-	errno = ENOMEM;
+    LOG_ERROR("CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE is 0");
+    errno = ENOMEM;
 
-	return NULL;
+    return NULL;
 }
 
 void free(void *ptr)
 {
-	ARG_UNUSED(ptr);
+    ARG_UNUSED(ptr);
 }
 
 void *realloc(void *ptr, size_t size)
 {
-	ARG_UNUSED(ptr);
-	return malloc(size);
+    ARG_UNUSED(ptr);
+    return malloc(size);
 }
 #endif /* else no malloc arena */
 
-#endif /* CONFIG_NEWLIB_LIBC_MALLOC */
+#endif /* CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE */
 
-#ifdef CONFIG_NEWLIB_LIBC_CALLOC
-
-void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
-{
-	void *ret;
-
-	if (size_mul_overflow(nmemb, size, &size)) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	ret = malloc(size);
-
-	if (ret != NULL) {
-		(void)memset(ret, 0, size);
-	}
-
-	return ret;
-}
-#endif /* CONFIG_NEWLIB_LIBC_CALLOC */
 
 #ifdef CONFIG_NEWLIB_LIBC_REALLOCARRAY
 void *reallocarray(void *ptr, size_t nmemb, size_t size)
 {
-	if (size_mul_overflow(nmemb, size, &size)) {
-		errno = ENOMEM;
-		return NULL;
-	}
-	return realloc(ptr, size);
+    if (size_mul_overflow(nmemb, size, &size)) {
+        errno = ENOMEM;
+        return NULL;
+    }
+    return realloc(ptr, size);
 }
 #endif /* CONFIG_NEWLIB_LIBC_REALLOCARRAY */
+
+void print_sys_memory_stats(void)
+{
+    struct sys_memory_stats stats;
+
+    sys_heap_runtime_stats_get(&_APP_HEAP->heap, &stats);
+
+    printk("allocated %zu, free %zu, max allocated %zu, heap size %u\n",
+        stats.allocated_bytes, stats.free_bytes,
+        stats.max_allocated_bytes, CONFIG_NEWLIB_LIBC_MALLOC_ARENA_SIZE);
+}
+
+/*
+ * Print heap info for debugging / analysis purpose
+ */
+static void _heap_print_info(struct z_heap *h, bool dump_chunks)
+{
+    int i, nb_buckets = bucket_idx(h, h->end_chunk) + 1;
+    size_t free_bytes, allocated_bytes, total, overhead;
+
+    printf("Heap at %p contains %d units in %d buckets\n\n",
+           chunk_buf(h), h->end_chunk, nb_buckets);
+
+    printf("  bucket#min units        total      largest      largest\n"
+           "             threshold       chunks      (units)      (bytes)\n"
+           "  -----------------------------------------------------------\n");
+    for (i = 0; i < nb_buckets; i++) {
+        chunkid_t first = h->buckets[i].next;
+        chunksz_t largest = 0;
+        int count = 0;
+
+        if (first) {
+            chunkid_t curr = first;
+
+            do {
+                count++;
+                largest = MAX(largest, chunk_size(h, curr));
+                curr = next_free_chunk(h, curr);
+            } while (curr != first);
+        }
+        if (count) {
+            printf("%9d %12d %12d %12d %12zd\n",
+                   i, (1 << i) - 1 + min_chunk_size(h), count,
+                   largest, chunksz_to_bytes(h, largest));
+        }
+    }
+
+    if (dump_chunks) {
+        printf("\nChunk dump:\n");
+        for (chunkid_t c = 0; ; c = right_chunk(h, c)) {
+            printf("chunk %4d: [%c] size=%-4d left=%-4d right=%d\n",
+                   c,
+                   chunk_used(h, c) ? '*'
+                   : solo_free_header(h, c) ? '.'
+                   : '-',
+                   chunk_size(h, c),
+                   left_chunk(h, c),
+                   right_chunk(h, c));
+            if (c == h->end_chunk) {
+                break;
+            }
+        }
+    }
+
+    get_alloc_info(h, &allocated_bytes, &free_bytes);
+    /* The end marker chunk has a header. It is part of the overhead. */
+    total = h->end_chunk * CHUNK_UNIT + chunk_header_bytes(h);
+    overhead = total - free_bytes - allocated_bytes;
+    printf("\n%zd free bytes, %zd allocated bytes, overhead = %zd bytes (%zd.%zd%%)\n",
+           free_bytes, allocated_bytes, overhead,
+           (1000 * overhead + total / 2) / total / 10,
+           (1000 * overhead + total / 2) / total % 10);
+}
+
+static int _sys_heap_print_info(struct sys_heap *heap, bool dump_chunks)
+{
+    _heap_print_info(heap->heap, dump_chunks);
+    return 0;
+}
+
+static int cmd_sys_memory_stats(const struct shell *shell, size_t argc, char **argv, void *data)
+{
+    print_sys_memory_stats();
+    return 0;
+}
+SHELL_CMD_REGISTER(sys_memory_stats, NULL, "sys_memory_stats", cmd_sys_memory_stats);
+
+static int cmd_sys_heap_print_info(const struct shell *shell, size_t argc, char **argv, void *data)
+{
+    _sys_heap_print_info(&_APP_HEAP->heap, true);
+    return 0;
+}
+SHELL_CMD_REGISTER(sys_heap_print_info, NULL, "sys_heap_print_info", cmd_sys_heap_print_info);

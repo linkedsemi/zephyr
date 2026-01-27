@@ -86,7 +86,11 @@
  * options.
  */
 #undef FF_FS_TINY
+#if defined(CONFIG_FS_FATFS_TINY)
 #define FF_FS_TINY 1
+#else
+#define FF_FS_TINY 0
+#endif /* defined(CONFIG_FS_FATFS_TINY) */
 
 #undef FF_FS_NORTC
 #if defined(CONFIG_FS_FATFS_HAS_RTC)

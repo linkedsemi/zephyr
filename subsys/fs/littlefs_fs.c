@@ -78,10 +78,7 @@ static inline void *fc_allocate(size_t size)
 {
 	void *ret = NULL;
 
-	ret = k_heap_aligned_alloc(&file_cache_heap, \
-								COND_CODE_1(CONFIG_DCACHE, (CONFIG_DCACHE_LINE_SIZE), (sizeof(void *))), \
-								size, \
-								K_NO_WAIT);
+	ret = k_heap_alloc(&file_cache_heap, size, K_NO_WAIT);
 
 	return ret;
 }
@@ -1059,9 +1056,9 @@ static const struct fs_file_system_t littlefs_fs = {
 #define FS_PARTITION(inst) DT_PHANDLE_BY_IDX(DT_DRV_INST(inst), partition, 0)
 
 #define DEFINE_FS(inst) \
-static uint8_t __aligned(COND_CODE_1(CONFIG_DCACHE, (CONFIG_DCACHE_LINE_SIZE), (4))) \
+static uint8_t __aligned(4) \
 	read_buffer_##inst[DT_INST_PROP(inst, cache_size)]; \
-static uint8_t __aligned(COND_CODE_1(CONFIG_DCACHE, (CONFIG_DCACHE_LINE_SIZE), (4))) \
+static uint8_t __aligned(4) \
 	prog_buffer_##inst[DT_INST_PROP(inst, cache_size)]; \
 static uint32_t lookahead_buffer_##inst[DT_INST_PROP(inst, lookahead_size) \
 					/ sizeof(uint32_t)]; \

@@ -1509,7 +1509,26 @@ static int udc_dwc3_unlock(const struct device *dev)
     return udc_unlock_internal(dev);
 }
 
-#if 0
+static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
+{
+    /* rst en */
+    *(uint32_t *)0x40058010 |= BIT(25);
+    k_busy_wait(1);
+
+    /* set reg_addr and write_data*/
+    *(uint32_t *)0x40058010 &= ~(0xff << 2);
+    *(uint32_t *)0x40058010 |= (reg_addr << 2);
+    *(uint32_t *)0x40058010 &= ~(0xff << 16);
+    *(uint32_t *)0x40058010 |= (write_data << 16);
+
+    k_busy_wait(1);
+    /* enable write */
+    *(uint32_t *)0x40058010 |= (0x1 << 1);
+    k_busy_wait(1);
+    *(uint32_t *)0x40058010 &= ~(0x1 << 1);
+}
+
+#if CONFIG_UDC_DWC3_DEBUG
 
 #include <zephyr/shell/shell.h>
 #include <stdlib.h>
@@ -1520,40 +1539,21 @@ static uint8_t dwc3_phy_cfg_read(uint8_t reg_addr)
 
     /* rst en */
     *(uint32_t *)0x40058010 |= BIT(25);
-    k_usleep(1);
+    k_busy_wait(1);
 
     /* set reg_addr and write_data*/
     *(uint32_t *)0x40058010 &= ~(0xff << 2);
     *(uint32_t *)0x40058010 |= (reg_addr << 2);
-    k_usleep(1);
+    k_busy_wait(1);
     /* enable read */
     *(uint32_t *)0x40058010 |= (0x1 << 0);
-    k_usleep(1);
+    k_busy_wait(1);
     *(uint32_t *)0x40058010 &= ~(0x1 << 0);
-    k_usleep(1);
+    k_busy_wait(1);
     res = *(uint32_t *)0x40058010;
-    k_usleep(1);
+    k_busy_wait(1);
 
     return (res >> 8) & 0xff;
-}
-
-static void dwc3_phy_cfg_write(uint8_t reg_addr, uint8_t write_data)
-{
-    /* rst en */
-    *(uint32_t *)0x40058010 |= BIT(25);
-    k_usleep(1);
-
-    /* set reg_addr and write_data*/
-    *(uint32_t *)0x40058010 &= ~(0xff << 2);
-    *(uint32_t *)0x40058010 |= (reg_addr << 2);
-    *(uint32_t *)0x40058010 &= ~(0xff << 16);
-    *(uint32_t *)0x40058010 |= (write_data << 16);
-
-    k_usleep(1);
-    /* enable write */
-    *(uint32_t *)0x40058010 |= (0x1 << 1);
-    k_usleep(1);
-    *(uint32_t *)0x40058010 &= ~(0x1 << 1);
 }
 
 static int usb_phy_reg_write(const struct shell *sh, size_t argc, char **argv) 
@@ -1581,18 +1581,85 @@ static int usb_phy_reg_read(const struct shell *sh, size_t argc, char **argv)
     addr = strtoul(argv[1], NULL, 16);
     res = dwc3_phy_cfg_read(addr);
 
-    printk("reg_0x%x value: 0x%x\n", atoi(argv[1]), res);
+    printk("reg_0x%x value: 0x%x\n", addr, res);
     return 0;
 }
 SHELL_CMD_REGISTER(usb_phy_reg_read, NULL, "naneng phy read reg", usb_phy_reg_read);
 
+static int usb2_device_phy_self_test(const struct shell *sh, size_t argc, char **argv)
+{
+    uint32_t value = *(volatile uint32_t *)0x40058014;
+    value |= BIT(2);
+    *(volatile uint32_t *)0x40058014 = value;
+
+    while (1)
+    {
+        value = *(volatile uint32_t *)0x40058014;
+        if (value & BIT(1))
+            break;
+    }
+
+    return 0;
+}
+SHELL_CMD_REGISTER(usb2_device_phy_self_test, NULL, "usb2_device_phy_self_test", usb2_device_phy_self_test);
+
+static int usb2_device_ctrl_test_packet(const struct shell *sh, size_t argc, char **argv)
+{
+    uint32_t reg = 0;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(0x40050000 + DWC3_DEVICE_REGS_START);
+    reg = dwc3_dev->DCTL;
+    reg &= ~DWC3_DCTL_TSTCTRL_MASK;
+    reg |= (TEST_PACKET << 1);
+    dwc3_dev->DCTL = reg;
+    return 0;
+}
+SHELL_CMD_REGISTER(usb2_device_ctrl_test_packet, NULL, "usb2_device_ctrl_test_packet", usb2_device_ctrl_test_packet);
+
 #endif
+
+#define USB2_CLK_CTRL               (0x40058014)
+#define USB2_PLL_EN                 (1U << 0)
+#define USB2_TEST_BIST              (1U << 1)
+#define USB2_SELF_TEST              (1U << 2)
+#define USB2_REFCLK_DIV(x)          ((x) << 4)
+#define USB2_REFCLK_MODE(x)         ((x) << 8)  // 0: input clock is integer multiples of 5MHz, 1: input clock is integer multiples of 12MHz
 
 static int dwc3_phy_setup(const struct device *dev)
 {
-    *(uint32_t *)0x40058014 = 0x131; // pll_en
+    *(volatile uint32_t *)USB2_CLK_CTRL = USB2_PLL_EN | USB2_REFCLK_DIV(3) | USB2_REFCLK_MODE(1);
+    dwc3_phy_cfg_write(0x9, 0xf0);
     return 0;
 }
+
+#if CONFIG_UDC_DWC3_DEBUG
+
+#include "ls_soc_gpio.h"
+#include "per_func_mux_type.h"
+
+#define USB2_DEBUG_SIGNAL_SEL (0x4005800c)
+
+enum usb20_dbg
+{
+    USB20_UTMI_CLK = 18,
+    USB20_UTMI_TXREADY
+};
+
+static int dwc3_debug_signal_setup(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
+
+    pinmux_cfg_pin_func_alt(PT13, PINMUX_FUNC1, USB20_UTMI_CLK); // gpio_t13 usb20_dbg0 utmi clk
+
+    uint32_t reg = dwc3_gbl->GDBGLSPMUX;
+    reg &= ~(0xff << 16);
+    reg |= (0x18 << 16);
+    dwc3_gbl->GDBGLSPMUX = reg;
+    *(volatile uint32_t *)USB2_DEBUG_SIGNAL_SEL = 0x1;
+
+    return 0;
+}
+#endif // CONFIG_UDC_DWC3_DEBUG
 
 static int udc_dwc3_init(const struct device *dev)
 {
@@ -1643,6 +1710,10 @@ static int udc_dwc3_init(const struct device *dev)
 
     /* phy init */
     dwc3_phy_setup(dev);
+
+#if CONFIG_UDC_DWC3_DEBUG
+    dwc3_debug_signal_setup(dev);
+#endif
 
     /* soft reset */
     MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
@@ -2108,8 +2179,8 @@ static void udc_dwc3_thread_handler(void *dev)
     }                                                                                                                                       \
     static struct udc_ep_config ep_cfg_out_##n[DT_INST_PROP(n, num_out_eps)];                                                               \
     static struct udc_ep_config ep_cfg_in_##n[DT_INST_PROP(n, num_in_eps)];                                                                 \
-    __nocache static struct dwc3_ep_trb ep_in_trb_##n[DT_INST_PROP(n, num_in_eps)];                                                         \
-    __nocache static struct dwc3_ep_trb ep_out_trb_##n[DT_INST_PROP(n, num_out_eps)];                                                       \
+    __nocache static __attribute__((aligned(sizeof (struct dwc3_trb)))) struct dwc3_ep_trb ep_in_trb_##n[DT_INST_PROP(n, num_in_eps)];      \
+    __nocache static __attribute__((aligned(sizeof (struct dwc3_trb)))) struct dwc3_ep_trb ep_out_trb_##n[DT_INST_PROP(n, num_out_eps)];    \
     static __attribute__((aligned(EVT_BUF_LENGTH_WORDS * sizeof(union evt_buf_u)))) union evt_buf_u dwc3_evt_buf_##n[EVT_BUF_LENGTH_WORDS]; \
     static uint8_t bounce_addr[BOUNCE_ADDR_SIZE];                                                                                           \
     static const struct udc_dwc3_config udc_dwc3_config_##n = {                                                                             \

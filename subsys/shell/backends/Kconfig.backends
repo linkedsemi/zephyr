@@ -185,6 +185,90 @@ config SHELL_BACKEND_SERIAL_LOG_LEVEL
 
 endif # SHELL_BACKEND_SERIAL
 
+config SHELL_BACKEND_WOLFSSH
+	bool "WolfSSH backend"
+	select WOLFSSH
+	help
+	  Enable WolfSSH backend
+
+if SHELL_BACKEND_WOLFSSH
+config SHELL_PROMPT_WOLFSSH
+	string "Displayed prompt name"
+	default "ssh:~$ "
+	help
+	  Displayed prompt name for WolfSSH backend. If prompt is set, the shell will
+	  send two newlines during initialization.
+
+config SHELL_WOLFSSH_BANNER
+	string "SSH Banner"
+	default "wolfSSH Shell"
+
+config SHELL_WOLFSSH_PORT
+	int "SSH Port"
+	default 22
+
+config SHELL_WOLFSSH_DAEMON_STACK_SIZE
+	int "wolfSSH daemon stack size"
+	default 4096
+
+config SHELL_WOLFSSH_TIMEOUT
+	int "SSH Shell Timeout (s)"
+	default 120
+
+config SHELL_WOLFSSH_LOGIN_TIMEOUT
+	int "SSH Shell Login Timeout (s)"
+	default 60
+
+config WOLFSSH_SETTINGS_FILE
+	string "wolfSSH settings file"
+	default "${ZEPHYR_BASE}/subsys/shell/backends/wolfssh_user_settings.h"
+
+module = SHELL_BACKEND_WOLFSSH
+default-timeout = 100
+source "subsys/shell/Kconfig.template.shell_log_queue_timeout"
+
+default-size = 512
+source "subsys/shell/Kconfig.template.shell_log_queue_size"
+
+choice
+	prompt "Initial log level limit"
+	default SHELL_WOLFSSH_INIT_LOG_LEVEL_DEFAULT
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL_DEFAULT
+	bool "System limit (LOG_MAX_LEVEL)"
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL_DBG
+	bool "Debug"
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL_INF
+	bool "Info"
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL_WRN
+	bool "Warning"
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL_ERR
+	bool "Error"
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL_NONE
+	bool "None"
+
+endchoice
+
+config SHELL_WOLFSSH_INIT_LOG_LEVEL
+	int
+	default 0 if SHELL_WOLFSSH_INIT_LOG_LEVEL_NONE
+	default 1 if SHELL_WOLFSSH_INIT_LOG_LEVEL_ERR
+	default 2 if SHELL_WOLFSSH_INIT_LOG_LEVEL_WRN
+	default 3 if SHELL_WOLFSSH_INIT_LOG_LEVEL_INF
+	default 4 if SHELL_WOLFSSH_INIT_LOG_LEVEL_DBG
+	default 5 if SHELL_WOLFSSH_INIT_LOG_LEVEL_DEFAULT
+
+module = SHELL_WOLFSSH
+module-str = WOLFSSH shell backend
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # SHELL_BACKEND_WOFLSSH
+
 config SHELL_BACKEND_RTT
 	bool "RTT backend"
 	select CONSOLE

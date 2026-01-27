@@ -15,129 +15,81 @@
 #define SRAM_RO_SIZE    DT_SIZE_K(256)
 #define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
 
-/ {
-    model = "linkedsemi lsqsh_evb";
-    compatible = "linkedsemi,lsqsh_evb";
+&chosen {
+    zephyr,flash = &sram_ro;
+    zephyr,flash-controller = &qspi1;
+    zephyr,sram = &sram;
+    zephyr,console = &uart1;
+    zephyr,shell-uart = &uart1;
+};
 
-    chosen {
-        zephyr,flash = &sram1_ro;
-        zephyr,flash-controller = &qspi1;
-        zephyr,sram = &sram1;
-        zephyr,console = &uart1;
-        zephyr,shell-uart = &uart1;
-        zephyr,internal-flash = &flash1;
-        zephyr,entropy = &trng0;
+&aliases {
+    sdhc0 = &sdhci1;
+    watchdog0 = &sec_iwdg;
+    // peci-0 = &peci1;
+    // sw0 = &btn1;
+    // led0 = &led1;
+    // pwm-led0 = &pwm_led0;
+};
+
+&soc {
+    /delete-node/ memory@10000000;
+    sram_ro: memory@100c0000 {
+        compatible = "mmio-sram";
+        reg = <0x100c0000 SRAM_RO_SIZE>;
     };
 
-    aliases {
-        peci-0 = &peci1;
-        sdhc0 = &sdhci1;
-        sw0 = &btn1;
-        led0 = &led1;
-        pwm-led0 = &pwm_led0;
-        watchdog0 = &sec_iwdg;
+    sram: memory@10100000 {
+        compatible = "mmio-sram";
+        reg = <(0x100c0000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
     };
 
-    pwmleds {
-        compatible = "pwm-leds";
-        pwm_led0: pwm_led_0 {
-            pwms = <&pwm 10 PWM_USEC(1) 0>;
+    driver_share_memory: memory@100be000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x100be000 0x1000>;
+        zephyr,memory-region = "SHMEM";
+    };
+
+    mbox: mbox@100bf000 {
+        compatible = "linkedsemi,mbox";
+        reg = <0x100bf000 DT_SIZE_K(4)>;
+        fifo-deepth = <2>;
+        fifo-width = <256>;
+        #mbox-cells = <1>;
+        interrupts = <SYSC_SEC_CPU_IRQN 3>;
+        mbox_consumer_qspi1: mbox-consumer_qspi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 1>, <&mbox 0>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 3>, <&mbox 2>;
+            mbox-names = "tx", "rx";
+        };
+
+        mbox_consumer_espi1: mbox-consumer_espi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 5>, <&mbox 4>;
+            mbox-names = "tx", "rx";
         };
     };
 
-
-    soc {
-        compatible = "simpe-bus";
+    qspi1: qspi@40000000 {
+        compatible = "linkedsemi,ls-flash-controller";
+        reg = <0x40000000 0x400>;
         #address-cells = <1>;
         #size-cells = <1>;
-        interrupt-parent = <&intc>;
+        interrupts = <3 3>;
+        quad_mode;
+        continuous_mode;
+        mbox = <&mbox_consumer_qspi1>;
 
-        /delete-node/ memory@10000000;
-        sram1_ro: memory@10000000 {
-            compatible = "mmio-sram";
-            reg = <0x10000000 SRAM_RO_SIZE>;
-        };
-
-        sram1: memory@10040000 {
-            compatible = "mmio-sram";
-            reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
-        };
-
-        share_memory: share-memory@1013e000 {
-            compatible = "zephyr,memory-region", "mmio-sram";
-            reg = <0x1013e000 DT_SIZE_K(4)>;
-            zephyr,memory-region = "SHMEM";
-        };
-
-        mbox: mbox@1013f000 {
-            compatible = "linkedsemi,mbox";
-            reg = <0x1013f000 DT_SIZE_K(4)>;
-            fifo-deepth = <2>;
-            fifo-width = <256>;
-            #mbox-cells = <1>;
-            interrupts = <SYSC_SEC_CPU_IRQN 3>;
-            
-            mbox_consumer_qspi1: mbox-consumer_qspi1 {
-                compatible = "vnd,mbox-consumer";
-                mboxes = <&mbox 1>, <&mbox 0>;
-                mbox-names = "tx", "rx";
-            };
-            mbox_consumer_mbedtls: mbox-consumer_mbedtls {
-                compatible = "vnd,mbox-consumer";
-                mboxes = <&mbox 3>, <&mbox 2>;
-                mbox-names = "tx", "rx";
-            };
-        };
-
-        qspi1: qspi@40000000 {
-            compatible = "linkedsemi,ls-flash-controller";
-            reg = <0x40000000 0x400>;
-            #address-cells = <1>;
-            #size-cells = <1>;
-            interrupts = <3 3>;
-            quad_mode;
-            continuous_mode;
-            addr4b;
-            mbox = <&mbox_consumer_qspi1>;
-
-            flash1: flash@8000000 {
-                compatible = "soc-nv-flash";
-                reg = <0x8000000 DT_SIZE_M(32)>;
-                erase-block-size = <4096>;
-                write-block-size = <4>;
-            };
-        };
-    };
-
-    leds: leds {
-        compatible = "gpio-leds";
-        led1: led1 {
-            gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
-            label = "LED1";
-        };
-        led2: led2 {
-            gpios = <&gpioh 7 GPIO_ACTIVE_HIGH>;
-            label = "LED2";
-        };
-        led3: led3 {
-            gpios = <&gpioh 0 GPIO_ACTIVE_HIGH>;
-            label = "LED3";
-        };
-    };
-
-    keys: keys {
-        compatible = "gpio-keys";
-        btn1: btn1 {
-            gpios = <&gpiog 4 BTN_GPIO_FLAGS>;
-            label = "Push button 1";
-        };
-        btn2: btn2 {
-            gpios = <&gpioh 1 BTN_GPIO_FLAGS>;
-            label = "Push button 2";
-        };
-        btn3: btn3 {
-            gpios = <&gpioh 4 BTN_GPIO_FLAGS>;
-            label = "Push button 3";
+        flash1: flash@8000000 {
+            compatible = "soc-nv-flash";
+            reg = <0x8000000 DT_SIZE_M(32)>;
+            erase-block-size = <4096>;
+            write-block-size = <4>;
         };
     };
 };
@@ -210,10 +162,6 @@
     status = "okay";
 };
 
-&rtc0 {
-    status = "okay";
-};
-
 &uart1 {
     current-speed = <115200>;
     status = "okay";
@@ -234,10 +182,6 @@
 };
 
 &pmu_iwdg {
-    status = "okay";
-};
-
-&trng0 {
     status = "okay";
 };
 
@@ -511,4 +455,48 @@ zephyr_udc0: &usb2 {
 //     clk_cfg = <ADC_CH_CLOCK_DIV1>;
 //     injected_offset = <0>;
 //     fif_ctrl1 = <0xFFFF>;
+// };
+
+// / {
+//     model = "linkedsemi lsqsh_evb";
+//     compatible = "linkedsemi,lsqsh_evb";
+//
+//     leds: leds {
+//         compatible = "gpio-leds";
+//         led1: led1 {
+//             gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
+//             label = "LED1";
+//         };
+//         led2: led2 {
+//             gpios = <&gpioh 7 GPIO_ACTIVE_HIGH>;
+//             label = "LED2";
+//         };
+//         led3: led3 {
+//             gpios = <&gpioh 0 GPIO_ACTIVE_HIGH>;
+//             label = "LED3";
+//         };
+//     };
+//
+//     keys: keys {
+//         compatible = "gpio-keys";
+//         btn1: btn1 {
+//             gpios = <&gpiog 4 BTN_GPIO_FLAGS>;
+//             label = "Push button 1";
+//         };
+//         btn2: btn2 {
+//             gpios = <&gpioh 1 BTN_GPIO_FLAGS>;
+//             label = "Push button 2";
+//         };
+//         btn3: btn3 {
+//             gpios = <&gpioh 4 BTN_GPIO_FLAGS>;
+//             label = "Push button 3";
+//         };
+//     };
+//
+//     pwmleds {
+//         compatible = "pwm-leds";
+//         pwm_led0: pwm_led_0 {
+//             pwms = <&pwm 10 PWM_USEC(1) 0>;
+//         };
+//     };
 // };

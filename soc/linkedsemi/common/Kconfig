@@ -1,0 +1,3 @@
+
+config ATOMIC_OPERATIONS_E906_SMP
+    bool

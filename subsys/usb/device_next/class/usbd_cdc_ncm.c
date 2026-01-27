@@ -1040,6 +1040,11 @@ static int cdc_ncm_send(const struct device *dev, struct net_pkt *const pkt)
 		return -EACCES;
 	}
 
+	if (atomic_test_bit(&data->state, CDC_NCM_CLASS_SUSPENDED)) {
+		LOG_INF("USB device is suspended");
+		return -EBUSY;
+	}
+
 	buf = cdc_ncm_buf_alloc(cdc_ncm_get_bulk_in(c_data));
 	if (buf == NULL) {
 		LOG_ERR("Failed to allocate buffer");

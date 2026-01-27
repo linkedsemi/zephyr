@@ -1,0 +1,5 @@
+description: Linkedsemi espi lpc host bmc container
+
+compatible: "linkedsemi,host-bmc-container"
+
+include: [base.yaml]

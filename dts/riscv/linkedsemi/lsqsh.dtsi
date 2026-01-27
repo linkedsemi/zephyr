@@ -14,7 +14,7 @@
 #define PBUS0123_CLOCK DT_FREQ_M(300)
 #define PBUS4_CLOCK    DT_FREQ_M(75)
 #define SDHCI_CLOCK    DT_FREQ_M(200)
-
+#define I3C_CLOCK      DT_FREQ_M(50)
 / {
     #address-cells = <1>;
     #size-cells = <1>;
@@ -41,33 +41,22 @@
         };
     };
 
-    soc {
+    soc: soc {
         compatible = "simpe-bus";
         #address-cells = <1>;
         #size-cells = <1>;
         interrupt-parent = <&intc>;
 
-        sram1: memory@10000000 {
+        sram: memory@10000000{
             compatible = "mmio-sram";
-            reg = <0x10000000 DT_SIZE_K(512)>;
+            reg = <0x10000000 DT_SIZE_K(1280)>;
         };
 
-        sram2: memory@10080000{
-            compatible = "mmio-sram";
-            reg = <0x10080000 DT_SIZE_K(768)>;
-        };
-
-/*
-        share_memory0: memory@1013f000{
-            compatible = "mmio-sram";
-            reg = <0x1013f000 0x1000>;
-        };
-*/
         psram: memory@18000000 {
             compatible = "zephyr,memory-region", "mmio-sram";
             reg = <0x18000000 DT_SIZE_M(8)>;
             zephyr,memory-region = "PSRAM";
-            status = "okay";
+            status = "disabled";
         };
 
         intc: interrupt-controller {
@@ -485,7 +474,7 @@
             status = "disabled";
         };
 
-        trng0: dwtrng@40004000 {
+        trng1: dwtrng@40004000 {
             compatible = "linkedsemi,ls-dwtrng";
             reg = <0x40004000 0x400>;
             status = "disabled";
@@ -528,21 +517,8 @@
             interrupts = <ESPI1_IRQN 3>;
             clocks = <ESPI1_CLOCK>;
             resets = <ESPI1_RESET>;
-            #address-cells = <1>;
-            #size-cells = <1>;
             status = "disabled";
-
-            vuart1: vuart1@40087800 {
-                compatible = "linkedsemi,ls-host-vuart";
-                reg = <0x40087800 0x400>;
-                interrupts = <UART3_IRQN 3>;
-                clocks = <UART3_CLOCK>;
-                resets = <UART3_RESET>;
-                clock-source = <CLK_SRC_PBUS4>;
-                port = <0x3f8>;
-                up-irq = <0x4 0>;
-                status = "disabled";
-            };
+            cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
 
             sio1: sio1 {
                 compatible = "linkedsemi,ls-sio";
@@ -559,6 +535,30 @@
 
         };
 
+        host_bmc_container1: host_bmc_container1 {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            host_vuart1: host_vuart1@40087800 {
+                compatible = "linkedsemi,ls-host-vuart";
+                reg = <0x40087800 0x400>;
+                interrupts = <UART3_IRQN 3>;
+                clocks = <UART3_CLOCK>;
+                resets = <UART3_RESET>;
+                clock-source = <CLK_SRC_PBUS4>;
+                port = <0x3f8>;
+                up-irq = <0x4 0>;
+                espi_lpc = <&espi1>;
+                fifo_base = <0x40045c00>;
+                status = "disabled";
+            };
+            vuart1: vuart1 {
+                compatible = "linkedsemi,ls-vuart";
+                fifo_base = <0x40045c00>;
+                status = "disabled";
+            };
+            status = "disabled";
+        };
 
         sec_iwdg: watchdog@400a1800 {
           compatible = "linkedsemi,ls-watchdog";
@@ -618,7 +618,6 @@
             compatible = "linkedsemi,ls-ipmi-kcs";
             status = "disabled";
         };
-
         i2c1: i2c@400a0000 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x400a0000 0x400>;
@@ -939,7 +938,7 @@
             status = "disabled";
         };
 
-        rtc0: rtc0@4006fc00{
+        rtc: rtc@4006fc00{
             compatible = "linkedsemi,ls-rtc";
             reg = <0x4006fc00 0x400>;
             interrupts = <PMU_RTC_IRQN 3>;
@@ -1170,7 +1169,8 @@
             resets = <SPI3_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
-            dmas =<&dmac1 0 DMA_SPI3_RX>,<&dmac1 0 DMA_SPI3_TX>;
+            spi-ctrl-caps-mask=<0x40000>;
+            dmas =<&dmac2 0 DMA_SPI3_RX>,<&dmac2 0 DMA_SPI3_TX>;
             dma-names ="rx","tx";
             status = "disabled";
         };
@@ -1186,7 +1186,8 @@
             resets = <SPI4_RESET>;
             fifo-depth = <4>;
             max-xfer-size = <32>;
-            dmas =<&dmac2 0 DMA_SPI4_RX>,<&dmac2 1 DMA_SPI4_TX>;
+            spi-ctrl-caps-mask=<0x40000>;
+            dmas =<&dmac2 1 DMA_SPI4_RX>,<&dmac2 1 DMA_SPI4_TX>;
             dma-names ="rx","tx";
             status = "disabled";
         };
@@ -1224,11 +1225,7 @@
             clocks = <EMMC1_CLOCK>;
             resets = <EMMC1_RESET>;
             clock-frequency = <SDHCI_CLOCK>;
-#if 0
             max-bus-freq = <SDHCI_CLOCK>;
-#else
-            max-bus-freq = <5000000>;
-#endif
             min-bus-freq = <50000>;
             status = "disabled";
         };
@@ -1283,11 +1280,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x400a0800 0x2000>;
-            interrupts = <I3C1_IRQN 3>;
+            interrupts = <I3C1_IRQN 7>;
             clocks = <I3C1_CLOCK>;
             resets = <I3C1_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1296,11 +1293,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40093400 0x2000>;
-            interrupts = <I3C2_IRQN 3>;
+            interrupts = <I3C2_IRQN 7>;
             clocks = <I3C2_CLOCK>;
             resets = <I3C2_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1309,11 +1306,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40093800 0x2000>;
-            interrupts = <I3C3_IRQN 3>;
+            interrupts = <I3C3_IRQN 7>;
             clocks = <I3C3_CLOCK>;
             resets = <I3C3_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1322,11 +1319,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40093c00 0x2000>;
-            interrupts = <I3C4_IRQN 3>;
+            interrupts = <I3C4_IRQN 7>;
             clocks = <I3C4_CLOCK>;
             resets = <I3C4_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1335,11 +1332,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094000 0x2000>;
-            interrupts = <I3C5_IRQN 3>;
+            interrupts = <I3C5_IRQN 7>;
             clocks = <I3C5_CLOCK>;
             resets = <I3C5_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1348,11 +1345,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094400 0x2000>;
-            interrupts = <I3C6_IRQN 3>;
+            interrupts = <I3C6_IRQN 7>;
             clocks = <I3C6_CLOCK>;
             resets = <I3C6_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1361,11 +1358,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094800 0x2000>;
-            interrupts = <I3C7_IRQN 3>;
+            interrupts = <I3C7_IRQN 7>;
             clocks = <I3C7_CLOCK>;
             resets = <I3C7_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1374,11 +1371,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40094c00 0x2000>;
-            interrupts = <I3C8_IRQN 3>;
+            interrupts = <I3C8_IRQN 7>;
             clocks = <I3C8_CLOCK>;
             resets = <I3C8_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1387,11 +1384,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095000 0x2000>;
-            interrupts = <I3C9_IRQN 3>;
+            interrupts = <I3C9_IRQN 7>;
             clocks = <I3C9_CLOCK>;
             resets = <I3C9_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1400,11 +1397,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095400 0x2000>;
-            interrupts = <I3C10_IRQN 3>;
+            interrupts = <I3C10_IRQN 7>;
             clocks = <I3C10_CLOCK>;
             resets = <I3C10_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1413,11 +1410,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095800 0x2000>;
-            interrupts = <I3C11_IRQN 3>;
+            interrupts = <I3C11_IRQN 7>;
             clocks = <I3C11_CLOCK>;
             resets = <I3C11_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1426,11 +1423,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40095c00 0x2000>;
-            interrupts = <I3C12_IRQN 3>;
+            interrupts = <I3C12_IRQN 7>;
             clocks = <I3C12_CLOCK>;
             resets = <I3C12_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1439,11 +1436,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40096000 0x2000>;
-            interrupts = <I3C13_IRQN 3>;
+            interrupts = <I3C13_IRQN 7>;
             clocks = <I3C13_CLOCK>;
             resets = <I3C13_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1452,11 +1449,11 @@
             #address-cells = <3>;
             #size-cells = <0>;
             reg = <0x40096400 0x2000>;
-            interrupts = <I3C14_IRQN 3>;
+            interrupts = <I3C14_IRQN 7>;
             clocks = <I3C14_CLOCK>;
             resets = <I3C14_RESET>;
-            i3c-scl-hz = <1000000>;
-            clock-frequency = <PBUS4_CLOCK>;
+            i3c-scl-hz = <12500000>;
+            clock-frequency = <I3C_CLOCK>;
             status = "disabled";
         };
 
@@ -1515,6 +1512,10 @@
             power-state-name = "standby";
         };
     };
+
+    chosen: chosen {};
+
+    aliases: aliases {};
 };
 
 #include "lsqsh_pinctrl_fixed_pinmap.dtsi"

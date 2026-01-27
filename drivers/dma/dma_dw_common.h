@@ -287,11 +287,17 @@ struct dw_dma_chan_data {
 	void *dsttranuser_data;
 };
 
+#if defined(CONFIG_DMA_DW_2_20A)
+#define DW_MSIZE_MAX 7
+static const uint32_t burst_elems[] = {1, 4, 8, 16, 32, 64, 128, 256};
+#else
+#define DW_MSIZE_MAX 5
 /* use array to get burst_elems for specific slot number setting.
  * the relation between msize and burst_elems should be
  * 2 ^ msize = burst_elems
  */
 static const uint32_t burst_elems[] = {1, 2, 4, 8};
+#endif /* CONFIG_DMA_DW_2_20A */
 
 /* Device run time data */
 struct dw_dma_dev_data {

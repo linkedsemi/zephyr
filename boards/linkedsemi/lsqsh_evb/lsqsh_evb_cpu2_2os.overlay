@@ -9,27 +9,21 @@
 #define SRAM_RO_SIZE    DT_SIZE_K(384)
 #define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE - SRAM_MBOX_SIZE - SRAM_SHMEM_SIZE)
 
-/ {
-    chosen {
-        zephyr,flash = &sram2_ro;
+&chosen {
+    zephyr,flash = &sram_ro;
+    zephyr,sram = &sram;
+};
+
+&soc {
+    /delete-node/ memory@10000000;
+    sram_ro: memory@10000000 {
+        compatible = "mmio-sram";
+        reg = <0x10000000 SRAM_RO_SIZE>;
     };
 
-    soc {
-        compatible = "simpe-bus";
-        #address-cells = <1>;
-        #size-cells = <1>;
-        interrupt-parent = <&intc>;
-
-        /delete-node/ memory@10080000;
-        sram2_ro: memory@10080000 {
-            compatible = "mmio-sram";
-            reg = <0x10080000 SRAM_RO_SIZE>;
-        };
-
-        sram2: memory@100e0000 {
-            compatible = "mmio-sram";
-            reg = <(0x10080000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
-        };
+    sram: memory@10060000 {
+        compatible = "mmio-sram";
+        reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
     };
 };
 
