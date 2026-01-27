@@ -935,6 +935,9 @@ void soc_late_init_hook(void)
 #endif /*!defined(CONFIG_SMP)*/
 
 #if defined(CONFIG_SMP)
+void soc_late_init_hook(void)
+{
+}
 void secondary_cpu_init(void)
 {
     cpu_early_common_config();
