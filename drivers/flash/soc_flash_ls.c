@@ -50,6 +50,7 @@ struct flash_ls_config {
 struct flash_ls_data {
 	struct hal_flash_env env;
 	struct k_sem sem;
+	struct k_spinlock slock;
 	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
 	struct k_work worker;
 	const struct device *dev;
@@ -520,8 +521,11 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	/* Erase sector one by one*/
 
 	for (off_t addr = offset; addr < (offset + size);) {
@@ -536,8 +540,11 @@ static int flash_ls_erase(const struct device *dev, off_t offset,
 			addr += KB(4);
 		}
 	}
-
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
+#endif
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -557,8 +564,11 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
-
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	while (size) {
 		/* If the offset isn't a multiple of the page size, we first need
 		 * to write the remaining part that fits, otherwise the write could
@@ -571,8 +581,11 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 		offset += len;
 		size -= len;
 	}
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
-
+#endif
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -591,10 +604,17 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
-
+#endif
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -609,10 +629,17 @@ uint8_t flash_ls_read_ear(const struct device *dev)
 		return -EACCES;
 	}
 
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	ret = hal_flashx_read_ear(&priv->env);
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
-
+#endif
 	k_sem_give(&priv->sem);
 
 	return ret;
@@ -627,10 +654,17 @@ uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear)
 		return -EACCES;
 	}
 
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	hal_flashx_write_ear(&priv->env, ear);
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
-
+#endif
 	k_sem_give(&priv->sem);
 
 	return ret;
@@ -667,9 +701,17 @@ static int flash_ls_read_jedec_id(const struct device *dev,
 		return -EACCES;
 	}
 
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	hal_flashx_read_id(&priv->env,id);
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
+#endif
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -683,9 +725,17 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 		return -EACCES;
 	}
 
+#if defined(CONFIG_SMP)
+	k_sched_lock();
+#else
 	DELEGATE_SERVER_OP_START(dev);
+#endif
 	hal_flashx_read_sfdp(&priv->env,offset,data,len);
+#if defined(CONFIG_SMP)
+	k_sched_unlock();
+#else
 	DELEGATE_SERVER_OP_END(dev);
+#endif
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -697,6 +747,9 @@ __ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
 				const uintptr_t in, void *out)
 {
 	struct flash_ls_data *priv = dev->data;
+#if defined(CONFIG_SMP)
+	k_spinlock_key_t key = k_spin_lock(&priv->slock);
+#endif
 	switch(code)
 	{
 	case FLASH_DRIVER_SUSPEND_OPCODE:
@@ -714,8 +767,25 @@ __ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
 	break;
 #endif
 	}
+#if defined(CONFIG_SMP)
+	k_spin_unlock(&priv->slock, key);
+#endif
 	return 0;
 }
+
+__ramfunc bool flash_ls_suspend_state_writing(const struct device *dev)
+{
+	struct flash_ls_data *priv = dev->data;
+	if(priv->env.writing)
+	{
+		return true;
+	}
+	else
+	{
+		return false;
+	}
+}
+
 #endif
 
 static struct flash_driver_api flash_ls_api = {
