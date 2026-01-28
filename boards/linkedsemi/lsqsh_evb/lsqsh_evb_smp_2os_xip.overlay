@@ -24,7 +24,7 @@
 &qspi1 {
     flash_xip_partition: flash@8010100 {
         compatible = "soc-nv-flash";
-        reg = <0x8011000 DT_SIZE_M(12)>;
+        reg = <0x8010100 DT_SIZE_M(12)>;
         erase-block-size = <4096>;
         write-block-size = <4>;
         status = "disabled";

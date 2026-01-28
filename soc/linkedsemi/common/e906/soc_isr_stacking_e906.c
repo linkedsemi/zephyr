@@ -36,9 +36,9 @@ static uint8_t get_cur_cpu_id(void)
 
 __ramfunc void isr_stacking_mcause(void)
 {
-    io_set_pin(PF13);
+    // io_set_pin(PF13);
 	/* get current cpu number */
-	uint32_t _cpu_id = get_cur_cpu_id();//这里要加自旋锁吗~  不能用这个接口，接口里边会重新打开中断，要用baddress寄存器
+	uint32_t _cpu_id = get_cur_cpu_id();
     uint32_t mcause = csr_read(mcause);
 #if defined(CONFIG_SMP)
     if(_cpu_id == LSQSH_CPU1_IDX && cpu1_flash_xip_banned)
@@ -91,7 +91,7 @@ __ramfunc void isr_stacking_mcause(void)
     {
         while(1);
     }
-    io_clr_pin(PF13);
+    // io_clr_pin(PF13);
 }
 
 #define MCAUSE_MPP_MASK (3UL << 27)
@@ -103,7 +103,7 @@ __ramfunc void isr_unstacking_mcause(void)
     uint32_t restore_mcause;
 
 	/* get current cpu number */
-	uint32_t _cpu_id = get_cur_cpu_id();//这里要加自旋锁吗~
+	uint32_t _cpu_id = get_cur_cpu_id();
 #if defined(CONFIG_SMP)
     if(csr_read(mraddr) != LSQSH_BOOT_ADDR)
     {
