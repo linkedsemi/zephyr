@@ -492,6 +492,9 @@ __ramfunc static void high_frequency_init()
     env.writing = false;
     env.continuous_mode_on = false;
     hal_flashx_init(&env);
+    if (!env.dual_mode_only) {
+        pinmux_hal_flash_quad_init();
+    }
     hal_flashx_continuous_mode_start(&env);
     lscache_cache_enable(1);
     peripheral_init();
@@ -828,8 +831,6 @@ __maybe_unused void soc_late_init_hook(void)
     if (is_app_cpu_running()) {
         flash_xip_prepare(flash_dev);
         return;
-    } else {
-        pinmux_hal_flash_quad_init();
     }
 #if defined(CONFIG_BOOT_CPU2)
     if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
