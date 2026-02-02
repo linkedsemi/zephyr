@@ -52,7 +52,7 @@ IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
 BUILD_ASSERT(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
 #endif
 
-static void cpu_sleep_mode_config(uint8_t deep)
+void cpu_sleep_mode_config(uint8_t deep)
 {
     uint32_t mextstaus = __get_MEXSTATUS();
     MODIFY_REG(mextstaus,MEXSTATUS_SLEEP_Msk,(!deep)<<MEXSTATUS_SLEEP_Pos);
@@ -902,7 +902,6 @@ __maybe_unused void soc_late_init_hook(void)
     else 
 #endif //!defined(CONFIG_SMP)
     {
-
         pinmux_hal_flash_quad_init();
     }
 #if !defined(CONFIG_SMP)
@@ -935,31 +934,3 @@ void soc_late_init_hook(void)
 }
 #endif /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
 #endif /*!defined(CONFIG_SMP)*/
-
-#if defined(CONFIG_SMP)
-void soc_late_init_hook(void)
-{
-}
-void secondary_cpu_init(void)
-{
-    cpu_early_common_config();
-    cpu_sleep_mode_config(0);
-    smp_mode_cache_region_init();
-    cpu_intr_sec_unmask();
-    cpu_intr_app_unmask();
-    // csi_vic_disable_irq(SYSC_APP_CPU_IRQN);
-}
-
-
-void __scondary_cpu_reset(void);
-int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point)
-{
-    if(cpuid == 1)
-    {
-        app_cpu_dereset_by_addr((int)__scondary_cpu_reset);
-        app_cpu_reset_hold_clr();
-    }
-
-    return 0;
-}
-#endif

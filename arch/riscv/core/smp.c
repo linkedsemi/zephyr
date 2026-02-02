@@ -15,6 +15,7 @@
 #ifdef CONFIG_SMP
 /* ls_qsh platform */
 #include "platform.h"
+#include "smp/lsqsh_smp.h"
 #endif
 volatile struct {
 	arch_cpustart_t fn;
@@ -76,10 +77,11 @@ void arch_secondary_cpu_init(int hartid)
 	z_riscv_pmp_init();
 #endif
 #ifdef CONFIG_SMP
-	// irq_enable(RISCV_IRQ_MSOFT);
-	irq_enable(SYSC_APP_CPU_IRQN);
-	irq_disable(SYSC_SEC_CPU_IRQN);
-	irq_enable(RV_TIME_IRQN);
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_secondary_cpu_init();
+#else
+	irq_enable(RISCV_IRQ_MSOFT);
+#endif
 #endif /* CONFIG_SMP */
 #ifdef CONFIG_PLIC_IRQ_AFFINITY
 	/* Enable on secondary cores so that they can respond to PLIC */
@@ -89,12 +91,13 @@ void arch_secondary_cpu_init(int hartid)
 }
 
 #ifdef CONFIG_SMP
-#define MSIP_BASE 0x2000000UL  //机器模式软件中断
+#define MSIP_BASE 0x2000000UL // e906 undefine
 #define MSIP(hartid) ((volatile uint32_t *)MSIP_BASE)[hartid]
 
 static atomic_val_t cpu_pending_ipi[CONFIG_MP_MAX_NUM_CPUS];
 #define IPI_SCHED	0
 #define IPI_FPU_FLUSH	1
+#define IPI_XIP_LOCK    2
 
 void arch_sched_directed_ipi(uint32_t cpu_bitmap)
 {
@@ -106,21 +109,11 @@ void arch_sched_directed_ipi(uint32_t cpu_bitmap)
 		if ((i != id) && _kernel.cpus[i].arch.online &&
 		 ((cpu_bitmap & BIT(i)) != 0)) {
 			atomic_set_bit(&cpu_pending_ipi[i], IPI_SCHED);
-			// MSIP(_kernel.cpus[i].arch.hartid) = 1;
-			if(i == 0)
-			{
-				/* set cpu1 irq */
-				cpu_intr_sec_activate();
-			}
-			else if(i == 1)
-			{
-				/* set cpu2 irq */
-				cpu_intr_app_activate();
-			}
-			else
-			{
-				// while(1);
-			}
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+			lsqsh_ipi_intr_set(i);
+#else
+			MSIP(_kernel.cpus[i].arch.hartid) = 1;
+#endif
 		}
 	}
 
@@ -139,21 +132,17 @@ void arch_flush_fpu_ipi(unsigned int cpu)
 	MSIP(_kernel.cpus[cpu].arch.hartid) = 1;
 }
 #endif
-
-static void sched_ipi_handler(const void *unused)
+#include "stdio.h"
+void sched_ipi_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
 	unsigned int id = _current_cpu->id;
-	/* clear pending irq , ls_qsh unuesd this register*/
-	// MSIP(csr_read(mhartid)) = 0;
-	if(id == 0)
-	{
-		cpu_intr_sec_clr();
-	}else
-	{
-		cpu_intr_app_clr();
-	}
-
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_ipi_intr_clr(id);
+#else
+	MSIP(csr_read(mhartid)) = 0;
+#endif
+	
 
 	atomic_val_t pending_ipi = atomic_clear(&cpu_pending_ipi[_current_cpu->id]);
 
@@ -170,6 +159,11 @@ static void sched_ipi_handler(const void *unused)
 		 * No need to re-enable IRQs here as long as
 		 * this remains the last case.
 		 */
+	}
+#endif
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK)) {
+		poll_wait_xip_unlock();
 	}
 #endif
 }
@@ -196,17 +190,14 @@ void arch_spin_relax(void)
 }
 #endif
 
-/* cpu1 api*/
+
 int arch_smp_init(void)
 {
-	// IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
-	IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
-	IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
-	irq_enable(SYSC_SEC_CPU_IRQN);
-	irq_disable(SYSC_APP_CPU_IRQN);
-	/* now , the cpu2 is not initailed*/
-	// irq_enable(SYSC_APP_CPU_IRQN);
-
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_arch_smp_init(cpu_pending_ipi);
+#else
+	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
+#endif
 	return 0;
 }
 #endif /* CONFIG_SMP */

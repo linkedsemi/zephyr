@@ -12,6 +12,8 @@ zephyr_library_sources_ifdef(CONFIG_HEAP_DEBUG_LSQSH heap_debug.c)
 zephyr_library_include_directories_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH ${ZEPHYR_BASE}/lib/heap)
 zephyr_library_sources_ifdef(CONFIG_CXX_OPERATOR_NEW_DELETE cxx_crt_init.cpp)
 
+zephyr_library_sources_ifdef(CONFIG_SMP smp/lsqsh_e906_smp.c)
+
 add_subdirectory(otbn)
 
 set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/soc/linkedsemi/common/linker.ld CACHE INTERNAL "")
