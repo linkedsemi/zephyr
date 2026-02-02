@@ -141,6 +141,12 @@ typedef int (*jtag_api_tdo_get)(const struct device *dev, uint8_t *value);
 
 
 /**
+ * @brief Type definition of JTAG API function for run one clock.
+ */
+typedef int (*jtag_api_tck_run_cycle)(const struct device *dev, uint8_t tms, uint8_t tdi);
+
+
+/**
  * @brief JTAG driver API
  *
  * This is the mandatory API any JTAG driver needs to expose.
@@ -154,6 +160,7 @@ __subsystem struct jtag_driver_api {
 	jtag_api_xfer xfer;
 	jtag_api_sw_xfer sw_xfer;
 	jtag_api_tdo_get tdo_get;
+	jtag_api_tck_run_cycle tck_run_cycle;
 };
 
 __syscall int jtag_freq_get(const struct device *dev, uint32_t *freq);
@@ -273,6 +280,16 @@ static inline int z_impl_jtag_tdo_get(const struct device *dev, uint8_t *value)
 		(const struct jtag_driver_api *)dev->api;
 
 	return api->tdo_get(dev, value);
+}
+
+__syscall int jtag_tck_run_cycle(const struct device *dev, uint8_t tms, uint8_t tdi);
+
+static inline int z_impl_jtag_tck_run_cycle(const struct device *dev, uint8_t tms, uint8_t tdi)
+{
+	const struct jtag_driver_api *api =
+		(const struct jtag_driver_api *)dev->api;
+
+	return api->tck_run_cycle(dev, tms, tdi);
 }
 
 /**
