@@ -489,7 +489,7 @@ static int jtag_ls_tck_run(const struct device *dev, uint32_t run_count)
     reg->FIFO_WREN = JTAG_WRITE_DATA_ENABLE;
     reg->TMS = 0x0;
     reg->TDI = 0x0;
-    reg->DW = 0x9;
+    reg->DW = run_count;
     reg->FIFO_PUSH = MJTAG_FIFO_PUSH_ALL_MASK;
     reg->FIFO_WREN = JTAG_START_SEND_DATA;
 
@@ -517,7 +517,11 @@ static void jtag_ls_xfer_gpio(const struct device *dev, uint32_t out_bits_len, c
 
         if (bits_len % 8) {
             if (i == count - 1) {
-                reg->TMS = BIT(bits_len % 8 - 1);
+                if (last_data) {
+                    reg->TMS = BIT(bits_len % 8 - 1);
+                } else {
+                    reg->TMS = 0x0;
+                }
                 reg->DW = bits_len % 8;
             } else {
                 reg->TMS = 0x0;
@@ -525,7 +529,11 @@ static void jtag_ls_xfer_gpio(const struct device *dev, uint32_t out_bits_len, c
             }
         } else {
             if (i == count - 1) {
-                reg->TMS = BIT(7);
+                if (last_data) {
+                    reg->TMS = BIT(7);
+                } else {
+                    reg->TMS = 0x0;
+                }
             } else {
                 reg->TMS = 0x0;
             }
@@ -634,6 +642,17 @@ static int jtag_ls_sw_xfer(const struct device *dev, enum jtag_pin pin,
 
     k_sem_take(&data->lock, K_FOREVER);
 
+    gpio_pin_set_dt(&config->tms_gpios, gpio_pin_get_dt(&config->tms_gpios));
+    gpio_pin_set_dt(&config->tdi_gpios, gpio_pin_get_dt(&config->tdi_gpios));
+    gpio_pin_set_dt(&config->tck_gpios, gpio_pin_get_dt(&config->tck_gpios));
+    gpio_pin_set_dt(&config->tdo_gpios, gpio_pin_get_dt(&config->tdo_gpios));
+
+    ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_PRIV_START);
+    if(ret != 0) {
+        LOG_ERR("JTAG pinctrl init failed (%d)", ret);
+        return ret;
+    }
+
     switch (pin) {
         case JTAG_TDI:
             gpio_pin_set_dt(&config->tdi_gpios, value);
@@ -646,11 +665,6 @@ static int jtag_ls_sw_xfer(const struct device *dev, enum jtag_pin pin,
             break;
         default:
             return -EINVAL;
-    }
-    ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_PRIV_START);
-    if(ret != 0) {
-        LOG_ERR("JTAG pinctrl init failed (%d)", ret);
-        return ret;
     }
 
     k_sem_give(&data->lock);
@@ -665,6 +679,37 @@ static int jtag_ls_tdo_get(const struct device *dev, uint8_t *value)
     return 0;
 }
 
+static int jtag_ls_tck_run_cycle(const struct device *dev, uint8_t tms, uint8_t tdi)
+{
+    uint8_t tdo;
+    const struct jtag_ls_config *const config = dev->config;
+    struct jtag_ls_data *const data = dev->data;
+    reg_mjtag_t *const reg = config->reg;
+    int ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+    if(ret != 0) {
+        LOG_ERR("JTAG pinctrl init failed (%d)", ret);
+        return ret;
+    }
+
+    k_sem_take(&data->lock, K_FOREVER);
+
+    data->tdo_value = &tdo;
+    data->count = 1;
+    reg->FIFO_WREN = JTAG_WRITE_DATA_ENABLE;
+    reg->TMS = tms ? 1 : 0;
+    reg->TDI = tdi ? 1 : 0;
+    reg->DW = 1;
+    reg->FIFO_PUSH = MJTAG_FIFO_PUSH_ALL_MASK;
+    reg->FIFO_WREN = JTAG_START_SEND_DATA;
+    reg->INTR_MSK = MJTAG_INTR_RX_FIFO_ALMOST_FULL_MASK;
+    k_sem_take(&data->trans_sync_sem, K_FOREVER);
+
+    data->count = 0;
+    k_sem_give(&data->lock);
+
+    return tdo;
+}
+
 static const struct jtag_driver_api jtag_ls_driver_api = {
     .freq_get = jtag_ls_freq_get,
     .freq_set = jtag_ls_freq_set,
@@ -674,6 +719,7 @@ static const struct jtag_driver_api jtag_ls_driver_api = {
     .xfer = jtag_ls_xfer,
     .sw_xfer = jtag_ls_sw_xfer,
     .tdo_get = jtag_ls_tdo_get,
+    .tck_run_cycle = jtag_ls_tck_run_cycle
 };
 
 #define LS_JTAG_IRQ_HANDLER(index)                          \
