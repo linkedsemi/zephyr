@@ -39,7 +39,6 @@ GTEXT(__scondary_cpu_reset)
 /* imports */
 GTEXT(riscv_cpu_wake_flag)
 GTEXT(riscv_cpu_sp)
-GTEXT(secondary_cpu_init)
 GTEXT(arch_secondary_cpu_init)
 #if defined(CONFIG_GEN_SW_ISR_TABLE)
 GTEXT(_isr_wrapper)
@@ -86,8 +85,6 @@ __scondary_cpu_reset:
 
 	la t0, riscv_cpu_sp
 	lr sp, 0(t0)
-
-	call secondary_cpu_init
 
     li a0, 1
     j arch_secondary_cpu_init

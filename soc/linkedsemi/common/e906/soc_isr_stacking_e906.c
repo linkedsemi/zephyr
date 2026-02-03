@@ -18,17 +18,16 @@ bool flash_ls_suspend_state_writing(const struct device *dev);
 
 uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS] = {0,0};
 static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX] = {{0},{0}};
-static volatile bool cpu1_flash_xip_banned = false;
-static volatile bool cpu2_flash_xip_banned = false;
-static volatile bool cpu1_pendding = false;
-static volatile bool cpu2_pendding = false;
-
 static const struct device *const zephyr_flash_controller =
     DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
 __ramfunc void isr_stacking_mcause(void)
 {
+#if defined(CONFIG_SMP)
 	uint32_t _cpu_id = get_cur_cpu_id();
+#else
+    uint32_t _cpu_id = 0;
+#endif
     uint32_t mcause = csr_read(mcause);
     
     flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,0,NULL);
@@ -61,7 +60,11 @@ __ramfunc void isr_unstacking_mcause(void)
     uint32_t current_mcause;
     uint32_t restore_mcause;
 	/* get current cpu number */
+#if defined(CONFIG_SMP)
 	uint32_t _cpu_id = get_cur_cpu_id();
+#else
+    uint32_t _cpu_id = 0;
+#endif
     if(irq_nested_level[_cpu_id] > 0 && irq_nested_level[_cpu_id] <= IRQ_NESTED_MAX)
     {
         irq_nested_level[_cpu_id]--;
@@ -93,12 +96,6 @@ __ramfunc void isr_unstacking_mcause(void)
         }
     }
 #endif
-}
-
-void discard_current_irq_nested(void)
-{
-    uint32_t _cpu_id = get_cur_cpu_id();
-    irq_nested_level[_cpu_id]--;
 }
 
 void Swint_Handler_C(struct arch_esf *args)

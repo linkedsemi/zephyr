@@ -20,8 +20,8 @@ atomic_val_t *p_cpu_pending_ipi;;
 /* the cpu1 boot address is fixed */
 #define LSQSH_CPU0_BOOT_ADDR                    (uint32_t)0x1000000
 #define LSQSH_CPU1_BOOT_ADDR                    (uint32_t)__scondary_cpu_reset
-#define LSQSH_CPU0_ID     0
-#define LSQSH_CPU1_ID     1
+#define LSQSH_CPU0     0
+#define LSQSH_CPU1     1
 
 typedef struct {
     volatile bool release_flag;
@@ -32,21 +32,19 @@ typedef struct {
 
 sync_control_t xip_sync;
 
-
-
 uint32_t get_cur_cpu_id(void)
 {
     return arch_curr_cpu()->id;
 }
 
-uint32_t arch_irq_is_locked(void)
-{
-    uint32_t mstatus = csr_read(mstatus);
-    if((mstatus & BIT(3)) == 0)
-    {
-        while(1);
-    }
-}
+// uint32_t arch_irq_is_locked(void)
+// {
+//     uint32_t mstatus = csr_read(mstatus);
+//     if((mstatus & BIT(3)) == 0)
+//     {
+//         while(1);
+//     }
+// }
 
 __ramfunc void poll_wait_xip_unlock(void) 
 {
@@ -65,6 +63,7 @@ __ramfunc void poll_wait_xip_unlock(void)
 
 int xip_lock(void) 
 {
+    unsigned int key = arch_irq_lock();
     sync_control_t *ctrl = &xip_sync;
     uint32_t _cpu_id = get_cur_cpu_id();
     if(ctrl->make_lock_cpu_id != 0xFF)
@@ -79,7 +78,8 @@ int xip_lock(void)
     lsqsh_xip_lcok_broadcast_ipi();
     // LOG_DBG("_cpu_id ipi : %d\n",_cpu_id);
     while (__atomic_load_n(&ctrl->slave_count, __ATOMIC_ACQUIRE) != ctrl->total_slaves);
-    // critical_operation();
+    arch_irq_unlock(key);
+
     return 0;
 }
 
@@ -122,11 +122,11 @@ void soc_late_init_hook(void)
 
 void lsqsh_ipi_intr_clr(uint32_t cpu_id)
 {
-    if(cpu_id == LSQSH_CPU0_ID)
+    if(cpu_id == LSQSH_CPU0)
     {
         cpu_intr_sec_clr();
     }
-    else if(cpu_id == LSQSH_CPU1_ID)
+    else if(cpu_id == LSQSH_CPU1)
     {
         cpu_intr_app_clr();
     }else
@@ -137,12 +137,12 @@ void lsqsh_ipi_intr_clr(uint32_t cpu_id)
 
 void lsqsh_ipi_intr_set(uint32_t cpu_id)
 {
-    if(cpu_id == LSQSH_CPU0_ID)
+    if(cpu_id == LSQSH_CPU0)
     {
         /* set cpu0 irq */
         cpu_intr_sec_activate();
     }
-    else if(cpu_id == LSQSH_CPU1_ID)
+    else if(cpu_id == LSQSH_CPU1)
     {
         /* set cpu1 irq */
         cpu_intr_app_activate();
@@ -156,15 +156,6 @@ void lsqsh_ipi_intr_set(uint32_t cpu_id)
 void cpu_early_common_config(void);
 void cpu_sleep_mode_config(uint8_t deep);
 __no_optimization void smp_mode_cache_region_init(void);
-void secondary_cpu_init(void)
-{
-    cpu_early_common_config();
-    cpu_sleep_mode_config(0);
-    smp_mode_cache_region_init();
-    cpu_intr_sec_unmask();
-    cpu_intr_app_unmask();
-    // csi_vic_disable_irq(SYSC_APP_CPU_IRQN);
-}
 
 void lsqsh_xip_lcok_broadcast_ipi(void)
 {
@@ -204,8 +195,13 @@ void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
 
 void lsqsh_secondary_cpu_init(void)
 {
-    if(get_cur_cpu_id() == LSQSH_CPU1_ID)
+    if(get_cur_cpu_id() == LSQSH_CPU1)
     {
+        cpu_early_common_config();
+        cpu_sleep_mode_config(0);
+        smp_mode_cache_region_init();
+        cpu_intr_sec_unmask();
+        cpu_intr_app_unmask();
         irq_enable(SYSC_APP_CPU_IRQN);
 	    irq_disable(SYSC_SEC_CPU_IRQN);
         // 当前cpu的flash中断要打开
@@ -221,7 +217,7 @@ void lsqsh_secondary_cpu_init(void)
 #ifdef CONFIG_PM_CPU_OPS
 int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point)
 {
-    if(cpuid == LSQSH_CPU1_ID)
+    if(cpuid == LSQSH_CPU1)
     {
         app_cpu_dereset_by_addr((int)__scondary_cpu_reset);
         app_cpu_reset_hold_clr();
