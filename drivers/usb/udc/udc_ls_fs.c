@@ -186,8 +186,9 @@ static int udc_ls_init(const struct device *dev)
 
 #ifdef CONFIG_SOC_LSQSH
     pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_PRIV_START);
-    gpio_pin_configure_dt(&usb_cfg->dp, GPIO_OUTPUT_LOW);
-    k_busy_wait(1);
+    gpio_pin_set_dt(&usb_cfg->dp, 0);
+    k_usleep(50);
+    gpio_pin_set_dt(&usb_cfg->dp, 1);
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
