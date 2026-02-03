@@ -194,7 +194,7 @@ void arch_spin_relax(void)
 int arch_smp_init(void)
 {
 #if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_arch_smp_init(cpu_pending_ipi);
+	lsqsh_primary_cpu_smp_init(cpu_pending_ipi);
 #else
 	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
 #endif
