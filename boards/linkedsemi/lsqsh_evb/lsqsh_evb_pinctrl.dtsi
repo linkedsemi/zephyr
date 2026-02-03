@@ -417,6 +417,6 @@
 &usb1 {
     pinctrl-0 = <&usb1_dp_ph14 &usb1_dm_ph15>;
     pinctrl-1 = <&usb1_dp_gpio_ph14 &usb1_dm_gpio_ph15>;
-    dp-gpios = < &gpioh 14 GPIO_ACTIVE_LOW>;
+    dp-gpios = < &gpioh 14 GPIO_ACTIVE_HIGH>;
     pinctrl-names = "default", "priv_start";
 };
