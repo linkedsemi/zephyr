@@ -11,12 +11,11 @@
 #include <zephyr/dt-bindings/adc/ls-adc.h>
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
 
-#define SRAM_TOTAL_SIZE DT_SIZE_K(512)
-#define SRAM_RO_SIZE    DT_SIZE_K(256)
-#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
+
+#define SRAM_TOTAL_SIZE DT_SIZE_K(1280)
 
 &chosen {
-    zephyr,flash = &sram_ro;
+    zephyr,flash = &sram;
     zephyr,flash-controller = &qspi1;
     zephyr,sram = &sram;
     zephyr,console = &uart1;
@@ -34,14 +33,9 @@
 
 &soc {
     /delete-node/ memory@10000000;
-    sram_ro: memory@10000000 {
+    sram: memory@10000000 {
         compatible = "mmio-sram";
-        reg = <0x10000000 SRAM_RO_SIZE>;
-    };
-
-    sram: memory@10100000 {
-        compatible = "mmio-sram";
-        reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
+        reg = <0x10000000 SRAM_TOTAL_SIZE>;
     };
 
     driver_share_memory: memory@100be000 {
@@ -49,20 +43,6 @@
         reg = <0x100be000 0x1000>;
         zephyr,memory-region = "SHMEM";
     };
-
-    // mbox: mbox@100bf000 {
-    //     compatible = "linkedsemi,mbox";
-    //     reg = <0x100bf000 DT_SIZE_K(4)>;
-    //     fifo-deepth = <2>;
-    //     fifo-width = <256>;
-    //     #mbox-cells = <1>;
-    //     interrupts = <SYSC_SEC_CPU_IRQN 3>;
-    //     mbox_consumer_qspi1: mbox-consumer_qspi1 {
-    //         compatible = "vnd,mbox-consumer";
-    //         mboxes = <&mbox 1>, <&mbox 0>;
-    //         mbox-names = "tx", "rx";
-    //     };
-    // };
 
     qspi1: qspi@40000000 {
         compatible = "linkedsemi,ls-flash-controller";
