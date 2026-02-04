@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 Zou Wei
+# Author: Zou Wei <wzou@linkedsemi.com>
+
+config RTC_INS5710C
+	bool "DAPU INS5710C I2C RTC driver"
+	default y
+	depends on DT_HAS_DAPU_INS5710C_ENABLED
+	select I2C
+	help
+	  Enable the DAPU INS5710C RTC driver.
