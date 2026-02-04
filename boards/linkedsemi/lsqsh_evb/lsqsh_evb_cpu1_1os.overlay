@@ -101,3 +101,31 @@
         };
     };
 };
+
+
+&pinctrl {
+    /* UART */
+    /omit-if-no-ref/uart7_tx_pe01: uart7_tx_pe01 {
+        pinmux = <UART7_TXD_FUNC3_PE01_PINMUX>;
+    };
+    /omit-if-no-ref/uart7_rx_pe00: uart7_rx_pe00 {
+        pinmux = <UART7_RXD_FUNC3_PE00_PINMUX>;
+        input-enable;
+    };
+
+    /* I2C */
+    DEFINE_PINCTRL_PRODUCER_I2C(I2C14, PK10, PK11, I2C14_SCL_FUNC2_PK10_PINMUX, I2C14_SDA_FUNC2_PK11_PINMUX)
+};
+
+
+&i2c14 {
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C14, PK10, PK11)
+    status = "okay";
+    label = "i2c-14";
+    ins5710c: ins5710c@32 {
+        compatible = "dapu,ins5710c";
+        reg = <0x32>;
+        status = "okay";
+        label = "ins5710c";
+    };
+};
