@@ -161,6 +161,7 @@ cubietech	Cubietech, Ltd.
 cypress	Cypress Semiconductor Corporation
 cznic	CZ.NIC, z.s.p.o.
 dallas	Maxim Integrated Products (formerly Dallas Semiconductor)
+dapu	DAPU Technology CO., Ltd.
 dataimage	DataImage, Inc.
 davicom	DAVICOM Semiconductor, Inc.
 decawave	Qorvo, Inc (formerly Decawave)
