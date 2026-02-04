@@ -15,6 +15,7 @@
 #include <zephyr/drivers/rtc.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/logging/log.h>
+#include <soc.h>
 
 LOG_MODULE_REGISTER(rtc_ins5710c, LOG_LEVEL_DBG);
 
@@ -102,12 +103,12 @@ static inline bool is_leap_year(int year) {
 }
 
 /* INPUT VALIDATION (HARDWARE RANGE CHECK) */
-static bool ins5710c_is_time_valid(const struct rtc_time *tm)
+static bool ins5710c_is_time_valid(const struct device *dev, const struct rtc_time *tm)
 {
 	if(tm->tm_year < 100 || tm->tm_year > 199)
 	{
 		//Validate year: INS5710C supports ONLY 2000-2099 (tm_year 100-199)
-		LOG_ERR("Year out of range (2000-2099): %d", tm->tm_year + 1900);
+		DEV_ERR(dev, "Year out of range (2000-2099): %d", tm->tm_year + 1900);
 		return false;
 	}
 
@@ -127,7 +128,7 @@ static bool ins5710c_is_time_valid(const struct rtc_time *tm)
         tm->tm_sec < 0 || tm->tm_sec > 59 ||
         tm->tm_wday < 0 || tm->tm_wday > 6)		
 		{
-        	LOG_ERR("Invalid time field(s): "
+		DEV_ERR(dev, "Invalid time field(s): "
                 "Y%04d M%d D%d %02d:%02d:%02d wday=%d",
                 tm->tm_year, tm->tm_mon, tm->tm_mday,
                 tm->tm_hour, tm->tm_min, tm->tm_sec, tm->tm_wday);
@@ -146,7 +147,7 @@ static int ins5710c_read_reg(const struct device *dev, uint8_t reg, uint8_t *val
 	
 	ret = i2c_write_read_dt(&config->i2c, &reg, 1, val, 1);
 	if (ret < 0) {
-		LOG_ERR("Failed to read reg 0x%02x: %d", reg, ret);
+		DEV_ERR(dev, "Failed to read reg 0x%02x: %d", reg, ret);
 		return ret;
 	}
 
@@ -164,7 +165,7 @@ static int ins5710c_write_reg(const struct device *dev, uint8_t reg, uint8_t val
 
 	ret = i2c_write_dt(&config->i2c, buf, sizeof(buf));
 	if (ret < 0) {
-		LOG_ERR("Failed to write reg 0x%02x: %d", reg, ret);
+		DEV_ERR(dev, "Failed to write reg 0x%02x: %d", reg, ret);
 		return ret;
 	}
 
@@ -182,7 +183,7 @@ static int ins5710c_read_regs(const struct device *dev, uint8_t start_reg,
 
 	ret = i2c_write_read_dt(&config->i2c, &start_reg, 1, buf, len);
 	if (ret < 0) {
-		LOG_ERR("Failed to read regs from 0x%02x: %d", start_reg, ret);
+		DEV_ERR(dev, "Failed to read regs from 0x%02x: %d", start_reg, ret);
 		return ret;
 	}
 
@@ -208,7 +209,7 @@ static int ins5710c_write_regs(const struct device *dev, uint8_t start_reg,
 
 	ret = i2c_write_dt(&config->i2c, tx_buf, len + 1);
 	if (ret < 0) {
-		LOG_ERR("Failed to write regs from 0x%02x: %d", start_reg, ret);
+		DEV_ERR(dev, "Failed to write regs from 0x%02x: %d", start_reg, ret);
 		return ret;
 	}
 
@@ -229,7 +230,7 @@ static int ins5710c_check_vlf(const struct device *dev)
 	}
 
 	if (flag & INS5710C_FLAG_VLF) {
-		LOG_WRN("VLF detected, RTC may have lost time");
+		DEV_WRN(dev, "VLF detected, RTC may have lost time");
 		/* Datasheet: VLF bit can only be cleared by writing 0 */
 		ret = ins5710c_write_reg(dev, INS5710C_REG_FLAG, flag & ~INS5710C_FLAG_VLF);
 		if (ret < 0) {
@@ -282,12 +283,12 @@ static int ins5710c_read_device_id(const struct device *dev)
 	vendor_id = (dev_id >> INS5710C_DEVID_VENDER_SHIFT) & INS5710C_VENDOR_ID_MASK;
 	version = dev_id & INS5710C_DEVID_VER_MASK;
 
-	LOG_INF("Device ID: 0x%02x, Vendor: 0x%x, Version: %d", 
+	DEV_INF(dev, "Device ID: 0x%02x, Vendor: 0x%x, Version: %d",
 		dev_id, vendor_id, version);
 
 	/* Datasheet: VendorID[3:0] = 1101b = 0x0D */
 	if (vendor_id != INS5710C_VENDOR_ID) {
-		LOG_ERR("Invalid vendor ID: 0x%x, expected 0x%x", 
+		DEV_ERR(dev, "Invalid vendor ID: 0x%x, expected 0x%x",
 			vendor_id, INS5710C_VENDOR_ID);
 		return -ENODEV;
 	}
@@ -374,7 +375,7 @@ static int ins5710c_read_temperature(const struct device *dev, int32_t *temp_mil
 	/* Convert to integer calculation to avoid floating point */
 	*temp_milli = ((temp_raw * 2000) - 187190) / 3218;
 
-	LOG_DBG("Temperature raw: 0x%02x, calculated: %d.%03d C",
+	DEV_DBG(dev, "Temperature raw: 0x%02x, calculated: %d.%03d C",
 		temp_raw, *temp_milli / 1000, *temp_milli % 1000);
 
 	return 0;
@@ -387,9 +388,9 @@ static int rtc_ins5710c_set_time(const struct device *dev, const struct rtc_time
 {
 	uint8_t buf[INS5710C_TIME_REG_BUF_LEN];
 	int ret;
-	if (!ins5710c_is_time_valid(timeptr))
+	if (!ins5710c_is_time_valid(dev, timeptr))
 	{
-    	LOG_WRN("RTC time is invalid, please reconfigure\n");
+		DEV_WRN(dev, "RTC time is invalid, please reconfigure\n");
 		return -EINVAL;
 	}
 
@@ -406,11 +407,11 @@ static int rtc_ins5710c_set_time(const struct device *dev, const struct rtc_time
 	/* Write 0x00-0x06 in one operation */
 	ret = ins5710c_write_regs(dev, INS5710C_REG_SEC, buf, 7);
 	if (ret < 0) {
-		LOG_ERR("Failed to set time");
+		DEV_ERR(dev, "Failed to set time");
 		return ret;
 	}
 
-	LOG_INF("Time set to %04d-%02d-%02d %02d:%02d:%02d",
+	DEV_INF(dev, "Time set to %04d-%02d-%02d %02d:%02d:%02d",
 		timeptr->tm_year + 1900, timeptr->tm_mon + 1, timeptr->tm_mday,
 		timeptr->tm_hour, timeptr->tm_min, timeptr->tm_sec);
 
@@ -428,7 +429,7 @@ static int rtc_ins5710c_get_time(const struct device *dev, struct rtc_time *time
 	/* Read 0x00-0x06 in one operation */
 	ret = ins5710c_read_regs(dev, INS5710C_REG_SEC, buf, INS5710C_TIME_REG_BUF_LEN);
 	if (ret < 0) {
-		LOG_ERR("Failed to get time");
+		DEV_ERR(dev, "Failed to get time");
 		return ret;
 	}
 
@@ -454,9 +455,9 @@ static int rtc_ins5710c_get_time(const struct device *dev, struct rtc_time *time
 	timeptr->tm_isdst = -1;
 	
 	/* Validate time validity */
-	if (!ins5710c_is_time_valid(timeptr))
+	if (!ins5710c_is_time_valid(dev, timeptr))
 	{
-    	LOG_WRN("Invalid time read from RTC\n");
+		DEV_WRN(dev, "Invalid time read from RTC\n");
 		return -EINVAL;
 	}
 
@@ -477,7 +478,7 @@ static int rtc_ins5710c_init(const struct device *dev)
 
 	/* Check I2C bus ready */
 	if (!i2c_is_ready_dt(&config->i2c)) {
-		LOG_ERR("I2C bus not ready");
+		DEV_ERR(dev, "I2C bus not ready");
 		return -ENODEV;
 	}
 
@@ -487,18 +488,18 @@ static int rtc_ins5710c_init(const struct device *dev)
 	/* Read and verify Device ID */
 	ret = ins5710c_read_device_id(dev);
 	if (ret < 0) {
-		LOG_ERR("Device ID check failed");
+		DEV_ERR(dev, "Device ID check failed");
 		return ret;
 	}
 
 	/* Check VLF flag (datasheet: Set when voltage below 1.6V) */
 	ret = ins5710c_check_vlf(dev);
 	if (ret < 0) {
-		LOG_ERR("Failed to check VLF");
+		DEV_ERR(dev, "Failed to check VLF");
 		return ret;
 	}
 	else if (ret > 0) {
-		LOG_WRN("VLF was set, time may be invalid");
+		DEV_WRN(dev, "VLF was set, time may be invalid");
 		ret = 0;
 	}
 
@@ -509,23 +510,23 @@ static int rtc_ins5710c_init(const struct device *dev)
 	 */
 	ret = ins5710c_write_reg(dev, INS5710C_REG_CTRL1, INS5710C_REG_CTRL1_VAL);
 	if (ret < 0) {
-		LOG_ERR("Failed to set Control Register 1");
+		DEV_ERR(dev, "Failed to set Control Register 1");
 		return ret;
 	}
 
 	/* Disable FOUT output (default) */
 	ret = ins5710c_set_fout_enable(dev, false);
 	if (ret < 0) {
-		LOG_WRN("Failed to disable FOUT");
+		DEV_WRN(dev, "Failed to disable FOUT");
 	}
 
 	/* Configure FOUT frequency to 32768Hz (default) */
 	ret = ins5710c_set_fout_freq(dev, INS5710C_FSEL_32768HZ);
 	if (ret < 0) {
-		LOG_WRN("Failed to set FOUT frequency");
+		DEV_WRN(dev, "Failed to set FOUT frequency");
 	}
 
-	LOG_INF("INS5710C RTC initialized successfully");
+	DEV_INF(dev, "INS5710C RTC initialized successfully");
 
 	return 0;
 }
