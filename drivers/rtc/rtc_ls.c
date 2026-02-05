@@ -129,14 +129,17 @@ static inline bool is_leap_year(int year) {
 
 //  Verify whether the date is valid
 static bool is_valid_time(const struct rtc_time *t) {
-    if (t->tm_mon < 1 || t->tm_mon > 12) return false;
-    if (t->tm_wday < 1 || t->tm_wday > 7) return false;
-    if (t->tm_hour > 23 || t->tm_min > 59 || t->tm_sec > 59) return false;
+    if (t->tm_sec < 0 || t->tm_sec > 59) return false;
+    if (t->tm_min < 0 || t->tm_min > 59) return false;
+    if (t->tm_hour < 0 || t->tm_hour > 23) return false;
+    if (t->tm_mon < 0 || t->tm_mon > 11) return false;
+    if (t->tm_wday < 0 || t->tm_wday > 6) return false;
 
     int max_day = 31;
-    switch (t->tm_mon) {
+    switch (t->tm_mon + 1) {
         case 4: case 6: case 9: case 11: max_day = 30; break;
         case 2: max_day = is_leap_year(t->tm_year) ? 29 : 28; break;
+        default: max_day = 31; break;
     }
     if (t->tm_mday < 1 || t->tm_mday > max_day) return false;
 
