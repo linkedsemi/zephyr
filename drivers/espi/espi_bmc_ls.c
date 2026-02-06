@@ -265,9 +265,9 @@ static const struct espi_driver_api espi_bmc_ls_driver_api = {
     static struct espi_bmc_ls_data espi_bmc_ls_data_##idx;\
     static const struct espi_bmc_ls_config espi_bmc_ls_cfg_##idx = {\
         .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,bmc_espi_rx_callback,host_espi_rx_callback),\
-        .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(inst,sysevent_base),\
+        .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(idx,sysevent_base),\
     };\
-    DEVICE_DT_INST_DEFINE(idx,espi_bmc_ls_init,NULL,&espi_ls_data_##idx,\
+    DEVICE_DT_INST_DEFINE(idx,espi_bmc_ls_init,NULL,&espi_bmc_ls_data_##idx,\
         &espi_bmc_ls_cfg_##idx,PRE_KERNEL_2,CONFIG_ESPI_INIT_PRIORITY,\
         &espi_bmc_ls_driver_api);
 
