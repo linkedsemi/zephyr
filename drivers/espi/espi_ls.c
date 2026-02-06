@@ -410,7 +410,7 @@ static int espi_ls_init(const struct device *dev)
         .raise_edge_irq = espi_send_edge_irq,\
         .set_level_irq = espi_send_level_irq,\
         .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,host_espi_rx_callback,bmc_espi_rx_callback),\
-        .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(inst,sysevent_base),\
+        .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(idx,sysevent_base),\
         .recover_data = &espi_cfg_recover_data_##idx,\
         .cs = GPIO_DT_SPEC_INST_GET(idx,cs_gpios),\
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), )) \
