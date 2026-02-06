@@ -121,6 +121,35 @@ struct espi_sysevent_base {
     uint8_t s07_ms;
 };
 
+
+
+#ifdef CONFIG_ESPI_LPC_MBOX
+struct host_bmc_msg_exch {
+    const struct device *dev;
+    void (*rx_callback)(const struct device *dev,void *msg);
+    const struct mbox_dt_spec mbox_tx;
+    const struct mbox_dt_spec mbox_rx;
+};
+#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
+    .dev = DEVICE_DT_GET(DT_DRV_INST(idx)),     \
+    .rx_callback = rx_cb,\
+    .mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
+    .mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
+    }
+#else
+struct host_bmc_msg_exch {
+    const struct device *peer;
+    void (*peer_rx_callback)(const struct device *dev,void *msg);
+};
+
+#define GET_PEER_DEV(node_id,local_node_id,...)     \
+    (DT_SAME_NODE(node_id,local_node_id)?0:(uint32_t)DEVICE_DT_GET(node_id))
+#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
+    .peer = (const struct device *)(DT_FOREACH_CHILD_STATUS_OKAY_SEP_VARGS(DT_INST_PARENT(idx),GET_PEER_DEV,(+),DT_DRV_INST(idx))),  \
+    .peer_rx_callback = peer_rx_cb, \
+    }
+#endif
+
 struct espi_lpc_ls_config {
 	void (*irq_config_func)(const struct device *);
     void *reg;
@@ -192,32 +221,7 @@ struct espi_vwire_msg {
     uint8_t vw_idx;
 };
 
-#ifdef CONFIG_ESPI_LPC_MBOX
-struct host_bmc_msg_exch {
-    const struct device *dev;
-    void (*rx_callback)(const struct device *dev,void *msg);
-    const struct mbox_dt_spec mbox_tx;
-    const struct mbox_dt_spec mbox_rx;
-};
-#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
-    .dev = DEVICE_DT_GET(DT_DRV_INST(idx)),     \
-    .rx_callback = rx_cb,\
-    .mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
-    .mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
-    }
-#else
-struct host_bmc_msg_exch {
-    const struct device *peer;
-    void (*peer_rx_callback)(const struct device *dev,void *msg);
-};
 
-#define GET_PEER_DEV(node_id,local_node_id,...)     \
-    (DT_SAME_NODE(node_id,local_node_id)?0:(uint32_t)DEVICE_DT_GET(node_id))
-#define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
-    .peer = (const struct device *)(DT_FOREACH_CHILD_STATUS_OKAY_SEP_VARGS(DT_INST_PARENT(idx),GET_PEER_DEV,(+),DT_DRV_INST(idx))),  \
-    .peer_rx_callback = peer_rx_cb, \
-    }
-#endif
 
 void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx);
 
