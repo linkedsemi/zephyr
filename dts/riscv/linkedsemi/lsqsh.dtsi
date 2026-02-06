@@ -524,6 +524,11 @@
                 sysevent-base = <0x40045ff8>;
                 status = "disabled";
                 cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
+                espibmc1: espibmc1 {
+                    compatible = "linkedsemi,ls-espi-bmc";
+                    sysevent-base = <0x40045ff8>;
+                    status = "disabled";
+                };
 
                 sio1: sio1 {
                     compatible = "linkedsemi,ls-sio";
@@ -545,6 +550,7 @@
             compatible = "linkedsemi,host-bmc-container";
             #address-cells = <1>;
             #size-cells = <1>;
+            status = "disabled";
             host_vuart1: host_vuart1@40087800 {
                 compatible = "linkedsemi,ls-host-vuart";
                 reg = <0x40087800 0x400>;
@@ -563,7 +569,6 @@
                 fifo_base = <0x40045c00>;
                 status = "disabled";
             };
-            status = "disabled";
         };
 
         sec_iwdg: watchdog@400a1800 {
