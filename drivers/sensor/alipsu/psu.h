@@ -140,7 +140,6 @@ enum ali_attr {
 	num_sysfs,
 };
 
-#if 0
 static uint8_t ali_attr_len[num_sysfs] = {
 	[operation] = 1,
 	[on_off_config] = 1,
@@ -201,7 +200,6 @@ static uint8_t ali_attr_len[num_sysfs] = {
 	[curr_share_compensation_write] = 2,
 	[curr_iout_filter] = 2,
 };
-#endif
 
 static uint8_t ali_psu_regs[num_sysfs] = {
 	[operation] = ALI_PS_REG_OPERATION_BYTE,
@@ -302,8 +300,8 @@ struct ali_psu_data {
 struct ali_psu_config {
     struct smbus_dt_spec smbus;        /* SMBus specification from DT */
 	struct i2c_dt_spec i2c_bus;        /* I2C bus specification from DT */
-}; 
-                  
+};
+
 /* Public API Functions */
 int ali_psu_init(const struct device *dev);
 int ali_psu_read_word_data(const struct device *dev, uint8_t cmd, uint16_t *value);
@@ -353,5 +351,7 @@ float ali_psu_convert_direct(uint16_t raw_value, uint8_t cmd);
 int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan);
 int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
                        struct sensor_value *val);
+
+int ali_psu_sample_fetch_opt(const struct device *dev, enum ali_attr attr, uint32_t *reading);
 
 #endif /* ZEPHYR_DRIVERS_SENSOR_ALIPSU_PSU_H_ */
