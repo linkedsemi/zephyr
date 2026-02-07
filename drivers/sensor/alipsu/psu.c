@@ -802,7 +802,7 @@ int ali_powerbrick_block_hex_his_show(const struct device *dev, uint8_t reg, uin
         LOG_ERR("Failed to read block data, reg: 0x%02x, error: %d", reg, rc);
 	}
 	
-	LOG_INF("psu_block_hex_his_show: block data 0x%x, len %d", *buf, *len);
+	LOG_INF("powerbrick_block_hex_his_show: block data 0x%x, len %d", *buf, *len);
 	return rc;
 }
 
@@ -874,7 +874,7 @@ int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
 	struct ali_psu_data *data;
     uint16_t raw_value;
-    int ret;
+    int ret = 0;
 
     if (!dev) {
         LOG_ERR("Device pointer is NULL");
@@ -947,16 +947,16 @@ int ali_psu_sample_fetch(const struct device *dev, enum sensor_channel chan)
 	}
 
     LOG_INF("Fetched samples: input voltage=%dmV, input current=%dmA, input voltage1=%dmV, \
-	output voltage=%dmV, output current=%dmA, input power=%duW, output power=%duW, temp=%dm°C, fan1=%dHz, fan2=%dHz.\n",
+output voltage=%dmV, output current=%dmA, input power=%duW, output power=%duW, temp=%dm°C, fan1=%dHz, fan2=%dHz.\n",
     data->vin, data->iin, data->vin1, data->vout, data->iout, data->pin, data->pout, data->temp1, data->fan1, data->fan2);
 
 	LOG_INF("Fetched status: status_word=0x%04x, status_cml=0x%02x, status_fans12=0x%02x, \
-		     status_input=0x%02x, status_iout=0x%02x, status_mfr_spec=0x%02x, status_other=0x%02x, \
-			 status_temp=0x%02x, status_vout=0x%02x.\n",
-             data->status_word, data->status_cml, data->status_fans12, data->status_input, 
+status_input=0x%02x, status_iout=0x%02x, status_mfr_spec=0x%02x, status_other=0x%02x, \
+status_temp=0x%02x, status_vout=0x%02x.\n",
+             data->status_word, data->status_cml, data->status_fans12, data->status_input,
 			 data->status_iout, data->status_mfr_spec, data->status_other, data->status_temp, data->status_vout);
 
-    return 0;
+    return ret;
 }
 
 int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
@@ -1047,6 +1047,76 @@ int ali_psu_channel_get(const struct device *dev, enum sensor_channel chan,
     }
 
     return 0;
+}
+
+/* Optimized `sample fetch` function */
+int ali_psu_sample_fetch_opt(const struct device *dev, enum ali_attr attr, uint32_t *reading)
+{
+	struct ali_psu_data *data;
+	uint16_t raw_value_word = 0;
+	uint8_t raw_value_byte = 0;
+    int ret = 0;
+
+    if (!dev) {
+        LOG_ERR("Device pointer is NULL");
+        return -ENODEV;
+    }
+
+    data = dev->data;
+	switch (attr) {
+		case read_vin:
+		case read_vin1:
+		case read_iin:
+		case read_iout:
+		case read_temp1:
+			ret = ali_psu_read_word(dev, ali_psu_regs[attr], &raw_value_word);
+			*reading = ls_pmbus_parse_linear11(raw_value_word) * 1000;
+			break;
+
+		case read_vout:
+			ret = ali_psu_read_word(dev, ali_psu_regs[attr], &raw_value_word);
+			*reading = ls_pmbus_parse_linear16(raw_value_word, data->exponent) * 1000;
+			LOG_INF("linear 16 exponent = %d\n", data->exponent);
+			break;
+
+		case read_pin:
+		case read_pout:
+			ret = ali_psu_read_word(dev, ali_psu_regs[attr], &raw_value_word);
+			*reading = ls_pmbus_parse_linear11(raw_value_word) * 1000 * 1000;
+			break;
+
+		case fan_command_1:
+		case fan_command_2:
+			ret = ali_psu_read_word(dev, ali_psu_regs[attr], &raw_value_word);
+			*reading = ls_pmbus_parse_linear11(raw_value_word);
+			break;
+
+		case status_word:
+			ret = ali_psu_read_word(dev, ali_psu_regs[attr], &raw_value_word);
+			*reading = (uint32_t) raw_value_word;
+			break;
+
+		case status_temp:
+		case status_vout:
+		case status_iout:
+		case status_mfr_spec:
+		case status_fans12:
+		case status_cml:
+		case status_input:
+		case status_other:
+		case line_status:
+		case match_status:
+			ret = ali_psu_read_byte(dev, ali_psu_regs[attr], &raw_value_byte);
+			*reading = (uint32_t) raw_value_byte;
+			break;
+
+		default:
+			LOG_INF("Attribute not supported yet: %d", attr);
+			return ret;
+	}
+
+	LOG_INF("Fetched reading [attr: %d]: %d, [ret: %d]", attr, *reading, ret);
+	return ret;
 }
 
 /* Device registration */
