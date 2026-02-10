@@ -464,6 +464,178 @@ static int rtc_ins5710c_get_time(const struct device *dev, struct rtc_time *time
 	return 0;
 }
 
+/**
+ * @name RTC Interface Alarm
+ * @{
+ */
+#if defined(CONFIG_RTC_ALARM)
+
+/**
+ * @brief Unimplemented: Getting the supported fields (for CONFIG_RTC_ALARM)
+ *
+ * @param dev Device instance
+ * @param id Id of the alarm
+ * @param mask Mask of fields in the alarm time which are supported
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_alarm_get_supported_fields(const struct device *dev, uint16_t id,
+					     uint16_t *mask)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(id);
+    ARG_UNUSED(mask);
+    return -ENOSYS;
+}
+
+/**
+ * @brief Unimplemented: Set alarm time (for CONFIG_RTC_ALARM)
+ *
+ * @param dev Device instance
+ * @param id Id of the alarm
+ * @param mask Mask of fields in the alarm time to enable
+ * @param timeptr The alarm time to set
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_alarm_set_time(const struct device *dev, uint16_t id, uint16_t mask,
+				 const struct rtc_time *timeptr)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(id);
+    ARG_UNUSED(mask);
+    ARG_UNUSED(timeptr);
+    return -ENOSYS;
+}
+
+/**
+ * @brief Unimplemented: Get alarm time (for CONFIG_RTC_ALARM)
+ *
+ * @param dev Device instance
+ * @param id Id of the alarm
+ * @param mask Destination for mask of fields which are enabled in the alarm time
+ * @param timeptr Destination for the alarm time
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_alarm_get_time(const struct device *dev, uint16_t id, uint16_t *mask,
+				 struct rtc_time *timeptr)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(id);
+    ARG_UNUSED(mask);
+    ARG_UNUSED(timeptr);
+    return -ENOSYS;
+}
+
+/**
+ * @brief Unimplemented: Check if alarm is pending (for CONFIG_RTC_ALARM)
+ *
+ * @param dev Device instance
+ * @param id Id of the alarm to test
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_alarm_is_pending(const struct device *dev, uint16_t id)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(id);
+    return -ENOSYS;
+}
+
+/**
+ * @brief Unimplemented: Set alarm callback (for CONFIG_RTC_ALARM)
+ *
+ * @param dev Device instance
+ * @param id Id of the alarm for which the callback shall be set
+ * @param callback Callback called when alarm occurs
+ * @param user_data Optional user data passed to callback
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_alarm_set_callback(const struct device *dev, uint16_t id,
+				     rtc_alarm_callback callback, void *user_data)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(id);
+    ARG_UNUSED(callback);
+    ARG_UNUSED(user_data);
+    return -ENOSYS;
+}
+#endif /* CONFIG_RTC_ALARM */
+/**
+ * @}
+ */
+
+ /**
+ * @name RTC Interface Update
+ * @{
+ */
+#if defined(CONFIG_RTC_UPDATE)
+
+/**
+ * @brief Unimplemented: Set RTC update callback (for CONFIG_RTC_UPDATE)
+ *
+ * @param dev Device instance
+ * @param callback Callback called when update occurs
+ * @param user_data Optional user data passed to callback
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_update_set_callback(const struct device *dev, rtc_update_callback callback,
+				      void *user_data)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(callback);
+    ARG_UNUSED(user_data);
+    return -ENOSYS;
+}
+
+#endif /* CONFIG_RTC_UPDATE */
+/**
+ * @}
+ */
+
+/**
+ * @name RTC Interface Calibration
+ * @{
+ */
+#if defined(CONFIG_RTC_CALIBRATION)
+
+/**
+ * @brief Unimplemented: Set RTC calibration value (for CONFIG_RTC_CALIBRATION)
+ *
+ * @param dev Device instance
+ * @param calibration Calibration to set in parts per billion
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_set_calibration(const struct device *dev, int32_t calibration)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(calibration);
+    return -ENOSYS;
+}
+
+/**
+ * @brief Unimplemented: Get RTC calibration value (for CONFIG_RTC_CALIBRATION)
+ *
+ * @param dev Device instance
+ * @param calibration Destination for calibration in parts per billion
+ *
+ * @return -ENOSYS (standard error code for "function not implemented")
+ */
+static int rtc_ins5710c_get_calibration(const struct device *dev, int32_t *calibration)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(calibration);
+    return -ENOSYS;
+}
+
+#endif /* CONFIG_RTC_CALIBRATION */
+/**
+ * @}
+ */
 
 
 /**
@@ -536,18 +708,18 @@ static const struct rtc_driver_api rtc_ins5710c_api = {
 	.set_time = rtc_ins5710c_set_time,
 	.get_time = rtc_ins5710c_get_time,
 #if defined(CONFIG_RTC_ALARM)
-	alarm_get_supported_fields = z_impl_sys_not_supported,
-	alarm_set_time = z_impl_sys_not_supported,
-	alarm_get_time = z_impl_sys_not_supported,
-	alarm_is_pending = z_impl_sys_not_supported,
-	alarm_set_callback = z_impl_sys_not_supported,
+	.alarm_get_supported_fields = rtc_ins5710c_alarm_get_supported_fields,
+	.alarm_set_time = rtc_ins5710c_alarm_set_time,
+	.alarm_get_time = rtc_ins5710c_alarm_get_time,
+	.alarm_is_pending = rtc_ins5710c_alarm_is_pending,
+	.alarm_set_callback = rtc_ins5710c_alarm_set_callback,
 #endif /* CONFIG_RTC_ALARM */
 #if defined(CONFIG_RTC_UPDATE)
-	update_set_callback = z_impl_sys_not_supported,
+	.update_set_callback = rtc_ins5710c_update_set_callback,
 #endif /* CONFIG_RTC_UPDATE */
 #if defined(CONFIG_RTC_CALIBRATION)
-	set_calibration = z_impl_sys_not_supported,
-	get_calibration = z_impl_sys_not_supported,
+	.set_calibration = rtc_ins5710c_set_calibration,
+	.get_calibration = rtc_ins5710c_get_calibration,
 #endif /* CONFIG_RTC_CALIBRATION */
 };
 
