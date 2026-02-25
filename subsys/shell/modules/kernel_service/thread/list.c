@@ -9,6 +9,8 @@
 
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/kernel.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #ifdef CONFIG_THREAD_RUNTIME_STATS
 static void rt_stats_dump(const struct shell *sh, struct k_thread *thread)
@@ -125,3 +127,189 @@ static int cmd_kernel_thread_list(const struct shell *sh, size_t argc, char **ar
 }
 
 KERNEL_THREAD_CMD_ADD(list, NULL, "List kernel threads.", cmd_kernel_thread_list);
+
+#ifdef CONFIG_THREAD_RUNTIME_STATS
+struct kernel_thread_list_result {
+	uint32_t count;
+	struct {
+		char *name;
+		uint64_t total;
+	} log[CONFIG_KERNEL_THREAD_MAX];
+};
+
+struct kernel_thread_list_result kernel_thread_list_result_start;
+struct kernel_thread_list_result kernel_thread_list_result_end;
+struct kernel_thread_list_result kernel_thread_list_result_delta;
+static uint64_t delta_total;
+static K_SEM_DEFINE(kernel_thread_list_sem, 1, 1);
+
+static void rt_stats_dump_cycle(struct kernel_thread_list_result *kernel_thread_list_result_p, struct k_thread *thread)
+{
+	k_thread_runtime_stats_t rt_stats_thread;
+	int ret = 0;
+
+	if (k_thread_runtime_stats_get(thread, &rt_stats_thread) != 0) {
+		ret++;
+	}
+
+	if (ret == 0) {
+		kernel_thread_list_result_p->log[kernel_thread_list_result_p->count].total = rt_stats_thread.execution_cycles;
+	} else {
+		printf("NA\n");
+	}
+}
+
+static void shell_tdata_dump_cycle(const struct k_thread *cthread, void *user_data)
+{
+	struct k_thread *thread = (struct k_thread *)cthread;
+	struct kernel_thread_list_result *kernel_thread_list_result_p = (struct kernel_thread_list_result *)user_data;
+	const char *tname;
+
+	tname = k_thread_name_get(thread);
+	kernel_thread_list_result_p->log[kernel_thread_list_result_p->count].name = (char *)tname;
+
+	IF_ENABLED(CONFIG_THREAD_RUNTIME_STATS, (rt_stats_dump_cycle(kernel_thread_list_result_p, thread)));
+	if ((kernel_thread_list_result_p->count + 1) >= CONFIG_KERNEL_THREAD_MAX) {
+		printf("Exceed max thread number %d\n", CONFIG_KERNEL_THREAD_MAX);
+		return;
+	}
+	kernel_thread_list_result_p->count++;
+}
+
+static int kernel_thread_list_start(void)
+{
+	int ret = k_sem_take(&kernel_thread_list_sem, K_NO_WAIT);
+	if (ret != 0) {
+		return ret;
+	}
+	memset(&kernel_thread_list_result_start, 0, sizeof(kernel_thread_list_result_start));
+	memset(&kernel_thread_list_result_end, 0, sizeof(kernel_thread_list_result_end));
+	memset(&kernel_thread_list_result_delta, 0, sizeof(kernel_thread_list_result_delta));
+	delta_total = 0;
+	/*
+	 * Use the unlocked version as the callback itself might call
+	 * arch_irq_unlock.
+	 */
+	k_thread_foreach_unlocked(shell_tdata_dump_cycle, (void *)&kernel_thread_list_result_start);
+
+	return 0;
+}
+
+static int kernel_thread_list_show(void)
+{
+	printf("Scheduler: %u since last call\n", sys_clock_elapsed());
+	printf("Threads:\n");
+	printf("count: %u\n", kernel_thread_list_result_start.count);
+	printf("delta_total: %llu\n", delta_total);
+	for (int i = 0; i < kernel_thread_list_result_start.count; i++) {
+		unsigned int pcnt;
+		pcnt = (kernel_thread_list_result_delta.log[i].total * 100ULL) / delta_total;
+		printf("[%d] %-10s\tTotal execution cycles: %llu (%u %%)\n",
+			    i,
+			    kernel_thread_list_result_start.log[i].name ? kernel_thread_list_result_start.log[i].name : "NA",
+			    kernel_thread_list_result_delta.log[i].total,
+			    pcnt);
+	}
+	k_sem_give(&kernel_thread_list_sem);
+
+	return 0;
+}
+
+static void kernel_thread_list_show_work(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	kernel_thread_list_show();
+}
+
+K_WORK_DEFINE(kernel_thread_list_work, kernel_thread_list_show_work);
+static int kernel_thread_list_stop(void)
+{
+	/*
+	 * Use the unlocked version as the callback itself might call
+	 * arch_irq_unlock.
+	 */
+	k_thread_foreach_unlocked(shell_tdata_dump_cycle, (void *)&kernel_thread_list_result_end);
+	for (int i = 0; i < kernel_thread_list_result_start.count; i++) {
+		/* kernel_thread_list_result_delta.log[i].name = kernel_thread_list_result_start.log[i].name; */
+		kernel_thread_list_result_delta.log[i].total = kernel_thread_list_result_end.log[i].total - kernel_thread_list_result_start.log[i].total;
+		delta_total += kernel_thread_list_result_delta.log[i].total;
+	}
+
+	k_work_submit(&kernel_thread_list_work);
+
+	return 0;
+}
+
+static void kernel_thread_list_timeout_handler(struct k_timer *timer)
+{
+	kernel_thread_list_stop();
+}
+
+static K_TIMER_DEFINE(timer, kernel_thread_list_timeout_handler, NULL);
+
+int kernel_thread_list_ms(uint32_t time_ms)
+{
+	int ret = kernel_thread_list_start();
+	if (ret != 0) {
+		printf("Another kernel thread list operation is in progress\n");
+		return ret;
+	}
+	k_timer_start(&timer, K_MSEC(time_ms), K_NO_WAIT);
+
+	return 0;
+}
+
+int kernel_thread_list_s(uint32_t time_s)
+{
+	int ret = kernel_thread_list_start();
+	if (ret != 0) {
+		printf("Another kernel thread list operation is in progress\n");
+		return ret;
+	}
+	k_timer_start(&timer, K_SECONDS(time_s), K_NO_WAIT);
+
+	return 0;
+}
+
+static int cmd_kernel_thread_list_start(const struct shell *sh, size_t argc, char **argv)
+{
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
+	shell_print(sh, "%s", __func__);
+
+	kernel_thread_list_start();
+
+	return 0;
+}
+KERNEL_THREAD_CMD_ADD(list_start, NULL, "List kernel threads.", cmd_kernel_thread_list_start);
+
+static int cmd_kernel_thread_list_stop(const struct shell *sh, size_t argc, char **argv)
+{
+	kernel_thread_list_stop();
+
+	return 0;
+}
+KERNEL_THREAD_CMD_ADD(list_stop, NULL, "List kernel threads.", cmd_kernel_thread_list_stop);
+
+static int cmd_kernel_thread_list_ms(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t time_ms = strtoul(argv[1], NULL, 10);
+
+	kernel_thread_list_ms(time_ms);
+
+	return 0;
+}
+KERNEL_THREAD_CMD_ARG_ADD(list_ms, NULL, "List kernel threads.", cmd_kernel_thread_list_ms, 2, 0);
+
+static int cmd_kernel_thread_list_s(const struct shell *sh, size_t argc, char **argv)
+{
+	uint32_t time_s = strtoul(argv[1], NULL, 10);
+
+	kernel_thread_list_s(time_s);
+
+	return 0;
+}
+KERNEL_THREAD_CMD_ARG_ADD(list_s, NULL, "List kernel threads.", cmd_kernel_thread_list_s, 2, 0);
+#endif /* CONFIG_THREAD_RUNTIME_STATS */
