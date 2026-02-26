@@ -271,7 +271,7 @@ void ls_i2c_isr(void *arg)
 	}
 	if(irq&I2C_INT_ADDR_MASK)
 	{
-		cfg->reg->ICR = I2C_INT_ADDR_MASK;
+		cfg->reg->ICR = I2C_INT_ADDR_MASK|I2C_INT_STOP_MASK;
 		if(data->current == NULL)
 		{
 			k_sem_take(&data->bus_mutex,K_NO_WAIT);
@@ -429,6 +429,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg,
 	data->errs = 0;
 	i2c_reenable(dev,true);
 	config->reg->SR = I2C_SR_TXE_MASK;//clear tx fifo
+	config->reg->ICR = I2C_INT_STOP_MASK;
 	config->reg->IER = I2C_INT_STOP_MASK;
 	uint32_t cr2_0_1 = msg->flags&I2C_MSG_ADDR_10_BITS? I2C_CR2_SADD10_MASK|slave<<I2C_CR2_SADD0_POS :slave<<I2C_CR2_SADD1_7_POS;
 	for(data->current = msg;data->current<&msg[num_msgs];data->current++)
