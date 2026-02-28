@@ -828,9 +828,11 @@ __maybe_unused void soc_late_init_hook(void)
         SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     }
 
-    if (is_app_cpu_running()) {
+    if (is_app_cpu_running() && is_app_cpu_xip_in_sec_flash()) {
         flash_xip_prepare(flash_dev);
         return;
+    } else {
+        flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_INACTIVE,0,NULL);
     }
 #if defined(CONFIG_BOOT_CPU2)
     if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
