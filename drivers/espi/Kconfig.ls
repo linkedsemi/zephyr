@@ -21,6 +21,7 @@ config ESPI_LS_MMBI
     help
         Enable Linkedsemi ESPI slave to mmbi driver.
 
+endif
 
 config ESPI_BMC_LS
     bool "Linkedsemi ESPI slave driver"
@@ -28,4 +29,4 @@ config ESPI_BMC_LS
     depends on DT_HAS_LINKEDSEMI_LS_ESPI_BMC_ENABLED
     help
         Enable Linkedsemi ESPI slave driver.
-endif
+
