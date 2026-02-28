@@ -320,7 +320,7 @@ static void ls_espi_isr(void *arg)
     {
         uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
         uint8_t s03 = dn_vwir_sys0>>24&0xf;
-        cfg->sysevent_base->s02_ms = s03;
+        cfg->sysevent_base->s03_ms = s03;
         espi_vwire_msg_send(&cfg->hb_exch,3);
         if(s03&ESPI_SYS_EVT_3_OOB_RST_WARN)
         {
