@@ -511,34 +511,46 @@
             status = "disabled";
         };
 
-        espi1: espi@40045000 {
-            compatible = "linkedsemi,ls-espi";
-            reg = <0x40045000 0x1000>;
-            interrupts = <ESPI1_IRQN 3>;
-            clocks = <ESPI1_CLOCK>;
-            resets = <ESPI1_RESET>;
-            status = "disabled";
-            cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
-
-            sio1: sio1 {
-                compatible = "linkedsemi,ls-sio";
-                port = <0x2e>;
+        host_bmc_container_espi: host_bmc_container_espi {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            espi1: espi@40045000 {
+                compatible = "linkedsemi,ls-espi";
+                reg = <0x40045000 0x1000>;
+                interrupts = <ESPI1_IRQN 3>;
+                clocks = <ESPI1_CLOCK>;
+                resets = <ESPI1_RESET>;
+                sysevent-base = <0x40045ff8>;
                 status = "disabled";
-            };
+                cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
+                espibmc1: espibmc1 {
+                    compatible = "linkedsemi,ls-espi-bmc";
+                    sysevent-base = <0x40045ff8>;
+                    status = "disabled";
+                };
 
-            mmbi1: mmbi1 {
-                compatible = "linkedsemi,ls-mmbi";
-                host-addr = <0xf6810000>;
-                size-order = <0>;
-                status = "disabled";
-            };
+                sio1: sio1 {
+                    compatible = "linkedsemi,ls-sio";
+                    port = <0x2e>;
+                    status = "disabled";
+                };
 
+                mmbi1: mmbi1 {
+                    compatible = "linkedsemi,ls-mmbi";
+                    host-addr = <0xf6810000>;
+                    size-order = <0>;
+                    status = "disabled";
+                };
+
+            };
         };
 
         host_bmc_container1: host_bmc_container1 {
             compatible = "linkedsemi,host-bmc-container";
             #address-cells = <1>;
             #size-cells = <1>;
+            status = "disabled";
             host_vuart1: host_vuart1@40087800 {
                 compatible = "linkedsemi,ls-host-vuart";
                 reg = <0x40087800 0x400>;
@@ -557,7 +569,6 @@
                 fifo_base = <0x40045c00>;
                 status = "disabled";
             };
-            status = "disabled";
         };
 
         sec_iwdg: watchdog@400a1800 {
