@@ -17,6 +17,9 @@
 
 #include "espi_lpc_common.h"
 
+#define VUART_RX_COUNT 7
+#define VUART_RX_TIMEOUT_MS 20
+
 LOG_MODULE_REGISTER(linkedsemi_ls_vuart, CONFIG_UART_LOG_LEVEL);
 
 struct ls_vuart_cfg {
@@ -32,14 +35,28 @@ struct ls_vuart_data {
     void *irq_user_data;
     struct k_thread irq_thread;
     struct k_sem irq_sem;
+    struct k_timer rx_timer;
     bool rx_irq_enabled;
     bool tx_irq_enabled;
 };
 
+static void vuart_rx_timer(struct k_timer *timer_id)
+{
+    struct ls_vuart_data *data = CONTAINER_OF(timer_id, struct ls_vuart_data, rx_timer);
+    k_sem_give(&data->irq_sem);
+}
+
+
 static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
 {
     struct ls_vuart_data *data = dev->data;
-    k_sem_give(&data->irq_sem);
+    const struct ls_vuart_cfg *cfg = dev->config;
+    if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > VUART_RX_COUNT) {
+        k_timer_stop(&data->rx_timer);
+        k_sem_give(&data->irq_sem);
+    }else if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b)  > 0) {
+        k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
+    }
 }
 
 void bmc_vuart_rx_callback(const struct device *dev, void *msg)
@@ -51,17 +68,19 @@ static void vuart_irq_thread(void *dev_ptr, void *p2, void *p3)
 {
 	const struct device *dev = (const struct device *)dev_ptr;
 	struct ls_vuart_data *ptr_data = dev->data;
-
+    const struct ls_vuart_cfg *cfg = dev->config;
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
 	while (1) {
-		if (k_sem_take(&ptr_data->irq_sem, K_FOREVER) == 0) {
-			if (ptr_data->irq_cb) {
-				ptr_data->irq_cb(dev, ptr_data->irq_user_data);
-			}
-		}
-	}
+        int ret = k_sem_take(&ptr_data->irq_sem, K_FOREVER);
+
+        if (ptr_data->irq_cb && ptr_data->rx_irq_enabled) {
+            if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > 0) {
+                ptr_data->irq_cb(dev, ptr_data->irq_user_data);
+            }
+        }
+    }
 }
 
 static int vuart_poll_in(const struct device *dev, unsigned char *c)
@@ -214,6 +233,7 @@ static int ls_vuart_init(const struct device *dev)
 {
     const struct ls_vuart_cfg *cfg = dev->config;
     struct ls_vuart_data *ptr_data = dev->data;
+    k_timer_init(&ptr_data->rx_timer, vuart_rx_timer, NULL);
     k_sem_init(&ptr_data->irq_sem, 0, 1);
     k_thread_create(&ptr_data->irq_thread, cfg->irq_thread_stack, cfg->irq_thread_stack_size,
       vuart_irq_thread, (void *)dev, NULL, NULL, CONFIG_VUART_IRQ_THREAD_PRIORITY, 0, K_NO_WAIT);
