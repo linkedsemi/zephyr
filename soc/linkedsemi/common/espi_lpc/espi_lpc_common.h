@@ -18,6 +18,43 @@
     #include <soc_clock.h>
 #endif
 
+#define ESPI_SYS_EVT_2_SLP_S5_N	BIT(2)
+#define ESPI_SYS_EVT_2_SLP_S4_N BIT(1)
+#define ESPI_SYS_EVT_2_SLP_S3_N BIT(0)
+
+#define ESPI_SYS_EVT_3_OOB_RST_WARN BIT(2)
+#define ESPI_SYS_EVT_3_PLTRST_N BIT(1)
+#define ESPI_SYS_EVT_3_SUS_STAT_N BIT(0)
+
+#define ESPI_SYS_EVT_4_PME_N_VLD BIT(7)
+#define ESPI_SYS_EVT_4_WAKE_N_VLD BIT(6)
+#define ESPI_SYS_EVT_4_OOB_RST_ACK_VLD BIT(4)
+#define ESPI_SYS_EVT_4_PME_N BIT(3)
+#define ESPI_SYS_EVT_4_WAKE_N BIT(2)
+#define ESPI_SYS_EVT_4_OOB_RST_ACK BIT(0)
+
+#define ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS_VLD BIT(7)
+#define ESPI_SYS_EVT_5_ERROR_NONFATAL_VLD BIT(6)
+#define ESPI_SYS_EVT_5_ERROR_FATAL_VLD BIT(5)
+#define ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE_VLD BIT(4)
+#define ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS BIT(3)
+#define ESPI_SYS_EVT_5_ERROR_NONFATAL BIT(2)
+#define ESPI_SYS_EVT_5_ERROR_FATAL BIT(1)
+#define ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE BIT(0)
+
+#define ESPI_SYS_EVT_6_HOST_RST_ACK_VLD BIT(7)
+#define ESPI_SYS_EVT_6_RCIN_N_VLD BIT(6)
+#define ESPI_SYS_EVT_6_SMI_N_VLD BIT(5)
+#define ESPI_SYS_EVT_6_SCI_N_VLD BIT(4)
+#define ESPI_SYS_EVT_6_HOST_RST_ACK BIT(3)
+#define ESPI_SYS_EVT_6_RCIN_N BIT(2)
+#define ESPI_SYS_EVT_6_SMI_N BIT(1)
+#define ESPI_SYS_EVT_6_SCI_N BIT(0)
+
+#define ESPI_SYS_EVT_7_NMIOUT_N BIT(2)
+#define ESPI_SYS_EVT_7_SMIOUT_N BIT(1)
+#define ESPI_SYS_EVT_7_HOST_RST_WARN BIT(0)
+
 struct peri_ioport_content {
     void (*io_read)(const struct peri_ioport_content *ioport,uint8_t size,void *res);
     void (*io_write)(const struct peri_ioport_content *ioport,uint8_t size,uint8_t *data);
@@ -75,11 +112,22 @@ struct espi_cfg_recover {
     uint32_t fls_ch3_cfg;
 };
 
+struct espi_sysevent_base {
+    uint8_t s02_ms;
+    uint8_t s03_ms;
+    uint8_t s04_sm;
+    uint8_t s05_sm;
+    uint8_t s06_sm;
+    uint8_t s07_ms;
+};
+
 struct espi_lpc_ls_config {
 	void (*irq_config_func)(const struct device *);
     void *reg;
     void (*raise_edge_irq)(const struct device *,uint8_t);
     void (*set_level_irq)(const struct device *,uint8_t,uint8_t);
+    struct host_bmc_msg_exch hb_exch;
+    struct espi_sysevent_base *sysevent_base;
     struct espi_cfg_recover *recover_data;
     struct gpio_dt_spec cs;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
@@ -91,7 +139,6 @@ struct espi_lpc_ls_data {
     const struct espi_lpc_ls_config *cfg;
     sys_slist_t peri_io;
     sys_slist_t peri_mem;
-	sys_slist_t callbacks;
     union{
         struct espi_data{
             struct k_spinlock vw_tx_lock;
@@ -139,6 +186,10 @@ struct host_kcs_env {
 enum kcs_hb_msg_type {
     KCS_IBF_EVENT,
     KCS_OBF_EVENT,
+};
+
+struct espi_vwire_msg {
+    uint8_t vw_idx;
 };
 
 #ifdef CONFIG_ESPI_LPC_MBOX
@@ -202,6 +253,8 @@ void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch);
 
 void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch);
 
+void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx);
+
 void host_vuart_rx_callback(const struct device *dev,void *msg);
 
 void bmc_vuart_rx_callback(const struct device *dev, void *msg);
@@ -209,5 +262,10 @@ void bmc_vuart_rx_callback(const struct device *dev, void *msg);
 void bmc_kcs_rx_callback(const struct device *dev,void *msg);
 
 void host_kcs_rx_callback(const struct device *dev,void *msg);
+
+void host_espi_rx_callback(const struct device *dev,void *msg);
+
+void bmc_espi_rx_callback(const struct device *dev,void *msg);
+
 
 #endif
