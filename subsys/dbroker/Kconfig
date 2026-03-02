@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig DBROKER
+	bool "D-Bus Broker support"
+	default n
+	help
+		Enable D-Bus broker support for inter-process communication.
+
+if DBROKER
+
+config DBUS_BROKER_PORT
+	int "D-Bus broker listening port"
+	default 55555
+	help
+		Port number for D-Bus broker listener.
+
+config DBUS_BROKER_STACK_SIZE
+	int "D-Bus broker thread stack size"
+	default 8192
+	help
+		Stack size for D-Bus broker thread.
+
+config DBUS_BROKER_PRIORITY
+	int "D-Bus broker thread priority"
+	default 7
+	help
+		Priority for D-Bus broker thread.
+
+endif # DBROKER
