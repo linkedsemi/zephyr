@@ -48,7 +48,9 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash_controller)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
 #endif
+#if !defined(CONFIG_SMP)
 BUILD_ASSERT(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
+#endif
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -495,6 +497,7 @@ __ramfunc static void high_frequency_init()
     if (!env.dual_mode_only) {
         pinmux_hal_flash_quad_init();
     }
+    hal_flashx_continuous_mode_reset(&env);
     hal_flashx_continuous_mode_start(&env);
     lscache_cache_enable(1);
     peripheral_init();
