@@ -186,6 +186,12 @@ static int vuart_irq_update(const struct device *dev)
 	return 1;
 }
 
+void vuart_ls_send_break(const struct device *dev)
+{
+    struct ls_vuart_data *data = dev->data;
+    vuart_status_send(&data->hb_exch, VUART_SEND_BREAK);
+}
+
 int get_host_vuart_mode_setting(const struct device *dev, uint8_t *rx_enable, uint8_t *tx_enable)
 {
     if (rx_enable == NULL || tx_enable == NULL) {
