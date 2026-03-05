@@ -197,6 +197,7 @@ enum vuart_hb_msg_type {
     H_RX_AVAIL,
     H_TX_EMPTY,
     VUART_MODE_SET,
+    VUART_SEND_BREAK,
 };
 
 struct vuart_hb_msg {
@@ -271,5 +272,5 @@ void host_espi_rx_callback(const struct device *dev,void *msg);
 
 void bmc_espi_rx_callback(const struct device *dev,void *msg);
 
-
+void vuart_ls_send_break(const struct device *dev);
 #endif
