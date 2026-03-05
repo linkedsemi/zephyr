@@ -23,3 +23,8 @@ properties:
     type: int
     description: |
       mac internal rx clock delay
+
+  mdio-handle:
+    type: phandle
+    description: |
+      Specifies a reference to a node representing a MDIO device.
