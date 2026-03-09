@@ -40,6 +40,7 @@ static int dw_dma_init(const struct device *dev)
     const struct dw_dma_cfg *const dev_config = dev->config;
     struct dw_dma_dev_data *dev_data = dev->data;
     int ret;
+    bool inited = false;
 
     dev_data->lli_pool = dev_config->lli_pool;
 
@@ -50,10 +51,21 @@ static int dw_dma_init(const struct device *dev)
             LOG_DBG("%s device not ready", clk_dev->name);
             return -ENODEV;
         }
-        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+        if(clock_control_get_status(clk_dev,(clock_control_subsys_t)&dev_config->ccfg) == CLOCK_CONTROL_STATUS_OFF)
+        {
+            clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+	    inited = false;
+        }else
+        {
+            inited = true;
+        }
     }
 #endif
 
+if (!inited) {
+	for(int channel=0;channel<DW_CHAN_COUNT;channel++) {
+		dev_data->chan[channel].dma_dsttrancallback = NULL;
+	}
 #if defined(CONFIG_RESET)
     if (dev_config->reset.dev != NULL) {
         if (!device_is_ready(dev_config->reset.dev)) {
@@ -83,6 +95,7 @@ static int dw_dma_init(const struct device *dev)
         LOG_ERR("failed to initialize DW DMA %s", dev->name);
         goto out;
     }
+}
 
     /* Configure interrupts */
     dev_config->dw_cfg.irq_config();
@@ -119,6 +132,7 @@ static const struct dma_driver_api dw_dma_driver_api = {
                                                                                                       \
     __nocache struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);\
                                                                                                       \
+    __noinit_named(dma_callback##inst) dma_callback_t callback##inst[DW_CHAN_COUNT];                  \
     static const struct dw_dma_cfg dw_dma##inst##_config = {                                          \
         .dw_cfg = {                                                                                   \
             .base = DT_INST_REG_ADDR(inst),                                                           \
