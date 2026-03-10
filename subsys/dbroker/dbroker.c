@@ -2,7 +2,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <sys/socket.h>
-// #include <sys/un.h>
+#include <zephyr/net/net_ip.h>
 #include <stdio.h>
 #include <soc.h>
 #include <errno.h>
@@ -47,10 +47,10 @@ static int create_listener_socket_with_retry(void)
     int retries = 50;
     int delay_ms = 100;
 
-    LOG_INF("=== CREATING LISTENER SOCKET WITH RETRY ===");
+    // LOG_INF("=== CREATING LISTENER SOCKET WITH RETRY ===");
 
     while (retries > 0) {
-        LOG_DBG("Attempt %d/%d to create listener socket...", 51-retries, 50);
+        // LOG_DBG("Attempt %d/%d to create listener socket...", 51-retries, 50);
 
         fd = socket(AF_INET, SOCK_STREAM, 0);
         if (fd >= 0) {
@@ -153,9 +153,9 @@ static int standard_broker_deployment(void)
     int r;
     int listener_fd = -1;
 
-    LOG_INF("===========================================");
-    LOG_INF("STANDARD BROKER DEPLOYMENT (PERMISSIVE MODE)");
-    LOG_INF("===========================================");
+    // LOG_INF("===========================================");
+    // LOG_INF("STANDARD BROKER DEPLOYMENT (PERMISSIVE MODE)");
+    // LOG_INF("===========================================");
 
     /* Step 1: Create controller socketpair */
     const char *machine_id = "0123456789abcdef0123456789abcdef";
@@ -175,7 +175,7 @@ static int standard_broker_deployment(void)
         close(g_controller_fds[1]);
         return r;
     }
-    LOG_INF("✓ Broker created: %p", g_broker);
+    // LOG_INF("✓ Broker created: %p", g_broker);
 
     /* Small delay to let broker initialize */
     k_msleep(100);
@@ -195,7 +195,7 @@ static int standard_broker_deployment(void)
         close(listener_fd);
         return r;
     }
-    LOG_INF("✓ Listener fd=%d added to broker, 127.0.0.1:55555 should be listening now", listener_fd);
+    // LOG_INF("✓ Listener fd=%d added to broker, 127.0.0.1:55555 should be listening now", listener_fd);
 
     /* Update deployment state */
     k_mutex_lock(&deploy_state.lock, K_FOREVER);
@@ -203,10 +203,10 @@ static int standard_broker_deployment(void)
     deploy_state.listener_fd = listener_fd;
     k_mutex_unlock(&deploy_state.lock);
 
-    LOG_INF("===========================================");
-    LOG_INF("DEPLOYMENT COMPLETED SUCCESSFULLY!");
+    // LOG_INF("===========================================");
+    // LOG_INF("DEPLOYMENT COMPLETED SUCCESSFULLY!");
     LOG_INF("Broker: %p, Listener FD: %d", g_broker, listener_fd);
-    LOG_INF("===========================================");
+    // LOG_INF("===========================================");
 
     k_msleep(1000);  /* Give broker time to start event loop and begin listening */
 
@@ -225,7 +225,7 @@ static int deploy_standard_broker(void)
 
     /* Run broker (handles all client connections in event loop) */
     LOG_INF("Starting broker event loop (will now accept connections on 127.0.0.1:55555)...");
-    LOG_INF("Service providers can now connect!");
+    // LOG_INF("Service providers can now connect!");
     k_msleep(500);  /* Give service providers a moment to see this log */
     r = broker_run(g_broker);
 
@@ -253,7 +253,7 @@ static void broker_thread_entry(void *p1, void *p2, void *p3)
     ARG_UNUSED(p3);
     int r;
 
-    LOG_INF("[DBus Broker] Starting D-Bus Broker Deployment...");
+    // LOG_INF("[DBus Broker] Starting D-Bus Broker Deployment...");
 
     /* Run the broker deployment using standard broker_run() */
     r = deploy_standard_broker();
@@ -274,7 +274,7 @@ static struct k_thread broker_thread;
  */
 static int dbus_broker_init(void)
 {
-    LOG_INF("[DBus Broker] Initializing D-Bus Broker subsystem...");
+    // LOG_INF("[DBus Broker] Initializing D-Bus Broker subsystem...");
     
     /* Create broker thread */
     k_thread_create(&broker_thread, 
@@ -324,7 +324,7 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
 
         r = connect(sock, (struct sockaddr *)&addr, sizeof(addr));
         if (r >= 0) {
-            LOG_INF("[DBroker API] Connected on attempt %d", retry_count + 1);
+            // LOG_INF("[DBroker API] Connected on attempt %d", retry_count + 1);
             break;
         }
         /* Log first few attempts */
