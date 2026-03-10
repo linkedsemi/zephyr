@@ -391,13 +391,11 @@ static int i2c_ls_do_start_or_next_cnt(const struct device *dev, struct i2c_msg 
     }
     dev_data->msg_curr->len -= dev_data->xfer_len;
 
-    /* workaround begin: master mode cannot trigger address match interrupt under restart condtition */
     if (read) {
         dev_config->reg->IER = I2C_INT_RXNE_MASK;
     } else {
         dev_config->reg->IER = I2C_INT_TXE_MASK;
     }
-    /* workaround end */
 
     return 0;
 }
@@ -651,11 +649,11 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg, uint8_
 err:
     if (dev_data->errs) {
         ret = -EIO;
-    }
-    if (dev_data->errs & MASTER_NACK_RECEIVED) {
-        DEV_DBG(dev, "err: %#x", dev_data->errs);
-    } else {
-        DEV_ERR(dev, "err: %#x", dev_data->errs);
+        if ((dev_data->errs & MASTER_NACK_RECEIVED) == MASTER_NACK_RECEIVED) {
+            DEV_DBG(dev, "err: %#x", dev_data->errs);
+        } else {
+            DEV_ERR(dev, "err: %#x", dev_data->errs);
+        }
     }
     if (dev_data->quick_command) {
         dev_config->reg->CR2_3 &= ~0x30;
