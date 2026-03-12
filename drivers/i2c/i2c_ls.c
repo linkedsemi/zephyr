@@ -4,9 +4,8 @@
 #include <string.h>
 #include <zephyr/kernel.h>
 #include <stdio.h>
-#define LOG_LEVEL LOG_LEVEL_DBG
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(i2c_ls);
+LOG_MODULE_REGISTER(i2c_ls, CONFIG_I2C_LOG_LEVEL);
 
 #include "platform.h"
 #include "field_manipulate.h"
@@ -256,8 +255,12 @@ int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_co
     if (!ret) {
         dev_data->pin[0] = pinctrl_pin2code(&state->pins[0]);
         dev_data->pin[1] = pinctrl_pin2code(&state->pins[1]);
-        __ASSERT(dev_data->pin[0] != dev_data->pin[1], "scl pin and sda pin can not be duplicated");
-        ret = 0;
+        if (dev_data->pin[0] == dev_data->pin[1]) {
+            DEV_ERR(dev, "scl pin and sda pin can not be duplicated: %#x", dev_data->pin[0]);
+            ret = -EINVAL;
+        } else {
+            ret = 0;
+        }
     } else {
         dev_data->pin[0] = 0;
         dev_data->pin[1] = 0;
@@ -267,8 +270,9 @@ int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_co
 }
 #endif
 
-static void i2c_timing_param_set(const struct i2c_ls_config *dev_config, uint32_t i2c_clk)
+static void i2c_timing_param_set(const struct device *dev, uint32_t i2c_clk)
 {
+    const struct i2c_ls_config *dev_config = dev->config;
     uint16_t cycle_count = 0;
     uint8_t prescalar = 0;
     int16_t scll = 0;
@@ -293,7 +297,11 @@ static void i2c_timing_param_set(const struct i2c_ls_config *dev_config, uint32_
             break;
         }
     }
-    __ASSERT((cycle_count >= 16) && (prescalar <= 16) && (scll < 48), "Invalid i2c timing");
+
+    if (!((cycle_count >= 16) && (prescalar <= 16) && (scll < 48))) {
+        DEV_ERR(dev, "Invalid i2c timing");
+        return;
+    }
 
     scldel = (scll >> 1) > 16 ? 15 : (scll >> 1);
     sclh = scll;
@@ -337,7 +345,7 @@ static void i2c_reenable(const struct device *dev, bool master)
             DEV_ERR(dev, "i2c speed not supported");
             break;
         }
-        i2c_timing_param_set(dev_config, i2c_clk);
+        i2c_timing_param_set(dev, i2c_clk);
     } else {
         i2c_slave_timing_param_set(dev_config);
     }
@@ -431,7 +439,8 @@ static void i2c_ls_isr_error_handle(const struct device *dev, uint32_t irq)
         dev_data->errs |= TIMEOUT_DETECTED;
         DEV_ERR(dev, "i2c@%08x timeout err", (uint32_t)dev_config->reg);
     }
-    if ((dev_data->errs != 0) && master_mode) {
+
+    if (((dev_data->errs & MASTER_NACK_RECEIVED) != MASTER_NACK_RECEIVED) && master_mode) {
         k_sem_give(&dev_data->master_complete_sem);
     }
 }
@@ -522,7 +531,7 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
         dev_config->reg->ICR = I2C_INT_TC_MASK;
         dev_config->reg->IDR = I2C_INT_TCR_MASK | I2C_INT_TC_MASK;
 
-        __ASSERT_NO_MSG(dev_data->msg_curr->len == 0);
+        /*  dev_data->msg_curr->len == 0 */
         if (((dev_data->msg_curr + 1) == &dev_data->msg[dev_data->msg_num])) { /* --> <stop> */
             dev_data->stop_pending = true;
             dev_config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
@@ -614,8 +623,8 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg, uint8_
 #endif
     dev_data->errs = 0;
     if (k_sem_count_get(&dev_data->master_complete_sem) != 0) {
-        k_sem_reset(&dev_data->master_complete_sem);
         DEV_WRN(dev, "master_complete_sem count: %d", k_sem_count_get(&dev_data->master_complete_sem));
+        k_sem_reset(&dev_data->master_complete_sem);
     }
     i2c_reenable(dev, true);
     dev_config->reg->SR = I2C_SR_TXE_MASK; //clear tx fifo
@@ -678,7 +687,9 @@ int i2c_ls_pinctrl(const struct device *dev, uint32_t pinctrl_state)
     const struct i2c_ls_config *dev_config = dev->config;
     int ret = 0;
 
-    __ASSERT_NO_MSG(dev);
+    if (NULL == dev) {
+        return -EINVAL;
+    }
 
     /* Configure dt provided device signals when available */
     ret = pinctrl_apply_state(dev_config->pcfg, pinctrl_state);
