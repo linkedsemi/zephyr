@@ -341,6 +341,10 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     }
     k_spin_unlock(&ptr_data->lock, key);
 
+    if (lsr & LSR_BI) {
+        *val |= LSR_BI;
+    }
+
     if (lsr_tx_empty(lsr))
     {
         *val |= LSR_THRE|LSR_TEMT;
