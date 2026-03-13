@@ -8,11 +8,58 @@ menuconfig DBROKER
 
 if DBROKER
 
+choice
+	prompt "D-Bus broker connection type"
+	default DBUS_BROKER_INET
+
+config DBUS_BROKER_INET
+	bool "Use INET sockets"
+	help
+		Use AF_INET sockets for client connections.
+		This requires network stack and uses more resources.
+
+config DBUS_BROKER_SOCKETPOOL
+	bool "Use socketpool"
+	select NET_SOCKETPAIR
+	help
+		Use a pool of pre-allocated socketpairs for client connections.
+		This is more efficient than INET sockets and uses less resources.
+
+endchoice
+
 config DBUS_BROKER_PORT
 	int "D-Bus broker listening port"
+	depends on DBUS_BROKER_INET
 	default 55555
 	help
 		Port number for D-Bus broker listener.
+
+config DBUS_BROKER_SOCKETPOOL_SIZE
+	int "Number of socketpairs in pool"
+	depends on DBUS_BROKER_SOCKETPOOL
+	default 16
+	help
+		Number of pre-allocated socketpairs in the pool.
+		Each socketpair uses 2 file descriptors.
+
+config DBUS_BROKER_SOCKETPOOL_BUFFER_SIZE
+	int "Socketpair buffer size in bytes"
+	depends on DBUS_BROKER_SOCKETPOOL
+	default 4096
+	help
+		Buffer size for each socketpair in the pool.
+		This is the size of the socket send/receive buffer for each
+		end of the socketpair. A larger buffer allows larger messages
+		to be sent without blocking, but uses more memory.
+
+		Total memory usage = SOCKETPOOL_SIZE * 2 * SOCKETPOOL_BUFFER_SIZE
+
+		Examples:
+		- 16 pairs * 2 * 4KB = 128KB
+		- 16 pairs * 2 * 8KB = 256KB
+		- 16 pairs * 2 * 16KB = 512KB
+
+		For most D-Bus use cases, 4KB-8KB is sufficient.
 
 config DBUS_BROKER_STACK_SIZE
 	int "D-Bus broker thread stack size"

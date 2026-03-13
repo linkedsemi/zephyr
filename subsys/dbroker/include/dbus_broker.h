@@ -28,4 +28,13 @@ extern Broker *g_broker;
  */
 int connect_to_dbroker(sd_bus **bus, int *socket_fd);
 
+/**
+ * @brief Request a connection from the socketpool
+ * @details This function allocates a socketpair from the pool and returns
+ *          the client's fd. The broker will use the other end to create a peer.
+ * @param client_fd [out] Pointer to store the client's fd
+ * @return 0 on success, negative error code on failure
+ */
+int request_dbroker_connection(int *client_fd);
+
 #endif /* DBUS_BROKER_H */

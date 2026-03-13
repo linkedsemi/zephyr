@@ -15,6 +15,7 @@
 
 /* D-Bus broker subsystem */
 #include "dbus_broker.h"
+#include "socketpool.h"
 
 LOG_MODULE_REGISTER(DBROKER, LOG_LEVEL_DBG);
 
@@ -41,6 +42,7 @@ struct deployment_state deploy_state = {
 };
 extern Broker *g_broker;
 
+#ifndef CONFIG_DBUS_BROKER_SOCKETPOOL
 static int create_listener_socket_with_retry(void)
 {
     int fd = -1;
@@ -128,7 +130,9 @@ static int create_listener_socket_with_retry(void)
     LOG_ERR("Failed to create listener socket after all retries");
     return -EIO;
 }
+#endif /* CONFIG_DBUS_BROKER_SOCKETPOOL */
 
+#ifndef CONFIG_DBUS_BROKER_SOCKETPOOL
 static int add_listener_to_broker(int listener_fd)
 {
     int r;
@@ -146,6 +150,7 @@ static int add_listener_to_broker(int listener_fd)
     LOG_INF("✓ Listener added to broker successfully");
     return 0;
 }
+#endif /* CONFIG_DBUS_BROKER_SOCKETPOOL */
 
 /* Modified deployment function */
 static int standard_broker_deployment(void)
@@ -180,6 +185,12 @@ static int standard_broker_deployment(void)
     /* Small delay to let broker initialize */
     k_msleep(100);
 
+#ifdef CONFIG_DBUS_BROKER_SOCKETPOOL
+    /* Step 4: Socketpool mode - no listener needed */
+    /* The broker will accept connections from socketpool directly */
+    LOG_INF("✓ Socketpool mode: broker ready to accept connections from pool");
+    listener_fd = -1;  /* No listener fd in socketpool mode */
+#else
     /* Step 4: Create listener socket with retry */
     listener_fd = create_listener_socket_with_retry();
     if (listener_fd < 0) {
@@ -196,6 +207,7 @@ static int standard_broker_deployment(void)
         return r;
     }
     // LOG_INF("✓ Listener fd=%d added to broker, 127.0.0.1:55555 should be listening now", listener_fd);
+#endif
 
     /* Update deployment state */
     k_mutex_lock(&deploy_state.lock, K_FOREVER);
@@ -274,7 +286,18 @@ static struct k_thread broker_thread;
  */
 static int dbus_broker_init(void)
 {
+    int r;
     // LOG_INF("[DBus Broker] Initializing D-Bus Broker subsystem...");
+
+#ifdef CONFIG_DBUS_BROKER_SOCKETPOOL
+    /* Initialize socketpool */
+    r = socketpool_init();
+    if (r < 0) {
+        LOG_ERR("[DBus Broker] Failed to initialize socketpool: %d", r);
+        return r;
+    }
+    LOG_INF("[DBus Broker] Socketpool initialized successfully");
+#endif
     
     /* Create broker thread */
     k_thread_create(&broker_thread, 
@@ -299,12 +322,70 @@ SYS_INIT(dbus_broker_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
  * Public API functions
  */
 
+#ifdef CONFIG_DBUS_BROKER_SOCKETPOOL
+
+/**
+ * @brief Request a connection from the socketpool
+ * @details This function allocates a socketpair from the pool and returns
+ *          the client's fd. The broker will use the other end to create a peer.
+ * @param client_fd [out] Pointer to store the client's fd
+ * @return 0 on success, negative error code on failure
+ */
+int request_dbroker_connection(int *client_fd)
+{
+    int broker_fd = -1;
+    int r;
+
+    if (!client_fd) {
+        LOG_ERR("[DBroker API] Invalid parameter: client_fd is NULL");
+        return -EINVAL;
+    }
+
+    /* Check if broker is ready */
+    if (!g_broker) {
+        LOG_ERR("[DBroker API] Broker not initialized yet");
+        return -ENOTCONN;
+    }
+
+    /* Allocate a socketpair from the pool */
+    r = socketpool_allocate(&broker_fd, client_fd);
+    if (r < 0) {
+        LOG_ERR("[DBroker API] Failed to allocate socketpair: %d", r);
+        return r;
+    }
+
+    LOG_DBG("[DBroker API] Allocated connection: client_fd=%d, broker_fd=%d",
+            *client_fd, broker_fd);
+
+    /* Add the broker_fd to the broker to create a peer */
+    r = socketpool_add_peer_to_broker(g_broker, broker_fd);
+    if (r < 0) {
+        LOG_ERR("[DBroker API] Failed to add peer to broker: %d", r);
+        socketpool_free(broker_fd, *client_fd);
+        return r;
+    }
+
+    return 0;
+}
+
+#endif /* CONFIG_DBUS_BROKER_SOCKETPOOL */
+
 int connect_to_dbroker(sd_bus **bus, int *socket_fd)
 {
     int sock = -1;
     int r = -1;
     int retry_count = 0;
 
+#ifdef CONFIG_DBUS_BROKER_SOCKETPOOL
+    /* Use socketpool for connection */
+    r = request_dbroker_connection(&sock);
+    if (r < 0) {
+        LOG_ERR("[DBroker API] Failed to get connection from socketpool: %d", r);
+        return r;
+    }
+
+    LOG_INF("[DBroker API] Got connection from socketpool: fd=%d", sock);
+#else
     /* Connect to localhost:CONFIG_DBUS_BROKER_PORT */
     struct sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
@@ -344,6 +425,7 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
     }
 
     LOG_INF("[DBroker API] Connected to broker");
+#endif /* CONFIG_DBUS_BROKER_SOCKETPOOL */
 
     /* Create sd-bus using the connected socket */
     r = sd_bus_new(bus);
@@ -369,16 +451,29 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
         return r;
     }
 
-    /* Start the bus (authentication) */
+    /* Start the bus (sends Hello message) */
     r = sd_bus_start(*bus);
     if (r < 0) {
-        LOG_WRN("[DBroker API] Authentication warning: %d", r);
+        LOG_WRN("[DBroker API] sd_bus_start returned: %d", r);
     }
 
+    /* Wait for bus to become ready (process Hello response) */
     retry_count = 0;
-    while (!sd_bus_is_ready(*bus) && retry_count < 100) {
-        k_msleep(50);
+    while (!sd_bus_is_ready(*bus) && retry_count < 200) {
+        /* Process incoming messages to handle Hello response */
+        r = sd_bus_process(*bus, NULL);
+        if (r < 0) {
+            LOG_ERR("[DBroker API] Failed to process bus messages: %d", r);
+            break;
+        }
+        k_msleep(25);
         retry_count++;
+    }
+
+    if (!sd_bus_is_ready(*bus)) {
+        LOG_ERR("[DBroker API] Bus not ready after %d attempts", retry_count);
+    } else {
+        LOG_DBG("[DBroker API] Bus ready after %d attempts", retry_count);
     }
 
     /* Return the socket fd if requested */
