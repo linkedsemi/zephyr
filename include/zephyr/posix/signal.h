@@ -141,4 +141,6 @@ int pthread_sigmask(int how, const sigset_t *ZRESTRICT set, sigset_t *ZRESTRICT 
 }
 #endif
 
+#include "zephyr/compat/signal_compat.h"
+
 #endif /* ZEPHYR_INCLUDE_POSIX_SIGNAL_H_ */

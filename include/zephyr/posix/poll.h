@@ -26,4 +26,6 @@ int poll(struct pollfd *fds, int nfds, int timeout);
 }
 #endif
 
+#include "zephyr/compat/poll_compat.h"
+
 #endif	/* ZEPHYR_INCLUDE_POSIX_POLL_H_ */
