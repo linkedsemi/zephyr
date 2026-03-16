@@ -103,8 +103,6 @@ int mmc_card_init(struct sd_card *card)
 	int ret = 0;
 	uint32_t ocr_arg = 0U;
 	/* Keep CSDs on stack for reduced RAM usage */
-	struct sd_csd card_csd = {0};
-	struct mmc_ext_csd card_ext_csd = {0};
 
 	/* SPI is not supported for MMC */
 	if (card->host_props.is_spi) {
@@ -155,7 +153,7 @@ int mmc_card_init(struct sd_card *card)
 	}
 
 	/* CMD9 */
-	ret = mmc_read_csd(card, &card_csd);
+	ret = mmc_read_csd(card, &card->card_csd);
 	if (ret) {
 		return ret;
 	}
@@ -176,7 +174,7 @@ int mmc_card_init(struct sd_card *card)
 	 * Currently only eMMC is supported for this command
 	 * Legacy MMC cards will initialize slowly
 	 */
-	ret = mmc_set_max_freq(card, &card_csd);
+	ret = mmc_set_max_freq(card, &card->card_csd);
 	if (ret) {
 		return ret;
 	}
@@ -190,19 +188,19 @@ int mmc_card_init(struct sd_card *card)
 #endif
 
 	/* CMD8 */
-	ret = mmc_read_ext_csd(card, &card_ext_csd);
+	ret = mmc_read_ext_csd(card, &card->card_ext_csd);
 	if (ret) {
 		return ret;
 	}
 
 	/* Set timing to fastest supported */
-	ret = mmc_set_timing(card, &card_ext_csd);
+	ret = mmc_set_timing(card, &card->card_ext_csd);
 	if (ret) {
 		return ret;
 	}
 
 	/* Turn on cache if it exists */
-	ret = mmc_set_cache(card, &card_ext_csd);
+	ret = mmc_set_cache(card, &card->card_ext_csd);
 	if (ret) {
 		return ret;
 	}
@@ -646,6 +644,8 @@ static inline void mmc_decode_ext_csd(struct mmc_ext_csd *ext, uint8_t *raw)
 	ext->pwr_class_200MHZ_VCCQ195 = raw[237U];
 	ext->cache_size =
 		(raw[252] << 24U) + (raw[251] << 16U) + (raw[250] << 8U) + (raw[249] << 0U);
+	ext->device_life_time_est_typ_a = raw[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A];
+	ext->device_life_time_est_typ_b = raw[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B];
 }
 
 static int mmc_set_cache(struct sd_card *card, struct mmc_ext_csd *card_ext_csd)
