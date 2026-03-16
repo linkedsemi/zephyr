@@ -440,7 +440,7 @@ static void i2c_ls_isr_error_handle(const struct device *dev, uint32_t irq)
         DEV_ERR(dev, "i2c@%08x timeout err", (uint32_t)dev_config->reg);
     }
 
-    if (((dev_data->errs & MASTER_NACK_RECEIVED) != MASTER_NACK_RECEIVED) && master_mode) {
+    if (dev_data->errs && ((dev_data->errs & MASTER_NACK_RECEIVED) != MASTER_NACK_RECEIVED) && master_mode) {
         k_sem_give(&dev_data->master_complete_sem);
     }
 }
