@@ -132,7 +132,6 @@ static const struct dma_driver_api dw_dma_driver_api = {
                                                                                                       \
     __nocache struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);\
                                                                                                       \
-    __noinit_named(dma_callback##inst) dma_callback_t callback##inst[DW_CHAN_COUNT];                  \
     static const struct dw_dma_cfg dw_dma##inst##_config = {                                          \
         .dw_cfg = {                                                                                   \
             .base = DT_INST_REG_ADDR(inst),                                                           \
