@@ -50,6 +50,11 @@
 	(0xFC000000 & (0U << 26)) + (0x03000000 & (0b11 << 24)) + (0x00FF0000 & (33U << 16)) +     \
 		(0x0000FF00 & (1U << 8)) + (0x000000F7 & (0U << 3)) + (0x00000000 & (3U << 0))
 
+#define MMC_SWITCH_MODE_CMD_SET     0x00 /* Change the command set */
+#define MMC_SWITCH_MODE_SET_BITS    0x01 /* Set bits which are 1 in value */
+#define MMC_SWITCH_MODE_CLEAR_BITS  0x02 /* Clear bits which are 1 in value */
+#define MMC_SWITCH_MODE_WRITE_BYTE  0x03 /* Set target to value */
+
 LOG_MODULE_DECLARE(sd, CONFIG_SD_LOG_LEVEL);
 
 inline int mmc_write_blocks(struct sd_card *card, const uint8_t *wbuf, uint32_t start_block,
@@ -95,9 +100,14 @@ static int mmc_set_timing(struct sd_card *card, struct mmc_ext_csd *card_ext_csd
 /* Enable cache for emmc if applicable */
 static int mmc_set_cache(struct sd_card *card, struct mmc_ext_csd *card_ext_csd);
 
+#if defined(CONFIG_MMC_RESET_ENABLE)
+static int mmc_set_rst_n_enable(struct sd_card *card, struct mmc_ext_csd *card_ext_csd);
+#endif /* CONFIG_MMC_RESET_ENABLE */
+
 /*
  * Initialize MMC card for use with subsystem
  */
+
 int mmc_card_init(struct sd_card *card)
 {
 	int ret = 0;
@@ -204,6 +214,13 @@ int mmc_card_init(struct sd_card *card)
 	if (ret) {
 		return ret;
 	}
+
+#if defined(CONFIG_MMC_RESET_ENABLE)
+	ret = mmc_set_rst_n_enable(card, &card->card_ext_csd);
+	if (ret) {
+		return ret;
+	}
+#endif /* CONFIG_MMC_RESET_ENABLE */
 
 	return 0;
 }
@@ -644,8 +661,13 @@ static inline void mmc_decode_ext_csd(struct mmc_ext_csd *ext, uint8_t *raw)
 	ext->pwr_class_200MHZ_VCCQ195 = raw[237U];
 	ext->cache_size =
 		(raw[252] << 24U) + (raw[251] << 16U) + (raw[250] << 8U) + (raw[249] << 0U);
-	ext->device_life_time_est_typ_a = raw[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A];
-	ext->device_life_time_est_typ_b = raw[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B];
+	if (ext->rev >= MMC_4_4) {
+		ext->rst_n_function = raw[EXT_CSD_RST_N_FUNCTION];
+	}
+	if (ext->rev >= MMC_5_0) {
+		ext->device_life_time_est_typ_a = raw[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A];
+		ext->device_life_time_est_typ_b = raw[EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B];
+	}
 }
 
 static int mmc_set_cache(struct sd_card *card, struct mmc_ext_csd *card_ext_csd)
@@ -670,3 +692,29 @@ static int mmc_set_cache(struct sd_card *card, struct mmc_ext_csd *card_ext_csd)
 	ret = sdmmc_wait_ready(card);
 	return ret;
 }
+
+#if defined(CONFIG_MMC_RESET_ENABLE)
+static int mmc_set_rst_n_enable(struct sd_card *card, struct mmc_ext_csd *card_ext_csd)
+{
+	int ret = 0;
+	struct sdhc_command cmd = {0};
+
+	if (card_ext_csd->rst_n_function == 1) {
+		return 0;
+	}
+
+	cmd.opcode = SD_SWITCH;
+	cmd.arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) |
+		  (EXT_CSD_RST_N_FUNCTION << 16) |
+		  (1 << 8);
+	cmd.response_type = SD_RSP_TYPE_R1b;
+	cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
+	ret = sdhc_request(card->sdhc, &cmd, NULL);
+	if (ret) {
+		LOG_DBG("Error turning on card cache: %d", ret);
+		return ret;
+	}
+	ret = sdmmc_wait_ready(card);
+	return ret;
+}
+#endif /* CONFIG_MMC_RESET_ENABLE */
