@@ -662,6 +662,7 @@ enum mmc_ext_csd_rev {
 	MMC_4_0 = 0U
 };
 
+#define EXT_CSD_RST_N_FUNCTION             162 /* R/W */
 #define EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A 268 /* RO */
 #define EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B 269 /* RO */
 
@@ -696,6 +697,7 @@ struct mmc_ext_csd {
 	uint8_t device_life_time_est_typ_a;
 	/* 269 */
 	uint8_t device_life_time_est_typ_b;
+	uint8_t rst_n_function;
 };
 
 /**
