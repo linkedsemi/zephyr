@@ -86,6 +86,9 @@ static void linkedsemi_sdhci_isr(const void *arg)
 
         /* cmd:begin */
         if (status & SDHCI_INT_RESPONSE) {
+            if (!host->execute_tuning) {
+                sdhci_receive_command_response(host, host->sdhci_command);
+            }
             k_sem_give(&host->cmd_sem);
         }
         /* cmd:end */
@@ -298,30 +301,6 @@ static int linkedsemi_sdhci_card_busy(const struct device *dev)
     return sdhci_card_busy(host);
 }
 
-static int linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struct sdhci_command *command, bool execute_tuning)
-{
-    __ASSERT_NO_MSG(NULL != command);
-    const struct device *dev = host->dev;
-
-    /* tuning cmd do not need to wait command done */
-    if (execute_tuning)
-        return 0;
-    /* Wait command complete or SDHC encounters error. */
-    int ret = k_sem_take(&host->cmd_sem, K_MSEC(command->timeout_ms));
-    if (ret) {
-        return -EIO;
-    }
-    if (host->error_code & SDHCI_INT_ERROR) {
-        if (!host->execute_tuning) {
-            DEV_ERR(dev, "%s: Error detected in status(0x%X)!", __func__, host->error_code);
-        }
-        host->error_code = 0;
-        return -EIO;
-    }
-
-    return sdhci_receive_command_response(host, command);
-}
-
 #if defined(CONFIG_SOC_LSQSH)
 static bool is_psram(uint32_t addr)
 {
@@ -370,16 +349,19 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
 
     host->transfer_status = 0;
     host->block_curr = 0;
+    host->error_code = 0;
     k_sem_reset(&host->cmd_sem);
     k_sem_reset(&host->data_sem);
     sdhci_send_command(host, sdhci_command, host->use_dma);
     /* wait command done */
-    ret = linkedsemi_sdhci_wait_command_done(host, sdhci_command, ((sdhci_data == NULL) ? false : sdhci_data->execute_tuning));
-    if (ret) {
-        DEV_ERR(dev, "cmd transfer fail: %d", ret);
-        goto err;
+    if (!host->execute_tuning) {
+        ret = k_sem_take(&host->cmd_sem, K_MSEC(sdhci_command->timeout_ms));
+        if (ret) {
+            DEV_ERR(dev, "cmd transfer fail: %d", ret);
+            goto err;
+        }
     }
-    /* transfer data */
+    /* wait data done */
     if ((sdhci_data != NULL) && (!(host->irq_status & SDHCI_INT_ERROR))) {
         ret = k_sem_take(&host->data_sem, K_MSEC(sdhci_data->timeout_ms));
         if (ret) {
