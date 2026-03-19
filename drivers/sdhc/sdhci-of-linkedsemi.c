@@ -80,17 +80,54 @@ static void linkedsemi_sdhci_isr(const void *arg)
         }
         host->irq_status |= status;
         if (status & SDHCI_INT_ERROR) {
-            k_sem_give(&host->transfer_sem);
+            k_sem_give(&host->cmd_sem);
+            k_sem_give(&host->data_sem);
         }
+
+        /* cmd:begin */
         if (status & SDHCI_INT_RESPONSE) {
-            k_sem_give(&host->transfer_sem);
+            k_sem_give(&host->cmd_sem);
         }
-        if (status & (SDHCI_INT_DATA_END
-                    | SDHCI_INT_DMA_END
-                    | SDHCI_INT_SPACE_AVAIL
-                    | SDHCI_INT_DATA_AVAIL)) {
-            k_sem_give(&host->transfer_sem);
+        /* cmd:end */
+
+        if (host->sdhci_data) {
+            /* data:begin */
+            if (host->use_dma) {
+                /* dma */
+                if (status & SDHCI_INT_DMA_END) {
+                    sdhci_writel(host, SDHCI_INT_DMA_END, SDHCI_INT_STATUS);
+                    sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
+                }
+                if (status & SDHCI_INT_DATA_END) {
+                    if (host->sdhci_data->rx_data) {
+                        sys_cache_data_invd_range((void *)host->sdhci_data->rx_data, host->sdhci_data->block_size * host->sdhci_data->block_count);
+                    }
+                    k_sem_give(&host->data_sem);
+                }
+            } else {
+                /* polling */
+                if (status & (SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL)) {
+                    if ((sdhci_readl(host, SDHCI_PRESENT_STATE) & (SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE))) {
+                        if (host->sdhci_data->rx_data) {
+                            uint16_t block_size = host->sdhci_data->block_size >> 2;
+                            for (int i = 0; i < block_size; i++) {
+                                host->sdhci_data->rx_data[i + host->block_curr * block_size] = sdhci_readl(host, SDHCI_BUFFER);
+                            }
+                        } else {
+                            uint16_t block_size = host->sdhci_data->block_size >> 2;
+                            for (int i = 0; i < block_size; i++) {
+                                sdhci_writel(host, host->sdhci_data->tx_data[i + host->block_curr * block_size], SDHCI_BUFFER);
+                            }
+                        }
+                        host->block_curr++;
+                        if (host->block_curr >= host->sdhci_data->block_count) {
+                            k_sem_give(&host->data_sem);
+                        }
+                    }
+                }
+            }
         }
+        /* data:end */
     }
     // if (status & SDHCI_INT_CARD_INT)
     //     sdio_irq_wakeup(host->host);
@@ -270,7 +307,7 @@ static int linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struct sd
     if (execute_tuning)
         return 0;
     /* Wait command complete or SDHC encounters error. */
-    int ret = k_sem_take(&host->transfer_sem, K_MSEC(command->timeout_ms));
+    int ret = k_sem_take(&host->cmd_sem, K_MSEC(command->timeout_ms));
     if (ret) {
         return -EIO;
     }
@@ -283,78 +320,6 @@ static int linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struct sd
     }
 
     return sdhci_receive_command_response(host, command);
-}
-
-static int linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, struct sdhci_data *data, bool use_dma)
-{
-    const struct device *dev = host->dev;
-    if (IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE) && use_dma) {
-        uint32_t stat;
-
-        while (1) {
-            int ret = k_sem_take(&host->transfer_sem, K_MSEC(data->timeout_ms));
-            if (ret) {
-                return -EIO;
-            }
-            stat = host->irq_status;
-            if (stat & SDHCI_INT_ERROR) {
-                if (!host->execute_tuning) {
-                    DEV_ERR(dev, "%s: Error detected in status(0x%x)!", __func__, host->error_code);
-                }
-                sdhci_reg_display(host);
-                return -EIO;
-            }
-            if (stat & SDHCI_INT_DMA_END) {
-                sdhci_writel(host, SDHCI_INT_DMA_END, SDHCI_INT_STATUS);
-                sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
-            }
-            if (stat & SDHCI_INT_DATA_END) {
-                sys_cache_data_invd_range((void *)data->rx_data, data->block_size * data->block_count);
-                return 0;
-            }
-        }
-    } else {
-        uint32_t stat, rdy, mask, block;
-
-        block = 0;
-        rdy = SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL;
-        mask = SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE;
-
-        while (1) {
-            int ret = k_sem_take(&host->transfer_sem, K_MSEC(data->timeout_ms));
-            if (ret) {
-                return -EIO;
-            }
-            stat = host->irq_status;
-            if (stat & SDHCI_INT_ERROR) {
-                if (!host->execute_tuning) {
-                    DEV_ERR(dev, "%s: Error detected in status(0x%X)!", __func__, stat);
-                }
-                sdhci_reg_display(host);
-                return -EIO;
-            }
-            if (stat & rdy) {
-                if (!(sdhci_readl(host, SDHCI_PRESENT_STATE) & mask)) {
-                    continue;
-                }
-                if (data->rx_data) {
-                    uint16_t block_size = data->block_size >> 2;
-                    for (int i = 0; i < block_size; i++) {
-                        data->rx_data[i + block * block_size] = sdhci_readl(host, SDHCI_BUFFER);
-                    }
-                } else {
-                    uint16_t block_size = data->block_size >> 2;
-                    for (int i = 0; i < block_size; i++) {
-                        sdhci_writel(host, data->tx_data[i + block * block_size], SDHCI_BUFFER);
-                    }
-                }
-                block++;
-                if (block >= data->block_count) {
-                    return 0;
-                }
-            }
-        }
-    }
 }
 
 #if defined(CONFIG_SOC_LSQSH)
@@ -385,10 +350,10 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     const struct device *dev = host->dev;
     struct sdhci_command *sdhci_command = host->sdhci_command;
     struct sdhci_data *sdhci_data = host->sdhci_data;
-    bool use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
+    host->use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
     int ret = 0;
 #if defined(CONFIG_SOC_LSQSH)
-    use_dma = lsqsh_workaround_psram_use_dma(host);
+    host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
     /* Wait until command/data bus out of busy status. */
     while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
@@ -403,9 +368,11 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     }
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) | SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_SIGNAL_ENABLE);
 
-    host->transfer_status = 0U;
-    k_sem_reset(&host->transfer_sem);
-    sdhci_send_command(host, sdhci_command, use_dma);
+    host->transfer_status = 0;
+    host->block_curr = 0;
+    k_sem_reset(&host->cmd_sem);
+    k_sem_reset(&host->data_sem);
+    sdhci_send_command(host, sdhci_command, host->use_dma);
     /* wait command done */
     ret = linkedsemi_sdhci_wait_command_done(host, sdhci_command, ((sdhci_data == NULL) ? false : sdhci_data->execute_tuning));
     if (ret) {
@@ -414,7 +381,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     }
     /* transfer data */
     if ((sdhci_data != NULL) && (!(host->irq_status & SDHCI_INT_ERROR))) {
-        ret = linkedsemi_sdhci_transfer_data_blocking(host, sdhci_data, use_dma);
+        ret = k_sem_take(&host->data_sem, K_MSEC(sdhci_data->timeout_ms));
         if (ret) {
             DEV_ERR(dev, "data transfer fail: %d", ret);
             goto err;
@@ -917,7 +884,8 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     sdhci_init(host);
 
     k_mutex_init(&dev_data->access_mutex);
-    k_sem_init(&host->transfer_sem, 0, 2);
+    k_sem_init(&host->cmd_sem, 0, 1);
+    k_sem_init(&host->data_sem, 0, 1);
 
     dev_config->irq_config_func(dev);
 
