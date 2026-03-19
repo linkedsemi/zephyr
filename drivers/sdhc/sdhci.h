@@ -477,8 +477,11 @@ struct sdhci_host {
     const struct device *dev;
     struct sdhci_data *sdhci_data;
     struct sdhci_command *sdhci_command;
+    uint32_t block_curr;
+    bool use_dma;
     void *usdhc_adma2_table;
-    struct k_sem transfer_sem;
+    struct k_sem cmd_sem;
+    struct k_sem data_sem;
     uint16_t error_code;
     uint32_t irq_status;
     uint32_t max_clk;
