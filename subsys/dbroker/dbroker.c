@@ -164,6 +164,17 @@ static int standard_broker_deployment(void)
 
     /* Step 1: Create controller socketpair */
     const char *machine_id = "0123456789abcdef0123456789abcdef";
+    // sd_id128_t saved_machine_id;
+    // r = sd_id128_get_machine(&saved_machine_id);
+    // if (r < 0) {
+    //     LOG_ERR("Failed to get machine ID: %d", r);
+    //     return r;
+    // }
+
+    // char midstr[SD_ID128_STRING_MAX];
+    // char *machine_id1 = sd_id128_to_string(saved_machine_id, midstr);
+    // LOG_INF("Machine ID: %s, %s", machine_id1, midstr);
+
     r = socketpair(AF_UNIX, SOCK_STREAM, 0, g_controller_fds);
     if (r < 0) {
         LOG_ERR("socketpair failed: %d", r);
