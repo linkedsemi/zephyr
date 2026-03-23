@@ -4,7 +4,6 @@
 
  #ifndef ZEPHYR_INCLUDE_COMPAT_UNISTD_COMPAT_H_
  #define ZEPHYR_INCLUDE_COMPAT_UNISTD_COMPAT_H_
-
  #include <zephyr/posix/posix_types.h>
 
  typedef unsigned long rlim_t;
@@ -67,6 +66,7 @@
  pid_t fork(void);
  int dup(int __fildes);
  int dup2(int __fildes, int __fildes2);
+ int	access (const char *__path, int __amode);
  /* Note: access() is defined in basu_zephyr_compat.h as basu_access_fallback */
  int execve(const char *__path, char * const __argv[], char * const __envp[]);
  int dirfd(void *);
@@ -75,5 +75,14 @@
  #ifdef __cplusplus
  }
  #endif
+	/* max stack size */
 
+
+#define STDIN_FILENO    0       /* standard input file descriptor */
+#define STDOUT_FILENO   1       /* standard output file descriptor */
+#define STDERR_FILENO   2       /* standard error file descriptor */
+
+
+
+#define WIFCONTINUED(status) ((status)==0xffff)
  #endif /* ZEPHYR_INCLUDE_COMPAT_UNISTD_COMPAT_H_ */

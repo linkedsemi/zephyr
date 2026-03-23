@@ -78,9 +78,9 @@ typedef struct {
 #define SIG_UNBLOCK 2
 #endif
 
-#define SIG_DFL ((void *)0)
-#define SIG_IGN ((void *)1)
-#define SIG_ERR ((void *)-1)
+#define SIG_DFL ((void (*)(int))0)
+#define SIG_IGN ((void (*)(int))1)
+#define SIG_ERR ((void (*)(int))-1)
 
 #define SI_USER 1
 #define SI_QUEUE 2
