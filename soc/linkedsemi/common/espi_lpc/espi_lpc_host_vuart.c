@@ -144,7 +144,7 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
         }
 
         if (!(iir & (IIR_RDA | IIR_THRE | IIR_RLS))) {
-            iir |= IIR_NOPEND;
+            iir = IIR_NOPEND;
         }
     }
 
@@ -156,7 +156,7 @@ static void host_vuart_report_up_irq(const struct device *dev)
 {
     const struct host_vuart_cfg *cfg = dev->config;
     uint8_t iir = host_vuart_calc_iir(dev);
-    if (!(iir & IIR_NOPEND))  {
+    if (!(iir == IIR_NOPEND))  {
         if (cfg->up_irq) {
             espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
         }
@@ -183,17 +183,12 @@ static void host_vuart_local_isr(const void *arg)
 {
     const struct device *dev = (const struct device *)arg;
     const struct host_vuart_cfg *cfg = dev->config;
-    uint8_t iir = host_vuart_calc_iir(dev);
 
     irq_disable(cfg->local_irq);
     if (!cfg->up_irq) {
         return;
     }
 
-   if (iir & IIR_NOPEND) {
-        irq_enable(cfg->local_irq);
-        return;
-    }
 
     espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
 }
