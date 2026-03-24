@@ -8,6 +8,7 @@ zephyr_library_sources(
 )
 zephyr_library_include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/include
+	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/basu/zephyr/include
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/dbus-broker/src
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/dbus-broker/zephyr/include
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/dbus-broker/subprojects/libcstdaux-1/src
@@ -16,6 +17,10 @@ zephyr_library_include_directories(
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/dbus-broker/subprojects/libcdvar-1/src
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/dbus-broker/subprojects/libcutf8-1/src
 	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/basu/include
+	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/basu/src
+	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/basu/src/libsystemd
+	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/basu/src/libsystemd/sd-bus
+	${CMAKE_CURRENT_SOURCE_DIR}/../../../modules/lib/basu/src/basic
 )
 
 zephyr_library_link_libraries(

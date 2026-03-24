@@ -10,7 +10,7 @@
 #include "../../../modules/lib/dbus-broker/src/broker/broker.h"
 #include "../../../modules/lib/dbus-broker/src/bus/peer.h"
 
-LOG_MODULE_REGISTER(SOCKETPOOL, LOG_LEVEL_DBG);
+LOG_MODULE_REGISTER(SOCKETPOOL, LOG_LEVEL_INF);
 
 /*
  * Socketpool configuration
@@ -204,7 +204,10 @@ int socketpool_free(int broker_fd, int client_fd)
         return 0;
     }
 
-    /* Mark as available */
+    /* Mark as available - DO NOT reset FDs to -1!
+     * The FDs remain valid and will be reused on next allocation.
+     * This prevents pool capacity from shrinking.
+     */
     entry->in_use = false;
     socketpool.available_pairs++;
 
@@ -262,7 +265,7 @@ int socketpool_add_peer_to_broker(Broker *broker, int broker_fd)
     /* Do NOT register the peer here - let the peer register itself via Hello message */
     /* peer_register(peer); */
 
-    LOG_INF("[Socketpool] Peer created: fd=%d, peer_id=%lu (will register via Hello)", broker_fd, peer->id);
+    LOG_DBG("[Socketpool] Peer created: fd=%d, peer_id=%d (will register via Hello)", broker_fd, peer->id);
 
     /* Spawn the peer (open the connection) */
     r = peer_spawn(peer);

@@ -29,12 +29,13 @@ extern Broker *g_broker;
 int connect_to_dbroker(sd_bus **bus, int *socket_fd);
 
 /**
- * @brief Request a connection from the socketpool
- * @details This function allocates a socketpair from the pool and returns
- *          the client's fd. The broker will use the other end to create a peer.
- * @param client_fd [out] Pointer to store the client's fd
+ * @brief Disconnect from the D-Bus broker
+ * @details This function integrates the sd-bus flush, close and unref to reliably
+ *          disconnect from the broker. And for socketpair pool solution, it will
+ *          release the socketpair and return the socketpair to the pool.
+ * @param bus Pointer to the in-use sd-bus object
  * @return 0 on success, negative error code on failure
  */
-int request_dbroker_connection(int *client_fd);
+int disconnect_from_dbroker(sd_bus *bus);
 
 #endif /* DBUS_BROKER_H */
