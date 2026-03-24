@@ -129,29 +129,26 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
     k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
     uint8_t iir = (cfg->retain->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
     uint8_t lsr = cfg->reg->LSR;
-    if (ptr_data->break_pending) {
+    uint8_t ier = cfg->retain->data_reg.ier;
+
+    if (ptr_data->break_pending && (ier & IER_ELSI)) {
         iir |= IIR_RLS;
     }
     else {
-        if(cfg->vuart_fifo_base->host_rx_from_vuart) {
-            if(host_vuart_rx_available(dev)) {
-                iir |= IIR_RDA;
-            }
-        }else {
-            if(lsr_rx_avail(lsr)) {
-                iir |= IIR_RDA;
-            }
+        bool rx_avail = cfg->vuart_fifo_base->host_rx_from_vuart ? host_vuart_rx_available(dev) : lsr_rx_avail(lsr);
+        if (rx_avail && (ier & IER_RDA)) {
+            iir |= IIR_RDA;
         }
-        if(!(iir&IIR_RDA) && lsr_tx_empty(lsr))
-        {
+        else if (!(iir & IIR_RDA) && lsr_tx_empty(lsr) && (ier & IER_THRE)) {
             iir |= IIR_THRE;
         }
-        if(!(iir&(IIR_RDA|IIR_THRE)))
-        {
+
+        if (!(iir & (IIR_RDA | IIR_THRE | IIR_RLS))) {
             iir |= IIR_NOPEND;
         }
     }
-    k_spin_unlock(&ptr_data->lock,key);
+
+    k_spin_unlock(&ptr_data->lock, key);
     return iir;
 }
 
@@ -159,10 +156,7 @@ static void host_vuart_report_up_irq(const struct device *dev)
 {
     const struct host_vuart_cfg *cfg = dev->config;
     uint8_t iir = host_vuart_calc_iir(dev);
-
-  if((((iir&IIR_RLS)==IIR_RLS) && (cfg->retain->data_reg.ier&IER_ELSI))||
-      ((iir&IIR_RDA) && (cfg->retain->data_reg.ier&IER_RDA)) ||
-       ((iir&IIR_THRE) && (cfg->retain->data_reg.ier&IER_THRE))) {
+    if (!(iir & IIR_NOPEND))  {
         if (cfg->up_irq) {
             espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
         }
@@ -189,10 +183,18 @@ static void host_vuart_local_isr(const void *arg)
 {
     const struct device *dev = (const struct device *)arg;
     const struct host_vuart_cfg *cfg = dev->config;
+    uint8_t iir = host_vuart_calc_iir(dev);
+
     irq_disable(cfg->local_irq);
     if (!cfg->up_irq) {
         return;
     }
+
+   if (iir & IIR_NOPEND) {
+        irq_enable(cfg->local_irq);
+        return;
+    }
+
     espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
 }
 
@@ -338,12 +340,12 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     if (ptr_data->break_pending) {
         *val |= LSR_BI;
         ptr_data->break_pending = false;
-    }
-    k_spin_unlock(&ptr_data->lock, key);
-
-    if (lsr & LSR_BI) {
+    } else if (lsr & LSR_BI) 
+    {
         *val |= LSR_BI;
     }
+    
+    k_spin_unlock(&ptr_data->lock, key);
 
     if (lsr_tx_empty(lsr))
     {
