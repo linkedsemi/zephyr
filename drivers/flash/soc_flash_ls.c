@@ -480,20 +480,20 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
 	priv->env.addr4b = cfg->addr4b;
 	priv->env.writing = false;
+	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
+	irq_enable(FLASH_SWINT_NUM); // Configure the flash irq function before  initializing mbox, mbox will trigger flash irq in work handler
 	k_sem_init(&priv->sem, 1, 1);
 	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
-	k_work_init(&priv->worker,delegation_server_work_handler);
-	mbox_set_enabled_dt(&cfg->mbox_tx,true);
-	mbox_register_callback_dt(&cfg->mbox_rx,delegation_server_mbox_callback,NULL);
-	mbox_set_enabled_dt(&cfg->mbox_rx,true);
 	cfg->shared->reg = cfg->reg;
 	cfg->shared->busy = false;
 	cfg->shared->suspend_request = false;
 	cfg->shared->hold_ack = false;
-	priv->dev = dev;
+	priv->dev = dev; // make sure the config is initialized before the work handler is submitted
+	k_work_init(&priv->worker,delegation_server_work_handler);
+	mbox_set_enabled_dt(&cfg->mbox_tx,true);
+	mbox_register_callback_dt(&cfg->mbox_rx,delegation_server_mbox_callback,NULL);
+	mbox_set_enabled_dt(&cfg->mbox_rx,true);
 	#endif
-	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
-	irq_enable(FLASH_SWINT_NUM);
 	return 0;
 }
 
