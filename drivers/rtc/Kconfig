@@ -60,5 +60,6 @@ source "drivers/rtc/Kconfig.rv8263"
 source "drivers/rtc/Kconfig.xmc4xxx"
 source "drivers/rtc/Kconfig.nxp_irtc"
 source "drivers/rtc/Kconfig.ls" 
+source "drivers/rtc/Kconfig.ins5710c"
 
 endif # RTC

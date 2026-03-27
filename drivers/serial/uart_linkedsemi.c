@@ -51,7 +51,6 @@ struct uart_ls_config_t {
 #endif
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	uart_irq_config_func_t irq_config_func;
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_irq_config_func_t irq_deconfig_func;))
 #endif		
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
@@ -63,7 +62,6 @@ struct uart_ls_data_t
 	uart_irq_callback_user_data_t user_cb;
 	void *user_parm;
 	uint32_t irq;
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (struct k_sem reg_sem;))
 };
 
 static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
@@ -71,18 +69,13 @@ static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_OE)) {
 	}
 
 	if (!LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE)) {
-		IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 		return -1;
 	}
 	*p_char = LL_UART_ReceiveData((reg_uart_t *)uart_handle->UARTX);
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	return 0;
 }
@@ -92,18 +85,13 @@ static void uart_ls_poll_out(const struct device *dev, unsigned char p_char)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	while (1) {
 		if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF))
 		{
 			LL_UART_TransmitData((reg_uart_t *)uart_handle->UARTX,p_char);
-			IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 			return;
 		}
 	}
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 }
 #ifdef CONFIG_SOC_LE5010
 #ifdef CONFIG_PM
@@ -131,7 +119,7 @@ static void uart_ls_pm_policy_state_lock_get(const struct device *dev)
 #endif /* CONFIG_PM */
 #endif /*SOC_LE5010*/
 
-static int uart_ls_reinit(const struct device *dev)
+static int uart_ls_init(const struct device *dev)
 {
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
@@ -193,56 +181,12 @@ static int uart_ls_reinit(const struct device *dev)
 	#endif
 #endif
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
-
 	#ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	dev_config->irq_config_func(dev);
 	#endif
 
 	return ret; 
 }
-
-static int uart_ls_init(const struct device *dev)
-{
-#if defined(CONFIG_UART_SHARE_REGISTER)
-    struct uart_ls_data_t *dev_data = dev->data;
-    k_sem_init(&dev_data->reg_sem, 1, 1);
-#endif
-    return uart_ls_reinit(dev);
-}
-
-#if defined(CONFIG_UART_SHARE_REGISTER)
-static int uart_ls_deinit(const struct device *dev)
-{
-	const struct uart_ls_config_t *dev_config = dev->config;
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
-	#ifdef CONFIG_UART_INTERRUPT_DRIVEN
-	dev_config->irq_deconfig_func(dev);
-	#endif
-
-	return 0;
-}
-
-static int uart_ls_sem_take(const struct device *dev, k_timeout_t timeout)
-{
-    struct uart_ls_data_t *dev_data = dev->data;
-    if (!k_is_in_isr()) {
-        k_sem_take(&dev_data->reg_sem, timeout);
-    }
-    return 0;
-}
-
-static int uart_ls_sem_give(const struct device *dev)
-{
-    struct uart_ls_data_t *dev_data = dev->data;
-    if (!k_is_in_isr()) {
-        k_sem_give(&dev_data->reg_sem);
-    }
-    return 0;
-}
-#endif
 
 static int uart_ls_err_check(const struct device *dev)
 {
@@ -278,11 +222,7 @@ static void uart_ls_irq_tx_enable(const struct device *dev)
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS); //transmission complete interrupt enable
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	// uart_ls_isr(dev);
 	trigger_irq(data->irq);
@@ -305,11 +245,7 @@ void uart_ls_irq_tx_disable(const struct device *dev)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_TXS);
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 }
 
 int uart_ls_irq_tx_ready(const struct device *dev)
@@ -317,11 +253,7 @@ int uart_ls_irq_tx_ready(const struct device *dev)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	int ret = (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFNF) == UART_SR_TFNF)? true : false;
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	return ret;
 }
@@ -331,11 +263,7 @@ void uart_ls_irq_rx_enable(const struct device *dev)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	LL_UART_EnableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD);
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	// #ifdef CONFIG_PM
 	// 	uart_ls_pm_policy_state_lock_get(dev);
@@ -359,11 +287,7 @@ void uart_ls_irq_rx_disable(const struct device *dev)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	LL_UART_DisableIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD);
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	// #ifdef CONFIG_PM
 	// 	uart_ls_pm_policy_state_lock_put(dev);
@@ -375,11 +299,7 @@ int uart_ls_irq_tx_complete(const struct device *dev)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	int ret = (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_TFEM) == UART_SR_TFEM)? true : false;
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	return ret;
 }
@@ -389,11 +309,7 @@ int uart_ls_irq_rx_ready(const struct device *dev)  //fifo no empty：Returen 1
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	int ret = (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE) == UART_SR_RFNE)? true : false;
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	return ret;
 }
@@ -410,11 +326,7 @@ void uart_ls_irq_err_disable(const struct device *dev)
 
 int uart_ls_irq_is_pending(const struct device *dev)
 {
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	int ret = uart_ls_irq_rx_ready(dev) || uart_ls_irq_rx_ready(dev);
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	return ret;
 }
@@ -462,8 +374,6 @@ int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int num_tx = 0U;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	while ((len-num_tx)>0 &&
 	       (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_TFNF) == UART_SR_TFNF)) {
 		/* TXE flag will be cleared with byte write to DR|RDR register */
@@ -471,8 +381,6 @@ int uart_ls_fifo_fill(const struct device *dev, const uint8_t *tx_data,int len)
 		/* Send a character (8bit , parity none) */
 		LL_UART_TransmitData((reg_uart_t *)uart_handle->UARTX,tx_data[num_tx++]);
 	}
-
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
 
 	return num_tx;
 }
@@ -483,8 +391,6 @@ int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int num_rx = 0U;
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_take(dev, K_FOREVER);))
-
 	while (((size - num_rx) > 0) &&
 	       LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX, UART_SR_RFNE)) {
 		/* RXNE flag will be cleared upon read from DR|RDR register */
@@ -493,8 +399,6 @@ int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 		rx_data[num_rx++] = LL_UART_ReceiveData((reg_uart_t *)uart_handle->UARTX);
 	}
 
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (uart_sem_give(dev);))
-
 	return num_rx;
 }
 
@@ -502,13 +406,6 @@ int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 #endif
 
 static const  struct uart_driver_api uart_ls_api = {
-#if defined(CONFIG_UART_SHARE_REGISTER)
-	.init = uart_ls_init,
-	.reinit = uart_ls_reinit,
-	.deinit = uart_ls_deinit,
-	.sem_take = uart_ls_sem_take,
-	.sem_give = uart_ls_sem_give,
-#endif
 	.poll_in = uart_ls_poll_in,
 	.poll_out = uart_ls_poll_out,
 	.err_check = uart_ls_err_check,
@@ -534,8 +431,7 @@ static const  struct uart_driver_api uart_ls_api = {
 
 #if defined(CONFIG_UART_INTERRUPT_DRIVEN)	
 #define LS_UART_IRQ_HANDLER_DECL(index)				\
-	static void uart_ls_irq_config_func_##index(const struct device *dev);\
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (static void uart_ls_irq_deconfig_func_##index(const struct device *dev);))
+	static void uart_ls_irq_config_func_##index(const struct device *dev);
 
 #define LS_UART_IRQ_HANDLER(index)					\
 static void uart_ls_irq_config_func_##index(const struct device *dev)	\
@@ -547,12 +443,7 @@ static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 	irq_enable(DT_INST_IRQN(index));				\
 	struct uart_ls_data_t *data = dev->data;\
 	data->irq = DT_INST_IRQN(index);\
-}\
-IF_ENABLED(CONFIG_UART_SHARE_REGISTER, \
-(static void uart_ls_irq_deconfig_func_##index(const struct device *dev)	\
-{									\
-	irq_disable(DT_INST_IRQN(index));				\
-}))
+}
 #else
 #define LS_UART_IRQ_HANDLER_DECL(index) /* Not used */
 #define LS_UART_IRQ_HANDLER(index) /* Not used */
@@ -560,8 +451,7 @@ IF_ENABLED(CONFIG_UART_SHARE_REGISTER, \
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 #define UART_IRQ_HANDLER_FUNC(index)				\
-	.irq_config_func = uart_ls_irq_config_func_##index,\
-	IF_ENABLED(CONFIG_UART_SHARE_REGISTER, (.irq_deconfig_func = uart_ls_irq_deconfig_func_##index,))
+	.irq_config_func = uart_ls_irq_config_func_##index,
 #else
 #define UART_IRQ_HANDLER_FUNC(index) /* Not used */
 #endif

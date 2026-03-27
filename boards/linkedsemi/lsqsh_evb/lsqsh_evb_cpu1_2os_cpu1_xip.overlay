@@ -1,44 +1,18 @@
-/*
- * Copyright (c) 2025 linkedsemi
- * SPDX-License-Identifier: Apache-2.0
- */
 
-#include "lsqsh_evb_pinctrl.dtsi"
 
-#undef SRAM_TOTAL_SIZE
-#define SRAM_TOTAL_SIZE DT_SIZE_K(512 + 760)
 
-#undef SRAM_RO_SIZE
-#define SRAM_RO_SIZE    DT_SIZE_K(512)
-
-#undef SRAM_RW_SIZE
-#define SRAM_RW_SIZE    (SRAM_TOTAL_SIZE - SRAM_RO_SIZE)
 
 &chosen {
-    zephyr,flash = &sram_ro;
-    zephyr,flash-controller = &qspi1;
-    zephyr,sram = &sram;
-    zephyr,console = &uart1;
-    zephyr,shell-uart = &uart1;
+    zephyr,flash = &flash_xip_partition;
 };
 
 &soc {
-    /delete-node/ memory@10000000;
-    /delete-node/ memory@100c0000;
-    /delete-node/ memory@10100000;
-    sram_ro: memory@10000000 {
-        compatible = "mmio-sram";
-        reg = <0x10000000 SRAM_RO_SIZE>;
+    flash_xip_partition: flash@8010100 {
+        compatible = "soc-nv-flash";
+        reg = <0x8010100 DT_SIZE_M(12)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
     };
-
-    sram: memory@10040000 {
-        compatible = "mmio-sram";
-        reg = <(0x10000000 + SRAM_RO_SIZE) SRAM_RW_SIZE>;
-    };
-};
-
-&cpu2 {
-    status = "disabled";
 };
 
 &qspi1 {
@@ -99,33 +73,5 @@
             reg = <0x01e00000 DT_SIZE_M(2)>;
             attr = <PMP_R>;
         };
-    };
-};
-
-
-&pinctrl {
-    /* UART */
-    /omit-if-no-ref/uart7_tx_pe01: uart7_tx_pe01 {
-        pinmux = <UART7_TXD_FUNC3_PE01_PINMUX>;
-    };
-    /omit-if-no-ref/uart7_rx_pe00: uart7_rx_pe00 {
-        pinmux = <UART7_RXD_FUNC3_PE00_PINMUX>;
-        input-enable;
-    };
-
-    /* I2C */
-    DEFINE_PINCTRL_PRODUCER_I2C(I2C14, PK10, PK11, I2C14_SCL_FUNC2_PK10_PINMUX, I2C14_SDA_FUNC2_PK11_PINMUX)
-};
-
-
-&i2c14 {
-    DEFINE_PINCTRL_CONSUMER_I2C(I2C14, PK10, PK11)
-    status = "okay";
-    label = "i2c-14";
-    ins5710c: ins5710c@32 {
-        compatible = "dapu,ins5710c";
-        reg = <0x32>;
-        status = "okay";
-        label = "ins5710c";
     };
 };

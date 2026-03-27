@@ -14,3 +14,10 @@ properties:
 
   cs-gpios:
     type: phandle-array
+
+  sysevent-base:
+    type: int
+    required: true
+
+  mbox:
+    type: phandle

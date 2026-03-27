@@ -48,7 +48,9 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash_controller)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
 #endif
+#if !defined(CONFIG_SMP)
 BUILD_ASSERT(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
+#endif
 
 static void cpu_sleep_mode_config(uint8_t deep)
 {
@@ -77,7 +79,7 @@ extern char __SHMEM_start[];
 extern char __SHMEM_end[];
 extern char __SHMEM_size[];
 
-__no_optimization void cpu1_cache_region_init(void)
+__no_optimization static void cpu1_cache_region_init(void)
 {
     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
@@ -113,7 +115,7 @@ __no_optimization void cpu1_cache_region_init(void)
     }
 }
 
-__no_optimization void cpu2_cache_region_init(void)
+__no_optimization static void cpu2_cache_region_init(void)
 {
     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
@@ -173,7 +175,7 @@ enum iopmp_channel {
 #define IOPMP_DMA_CHANNEL_MIN IOPMP_DMAC1_ETH1_EMMC1
 #define IOPMP_DMA_CHANNEL_MAX IOPMP_USB2_SHA512_LTPI
 
-void iopmp_region_init(void)
+static void iopmp_region_init(void)
 {
     uint32_t dev;
     uint32_t chn;
@@ -495,6 +497,7 @@ __ramfunc static void high_frequency_init()
     if (!env.dual_mode_only) {
         pinmux_hal_flash_quad_init();
     }
+    hal_flashx_continuous_mode_reset(&env);
     hal_flashx_continuous_mode_start(&env);
     lscache_cache_enable(1);
     peripheral_init();
@@ -587,7 +590,7 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
     }
 }
 
-void soc_prep_hook(void)
+__weak void soc_prep_hook(void)
 {
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     cpu1_cache_region_init();
@@ -596,7 +599,7 @@ void soc_prep_hook(void)
 #endif
 }
 
-void soc_early_init_hook(void)
+__weak void soc_early_init_hook(void)
 {
     uint32_t value = __get_MSTATUS();
     MODIFY_REG(value, 0x6000, 0x2000);
@@ -620,8 +623,6 @@ void soc_early_init_hook(void)
     for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
         irq_disable(irq);
     }
-
-
 
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
@@ -684,7 +685,7 @@ extern uint8_t flash_ls_read_ear(const struct device *dev);
 extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
 extern struct hal_flash_env *flash_ls_env(const struct device *dev);
 
-int flash_xip_prepare(const struct device *flash_dev)
+static int flash_xip_prepare(const struct device *flash_dev)
 {
     flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_ACTIVE,0,NULL);
 
@@ -817,7 +818,7 @@ __maybe_unused int boot_cpu2(const struct device *flash_dev, uint32_t cpu2_boot_
 #define BOOTRAM_STARTUP_PART_FLAG_MASK       (0xf)
 #define BOOTRAM_STARTUP_PART_FLAG_POS        (0)
 
-__maybe_unused void soc_late_init_hook(void)
+__weak void soc_late_init_hook(void)
 {
     const struct device *flash_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
     struct hal_flash_env *env = flash_ls_env(flash_dev);
@@ -828,9 +829,11 @@ __maybe_unused void soc_late_init_hook(void)
         SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     }
 
-    if (is_app_cpu_running()) {
+    if (is_app_cpu_running() && is_app_cpu_xip_in_sec_flash()) {
         flash_xip_prepare(flash_dev);
         return;
+    } else {
+        flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_INACTIVE,0,NULL);
     }
 #if defined(CONFIG_BOOT_CPU2)
     if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
@@ -851,7 +854,7 @@ __maybe_unused void soc_late_init_hook(void)
 #endif
 }
 #else
-void soc_late_init_hook(void)
+__weak void soc_late_init_hook(void)
 {
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
     ls_otbn_delegation_client_chanels_init();

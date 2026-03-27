@@ -160,6 +160,12 @@ void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 	espi_lpc_mbox_msg_send(&exch->mbox_tx,&kcs_msg,sizeof(kcs_msg));
 }
 
+void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx)
+{
+	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,};
+	espi_lpc_mbox_msg_send(&exch->mbox_tx,&vw_msg,sizeof(vw_msg));
+}
+
 #else
 void host_bmc_msg_exch_init(const struct host_bmc_msg_exch *exch)
 {
@@ -194,6 +200,12 @@ void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 {
 	enum kcs_hb_msg_type kcs_msg = KCS_OBF_EVENT;
 	exch->peer_rx_callback(exch->peer,&kcs_msg);
+}
+
+void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx)
+{
+	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,};
+	exch->peer_rx_callback(exch->peer,&vw_msg);
 }
 
 #endif
