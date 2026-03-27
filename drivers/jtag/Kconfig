@@ -15,7 +15,7 @@ if JTAG
 
 config JTAG_SHELL
 	bool "Enable JTAG Shell"
-	default y
+	default n
 	depends on SHELL
 	help
 	  Enable JTAG Shell for testing.
