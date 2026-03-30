@@ -22,6 +22,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "eth_dwmac_priv.h"
 #include "eth.h"
+#include <soc.h>
 
 
 /*
@@ -116,7 +117,7 @@ static enum ethernet_hw_caps dwmac_caps(const struct device *dev)
 		caps |= ETHERNET_LINK_10BASE_T | ETHERNET_LINK_100BASE_T;
 	}
 
-	caps |= ETHERNET_PROMISC_MODE;
+	caps |= ETHERNET_PROMISC_MODE | ETHERNET_HW_RX_CHKSUM_OFFLOAD;
 
 	return caps;
 }
@@ -133,22 +134,6 @@ static inline int net_pkt_get_nbfrags(struct net_pkt *pkt)
 	return nbfrags;
 }
 
-void dwmac_tx_lock(const struct device *dev)
-{
-	struct dwmac_priv *p = dev->data;
-	if (p->need_tx_mutex) {
-		k_mutex_lock(&p->tx_mutex, K_FOREVER);
-	}
-}
-
-void dwmac_tx_unlock(const struct device *dev)
-{
-	struct dwmac_priv *p = dev->data;
-	if (p->need_tx_mutex) {
-		k_mutex_unlock(&p->tx_mutex);
-	}
-}
-
 static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 {
 	struct dwmac_priv *p = dev->data;
@@ -157,8 +142,6 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	unsigned int d_idx;
 	struct dwmac_dma_desc *d;
 	uint32_t des2_flags, des3_flags;
-
-	dwmac_tx_lock(dev);
 
 	LOG_DBG("pkt len/frags=%d/%d", pkt_len, net_pkt_get_nbfrags(pkt));
 
@@ -222,8 +205,6 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	/* lastly notify the hardware */
 	REG_WRITE(DMA_CHn_TXDESC_TAIL_PTR(0), TXDESC_PHYS_L(d_idx));
 
-	dwmac_tx_unlock(dev);
-
 	return 0;
 
 abort:
@@ -234,7 +215,6 @@ abort:
 		net_pkt_frag_unref(frag);
 		k_sem_give(&p->free_tx_descs);
 	}
-	dwmac_tx_unlock(dev);
 
 	return -ENOMEM;
 }
@@ -598,16 +578,9 @@ static void phy_link_state_changed(const struct device *phy_dev,
 	}
 }
 
-static void dwmac_iface_init(struct net_if *iface)
+static void net_link_state_detect(const struct device *dev, struct net_if *iface)
 {
-	struct dwmac_priv *p = net_if_get_device(iface)->data;
-	const struct device *const dev = p->dev;
-	uint32_t reg_val;
-
-	__ASSERT(!p->iface, "interface already initialized?");
-	p->iface = iface;
-
-	ethernet_init(iface);
+	struct dwmac_priv *p = dev->data;
 
 	if (device_is_ready(p->phy_dev)) {
 		struct phy_link_state link_state;
@@ -620,32 +593,56 @@ static void dwmac_iface_init(struct net_if *iface)
 			}
 			phy_link_state_changed(p->phy_dev, &link_state, (void *)dev);
 		} else {
-			bool net_if_carrier_off_flag = false;
 			ret = phy_get_link_state(p->phy_dev, &link_state);
 			if (ret != 0) {
 				LOG_ERR("Failed to get fixed link state: %d", ret);
 				return;
 			}
 			if (!link_state.is_up) {
-				net_if_carrier_off_flag = true;
 				/* Do not start the interface until PHY link is up */
 				net_if_carrier_off(iface);
 			}
 			phy_link_callback_set(p->phy_dev, phy_link_state_changed, (void *)dev);
-			if (net_if_carrier_off_flag) {
-				ret = phy_get_link_state(p->phy_dev, &link_state);
-				if (ret != 0) {
-					LOG_ERR("Failed to get fixed link state: %d", ret);
-					return;
-				}
-				if (link_state.is_up) {
-					net_if_carrier_on(iface);
-				}
-			}
 		}
 	} else {
 		LOG_ERR("PHY device not ready");
 	}
+}
+
+static void dwmac_dma_run(const struct device *const dev)
+{
+	struct dwmac_priv *p = dev->data;
+	uint32_t reg_val;
+
+	/* start up TX/RX */
+	reg_val = REG_READ(DMA_CHn_TX_CTRL(0));
+	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St | (32 << DMA_CHn_TX_CTRL_PBL_POS));
+	reg_val = REG_READ(DMA_CHn_RX_CTRL(0));
+	REG_WRITE(DMA_CHn_RX_CTRL(0), reg_val | DMA_CHn_RX_CTRL_SR);
+	reg_val = REG_READ(MAC_CONF);
+	reg_val |= MAC_CONF_CST | MAC_CONF_TE | MAC_CONF_RE;
+	REG_WRITE(MAC_CONF, reg_val);
+
+	/* unmask IRQs */
+	REG_WRITE(DMA_CHn_IRQ_ENABLE(0),
+		  DMA_CHn_IRQ_ENABLE_TIE |
+		  DMA_CHn_IRQ_ENABLE_RIE |
+		  DMA_CHn_IRQ_ENABLE_NIE |
+		  DMA_CHn_IRQ_ENABLE_FBEE |
+		  DMA_CHn_IRQ_ENABLE_CDEE |
+		  DMA_CHn_IRQ_ENABLE_AIE);
+}
+
+static void dwmac_iface_init(struct net_if *iface)
+{
+	struct dwmac_priv *p = net_if_get_device(iface)->data;
+	const struct device *const dev = p->dev;
+
+	__ASSERT(!p->iface, "interface already initialized?");
+	p->iface = iface;
+
+	ethernet_init(iface);
+	net_link_state_detect(dev, iface);
 
 	net_if_set_link_addr(iface, p->mac_addr, sizeof(p->mac_addr),
 			     NET_LINK_ETHERNET);
@@ -668,53 +665,7 @@ static void dwmac_iface_init(struct net_if *iface)
 			RX_REFILL_THREAD_PRIORITY, 0, K_NO_WAIT);
 	k_thread_name_set(&p->rx_refill_thread, "dwmac_rx_refill");
 
-	/* start up TX/RX */
-	reg_val = REG_READ(DMA_CHn_TX_CTRL(0));
-	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St | (32 << DMA_CHn_TX_CTRL_PBL_POS));
-	reg_val = REG_READ(DMA_CHn_RX_CTRL(0));
-	REG_WRITE(DMA_CHn_RX_CTRL(0), reg_val | DMA_CHn_RX_CTRL_SR);
-	reg_val = REG_READ(MAC_CONF);
-	reg_val |= MAC_CONF_CST | MAC_CONF_TE | MAC_CONF_RE;
-	REG_WRITE(MAC_CONF, reg_val);
-
-	/* unmask IRQs */
-	REG_WRITE(DMA_CHn_IRQ_ENABLE(0),
-		  DMA_CHn_IRQ_ENABLE_TIE |
-		  DMA_CHn_IRQ_ENABLE_RIE |
-		  DMA_CHn_IRQ_ENABLE_NIE |
-		  DMA_CHn_IRQ_ENABLE_FBEE |
-		  DMA_CHn_IRQ_ENABLE_CDEE |
-		  DMA_CHn_IRQ_ENABLE_AIE);
-
-	LOG_DBG("done");
-}
-
-static void dwmac_iface_reinit(struct net_if *iface)
-{
-	__ASSERT(iface, "interface not initialized?");
-	struct dwmac_priv *p = net_if_get_device(iface)->data;
-	uint32_t reg_val;
-	__ASSERT(p->iface, "interface already initialized?");
-
-	k_sem_init(&p->free_tx_descs, NB_TX_DESCS - 1, NB_TX_DESCS - 1);
-	k_sem_init(&p->free_rx_descs, NB_RX_DESCS - 1, NB_RX_DESCS - 1);
-	/* start up TX/RX */
-	reg_val = REG_READ(DMA_CHn_TX_CTRL(0));
-	REG_WRITE(DMA_CHn_TX_CTRL(0), reg_val | DMA_CHn_TX_CTRL_St | (32 << DMA_CHn_TX_CTRL_PBL_POS));
-	reg_val = REG_READ(DMA_CHn_RX_CTRL(0));
-	REG_WRITE(DMA_CHn_RX_CTRL(0), reg_val | DMA_CHn_RX_CTRL_SR);
-	reg_val = REG_READ(MAC_CONF);
-	reg_val |= MAC_CONF_CST | MAC_CONF_TE | MAC_CONF_RE;
-	REG_WRITE(MAC_CONF, reg_val);
-
-	/* unmask IRQs */
-	REG_WRITE(DMA_CHn_IRQ_ENABLE(0),
-		  DMA_CHn_IRQ_ENABLE_TIE |
-		  DMA_CHn_IRQ_ENABLE_RIE |
-		  DMA_CHn_IRQ_ENABLE_NIE |
-		  DMA_CHn_IRQ_ENABLE_FBEE |
-		  DMA_CHn_IRQ_ENABLE_CDEE |
-		  DMA_CHn_IRQ_ENABLE_AIE);
+	dwmac_dma_run(dev);
 
 	LOG_DBG("done");
 }
@@ -725,6 +676,7 @@ int dwmac_probe(const struct device *dev)
 	int ret;
 	uint32_t reg_val;
 	__maybe_unused k_timepoint_t timeout;
+	p->dev = dev;
 
 	ret = dwmac_bus_init(p);
 	if (ret != 0) {
@@ -736,14 +688,14 @@ int dwmac_probe(const struct device *dev)
 	__ASSERT(FIELD_GET(MAC_VERSION_SNPSVER, reg_val) >= 0x40,
 		 "This driver expects DWC-ETHERNET version >= 4.00");
 #if defined(CONFIG_MDIO_RESET_MAC)
-	if (!p->is_mdio_reset_mac) {
+	if (!p->mdio_dev) {
 #endif
 		/* resets all of the MAC internal registers and logic */
 		REG_WRITE(DMA_MODE, DMA_MODE_SWR);
 		timeout = sys_timepoint_calc(K_MSEC(100));
 		while (REG_READ(DMA_MODE) & DMA_MODE_SWR) {
 			if (sys_timepoint_expired(timeout)) {
-				__ASSERT(0, "unable to reset hardware");
+				LOG_ERR("unable to reset hardware");
 				return -EIO;
 			}
 		}
@@ -778,50 +730,17 @@ int dwmac_probe(const struct device *dev)
 	return 0;
 }
 
-int dwmac_init(const struct device *dev)
+#if defined(CONFIG_NETWORKING_MODULE)
+int dwmac_exit(const struct device *const dev)
 {
 	struct dwmac_priv *p = dev->data;
-	p->dev = dev;
-	k_mutex_init(&p->tx_mutex);
-	return dwmac_probe(dev);
+
+	k_thread_abort(&p->rx_refill_thread);
+	dwmac_platform_exit(dev);
+
+	return 0;
 }
-
-int dwmac_reinit(const struct device *const dev)
-{
-	struct dwmac_priv *p = dev->data;
-	int ret = 0;
-
-	memset(&p->free_tx_descs, 0, sizeof(struct k_sem));
-	memset(&p->free_rx_descs, 0, sizeof(struct k_sem));
-	p->tx_desc_head = 0;
-	p->tx_desc_tail = 0;
-	p->rx_desc_head = 0;
-	p->rx_desc_tail = 0;
-#if defined(CONFIG_MMU)
-	p->tx_descs_phys = NULL;
-	p->rx_descs_phys = NULL;
 #endif
-	memset(p->tx_frags, 0, NB_TX_DESCS * sizeof(struct net_buf));
-	memset(p->rx_frags, 0, NB_RX_DESCS * sizeof(struct net_buf));
-	p->rx_pkt = NULL;
-	p->rx_bytes = 0;
-
-	ret = dwmac_probe(dev);
-	dwmac_iface_reinit(p->iface);
-	dwmac_tx_unlock(dev);
-	p->need_tx_mutex = false;
-
-	return ret;
-}
-
-void dwmac_deinit(const struct device *const dev)
-{
-	struct dwmac_priv *p = dev->data;
-	dwmac_tx_lock(dev);
-	p->need_tx_mutex = true;
-	dwmac_platform_deinit(dev);
-	REG_WRITE(DMA_MODE, DMA_MODE_SWR);
-}
 
 const struct ethernet_api dwmac_api = {
 	.iface_api.init		= dwmac_iface_init,
@@ -830,3 +749,37 @@ const struct ethernet_api dwmac_api = {
 	.send			= dwmac_send,
 	.get_phy		= dwmac_get_phy,
 };
+
+#include <zephyr/shell/shell.h>
+#define REG_SHOW(r) LOG_INF("r:%s:%#lx v:%#x", #r, (uintptr_t)r, REG_READ(r))
+static int cmd_eth_dwmac_reg_show(const struct shell *sh, size_t argc, char **argv)
+{
+	const struct device *const dev = device_get_binding(argv[1]);
+	if (!dev) {
+		shell_error(sh, "%s", argv[1]);
+		return -EINVAL;
+	}
+	struct dwmac_priv *p = dev->data;
+
+	REG_SHOW(MAC_CONF);
+	REG_SHOW(MAC_PKT_FILTER);
+	REG_SHOW(MAC_ADDRESS_HIGH(0));
+	REG_SHOW(MAC_ADDRESS_LOW(0));
+	REG_SHOW(DMA_SYSBUS_MODE);
+	REG_SHOW(DMA_CHn_TX_CTRL(0));
+	REG_SHOW(DMA_CHn_RX_CTRL(0));
+	REG_SHOW(DMA_CHn_TXDESC_TAIL_PTR(0));
+	REG_SHOW(DMA_CHn_RXDESC_TAIL_PTR(0));
+	REG_SHOW(DMA_CHn_TXDESC_LIST_HADDR(0));
+	REG_SHOW(DMA_CHn_TXDESC_LIST_ADDR(0));
+	REG_SHOW(DMA_CHn_RXDESC_LIST_HADDR(0));
+	REG_SHOW(DMA_CHn_RXDESC_LIST_ADDR(0));
+	REG_SHOW(DMA_CHn_TXDESC_RING_LENGTH(0));
+	REG_SHOW(DMA_CHn_RXDESC_RING_LENGTH(0));
+	REG_SHOW(DMA_CHn_IRQ_ENABLE(0));
+	REG_SHOW(DMA_CHn_STATUS(0));
+
+	return 0;
+}
+
+SHELL_CMD_ARG_REGISTER(eth_dwmac_reg_show, NULL, "eth_dwmac_reg_show <dev>", cmd_eth_dwmac_reg_show, 2, 0);
