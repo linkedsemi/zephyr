@@ -65,10 +65,8 @@ struct dwmac_priv {
 
 	K_KERNEL_STACK_MEMBER(rx_refill_thread_stack, CONFIG_RX_REFILL_STACK_SIZE);
 	struct k_thread rx_refill_thread;
-	struct k_mutex tx_mutex;
-	bool need_tx_mutex;
+	const struct device *mdio_dev;
 	const struct device *phy_dev;
-	bool is_mdio_reset_mac;
 	bool is_fixed_link;
 };
 
@@ -82,14 +80,12 @@ struct dwmac_priv {
 /*
  * Shared declarations between core and platform glue code
  */
-
 int dwmac_probe(const struct device *dev);
-int dwmac_init(const struct device *dev);
-int dwmac_reinit(const struct device *dev);
-void dwmac_deinit(const struct device *dev);
 int dwmac_bus_init(struct dwmac_priv *p);
 void dwmac_platform_init(struct dwmac_priv *p);
-void dwmac_platform_deinit(const struct device *const dev);
+#if defined(CONFIG_NETWORKING_MODULE)
+void dwmac_platform_exit(const struct device *const dev);
+#endif
 void dwmac_isr(const struct device *ddev);
 extern const struct ethernet_api dwmac_api;
 
