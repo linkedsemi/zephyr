@@ -5,6 +5,7 @@
 #include <zephyr/logging/log.h>
 
 #include "sdhci.h"
+#include "soc.h"
 
 LOG_MODULE_REGISTER(sdhci, CONFIG_SDHC_LOG_LEVEL);
 
@@ -13,41 +14,43 @@ void sdhci_reg_display(struct sdhci_host *host)
     if (host->execute_tuning) {
         return;
     }
-    LOG_INF("SD_MASA_R:%x", sdhci_readl(host, SDHCI_DMA_ADDRESS));
-    LOG_INF("BLCOKSIZE_R:%x", sdhci_readw(host, SDHCI_BLOCK_SIZE));
-    LOG_INF("BLOCKCOUNT_R:%x", sdhci_readw(host, SDHCI_BLOCK_COUNT));
-    LOG_INF("ARGUMENT_R:%x", sdhci_readl(host, SDHCI_ARGUMENT));
-    LOG_INF("XFER_MODE_R:%x", sdhci_readw(host, SDHCI_TRANSFER_MODE));
-    LOG_INF("CMD_R:%x", sdhci_readw(host, SDHCI_COMMAND));
-    LOG_INF("RESP0_R:%x", sdhci_readl(host, SDHCI_RESPONSE));
-    LOG_INF("RESP1_R:%x", sdhci_readl(host, SDHCI_RESPONSE + 4));
-    LOG_INF("RESP2_R:%x", sdhci_readl(host, SDHCI_RESPONSE + 8));
-    LOG_INF("RESP3_R:%x", sdhci_readl(host, SDHCI_RESPONSE + 12));
-    LOG_INF("BUF_DATA_R:%x", sdhci_readl(host, SDHCI_BUFFER));
-    LOG_INF("PSTATE_REG_R:%x", sdhci_readl(host, SDHCI_PRESENT_STATE));
-    LOG_INF("HOST_CTL_R:%x", sdhci_readb(host, SDHCI_HOST_CONTROL));
-    LOG_INF("PWR_CTRL_R:%x", sdhci_readb(host, SDHCI_POWER_CONTROL));
-    LOG_INF("BGAP_CTRL_R:%x", sdhci_readb(host, SDHCI_BLOCK_GAP_CONTROL));
-    LOG_INF("WUP_CTRL_R:%x", sdhci_readb(host, SDHCI_WAKE_UP_CONTROL));
-    LOG_INF("CLK_CTRL_R:%x", sdhci_readw(host, SDHCI_CLOCK_CONTROL));
-    LOG_INF("TOUT_CTRL_R:%x", sdhci_readb(host, SDHCI_TIMEOUT_CONTROL));
-    LOG_INF("SW_RSR_R:%x", sdhci_readb(host, SDHCI_SOFTWARE_RESET));
-    LOG_INF("NORMAL_INT_STAT_R:%x", sdhci_readw(host, SDHCI_INT_STATUS));
-    LOG_INF("ERROR_INT_STAT_R:%x", sdhci_readw(host, SDHCI_INT_STATUS + 2));
-    LOG_INF("NORMAL_INT_STAT_EN_R:%x", sdhci_readw(host, SDHCI_INT_ENABLE));
-    LOG_INF("ERROR_INT_STAT_EN_R:%x", sdhci_readw(host, SDHCI_INT_ENABLE + 2));
-    LOG_INF("NORNAL_INT_SIGNAL_EN_R:%x", sdhci_readw(host, SDHCI_SIGNAL_ENABLE));
-    LOG_INF("ERROR_INT_SIGNAL_EN_R:%x", sdhci_readw(host, SDHCI_SIGNAL_ENABLE + 2));
-    LOG_INF("AUTO_CMD_STAT_R:%x", sdhci_readw(host, SDHCI_AUTO_CMD_STATUS));
-    LOG_INF("HOST_CTRL2_R:%x", sdhci_readw(host, SDHCI_HOST_CONTROL2));
-    LOG_INF("CAPABILITIES1_R:%x", sdhci_readl(host, SDHCI_CAPABILITIES));
-    LOG_INF("CAPABILITIES2_R:%x", sdhci_readl(host, SDHCI_CAPABILITIES_1));
-    LOG_INF("FORCE_AUTO_CMD_STAT_R:%x", sdhci_readw(host, SDHCI_MAX_CURRENT));
-    LOG_INF("FORCE_ERROR_INT_STAT_R:%x", sdhci_readw(host, SDHCI_SET_ACMD12_ERROR));
+    const struct device *dev = host->dev;
+    DEV_INF(dev, "SD_MASA_R:%x", sdhci_readl(host, SDHCI_DMA_ADDRESS));
+    DEV_INF(dev, "BLCOKSIZE_R:%x", sdhci_readw(host, SDHCI_BLOCK_SIZE));
+    DEV_INF(dev, "BLOCKCOUNT_R:%x", sdhci_readw(host, SDHCI_BLOCK_COUNT));
+    DEV_INF(dev, "ARGUMENT_R:%x", sdhci_readl(host, SDHCI_ARGUMENT));
+    DEV_INF(dev, "XFER_MODE_R:%x", sdhci_readw(host, SDHCI_TRANSFER_MODE));
+    DEV_INF(dev, "CMD_R:%x", sdhci_readw(host, SDHCI_COMMAND));
+    DEV_INF(dev, "RESP0_R:%x", sdhci_readl(host, SDHCI_RESPONSE));
+    DEV_INF(dev, "RESP1_R:%x", sdhci_readl(host, SDHCI_RESPONSE + 4));
+    DEV_INF(dev, "RESP2_R:%x", sdhci_readl(host, SDHCI_RESPONSE + 8));
+    DEV_INF(dev, "RESP3_R:%x", sdhci_readl(host, SDHCI_RESPONSE + 12));
+    DEV_INF(dev, "BUF_DATA_R:%x", sdhci_readl(host, SDHCI_BUFFER));
+    DEV_INF(dev, "PSTATE_REG_R:%x", sdhci_readl(host, SDHCI_PRESENT_STATE));
+    DEV_INF(dev, "HOST_CTL_R:%x", sdhci_readb(host, SDHCI_HOST_CONTROL));
+    DEV_INF(dev, "PWR_CTRL_R:%x", sdhci_readb(host, SDHCI_POWER_CONTROL));
+    DEV_INF(dev, "BGAP_CTRL_R:%x", sdhci_readb(host, SDHCI_BLOCK_GAP_CONTROL));
+    DEV_INF(dev, "WUP_CTRL_R:%x", sdhci_readb(host, SDHCI_WAKE_UP_CONTROL));
+    DEV_INF(dev, "CLK_CTRL_R:%x", sdhci_readw(host, SDHCI_CLOCK_CONTROL));
+    DEV_INF(dev, "TOUT_CTRL_R:%x", sdhci_readb(host, SDHCI_TIMEOUT_CONTROL));
+    DEV_INF(dev, "SW_RSR_R:%x", sdhci_readb(host, SDHCI_SOFTWARE_RESET));
+    DEV_INF(dev, "NORMAL_INT_STAT_R:%x", sdhci_readw(host, SDHCI_INT_STATUS));
+    DEV_INF(dev, "ERROR_INT_STAT_R:%x", sdhci_readw(host, SDHCI_INT_STATUS + 2));
+    DEV_INF(dev, "NORMAL_INT_STAT_EN_R:%x", sdhci_readw(host, SDHCI_INT_ENABLE));
+    DEV_INF(dev, "ERROR_INT_STAT_EN_R:%x", sdhci_readw(host, SDHCI_INT_ENABLE + 2));
+    DEV_INF(dev, "NORNAL_INT_SIGNAL_EN_R:%x", sdhci_readw(host, SDHCI_SIGNAL_ENABLE));
+    DEV_INF(dev, "ERROR_INT_SIGNAL_EN_R:%x", sdhci_readw(host, SDHCI_SIGNAL_ENABLE + 2));
+    DEV_INF(dev, "AUTO_CMD_STAT_R:%x", sdhci_readw(host, SDHCI_AUTO_CMD_STATUS));
+    DEV_INF(dev, "HOST_CTRL2_R:%x", sdhci_readw(host, SDHCI_HOST_CONTROL2));
+    DEV_INF(dev, "CAPABILITIES1_R:%x", sdhci_readl(host, SDHCI_CAPABILITIES));
+    DEV_INF(dev, "CAPABILITIES2_R:%x", sdhci_readl(host, SDHCI_CAPABILITIES_1));
+    DEV_INF(dev, "FORCE_AUTO_CMD_STAT_R:%x", sdhci_readw(host, SDHCI_MAX_CURRENT));
+    DEV_INF(dev, "FORCE_ERROR_INT_STAT_R:%x", sdhci_readw(host, SDHCI_SET_ACMD12_ERROR));
 }
 
 void sdhci_reset(struct sdhci_host *host, uint8_t mask)
 {
+    const struct device *dev = host->dev;
     unsigned long timeout;
 
     /* Wait max 100 ms */
@@ -55,7 +58,7 @@ void sdhci_reset(struct sdhci_host *host, uint8_t mask)
     sdhci_writeb(host, mask, SDHCI_SOFTWARE_RESET);
     while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
         if (timeout == 0) {
-            LOG_ERR("%s: Reset 0x%x never completed.", __func__, (int)mask);
+            DEV_ERR(dev, "%s: Reset 0x%x never completed.", __func__, (int)mask);
             return;
         }
         timeout--;
@@ -100,7 +103,7 @@ void sdhic_error_recovery(struct sdhci_host *sdhci_host)
     }
 }
 
-int32_t sdhci_receive_command_response(struct sdhci_host *sdhci_host, struct sdhci_command *command)
+int sdhci_receive_command_response(struct sdhci_host *sdhci_host, struct sdhci_command *command)
 {
     if (command->response_type == CARD_RESPONSE_TYPE_R2) {
         /* CRC is stripped so we need to do some shifting. */
@@ -158,7 +161,7 @@ void sdhci_send_command(struct sdhci_host *sdhci_host, struct sdhci_command *com
     sdhci_writew(sdhci_host, cmd_r, SDHCI_COMMAND);
 }
 
-int32_t sdhci_set_transfer_config(struct sdhci_host *sdhci_host, struct sdhci_command *sdhci_command, struct sdhci_data *sdhci_data)
+int sdhci_set_transfer_config(struct sdhci_host *sdhci_host, struct sdhci_command *sdhci_command, struct sdhci_data *sdhci_data)
 {
     __ASSERT_NO_MSG(sdhci_command);
     /* Define the flag corresponding to each response type. */
@@ -277,11 +280,12 @@ extern void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint3
 
 void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
 {
+    const struct device *dev = host->dev;
     uint32_t div;
     uint32_t val;
 
     if (!host->execute_tuning) {
-        LOG_INF("%s: %d(HZ)", __func__, clock);
+        DEV_INF(dev, "%s: %d(HZ)", __func__, clock);
     }
     host->current_speed = clock;
 

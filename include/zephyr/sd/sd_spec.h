@@ -662,6 +662,10 @@ enum mmc_ext_csd_rev {
 	MMC_4_0 = 0U
 };
 
+#define EXT_CSD_RST_N_FUNCTION             162 /* R/W */
+#define EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A 268 /* RO */
+#define EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B 269 /* RO */
+
 /**
  * @brief MMC extended card specific data register
  *
@@ -689,6 +693,11 @@ struct mmc_ext_csd {
 	uint8_t pwr_class_HS400;
 	/** Size of eMMC cache [252:249] */
 	uint32_t cache_size;
+	/* 268 */
+	uint8_t device_life_time_est_typ_a;
+	/* 269 */
+	uint8_t device_life_time_est_typ_b;
+	uint8_t rst_n_function;
 };
 
 /**

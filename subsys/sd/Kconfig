@@ -118,6 +118,12 @@ config MMC_HS_TIMING_TUNING
 	help
 	  MMC_HS_TIMING_TUNING
 
+config MMC_RESET_ENABLE
+	bool "MMC_RESET_ENABLE"
+	default n
+	help
+	  MMC_RESET_ENABLE
+
 endif # SD_STACK
 
 endmenu

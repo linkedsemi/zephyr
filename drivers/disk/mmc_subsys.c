@@ -11,6 +11,7 @@
 
 #include <zephyr/sd/mmc.h>
 #include <zephyr/drivers/disk.h>
+#include <zephyr/llext/symbol.h>
 
 
 enum sd_status {
@@ -117,6 +118,20 @@ static int disk_mmc_init(const struct device *dev)
 
 	return disk_access_register(data->disk_info);
 }
+
+struct sd_csd *disk_mmc_csd(const struct device *dev)
+{
+	struct mmc_data *data = dev->data;
+	return &data->card.card_csd;
+}
+EXPORT_SYMBOL(disk_mmc_csd);
+
+struct mmc_ext_csd *disk_mmc_ext_csd(const struct device *dev)
+{
+	struct mmc_data *data = dev->data;
+	return &data->card.card_ext_csd;
+}
+EXPORT_SYMBOL(disk_mmc_ext_csd);
 
 #define DISK_ACCESS_MMC_INIT(n)						\
 	static const struct mmc_config mmc_config_##n = {			\

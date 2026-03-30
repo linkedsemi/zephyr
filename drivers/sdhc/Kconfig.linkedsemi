@@ -7,8 +7,6 @@ config SDHCI_LINKEDSEMI
     depends on DT_HAS_LINKEDSEMI_SDHCI_ENABLED
     select SDHC_SUPPORTS_NATIVE_MODE
     select SDHCI
-    select MMC_LEGACY_TIMING_TUNING
-    select MMC_HS_TIMING_TUNING
     help
       Enable the LINKEDSEMI SDHCI Host controller driver
 
