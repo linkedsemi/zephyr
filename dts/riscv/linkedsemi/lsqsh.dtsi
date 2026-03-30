@@ -1120,6 +1120,7 @@
                 clock-frequency = <PBUS0123_CLOCK>;
                 clocks = <ETH1_CLOCK>;
                 resets = <ETH1_RESET>;
+                mdio-handle = <&mdio1>;
                 status = "disabled";
             };
         };
@@ -1141,6 +1142,7 @@
                 clock-frequency = <PBUS0123_CLOCK>;
                 clocks = <ETH2_CLOCK>;
                 resets = <ETH2_RESET>;
+                mdio-handle = <&mdio2>;
                 status = "disabled";
             };
         };
