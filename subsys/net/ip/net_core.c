@@ -621,7 +621,7 @@ static inline int services_init(void)
 	return status;
 }
 
-static int net_init(void)
+int net_init(void)
 {
 	net_hostname_init();
 
@@ -640,4 +640,6 @@ static int net_init(void)
 	return services_init();
 }
 
+#if defined(CONFIG_NETWORKING_AUTO_INIT)
 SYS_INIT(net_init, POST_KERNEL, CONFIG_NET_INIT_PRIO);
+#endif
