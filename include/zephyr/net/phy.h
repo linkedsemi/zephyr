@@ -23,6 +23,7 @@
  */
 #include <zephyr/types.h>
 #include <zephyr/device.h>
+#include <errno.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -103,6 +104,11 @@ typedef void (*phy_callback_t)(const struct device *dev,
  * public documentation.
  */
 __subsystem struct ethphy_driver_api {
+#if defined(CONFIG_NETWORKING_MODULE)
+	int (*init)(const struct device *dev);
+	int (*exit)(const struct device *dev);
+#endif
+
 	/** Get link state */
 	int (*get_link)(const struct device *dev,
 			struct phy_link_state *state);
@@ -126,6 +132,30 @@ __subsystem struct ethphy_driver_api {
 /**
  * @endcond
  */
+
+#if defined(CONFIG_NETWORKING_MODULE)
+static inline int phy_init(const struct device *const dev)
+{
+	const struct ethphy_driver_api *api = (struct ethphy_driver_api *)dev->api;
+
+	if (!api->init) {
+		return -ENOTSUP;
+	}
+
+	return api->init(dev);
+}
+
+static inline int phy_exit(const struct device *const dev)
+{
+	const struct ethphy_driver_api *api = (struct ethphy_driver_api *)dev->api;
+
+	if (!api->exit) {
+		return -ENOTSUP;
+	}
+
+	return api->exit(dev);
+}
+#endif
 
 /**
  * @brief      Configure PHY link
