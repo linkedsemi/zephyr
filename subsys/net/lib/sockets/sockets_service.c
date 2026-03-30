@@ -28,7 +28,7 @@ static K_CONDVAR_DEFINE(wait_start);
 STRUCT_SECTION_START_EXTERN(net_socket_service_desc);
 STRUCT_SECTION_END_EXTERN(net_socket_service_desc);
 
-static struct service {
+struct service {
 	struct zsock_pollfd events[CONFIG_ZVFS_POLL_MAX];
 	int count;
 } ctx;
@@ -276,10 +276,10 @@ fail:
 	k_condvar_broadcast(&wait_start);
 }
 
+struct k_thread service_thread;
 static int init_socket_service(void)
 {
 	k_tid_t ssm;
-	static struct k_thread service_thread;
 
 	static K_THREAD_STACK_DEFINE(service_thread_stack,
 				     CONFIG_NET_SOCKETS_SERVICE_STACK_SIZE);
