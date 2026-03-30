@@ -16,6 +16,9 @@
 #include "shell_utils.h"
 #include "shell_vt100.h"
 #include "shell_wildcard.h"
+#if defined(CONFIG_NETWORKING_MODULE)
+#include <plugin_section.h>
+#endif
 
 /* 2 == 1 char for cmd + 1 char for '\0' */
 #if (CONFIG_SHELL_CMD_BUFF_SIZE < 2)
@@ -337,6 +340,12 @@ static void find_completion_candidates(const struct shell *sh,
 	*cnt = 0;
 
 	while ((candidate = z_shell_cmd_get(cmd, idx, &dloc)) != NULL) {
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)candidate) && (!plugin_section_ready())) {
+			idx++;
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
 		bool is_candidate;
 		is_candidate = is_completion_candidate(candidate->syntax,
 						incompl_cmd, incompl_cmd_len);
@@ -438,6 +447,13 @@ static void tab_options_print(const struct shell *sh,
 		 * context to save stack
 		 */
 		match = z_shell_cmd_get(cmd, idx, &sh->ctx->active_cmd);
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)match) && (!plugin_section_ready())) {
+			idx++;
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
+
 		__ASSERT_NO_MSG(match != NULL);
 		idx++;
 		if (str && match->syntax &&
@@ -478,6 +494,11 @@ static uint16_t common_beginning_find(const struct shell *sh,
 		int curr_common;
 
 		match2 = z_shell_cmd_get(cmd, idx++, &dynamic_entry2);
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)match2) && (!plugin_section_ready())) {
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
 		if (match2 == NULL) {
 			break;
 		}
@@ -1866,6 +1887,11 @@ static int cmd_help(const struct shell *sh, size_t argc, char **argv)
 
 		shell_print(sh, "\nAvailable commands:");
 		while ((entry = z_shell_cmd_get(NULL, idx++, NULL)) != NULL) {
+#if defined(CONFIG_NETWORKING_MODULE)
+			if (in_plugin_section((uintptr_t)entry) && (!plugin_section_ready())) {
+				continue;
+			}
+#endif /* CONFIG_NETWORKING_MODULE */
 			shell_print(sh, "  %s", entry->syntax);
 		}
 	}
