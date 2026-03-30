@@ -235,6 +235,14 @@ config MDIO
 config MDIO_RESET_MAC
 	default y
 
+config NETWORKING_AUTO_INIT
+	bool "NETWORKING_AUTO_INIT"
+	default y
+
+config NETWORKING_MODULE
+	bool "NETWORKING_MODULE"
+	default n
+
 endif # NETWORKING
 
 if CACHE
@@ -301,7 +309,7 @@ config USERSPACE
 
 config RISCV_PMP
 	default y
-	
+
 config PMP_SLOTS
 	default 16
 
@@ -482,7 +490,7 @@ config IOPMP_WHITELIST_I2C1_I3C1
 
 config POSIX_USLEEP_WORKAROUND
 	bool "POSIX_USLEEP_WORKAROUND"
-	default n
+	default y
 	help
 		POSIX_USLEEP_WORKAROUND
 
