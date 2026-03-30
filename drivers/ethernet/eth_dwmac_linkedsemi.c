@@ -32,19 +32,20 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
     #include <soc_clock.h>
 #endif
 
+#include <soc.h>
 #include <platform.h>
 
 struct eth_linkedsemi_config {
     mem_addr_t base_addr;
     struct dwmac_dma_desc *tx_descs;
     struct dwmac_dma_desc *rx_descs;
-    bool is_mdio_reset_mac;
     bool is_fixed_link;
     void (*irq_config_func)(const struct device *dev);
     void (*irq_deconfig_func)(const struct device *dev);
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+    const struct device *mdio_dev;
     const struct device *phy_dev;
     uint8_t tx_delay;
     uint8_t rx_delay;
@@ -59,12 +60,12 @@ int dwmac_bus_init(struct dwmac_priv *p)
     p->base_addr = dev_config->base_addr;
     p->tx_descs = dev_config->tx_descs;
     p->rx_descs = dev_config->rx_descs;
+    p->mdio_dev = dev_config->mdio_dev;
     p->phy_dev = dev_config->phy_dev;
-    p->is_mdio_reset_mac = dev_config->is_mdio_reset_mac;
     p->is_fixed_link = dev_config->is_fixed_link;
 
 #if defined(CONFIG_MDIO_RESET_MAC)
-    if (!p->is_mdio_reset_mac) {
+    if (!p->mdio_dev) {
 #endif
 #if defined(CONFIG_CLOCK_CONTROL)
         if (dev_config->ccfg.cctl_dev) {
@@ -137,12 +138,15 @@ void dwmac_platform_init(struct dwmac_priv *p)
     gen_random_mac(p->mac_addr, 0x00, 0x80, 0xE1);
 }
 
-void dwmac_platform_deinit(const struct device *const dev)
+#if defined(CONFIG_NETWORKING_MODULE)
+void dwmac_platform_exit(const struct device *const dev)
 {
     /* basic configuration for this platform */
     const struct eth_linkedsemi_config *dev_config = dev->config;
     dev_config->irq_deconfig_func(dev);
+    memset(dev->state, 0, sizeof(struct device_state));
 }
+#endif
 
 BUILD_ASSERT(CONFIG_NOCACHE_MEMORY, "descriptors are placed in nocache section");
 #define __desc_mem __nocache __aligned(4)
@@ -163,35 +167,34 @@ BUILD_ASSERT(CONFIG_NOCACHE_MEMORY, "descriptors are placed in nocache section")
         irq_disable(DT_INST_IRQN(index));                                          \
     }
 
-#define LINKEDSEMI_ETH_INIT(index)                                                                   \
-    static struct dwmac_dma_desc dwmac_tx_descs_##index[NB_TX_DESCS] __desc_mem;                     \
-    static struct dwmac_dma_desc dwmac_rx_descs_##index[NB_RX_DESCS] __desc_mem;                     \
-    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(index)));                                     \
-    LINKEDSEMI_ETH_IRQ_HANDLER(index)                                                                \
-    static const struct eth_linkedsemi_config eth_linkedsemi_cfg_##index = {                         \
-        .base_addr = (uint32_t)DT_INST_REG_ADDR(index),                                              \
-        .tx_descs = dwmac_tx_descs_##index,                                                          \
-        .rx_descs = dwmac_rx_descs_##index,                                                          \
-        .is_mdio_reset_mac = DT_NODE_HAS_COMPAT(DT_INST_PARENT(index), snps_dwmac_mdio)              \
-                       && DT_NODE_HAS_STATUS_OKAY(DT_INST_PARENT(index)),                            \
-        .is_fixed_link = DT_NODE_HAS_PROP(DT_INST_PHANDLE(index, phy_handle), fixed_link),           \
-        .irq_config_func = eth_linkedsemi_irq_config_func_##index,                                   \
-        .irq_deconfig_func = eth_linkedsemi_irq_deconfig_func_##index,                               \
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), ))                \
-        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                      \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), )) \
-        .phy_dev = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(index, phy_handle)),                        \
-        .tx_delay = DT_INST_PROP_OR(index, tx_delay, 0),                                             \
-        .rx_delay = DT_INST_PROP_OR(index, rx_delay, 0),                                             \
-    };                                                                                               \
-    static struct dwmac_priv dwmac_instance_##index;                                                 \
-    ETH_NET_DEVICE_DT_INST_DEFINE(index,                                                             \
-                                  dwmac_init,                                                        \
-                                  NULL,                                                              \
-                                  &dwmac_instance_##index,                                           \
-                                  &eth_linkedsemi_cfg_##index,                                       \
-                                  CONFIG_ETH_INIT_PRIORITY,                                          \
-                                  &dwmac_api,                                                        \
+#define LINKEDSEMI_ETH_INIT(index)                                                                      \
+    static struct dwmac_dma_desc dwmac_tx_descs_##index[NB_TX_DESCS] __desc_mem;                        \
+    static struct dwmac_dma_desc dwmac_rx_descs_##index[NB_RX_DESCS] __desc_mem;                        \
+    IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(index)));                                        \
+    LINKEDSEMI_ETH_IRQ_HANDLER(index)                                                                   \
+    static const struct eth_linkedsemi_config eth_linkedsemi_cfg_##index = {                            \
+        .base_addr = (uint32_t)DT_INST_REG_ADDR(index),                                                 \
+        .tx_descs = dwmac_tx_descs_##index,                                                             \
+        .rx_descs = dwmac_rx_descs_##index,                                                             \
+        .is_fixed_link = DT_NODE_HAS_PROP(DT_INST_PHANDLE(index, phy_handle), fixed_link),              \
+        .irq_config_func = eth_linkedsemi_irq_config_func_##index,                                      \
+        .irq_deconfig_func = eth_linkedsemi_irq_deconfig_func_##index,                                  \
+        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(index), ))                   \
+        IF_ENABLED(DT_HAS_CLOCKS(index), (.ccfg = LS_DT_CLK_CFG_ITEM(index), ))                         \
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(index, resets), (.reset = RESET_DT_SPEC_INST_GET(index), ))    \
+        .mdio_dev = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(index, mdio_handle)),                         \
+        .phy_dev = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(index, phy_handle)),                           \
+        .tx_delay = DT_INST_PROP_OR(index, tx_delay, 0),                                                \
+        .rx_delay = DT_INST_PROP_OR(index, rx_delay, 0),                                                \
+    };                                                                                                  \
+    static struct dwmac_priv dwmac_instance_##index;                                                    \
+    ETH_NET_DEVICE_DT_INST_DEFINE(index,                                                                \
+                                  COND_CODE_1(CONFIG_NETWORKING_AUTO_INIT, (dwmac_probe), (NULL)),\
+                                  NULL,                                                                 \
+                                  &dwmac_instance_##index,                                              \
+                                  &eth_linkedsemi_cfg_##index,                                          \
+                                  CONFIG_ETH_INIT_PRIORITY,                                             \
+                                  &dwmac_api,                                                           \
                                   NET_ETH_MTU);
 
 DT_INST_FOREACH_STATUS_OKAY(LINKEDSEMI_ETH_INIT)
