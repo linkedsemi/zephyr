@@ -12,6 +12,12 @@ void k_sys_fatal_error_handler(unsigned int reason,
 {
     ARG_UNUSED(esf);
 
+
+#ifdef CONFIG_COVERAGE_DUMP
+    LOG_ERR("%s is expected; reason = %u; halting ...\n", __func__, reason);
+	gcov_coverage_dump();  /* LCOV_EXCL_LINE */
+#endif
+
     LOG_PANIC();
     if (irq_nested_level > 1) {
         LOG_ERR("fatal error! Halting system");
