@@ -156,11 +156,11 @@ config DCACHE_LINE_SIZE_DETECT
 
 config IOPMP
 	bool "IOPMP"
-	default y
+	default n
 
 config IOPMP_DMA
 	bool "IOPMP_DMA"
-	default y
+	default n
 
 config RV_BOOT_HART_MRADDR
 	hex
@@ -254,10 +254,6 @@ config CPU2_IMAGE_HEADER
 config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
 	default 0x8100000
-
-config INIT_FLASH_FOR_DEBUG
-	bool "INIT_FLASH_FOR_DEBUG"
-	default $(dt_path_enabled,/cpus/cpu@1)
 
 config FLASH
 	default y
@@ -402,10 +398,6 @@ config FORCE_CLOCK_HSI
 	bool "FORCE_CLOCK_HSI(25MHz)"
 	default n
 
-config UART_SHARE_REGISTER
-	bool "UART_SHARE_REGISTER"
-	default n
-
 config SHA256_CLOCK_RESET
 	bool "SHA256_CLOCK_RESET"
 	default n
@@ -434,13 +426,13 @@ endif
 if $(dt_path_enabled,/cpus/cpu@1)
 	config GPIO_CFG_LOCK
 		bool "GPIO_CFG_LOCK"
-		default y
+		default n
 		help
 		GPIO_CFG_LOCK
 
 	config GPIO_INTR_LOCK
 		bool "GPIO_INTR_LOCK"
-		default y
+		default n
 		help
 		GPIO_INTR_LOCK
 
@@ -449,12 +441,6 @@ if $(dt_path_enabled,/cpus/cpu@1)
 		default n
 
 endif
-
-config WORKAROUND_CONFLICT_LOG_ERR
-	bool "WORKAROUND_CONFLICT_LOG_ERR"
-	default n
-	help
-	WORKAROUND_CONFLICT_LOG_ERR
 
 config IOPMP_WHITELIST_I2C1_I3C1
 	bool "IOPMP_WHITELIST_I2C1_I3C1"

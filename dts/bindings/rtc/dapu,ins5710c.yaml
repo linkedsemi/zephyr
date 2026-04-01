@@ -1,0 +1,16 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright (c) 2026 wzou <wzou@linkedsemi.com>
+
+description: Dapu INS5710 RTC
+
+compatible: "dapu,ins5710c"
+
+include:
+  - name: rtc-device.yaml
+  - name: i2c-device.yaml
+
+properties:
+  reg:
+    type: array
+    description: I2C device address 0x32
+    required: true
