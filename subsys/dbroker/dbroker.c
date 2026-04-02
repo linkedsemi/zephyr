@@ -361,7 +361,7 @@ static struct k_thread broker_thread;
 /*
  * D-Bus Broker initialization
  */
-static int dbus_broker_init(void)
+int dbus_broker_main(void)
 {
     int r;
     // LOG_INF("[DBus Broker] Initializing D-Bus Broker subsystem...");
@@ -377,20 +377,20 @@ static int dbus_broker_init(void)
 #endif
     
     /* Create broker thread */
-    k_thread_create(&broker_thread, 
-                   broker_stack, 
-                   K_THREAD_STACK_SIZEOF(broker_stack), 
-                   broker_thread_entry, 
-                   NULL, NULL, NULL, 
-                   CONFIG_DBUS_BROKER_PRIORITY, 0, K_NO_WAIT);
-    
+    // k_thread_create(&broker_thread, 
+    //                broker_stack, 
+    //                K_THREAD_STACK_SIZEOF(broker_stack), 
+    //                broker_thread_entry, 
+    //                NULL, NULL, NULL, 
+    //                CONFIG_DBUS_BROKER_PRIORITY, 0, K_NO_WAIT);
+    broker_thread_entry(NULL, NULL, NULL);
     LOG_INF("[DBus Broker] D-Bus Broker subsystem initialized");
     return 0;
 }
 
 
 /* Register initialization function */
-SYS_INIT(dbus_broker_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+// SYS_INIT(dbus_broker_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
 
 
