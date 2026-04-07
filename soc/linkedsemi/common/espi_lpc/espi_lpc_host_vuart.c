@@ -501,7 +501,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
               .ctx = (void *)DEVICE_DT_INST_GET(inst),                 \
               .addr = DT_INST_PROP(inst, port) + 7},\
   };\
-  static struct retain_uart_var host_vuart_retain_var_##inst __attribute__((section(".var_retain.98."#inst)));  \
+  static struct retain_uart_var host_vuart_retain_var_##inst __attribute__((section("SHMEM.98."#inst)));  \
   static struct host_vuart_data host_vuart_data_##inst __noinit; \
   static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
     .retain = &host_vuart_retain_var_##inst,                                            \
