@@ -6,7 +6,3 @@ zephyr_linker_sources(
     RAMFUNC_SECTION
     xip_banned.ld
 )
-zephyr_linker_sources(
-    SECTIONS
-    var_retain.ld
-)
