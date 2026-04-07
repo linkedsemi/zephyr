@@ -4,6 +4,10 @@
 
 #include <zephyr/kernel.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Forward declarations */
 struct deployment_state;
 typedef struct Broker Broker;
@@ -37,5 +41,9 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd);
  * @return 0 on success, negative error code on failure
  */
 int disconnect_from_dbroker(sd_bus *bus);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* DBUS_BROKER_H */

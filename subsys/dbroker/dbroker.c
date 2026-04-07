@@ -361,7 +361,7 @@ static struct k_thread broker_thread;
 /*
  * D-Bus Broker initialization
  */
-int dbus_broker_main(void)
+static int dbus_broker_init(void)
 {
     int r;
     // LOG_INF("[DBus Broker] Initializing D-Bus Broker subsystem...");
@@ -377,20 +377,20 @@ int dbus_broker_main(void)
 #endif
     
     /* Create broker thread */
-    // k_thread_create(&broker_thread, 
-    //                broker_stack, 
-    //                K_THREAD_STACK_SIZEOF(broker_stack), 
-    //                broker_thread_entry, 
-    //                NULL, NULL, NULL, 
-    //                CONFIG_DBUS_BROKER_PRIORITY, 0, K_NO_WAIT);
-    broker_thread_entry(NULL, NULL, NULL);
+    k_thread_create(&broker_thread, 
+                   broker_stack, 
+                   K_THREAD_STACK_SIZEOF(broker_stack), 
+                   broker_thread_entry, 
+                   NULL, NULL, NULL, 
+                   CONFIG_DBUS_BROKER_PRIORITY, 0, K_NO_WAIT);
+    
     LOG_INF("[DBus Broker] D-Bus Broker subsystem initialized");
     return 0;
 }
 
 
 /* Register initialization function */
-// SYS_INIT(dbus_broker_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+SYS_INIT(dbus_broker_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
 
 
 
@@ -457,6 +457,7 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
     int client_fd = -1;
     int r = -1;
     int retry_count = 0;
+    static bool broker_started = false;
     struct bus_wrapper *wrapper = NULL;
     sd_bus *internal_bus = NULL;
 
@@ -465,6 +466,11 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
         return -EINVAL;
     }
 
+    if (!broker_started) { 
+        k_msleep(1000);
+        broker_started = true;
+    }
+    
     /* Allocate wrapper structure */
     wrapper = k_malloc(sizeof(struct bus_wrapper));
     if (!wrapper) {
