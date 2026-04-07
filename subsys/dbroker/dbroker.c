@@ -457,6 +457,7 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
     int client_fd = -1;
     int r = -1;
     int retry_count = 0;
+    static bool broker_started = false;
     struct bus_wrapper *wrapper = NULL;
     sd_bus *internal_bus = NULL;
 
@@ -465,6 +466,11 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
         return -EINVAL;
     }
 
+    if (!broker_started) { 
+        k_msleep(1000);
+        broker_started = true;
+    }
+    
     /* Allocate wrapper structure */
     wrapper = k_malloc(sizeof(struct bus_wrapper));
     if (!wrapper) {
