@@ -403,7 +403,7 @@ static int espi_ls_init(const struct device *dev)
                 ls_espi_isr,DEVICE_DT_INST_GET(idx), 0);\
         irq_enable(DT_INST_IRQN(idx));\
     }\
-    static struct espi_cfg_recover espi_cfg_recover_data_##idx __attribute__((section(".var_retain.99."#idx)));\
+    static struct espi_cfg_recover espi_cfg_recover_data_##idx __attribute__((section("SHMEM.99."#idx)));\
     static const struct espi_lpc_ls_config espi_ls_cfg_##idx = {\
         .reg = (reg_espi_t *)DT_INST_REG_ADDR(idx),\
         .irq_config_func = espi_ls_irq_config_func_##idx,\
