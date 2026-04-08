@@ -221,7 +221,7 @@ static inline int wdt_setup_linkedsemi(const struct device *dev, struct wdt_rese
         struct wdt_reset_en *noinit_wdt_reset_en = wdt_reset_en_val_get();
         *noinit_wdt_reset_en = *wdt_reset_en;
         sec_iwdt_reset_en_set(wdt_reset_en);
-        wdt_setup(dev, 0);
+        return wdt_setup(dev, 0);
     } else {
         return -ENOTSUP;
     }
