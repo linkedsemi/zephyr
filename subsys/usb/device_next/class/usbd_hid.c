@@ -99,6 +99,16 @@ static inline uint8_t hid_get_out_ep(struct usbd_class_data *const c_data)
 	return desc->out_ep.bEndpointAddress;
 }
 
+static inline uint8_t hid_get_out_ep_mps(struct usbd_class_data *const c_data)
+{
+	const struct device *dev = usbd_class_get_private(c_data);
+	const struct hid_device_config *dcfg = dev->config;
+	struct usbd_hid_descriptor *desc = dcfg->desc;
+
+	return desc->out_ep.wMaxPacketSize;
+}
+
+
 static int usbd_hid_request(struct usbd_class_data *const c_data,
 			    struct net_buf *const buf, const int err)
 {
@@ -556,6 +566,7 @@ static void hid_dev_output_handler(struct k_work *work)
 		LOG_ERR("Failed to allocate buffer");
 		return;
 	}
+	buf->size = MIN(hid_get_out_ep_mps(c_data), buf->size);
 
 	if (usbd_ep_enqueue(c_data, buf)) {
 		net_buf_unref(buf);
