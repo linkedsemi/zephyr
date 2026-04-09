@@ -50,8 +50,14 @@ class RegNum():
 
 
 class GdbStub_RISC_V(GdbStub):
+    # Version 1 (32-bit, no sp/fp): 18 registers
     ARCH_DATA_BLK_STRUCT    = "<IIIIIIIIIIIIIIIIII"
+    # Version 2 (64-bit, no sp/fp): 18 registers
     ARCH_DATA_BLK_STRUCT_2  = "<QQQQQQQQQQQQQQQQQQ"
+    # Version 4 (32-bit, with sp for backtrace): 19 registers
+    ARCH_DATA_BLK_STRUCT_2_32  = "<IIIIIIIIIIIIIIIIIII"
+    # Version 3 (64-bit, with sp for backtrace): 19 registers
+    ARCH_DATA_BLK_STRUCT_3_64  = "<QQQQQQQQQQQQQQQQQQQ"
 
     GDB_SIGNAL_DEFAULT = 7
 
@@ -68,10 +74,18 @@ class GdbStub_RISC_V(GdbStub):
         arch_data_blk = self.logfile.get_arch_data()['data']
         self.arch_data_ver = self.logfile.get_arch_data()['hdr_ver']
 
+        # Version 1: 32-bit original (18 regs, no sp)
+        # Version 2: 64-bit original (18 regs, no sp)
+        # Version 3: 64-bit with sp (19 regs)
+        # Version 4: 32-bit with sp (19 regs)
         if self.arch_data_ver == 1:
             tu = struct.unpack(self.ARCH_DATA_BLK_STRUCT, arch_data_blk)
         elif self.arch_data_ver == 2:
             tu = struct.unpack(self.ARCH_DATA_BLK_STRUCT_2, arch_data_blk)
+        elif self.arch_data_ver == 3:
+            tu = struct.unpack(self.ARCH_DATA_BLK_STRUCT_3_64, arch_data_blk)
+        elif self.arch_data_ver == 4:
+            tu = struct.unpack(self.ARCH_DATA_BLK_STRUCT_2_32, arch_data_blk)
 
         self.registers = dict()
 
@@ -92,10 +106,13 @@ class GdbStub_RISC_V(GdbStub):
         self.registers[RegNum.T4] = tu[14]
         self.registers[RegNum.T5] = tu[15]
         self.registers[RegNum.T6] = tu[16]
-        self.registers[RegNum.PC] = tu[17]
+        self.registers[RegNum.SP] = tu[17]
+        self.registers[RegNum.PC] = tu[18]
 
     def handle_register_group_read_packet(self):
-        reg_fmt = "<I" if self.arch_data_ver == 1 else "<Q"
+        # Version 1 and 4 are 32-bit, version 2 and 3 are 64-bit
+        is_32bit = self.arch_data_ver in (1, 4)
+        reg_fmt = "<I" if is_32bit else "<Q"
 
         idx = 0
         pkt = b''
@@ -107,7 +124,7 @@ class GdbStub_RISC_V(GdbStub):
             else:
                 # Register not in coredump -> unknown value
                 # Send in "xxxxxxxx"
-                length = 8 if self.arch_data_ver == 1 else 16
+                length = 8 if is_32bit else 16
                 pkt += b'x' * length
 
             idx += 1
@@ -117,5 +134,6 @@ class GdbStub_RISC_V(GdbStub):
     def handle_register_single_read_packet(self, pkt):
         # Mark registers as "<unavailable>". 'p' packets are not sent for the registers
         # currently handled in this file so we can safely reply "xxxxxxxx" here.
-        length = 8 if self.arch_data_ver == 1 else 16
+        is_32bit = self.arch_data_ver in (1, 4)
+        length = 8 if is_32bit else 16
         self.put_gdb_packet(b'x' * length)
