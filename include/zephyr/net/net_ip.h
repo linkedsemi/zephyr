@@ -406,11 +406,16 @@ struct sockaddr_storage {
 	char data[NET_SOCKADDR_MAX_SIZE - sizeof(sa_family_t)];
 };
 
+/* For sd-bus linux compatible definition: sun_path fixed to 108 bytes */
+#undef NET_SOCKADDR_MAX_SIZE
+#define NET_SOCKADDR_MAX_SIZE (sizeof(sa_family_t) + 108)
+
 /* Socket address struct for UNIX domain sockets */
 struct sockaddr_un {
 	sa_family_t sun_family;    /* AF_UNIX */
 	char        sun_path[NET_SOCKADDR_MAX_SIZE - sizeof(sa_family_t)];
 };
+#undef NET_SOCKADDR_MAX_SIZE
 
 struct net_addr {
 	sa_family_t family;
