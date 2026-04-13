@@ -27,10 +27,9 @@ extern Broker *g_broker;
  * @details This function creates a socket connection to the D-Bus broker
  *          and initializes an sd-bus object for communication
  * @param bus [out] Pointer to store the created sd-bus object
- * @param socket_fd [out] Optional pointer to store the socket file descriptor
  * @return 0 on success, negative error code on failure
  */
-int connect_to_dbroker(sd_bus **bus, int *socket_fd);
+int connect_to_dbroker(sd_bus **bus);
 
 /**
  * @brief Disconnect from the D-Bus broker

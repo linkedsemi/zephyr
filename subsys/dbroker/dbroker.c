@@ -451,7 +451,7 @@ static int request_dbroker_connection(int *broker_fd, int *client_fd)
 
 #endif /* CONFIG_DBUS_BROKER_SOCKETPOOL */
 
-int connect_to_dbroker(sd_bus **bus, int *socket_fd)
+int connect_to_dbroker(sd_bus **bus)
 {
     int broker_fd = -1;
     int client_fd = -1;
@@ -632,9 +632,9 @@ int connect_to_dbroker(sd_bus **bus, int *socket_fd)
     *bus = internal_bus;
 
     /* Return the socket fd if requested */
-    if (socket_fd) {
-        *socket_fd = client_fd;
-    }
+    // if (socket_fd) {
+    //     *socket_fd = client_fd;
+    // }
 
     return 0;
 }
