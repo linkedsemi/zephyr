@@ -14,6 +14,17 @@
 #ifndef ZEPHYR_DRIVERS_ETHERNET_ETH_DWMAC_PRIV_H_
 #define ZEPHYR_DRIVERS_ETHERNET_ETH_DWMAC_PRIV_H_
 
+#if defined(CONFIG_PINCTRL)
+    #include <zephyr/drivers/pinctrl.h>
+#endif
+#if defined(CONFIG_RESET)
+    #include <zephyr/drivers/reset.h>
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+    #include <zephyr/drivers/clock_control.h>
+    #include <soc_clock.h>
+#endif
+
 /*
  * Global driver parameters
  */
@@ -34,21 +45,34 @@ struct dwmac_dma_desc {
 	uint32_t des3;
 };
 
+struct eth_linkedsemi_config {
+    mem_addr_t base_addr;
+    void *rx_refill_thread_stack;
+    char *rx_refill_thread_name;
+    struct dwmac_dma_desc *tx_descs;
+    struct dwmac_dma_desc *rx_descs;
+    void (*irq_config_func)(const struct device *dev);
+    void (*irq_deconfig_func)(const struct device *dev);
+    IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
+    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
+    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+    const struct device *mdio_dev;
+    const struct device *phy_dev;
+    bool is_fixed_link;
+    uint8_t tx_delay;
+    uint8_t rx_delay;
+};
+
 /* our private instance structure */
 struct dwmac_priv {
-	mem_addr_t base_addr;
 	struct net_if *iface;
 	const struct device *dev;
-	const struct device *clock;
-
-	uint8_t mac_addr[6];
 
 	uint32_t feature0;
 	uint32_t feature1;
 	uint32_t feature2;
 	uint32_t feature3;
 
-	struct dwmac_dma_desc *tx_descs, *rx_descs;
 	struct k_sem free_tx_descs, free_rx_descs;
 	unsigned int tx_desc_head, tx_desc_tail;
 	unsigned int rx_desc_head, rx_desc_tail;
@@ -58,24 +82,22 @@ struct dwmac_priv {
 #endif
 
 	struct net_buf *tx_frags[NB_TX_DESCS]; /* index shared with tx_descs */
+	struct net_pkt *tx_pkt[NB_TX_DESCS];   /* index shared with tx_descs */
 	struct net_buf *rx_frags[NB_RX_DESCS]; /* index shared with rx_descs */
-
 	struct net_pkt *rx_pkt;
 	unsigned int rx_bytes;
 
-	K_KERNEL_STACK_MEMBER(rx_refill_thread_stack, CONFIG_RX_REFILL_STACK_SIZE);
 	struct k_thread rx_refill_thread;
-	const struct device *mdio_dev;
-	const struct device *phy_dev;
-	bool is_fixed_link;
+
+	uint8_t mac_addr[6];
 };
 
 /*
  * Handy register accessors
  */
 
-#define REG_READ(r) sys_read32(p->base_addr + (r))
-#define REG_WRITE(r, v) sys_write32((v), p->base_addr + (r))
+#define REG_READ(r) sys_read32(dev_config->base_addr + (r))
+#define REG_WRITE(r, v) sys_write32((v), dev_config->base_addr + (r))
 
 /*
  * Shared declarations between core and platform glue code
