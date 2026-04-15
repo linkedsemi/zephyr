@@ -6,12 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* Workaround for missing syscall wrappers when CONFIG_USERSPACE=n */
-#ifndef CONFIG_USERSPACE
-#define net_addr_pton(family, src, dst) z_impl_net_addr_pton(family, src, dst)
-#define net_addr_ntop(family, src, dst, size) z_impl_net_addr_ntop(family, src, dst, size)
-#endif
-
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 

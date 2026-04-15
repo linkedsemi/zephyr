@@ -18,11 +18,6 @@ zephyr_library_sources(
   utils.c
   )
 
-# Add implementation file when CONFIG_USERSPACE is disabled
-if(NOT CONFIG_USERSPACE)
-  zephyr_library_sources(net_addr_impl.c)
-endif()
-
 if(CONFIG_NET_OFFLOAD)
 zephyr_library_sources(net_context.c net_pkt.c)
 endif()
