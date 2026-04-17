@@ -24,7 +24,7 @@ zephyr_library_include_directories(
 )
 
 zephyr_library_link_libraries(
-	dbus_broker
+	dbus-broker
 	basu
 )
 
