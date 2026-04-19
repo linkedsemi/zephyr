@@ -76,51 +76,10 @@ void reset_reason_init(void)
         reset_src = SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK;
         sec_wdt_reset_reason_clean();
         if (SYSC_SEC_PER_RST_FROM_IWDT1_MASK & reset_src) {
-#if defined(CONFIG_WDT_RESET_REASON_DETAIL)
-            wdt_reset_en.value1 &= IWDT_RSTEN1_ALL_MASK;
-            wdt_reset_en.value2 &= IWDT_RSTEN2_ALL_MASK;
-            wdt_reset_en.value3 &= IWDT_RSTEN3_ALL_MASK;
-            wdt_reset_en.value4 &= IWDT_RSTEN4_ALL_MASK;
-            wdt_reset_en.value5 &= IWDT_RSTEN5_ALL_MASK;
-            if ((IWDT_RSTEN1_ALL_MASK == wdt_reset_en.value1)
-                && (IWDT_RSTEN2_ALL_MASK == wdt_reset_en.value2)
-                && (IWDT_RSTEN3_ALL_MASK == wdt_reset_en.value3)
-                && (IWDT_RSTEN4_ALL_MASK == wdt_reset_en.value4)
-                && (IWDT_RSTEN5_ALL_MASK == wdt_reset_en.value5)) {
-                ret = SEC_IWDT_FULL_RESET;
-            } else if ((0 == wdt_reset_en.value1)
-                && (0 == wdt_reset_en.value2)
-                && (0 == wdt_reset_en.value3)
-                && (0 == wdt_reset_en.value4)
-                && (0 == wdt_reset_en.value5)) {
-                ret = SEC_IWDT_HART_RESET;
-            } else if ((0 != wdt_reset_en.value1)
-                || (0 != wdt_reset_en.value2)
-                || (0 != wdt_reset_en.value3)
-                || (0 != wdt_reset_en.value4)
-                || (0 != wdt_reset_en.value5)) {
-                ret = SEC_IWDT_PARTIAL_RESET;
-            }
-
-            if (wdt_reset_en.WDT_RST_PSRAM) {
-                /* PSRAM xip disable */
-                uint32_t psram_cfg = sys_read32(APP_SYSC_CPU_APP_ADDR + 0x80);
-                psram_cfg &= ~BIT(0);
-                sys_write32(psram_cfg, APP_SYSC_CPU_APP_ADDR + 0x80);
-            }
-#else
             ret = SEC_IWDT_HART_RESET;
-#endif
+        } else if (SYSC_SEC_PER_RST_FROM_WWDT1_MASK & reset_src) {
+            ret = SEC_WWDT_HART_RESET;
         }
-    #if 0
-        else if (SYSC_SEC_PER_RST_FROM_WWDT1_MASK & reset_src) {
-            if () {
-                ret = SEC_WWDT_FULL_RESET;
-            } else {
-                ret = SEC_WWDT_HART_RESET;
-            }
-        }
-    #endif
         else if (SYSC_SEC_PER_RST_FROM_SEC_CORE_SRST_MASK & reset_src) {
             ret = SOFT_HART_RESET;
         }
