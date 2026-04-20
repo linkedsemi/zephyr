@@ -214,7 +214,7 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t size)
         return NULL;
     }
 
-    ret = k_heap_realloc(heap, ptr, size, K_NO_WAIT);
+    ret = k_heap_realloc(heap, ptr, size, Z_TIMEOUT_TICKS((k_ticks_t)CONFIG_NEWLIB_LIBC_MALLOC_TIMEOUT));
 
     if (ret != NULL) {
         heap_ref = ret;

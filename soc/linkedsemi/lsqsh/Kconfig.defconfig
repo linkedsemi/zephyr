@@ -470,4 +470,11 @@ if SPI_DW
 	config SPI_EXTENDED_MODES
 		default y
 endif
+
+if WATCHDOG
+	config WDT_RESET_REASON_DETAIL
+		bool "WDT_RESET_REASON_DETAIL"
+		default y
+endif
+
 endif
