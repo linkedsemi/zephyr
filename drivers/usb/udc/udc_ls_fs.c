@@ -568,7 +568,6 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
         }
         else
         {
-            __ASSERT(usb_data->rx_fifo_addr < 16, "no enough fifo");
             usb_reg->RXFIFO_SIZE[0] = usb_data->rx_fifo_addr;
             switch(cfg->mps)
             {
@@ -592,6 +591,7 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
                 __ASSERT(0, "no enough fifo");
             break;
             }
+            __ASSERT(usb_data->rx_fifo_addr <= 16, "no enough fifo");
         }
     }
 
@@ -836,8 +836,14 @@ static void ls_handle_evt_out_xfer(const struct device *dev, uint8_t ep)
 {
     /* wait out buffer valid */
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
-    k_sem_take(&usb_data->out_buf_valid, K_FOREVER);
-    udc_ls_rx(dev, ep, udc_buf_peek(dev, ep));
+    struct net_buf *buf = udc_buf_peek(dev, ep);
+
+    while (buf == NULL) {
+        k_sem_take(&usb_data->out_buf_valid, K_FOREVER);
+        buf = udc_buf_peek(dev, ep);
+    }
+
+    udc_ls_rx(dev, ep, buf);
 }
 
 static void udc_ls_thread_handler(void *dev)
