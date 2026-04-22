@@ -15,6 +15,7 @@
 #include <espi_lpc_common.h>
 #include "cpu.h"
 #include "reg_dwuart_type.h"
+#include <soc.h>
 
 LOG_MODULE_REGISTER(ls_host_vuart, CONFIG_ESPI_LOG_LEVEL);
 
@@ -144,7 +145,7 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
         }
 
         if (!(iir & (IIR_RDA | IIR_THRE | IIR_RLS))) {
-            iir = IIR_NOPEND;
+            iir |= IIR_NOPEND;
         }
     }
 
@@ -156,7 +157,7 @@ static void host_vuart_report_up_irq(const struct device *dev)
 {
     const struct host_vuart_cfg *cfg = dev->config;
     uint8_t iir = host_vuart_calc_iir(dev);
-    if (!(iir == IIR_NOPEND))  {
+   if ((iir & 0x0F) != IIR_NOPEND)  {
         if (cfg->up_irq) {
             espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
         }
@@ -254,7 +255,7 @@ static void host_vuart_reg1_read(const struct peri_ioport_content *ioport, uint8
     if (cfg->retain->data_reg.lcr & LCR_DLAB) {
         *val = cfg->retain->data_reg.dlh;
     } else {
-        *val = cfg->retain->data_reg.ier;
+        *val = cfg->retain->data_reg.ier & ~(1 << 6);
     }
 }
 
@@ -339,7 +340,6 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     {
         *val |= LSR_BI;
     }
-    
     k_spin_unlock(&ptr_data->lock, key);
 
     if (lsr_tx_empty(lsr))
