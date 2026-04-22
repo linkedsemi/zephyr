@@ -18,7 +18,7 @@
 #include "espi_lpc_common.h"
 
 #define VUART_RX_COUNT 7
-#define VUART_RX_TIMEOUT_MS 20
+#define VUART_RX_TIMEOUT_MS 1
 
 LOG_MODULE_REGISTER(linkedsemi_ls_vuart, CONFIG_UART_LOG_LEVEL);
 
@@ -38,30 +38,38 @@ struct ls_vuart_data {
     struct k_timer rx_timer;
     bool rx_irq_enabled;
     bool tx_irq_enabled;
+    int64_t rx_last_ready_ms;
 };
+
+
 
 static void vuart_rx_timer(struct k_timer *timer_id)
 {
-    struct ls_vuart_data *data = CONTAINER_OF(timer_id, struct ls_vuart_data, rx_timer);
-    k_sem_give(&data->irq_sem);
+    const struct device *dev = k_timer_user_data_get(timer_id);
+    struct ls_vuart_data *data = dev->data;
+    const struct ls_vuart_cfg *cfg = dev->config;
+    if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > 0) {
+        k_sem_give(&data->irq_sem);
+    }
 }
 
 
 static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
 {
     struct ls_vuart_data *data = dev->data;
-    const struct ls_vuart_cfg *cfg = dev->config;
-    if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > VUART_RX_COUNT) {
-        k_timer_stop(&data->rx_timer);
-        k_sem_give(&data->irq_sem);
-    }else if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b)  > 0) {
-        k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
-    }
+    k_sem_give(&data->irq_sem);
 }
 
 void bmc_vuart_rx_callback(const struct device *dev, void *msg)
 {
-    vuart_local_wakeup_irq_thread(dev);
+    struct ls_vuart_data *data = dev->data;
+    if (k_timer_remaining_get(&data->rx_timer) == 0) {
+        k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
+    }
+    if (uart_irq_rx_ready(dev)) {
+        vuart_local_wakeup_irq_thread(dev);
+         k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
+    }
 }
 
 static void vuart_irq_thread(void *dev_ptr, void *p2, void *p3)
@@ -73,13 +81,13 @@ static void vuart_irq_thread(void *dev_ptr, void *p2, void *p3)
 	ARG_UNUSED(p3);
 
 	while (1) {
-        int ret = k_sem_take(&ptr_data->irq_sem, K_FOREVER);
-
-        if (ptr_data->irq_cb && ptr_data->rx_irq_enabled) {
-            if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > 0) {
-                ptr_data->irq_cb(dev, ptr_data->irq_user_data);
-            }
+      if(k_sem_take(&ptr_data->irq_sem,K_FOREVER) == 0)
+      {
+        if(ptr_data->irq_cb)
+        {
+            ptr_data->irq_cb(dev,ptr_data->irq_user_data);
         }
+      }
     }
 }
 
@@ -167,7 +175,14 @@ static int vuart_irq_tx_ready(const struct device *dev)
 static int vuart_irq_rx_ready(const struct device *dev)
 {
 	const struct ls_vuart_cfg *cfg = dev->config;
-	return !sw_fifo_empty(&cfg->vuart_fifo_base->h2b);
+	struct ls_vuart_data *data = dev->data;
+	uint16_t count = sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b);
+
+	if (count > VUART_RX_COUNT) {
+		return 1;
+	}
+
+	return 0;
 }
 
 static void vuart_irq_rx_disable(const struct device *dev)
@@ -240,6 +255,7 @@ static int ls_vuart_init(const struct device *dev)
     const struct ls_vuart_cfg *cfg = dev->config;
     struct ls_vuart_data *ptr_data = dev->data;
     k_timer_init(&ptr_data->rx_timer, vuart_rx_timer, NULL);
+    k_timer_user_data_set(&ptr_data->rx_timer, (void *)dev);
     k_sem_init(&ptr_data->irq_sem, 0, 1);
     k_thread_create(&ptr_data->irq_thread, cfg->irq_thread_stack, cfg->irq_thread_stack_size,
       vuart_irq_thread, (void *)dev, NULL, NULL, CONFIG_VUART_IRQ_THREAD_PRIORITY, 0, K_NO_WAIT);
