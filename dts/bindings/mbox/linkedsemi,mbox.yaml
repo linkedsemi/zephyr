@@ -8,16 +8,13 @@ compatible: "linkedsemi,mbox"
 include: [base.yaml, mailbox-controller.yaml]
 
 properties:
-  reg:
-    required: true
-
-  fifo-deepth:
+  mtu:
     type: int
-    required: true
-
-  fifo-width:
-    type: int
+    description: |
+      maximum transmission unit of all channels.
     required: true
 
 mbox-cells:
   - channel
+  - fifo_width
+  - fifo_deepth
