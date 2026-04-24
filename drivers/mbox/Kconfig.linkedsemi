@@ -10,24 +10,14 @@ config MBOX_LINKEDSEMI
 
 if MBOX_LINKEDSEMI
 
+config MBOX_LINKEDSEMI_CRC
+    bool "MBOX_LINKEDSEMI_CRC"
+    default y
+
 config SIGNALLING_MODE_SUPPORT
     bool "NULL msg support for mailbox"
     default n
     help
       not support signalling mode
-
-config MBOX_LINKEDSEMI_APP_CPU1
-	bool "MBOX LINKEDSEMI driver app cpu1"
-	depends on $(dt_path_enabled,/cpus/cpu@1)
-	default y
-	help
-	  MBOX Driver for LINKEDSEMI SOC
-
-config MBOX_LINKEDSEMI_APP_CPU2
-	bool "MBOX LINKEDSEMI driver app cpu2"
-	depends on $(dt_path_enabled,/cpus/cpu@2)
-	default y
-	help
-	  MBOX Driver for LINKEDSEMI SOC
 
 endif # MBOX_LINKEDSEMI
