@@ -37,6 +37,10 @@
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
+#if defined(CONFIG_IOPMP_LINKEDSEMI)
+extern void lsqsh_iopmp_init(void);
+#endif
+
 #define MHINT_AEE_POS 20
 #define SFT_CTRL_REG_NUM_RESET_FLAG (0x2)
 #define FLASH_XIP_MODE_RESET_BIT     (4)
@@ -163,85 +167,6 @@ extern void SystemInit();
 extern void psram_init(void);
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-
-enum iopmp_channel {
-    IOPMP_APP_CPUI_APP_CPUD,
-    IOPMP_APP_CPUS,
-    IOPMP_DMAC1_ETH1_EMMC1,
-    IOPMP_DMAC2_ETH2_EMMC2,
-    IOPMP_USB2_SHA512_LTPI,
-};
-
-#define IOPMP_DMA_CHANNEL_MIN IOPMP_DMAC1_ETH1_EMMC1
-#define IOPMP_DMA_CHANNEL_MAX IOPMP_USB2_SHA512_LTPI
-
-static void iopmp_region_init(void)
-{
-    uint32_t dev;
-    uint32_t chn;
-    uint32_t idx;
-
-    ls_clock_control_off(IOPMP_CLOCK);
-    ls_reset_line_toggle(IOPMP_RESET);
-    ls_clock_control_on(IOPMP_CLOCK);
-
-    chn = IOPMP_APP_CPUI_APP_CPUD;
-    idx = 0;
-    dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-    iopmp_config_region_napot(dev, idx++, 0x1000000, KB(64), false, false, false, false);
-    iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
-    iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
-    iopmp_config_region_napot(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
-
-    iopmp_config_enable(dev, true);
-
-    chn = IOPMP_APP_CPUS;
-    idx = 0;
-    dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-    iopmp_config_region_napot(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
-    iopmp_config_region_napot(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K
-                                                                                                                                    sha512    0x40005000 0x40005FFF 4K
-                                                                                                                                    otfad_aes 0x40006000 0x40006FFF 4K
-                                                                                                                                    nouse     0x40007000 0x40007FFF 4K */
-    iopmp_config_region_napot(dev, idx++, 0x40022000 + 0x28, 4, true, true, true, false); /* sec_cpu_intr */
-    iopmp_config_region_napot(dev, idx++, 0x40029000, KB(2), true, true, true, false);    /* calc_aes  0x40029000 0x400293FF 1K
-                                                                                                                                    calc_sm4  0x40029400 0x400297FF 1K */
-#if defined(CONFIG_IOPMP_WHITELIST_I2C1_I3C1)
-    iopmp_config_region_napot(dev, idx++, 0x400a0000, KB(4), true, true, true, false);                                          /* i2c1      0x400A0000 0x400A03FF 1K
-                                                                                                                                    nouse     0x400A0400 0x400A07FF 1K
-                                                                                                                                    i3c1      0x400A0800 0x400A0BFF 1K
-                                                                                                                                    nouse     0x400A0C00 0x400A0FFF 1K */
-#endif
-    iopmp_config_region_napot(dev, idx++, 0x40000000, KB(256), false, false, false, false);
-    iopmp_config_region_napot(dev, idx++, 0x400a0000, KB(32), false, false, false, false);
-
-    iopmp_config_region_napot(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
-
-    iopmp_config_enable(dev, true);
-
-#if defined(CONFIG_IOPMP_DMA)
-    for (chn = IOPMP_DMA_CHANNEL_MIN; chn <= IOPMP_DMA_CHANNEL_MAX; chn++) {
-        idx = 0;
-        dev = SEC_IOPMP1_ADDR + (chn * 0x400);
-        iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768), KB(256), false, false, false, false);
-        iopmp_config_region_napot(dev, idx++, 0x10000000 + KB(768) + KB(256), KB(256), false, false, false, false);
-
-        iopmp_config_region_napot(dev, idx++, 0x40002800, KB(1), true, true, true, false);    /* calc_sha  0x40002800 0x40002BFF 1K */
-        iopmp_config_region_napot(dev, idx++, 0x40004000, KB(16), true, true, true, false);   /* nist_trng 0x40004000 0x40004FFF 4K
-                                                                                                  sha512    0x40005000 0x40005FFF 4K
-                                                                                                  otfad_aes 0x40006000 0x40006FFF 4K
-                                                                                                  nouse     0x40007000 0x40007FFF 4K */
-        iopmp_config_region_napot(dev, idx++, 0x40029000, KB(2), true, true, true, false);    /* calc_aes  0x40029000 0x400293FF 1K
-                                                                                                  calc_sm4  0x40029400 0x400297FF 1K */
-        iopmp_config_region_napot(dev, idx++, 0x40000000, KB(256), false, false, false, false);
-        iopmp_config_region_napot(dev, idx++, 0x400a0000, KB(32), false, false, false, false);
-
-        iopmp_config_region_napot(dev, idx++, 0x0, (uint64_t)4 * GB(1), true, true, true, false);
-
-        iopmp_config_enable(dev, true);
-    }
-#endif
-}
 
 __maybe_unused __ramfunc static void enable_dpll()
 {
@@ -654,10 +579,6 @@ __weak void soc_early_init_hook(void)
         || (EXT_FULL_RESET == reset_reason_get())) {
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox)), 0, DT_REG_SIZE(DT_NODELABEL(mbox)));
     }
-#endif
-
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) && defined(CONFIG_IOPMP)
-    iopmp_region_init();
 #endif
 
     cpu_sleep_mode_config(0);

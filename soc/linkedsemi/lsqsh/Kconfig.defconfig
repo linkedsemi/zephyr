@@ -154,13 +154,45 @@ config ICACHE_LINE_SIZE_DETECT
 config DCACHE_LINE_SIZE_DETECT
 	default y
 
-config IOPMP
-	bool "IOPMP"
+config IOPMP_LINKEDSEMI
+	bool "IOPMP_LINKEDSEMI"
 	default n
 
-config IOPMP_DMA
-	bool "IOPMP_DMA"
+if IOPMP_LINKEDSEMI
+
+config IOPMP_GRANULARITY
+	int "IOPMP_GRANULARITY"
+	default 8
+
+config IOPMP_SLOTS
+	int "IOPMP_SLOTS"
+	default 8
+
+config IOPMP_NO_TOR
+	bool "PMP_NO_TOR"
 	default n
+
+config IOPMP_NO_NA4
+	bool "PMP_NO_NA4"
+	default y
+
+config IOPMP_NO_NAPOT
+	bool "IOPMP_NO_NAPOT"
+	default n
+
+config IOPMP_DEBUG_INIT_DUMP
+	bool "IOPMP_DEBUG_INIT_DUMP"
+	default n
+
+config IOPMP_DEBUG_WRITE_DUMP
+	bool "IOPMP_DEBUG_WRITE_DUMP"
+	default n
+
+config IOPMP_LOG_LEVEL
+	int "IOPMP_LOG_LEVEL"
+	default 3
+
+endif
 
 config RV_BOOT_HART_MRADDR
 	hex

@@ -4,6 +4,7 @@ zephyr_sources(psram.c)
 zephyr_sources(dma.c)
 zephyr_sources(soc_reset_reason.c)
 zephyr_sources(soc_reboot.c)
+zephyr_library_sources_ifdef(CONFIG_IOPMP_LINKEDSEMI iopmp.c)
 
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH malloc_newlib.c)
 zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_TLSF_LSQSH malloc_newlib_tlsf.c tlsf/tlsf.c)
