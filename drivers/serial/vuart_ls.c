@@ -38,7 +38,6 @@ struct ls_vuart_data {
     struct k_timer rx_timer;
     bool rx_irq_enabled;
     bool tx_irq_enabled;
-    int64_t rx_last_ready_ms;
 };
 
 
@@ -49,7 +48,7 @@ static void vuart_rx_timer(struct k_timer *timer_id)
     struct ls_vuart_data *data = dev->data;
     const struct ls_vuart_cfg *cfg = dev->config;
     if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > 0) {
-        k_sem_give(&data->irq_sem);
+        vuart_local_wakeup_irq_thread(dev);
     }
 }
 
@@ -63,12 +62,14 @@ static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
 void bmc_vuart_rx_callback(const struct device *dev, void *msg)
 {
     struct ls_vuart_data *data = dev->data;
+    const struct ls_vuart_cfg *cfg = dev->config;
+
     if (k_timer_remaining_get(&data->rx_timer) == 0) {
         k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
-    }
-    if (uart_irq_rx_ready(dev)) {
+    }    
+    if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > VUART_RX_COUNT) { 
         vuart_local_wakeup_irq_thread(dev);
-         k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
+        k_timer_stop(&data->rx_timer);
     }
 }
 
@@ -175,14 +176,8 @@ static int vuart_irq_tx_ready(const struct device *dev)
 static int vuart_irq_rx_ready(const struct device *dev)
 {
 	const struct ls_vuart_cfg *cfg = dev->config;
-	struct ls_vuart_data *data = dev->data;
-	uint16_t count = sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b);
+	return !sw_fifo_empty(&cfg->vuart_fifo_base->h2b);
 
-	if (count > VUART_RX_COUNT) {
-		return 1;
-	}
-
-	return 0;
 }
 
 static void vuart_irq_rx_disable(const struct device *dev)
