@@ -54,10 +54,10 @@ class GdbStub_RISC_V(GdbStub):
     ARCH_DATA_BLK_STRUCT    = "<IIIIIIIIIIIIIIIIII"
     # Version 2 (64-bit, no sp/fp): 18 registers
     ARCH_DATA_BLK_STRUCT_2  = "<QQQQQQQQQQQQQQQQQQ"
-    # Version 4 (32-bit, with sp for backtrace): 19 registers
-    ARCH_DATA_BLK_STRUCT_2_32  = "<IIIIIIIIIIIIIIIIIII"
-    # Version 3 (64-bit, with sp for backtrace): 19 registers
-    ARCH_DATA_BLK_STRUCT_3_64  = "<QQQQQQQQQQQQQQQQQQQ"
+    # Version 4 (32-bit, with sp + fp for backtrace): 20 registers
+    ARCH_DATA_BLK_STRUCT_2_32  = "<IIIIIIIIIIIIIIIIIIII"
+    # Version 3 (64-bit, with sp + fp for backtrace): 20 registers
+    ARCH_DATA_BLK_STRUCT_3_64  = "<QQQQQQQQQQQQQQQQQQQQ"
 
     GDB_SIGNAL_DEFAULT = 7
 
@@ -76,8 +76,8 @@ class GdbStub_RISC_V(GdbStub):
 
         # Version 1: 32-bit original (18 regs, no sp)
         # Version 2: 64-bit original (18 regs, no sp)
-        # Version 3: 64-bit with sp (19 regs)
-        # Version 4: 32-bit with sp (19 regs)
+        # Version 3: 64-bit with sp (20 regs)
+        # Version 4: 32-bit with sp + fp (20 regs)
         if self.arch_data_ver == 1:
             tu = struct.unpack(self.ARCH_DATA_BLK_STRUCT, arch_data_blk)
         elif self.arch_data_ver == 2:
@@ -107,7 +107,8 @@ class GdbStub_RISC_V(GdbStub):
         self.registers[RegNum.T5] = tu[15]
         self.registers[RegNum.T6] = tu[16]
         self.registers[RegNum.SP] = tu[17]
-        self.registers[RegNum.PC] = tu[18]
+        self.registers[RegNum.FP] = tu[18]
+        self.registers[RegNum.PC] = tu[19]
 
     def handle_register_group_read_packet(self):
         # Version 1 and 4 are 32-bit, version 2 and 3 are 64-bit
