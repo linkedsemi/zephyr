@@ -11,86 +11,86 @@ static int pinctrl_pin_show(uint8_t pin)
     uint32_t mask = (1<<x->num<<16) | (1<<x->num);
     LOG_INF("%s  "
             "pin: %#x  "
-            "%p: PU1_PU0: %#x  "
-            "%p: PD_PU2: %#x  "
-            "%p: IEN1_IEN0: %#x  "
-            "%p: DS1_DS0: %#x  "
-            "%p: AE_DS2: %#x  "
-            "%p: OD_FIR: %#x  "
-            "%p: SL_ST: %#x  "
+            "%#lx: PU1_PU0: %#x  "
+            "%#lx: PD_PU2: %#x  "
+            "%#lx: IEN1_IEN0: %#x  "
+            "%#lx: DS1_DS0: %#x  "
+            "%#lx: AE_DS2: %#x  "
+            "%#lx: OD_FIR: %#x  "
+            "%#lx: SL_ST: %#x  "
 
-            "%p: OE_DIN: %#x  "
-            "%p: DOC_DOS: %#x  "
+            "%#lx: OE_DIN: %#x  "
+            "%#lx: DOC_DOS: %#x  "
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-            "%p: FUNC_IO_LOCK: %#x  "
-            "%p: IO_FUNC_LOCK: %#x  "
-            "%p: SEC GPIO_INTR_MSK: %#x  "
-            "%p: SEC GPIO_INTR_STT: %#x  "
-            "%p: SEC GPIO_INTR_RAW: %#x  "
+            "%#lx: FUNC_IO_LOCK: %#lx  "
+            "%#lx: IO_FUNC_LOCK: %#lx  "
+            "%#lx: SEC GPIO_INTR_MSK: %#x  "
+            "%#lx: SEC GPIO_INTR_STT: %#x  "
+            "%#lx: SEC GPIO_INTR_RAW: %#x  "
 #endif
-            "%p: APP GPIO_INTR_MSK: %#x  "
-            "%p: APP GPIO_INTR_STT: %#x  "
-            "%p: APP GPIO_INTR_RAW: %#x  "
+            "%#lx: APP GPIO_INTR_MSK: %#x  "
+            "%#lx: APP GPIO_INTR_STT: %#x  "
+            "%#lx: APP GPIO_INTR_RAW: %#x  "
 
-            "%p: PINMUX_FUNC1 enable: %#x %p: FUNC: %#x  "
-            "%p: PINMUX_FUNC2 enable: %#x  "
-            "%p: PINMUX_FUNC3 enable: %#x  "
-            "%p: PINMUX_FUNC4 enable: %#x  "
+            "%#lx: PINMUX_FUNC1 enable: %#x  %#lx: FUNC: %#x  "
+            "%#lx: PINMUX_FUNC2 enable: %#x  "
+            "%#lx: PINMUX_FUNC3 enable: %#x  "
+            "%#lx: PINMUX_FUNC4 enable: %#x  "
             ,
 
             __func__,
             pin,
 
-            &APP_PMU->IO_CFG[x->port].PU1_PU0,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].PU1_PU0,
             APP_PMU->IO_CFG[x->port].PU1_PU0 & mask,
-            &APP_PMU->IO_CFG[x->port].PD_PU2,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].PD_PU2,
             APP_PMU->IO_CFG[x->port].PD_PU2 & mask,
-            &APP_PMU->IO_CFG[x->port].IEN1_IEN0,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].IEN1_IEN0,
             APP_PMU->IO_CFG[x->port].IEN1_IEN0 & mask,
-            &APP_PMU->IO_CFG[x->port].DS1_DS0,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].DS1_DS0,
             APP_PMU->IO_CFG[x->port].DS1_DS0 & mask,
-            &APP_PMU->IO_CFG[x->port].AE_DS2,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].AE_DS2,
             APP_PMU->IO_CFG[x->port].AE_DS2 & mask,
-            &APP_PMU->IO_CFG[x->port].OD_FIR,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].OD_FIR,
             APP_PMU->IO_CFG[x->port].OD_FIR & mask,
-            &APP_PMU->IO_CFG[x->port].SL_ST,
+            (uintptr_t)&APP_PMU->IO_CFG[x->port].SL_ST,
             APP_PMU->IO_CFG[x->port].SL_ST & mask,
 
-            &APP_PMU->IO_VAL[x->port].OE_DIN,
+            (uintptr_t)&APP_PMU->IO_VAL[x->port].OE_DIN,
             APP_PMU->IO_VAL[x->port].OE_DIN & mask,
-            &APP_PMU->IO_VAL[x->port].DOC_DOS,
+            (uintptr_t)&APP_PMU->IO_VAL[x->port].DOC_DOS,
             APP_PMU->IO_VAL[x->port].DOC_DOS & mask,
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-            &SYSC_SEC_AWO->FUNC_IO_LOCK[pin>>4],
+            (uintptr_t)&SYSC_SEC_AWO->FUNC_IO_LOCK[pin>>4],
             SYSC_SEC_AWO->FUNC_IO_LOCK[pin>>4] & BIT(x->num),
-            &SYSC_SEC_PER->IO_FUNC_LOCK[pin>>4],
+            (uintptr_t)&SYSC_SEC_PER->IO_FUNC_LOCK[pin>>4],
             SYSC_SEC_PER->IO_FUNC_LOCK[pin>>4] & BIT(x->num),
 
-            &SEC_PMU->GPIO_INTR_MSK[x->port],
+            (uintptr_t)&SEC_PMU->GPIO_INTR_MSK[x->port],
             SEC_PMU->GPIO_INTR_MSK[x->port] & mask,
-            &SEC_PMU->GPIO_INTR_STT[x->port],
+            (uintptr_t)&SEC_PMU->GPIO_INTR_STT[x->port],
             SEC_PMU->GPIO_INTR_STT[x->port] & mask,
-            &SEC_PMU->GPIO_INTR_RAW[x->port],
+            (uintptr_t)&SEC_PMU->GPIO_INTR_RAW[x->port],
             SEC_PMU->GPIO_INTR_RAW[x->port] & mask,
 #endif
-            &APP_PMU->GPIO_INTR_MSK[x->port],
+            (uintptr_t)&APP_PMU->GPIO_INTR_MSK[x->port],
             APP_PMU->GPIO_INTR_MSK[x->port] & mask,
-            &APP_PMU->GPIO_INTR_STT[x->port],
+            (uintptr_t)&APP_PMU->GPIO_INTR_STT[x->port],
             APP_PMU->GPIO_INTR_STT[x->port] & mask,
-            &APP_PMU->GPIO_INTR_RAW[x->port],
+            (uintptr_t)&APP_PMU->GPIO_INTR_RAW[x->port],
             APP_PMU->GPIO_INTR_RAW[x->port] & mask,
 
-            &SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC1][x->port >> 1],
+            (uintptr_t)&SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC1][x->port >> 1],
             per_func_en_get(pin, PINMUX_FUNC1),
-            &SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4],
+            (uintptr_t)&SYSC_APP_PER->FUNC_SEL[x->port][x->num / 4],
             per_func0_alt_get(pin),
-            &SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC2][x->port >> 1],
+            (uintptr_t)&SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC2][x->port >> 1],
             per_func_en_get(pin, PINMUX_FUNC2),
-            &SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC3][x->port >> 1],
+            (uintptr_t)&SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC3][x->port >> 1],
             per_func_en_get(pin, PINMUX_FUNC3),
-            &SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC4][x->port >> 1],
+            (uintptr_t)&SYSC_APP_AWO->IO_FUNC[PINMUX_FUNC4][x->port >> 1],
             per_func_en_get(pin, PINMUX_FUNC4)
     );
 
@@ -119,6 +119,10 @@ static int pin2code(char port, uint8_t num)
 
 static int cmd_pinctrl_pin_show(const struct shell *sh, size_t argc, char **argv)
 {
+    if (1 == argc) {
+        shell_print(sh, "Usage: %s <pin> [pin] [pin] ...", argv[0]);
+        return 0;
+    }
     for (int i = 1; i < argc; i++) {
         int err = 0;
         char port = argv[i][0];
