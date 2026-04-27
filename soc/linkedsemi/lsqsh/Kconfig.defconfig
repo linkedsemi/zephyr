@@ -497,6 +497,7 @@ config SD_BUFFER_SIZE
 	default SD_BUFFER_SIZE_OVERLAY
 
 rsource "otbn/Kconfig.defconfig"
+rsource "coredump/Kconfig"
 
 if SPI_DW
 	config SPI_EXTENDED_MODES

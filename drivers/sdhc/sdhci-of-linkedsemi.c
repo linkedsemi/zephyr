@@ -12,7 +12,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/cache.h>
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/bitarray.h>
+#include <errno.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
 #endif
@@ -29,9 +31,43 @@
 #include "reg_sysc_app_awo.h"
 #include "reg_sysc_app_cpu.h"
 
+/* HAL eMMC function declarations for coredump backend - avoid include due to enum conflicts */
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+extern void emmc_protection_init(void);
+#endif
+extern uint32_t ls_mmc_card_init(uint32_t mapbase);
+extern void ls_sdhci_reset(uint32_t mapbase, uint8_t mask);
+extern uint32_t ls_sdhci_request(uint32_t mapbase, struct sdhc_command *cmd, struct sdhc_data *data);
+
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
 #define LINKEDSEMI_SDHCI_TUNING_DELAY_MAX (SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS)
+
+/* Time-based timeout helper for bare-metal context */
+#define TIMEOUT_MS_TO_CYCLES(ms) ((ms) * (uint32_t)(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000))
+
+/**
+ * @brief Check if time-based timeout has expired
+ *
+ * @param start Start cycle count from k_cycle_get_32()
+ * @param timeout_ms Timeout in milliseconds
+ * @return true if timeout expired
+ */
+static inline bool timeout_expired(uint32_t start, uint32_t timeout_ms)
+{
+    uint32_t elapsed = (k_cycle_get_32() - start) & UINT32_MAX;
+    return elapsed >= TIMEOUT_MS_TO_CYCLES(timeout_ms);
+}
+
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+/* eMMC coredump region tracking - set during MMC_SEND_EXT_CSD interception */
+static uint32_t g_coredump_start_block = 0;       /* Starting block for coredump */
+static uint32_t g_coredump_reserved_blocks;   /* Number of reserved blocks */
+static bool g_coredump_region_configured;     /* Whether region has been configured */
+
+/* Flag to indicate if SDHCI is currently busy with a transfer */
+static atomic_t g_sdhci_busy;
+#endif
 
 struct linkedsemi_sdhci_config {
     uint32_t response_timeout;
@@ -331,6 +367,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     struct sdhci_data *sdhci_data = host->sdhci_data;
     host->use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
     int ret = 0;
+
 #if defined(CONFIG_SOC_LSQSH)
     host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
@@ -376,6 +413,7 @@ err:
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
     sdhci_reset(host, SDHCI_RESET_CMD);
     sdhci_reset(host, SDHCI_RESET_DATA);
+
     return ret;
 }
 
@@ -402,6 +440,11 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         }
         return -EBUSY;
     }
+
+    /* Mark SDHCI as busy */
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+    atomic_set(&g_sdhci_busy, 1);
+#endif
 
     host->irq_status = 0;
     sdhci_command.index = cmd->opcode;
@@ -467,10 +510,96 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
             cmd->response[3] = host->sdhci_command->response[3];
         }
     } while (ret != 0 && (retries-- > 0));
+
+    /* After successful MMC_SEND_EXT_CSD, modify sec_count to reserve space for coredump */
+    if (ret == 0 && cmd->opcode == MMC_SEND_EXT_CSD && data != NULL) {
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+        /* Only configure coredump region once - skip if already configured */
+        if (!g_coredump_region_configured) {
+            uint8_t *ext_csd = data->data;
+            uint32_t orig_sec_count = (ext_csd[215] << 24) | (ext_csd[214] << 16) |
+                                      (ext_csd[213] << 8) | ext_csd[212];
+
+            /* Calculate reserved blocks (round up to block boundary) */
+            uint32_t reserve_bytes = CONFIG_DEBUG_COREDUMP_EMMC_RESERVE_SIZE;
+
+            uint32_t reserve_blocks = (reserve_bytes + 511) / 512;
+
+            if (orig_sec_count > reserve_blocks) {
+                uint32_t new_sec_count = orig_sec_count - reserve_blocks;
+                ext_csd[212] = new_sec_count & 0xFF;
+                ext_csd[213] = (new_sec_count >> 8) & 0xFF;
+                ext_csd[214] = (new_sec_count >> 16) & 0xFF;
+                ext_csd[215] = (new_sec_count >> 24) & 0xFF;
+
+                /* Store coredump region info for bare-metal access */
+                g_coredump_reserved_blocks = reserve_blocks;
+                g_coredump_start_block = new_sec_count;
+                g_coredump_region_configured = true;
+
+                DEV_INF(dev, "eMMC sec_count: original=%d, reserved=%d blocks, coredump_start=%d",
+                        orig_sec_count, reserve_blocks, new_sec_count);
+            }
+        }
+#endif
+    }
+    /* Mark SDHCI as not busy */
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+    atomic_set(&g_sdhci_busy, 0);
+#endif
+
     k_mutex_unlock(&dev_data->access_mutex);
 
     return ret;
 }
+
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+/**
+ * @brief Get eMMC coredump region information
+ *
+ * This function provides access to the coredump region configuration
+ * that is determined during eMMC initialization via MMC_SEND_EXT_CSD.
+ *
+ * @param dev SDHC device
+ * @param start_block Output: pointer to store coredump start block
+ * @param block_count Output: pointer to store reserved block count
+ * @return 0 if successful, -ENODEV if coredump region not configured
+ */
+int linkedsemi_sdhci_get_coredump_info(const struct device *dev, uint32_t *start_block, uint32_t *block_count)
+{
+    ARG_UNUSED(dev);
+
+    if (g_coredump_region_configured) {
+        *start_block = g_coredump_start_block;
+        *block_count = g_coredump_reserved_blocks;
+        return 0;
+    }
+    return -ENODEV;
+}
+
+/**
+ * @brief Check if eMMC card is ready for bare-metal operations
+ *
+ * @param dev SDHC device
+ * @return true if card is ready, false otherwise
+ */
+bool linkedsemi_sdhci_card_ready(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+
+    /* Card must have been initialized and coredump region configured */
+    if (!g_coredump_region_configured) {
+        return false;
+    }
+
+    /* Check if SDHCI is currently busy with a transfer */
+    if (atomic_get(&g_sdhci_busy)) {
+        return false;
+    }
+
+    return true;
+}
+#endif
 
 static const uint8_t tuning_blk_pattern_4bit[] = {
     0xff, 0x0f, 0xff, 0x00, 0xff, 0xcc, 0xc3, 0xcc,
@@ -870,6 +999,9 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     k_sem_init(&host->data_sem, 0, 1);
 
     dev_config->irq_config_func(dev);
+
+    /* Initialize eMMC protection if configured */
+    IF_ENABLED(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC, (emmc_protection_init();));
 
     return 0;
 }

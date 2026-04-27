@@ -35,6 +35,7 @@ struct riscv_arch_block {
 		uint64_t t5;
 		uint64_t t6;
 		uint64_t sp;   /* stack pointer */
+		uint64_t fp;    /* frame pointer (s0) */
 		uint64_t pc;
 	} r;
 #else /* !CONFIG_64BIT */
@@ -59,6 +60,7 @@ struct riscv_arch_block {
 		uint32_t t6;
 #endif /* !CONFIG_RISCV_ISA_RV32E */
 		uint32_t sp;   /* stack pointer */
+		uint32_t fp;    /* frame pointer (s0) */
 		uint32_t pc;
 	} r;
 #endif /* CONFIG_64BIT */
@@ -110,6 +112,8 @@ void arch_coredump_info_dump(const struct arch_esf *esf)
 #endif /* !CONFIG_RISCV_ISA_RV32E */
 	/* Stack pointer - must be original SP before arch_esf was allocated on stack */
 	arch_blk.r.sp = (uintptr_t)esf + sizeof(*esf);
+	/* Frame pointer (s0) for backtrace */
+	arch_blk.r.fp = esf->s0;
 	arch_blk.r.pc = esf->mepc;
 
 	/* Send for output */
