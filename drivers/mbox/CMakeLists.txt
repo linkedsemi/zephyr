@@ -19,5 +19,3 @@ zephyr_library_sources_ifdef(CONFIG_MBOX_NRF_BELLBOARD_RX mbox_nrf_bellboard_rx.
 zephyr_library_sources_ifdef(CONFIG_MBOX_NRF_BELLBOARD_TX mbox_nrf_bellboard_tx.c)
 zephyr_library_sources_ifdef(CONFIG_MBOX_STM32_HSEM   mbox_stm32_hsem.c)
 zephyr_library_sources_ifdef(CONFIG_MBOX_LINKEDSEMI            mbox_linkedsemi.c)
-zephyr_library_sources_ifdef(CONFIG_MBOX_LINKEDSEMI_APP_CPU1   mbox_linkedsemi_app_cpu1.c)
-zephyr_library_sources_ifdef(CONFIG_MBOX_LINKEDSEMI_APP_CPU2   mbox_linkedsemi_app_cpu2.c)

@@ -50,27 +50,31 @@
         zephyr,memory-region = "SHMEM";
     };
 
-    mbox: mbox@100bf000 {
-        compatible = "linkedsemi,mbox";
+    mbox_memory: memory@100bf000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
         reg = <0x100bf000 DT_SIZE_K(4)>;
-        fifo-deepth = <2>;
-        fifo-width = <256>;
-        #mbox-cells = <1>;
+        zephyr,memory-region = "MBOX";
+    };
+
+    mbox: mbox {
+        compatible = "linkedsemi,mbox";
+        mtu = <64>;
         interrupts = <SYSC_SEC_CPU_IRQN 3>;
+        #mbox-cells = <3>;
+
         mbox_consumer_qspi1: mbox-consumer_qspi1 {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 1>, <&mbox 0>;
+            mboxes = <&mbox 0 24 1>, <&mbox 0 24 1>;
             mbox-names = "tx", "rx";
         };
         mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 3>, <&mbox 2>;
+            mboxes = <&mbox 1 32 1>, <&mbox 1 32 1>;
             mbox-names = "tx", "rx";
         };
-
         mbox_consumer_espi1: mbox-consumer_espi1 {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 5>, <&mbox 4>;
+            mboxes = <&mbox 2 8 1>, <&mbox 2 8 1>;
             mbox-names = "tx", "rx";
         };
     };
@@ -82,7 +86,6 @@
         #size-cells = <1>;
         interrupts = <3 3>;
         quad_mode;
-        continuous_mode;
         mbox = <&mbox_consumer_qspi1>;
 
         flash1: flash@8000000 {
