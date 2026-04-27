@@ -35,7 +35,7 @@ LOG_MODULE_REGISTER(iopmp, CONFIG_IOPMP_LOG_LEVEL);
 
 #define PMP_ADDR(addr)             ((addr) >> 2)
 #define NAPOT_RANGE(size)          (((size)-1) >> 3)
-#define PMP_ADDR_NAPOT(addr, size) PMP_ADDR(addr | NAPOT_RANGE(size))
+#define PMP_ADDR_NAPOT(addr, size) (PMP_ADDR(addr) | NAPOT_RANGE(size))
 
 #define PMP_NONE 0
 
@@ -91,9 +91,9 @@ static void print_pmp_entries(const struct device *dev,
             end = start + 3;
             break;
         case PMP_NAPOT:
-            tmp = (pmp_addr[index] << 2) | 0x3;
-            start = tmp & (tmp + 1);
-            end = tmp | (tmp + 1);
+            tmp = ((pmp_addr[index] ^ (pmp_addr[index] + 1)) >> 1);
+            start = (pmp_addr[index] & ~tmp) << 2;
+            end = start + ((tmp << 3) | 0x7);
             break;
         default:
             start = 0;
