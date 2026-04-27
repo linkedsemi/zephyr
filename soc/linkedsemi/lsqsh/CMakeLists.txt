@@ -14,6 +14,7 @@ zephyr_library_include_directories_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH ${ZEPHY
 zephyr_library_sources_ifdef(CONFIG_CXX_OPERATOR_NEW_DELETE cxx_crt_init.cpp)
 
 add_subdirectory(otbn)
+add_subdirectory_ifdef(CONFIG_SHELL shell)
 
 set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/soc/linkedsemi/common/linker.ld CACHE INTERNAL "")
 
