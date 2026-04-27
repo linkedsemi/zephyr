@@ -102,11 +102,6 @@ struct k_mutex *to_posix_mutex(pthread_mutex_t *mu)
 	err = k_mutex_init(m);
 	__ASSERT_NO_MSG(err == 0);
 
-	int count = 0;
-	sys_bitarray_popcount_region(&posix_mutex_bitarray, CONFIG_MAX_PTHREAD_MUTEX_COUNT, 0, &count);
-
-	// LOG_INF("mutex allocate bit %d, total count: %d\n", bit, count);
-
 	return m;
 }
 
@@ -307,10 +302,7 @@ int pthread_mutex_destroy(pthread_mutex_t *mu)
 	err = sys_bitarray_free(&posix_mutex_bitarray, 1, bit);
 	__ASSERT_NO_MSG(err == 0);
 
-	int count = 0;
-	sys_bitarray_popcount_region(&posix_mutex_bitarray, CONFIG_MAX_PTHREAD_MUTEX_COUNT, 0, &count);
-	
-	// LOG_INF("detroying mutex bit: %d, total count: %d\n", bit, count);
+	LOG_DBG("Destroyed mutex %p", m);
 
 	return 0;
 }

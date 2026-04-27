@@ -411,15 +411,9 @@ static ssize_t spair_write(void *obj, const void *buffer, size_t count)
 	struct spair *const spair = (struct spair *)obj;
 	struct spair *remote = NULL;
 
-	if (obj == NULL) {
+	if (obj == NULL || buffer == NULL || count == 0) {
 		errno = EINVAL;
 		res = -1;
-		goto out;
-	}
-
-	/* Ignore NULL buffer or zero count */
-	if (buffer == NULL || count == 0) {
-		res = 0;
 		goto out;
 	}
 
@@ -779,10 +773,6 @@ static int zsock_poll_prepare_ctx(struct spair *const spair,
 
 		/* Wait until data has been written to the local end */
 		(*pev)->obj = &spair->readable;
-		(*pev)->type = K_POLL_TYPE_SIGNAL;
-		(*pev)->mode = K_POLL_MODE_NOTIFY_ONLY;
-		(*pev)->state = K_POLL_STATE_NOT_READY;
-		(*pev)++;
 	}
 
 	if (pfd->events & ZSOCK_POLLOUT) {
@@ -813,11 +803,13 @@ static int zsock_poll_prepare_ctx(struct spair *const spair,
 
 		/* Wait until the recv queue on the remote end is no longer full */
 		(*pev)->obj = &remote->writeable;
-		(*pev)->type = K_POLL_TYPE_SIGNAL;
-		(*pev)->mode = K_POLL_MODE_NOTIFY_ONLY;
-		(*pev)->state = K_POLL_STATE_NOT_READY;
-		(*pev)++;
 	}
+
+	(*pev)->type = K_POLL_TYPE_SIGNAL;
+	(*pev)->mode = K_POLL_MODE_NOTIFY_ONLY;
+	(*pev)->state = K_POLL_STATE_NOT_READY;
+
+	(*pev)++;
 
 	res = 0;
 
@@ -876,14 +868,9 @@ static int zsock_poll_update_ctx(struct spair *const spair,
 				"invalid result %d", result);
 			pfd->revents |= ZSOCK_POLLHUP;
 		}
+	}
 
 pollout_done:
-		if (remote != NULL && have_remote_sem) {
-			k_sem_give(&remote->sem);
-			have_remote_sem = false;
-		}
-		(*pev)++;
-	}
 
 	if (pfd->events & ZSOCK_POLLIN) {
 		if (sock_is_eof(spair)) {
@@ -893,30 +880,27 @@ pollout_done:
 
 		if (spair_read_avail(spair) > 0) {
 			pfd->revents |= ZSOCK_POLLIN;
-			/* Reset the readable signal since we have data available */
-			k_poll_signal_reset(&spair->readable);
 			goto pollin_done;
 		}
 
-		/* Check if readable signal was raised (indicating data was written) */
+		/* check to see if op was canceled */
 		signaled = false;
 		k_poll_signal_check(&spair->readable, &signaled, &result);
 		if (signaled) {
-			/* Data was written to the pipe, signal POLLIN */
-			pfd->revents |= ZSOCK_POLLIN;
-		} else if (result > 0) {
-			/* Signal was consumed by k_poll but data is not available.
-			 * This can happen when data was already read. Reset the signal
-			 * to prevent returning to this state repeatedly.
+			/* Cannot be SPAIR_SIG_DATA, because
+			 * spair_read_avail() would have
+			 * returned 0
 			 */
-			k_poll_signal_reset(&spair->readable);
+			__ASSERT(result == SPAIR_SIG_CANCEL,
+					 "invalid result %d", result);
+			pfd->revents |= ZSOCK_POLLIN;
 		}
-
-pollin_done:
-		(*pev)++;
 	}
 
+pollin_done:
 	res = 0;
+
+	(*pev)++;
 
 	if (remote != NULL && have_remote_sem) {
 		k_sem_give(&remote->sem);
