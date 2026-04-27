@@ -52,6 +52,6 @@ int socketpair(int family, int type, int proto, int sv[2]);
 }
 #endif
 
-#include "zephyr/posix/socket_compat.h"
+#include "zephyr/posix/compat/socket_compat.h"
 
 #endif	/* ZEPHYR_INCLUDE_POSIX_SYS_SOCKET_H_ */
