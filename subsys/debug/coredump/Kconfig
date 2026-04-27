@@ -41,6 +41,11 @@ config DEBUG_COREDUMP_BACKEND_OTHER
 	help
 	  Core dump is done via custom mechanism defined out of tree
 
+config DEBUG_COREDUMP_BACKEND_EMMC
+	bool "Use eMMC for coredump"
+	depends on SDHCI_LINKEDSEMI
+	help
+	  Core dump is saved directly to eMMC storage.
 endchoice
 
 choice DEBUG_COREDUMP_MEMORY_DUMP
