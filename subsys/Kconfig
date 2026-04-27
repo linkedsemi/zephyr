@@ -9,7 +9,7 @@ menu "Subsystems and OS Services"
 # zephyr-keep-sorted-start
 source "subsys/bindesc/Kconfig"
 source "subsys/bluetooth/Kconfig"
-source "subsys/dbroker/Kconfig"
+# source "subsys/dbroker/Kconfig"
 source "subsys/canbus/Kconfig"
 source "subsys/console/Kconfig"
 source "subsys/dap/Kconfig"

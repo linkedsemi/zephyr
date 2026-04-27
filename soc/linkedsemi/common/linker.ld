@@ -267,9 +267,21 @@ SECTIONS
 		 *(.data)
 		 *(".data.*")
 
-/* Disable GP to fix XIP R_RISCV_GPREL_I relocation error
- * Place __global_pointer$ in ROM to avoid GP-relative access from xip.c */
-PROVIDE (__global_pointer$ = ORIGIN(ROM) + 0x800);
+#ifdef CONFIG_RISCV_GP
+		/*
+		 * RISC-V architecture has 12-bit signed immediate offsets in the
+		 * instructions. If we can put the most commonly accessed globals
+		 * in a special 4K span of memory addressed by the GP register, then
+		 * we can access those values in a single instruction, saving both
+		 * codespace and runtime.
+		 *
+		 * Since these immediate offsets are signed, place gp 0x800 past the
+		 * beginning of .sdata so that we can use both positive and negative
+		 * offsets.
+		 */
+		 . = ALIGN(8);
+		 PROVIDE (__global_pointer$ = . + 0x800);
+#endif
 
 		 *(.sdata .sdata.* .gnu.linkonce.s.*)
 
