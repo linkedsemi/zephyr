@@ -357,11 +357,10 @@ if NET_SOCKETPAIR
 config NET_SOCKETPAIR_BUFFER_SIZE
 	int "Size of the intermediate buffer, in bytes"
 	default 4096 if WIFI_NM_WPA_SUPPLICANT
-	default 2048
-	range 1 16384
+	default 64
+	range 1 4096
 	help
-	  Buffer size for socketpair(2). Larger values allow bigger messages
-	  to be sent without blocking, but use more memory.
+	  Buffer size for socketpair(2)
 
 choice
 	prompt "Memory management for socketpair"
