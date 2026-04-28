@@ -381,6 +381,143 @@ static int cmd_gpio_get(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+#if defined(CONFIG_GPIO_GET_CONFIG)
+static void gpio_shell_print_pin_config(const struct shell *sh, gpio_flags_t flags)
+{
+	shell_fprintf(sh, SHELL_NORMAL, "decoded:");
+
+	if (flags == GPIO_DISCONNECTED) {
+		shell_fprintf(sh, SHELL_NORMAL, " disconnected\n");
+		return;
+	}
+
+	if ((flags & GPIO_INPUT) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " input");
+	}
+	if ((flags & GPIO_OUTPUT) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " output");
+	}
+	if ((flags & GPIO_PULL_UP) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " pull_up");
+	}
+	if ((flags & GPIO_PULL_DOWN) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " pull_down");
+	}
+	if ((flags & GPIO_ACTIVE_LOW) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " active_low");
+	} else {
+		shell_fprintf(sh, SHELL_NORMAL, " active_high");
+	}
+
+	if ((flags & GPIO_SINGLE_ENDED) != 0U) {
+		if ((flags & GPIO_LINE_OPEN_DRAIN) != 0U) {
+			shell_fprintf(sh, SHELL_NORMAL, " open_drain");
+		} else {
+			shell_fprintf(sh, SHELL_NORMAL, " open_source");
+		}
+	} else if ((flags & GPIO_OUTPUT) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " push_pull");
+	}
+
+	if ((flags & GPIO_OUTPUT_HIGH) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " output_high");
+	} else if ((flags & GPIO_OUTPUT_LOW) != 0U) {
+		shell_fprintf(sh, SHELL_NORMAL, " output_low");
+	}
+
+	shell_fprintf(sh, SHELL_NORMAL, "\n");
+}
+#endif /* CONFIG_GPIO_GET_CONFIG */
+
+#if defined(CONFIG_GPIO_GET_CONFIG)
+static int cmd_gpio_pin_get_config(const struct shell *sh, size_t argc, char **argv)
+{
+	struct sh_gpio gpio;
+	gpio_flags_t flags;
+	int ret;
+
+	ret = get_sh_gpio(sh, argv, &gpio);
+	if (ret != 0) {
+		shell_help(sh);
+		return SHELL_CMD_HELP_PRINTED;
+	}
+
+	ret = gpio_pin_get_config(gpio.dev, gpio.pin, &flags);
+	if (ret != 0) {
+		shell_error(sh, "error: %d", ret);
+		return ret;
+	}
+
+	shell_print(sh, "raw_flags=0x%llx", (unsigned long long)flags);
+	gpio_shell_print_pin_config(sh, flags);
+
+	return 0;
+}
+#endif /* CONFIG_GPIO_GET_CONFIG */
+
+static int cmd_gpio_get_pending_int(const struct shell *sh, size_t argc, char **argv)
+{
+	const struct gpio_ctrl *ctrl;
+	int ret;
+
+	ctrl = get_gpio_ctrl(argv[ARGV_DEV]);
+	if (ctrl == NULL) {
+		shell_error(sh, "unknown gpio controller: %s", argv[ARGV_DEV]);
+		shell_help(sh);
+		return SHELL_CMD_HELP_PRINTED;
+	}
+
+	ret = gpio_get_pending_int(ctrl->dev);
+	if (ret < 0) {
+		shell_error(sh, "error: %d", ret);
+		return ret;
+	}
+
+	shell_print(sh, "raw_pending=0x%x", ret);
+
+	return 0;
+}
+
+#if defined(CONFIG_GPIO_GET_DIRECTION)
+static int cmd_gpio_port_get_direction(const struct shell *sh, size_t argc, char **argv)
+{
+	const struct gpio_ctrl *ctrl;
+	gpio_port_pins_t map;
+	gpio_port_pins_t inputs = 0U;
+	gpio_port_pins_t outputs = 0U;
+	int ret = 0;
+
+	ctrl = get_gpio_ctrl(argv[ARGV_DEV]);
+	if (ctrl == NULL) {
+		shell_error(sh, "unknown gpio controller: %s", argv[ARGV_DEV]);
+		shell_help(sh);
+		return SHELL_CMD_HELP_PRINTED;
+	}
+
+	map = (gpio_port_pins_t)shell_strtoull(argv[2], 0, &ret);
+	if (ret != 0) {
+		shell_help(sh);
+		return SHELL_CMD_HELP_PRINTED;
+	}
+
+	ret = gpio_port_get_direction(ctrl->dev, map, &inputs, &outputs);
+	if (ret != 0) {
+		shell_error(sh, "error: %d", ret);
+		return ret;
+	}
+
+	inputs &= map;
+	outputs &= map;
+
+	shell_print(sh, "map=0x%llx inputs=0x%llx outputs=0x%llx",
+		    (unsigned long long)map,
+		    (unsigned long long)inputs,
+		    (unsigned long long)outputs);
+
+	return 0;
+}
+#endif /* CONFIG_GPIO_GET_DIRECTION */
+
 static int cmd_gpio_set(const struct shell *sh, size_t argc, char **argv)
 {
 	struct sh_gpio gpio;
@@ -669,6 +806,22 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_gpio,
 	SHELL_CMD_ARG(get, &sub_gpio_dev,
 		"Get GPIO pin value\n"
 		"Usage: gpio get <device> <pin>", cmd_gpio_get, 3, 0),
+#if defined(CONFIG_GPIO_GET_CONFIG)
+	SHELL_CMD_ARG(get_conf, &sub_gpio_dev,
+		"Get GPIO pin configuration flags\n"
+		"Usage: gpio pin_get_config <device> <pin>",
+		cmd_gpio_pin_get_config, 3, 0),
+#endif /* CONFIG_GPIO_GET_CONFIG */
+	SHELL_CMD_ARG(get_pending_int, &sub_gpio_dev,
+		"Get GPIO pending interrupt status\n"
+		"Usage: gpio get_pending_int <device>", cmd_gpio_get_pending_int, 2, 0),
+#if defined(CONFIG_GPIO_GET_DIRECTION)
+	SHELL_CMD_ARG(get_dir,
+		&sub_gpio_dev,
+		"Get GPIO direction bitmaps for selected pins\n"
+		"Usage: gpio port_get_direction <device> <map>",
+		cmd_gpio_port_get_direction, 3, 0),
+#endif /* CONFIG_GPIO_GET_DIRECTION */
 	SHELL_CMD_ARG(set, &sub_gpio_dev,
 		"Set GPIO pin value\n"
 		"Usage: gpio set <device> <pin> <level 0|1>", cmd_gpio_set, 4, 0),
