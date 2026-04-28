@@ -21,4 +21,6 @@ typedef uint32_t in_addr_t;
 }
 #endif
 
+#include "zephyr/posix/compat/in_compat.h"
+
 #endif /* ZEPHYR_INCLUDE_POSIX_NETINET_IN_H_ */

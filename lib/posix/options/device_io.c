@@ -49,15 +49,15 @@ int close(int fd)
 FUNC_ALIAS(close, _close, int);
 #endif
 
-FILE *fdopen(int fd, const char *mode)
-{
-	return zvfs_fdopen(fd, mode);
-}
+// FILE *fdopen(int fd, const char *mode)
+// {
+// 	return zvfs_fdopen(fd, mode);
+// }
 
-int fileno(FILE *file)
-{
-	return zvfs_fileno(file);
-}
+// int fileno(FILE *file)
+// {
+// 	return zvfs_fileno(file);
+// }
 
 int open(const char *name, int flags, ...)
 {
@@ -99,7 +99,7 @@ int pselect(int nfds, fd_set *readfds, fd_set *writefds, fd_set *exceptfds,
 	return zvfs_select(nfds, readfds, writefds, exceptfds, timeout, sigmask);
 }
 
-ssize_t pwrite(int fd, void *buf, size_t count, off_t offset)
+ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset)
 {
 	size_t off = (size_t)offset;
 

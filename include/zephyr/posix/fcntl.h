@@ -41,4 +41,6 @@ int fcntl(int fildes, int cmd, ...);
 }
 #endif
 
+#include "zephyr/posix/compat/fcntl_compat.h"
+
 #endif /* ZEPHYR_POSIX_FCNTL_H_ */

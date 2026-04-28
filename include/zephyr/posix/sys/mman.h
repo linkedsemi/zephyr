@@ -45,6 +45,8 @@ int munmap(void *addr, size_t len);
 int shm_open(const char *name, int oflag, mode_t mode);
 int shm_unlink(const char *name);
 
+int mprotect(void *addr, size_t len, int prot);
+
 #ifdef __cplusplus
 }
 #endif
