@@ -7,20 +7,14 @@
 #define DT_DRV_COMPAT linkedsemi_lsqsh_gpio
 
 #include <zephyr/kernel.h>
-#define LOG_LEVEL CONFIG_MBOX_LOG_LEVEL
 #include <zephyr/logging/log.h>
 #include <zephyr/dt-bindings/gpio/linkedsemi-ls-gpio.h>
 #include <zephyr/drivers/gpio/gpio_utils.h>
 #include <errno.h>
+#include <soc.h>
+#include <platform.h>
 
-#include <reg_base_addr.h>
-#include <reg_exti_type.h>
-#include <reg_sec_pmu_rg.h>
-#include <reg_app_pmu_rg.h>
-#include <ls_soc_gpio.h>
-#include <field_manipulate.h>
-
-LOG_MODULE_REGISTER(gpio_lsqsh);
+LOG_MODULE_REGISTER(gpio_lsqsh, CONFIG_GPIO_LOG_LEVEL);
 
 /* except qspi1 */
 #define NUMBER_OF_PORTS 15
@@ -35,6 +29,9 @@ LOG_MODULE_REGISTER(gpio_lsqsh);
 #define LS_GPIO_DS_MAX_DRIVE     (0x3U << LS_GPIO_DS_POS)
 
 #define LSPIN(_port, _pin) (_port << 4 | _pin)
+
+#define GPIO_LS_PULL_DOWN_MASK BIT(3)
+#define GPIO_LS_PULL_UP_MASK   (BIT(2) | BIT(1) | BIT(0))
 
 static struct gpio_ls_exti_data gpio_ls_exti_data;
 
@@ -170,7 +167,7 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
         io_cfg_output(pincode);
         ret = io_is_output(pincode);
         if (!ret) {
-            LOG_ERR("%s:%d: operation fail", __func__, __LINE__);
+            DEV_ERR(dev, "%s:%d: operation fail", __func__, __LINE__);
         }
 #endif
         break;
@@ -256,6 +253,79 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
 
     return 0;
 }
+
+#if defined(CONFIG_GPIO_GET_CONFIG)
+static int gpio_ls_pin_get_config(const struct device *dev,
+                                    gpio_pin_t pin,
+                                    gpio_flags_t *out_flags)
+{
+    const struct gpio_ls_config *cfg = dev->config;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
+    uint8_t pincode;
+    uint8_t port;
+    int ret = 0;
+
+    port = get_gpio_port_id((uint32_t)gpio_cfg);
+    pincode = LSPIN(port, pin);
+
+    *out_flags = 0;
+    if (per_func_en_get(pincode, PINMUX_FUNC1)
+        || per_func_en_get(pincode, PINMUX_FUNC2)
+        || per_func_en_get(pincode, PINMUX_FUNC3)
+        || per_func_en_get(pincode, PINMUX_FUNC4)) {
+        DEV_INF(dev, "pin %d not configured as gpio", pin);
+        ret = -EINVAL;
+        goto err;
+    }
+
+    uint8_t val = io_pull_read(pincode);
+    if (val & GPIO_LS_PULL_DOWN_MASK) {
+        *out_flags |= GPIO_PULL_DOWN;
+    }
+    if (val & GPIO_LS_PULL_UP_MASK) {
+        *out_flags |= GPIO_PULL_UP;
+    }
+
+    if (io_is_output_enabled(pincode)) {
+        *out_flags |= GPIO_OUTPUT;
+        if (io_is_opendrain(pincode)) {
+            *out_flags |= GPIO_OPEN_DRAIN;
+        }
+        if (io_get_output_val(pincode)) {
+            *out_flags |= GPIO_OUTPUT_HIGH;
+        } else {
+            *out_flags |= GPIO_OUTPUT_LOW;
+        }
+    } else if (io_is_input_enabled(pincode)) {
+        *out_flags |= GPIO_INPUT;
+    }
+
+    if (0 == (*out_flags & (GPIO_INPUT | GPIO_OUTPUT))) {
+        *out_flags |= GPIO_DISCONNECTED;
+    }
+
+err:
+    return ret;
+}
+#endif /* CONFIG_GPIO_GET_CONFIG */
+
+#ifdef CONFIG_GPIO_GET_DIRECTION
+static int gpio_ls_port_get_direction(const struct device *dev,
+                                        gpio_port_pins_t map,
+                                        gpio_port_pins_t *inputs,
+                                        gpio_port_pins_t *outputs)
+{
+    const struct gpio_ls_config *cfg = dev->config;
+    reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
+
+    *inputs = (~gpio_cfg->IEN1_IEN0) & 0xffff;
+    *outputs = gpio_val->OE_DIN >> 16;
+
+    return 0;
+}
+#endif /* CONFIG_GPIO_GET_DIRECTION */
 
 static void gpio_vcore_isr(const struct device *dev)
 {
@@ -359,7 +429,7 @@ static int gpio_ls_port_set_masked_raw(const struct device *dev, gpio_port_pins_
     gpio_val->DOC_DOS = dos | (~dos << 16);
     ret = ((gpio_val->DOC_DOS & target_pins) == target_pins);
     if (!ret) {
-        LOG_ERR("%s:%d: operation fail", __func__, __LINE__);
+        DEV_ERR(dev, "%s:%d: operation fail", __func__, __LINE__);
     }
 #endif
 
@@ -394,7 +464,7 @@ static int gpio_ls_port_set_bits_raw(const struct device *dev, gpio_port_pins_t 
     gpio_val->DOC_DOS = pins & 0xffff;
     ret = ((gpio_val->DOC_DOS & pins) == pins);
     if (!ret) {
-        LOG_ERR("%s:%d: operation fail", __func__, __LINE__);
+        DEV_ERR(dev, "%s:%d: operation fail", __func__, __LINE__);
     }
 #endif
 
@@ -429,7 +499,7 @@ static int gpio_ls_port_clear_bits_raw(const struct device *dev, gpio_port_pins_
     }
     ret = ((gpio_val->DOC_DOS & pins) == 0);
     if (!ret) {
-        LOG_ERR("%s:%d: operation fail", __func__, __LINE__);
+        DEV_ERR(dev, "%s:%d: operation fail", __func__, __LINE__);
     }
 #endif
 
@@ -491,7 +561,7 @@ static int gpio_ls_pin_interrupt_configure(const struct device *dev,
                 MODIFY_REG(PMU->GPIO_INTR_MSK[port], 1<<pin, 1<<16<<pin);
             }
         } else {
-            LOG_ERR("level interrupt is not support");
+            DEV_ERR(dev, "level interrupt is not support");
             return -ENOTSUP;
         }
     } else {
@@ -550,8 +620,29 @@ static int gpio_ls_manage_callback(const struct device *dev,
     return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
+static uint32_t gpio_ls_get_pending_int(const struct device *dev)
+{
+    const struct gpio_ls_config *cfg = dev->config;
+    __maybe_unused reg_io_cfg_t *gpio_cfg = (reg_io_cfg_t *)cfg->base_io_cfg;
+    __maybe_unused reg_io_val_t *gpio_val = (reg_io_val_t *)cfg->base_io_val;
+    uint8_t port;
+
+    port = get_gpio_port_id((uint32_t)gpio_cfg);
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+    volatile uint32_t *INT_STAT_BASE = SEC_PMU->GPIO_INTR_STT;
+#elif DT_NODE_HAS_STATUS(DT_NODELABEL(cpu2), okay)
+    volatile uint32_t *INT_STAT_BASE = APP_PMU->GPIO_INTR_STT;
+#endif
+
+    return INT_STAT_BASE[port];
+}
+
 static const struct gpio_driver_api gpio_ls_driver_api = {
     .pin_configure = gpio_ls_pin_configure,
+#ifdef CONFIG_GPIO_GET_CONFIG
+    .pin_get_config = gpio_ls_pin_get_config,
+#endif
     .port_get_raw = gpio_ls_port_get_raw,
     .port_set_masked_raw = gpio_ls_port_set_masked_raw,
     .port_set_bits_raw = gpio_ls_port_set_bits_raw,
@@ -559,6 +650,10 @@ static const struct gpio_driver_api gpio_ls_driver_api = {
     .port_toggle_bits = gpio_ls_port_toggle_bits,
     .pin_interrupt_configure = gpio_ls_pin_interrupt_configure,
     .manage_callback = gpio_ls_manage_callback,
+    .get_pending_int = gpio_ls_get_pending_int,
+#ifdef CONFIG_GPIO_GET_DIRECTION
+    .port_get_direction = gpio_ls_port_get_direction,
+#endif /* CONFIG_GPIO_GET_DIRECTION */
 };
 
 static const struct gpio_driver_api gpio_ls_exti_driver_api = {
