@@ -1931,15 +1931,13 @@ static int spi_dw_nor_read_init(const struct device *dev,
 						const struct spi_config *config,
 						struct spi_nor_op_info *op_info)
 {
-	int ret = 0;
-
 	LOG_DBG("mode %08x, cmd: %x, dummy: %d, frequency: %d",
 		op_info->mode, op_info->opcode, op_info->dummy_cycle,
 		config->frequency);
 
-	ret = spi_timing_calibration(dev, config, op_info);
+	spi_timing_calibration(dev, config, op_info);
 
-	return ret;
+	return 0;
 }
 
 static int spi_dw_nor_write_init(const struct device *dev,
