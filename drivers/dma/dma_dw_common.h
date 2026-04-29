@@ -285,6 +285,8 @@ struct dw_dma_chan_data {
 	void *srctranuser_data;
 	dma_callback_t dma_dsttrancallback;
 	void *dsttranuser_data;
+	dma_callback_t dma_errcallback;
+	void *erruser_data;
 };
 
 #if defined(CONFIG_DMA_DW_2_20A)
@@ -349,6 +351,8 @@ void dw_dma_isr(const struct device *dev);
 
 int dw_dma_get_status(const struct device *dev, uint32_t channel,
 		      struct dma_status *stat);
+
+int dw_dma_get_attribute(const struct device *dev, uint32_t type, uint32_t *value);
 
 #ifdef __cplusplus
 }
