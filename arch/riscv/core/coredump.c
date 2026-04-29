@@ -62,6 +62,19 @@ struct riscv_arch_block {
 		uint32_t sp;   /* stack pointer */
 		uint32_t fp;    /* frame pointer (s0) */
 		uint32_t pc;
+		/* CSR registers for debugging */
+		uint32_t mcause;
+		uint32_t mepc;
+		uint32_t mtval;
+		uint32_t mstatus;
+		uint32_t mexstatus;
+		uint32_t mie;
+		uint32_t mip;
+		uint32_t mtvec;
+		uint32_t mscratch;
+		uint32_t mintstatus;
+		uint32_t minstret;
+		uint32_t mcycle;
 	} r;
 #endif /* CONFIG_64BIT */
 } __packed;
@@ -115,6 +128,20 @@ void arch_coredump_info_dump(const struct arch_esf *esf)
 	/* Frame pointer (s0) for backtrace */
 	arch_blk.r.fp = esf->s0;
 	arch_blk.r.pc = esf->mepc;
+
+	/* Read RISC-V CSR registers directly */
+	__asm__ volatile("csrr %0, mcause" : "=r"(arch_blk.r.mcause));
+	__asm__ volatile("csrr %0, mepc" : "=r"(arch_blk.r.mepc));
+	__asm__ volatile("csrr %0, mtval" : "=r"(arch_blk.r.mtval));
+	__asm__ volatile("csrr %0, mstatus" : "=r"(arch_blk.r.mstatus));
+	__asm__ volatile("csrr %0, mexstatus" : "=r"(arch_blk.r.mexstatus));
+	__asm__ volatile("csrr %0, mie" : "=r"(arch_blk.r.mie));
+	__asm__ volatile("csrr %0, mip" : "=r"(arch_blk.r.mip));
+	__asm__ volatile("csrr %0, mtvec" : "=r"(arch_blk.r.mtvec));
+	__asm__ volatile("csrr %0, mscratch" : "=r"(arch_blk.r.mscratch));
+	__asm__ volatile("csrr %0, mintstatus" : "=r"(arch_blk.r.mintstatus));
+	__asm__ volatile("csrr %0, minstret" : "=r"(arch_blk.r.minstret));
+	__asm__ volatile("csrr %0, mcycle" : "=r"(arch_blk.r.mcycle));
 
 	/* Send for output */
 	coredump_buffer_output((uint8_t *)&hdr, sizeof(hdr));
