@@ -118,6 +118,17 @@ def main():
 
     gdbstub = gdbstubs.get_gdbstub(logf, elff)
 
+    # Print CSR registers info
+    if hasattr(gdbstub, 'csr_registers') and gdbstub.csr_registers:
+        logger.info("=== RISC-V CSR Registers ===")
+        for reg_idx, reg_val in gdbstub.csr_registers.items():
+            csr_names = {33: "mcause", 34: "mepc", 35: "mtval", 36: "mstatus",
+                         37: "mexstatus", 38: "mie", 39: "mip", 40: "mtvec",
+                         41: "mscratch", 42: "mintstatus", 43: "minstret", 44: "mcycle"}
+            name = csr_names.get(reg_idx, f"reg{reg_idx}")
+            logger.info(f"  {name}: 0x{reg_val:08x}")
+        logger.info("===========================")
+
     if not args.pipe:
         # Start a GDB server
         gdbserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
