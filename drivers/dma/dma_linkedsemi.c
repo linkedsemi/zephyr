@@ -23,13 +23,15 @@ LOG_MODULE_REGISTER(dma_dw, CONFIG_DMA_LOG_LEVEL);
 #include <soc_dma.h>
 #include "dma_dw_common.h"
 
+#if defined(CONFIG_DMA_DW_HW_LLI)
 BUILD_ASSERT(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL,
     "VENDER_DEFINE_DMA_DW_LLI_POOL must be enabled for nocache lli_pool");
+#endif
 
 /* Device constant configuration parameters */
 struct dw_dma_cfg {
     struct dw_dma_dev_cfg dw_cfg;
-    struct dw_lli (*lli_pool)[CONFIG_DMA_DW_LLI_POOL_SIZE];
+    IF_ENABLED(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL, (struct dw_lli (*lli_pool)[CONFIG_DMA_DW_LLI_POOL_SIZE];))
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -38,11 +40,13 @@ struct dw_dma_cfg {
 static int dw_dma_init(const struct device *dev)
 {
     const struct dw_dma_cfg *const dev_config = dev->config;
-    struct dw_dma_dev_data *dev_data = dev->data;
+    __maybe_unused struct dw_dma_dev_data *dev_data = dev->data;
     int ret;
     bool inited = false;
 
+#if defined(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL)
     dev_data->lli_pool = dev_config->lli_pool;
+#endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
@@ -51,21 +55,16 @@ static int dw_dma_init(const struct device *dev)
             LOG_DBG("%s device not ready", clk_dev->name);
             return -ENODEV;
         }
-        if(clock_control_get_status(clk_dev,(clock_control_subsys_t)&dev_config->ccfg) == CLOCK_CONTROL_STATUS_OFF)
-        {
+        if(clock_control_get_status(clk_dev,(clock_control_subsys_t)&dev_config->ccfg) == CLOCK_CONTROL_STATUS_OFF) {
             clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-	    inited = false;
-        }else
-        {
+            inited = false;
+        } else {
             inited = true;
         }
     }
 #endif
 
 if (!inited) {
-	for(int channel=0;channel<DW_CHAN_COUNT;channel++) {
-		dev_data->chan[channel].dma_dsttrancallback = NULL;
-	}
 #if defined(CONFIG_RESET)
     if (dev_config->reset.dev != NULL) {
         if (!device_is_ready(dev_config->reset.dev)) {
@@ -124,20 +123,23 @@ static const struct dma_driver_api dw_dma_driver_api = {
     .suspend = dw_dma_suspend,
     .resume = dw_dma_resume,
     .get_status = dw_dma_get_status,
+    .get_attribute = dw_dma_get_attribute,
 };
 
 #define DW_DMAC_INIT(inst)                                                                            \
                                                                                                       \
     static void dw_dma##inst##_irq_config(void);                                                      \
                                                                                                       \
-    __nocache struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE] __aligned(64);\
+    IF_ENABLED(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL,                                                  \
+        (struct dw_lli lli_pool_##inst[DW_CHAN_COUNT][CONFIG_DMA_DW_LLI_POOL_SIZE]                    \
+                                                        __nocache __aligned(64);))                    \
                                                                                                       \
     static const struct dw_dma_cfg dw_dma##inst##_config = {                                          \
         .dw_cfg = {                                                                                   \
             .base = DT_INST_REG_ADDR(inst),                                                           \
             .irq_config = dw_dma##inst##_irq_config,                                                  \
         },                                                                                            \
-        .lli_pool = lli_pool_##inst,                                                                  \
+        IF_ENABLED(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL, (.lli_pool = lli_pool_##inst,))              \
         IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                         \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), ))    \
     };                                                                                                \

@@ -11,6 +11,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
+#include <zephyr/cache.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
@@ -53,6 +54,25 @@ void dw_dma_isr(const struct device *dev)
 	if (status_err) {
 		LOG_ERR("%s: status_err = %d\n", dev->name, status_err);
 		dw_write(dev_cfg->base, DW_CLEAR_ERR, status_err);
+
+		while (status_err) {
+			channel = find_lsb_set(status_err) - 1;
+			status_err &= ~(1 << channel);
+			chan_data = &dev_data->chan[channel];
+
+			if (chan_data->dma_errcallback) {
+				LOG_DBG("%s: Dispatching err complete callback for channel %d\n", dev->name,
+					channel);
+
+				/* Ensure the linked list (chan_data->lli) is
+				* freed in the user callback function once
+				* all the errs are transferred.
+				*/
+				chan_data->dma_errcallback(dev,
+							chan_data->erruser_data,
+							channel, DMA_STATUS_ERROR);
+			}
+		}
 	}
 
 	/* clear interrupts */
@@ -212,7 +232,9 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	chan_data->cfg_lo = 0;
 	chan_data->cfg_hi = 0;
 
+#if defined(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL)
 	__ASSERT_NO_MSG((NULL != dev_data->lli_pool) && IS_ALIGNED((uintptr_t)dev_data->lli_pool, 64));
+#endif
 	/* setup a list of lli structs. we don't need to allocate */
 	chan_data->lli = &dev_data->lli_pool[channel][0]; /* TODO allocate here */
 	chan_data->lli_count = cfg->block_count;
@@ -475,6 +497,8 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	 * interrupt is requested at the end of transaction completion or
 	 * at the end of each block.
 	 */
+	chan_data->dma_errcallback = cfg->dma_callback;
+	chan_data->erruser_data = cfg->user_data;
 	if (cfg->complete_callback_en) {
 		chan_data->dma_blkcallback = cfg->dma_callback;
 		chan_data->blkuser_data = cfg->user_data;
@@ -921,5 +945,33 @@ int dw_dma_get_status(const struct device *dev, uint32_t channel,
 		return -EPIPE;
 	}
 #endif
+	return 0;
+}
+
+#if DT_HAS_COMPAT_STATUS_OKAY(snps_designware_dma)
+#define DW_DMA_COMPAT DT_COMPAT_GET_ANY_STATUS_OKAY(snps_designware_dma)
+#elif DT_HAS_COMPAT_STATUS_OKAY(snps_designware_dma_2_20a)
+#define DW_DMA_COMPAT DT_COMPAT_GET_ANY_STATUS_OKAY(snps_designware_dma_2_20a)
+#endif
+
+int dw_dma_get_attribute(const struct device *dev, uint32_t type, uint32_t *value)
+{
+	switch (type) {
+	case DMA_ATTR_BUFFER_ADDRESS_ALIGNMENT:
+		*value = sys_cache_data_line_size_get();
+		break;
+	case DMA_ATTR_BUFFER_SIZE_ALIGNMENT:
+		*value = DMA_BUF_SIZE_ALIGNMENT(DW_DMA_COMPAT);
+		break;
+	case DMA_ATTR_COPY_ALIGNMENT:
+		*value = DMA_COPY_ALIGNMENT(DW_DMA_COMPAT);
+		break;
+	case DMA_ATTR_MAX_BLOCK_COUNT:
+		*value = CONFIG_DMA_DW_LLI_POOL_SIZE;
+		break;
+	default:
+		return -EINVAL;
+	}
+
 	return 0;
 }

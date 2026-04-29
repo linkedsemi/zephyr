@@ -19,6 +19,7 @@ config DMA_DW_2_20A
 
 config VENDER_DEFINE_DMA_DW_LLI_POOL
 	bool "vender define dma dw lli pool"
+	depends on DMA_DW_HW_LLI
 	default n
 	help
 	  vender define dma dw lli pool
