@@ -388,9 +388,12 @@ static void spi_dw_dma_rx_callback(const struct device *dev_dma,
 	const struct device *dev = (const struct device *)user;
 	struct spi_dw_data *spi = dev->data;
 
-	if (status == DMA_STATUS_COMPLETE ||
-		status < 0) {
+	if (status == DMA_STATUS_COMPLETE || status < 0) {
+		spi->dma_status = status;
 		k_sem_give(&spi->dma_rx_sem);
+		if (status < 0) {
+			LOG_ERR("dma rx callback failed: %d", status);
+		}
 	}
 }
 
@@ -966,7 +969,7 @@ static int transceive_read(const struct device *dev,
 		goto end_xfer;
 	}
 
-	sys_cache_data_flush_and_invd_range((void *)aligned_start, aligned_size);
+	sys_cache_data_invd_range((void *)aligned_start, aligned_size);
 
 	struct dma_config dma_cfg_rx;
 	/* Config DMA Config */
@@ -1022,6 +1025,9 @@ static int transceive_read(const struct device *dev,
 	} else {
 		ret = 0;
 	}
+	if ((spi->dma_status < 0) && (ret == 0)) {
+		ret = spi->dma_status;
+	}
 
 	write_dmacr(dev, 0);
 	write_imr(dev, DW_SPI_IMR_MASK);
@@ -1057,7 +1063,11 @@ static void spi_dw_dma_tx_callback(const struct device *dev_dma,
 	struct spi_dw_data *spi = dev->data;
 
 	if (status == DMA_STATUS_COMPLETE || status < 0) {
-	k_sem_give(&spi->dma_tx_sem);
+		spi->dma_status = status;
+		k_sem_give(&spi->dma_tx_sem);
+		if (status < 0) {
+			LOG_ERR("dma tx callback failed: %d", status);
+		}
 	}
 }
 static int build_tx_lli_chain(struct spi_dw_data *spi,
@@ -1264,7 +1274,7 @@ static int transceive_write(const struct device *dev,
 			     ((spi->dfs==4) ? DW_SPI_DR_REVERSED : DW_SPI_REG_DR));
 	uintptr_t src_addr = (uintptr_t)tx_bufs->buffers[0].buf;
 	size_t len_bytes= tx_bufs->buffers[0].len;
-	sys_cache_data_flush_and_invd_range((void *)aligned_start, aligned_size);
+	sys_cache_data_flush_range((void *)aligned_start, aligned_size);
 
 	ret = build_tx_lli_chain(spi, blk, &blk_cnt, src_addr, dr_addr, len_bytes);
 	if (ret) {
@@ -1327,6 +1337,9 @@ static int transceive_write(const struct device *dev,
 	} else {
 		ret = 0;
 	}
+	if ((spi->dma_status < 0) && (ret == 0)) {
+		ret = spi->dma_status;
+	}
 
 	write_dmacr(dev, 0);
 	write_imr(dev, DW_SPI_IMR_MASK);
@@ -1342,8 +1355,6 @@ end_xfer:
 			write_ser(dev, 0);
 		}
 	}
-	/* clear cache，Prevent DMA from not reading the latest data */
-	sys_cache_data_flush_range((void *)(uintptr_t)aligned_start, aligned_size);
 	spi_context_complete(&spi->ctx, dev, 0);
 
 out:
