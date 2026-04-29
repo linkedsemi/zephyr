@@ -40,6 +40,11 @@ struct ls_vuart_data {
     bool tx_irq_enabled;
 };
 
+static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
+{
+    struct ls_vuart_data *data = dev->data;
+    k_sem_give(&data->irq_sem);
+}
 
 
 static void vuart_rx_timer(struct k_timer *timer_id)
@@ -53,11 +58,6 @@ static void vuart_rx_timer(struct k_timer *timer_id)
 }
 
 
-static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
-{
-    struct ls_vuart_data *data = dev->data;
-    k_sem_give(&data->irq_sem);
-}
 
 void bmc_vuart_rx_callback(const struct device *dev, void *msg)
 {
