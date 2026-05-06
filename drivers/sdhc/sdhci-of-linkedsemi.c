@@ -60,13 +60,9 @@ static inline bool timeout_expired(uint32_t start, uint32_t timeout_ms)
 }
 
 #if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-/* eMMC coredump region tracking - set during MMC_SEND_EXT_CSD interception */
-static uint32_t g_coredump_start_block = 0;       /* Starting block for coredump */
-static uint32_t g_coredump_reserved_blocks;   /* Number of reserved blocks */
-static bool g_coredump_region_configured;     /* Whether region has been configured */
-
 /* Flag to indicate if SDHCI is currently busy with a transfer */
-static atomic_t g_sdhci_busy;
+/* Initialized to 1 to ensure linkedsemi_sdhci_request completes at least once before card is considered ready */
+static atomic_t g_sdhci_busy = 1;
 #endif
 
 struct linkedsemi_sdhci_config {
@@ -511,38 +507,6 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         }
     } while (ret != 0 && (retries-- > 0));
 
-    /* After successful MMC_SEND_EXT_CSD, modify sec_count to reserve space for coredump */
-    if (ret == 0 && cmd->opcode == MMC_SEND_EXT_CSD && data != NULL) {
-#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-        /* Only configure coredump region once - skip if already configured */
-        if (!g_coredump_region_configured) {
-            uint8_t *ext_csd = data->data;
-            uint32_t orig_sec_count = (ext_csd[215] << 24) | (ext_csd[214] << 16) |
-                                      (ext_csd[213] << 8) | ext_csd[212];
-
-            /* Calculate reserved blocks (round up to block boundary) */
-            uint32_t reserve_bytes = CONFIG_DEBUG_COREDUMP_EMMC_RESERVE_SIZE;
-
-            uint32_t reserve_blocks = (reserve_bytes + 511) / 512;
-
-            if (orig_sec_count > reserve_blocks) {
-                uint32_t new_sec_count = orig_sec_count - reserve_blocks;
-                ext_csd[212] = new_sec_count & 0xFF;
-                ext_csd[213] = (new_sec_count >> 8) & 0xFF;
-                ext_csd[214] = (new_sec_count >> 16) & 0xFF;
-                ext_csd[215] = (new_sec_count >> 24) & 0xFF;
-
-                /* Store coredump region info for bare-metal access */
-                g_coredump_reserved_blocks = reserve_blocks;
-                g_coredump_start_block = new_sec_count;
-                g_coredump_region_configured = true;
-
-                DEV_INF(dev, "eMMC sec_count: original=%d, reserved=%d blocks, coredump_start=%d",
-                        orig_sec_count, reserve_blocks, new_sec_count);
-            }
-        }
-#endif
-    }
     /* Mark SDHCI as not busy */
 #if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
     atomic_set(&g_sdhci_busy, 0);
@@ -554,13 +518,15 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
 }
 
 #if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+extern int emmc_get_coredump_info(uint32_t *start_sector, uint32_t *sector_count);
+
 /**
  * @brief Get eMMC coredump region information
  *
  * This function provides access to the coredump region configuration
- * that is determined during eMMC initialization via MMC_SEND_EXT_CSD.
+ * from device tree via emmc_get_coredump_info().
  *
- * @param dev SDHC device
+ * @param dev SDHC device (unused, kept for API compatibility)
  * @param start_block Output: pointer to store coredump start block
  * @param block_count Output: pointer to store reserved block count
  * @return 0 if successful, -ENODEV if coredump region not configured
@@ -569,12 +535,7 @@ int linkedsemi_sdhci_get_coredump_info(const struct device *dev, uint32_t *start
 {
     ARG_UNUSED(dev);
 
-    if (g_coredump_region_configured) {
-        *start_block = g_coredump_start_block;
-        *block_count = g_coredump_reserved_blocks;
-        return 0;
-    }
-    return -ENODEV;
+    return emmc_get_coredump_info(start_block, block_count);
 }
 
 /**
@@ -586,11 +547,6 @@ int linkedsemi_sdhci_get_coredump_info(const struct device *dev, uint32_t *start
 bool linkedsemi_sdhci_card_ready(const struct device *dev)
 {
     ARG_UNUSED(dev);
-
-    /* Card must have been initialized and coredump region configured */
-    if (!g_coredump_region_configured) {
-        return false;
-    }
 
     /* Check if SDHCI is currently busy with a transfer */
     if (atomic_get(&g_sdhci_busy)) {

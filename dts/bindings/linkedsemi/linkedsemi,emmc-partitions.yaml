@@ -1,0 +1,30 @@
+description: |
+  eMMC partition information node for LinkedSemi SoCs.
+  This node defines partition layout for eMMC storage including
+  coredump region boundaries.
+
+compatible: "linkedsemi,emmc-partitions"
+
+properties:
+  mbr-area-size:
+    type: int
+    required: true
+    description: |
+      Size of the MBR/Management area in bytes.
+      This includes the MBR sector (512 bytes) and reserved sectors.
+      Typically 1 MB (1048576 bytes), which equals 2048 sectors.
+
+  user-partition-size:
+    type: int
+    required: true
+    description: |
+      Size of the user (FAT32) partition in sectors.
+      Each sector is 512 bytes.
+
+  coredump-partition-size:
+    type: int
+    required: true
+    description: |
+      Size of the coredump partition in sectors.
+      Each sector is 512 bytes.
+      Example: 20480 sectors = 10MB
