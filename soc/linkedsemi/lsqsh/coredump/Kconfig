@@ -16,13 +16,4 @@ config DEBUG_COREDUMP_EMMC_SECTION_SIZE
 	  eMMC block/sector size for coredump read/write operations.
 	  Default is 512 bytes (eMMC native block size).
 
-config DEBUG_COREDUMP_EMMC_RESERVE_SIZE
-	hex "eMMC space reserved for coredump"
-	default 0xA00000
-	help
-	  Size of eMMC space to reserve at the end of the device for
-	  coredump storage. This space is excluded from FATFS by modifying
-	  the reported eMMC size (EXT_CSD sec_count).
-	  Default is 10MB (0xA00000).
-
 endif # DEBUG_COREDUMP_BACKEND_EMMC
