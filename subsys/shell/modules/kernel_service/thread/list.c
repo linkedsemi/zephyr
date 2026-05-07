@@ -202,13 +202,13 @@ static int kernel_thread_list_show(void)
 	printf("count: %u\n", kernel_thread_list_result_start.count);
 	printf("delta_total: %llu\n", delta_total);
 	for (int i = 0; i < kernel_thread_list_result_start.count; i++) {
-		unsigned int pcnt;
-		pcnt = (kernel_thread_list_result_delta.log[i].total * 100ULL) / delta_total;
-		printf("[%d] %-10s\tTotal execution cycles: %llu (%u %%)\n",
+		unsigned int pcnt = (kernel_thread_list_result_delta.log[i].total * 100ULL) / delta_total;
+		unsigned int pdec = ((kernel_thread_list_result_delta.log[i].total * 10000ULL) / delta_total) % 100;
+		printf("[%2d] %-32s | %10llu | %2u.%02u %%\n",
 			    i,
 			    kernel_thread_list_result_start.log[i].name ? kernel_thread_list_result_start.log[i].name : "NA",
 			    kernel_thread_list_result_delta.log[i].total,
-			    pcnt);
+			    pcnt, pdec);
 	}
 	k_sem_give(&kernel_thread_list_sem);
 
