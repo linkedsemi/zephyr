@@ -3,6 +3,10 @@ if SOC_SERIES_LSQSH
 config SOC
     default "lsqsh"
 
+config CPU_XUANTIE_E9XX
+	bool
+	default y
+
 config RISCV_HAS_PLIC
 	default n
 
