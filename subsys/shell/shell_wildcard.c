@@ -9,6 +9,9 @@
 #include "shell_wildcard.h"
 #include "shell_utils.h"
 #include "shell_ops.h"
+#if defined(CONFIG_NETWORKING_MODULE)
+#include <plugin_section.h>
+#endif
 
 static enum shell_wildcard_status command_add(char *buff, uint16_t *buff_len,
 					      char const *cmd,
@@ -77,7 +80,11 @@ static enum shell_wildcard_status commands_expand(const struct shell *sh,
 	size_t cnt = 0;
 
 	while ((entry = z_shell_cmd_get(cmd, cmd_idx++, &dloc)) != NULL) {
-
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)entry) && (!plugin_section_ready())) {
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
 		if (fnmatch(pattern, entry->syntax, 0) == 0) {
 			ret_val = command_add(sh->ctx->temp_buff,
 					      &sh->ctx->cmd_tmp_buff_len,

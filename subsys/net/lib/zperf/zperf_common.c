@@ -46,7 +46,7 @@ struct sockaddr_in *zperf_get_sin(void)
 	      K_LOWEST_APPLICATION_THREAD_PRIO)
 K_THREAD_STACK_DEFINE(zperf_work_q_stack, CONFIG_ZPERF_WORK_Q_STACK_SIZE);
 
-static struct k_work_q zperf_work_q;
+struct k_work_q zperf_work_q;
 
 int zperf_get_ipv6_addr(char *host, char *prefix_str, struct in6_addr *addr)
 {
@@ -225,7 +225,7 @@ void zperf_async_work_submit(struct k_work *work)
 	k_work_submit_to_queue(&zperf_work_q, work);
 }
 
-static int zperf_init(void)
+int zperf_init(void)
 {
 
 	k_work_queue_init(&zperf_work_q);
@@ -246,4 +246,13 @@ static int zperf_init(void)
 	return 0;
 }
 
+int zperf_exit(void)
+{
+	k_thread_abort(&zperf_work_q.thread);
+
+	return 0;
+}
+
+#if defined(CONFIG_NETWORKING_AUTO_INIT)
 SYS_INIT(zperf_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+#endif

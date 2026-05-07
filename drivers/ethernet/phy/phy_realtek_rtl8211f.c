@@ -19,6 +19,7 @@
 #if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios) || DT_ANY_INST_HAS_PROP_STATUS_OKAY(int_gpios)
 #include <zephyr/drivers/gpio.h>
 #endif
+#include <soc.h>
 
 #define LOG_MODULE_NAME phy_rt_rtl8211f
 #define LOG_LEVEL CONFIG_PHY_LOG_LEVEL
@@ -642,7 +643,34 @@ skip_int_gpio:
 	return 0;
 }
 
+#if defined(CONFIG_NETWORKING_MODULE)
+static int phy_rt_rtl8211f_exit(const struct device *dev)
+{
+	const struct rt_rtl8211f_config *config = dev->config;
+	struct rt_rtl8211f_data *data = dev->data;
+	int ret = 0;
+
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(int_gpios)
+	ret = gpio_pin_interrupt_configure_dt(&config->interrupt_gpio, GPIO_INT_DISABLE);
+	if (ret) {
+		return ret;
+	}
+	ret = gpio_remove_callback_dt(&config->interrupt_gpio, &data->gpio_callback);
+	if (ret) {
+		return ret;
+	}
+#endif
+	memset(dev->state, 0, sizeof(struct device_state));
+
+    return ret;
+}
+#endif
+
 static const struct ethphy_driver_api rt_rtl8211f_phy_api = {
+#if defined(CONFIG_NETWORKING_MODULE)
+	.init = phy_rt_rtl8211f_init,
+	.exit = phy_rt_rtl8211f_exit,
+#endif
 	.get_link = phy_rt_rtl8211f_get_link,
 	.cfg_link = phy_rt_rtl8211f_cfg_link,
 	.link_cb_set = phy_rt_rtl8211f_link_cb_set,
@@ -674,7 +702,8 @@ static const struct ethphy_driver_api rt_rtl8211f_phy_api = {
 										\
 	static struct rt_rtl8211f_data rt_rtl8211f_##n##_data;			\
 										\
-	DEVICE_DT_INST_DEFINE(n, &phy_rt_rtl8211f_init, NULL,			\
+	DEVICE_DT_INST_DEFINE(n,	\
+			COND_CODE_1(CONFIG_NETWORKING_AUTO_INIT, (&phy_rt_rtl8211f_init), (NULL)), NULL,			\
 			&rt_rtl8211f_##n##_data, &rt_rtl8211f_##n##_config,	\
 			POST_KERNEL, CONFIG_PHY_INIT_PRIORITY,			\
 			&rt_rtl8211f_phy_api);

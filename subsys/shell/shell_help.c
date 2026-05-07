@@ -7,7 +7,9 @@
 #include "shell_ops.h"
 #include "shell_help.h"
 #include "shell_utils.h"
-
+#if defined(CONFIG_NETWORKING_MODULE)
+#include <plugin_section.h>
+#endif
 
 /* Function prints a string on terminal screen with requested margin.
  * It takes care to not divide words.
@@ -160,6 +162,11 @@ void z_shell_help_subcmd_print(const struct shell *sh,
 
 	/* Searching for the longest subcommand to print. */
 	while ((entry = z_shell_cmd_get(parent, idx++, &dloc)) != NULL) {
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)entry) && (!plugin_section_ready())) {
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
 		longest = Z_MAX(longest, z_shell_strlen(entry->syntax));
 	}
 
@@ -176,6 +183,11 @@ void z_shell_help_subcmd_print(const struct shell *sh,
 	idx = 0;
 
 	while ((entry = z_shell_cmd_get(parent, idx++, &dloc)) != NULL) {
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)entry) && (!plugin_section_ready())) {
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
 		help_item_print(sh, entry->syntax, longest, entry->help);
 	}
 }
