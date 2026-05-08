@@ -185,7 +185,7 @@ __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_HBUS, 0x1)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_OTP, 0x1);
     SYSC_SEC_AWO->CLKG_DIV_DPLL = SYSC_SEC_AWO_CLKG_DIV_DPLL_CLR_MASK;
-    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 = 
+    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 =
                                   // FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_PARA_HBUS_M1, 0x1)
                                      FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS, 0x1)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_M1, 0x1) /* set ahb_clk = 1/2 * cpu_clk */
