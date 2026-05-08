@@ -50,7 +50,7 @@ typedef struct __packed {
     uint8_t mem[];
 } k_heap_mem_t;
 
-static void *chunk_mem(struct z_heap *h, chunkid_t c)
+__maybe_unused static void *chunk_mem(struct z_heap *h, chunkid_t c)
 {
     chunk_unit_t *buf = chunk_buf(h);
     uint8_t *ret = ((uint8_t *)&buf[c]) + chunk_header_bytes(h);

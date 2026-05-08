@@ -37,10 +37,6 @@
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
-#if defined(CONFIG_IOPMP_LINKEDSEMI)
-extern void lsqsh_iopmp_init(void);
-#endif
-
 #define MHINT_AEE_POS 20
 #define SFT_CTRL_REG_NUM_RESET_FLAG (0x2)
 #define FLASH_XIP_MODE_RESET_BIT     (4)
@@ -51,9 +47,6 @@ BUILD_ASSERT(DT_NODE_EXISTS(DT_CHOSEN(zephyr_flash_controller)));
 #if defined(CONFIG_CACHE)
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
-#endif
-#if !defined(CONFIG_SMP)
-BUILD_ASSERT(FIXED_PARTITION_OFFSET(a_app_image_partition) < FIXED_PARTITION_OFFSET(b_app_image_partition));
 #endif
 
 static void cpu_sleep_mode_config(uint8_t deep)
@@ -66,12 +59,7 @@ static void cpu_sleep_mode_config(uint8_t deep)
 void systick_start(void){};
 void sw_timer_module_init(void){};
 
-static void driver_init(void)
-{
-}
-
-#define CPU0_FW_REGION_SIZE MB(2)
-#define CPU2_FW_REGION_SIZE MB(14)
+#define SYSMAP_REGION_MAX 8
 /* strong order | cacheable | bufferable */
 /*       2      |     1     |     0      */
 #define WEAK_ORDER 0
@@ -79,11 +67,20 @@ static void driver_init(void)
 #define CACHEABLE BIT(1)
 #define STRONG_ORDER BIT(2)
 
-extern char __SHMEM_start[];
-extern char __SHMEM_end[];
-extern char __SHMEM_size[];
+#define SYSMAP_PRINT(idx) LOG_INF("SYSMAPADDR%d: %#8.8x SYSMAPCFG%d: %#8.8x", \
+                                    idx,                                      \
+                                    SYSMAP->SYSMAPADDR##idx,                  \
+                                    idx,                                      \
+                                    SYSMAP->SYSMAPCFG##idx)
 
-__no_optimization static void cpu1_cache_region_init(void)
+#define SYSMAP_ADDR_ATTR_PRINT(idx) LOG_INF("%d addr: %#8.8x attr: %c%c%c",                              \
+                                                idx,                                                     \
+                                                SYSMAP->SYSMAPADDR##idx << 12,                           \
+                                                (SYSMAP->SYSMAPCFG##idx >> 2) & BUFFERABLE ? 'B' : '-',  \
+                                                (SYSMAP->SYSMAPCFG##idx >> 2) & CACHEABLE ? 'C' : '-',   \
+                                                (SYSMAP->SYSMAPCFG##idx >> 2) & STRONG_ORDER ? 'S' : '-')
+
+__maybe_unused __no_optimization static void cpu1_cache_region_init(void)
 {
     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
@@ -91,9 +88,6 @@ __no_optimization static void cpu1_cache_region_init(void)
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
-    __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
-    __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
-    __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
     uint8_t idx = 0;
 
     csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
@@ -114,12 +108,12 @@ __no_optimization static void cpu1_cache_region_init(void)
     csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
 #endif
 
-    if (idx < 8) {
+    while (idx < SYSMAP_REGION_MAX) {
         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
     }
 }
 
-__no_optimization static void cpu2_cache_region_init(void)
+__maybe_unused __no_optimization static void cpu2_cache_region_init(void)
 {
     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
@@ -127,9 +121,6 @@ __no_optimization static void cpu2_cache_region_init(void)
     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
-    __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
-    __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
-    __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
     uint8_t idx = 0;
 
 #if defined(CONFIG_XIP)
@@ -157,7 +148,7 @@ __no_optimization static void cpu2_cache_region_init(void)
     csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
     csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
 #endif
-    if (idx < 8) {
+    while (idx < SYSMAP_REGION_MAX) {
         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
     }
 }
@@ -369,40 +360,18 @@ __maybe_unused static void peripheral_init()
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x2);
 
-    ls_clock_control_off(CALC_SHA_CLOCK);
-    ls_reset_line_toggle(CALC_SHA_RESET);
-    ls_clock_control_on(CALC_SHA_CLOCK);
-
-    ls_clock_control_off(SHA512_CLOCK);
-    ls_reset_line_toggle(SHA512_RESET);
-    ls_clock_control_on(SHA512_CLOCK);
-
-    ls_clock_control_off(CALC_SM4_CLOCK);
-    ls_reset_line_toggle(CALC_SM4_RESET);
-    ls_clock_control_on(CALC_SM4_CLOCK);
-
-    ls_clock_control_off(CRYPT_CLOCK);
-    ls_reset_line_toggle(CRYPT_RESET);
-    ls_clock_control_on(CRYPT_CLOCK);
-
-    ls_clock_control_off(OTFAD_AES_CLOCK);
-    ls_reset_line_toggle(OTFAD_AES_RESET);
-    ls_clock_control_on(OTFAD_AES_CLOCK);
-
-    ls_clock_control_off(NIST_TRNG_CLOCK);
-    ls_reset_line_toggle(NIST_TRNG_RESET);
-    ls_clock_control_on(NIST_TRNG_CLOCK);
-
+    ls_clock_control_on_reset_line_toggle_once(CALC_SHA_CLOCK, CALC_SHA_RESET);
+    ls_clock_control_on_reset_line_toggle_once(SHA512_CLOCK, SHA512_RESET);
+    ls_clock_control_on_reset_line_toggle_once(CALC_SM4_CLOCK, CALC_SM4_RESET);
+    ls_clock_control_on_reset_line_toggle_once(CRYPT_CLOCK, CRYPT_RESET);
+    ls_clock_control_on_reset_line_toggle_once(OTFAD_AES_CLOCK, OTFAD_AES_RESET);
+    ls_clock_control_on_reset_line_toggle_once(NIST_TRNG_CLOCK, NIST_TRNG_RESET);
 #if defined(CONFIG_IOPMP_WHITELIST_I2C1_I3C1)
-    ls_clock_control_off(I2C1_CLOCK);
-    ls_reset_line_toggle(I2C1_RESET);
-    ls_clock_control_on(I2C1_CLOCK);
-
-    ls_clock_control_off(I3C1_CLOCK);
-    ls_reset_line_toggle(I3C1_RESET);
-    ls_clock_control_on(I3C1_CLOCK);
+    ls_clock_control_on_reset_line_toggle_once(I2C1_CLOCK, I2C1_RESET);
+    ls_clock_control_on_reset_line_toggle_once(I3C1_CLOCK, I3C1_RESET);
 #endif
 }
+
 __ramfunc static void high_frequency_init()
 {
     LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
@@ -418,13 +387,18 @@ __ramfunc static void high_frequency_init()
     env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
     env.writing = false;
     env.continuous_mode_on = false;
-    hal_flashx_init(&env);
+    hal_flashx_noreset_init(&env);
     if (!env.dual_mode_only) {
         pinmux_hal_flash_quad_init();
     }
     hal_flashx_continuous_mode_reset(&env);
     hal_flashx_continuous_mode_start(&env);
-    lscache_cache_enable(1);
+    if (ls_clock_control_is_on(QSPI1_CLOCK)) {
+        lscache_cachex_enable(LSCACHE, 1);
+    }
+    if (ls_clock_control_is_on(QSPI2_CLOCK)) {
+        lscache_cachex_enable(LSCACHE2, 1);
+    }
     peripheral_init();
 }
 #endif /*  DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) */
@@ -526,6 +500,25 @@ __weak void soc_prep_hook(void)
 
 __weak void soc_early_init_hook(void)
 {
+#if 0
+    SYSMAP_PRINT(0);
+    SYSMAP_PRINT(1);
+    SYSMAP_PRINT(2);
+    SYSMAP_PRINT(3);
+    SYSMAP_PRINT(4);
+    SYSMAP_PRINT(5);
+    SYSMAP_PRINT(6);
+    SYSMAP_PRINT(7);
+    SYSMAP_ADDR_ATTR_PRINT(0);
+    SYSMAP_ADDR_ATTR_PRINT(1);
+    SYSMAP_ADDR_ATTR_PRINT(2);
+    SYSMAP_ADDR_ATTR_PRINT(3);
+    SYSMAP_ADDR_ATTR_PRINT(4);
+    SYSMAP_ADDR_ATTR_PRINT(5);
+    SYSMAP_ADDR_ATTR_PRINT(6);
+    SYSMAP_ADDR_ATTR_PRINT(7);
+#endif
+
     uint32_t value = __get_MSTATUS();
     MODIFY_REG(value, 0x6000, 0x2000);
     __set_MSTATUS(value);//enable fpu
@@ -582,7 +575,6 @@ __weak void soc_early_init_hook(void)
 #endif
 
     cpu_sleep_mode_config(0);
-    driver_init();
     arch_irq_lock();
 
 #if defined(CONFIG_PECI)
