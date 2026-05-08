@@ -387,7 +387,11 @@ __ramfunc static void high_frequency_init()
     env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
     env.writing = false;
     env.continuous_mode_on = false;
-    hal_flashx_noreset_init(&env);
+    if (ls_clock_control_is_on(QSPI1_CLOCK)) {
+        hal_flashx_noreset_init(&env);
+    } else {
+        hal_flashx_init(&env);
+    }
     if (!env.dual_mode_only) {
         pinmux_hal_flash_quad_init();
     }
