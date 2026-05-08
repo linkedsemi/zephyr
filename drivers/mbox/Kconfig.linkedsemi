@@ -10,10 +10,6 @@ config MBOX_LINKEDSEMI
 
 if MBOX_LINKEDSEMI
 
-config MBOX_LINKEDSEMI_CRC
-    bool "MBOX_LINKEDSEMI_CRC"
-    default y
-
 config SIGNALLING_MODE_SUPPORT
     bool "NULL msg support for mailbox"
     default n
