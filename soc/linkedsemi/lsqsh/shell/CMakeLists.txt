@@ -1,3 +1,5 @@
 zephyr_include_directories(.)
-zephyr_library_sources(pinctrl.c)
-zephyr_library_sources(cache.c)
+if (DEFINED CONFIG_SOC_LSQSH_SHELL)
+    zephyr_library_sources_ifdef(CONFIG_SOC_LSQSH_SHELL pinctrl.c)
+    zephyr_library_sources_ifdef(CONFIG_SOC_LSQSH_SHELL cache.c)
+endif()
