@@ -21,7 +21,7 @@
 };
 
 &sram {
-    reg = <0x10100000 SRAM_TOTAL_SIZE>;
+    reg = <0x10000000 SRAM_TOTAL_SIZE>;
 };
 
 &psram {

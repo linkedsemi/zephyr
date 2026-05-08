@@ -120,12 +120,12 @@
 
 &i2c14 {
     DEFINE_PINCTRL_CONSUMER_I2C(I2C14, PK10, PK11)
-    status = "okay";
+    status = "disabled";
     label = "i2c-14";
     ins5710c: ins5710c@32 {
         compatible = "dapu,ins5710c";
         reg = <0x32>;
-        status = "okay";
+        status = "disabled";
         label = "ins5710c";
     };
 };

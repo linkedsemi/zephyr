@@ -393,6 +393,8 @@ static int rtc_ls_init(const struct device *dev){
     const struct rtc_ls_config *cfg = dev->config;
     struct rtc_ls_data *data = dev->data;
     __maybe_unused int ret;
+    bool inited = false;
+
     data->alarm_cb = NULL;
     data->alarm_cb_user_data = NULL;
 
@@ -403,35 +405,44 @@ static int rtc_ls_init(const struct device *dev){
             LOG_DBG("%s: %s device not ready", dev->name, clk_dev->name);
             return -ENODEV;
         }
-        clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
+        enum clock_control_status clk_status = clock_control_get_status(clk_dev,(clock_control_subsys_t)&cfg->clk_cfg);
+        if(CLOCK_CONTROL_STATUS_OFF == clk_status) {
+            clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
+            inited = false;
+        } else {
+            inited = true;
+        }
     }
 #endif/* CONFIG_CLOCK_CONTROL */
 
+    if (!inited) {
 #if defined(CONFIG_RESET)
-    if (cfg->reset.dev != NULL) {
-        if (!device_is_ready(cfg->reset.dev)) {
-            LOG_ERR("%s: Reset controller device is not ready", dev->name);
-            return -ENODEV;
-        }
+        if (cfg->reset.dev != NULL) {
+            if (!device_is_ready(cfg->reset.dev)) {
+                LOG_ERR("%s: Reset controller device is not ready", dev->name);
+                return -ENODEV;
+            }
 
-        ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
-        if (ret != 0) {
-            LOG_ERR("%s: toggle reset line failed", dev->name);
-            return ret;
+            ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
+            if (ret != 0) {
+                LOG_ERR("%s: toggle reset line failed", dev->name);
+                return ret;
+            }
         }
-    }
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
-    if (cfg->clk_cfg.cctl_dev) {
-        const struct device *clk_dev = cfg->clk_cfg.cctl_dev;
-        clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
-    }
+        if (cfg->clk_cfg.cctl_dev) {
+            const struct device *clk_dev = cfg->clk_cfg.cctl_dev;
+            clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->clk_cfg);
+        }
 #endif
 
-    rtc_cycle_config(dev, cfg->cyc_1hz, cfg->calib_cyc,true);
-    RTC_REGS(dev)->CTRL &= ~RTC_CTRL_ALARM_EN_MASK;//Alarm Disable
-    RTC_REGS(dev)->CTRL |= RTC_CTRL_ENABLE_MASK;
+        rtc_cycle_config(dev, cfg->cyc_1hz, cfg->calib_cyc,true);
+        RTC_REGS(dev)->CTRL &= ~RTC_CTRL_ALARM_EN_MASK;//Alarm Disable
+        RTC_REGS(dev)->CTRL |= RTC_CTRL_ENABLE_MASK;
+    }
+
     cfg->irq_config_func(dev);
     return 0;
 }

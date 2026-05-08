@@ -5,7 +5,7 @@
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
-static int pinctrl_pin_show(uint8_t pin)
+static int pinmux_show(uint8_t pin)
 {
     gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
     uint32_t mask = (1<<x->num<<16) | (1<<x->num);
@@ -117,7 +117,7 @@ static int pin2code(char port, uint8_t num)
     return ret;
 }
 
-static int cmd_pinctrl_pin_show(const struct shell *sh, size_t argc, char **argv)
+static int cmd_pinmux_show(const struct shell *sh, size_t argc, char **argv)
 {
     if (1 == argc) {
         shell_print(sh, "Usage: %s <pin> [pin] [pin] ...", argv[0]);
@@ -130,11 +130,11 @@ static int cmd_pinctrl_pin_show(const struct shell *sh, size_t argc, char **argv
         if (err) {
             shell_print(sh, "Invalid Arguments: %s",  argv[i]);
         } else {
-            pinctrl_pin_show(pin2code(port, num));
+            pinmux_show(pin2code(port, num));
         }
     }
 
     return 0;
 }
 
-SHELL_CMD_REGISTER(pinctrl_pin_show, NULL, "pinctrl_pin_show A10 A11 A12 A13 ...", cmd_pinctrl_pin_show);
+SHELL_CMD_REGISTER(soc_pinmux, NULL, "pinmux_show A10 A11 A12 A13 ...", cmd_pinmux_show);
