@@ -185,7 +185,7 @@ __maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_HBUS, 0x1)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_OTP, 0x1);
     SYSC_SEC_AWO->CLKG_DIV_DPLL = SYSC_SEC_AWO_CLKG_DIV_DPLL_CLR_MASK;
-    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 = 
+    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 =
                                   // FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_PARA_HBUS_M1, 0x1)
                                      FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS, 0x1)
                                    | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_M1, 0x1) /* set ahb_clk = 1/2 * cpu_clk */
@@ -387,7 +387,11 @@ __ramfunc static void high_frequency_init()
     env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
     env.writing = false;
     env.continuous_mode_on = false;
-    hal_flashx_noreset_init(&env);
+    if (ls_clock_control_is_on(QSPI1_CLOCK)) {
+        hal_flashx_noreset_init(&env);
+    } else {
+        hal_flashx_init(&env);
+    }
     if (!env.dual_mode_only) {
         pinmux_hal_flash_quad_init();
     }

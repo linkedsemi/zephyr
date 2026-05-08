@@ -13,6 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <soc.h>
 
 #if defined(CONFIG_CLOCK_CONTROL)
     #include <zephyr/drivers/clock_control.h>

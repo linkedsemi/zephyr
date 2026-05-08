@@ -285,13 +285,13 @@ void *_calloc_r(struct _reent *r, size_t nmemb, size_t size)
         (void)memset(ret, 0, bounds);
 
 #if defined(CONFIG_NEWLIB_LIBC_MALLOC_DEBUG_FOOTER)
-        heap_ext_log(_CALLOC_R, ret, size);
+        heap_ext_log(_CALLOC_R, ret, nmemb * size);
 #endif
 #if defined(CONFIG_HEAP_DEBUG_RD_LSQSH)
-        heap_debug_ptr_push(__func__, ret, size);
+        heap_debug_ptr_push(__func__, ret, nmemb * size);
 #endif
 #if defined(CONFIG_HEAP_DEBUG_LSQSH)
-        heap_debug_callstack(__func__, ret, size);
+        heap_debug_callstack(__func__, ret, nmemb * size);
 #endif
     }
 
@@ -340,8 +340,7 @@ void *_realloc_r(struct _reent *r, void *ptr, size_t size)
         return NULL;
     }
 
-    ret = k_heap_realloc(heap, ptr, size, Z_TIMEOUT_MS(CONFIG_NEWLIB_LIBC_MALLOC_TIMEOUT_MS));
-
+    ret = k_heap_realloc(heap, (void *)obj, size, Z_TIMEOUT_MS(CONFIG_NEWLIB_LIBC_MALLOC_TIMEOUT_MS));
     if (ret != NULL) {
         obj = (k_heap_mem_t *)ret;
         obj->heap = heap;
