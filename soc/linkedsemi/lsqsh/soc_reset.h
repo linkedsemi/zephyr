@@ -207,6 +207,7 @@ struct wdt_reset_en * wdt_reset_en_val_get(void);
 int sec_iwdt_reset_en_get(struct wdt_reset_en *wdt_reset_en);
 int sec_iwdt_reset_en_set(struct wdt_reset_en *wdt_reset_en);
 int wdt_reset_en_print(struct wdt_reset_en *wdt_reset_en);
+void sys_arch_reboot_warm_emul();
 
 static inline int wdt_setup_linkedsemi(const struct device *dev, struct wdt_reset_en *wdt_reset_en)
 {
