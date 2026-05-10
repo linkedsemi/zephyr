@@ -88,6 +88,9 @@ int _getpid(void);
 		#elif defined(CONFIG_ARC)
 			#define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, \
 							  Z_ARC_MPU_ALIGN)
+		#elif defined(CONFIG_RISCV)
+			#define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, \
+							  Z_RISCV_STACK_PMP_ALIGN)
 		#else
 			#error "Unsupported platform"
 		#endif /* CONFIG_<arch> */
