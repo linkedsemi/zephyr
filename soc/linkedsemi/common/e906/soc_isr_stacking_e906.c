@@ -15,9 +15,11 @@ static uint32_t irq_nested_mcause[IRQ_NESTED_MAX] = {0,0,0,0,0,0,0,0,0,0};
 static const struct device *const zephyr_flash_controller =
 	DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
+extern int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out);
+
 __ramfunc void isr_stacking_mcause(void)
 {
-    flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,0,NULL);
+    flash_ls_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,0,NULL);
     if(irq_nested_level < IRQ_NESTED_MAX)
     {
         irq_nested_mcause[irq_nested_level] = csr_read(mcause);
@@ -52,7 +54,7 @@ __ramfunc void isr_unstacking_mcause(void)
     {
         while(1);
     }
-    flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_RESUME_OPCODE,0,NULL);
+    flash_ls_ex_op(zephyr_flash_controller,FLASH_DRIVER_RESUME_OPCODE,0,NULL);
 }
 
 void discard_current_irq_nested(void)
