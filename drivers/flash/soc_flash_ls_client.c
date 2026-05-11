@@ -517,7 +517,7 @@ __ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t co
 	return 0;
 }
 #else
-__ramfunc int flash_ls_client_ex_op(const struct device *dev, uint16_t code,
+__ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t code,
 				const uintptr_t in, void *out)
 {
 	return 0;
