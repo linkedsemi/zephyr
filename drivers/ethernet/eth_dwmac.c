@@ -558,6 +558,32 @@ static int dwmac_set_config(const struct device *dev,
 		break;
 #endif
 
+	case ETHERNET_CONFIG_TYPE_FILTER:
+		/*
+		 * ARP storm mitigation via DBF (Disable Broadcast Frames).
+		 *
+		 * MAC_PKT_FILTER.DBF (Bit 5):
+		 *   DBF=1 → hardware drops ALL broadcast frames
+		 *   DBF=0 → normal broadcast reception
+		 *   Unicast traffic (TCP/SSH/ICMP) is completely unaffected.
+		 */
+		reg_val = REG_READ(MAC_PKT_FILTER);
+		if (config->filter.set) {
+			reg_val |= MAC_PKT_FILTER_DBF;
+		} else {
+			reg_val &= ~MAC_PKT_FILTER_DBF;
+		}
+		REG_WRITE(MAC_PKT_FILTER, reg_val);
+		barrier_dsync_fence_full();
+		{
+			uint32_t readback = REG_READ(MAC_PKT_FILTER);
+
+			LOG_DBG("MAC_PKT_FILTER=0x%08x DBF=%u",
+				readback,
+				(readback & MAC_PKT_FILTER_DBF) ? 1 : 0);
+		}
+		break;
+
 	default:
 		ret = -ENOTSUP;
 		break;
