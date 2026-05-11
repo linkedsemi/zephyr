@@ -693,7 +693,7 @@ static int flash_ls_sfdp_read(const struct device *dev, off_t offset,
 
 #endif /* CONFIG_FLASH_JESD216_API */
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
-__ramfunc static int flash_ls_ex_op(const struct device *dev, uint16_t code,
+__ramfunc int flash_ls_ex_op(const struct device *dev, uint16_t code,
 				const uintptr_t in, void *out)
 {
 	struct flash_ls_data *priv = dev->data;
