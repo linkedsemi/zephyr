@@ -67,6 +67,10 @@ static void arp_storm_recovery_work(struct k_work *work)
 {
 	struct net_if *iface = net_if_get_default();
 
+	if (!iface) {
+		return;
+	}	
+
 	if (!atomic_get(&broadcast_filter_enabled)) {
 		return;
 	}
