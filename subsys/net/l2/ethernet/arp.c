@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(net_arp, CONFIG_NET_ARP_LOG_LEVEL);
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_stats.h>
 #include <zephyr/net/net_mgmt.h>
+#include <zephyr/net/ethernet.h>
 
 #include "arp.h"
 #include "net_private.h"
@@ -35,11 +36,119 @@ static struct k_work_delayable arp_request_timer;
 
 static struct k_mutex arp_mutex;
 
+/* ARP storm protection: token bucket rate limiter + hardware DBF */
+#ifndef CONFIG_NET_ARP_RATE_LIMIT
+#define CONFIG_NET_ARP_RATE_LIMIT 50  /* packets per second */
+#endif
+
+static atomic_t arp_rate_tokens;
+static uint32_t arp_last_refill;
+static uint32_t arp_storm_detected;
+
+/* DBF (Disable Broadcast Frames) state and recovery timer */
+static atomic_t broadcast_filter_enabled;
+static struct k_work_delayable arp_storm_recovery_timer;
+#define ARP_STORM_RECOVERY_MS 5000
+
 #if defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION)
 static struct net_mgmt_event_callback iface_event_cb;
 static struct net_mgmt_event_callback ipv4_event_cb;
 static struct k_work_delayable arp_gratuitous_work;
 #endif /* defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION) */
+
+/* Forward declaration */
+static void arp_storm_set_dbf(struct net_if *iface, bool block);
+
+/*
+ * Recovery timer: periodically clear DBF to probe if the storm has passed.
+ * If the storm is still ongoing, arp_rate_limit_check will re-enable DBF.
+ */
+static void arp_storm_recovery_work(struct k_work *work)
+{
+	struct net_if *iface = net_if_get_default();
+
+	if (!atomic_get(&broadcast_filter_enabled)) {
+		return;
+	}
+
+	atomic_set(&arp_rate_tokens, CONFIG_NET_ARP_RATE_LIMIT);
+	arp_last_refill = k_uptime_get_32();
+	arp_storm_set_dbf(iface, false);
+	arp_storm_detected = 0;
+
+	NET_INFO("ARP storm probing: DBF cleared, monitoring broadcast traffic");
+}
+
+/*
+ * Enable/disable hardware broadcast filter (DBF) via driver.
+ * block=true  → MAC_PKT_FILTER.DBF=1, hardware drops all broadcast frames
+ * block=false → MAC_PKT_FILTER.DBF=0, restore normal broadcast reception
+ */
+static void arp_storm_set_dbf(struct net_if *iface, bool block)
+{
+	const struct device *dev = net_if_get_device(iface);
+	const struct ethernet_api *eth_api;
+	struct ethernet_config config;
+
+	if (!dev || !dev->api) {
+		return;
+	}
+
+	eth_api = (const struct ethernet_api *)dev->api;
+	if (!eth_api->set_config) {
+		return;
+	}
+
+	config.filter.set = block;
+	eth_api->set_config(dev, ETHERNET_CONFIG_TYPE_FILTER, &config);
+
+	if (block) {
+		atomic_set(&broadcast_filter_enabled, 1);
+		k_work_reschedule(&arp_storm_recovery_timer,
+				  K_MSEC(ARP_STORM_RECOVERY_MS));
+	} else {
+		atomic_set(&broadcast_filter_enabled, 0);
+	}
+}
+
+/*
+ * ARP rate limiting using token bucket algorithm.
+ * When tokens are exhausted, enables hardware DBF to block all broadcast
+ * traffic at the MAC level, preventing CPU overload from ARP storms.
+ */
+static bool arp_rate_limit_check(struct net_if *iface)
+{
+	uint32_t current_time = k_uptime_get_32();
+	uint32_t elapsed = current_time - arp_last_refill;
+	int32_t tokens = atomic_get(&arp_rate_tokens);
+
+	/* Refill tokens based on elapsed time */
+	if (elapsed > 0) {
+		uint32_t refill = (elapsed * CONFIG_NET_ARP_RATE_LIMIT) / 1000;
+
+		refill = MIN(refill, CONFIG_NET_ARP_RATE_LIMIT);
+		tokens = MIN(tokens + (int32_t)refill, CONFIG_NET_ARP_RATE_LIMIT);
+		atomic_set(&arp_rate_tokens, tokens);
+		arp_last_refill = current_time;
+	}
+
+	if (tokens <= 0) {
+		if (!arp_storm_detected) {
+			arp_storm_detected = 1;
+			NET_WARN("ARP broadcast storm detected, enabling hardware DBF");
+			arp_storm_set_dbf(iface, true);
+		}
+		return false;
+	}
+
+	if (arp_storm_detected && tokens >= (CONFIG_NET_ARP_RATE_LIMIT / 2)) {
+		arp_storm_detected = 0;
+		NET_INFO("ARP storm subsided, broadcast reception restored");
+	}
+
+	atomic_dec(&arp_rate_tokens);
+	return true;
+}
 
 static void arp_entry_cleanup(struct arp_entry *entry, bool pending)
 {
@@ -773,6 +882,12 @@ enum net_verdict net_arp_input(struct net_pkt *pkt,
 	struct net_pkt *reply;
 	struct in_addr *addr;
 
+	/* ARP storm protection: check rate limit */
+	if (!arp_rate_limit_check(net_pkt_iface(pkt))) {
+		NET_DBG("ARP rate limit exceeded, dropping packet");
+		return NET_DROP;
+	}
+
 	if (net_pkt_get_len(pkt) < (sizeof(struct net_arp_hdr) -
 				    (net_pkt_ip_data(pkt) - (uint8_t *)eth_hdr))) {
 		NET_DBG("Invalid ARP header (len %zu, min %zu bytes) %p",
@@ -987,6 +1102,13 @@ void net_arp_init(void)
 	k_mutex_init(&arp_mutex);
 
 	arp_cache_initialized = true;
+
+	/* Initialize ARP storm protection variables */
+	atomic_set(&arp_rate_tokens, CONFIG_NET_ARP_RATE_LIMIT);
+	arp_last_refill = k_uptime_get_32();
+	arp_storm_detected = 0;
+	atomic_set(&broadcast_filter_enabled, 0);
+	k_work_init_delayable(&arp_storm_recovery_timer, arp_storm_recovery_work);
 
 #if defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION)
 	net_mgmt_init_event_callback(&iface_event_cb, iface_event_handler,
