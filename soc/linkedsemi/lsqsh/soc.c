@@ -9,9 +9,7 @@
 #include <zephyr/pm/state.h>
 #include <zephyr/drivers/flash.h>
 #include <zephyr/storage/flash_map.h>
-#include <zephyr/drivers/misc/linkedsemi/mbox_linkedsemi.h>
 #include "platform.h"
-#include "core_rv32.h"
 #include "exception_isr.h"
 #include "systick.h"
 #include "cpu.h"
@@ -20,13 +18,7 @@
 #include "iopmp.h"
 #include "qsh.h"
 #include <zephyr/irq.h>
-#include "reg_sec_pmu_rg.h"
-#include "reg_app_pmu_rg.h"
-#include "reg_sysc_sec_awo.h"
-#include "reg_sysc_app_awo.h"
-#include "reg_sysc_sec_cpu.h"
 #include "ls_hal_iwdgv2.h"
-#include "ls_soc_gpio.h"
 #include "ls_hal_cache.h"
 #include "ls_hal_qspiv2.h"
 #include "ls_msp_qspiv2.h"
@@ -63,9 +55,9 @@ void sw_timer_module_init(void){};
 /* strong order | cacheable | bufferable */
 /*       2      |     1     |     0      */
 #define WEAK_ORDER 0
-#define BUFFERABLE BIT(0)
-#define CACHEABLE BIT(1)
-#define STRONG_ORDER BIT(2)
+#define BUFFERABLE SYSMAP_SYSMAPCFG_B_Msk
+#define CACHEABLE SYSMAP_SYSMAPCFG_C_Msk
+#define STRONG_ORDER SYSMAP_SYSMAPCFG_SO_Msk
 
 #define SYSMAP_PRINT(idx) LOG_INF("SYSMAPADDR%d: %#8.8x SYSMAPCFG%d: %#8.8x", \
                                     idx,                                      \
@@ -76,19 +68,75 @@ void sw_timer_module_init(void){};
 #define SYSMAP_ADDR_ATTR_PRINT(idx) LOG_INF("%d addr: %#8.8x attr: %c%c%c",                              \
                                                 idx,                                                     \
                                                 SYSMAP->SYSMAPADDR##idx << 12,                           \
-                                                (SYSMAP->SYSMAPCFG##idx >> 2) & BUFFERABLE ? 'B' : '-',  \
-                                                (SYSMAP->SYSMAPCFG##idx >> 2) & CACHEABLE ? 'C' : '-',   \
-                                                (SYSMAP->SYSMAPCFG##idx >> 2) & STRONG_ORDER ? 'S' : '-')
+                                                SYSMAP->SYSMAPCFG##idx & BUFFERABLE ? 'B' : '-',  \
+                                                SYSMAP->SYSMAPCFG##idx & CACHEABLE ? 'C' : '-',   \
+                                                SYSMAP->SYSMAPCFG##idx & STRONG_ORDER ? 'S' : '-')
 
-__maybe_unused __no_optimization static void cpu1_cache_region_init(void)
+typedef struct {
+    volatile uint32_t SYSMAPADDR;             /*!< Offset: 0x000 (R/W)  SYSMAP configure register */
+    volatile uint32_t SYSMAPCFG;              /*!< Offset: 0x004 (R/W)  SYSMAP configure register */
+} SYSMAP_ITEM_Type;
+#define SYSMAP_ITEM              ((SYSMAP_ITEM_Type  *)     SYSMAP_BASE )
+
+void cpu_sysmap_show(void)
 {
-    __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
-    __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
-    __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
-    __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
-    __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
-    __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    SYSMAP_PRINT(0);
+    SYSMAP_PRINT(1);
+    SYSMAP_PRINT(2);
+    SYSMAP_PRINT(3);
+    SYSMAP_PRINT(4);
+    SYSMAP_PRINT(5);
+    SYSMAP_PRINT(6);
+    SYSMAP_PRINT(7);
+    SYSMAP_ADDR_ATTR_PRINT(0);
+    SYSMAP_ADDR_ATTR_PRINT(1);
+    SYSMAP_ADDR_ATTR_PRINT(2);
+    SYSMAP_ADDR_ATTR_PRINT(3);
+    SYSMAP_ADDR_ATTR_PRINT(4);
+    SYSMAP_ADDR_ATTR_PRINT(5);
+    SYSMAP_ADDR_ATTR_PRINT(6);
+    SYSMAP_ADDR_ATTR_PRINT(7);
+}
+
+static void cpu_sysmap_erase(void)
+{
+    for (int i = 0; i < SYSMAP_REGION_MAX; i++) {
+        SYSMAP_ITEM[i].SYSMAPADDR = 0;
+        SYSMAP_ITEM[i].SYSMAPCFG = 0;
+    }
+}
+
+static int cpu_sysmap_check(void)
+{
+    int ret = 0;
+
+    for (int i = 1; i < SYSMAP_REGION_MAX; i++) {
+        if (SYSMAP_ITEM[i - 1].SYSMAPADDR > SYSMAP_ITEM[i].SYSMAPADDR) {
+            ret = -EINVAL;
+            break;
+        }
+    }
+
+    return ret;
+}
+
+__maybe_unused static void cpu1_cache_region_init(void)
+{
+    const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+    const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+    const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+    const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
     uint8_t idx = 0;
+
+#if defined(CONFIG_XIP)
+    if (!(((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE))))) {
+        csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
+        csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
+    }
+#endif
 
     csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
 
@@ -103,6 +151,7 @@ __maybe_unused __no_optimization static void cpu1_cache_region_init(void)
 #endif
 
     csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+
 #if DT_NODE_EXISTS(DT_NODELABEL(psram))
     csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
     csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
@@ -113,19 +162,19 @@ __maybe_unused __no_optimization static void cpu1_cache_region_init(void)
     }
 }
 
-__maybe_unused __no_optimization static void cpu2_cache_region_init(void)
+__maybe_unused static void cpu2_cache_region_init(void)
 {
-    __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
-    __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
-    __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
-    __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
-    __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
-    __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+    const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+    const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+    const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
     uint8_t idx = 0;
 
 #if defined(CONFIG_XIP)
-    if (((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
-        || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
+    if (!(((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE))))) {
         csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
         csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
     }
@@ -158,57 +207,10 @@ extern void SystemInit();
 extern void psram_init(void);
 
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
-
-__maybe_unused __ramfunc static void enable_dpll()
-{
-    CLEAR_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_CLKREF_SEL_MASK); /* clkin */
-    SET_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_EN_MASK); /* clr reset */
-    SET_BIT(SYSC_SEC_AWO->DPLL1_CTRL1, SYSC_SEC_AWO_DPLL1_CTRL1_PLL1_RSTN_MASK); /* enable pll1 */
-    while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK));
-
-    CLEAR_BIT(SYSC_SEC_AWO->DPLL2_CTRL1, SYSC_SEC_AWO_DPLL2_CTRL1_PLL2_CLKREF_SEL_MASK); /* clkin */
-    SET_BIT(SYSC_SEC_AWO->DPLL2_CTRL1, SYSC_SEC_AWO_DPLL2_CTRL1_PLL2_EN_MASK); /* clr reset */
-    SET_BIT(SYSC_SEC_AWO->DPLL2_CTRL1, SYSC_SEC_AWO_DPLL2_CTRL1_PLL2_RSTN_MASK); /* enable pll2 */
-    while(0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK));
-}
-
 #define LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE(node_id) \
     IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
 
-__maybe_unused __ramfunc static void cpu_600M_ahb_300M_qspi_200M_init()
-{
-    SYSC_SEC_AWO->PD_AWO_CLK_CTRL1 = FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS0, 0x0)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS1, 0x0)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS2, 0x0)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS3, 0x0)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_PBUS4, 0x3)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_HBUS, 0x1)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_OTP, 0x1);
-    SYSC_SEC_AWO->CLKG_DIV_DPLL = SYSC_SEC_AWO_CLKG_DIV_DPLL_CLR_MASK;
-    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 =
-                                  // FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_PARA_HBUS_M1, 0x1)
-                                     FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS, 0x1)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_M1, 0x1) /* set ahb_clk = 1/2 * cpu_clk */
-                                 //| FIELD_BUILD(SYSC_SEC_AWO_HSE_DCT_EN, 0)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_HBUS_FLT_CTRL, 0x9)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_QSPI_FLT_CTRL, 0x9)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x1)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
-    SYSC_SEC_AWO->CLKG_DIV_DPLL = SYSC_SEC_AWO_CLKG_DIV_DPLL_SET_MASK;
-    SYSC_SEC_AWO->PD_AWO_CLK_CTRL0 =
-                                  // FIELD_BUILD(SYSC_SEC_AWO_CLK_DIV_PARA_HBUS_M1, 0x1)
-                                     FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS, 0x10)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_M1, 0x1)
-                                 //| FIELD_BUILD(SYSC_SEC_AWO_HSE_DCT_EN, 0)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_HBUS_FLT_CTRL, 0x9)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_QSPI_FLT_CTRL, 0x9)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI, 0x10)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_HBUS_FLT, 0x2)
-                                   | FIELD_BUILD(SYSC_SEC_AWO_CLK_SEL_QSPI_FLT, 0x2);
-}
-
-__maybe_unused static void peripheral_init()
+static void peripheral_init()
 {
     /* SYSC_APP_AWO->PD_AWO_CLK_CTRL1 */
 #if DT_NODE_EXISTS(DT_NODELABEL(psram))
@@ -351,7 +353,7 @@ __maybe_unused static void peripheral_init()
 
     REG_FIELD_WR(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC2_CLK_DIV, 0x0);
     REG_FIELD_WR(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC2_CLK_SEL, 0x8); /* dpll 50M */
-    SET_BIT(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC1_CLK_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->LPC_CLK, SYSC_APP_AWO_LPC2_CLK_CG_MASK);
     /* SYSC_APP_AWO->LPC_CLK */
 
     SET_BIT(SEC_PMU->TRIM0, SEC_PMU_RG_LDO_PECI_EN_MASK);
@@ -376,11 +378,7 @@ __maybe_unused static void peripheral_init()
 __ramfunc static void high_frequency_init()
 {
     LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
-    if ((0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL1_LOCK_MASK))
-        && (0 == READ_BIT(SYSC_SEC_AWO->DPLL_LOCK, SYSC_SEC_AWO_DPLL2_LOCK_MASK))) {
-        enable_dpll();
-        cpu_600M_ahb_300M_qspi_200M_init();
-    }
+    dpll_qspi_clk_config_and_clk_switch();
     struct hal_flash_env env;
     env.reg = (void *)DT_REG_ADDR(DT_CHOSEN(zephyr_flash_controller));
     env.dual_mode_only = !DT_PROP(DT_CHOSEN(zephyr_flash_controller), quad_mode);
@@ -410,10 +408,6 @@ __ramfunc static void high_frequency_init()
 
 __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_clock, uint32_t target_clock)
 {
-    ARG_UNUSED(base_clock);
-
-    __ASSERT_NO_MSG(target_clock);
-
     uint16_t tx_div;
     uint16_t rx_div;
     uint8_t tx_sel;
@@ -505,30 +499,17 @@ __weak void soc_prep_hook(void)
 
 __weak void soc_early_init_hook(void)
 {
-#if 0
-    SYSMAP_PRINT(0);
-    SYSMAP_PRINT(1);
-    SYSMAP_PRINT(2);
-    SYSMAP_PRINT(3);
-    SYSMAP_PRINT(4);
-    SYSMAP_PRINT(5);
-    SYSMAP_PRINT(6);
-    SYSMAP_PRINT(7);
-    SYSMAP_ADDR_ATTR_PRINT(0);
-    SYSMAP_ADDR_ATTR_PRINT(1);
-    SYSMAP_ADDR_ATTR_PRINT(2);
-    SYSMAP_ADDR_ATTR_PRINT(3);
-    SYSMAP_ADDR_ATTR_PRINT(4);
-    SYSMAP_ADDR_ATTR_PRINT(5);
-    SYSMAP_ADDR_ATTR_PRINT(6);
-    SYSMAP_ADDR_ATTR_PRINT(7);
-#endif
+    if (cpu_sysmap_check()) {
+        LOG_ERR("cpu_sysmap_check failed, erase sysmap");
+        cpu_sysmap_erase();
+        cpu_sysmap_show();
+    }
 
     uint32_t value = __get_MSTATUS();
     MODIFY_REG(value, 0x6000, 0x2000);
     __set_MSTATUS(value);//enable fpu
     value = __get_MHCR();
-    value |= (CACHE_MHCR_RS_Msk | CACHE_MHCR_BPE_Msk | CACHE_MHCR_L0BTB_Msk);
+    value |= (CACHE_MHCR_RS_Msk | CACHE_MHCR_BPE_Msk | CACHE_MHCR_BTB_Msk);
     __set_MHCR(value);
 
     __set_MTVT((uint32_t)0);
@@ -556,28 +537,15 @@ __weak void soc_early_init_hook(void)
 #endif /* CONFIG_FORCE_CLOCK_HSI */
 
 #if defined(CONFIG_CACHE)
-#if !defined(CONFIG_SMP)
+#if defined(CONFIG_DCACHE)
     csi_dcache_enable();
 #endif
+#if defined(CONFIG_ICACHE)
     csi_icache_enable();
-
-#if !defined(CONFIG_SMP)
-    csi_dcache_invalid();
 #endif
-    csi_icache_invalid();
 #endif
 
     reset_reason_init();
-
-#if defined(CONFIG_MBOX)
-    if ((PWR_FULL_RESET == reset_reason_get())
-        || (SOFT_FULL_RESET == reset_reason_get())
-        || (CPU_FULL_RESET == reset_reason_get())
-        || (SYS_IWDT_FULL_RESET == reset_reason_get())
-        || (EXT_FULL_RESET == reset_reason_get())) {
-        memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox_memory)), 0, DT_REG_SIZE(DT_NODELABEL(mbox_memory)));
-    }
-#endif
 
     cpu_sleep_mode_config(0);
     arch_irq_lock();
@@ -588,11 +556,14 @@ __weak void soc_early_init_hook(void)
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
-#if defined(CONFIG_PSRAM)
     if (!is_app_cpu_running()) {
-        psram_init();
-    }
+#if defined(CONFIG_MBOX)
+        memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox_memory)), 0, DT_REG_SIZE(DT_NODELABEL(mbox_memory)));
 #endif
+#if defined(CONFIG_PSRAM)
+        psram_init();
+#endif
+    }
 #endif
 
     return;
