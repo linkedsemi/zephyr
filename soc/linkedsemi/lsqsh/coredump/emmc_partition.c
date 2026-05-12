@@ -4,18 +4,23 @@
  */
 
 #include "emmc_partition.h"
+#include <ff.h>
 
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
 #include <zephyr/storage/disk_access.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/devicetree.h>
+#include <string.h>
 
 LOG_MODULE_REGISTER(emmc_fatfs_multi_part, CONFIG_LOG_DEFAULT_LEVEL);
 
-/* eMMC partition node in device tree - child of mmc_disk1 */
-#define EMMC_PARTS_NODE  DT_CHILD(DT_NODELABEL(mmc_disk1), emmc_partitions)
+/* eMMC partition node in device tree
+ * The emmc-partitions node must have label "emmc_parts".
+ * Its parent is the disk node (e.g., mmc_disk1).
+ */
+#define EMMC_PARTS_NODE  DT_NODELABEL(emmc_parts)
+#define EMMC_DISK_NODE   DT_PARENT(EMMC_PARTS_NODE)
 #define MBR_AREA_SIZE    (DT_PROP(EMMC_PARTS_NODE, mbr_area_size) / 512)
 #define USER_PART_START  MBR_AREA_SIZE
 #define USER_PART_SIZE   DT_PROP(EMMC_PARTS_NODE, user_partition_size)
@@ -28,12 +33,14 @@ LOG_MODULE_REGISTER(emmc_fatfs_multi_part, CONFIG_LOG_DEFAULT_LEVEL);
 
 #include <ff.h>
 
-#define EMMC_PDRIVE 4  /* pdrv_str[4] = "SD2" */
-
-/* FF_VOLUME_STRS = "RAM","NAND","CF","SD","SD2","USB","USB2","USB3" */
+/* Default VolToPart: each pdrv points to itself by default
+ * pdrv 4 → drive 4, partition 1 (eMMC user partition)
+ * User can override this array to add custom disk mappings
+ */
+__attribute__((weak))
 PARTITION VolToPart[FF_VOLUMES] = {
-	{0xFF, 0}, {0xFF, 0}, {0xFF, 0}, {0xFF, 0},
-	{EMMC_PDRIVE, 1}, {0xFF, 0}, {0xFF, 0}, {0xFF, 0},
+	{0, 0}, {1, 0}, {2, 0}, {3, 0},
+	{4, 1}, {5, 0}, {6, 0}, {7, 0}
 };
 
 /* Create partition table (MBR) using DT values */
@@ -182,6 +189,13 @@ int init_emmc_backend(void)
 
 	LOG_INF("Initializing eMMC coredump backend...");
 
+	/* Verify device tree disk-name matches Kconfig volume alias */
+	if (strcmp(DT_PROP(EMMC_DISK_NODE, disk_name), EMMC_DISK_NAME) != 0) {
+		LOG_ERR("disk-name mismatch: DT='%s' vs Kconfig='%s'",
+			DT_PROP(EMMC_DISK_NODE, disk_name), EMMC_DISK_NAME);
+		return -EINVAL;
+	}
+
 	ret = disk_access_ioctl(EMMC_DISK_NAME, DISK_IOCTL_CTRL_INIT, NULL);
 	if (ret != 0) {
 		LOG_ERR("DISK_IOCTL_CTRL_INIT failed: %d", ret);
@@ -190,6 +204,16 @@ int init_emmc_backend(void)
 	LOG_INF("eMMC disk initialized successfully");
 
 #if defined(CONFIG_FS_FATFS_MULTI_PARTITION)
+	/* Verify VolToPart[4] maps to drive 4, partition 1
+	 * FF_VOLUME_STRS[4] = CONFIG_ZEPHYR_FATFS_SD2_ALIAS_UNIX
+	 * So pdrv 4 must point to physical drive 4, partition 1
+	 */
+	if (VolToPart[4].pd != 4 || VolToPart[4].pt != 1) {
+		LOG_ERR("VolToPart[4] must be {4, 1}, got {%d, %d}",
+			VolToPart[4].pd, VolToPart[4].pt);
+		return -EINVAL;
+	}
+
 	/* Create partition table using device tree info */
 	LOG_INF("Creating partition table...");
 	ret = emmc_create_partition();
