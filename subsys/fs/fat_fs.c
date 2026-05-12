@@ -94,7 +94,11 @@ static const char *translate_path(const char *path)
 	/* this is guaranteed by the fs subsystem */
 	__ASSERT_NO_MSG(path[0] == '/');
 
+#if FF_STR_VOLUME_ID == 2
+	return &path[0];
+#endif
 	return &path[1];
+
 }
 
 static uint8_t translate_flags(fs_mode_t flags)
@@ -394,11 +398,44 @@ static int fatfs_closedir(struct fs_dir_t *zdp)
 	return translate_error(res);
 }
 
+static int fatfs_is_root_path(const char *path)
+{
+	const char *volume_strs[] = {FF_VOLUME_STRS};
+	size_t num_volume = sizeof(volume_strs) / sizeof(volume_strs[0]);
+
+	for (size_t i = 0; i < num_volume; i++) {
+		size_t len = strlen(volume_strs[i]);
+
+#if FF_STR_VOLUME_ID == 2 /* Unix style volume ID is enabled */
+		if ((strncmp(path + 1, volume_strs[i], len) == 0) && 
+				path[0] == '/' && strlen(path) == len + 1)
+#endif
+
+#if FF_STR_VOLUME_ID == 1 /* Arbitrary string is enabled */
+		if ((strncmp(path, volume_strs[i], len) == 0) && 
+				path[strlen(path) - 1] == ':')
+#endif
+		{
+			LOG_DBG("%s is FatFs root path", path);
+			return FR_OK;
+		}
+	}
+
+	return FR_INVALID_PARAMETER;
+}
+
 static int fatfs_stat(struct fs_mount_t *mountp,
 		      const char *path, struct fs_dirent *entry)
 {
 	FRESULT res;
 	FILINFO fno;
+
+
+	res = fatfs_is_root_path(translate_path(path));
+	if(res == FR_OK) {
+		entry->type = FS_DIR_ENTRY_DIR;
+		return translate_error(res);
+	}
 
 	res = f_stat(translate_path(path), &fno);
 	if (res == FR_OK) {
