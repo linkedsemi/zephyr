@@ -27,6 +27,14 @@
  *         };
  *     };
  *
+ * Note:
+ *   - disk-name in device tree MUST match the volume alias in FF_VOLUME_STRS
+ *     (e.g., CONFIG_ZEPHYR_FATFS_SD2_ALIAS_UNIX = "SD2")
+ *   - VolToPart array is always required for FATFS multi-partition support.
+ *     Default mapping: pdrv 4 -> physical drive 4, partition 1.
+ *     If mounting other disks, user MUST redefine VolToPart externally
+ *     (weak symbol) to override the default.
+ *
  * Usage:
  *   1. Call init_emmc_backend() to initialize eMMC and create MBR partition table
  *   2. (Optional) Format FAT32 partition using emmc_format_partition()
@@ -44,29 +52,30 @@
  * @{
  */
 
-/** eMMC disk device name used for disk_access read/write */
-#define EMMC_DISK_NAME "SD2"
+/**
+ * eMMC disk device name.
+ * When CONFIG_ZEPHYR_FATFS_UNIX_MNTPOINT=y: from Kconfig volume alias
+ * Otherwise: fixed "SD2"
+ */
+#ifdef CONFIG_ZEPHYR_FATFS_UNIX_MNTPOINT
+#define EMMC_DISK_NAME  CONFIG_ZEPHYR_FATFS_SD2_ALIAS_UNIX
+#else
+#define EMMC_DISK_NAME  "SD2"
+#endif
 
 /**
  * FATFS mount point for Partition 1 (FAT32 user data).
  *
- * Zephyr FATFS multi-partition uses /{pdrv}: convention:
- *   - pdrv 4 = SD2
- *   - /4: = SD2, partition 1
- *
- * After MBR partitioning, FATFS must use this mount point
- * instead of raw device name "SD2".
- *
- * Usage:
- *   struct fs_mount_t mp = {
- *       .type = FS_FATFS,
- *       .fs_data = &fs_part1,
- *       .mnt_point = EMMC_FATFS_MOUNT_POINT,
- *   };
- *   fs_mount(&mp);
+ * With CONFIG_ZEPHYR_FATFS_UNIX_MNTPOINT=y:
+ *   Mount point is /EMMC_DISK_NAME (Unix style)
+ * Without:
+ *   Mount point is /EMMC_DISK_NAME: (FATFS legacy style)
  */
-#define EMMC_FATFS_MOUNT_POINT "/4:"
-
+#ifdef CONFIG_ZEPHYR_FATFS_UNIX_MNTPOINT
+#define EMMC_FATFS_MOUNT_POINT  "/" EMMC_DISK_NAME
+#else
+#define EMMC_FATFS_MOUNT_POINT  "/" EMMC_DISK_NAME ":"
+#endif
 /** @} */
 
 /**
