@@ -524,6 +524,7 @@ config SD_BUFFER_SIZE
 
 rsource "otbn/Kconfig.defconfig"
 rsource "coredump/Kconfig"
+rsource "uart_agent/Kconfig"
 
 if SPI_DW
 	config SPI_EXTENDED_MODES
