@@ -527,6 +527,7 @@ static int dwmac_set_config(const struct device *dev,
 			    enum ethernet_config_type type,
 			    const struct ethernet_config *config)
 {
+	const struct eth_linkedsemi_config *dev_config = dev->config;
 	struct dwmac_priv *p = dev->data;
 	uint32_t reg_val;
 	int ret = 0;
