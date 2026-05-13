@@ -111,6 +111,34 @@ const struct shell *shell_backend_uart_get_ptr(void);
  */
 struct smp_shell_data *shell_uart_smp_shell_data_get_ptr(void);
 
+
+
+/**
+ * @brief Disable UART RX/TX IRQ used by the default UART shell transport.
+ *
+ * Intended for temporarily handing the same UART device to another driver
+ * (for example a USB ACM bridge). Pair with shell_backend_uart_rx_tx_irq_resume().
+ *
+ * @param sh Shell instance using the UART transport (must be shell_backend_uart_get_ptr()).
+ *
+ * @retval 0 UART IRQs were disabled.
+ * @retval -EINVAL Not the UART shell backend instance.
+ * @retval -ENOTSUP Shell UART is not using interrupt-driven mode.
+ */
+int shell_backend_uart_suspend(const struct shell *sh);
+
+/**
+ * @brief Restore UART RX IRQ callback for the default UART shell transport.
+ *
+ * @param sh Shell instance using the UART transport (must be shell_backend_uart_get_ptr()).
+ *
+ * @retval 0 UART RX IRQ was re-armed.
+ * @retval -EINVAL Not the UART shell backend instance.
+ * @retval -ENOTSUP Shell UART is not using interrupt-driven mode.
+ */
+int shell_backend_uart_resume(const struct shell *sh);
+
+
 #ifdef __cplusplus
 }
 #endif
