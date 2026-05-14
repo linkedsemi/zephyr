@@ -18,7 +18,7 @@
 #include "espi_lpc_common.h"
 
 #define VUART_RX_COUNT 7
-#define VUART_RX_TIMEOUT_MS 1
+#define VUART_RX_TIMEOUT_MS 4
 
 LOG_MODULE_REGISTER(linkedsemi_ls_vuart, CONFIG_UART_LOG_LEVEL);
 
