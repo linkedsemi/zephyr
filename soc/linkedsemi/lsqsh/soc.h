@@ -23,4 +23,8 @@
 #define DEV_INF(dev, fmt, ...) LOG_INF("%s: " fmt, (dev)->name, ##__VA_ARGS__)
 #define DEV_DBG(dev, fmt, ...) LOG_DBG("%s: " fmt, (dev)->name, ##__VA_ARGS__)
 
+#if defined(CONFIG_SPI_FILTER_LINKEDSEMI)
+#include <zephyr/device.h>
+int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms);
+#endif
 #endif /* _SOC_H_ */
