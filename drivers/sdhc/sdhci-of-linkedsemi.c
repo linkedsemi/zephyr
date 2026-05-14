@@ -272,13 +272,6 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
 
     sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
     sdhci_writew(host, sdhci_readw(host, 0x52c) | 0x1, 0x52c);
-    uint8_t mshc_ctrl_r = sdhci_readb(host, MSHC_CTRL_R);
-    if (ios->clock > MHZ(100)) {
-        mshc_ctrl_r &= ~CMD_CONFLICT_CHECK_MASK;
-        sdhci_writeb(host, 0, MSHC_CTRL_R);
-    } else {
-        sdhci_writeb(host, 1, MSHC_CTRL_R);
-    }
 
     host->timing = ios->timing;
 
