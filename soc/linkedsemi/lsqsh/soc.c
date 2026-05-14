@@ -365,6 +365,7 @@ __maybe_unused static void peripheral_init()
     ls_clock_control_on_reset_line_toggle_once(CALC_SM4_CLOCK, CALC_SM4_RESET);
     ls_clock_control_on_reset_line_toggle_once(CRYPT_CLOCK, CRYPT_RESET);
     ls_clock_control_on_reset_line_toggle_once(OTFAD_AES_CLOCK, OTFAD_AES_RESET);
+    ls_clock_control_on_reset_line_toggle_once(WWDT1_CLOCK, WWDT1_RESET);
     ls_clock_control_on_reset_line_toggle_once(NIST_TRNG_CLOCK, NIST_TRNG_RESET);
 #if defined(CONFIG_IOPMP_WHITELIST_I2C1_I3C1)
     ls_clock_control_on_reset_line_toggle_once(I2C1_CLOCK, I2C1_RESET);
@@ -778,3 +779,63 @@ __weak void soc_late_init_hook(void)
 #endif
 }
 #endif
+
+#if defined(CONFIG_SPI_FILTER_LINKEDSEMI)
+
+#define LS_TPM_SPIS_DETECT_REG		0x40021018U
+#define LS_TPM_SPIS_DETECT_SEL_BIT	BIT(20)
+#define LS_TPM_SPIS_DETECT_ENABLE_BIT	BIT(21)
+
+#define LS_WWDT1_LOCK_REG		0x400A1D00U
+#define LS_WWDT1_UNLOCK_VALUE		0x1ACCE551U
+#define LS_WWDT1_TPM_RST_REG		0x400A1C20U
+#define LS_WWDT1_TPM_RST_VALUE		0x20000000U
+#define LS_WWDT1_TIMEOUT_REG		0x400A1C00U
+#define LS_WWDT1_EN_REG			0x400A1C08U
+#define LS_WWDT1_EN_VALUE		0xdU
+
+int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms)
+{
+	uint32_t reg, ticks;
+	if (tpm_spis_dev == NULL || !device_is_ready(tpm_spis_dev)) {
+		return -ENODEV;
+	}
+	if (timeout_ms == 0U) {
+		return -EINVAL;
+	}
+	ticks = timeout_ms * 32U;
+	if (ticks == 0U) {
+		ticks = 1U;
+	}
+	reg = sys_read32(LS_TPM_SPIS_DETECT_REG);
+	reg |= LS_TPM_SPIS_DETECT_ENABLE_BIT;
+	reg &= ~LS_TPM_SPIS_DETECT_SEL_BIT;//default tpmspi2
+
+	/* Only compare DEVICE_DT_GET for nodes that are status "okay" in this build. */
+	bool sel_matched = false;
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(tpm_spis2), okay)
+	if (tpm_spis_dev == DEVICE_DT_GET(DT_NODELABEL(tpm_spis2))) {
+		// reg &= ~LS_TPM_SPIS_DETECT_SEL_BIT;
+		sel_matched = true;
+	}
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(tpm_spis1), okay)
+	if (!sel_matched && tpm_spis_dev == DEVICE_DT_GET(DT_NODELABEL(tpm_spis1))) {
+		reg |= LS_TPM_SPIS_DETECT_SEL_BIT;
+		sel_matched = true;
+	}
+#endif
+	if (!sel_matched) {
+		return -EINVAL;
+	}
+
+	sys_write32(reg, LS_TPM_SPIS_DETECT_REG);
+	sys_write32(LS_WWDT1_UNLOCK_VALUE, LS_WWDT1_LOCK_REG);
+	sys_write32(LS_WWDT1_TPM_RST_VALUE, LS_WWDT1_TPM_RST_REG);
+	sys_write32(ticks, LS_WWDT1_TIMEOUT_REG);
+	sys_write32(LS_WWDT1_EN_VALUE, LS_WWDT1_EN_REG);
+	return 0;
+}
+
+#endif /* CONFIG_SPI_FILTER_LINKEDSEMI */
