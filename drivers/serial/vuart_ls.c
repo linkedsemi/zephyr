@@ -50,7 +50,6 @@ static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
 static void vuart_rx_timer(struct k_timer *timer_id)
 {
     const struct device *dev = k_timer_user_data_get(timer_id);
-    struct ls_vuart_data *data = dev->data;
     const struct ls_vuart_cfg *cfg = dev->config;
     if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > 0) {
         vuart_local_wakeup_irq_thread(dev);
@@ -63,21 +62,28 @@ void bmc_vuart_rx_callback(const struct device *dev, void *msg)
 {
     struct ls_vuart_data *data = dev->data;
     const struct ls_vuart_cfg *cfg = dev->config;
-
-    if (k_timer_remaining_get(&data->rx_timer) == 0) {
-        k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
-    }    
-    if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > VUART_RX_COUNT) { 
+    
+    if(vuart_msg->type==B_TX_EMPTY)
+    {
         vuart_local_wakeup_irq_thread(dev);
-        k_timer_stop(&data->rx_timer);
     }
+    else 
+    { 
+        if (k_timer_remaining_get(&data->rx_timer) == 0) {
+            k_timer_start(&data->rx_timer, K_MSEC(VUART_RX_TIMEOUT_MS), K_NO_WAIT);
+        }    
+        if (sw_fifo_element_amount(&cfg->vuart_fifo_base->h2b) > VUART_RX_COUNT) { 
+            vuart_local_wakeup_irq_thread(dev);
+            k_timer_stop(&data->rx_timer);
+        }
+    }
+
 }
 
 static void vuart_irq_thread(void *dev_ptr, void *p2, void *p3)
 {
 	const struct device *dev = (const struct device *)dev_ptr;
 	struct ls_vuart_data *ptr_data = dev->data;
-    const struct ls_vuart_cfg *cfg = dev->config;
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
 
