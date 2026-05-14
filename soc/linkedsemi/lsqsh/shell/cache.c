@@ -11,6 +11,8 @@ LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 #define UINT64_DOUBLE_SAFE_MAX (UINT64_C(1) << DBL_MANT_DIG)
 
+extern void cpu_sysmap_show(void);
+
 static bool u64_to_double_safe(uint64_t val, double *out)
 {
     if (val > UINT64_DOUBLE_SAFE_MAX) {
@@ -76,7 +78,7 @@ static int cmd_cache_init(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
-static int cmd_cache_show(const struct shell *sh, size_t argc, char **argv)
+static int cmd_cache_rate_show(const struct shell *sh, size_t argc, char **argv)
 {
     ARG_UNUSED(argc);
     ARG_UNUSED(argv);
@@ -110,6 +112,17 @@ static int cmd_cache_show(const struct shell *sh, size_t argc, char **argv)
     return 0;
 }
 
+static int cmd_cache_config_show(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(sh);
+    ARG_UNUSED(argc);
+    ARG_UNUSED(argv);
+
+    cpu_sysmap_show();
+
+    return 0;
+}
+
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_cache_cmds,
     SHELL_CMD_ARG(init,
                   NULL,
@@ -117,10 +130,16 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_cache_cmds,
                   cmd_cache_init,
                   1,
                   0),
-    SHELL_CMD_ARG(show,
+    SHELL_CMD_ARG(rate_show,
                   NULL,
                   "Usage: show",
-                  cmd_cache_show,
+                  cmd_cache_rate_show,
+                  1,
+                  0),
+    SHELL_CMD_ARG(config_show,
+                  NULL,
+                  "Usage: show",
+                  cmd_cache_config_show,
                   1,
                   0),
     SHELL_SUBCMD_SET_END /* Array terminated. */
