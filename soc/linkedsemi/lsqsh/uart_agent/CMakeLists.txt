@@ -1,0 +1,1 @@
+zephyr_library_sources_ifdef(CONFIG_UART_AGENT uart_agent.c)

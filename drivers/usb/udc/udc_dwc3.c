@@ -6,13 +6,22 @@
 #if defined(CONFIG_RESET)
 #include <zephyr/drivers/reset.h>
 #endif
-
 #if defined(CONFIG_CLOCK_CONTROL)
 #include <soc_clock.h>
 #include <zephyr/drivers/clock_control.h>
 #endif
-
 #include "field_manipulate.h"
+
+#if defined(CONFIG_UDC_DRIVER_LOG_LEVEL) && CONFIG_UDC_DRIVER_LOG_LEVEL != LOG_LEVEL_NONE
+#define CHOSEN_CONSOLE DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_console), zephyr_cdc_acm_uart)
+#define CHOSEN_SHELL   DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_shell_uart), zephyr_cdc_acm_uart)
+#if (CHOSEN_CONSOLE && defined(CONFIG_LOG_BACKEND_UART)) || \
+	(CHOSEN_SHELL && defined(CONFIG_SHELL_LOG_BACKEND))
+#warning "CONFIG_UDC_DRIVER_LOG_LEVEL forced to LOG_LEVEL_NONE"
+#undef CONFIG_UDC_DRIVER_LOG_LEVEL
+#define CONFIG_UDC_DRIVER_LOG_LEVEL LOG_LEVEL_NONE
+#endif
+#endif
 
 LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 

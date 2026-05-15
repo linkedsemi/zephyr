@@ -1,0 +1,4 @@
+config UART_AGENT
+	bool "uart agent"
+	default y
+	depends on DT_HAS_LINKEDSEMI_UART_AGENT_ENABLED

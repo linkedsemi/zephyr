@@ -17,6 +17,7 @@ zephyr_library_sources_ifdef(CONFIG_CXX_OPERATOR_NEW_DELETE cxx_crt_init.cpp)
 add_subdirectory(otbn)
 add_subdirectory(coredump)
 add_subdirectory(shell)
+add_subdirectory(uart_agent)
 
 set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/soc/linkedsemi/common/linker.ld CACHE INTERNAL "")
 

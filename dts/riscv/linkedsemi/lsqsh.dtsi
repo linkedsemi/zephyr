@@ -573,6 +573,11 @@
                 fifo_base = <0x40045c00>;
                 status = "disabled";
             };
+            uart_agent: uart_agent {
+                compatible = "linkedsemi,uart-agent";
+                fifo_base = <0x40045c00>;
+                status = "disabled";
+            };
         };
 
         sec_iwdg: watchdog@400a1800 {
