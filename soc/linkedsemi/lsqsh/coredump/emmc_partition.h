@@ -97,7 +97,7 @@
  * @retval -ENODEV if eMMC device not found
  * @retval -EIO if disk init or partition write fails
  */
-int init_emmc_backend(void);
+int init_coredump_emmc_backend(void);
 
 /**
  * @brief Get coredump partition information.
