@@ -24,10 +24,8 @@
 #include <zephyr/drivers/sdhc.h>
 #include <zephyr/sd/sd_spec.h>
 #include <emmc_coredump_sdhci.h>
-
+#include <stdio.h>
 #include "coredump_internal.h"
-
-LOG_MODULE_REGISTER(coredump_emmc, CONFIG_KERNEL_LOG_LEVEL);
 
 /* HW_STACK_PROTECTION must be disabled for eMMC coredump backend */
 #if defined(CONFIG_TEST_HW_STACK_PROTECTION) && CONFIG_TEST_HW_STACK_PROTECTION
@@ -229,76 +227,6 @@ static int emmc_write(size_t offset, const uint8_t *buf, size_t len)
 
     return (ret == 0) ? 0 : -EIO;
 }
-
-// /**
-//  * @brief Erase eMMC coredump region
-//  *
-//  * @return 0 if successful, error otherwise
-//  */
-// static int emmc_erase_region(void)
-// {
-//     struct sdhc_command cmd = {0};
-//     uint32_t start_block, block_count;
-//     int ret;
-
-//     /* Lazy initialization of SDHC device on first use */
-//     if (backend_ctx.sdhc_dev == NULL) {
-//         backend_ctx.sdhc_dev = COREDUMP_EMMC_DEVICE;
-//     }
-
-//     if (backend_ctx.sdhc_dev == NULL) {
-//         return -ENODEV;
-//     }
-
-//     /* Get coredump region info from driver */
-//     ret = linkedsemi_sdhci_get_coredump_info(backend_ctx.sdhc_dev, &start_block, &block_count);
-//     if (ret != 0) {
-//         LOG_ERR("Failed to get coredump region info: %d", ret);
-//         return ret;
-//     }
-
-//     /* Erase start block */
-//     cmd.opcode = SD_ERASE_BLOCK_START;
-//     cmd.arg = start_block;
-//     cmd.response_type = SD_RSP_TYPE_R1;
-//     cmd.retries = 3;
-//     cmd.timeout_ms = 2000;
-
-//     ret = sdhc_request(backend_ctx.sdhc_dev, &cmd, NULL);
-//     if (ret != 0) {
-//         LOG_ERR("eMMC erase start failed: %d", ret);
-//         return ret;
-//     }
-
-//     /* Erase end block */
-//     cmd.opcode = SD_ERASE_BLOCK_END;
-//     cmd.arg = start_block + block_count - 1;
-//     cmd.response_type = SD_RSP_TYPE_R1;
-//     cmd.retries = 3;
-//     cmd.timeout_ms = 2000;
-
-//     ret = sdhc_request(backend_ctx.sdhc_dev, &cmd, NULL);
-//     if (ret != 0) {
-//         LOG_ERR("eMMC erase end failed: %d", ret);
-//         return ret;
-//     }
-
-//     /* Execute erase */
-//     cmd.opcode = SD_ERASE_BLOCK_OPERATION;
-//     cmd.arg = 0;
-//     cmd.response_type = SD_RSP_TYPE_R1b;
-//     cmd.retries = 3;
-//     cmd.timeout_ms = 30000; /* Erase can take a while */
-
-//     ret = sdhc_request(backend_ctx.sdhc_dev, &cmd, NULL);
-//     if (ret != 0) {
-//         LOG_ERR("eMMC erase operation failed: %d", ret);
-//         return ret;
-//     }
-
-//     LOG_DBG("eMMC region erased: blocks %u to %u", start_block, start_block + block_count - 1);
-//     return 0;
-// }
 
 /**
  * @brief Read the stored coredump header from eMMC.
@@ -591,11 +519,11 @@ static void coredump_emmc_backend_start(void)
 
     /* Check if card is ready for bare-metal operations */
     if (!linkedsemi_sdhci_card_ready(backend_ctx.sdhc_dev)) {
-        LOG_DBG("coredump_emmc_backend_start: card not ready, skipping");
+        printf("\n coredump_emmc_backend_start: card not ready, skipping \n");
         backend_ctx.error = -EBUSY;
         return;
     }
-
+    printf(" coredump_emmc_backend_start \n");
     /* Clear any pending SDHC interrupts */
     sys_write32(SDHCI_INT_ALL_MASK, DT_REG_ADDR(DT_ALIAS(sdhc0)) + 0x30);
 
@@ -603,7 +531,7 @@ static void coredump_emmc_backend_start(void)
     uint32_t start_block, block_count;
     ret = linkedsemi_sdhci_get_coredump_info(backend_ctx.sdhc_dev, &start_block, &block_count);
     if (ret != 0) {
-        LOG_ERR("Failed to get coredump region info: %d", ret);
+        printf("Failed to get coredump region info: %d \n", ret);
         backend_ctx.error = ret;
         return;
     }
@@ -622,7 +550,7 @@ static void coredump_emmc_backend_start(void)
      */
 
     /* Write placeholder header - overwrites any existing data */
-    LOG_DBG("coredump_emmc_backend_start: writing initial header\n");
+    // LOG_DBG("coredump_emmc_backend_start: writing initial header\n");
     struct emmc_hdr_t hdr = {
         .id = {'C', 'D'},
         .hdr_version = HDR_VER,
@@ -633,18 +561,14 @@ static void coredump_emmc_backend_start(void)
     };
 
     ret = write_header_baremetal(&hdr);
-    LOG_DBG("coredump_emmc_backend_start: write_header_baremetal returned %d", ret);
     if (ret != 0) {
-        LOG_DBG("coredump_emmc_backend_start: write_header_baremetal failed %d\n", ret);
+        printf("coredump_emmc_backend_start: write_header_baremetal failed %d\n", ret);
         backend_ctx.error = ret;
         return;
     }
 
     /* Advance offset past header - skip full block to avoid overwriting header */
     backend_ctx.current_offset = EMMC_BLOCK_SIZE;
-
-    LOG_DBG("coredump_emmc_backend_start: done, current_offset=%zu",
-           backend_ctx.current_offset);
 }
 
 /**
@@ -658,15 +582,11 @@ static void coredump_emmc_backend_end(void)
     struct emmc_hdr_t hdr;
     int ret;
 
-    LOG_DBG("backend_end: dump_in_progress=%d", backend_ctx.dump_in_progress);
-
     if (!backend_ctx.dump_in_progress) {
         return;
     }
 
     backend_ctx.dump_in_progress = false;
-
-    LOG_DBG("backend_end: flushing buffer, bytes_written=%zu", backend_ctx.bytes_written);
 
     /* Flush any remaining data in block buffer */
     flush_block_buf_if_needed();
@@ -683,7 +603,7 @@ static void coredump_emmc_backend_end(void)
     hdr.error = backend_ctx.error;
     hdr.flags = 0;
 
-    LOG_DBG("backend_end: writing final header: size=%zu, checksum=%u, error=%d",
+    printf("backend_end: writing final header: size=%zu, checksum=%u, error=%d \n",
            hdr.size, hdr.checksum, hdr.error);
 
     /* Write updated header */
@@ -692,7 +612,7 @@ static void coredump_emmc_backend_end(void)
         backend_ctx.error = ret;
     }
 
-    LOG_DBG("backend_end done");
+    printf("backend_end done \n");
 }
 
 /**
@@ -710,14 +630,14 @@ static void flush_block_buf_if_needed(void)
     /* Check if we have space to write this block */
     reserved_size = (size_t)backend_ctx.reserved_blocks * EMMC_BLOCK_SIZE;
     if (backend_ctx.current_offset + EMMC_BLOCK_SIZE > reserved_size) {
-        LOG_ERR("eMMC coredump space exhausted! offset=%zu, reserved=%zu",
+        printf("\n !!!!! eMMC coredump space exhausted! offset=%zu, reserved=%zu !!!!!\n",
                 backend_ctx.current_offset, reserved_size);
         backend_ctx.error = -ENOSPC;
         block_buf_used = 0;
         return;
     }
 
-    LOG_DBG("flush: block_buf_used=%zu, current_offset=%zu", block_buf_used, backend_ctx.current_offset);
+    // LOG_DBG("flush: block_buf_used=%zu, current_offset=%zu", block_buf_used, backend_ctx.current_offset);
 
     /* Pad remaining bytes with zeros */
     if (block_buf_used < EMMC_BLOCK_SIZE) {
@@ -728,9 +648,8 @@ static void flush_block_buf_if_needed(void)
     // CHECKSUM_TYPE block_checksum = compute_checksum(block_buf, EMMC_BLOCK_SIZE);
 
     ret = emmc_write_baremetal(backend_ctx.start_block * EMMC_BLOCK_SIZE + backend_ctx.current_offset, block_buf, EMMC_BLOCK_SIZE);
-    LOG_DBG("flush: emmc_write_baremetal returned %d", ret);
     if (ret != 0) {
-        LOG_ERR("eMMC flush error: %d at offset %zu", ret, backend_ctx.current_offset);
+        printf("eMMC flush error: %d at offset %zu \n", ret, backend_ctx.current_offset);
         backend_ctx.error = ret;
         return;
     }
@@ -876,6 +795,8 @@ struct coredump_backend_api coredump_backend_emmc = {
  */
 int coredump_emmc_backend_init(void)
 {
+    int ret;
+
     if (backend_ctx.initialized) {
         return 0;
     }
@@ -883,8 +804,18 @@ int coredump_emmc_backend_init(void)
     /* Initialize SDHC device handle for Zephyr SD stack operations */
     backend_ctx.sdhc_dev = COREDUMP_EMMC_DEVICE;
 
+    /* Pre-fetch coredump region info so shell commands work after reboot */
+    ret = linkedsemi_sdhci_get_coredump_info(backend_ctx.sdhc_dev,
+                         &backend_ctx.start_block,
+                         &backend_ctx.reserved_blocks);
+    if (ret != 0) {
+        printf("Failed to get coredump region info: %d \n", ret);
+        return ret;
+    }
+
     backend_ctx.initialized = true;
-    LOG_INF("eMMC coredump backend initialized");
+    printf("eMMC coredump backend initialized: start_block=%u, reserved_blocks=%u\n",
+        backend_ctx.start_block, backend_ctx.reserved_blocks);
 
     return 0;
 }
