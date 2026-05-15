@@ -21,7 +21,7 @@ LOG_MODULE_REGISTER(emmc_fatfs_multi_part, CONFIG_LOG_DEFAULT_LEVEL);
  */
 #define EMMC_PARTS_NODE  DT_NODELABEL(emmc_parts)
 #define EMMC_DISK_NODE   DT_PARENT(EMMC_PARTS_NODE)
-#define MBR_AREA_SIZE    (DT_PROP(EMMC_PARTS_NODE, mbr_area_size) / 512)
+#define MBR_AREA_SIZE    DT_PROP(EMMC_PARTS_NODE, mbr_area_size)
 #define USER_PART_START  MBR_AREA_SIZE
 #define USER_PART_SIZE   DT_PROP(EMMC_PARTS_NODE, user_partition_size)
 #define COREDUMP_SECTORS  DT_PROP(EMMC_PARTS_NODE, coredump_partition_size)
@@ -179,11 +179,11 @@ int emmc_get_coredump_info(uint32_t *start_sector, uint32_t *sector_count)
 	LOG_INF("eMMC partition info from DT: coredump_start=%u, coredump_size=%u sectors",
 		*start_sector, *sector_count);
 
-	return 0;
+	return 0;	
 }
-
+extern int coredump_emmc_backend_init(void);
 /* Initialize eMMC coredump backend */
-int init_emmc_backend(void)
+int init_coredump_emmc_backend(void)
 {
 	int ret;
 
@@ -224,6 +224,9 @@ int init_emmc_backend(void)
 
 	LOG_INF("Partition table created successfully");
 #endif
+
+
+	coredump_emmc_backend_init();
 
 	LOG_INF("eMMC coredump backend initialized");
 	return 0;
