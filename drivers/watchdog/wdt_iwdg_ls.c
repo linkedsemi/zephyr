@@ -110,7 +110,13 @@ static int iwdt_ls_install_timeout(const struct device *dev, const struct wdt_ti
 		return -EINVAL;
 	}
 
-	data->callback = cfg->callback;
+
+	if (cfg->callback != NULL) {
+		config->irq_config_func(dev);
+		data->callback = cfg->callback;
+	} else {
+		data->callback = NULL;
+	}
 
 	config->iwdg_reg->IWDT_CTRL = 0x0;
 
@@ -174,8 +180,6 @@ static int iwdt_init(const struct device *dev)
 		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
 	}
 #endif
-
-	cfg->irq_config_func(dev);
 
 	return 0;
 }
