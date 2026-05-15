@@ -38,6 +38,7 @@ struct ls_vuart_data {
     struct k_timer rx_timer;
     bool rx_irq_enabled;
     bool tx_irq_enabled;
+    bool peer_rx_valid;
 };
 
 static inline void vuart_local_wakeup_irq_thread(const struct device *dev)
@@ -62,7 +63,15 @@ void bmc_vuart_rx_callback(const struct device *dev, void *msg)
 {
     struct ls_vuart_data *data = dev->data;
     const struct ls_vuart_cfg *cfg = dev->config;
-    
+    struct vuart_hb_msg *vuart_msg = msg;
+
+#ifdef CONFIG_SOC_LSQSH_CPU1
+    struct ls_vuart_data *dev_data = dev->data;
+    if (vuart_msg->type == H_RX_AVAIL) {
+        dev_data->peer_rx_valid = true;
+    }
+#endif
+
     if(vuart_msg->type==B_TX_EMPTY)
     {
         vuart_local_wakeup_irq_thread(dev);
@@ -126,15 +135,32 @@ static int vuart_fifo_read(const struct device *dev, uint8_t *rx_data, const int
 
 static void vuart_poll_out(const struct device *dev, unsigned char c)
 {
-	const struct ls_vuart_cfg *cfg = dev->config;
-    general_fifo_put(&cfg->vuart_fifo_base->b2h,&c);
-    vuart_status_send(&cfg->hb_exch,H_RX_AVAIL);
+    const struct ls_vuart_cfg *cfg = dev->config;
+    struct ls_vuart_data *data = dev->data;
+
+    if (data->peer_rx_valid == false)
+        return;
+
+    while (1) {
+        if (general_fifo_put(&cfg->vuart_fifo_base->b2h, &c) == true) {
+            vuart_status_send(&cfg->hb_exch, H_RX_AVAIL);
+            return;
+        }
+    }
 }
 
 static int vuart_fifo_fill(const struct device *dev, const uint8_t *tx_data, int len)
 {
 	const struct ls_vuart_cfg *cfg = dev->config;
+    struct ls_vuart_data *data = dev->data;
+
     int length = len;
+
+    if (data->peer_rx_valid == false) {
+        vuart_local_wakeup_irq_thread(dev);
+        return length;
+    }
+
     while(length--)
     {
         general_fifo_put(&cfg->vuart_fifo_base->b2h,(void *)tx_data++);
@@ -255,6 +281,21 @@ static int ls_vuart_init(const struct device *dev)
 {
     const struct ls_vuart_cfg *cfg = dev->config;
     struct ls_vuart_data *ptr_data = dev->data;
+
+    if (cfg->vuart_fifo_base->b2h.buf == NULL) {
+        /* init fifo base */
+        sw_fifo_init(&cfg->vuart_fifo_base->b2h, cfg->vuart_fifo_base->b2h_buf, VUART_FIFO_SIZE, 1);
+        sw_fifo_init(&cfg->vuart_fifo_base->h2b, cfg->vuart_fifo_base->h2b_buf, VUART_FIFO_SIZE, 1);
+        cfg->vuart_fifo_base->host_tx_to_vuart = false;
+        cfg->vuart_fifo_base->host_rx_from_vuart = false;
+    }
+
+#ifdef CONFIG_SOC_LSQSH_CPU1
+    ptr_data->peer_rx_valid = false;
+#elif CONFIG_SOC_LSQSH_CPU2
+    ptr_data->peer_rx_valid = true;
+#endif
+
     k_timer_init(&ptr_data->rx_timer, vuart_rx_timer, NULL);
     k_timer_user_data_set(&ptr_data->rx_timer, (void *)dev);
     k_sem_init(&ptr_data->irq_sem, 0, 1);
@@ -285,6 +326,24 @@ static int ls_vuart_init(const struct device *dev)
 			      &ls_vuart_api);
 
 DT_INST_FOREACH_STATUS_OKAY(LS_VUART_INIT)
+
+#if defined(CONFIG_ESPI_LPC_MBOX) && defined(CONFIG_SOC_LSQSH_CPU1)
+static int cmd_uart_switch_app(const struct shell *sh, size_t argc, char **argv)
+{
+    const struct device *dev = VUART_DEV;
+    const struct ls_vuart_cfg *cfg = dev->config;
+    struct ls_vuart_data *data = dev->data;
+
+    if (!device_is_ready(dev)) {
+        shell_error(sh, "vuart not ready");
+        return -ENODEV;
+    }
+    data->peer_rx_valid = false;
+    vuart_b2h_mode_set(&cfg->hb_exch, true, true);
+    return 0;
+}
+SHELL_CMD_REGISTER(uart_switch_app, NULL, "Switch uart to peer core", cmd_uart_switch_app);
+#endif
 
 #ifdef CONFIG_ESPI_LPC_MBOX
 void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool host_tx_to_vuart)
