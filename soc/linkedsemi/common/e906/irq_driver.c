@@ -1,10 +1,8 @@
 #include <stdint.h>
 #include <string.h>
-#include "core_rv32.h"
 #include <zephyr/irq.h>
-#include "cpu.h"
 #include <soc.h>
-#include "field_manipulate.h"
+#include <platform.h>
 
 
 /**
