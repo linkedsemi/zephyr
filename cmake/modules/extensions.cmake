@@ -518,6 +518,10 @@ function(zephyr_library_include_directories)
   target_include_directories(${ZEPHYR_CURRENT_LIBRARY} PRIVATE ${ARGN})
 endfunction()
 
+function(zephyr_export_include_directories)
+  target_include_directories(${ZEPHYR_CURRENT_LIBRARY} INTERFACE ${ARGN})
+endfunction()
+
 function(zephyr_library_link_libraries item)
   target_link_libraries(${ZEPHYR_CURRENT_LIBRARY} PUBLIC ${item} ${ARGN})
 endfunction()
