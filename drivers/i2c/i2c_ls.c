@@ -512,8 +512,8 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
             k_sem_give(&dev_data->master_complete_sem);
         } else if (dev_data->slave_cfg) {
             /* workaound: clear i2c slave internal counter after stop */
-            dev_config->reg->CR1 &= ~I2C_CR1_PE_MASK;
-            dev_config->reg->CR1 |= I2C_CR1_PE_MASK;
+        //     dev_config->reg->CR1 &= ~I2C_CR1_PE_MASK;
+        //     dev_config->reg->CR1 |= I2C_CR1_PE_MASK;
             /* --------------------------------------------- */
 
             dev_config->reg->SR = 1;
