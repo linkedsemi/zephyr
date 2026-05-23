@@ -872,7 +872,7 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     struct sdhci_host *host = &dev_data->host;
 
     if (host->current_speed < CONFIG_SDHCI_LINKEDSEMI_TUNING_LOWEST_FREQUENCY) {
-        return linkedsemi_sdhci_execute_mmc_bus_test_tuning(dev);
+        return 0;
     } else if (host->current_speed <= MMC_CLOCK_HS200) {
         return linkedsemi_sdhci_execute_hs200_tuning(dev);
     } else {
