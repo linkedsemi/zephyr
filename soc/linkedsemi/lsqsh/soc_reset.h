@@ -200,7 +200,10 @@ struct wdt_reset_en {
 #endif
 
 void reset_reason_init(void);
-enum reset_reason reset_reason_get(void);
+uint32_t reset_reason_get(void);
+uint32_t reset_reason_app_get(void);
+void reset_reason_app_set(uint32_t reason);
+void reset_reason_app_clean();
 void reset_reason_magic_set(void);
 #if defined(CONFIG_WDT_RESET_REASON_DETAIL)
 struct wdt_reset_en * wdt_reset_en_val_get(void);
