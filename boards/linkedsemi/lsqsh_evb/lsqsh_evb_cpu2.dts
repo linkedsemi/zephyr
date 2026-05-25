@@ -23,8 +23,14 @@
 &soc {
     driver_share_memory: memory@100be000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x100be000 0x1000>;
+        reg = <0x100be000 0xffc>;
         zephyr,memory-region = "SHMEM";
+    };
+
+    driver_reset_reason: memory@100beffc {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x100beffc 0x4>;
+        zephyr,memory-region = "RESET_REASON";
     };
 
     mbox_memory: memory@100bf000 {
