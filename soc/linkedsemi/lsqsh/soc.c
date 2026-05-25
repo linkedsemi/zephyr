@@ -204,45 +204,44 @@ __maybe_unused static void cpu2_cache_region_init(void)
 
 __maybe_unused void smp_mode_cache_region_init(void)
 {
-//     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
-//     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
-//     __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
-//     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
-//     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
-//     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
-//     __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
-//     __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
-//     __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
-//     uint8_t idx = 0;
+    const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+    const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+    const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+    const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+    const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+    const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+    uint8_t idx = 0;
 
-// #if defined(CONFIG_XIP)
-//     if (((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
-//         || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
-//         csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
-//         csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
-//     }
-// #endif
+#if defined(CONFIG_XIP)
+    if (!(((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+        || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE))))) {
+        csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
+        csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
+    }
+#endif
 
-//     csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
+    csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
 
-// #if defined(CONFIG_NOCACHE_MEMORY)
-//     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
-//         __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_PMP_GRANULARITY));
-//         if (__image_ram_start != __nocache_ram_start) {
-//             csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
-//         }
-//         csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
-//     }
-// #endif
+#if defined(CONFIG_NOCACHE_MEMORY)
+    if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
+        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_SYSMAP_GRANULARITY));
+        if (__image_ram_start != __nocache_ram_start) {
+            csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+        }
+        csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
+    }
+#endif
 
-//     csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
-// #if DT_NODE_EXISTS(DT_NODELABEL(psram))
-//     csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
-//     csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
-// #endif
-//     if (idx < 8) {
-//         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
-//     }
+    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+
+#if DT_NODE_EXISTS(DT_NODELABEL(psram))
+    csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
+    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+#endif
+
+    while (idx < SYSMAP_REGION_MAX) {
+        csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+    }
 }
 
 extern void SystemInit();
@@ -592,7 +591,6 @@ void soc_early_init_hook(void)
 #if defined(CONFIG_CACHE)
 #if defined(CONFIG_SMP)
     csi_icache_enable();
-    csi_dcache_invalid();
 #else
 #if defined(CONFIG_DCACHE)
     csi_dcache_enable();

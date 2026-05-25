@@ -831,6 +831,10 @@ static struct flash_driver_api flash_ls_api = {
 		IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
 
 #define LS_FLASH_INIT(idx) \
+	COND_CODE_1(DT_NODE_EXISTS(DT_INST(idx, fixed_partitions)), \
+		(struct flash_partition_attr attr_partition_##idx[] =\
+			{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};), \
+		()) \
 	IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (__attribute__((section("SHMEM")))\
 	static struct flash_ls_shared_data flash_ls_shared_data_##idx;)) \
 	static const struct flash_ls_config flash_ls_cfg_##idx = {\
@@ -843,6 +847,10 @@ static struct flash_driver_api flash_ls_api = {
 		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
 		))\
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CHILD)\
+		COND_CODE_1(DT_NODE_EXISTS(DT_INST(idx, fixed_partitions)), \
+			(.attr = attr_partition_##idx,\
+			.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions)),), \
+			()) \
 		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (.shared = &flash_ls_shared_data_##idx,))\
 	};\
 	static struct flash_ls_data flash_ls_data_##idx;\
