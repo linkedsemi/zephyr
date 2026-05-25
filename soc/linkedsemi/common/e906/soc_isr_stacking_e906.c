@@ -21,6 +21,8 @@ static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX] = {{0}
 static const struct device *const zephyr_flash_controller =
     DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
+extern int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out);
+
 __ramfunc void isr_stacking_mcause(void)
 {
 #if defined(CONFIG_SMP)
@@ -101,6 +103,11 @@ __ramfunc void isr_unstacking_mcause(void)
         }
     }
 #endif
+}
+
+void discard_current_irq_nested(void)
+{
+    irq_nested_level--;
 }
 
 void Swint_Handler_C(struct arch_esf *args)

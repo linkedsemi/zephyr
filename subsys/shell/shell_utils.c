@@ -9,6 +9,9 @@
 #include <stdlib.h>
 #include "shell_utils.h"
 #include "shell_wildcard.h"
+#if defined(CONFIG_NETWORKING_MODULE)
+#include <plugin_section.h>
+#endif
 
 TYPE_SECTION_START_EXTERN(union shell_cmd_entry, shell_dynamic_subcmds);
 TYPE_SECTION_END_EXTERN(union shell_cmd_entry, shell_dynamic_subcmds);
@@ -355,6 +358,11 @@ const struct shell_static_entry *z_shell_find_cmd(
 	}
 
 	while ((entry = z_shell_cmd_get(parent, idx++, dloc)) != NULL) {
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)entry) && (!plugin_section_ready())) {
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
 		if (strcmp(cmd_str, entry->syntax) == 0) {
 			return entry;
 		}

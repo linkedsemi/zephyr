@@ -15,23 +15,29 @@
 #include <espi_lpc_common.h>
 #include "cpu.h"
 #include "reg_dwuart_type.h"
+#include <soc.h>
 
 LOG_MODULE_REGISTER(ls_host_vuart, CONFIG_ESPI_LOG_LEVEL);
 
 #define PORT_NUM   8
 #define IER_RDA    0x01
 #define IER_THRE   0x02
+#define IER_ELSI   0x04    /* Enable Receiver Line Status Interrupt */
 #define LCR_DLAB   0x80
 #define LCR_DLS    0x3
 #define IIR_NOPEND 0x01
 #define IIR_THRE   0x02
 #define IIR_RDA    0x04
+#define IIR_RLS    0x06    /* Receiver Line Status Interrupt */
 #define FCR_FIFO    0x01    /* enable XMIT and RCVR FIFO */
 #define FCR_RCVRCLR 0x02 /* clear RCVR FIFO */
 #define FCR_XMITCLR 0x04 /* clear XMIT FIFO */
 #define LSR_DR     0x01
 #define LSR_THRE   0x20
 #define LSR_TEMT   0x40
+#define LSR_BI     0x10    /* Break Interrupt */
+
+
 
 struct host_vuart_reg {
   uint8_t dll;
@@ -67,6 +73,7 @@ struct host_vuart_cfg {
 struct host_vuart_data {
   struct peri_ioport ioport[PORT_NUM];
   struct k_spinlock lock;
+  bool break_pending;
 };
 
 void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool host_tx_to_vuart);
@@ -76,10 +83,19 @@ void host_vuart_rx_callback(const struct device *dev,void *msg)
 {
     const struct device *vuart_dev = dev;
     struct vuart_hb_msg *vuart_msg = msg;
+    struct host_vuart_data *ptr_data = dev->data;
     if(vuart_msg->type==VUART_MODE_SET)
     {
         host_vuart_mode_set(vuart_dev,vuart_msg->host_rx_from_vuart,vuart_msg->host_tx_to_vuart);
-    }else
+    }
+    else if (vuart_msg->type == VUART_SEND_BREAK)
+    {
+        k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
+        ptr_data->break_pending = true;
+        k_spin_unlock(&ptr_data->lock, key);
+        host_vuart_report_up_irq(vuart_dev);
+    }
+    else
     {
 	    host_vuart_report_up_irq(vuart_dev);
     }
@@ -114,24 +130,26 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
     k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
     uint8_t iir = (cfg->retain->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
     uint8_t lsr = cfg->reg->LSR;
-    if(cfg->vuart_fifo_base->host_rx_from_vuart) {
-        if(host_vuart_rx_available(dev)) {
+    uint8_t ier = cfg->retain->data_reg.ier;
+
+    if (ptr_data->break_pending && (ier & IER_ELSI)) {
+        iir |= IIR_RLS;
+    }
+    else {
+        bool rx_avail = cfg->vuart_fifo_base->host_rx_from_vuart ? host_vuart_rx_available(dev) : lsr_rx_avail(lsr);
+        if (rx_avail && (ier & IER_RDA)) {
             iir |= IIR_RDA;
         }
-    }else {
-        if(lsr_rx_avail(lsr)) {
-            iir |= IIR_RDA;
+        else if (!(iir & IIR_RDA) && lsr_tx_empty(lsr) && (ier & IER_THRE)) {
+            iir |= IIR_THRE;
+        }
+
+        if (!(iir & (IIR_RDA | IIR_THRE | IIR_RLS))) {
+            iir |= IIR_NOPEND;
         }
     }
-    if(!(iir&IIR_RDA) && lsr_tx_empty(lsr))
-    {
-        iir |= IIR_THRE;
-    }
-    if(!(iir&(IIR_RDA|IIR_THRE)))
-    {
-        iir |= IIR_NOPEND;
-    }
-    k_spin_unlock(&ptr_data->lock,key);
+
+    k_spin_unlock(&ptr_data->lock, key);
     return iir;
 }
 
@@ -139,8 +157,7 @@ static void host_vuart_report_up_irq(const struct device *dev)
 {
     const struct host_vuart_cfg *cfg = dev->config;
     uint8_t iir = host_vuart_calc_iir(dev);
-    if(((iir&IIR_RDA) && (cfg->retain->data_reg.ier&IER_RDA)) ||
-       ((iir&IIR_THRE) && (cfg->retain->data_reg.ier&IER_THRE))) {
+   if ((iir & 0x0F) != IIR_NOPEND)  {
         if (cfg->up_irq) {
             espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
         }
@@ -167,10 +184,13 @@ static void host_vuart_local_isr(const void *arg)
 {
     const struct device *dev = (const struct device *)arg;
     const struct host_vuart_cfg *cfg = dev->config;
+
     irq_disable(cfg->local_irq);
     if (!cfg->up_irq) {
         return;
     }
+
+
     espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
 }
 
@@ -235,7 +255,7 @@ static void host_vuart_reg1_read(const struct peri_ioport_content *ioport, uint8
     if (cfg->retain->data_reg.lcr & LCR_DLAB) {
         *val = cfg->retain->data_reg.dlh;
     } else {
-        *val = cfg->retain->data_reg.ier;
+        *val = cfg->retain->data_reg.ier & ~(1 << 6);
     }
 }
 
@@ -249,10 +269,10 @@ static void host_vuart_reg1_write(const struct peri_ioport_content *ioport, uint
     } else {
         cfg->retain->data_reg.ier = *val;
         if(cfg->vuart_fifo_base->host_rx_from_vuart) {
-            cfg->reg->DLH_IER = *val & IER_THRE;
+            cfg->reg->DLH_IER = *val & (IER_THRE|IER_ELSI);
             host_vuart_report_up_irq(dev);
         }else {
-            cfg->reg->DLH_IER = *val & (IER_THRE|IER_RDA);
+            cfg->reg->DLH_IER = *val & (IER_THRE|IER_RDA|IER_ELSI);
             local_irq_state_update(dev);
         }
     }
@@ -311,6 +331,17 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     uint8_t *val = (uint8_t *)res;
     uint8_t lsr = cfg->reg->LSR;
     *val = 0;
+
+    k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
+    if (ptr_data->break_pending) {
+        *val |= LSR_BI;
+        ptr_data->break_pending = false;
+    } else if (lsr & LSR_BI) 
+    {
+        *val |= LSR_BI;
+    }
+    k_spin_unlock(&ptr_data->lock, key);
+
     if (lsr_tx_empty(lsr))
     {
         *val |= LSR_THRE|LSR_TEMT;
@@ -501,7 +532,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
               .ctx = (void *)DEVICE_DT_INST_GET(inst),                 \
               .addr = DT_INST_PROP(inst, port) + 7},\
   };\
-  static struct retain_uart_var host_vuart_retain_var_##inst __attribute__((section(".var_retain.98."#inst)));  \
+  static struct retain_uart_var host_vuart_retain_var_##inst __attribute__((section("SHMEM.98."#inst)));  \
   static struct host_vuart_data host_vuart_data_##inst __noinit; \
   static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
     .retain = &host_vuart_retain_var_##inst,                                            \
@@ -549,4 +580,3 @@ static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 }
 
 SHELL_CMD_ARG_REGISTER(chmode, NULL, "chmod usage: <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>",  cmd_mode,  0, 3);
-

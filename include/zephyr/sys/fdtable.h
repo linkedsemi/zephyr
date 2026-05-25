@@ -7,10 +7,13 @@
 #define ZEPHYR_INCLUDE_SYS_FDTABLE_H_
 
 #include <stdarg.h>
-#include <time.h>
 
 /* FIXME: For native_posix ssize_t, off_t. */
 #include <sys/types.h>
+
+/* Forward declaration to avoid circular dependency with time.h */
+struct timespec;
+
 #include <zephyr/kernel.h>
 #include <zephyr/sys/util.h>
 

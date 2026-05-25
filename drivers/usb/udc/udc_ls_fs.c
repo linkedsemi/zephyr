@@ -45,10 +45,12 @@ LOG_MODULE_REGISTER(udc_ls_fs, LOG_LEVEL_WRN);
     (USB_RXCSRL1_STALLED | USB_RXCSRL1_OVER | USB_RXCSRL1_RXRDY)
 
 typedef enum {
-    USB_EP0_STAGE_IDLE,         /* idle, waiting for SETUP */
     USB_EP0_STAGE_SETUP,        /* received SETUP */
     USB_EP0_STAGE_TX,           /* IN data */
+    USB_EP0_STAGE_PRE_TX,           /* IN data */
     USB_EP0_STAGE_RX,           /* OUT data */
+    USB_EP0_STAGE_PRE_RX,
+    USB_EP0_STAGE_PRE_STATUSIN,
     USB_EP0_STAGE_STATUSIN,     /* (after OUT data) */
     USB_EP0_STAGE_STATUSOUT     /* (after IN data) */
 } ep0_state_t;
@@ -186,8 +188,9 @@ static int udc_ls_init(const struct device *dev)
 
 #ifdef CONFIG_SOC_LSQSH
     pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_PRIV_START);
-    gpio_pin_configure_dt(&usb_cfg->dp, GPIO_OUTPUT_LOW);
-    k_busy_wait(1);
+    gpio_pin_set_dt(&usb_cfg->dp, 0);
+    k_usleep(50);
+    gpio_pin_set_dt(&usb_cfg->dp, 1);
 #endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -438,7 +441,7 @@ static int udc_ls_ep_set_halt(const struct device *dev,struct udc_ep_config *con
     }
     else
     {
-        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
+        usb_data->ep0_state = USB_EP0_STAGE_SETUP;
         usb_reg->TXCSRL |= (USB_CSRL0_STALL | USB_CSRL0_RXRDYC);
     }
 
@@ -565,7 +568,6 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
         }
         else
         {
-            __ASSERT(usb_data->rx_fifo_addr < 16, "no enough fifo");
             usb_reg->RXFIFO_SIZE[0] = usb_data->rx_fifo_addr;
             switch(cfg->mps)
             {
@@ -589,6 +591,7 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
                 __ASSERT(0, "no enough fifo");
             break;
             }
+            __ASSERT(usb_data->rx_fifo_addr <= 16, "no enough fifo");
         }
     }
 
@@ -677,6 +680,7 @@ static void ls_handle_evt_setup(const struct device *dev)
             udc_submit_ep_event(dev, buf, -ENOMEM);
         }
         /* We have prepared a new buffer and are now ready to receive data */
+        usb_data->ep0_state = USB_EP0_STAGE_RX;
         usb_instance->CSRL0 = USB_CSRL0_RXRDYC;
     }
     else if (udc_ctrl_stage_is_data_in(dev))
@@ -748,6 +752,10 @@ static void _usb_ep0_txstate(const struct device *dev)
         usb_data->ep0_state = USB_EP0_STAGE_STATUSOUT;
         csr |= USB_CSRL0_DATAEND;
     }
+    else
+    {
+        usb_data->ep0_state = USB_EP0_STAGE_TX;
+    }
 
     usb_reg->CSRL0= csr;
 }
@@ -784,28 +792,25 @@ static void ls_handle_evt_xfer(const struct device *dev, uint8_t ep)
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     reg_usb_t *usb_reg = usb_data->usb_instance;
     struct net_buf *buf = udc_buf_peek(dev, ep);
-    struct udc_buf_info *bi = udc_get_buf_info(buf);
-
+    __ASSERT(buf, "udc buffer not put?? state = %d\n", usb_data->ep0_state);
     musb_set_active_ep(usb_reg, 0);
 
-    if (bi->data)
+    if (usb_data->ep0_state == USB_EP0_STAGE_PRE_TX || usb_data->ep0_state == USB_EP0_STAGE_TX)
     {
-        if (usb_data->ep0_state == USB_EP0_STAGE_TX)
-        {
-            /* usb thread ctx post event */
-            _usb_ep0_txstate(dev);
-        }
-        else if (usb_data->ep0_state == USB_EP0_STAGE_RX)
-        {
-            /* irq post event */
-            _usb_ep0_rxstate(dev);
-        }
+        /* usb thread ctx post event */
+        _usb_ep0_txstate(dev);
     }
-    else if (bi->status)
+    else if (usb_data->ep0_state == USB_EP0_STAGE_RX)
+    {
+        /* irq post event */
+        _usb_ep0_rxstate(dev);
+    }
+    else if (usb_data->ep0_state == USB_EP0_STAGE_PRE_STATUSIN || usb_data->ep0_state == USB_EP0_STAGE_STATUSIN)
     {
         /* usb thread ctx post event */
         buf = udc_buf_get(dev, USB_CONTROL_EP_IN);
         udc_ctrl_in_state_update(dev, buf);
+        usb_data->ep0_state = USB_EP0_STAGE_STATUSIN;
         usb_reg->CSRL0 = USB_CSRL0_DATAEND | USB_CSRL0_RXRDYC | USB_CSRL0_TXRDY;
     }
 }
@@ -831,8 +836,14 @@ static void ls_handle_evt_out_xfer(const struct device *dev, uint8_t ep)
 {
     /* wait out buffer valid */
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
-    k_sem_take(&usb_data->out_buf_valid, K_FOREVER);
-    udc_ls_rx(dev, ep, udc_buf_peek(dev, ep));
+    struct net_buf *buf = udc_buf_peek(dev, ep);
+
+    while (buf == NULL) {
+        k_sem_take(&usb_data->out_buf_valid, K_FOREVER);
+        buf = udc_buf_peek(dev, ep);
+    }
+
+    udc_ls_rx(dev, ep, buf);
 }
 
 static void udc_ls_thread_handler(void *dev)
@@ -866,11 +877,42 @@ static void udc_ls_thread_handler(void *dev)
     }
 }
 
+static void _usbd_ep0_setup(struct udc_ls_data *usb_data)
+{
+    reg_usb_t *usb_instance = usb_data->usb_instance;
+    __ASSERT(usb_instance->COUNT0 == 8, "setup packet size not equal 8bytes ?");
+
+    // setup begin
+    usb_data->is_set_addr = false;
+    fifo_read(&usb_data->setup, (void *)&usb_instance->FIFO0_WORD, sizeof(usb_data->setup));
+
+    if (usb_data->setup.wLength == 0) {
+        /* No data stage, must send zlp to host */
+        usb_data->ep0_state = USB_EP0_STAGE_PRE_STATUSIN;
+        if (usb_data->setup.bRequest == USB_SREQ_SET_ADDRESS) {
+            usb_data->is_set_addr = true;
+        }
+    } else if (usb_data->setup.bmRequestType & USB_DIR_IN) {
+        /* IN stage, send data to host */
+        usb_data->ep0_state = USB_EP0_STAGE_PRE_TX;
+        usb_instance->CSRL0 = USB_CSRL0_RXRDYC;
+        while ((usb_instance->CSRL0 & USB_CSRL0_RXRDY) != 0);
+    } else {
+        /* OUT stage, recive data from host */
+        usb_data->ep0_state = USB_EP0_STAGE_PRE_RX;
+    }
+
+    struct ls_event evt = {
+        .type = LS_EVT_SETUP,
+        .ep = USB_CONTROL_EP_OUT
+    };
+    k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
+}
+
 static void _usbd_process_ep0(const struct device *dev)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     reg_usb_t *usb_instance = usb_data->usb_instance;
-    uint16_t len = usb_instance->COUNT0;
     uint16_t csr = usb_instance->CSRL0;
 
     if (csr & USB_CSRL0_DATAEND) {
@@ -884,7 +926,7 @@ static void _usbd_process_ep0(const struct device *dev)
     if (csr & USB_CSRL0_STALLED) {
         /* Returned STALL packet to HOST. */
         usb_instance->CSRL0 = csr & ~USB_CSRL0_STALLED;
-        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
+        usb_data->ep0_state = USB_EP0_STAGE_SETUP;
         csr = usb_instance->CSRL0;
         k_sem_give(&usb_data->send_stall);
     }
@@ -899,16 +941,16 @@ static void _usbd_process_ep0(const struct device *dev)
             usb_data->ep0_state = USB_EP0_STAGE_STATUSIN;
             break;
         default:
-            __ASSERT(0, "SetupEnd came in a wrong ep0stage %d\n", usb_data->ep0_state);
-            break;
+            LOG_ERR("SetupEnd came in a wrong ep0stage %d\n", usb_data->ep0_state);
         }
         csr = usb_instance->CSRL0;
-        if (!(csr & USB_CSRL0_RXRDY)) {
-            return;
-        }
     }
 
     switch (usb_data->ep0_state) {
+    case USB_EP0_STAGE_PRE_TX:
+    case USB_EP0_STAGE_PRE_STATUSIN:
+    case USB_EP0_STAGE_PRE_RX:
+        break;
     case USB_EP0_STAGE_TX:
         /* irq on clearing txpktrdy */
         if ((csr & USB_CSRL0_TXRDY) == 0) {
@@ -920,7 +962,6 @@ static void _usbd_process_ep0(const struct device *dev)
             k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
         }
         break;
-
     case USB_EP0_STAGE_RX:
         /* irq on set rxpktrdy */
         if (csr & USB_CSRL0_RXRDY) {
@@ -939,52 +980,26 @@ static void _usbd_process_ep0(const struct device *dev)
             usb_data->is_set_addr = false;
             usb_instance->FADDR = usb_data->addr;
         }
+        if (csr & USB_CSRL0_RXRDY) {
+            _usbd_ep0_setup(usb_data);
+        } else {
+            usb_data->ep0_state = USB_EP0_STAGE_SETUP;
+        }
+        break;
     case USB_EP0_STAGE_STATUSOUT:
         /* end of sequence #1, host move status stage, the interrupt is just a confirmation that the request
             completed successfully.*/
-        if (csr & USB_CSRL0_RXRDY)
-            goto setup;
-        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
-        break;
-    case USB_EP0_STAGE_IDLE:
-        usb_data->ep0_state = USB_EP0_STAGE_SETUP;
-    case USB_EP0_STAGE_SETUP:
-    setup:
-        // setup begin
         if (csr & USB_CSRL0_RXRDY) {
-            if (len != 8) {
-                __ASSERT(0,"SETUP packet len %d != 8 ?\n", len);
-                break;
-            }
-            usb_data->is_set_addr = false;
-            fifo_read(&usb_data->setup, (void *)&usb_instance->FIFO0_WORD, sizeof(usb_data->setup));
-
-            struct ls_event evt = {
-                .type = LS_EVT_SETUP,
-                .ep = USB_CONTROL_EP_OUT
-            };
-            k_msgq_put(&usb_data->msgq, &evt, K_NO_WAIT);
-
-            if (usb_data->setup.wLength == 0) {
-                /* No data stage, must send zlp to host */
-                usb_data->ep0_state = USB_EP0_STAGE_STATUSIN;
-                if (usb_data->setup.bRequest == USB_SREQ_SET_ADDRESS) {
-                    usb_data->is_set_addr = true;
-                }
-            } else if (usb_data->setup.bmRequestType & USB_DIR_IN) {
-                /* IN stage, send data to host */
-                usb_data->ep0_state = USB_EP0_STAGE_TX;
-                usb_instance->CSRL0 = USB_CSRL0_RXRDYC;
-                while ((usb_instance->CSRL0 & USB_CSRL0_RXRDY) != 0);
-            } else {
-                /* OUT stage, recive data from host */
-                usb_data->ep0_state = USB_EP0_STAGE_RX;
-            }
+            _usbd_ep0_setup(usb_data);
+        } else {
+            usb_data->ep0_state = USB_EP0_STAGE_SETUP;
         }
         break;
-    default:
-        /* "can't happen" */
-        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
+    case USB_EP0_STAGE_SETUP:
+        // setup begin
+        if (csr & USB_CSRL0_RXRDY) {
+            _usbd_ep0_setup(usb_data);
+        }
         break;
     }
 }
@@ -1095,7 +1110,7 @@ static void udc_ls_irq(const struct device *dev)
 
     if (is & USB_IS_RESET) {
         usb_instance->POWER |= USB_POWER_PWRDNPHY;
-        usb_data->ep0_state = USB_EP0_STAGE_IDLE;
+        usb_data->ep0_state = USB_EP0_STAGE_SETUP;
         udc_submit_event(dev, UDC_EVT_RESET, 0);
     }
 

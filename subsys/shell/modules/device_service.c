@@ -13,6 +13,9 @@
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
 #include <zephyr/arch/arch_interface.h>
+#if defined(CONFIG_NETWORKING_MODULE)
+#include <plugin_section.h>
+#endif
 
 static const char *get_device_name(const struct device *dev,
 				   char *buf,
@@ -61,6 +64,12 @@ static int cmd_device_list(const struct shell *sh,
 	shell_fprintf(sh, SHELL_NORMAL, "devices:\n");
 
 	for (dev = devlist; dev < devlist_end; dev++) {
+#if defined(CONFIG_NETWORKING_MODULE)
+		if (in_plugin_section((uintptr_t)dev->name) && (!plugin_section_ready())) {
+			continue;
+		}
+#endif /* CONFIG_NETWORKING_MODULE */
+
 		char buf[20];
 		const char *name = get_device_name(dev, buf, sizeof(buf));
 		const char *state = "READY";

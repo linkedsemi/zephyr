@@ -154,13 +154,45 @@ config ICACHE_LINE_SIZE_DETECT
 config DCACHE_LINE_SIZE_DETECT
 	default y
 
-config IOPMP
-	bool "IOPMP"
+config IOPMP_LINKEDSEMI
+	bool "IOPMP_LINKEDSEMI"
+	default n
+
+if IOPMP_LINKEDSEMI
+
+config IOPMP_GRANULARITY
+	int "IOPMP_GRANULARITY"
+	default 8
+
+config IOPMP_SLOTS
+	int "IOPMP_SLOTS"
+	default 8
+
+config IOPMP_NO_TOR
+	bool "PMP_NO_TOR"
+	default n
+
+config IOPMP_NO_NA4
+	bool "PMP_NO_NA4"
 	default y
 
-config IOPMP_DMA
-	bool "IOPMP_DMA"
-	default y
+config IOPMP_NO_NAPOT
+	bool "IOPMP_NO_NAPOT"
+	default n
+
+config IOPMP_DEBUG_INIT_DUMP
+	bool "IOPMP_DEBUG_INIT_DUMP"
+	default n
+
+config IOPMP_DEBUG_WRITE_DUMP
+	bool "IOPMP_DEBUG_WRITE_DUMP"
+	default n
+
+config IOPMP_LOG_LEVEL
+	int "IOPMP_LOG_LEVEL"
+	default 3
+
+endif
 
 config RV_BOOT_HART_MRADDR
 	hex
@@ -202,6 +234,14 @@ config MDIO
 
 config MDIO_RESET_MAC
 	default y
+
+config NETWORKING_AUTO_INIT
+	bool "NETWORKING_AUTO_INIT"
+	default y
+
+config NETWORKING_MODULE
+	bool "NETWORKING_MODULE"
+	default n
 
 endif # NETWORKING
 
@@ -255,10 +295,6 @@ config CPU2_BOOT_ADDR
 	hex "CPU2_BOOT_ADDR"
 	default 0x8100000
 
-config INIT_FLASH_FOR_DEBUG
-	bool "INIT_FLASH_FOR_DEBUG"
-	default $(dt_path_enabled,/cpus/cpu@1)
-
 config FLASH
 	default y
 
@@ -273,7 +309,7 @@ config USERSPACE
 
 config RISCV_PMP
 	default y
-	
+
 config PMP_SLOTS
 	default 16
 
@@ -300,6 +336,7 @@ config PSRAM
 
 config NEWLIB_LIBC_MALLOC_LSQSH
 	bool "NEWLIB_LIBC_MALLOC_LSQSH"
+	select SYS_HEAP_RUNTIME_STATS
 	default n
 
 config NEWLIB_LIBC_MALLOC_TLSF_LSQSH
@@ -310,6 +347,14 @@ config NEWLIB_LIBC_MALLOC_TLSF_MULIT_LSQSH
 	bool "NEWLIB_LIBC_MALLOC_TLSF_MULIT_LSQSH"
 	default n
 
+config NEWLIB_LIBC_MALLOC_DEBUG_FOOTER
+	bool "NEWLIB_LIBC_MALLOC_DEBUG_FOOTER"
+	default n
+
+config NEWLIB_LIBC_MALLOC_DEBUG_FOOTER_RA
+	bool "NEWLIB_LIBC_MALLOC_DEBUG_FOOTER_RA"
+	default n
+
 config CXX_OPERATOR_NEW_DELETE
 	bool "cpp operator new and delete"
 	default n
@@ -318,14 +363,18 @@ config HEAP_DEBUG_LSQSH
 	bool "HEAP_DEBUG_LSQSH"
 	default n
 
+config HEAP_DEBUG_RD_LSQSH
+	bool "HEAP_DEBUG_RD_LSQSH"
+	default n
+
+config HEAP_DEBUG_RECORD_MAX_NUM
+	int "HEAP_DEBUG_RECORD_MAX_NUM"
+	default 4096
+
 if NEWLIB_LIBC_MALLOC_LSQSH || NEWLIB_LIBC_MALLOC_TLSF_LSQSH || NEWLIB_LIBC_MALLOC_TLSF_MULIT_LSQSH
 
 config NEWLIB_LIBC_MALLOC_ARENA_SIZE
 	int "NEWLIB_LIBC_MALLOC_ARENA_SIZE"
-	default 0
-
-config NEWLIB_LIBC_MALLOC_ARENA_2_SIZE
-	int "NEWLIB_LIBC_MALLOC_ARENA_2_SIZE"
 	default 0
 
 config NEWLIB_LIBC_MALLOC_ALIGNMENT
@@ -334,10 +383,11 @@ config NEWLIB_LIBC_MALLOC_ALIGNMENT
 
 config NEWLIB_LIBC_MALLOC_SECTION_NAME
 	string "NEWLIB_LIBC_MALLOC_SECTION_NAME"
+	default ".noinit.malloc"
 
-config NEWLIB_LIBC_MALLOC_TIMEOUT
-	int "NEWLIB_LIBC_MALLOC_TIMEOUT"
-	default -1
+config NEWLIB_LIBC_MALLOC_TIMEOUT_MS
+	int "NEWLIB_LIBC_MALLOC_TIMEOUT_MS"
+	default 1000000
 
 config NEWLIB_LIBC_MALLOC_PSRAM_BIG_BLOCK_SIZE
 	int "NEWLIB_LIBC_MALLOC_PSRAM_BIG_BLOCK_SIZE"
@@ -402,10 +452,6 @@ config FORCE_CLOCK_HSI
 	bool "FORCE_CLOCK_HSI(25MHz)"
 	default n
 
-config UART_SHARE_REGISTER
-	bool "UART_SHARE_REGISTER"
-	default n
-
 config SHA256_CLOCK_RESET
 	bool "SHA256_CLOCK_RESET"
 	default n
@@ -434,13 +480,13 @@ endif
 if $(dt_path_enabled,/cpus/cpu@1)
 	config GPIO_CFG_LOCK
 		bool "GPIO_CFG_LOCK"
-		default y
+		default n
 		help
 		GPIO_CFG_LOCK
 
 	config GPIO_INTR_LOCK
 		bool "GPIO_INTR_LOCK"
-		default y
+		default n
 		help
 		GPIO_INTR_LOCK
 
@@ -450,12 +496,6 @@ if $(dt_path_enabled,/cpus/cpu@1)
 
 endif
 
-config WORKAROUND_CONFLICT_LOG_ERR
-	bool "WORKAROUND_CONFLICT_LOG_ERR"
-	default n
-	help
-	WORKAROUND_CONFLICT_LOG_ERR
-
 config IOPMP_WHITELIST_I2C1_I3C1
 	bool "IOPMP_WHITELIST_I2C1_I3C1"
 	default n
@@ -464,7 +504,7 @@ config IOPMP_WHITELIST_I2C1_I3C1
 
 config POSIX_USLEEP_WORKAROUND
 	bool "POSIX_USLEEP_WORKAROUND"
-	default n
+	default y
 	help
 		POSIX_USLEEP_WORKAROUND
 
@@ -479,9 +519,23 @@ config SD_BUFFER_SIZE
 	default SD_BUFFER_SIZE_OVERLAY
 
 rsource "otbn/Kconfig.defconfig"
+rsource "coredump/Kconfig"
+rsource "uart_agent/Kconfig"
 
 if SPI_DW
 	config SPI_EXTENDED_MODES
 		default y
 endif
+
+if WATCHDOG
+	config WDT_RESET_REASON_DETAIL
+		bool "WDT_RESET_REASON_DETAIL"
+		default y
+endif
+
+config SOC_LSQSH_SHELL
+	bool "SOC_LSQSH_SHELL"
+	depends on SHELL
+	default y
+
 endif

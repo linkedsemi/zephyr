@@ -81,4 +81,6 @@ long sysconf(int opt);
 }
 #endif
 
+#include "zephyr/posix/compat/unistd_compat.h"
+
 #endif	/* ZEPHYR_INCLUDE_POSIX_UNISTD_H_ */

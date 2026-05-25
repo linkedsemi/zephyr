@@ -1,8 +1,25 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/reboot.h>
-#include "platform.h"
-#include "reg_sec_pmu_rg.h"
+#include <zephyr/cache.h>
+#include <zephyr/linker/linker-defs.h>
+#include <soc_reset.h>
+#include <platform.h>
+
+void sys_arch_reboot_warm_emul()
+{
+    irq_lock();
+    for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
+        irq_disable(irq);
+    }
+    reset_reason_magic_set();
+    sys_cache_data_flush_all();
+    sys_cache_data_disable();
+    sys_cache_instr_disable();
+    void (* goto_rom_region_start)();
+    goto_rom_region_start = (void *)__rom_region_start;
+    goto_rom_region_start();
+}
 
 void sys_arch_reboot(int type)
 {
@@ -16,17 +33,7 @@ void sys_arch_reboot(int type)
         break;
     case SYS_REBOOT_WARM:
 #if defined(CONFIG_EMUL_SOFT_RESET)
-        disable_global_irq();
-        reset_reason_magic_set();
-        sys_cache_data_flush_all();
-        sys_cache_data_disable();
-        sys_cache_instr_disable();
-        for (int irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
-            irq_disable(irq);
-        }
-        void (* goto_rom_region_start)();
-        goto_rom_region_start = (void *)__rom_region_start;
-        goto_rom_region_start();
+        sys_arch_reboot_warm_emul();
 #endif
         break;
     default:

@@ -477,7 +477,7 @@ __ramfunc static bool poll_suspend_request_true(void *param)
 	return priv->shared->suspend_request;
 }
 
-__ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t code,
+__ramfunc int flash_ls_ex_op(const struct device *dev, uint16_t code,
 				const uintptr_t in, void *out)
 {
 	struct flash_ls_client_data *priv = dev->data;
@@ -517,7 +517,7 @@ __ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t co
 	return 0;
 }
 #else
-__ramfunc static int flash_ls_client_ex_op(const struct device *dev, uint16_t code,
+__ramfunc int flash_ls_ex_op(const struct device *dev, uint16_t code,
 				const uintptr_t in, void *out)
 {
 	return 0;
@@ -538,7 +538,7 @@ static struct flash_driver_api flash_ls_client_api = {
 	.sfdp_read = flash_ls_client_sfdp_read_align,
 #endif
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
-	.ex_op = flash_ls_client_ex_op,
+	.ex_op = flash_ls_ex_op,
 #endif
 };
 

@@ -1,0 +1,81 @@
+# Copyright (c) 2024 LinkedSemi Semiconductor
+# SPDX-License-Identifier: Apache-2.0
+
+# config DEBUG_COREDUMP_BACKEND_EMMC
+# 	bool "Use eMMC for coredump"
+# 	depends on SDHCI_LINKEDSEMI
+# 	help
+# 	  Core dump is saved directly to eMMC storage.
+
+if DEBUG_COREDUMP_BACKEND_EMMC
+
+config DEBUG_COREDUMP_EMMC_SECTION_SIZE
+	int "eMMC section size for coredump operations"
+	default 512
+	help
+	  eMMC block/sector size for coredump read/write operations.
+	  Default is 512 bytes (eMMC native block size).
+
+endif # DEBUG_COREDUMP_BACKEND_EMMC
+
+config ZEPHYR_FATFS_UNIX_MNTPOINT
+	bool "Enable Unix-style mount point"
+	default n
+	help
+	  Enable Unix-style mount point (e.g., /mnt instead of /mnt:).
+	  Must also set the volume alias to match disk-name in device tree.
+
+# Volume alias configurations for FatFs FF_VOLUME_STRS
+# Allow customizing volume ID strings for Unix-style mount points
+
+menu "FatFs Volume and Partition Configuration"
+
+config ZEPHYR_FATFS_SD2_ALIAS_UNIX
+	string "SD2 volume alias"
+	default "SD2"
+	help
+	  Volume alias for SD2 (pdrv 4). Must match disk-name in device tree.
+
+config ZEPHYR_FATFS_RAM_ALIAS_UNIX
+	string "RAM volume alias"
+	default "RAM"
+	help
+	  Volume alias for RAM disk (pdrv 0).
+
+config ZEPHYR_FATFS_NAND_ALIAS_UNIX
+	string "NAND volume alias"
+	default "NAND"
+	help
+	  Volume alias for NAND disk (pdrv 1).
+
+config ZEPHYR_FATFS_CF_ALIAS_UNIX
+	string "CF volume alias"
+	default "CF"
+	help
+	  Volume alias for CF disk (pdrv 2).
+
+config ZEPHYR_FATFS_SD_ALIAS_UNIX
+	string "SD volume alias"
+	default "SD"
+	help
+	  Volume alias for SD card (pdrv 3).
+
+config ZEPHYR_FATFS_USB_ALIAS_UNIX
+	string "USB volume alias"
+	default "USB"
+	help
+	  Volume alias for USB disk (pdrv 5).
+
+config ZEPHYR_FATFS_USB2_ALIAS_UNIX
+	string "USB2 volume alias"
+	default "USB2"
+	help
+	  Volume alias for USB2 disk (pdrv 6).
+
+config ZEPHYR_FATFS_USB3_ALIAS_UNIX
+	string "USB3 volume alias"
+	default "USB3"
+	help
+	  Volume alias for USB3 disk (pdrv 7).
+
+endmenu

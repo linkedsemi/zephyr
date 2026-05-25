@@ -75,6 +75,7 @@ struct spi_dw_data {
 	struct spi_context ctx;
 	struct k_sem dma_rx_sem;
 	struct k_sem dma_tx_sem;
+	int dma_status;
 	uint8_t dfs;	/* dfs in bytes: 1,2 or 4 */
 	uint8_t fifo_diff;	/* cannot be bigger than FIFO depth */
 };

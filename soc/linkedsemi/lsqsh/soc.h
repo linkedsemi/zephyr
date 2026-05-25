@@ -18,14 +18,13 @@
 #define IRQ_TYPE_LEVEL_HIGH   4
 #define IRQ_TYPE_LEVEL_LOW    8
 
-#if defined(CONFIG_WORKAROUND_CONFLICT_LOG_ERR)
-#undef LOG_ERR
-#define LOG_ERR LOG_ERROR
-#endif
-
 #define DEV_ERR(dev, fmt, ...) LOG_ERR("%s: " fmt, (dev)->name, ##__VA_ARGS__)
 #define DEV_WRN(dev, fmt, ...) LOG_WRN("%s: " fmt, (dev)->name, ##__VA_ARGS__)
 #define DEV_INF(dev, fmt, ...) LOG_INF("%s: " fmt, (dev)->name, ##__VA_ARGS__)
 #define DEV_DBG(dev, fmt, ...) LOG_DBG("%s: " fmt, (dev)->name, ##__VA_ARGS__)
 
+#if defined(CONFIG_SPI_FILTER_LINKEDSEMI)
+#include <zephyr/device.h>
+int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms);
+#endif
 #endif /* _SOC_H_ */

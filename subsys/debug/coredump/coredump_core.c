@@ -24,6 +24,10 @@ static struct coredump_backend_api
 extern struct coredump_backend_api coredump_backend_intel_adsp_mem_window;
 static struct coredump_backend_api
 	*backend_api = &coredump_backend_intel_adsp_mem_window;
+#elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+extern struct coredump_backend_api coredump_backend_emmc;
+static struct coredump_backend_api
+	*backend_api = &coredump_backend_emmc;
 #elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_OTHER)
 extern struct coredump_backend_api coredump_backend_other;
 static struct coredump_backend_api

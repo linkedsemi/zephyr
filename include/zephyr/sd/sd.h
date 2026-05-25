@@ -80,6 +80,8 @@ struct sd_card {
 	uint8_t bus_width; /*!< Desired bus width */
 	uint32_t cccr_flags; /*!< SDIO CCCR data */
 	struct sdio_func func0; /*!< Function 0 common card data */
+	struct sd_csd card_csd;
+	struct mmc_ext_csd card_ext_csd;
 
 	/* NOTE: The buffer is accessed as a uint32_t* by the SD subsystem, so must be
 	 * aligned to 4 bytes for platforms that don't support unaligned access...

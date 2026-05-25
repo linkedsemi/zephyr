@@ -27,30 +27,37 @@
         zephyr,memory-region = "SHMEM";
     };
 
-    mbox: mbox@100bf000 {
-        compatible = "linkedsemi,mbox";
+    mbox_memory: memory@100bf000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
         reg = <0x100bf000 DT_SIZE_K(4)>;
-        fifo-deepth = <2>;
-        fifo-width = <256>;
-        #mbox-cells = <1>;
+        zephyr,memory-region = "MBOX";
+    };
 
+    mbox: mbox {
+        compatible = "linkedsemi,mbox";
+        #mbox-cells = <3>;
+        mtu = <64>;
         interrupts = <SYSC_APP_CPU_IRQN 3>;
+        #mbox-cells = <3>;
 
         mbox_consumer_qspi1: mbox-consumer_qspi1 {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 0>, <&mbox 1>;
+            mboxes = <&mbox 0 24 1>, <&mbox 0 24 1>;
             mbox-names = "tx", "rx";
         };
-
         mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 2>, <&mbox 3>;
+            mboxes = <&mbox 1 32 1>, <&mbox 1 32 1>;
             mbox-names = "tx", "rx";
         };
-
-       mbox_consumer_espi1: mbox-consumer_espi1 {
+        mbox_consumer_espi1: mbox-consumer_espi1 {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 4>, <&mbox 5>;
+            mboxes = <&mbox 2 8 1>, <&mbox 2 8 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_vuart1: mbox-mbox_consumer_vuart1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 3 8 1>, <&mbox 3 8 1>;
             mbox-names = "tx", "rx";
         };
     };
@@ -180,9 +187,6 @@
 
 &mdio1 {
     status = "okay";
-    reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
-    reset-hold-ms = <10>;
-    circuits-set-ms = <30>;
     eth1_phy: ethernet-phy@0 {
         compatible = "realtek,rtl8211f";
         reg = <0>;

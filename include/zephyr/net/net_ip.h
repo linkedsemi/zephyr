@@ -181,6 +181,7 @@ typedef size_t socklen_t;
 struct sockaddr_in6 {
 	sa_family_t		sin6_family;   /**< AF_INET6               */
 	uint16_t		sin6_port;     /**< Port number            */
+	uint32_t		sin6_flowinfo; /**< IPv6 flow information  */
 	struct in6_addr		sin6_addr;     /**< IPv6 address           */
 	uint8_t			sin6_scope_id; /**< Interfaces for a scope */
 };
@@ -404,6 +405,12 @@ struct sockaddr_storage {
 	sa_family_t ss_family;
 	char data[NET_SOCKADDR_MAX_SIZE - sizeof(sa_family_t)];
 };
+
+/* For sd-bus linux compatible definition: sun_path fixed to 108 bytes */
+#ifdef CONFIG_OPENBMC_ZEPHYR
+#undef NET_SOCKADDR_MAX_SIZE
+#define NET_SOCKADDR_MAX_SIZE (sizeof(sa_family_t) + 108)
+#endif /* CONFIG_OPENBMC_ZEPHYR */
 
 /* Socket address struct for UNIX domain sockets */
 struct sockaddr_un {

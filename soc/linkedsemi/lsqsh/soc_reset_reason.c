@@ -11,7 +11,9 @@
 #define MAGIC_VALUE 0xdeadbeef
 
 static enum reset_reason reset_reason = NO_RESET_REASON;
+#if defined(CONFIG_WDT_RESET_REASON_DETAIL)
 struct wdt_reset_en wdt_reset_en __noinit;
+#endif
 static volatile uint32_t magic __noinit IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE)));
 
 __maybe_unused static void global_reset_reason_clean(void)
@@ -74,51 +76,10 @@ void reset_reason_init(void)
         reset_src = SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK;
         sec_wdt_reset_reason_clean();
         if (SYSC_SEC_PER_RST_FROM_IWDT1_MASK & reset_src) {
-#if defined(CONFIG_WDT_RESET_REASON_DETAIL)
-            wdt_reset_en.value1 &= IWDT_RSTEN1_ALL_MASK;
-            wdt_reset_en.value2 &= IWDT_RSTEN2_ALL_MASK;
-            wdt_reset_en.value3 &= IWDT_RSTEN3_ALL_MASK;
-            wdt_reset_en.value4 &= IWDT_RSTEN4_ALL_MASK;
-            wdt_reset_en.value5 &= IWDT_RSTEN5_ALL_MASK;
-            if ((IWDT_RSTEN1_ALL_MASK == wdt_reset_en.value1)
-                && (IWDT_RSTEN2_ALL_MASK == wdt_reset_en.value2)
-                && (IWDT_RSTEN3_ALL_MASK == wdt_reset_en.value3)
-                && (IWDT_RSTEN4_ALL_MASK == wdt_reset_en.value4)
-                && (IWDT_RSTEN5_ALL_MASK == wdt_reset_en.value5)) {
-                ret = SEC_IWDT_FULL_RESET;
-            } else if ((0 == wdt_reset_en.value1)
-                && (0 == wdt_reset_en.value2)
-                && (0 == wdt_reset_en.value3)
-                && (0 == wdt_reset_en.value4)
-                && (0 == wdt_reset_en.value5)) {
-                ret = SEC_IWDT_HART_RESET;
-            } else if ((0 != wdt_reset_en.value1)
-                || (0 != wdt_reset_en.value2)
-                || (0 != wdt_reset_en.value3)
-                || (0 != wdt_reset_en.value4)
-                || (0 != wdt_reset_en.value5)) {
-                ret = SEC_IWDT_PARTIAL_RESET;
-            }
-
-            if (wdt_reset_en.PSRAM) {
-                /* PSRAM xip disable */
-                uint32_t psram_cfg = sys_read32(APP_SYSC_CPU_APP_ADDR + 0x80);
-                psram_cfg &= ~BIT(0);
-                sys_write32(psram_cfg, APP_SYSC_CPU_APP_ADDR + 0x80);
-            }
-#else
             ret = SEC_IWDT_HART_RESET;
-#endif
+        } else if (SYSC_SEC_PER_RST_FROM_WWDT1_MASK & reset_src) {
+            ret = SEC_WWDT_HART_RESET;
         }
-    #if 0
-        else if (SYSC_SEC_PER_RST_FROM_WWDT1_MASK & reset_src) {
-            if () {
-                ret = SEC_WWDT_FULL_RESET;
-            } else {
-                ret = SEC_WWDT_HART_RESET;
-            }
-        }
-    #endif
         else if (SYSC_SEC_PER_RST_FROM_SEC_CORE_SRST_MASK & reset_src) {
             ret = SOFT_HART_RESET;
         }
@@ -144,6 +105,7 @@ void reset_reason_init(void)
     reset_reason = ret;
 }
 
+#if defined(CONFIG_WDT_RESET_REASON_DETAIL)
 struct wdt_reset_en *wdt_reset_en_val_get(void)
 {
     return &wdt_reset_en;
@@ -308,135 +270,136 @@ int wdt_reset_en_print(struct wdt_reset_en *en)
      /* "RESERVED41 : %d\n" */
         "SHA512 : %d\n"
         "OTFAD_AES : %d\n",
-        en->BSTIM1,
-        en->BSTIM2,
-        en->GPTIMA1,
-        en->GPTIMA2,
-        en->GPTIMB1,
-        en->GPTIMC1,
-        en->ADTIM1,
-        en->ADTIM2,
-        en->PWM,
-        en->TACH,
-        en->I2C1,
-        en->I2C2,
-        en->I2C3,
-        en->I2C4,
-        en->I2C5,
-        en->I2C6,
-        en->I2C7,
-        en->I2C8,
-        en->I2C9,
-        en->I2C10,
-        en->I2C11,
-        en->I2C12,
-        en->I2C13,
-        en->I2C14,
-        en->I2C15,
-        en->I2C16,
-        en->UART1,
-        en->UART2,
-        en->UART3,
-        en->UART4,
-        en->UART5,
-        en->UART6,
-        en->UART7,
-        en->UART8,
-        en->UART9,
-        en->UART10,
-        en->UART11,
-        en->UART12,
-        en->SGPIO1_MST,
-        en->SGPIO2_MST,
-        en->SGPIO1_MON,
-        en->SGPIO2_MON,
-        en->PECI1,
-        en->PECI2,
-        en->SPI1,
-        en->SPI2,
-        en->SPI3,
-        en->SPI4,
-        en->SPIS1,
-        en->SPIS2,
-        en->ADC1,
-        en->ADC2,
-        en->EXTI1,
-        en->EXTI2,
-        en->EXTI3,
-        en->EXTI4,
-        en->MJTAG1,
-        en->MJTAG2,
-        en->MJTAG3,
-        en->I3C1,
-        en->I3C2,
-        en->I3C3,
-        en->I3C4,
-        en->I3C5,
-        en->I3C6,
-        en->I3C7,
-        en->I3C8,
-        en->I3C9,
-        en->I3C10,
-        en->I3C11,
-        en->I3C12,
-        en->I3C13,
-        en->I3C14,
-     /* en->RESERVED30, */
-     /* en->RESERVED31, */
-        en->KSCAN,
-        en->PS2IF1,
-        en->PS2IF2,
-        en->OWM,
-        en->CEC,
-        en->PIS,
-        en->FILTER,
-        en->SPI_FLT1,
-        en->SPI_FLT2,
-        en->SPI_FLT3,
-        en->SPI_FLT4,
-        en->SMB_FLT1,
-        en->SMB_FLT2,
-        en->SMB_FLT3,
-        en->SMB_FLT4,
-        en->PDM,
-        en->TRNG1,
-        en->TRNG2,
-     /* en->RESERVED32, */
-        en->PARAL,
-        en->OTBN,
-        en->CACHE1,
-        en->CACHE2,
-        en->QSPI1,
-        en->QSPI2,
-        en->USB1,
-        en->USB2,
-        en->DMAC1,
-        en->DMAC2,
-        en->ESPI1,
-        en->ESPI2,
-        en->LPC1,
-        en->LPC2,
-        en->FDCAN,
-        en->PSRAM,
-        en->ETH1,
-        en->ETH2,
-        en->EMMC1,
-        en->EMMC2,
-        en->LTPI_SCM,
-        en->LTPI_HPM,
-        en->LTPI_PHY,
-     /* en->RESERVED40, */
-        en->CALC_CRC,
-        en->CALC,
-        en->CRYPT,
-        en->OTP_CTRL,
-        en->CALC_SHA,
-        en->CALC_SM4,
-        en->TPM_SPIS1,
-        en->TPM_SPIS2,
-        en->NIST_TRNG,
-     /* en->RESERVED41, */
-        en->SHA512,
-        en->OTFAD_AES);
+        en->WDT_RST_BSTIM1,
+        en->WDT_RST_BSTIM2,
+        en->WDT_RST_GPTIMA1,
+        en->WDT_RST_GPTIMA2,
+        en->WDT_RST_GPTIMB1,
+        en->WDT_RST_GPTIMC1,
+        en->WDT_RST_ADTIM1,
+        en->WDT_RST_ADTIM2,
+        en->WDT_RST_PWM,
+        en->WDT_RST_TACH,
+        en->WDT_RST_I2C1,
+        en->WDT_RST_I2C2,
+        en->WDT_RST_I2C3,
+        en->WDT_RST_I2C4,
+        en->WDT_RST_I2C5,
+        en->WDT_RST_I2C6,
+        en->WDT_RST_I2C7,
+        en->WDT_RST_I2C8,
+        en->WDT_RST_I2C9,
+        en->WDT_RST_I2C10,
+        en->WDT_RST_I2C11,
+        en->WDT_RST_I2C12,
+        en->WDT_RST_I2C13,
+        en->WDT_RST_I2C14,
+        en->WDT_RST_I2C15,
+        en->WDT_RST_I2C16,
+        en->WDT_RST_UART1,
+        en->WDT_RST_UART2,
+        en->WDT_RST_UART3,
+        en->WDT_RST_UART4,
+        en->WDT_RST_UART5,
+        en->WDT_RST_UART6,
+        en->WDT_RST_UART7,
+        en->WDT_RST_UART8,
+        en->WDT_RST_UART9,
+        en->WDT_RST_UART10,
+        en->WDT_RST_UART11,
+        en->WDT_RST_UART12,
+        en->WDT_RST_SGPIO1_MST,
+        en->WDT_RST_SGPIO2_MST,
+        en->WDT_RST_SGPIO1_MON,
+        en->WDT_RST_SGPIO2_MON,
+        en->WDT_RST_PECI1,
+        en->WDT_RST_PECI2,
+        en->WDT_RST_SPI1,
+        en->WDT_RST_SPI2,
+        en->WDT_RST_SPI3,
+        en->WDT_RST_SPI4,
+        en->WDT_RST_SPIS1,
+        en->WDT_RST_SPIS2,
+        en->WDT_RST_ADC1,
+        en->WDT_RST_ADC2,
+        en->WDT_RST_EXTI1,
+        en->WDT_RST_EXTI2,
+        en->WDT_RST_EXTI3,
+        en->WDT_RST_EXTI4,
+        en->WDT_RST_MJTAG1,
+        en->WDT_RST_MJTAG2,
+        en->WDT_RST_MJTAG3,
+        en->WDT_RST_I3C1,
+        en->WDT_RST_I3C2,
+        en->WDT_RST_I3C3,
+        en->WDT_RST_I3C4,
+        en->WDT_RST_I3C5,
+        en->WDT_RST_I3C6,
+        en->WDT_RST_I3C7,
+        en->WDT_RST_I3C8,
+        en->WDT_RST_I3C9,
+        en->WDT_RST_I3C10,
+        en->WDT_RST_I3C11,
+        en->WDT_RST_I3C12,
+        en->WDT_RST_I3C13,
+        en->WDT_RST_I3C14,
+     /* en->WDT_RST_RESERVED30, */
+     /* en->WDT_RST_RESERVED31, */
+        en->WDT_RST_KSCAN,
+        en->WDT_RST_PS2IF1,
+        en->WDT_RST_PS2IF2,
+        en->WDT_RST_OWM,
+        en->WDT_RST_CEC,
+        en->WDT_RST_PIS,
+        en->WDT_RST_FILTER,
+        en->WDT_RST_SPI_FLT1,
+        en->WDT_RST_SPI_FLT2,
+        en->WDT_RST_SPI_FLT3,
+        en->WDT_RST_SPI_FLT4,
+        en->WDT_RST_SMB_FLT1,
+        en->WDT_RST_SMB_FLT2,
+        en->WDT_RST_SMB_FLT3,
+        en->WDT_RST_SMB_FLT4,
+        en->WDT_RST_PDM,
+        en->WDT_RST_TRNG1,
+        en->WDT_RST_TRNG2,
+     /* en->WDT_RST_RESERVED32, */
+        en->WDT_RST_PARAL,
+        en->WDT_RST_OTBN,
+        en->WDT_RST_CACHE1,
+        en->WDT_RST_CACHE2,
+        en->WDT_RST_QSPI1,
+        en->WDT_RST_QSPI2,
+        en->WDT_RST_USB1,
+        en->WDT_RST_USB2,
+        en->WDT_RST_DMAC1,
+        en->WDT_RST_DMAC2,
+        en->WDT_RST_ESPI1,
+        en->WDT_RST_ESPI2,
+        en->WDT_RST_LPC1,
+        en->WDT_RST_LPC2,
+        en->WDT_RST_FDCAN,
+        en->WDT_RST_PSRAM,
+        en->WDT_RST_ETH1,
+        en->WDT_RST_ETH2,
+        en->WDT_RST_EMMC1,
+        en->WDT_RST_EMMC2,
+        en->WDT_RST_LTPI_SCM,
+        en->WDT_RST_LTPI_HPM,
+        en->WDT_RST_LTPI_PHY,
+     /* en->WDT_RST_RESERVED40, */
+        en->WDT_RST_CALC_CRC,
+        en->WDT_RST_CALC,
+        en->WDT_RST_CRYPT,
+        en->WDT_RST_OTP_CTRL,
+        en->WDT_RST_CALC_SHA,
+        en->WDT_RST_CALC_SM4,
+        en->WDT_RST_TPM_SPIS1,
+        en->WDT_RST_TPM_SPIS2,
+        en->WDT_RST_NIST_TRNG,
+     /* en->WDT_RST_RESERVED41, */
+        en->WDT_RST_SHA512,
+        en->WDT_RST_OTFAD_AES);
     return 0;
 }
+#endif /* CONFIG_WDT_RESET_REASON_DETAIL */

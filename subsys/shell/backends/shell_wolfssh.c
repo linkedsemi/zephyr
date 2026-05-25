@@ -224,6 +224,10 @@ static int NonBlockSSH_accept(WOLFSSH* ssh)
             break;
         }else{
             ret = wolfSSH_accept(ssh);
+            if(ret == WS_INVALID_STATE_E)
+            {
+                break;
+            }
         }
     }
     return ret;

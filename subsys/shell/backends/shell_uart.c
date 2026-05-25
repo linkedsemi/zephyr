@@ -561,3 +561,39 @@ const struct shell *shell_backend_uart_get_ptr(void)
 {
 	return &shell_uart;
 }
+
+int shell_backend_uart_suspend(const struct shell *sh)
+{
+	struct shell_uart_int_driven *sh_uart;
+
+	if (sh != &shell_uart) {
+		return -EINVAL;
+	}
+
+	sh_uart = (struct shell_uart_int_driven *)sh->iface->ctx;
+
+	if (IS_ENABLED(CONFIG_SHELL_BACKEND_SERIAL_CHECK_DTR)) {
+		k_timer_stop(&sh_uart->dtr_timer);
+	}
+	uart_irq_tx_disable(sh_uart->common.dev);
+	uart_irq_rx_disable(sh_uart->common.dev);
+
+	return 0;
+}
+
+int shell_backend_uart_resume(const struct shell *sh)
+{
+	struct shell_uart_int_driven *sh_uart;
+
+	if (sh != &shell_uart) {
+		return -EINVAL;
+	}
+
+	sh_uart = (struct shell_uart_int_driven *)sh->iface->ctx;
+
+	uart_irq_callback_user_data_set(sh_uart->common.dev, uart_callback, (void *)sh_uart);
+	uart_irq_rx_enable(sh_uart->common.dev);
+	sh_uart->tx_busy = 0;
+
+	return 0;
+}

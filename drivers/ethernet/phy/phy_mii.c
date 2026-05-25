@@ -14,9 +14,16 @@
 #include <zephyr/drivers/mdio.h>
 #include <zephyr/net/phy.h>
 #include <zephyr/net/mii.h>
+#include <soc.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(phy_mii, CONFIG_PHY_LOG_LEVEL);
+
+#if defined(CONFIG_NETWORKING_MODULE)
+#if !defined(CONFIG_MONITOR_WORK_EXIT_SEM_TIMEOUT_MS)
+#define CONFIG_MONITOR_WORK_EXIT_SEM_TIMEOUT_MS (10 * CONFIG_PHY_MONITOR_PERIOD)
+#endif
+#endif
 
 struct phy_mii_dev_config {
 	uint8_t phy_addr;
@@ -33,6 +40,10 @@ struct phy_mii_dev_data {
 	struct k_work_delayable monitor_work;
 	struct phy_link_state state;
 	struct k_sem sem;
+#if defined(CONFIG_NETWORKING_MODULE)
+	struct k_sem monitor_work_exit_sem;
+	bool monitor_work_exit;
+#endif
 	bool gigabit_supported;
 };
 
@@ -274,6 +285,13 @@ static void monitor_work_handler(struct k_work *work)
 	const struct device *dev = data->dev;
 	int rc;
 
+#if defined(CONFIG_NETWORKING_MODULE)
+	if (data->monitor_work_exit) {
+		k_sem_give(&data->monitor_work_exit_sem);
+		return;
+	}
+#endif
+
 	k_sem_take(&data->sem, K_FOREVER);
 
 	rc = update_link_state(dev);
@@ -285,9 +303,19 @@ static void monitor_work_handler(struct k_work *work)
 		invoke_link_cb(dev);
 	}
 
+#if defined(CONFIG_NETWORKING_MODULE)
+	if (data->monitor_work_exit) {
+		k_sem_give(&data->monitor_work_exit_sem);
+	} else {
+		/* Submit delayed work */
+		k_work_reschedule(&data->monitor_work,
+				K_MSEC(CONFIG_PHY_MONITOR_PERIOD));
+	}
+#else
 	/* Submit delayed work */
 	k_work_reschedule(&data->monitor_work,
 			  K_MSEC(CONFIG_PHY_MONITOR_PERIOD));
+#endif
 }
 
 static int phy_mii_read(const struct device *dev, uint16_t reg_addr,
@@ -477,9 +505,32 @@ static int phy_mii_initialize(const struct device *dev)
 	return 0;
 }
 
+#if defined(CONFIG_NETWORKING_MODULE)
+static int phy_mii_exit(const struct device *dev)
+{
+	const struct phy_mii_dev_config *const cfg = dev->config;
+	struct phy_mii_dev_data *const data = dev->data;
+	int ret = 0;
+
+	data->monitor_work_exit = true;
+	if (!cfg->fixed) {
+		k_sem_init(&data->monitor_work_exit_sem, 0, 1);
+		data->monitor_work_exit = true;
+		ret = k_sem_take(&data->monitor_work_exit_sem, K_MSEC(CONFIG_MONITOR_WORK_EXIT_SEM_TIMEOUT_MS));
+	}
+	memset(dev->state, 0, sizeof(struct device_state));
+
+	return ret;
+}
+#endif
+
 #define IS_FIXED_LINK(n)	DT_INST_NODE_HAS_PROP(n, fixed_link)
 
 static const struct ethphy_driver_api phy_mii_driver_api = {
+#if defined(CONFIG_NETWORKING_MODULE)
+	.init = phy_mii_initialize,
+	.exit = phy_mii_exit,
+#endif
 	.get_link = phy_mii_get_link_state,
 	.cfg_link = phy_mii_cfg_link,
 	.link_cb_set = phy_mii_link_cb_set,
@@ -501,7 +552,7 @@ static const struct phy_mii_dev_config phy_mii_dev_config_##n = {	 \
 	PHY_MII_CONFIG(n);						\
 	static struct phy_mii_dev_data phy_mii_dev_data_##n;		\
 	DEVICE_DT_INST_DEFINE(n,					\
-			      &phy_mii_initialize,			\
+			      COND_CODE_1(CONFIG_NETWORKING_AUTO_INIT, (&phy_mii_initialize), (NULL)),			\
 			      NULL,					\
 			      &phy_mii_dev_data_##n,			\
 			      &phy_mii_dev_config_##n, POST_KERNEL,	\

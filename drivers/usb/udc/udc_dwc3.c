@@ -6,13 +6,22 @@
 #if defined(CONFIG_RESET)
 #include <zephyr/drivers/reset.h>
 #endif
-
 #if defined(CONFIG_CLOCK_CONTROL)
 #include <soc_clock.h>
 #include <zephyr/drivers/clock_control.h>
 #endif
-
 #include "field_manipulate.h"
+
+#if defined(CONFIG_UDC_DRIVER_LOG_LEVEL) && CONFIG_UDC_DRIVER_LOG_LEVEL != LOG_LEVEL_NONE
+#define CHOSEN_CONSOLE DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_console), zephyr_cdc_acm_uart)
+#define CHOSEN_SHELL   DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_shell_uart), zephyr_cdc_acm_uart)
+#if (CHOSEN_CONSOLE && defined(CONFIG_LOG_BACKEND_UART)) || \
+	(CHOSEN_SHELL && defined(CONFIG_SHELL_LOG_BACKEND))
+#warning "CONFIG_UDC_DRIVER_LOG_LEVEL forced to LOG_LEVEL_NONE"
+#undef CONFIG_UDC_DRIVER_LOG_LEVEL
+#define CONFIG_UDC_DRIVER_LOG_LEVEL LOG_LEVEL_NONE
+#endif
+#endif
 
 LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 
@@ -446,73 +455,9 @@ LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 #define DWC3_DEV_IMOD_INTERVAL_SHIFT 0
 #define DWC3_DEV_IMOD_INTERVAL_MASK  (0xffff << 0)
 
-/* OTG Configuration Register */
-#define DWC3_OCFG_DISPWRCUTTOFF BIT(5)
-#define DWC3_OCFG_HIBDISMASK    BIT(4)
-#define DWC3_OCFG_SFTRSTMASK    BIT(3)
-#define DWC3_OCFG_OTGVERSION    BIT(2)
-#define DWC3_OCFG_HNPCAP        BIT(1)
-#define DWC3_OCFG_SRPCAP        BIT(0)
-
-/* OTG CTL Register */
-#define DWC3_OCTL_OTG3GOERR      BIT(7)
-#define DWC3_OCTL_PERIMODE       BIT(6)
-#define DWC3_OCTL_PRTPWRCTL      BIT(5)
-#define DWC3_OCTL_HNPREQ         BIT(4)
-#define DWC3_OCTL_SESREQ         BIT(3)
-#define DWC3_OCTL_TERMSELIDPULSE BIT(2)
-#define DWC3_OCTL_DEVSETHNPEN    BIT(1)
-#define DWC3_OCTL_HSTSETHNPEN    BIT(0)
-
-/* OTG Event Register */
-#define DWC3_OEVT_DEVICEMODE     BIT(31)
-#define DWC3_OEVT_XHCIRUNSTPSET  BIT(27)
-#define DWC3_OEVT_DEVRUNSTPSET   BIT(26)
-#define DWC3_OEVT_HIBENTRY       BIT(25)
-#define DWC3_OEVT_CONIDSTSCHNG   BIT(24)
-#define DWC3_OEVT_HRRCONFNOTIF   BIT(23)
-#define DWC3_OEVT_HRRINITNOTIF   BIT(22)
-#define DWC3_OEVT_ADEVIDLE       BIT(21)
-#define DWC3_OEVT_ADEVBHOSTEND   BIT(20)
-#define DWC3_OEVT_ADEVHOST       BIT(19)
-#define DWC3_OEVT_ADEVHNPCHNG    BIT(18)
-#define DWC3_OEVT_ADEVSRPDET     BIT(17)
-#define DWC3_OEVT_ADEVSESSENDDET BIT(16)
-#define DWC3_OEVT_BDEVBHOSTEND   BIT(11)
-#define DWC3_OEVT_BDEVHNPCHNG    BIT(10)
-#define DWC3_OEVT_BDEVSESSVLDDET BIT(9)
-#define DWC3_OEVT_BDEVVBUSCHNG   BIT(8)
-#define DWC3_OEVT_BSESSVLD       BIT(3)
-#define DWC3_OEVT_HSTNEGSTS      BIT(2)
-#define DWC3_OEVT_SESREQSTS      BIT(1)
-#define DWC3_OEVT_ERROR          BIT(0)
-
-/* OTG Event Enable Register */
-#define DWC3_OEVTEN_XHCIRUNSTPSETEN  BIT(27)
-#define DWC3_OEVTEN_DEVRUNSTPSETEN   BIT(26)
-#define DWC3_OEVTEN_HIBENTRYEN       BIT(25)
-#define DWC3_OEVTEN_CONIDSTSCHNGEN   BIT(24)
-#define DWC3_OEVTEN_HRRCONFNOTIFEN   BIT(23)
-#define DWC3_OEVTEN_HRRINITNOTIFEN   BIT(22)
-#define DWC3_OEVTEN_ADEVIDLEEN       BIT(21)
-#define DWC3_OEVTEN_ADEVBHOSTENDEN   BIT(20)
-#define DWC3_OEVTEN_ADEVHOSTEN       BIT(19)
-#define DWC3_OEVTEN_ADEVHNPCHNGEN    BIT(18)
-#define DWC3_OEVTEN_ADEVSRPDETEN     BIT(17)
-#define DWC3_OEVTEN_ADEVSESSENDDETEN BIT(16)
-#define DWC3_OEVTEN_BDEVBHOSTENDEN   BIT(11)
-#define DWC3_OEVTEN_BDEVHNPCHNGEN    BIT(10)
-#define DWC3_OEVTEN_BDEVSESSVLDDETEN BIT(9)
-#define DWC3_OEVTEN_BDEVVBUSCHNGEN   BIT(8)
-
-/* OTG Status Register */
-#define DWC3_OSTS_DEVRUNSTP       BIT(13)
-#define DWC3_OSTS_XHCIRUNSTP      BIT(12)
-#define DWC3_OSTS_PERIPHERALSTATE BIT(4)
-#define DWC3_OSTS_XHCIPRTPOWER    BIT(3)
-#define DWC3_OSTS_BSESVLD         BIT(2)
-#define DWC3_OSTS_VBUSVLD         BIT(1)
-#define DWC3_OSTS_CONIDSTS        BIT(0)
+/* In response to Start Transfer */
+#define DEPEVT_TRANSFER_NO_RESOURCE	1
+#define DEPEVT_TRANSFER_BUS_EXPIRY	2
 
 /*
  * Test Mode Selectors
@@ -947,15 +892,61 @@ static void dwc3_dep_config(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, const 
     dwc3_dep_command(reg, phy_ep_idx, &cmd, param);
 }
 
-static void dwc3_dep_xfer_resource(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, const union dep_command_param *param)
+static int dwc3_dep_xfer_resource(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, const union dep_command_param *param)
 {
+    uint32_t retry = 50000;
+    uint32_t value;
+    int ret = -1;
+
     union dep_command cmd = {
         .cmd = {
             .cmdact = 1,
             .cmdtyp = DWC3_DEPCMD_SETTRANSFRESOURCE,
         },
     };
-    dwc3_dep_command(reg, phy_ep_idx, &cmd, param);
+
+    reg->DEP[phy_ep_idx].CMDPAR0 = param->param[0];
+    reg->DEP[phy_ep_idx].CMDPAR1 = param->param[1];
+    reg->DEP[phy_ep_idx].CMDPAR2 = param->param[2];
+    reg->DEP[phy_ep_idx].CMD = cmd.val;
+
+    do {
+        /*
+            In response to a Start Transfer command:
+            ■ [15:12]:
+                ❑ 4’h2: Indicates expiry of the bus time reflected in the Start Transfer command.
+                ❑ 4’h1: Indicates there is no transfer resource available on the endpoint.
+            In response to a Set Transfer Resource (DEPXFERCFG) command:
+            ■ [15:12]:
+                ❑ 4'h1: Indicates an error has occurred because software is requesting more transfer resources to be
+                assigned than have been configured in the hardware.
+            In response to a End Transfer command:
+            ■ [15:12]:
+                ❑ 4'h1: Indicates an invalid transfer resource was specified
+        */
+        value = reg->DEP[phy_ep_idx].CMD;
+        if (!(value & DWC3_DEPCMD_CMDACT)) {
+            switch (DWC3_DEPCMD_STATUS(value))
+            {
+            case 0:
+                ret = 0;
+                break;
+            case DEPEVT_TRANSFER_NO_RESOURCE:
+                LOG_WRN("DEPEVT_TRANSFER_NO_RESOURCE\n");
+                ret = -EINVAL;
+                break;
+            case DEPEVT_TRANSFER_BUS_EXPIRY:
+                ret = -EAGAIN;
+                LOG_WRN("DEPEVT_TRANSFER_BUS_EXPIRY\n");
+                break;
+            default:
+                LOG_WRN("UNKNOWN cmd status\n");
+            }
+            break;
+        }
+    } while (--retry);
+
+    return ret;
 }
 
 static void dwc3_dep_start_transfer(const struct device *dev, uint8_t phy_ep_idx, void *td_addr, uint16_t stream_id)
@@ -1740,7 +1731,10 @@ static int udc_dwc3_init(const struct device *dev)
        End Transfer or an XferComplete event releases the transfer resource.
     */
     for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
-        dwc3_dep_xfer_resource(dwc3_dev, i, &cmd_param);
+        if (dwc3_dep_xfer_resource(dwc3_dev, i, &cmd_param) != 0) {
+            LOG_ERR("Failed to alloc transfer resource");
+            return -EIO;
+        }
         dwc3_data->ep_res_index[i] = -1;
     }
 

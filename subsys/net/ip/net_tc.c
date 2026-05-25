@@ -33,11 +33,11 @@ K_KERNEL_STACK_ARRAY_DEFINE(rx_stack, NET_TC_RX_COUNT,
 			    CONFIG_NET_RX_STACK_SIZE);
 
 #if NET_TC_TX_COUNT > 0
-static struct net_traffic_class tx_classes[NET_TC_TX_COUNT];
+struct net_traffic_class tx_classes[NET_TC_TX_COUNT];
 #endif
 
 #if NET_TC_RX_COUNT > 0
-static struct net_traffic_class rx_classes[NET_TC_RX_COUNT];
+struct net_traffic_class rx_classes[NET_TC_RX_COUNT];
 #endif
 
 #if NET_TC_RX_COUNT > 0 || NET_TC_TX_COUNT > 0

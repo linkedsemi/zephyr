@@ -1,5 +1,6 @@
 set(BOARD_REVISIONS "2os"
                     "2os_xip"
+                    "2os_cpu1_xip"
                     "1os"
                     "1os_xip"
                     )

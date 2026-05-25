@@ -1,0 +1,18 @@
+description: Linkedsemi uart agent
+compatible: "linkedsemi,uart-agent"
+
+include: [base.yaml]
+
+properties:
+  fifo_base:
+    type: int
+    required: true
+    description: Virtual UART FIFO Base Addr
+
+  mbox:
+    type: phandle
+
+  uart:
+    type: phandle
+    required: true
+    description: Phandle to the physical UART controller node

@@ -52,7 +52,7 @@ LOG_MODULE_REGISTER(spi_dw);
 #include <zephyr/drivers/pinctrl.h>
 #endif
 #include <zephyr/sys/__assert.h>
-
+#include "soc.h"
 BUILD_ASSERT(CONFIG_SPI_EXTENDED_MODES == 1,
              "DesignWare SPI driver requires CONFIG_SPI_EXTENDED_MODES to be enabled\n"
              "Please add CONFIG_SPI_EXTENDED_MODES=y to your prj.conf");
@@ -388,9 +388,12 @@ static void spi_dw_dma_rx_callback(const struct device *dev_dma,
 	const struct device *dev = (const struct device *)user;
 	struct spi_dw_data *spi = dev->data;
 
-	if (status == DMA_STATUS_COMPLETE ||
-		status < 0) {
+	if (status == DMA_STATUS_COMPLETE || status < 0) {
+		spi->dma_status = status;
 		k_sem_give(&spi->dma_rx_sem);
+		if (status < 0) {
+			LOG_ERR("dma rx callback failed: %d", status);
+		}
 	}
 }
 
@@ -966,10 +969,12 @@ static int transceive_read(const struct device *dev,
 		goto end_xfer;
 	}
 
-	sys_cache_data_flush_and_invd_range((void *)aligned_start, aligned_size);
+	sys_cache_data_invd_range((void *)aligned_start, aligned_size);
 
 	struct dma_config dma_cfg_rx;
 	/* Config DMA Config */
+	uint32_t burst_sz = (spi->dfs == 4) ? 8 : 1;
+	uint32_t dmardl = (spi->dfs == 4) ? 7 : 0;
 	memset(&dma_cfg_rx, 0, sizeof(dma_cfg_rx));
 	dma_cfg_rx.dma_slot          = info->dma_handshake_rx;
 	dma_cfg_rx.channel_direction = PERIPHERAL_TO_MEMORY;
@@ -977,8 +982,8 @@ static int transceive_read(const struct device *dev,
 	dma_cfg_rx.channel_priority = 0;
 	dma_cfg_rx.source_data_size  = spi->dfs;
 	dma_cfg_rx.dest_data_size    = spi->dfs;
-	dma_cfg_rx.source_burst_length = 1;
-	dma_cfg_rx.dest_burst_length  = 1;
+	dma_cfg_rx.source_burst_length = burst_sz;
+	dma_cfg_rx.dest_burst_length  = burst_sz;
 	dma_cfg_rx.block_count       = blk_cnt;
 	dma_cfg_rx.head_block        = &blk[0];
 	dma_cfg_rx.user_data         = (void *)dev;
@@ -1001,7 +1006,7 @@ static int transceive_read(const struct device *dev,
 	}
 
 	/* Open SPI DMA */
-	write_dmardlr(dev, 0);
+	write_dmardlr(dev, dmardl);
 	write_dmacr(dev, DW_SPI_RDMAE_BIT);  // Enable RX DMA
 
 	if (!spi_dw_is_slave(spi)) {
@@ -1021,6 +1026,9 @@ static int transceive_read(const struct device *dev,
 		ret = -ETIMEDOUT;
 	} else {
 		ret = 0;
+	}
+	if ((spi->dma_status < 0) && (ret == 0)) {
+		ret = spi->dma_status;
 	}
 
 	write_dmacr(dev, 0);
@@ -1057,7 +1065,11 @@ static void spi_dw_dma_tx_callback(const struct device *dev_dma,
 	struct spi_dw_data *spi = dev->data;
 
 	if (status == DMA_STATUS_COMPLETE || status < 0) {
-	k_sem_give(&spi->dma_tx_sem);
+		spi->dma_status = status;
+		k_sem_give(&spi->dma_tx_sem);
+		if (status < 0) {
+			LOG_ERR("dma tx callback failed: %d", status);
+		}
 	}
 }
 static int build_tx_lli_chain(struct spi_dw_data *spi,
@@ -1264,7 +1276,7 @@ static int transceive_write(const struct device *dev,
 			     ((spi->dfs==4) ? DW_SPI_DR_REVERSED : DW_SPI_REG_DR));
 	uintptr_t src_addr = (uintptr_t)tx_bufs->buffers[0].buf;
 	size_t len_bytes= tx_bufs->buffers[0].len;
-	sys_cache_data_flush_and_invd_range((void *)aligned_start, aligned_size);
+	sys_cache_data_flush_range((void *)aligned_start, aligned_size);
 
 	ret = build_tx_lli_chain(spi, blk, &blk_cnt, src_addr, dr_addr, len_bytes);
 	if (ret) {
@@ -1327,6 +1339,9 @@ static int transceive_write(const struct device *dev,
 	} else {
 		ret = 0;
 	}
+	if ((spi->dma_status < 0) && (ret == 0)) {
+		ret = spi->dma_status;
+	}
 
 	write_dmacr(dev, 0);
 	write_imr(dev, DW_SPI_IMR_MASK);
@@ -1342,8 +1357,6 @@ end_xfer:
 			write_ser(dev, 0);
 		}
 	}
-	/* clear cache，Prevent DMA from not reading the latest data */
-	sys_cache_data_flush_range((void *)(uintptr_t)aligned_start, aligned_size);
 	spi_context_complete(&spi->ctx, dev, 0);
 
 out:
@@ -1405,6 +1418,7 @@ void spi_dw_isr(const struct device *dev)
 		read_txflr(dev), read_rxflr(dev));
 
 	if (int_status & DW_SPI_ISR_ERRORS_MASK) {
+		DEV_ERR(dev, "Hardware Error Detected! ISR=0x%x. (Possible DMA Overflow/Underflow)", int_status);
 		error = -EIO;
 		goto out;
 	}
@@ -1445,6 +1459,49 @@ static void spi_dw_spi_ctrlr0_config(const struct device *dev,
 	write_spi_ctrlr0(dev, spi_ctrlr0);
 }
 
+static int spi_dw_transceive_chunked(const struct device *dev,
+				   const struct spi_config *config,
+				   struct spi_nor_op_info *op_info,
+				   const struct spi_buf_set *rx_bufs,
+				   uint32_t opcode,
+				   uint32_t flash_addr)
+{
+	const struct spi_dw_config *info = dev->config;
+	uint32_t dfs_bytes  = SPI_WS_TO_DFS(SPI_WORD_SIZE_GET(config->operation));
+	/* The LLI limit only applies to the maximum Block Words when DFS = 32 is enabled. */
+	size_t lli_limit_bytes = (size_t)SPI_DMA_LLI_BLOCK_WORDS * dfs_bytes;
+
+	size_t total_len = rx_bufs->buffers[0].len;
+
+	/*Only channels 0 and 1 have lli*/
+	if ((dfs_bytes == 4) && (info->dma_channel_rx >= 2) && (total_len > lli_limit_bytes)) {
+		uint32_t rem = total_len;
+		uint32_t cur_flash_addr = flash_addr;
+		uint8_t *cur_buf_ptr = (uint8_t *)rx_bufs->buffers[0].buf;
+
+		while (rem > 0) {
+			uint32_t chunk = MIN(rem, lli_limit_bytes);
+			struct spi_buf tmp_b = { .buf = cur_buf_ptr, .len = chunk };
+			struct spi_buf_set tmp_s = { .buffers = &tmp_b, .count = 1 };
+
+			/* Modify data_len to ensure NDF */
+			struct spi_nor_op_info tmp_op = *op_info;
+			tmp_op.data_len = chunk;
+
+			int ret = transceive_read(dev, config, &tmp_op, NULL, &tmp_s,
+						false, NULL, NULL, opcode, cur_flash_addr);
+			if (ret) return ret;
+
+			rem -= chunk;
+			cur_flash_addr += chunk;
+			cur_buf_ptr += chunk;
+		}
+		return 0;
+	}
+
+	return transceive_read(dev, config, op_info, NULL, rx_bufs,
+				false, NULL, NULL, opcode, flash_addr);
+}
 static int spi_dw_read_multi_addr_align(const struct device *dev,
 			   const struct spi_config *config,
 			   const struct spi_dw_config *info,
@@ -1466,17 +1523,22 @@ static int spi_dw_read_multi_addr_align(const struct device *dev,
 	const struct spi_config *config_copy_const = &config_copy;
 
 	if ((op_info->data_len > info->fifo_depth) && (op_info->data_len % DFS_4 != 0)) {
-		transceive_read(dev, config_copy_const, op_info,NULL, set_front,
-				false, NULL, NULL, op_info->opcode, dr_addr);
+
+		// transceive_read(dev, config_copy_const, op_info,NULL, set_front,
+		// 		false, NULL, NULL, op_info->opcode, dr_addr);
+		int ret = spi_dw_transceive_chunked(dev, config_copy_const, op_info, set_front,op_info->opcode, dr_addr);
+		if (ret) return ret;
 		struct spi_config config_copy_after = *config_copy_const;
 		config_copy_after.operation &= ~SPI_WORD_SIZE_MASK;
 		config_copy_after.operation |= (8U << SPI_WORD_SIZE_SHIFT);
 		const struct spi_config *config_copy_const_after = &config_copy_after;
 		return transceive_read(dev, config_copy_const_after,op_info, NULL, set_behind,
 				false, NULL, NULL, op_info->opcode, dr_addr_after);
-	}else {
-		return transceive_read(dev, config_copy_const, op_info, NULL, set_main,
-				false, NULL, NULL, op_info->opcode, dr_addr);
+	}else{
+		return spi_dw_transceive_chunked(dev, config_copy_const, op_info, set_main,
+					op_info->opcode, dr_addr);
+		// return transceive_read(dev, config_copy_const, op_info, NULL, set_main,
+		// 		false, NULL, NULL, op_info->opcode, dr_addr);
 	}
 
 }
@@ -1524,7 +1586,8 @@ static int spi_dw_read_split_4align(const struct device *dev,
 	if (mid > 0) {
 		struct spi_buf b = { .buf = dst, .len = mid };
 		struct spi_buf_set r = { .buffers = &b, .count = 1 };
-		ret = transceive_read(dev, &config_dfs4, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+		ret = spi_dw_transceive_chunked(dev, &config_dfs4, op_info, &r, opcode, flash_addr);
+		// ret = transceive_read(dev, &config_dfs4, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
 
 		if (ret) return ret;
 
@@ -1931,15 +1994,13 @@ static int spi_dw_nor_read_init(const struct device *dev,
 						const struct spi_config *config,
 						struct spi_nor_op_info *op_info)
 {
-	int ret = 0;
-
 	LOG_DBG("mode %08x, cmd: %x, dummy: %d, frequency: %d",
 		op_info->mode, op_info->opcode, op_info->dummy_cycle,
 		config->frequency);
 
-	ret = spi_timing_calibration(dev, config, op_info);
+	spi_timing_calibration(dev, config, op_info);
 
-	return ret;
+	return 0;
 }
 
 static int spi_dw_nor_write_init(const struct device *dev,

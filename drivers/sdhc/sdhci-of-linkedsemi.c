@@ -12,7 +12,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/cache.h>
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/bitarray.h>
+#include <errno.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
 #endif
@@ -23,18 +25,45 @@
     #include <zephyr/drivers/clock_control.h>
     #include <soc_clock.h>
 #endif
+#include "soc.h"
 #include "platform.h"
 #include "sdhci.h"
 #include "reg_sysc_app_awo.h"
 #include "reg_sysc_app_cpu.h"
 
+/* HAL eMMC function declarations for coredump backend - avoid include due to enum conflicts */
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+extern void emmc_protection_init(void);
+#endif
+extern uint32_t ls_mmc_card_init(uint32_t mapbase);
+extern void ls_sdhci_reset(uint32_t mapbase, uint8_t mask);
+extern uint32_t ls_sdhci_request(uint32_t mapbase, struct sdhc_command *cmd, struct sdhc_data *data);
+
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
-#define LINKEDSEMI_SDHCI_RESET_TIMEOUT_VALUE (1000000U)
-
-#define LINKEDSEMI_SDHCI_DEFAULT_TIMEOUT (5000U)
-
 #define LINKEDSEMI_SDHCI_TUNING_DELAY_MAX (SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS)
+
+/* Time-based timeout helper for bare-metal context */
+#define TIMEOUT_MS_TO_CYCLES(ms) ((ms) * (uint32_t)(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000))
+
+/**
+ * @brief Check if time-based timeout has expired
+ *
+ * @param start Start cycle count from k_cycle_get_32()
+ * @param timeout_ms Timeout in milliseconds
+ * @return true if timeout expired
+ */
+static inline bool timeout_expired(uint32_t start, uint32_t timeout_ms)
+{
+    uint32_t elapsed = (k_cycle_get_32() - start) & UINT32_MAX;
+    return elapsed >= TIMEOUT_MS_TO_CYCLES(timeout_ms);
+}
+
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+/* Flag to indicate if SDHCI is currently busy with a transfer */
+/* Initialized to 1 to ensure linkedsemi_sdhci_request completes at least once before card is considered ready */
+static atomic_t g_sdhci_busy = 1;
+#endif
 
 struct linkedsemi_sdhci_config {
     uint32_t response_timeout;
@@ -77,22 +106,63 @@ static void linkedsemi_sdhci_isr(const void *arg)
         if (host->error_code) {
             if (!host->execute_tuning) {
                 uint32_t cmd_r = sdhci_readw(host, SDHCI_COMMAND);
-                LOG_ERR("error: %#4.4x  CMD_R: %#x", host->error_code, cmd_r);
+                uint32_t arg_r = sdhci_readl(host, SDHCI_ARGUMENT);
+                DEV_INF(dev, "isr_dbg: status: %#4.4x  CMD_R: %#x  ARG_R: %#x", status, cmd_r, arg_r);
             }
         }
         host->irq_status |= status;
         if (status & SDHCI_INT_ERROR) {
-            k_sem_give(&host->transfer_sem);
+            k_sem_give(&host->cmd_sem);
+            k_sem_give(&host->data_sem);
         }
+
+        /* cmd:begin */
         if (status & SDHCI_INT_RESPONSE) {
-            k_sem_give(&host->transfer_sem);
+            if (!host->execute_tuning) {
+                sdhci_receive_command_response(host, host->sdhci_command);
+            }
+            k_sem_give(&host->cmd_sem);
         }
-        if (status & (SDHCI_INT_DATA_END
-                    | SDHCI_INT_DMA_END
-                    | SDHCI_INT_SPACE_AVAIL
-                    | SDHCI_INT_DATA_AVAIL)) {
-            k_sem_give(&host->transfer_sem);
+        /* cmd:end */
+
+        if (host->sdhci_data) {
+            /* data:begin */
+            if (host->use_dma) {
+                /* dma */
+                if (status & SDHCI_INT_DMA_END) {
+                    sdhci_writel(host, SDHCI_INT_DMA_END, SDHCI_INT_STATUS);
+                    sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
+                }
+                if (status & SDHCI_INT_DATA_END) {
+                    if (host->sdhci_data->rx_data) {
+                        sys_cache_data_invd_range((void *)host->sdhci_data->rx_data, host->sdhci_data->block_size * host->sdhci_data->block_count);
+                    }
+                    k_sem_give(&host->data_sem);
+                }
+            } else {
+                /* polling */
+                if (status & (SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL)) {
+                    if ((sdhci_readl(host, SDHCI_PRESENT_STATE) & (SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE))) {
+                        if (host->sdhci_data->rx_data) {
+                            uint16_t block_size = host->sdhci_data->block_size >> 2;
+                            for (int i = 0; i < block_size; i++) {
+                                host->sdhci_data->rx_data[i + host->block_curr * block_size] = sdhci_readl(host, SDHCI_BUFFER);
+                            }
+                        } else {
+                            uint16_t block_size = host->sdhci_data->block_size >> 2;
+                            for (int i = 0; i < block_size; i++) {
+                                sdhci_writel(host, host->sdhci_data->tx_data[i + host->block_curr * block_size], SDHCI_BUFFER);
+                            }
+                        }
+                        host->block_curr++;
+                        if (host->block_curr >= host->sdhci_data->block_count) {
+                            k_sem_give(&host->data_sem);
+                        }
+                    }
+                }
+            }
         }
+        /* data:end */
     }
     // if (status & SDHCI_INT_CARD_INT)
     //     sdio_irq_wakeup(host->host);
@@ -118,7 +188,7 @@ static int linkedsemi_sdhci_get_host_props(const struct device *dev, struct sdhc
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (is_app_cpu_running()) {
-        LOG_INF("app_cpu_running");
+        DEV_INF(dev, "app_cpu_running");
         return -EBUSY;
     }
 #endif
@@ -148,12 +218,12 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (is_app_cpu_running()) {
-        LOG_INF("app_cpu_running");
+        DEV_INF(dev, "app_cpu_running");
         return -EBUSY;
     }
 #endif
 
-    LOG_DBG("%s: sdhci_clk=%d, bus_width:%d", __func__, ios->clock, ios->bus_width);
+    DEV_DBG(dev, "%s: sdhci_clk=%d, bus_width:%d", __func__, ios->clock, ios->bus_width);
 
     if (ios->clock != 0
         && (ios->clock <= dev_config->max_bus_freq)
@@ -240,7 +310,7 @@ static int linkedsemi_sdhci_get_card_present(const struct device *dev)
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (is_app_cpu_running()) {
-        LOG_INF("app_cpu_running");
+        DEV_INF(dev, "app_cpu_running");
         return -EBUSY;
     }
 #endif
@@ -255,97 +325,12 @@ static int linkedsemi_sdhci_card_busy(const struct device *dev)
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (is_app_cpu_running()) {
-        LOG_INF("app_cpu_running");
+        DEV_INF(dev, "app_cpu_running");
         return -EBUSY;
     }
 #endif
 
     return sdhci_card_busy(host);
-}
-
-static int32_t linkedsemi_sdhci_wait_command_done(struct sdhci_host *host, struct sdhci_command *command, bool execute_tuning)
-{
-    __ASSERT_NO_MSG(NULL != command);
-
-    /* tuning cmd do not need to wait command done */
-    if (execute_tuning)
-        return 0;
-    /* Wait command complete or SDHC encounters error. */
-    k_sem_take(&host->transfer_sem, K_FOREVER);
-    if (host->error_code & SDHCI_INT_ERROR) {
-        if (!host->execute_tuning) {
-            LOG_ERR("%s: Error detected in status(0x%X)!", __func__, host->error_code);
-        }
-        host->error_code = 0;
-        return -1;
-    }
-
-    return sdhci_receive_command_response(host, command);
-}
-
-static int32_t linkedsemi_sdhci_transfer_data_blocking(struct sdhci_host *host, struct sdhci_data *data, bool use_dma)
-{
-    if (IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE) && use_dma) {
-        uint32_t stat;
-
-        while (1) {
-            k_sem_take(&host->transfer_sem, K_FOREVER);
-            stat = host->irq_status;
-            if (stat & SDHCI_INT_ERROR) {
-                if (!host->execute_tuning) {
-                    LOG_ERR("%s: Error detected in status(0x%x)!", __func__, host->error_code);
-                }
-                sdhci_reg_display(host);
-                return -1;
-            }
-            if (stat & SDHCI_INT_DMA_END) {
-                sdhci_writel(host, SDHCI_INT_DMA_END, SDHCI_INT_STATUS);
-                sdhci_writel(host, sdhci_readl(host, SDHCI_DMA_ADDRESS), SDHCI_DMA_ADDRESS);
-            }
-            if (stat & SDHCI_INT_DATA_END) {
-                sys_cache_data_invd_range((void *)data->rx_data, data->block_size * data->block_count);
-                return 0;
-            }
-        }
-    } else {
-        uint32_t stat, rdy, mask, block;
-
-        block = 0;
-        rdy = SDHCI_INT_SPACE_AVAIL | SDHCI_INT_DATA_AVAIL;
-        mask = SDHCI_DATA_AVAILABLE | SDHCI_SPACE_AVAILABLE;
-
-        while (1) {
-            k_sem_take(&host->transfer_sem, K_FOREVER);
-            stat = host->irq_status;
-            if (stat & SDHCI_INT_ERROR) {
-                if (!host->execute_tuning) {
-                    LOG_ERR("%s: Error detected in status(0x%X)!", __func__, stat);
-                }
-                sdhci_reg_display(host);
-                return -1;
-            }
-            if (stat & rdy) {
-                if (!(sdhci_readl(host, SDHCI_PRESENT_STATE) & mask)) {
-                    continue;
-                }
-                if (data->rx_data) {
-                    uint16_t block_size = data->block_size >> 2;
-                    for (int i = 0; i < block_size; i++) {
-                        data->rx_data[i + block * block_size] = sdhci_readl(host, SDHCI_BUFFER);
-                    }
-                } else {
-                    uint16_t block_size = data->block_size >> 2;
-                    for (int i = 0; i < block_size; i++) {
-                        sdhci_writel(host, data->tx_data[i + block * block_size], SDHCI_BUFFER);
-                    }
-                }
-                block++;
-                if (block >= data->block_count) {
-                    return 0;
-                }
-            }
-        }
-    }
 }
 
 #if defined(CONFIG_SOC_LSQSH)
@@ -373,12 +358,14 @@ static bool lsqsh_workaround_psram_use_dma(struct sdhci_host *host)
 static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
 {
     __ASSERT_NO_MSG(host);
+    const struct device *dev = host->dev;
     struct sdhci_command *sdhci_command = host->sdhci_command;
     struct sdhci_data *sdhci_data = host->sdhci_data;
-    bool use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
+    host->use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
     int ret = 0;
+
 #if defined(CONFIG_SOC_LSQSH)
-    use_dma = lsqsh_workaround_psram_use_dma(host);
+    host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
     /* Wait until command/data bus out of busy status. */
     while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
@@ -388,41 +375,56 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
 
     ret = sdhci_set_transfer_config(host, sdhci_command, sdhci_data);
-    if (ret != 0) {
-        return ret;
+    if (ret) {
+        goto err;
     }
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) | SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_SIGNAL_ENABLE);
 
-    host->transfer_status = 0U;
-    k_sem_reset(&host->transfer_sem);
-    sdhci_send_command(host, sdhci_command, use_dma);
+    host->transfer_status = 0;
+    host->block_curr = 0;
+    host->error_code = 0;
+    k_sem_reset(&host->cmd_sem);
+    k_sem_reset(&host->data_sem);
+    sdhci_send_command(host, sdhci_command, host->use_dma);
     /* wait command done */
-    ret = linkedsemi_sdhci_wait_command_done(host, sdhci_command, ((sdhci_data == NULL) ? false : sdhci_data->execute_tuning));
-    /* transfer data */
-    if ((sdhci_data != NULL) && (ret == 0) && (!(host->irq_status & SDHCI_INT_ERROR))) {
-        ret = linkedsemi_sdhci_transfer_data_blocking(host, sdhci_data, use_dma);
+    if (!host->execute_tuning) {
+        ret = k_sem_take(&host->cmd_sem, K_MSEC(sdhci_command->timeout_ms));
+        if (ret) {
+            DEV_ERR(dev, "cmd transfer fail: %d", ret);
+            goto err;
+        }
+    }
+    /* wait data done */
+    if ((sdhci_data != NULL) && (!(host->irq_status & SDHCI_INT_ERROR))) {
+        ret = k_sem_take(&host->data_sem, K_MSEC(sdhci_data->timeout_ms));
+        if (ret) {
+            DEV_ERR(dev, "data transfer fail: %d", ret);
+            goto err;
+        }
     }
     while ((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR)));
     while ((sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR))));
+err:
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
     sdhci_reset(host, SDHCI_RESET_CMD);
     sdhci_reset(host, SDHCI_RESET_DATA);
+
     return ret;
 }
 
 static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_command *cmd, struct sdhc_data *data)
 {
     int ret;
-    int busy_timeout = LINKEDSEMI_SDHCI_DEFAULT_TIMEOUT;
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
     struct sdhci_data sdhci_data = { 0 };
     struct sdhci_command sdhci_command = { 0 };
+    unsigned int retries = cmd->retries;
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (is_app_cpu_running()) {
-        LOG_INF("app_cpu_running");
+        DEV_INF(dev, "app_cpu_running");
         return -EBUSY;
     }
 #endif
@@ -430,10 +432,15 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
     ret = k_mutex_lock(&dev_data->access_mutex, K_FOREVER);
     if (ret) {
         if (!host->execute_tuning) {
-            LOG_ERR("Could not access card");
+            DEV_ERR(dev, "Could not access card");
         }
         return -EBUSY;
     }
+
+    /* Mark SDHCI as busy */
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+    atomic_set(&g_sdhci_busy, 1);
+#endif
 
     host->irq_status = 0;
     sdhci_command.index = cmd->opcode;
@@ -476,7 +483,7 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
             sdhci_data.rx_data = data->data;
             break;
         default:
-            LOG_ERR("invalid opcode: %#x", cmd->opcode);
+            DEV_ERR(dev, "invalid opcode: %#x", cmd->opcode);
             return -ENOTSUP;
         }
 
@@ -491,31 +498,64 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         // ret = linkedsemi_sdhci_transfer(dev, cmd, data);
         ret = linkedsemi_sdhci_transfer_blocking(host);
         if (data && ret) {
-            /* Send CMD12 to stop transmission after error */
-            while (busy_timeout > 0) {
-                if (!sdhci_card_busy(host)) {
-                    break;
-                }
-                /* Wait 125us before polling again */
-                k_busy_wait(125);
-                busy_timeout -= 125;
-            }
-            if (busy_timeout <= 0) {
-                LOG_DBG("Card did not idle after CMD12");
-                k_mutex_unlock(&dev_data->access_mutex);
-                return -ETIMEDOUT;
-            }
+            DEV_ERR(dev, "transfer failed, ret=%d, retries=%d", ret, retries);
         } else {
             cmd->response[0] = host->sdhci_command->response[0];
             cmd->response[1] = host->sdhci_command->response[1];
             cmd->response[2] = host->sdhci_command->response[2];
             cmd->response[3] = host->sdhci_command->response[3];
         }
-    } while (ret != 0 && (cmd->retries-- > 0));
+    } while (ret != 0 && (retries-- > 0));
+
+    /* Mark SDHCI as not busy */
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+    atomic_set(&g_sdhci_busy, 0);
+#endif
+
     k_mutex_unlock(&dev_data->access_mutex);
 
-    return 0;
+    return ret;
 }
+
+#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
+extern int emmc_get_coredump_info(uint32_t *start_sector, uint32_t *sector_count);
+
+/**
+ * @brief Get eMMC coredump region information
+ *
+ * This function provides access to the coredump region configuration
+ * from device tree via emmc_get_coredump_info().
+ *
+ * @param dev SDHC device (unused, kept for API compatibility)
+ * @param start_block Output: pointer to store coredump start block
+ * @param block_count Output: pointer to store reserved block count
+ * @return 0 if successful, -ENODEV if coredump region not configured
+ */
+int linkedsemi_sdhci_get_coredump_info(const struct device *dev, uint32_t *start_block, uint32_t *block_count)
+{
+    ARG_UNUSED(dev);
+
+    return emmc_get_coredump_info(start_block, block_count);
+}
+
+/**
+ * @brief Check if eMMC card is ready for bare-metal operations
+ *
+ * @param dev SDHC device
+ * @return true if card is ready, false otherwise
+ */
+bool linkedsemi_sdhci_card_ready(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+
+    /* Check if SDHCI is currently busy with a transfer */
+    if (atomic_get(&g_sdhci_busy)) {
+        return false;
+    }
+
+    return true;
+}
+#endif
 
 static const uint8_t tuning_blk_pattern_4bit[] = {
     0xff, 0x0f, 0xff, 0x00, 0xff, 0xcc, 0xc3, 0xcc,
@@ -547,20 +587,20 @@ static const uint8_t tuning_blk_pattern_8bit[] = {
     0xff, 0x77, 0x77, 0xff, 0x77, 0xbb, 0xdd, 0xee,
 };
 
-static int dll_lock()
+static int dll_lock(const struct device *dev)
 {
     REG_FIELD_WR(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R, 0);
     for (uint8_t phase_detect_sel = 1; phase_detect_sel <= 0x7; phase_detect_sel++) {
-        LOG_DBG("phase_detect_sel: %x", phase_detect_sel);
+        DEV_DBG(dev, "phase_detect_sel: %x", phase_detect_sel);
         REG_FIELD_WR(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_PHASE_DETECT_SEL_N, phase_detect_sel);
         for (uint16_t num = 0; num <= 0x7f; num++) {
             k_msleep(10);
             bool lock = READ_BIT(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_RD_LOCK_MASK) > 0;
             if (lock) {
-                LOG_DBG("lock: EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
+                DEV_DBG(dev, "lock: EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
                 return 0;
             } else {
-                LOG_DBG("EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
+                DEV_DBG(dev, "EMMC1_DLL_CTRL: %x", SYSC_APP_CPU->EMMC1_DLL_CTRL);
                 REG_FIELD_WR(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R, num);
             }
         }
@@ -634,7 +674,7 @@ static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev
         return -ENOTSUP;
     }
 
-    LOG_DBG("%s: tuning %d(HZ) begin", __func__, host->current_speed);
+    DEV_DBG(dev, "%s: tuning %d(HZ) begin", __func__, host->current_speed);
     host->execute_tuning = true;
 
     // tx inv
@@ -665,7 +705,7 @@ static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev
 
         ret = sdhc_request(dev, &cmd, &data);
         if (ret) {
-            LOG_ERR("CMD19 (MMC_SEND_BUS_TEST) failed: %d", ret);
+            DEV_ERR(dev, "CMD19 (MMC_SEND_BUS_TEST) failed: %d", ret);
             host->execute_tuning = false;
             return ret;
         }
@@ -678,7 +718,7 @@ static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev
 
         ret = sdhc_request(dev, &cmd, &data);
         if (ret) {
-            LOG_ERR("CMD14 (MMC_CHECK_BUS_TEST) failed: %d", ret);
+            DEV_ERR(dev, "CMD14 (MMC_CHECK_BUS_TEST) failed: %d", ret);
             host->execute_tuning = false;
             return ret;
         }
@@ -687,7 +727,7 @@ static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev
         bool delay_good = true;
         for (int i = 0; i < block_size >> 2; i++) {
             if ((tuning_data_rd[i] ^ tuning_data_wr[i]) != 0xff) {
-                LOG_DBG("bad delay: %x", delay);
+                DEV_DBG(dev, "bad delay: %x", delay);
                 delay_good = false;
                 break;
             }
@@ -698,7 +738,7 @@ static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev
                 break;
             }
             sys_bitarray_set_bit(&delay_bitmap, delay);
-            LOG_DBG("ok delay: %x", delay);
+            DEV_DBG(dev, "ok delay: %x", delay);
         }
     }
 
@@ -707,20 +747,20 @@ static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev
         int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
         CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
         if (max_length > 0) {
-            LOG_INF("%s: tuning len: %d start bit: %zu", __func__, max_length, max_consecutive_start);
-            LOG_INF("%s: tuning delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
-            LOG_INF("%s: tuning %d(HZ) success", __func__, host->current_speed);
+            DEV_INF(dev, "%s: tuning len: %d start bit: %zu", __func__, max_length, max_consecutive_start);
+            DEV_INF(dev, "%s: tuning delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
+            DEV_INF(dev, "%s: tuning %d(HZ) success", __func__, host->current_speed);
             REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, max_consecutive_start + (max_length >> 1));
             ret = 0;
         } else {
-            LOG_ERR("%s: tuning err: %d", __func__, max_length);
-            LOG_ERR("%s: tuning %d(HZ) fail", __func__, host->current_speed);
+            DEV_ERR(dev, "%s: tuning err: %d", __func__, max_length);
+            DEV_ERR(dev, "%s: tuning %d(HZ) fail", __func__, host->current_speed);
             REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, 0);
             ret = -EIO;
         }
         SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
     } else {
-        LOG_INF("%s: tuning %d(HZ) is needless", __func__, host->current_speed);
+        DEV_INF(dev, "%s: tuning %d(HZ) is needless", __func__, host->current_speed);
     }
 
     host->execute_tuning = false;
@@ -760,11 +800,11 @@ static int linkedsemi_sdhci_execute_hs200_tuning(const struct device *dev)
     data.data = tuning_data;
     data.timeout_ms = CONFIG_SD_DATA_TIMEOUT;
 
-    if(dll_lock()) {
+    if(dll_lock(dev)) {
         return -EIO;
     }
-    LOG_DBG("%s: tuning EMMC1_DLL_CTRL: %x", __func__, SYSC_APP_CPU->EMMC1_DLL_CTRL);
-    LOG_DBG("%s: tuning %d(HZ) begin", __func__, host->current_speed);
+    DEV_DBG(dev, "%s: tuning EMMC1_DLL_CTRL: %x", __func__, SYSC_APP_CPU->EMMC1_DLL_CTRL);
+    DEV_DBG(dev, "%s: tuning %d(HZ) begin", __func__, host->current_speed);
     host->execute_tuning = true;
 
     if (SDHC_TIMING_HS200 == host->timing) {
@@ -795,15 +835,15 @@ static int linkedsemi_sdhci_execute_hs200_tuning(const struct device *dev)
         sys_cache_data_flush_range(tuning_data, sizeof(tuning_data));
         ret = sdhc_request(dev, &cmd, &data);
         if (ret) {
-            LOG_ERR("CMD21 (MMC_SEND_TUNING_BLOCK) failed: %d", ret);
+            DEV_ERR(dev, "CMD21 (MMC_SEND_TUNING_BLOCK) failed: %d", ret);
             host->execute_tuning = false;
             return ret;
         }
         if (memcmp(tuning_data, tuning_data_cmp, block_size)) {
-            LOG_DBG("bad delay: %x", delay);
+            DEV_DBG(dev, "bad delay: %x", delay);
         } else {
             sys_bitarray_set_bit(&delay_bitmap, delay);
-            LOG_DBG("ok delay: %x", delay);
+            DEV_DBG(dev, "ok delay: %x", delay);
         }
     }
 
@@ -811,14 +851,14 @@ static int linkedsemi_sdhci_execute_hs200_tuning(const struct device *dev)
     int max_length = find_max_consecutive_ones_region(&delay_bitmap, &max_consecutive_start);
     CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_VAL_ACTIVE_MASK);
     if (max_length > 0) {
-        LOG_INF("%s: tuning len: %d start bit: %zu", __func__, max_length, max_consecutive_start);
-        LOG_INF("%s: tuning delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
-        LOG_INF("%s: tuning %d(HZ) success", __func__, host->current_speed);
+        DEV_INF(dev, "%s: tuning len: %d start bit: %zu", __func__, max_length, max_consecutive_start);
+        DEV_INF(dev, "%s: tuning delay: %#x", __func__, max_consecutive_start + (max_length >> 1));
+        DEV_INF(dev, "%s: tuning %d(HZ) success", __func__, host->current_speed);
         REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, max_consecutive_start + (max_length >> 1));
         ret = 0;
     } else {
-        LOG_ERR("%s: tuning err: %d", __func__, max_length);
-        LOG_ERR("%s: tuning %d(HZ) fail", __func__, host->current_speed);
+        DEV_ERR(dev, "%s: tuning err: %d", __func__, max_length);
+        DEV_ERR(dev, "%s: tuning %d(HZ) fail", __func__, host->current_speed);
         REG_FIELD_WR(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP, 0);
         ret = -EIO;
     }
@@ -855,7 +895,7 @@ static int linkedsemi_sdhci_init(const struct device *dev)
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (is_app_cpu_running()) {
-        LOG_INF("app_cpu_running");
+        DEV_INF(dev, "app_cpu_running");
         return -EBUSY;
     }
 #endif
@@ -863,7 +903,7 @@ static int linkedsemi_sdhci_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_ERR("SDHC pinctrl setup failed (%d)", ret);
+        DEV_ERR(dev, "SDHC pinctrl setup failed (%d)", ret);
         return ret;
     }
 #endif
@@ -872,7 +912,7 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
         if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
+            DEV_DBG(dev, "%s device not ready", clk_dev->name);
             return -ENODEV;
         }
         clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
@@ -882,13 +922,13 @@ static int linkedsemi_sdhci_init(const struct device *dev)
 #if defined(CONFIG_RESET)
     if (dev_config->reset.dev != NULL) {
         if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
+            DEV_ERR(dev, "Reset controller device is not ready");
             return -ENODEV;
         }
 
         ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
         if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
+            DEV_ERR(dev, "toggle reset line failed");
             return ret;
         }
     }
@@ -901,6 +941,7 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     }
 #endif
 
+    host->dev = dev;
     host->index = 0;
     host->have_phy = false;
     host->mshc_ctrl_r = 0;
@@ -910,9 +951,13 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     sdhci_init(host);
 
     k_mutex_init(&dev_data->access_mutex);
-    k_sem_init(&host->transfer_sem, 0, 2);
+    k_sem_init(&host->cmd_sem, 0, 1);
+    k_sem_init(&host->data_sem, 0, 1);
 
     dev_config->irq_config_func(dev);
+
+    /* Initialize eMMC protection if configured */
+    IF_ENABLED(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC, (emmc_protection_init();));
 
     return 0;
 }

@@ -1,0 +1,14 @@
+
+description: Linkedsemi eSPI BMC slave
+
+compatible: "linkedsemi,ls-espi-bmc"
+
+
+properties:
+
+  sysevent-base:
+    type: int
+    required: true
+
+  mbox:
+    type: phandle

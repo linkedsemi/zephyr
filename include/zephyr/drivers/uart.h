@@ -26,9 +26,6 @@
 #include <stddef.h>
 
 #include <zephyr/device.h>
-#if defined(CONFIG_UART_SHARE_REGISTER)
-#include <zephyr/sys_clock.h>
-#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -366,15 +363,6 @@ __subsystem struct uart_driver_api {
 
 #endif
 
-#if defined(CONFIG_UART_SHARE_REGISTER)
-	int (*init)(const struct device *dev);
-	int (*reinit)(const struct device *dev);
-	int (*deinit)(const struct device *dev);
-
-	int (*sem_take)(const struct device *dev, k_timeout_t timeout);
-	int (*sem_give)(const struct device *dev);
-#endif
-
 	/** Console I/O function */
 	int (*poll_in)(const struct device *dev, unsigned char *p_char);
 	void (*poll_out)(const struct device *dev, unsigned char out_char);
@@ -491,79 +479,6 @@ static inline int z_impl_uart_err_check(const struct device *dev)
 
 	return api->err_check(dev);
 }
-
-#if defined(CONFIG_UART_SHARE_REGISTER)
-
-__syscall int uart_init(const struct device *dev);
-
-static inline int z_impl_uart_init(const struct device *dev)
-{
-	const struct uart_driver_api *api =
-		(const struct uart_driver_api *)dev->api;
-
-	if (api->init == NULL) {
-		return -ENOSYS;
-	}
-
-	return api->init(dev);
-}
-
-__syscall int uart_reinit(const struct device *dev);
-
-static inline int z_impl_uart_reinit(const struct device *dev)
-{
-	const struct uart_driver_api *api =
-		(const struct uart_driver_api *)dev->api;
-
-	if (api->reinit == NULL) {
-		return -ENOSYS;
-	}
-
-	return api->reinit(dev);
-}
-
-__syscall int uart_deinit(const struct device *dev);
-
-static inline int z_impl_uart_deinit(const struct device *dev)
-{
-	const struct uart_driver_api *api =
-		(const struct uart_driver_api *)dev->api;
-
-	if (api->deinit == NULL) {
-		return -ENOSYS;
-	}
-
-	return api->deinit(dev);
-}
-
-__syscall int uart_sem_take(const struct device *dev, k_timeout_t timeout);
-
-static inline int z_impl_uart_sem_take(const struct device *dev, k_timeout_t timeout)
-{
-	const struct uart_driver_api *api =
-		(const struct uart_driver_api *)dev->api;
-
-	if (api->sem_take == NULL) {
-		return -ENOSYS;
-	}
-
-	return api->sem_take(dev, timeout);
-}
-
-__syscall int uart_sem_give(const struct device *dev);
-
-static inline int z_impl_uart_sem_give(const struct device *dev)
-{
-	const struct uart_driver_api *api =
-		(const struct uart_driver_api *)dev->api;
-
-	if (api->sem_give == NULL) {
-		return -ENOSYS;
-	}
-
-	return api->sem_give(dev);
-}
-#endif /* CONFIG_UART_SHARE_REGISTER */
 
 /**
  * @defgroup uart_polling Polling UART API
