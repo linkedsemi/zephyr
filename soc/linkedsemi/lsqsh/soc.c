@@ -202,47 +202,47 @@ __maybe_unused static void cpu2_cache_region_init(void)
     }
 }
 
-__maybe_unused static void smp_mode_cache_region_init(void)
+__maybe_unused void smp_mode_cache_region_init(void)
 {
-    __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
-    __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
-    __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
-    __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
-    __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
-    __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
-    __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
-    __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
-    __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
-    uint8_t idx = 0;
+//     __maybe_unused const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+//     __maybe_unused const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+//     __maybe_unused const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+//     __maybe_unused const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+//     __maybe_unused const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+//     __maybe_unused const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+//     __maybe_unused const uint32_t ___SHMEM_start = (uint32_t)__SHMEM_start;
+//     __maybe_unused const uint32_t ___SHMEM_end = (uint32_t)__SHMEM_end;
+//     __maybe_unused const uint32_t ___SHMEM_size = (uint32_t)__SHMEM_size;
+//     uint8_t idx = 0;
 
-#if defined(CONFIG_XIP)
-    if (((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
-        || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
-        csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
-        csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
-    }
-#endif
+// #if defined(CONFIG_XIP)
+//     if (((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+//         || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE)))) {
+//         csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
+//         csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
+//     }
+// #endif
 
-    csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
+//     csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
 
-#if defined(CONFIG_NOCACHE_MEMORY)
-    if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
-        __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_PMP_GRANULARITY));
-        if (__image_ram_start != __nocache_ram_start) {
-            csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
-        }
-        csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
-    }
-#endif
+// #if defined(CONFIG_NOCACHE_MEMORY)
+//     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
+//         __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_PMP_GRANULARITY));
+//         if (__image_ram_start != __nocache_ram_start) {
+//             csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+//         }
+//         csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
+//     }
+// #endif
 
-    csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
-#if DT_NODE_EXISTS(DT_NODELABEL(psram))
-    csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
-    csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
-#endif
-    if (idx < 8) {
-        csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
-    }
+//     csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+// #if DT_NODE_EXISTS(DT_NODELABEL(psram))
+//     csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
+//     csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+// #endif
+//     if (idx < 8) {
+//         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+//     }
 }
 
 extern void SystemInit();
@@ -615,7 +615,7 @@ void soc_early_init_hook(void)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     if (!is_app_cpu_running()) {
-#if defined(CONFIG_MBOX)
+#if defined(CONFIG_MBOX)&&(!defined(CONFIG_SMP))
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox_memory)), 0, DT_REG_SIZE(DT_NODELABEL(mbox_memory)));
 #endif
 #if defined(CONFIG_PSRAM)
@@ -775,18 +775,13 @@ __weak void soc_late_init_hook(void)
         SET_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], BIT(FLASH_XIP_MODE_RESET_BIT));
     }
 
-#if defined(CONFIG_SMP)
-    pinmux_hal_flash_quad_init();
-#else
     if (is_app_cpu_running() && is_app_cpu_xip_in_sec_flash()) {
         flash_xip_prepare(flash_dev);
         return;
     } else {
         flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_INACTIVE,0,NULL);
     }
-#endif
 
-#if !defined(CONFIG_SMP)
 #if defined(CONFIG_BOOT_CPU2)
     if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
         || ((CONFIG_CPU2_BOOT_ADDR >= CACHE2_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE2_ADDR + QSPI_CACHE_SIZE)))
@@ -805,7 +800,6 @@ __weak void soc_late_init_hook(void)
     ls_otbn_delegation_server_chanels_init();
 #endif
 
-#endif //!defined(CONFIG_SMP)
 }
 #else
 __weak void soc_late_init_hook(void)
@@ -816,7 +810,6 @@ __weak void soc_late_init_hook(void)
 }
 #endif /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
 #endif /*!defined(CONFIG_SMP)*/
-#endif
 
 #if defined(CONFIG_SPI_FILTER_LINKEDSEMI)
 

@@ -117,7 +117,7 @@ bool get_xip_lock_owner(void)
 
 void soc_late_init_hook(void)
 {
-    pinmux_hal_flash_quad_init();
+    // pinmux_hal_flash_quad_init();
 }
 
 void lsqsh_ipi_intr_clr(uint32_t cpu_id)
@@ -155,7 +155,6 @@ void lsqsh_ipi_intr_set(uint32_t cpu_id)
 
 void cpu_early_common_config(void);
 void cpu_sleep_mode_config(uint8_t deep);
-__no_optimization void smp_mode_cache_region_init(void);
 
 void lsqsh_xip_lcok_broadcast_ipi(void)
 {
@@ -192,7 +191,7 @@ void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
     IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
 	irq_disable(SYSC_APP_CPU_IRQN);
 }
-
+extern void smp_mode_cache_region_init(void);
 void lsqsh_secondary_cpu_init(void)
 {
     if(get_cur_cpu_id() == LSQSH_CPU1)
