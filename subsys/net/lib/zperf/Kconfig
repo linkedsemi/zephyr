@@ -43,4 +43,8 @@ config NET_ZPERF_MAX_SESSIONS
 	help
 	  Upper size limit for connections handled by zperf.
 
+config NET_ZPERF_TCP_RECEIVER_BUF_SIZE
+	int "tcp receiver buf size"
+	default 1500
+
 endif
