@@ -1,16 +1,15 @@
-#include <zephyr/cache.h>
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
 #include "soc_reset.h"
-#include "field_manipulate.h"
 #include "ls_msp_iwdg.h"
-#include "reg_sec_pmu_rg.h"
-#include "reg_sysc_sec_cpu.h"
-#include "reg_sysc_app_cpu.h"
-#include "reg_sysc_sec_per.h"
-#include "reg_sysc_app_per.h"
+#include "platform.h"
+LOG_MODULE_REGISTER(soc_reset_reason, CONFIG_SOC_LOG_LEVEL);
 
 #define MAGIC_VALUE 0xdeadbeef
 
-static enum reset_reason reset_reason = NO_RESET_REASON;
+static volatile uint32_t reset_reason;
+static volatile uint32_t reset_reason_app __attribute__((section("RESET_REASON.app")));
+
 #if defined(CONFIG_WDT_RESET_REASON_DETAIL)
 struct wdt_reset_en wdt_reset_en __noinit;
 #endif
@@ -44,15 +43,36 @@ void reset_reason_magic_set()
     magic = MAGIC_VALUE;
 }
 
-enum reset_reason reset_reason_get(void)
+uint32_t reset_reason_app_get(void)
+{
+    return reset_reason_app;
+}
+
+void reset_reason_app_set(uint32_t reason)
+{
+    reset_reason_app = reason;
+}
+
+void reset_reason_app_clean()
+{
+    reset_reason_app_set(NO_RESET_REASON);
+}
+
+uint32_t reset_reason_get(void)
 {
     return reset_reason;
 }
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
+static inline int has_at_least_two_bits(uint32_t x) {
+    return x && (x & (x - 1));
+}
+#endif
+
 void reset_reason_init(void)
 {
-    enum reset_reason ret = NO_RESET_REASON;
-    uint32_t reset_src = 0;
+    uint32_t reset_src;
+    reset_reason = NO_RESET_REASON;
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
     if (SEC_PMU->PMU_STATUS & SEC_PMU_RG_RST_SRC_MASK) {
@@ -62,47 +82,52 @@ void reset_reason_init(void)
         app_wdt_reset_reason_clean();
         reset_reasonn_magic_clean();
         if (SEC_PMU_RG_RST_SRC_MASK == reset_src) {
-            ret = PWR_FULL_RESET;
-        } else if (SEC_PMU_RG_RST_SRC_CPU_MASK & reset_src) {
-            ret = CPU_FULL_RESET;
-        } else if (SEC_PMU_RG_RST_SRC_SOFTWARE_MASK & reset_src) {
-            ret = SOFT_FULL_RESET;
-        } else if (SEC_PMU_RG_RST_SRC_IWDT_MASK & reset_src) {
-            ret = SYS_IWDT_FULL_RESET;
-        } else if (SEC_PMU_RG_RST_SRC_PAD_MASK & reset_src) {
-            ret = EXT_FULL_RESET;
+            reset_reason = PWR_FULL_RESET;
+        } else {
+            if (has_at_least_two_bits(reset_src)) {
+                LOG_DBG("dirty reset_src: %#x", reset_src);
+            }
+            if (SEC_PMU_RG_RST_SRC_PAD_MASK & reset_src) {
+                reset_reason = EXT_FULL_RESET;
+            } else if (SEC_PMU_RG_RST_SRC_IWDT_MASK & reset_src) {
+                reset_reason = SYS_IWDT_FULL_RESET;
+            } else if (SEC_PMU_RG_RST_SRC_SOFTWARE_MASK & reset_src) {
+                reset_reason = SOFT_FULL_RESET;
+            } else if (SEC_PMU_RG_RST_SRC_CPU_MASK & reset_src) {
+                reset_reason = CPU_FULL_RESET;
+            }
         }
+        reset_reason_app_set(reset_reason);
     } else if (SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK) {
         reset_src = SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK;
         sec_wdt_reset_reason_clean();
         if (SYSC_SEC_PER_RST_FROM_IWDT1_MASK & reset_src) {
-            ret = SEC_IWDT_HART_RESET;
+            reset_reason = SEC_IWDT_HART_RESET;
         } else if (SYSC_SEC_PER_RST_FROM_WWDT1_MASK & reset_src) {
-            ret = SEC_WWDT_HART_RESET;
+            reset_reason = SEC_WWDT_HART_RESET;
         }
         else if (SYSC_SEC_PER_RST_FROM_SEC_CORE_SRST_MASK & reset_src) {
-            ret = SOFT_HART_RESET;
+            reset_reason = SOFT_HART_RESET;
         }
     } else if (MAGIC_VALUE == magic) {
-        ret = EMUL_SOFT_RESET;
+        reset_reason = EMUL_SOFT_RESET;
     }
-#else  /* DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) */
+#else /* DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) */
     reset_src = SYSC_APP_PER->RST_SRC & SYSC_APP_PER_RST_SRC_MASK;
     if (reset_src) {
         app_wdt_reset_reason_clean();
         if (SYSC_APP_PER_RST_FROM_IWDT2_MASK & reset_src) {
-            ret = APP_IWDT_HART_RESET;
+            reset_reason = APP_IWDT_HART_RESET;
         } else if (SYSC_APP_PER_RST_FROM_WWDT2_MASK & reset_src) {
-            ret = APP_WWDT_HART_RESET;
+            reset_reason = APP_WWDT_HART_RESET;
         } else if (SYSC_APP_PER_RST_FROM_APP_CORE_SRST_MASK & reset_src) {
-            ret = SOFT_HART_RESET;
+            reset_reason = SOFT_HART_RESET;
         }
-    } else if (MAGIC_VALUE == magic) {
-        ret = EMUL_SOFT_RESET;
+    } else if (NO_RESET_REASON != reset_reason_app) {
+        reset_reason = reset_reason_app;
+        reset_reason_app_clean();
     }
-#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay) */
-
-    reset_reason = ret;
+#endif
 }
 
 #if defined(CONFIG_WDT_RESET_REASON_DETAIL)
