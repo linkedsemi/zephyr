@@ -121,7 +121,7 @@ static void tcp_receiver_cleanup(void)
 
 static int tcp_recv_data(struct net_socket_service_event *pev)
 {
-	static uint8_t buf[CONFIG_TCP_RECEIVER_BUF_SIZE];
+	static uint8_t buf[CONFIG_NET_ZPERF_TCP_RECEIVER_BUF_SIZE];
 	int i, ret = 0;
 	int family, sock, sock_error;
 	struct sockaddr addr_incoming_conn;

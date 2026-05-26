@@ -201,9 +201,11 @@ struct wdt_reset_en {
 
 void reset_reason_init(void);
 uint32_t reset_reason_get(void);
+#if CONFIG_NUM_OS > 1
 uint32_t reset_reason_app_get(void);
 void reset_reason_app_set(uint32_t reason);
 void reset_reason_app_clean();
+#endif
 void reset_reason_magic_set(void);
 #if defined(CONFIG_WDT_RESET_REASON_DETAIL)
 struct wdt_reset_en * wdt_reset_en_val_get(void);

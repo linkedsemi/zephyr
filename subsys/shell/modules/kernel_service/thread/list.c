@@ -176,7 +176,7 @@ static void shell_tdata_dump_cycle(const struct k_thread *cthread, void *user_da
 	kernel_thread_list_result_p->count++;
 }
 
-static int kernel_thread_list_start(void)
+int kernel_thread_list_start(void)
 {
 	int ret = k_sem_take(&kernel_thread_list_sem, K_NO_WAIT);
 	if (ret != 0) {
@@ -197,14 +197,17 @@ static int kernel_thread_list_start(void)
 
 static int kernel_thread_list_show(void)
 {
-	printf("Scheduler: %u since last call\n", sys_clock_elapsed());
-	printf("Threads:\n");
-	printf("count: %u\n", kernel_thread_list_result_start.count);
-	printf("delta_total: %llu\n", delta_total);
+	printk("Scheduler: %u since last call\n"
+		"Threads:\n"
+		"count: %u\n"
+		"delta_total: %llu\n",
+		sys_clock_elapsed(),
+		kernel_thread_list_result_start.count,
+		delta_total);
 	for (int i = 0; i < kernel_thread_list_result_start.count; i++) {
 		unsigned int pcnt = (kernel_thread_list_result_delta.log[i].total * 100ULL) / delta_total;
 		unsigned int pdec = ((kernel_thread_list_result_delta.log[i].total * 10000ULL) / delta_total) % 100;
-		printf("[%2d] %-32s | %10llu | %2u.%02u %%\n",
+		printk("[%2d] %-32s | %10llu | %2u.%02u %%\n",
 			    i,
 			    kernel_thread_list_result_start.log[i].name ? kernel_thread_list_result_start.log[i].name : "NA",
 			    kernel_thread_list_result_delta.log[i].total,
@@ -223,7 +226,7 @@ static void kernel_thread_list_show_work(struct k_work *work)
 }
 
 K_WORK_DEFINE(kernel_thread_list_work, kernel_thread_list_show_work);
-static int kernel_thread_list_stop(void)
+int kernel_thread_list_stop(void)
 {
 	/*
 	 * Use the unlocked version as the callback itself might call
