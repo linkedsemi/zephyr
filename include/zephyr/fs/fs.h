@@ -69,6 +69,9 @@ enum {
 
 	/** Base identifier for external file systems. */
 	FS_TYPE_EXTERNAL_BASE,
+
+    /** Identifier for in-tree OverlayFS file system. */
+	FS_OVERLAYFS,
 };
 
 /** Flag prevents formatting device if requested file system not found */
