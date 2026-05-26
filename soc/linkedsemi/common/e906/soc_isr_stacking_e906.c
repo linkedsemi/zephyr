@@ -31,8 +31,9 @@ __ramfunc void isr_stacking_mcause(void)
     uint32_t _cpu_id = 0;
 #endif
     uint32_t mcause = csr_read(mcause);
-    
+#ifdef CONFIG_SMP
     if(flash_ls_suspend_state_writing(zephyr_flash_controller))
+#endif
     {
         flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,0,NULL);
     }
@@ -86,7 +87,9 @@ __ramfunc void isr_unstacking_mcause(void)
     {
         while(1);
     }
+#if defined(CONFIG_SMP)
     if(flash_ls_suspend_state_writing(zephyr_flash_controller))
+#endif
     {
         flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_RESUME_OPCODE,0,NULL);
     } 
