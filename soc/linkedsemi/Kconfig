@@ -28,8 +28,8 @@ config ESPI_LPC_HOST_KCS
     help
         Enable Host-side KCS
 
-config LINKEDSEMI_TPM_MODULE
-    bool "LinkedSemi TPM module"
+config LINKEDSEMI_TPM_WWDT
+    bool "LinkedSemi TPM WWDT"
     default n
     depends on SOC_LSQSH
 
