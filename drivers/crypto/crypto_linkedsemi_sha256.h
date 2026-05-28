@@ -21,16 +21,16 @@
 #define SHA256_PADDING_BYTE         (0x80)
 #define SHA256_BLOCK_BYTE_SIZE      (0x40)
 #define SHA256_BLOCK_WORD_SIZE      (SHA256_BLOCK_BYTE_SIZE / sizeof(uint32_t))
-#define SHA256_FIANL_LENGTH         (SHA256_BLOCK_BYTE_SIZE - SHA256_TOTAL_LEN_BYTE)
-
+#define SHA_PADDING_MOD             (SHA256_BLOCK_BYTE_SIZE - SHA256_TOTAL_LEN_BYTE)
+#define SHA224_WORDS_NUM 7
+#define SHA256_SM3_WORDS_NUM 8
 
 struct sha256_linkedsemi_data {
     struct k_mutex sha256_engine_mutex;
-    struct k_sem fsm_end_sem;
-    
-    uint8_t buffer[SHA256_BLOCK_BYTE_SIZE];
-	uint32_t buf_idx;
-    uint32_t total_len;
+    uint32_t current_word;
+    uint8_t current_block_bytes;
+    uint64_t total_length;
+    bool first_update;
     enum hash_algo algo;
 };
 
