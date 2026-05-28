@@ -26,8 +26,15 @@ config ESPI_LPC_HOST_KCS
     depends on ESPI_LPC
 
     help
-        Enable Host-side KCS 
+        Enable Host-side KCS
 
+config LINKEDSEMI_TPM_WWDT
+    bool "LinkedSemi TPM WWDT"
+    default n
+    depends on SOC_LSQSH
+
+    help
+      Enable wwdt1_tpm_init() in lsqsh soc.c
 rsource "*/Kconfig"
 
 endif
