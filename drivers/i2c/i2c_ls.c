@@ -465,6 +465,7 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
         } else { /* --> <self> */
             uint8_t val;
             dev_data->slave_cfg->callbacks->read_processed(dev_data->slave_cfg, &val);
+            k_busy_wait(10);
             dev_config->reg->TXDR = val;
         }
     } else if (irq & I2C_INT_RXNE_MASK) {
