@@ -708,7 +708,7 @@ err:
     if (dev_data->quick_command) {
         dev_config->reg->CR2_3 &= ~0x30;
     }
-    dev_config->reg->IDR = I2C_INT_STOP_MASK;
+    dev_config->reg->IDR = I2C_INT_STOP_MASK | I2C_INT_TCR_MASK | I2C_INT_TC_MASK;
     i2c_reenable(dev, false);
     dev_data->msg_curr = NULL;
     k_sem_give(&dev_data->bus_mutex);
