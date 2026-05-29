@@ -35,6 +35,9 @@ LOG_MODULE_REGISTER(i2c_ls, CONFIG_I2C_LOG_LEVEL);
 #define TIMEOUT_DETECTED          BIT(6)
 #define I2C_LS_CNT_MAX            255
 #define I2C_LS_FIFO_DEEPTH        8
+#define I2C_LS_FILTER_NS          50
+#define I2C_LS_FILTER_FACTOR_MAX  15
+#define I2C_LS_FILTER_FACTOR_MIN  1
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
@@ -271,6 +274,18 @@ int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_co
 }
 #endif
 
+static void i2c_noise_filter_set(const struct device *dev)
+{
+    const struct i2c_ls_config *dev_config = dev->config;
+    uint8_t factor = DIV_ROUND_UP(I2C_LS_FILTER_NS, 1000000000 / dev_config->clock_frequency);
+    if ((factor <= I2C_LS_FILTER_FACTOR_MAX) && (factor >= I2C_LS_FILTER_FACTOR_MIN)) {
+        REG_FIELD_WR(dev_config->reg->CR1, I2C_CR1_DNF, factor);
+        LOG_DBG("filter factor: %d", factor);
+    } else {
+        LOG_WRN("not support noise filter factor: %d", factor);
+    }
+}
+
 static void i2c_timing_param_set(const struct device *dev, uint32_t i2c_clk)
 {
     const struct i2c_ls_config *dev_config = dev->config;
@@ -310,6 +325,7 @@ static void i2c_timing_param_set(const struct device *dev, uint32_t i2c_clk)
     MODIFY_REG(dev_config->reg->TIMINGR,
                (I2C_TIMINGR_PRESC_MASK | I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK),
                (prescalar - 1) << I2C_TIMINGR_PRESC_POS | sclh << I2C_TIMINGR_SCLH_POS | scll << I2C_TIMINGR_SCLL_POS | sdadel << I2C_TIMINGR_SDADEL_POS | scldel << I2C_TIMINGR_SCLDEL_POS);
+    i2c_noise_filter_set(dev);
 }
 
 static void i2c_slave_timing_param_set(const struct i2c_ls_config *dev_config)
