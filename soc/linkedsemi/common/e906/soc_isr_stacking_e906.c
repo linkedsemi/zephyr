@@ -31,8 +31,8 @@ __ramfunc void isr_stacking_mcause(void)
     }
 }
 
-#define MCAUSE_MPP_MASK (3UL << 27)
-#define MCAUSE_MPIE_MASK (1UL << 26)
+#define MCAUSE_MPP_MASK (3UL << 28)
+#define MCAUSE_MPIE_MASK (1UL << 27)
 
 __ramfunc void isr_unstacking_mcause(void)
 {
