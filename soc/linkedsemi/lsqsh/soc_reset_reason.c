@@ -8,7 +8,9 @@ LOG_MODULE_REGISTER(soc_reset_reason, CONFIG_SOC_LOG_LEVEL);
 #define MAGIC_VALUE 0xdeadbeef
 
 static volatile uint32_t reset_reason;
+#if CONFIG_NUM_OS > 1
 static volatile uint32_t reset_reason_app __attribute__((section("RESET_REASON.app")));
+#endif
 
 #if defined(CONFIG_WDT_RESET_REASON_DETAIL)
 struct wdt_reset_en wdt_reset_en __noinit;
@@ -43,6 +45,7 @@ void reset_reason_magic_set()
     magic = MAGIC_VALUE;
 }
 
+#if CONFIG_NUM_OS > 1
 uint32_t reset_reason_app_get(void)
 {
     return reset_reason_app;
@@ -57,6 +60,7 @@ void reset_reason_app_clean()
 {
     reset_reason_app_set(NO_RESET_REASON);
 }
+#endif
 
 uint32_t reset_reason_get(void)
 {
@@ -97,7 +101,9 @@ void reset_reason_init(void)
                 reset_reason = CPU_FULL_RESET;
             }
         }
+#if CONFIG_NUM_OS > 1
         reset_reason_app_set(reset_reason);
+#endif
     } else if (SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK) {
         reset_src = SYSC_SEC_PER->RST_SRC & SYSC_SEC_PER_RST_SRC_MASK;
         sec_wdt_reset_reason_clean();

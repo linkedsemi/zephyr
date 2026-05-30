@@ -815,7 +815,7 @@ __weak void soc_late_init_hook(void)
 #endif /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
 #endif /*!defined(CONFIG_SMP)*/
 
-#if defined(CONFIG_SPI_FILTER_LINKEDSEMI)
+#if defined(CONFIG_LINKEDSEMI_TPM_WWDT)
 
 #define LS_TPM_SPIS_DETECT_REG        0x40021018U
 #define LS_TPM_SPIS_DETECT_SEL_BIT    BIT(20)
@@ -873,4 +873,4 @@ int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms)
     return 0;
 }
 
-#endif /* CONFIG_SPI_FILTER_LINKEDSEMI */
+#endif /* CONFIG_LINKEDSEMI_TPM_WWDT */
