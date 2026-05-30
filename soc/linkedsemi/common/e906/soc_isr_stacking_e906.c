@@ -13,7 +13,7 @@ static uint32_t irq_nested_mcause[IRQ_NESTED_MAX] = {0,0,0,0,0,0,0,0,0,0};
 
 
 static const struct device *const zephyr_flash_controller =
-	DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
+    DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
 extern int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out);
 
@@ -31,8 +31,8 @@ __ramfunc void isr_stacking_mcause(void)
     }
 }
 
-#define MCAUSE_MPP_MASK (3UL << 27)
-#define MCAUSE_MPIE_MASK (1UL << 26)
+#define MCAUSE_MPP_MASK (3UL << 28)
+#define MCAUSE_MPIE_MASK (1UL << 27)
 
 __ramfunc void isr_unstacking_mcause(void)
 {
@@ -48,7 +48,6 @@ __ramfunc void isr_unstacking_mcause(void)
         MODIFY_REG(restore_mcause,(MCAUSE_MPP_MASK | MCAUSE_MPIE_MASK),current_mcause);
 
         csr_write(mcause,restore_mcause);
-        
     }
     else
     {
