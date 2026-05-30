@@ -9,12 +9,9 @@
 #include "field_manipulate.h"
 #include "platform.h"
 #include "ls_soc_gpio.h"
+#include "smp/lsqsh_smp.h"
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
-#ifdef CONFIG_SMP
-#include "smp/lsqsh_smp.h"
-bool flash_ls_suspend_state_writing(const struct device *dev);
-#endif
 
 uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS] = {0,0};
 static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX] = {{0},{0}};
@@ -25,31 +22,11 @@ extern int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr
 
 __ramfunc void isr_stacking_mcause(void)
 {
-#if defined(CONFIG_SMP)
 	uint32_t _cpu_id = get_cur_cpu_id();
-#else
-    uint32_t _cpu_id = 0;
-#endif
-    uint32_t mcause = csr_read(mcause);
-#ifdef CONFIG_SMP
-    if(flash_ls_suspend_state_writing(zephyr_flash_controller))
-#endif
-    {
-        flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,0,NULL);
-    }
-#if defined(CONFIG_SMP)
-    if((mcause & CONFIG_RISCV_MCAUSE_EXCEPTION_MASK) == FLASH_SWINT_NUM)
-    {   
-        LOG_DBG("cpu%d:xip_lock\n",_cpu_id);
-        if(xip_lock() != 0)
-        {
-            while(1);
-        }
-    }
-#endif
+    flash_ls_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,_cpu_id,NULL);
     if(irq_nested_level[_cpu_id] < IRQ_NESTED_MAX)
     {
-        irq_nested_mcause[_cpu_id][irq_nested_level[_cpu_id]] = mcause;
+        irq_nested_mcause[_cpu_id][irq_nested_level[_cpu_id]] = csr_read(mcause);
         irq_nested_level[_cpu_id]++;
     }
     else
@@ -66,11 +43,7 @@ __ramfunc void isr_unstacking_mcause(void)
     uint32_t current_mcause;
     uint32_t restore_mcause;
 	/* get current cpu number */
-#if defined(CONFIG_SMP)
 	uint32_t _cpu_id = get_cur_cpu_id();
-#else
-    uint32_t _cpu_id = 0;
-#endif
     if(irq_nested_level[_cpu_id] > 0 && irq_nested_level[_cpu_id] <= IRQ_NESTED_MAX)
     {
         irq_nested_level[_cpu_id]--;
@@ -86,25 +59,7 @@ __ramfunc void isr_unstacking_mcause(void)
     {
         while(1);
     }
-#if defined(CONFIG_SMP)
-    if(flash_ls_suspend_state_writing(zephyr_flash_controller))
-#endif
-    {
-        flash_ex_op(zephyr_flash_controller,FLASH_DRIVER_RESUME_OPCODE,0,NULL);
-    } 
-#if defined(CONFIG_SMP)
-    if((restore_mcause & CONFIG_RISCV_MCAUSE_EXCEPTION_MASK) == FLASH_SWINT_NUM)
-    {
-        if(get_xip_lock_owner())
-        {
-            if(xip_lock_relesae() != 0)
-            {
-                while(1);
-            }
-            LOG_DBG("cpu%d:lock_relesae\n",_cpu_id);
-        }
-    }
-#endif
+    flash_ls_ex_op(zephyr_flash_controller,FLASH_DRIVER_RESUME_OPCODE,_cpu_id,NULL);
 }
 
 void Swint_Handler_C(struct arch_esf *args)

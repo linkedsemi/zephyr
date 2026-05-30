@@ -12,8 +12,10 @@
 #include <zephyr/sys/atomic.h>
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/drivers/pm_cpu_ops.h>
-#ifdef CONFIG_SMP
+
+#ifdef CONFIG_SOC_SERIES_LSQSH
 /* ls_qsh platform */
+#include <stdio.h>
 #include "platform.h"
 #include "smp/lsqsh_smp.h"
 #endif
@@ -91,13 +93,13 @@ void arch_secondary_cpu_init(int hartid)
 }
 
 #ifdef CONFIG_SMP
-#define MSIP_BASE 0x2000000UL // e906 undefine
+
+#define MSIP_BASE 0x2000000UL
 #define MSIP(hartid) ((volatile uint32_t *)MSIP_BASE)[hartid]
 
 static atomic_val_t cpu_pending_ipi[CONFIG_MP_MAX_NUM_CPUS];
 #define IPI_SCHED	0
 #define IPI_FPU_FLUSH	1
-#define IPI_XIP_LOCK    2
 
 void arch_sched_directed_ipi(uint32_t cpu_bitmap)
 {
@@ -129,20 +131,23 @@ void arch_sched_broadcast_ipi(void)
 void arch_flush_fpu_ipi(unsigned int cpu)
 {
 	atomic_set_bit(&cpu_pending_ipi[cpu], IPI_FPU_FLUSH);
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_ipi_intr_set(cpu);
+#else
 	MSIP(_kernel.cpus[cpu].arch.hartid) = 1;
+#endif
 }
 #endif
-#include "stdio.h"
-void sched_ipi_handler(const void *unused)
+
+static void sched_ipi_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
-	unsigned int id = _current_cpu->id;
+
 #if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_ipi_intr_clr(id);
+	lsqsh_ipi_intr_clr(_current_cpu->id);
 #else
 	MSIP(csr_read(mhartid)) = 0;
 #endif
-	
 
 	atomic_val_t pending_ipi = atomic_clear(&cpu_pending_ipi[_current_cpu->id]);
 
@@ -190,13 +195,15 @@ void arch_spin_relax(void)
 }
 #endif
 
-
 int arch_smp_init(void)
 {
+
 #if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_primary_cpu_smp_init(cpu_pending_ipi);
+	lsqsh_primary_cpu_smp_init(cpu_pending_ipi,sched_ipi_handler);
 #else
 	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
+	irq_enable(RISCV_IRQ_MSOFT);
+
 #endif
 	return 0;
 }

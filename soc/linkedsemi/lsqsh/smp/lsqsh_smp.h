@@ -3,20 +3,23 @@
 
 #include <zephyr/sys/atomic.h>
 
+#if defined(CONFIG_SMP)
 uint32_t get_cur_cpu_id(void);
+#else
+static inline uint32_t get_cur_cpu_id(void)
+{
+    return 0;
+}
+#endif
 void lsqsh_ipi_intr_set(uint32_t cpu_id);
 void lsqsh_ipi_intr_clr(uint32_t cpu_id);
 
-int xip_lock(void);
-int xip_lock_relesae(void);
 void poll_wait_xip_unlock(void);
-bool get_xip_lock_owner(void);
 
-
-void secondary_cpu_init(void);
-void lsqsh_xip_lcok_broadcast_ipi(void);
-void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak);
-
+void flash_xip_lock_clear(void);
+void flash_xip_lock_sync(void);
+void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak,void (*ipi_handler)(const void *));
+void smp_mode_cache_region_init(void);
 void lsqsh_secondary_cpu_init(void);
 
 #define IPI_SCHED	0

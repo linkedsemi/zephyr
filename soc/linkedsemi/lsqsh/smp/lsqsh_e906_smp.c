@@ -15,22 +15,13 @@ LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 #define XIP_LOCK_COUNT                          (CONFIG_MP_MAX_NUM_CPUS-1)
 
 void __scondary_cpu_reset(void);
-atomic_val_t *p_cpu_pending_ipi;;
+atomic_val_t *p_cpu_pending_ipi;
 
 /* the cpu1 boot address is fixed */
 #define LSQSH_CPU0_BOOT_ADDR                    (uint32_t)0x1000000
 #define LSQSH_CPU1_BOOT_ADDR                    (uint32_t)__scondary_cpu_reset
 #define LSQSH_CPU0     0
 #define LSQSH_CPU1     1
-
-typedef struct {
-    volatile bool release_flag;
-    volatile uint32_t make_lock_cpu_id;
-    volatile uint32_t slave_count;
-    uint32_t total_slaves;
-} sync_control_t;
-
-sync_control_t xip_sync;
 
 uint32_t get_cur_cpu_id(void)
 {
@@ -45,75 +36,6 @@ uint32_t get_cur_cpu_id(void)
 //         while(1);
 //     }
 // }
-
-__ramfunc void poll_wait_xip_unlock(void) 
-{
-    unsigned int key = arch_irq_lock();
-    sync_control_t *ctrl = &xip_sync;
-
-    __atomic_add_fetch(&ctrl->slave_count, 1, __ATOMIC_RELEASE);
-
-    while (__atomic_load_n(&ctrl->release_flag, __ATOMIC_ACQUIRE) == false) 
-    {
-        // __asm__ volatile("wfi");
-    }
-
-    arch_irq_unlock(key);
-}
-
-int xip_lock(void) 
-{
-    unsigned int key = arch_irq_lock();
-    sync_control_t *ctrl = &xip_sync;
-    uint32_t _cpu_id = get_cur_cpu_id();
-    if(ctrl->make_lock_cpu_id != 0xFF)
-    {
-        LOG_DBG("ctrl->make_lock_cpu_id != 0xFF\n");
-        return -1;
-    }
-    ctrl->make_lock_cpu_id = _cpu_id;
-    ctrl->slave_count = 0;
-    __atomic_store_n(&ctrl->release_flag, false, __ATOMIC_RELEASE);
-
-    lsqsh_xip_lcok_broadcast_ipi();
-    // LOG_DBG("_cpu_id ipi : %d\n",_cpu_id);
-    while (__atomic_load_n(&ctrl->slave_count, __ATOMIC_ACQUIRE) != ctrl->total_slaves);
-    arch_irq_unlock(key);
-
-    return 0;
-}
-
-int xip_lock_relesae(void)
-{
-    sync_control_t *ctrl = &xip_sync;
-    uint32_t _cpu_id = get_cur_cpu_id();
-    if(ctrl->make_lock_cpu_id == _cpu_id)
-    {
-        __atomic_store_n(&xip_sync.release_flag, true, __ATOMIC_RELEASE);
-    }
-    else
-    {
-        LOG_DBG(" xip_lock_relesae: unexception state \n");
-        return -1;
-    }
-    ctrl->make_lock_cpu_id = 0xff;
-    return 0;
-}
-
-bool get_xip_lock_owner(void)
-{
-    sync_control_t *ctrl = &xip_sync;
-    uint32_t _cpu_id = get_cur_cpu_id();
-    if(ctrl->make_lock_cpu_id == _cpu_id)
-    {
-        return true;
-    }
-    else
-    {
-        return false;
-    }
-
-}
 
 void soc_late_init_hook(void)
 {
@@ -156,7 +78,7 @@ void lsqsh_ipi_intr_set(uint32_t cpu_id)
 void cpu_early_common_config(void);
 void cpu_sleep_mode_config(uint8_t deep);
 
-void lsqsh_xip_lcok_broadcast_ipi(void)
+static void lsqsh_xip_lock_broadcast_ipi(void)
 {
     unsigned int key = arch_irq_lock();
     unsigned int id = _current_cpu->id;
@@ -175,23 +97,58 @@ void lsqsh_xip_lcok_broadcast_ipi(void)
     arch_irq_unlock(key);
 }
 
-void sched_ipi_handler(const void *unused);
+struct xip_sync_control{
+    bool flash_op_ongoing;
+    bool sync_ack[CONFIG_MP_MAX_NUM_CPUS]; 
+};
+__nocache struct xip_sync_control xip_sync;
+
+__ramfunc void poll_wait_xip_unlock(void) 
+{
+    xip_sync.sync_ack[get_cur_cpu_id()] = true;
+    while(xip_sync.flash_op_ongoing);
+}
+
+static void wait_xip_sync_ack()
+{
+    uint8_t i;
+    for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
+    {
+        if(i != get_cur_cpu_id())
+        {
+            while(!xip_sync.sync_ack[i]);
+        }
+    }
+    for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
+    {
+        xip_sync.sync_ack[i] = false;
+    }
+}
+
+void flash_xip_lock_clear(void)
+{
+    xip_sync.flash_op_ongoing = false;
+}
+
+void flash_xip_lock_sync(void)
+{
+	xip_sync.flash_op_ongoing = true;
+	lsqsh_xip_lock_broadcast_ipi();
+	wait_xip_sync_ack();
+}
+
 /* cpu1 */
-void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
+void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak,void (*ipi_handler)(const void *))
 {
     p_cpu_pending_ipi = p_ipi_msak;
-    xip_sync.release_flag = false;
-    xip_sync.slave_count = 0;
-    xip_sync.total_slaves = XIP_LOCK_COUNT;
-    xip_sync.make_lock_cpu_id = 0xff;
     /* premary processors init ipi isr*/
-    IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
+    IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, ipi_handler, NULL, 0);
 	irq_enable(SYSC_SEC_CPU_IRQN);
     // /*enable on other processors*/
-    IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
+    IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, ipi_handler, NULL, 0);
 	irq_disable(SYSC_APP_CPU_IRQN);
 }
-extern void smp_mode_cache_region_init(void);
+
 void lsqsh_secondary_cpu_init(void)
 {
     if(get_cur_cpu_id() == LSQSH_CPU1)
