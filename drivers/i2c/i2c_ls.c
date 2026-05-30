@@ -280,9 +280,9 @@ static void i2c_noise_filter_set(const struct device *dev)
     uint8_t factor = DIV_ROUND_UP(I2C_LS_FILTER_NS, 1000000000 / dev_config->clock_frequency);
     if ((factor <= I2C_LS_FILTER_FACTOR_MAX) && (factor >= I2C_LS_FILTER_FACTOR_MIN)) {
         REG_FIELD_WR(dev_config->reg->CR1, I2C_CR1_DNF, factor);
-        LOG_DBG("filter factor: %d", factor);
+        DEV_DBG(dev, "filter factor: %d", factor);
     } else {
-        LOG_WRN("not support noise filter factor: %d", factor);
+        DEV_WRN(dev, "not support noise filter factor: %d", factor);
     }
 }
 
