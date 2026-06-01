@@ -213,18 +213,19 @@ static void trng_ls_isr(void *arg)
 		__ASSERT(!(regs->STAT & DWTRNG_STAT_BUSY_Msk), "TRNG Core BUSY");
 
 		if (data->state == TRNG_S_INIT_NOISE) {
-				regs->CTRL = CMD_CREATE_STATE;
-				data->state = TRNG_S_INIT_CREATE;
-				regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
+			regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
+			data->state = TRNG_S_INIT_CREATE;
+			regs->CTRL = CMD_CREATE_STATE;
 			return;
 		} else if (data->state == TRNG_S_INIT_CREATE) {
-				regs->CTRL = CMD_GEN_RANDOM;	
-				data->state = TRNG_S_READY;
-				k_sem_give(&data->sem_cmd);
-				regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
+			regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
+			data->state = TRNG_S_READY;
+			regs->CTRL = CMD_GEN_RANDOM;
+			k_sem_give(&data->sem_cmd);
 			return;
 		}
 
+		regs->ISTAT = DWTRNG_ISTAT_DONE_Msk; 
 		uint32_t r0 = regs->RAND[0];
 		uint32_t r1 = regs->RAND[1];
 		uint32_t r2 = regs->RAND[2];
@@ -247,14 +248,12 @@ static void trng_ls_isr(void *arg)
 		if (rng_pool_avail(pool) <= pool->threshold) {
 			if (data->req_bits + GEN_BITS_PER_CMD <= MAX_BITS_PER_REQUEST) {
 				if ((regs->STAT & DWTRNG_STAT_BUSY_Msk) == 0) {
-					regs->CTRL = CMD_GEN_RANDOM;
+					regs->CTRL = CMD_GEN_RANDOM; 
 				}
 			}
 		}
-		regs->ISTAT = DWTRNG_ISTAT_DONE_Msk;
 	}
 }
-
 
 static int ls_trng_get_entropy(const struct device *dev, uint8_t *buf, uint16_t len)
 {
