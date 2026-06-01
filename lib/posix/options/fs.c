@@ -337,6 +337,21 @@ struct dirent *readdir(DIR *dirp)
 	rc = (rc < MAX_FILE_NAME) ? rc : (MAX_FILE_NAME - 1);
 	(void)memcpy(pdirent.d_name, fdirent.name, rc);
 
+// readdir dirent type transfer to glibc
+#ifdef CONFIG_OPENBMC_ZEPHYR
+    switch(fdirent.type){
+               case FS_DIR_ENTRY_FILE:
+                       pdirent.d_type = DT_REG;
+                       break;
+               case FS_DIR_ENTRY_DIR:
+                       pdirent.d_type = DT_DIR;
+                       break;
+               default:
+                       pdirent.d_type = DT_UNKNOWN;
+                       break;
+       }
+#endif /* CONFIG_OPENBMC_ZEPHYR */
+
 	/* Make sure the name is NULL terminated */
 	pdirent.d_name[rc] = '\0';
 	return &pdirent;
