@@ -38,11 +38,11 @@ LOG_MODULE_REGISTER(i2c_ls, CONFIG_I2C_LOG_LEVEL);
 #define I2C_LS_FILTER_NS          50
 #define I2C_LS_FILTER_FACTOR_MAX  15
 #define I2C_LS_FILTER_FACTOR_MIN  1
-#define I2C_INT_ERR_MASK ( I2C_INT_BERR_MASK \
-                            | I2C_INT_ARLO_MASK \
-                            | I2C_INT_OVR_MASK \
-                            | I2C_INT_PECE_MASK \
-                            | I2C_INT_TOUT_MASK)
+#define I2C_INT_ERR_MASK          (I2C_INT_BERR_MASK \
+                                    | I2C_INT_ARLO_MASK \
+                                    | I2C_INT_OVR_MASK \
+                                    | I2C_INT_PECE_MASK \
+                                    | I2C_INT_TOUT_MASK)
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
