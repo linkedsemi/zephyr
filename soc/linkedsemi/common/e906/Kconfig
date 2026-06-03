@@ -4,7 +4,4 @@ if SMP && SOC_SERIES_LSQSH
 config MP_MAX_NUM_CPUS
     default 2
 
-config ATOMIC_OPERATIONS_E906_SMP
-    bool
-    
 endif

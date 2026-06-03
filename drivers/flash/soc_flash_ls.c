@@ -466,6 +466,7 @@ static void delegation_server_mbox_callback(const struct device *dev,
 	}while(0);
 
 #elif defined(CONFIG_SMP)
+#include "smp/lsqsh_smp.h"
 #define DELEGATE_SERVER_OP_START(dev) flash_xip_lock_sync()
 #define DELEGATE_SERVER_OP_END(dev) flash_xip_lock_clear()
 #else

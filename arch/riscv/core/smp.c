@@ -139,7 +139,7 @@ void arch_flush_fpu_ipi(unsigned int cpu)
 }
 #endif
 
-static void sched_ipi_handler(const void *unused)
+void sched_ipi_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
 
@@ -199,7 +199,7 @@ int arch_smp_init(void)
 {
 
 #if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_primary_cpu_smp_init(cpu_pending_ipi,sched_ipi_handler);
+	lsqsh_primary_cpu_smp_init(cpu_pending_ipi);
 #else
 	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
 	irq_enable(RISCV_IRQ_MSOFT);

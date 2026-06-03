@@ -216,8 +216,6 @@ if SMP
 config TICKET_SPINLOCKS
 	default y
 
-config ATOMIC_OPERATIONS_E906_SMP
-	default y
 
 endif
 

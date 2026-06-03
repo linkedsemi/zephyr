@@ -98,8 +98,8 @@ static void lsqsh_xip_lock_broadcast_ipi(void)
 }
 
 struct xip_sync_control{
-    bool flash_op_ongoing;
-    bool sync_ack[CONFIG_MP_MAX_NUM_CPUS]; 
+    volatile bool flash_op_ongoing;
+    volatile bool sync_ack[CONFIG_MP_MAX_NUM_CPUS]; 
 };
 __nocache struct xip_sync_control xip_sync;
 
@@ -136,17 +136,19 @@ void flash_xip_lock_sync(void)
 	lsqsh_xip_lock_broadcast_ipi();
 	wait_xip_sync_ack();
 }
-
+void sched_ipi_handler(const void *unused);
 /* cpu1 */
-void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak,void (*ipi_handler)(const void *))
+void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
 {
     p_cpu_pending_ipi = p_ipi_msak;
     /* premary processors init ipi isr*/
-    IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, ipi_handler, NULL, 0);
+    IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
 	irq_enable(SYSC_SEC_CPU_IRQN);
     // /*enable on other processors*/
-    IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, ipi_handler, NULL, 0);
+    IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
 	irq_disable(SYSC_APP_CPU_IRQN);
+
+    
 }
 
 void lsqsh_secondary_cpu_init(void)
