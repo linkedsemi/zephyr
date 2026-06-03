@@ -369,6 +369,15 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
             goto err;
         }
     }
+
+    /* sdhc超时问题规避措施 start */
+    if (!host->execute_tuning && (host->irq_status & (SDHCI_INT_DATA_TIMEOUT | SDHCI_INT_TIMEOUT)))
+    {
+        DEV_INF(dev, "linkedsemi_sdhci_transfer_blocking: host->irq_status: %#x", host->irq_status);
+        ret = -1;
+    }
+    /* sdhc超时问题规避措施 end */
+
     while ((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR)));
     while ((sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR))));
 err:
@@ -379,7 +388,7 @@ err:
     return ret;
 }
 
-static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_command *cmd, struct sdhc_data *data)
+static int linkedsemi_sdhci_request_inner(const struct device *dev, struct sdhc_command *cmd, struct sdhc_data *data)
 {
     int ret;
     struct linkedsemi_sdhci_data *dev_data = dev->data;
@@ -471,6 +480,28 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
 
     return ret;
 }
+
+/* sdhc超时问题规避措施 start */
+static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_command *cmd, struct sdhc_data *data)
+{
+    int ret;
+    unsigned int retries = 5;
+
+    cmd->retries = 0;
+
+    do {
+        ret = linkedsemi_sdhci_request_inner(dev, cmd, data);
+        if (!ret)
+        {
+            break;
+        }
+        DEV_ERR(dev, "linkedsemi_sdhci_request_inner failed, ret=%d, retries=%d", ret, retries);
+        k_msleep(150);
+    } while (retries-- > 0);
+
+    return ret;
+}
+/* sdhc超时问题规避措施 end */
 
 static const uint8_t tuning_blk_pattern_4bit[] = {
     0xff, 0x0f, 0xff, 0x00, 0xff, 0xcc, 0xc3, 0xcc,
