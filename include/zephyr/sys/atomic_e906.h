@@ -10,7 +10,6 @@
 #ifndef ZEPHYR_INCLUDE_SYS_ATOMIC_E906_H_
 #define ZEPHYR_INCLUDE_SYS_ATOMIC_E906_H_
 
-#if defined(CONFIG_ATOMIC_OPERATIONS_E906)
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -124,5 +123,4 @@ static inline atomic_val_t atomic_nand(atomic_t *target, atomic_val_t value)
 }
 #endif
 
-#endif
 #endif /* ZEPHYR_INCLUDE_SYS_ATOMIC_E906_H_ */
