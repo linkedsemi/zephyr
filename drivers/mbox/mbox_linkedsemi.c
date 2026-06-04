@@ -50,13 +50,13 @@ struct mbox_linkedsemi_data {
 };
 
 #define GET_WR_IDX(fifo) ((fifo)->wr_idx>=(fifo)->length?(fifo)->wr_idx - (fifo)->length:(fifo)->wr_idx)
+#define GET_RD_IDX(fifo) ((fifo)->rd_idx>=(fifo)->length?(fifo)->rd_idx - (fifo)->length:(fifo)->rd_idx)
 __ramfunc static bool general_fifo_put_size(struct fifo_env *ptr, void *data, size_t size)
 {
-    if(sw_fifo_full(ptr)) {
+    if(sw_fifo_full(ptr) || (size > ptr->item_size)) {
         return false;
     } else {
         uint8_t *elem = ptr->buf;
-        __ASSERT_NO_MSG(size <= ptr->item_size);
         memcpy((void*)(elem + ptr->item_size * GET_WR_IDX(ptr)), data, size);
         if(ptr->wr_idx + 1 == 2*ptr->length) {
             ptr->wr_idx = 0;
@@ -67,6 +67,26 @@ __ramfunc static bool general_fifo_put_size(struct fifo_env *ptr, void *data, si
     }
 }
 
+__ramfunc static bool general_fifo_peek_ptr(struct fifo_env *ptr,void **data)
+{
+    if (sw_fifo_empty(ptr)) {
+        return false;
+    } else {
+        uint8_t *elem = ptr->buf;
+        *data = (void*)(elem + ptr->item_size * GET_RD_IDX(ptr));
+        return true;
+    }
+}
+
+__ramfunc static void general_fifo_drop(struct fifo_env *ptr)
+{
+    if (ptr->rd_idx + 1 == 2 * ptr->length) {
+        ptr->rd_idx = 0;
+    } else {
+        ptr->rd_idx = ptr->rd_idx + 1;
+    }
+}
+
 static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_t channel)
 {
     /* handle events of all rx channels */
@@ -74,8 +94,8 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
     struct mbox_linkedsemi_data *dev_data = dev->data;
     bool ret;
     do {
-        uint8_t recv_data[DT_INST_PROP(0, mtu)];
-        ret = general_fifo_get(dev_config->fifo[MBOX_RX_CHANNEL_ID][channel].env, recv_data);
+        void *recv_data;
+        ret = general_fifo_peek_ptr(dev_config->fifo[MBOX_RX_CHANNEL_ID][channel].env, &recv_data);
         if (ret) {
             struct mbox_msg msg = {
                 (const void *)recv_data,
@@ -83,8 +103,9 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
             };
             if (dev_data->cb[channel]) {
                 dev_data->cb[channel](dev, channel, dev_data->user_data[channel], &msg);
+                general_fifo_drop(dev_config->fifo[MBOX_RX_CHANNEL_ID][channel].env);
             } else {
-                DEV_WRN(dev, "channel: %d callback() is NULL", channel);
+                DEV_WRN(dev, "channel: %d callback() is NULL, skip", channel);
                 return;
             }
         }
@@ -102,8 +123,6 @@ static void mbox_linkedsemi_isr(const struct device *dev)
         cpu_intr_sec_clr();
     } else if (MBOX_RX_CHANNEL_ID == MBOX_RX_CH_APP) {
         cpu_intr_app_clr();
-    } else {
-        __ASSERT(0, "channel invalid!\n");
     }
 
     for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
@@ -309,14 +328,6 @@ static struct mbox_driver_api mbox_linkedsemi_driver_api = {
     .width = DT_PHA_BY_NAME(node_id, mboxes, tx, fifo_width),              \
     .deepth = DT_PHA_BY_NAME(node_id, mboxes, tx, fifo_deepth),            \
 },
-
-#define BUILD_ASSERT_MBOX_CONSUMER_CHILD_RX_CHECK_MTU(node_id, mtu_rx) \
-    BUILD_ASSERT(DT_PHA_BY_NAME(node_id, mboxes, rx, fifo_width) <= mtu_rx);
-#define BUILD_ASSERT_MBOX_CONSUMER_CHILD_TX_CHECK_MTU(node_id, mtu_tx) \
-    BUILD_ASSERT(DT_PHA_BY_NAME(node_id, mboxes, tx, fifo_width) <= mtu_tx);
-
-DT_INST_FOREACH_CHILD_STATUS_OKAY_VARGS(0, BUILD_ASSERT_MBOX_CONSUMER_CHILD_RX_CHECK_MTU, DT_INST_PROP(0, mtu))
-DT_INST_FOREACH_CHILD_STATUS_OKAY_VARGS(0, BUILD_ASSERT_MBOX_CONSUMER_CHILD_TX_CHECK_MTU, DT_INST_PROP(0, mtu))
 
 MBOX_LINKEDSEMI_IRQ_HANDLER(0)
 
