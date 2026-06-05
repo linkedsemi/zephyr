@@ -136,7 +136,7 @@ int mbedtls_ls_otbn_operation_init(ls_otbn_fireware_t fireware_id)
     return 0;
 }
 
-
+void LS_OTBN_SYSC_IRQHandler(void);
 void mbedtls_ls_otbn_moudle_init(void)
 {
     // unsigned int key;
@@ -170,7 +170,7 @@ void mbedtls_ls_otbn_moudle_init(void)
                               FIELD_BUILD(SYSC_SEC_CPU_I_EDN_URND_REQ, 1) |
                               FIELD_BUILD(SYSC_SEC_CPU_I_OTBN_OTP_REQ, 1);
     // irq_unlock(key);
-    IRQ_CONNECT(OTBN_SYSC_IRQN, 3, HAL_OTBN_SYSC_IRQHandler,NULL, 0);
+    IRQ_CONNECT(OTBN_SYSC_IRQN, 3, LS_OTBN_SYSC_IRQHandler,NULL, 0);
     csi_vic_clear_pending_irq(OTBN_SYSC_IRQN);
     irq_enable(OTBN_SYSC_IRQN);
     IRQ_CONNECT(OBTN_IRQN, 3, MBEDTLS_LS_OTBN_IRQHandler,NULL, 0);
