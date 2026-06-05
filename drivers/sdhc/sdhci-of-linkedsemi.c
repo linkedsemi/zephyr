@@ -407,8 +407,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
 err:
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
-    sdhci_reset(host, SDHCI_RESET_CMD);
-    sdhci_reset(host, SDHCI_RESET_DATA);
+    sdhci_reset(host, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
     return ret;
 }
