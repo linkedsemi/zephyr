@@ -7,6 +7,7 @@ zephyr_include_directories(.)
 zephyr_include_directories(${ZEPHYR_BASE}/../modules/crypto/mbedtls/include/)
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN 
                             mbedtls_otbn_msp.c 
+                            otbn_common.c
                             )
 zephyr_library_sources_ifdef(CONFIG_MEBDTLS_LINKEDSEMI_OTBN_DELEGATION mbedtls_otbn_crypto_mbox.c)
 if(CONFIG_MBEDTLS)
@@ -28,4 +29,7 @@ endif()
 
 # wolfssl
 zephyr_library_sources_ifdef(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION wolfssl_otbn_crypto_mbox.c)
-zephyr_library_sources_ifdef(CONFIG_WOLFSSL wolfssl_otbn_msp.c)
+zephyr_library_sources_ifdef(CONFIG_WOLFSSL 
+                            wolfssl_otbn_msp.c
+                            otbn_common.c
+                            )
