@@ -29,7 +29,7 @@ LOG_MODULE_REGISTER(mctp_usb, CONFIG_MCTP_LOG_LEVEL);
 
 UDC_BUF_POOL_DEFINE(mctp_usb_ep_pool,
 		    MCTP_USB_NUM_INSTANCES * MCTP_USB_BUFS_PER_INSTANCE,
-		    USBD_MAX_BULK_MPS,
+		    512,
 		    sizeof(struct udc_buf_info), NULL);
 
 struct mctp_usb_class_desc {
@@ -415,7 +415,7 @@ static void *mctp_usb_class_get_desc(struct usbd_class_data *const c_data,
 {
 	struct mctp_usb_class_ctx *ctx = usbd_class_get_private(c_data);
 
-	if (USBD_SUPPORTS_HIGH_SPEED && speed == USBD_SPEED_HS) {
+	if (1 && speed == USBD_SPEED_HS) {
 		return ctx->hs_desc;
 	}
 
@@ -509,10 +509,10 @@ static int mctp_usb_class_init(struct usbd_class_data *const c_data)
 	k_work_init(&ctx->out_work, mctp_usb_class_out_work);
 	atomic_set(&ctx->in_pending, 0);
 
-	if (ctx->inst->sublcass == USBD_MCTP_SUBCLASS_MANAGEMENT_CONTROLLER ||
-	    ctx->inst->sublcass == USBD_MCTP_SUBCLASS_MANAGED_DEVICE_ENDPOINT ||
-	    ctx->inst->sublcass == USBD_MCTP_SUBCLASS_HOST_INTERFACE_ENDPOINT) {
-		ctx->desc->if0.bInterfaceSubClass = ctx->inst->sublcass;
+	if (ctx->inst->subclass == USBD_MCTP_SUBCLASS_MANAGEMENT_CONTROLLER ||
+	    ctx->inst->subclass == USBD_MCTP_SUBCLASS_MANAGED_DEVICE_ENDPOINT ||
+	    ctx->inst->subclass == USBD_MCTP_SUBCLASS_HOST_INTERFACE_ENDPOINT) {
+		ctx->desc->if0.bInterfaceSubClass = ctx->inst->subclass;
 	} else {
 		LOG_ERR("Invalid USB MCTP sublcass");
 		return -EINVAL;
