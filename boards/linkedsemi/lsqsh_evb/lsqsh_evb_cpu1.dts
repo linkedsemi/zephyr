@@ -64,7 +64,6 @@
 
     mbox: mbox {
         compatible = "linkedsemi,mbox";
-        mtu = <64>;
         interrupts = <SYSC_SEC_CPU_IRQN 3>;
         #mbox-cells = <3>;
 

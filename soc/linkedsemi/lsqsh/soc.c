@@ -554,10 +554,16 @@ __weak void soc_early_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-    if (!is_app_cpu_running()) {
 #if defined(CONFIG_MBOX)
+    if ((PWR_FULL_RESET == reset_reason_get())
+        || (SOFT_FULL_RESET == reset_reason_get())
+        || (CPU_FULL_RESET == reset_reason_get())
+        || (SYS_IWDT_FULL_RESET == reset_reason_get())
+        || (EXT_FULL_RESET == reset_reason_get())) {
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox_memory)), 0, DT_REG_SIZE(DT_NODELABEL(mbox_memory)));
+    }
 #endif
+    if (!is_app_cpu_running()) {
 #if defined(CONFIG_PSRAM)
         psram_init();
 #endif
