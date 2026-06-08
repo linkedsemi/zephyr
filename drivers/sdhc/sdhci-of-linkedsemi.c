@@ -368,10 +368,8 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
     /* Wait until command/data bus out of busy status. */
-    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
-    }
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG)) {
-    }
+    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG);
+    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG));
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
 
     ret = sdhci_set_transfer_config(host, sdhci_command, sdhci_data);
