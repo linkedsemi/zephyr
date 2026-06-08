@@ -6,24 +6,22 @@
 #include "qsh.h"
 #include "ls_otbn_config.h"
 #include <stdio.h>
-static unsigned int s_prng_seed = 0x12345678;
+#include <math.h>
 
 static uint32_t ls_otbn_default_prng_cb(void)
 {
-    return (uint32_t)rand_r(&s_prng_seed);
+    return (uint32_t)rand();
 }
 
 static otbn_rand_cb s_trng_cb = ls_otbn_default_prng_cb;
 static otbn_rand_cb s_prng_cb = ls_otbn_default_prng_cb;
 static uint32_t EDN_URND_BUS_IN;
 
-void ls_otbn_wolfssl_random_callback_register(otbn_rand_cb trng_cb, otbn_rand_cb prng_cb)
+void ls_otbn_random_callback_register(otbn_rand_cb trng_cb, otbn_rand_cb prng_cb)
 {
     s_trng_cb = trng_cb ? trng_cb : ls_otbn_default_prng_cb;
     s_prng_cb = prng_cb ? prng_cb : ls_otbn_default_prng_cb;
 }
-
-#define DEFAULT_RND_INPUT 0xfefefefe
 
 void LS_OTBN_SYSC_IRQHandler(void)
 {
