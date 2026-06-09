@@ -22,6 +22,8 @@ extern "C" {
 /* Included from <atomic.h> */
 
 #ifdef CONFIG_SMP
+bool atomic_cas_ram(atomic_t *target, atomic_val_t old_value,
+			  atomic_val_t new_value);
 bool atomic_cas(atomic_t *target, atomic_val_t old_value,
 			  atomic_val_t new_value);
 
@@ -35,7 +37,6 @@ static inline bool atomic_cas(atomic_t *target, atomic_val_t old_value,
 					   0, __ATOMIC_SEQ_CST,
 					   __ATOMIC_SEQ_CST);
 }
-
 static inline bool atomic_ptr_cas(atomic_ptr_t *target, atomic_ptr_val_t old_value,
 				  atomic_ptr_val_t new_value)
 {
@@ -45,22 +46,22 @@ static inline bool atomic_ptr_cas(atomic_ptr_t *target, atomic_ptr_val_t old_val
 }
 #endif
 
-static inline atomic_val_t atomic_add(atomic_t *target, atomic_val_t value)
+static ALWAYS_INLINE atomic_val_t atomic_add(atomic_t *target, atomic_val_t value)
 {
 	return __atomic_fetch_add(target, value, __ATOMIC_SEQ_CST);
 }
 
-static inline atomic_val_t atomic_sub(atomic_t *target, atomic_val_t value)
+static ALWAYS_INLINE atomic_val_t atomic_sub(atomic_t *target, atomic_val_t value)
 {
 	return __atomic_fetch_sub(target, value, __ATOMIC_SEQ_CST);
 }
 
-static inline atomic_val_t atomic_inc(atomic_t *target)
+static ALWAYS_INLINE atomic_val_t atomic_inc(atomic_t *target)
 {
 	return atomic_add(target, 1);
 }
 
-static inline atomic_val_t atomic_dec(atomic_t *target)
+static ALWAYS_INLINE atomic_val_t atomic_dec(atomic_t *target)
 {
 	return atomic_sub(target, 1);
 }

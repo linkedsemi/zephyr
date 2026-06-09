@@ -151,11 +151,22 @@ void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
     
 }
 
+void smp_mode_cache_config(void)
+{
+#if defined(CONFIG_XIP)
+    csi_icache_enable();
+#else
+    csi_icache_enable();
+    // csi_dcache_enable();
+#endif
+}
+
 void lsqsh_secondary_cpu_init(void)
 {
     if(get_cur_cpu_id() == LSQSH_CPU1)
     {
         cpu_early_common_config();
+        smp_mode_cache_config();
         cpu_sleep_mode_config(0);
         smp_mode_cache_region_init();
         cpu_intr_sec_unmask();

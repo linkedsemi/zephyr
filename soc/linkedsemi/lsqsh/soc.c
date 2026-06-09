@@ -27,6 +27,10 @@
 #include "soc_boot.h"
 #include "otbn/otbn_mbox.h"
 
+#if defined(CONFIG_SMP)
+#include "smp/lsqsh_smp.h"
+#endif
+
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
 #define MHINT_AEE_POS 20
@@ -589,7 +593,7 @@ void soc_early_init_hook(void)
 
 #if defined(CONFIG_CACHE)
 #if defined(CONFIG_SMP)
-    csi_icache_enable();
+    smp_mode_cache_config();
 #else
 #if defined(CONFIG_DCACHE)
     csi_dcache_enable();

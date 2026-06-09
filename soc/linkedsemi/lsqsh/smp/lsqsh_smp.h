@@ -21,6 +21,8 @@ void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak);
 void smp_mode_cache_region_init(void);
 void lsqsh_secondary_cpu_init(void);
 
+void smp_mode_cache_config(void);
+
 #define IPI_SCHED	0
 #define IPI_FPU_FLUSH	1
 #define IPI_XIP_LOCK    2
