@@ -25,7 +25,7 @@
 #include "soc.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
-#include "otbn/otbn_mbox.h"
+#include "otbn/ls_otbn_config.h"
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
