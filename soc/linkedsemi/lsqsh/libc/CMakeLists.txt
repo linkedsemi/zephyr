@@ -6,3 +6,7 @@ zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_TLSF_MULIT_LSQSH malloc_t
 zephyr_library_sources_ifdef(CONFIG_HEAP_DEBUG_LSQSH heap_debug.c)
 zephyr_library_include_directories_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH ${ZEPHYR_BASE}/lib/heap)
 zephyr_library_sources_ifdef(CONFIG_CXX_OPERATOR_NEW_DELETE cxx_crt_init.cpp)
+zephyr_library_sources_ifdef(CONFIG_POSIX_API fopen.c)
+if (${CONFIG_POSIX_API})
+  target_link_options(app PUBLIC -Wl,--wrap=fopen)
+endif()
