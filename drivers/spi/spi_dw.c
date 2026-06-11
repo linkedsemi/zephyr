@@ -178,7 +178,7 @@ int spi_timing_calibration(const struct device *dev,
 		}
 	} else {
 		bool detect_success = false;
-		for (int off = 0; off < flash_size; off += SPI_CALIB_LEN) {
+		for (int off = 0; off < flash_size; off += info->timing_calibration_per_block_len) {
 			op_info->addr = off;
 			ret = api->spi_nor_op->transceive(dev, config, op_info);
 			if (ret) {
@@ -2208,6 +2208,7 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 		.timing_calibration_disabled = DT_INST_PROP_OR(inst, timing_calibration_disabled, false),           \
 		.timing_calibration_auto_detect_content_disable = DT_INST_PROP_OR(inst, timing_calibration_auto_detect_content_disable, false), \
 		.timing_calibration_start_off = DT_INST_PROP_OR(inst, timing_calibration_start_offset, 0),          \
+		.timing_calibration_per_block_len = DT_INST_PROP_OR(inst, timing_calibration_per_block_len, SPI_CALIB_LEN),          \
 		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),)) \
 		COND_CODE_1(DT_INST_PROP(inst, aux_reg),                                    \
 			(.read_func = aux_reg_read,                                         \
