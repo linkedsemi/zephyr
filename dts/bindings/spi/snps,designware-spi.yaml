@@ -64,6 +64,13 @@ properties:
       The flash data offset for timing calibration.
     default: 0
 
+  timing-calibration-per-block-len:
+    type: int
+    required: false
+    description: |
+      The flash data offset for timing calibration.
+    default: 4096
+
   timing-calibration-clock-frequency:
     type: int
     required: false
