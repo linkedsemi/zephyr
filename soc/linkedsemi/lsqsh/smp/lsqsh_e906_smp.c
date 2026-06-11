@@ -12,8 +12,6 @@
 #include <zephyr/logging/log.h>
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
-#define XIP_LOCK_COUNT                          (CONFIG_MP_MAX_NUM_CPUS-1)
-
 void __scondary_cpu_reset(void);
 atomic_val_t *p_cpu_pending_ipi;
 
@@ -28,14 +26,6 @@ uint32_t get_cur_cpu_id(void)
     return arch_curr_cpu()->id;
 }
 
-// uint32_t arch_irq_is_locked(void)
-// {
-//     uint32_t mstatus = csr_read(mstatus);
-//     if((mstatus & BIT(3)) == 0)
-//     {
-//         while(1);
-//     }
-// }
 
 void soc_late_init_hook(void)
 {
@@ -71,7 +61,7 @@ void lsqsh_ipi_intr_set(uint32_t cpu_id)
     }
     else
     {
-        while(1);
+        __ASSERT(0,"Unexpected number of CPUs\n");
     }
 }
 
@@ -140,15 +130,15 @@ void sched_ipi_handler(const void *unused);
 /* cpu1 */
 void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
 {
+    // The __nocache section was not initialized during the initialization phase of the .bss section.
+    memset(&xip_sync, 0, sizeof(xip_sync));
     p_cpu_pending_ipi = p_ipi_msak;
-    /* premary processors init ipi isr*/
+    /* premary processors init ipi isr */
     IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
 	irq_enable(SYSC_SEC_CPU_IRQN);
-    // /*enable on other processors*/
+    /* enable on other processors */
     IRQ_CONNECT(SYSC_APP_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
 	irq_disable(SYSC_APP_CPU_IRQN);
-
-    
 }
 
 void smp_mode_cache_config(void)
@@ -157,7 +147,6 @@ void smp_mode_cache_config(void)
     csi_icache_enable();
 #else
     csi_icache_enable();
-    // csi_dcache_enable();
 #endif
 }
 
@@ -173,7 +162,6 @@ void lsqsh_secondary_cpu_init(void)
         cpu_intr_app_unmask();
         irq_enable(SYSC_APP_CPU_IRQN);
 	    irq_disable(SYSC_SEC_CPU_IRQN);
-        // 当前cpu的flash中断要打开
         z_riscv_irq_priority_set(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, IRQ_TYPE_EDGE_RISING);
         irq_enable(FLASH_SWINT_NUM);
     }
@@ -194,7 +182,7 @@ int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point)
     }
     else
     {
-        return -1;
+        __ASSERT(0,"Unexpected number of CPUs\n");
     }
 }
 #endif
