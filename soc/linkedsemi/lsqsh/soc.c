@@ -25,7 +25,7 @@
 #include "soc.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
-#include "otbn/otbn_mbox.h"
+#include "otbn/ls_otbn_config.h"
 
 #if defined(CONFIG_SMP)
 #include "smp/lsqsh_smp.h"
@@ -558,7 +558,7 @@ __weak void cpu_early_common_config(void)
     MODIFY_REG(value, 0x6000, 0x2000);
     __set_MSTATUS(value);//enable fpu
     value = __get_MHCR();
-    value |= (CACHE_MHCR_RS_Msk | CACHE_MHCR_BPE_Msk | CACHE_MHCR_BTB_Msk);
+    value |= (CACHE_MHCR_WB_Msk | CACHE_MHCR_WA_Msk | CACHE_MHCR_RS_Msk | CACHE_MHCR_BPE_Msk | CACHE_MHCR_BTB_Msk);
     __set_MHCR(value);
 
     __set_MTVT((uint32_t)0);
@@ -614,10 +614,16 @@ void soc_early_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-    if (!is_app_cpu_running()) {
 #if defined(CONFIG_MBOX)&&(!defined(CONFIG_SMP))
+    if ((PWR_FULL_RESET == reset_reason_get())
+        || (SOFT_FULL_RESET == reset_reason_get())
+        || (CPU_FULL_RESET == reset_reason_get())
+        || (SYS_IWDT_FULL_RESET == reset_reason_get())
+        || (EXT_FULL_RESET == reset_reason_get())) {
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox_memory)), 0, DT_REG_SIZE(DT_NODELABEL(mbox_memory)));
+    }
 #endif
+    if (!is_app_cpu_running()) {
 #if defined(CONFIG_PSRAM)
         psram_init();
 #endif

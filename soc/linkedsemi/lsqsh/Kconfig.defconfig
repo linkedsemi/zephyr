@@ -516,7 +516,8 @@ config SD_BUFFER_SIZE
 	int
 	default SD_BUFFER_SIZE_OVERLAY
 
-rsource "otbn/Kconfig.defconfig"
+rsource "otbn/Kconfig.wolfssl"
+rsource "otbn/Kconfig.mbedtls"
 rsource "coredump/Kconfig"
 rsource "uart_agent/Kconfig"
 
