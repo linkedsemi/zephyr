@@ -13,6 +13,12 @@
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/drivers/pm_cpu_ops.h>
 
+#ifdef CONFIG_SOC_SERIES_LSQSH
+/* ls_qsh platform */
+#include <stdio.h>
+#include "platform.h"
+#include "smp/lsqsh_smp.h"
+#endif
 volatile struct {
 	arch_cpustart_t fn;
 	void *arg;
@@ -73,7 +79,11 @@ void arch_secondary_cpu_init(int hartid)
 	z_riscv_pmp_init();
 #endif
 #ifdef CONFIG_SMP
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_secondary_cpu_init();
+#else
 	irq_enable(RISCV_IRQ_MSOFT);
+#endif
 #endif /* CONFIG_SMP */
 #ifdef CONFIG_PLIC_IRQ_AFFINITY
 	/* Enable on secondary cores so that they can respond to PLIC */
@@ -99,9 +109,13 @@ void arch_sched_directed_ipi(uint32_t cpu_bitmap)
 
 	for (unsigned int i = 0; i < num_cpus; i++) {
 		if ((i != id) && _kernel.cpus[i].arch.online &&
-		    ((cpu_bitmap & BIT(i)) != 0)) {
+		 ((cpu_bitmap & BIT(i)) != 0)) {
 			atomic_set_bit(&cpu_pending_ipi[i], IPI_SCHED);
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+			lsqsh_ipi_intr_set(i);
+#else
 			MSIP(_kernel.cpus[i].arch.hartid) = 1;
+#endif
 		}
 	}
 
@@ -117,15 +131,23 @@ void arch_sched_broadcast_ipi(void)
 void arch_flush_fpu_ipi(unsigned int cpu)
 {
 	atomic_set_bit(&cpu_pending_ipi[cpu], IPI_FPU_FLUSH);
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_ipi_intr_set(cpu);
+#else
 	MSIP(_kernel.cpus[cpu].arch.hartid) = 1;
+#endif
 }
 #endif
 
-static void sched_ipi_handler(const void *unused)
+void sched_ipi_handler(const void *unused)
 {
 	ARG_UNUSED(unused);
 
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_ipi_intr_clr(_current_cpu->id);
+#else
 	MSIP(csr_read(mhartid)) = 0;
+#endif
 
 	atomic_val_t pending_ipi = atomic_clear(&cpu_pending_ipi[_current_cpu->id]);
 
@@ -142,6 +164,11 @@ static void sched_ipi_handler(const void *unused)
 		 * No need to re-enable IRQs here as long as
 		 * this remains the last case.
 		 */
+	}
+#endif
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK)) {
+		poll_wait_xip_unlock();
 	}
 #endif
 }
@@ -171,9 +198,13 @@ void arch_spin_relax(void)
 int arch_smp_init(void)
 {
 
+#if defined(CONFIG_SOC_SERIES_LSQSH)
+	lsqsh_primary_cpu_smp_init(cpu_pending_ipi);
+#else
 	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
 	irq_enable(RISCV_IRQ_MSOFT);
 
+#endif
 	return 0;
 }
 #endif /* CONFIG_SMP */

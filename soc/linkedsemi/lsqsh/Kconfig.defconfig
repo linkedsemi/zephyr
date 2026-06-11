@@ -25,8 +25,8 @@ if LSQSH_ARCH_HAS_CUSTOM_BUSY_WAIT
 endif
 
 config SYS_CLOCK_HW_CYCLES_PER_SEC
+	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency) if $(dt_path_enabled,/cpus/cpu@0)
 	default $(dt_node_int_prop_int,/cpus/cpu@1,clock-frequency) if $(dt_path_enabled,/cpus/cpu@1)
-	default $(dt_node_int_prop_int,/cpus/cpu@2,clock-frequency) if $(dt_path_enabled,/cpus/cpu@2)
 	default 0
 
 config NUM_IRQS
@@ -216,8 +216,6 @@ if SMP
 config TICKET_SPINLOCKS
 	default y
 
-config ATOMIC_OPERATIONS_E906_SMP
-	default y
 
 endif
 

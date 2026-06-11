@@ -27,6 +27,10 @@
 #include "soc_boot.h"
 #include "otbn/ls_otbn_config.h"
 
+#if defined(CONFIG_SMP)
+#include "smp/lsqsh_smp.h"
+#endif
+
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
 #define MHINT_AEE_POS 20
@@ -40,7 +44,7 @@ IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE_DETECT)));
 IF_ENABLED(CONFIG_DCACHE, (BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE > 0)));
 #endif
 
-static void cpu_sleep_mode_config(uint8_t deep)
+void cpu_sleep_mode_config(uint8_t deep)
 {
     uint32_t mextstaus = __get_MEXSTATUS();
     MODIFY_REG(mextstaus,MEXSTATUS_SLEEP_Msk,(!deep)<<MEXSTATUS_SLEEP_Pos);
@@ -201,7 +205,48 @@ __maybe_unused static void cpu2_cache_region_init(void)
     }
 }
 
-extern void SWINT_Handler_ASM(void);
+__maybe_unused void smp_mode_cache_region_init(void)
+{
+//     const uint32_t __image_ram_start = (uint32_t)_image_ram_start;
+//     const uint32_t __image_ram_end = (uint32_t)_image_ram_end;
+//     const uint32_t __image_ram_size = (uint32_t)_image_ram_size;
+//     const uint32_t __nocache_ram_start = (uint32_t)_nocache_ram_start;
+//     const uint32_t __nocache_ram_end = (uint32_t)_nocache_ram_end;
+//     const uint32_t __nocache_ram_size = (uint32_t)_nocache_ram_size;
+//     uint8_t idx = 0;
+
+// #if defined(CONFIG_XIP)
+//     if (!(((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE1_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
+//         || ((DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) >= CACHE2_ADDR) && (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) < (CACHE2_ADDR + QSPI_CACHE_SIZE))))) {
+//         csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_CHOSEN(zephyr_flash)), WEAK_ORDER);
+//         csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_CHOSEN(zephyr_flash)) + DT_REG_SIZE(DT_CHOSEN(zephyr_flash))), CACHEABLE);
+//     }
+// #endif
+
+//     csi_sysmap_config_region(idx++, __image_ram_start, WEAK_ORDER);
+
+// #if defined(CONFIG_NOCACHE_MEMORY)
+//     if ((__nocache_ram_size > 0) && (__nocache_ram_size < __image_ram_size)) {
+//         __ASSERT_NO_MSG(0 == (__nocache_ram_size % CONFIG_SYSMAP_GRANULARITY));
+//         if (__image_ram_start != __nocache_ram_start) {
+//             csi_sysmap_config_region(idx++, __nocache_ram_start, CACHEABLE | BUFFERABLE);
+//         }
+//         csi_sysmap_config_region(idx++, __nocache_ram_end, WEAK_ORDER);
+//     }
+// #endif
+
+//     csi_sysmap_config_region(idx++, __image_ram_end, CACHEABLE | BUFFERABLE);
+
+// #if DT_NODE_EXISTS(DT_NODELABEL(psram))
+//     csi_sysmap_config_region(idx++, DT_REG_ADDR(DT_NODELABEL(psram)), WEAK_ORDER); /* 8MB PSRAM */
+//     csi_sysmap_config_region(idx++, (DT_REG_ADDR(DT_NODELABEL(psram)) + DT_REG_SIZE(DT_NODELABEL(psram))), CACHEABLE | BUFFERABLE); /* 8MB PSRAM */
+// #endif
+
+//     while (idx < SYSMAP_REGION_MAX) {
+//         csi_sysmap_config_region(idx++, 0xffffffff, STRONG_ORDER);
+//     }
+}
+
 extern void SystemInit();
 extern void psram_init(void);
 
@@ -489,14 +534,19 @@ __maybe_unused void lsqsh_emmc_txck_rxck_config(uint32_t dev, uint32_t base_cloc
 
 __weak void soc_prep_hook(void)
 {
+#if defined(CONFIG_SMP)
+    /* first cpu*/
+    // smp_mode_cache_region_init();
+#else
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     cpu1_cache_region_init();
 #else
     cpu2_cache_region_init();
 #endif
+#endif
 }
 
-__weak void soc_early_init_hook(void)
+__weak void cpu_early_common_config(void)
 {
     if (cpu_sysmap_check()) {
         LOG_ERR("cpu_sysmap_check failed, erase sysmap");
@@ -527,6 +577,12 @@ __weak void soc_early_init_hook(void)
         irq_disable(irq);
     }
 
+}
+
+void soc_early_init_hook(void)
+{
+    cpu_early_common_config();
+
 #if !defined(CONFIG_FORCE_CLOCK_HSI)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
     if (!is_app_cpu_running()) {
@@ -536,11 +592,15 @@ __weak void soc_early_init_hook(void)
 #endif /* CONFIG_FORCE_CLOCK_HSI */
 
 #if defined(CONFIG_CACHE)
+#if defined(CONFIG_SMP)
+    smp_mode_cache_config();
+#else
 #if defined(CONFIG_DCACHE)
     csi_dcache_enable();
 #endif
 #if defined(CONFIG_ICACHE)
     csi_icache_enable();
+#endif
 #endif
 #endif
 
@@ -554,7 +614,7 @@ __weak void soc_early_init_hook(void)
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)
-#if defined(CONFIG_MBOX)
+#if defined(CONFIG_MBOX)&&(!defined(CONFIG_SMP))
     if ((PWR_FULL_RESET == reset_reason_get())
         || (SOFT_FULL_RESET == reset_reason_get())
         || (CPU_FULL_RESET == reset_reason_get())
@@ -573,6 +633,7 @@ __weak void soc_early_init_hook(void)
     return;
 }
 
+#if !defined(CONFIG_SMP)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 extern uint8_t flash_ls_read_ear(const struct device *dev);
 extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
@@ -734,6 +795,7 @@ __weak void soc_late_init_hook(void)
     } else {
         flash_ex_op(flash_dev,FLASH_DRIVER_CLIENT_XIP_INACTIVE,0,NULL);
     }
+
 #if defined(CONFIG_BOOT_CPU2)
     if (((CONFIG_CPU2_BOOT_ADDR >= CACHE1_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE1_ADDR + QSPI_CACHE_SIZE)))
         || ((CONFIG_CPU2_BOOT_ADDR >= CACHE2_ADDR) && (CONFIG_CPU2_BOOT_ADDR < (CACHE2_ADDR + QSPI_CACHE_SIZE)))
@@ -751,6 +813,7 @@ __weak void soc_late_init_hook(void)
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER)
     ls_otbn_delegation_server_chanels_init();
 #endif
+
 }
 #else
 __weak void soc_late_init_hook(void)
@@ -759,7 +822,8 @@ __weak void soc_late_init_hook(void)
     ls_otbn_delegation_client_chanels_init();
 #endif
 }
-#endif
+#endif /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
+#endif /*!defined(CONFIG_SMP)*/
 
 #if defined(CONFIG_LINKEDSEMI_TPM_WWDT)
 

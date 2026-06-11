@@ -2,7 +2,10 @@ set(BOARD_REVISIONS "2os"
                     "2os_xip"
                     "2os_cpu1_xip"
                     "1os"
-                    "1os_xip")
+                    "1os_xip"
+                    "smp"
+                    "smp_xip"
+                    )
 if(NOT DEFINED BOARD_REVISION)
   set(BOARD_REVISION "1os")
 else()
