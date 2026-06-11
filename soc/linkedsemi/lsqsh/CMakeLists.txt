@@ -7,15 +7,9 @@ zephyr_sources(soc_reboot.c)
 zephyr_sources_ifdef(CONFIG_NETWORKING_MODULE plugin_section.c)
 
 zephyr_library_sources_ifdef(CONFIG_IOPMP_LINKEDSEMI iopmp.c)
-zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH malloc_newlib.c)
-zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_TLSF_LSQSH malloc_newlib_tlsf.c tlsf/tlsf.c)
-zephyr_library_sources_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_TLSF_MULIT_LSQSH malloc_tlsf_mulit_heap.c tlsf/tlsf.c)
-zephyr_library_sources_ifdef(CONFIG_HEAP_DEBUG_LSQSH heap_debug.c)
-zephyr_library_include_directories_ifdef(CONFIG_NEWLIB_LIBC_MALLOC_LSQSH ${ZEPHYR_BASE}/lib/heap)
-zephyr_library_sources_ifdef(CONFIG_CXX_OPERATOR_NEW_DELETE cxx_crt_init.cpp)
-
 zephyr_library_sources_ifdef(CONFIG_SMP smp/lsqsh_e906_smp.c)
 
+add_subdirectory(libc)
 add_subdirectory(otbn)
 add_subdirectory(coredump)
 add_subdirectory(shell)

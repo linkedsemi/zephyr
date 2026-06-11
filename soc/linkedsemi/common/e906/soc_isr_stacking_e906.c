@@ -6,15 +6,11 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/arch/riscv/csr.h>
 #include "soc.h"
-#include "field_manipulate.h"
-#include "platform.h"
-#include "ls_soc_gpio.h"
 #include "smp/lsqsh_smp.h"
-#include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
+#include <platform.h>
 
-uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS] = {0,0};
-static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX] = {{0},{0}};
+uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS];
+static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX];
 static const struct device *const zephyr_flash_controller =
     DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
@@ -67,3 +63,36 @@ void Swint_Handler_C(struct arch_esf *args)
     uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args->a4;
     args->a0 = func(args->a0, args->a1, args->a2, args->a3);
 }
+
+#if defined(CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_HANDLING)
+static inline uint32_t mnxti_get_and_set_mie(void)
+{
+    uint32_t mnxti;
+
+    __asm__ volatile (
+        "csrrsi %0, mnxti, 8"
+        : "=r"(mnxti)
+        :
+        : "memory"
+    );
+
+    return mnxti;
+}
+
+void __soc_handle_all_irqs(void)
+{
+    while (1) {
+        uint32_t mnxti = mnxti_get_and_set_mie();
+        uint32_t irq_num = mnxti >> 2;
+        struct _isr_table_entry *entry;
+        if (0 == mnxti) {
+            break;
+        }
+        entry = &_sw_isr_table[irq_num];
+        (entry->isr)(entry->arg);
+        __disable_irq();
+    }
+
+    __disable_irq();
+}
+#endif

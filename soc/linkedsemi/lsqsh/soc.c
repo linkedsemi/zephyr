@@ -546,7 +546,7 @@ __weak void soc_prep_hook(void)
 #endif
 }
 
-__weak void cpu_early_common_config(void)
+void cpu_early_common_config(void)
 {
     if (cpu_sysmap_check()) {
         LOG_ERR("cpu_sysmap_check failed, erase sysmap");
@@ -579,7 +579,7 @@ __weak void cpu_early_common_config(void)
 
 }
 
-void soc_early_init_hook(void)
+__weak void soc_early_init_hook(void)
 {
     cpu_early_common_config();
 
