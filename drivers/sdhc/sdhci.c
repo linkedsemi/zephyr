@@ -230,6 +230,8 @@ int sdhci_set_transfer_config(struct sdhci_host *sdhci_host, struct sdhci_comman
 
 void sdhci_init(struct sdhci_host *host)
 {
+    uint8_t mshc_ctrl_r;
+
     sdhci_reset(host, SDHCI_RESET_ALL);
     /* high speed support*/
     // sdhci_writeb(host, SDHCI_CTRL_HISPD, SDHCI_HOST_CONTROL);
@@ -239,6 +241,9 @@ void sdhci_init(struct sdhci_host *host)
     while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
     sdhci_writel(host, SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_INT_ENABLE);
     sdhci_writel(host, SDHCI_INT_CARD_INT, SDHCI_SIGNAL_ENABLE);
+    mshc_ctrl_r = sdhci_readb(host, MSHC_CTRL_R);
+    mshc_ctrl_r &= ~CMD_CONFLICT_CHECK_MASK;
+    sdhci_writeb(host, mshc_ctrl_r, MSHC_CTRL_R);
 
     host->power_mode = SDHC_POWER_ON;
 }

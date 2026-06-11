@@ -83,15 +83,20 @@ void psram_reset(void)
 void psram_init(void) {
     uint32_t val = 0;
 
+    val = sys_read32(APP_SYSC_CPU_APP_ADDR + 0x80);
+    if ((val & BIT(0)) && is_app_cpu_running()) {
+        LOG_DBG("PSRAM is already initialized");
+        return;
+    }
+
+    /* xip disable */
+    val = sys_read32( APP_SYSC_CPU_APP_ADDR + 0x80);
+    val &= ~BIT(0);
+    sys_write32(val, APP_SYSC_CPU_APP_ADDR + 0x80);
+
     ls_clock_control_off(PSRAM_CLOCK);
     ls_reset_line_toggle(PSRAM_RESET);
     ls_clock_control_on(PSRAM_CLOCK);
-
-    val = sys_read32(APP_SYSC_CPU_APP_ADDR + 0x80);
-    if ((val & BIT(0))) {
-        LOG_DBG("PSRAM has been initialized");
-        return;
-    }
 
     psram_pin_init();
     psram_reset();
@@ -128,10 +133,10 @@ void psram_init(void) {
 
     val = 0;
     sys_write32(val, APP_PSRAM_CFG_ADDR + SSIV2_IMR);
- 
+
     val = DW_FIELD_BUILD(SSIV2_XIP_MODE_BITS_XIP_MD_BITS, 0x0);
     sys_write32(val, APP_PSRAM_CFG_ADDR + SSIV2_XIP_MODE_BITS);
- 
+
     val = DW_FIELD_BUILD(SSIV2_XIP_INCR_INST_INCR_INST, 0xeb);
     sys_write32(val, APP_PSRAM_CFG_ADDR + SSIV2_XIP_INCR_INST);
 
