@@ -274,6 +274,9 @@ endif # MBEDTLS_CIPHER_AES_ENABLED
 config MBEDTLS_CIPHER_CAMELLIA_ENABLED
 	bool "Camellia block cipher"
 
+config MBEDTLS_CIPHER_ARIA_ENABLED
+	bool "ARIA block cipher"
+
 config MBEDTLS_CIPHER_DES_ENABLED
 	bool "DES block cipher"
 
@@ -333,6 +336,9 @@ config MBEDTLS_HASH_ALL_ENABLED
 config MBEDTLS_MD5
 	bool "MD5 hash algorithm"
 
+config MBEDTLS_RIPEMD160
+	bool "RIPEMD-160 hash algorithm"
+
 config MBEDTLS_SHA1
 	bool "SHA-1 hash algorithm"
 
@@ -356,6 +362,9 @@ config MBEDTLS_SHA384
 
 config MBEDTLS_SHA512
 	bool "SHA-512 hash algorithm"
+
+config MBEDTLS_SHA3
+	bool "SHA-3 hash algorithm"
 
 config MBEDTLS_POLY1305
 	bool "Poly1305 hash family"
