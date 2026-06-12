@@ -35,7 +35,7 @@ struct otbn_delegate_params
     uint8_t *data[5];
 };
 
-#if defined(CONFIG_MEBDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
 struct mbox_dt_spec ls_otbn_client_tx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),tx);
 struct mbox_dt_spec ls_otbn_client_rx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),rx);
 struct k_sem client_sem;
