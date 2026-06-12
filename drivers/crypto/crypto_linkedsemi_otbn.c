@@ -53,7 +53,7 @@ status_t ls_otbn_imem_sec_wipe(const struct device *dev)
         return -1;
     }
 
-    HAL_OTBN_CMD_Write_Polling(HAL_OTBN_CMD_SEC_WIPE_IMEM);
+    OTBN_CMD_Write_Polling(OTBN_CMD_SEC_WIPE_IMEM);
 
     return 0;
 }
@@ -67,7 +67,7 @@ status_t ls_otbn_dmem_sec_wipe(const struct device *dev)
         return -1;
     }
 
-    HAL_OTBN_CMD_Write_Polling(HAL_OTBN_CMD_SEC_WIPE_DMEM);
+    OTBN_CMD_Write_Polling(OTBN_CMD_SEC_WIPE_DMEM);
 
     return 0;
 }
@@ -79,7 +79,7 @@ status_t ls_otbn_execute(const struct device *dev)
         return -1;
     }
 
-    HAL_OTBN_CMD_Write_Polling(HAL_OTBN_CMD_EXECUTE);
+    OTBN_CMD_Write_Polling(OTBN_CMD_EXECUTE);
 
     return 0;
 }
