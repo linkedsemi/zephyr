@@ -28,7 +28,7 @@
 #include <zephyr/cache.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(mbox_linkedsem_ipc);
+LOG_MODULE_DECLARE(ls_otbn);
 
 // #define ASSERT_WOLFSSL(error) {if(error){__ASSERT_//PRINT("wolfssl :stack is too small\n"); err = WOLFSSL_ERR_ECP_BUFFER_TOO_SMALL; goto exit;}}
 #define DELEGATE_ECDSA_GENE_KEY     0x11
@@ -60,7 +60,7 @@ struct mbox_dt_spec ls_otbn_client_tx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consu
 struct mbox_dt_spec ls_otbn_client_rx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),rx);
 struct k_sem client_sem;
 struct k_sem client_op_return_sem;
-static volatile struct otbn_delegate_params recive_params;
+static volatile struct otbn_delegate_params receive_params;
 
 static void delegation_client_mbox_handler(const struct device *dev,struct mbox_msg *data)
 {
@@ -74,12 +74,12 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
         case DELEGATE_ECC_SHARED_KEY:
         case DELEGATE_RSA_MOD_EXP_DECRY:
         case DELEGATE_RSA_MOD_EXP_ENCRY:
-            memcpy((void *)&recive_params,(void *)param,sizeof(struct otbn_delegate_params));
-            // recive_params.op = param->op;
-            // recive_params.data[0] = param->data[0];
-            // recive_params.data[1] = param->data[1];
-            // recive_params.data[2] = param->data[2];
-            // recive_params.data[3] = param->data[3];
+            memcpy((void *)&receive_params,(void *)param,sizeof(struct otbn_delegate_params));
+            // receive_params.op = param->op;
+            // receive_params.data[0] = param->data[0];
+            // receive_params.data[1] = param->data[1];
+            // receive_params.data[2] = param->data[2];
+            // receive_params.data[3] = param->data[3];
             break;
         default:
             LOG_DBG("ecdsa error operation\n");
@@ -145,8 +145,8 @@ int ls_otbn_sign_hash(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
 
     mbox_send_dt(&ls_otbn_client_tx,&mmsg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = recive_params.status;
-    if(recive_params.status == 0)
+    ret = receive_params.status;
+    if(receive_params.status == 0)
     {
         sys_cache_data_invd_range((void *)r, curve_size);//r
         sys_cache_data_invd_range((void *)s, curve_size);//s
@@ -191,8 +191,8 @@ int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t
     mbox_send_dt(&ls_otbn_client_tx,&mmsg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
 
-    ret = recive_params.status;
-    sys_cache_data_invd_range((void *)recive_params.data[0], curve_size);
+    ret = receive_params.status;
+    sys_cache_data_invd_range((void *)receive_params.data[0], curve_size);
     k_sem_give(&client_sem);
 
     return  ret;
@@ -223,7 +223,7 @@ int ls_otbn_get_key_pair(uint32_t curve, uint32_t curve_size, uint8_t *private_k
     };
     mbox_send_dt(&ls_otbn_client_tx,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = recive_params.status;
+    ret = receive_params.status;
     if(ret == 0)
     {
         sys_cache_data_invd_range((void *)private_key, curve_size);
@@ -259,7 +259,7 @@ int ls_otbn_shared_secret(uint32_t curve, uint32_t curve_size, uint8_t *private_
     };
     mbox_send_dt(&ls_otbn_client_tx,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = recive_params.status;
+    ret = receive_params.status;
     if(ret == 0)
     {
         // sys_cache_data_invd_range((void *)private_key, curve_size);
@@ -301,7 +301,7 @@ int ls_rsa_modexp_decrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
 
     mbox_send_dt(&ls_otbn_client_tx,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = recive_params.status;
+    ret = receive_params.status;
     if(ret == 0)
     {
         sys_cache_data_invd_range((void *)out, num_bytes);
@@ -319,8 +319,6 @@ int ls_rsa_modexp_encrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
     if (k_sem_take(&client_sem, K_FOREVER)) {
 		return -EACCES;
 	}
-    k_sem_give(&client_sem);
-
     sys_cache_data_flush_range((void *)in, num_bytes);
     sys_cache_data_flush_range((void *)out, num_bytes);
     sys_cache_data_flush_range((void *)exp, num_bytes);
@@ -341,7 +339,7 @@ int ls_rsa_modexp_encrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
 
     mbox_send_dt(&ls_otbn_client_tx,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = recive_params.status;
+    ret = receive_params.status;
     if(ret == 0)
     {
         sys_cache_data_invd_range((void *)out, num_bytes);
