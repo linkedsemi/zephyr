@@ -1,0 +1,14 @@
+# Common OTBN module configuration
+
+rsource "Kconfig.wolfssl"
+rsource "Kconfig.mbedtls"
+
+module = LINKEDSEMI_OTBN
+module-str = "LinkedSemi OTBN"
+source "subsys/logging/Kconfig.template.log_config"
+
+config LINKEDSEMI_OTBN
+	bool
+	help
+	  Internal flag indicating that the OTBN hardware module is used.
+	  Selected automatically when mbedtls or wolfssl OTBN support is enabled.
