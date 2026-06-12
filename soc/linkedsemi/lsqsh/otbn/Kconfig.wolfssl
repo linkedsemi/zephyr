@@ -45,5 +45,6 @@ config WOLFSSL_LINKEDSEMI_OTBN_RSA_ALT
 config WOLFSSL_LINKEDSEMI_OTBN_ENABLE
     bool "enable otbn moudule"
     default n
+    select LINKEDSEMI_OTBN
 
 endif

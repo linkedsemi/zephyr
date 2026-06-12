@@ -2,6 +2,7 @@
 
 #include "ls_hal_otbn_sha.h"
 #include "mbedtls_otbn_hash.h"
+#include "ls_otbn_config.h"
 #define SHA256_TEXT_LENTH           (540)
 extern const char sha256_text[SHA256_TEXT_LENTH];
 
@@ -46,7 +47,7 @@ static const uint32_t K[64] = {
 static void Sha256_BlockNumber_Update(uint16_t number)
 {
     uint32_t insruct = SHA256_IMEM_BLOCKNUM_DATA | ((number << 20)&0xfff00000);
-    HAL_OTBN_IMEM_Write(SHA256_IMEM_BLOCKNUM_OFFSET, &insruct, sizeof(uint32_t));
+    ls_otbn_imem_write(SHA256_IMEM_BLOCKNUM_OFFSET, &insruct, sizeof(uint32_t));
 }
 
 
@@ -59,21 +60,21 @@ void ls_otbn_sha256_init_for_rtos()
     totasha256_hmac_cnt = 0;
     remain_len = 0;
     sha_idx = SHA256_DMEM_MSG_OFFSET;
-    HAL_OTBN_DMEM_Set(0, 0x0, OTBN_DMEM_SIZE);
-    HAL_OTBN_IMEM_Write(0, (uint32_t *)sha256_text, SHA256_TEXT_LENTH);
-    HAL_OTBN_DMEM_Write(SHA256_DMEM_STATE_OFFSET, (uint32_t *)state_init, SHA256_DMEM_STATE_SIZE);
-    HAL_OTBN_DMEM_Write(SHA256_DMEM_MASK_OFFSET, (uint32_t *)bswap32_mask, SHA256_DMEM_MASK_SIZE);
-    HAL_OTBN_DMEM_Write(SHA256_DMEM_K_OFFSET, (uint32_t *)K, SHA256_DMEM_K_SIZE);
+    ls_otbn_dmem_set(0, 0x0, OTBN_DMEM_SIZE);
+    ls_otbn_imem_write(0, (uint32_t *)sha256_text, SHA256_TEXT_LENTH);
+    ls_otbn_dmem_write(SHA256_DMEM_STATE_OFFSET, (uint32_t *)state_init, SHA256_DMEM_STATE_SIZE);
+    ls_otbn_dmem_write(SHA256_DMEM_MASK_OFFSET, (uint32_t *)bswap32_mask, SHA256_DMEM_MASK_SIZE);
+    ls_otbn_dmem_write(SHA256_DMEM_K_OFFSET, (uint32_t *)K, SHA256_DMEM_K_SIZE);
     Sha256_BlockNumber_Update(0x20);
 }
 
 static void sha256_msg_write(uint8_t *msg)
 {
-    HAL_OTBN_DMEM_Write(sha_idx, (uint32_t *)msg, SHA256_BLOCK_SIZE);
+    ls_otbn_dmem_write(sha_idx, (uint32_t *)msg, SHA256_BLOCK_SIZE);
     sha_idx += SHA256_BLOCK_SIZE;
     if (sha_idx == (SHA256_DMEM_MSG_SIZE + SHA256_DMEM_MSG_OFFSET))
     {
-        ls_otbn_cmd(HAL_OTBN_CMD_EXECUTE);
+        ls_otbn_cmd(OTBN_CMD_EXECUTE);
         sha_idx = SHA256_DMEM_MSG_OFFSET;
     }
 }
@@ -135,13 +136,13 @@ void ls_otbn_sha256_final_for_rtos(uint8_t result[0x20])
     {
         remain_data[0x3f - i] = (uint8_t)(bit_cnt >> (8 * i));
     }
-    HAL_OTBN_DMEM_Write(sha_idx, (uint32_t *)remain_data, SHA256_BLOCK_SIZE);
+    ls_otbn_dmem_write(sha_idx, (uint32_t *)remain_data, SHA256_BLOCK_SIZE);
     sha_idx += SHA256_BLOCK_SIZE;
     Sha256_BlockNumber_Update((sha_idx - SHA256_DMEM_MSG_OFFSET) / SHA256_BLOCK_SIZE);
-    ls_otbn_cmd(HAL_OTBN_CMD_EXECUTE);
+    ls_otbn_cmd(OTBN_CMD_EXECUTE);
 
     uint32_t rs[8];
-    HAL_OTBN_DMEM_Read(SHA256_DMEM_STATE_OFFSET, rs, SHA256_DMEM_STATE_SIZE);
+    ls_otbn_dmem_read(SHA256_DMEM_STATE_OFFSET, rs, SHA256_DMEM_STATE_SIZE);
     for (uint8_t i = 0; i < 8; i++)
     {
         *result++ = (uint8_t)(rs[7 - i] >> 24);
@@ -149,5 +150,5 @@ void ls_otbn_sha256_final_for_rtos(uint8_t result[0x20])
         *result++ = (uint8_t)(rs[7 - i] >> 8);
         *result++ = (uint8_t)(rs[7 - i] >> 0);
     }
-    // ls_otbn_cmd(HAL_OTBN_CMD_SEC_WIPE_DMEM);
+    // ls_otbn_cmd(OTBN_CMD_SEC_WIPE_DMEM);
 }

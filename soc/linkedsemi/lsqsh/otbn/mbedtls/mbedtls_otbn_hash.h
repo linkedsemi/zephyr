@@ -2,10 +2,6 @@
 #include <string.h>
 #include "ls_hal_otbn_sha.h"
 
-
-void ls_otbn_cmd(enum HAL_OTBN_CMD cmd);
-
-
 void ls_otbn_sha256_init_for_rtos(void);
 void ls_otbn_sha256_update_for_rtos(uint8_t *msg, uint32_t length);
 void ls_otbn_sha256_final_for_rtos(uint8_t result[0x20]);

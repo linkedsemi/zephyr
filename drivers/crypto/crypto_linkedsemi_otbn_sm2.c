@@ -83,7 +83,7 @@ static int ls_otbn_sm2_sign(struct sm2_ctx *ctx, struct sm2_key *key, struct sm2
     const struct otbn_ops_api_t *otbn_func = otbn->api;
     uint32_t mode = data->kOtbnSm2ModeSign;
     struct ls_otbn_data *otbn_data = otbn->data;
-    if(otbn_data->mode != OTBN_SM2)
+    if(otbn_data->mode != OTBN_FIRMWARE_SM2)
     {
         return -1;
     }
@@ -155,7 +155,7 @@ static int ls_otbn_sm2_verify(struct sm2_ctx *ctx, struct sm2_key *key, struct s
     uint32_t mode = data->kOtbnSm2ModeVerify;
     struct ls_otbn_data *otbn_data = otbn->data;
     uint8_t r_x[32] = {0};
-    if(otbn_data->mode != OTBN_SM2)
+    if(otbn_data->mode != OTBN_FIRMWARE_SM2)
     {
         return -1;
     }
@@ -235,7 +235,7 @@ static int ls_otbn_sm2_keygen(struct sm2_ctx *ctx, struct sm2_key *key)
     const struct otbn_ops_api_t *otbn_func = otbn->api;
     uint32_t mode = data->kOtbnSm2ModeKeygen;
     struct ls_otbn_data *otbn_data = otbn->data;
-    if(otbn_data->mode != OTBN_SM2)
+    if(otbn_data->mode != OTBN_FIRMWARE_SM2)
     {
         return -1;
     }
@@ -316,7 +316,7 @@ static int ls_otbn_sm2_session_setup(const struct device *dev,
         return -1;
     }
 
-    otbn_data->mode = OTBN_SM2;
+    otbn_data->mode = OTBN_FIRMWARE_SM2;
     ctx->device = dev;
     ctx->ops.keygen = ls_otbn_sm2_keygen;
     ctx->ops.sign = ls_otbn_sm2_sign;
