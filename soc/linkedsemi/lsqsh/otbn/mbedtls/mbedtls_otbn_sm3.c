@@ -1,5 +1,6 @@
 #include "ls_hal_otbn_sha.h"
 #include "mbedtls_otbn_hash.h"
+#include "ls_otbn_config.h"
 #define SM3_TEXT_LENTH           (1000)
 #define SM3_DMEM_LENTH           (320)
 extern const char sm3_text[SM3_TEXT_LENTH];
@@ -29,20 +30,19 @@ void ls_otbn_sm3_init_for_rtos()
     totash_sm3_msg_total_len = 0;
     remain_len = 0;
     // sha_idx = SM3_DMEM_MSG_OFFSET;
-    HAL_OTBN_DMEM_Set(0, 0x0, OTBN_DMEM_SIZE);
-    HAL_OTBN_IMEM_Write(0, (uint32_t *)sm3_text, SM3_TEXT_LENTH);
-    HAL_OTBN_DMEM_Write(0, (uint32_t *)sm3_dmem, SM3_DMEM_LENTH);
+    ls_otbn_dmem_set(0, 0x0, OTBN_DMEM_SIZE);
+    ls_otbn_imem_write(0, (uint32_t *)sm3_text, SM3_TEXT_LENTH);
+    ls_otbn_dmem_write(0, (uint32_t *)sm3_dmem, SM3_DMEM_LENTH);
     memcpy32(currnt_state,state_init,8);
 }
 
 static void sm3_msg_write(uint8_t *msg,uint32_t chunks_num)
 {
-    HAL_OTBN_DMEM_Write(SM3_DMEM_STATE_IV_OFFSET,currnt_state,SM3_DMEM_STATE_IV_SIZE);
-    HAL_OTBN_DMEM_Write(SM3_DMEM_BLOCKNUM_OFFSET,&chunks_num,SM3_DMEM_BLOCKNUM_SIZE);
-    HAL_OTBN_DMEM_Write(SM3_DMEM_MSG_OFFSET, (uint32_t *)msg, SM3_BLOCK_SIZE*chunks_num);
-    ls_otbn_cmd(HAL_OTBN_CMD_EXECUTE);
-    HAL_OTBN_DMEM_Read(SM3_DMEM_STATE_IV_OFFSET,currnt_state,SM3_DMEM_STATE_IV_SIZE);
-    (void)chunks_num;
+    ls_otbn_dmem_write(SM3_DMEM_STATE_IV_OFFSET,currnt_state,SM3_DMEM_STATE_IV_SIZE);
+    ls_otbn_dmem_write(SM3_DMEM_BLOCKNUM_OFFSET,&chunks_num,SM3_DMEM_BLOCKNUM_SIZE);
+    ls_otbn_dmem_write(SM3_DMEM_MSG_OFFSET, (uint32_t *)msg, SM3_BLOCK_SIZE*chunks_num);
+    ls_otbn_cmd(OTBN_CMD_EXECUTE);
+    ls_otbn_dmem_read(SM3_DMEM_STATE_IV_OFFSET,currnt_state,SM3_DMEM_STATE_IV_SIZE);
 }
 
 void ls_otbn_sm3_update_for_rtos(uint8_t *msg, uint32_t length)
@@ -128,5 +128,5 @@ void ls_otbn_sm3_final_for_rtos(uint8_t result[0x20])
     totash_sm3_msg_total_len = 0;
     remain_len = 0;
     // memcpy32(currnt_state,state_init,32);
-    // ls_otbn_cmd(HAL_OTBN_CMD_SEC_WIPE_DMEM);
+    // ls_otbn_cmd(OTBN_CMD_SEC_WIPE_DMEM);
 }
