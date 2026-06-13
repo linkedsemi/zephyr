@@ -79,6 +79,7 @@ static inline uint32_t mnxti_get_and_set_mie(void)
     return mnxti;
 }
 
+__attribute__((optimize("-O2"), noinline, section(".exception.other.__soc_handle_all_irqs")))
 void __soc_handle_all_irqs(void)
 {
     while (1) {
