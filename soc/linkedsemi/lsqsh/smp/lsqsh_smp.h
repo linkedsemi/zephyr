@@ -2,7 +2,7 @@
 #define _LSQSH_SMP_H_
 
 #include <zephyr/sys/atomic.h>
-
+#include <zephyr/spinlock.h>
 #if defined(CONFIG_SMP)
 uint32_t get_cur_cpu_id(void);
 #else
@@ -22,6 +22,10 @@ void smp_mode_cache_region_init(void);
 void lsqsh_secondary_cpu_init(void);
 
 void smp_mode_cache_config(void);
+
+k_spinlock_key_t e906_smp_spin_lock(struct k_spinlock *l);
+
+void e906_smp_spin_unlock(struct k_spinlock *l, k_spinlock_key_t key);
 
 #define IPI_SCHED	0
 #define IPI_FPU_FLUSH	1
