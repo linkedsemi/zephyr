@@ -326,7 +326,7 @@ void uart_ls_irq_err_disable(const struct device *dev)
 
 int uart_ls_irq_is_pending(const struct device *dev)
 {
-	int ret = uart_ls_irq_rx_ready(dev) || uart_ls_irq_rx_ready(dev);
+	int ret = uart_ls_irq_tx_ready(dev) || uart_ls_irq_rx_ready(dev);
 
 	return ret;
 }
