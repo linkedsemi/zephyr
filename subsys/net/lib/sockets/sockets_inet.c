@@ -2236,7 +2236,7 @@ int zsock_setsockopt_ctx(struct net_context *ctx, int level, int optname,
 				return 0;
 			}
 
-			if ((ifreq == NULL) || (optlen > sizeof(*ifreq))) {
+			if ((ifreq == NULL) || (optlen != sizeof(*ifreq))) {
 				errno = EINVAL;
 				return -1;
 			}
