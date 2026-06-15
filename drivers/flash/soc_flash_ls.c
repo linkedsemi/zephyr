@@ -484,6 +484,12 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
 	priv->env.addr4b = cfg->addr4b;
 	priv->env.writing = false;
+#if defined(CONFIG_XIP)
+	priv->env.xip = true;
+#else
+	priv->env.xip = false;
+#endif
+	priv->env.suspended = false;
 	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM); // Configure the flash irq function before  initializing mbox, mbox will trigger flash irq in work handler
 	k_sem_init(&priv->sem, 1, 1);
