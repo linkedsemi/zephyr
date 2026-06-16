@@ -153,6 +153,8 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	/* map packet fragments */
 	d_idx = p->tx_desc_head;
 	frag = pkt->buffer;
+
+	net_pkt_ref(pkt);
 	do {
 		LOG_DBG("desc sem/head/tail=%d/%d/%d",
 			k_sem_count_get(&p->free_tx_descs),
@@ -164,12 +166,10 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 			goto abort;
 		}
 
-		/* Take reference for the DMA */
-		net_pkt_frag_ref(frag);
-
 		sys_cache_data_flush_range(frag->data, frag->len);
 		p->tx_frags[d_idx] = frag;
-		LOG_DBG("d[%d]: frag %p len %d", d_idx, (void *)frag->data, frag->len);
+		p->tx_pkt[d_idx] = pkt;
+		LOG_DBG("d[%d]: frag %p len %d", d_idx, frag->data, frag->len);
 
 		/* if no more fragments after this one: */
 		if (!frag->frags) {
@@ -205,21 +205,19 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 
 abort:
 	while (d_idx != p->tx_desc_head) {
-		/* release already prepared fragments */
+		/* release already pinned fragments */
 		DEC_WRAP(d_idx, NB_TX_DESCS);
-		frag = p->tx_frags[d_idx];
-		net_pkt_frag_unref(frag);
 		k_sem_give(&p->free_tx_descs);
 	}
+	net_pkt_unref(pkt);
+
 	return -ENOMEM;
 }
-
 
 static void dwmac_tx_release(struct dwmac_priv *p)
 {
 	unsigned int d_idx;
 	struct dwmac_dma_desc *d;
-	struct net_buf *frag;
 	const struct eth_linkedsemi_config *dev_config = p->dev->config;
 	uint32_t des3_val;
 
@@ -240,11 +238,6 @@ static void dwmac_tx_release(struct dwmac_priv *p)
 			break;
 		}
 
-		/* release corresponding fragments */
-		frag = p->tx_frags[d_idx];
-		LOG_DBG("unref frag %p", (void *)frag->data);
-		net_pkt_frag_unref(frag);
-
 		/* last packet descriptor: */
 		if (des3_val & TDES3_LD) {
 			/* log any errors */
@@ -252,6 +245,7 @@ static void dwmac_tx_release(struct dwmac_priv *p)
 				LOG_ERR("tx error (DES3 = 0x%08x)", des3_val);
 				eth_stats_update_errors_tx(p->iface);
 			}
+			net_pkt_unref(p->tx_pkt[d_idx]);
 		}
 	}
 	p->tx_desc_tail = d_idx;
