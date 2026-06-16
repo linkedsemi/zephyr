@@ -141,6 +141,7 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	struct net_buf *frag;
 	unsigned int pkt_len = net_pkt_get_len(pkt);
 	unsigned int d_idx;
+	unsigned int first_d_idx;
 	struct dwmac_dma_desc *d;
 	uint32_t des2_flags, des3_flags;
 
@@ -150,28 +151,35 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	des2_flags = 0;
 	des3_flags = TDES3_FD | TDES3_OWN;
 
-	/* map packet fragments */
-	d_idx = p->tx_desc_head;
+	/* Reserve descriptors and fragment refs before touching hardware. */
+	first_d_idx = p->tx_desc_head;
+	d_idx = first_d_idx;
 	frag = pkt->buffer;
 	do {
 		LOG_DBG("desc sem/head/tail=%d/%d/%d",
 			k_sem_count_get(&p->free_tx_descs),
 			p->tx_desc_head, p->tx_desc_tail);
 
-		/* reserve a free descriptor for this fragment */
-		if (k_sem_take(&p->free_tx_descs, K_NO_WAIT) != 0) {
-			LOG_WRN("no more free tx descriptors");
+		if (k_sem_take(&p->free_tx_descs, TX_AVAIL_WAIT) != 0) {
+			LOG_DBG("no more free tx descriptors");
 			goto abort;
 		}
 
-		/* Take reference for the DMA */
 		net_pkt_frag_ref(frag);
-
-		sys_cache_data_flush_range(frag->data, frag->len);
 		p->tx_frags[d_idx] = frag;
+
+		INC_WRAP(d_idx, NB_TX_DESCS);
+		frag = frag->frags;
+	} while (frag);
+
+	/* All resources secured; program the descriptor ring. */
+	d_idx = first_d_idx;
+	frag = pkt->buffer;
+	do {
 		LOG_DBG("d[%d]: frag %p len %d", d_idx, (void *)frag->data, frag->len);
 
-		/* if no more fragments after this one: */
+		sys_cache_data_flush_range(frag->data, frag->len);
+
 		if (!frag->frags) {
 			/* set those flags on the last descriptor */
 			des2_flags |= TDES2_IOC;
@@ -204,11 +212,13 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	return 0;
 
 abort:
-	while (d_idx != p->tx_desc_head) {
-		/* release already prepared fragments */
+	while (d_idx != first_d_idx) {
 		DEC_WRAP(d_idx, NB_TX_DESCS);
 		frag = p->tx_frags[d_idx];
-		net_pkt_frag_unref(frag);
+		if (frag != NULL) {
+			net_pkt_frag_unref(frag);
+			p->tx_frags[d_idx] = NULL;
+		}
 		k_sem_give(&p->free_tx_descs);
 	}
 	return -ENOMEM;
@@ -242,8 +252,17 @@ static void dwmac_tx_release(struct dwmac_priv *p)
 
 		/* release corresponding fragments */
 		frag = p->tx_frags[d_idx];
-		LOG_DBG("unref frag %p", (void *)frag->data);
-		net_pkt_frag_unref(frag);
+		if (frag != NULL) {
+			LOG_DBG("unref frag %p", (void *)frag->data);
+			net_pkt_frag_unref(frag);
+			p->tx_frags[d_idx] = NULL;
+		}
+
+		d->des0 = 0;
+		d->des1 = 0;
+		d->des2 = 0;
+		d->des3 = 0;
+		barrier_dmem_fence_full();
 
 		/* last packet descriptor: */
 		if (des3_val & TDES3_LD) {
