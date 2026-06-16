@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  *
- * AF_UNIX SOCK_STREAM socket implementation for Zephyr.
+ * AF_UNIX SOCK_STREAM & SOCK_DGRAM socket implementation for Zephyr.
  *
  * Data transport reuses the k_pipe + k_poll_signal pattern from socketpair.c.
  * Each connected socket endpoint owns a recv pipe; writes go to the peer's
@@ -108,6 +108,11 @@ __net_socket struct unix_socket {
 	struct k_mutex lock;
 	int type;                       /* SOCK_STREAM only for now     */
 	int backlog;
+        /* DGRAM fields */
+	sys_slist_t dgram_list;
+	size_t dgram_queued_bytes;
+	struct sockaddr_un dgram_peer;
+	bool dgram_peer_set;
 };
 
 /* ------------------------------------------------------------------ */
@@ -175,6 +180,9 @@ static int usock_init(struct unix_socket *s)
 	s->closed = false;
 	s->type = SOCK_STREAM;
 	s->backlog = 0;
+    sys_slist_init(&s->dgram_list);
+	s->dgram_queued_bytes = 0;
+	s->dgram_peer_set = false;
 	memset(&s->addr, 0, sizeof(s->addr));
 
 	/* A fresh socket is always writable */
@@ -375,6 +383,113 @@ static ssize_t unix_write(void *obj, const void *buffer, size_t count)
 }
 
 /* ------------------------------------------------------------------ */
+
+/* ------------------------------------------------------------------ */
+/* DGRAM                                                              */
+/* ------------------------------------------------------------------ */
+struct unix_dgram {
+	sys_snode_t node;
+	struct sockaddr_un src_addr;
+	size_t len;
+	uint8_t data[];  /* flexible array member */
+};
+
+#define DGRAM_MAX_SIZE CONFIG_NET_UNIX_BUFFER_SIZE
+
+static int dgram_sendto(struct unix_socket *s, const void *buf,
+			size_t len, const struct sockaddr *dest_addr,
+			socklen_t addrlen)
+{
+	struct unix_socket *target = NULL;
+	const struct sockaddr_un *sun;
+	size_t pathlen;
+
+	if (dest_addr != NULL) {
+		sun = (const struct sockaddr_un *)dest_addr;
+		pathlen = addrlen - offsetof(struct sockaddr_un, sun_path);
+		if (pathlen == 0 || pathlen > sizeof(s->addr.sun_path)) {
+			errno = EINVAL; return -1;
+		}
+		target = find_bound_socket(sun->sun_path, pathlen);
+	} else if (s->dgram_peer_set) {
+		target = find_bound_socket(s->dgram_peer.sun_path,
+			strlen(s->dgram_peer.sun_path));
+	}
+	if (!target) { errno = ECONNREFUSED; return -1; }
+	if (len > DGRAM_MAX_SIZE) { errno = EMSGSIZE; return -1; }
+
+	struct unix_dgram *d = k_malloc(sizeof(*d) + len);
+	if (!d) { errno = ENOMEM; return -1; }
+	d->len = len;
+	memcpy(d->data, buf, len);
+	if (s->bound)
+		memcpy(&d->src_addr, &s->addr, sizeof(d->src_addr));
+	else {
+		memset(&d->src_addr, 0, sizeof(d->src_addr));
+		d->src_addr.sun_family = AF_UNIX;
+	}
+
+
+	k_mutex_lock(&target->lock, K_FOREVER);
+	sys_slist_append(&target->dgram_list, &d->node);
+	target->dgram_queued_bytes += len;
+	k_poll_signal_raise(&target->readable, USOCK_SIG_DATA);
+	k_mutex_unlock(&target->lock);
+	return len;
+}
+
+static ssize_t dgram_recvfrom(struct unix_socket *s, void *buf,
+			      size_t max_len, struct sockaddr *src_addr,
+			      socklen_t *addrlen)
+{
+	k_mutex_lock(&s->lock, K_FOREVER);
+
+	for (;;) {
+		struct unix_dgram *d = (struct unix_dgram *)sys_slist_get(&s->dgram_list);
+		if (d) {
+			size_t copy_len = (max_len < d->len) ? max_len : d->len;
+			memcpy(buf, d->data, copy_len);
+			if (addrlen) {
+				*addrlen = sizeof(struct sockaddr_un);
+			}
+			if (src_addr && addrlen) {
+				memcpy(src_addr, &d->src_addr,
+				       MIN(*addrlen, sizeof(d->src_addr)));
+			}
+			s->dgram_queued_bytes -= d->len;
+			k_free(d);
+			k_mutex_unlock(&s->lock);
+			return copy_len;
+		}
+		if (usock_is_nonblock(s)) {
+			k_mutex_unlock(&s->lock);
+			errno = EAGAIN;
+			return -1;
+		}
+		
+		/* Poll for datagram using k_poll on readable signal */
+		{
+			struct k_poll_event events[] = {
+				K_POLL_EVENT_INITIALIZER(
+					K_POLL_TYPE_SIGNAL,
+					K_POLL_MODE_NOTIFY_ONLY,
+					&s->readable),
+			};
+
+			k_mutex_unlock(&s->lock);
+			
+			int ret = k_poll(events, ARRAY_SIZE(events), K_FOREVER);
+			
+			k_mutex_lock(&s->lock, K_FOREVER);
+			
+			/* If poll failed, continue waiting */
+			if (ret < 0 && ret != -EAGAIN) {
+				errno = EINTR;
+				return -1;
+			}
+		}
+	}
+}
 /* read: receive data from our own recv pipe                          */
 /* ------------------------------------------------------------------ */
 static ssize_t unix_read(void *obj, void *buffer, size_t count)
@@ -529,6 +644,17 @@ static int unix_close(void *obj)
 		struct pending_conn *pc =
 			CONTAINER_OF(node, struct pending_conn, node);
 		pending_free(pc);
+	}
+
+	/* Free any pending datagrams */
+	{
+		sys_snode_t *node_dgram;
+		while ((node_dgram = sys_slist_get(&s->dgram_list)) != NULL) {
+			struct unix_dgram *d =
+				CONTAINER_OF(node_dgram, struct unix_dgram, node);
+			k_free(d);
+		}
+		s->dgram_queued_bytes = 0;
 	}
 
 	/* Clear registration */
@@ -825,6 +951,25 @@ static int unix_connect(void *obj, const struct sockaddr *addr,
 
 	k_mutex_unlock(&s->lock);
 
+	/* DGRAM connect: just store default target address */
+	if (s->type == SOCK_DGRAM) {
+		if (s->connected) {
+			errno = EISCONN;
+			return -1;
+		}
+		const struct sockaddr_un *sun_d = (const struct sockaddr_un *)addr;
+		struct unix_socket *target = find_bound_socket(sun_d->sun_path,
+			addrlen - offsetof(struct sockaddr_un, sun_path));
+		if (!target) {
+			errno = ECONNREFUSED;
+			return -1;
+		}
+		memcpy(&s->dgram_peer, sun_d, sizeof(*sun_d));
+		s->dgram_peer_set = true;
+		s->connected = true;
+		return 0;
+	}
+
 	/*
 	 * Create a client-side endpoint. This is the fd that will
 	 * become connected once accept() picks it up. We reserve an fd
@@ -937,6 +1082,7 @@ static int unix_connect(void *obj, const struct sockaddr *addr,
 		for (int tries = 0; tries < 100; tries++) {
 			k_mutex_lock(&s->lock, K_FOREVER);
 			if (s->connected) {
+				k_poll_signal_reset(&s->readable);
 				k_mutex_unlock(&s->lock);
 				return 0;
 			}
@@ -962,6 +1108,7 @@ static int unix_connect(void *obj, const struct sockaddr *addr,
 
 		k_mutex_lock(&s->lock, K_FOREVER);
 		if (s->connected) {
+			k_poll_signal_reset(&s->readable);
 			k_mutex_unlock(&s->lock);
 			return 0;
 		}
@@ -991,12 +1138,19 @@ static ssize_t unix_sendto(void *obj, const void *buf, size_t len,
 			   socklen_t addrlen)
 {
 	struct unix_socket *s = (struct unix_socket *)obj;
-	bool saved_nonblock;
-	ssize_t ret;
-
+	if (s->type == SOCK_DGRAM) {
+		bool nb = usock_is_nonblock(s);
+		if (flags & ZSOCK_MSG_DONTWAIT) s->flags |= USOCK_FLAG_NONBLOCK;
+		int ret = dgram_sendto(s, buf, len, dest_addr, addrlen);
+		if ((flags & ZSOCK_MSG_DONTWAIT) && !nb)
+			s->flags &= ~USOCK_FLAG_NONBLOCK;
+		return ret;
+	}
+	/* STREAM path */
 	ARG_UNUSED(dest_addr);
 	ARG_UNUSED(addrlen);
-
+	bool saved_nonblock;
+	ssize_t ret;
 	if (flags & ZSOCK_MSG_DONTWAIT) {
 		saved_nonblock = usock_is_nonblock(s);
 		s->flags |= USOCK_FLAG_NONBLOCK;
@@ -1046,13 +1200,18 @@ static ssize_t unix_recvfrom(void *obj, void *buf, size_t max_len,
 			     socklen_t *addrlen)
 {
 	struct unix_socket *s = (struct unix_socket *)obj;
+	if (s->type == SOCK_DGRAM) {
+		bool nb = usock_is_nonblock(s);
+		if (flags & ZSOCK_MSG_DONTWAIT) s->flags |= USOCK_FLAG_NONBLOCK;
+		ssize_t ret = dgram_recvfrom(s, buf, max_len, src_addr, addrlen);
+		if ((flags & ZSOCK_MSG_DONTWAIT) && !nb)
+			s->flags &= ~USOCK_FLAG_NONBLOCK;
+		return ret;
+	}
+	/* STREAM path */
+	if (addrlen != NULL) *addrlen = 0;
 	bool saved_nonblock;
 	ssize_t ret;
-
-	if (addrlen != NULL) {
-		*addrlen = 0;
-	}
-
 	if (flags & ZSOCK_MSG_DONTWAIT) {
 		saved_nonblock = usock_is_nonblock(s);
 		s->flags |= USOCK_FLAG_NONBLOCK;
@@ -1491,7 +1650,7 @@ int unix_socket_create(int family, int type, int proto)
 		return -1;
 	}
 
-	if (type != SOCK_STREAM) {
+	if (type != SOCK_STREAM && type != SOCK_DGRAM) {
 		errno = EPROTOTYPE;
 		return -1;
 	}
@@ -1514,6 +1673,7 @@ int unix_socket_create(int family, int type, int proto)
 		errno = ENOMEM;
 		return -1;
 	}
+	s->type = type;
 
 	fd = zvfs_reserve_fd();
 	if (fd < 0) {
@@ -1540,7 +1700,7 @@ int unix_socket_create(int family, int type, int proto)
 /* ------------------------------------------------------------------ */
 static bool unix_is_supported(int family, int type, int proto)
 {
-	return (family == AF_UNIX) && (type == SOCK_STREAM) &&
+	return (family == AF_UNIX) && (type == SOCK_STREAM || type == SOCK_DGRAM) &&
 	       (proto == 0);
 }
 
