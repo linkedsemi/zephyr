@@ -1056,6 +1056,9 @@ extern const struct ethernet_api dwmac_api;
 
 #define DMA_CHn_RX_IRQ_WATCHDOG_TIMER(n)	(0x1138 + 0x80 * (n))
 
+#define DMA_CHn_RX_IRQ_WDT_RWT			GENMASK(7, 0)
+#define DMA_CHn_RX_IRQ_WDT_RWTU			GENMASK(13, 12)
+
 /* 17.6.14 */
 
 #define DMA_CHn_SLOT_FN_CTRL_STATUS(n)		(0x113c + 0x80 * (n))
