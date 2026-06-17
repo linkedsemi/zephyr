@@ -22,6 +22,21 @@ config WOLFSSL_LINKEDSEMI_OTBN_ECC_ALT
     select WOLFSSL_LINKEDSEMI_OTBN_ENABLE
     default n
 
+config WOLFSSL_LINKEDSEMI_OTBN_SHA224_SHA256_ALT
+    bool "Replace sha224 and sha256 hash functions with OTBN hash implementations"
+    select WOLFSSL_LINKEDSEMI_OTBN_ENABLE
+    default n
+
+config WOLFSSL_LINKEDSEMI_OTBN_SHA384_SHA512_ALT
+    bool "Replace sha384 and sha512 hash functions with OTBN hash implementations"
+    select WOLFSSL_LINKEDSEMI_OTBN_ENABLE
+    default n
+
+config WOLFSSL_LINKEDSEMI_OTBN_SM3_ALT
+    bool "Replace sm3 hash function with OTBN hash implementation"
+    select WOLFSSL_LINKEDSEMI_OTBN_ENABLE
+    default n
+
 config WOLFSSL_LINKEDSEMI_HARDWARE_SHA224_SHA256_SM3_ALT
     bool "Replace the software sha224、 sha256 and sm3 hash calculate of wolfssl with the hardware hash of linkedsemi"
     default n
