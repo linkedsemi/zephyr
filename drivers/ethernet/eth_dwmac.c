@@ -135,11 +135,11 @@ static inline int net_pkt_get_nbfrags(struct net_pkt *pkt)
 }
 static bool dwmac_rx_desc_set_ioc(unsigned int d_idx)
 {
-	if (CONFIG_DWMAC_RX_COALESCE_PKTS <= 1) {
+	if (CONFIG_DWMAC_RX_COALESCE_DESC <= 1) {
 		return true;
 	}
 
-	return ((d_idx + 1) % CONFIG_DWMAC_RX_COALESCE_PKTS) == 0;
+	return ((d_idx + 1) % CONFIG_DWMAC_RX_COALESCE_DESC) == 0;
 }
 
 static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
@@ -361,7 +361,7 @@ static void dwmac_rx_coalesce_configure(struct dwmac_priv *p)
 {
 	const struct eth_linkedsemi_config *dev_config = p->dev->config;
 
-	if (CONFIG_DWMAC_RX_COALESCE_PKTS <= 1) {
+	if (CONFIG_DWMAC_RX_COALESCE_DESC <= 1) {
 		return;
 	}
 
@@ -707,7 +707,7 @@ static void dwmac_iface_init(struct net_if *iface)
 		  DMA_CHn_IRQ_ENABLE_FBEE |
 		  DMA_CHn_IRQ_ENABLE_CDEE |
 		  DMA_CHn_IRQ_ENABLE_AIE;
-	if (CONFIG_DWMAC_RX_COALESCE_PKTS > 1) {
+	if (CONFIG_DWMAC_RX_COALESCE_DESC > 1) {
 		reg_val |= DMA_CHn_IRQ_ENABLE_RWTE;
 	}
 	REG_WRITE(DMA_CHn_IRQ_ENABLE(0), reg_val);
