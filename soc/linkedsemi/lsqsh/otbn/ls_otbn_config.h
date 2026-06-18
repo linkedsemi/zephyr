@@ -1,6 +1,7 @@
 #ifndef _LS_OTBN_CONFIG_
 #define _LS_OTBN_CONFIG_
 
+#include <string.h>
 /**
  * @file ls_otbn_config.h
  * @brief LinkedSemi OTBN RTOS abstraction layer API.
@@ -152,7 +153,7 @@ bool ls_otbn_session_is_owner(void);
  * @ref ls_otbn_session_acquire. Releasing without owning a session is a
  * programming error.
  */
-void ls_otbn_session_release(void);
+int ls_otbn_session_release(void);
 
 /**
  * @brief Send a command to OTBN and wait for completion.
