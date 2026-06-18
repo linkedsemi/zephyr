@@ -12,3 +12,12 @@ config LINKEDSEMI_OTBN
 	help
 	  Internal flag indicating that the OTBN hardware module is used.
 	  Selected automatically when mbedtls or wolfssl OTBN support is enabled.
+
+
+config LS_OTBN_OPERATION_TIMEOUT_MS
+	int "OTBN operation timeout in milliseconds"
+	default 10000
+	help
+	  Maximum time in milliseconds to wait for an OTBN operation to complete.
+	  This timeout is applied when waiting for OTBN command completion and
+	  when waiting for the OTBN to return to idle state.
