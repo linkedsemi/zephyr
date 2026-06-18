@@ -15,18 +15,17 @@
 LOG_MODULE_REGISTER(ls_otbn, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
 
 #define MBEDTLS_ERR_LS_OTBN_BUSY -0x135
+#ifndef CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
 #define OTBN_OPERATION_TIMEOUT_MS 10000
+#else
+#define OTBN_OPERATION_TIMEOUT_MS CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
+#endif
 
 static K_MUTEX_DEFINE(otbn_lock);
 static K_SEM_DEFINE(wait_complete, 0, 1);
 static bool otbn_inited;
 static volatile struct k_thread *otbn_owner_thread = NULL;
 static otbn_firmware_t current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
-/*
-#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN)&&defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_ENABLE)
-BUILD_ASSERT(false,"otbn is reused");
-#endif
-*/
 
 static uint32_t ls_otbn_default_prng_cb(void)
 {
@@ -142,7 +141,7 @@ void ls_otbn_module_init(void)
 
     irq_enable(OTBN_SYSC_IRQN);
     irq_enable(OBTN_IRQN);
-
+    HAL_OTBN_DMEM_Set(0, 0, OTBN_DMEM_SIZE);
     otbn_inited = true;
 }
 
@@ -161,33 +160,28 @@ int ls_otbn_module_deinit(void)
 
     struct k_thread *current_thread = k_current_get();
 
-    /* 如果 OTBN 正被其它线程使用，禁止 deinit */
     if (otbn_owner_thread != NULL && otbn_owner_thread != current_thread) {
         LOG_ERR("%s: OTBN in use by other thread", __func__);
         return -EBUSY;
     }
 
-    /* 获取锁，确保没有其它线程持有 session */
     int ret = k_mutex_lock(&otbn_lock, K_FOREVER);
     if (ret != 0) {
         LOG_ERR("%s: mutex lock failed (%d)", __func__, ret);
         return ret;
     }
 
-    /* 等待期间可能被其它线程抢走，再确认一次 */
     if (otbn_owner_thread != NULL && otbn_owner_thread != current_thread) {
         LOG_ERR("%s: OTBN acquired by other thread during wait", __func__);
         k_mutex_unlock(&otbn_lock);
         return -EBUSY;
     }
 
-    /* 当前线程是 owner 的话，清掉 owner 状态 */
     if (otbn_owner_thread == current_thread) {
         otbn_owner_thread = NULL;
         current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
     }
 
-    /* 如果 OTBN 正在执行，等待完成 */
     if (!HAL_OTBN_In_Idle_State()) {
         k_sem_reset(&wait_complete);
         ret = k_sem_take(&wait_complete, K_MSEC(OTBN_OPERATION_TIMEOUT_MS));
@@ -198,7 +192,6 @@ int ls_otbn_module_deinit(void)
         }
     }
 
-    /* 执行 deinit */
     int key = irq_lock();
     HAL_LSOTBN_MSP_DeInit();
     irq_disable(OTBN_SYSC_IRQN);
@@ -217,7 +210,6 @@ int ls_otbn_session_acquire(otbn_firmware_t firmware_id, otbn_timeout_s timeout)
 
     struct k_thread *current_thread = k_current_get();
 
-    /* 同线程重入直接拒绝，避免非递归 mutex 死锁 */
     if (otbn_owner_thread == current_thread) {
         LOG_ERR("%s: reentrant acquire rejected (firmware=%u)",
                 __func__, firmware_id);
@@ -228,7 +220,6 @@ int ls_otbn_session_acquire(otbn_firmware_t firmware_id, otbn_timeout_s timeout)
     if (ret != 0) {
         LOG_ERR("%s: mutex lock timeout (firmware=%u, timeout=%u)",
                 __func__, firmware_id, timeout);
-        // current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
         return -EBUSY;
     }
 
@@ -289,8 +280,6 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
         return -EACCES;
     }
 
-    // LOG_DBG("ls_otbn_cmd : 0x%x",cmd);
-    // io_toggle_pin(PA09);
     if (LSOTBN->INTR_STATE)
         LSOTBN->INTR_STATE = OTBN_INTR_STATE_DONE_MASK;
     k_sem_reset(&wait_complete);
@@ -304,7 +293,6 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
         }
         return rc;
     }
-    // io_toggle_pin(PA09);
     rc = HAL_OTBN_Error_Bit_Get();
     if(rc)
     {
@@ -327,7 +315,7 @@ static int ls_otbn_hal_status_to_errno(HAL_StatusTypeDef status)
 {
     if(status != HAL_OK)
     {
-        LOG_ERR("otbn write or read memery faile !");
+        LOG_ERR("Failed to read/write to the OTBN memory !");
         switch (status) {
         case HAL_BUSY:
             return -EBUSY;
@@ -336,15 +324,6 @@ static int ls_otbn_hal_status_to_errno(HAL_StatusTypeDef status)
         default:
             return -EIO;
         }
-    }
-    return 0;
-}
-
-static inline int __attribute__((always_inline)) ls_otbn_check_idle(void)
-{
-    if (!HAL_OTBN_In_Idle_State()) {
-        LOG_ERR("%s: OTBN is busy  now", __func__);
-        return -EBUSY;
     }
     return 0;
 }
@@ -362,10 +341,6 @@ static int ls_otbn_mem_param_check(uint32_t offset, uint32_t size)
 int ls_otbn_imem_write(uint32_t offset, const uint32_t *src, uint32_t size)
 {
     LOG_DBG("%s", __func__);
-    int ret = ls_otbn_mem_param_check(offset, size);
-    if (ret != 0) {
-        return ret;
-    }
     if (!ls_otbn_session_is_owner()) {
         return -EACCES;
     }
@@ -380,10 +355,6 @@ int ls_otbn_imem_write(uint32_t offset, const uint32_t *src, uint32_t size)
 int ls_otbn_imem_read(uint32_t offset, uint32_t *dst, uint32_t size)
 {
     LOG_DBG("%s", __func__);
-    int ret = ls_otbn_mem_param_check(offset, size);
-    if (ret != 0) {
-        return ret;
-    }
     if (!ls_otbn_session_is_owner()) {
         return -EACCES;
     }
@@ -398,10 +369,6 @@ int ls_otbn_imem_read(uint32_t offset, uint32_t *dst, uint32_t size)
 int ls_otbn_dmem_write(uint32_t offset, const uint32_t *src, uint32_t size)
 {
     LOG_DBG("%s", __func__);
-    int ret = ls_otbn_mem_param_check(offset, size);
-    if (ret != 0) {
-        return ret;
-    }
     if (!ls_otbn_session_is_owner()) {
         return -EACCES;
     }
@@ -416,10 +383,6 @@ int ls_otbn_dmem_write(uint32_t offset, const uint32_t *src, uint32_t size)
 int ls_otbn_dmem_read(uint32_t offset, uint32_t *dst, uint32_t size)
 {
     LOG_DBG("%s", __func__);
-    int ret = ls_otbn_mem_param_check(offset, size);
-    if (ret != 0) {
-        return ret;
-    }
     if (!ls_otbn_session_is_owner()) {
         return -EACCES;
     }
@@ -434,16 +397,12 @@ int ls_otbn_dmem_read(uint32_t offset, uint32_t *dst, uint32_t size)
 int ls_otbn_dmem_set(uint32_t offset, uint32_t data, uint32_t size)
 {
     LOG_DBG("%s", __func__);
-    int ret = ls_otbn_mem_param_check(offset, size);
-    if (ret != 0) {
-        return ret;
-    }
-    ret = ls_otbn_check_idle();
-    if (ret != 0) {
-        return ret;
-    }
     if (!ls_otbn_session_is_owner()) {
         return -EACCES;
+    }
+    if (!HAL_OTBN_In_Idle_State()) {
+        LOG_ERR("%s: OTBN not idle", __func__);
+        return -EBUSY;
     }
     return ls_otbn_hal_status_to_errno(
         HAL_OTBN_DMEM_Set(offset, data, size));
