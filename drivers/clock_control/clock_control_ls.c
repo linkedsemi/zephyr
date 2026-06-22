@@ -17,6 +17,10 @@ LOG_MODULE_REGISTER(clock_control_ls, LOG_LEVEL_DBG);
 #endif
 
 #if(CONFIG_SOC_LSQSH)
+/* HAL ls_soc_clock.h and Zephyr lsqsh_clock.h both define GEN_CLOCK with different semantics */
+#ifdef GEN_CLOCK
+#undef GEN_CLOCK
+#endif
 #include <zephyr/dt-bindings/clock/lsqsh_clock.h>
 #include "reg_sysc_sec_awo.h"
 #define CPU_FREQ DT_PROP(DT_PATH(cpus, cpu_1), clock_frequency)
@@ -40,7 +44,7 @@ static inline enum clock_control_status ls_clock_control_get_status(const struct
 	}
 }
 
-static inline int ls_clock_control_on(const struct device *dev,
+static inline int ls_clock_control_driver_on(const struct device *dev,
 					clock_control_subsys_t sub_system)
 {
 	enum clock_control_status status = ls_clock_control_get_status(dev, sub_system);
@@ -54,7 +58,7 @@ static inline int ls_clock_control_on(const struct device *dev,
 	return 0;
 }
 
-static inline int ls_clock_control_off(const struct device *dev,
+static inline int ls_clock_control_driver_off(const struct device *dev,
 					clock_control_subsys_t sub_system)
 {
 	struct ls_clk_cfg *clk_cfg = (struct ls_clk_cfg *)(sub_system);
@@ -150,8 +154,8 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 
 /* Clock controller driver registration */
 static const struct clock_control_driver_api ls_clock_control_api = {
-	.on = ls_clock_control_on,
-	.off = ls_clock_control_off,
+	.on = ls_clock_control_driver_on,
+	.off = ls_clock_control_driver_off,
 	.get_rate = ls_clock_control_get_rate,
 	.get_status = ls_clock_control_get_status,
 };
