@@ -27,7 +27,7 @@ k_spinlock_key_t e906_smp_spin_lock(struct k_spinlock *l);
 
 void e906_smp_spin_unlock(struct k_spinlock *l, k_spinlock_key_t key);
 
-void flash_critical_sync_ack();
+void flash_critical_sync_ack(bool loop_condition);
 
 static ALWAYS_INLINE bool e906_smp_spin_lock_is_locked(struct k_spinlock *l)
 {

@@ -95,30 +95,21 @@ struct xip_sync_control{
 };
 __nocache struct xip_sync_control xip_sync;
 
-__ramfunc void sync_ack(bool *ack)
+__ramfunc void sync_ack(bool *ack,bool loop_condition)
 {
     uint8_t i;
     for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
     {
         if(i != get_cur_cpu_id())
         {
-            while(!ack[i]);
+            while(ack[i]==loop_condition);
         }
     }
-    for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
-    {
-        ack[i] = false;
-    }
 }
 
-__ramfunc void flash_critical_sync_ack()
+__ramfunc void flash_critical_sync_ack(bool loop_condition)
 {
-    sync_ack(xip_sync.critical_ack);
-}
-
-static void wait_xip_sync_ack()
-{
-    sync_ack(xip_sync.sync_ack);
+    sync_ack(xip_sync.critical_ack, loop_condition);
 }
 
 __ramfunc void poll_wait_xip_unlock(void) 
@@ -131,20 +122,23 @@ __ramfunc void poll_wait_xip_unlock(void)
         unsigned int key = arch_irq_lock();
         xip_sync.critical_ack[cur_cpu_id] = true;
         while(e906_smp_spin_lock_is_locked(xip_sync.flash_lock));
+        xip_sync.critical_ack[cur_cpu_id] = false;
         arch_irq_unlock(key);
     }
+    xip_sync.sync_ack[cur_cpu_id] = false;
 }
 
 void flash_xip_lock_clear(void)
 {
     xip_sync.flash_op_ongoing = false;
+    sync_ack(xip_sync.sync_ack,true);
 }
 
 void flash_xip_lock_sync(void)
 {
 	xip_sync.flash_op_ongoing = true;
 	lsqsh_xip_lock_broadcast_ipi();
-	wait_xip_sync_ack();
+	sync_ack(xip_sync.sync_ack,false);
 }
 
 void sched_ipi_handler(const void *unused);
