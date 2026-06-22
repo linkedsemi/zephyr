@@ -74,6 +74,38 @@ config RX_REFILL_STACK_SIZE
 	help
 	  stack size for RX refill thread
 
+config DWMAC_RX_COALESCE_DESC
+	int "RX interrupt coalesce descriptor count"
+	default 1
+	range 1 500
+	help
+	  Number of RX descriptors to aggregate before asserting a receive
+	  interrupt (RDES3 IOC bit). A value of 1 disables coalescing.
+
+	  When N > 1, the RX IRQ Watchdog Timer (RIWT) is also enabled as a
+	  timeout fallback for trailing packets in a burst.
+
+config DWMAC_RX_COALESCE_RIWT
+	int "RX IRQ watchdog timer count (RIWT)"
+	default 234
+	range 16 255
+	help
+	  RWT field (bits[7:0]) written to DMA_CHn_RX_IRQ_WATCHDOG_TIMER.
+	  Only used when DWMAC_RX_COALESCE_DESC > 1. The watchdog expires
+	  after (RIWT * RWTU multiplier) CSR clock cycles when a packet
+	  completes on a descriptor without IOC.
+
+config DWMAC_RX_COALESCE_RIWTU
+	int "RX IRQ watchdog timer unit (CSR cycles per RIWT count)"
+	default 256
+	help
+	  RWTU multiplier for DMA_CHn_RX_IRQ_WATCHDOG_TIMER bits[13:12].
+	  Only used when DWMAC_RX_COALESCE_DESC > 1. Set to one of:
+	  256, 512, 1024, or 2048. The driver maps these to the hardware
+	  encoding 0, 1, 2, 3. Watchdog timeout is:
+
+	    RIWT * DWMAC_RX_COALESCE_RIWTU / CSR_clock
+
 config MDIO_RESET_MAC
 	bool "MDIO_RESET_MAC"
 	default y
