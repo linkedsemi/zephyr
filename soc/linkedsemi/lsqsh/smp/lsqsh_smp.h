@@ -27,6 +27,13 @@ k_spinlock_key_t e906_smp_spin_lock(struct k_spinlock *l);
 
 void e906_smp_spin_unlock(struct k_spinlock *l, k_spinlock_key_t key);
 
+void flash_critical_sync_ack();
+
+static ALWAYS_INLINE bool e906_smp_spin_lock_is_locked(struct k_spinlock *l)
+{
+	return atomic_get(&l->owner) != atomic_get(&l->tail);
+}
+
 #define IPI_SCHED	0
 #define IPI_FPU_FLUSH	1
 #define IPI_XIP_LOCK    2

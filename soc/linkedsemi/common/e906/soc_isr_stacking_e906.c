@@ -13,10 +13,10 @@
 uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS];
 static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX];
 static struct device zephyr_flash_controller_ram_struct;
+const struct device *const zephyr_flash_controller = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
 
 void zephyr_flash_controller_ram_struct_init()
 {
-    const struct device *const zephyr_flash_controller = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
     zephyr_flash_controller_ram_struct = *zephyr_flash_controller;
 }
 SYS_INIT(zephyr_flash_controller_ram_struct_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);

@@ -646,6 +646,12 @@ uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear)
 	return ret;
 }
 
+k_spinlock *flash_ls_get_flash_lock(const struct device *dev)
+{
+	struct flash_ls_data *priv = dev->data;
+	return &priv->env.reg.flash_lock;
+}
+
 static const struct flash_parameters *
 flash_ls_get_parameters(const struct device *dev)
 {
