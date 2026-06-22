@@ -89,6 +89,7 @@ static void lsqsh_xip_lock_broadcast_ipi(void)
 
 struct xip_sync_control{
     k_spinlock *flash_lock;
+    volatile bool in_critical;
     volatile bool flash_op_ongoing;
     volatile bool sync_ack[CONFIG_MP_MAX_NUM_CPUS]; 
     volatile bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
@@ -107,9 +108,16 @@ __ramfunc void sync_ack(bool *ack,bool loop_condition)
     }
 }
 
-__ramfunc void flash_critical_sync_ack(bool loop_condition)
+__ramfunc void flash_critical_enter_sync()
 {
-    sync_ack(xip_sync.critical_ack, loop_condition);
+    xip_sync.in_critical = true;
+    sync_ack(xip_sync.critical_ack, false);
+}
+
+__ramfunc void flash_critical_exit_sync()
+{
+    xip_sync.in_critical = false;
+    sync_ack(xip_sync.critical_ack, true);
 }
 
 __ramfunc void poll_wait_xip_unlock(void) 
@@ -118,10 +126,10 @@ __ramfunc void poll_wait_xip_unlock(void)
     xip_sync.sync_ack[cur_cpu_id] = true;
     while(xip_sync.flash_op_ongoing)
     {
-        while(!e906_smp_spin_lock_is_locked(xip_sync.flash_lock));
+        while(!xip_sync.in_critical && xip_sync.flash_op_ongoing);
         unsigned int key = arch_irq_lock();
         xip_sync.critical_ack[cur_cpu_id] = true;
-        while(e906_smp_spin_lock_is_locked(xip_sync.flash_lock));
+        while(xip_sync.in_critical);
         xip_sync.critical_ack[cur_cpu_id] = false;
         arch_irq_unlock(key);
     }
