@@ -455,6 +455,7 @@ static void delegation_server_mbox_callback(const struct device *dev,
 #define DELEGATE_SERVER_OP_START(dev)\
 	do{\
 		const struct flash_ls_config *cfg = dev->config;\
+		k_sched_lock();\
 		cfg->shared->busy = true;\
 		flash_delegation_server_operation_sync(dev);\
 	}while(0);
@@ -463,11 +464,12 @@ static void delegation_server_mbox_callback(const struct device *dev,
 	do{\
 		const struct flash_ls_config *cfg = dev->config;\
 		cfg->shared->busy = false;\
+		k_sched_unlock();\
 	}while(0);
 
 #else
-#define DELEGATE_SERVER_OP_START(dev)
-#define DELEGATE_SERVER_OP_END(dev)
+#define DELEGATE_SERVER_OP_START(dev)	k_sched_lock()
+#define DELEGATE_SERVER_OP_END(dev)		k_sched_unlock()
 #endif
 
 static int flash_ls_init(const struct device *dev)
