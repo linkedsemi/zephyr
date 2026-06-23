@@ -474,7 +474,7 @@ static int flash_ls_init(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
 	const struct flash_ls_config *cfg = dev->config;
-	priv->env.reg = cfg->reg;
+	priv->env.reg.reg = (reg_lsqspiv2_t *)cfg->reg;
 	priv->env.dual_mode_only = cfg->dual_mode_only;
 	priv->env.continuous_mode_enable = cfg->continuous_mode_enable;
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
@@ -642,7 +642,7 @@ uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear)
 	return ret;
 }
 
-k_spinlock *flash_ls_get_flash_lock(const struct device *dev)
+struct k_spinlock *flash_ls_get_flash_lock(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
 	return &priv->env.reg.flash_lock;

@@ -95,10 +95,12 @@ __nocache struct xip_sync_control xip_sync;
 
 __ramfunc void sync_ack(bool *ack,bool loop_condition)
 {
+    uint32_t cpu = get_cur_cpu_id();
     uint8_t i;
+
     for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
     {
-        if(i != get_cur_cpu_id())
+        if(i != cpu)
         {
             while(ack[i]==loop_condition);
         }
