@@ -58,6 +58,12 @@ struct flash_ls_data {
 	#endif
 };
 
+__ramfunc bool flash_ls_get_writing_status(const struct device *dev)
+{
+    struct flash_ls_data *priv = dev->data;
+	return priv->env.writing;
+}
+
 uint8_t flash_ls_read_ear(const struct device *dev);
 
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
