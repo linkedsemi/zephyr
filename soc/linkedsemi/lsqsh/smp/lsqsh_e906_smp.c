@@ -98,10 +98,12 @@ __nocache struct xip_sync_control xip_sync;
 
 __ramfunc void sync_ack(bool *ack,bool loop_condition)
 {
+    uint32_t cpu = get_cur_cpu_id();
     uint8_t i;
+
     for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
     {
-        if(i != get_cur_cpu_id())
+        if(i != cpu)
         {
             while(ack[i]==loop_condition);
         }
@@ -140,11 +142,18 @@ void flash_xip_lock_clear(void)
 {
     xip_sync.flash_op_ongoing = false;
     sync_ack(xip_sync.sync_ack,true);
+    k_sched_unlock();
 }
 
 void flash_xip_lock_sync(void)
 {
-	xip_sync.flash_op_ongoing = true;
+    /* Prevent this thread from migrating to another CPU while it owns the
+     * XIP lock; otherwise get_cur_cpu_id() at unlock would not match
+     * lock_owner and the remote CPU would spin forever.
+     */
+    k_sched_lock();
+
+    xip_sync.flash_op_ongoing = true;
 	lsqsh_xip_lock_broadcast_ipi();
 	sync_ack(xip_sync.sync_ack,false);
 }
