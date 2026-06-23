@@ -88,10 +88,7 @@ static void lsqsh_xip_lock_broadcast_ipi(void)
 }
 
 struct xip_sync_control{
-    k_spinlock *flash_lock;
     volatile bool in_critical;
-    volatile bool flash_op_ongoing;
-    volatile bool sync_ack[CONFIG_MP_MAX_NUM_CPUS]; 
     volatile bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
 __nocache struct xip_sync_control xip_sync;
@@ -111,6 +108,7 @@ __ramfunc void sync_ack(bool *ack,bool loop_condition)
 __ramfunc void flash_critical_enter_sync()
 {
     xip_sync.in_critical = true;
+	lsqsh_xip_lock_broadcast_ipi();
     sync_ack(xip_sync.critical_ack, false);
 }
 
@@ -123,41 +121,19 @@ __ramfunc void flash_critical_exit_sync()
 __ramfunc void poll_wait_xip_unlock(void) 
 {
     uint8_t cur_cpu_id = get_cur_cpu_id();
-    xip_sync.sync_ack[cur_cpu_id] = true;
-    while(xip_sync.flash_op_ongoing)
-    {
-        while(!xip_sync.in_critical && xip_sync.flash_op_ongoing);
-        unsigned int key = arch_irq_lock();
-        xip_sync.critical_ack[cur_cpu_id] = true;
-        while(xip_sync.in_critical);
-        xip_sync.critical_ack[cur_cpu_id] = false;
-        arch_irq_unlock(key);
-    }
-    xip_sync.sync_ack[cur_cpu_id] = false;
-}
-
-void flash_xip_lock_clear(void)
-{
-    xip_sync.flash_op_ongoing = false;
-    sync_ack(xip_sync.sync_ack,true);
-}
-
-void flash_xip_lock_sync(void)
-{
-	xip_sync.flash_op_ongoing = true;
-	lsqsh_xip_lock_broadcast_ipi();
-	sync_ack(xip_sync.sync_ack,false);
+    unsigned int key = arch_irq_lock();
+    xip_sync.critical_ack[cur_cpu_id] = true;
+    while(xip_sync.in_critical);
+    xip_sync.critical_ack[cur_cpu_id] = false;
+    arch_irq_unlock(key);
 }
 
 void sched_ipi_handler(const void *unused);
-k_spinlock *flash_ls_get_flash_lock(const struct device *dev);
-extern const struct device *const zephyr_flash_controller;
 
 void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
 {
     // The __nocache section was not initialized during the initialization phase of the .bss section.
     memset(&xip_sync, 0, sizeof(xip_sync));
-    xip_sync.flash_lock = flash_ls_get_flash_lock(zephyr_flash_controller);
     p_cpu_pending_ipi = p_ipi_msak;
     /* premary processors init ipi isr */
     IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
