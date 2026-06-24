@@ -424,7 +424,7 @@ __ramfunc static void high_frequency_init()
     LSCACHE->CCR = FIELD_BUILD(LSCACHE_EN, 0);
     dpll_qspi_clk_config_and_clk_switch();
     struct hal_flash_env env;
-    env.reg.reg = (void *)DT_REG_ADDR(DT_CHOSEN(zephyr_flash_controller));
+    env.reg = (void *)DT_REG_ADDR(DT_CHOSEN(zephyr_flash_controller));
     env.dual_mode_only = !DT_PROP(DT_CHOSEN(zephyr_flash_controller), quad_mode);
     env.continuous_mode_enable = DT_PROP(DT_CHOSEN(zephyr_flash_controller), continuous_mode);
     env.addr4b = (DT_FOREACH_CHILD_STATUS_OKAY(DT_CHOSEN(zephyr_flash_controller), LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20));
@@ -704,7 +704,7 @@ __maybe_unused static int flash_ear_offset_set(const struct device *flash_dev, u
             LOG_ERR("flash_ls_write_ear err");
             while(1);
         }
-        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)&env->reg, 0);
+        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, 0);
         if (ret) {
             LOG_ERR("lsqspiv2_backup_offset_set err: offset: %#x", 0);
             return ret;
@@ -720,7 +720,7 @@ __maybe_unused static int flash_ear_offset_set(const struct device *flash_dev, u
         const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
         const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
         const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
-        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)&env->reg, offset);
+        int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, offset);
         if (ret) {
             LOG_ERR("lsqspiv2_backup_offset_set err: offset: %#x", offset);
             return ret;

@@ -67,7 +67,7 @@ __ramfunc void lsqsh_ipi_intr_set(uint32_t cpu_id)
 
 void cpu_early_common_config(void);
 void cpu_sleep_mode_config(uint8_t deep);
-__ramfunc static void lsqsh_xip_lock_broadcast_ipi(void)
+void lsqsh_xip_lock_broadcast_ipi(bool is_write)
 {
     unsigned int key = arch_irq_lock();
     unsigned int id = get_cur_cpu_id();
@@ -77,7 +77,7 @@ __ramfunc static void lsqsh_xip_lock_broadcast_ipi(void)
 		if ((i != id) && _kernel.cpus[i].arch.online
         &&((cpu_bitmap & BIT(i)) != 0)
         ) {
-			atomic_set_bit(&p_cpu_pending_ipi[i], IPI_XIP_LOCK);
+			atomic_set_bit(&p_cpu_pending_ipi[i], is_write?IPI_XIP_LOCK_WRITE:IPI_XIP_LOCK_READ);
 			// MSIP(_kernel.cpus[i].arch.hartid) = 1;
             lsqsh_ipi_intr_set(i);
 		}
@@ -90,7 +90,6 @@ struct xip_sync_control{
     bool in_critical;
     bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
-extern struct device zephyr_flash_controller_ram_struct;
 __nocache struct xip_sync_control xip_sync;
 
 __ramfunc void sync_ack(bool *ack,bool loop_condition)
@@ -110,7 +109,6 @@ __ramfunc void sync_ack(bool *ack,bool loop_condition)
 __ramfunc void flash_critical_enter_sync()
 {
     xip_sync.in_critical = true;
-	lsqsh_xip_lock_broadcast_ipi();
     sync_ack(xip_sync.critical_ack, false);
 }
 
@@ -119,18 +117,25 @@ __ramfunc void flash_critical_exit_sync()
     xip_sync.in_critical = false;
     sync_ack(xip_sync.critical_ack, true);
 }
-bool flash_ls_get_writing_status(const struct device *dev);
-__ramfunc void poll_wait_xip_unlock(void) 
+
+__ramfunc static void critical_sync()
 {
     uint8_t cur_cpu_id = get_cur_cpu_id();
-    do{
-        unsigned int key = arch_irq_lock();
-        xip_sync.critical_ack[cur_cpu_id] = true;
-        while(xip_sync.in_critical);
-        xip_sync.critical_ack[cur_cpu_id] = false;
-        arch_irq_unlock(key);
-    }while(flash_ls_get_writing_status(&zephyr_flash_controller_ram_struct));
+    unsigned int key = arch_irq_lock();
+    xip_sync.critical_ack[cur_cpu_id] = true;
+    while(xip_sync.in_critical);
+    xip_sync.critical_ack[cur_cpu_id] = false;
+    arch_irq_unlock(key);
+}
 
+__ramfunc void poll_wait_xip_unlock(bool is_write) 
+{
+    critical_sync();
+    if(is_write)
+    {
+        while(!xip_sync.in_critical);
+        critical_sync();
+    }
 }
 
 void sched_ipi_handler(const void *unused);
