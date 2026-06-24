@@ -122,6 +122,7 @@ __ramfunc static void critical_sync()
 {
     uint8_t cur_cpu_id = get_cur_cpu_id();
     unsigned int key = arch_irq_lock();
+    while(!xip_sync.in_critical);
     xip_sync.critical_ack[cur_cpu_id] = true;
     while(xip_sync.in_critical);
     xip_sync.critical_ack[cur_cpu_id] = false;
