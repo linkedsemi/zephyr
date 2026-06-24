@@ -90,9 +90,9 @@ struct xip_sync_control{
     bool in_critical;
     bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
-__nocache struct xip_sync_control xip_sync;
+__nocache volatile struct xip_sync_control xip_sync;
 
-__ramfunc void sync_ack(bool *ack,bool loop_condition)
+__ramfunc void sync_ack(volatile bool *ack,bool loop_condition)
 {
     uint32_t cpu = get_cur_cpu_id();
     uint8_t i;
