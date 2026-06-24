@@ -88,8 +88,8 @@ static void lsqsh_xip_lock_broadcast_ipi(void)
 }
 
 struct xip_sync_control{
-    volatile bool in_critical;
-    volatile bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
+    bool in_critical;
+    bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
 __nocache struct xip_sync_control xip_sync;
 
