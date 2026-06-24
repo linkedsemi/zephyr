@@ -21,7 +21,7 @@ atomic_val_t *p_cpu_pending_ipi;
 #define LSQSH_CPU0     0
 #define LSQSH_CPU1     1
 
-uint32_t get_cur_cpu_id(void)
+__ramfunc uint32_t get_cur_cpu_id(void)
 {
     return arch_curr_cpu()->id;
 }
@@ -47,7 +47,7 @@ void lsqsh_ipi_intr_clr(uint32_t cpu_id)
     }
 }
 
-void lsqsh_ipi_intr_set(uint32_t cpu_id)
+__ramfunc void lsqsh_ipi_intr_set(uint32_t cpu_id)
 {
     if(cpu_id == LSQSH_CPU0)
     {
@@ -67,18 +67,17 @@ void lsqsh_ipi_intr_set(uint32_t cpu_id)
 
 void cpu_early_common_config(void);
 void cpu_sleep_mode_config(uint8_t deep);
-
-static void lsqsh_xip_lock_broadcast_ipi(void)
+void lsqsh_xip_lock_broadcast_ipi(bool is_write)
 {
     unsigned int key = arch_irq_lock();
-    unsigned int id = _current_cpu->id;
-    unsigned int num_cpus = arch_num_cpus();
+    unsigned int id = get_cur_cpu_id();
     uint32_t cpu_bitmap = IPI_ALL_CPUS_MASK;
 
-	for (unsigned int i = 0; i < num_cpus; i++) {
-		if ((i != id) && _kernel.cpus[i].arch.online &&
-		 ((cpu_bitmap & BIT(i)) != 0)) {
-			atomic_set_bit(&p_cpu_pending_ipi[i], IPI_XIP_LOCK);
+	for (unsigned int i = 0; i < CONFIG_MP_MAX_NUM_CPUS; i++) {
+		if ((i != id) && _kernel.cpus[i].arch.online
+        &&((cpu_bitmap & BIT(i)) != 0)
+        ) {
+			atomic_set_bit(&p_cpu_pending_ipi[i], is_write?IPI_XIP_LOCK_WRITE:IPI_XIP_LOCK_READ);
 			// MSIP(_kernel.cpus[i].arch.hartid) = 1;
             lsqsh_ipi_intr_set(i);
 		}
@@ -88,46 +87,60 @@ static void lsqsh_xip_lock_broadcast_ipi(void)
 }
 
 struct xip_sync_control{
-    volatile bool flash_op_ongoing;
-    volatile bool sync_ack[CONFIG_MP_MAX_NUM_CPUS]; 
+    bool in_critical;
+    bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
-__nocache struct xip_sync_control xip_sync;
+__nocache volatile struct xip_sync_control xip_sync;
 
-__ramfunc void poll_wait_xip_unlock(void) 
+__ramfunc void sync_ack(volatile bool *ack,bool loop_condition)
 {
-    xip_sync.sync_ack[get_cur_cpu_id()] = true;
-    while(xip_sync.flash_op_ongoing);
-}
-
-static void wait_xip_sync_ack()
-{
+    uint32_t cpu = get_cur_cpu_id();
     uint8_t i;
+
     for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
     {
-        if(i != get_cur_cpu_id())
+        if(i != cpu)
         {
-            while(!xip_sync.sync_ack[i]);
+            while(ack[i]==loop_condition);
         }
     }
-    for(i=0;i<CONFIG_MP_MAX_NUM_CPUS;i++)
+}
+
+__ramfunc void flash_critical_enter_sync()
+{
+    xip_sync.in_critical = true;
+    sync_ack(xip_sync.critical_ack, false);
+}
+
+__ramfunc void flash_critical_exit_sync()
+{
+    xip_sync.in_critical = false;
+    sync_ack(xip_sync.critical_ack, true);
+}
+
+__ramfunc static void critical_sync()
+{
+    uint8_t cur_cpu_id = get_cur_cpu_id();
+    unsigned int key = arch_irq_lock();
+    while(!xip_sync.in_critical);
+    xip_sync.critical_ack[cur_cpu_id] = true;
+    while(xip_sync.in_critical);
+    xip_sync.critical_ack[cur_cpu_id] = false;
+    arch_irq_unlock(key);
+}
+
+__ramfunc void poll_wait_xip_unlock(bool is_write) 
+{
+    critical_sync();
+    if(is_write)
     {
-        xip_sync.sync_ack[i] = false;
+        while(!xip_sync.in_critical);
+        critical_sync();
     }
 }
 
-void flash_xip_lock_clear(void)
-{
-    xip_sync.flash_op_ongoing = false;
-}
-
-void flash_xip_lock_sync(void)
-{
-	xip_sync.flash_op_ongoing = true;
-	lsqsh_xip_lock_broadcast_ipi();
-	wait_xip_sync_ack();
-}
 void sched_ipi_handler(const void *unused);
-/* cpu1 */
+
 void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
 {
     // The __nocache section was not initialized during the initialization phase of the .bss section.

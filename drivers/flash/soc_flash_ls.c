@@ -455,6 +455,7 @@ static void delegation_server_mbox_callback(const struct device *dev,
 #define DELEGATE_SERVER_OP_START(dev)\
 	do{\
 		const struct flash_ls_config *cfg = dev->config;\
+		k_sched_lock();\
 		cfg->shared->busy = true;\
 		flash_delegation_server_operation_sync(dev);\
 	}while(0);
@@ -463,15 +464,12 @@ static void delegation_server_mbox_callback(const struct device *dev,
 	do{\
 		const struct flash_ls_config *cfg = dev->config;\
 		cfg->shared->busy = false;\
+		k_sched_unlock();\
 	}while(0);
 
-#elif defined(CONFIG_SMP)
-#include "smp/lsqsh_smp.h"
-#define DELEGATE_SERVER_OP_START(dev) flash_xip_lock_sync()
-#define DELEGATE_SERVER_OP_END(dev) flash_xip_lock_clear()
 #else
-#define DELEGATE_SERVER_OP_START(dev)
-#define DELEGATE_SERVER_OP_END(dev)
+#define DELEGATE_SERVER_OP_START(dev)	k_sched_lock()
+#define DELEGATE_SERVER_OP_END(dev)		k_sched_unlock()
 #endif
 
 static int flash_ls_init(const struct device *dev)
@@ -484,6 +482,12 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
 	priv->env.addr4b = cfg->addr4b;
 	priv->env.writing = false;
+#if defined(CONFIG_XIP)
+	priv->env.xip = true;
+#else
+	priv->env.xip = false;
+#endif
+	priv->env.suspended = false;
 	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM); // Configure the flash irq function before  initializing mbox, mbox will trigger flash irq in work handler
 	k_sem_init(&priv->sem, 1, 1);

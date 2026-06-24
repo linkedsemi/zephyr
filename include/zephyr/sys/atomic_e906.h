@@ -30,6 +30,7 @@ bool atomic_cas(atomic_t *target, atomic_val_t old_value,
 bool atomic_ptr_cas(atomic_ptr_t *target, atomic_ptr_val_t old_value,
 				  atomic_ptr_val_t new_value);
 #else
+#define atomic_cas_ram atomic_cas 
 static inline bool atomic_cas(atomic_t *target, atomic_val_t old_value,
 				  atomic_val_t new_value)
 {

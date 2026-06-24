@@ -6,7 +6,7 @@
 
 static struct k_spinlock lock;
 
-static ALWAYS_INLINE k_spinlock_key_t e906_smp_spin_lock(struct k_spinlock *l)
+__ramfunc k_spinlock_key_t e906_smp_spin_lock(struct k_spinlock *l)
 {
 	ARG_UNUSED(l);
 	k_spinlock_key_t k;
@@ -29,7 +29,7 @@ static ALWAYS_INLINE k_spinlock_key_t e906_smp_spin_lock(struct k_spinlock *l)
 	return k;
 }
 
-static ALWAYS_INLINE void e906_smp_spin_unlock(struct k_spinlock *l,
+__ramfunc void e906_smp_spin_unlock(struct k_spinlock *l,
 					k_spinlock_key_t key)
 {
 	ARG_UNUSED(l);

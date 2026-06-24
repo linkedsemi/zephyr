@@ -167,8 +167,11 @@ void sched_ipi_handler(const void *unused)
 	}
 #endif
 #if defined(CONFIG_SOC_SERIES_LSQSH)
-	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK)) {
-		poll_wait_xip_unlock();
+	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK_WRITE)) {
+		poll_wait_xip_unlock(true);
+	}
+	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK_READ)) {
+		poll_wait_xip_unlock(false);
 	}
 #endif
 }

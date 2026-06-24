@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/flash.h>
@@ -11,15 +12,22 @@
 
 uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS];
 static uint32_t irq_nested_mcause[CONFIG_MP_MAX_NUM_CPUS][IRQ_NESTED_MAX];
-static const struct device *const zephyr_flash_controller =
-    DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
+static struct device zephyr_flash_controller_ram_struct;
+const struct device *const zephyr_flash_controller = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
+
+int zephyr_flash_controller_ram_struct_init()
+{
+    zephyr_flash_controller_ram_struct = *zephyr_flash_controller;
+    return 0;
+}
+SYS_INIT(zephyr_flash_controller_ram_struct_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
 extern int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out);
 
 __ramfunc void isr_stacking_mcause(void)
 {
 	uint32_t _cpu_id = get_cur_cpu_id();
-    flash_ls_ex_op(zephyr_flash_controller,FLASH_DRIVER_SUSPEND_OPCODE,_cpu_id,NULL);
+    flash_ls_ex_op(&zephyr_flash_controller_ram_struct,FLASH_DRIVER_SUSPEND_OPCODE,_cpu_id,NULL);
     if(irq_nested_level[_cpu_id] < IRQ_NESTED_MAX)
     {
         irq_nested_mcause[_cpu_id][irq_nested_level[_cpu_id]] = csr_read(mcause);
@@ -55,7 +63,7 @@ __ramfunc void isr_unstacking_mcause(void)
     {
         while(1);
     }
-    flash_ls_ex_op(zephyr_flash_controller,FLASH_DRIVER_RESUME_OPCODE,_cpu_id,NULL);
+    flash_ls_ex_op(&zephyr_flash_controller_ram_struct,FLASH_DRIVER_RESUME_OPCODE,_cpu_id,NULL);
 }
 
 void Swint_Handler_C(struct arch_esf *args)
