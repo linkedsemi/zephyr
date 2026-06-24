@@ -154,6 +154,25 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
         flags |= GPIO_INPUT;
     }
 
+    if ((flags & GPIO_OUTPUT) != 0) {
+        if ((flags & GPIO_OUTPUT_INIT_HIGH) != 0) {
+            gpio_ls_port_set_bits_raw(dev, BIT(pin));
+        } else if ((flags & GPIO_OUTPUT_INIT_LOW) != 0) {
+            gpio_ls_port_clear_bits_raw(dev, BIT(pin));
+        }
+
+        if ((flags & GPIO_SINGLE_ENDED) != 0) {
+            if (flags & GPIO_LINE_OPEN_DRAIN) {
+                io_cfg_opendrain(pincode);
+            } else {
+                /* Output can't be open source */
+                return -ENOTSUP;
+            }
+        } else {
+            io_cfg_pushpull(pincode);
+        }
+    }
+
     switch (flags & (GPIO_INPUT | GPIO_OUTPUT)) {
     case GPIO_OUTPUT:
 #if defined(CONFIG_GPIO_CFG_LOCK)
@@ -232,24 +251,6 @@ static int gpio_ls_pin_configure(const struct device *dev, gpio_pin_t pin, gpio_
     //     return -ENOTSUP;
     // }
 
-    if ((flags & GPIO_OUTPUT) != 0) {
-        if ((flags & GPIO_SINGLE_ENDED) != 0) {
-            if (flags & GPIO_LINE_OPEN_DRAIN) {
-                io_cfg_opendrain(pincode);
-            } else {
-                /* Output can't be open source */
-                return -ENOTSUP;
-            }
-        } else {
-            io_cfg_pushpull(pincode);
-        }
-
-        if ((flags & GPIO_OUTPUT_INIT_HIGH) != 0) {
-            gpio_ls_port_set_bits_raw(dev, BIT(pin));
-        } else if ((flags & GPIO_OUTPUT_INIT_LOW) != 0) {
-            gpio_ls_port_clear_bits_raw(dev, BIT(pin));
-        }
-    }
 
     return 0;
 }
