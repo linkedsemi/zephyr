@@ -18,8 +18,8 @@
     zephyr,flash = &sram;
     zephyr,flash-controller = &qspi1;
     zephyr,sram = &sram;
-    zephyr,console = &uart1;
-    zephyr,shell-uart = &uart1;
+    zephyr,console = &uart3;
+    zephyr,shell-uart = &uart3;
 };
 
 &aliases {
@@ -133,12 +133,12 @@
 
 &uart1 {
     current-speed = <115200>;
-    status = "okay";
+    status = "disabled";
 };
 
 &uart3 {
     current-speed = <115200>;
-    status = "disabled";
+    status = "okay";
 };
 
 &uart4 {
@@ -154,24 +154,24 @@
     status = "okay";
 };
 
-// &eth1 {
-//     phy-handle = <&eth1_phy>;
-//     status = "okay";
-// };
+&eth1 {
+    phy-handle = <&eth1_phy>;
+    status = "okay";
+};
 
-// &mdio1 {
-//     status = "okay";
-//     reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
-//     reset-hold-ms = <10>;
-//     circuits-set-ms = <30>;
-//     eth1_phy: ethernet-phy@0 {
-//         compatible = "realtek,rtl8211f";
-//         reg = <0>;
-//         reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
-//         int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
-//         status = "okay";
-//     };
-// };
+&mdio1 {
+    status = "okay";
+    // reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+    // reset-hold-ms = <10>;
+    circuits-set-ms = <30>;
+    eth1_phy: ethernet-phy@0 {
+        compatible = "realtek,rtl8211f";
+        reg = <0>;
+        reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+        int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+        status = "okay";
+    };
+};
 
 &sdhci1 {
     status = "okay";
