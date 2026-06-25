@@ -7,8 +7,8 @@ config SOC_LSQSH_CPU2
 config SOC_LSQSH
     bool
     select SOC_SERIES_LSQSH
-    select SOC_LSQSH_CPU1 if $(dt_path_enabled,/cpus/cpu@1)
-    select SOC_LSQSH_CPU2 if $(dt_path_enabled,/cpus/cpu@2)
+    select SOC_LSQSH_CPU1 if $(dt_path_enabled,/cpus/cpu@0)
+    select SOC_LSQSH_CPU2 if $(dt_path_enabled,/cpus/cpu@1)
 
 config SOC_SERIES_LSQSH
     bool
