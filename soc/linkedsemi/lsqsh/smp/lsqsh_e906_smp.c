@@ -87,10 +87,10 @@ void lsqsh_xip_lock_broadcast_ipi(bool is_write)
 }
 
 struct xip_sync_control{
-    bool in_critical;
-    bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
+    volatile bool in_critical;
+    volatile bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
-__nocache volatile struct xip_sync_control xip_sync;
+__nocache struct xip_sync_control xip_sync;
 
 __ramfunc void sync_ack(volatile bool *ack,bool loop_condition)
 {
@@ -144,11 +144,7 @@ void sched_ipi_handler(const void *unused);
 void lsqsh_primary_cpu_smp_init(atomic_val_t *p_ipi_msak)
 {
     // The __nocache section was not initialized during the initialization phase of the .bss section.
-    xip_sync.in_critical = false;
-    for(uint8_t i = 0; i < CONFIG_MP_MAX_NUM_CPUS; i++)
-    {
-        xip_sync.critical_ack[i] = false;
-    }
+    memset(&xip_sync, 0, sizeof(xip_sync));
     p_cpu_pending_ipi = p_ipi_msak;
     /* premary processors init ipi isr */
     IRQ_CONNECT(SYSC_SEC_CPU_IRQN, 0, sched_ipi_handler, NULL, 0);
