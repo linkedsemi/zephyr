@@ -124,6 +124,35 @@ static struct unix_socket unix_sockets[MAX_UNIX_SOCKETS];
 static struct k_mutex registry_lock;
 
 /* ------------------------------------------------------------------ */
+/* Static pipe buffer pool - eliminates heap fragmentation              */
+/* Each socket gets a fixed 2KB buffer from this pre-allocated pool.   */
+/* No k_malloc needed → no fragmentation under heavy object creation. */
+/* ------------------------------------------------------------------ */
+static uint8_t unix_pipe_buf_pool[MAX_UNIX_SOCKETS][CONFIG_NET_UNIX_BUFFER_SIZE];
+static ATOMIC_DEFINE(pipe_buf_used, MAX_UNIX_SOCKETS);
+
+static uint8_t *pipe_buf_alloc(void)
+{
+	for (int i = 0; i < MAX_UNIX_SOCKETS; i++) {
+		if (!atomic_test_and_set_bit(pipe_buf_used, i)) {
+			return unix_pipe_buf_pool[i];
+		}
+	}
+	return NULL;
+}
+
+static void pipe_buf_free(uint8_t *buf)
+{
+	if (!buf) return;
+	for (int i = 0; i < MAX_UNIX_SOCKETS; i++) {
+		if (buf == unix_pipe_buf_pool[i]) {
+			atomic_clear_bit(pipe_buf_used, i);
+			return;
+		}
+	}
+}
+
+/* ------------------------------------------------------------------ */
 /* Pool helpers                                                       */
 /* ------------------------------------------------------------------ */
 static struct unix_socket *usock_alloc(void)
@@ -156,10 +185,10 @@ static int usock_init(struct unix_socket *s)
 {
 	uint8_t *buf;
 
-	buf = k_malloc(CONFIG_NET_UNIX_BUFFER_SIZE);
+	buf = pipe_buf_alloc();
 	if (buf == NULL) {
-		LOG_ERR("AF_UNIX: pipe buffer alloc failed (%d bytes)",
-			CONFIG_NET_UNIX_BUFFER_SIZE);
+		LOG_ERR("AF_UNIX: pipe buffer pool exhausted (%d sockets)",
+			MAX_UNIX_SOCKETS);
 		return -ENOMEM;
 	}
 
@@ -664,7 +693,7 @@ static int unix_close(void *obj)
 
 	/* Free the dynamically allocated pipe buffer */
 	if (s->pipe_buf != NULL) {
-		k_free(s->pipe_buf);
+		pipe_buf_free(s->pipe_buf);
 		s->pipe_buf = NULL;
 	}
 
@@ -852,7 +881,7 @@ accepted:
 
 		if (server_fd < 0) {
 			/* Free pipe buffer and return the slot */
-			k_free(server_ep->pipe_buf);
+			pipe_buf_free(server_ep->pipe_buf);
 			server_ep->pipe_buf = NULL;
 			k_mutex_lock(&registry_lock, K_FOREVER);
 			server_ep->type = 0;
@@ -1678,7 +1707,7 @@ int unix_socket_create(int family, int type, int proto)
 	fd = zvfs_reserve_fd();
 	if (fd < 0) {
 		/* Free pipe buffer and return the slot */
-		k_free(s->pipe_buf);
+		pipe_buf_free(s->pipe_buf);
 		s->pipe_buf = NULL;
 		k_mutex_lock(&registry_lock, K_FOREVER);
 		s->type = 0;
