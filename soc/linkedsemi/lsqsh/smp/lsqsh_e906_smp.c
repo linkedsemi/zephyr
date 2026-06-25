@@ -87,10 +87,10 @@ void lsqsh_xip_lock_broadcast_ipi(bool is_write)
 }
 
 struct xip_sync_control{
-    bool in_critical;
-    bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
+    volatile bool in_critical;
+    volatile bool critical_ack[CONFIG_MP_MAX_NUM_CPUS];
 };
-__nocache volatile struct xip_sync_control xip_sync;
+__nocache struct xip_sync_control xip_sync;
 
 __ramfunc void sync_ack(volatile bool *ack,bool loop_condition)
 {
