@@ -1,0 +1,13 @@
+# Copyright (c) 2025 linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: lsqsh_evb@2os_xip/lsqsh/smp
+name: lsqsh
+type: mcu
+arch: riscv32
+ram: 768
+toolchain:
+  - cross-compile
+  - zephyr
+supported:
+  - uart

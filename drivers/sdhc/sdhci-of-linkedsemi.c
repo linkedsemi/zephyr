@@ -272,13 +272,6 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
 
     sdhci_writeb(host, ctrl, SDHCI_HOST_CONTROL);
     sdhci_writew(host, sdhci_readw(host, 0x52c) | 0x1, 0x52c);
-    uint8_t mshc_ctrl_r = sdhci_readb(host, MSHC_CTRL_R);
-    if (ios->clock > MHZ(100)) {
-        mshc_ctrl_r &= ~CMD_CONFLICT_CHECK_MASK;
-        sdhci_writeb(host, 0, MSHC_CTRL_R);
-    } else {
-        sdhci_writeb(host, 1, MSHC_CTRL_R);
-    }
 
     host->timing = ios->timing;
 
@@ -368,10 +361,8 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
     /* Wait until command/data bus out of busy status. */
-    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
-    }
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG)) {
-    }
+    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG);
+    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG));
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
 
     ret = sdhci_set_transfer_config(host, sdhci_command, sdhci_data);
@@ -407,8 +398,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
 err:
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
-    sdhci_reset(host, SDHCI_RESET_CMD);
-    sdhci_reset(host, SDHCI_RESET_DATA);
+    sdhci_reset(host, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
     return ret;
 }
@@ -875,7 +865,7 @@ static int linkedsemi_sdhci_execute_tuning(const struct device *dev)
     struct sdhci_host *host = &dev_data->host;
 
     if (host->current_speed < CONFIG_SDHCI_LINKEDSEMI_TUNING_LOWEST_FREQUENCY) {
-        return linkedsemi_sdhci_execute_mmc_bus_test_tuning(dev);
+        return 0;
     } else if (host->current_speed <= MMC_CLOCK_HS200) {
         return linkedsemi_sdhci_execute_hs200_tuning(dev);
     } else {

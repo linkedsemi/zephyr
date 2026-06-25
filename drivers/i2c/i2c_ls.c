@@ -34,20 +34,29 @@ LOG_MODULE_REGISTER(i2c_ls, CONFIG_I2C_LOG_LEVEL);
 #define PEC_ERROR_DETECTED        BIT(5)
 #define TIMEOUT_DETECTED          BIT(6)
 #define I2C_LS_CNT_MAX            255
+#define I2C_LS_FIFO_DEEPTH        8
+#define I2C_LS_FILTER_NS          50
+#define I2C_LS_FILTER_FACTOR_MAX  15
+#define I2C_LS_FILTER_FACTOR_MIN  1
+#define I2C_INT_ERR_MASK          (I2C_INT_BERR_MASK \
+                                    | I2C_INT_ARLO_MASK \
+                                    | I2C_INT_OVR_MASK \
+                                    | I2C_INT_PECE_MASK \
+                                    | I2C_INT_TOUT_MASK)
 
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 
 struct i2c_ls_config {
     irq_cfg_func_t irq_config_func;
+    struct gpio_dt_spec scl;
+    struct gpio_dt_spec sda;
     reg_i2c_t *reg;
     uint32_t clock_frequency;
     uint32_t init_bus_frequency;
-    struct gpio_dt_spec scl;
-    struct gpio_dt_spec sda;
-    bool pinctrl_noinit;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
+    bool pinctrl_noinit;
 };
 
 struct i2c_ls_data {
@@ -55,18 +64,19 @@ struct i2c_ls_data {
     struct k_sem bus_mutex;
     uint32_t config;
     struct i2c_target_config *slave_cfg;
-
     struct i2c_msg *msg;
     struct i2c_msg *msg_curr;
     uint32_t msg_num;
+    uint32_t xfer_remain;
+#ifdef CONFIG_I2C_TARGET_BUFFER_MODE
+    uint32_t slave_buf_remain;
+    uint8_t *slave_buf;
+#endif
+    uint8_t errs;
     uint8_t slave_addr;
     uint8_t xfer_len;
-    uint8_t xfer_remain;
-    uint8_t errs;
-    bool stop_pending;
-    bool quick_command;
-
     uint8_t pin[2];
+    bool quick_command;
 };
 
 struct i2c_speed_config_t {
@@ -270,6 +280,18 @@ int i2c_idle_check_prepare(const struct device *dev, const struct pinctrl_dev_co
 }
 #endif
 
+static void i2c_noise_filter_set(const struct device *dev)
+{
+    const struct i2c_ls_config *dev_config = dev->config;
+    uint8_t factor = DIV_ROUND_UP(I2C_LS_FILTER_NS, 1000000000 / dev_config->clock_frequency);
+    if ((factor <= I2C_LS_FILTER_FACTOR_MAX) && (factor >= I2C_LS_FILTER_FACTOR_MIN)) {
+        REG_FIELD_WR(dev_config->reg->CR1, I2C_CR1_DNF, factor);
+        DEV_DBG(dev, "filter factor: %d", factor);
+    } else {
+        DEV_WRN(dev, "not support noise filter factor: %d", factor);
+    }
+}
+
 static void i2c_timing_param_set(const struct device *dev, uint32_t i2c_clk)
 {
     const struct i2c_ls_config *dev_config = dev->config;
@@ -309,6 +331,7 @@ static void i2c_timing_param_set(const struct device *dev, uint32_t i2c_clk)
     MODIFY_REG(dev_config->reg->TIMINGR,
                (I2C_TIMINGR_PRESC_MASK | I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK),
                (prescalar - 1) << I2C_TIMINGR_PRESC_POS | sclh << I2C_TIMINGR_SCLH_POS | scll << I2C_TIMINGR_SCLL_POS | sdadel << I2C_TIMINGR_SDADEL_POS | scldel << I2C_TIMINGR_SCLDEL_POS);
+    i2c_noise_filter_set(dev);
 }
 
 static void i2c_slave_timing_param_set(const struct i2c_ls_config *dev_config)
@@ -349,8 +372,8 @@ static void i2c_reenable(const struct device *dev, bool master)
     } else {
         i2c_slave_timing_param_set(dev_config);
     }
-    dev_config->reg->CFR = 0xffff;
-    dev_config->reg->ICR = 0xffff;         // clear pending irq
+    dev_config->reg->CFR = UINT32_MAX;
+    dev_config->reg->ICR = UINT32_MAX;
     dev_config->reg->SR = I2C_SR_TXE_MASK; //clear tx fifo
     dev_config->reg->CR1 |= I2C_CR1_SBC_MASK | I2C_CR1_PE_MASK;
     slv_single_byte(dev_config);
@@ -366,7 +389,26 @@ static void i2c_slave_addr_reenable(reg_i2c_t *reg)
     reg->OAR2 = oar2;
 }
 
-static int i2c_ls_do_start_or_next_cnt(const struct device *dev, struct i2c_msg *msg, uint16_t slave_addr)
+static void i2c_ls_write_fifo(const struct device *dev, uint8_t **buf, uint32_t *cnt)
+{
+    const struct i2c_ls_config *dev_config = dev->config;
+    struct i2c_ls_data *dev_data = dev->data;
+    bool master_mode = (dev_data->msg_curr != NULL);
+
+    uint8_t txflv = REG_FIELD_RD(dev_config->reg->SR, I2C_SR_TXFLV);
+    while (*cnt && (txflv < I2C_LS_FIFO_DEEPTH)) {
+        if (!master_mode && !txflv) {
+            /* workaround */
+            k_busy_wait(10);
+        }
+        dev_config->reg->TXDR = **buf;
+        (*buf)++;
+        (*cnt)--;
+        txflv++;
+    }
+}
+
+static int i2c_ls_start_or_reload(const struct device *dev, struct i2c_msg *msg, uint16_t slave_addr)
 {
     const struct i2c_ls_config *dev_config = dev->config;
     struct i2c_ls_data *dev_data = dev->data;
@@ -402,7 +444,12 @@ static int i2c_ls_do_start_or_next_cnt(const struct device *dev, struct i2c_msg 
     if (read) {
         dev_config->reg->IER = I2C_INT_RXNE_MASK;
     } else {
-        dev_config->reg->IER = I2C_INT_TXE_MASK;
+        i2c_ls_write_fifo(dev, &dev_data->msg_curr->buf, &dev_data->xfer_remain);
+        if (dev_data->xfer_remain) {
+            dev_config->reg->IER = I2C_INT_TXE_MASK;
+        } else {
+            dev_config->reg->IER = I2C_INT_TCR_MASK | I2C_INT_TC_MASK;
+        }
     }
 
     return 0;
@@ -412,7 +459,6 @@ static void i2c_ls_isr_error_handle(const struct device *dev, uint32_t irq)
 {
     const struct i2c_ls_config *dev_config = dev->config;
     struct i2c_ls_data *dev_data = dev->data;
-    bool master_mode = (dev_data->msg_curr != NULL);
 
     if (irq & I2C_INT_BERR_MASK) {
         dev_config->reg->ICR = I2C_INT_BERR_MASK;
@@ -439,10 +485,6 @@ static void i2c_ls_isr_error_handle(const struct device *dev, uint32_t irq)
         dev_data->errs |= TIMEOUT_DETECTED;
         DEV_ERR(dev, "i2c@%08x timeout err", (uint32_t)dev_config->reg);
     }
-
-    if (dev_data->errs && ((dev_data->errs & MASTER_NACK_RECEIVED) != MASTER_NACK_RECEIVED) && master_mode) {
-        k_sem_give(&dev_data->master_complete_sem);
-    }
 }
 
 static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
@@ -455,17 +497,35 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
     if (irq & I2C_INT_TXE_MASK) {
         dev_config->reg->ICR = I2C_INT_TXE_MASK;
         if (master_mode) { /* --> <self>/<tc>/<tcr> */
-            if (dev_data->xfer_remain) {
-                dev_config->reg->TXDR = *dev_data->msg_curr->buf++;
-                --dev_data->xfer_remain;
-            } else {
+            i2c_ls_write_fifo(dev, &dev_data->msg_curr->buf, &dev_data->xfer_remain);
+            if (!dev_data->xfer_remain) {
                 dev_config->reg->IDR = I2C_INT_TXE_MASK;
                 dev_config->reg->IER = I2C_INT_TCR_MASK | I2C_INT_TC_MASK;
             }
         } else { /* --> <self> */
-            uint8_t val;
-            dev_data->slave_cfg->callbacks->read_processed(dev_data->slave_cfg, &val);
-            dev_config->reg->TXDR = val;
+            if (!(irq & (I2C_INT_NACK_MASK | I2C_INT_STOP_MASK))) {
+#if defined(CONFIG_I2C_TARGET_BUFFER_MODE)
+                if (dev_data->slave_cfg->callbacks->buf_read_requested) {
+                    if (dev_data->slave_buf_remain > 0) {
+                        i2c_ls_write_fifo(dev, &dev_data->slave_buf, &dev_data->slave_buf_remain);
+                    } else {
+                        int ret = dev_data->slave_cfg->callbacks->buf_read_requested(dev_data->slave_cfg, &dev_data->slave_buf, &dev_data->slave_buf_remain);
+                        if (!ret) {
+                            i2c_ls_write_fifo(dev, &dev_data->slave_buf, &dev_data->slave_buf_remain);
+                        }
+                    }
+                } else
+#endif
+                {
+                    uint8_t val;
+                    int ret = dev_data->slave_cfg->callbacks->read_processed(dev_data->slave_cfg, &val);
+                    if (!ret) {
+                        /* workaround */
+                        k_busy_wait(10);
+                        dev_config->reg->TXDR = val;
+                    }
+                }
+            }
         }
     } else if (irq & I2C_INT_RXNE_MASK) {
         if (master_mode) { /* --> <self>/<tc>/<tcr> */
@@ -482,8 +542,11 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
             i2c_slave_addr_reenable(dev_config->reg);
             /* workaround end */
             do {
-                if (dev_data->slave_cfg->callbacks->write_received(dev_data->slave_cfg, dev_config->reg->RXDR)) {
+                int ret = dev_data->slave_cfg->callbacks->write_received(dev_data->slave_cfg, dev_config->reg->RXDR);
+                if (ret) {
+                    /* workaround begin */
                     k_busy_wait(10);
+                    /* workaround end */
                     dev_config->reg->CR2_0_1 |= I2C_CR2_NACK_MASK;
                 }
                 dev_config->reg->CR2_2 = 1;
@@ -500,23 +563,21 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
                 k_sem_give(&dev_data->device_sync_sem);
             }
 #endif
-            dev_data->stop_pending = true;
             dev_config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
         }
     }
     if (irq & I2C_INT_STOP_MASK) { /* --> |end| */
-        dev_config->reg->ICR = I2C_INT_STOP_MASK;
         dev_config->reg->IDR = I2C_INT_TXE_MASK | I2C_INT_RXNE_MASK | I2C_INT_STOP_MASK;
+        dev_config->reg->ICR = I2C_INT_STOP_MASK;
         if (master_mode) {
-            dev_data->stop_pending = false;
             k_sem_give(&dev_data->master_complete_sem);
         } else if (dev_data->slave_cfg) {
             /* workaound: clear i2c slave internal counter after stop */
-            dev_config->reg->CR1 &= ~I2C_CR1_PE_MASK;
-            dev_config->reg->CR1 |= I2C_CR1_PE_MASK;
+        //     dev_config->reg->CR1 &= ~I2C_CR1_PE_MASK;
+        //     dev_config->reg->CR1 |= I2C_CR1_PE_MASK;
             /* --------------------------------------------- */
 
-            dev_config->reg->SR = 1;
+            dev_config->reg->SR = I2C_SR_TXE_MASK; //clear tx fifo
             while (dev_config->reg->SR & I2C_SR_RXNE_MASK) {
                 dev_config->reg->RXDR;
             }
@@ -528,30 +589,29 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
 
     /* * * * * * master state begin * * * * * */
     if (irq & I2C_INT_TC_MASK) { /* --> <restart> or <stop> */
-        dev_config->reg->ICR = I2C_INT_TC_MASK;
         dev_config->reg->IDR = I2C_INT_TCR_MASK | I2C_INT_TC_MASK;
+        dev_config->reg->ICR = I2C_INT_TC_MASK;
 
         /*  dev_data->msg_curr->len == 0 */
         if (((dev_data->msg_curr + 1) == &dev_data->msg[dev_data->msg_num])) { /* --> <stop> */
-            dev_data->stop_pending = true;
             dev_config->reg->CR2_0_1 |= I2C_CR2_STOP_MASK;
 
         } else { /* --> <restart> */
             dev_data->msg_curr++;
             dev_data->xfer_len = 0;
-            i2c_ls_do_start_or_next_cnt(dev, dev_data->msg, dev_data->slave_addr);
+            i2c_ls_start_or_reload(dev, dev_data->msg, dev_data->slave_addr);
         }
     }
     if (irq & I2C_INT_TCR_MASK) { /* --> <tx>/<rx> */
-        dev_config->reg->ICR = I2C_INT_TCR_MASK;
         dev_config->reg->IDR = I2C_INT_TCR_MASK | I2C_INT_TC_MASK;
+        dev_config->reg->ICR = I2C_INT_TCR_MASK;
 
         if (dev_data->msg_curr->len == 0) {
             dev_data->msg_curr++;
             dev_data->xfer_len = 0;
         }
         // restart
-        i2c_ls_do_start_or_next_cnt(dev, dev_data->msg, dev_data->slave_addr);
+        i2c_ls_start_or_reload(dev, dev_data->msg, dev_data->slave_addr);
     }
     /* * * * * * master state end * * * * * */
 
@@ -564,15 +624,32 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
             k_sem_take(&dev_data->bus_mutex, K_NO_WAIT);
             uint32_t status = dev_config->reg->SR;
             if (status & I2C_SR_DIR_MASK) { /* read */
-                uint8_t val;
-                dev_data->slave_cfg->callbacks->read_requested(dev_data->slave_cfg, &val);
-                dev_config->reg->TXDR = val;
-                dev_config->reg->IER = I2C_INT_TXE_MASK | I2C_INT_STOP_MASK;
+#if defined(CONFIG_I2C_TARGET_BUFFER_MODE)
+                if (dev_data->slave_cfg->callbacks->buf_read_requested) {
+                    dev_data->slave_buf_remain = 0;
+                    dev_data->slave_buf = NULL;
+                    int ret = dev_data->slave_cfg->callbacks->buf_read_requested(dev_data->slave_cfg, &dev_data->slave_buf, &dev_data->slave_buf_remain);
+                    if (!ret) {
+                        i2c_ls_write_fifo(dev, &dev_data->slave_buf, &dev_data->slave_buf_remain);
+                        dev_config->reg->IER = I2C_INT_TXE_MASK | I2C_INT_STOP_MASK | I2C_INT_NACK_MASK | I2C_INT_ERR_MASK;
+                    }
+                } else
+#endif
+                {
+                    uint8_t val;
+                    int ret = dev_data->slave_cfg->callbacks->read_requested(dev_data->slave_cfg, &val);
+                    if (!ret) {
+                        dev_config->reg->TXDR = val;
+                        dev_config->reg->IER = I2C_INT_TXE_MASK | I2C_INT_STOP_MASK | I2C_INT_NACK_MASK | I2C_INT_ERR_MASK;
+                    }
+                }
             } else { /* write */
-                if (dev_data->slave_cfg->callbacks->write_requested(dev_data->slave_cfg)) {
+                int ret = dev_data->slave_cfg->callbacks->write_requested(dev_data->slave_cfg);
+                if (!ret) {
+                    dev_config->reg->IER = I2C_INT_RXNE_MASK | I2C_INT_STOP_MASK | I2C_INT_NACK_MASK | I2C_INT_ERR_MASK;
+                } else {
                     dev_config->reg->CR2_0_1 |= I2C_CR2_NACK_MASK;
                 }
-                dev_config->reg->IER = I2C_INT_RXNE_MASK | I2C_INT_STOP_MASK;
             }
         }
     }
@@ -586,7 +663,9 @@ static void i2c_ls_isr_normal_handle(const struct device *dev, uint32_t irq)
 static void i2c_ls_isr(void *arg)
 {
     struct device *dev = (struct device *)arg;
+    struct i2c_ls_data *dev_data = dev->data;
     const struct i2c_ls_config *dev_config = dev->config;
+    bool master_mode = (dev_data->msg_curr != NULL);
 
     while (1) {
         uint32_t irq = dev_config->reg->IFM;
@@ -595,7 +674,11 @@ static void i2c_ls_isr(void *arg)
         }
 
         i2c_ls_isr_error_handle(dev, irq);
-        i2c_ls_isr_normal_handle(dev, irq);
+        if (!(irq & I2C_INT_ERR_MASK)) {
+            i2c_ls_isr_normal_handle(dev, irq);
+        } else if (master_mode) {
+            k_sem_give(&dev_data->master_complete_sem);
+        }
     }
 }
 
@@ -628,8 +711,9 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg, uint8_
     }
     i2c_reenable(dev, true);
     dev_config->reg->SR = I2C_SR_TXE_MASK; //clear tx fifo
-    dev_config->reg->ICR = I2C_INT_STOP_MASK;
-    dev_config->reg->IER = I2C_INT_STOP_MASK;
+    dev_config->reg->IDR = UINT32_MAX;
+    dev_config->reg->ICR = UINT32_MAX;
+    dev_config->reg->IER = I2C_INT_STOP_MASK | I2C_INT_NACK_MASK | I2C_INT_ERR_MASK;
     uint32_t cr2_0_1 = msg->flags & I2C_MSG_ADDR_10_BITS ? I2C_CR2_SADD10_MASK | slave_addr << I2C_CR2_SADD0_POS : slave_addr << I2C_CR2_SADD1_7_POS;
 
     dev_data->msg_curr = msg;
@@ -648,7 +732,7 @@ static int i2c_ls_transfer(const struct device *dev, struct i2c_msg *msg, uint8_
         }
         dev_config->reg->CR2_0_1 = cr2_0_1 | I2C_CR2_START_MASK | I2C_CR2_STOP_MASK;
     } else {
-        i2c_ls_do_start_or_next_cnt(dev, dev_data->msg, dev_data->slave_addr);
+        i2c_ls_start_or_reload(dev, dev_data->msg, dev_data->slave_addr);
     }
     if (k_sem_take(&dev_data->master_complete_sem, K_MSEC(CONFIG_LS_I2C_BUS_TIMEOUT_MS)) == (-EAGAIN)) {
         dev_data->errs |= I2C_BUS_TIMOUT;
@@ -667,8 +751,11 @@ err:
     if (dev_data->quick_command) {
         dev_config->reg->CR2_3 &= ~0x30;
     }
-    dev_config->reg->IDR = I2C_INT_STOP_MASK;
+    dev_config->reg->IDR = UINT32_MAX;
     i2c_reenable(dev, false);
+    if (dev_data->slave_cfg) {
+        dev_config->reg->IER = I2C_INT_ADDR_MASK;
+    }
     dev_data->msg_curr = NULL;
     k_sem_give(&dev_data->bus_mutex);
 
@@ -751,10 +838,8 @@ static int i2c_ls_init(const struct device *dev)
 
     i2c_reenable(dev, false);
     dev_config->reg->CR2_3 |= 1 << 3; // slv nbytes upd hw workaround
-    dev_config->reg->ICR = 0xffff;
-    dev_config->reg->IER = I2C_INT_NACK_MASK | I2C_INT_BERR_MASK
-        | I2C_INT_ARLO_MASK | I2C_INT_OVR_MASK | I2C_INT_PECE_MASK
-        | I2C_INT_TOUT_MASK | I2C_INT_ALERT_MASK;
+    dev_config->reg->IDR = UINT32_MAX;
+    dev_config->reg->ICR = UINT32_MAX;
 
     if (i2c_configure(dev, i2c_map_dt_bitrate(dev_config->init_bus_frequency) | I2C_MODE_CONTROLLER)) {
         DEV_ERR(dev, "%s: config failed", dev->name);
@@ -776,6 +861,8 @@ static int i2c_ls_target_register(const struct device *dev, struct i2c_target_co
 {
     const struct i2c_ls_config *dev_config = dev->config;
     struct i2c_ls_data *dev_data = dev->data;
+
+    k_sem_take(&dev_data->bus_mutex, K_FOREVER);
     dev_data->slave_cfg = target_cfg;
     if (target_cfg->flags & I2C_TARGET_FLAGS_ADDR_10_BITS) {
         dev_config->reg->OAR1 = I2C_OAR1_OA1EN_MASK | I2C_OAR1_OA1MODE_MASK | target_cfg->address << I2C_OAR1_OA10_POS;
@@ -783,6 +870,8 @@ static int i2c_ls_target_register(const struct device *dev, struct i2c_target_co
         dev_config->reg->OAR1 = I2C_OAR1_OA1EN_MASK | target_cfg->address << I2C_OAR1_OA11_7_POS;
     }
     dev_config->reg->IER = I2C_INT_ADDR_MASK;
+    k_sem_give(&dev_data->bus_mutex);
+
     return 0;
 }
 
@@ -790,9 +879,14 @@ static int i2c_ls_target_unregister(const struct device *dev, struct i2c_target_
 {
     struct i2c_ls_data *dev_data = dev->data;
     const struct i2c_ls_config *dev_config = dev->config;
-    dev_config->reg->IDR = I2C_INT_ADDR_MASK;
+
+    k_sem_take(&dev_data->bus_mutex, K_FOREVER);
+    dev_config->reg->IDR = UINT32_MAX;
+    dev_config->reg->ICR = UINT32_MAX;
     dev_config->reg->OAR1 = 0;
     dev_data->slave_cfg = NULL;
+    k_sem_give(&dev_data->bus_mutex);
+
     return 0;
 }
 

@@ -51,18 +51,19 @@ void sdhci_reg_display(struct sdhci_host *host)
 void sdhci_reset(struct sdhci_host *host, uint8_t mask)
 {
     const struct device *dev = host->dev;
-    unsigned long timeout;
+    int64_t start_time;
+    int64_t loop_time;
 
     /* Wait max 100 ms */
-    timeout = 100;
     sdhci_writeb(host, mask, SDHCI_SOFTWARE_RESET);
-    while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
-        if (timeout == 0) {
-            DEV_ERR(dev, "%s: Reset 0x%x never completed.", __func__, (int)mask);
-            return;
+    if (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
+        start_time = k_uptime_get();
+        while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
+            loop_time = k_uptime_delta(&start_time);
+            if (loop_time > 100) {
+                DEV_ERR(dev, "Reset 0x%x never completed", (int)mask);
+            }
         }
-        timeout--;
-        k_msleep(1);
     }
 }
 
@@ -229,6 +230,8 @@ int sdhci_set_transfer_config(struct sdhci_host *sdhci_host, struct sdhci_comman
 
 void sdhci_init(struct sdhci_host *host)
 {
+    uint8_t mshc_ctrl_r;
+
     sdhci_reset(host, SDHCI_RESET_ALL);
     /* high speed support*/
     // sdhci_writeb(host, SDHCI_CTRL_HISPD, SDHCI_HOST_CONTROL);
@@ -238,6 +241,9 @@ void sdhci_init(struct sdhci_host *host)
     while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
     sdhci_writel(host, SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_INT_ENABLE);
     sdhci_writel(host, SDHCI_INT_CARD_INT, SDHCI_SIGNAL_ENABLE);
+    mshc_ctrl_r = sdhci_readb(host, MSHC_CTRL_R);
+    mshc_ctrl_r &= ~CMD_CONFLICT_CHECK_MASK;
+    sdhci_writeb(host, mshc_ctrl_r, MSHC_CTRL_R);
 
     host->power_mode = SDHC_POWER_ON;
 }

@@ -61,7 +61,6 @@ config MBEDTLS_CFG_FILE
 	  alternative config.
 
 rsource "Kconfig.tls-generic"
-rsource "Kconfig.linkedsemi"
 
 config MBEDTLS_SSL_MAX_CONTENT_LEN
 	int "Max payload size for TLS protocol message"

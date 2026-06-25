@@ -218,7 +218,7 @@
 // // enum currnt_imem_image_t
 // // {
 // //     OTBN_FREE,
-// //     OTBN_SM2,
+// //     OTBN_FIRMWARE_SM2,
 // //     OTBN_ECC_P256,
 // //     OTBN_ECC_P384,
 

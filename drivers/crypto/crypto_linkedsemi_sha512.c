@@ -1,7 +1,7 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
  *
- * Copyright (c) 2024 LINKEDSEMI Technology Inc.
+ * Copyright (c) 2026 LINKEDSEMI Technology Inc.
  */
 
 #define DT_DRV_COMPAT linkedsemi_sha512
@@ -15,139 +15,202 @@
 
 #include "crypto_linkedsemi_sha512.h"
 #include "field_manipulate.h"
+#include <core_rv32.h>
 
-#define IS_4BYTE_UNALIGNED(ptr) ((((uintptr_t)(ptr)) & (sizeof(uint32_t) - 1)) != 0)
+#define SHA384_SHA512_WAIT_TIMEOUT_MS 100000
 
 LOG_MODULE_REGISTER(sha512_linkedsemi, LOG_LEVEL_DBG);
 
+static struct hash_ctx *ls_sha512_ctx = NULL;
+
+static inline bool is_sram_address(uint32_t addr) {
+    return ((addr >= 0x10000000 && addr < 0x10140000)
+            || (addr >= 0x30000000 && addr < 0x30140000));
+}
 
 void sha512_linkedsemi_isr(const struct device *dev)
 {
-	const struct sha512_linkedsemi_config *cfg = dev->config;
-	struct sha512_linkedsemi_data *dev_data = dev->data;
-	reg_sha512_t *reg = cfg->reg;
+    const struct sha512_linkedsemi_config *cfg = dev->config;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
+    reg_sha512_t *reg = cfg->reg;
 
-	if (reg->INTR_STT & SHA512_INTR_CALC_END_MASK) {
-		reg->INTR_MSK &= ~SHA512_INTR_CALC_END_MASK;
-		k_sem_give(&dev_data->calc_end_sem);
-	}
+    if (reg->INTR_STT & SHA512_INTR_CALC_END_MASK) {
+        reg->INTR_CLR = SHA512_INTR_CALC_END_MASK;
+        reg->INTR_MSK = 0;
+        k_sem_give(&dev_data->calc_end_sem);
+    }
 }
 
-static void sha512_data_output(struct hash_pkt *pkt)
+static void sha512_calc(const struct device *dev, uint32_t addr, uint32_t block_number)
 {
-	const struct device *dev = pkt->ctx->device;
-	const struct sha512_linkedsemi_config *cfg = dev->config;
-	struct sha512_linkedsemi_data *dev_data = dev->data;
-	reg_sha512_t *reg = cfg->reg;
+    const struct sha512_linkedsemi_config *cfg = dev->config;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
+    reg_sha512_t *reg = cfg->reg;
 
-	for (uint8_t i = 0; i < dev_data->result_word_num; i++) {
-		uint32_t val = reg->DIGEST[15 - i];
-		val = BSWAP_32(val);
-		memcpy(pkt->out_buf + i * sizeof(uint32_t), &val, sizeof(uint32_t));
-	}
+    while ((reg->STATUS & 0x1) != 0x1);
+    REG_FIELD_WR(reg->CTRL, SHA512_CTRL_BLOCK_NUM, (block_number - 1));
+    reg->ADDR = addr & (~BIT(29));
 
-	dev_data->buf_idx = 0;
-	dev_data->total_len = 0;
+    __ASSERT_NO_MSG(((uint32_t)addr % 4) == 0);
+    csi_dcache_clean_range((void *)addr, block_number*SHA512_BLOCK_BYTE_SIZE);
+
+    irq_disable(cfg->irqn);
+
+    if (dev_data->first_update) {
+        REG_FIELD_WR(reg->CTRL, SHA512_CTRL_INIT_CALC, 1);
+        REG_FIELD_WR(reg->CTRL, SHA512_CTRL_START, 1);
+        dev_data->first_update = false;
+    } else {
+        REG_FIELD_WR(reg->CTRL, SHA512_CTRL_INIT_CALC, 0);
+        REG_FIELD_WR(reg->CTRL, SHA512_CTRL_START, 1);
+    }
+
+    reg->INTR_CLR = SHA512_INTR_DMA_END_MASK | SHA512_INTR_CALC_END_MASK;
+
+    irq_enable(cfg->irqn);
+
+    reg->INTR_MSK = SHA512_INTR_CALC_END_MASK;
+
+    k_sem_take(&dev_data->calc_end_sem, K_MSEC(SHA384_SHA512_WAIT_TIMEOUT_MS));
 }
 
-static void sha512_calc(struct hash_ctx *ctx, uint32_t *in, uint32_t block_number)
+static int sha512_linkedsemi_sha(struct hash_ctx *ctx, uint8_t *msg, uint32_t length, struct hash_pkt *pkt, bool final)
 {
-	const struct device *dev = ctx->device;
-	struct sha512_linkedsemi_data *dev_data = dev->data;
-	const struct sha512_linkedsemi_config *cfg = dev->config;
-	const uint32_t data_len = SHA512_BLOCK_BYTE_SIZE * block_number;
-	reg_sha512_t *reg = cfg->reg;
+    const struct device *dev = ctx->device;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
+    const struct sha512_linkedsemi_config *cfg = dev->config;
+    reg_sha512_t *reg = cfg->reg;
 
-	sys_cache_data_flush_range(in, data_len);
+    if (!ctx->started) {
+        k_mutex_lock(&dev_data->sha512_engine_mutex, K_FOREVER);
+        ls_sha512_ctx = ctx;
+        ctx->started = true;
+    }
 
-	reg->INTR_MSK = 0;
-	reg->ADDR = (uint32_t)in;
-	unsigned int key = irq_lock();
-	reg->CTRL = FIELD_BUILD(SHA512_CTRL_START, 1) |
-		    FIELD_BUILD(SHA512_CTRL_INIT_CALC, dev_data->total_len == 0) |
-		    FIELD_BUILD(SHA512_CTRL_MODE, dev_data->algo) |
-		    FIELD_BUILD(SHA512_CTRL_BLOCK_NUM, block_number - 1);
-	reg->INTR_CLR = SHA512_INTR_CALC_END_MASK;
-	while (reg->INTR_RAW & SHA512_INTR_CALC_END_MASK) ;
-	irq_unlock(key);
+    __ASSERT_NO_MSG(ls_sha512_ctx == ctx);
+    __ASSERT_NO_MSG(is_sram_address((uint32_t)msg) && ((uint32_t)msg % 4) == 0);
 
-	reg->INTR_MSK = SHA512_INTR_CALC_END_MASK;
+    dev_data->total_length += length;
 
-	k_sem_take(&dev_data->calc_end_sem, K_FOREVER);
+    if(length) {
+        if(dev_data->buffer_idx) {
+            if ((length + dev_data->buffer_idx) < SHA512_BLOCK_BYTE_SIZE) {
+                memcpy(dev_data->buffer + dev_data->buffer_idx, msg, length);
+                dev_data->buffer_idx += length;
+                if(!final) {
+                    return 0;
+                }
+                goto do_final;
+            } else {
+                uint32_t wr_len = SHA512_BLOCK_BYTE_SIZE - dev_data->buffer_idx;
+                memcpy((uint8_t *)dev_data->buffer + dev_data->buffer_idx, msg, wr_len);
+                sha512_calc(dev, (uint32_t)dev_data->buffer, 1);
+                dev_data->buffer_idx = 0;
+                length -= wr_len;
+                msg += wr_len;
+            }
+        }
+    }
 
-	dev_data->total_len += data_len;
+    uint32_t block_number = length / SHA512_BLOCK_BYTE_SIZE;
+    if (block_number) {
+        if ((uint32_t)msg % 4) {
+            for (uint32_t i = 0; i < block_number / MAX_BLOCK_SIZE; i++) {
+                memcpy(dev_data->temp_sram_buffer, msg, sizeof(dev_data->temp_sram_buffer));
+                sha512_calc(dev, (uint32_t)dev_data->temp_sram_buffer, MAX_BLOCK_SIZE);
+                msg += sizeof(dev_data->temp_sram_buffer);
+            }
+            if (block_number % MAX_BLOCK_SIZE) {
+                memcpy(dev_data->temp_sram_buffer, msg, (block_number % MAX_BLOCK_SIZE) * SHA512_BLOCK_BYTE_SIZE);
+                sha512_calc(dev, (uint32_t)dev_data->temp_sram_buffer, block_number % MAX_BLOCK_SIZE);
+                msg += (block_number % MAX_BLOCK_SIZE) * SHA512_BLOCK_BYTE_SIZE;
+            }
+        } else {
+            sha512_calc(dev, (uint32_t)msg, block_number);
+            msg += block_number * SHA512_BLOCK_BYTE_SIZE;
+        }
+    }
+
+    if (length % SHA512_BLOCK_BYTE_SIZE) {
+        memcpy((uint8_t *)dev_data->buffer, msg, length % SHA512_BLOCK_BYTE_SIZE);
+        dev_data->buffer_idx = length % SHA512_BLOCK_BYTE_SIZE;
+    }
+
+do_final:
+    if(final) {
+        uint8_t *p_buffer = dev_data->buffer;
+        uint64_t bit_cnt = dev_data->total_length * 8;
+        p_buffer[dev_data->buffer_idx++] = SHA512_PADDING_BYTE;
+
+        if (dev_data->buffer_idx == SHA512_BLOCK_BYTE_SIZE) {
+            sha512_calc(dev, (uint32_t)dev_data->buffer, 1);
+            dev_data->buffer_idx = 0;
+        }
+
+        while (dev_data->buffer_idx != (SHA512_BLOCK_BYTE_SIZE - SHA512_TOTAL_LEN_BYTE)) {
+            p_buffer[dev_data->buffer_idx++] = SHA512_PADDING_ZERO;
+            if (dev_data->buffer_idx == SHA512_BLOCK_BYTE_SIZE) {
+                sha512_calc(dev, (uint32_t)dev_data->buffer, 1);
+                dev_data->buffer_idx = 0;
+            }
+        }
+
+        memset(&p_buffer[dev_data->buffer_idx], 0x0, 8);
+        dev_data->buffer_idx += 8;
+
+        for (uint8_t i = 0; i < 8; i++) {
+            p_buffer[dev_data->buffer_idx + (7 - i)] = (uint8_t)(bit_cnt >> (8 * i));
+        }
+        dev_data->buffer_idx += 8;
+        sha512_calc(dev, (uint32_t)dev_data->buffer, 1);
+
+        uint8_t *out = pkt->out_buf;
+        for (uint8_t j = 0; j < dev_data->result_word_num; j++) {
+            uint32_t val = reg->DIGEST[15 - j];
+            *out++ = val >> 24;
+            *out++ = val >> 16;
+            *out++ = val >> 8;
+            *out++ = val;
+        }
+
+        dev_data->buffer_idx = 0;
+        dev_data->total_length = 0;
+        dev_data->first_update = false;
+        ls_sha512_ctx = NULL;
+        ctx->started = false;
+        k_mutex_unlock(&dev_data->sha512_engine_mutex);
+    }
+    return 0;
 }
 
-static void sha512_buffer_write_byte(struct hash_ctx *ctx, uint8_t byte)
+static int sha512_linkedsemi_sha_align(struct hash_ctx *ctx, struct hash_pkt *pkt, bool final)
 {
-	const struct device *dev = ctx->device;
-	struct sha512_linkedsemi_data *dev_data = dev->data;
+    const struct device *dev = ctx->device;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
 
-	((uint8_t *)dev_data->buffer)[dev_data->buf_idx++] = byte;
-	if (dev_data->buf_idx == SHA512_BLOCK_BYTE_SIZE) {
-		dev_data->buf_idx = 0;
-		sha512_calc(ctx, dev_data->buffer, 1);
-	}
-}
+    if (is_sram_address((uint32_t)pkt->in_buf) && ((uint32_t)pkt->in_buf % 4) == 0) {
+        sha512_linkedsemi_sha(ctx, pkt->in_buf, pkt->in_len, pkt, final);
+    } else {
+        uint8_t *current = pkt->in_buf;
+        uint32_t remain = pkt->in_len % sizeof(dev_data->temp_sram_buffer);
 
-static int sha512_linkedsemi_sha(struct hash_ctx *ctx, struct hash_pkt *pkt, bool finish)
-{
-	const struct device *dev = ctx->device;
-	struct sha512_linkedsemi_data *dev_data = dev->data;
-	uint8_t *pBuffer = (uint8_t *)dev_data->buffer;
-	uint8_t *in_buf = pkt->in_buf;
-	uint32_t in_len = pkt->in_len;
-
-	if (IS_4BYTE_UNALIGNED(pkt->in_buf) || IS_4BYTE_UNALIGNED(pkt->in_len)) {
-		return EINVAL;
-	}
-
-	k_mutex_lock(&dev_data->sha512_engine_mutex, K_FOREVER);
-
-	if (dev_data->buf_idx) {
-		while ((dev_data->buf_idx != 0) && (in_len != 0)) {
-			sha512_buffer_write_byte(ctx, *in_buf++);
-			in_len--;
-		}
-	}
-
-	if (in_len / SHA512_BLOCK_BYTE_SIZE) {
-		sha512_calc(ctx, (uint32_t *)in_buf, in_len / SHA512_BLOCK_BYTE_SIZE);
-	}
-
-	in_len = in_len % SHA512_BLOCK_BYTE_SIZE;
-	while (in_len--) {
-		sha512_buffer_write_byte(ctx, *in_buf++);
-	}
-
-	if (finish) {
-		uint64_t bit_cnt = (dev_data->total_len + dev_data->buf_idx) * 8;
-
-		sha512_buffer_write_byte(ctx, SHA512_PADDING_BYTE);
-
-		while (dev_data->buf_idx != SHA512_FIANL_LENGTH) {
-			sha512_buffer_write_byte(ctx, SHA512_PADDING_ZERO);
-		}
-
-		memset(&pBuffer[dev_data->buf_idx], SHA512_PADDING_ZERO, 8);
-		dev_data->buf_idx += 8;
-
-		for (int i = 7; i >= 0; i--) {
-			pBuffer[dev_data->buf_idx++] = (uint8_t)(bit_cnt >> (8 * i));
-		}
-		sha512_calc(ctx, dev_data->buffer, 1);
-
-		sha512_data_output(pkt);
-	}
-
-	k_mutex_unlock(&dev_data->sha512_engine_mutex);
-	return 0;
+        for (uint32_t blk = 0; blk < (pkt->in_len / sizeof(dev_data->temp_sram_buffer)); blk++) {
+            memcpy(dev_data->temp_sram_buffer, current, sizeof(dev_data->temp_sram_buffer));
+            sha512_linkedsemi_sha(ctx, dev_data->temp_sram_buffer, sizeof(dev_data->temp_sram_buffer), pkt, final);
+            current += sizeof(dev_data->temp_sram_buffer);
+        }
+        if (remain || (final && !pkt->in_len)) {
+            memcpy(dev_data->temp_sram_buffer, current, remain);
+            sha512_linkedsemi_sha(ctx, dev_data->temp_sram_buffer, remain, pkt, final);
+        }
+    }
+    return 0;
 }
 
 static int sha512_linkedsemi_init(const struct device *dev)
 {
-	const struct sha512_linkedsemi_config *const dev_config = dev->config;
-	struct sha512_linkedsemi_data *dev_data = dev->data;
+    const struct sha512_linkedsemi_config *const dev_config = dev->config;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
     __maybe_unused int ret;
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -183,86 +246,92 @@ static int sha512_linkedsemi_init(const struct device *dev)
     }
 #endif
 
-	dev_config->irq_config_func(dev);
-
-	k_mutex_init(&dev_data->sha512_engine_mutex);
-	k_sem_init(&dev_data->calc_end_sem, 0, K_SEM_MAX_LIMIT);
-
-	return 0;
+    k_mutex_init(&dev_data->sha512_engine_mutex);
+    k_sem_init(&dev_data->calc_end_sem, 0, K_SEM_MAX_LIMIT);
+    dev_config->irq_config_func(dev);
+    return 0;
 }
 
 static int sha512_linkedsemi_query_caps(const struct device *dev)
 {
-	ARG_UNUSED(dev);
-
-	return SHA512_LINKEDSEMI_HASH_CAPS;
+    ARG_UNUSED(dev);
+    return SHA512_LINKEDSEMI_HASH_CAPS;
 }
 
 static int sha512_linkedsemi_cipher_begin_session(const struct device *dev, struct hash_ctx *ctx,
-						  enum hash_algo algo)
+                          enum hash_algo algo)
 {
-	struct sha512_linkedsemi_data *dev_data = dev->data;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
+    const struct sha512_linkedsemi_config *cfg = dev->config;
+    reg_sha512_t *reg = cfg->reg;
 
-	if (ctx->flags & ~(SHA512_LINKEDSEMI_HASH_CAPS)) {
-		LOG_ERR("Unsupported flag");
-		return -ENOTSUP;
-	}
+    if (ctx->flags & ~(SHA512_LINKEDSEMI_HASH_CAPS)) {
+        LOG_ERR("Unsupported flag");
+        return -ENOTSUP;
+    }
 
-	switch (algo) {
-	case CRYPTO_HASH_ALGO_SHA384:
-		dev_data->algo = SHA512_MODE_SHA384;
-		dev_data->result_word_num = SHA384_RESULT_WORD_NUM;
-		break;
-	case CRYPTO_HASH_ALGO_SHA512:
-		dev_data->algo = SHA512_MODE_SHA512;
-		dev_data->result_word_num = SHA512_RESULT_WORD_NUM;
-		break;
-	default:
-		LOG_ERR("Unsupported algo");
-		return -ENOTSUP;
-	}
+    switch (algo) {
+    case CRYPTO_HASH_ALGO_SHA384:
+        dev_data->algo = SHA512_MODE_SHA384;
+        dev_data->result_word_num = SHA384_RESULT_WORD_NUM;
+        break;
+    case CRYPTO_HASH_ALGO_SHA512:
+        dev_data->algo = SHA512_MODE_SHA512;
+        dev_data->result_word_num = SHA512_RESULT_WORD_NUM;
+        break;
+    default:
+        LOG_ERR("Unsupported algo");
+        return -ENOTSUP;
+    }
 
-	dev_data->buf_idx = 0;
-	dev_data->total_len = 0;
-
-	ctx->hash_hndlr = sha512_linkedsemi_sha;
-
-	return 0;
+    REG_FIELD_WR(reg->CTRL, SHA512_CTRL_MODE, dev_data->algo);
+    dev_data->buffer_idx = 0;
+    dev_data->total_length = 0;
+    dev_data->first_update = true;
+    ctx->started = false;
+    ctx->hash_hndlr = sha512_linkedsemi_sha_align;
+    return 0;
 }
 
 static int sha512_linkedsemi_cipher_free_session(const struct device *dev, struct hash_ctx *ctx)
 {
-	ARG_UNUSED(dev);
-	ARG_UNUSED(ctx);
-
-	return 0;
+    const struct sha512_linkedsemi_config *const dev_config = dev->config;
+    struct sha512_linkedsemi_data *dev_data = dev->data;
+    ctx->started = false;
+    ls_sha512_ctx = NULL;
+    k_mutex_unlock(&dev_data->sha512_engine_mutex);
+    irq_disable(dev_config->irqn);
+    return 0;
 }
 
 static struct crypto_driver_api sha512_driver_api = {
-	.query_hw_caps = sha512_linkedsemi_query_caps,
-	.hash_begin_session = sha512_linkedsemi_cipher_begin_session,
-	.hash_free_session = sha512_linkedsemi_cipher_free_session,
-	.hash_async_callback_set = NULL,
-	.cipher_begin_session = NULL,
-	.cipher_free_session = NULL,
-	.cipher_async_callback_set = NULL,
+    .query_hw_caps = sha512_linkedsemi_query_caps,
+    .hash_begin_session = sha512_linkedsemi_cipher_begin_session,
+    .hash_free_session = sha512_linkedsemi_cipher_free_session,
+    .hash_async_callback_set = NULL,
+    .cipher_begin_session = NULL,
+    .cipher_free_session = NULL,
+    .cipher_async_callback_set = NULL,
 };
 
 #define LS_SHA512_INIT(idx)                                                                        \
-	static void sha512_linkedsemi_irq_config_func_##idx(const struct device *dev)              \
-	{                                                                                          \
-		IRQ_CONNECT(DT_INST_IRQN(idx), DT_INST_IRQ(idx, priority), sha512_linkedsemi_isr,  \
-			    DEVICE_DT_INST_GET(idx), 0);                                           \
-		irq_enable(DT_INST_IRQN(idx));                                                     \
-	}                                                                                          \
-	__attribute__((aligned(32))) static struct sha512_linkedsemi_data sha512_linkedsemi_data_##idx;                         \
-	static const struct sha512_linkedsemi_config sha512_linkedsemi_config_##idx = {            \
-		.reg = (void *)DT_INST_REG_ADDR(idx),                                              \
-		.irq_config_func = sha512_linkedsemi_irq_config_func_##idx,                        \
+    static void sha512_linkedsemi_irq_config_func_##idx(const struct device *dev)              \
+    {                                                                                          \
+        IRQ_CONNECT(DT_INST_IRQN(idx), DT_INST_IRQ(idx, priority), sha512_linkedsemi_isr,  \
+                DEVICE_DT_INST_GET(idx), 0);                                           \
+        irq_enable(DT_INST_IRQN(idx));                                                     \
+    }                                                                                          \
+    __attribute__((aligned(32))) static struct sha512_linkedsemi_data                          \
+    sha512_linkedsemi_data_##idx;                                                              \
+    static const struct sha512_linkedsemi_config sha512_linkedsemi_config_##idx = {            \
+        .reg = (void *)DT_INST_REG_ADDR(idx),                                              \
+        .irq_config_func = sha512_linkedsemi_irq_config_func_##idx,                        \
+        .irqn = DT_INST_IRQN(idx),                                                         \
         IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), ))                       \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), ))  \
-	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(idx, sha512_linkedsemi_init, NULL, &sha512_linkedsemi_data_##idx,    \
-			      &sha512_linkedsemi_config_##idx, POST_KERNEL,                        \
-			      CONFIG_KERNEL_INIT_PRIORITY_DEVICE, (void *)&sha512_driver_api);
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets),                                             \
+               (.reset = RESET_DT_SPEC_INST_GET(idx), ))                                   \
+    };                                                                                         \
+    DEVICE_DT_INST_DEFINE(idx, sha512_linkedsemi_init, NULL, &sha512_linkedsemi_data_##idx,    \
+              &sha512_linkedsemi_config_##idx, POST_KERNEL,                                  \
+              CONFIG_KERNEL_INIT_PRIORITY_DEVICE, (void *)&sha512_driver_api);
 DT_INST_FOREACH_STATUS_OKAY(LS_SHA512_INIT)

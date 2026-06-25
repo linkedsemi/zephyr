@@ -455,6 +455,7 @@ static void delegation_server_mbox_callback(const struct device *dev,
 #define DELEGATE_SERVER_OP_START(dev)\
 	do{\
 		const struct flash_ls_config *cfg = dev->config;\
+		k_sched_lock();\
 		cfg->shared->busy = true;\
 		flash_delegation_server_operation_sync(dev);\
 	}while(0);
@@ -463,11 +464,12 @@ static void delegation_server_mbox_callback(const struct device *dev,
 	do{\
 		const struct flash_ls_config *cfg = dev->config;\
 		cfg->shared->busy = false;\
+		k_sched_unlock();\
 	}while(0);
 
 #else
-#define DELEGATE_SERVER_OP_START(dev)
-#define DELEGATE_SERVER_OP_END(dev)
+#define DELEGATE_SERVER_OP_START(dev)	k_sched_lock()
+#define DELEGATE_SERVER_OP_END(dev)		k_sched_unlock()
 #endif
 
 static int flash_ls_init(const struct device *dev)
@@ -480,6 +482,12 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.continuous_mode_on = cfg->continuous_mode_enable;
 	priv->env.addr4b = cfg->addr4b;
 	priv->env.writing = false;
+#if defined(CONFIG_XIP)
+	priv->env.xip = true;
+#else
+	priv->env.xip = false;
+#endif
+	priv->env.suspended = false;
 	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM); // Configure the flash irq function before  initializing mbox, mbox will trigger flash irq in work handler
 	k_sem_init(&priv->sem, 1, 1);
@@ -594,7 +602,7 @@ static int flash_ls_read(const struct device *dev, off_t offset,
 	DELEGATE_SERVER_OP_START(dev);
 	hal_flashx_multi_io_read(&priv->env,offset, (uint8_t *)data, size);
 	DELEGATE_SERVER_OP_END(dev);
-
+	
 	k_sem_give(&priv->sem);
 
 	return 0;
@@ -761,8 +769,10 @@ static struct flash_driver_api flash_ls_api = {
 		IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
 
 #define LS_FLASH_INIT(idx) \
-	struct flash_partition_attr attr_partition_##idx[] =\
-		{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};\
+	COND_CODE_1(DT_NODE_EXISTS(DT_INST(idx, fixed_partitions)), \
+		(struct flash_partition_attr attr_partition_##idx[] =\
+			{DT_FOREACH_CHILD(DT_INST(idx, fixed_partitions), LS_PARTITION_CHILD)};), \
+		()) \
 	IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (__attribute__((section("SHMEM")))\
 	static struct flash_ls_shared_data flash_ls_shared_data_##idx;)) \
 	static const struct flash_ls_config flash_ls_cfg_##idx = {\
@@ -775,8 +785,10 @@ static struct flash_driver_api flash_ls_api = {
 		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
 		))\
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CHILD)\
-		.attr = attr_partition_##idx,\
-		.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions)),\
+		COND_CODE_1(DT_NODE_EXISTS(DT_INST(idx, fixed_partitions)), \
+			(.attr = attr_partition_##idx,\
+			.attr_num = DT_CHILD_NUM(DT_INST(idx, fixed_partitions)),), \
+			()) \
 		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER, (.shared = &flash_ls_shared_data_##idx,))\
 	};\
 	static struct flash_ls_data flash_ls_data_##idx;\

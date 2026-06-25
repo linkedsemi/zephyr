@@ -46,8 +46,14 @@
 
     driver_share_memory: memory@100be000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x100be000 0x1000>;
+        reg = <0x100be000 0xffc>;
         zephyr,memory-region = "SHMEM";
+    };
+
+    driver_reset_reason: memory@100beffc {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x100beffc 0x4>;
+        zephyr,memory-region = "RESET_REASON";
     };
 
     mbox_memory: memory@100bf000 {
@@ -58,7 +64,6 @@
 
     mbox: mbox {
         compatible = "linkedsemi,mbox";
-        mtu = <64>;
         interrupts = <SYSC_SEC_CPU_IRQN 3>;
         #mbox-cells = <3>;
 

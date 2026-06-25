@@ -133,6 +133,14 @@ static inline int net_pkt_get_nbfrags(struct net_pkt *pkt)
 	}
 	return nbfrags;
 }
+static bool dwmac_rx_desc_set_ioc(unsigned int d_idx)
+{
+	if (CONFIG_DWMAC_RX_COALESCE_DESC <= 1) {
+		return true;
+	}
+
+	return ((d_idx + 1) % CONFIG_DWMAC_RX_COALESCE_DESC) == 0;
+}
 
 static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 {
@@ -328,6 +336,43 @@ static void dwmac_receive(struct dwmac_priv *p)
 	p->rx_desc_tail = d_idx;
 }
 
+
+static uint8_t dwmac_rx_coalesce_riwtu_field(void)
+{
+	switch (CONFIG_DWMAC_RX_COALESCE_RIWTU) {
+	case 256:
+		return 0U;
+	case 512:
+		return 1U;
+	case 1024:
+		return 2U;
+	case 2048:
+		return 3U;
+	default:
+		__ASSERT(false,
+			 "CONFIG_DWMAC_RX_COALESCE_RIWTU=%d, must be 256/512/1024/2048",
+			 CONFIG_DWMAC_RX_COALESCE_RIWTU);
+		return 0U;
+	}
+}
+
+
+static void dwmac_rx_coalesce_configure(struct dwmac_priv *p)
+{
+	const struct eth_linkedsemi_config *dev_config = p->dev->config;
+
+	if (CONFIG_DWMAC_RX_COALESCE_DESC <= 1) {
+		return;
+	}
+
+	uint8_t rwtu_field = dwmac_rx_coalesce_riwtu_field();
+
+	REG_WRITE(DMA_CHn_RX_IRQ_WATCHDOG_TIMER(0),
+		  FIELD_PREP(DMA_CHn_RX_IRQ_WDT_RWT,
+			     CONFIG_DWMAC_RX_COALESCE_RIWT) |
+		  FIELD_PREP(DMA_CHn_RX_IRQ_WDT_RWTU, rwtu_field));
+}
+
 static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 {
 	struct dwmac_priv *p = arg1;
@@ -380,7 +425,10 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 		d->des0 = phys_lo32(frag->data);
 		d->des1 = phys_hi32(frag->data);
 		d->des2 = 0;
-		d->des3 = RDES3_BUF1V | RDES3_IOC | RDES3_OWN;
+		d->des3 = RDES3_BUF1V | RDES3_OWN;
+		if (dwmac_rx_desc_set_ioc(d_idx)) {
+			d->des3 |= RDES3_IOC;
+		}
 
 		/* commit the above to memory */
 		barrier_dmem_fence_full();
@@ -405,14 +453,18 @@ static void dwmac_dma_irq(struct dwmac_priv *p, unsigned int ch)
 	__ASSERT(ch == 0, "only one DMA channel is currently supported");
 
 	if (status & DMA_CHn_STATUS_AIS) {
-		LOG_ERR("Abnormal Interrupt Status received (0x%x)", status);
+		if (status & DMA_CHn_STATUS_RWT) {
+			LOG_DBG("RX watchdog timeout (coalesce trailing packets)");
+		} else {
+			LOG_ERR("Abnormal Interrupt Status received (0x%x)", status);
+		}
 	}
 
 	if (status & DMA_CHn_STATUS_TI) {
 		dwmac_tx_release(p);
 	}
 
-	if (status & DMA_CHn_STATUS_RI) {
+	if (status & (DMA_CHn_STATUS_RI | DMA_CHn_STATUS_RWT)) {
 		dwmac_receive(p);
 	}
 }
@@ -630,6 +682,8 @@ static void dwmac_iface_init(struct net_if *iface)
 	k_sem_init(&p->free_tx_descs, NB_TX_DESCS - 1, NB_TX_DESCS - 1);
 	k_sem_init(&p->free_rx_descs, NB_RX_DESCS - 1, NB_RX_DESCS - 1);
 
+	dwmac_rx_coalesce_configure(p);
+
 	/* set up RX buffer refill thread */
 	k_thread_create(&p->rx_refill_thread, dev_config->rx_refill_thread_stack,
 			CONFIG_RX_REFILL_STACK_SIZE,
@@ -647,13 +701,16 @@ static void dwmac_iface_init(struct net_if *iface)
 	REG_WRITE(MAC_CONF, reg_val);
 
 	/* unmask IRQs */
-	REG_WRITE(DMA_CHn_IRQ_ENABLE(0),
-		  DMA_CHn_IRQ_ENABLE_TIE |
+	reg_val = DMA_CHn_IRQ_ENABLE_TIE |
 		  DMA_CHn_IRQ_ENABLE_RIE |
 		  DMA_CHn_IRQ_ENABLE_NIE |
 		  DMA_CHn_IRQ_ENABLE_FBEE |
 		  DMA_CHn_IRQ_ENABLE_CDEE |
-		  DMA_CHn_IRQ_ENABLE_AIE);
+		  DMA_CHn_IRQ_ENABLE_AIE;
+	if (CONFIG_DWMAC_RX_COALESCE_DESC > 1) {
+		reg_val |= DMA_CHn_IRQ_ENABLE_RWTE;
+	}
+	REG_WRITE(DMA_CHn_IRQ_ENABLE(0), reg_val);
 
 	LOG_DBG("done");
 }

@@ -182,6 +182,10 @@
 #define MBEDTLS_CAMELLIA_C
 #endif
 
+#if defined(CONFIG_MBEDTLS_CIPHER_ARIA_ENABLED)
+#define MBEDTLS_ARIA_C
+#endif
+
 #if defined(CONFIG_MBEDTLS_CIPHER_DES_ENABLED)
 #define MBEDTLS_DES_C
 #endif
@@ -300,6 +304,10 @@
 #define MBEDTLS_MD5_C
 #endif
 
+#if defined(CONFIG_MBEDTLS_RIPEMD160)
+#define MBEDTLS_RIPEMD160_C
+#endif
+
 #if defined(CONFIG_MBEDTLS_SHA1)
 #define MBEDTLS_SHA1_C
 #endif
@@ -322,6 +330,10 @@
 
 #if defined(CONFIG_MBEDTLS_SHA512)
 #define MBEDTLS_SHA512_C
+#endif
+
+#if defined(CONFIG_MBEDTLS_SHA3)
+#define MBEDTLS_SHA3_C
 #endif
 
 #if defined(CONFIG_MBEDTLS_POLY1305)
