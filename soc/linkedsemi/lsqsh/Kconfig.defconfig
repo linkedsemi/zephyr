@@ -270,7 +270,7 @@ config NUM_OS
 	default 2
 
 if (NUM_USE_CPU=2)
-	if $(dt_path_enabled,/cpus/cpu@1)
+	if $(dt_path_enabled,/cpus/cpu@0)
 		config BOOT_CPU2
 			bool "BOOT_CPU2"
 			default n
@@ -475,7 +475,7 @@ if DMA_DW
 		default 8
 endif
 
-if $(dt_path_enabled,/cpus/cpu@1)
+if $(dt_path_enabled,/cpus/cpu@0)
 	config GPIO_CFG_LOCK
 		bool "GPIO_CFG_LOCK"
 		default n
