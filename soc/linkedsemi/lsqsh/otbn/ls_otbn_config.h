@@ -2,6 +2,7 @@
 #define _LS_OTBN_CONFIG_
 
 #include <string.h>
+#include <stdbool.h>
 /**
  * @file ls_otbn_config.h
  * @brief LinkedSemi OTBN RTOS abstraction layer API.
