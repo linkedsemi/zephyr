@@ -5,6 +5,7 @@ config ENTROPY_LS_DWTRNG
 	default y
 	depends on DT_HAS_LINKEDSEMI_LS_DWTRNG_ENABLED
 	select ENTROPY_HAS_DRIVER
+	select PIPES
 	help
 	  Enable linkedsemi DWTRNG driver.
 	  HW produces 128-bit per command; driver caches 16 bytes and
