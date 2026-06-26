@@ -62,6 +62,8 @@ struct qspi_ls_config {
 	uint32_t timing_calibration_start_off;
 	uint32_t timing_calibration_per_block_len;
 	uint32_t timing_calibration_clock_frequency;
+	bool auto_wait_ready;
+	uint16_t auto_wait_interval;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -81,13 +83,20 @@ struct qspi_ls_data {
 		bool rx_first_word;
 	} xfer;
 	uint8_t calib_combo;
+	bool auto_active;
 };
 
 #define STG_IRQ_ALL \
 	(LSQSPIV2_INT_FSM_END_MASK | LSQSPIV2_INT_FIFO_RX_MASK | \
-	 LSQSPIV2_INT_FIFO_TX_MASK)
+	 LSQSPIV2_INT_FIFO_TX_MASK | LSQSPIV2_INT_AUTO_MASK)
 
 #define STG_XFER_TIMEOUT_MS 30000U
+
+#if defined(CONFIG_SPI_NOR_WAIT_UNTIL_READY_TIMEOUT_MS)
+#define QSPI_LS_AUTO_WAIT_TIMEOUT_MS CONFIG_SPI_NOR_WAIT_UNTIL_READY_TIMEOUT_MS
+#else
+#define QSPI_LS_AUTO_WAIT_TIMEOUT_MS 150000U
+#endif
 
 struct stg_wire_cfg {
 	uint8_t hz_cyc;
@@ -567,6 +576,81 @@ static void stg_xfer_try_complete_read(struct qspi_ls_data *data,
 	}
 }
 
+static void stg_load_stg_regs(reg_lsqspiv2_t *reg, struct lsqspiv2_stg_cfg *cfg,
+			      uint8_t fifo_depth)
+{
+	REG_FIELD_WR(reg->QSPI_CTRL1, LSQSPIV2_MODE_DAC, 0);
+	reg->QSPI_SRST_N = 0;
+	reg->STG_REQ_T = reg->STG_REQ_T;
+	reg->QSPI_SRST_N = 1;
+	stg_irq_clear(reg, STG_IRQ_ALL);
+	stg_irq_mask_all(reg);
+	stg_irq_fifo_thr_set(reg, fifo_depth);
+	reg->STG_CTRL = *(uint32_t *)&cfg->ctrl;
+	reg->STG_CA_HIGH = cfg->ca_high;
+	reg->STG_CA_LOW = cfg->ca_low;
+	reg->STG_DAT_CTRL = *(uint32_t *)&cfg->dat_ctrl;
+}
+
+static void stg_auto_hw_teardown(reg_lsqspiv2_t *reg)
+{
+	reg->AUTO_CTRL = 0;
+	REG_FIELD_WR(reg->QSPI_CTRL1, LSQSPIV2_MODE_DAC, 0);
+	reg->QSPI_SRST_N = 0;
+	reg->STG_REQ_T = reg->STG_REQ_T;
+	reg->QSPI_SRST_N = 1;
+	stg_irq_mask_all(reg);
+	stg_irq_clear(reg, STG_IRQ_ALL);
+}
+
+/*
+ * Hardware AUTO poll: repeat STG RDSR until (status & WIP) == 0.
+ * STG template must already be configured for a 1-byte RDSR read.
+ */
+static int stg_auto_wait_rdsr(const struct device *dev, struct lsqspiv2_stg_cfg *cfg)
+{
+	const struct qspi_ls_config *info = dev->config;
+	struct qspi_ls_data *data = dev->data;
+	reg_lsqspiv2_t *reg = info->reg;
+	uint32_t auto_intv = info->auto_wait_interval;
+	int ret;
+
+	if (auto_intv > 0xFFFU) {
+		auto_intv = 0xFFFU;
+	}
+
+	stg_xfer_quiesce(reg, data);
+	stg_load_stg_regs(reg, cfg, info->fifo_depth);
+
+	reg->AUTO_CTRL = FIELD_BUILD(LSQSPIV2_AUTO_DAT_TGT, 0) |
+			 FIELD_BUILD(LSQSPIV2_AUTO_DAT_MSK, SPI_NOR_WIP_BIT) |
+			 FIELD_BUILD(LSQSPIV2_AUTO_INTV, auto_intv);
+
+	data->auto_active = true;
+	stg_irq_unmask(reg, LSQSPIV2_INT_AUTO_MASK);
+	reg->AUTO_CTRL |= FIELD_BUILD(LSQSPIV2_AUTO_REQ, 1);
+
+	ret = k_sem_take(&data->done_sem, K_MSEC(QSPI_LS_AUTO_WAIT_TIMEOUT_MS));
+
+	if (ret != 0 && (reg->INTR_RAW & LSQSPIV2_INT_AUTO_MASK) != 0) {
+		stg_irq_clear(reg, LSQSPIV2_INT_AUTO_MASK);
+		stg_irq_mask_all(reg);
+		ret = 0;
+	}
+
+	data->auto_active = false;
+	stg_auto_hw_teardown(reg);
+	k_sem_reset(&data->done_sem);
+
+	if (ret != 0) {
+		DEV_ERR(dev, "AUTO wait WIP timeout (%u ms)",
+			QSPI_LS_AUTO_WAIT_TIMEOUT_MS);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
 static void qspi_ls_isr(const struct device *dev)
 {
 	const struct qspi_ls_config *info = dev->config;
@@ -575,8 +659,31 @@ static void qspi_ls_isr(const struct device *dev)
 	struct stg_xfer *xfer = &data->xfer;
 	uint32_t stt = reg->INTR_STT;
 
+	if (data->auto_active) {
+		if (stt & LSQSPIV2_INT_AUTO_MASK) {
+			stg_irq_clear(reg, LSQSPIV2_INT_AUTO_MASK);
+			data->auto_active = false;
+			stg_irq_mask_all(reg);
+			k_sem_give(&data->done_sem);
+		} else {
+			/*
+			 * Spurious STG status while AUTO is armed: clear and
+			 * keep IRQs masked so we do not spin in the SoC IRQ loop.
+			 */
+			stg_irq_clear(reg, stt & STG_IRQ_ALL);
+			stg_irq_mask_all(reg);
+			stg_irq_unmask(reg, LSQSPIV2_INT_AUTO_MASK);
+		}
+		return;
+	}
+
 	if (!xfer->active) {
+		/*
+		 * Late or stray IRQ after quiesce/teardown: acknowledge and
+		 * mask so INTR_STT cannot re-enter the dispatcher forever.
+		 */
 		stg_irq_clear(reg, stt & STG_IRQ_ALL);
+		stg_irq_mask_all(reg);
 		return;
 	}
 
@@ -627,20 +734,7 @@ static int stg_read_write(const struct device *dev, struct lsqspiv2_stg_cfg *cfg
 	stg_xfer_quiesce(reg, data);
 	memset(xfer, 0, sizeof(*xfer));
 
-	REG_FIELD_WR(reg->QSPI_CTRL1, LSQSPIV2_MODE_DAC, 0);
-	reg->QSPI_SRST_N = 0;
-	reg->STG_REQ_T = reg->STG_REQ_T;
-	reg->QSPI_SRST_N = 1;
-	barrier_dmem_fence_full();
-	stg_irq_clear(reg, STG_IRQ_ALL);
-	stg_irq_mask_all(reg);
-	stg_irq_fifo_thr_set(reg, info->fifo_depth);
-
-	reg->STG_CTRL = *(uint32_t *)&cfg->ctrl;
-	reg->STG_CA_HIGH = cfg->ca_high;
-	reg->STG_CA_LOW = cfg->ca_low;
-	reg->STG_DAT_CTRL = *(uint32_t *)&cfg->dat_ctrl;
-	barrier_dmem_fence_full();
+	stg_load_stg_regs(reg, cfg, info->fifo_depth);
 
 	xfer->active = true;
 
@@ -663,7 +757,6 @@ static int stg_read_write(const struct device *dev, struct lsqspiv2_stg_cfg *cfg
 
 	stg_irq_unmask(reg, irq_mask);
 	reg->STG_REQ_T = 1;
-	barrier_dmem_fence_full();
 
 	ret = k_sem_take(&data->done_sem, K_MSEC(STG_XFER_TIMEOUT_MS));
 
@@ -1003,6 +1096,7 @@ static int stg_cmd(const struct device *dev, struct spi_nor_op_info *op,
 static int stg_reg_read(const struct device *dev, struct spi_nor_op_info *op,
 			const struct stg_wire_cfg *wire)
 {
+	const struct qspi_ls_config *info = dev->config;
 	struct lsqspiv2_stg_cfg cfg = {0};
 	int ret;
 
@@ -1013,7 +1107,28 @@ static int stg_reg_read(const struct device *dev, struct spi_nor_op_info *op,
 		return ret;
 	}
 
-	return stg_read_write(dev, &cfg);
+	ret = stg_read_write(dev, &cfg);
+	if (ret != 0 || !info->auto_wait_ready ||
+		op->opcode != SPI_NOR_CMD_RDSR || op->data_len != 1) {
+		return ret;
+	}
+
+	if ((*(uint8_t *)op->buf & SPI_NOR_WIP_BIT) == 0) {
+		return 0;
+	}
+
+	ret = stg_auto_wait_rdsr(dev, &cfg);
+	if (ret != 0) {
+		return ret;
+	}
+
+	/*
+	 * AUTO confirmed WIP=0. Do not issue another STIG RDSR here — the
+	 * controller may still be in AUTO state and the follow-up read fails
+	 * with -EIO. The flash layer only checks the WIP bit.
+	 */
+	*(uint8_t *)op->buf = 0;
+	return 0;
 }
 
 static int stg_reg_write(const struct device *dev, struct spi_nor_op_info *op,
@@ -1307,6 +1422,10 @@ static int qspi_ls_init(const struct device *dev)
 			DT_INST_PROP_OR(inst, timing_calibration_disabled, false),\
 		.timing_calibration_clock_frequency =				\
 			DT_INST_PROP_OR(inst, timing_calibration_clock_frequency, 10000000),\
+		.auto_wait_ready =						\
+			DT_INST_PROP_OR(inst, auto_wait_ready, false),		\
+		.auto_wait_interval =						\
+			DT_INST_PROP_OR(inst, auto_wait_interval, 1000),	\
 		.config_func = qspi_ls_irq_config_##inst,			\
 		.fifo_depth = DT_INST_PROP(inst, fifo_depth),			\
 		IF_ENABLED(CONFIG_PINCTRL,					\

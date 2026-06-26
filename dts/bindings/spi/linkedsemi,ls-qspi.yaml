@@ -18,7 +18,7 @@ properties:
     type: int
     default: 8
     description: |
-      QSPI STIG FIFO depth (words). When FIFO_FLVL equals this value
+      QSPI STIG FIFO depth. When FIFO_FLVL equals this value
       the TX FIFO is considered full.
 
   spi-ctrl-caps-mask:
@@ -76,3 +76,20 @@ properties:
       Low clock frequency used to read flash and generate the CRC reference
       during capture timing calibration (default 10MHz). The read uses the same
       command and bus mode as the runtime read path (from SFDP / devicetree).
+
+  auto-wait-ready:
+    type: boolean
+    required: false
+    description: |
+      After an STIG RDSR read, if the WIP bit is still set, use the QSPI
+      hardware AUTO engine to poll status until WIP clears instead of returning
+      immediately to software.
+
+  auto-wait-interval:
+    type: int
+    required: false
+    default: 1000
+    description: |
+      AUTO engine poll interval between RDSR retries when auto-wait-ready is
+      enabled. Hardware accepts values up to 0xFFF,
+      The time interval between two consecutive WIP checks :time = (auto-wait-interval / 200M)s.
