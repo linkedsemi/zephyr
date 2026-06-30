@@ -1156,6 +1156,20 @@
             };
         };
 
+        qspi2: qspi2@40040000 {
+            compatible = "linkedsemi,ls-qspi";
+            #address-cells = <1>;
+            #size-cells = <0>;
+            reg = <0x40040000 0x400>;
+            clock-frequency = <SDHCI_CLOCK>;
+            interrupts = <QSPI2_IRQN 3>;
+            clocks = <QSPI2_CLOCK>;
+            resets = <QSPI2_RESET>;
+            fifo-depth = <8>;
+            spi-ctrl-caps-mask = <0x40000>;
+            status = "disabled";
+        };
+
         spi1: spi@4008a000 {
             compatible = "linkedsemi,ls-spi";
             #address-cells = <1>;

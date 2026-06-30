@@ -1,0 +1,95 @@
+# Copyright (c) 2026 LinkedSemi.
+# SPDX-License-Identifier: Apache-2.0
+
+description: LinkedSemi QSPIv2 SPI NOR controller
+
+compatible: "linkedsemi,ls-qspi"
+
+include: [spi-controller.yaml, pinctrl-device.yaml, reset-device.yaml]
+
+properties:
+  reg:
+    required: true
+
+  interrupts:
+    required: false
+
+  fifo-depth:
+    type: int
+    default: 8
+    description: |
+      QSPI STIG FIFO depth. When FIFO_FLVL equals this value
+      the TX FIFO is considered full.
+
+  spi-ctrl-caps-mask:
+    type: int
+    required: false
+    description: |
+      SPI flash controller mode/protocol configuration.
+
+      bit 0 : disable 1-1-1
+      bit 1 : disable 1-1-1 (fast read)
+      bit 8 : disable 1-1-2
+      bit 9 : disable 1-2-2
+      bit 10: disable 2-2-2
+      bit 16: disable 1-1-4
+      bit 17: disable 1-4-4
+      bit 18: disable 4-4-4
+
+  timing-calibration-disabled:
+    type: boolean
+    required: false
+    description: |
+      Disable QSPI controller capture timing calibration.
+
+  timing-calibration-auto-detect-content-disable:
+    type: boolean
+    required: false
+    description: |
+      Disable auto-scan for non-monotonous flash content during calibration.
+      When set, only timing-calibration-start-offset is read (64 bytes).
+      When clear (default), scan from start-offset toward flash end using
+      timing-calibration-per-block-len as stride.
+
+  timing-calibration-start-offset:
+    type: int
+    required: false
+    default: 0
+    description: |
+      Flash byte offset where calibration read begins. With auto-detect enabled,
+      scanning starts here; with auto-detect disabled, only this offset is used.
+      start-offset plus 64-byte read length must not exceed flash size.
+
+  timing-calibration-per-block-len:
+    type: int
+    required: false
+    default: 4096
+    description: |
+      Byte stride between calibration probe reads when auto-detect is enabled.
+      Each probe reads 64 bytes. Scan stops before flash size boundary.
+
+  timing-calibration-clock-frequency:
+    type: int
+    required: false
+    default: 10000000
+    description: |
+      Low clock frequency used to read flash and generate the CRC reference
+      during capture timing calibration (default 10MHz). The read uses the same
+      command and bus mode as the runtime read path (from SFDP / devicetree).
+
+  auto-wait-ready:
+    type: boolean
+    required: false
+    description: |
+      After an STIG RDSR read, if the WIP bit is still set, use the QSPI
+      hardware AUTO engine to poll status until WIP clears instead of returning
+      immediately to software.
+
+  auto-wait-interval:
+    type: int
+    required: false
+    default: 1000
+    description: |
+      AUTO engine poll interval between RDSR retries when auto-wait-ready is
+      enabled. Hardware accepts values up to 0xFFF,
+      The time interval between two consecutive WIP checks :time = (auto-wait-interval / 200M)s.

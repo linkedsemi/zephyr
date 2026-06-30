@@ -5,6 +5,7 @@ zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/drivers/spi.h)
 zephyr_library()
 
 zephyr_library_sources_ifdef(CONFIG_SPI_LS  spi_ls.c)
+zephyr_library_sources_ifdef(CONFIG_QSPI_LS  qspi_ls.c)
 zephyr_library_sources_ifdef(CONFIG_SPI_SHELL  spi_shell.c)
 zephyr_library_sources_ifdef(CONFIG_SPI_TELINK_B91  spi_b91.c)
 zephyr_library_sources_ifdef(CONFIG_SPI_CC13XX_CC26XX		spi_cc13xx_cc26xx.c)

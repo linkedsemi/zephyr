@@ -420,3 +420,15 @@
     dp-gpios = < &gpioh 14 GPIO_ACTIVE_HIGH>;
     pinctrl-names = "default", "priv_start";
 };
+
+&qspi2 {
+    pinctrl-0 = <
+        &qspi2_csn_pc05
+        &qspi2_dat0_pc06
+        &qspi2_dat1_pc07
+        &qspi2_dat2_pc08
+        &qspi2_dat3_pc09
+        &qspi2_sck_pc10
+    >;
+    pinctrl-names = "default";
+};
