@@ -26,6 +26,7 @@
 
 #if(CONFIG_SOC_LSQSH)
     #include "reg_sec_pmu_rg.h"
+    #include "ls_hal_otp_ctrl.h"
     #define temperature_sensing_channel 13
 #endif
 
@@ -261,13 +262,13 @@ static int ADC_VrefType_SetConfig(const struct adc_ls_config* config, enum adc_r
             FIELD_BUILD(ADC_ADR_VRSEL, 1);
     break;
     case ADC_REF_EXTERNAL0:
-    tmp_adr = FIELD_BUILD(ADC_ADR_BP, 0)|FIELD_BUILD(ADC_ADR_VREFBUF_EN, 0)|
-            FIELD_BUILD(ADC_ADR_VCM_EN, 1)|FIELD_BUILD(ADC_ADR_VREF_EN, 1)|
+    tmp_adr = FIELD_BUILD(ADC_ADR_BP, 1)|FIELD_BUILD(ADC_ADR_VREFBUF_EN, 0)|
+            FIELD_BUILD(ADC_ADR_VCM_EN, 1)|FIELD_BUILD(ADC_ADR_VREF_EN, 0)|
             FIELD_BUILD(ADC_ADR_VRSEL, 2);
     break;
     case ADC_REF_INTERNAL:
     default:
-    tmp_adr = FIELD_BUILD(ADC_ADR_BP, 1)|FIELD_BUILD(ADC_ADR_VREFBUF_EN, 1)| 
+    tmp_adr = FIELD_BUILD(ADC_ADR_BP, 0)|FIELD_BUILD(ADC_ADR_VREFBUF_EN, 1)| 
             FIELD_BUILD(ADC_ADR_VCM_EN, 1)|FIELD_BUILD(ADC_ADR_VREF_EN, 1)|
             FIELD_BUILD(ADC_ADR_VRSEL, 4);
     break;
@@ -343,6 +344,34 @@ static void load_trim_value(reg_adc_t* reg, uint16_t addr)
 }
 #endif
 
+#if(CONFIG_SOC_LSQSH)
+struct adc_otp_trim {
+    uint32_t : 20, adc12b_os_cal_adc0 : 8, : 4;
+    uint32_t : 24, adc12b_os_cal_adc1 : 8;
+    uint32_t adc12b_vref_trim_adc0 : 5, : 11,
+             adc12b_vref_trim_adc1 : 5, : 11;
+};
+
+static void load_trim_value_otp(reg_adc_t *reg)
+{
+
+    HAL_OTP_CTRL_Init();
+    struct adc_otp_trim trim;
+    if (HAL_OTP_Read(0x0c, (uint8_t *)&trim, sizeof(trim)) != HAL_OK) {
+        return;
+    }
+
+    bool is_adc1 = (reg == (reg_adc_t *)APP_ADC1_ADDR);
+
+    uint32_t os_cal = is_adc1 ? trim.adc12b_os_cal_adc0    : trim.adc12b_os_cal_adc1;
+    uint32_t vref   = is_adc1 ? trim.adc12b_vref_trim_adc0 : trim.adc12b_vref_trim_adc1;
+
+    MODIFY_REG(reg->ADCH, ADC_ADCH_OS_CALV_MASK, os_cal << ADC_ADCH_OS_CALV_POS);
+    MODIFY_REG(reg->ADCH, ADC_ADCH_GE_CALV_MASK, 0);
+    MODIFY_REG(reg->ADR,  ADC_ADR_VREF_TRIM_MASK, vref << ADC_ADR_VREF_TRIM_POS);
+}
+#endif
+
 static int adc_ls_init(const struct device *dev)
 {
     const struct adc_ls_config * config = dev->config;
@@ -410,6 +439,10 @@ static int adc_ls_init(const struct device *dev)
     }else {
         load_trim_value(reg, 0x38);
     }
+#endif
+
+#if(CONFIG_SOC_LSQSH)
+    load_trim_value_otp(reg);
 #endif
 
     REG_FIELD_WR(reg->ADCH, ADC_ADCH_TRIM_EN, 1);
