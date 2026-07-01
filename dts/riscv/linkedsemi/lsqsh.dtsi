@@ -970,6 +970,12 @@
             status = "disabled";
         };
 
+        /* RTC: BSTIM1 + PIS + GPTIMA1 chain */
+        rtc_timer: rtc-timer {
+            compatible = "linkedsemi,ls-rtc-timer";
+            status = "disabled";
+        };
+
         uart1: uart@400a1000 {
             compatible = "linkedsemi,ls-uart";
             reg = <0x400a1000 0x400>;
