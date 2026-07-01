@@ -815,6 +815,8 @@ extern const struct ethernet_api dwmac_api;
 
 #define MTL_TXQn_OPERATION_MODE(n)		(0x0d00 + 0x40 * (n))
 
+#define MTL_OP_MODE_TSF				BIT(1)
+
 /* 17.3.2, 17.4.2 */
 
 #define MTL_TXQn_UNDERFLOW(n)			(0x0d04 + 0x40 * (n))
