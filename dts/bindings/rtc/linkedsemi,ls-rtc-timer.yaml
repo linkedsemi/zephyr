@@ -1,0 +1,15 @@
+# Copyright (c) 2026 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Linkedsemi software RTC using the BSTIM + PIS + GPTIMA chain.
+
+  This is a logical Zephyr RTC device, not a dedicated RTC IP block. There is
+  no MMIO reg, interrupt, or clock-frequency property on this node: the driver
+  enables BSTIM1, GPTIMA1 and PIS via SYSC_APP_PER and configures the timer
+  chain in platform.c. Time offset is stored in SEC_PMU SFT_CTRL[4];
+  LSGPTIMA->CNT increments once per second.
+
+compatible: "linkedsemi,ls-rtc-timer"
+
+include: base.yaml
