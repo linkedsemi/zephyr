@@ -782,7 +782,6 @@ __weak void soc_late_init_hook(void)
     };
     const struct device *flash_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_flash_controller));
     struct hal_flash_env *env = flash_ls_env(flash_dev);
-    REG_FIELD_WR(SEC_IWDG->IWDT_CTRL, IWDT_EN, 0);
     CLEAR_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], SEC_PMU_SFT_CTRL_RESET_FLAG_STARTUP_PART_FLAG_MASK);
     CLEAR_BIT(SEC_PMU->SFT_CTRL[SFT_CTRL_REG_NUM_RESET_FLAG], SEC_PMU_SFT_CTRL_RESET_FLAG_BOOTRAM_STARTUP_PART_FLAG_MASK);
     if (env->continuous_mode_enable) {
