@@ -141,8 +141,6 @@ static int ls_trng_get_entropy(const struct device *dev, uint8_t *buf, uint16_t 
 
 	k_mutex_lock(&data->mutex, K_FOREVER);
 
-	trng_irq_enable(cfg->regs);
-
 	while (copied < len) {
 		size_t got = 0;
 
@@ -153,9 +151,8 @@ static int ls_trng_get_entropy(const struct device *dev, uint8_t *buf, uint16_t 
 		copied += got;
 	}
 
-	trng_irq_disable(cfg->regs);
-
 	k_mutex_unlock(&data->mutex);
+	
 	return 0;
 }
 
