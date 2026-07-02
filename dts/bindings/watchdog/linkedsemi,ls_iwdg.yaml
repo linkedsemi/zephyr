@@ -18,3 +18,9 @@ properties:
   clocks:
     required: true
     description: "Independent Watchdog module clock"
+  quick-enable:
+    type: boolean
+    description: Enable the watchdog immediately during driver initialization.
+  quick-timeout-ms:
+    type: int
+    description: Timeout value in milliseconds for quick initialization.

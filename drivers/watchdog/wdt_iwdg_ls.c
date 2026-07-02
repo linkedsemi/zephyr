@@ -33,6 +33,8 @@ struct iwdt_ls_config {
 	reg_iwdg_t *iwdg_reg;
 	irq_cfg_func_t irq_config_func;
 	uint32_t hclk_hz;
+	bool quick_enable;
+	uint32_t quick_timeout_ms;
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
@@ -146,6 +148,7 @@ static void iwdt_ls_isr(void *arg)
 static int iwdt_init(const struct device *dev)
 {
 	const struct iwdt_ls_config *const cfg = dev->config;
+	struct iwdt_ls_data *data = dev->data;
 	cfg->iwdg_reg->IWDT_CTRL &= ~WDT_CTRL_RST_EN;
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -181,6 +184,20 @@ static int iwdt_init(const struct device *dev)
 	}
 #endif
 
+	if (cfg->quick_enable) {
+		if (cfg->quick_timeout_ms == 0U) {
+			LOG_ERR("%s: quick-timeout-ms must be > 0", dev->name);
+			return -EINVAL;
+		}
+
+		uint32_t ticks = iwdt_calculate_load(cfg->quick_timeout_ms, cfg->hclk_hz);
+		cfg->iwdg_reg->IWDT_LOAD = ticks;
+		k_spinlock_key_t key = k_spin_lock(&data->lock);
+		cfg->iwdg_reg->IWDT_CTRL = FIELD_BUILD(IWDT_RST_EN, 1) | FIELD_BUILD(IWDT_EN, 1);
+		k_spin_unlock(&data->lock, key);
+		LOG_INF("%s: Quick start enabled with %d ms timeout", dev->name, cfg->quick_timeout_ms);
+	}
+
 	return 0;
 }
 
@@ -201,11 +218,12 @@ static const struct wdt_driver_api iwdt_ls_api = {
 	}                                                                                          \
 	static const struct iwdt_ls_config iwdt_ls_config##inst = {                                \
 		.iwdg_reg = (reg_iwdg_t *)DT_INST_REG_ADDR(inst),                                  \
-		.ccfg = LS_DT_CLK_CFG_ITEM(inst),                                                  \
 		.irq_config_func = iwdt_irq_config_##inst,                                         \
 		.hclk_hz = DT_INST_PROP(inst, clock_frequency),                                    \
-        IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), )) \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) \
+		.quick_enable = DT_INST_PROP(inst, quick_enable),                                  \
+		.quick_timeout_ms = DT_INST_PROP_OR(inst, quick_timeout_ms, 1000),                 \
+		IF_ENABLED(CONFIG_CLOCK_CONTROL, (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))              \
+		IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, iwdt_init, NULL, &iwdt_ls_data##inst, &iwdt_ls_config##inst,   \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &iwdt_ls_api);
