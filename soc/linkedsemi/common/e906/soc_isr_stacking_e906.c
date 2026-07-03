@@ -87,19 +87,52 @@ static inline uint32_t mnxti_get_and_set_mie(void)
     return mnxti;
 }
 
+static inline uint32_t mnxti_get_no_set_mie(void)
+{
+    uint32_t mnxti;
+
+    __asm__ volatile (
+        "csrrs %0, mnxti, x0"
+        : "=r"(mnxti)
+        :
+        : "memory"
+    );
+
+    return mnxti;
+}
+
+#ifdef CONFIG_TRACING_ISR
+#include <zephyr/tracing/tracing.h>
+#include <ctf_top.h>
+#endif
+
 __attribute__((optimize("-O2")))
 void __soc_handle_all_irqs(void)
 {
     while (1) {
-        uint32_t mnxti = mnxti_get_and_set_mie();
-        uint32_t irq_num = mnxti >> 2;
+        uint32_t mnxti;
+        uint32_t irq_num;
         struct _isr_table_entry *entry;
+
+#ifdef CONFIG_TRACING_ISR
+        mnxti = mnxti_get_no_set_mie();
+#else
+        mnxti = mnxti_get_and_set_mie();
+#endif
+        irq_num = mnxti >> 2;
         if (0 == mnxti) {
             break;
         }
         entry = &_sw_isr_table[irq_num];
+#ifdef CONFIG_TRACING_ISR
+        ctf_top_isr_enter_id(get_cur_cpu_id(), irq_num);
+        csr_set(mstatus, MSTATUS_MIE);
+#endif
         (entry->isr)(entry->arg);
         __disable_irq();
+#ifdef CONFIG_TRACING_ISR
+        ctf_top_isr_exit_id(get_cur_cpu_id());
+#endif
     }
 
     __disable_irq();
