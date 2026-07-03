@@ -447,7 +447,8 @@ static int linkedsemi_sdhci_request_inner(const struct device *dev, struct sdhc_
             break;
         default:
             DEV_ERR(dev, "invalid opcode: %#x", cmd->opcode);
-            return -ENOTSUP;
+            ret = -ENOTSUP;
+            goto out;
         }
 
         host->sdhci_data = &sdhci_data;
@@ -469,6 +470,8 @@ static int linkedsemi_sdhci_request_inner(const struct device *dev, struct sdhc_
             cmd->response[3] = host->sdhci_command->response[3];
         }
     } while (ret != 0 && (retries-- > 0));
+
+out:
     k_mutex_unlock(&dev_data->access_mutex);
 
     return ret;
