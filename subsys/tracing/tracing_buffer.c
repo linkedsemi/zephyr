@@ -7,7 +7,14 @@
 #include <zephyr/sys/ring_buffer.h>
 
 static struct ring_buf tracing_ring_buf;
+
+#ifdef CONFIG_TRACING_BUFFER_PSRAM
+/* Place the tracing ring buffer in PSRAM to allow much larger capture buffers. */
+__attribute__((section("PSRAM"))) static uint8_t tracing_buffer[CONFIG_TRACING_BUFFER_SIZE];
+#else
 static uint8_t tracing_buffer[CONFIG_TRACING_BUFFER_SIZE + 1];
+#endif
+
 static uint8_t tracing_cmd_buffer[CONFIG_TRACING_CMD_BUFFER_SIZE];
 
 uint32_t tracing_cmd_buffer_alloc(uint8_t **data)
