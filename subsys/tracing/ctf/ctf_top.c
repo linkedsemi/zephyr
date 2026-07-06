@@ -30,11 +30,13 @@ void sys_trace_k_thread_switched_out(void)
 {
 	ctf_bounded_string_t name = { "unknown" };
 	struct k_thread *thread;
+	uint8_t cpu_id;
 
 	thread = k_sched_current_thread_query();
 	_get_thread_name(thread, &name);
+	cpu_id = _current_cpu->id;
 
-	ctf_top_thread_switched_out((uint32_t)(uintptr_t)thread, name);
+	ctf_top_thread_switched_out((uint32_t)(uintptr_t)thread, name, cpu_id);
 }
 
 void sys_trace_k_thread_user_mode_enter(void)
@@ -60,11 +62,13 @@ void sys_trace_k_thread_switched_in(void)
 {
 	struct k_thread *thread;
 	ctf_bounded_string_t name = { "unknown" };
+	uint8_t cpu_id;
 
 	thread = k_sched_current_thread_query();
 	_get_thread_name(thread, &name);
+	cpu_id = _current_cpu->id;
 
-	ctf_top_thread_switched_in((uint32_t)(uintptr_t)thread, name);
+	ctf_top_thread_switched_in((uint32_t)(uintptr_t)thread, name, cpu_id);
 }
 
 void sys_trace_k_thread_priority_set(struct k_thread *thread)
@@ -745,6 +749,120 @@ void sys_trace_net_tx_time(struct net_pkt *pkt, uint32_t end_time)
 			    (uint32_t)net_pkt_priority(pkt),
 			    (uint32_t)tc,
 			    (uint32_t)duration_us);
+}
+
+/* Queue */
+void sys_trace_k_queue_append_enter(struct k_queue *queue)
+{
+	ctf_top_queue_append_enter((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_append_exit(struct k_queue *queue)
+{
+	ctf_top_queue_append_exit((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_prepend_enter(struct k_queue *queue)
+{
+	ctf_top_queue_prepend_enter((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_prepend_exit(struct k_queue *queue)
+{
+	ctf_top_queue_prepend_exit((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_insert_enter(struct k_queue *queue)
+{
+	ctf_top_queue_insert_enter((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_insert_blocking(struct k_queue *queue, k_timeout_t timeout)
+{
+	ctf_top_queue_insert_blocking((uint32_t)(uintptr_t)queue,
+				      (uint32_t)timeout.ticks);
+}
+
+void sys_trace_k_queue_insert_exit(struct k_queue *queue)
+{
+	ctf_top_queue_insert_exit((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_get_enter(struct k_queue *queue, k_timeout_t timeout)
+{
+	ctf_top_queue_get_enter((uint32_t)(uintptr_t)queue, (uint32_t)timeout.ticks);
+}
+
+void sys_trace_k_queue_get_blocking(struct k_queue *queue, k_timeout_t timeout)
+{
+	ctf_top_queue_get_blocking((uint32_t)(uintptr_t)queue, (uint32_t)timeout.ticks);
+}
+
+void sys_trace_k_queue_get_exit(struct k_queue *queue, k_timeout_t timeout, void *ret)
+{
+	ctf_top_queue_get_exit((uint32_t)(uintptr_t)queue, (uint32_t)timeout.ticks, ret);
+}
+
+void sys_trace_k_queue_unique_append_enter(struct k_queue *queue)
+{
+	ctf_top_queue_unique_append_enter((uint32_t)(uintptr_t)queue);
+}
+
+void sys_trace_k_queue_unique_append_exit(struct k_queue *queue, int ret)
+{
+	ARG_UNUSED(ret);
+	ctf_top_queue_unique_append_exit((uint32_t)(uintptr_t)queue);
+}
+
+/* FIFO */
+void sys_trace_k_fifo_put_enter(struct k_fifo *fifo, void *data)
+{
+	ctf_top_fifo_put_enter((uint32_t)(uintptr_t)fifo, data);
+}
+
+void sys_trace_k_fifo_put_exit(struct k_fifo *fifo, void *data)
+{
+	ctf_top_fifo_put_exit((uint32_t)(uintptr_t)fifo, data);
+}
+
+void sys_trace_k_fifo_alloc_put_enter(struct k_fifo *fifo, void *data)
+{
+	ctf_top_fifo_alloc_put_enter((uint32_t)(uintptr_t)fifo, data);
+}
+
+void sys_trace_k_fifo_alloc_put_exit(struct k_fifo *fifo, void *data, int ret)
+{
+	ctf_top_fifo_alloc_put_exit((uint32_t)(uintptr_t)fifo, data, ret);
+}
+
+void sys_trace_k_fifo_put_list_enter(struct k_fifo *fifo, void *head, void *tail)
+{
+	ctf_top_fifo_put_list_enter((uint32_t)(uintptr_t)fifo, head, tail);
+}
+
+void sys_trace_k_fifo_put_list_exit(struct k_fifo *fifo, void *head, void *tail)
+{
+	ctf_top_fifo_put_list_exit((uint32_t)(uintptr_t)fifo, head, tail);
+}
+
+void sys_trace_k_fifo_put_slist_enter(struct k_fifo *fifo, void *list)
+{
+	ctf_top_fifo_put_slist_enter((uint32_t)(uintptr_t)fifo, list);
+}
+
+void sys_trace_k_fifo_put_slist_exit(struct k_fifo *fifo, void *list)
+{
+	ctf_top_fifo_put_slist_exit((uint32_t)(uintptr_t)fifo, list);
+}
+
+void sys_trace_k_fifo_get_enter(struct k_fifo *fifo, k_timeout_t timeout)
+{
+	ctf_top_fifo_get_enter((uint32_t)(uintptr_t)fifo, (uint32_t)timeout.ticks);
+}
+
+void sys_trace_k_fifo_get_exit(struct k_fifo *fifo, k_timeout_t timeout, void *ret)
+{
+	ctf_top_fifo_get_exit((uint32_t)(uintptr_t)fifo, (uint32_t)timeout.ticks, ret);
 }
 
 void sys_trace_named_event(const char *name, uint32_t arg0, uint32_t arg1)

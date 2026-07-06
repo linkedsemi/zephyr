@@ -11,6 +11,8 @@
 #include <string.h>
 #include <ctf_map.h>
 #include <zephyr/tracing/tracing_format.h>
+#include <zephyr/arch/cpu.h>
+#include <zephyr/kernel.h>
 #include <zephyr/net/net_ip.h>
 
 /* Limit strings to 20 bytes to optimize bandwidth */
@@ -52,7 +54,7 @@
 #ifdef CONFIG_TRACING_CTF_TIMESTAMP
 #define CTF_EVENT(...)                                                         \
 	{                                                                      \
-		const uint32_t tstamp = k_cyc_to_ns_floor64(k_cycle_get_32()); \
+		const uint64_t tstamp = k_cyc_to_ns_floor64(k_cycle_get_64()); \
 									       \
 		CTF_GATHER_FIELDS(tstamp, __VA_ARGS__)                         \
 	}
@@ -158,6 +160,32 @@ typedef enum {
 	CTF_EVENT_NET_RX_TIME = 0x60,
 	CTF_EVENT_NET_TX_TIME = 0x61,
 	CTF_EVENT_NAMED_EVENT = 0x62,
+	CTF_EVENT_ISR_ENTER_ID = 0x63,
+	CTF_EVENT_ISR_EXIT_ID = 0x64,
+
+	CTF_EVENT_QUEUE_GET_ENTER = 0x70,
+	CTF_EVENT_QUEUE_GET_BLOCKING = 0x71,
+	CTF_EVENT_QUEUE_GET_EXIT = 0x72,
+	CTF_EVENT_QUEUE_APPEND_ENTER = 0x73,
+	CTF_EVENT_QUEUE_APPEND_EXIT = 0x74,
+	CTF_EVENT_QUEUE_PREPEND_ENTER = 0x75,
+	CTF_EVENT_QUEUE_PREPEND_EXIT = 0x76,
+	CTF_EVENT_QUEUE_INSERT_ENTER = 0x77,
+	CTF_EVENT_QUEUE_INSERT_BLOCKING = 0x78,
+	CTF_EVENT_QUEUE_INSERT_EXIT = 0x79,
+	CTF_EVENT_QUEUE_UNIQUE_APPEND_ENTER = 0x7A,
+	CTF_EVENT_QUEUE_UNIQUE_APPEND_EXIT = 0x7B,
+
+	CTF_EVENT_FIFO_GET_ENTER = 0x7C,
+	CTF_EVENT_FIFO_GET_EXIT = 0x7D,
+	CTF_EVENT_FIFO_PUT_ENTER = 0x7E,
+	CTF_EVENT_FIFO_PUT_EXIT = 0x7F,
+	CTF_EVENT_FIFO_ALLOC_PUT_ENTER = 0x80,
+	CTF_EVENT_FIFO_ALLOC_PUT_EXIT = 0x81,
+	CTF_EVENT_FIFO_PUT_LIST_ENTER = 0x82,
+	CTF_EVENT_FIFO_PUT_LIST_EXIT = 0x83,
+	CTF_EVENT_FIFO_PUT_SLIST_ENTER = 0x84,
+	CTF_EVENT_FIFO_PUT_SLIST_EXIT = 0x85,
 
 } ctf_event_t;
 
@@ -166,17 +194,19 @@ typedef struct {
 } ctf_bounded_string_t;
 
 static inline void ctf_top_thread_switched_out(uint32_t thread_id,
-					       ctf_bounded_string_t name)
+					       ctf_bounded_string_t name,
+					       uint8_t cpu_id)
 {
 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_THREAD_SWITCHED_OUT),
-		  thread_id, name);
+		  thread_id, name, cpu_id);
 }
 
 static inline void ctf_top_thread_switched_in(uint32_t thread_id,
-					      ctf_bounded_string_t name)
+					      ctf_bounded_string_t name,
+					      uint8_t cpu_id)
 {
 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_THREAD_SWITCHED_IN), thread_id,
-		  name);
+		  name, cpu_id);
 }
 
 static inline void ctf_top_thread_priority_set(uint32_t thread_id, int8_t prio,
@@ -261,6 +291,18 @@ static inline void ctf_top_isr_enter(void)
 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_ISR_ENTER));
 }
 
+static inline void ctf_top_isr_enter_id(uint8_t cpu_id, uint32_t irq_num)
+{
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_ISR_ENTER_ID),
+		  cpu_id, irq_num);
+}
+
+static inline void ctf_top_isr_exit_id(uint8_t cpu_id)
+{
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_ISR_EXIT_ID),
+		  cpu_id);
+}
+
 static inline void ctf_top_isr_exit(void)
 {
 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_ISR_EXIT));
@@ -290,79 +332,99 @@ static inline void ctf_top_end_call(uint32_t id)
 static inline void ctf_top_semaphore_init(uint32_t sem_id,
 					  int32_t ret)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_INIT), sem_id, ret);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_INIT), cpu_id,
+		  sem_id, ret);
 }
 
 static inline void ctf_top_semaphore_reset(uint32_t sem_id)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_RESET), sem_id);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_RESET), cpu_id,
+		  sem_id);
 }
 
 static inline void ctf_top_semaphore_take_enter(uint32_t sem_id,
 						uint32_t timeout)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_TAKE_ENTER), sem_id,
-		  timeout);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_TAKE_ENTER), cpu_id,
+		  sem_id, timeout);
 }
 
 static inline void ctf_top_semaphore_take_blocking(uint32_t sem_id,
 						   uint32_t timeout)
 {
+	uint8_t cpu_id = arch_curr_cpu()->id;
 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_TAKE_BLOCKING),
-		  sem_id, timeout);
+		  cpu_id, sem_id, timeout);
 }
 
 static inline void ctf_top_semaphore_take_exit(uint32_t sem_id,
 					       uint32_t timeout, int32_t ret)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_TAKE_EXIT), sem_id,
-		  timeout, ret);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_TAKE_EXIT), cpu_id,
+		  sem_id, timeout, ret);
 }
 
 static inline void ctf_top_semaphore_give_enter(uint32_t sem_id)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_GIVE_ENTER), sem_id);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_GIVE_ENTER), cpu_id,
+		  sem_id);
 }
 
 static inline void ctf_top_semaphore_give_exit(uint32_t sem_id)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_GIVE_EXIT), sem_id);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_SEMAPHORE_GIVE_EXIT), cpu_id,
+		  sem_id);
 }
 
 /* Mutex */
 static inline void ctf_top_mutex_init(uint32_t mutex_id, int32_t ret)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_INIT), mutex_id, ret);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_INIT), cpu_id,
+		  mutex_id, ret);
 }
 
 static inline void ctf_top_mutex_lock_enter(uint32_t mutex_id, uint32_t timeout)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_LOCK_ENTER), mutex_id,
-		  timeout);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_LOCK_ENTER), cpu_id,
+		  mutex_id, timeout);
 }
 
 static inline void ctf_top_mutex_lock_blocking(uint32_t mutex_id,
 					       uint32_t timeout)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_LOCK_BLOCKING), mutex_id,
-		  timeout);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_LOCK_BLOCKING), cpu_id,
+		  mutex_id, timeout);
 }
 
 static inline void ctf_top_mutex_lock_exit(uint32_t mutex_id, uint32_t timeout,
 					   int32_t ret)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_LOCK_EXIT), mutex_id,
-		  timeout, ret);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_LOCK_EXIT), cpu_id,
+		  mutex_id, timeout, ret);
 }
 
 static inline void ctf_top_mutex_unlock_enter(uint32_t mutex_id)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_UNLOCK_ENTER), mutex_id);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_UNLOCK_ENTER), cpu_id,
+		  mutex_id);
 }
 
 static inline void ctf_top_mutex_unlock_exit(uint32_t mutex_id, int32_t ret)
 {
-	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_UNLOCK_EXIT), mutex_id);
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_MUTEX_UNLOCK_EXIT), cpu_id,
+		  mutex_id);
 }
 
 /* Timer */
@@ -657,6 +719,216 @@ static inline void ctf_top_net_tx_time(int32_t if_index, uint32_t iface, uint32_
 {
 	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_NET_TX_TIME),
 		  if_index, iface, pkt, priority, tc, duration);
+}
+
+static inline void ctf_top_queue_get_enter(uint32_t queue, uint32_t timeout)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_GET_ENTER), cpu_id, thread_id,
+		  queue, timeout);
+}
+
+static inline void ctf_top_queue_get_blocking(uint32_t queue, uint32_t timeout)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_GET_BLOCKING), cpu_id,
+		  thread_id, queue, timeout);
+}
+
+static inline void ctf_top_queue_get_exit(uint32_t queue, uint32_t timeout, void *ret)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t ret_u = (uint32_t)(uintptr_t)ret;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_GET_EXIT), cpu_id, thread_id,
+		  queue, timeout, ret_u);
+}
+
+static inline void ctf_top_queue_append_enter(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_APPEND_ENTER), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_append_exit(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_APPEND_EXIT), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_prepend_enter(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_PREPEND_ENTER), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_prepend_exit(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_PREPEND_EXIT), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_insert_enter(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_INSERT_ENTER), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_insert_blocking(uint32_t queue, uint32_t timeout)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_INSERT_BLOCKING), cpu_id,
+		  thread_id, queue, timeout);
+}
+
+static inline void ctf_top_queue_insert_exit(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_INSERT_EXIT), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_unique_append_enter(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_UNIQUE_APPEND_ENTER), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_queue_unique_append_exit(uint32_t queue)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_QUEUE_UNIQUE_APPEND_EXIT), cpu_id,
+		  thread_id, queue);
+}
+
+static inline void ctf_top_fifo_get_enter(uint32_t fifo, uint32_t timeout)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_GET_ENTER), cpu_id, thread_id,
+		  fifo, timeout);
+}
+
+static inline void ctf_top_fifo_get_exit(uint32_t fifo, uint32_t timeout, void *ret)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t ret_u = (uint32_t)(uintptr_t)ret;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_GET_EXIT), cpu_id, thread_id,
+		  fifo, timeout, ret_u);
+}
+
+static inline void ctf_top_fifo_put_enter(uint32_t fifo, void *data)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t data_u = (uint32_t)(uintptr_t)data;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_PUT_ENTER), cpu_id, thread_id,
+		  fifo, data_u);
+}
+
+static inline void ctf_top_fifo_put_exit(uint32_t fifo, void *data)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t data_u = (uint32_t)(uintptr_t)data;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_PUT_EXIT), cpu_id, thread_id,
+		  fifo, data_u);
+}
+
+static inline void ctf_top_fifo_alloc_put_enter(uint32_t fifo, void *data)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t data_u = (uint32_t)(uintptr_t)data;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_ALLOC_PUT_ENTER), cpu_id,
+		  thread_id, fifo, data_u);
+}
+
+static inline void ctf_top_fifo_alloc_put_exit(uint32_t fifo, void *data, int32_t ret)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t data_u = (uint32_t)(uintptr_t)data;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_ALLOC_PUT_EXIT), cpu_id,
+		  thread_id, fifo, data_u, ret);
+}
+
+static inline void ctf_top_fifo_put_list_enter(uint32_t fifo, void *head, void *tail)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t head_u = (uint32_t)(uintptr_t)head;
+	uint32_t tail_u = (uint32_t)(uintptr_t)tail;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_PUT_LIST_ENTER), cpu_id,
+		  thread_id, fifo, head_u, tail_u);
+}
+
+static inline void ctf_top_fifo_put_list_exit(uint32_t fifo, void *head, void *tail)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t head_u = (uint32_t)(uintptr_t)head;
+	uint32_t tail_u = (uint32_t)(uintptr_t)tail;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_PUT_LIST_EXIT), cpu_id,
+		  thread_id, fifo, head_u, tail_u);
+}
+
+static inline void ctf_top_fifo_put_slist_enter(uint32_t fifo, sys_slist_t *list)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t list_u = (uint32_t)(uintptr_t)list;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_PUT_SLIST_ENTER), cpu_id,
+		  thread_id, fifo, list_u);
+}
+
+static inline void ctf_top_fifo_put_slist_exit(uint32_t fifo, sys_slist_t *list)
+{
+	uint8_t cpu_id = arch_curr_cpu()->id;
+	uint32_t thread_id = (uint32_t)(uintptr_t)k_sched_current_thread_query();
+	uint32_t list_u = (uint32_t)(uintptr_t)list;
+
+	CTF_EVENT(CTF_LITERAL(uint8_t, CTF_EVENT_FIFO_PUT_SLIST_EXIT), cpu_id,
+		  thread_id, fifo, list_u);
 }
 
 static inline void ctf_named_event(ctf_bounded_string_t name, uint32_t arg0,

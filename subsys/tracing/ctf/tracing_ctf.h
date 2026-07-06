@@ -189,28 +189,40 @@ extern "C" {
 #define sys_port_trace_k_queue_queue_insert_enter(queue, alloc)
 #define sys_port_trace_k_queue_queue_insert_blocking(queue, alloc, timeout)
 #define sys_port_trace_k_queue_queue_insert_exit(queue, alloc, ret)
-#define sys_port_trace_k_queue_append_enter(queue)
-#define sys_port_trace_k_queue_append_exit(queue)
+#define sys_port_trace_k_queue_append_enter(queue) \
+	sys_trace_k_queue_append_enter(queue)
+#define sys_port_trace_k_queue_append_exit(queue) \
+	sys_trace_k_queue_append_exit(queue)
 #define sys_port_trace_k_queue_alloc_append_enter(queue)
 #define sys_port_trace_k_queue_alloc_append_exit(queue, ret)
-#define sys_port_trace_k_queue_prepend_enter(queue)
-#define sys_port_trace_k_queue_prepend_exit(queue)
+#define sys_port_trace_k_queue_prepend_enter(queue) \
+	sys_trace_k_queue_prepend_enter(queue)
+#define sys_port_trace_k_queue_prepend_exit(queue) \
+	sys_trace_k_queue_prepend_exit(queue)
 #define sys_port_trace_k_queue_alloc_prepend_enter(queue)
 #define sys_port_trace_k_queue_alloc_prepend_exit(queue, ret)
-#define sys_port_trace_k_queue_insert_enter(queue)
-#define sys_port_trace_k_queue_insert_blocking(queue, timeout)
-#define sys_port_trace_k_queue_insert_exit(queue)
+#define sys_port_trace_k_queue_insert_enter(queue) \
+	sys_trace_k_queue_insert_enter(queue)
+#define sys_port_trace_k_queue_insert_blocking(queue, timeout) \
+	sys_trace_k_queue_insert_blocking(queue, timeout)
+#define sys_port_trace_k_queue_insert_exit(queue) \
+	sys_trace_k_queue_insert_exit(queue)
 #define sys_port_trace_k_queue_append_list_enter(queue)
 #define sys_port_trace_k_queue_append_list_exit(queue, ret)
 #define sys_port_trace_k_queue_merge_slist_enter(queue)
 #define sys_port_trace_k_queue_merge_slist_exit(queue, ret)
-#define sys_port_trace_k_queue_get_enter(queue, timeout)
-#define sys_port_trace_k_queue_get_blocking(queue, timeout)
-#define sys_port_trace_k_queue_get_exit(queue, timeout, ret)
+#define sys_port_trace_k_queue_get_enter(queue, timeout) \
+	sys_trace_k_queue_get_enter(queue, timeout)
+#define sys_port_trace_k_queue_get_blocking(queue, timeout) \
+	sys_trace_k_queue_get_blocking(queue, timeout)
+#define sys_port_trace_k_queue_get_exit(queue, timeout, ret) \
+	sys_trace_k_queue_get_exit(queue, timeout, ret)
 #define sys_port_trace_k_queue_remove_enter(queue)
 #define sys_port_trace_k_queue_remove_exit(queue, ret)
-#define sys_port_trace_k_queue_unique_append_enter(queue)
-#define sys_port_trace_k_queue_unique_append_exit(queue, ret)
+#define sys_port_trace_k_queue_unique_append_enter(queue) \
+	sys_trace_k_queue_unique_append_enter(queue)
+#define sys_port_trace_k_queue_unique_append_exit(queue, ret) \
+	sys_trace_k_queue_unique_append_exit(queue, ret)
 #define sys_port_trace_k_queue_peek_head(queue, ret)
 #define sys_port_trace_k_queue_peek_tail(queue, ret)
 
@@ -218,16 +230,26 @@ extern "C" {
 #define sys_port_trace_k_fifo_init_exit(fifo)
 #define sys_port_trace_k_fifo_cancel_wait_enter(fifo)
 #define sys_port_trace_k_fifo_cancel_wait_exit(fifo)
-#define sys_port_trace_k_fifo_put_enter(fifo, data)
-#define sys_port_trace_k_fifo_put_exit(fifo, data)
-#define sys_port_trace_k_fifo_alloc_put_enter(fifo, data)
-#define sys_port_trace_k_fifo_alloc_put_exit(fifo, data, ret)
-#define sys_port_trace_k_fifo_put_list_enter(fifo, head, tail)
-#define sys_port_trace_k_fifo_put_list_exit(fifo, head, tail)
-#define sys_port_trace_k_fifo_put_slist_enter(fifo, list)
-#define sys_port_trace_k_fifo_put_slist_exit(fifo, list)
-#define sys_port_trace_k_fifo_get_enter(fifo, timeout)
-#define sys_port_trace_k_fifo_get_exit(fifo, timeout, ret)
+#define sys_port_trace_k_fifo_put_enter(fifo, data) \
+	sys_trace_k_fifo_put_enter(fifo, data)
+#define sys_port_trace_k_fifo_put_exit(fifo, data) \
+	sys_trace_k_fifo_put_exit(fifo, data)
+#define sys_port_trace_k_fifo_alloc_put_enter(fifo, data) \
+	sys_trace_k_fifo_alloc_put_enter(fifo, data)
+#define sys_port_trace_k_fifo_alloc_put_exit(fifo, data, ret) \
+	sys_trace_k_fifo_alloc_put_exit(fifo, data, ret)
+#define sys_port_trace_k_fifo_put_list_enter(fifo, head, tail) \
+	sys_trace_k_fifo_put_list_enter(fifo, head, tail)
+#define sys_port_trace_k_fifo_put_list_exit(fifo, head, tail) \
+	sys_trace_k_fifo_put_list_exit(fifo, head, tail)
+#define sys_port_trace_k_fifo_put_slist_enter(fifo, list) \
+	sys_trace_k_fifo_put_slist_enter(fifo, list)
+#define sys_port_trace_k_fifo_put_slist_exit(fifo, list) \
+	sys_trace_k_fifo_put_slist_exit(fifo, list)
+#define sys_port_trace_k_fifo_get_enter(fifo, timeout) \
+	sys_trace_k_fifo_get_enter(fifo, timeout)
+#define sys_port_trace_k_fifo_get_exit(fifo, timeout, ret) \
+	sys_trace_k_fifo_get_exit(fifo, timeout, ret)
 #define sys_port_trace_k_fifo_peek_head_enter(fifo)
 #define sys_port_trace_k_fifo_peek_head_exit(fifo, ret)
 #define sys_port_trace_k_fifo_peek_tail_enter(fifo)
@@ -591,6 +613,32 @@ void sys_trace_net_send_data_enter(struct net_pkt *pkt);
 void sys_trace_net_send_data_exit(struct net_pkt *pkt, int ret);
 void sys_trace_net_rx_time(struct net_pkt *pkt, uint32_t end_time);
 void sys_trace_net_tx_time(struct net_pkt *pkt, uint32_t end_time);
+
+/* Queue */
+void sys_trace_k_queue_append_enter(struct k_queue *queue);
+void sys_trace_k_queue_append_exit(struct k_queue *queue);
+void sys_trace_k_queue_prepend_enter(struct k_queue *queue);
+void sys_trace_k_queue_prepend_exit(struct k_queue *queue);
+void sys_trace_k_queue_insert_enter(struct k_queue *queue);
+void sys_trace_k_queue_insert_blocking(struct k_queue *queue, k_timeout_t timeout);
+void sys_trace_k_queue_insert_exit(struct k_queue *queue);
+void sys_trace_k_queue_get_enter(struct k_queue *queue, k_timeout_t timeout);
+void sys_trace_k_queue_get_blocking(struct k_queue *queue, k_timeout_t timeout);
+void sys_trace_k_queue_get_exit(struct k_queue *queue, k_timeout_t timeout, void *ret);
+void sys_trace_k_queue_unique_append_enter(struct k_queue *queue);
+void sys_trace_k_queue_unique_append_exit(struct k_queue *queue, int ret);
+
+/* FIFO */
+void sys_trace_k_fifo_put_enter(struct k_fifo *fifo, void *data);
+void sys_trace_k_fifo_put_exit(struct k_fifo *fifo, void *data);
+void sys_trace_k_fifo_alloc_put_enter(struct k_fifo *fifo, void *data);
+void sys_trace_k_fifo_alloc_put_exit(struct k_fifo *fifo, void *data, int ret);
+void sys_trace_k_fifo_put_list_enter(struct k_fifo *fifo, void *head, void *tail);
+void sys_trace_k_fifo_put_list_exit(struct k_fifo *fifo, void *head, void *tail);
+void sys_trace_k_fifo_put_slist_enter(struct k_fifo *fifo, void *list);
+void sys_trace_k_fifo_put_slist_exit(struct k_fifo *fifo, void *list);
+void sys_trace_k_fifo_get_enter(struct k_fifo *fifo, k_timeout_t timeout);
+void sys_trace_k_fifo_get_exit(struct k_fifo *fifo, k_timeout_t timeout, void *ret);
 
 void sys_trace_named_event(const char *name, uint32_t arg0, uint32_t arg1);
 
