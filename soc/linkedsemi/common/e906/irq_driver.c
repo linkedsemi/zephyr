@@ -25,7 +25,54 @@ static void clic_irq_set_trigger(uint32_t irq, uint32_t flags)
 	}
 }
 
-#ifdef CONFIG_SMP
+/**
+ * @brief Get enable status of interrupt
+ */
+int riscv_clic_irq_is_enabled(uint32_t irq)
+{
+	return (uint32_t)csi_vic_get_enabled_irq(irq);
+}
+
+void riscv_clic_irq_set_pending(uint32_t irq)
+{
+	MODIFY_REG(CLIC->CLICINT[irq].ATTR, CLIC_INTATTR_TRIG_Msk, 1 << CLIC_INTATTR_TRIG_Pos);
+	csi_vic_set_pending_irq(irq);
+}
+
+void riscv_clic_irq_disable_trigger_mode(uint32_t irq)
+{
+	MODIFY_REG(CLIC->CLICINT[irq].ATTR, CLIC_INTATTR_TRIG_Msk, 0 << CLIC_INTATTR_TRIG_Pos);
+}
+
+#ifndef CONFIG_SMP
+
+/**
+ * @brief Enable interrupt
+ */
+void riscv_clic_irq_enable(uint32_t irq)
+{
+	csi_vic_enable_irq(irq);
+}
+
+/**
+ * @brief Disable interrupt
+ */
+void riscv_clic_irq_disable(uint32_t irq)
+{
+	csi_vic_disable_irq(irq);
+}
+
+/**
+ * @brief Set priority and level of interrupt
+ */
+void riscv_clic_irq_priority_set(uint32_t irq, uint32_t pri, uint32_t flags)
+{
+	csi_vic_set_prio(irq, pri);
+	clic_irq_set_trigger(irq, flags);
+}
+
+#else /* CONFIG_SMP */
+
 extern atomic_val_t *p_cpu_pending_ipi;
 
 struct irq_affinity_cfg {
@@ -86,15 +133,11 @@ static void clic_irq_notify_online(uint32_t irq, uint32_t mask)
 	}
 }
 
-#endif /* CONFIG_SMP */
-
-
 /**
  * @brief Enable interrupt
  */
 void riscv_clic_irq_enable(uint32_t irq)
 {
-#ifdef CONFIG_SMP
 	uint32_t mask = (uint32_t)atomic_get(&irq_affinity[irq].cpumask);
 
 	if (mask == 0) {
@@ -115,9 +158,6 @@ void riscv_clic_irq_enable(uint32_t irq)
 
 	clic_irq_notify_online(irq, mask);
 	arch_irq_unlock(key);
-#else
-	csi_vic_enable_irq(irq);
-#endif
 }
 
 /**
@@ -125,7 +165,6 @@ void riscv_clic_irq_enable(uint32_t irq)
  */
 void riscv_clic_irq_disable(uint32_t irq)
 {
-#ifdef CONFIG_SMP
 	uint32_t mask = (uint32_t)atomic_get(&irq_affinity[irq].cpumask);
 
 	if (mask == 0) {
@@ -163,17 +202,6 @@ void riscv_clic_irq_disable(uint32_t irq)
 		}
 	}
 	arch_irq_unlock(key);
-#else
-	csi_vic_disable_irq(irq);
-#endif
-}
-
-/**
- * @brief Get enable status of interrupt
- */
-int riscv_clic_irq_is_enabled(uint32_t irq)
-{
-    return (uint32_t)csi_vic_get_enabled_irq(irq);
 }
 
 /**
@@ -181,46 +209,28 @@ int riscv_clic_irq_is_enabled(uint32_t irq)
  */
 void riscv_clic_irq_priority_set(uint32_t irq, uint32_t pri, uint32_t flags)
 {
-#ifdef CONFIG_SMP
-    uint32_t mask = (uint32_t)atomic_get(&irq_affinity[irq].cpumask);
-    uint32_t cur_cpu = get_cur_cpu_id();
+	uint32_t mask = (uint32_t)atomic_get(&irq_affinity[irq].cpumask);
+	uint32_t cur_cpu = get_cur_cpu_id();
 
-    /* Cache the configuration so migration can replay it on another CPU. */
-    irq_affinity[irq].prio = (uint8_t)pri;
-    irq_affinity[irq].flags = (uint8_t)flags;
+	/* Cache the configuration so migration can replay it on another CPU. */
+	irq_affinity[irq].prio = (uint8_t)pri;
+	irq_affinity[irq].flags = (uint8_t)flags;
 
-    /* Apply locally only if this CPU is supposed to own the interrupt. */
-    if (mask == 0 || (mask & BIT(cur_cpu))) {
-	    csi_vic_set_prio(irq, pri);
-	    clic_irq_set_trigger(irq, flags);
-    }
+	/* Apply locally only if this CPU is supposed to own the interrupt. */
+	if (mask == 0 || (mask & BIT(cur_cpu))) {
+		csi_vic_set_prio(irq, pri);
+		clic_irq_set_trigger(irq, flags);
+	}
 
-    /* Propagate to other target CPUs. */
-    if (mask != 0) {
-	    unsigned int key = arch_irq_lock();
+	/* Propagate to other target CPUs. */
+	if (mask != 0) {
+		unsigned int key = arch_irq_lock();
 
-	    clic_irq_notify_online(irq, mask);
-	    arch_irq_unlock(key);
-    }
-#else
-    csi_vic_set_prio(irq, pri);
-    clic_irq_set_trigger(irq, flags);
-#endif
+		clic_irq_notify_online(irq, mask);
+		arch_irq_unlock(key);
+	}
 }
 
-
-void lsqsh_clic_irq_set_pending(uint32_t irq)
-{
-    MODIFY_REG(CLIC->CLICINT[irq].ATTR,CLIC_INTATTR_TRIG_Msk,1<<CLIC_INTATTR_TRIG_Pos);
-	csi_vic_set_pending_irq(irq);
-}
-
-void lsqsh_clic_irq_disable_trigger_mode(uint32_t irq)
-{
-    MODIFY_REG(CLIC->CLICINT[irq].ATTR,CLIC_INTATTR_TRIG_Msk,0<<CLIC_INTATTR_TRIG_Pos);
-}
-
-#ifdef CONFIG_SMP
 int lsqsh_clic_irq_set_affinity(uint32_t irq, uint32_t cpumask)
 {
 	if (irq >= CONFIG_NUM_IRQS) {
@@ -282,7 +292,7 @@ int lsqsh_clic_irq_set_affinity_sync(uint32_t irq, uint32_t cpumask)
 
 	/* Wait for each notified CPU to finish applying the affinity in its
 	 * IPI handler.  The local CPU has already been applied synchronously
-	 * inside riscv_clic_irq_set_affinity().
+	 * inside lsqsh_clic_irq_set_affinity().
 	 */
 	for (uint32_t cpu = 0; cpu < arch_num_cpus(); cpu++) {
 		if (cpu != cur_cpu && _kernel.cpus[cpu].arch.online) {
@@ -348,7 +358,7 @@ static int lsqsh_irq_affinity_init(void)
 	memset((void *)affinity_ack, 0, sizeof(affinity_ack));
 
 	/* Default routing: all interrupts handled on CPU0 unless explicitly
-	 * rebound via riscv_clic_irq_set_affinity().
+	 * rebound via lsqsh_clic_irq_set_affinity().
 	 */
 	for (uint32_t irq = 0; irq < CONFIG_NUM_IRQS; irq++) {
 		atomic_set(&irq_affinity[irq].cpumask, BIT(0));
@@ -373,4 +383,5 @@ static int lsqsh_irq_affinity_init(void)
 	return 0;
 }
 SYS_INIT(lsqsh_irq_affinity_init, PRE_KERNEL_1, 0);
+
 #endif /* CONFIG_SMP */
