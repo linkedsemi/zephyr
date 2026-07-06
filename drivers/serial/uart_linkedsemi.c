@@ -38,7 +38,7 @@
 #endif
 
 #ifdef CONFIG_RISCV_HAS_CLIC
-void lsqsh_clic_irq_disable_trigger_mode(uint32_t irq);
+void riscv_clic_irq_disable_trigger_mode(uint32_t irq);
 #endif
 
 #define DT_DRV_COMPAT linkedsemi_ls_uart
@@ -350,7 +350,7 @@ void uart_ls_isr(const struct device *dev)
 	struct uart_ls_data_t *data = (struct uart_ls_data_t *)dev->data;
 
 #ifdef CONFIG_RISCV_HAS_CLIC
-	lsqsh_clic_irq_disable_trigger_mode(data->irq);
+	riscv_clic_irq_disable_trigger_mode(data->irq);
 #endif
 
 	if (LL_UART_IsActiveFlagIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD) && LL_UART_IsEnabledIT((reg_uart_t *)uart_handle->UARTX, UART_IT_RXRD))
