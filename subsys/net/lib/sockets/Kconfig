@@ -346,6 +346,48 @@ config NET_SOCKETS_CAN_RECEIVERS
 	  The value tells how many sockets can receive data from same
 	  Socket-CAN interface.
 
+config NET_SOCKETS_AF_UNIX
+	bool "AF_UNIX (local) socket support"
+	depends on NET_SOCKETS
+	select PIPES
+	default n
+	help
+	  Enable Unix domain socket support for local IPC without
+	  TCP/IP stack overhead. Provides socket/bind/listen/accept/
+	  connect for AF_UNIX SOCK_STREAM. Data transfer uses k_pipe
+	  internally, reusing the same mechanism as socketpair.
+
+config NET_UNIX_BUFFER_SIZE
+	int "AF_UNIX socket buffer size"
+	depends on NET_SOCKETS_AF_UNIX
+	default 2048
+	help
+	  Per-socket pipe buffer size in bytes for AF_UNIX sockets.
+	  Buffers are allocated from the system heap when the socket
+	  is created and freed on close, so idle sockets consume no
+	  buffer memory.
+
+config NET_UNIX_MAX_SOCKETS
+	int "Maximum number of AF_UNIX sockets"
+	depends on NET_SOCKETS_AF_UNIX
+	default 4
+	help
+	  Maximum number of concurrent AF_UNIX sockets. This covers
+	  both listening sockets and connected endpoints (e.g. one
+	  listener + up to 3 connected pairs). Only the socket control
+	  structures are statically allocated; pipe buffers are
+	  heap-allocated on demand.
+
+config HEAP_MEM_POOL_ADD_SIZE_AF_UNIX
+	int
+	depends on NET_SOCKETS_AF_UNIX
+	default 4096
+	help
+	  Additional heap memory for AF_UNIX dynamic pipe buffers.
+	  Sized for up to 2 concurrent pipe buffers (2 x 2048 B)
+	  from the shared system heap; remaining sockets borrow
+	  from the common pool or wait until a peer closes.
+
 config NET_SOCKETPAIR
 	bool "Support for socketpair"
 	select PIPES
