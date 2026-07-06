@@ -31,8 +31,39 @@ void flash_critical_exit_sync();
 
 void flash_critical_enter_sync();
 
+#ifdef CONFIG_SMP
+void lsqsh_clic_apply_affinity(void);
+
+/**
+ * @brief Set interrupt CPU affinity (asynchronous)
+ *
+ * Bind an interrupt to one or more CPUs. The actual enable/disable/priority
+ * configuration is performed on the target CPUs via IPI. The function returns
+ * immediately after sending the IPIs.
+ *
+ * @param irq interrupt ID
+ * @param cpumask bitmask of target CPUs (bit 0 = CPU0, etc.)
+ * @return 0 on success, negative errno on error
+ */
+int lsqsh_clic_irq_set_affinity(uint32_t irq, uint32_t cpumask);
+
+/**
+ * @brief Set interrupt CPU affinity and wait for target CPUs to apply it
+ *
+ * Same as @ref lsqsh_clic_irq_set_affinity, but additionally waits until all
+ * online target CPUs have finished configuring their local CLIC.
+ *
+ * @param irq interrupt ID
+ * @param cpumask bitmask of target CPUs (bit 0 = CPU0, etc.)
+ * @return 0 on success, negative errno on error
+ */
+int lsqsh_clic_irq_set_affinity_sync(uint32_t irq, uint32_t cpumask);
+#endif /* CONFIG_SMP */
+
 #define IPI_SCHED	0
 #define IPI_FPU_FLUSH	1
 #define IPI_XIP_LOCK_WRITE    2
 #define IPI_XIP_LOCK_READ    3
+#define IPI_IRQ_AFFINITY      4
+
 #endif
