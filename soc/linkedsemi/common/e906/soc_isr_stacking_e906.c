@@ -73,20 +73,9 @@ void Swint_Handler_C(struct arch_esf *args)
 }
 
 #if defined(CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_HANDLING)
-static inline uint32_t mnxti_get_and_set_mie(void)
-{
-    uint32_t mnxti;
-
-    __asm__ volatile (
-        "csrrsi %0, mnxti, 8"
-        : "=r"(mnxti)
-        :
-        : "memory"
-    );
-
-    return mnxti;
-}
-
+#ifdef CONFIG_TRACING_ISR
+#include <zephyr/tracing/tracing.h>
+#include <ctf_top.h>
 static inline uint32_t mnxti_get_no_set_mie(void)
 {
     uint32_t mnxti;
@@ -101,13 +90,7 @@ static inline uint32_t mnxti_get_no_set_mie(void)
     return mnxti;
 }
 
-#ifdef CONFIG_TRACING_ISR
-#include <zephyr/tracing/tracing.h>
-#include <ctf_top.h>
-#endif
-
 __attribute__((optimize("-O2")))
-#ifdef CONFIG_TRACING_ISR
 void __soc_handle_all_irqs(void)
 {
 	while (1) {
@@ -129,6 +112,21 @@ void __soc_handle_all_irqs(void)
 	__disable_irq();
 }
 #else
+static inline uint32_t mnxti_get_and_set_mie(void)
+{
+    uint32_t mnxti;
+
+    __asm__ volatile (
+        "csrrsi %0, mnxti, 8"
+        : "=r"(mnxti)
+        :
+        : "memory"
+    );
+
+    return mnxti;
+}
+
+__attribute__((optimize("-O2")))
 void __soc_handle_all_irqs(void)
 {
 	while (1) {
