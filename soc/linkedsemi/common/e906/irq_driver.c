@@ -365,7 +365,7 @@ static int lsqsh_irq_affinity_init(void)
 	 */
 	atomic_set(&irq_affinity[RV_SOFT_IRQN].cpumask, 0);
 	atomic_set(&irq_affinity[RV_TIME_IRQN].cpumask, 0);
-	atomic_set(&irq_affinity[RV_EXT_IRQN].cpumask, 0);
+	// atomic_set(&irq_affinity[RV_EXT_IRQN].cpumask, 0);
 
 	/* Flash software interrupt is used by both cores for XIP sync. */
 	atomic_set(&irq_affinity[FLASH_SWINT_NUM].cpumask, BIT(0) | BIT(1));
