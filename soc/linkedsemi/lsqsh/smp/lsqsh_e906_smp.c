@@ -177,6 +177,7 @@ void lsqsh_secondary_cpu_init(void)
 	    irq_disable(SYSC_SEC_CPU_IRQN);
         z_riscv_irq_priority_set(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, IRQ_TYPE_EDGE_RISING);
         irq_enable(FLASH_SWINT_NUM);
+        lsqsh_clic_apply_affinity();
     }
     else
     {
