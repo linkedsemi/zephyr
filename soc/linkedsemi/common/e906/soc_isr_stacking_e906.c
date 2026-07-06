@@ -107,34 +107,44 @@ static inline uint32_t mnxti_get_no_set_mie(void)
 #endif
 
 __attribute__((optimize("-O2")))
+#ifdef CONFIG_TRACING_ISR
 void __soc_handle_all_irqs(void)
 {
-    while (1) {
-        uint32_t mnxti;
-        uint32_t irq_num;
-        struct _isr_table_entry *entry;
+	while (1) {
+		uint32_t mnxti = mnxti_get_no_set_mie();
+		uint32_t irq_num = mnxti >> 2;
+		struct _isr_table_entry *entry;
 
-#ifdef CONFIG_TRACING_ISR
-        mnxti = mnxti_get_no_set_mie();
-#else
-        mnxti = mnxti_get_and_set_mie();
-#endif
-        irq_num = mnxti >> 2;
-        if (0 == mnxti) {
-            break;
-        }
-        entry = &_sw_isr_table[irq_num];
-#ifdef CONFIG_TRACING_ISR
-        ctf_top_isr_enter_id(get_cur_cpu_id(), irq_num);
-        csr_set(mstatus, MSTATUS_MIE);
-#endif
-        (entry->isr)(entry->arg);
-        __disable_irq();
-#ifdef CONFIG_TRACING_ISR
-        ctf_top_isr_exit_id(get_cur_cpu_id());
-#endif
-    }
+		if (0 == mnxti) {
+			break;
+		}
+		entry = &_sw_isr_table[irq_num];
+		ctf_top_isr_enter_id(get_cur_cpu_id(), irq_num);
+		csr_set(mstatus, MSTATUS_MIE);
+		(entry->isr)(entry->arg);
+		__disable_irq();
+		ctf_top_isr_exit_id(get_cur_cpu_id());
+	}
 
-    __disable_irq();
+	__disable_irq();
 }
+#else
+void __soc_handle_all_irqs(void)
+{
+	while (1) {
+		uint32_t mnxti = mnxti_get_and_set_mie();
+		uint32_t irq_num = mnxti >> 2;
+		struct _isr_table_entry *entry;
+
+		if (0 == mnxti) {
+			break;
+		}
+		entry = &_sw_isr_table[irq_num];
+		(entry->isr)(entry->arg);
+		__disable_irq();
+	}
+
+	__disable_irq();
+}
+#endif
 #endif
