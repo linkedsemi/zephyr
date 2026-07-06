@@ -173,6 +173,9 @@ void sched_ipi_handler(const void *unused)
 	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK_READ)) {
 		poll_wait_xip_unlock(false);
 	}
+	if (pending_ipi & ATOMIC_MASK(IPI_IRQ_AFFINITY)) {
+		lsqsh_clic_apply_affinity();
+	}
 #endif
 }
 
