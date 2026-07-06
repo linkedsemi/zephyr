@@ -129,20 +129,19 @@ static inline uint32_t mnxti_get_and_set_mie(void)
 __attribute__((optimize("-O2")))
 void __soc_handle_all_irqs(void)
 {
-	while (1) {
-		uint32_t mnxti = mnxti_get_and_set_mie();
-		uint32_t irq_num = mnxti >> 2;
-		struct _isr_table_entry *entry;
+    while (1) {
+        uint32_t mnxti = mnxti_get_and_set_mie();
+        uint32_t irq_num = mnxti >> 2;
+        struct _isr_table_entry *entry;
+        if (0 == mnxti) {
+            break;
+        }
+        entry = &_sw_isr_table[irq_num];
+        (entry->isr)(entry->arg);
+        __disable_irq();
+    }
 
-		if (0 == mnxti) {
-			break;
-		}
-		entry = &_sw_isr_table[irq_num];
-		(entry->isr)(entry->arg);
-		__disable_irq();
-	}
-
-	__disable_irq();
+    __disable_irq();
 }
 #endif
 #endif
