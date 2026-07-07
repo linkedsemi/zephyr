@@ -93,7 +93,7 @@ void dwmac_platform_init(struct dwmac_priv *p)
     const struct device *const dev = p->dev;
     const struct eth_linkedsemi_config *dev_config = dev->config;
 
-    REG_WRITE(MAC_CONF, MAC_CONF_DM);
+    REG_WRITE(MAC_CONF, MAC_CONF_DM | MAC_CONF_IPC);
 
     REG_WRITE(DMA_SYSBUS_MODE, DMA_SYSBUS_MODE_AAL | DMA_SYSBUS_MODE_FB);
 
