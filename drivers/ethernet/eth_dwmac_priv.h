@@ -857,6 +857,8 @@ extern const struct ethernet_api dwmac_api;
 
 #define MTL_RXQn_OPERATION_MODE(n)		(0x0d30 + 0x40 * (n))
 
+#define MTL_OP_MODE_RSF				BIT(5)
+
 /* 17.3.8, 17.4.12 */
 
 #define MTL_RXQn_MISSED_PKT_OVFL_CNT(n)		(0x0d34 + 0x40 * (n))
