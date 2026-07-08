@@ -374,7 +374,7 @@ static int sysfs_ioctl(struct fs_file_t *filp, unsigned long cmd, va_list args)
     int rc = -EINVAL;
     struct sysfs_attribute *attr = filp->filep;
 
-    if (attr->ops->ioctl)
+    if (attr->ops->ioctl == NULL)
     {
         LOG_ERR("invalid file pointer or ioctl not supported");
         return -ENOTSUP;
