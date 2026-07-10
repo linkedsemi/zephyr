@@ -83,6 +83,10 @@ void Swint_Handler_C(struct arch_esf *args)
 #ifdef CONFIG_TRACING_ISR
 #include <zephyr/tracing/tracing.h>
 #include <ctf_top.h>
+#else
+static inline void ctf_top_isr_enter_id(uint8_t cpu, uint8_t id) {}
+static inline void ctf_top_isr_exit_id(uint8_t cpu) {}
+#endif
 static inline uint32_t mnxti_get_no_set_mie(void)
 {
     uint32_t mnxti;
@@ -110,45 +114,11 @@ void __soc_handle_all_irqs(void)
         }
         entry = &_sw_isr_table[irq_num];
         ctf_top_isr_enter_id(get_cur_cpu_id(), irq_num);
-        csr_set(mstatus, MSTATUS_MIE);
+        __enable_irq();
         (entry->isr)(entry->arg);
         __disable_irq();
         ctf_top_isr_exit_id(get_cur_cpu_id());
     }
-
-    __disable_irq();
-}
-#else
-static inline uint32_t mnxti_get_and_set_mie(void)
-{
-    uint32_t mnxti;
-
-    __asm__ volatile (
-        "csrrsi %0, mnxti, 8"
-        : "=r"(mnxti)
-        :
-        : "memory"
-    );
-
-    return mnxti;
 }
 
-__attribute__((optimize("-O2")))
-void __soc_handle_all_irqs(void)
-{
-    while (1) {
-        uint32_t mnxti = mnxti_get_and_set_mie();
-        uint32_t irq_num = mnxti >> 2;
-        struct _isr_table_entry *entry;
-        if (0 == mnxti) {
-            break;
-        }
-        entry = &_sw_isr_table[irq_num];
-        (entry->isr)(entry->arg);
-        __disable_irq();
-    }
-
-    __disable_irq();
-}
-#endif
 #endif
