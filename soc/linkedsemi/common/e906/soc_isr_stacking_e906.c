@@ -41,7 +41,6 @@ __ramfunc void isr_stacking_mcause(void)
 
 #define MCAUSE_MPP_MASK (3UL << 28)
 #define MCAUSE_MPIE_MASK (1UL << 27)
-#define MCAUSE_MPIL_MASK (0xff << 16)
 
 __ramfunc void isr_unstacking_mcause(void)
 {
@@ -56,14 +55,8 @@ __ramfunc void isr_unstacking_mcause(void)
         current_mcause = csr_read(mcause);
 
         current_mcause &=  (MCAUSE_MPP_MASK | MCAUSE_MPIE_MASK);
-        if(irq_nested_level[_cpu_id])
-        {
-            uint32_t restore_mpil = irq_nested_mcause[_cpu_id][irq_nested_level[_cpu_id]-1]&MCAUSE_MPIL_MASK;
-            MODIFY_REG(restore_mcause,(MCAUSE_MPP_MASK | MCAUSE_MPIE_MASK | MCAUSE_MPIL_MASK),current_mcause|restore_mpil);
-        }else
-        {
-            MODIFY_REG(restore_mcause,(MCAUSE_MPP_MASK | MCAUSE_MPIE_MASK),current_mcause);
-        }
+        MODIFY_REG(restore_mcause,(MCAUSE_MPP_MASK | MCAUSE_MPIE_MASK),current_mcause);
+
         csr_write(mcause,restore_mcause);
     }
     else
