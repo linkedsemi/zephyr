@@ -92,6 +92,17 @@ void sdhci_clear_int_status_flag(struct sdhci_host *sdhci_host, uint32_t mask)
     sdhci_writel(sdhci_host, mask, SDHCI_INT_STATUS);
 }
 
+void sdhci_count_errors(struct sdhci_host *host, uint32_t status)
+{
+    uint32_t err = (status >> 16) & 0xffff;
+
+    for (int i = 0; i < 16; i++) {
+        if (err & BIT(i)) {
+            host->err_counters[i]++;
+        }
+    }
+}
+
 void sdhic_error_recovery(struct sdhci_host *sdhci_host)
 {
     uint32_t status;
