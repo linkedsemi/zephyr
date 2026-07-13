@@ -504,7 +504,16 @@ struct sdhci_host {
     uint32_t current_speed;
     enum sdhc_timing_mode timing;
     bool execute_tuning;
+    uint32_t err_counters[16];
 };
+
+#define SDHCI_ERR_NAMES \
+    "CMD_TIMEOUT", "CMD_CRC", "CMD_ENDBIT", "CMD_INDEX", \
+    "DAT_TIMEOUT", "DAT_CRC", "DAT_ENDBIT", "BUS_POWER", \
+    "AUTO_CMD", "ADMA", "TUNING", "RESP", \
+    "", "", "", ""
+
+void sdhci_count_errors(struct sdhci_host *host, uint32_t status);
 
 
 #define CACHE_LINESIZE (32)
