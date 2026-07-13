@@ -28,6 +28,7 @@
 #include "sdhci.h"
 #include "reg_sysc_app_awo.h"
 #include "reg_sysc_app_cpu.h"
+#include <zephyr/shell/shell.h>
 
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
@@ -73,6 +74,7 @@ static void linkedsemi_sdhci_isr(const void *arg)
         host->error_code = (status >> 16) & 0xffff;
         if (host->error_code) {
             if (!host->execute_tuning) {
+                sdhci_count_errors(host, status);
                 uint32_t cmd_r = sdhci_readw(host, SDHCI_COMMAND);
                 uint32_t arg_r = sdhci_readl(host, SDHCI_ARGUMENT);
                 DEV_INF(dev, "isr_dbg: status: %#4.4x  CMD_R: %#x  ARG_R: %#x", status, cmd_r, arg_r);
@@ -931,6 +933,43 @@ int linkedsemi_sdhci_deinit(const struct device *dev)
 
     return 0;
 }
+
+#if defined(CONFIG_SHELL)
+static const char *const sdhci_err_names[] = { SDHCI_ERR_NAMES };
+
+#define SDHC_SHELL_DEV(n) DEVICE_DT_INST_GET(n),
+
+static const struct device *const sdhc_instances[] = {
+    DT_INST_FOREACH_STATUS_OKAY(SDHC_SHELL_DEV)
+};
+
+static int cmd_sdhc_errors(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc); ARG_UNUSED(argv);
+
+    for (size_t idx = 0; idx < ARRAY_SIZE(sdhc_instances); idx++) {
+        const struct device *dev = sdhc_instances[idx];
+        struct linkedsemi_sdhci_data *data = dev->data;
+        struct sdhci_host *host = &data->host;
+        uint32_t total = 0;
+
+        shell_print(sh, "SDHCI error counters (%s):", dev->name);
+        for (int i = 0; i < 16; i++) {
+            uint32_t c = host->err_counters[i];
+            total += c;
+            if (sdhci_err_names[i][0] != '\0') {
+                shell_print(sh, "  %-14s  %u", sdhci_err_names[i], c);
+            }
+        }
+        shell_print(sh, "  %-14s  %u", "TOTAL", total);
+    }
+    return 0;
+}
+
+SHELL_CMD_REGISTER(sdhc_errors, NULL,
+                   "Show SDHCI error counters for all instances",
+                   cmd_sdhc_errors);
+#endif
 
 static const struct sdhc_driver_api linkedsemi_sdhci_api = {
     .reset = linkedsemi_sdhci_reset,
