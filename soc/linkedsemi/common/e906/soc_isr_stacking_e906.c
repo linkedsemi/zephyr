@@ -85,7 +85,7 @@ static inline uint32_t mnxti_get_no_set_mie(void)
     uint32_t mnxti;
 
     __asm__ volatile (
-        "csrrs %0, mnxti, x0"
+        "csrrsi %0, mnxti, 1"
         : "=r"(mnxti)
         :
         : "memory"
