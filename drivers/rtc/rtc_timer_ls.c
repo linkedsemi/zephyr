@@ -15,6 +15,7 @@
 #include <zephyr/logging/log.h>
 #include <soc.h>
 #include "rtc_utils.h"
+#include "platform.h"
 
 LOG_MODULE_REGISTER(rtc_timer_ls, LOG_LEVEL_DBG);
 
