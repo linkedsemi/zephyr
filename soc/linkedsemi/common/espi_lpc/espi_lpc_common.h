@@ -252,7 +252,7 @@ int get_host_vuart_mode_setting(const struct device *dev, uint8_t *rx_enable, ui
 
 unsigned int kcs_env_lock(struct host_kcs_env *env);
 
-void kcs_env_unlock(struct host_kcs_env *env,unsinged int key);
+void kcs_env_unlock(struct host_kcs_env *env,unsigned int key);
 
 void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch);
 
