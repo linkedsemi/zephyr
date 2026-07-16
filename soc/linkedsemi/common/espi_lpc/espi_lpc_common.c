@@ -86,17 +86,20 @@ void espi_lpc_remove_mem(const struct device *dev,struct peri_mem *mem)
 	sys_slist_find_and_remove(&data->peri_mem,&mem->node);
 }
 
-void kcs_env_lock(struct host_kcs_env *env)
+unsigned int kcs_env_lock(struct host_kcs_env *env)
 {
+	unsigned int key = arch_irq_lock();
     while(atomic_inc(&env->lock))
     {
         atomic_dec(&env->lock);
     }
+	return key;
 }
 
-void kcs_env_unlock(struct host_kcs_env *env)
+void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
 {
 	atomic_dec(&env->lock);
+	arch_irq_unlock(key);
 }
 
 #ifdef CONFIG_ESPI_LPC_MBOX
