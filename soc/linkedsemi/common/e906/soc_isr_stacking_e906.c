@@ -101,16 +101,17 @@ void __soc_handle_all_irqs(void)
         uint32_t mnxti = mnxti_get_no_set_mie();
         uint32_t irq_num = mnxti >> 2;
         struct _isr_table_entry *entry;
-
+        uint32_t _cpu_id = get_cur_cpu_id();
         if (0 == mnxti) {
             break;
         }
         entry = &_sw_isr_table[irq_num];
-        ctf_top_isr_enter_id(get_cur_cpu_id(), irq_num);
+        ctf_top_isr_enter_id(_cpu_id, irq_num);
         __enable_irq();
         (entry->isr)(entry->arg);
         __disable_irq();
-        ctf_top_isr_exit_id(get_cur_cpu_id());
+        ctf_top_isr_exit_id(_cpu_id);
+        csr_write(mcause,irq_nested_mcause[_cpu_id][irq_nested_level[_cpu_id]-1]);
     }
 }
 
