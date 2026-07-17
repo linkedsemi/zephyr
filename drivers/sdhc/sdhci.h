@@ -515,6 +515,18 @@ struct sdhci_host {
 
 void sdhci_count_errors(struct sdhci_host *host, uint32_t status);
 
+/* Poll condition with k_uptime_delta() timeout.  On timeout execute
+ * the statements in @a act (typically return / break / goto).
+ */
+#define SDHCI_WAIT_TIMEOUT(cond, timeout_ms, act) \
+    do { \
+        int64_t _start = k_uptime_get(); \
+        while (cond) { \
+            if ((k_uptime_get() - _start) > (timeout_ms)) { \
+                act; \
+            } \
+        } \
+    } while (0)
 
 #define CACHE_LINESIZE (32)
 #ifndef BIT
