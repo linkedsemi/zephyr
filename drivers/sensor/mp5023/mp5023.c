@@ -287,7 +287,7 @@ int mp5023_sample_fetch(const struct device *dev, enum sensor_channel chan)
     }
 
     if (chan != SENSOR_CHAN_ALL && chan != SENSOR_CHAN_VOLTAGE &&
-        chan != SENSOR_CHAN_GAUGE_TEMP && chan != SENSOR_CHAN_POWER) {
+        chan != SENSOR_CHAN_AMBIENT_TEMP && chan != SENSOR_CHAN_POWER) {
         return -ENOTSUP;
     }
 
@@ -313,7 +313,7 @@ int mp5023_sample_fetch(const struct device *dev, enum sensor_channel chan)
     }
 
     /* Read temperature if requested or all channels */
-    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_GAUGE_TEMP) {
+    if (chan == SENSOR_CHAN_ALL || chan == SENSOR_CHAN_AMBIENT_TEMP) {
         ret = mp5023_read_word(dev, PMBUS_CMD_READ_TEMPERATURE_1, &raw_value);
         if (ret < 0) {
             return ret;
@@ -381,7 +381,7 @@ int mp5023_channel_get(const struct device *dev, enum sensor_channel chan,
         val->val2 = 0;
         break;
     
-     case SENSOR_CHAN_GAUGE_TEMP:
+     case SENSOR_CHAN_AMBIENT_TEMP:
         // val->val1 = (int32_t)data->temperature;
         // if((val->val1 > 0) && (val->val1 > data->temperature))
         // {

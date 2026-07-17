@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fake temperature sensor for hwmon self-test (CONFIG_FAKE_TEMP_SENSOR).
+# Returns ~25 C via the Zephyr sensor API so the hwmon_i2c -> sysfs
+# tempX_input -> HwmonTempSensor dbus path can be tested without hardware.
+description: Simulated temperature sensor returning ~25 C for hwmon testing.
+
+compatible: "test,fake-temp-sensor"
+
+include: ["i2c-device.yaml", "hwmon-controller.yaml"]
+
+properties:
+  reg:
+    required: true
