@@ -1093,6 +1093,7 @@ static int unix_connect(void *obj, const struct sockaddr *addr,
 
 	/* Wake the listener's accept() */
 	k_sem_give(&listener->accept_sem);
+	k_poll_signal_raise(&listener->readable, USOCK_SIG_DATA);
 
 	k_mutex_unlock(&listener->lock);
 	k_mutex_unlock(&registry_lock);
