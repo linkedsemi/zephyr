@@ -66,12 +66,6 @@ __ramfunc void isr_unstacking_mcause(void)
     flash_ls_ex_op(&zephyr_flash_controller_ram_struct,FLASH_DRIVER_RESUME_OPCODE,_cpu_id,NULL);
 }
 
-void Swint_Handler_C(struct arch_esf *args)
-{
-    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args->a4;
-    args->a0 = func(args->a0, args->a1, args->a2, args->a3);
-}
-
 #if defined(CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_HANDLING)
 #ifdef CONFIG_TRACING_ISR
 #include <zephyr/tracing/tracing.h>
@@ -94,7 +88,6 @@ static inline uint32_t mnxti_get_no_set_mie(void)
     return mnxti;
 }
 
-__attribute__((optimize("-O2")))
 void __soc_handle_all_irqs(void)
 {
 	while (1) {
