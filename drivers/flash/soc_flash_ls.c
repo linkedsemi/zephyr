@@ -14,7 +14,6 @@
 #include <zephyr/drivers/flash/soc_flash_ls.h>
 #include <zephyr/logging/log.h>
 #include <string.h>
-#include "platform.h"
 #include <soc.h>
 #if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
 #include <zephyr/drivers/mbox.h>
@@ -472,6 +471,13 @@ static void delegation_server_mbox_callback(const struct device *dev,
 #define DELEGATE_SERVER_OP_END(dev)		k_sched_unlock()
 #endif
 
+static void Flash_Handler()
+{
+    struct arch_esf *args = *(struct arch_esf **)(_current_cpu->irq_stack - 16);
+    uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args->a4;
+    args->a0 = func(args->a0, args->a1, args->a2, args->a3);
+}
+
 static int flash_ls_init(const struct device *dev)
 {
 	struct flash_ls_data *priv = dev->data;
@@ -488,7 +494,7 @@ static int flash_ls_init(const struct device *dev)
 	priv->env.xip = false;
 #endif
 	priv->env.suspended = false;
-	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, SWINT_Handler_ASM, NULL, IRQ_TYPE_EDGE_RISING);
+	IRQ_CONNECT(FLASH_SWINT_NUM, CONFIG_FLASH_SWINT_PRIORITY, Flash_Handler, NULL, IRQ_TYPE_EDGE_RISING);
 	irq_enable(FLASH_SWINT_NUM); // Configure the flash irq function before  initializing mbox, mbox will trigger flash irq in work handler
 	k_sem_init(&priv->sem, 1, 1);
 	#ifdef CONFIG_FLASH_OP_DELEGATION_SERVER
