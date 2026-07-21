@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 NXP
+ * Copyright 2025 linkedsemi
  *
  * SPDX-License-Identifier: Apache-2.0
  */
