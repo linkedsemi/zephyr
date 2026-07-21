@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fake PSU sensor for hwmon self-test (CONFIG_FAKE_PSU_SENSOR).
+# Returns slowly-varying voltage/power rail values via the Zephyr sensor API so
+# the hwmon_i2c -> sysfs <rail>_input -> PSUSensor dbus path can be tested
+# without real PMBus hardware.
+description: Simulated PSU sensor returning voltage/power rails for hwmon testing.
+
+compatible: "test,fake-psu-sensor"
+
+include: ["i2c-device.yaml", "hwmon-controller.yaml"]
+
+properties:
+  reg:
+    required: true
