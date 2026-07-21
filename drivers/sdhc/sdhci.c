@@ -1,3 +1,9 @@
+/*
+ * Copyright 2025 linkedsemi
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
 #include <zephyr/sys/barrier.h>
