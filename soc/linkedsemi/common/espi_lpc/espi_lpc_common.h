@@ -182,7 +182,10 @@ struct espi_lpc_ls_data {
 };
 
 #define VUART_FIFO_SIZE 16
+#define VUART_FIFO_MAGIC 0x56554152  /* "VUAR" */
+
 struct host_vuart_fifo {
+    uint32_t init_magic;
     struct fifo_env b2h;
     struct fifo_env h2b;
     uint8_t b2h_buf[VUART_FIFO_SIZE];
