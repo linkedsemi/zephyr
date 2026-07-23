@@ -566,10 +566,6 @@ int shell_backend_uart_suspend(const struct shell *sh)
 {
 	struct shell_uart_int_driven *sh_uart;
 
-	if (sh != &shell_uart) {
-		return -EINVAL;
-	}
-
 	sh_uart = (struct shell_uart_int_driven *)sh->iface->ctx;
 
 	if (IS_ENABLED(CONFIG_SHELL_BACKEND_SERIAL_CHECK_DTR)) {
@@ -584,10 +580,6 @@ int shell_backend_uart_suspend(const struct shell *sh)
 int shell_backend_uart_resume(const struct shell *sh)
 {
 	struct shell_uart_int_driven *sh_uart;
-
-	if (sh != &shell_uart) {
-		return -EINVAL;
-	}
 
 	sh_uart = (struct shell_uart_int_driven *)sh->iface->ctx;
 
