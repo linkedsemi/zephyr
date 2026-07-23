@@ -329,22 +329,31 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
 #if defined(CONFIG_SOC_LSQSH)
     host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
-    /* Wait until command/data bus out of busy status. */
-    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) {
-    }
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG)) {
+    /* Wait until command/data bus is free before sending a new command. */
+    {
+        uint32_t inhibit_mask = SDHCI_COMMAND_INHIBIT_FLAG;
+
+        if (!(sdhci_command->type == CARD_COMMAND_TYPE_ABORT) && sdhci_data) {
+            inhibit_mask |= SDHCI_DATA_INHIBIT_FLAG;
+        }
+        SDHCI_WAIT_TIMEOUT(sdhci_get_present_status_flag(host) & inhibit_mask,
+                           100,
+                           { DEV_ERR(dev, "%s: timeout for inhibit %#x",
+                                     __func__, inhibit_mask);
+                             ret = -ETIMEDOUT; goto cleanup; });
     }
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
 
     ret = sdhci_set_transfer_config(host, sdhci_command, sdhci_data);
     if (ret) {
-        goto err;
+        goto cleanup;
     }
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) | SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_SIGNAL_ENABLE);
 
     host->transfer_status = 0;
     host->block_curr = 0;
     host->error_code = 0;
+    host->irq_status = 0;
     k_sem_reset(&host->cmd_sem);
     k_sem_reset(&host->data_sem);
     sdhci_send_command(host, sdhci_command, host->use_dma);
@@ -353,7 +362,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
         ret = k_sem_take(&host->cmd_sem, K_MSEC(sdhci_command->timeout_ms));
         if (ret) {
             DEV_ERR(dev, "cmd transfer fail: %d", ret);
-            goto err;
+            goto cleanup;
         }
     }
     /* wait data done */
@@ -361,7 +370,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
         ret = k_sem_take(&host->data_sem, K_MSEC(sdhci_data->timeout_ms));
         if (ret) {
             DEV_ERR(dev, "data transfer fail: %d", ret);
-            goto err;
+            goto cleanup;
         }
     }
 
@@ -373,13 +382,31 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     }
     /* sdhc超时问题规避措施 end */
 
-    while ((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR)));
-    while ((sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR))));
-err:
+    SDHCI_WAIT_TIMEOUT((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) &&
+                         !(host->irq_status & SDHCI_INT_ERROR),
+                       100,
+                       { DEV_ERR(dev, "CMD inhibit timeout after transfer");
+                         ret = -ETIMEDOUT; goto cleanup; });
+    if (sdhci_data) {
+        SDHCI_WAIT_TIMEOUT((sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) &&
+                             !(host->irq_status & SDHCI_INT_ERROR),
+                           100,
+                           { DEV_ERR(dev, "DAT inhibit timeout after transfer");
+                             ret = -ETIMEDOUT; goto cleanup; });
+    }
+
+cleanup:
+    /* Disable interrupt signals to prevent ISR during cleanup */
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
-    sdhci_reset(host, SDHCI_RESET_CMD);
-    sdhci_reset(host, SDHCI_RESET_DATA);
+
+    /* Only reset CMD/DAT lines on error to avoid interrupting Auto CMD12
+     * that has successfully completed on the eMMC device side.
+     */
+    if (ret != 0 || (host->irq_status & SDHCI_INT_ERROR)) {
+        sdhci_reset(host, SDHCI_RESET_CMD);
+        sdhci_reset(host, SDHCI_RESET_DATA);
+    }
     return ret;
 }
 
@@ -759,13 +786,13 @@ static int linkedsemi_sdhci_execute_hs200_tuning(const struct device *dev)
         CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S0_CCLK_RX_MASK);
         SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
     } else if (SDHC_TIMING_HS400 == host->timing) {
-        // tx no inv
-        // tx dll delay
-        // rx dll delay
-        while(1);
+        DEV_ERR(dev, "%s: HS400 tuning not implemented", __func__);
+        host->execute_tuning = false;
+        return -ENOTSUP;
     } else {
-        // error
-        while(1);
+        DEV_ERR(dev, "%s: unknown timing %d", __func__, host->timing);
+        host->execute_tuning = false;
+        return -ENOTSUP;
     }
 
     uint8_t emmc1_dll_ctrl_decoder_r = REG_FIELD_RD(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R);
