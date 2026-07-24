@@ -20,7 +20,14 @@
 #define VUART_RX_COUNT 7
 #define VUART_RX_TIMEOUT_MS 4
 
+#include <zephyr/drivers/clock_control.h>
+#include <soc_clock.h>
+
 LOG_MODULE_REGISTER(linkedsemi_ls_vuart, CONFIG_UART_LOG_LEVEL);
+
+/* eSPI clock — needed to access shared fifo_base in eSPI register space */
+#define ESPI_NODE DT_NODELABEL(espi1)
+
 
 struct ls_vuart_cfg {
     struct host_bmc_msg_exch hb_exch;
@@ -282,15 +289,31 @@ static int ls_vuart_init(const struct device *dev)
     const struct ls_vuart_cfg *cfg = dev->config;
     struct ls_vuart_data *ptr_data = dev->data;
 
-    if (cfg->vuart_fifo_base->b2h.buf == NULL) {
-        /* init fifo base */
+#ifdef CONFIG_SOC_LSQSH_CPU1
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    const struct ls_clk_cfg espi_ccfg = {
+        .cctl_dev = DEVICE_DT_GET(DT_PHANDLE_BY_IDX(ESPI_NODE, clocks, 0)),
+        .cctl_addr_offest = DT_PHA(ESPI_NODE, clocks, cctl_addr_offest),
+        .set_bit  = DT_PHA(ESPI_NODE, clocks, set_bit),
+        .clr_bit  = DT_PHA(ESPI_NODE, clocks, clr_bit),
+    };
+
+    if (espi_ccfg.cctl_dev && device_is_ready(espi_ccfg.cctl_dev)) {
+        if (clock_control_get_status(espi_ccfg.cctl_dev, (clock_control_subsys_t)&espi_ccfg) == CLOCK_CONTROL_STATUS_OFF) {
+            clock_control_on(espi_ccfg.cctl_dev, (clock_control_subsys_t)&espi_ccfg);
+        }
+    }
+#endif
+
+    if (cfg->vuart_fifo_base->init_magic != VUART_FIFO_MAGIC) {
+        cfg->vuart_fifo_base->init_magic = VUART_FIFO_MAGIC;
         sw_fifo_init(&cfg->vuart_fifo_base->b2h, cfg->vuart_fifo_base->b2h_buf, VUART_FIFO_SIZE, 1);
         sw_fifo_init(&cfg->vuart_fifo_base->h2b, cfg->vuart_fifo_base->h2b_buf, VUART_FIFO_SIZE, 1);
         cfg->vuart_fifo_base->host_tx_to_vuart = false;
         cfg->vuart_fifo_base->host_rx_from_vuart = false;
     }
 
-#ifdef CONFIG_SOC_LSQSH_CPU1
     ptr_data->peer_rx_valid = false;
 #elif CONFIG_SOC_LSQSH_CPU2
     ptr_data->peer_rx_valid = true;
