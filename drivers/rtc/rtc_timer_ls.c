@@ -38,7 +38,10 @@ static int rtc_timer_ls_set_time(const struct device *dev, const struct rtc_time
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
-	rtc_timer_set_time(rtc_time_to_tm(&copy));
+	if (rtc_timer_set_time(rtc_time_to_tm(&copy)) != 0) {
+		k_spin_unlock(&data->lock, key);
+		return -EIO;
+	}
 
 	k_spin_unlock(&data->lock, key);
 	return 0;
@@ -50,7 +53,11 @@ static int rtc_timer_ls_get_time(const struct device *dev, struct rtc_time *tm)
 
 	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
-	rtc_timer_get_time(rtc_time_to_tm(tm));
+	if (rtc_timer_get_time(rtc_time_to_tm(tm)) != 0) {
+		tm->tm_nsec = 0;
+		k_spin_unlock(&data->lock, key);
+		return -EIO;
+	}
 	tm->tm_nsec = 0;
 
 	k_spin_unlock(&data->lock, key);
