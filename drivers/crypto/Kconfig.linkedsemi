@@ -15,6 +15,14 @@ config CRYPTO_LINKEDSEMI_SHA512
     help
       Enable linkedsemi SHA512 driver.
 
+config SHA512_LINKEDSEMI_NO_CLOCK_RESET
+	bool "Skip SHA512 CCTL/RCTL access in driver init"
+	depends on CRYPTO_LINKEDSEMI_SHA512
+	help
+	  Skip clock_control and reset_line_toggle in sha512_linkedsemi_init.
+	  Use when CCTL/RCTL is blocked by IOPMP.
+	  Clock/reset must be handled elsewhere if this is enabled.
+
 config CRYPTO_LINKEDSEMI_SM4
     bool "linkedsemi SM4 driver"
     depends on DT_HAS_LINKEDSEMI_SM4_ENABLED

@@ -213,6 +213,7 @@ static int sha512_linkedsemi_init(const struct device *dev)
     struct sha512_linkedsemi_data *dev_data = dev->data;
     __maybe_unused int ret;
 
+#if !defined(CONFIG_SHA512_LINKEDSEMI_NO_CLOCK_RESET)
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
@@ -245,6 +246,7 @@ static int sha512_linkedsemi_init(const struct device *dev)
         clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
     }
 #endif
+#endif /* !CONFIG_SHA512_LINKEDSEMI_NO_CLOCK_RESET */
 
     k_mutex_init(&dev_data->sha512_engine_mutex);
     k_sem_init(&dev_data->calc_end_sem, 0, K_SEM_MAX_LIMIT);
