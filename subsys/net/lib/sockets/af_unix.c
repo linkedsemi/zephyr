@@ -311,6 +311,7 @@ static ssize_t unix_write(void *obj, const void *buffer, size_t count)
 
 	k_mutex_lock(&s->lock, K_FOREVER);
 
+revalidate:
 	if (!s->connected) {
 		k_mutex_unlock(&s->lock);
 		errno = ENOTCONN;
@@ -330,7 +331,29 @@ static ssize_t unix_write(void *obj, const void *buffer, size_t count)
 		return -1;
 	}
 
-	k_mutex_lock(&peer->lock, K_FOREVER);
+	/*
+	 * Deadlock avoidance (AB-BA): both endpoints of a connection may
+	 * write simultaneously (e.g. dbus-broker sending a signal while
+	 * the client sends a request). If each writer locks "own then
+	 * peer", the two threads deadlock forever on k_mutex_lock().
+	 *
+	 * Enforce a global lock order: lower-address socket first. If the
+	 * peer has the lower address, drop our lock, take the peer's,
+	 * re-take ours, then revalidate the connection state (it may have
+	 * changed while unlocked).
+	 */
+	if (peer < s) {
+		k_mutex_unlock(&s->lock);
+		k_mutex_lock(&peer->lock, K_FOREVER);
+		k_mutex_lock(&s->lock, K_FOREVER);
+		if (usock_peer(s) != peer || !s->connected ||
+		    (s->flags & USOCK_FLAG_SHUT_WR)) {
+			k_mutex_unlock(&peer->lock);
+			goto revalidate;
+		}
+	} else {
+		k_mutex_lock(&peer->lock, K_FOREVER);
+	}
 
 	if (peer->closed) {
 		k_mutex_unlock(&peer->lock);
@@ -383,7 +406,20 @@ static ssize_t unix_write(void *obj, const void *buffer, size_t count)
 				errno = EPIPE;
 				return -1;
 			}
-			k_mutex_lock(&peer->lock, K_FOREVER);
+			/* Same AB-BA avoidance: lower address first. */
+			if (peer < s) {
+				k_mutex_unlock(&s->lock);
+				k_mutex_lock(&peer->lock, K_FOREVER);
+				k_mutex_lock(&s->lock, K_FOREVER);
+				if (usock_peer(s) != peer || peer->closed) {
+					k_mutex_unlock(&peer->lock);
+					k_mutex_unlock(&s->lock);
+					errno = EPIPE;
+					return -1;
+				}
+			} else {
+				k_mutex_lock(&peer->lock, K_FOREVER);
+			}
 			avail = k_pipe_write_avail(&peer->recv_q);
 			if (avail > 0) {
 				break;
@@ -650,10 +686,25 @@ static int unix_close(void *obj)
 	s->closed = true;
 	s->connected = false;
 
-	/* Notify peer so it unblocks from read/write */
+	/* Notify peer so it unblocks from read/write.
+	 * AB-BA avoidance: a writer on the peer side locks "peer then us";
+	 * locking "us then peer" here can deadlock. Enforce lower-address-
+	 * first ordering, revalidating after the re-lock window.
+	 */
 	peer = usock_peer(s);
-	if (peer != NULL) {
+	if (peer != NULL && peer < s) {
+		k_mutex_unlock(&s->lock);
 		k_mutex_lock(&peer->lock, K_FOREVER);
+		k_mutex_lock(&s->lock, K_FOREVER);
+		if (usock_peer(s) != peer) {
+			/* Peer vanished while unlocked */
+			k_mutex_unlock(&peer->lock);
+			peer = NULL;
+		}
+	} else if (peer != NULL) {
+		k_mutex_lock(&peer->lock, K_FOREVER);
+	}
+	if (peer != NULL) {
 		peer->peer_fd = -1;
 		peer->connected = false;
 		k_poll_signal_raise(&peer->readable, USOCK_SIG_CANCEL);
@@ -1197,14 +1248,20 @@ static ssize_t unix_sendto(void *obj, const void *buf, size_t len,
 static ssize_t unix_sendmsg(void *obj, const struct msghdr *msg,
 			    int flags)
 {
-	ARG_UNUSED(flags);
-
 	struct unix_socket *s = (struct unix_socket *)obj;
 	ssize_t total = 0;
+	bool saved_nonblock = false;
+	bool dontwait;
 
 	if (s == NULL || msg == NULL) {
 		errno = EINVAL;
 		return -1;
+	}
+
+	dontwait = (flags & ZSOCK_MSG_DONTWAIT) != 0;
+	if (dontwait) {
+		saved_nonblock = usock_is_nonblock(s);
+		s->flags |= USOCK_FLAG_NONBLOCK;
 	}
 
 	for (size_t i = 0; i < msg->msg_iovlen; i++) {
@@ -1214,9 +1271,27 @@ static ssize_t unix_sendmsg(void *obj, const struct msghdr *msg,
 		ssize_t ret = unix_write(obj, msg->msg_iov[i].iov_base,
 					 msg->msg_iov[i].iov_len);
 		if (ret < 0) {
-			return (total > 0) ? total : ret;
+			total = (total > 0) ? total : ret;
+			goto out;
 		}
 		total += ret;
+
+		/*
+		 * Short write: the peer's pipe is full. Stop here and
+		 * report how much was actually written, so the caller
+		 * (e.g. sd-bus iovec resume logic) can retransmit the
+		 * remainder. Continuing with the next iovec would punch
+		 * a hole in the byte stream and corrupt the D-Bus
+		 * message framing.
+		 */
+		if ((size_t)ret < msg->msg_iov[i].iov_len) {
+			break;
+		}
+	}
+
+out:
+	if (dontwait && !saved_nonblock) {
+		s->flags &= ~USOCK_FLAG_NONBLOCK;
 	}
 
 	return total;
@@ -1336,6 +1411,33 @@ static int unix_ioctl(void *obj, unsigned int request, va_list args)
 			(*pev)->mode = K_POLL_MODE_NOTIFY_ONLY;
 			(*pev)->state = K_POLL_STATE_NOT_READY;
 			(*pev)++;
+
+			/*
+			 * Level-triggered readiness must be re-checked at
+			 * prepare time, not only in POLL_UPDATE.
+			 *
+			 * unix_connect() enqueues the pending connection and
+			 * wakes a *blocking* accept() via k_sem_give(); the
+			 * poll() path, however, only sleeps on the `readable`
+			 * k_poll_signal. That is a two-channel mismatch: if the
+			 * connection was already queued (or bytes were already
+			 * buffered) before this prepare runs, and the signal is
+			 * not currently latched, k_poll() would block until
+			 * timeout -> "poll() never fires, connect() stalls".
+			 *
+			 * Re-raise the signal whenever the level condition
+			 * already holds so k_poll() returns immediately.
+			 */
+			if (s->listening) {
+				if (!sys_slist_is_empty(&s->accept_queue)) {
+					k_poll_signal_raise(&s->readable,
+							    USOCK_SIG_DATA);
+				}
+			} else if (usock_read_avail(s) > 0 ||
+				   s->peer_fd == -1) {
+				k_poll_signal_raise(&s->readable,
+						    USOCK_SIG_DATA);
+			}
 		}
 
 		if (pfd->events & ZSOCK_POLLOUT) {
@@ -1349,6 +1451,13 @@ static int unix_ioctl(void *obj, unsigned int request, va_list args)
 			(*pev)->mode = K_POLL_MODE_NOTIFY_ONLY;
 			(*pev)->state = K_POLL_STATE_NOT_READY;
 			(*pev)++;
+
+			/* Same level re-check for the writable side. */
+			if (s->connected && !(s->flags & USOCK_FLAG_SHUT_WR) &&
+			    usock_write_avail(s) > 0) {
+				k_poll_signal_raise(&s->writable,
+						    USOCK_SIG_DATA);
+			}
 		}
 
 		res = 0;
