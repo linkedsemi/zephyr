@@ -1,3 +1,4 @@
+zephyr_compile_definitions(_GNU_SOURCE)
 zephyr_include_directories(.)
 zephyr_sources(soc.c)
 zephyr_sources(psram.c)
