@@ -60,7 +60,7 @@
             mboxes = <&mbox 2 8 1>, <&mbox 2 8 1>;
             mbox-names = "tx", "rx";
         };
-        mbox_consumer_vuart1: mbox-mbox_consumer_vuart1 {
+        mbox_consumer_vuart1: mbox-consumer_vuart1 {
             compatible = "vnd,mbox-consumer";
             mboxes = <&mbox 3 8 1>, <&mbox 3 8 1>;
             mbox-names = "tx", "rx";
