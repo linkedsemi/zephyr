@@ -247,7 +247,6 @@ static int caseopen_sample_fetch(const struct device *dev, enum sensor_channel c
 			 (uint8_t)FIELD_GET(APP_PMU_RG_CASEOPEN_STT_MASK, v);
 	data->raw = (uint8_t)FIELD_GET(APP_PMU_RG_CASEOPEN_INT_MASK, v);
 	k_spin_unlock(&data->lock, key);
-
 	return 0;
 }
 
