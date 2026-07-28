@@ -19,3 +19,12 @@ config CAP_V2
 	  of the Linkedsemi CAP sensor. Leave disabled if using older hardware.
 
 endif # CAP_LS
+
+config CASEOPEN_LS
+	bool "Linkedsemi case-open (chassis intrusion) driver"
+	default y
+	depends on SENSOR
+	depends on DT_HAS_LINKEDSEMI_CASEOPEN_ENABLED
+	help
+	  Enable the Linkedsemi case-open (chassis intrusion) detection
+	  driver backed by the APP_PMU CASEOPEN_CTRL register.

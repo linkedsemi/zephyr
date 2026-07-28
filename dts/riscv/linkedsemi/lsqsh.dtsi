@@ -108,6 +108,14 @@
             status = "okay";
         };
 
+        caseopen: caseopen@4006f044 {
+            compatible = "linkedsemi,caseopen";
+            reg = <0x4006f044 0x4>;
+            interrupts = <PMU_CASEOPEN_IRQN 3>;
+            #hwmon-in-cells = <1>;
+            status = "disabled";
+        };
+
         rctl_sysc_sec_cpu: reset-controller@40022000 {
             compatible = "linkedsemi,rctl";
             reg = <0x40022000 DT_SIZE_K(1)>;

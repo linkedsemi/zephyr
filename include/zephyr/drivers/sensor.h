@@ -164,6 +164,8 @@ enum sensor_channel {
 	SENSOR_CHAN_CAP_06,
 	SENSOR_CHAN_CAP_07,
 	SENSOR_CHAN_CAP_08,
+	/** Chassis intrusion (case-open): val1=latched status, val2=current raw state */
+	SENSOR_CHAN_INTRUSION,
 	/** Voltage, in volts **/
 	SENSOR_CHAN_GAUGE_VOLTAGE,
 	/** Average current, in amps **/
