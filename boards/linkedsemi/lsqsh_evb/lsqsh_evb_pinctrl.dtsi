@@ -69,23 +69,23 @@
         pinmux = <CAP1_FUNC1_IDX28_PINMUX_PA(08)>;
         input-enable;
     };
-    /omit-if-no-ref/cap2_rx_pb01: cap2_rx_pb01 {
+    /omit-if-no-ref/cap2_rx_pb00: cap2_rx_pb00 {
         pinmux = <CAP2_FUNC1_IDX29_PINMUX_PB(00)>;
         input-enable;
     };
-    /omit-if-no-ref/cap3_rx_pc02: cap3_rx_pc02 {
+    /omit-if-no-ref/cap3_rx_pc00: cap3_rx_pc00 {
         pinmux = <CAP3_FUNC1_IDX29_PINMUX_PC(00)>;
         input-enable;
     };
-     /omit-if-no-ref/cap4_rx_pc03: cap4_rx_pc03 {
+     /omit-if-no-ref/cap4_rx_pc01: cap4_rx_pc01 {
         pinmux = <CAP4_FUNC1_IDX30_PINMUX_PC(01)>;
         input-enable;
     };
-     /omit-if-no-ref/cap5_rx_pf04: cap5_rx_pf04 {
+     /omit-if-no-ref/cap5_rx_pf00: cap5_rx_pf00 {
         pinmux = <CAP5_FUNC1_IDX30_PINMUX_PF(00)>;
         input-enable;
     };
-     /omit-if-no-ref/cap6_rx_pf05: cap6_rx_pf05 {
+     /omit-if-no-ref/cap6_rx_pf01: cap6_rx_pf01 {
         pinmux = <CAP6_FUNC1_IDX31_PINMUX_PF(01)>;
         input-enable;
     };
@@ -93,7 +93,7 @@
         pinmux = <CAP7_FUNC1_IDX28_PINMUX_PG(02)>;
         input-enable;
     };
-     /omit-if-no-ref/cap8_rx_pm07: cap8_rx_pm07 {
+     /omit-if-no-ref/cap8_rx_pm00: cap8_rx_pm00 {
         pinmux = <CAP8_FUNC1_IDX29_PINMUX_PM(00)>;
         input-enable;
     };
