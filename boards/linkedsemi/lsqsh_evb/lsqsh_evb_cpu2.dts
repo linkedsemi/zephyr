@@ -43,7 +43,6 @@
         compatible = "linkedsemi,mbox";
         #mbox-cells = <3>;
         interrupts = <SYSC_APP_CPU_IRQN 3>;
-        #mbox-cells = <3>;
 
         mbox_consumer_qspi1: mbox-consumer_qspi1 {
             compatible = "vnd,mbox-consumer";
