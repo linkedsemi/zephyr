@@ -138,6 +138,12 @@ zephyr_interface_library_named(mbedTLS)
       )
     endif()
 
+    if(CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT)
+      list(APPEND mbedtls_base_src
+        ${ZEPHYR_CURRENT_MODULE_DIR}/library/rsa_alt.c
+      )
+    endif()
+
     if(CONFIG_MBEDTLS_CIPHER_AES_LINKEDSEMI)
       list(APPEND mbedtls_base_src
         ${ZEPHYR_CURRENT_MODULE_DIR}/library/aes_alt.c
