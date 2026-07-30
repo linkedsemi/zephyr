@@ -323,8 +323,8 @@
 &cap {
     prescaler = <7>;
     channels = <CAP_MODE1 CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_MODE1 CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_MODE1 CAP_MODE1 CAP_DISABLED CAP_DISABLED CAP_DISABLED CAP_DISABLED>;//cap_mode
-    pinctrl-0 = <&cap1_rx_pa08 &cap2_rx_pb01 &cap3_rx_pc02 &cap4_rx_pc03 &cap5_rx_pf04
-                 &cap6_rx_pf05 &cap7_rx_pg02 &cap8_rx_pm07 &cap9_rx_pi00 &cap10_rx_pi01
+    pinctrl-0 = <&cap1_rx_pa08 &cap2_rx_pb00 &cap3_rx_pc00 &cap4_rx_pc01 &cap5_rx_pf00
+                 &cap6_rx_pf01 &cap7_rx_pg02 &cap8_rx_pm00 &cap9_rx_pi00 &cap10_rx_pi01
                  &cap11_rx_pn14 &cap12_rx_pn15 &cap13_rx_pn02 &cap14_rx_pq00 &cap15_rx_pq01
                  &cap16_rx_pq02>;
     pinctrl-names = "default";
