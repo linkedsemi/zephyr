@@ -11,64 +11,100 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/rtc.h>
 #include <zephyr/kernel.h>
-#include <zephyr/spinlock.h>
 #include <zephyr/logging/log.h>
 #include <soc.h>
-#include "rtc_utils.h"
 #include "platform.h"
 
 LOG_MODULE_REGISTER(rtc_timer_ls, LOG_LEVEL_DBG);
 
-#define RTC_TIMER_LS_SET_MASK    \
-    (RTC_ALARM_TIME_MASK_SECOND | RTC_ALARM_TIME_MASK_MINUTE | RTC_ALARM_TIME_MASK_HOUR |    \
-    RTC_ALARM_TIME_MASK_MONTHDAY | RTC_ALARM_TIME_MASK_MONTH | RTC_ALARM_TIME_MASK_YEAR)
-
 struct rtc_timer_ls_data {
-	struct k_spinlock lock;
+	struct k_mutex lock;
+	bool initialized;
 };
+
+static bool rtc_timer_ls_is_leap_year(int year)
+{
+	return ((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0);
+}
+
+static bool rtc_timer_ls_calendar_valid(const struct rtc_time *tm)
+{
+	int max_day;
+	bool leap;
+
+	/* hardware epoch floor 1970 */
+	if (tm->tm_year < 70 || tm->tm_year > 199) {return false;}
+	if (tm->tm_mon < 0 || tm->tm_mon > 11) {return false;}
+	leap = rtc_timer_ls_is_leap_year(tm->tm_year + 1900);
+	switch (tm->tm_mon + 1) {
+		case 4:case 6:case 9:case 11:
+			max_day = 30;
+			break;
+		case 2:
+			max_day = leap ? 29 : 28;
+			break;
+		default:
+			max_day = 31;
+			break;
+	}
+	if (tm->tm_mday < 1 || tm->tm_mday > max_day) {return false;}
+	if (tm->tm_hour < 0 || tm->tm_hour > 23) {return false;}
+	if (tm->tm_min < 0 || tm->tm_min > 59) {return false;}
+	if (tm->tm_sec < 0 || tm->tm_sec > 59) {return false;}
+	if (tm->tm_wday < -1 || tm->tm_wday > 6) {return false;}
+	if (tm->tm_yday != -1 && (tm->tm_yday < 0 || ( (tm->tm_yday) >= (leap ? 366 : 365)))) {return false;}
+	if (tm->tm_isdst != -1 && tm->tm_isdst != 0 && tm->tm_isdst != 1) {return false;}
+	if (tm->tm_nsec < 0 || tm->tm_nsec > 999999999) {return false;}
+
+	return true;
+}
 
 static int rtc_timer_ls_set_time(const struct device *dev, const struct rtc_time *tm)
 {
 	struct rtc_timer_ls_data *data = dev->data;
 	struct rtc_time copy = *tm;
+	int ret;
 
-	if (!rtc_utils_validate_rtc_time(tm, RTC_TIMER_LS_SET_MASK)) {
+	if (!rtc_timer_ls_calendar_valid(tm)) {
 		return -EINVAL;
 	}
 
-	k_spinlock_key_t key = k_spin_lock(&data->lock);
+	k_mutex_lock(&data->lock, K_FOREVER);
+	ret = rtc_timer_set_time(rtc_time_to_tm(&copy));
+	k_mutex_unlock(&data->lock);
 
-	if (rtc_timer_set_time(rtc_time_to_tm(&copy)) != 0) {
-		k_spin_unlock(&data->lock, key);
-		return -EIO;
-	}
-
-	k_spin_unlock(&data->lock, key);
-	return 0;
+	return ret == 0 ? 0 : -EIO;
 }
 
 static int rtc_timer_ls_get_time(const struct device *dev, struct rtc_time *tm)
 {
 	struct rtc_timer_ls_data *data = dev->data;
+	int ret;
 
-	k_spinlock_key_t key = k_spin_lock(&data->lock);
+	k_mutex_lock(&data->lock, K_FOREVER);
+	ret = rtc_timer_get_time(rtc_time_to_tm(tm));
+	k_mutex_unlock(&data->lock);
 
-	if (rtc_timer_get_time(rtc_time_to_tm(tm)) != 0) {
-		tm->tm_nsec = 0;
-		k_spin_unlock(&data->lock, key);
-		return -EIO;
+	if (ret != 0) {
+		return -ENODATA;
 	}
+
+	/* DST/ns not supported by HW */
+	tm->tm_isdst = -1;
 	tm->tm_nsec = 0;
-
-	k_spin_unlock(&data->lock, key);
-
 	return 0;
 }
 
 static int rtc_timer_ls_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
-	rtc_timer_init();
+	struct rtc_timer_ls_data *data = dev->data;
+
+	k_mutex_init(&data->lock);
+
+	if (!data->initialized) {
+		rtc_timer_init();
+		data->initialized = true;
+	}
 
 	return 0;
 }
