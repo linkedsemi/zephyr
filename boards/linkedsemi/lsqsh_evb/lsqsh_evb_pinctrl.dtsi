@@ -316,7 +316,7 @@
 };
 
 &uart7 {
-    pinctrl-0 = <&uart7_tx_pg08 &uart6_rx_pf14>;
+    pinctrl-0 = <&uart7_tx_pg08 &uart7_rx_pg06>;
     pinctrl-names = "default";
 };
 
