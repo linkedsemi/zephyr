@@ -19,7 +19,6 @@ LOG_MODULE_REGISTER(rtc_timer_ls, LOG_LEVEL_DBG);
 
 struct rtc_timer_ls_data {
 	struct k_mutex lock;
-	bool initialized;
 };
 
 static bool rtc_timer_ls_is_leap_year(int year)
@@ -100,11 +99,7 @@ static int rtc_timer_ls_init(const struct device *dev)
 	struct rtc_timer_ls_data *data = dev->data;
 
 	k_mutex_init(&data->lock);
-
-	if (!data->initialized) {
-		rtc_timer_init();
-		data->initialized = true;
-	}
+	rtc_timer_init();
 
 	return 0;
 }
