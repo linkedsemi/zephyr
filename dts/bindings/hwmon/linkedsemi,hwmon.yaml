@@ -17,6 +17,7 @@ properties:
     enum:
       - temp
       - psu
+      - intrusion
     # NOTE: `sensor-type` is only a label (used for the hwmon `name` file).
     # It does NOT decide which <chan>_input files are created.
   meas:
@@ -26,12 +27,13 @@ properties:
       List of hwmon ABI files to expose for this node. Each entry is
       "<chan><n>_input" with an OPTIONAL ":<label>" suffix, e.g.
       "in1_input:vin1", "in3_input:vout1", "curr2_input:iout1",
-      "power2_input:pout1", "temp1_input", "fan1_input".
+      "power2_input:pout1", "temp1_input", "fan1_input",
+      "intrusion1_input".
 
       At read time hwmon_i2c parses the filename part (before ':'): the prefix
-      (in/curr/power/temp/fan) selects the sensor_channel, and the number
-      (minus 1) is passed as val2 (the rail/sub-channel selector the driver's
-      channel_get expects).
+      (in/curr/power/temp/fan/intrusion) selects the sensor_channel, and the
+      number (minus 1) is passed as val2 (the rail/sub-channel selector the
+      driver's channel_get expects).
 
       The OPTIONAL part after ':' becomes the content of a companion
       "<chan><n>_label" file (input->label). This lets dbus-sensors tell
