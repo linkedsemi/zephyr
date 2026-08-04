@@ -1,0 +1,83 @@
+，# SPDX-License-Identifier: Apache-2.0
+#
+# Intel PECI CPU temperature/power/DIMM sensor (CONFIG_SENSOR_INTEL_PECI).
+#
+# Reads temperatures (DTS, Margin to Tjmax, DIMM A1, DIMM B1) and power
+# (Package, DRAM) from an Intel CPU over PECI and exposes them via the
+# Zephyr sensor API. Used behind hwmon_i2c as a drop-in replacement for
+# the fake_peci_cputemp stub once a real Intel CPU is wired to the board
+# -- the hwmon file / label layout is identical so the IntelCPUSensor
+# dbus object picks it up unchanged.
+#
+# All six rails, including DIMM A1 / DIMM B1, come through PECI:
+# the CPU's integrated memory controller (IMC) monitors the DIMM
+# thermistors and reports per-channel DIMM temperatures through the
+# PECI memory-thermal domain (RdPkgCfg with a memory-domain index, or
+# RdIAMSR for some platforms). The DIMM slot SMBus is reserved for
+# SPD / PMBus access and is NOT used as the temperature source.
+#
+# One instance = one CPU. val2 passed to channel_get is the rail / sub-
+# channel selector (same numbering as the fake stub, see
+# fake_peci_cputemp.c):
+#
+#   temp   val2=0 -> DTS,        val2=1 -> Margin,
+#   temp   val2=2 -> DIMM A1,    val2=3 -> DIMM B1
+#   power  val2=0 -> Package,    val2=1 -> DRAM
+#
+# Example:
+#
+#   / {
+#       intel_peci0: intel-peci-cputemp {
+#           compatible = "intel,peci-cputemp";
+#           peci-controller = <&peci1>;
+#           cpu-address = <0x30>;
+#           #hwmon-in-cells = <1>;
+#           status = "okay";
+#       };
+#       hwmon_intel_cpu0: hwmon_intel_cpu0 {
+#           compatible = "linkedsemi,hwmon";
+#           class = <0x5>;
+#           label = "peci_cputemp";
+#           sensor-type = "temperature";
+#           hwmon-ins = <&intel_peci0 0>;
+#           meas = "temp1_input:DTS",
+#                  "temp2_input:Margin",
+#                  "power1_input:cpu power",
+#                  "power2_input:dimm power",
+#                  "temp3_input:DIMM A1",
+#                  "temp4_input:DIMM B1";
+#           status = "okay";
+#       };
+#   };
+description: Intel PECI CPU temperature and power sensor
+
+compatible: "intel,peci-cputemp"
+
+include: ["hwmon-controller.yaml"]
+
+properties:
+  peci-controller:
+    type: phandle
+    required: true
+    description: |
+      Phandle to the PECI controller that connects to the CPU (e.g. &peci1
+      on linkedsemi LS-series SoCs). The driver binds to whichever device
+      this points to via the standard peci.h API (peci_config / peci_transfer).
+
+  cpu-address:
+    type: int
+    required: true
+    description: |
+      PECI client (host) address of the CPU on the PECI bus. 0x30 for
+      CPU 0, 0x31 for CPU 1, etc. Passed as msg.addr to every peci_transfer.
+
+  tjmax:
+    type: int
+    required: false
+    description: |
+      Optional fixed Tjmax in degrees Celsius (e.g. 100 for typical desktop
+      CPUs). When provided, the driver uses this constant for the Margin
+      rail and skips the RdPkgConfig(index=16) read at init time. Use it
+      when the platform guarantees a known Tjmax and you want one fewer
+      PECI transaction per init. When omitted, the driver issues the
+      RdPkgConfig read at first use and caches the result.
