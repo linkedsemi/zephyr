@@ -31,12 +31,15 @@ config MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT
 	#select MBEDTLS_ECP_DP_SECP384R1_ENABLED
 
 config MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's RSA public/private modexp using OTBN"
+	bool "LINKEDSEMI's RSA public/private modexp and keygen using OTBN"
 	default n
 	select MBEDTLS_LINKEDSEMI_OTBN
 	help
-	  Off-loads mbedtls_rsa_public() and mbedtls_rsa_private() to the
-	  LINKEDSEMI OTBN RSA modexp firmware. Supports 2048/3072/4096-bit keys.
+	  Off-loads mbedtls_rsa_public(), mbedtls_rsa_private() and
+	  mbedtls_rsa_gen_key() to the LINKEDSEMI OTBN RSA firmware.
+	  Supports 2048/3072/4096-bit keys. Key generation uses fixed
+	  public exponent F4 (65537); other configurations fall back to
+	  the software implementation.
 
 config MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
 	bool "enable linedsemi's otbn delegation"
