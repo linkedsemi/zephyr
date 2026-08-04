@@ -13,6 +13,7 @@
 #define MBEDTLS_RSA_C
 #define MBEDTLS_PKCS1_V15
 #define MBEDTLS_PKCS1_V21
+#define MBEDTLS_GENPRIME
 #define MBEDTLS_OID_C
 #define MBEDTLS_MD_C
 
