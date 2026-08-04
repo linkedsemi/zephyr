@@ -62,6 +62,8 @@ enum otbn_cmd_t
 #define OTBN_FIRMWARE_ECDSA_P256     5 /**< ECDSA over P-256 firmware */
 #define OTBN_FIRMWARE_ECDSA_P384     6 /**< ECDSA over P-384 firmware */
 #define OTBN_FIRMWARE_SM2            7 /**< SM2 firmware */
+#define OTBN_FIRMWARE_RSA_MODEXP     8 /**< RSA modexp firmware */
+#define OTBN_FIRMWARE_RSA_KEYGEN     9 /**< RSA key generation firmware */
 
 /** @brief Base value for user-defined custom firmware IDs */
 #define OTBN_FIRMWARE_USER_BASE     0x100
