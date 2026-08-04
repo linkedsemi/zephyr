@@ -568,8 +568,18 @@ static int adc_ls_channel_setup(const struct device *dev, const struct adc_chann
 #if(CONFIG_SOC_LSQSH)
     if(channel_cfg->channel_id == temperature_sensing_channel)
     {
-        // When using the temperature sensor, the bg_ibg_trim value needs to be set to 0xf
-        REG_FIELD_WR(SEC_PMU->ANA_PMU_CTRL, SEC_PMU_RG_BG_IBG_TRIM, 0xf);
+        REG_FIELD_WR(reg->MISC, ADC_REG_SMPHLD, 1);
+        reg->BYP_CFG = 0xffffffff;
+
+        /* SEQ00: temperature channel; SEQ01: idle channel 1 */
+        REG_FIELD_WR(reg->REG_CTRL0, ADC_REG_SEQ00, temperature_sensing_channel);
+        REG_FIELD_WR(reg->REG_CTRL0, ADC_REG_SEQ01, ADC_CHANNEL_1);
+        reg->REG_CTRL1 = 0x00000000;
+
+        /* Low bits: ch_en for temperature channel; high bits: ADC_CFG_CH1 */
+        reg->CH_CFG = (1U << temperature_sensing_channel) | ADC_CFG_CH1_MASK;
+        REG_FIELD_WR(reg->INJ_CTRL, ADC_REG_SEQLEN, 0);
+        REG_FIELD_WR(reg->MISC_CTRL, ADC_ADC_EN, 1);
     }
 #endif
 
