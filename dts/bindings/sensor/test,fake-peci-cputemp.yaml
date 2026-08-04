@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: Apache-2.0
+# Fake PECI CPU temperature/power sensor for hwmon self-test
+# (CONFIG_FAKE_PECI_CPUTEMP).
+# Returns slowly-varying temperature and power values through the Zephyr
+# sensor API so the hwmon_i2c -> sysfs *_input -> IntelCPUSensor dbus path
+# can be tested without a real Intel CPU connected.
+description: Simulated PECI CPU sensor returning temperature/power rails for hwmon testing.
+
+compatible: "test,fake-peci-cputemp"
+
+include: ["base.yaml", "hwmon-controller.yaml"]

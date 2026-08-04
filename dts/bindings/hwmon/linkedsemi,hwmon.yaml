@@ -18,8 +18,11 @@ properties:
       - temp
       - psu
       - intrusion
+      - peci_cputemp
     # NOTE: `sensor-type` is only a label (used for the hwmon `name` file).
     # It does NOT decide which <chan>_input files are created.
+    # `peci_cputemp` is matched by IntelCPUSensorMain (name == "peci_cputemp"
+    # filter, same string the upstream Linux xeon-pci-sensors driver emits).
   meas:
     type: string-array
     required: false
