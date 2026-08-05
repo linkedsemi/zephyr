@@ -31,4 +31,10 @@
 #define SA_ONESHOT SA_RESETHAND
 #endif
 
+/* Bits in `sa_flags'.  */
+#define SA_NOCLDSTOP  1		 /* Don't send SIGCHLD when children stop.  */
+#define SA_NOCLDWAIT  2		 /* Don't create zombie on child death.  */
+#define SA_SIGINFO    4		 /* Invoke signal-catching function with
+				    three arguments instead of one.  */
+
 #endif /* ZEPHYR_INCLUDE_POSIX_SIGNAL_COMPAT_H_ */
