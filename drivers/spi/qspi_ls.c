@@ -1410,34 +1410,42 @@ static int qspi_ls_init(const struct device *dev)
 
 #define QSPI_LS_INIT(inst)							\
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))		\
-	QSPI_LS_IRQ_HANDLER(inst)						\
-	static const struct qspi_ls_config qspi_ls_config_##inst = {	\
-		.reg = (reg_lsqspiv2_t *)DT_INST_REG_ADDR(inst),		\
+	QSPI_LS_IRQ_HANDLER(inst);						\
+	static struct qspi_ls_data qspi_ls_data_##inst = {			\
+		SPI_CONTEXT_INIT_LOCK(qspi_ls_data_##inst, ctx),		\
+		SPI_CONTEXT_INIT_SYNC(qspi_ls_data_##inst, ctx),		\
+	};									\
+	static const struct qspi_ls_config qspi_ls_config_##inst = {		\
+		.reg = (reg_lsqspiv2_t *)DT_INST_REG_ADDR(inst),			\
 		.clock_frequency = COND_CODE_1(					\
 			DT_NODE_HAS_PROP(DT_INST_PHANDLE(inst, clocks),		\
 					 clock_frequency),			\
 			(DT_INST_PROP_BY_PHANDLE(inst, clocks, clock_frequency)),\
 			(DT_INST_PROP(inst, clock_frequency))),			\
-		.timing_calibration_disabled =					\
-			DT_INST_PROP_OR(inst, timing_calibration_disabled, false),\
-		.timing_calibration_clock_frequency =				\
-			DT_INST_PROP_OR(inst, timing_calibration_clock_frequency, 10000000),\
-		.auto_wait_ready =						\
-			DT_INST_PROP_OR(inst, auto_wait_ready, false),		\
-		.auto_wait_interval =						\
-			DT_INST_PROP_OR(inst, auto_wait_interval, 1000),	\
 		.config_func = qspi_ls_irq_config_##inst,			\
 		.fifo_depth = DT_INST_PROP(inst, fifo_depth),			\
+		.timing_calibration_disabled = DT_INST_PROP_OR(inst,		\
+			timing_calibration_disabled, false),			\
+		.timing_calibration_auto_detect_content_disable =		\
+			DT_INST_PROP_OR(inst,					\
+				timing_calibration_auto_detect_content_disable,	\
+				false),						\
+		.timing_calibration_start_off = DT_INST_PROP_OR(inst,		\
+			timing_calibration_start_offset, 0),			\
+		.timing_calibration_per_block_len = DT_INST_PROP_OR(inst,	\
+			timing_calibration_per_block_len, 4096),		\
+		.timing_calibration_clock_frequency = DT_INST_PROP_OR(inst,	\
+			timing_calibration_clock_frequency, 10000000),		\
+		.auto_wait_ready = DT_INST_PROP_OR(inst,			\
+			auto_wait_ready, false),				\
+		.auto_wait_interval = DT_INST_PROP_OR(inst,			\
+			auto_wait_interval, 1000),				\
 		IF_ENABLED(CONFIG_PINCTRL,					\
 			(.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))	\
 		IF_ENABLED(DT_HAS_CLOCKS(inst),					\
 			(.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))			\
 		IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets),			\
 			(.reset = RESET_DT_SPEC_INST_GET(inst), ))		\
-	};									\
-	static struct qspi_ls_data qspi_ls_data_##inst = {		\
-		SPI_CONTEXT_INIT_LOCK(qspi_ls_data_##inst, ctx),		\
-		SPI_CONTEXT_INIT_SYNC(qspi_ls_data_##inst, ctx),		\
 	};									\
 	DEVICE_DT_INST_DEFINE(inst,						\
 			      qspi_ls_init,					\
