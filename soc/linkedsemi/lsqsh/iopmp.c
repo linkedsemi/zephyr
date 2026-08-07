@@ -49,8 +49,6 @@ struct iopmp_config {
     mm_reg_t base;
     struct iopmp_partition_attr *attr;
     uint8_t attr_num;
-    IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
-    IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 static const char *iopmp_mode_str(uint32_t mode)
@@ -271,52 +269,8 @@ static int iopmp_init(const struct device *dev)
 {
     const struct iopmp_config *dev_config = dev->config;
 
-    int ret = 0;
-    bool inited = false;
-
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        if (!device_is_ready(clk_dev)) {
-            DEV_DBG(dev, "%s device not ready", clk_dev->name);
-            return -ENODEV;
-        }
-        if (clock_control_get_status(clk_dev, (clock_control_subsys_t)&dev_config->ccfg) == CLOCK_CONTROL_STATUS_OFF) {
-            clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-            inited = false;
-        } else {
-            inited = true;
-        }
-    }
-#endif
-
-    if (!inited) {
-#if defined(CONFIG_RESET)
-        if (dev_config->reset.dev != NULL) {
-            if (!device_is_ready(dev_config->reset.dev)) {
-                DEV_ERR(dev, "Reset controller device is not ready");
-                ret = -ENODEV;
-                goto err;
-            }
-
-            ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
-            if (ret) {
-                DEV_ERR(dev, "toggle reset line failed");
-                goto err;
-            }
-        }
-#endif
-
-#if defined(CONFIG_CLOCK_CONTROL)
-        if (dev_config->ccfg.cctl_dev) {
-            const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-            ret = clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-            if (ret) {
-                DEV_ERR(dev, "clock control on failed");
-                goto err;
-            }
-        }
-#endif
+    if (iopmp_is_enable(dev_config->base)) {
+        return 0;
     }
 
     uint32_t slot_idx = 0;
@@ -333,16 +287,16 @@ static int iopmp_init(const struct device *dev)
                                 pmp_cfg,
                                 CONFIG_IOPMP_SLOTS);
         if (!ok) {
-            DEV_ERR(dev, "set_pmp_entry failed, ret=%d", ret);
-            goto err;
+            DEV_ERR(dev, "set_pmp_entry failed");
+            return -1;
         }
         write_pmp_entries(dev,
-                          last_slot_idx,
-                          slot_idx,
-                          true,
-                          pmp_addr,
-                          pmp_cfg,
-                          CONFIG_IOPMP_SLOTS);
+                        last_slot_idx,
+                        slot_idx,
+                        true,
+                        pmp_addr,
+                        pmp_cfg,
+                        CONFIG_IOPMP_SLOTS);
     }
     iopmp_config_enable(dev_config->base, true);
 
@@ -350,8 +304,7 @@ static int iopmp_init(const struct device *dev)
         dump_pmp_regs(dev, "initial register dump");
     }
 
-err:
-    return ret;
+    return 0;
 }
 
 #define PARTITION_CHILD(node_id)        \
