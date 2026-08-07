@@ -56,7 +56,7 @@ static int ls_pwm_set_cycles(const struct device *dev, uint32_t channel, uint32_
 	if (pulse_cycles > period_cycles) {
 		return -EINVAL;
 	}
-	if ((pulse_cycles == 0) || (period_cycles == 0)) {
+	if (period_cycles == 0) {
 		return -EINVAL;
 	}
 	if ((period_cycles > 0xFFFFu) || (pulse_cycles > 0xFFFFu)) {
