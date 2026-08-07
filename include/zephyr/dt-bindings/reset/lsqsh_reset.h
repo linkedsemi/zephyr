@@ -101,7 +101,6 @@
 
 #define RST_SET_RESET    GEN_RESET(RST_SET)
 #define CACHE1_RESET     GEN_RESET(CACHE1)
-#define IOPMP_RESET      GEN_RESET(IOPMP)
 #define QSPI1_RESET      GEN_RESET(QSPI1)
 #define SHA512_RESET     GEN_RESET(SHA512)
 #define OTFAD_AES_RESET  GEN_RESET(OTFAD_AES)
@@ -239,7 +238,6 @@
 
 #define RST_SET_RST_BASE    sysc_sec_cpu
 #define CACHE1_RST_BASE     sysc_sec_cpu
-#define IOPMP_RST_BASE      sysc_sec_cpu
 #define QSPI1_RST_BASE      sysc_sec_cpu
 #define SHA512_RST_BASE     sysc_sec_cpu
 #define OTFAD_AES_RST_BASE  sysc_sec_cpu
@@ -380,7 +378,6 @@
 
 
 #define CACHE1_RST_REG    PD_CPU_SRST0_RSTREG
-#define IOPMP_RST_REG     PD_CPU_SRST0_RSTREG
 #define QSPI1_RST_REG     PD_CPU_SRST0_RSTREG
 #define SHA512_RST_REG    PD_CPU_SRST0_RSTREG
 #define OTFAD_AES_RST_REG PD_CPU_SRST0_RSTREG
@@ -775,10 +772,6 @@
 #define CACHE1_RST_SET_POS      2
 #define CACHE1_RST_CLR_MASK     0x8
 #define CACHE1_RST_CLR_POS      3
-#define IOPMP_RST_SET_MASK      0x10
-#define IOPMP_RST_SET_POS       4
-#define IOPMP_RST_CLR_MASK      0x20
-#define IOPMP_RST_CLR_POS       5
 #define QSPI1_RST_SET_MASK      0x40
 #define QSPI1_RST_SET_POS       6
 #define QSPI1_RST_CLR_MASK      0x80

@@ -119,7 +119,6 @@
 #define WWDT2_CLOCK      GEN_CLOCK(WWDT2)
 #define CPU_DBG_CLOCK    GEN_CLOCK(CPU_DBG)
 #define CACHE1_CLOCK     GEN_CLOCK(CACHE1)
-#define IOPMP_CLOCK      GEN_CLOCK(IOPMP)
 #define QSPI1_CLOCK      GEN_CLOCK(QSPI1)
 #define SHA512_CLOCK     GEN_CLOCK(SHA512)
 #define OTFAD_AES_CLOCK  GEN_CLOCK(OTFAD_AES)
@@ -263,7 +262,6 @@
 #define WWDT2_CLK_BASE      sysc_app_per
 #define CPU_DBG_CLK_BASE    sysc_sec_cpu
 #define CACHE1_CLK_BASE     sysc_sec_cpu
-#define IOPMP_CLK_BASE      sysc_sec_cpu
 #define QSPI1_CLK_BASE      sysc_sec_cpu
 #define SHA512_CLK_BASE     sysc_sec_cpu
 #define OTFAD_AES_CLK_BASE  sysc_sec_cpu
@@ -396,7 +394,6 @@
 #define WWDT2_CLK_REG      PD_PER_CLKG3_CLK_REG
 #define CPU_DBG_CLK_REG    PD_CPU_CLKG0_CLK_REG
 #define CACHE1_CLK_REG     PD_CPU_CLKG0_CLK_REG
-#define IOPMP_CLK_REG      PD_CPU_CLKG0_CLK_REG
 #define QSPI1_CLK_REG      PD_CPU_CLKG0_CLK_REG
 #define SHA512_CLK_REG     PD_CPU_CLKG0_CLK_REG
 #define OTFAD_AES_CLK_REG  PD_CPU_CLKG0_CLK_REG
@@ -820,10 +817,6 @@
 #define CACHE1_CLK_SET_POS     2
 #define CACHE1_CLK_CLR_MASK    0x8
 #define CACHE1_CLK_CLR_POS     3
-#define IOPMP_CLK_SET_MASK     0x10
-#define IOPMP_CLK_SET_POS      4
-#define IOPMP_CLK_CLR_MASK     0x20
-#define IOPMP_CLK_CLR_POS      5
 #define QSPI1_CLK_SET_MASK     0x40
 #define QSPI1_CLK_SET_POS      6
 #define QSPI1_CLK_CLR_MASK     0x80
