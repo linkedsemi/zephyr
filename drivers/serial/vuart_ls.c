@@ -326,6 +326,11 @@ static int ls_vuart_init(const struct device *dev)
       vuart_irq_thread, (void *)dev, NULL, NULL, CONFIG_VUART_IRQ_THREAD_PRIORITY, 0, K_NO_WAIT);
     k_thread_name_set(&ptr_data->irq_thread, cfg->vuart_irq_thread_name);
     host_bmc_msg_exch_init(&cfg->hb_exch);
+
+#ifdef CONFIG_SOC_LSQSH_CPU1
+    vuart_b2h_mode_set(&cfg->hb_exch, true, true);
+#endif
+
     return 0;
 }
 
