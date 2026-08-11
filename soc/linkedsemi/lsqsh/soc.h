@@ -26,4 +26,19 @@
 #if defined(CONFIG_LINKEDSEMI_TPM_WWDT)
 int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms);
 #endif
+
+#if defined(CONFIG_SOC_LSQSH)
+struct adc_otp_trim {
+	uint32_t : 20, adc12b_os_cal_adc0 : 8, : 4;
+	uint32_t : 24, adc12b_os_cal_adc1 : 8;
+	uint32_t adc12b_vref_trim_adc0 : 5, : 11,
+		 adc12b_vref_trim_adc1 : 5, : 11;
+};
+
+#if DT_NODE_EXISTS(DT_NODELABEL(otp_config_adc_trim_memory))
+#define LS_SHARED_ADC_TRIM_ADDR \
+	((uintptr_t)DT_REG_ADDR(DT_NODELABEL(otp_config_adc_trim_memory)))
+#endif
+#endif /* CONFIG_SOC_LSQSH */
+
 #endif /* _SOC_H_ */
