@@ -7,6 +7,7 @@
 #define DT_DRV_COMPAT linkedsemi_ls_adc
 
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <field_manipulate.h>
 #include <zephyr/drivers/adc.h>
@@ -26,7 +27,6 @@
 
 #if(CONFIG_SOC_LSQSH)
     #include "reg_sec_pmu_rg.h"
-    #include "ls_hal_otp_ctrl.h"
     #define temperature_sensing_channel 13
 #endif
 
@@ -96,6 +96,7 @@ static void ADC_RegularGetValue(const struct device *dev)
     {
         reg->INTR_C |= ADC_INTR_REG_ERR_MASK;
         LOG_ERR("Sampling error\n");
+        return;
     }
 
     uint16_t *buffer = (uint16_t *)data->ctx.sequence.buffer;
@@ -121,7 +122,7 @@ static void ADC_RegularGetValue(const struct device *dev)
             break;
         case ADC_REGULAR_RANK_6:
             *buffer = reg->REG_DAT05 & 0xffff;
-            break;    
+            break;
         case ADC_REGULAR_RANK_7:
             *buffer = reg->REG_DAT06 & 0xffff;
             break;
@@ -155,7 +156,7 @@ static void ADC_RegularGetValue(const struct device *dev)
             break;
     #endif
         default:
-            __ASSERT(false, "REGULAR_RANK illegal\n");
+            LOG_ERR("REGULAR_RANK illegal\n");
             break;
         }
         buffer++;
@@ -172,6 +173,7 @@ static void ADC_InjectGetValue(const struct device *dev)
     {
         reg->INTR_C |= ADC_INTR_INJ_ERR_MASK;
         LOG_ERR("Sampling error\n");
+        return;
     }
 
     uint16_t *buffer = (uint16_t *)data->ctx.sequence.buffer;
@@ -193,7 +195,7 @@ static void ADC_InjectGetValue(const struct device *dev)
             *buffer = reg->INJ_DAT03 & 0xffff;
             break;
         default:
-            __ASSERT(false, "REGULAR_RANK illegal\n");
+            LOG_ERR("INJECTED_RANK illegal\n");
             break;
         }
         buffer++;
@@ -222,6 +224,7 @@ static void ADC_LoopGetValue(const struct device *dev)
             reg->INTR_C |= ADC_INTR_FIF_OVR_MASK;
             LOG_ERR("FIF Overrun\n");
             REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIFO_CLR, 1);
+            break;
         }
 
         *buffer = reg->FIF_DAT;
@@ -268,7 +271,7 @@ static int ADC_VrefType_SetConfig(const struct adc_ls_config* config, enum adc_r
     break;
     case ADC_REF_INTERNAL:
     default:
-    tmp_adr = FIELD_BUILD(ADC_ADR_BP, 0)|FIELD_BUILD(ADC_ADR_VREFBUF_EN, 1)| 
+    tmp_adr = FIELD_BUILD(ADC_ADR_BP, 0)|FIELD_BUILD(ADC_ADR_VREFBUF_EN, 1)|
             FIELD_BUILD(ADC_ADR_VCM_EN, 1)|FIELD_BUILD(ADC_ADR_VREF_EN, 1)|
             FIELD_BUILD(ADC_ADR_VRSEL, 4);
     break;
@@ -319,7 +322,7 @@ static void ADC_Ch_cfg_Reg_SetConfig(reg_adc_t* reg, uint8_t channel_id)
         reg->CH_CFG |= 1<<16<<channel_id;
     }else {
         reg->CH_CFG &= ~(1<<16<<channel_id);
-    }  
+    }
 #endif
 
 #if(CONFIG_SOC_LSQSH)
@@ -328,38 +331,39 @@ static void ADC_Ch_cfg_Reg_SetConfig(reg_adc_t* reg, uint8_t channel_id)
 }
 
 #if(CONFIG_SOC_LS1010)
-static void load_trim_value(reg_adc_t* reg, uint16_t addr)
+static int load_trim_value(reg_adc_t* reg, uint16_t addr)
 {
     uint32_t adc_trim_value[6] = {0};
+    int valid = 0;
 
     hal_flash_read_security_area(1, addr, (uint8_t *)adc_trim_value, sizeof(adc_trim_value));
 
     if(adc_trim_value[0] == ~adc_trim_value[1]) {
         reg->ADR = adc_trim_value[0];
+        valid = 1;
     }
 
     if(adc_trim_value[4] == ~adc_trim_value[5]) {
         MODIFY_REG(reg->ADCH, ADC_ADCH_OS_CALV_MASK, (adc_trim_value[4] >> 16) << ADC_ADCH_OS_CALV_POS);
+        valid = 1;
     }
+
+    return valid;
 }
 #endif
 
 #if(CONFIG_SOC_LSQSH)
-struct adc_otp_trim {
-    uint32_t : 20, adc12b_os_cal_adc0 : 8, : 4;
-    uint32_t : 24, adc12b_os_cal_adc1 : 8;
-    uint32_t adc12b_vref_trim_adc0 : 5, : 11,
-             adc12b_vref_trim_adc1 : 5, : 11;
-};
 
-static void load_trim_value_otp(reg_adc_t *reg)
+static int load_trim_value_otp(reg_adc_t *reg)
 {
-
-    HAL_OTP_CTRL_Init();
+#if !DT_NODE_EXISTS(DT_NODELABEL(otp_config_adc_trim_memory))
+    ARG_UNUSED(reg);
+    LOG_ERR("ADC trim needs DT otp_config_adc_trim_memory");
+    return -ENODEV;
+#else
     struct adc_otp_trim trim;
-    if (HAL_OTP_Read(0x0c, (uint8_t *)&trim, sizeof(trim)) != HAL_OK) {
-        return;
-    }
+
+    memcpy(&trim, (const void *)LS_SHARED_ADC_TRIM_ADDR, sizeof(trim));
 
     bool is_adc1 = (reg == (reg_adc_t *)APP_ADC1_ADDR);
 
@@ -369,6 +373,9 @@ static void load_trim_value_otp(reg_adc_t *reg)
     MODIFY_REG(reg->ADCH, ADC_ADCH_OS_CALV_MASK, os_cal << ADC_ADCH_OS_CALV_POS);
     MODIFY_REG(reg->ADCH, ADC_ADCH_GE_CALV_MASK, 0);
     MODIFY_REG(reg->ADR,  ADC_ADR_VREF_TRIM_MASK, vref << ADC_ADR_VREF_TRIM_POS);
+
+    return 0;
+#endif
 }
 #endif
 
@@ -427,25 +434,43 @@ static int adc_ls_init(const struct device *dev)
 
     config->irq_config_func(dev);
 
-    __ASSERT(IS_ADC_DATA_ALIGN(config->data_align), "Invalid data alignment");
+    if (!IS_ADC_DATA_ALIGN(config->data_align)) {
+        LOG_ERR("Invalid data alignment");
+        return -EINVAL;
+    }
 
-    __ASSERT(IS_FUNCTIONAL_STATE(config->continuous_conv_mode), "Invalid conversion mode");
+    if (!IS_FUNCTIONAL_STATE(config->continuous_conv_mode)) {
+        LOG_ERR("Invalid conversion mode");
+        return -EINVAL;
+    }
+
+    bool trim_ok = false;
 
 #if(CONFIG_SOC_LS1010)
     MODIFY_REG(V33_RG->MISC_CTRL1, V33_RG_PD_ADC12_MASK, 0 << V33_RG_PD_ADC12_POS);
 
     if(reg == (reg_adc_t *)0x40089000) {
-        load_trim_value(reg, 0x30);
+        trim_ok = load_trim_value(reg, 0x30);
     }else {
-        load_trim_value(reg, 0x38);
+        trim_ok = load_trim_value(reg, 0x38);
+    }
+
+    if (!trim_ok) {
+        LOG_WRN("ADC trim disabled: no valid trim values in flash");
     }
 #endif
 
 #if(CONFIG_SOC_LSQSH)
-    load_trim_value_otp(reg);
+    if (load_trim_value_otp(reg) < 0) {
+        LOG_WRN("ADC trim disabled due to OTP read failure");
+    } else {
+        trim_ok = true;
+    }
 #endif
 
-    REG_FIELD_WR(reg->ADCH, ADC_ADCH_TRIM_EN, 1);
+    if (trim_ok) {
+        REG_FIELD_WR(reg->ADCH, ADC_ADCH_TRIM_EN, 1);
+    }
 
     uint32_t tmp_misc_ctrl = 0;
     tmp_misc_ctrl |= config->data_align;
@@ -463,19 +488,27 @@ static int adc_ls_init(const struct device *dev)
     return 0;
 }
 
-static void ADC_RegularChannelConfig(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
+static int ADC_RegularChannelConfig(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
 {
     const struct adc_ls_config * config = dev->config;
     struct adc_ls_data *const data = dev->data;
     reg_adc_t *const reg = config->reg;
 
     #if(CONFIG_SOC_LS1010)
-        __ASSERT(data->conversion_rank <= ADC_REGULAR_RANK_12, "LS1010 regular mode rank must be less than or equal to 12");
+        if (data->conversion_rank > ADC_REGULAR_RANK_12) {
+            LOG_ERR("LS1010 regular mode rank %d exceeds max %d",
+                    data->conversion_rank, ADC_REGULAR_RANK_12);
+            return -EINVAL;
+        }
         REG_FIELD_WR(reg->REG_CTRL1, ADC_REG_SEQLEN, config->nbr_of_conversion - 1);
     #endif
 
     #if(CONFIG_SOC_LSQSH)
-        __ASSERT(data->conversion_rank <= ADC_REGULAR_RANK_16, "LSQSH regular mode rank must be less than or equal to 16");
+        if (data->conversion_rank > ADC_REGULAR_RANK_16) {
+            LOG_ERR("LSQSH regular mode rank %d exceeds max %d",
+                    data->conversion_rank, ADC_REGULAR_RANK_16);
+            return -EINVAL;
+        }
         REG_FIELD_WR(reg->INJ_CTRL, ADC_REG_SEQLEN, config->nbr_of_conversion - 1);
     #endif
 
@@ -484,19 +517,25 @@ static void ADC_RegularChannelConfig(const struct device *dev, const struct adc_
         reg->REG_CTRL0 |= ADC_REG_SEQ0_RK(channel_cfg->channel_id, data->conversion_rank);
     }
     /*ls1010: For Rank 9 to 12 ; lsqsh: For Rank 9 to 16*/
-    else 
+    else
     {
         reg->REG_CTRL1 |= ADC_REG_SEQ1_RK(channel_cfg->channel_id, data->conversion_rank);
     }
+
+    return 0;
 }
 
-static void ADC_InjectChannelConfig(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
+static int ADC_InjectChannelConfig(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
 {
     const struct adc_ls_config * config = dev->config;
     struct adc_ls_data *const data = dev->data;
     reg_adc_t *const reg = config->reg;
-    
-    __ASSERT(data->conversion_rank <= ADC_INJECTED_RANK_4, "inject mode rank must be less than or equal to 4");
+
+    if (data->conversion_rank > ADC_INJECTED_RANK_4) {
+        LOG_ERR("inject mode rank %d exceeds max %d",
+                data->conversion_rank, ADC_INJECTED_RANK_4);
+        return -EINVAL;
+    }
 
     REG_FIELD_WR(reg->INJ_CTRL, ADC_INJ_SEQLEN, config->nbr_of_conversion - 1);
 
@@ -509,37 +548,43 @@ static void ADC_InjectChannelConfig(const struct device *dev, const struct adc_c
         /* Set injected channel 1 offset */
         MODIFY_REG(reg->INJ_OFF00,
                     ADC_INJ_OFFSET0_MASK,
-                    data->conversion_rank);
+                    config->injected_offset);
         break;
         case ADC_INJECTED_RANK_2:
         /* Set injected channel 2 offset */
         MODIFY_REG(reg->INJ_OFF01,
                     ADC_INJ_OFFSET1_MASK,
-                    data->conversion_rank);
+                    config->injected_offset);
         break;
         case ADC_INJECTED_RANK_3:
         /* Set injected channel 3 offset */
         MODIFY_REG(reg->INJ_OFF02,
                     ADC_INJ_OFFSET2_MASK,
-                    data->conversion_rank);
+                    config->injected_offset);
         break;
         case ADC_INJECTED_RANK_4:
         MODIFY_REG(reg->INJ_OFF03,
                     ADC_INJ_OFFSET3_MASK,
-                    data->conversion_rank);
+                    config->injected_offset);
         break;
         default:
         break;
     }
+
+    return 0;
 }
 
-static void ADC_LoopChannelConfig(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
+static int ADC_LoopChannelConfig(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
 {
     const struct adc_ls_config * config = dev->config;
     struct adc_ls_data *const data = dev->data;
     reg_adc_t *const reg = config->reg;
 
-    __ASSERT(data->conversion_rank <= ADC_LOOP_RANK_4, "loop mode rank must be less than or equal to 4");
+    if (data->conversion_rank > ADC_LOOP_RANK_4) {
+        LOG_ERR("loop mode rank %d exceeds max %d",
+                data->conversion_rank, ADC_LOOP_RANK_4);
+        return -EINVAL;
+    }
 
     while(REG_FIELD_RD(reg->FIFO_FLVL, ADC_FIFO_FLVL) != 0){
         REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIFO_CLR, 1);
@@ -550,6 +595,8 @@ static void ADC_LoopChannelConfig(const struct device *dev, const struct adc_cha
     reg->FIF_CTRL1 = config->fif_ctrl1;
 
     reg->FIF_CTRL0 |= ADC_FIF_SEQ_RK(channel_cfg->channel_id, data->conversion_rank);
+
+    return 0;
 }
 
 static int adc_ls_channel_setup(const struct device *dev, const struct adc_channel_cfg *channel_cfg)
@@ -557,6 +604,12 @@ static int adc_ls_channel_setup(const struct device *dev, const struct adc_chann
     const struct adc_ls_config * config = dev->config;
     struct adc_ls_data *const data = dev->data;
     reg_adc_t *const reg = config->reg;
+    int ret;
+
+    if (channel_cfg == NULL || channel_cfg->channel_id >= 16 ||
+        channel_cfg->acquisition_time > 3) {
+        return -EINVAL;
+    }
 
     ADC_VrefType_SetConfig(config, channel_cfg->reference);
 
@@ -605,16 +658,26 @@ static int adc_ls_channel_setup(const struct device *dev, const struct adc_chann
 
             if(config->conversion_mode == regular_mode) {
                 REG_FIELD_WR(reg->DISC_CTRL, ADC_REG_DISCEN, disc_en);
-                ADC_RegularChannelConfig(dev, channel_cfg);
+                ret = ADC_RegularChannelConfig(dev, channel_cfg);
+                if (ret < 0) {
+                    return ret;
+                }
             }else if(config->conversion_mode == inject_mode) {
                 REG_FIELD_WR(reg->DISC_CTRL, ADC_INJ_DISCEN, disc_en);
-                ADC_InjectChannelConfig(dev, channel_cfg);
+                ret = ADC_InjectChannelConfig(dev, channel_cfg);
+                if (ret < 0) {
+                    return ret;
+                }
             }
         }else if(config->conversion_mode == loop_mode) {
-            ADC_LoopChannelConfig(dev, channel_cfg);
+            ret = ADC_LoopChannelConfig(dev, channel_cfg);
+            if (ret < 0) {
+                return ret;
+            }
         }
-    }else{
-        __ASSERT(false, "Regular Channel Mode Illegal rank");
+    } else {
+        LOG_ERR("Regular Channel Mode Illegal rank");
+        return -EINVAL;
     }
 
     if(channel_cfg->channel_id == ADC1_CHANNEL_VBAT) {
@@ -665,7 +728,14 @@ static int adc_ls_read(const struct device *dev, const struct adc_sequence *sequ
 
     adc_context_start_read(&data->ctx, sequence);
 
-    while((reg->INTR_R &(ADC_INTR_REG_END_MASK | ADC_INTR_INJ_END_MASK | ADC_INTR_FIF_END_MASK))== 0);
+    int64_t _start = k_uptime_get();
+    while((reg->INTR_R &(ADC_INTR_REG_END_MASK | ADC_INTR_INJ_END_MASK | ADC_INTR_FIF_END_MASK))== 0) {
+        if ((k_uptime_get() - _start) > 100) {
+            LOG_ERR("ADC read timeout");
+            adc_context_release(&data->ctx, -ETIMEDOUT);
+            return -ETIMEDOUT;
+        }
+    }
 
     ADC_GetValue(dev, config->conversion_mode);
 

@@ -21,6 +21,12 @@
 };
 
 &soc {
+    otp_config_adc_trim_memory: memory@100bdff0 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x100bdff0 0x10>;
+        zephyr,memory-region = "OTP_CONFIG_ADC_TRIM";
+    };
+
     driver_share_memory: memory@100be000 {
         compatible = "zephyr,memory-region", "mmio-sram";
         reg = <0x100be000 0xffc>;
