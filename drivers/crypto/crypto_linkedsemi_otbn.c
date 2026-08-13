@@ -213,7 +213,7 @@ static int ls_otbn_init(const struct device *dev)
         SYSC_SEC_CPU->INTR_CLR_MSK = FIELD_BUILD(SYSC_SEC_CPU_I_EDN_RND_REQ, 1) |
                               FIELD_BUILD(SYSC_SEC_CPU_I_EDN_URND_REQ, 1) |
                               FIELD_BUILD(SYSC_SEC_CPU_I_OTBN_OTP_REQ, 1);
-    SYSC_SEC_CPU->INTR_CTRL_INTR_MSK = FIELD_BUILD(SYSC_SEC_CPU_I_EDN_RND_REQ, 1) |
+    SYSC_SEC_CPU->INTR_CTRL_INTR_MSK |= FIELD_BUILD(SYSC_SEC_CPU_I_EDN_RND_REQ, 1) |
                               FIELD_BUILD(SYSC_SEC_CPU_I_EDN_URND_REQ, 1) |
                               FIELD_BUILD(SYSC_SEC_CPU_I_OTBN_OTP_REQ, 1);
 
