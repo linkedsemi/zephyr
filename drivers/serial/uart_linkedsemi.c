@@ -69,9 +69,6 @@ static int uart_ls_poll_in(const struct device *dev, unsigned char *p_char)
 	const struct uart_ls_config_t *dev_config = dev->config;
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 
-	if (LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_OE)) {
-	}
-
 	if (!LL_UART_IsActiveFlag((reg_uart_t *)uart_handle->UARTX,UART_SR_RFNE)) {
 		return -1;
 	}
