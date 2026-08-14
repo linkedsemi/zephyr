@@ -208,14 +208,12 @@ static int cap_init(const struct device *dev)
 		return -EIO;
 	}
 
-	if (data) {
-		for (uint8_t i = 0; i < CHAN_CONT; i++) {
-			k_sem_init(&data->data_sem[i], 0, 1);
-			k_mutex_init(&data->ch_mutex[i]);
-			data->ch_data[i].cap_low = 0;
-			data->ch_data[i].cap_high = 0;
-			data->ch_data[i].data_err = 0;
-		}
+	for (uint8_t i = 0; i < CHAN_CONT; i++) {
+		k_sem_init(&data->data_sem[i], 0, 1);
+		k_mutex_init(&data->ch_mutex[i]);
+		data->ch_data[i].cap_low = 0;
+		data->ch_data[i].cap_high = 0;
+		data->ch_data[i].data_err = 0;
 	}
 
 #if defined(CONFIG_CLOCK_CONTROL)
