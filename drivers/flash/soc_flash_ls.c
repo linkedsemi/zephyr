@@ -568,6 +568,10 @@ static int flash_ls_write(const struct device *dev, off_t offset,
 		return 0;
 	}
 
+	if (data == NULL) {
+		return -EINVAL;
+	}
+
 	if (k_sem_take(&priv->sem, K_FOREVER)) {
 		return -EACCES;
 	}
