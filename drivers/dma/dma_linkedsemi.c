@@ -41,7 +41,7 @@ static int dw_dma_init(const struct device *dev)
 {
     const struct dw_dma_cfg *const dev_config = dev->config;
     __maybe_unused struct dw_dma_dev_data *dev_data = dev->data;
-    int ret;
+    int ret= 0;
     bool inited = false;
 
 #if defined(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL)
@@ -65,27 +65,27 @@ static int dw_dma_init(const struct device *dev)
 #endif
 
 if (!inited) {
-#if defined(CONFIG_RESET)
-    if (dev_config->reset.dev != NULL) {
-        if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
-            return -ENODEV;
-        }
+    #if defined(CONFIG_RESET)
+        if (dev_config->reset.dev != NULL) {
+            if (!device_is_ready(dev_config->reset.dev)) {
+                LOG_ERR("Reset controller device is not ready");
+                return -ENODEV;
+            }
 
-        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
-        if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
-            return ret;
+            ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+            if (ret != 0) {
+                LOG_ERR("toggle reset line failed");
+                return ret;
+            }
         }
-    }
-#endif
+    #endif
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-    }
-#endif
+    #if defined(CONFIG_CLOCK_CONTROL)
+        if (dev_config->ccfg.cctl_dev) {
+            const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+            clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+        }
+    #endif
 
     /* Disable all channels and Channel interrupts */
     ret = dw_dma_setup(dev);
