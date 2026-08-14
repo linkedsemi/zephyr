@@ -161,19 +161,25 @@ static int vuart_fifo_fill(const struct device *dev, const uint8_t *tx_data, int
 	const struct ls_vuart_cfg *cfg = dev->config;
     struct ls_vuart_data *data = dev->data;
 
-    int length = len;
-
     if (data->peer_rx_valid == false) {
         vuart_local_wakeup_irq_thread(dev);
-        return length;
+        return len;
     }
 
-    while(length--)
-    {
-        general_fifo_put(&cfg->vuart_fifo_base->b2h,(void *)tx_data++);
+    int written = 0;
+
+    while (written < len) {
+        if (!general_fifo_put(&cfg->vuart_fifo_base->b2h,
+                              (void *)&tx_data[written])) {
+            break;
+        }
+        written++;
     }
-    vuart_status_send(&cfg->hb_exch,H_RX_AVAIL);
-	return len;
+
+    if (written > 0) {
+        vuart_status_send(&cfg->hb_exch, H_RX_AVAIL);
+    }
+	return written;
 }
 
 static void vuart_irq_tx_enable(const struct device *dev)
