@@ -693,6 +693,13 @@ static void dwmac_iface_init(struct net_if *iface)
 	p->iface = iface;
 
 	ethernet_init(iface);
+
+	if (!device_is_ready(dev)) {
+		net_if_carrier_off(iface);
+		LOG_ERR("dwmac_iface_init exit due to device is not ready!");
+		return;
+	}
+
 	net_link_state_detect(dev, iface);
 
 	net_if_set_link_addr(iface, p->mac_addr, sizeof(p->mac_addr),
