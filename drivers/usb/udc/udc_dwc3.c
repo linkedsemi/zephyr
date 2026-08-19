@@ -485,6 +485,7 @@ LOG_MODULE_REGISTER(udc_dwc3, CONFIG_UDC_DRIVER_LOG_LEVEL);
 /* Control-only Status */
 #define DEPEVT_STATUS_CONTROL_DATA   1
 #define DEPEVT_STATUS_CONTROL_STATUS 2
+#define DEPEVT_STATUS_CONTROL_PHASE(n) ((n) & 0x3)
 
 #define DWC3_GEVNTCOUNT_MASK    0xfffc
 
@@ -801,6 +802,8 @@ struct udc_dwc3_data {
     enum udc_bus_speed speed;
     struct k_thread thread;
     int8_t ep_res_index[DWC_USB3_NUM_EPS];
+    bool ep_res_allocated[DWC_USB3_NUM_EPS];
+    bool xfer_res_initialized;
     union evt_buf_u evt_buf[EVT_BUF_LENGTH_WORDS];
     struct k_sem ep0_sync;
     bool connect;
@@ -813,21 +816,8 @@ static int dwc3_ctrl_feed_dout(const struct device *dev, const size_t length, en
 static enum udc_bus_speed udc_dwc3_device_speed(const struct device *dev)
 {
     LOG_DBG("%s udc device speed", dev->name);
-    const struct udc_dwc3_config *config = dev->config;
-    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
-    enum udc_bus_speed speed = UDC_BUS_UNKNOWN;
-    switch (dwc3_dev->DCFG & DWC3_DCFG_SPEED_MASK) {
-    case DWC3_DCFG_FULLSPEED:
-        speed = UDC_BUS_SPEED_FS;
-        break;
-    case DWC3_DCFG_HIGHSPEED:
-        speed = UDC_BUS_SPEED_HS;
-        break;
-    case DWC3_DCFG_SUPERSPEED:
-        speed = UDC_BUS_SPEED_SS;
-        break;
-    }
-    return speed;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    return dwc3_data->speed;
 }
 
 static void dwc3_prepare_one_trb(struct dwc3_trb *trb, void *buf_ptr, uint32_t size, enum TRB_Control trbctl, bool chain)
@@ -851,14 +841,16 @@ static void dwc3_prepare_one_trb(struct dwc3_trb *trb, void *buf_ptr, uint32_t s
     trb->trbsts = 0;
 }
 
-static void dwc3_dep_command(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, union dep_command *cmd, const union dep_command_param *param)
+static int dwc3_dep_command(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, union dep_command *cmd, const union dep_command_param *param)
 {
-    reg->DEP[phy_ep_idx].CMDPAR0 = param->param[0];
-    reg->DEP[phy_ep_idx].CMDPAR1 = param->param[1];
-    reg->DEP[phy_ep_idx].CMDPAR2 = param->param[2];
-    reg->DEP[phy_ep_idx].CMD = cmd->val;
-    while (reg->DEP[phy_ep_idx].CMD & DWC3_DEPCMD_CMDACT);
-    cmd->val = reg->DEP[phy_ep_idx].CMD;
+	reg->DEP[phy_ep_idx].CMDPAR0 = param->param[0];
+	reg->DEP[phy_ep_idx].CMDPAR1 = param->param[1];
+	reg->DEP[phy_ep_idx].CMDPAR2 = param->param[2];
+	reg->DEP[phy_ep_idx].CMD = cmd->val;
+	while (reg->DEP[phy_ep_idx].CMD & DWC3_DEPCMD_CMDACT);
+	cmd->val = reg->DEP[phy_ep_idx].CMD;
+
+	return DWC3_DEPCMD_STATUS(cmd->val);
 }
 
 static void dwc3_dep_start_config(struct dwc3_dev_reg *reg, uint8_t XferRscIdx)
@@ -949,7 +941,7 @@ static int dwc3_dep_xfer_resource(struct dwc3_dev_reg *reg, uint8_t phy_ep_idx, 
     return ret;
 }
 
-static void dwc3_dep_start_transfer(const struct device *dev, uint8_t phy_ep_idx, void *td_addr, uint16_t stream_id)
+static int dwc3_dep_start_transfer(const struct device *dev, uint8_t phy_ep_idx, void *td_addr, uint16_t stream_id)
 {
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     const struct udc_dwc3_config *config = dev->config;
@@ -968,8 +960,57 @@ static void dwc3_dep_start_transfer(const struct device *dev, uint8_t phy_ep_idx
             .td_addr_high = 0,
         },
     };
-    dwc3_dep_command(reg, phy_ep_idx, &cmd, &param);
+    int status = dwc3_dep_command(reg, phy_ep_idx, &cmd, &param);
+
+    switch (status) {
+    case 0:
+        break;
+    case DEPEVT_TRANSFER_NO_RESOURCE:
+        LOG_WRN("DEPEVT_TRANSFER_NO_RESOURCE on phy ep %u", phy_ep_idx);
+        return -EINVAL;
+    case DEPEVT_TRANSFER_BUS_EXPIRY:
+        LOG_WRN("DEPEVT_TRANSFER_BUS_EXPIRY on phy ep %u", phy_ep_idx);
+        return -EAGAIN;
+    default:
+        LOG_WRN("Unknown Start Transfer status %d on phy ep %u",
+            status, phy_ep_idx);
+        return -EIO;
+    }
+
     dwc3_data->ep_res_index[phy_ep_idx] = DWC3_DEPCMD_GET_RSC_IDX(cmd.val);
+
+    return 0;
+}
+
+static int dwc3_dep_end_transfer(const struct device *dev, uint8_t phy_ep_idx, int8_t resource_index, bool force_rm)
+{
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *reg = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    union dep_command_param param = {0};
+    union dep_command cmd = {
+        .cmd = {
+            .commandparam = (uint16_t)resource_index,
+            .cmdioc = 0,
+            .cmdact = 1,
+            .hipri_forcerm = force_rm,
+            .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
+        },
+    };
+
+    if (resource_index < 0) {
+        return 0;
+    }
+
+    dwc3_dep_command(reg, phy_ep_idx, &cmd, &param);
+    /* ENDTRANSFER without CMDIOC only guarantees CMDACT is cleared, not that
+     * the controller has fully stopped DMA and released the transfer resource.
+     * Give it a moment before allowing the endpoint/TRBs to be reused.
+     */
+    k_busy_wait(1000);
+    dwc3_data->ep_res_index[phy_ep_idx] = -1;
+
+    return 0;
 }
 
 #define DEPCFG_POR(EPDir)                        \
@@ -1017,12 +1058,15 @@ static void dwc3_ep0_setup_phase(const struct device *dev, const union evt_buf_u
     struct net_buf *buf = udc_buf_get(dev, USB_CONTROL_EP_OUT);
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    struct usb_setup_packet *setup;
 
     udc_ep_buf_set_setup(buf);
     net_buf_add(buf, 8);
 
     sys_cache_data_invd_range(buf->data, buf->len);
     LOG_HEXDUMP_DBG(buf->data, buf->len, "setup token");
+    setup = (struct usb_setup_packet *)buf->data;
+
     /* Update to next stage of control transfer */
     udc_ctrl_update_stage(dev, buf);
 
@@ -1030,17 +1074,26 @@ static void dwc3_ep0_setup_phase(const struct device *dev, const union evt_buf_u
         dwc3_data->ep0_state = EP0_DATA_PHASE;
         dwc3_data->three_stage_setup = 1;
         dwc3_data->ep0_expect_in = 0;
-        if (dwc3_ctrl_feed_dout(dev, 64, TRB_Control_Data) == -ENOMEM) {
-            udc_submit_ep_event(dev, buf, -ENOMEM);
-        }
+        /* prepare EP0 OUT data TRB to receive control data */
+        dwc3_ctrl_feed_dout(dev, 64, TRB_Control_Data);
     } else if (udc_ctrl_stage_is_data_in(dev)) {
         dwc3_data->ep0_state = EP0_DATA_PHASE;
         dwc3_data->three_stage_setup = 1;
         dwc3_data->ep0_expect_in = 1;
+        /* allocate control IN data buffer and submit setup event to upper layer */
         udc_ctrl_submit_s_in_status(dev);
     } else {
-        if (((struct usb_setup_packet *)buf->data)->bRequest == USB_SREQ_SET_ADDRESS) {
-            uint16_t addr = ((struct usb_setup_packet *)buf->data)->wValue;
+        if (setup->bRequest == USB_SREQ_SET_CONFIGURATION) {
+            if (!dwc3_data->xfer_res_initialized) {
+                dwc3_dep_start_config(dwc3_dev, 2);
+                for (int i = 2; i < DWC_USB3_NUM_EPS; i++) {
+                    dwc3_data->ep_res_allocated[i] = false;
+                    dwc3_data->ep_res_index[i] = -1;
+                }
+                dwc3_data->xfer_res_initialized = true;
+            }
+        } else if (setup->bRequest == USB_SREQ_SET_ADDRESS) {
+            uint16_t addr = setup->wValue;
             uint32_t reg = dwc3_dev->DCFG;
             reg &= ~(DWC3_DCFG_DEVADDR_MASK);
             reg |= DWC3_DCFG_DEVADDR(addr);
@@ -1126,6 +1179,8 @@ static void dwc3_ep0_xfer_complete(const struct device *dev, const union evt_buf
 {
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
 
+    dwc3_data->ep_res_index[evt->depevt.phy_ep_num] = -1;
+
     switch (dwc3_data->ep0_state) {
     case EP0_SETUP_PHASE:
         LOG_DBG("EP0_SETUP_PHASE!!");
@@ -1144,23 +1199,11 @@ static void dwc3_ep0_xfer_complete(const struct device *dev, const union evt_buf
     }
 }
 
-static void dwc3_ep0_end_control_data(const struct device *dev)
+static int dwc3_ep0_end_control_data(const struct device *dev, uint8_t phy_ep_idx)
 {
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
-    const struct udc_dwc3_config *config = dev->config;
-    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
-    union dep_command_param param = {0};
-    union dep_command cmd = {
-        .cmd = {
-            .commandparam = DWC3_DEPCMD_PARAM(dwc3_data->ep_res_index[0]),
-            .cmdioc = 1, // trigger EPCmdCmplt irq
-            .cmdact = 1,
-            .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
-        },
-    };
 
-    dwc3_dep_command(dwc3_dev, 0, &cmd, &param);
-    dwc3_data->ep_res_index[0] = -1;
+    return dwc3_dep_end_transfer(dev, phy_ep_idx, dwc3_data->ep_res_index[phy_ep_idx], false);
 }
 
 static void dwc3_ep0_stall_and_restart(const struct device *dev)
@@ -1182,18 +1225,43 @@ static void dwc3_ep0_stall_and_restart(const struct device *dev)
     dwc3_ctrl_feed_dout(dev, 8, TRB_Control_Setup);
 }
 
+static void dwc3_ep0_reset_state(const struct device *dev)
+{
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    uint8_t active_ep;
+
+    if (dwc3_data->ep0_state == EP0_SETUP_PHASE) {
+        if (dwc3_data->ep_res_index[0] < 0) {
+            dwc3_ctrl_feed_dout(dev, 8, TRB_Control_Setup);
+        }
+        return;
+    }
+
+    active_ep = dwc3_data->ep0_expect_in ? 1 : 0;
+    if (dwc3_data->ep0_state == EP0_DATA_PHASE) {
+        dwc3_ep0_end_control_data(dev, active_ep);
+    } else {
+        dwc3_ep0_end_control_data(dev, active_ep ? 0 : 1);
+    }
+
+    dwc3_data->ep0_state = EP0_SETUP_PHASE;
+    dwc3_data->three_stage_setup = 0;
+    dwc3_data->ep0_expect_in = 0;
+    dwc3_ep0_stall_and_restart(dev);
+}
+
 static void dwc3_ep0_xfer_notready(const struct device *dev, const union evt_buf_u *evt)
 {
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     const struct udc_dwc3_config *config = dev->config;
     uint8_t ep_num = evt->depevt.phy_ep_num;
 
-    switch (evt->depevt.evt_status) {
+    switch (DEPEVT_STATUS_CONTROL_PHASE(evt->depevt.evt_status)) {
     case DEPEVT_STATUS_CONTROL_DATA: {
         LOG_DBG("DEPEVT_STATUS_CONTROL_DATA, ep_num = %d", ep_num);
         if (dwc3_data->ep0_expect_in != ep_num) {
             LOG_DBG("dwc3_data->ep0_expect_in != ep_num!!\n");
-            dwc3_ep0_end_control_data(dev);
+            dwc3_ep0_end_control_data(dev, dwc3_data->ep0_expect_in);
             dwc3_ep0_stall_and_restart(dev);
         }
     } break;
@@ -1235,6 +1303,7 @@ static void dwc3_endpoint_event(const struct device *dev, const union evt_buf_u 
     /* Device Endpoint-Specific Events  */
     enum ep_evt evt_type = evt->depevt.ep_evt_type;
     uint8_t ep_num = evt->depevt.phy_ep_num;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, PHY_EP_IDX_2_EP_ADDR(ep_num));
     const struct udc_dwc3_config *config = dev->config;
     struct net_buf *buf;
@@ -1253,6 +1322,7 @@ static void dwc3_endpoint_event(const struct device *dev, const union evt_buf_u 
             net_buf_add(buf, buf->size - config->out_trb[USB_EP_GET_IDX(ep_cfg->addr)].trb[0].bufsiz);
             sys_cache_data_invd_range(buf->data, buf->len);
         }
+        dwc3_data->ep_res_index[ep_num] = -1;
         udc_ep_set_busy(dev, ep_cfg->addr, false);
         udc_submit_ep_event(dev, buf, 0);
         break;
@@ -1274,13 +1344,24 @@ static void dwc3_endpoint_event(const struct device *dev, const union evt_buf_u 
 
 static void dwc3_dev_reset(const struct device *dev, const union evt_buf_u *evt)
 {
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+
+    dwc3_data->speed = UDC_BUS_UNKNOWN;
+    dwc3_data->xfer_res_initialized = false;
+    dwc3_ep0_reset_state(dev);
+
+    for (int i = 2; i < DWC_USB3_NUM_EPS; i++) {
+        if (dwc3_data->ep_res_index[i] >= 0) {
+            dwc3_dep_end_transfer(dev, i, dwc3_data->ep_res_index[i], true);
+        }
+        dwc3_data->ep_res_allocated[i] = false;
+    }
 
     dwc3_dev->DCTL &= ~DWC3_DCTL_TSTCTRL_MASK;
     /* Set DevAddr to 0 */
     MODIFY_REG(dwc3_dev->DCFG, DWC3_DCFG_DEVADDR_MASK, DWC3_DCFG_DEVADDR(0));
-    udc_submit_event(dev, UDC_EVT_RESET, 0);
 }
 
 static void dwc3_dev_disconnect(const struct device *dev, const union evt_buf_u *evt)
@@ -1308,9 +1389,11 @@ static void dwc3_dev_connect_done(const struct device *dev, const union evt_buf_
     case DWC3_DSTS_SUPERSPEED:
     case DWC3_DSTS_SUPERSPEED_PLUS:
         dwc3_data->speed = UDC_BUS_SPEED_SS;
+        LOG_DBG("DWC3_DSTS_SUPERSPEED.");
         break;
     default:
-        __ASSERT(0, "not support %d speed", dwc3_data->speed);
+        dwc3_data->speed = UDC_BUS_UNKNOWN;
+        LOG_WRN("unexpected DSTS speed: 0x%x", speed);
         break;
     }
 
@@ -1320,6 +1403,7 @@ static void dwc3_dev_connect_done(const struct device *dev, const union evt_buf_
     dwc3_dep_config(dwc3_dev, 1, &cmd_param);
 
     dwc3_dev->DEVTEN |= DWC3_DEVTEN_ULSTCNGEN;
+    udc_submit_event(dev, UDC_EVT_RESET, 0);
 }
 
 static void dwc3_dev_suspend_entry_event(const struct device *dev, const union evt_buf_u *evt)
@@ -1330,8 +1414,12 @@ static void dwc3_dev_suspend_entry_event(const struct device *dev, const union e
 
 static void dwc3_dev_wakeup_detected_event(const struct device *dev, const union evt_buf_u *evt)
 {
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+
     /* This event is generated when the host initiates a resume condition on the USB bus */
     /* This event is not generated by the device initiating a remote wakeup to the host. */
+    dwc3_dev->DEVTEN |= DWC3_DEVTEN_ULSTCNGEN;
     udc_submit_event(dev, UDC_EVT_RESUME, 0);
 }
 
@@ -1339,11 +1427,17 @@ static void dwc3_dev_link_change_event(const struct device *dev, const union evt
 {
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    uint8_t link_state = evt->devt.evt_info & DWC3_LINK_STATE_MASK;
 
-    switch (evt->devt.evt_info) {
+    switch (link_state) {
     case DWC3_LINK_STATE_U3:
         dwc3_dev->DEVTEN &= ~DWC3_DEVTEN_ULSTCNGEN;
         udc_submit_event(dev, UDC_EVT_SUSPEND, 0);
+        break;
+    case DWC3_LINK_STATE_U0:
+    case DWC3_LINK_STATE_RECOV:
+    case DWC3_LINK_STATE_RESUME:
+        dwc3_dev->DEVTEN |= DWC3_DEVTEN_ULSTCNGEN;
         break;
     default:
         break;
@@ -1659,15 +1753,21 @@ static int udc_dwc3_init(const struct device *dev)
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
-    union dep_command_param cmd_param = {
-        .xfercfg.NumXferRes = 1
+    union dep_command_param xfer_param = {
+        .xfercfg.NumXferRes = 1,
     };
+    int ret;
 
     k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
     k_sem_init(&dwc3_data->ep0_sync, 0, 1);
 
     dwc3_data->dev = dev;
     dwc3_data->ep0_state = EP0_SETUP_PHASE;
+    dwc3_data->evt_buf_rd_idx = 0;
+    dwc3_data->evt_count = 0;
+    dwc3_data->connect = false;
+    dwc3_data->xfer_res_initialized = false;
+    memset(dwc3_data->ep_res_allocated, 0, sizeof(dwc3_data->ep_res_allocated));
     config->make_thread(dev);
 
 #if defined(CONFIG_CLOCK_CONTROL)
@@ -1702,10 +1802,6 @@ static int udc_dwc3_init(const struct device *dev)
     /* phy init */
     dwc3_phy_setup(dev);
 
-#if CONFIG_UDC_DWC3_DEBUG
-    dwc3_debug_signal_setup(dev);
-#endif
-
     /* soft reset */
     MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
     while (dwc3_dev->DCTL & DWC3_DCTL_CSFTRST);
@@ -1713,6 +1809,7 @@ static int udc_dwc3_init(const struct device *dev)
     dwc3_gbl->GUSB2PHYCFG[0] = 0x40002407;
     dwc3_dev->DCFG = 0x480800; 
     dwc3_gbl->GUCTL = 0xa400010;
+    dwc3_gbl->GUCTL2 |= DWC3_GUCTL2_RST_ACTBITLATER;
 
     dwc3_gbl->GEVNT[0].ADRLO = (uint32_t)config->evt_buf;
     dwc3_gbl->GEVNT[0].ADRHI = 0;
@@ -1725,16 +1822,17 @@ static int udc_dwc3_init(const struct device *dev)
                     | DWC3_DEVTEN_ERRTICERREN | DWC3_DEVTEN_CMDCMPLTEN | DWC3_DEVTEN_EVNTOVERFLOWEN | DWC3_DEVTEN_ECCERREN;
 
     dwc3_dep_start_config(dwc3_dev, 0);
-    /* 
-       There must be only one transfer resource allocated per endpoint.
-       Start Transfer causes the use of the transfer resource.
-       End Transfer or an XferComplete event releases the transfer resource.
-    */
-    for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
-        if (dwc3_dep_xfer_resource(dwc3_dev, i, &cmd_param) != 0) {
-            LOG_ERR("Failed to alloc transfer resource");
-            return -EIO;
+
+    for (int i = 0; i < 2; i++) {
+        ret = dwc3_dep_xfer_resource(dwc3_dev, i, &xfer_param);
+        if (ret < 0) {
+            LOG_ERR("Failed to allocate transfer resource for EP%d", i);
+            return ret;
         }
+        dwc3_data->ep_res_allocated[i] = true;
+    }
+
+    for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
         dwc3_data->ep_res_index[i] = -1;
     }
 
@@ -1760,6 +1858,10 @@ static int udc_dwc3_enable(const struct device *dev)
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
 
+    if (dwc3_data->ep_res_index[0] < 0) {
+        dwc3_ctrl_feed_dout(dev, 8, TRB_Control_Setup);
+    }
+
     dwc3_data->connect = true;
     config->irq_enable_func(dev);
     /* allow the device to attach to the host. */
@@ -1782,26 +1884,55 @@ static int udc_dwc3_disable(const struct device *dev)
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
     uint32_t count = 0;
+    uint32_t retry = 100;
 
-    /* wait ep0 setup state */
-    while (dwc3_data->ep0_state != EP0_SETUP_PHASE);
-    /* clear msg queue */
     dwc3_data->connect = false;
+    dwc3_data->xfer_res_initialized = false;
     /* disable irq */
     config->irq_disable_func(dev);
+    k_msgq_purge(&dwc3_data->msgq);
+    dwc3_data->evt_count = 0;
+
+    if (dwc3_data->ep0_state == EP0_DATA_PHASE) {
+        uint8_t active_ep = dwc3_data->ep0_expect_in ? 1 : 0;
+
+        LOG_DBG("disable while EP0 data phase, end phy ep %u", active_ep);
+        dwc3_ep0_end_control_data(dev, active_ep);
+    } else if (dwc3_data->ep0_state == EP0_STATUS_PHASE) {
+        uint8_t active_ep = dwc3_data->ep0_expect_in ? 0 : 1;
+
+        LOG_DBG("disable while EP0 status phase, end phy ep %u", active_ep);
+        dwc3_ep0_end_control_data(dev, active_ep);
+    }
+
     /* clear event queue */
     count = dwc3_gbl->GEVNT[0].COUNT;
     count &= DWC3_GEVNTCOUNT_MASK;
     if (count)
     {
         dwc3_gbl->GEVNT[0].COUNT = count;
-        dwc3_data->evt_buf_rd_idx = (dwc3_data->evt_buf_rd_idx + count) % EVT_BUF_LENGTH_WORDS;
+        dwc3_data->evt_buf_rd_idx = (dwc3_data->evt_buf_rd_idx +
+                                     count / sizeof(union evt_buf_u)) %
+                                    EVT_BUF_LENGTH_WORDS;
     }
 
     dwc3_data->ep0_state = EP0_SETUP_PHASE;
+    for (int i = 2; i < DWC_USB3_NUM_EPS; i++) {
+        if (dwc3_data->ep_res_index[i] >= 0) {
+            dwc3_dep_end_transfer(dev, i, dwc3_data->ep_res_index[i], true);
+        }
+        dwc3_data->ep_res_index[i] = -1;
+        dwc3_data->ep_res_allocated[i] = false;
+    }
+
     /* soft disconnect host */
     MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, 0);
-    while (!(dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT));
+    while (!(dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT) && retry--) {
+        k_busy_wait(1);
+    }
+    if (!(dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT)) {
+        LOG_WRN("DWC3 device controller did not halt in time");
+    }
 
     return 0;
 }
@@ -1866,12 +1997,28 @@ static int udc_dwc3_ep_activate(const struct device *dev, struct udc_ep_config *
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     uint8_t ep_idx = USB_EP_GET_IDX(cfg->addr);
     uint8_t ep_dir = USB_EP_GET_DIR(cfg->addr);
-    union dep_command_param cmd_param;
+    uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    union dep_command_param cmd_param = {0};
+    int ret;
 
     LOG_DBG("%s udc ep activate,cfg->addr = %x", dev->name, cfg->addr);
     if (ep_idx) {
         uint8_t ep_in = ep_dir == USB_EP_DIR_IN;
-        uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
+
+        if (!dwc3_data->ep_res_allocated[phy_ep_idx]) {
+            union dep_command_param xfer_param = {
+                .xfercfg.NumXferRes = 1,
+            };
+
+            ret = dwc3_dep_xfer_resource(dwc3_dev, phy_ep_idx, &xfer_param);
+            if (ret < 0) {
+                LOG_ERR("Failed to allocate transfer resource for ep 0x%x", cfg->addr);
+                return ret;
+            }
+            dwc3_data->ep_res_allocated[phy_ep_idx] = true;
+        }
+
         cmd_param.cfg.FIFOBased = 0;
         cmd_param.cfg.StrmCap = 0;
         cmd_param.cfg.EBCMode = 0;
@@ -1883,7 +2030,7 @@ static int udc_dwc3_ep_activate(const struct device *dev, struct udc_ep_config *
         cmd_param.cfg.XferNRdyEn = 0;
         cmd_param.cfg.StreamEvtEn = 1;
         cmd_param.cfg.ConfigAction = Initialize_EP_State;
-        cmd_param.cfg.bInterval_m1 = cfg->interval;
+        cmd_param.cfg.bInterval_m1 = cfg->interval ? MIN(cfg->interval - 1, 13) : 0;
         cmd_param.cfg.MPS = cfg->mps; // USB 3.0 supports up to 1024 bytes
         cmd_param.cfg.FIFONum = ep_in ? ep_idx : 0;
         cmd_param.cfg.EpNum = ep_idx;
@@ -1930,19 +2077,12 @@ static int udc_dwc3_ep_deactivate(const struct device *dev, struct udc_ep_config
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
     uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
     union dep_command_param param = {0};
-    LOG_DBG("%s udc ep deactivate, ep : %x, phy_ep_idx : %d, ep_res_index = %d", dev->name, cfg->addr, phy_ep_idx, dwc3_data->ep_res_index[phy_ep_idx]);
+    LOG_DBG("%s udc ep deactivate, ep : %x, phy_ep_idx : %d, ep_res_index = %d\n", dev->name, cfg->addr, phy_ep_idx, dwc3_data->ep_res_index[phy_ep_idx]);
 
     if (dwc3_data->ep_res_index[phy_ep_idx] >= 0)
-    {    
-        union dep_command end_trans = {
-        .cmd = {
-            .commandparam = dwc3_data->ep_res_index[phy_ep_idx],
-            .cmdact = 1,
-            .hipri_forcerm = 1,
-            .cmdtyp = DWC3_DEPCMD_ENDTRANSFER,
-            },
-        };
-        dwc3_dep_command(dwc3_dev, phy_ep_idx, &end_trans, &param);
+    {
+        dwc3_dep_end_transfer(dev, phy_ep_idx,
+                              dwc3_data->ep_res_index[phy_ep_idx], true);
         dwc3_data->ep_res_index[phy_ep_idx] = -1;
     }
 
@@ -2000,6 +2140,7 @@ static int udc_dwc3_ep_clear_halt(const struct device *dev, struct udc_ep_config
     /* The application must not issue the Clear Stall command on a control endpoint. */
     const struct udc_dwc3_config *config = dev->config;
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
 
     union dep_command_param param = {0};
     union dep_command cmd = {
@@ -2010,7 +2151,7 @@ static int udc_dwc3_ep_clear_halt(const struct device *dev, struct udc_ep_config
     };
 
     if (USB_EP_GET_IDX(cfg->addr)) {
-        dwc3_dep_command(dwc3_dev, EP_ADDR_2_PHY_EP_IDX(cfg->addr), &cmd, &param);
+        dwc3_dep_command(dwc3_dev, phy_ep_idx, &cmd, &param);
     }
 
     cfg->stat.halted = false;
@@ -2025,13 +2166,19 @@ static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *c
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     uint8_t ep_idx = USB_EP_GET_IDX(addr);
     struct udc_buf_info *bi = udc_get_buf_info(buf);
-    struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, addr);
-    struct dwc3_trb *trb;
+	struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, addr);
+	struct dwc3_trb *trb;
+	struct dwc3_trb *head;
+	struct net_buf *fail_buf;
+	int ret;
 
     LOG_DBG("ep: %x buf:%p, buf-len: %d, buf->size = %d, bi->data:%d bi->status %d", addr, buf, buf->len, buf->size, bi->data, bi->status);
 
     udc_buf_put(cfg, buf);
     if (ep_idx) {
+        head = USB_EP_DIR_IS_IN(addr) ? config->in_trb[ep_idx].trb : config->out_trb[ep_idx].trb;
+        udc_ep_set_busy(dev, addr, true);
+
         /*
             For OUT endpoints, the following rules apply:
             ■ The BUFSIZ field must be ≥ 1 byte.
@@ -2048,7 +2195,7 @@ static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *c
             multiple of MaxPacketSize, it must set up a zero-length TRB following the last TRB in the transfer.
         */
         if (USB_EP_DIR_IS_IN(addr)) {
-            trb = config->in_trb[ep_idx].trb;
+            trb = head;
             if (!udc_ep_buf_has_zlp(buf)) {
                 if (buf->len)
                     dwc3_prepare_one_trb(trb, buf->data, DWC3_TRB_SIZE_LENGTH(buf->len), TRB_Normal, false);
@@ -2072,7 +2219,15 @@ static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *c
                 dwc3_prepare_one_trb(++trb, config->bounce_addr, ep_cfg->mps - remain, TRB_Normal, false);
             }
         }
-        dwc3_dep_start_transfer(dev, EP_ADDR_2_PHY_EP_IDX(addr), trb, 0);
+        ret = dwc3_dep_start_transfer(dev, EP_ADDR_2_PHY_EP_IDX(addr), head, 0);
+        if (ret) {
+            udc_ep_set_busy(dev, addr, false);
+            fail_buf = udc_buf_get_all(dev, addr);
+            if (fail_buf) {
+                udc_submit_ep_event(dev, fail_buf, ret);
+            }
+            return ret;
+        }
     } else {
         if (USB_EP_DIR_IS_IN(addr)) {
             trb = config->in_trb[0].trb;
@@ -2095,7 +2250,16 @@ static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *c
 static int udc_dwc3_ep_dequeue(const struct device *dev, struct udc_ep_config *const cfg)
 {
     LOG_DBG("%s udc ep dequeue, %x", dev->name, cfg->addr);
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    uint8_t phy_ep_idx = EP_ADDR_2_PHY_EP_IDX(cfg->addr);
     struct net_buf *buf;
+
+    if (USB_EP_GET_IDX(cfg->addr) &&
+        dwc3_data->ep_res_index[phy_ep_idx] >= 0) {
+        dwc3_dep_end_transfer(dev, phy_ep_idx,
+                              dwc3_data->ep_res_index[phy_ep_idx], true);
+    }
+
     buf = udc_buf_get_all(dev, cfg->addr);
     if (buf) {
         udc_submit_ep_event(dev, buf, -ECONNABORTED);
