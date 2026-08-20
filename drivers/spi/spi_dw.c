@@ -58,7 +58,6 @@ BUILD_ASSERT(CONFIG_SPI_EXTENDED_MODES == 1,
              "Please add CONFIG_SPI_EXTENDED_MODES=y to your prj.conf");
 #define SPI_DW_DMA_WAIT_TIMEOUT_MS 10000
 #define SCKDV_BIT 0xfe
-#define SPI_CALIB_LEN 64
 #define TIMING_CALIBRATION_INVALID UINT8_MAX
 #define RX_SAMPLE_DLY_MAX 4
 #define DFS_4     4
@@ -121,7 +120,7 @@ static bool spi_calibriation_enable(const uint8_t *buf, uint32_t sz)
 		if (buf_32[i] != 0 && buf_32[i] != 0xffffffff) {
 			valid_count++;
 		}
-		if (valid_count > (SPI_CALIB_LEN >> 3)) {
+		if (valid_count > (sz >> 3)) {
 			return true;
 		}
 	}
@@ -138,13 +137,20 @@ int spi_timing_calibration(const struct device *dev,
 	struct spi_context *ctx = &data->ctx;
 	uint32_t cs = ctx->config->slave;
 	const struct spi_driver_api *api = (const struct spi_driver_api *)dev->api;
-	IF_ENABLED(CONFIG_DCACHE, (__aligned(CONFIG_DCACHE_LINE_SIZE))) uint8_t check_buf[SPI_CALIB_LEN];
+	uint8_t *check_buf = info->calib_buf;
+	const uint32_t calib_len = info->timing_calibration_data_len;
 	const uint32_t flash_size = op_info->data_len; /* from spi_nor_configure() */
 	uint32_t reg_val;
 	SYS_BITARRAY_DEFINE(delay_bitmap, RX_SAMPLE_DLY_MAX + 1);
 	int ret = 0;
 
 	__ASSERT_NO_MSG(flash_size);
+
+	if (calib_len == 0U) {
+		LOG_ERR("timing_calibration_data_len is zero, skip calibration.");
+		ret = -EINVAL;
+		goto no_calibration;
+	}
 
 	if (info->timing_calibration_disabled) {
 		goto no_calibration;
@@ -163,28 +169,42 @@ int spi_timing_calibration(const struct device *dev,
 
 	write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, info->timing_calibration_clock_frequency));
 	op_info->buf = check_buf;
-	op_info->data_len = SPI_CALIB_LEN;
+	op_info->data_len = calib_len;
 
 	if (info->timing_calibration_auto_detect_content_disable) {
 		op_info->addr = info->timing_calibration_start_off;
+		if ((op_info->addr + calib_len) > flash_size) {
+			LOG_ERR("calibration read exceeds flash size");
+			ret = -EINVAL;
+			goto no_calibration;
+		}
 		ret = api->spi_nor_op->transceive(dev, config, op_info);
 		if (ret) {
 			goto no_calibration;
 		}
-		if (!spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
+		if (!spi_calibriation_enable(check_buf, calib_len)) {
 			LOG_ERR("Flash data is monotonous, skip calibration.");
 			ret = -EINVAL;
 			goto no_calibration;
 		}
 	} else {
 		bool detect_success = false;
-		for (int off = 0; off < flash_size; off += info->timing_calibration_per_block_len) {
+		uint32_t stride = info->timing_calibration_per_block_len;
+
+		if (stride == 0U) {
+			stride = calib_len;
+		}
+
+		for (uint32_t off = info->timing_calibration_start_off;off < flash_size; off += stride) {
+			if ((off + calib_len) > flash_size) {
+				break;
+			}
 			op_info->addr = off;
 			ret = api->spi_nor_op->transceive(dev, config, op_info);
 			if (ret) {
 				goto no_calibration;
 			}
-			if (spi_calibriation_enable(check_buf, SPI_CALIB_LEN)) {
+			if (spi_calibriation_enable(check_buf, calib_len)) {
 				LOG_DBG("Flash address: %#x data is valid, continue calibration.", off);
 				detect_success = true;
 				break;
@@ -198,7 +218,7 @@ int spi_timing_calibration(const struct device *dev,
 	}
 
 	write_rx_sample_dly(dev, 0);
-	int low_speed_check_sum = crc32_ieee(check_buf, SPI_CALIB_LEN);
+	int low_speed_check_sum = crc32_ieee(check_buf, calib_len);
 
 	write_baudr(dev, SPI_DW_CLK_DIVIDER(info->clock_frequency, config->frequency));
 	for (uint8_t delay = 0; delay <= RX_SAMPLE_DLY_MAX; delay++) {
@@ -207,7 +227,7 @@ int spi_timing_calibration(const struct device *dev,
 		if (ret) {
 			goto no_calibration;
 		}
-		int high_speed_check_sum = crc32_ieee(check_buf, SPI_CALIB_LEN);
+		int high_speed_check_sum = crc32_ieee(check_buf, calib_len);
 		if (low_speed_check_sum == high_speed_check_sum) {
 			sys_bitarray_set_bit(&delay_bitmap, delay);
 		}
@@ -2170,12 +2190,19 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 		(SPI_CFG_IRQS_MULTIPLE_ERR_LINES(inst)))))	   \
 }
 
+#define SPI_DW_CALIB_DATA_LEN(inst) \
+	DT_INST_PROP_OR(inst, timing_calibration_data_len, 64U)
+
 #define SPI_DW_INIT(inst)                                                                   \
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))                         \
 	SPI_DW_IRQ_HANDLER(inst);                                                           \
 	uint8_t timing_calibration_delay_arr_##inst[] = {                                   \
 		DT_INST_FOREACH_CHILD_STATUS_OKAY_SEP(inst, TIMING_CALIBRATION_INV_, (,))   \
 	};                                                                                  \
+	IF_ENABLED(CONFIG_DCACHE, (static uint8_t spi_dw_calib_buf_##inst[SPI_DW_CALIB_DATA_LEN(inst)] \
+		__aligned(CONFIG_DCACHE_LINE_SIZE);))                                       \
+	IF_DISABLED(CONFIG_DCACHE, (static uint8_t spi_dw_calib_buf_##inst[SPI_DW_CALIB_DATA_LEN(inst)] \
+		__aligned(4);))                                                             \
 	static struct spi_dw_data spi_dw_data_##inst = {                                    \
 		SPI_CONTEXT_INIT_LOCK(spi_dw_data_##inst, ctx),                             \
 		SPI_CONTEXT_INIT_SYNC(spi_dw_data_##inst, ctx),                             \
@@ -2208,7 +2235,9 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 		.timing_calibration_disabled = DT_INST_PROP_OR(inst, timing_calibration_disabled, false),           \
 		.timing_calibration_auto_detect_content_disable = DT_INST_PROP_OR(inst, timing_calibration_auto_detect_content_disable, false), \
 		.timing_calibration_start_off = DT_INST_PROP_OR(inst, timing_calibration_start_offset, 0),          \
-		.timing_calibration_per_block_len = DT_INST_PROP_OR(inst, timing_calibration_per_block_len, SPI_CALIB_LEN),          \
+		.timing_calibration_data_len = SPI_DW_CALIB_DATA_LEN(inst),                                         \
+		.timing_calibration_per_block_len = DT_INST_PROP_OR(inst, timing_calibration_per_block_len, 4096),  \
+		.calib_buf = spi_dw_calib_buf_##inst,                                                                \
 		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),)) \
 		COND_CODE_1(DT_INST_PROP(inst, aux_reg),                                    \
 			(.read_func = aux_reg_read,                                         \
