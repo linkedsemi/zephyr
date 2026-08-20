@@ -2515,7 +2515,7 @@ static int spi_nor_configure(const struct device *dev)
 	}
 
 	rc = spi_nor_rdsr(dev);
-	if (rc > 0 && (rc & SPI_NOR_WIP_BIT)) {
+	if ((rc > 0 && (rc & SPI_NOR_WIP_BIT)) || (rc == -ETIMEDOUT)) {
 		LOG_ERR("%s: flash maybe not present", dev->name);
 		release_device(dev);
 		return -ENODEV;
