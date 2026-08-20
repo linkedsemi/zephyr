@@ -64,6 +64,13 @@ properties:
       The flash data offset for timing calibration.
     default: 0
 
+  timing-calibration-data-len:
+    type: int
+    required: false
+    default: 64
+    description: |
+      Byte length of each calibration probe read.
+
   timing-calibration-per-block-len:
     type: int
     required: false
