@@ -33,7 +33,6 @@ LOG_MODULE_REGISTER(qspi_ls);
 #include "spi_context.h"
 
 #define STG_DAT_PHASE_BYTES_MAX 4096U /* stg_byt_num[15:4]: bytes = byt_num + 1 */
-#define CALIB_DATA_LEN      64U
 #define REF_CAP_DLY   0U
 #define REF_CAP_NEG   0U
 
@@ -60,10 +59,12 @@ struct qspi_ls_config {
 	bool timing_calibration_disabled;
 	bool timing_calibration_auto_detect_content_disable;
 	uint32_t timing_calibration_start_off;
+	uint32_t timing_calibration_data_len;
 	uint32_t timing_calibration_per_block_len;
 	uint32_t timing_calibration_clock_frequency;
 	bool auto_wait_ready;
 	uint16_t auto_wait_interval;
+	uint8_t *calib_buf;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -926,7 +927,8 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	struct qspi_ls_data *data = dev->data;
 	reg_lsqspiv2_t *reg = info->reg;
 
-	uint8_t check_buf[CALIB_DATA_LEN] __aligned(4);
+	uint8_t *check_buf = info->calib_buf;
+	const uint32_t calib_len = info->timing_calibration_data_len;
 	uint8_t valid_bitmap = 0;
 	uint32_t addr = 0;
 	const uint32_t flash_size = op_info->data_len;
@@ -934,6 +936,12 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	uint32_t ref_crc;
 	struct spi_config low_cfg;
 	int ret = 0;
+
+	if (calib_len == 0U) {
+		DEV_ERR(dev, "timing_calibration_data_len is zero, skip calibration.");
+		ret = -EINVAL;
+		goto no_calibration;
+	}
 
 	if (info->timing_calibration_disabled) {
 		goto no_calibration;
@@ -959,11 +967,16 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 
 	if (info->timing_calibration_auto_detect_content_disable) {
 		addr = info->timing_calibration_start_off;
-		ret = calib_read_flash(dev, op_info, addr, check_buf, CALIB_DATA_LEN);
+		if ((addr + calib_len) > flash_size) {
+			DEV_ERR(dev, "calibration read exceeds flash size");
+			ret = -EINVAL;
+			goto no_calibration;
+		}
+		ret = calib_read_flash(dev, op_info, addr, check_buf, calib_len);
 		if (ret != 0) {
 			goto no_calibration;
 		}
-		if (!calib_buf_valid(check_buf, CALIB_DATA_LEN)) {
+		if (!calib_buf_valid(check_buf, calib_len)) {
 			DEV_ERR(dev, "Flash data is monotonous, skip calibration.");
 			ret = -EINVAL;
 			goto no_calibration;
@@ -973,16 +986,16 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 		bool found = false;
 
 		if (stride == 0U) {
-			stride = CALIB_DATA_LEN;
+			stride = calib_len;
 		}
 
-		for (uint32_t off = 0; off < flash_size; off += stride) {
-			if ((off + CALIB_DATA_LEN) > flash_size) {break;}
-			ret = calib_read_flash(dev, op_info, off, check_buf, CALIB_DATA_LEN);
+		for (uint32_t off = info->timing_calibration_start_off;off < flash_size; off += stride) {
+			if ((off + calib_len) > flash_size) {break;}
+			ret = calib_read_flash(dev, op_info, off, check_buf, calib_len);
 			if (ret != 0) {
 				goto no_calibration;
 			}
-			if (calib_buf_valid(check_buf, CALIB_DATA_LEN)) {
+			if (calib_buf_valid(check_buf, calib_len)) {
 				DEV_DBG(dev, "calibration data at 0x%x", off);
 				addr = off;
 				found = true;
@@ -997,7 +1010,7 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	}
 
 	stg_capture_set(reg, REF_CAP_NEG, REF_CAP_DLY);
-	ref_crc = crc32_ieee(check_buf, CALIB_DATA_LEN);
+	ref_crc = crc32_ieee(check_buf, calib_len);
 
 	ret = apply_clk(dev, config);
 	if (ret != 0) {
@@ -1008,12 +1021,12 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 		uint32_t crc;
 
 		stg_capture_set(reg, calib_combos[i].neg, calib_combos[i].dly);
-		ret = calib_read_flash(dev, op_info, addr, check_buf, CALIB_DATA_LEN);
+		ret = calib_read_flash(dev, op_info, addr, check_buf, calib_len);
 		if (ret != 0) {
 			/* Capture combo out of window at target Hz — skip it. */
 			continue;
 		}
-		crc = crc32_ieee(check_buf, CALIB_DATA_LEN);
+		crc = crc32_ieee(check_buf, calib_len);
 		if (crc == ref_crc) {
 			valid_bitmap |= BIT(i);
 		}
@@ -1408,9 +1421,14 @@ static int qspi_ls_init(const struct device *dev)
 		irq_enable(DT_INST_IRQN(inst));					\
 }
 
+#define QSPI_LS_CALIB_DATA_LEN(inst) \
+	DT_INST_PROP_OR(inst, timing_calibration_data_len, 64)
+
 #define QSPI_LS_INIT(inst)							\
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))		\
 	QSPI_LS_IRQ_HANDLER(inst);						\
+	static uint8_t qspi_ls_calib_buf_##inst[QSPI_LS_CALIB_DATA_LEN(inst)]	\
+		__aligned(4);							\
 	static struct qspi_ls_data qspi_ls_data_##inst = {			\
 		SPI_CONTEXT_INIT_LOCK(qspi_ls_data_##inst, ctx),		\
 		SPI_CONTEXT_INIT_SYNC(qspi_ls_data_##inst, ctx),		\
@@ -1432,6 +1450,7 @@ static int qspi_ls_init(const struct device *dev)
 				false),						\
 		.timing_calibration_start_off = DT_INST_PROP_OR(inst,		\
 			timing_calibration_start_offset, 0),			\
+		.timing_calibration_data_len = QSPI_LS_CALIB_DATA_LEN(inst),	\
 		.timing_calibration_per_block_len = DT_INST_PROP_OR(inst,	\
 			timing_calibration_per_block_len, 4096),		\
 		.timing_calibration_clock_frequency = DT_INST_PROP_OR(inst,	\
@@ -1440,6 +1459,7 @@ static int qspi_ls_init(const struct device *dev)
 			auto_wait_ready, false),				\
 		.auto_wait_interval = DT_INST_PROP_OR(inst,			\
 			auto_wait_interval, 1000),				\
+		.calib_buf = qspi_ls_calib_buf_##inst,				\
 		IF_ENABLED(CONFIG_PINCTRL,					\
 			(.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))	\
 		IF_ENABLED(DT_HAS_CLOCKS(inst),					\
