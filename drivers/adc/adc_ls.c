@@ -309,7 +309,7 @@ static void ADC_Sample_Data_Path_set(const struct adc_ls_config * config, uint8_
         byp_cfg_tmp |= 1<<16<< channel_id;
     }
 
-    config->reg->BYP_CFG |= byp_cfg_tmp;
+    config->reg->BYP_CFG = byp_cfg_tmp;
 }
 
 static void ADC_Ch_cfg_Reg_SetConfig(reg_adc_t* reg, uint8_t channel_id)
