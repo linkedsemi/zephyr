@@ -212,7 +212,7 @@ static void ADC_LoopGetValue(const struct device *dev)
 
     uint8_t fif_lvl_num = reg->FIFO_FLVL;
 
-    for(uint8_t read_count = 0; read_count <= fif_lvl_num; read_count++)
+    for(uint8_t read_count = 0; read_count < fif_lvl_num; read_count++)
     {
 
        if (reg->INTR_R & ADC_INTR_FIF_ERR_MASK) {
