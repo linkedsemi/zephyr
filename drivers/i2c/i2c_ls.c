@@ -351,6 +351,35 @@ static void i2c_reenable(const struct device *dev, bool master)
 {
     const struct i2c_ls_config *dev_config = dev->config;
     struct i2c_ls_data *dev_data = dev->data;
+
+    /* Force FSM recovery before disabling PE.
+     * i2cdump sends many repeated START/STOP sequences that can leave
+     * the hardware FSM in M_HOLD/M_PEC/M_STOP state, causing subsequent
+     * transfers to fail with "Device or resource busy".
+     *
+     * Strategy: send explicit STOP to clear the FSM, then wait for IDLE.
+     */
+    {
+        /* Try to send STOP to force FSM back to IDLE */
+        uint32_t cr2 = dev_config->reg->CR2_0_1;
+        cr2 |= I2C_CR2_STOP_MASK;
+        dev_config->reg->CR2_0_1 = cr2;
+        k_usleep(100);
+        dev_config->reg->CR2_0_1 = cr2 & ~I2C_CR2_STOP_MASK;
+    }
+
+    /* Wait for FSM to reach IDLE (with longer timeout) */
+    {
+        uint32_t timeout = 10000;  /* 100ms total */
+        while (timeout-- &&
+               (REG_FIELD_RD(dev_config->reg->STAT, I2C_STAT_FSM_STAT) != I2C_STAT_FSM_ST_IDLE)) {
+            k_usleep(10);
+        }
+        if (timeout == 0) {
+            DEV_WRN(dev, "FSM still not IDLE after 100ms, state=%d",
+                    REG_FIELD_RD(dev_config->reg->STAT, I2C_STAT_FSM_STAT));
+        }
+    }
     dev_config->reg->CR1 &= ~I2C_CR1_PE_MASK;
     if (master) {
         uint32_t i2c_clk = 0;

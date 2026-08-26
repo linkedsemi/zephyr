@@ -7,6 +7,7 @@
 #include <stdarg.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/fs/fs_sys.h>
+#include <zephyr/fs/devfs.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/fdtable.h>
@@ -30,13 +31,6 @@ struct devfs_node
     const char *abs_path;
     int is_dir;
     char name[MAX_FILE_NAME+1];
-};
-
-struct devfs_file_object
-{
-    const struct fs_file_system_t *ops;
-    struct fs_file_t filp;
-    char file_name[MAX_FILE_NAME+1];
 };
 
 struct devfs
