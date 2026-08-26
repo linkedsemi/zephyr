@@ -587,8 +587,13 @@ static int ADC_LoopChannelConfig(const struct device *dev, const struct adc_chan
         return -EINVAL;
     }
 
+    int64_t _start = k_uptime_get();
     while(REG_FIELD_RD(reg->FIFO_FLVL, ADC_FIFO_FLVL) != 0){
         REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIFO_CLR, 1);
+        if ((k_uptime_get() - _start) > 100) {
+            LOG_ERR("ADC FIFO clear timeout");
+            return -ETIMEDOUT;
+        }
     }
 
     REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIF_SEQLEN, config->nbr_of_conversion - 1);
