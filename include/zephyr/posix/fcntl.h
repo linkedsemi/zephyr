@@ -37,6 +37,15 @@ extern "C" {
 int open(const char *name, int flags, ...);
 int fcntl(int fildes, int cmd, ...);
 
+/*
+ * Close every posix file fd whose devfs char-device object equals
+ * @p target_filep. Used by char-device drivers (e.g. i2c-dev) to reclaim fds
+ * left open after a command aborted via longjmp/exit() and skipped its own
+ * close(). Only a pointer comparison is performed, so it is safe for any fd
+ * state. Returns the number of fds closed.
+ */
+int zvfs_close_fds_with_filep(const void *target_filep);
+
 #ifdef __cplusplus
 }
 #endif

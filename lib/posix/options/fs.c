@@ -17,6 +17,7 @@
 #include <zephyr/posix/fcntl.h>
 #include <zephyr/fs/fs.h>
 #include <zephyr/fs/fs_sys.h>
+#include <zephyr/fs/devfs.h>
 
 int zvfs_fstat(int fd, struct stat *buf);
 
@@ -142,6 +143,46 @@ out_err:
 
 out:
 	return fd;
+}
+
+/* zvfs_close() is internal to the fdtable and not yet publicly declared */
+extern int zvfs_close(int fd);
+
+int zvfs_close_fds_with_filep(const void *target_filep)
+{
+	int closed = 0;
+
+	if (target_filep == NULL) {
+		return 0;
+	}
+
+	/*
+	 * Close every fd whose devfs char-device object matches @p target_filep.
+	 * The fdtable object for a posix file is a posix_fs_desc; its
+	 * fs_file_t.filep points at the devfs file object (devfs_file_object),
+	 * whose embedded fs_file_t.filp.filep is the driver's per-device struct
+	 * (e.g. i2c_device).
+	 * We only descend the chain for fds whose vtable is fs_fd_op_vtable, so
+	 * sockets and other non-posix-fs fds are skipped without dereferencing
+	 * their (incompatible) object layouts.
+	 */
+	for (int fd = 0; fd < CONFIG_ZVFS_OPEN_MAX; fd++) {
+		struct posix_fs_desc *P = zvfs_get_fd_obj(fd, &fs_fd_op_vtable, 0);
+
+		if (P == NULL) {
+			continue;
+		}
+
+		struct devfs_file_object *fo =
+			(struct devfs_file_object *)P->file.filep;
+
+		if (fo != NULL && fo->filp.filep == target_filep) {
+			zvfs_close(fd);
+			closed++;
+		}
+	}
+
+	return closed;
 }
 
 static int fs_close_vmeth(void *obj)
