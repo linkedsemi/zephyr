@@ -22,22 +22,15 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
 
     if (pin_desc.pin_attr.bias_pull_down) {
         io_pull_write(pin, IO_PULL_DOWN);
-    }
-
-    if (pin_desc.pin_attr.bias_pull_up) {
+    } else if (pin_desc.pin_attr.bias_pull_up
+        || pin_desc.pin_attr.bias_pull_up0) {
         io_pull_write(pin, IO_PULL_UP);
-    }
-
-    if (pin_desc.pin_attr.bias_pull_up0) {
-        io_pull_write(pin, IO_PULL_UP);
-    }
-
-    if (pin_desc.pin_attr.bias_pull_up1) {
+    } else if (pin_desc.pin_attr.bias_pull_up1) {
         io_pull_write(pin, IO_PULL_UP1);
-    }
-
-    if (pin_desc.pin_attr.bias_pull_up2) {
+    } else if (pin_desc.pin_attr.bias_pull_up2) {
         io_pull_write(pin, IO_PULL_UP2);
+    } else {
+        io_pull_write(pin, IO_PULL_DISABLE);
     }
 
     if (pin_desc.pin_attr.input_enable) {
