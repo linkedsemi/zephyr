@@ -263,7 +263,13 @@ static void peripheral_init()
     REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_PSRAM_FLT, 0x2); /* bypass */
 #endif
     REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_USB2, 0x4); /* dpll_48M */
-    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_I3C, 0x2); /* clk_pbus4: 0x4  dpll: 0x2 */
+    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_I3C, 0x1);
+    /*
+    i3c clock
+        clk_pbus4: 0x4 , 75Mhz
+        dpll: 0x2 , 50Mhz
+        hsi：0x1 , 25Mhz
+    */
     /* SYSC_APP_AWO->PD_AWO_CLK_CTRL1 */
 
 
