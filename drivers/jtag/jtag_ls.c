@@ -38,8 +38,6 @@ LOG_MODULE_REGISTER(jtag_ls, LOG_LEVEL_DBG);
 
 #define JTAG_WRITE_DATA_ENABLE  (1)
 #define JTAG_START_SEND_DATA    (0)
-#define JTAG_TXD_CAP_DLY        (1)
-#define JTAG_RXD_CAP_DLY        (1)
 
 struct jtag_info {
     enum jtag_ls_tap_states tap_state;
@@ -59,6 +57,8 @@ struct jtag_ls_config {
     uint8_t irq_num;
     uint32_t clock_source;
     uint32_t bus_frequency;
+    uint32_t tx_delay;
+    uint32_t rx_delay;
     struct gpio_dt_spec tck_gpios;
     struct gpio_dt_spec tms_gpios;
     struct gpio_dt_spec tdi_gpios;
@@ -77,6 +77,8 @@ struct jtag_ls_data {
     uint8_t tms_dev;
     uint32_t count;
 };
+
+int jtag_ls_freq_set(const struct device *dev, uint32_t freq);
 
 void ls_jtag_isr(void *arg)
 {
@@ -106,6 +108,9 @@ static int jtag_ls_init(const struct device *dev)
     struct jtag_ls_data *const data = dev->data;
     reg_mjtag_t *const reg = config->reg;
     __maybe_unused int ret;
+
+    k_sem_init(&data->trans_sync_sem, 0, 1);
+    k_sem_init(&data->lock, 1, 1);
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (config->ccfg.cctl_dev) {
@@ -172,30 +177,30 @@ static int jtag_ls_init(const struct device *dev)
     const uint32_t max_div = MJTAG_CTRL_TCK_DIVIDER_MASK >> MJTAG_CTRL_TCK_DIVIDER_POS;
 #if defined(CONFIG_CLOCK_CONTROL)
     if (config->ccfg.cctl_dev) {
-        const struct device *clk_dev = config->ccfg.cctl_dev;
-        uint32_t rate;
-        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
-
-        uint32_t div = config->bus_frequency ?
-                        (rate / config->bus_frequency) : max_div;
-
-        if (div > max_div) {
-            LOG_ERR("bus_frequence value: %d error", config->bus_frequency);
-            return -EINVAL;
+        if (config->bus_frequency) {
+            ret = jtag_ls_freq_set(dev, config->bus_frequency);
+            if (ret != 0) {
+                return ret;
+            }
+        } else {
+            reg->CTRL |= FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, max_div);
         }
-
-        reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, div);
     }
 #else
-    reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, max_div);
+    reg->CTRL |= FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, max_div);
 #endif
 
-    k_sem_init(&data->trans_sync_sem, 0, 1);
-    k_sem_init(&data->lock, 1, 1);
     config->irq_config_func(dev);
+    if (config->tx_delay > (MJTAG_CTRL_TXD_CAP_DLY_MASK >> MJTAG_CTRL_TXD_CAP_DLY_POS)) {
+        LOG_WRN("tx-delay exceed field max %d", (MJTAG_CTRL_TXD_CAP_DLY_MASK >> MJTAG_CTRL_TXD_CAP_DLY_POS));
+    }
+    if (config->rx_delay > (MJTAG_CTRL_RXD_CAP_DLY_MASK >> MJTAG_CTRL_RXD_CAP_DLY_POS)) {
+        LOG_WRN("rx-delay exceed field max %d", (MJTAG_CTRL_RXD_CAP_DLY_MASK >> MJTAG_CTRL_RXD_CAP_DLY_POS));
+    }
     reg->INTR_MSK = 0x0;
     reg->INTR_CLR = MJTAG_INTR_ALL_MASK;
-    reg->CTRL = READ_REG(reg->CTRL) | FIELD_BUILD(MJTAG_CTRL_TXD_CAP_DLY, JTAG_TXD_CAP_DLY) | FIELD_BUILD(MJTAG_CTRL_RXD_CAP_DLY, JTAG_RXD_CAP_DLY);
+    REG_FIELD_WR(reg->CTRL, MJTAG_CTRL_TXD_CAP_DLY, config->tx_delay);
+    REG_FIELD_WR(reg->CTRL, MJTAG_CTRL_RXD_CAP_DLY, config->rx_delay);
     reg->TDO_FT = 0;
     reg->TRST = 0x01;
     /* Test-Logic Reset state */
@@ -394,14 +399,17 @@ static enum jtag_ls_tap_states jtag_ls_get_tap_state(void)
 int jtag_ls_freq_get(const struct device *dev, uint32_t *freq)
 {
     const struct jtag_ls_config *const config = dev->config;
+    struct jtag_ls_data *const data = dev->data;
     const struct device *clk_dev = config->ccfg.cctl_dev;
     reg_mjtag_t *const reg = config->reg;
     uint32_t rate, div;
 
     if (clk_dev) {
+        k_sem_take(&data->lock, K_FOREVER);
         div = REG_FIELD_RD(reg->CTRL, MJTAG_CTRL_TCK_DIVIDER);
         clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
         *freq = rate / div;
+        k_sem_give(&data->lock);
         return 0;
     }
 
@@ -411,18 +419,29 @@ int jtag_ls_freq_get(const struct device *dev, uint32_t *freq)
 int jtag_ls_freq_set(const struct device *dev, uint32_t freq)
 {
     const struct jtag_ls_config *const config = dev->config;
+    struct jtag_ls_data *const data = dev->data;
     const struct device *clk_dev = config->ccfg.cctl_dev;
     reg_mjtag_t *const reg = config->reg;
-    uint32_t rate, div;
+    uint32_t rate;
+    uint32_t div;
 
     if (clk_dev) {
-        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
-        div = rate / freq;
-        if (div > MJTAG_CTRL_TCK_DIVIDER_MASK) {
-            LOG_ERR("bus_frequence value: %d error", config->bus_frequency);
+        if (freq == 0) {
             return -EINVAL;
         }
-        reg->CTRL = FIELD_BUILD(MJTAG_CTRL_TCK_DIVIDER, div);
+
+        k_sem_take(&data->lock, K_FOREVER);
+
+        clock_control_get_rate(clk_dev, (clock_control_subsys_t)&config->clock_source, &rate);
+        div = rate / freq;
+        if (div > (MJTAG_CTRL_TCK_DIVIDER_MASK >> MJTAG_CTRL_TCK_DIVIDER_POS)) {
+            LOG_ERR("frequency value: %d error(bus_frequency: %d)", freq, config->bus_frequency);
+            k_sem_give(&data->lock);
+            return -EINVAL;
+        }
+
+        REG_FIELD_WR(reg->CTRL, MJTAG_CTRL_TCK_DIVIDER, div);
+        k_sem_give(&data->lock);
         return 0;
     }
 
@@ -742,6 +761,8 @@ static const struct jtag_ls_config jtag_ls_cfg_##index = {  \
     .irq_config_func = jtag_ls_irq_config_func_##index,     \
     .clock_source = DT_INST_PROP(index, clock_source),      \
     .bus_frequency = DT_INST_PROP(index, bus_frequency),    \
+    .tx_delay = DT_INST_PROP_OR(index, tx_delay, 0),        \
+    .rx_delay = DT_INST_PROP_OR(index, rx_delay, 0),        \
     .tck_gpios = GPIO_DT_SPEC_INST_GET(index, tck_gpios),   \
     .tms_gpios = GPIO_DT_SPEC_INST_GET(index, tms_gpios),   \
     .tdi_gpios = GPIO_DT_SPEC_INST_GET(index, tdi_gpios),   \
