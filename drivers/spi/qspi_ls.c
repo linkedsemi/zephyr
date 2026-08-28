@@ -19,6 +19,7 @@ LOG_MODULE_REGISTER(qspi_ls);
 #include <zephyr/drivers/reset.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/spi_nor.h>
+#include <zephyr/drivers/qspi_ls.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/barrier.h>
 #include <zephyr/sys/crc.h>
@@ -58,6 +59,7 @@ struct qspi_ls_config {
 	uint8_t fifo_depth;
 	bool timing_calibration_disabled;
 	bool timing_calibration_auto_detect_content_disable;
+	bool timing_calibration_from_end;
 	uint32_t timing_calibration_start_off;
 	uint32_t timing_calibration_data_len;
 	uint32_t timing_calibration_per_block_len;
@@ -85,6 +87,7 @@ struct qspi_ls_data {
 	} xfer;
 	uint8_t calib_combo;
 	bool auto_active;
+	enum qspi_timing_calib_status calib_status;
 };
 
 #define STG_IRQ_ALL \
@@ -544,6 +547,9 @@ static void stg_tx_irq_fill(struct qspi_ls_data *data, reg_lsqspiv2_t *reg,
 		reg->FIFO_WDAT = *xfer->tx_ptr++;
 		xfer->tx_remain -= 4;
 	}
+	if (reg->FIFO_FLVL == 0 && xfer->tx_remain <= 0) {
+		reg->INTR_MSK &= ~LSQSPIV2_INT_FIFO_TX_MASK;
+	}
 }
 
 /* Drop late ISR completions and pending IRQs before a new STIG op. */
@@ -756,8 +762,8 @@ static int stg_read_write(const struct device *dev, struct lsqspiv2_stg_cfg *cfg
 		}
 	}
 
-	stg_irq_unmask(reg, irq_mask);
 	reg->STG_REQ_T = 1;
+	stg_irq_unmask(reg, irq_mask);
 
 	ret = k_sem_take(&data->done_sem, K_MSEC(STG_XFER_TIMEOUT_MS));
 
@@ -944,15 +950,18 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	}
 
 	if (info->timing_calibration_disabled) {
+		data->calib_status = QSPI_TIMING_CALIB_UNUSED;
 		goto no_calibration;
 	}
 
 	if (calib_hz > config->frequency) {
 		data->calib_combo = 1U;
+		data->calib_status = QSPI_TIMING_CALIB_UNUSED;
 		goto no_calibration;
 	}
 
-	if (data->calib_combo != 0U || stg_capture_hw_applied(reg)) {
+	if ((data->calib_combo != 0U && data->calib_combo != CALIB_COMBO_INVALID) ||
+	    (data->calib_combo == 0U && stg_capture_hw_applied(reg))) {
 		DEV_INF(dev, "Already executed calibration.");
 		goto no_calibration;
 	}
@@ -966,11 +975,20 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	stg_capture_set(reg, REF_CAP_NEG, REF_CAP_DLY);
 
 	if (info->timing_calibration_auto_detect_content_disable) {
-		addr = info->timing_calibration_start_off;
-		if ((addr + calib_len) > flash_size) {
+		if (info->timing_calibration_from_end) {
+			if (calib_len > flash_size) {
+				DEV_ERR(dev, "auto disable calibration from end beyond flash size");
+				ret = -EINVAL;
+				goto no_calibration;
+			}
+			addr = flash_size - calib_len;
+		} else {
+			addr = info->timing_calibration_start_off;
+			if ((addr + calib_len) > flash_size) {
 			DEV_ERR(dev, "calibration read exceeds flash size");
-			ret = -EINVAL;
-			goto no_calibration;
+				ret = -EINVAL;
+				goto no_calibration;
+			}
 		}
 		ret = calib_read_flash(dev, op_info, addr, check_buf, calib_len);
 		if (ret != 0) {
@@ -1057,11 +1075,13 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 		if (best_len == ARRAY_SIZE(calib_combos)) {
 			DEV_INF(dev, "useless calibration, all capture delay ok");
 			data->calib_combo = 1U;
+			data->calib_status = QSPI_TIMING_CALIB_SUCCESS;
 			stg_capture_apply_calibrated(dev);
 		} else if (best_len > 0) {
 			size_t pick = best_start + (best_len >> 1);
 
 			data->calib_combo = (uint8_t)pick + 1U;
+			data->calib_status = QSPI_TIMING_CALIB_SUCCESS;
 			stg_capture_apply_calibrated(dev);
 			DEV_INF(dev, "timing calibration success: combo %zu "
 				"(cap_neg=%u cap_dly=%u) @ %u Hz",
@@ -1079,6 +1099,7 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 no_calibration:
 	if (ret != 0) {
 		data->calib_combo = CALIB_COMBO_INVALID;
+		data->calib_status = QSPI_TIMING_CALIB_FAILED;
 		low_cfg = *config;
 		low_cfg.frequency = calib_hz;
 		(void)apply_clk(dev, &low_cfg);
@@ -1088,6 +1109,18 @@ no_calibration:
 	}
 
 	return ret;
+}
+
+int qspi_timing_calibration_status(const struct device *dev)
+{
+	const struct qspi_ls_data *data;
+
+	if (dev == NULL) {
+		return -EINVAL;
+	}
+
+	data = dev->data;
+	return (int)data->calib_status;
 }
 
 static int stg_cmd(const struct device *dev, struct spi_nor_op_info *op,
@@ -1448,6 +1481,8 @@ static int qspi_ls_init(const struct device *dev)
 			DT_INST_PROP_OR(inst,					\
 				timing_calibration_auto_detect_content_disable,	\
 				false),						\
+		.timing_calibration_from_end = DT_INST_PROP_OR(inst,		\
+			timing_calibration_from_end, false),			\
 		.timing_calibration_start_off = DT_INST_PROP_OR(inst,		\
 			timing_calibration_start_offset, 0),			\
 		.timing_calibration_data_len = QSPI_LS_CALIB_DATA_LEN(inst),	\
