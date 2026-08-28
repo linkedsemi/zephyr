@@ -156,6 +156,10 @@ void ls_otbn_module_reset(void)
     SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_CLR_OTBN_MASK;
     SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_SET_OTBN_MASK;
     SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_SET_OTBN_MASK;
+
+    /* Reset leaves the IMEM image unverified; mark it unknown so the next
+     * load_firmware() reloads instead of trusting stale shared state. */
+    imem_firmware = OTBN_FIRMWARE_UNUSED;
 }
 
 static int ls_otbn_interrupt_init(void)
