@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(ls_otbn, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
 
 #define MBEDTLS_ERR_LS_OTBN_BUSY -0x135
 #ifndef CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
-#define OTBN_OPERATION_TIMEOUT_MS 10000
+#define OTBN_OPERATION_TIMEOUT_MS 60000
 #else
 #define OTBN_OPERATION_TIMEOUT_MS CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
 #endif
@@ -148,6 +148,14 @@ void ls_otbn_module_init(void)
     HAL_OTBN_DMEM_Set(0, 0, OTBN_DMEM_SIZE);
     imem_firmware = OTBN_FIRMWARE_UNUSED;
     otbn_inited = true;
+}
+
+void ls_otbn_module_reset(void)
+{
+    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_CLR_OTBN_MASK;
+    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_CLR_OTBN_MASK;
+    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_SET_OTBN_MASK;
+    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_SET_OTBN_MASK;
 }
 
 static int ls_otbn_interrupt_init(void)
@@ -304,6 +312,7 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
     rc = k_sem_take(&wait_complete, K_MSEC(OTBN_OPERATION_TIMEOUT_MS));
     if (rc != 0) {
         if (rc == -EAGAIN) {
+            ls_otbn_module_reset();
             LOG_ERR("%s timeout", __func__);
             rc = -ETIMEDOUT;
         }
@@ -319,6 +328,7 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
     uint32_t start = k_uptime_get_32();
     while (!HAL_OTBN_In_Idle_State()) {
         if (k_uptime_get_32() - start > OTBN_OPERATION_TIMEOUT_MS) {
+            ls_otbn_module_reset();
             LOG_ERR("%s: wait idle timeout", __func__);
             return -ETIMEDOUT;
         }
