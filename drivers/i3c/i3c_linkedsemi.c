@@ -2495,7 +2495,7 @@ static int ls_i3c_ibi_enable(const struct device *dev, struct i3c_device_desc *t
 	base->DEVRX[set_idx] = write_value;
 	/* Enable target IBI event by ENEC command */
 	i3c_events.events |= I3C_CCC_EVT_INTR;  //|I3C_CCC_EVT_CR;
-	i3c_ccc_do_events_set(target, true, &i3c_events);
+	ret = i3c_ccc_do_events_set(target, true, &i3c_events);
 	if (ret != 0) {
 		LOG_ERR("Error sending IBI ENEC for 0x%02x (%d)", target->dynamic_addr, ret);
 	}
