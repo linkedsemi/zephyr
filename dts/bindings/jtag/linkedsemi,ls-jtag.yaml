@@ -13,6 +13,20 @@ properties:
     type: int
     description: "jtag master bus frequency"
 
+  tx-delay:
+    type: int
+    default: 0
+    description: |
+      TXD_CAP_DLY register value (0..31), delay = reg + 1 APB clock
+      cycles. Tuned manually per board, no frequency auto-calculation.
+
+  rx-delay:
+    type: int
+    default: 0
+    description: |
+      RXD_CAP_DLY register value (0..31), delay = reg + 1 APB clock
+      cycles. Tuned manually per board, no frequency auto-calculation.
+
   tck-gpios:
     type: phandle-array
     description: "tck simulated by gpio"
