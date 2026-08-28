@@ -159,6 +159,30 @@ bool ls_otbn_session_is_owner(void);
 int ls_otbn_session_release(void);
 
 /**
+ * @brief Mark @p firmware_id as the firmware currently held in OTBN IMEM.
+ *
+ * Modules that program IMEM with a complete firmware image must call this
+ * after a successful write, so that the shared IMEM state stays accurate.
+ * The state persists across sessions: IMEM is hardware memory, it is not
+ * cleared by session acquire/release. It is reset when the OTBN module is
+ * (re)initialized, since that resets the core.
+ *
+ * @param firmware_id Firmware image now resident in IMEM.
+ */
+void ls_otbn_imem_firmware_confirm(otbn_firmware_t firmware_id);
+
+/**
+ * @brief Get the firmware currently held in OTBN IMEM per the last
+ *        @ref ls_otbn_imem_firmware_confirm call.
+ *
+ * Modules that cache the loaded firmware (hash, ECC) use this to decide
+ * whether IMEM still holds their image or must be reloaded.
+ *
+ * @return Current IMEM firmware, or OTBN_FIRMWARE_UNUSED if unknown.
+ */
+otbn_firmware_t ls_otbn_imem_firmware_get(void);
+
+/**
  * @brief Send a command to OTBN and wait for completion.
  *
  * The caller must hold an active OTBN session. The function blocks until

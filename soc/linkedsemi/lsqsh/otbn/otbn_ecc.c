@@ -11,8 +11,6 @@
 #include "reg_sysc_sec_cpu.h"
 #include "qsh.h"
 
-static otbn_firmware_t cur_curve = OTBN_FIRMWARE_UNUSED;
-
 int ls_otbn_load_curve_fireware(otbn_firmware_t curve_id)
 {
     int err = 0;
@@ -29,11 +27,13 @@ int ls_otbn_load_curve_fireware(otbn_firmware_t curve_id)
         return -1;
     }
 
-    if(cur_curve == curve_id)
-    {
+    /* IMEM content is tracked across sessions (ls_otbn_imem_firmware_*):
+     * another module (hash/RSA) may have replaced the image since the
+     * last curve load, so consult the shared state instead of a local
+     * cache that other loaders cannot see. */
+    if (ls_otbn_imem_firmware_get() == curve_id) {
         return 0;
     }
-    cur_curve = curve_id;
     switch (curve_id)
     {
     case OTBN_FIRMWARE_ECDSA_P256:
@@ -65,6 +65,10 @@ int ls_otbn_load_curve_fireware(otbn_firmware_t curve_id)
     err |= HAL_OTBN_DMEM_Set(0, 0, dmem_end);
     err |= HAL_OTBN_IMEM_Write(0, imem_image, imem_size);
     err |= HAL_OTBN_DMEM_Write(0, dmem_image, dmem_size);
+
+    if (err == 0) {
+        ls_otbn_imem_firmware_confirm(curve_id);
+    }
 
     return err;
 }

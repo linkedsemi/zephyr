@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(ls_otbn, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
 
 #define MBEDTLS_ERR_LS_OTBN_BUSY -0x135
 #ifndef CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
-#define OTBN_OPERATION_TIMEOUT_MS 10000
+#define OTBN_OPERATION_TIMEOUT_MS 60000
 #else
 #define OTBN_OPERATION_TIMEOUT_MS CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
 #endif
@@ -26,6 +26,10 @@ static K_SEM_DEFINE(wait_complete, 0, 1);
 static bool otbn_inited;
 static volatile struct k_thread *otbn_owner_thread = NULL;
 static otbn_firmware_t current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
+/* Firmware image currently held in IMEM, per the last confirm call.
+ * IMEM persists across sessions (acquire/release only arbitrate ownership),
+ * so this state must too. Reset on module init/deinit, which reset the core. */
+static otbn_firmware_t imem_firmware = OTBN_FIRMWARE_UNUSED;
 
 static uint32_t ls_otbn_default_prng_cb(void)
 {
@@ -142,7 +146,20 @@ void ls_otbn_module_init(void)
     irq_enable(OTBN_SYSC_IRQN);
     irq_enable(OBTN_IRQN);
     HAL_OTBN_DMEM_Set(0, 0, OTBN_DMEM_SIZE);
+    imem_firmware = OTBN_FIRMWARE_UNUSED;
     otbn_inited = true;
+}
+
+void ls_otbn_module_reset(void)
+{
+    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_CLR_OTBN_MASK;
+    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_CLR_OTBN_MASK;
+    SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_SET_OTBN_MASK;
+    SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_SET_OTBN_MASK;
+
+    /* Reset leaves the IMEM image unverified; mark it unknown so the next
+     * load_firmware() reloads instead of trusting stale shared state. */
+    imem_firmware = OTBN_FIRMWARE_UNUSED;
 }
 
 static int ls_otbn_interrupt_init(void)
@@ -198,6 +215,7 @@ int ls_otbn_module_deinit(void)
     otbn_inited = false;
     otbn_owner_thread = NULL;
     current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
+    imem_firmware = OTBN_FIRMWARE_UNUSED;
     irq_unlock(key);
     LOG_INF("OTBN has completed the shutdown.");
     k_mutex_unlock(&otbn_lock);
@@ -254,12 +272,22 @@ int ls_otbn_session_release(void)
         LOG_ERR("OTBN release by non-owner");
         return -EBUSY;
     }
-             
+
 
     otbn_owner_thread = NULL;
     current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
     k_mutex_unlock(&otbn_lock);
     return 0;
+}
+
+void ls_otbn_imem_firmware_confirm(otbn_firmware_t firmware_id)
+{
+    imem_firmware = firmware_id;
+}
+
+otbn_firmware_t ls_otbn_imem_firmware_get(void)
+{
+    return imem_firmware;
 }
 
 bool ls_otbn_session_is_owner(void)
@@ -288,6 +316,7 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
     rc = k_sem_take(&wait_complete, K_MSEC(OTBN_OPERATION_TIMEOUT_MS));
     if (rc != 0) {
         if (rc == -EAGAIN) {
+            ls_otbn_module_reset();
             LOG_ERR("%s timeout", __func__);
             rc = -ETIMEDOUT;
         }
@@ -303,6 +332,7 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
     uint32_t start = k_uptime_get_32();
     while (!HAL_OTBN_In_Idle_State()) {
         if (k_uptime_get_32() - start > OTBN_OPERATION_TIMEOUT_MS) {
+            ls_otbn_module_reset();
             LOG_ERR("%s: wait idle timeout", __func__);
             return -ETIMEDOUT;
         }
