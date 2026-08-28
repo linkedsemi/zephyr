@@ -1661,13 +1661,20 @@ static int ls_i3c_do_ccc(const struct device *dev,
 			}
 		}
 
-		if(transfer_num != 0)
+		if (transfer_num != 0)
 		{
-			LOG_ERR("%s: CCC[0x%02x] target 0x%02x amount mismatch, remaining %d",
-				dev->name, payload->ccc.id,
-				(cur_tgt_idx <= payload->targets.num_targets) ? cur_tgt->addr : 0,
-				transfer_num);
-			ret = -EIO;
+			/* MIPI v1.1: GETCAPS 可回 2/3/4 字节（v1.0 target 只回第 1 字节，
+			* 不产生 CE0）；GETMXDS 可回 2 或 5 字节——短读属协议允许，
+			* 实际收到几字节由调用方从 num_xfer 读取，不视为错误。 */
+			if ((payload->ccc.id != I3C_CCC_GETCAPS) &&
+				(payload->ccc.id != I3C_CCC_GETMXDS))
+			{
+				LOG_ERR("%s: CCC[0x%02x] target 0x%02x amount mismatch, remaining %d",
+					dev->name, payload->ccc.id,
+					(cur_tgt_idx <= payload->targets.num_targets) ? cur_tgt->addr : 0,
+					transfer_num);
+				ret = -EIO;
+			}
 		}
 	}
 
