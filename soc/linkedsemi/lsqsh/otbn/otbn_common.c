@@ -26,6 +26,10 @@ static K_SEM_DEFINE(wait_complete, 0, 1);
 static bool otbn_inited;
 static volatile struct k_thread *otbn_owner_thread = NULL;
 static otbn_firmware_t current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
+/* Firmware image currently held in IMEM, per the last confirm call.
+ * IMEM persists across sessions (acquire/release only arbitrate ownership),
+ * so this state must too. Reset on module init/deinit, which reset the core. */
+static otbn_firmware_t imem_firmware = OTBN_FIRMWARE_UNUSED;
 
 static uint32_t ls_otbn_default_prng_cb(void)
 {
@@ -142,6 +146,7 @@ void ls_otbn_module_init(void)
     irq_enable(OTBN_SYSC_IRQN);
     irq_enable(OBTN_IRQN);
     HAL_OTBN_DMEM_Set(0, 0, OTBN_DMEM_SIZE);
+    imem_firmware = OTBN_FIRMWARE_UNUSED;
     otbn_inited = true;
 }
 
@@ -198,6 +203,7 @@ int ls_otbn_module_deinit(void)
     otbn_inited = false;
     otbn_owner_thread = NULL;
     current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
+    imem_firmware = OTBN_FIRMWARE_UNUSED;
     irq_unlock(key);
     LOG_INF("OTBN has completed the shutdown.");
     k_mutex_unlock(&otbn_lock);
@@ -254,12 +260,22 @@ int ls_otbn_session_release(void)
         LOG_ERR("OTBN release by non-owner");
         return -EBUSY;
     }
-             
+
 
     otbn_owner_thread = NULL;
     current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
     k_mutex_unlock(&otbn_lock);
     return 0;
+}
+
+void ls_otbn_imem_firmware_confirm(otbn_firmware_t firmware_id)
+{
+    imem_firmware = firmware_id;
+}
+
+otbn_firmware_t ls_otbn_imem_firmware_get(void)
+{
+    return imem_firmware;
 }
 
 bool ls_otbn_session_is_owner(void)

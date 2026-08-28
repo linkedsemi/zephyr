@@ -163,11 +163,6 @@ static const uint32_t sm3_state_init[8] = {
 };
 
 /* ========================================================================
- * Module state
- * ======================================================================== */
-static otbn_firmware_t s_last_firmware_id = OTBN_FIRMWARE_UNUSED;
-
-/* ========================================================================
  * Helpers
  * ======================================================================== */
 static inline uint32_t min_u32(uint32_t a, uint32_t b)
@@ -207,7 +202,10 @@ static int load_firmware(otbn_hash_ctx_t *ctx)
     //     return ret;
     // }
 
-    if (s_last_firmware_id == ctx->firmware_id) {
+    /* IMEM content is tracked across sessions (ls_otbn_imem_firmware_*):
+     * a session held by another module (RSA/ECC) may have replaced the
+     * image, so the private-cache shortcut must consult the shared state. */
+    if (ls_otbn_imem_firmware_get() == ctx->firmware_id) {
         return 0;
     }
 
@@ -244,7 +242,7 @@ static int load_firmware(otbn_hash_ctx_t *ctx)
     }
 
     if (ret == 0) {
-        s_last_firmware_id = ctx->firmware_id;
+        ls_otbn_imem_firmware_confirm(ctx->firmware_id);
     }
     return ret;
 }
