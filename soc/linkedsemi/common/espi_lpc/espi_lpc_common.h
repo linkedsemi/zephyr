@@ -3,6 +3,7 @@
 #include <zephyr/sys/slist.h>
 #include <zephyr/device.h>
 #include <zephyr/spinlock.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mbox.h>
 #include <zephyr/sys/atomic.h>
@@ -170,7 +171,7 @@ struct espi_lpc_ls_data {
     sys_slist_t peri_mem;
     union{
         struct espi_data{
-            struct k_spinlock vw_tx_lock;
+            struct k_sem vw_tx_sem;
             struct gpio_callback cs_cb;
         }espi;
         struct {
