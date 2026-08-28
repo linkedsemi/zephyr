@@ -2,6 +2,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/kernel.h>
 #include <stdarg.h>
 #include "reg_espi_type.h"
 #include "espi_lpc_common.h"
@@ -94,13 +95,9 @@ static void espi_vw_tx(const struct device *dev,uint8_t count,uint8_t idx,uint8_
 	struct espi_lpc_ls_data *data = dev->data;
     reg_espi_t *reg = cfg->reg;
 	va_list vargs;
-	uint32_t espi_stat;
 	uint32_t vw_first_word = val<<16|idx<<8|(count - 1);
 	uint8_t *vw_tx = vw_tx_buf_get(dev);
-	k_spinlock_key_t flags = k_spin_lock(&data->u.espi.vw_tx_lock);
-	do{
-		espi_stat = reg->STATUS;
-	}while(espi_stat & ESPI_STATUS_SET_VWIRE_AVAIL_MASK);
+    k_sem_take(&data->u.espi.vw_tx_sem,K_FOREVER);
     reg->UP_VWIR_LEN_M1 = count*2;
 	count--;
 	va_start(vargs,val);
@@ -122,7 +119,6 @@ static void espi_vw_tx(const struct device *dev,uint8_t count,uint8_t idx,uint8_
 	va_end(vargs);
     reg->UP_VWIR_DAT = vw_first_word;
     reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK|ESPI_STATUS_SET_VWIRE_AVAIL_MASK;
-	k_spin_unlock(&data->u.espi.vw_tx_lock,flags);
 }
 
 static void mem_io_rd_rsp_pkt_build(uint8_t len,uint32_t data,uint8_t *up_data_buf,uint32_t *up_first_word,uint16_t *up_len)
@@ -134,31 +130,47 @@ static void mem_io_rd_rsp_pkt_build(uint8_t len,uint32_t data,uint8_t *up_data_b
 	up_data_buf[2] = data>>24;
 }
 
+#define ESPI_SEND_OOB_RST_ACK_TYPE -3
+#define ESPI_SEND_HOST_RST_ACK_TYPE -2
+#define ESPI_SEND_BOOT_DONE_TYPE -1
+
+struct vw_tx_msg {
+    const struct device *dev;
+    int type;
+};
+
+K_MSGQ_DEFINE(vw_tx_msgq,sizeof(struct vw_tx_msg),CONFIG_ESPI_VW_TX_MSG_MAX,4);
+
+static void vw_tx_msgq_put(const struct device *dev,int type)
+{
+    struct vw_tx_msg msg = {
+        .dev = dev,
+        .type = type,
+    };
+    int ret = k_msgq_put(&vw_tx_msgq,&msg,K_NO_WAIT);
+    __ASSERT_NO_MSG(ret == 0);
+}
+
 static void espi_send_oob_rst_ack(const struct device *dev)
 {
-	espi_vw_tx(dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
+    vw_tx_msgq_put(dev,ESPI_SEND_OOB_RST_ACK_TYPE);
 }
 
 static void espi_send_host_rst_ack(const struct device *dev)
 {
-	espi_vw_tx(dev,1,6,ESPI_SYS_EVT_6_HOST_RST_ACK_VLD|ESPI_SYS_EVT_6_HOST_RST_ACK);
+    vw_tx_msgq_put(dev,ESPI_SEND_HOST_RST_ACK_TYPE);
 }
 
 static void espi_send_boot_done(const struct device *dev)
 {
-	espi_vw_tx(dev,1,5,ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE|
-						ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS);
+    vw_tx_msgq_put(dev,ESPI_SEND_BOOT_DONE_TYPE);
 }
 
 static void espi_send_edge_irq(const struct device *dev,uint8_t idx)
 {
-	espi_vw_tx(dev,2,idx&0x80?1:0,1<<7|(idx&0x7f),idx&0x80?1:0,idx&0x7f);
+    vw_tx_msgq_put(dev,idx);
 }
 
-static void espi_send_level_irq(const struct device *dev,uint8_t idx,uint8_t active)
-{
-	espi_vw_tx(dev,1,idx&0x80?1:0,active<<7|(idx&0x7f));
-}
 
 static void espi_reg_init(const struct device *dev)
 {
@@ -201,7 +213,8 @@ static void espi_reg_init(const struct device *dev)
                         |ESPI_STATUS_SET_FLASH_NP_FREE_MASK;
         espi_send_boot_done(dev);
     }
-    reg->INTERRUPT_MASK = ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
+    reg->INTERRUPT_MASK = ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK
+                        |ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK|ESPI_INTR_STT_VWIR_AVAL_MASK
                         |ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
 }
 static int espi_reset(const struct device *dev)
@@ -297,6 +310,11 @@ static void ls_espi_isr(void *arg)
     {
 
     }
+    if(stt&ESPI_INTR_STT_VWIR_AVAL_MASK)
+    {
+        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_VWIR_AVAL_MASK;
+        k_sem_give(&data->u.espi.vw_tx_sem);
+    }
     if(stt&ESPI_INTR_STT_DN_CNFG_MASK)
     {
         cfg->recover_data->gen_cfg = reg->GEN_CFG;
@@ -353,6 +371,33 @@ void host_espi_rx_callback(const struct device *dev,void *msg)
 
 }
 
+static void vw_tx_thread(void *p1,void *p2,void *p3)
+{
+    struct vw_tx_msg msg;
+    while(1)
+    {
+        k_msgq_get(&vw_tx_msgq,&msg,K_FOREVER);
+        switch(msg.type) {
+        case ESPI_SEND_OOB_RST_ACK_TYPE:
+	        espi_vw_tx(msg.dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
+        break;
+        case ESPI_SEND_HOST_RST_ACK_TYPE:
+	        espi_vw_tx(msg.dev,1,6,ESPI_SYS_EVT_6_HOST_RST_ACK_VLD|ESPI_SYS_EVT_6_HOST_RST_ACK);
+        break;
+        case ESPI_SEND_BOOT_DONE_TYPE:
+	        espi_vw_tx(msg.dev,1,5,ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE|
+						ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS);
+        break;
+        default: {
+            int idx = msg.type;
+	        espi_vw_tx(msg.dev,2,idx&0x80?1:0,1<<7|(idx&0x7f),idx&0x80?1:0,idx&0x7f);
+        }break;
+        }
+    }
+}
+
+K_KERNEL_THREAD_DEFINE(espi_vw_tx_thread,CONFIG_ESPI_VW_TX_THREAD_STACK_SIZE,vw_tx_thread,NULL,NULL,NULL,CONFIG_ESPI_VW_TX_THREAD_PRIORITY,0,0);
+
 static int espi_ls_init(const struct device *dev)
 {
 	const struct espi_lpc_ls_config *const dev_config = dev->config;
@@ -379,7 +424,8 @@ static int espi_ls_init(const struct device *dev)
         }
     }
 #endif
- if(inited == false)
+    k_sem_init(&data->u.espi.vw_tx_sem,1,1);
+    if(inited == false)
     {
 #if defined(CONFIG_PINCTRL)
         ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
@@ -408,7 +454,7 @@ static int espi_ls_init(const struct device *dev)
         .reg = (reg_espi_t *)DT_INST_REG_ADDR(idx),\
         .irq_config_func = espi_ls_irq_config_func_##idx,\
         .raise_edge_irq = espi_send_edge_irq,\
-        .set_level_irq = espi_send_level_irq,\
+        .set_level_irq = NULL,\
         .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,host_espi_rx_callback,bmc_espi_rx_callback),\
         .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(idx,sysevent_base),\
         .recover_data = &espi_cfg_recover_data_##idx,\
