@@ -1532,6 +1532,7 @@ static void udc_dwc3_isr_handler(const struct device *dev)
 static int dwc3_driver_preinit(const struct device *dev)
 {
     const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct udc_data *data = dev->data;
     uint16_t mps = 512;
     int err;
@@ -1580,6 +1581,10 @@ static int dwc3_driver_preinit(const struct device *dev)
             return err;
         }
     }
+
+    dwc3_data->dev = dev;
+    k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
+    config->make_thread(dev);
 
     return 0;
 }
@@ -1746,9 +1751,67 @@ static int dwc3_debug_signal_setup(const struct device *dev)
 }
 #endif // CONFIG_UDC_DWC3_DEBUG
 
-static int udc_dwc3_init(const struct device *dev)
+#define DWC3_SOFT_RESET_RETRY     1000
+#define DWC3_RUN_STOP_RETRY       500
+#define DWC3_SOFT_DISCONNECT_MS   20
+
+static int dwc3_core_soft_reset(const struct device *dev)
 {
-    LOG_DBG("%s udc init", dev->name);
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    uint32_t retry = DWC3_SOFT_RESET_RETRY;
+
+    MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
+
+    while ((dwc3_dev->DCTL & DWC3_DCTL_CSFTRST) && --retry) {
+        k_busy_wait(1);
+    }
+
+    if (dwc3_dev->DCTL & DWC3_DCTL_CSFTRST) {
+        LOG_ERR("core soft reset did not complete");
+        return -ETIMEDOUT;
+    }
+
+    k_busy_wait(1);
+
+    return 0;
+}
+
+static void dwc3_event_buffer_setup(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
+
+    dwc3_data->evt_buf_rd_idx = 0;
+    dwc3_data->evt_count = 0;
+
+    dwc3_gbl->GEVNT[0].ADRLO = (uint32_t)config->evt_buf;
+    dwc3_gbl->GEVNT[0].ADRHI = 0;
+    dwc3_gbl->GEVNT[0].SIZ = EVT_BUF_LENGTH_WORDS * sizeof(union evt_buf_u);
+    dwc3_gbl->GEVNT[0].COUNT = 0;
+}
+
+static void dwc3_ctrl_ep_flush(const struct device *dev)
+{
+    struct net_buf *buf;
+
+    buf = udc_buf_get_all(dev, USB_CONTROL_EP_OUT);
+    if (buf != NULL) {
+        net_buf_unref(buf);
+    }
+
+    buf = udc_buf_get_all(dev, USB_CONTROL_EP_IN);
+    if (buf != NULL) {
+        net_buf_unref(buf);
+    }
+
+    udc_ep_set_busy(dev, USB_CONTROL_EP_OUT, false);
+    udc_ep_set_busy(dev, USB_CONTROL_EP_IN, false);
+}
+
+static int dwc3_device_start(const struct device *dev)
+{
     const struct udc_dwc3_config *config = dev->config;
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
     struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
@@ -1758,17 +1821,209 @@ static int udc_dwc3_init(const struct device *dev)
     };
     int ret;
 
-    k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
-    k_sem_init(&dwc3_data->ep0_sync, 0, 1);
-
-    dwc3_data->dev = dev;
     dwc3_data->ep0_state = EP0_SETUP_PHASE;
-    dwc3_data->evt_buf_rd_idx = 0;
-    dwc3_data->evt_count = 0;
-    dwc3_data->connect = false;
+    dwc3_data->ep0_expect_in = 0;
+    dwc3_data->three_stage_setup = 0;
+    dwc3_data->speed = UDC_BUS_UNKNOWN;
     dwc3_data->xfer_res_initialized = false;
+    k_sem_init(&dwc3_data->ep0_sync, 0, 1);
     memset(dwc3_data->ep_res_allocated, 0, sizeof(dwc3_data->ep_res_allocated));
-    config->make_thread(dev);
+    for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
+        dwc3_data->ep_res_index[i] = -1;
+    }
+
+    dwc3_gbl->GUSB2PHYCFG[0] = 0x40002407;
+    /* rewriting DCFG also puts DevAddr back to 0 */
+    dwc3_dev->DCFG = 0x480800;
+    dwc3_gbl->GUCTL = 0xa400010;
+    dwc3_gbl->GUCTL2 |= DWC3_GUCTL2_RST_ACTBITLATER;
+
+    dwc3_event_buffer_setup(dev);
+    dwc3_gbl->GCTL = 0x30C12204;
+
+    dwc3_dev->DEVTEN = DWC3_DEVTEN_DISCONNEVTEN | DWC3_DEVTEN_USBRSTEN | DWC3_DEVTEN_CONNECTDONEEN
+                    | DWC3_DEVTEN_WKUPEVTEN | DWC3_DEVTEN_HIBERNATIONREQEVTEN
+                    | DWC3_DEVTEN_ERRTICERREN | DWC3_DEVTEN_CMDCMPLTEN | DWC3_DEVTEN_EVNTOVERFLOWEN | DWC3_DEVTEN_ECCERREN;
+
+    dwc3_dep_start_config(dwc3_dev, 0);
+
+    for (uint8_t i = 0; i < 2; i++) {
+        ret = dwc3_dep_xfer_resource(dwc3_dev, i, &xfer_param);
+        if (ret < 0) {
+            LOG_ERR("Failed to allocate transfer resource for phy ep %u", i);
+            return ret;
+        }
+        dwc3_data->ep_res_allocated[i] = true;
+    }
+
+    return 0;
+}
+
+static void dwc3_device_stop(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+
+    config->irq_disable_func(dev);
+    dwc3_dev->DEVTEN = 0;
+    dwc3_dev->DALEPENA = 0;
+
+    k_msgq_purge(&dwc3_data->msgq);
+    dwc3_data->evt_count = 0;
+    dwc3_ctrl_ep_flush(dev);
+
+    dwc3_data->ep0_state = EP0_SETUP_PHASE;
+    dwc3_data->xfer_res_initialized = false;
+    for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
+        dwc3_data->ep_res_index[i] = -1;
+        dwc3_data->ep_res_allocated[i] = false;
+    }
+}
+
+static int dwc3_run_stop(const struct device *dev, bool is_on)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
+    struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
+    uint32_t retry = DWC3_RUN_STOP_RETRY;
+    uint32_t count;
+    bool halted;
+
+    if (is_on) {
+        MODIFY_REG(dwc3_dev->DCTL, 0, DWC3_DCTL_RUN_STOP);
+    } else {
+        MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, 0);
+    }
+
+    do {
+        halted = dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT;
+        if (halted != is_on) {
+            return 0;
+        }
+
+        /* DSTS.DevCtrlHlt (databook 1.3.4) is not set while GEVNTCOUNT
+         * (1.2.56) still holds unacknowledged events.  The interrupt is
+         * already off during teardown, so drain them here: GEVNTCOUNT
+         * decrements by the written value, hence the read-back first.
+         */
+        if (!is_on) {
+            count = dwc3_gbl->GEVNT[0].COUNT & DWC3_GEVNTCOUNT_MASK;
+            if (count) {
+                dwc3_gbl->GEVNT[0].COUNT = count;
+            }
+        }
+
+        k_busy_wait(1);
+    } while (--retry);
+
+    LOG_ERR("controller failed to %s", is_on ? "start" : "halt");
+
+    return -ETIMEDOUT;
+}
+
+static int dwc3_soft_disconnect(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    int ret;
+
+    dwc3_data->connect = false;
+    config->irq_disable_func(dev);
+
+    if (dwc3_data->ep0_state == EP0_DATA_PHASE) {
+        uint8_t active_ep = dwc3_data->ep0_expect_in ? 1 : 0;
+
+        LOG_DBG("disable while EP0 data phase, end phy ep %u", active_ep);
+        dwc3_ep0_end_control_data(dev, active_ep);
+    } else if (dwc3_data->ep0_state == EP0_STATUS_PHASE) {
+        uint8_t active_ep = dwc3_data->ep0_expect_in ? 0 : 1;
+
+        LOG_DBG("disable while EP0 status phase, end phy ep %u", active_ep);
+        dwc3_ep0_end_control_data(dev, active_ep);
+    }
+
+    for (int i = 2; i < DWC_USB3_NUM_EPS; i++) {
+        if (dwc3_data->ep_res_index[i] >= 0) {
+            dwc3_dep_end_transfer(dev, i, dwc3_data->ep_res_index[i], true);
+        }
+    }
+
+    if (udc_ep_disable_internal(dev, USB_CONTROL_EP_OUT)) {
+        LOG_ERR("Failed to disable control endpoint");
+    }
+
+    if (udc_ep_disable_internal(dev, USB_CONTROL_EP_IN)) {
+        LOG_ERR("Failed to disable control endpoint");
+    }
+
+    ret = dwc3_run_stop(dev, false);
+    dwc3_device_stop(dev);
+
+    k_msleep(DWC3_SOFT_DISCONNECT_MS);
+
+    return ret;
+}
+
+static int dwc3_soft_connect(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    int ret;
+
+    ret = dwc3_core_soft_reset(dev);
+    if (ret) {
+        return ret;
+    }
+
+    ret = dwc3_device_start(dev);
+    if (ret) {
+        return ret;
+    }
+
+    if (udc_ep_enable_internal(dev, USB_CONTROL_EP_OUT,
+                               USB_EP_TYPE_CONTROL, 64, 0)) {
+        LOG_ERR("Failed to enable control endpoint");
+        ret = -EIO;
+        goto connect_error;
+    }
+
+    if (udc_ep_enable_internal(dev, USB_CONTROL_EP_IN,
+                               USB_EP_TYPE_CONTROL, 64, 0)) {
+        LOG_ERR("Failed to enable control endpoint");
+        ret = -EIO;
+        goto connect_error;
+    }
+
+    dwc3_data->connect = true;
+    config->irq_enable_func(dev);
+
+    /* allow the device to attach to the host. */
+    ret = dwc3_run_stop(dev, true);
+    if (ret) {
+        dwc3_data->connect = false;
+        goto connect_error;
+    }
+
+    return 0;
+
+connect_error:
+
+    dwc3_device_stop(dev);
+    udc_ep_disable_internal(dev, USB_CONTROL_EP_IN);
+    udc_ep_disable_internal(dev, USB_CONTROL_EP_OUT);
+
+    return ret;
+}
+
+static int udc_dwc3_init(const struct device *dev)
+{
+    LOG_DBG("%s udc init", dev->name);
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+
+    dwc3_data->connect = false;
+    k_msgq_purge(&dwc3_data->msgq);
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (config->ccfg.cctl_dev) {
@@ -1798,55 +2053,7 @@ static int udc_dwc3_init(const struct device *dev)
         clock_control_on(clk_dev, (clock_control_subsys_t)&config->ccfg);
     }
 #endif
-
-    /* phy init */
     dwc3_phy_setup(dev);
-
-    /* soft reset */
-    MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, DWC3_DCTL_CSFTRST);
-    while (dwc3_dev->DCTL & DWC3_DCTL_CSFTRST);
-
-    dwc3_gbl->GUSB2PHYCFG[0] = 0x40002407;
-    dwc3_dev->DCFG = 0x480800; 
-    dwc3_gbl->GUCTL = 0xa400010;
-    dwc3_gbl->GUCTL2 |= DWC3_GUCTL2_RST_ACTBITLATER;
-
-    dwc3_gbl->GEVNT[0].ADRLO = (uint32_t)config->evt_buf;
-    dwc3_gbl->GEVNT[0].ADRHI = 0;
-    dwc3_gbl->GEVNT[0].SIZ = EVT_BUF_LENGTH_WORDS * sizeof(union evt_buf_u);
-    dwc3_gbl->GEVNT[0].COUNT = 0;
-    dwc3_gbl->GCTL = 0x30C12204;
-
-    dwc3_dev->DEVTEN = DWC3_DEVTEN_DISCONNEVTEN | DWC3_DEVTEN_USBRSTEN | DWC3_DEVTEN_CONNECTDONEEN 
-                    | DWC3_DEVTEN_WKUPEVTEN | DWC3_DEVTEN_HIBERNATIONREQEVTEN
-                    | DWC3_DEVTEN_ERRTICERREN | DWC3_DEVTEN_CMDCMPLTEN | DWC3_DEVTEN_EVNTOVERFLOWEN | DWC3_DEVTEN_ECCERREN;
-
-    dwc3_dep_start_config(dwc3_dev, 0);
-
-    for (int i = 0; i < 2; i++) {
-        ret = dwc3_dep_xfer_resource(dwc3_dev, i, &xfer_param);
-        if (ret < 0) {
-            LOG_ERR("Failed to allocate transfer resource for EP%d", i);
-            return ret;
-        }
-        dwc3_data->ep_res_allocated[i] = true;
-    }
-
-    for (int i = 0; i < DWC_USB3_NUM_EPS; i++) {
-        dwc3_data->ep_res_index[i] = -1;
-    }
-
-    if (udc_ep_enable_internal(dev, USB_CONTROL_EP_IN,
-                               USB_EP_TYPE_CONTROL, 64, 0)) {
-        LOG_ERR("Failed to enable control endpoint");
-        return -EIO;
-    }
-
-    if (udc_ep_enable_internal(dev, USB_CONTROL_EP_OUT,
-                               USB_EP_TYPE_CONTROL, 64, 0)) {
-        LOG_ERR("Failed to enable control endpoint");
-        return -EIO;
-    }
 
     return 0;
 }
@@ -1854,87 +2061,34 @@ static int udc_dwc3_init(const struct device *dev)
 static int udc_dwc3_enable(const struct device *dev)
 {
     LOG_DBG("%s udc enable", dev->name);
-    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
-    const struct udc_dwc3_config *config = dev->config;
-    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
-
-    if (dwc3_data->ep_res_index[0] < 0) {
-        dwc3_ctrl_feed_dout(dev, 8, TRB_Control_Setup);
-    }
-
-    dwc3_data->connect = true;
-    config->irq_enable_func(dev);
-    /* allow the device to attach to the host. */
-    MODIFY_REG(dwc3_dev->DCTL, 0, DWC3_DCTL_RUN_STOP);
-
-    return 0;
+    return dwc3_soft_connect(dev);
 }
 
 static int udc_dwc3_shutdown(const struct device *dev)
 {
     LOG_DBG("%s udc shutdown", dev->name);
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+
+    config->irq_disable_func(dev);
+    dwc3_data->connect = false;
+    k_msgq_purge(&dwc3_data->msgq);
+
+    *(volatile uint32_t *)USB2_CLK_CTRL = 0;
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (config->ccfg.cctl_dev) {
+        clock_control_off(config->ccfg.cctl_dev, (clock_control_subsys_t)&config->ccfg);
+    }
+#endif
+
     return 0;
 }
 
 static int udc_dwc3_disable(const struct device *dev)
 {
     LOG_DBG("%s udc disable", dev->name);
-    const struct udc_dwc3_config *config = dev->config;
-    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
-    struct dwc3_dev_reg *dwc3_dev = (struct dwc3_dev_reg *)(config->base + DWC3_DEVICE_REGS_START);
-    struct dwc3_global_reg *dwc3_gbl = (struct dwc3_global_reg *)(config->base + DWC3_GLOBALS_REGS_START);
-    uint32_t count = 0;
-    uint32_t retry = 100;
-
-    dwc3_data->connect = false;
-    dwc3_data->xfer_res_initialized = false;
-    /* disable irq */
-    config->irq_disable_func(dev);
-    k_msgq_purge(&dwc3_data->msgq);
-    dwc3_data->evt_count = 0;
-
-    if (dwc3_data->ep0_state == EP0_DATA_PHASE) {
-        uint8_t active_ep = dwc3_data->ep0_expect_in ? 1 : 0;
-
-        LOG_DBG("disable while EP0 data phase, end phy ep %u", active_ep);
-        dwc3_ep0_end_control_data(dev, active_ep);
-    } else if (dwc3_data->ep0_state == EP0_STATUS_PHASE) {
-        uint8_t active_ep = dwc3_data->ep0_expect_in ? 0 : 1;
-
-        LOG_DBG("disable while EP0 status phase, end phy ep %u", active_ep);
-        dwc3_ep0_end_control_data(dev, active_ep);
-    }
-
-    /* clear event queue */
-    count = dwc3_gbl->GEVNT[0].COUNT;
-    count &= DWC3_GEVNTCOUNT_MASK;
-    if (count)
-    {
-        dwc3_gbl->GEVNT[0].COUNT = count;
-        dwc3_data->evt_buf_rd_idx = (dwc3_data->evt_buf_rd_idx +
-                                     count / sizeof(union evt_buf_u)) %
-                                    EVT_BUF_LENGTH_WORDS;
-    }
-
-    dwc3_data->ep0_state = EP0_SETUP_PHASE;
-    for (int i = 2; i < DWC_USB3_NUM_EPS; i++) {
-        if (dwc3_data->ep_res_index[i] >= 0) {
-            dwc3_dep_end_transfer(dev, i, dwc3_data->ep_res_index[i], true);
-        }
-        dwc3_data->ep_res_index[i] = -1;
-        dwc3_data->ep_res_allocated[i] = false;
-    }
-
-    /* soft disconnect host */
-    MODIFY_REG(dwc3_dev->DCTL, DWC3_DCTL_RUN_STOP, 0);
-    while (!(dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT) && retry--) {
-        k_busy_wait(1);
-    }
-    if (!(dwc3_dev->DSTS & DWC3_DSTS_DEVCTRLHLT)) {
-        LOG_WRN("DWC3 device controller did not halt in time");
-    }
-
-    return 0;
+    return dwc3_soft_disconnect(dev);
 }
 
 static int udc_dwc3_set_address(const struct device *dev, const uint8_t addr)
@@ -2236,7 +2390,10 @@ static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *c
                 dwc3_prepare_one_trb(trb, buf->data, buf->len, TRB_Control_Data, false);
                 sys_cache_data_flush_range(buf->data, buf->len);
             } else if (bi->status) {
+                udc_unlock_internal(dev);
                 k_sem_take(&dwc3_data->ep0_sync, K_FOREVER);
+                udc_lock_internal(dev, K_FOREVER);
+
                 dwc3_prepare_one_trb(trb, NULL, 0, dwc3_data->three_stage_setup ? TRB_Control_Status_3 : TRB_Control_Status_2, false);
                 dwc3_ep0_in_state_update(dev, udc_buf_get(dev, USB_CONTROL_EP_IN));
             }
@@ -2294,9 +2451,18 @@ static void udc_dwc3_thread_handler(void *dev)
     struct udc_dwc3_data *usb_data = (struct udc_dwc3_data *)udc_get_private(dev);
     struct dwc3_msgq_type evt;
     while (1) {
-        k_msgq_get(&usb_data->msgq, &evt, K_FOREVER);
+        /* k_msgq_purge() wakes a blocked reader with -ENOMSG and leaves the
+         * output buffer untouched; using evt in that case would jump to a
+         * stale (possibly NULL) handler.
+         */
+        if (k_msgq_get(&usb_data->msgq, &evt, K_FOREVER) != 0) {
+            continue;
+        }
+
+        udc_lock_internal(dev, K_FOREVER);
         if (usb_data->connect)
             evt.handler(dev, evt.param);
+        udc_unlock_internal(dev);
     }
 }
 
