@@ -24,6 +24,15 @@ properties:
       enum: [100000, 400000, 1000000]
       description: output clock frequency (Hz)
 
+    scl-overhead-ns:
+      type: int
+      default: 398
+      description: |
+        Fixed per-cycle SCL period overhead in nanoseconds caused by bus
+        pull-up RC charge/discharge time (board/wiring dependent, independent
+        of the prescaler). Subtracted from the target period before deriving
+        the TIMINGR values. Default calibrated on LSQSH EVB.
+
     scl-gpios:
       type: phandle-array
       description: |

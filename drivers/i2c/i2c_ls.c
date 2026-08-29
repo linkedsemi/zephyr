@@ -38,6 +38,10 @@ LOG_MODULE_REGISTER(i2c_ls, CONFIG_I2C_LOG_LEVEL);
 #define I2C_LS_FILTER_NS          50
 #define I2C_LS_FILTER_FACTOR_MAX  15
 #define I2C_LS_FILTER_FACTOR_MIN  1
+/* 硬件在 SCLL/SCLH 编程值之外额外计数的拍数：低相位 +1 拍、高相位 +2 拍 */
+#define I2C_LS_SCL_PERIOD_TICK_OFFSET 3
+/* SCL 周期固定开销默认值（ns），可用 DT 属性 scl-overhead-ns 覆盖 */
+#define I2C_LS_SCL_OVERHEAD_NS    400
 #define I2C_INT_ERR_MASK          (I2C_INT_BERR_MASK \
                                     | I2C_INT_ARLO_MASK \
                                     | I2C_INT_OVR_MASK \
@@ -53,6 +57,7 @@ struct i2c_ls_config {
     reg_i2c_t *reg;
     uint32_t clock_frequency;
     uint32_t init_bus_frequency;
+    uint32_t scl_overhead_ns;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -295,39 +300,104 @@ static void i2c_noise_filter_set(const struct device *dev)
 static void i2c_timing_param_set(const struct device *dev, uint32_t i2c_clk)
 {
     const struct i2c_ls_config *dev_config = dev->config;
-    uint16_t cycle_count = 0;
-    uint8_t prescalar = 0;
-    int16_t scll = 0;
-    int16_t sclh = 0;
-    int16_t scldel = 0;
-    int16_t sdadel = 0;
+    uint64_t tick_num;
+    uint32_t period_ns;
+    uint32_t prescalar = 0;
+    uint32_t total;
+    int16_t scll;
+    int16_t sclh;
+    int16_t scldel;
+    int16_t sdadel;
 
-    uint8_t __prescalar = 1;
-    uint16_t __cycle_count;
-    int16_t __scll;
-
-    while (1) {
-        __prescalar++;
-        __cycle_count = dev_config->clock_frequency / i2c_clk / __prescalar;
-        __scll = __cycle_count >> 1;
-
-        if (((__cycle_count > 256) || (__scll > 16)) && (__cycle_count >= 16) && (__prescalar <= 16)) {
-            prescalar = __prescalar;
-            cycle_count = __cycle_count;
-            scll = __scll;
-        } else {
-            break;
-        }
+    /* ls-i2c IP 的 SCL 实际周期模型：
+     *   period = (SCLL + SCLH + I2C_LS_SCL_PERIOD_TICK_OFFSET) * tick + scl_overhead_ns
+     * tick 为分频后的源时钟周期；scl_overhead_ns 是总线上下拉 RC 充放电
+     * 造成的每周期固定开销（板级接线相关，DT 属性 scl-overhead-ns 可配，
+     * 与分频无关），需从目标周期中扣除后再折合计数拍。
+     */
+    if (i2c_clk == 0) {
+        DEV_ERR(dev, "Invalid i2c speed");
+        return;
     }
+    period_ns = 1000000000U / i2c_clk;
+    if (period_ns <= dev_config->scl_overhead_ns) {
+        DEV_ERR(dev, "i2c speed not reachable: period %u ns <= bus overhead %u ns",
+                period_ns, dev_config->scl_overhead_ns);
+        return;
+    }
+    tick_num = (uint64_t)(period_ns - dev_config->scl_overhead_ns) *
+               dev_config->clock_frequency;
 
-    if (!((cycle_count >= 16) && (prescalar <= 16) && (scll < 48))) {
+    /* 找最小偶分频，使总拍数（含硬件附加拍）不超计数上限 */
+    do {
+        prescalar += 2;
+        total = tick_num / ((uint64_t)prescalar * 1000000000U);
+    } while (total > 256);
+
+    if (!((total >= 16) && (prescalar <= 16))) {
         DEV_ERR(dev, "Invalid i2c timing");
         return;
     }
 
-    scldel = (scll >> 1) > 16 ? 15 : (scll >> 1);
-    sclh = scll;
-    sdadel = 2;
+    /* 总拍数四舍五入取整；高相位编程值比低相位短 TICK_OFFSET 拍，
+     * 抵消高相位上升沿占大头的固定开销 */
+    total = (tick_num + (uint64_t)prescalar * 1000000000U / 2) /
+            ((uint64_t)prescalar * 1000000000U);
+
+    scll = total / 2;
+    /* 用减法保证 scll + sclh 恒等于 total - TICK_OFFSET（total 为奇数时
+     * 直接除以 2 会丢 1 拍） */
+    sclh = total - I2C_LS_SCL_PERIOD_TICK_OFFSET - scll;
+    if (scll < 1) {
+        scll = 1;
+    }
+    if (sclh < 0) {
+        sclh = 0;
+    }
+
+    /* I2C 规范要求各速率档的 SCL 低电平最小值：标准模式 4.7us、快速模式
+     * 1.3us、快速+ 模式 0.5us。低电平按 (scll + 1) 拍加下降沿时间（约为
+     * 固定开销的 1/3，上升沿占大头）估算，不足时从高相位挪拍补偿，
+     * 总拍数不变，周期不变。 */
+    {
+        uint64_t tick_ps;
+        uint32_t min_low_ps;
+        uint32_t fall_ps;
+
+        if (i2c_clk <= 100000) {
+            min_low_ps = 4700000U;
+        } else if (i2c_clk <= 400000) {
+            min_low_ps = 1300000U;
+        } else {
+            min_low_ps = 500000U;
+        }
+        tick_ps = (uint64_t)prescalar * 1000000000000ULL / dev_config->clock_frequency;
+        fall_ps = (uint32_t)((uint64_t)dev_config->scl_overhead_ns * 1000 / 3);
+        while ((sclh > 0) && (((uint64_t)scll + 1) * tick_ps + fall_ps < min_low_ps)) {
+            scll++;
+            sclh--;
+        }
+    }
+
+    scldel = scll / 3;
+    if (scldel > 15) {
+        scldel = 15;
+    } else if (scldel < 5) {
+        /* SCLDEL should not be too small to keep compatible with different resistance */
+        scldel = 5;
+    }
+    sdadel = scldel - 4;
+    if (sdadel > 10) {
+        /* SDADEL ceiling keeps compatibility when acting as I2C slave */
+        sdadel = 10;
+    } else if (sdadel < 1) {
+        sdadel = 1;
+    }
+    /* HW design requires SCLDEL to be no less than SDADEL + 5 */
+    if (scldel <= sdadel + 5) {
+        scldel = sdadel + 5;
+    }
+
     MODIFY_REG(dev_config->reg->TIMINGR,
                (I2C_TIMINGR_PRESC_MASK | I2C_TIMINGR_SCLH_MASK | I2C_TIMINGR_SCLL_MASK | I2C_TIMINGR_SDADEL_MASK | I2C_TIMINGR_SCLDEL_MASK),
                (prescalar - 1) << I2C_TIMINGR_PRESC_POS | sclh << I2C_TIMINGR_SCLH_POS | scll << I2C_TIMINGR_SCLL_POS | sdadel << I2C_TIMINGR_SDADEL_POS | scldel << I2C_TIMINGR_SCLDEL_POS);
@@ -920,6 +990,7 @@ static const struct i2c_driver_api api_funcs = {
             (DT_INST_PROP_BY_PHANDLE(index, clocks, clock_frequency)),                                       \
             (DT_INST_PROP(index, clock_frequency))),                                                         \
         .init_bus_frequency = DT_INST_PROP_OR(index, bus_frequency, I2C_BITRATE_STANDARD),                   \
+        .scl_overhead_ns = DT_INST_PROP_OR(index, scl_overhead_ns, I2C_LS_SCL_OVERHEAD_NS),                   \
         .scl = GPIO_DT_SPEC_INST_GET_OR(index, scl_gpios, { 0 }),                                            \
         .sda = GPIO_DT_SPEC_INST_GET_OR(index, sda_gpios, { 0 }),                                            \
         .pinctrl_noinit = DT_INST_PROP_OR(index, pinctrl_noinit, 0),                                         \
