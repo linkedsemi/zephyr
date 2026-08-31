@@ -14,9 +14,19 @@
 #include <zephyr/sys/fdtable.h>
 
 /* prototypes for external, not-yet-public, functions in fdtable.c or fs.c */
+#ifdef CONFIG_OPENBMC_ZEPHYR
+int zvfs_dup(int fd);
+#endif /* CONFIG_OPENBMC_ZEPHYR */
 int zvfs_fcntl(int fd, int cmd, va_list arg);
 int zvfs_ftruncate(int fd, off_t length);
 off_t zvfs_lseek(int fd, off_t offset, int whence);
+
+#ifdef CONFIG_OPENBMC_ZEPHYR
+int dup(int fd)
+{
+	return zvfs_dup(fd);
+}
+#endif /* CONFIG_OPENBMC_ZEPHYR */
 
 int fcntl(int fd, int cmd, ...)
 {
