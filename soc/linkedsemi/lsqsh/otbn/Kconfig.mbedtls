@@ -10,12 +10,22 @@ config MBEDTLS_LINKEDSEMI_OTBN
 	default n
 	select LINKEDSEMI_OTBN
 
-config MBEDTLS_SHA224_SHA256_SM3_LINKEDSEMI_HARDWARE_ALT
+config MBEDTLS_SHA224_SHA256_LINKEDSEMI_HARDWARE_ALT
 	bool "LINKEDSEMI's hardware sha224 and sha256"
 	default n
 
-config MBEDTLS_SHA256_SM3_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's otbn module calculate sm3 and sha256"
+config MBEDTLS_SM3_LINKEDSEMI_HARDWARE_ALT
+	bool "LINKEDSEMI's hardware sm3"
+	default n
+
+config MBEDTLS_SHA224_SHA256_LINKEDSEMI_OTBN_ALT
+	bool "LINKEDSEMI's otbn module calculate sha224 and sha256"
+	default n
+	select MBEDTLS_LINKEDSEMI_OTBN
+	#select MBEDTLS_ECDSA_C
+
+config MBEDTLS_SM3_LINKEDSEMI_OTBN_ALT
+	bool "LINKEDSEMI's otbn module calculate sm3"
 	default n
 	select MBEDTLS_LINKEDSEMI_OTBN
 	#select MBEDTLS_ECDSA_C
