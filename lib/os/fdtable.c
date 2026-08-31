@@ -378,16 +378,96 @@ ssize_t zvfs_write(int fd, const void *buf, size_t sz, const size_t *from_offset
 	return zvfs_rw(fd, (void *)buf, sz, true, from_offset);
 }
 
-int zvfs_close(int fd)
+#ifdef CONFIG_OPENBMC_ZEPHYR
+/*
+ * Return true when another live descriptor refers to the same object as
+ * @a fd.  dup()'d descriptors share the underlying object, so close() must
+ * only release that object once the last descriptor is gone.
+ *
+ * The caller must hold @ref fdtable_lock.
+ */
+static bool zvfs_fd_has_other_refs(int fd)
 {
-	int res = 0;
+	void *obj = fdtable[fd].obj;
+
+	if (obj == NULL) {
+		return false;
+	}
+
+	for (int i = 0; i < ARRAY_SIZE(fdtable); i++) {
+		if (i == fd) {
+			continue;
+		}
+		if (atomic_get(&fdtable[i].refcount) != 0 &&
+		    fdtable[i].obj == obj &&
+		    fdtable[i].vtable == fdtable[fd].vtable) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
+int zvfs_dup(int fd)
+{
+	int ret;
 
 	if (_check_fd(fd) < 0) {
 		return -1;
 	}
 
+	(void)k_mutex_lock(&fdtable_lock, K_FOREVER);
+
+	ret = _find_fd_entry();
+	if (ret < 0) {
+		goto out;
+	}
+
+	(void)z_fd_ref(ret);
+
+	fdtable[ret].obj = fdtable[fd].obj;
+	fdtable[ret].vtable = fdtable[fd].vtable;
+	fdtable[ret].offset = fdtable[fd].offset;
+	fdtable[ret].mode = fdtable[fd].mode;
+
+	k_mutex_init(&fdtable[ret].lock);
+	k_condvar_init(&fdtable[ret].cond);
+
+out:
+	k_mutex_unlock(&fdtable_lock);
+
+	return ret;
+}
+#endif /* CONFIG_OPENBMC_ZEPHYR */
+
+int zvfs_close(int fd)
+{
+	int res = 0;
+#ifdef CONFIG_OPENBMC_ZEPHYR
+	bool last_ref;
+#endif /* CONFIG_OPENBMC_ZEPHYR */
+
+	if (_check_fd(fd) < 0) {
+		return -1;
+	}
+
+#ifdef CONFIG_OPENBMC_ZEPHYR
+	/* dup()'d descriptors share an object.  Only the last descriptor
+	 * referring to it may run the vtable close, otherwise the object
+	 * would be released (or double-released) while still in use by the
+	 * other descriptor.
+	 */
+	(void)k_mutex_lock(&fdtable_lock, K_FOREVER);
+	last_ref = !zvfs_fd_has_other_refs(fd);
+	k_mutex_unlock(&fdtable_lock);
+#endif /* CONFIG_OPENBMC_ZEPHYR */
+
 	(void)k_mutex_lock(&fdtable[fd].lock, K_FOREVER);
+#ifdef CONFIG_OPENBMC_ZEPHYR
+	if (last_ref && fdtable[fd].vtable->close != NULL) {
+#else
 	if (fdtable[fd].vtable->close != NULL) {
+#endif /* CONFIG_OPENBMC_ZEPHYR */
 		/* close() is optional - e.g. stdinout_fd_op_vtable */
 		if (fdtable[fd].mode & ZVFS_MODE_IFSOCK) {
 			/* Network socket needs to know socket number so pass

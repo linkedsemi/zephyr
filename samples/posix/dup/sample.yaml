@@ -1,0 +1,53 @@
+sample:
+  description: Verify POSIX dup() including refcounted close, flag inheritance
+    and error semantics
+  name: dup
+common:
+  filter: CONFIG_FULL_LIBC_SUPPORTED and not CONFIG_NATIVE_LIBC
+  tags: posix
+tests:
+  sample.posix.dup:
+    min_ram: 32
+    tags: posix
+    harness: console
+    harness_config:
+      type: multi_line
+      ordered: true
+      regex:
+        - "Zephyr dup\\(\\) sample"
+        - "PASS: eventfd create"
+        - "PASS: dup returns valid fd"
+        - "PASS: dup returns distinct fd"
+        - "PASS: write via original fd"
+        - "PASS: read via duplicated fd"
+        - "PASS: duplicated fd observes same object"
+        - "PASS: close original fd"
+        - "PASS: write via duplicated fd after closing original"
+        - "PASS: read via duplicated fd after closing original"
+        - "PASS: duplicated fd still owns object"
+        - "PASS: close duplicated fd"
+        - "PASS: dup\\(-1\\) fails with EBADF"
+        - "PASS: eventfd create \\(reverse close\\)"
+        - "PASS: dup for reverse close"
+        - "PASS: close duplicated fd first"
+        - "PASS: write original after duplicated fd closed"
+        - "PASS: original still functional after duplicated fd closed"
+        - "PASS: close original fd \\(reverse close\\)"
+        - "PASS: eventfd create \\(nonblock inherit\\)"
+        - "PASS: dup for nonblock inherit"
+        - "PASS: duplicated fd reports O_NONBLOCK via fcntl"
+        - "PASS: duplicated fd inherits O_NONBLOCK"
+        - "PASS: close original nonblock fd"
+        - "PASS: close duplicated nonblock fd"
+        - "PASS: eventfd create \\(multi dup\\)"
+        - "PASS: multi dup returns distinct fds"
+        - "PASS: close middle duplicated fd"
+        - "PASS: write fd1 after closing middle dup"
+        - "PASS: fd3 still shares object after middle dup closed"
+        - "PASS: close remaining fd1"
+        - "PASS: close remaining fd3"
+        - "PASS: eventfd create \\(closed fd\\)"
+        - "PASS: close fd before dup"
+        - "PASS: dup on already closed fd fails with EBADF"
+        - "PASS: dup\\(INT_MAX\\) fails with EBADF"
+        - "dup\\(\\) sample PASSED \\(0 failures\\)"
