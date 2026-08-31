@@ -80,6 +80,9 @@ LOG_MODULE_DECLARE(i3c,CONFIG_I3C_LOG_LEVEL);
  * 100ms 覆盖 DAA 场景，也是主机不存在时 ibi_raise 不永久阻塞的兜底。 */
 #define I3C_IBI_COMPLETE_TIMEOUT   K_MSEC(100)
 
+/* 硬件只准许注册4个ibi/hj通知的设备 */
+#define I3C_CONTROLLER_MAX_COUNT_IBI_DEVEICE 4
+
 /* Private define for CCC command */
 #define I3C_BROADCAST_RSTDAA          (0x00000006U)
 #define I3C_BROADCAST_ENTDAA          (0x00000007U)
@@ -230,7 +233,7 @@ struct ls_i3c_data {
 		bool has_mandatory_byte;
 
 		bool already_enabled;
-	} ibi_inifo[4];
+	} ibi_inifo[I3C_CONTROLLER_MAX_COUNT_IBI_DEVEICE];
 #endif
 };
 
@@ -2478,6 +2481,12 @@ static int ls_i3c_ibi_enable(const struct device *dev, struct i3c_device_desc *t
 			break;
 		}
 	}
+	if(set_idx >= I3C_CONTROLLER_MAX_COUNT_IBI_DEVEICE)
+	{
+		LOG_ERR("Cannot support more IBIs");
+		ret = -ENOTSUP;
+		goto out;
+	}
 	/*暂时先把cr使能放到ibi使能中，两者共用一个DEVICEx 寄存器*/
 	uint32_t controller_capable = i3c_device_is_controller_capable(target);
 	if(controller_capable)
@@ -2499,7 +2508,7 @@ static int ls_i3c_ibi_enable(const struct device *dev, struct i3c_device_desc *t
 	if (ret != 0) {
 		LOG_ERR("Error sending IBI ENEC for 0x%02x (%d)", target->dynamic_addr, ret);
 	}
-
+out:
 	return ret;
 }
 
