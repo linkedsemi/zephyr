@@ -26,6 +26,11 @@ extern const uint32_t g_ecc_p521_imem_size;
 extern const uint8_t g_ecc_p521_dmem[];
 extern const uint32_t g_ecc_p521_dmem_size;
 
+extern const uint8_t g_ecc_sm2_imem[];
+extern const uint32_t g_ecc_sm2_imem_size;
+extern const uint8_t g_ecc_sm2_dmem[];
+extern const uint32_t g_ecc_sm2_dmem_size;
+
 /* ========================================================================== */
 /* DMEM protocol constants (match the OTBN firmware main.s symbol layout)     */
 /* ========================================================================== */
@@ -57,6 +62,16 @@ extern const uint32_t g_ecc_p521_dmem_size;
 #define P384_RY_OFFSET           (800)
 #define P384_FIELD_BYTES         (48)
 #define P384_DMEM_TOTAL          (1696)
+
+/* SM2 pointops firmware — same DMEM layout as P-256, different curve params */
+#define SM2_MODE_OFFSET          (224)
+#define SM2_SCALAR_D_OFFSET      (256)
+#define SM2_X_OFFSET             (384)
+#define SM2_Y_OFFSET             (416)
+#define SM2_QX_OFFSET            (448)
+#define SM2_QY_OFFSET            (480)
+#define SM2_FIELD_BYTES          (32)
+#define SM2_DMEM_TOTAL           (1088)
 
 /* P-521 pointops firmware: atomic field/point operations only. Scalar
  * multiplication is built in software (Montgomery ladder) on top of these. */
@@ -143,6 +158,24 @@ static const struct pointops_curve_layout p384_layout = {
     .field_bytes = P384_FIELD_BYTES,
 };
 
+static const struct pointops_curve_layout sm2_layout = {
+    .fw_id = OTBN_FIRMWARE_ECC_SM2_POINTOPS,
+    .imem = g_ecc_sm2_imem,
+    .imem_size = &g_ecc_sm2_imem_size,
+    .dmem = g_ecc_sm2_dmem,
+    .dmem_size = &g_ecc_sm2_dmem_size,
+    .dmem_total = SM2_DMEM_TOTAL,
+    .mode_off = SM2_MODE_OFFSET,
+    .d_off = SM2_SCALAR_D_OFFSET,
+    .px_off = SM2_X_OFFSET,
+    .py_off = SM2_Y_OFFSET,
+    .qx_off = SM2_QX_OFFSET,
+    .qy_off = SM2_QY_OFFSET,
+    .rx_off = SM2_X_OFFSET,
+    .ry_off = SM2_Y_OFFSET,
+    .field_bytes = SM2_FIELD_BYTES,
+};
+
 static const struct pointops_curve_layout *pointops_get_layout(
     enum ls_otbn_pointops_curve curve)
 {
@@ -151,6 +184,8 @@ static const struct pointops_curve_layout *pointops_get_layout(
         return &p256_layout;
     case LS_OTBN_POINTOPS_CURVE_P384:
         return &p384_layout;
+    case LS_OTBN_POINTOPS_CURVE_SM2:
+        return &sm2_layout;
     default:
         return NULL;
     }
@@ -819,6 +854,9 @@ int ls_otbn_pointops_field_bytes(enum ls_otbn_pointops_curve curve, size_t *byte
         return 0;
     case LS_OTBN_POINTOPS_CURVE_P521:
         *bytes = P521_FIELD_BYTES;
+        return 0;
+    case LS_OTBN_POINTOPS_CURVE_SM2:
+        *bytes = SM2_FIELD_BYTES;
         return 0;
     default:
         return -EINVAL;
