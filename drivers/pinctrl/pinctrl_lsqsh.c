@@ -29,6 +29,16 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pin_desc)
         io_pull_write(pin, IO_PULL_UP1);
     } else if (pin_desc.pin_attr.bias_pull_up2) {
         io_pull_write(pin, IO_PULL_UP2);
+    } else if (pin_desc.pin_attr.bias_pull_up3) {
+        io_pull_write(pin, IO_PULL_UP3);
+    } else if (pin_desc.pin_attr.bias_pull_up4) {
+        io_pull_write(pin, IO_PULL_UP4);
+    } else if (pin_desc.pin_attr.bias_pull_up5) {
+        io_pull_write(pin, IO_PULL_UP5);
+    } else if (pin_desc.pin_attr.bias_pull_up6) {
+        io_pull_write(pin, IO_PULL_UP6);
+    } else if (pin_desc.pin_attr.bias_pull_up7) {
+        io_pull_write(pin, IO_PULL_UP7);
     } else {
         io_pull_write(pin, IO_PULL_DISABLE);
     }

@@ -40,6 +40,11 @@ typedef struct __attribute__((packed)) {
                 bias_pull_up0    : 1,
                 bias_pull_up1    : 1,
                 bias_pull_up2    : 1,
+                bias_pull_up3    : 1,
+                bias_pull_up4    : 1,
+                bias_pull_up5    : 1,
+                bias_pull_up6    : 1,
+                bias_pull_up7    : 1,
                 bias_pull_down   : 1,
                 drive_push_pull  : 1,
                 drive_open_drain : 1,
@@ -72,6 +77,11 @@ typedef struct __attribute__((packed)) {
         .pin_attr.bias_pull_up0    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up0), \
         .pin_attr.bias_pull_up1    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up1), \
         .pin_attr.bias_pull_up2    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up2), \
+        .pin_attr.bias_pull_up3    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up3), \
+        .pin_attr.bias_pull_up4    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up4), \
+        .pin_attr.bias_pull_up5    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up5), \
+        .pin_attr.bias_pull_up6    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up6), \
+        .pin_attr.bias_pull_up7    = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_up7), \
         .pin_attr.bias_pull_down   = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, bias_pull_down), \
         .pin_attr.drive_push_pull  = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_push_pull), \
         .pin_attr.drive_open_drain = DT_PROP_BY_PHANDLE_IDX(node, prop, idx, drive_open_drain), \

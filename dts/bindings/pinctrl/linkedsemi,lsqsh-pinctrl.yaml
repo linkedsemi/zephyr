@@ -93,6 +93,26 @@ child-binding:
           type: boolean
           description: enable pull-up resistor
 
+        bias-pull-up3:
+          type: boolean
+          description: enable pull-up resistor
+
+        bias-pull-up4:
+          type: boolean
+          description: enable pull-up resistor
+
+        bias-pull-up5:
+          type: boolean
+          description: enable pull-up resistor
+
+        bias-pull-up6:
+          type: boolean
+          description: enable pull-up resistor
+
+        bias-pull-up7:
+          type: boolean
+          description: enable pull-up resistor
+
         lock:
           type: boolean
 
