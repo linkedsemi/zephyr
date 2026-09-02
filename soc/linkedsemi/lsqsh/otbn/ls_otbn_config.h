@@ -68,6 +68,7 @@ enum otbn_cmd_t
 #define OTBN_FIRMWARE_ECC_P256_POINTOPS  10 /**< ECC P-256 point operations firmware */
 #define OTBN_FIRMWARE_ECC_P384_POINTOPS  11 /**< ECC P-384 point operations firmware */
 #define OTBN_FIRMWARE_ECC_P521_POINTOPS  12 /**< ECC P-521 point operations firmware */
+#define OTBN_FIRMWARE_ECC_SM2_POINTOPS   13 /**< ECC SM2 point operations firmware */
 
 /** @brief Base value for user-defined custom firmware IDs */
 #define OTBN_FIRMWARE_USER_BASE     0x100
