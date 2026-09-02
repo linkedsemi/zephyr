@@ -11,9 +11,6 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/spinlock.h>
 #include <stdbool.h>
-#if defined(CONFIG_RESET)
-    #include <zephyr/drivers/reset.h>
-#endif
 #if defined(CONFIG_CLOCK_CONTROL)
     #include <zephyr/drivers/clock_control.h>
     #include <soc_clock.h>
@@ -36,7 +33,6 @@ struct iwdt_ls_config {
 	bool quick_enable;
 	uint32_t quick_timeout_ms;
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
-	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
 struct iwdt_ls_data {
@@ -149,7 +145,6 @@ static int iwdt_init(const struct device *dev)
 {
 	const struct iwdt_ls_config *const cfg = dev->config;
 	struct iwdt_ls_data *data = dev->data;
-	cfg->iwdg_reg->IWDT_CTRL &= ~WDT_CTRL_RST_EN;
 
 #if defined(CONFIG_CLOCK_CONTROL)
 	if (cfg->ccfg.cctl_dev) {
@@ -158,30 +153,20 @@ static int iwdt_init(const struct device *dev)
 			LOG_ERR("%s: %s device not ready", dev->name, clk_dev->name);
 			return -ENODEV;
 		}
-		clock_control_off(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
+
+		if (clock_control_get_status(clk_dev,(clock_control_subsys_t)&cfg->ccfg) == CLOCK_CONTROL_STATUS_OFF) {
+			int ret = clock_control_on(clk_dev,(clock_control_subsys_t)&cfg->ccfg);
+			if (ret < 0) {
+				LOG_ERR("%s: enable clock failed", dev->name);
+				return ret;
+			}
+		}
+
 	}
 #endif
 
-#if defined(CONFIG_RESET)
-	if (cfg->reset.dev != NULL) {
-		if (!device_is_ready(cfg->reset.dev)) {
-			LOG_ERR("%s: Reset controller device is not ready", dev->name);
-			return -ENODEV;
-		}
-
-		int ret = reset_line_toggle(cfg->reset.dev, cfg->reset.id);
-		if (ret != 0) {
-			LOG_ERR("%s: toggle reset line failed", dev->name);
-			return ret;
-		}
-	}
-#endif
-
-#if defined(CONFIG_CLOCK_CONTROL)
-	if (cfg->ccfg.cctl_dev) {
-		const struct device *clk_dev = cfg->ccfg.cctl_dev;
-		clock_control_on(clk_dev, (clock_control_subsys_t)&cfg->ccfg);
-	}
+#ifdef CONFIG_WDT_DISABLE_AT_BOOT
+	iwdt_ls_disable(dev);
 #endif
 
 	if (cfg->quick_enable) {
@@ -223,7 +208,6 @@ static const struct wdt_driver_api iwdt_ls_api = {
 		.quick_enable = DT_INST_PROP(inst, quick_enable),                                  \
 		.quick_timeout_ms = DT_INST_PROP_OR(inst, quick_timeout_ms, 1000),                 \
 		IF_ENABLED(CONFIG_CLOCK_CONTROL, (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))              \
-		IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, resets), (.reset = RESET_DT_SPEC_INST_GET(inst), )) \
 	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(inst, iwdt_init, NULL, &iwdt_ls_data##inst, &iwdt_ls_config##inst,   \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &iwdt_ls_api);
