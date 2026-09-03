@@ -63,7 +63,7 @@ static int ls_pwm_set_cycles(const struct device *dev, uint32_t channel, uint32_
 		return -EINVAL;
 	}
 	k_spinlock_key_t key = k_spin_lock(&data->pwm_spinlock);
-	if (flags & PWM_POLARITY_INVERTED == 0) {
+	if ((flags & PWM_POLARITY_INVERTED) == 0) {
 		config->reg->PWM_CTRL[channel] &= ~PWM_POL_MASK;
 	} else {
 		config->reg->PWM_CTRL[channel] |= PWM_POL_MASK;
