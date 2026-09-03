@@ -69,7 +69,6 @@ static void rtc_irq_handler(const void *arg){
     struct rtc_ls_data *data = dev->data;
 
     if (intr) {
-        LOG_INF(">>>> Alarm interrupt!\n");
         RTC_REGS(dev)->CTRL |= RTC_CTRL_INTR_CLR_MASK;
         RTC_REGS(dev)->CTRL &= ~RTC_CTRL_INTR_CLR_MASK;
 
@@ -78,7 +77,6 @@ static void rtc_irq_handler(const void *arg){
         if (data->alarm_cb) {
             data->alarm_cb(dev, 0, data->alarm_cb_user_data);
         }
-        LOG_INF("================================\n");
     }
 }
 
@@ -118,14 +116,16 @@ static int rtc_ls_get_time(const struct device *dev, struct rtc_time *tm){
     tm->tm_year = (cur1 >> 8) & 0xFF;
     tm->tm_mon  = (cur1 >> 4) & 0x0F;
     tm->tm_wday = (cur1 >> 0) & 0x07;
+    if (tm->tm_mon > 0) tm->tm_mon -= 1;
+    if (tm->tm_wday > 0) tm->tm_wday -= 1;
 
     return 0;
 }
 
 // Determine whether it is a leap year
-static inline bool is_leap_year(int year) {
-    year += 1900;  // The year of RTC is the year minus 1900
-    return (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0);
+static inline bool is_leap_year(int year_since_1900) {
+    year_since_1900 += 1900;  // The year of RTC is the year minus 1900
+    return (year_since_1900 % 4 == 0 && year_since_1900 % 100 != 0) || (year_since_1900 % 400 == 0);
 }
 
 //  Verify whether the date is valid
@@ -153,7 +153,8 @@ static bool is_valid_time(const struct rtc_time *t) {
  * and then set the corresponding year, month, and day. Setting the year, month, and day is not effective* immediately.
  * You need to toggle the rtc_set_tggl register, and then set rtc_en to 1,
  * "Note: Before setting the time, you must clear CTRL.rtc_en = 0; set SET0/SET1; raise CTRL.rtc_set_tggl; and then raise CTRL.rtc_en = 1
-*/
+ * After settime, the time is not immediately available, you need to wait for the time to be loaded into CURTIME/CURCAL.
+ */
 static int rtc_ls_set_time(const struct device *dev, const struct rtc_time *tm) {
     struct rtc_ls_data *data = dev->data;
     if (!is_valid_time(tm)) {
@@ -175,12 +176,10 @@ static int rtc_ls_set_time(const struct device *dev, const struct rtc_time *tm) 
 
     RTC_REGS(dev)->CAL   =
         ((tm->tm_year & 0xFF) << 8) |
-        ((tm->tm_mon  & 0x0F) << 4) |
-        ((tm->tm_wday & 0x07) << 0);
+        (((tm->tm_mon+1)  & 0x0F) << 4) |
+        (((tm->tm_wday+1) & 0x07) << 0);
 
     RTC_REGS(dev)->CTRL ^= RTC_CTRL_SET_TGGL_MASK;
-    k_busy_wait(10);
-
     RTC_REGS(dev)->CTRL |= RTC_CTRL_ENABLE_MASK;
     k_spin_unlock(&data->lock, key);
 
@@ -204,13 +203,15 @@ static int rtc_ls_alarm_set_time(const struct device *dev, uint16_t id, uint16_t
     k_spinlock_key_t key = k_spin_lock(&data->lock);
 
     RTC_REGS(dev)->CTRL &= ~RTC_CTRL_ALARM_EN_MASK;
+    RTC_REGS(dev)->CTRL |= RTC_CTRL_INTR_CLR_MASK;
+    RTC_REGS(dev)->CTRL &= ~RTC_CTRL_INTR_CLR_MASK;
     RTC_REGS(dev)->TIME = ((tm->tm_mday & 0x1F) << 24) |
                 (((tm->tm_hour+1) & 0x1F) << 16) |
                 (((tm->tm_min+1)  & 0x3F) << 8)  |
                 (((tm->tm_sec+1)  & 0x3F) << 0);
     RTC_REGS(dev)->CAL = ((tm->tm_year & 0xFF) << 8) |
-                ((tm->tm_mon  & 0x0F) << 4) |
-                ((tm->tm_wday & 0x07) << 0);
+                (((tm->tm_mon+1)  & 0x0F) << 4) |
+                (((tm->tm_wday+1) & 0x07) << 0);
 
     RTC_REGS(dev)->CTRL |= RTC_CTRL_ALARM_EN_MASK;
     k_spin_unlock(&data->lock, key);
@@ -260,6 +261,8 @@ static int rtc_ls_alarm_get_time(const struct device *dev, uint16_t id, uint16_t
     tm->tm_year = (tgt1 >> 8) & 0xFF;
     tm->tm_mon  = (tgt1 >> 4) & 0x0F;
     tm->tm_wday = (tgt1 >> 0) & 0x07;
+    if (tm->tm_mon > 0)  tm->tm_mon  -= 1;
+    if (tm->tm_wday > 0) tm->tm_wday -= 1;
 
     return 0;
 }
