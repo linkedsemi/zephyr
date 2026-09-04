@@ -57,19 +57,69 @@ NET_SOCKET_SERVICE_SYNC_DEFINE_STATIC(wolfssh_server, wolfssh_server_cb, 1);
 static void wolfssh_server_cb(struct net_socket_service_event *evt)
 {
     struct shell_wolfssh *sh_ssh = evt->user_data;
-    // struct pollfd *pfd = &evt->event;
     word32 lastChannel = 0;
-    k_mutex_lock(&sh_ssh->ssh_lock,K_FOREVER);
-    int ret = wolfSSH_worker(sh_ssh->ssh,&lastChannel);
+    int ret;
+    int gotRx = 0;
+
+    k_mutex_lock(&sh_ssh->ssh_lock, K_FOREVER);
+    /* wolfSSH_worker() is non-blocking. It may return a "fatal looking"
+     * WS_FATAL_ERROR/WS_ERROR (=-1001) whose underlying ssh->error is in
+     * fact WS_WANT_READ: that happens when the non-blocking socket has no
+     * more data mid-packet (GetInputData() surfaces a would-block as
+     * WS_FATAL_ERROR with ssh->error = WS_WANT_READ). Per wolfSSH's
+     * contract the application must consult wolfSSH_get_error(): a
+     * WS_WANT_READ / WS_WANT_WRITE / WS_REKEYING is transient and only
+     * means "call again when the socket is readable/writable" -- it must
+     * NEVER tear down the session. The only genuinely fatal conditions are
+     * a real transport/decrypt error or the channel being closed.
+     *
+     * Loop here so that every complete packet already queued in the socket
+     * receive buffer is drained (each yields WS_CHAN_RXD), and so that a
+     * WS_WANT_WRITE (output buffer full: echo / WINDOW_ADJUST / rekey) is
+     * retried after the socket becomes writable. */
+    do {
+        ret = wolfSSH_worker(sh_ssh->ssh, &lastChannel);
+
+        if (ret == WS_CHAN_RXD) {
+            gotRx = 1;
+            continue; /* drain more packets, if any */
+        }
+
+        int err = wolfSSH_get_error(sh_ssh->ssh);
+        if (ret == WS_WANT_WRITE || err == WS_WANT_WRITE) {
+            struct pollfd pfd = {
+                .fd = wolfSSH_get_fd(sh_ssh->ssh),
+                .events = POLLIN | POLLOUT,
+            };
+            if (poll(&pfd, 1, CONFIG_SHELL_WOLFSSH_TIMEOUT * 1000) <= 0)
+                break; /* give up; pending data retried on next event */
+            continue;  /* flush the output buffer and retry */
+        }
+
+        /* WS_WANT_READ / WS_REKEYING (incl. the -1001-with-error=WS_WANT_READ
+         * case) are transient: stop and wait for the next socket event. */
+        if (ret == WS_WANT_READ || err == WS_WANT_READ ||
+            ret == WS_REKEYING || err == WS_REKEYING) {
+            break;
+        }
+
+        break; /* any other (unexpected) return stops the loop */
+    } while (1);
     k_mutex_unlock(&sh_ssh->ssh_lock);
-    // LOG_DBG("wolfssh worker ret:%d\n",ret);
-    if(ret == WS_CHAN_RXD)
-    {
-        k_timer_start(&sh_ssh->timer,K_SECONDS(CONFIG_SHELL_WOLFSSH_TIMEOUT),K_NO_WAIT);
+
+    if (gotRx) {
+        k_timer_start(&sh_ssh->timer, K_SECONDS(CONFIG_SHELL_WOLFSSH_TIMEOUT),
+                      K_NO_WAIT);
         sh_ssh->shell_handler(SHELL_TRANSPORT_EVT_RX_RDY, sh_ssh->shell_context);
-    }else if(ret != WS_CHANNEL_CLOSED && ret != WS_WANT_READ)
-    {
+    }
+
+    int err = wolfSSH_get_error(sh_ssh->ssh);
+    if (ret != WS_CHANNEL_CLOSED && ret != WS_CHAN_RXD &&
+        err != WS_WANT_READ && err != WS_WANT_WRITE && err != WS_REKEYING &&
+        ret != WS_WANT_READ && ret != WS_WANT_WRITE && ret != WS_REKEYING) {
         struct shell *sh = sh_ssh->shell_context;
+        printk("wolfssh: session closed by worker error: ret=%d err=%d (%s)\n",
+               ret, err, wolfSSH_ErrorToName(err));
         net_socket_service_unregister(&wolfssh_server);
         k_poll_signal_raise(&sh->ctx->signals[SHELL_SIGNAL_KILL], 0);
     }
@@ -79,6 +129,7 @@ static void ssh_timeout_handler(struct k_timer *timer)
 {
     struct shell_wolfssh *sh_ssh = CONTAINER_OF(timer,struct shell_wolfssh,timer);
     struct shell *sh = sh_ssh->shell_context;
+    printk("wolfssh: idle timeout fired, killing session\n");
     if(sh->ctx->tid)
     {
         k_poll_signal_raise(&sh->ctx->signals[SHELL_SIGNAL_KILL], 0);
@@ -123,11 +174,55 @@ static int shell_ssh_read(const struct shell_transport *transport,void *data, si
 static int shell_ssh_write(const struct shell_transport *transport,const void *data, size_t length, size_t *cnt)
 {
     struct shell_wolfssh *sh_ssh = transport->ctx;
-    k_mutex_lock(&sh_ssh->ssh_lock,K_FOREVER);
-    wolfSSH_ChannelSend(sh_ssh->local_channel,data,length);
+    const uint8_t *p = (const uint8_t *)data;
+    size_t remaining = length;
+    int ret;
+
+    *cnt = 0;
+
+    /* Any outgoing data means the session is alive: reset the idle timeout so
+     * a command whose execution/output takes a while (with no *received*
+     * traffic in the meantime) is not killed by the idle timer. */
+    k_timer_start(&sh_ssh->timer, K_SECONDS(CONFIG_SHELL_WOLFSSH_TIMEOUT),
+		  K_NO_WAIT);
+
+    /* wolfSSH_ChannelSend() is non-blocking: when the underlying TCP send
+     * buffer is full it returns WS_WANT_WRITE (and WS_WANT_READ during a
+     * rekey). The old code ignored the return value and always reported the
+     * whole buffer as sent, so any large command output (e.g. `busctl tree`)
+     * was silently truncated on the SSH channel. Loop here and wait for the
+     * socket to become writable, only returning once everything is flushed
+     * or a timeout/error forces a partial write. */
+    k_mutex_lock(&sh_ssh->ssh_lock, K_FOREVER);
+    while (remaining > 0) {
+        ret = wolfSSH_ChannelSend(sh_ssh->local_channel, p, remaining);
+        if (ret > 0) {
+            p += (size_t)ret;
+            remaining -= (size_t)ret;
+        } else if (ret == WS_WANT_WRITE) {
+            struct pollfd pfd = {
+                .fd = wolfSSH_get_fd(sh_ssh->ssh),
+                .events = POLLOUT,
+            };
+            if (poll(&pfd, 1, CONFIG_SHELL_WOLFSSH_TIMEOUT * 1000) <= 0) {
+                break; /* timeout / error: report partial write */
+            }
+        } else if (ret == WS_WANT_READ) {
+            struct pollfd pfd = {
+                .fd = wolfSSH_get_fd(sh_ssh->ssh),
+                .events = POLLIN,
+            };
+            poll(&pfd, 1, CONFIG_SHELL_WOLFSSH_TIMEOUT * 1000);
+        } else {
+            printk("wolfssh: ChannelSend error ret=%d (%s)\n", ret,
+                   wolfSSH_ErrorToName(wolfSSH_get_error(sh_ssh->ssh)));
+            break; /* protocol/transport error */
+        }
+    }
     k_mutex_unlock(&sh_ssh->ssh_lock);
-    *cnt = length;
-    return 0;
+
+    *cnt = length - remaining;
+    return (remaining == 0) ? 0 : -EIO;
 }
 
 static int shell_ssh_uninit(const struct shell_transport *transport)
@@ -169,19 +264,34 @@ static void set_password_suite(WOLFSSH_CTX* ctx)
     if(wolfSSH_CTX_SetAlgoListKex(ctx, kex_list) != WS_SUCCESS)
         LOG_WRN("Failed to set Kex list\n");
 
+    /* Only nistp256 is listed because wsGetEccKeyDer() loads a P-256 key and
+     * nothing else. Setting algoListKey makes wolfSSH match against this
+     * string instead of ctx->publicKeyAlgo (the keys actually loaded, see
+     * DoKexInit()), so listing nistp384 here would let a client that prefers
+     * P-384 select a host key algorithm we have no private key for. */
     const char* key_list = 
-        "ecdsa-sha2-nistp256,"
-        "ecdsa-sha2-nistp384";
+        "ecdsa-sha2-nistp256";
     if(wolfSSH_CTX_SetAlgoListKey(ctx, key_list) != WS_SUCCESS)
         LOG_WRN("Failed to set Key list\n");
 
+    /* IMPORTANT: every name listed here is advertised verbatim in our
+     * KEXINIT, but wolfSSH resolves its *own* list through NameToId() and
+     * silently drops names the build does not implement (GetNameListRaw:
+     * "if (id != ID_UNKNOWN ...)"). Advertising an unimplemented algorithm
+     * therefore makes the two peers pick *different* ciphers: the client
+     * picks the advertised one, we pick the next one we really have. The KEX
+     * signature still verifies (the exchange hash only covers the KEXINIT
+     * payload), so the failure only shows up after NEWKEYS as
+     * "Bad packet length" / "message authentication code incorrect".
+     *
+     * aes*-ctr is NOT in this build: it requires WOLFSSL_AES_COUNTER, which
+     * the app's wolfssl_user_settings.h does not define, so wolfssh/internal.h
+     * sets WOLFSSH_NO_AES_CTR. Add WOLFSSL_AES_COUNTER (and rebuild wolfSSL
+     * from scratch: it changes the Aes struct layout) before re-listing them.
+     */
     const char* cipher_list = 
         "aes256-gcm@openssh.com,"
-        "aes192-gcm@openssh.com,"
         "aes128-gcm@openssh.com,"
-        "aes256-ctr,"
-        "aes192-ctr,"
-        "aes128-ctr,"
         "aes256-cbc,"
         "aes192-cbc,"
         "aes128-cbc";
@@ -320,10 +430,19 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
                     // LOG_INF("old session killed\n");
                 }
                 // LOG_INF("new session request\n");
+                /* CONFIG_SHELL_WOLFSSH_LOG_LEVEL comes from
+                 * Kconfig.template.log_config which depends on LOG. Apps
+                 * that do not enable CONFIG_LOG (e.g. they log via printk)
+                 * must not fail to compile: fall back to no log backend. */
+#if defined(CONFIG_SHELL_WOLFSSH_LOG_LEVEL)
                 bool log_backend = CONFIG_SHELL_WOLFSSH_LOG_LEVEL > 0;
                 uint32_t level =
                     (CONFIG_SHELL_WOLFSSH_LOG_LEVEL > LOG_LEVEL_DBG) ?
                     CONFIG_LOG_MAX_LEVEL : CONFIG_SHELL_WOLFSSH_LOG_LEVEL;
+#else
+                bool log_backend = false;
+                uint32_t level = LOG_LEVEL_NONE;
+#endif
                 static const struct shell_backend_config_flags cfg_flags =
                                 SHELL_DEFAULT_BACKEND_CONFIG_FLAGS;
                 shell_init(&shell_wolfssh,ssh,cfg_flags,log_backend,level);
@@ -347,9 +466,11 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
 
 static int create_wolfssh_shell_daemon(void)
 {
-    k_thread_name_set(&ssh_daemon_thread,"ssh_daemon_thread");
+    /* Name must be set AFTER k_thread_create(): create() re-initializes the
+     * thread struct and would wipe a name set beforehand. */
     k_thread_create(&ssh_daemon_thread,ssh_daemon_stack,K_KERNEL_STACK_SIZEOF(ssh_daemon_stack),
         ssh_daemon_func,NULL,NULL,NULL,SHELL_SSH_DAEMON_THREAD_PRIORITY,0,K_NO_WAIT);
+    k_thread_name_set(&ssh_daemon_thread,"ssh_daemon_thread");
     return 0;
 }
 
