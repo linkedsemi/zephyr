@@ -16,7 +16,7 @@
 #include <zephyr/cache.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(mbedtls,CONFIG_MBEDTLS_LOG_LEVEL);
+LOG_MODULE_DECLARE(mbedtls_otbn, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
 
 #define ASSERT_MBEDTLS(error) {if(error){printf("mbedtls :stack is too small\n"); err = MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL; goto exit;}}
 #define DELEGATE_ECDSA_GENE_KEY 0x11
