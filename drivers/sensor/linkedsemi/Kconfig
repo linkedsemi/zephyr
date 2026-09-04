@@ -18,4 +18,13 @@ config CAP_V2
 	  Enable this option to add support for the newer QSH hardware variant
 	  of the Linkedsemi CAP sensor. Leave disabled if using older hardware.
 
+config CAP_LS_FETCH_TIMEOUT_MS
+	int "CAP sample_fetch wait timeout in milliseconds"
+	default 1000
+	range 1 60000
+	help
+	  How long cap_sample_fetch waits for a capture-complete interrupt.
+	  CAP does not raise an IRQ if the pin stays at a fixed level, so
+	  this must not be infinite. Timed-out fetch returns -EAGAIN.
+
 endif # CAP_LS

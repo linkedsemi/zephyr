@@ -299,9 +299,11 @@ static int cap_sample_fetch(const struct device *dev, enum sensor_channel chan)
 
 	cap_intr_mask_atomic(data, cap, channel, true);
 
-	ret = k_sem_take(&data->data_sem[channel], K_FOREVER);
+	ret = k_sem_take(&data->data_sem[channel], K_MSEC(CONFIG_CAP_LS_FETCH_TIMEOUT_MS));
 	if (ret != 0) {
-		LOG_DBG("CAP timeout on channel %d", channel);
+		cap_intr_mask_atomic(data, cap, channel, false);
+		k_sem_reset(&data->data_sem[channel]);
+		LOG_WRN("CAP timeout on channel %d", channel);
 		k_mutex_unlock(&data->ch_mutex[channel]);
 		return -EAGAIN;
 	}
