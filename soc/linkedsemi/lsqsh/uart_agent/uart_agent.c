@@ -21,8 +21,7 @@ struct uart_agent_data {
 
 struct uart_agent_cfg {
     struct host_vuart_fifo *vuart_fifo_base;
-    const struct mbox_dt_spec mbox_tx;
-    const struct mbox_dt_spec mbox_rx;
+    const struct mbox_dt_spec mbox;
     const struct device *uart;
 };
 
@@ -65,7 +64,7 @@ static void uart_callback(const struct device *dev, void *user_data)
             for (int i = 0; i < recv_len; i++) {
                 uart_agent_send_char_h2b(agent, buffer[i]);
             }
-            uart_agent_status_send(&cfg->mbox_tx, B_RX_AVAIL);
+            uart_agent_status_send(&cfg->mbox, B_RX_AVAIL);
         } else {
             LOG_WRN("RX ready but fifo read returned 0");
         }
@@ -92,7 +91,7 @@ static void uart_agent_work_handler(struct k_work *work)
             general_fifo_get(&cfg->vuart_fifo_base->b2h, &value);
             uart_poll_out(cfg->uart, value);
         }
-        uart_agent_status_send(&cfg->mbox_tx, B_TX_EMPTY);
+        uart_agent_status_send(&cfg->mbox, B_TX_EMPTY);
     }
 }
 
@@ -131,7 +130,7 @@ int uart_agent_start(const struct device *dev)
     uart_irq_rx_enable(cfg->uart);
 
 #ifdef CONFIG_SOC_LSQSH_CPU2
-    uart_agent_status_send(&cfg->mbox_tx, H_RX_AVAIL);
+    uart_agent_status_send(&cfg->mbox, H_RX_AVAIL);
 #endif
 
     return 0;
@@ -177,9 +176,8 @@ static int ls_uart_agent_init(const struct device *dev)
         cfg->vuart_fifo_base->host_rx_from_vuart = false;
     }
 
-    mbox_set_enabled_dt(&cfg->mbox_tx, true);
-    mbox_register_callback_dt(&cfg->mbox_rx, uart_agent_mbox_callback, (void *)dev);
-    mbox_set_enabled_dt(&cfg->mbox_rx, true);
+    mbox_register_callback_dt(&cfg->mbox, uart_agent_mbox_callback, (void *)dev);
+    mbox_set_enabled_dt(&cfg->mbox, true);
 
     return 0;
 }
@@ -188,8 +186,7 @@ static int ls_uart_agent_init(const struct device *dev)
     static struct uart_agent_data uart_agent_data##inst;                              \
     static const struct uart_agent_cfg uart_agent_cfg##inst = {                       \
         .vuart_fifo_base = (struct host_vuart_fifo *)DT_INST_PROP(inst, fifo_base),   \
-        .mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(inst, mbox), tx),                 \
-        .mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(inst, mbox), rx),                 \
+        .mbox = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(inst, mbox), mbox),                   \
         .uart = DEVICE_DT_GET(DT_INST_PHANDLE(inst, uart)),                           \
     };                                                                                \
     DEVICE_DT_INST_DEFINE(inst, ls_uart_agent_init, NULL, &uart_agent_data##inst,     \

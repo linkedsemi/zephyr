@@ -14,8 +14,7 @@ LOG_MODULE_REGISTER(linkedsemi_ls_flash_delegation_client, CONFIG_FLASH_LOG_LEVE
 
 struct flash_ls_client_config {
 	void *reg;
-	const struct mbox_dt_spec mbox_tx;
-	const struct mbox_dt_spec mbox_rx;
+	const struct mbox_dt_spec mbox;
 	struct flash_pages_layout layout;
 };
 
@@ -82,9 +81,8 @@ static int flash_ls_client_init(const struct device *dev)
 	const struct flash_ls_client_config *cfg = dev->config;
 	k_sem_init(&priv->sem,1,1);
 	k_sem_init(&priv->op_return_sem,0,1);
-	mbox_set_enabled_dt(&cfg->mbox_tx,true);
-	mbox_register_callback_dt(&cfg->mbox_rx,delegation_client_mbox_callback,NULL);
-	mbox_set_enabled_dt(&cfg->mbox_rx,true);
+	mbox_register_callback_dt(&cfg->mbox,delegation_client_mbox_callback,NULL);
+	mbox_set_enabled_dt(&cfg->mbox,true);
 	return 0;
 }
 
@@ -110,7 +108,7 @@ static int flash_ls_client_erase(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	int ret = k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT));
 	if(!ret) ret = priv->ret.value;
 	k_sem_give(&priv->sem);
@@ -140,7 +138,7 @@ static int flash_ls_client_write_op(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	int ret = k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT));
 	if(!ret) ret = priv->ret.value;
 	k_sem_give(&priv->sem);
@@ -170,7 +168,7 @@ static int flash_ls_client_read_op(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	int ret = k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT));
 	if(!ret) ret = priv->ret.value;
 	k_sem_give(&priv->sem);
@@ -328,7 +326,7 @@ uint8_t flash_ls_client_read_ear(const struct device *dev)
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	int ret = k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT));
 	if(!ret) ret = priv->ret.value;
 	k_sem_give(&priv->sem);
@@ -351,7 +349,7 @@ flash_ls_client_get_parameters(const struct device *dev)
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	const struct flash_parameters *ret;
 	if(k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT)))
 	{
@@ -398,7 +396,7 @@ static int flash_ls_client_read_jedec_id(const struct device *dev, uint8_t *id)
 		.size = sizeof(param),
 	};
 	sys_cache_data_invd_range((void *)buf_align, sizeof(buf_align));
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	int ret = k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT));
 	if(!ret) ret = priv->ret.value;
 	k_sem_give(&priv->sem);
@@ -429,7 +427,7 @@ static int flash_ls_client_sfdp_read(const struct device *dev, off_t offset,
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	int ret = k_sem_take(&priv->op_return_sem,K_MSEC(CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT));
 	if(!ret) ret = priv->ret.value;
 	k_sem_give(&priv->sem);
@@ -497,7 +495,7 @@ __ramfunc int flash_ls_ex_op(const struct device *dev, uint16_t code,
 					.data = &param,
 					.size = sizeof(param),
 				};
-				mbox_send_dt(&cfg->mbox_tx,&msg);
+				mbox_send_dt(&cfg->mbox,&msg);
 				busy_poll(poll_suspend_request_true,priv,CONFIG_FLASH_DELEGATION_SUSPEND_TIMEOUT);
 			}
 			priv->suspend_count++;
@@ -552,8 +550,7 @@ static struct flash_driver_api flash_ls_client_api = {
 #define LS_FLASH_CLIENT_INIT(idx)\
 	static const struct flash_ls_client_config flash_ls_client_cfg_##idx ={\
 		.reg = (void *)DT_INST_REG_ADDR(idx),\
-		.mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
-		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
+		.mbox = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox),mbox),\
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CLIENT_CHILD)\
 	};\
 	static struct flash_ls_client_data flash_ls_client_data_##idx;\

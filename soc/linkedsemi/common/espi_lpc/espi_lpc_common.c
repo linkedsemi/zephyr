@@ -131,14 +131,13 @@ static void hb_exch_rx_callback(const struct device *dev,
 
 void host_bmc_msg_exch_init(const struct host_bmc_msg_exch *exch)
 {
-    mbox_register_callback_dt(&exch->mbox_rx,hb_exch_rx_callback, (void *)exch);
-    mbox_set_enabled_dt(&exch->mbox_tx, true);
-    mbox_set_enabled_dt(&exch->mbox_rx, true);
+    mbox_register_callback_dt(&exch->mbox,hb_exch_rx_callback, (void *)exch);
+    mbox_set_enabled_dt(&exch->mbox, true);
 }
 
 void vuart_status_send(const struct host_bmc_msg_exch *exch,enum vuart_hb_msg_type vuart_msg_type)
 {
-	vuart_mbox_status_send(&exch->mbox_tx,vuart_msg_type);
+	vuart_mbox_status_send(&exch->mbox,vuart_msg_type);
 }
 
 void vuart_b2h_mode_set(const struct host_bmc_msg_exch *exch,bool host_rx_from_vuart,bool host_tx_to_vuart)
@@ -148,25 +147,25 @@ void vuart_b2h_mode_set(const struct host_bmc_msg_exch *exch,bool host_rx_from_v
 		.host_rx_from_vuart = host_rx_from_vuart,
 		.host_tx_to_vuart = host_tx_to_vuart,
 	};
-	espi_lpc_mbox_msg_send(&exch->mbox_tx,&vuart_msg,sizeof(struct vuart_hb_msg));
+	espi_lpc_mbox_msg_send(&exch->mbox,&vuart_msg,sizeof(struct vuart_hb_msg));
 }
 
 void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch)
 {
 	enum kcs_hb_msg_type kcs_msg = KCS_IBF_EVENT;
-	espi_lpc_mbox_msg_send(&exch->mbox_tx,&kcs_msg,sizeof(kcs_msg));
+	espi_lpc_mbox_msg_send(&exch->mbox,&kcs_msg,sizeof(kcs_msg));
 }
 
 void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 {
 	enum kcs_hb_msg_type kcs_msg = KCS_OBF_EVENT;
-	espi_lpc_mbox_msg_send(&exch->mbox_tx,&kcs_msg,sizeof(kcs_msg));
+	espi_lpc_mbox_msg_send(&exch->mbox,&kcs_msg,sizeof(kcs_msg));
 }
 
 void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx)
 {
 	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,};
-	espi_lpc_mbox_msg_send(&exch->mbox_tx,&vw_msg,sizeof(vw_msg));
+	espi_lpc_mbox_msg_send(&exch->mbox,&vw_msg,sizeof(vw_msg));
 }
 
 #else
