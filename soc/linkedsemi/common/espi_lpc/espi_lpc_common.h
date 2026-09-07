@@ -128,14 +128,12 @@ struct espi_sysevent_base {
 struct host_bmc_msg_exch {
     const struct device *dev;
     void (*rx_callback)(const struct device *dev,void *msg);
-    const struct mbox_dt_spec mbox_tx;
-    const struct mbox_dt_spec mbox_rx;
+    const struct mbox_dt_spec mbox;
 };
 #define HOST_BMC_MSG_EXCH_INIT(idx,rx_cb,peer_rx_cb) {\
     .dev = DEVICE_DT_GET(DT_DRV_INST(idx)),     \
     .rx_callback = rx_cb,\
-    .mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
-    .mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
+    .mbox = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), mbox),\
     }
 #else
 struct host_bmc_msg_exch {
