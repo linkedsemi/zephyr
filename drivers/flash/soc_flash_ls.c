@@ -30,8 +30,7 @@ struct flash_partition_attr {
 
 struct flash_ls_config {
 	#if defined(CONFIG_FLASH_OP_DELEGATION_SERVER)
-	const struct mbox_dt_spec mbox_tx;
-	const struct mbox_dt_spec mbox_rx;
+	const struct mbox_dt_spec mbox;
 	struct flash_ls_shared_data *shared;
 	#endif
 	struct flash_parameters params;
@@ -85,7 +84,7 @@ static void flash_delegation_server_operation_sync(const struct device *dev)
 		return;
 	}
 
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 	if(busy_poll(server_polling,(void *)cfg,CONFIG_FLASH_DELEGATION_SYNC_TIMEOUT*1000)!=0)
 	{
 		priv->client_xip_active = false;
@@ -410,7 +409,7 @@ static void delegation_server_work_handler(struct k_work *work)
 		.data = &param,
 		.size = sizeof(param),
 	};
-	mbox_send_dt(&cfg->mbox_tx,&msg);
+	mbox_send_dt(&cfg->mbox,&msg);
 }
 
 static bool poll_suspend_request_false(void *param)
@@ -504,9 +503,8 @@ static int flash_ls_init(const struct device *dev)
 	cfg->shared->hold_ack = false;
 	priv->dev = dev; // make sure the config is initialized before the work handler is submitted
 	k_work_init(&priv->worker,delegation_server_work_handler);
-	mbox_set_enabled_dt(&cfg->mbox_tx,true);
-	mbox_register_callback_dt(&cfg->mbox_rx,delegation_server_mbox_callback,NULL);
-	mbox_set_enabled_dt(&cfg->mbox_rx,true);
+	mbox_register_callback_dt(&cfg->mbox,delegation_server_mbox_callback,NULL);
+	mbox_set_enabled_dt(&cfg->mbox,true);
 	#endif
 	return 0;
 }
@@ -791,8 +789,7 @@ static struct flash_driver_api flash_ls_api = {
 		.continuous_mode_enable = DT_INST_PROP(idx,continuous_mode),\
 		.addr4b = (DT_INST_FOREACH_CHILD_STATUS_OKAY(idx, LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE) > (16 << 20)),\
 		IF_ENABLED(CONFIG_FLASH_OP_DELEGATION_SERVER,(\
-		.mbox_tx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), tx),\
-		.mbox_rx = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox), rx),\
+		.mbox = MBOX_DT_SPEC_GET(DT_INST_PHANDLE(idx, mbox),mbox),\
 		))\
 		DT_INST_FOREACH_CHILD(idx,LS_FLASH_CONTROLLER_CHILD)\
 		COND_CODE_1(DT_NODE_EXISTS(DT_INST(idx, fixed_partitions)), \
