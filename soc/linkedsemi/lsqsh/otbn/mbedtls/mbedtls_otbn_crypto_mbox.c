@@ -36,8 +36,7 @@ struct otbn_delegate_params
 };
 
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
-struct mbox_dt_spec ls_otbn_client_tx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),tx);
-struct mbox_dt_spec ls_otbn_client_rx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),rx);
+struct mbox_dt_spec ls_otbn_client = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),mbox);
 struct k_sem client_sem;
 struct k_sem client_op_return_sem;
 static volatile struct otbn_delegate_params recive_params;
@@ -82,14 +81,12 @@ static void delegation_client_mbox_callback(const struct device *dev,
 /* client : cpu1 secure*/
 void mbedtls_ls_otbn_delegation_client_chanels_init(void)
 {
-    // LOG_DBG("ls_otbn_tx channel_id= 0x%x\n",ls_otbn_client_tx.channel_id);
-    // LOG_DBG("ls_otbn_rx channel_id= 0x%x\n",ls_otbn_client_rx.channel_id);
+    // LOG_DBG("ls_otbn channel_id= 0x%x\n",ls_otbn_client.channel_id);
     k_sem_init(&client_sem,1,1);
     k_sem_init(&client_op_return_sem,0,1);
 
-	mbox_set_enabled_dt(&ls_otbn_client_tx,true);
-	mbox_register_callback_dt(&ls_otbn_client_rx,delegation_client_mbox_callback,NULL);
-	mbox_set_enabled_dt(&ls_otbn_client_rx,true);
+	mbox_register_callback_dt(&ls_otbn_client,delegation_client_mbox_callback,NULL);
+	mbox_set_enabled_dt(&ls_otbn_client,true);
 }
 
 
@@ -127,7 +124,7 @@ int mbedtls_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_id gid,
     sys_cache_data_flush_range((void *)private_key, MAX_OTBN_CURVE_LEN);
     sys_cache_data_flush_range((void *)public_key, MAX_OTBN_CURVE_LEN*2);
 
-    mbox_send_dt(&ls_otbn_client_tx,&msg);
+    mbox_send_dt(&ls_otbn_client,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
     if(recive_params.status != 0)
         err = -1;
@@ -181,7 +178,7 @@ int mbedtls_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_mpi *s,
     sys_cache_data_flush_range((void *)private_key, MAX_OTBN_CURVE_LEN);
     sys_cache_data_flush_range((void *)user_buf, MAX_OTBN_CURVE_LEN);
 
-    mbox_send_dt(&ls_otbn_client_tx,&msg);
+    mbox_send_dt(&ls_otbn_client,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
     if(!recive_params.status)
     {
@@ -242,7 +239,7 @@ int mbedtls_ecdsa_verify(mbedtls_ecp_group *grp,
     sys_cache_data_flush_range((void *)param.data[2], MAX_OTBN_CURVE_LEN);
     sys_cache_data_flush_range((void *)param.data[3], MAX_OTBN_CURVE_LEN);
 
-    mbox_send_dt(&ls_otbn_client_tx,&msg);
+    mbox_send_dt(&ls_otbn_client,&msg);
     k_sem_take(&client_op_return_sem,K_FOREVER);
     if(recive_params.status != 0)
     {
@@ -257,8 +254,7 @@ int mbedtls_ecdsa_verify(mbedtls_ecp_group *grp,
 static void mbedtls_delegation_server_consumer(struct k_work *work);
 // K_THREAD_DEFINE(consumer_thread_id, 1024, mbedtls_delegation_server_consumer, NULL, NULL, NULL, 2, 0, 0);
 const static struct device *trng = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
-static struct mbox_dt_spec ls_otbn_server_tx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),tx);
-static struct mbox_dt_spec ls_otbn_server_rx = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),rx);
+static struct mbox_dt_spec ls_otbn_server = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),mbox);
 static struct k_sem server_sem;
 static struct k_sem server_op_return_sem;
 static struct k_work worker;
@@ -286,7 +282,7 @@ static void delegation_server_mbox_handler(const struct device *dev,struct mbox_
                     .status = MBEDTLS_ERR_ECP_IN_PROGRESS,
                 };
                 msg.data = &rparam;
-                mbox_send_dt(&ls_otbn_server_tx,&msg);
+                mbox_send_dt(&ls_otbn_server,&msg);
                 LOG_DBG("mbedtls mailbox fifo too small\n");
             }else
             {
@@ -306,24 +302,22 @@ static void delegation_server_mbox_callback(const struct device *dev,
 				mbox_channel_id_t channel_id, void *user_data,
 				struct mbox_msg *data)
 {
-    delegation_server_mbox_handler(ls_otbn_server_rx.dev,data);
+    delegation_server_mbox_handler(ls_otbn_server.dev,data);
 	// DT_INST_FOREACH_STATUS_OKAY(DELEGATION_SERVER_MBOX_CALLBACK);
 }
 
 /* server : cpu2 app core*/
 void mbedtls_ls_otbn_delegation_server_chanels_init(void)
 {
-    // LOG_DBG("ls_otbn_tx channel_id= 0x%x\n",ls_otbn_server_tx.channel_id);
-    // LOG_DBG("ls_otbn_rx channel_id= 0x%x\n",ls_otbn_server_rx.channel_id);
+    // LOG_DBG("ls_otbn channel_id= 0x%x\n",ls_otbn_server.channel_id);
     k_sem_init(&server_sem,1,1);
     k_sem_init(&server_op_return_sem,0,1);
     k_msgq_init(&msgq, (char *)msgq_buf, sizeof(struct otbn_delegate_params), MBEDTLS_MSGQ_LEN);
 
     k_work_init(&worker,mbedtls_delegation_server_consumer);
     // k_thread_start(consumer_thread_id);
-	mbox_set_enabled_dt(&ls_otbn_server_tx,true);
-	mbox_register_callback_dt(&ls_otbn_server_rx,delegation_server_mbox_callback,NULL);
-	mbox_set_enabled_dt(&ls_otbn_server_rx,true);
+	mbox_register_callback_dt(&ls_otbn_server,delegation_server_mbox_callback,NULL);
+	mbox_set_enabled_dt(&ls_otbn_server,true);
 }
 
 static int ls_wolfssl_get_random(void *null, unsigned char *buf, size_t size)
@@ -447,7 +441,7 @@ exit:
         }
         msg.data = &param;
         msg.size = sizeof(param);
-        mbox_send_dt(&ls_otbn_server_tx,&msg);
+        mbox_send_dt(&ls_otbn_server,&msg);
         mbedtls_ecp_group_free(&ctx.private_grp);
         mbedtls_mpi_free(&ctx.private_Q.private_X);
         mbedtls_mpi_free(&ctx.private_Q.private_Y);
