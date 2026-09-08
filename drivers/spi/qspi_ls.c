@@ -987,7 +987,7 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	}
 	DEV_INF(dev, "reference JEDEC ID %02x %02x %02x @ %u Hz (%s)",
 		ref_id[0], ref_id[1], ref_id[2], calib_hz,
-		(jedec_mode == JESD216_MODE_444) ? "QPI 4-4-4" : "SPI 1-1-1");
+		(jedec_mode == JESD216_MODE_444) ? "QPI 4-4-4 calibration" : "SPI 1-1-1 calibration");
 	
 	ret = apply_clk(dev, config);
 	if (ret != 0) {
