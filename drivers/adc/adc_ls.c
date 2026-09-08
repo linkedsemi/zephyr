@@ -55,6 +55,8 @@ LOG_MODULE_REGISTER(adc_ls, LOG_LEVEL_DBG);
 #define inject_mode     0x00000001U
 #define loop_mode       0x00000002U
 
+#define ADC_LS_OP_TIMEOUT_MS 100
+
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 struct adc_ls_config {
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
@@ -590,7 +592,7 @@ static int ADC_LoopChannelConfig(const struct device *dev, const struct adc_chan
     int64_t _start = k_uptime_get();
     while(REG_FIELD_RD(reg->FIFO_FLVL, ADC_FIFO_FLVL) != 0){
         REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIFO_CLR, 1);
-        if ((k_uptime_get() - _start) > 100) {
+        if ((k_uptime_get() - _start) > ADC_LS_OP_TIMEOUT_MS) {
             LOG_ERR("ADC FIFO clear timeout");
             return -ETIMEDOUT;
         }
@@ -736,7 +738,7 @@ static int adc_ls_read(const struct device *dev, const struct adc_sequence *sequ
 
     int64_t _start = k_uptime_get();
     while((reg->INTR_R &(ADC_INTR_REG_END_MASK | ADC_INTR_INJ_END_MASK | ADC_INTR_FIF_END_MASK))== 0) {
-        if ((k_uptime_get() - _start) > 100) {
+        if ((k_uptime_get() - _start) > ADC_LS_OP_TIMEOUT_MS) {
             LOG_ERR("ADC read timeout");
             adc_context_release(&data->ctx, -ETIMEDOUT);
             return -ETIMEDOUT;
