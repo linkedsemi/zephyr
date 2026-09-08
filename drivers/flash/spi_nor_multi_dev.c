@@ -2502,8 +2502,8 @@ static int spi_nor_configure(const struct device *dev)
 	spi_nor_exit_continuous_mode(dev);
 	spi_nor_rst_by_cmd(dev);
 
-	/* After a soft-reset the flash might be in DPD or busy writing/erasing.
-	 * Exit DPD and wait until flash is ready.
+	/* After a soft-reset the flash might be in DPD. Exit DPD before
+	 * further access.
 	 */
 	acquire_device(dev);
 
