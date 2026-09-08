@@ -210,7 +210,7 @@ static void ADC_LoopGetValue(const struct device *dev)
 
     uint16_t *buffer = (uint16_t *)data->ctx.sequence.buffer;
 
-    uint8_t fif_lvl_num = reg->FIFO_FLVL;
+    uint8_t fif_lvl_num = REG_FIELD_RD(reg->FIFO_FLVL, ADC_FIFO_FLVL);
 
     for(uint8_t read_count = 0; read_count < fif_lvl_num; read_count++)
     {
