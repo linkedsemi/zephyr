@@ -51,33 +51,6 @@ properties:
     description: |
       Disable SPI controller timing calibration capability.
 
-  timing-calibration-auto-detect-content-disable:
-    type: boolean
-    required: false
-    description: |
-      Disable SPI controller timing calibration auto detect flash valid content capability.
-
-  timing-calibration-start-offset:
-    type: int
-    required: false
-    description: |
-      The flash data offset for timing calibration.
-    default: 0
-
-  timing-calibration-data-len:
-    type: int
-    required: false
-    default: 64
-    description: |
-      Byte length of each calibration probe read.
-
-  timing-calibration-per-block-len:
-    type: int
-    required: false
-    description: |
-      The flash data offset for timing calibration.
-    default: 4096
-
   timing-calibration-clock-frequency:
     type: int
     required: false
