@@ -42,53 +42,6 @@ properties:
     description: |
       Disable QSPI controller capture timing calibration.
 
-  timing-calibration-auto-detect-content-disable:
-    type: boolean
-    required: false
-    description: |
-      Disable auto-scan for non-monotonous flash content during calibration.
-      When set, only one probe region is read (timing-calibration-data-len bytes):
-      either timing-calibration-start-offset, or the last data-len bytes of flash
-      when timing-calibration-from-end is set.
-      When clear (default), scan using timing-calibration-per-block-len as stride.
-
-  timing-calibration-from-end:
-    type: boolean
-    required: false
-    description: |
-      Calibrate using flash content counted from the end of the device.
-      Default is disabled (calibrate from the start / start-offset).
-      With auto-detect disabled: read the last timing-calibration-data-len bytes
-      (address = flash_size - data_len).
-      With auto-detect enabled: scan from the end toward the start using
-      timing-calibration-per-block-len as stride.
-
-  timing-calibration-start-offset:
-    type: int
-    required: false
-    default: 0
-    description: |
-      Flash byte offset where calibration read begins when
-      timing-calibration-from-end is not set. With auto-detect enabled,
-      scanning starts here; with auto-detect disabled, only this offset is used.
-      start-offset plus timing-calibration-data-len must not exceed flash size.
-
-  timing-calibration-data-len:
-    type: int
-    required: false
-    default: 64
-    description: |
-      Byte length of each calibration probe read.
-
-  timing-calibration-per-block-len:
-    type: int
-    required: false
-    default: 4096
-    description: |
-      Byte stride between calibration probe reads when auto-detect is enabled.
-      Each probe reads timing-calibration-data-len bytes. Scan stops before
-      flash size boundary.
-
   timing-calibration-clock-frequency:
     type: int
     required: false
