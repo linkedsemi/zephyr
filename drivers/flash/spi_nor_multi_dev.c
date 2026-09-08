@@ -2514,17 +2514,7 @@ static int spi_nor_configure(const struct device *dev)
 		return -ENODEV;
 	}
 
-	rc = spi_nor_rdsr(dev);
-	if ((rc > 0 && (rc & SPI_NOR_WIP_BIT)) || (rc == -ETIMEDOUT)) {
-		LOG_ERR("%s: flash maybe not present", dev->name);
-		release_device(dev);
-		return -ENODEV;
-	}
 	release_device(dev);
-	if (rc < 0) {
-		LOG_ERR("Failed to wait until flash is ready (%d)", rc);
-		return -ENODEV;
-	}
 
 	/* now the spi bus is configured, we can verify SPI
 	 * connectivity by reading the JEDEC ID.
@@ -2538,7 +2528,7 @@ static int spi_nor_configure(const struct device *dev)
 
 	if (((0x00 == data->jedec_id[0]) && (0x00 == data->jedec_id[1]) && (0x00 == data->jedec_id[2]))
 		|| ((0xff == data->jedec_id[0]) && (0xff == data->jedec_id[1]) && (0xff == data->jedec_id[2]))) {
-		LOG_ERR("%s: invalid jedec id %02x %02x %02x", dev->name,
+		LOG_ERR("%s: flash not present, invalid jedec id %02x %02x %02x", dev->name,
 			data->jedec_id[0], data->jedec_id[1], data->jedec_id[2]);
 		ret = -ENODEV;
 		goto end;
