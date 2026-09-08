@@ -668,23 +668,27 @@ static int adc_ls_channel_setup(const struct device *dev, const struct adc_chann
                 REG_FIELD_WR(reg->DISC_CTRL, ADC_REG_DISCEN, disc_en);
                 ret = ADC_RegularChannelConfig(dev, channel_cfg);
                 if (ret < 0) {
+                    data->conversion_rank--;
                     return ret;
                 }
             }else if(config->conversion_mode == inject_mode) {
                 REG_FIELD_WR(reg->DISC_CTRL, ADC_INJ_DISCEN, disc_en);
                 ret = ADC_InjectChannelConfig(dev, channel_cfg);
                 if (ret < 0) {
+                    data->conversion_rank--;
                     return ret;
                 }
             }
         }else if(config->conversion_mode == loop_mode) {
             ret = ADC_LoopChannelConfig(dev, channel_cfg);
             if (ret < 0) {
+                data->conversion_rank--;
                 return ret;
             }
         }
     } else {
         LOG_ERR("Regular Channel Mode Illegal rank");
+        data->conversion_rank--;
         return -EINVAL;
     }
 
