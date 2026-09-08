@@ -22,7 +22,6 @@ LOG_MODULE_REGISTER(qspi_ls);
 #include <zephyr/drivers/qspi_ls.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/barrier.h>
-#include <zephyr/sys/crc.h>
 #include <zephyr/sys/util.h>
 #include <field_manipulate.h>
 #include <hal_flash_int.h>
@@ -40,15 +39,15 @@ LOG_MODULE_REGISTER(qspi_ls);
 /* clk_cyc + 1 = bus_hz / spi_hz */
 #define QSPI_LS_CLK_CYC(bus_hz, spi_hz) \
 	(((bus_hz) / (spi_hz)) - 1U)
-#define CALIB_COMBO_MAX      6U
+#define CALIB_COMBO_MAX      7U
 #define CALIB_COMBO_INVALID  UINT8_MAX
-/* calib_combo: 0 = pending (BSS); 1..7 = combo index + 1; 0xFF = invalid */
+/* calib_combo: 0 = pending (BSS); 1..8 = combo index + 1; 0xFF = invalid */
 
 static const struct {
 	uint8_t neg;
 	uint8_t dly;
 } calib_combos[] = {
-	{0, 0}, {0, 1}, {1, 1}, {0, 2}, {1, 2}, {0, 3}, {1, 3},
+	{1, 0}, {0, 0}, {1, 1}, {0, 1}, {1, 2}, {0, 2}, {1, 3}, {0, 3},
 };
 typedef void (*qspi_ls_config_t)(void);
 
@@ -58,15 +57,9 @@ struct qspi_ls_config {
 	qspi_ls_config_t config_func;
 	uint8_t fifo_depth;
 	bool timing_calibration_disabled;
-	bool timing_calibration_auto_detect_content_disable;
-	bool timing_calibration_from_end;
-	uint32_t timing_calibration_start_off;
-	uint32_t timing_calibration_data_len;
-	uint32_t timing_calibration_per_block_len;
 	uint32_t timing_calibration_clock_frequency;
 	bool auto_wait_ready;
 	uint16_t auto_wait_interval;
-	uint8_t *calib_buf;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -883,21 +876,51 @@ static void stg_capture_apply_calibrated(const struct device *dev)
 }
 
 
-static bool calib_buf_valid(const uint8_t *buf, size_t len)
-{
-	const uint32_t *buf_32 = (const uint32_t *)buf;
-	uint32_t valid_count = 0;
 
-	for (size_t i = 0; i < (len >> 2); i++) {
-		if (buf_32[i] != 0U && buf_32[i] != 0xffffffffU) {
-			valid_count++;
-		}
-		if (valid_count > (len >> 3)) {
-			return true;
-		}
+static bool calib_jedec_id_valid(const uint8_t *id)
+{
+	return !((id[0] == 0x00U && id[1] == 0x00U && id[2] == 0x00U) ||
+		 (id[0] == 0xffU && id[1] == 0xffU && id[2] == 0xffU));
+}
+
+static enum jesd216_mode_type calib_jedec_mode(const struct spi_nor_op_info *op_info)
+{
+	if (op_info != NULL && op_info->mode == JESD216_MODE_444) {
+		return JESD216_MODE_444;
 	}
 
-	return false;
+	return JESD216_MODE_111;
+}
+
+static int calib_read_jedec_id(const struct device *dev,
+			       enum jesd216_mode_type mode, uint8_t *id)
+{
+	struct spi_nor_op_info jedec_op = SPI_NOR_OP_INFO(
+		mode, SPI_NOR_CMD_RDID,
+		0, 0, 0, id, SPI_NOR_MAX_ID_LEN, SPI_NOR_DATA_DIRECT_IN);
+
+	return stg_transceive(dev, &jedec_op);
+}
+
+static size_t calib_pick_best(size_t start, size_t len)
+{
+	const size_t n = ARRAY_SIZE(calib_combos);
+
+	if (len == 0U) {
+		return 0U;
+	}
+
+	if (start == 0U && len >= 6U) {
+		return len - 5U;
+	}
+
+	if ((start + len) == n && start >= 1U) {
+		size_t pick = start + 3U;
+
+		return (pick < n) ? pick : (n - 1U);
+	}
+
+	return start + (len >> 1);
 }
 
 static bool stg_capture_hw_applied(reg_lsqspiv2_t *reg)
@@ -911,20 +934,6 @@ static bool stg_capture_hw_applied(reg_lsqspiv2_t *reg)
 	return cap_dly != 0U || cap_neg != 0U;
 }
 
-static int calib_read_flash(const struct device *dev,
-			    const struct spi_nor_op_info *op_info,
-			    uint32_t addr, uint8_t *buf, size_t len)
-{
-	struct spi_nor_op_info calib_op = *op_info;
-
-	calib_op.addr = addr;
-	calib_op.buf = buf;
-	calib_op.data_len = len;
-	calib_op.data_direct = SPI_NOR_DATA_DIRECT_IN;
-
-	return stg_transceive(dev, &calib_op);
-}
-
 static int qspi_ls_timing_calibration(const struct device *dev,
 					 const struct spi_config *config,
 					 struct spi_nor_op_info *op_info)
@@ -932,22 +941,13 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	const struct qspi_ls_config *info = dev->config;
 	struct qspi_ls_data *data = dev->data;
 	reg_lsqspiv2_t *reg = info->reg;
-
-	uint8_t *check_buf = info->calib_buf;
-	const uint32_t calib_len = info->timing_calibration_data_len;
+	enum jesd216_mode_type jedec_mode = calib_jedec_mode(op_info);
+	uint8_t ref_id[SPI_NOR_MAX_ID_LEN];
+	uint8_t read_id[SPI_NOR_MAX_ID_LEN];
 	uint8_t valid_bitmap = 0;
-	uint32_t addr = 0;
-	const uint32_t flash_size = op_info->data_len;
 	const uint32_t calib_hz = qspi_ls_calib_hz(info);
-	uint32_t ref_crc;
 	struct spi_config low_cfg;
 	int ret = 0;
-
-	if (calib_len == 0U) {
-		DEV_ERR(dev, "timing_calibration_data_len is zero, skip calibration.");
-		ret = -EINVAL;
-		goto no_calibration;
-	}
 
 	if (info->timing_calibration_disabled) {
 		data->calib_status = QSPI_TIMING_CALIB_UNUSED;
@@ -974,78 +974,33 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	}
 	stg_capture_set(reg, REF_CAP_NEG, REF_CAP_DLY);
 
-	if (info->timing_calibration_auto_detect_content_disable) {
-		if (info->timing_calibration_from_end) {
-			if (calib_len > flash_size) {
-				DEV_ERR(dev, "auto disable calibration from end beyond flash size");
-				ret = -EINVAL;
-				goto no_calibration;
-			}
-			addr = flash_size - calib_len;
-		} else {
-			addr = info->timing_calibration_start_off;
-			if ((addr + calib_len) > flash_size) {
-			DEV_ERR(dev, "calibration read exceeds flash size");
-				ret = -EINVAL;
-				goto no_calibration;
-			}
-		}
-		ret = calib_read_flash(dev, op_info, addr, check_buf, calib_len);
-		if (ret != 0) {
-			goto no_calibration;
-		}
-		if (!calib_buf_valid(check_buf, calib_len)) {
-			DEV_ERR(dev, "Flash data is monotonous, skip calibration.");
-			ret = -EINVAL;
-			goto no_calibration;
-		}
-	} else {
-		uint32_t stride = info->timing_calibration_per_block_len;
-		bool found = false;
-
-		if (stride == 0U) {
-			stride = calib_len;
-		}
-
-		for (uint32_t off = info->timing_calibration_start_off;off < flash_size; off += stride) {
-			if ((off + calib_len) > flash_size) {break;}
-			ret = calib_read_flash(dev, op_info, off, check_buf, calib_len);
-			if (ret != 0) {
-				goto no_calibration;
-			}
-			if (calib_buf_valid(check_buf, calib_len)) {
-				DEV_DBG(dev, "calibration data at 0x%x", off);
-				addr = off;
-				found = true;
-				break;
-			}
-		}
-		if (!found) {
-			DEV_ERR(dev, "All flash data is monotonous, skip calibration.");
-			ret = -EINVAL;
-			goto no_calibration;
-		}
+	ret = calib_read_jedec_id(dev, jedec_mode, ref_id);
+	if (ret != 0) {
+		DEV_ERR(dev, "JEDEC ID read failed at %u Hz", calib_hz);
+		goto no_calibration;
 	}
-
-	stg_capture_set(reg, REF_CAP_NEG, REF_CAP_DLY);
-	ref_crc = crc32_ieee(check_buf, calib_len);
-
+	if (!calib_jedec_id_valid(ref_id)) {
+		DEV_ERR(dev, "flash invalid, reference JEDEC ID %02x %02x %02x",
+			ref_id[0], ref_id[1], ref_id[2]);
+		ret = -ENODEV;
+		goto no_calibration;
+	}
+	DEV_INF(dev, "reference JEDEC ID %02x %02x %02x @ %u Hz (%s)",
+		ref_id[0], ref_id[1], ref_id[2], calib_hz,
+		(jedec_mode == JESD216_MODE_444) ? "QPI 4-4-4" : "SPI 1-1-1");
+	
 	ret = apply_clk(dev, config);
 	if (ret != 0) {
 		goto no_calibration;
 	}
 
 	for (size_t i = 0; i < ARRAY_SIZE(calib_combos); i++) {
-		uint32_t crc;
-
 		stg_capture_set(reg, calib_combos[i].neg, calib_combos[i].dly);
-		ret = calib_read_flash(dev, op_info, addr, check_buf, calib_len);
+		ret = calib_read_jedec_id(dev, jedec_mode, read_id);
 		if (ret != 0) {
-			/* Capture combo out of window at target Hz — skip it. */
 			continue;
 		}
-		crc = crc32_ieee(check_buf, calib_len);
-		if (crc == ref_crc) {
+		if (memcmp(read_id, ref_id, SPI_NOR_MAX_ID_LEN) == 0) {
 			valid_bitmap |= BIT(i);
 		}
 	}
@@ -1072,23 +1027,19 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 			i = j;
 		}
 
-		if (best_len == ARRAY_SIZE(calib_combos)) {
-			DEV_INF(dev, "useless calibration, all capture delay ok");
-			data->calib_combo = 1U;
-			data->calib_status = QSPI_TIMING_CALIB_SUCCESS;
-			stg_capture_apply_calibrated(dev);
-		} else if (best_len > 0) {
-			size_t pick = best_start + (best_len >> 1);
+		if (best_len > 0) {
+			size_t pick = calib_pick_best(best_start, best_len);
 
 			data->calib_combo = (uint8_t)pick + 1U;
 			data->calib_status = QSPI_TIMING_CALIB_SUCCESS;
 			stg_capture_apply_calibrated(dev);
 			DEV_INF(dev, "timing calibration success: combo %zu "
-				"(cap_neg=%u cap_dly=%u) @ %u Hz",
-				pick, calib_combos[pick].neg, calib_combos[pick].dly,
-				config->frequency);
+				"(cap_neg=%u cap_dly=%u) window=[%zu,%zu) @ %u Hz",
+				pick+1U, calib_combos[pick].neg, calib_combos[pick].dly,
+				best_start, best_start + best_len, config->frequency);
 		} else {
-			DEV_ERR(dev, "timing calibration failed (valid_bitmap=0x%02x)",valid_bitmap);
+			DEV_ERR(dev, "timing calibration failed (valid_bitmap=0x%02x)",
+				valid_bitmap);
 			ret = -EIO;
 			goto no_calibration;
 		}
@@ -1454,14 +1405,9 @@ static int qspi_ls_init(const struct device *dev)
 		irq_enable(DT_INST_IRQN(inst));					\
 }
 
-#define QSPI_LS_CALIB_DATA_LEN(inst) \
-	DT_INST_PROP_OR(inst, timing_calibration_data_len, 64)
-
 #define QSPI_LS_INIT(inst)							\
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(inst);))		\
 	QSPI_LS_IRQ_HANDLER(inst);						\
-	static uint8_t qspi_ls_calib_buf_##inst[QSPI_LS_CALIB_DATA_LEN(inst)]	\
-		__aligned(4);							\
 	static struct qspi_ls_data qspi_ls_data_##inst = {			\
 		SPI_CONTEXT_INIT_LOCK(qspi_ls_data_##inst, ctx),		\
 		SPI_CONTEXT_INIT_SYNC(qspi_ls_data_##inst, ctx),		\
@@ -1477,24 +1423,12 @@ static int qspi_ls_init(const struct device *dev)
 		.fifo_depth = DT_INST_PROP(inst, fifo_depth),			\
 		.timing_calibration_disabled = DT_INST_PROP_OR(inst,		\
 			timing_calibration_disabled, false),			\
-		.timing_calibration_auto_detect_content_disable =		\
-			DT_INST_PROP_OR(inst,					\
-				timing_calibration_auto_detect_content_disable,	\
-				false),						\
-		.timing_calibration_from_end = DT_INST_PROP_OR(inst,		\
-			timing_calibration_from_end, false),			\
-		.timing_calibration_start_off = DT_INST_PROP_OR(inst,		\
-			timing_calibration_start_offset, 0),			\
-		.timing_calibration_data_len = QSPI_LS_CALIB_DATA_LEN(inst),	\
-		.timing_calibration_per_block_len = DT_INST_PROP_OR(inst,	\
-			timing_calibration_per_block_len, 4096),		\
 		.timing_calibration_clock_frequency = DT_INST_PROP_OR(inst,	\
 			timing_calibration_clock_frequency, 10000000),		\
 		.auto_wait_ready = DT_INST_PROP_OR(inst,			\
 			auto_wait_ready, false),				\
 		.auto_wait_interval = DT_INST_PROP_OR(inst,			\
 			auto_wait_interval, 1000),				\
-		.calib_buf = qspi_ls_calib_buf_##inst,				\
 		IF_ENABLED(CONFIG_PINCTRL,					\
 			(.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))	\
 		IF_ENABLED(DT_HAS_CLOCKS(inst),					\
