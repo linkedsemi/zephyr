@@ -62,12 +62,7 @@ struct spi_dw_config {
 	uint32_t dma_handshake_tx;
 	uint8_t *timing_calibration_delay_arr;
 	uint32_t timing_calibration_clock_frequency;
-	uint32_t timing_calibration_start_off;
-	uint32_t timing_calibration_data_len;
-	uint32_t timing_calibration_per_block_len;
 	bool timing_calibration_disabled;
-	bool timing_calibration_auto_detect_content_disable;
-	uint8_t *calib_buf;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
 	IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -81,6 +76,7 @@ struct spi_dw_data {
 	int dma_status;
 	uint8_t dfs;	/* dfs in bytes: 1,2 or 4 */
 	uint8_t fifo_diff;	/* cannot be bigger than FIFO depth */
+	uint8_t calib_status;	/* enum spi_dw_timing_calib_status */
 };
 
 /* Register operation functions */
