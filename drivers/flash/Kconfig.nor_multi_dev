@@ -112,4 +112,16 @@ config SPI_NOR_WAIT_UNTIL_READY_TIMEOUT_MS
 	help
 	  set SPI_NOR_WAIT_UNTIL_READY_TIMEOUT_MS to chip erase time
 
+config SPI_NOR_PRESENT_DETECT_TIMEOUT_MS
+	int "Timeout (ms) to poll JEDEC ID for flash presence"
+	default 900
+	help
+	  Timeout (ms) to poll JEDEC ID for flash presence
+
+config SPI_NOR_PRESENT_DETECT_RETRY_MS
+	int "Interval (ms) between JEDEC ID presence retries"
+	default 50
+	help
+	  Interval (ms) between JEDEC ID presence retries. 
+
 endif # SPI_NOR_MULTI_DEV
