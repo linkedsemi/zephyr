@@ -58,6 +58,12 @@ properties:
       User can re-probe SPI flash at any time after
       booting up to system.
 
+  init-send-reset:
+    type: boolean
+    required: false
+    description: |
+      If open it , the driver will send reset command to the flash at initialization.
+
   spi-monitor-ctrl:
     type: phandle
     required: false

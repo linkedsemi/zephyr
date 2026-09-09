@@ -163,6 +163,7 @@ struct spi_nor_config {
 	bool wp_gpios_exist:1;
 	bool hold_gpios_exist:1;
 	bool broken_sfdp;
+	bool init_send_reset;
 	uint32_t spi_ctrl_caps_mask;
 	uint32_t spi_nor_caps_mask;
 };
@@ -1028,12 +1029,9 @@ int spi_nor_exit_continuous_mode(const struct device *dev)
 	acquire_device(dev);
 
 	ret = spi_nor_op_exec(dev, &op_info_nop);
-	if (ret)
-		goto end;
 
 	release_device(dev);
 
-end:
 	return ret;
 }
 int spi_nor_exit_qpi_mode(const struct device *dev)
@@ -1044,15 +1042,16 @@ int spi_nor_exit_qpi_mode(const struct device *dev)
 			SPI_NOR_OP_INFO(JESD216_MODE_444, 0xff,
 					0, 0, 0, NULL, 0, SPI_NOR_DATA_DIRECT_OUT);
 
+	acquire_device(dev);
+
 	ret = spi_nor_op_exec(dev, &op_info_nop);
-	if (ret){
-		goto end;
-	}else {
+	if (ret == 0) {
 		data->flag_qpi_mode = false;
 		LOG_INF("Exit QPI(4-4-4) mode");
 	}
 
-end:
+	release_device(dev);
+
 	return ret;
 }
 
@@ -1064,15 +1063,16 @@ int spi_nor_enter_qpi_mode(const struct device *dev)
 			SPI_NOR_OP_INFO(JESD216_MODE_111, SPI_NOR_CMD_WINBOND_ENQPI,
 					0, 0, 0, NULL, 0, SPI_NOR_DATA_DIRECT_OUT);
 
-	ret = spi_nor_op_exec(dev, &op_info_nop);
-	if (ret){
+	acquire_device(dev);
 
-		goto end;
-	}else {
+	ret = spi_nor_op_exec(dev, &op_info_nop);
+	if (ret == 0) {
 		data->flag_qpi_mode = true;
 		LOG_INF("Enter QPI(4-4-4) mode");
 	}
-end:
+
+	release_device(dev);
+
 	return ret;
 }
 
@@ -1090,21 +1090,23 @@ int spi_nor_rst_by_cmd(const struct device *dev)
 
 	ret = spi_nor_op_exec(dev, &op_info_srsten);
 	if (ret)
-		goto end;
+		goto out;
 
 	k_busy_wait(10 * 1000);
 
 	ret = spi_nor_op_exec(dev, &op_info_srst);
 	if (ret)
-		goto end;
+		goto out;
 
 	k_busy_wait(50 * 1000);
 
+out:
 	release_device(dev);
 
-	spi_nor_config_4byte_mode(dev, false);
+	if (ret == 0) {
+		spi_nor_config_4byte_mode(dev, false);
+	}
 
-end:
 	return ret;
 }
 
@@ -1819,6 +1821,61 @@ static int spi_nor_read_jedec_id(const struct device *dev,
 	return ret;
 }
 
+static bool spi_nor_jedec_id_absent(const uint8_t *id)
+{
+	return ((id[0] == 0x00 && id[1] == 0x00 && id[2] == 0x00) ||
+		(id[0] == 0xff && id[1] == 0xff && id[2] == 0xff));
+}
+
+
+static int spi_nor_wait_flash_present(const struct device *dev, uint8_t *id)
+{
+	k_timepoint_t timeout;
+	int rc = -ENODEV;
+	uint32_t attempt = 0;
+
+	LOG_INF("%s: wait flash present (timeout %u ms, retry %u ms)",
+		dev->name, CONFIG_SPI_NOR_PRESENT_DETECT_TIMEOUT_MS,
+		CONFIG_SPI_NOR_PRESENT_DETECT_RETRY_MS);
+
+	timeout = sys_timepoint_calc(K_MSEC(CONFIG_SPI_NOR_PRESENT_DETECT_TIMEOUT_MS));
+
+	while (true) {
+		attempt++;
+		rc = spi_nor_read_jedec_id(dev, id);
+		if (rc == 0 && !spi_nor_jedec_id_absent(id)) {
+			LOG_INF("%s: flash present, jedec id %02x %02x %02x (attempt %u)",
+				dev->name, id[0], id[1], id[2], attempt);
+			return 0;
+		}
+
+		if ((attempt == 1U) || ((attempt % 20U) == 0U)) {
+			if (rc != 0) {
+				LOG_WRN("%s: JEDEC ID read ret=%d, retrying... (attempt %u)",
+					dev->name, rc, attempt);
+			} else {
+				LOG_WRN("%s: invalid jedec id %02x %02x %02x, retrying... (attempt %u)",
+					dev->name, id[0], id[1], id[2], attempt);
+			}
+		}
+
+		if (sys_timepoint_expired(timeout)) {
+			break;
+		}
+
+		k_sleep(K_MSEC(CONFIG_SPI_NOR_PRESENT_DETECT_RETRY_MS));
+	}
+
+	if (rc != 0) {
+		LOG_ERR("JEDEC ID read failed: %d (after %u attempts)", rc, attempt);
+		return -ENODEV;
+	}
+
+	LOG_ERR("%s: flash not present, invalid jedec id %02x %02x %02x (after %u attempts)",
+		dev->name, id[0], id[1], id[2], attempt);
+	return -ENODEV;
+}
+
 int spi_nor_set_freq(const struct device *dev, uint32_t freq)
 {
 	if (!dev) {
@@ -1863,7 +1920,11 @@ int spi_nor_rdsr_by_cmd(const struct device *dev, uint8_t cmd)
 			SPI_NOR_OP_INFO(((data->flag_qpi_mode)?JESD216_MODE_444:JESD216_MODE_111), cmd,
 				0, 0, 0, &reg, sizeof(reg), SPI_NOR_DATA_DIRECT_IN);
 
+	acquire_device(dev);
+
 	int ret = spi_nor_op_exec(dev, &op_info);
+
+	release_device(dev);
 
 	if (ret == 0) {
 		ret = reg;
@@ -2498,38 +2559,28 @@ static int spi_nor_configure(const struct device *dev)
 		}
 	}
 #endif
-	spi_nor_exit_qpi_mode(dev);
-	spi_nor_exit_continuous_mode(dev);
-	spi_nor_rst_by_cmd(dev);
+	if (cfg->init_send_reset) {
+		spi_nor_exit_qpi_mode(dev);
+		spi_nor_exit_continuous_mode(dev);
+		spi_nor_rst_by_cmd(dev);
 
-	/* After a soft-reset the flash might be in DPD. Exit DPD before
-	 * further access.
-	 */
-	acquire_device(dev);
+		/* After a soft-reset the flash might be in DPD. Exit DPD before
+		 * further access.
+		 */
+		acquire_device(dev);
 
-	rc = exit_dpd(dev);
-	if (rc < 0) {
-		LOG_ERR("Failed to exit DPD (%d)", rc);
+		rc = exit_dpd(dev);
+		if (rc < 0) {
+			LOG_ERR("Failed to exit DPD (%d)", rc);
+			release_device(dev);
+			return -ENODEV;
+		}
+
 		release_device(dev);
-		return -ENODEV;
 	}
 
-	release_device(dev);
-
-	/* now the spi bus is configured, we can verify SPI
-	 * connectivity by reading the JEDEC ID.
-	 */
-	rc = spi_nor_read_jedec_id(dev, data->jedec_id);
+	rc = spi_nor_wait_flash_present(dev, data->jedec_id);
 	if (rc != 0) {
-		LOG_ERR("JEDEC ID read failed: %d", rc);
-		ret = -ENODEV;
-		goto end;
-	}
-
-	if (((0x00 == data->jedec_id[0]) && (0x00 == data->jedec_id[1]) && (0x00 == data->jedec_id[2]))
-		|| ((0xff == data->jedec_id[0]) && (0xff == data->jedec_id[1]) && (0xff == data->jedec_id[2]))) {
-		LOG_ERR("%s: flash not present, invalid jedec id %02x %02x %02x", dev->name,
-			data->jedec_id[0], data->jedec_id[1], data->jedec_id[2]);
 		ret = -ENODEV;
 		goto end;
 	}
@@ -2934,6 +2985,7 @@ static const struct flash_driver_api spi_nor_api = {
 		.wp_gpios_exist = DT_INST_NODE_HAS_PROP(idx, wp_gpios),				\
 		.hold_gpios_exist = DT_INST_NODE_HAS_PROP(idx, hold_gpios),			\
 		.broken_sfdp = DT_PROP(DT_INST(idx, DT_DRV_COMPAT), broken_sfdp),		\
+		.init_send_reset = DT_INST_PROP(idx, init_send_reset),				\
 		.spi_ctrl_caps_mask = DT_PROP_OR(DT_PARENT(DT_INST(idx, DT_DRV_COMPAT)),	\
 				spi_ctrl_caps_mask, 0),						\
 		.spi_nor_caps_mask = DT_INST_PROP_OR(idx, spi_nor_caps_mask, 0),		\
