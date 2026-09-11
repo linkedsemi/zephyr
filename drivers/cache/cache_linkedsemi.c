@@ -119,17 +119,3 @@ int cache_instr_flush_and_invd_range(void *addr, size_t size)
 {
     return -ENOTSUP;
 }
-
-#ifdef CONFIG_DCACHE_LINE_SIZE_DETECT
-size_t cache_data_line_size_get(void)
-{
-    return CONFIG_DCACHE_LINE_SIZE;
-}
-#endif /* CONFIG_DCACHE_LINE_SIZE_DETECT */
-
-#ifdef CONFIG_ICACHE_LINE_SIZE_DETECT
-size_t cache_instr_line_size_get(void)
-{
-    return CONFIG_ICACHE_LINE_SIZE;
-}
-#endif /* CONFIG_ICACHE_LINE_SIZE_DETECT */
