@@ -90,6 +90,11 @@ struct sd_card {
 	 */
 	uint8_t card_buffer[CONFIG_SD_BUFFER_SIZE]
 		__aligned(MAX(4, CONFIG_SDHC_BUFFER_ALIGNMENT)); /* Card internal buffer */
+
+	bool bkops_man_en;
+	bool bkops_auto_en;
+	bool exception_event;
+	int64_t bkops_last_check;
 };
 
 /**
