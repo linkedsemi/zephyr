@@ -1,0 +1,4 @@
+
+config BOARD_LS1020_EVB
+    select SOC_LSQSH
+
