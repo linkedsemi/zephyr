@@ -148,12 +148,6 @@ config CACHE_MANAGEMENT
 config CACHE_LINKEDSEMI
 	default y
 
-config ICACHE_LINE_SIZE_DETECT
-	default y
-
-config DCACHE_LINE_SIZE_DETECT
-	default y
-
 config IOPMP_LINKEDSEMI
 	bool "IOPMP_LINKEDSEMI"
 	default n
