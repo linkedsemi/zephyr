@@ -1,0 +1,8 @@
+board:
+  name: ls1020_evb
+  vendor: linkedsemi
+  socs:
+  - name: lsqsh
+  revision:
+    format: custom
+

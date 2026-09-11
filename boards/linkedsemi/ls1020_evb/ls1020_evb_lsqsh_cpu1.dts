@@ -1,0 +1,507 @@
+/*
+ * Copyright (c) 2025 linkedsemi
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <riscv/linkedsemi/lsqsh.dtsi>
+#include <arch/riscv/csr.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+#include "ls1020_evb_pinctrl.dtsi"
+#include <zephyr/dt-bindings/adc/ls-adc.h>
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
+&chosen {
+    zephyr,flash = &flash1;
+    zephyr,flash-controller = &qspi1;
+    zephyr,sram = &sram;
+    zephyr,console = &uart1;
+    zephyr,shell-uart = &uart1;
+};
+
+&aliases {
+    sdhc0 = &sdhci1;
+    watchdog0 = &sec_iwdg;
+    // peci-0 = &peci1;
+    // sw0 = &btn1;
+    // led0 = &led1;
+    // pwm-led0 = &pwm_led0;
+};
+
+&sram {
+    reg = <0x10000000 DT_SIZE_K(512)>;
+};
+
+&soc {
+
+    driver_share_memory: memory@1013e000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013e000 0xffc>;
+        zephyr,memory-region = "SHMEM";
+    };
+
+    driver_reset_reason: memory@1013effc {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013effc 0x4>;
+        zephyr,memory-region = "RESET_REASON";
+    };
+
+    mbox_memory: memory@1013f000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013f000 DT_SIZE_K(4)>;
+        zephyr,memory-region = "MBOX";
+    };
+
+    mbox: mbox {
+        compatible = "linkedsemi,mbox";
+        interrupts = <SYSC_SEC_CPU_IRQN 3>;
+        #mbox-cells = <3>;
+
+        mbox_consumer_qspi1: mbox-consumer_qspi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 0 24 1>, <&mbox 0 24 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 1 32 1>, <&mbox 1 32 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_espi1: mbox-consumer_espi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 2 8 1>, <&mbox 2 8 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_vuart1: mbox-consumer_vuart1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 3 8 1>, <&mbox 3 8 1>;
+            mbox-names = "tx", "rx";
+        };
+        socket_mbox_client: mbox-socket_mbox_client {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 4 32 16>, <&mbox 4 12 16>;
+            mbox-names = "tx", "rx";
+        };
+    };
+
+    qspi1: qspi@40000000 {
+        compatible = "linkedsemi,ls-flash-controller";
+        reg = <0x40000000 0x400>;
+        #address-cells = <1>;
+        #size-cells = <1>;
+        interrupts = <3 3>;
+        quad_mode;
+        mbox = <&mbox_consumer_qspi1>;
+
+        flash1: flash@8000000 {
+            compatible = "soc-nv-flash";
+            reg = <0x8000000 DT_SIZE_M(32)>;
+            erase-block-size = <4096>;
+            write-block-size = <4>;
+        };
+    };
+};
+
+&cpu1 {
+    status = "okay";
+};
+
+&cpu2 {
+    status = "disabled";
+};
+
+&gpioa {
+    status = "okay";
+};
+
+&gpiob {
+    status = "okay";
+};
+
+&gpioc {
+    status = "okay";
+};
+
+&gpiod {
+    status = "okay";
+};
+
+&gpioe {
+    status = "okay";
+};
+
+&gpiof {
+    status = "okay";
+};
+
+&gpiog {
+    status = "okay";
+};
+
+&gpioh {
+    status = "okay";
+};
+
+&gpioi {
+    status = "okay";
+};
+
+&gpioj {
+    status = "okay";
+};
+
+&gpiok {
+    status = "okay";
+};
+
+&gpiom {
+    status = "okay";
+};
+
+&gpion {
+    status = "okay";
+};
+
+&gpioq {
+    status = "okay";
+};
+
+&gpiot {
+    status = "okay";
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&sec_iwdg {
+    status = "okay";
+};
+
+&pmu_iwdg {
+    status = "okay";
+};
+
+// &pwm{
+//     status = "okay";
+//     prescaler = <3>;
+//     pinctrl-0 = <&pwm1_pa04 &pwm7_pg02 &fan_pwm10_ph05>;
+//     pinctrl-names = "default";
+// };
+
+// &sgpiom {
+//     ngpios = <128>;
+//     status = "okay";
+// };
+
+// &sgpiom_a_d {
+//     status = "okay";
+// };
+
+// &sgpiom_e_h {
+//     status = "okay";
+// };
+
+// &sgpiom_i_l {
+//     status = "okay";
+// };
+
+// &sgpiom_m_p {
+//     status = "okay";
+// };
+
+// &sgpiom2 {
+//     ngpios = <128>;
+//     status = "okay";
+// };
+
+// &sgpiom2_a_d {
+//     status = "okay";
+// };
+
+// &sgpiom2_e_h {
+//     status = "okay";
+// };
+
+// &sgpiom2_i_l {
+//     status = "okay";
+// };
+
+// &sgpiom2_m_p {
+//     status = "okay";
+// };
+
+// &eth1 {
+//     phy-handle = <&eth1_phy>;
+//     status = "okay";
+// };
+
+// &mdio1 {
+//     status = "okay";
+//     eth1_phy: ethernet-phy@0 {
+//         compatible = "realtek,rtl8211f";
+//         reg = <0>;
+//         reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+//         int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+//         status = "okay";
+//     };
+// };
+
+// &peci1 {
+//     status = "okay";
+// };
+
+&sdhci1 {
+    status = "okay";
+
+    mmc_disk1: disk {
+        compatible = "zephyr,mmc-disk";
+        /* samples/subsys/fs/fs_sample/ assert disk-name to SD2 */
+        disk-name = "SD2";
+        bus-width = <8>;
+        status = "okay";
+    };
+};
+
+// tst_dma0: &dma0 {
+//     status = "okay";
+// };
+
+// &lpc1 {
+//     status = "disabled";
+
+//     lpc_kcs_ca2: lpc_kcs_ca2 {
+//         compatible = "linkedsemi,ls-kcs";
+//         port = <0xca2 0xca3>;
+//         status = "disabled";
+//     };
+// };
+
+// &espi1 {
+//     espi1_kcs_ca2: espi1_kcs_ca2 {
+//         compatible = "linkedsemi,ls-kcs";
+//         port = <0xca2 0xca3>;
+//         status = "okay";
+//     };
+// };
+
+// &ipmi_kcs {
+//     kcs_chan = <&espi1_kcs_ca2>;
+//     status = "okay";
+// };
+
+zephyr_udc0: &usb2 {
+    status = "okay";
+};
+
+// zephyr_udc1: &usb1 {
+//     status = "okay";
+// };
+
+// &i2c5 {
+//     status = "okay";
+//     eeprom_5_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c6 {
+//     eeprom_6_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c7 {
+//     status = "okay";
+//     eeprom_7_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c8 {
+//     status = "okay";
+//     eeprom_8_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c9 {
+//     status = "okay";
+//     eeprom_9_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c10 {
+//     status = "okay";
+//     eeprom_10_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c11 {
+//     status = "okay";
+//     eeprom_11_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// &i2c14 {
+//     status = "okay";
+//     eeprom_14_1: eeprom@50 {
+//         compatible = "atmel,at24";
+//         reg = <0x50>;
+//         size = <4096>;
+//         pagesize = <32>;
+//         address-width = <16>;
+//         timeout = <5>;
+//     };
+// };
+
+// #if 0
+//&spi1 {
+//   status = "okay";
+//     flash1_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+//};
+
+// &spi2 {
+//   status = "okay";
+//     flash2_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
+// #endif
+
+// &spi3 {
+//     status = "okay";
+//     flash3_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
+
+// &spi4 {
+//     status = "okay";
+//     flash4_1: flash@0 {
+//         compatible = "jedec,spi-nor";
+//         reg = <0>;
+//         spi-max-frequency = <DT_FREQ_M(50)>;
+//     };
+// };
+
+// &adc1 {
+//     status = "okay";
+//     #address-cells = <1>;
+//     #size-cells = <0>;
+//     pinctrl-0 = <&adc1_ain1_pc04>;
+//     pinctrl-names = "default";
+//     conversion_mode = <regular_mode>;
+//     data_align = <ADC_DATAALIGN_RIGHT>;
+//     continuous_conv_mode = <discontinuous>;
+//     nbr_of_conversion = <1>;
+//     discontinuous_conv_mode = <discontinuous>;
+//     nbr_of_disc_conversion = <0>;
+//     trig_type = <ADC_SOFTWARE_TRIGT>;
+//     adc_drive_type = <BINBUF_DIRECT_DRIVE_ADC>;
+//     adc_clk_div = <74>;
+//     clk_cfg = <ADC_CH_CLOCK_DIV1>;
+//     injected_offset = <0>;
+//     fif_ctrl1 = <0xFFFF>;
+// };
+
+// / {
+//     model = "linkedsemi lsqsh_evb";
+//     compatible = "linkedsemi,lsqsh_evb";
+//
+//     leds: leds {
+//         compatible = "gpio-leds";
+//         led1: led1 {
+//             gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
+//             label = "LED1";
+//         };
+//         led2: led2 {
+//             gpios = <&gpioh 7 GPIO_ACTIVE_HIGH>;
+//             label = "LED2";
+//         };
+//         led3: led3 {
+//             gpios = <&gpioh 0 GPIO_ACTIVE_HIGH>;
+//             label = "LED3";
+//         };
+//     };
+//
+//     keys: keys {
+//         compatible = "gpio-keys";
+//         btn1: btn1 {
+//             gpios = <&gpiog 4 BTN_GPIO_FLAGS>;
+//             label = "Push button 1";
+//         };
+//         btn2: btn2 {
+//             gpios = <&gpioh 1 BTN_GPIO_FLAGS>;
+//             label = "Push button 2";
+//         };
+//         btn3: btn3 {
+//             gpios = <&gpioh 4 BTN_GPIO_FLAGS>;
+//             label = "Push button 3";
+//         };
+//     };
+//
+//     pwmleds {
+//         compatible = "pwm-leds";
+//         pwm_led0: pwm_led_0 {
+//             pwms = <&pwm 10 PWM_USEC(1) 0>;
+//         };
+//     };
+// };

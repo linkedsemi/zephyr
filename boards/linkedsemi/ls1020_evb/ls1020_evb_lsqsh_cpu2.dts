@@ -1,0 +1,208 @@
+/*
+ * Copyright (c) 2025 linkedsemi
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+#include <riscv/linkedsemi/lsqsh.dtsi>
+#include "ls1020_evb_pinctrl.dtsi"
+
+#define BTN_GPIO_FLAGS (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)
+
+&chosen {
+    zephyr,flash = &flash1;
+    zephyr,console = &uart4;
+    zephyr,shell-uart = &uart4;
+    zephyr,sram = &sram;
+};
+
+&aliases {
+    sdhc0 = &sdhci1;
+    watchdog0=&app_iwdg;
+};
+
+&sram {
+    reg = <0x10080000 DT_SIZE_K(768)>;
+};
+
+&psram {
+    status = "disabled";
+};
+
+&soc {
+    flash1: flash@8800000 {
+        compatible = "soc-nv-flash";
+        reg = <0x8800000 DT_SIZE_M(8)>;
+        erase-block-size = <4096>;
+        write-block-size = <4>;
+    };
+    driver_share_memory: memory@1013e000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013e000 0xffc>;
+        zephyr,memory-region = "SHMEM";
+    };
+
+    driver_reset_reason: memory@1013effc {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013effc 0x4>;
+        zephyr,memory-region = "RESET_REASON";
+    };
+
+    mbox_memory: memory@1013f000 {
+        compatible = "zephyr,memory-region", "mmio-sram";
+        reg = <0x1013f000 DT_SIZE_K(4)>;
+        zephyr,memory-region = "MBOX";
+    };
+
+    mbox: mbox {
+        compatible = "linkedsemi,mbox";
+        #mbox-cells = <3>;
+        interrupts = <SYSC_APP_CPU_IRQN 3>;
+
+        mbox_consumer_qspi1: mbox-consumer_qspi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 0 24 1>, <&mbox 0 24 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 1 32 1>, <&mbox 1 32 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_espi1: mbox-consumer_espi1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 2 8 1>, <&mbox 2 8 1>;
+            mbox-names = "tx", "rx";
+        };
+        mbox_consumer_vuart1: mbox-mbox_consumer_vuart1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 3 8 1>, <&mbox 3 8 1>;
+            mbox-names = "tx", "rx";
+        };
+        socket_mbox_server: mbox-socket_mbox_server {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 4 12 16>, <&mbox 4 32 16>;
+            mbox-names = "tx", "rx";
+        };
+    };
+
+};
+
+&eth1 {
+    phy-handle = <&eth1_phy>;
+    status = "okay";
+};
+
+&mdio1 {
+    status = "okay";
+    eth1_phy: ethernet-phy@0 {
+        compatible = "realtek,rtl8211f";
+        reg = <0>;
+        reset-gpios = <&gpiog 1 GPIO_ACTIVE_HIGH>;
+        int-gpios = <&gpiog 5 GPIO_ACTIVE_LOW>;
+        status = "okay";
+    };
+};
+
+&cpu1 {
+    status = "disabled";
+};
+
+&cpu2 {
+    status = "okay";
+};
+
+&uart1 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart2 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart3 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&uart4 {
+    current-speed = <115200>;
+    status = "okay";
+};
+
+&uart5 {
+    current-speed = <115200>;
+    status = "disabled";
+};
+
+&app_iwdg {
+    status = "okay";
+};
+
+&psram {
+    status = "okay";
+};
+
+&gpioa {
+    status = "okay";
+};
+
+&gpiob {
+    status = "okay";
+};
+
+&gpioc {
+    status = "okay";
+};
+
+&gpiod {
+    status = "okay";
+};
+
+&gpioe {
+    status = "okay";
+};
+
+&gpiof {
+    status = "okay";
+};
+
+&gpiog {
+    status = "okay";
+};
+
+&gpioh {
+    status = "okay";
+};
+
+&gpioi {
+    status = "okay";
+};
+
+&gpioj {
+    status = "okay";
+};
+
+&gpiok {
+    status = "okay";
+};
+
+&gpiom {
+    status = "okay";
+};
+
+&gpion {
+    status = "okay";
+};
+
+&gpioq {
+    status = "okay";
+};
+
+&gpiot {
+    status = "okay";
+};
+
+
