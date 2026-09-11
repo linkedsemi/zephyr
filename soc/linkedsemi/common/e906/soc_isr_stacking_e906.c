@@ -17,12 +17,14 @@ const struct device *const zephyr_flash_controller = DEVICE_DT_GET_OR_NULL(DT_CH
 
 int zephyr_flash_controller_ram_struct_init()
 {
-    zephyr_flash_controller_ram_struct = *zephyr_flash_controller;
+    if (zephyr_flash_controller) {
+        zephyr_flash_controller_ram_struct = *zephyr_flash_controller;
+    }
     return 0;
 }
 SYS_INIT(zephyr_flash_controller_ram_struct_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
 
-extern int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out);
+__attribute__((weak)) int flash_ls_ex_op(const struct device *dev, uint16_t code, const uintptr_t in, void *out){return 0;}
 
 __ramfunc void isr_stacking_mcause(void)
 {
