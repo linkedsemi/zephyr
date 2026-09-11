@@ -374,6 +374,10 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
         }
     }
 
+    if (!host->execute_tuning && (host->irq_status & SDHCI_INT_ERROR)) {
+        ret = (host->irq_status & (SDHCI_INT_DATA_TIMEOUT | SDHCI_INT_TIMEOUT)) ? -ETIMEDOUT : -EIO;
+    }
+
     SDHCI_WAIT_TIMEOUT((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) &&
                          !(host->irq_status & SDHCI_INT_ERROR),
                        100,
