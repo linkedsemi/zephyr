@@ -18,6 +18,8 @@
 extern "C" {
 #endif
 
+#define MMC_SWITCH_MODE_WRITE_BYTE 0x03
+
 /**
  * Custom SD return codes. Used internally to indicate conditions that may
  * not be errors, but are abnormal return conditions
