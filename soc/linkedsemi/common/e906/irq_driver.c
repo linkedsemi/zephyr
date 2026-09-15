@@ -377,8 +377,10 @@ static int lsqsh_irq_affinity_init(void)
 	atomic_set(&irq_affinity[RV_TIME_IRQN].cpumask, 0);
 	// atomic_set(&irq_affinity[RV_EXT_IRQN].cpumask, 0);
 
-	/* Flash software interrupt is used by both cores for XIP sync. */
-	atomic_set(&irq_affinity[FLASH_SWINT_NUM].cpumask, BIT(0) | BIT(1));
+	/* Flash software interrupt is per-CPU local as well: each core
+	 * triggers it by writing the pending bit of its own CLIC.
+	 */
+	atomic_set(&irq_affinity[FLASH_SWINT_NUM].cpumask, 0);
 
 	return 0;
 }
