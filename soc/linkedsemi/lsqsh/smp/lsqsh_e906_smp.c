@@ -21,12 +21,6 @@ atomic_val_t *p_cpu_pending_ipi;
 #define LSQSH_CPU0     0
 #define LSQSH_CPU1     1
 
-__ramfunc uint32_t get_cur_cpu_id(void)
-{
-    return arch_curr_cpu()->id;
-}
-
-
 void soc_late_init_hook(void)
 {
     // pinmux_hal_flash_quad_init();

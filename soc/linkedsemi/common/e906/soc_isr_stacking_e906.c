@@ -7,7 +7,6 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/arch/riscv/csr.h>
 #include "soc.h"
-#include "smp/lsqsh_smp.h"
 #include <platform.h>
 
 uint32_t irq_nested_level[CONFIG_MP_MAX_NUM_CPUS];

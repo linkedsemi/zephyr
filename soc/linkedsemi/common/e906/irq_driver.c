@@ -5,8 +5,6 @@
 #include <zephyr/sys/atomic.h>
 #include <soc.h>
 #include <platform.h>
-#include "smp/lsqsh_smp.h"
-
 
 static void clic_irq_set_trigger(uint32_t irq, uint32_t flags)
 {
@@ -72,7 +70,7 @@ void riscv_clic_irq_priority_set(uint32_t irq, uint32_t pri, uint32_t flags)
 }
 
 #else /* CONFIG_SMP */
-
+#include "smp/lsqsh_smp.h"
 extern atomic_val_t *p_cpu_pending_ipi;
 
 struct irq_affinity_cfg {

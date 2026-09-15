@@ -3,14 +3,7 @@
 
 #include <zephyr/sys/atomic.h>
 #include <zephyr/spinlock.h>
-#if defined(CONFIG_SMP)
-uint32_t get_cur_cpu_id(void);
-#else
-static inline uint32_t get_cur_cpu_id(void)
-{
-    return 0;
-}
-#endif
+
 void lsqsh_ipi_intr_set(uint32_t cpu_id);
 void lsqsh_ipi_intr_clr(uint32_t cpu_id);
 

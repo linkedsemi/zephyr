@@ -4,6 +4,18 @@
 #include <zephyr/kernel.h>
 #include "ls_hal_flash.h"
 
+#if defined(CONFIG_SMP)
+static inline uint32_t get_cur_cpu_id(void)
+{
+    return arch_curr_cpu()->id;
+}
+#else
+static inline uint32_t get_cur_cpu_id(void)
+{
+    return 0;
+}
+#endif
+
 #define IRQ_NESTED_MAX 10
 
 #define IRQ_TYPE_NONE         0
