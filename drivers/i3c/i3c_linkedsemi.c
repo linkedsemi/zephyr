@@ -427,12 +427,14 @@ static int ls_i3c_configure(const struct device *dev, enum i3c_config_type type,
 		struct i3c_config_controller *cntlr_cfg = config;
 
 		if ((cntlr_cfg->scl.i2c == 0U) || (cntlr_cfg->scl.i3c == 0U)) {
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 		if(cntlr_cfg->supported_hdr != 0)
 		{
 			LOG_ERR("The I3c controller supports only SDR mode");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 
 		dev_data->common.ctrl_config.scl.i3c = cntlr_cfg->scl.i3c;
@@ -454,6 +456,7 @@ static int ls_i3c_configure(const struct device *dev, enum i3c_config_type type,
 		memcpy(&dev_data->config_target,config_target,sizeof(struct i3c_config_target));
 		ret = ls_i3c_target_config(dev);
 	}
+out:
 	k_mutex_unlock(&dev_data->lock);
 	return ret;
 }
@@ -689,7 +692,6 @@ static int ls_i3c_init(const struct device *dev)
 	return ret;
 }
 
-
 static int i3c_ls_curr_msg_init(const struct device *dev, struct i3c_msg *i3c_msgs,
 				   struct i2c_msg *i2c_msgs, uint8_t num_msgs, uint8_t tgt_addr)
 {
@@ -920,13 +922,22 @@ static void ls_i3c_event_isr_tx(const struct device *dev)
 
 static void ls_i3c_event_isr_rx(const struct device *dev)
 {
+	const struct ls_i3c_config *config = dev->config;
 	struct ls_i3c_data *data = dev->data;
+	I3C_TypeDef *base = (I3C_TypeDef *)config->base;
 
 	switch (data->msg_state) {
 	case LS_I3C_MSG: {
 
-		if (ls_i3c_drain_rx_fifo(dev)) {
-			ls_i3c_curr_msg_xfer_next(dev);
+			/* RX FIFO 循环排空：单次 drain 只读 1 字节，
+		 * 若提前返回，RXTGTEND 检查 cur_num_xfer < len 会误判
+		 * 短读并提前 give 信号量。循环读至 RXFNE 清除，
+		 * 保证计数与硬件同步。 */		
+		while (LL_I3C_IsActiveFlag_RXFNE(base)) {
+			if (ls_i3c_drain_rx_fifo(dev)) {
+				ls_i3c_curr_msg_xfer_next(dev);
+				break;
+			}
 		}
 
 		break;
@@ -1090,13 +1101,16 @@ static int ls_i3c_request_transfer_flag(const struct device *dev)
 	data->msg_state = LS_I3C_MSG;
 	// data->sf_state = LS_I3C_SF;
 
-	/* 防上一帧 ERR+FCF 双 give 的信号量残留：错误帧（如地址 NACK）时
-	 * ISR 的 ERR 分支和 FC 分支都会 give device_sync_sem，take 只消费
-	 * 一个，残留计数会让下一笔传输的 k_sem_take 立即返回（不等帧完成
-	 * 就上报成功）。每帧开始前重置计数。 */
+	/* 清残余标志 + 复位信号量计数 + 发起 RequestTransfer 置于同一
+	 * irq_lock 临界区：防止清标志后、RequestTransfer 前被 ISR 抢占
+	 * 并 give 信号量（上一帧滞后 FC/ERR），导致本次 take 提前返回。 */
+	unsigned int key = irq_lock();
+	LL_I3C_ClearFlag_FC(base);
+	LL_I3C_ClearFlag_RXTGTEND(base);
+	LL_I3C_ClearFlag_ERR(base);
 	k_sem_reset(&data->device_sync_sem);
-
 	LL_I3C_RequestTransfer(base);
+	irq_unlock(key);
 
 	/* Wait for whole transfer to complete */
 	if (k_sem_take(&data->device_sync_sem, LS_I3C_TRANSFER_TIMEOUT) != 0) {
@@ -1278,7 +1292,8 @@ out_daa:
 		{
 			if (arch_k_cycle_get_64() > stop_exp) {
 				LOG_ERR("%s: DAA wait-frame-complete timeout", dev->name);
-				return -ETIMEDOUT;
+				ret = -ETIMEDOUT;
+				goto out_daa_done;
 			}
 		}
 	}
@@ -1287,14 +1302,9 @@ out_daa:
 	{
 		ret = -EIO;
 		ls_i3c_log_err_type(dev);
-		LL_I3C_ClearFlag_ERR(base);
 	}
 
-	if(__LS_I3C_GET_FLAG(base,I3C_EVR_FCF_MASK))
-	{
-		/* Clear frame complete flag */
-		LL_I3C_ClearFlag_FC(base);
-	}
+out_daa_done:
 	ls_i3c_xfer_reset(base);
 	k_mutex_unlock(&data->lock);
 
@@ -1312,10 +1322,43 @@ out_daa:
  */
 static inline void ls_i3c_xfer_reset(I3C_TypeDef *base)
 {
-    LL_I3C_RequestStatusFIFOFlush(base);
+	/* 等总线空闲（BUSY 清零）再 flush：传输进行中 flush 会打断活动帧；
+	 * 超时说明总线异常，软复位 master（禁用+使能 MASTER_EN）恢复 */
+	uint64_t busy_exp = arch_k_cycle_get_64() +
+			    LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT;
+	while (base->EVR & I3C_EVR_BUSY_MASK) {
+		if (arch_k_cycle_get_64() > busy_exp) {
+			REG_FIELD_WR(base->CFGR, I3C_CFGR_MASTER_EN, 0);
+			REG_FIELD_WR(base->CFGR, I3C_CFGR_MASTER_EN, 1);
+			break;
+		}
+	}
+
+	/* 清 FCF/ERRF/RXTGTEND 残留标志：跨时钟域同步有滞后，上一帧的标志
+	 * 可能残留到下一帧，被轮询误读为"帧已完成"，导致 FIFO 在活动帧期间
+	 * 被 flush。逐个判断清除，跨时钟域滞后可能需多次。 */
+	uint64_t clr_exp = arch_k_cycle_get_64() +
+			   LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT;
+	while ((base->EVR & (I3C_EVR_FCF_MASK | I3C_EVR_RXTGTENDF_MASK |
+			     I3C_EVR_ERRF_MASK)) && arch_k_cycle_get_64() < clr_exp) {
+		if (base->EVR & I3C_EVR_FCF_MASK) {
+			LL_I3C_ClearFlag_FC(base);
+		}
+		if (base->EVR & I3C_EVR_RXTGTENDF_MASK) {
+			LL_I3C_ClearFlag_RXTGTEND(base);
+		}
+		if (base->EVR & I3C_EVR_ERRF_MASK) {
+			LL_I3C_ClearFlag_ERR(base);
+		}
+	}
+	LL_I3C_RequestStatusFIFOFlush(base);
 	while(LL_I3C_IsActiveFlag_RXFNE(base))
 	{
     	LL_I3C_RequestRxFIFOFlush(base);
+	}
+	while(LL_I3C_IsActiveFlag_RXFNE(base))
+	{
+		(void)LL_I3C_ReceiveData8(base);
 	}
 	while(!LL_I3C_IsActiveFlag_TXFE(base))
 	{
@@ -1396,7 +1439,22 @@ static int ls_i3c_do_ccc(const struct device *dev,
 
 	data->msg_state = LS_I3C_MSG;
 	LL_I3C_RequestTransfer(base);
-	
+
+	/* TSFSET 触发硬件进入可接收控制字状态，须等 CFNFF（控制 FIFO 非满）
+	 * 才能写 CR 控制字，否则控制字写入时机不对。 */
+	{
+		uint64_t cf_exp = arch_k_cycle_get_64() +
+				  LS_I3C_TRANSFER_POLLING_MODE_TIMEOUT;
+		while (__LS_I3C_GET_FLAG(base, I3C_EVR_CFNFF) == 0) {
+			if (arch_k_cycle_get_64() > cf_exp) {
+				LOG_ERR("%s: CCC[0x%02x] TSFSET CFNFF timeout",
+					dev->name, payload->ccc.id);
+				ret = -ETIMEDOUT;
+				goto out_ccc_stop;
+			}
+		}
+	}
+
 	if(i3c_ccc_is_payload_broadcast(payload) == true)
 	{
 		LL_I3C_ControllerHandleCCC(base,payload->ccc.id,payload->ccc.data_len,LL_I3C_GENERATE_STOP);
@@ -1697,18 +1755,10 @@ out_ccc_stop:
 		}
 	}
 
-	if (__LS_I3C_GET_FLAG(base, LL_I3C_EVR_FCF) == SET)
-	{
-		LL_I3C_ClearFlag_FC(base);
-	}	
-
 	/* Check on error flag */
 	if (__LS_I3C_GET_FLAG(base, LL_I3C_EVR_ERRF) == SET)
 	{
-		/* Clear error flag */
 		ls_i3c_log_err_type(dev);
-		LL_I3C_ClearFlag_ERR(base);
-		/* Update returned status value */
 		ret = -EIO;
 	}
 
@@ -1756,7 +1806,7 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 		return -EINVAL;
 	}
 
-	for(uint8_t i=0;i < num_msgs;i++)  // error
+	for(uint8_t i=0;i < num_msgs; i++)
 	{
 		msgs[i].num_xfer = 0;
 		if(msgs[i].hdr_mode != 0)
@@ -1766,7 +1816,8 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 		}
 	}
 	k_mutex_lock(&data->lock, K_FOREVER);
-	
+
+	LL_I3C_ClearFlag_FC(base);
 	LL_I3C_EnableIT_FC(base);
 	LL_I3C_EnableIT_CFNF(base);
 	LL_I3C_EnableIT_SFNE(base);
@@ -1774,6 +1825,8 @@ static int ls_i3c_transfer(const struct device *dev, struct i3c_device_desc *tar
 	LL_I3C_EnableIT_TXFNF(base);
 	LL_I3C_ClearFlag_ERR(base);
 	LL_I3C_EnableIT_ERR(base);
+	LL_I3C_ClearFlag_RXTGTEND(base);
+	LL_I3C_EnableIT_RXTGTEND(base);
 
 	ret = i3c_ls_curr_msg_init(dev, msgs, NULL, num_msgs, target->dynamic_addr);
 	if (ret != 0) {
@@ -1813,6 +1866,7 @@ out_transfer:
 	LL_I3C_DisableIT_RXFNE(base);
 	LL_I3C_DisableIT_TXFNF(base);
 	LL_I3C_DisableIT_ERR(base);
+	LL_I3C_DisableIT_RXTGTEND(base);
 	k_mutex_unlock(&data->lock);
 
 	return ret;
@@ -2361,12 +2415,31 @@ static void ls_i3c_isr(const struct device *dev)
 		}
 	}
 
-	/* Target read early termination flag (only used during CCC commands)*/
+	/* Target read early termination flag. */
 	if (LL_I3C_IsActiveFlag_RXTGTEND(base) && LL_I3C_IsEnabledIT_RXTGTEND(base)) {
-		/* A target ended a read request early during a CCC command, move the ptr to the
-		 * next target
-		 */
 		LL_I3C_ClearFlag_RXTGTEND(base);
+		if (data->msg_state == LS_I3C_MSG && curr_msg->xfer_msg_idx < curr_msg->num_msgs &&
+		    !LL_I3C_IsActiveFlag_FC(base)) {
+			bool is_read = ls_i3c_curr_msg_is_i3c(dev) ?
+				((curr_msg->i3c_msg_ptr->flags & I3C_MSG_READ) != 0) :
+				((curr_msg->i2c_msg_ptr->flags & I2C_MSG_READ) != 0);
+			size_t len = ls_i3c_curr_msg_is_i3c(dev) ?
+				curr_msg->i3c_msg_ptr->len : curr_msg->i2c_msg_ptr->len;
+			if (is_read && curr_msg->cur_num_xfer < len &&
+			    curr_msg->xfer_msg_idx == (curr_msg->num_msgs - 1)) {
+				LL_I3C_DisableIT_RXFNE(base);
+				LL_I3C_DisableIT_RXTGTEND(base);
+				/* RXTGTEND 已提前完成本帧读操作并 give 信号量。
+				 * 同帧 FC 到达时 msg_state==IDLE 满足 !=MSG_ERR 条件
+				 * 会再次 give → 清 FC 标志并屏蔽 FC 中断，保证每帧
+				 * device_sync_sem 只 give 一次。FC 由下一笔传输入口
+				 * ls_i3c_transfer / ls_i3c_i2c_api_transfer 重新使能。 */
+				LL_I3C_ClearFlag_FC(base);
+				LL_I3C_DisableIT_FC(base);
+				k_sem_give(&data->device_sync_sem);
+				data->msg_state = LS_I3C_MSG_IDLE;
+			}
+		}
 	}
 
 	/* Frame complete handler */
@@ -2713,6 +2786,10 @@ static int ls_i3c_target_register(const struct device *dev, struct i3c_target_co
 		return -EINVAL;
 	}
 	base->SERRWARN = base->SERRWARN;
+	/* 重新注册时重置状态机：mode switch（unregister/register）后
+	 * data->state 可能残留 RD/WR，导致 ls_i3c_target_tx_write 的
+	 * state==RD 检查拒绝 prefill，TX FIFO 空 → read 返回 0x00/超时。 */
+	data->state = LS_I3C_OP_STATE_IDLE;
 	ls_i3c_enable_target_interrupt(dev,true);
 	return 0;
 }
@@ -2828,6 +2905,7 @@ static int ls_i3c_i2c_api_transfer(const struct device *dev,
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
+	LL_I3C_ClearFlag_FC(base);
 	LL_I3C_EnableIT_FC(base);
 	LL_I3C_EnableIT_CFNF(base);
 	LL_I3C_EnableIT_SFNE(base);
@@ -2848,6 +2926,7 @@ static int ls_i3c_i2c_api_transfer(const struct device *dev,
 	LL_I3C_DisableIT_RXFNE(base);
 	LL_I3C_DisableIT_TXFNF(base);
 	LL_I3C_DisableIT_ERR(base);
+	LL_I3C_DisableIT_RXTGTEND(base);
 
 	k_mutex_unlock(&data->lock);
 

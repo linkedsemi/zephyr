@@ -25,11 +25,10 @@ extern "C" {
 #endif
 
 /* Includes ------------------------------------------------------------------*/
-// #include "stm32h5xx.h"
 #include "ls_i3c_misc.h"
 #include "reg_i3c.h"
 #include "field_manipulate.h"
-/** @addtogroup STM32H5xx_LL_Driver
+/** @addtogroup LL_Driver
   * @{
   */
 
@@ -151,6 +150,7 @@ typedef struct
 #define LL_I3C_EVR_RXTGTENDF               I3C_EVR_RXTGTENDF
 #define LL_I3C_EVR_ERRF                    I3C_EVR_ERRF
 #define LL_I3C_EVR_IBIF                    I3C_EVR_IBIF
+#define LL_I3C_EVR_BUSY                    I3C_EVR_BUSY
 // #define LL_I3C_EVR_IBIENDF                 I3C_EVR_IBIENDF  // as target
 #define LL_I3C_EVR_CRF                     I3C_EVR_CRF
 // #define LL_I3C_EVR_CRUPDF                  I3C_EVR_CRUPDF
@@ -3101,6 +3101,19 @@ __STATIC_INLINE uint32_t LL_I3C_IsActiveFlag_ERR(const I3C_TypeDef *I3Cx)
 __STATIC_INLINE uint32_t LL_I3C_IsActiveFlag_IBI(const I3C_TypeDef *I3Cx)
 {
   return ((READ_BIT(I3Cx->EVR, I3C_EVR_IBIF) == (I3C_EVR_IBIF)) ? 1UL : 0UL);
+}
+
+/**
+  * @brief  Indicates the status of Bus Busy flag.
+  *         RESET: Bus is idle.
+  *         SET: Bus is busy (transfer ongoing).
+  * @rmtoll EVR          BUSY          LL_I3C_IsActiveFlag_BUSY
+  * @param  I3Cx I3C Instance.
+  * @retval State of bit (1 or 0).
+  */
+__STATIC_INLINE uint32_t LL_I3C_IsActiveFlag_BUSY(const I3C_TypeDef *I3Cx)
+{
+  return ((READ_BIT(I3Cx->EVR, I3C_EVR_BUSY) == (I3C_EVR_BUSY)) ? 1UL : 0UL);
 }
 
 /**
