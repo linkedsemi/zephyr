@@ -182,9 +182,13 @@ status_t ls_otbn_load_app(const struct device *dev, const otbn_app_t *app_info)
     ls_otbn_imem_sec_wipe(dev);
     ls_otbn_dmem_sec_wipe(dev);
 
-    ls_otbn_dmem_set(dev,(app_info->kOtbnAppDmemEnd+3)/4,0,0);
-    ls_otbn_imem_write(dev,(app_info->kOtbnAppImemSize+3)/4,(uint32_t *)app_info->imem_image,0);
-    ls_otbn_dmem_write(dev,(app_info->kOtbnAppDmemSize+3)/4,(uint32_t *)app_info->dmem_image,0);
+    int ret;
+    ret = ls_otbn_dmem_set(dev,(app_info->kOtbnAppDmemEnd+3)/4,0,0);
+    if (ret) return ret;
+    ret = ls_otbn_imem_write(dev,(app_info->kOtbnAppImemSize+3)/4,(uint32_t *)app_info->imem_image,0);
+    if (ret) return ret;
+    ret = ls_otbn_dmem_write(dev,(app_info->kOtbnAppDmemSize+3)/4,(uint32_t *)app_info->dmem_image,0);
+    if (ret) return ret;
 
     return 0;
 }

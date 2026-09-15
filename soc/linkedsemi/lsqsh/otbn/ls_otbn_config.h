@@ -120,8 +120,10 @@ void ls_otbn_module_init(void);
  * If the calling thread currently owns the session, it is released first.
  *
  * @return 0 on success, negative errno on failure (e.g. -ETIMEDOUT if a
- *         running command does not complete within
- *         @ref OTBN_OPERATION_TIMEOUT_MS).
+ *         running command does not complete within the applicable timeout:
+ *         @ref OTBN_KEYGEN_OPERATION_TIMEOUT_MS for RSA keygen operations,
+ *         @ref OTBN_OPERATION_TIMEOUT_MS for all others, or the larger of
+ *         the two when deinitializing while an operation is in progress).
  */
 int ls_otbn_module_deinit(void);
 
