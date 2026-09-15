@@ -16,8 +16,20 @@ config LINKEDSEMI_OTBN
 
 config LS_OTBN_OPERATION_TIMEOUT_MS
 	int "OTBN operation timeout in milliseconds"
-	default 60000
+	default 15000
 	help
-	  Maximum time in milliseconds to wait for an OTBN operation to complete.
-	  This timeout is applied when waiting for OTBN command completion and
-	  when waiting for the OTBN to return to idle state.
+	  Maximum time in milliseconds to wait for a non-keygen OTBN operation
+	  to complete. This timeout applies to hash, ECDSA, SM2, RSA encrypt/
+	  verify/sign/decrypt, and other OTBN commands. Must be large enough
+	  for the slowest non-keygen operation on the target platform.
+
+config LS_OTBN_KEYGEN_OPERATION_TIMEOUT_MS
+	int "OTBN RSA keygen operation timeout in milliseconds"
+	default 180000
+	help
+	  Maximum time in milliseconds to wait for an RSA key generation
+	  operation to complete. RSA keygen involves random prime searching
+	  with repeated primality tests and can take much longer than other
+	  operations: RSA-2048 keygen worst case is ~72 s, RSA-4096 keygen
+	  may take several minutes. This timeout is only used when the active
+	  firmware is OTBN_FIRMWARE_RSA_KEYGEN.

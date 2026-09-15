@@ -16,16 +16,38 @@ LOG_MODULE_REGISTER(ls_otbn, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
 
 #define MBEDTLS_ERR_LS_OTBN_BUSY -0x135
 #ifndef CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
-#define OTBN_OPERATION_TIMEOUT_MS 60000
+#define OTBN_OPERATION_TIMEOUT_MS 15000
 #else
 #define OTBN_OPERATION_TIMEOUT_MS CONFIG_LS_OTBN_OPERATION_TIMEOUT_MS
 #endif
+
+#ifndef CONFIG_LS_OTBN_KEYGEN_OPERATION_TIMEOUT_MS
+#define OTBN_KEYGEN_OPERATION_TIMEOUT_MS 180000
+#else
+#define OTBN_KEYGEN_OPERATION_TIMEOUT_MS CONFIG_LS_OTBN_KEYGEN_OPERATION_TIMEOUT_MS
+#endif
+
+static otbn_firmware_t current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
+
+/**
+ * @brief Return the appropriate command timeout for the current firmware.
+ *
+ * RSA key generation involves repeated random prime searching and can take
+ * up to a minute or more (RSA-2048 worst case ~72 s, RSA-4096 several
+ * minutes); all other OTBN operations finish well within 15 s.
+ */
+static uint32_t ls_otbn_timeout_for_cmd(void)
+{
+    if (current_obtn_firmware == OTBN_FIRMWARE_RSA_KEYGEN) {
+        return OTBN_KEYGEN_OPERATION_TIMEOUT_MS;
+    }
+    return OTBN_OPERATION_TIMEOUT_MS;
+}
 
 static K_MUTEX_DEFINE(otbn_lock);
 static K_SEM_DEFINE(wait_complete, 0, 1);
 static bool otbn_inited;
 static volatile struct k_thread *otbn_owner_thread = NULL;
-static otbn_firmware_t current_obtn_firmware = OTBN_FIRMWARE_UNUSED;
 /* Firmware image currently held in IMEM, per the last confirm call.
  * IMEM persists across sessions (acquire/release only arbitrate ownership),
  * so this state must too. Reset on module init/deinit, which reset the core. */
@@ -201,7 +223,9 @@ int ls_otbn_module_deinit(void)
 
     if (!HAL_OTBN_In_Idle_State()) {
         k_sem_reset(&wait_complete);
-        ret = k_sem_take(&wait_complete, K_MSEC(OTBN_OPERATION_TIMEOUT_MS));
+        ret = k_sem_take(&wait_complete,
+                         K_MSEC(MAX(OTBN_OPERATION_TIMEOUT_MS,
+                                    OTBN_KEYGEN_OPERATION_TIMEOUT_MS)));
         if (ret != 0) {
             LOG_ERR("%s: wait for OTBN completion timeout", __func__);
             k_mutex_unlock(&otbn_lock);
@@ -313,7 +337,7 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
     k_sem_reset(&wait_complete);
     LSOTBN->INTR_ENABLE = OTBN_INTR_ENABLE_EN_MASK;
     LSOTBN->CMD = cmd;
-    rc = k_sem_take(&wait_complete, K_MSEC(OTBN_OPERATION_TIMEOUT_MS));
+    rc = k_sem_take(&wait_complete, K_MSEC(ls_otbn_timeout_for_cmd()));
     if (rc != 0) {
         if (rc == -EAGAIN) {
             ls_otbn_module_reset();
@@ -330,8 +354,9 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
 
     /* DONE interrupt may fire before STATUS returns to idle; wait for it. */
     uint32_t start = k_uptime_get_32();
+    uint32_t idle_timeout = ls_otbn_timeout_for_cmd();
     while (!HAL_OTBN_In_Idle_State()) {
-        if (k_uptime_get_32() - start > OTBN_OPERATION_TIMEOUT_MS) {
+        if (k_uptime_get_32() - start > idle_timeout) {
             ls_otbn_module_reset();
             LOG_ERR("%s: wait idle timeout", __func__);
             return -ETIMEDOUT;
