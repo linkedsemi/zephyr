@@ -167,6 +167,10 @@ static int sd_init_io(struct sd_card *card)
 	card->card_voltage = voltage;
 	/* Reset card flags */
 	card->flags = 0U;
+	card->bkops_man_en = false;
+	card->bkops_auto_en = false;
+	card->exception_event = false;
+	card->bkops_last_check = 0;
 	/* Delay so card can power up */
 	sd_delay(card->host_props.power_delay);
 	/* Start bus clock */
