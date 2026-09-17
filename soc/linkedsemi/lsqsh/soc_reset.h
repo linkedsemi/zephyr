@@ -233,4 +233,34 @@ static inline int wdt_setup_linkedsemi(const struct device *dev, struct wdt_rese
 }
 #endif
 
+/* Cold reboot that first hands the flash read window back to its neutral state
+ * (chip EAR=0, QSPI direct-read offset 0 = the slot A mapping). Use this
+ * instead of sys_reboot(SYS_REBOOT_COLD) whenever the running image may have
+ * left the window programmed for slot B: a warm reset clears neither the flash
+ * chip's EAR nor the QSPI controller, and the next boot's ROM/SBL loader would
+ * then read the SBL image (flash offset 0) from the wrong bank, fail its header
+ * check, retry four times and fall back to UART boot. Runs from RAM; never
+ * returns. */
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+void soc_reboot_cold_after_flash_window_reset(void);
+
+/* Log the flash direct-read window (chip EAR, QSPI backup offset, DAC state)
+ * and the SEC_PMU boot-attempt counters. Call from normal context before a
+ * reboot to see what the next boot inherits. */
+void soc_flash_window_log(const char *tag);
+
+/* Which A/B slot the QSPI direct-read (XIP) window is currently mapped onto:
+ * 'a', 'b', or 0 when it cannot be determined (flash controller unavailable,
+ * or the window is somewhere unexpected). This is the hardware ground truth
+ * for "which slot is executing", so an updater must protect the slot it
+ * returns even when the sbl_env selectors say otherwise. */
+char soc_flash_window_slot(void);
+
+#ifdef __cplusplus
+}
+#endif
+
 #endif /* _SOC_RESET_H_ */

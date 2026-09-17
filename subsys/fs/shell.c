@@ -787,6 +787,75 @@ static int cmd_mount_fat(const struct shell *sh, size_t argc, char **argv)
 
 	return 0;
 }
+
+/* Unmount a FATFS volume so it can be formatted, e.g.
+ *   fs umount /SD2
+ * This unregisters the FatFs volume by name (f_mount(NULL, ...)), which
+ * also affects the application's own mount of the same mount point; reboot
+ * afterwards to restore a clean mount state. */
+static int cmd_umount_fat(const struct shell *sh, size_t argc, char **argv)
+{
+	char *mntpt;
+	int res;
+
+	mntpt = mntpt_prepare(argv[1]);
+	if (!mntpt) {
+		shell_error(sh,
+			    "Failed to allocate buffer for mount point");
+		return -ENOEXEC;
+	}
+
+	fatfs_mnt.mnt_point = (const char *)mntpt;
+	res = fs_unmount(&fatfs_mnt);
+	k_free((void *)fatfs_mnt.mnt_point);
+	fatfs_mnt.mnt_point = NULL;
+	if (res != 0) {
+		shell_error(sh, "Error unmounting fs. Error Code [%d]", res);
+		return -ENOEXEC;
+	}
+
+	shell_print(sh, "Successfully unmounted: %s", argv[1]);
+
+	return 0;
+}
+
+/* Format (FATFS mkfs) the volume behind a mount point, e.g.
+ *   fs mkfs fat /SD2
+ * The volume must be unmounted or at least not in use; the target media
+ * content is destroyed. Added for on-target recovery of FAT volumes that
+ * were corrupted by an interrupted write. */
+static int cmd_mkfs_fat(const struct shell *sh, size_t argc, char **argv)
+{
+	char *mntpt;
+	int res;
+
+	mntpt = mntpt_prepare(argv[1]);
+	if (!mntpt) {
+		shell_error(sh,
+			    "Failed to allocate buffer for mount point");
+		return -ENOEXEC;
+	}
+
+	/* The FATFS backend passes dev_id straight to f_mkfs(), which wants
+	 * the FatFs volume string ("SD2") -- the leading '/' of the Zephyr
+	 * mount point must be stripped first. Accept both spellings. */
+	const char *vol = mntpt;
+	if (vol[0] == '/') {
+		vol++;
+	}
+
+	res = fs_mkfs(FS_FATFS, (uintptr_t)vol, NULL, 0);
+	k_free(mntpt);
+	if (res != 0) {
+		shell_error(sh, "Error formatting FAT fs. Error Code [%d]",
+			    res);
+		return -ENOEXEC;
+	}
+
+	shell_print(sh, "Successfully formatted fat fs: %s", argv[1]);
+
+	return 0;
+}
 #endif
 
 #if defined(CONFIG_FILE_SYSTEM_LITTLEFS)
@@ -836,6 +905,16 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs_mount,
 
 	SHELL_SUBCMD_SET_END
 );
+
+#if defined(CONFIG_FAT_FILESYSTEM_ELM)
+/* fs mkfs fat <mount-point> -- destroys the volume content. */
+SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs_mkfs,
+	SHELL_CMD_ARG(fat, NULL,
+		      "Format fatfs. fs mkfs fat <mount-point>",
+		      cmd_mkfs_fat, 2, 0),
+	SHELL_SUBCMD_SET_END
+);
+#endif
 #endif
 
 SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs,
@@ -846,6 +925,13 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_fs,
 	|| defined(CONFIG_FILE_SYSTEM_LITTLEFS)
 	SHELL_CMD(mount, &sub_fs_mount,
 		  "<Mount fs, syntax:- fs mount <fs type> <mount-point>", NULL),
+#endif
+#if defined(CONFIG_FAT_FILESYSTEM_ELM)
+	SHELL_CMD(mkfs, &sub_fs_mkfs,
+		  "<Format fs, syntax:- fs mkfs fat <mount-point>", NULL),
+	SHELL_CMD_ARG(umount, NULL,
+		      "<Unmount fs, syntax:- fs umount <mount-point>",
+		      cmd_umount_fat, 2, 0),
 #endif
 	SHELL_CMD(pwd, NULL, "Print current working directory", cmd_pwd),
 	SHELL_CMD_ARG(read, NULL, "Read from file", cmd_read, 2, 255),
