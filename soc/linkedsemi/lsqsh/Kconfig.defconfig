@@ -528,6 +528,6 @@ endif
 config SOC_LSQSH_SHELL
 	bool "SOC_LSQSH_SHELL"
 	depends on SHELL
-	default y
+	default n
 
 endif
