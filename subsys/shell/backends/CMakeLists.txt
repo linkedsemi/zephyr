@@ -43,6 +43,7 @@ zephyr_sources_ifdef(
 zephyr_sources_ifdef(
   CONFIG_SHELL_BACKEND_WOLFSSH
   shell_wolfssh.c
+  shell_wolfssh_scp.c
 )
 
 zephyr_link_libraries_ifdef(

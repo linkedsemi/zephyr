@@ -22,6 +22,14 @@ static struct k_thread ssh_daemon_thread;
 
 void wolfSSL_Debugging_ON(void);
 
+/* Minimal SCP server support (see shell_wolfssh_scp.c). The implementations
+ * live in their own translation unit so that they can define WOLFSSH_ZEPHYR
+ * themselves: this file is built without it (only the "app" target gets it
+ * from the wolfSSH module), so wolfssh/settings.h would not include
+ * CONFIG_WOLFSSH_SETTINGS_FILE here and WOLFSSH_SCP would be invisible. */
+void shell_wolfssh_scp_register_ctx(WOLFSSH_CTX *ctx);
+int shell_wolfssh_scp_accept(WOLFSSH *ssh);
+
 __attribute__((weak)) int wsUserAuth(byte authType,WS_UserAuthData* authData,void* ctx)
 {
     return WOLFSSH_USERAUTH_SUCCESS;
@@ -80,7 +88,7 @@ static void wolfssh_server_cb(struct net_socket_service_event *evt)
     do {
         ret = wolfSSH_worker(sh_ssh->ssh, &lastChannel);
 
-        if (ret == WS_CHAN_RXD) {
+        if (ret == WS_CHAN_RXD || ret == WS_EXTDATA) {
             gotRx = 1;
             continue; /* drain more packets, if any */
         }
@@ -103,7 +111,8 @@ static void wolfssh_server_cb(struct net_socket_service_event *evt)
             break;
         }
 
-        break; /* any other (unexpected) return stops the loop */
+        break; /* WS_SUCCESS (packet processed, no channel data) and any
+                * other (unexpected) return stop the loop */
     } while (1);
     k_mutex_unlock(&sh_ssh->ssh_lock);
 
@@ -114,9 +123,18 @@ static void wolfssh_server_cb(struct net_socket_service_event *evt)
     }
 
     int err = wolfSSH_get_error(sh_ssh->ssh);
-    if (ret != WS_CHANNEL_CLOSED && ret != WS_CHAN_RXD &&
-        err != WS_WANT_READ && err != WS_WANT_WRITE && err != WS_REKEYING &&
-        ret != WS_WANT_READ && ret != WS_WANT_WRITE && ret != WS_REKEYING) {
+    /* Only a genuinely negative, non-transient return tears the session
+     * down. ret == WS_SUCCESS (0) is HEALTHY: wolfSSH_worker() returns it
+     * after processing a complete non-channel packet -- notably the
+     * client's WINDOW_ADJUST (DoReceive/DoPacket overwrite ssh->error with
+     * the handler's return, so err is 0 too). The client sends its first
+     * WINDOW_ADJUST only once its consumed output crosses ~half of its
+     * initial 2 MB channel window, i.e. after roughly 1 MB of cumulative
+     * output -- which is why sessions appeared to die "on the third long
+     * busctl tree" while short commands never triggered it. */
+    if (ret < 0 && ret != WS_CHANNEL_CLOSED &&
+        ret != WS_WANT_READ && ret != WS_WANT_WRITE && ret != WS_REKEYING &&
+        err != WS_WANT_READ && err != WS_WANT_WRITE && err != WS_REKEYING) {
         struct shell *sh = sh_ssh->shell_context;
         printk("wolfssh: session closed by worker error: ret=%d err=%d (%s)\n",
                ret, err, wolfSSH_ErrorToName(err));
@@ -326,7 +344,9 @@ static int NonBlockSSH_accept(WOLFSSH* ssh)
     WS_SOCKET_T sockfd;
     sockfd = (WS_SOCKET_T)wolfSSH_get_fd(ssh);
     ret = wolfSSH_accept(ssh);
-    while (ret != WS_SUCCESS) {
+    /* WS_SCP_INIT also means "accepted, but there is an SCP transfer to run":
+     * hand that back to the caller instead of retrying accept() here. */
+    while (ret != WS_SUCCESS && ret != WS_SCP_INIT) {
         select_ret = tcp_select(sockfd, CONFIG_SHELL_WOLFSSH_LOGIN_TIMEOUT);
         if(select_ret == WS_CBIO_ERR_TIMEOUT)
         {
@@ -356,6 +376,9 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
     __ASSERT_NO_MSG(ret == WS_SUCCESS);
     ctx = wolfSSH_CTX_new(WOLFSSH_ENDPOINT_SERVER, heap);
     __ASSERT_NO_MSG(ctx);
+
+    /* SCP receive/send callbacks (upload support) */
+    shell_wolfssh_scp_register_ctx(ctx);
 
     set_password_suite(ctx);
 
@@ -420,6 +443,24 @@ static void ssh_daemon_func(void *p1,void *p2,void *p3)
 
             wolfSSH_set_fd(ssh,client_fd);
             ret = NonBlockSSH_accept(ssh);
+            if(ret == WS_SCP_INIT)
+            {
+                /* SCP session ("scp -t ..."): run the transfer to completion
+                 * and drop the session. The shell must NOT be attached to
+                 * this channel, so do not fall through to shell_init(). */
+                ret = shell_wolfssh_scp_accept(ssh);
+                if (ret != WS_SCP_COMPLETE) {
+                    /* A completed upload logs "<path> saved" from the SCP
+                     * callbacks, so only report the abnormal endings. */
+                    printk("wolfssh: scp session ended: ret=%d err=%d (%s)\n",
+                           ret, wolfSSH_get_error(ssh),
+                           wolfSSH_ErrorToName(wolfSSH_get_error(ssh)));
+                }
+                wolfSSH_shutdown(ssh);
+                wolfSSH_free(ssh);
+                close(client_fd);
+                continue;
+            }
             if(ret == WS_SUCCESS)
             {
                 k_tid_t tid = shell_wolfssh.ctx->tid;
