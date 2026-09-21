@@ -15,6 +15,13 @@ properties:
   cs-gpios:
     type: phandle-array
 
+  reset-gpios:
+    type: phandle-array
+    description: |
+      GPIO connected to the host reset signal, active low. A falling-edge
+      interrupt is configured on this pin; when it fires, the driver sends
+      the eSPI virtual wire SLAVE_BOOT_LOAD_DONE.
+
   sysevent-base:
     type: int
     required: true
