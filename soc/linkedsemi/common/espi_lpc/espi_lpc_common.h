@@ -158,6 +158,7 @@ struct espi_lpc_ls_config {
     struct espi_sysevent_base *sysevent_base;
     struct espi_cfg_recover *recover_data;
     struct gpio_dt_spec cs;
+    struct gpio_dt_spec reset_gpio;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -165,12 +166,14 @@ struct espi_lpc_ls_config {
 
 struct espi_lpc_ls_data {
     const struct espi_lpc_ls_config *cfg;
+    const struct device *dev;
     sys_slist_t peri_io;
     sys_slist_t peri_mem;
     union{
         struct espi_data{
             struct k_sem vw_tx_sem;
             struct gpio_callback cs_cb;
+            struct gpio_callback reset_cb;
         }espi;
         struct {
             struct k_spinlock serirq_src_lock;
