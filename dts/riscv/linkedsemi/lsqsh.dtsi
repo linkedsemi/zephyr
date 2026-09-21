@@ -537,6 +537,7 @@
                 sysevent-base = <0x40045ff8>;
                 status = "disabled";
                 cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
+                reset-gpios = <&gpioi 8 GPIO_ACTIVE_LOW>;
                 espibmc1: espibmc1 {
                     compatible = "linkedsemi,ls-espi-bmc";
                     sysevent-base = <0x40045ff8>;
