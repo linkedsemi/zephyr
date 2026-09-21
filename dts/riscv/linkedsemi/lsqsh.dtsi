@@ -487,6 +487,15 @@
             interrupts = <NIST_TRNG_IRQN 3>;
         };
 
+        trng0: trng@400a2000 {
+            compatible = "linkedsemi,ls-apb-trng";
+            reg = <0x400a2000 0x38>;
+            status = "disabled";
+            interrupts = <TRNG_IRQN 3>;
+            clocks = <TRNG_CLOCK>;
+            resets = <TRNG_RESET>;
+        };
+
 
         aes256: aes256@40029000 {
             compatible = "linkedsemi,aes256";

@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: Apache-2.0
+
+config ENTROPY_LS_APB_TRNG
+	bool "Linkedsemi APB TRNG entropy driver"
+	default y
+	depends on DT_HAS_LINKEDSEMI_LS_APB_TRNG_ENABLED
+	select ENTROPY_HAS_DRIVER
+	select PIPES
+	help
+	  Enable Linkedsemi APB ring-oscillator TRNG driver.
+	  Polling-based; each 16-bit sample waits for FSM match,
+	  then FSM_RST advances to next search.
+
+config ENTROPY_LS_APB_TRNG_POOL_SIZE
+	int "APB TRNG entropy pipe pool size (bytes)"
+	default 64
+	range 16 256
+	depends on ENTROPY_LS_APB_TRNG
+	help
+	  Size in bytes of the static k_pipe buffer used by the APB TRNG
+	  entropy driver.  Each hardware sample is 2 bytes.  64 bytes =
+	  32 samples.

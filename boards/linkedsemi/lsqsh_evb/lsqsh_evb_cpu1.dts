@@ -21,6 +21,7 @@
     zephyr,sram = &sram;
     zephyr,console = &uart1;
     zephyr,shell-uart = &uart1;
+    zephyr,entropy = &trng0;
 };
 
 &aliases {
@@ -279,6 +280,10 @@
 // &peci1 {
 //     status = "okay";
 // };
+
+&trng0 {
+    status = "okay";
+};
 
 &sdhci1 {
     status = "okay";

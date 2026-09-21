@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: Apache-2.0
+description: Linkedsemi APB ring-oscillator TRNG
+
+compatible: "linkedsemi,ls-apb-trng"
+
+include: [base.yaml, reset-device.yaml]
+
+properties:
+  reg:
+    required: true
+  interrupts:
+    required: false
+  clocks:
+    type: phandle-array
+    required: false
+  resets:
+    type: phandle-array
+    required: false
