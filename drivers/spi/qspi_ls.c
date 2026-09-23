@@ -41,14 +41,7 @@ LOG_MODULE_REGISTER(qspi_ls);
 	(((bus_hz) / (spi_hz)) - 1U)
 #define CALIB_COMBO_MAX      7U
 #define CALIB_COMBO_INVALID  UINT8_MAX
-/* 0xFE = calibration not applicable: capture is REF_CAP_NEG/REF_CAP_DLY, not a
- * calib_combos[] entry. A sentinel must not be expressed as a table position —
- * reordering the table would silently repoint it at a different capture. */
-#define CALIB_COMBO_REF      (UINT8_MAX - 1U)
-/* calib_combo: 0 = pending (BSS); 1..8 = combo index + 1; 0xFE = ref; 0xFF = invalid */
-BUILD_ASSERT(CALIB_COMBO_REF != CALIB_COMBO_INVALID &&
-	     CALIB_COMBO_REF > (CALIB_COMBO_MAX + 1U),
-	     "CALIB_COMBO_REF must not alias a calib_combos[] entry or CALIB_COMBO_INVALID");
+/* calib_combo: 0 = pending (BSS); 1..8 = combo index + 1; 0xFF = invalid */
 
 static const struct {
 	uint8_t neg;
@@ -873,17 +866,6 @@ static void stg_capture_apply_calibrated(const struct device *dev)
 	struct qspi_ls_data *data = dev->data;
 	uint8_t stored = data->calib_combo;
 
-	if (stored == CALIB_COMBO_REF) {
-		/*
-		 * Calibration was skipped because the requested frequency is
-		 * below the calibration clock. Apply the reference capture
-		 * directly: this value means "no calibration", and a table
-		 * position cannot express that.
-		 */
-		stg_capture_set(info->reg, REF_CAP_NEG, REF_CAP_DLY);
-		return;
-	}
-
 	if (stored == 0U || stored == CALIB_COMBO_INVALID ||
 	    stored > (CALIB_COMBO_MAX + 1U)) {
 		return;
@@ -973,7 +955,7 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	}
 
 	if (calib_hz > config->frequency) {
-		data->calib_combo = CALIB_COMBO_REF;
+		data->calib_combo = 2;
 		data->calib_status = QSPI_TIMING_CALIB_UNUSED;
 		goto no_calibration;
 	}
