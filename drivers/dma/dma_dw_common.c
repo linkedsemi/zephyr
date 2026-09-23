@@ -60,6 +60,9 @@ void dw_dma_isr(const struct device *dev)
 			status_err &= ~(1 << channel);
 			chan_data = &dev_data->chan[channel];
 
+			dw_write(dev_cfg->base, DW_DMA_CHAN_EN, DW_CHAN_MASK(channel));
+			chan_data->state = DW_DMA_IDLE;
+
 			if (chan_data->dma_errcallback) {
 				LOG_DBG("%s: Dispatching err complete callback for channel %d\n", dev->name,
 					channel);
@@ -177,6 +180,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	uint32_t msize;
 	uint32_t block_ts_mask = dw_ctlh_block_ts_mask(dev_cfg);
 	uint32_t block_size = 0;
+	int idx;
 	int ret = 0;
 
 	if (channel >= DW_CHAN_COUNT) {
@@ -227,6 +231,19 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 #endif
 	LOG_DBG("%s: channel %d m_size=%d", dev->name, channel, msize);
 	__ASSERT_NO_MSG(msize <= DW_MSIZE_MAX);
+
+	for (idx = 0, block_cfg = cfg->head_block; idx < cfg->block_count;
+	     idx++, block_cfg = block_cfg->next_block) {
+		if (!block_cfg) {
+			return -EINVAL;
+		}
+		if (block_cfg->source_address == block_cfg->dest_address) {
+			LOG_ERR("%s: channel %d block %d: source and destination address are identical (0x%x)",
+				dev->name, channel, idx, block_cfg->source_address);
+			ret = -EINVAL;
+			goto out;
+		}
+	}
 
 	/* default channel config */
 	chan_data->direction = cfg->channel_direction;
@@ -505,13 +522,20 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 		chan_data->blkuser_data = cfg->user_data;
 		chan_data->dma_dsttrancallback = cfg->dma_callback;
 		chan_data->dsttranuser_data = cfg->user_data;
+		chan_data->dma_tfrcallback = NULL;
+		chan_data->tfruser_data = NULL;
 		dw_write(dev_cfg->base, DW_MASK_BLOCK, DW_CHAN_UNMASK(channel));
 		dw_write(dev_cfg->base, DW_MASK_DST_TRAN, DW_CHAN_UNMASK(channel));
 	} else {
 		chan_data->dma_tfrcallback = cfg->dma_callback;
 		chan_data->tfruser_data = cfg->user_data;
-		dw_write(dev_cfg->base, DW_MASK_TFR, DW_CHAN_UNMASK(channel));
+		chan_data->dma_blkcallback = NULL;
+		chan_data->blkuser_data = NULL;
+		chan_data->dma_dsttrancallback = NULL;
+		chan_data->dsttranuser_data = NULL;
 	}
+
+	dw_write(dev_cfg->base, DW_MASK_TFR, DW_CHAN_UNMASK(channel));
 
 	dw_write(dev_cfg->base, DW_MASK_ERR, DW_CHAN_UNMASK(channel));
 
@@ -663,6 +687,9 @@ int dw_dma_stop(const struct device *dev, uint32_t channel)
 	}
 
 	if (!dw_dma_is_enabled(dev, channel) && chan_data->state != DW_DMA_SUSPENDED) {
+		if (chan_data->state == DW_DMA_ACTIVE) {
+			chan_data->state = DW_DMA_IDLE;
+		}
 		ret = 0;
 		goto out;
 	}
