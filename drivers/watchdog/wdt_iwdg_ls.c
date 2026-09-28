@@ -42,7 +42,10 @@ struct iwdt_ls_data {
 
 static uint32_t iwdt_calculate_load(uint32_t timeout_ms, uint32_t frequency)
 {
-	uint64_t ticks = timeout_ms * frequency / 1000;
+	/* timeout_ms and frequency are both uint32_t: without the cast the
+	 * product would be evaluated mod 2^32 before being widened, so the
+	 * saturation below would never be reached. */
+	uint64_t ticks = (uint64_t)timeout_ms * frequency / 1000;
 
 	return (ticks > UINT32_MAX) ? UINT32_MAX : (uint32_t)ticks;
 }
@@ -70,7 +73,12 @@ static int iwdt_ls_setup(const struct device *dev, uint8_t options)
 		return -ENOTSUP;
 	}
 
-	if (config->iwdg_reg->IWDT_CTRL) {
+	/* IWDT_CTRL also holds two strobe bits, IWDT_INTR_CLR(bit2) and
+	 * IWDT_CNT_CLR(bit3). IWDT_CNT_CLR is left set by the hardware after a
+	 * feed and can not be cleared by writing 0, so testing the whole
+	 * register for non-zero reports a running watchdog long after the
+	 * counter was cleared. Only IWDT_EN/IWDT_RST_EN say "already set up". */
+	if (config->iwdg_reg->IWDT_CTRL & (IWDT_EN_MASK | IWDT_RST_EN_MASK)) {
 		LOG_INF("wdt_ls_setup: interrupt already configured");
 		return -EBUSY;
 	}
