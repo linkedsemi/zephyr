@@ -955,7 +955,7 @@ static int qspi_ls_timing_calibration(const struct device *dev,
 	}
 
 	if (calib_hz > config->frequency) {
-		data->calib_combo = 1U;
+		data->calib_combo = 2;
 		data->calib_status = QSPI_TIMING_CALIB_UNUSED;
 		goto no_calibration;
 	}
