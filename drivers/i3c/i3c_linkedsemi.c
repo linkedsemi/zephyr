@@ -193,6 +193,11 @@ struct ls_i3c_config {
 	I3C_TypeDef   *base;
 	uint32_t clock_frequency;
     void (*irq_config_func)(const struct device *dev);
+    /* DTS `no-bus-init`: a target may not be powered or ready yet at
+     * kernel init time, where the boot-time enumeration
+     * (RSTDAA/DISEC/SETDASA/DAA) would only produce bus errors.
+     * The application then calls i3c_bus_init() once targets are up. */
+    bool no_bus_init;
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -680,7 +685,7 @@ static int ls_i3c_init(const struct device *dev)
 	{
 		LOG_DBG("I3C_ROLE_CONTROLLER started\n");
 		/* Perform bus initialization */
-		if(dev_config->common.dev_list.num_i3c > 0)
+		if(!dev_config->no_bus_init && dev_config->common.dev_list.num_i3c > 0)
 		{
 			ret = i3c_bus_init(dev, &dev_config->common.dev_list);
 		}
@@ -2986,6 +2991,7 @@ static const struct i3c_driver_api ls_i3c_driver_api = {
 		.common.dev_list.num_i3c = ARRAY_SIZE(ls_i3c_device_array_##id),                 \
 		.common.dev_list.i2c = ls_i2c_device_array_##id,                             \
 		.common.dev_list.num_i2c = ARRAY_SIZE(ls_i2c_device_array_##id),             \
+		.no_bus_init = DT_INST_PROP_OR(id, no_bus_init, 0),                          \
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id), )) \
         IF_ENABLED(DT_HAS_CLOCKS(id), (.ccfg = LS_DT_CLK_CFG_ITEM(id), )) \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(id, resets), (.reset = RESET_DT_SPEC_INST_GET(id), )) \

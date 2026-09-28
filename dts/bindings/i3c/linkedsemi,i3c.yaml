@@ -22,8 +22,20 @@ properties:
   is-secondary:
     type: boolean
     description: |
-      if true, the device is secondary controller(target), 
+      if true, the device is secondary controller(target),
       otherwise it is the primary controller device
+
+  no-bus-init:
+    type: boolean
+    description: |
+      If set, the controller does not run i3c_bus_init() during driver
+      initialization. Bus initialization (RSTDAA / DISEC / SETDASA / DAA /
+      SETAASA) must then be triggered by the application through
+      i3c_bus_init().
+
+      Use this when the targets are not guaranteed to be powered or
+      addressable at kernel init time, where the default boot-time
+      enumeration would only produce bus errors.
 
   static-address:
     type: int
