@@ -75,6 +75,9 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/spinlock.h>
+#include <zephyr/fs/fs.h>
+#include <zephyr/sys/crc.h>
+#include <stddef.h>
 #include "reg_app_pmu_rg.h"
 #include "qsh.h" /* PMU_CASEOPEN_IRQN */
 
@@ -96,7 +99,185 @@ struct caseopen_data {
 	uint8_t enabled; /* current msk value (channels still armed) */
 	uint32_t isr_count;   /* how many times the ISR actually ran */
 	uint32_t isr_last_v;  /* CASEOPEN_CTRL snapshot at last ISR entry */
+#ifdef CONFIG_CASEOPEN_PERSIST
+	struct k_work_delayable persist_save_work;
+	struct k_work_delayable persist_restore_work;
+	uint8_t persist_save_retries;
+	uint8_t persist_restore_retries;
+#endif
 };
+
+/* ------------------------------------------------------------------
+ * Latch persistence (CONFIG_CASEOPEN_PERSIST)
+ *
+ * data->latched is RAM only, and caseopen_init() scrubs both the SW latch
+ * and the HW edge-latch at boot, so an intrusion that happened while the
+ * BMC was rebooting (or powered off) is otherwise lost. With persistence
+ * enabled:
+ *   - the ISR defers a save to the system workqueue (no FS I/O in ISR
+ *     context); the save work writes a tiny {magic, version, latched, crc}
+ *     record to CONFIG_CASEOPEN_PERSIST_PATH (/rw littlefs, shared across
+ *     A/B slots), retrying while rwfs is not mounted yet;
+ *   - a restore work scheduled from init re-applies the record to the SW
+ *     latch once /rw shows up (rwfs is mounted by the app main thread long
+ *     after this POST_KERNEL driver init -- hence the retry budget);
+ *   - rearm() cancels both works and deletes the record.
+ * ------------------------------------------------------------------ */
+#ifdef CONFIG_CASEOPEN_PERSIST
+
+#define CASEOPEN_PERSIST_MAGIC   0x50534F43U /* "COSP" (little-endian) */
+#define CASEOPEN_PERSIST_VERSION 1U
+
+struct caseopen_persist_rec {
+	uint32_t magic;
+	uint8_t version;
+	uint8_t latched;
+	uint8_t rsvd;
+	uint8_t crc;	/* crc8_ccitt(0xff, bytes up to crc) */
+};
+
+BUILD_ASSERT(sizeof(struct caseopen_persist_rec) == 8U);
+BUILD_ASSERT(offsetof(struct caseopen_persist_rec, crc) == 7U);
+
+/* Persistence work items must NOT run on the system workqueue: its stack
+ * (CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE, 1024 here) is far too small for the
+ * VFS + littlefs call chain, and sysworkq is K_ESSENTIAL, so an overflow
+ * there aborts an essential thread and panics the kernel (observed as
+ * "ASSERTION FAIL ... aborting essential thread" right after boot).
+ * Give persistence its own small workqueue instead. */
+K_KERNEL_STACK_DEFINE(caseopen_persist_wq_stack,
+		      CONFIG_CASEOPEN_PERSIST_WQ_STACK_SIZE);
+static struct k_work_q caseopen_persist_wq;
+
+/* Write the current SW latch, or delete the record when it is empty.
+ * Runs on the system workqueue only -- never in ISR context. */
+static void caseopen_persist_save(struct caseopen_data *data, uint8_t latched)
+{
+	int ret;
+
+	if (latched == 0U) {
+		/* Latch already cleared (e.g. rearm raced this save): the
+		 * record must not resurrect the intrusion. */
+		ret = fs_unlink(CONFIG_CASEOPEN_PERSIST_PATH);
+		if (ret < 0 && ret != -ENOENT) {
+			LOG_WRN("persist: unlink failed (%d)", ret);
+		}
+		return;
+	}
+
+	struct caseopen_persist_rec rec = {
+		.magic = CASEOPEN_PERSIST_MAGIC,
+		.version = CASEOPEN_PERSIST_VERSION,
+		.latched = latched,
+	};
+
+	rec.crc = crc8_ccitt(0xffU, &rec,
+			     offsetof(struct caseopen_persist_rec, crc));
+
+	struct fs_file_t f;
+
+	fs_file_t_init(&f);
+	ret = fs_open(&f, CONFIG_CASEOPEN_PERSIST_PATH,
+		      FS_O_CREATE | FS_O_WRITE | FS_O_TRUNC);
+	if (ret < 0) {
+		goto retry;
+	}
+	if (fs_write(&f, &rec, sizeof(rec)) != (ssize_t)sizeof(rec)) {
+		fs_close(&f);
+		goto retry;
+	}
+	fs_sync(&f);
+	fs_close(&f);
+	data->persist_save_retries = 0U;
+	return;
+
+retry:
+	if (++data->persist_save_retries <= CONFIG_CASEOPEN_PERSIST_RETRIES) {
+		k_work_reschedule_for_queue(&caseopen_persist_wq,
+					    &data->persist_save_work,
+					    K_SECONDS(1));
+	} else {
+		LOG_WRN("persist: save gave up after %d attempts",
+			data->persist_save_retries);
+	}
+}
+
+static void caseopen_persist_save_cb(struct k_work *work)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct caseopen_data *data = CONTAINER_OF(dwork, struct caseopen_data,
+						  persist_save_work);
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
+	uint8_t latched = data->latched;
+	k_spin_unlock(&data->lock, key);
+
+	caseopen_persist_save(data, latched);
+}
+
+/* Re-apply a persisted latch to the SW state. A missing record and a
+ * not-yet-mounted /rw both fail fs_open with -ENOENT, so absence just
+ * consumes the retry budget -- harmless, this only matters during the
+ * first seconds after boot. */
+static void caseopen_persist_restore_cb(struct k_work *work)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct caseopen_data *data = CONTAINER_OF(dwork, struct caseopen_data,
+						  persist_restore_work);
+
+	struct caseopen_persist_rec rec;
+	struct fs_file_t f;
+
+	fs_file_t_init(&f);
+	int ret = fs_open(&f, CONFIG_CASEOPEN_PERSIST_PATH, FS_O_READ);
+	if (ret < 0) {
+		if (++data->persist_restore_retries <=
+		    CONFIG_CASEOPEN_PERSIST_RETRIES) {
+			k_work_reschedule_for_queue(&caseopen_persist_wq, dwork,
+						    K_SECONDS(1));
+		}
+		return;
+	}
+
+	ssize_t n = fs_read(&f, &rec, sizeof(rec));
+	fs_close(&f);
+
+	if (n != (ssize_t)sizeof(rec) ||
+	    rec.magic != CASEOPEN_PERSIST_MAGIC ||
+	    rec.version != CASEOPEN_PERSIST_VERSION ||
+	    rec.crc != crc8_ccitt(0xffU, &rec,
+				  offsetof(struct caseopen_persist_rec, crc))) {
+		/* Truncated or corrupt record: drop it instead of
+		 * resurrecting garbage. */
+		fs_unlink(CONFIG_CASEOPEN_PERSIST_PATH);
+		return;
+	}
+
+	if (rec.latched != 0U) {
+		k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+		data->latched |= rec.latched;
+		k_spin_unlock(&data->lock, key);
+		LOG_INF("persist: restored latched=0x%02x", rec.latched);
+	}
+}
+
+/* Called from rearm() (thread context): stop any pending save/restore and
+ * remove the record so a stale latch cannot come back after a reboot. */
+static void caseopen_persist_clear(struct caseopen_data *data)
+{
+	struct k_work_sync sync;
+
+	k_work_cancel_delayable_sync(&data->persist_save_work, &sync);
+	k_work_cancel_delayable_sync(&data->persist_restore_work, &sync);
+
+	int ret = fs_unlink(CONFIG_CASEOPEN_PERSIST_PATH);
+
+	if (ret < 0 && ret != -ENOENT) {
+		LOG_WRN("persist: clear failed (%d)", ret);
+	}
+}
+
+#endif /* CONFIG_CASEOPEN_PERSIST */
 
 static inline uint32_t caseopen_read(const struct device *dev)
 {
@@ -172,6 +353,13 @@ static void caseopen_isr(const void *arg)
 	caseopen_write_locked(dev, new_msk, 0U);
 
 	k_sem_give(&data->intr_sem);
+
+#ifdef CONFIG_CASEOPEN_PERSIST
+	/* Persist the new latch state (coalesced: no-op if already
+	 * scheduled). Deferred to the persistence workqueue on purpose. */
+	k_work_schedule_for_queue(&caseopen_persist_wq,
+				  &data->persist_save_work, K_NO_WAIT);
+#endif
 }
 
 /* Unmask (or mask) channels WITHOUT touching the edge-latch.
@@ -224,6 +412,10 @@ static int caseopen_rearm(const struct device *dev)
 	}
 	k_spin_unlock(&data->lock, key);
 
+#ifdef CONFIG_CASEOPEN_PERSIST
+	caseopen_persist_clear(data);
+#endif
+
 	LOG_INF("case-open latch rearmed (reg=0x%08x)", caseopen_read(dev));
 	return 0;
 }
@@ -243,10 +435,23 @@ static int caseopen_sample_fetch(const struct device *dev, enum sensor_channel c
 	/* int latches edges even on masked channels (no IRQ fires for
 	 * those): pick them up here in addition to ISR captures.
 	 */
+#ifdef CONFIG_CASEOPEN_PERSIST
+	uint8_t old_latched = data->latched;
+#endif
 	data->latched |= (uint8_t)FIELD_GET(APP_PMU_RG_CASEOPEN_INT_MASK, v) |
 			 (uint8_t)FIELD_GET(APP_PMU_RG_CASEOPEN_STT_MASK, v);
 	data->raw = (uint8_t)FIELD_GET(APP_PMU_RG_CASEOPEN_INT_MASK, v);
 	k_spin_unlock(&data->lock, key);
+
+#ifdef CONFIG_CASEOPEN_PERSIST
+	if (data->latched != old_latched) {
+		/* New edges folded in outside the ISR path (e.g. masked
+		 * channels picked up here): persist them too. */
+		k_work_schedule_for_queue(&caseopen_persist_wq,
+					  &data->persist_save_work,
+					  K_NO_WAIT);
+	}
+#endif
 	return 0;
 }
 
@@ -355,6 +560,23 @@ static int caseopen_init(const struct device *dev)
 		(unsigned int)(data->latched & 1U),
 		(unsigned int)((data->latched >> 1) & 1U),
 		(unsigned int)arm);
+
+#ifdef CONFIG_CASEOPEN_PERSIST
+	k_work_init_delayable(&data->persist_save_work,
+			      caseopen_persist_save_cb);
+	k_work_init_delayable(&data->persist_restore_work,
+			      caseopen_persist_restore_cb);
+	/* Own workqueue with a stack sized for the fs/littlefs call chain;
+	 * the system workqueue (1024-byte stack, K_ESSENTIAL) must never
+	 * run FS work. */
+	k_work_queue_start(&caseopen_persist_wq, caseopen_persist_wq_stack,
+			   K_KERNEL_STACK_SIZEOF(caseopen_persist_wq_stack),
+			   K_PRIO_COOP(10), NULL);
+	/* rwfs is mounted by the app main thread long after POST_KERNEL;
+	 * the restore work retries once per second until /rw is there. */
+	k_work_schedule_for_queue(&caseopen_persist_wq,
+				  &data->persist_restore_work, K_SECONDS(1));
+#endif
 
 	/* Hook the dedicated intrusion interrupt (PMU_CASEOPEN_IRQN). */
 	cfg->irq_config_func(dev);
