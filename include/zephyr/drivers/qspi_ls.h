@@ -36,6 +36,28 @@ enum qspi_timing_calib_status {
  */
 int qspi_timing_calibration_status(const struct device *dev);
 
+/**
+ * @brief Capture timing currently programmed on the QSPI controller.
+ *
+ * cap_neg / cap_dly are read from QSPI_CTRL1 (the values in use).
+ */
+struct qspi_timing_calib_value {
+	uint8_t cap_neg;
+	uint8_t cap_dly;
+};
+
+/**
+ * @brief Read the QSPI capture timing currently in use.
+ *
+ * @param dev QSPI controller device
+ * @param value Output; must not be NULL
+ *
+ * @retval 0 Success
+ * @retval -EINVAL Invalid device or value
+ */
+int qspi_timing_calibration_value(const struct device *dev,
+				  struct qspi_timing_calib_value *value);
+
 #ifdef __cplusplus
 }
 #endif
