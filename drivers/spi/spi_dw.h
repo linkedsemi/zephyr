@@ -61,6 +61,7 @@ struct spi_dw_config {
 	uint32_t dma_channel_tx;
 	uint32_t dma_handshake_tx;
 	uint8_t *timing_calibration_delay_arr;
+	size_t timing_calibration_delay_arr_size;
 	uint32_t timing_calibration_clock_frequency;
 	bool timing_calibration_disabled;
 	IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))

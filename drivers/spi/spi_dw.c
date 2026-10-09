@@ -38,6 +38,7 @@ LOG_MODULE_REGISTER(spi_dw);
 
 #include <zephyr/drivers/spi_nor.h>
 #include <zephyr/drivers/spi.h>
+#include <zephyr/drivers/spi_dw_api.h>
 #include <zephyr/drivers/spi/rtio.h>
 #include <zephyr/irq.h>
 #include <zephyr/drivers/dma.h>
@@ -228,6 +229,37 @@ no_calibration:
 	}
 
 	return ret;
+}
+
+static const struct spi_driver_api dw_spi_api;
+
+int spi_dw_timing_calibration_value(const struct device *dev, uint8_t slave,
+				    struct spi_dw_timing_calib_value *value)
+{
+	const struct spi_dw_config *info;
+
+	if (dev == NULL || value == NULL) {
+		return -EINVAL;
+	}
+
+	if (dev->api != &dw_spi_api) {
+		return -EINVAL;
+	}
+
+	if (!device_is_ready(dev)) {
+		return -ENODEV;
+	}
+
+	info = dev->config;
+	if (slave >= info->timing_calibration_delay_arr_size) {
+		return -EINVAL;
+	}
+	value->rx_sample_dly = info->timing_calibration_delay_arr[slave];
+
+	LOG_INF("%s: calib value: slave=%u rx_sample_dly=%u",
+		dev->name, slave, value->rx_sample_dly);
+
+	return 0;
 }
 
 static inline bool spi_dw_is_slave(struct spi_dw_data *spi)
@@ -2077,6 +2109,14 @@ int spi_dw_init(const struct device *dev)
 	k_sem_init(&spi->dma_rx_sem, 0, 1);
 	k_sem_init(&spi->dma_tx_sem, 0, 1);
 
+	/*
+	 * The initializer leaves slots without a child node at 0, which reads as
+	 * a valid delay; mark every slot uncalibrated.
+	 */
+	memset(info->timing_calibration_delay_arr, TIMING_CALIBRATION_INVALID,
+	       info->timing_calibration_delay_arr_size *
+	       sizeof(info->timing_calibration_delay_arr[0]));
+
 
 	LOG_DBG("Designware SPI driver initialized on device: %p", dev);
 
@@ -2092,7 +2132,7 @@ int spi_dw_init(const struct device *dev)
 	return 0;
 }
 
-#define TIMING_CALIBRATION_INV_(inst)  TIMING_CALIBRATION_INVALID
+#define TIMING_CALIBRATION_INV_(node)  [DT_REG_ADDR(node)] = TIMING_CALIBRATION_INVALID
 
 #define SPI_CFG_IRQS_SINGLE_ERR_LINE(inst)					\
 		IRQ_CONNECT(DT_INST_IRQ_BY_NAME(inst, rx_avail, irq),		\
@@ -2191,6 +2231,7 @@ COND_CODE_1(IS_EQ(DT_NUM_IRQS(DT_DRV_INST(inst)), 1),              \
 		.fifo_depth = DT_INST_PROP(inst, fifo_depth),                               \
 		.max_xfer_size = DT_INST_PROP(inst, max_xfer_size),                         \
 		.timing_calibration_delay_arr = timing_calibration_delay_arr_##inst,                                \
+		.timing_calibration_delay_arr_size = ARRAY_SIZE(timing_calibration_delay_arr_##inst), \
 		.timing_calibration_clock_frequency = DT_INST_PROP_OR(inst, timing_calibration_clock_frequency, 10000000), \
 		.timing_calibration_disabled = DT_INST_PROP_OR(inst, timing_calibration_disabled, false),           \
 		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),)) \
