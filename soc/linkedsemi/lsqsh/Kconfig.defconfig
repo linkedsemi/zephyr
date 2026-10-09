@@ -530,4 +530,24 @@ config SOC_LSQSH_SHELL
 	depends on SHELL
 	default n
 
+config SOC_REBOOT_FLASH_WINDOW_RESET
+	bool "SOC_REBOOT_FLASH_WINDOW_RESET"
+	default n
+	help
+	  Restore the QSPI flash direct-read window to slot A (chip EAR = 0,
+	  QSPI BACKUP_OFFSET = 0) in software before a cold reboot, by
+	  calling soc_reboot_cold_after_flash_window_reset() from
+	  soc_reboot.c.
+
+	  Normally not needed: the app programs the OTP bit
+	  startup_param.flash_reset_disable = 0 once (main() in
+	  openbmc_zephyr_app), after which the boot ROM resets the window
+	  itself on every reset, and both a -> b and b -> a switching was
+	  verified working with this left off.
+
+	  Enable it only as a fallback for boards whose OTP block refused
+	  the program -- the app logs "flash_reset_disable did NOT clear"
+	  in that case. Costs a few register writes from RAM, plus losing
+	  the ROM's own window handling.
+
 endif

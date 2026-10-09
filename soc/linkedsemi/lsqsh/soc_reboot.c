@@ -46,23 +46,32 @@ void sys_arch_reboot(int type)
 #if defined(CONFIG_OPENBMC_PHOSPHOR_BMC_CODE_MGT)
     /* OpenBMC A/B boot -- MUST run before anything that can reset the chip.
      *
-     * The flash read window may currently be programmed for slot B, and a reset
-     * clears neither the chip's EAR nor the QSPI controller. The boot ROM then
-     * reads the SBL image from flash offset 0 through the displaced window,
-     * fails its header check four times and falls back to UART boot until power
-     * is removed ("b -> a never boots"; a -> b is fine because a run leaves the
+     * Historically this is where the flash read window was handed back to slot
+     * A in software (soc_reboot_cold_after_flash_window_reset()), because a
+     * reset clears neither the chip's EAR nor the QSPI controller: the window
+     * stayed programmed for the running slot, the boot ROM then read the SBL
+     * image (flash offset 0) out of the wrong 16MB bank, failed its header
+     * check four times and fell back to UART boot until power was removed
+     * ("b -> a never boots"; a -> b was fine because an a run leaves the
      * window at 0/0 already).
      *
-     * This used to sit after the switch below, but the SYS_REBOOT_COLD case
-     * writes SEC_PMU->RST_SFT, which resets the chip immediately -- the window
-     * clear was never reached. Evidence: the reboot always cut the caller's
-     * console line in half and no print placed after that write ever appeared.
+     * That hand-over is now done by the boot ROM instead: main() programs
+     * startup_param.flash_reset_disable = 0 in OTP once (see
+     * bmc_otp_program_flash_reset_disable() in the app), and the ROM resets
+     * the window on every reset from then on -- a -> b and b -> a both
+     * verified working with the software window reset skipped. OTP is one-way,
+     * so this cannot be undone, which is why the log states the bit on every
+     * boot.
      *
-     * The helper runs from RAM (__ramfunc), clears EAR + BACKUP_OFFSET, requests
-     * the reset and never returns -- so the switch below is unreachable for
-     * code-mgt builds, which all reboot via SYS_REBOOT_COLD anyway. */
+     * soc_reboot_cold_after_flash_window_reset() is kept below, behind
+     * SOC_REBOOT_FLASH_WINDOW_RESET, as the software fallback: it costs a
+     * couple of register writes and makes b -> a work even on a unit whose OTP
+     * block refused the program (main() logs an explicit error in that case).
+     * Enable it if the OTP state of a board can never be trusted. */
     soc_flash_window_log("pre-reboot");
+#ifdef CONFIG_SOC_REBOOT_FLASH_WINDOW_RESET
     soc_reboot_cold_after_flash_window_reset();
+#endif
 #endif
 
     switch(type) {
