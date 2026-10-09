@@ -1074,6 +1074,28 @@ int qspi_timing_calibration_status(const struct device *dev)
 	return (int)data->calib_status;
 }
 
+int qspi_timing_calibration_value(const struct device *dev,
+				  struct qspi_timing_calib_value *value)
+{
+	const struct qspi_ls_config *info;
+	uint32_t ctrl;
+
+	if (dev == NULL || value == NULL) {
+		return -EINVAL;
+	}
+
+	info = dev->config;
+	ctrl = info->reg->QSPI_CTRL1;
+
+	value->cap_neg = (uint8_t)((ctrl & LSQSPIV2_CAP_NEG_MASK) >>LSQSPIV2_CAP_NEG_POS);
+	value->cap_dly = (uint8_t)((ctrl & LSQSPIV2_CAP_DLY_MASK) >>LSQSPIV2_CAP_DLY_POS);
+
+	DEV_INF(dev, "calib value: cap_neg=%u cap_dly=%u",
+		value->cap_neg, value->cap_dly);
+
+	return 0;
+}
+
 static int stg_cmd(const struct device *dev, struct spi_nor_op_info *op,
 		   const struct stg_wire_cfg *wire)
 {
