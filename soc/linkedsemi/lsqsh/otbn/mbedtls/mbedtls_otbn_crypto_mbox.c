@@ -16,12 +16,22 @@
 #include <zephyr/cache.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(mbedtls_otbn, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
+/* Own REGISTER: this file is built for delegation, while the shared
+ * 'mbedtls_otbn' module is registered in mbedtls_otbn_msp.c, which is gated
+ * on CONFIG_MBEDTLS_LINKEDSEMI_OTBN only -- a delegation-only build would
+ * otherwise fail to link log_const_mbedtls_otbn (LOG_DBG used to be culled
+ * by the log level, which hid this).
+ */
+LOG_MODULE_REGISTER(mbedtls_otbn_mbox, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
 
 #define ASSERT_MBEDTLS(error) {if(error){printf("mbedtls :stack is too small\n"); err = MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL; goto exit;}}
 #define DELEGATE_ECDSA_GENE_KEY 0x11
 #define DELEGATE_ECDSA_SIGN     0x22
 #define DELEGATE_ECDSA_VERIFY   0x33
+/* Upper bound on waiting for a reply. The stubs used to wait K_FOREVER while
+ * ignoring mbox_send_dt() errors, so a dead or absent peer blocked the caller
+ * (and held client_sem) forever. A blocking API must fail instead. */
+#define DELEGATE_REPLY_TIMEOUT_MS  1000
 
 const struct device *otbn_mbox_dev = DEVICE_DT_GET(DT_NODELABEL(mbox_consumer_otbn_crypto));
 
@@ -32,6 +42,11 @@ struct otbn_delegate_params
     uint8_t op;
     uint8_t curve_idx;
     uint8_t data_len;
+    /* Request/response correlation. Replies cross the mbox asynchronously, and
+     * a call may give up on timeout while its reply is still in flight, so the
+     * op alone cannot tell "this reply is mine" from "this is a stale one".
+     * 0 = no reply stored yet. */
+    uint8_t seq;
     uint8_t *data[5];
 };
 
@@ -40,10 +55,55 @@ struct mbox_dt_spec ls_otbn_client = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer
 struct k_sem client_sem;
 struct k_sem client_op_return_sem;
 static volatile struct otbn_delegate_params recive_params;
+static uint8_t client_seq;
+
+/* Send one request and wait for the reply carrying `seq`.
+ * Returns 0 on our reply, -EIO if the send itself failed, -ETIMEDOUT if no
+ * matching reply arrived in time. A reply from a call that already timed out
+ * may wake us first, so keep waiting until the sequence matches.
+ */
+static int deleg_request(const struct mbox_msg *msg, uint8_t seq)
+{
+    int64_t deadline;
+
+    if(mbox_send_dt(&ls_otbn_client, msg) != 0)
+    {
+        LOG_WRN("delegation: mbox send failed");
+        return -EIO;
+    }
+    deadline = k_uptime_get() + DELEGATE_REPLY_TIMEOUT_MS;
+    for(;;)
+    {
+        int64_t left = deadline - k_uptime_get();
+
+        if(left <= 0)
+        {
+            break;
+        }
+        if(k_sem_take(&client_op_return_sem, K_MSEC(left)) != 0)
+        {
+            break;
+        }
+        if(recive_params.seq == seq)
+        {
+            return 0;
+        }
+        /* Stale reply from an earlier timed-out call -- keep waiting. */
+    }
+    LOG_WRN("delegation: no reply within %d ms", DELEGATE_REPLY_TIMEOUT_MS);
+    return -ETIMEDOUT;
+}
 
 static void delegation_client_mbox_handler(const struct device *dev,struct mbox_msg *data)
 {
     const struct otbn_delegate_params *param = data->data;
+
+    /* Record seq/status BEFORE the switch: those two are valid on every reply,
+     * including error replies whose op never reached the server's switch (the
+     * reply would fall into the default branch and copy no data).
+     */
+    recive_params.seq = param->seq;
+    recive_params.status = param->status;
 
     switch(param->op)
     {
@@ -51,7 +111,6 @@ static void delegation_client_mbox_handler(const struct device *dev,struct mbox_
         case DELEGATE_ECDSA_SIGN:
         case DELEGATE_ECDSA_VERIFY:
             // memcpy(&recive_params,param,sizeof(struct otbn_delegate_params));
-            recive_params.op = param->op;
             recive_params.curve_idx = param->curve_idx;
             recive_params.data_len = param->data_len;
             recive_params.data[0] = param->data[0];
@@ -109,7 +168,12 @@ int mbedtls_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_id gid,
         n_size = 32;
     }else
     {
-        return -EIO;
+        /* Exit through the shared epilogue so client_sem is always released;
+         * a bare return here leaks it and deadlocks every later proxy call.
+         * Return value is unchanged (-EIO).
+         */
+        err = -EIO;
+        goto exit;
     }
     struct otbn_delegate_params param = {
         .op = DELEGATE_ECDSA_GENE_KEY,
@@ -124,19 +188,43 @@ int mbedtls_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_id gid,
     sys_cache_data_flush_range((void *)private_key, MAX_OTBN_CURVE_LEN);
     sys_cache_data_flush_range((void *)public_key, MAX_OTBN_CURVE_LEN*2);
 
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
+    /* seq 0 is the "no reply stored" sentinel, so never hand it out: on
+     * wrap the request's seq would equal the sentinel and any stale reply
+     * would be mistaken for this call's. */
+    ++client_seq;
+    if(client_seq == 0)
+    {
+        client_seq = 1;
+    }
+    param.seq = client_seq;
+    recive_params.seq = 0;
+    err = deleg_request(&msg, param.seq);
+    if(err)
+    {
+        goto exit;
+    }
     if(recive_params.status != 0)
-        err = -1;
+    {
+        /* Server reported a failure: its result buffers are not valid. */
+        err = recive_params.status;
+        goto exit;
+    }
     sys_cache_data_invd_range((void *)recive_params.data[0], n_size);
     sys_cache_data_invd_range((void *)recive_params.data[1], n_size*2);
     ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&ctx->private_d,recive_params.data[0],n_size)); //private key
     ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&ctx->private_Q.private_X,recive_params.data[1],n_size)); //public_x key
     ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&ctx->private_Q.private_Y,recive_params.data[1]+n_size,n_size)); //public_y key
+    /* data[1] carries affine X||Y; set Z=1 so this is a real affine point
+     * rather than the Z==0 point at infinity that check_pubkey() rejects.
+     */
+    mbedtls_mpi_lset(&ctx->private_Q.private_Z, 1);
 
 exit:
-    LOG_HEXDUMP_DBG(recive_params.data[0],n_size,"private key");
-    LOG_HEXDUMP_DBG(recive_params.data[1],n_size*2,"public_x key");
+    if(recive_params.status == 0)
+    {
+        LOG_HEXDUMP_DBG(recive_params.data[0],n_size,"private key");
+        LOG_HEXDUMP_DBG(recive_params.data[1],n_size*2,"public_x key");
+    }
     k_sem_give(&client_sem);
     
     return err;
@@ -178,8 +266,21 @@ int mbedtls_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_mpi *s,
     sys_cache_data_flush_range((void *)private_key, MAX_OTBN_CURVE_LEN);
     sys_cache_data_flush_range((void *)user_buf, MAX_OTBN_CURVE_LEN);
 
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
+    /* seq 0 is the "no reply stored" sentinel, so never hand it out: on
+     * wrap the request's seq would equal the sentinel and any stale reply
+     * would be mistaken for this call's. */
+    ++client_seq;
+    if(client_seq == 0)
+    {
+        client_seq = 1;
+    }
+    param.seq = client_seq;
+    recive_params.seq = 0;
+    err = deleg_request(&msg, param.seq);
+    if(err)
+    {
+        goto exit;
+    }
     if(!recive_params.status)
     {
         sys_cache_data_invd_range((void *)recive_params.data[2], n_size);
@@ -187,8 +288,11 @@ int mbedtls_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_mpi *s,
         ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(r,recive_params.data[2],n_size)); //r_buf
         ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(s,recive_params.data[3],n_size)); //s_buf
     }
-    LOG_HEXDUMP_DBG(recive_params.data[2],n_size,"sign r_buf");
-    LOG_HEXDUMP_DBG(recive_params.data[3],n_size,"sign s_buf");
+    if(recive_params.status == 0)
+    {
+        LOG_HEXDUMP_DBG(recive_params.data[2],n_size,"sign r_buf");
+        LOG_HEXDUMP_DBG(recive_params.data[3],n_size,"sign s_buf");
+    }
 exit:
     k_sem_give(&client_sem);
     if(err)
@@ -204,6 +308,7 @@ int mbedtls_ecdsa_verify(mbedtls_ecp_group *grp,
                          const mbedtls_mpi *r,
                          const mbedtls_mpi *s)
 {
+    int err = 0;
     __attribute__((aligned(32)))uint8_t r_buf[MAX_OTBN_CURVE_LEN];
     __attribute__((aligned(32)))uint8_t s_buf[MAX_OTBN_CURVE_LEN];
     __attribute__((aligned(32)))uint8_t user_buf[MAX_OTBN_CURVE_LEN] = {0};
@@ -239,8 +344,22 @@ int mbedtls_ecdsa_verify(mbedtls_ecp_group *grp,
     sys_cache_data_flush_range((void *)param.data[2], MAX_OTBN_CURVE_LEN);
     sys_cache_data_flush_range((void *)param.data[3], MAX_OTBN_CURVE_LEN);
 
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
+    /* seq 0 is the "no reply stored" sentinel, so never hand it out: on
+     * wrap the request's seq would equal the sentinel and any stale reply
+     * would be mistaken for this call's. */
+    ++client_seq;
+    if(client_seq == 0)
+    {
+        client_seq = 1;
+    }
+    param.seq = client_seq;
+    recive_params.seq = 0;
+    err = deleg_request(&msg, param.seq);
+    if(err)
+    {
+        k_sem_give(&client_sem);
+        return err;
+    }
     if(recive_params.status != 0)
     {
         LOG_DBG("ecdsa verification  failed or input parameters are incorrect");
@@ -386,6 +505,7 @@ static void mbedtls_delegation_server_consumer(struct k_work *work)
                 param.curve_idx = (uint8_t)ecc_param.curve_idx;
                 param.data[0] = ecc_param.data[0];
                 param.data[1] = ecc_param.data[1];
+                param.status = err;
                 break;
             case DELEGATE_ECDSA_SIGN:
                 sys_cache_data_invd_range((void *)ecc_param.data[0], curve_size);
@@ -418,6 +538,10 @@ static void mbedtls_delegation_server_consumer(struct k_work *work)
                 sys_cache_data_invd_range((void *)ecc_param.data[3], curve_size);
                 ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&ctx.private_Q.private_X,ecc_param.data[0],curve_size));
                 ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&ctx.private_Q.private_Y,ecc_param.data[0]+curve_size,curve_size));
+                /* data[0] carries affine X||Y; set Z=1 (see the client-side
+                 * genkey note above).
+                 */
+                mbedtls_mpi_lset(&ctx.private_Q.private_Z, 1);
                 ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&r,ecc_param.data[2],curve_size));
                 ASSERT_MBEDTLS(mbedtls_mpi_read_binary_le(&s,ecc_param.data[3],curve_size));
                 err = mbedtls_ecdsa_verify(&ctx.private_grp, ecc_param.data[1], ecc_param.data_len, &ctx.private_Q, &r, &s);
@@ -435,10 +559,16 @@ static void mbedtls_delegation_server_consumer(struct k_work *work)
                 break;
         }
 exit:
-        if((err == MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL) || (err == EOPNOTSUPP))
-        {
-            param.status = err;
-        }
+        /* Report the real verdict on EVERY exit path. The old guarded form
+         * only covered two codes, and mbedtls_ecp_group_load() above
+         * overwrites err, so a failed curve load left status at its
+         * zero-initialised value and the client read the failure as success.
+         */
+        param.status = err;
+        /* Echo op and seq so the client can correlate this reply with its
+         * request even on an error path (the switch never set them). */
+        param.op = ecc_param.op;
+        param.seq = ecc_param.seq;
         msg.data = &param;
         msg.size = sizeof(param);
         mbox_send_dt(&ls_otbn_server,&msg);

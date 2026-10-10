@@ -10,6 +10,10 @@
 #define MBEDTLS_ECDSA_VERIFY_ALT
 #define MBEDTLS_ECDSA_GENKEY_ALT
 #endif
+/* Defining these ALT macros makes MBEDTLS_ECP_RESTARTABLE illegal (mbedtls
+ * check_config.h). The delegation CLIENT alone is enough -- it is in the
+ * condition above. See 810_driver_test/KNOWN_ISSUES.md #120.
+ */
 
 #if defined(CONFIG_MBEDTLS_SHA224_SHA256_LINKEDSEMI_HARDWARE_ALT)||defined(CONFIG_MBEDTLS_SHA224_SHA256_LINKEDSEMI_OTBN_ALT)
 #define MBEDTLS_SHA256_ALT
