@@ -61,6 +61,7 @@ extern "C" {
 int getrlimit(int __resource, struct rlimit *__rlp);
 int setrlimit(int __resource, const struct rlimit *__rlp);
 int pipe(int __fildes[2]);
+struct iovec;
 ssize_t readv(int fd, const struct iovec *iov, int iovcnt);
 ssize_t writev(int fd, const struct iovec *iov, int iovcnt);
 int mkstemp(char *);
