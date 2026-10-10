@@ -58,4 +58,20 @@
 #define MBEDTLS_CCM_C
 #define MBEDTLS_GCM_C
 
+/*
+ * MBEDTLS_ECP_RESTARTABLE cannot coexist with the Linkedsemi ECC alternative.
+ * Restartable ECP needs an interruptible implementation; both the OTBN hardware
+ * path and the delegation proxy are blocking. mbedtls rejects the combination
+ * in check_config.h -- fail here first, so the conflicting switch is named.
+ * Placed at the end of MBEDTLS_CONFIG_FILE, so a -D from the build or a define
+ * earlier in this chain is already visible. MBEDTLS_USER_CONFIG_FILE is
+ * processed AFTER this file and is caught only by check_config.h.
+ * See 810_driver_test/KNOWN_ISSUES.md #120.
+ */
+#if defined(MBEDTLS_ECP_RESTARTABLE)
+#if defined(MBEDTLS_ECDSA_SIGN_ALT) || defined(MBEDTLS_ECDSA_VERIFY_ALT) || defined(MBEDTLS_ECDSA_GENKEY_ALT)
+#error "Linkedsemi ECC ALT cannot coexist with MBEDTLS_ECP_RESTARTABLE. Remove MBEDTLS_ECP_RESTARTABLE, or set CONFIG_MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT=n and CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT=n. See 810_driver_test/KNOWN_ISSUES.md #120."
+#endif
+#endif
+
 #endif /*_MBEDTLS_LS_CFG_TLS_*/
