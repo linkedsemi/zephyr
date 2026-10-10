@@ -383,16 +383,6 @@ static int ls_otbn_hal_status_to_errno(HAL_StatusTypeDef status)
     return 0;
 }
 
-static int ls_otbn_mem_param_check(uint32_t offset, uint32_t size)
-{
-    if ((offset & 0x3) || (size & 0x3)) {
-        LOG_ERR("%s: offset=%u size=%u not 4-byte aligned",
-                __func__, offset, size);
-        return -EINVAL;
-    }
-    return 0;
-}
-
 int ls_otbn_imem_write(uint32_t offset, const uint32_t *src, uint32_t size)
 {
     LOG_DBG("%s", __func__);
