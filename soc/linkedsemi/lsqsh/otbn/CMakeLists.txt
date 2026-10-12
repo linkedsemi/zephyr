@@ -29,3 +29,4 @@ endif()
 
 # Common OTBN source files
 zephyr_library_sources_ifdef(CONFIG_LINKEDSEMI_OTBN otbn_common.c otbn_hash.c otbn_ecc.c otbn_pointops.c)
+zephyr_library_sources_ifdef(CONFIG_LS_OTBN_RSA_KEYGEN otbn_rsa_keygen.c)
