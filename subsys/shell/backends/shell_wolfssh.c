@@ -384,24 +384,13 @@ static void set_password_suite(WOLFSSH_CTX* ctx)
     if(wolfSSH_CTX_SetAlgoListKey(ctx, key_list) != WS_SUCCESS)
         LOG_WRN("Failed to set Key list\n");
 
-    /* IMPORTANT: every name listed here is advertised verbatim in our
-     * KEXINIT, but wolfSSH resolves its *own* list through NameToId() and
-     * silently drops names the build does not implement (GetNameListRaw:
-     * "if (id != ID_UNKNOWN ...)"). Advertising an unimplemented algorithm
-     * therefore makes the two peers pick *different* ciphers: the client
-     * picks the advertised one, we pick the next one we really have. The KEX
-     * signature still verifies (the exchange hash only covers the KEXINIT
-     * payload), so the failure only shows up after NEWKEYS as
-     * "Bad packet length" / "message authentication code incorrect".
-     *
-     * aes*-ctr is NOT in this build: it requires WOLFSSL_AES_COUNTER, which
-     * the app's wolfssl_user_settings.h does not define, so wolfssh/internal.h
-     * sets WOLFSSH_NO_AES_CTR. Add WOLFSSL_AES_COUNTER (and rebuild wolfSSL
-     * from scratch: it changes the Aes struct layout) before re-listing them.
-     */
     const char* cipher_list = 
         "aes256-gcm@openssh.com,"
+        "aes192-gcm@openssh.com,"
         "aes128-gcm@openssh.com,"
+        "aes256-ctr,"
+        "aes192-ctr,"
+        "aes128-ctr,"
         "aes256-cbc,"
         "aes192-cbc,"
         "aes128-cbc";
