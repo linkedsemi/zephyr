@@ -33,3 +33,14 @@ config LS_OTBN_KEYGEN_OPERATION_TIMEOUT_MS
 	  operations: RSA-2048 keygen worst case is ~72 s, RSA-4096 keygen
 	  may take several minutes. This timeout is only used when the active
 	  firmware is OTBN_FIRMWARE_RSA_KEYGEN.
+
+config LS_OTBN_RSA_KEYGEN
+	bool "OTBN RSA key generation module"
+	default n
+	select LINKEDSEMI_OTBN
+	help
+	  Build the OTBN-backed RSA key generation module
+	  (otbn_rsa_keygen.c). Enable it for configurations that generate RSA
+	  keys; the API is otbn_rsa_keygen() plus the RNG-free helpers declared
+	  in otbn_rsa_keygen.h. The module references the RSA keygen firmware
+	  image, so enabling it adds that image to the build.

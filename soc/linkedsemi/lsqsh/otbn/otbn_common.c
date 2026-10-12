@@ -346,10 +346,9 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
         }
         return rc;
     }
-    rc = HAL_OTBN_Error_Bit_Get();
-    if(rc)
-    {
-        LOG_ERR("otbn cmd error , error bit : 0x%x",rc);
+    uint32_t err = HAL_OTBN_Error_Bit_Get();
+    if (err) {
+        LOG_ERR("otbn cmd error , error bit : 0x%x", err);
     }
 
     /* DONE interrupt may fire before STATUS returns to idle; wait for it. */
@@ -363,7 +362,10 @@ int ls_otbn_cmd(enum otbn_cmd_t cmd)
         }
     }
 
-    return 0;
+    /* A set error bit means the firmware did not complete as requested, so the
+     * DMEM contents are not a result. Report it instead of returning success:
+     * callers that only see 0 would take the leftover words for output. */
+    return (err != 0) ? -EIO : 0;
 }
 
 static int ls_otbn_hal_status_to_errno(HAL_StatusTypeDef status)
