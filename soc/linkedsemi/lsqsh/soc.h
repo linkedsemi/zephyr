@@ -22,6 +22,8 @@ struct adc_otp_trim {
 		 adc12b_vref_trim_adc1 : 5, : 11;
 };
 
+BUILD_ASSERT(sizeof(struct adc_otp_trim) == 12);
+
 #if DT_NODE_EXISTS(DT_NODELABEL(otp_config_adc_trim_memory))
 #define LS_SHARED_ADC_TRIM_ADDR \
 	((uintptr_t)DT_REG_ADDR(DT_NODELABEL(otp_config_adc_trim_memory)))
