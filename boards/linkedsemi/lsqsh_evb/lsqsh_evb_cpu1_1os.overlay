@@ -129,3 +129,16 @@
         label = "ins5710c";
     };
 };
+
+
+&i2c13 {
+    DEFINE_PINCTRL_CONSUMER_I2C(I2C13, PK08, PK09)
+    status = "okay";
+    label = "i2c-13";
+    au1901c: au1901c@6f {
+        compatible = "aurasemi,au1901c";
+        reg = <0x6F>;
+        status = "okay";
+        label = "au1901c";
+    };
+};
