@@ -84,6 +84,7 @@ atlas	Atlas Scientific LLC
 atmarktechno	Atmark Techno, Inc.
 atmel	Atmel Corporation
 auo	AU Optronics Corporation
+aurasemi	Aurasemi Technology
 auvidea	Auvidea GmbH
 avago	Avago Technologies
 avia	avia semiconductor
