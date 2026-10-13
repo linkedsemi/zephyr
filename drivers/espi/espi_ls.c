@@ -171,6 +171,52 @@ static void espi_send_edge_irq(const struct device *dev,uint8_t idx)
     vw_tx_msgq_put(dev,idx);
 }
 
+static void espi_reset_callback(const struct device *port,struct gpio_callback *cb,gpio_port_pins_t pins)
+{
+    struct espi_data *espi = CONTAINER_OF(cb,struct espi_data,reset_cb);
+    struct espi_lpc_ls_data *data = CONTAINER_OF(espi,struct espi_lpc_ls_data,u.espi);
+    espi_send_boot_done(data->dev);
+}
+
+static int espi_reset_gpio_init(const struct device *dev)
+{
+    const struct espi_lpc_ls_config *cfg = dev->config;
+    struct espi_lpc_ls_data *data = dev->data;
+    int ret;
+
+    if (cfg->reset_gpio.port == NULL) {
+        LOG_DBG("%s: reset gpio not configured", dev->name);
+        return 0;
+    }
+
+    if (!gpio_is_ready_dt(&cfg->reset_gpio)) {
+        LOG_ERR("reset gpio device not ready");
+        return -ENODEV;
+    }
+
+    ret = gpio_pin_configure_dt(&cfg->reset_gpio,GPIO_INPUT);
+    if (ret != 0) {
+        LOG_ERR("reset gpio pin configure failed, ret=%d", ret);
+        return ret;
+    }
+
+    gpio_init_callback(&data->u.espi.reset_cb,espi_reset_callback,1<<cfg->reset_gpio.pin);
+
+    ret = gpio_add_callback_dt(&cfg->reset_gpio,&data->u.espi.reset_cb);
+    if (ret != 0) {
+        LOG_ERR("reset gpio add callback failed, ret=%d", ret);
+        return ret;
+    }
+
+    ret = gpio_pin_interrupt_configure_dt(&cfg->reset_gpio,GPIO_INT_EDGE_FALLING);
+    if (ret != 0) {
+        LOG_ERR("reset gpio interrupt configure failed, ret=%d", ret);
+        return ret;
+    }
+
+    return 0;
+}
+
 
 static void espi_reg_init(const struct device *dev)
 {
@@ -405,6 +451,7 @@ static int espi_ls_init(const struct device *dev)
     bool inited = false;
     __maybe_unused int ret;
     data->cfg = dev_config;
+    data->dev = dev;
 	sys_slist_init(&data->peri_io);
 	sys_slist_init(&data->peri_mem);
 
@@ -436,6 +483,11 @@ static int espi_ls_init(const struct device *dev)
         espi_reg_init(dev);
     }
 
+    ret = espi_reset_gpio_init(dev);
+    if (ret != 0) {
+        return ret;
+    }
+
     dev_config->irq_config_func(dev);
 
     return 0;
@@ -459,6 +511,7 @@ static int espi_ls_init(const struct device *dev)
         .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(idx,sysevent_base),\
         .recover_data = &espi_cfg_recover_data_##idx,\
         .cs = GPIO_DT_SPEC_INST_GET(idx,cs_gpios),\
+        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, reset_gpios), (.reset_gpio = GPIO_DT_SPEC_INST_GET(idx, reset_gpios), )) \
         IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), )) \
         IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), )) \
         IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), )) \
