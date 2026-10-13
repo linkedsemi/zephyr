@@ -1,0 +1,17 @@
+# Copyright (c) 2026 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+description: |
+  Linkedsemi case-open (chassis intrusion) detector.
+
+  Backed by the CASEOPEN_CTRL register in the APP_PMU block. The reg
+  property points directly at the CASEOPEN_CTRL register (base 0x4006f000
+  + offset 0x44 on QSH).
+
+compatible: "linkedsemi,caseopen"
+
+include: [base.yaml, hwmon-controller.yaml]
+
+properties:
+  reg:
+    required: true
