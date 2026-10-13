@@ -28,6 +28,18 @@ struct shell_wolfssh {
 	struct k_mutex ssh_lock;
 
 	struct k_timer timer;
+
+	/** Set while the socket service is asked to report POLLOUT on the SSH
+	 *  socket as well, i.e. while wolfSSH has data waiting for the TCP
+	 *  socket to accept more (see ssh_tx_watch_set()).
+	 */
+	bool tx_watch_armed;
+
+	/** Set while wolfSSH_stream_peek() may be used to learn how many bytes
+	 *  wolfSSH_ChannelRead() is going to hand over (see shell_ssh_read());
+	 *  cleared if the two ever disagree.
+	 */
+	bool read_peek_ok;
 };
 
 #define SHELL_WOLFSSH_DEFINE(_name)	\
