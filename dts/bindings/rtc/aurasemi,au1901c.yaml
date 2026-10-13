@@ -1,0 +1,16 @@
+# Copyright (c) 2026 Linkedsemi Corporation
+# SPDX-License-Identifier: Apache-2.0
+
+description: Aurasemi AU1901C I2C RTC
+
+compatible: "aurasemi,au1901c"
+
+include:
+  - name: rtc-device.yaml
+  - name: i2c-device.yaml
+
+properties:
+  reg:
+    type: array
+    description: I2C device address 0x6F
+    required: true
