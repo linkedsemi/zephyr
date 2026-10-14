@@ -1,0 +1,26 @@
+description: Linkedsemi HOST PCC controller
+
+compatible: "linkedsemi,ls-host-pcc"
+
+include: base.yaml
+
+properties:
+    ports:
+      type: array
+      required: true
+      description: |
+        I/O port addresses snooped by the eSPI/LPC host interface. Every write
+        to one of these ports is captured as a post code.
+
+    pcc-env-addr:
+      type: int
+      required: true
+      description: Address of the shared host_pcc_env post code FIFO
+
+    espi_lpc:
+      type: phandle
+      required: true
+      description: espi lpc device handle
+
+    mbox:
+      type: phandle

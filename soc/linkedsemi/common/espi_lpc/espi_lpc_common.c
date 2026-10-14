@@ -168,6 +168,11 @@ void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uin
 	espi_lpc_mbox_msg_send(&exch->mbox,&vw_msg,sizeof(vw_msg));
 }
 
+void post_code_msg_send(const struct host_bmc_msg_exch *exch,struct pcc_data *data)
+{
+	espi_lpc_mbox_msg_send(&exch->mbox,data,sizeof(*data));
+}
+
 #else
 void host_bmc_msg_exch_init(const struct host_bmc_msg_exch *exch)
 {
@@ -208,6 +213,11 @@ void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uin
 {
 	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,.vw_val = vw_val};
 	exch->peer_rx_callback(exch->peer,&vw_msg);
+}
+
+void post_code_msg_send(const struct host_bmc_msg_exch *exch,struct pcc_data *data)
+{
+	exch->peer_rx_callback(exch->peer,data);
 }
 
 #endif
