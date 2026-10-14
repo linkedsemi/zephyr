@@ -534,13 +534,12 @@
                 interrupts = <ESPI1_IRQN 3>;
                 clocks = <ESPI1_CLOCK>;
                 resets = <ESPI1_RESET>;
-                sysevent-base = <0x40045ff8>;
+                h2b-vw-base = <0x40045ff0>;
                 status = "disabled";
-                cs-gpios = <&gpioi 10 GPIO_ACTIVE_LOW>;
                 reset-gpios = <&gpioi 8 GPIO_ACTIVE_LOW>;
                 espibmc1: espibmc1 {
                     compatible = "linkedsemi,ls-espi-bmc";
-                    sysevent-base = <0x40045ff8>;
+                    h2b-vw-base = <0x40045ff0>;
                     status = "disabled";
                 };
 

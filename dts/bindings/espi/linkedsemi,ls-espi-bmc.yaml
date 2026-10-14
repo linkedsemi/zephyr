@@ -6,7 +6,7 @@ compatible: "linkedsemi,ls-espi-bmc"
 
 properties:
 
-  sysevent-base:
+  h2b-vw-base:
     type: int
     required: true
 

@@ -12,9 +12,6 @@ properties:
   interrupts:
     required: true
 
-  cs-gpios:
-    type: phandle-array
-
   reset-gpios:
     type: phandle-array
     description: |
@@ -22,9 +19,12 @@ properties:
       interrupt is configured on this pin; when it fires, the driver sends
       the eSPI virtual wire SLAVE_BOOT_LOAD_DONE.
 
-  sysevent-base:
+  h2b-vw-base:
     type: int
     required: true
+
+  ms-vw-idx:
+    type: array
 
   mbox:
     type: phandle
