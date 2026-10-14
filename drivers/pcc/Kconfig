@@ -1,0 +1,25 @@
+# PCC (post code capture) configuration options
+
+# Copyright (c) 2026 Linkedsemi
+# SPDX-License-Identifier: Apache-2.0
+
+menuconfig PCC
+    bool "PCC (post code capture) drivers"
+    help
+      Include PCC post code capture drivers in the system configuration.
+
+if PCC
+
+source "drivers/pcc/Kconfig.ls"
+
+module = PCC
+module-str = pcc
+source "subsys/logging/Kconfig.template.log_config"
+
+config PCC_INIT_PRIORITY
+    int "PCC driver init priority"
+    default 10
+    help
+       PCC driver initialization priority.
+
+endif

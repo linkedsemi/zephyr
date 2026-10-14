@@ -1,0 +1,14 @@
+description: Linkedsemi PCC controller
+
+compatible: "linkedsemi,ls-pcc"
+
+include: base.yaml
+
+properties:
+    pcc-env-addr:
+      type: int
+      required: true
+      description: Address of the shared host_pcc_env post code FIFO
+
+    mbox:
+      type: phandle

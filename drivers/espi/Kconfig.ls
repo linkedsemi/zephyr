@@ -7,20 +7,6 @@ config ESPI_LS
 
 if ESPI_LS
 
-config ESPI_LS_SIO
-    bool "Linkedsemi ESPI slave to sio driver"
-    default y
-    depends on DT_HAS_LINKEDSEMI_LS_SIO_ENABLED
-    help
-        Enable Linkedsemi ESPI slave to sio driver.
-
-config ESPI_LS_MMBI
-    bool "Linkedsemi ESPI slave to mmbi driver"
-    default y
-    depends on DT_HAS_LINKEDSEMI_LS_MMBI_ENABLED
-    help
-        Enable Linkedsemi ESPI slave to mmbi driver.
-
 config ESPI_VW_TX_MSG_MAX
     int "Maximum pending virtual wire TX messages"
     range 1 32

@@ -6,6 +6,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mbox.h>
+#include <zephyr/drivers/pcc.h>
 #include <zephyr/sys/atomic.h>
 #include "fifo.h"
 #if defined(CONFIG_PINCTRL)
@@ -218,6 +219,11 @@ struct espi_vwire_msg {
     uint8_t vw_val;
 };
 
+struct host_pcc_env {
+    struct fifo_env fifo;
+    struct pcc_data data[CONFIG_ESPI_LPC_PCC_FIFO_LENGTH];
+};
+
 
 
 void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx);
@@ -267,6 +273,12 @@ void host_kcs_rx_callback(const struct device *dev,void *msg);
 void host_espi_rx_callback(const struct device *dev,void *msg);
 
 void bmc_espi_rx_callback(const struct device *dev,void *msg);
+
+void host_pcc_rx_callback(const struct device *dev,void *msg);
+
+void bmc_pcc_rx_callback(const struct device *dev,void *msg);
+
+void post_code_msg_send(const struct host_bmc_msg_exch *exch,struct pcc_data *data);
 
 void vuart_ls_send_break(const struct device *dev);
 #endif

@@ -7,6 +7,8 @@
 #include "reg_espi_type.h"
 #include "espi_lpc_common.h"
 #include "field_manipulate.h"
+#include "soc.h"
+
 #define ESPI_INTR_STT_DN_VW_MASK (ESPI_INTR_STT_DN_VWIR_P00_MASK|\
                                     ESPI_INTR_STT_DN_VWIR_P01_MASK|\
                                     ESPI_INTR_STT_DN_VWIR_P02_MASK|\

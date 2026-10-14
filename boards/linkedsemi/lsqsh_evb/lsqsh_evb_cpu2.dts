@@ -82,6 +82,12 @@
             mboxes = <&mbox 3 8 1 8 1>;
             mbox-names = "mbox";
         };
+        /* struct pcc_data is 2 bytes wide */
+        mbox_consumer_pcc1: mbox-consumer_pcc1 {
+            compatible = "vnd,mbox-consumer";
+            mboxes = <&mbox 4 2 4 2 4>;
+            mbox-names = "mbox";
+        };
     };
 
     qspi1: qspi@40000000 {

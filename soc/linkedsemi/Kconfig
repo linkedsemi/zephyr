@@ -4,6 +4,7 @@ if SOC_FAMILY_LS_MCU
 config ESPI_LPC
     bool
     default y
+    select PCC
 
 config ESPI_LPC_MBOX
     bool "espi lpc mbox for dual core cooperation"
@@ -11,7 +12,7 @@ config ESPI_LPC_MBOX
     depends on ESPI_LPC
 
 config ESPI_LPC_HOST_VUART
-    bool "Linkedsemi ESPI_LPC_HOST_VUART VUART (Zephyr port of linux_espi-master)"
+    bool "Linkedsemi ESPI/LPC HOST VUART"
     default y
     depends on DT_HAS_LINKEDSEMI_LS_HOST_VUART_ENABLED
     depends on ESPI_LPC
@@ -27,6 +28,37 @@ config ESPI_LPC_HOST_KCS
 
     help
         Enable Host-side KCS
+
+config ESPI_LPC_SIO
+    bool "Linkedsemi ESPI/LPC sio driver"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LS_SIO_ENABLED
+    help
+        Enable Linkedsemi ESPI/LPC sio driver.
+
+config ESPI_LPC_MMBI
+    bool "Linkedsemi ESPI/LPC mmbi driver"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LS_MMBI_ENABLED
+    help
+        Enable Linkedsemi ESPI/LPC mmbi driver.
+
+config ESPI_LPC_HOST_PCC
+    bool "Linkedsemi ESPI/LPC HOST PCC"
+    default y
+    depends on DT_HAS_LINKEDSEMI_LS_HOST_PCC_ENABLED
+    depends on ESPI_LPC
+
+    help
+        Enable Host-side PCC
+
+config ESPI_LPC_PCC_FIFO_LENGTH
+    int "Linkedsemi ESPI/LPC HOST PCC FIFO length"
+    default 128
+    depends on ESPI_LPC
+
+    help
+        Length of the FIFO for Host-side PCC
 
 config LINKEDSEMI_TPM_WWDT
     bool "LinkedSemi TPM WWDT"
