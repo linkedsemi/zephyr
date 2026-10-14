@@ -1138,7 +1138,7 @@ static int ls_i3c_request_transfer_flag(const struct device *dev)
 			/* 排空与 ISR 的 RXFNE 分支互斥：残余字节在本窗口内落地
 			 * 时 ISR 可能也在 drain，cur_num_xfer/buf 是共享状态，
 			 * 不互斥会重复读/错位 */
-			unsigned int key = irq_lock();
+			unsigned int drain_key = irq_lock();
 			for (int drain_i = 0; drain_i < 64; drain_i++) {
 				uint32_t rxc = (base->SDATACTRL & I3C_SDATACTRL_RXCOUNT_MASK) >>
 					       I3C_SDATACTRL_RXCOUNT_POS;
@@ -1151,7 +1151,7 @@ static int ls_i3c_request_transfer_flag(const struct device *dev)
 			}
 			/* 落账（含未收满的提前终止消息） */
 			curr_msg->i3c_msg_ptr->num_xfer = curr_msg->cur_num_xfer;
-			irq_unlock(key);
+			irq_unlock(drain_key);
 		}
 	}
 
@@ -1905,7 +1905,7 @@ static void ls_i3c_log_slave_serrwarn(const struct device *dev, I3C_TypeDef *bas
 		return;
 	}
 
-	LOG_ERR("%s: SERRWARN raw=0x%08x, state=%d, txcount=%lu, rxcount=%lu",
+	LOG_ERR("%s: SERRWARN raw=0x%08x, state=%d, txcount=%u, rxcount=%u",
 		dev->name, err, data->state,
 		(base->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) >> I3C_SDATACTRL_TXCOUNT_POS,
 		(base->SDATACTRL & I3C_SDATACTRL_RXCOUNT_MASK) >> I3C_SDATACTRL_RXCOUNT_POS);
