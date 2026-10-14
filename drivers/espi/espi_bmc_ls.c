@@ -5,7 +5,7 @@
 
 struct espi_bmc_ls_config {
     struct host_bmc_msg_exch hb_exch;
-    struct espi_sysevent_base *sysevent_base;
+    struct espi_h2b_vw_base *h2b_vw_base;
 };
 
 struct espi_bmc_ls_data {
@@ -98,6 +98,7 @@ static int espi_ls_write_lpc_request(const struct device *dev,enum lpc_periphera
 
 static int espi_ls_send_vwire(const struct device *dev,enum espi_vwire_signal vw,uint8_t level)
 {
+    const struct espi_bmc_ls_config *cfg = dev->config;
     switch(vw)
     {
     case ESPI_VWIRE_SIGNAL_PME:
@@ -140,7 +141,14 @@ static int espi_ls_send_vwire(const struct device *dev,enum espi_vwire_signal vw
 
     break;
     default:
-        __ASSERT(0,"illegal espi send vw\n");
+        if(vw >= ESPI_VWIRE_SIGNAL_GPIO_START) {
+            uint8_t idx = (vw>>8)&0xff;
+            uint8_t bit = vw&0xff;
+            uint8_t val = 0x10<<bit|level<<bit;
+            espi_vwire_msg_send(&cfg->hb_exch,idx,val);
+        }else {
+            __ASSERT(0,"illegal espi send vw\n");
+        }
     break;
     }
     return 0;
@@ -148,35 +156,35 @@ static int espi_ls_send_vwire(const struct device *dev,enum espi_vwire_signal vw
 
 static int espi_ls_receive_vwire(const struct device *dev,enum espi_vwire_signal vw,uint8_t *level)
 {
-    struct espi_bmc_ls_config *cfg = dev->config;
+    const struct espi_bmc_ls_config *cfg = dev->config;
     switch(vw)
     {
     case ESPI_VWIRE_SIGNAL_SLP_S3:
-        *level = (cfg->sysevent_base->s02_ms & ESPI_SYS_EVT_2_SLP_S3_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s02_ms & ESPI_SYS_EVT_2_SLP_S3_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_SLP_S4:
-        *level = (cfg->sysevent_base->s02_ms & ESPI_SYS_EVT_2_SLP_S4_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s02_ms & ESPI_SYS_EVT_2_SLP_S4_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_SLP_S5:
-        *level = (cfg->sysevent_base->s02_ms & ESPI_SYS_EVT_2_SLP_S5_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s02_ms & ESPI_SYS_EVT_2_SLP_S5_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_OOB_RST_WARN:
-        *level = (cfg->sysevent_base->s03_ms & ESPI_SYS_EVT_3_OOB_RST_WARN) ? 1:0;
+        *level = (cfg->h2b_vw_base->s03_ms & ESPI_SYS_EVT_3_OOB_RST_WARN) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_PLTRST:
-        *level = (cfg->sysevent_base->s03_ms & ESPI_SYS_EVT_3_PLTRST_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s03_ms & ESPI_SYS_EVT_3_PLTRST_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_SUS_STAT:
-        *level = (cfg->sysevent_base->s03_ms & ESPI_SYS_EVT_3_SUS_STAT_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s03_ms & ESPI_SYS_EVT_3_SUS_STAT_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_NMIOUT:
-        *level = (cfg->sysevent_base->s07_ms & ESPI_SYS_EVT_7_NMIOUT_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s07_ms & ESPI_SYS_EVT_7_NMIOUT_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_SMIOUT:
-        *level = (cfg->sysevent_base->s07_ms & ESPI_SYS_EVT_7_SMIOUT_N) ? 1:0;
+        *level = (cfg->h2b_vw_base->s07_ms & ESPI_SYS_EVT_7_SMIOUT_N) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_HOST_RST_WARN:
-        *level = (cfg->sysevent_base->s07_ms & ESPI_SYS_EVT_7_HOST_RST_WARN) ? 1:0;
+        *level = (cfg->h2b_vw_base->s07_ms & ESPI_SYS_EVT_7_HOST_RST_WARN) ? 1:0;
     break;
     case ESPI_VWIRE_SIGNAL_SLP_A:
 
@@ -198,9 +206,14 @@ static int espi_ls_receive_vwire(const struct device *dev,enum espi_vwire_signal
     break;
     case ESPI_VWIRE_SIGNAL_DNX_WARN:
 
-    break;
+    break;    
     default:
-        __ASSERT(0,"illegal espi receive vw\n");
+        if(vw>=ESPI_VWIRE_SIGNAL_MS_P0_0&&vw<=ESPI_VWIRE_SIGNAL_MS_P7_3) {
+            uint8_t offset = vw-ESPI_VWIRE_SIGNAL_MS_P0_0;
+            *level = cfg->h2b_vw_base->ms_vw_val[offset/4]>>(offset%4)&0x1;
+        }else {
+            __ASSERT(0,"illegal espi receive vw\n");
+        }
     break;
     }
     return 0;
@@ -265,7 +278,7 @@ static const struct espi_driver_api espi_bmc_ls_driver_api = {
     static struct espi_bmc_ls_data espi_bmc_ls_data_##idx;\
     static const struct espi_bmc_ls_config espi_bmc_ls_cfg_##idx = {\
         .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,bmc_espi_rx_callback,host_espi_rx_callback),\
-        .sysevent_base = (struct espi_sysevent_base *)DT_INST_PROP(idx,sysevent_base),\
+        .h2b_vw_base = (struct espi_h2b_vw_base *)DT_INST_PROP(idx,h2b_vw_base),\
     };\
     DEVICE_DT_INST_DEFINE(idx,espi_bmc_ls_init,NULL,&espi_bmc_ls_data_##idx,\
         &espi_bmc_ls_cfg_##idx,PRE_KERNEL_2,CONFIG_ESPI_INIT_PRIORITY,\

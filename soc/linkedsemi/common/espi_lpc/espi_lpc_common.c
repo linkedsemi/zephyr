@@ -162,9 +162,9 @@ void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 	espi_lpc_mbox_msg_send(&exch->mbox,&kcs_msg,sizeof(kcs_msg));
 }
 
-void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx)
+void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val)
 {
-	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,};
+	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,.vw_val = vw_val};
 	espi_lpc_mbox_msg_send(&exch->mbox,&vw_msg,sizeof(vw_msg));
 }
 
@@ -204,9 +204,9 @@ void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 	exch->peer_rx_callback(exch->peer,&kcs_msg);
 }
 
-void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx)
+void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val)
 {
-	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,};
+	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,.vw_val = vw_val};
 	exch->peer_rx_callback(exch->peer,&vw_msg);
 }
 

@@ -104,22 +104,13 @@ struct upstream_irq_type {
 
 #define UP_IRQ_EDGE_TYPE 0
 
-struct espi_cfg_recover {
-    uint8_t magic[8];
-    uint32_t gen_cfg;
-    uint32_t per_ch0_cfg;
-    uint32_t vwir_ch1_cfg;
-    uint32_t oob_ch2_cfg;
-    uint32_t fls_ch3_cfg;
-};
+#define MS_VW_GROUP_SIZE 8
 
-struct espi_sysevent_base {
+struct espi_h2b_vw_base {
     uint8_t s02_ms;
     uint8_t s03_ms;
-    uint8_t s04_sm;
-    uint8_t s05_sm;
-    uint8_t s06_sm;
     uint8_t s07_ms;
+    uint8_t ms_vw_val[MS_VW_GROUP_SIZE];
 };
 
 
@@ -155,10 +146,9 @@ struct espi_lpc_ls_config {
     void (*raise_edge_irq)(const struct device *,uint8_t);
     void (*set_level_irq)(const struct device *,uint8_t,uint8_t);
     struct host_bmc_msg_exch hb_exch;
-    struct espi_sysevent_base *sysevent_base;
-    struct espi_cfg_recover *recover_data;
-    struct gpio_dt_spec cs;
+    struct espi_h2b_vw_base *h2b_vw_base;
     struct gpio_dt_spec reset_gpio;
+    uint8_t ms_vw_idx[MS_VW_GROUP_SIZE];
     IF_ENABLED(CONFIG_PINCTRL, (const struct pinctrl_dev_config *pcfg;))
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -170,7 +160,7 @@ struct espi_lpc_ls_data {
     sys_slist_t peri_io;
     sys_slist_t peri_mem;
     union{
-        struct espi_data{
+        struct espi_data {
             struct k_sem vw_tx_sem;
             struct gpio_callback cs_cb;
             struct gpio_callback reset_cb;
@@ -225,6 +215,7 @@ enum kcs_hb_msg_type {
 
 struct espi_vwire_msg {
     uint8_t vw_idx;
+    uint8_t vw_val;
 };
 
 
@@ -263,7 +254,7 @@ void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch);
 
 void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch);
 
-void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx);
+void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val);
 
 void host_vuart_rx_callback(const struct device *dev,void *msg);
 
