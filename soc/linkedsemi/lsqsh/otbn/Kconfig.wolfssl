@@ -11,11 +11,16 @@ config WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT
     default n
     select WOLFSSL_LINKEDSEMI_OTBN_DELEGATION
     select WOLFSSL_LINKEDSEMI_OTBN_ECC_ALT
+    select LS_OTBN_DELEGATION_CLIENT
 
 config WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER
     bool "otbn moudule can be excuted locally."
     default n
     select WOLFSSL_LINKEDSEMI_OTBN_DELEGATION
+    # The wolfssl family is a client of the generic OTBN delegation bus
+    # (otbn_delegation.c), which carries its requests over the shared mbox
+    # channel; that bus owns the channel bring-up and the operation table.
+    select LS_OTBN_DELEGATION_SERVER
 
 config WOLFSSL_LINKEDSEMI_OTBN_ECC_ALT
     bool "Replace the original software encryption function with the ECC encryption provided by OTBN. However, it only supports SM2, P256, and P384."

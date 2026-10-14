@@ -33,12 +33,31 @@ config MBEDTLS_SM3_LINKEDSEMI_OTBN_ALT
 config MBEDTLS_ECP_DP_SM2_ENABLED
 	bool "SM2 elliptic curve, implementation based on LINKEDSEMI’s OTBN moudle"
 
+choice MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_MODE
+	prompt "LINKEDSEMI ECDSA OTBN alternative"
+	default MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_NONE
+	help
+	  Selects what the plain mbedtls_ecdsa_genkey()/sign()/verify() names
+	  resolve to. The two hardware entries are mutually exclusive: a core
+	  either drives its own OTBN or forwards to the peer core, never both.
+	  The delegation client switch stays independent of this choice: whenever
+	  it is enabled the explicit mbedtls_ls_otbn_ecdsa_* entry points exist,
+	  whichever entry is selected here.
+
+config MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_NONE
+	bool "Off - software ECDSA (mbedtls ecdsa.c)"
+
 config MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's P256, P384, SM2 curve, ECDSA implementation based on OTBN"
-	default n
+	bool "This core's OTBN - P256, P384, SM2, local hardware"
 	select MBEDTLS_LINKEDSEMI_OTBN
 	#select MBEDTLS_ECP_DP_SECP256R1_ENABLED
 	#select MBEDTLS_ECP_DP_SECP384R1_ENABLED
+
+config MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION
+	bool "The peer core's OTBN, reached through the delegation proxy"
+	select MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT
+
+endchoice
 
 config MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT
 	bool "LINKEDSEMI's RSA public/private modexp and keygen using OTBN"
@@ -60,11 +79,13 @@ config MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT
 	bool "Use the mailbox to control the authorization server in order to execute the OTBN ECDSA function of  LINKEDSEMI Company"
 	default n
 	select MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+	select LS_OTBN_DELEGATION_CLIENT
 
 config MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_SERVER
 	bool "The specific implementation of OTBN ECDSA for the LINKEDSEMI Company"
 	default n
 	select MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+	select LS_OTBN_DELEGATION_SERVER
 
 config MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT
 	bool "LINKEDSEMI's hardware sha384 and sha512"

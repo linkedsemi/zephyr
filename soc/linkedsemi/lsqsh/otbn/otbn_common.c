@@ -142,6 +142,12 @@ void ls_otbn_done_callback_unregister(void)
 
 void ls_otbn_module_init(void)
 {
+#if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT)
+    /* Delegation client: the unit belongs to the peer core. Clocking, resetting
+     * or running the EDN handshake here would disturb the peer's server, so
+     * there is nothing to initialise locally. */
+    return;
+#endif
     if (otbn_inited) {
         return;
     }
@@ -174,6 +180,10 @@ void ls_otbn_module_init(void)
 
 void ls_otbn_module_reset(void)
 {
+#if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT)
+    /* See ls_otbn_module_init(): a delegation client must not touch the unit. */
+    return;
+#endif
     SYSC_SEC_CPU->PD_CPU_CLKG[1] = SYSC_SEC_CPU_CLKG_CLR_OTBN_MASK;
     SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_CLR_OTBN_MASK;
     SYSC_SEC_CPU->PD_CPU_SRST[1] = SYSC_SEC_CPU_SRST_SET_OTBN_MASK;
@@ -186,6 +196,11 @@ void ls_otbn_module_reset(void)
 
 static int ls_otbn_interrupt_init(void)
 {
+#if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT)
+    /* A delegation client never executes an OTBN command locally, so it has no
+     * use for the OTBN interrupts -- leave them unwired. */
+    return 0;
+#endif
     IRQ_CONNECT(OTBN_SYSC_IRQN, 3, LS_OTBN_SYSC_IRQHandler, NULL, 0);
     IRQ_CONNECT(OBTN_IRQN, 3, LS_OTBN_IRQHandler, NULL, 0);
 
@@ -195,6 +210,14 @@ SYS_INIT(ls_otbn_interrupt_init, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE
 
 int ls_otbn_module_deinit(void)
 {
+#if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT)
+    /* Nothing was initialised locally (see ls_otbn_module_init), so there is
+     * nothing to tear down -- and touching the unit here would disturb the
+     * peer's server. This path is reachable without a session, e.g. from a
+     * library's cleanup, which is exactly why the guard is here and not only in
+     * ls_otbn_session_acquire(). */
+    return 0;
+#endif
     LOG_DBG("%s", __func__);
 
     struct k_thread *current_thread = k_current_get();
@@ -248,6 +271,17 @@ int ls_otbn_module_deinit(void)
 
 int ls_otbn_session_acquire(otbn_firmware_t firmware_id, otbn_timeout_s timeout)
 {
+#if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT)
+    /* This image is a delegation client: it does not own the OTBN, it forwards
+     * its operations to the peer core that runs the server. Driving the local
+     * unit from here would race the server over shared hardware, so the entry
+     * point every OTBN operation starts with refuses instead of half-working.
+     * Applications on a client core are expected to use the delegation entry
+     * points (mbedtls_ls_otbn_* / the library's own proxy APIs). */
+    LOG_ERR("%s: this image delegates OTBN work to the peer core; local OTBN use is not allowed",
+            __func__);
+    return -EPERM;
+#endif
     LOG_DBG("%s, firmware_id=%u, timeout=%u", __func__, firmware_id, timeout);
 
     struct k_thread *current_thread = k_current_get();

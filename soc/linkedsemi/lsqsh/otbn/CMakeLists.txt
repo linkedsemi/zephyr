@@ -1,13 +1,25 @@
 zephyr_include_directories(.)
+# Public OTBN API headers: the ones consumed from outside this directory
+# (HAL, the mbedtls/wolfssl ports, samples, test projects). Internal ones stay
+# next to their sources.
+zephyr_include_directories(include)
 # mbedtls
 if(CONFIG_MBEDTLS)
-zephyr_include_directories(mbedtls/.)
 zephyr_include_directories(${ZEPHYR_BASE}/../modules/crypto/mbedtls/include/)
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN
                             mbedtls/mbedtls_otbn_msp.c
                             )
-zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION mbedtls/mbedtls_otbn_crypto_mbox.c)
+zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+                            mbedtls/mbedtls_otbn_ecdsa_mbox.c
+                            mbedtls/mbedtls_otbn_rsa_mbox.c
+                            )
 endif()
+
+# The delegation bus is crypto-library agnostic -- it must be built whenever
+# either library enables a delegation side (LS_OTBN_DELEGATION is selected by
+# both the mbedtls and the wolfssl switches), including a wolfssl-only image
+# where CONFIG_MBEDTLS is off.
+zephyr_library_sources_ifdef(CONFIG_LS_OTBN_DELEGATION otbn_delegation.c)
 
 # wolfssl
 if(CONFIG_WOLFSSL)
