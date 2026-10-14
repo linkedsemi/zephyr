@@ -65,7 +65,11 @@
         };
         mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 1 32 1 32 1>;
+            /* The OTBN delegation bus exchanges a 48-byte frame, so this
+             * channel is wider than the 8/24-byte ones used elsewhere. Both
+             * cores must use the same value: they share the fifo area.
+             */
+            mboxes = <&mbox 1 64 1 64 1>;
             mbox-names = "mbox";
         };
         mbox_consumer_espi1: mbox-consumer_espi1 {

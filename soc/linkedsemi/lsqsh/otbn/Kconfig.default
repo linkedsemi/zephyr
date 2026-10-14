@@ -14,6 +14,34 @@ config LINKEDSEMI_OTBN
 	  Selected automatically when mbedtls or wolfssl OTBN support is enabled.
 
 
+config LS_OTBN_DELEGATION
+	bool
+	help
+	  Internal flag: the OTBN delegation bus (otbn_delegation.c) is built into
+	  this image. Selected by either side below.
+
+config LS_OTBN_DELEGATION_CLIENT
+	bool "OTBN delegation: this core sends the requests"
+	default n
+	select LS_OTBN_DELEGATION
+	help
+	  Build the OTBN delegation channel in client mode: operations are
+	  forwarded over the otbn_crypto mailbox to the peer core, which owns the
+	  OTBN. The channel is crypto-library agnostic -- a library's own
+	  delegation switch (mbedtls', wolfssl's) selects this one, so
+	  applications normally do not set it directly. Note that the client does
+	  not need this core's OTBN: only the server side drives it.
+
+config LS_OTBN_DELEGATION_SERVER
+	bool "OTBN delegation: this core executes the requests"
+	default n
+	select LS_OTBN_DELEGATION
+	help
+	  Build the OTBN delegation channel in server mode: this core answers the
+	  peer's requests from its own OTBN, so it needs the local OTBN support of
+	  every operation family it is expected to serve.
+
+
 config LS_OTBN_OPERATION_TIMEOUT_MS
 	int "OTBN operation timeout in milliseconds"
 	default 15000

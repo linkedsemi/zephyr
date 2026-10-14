@@ -287,16 +287,4 @@ int ls_otbn_dmem_read(uint32_t offset, uint32_t *dst, uint32_t size);
  */
 int ls_otbn_dmem_set(uint32_t offset, uint32_t data, uint32_t size);
 
-
-
-#if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER)
-/** @brief Initialize wolfSSL OTBN delegation server mailboxes. */
-void ls_otbn_delegation_server_chanels_init(void);
-#endif
-
-#if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
-/** @brief Initialize wolfSSL OTBN delegation client mailboxes. */
-void ls_otbn_delegation_client_chanels_init(void);
-#endif
-
 #endif

@@ -25,7 +25,11 @@
 #include "soc.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
-#include "otbn/ls_otbn_config.h"
+#include "ls_otbn_config.h"
+/* The OTBN delegation channel is brought up by the bus itself (a SYS_INIT in
+ * otbn_delegation.c), not from here: this file's soc_late_init_hook() is weak
+ * and the SMP build defines it strongly elsewhere, which would silently drop
+ * the call. */
 #include "ls_hal_otp_ctrl.h"
 
 #if defined(CONFIG_SMP)
@@ -821,17 +825,10 @@ __weak void soc_late_init_hook(void)
     }
 #endif /* CONFIG_BOOT_CPU2 */
 
-#if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_SERVER)
-    ls_otbn_delegation_server_chanels_init();
-#endif
-
 }
 #else
 __weak void soc_late_init_hook(void)
 {
-#if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
-    ls_otbn_delegation_client_chanels_init();
-#endif
 }
 #endif /*(DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay)) */
 #endif /*!defined(CONFIG_SMP)*/

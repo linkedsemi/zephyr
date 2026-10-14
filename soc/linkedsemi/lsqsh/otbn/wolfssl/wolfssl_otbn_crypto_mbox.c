@@ -1,575 +1,420 @@
-
+/*
+ * wolfSSL family of the OTBN delegation bus.
+ *
+ * This file used to carry wolfSSL's own delegation channel (its own mbox
+ * callback, k_msgq, worker and request struct). That could not coexist with the
+ * mbedtls family: the linkedsemi mbox driver keeps one callback slot per
+ * channel, so whichever family registered second silently orphaned the first.
+ * The channel mechanism is gone; what is left is a family on the shared bus:
+ *
+ *   client side -- the wolfssl port's ls_otbn_* / ls_rsa_modexp_* entry points
+ *   (called from ecc.c / rsa_modexp.c) pack a request and hand it to the bus.
+ *
+ *   server side -- otbn_deleg_wolfssl_*() execute the request with the wolfssl
+ *   port's own local OTBN routines (ls_otbn_* in ecc.c, ls_rsa_modexp_* in
+ *   rsa_modexp.c). No OTBN sequence is reimplemented here.
+ *
+ * Wire contract (see otbn_delegation.h for the op codes):
+ *   arg[0] = the wolfssl curve id (ECC_SECP256R1/ECC_SECP384R1/ECC_SM2P256V1),
+ *            or the RSA modulus size in bits for the RSA ops;
+ *   arg[1] = the curve size in bytes (ECC ops only);
+ *   data[] = the shared-SRAM buffers, in the order the handlers below use.
+ */
 
 #include <zephyr/kernel.h>
-#include <zephyr/device.h>
-#include <zephyr/logging/log.h>
-#include <stdio.h>
-#include <zephyr/kernel.h>
 
+/* The wolfssl public types (ECC_*, WC_HW_E) come from these; keep the same
+ * settings preamble the rest of the port uses. */
 #ifndef WOLFSSL_USER_SETTINGS
-    /* Should already be defined in settings.h for #if defined(ARDUINO) */
-    #define WOLFSSL_USER_SETTINGS
+#define WOLFSSL_USER_SETTINGS
 #endif
-
 #ifndef WOLFSSL_ZEPHYR
-    #define WOLFSSL_ZEPHYR
+#define WOLFSSL_ZEPHYR
 #endif
-/* Reminder: user_settings.h is needed and included from settings.h
- * Be sure to define WOLFSSL_USER_SETTINGS, typically in CMakeLists.txt */
 #include <wolfssl/wolfcrypt/settings.h>
 #include <wolfssl/wolfcrypt/types.h>
 #include <wolfssl/wolfcrypt/error-crypt.h>
-#include <wolfssl/wolfcrypt/wc_port.h>
 #include <wolfssl/wolfcrypt/ecc.h>
-#include <wolfssl/wolfcrypt/port/linkedsemi/ls-otbn-ecc.h>
 #include <wolfssl/wolfcrypt/port/linkedsemi/ls-rsa.h>
-#include <zephyr/drivers/mbox.h>
-#include <zephyr/drivers/entropy.h>
-#include <zephyr/cache.h>
 
-#include <zephyr/logging/log.h>
-LOG_MODULE_DECLARE(ls_otbn);
+#include "otbn_delegation.h"
 
-// #define ASSERT_WOLFSSL(error) {if(error){__ASSERT_//PRINT("wolfssl :stack is too small\n"); err = WOLFSSL_ERR_ECP_BUFFER_TOO_SMALL; goto exit;}}
-#define DELEGATE_ECDSA_GENE_KEY     0x11
-#define DELEGATE_ECDSA_SIGN         0x22
-#define DELEGATE_ECDSA_VERIFY       0x33
-#define DELEGATE_ECC_SHARED_KEY     0x44
-#define DELEGATE_RSA_MOD_EXP_ENCRY  0x55
-#define DELEGATE_RSA_MOD_EXP_DECRY  0x66
-#define DELEGATE_ERROR_OPERATION    0Xff
-// const struct device *otbn_mbox_dev = DEVICE_DT_GET(DT_NODELABEL(mbox_consumer_otbn_crypto));
+/* ECDSA is one round trip of a few ms; RSA modexp is orders of magnitude
+ * slower. The bus takes the bound per call, so each op passes its own. */
+#define OTBN_DELEG_TIMEOUT_ECDSA_MS 1000
+#define OTBN_DELEG_TIMEOUT_RSA_MS   10000
 
-#define RSA_MAX_NUMER_SIZE (4096/8)
-
-struct otbn_delegate_params
+/* The curves the wolfssl OTBN firmware implements (get_otbn_fireware_id()). */
+static bool wolfssl_curve_supported(uint32_t curve)
 {
-    int status;
-    uint8_t op;
-    void *data[5];
-    uint32_t param[5];
-};
-int ls_otbn_get_key_pair(uint32_t curve, uint32_t curve_size, uint8_t *private_key, uint8_t *public_x, uint8_t *public_y);
-int ls_otbn_sign_hash(uint32_t curve, uint32_t curve_size, uint8_t *private_key, uint8_t *msg, uint8_t *r, uint8_t *s);
-int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t *s, uint8_t *msg, uint8_t *pub_x, uint8_t *pub_y);
-int ls_otbn_shared_secret(uint32_t curve, uint32_t curve_size, uint8_t *private_key, uint8_t *public_x, uint8_t *public_y);
+	return curve == ECC_SECP256R1 || curve == ECC_SECP384R1 ||
+	       curve == ECC_SM2P256V1;
+}
 
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT)
 
-struct mbox_dt_spec ls_otbn_client = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),mbox);
-struct k_sem client_sem;
-struct k_sem client_op_return_sem;
-static volatile struct otbn_delegate_params receive_params;
-
-static void delegation_client_mbox_handler(const struct device *dev,struct mbox_msg *data)
+int ls_otbn_get_key_pair(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
+			 uint8_t *public_x, uint8_t *public_y)
 {
-    const struct otbn_delegate_params *param = data->data;
+	struct otbn_delegate_params req = {0};
+	const struct otbn_delegate_params *rpy;
+	int err;
 
-    switch(param->op)
-    {
-        case DELEGATE_ECDSA_GENE_KEY:
-        case DELEGATE_ECDSA_SIGN:
-        case DELEGATE_ECDSA_VERIFY:
-        case DELEGATE_ECC_SHARED_KEY:
-        case DELEGATE_RSA_MOD_EXP_DECRY:
-        case DELEGATE_RSA_MOD_EXP_ENCRY:
-            memcpy((void *)&receive_params,(void *)param,sizeof(struct otbn_delegate_params));
-            // receive_params.op = param->op;
-            // receive_params.data[0] = param->data[0];
-            // receive_params.data[1] = param->data[1];
-            // receive_params.data[2] = param->data[2];
-            // receive_params.data[3] = param->data[3];
-            break;
-        default:
-            LOG_DBG("ecdsa error operation\n");
-            break;
-    }
-    
-    k_sem_give(&client_op_return_sem);
-}
+	otbn_deleg_cache_flush(private_key, curve_size);
+	otbn_deleg_cache_flush(public_x, curve_size);
+	otbn_deleg_cache_flush(public_y, curve_size);
 
-#define DELEGATION_CLIENT_MBOX_CALLBACK(idx)\
-	delegation_client_mbox_handler(DEVICE_DT_INST_GET(idx),data);
+	req.op = OTBN_DELEG_OP_WOLFSSL_GENKEY;
+	req.arg[0] = curve;
+	req.arg[1] = curve_size;
+	req.data[0] = private_key;
+	req.data[1] = public_x;
+	req.data[2] = public_y;
 
-static void delegation_client_mbox_callback(const struct device *dev,
-				mbox_channel_id_t channel_id, void *user_data,
-				struct mbox_msg *data)
-{
-    delegation_client_mbox_handler(dev,data);
-	// DT_INST_FOREACH_STATUS_OKAY(DELEGATION_CLIENT_MBOX_CALLBACK);
-}
-
-/* client : cpu1 secure*/
-void ls_otbn_delegation_client_chanels_init(void)
-{
-    LOG_DBG("ls_otbn channel_id= 0x%x\n",ls_otbn_client.channel_id);
-    k_sem_init(&client_sem,1,1);
-    k_sem_init(&client_op_return_sem,0,1);
-
-	mbox_register_callback_dt(&ls_otbn_client,delegation_client_mbox_callback,NULL);
-	mbox_set_enabled_dt(&ls_otbn_client,true);
-}
-
-int ls_otbn_sign_hash(uint32_t curve, uint32_t curve_size, uint8_t *private_key, uint8_t *msg, uint8_t *r, uint8_t *s)
-{
-    int ret = 0;
- 
-    if(!(curve == ECC_SM2P256V1 || curve == ECC_SECP256R1 || curve == ECC_SECP384R1))
-    {
-        return WC_HW_E;
-    }
-	if (k_sem_take(&client_sem, K_FOREVER)) {
-		return -EACCES;
+	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
+	if (err) {
+		return err;
 	}
-    sys_cache_data_flush_range((void *)private_key, curve_size);
-    sys_cache_data_flush_range((void *)msg, curve_size);
-    sys_cache_data_flush_range((void *)r, curve_size);
-    sys_cache_data_flush_range((void *)s, curve_size);
-
-    struct otbn_delegate_params param = {
-        .op = DELEGATE_ECDSA_SIGN,
-        .param[0] = curve,
-        .param[1] = curve_size,
-        .data[0] = private_key,
-        .data[1] = msg,
-        .data[2] = r,
-        .data[3] = s,
-    };
-    struct mbox_msg mmsg = {
-        .data = &param,
-        .size = sizeof(param),
-    };
-
-    mbox_send_dt(&ls_otbn_client,&mmsg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = receive_params.status;
-    if(receive_params.status == 0)
-    {
-        sys_cache_data_invd_range((void *)r, curve_size);//r
-        sys_cache_data_invd_range((void *)s, curve_size);//s
-    }
-    k_sem_give(&client_sem);
-
-    return ret;
-}
-
-int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t *s, 
-                                                uint8_t *msg, uint8_t *pub_x, uint8_t *pub_y)
-{
-    int ret;
-    if(!(curve == ECC_SM2P256V1 || curve == ECC_SECP256R1 || curve == ECC_SECP384R1))
-    {
-        return WC_HW_E;
-    }
-	if (k_sem_take(&client_sem, K_FOREVER)) {
-		return -EACCES;
+	rpy = otbn_deleg_reply();
+	if (rpy->status == 0) {
+		otbn_deleg_cache_invd(rpy->data[0], curve_size);
+		otbn_deleg_cache_invd(rpy->data[1], curve_size);
+		otbn_deleg_cache_invd(rpy->data[2], curve_size);
 	}
-    sys_cache_data_flush_range((void *)r, curve_size);
-    sys_cache_data_flush_range((void *)s, curve_size);
-    sys_cache_data_flush_range((void *)msg, curve_size);
-    sys_cache_data_flush_range((void *)pub_x, curve_size);
-    sys_cache_data_flush_range((void *)pub_y, curve_size);
-
-    struct otbn_delegate_params param = {
-        .op = DELEGATE_ECDSA_VERIFY,
-        .data[0] = r,
-        .data[1] = s,
-        .data[2] = msg,
-        .data[3] = pub_x,
-        .data[4] = pub_y,
-        .param[0] = curve,
-        .param[1] = curve_size,
-    };
-    struct mbox_msg mmsg = {
-        .data = &param,
-        .size = sizeof(param),
-    };
-
-    mbox_send_dt(&ls_otbn_client,&mmsg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
-
-    ret = receive_params.status;
-    sys_cache_data_invd_range((void *)receive_params.data[0], curve_size);
-    k_sem_give(&client_sem);
-
-    return  ret;
-}
-// #endif
-
-
-int ls_otbn_get_key_pair(uint32_t curve, uint32_t curve_size, uint8_t *private_key, uint8_t *public_x, uint8_t *public_y)
-{
-    int ret;
-    if (k_sem_take(&client_sem, K_FOREVER)) {
-		return -EACCES;
-	}
-    sys_cache_data_flush_range((void *)private_key, curve_size);
-    sys_cache_data_flush_range((void *)public_x, curve_size);
-    sys_cache_data_flush_range((void *)public_y, curve_size);
-    struct otbn_delegate_params param = {
-        .op = DELEGATE_ECDSA_GENE_KEY,
-        .data[0] = private_key,
-        .data[1] = public_x,
-        .data[2] = public_y,
-        .param[0] = curve,
-        .param[1] = curve_size,
-    };
-    struct mbox_msg msg = {
-        .data = &param,
-        .size = sizeof(param),
-    };
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = receive_params.status;
-    if(ret == 0)
-    {
-        sys_cache_data_invd_range((void *)private_key, curve_size);
-        sys_cache_data_invd_range((void *)public_x, curve_size);
-        sys_cache_data_invd_range((void *)public_y, curve_size);
-    }
-    k_sem_give(&client_sem);
-
-    return ret;
+	return rpy->status;
 }
 
-
-int ls_otbn_shared_secret(uint32_t curve, uint32_t curve_size, uint8_t *private_key, uint8_t *public_x, uint8_t *public_y)
+int ls_otbn_sign_hash(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
+		      uint8_t *msg, uint8_t *r, uint8_t *s)
 {
-    int ret;
-    if (k_sem_take(&client_sem, K_FOREVER)) {
-		return -EACCES;
-	}
-    sys_cache_data_flush_range((void *)private_key, curve_size);
-    sys_cache_data_flush_range((void *)public_x, curve_size);
-    sys_cache_data_flush_range((void *)public_y, curve_size);
-    struct otbn_delegate_params param = {
-        .op = DELEGATE_ECC_SHARED_KEY,
-        .data[0] = private_key,
-        .data[1] = public_x,
-        .data[2] = public_y,
-        .param[0] = curve,
-        .param[1] = curve_size,
-    };
-    struct mbox_msg msg = {
-        .data = &param,
-        .size = sizeof(param),
-    };
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = receive_params.status;
-    if(ret == 0)
-    {
-        // sys_cache_data_invd_range((void *)private_key, curve_size);
-        sys_cache_data_invd_range((void *)public_x, curve_size);
-        sys_cache_data_invd_range((void *)public_y, curve_size);
-    }
-    k_sem_give(&client_sem);
+	struct otbn_delegate_params req = {0};
+	const struct otbn_delegate_params *rpy;
+	int err;
 
-    return ret;
-}
-
-int ls_rsa_modexp_decrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
-    uint32_t* outLen, uint8_t *key_d, const uint8_t* key_n, uint32_t d_size)
-{
-    int ret = 0;
-    uint32_t num_bytes = d_size / 8;
-    if (k_sem_take(&client_sem, K_FOREVER)) {
-		return -EACCES;
+	if (!wolfssl_curve_supported(curve)) {
+		return WC_HW_E;
 	}
 
-    sys_cache_data_flush_range((void *)in, num_bytes);
-    sys_cache_data_flush_range((void *)out, num_bytes);
-    sys_cache_data_flush_range((void *)key_d, num_bytes);
-    sys_cache_data_flush_range((void *)key_n, num_bytes);
+	otbn_deleg_cache_flush(private_key, curve_size);
+	otbn_deleg_cache_flush(msg, curve_size);
+	otbn_deleg_cache_flush(r, curve_size);
+	otbn_deleg_cache_flush(s, curve_size);
 
-    struct otbn_delegate_params param = {
-        .op = DELEGATE_RSA_MOD_EXP_DECRY,
-        .data[0] = (uint8_t *)in,
-        .data[1] = (uint8_t *)key_d,
-        .data[2] = (uint8_t *)key_n,
-        .data[3] = (uint8_t *)out,
-        .param[0] = inLen,
-        .param[1] = d_size,
-    };
-    struct mbox_msg msg = {
-        .data = &param,
-        .size = sizeof(param),
-    };
+	req.op = OTBN_DELEG_OP_WOLFSSL_SIGN;
+	req.arg[0] = curve;
+	req.arg[1] = curve_size;
+	req.data[0] = private_key;
+	req.data[1] = msg;
+	req.data[2] = r;
+	req.data[3] = s;
 
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = receive_params.status;
-    if(ret == 0)
-    {
-        sys_cache_data_invd_range((void *)out, num_bytes);
-        *outLen = num_bytes;
-    }
-    k_sem_give(&client_sem);
-    return ret;
-}
-
-int ls_rsa_modexp_encrypt(const uint8_t* in, uint32_t inLen, uint8_t* out,
-    uint32_t* outLen, uint8_t *exp, const uint8_t* key_n, uint32_t n_size)
-{
-    int ret = 0;
-    uint32_t num_bytes = n_size / 8;
-    if (k_sem_take(&client_sem, K_FOREVER)) {
-		return -EACCES;
+	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
+	if (err) {
+		return err;
 	}
-    sys_cache_data_flush_range((void *)in, num_bytes);
-    sys_cache_data_flush_range((void *)out, num_bytes);
-    sys_cache_data_flush_range((void *)exp, num_bytes);
-    sys_cache_data_flush_range((void *)key_n, num_bytes);
-    struct otbn_delegate_params param = {
-        .op = DELEGATE_RSA_MOD_EXP_ENCRY,
-        .data[0] = (uint8_t *)in,
-        .data[1] = (uint8_t *)exp,
-        .data[2] = (uint8_t *)key_n,
-        .data[3] = (uint8_t *)out,
-        .param[0] = inLen,
-        .param[1] = n_size,
-    };
-    struct mbox_msg msg = {
-        .data = &param,
-        .size = sizeof(param),
-    };
-
-    mbox_send_dt(&ls_otbn_client,&msg);
-    k_sem_take(&client_op_return_sem,K_FOREVER);
-    ret = receive_params.status;
-    if(ret == 0)
-    {
-        sys_cache_data_invd_range((void *)out, num_bytes);
-        *outLen = num_bytes;
-    }
-    k_sem_give(&client_sem);
-    return ret;
+	rpy = otbn_deleg_reply();
+	if (rpy->status == 0) {
+		otbn_deleg_cache_invd(rpy->data[2], curve_size);
+		otbn_deleg_cache_invd(rpy->data[3], curve_size);
+	}
+	return rpy->status;
 }
 
-#else
-static void wolfssl_delegation_server_consumer(struct k_work *work);
-// K_THREAD_DEFINE(consumer_thread_id, 1024, wolfssl_delegation_server_consumer, NULL, NULL, NULL, 2, 0, 0);
-static struct mbox_dt_spec ls_otbn_server = MBOX_DT_SPEC_GET(DT_NODELABEL(mbox_consumer_otbn_crypto),mbox);
-static struct k_sem server_sem;
-static struct k_sem server_op_return_sem;
-static struct k_work worker;
-static struct k_msgq msgq;
-#define WOLFSSL_MSGQ_LEN 2
-struct otbn_delegate_params msgq_buf[WOLFSSL_MSGQ_LEN];
-
-static void delegation_server_mbox_handler(const struct device *dev,struct mbox_msg *data)
+int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t *s,
+			uint8_t *msg, uint8_t *pub_x, uint8_t *pub_y)
 {
-    int err = 0;
-    const struct otbn_delegate_params *param = data->data;
-    struct mbox_msg msg;
-    LOG_DBG("delegation_server_mbox_handler\n");
-    switch(param->op)
-    {
-        case DELEGATE_ECDSA_GENE_KEY:
-        case DELEGATE_ECDSA_SIGN:
-        case DELEGATE_ECDSA_VERIFY:
-        case DELEGATE_ECC_SHARED_KEY:
-        case DELEGATE_RSA_MOD_EXP_DECRY:
-        case DELEGATE_RSA_MOD_EXP_ENCRY:
-            err = k_msgq_put(&msgq, param, K_NO_WAIT);
-            if(err)
-            {
-                struct otbn_delegate_params rparam = 
-                {
-                    .status = -1,
-                };
-                msg.data = &rparam;
-                mbox_send_dt(&ls_otbn_server,&msg);
-                LOG_ERR("wolfssl mailbox fifo too small\n");
-            }else
-            {
-                k_work_submit(&worker);
-            }
-            break;
-        default:
-            LOG_ERR("error wolfssl mailbox operation\n");
-            break;
-    }
+	struct otbn_delegate_params req = {0};
+	const struct otbn_delegate_params *rpy;
+	int err;
+
+	if (!wolfssl_curve_supported(curve)) {
+		return WC_HW_E;
+	}
+
+	otbn_deleg_cache_flush(r, curve_size);
+	otbn_deleg_cache_flush(s, curve_size);
+	otbn_deleg_cache_flush(msg, curve_size);
+	otbn_deleg_cache_flush(pub_x, curve_size);
+	otbn_deleg_cache_flush(pub_y, curve_size);
+
+	req.op = OTBN_DELEG_OP_WOLFSSL_VERIFY;
+	req.arg[0] = curve;
+	req.arg[1] = curve_size;
+	req.data[0] = r;
+	req.data[1] = s;
+	req.data[2] = msg;
+	req.data[3] = pub_x;
+	req.data[4] = pub_y;
+
+	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
+	if (err) {
+		return err;
+	}
+	rpy = otbn_deleg_reply();
+	if (rpy->status == 0) {
+		/* The local routine stores the OTBN r_x into `s`; that buffer is
+		 * the one the caller (ecc.c) reads back to decide the verdict. */
+		otbn_deleg_cache_invd(rpy->data[1], curve_size);
+	}
+	return rpy->status;
 }
 
-#define DELEGATION_SERVER_MBOX_CALLBACK(idx)\
-	delegation_server_mbox_handler(DEVICE_DT_INST_GET(idx),data);
-
-static void delegation_server_mbox_callback(const struct device *dev,
-				mbox_channel_id_t channel_id, void *user_data,
-				struct mbox_msg *data)
+int ls_otbn_shared_secret(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
+			  uint8_t *public_x, uint8_t *public_y)
 {
-    delegation_server_mbox_handler(ls_otbn_server.dev,data);
-	// DT_INST_FOREACH_STATUS_OKAY(DELEGATION_SERVER_MBOX_CALLBACK);
+	struct otbn_delegate_params req = {0};
+	const struct otbn_delegate_params *rpy;
+	int err;
+
+	otbn_deleg_cache_flush(private_key, curve_size);
+	otbn_deleg_cache_flush(public_x, curve_size);
+	otbn_deleg_cache_flush(public_y, curve_size);
+
+	req.op = OTBN_DELEG_OP_WOLFSSL_SHARED_SECRET;
+	req.arg[0] = curve;
+	req.arg[1] = curve_size;
+	req.data[0] = private_key;
+	req.data[1] = public_x;
+	req.data[2] = public_y;
+
+	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
+	if (err) {
+		return err;
+	}
+	rpy = otbn_deleg_reply();
+	if (rpy->status == 0) {
+		/* The result is written back into public_x/public_y. */
+		otbn_deleg_cache_invd(rpy->data[1], curve_size);
+		otbn_deleg_cache_invd(rpy->data[2], curve_size);
+	}
+	return rpy->status;
 }
-/* server : cpu1 app core*/
-void ls_otbn_delegation_server_chanels_init(void)
+
+int ls_rsa_modexp_encrypt(const uint8_t *in, uint32_t inLen, uint8_t *out,
+			  uint32_t *outLen, uint8_t *exp, const uint8_t *key_n,
+			  uint32_t n_size)
 {
-    LOG_DBG("ls_otbn channel_id= 0x%x\n",ls_otbn_server.channel_id);
-    k_sem_init(&server_sem,1,1);
-    k_sem_init(&server_op_return_sem,0,1);
-    k_msgq_init(&msgq, (char *)msgq_buf, sizeof(struct otbn_delegate_params), WOLFSSL_MSGQ_LEN);
+	struct otbn_delegate_params req = {0};
+	const struct otbn_delegate_params *rpy;
+	uint32_t num_bytes = n_size / 8;
+	int err;
 
-    k_work_init(&worker,wolfssl_delegation_server_consumer);
-    // k_thread_start(consumer_thread_id);
-	mbox_register_callback_dt(&ls_otbn_server,delegation_server_mbox_callback,NULL);
-	mbox_set_enabled_dt(&ls_otbn_server,true);
+	otbn_deleg_cache_flush((void *)in, num_bytes);
+	otbn_deleg_cache_flush(out, num_bytes);
+	otbn_deleg_cache_flush(exp, num_bytes);
+	otbn_deleg_cache_flush((void *)key_n, num_bytes);
+
+	req.op = OTBN_DELEG_OP_WOLFSSL_RSA_MODEXP_PUB;
+	req.arg[0] = n_size;
+	req.data[0] = (uint8_t *)in;
+	req.data[1] = exp;
+	req.data[2] = (uint8_t *)key_n;
+	req.data[3] = out;
+
+	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_RSA_MS);
+	if (err) {
+		return err;
+	}
+	rpy = otbn_deleg_reply();
+	if (rpy->status == 0) {
+		otbn_deleg_cache_invd(rpy->data[3], num_bytes);
+		*outLen = num_bytes;
+	}
+	return rpy->status;
 }
 
-// static int ls_wolfssl_get_random(void *null, unsigned char *buf, size_t size)
-// {
-//     (void)null;
-//     return entropy_get_entropy(trng, buf, size);
-// }
-
-static void wolfssl_delegation_server_consumer(struct k_work *work)
+int ls_rsa_modexp_decrypt(const uint8_t *in, uint32_t inLen, uint8_t *out,
+			  uint32_t *outLen, uint8_t *key_d, const uint8_t *key_n,
+			  uint32_t d_size)
 {
-    int err = 0;
-    struct otbn_delegate_params mbox_server;
-    struct otbn_delegate_params param = {0};
-    struct mbox_msg msg = {0};
-    uint32_t curve_id;
-    uint32_t curve_size;
-    uint32_t nbyte;
-    uint32_t out_len;
-    LOG_DBG("thread :wolfssl_delegation_server_consumer started\n");
-    do
-    {
-        err = k_msgq_get(&msgq, &mbox_server, K_FOREVER);
-        if(err)
-        {
-            LOG_ERR("wolfssl work queue err\n");
-        }
-        curve_id = mbox_server.param[0];
-        curve_size = mbox_server.param[1];
-        
-        // LOG_DBG("wolfssl get client request\n");
-        // if(!(curve_id == ECC_SECP384R1 || curve_id == ECC_SECP256R1 || curve_id == ECC_SM2P256V1))
-        // {
-        //     LOG_DBG("wolfssl work queue:This curve is not supported.\n");
-        //     mbox_server.op = DELEGATE_ERROR_OPERATION;
-        // }
+	struct otbn_delegate_params req = {0};
+	const struct otbn_delegate_params *rpy;
+	uint32_t num_bytes = d_size / 8;
+	int err;
 
-        switch(mbox_server.op)
-        {
-            case DELEGATE_ECDSA_GENE_KEY:
-                LOG_DBG("DELEGATE_ECDSA_GENE_KEY\n");
-                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
-                err = ls_otbn_get_key_pair(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2]);
-                if(err)
-                {
-                    LOG_ERR(" ecc keygen failed\n");
-                }
-                param.op = DELEGATE_ECDSA_GENE_KEY;
-                param.status = err;
-                param.data[0] = mbox_server.data[0];
-                param.data[1] = mbox_server.data[1];
-                param.data[2] = mbox_server.data[2];
-                sys_cache_data_flush_range((void *)mbox_server.data[0], curve_size);
-                sys_cache_data_flush_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_flush_range((void *)mbox_server.data[2], curve_size);
-                break;
-            case DELEGATE_ECDSA_SIGN:
-                LOG_DBG("DELEGATE_ECDSA_SIGN\n");
-                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[3], curve_size);
-                err = ls_otbn_sign_hash(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2],mbox_server.data[3]);
-                if(err)
-                {
-                    LOG_ERR(" ecdsa sign failed\n");
-                }
-                param.op = DELEGATE_ECDSA_SIGN;
-                param.status = err;
-                param.data[0] = mbox_server.data[0];
-                param.data[1] = mbox_server.data[1];
-                param.data[2] = mbox_server.data[2];
-                param.data[3] = mbox_server.data[3];
-                sys_cache_data_flush_range((void *)mbox_server.data[0], curve_size);
-                sys_cache_data_flush_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_flush_range((void *)mbox_server.data[2], curve_size);
-                sys_cache_data_flush_range((void *)mbox_server.data[3], curve_size);
-                break;
-            case DELEGATE_ECDSA_VERIFY:
-                LOG_DBG("DELEGATE_ECDSA_VERIFY\n");
-                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[3], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[4], curve_size);
-                err = ls_otbn_verify_hash(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2],mbox_server.data[3],mbox_server.data[4]);
-                if(err)
-                {
-                    LOG_ERR(" ecdsa verify failed\n");
-                }
-                param.op = DELEGATE_ECDSA_VERIFY;
-                param.status = err;
-                param.data[0] = mbox_server.data[1];//r_x
-                sys_cache_data_flush_range((void *)param.data[0], curve_size);
-                break;
-            case DELEGATE_ECC_SHARED_KEY:
-                LOG_DBG("DELEGATE_ECC_SHARED_KEY\n");
-                sys_cache_data_invd_range((void *)mbox_server.data[0], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_invd_range((void *)mbox_server.data[2], curve_size);
-                err = ls_otbn_shared_secret(curve_id,curve_size,mbox_server.data[0],mbox_server.data[1],mbox_server.data[2]);
-                if(err)
-                {
-                    LOG_ERR(" ecc shared key failed\n");
-                }
-                param.op = DELEGATE_ECC_SHARED_KEY;
-                param.status = err;
-                param.data[1] = mbox_server.data[1];
-                param.data[2] = mbox_server.data[2];
-                sys_cache_data_flush_range((void *)mbox_server.data[1], curve_size);
-                sys_cache_data_flush_range((void *)mbox_server.data[2], curve_size);
-                break;
-            case DELEGATE_RSA_MOD_EXP_ENCRY:
-                nbyte = mbox_server.param[1]/8;
-                LOG_DBG("DELEGATE_RSA_MOD_EXP_ENCRY\n");
-                sys_cache_data_invd_range((void *)mbox_server.data[0], nbyte);
-                sys_cache_data_invd_range((void *)mbox_server.data[1], nbyte);
-                sys_cache_data_invd_range((void *)mbox_server.data[2], nbyte);
-                sys_cache_data_invd_range((void *)mbox_server.data[3], nbyte);
-                err = ls_rsa_modexp_encrypt(mbox_server.data[0],mbox_server.param[0],mbox_server.data[3],&out_len,mbox_server.data[1],mbox_server.data[2],mbox_server.param[1]);
-                if(err)
-                {
-                    LOG_ERR(" rsa mod exp failed\n");
-                }
-                param.op = DELEGATE_RSA_MOD_EXP_ENCRY;
-                param.status = err;
-                param.data[0] = mbox_server.data[3];
-                sys_cache_data_flush_range((void *)mbox_server.data[3], nbyte);
-                break;
-            case DELEGATE_RSA_MOD_EXP_DECRY:
-                LOG_DBG("DELEGATE_RSA_MOD_EXP_DECRY\n");
-                nbyte = mbox_server.param[1]/8;
-                sys_cache_data_invd_range((void *)mbox_server.data[0], nbyte);
-                sys_cache_data_invd_range((void *)mbox_server.data[1], nbyte);
-                sys_cache_data_invd_range((void *)mbox_server.data[2], nbyte);
-                sys_cache_data_invd_range((void *)mbox_server.data[3], nbyte);
-                err = ls_rsa_modexp_decrypt(mbox_server.data[0],mbox_server.param[0],mbox_server.data[3],&out_len,mbox_server.data[1],mbox_server.data[2],mbox_server.param[1]);
-                if(err)
-                {
-                    LOG_ERR(" rsa mod exp failed\n");
-                }
-                param.op = DELEGATE_RSA_MOD_EXP_DECRY;
-                param.status = err;
-                param.data[0] = mbox_server.data[3];
-                sys_cache_data_flush_range((void *)mbox_server.data[3], nbyte);
-                break;
-            default:
-                param.status = -1;
-                LOG_ERR("error operation\n");
-                break;
-        }
-// exit:
-        msg.data = &param;
-        msg.size = sizeof(param);
-        mbox_send_dt(&ls_otbn_server,&msg);
-    }while(0);
+	otbn_deleg_cache_flush((void *)in, num_bytes);
+	otbn_deleg_cache_flush(out, num_bytes);
+	otbn_deleg_cache_flush(key_d, num_bytes);
+	otbn_deleg_cache_flush((void *)key_n, num_bytes);
+
+	req.op = OTBN_DELEG_OP_WOLFSSL_RSA_MODEXP_PRV;
+	req.arg[0] = d_size;
+	req.data[0] = (uint8_t *)in;
+	req.data[1] = key_d;
+	req.data[2] = (uint8_t *)key_n;
+	req.data[3] = out;
+
+	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_RSA_MS);
+	if (err) {
+		return err;
+	}
+	rpy = otbn_deleg_reply();
+	if (rpy->status == 0) {
+		otbn_deleg_cache_invd(rpy->data[3], num_bytes);
+		*outLen = num_bytes;
+	}
+	return rpy->status;
 }
-#endif
+
+#else /* server */
+
+/* The local OTBN sequences live in the wolfssl port and are built when this
+ * image is not the delegation client. Declared here because the port keeps them
+ * file-local (ecc.c declares them for its own use). */
+int ls_otbn_get_key_pair(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
+			 uint8_t *public_x, uint8_t *public_y);
+int ls_otbn_sign_hash(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
+		      uint8_t *msg, uint8_t *r, uint8_t *s);
+int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t *s,
+			uint8_t *msg, uint8_t *pub_x, uint8_t *pub_y);
+int ls_otbn_shared_secret(uint32_t curve, uint32_t curve_size, uint8_t *private_key,
+			  uint8_t *public_x, uint8_t *public_y);
+
+int otbn_deleg_wolfssl_genkey(const struct otbn_delegate_params *req,
+			      struct otbn_delegate_params *reply)
+{
+	uint32_t curve = req->arg[0];
+	uint32_t curve_size = req->arg[1];
+	int err;
+
+	otbn_deleg_cache_invd(req->data[0], curve_size);
+	otbn_deleg_cache_invd(req->data[1], curve_size);
+	otbn_deleg_cache_invd(req->data[2], curve_size);
+
+	err = ls_otbn_get_key_pair(curve, curve_size, req->data[0], req->data[1],
+				   req->data[2]);
+	if (err) {
+		return err;
+	}
+
+	otbn_deleg_cache_flush(req->data[0], curve_size);
+	otbn_deleg_cache_flush(req->data[1], curve_size);
+	otbn_deleg_cache_flush(req->data[2], curve_size);
+	reply->data[0] = req->data[0];
+	reply->data[1] = req->data[1];
+	reply->data[2] = req->data[2];
+	return 0;
+}
+
+int otbn_deleg_wolfssl_sign(const struct otbn_delegate_params *req,
+			    struct otbn_delegate_params *reply)
+{
+	uint32_t curve = req->arg[0];
+	uint32_t curve_size = req->arg[1];
+	int err;
+
+	otbn_deleg_cache_invd(req->data[0], curve_size);
+	otbn_deleg_cache_invd(req->data[1], curve_size);
+	otbn_deleg_cache_invd(req->data[2], curve_size);
+	otbn_deleg_cache_invd(req->data[3], curve_size);
+
+	err = ls_otbn_sign_hash(curve, curve_size, req->data[0], req->data[1],
+				req->data[2], req->data[3]);
+	if (err) {
+		return err;
+	}
+
+	otbn_deleg_cache_flush(req->data[2], curve_size);
+	otbn_deleg_cache_flush(req->data[3], curve_size);
+	reply->data[2] = req->data[2];
+	reply->data[3] = req->data[3];
+	return 0;
+}
+
+int otbn_deleg_wolfssl_verify(const struct otbn_delegate_params *req,
+			      struct otbn_delegate_params *reply)
+{
+	uint32_t curve = req->arg[0];
+	uint32_t curve_size = req->arg[1];
+	int err;
+
+	otbn_deleg_cache_invd(req->data[0], curve_size);
+	otbn_deleg_cache_invd(req->data[1], curve_size);
+	otbn_deleg_cache_invd(req->data[2], curve_size);
+	otbn_deleg_cache_invd(req->data[3], curve_size);
+	otbn_deleg_cache_invd(req->data[4], curve_size);
+
+	err = ls_otbn_verify_hash(curve, curve_size, req->data[0], req->data[1],
+				  req->data[2], req->data[3], req->data[4]);
+	if (err) {
+		return err;
+	}
+
+	/* The local routine leaves the OTBN r_x in `s` (data[1]); the client
+	 * reads exactly that buffer back. */
+	otbn_deleg_cache_flush(req->data[1], curve_size);
+	reply->data[1] = req->data[1];
+	return 0;
+}
+
+int otbn_deleg_wolfssl_shared_secret(const struct otbn_delegate_params *req,
+				     struct otbn_delegate_params *reply)
+{
+	uint32_t curve = req->arg[0];
+	uint32_t curve_size = req->arg[1];
+	int err;
+
+	otbn_deleg_cache_invd(req->data[0], curve_size);
+	otbn_deleg_cache_invd(req->data[1], curve_size);
+	otbn_deleg_cache_invd(req->data[2], curve_size);
+
+	err = ls_otbn_shared_secret(curve, curve_size, req->data[0], req->data[1],
+				    req->data[2]);
+	if (err) {
+		return err;
+	}
+
+	otbn_deleg_cache_flush(req->data[1], curve_size);
+	otbn_deleg_cache_flush(req->data[2], curve_size);
+	reply->data[1] = req->data[1];
+	reply->data[2] = req->data[2];
+	return 0;
+}
+
+int otbn_deleg_wolfssl_rsa_modexp_pub(const struct otbn_delegate_params *req,
+				      struct otbn_delegate_params *reply)
+{
+	uint32_t num_bytes = req->arg[0] / 8;
+	uint32_t outLen = 0;
+	int err;
+
+	otbn_deleg_cache_invd(req->data[0], num_bytes);
+	otbn_deleg_cache_invd(req->data[1], num_bytes);
+	otbn_deleg_cache_invd(req->data[2], num_bytes);
+	otbn_deleg_cache_invd(req->data[3], num_bytes);
+
+	err = ls_rsa_modexp_encrypt(req->data[0], req->arg[0], req->data[3], &outLen,
+				    req->data[1], req->data[2], req->arg[0]);
+	if (err) {
+		return err;
+	}
+
+	otbn_deleg_cache_flush(req->data[3], num_bytes);
+	reply->data[3] = req->data[3];
+	return 0;
+}
+
+int otbn_deleg_wolfssl_rsa_modexp_prv(const struct otbn_delegate_params *req,
+				      struct otbn_delegate_params *reply)
+{
+	uint32_t num_bytes = req->arg[0] / 8;
+	uint32_t outLen = 0;
+	int err;
+
+	otbn_deleg_cache_invd(req->data[0], num_bytes);
+	otbn_deleg_cache_invd(req->data[1], num_bytes);
+	otbn_deleg_cache_invd(req->data[2], num_bytes);
+	otbn_deleg_cache_invd(req->data[3], num_bytes);
+
+	err = ls_rsa_modexp_decrypt(req->data[0], req->arg[0], req->data[3], &outLen,
+				    req->data[1], req->data[2], req->arg[0]);
+	if (err) {
+		return err;
+	}
+
+	otbn_deleg_cache_flush(req->data[3], num_bytes);
+	reply->data[3] = req->data[3];
+	return 0;
+}
+
+#endif /* CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION_CLIENT */
