@@ -550,10 +550,6 @@ static int spi_dw_configure_support_all(const struct device *dev,
 
 	LOG_DBG("%p (prev %p)", config, spi->ctx.config);
 
-	if (spi_context_configured(&spi->ctx, config)) {
-		/* Nothing to do */
-		return 0;
-	}
 
 	if (config->operation & SPI_HALF_DUPLEX) {
 		LOG_ERR("Half-duplex not supported");
@@ -968,8 +964,8 @@ static int transceive_read(const struct device *dev,
 
 	uintptr_t start = (uintptr_t)rx_bufs->buffers[0].buf;
 	uintptr_t end   = start + rx_bufs->buffers[0].len;
-	uintptr_t aligned_start = start & ~(CONFIG_DCACHE_LINE_SIZE - 1);
-	uintptr_t aligned_end   = (end + CONFIG_DCACHE_LINE_SIZE - 1) & ~(CONFIG_DCACHE_LINE_SIZE - 1);
+	uintptr_t aligned_start = start & ~(SPI_DW_ALIGN_SIZE - 1);
+	uintptr_t aligned_end   = (end + SPI_DW_ALIGN_SIZE - 1) & ~(SPI_DW_ALIGN_SIZE - 1);
 	size_t aligned_size = aligned_end - aligned_start;
 	if (info->dev_dma_rx == NULL || !device_is_ready(info->dev_dma_rx)) {
 		LOG_ERR("RX DMA device not ready");
@@ -1280,8 +1276,8 @@ static int transceive_write(const struct device *dev,
 
 	uintptr_t start =(uintptr_t)tx_bufs->buffers[0].buf;
 	uintptr_t end   = start + tx_bufs->buffers[0].len;
-	uintptr_t aligned_start = start & ~(CONFIG_DCACHE_LINE_SIZE - 1);
-	uintptr_t aligned_end   = (end + CONFIG_DCACHE_LINE_SIZE - 1) & ~(CONFIG_DCACHE_LINE_SIZE - 1);
+	uintptr_t aligned_start = start & ~(SPI_DW_ALIGN_SIZE - 1);
+	uintptr_t aligned_end   = (end + SPI_DW_ALIGN_SIZE - 1) & ~(SPI_DW_ALIGN_SIZE - 1);
 	size_t aligned_size = aligned_end - aligned_start;
 
 	if (info->dev_dma_tx == NULL || !device_is_ready(info->dev_dma_tx)) {
@@ -1385,6 +1381,192 @@ out:
 	pm_device_busy_clear(dev);
 #endif
 
+	return ret;
+}
+
+static void spi_dw_wait_wip_and_wren(const struct device *dev,
+			   const struct spi_config *config,
+			   struct spi_nor_op_info *op_info);
+
+/*
+ * Split one user buffer into at most three pieces:
+ *   head: bytes before the first cache line, copied through a bounce buffer
+ *   mid:  whole cache lines, DMA uses the user buffer directly
+ *   tail: bytes after the last cache line, copied through the same bounce buffer
+ * head and tail are each shorter than one cache line.
+ */
+static void spi_dw_cacheline_split(uintptr_t start, size_t len,
+				    size_t *head, size_t *mid, size_t *tail)
+{
+	size_t line = SPI_DW_ALIGN_SIZE;
+	size_t off = start & (line - 1U);
+
+	*head = 0U;
+	if (off != 0U) {
+		*head = MIN(line - off, len);
+	}
+	*tail = (len - *head) & (line - 1U);
+	*mid = len - *head - *tail;
+}
+
+static int transceive_read_cacheline(const struct device *dev,
+		      const struct spi_config *config,
+		      struct spi_nor_op_info *op_info,
+		      const struct spi_buf_set *tx_bufs,
+		      const struct spi_buf_set *rx_bufs,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata, uint32_t opcode, uint32_t addr)
+{
+	struct spi_dw_data *spi = dev->data;
+	uint8_t *user = rx_bufs->buffers[0].buf;
+	size_t len = rx_bufs->buffers[0].len;
+	size_t head;
+	size_t mid;
+	size_t tail;
+	uint8_t *bounce;
+	uint8_t *cur = user;
+	uint32_t cur_addr = addr;
+	int ret = 0;
+
+	spi_dw_cacheline_split((uintptr_t)user, len, &head, &mid, &tail);
+	if (head == 0U && tail == 0U) {
+		return transceive_read(dev, config, op_info, tx_bufs, rx_bufs,
+					asynchronous, cb, userdata, opcode, addr);
+	}
+
+	k_mutex_lock(&spi->bounce_lock, K_FOREVER);
+	bounce = spi->bounce;
+
+	if (head != 0U) {
+		struct spi_buf b = { .buf = bounce, .len = head };
+		struct spi_buf_set set = { .buffers = &b, .count = 1 };
+
+		ret = transceive_read(dev, config, op_info, NULL, &set,
+				       false, NULL, NULL, opcode, cur_addr);
+		if (ret) {
+			goto out;
+		}
+		memcpy(cur, bounce, head);
+		cur += head;
+		cur_addr += head;
+	}
+
+	if (mid != 0U) {
+		struct spi_buf b = { .buf = cur, .len = mid };
+		struct spi_buf_set set = { .buffers = &b, .count = 1 };
+
+		ret = transceive_read(dev, config, op_info, NULL, &set,
+				       false, NULL, NULL, opcode, cur_addr);
+		if (ret) {
+			goto out;
+		}
+		cur += mid;
+		cur_addr += mid;
+	}
+
+	if (tail != 0U) {
+		struct spi_buf b = { .buf = bounce, .len = tail };
+		struct spi_buf_set set = { .buffers = &b, .count = 1 };
+
+		ret = transceive_read(dev, config, op_info, NULL, &set,
+				       false, NULL, NULL, opcode, cur_addr);
+		if (ret) {
+			goto out;
+		}
+		memcpy(cur, bounce, tail);
+	}
+
+out:
+	k_mutex_unlock(&spi->bounce_lock);
+	return ret;
+}
+
+static int transceive_write_cacheline(const struct device *dev,
+		      const struct spi_config *config,
+		      struct spi_nor_op_info *op_info,
+		      const struct spi_buf_set *tx_bufs,
+		      const struct spi_buf_set *rx_bufs,
+		      bool asynchronous,
+		      spi_callback_t cb,
+		      void *userdata, uint32_t opcode, uint32_t addr)
+{
+	struct spi_dw_data *spi = dev->data;
+	uint8_t *user = tx_bufs->buffers[0].buf;
+	size_t len = tx_bufs->buffers[0].len;
+	size_t head;
+	size_t mid;
+	size_t tail;
+	uint8_t *bounce;
+	uint8_t *cur = user;
+	uint32_t cur_addr = addr;
+	uint32_t saved_spi_ctrlr0 = 0U;
+	bool started = false;
+	int ret = 0;
+
+	spi_dw_cacheline_split((uintptr_t)user, len, &head, &mid, &tail);
+	if (head == 0U && tail == 0U) {
+		return transceive_write(dev, config, tx_bufs, rx_bufs,
+					 asynchronous, cb, userdata, opcode, addr);
+	}
+
+	bounce = spi->bounce;
+	saved_spi_ctrlr0 = read_spi_ctrlr0(dev);
+
+	if (head != 0U) {
+		struct spi_buf b = { .buf = bounce, .len = head };
+		struct spi_buf_set set = { .buffers = &b, .count = 1 };
+
+		k_mutex_lock(&spi->bounce_lock, K_FOREVER);
+		memcpy(bounce, cur, head);
+		ret = transceive_write(dev, config, &set, NULL,
+					false, NULL, NULL, opcode, cur_addr);
+		k_mutex_unlock(&spi->bounce_lock);
+		if (ret) {
+			goto out;
+		}
+		cur += head;
+		cur_addr += head;
+		started = true;
+	}
+
+	if (mid != 0U) {
+		struct spi_buf b = { .buf = cur, .len = mid };
+		struct spi_buf_set set = { .buffers = &b, .count = 1 };
+
+		if (started) {
+			spi_dw_wait_wip_and_wren(dev, config, op_info);
+			write_spi_ctrlr0(dev, saved_spi_ctrlr0);
+		}
+		ret = transceive_write(dev, config, &set, NULL,
+					false, NULL, NULL, opcode, cur_addr);
+		if (ret) {
+			goto out;
+		}
+		cur += mid;
+		cur_addr += mid;
+		started = true;
+	}
+
+	if (tail != 0U) {
+		struct spi_buf b = { .buf = bounce, .len = tail };
+		struct spi_buf_set set = { .buffers = &b, .count = 1 };
+
+		if (started) {
+			spi_dw_wait_wip_and_wren(dev, config, op_info);
+			write_spi_ctrlr0(dev, saved_spi_ctrlr0);
+		}
+		k_mutex_lock(&spi->bounce_lock, K_FOREVER);
+		memcpy(bounce, cur, tail);
+		ret = transceive_write(dev, config, &set, NULL,
+					false, NULL, NULL, opcode, cur_addr);
+		k_mutex_unlock(&spi->bounce_lock);
+		if (ret) {
+			goto out;
+		}
+	}
+
+out:
 	return ret;
 }
 
@@ -1507,7 +1689,7 @@ static int spi_dw_transceive_chunked(const struct device *dev,
 			struct spi_nor_op_info tmp_op = *op_info;
 			tmp_op.data_len = chunk;
 
-			int ret = transceive_read(dev, config, &tmp_op, NULL, &tmp_s,
+			int ret = transceive_read_cacheline(dev, config, &tmp_op, NULL, &tmp_s,
 						false, NULL, NULL, opcode, cur_flash_addr);
 			if (ret) return ret;
 
@@ -1518,7 +1700,7 @@ static int spi_dw_transceive_chunked(const struct device *dev,
 		return 0;
 	}
 
-	return transceive_read(dev, config, op_info, NULL, rx_bufs,
+	return transceive_read_cacheline(dev, config, op_info, NULL, rx_bufs,
 				false, NULL, NULL, opcode, flash_addr);
 }
 static int spi_dw_read_multi_addr_align(const struct device *dev,
@@ -1551,7 +1733,7 @@ static int spi_dw_read_multi_addr_align(const struct device *dev,
 		config_copy_after.operation &= ~SPI_WORD_SIZE_MASK;
 		config_copy_after.operation |= (8U << SPI_WORD_SIZE_SHIFT);
 		const struct spi_config *config_copy_const_after = &config_copy_after;
-		return transceive_read(dev, config_copy_const_after,op_info, NULL, set_behind,
+		return transceive_read_cacheline(dev, config_copy_const_after,op_info, NULL, set_behind,
 				false, NULL, NULL, op_info->opcode, dr_addr_after);
 	}else{
 		return spi_dw_transceive_chunked(dev, config_copy_const, op_info, set_main,
@@ -1591,7 +1773,7 @@ static int spi_dw_read_split_4align(const struct device *dev,
 		head = MIN(4 - head, len);
 		struct spi_buf b = { .buf = dst, .len = head };
 		struct spi_buf_set r = { .buffers = &b, .count = 1 };
-		ret = transceive_read(dev, &config_dfs1, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+		ret = transceive_read_cacheline(dev, &config_dfs1, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
 
 		if (ret) return ret;
 
@@ -1618,7 +1800,7 @@ static int spi_dw_read_split_4align(const struct device *dev,
 	if (len > 0) {
 		struct spi_buf b = { .buf = dst, .len = len };
 		struct spi_buf_set r = { .buffers = &b, .count = 1 };
-		ret = transceive_read(dev, &config_dfs1, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
+		ret = transceive_read_cacheline(dev, &config_dfs1, op_info, NULL, &r, false, NULL, NULL, opcode, flash_addr);
 
 		if (ret) return ret;
 	}
@@ -1720,7 +1902,7 @@ static int spi_dw_write_small_bytes_transceive(const struct device *dev,const st
 		txb.buf = (void *)&buf[i];
 		txb.len = 1;
 		/* Send 1 byte using transceive_write, with address increment */
-		int ret = transceive_write(dev,config,&one_set,NULL,false,NULL,NULL,op_info->opcode,dr_addr + i);
+		int ret = transceive_write_cacheline(dev,config, op_info, &one_set,NULL,false,NULL,NULL,op_info->opcode,dr_addr + i);
 		if (ret < 0) {
 			return ret;
 		}
@@ -1778,7 +1960,8 @@ static int spi_dw_write_split_4align(const struct device *dev,
 		struct spi_buf_set t = { .buffers = &b, .count = 1 };
 		spi_dw_wait_wip_and_wren(dev, config,op_info);
 		spi_dw_spi_ctrlr0_write_config(dev,op_info,trans_type);
-		ret = transceive_write(dev, &config_dfs4, &t, NULL, false, NULL, NULL, opcode, addr);
+		ret = transceive_write_cacheline(dev, &config_dfs4, op_info, &t, NULL,
+						 false, NULL, NULL, opcode, addr);
 		if (ret) return ret;
 
 		src += mid;
@@ -1819,9 +2002,13 @@ static int spi_dw_write_multi_addr_align(const struct device *dev,
 	const struct spi_config *config_copy_const = &config_copy;
 
 	if ((op_info->data_len > info->fifo_depth) && (op_info->data_len % DFS_4 != 0)) {
+		int ret;
 
-		transceive_write(dev, config_copy_const, set_front, NULL, false,
+		ret = transceive_write_cacheline(dev, config_copy_const, op_info, set_front, NULL, false,
 				NULL, NULL, op_info->opcode, dr_addr);
+		if (ret) {
+			return ret;
+		}
 
 		spi_dw_wait_wip_and_wren(dev, config,op_info);
 
@@ -1833,8 +2020,8 @@ static int spi_dw_write_multi_addr_align(const struct device *dev,
 		return spi_dw_write_small_bytes_transceive(dev,config_copy_const_after,op_info,set_behind,dr_addr_after);
 	}else if (op_info->data_len < info->fifo_depth) {
 		 return spi_dw_write_small_bytes_transceive(dev,config_copy_const,op_info,set_main,dr_addr);
-	}else {
-		return transceive_write(dev, config_copy_const, set_main, NULL,
+	} else {
+		return transceive_write_cacheline(dev, config_copy_const, op_info, set_main, NULL,
 				false, NULL, NULL, op_info->opcode, dr_addr);
 	}
 
@@ -2108,6 +2295,7 @@ int spi_dw_init(const struct device *dev)
 
 	k_sem_init(&spi->dma_rx_sem, 0, 1);
 	k_sem_init(&spi->dma_tx_sem, 0, 1);
+	k_mutex_init(&spi->bounce_lock);
 
 	/*
 	 * The initializer leaves slots without a child node at 0, which reads as

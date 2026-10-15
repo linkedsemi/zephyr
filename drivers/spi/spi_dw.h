@@ -69,6 +69,15 @@ struct spi_dw_config {
 	IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
 };
 
+#if defined(CONFIG_DCACHE) && defined(CONFIG_DCACHE_LINE_SIZE) && \
+	(CONFIG_DCACHE_LINE_SIZE > 0)
+#define SPI_DW_ALIGN_SIZE CONFIG_DCACHE_LINE_SIZE
+#elif defined(CONFIG_DCACHE)
+#define SPI_DW_ALIGN_SIZE 32
+#else
+#define SPI_DW_ALIGN_SIZE 4
+#endif
+
 struct spi_dw_data {
 	DEVICE_MMIO_RAM;
 	struct spi_context ctx;
@@ -77,6 +86,8 @@ struct spi_dw_data {
 	int dma_status;
 	uint8_t dfs;	/* dfs in bytes: 1,2 or 4 */
 	uint8_t fifo_diff;	/* cannot be bigger than FIFO depth */
+	struct k_mutex bounce_lock;
+	uint8_t bounce[SPI_DW_ALIGN_SIZE] __aligned(SPI_DW_ALIGN_SIZE);
 };
 
 /* Register operation functions */
