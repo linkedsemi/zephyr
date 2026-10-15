@@ -55,6 +55,8 @@ LOG_MODULE_REGISTER(adc_ls, LOG_LEVEL_DBG);
 #define inject_mode     0x00000001U
 #define loop_mode       0x00000002U
 
+#define ADC_LS_OP_TIMEOUT_MS 100
+
 typedef void (*irq_cfg_func_t)(const struct device *dev);
 struct adc_ls_config {
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
@@ -210,9 +212,9 @@ static void ADC_LoopGetValue(const struct device *dev)
 
     uint16_t *buffer = (uint16_t *)data->ctx.sequence.buffer;
 
-    uint8_t fif_lvl_num = reg->FIFO_FLVL;
+    uint8_t fif_lvl_num = REG_FIELD_RD(reg->FIFO_FLVL, ADC_FIFO_FLVL);
 
-    for(uint8_t read_count = 0; read_count <= fif_lvl_num; read_count++)
+    for(uint8_t read_count = 0; read_count < fif_lvl_num; read_count++)
     {
 
        if (reg->INTR_R & ADC_INTR_FIF_ERR_MASK) {
@@ -309,7 +311,7 @@ static void ADC_Sample_Data_Path_set(const struct adc_ls_config * config, uint8_
         byp_cfg_tmp |= 1<<16<< channel_id;
     }
 
-    config->reg->BYP_CFG |= byp_cfg_tmp;
+    config->reg->BYP_CFG = byp_cfg_tmp;
 }
 
 static void ADC_Ch_cfg_Reg_SetConfig(reg_adc_t* reg, uint8_t channel_id)
@@ -424,7 +426,8 @@ static int adc_ls_init(const struct device *dev)
 #if defined(CONFIG_PINCTRL)
     ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
     if (ret < 0) {
-        LOG_DBG("%s: Could not configure pins", dev->name);
+        LOG_ERR("%s: Could not configure pins (%d)", dev->name, ret);
+        return ret;
     }
 #endif
 
@@ -586,8 +589,13 @@ static int ADC_LoopChannelConfig(const struct device *dev, const struct adc_chan
         return -EINVAL;
     }
 
+    int64_t _start = k_uptime_get();
     while(REG_FIELD_RD(reg->FIFO_FLVL, ADC_FIFO_FLVL) != 0){
         REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIFO_CLR, 1);
+        if ((k_uptime_get() - _start) > ADC_LS_OP_TIMEOUT_MS) {
+            LOG_ERR("ADC FIFO clear timeout");
+            return -ETIMEDOUT;
+        }
     }
 
     REG_FIELD_WR(reg->FIF_CTRL0, ADC_FIF_SEQLEN, config->nbr_of_conversion - 1);
@@ -660,23 +668,27 @@ static int adc_ls_channel_setup(const struct device *dev, const struct adc_chann
                 REG_FIELD_WR(reg->DISC_CTRL, ADC_REG_DISCEN, disc_en);
                 ret = ADC_RegularChannelConfig(dev, channel_cfg);
                 if (ret < 0) {
+                    data->conversion_rank--;
                     return ret;
                 }
             }else if(config->conversion_mode == inject_mode) {
                 REG_FIELD_WR(reg->DISC_CTRL, ADC_INJ_DISCEN, disc_en);
                 ret = ADC_InjectChannelConfig(dev, channel_cfg);
                 if (ret < 0) {
+                    data->conversion_rank--;
                     return ret;
                 }
             }
         }else if(config->conversion_mode == loop_mode) {
             ret = ADC_LoopChannelConfig(dev, channel_cfg);
             if (ret < 0) {
+                data->conversion_rank--;
                 return ret;
             }
         }
     } else {
         LOG_ERR("Regular Channel Mode Illegal rank");
+        data->conversion_rank--;
         return -EINVAL;
     }
 
@@ -730,7 +742,7 @@ static int adc_ls_read(const struct device *dev, const struct adc_sequence *sequ
 
     int64_t _start = k_uptime_get();
     while((reg->INTR_R &(ADC_INTR_REG_END_MASK | ADC_INTR_INJ_END_MASK | ADC_INTR_FIF_END_MASK))== 0) {
-        if ((k_uptime_get() - _start) > 100) {
+        if ((k_uptime_get() - _start) > ADC_LS_OP_TIMEOUT_MS) {
             LOG_ERR("ADC read timeout");
             adc_context_release(&data->ctx, -ETIMEDOUT);
             return -ETIMEDOUT;
