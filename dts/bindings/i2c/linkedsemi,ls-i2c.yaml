@@ -26,7 +26,7 @@ properties:
 
     scl-overhead-ns:
       type: int
-      default: 300
+      default: 200
       description: |
         Fixed per-cycle SCL period overhead in nanoseconds caused by bus
         pull-up RC charge/discharge time (board/wiring dependent, independent

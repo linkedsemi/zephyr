@@ -41,7 +41,7 @@ LOG_MODULE_REGISTER(i2c_ls, CONFIG_I2C_LOG_LEVEL);
 /* 硬件在 SCLL/SCLH 编程值之外额外计数的拍数：低相位 +1 拍、高相位 +2 拍 */
 #define I2C_LS_SCL_PERIOD_TICK_OFFSET 3
 /* SCL 周期固定开销默认值（ns），可用 DT 属性 scl-overhead-ns 覆盖 */
-#define I2C_LS_SCL_OVERHEAD_NS    300
+#define I2C_LS_SCL_OVERHEAD_NS    200
 #define I2C_INT_ERR_MASK          (I2C_INT_BERR_MASK \
                                     | I2C_INT_ARLO_MASK \
                                     | I2C_INT_OVR_MASK \
