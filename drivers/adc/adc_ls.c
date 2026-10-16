@@ -358,11 +358,6 @@ static int load_trim_value(reg_adc_t* reg, uint16_t addr)
 
 static int load_trim_value_otp(reg_adc_t *reg)
 {
-#if !DT_NODE_EXISTS(DT_NODELABEL(otp_config_adc_trim_memory))
-    ARG_UNUSED(reg);
-    LOG_ERR("ADC trim needs DT otp_config_adc_trim_memory");
-    return -ENODEV;
-#else
     struct adc_otp_trim trim;
 
     memcpy(&trim, (const void *)LS_SHARED_ADC_TRIM_ADDR, sizeof(trim));
@@ -377,7 +372,6 @@ static int load_trim_value_otp(reg_adc_t *reg)
     MODIFY_REG(reg->ADR,  ADC_ADR_VREF_TRIM_MASK, vref << ADC_ADR_VREF_TRIM_POS);
 
     return 0;
-#endif
 }
 #endif
 

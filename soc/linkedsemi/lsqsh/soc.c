@@ -634,11 +634,9 @@ __weak void soc_early_init_hook(void)
         memset((void *)DT_REG_ADDR(DT_NODELABEL(mbox_memory)), 0, DT_REG_SIZE(DT_NODELABEL(mbox_memory)));
     }
 #endif
-#if DT_NODE_EXISTS(DT_NODELABEL(otp_config_adc_trim_memory))
-	HAL_OTP_CTRL_Init();
+    HAL_OTP_CTRL_Init();
 	(void)HAL_OTP_Read(0x0c, (uint8_t *)LS_SHARED_ADC_TRIM_ADDR,
 			   sizeof(struct adc_otp_trim));
-#endif
     if (!is_app_cpu_running()) {
 #if defined(CONFIG_PSRAM)
         psram_init();

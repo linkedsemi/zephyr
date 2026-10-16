@@ -24,10 +24,16 @@ struct adc_otp_trim {
 
 BUILD_ASSERT(sizeof(struct adc_otp_trim) == 12);
 
-#if DT_NODE_EXISTS(DT_NODELABEL(otp_config_adc_trim_memory))
-#define LS_SHARED_ADC_TRIM_ADDR \
-	((uintptr_t)DT_REG_ADDR(DT_NODELABEL(otp_config_adc_trim_memory)))
-#endif
+
+#define SHMEM_BASE_ADDR ((uintptr_t)DT_REG_ADDR(DT_NODELABEL(share_memory)))
+#define SHMEM_SIZE (DT_REG_SIZE(DT_NODELABEL(share_memory)))
+#define FLASH_LS_SHARED_DATA_SIZE (sizeof(struct flash_ls_shared_data))
+#define LS_SHARED_ADC_TRIM_SIZE (sizeof(struct adc_otp_trim))
+#define FLASH_LS_SHARED_DATA_0 (SHMEM_BASE_ADDR)
+#define FLASH_LS_SHARED_DATA_1 (FLASH_LS_SHARED_DATA_0 + FLASH_LS_SHARED_DATA_SIZE)
+#define LS_SHARED_ADC_TRIM_ADDR (FLASH_LS_SHARED_DATA_1 + FLASH_LS_SHARED_DATA_SIZE)
+
+#define RESET_REASON_APP_ADDR (SHMEM_BASE_ADDR + SHMEM_SIZE - 4)
 #endif /* CONFIG_SOC_LSQSH */
 
 #endif /* _SOC_H_ */
