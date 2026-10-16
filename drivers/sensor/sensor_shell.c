@@ -96,6 +96,7 @@ static const char *sensor_channel_name[SENSOR_CHAN_COMMON_COUNT] = {
 	[SENSOR_CHAN_CAP_06] = "cap_06",
 	[SENSOR_CHAN_CAP_07] = "cap_07",
 	[SENSOR_CHAN_CAP_08] = "cap_08",
+	[SENSOR_CHAN_INTRUSION] = "intrusion",
 	[SENSOR_CHAN_GAUGE_VOLTAGE] = "gauge_voltage",
 	[SENSOR_CHAN_GAUGE_AVG_CURRENT] = "gauge_avg_current",
 	[SENSOR_CHAN_GAUGE_STDBY_CURRENT] = "gauge_stdby_current",
