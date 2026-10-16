@@ -424,10 +424,14 @@ static int adc_ls_init(const struct device *dev)
 #endif
 
 #if defined(CONFIG_PINCTRL)
-    ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret < 0) {
-        LOG_ERR("%s: Could not configure pins (%d)", dev->name, ret);
-        return ret;
+    /* pcfg is non-NULL even without pinctrl-0 (state_cnt is 0); use state_cnt
+     * to decide whether pins need to be configured. */
+    if (config->pcfg->state_cnt > 0) {
+        ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
+        if (ret < 0) {
+            LOG_ERR("%s: Could not configure pins (%d)", dev->name, ret);
+            return ret;
+        }
     }
 #endif
 
