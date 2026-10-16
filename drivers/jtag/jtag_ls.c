@@ -665,6 +665,7 @@ static int jtag_ls_sw_xfer(const struct device *dev, enum jtag_pin pin,
     gpio_pin_set_dt(&config->tdi_gpios, gpio_pin_get_dt(&config->tdi_gpios));
     gpio_pin_set_dt(&config->tck_gpios, gpio_pin_get_dt(&config->tck_gpios));
     gpio_pin_set_dt(&config->tdo_gpios, gpio_pin_get_dt(&config->tdo_gpios));
+    gpio_pin_set_dt(&config->trst_gpios, gpio_pin_get_dt(&config->trst_gpios));
 
     ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_PRIV_START);
     if(ret != 0) {
@@ -681,6 +682,9 @@ static int jtag_ls_sw_xfer(const struct device *dev, enum jtag_pin pin,
             break;
         case JTAG_TMS:
             gpio_pin_set_dt(&config->tms_gpios, value);
+            break;
+        case JTAG_TRST:
+            gpio_pin_set_dt(&config->trst_gpios, value);
             break;
         default:
             return -EINVAL;
