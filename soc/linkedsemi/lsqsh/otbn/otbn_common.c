@@ -78,47 +78,65 @@ static void LS_OTBN_IRQHandler(void)
 
 static void LS_OTBN_SYSC_IRQHandler(void)
 {
-    uint32_t intr = SYSC_SEC_CPU->OTBN_INTR_STT;
-    if (intr & CO_BIT(0))
+    uint8_t count;
+    uint32_t intr;
+
+    while (1)
     {
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(0);
-    }
-    if (intr & CO_BIT(1))
-    {
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(1);
-    }
-    if (intr & CO_BIT(2))
-    {
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(2);
-    }
-    if (intr & CO_BIT(3))
-    {
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(3);
-    }
-    if (intr & 0xf0)
-    {
-        SYSC_SEC_CPU->INTR_CLR_MSK = 0xf0;
-    }
-    if (intr & CO_BIT(8))
-    {
-        SYSC_SEC_CPU->EDN_RND_BUS = s_trng_cb();
-        SYSC_SEC_CPU->OTBN_CTRL2 |= CO_BIT(8)|CO_BIT(9);
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(8);
-    }
-    if (intr & CO_BIT(9))
-    {
-        SYSC_SEC_CPU->EDN_URND_BUS = s_prng_cb();
-        SYSC_SEC_CPU->OTBN_CTRL2 |= CO_BIT(10)|CO_BIT(11);
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(9);
-    }
-    if (intr & CO_BIT(10))
-    {
-        SYSC_SEC_CPU->OTBN_OTP_KEY_0 = ++EDN_URND_BUS_IN;
-        SYSC_SEC_CPU->OTBN_OTP_KEY_1 = ++EDN_URND_BUS_IN;
-        SYSC_SEC_CPU->OTBN_OTP_KEY_2 = ++EDN_URND_BUS_IN;
-        SYSC_SEC_CPU->OTBN_OTP_KEY_3 = ++EDN_URND_BUS_IN;
-        SYSC_SEC_CPU->OTBN_CTRL2 |= CO_BIT(12);
-        SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(10);
+        intr = SYSC_SEC_CPU->OTBN_INTR_STT & SYSC_SEC_CPU_OTBN_INTR_STT_MASK;
+        if (intr == 0)
+        {
+            break;
+        }
+        if (intr & CO_BIT(0))
+        {
+            SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(0);
+        }
+        if (intr & CO_BIT(1))
+        {
+            SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(1);
+        }
+        if (intr & CO_BIT(2))
+        {
+            SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(2);
+        }
+        if (intr & CO_BIT(3))
+        {
+            SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(3);
+        }
+        if (intr & 0xf0)
+        {
+            SYSC_SEC_CPU->INTR_CLR_MSK = 0xf0;
+        }
+        if (intr & CO_BIT(8))
+        {
+            count = 8;
+            while(count--)
+            {
+                SYSC_SEC_CPU->EDN_RND_BUS = s_trng_cb();
+                SYSC_SEC_CPU->OTBN_CTRL2 |= CO_BIT(8)|CO_BIT(9);
+                SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(8);
+            }
+        }
+        if (intr & CO_BIT(9))
+        {
+            count = 8;
+            while(count--)
+            {
+                SYSC_SEC_CPU->EDN_URND_BUS = s_prng_cb();
+                SYSC_SEC_CPU->OTBN_CTRL2 |= CO_BIT(10)|CO_BIT(11);
+                SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(9);
+            }
+        }
+        if (intr & CO_BIT(10))
+        {
+            SYSC_SEC_CPU->OTBN_OTP_KEY_0 = ++EDN_URND_BUS_IN;
+            SYSC_SEC_CPU->OTBN_OTP_KEY_1 = ++EDN_URND_BUS_IN;
+            SYSC_SEC_CPU->OTBN_OTP_KEY_2 = ++EDN_URND_BUS_IN;
+            SYSC_SEC_CPU->OTBN_OTP_KEY_3 = ++EDN_URND_BUS_IN;
+            SYSC_SEC_CPU->OTBN_CTRL2 |= CO_BIT(12);
+            SYSC_SEC_CPU->INTR_CLR_MSK = CO_BIT(10);
+        }
     }
 }
 
