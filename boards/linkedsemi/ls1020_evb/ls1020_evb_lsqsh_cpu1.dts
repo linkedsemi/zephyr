@@ -34,16 +34,10 @@
 
 &soc {
 
-    driver_share_memory: memory@1013e000 {
+    share_memory: memory@1013e000 {
         compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013e000 0xffc>;
+        reg = <0x1013e000 DT_SIZE_K(4)>;
         zephyr,memory-region = "SHMEM";
-    };
-
-    driver_reset_reason: memory@1013effc {
-        compatible = "zephyr,memory-region", "mmio-sram";
-        reg = <0x1013effc 0x4>;
-        zephyr,memory-region = "RESET_REASON";
     };
 
     mbox_memory: memory@1013f000 {

@@ -3,13 +3,14 @@
 #include "soc_reset.h"
 #include "ls_msp_iwdg.h"
 #include "platform.h"
+#include "soc.h"
 LOG_MODULE_REGISTER(soc_reset_reason, CONFIG_SOC_LOG_LEVEL);
 
 #define MAGIC_VALUE 0xdeadbeef
 
 static volatile uint32_t reset_reason;
 #if CONFIG_NUM_OS > 1
-static volatile uint32_t reset_reason_app __attribute__((section("RESET_REASON.app")));
+static volatile uint32_t *const reset_reason_app = (void *)RESET_REASON_APP_ADDR;
 #endif
 
 #if defined(CONFIG_WDT_RESET_REASON_DETAIL)
@@ -48,12 +49,12 @@ void reset_reason_magic_set()
 #if CONFIG_NUM_OS > 1
 uint32_t reset_reason_app_get(void)
 {
-    return reset_reason_app;
+    return *reset_reason_app;
 }
 
 void reset_reason_app_set(uint32_t reason)
 {
-    reset_reason_app = reason;
+    *reset_reason_app = reason;
 }
 
 void reset_reason_app_clean()
@@ -129,8 +130,8 @@ void reset_reason_init(void)
         } else if (SYSC_APP_PER_RST_FROM_APP_CORE_SRST_MASK & reset_src) {
             reset_reason = SOFT_HART_RESET;
         }
-    } else if (NO_RESET_REASON != reset_reason_app) {
-        reset_reason = reset_reason_app;
+    } else if (NO_RESET_REASON != *reset_reason_app) {
+        reset_reason = *reset_reason_app;
         reset_reason_app_clean();
     }
 #endif
