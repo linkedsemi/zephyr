@@ -125,6 +125,10 @@ int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t
 {
 	struct otbn_delegate_params req = {0};
 	const struct otbn_delegate_params *rpy;
+	/* The wire carries the peer's public key packed as X||Y in one buffer: the
+	 * frame has four buffer slots (32 bytes total) and verify already needs
+	 * three of them for r, s and the message. */
+	__attribute__((aligned(32))) uint8_t pub_xy[2 * 48];
 	int err;
 
 	if (!wolfssl_curve_supported(curve)) {
@@ -134,8 +138,9 @@ int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t
 	otbn_deleg_cache_flush(r, curve_size);
 	otbn_deleg_cache_flush(s, curve_size);
 	otbn_deleg_cache_flush(msg, curve_size);
-	otbn_deleg_cache_flush(pub_x, curve_size);
-	otbn_deleg_cache_flush(pub_y, curve_size);
+	memcpy(pub_xy, pub_x, curve_size);
+	memcpy(pub_xy + curve_size, pub_y, curve_size);
+	otbn_deleg_cache_flush(pub_xy, 2 * curve_size);
 
 	req.op = OTBN_DELEG_OP_WOLFSSL_VERIFY;
 	req.arg[0] = curve;
@@ -143,8 +148,7 @@ int ls_otbn_verify_hash(uint32_t curve, uint32_t curve_size, uint8_t *r, uint8_t
 	req.data[0] = r;
 	req.data[1] = s;
 	req.data[2] = msg;
-	req.data[3] = pub_x;
-	req.data[4] = pub_y;
+	req.data[3] = pub_xy;
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err) {
@@ -331,11 +335,10 @@ int otbn_deleg_wolfssl_verify(const struct otbn_delegate_params *req,
 	otbn_deleg_cache_invd(req->data[0], curve_size);
 	otbn_deleg_cache_invd(req->data[1], curve_size);
 	otbn_deleg_cache_invd(req->data[2], curve_size);
-	otbn_deleg_cache_invd(req->data[3], curve_size);
-	otbn_deleg_cache_invd(req->data[4], curve_size);
+	otbn_deleg_cache_invd(req->data[3], 2 * curve_size);
 
 	err = ls_otbn_verify_hash(curve, curve_size, req->data[0], req->data[1],
-				  req->data[2], req->data[3], req->data[4]);
+				  req->data[2], req->data[3], req->data[3] + curve_size);
 	if (err) {
 		return err;
 	}

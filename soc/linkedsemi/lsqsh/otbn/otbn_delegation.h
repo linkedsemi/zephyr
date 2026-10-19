@@ -19,14 +19,14 @@
  * - There is no wire version field: client and server images must come from the
  *   same build tree. A mismatched pair surfaces as a reply the caller cannot
  *   serve (status OTBN_DELEG_ERR_UNKNOWN_OP), never as silent corruption.
- * - The frame size is sizeof(struct otbn_delegate_params) -- 48 bytes today --
+ * - The frame size is sizeof(struct otbn_delegate_params) -- 32 bytes today --
  *   and the mbox driver rejects a longer frame with -EMSGSIZE instead of
  *   truncating it. The board's delegation channel must therefore be at least
- *   that wide (see the mbox_consumer_otbn_crypto node: 64 in the EVB dts) and
+ *   that wide (see the mbox_consumer_otbn_crypto node: 32 in the EVB dts) and
  *   both cores must use the same value, since they share the fifo area. Rebuild
  *   and flash the two images together: a mixed pair misplaces the shared fifo
- *   area (measured: an old client against a new server fails every send with
- *   "msg size error ... msg size: 48, mtu: 32").
+ *   area (an old client against a new server fails every send with
+ *   "msg size error ..." at the frame size).
  *
  * Usage flow
  * ----------
@@ -121,11 +121,13 @@ struct otbn_delegate_params {
 	 * stale one". 0 = no reply stored yet. */
 	uint8_t seq;
 	uint16_t reserved;
-	/* Op-specific scalars (lengths, ids, sizes). 32-bit because an RSA
-	 * modulus does not fit the uint8 the ECDSA-only struct used to carry. */
-	uint32_t arg[5];
-	/* Op-specific shared-SRAM buffers. */
-	uint8_t *data[5];
+	/* Op-specific scalars (curve id, payload length, modulus size). Two are
+	 * enough for every family: ECDSA/RSA use arg[0] (curve/gid) and arg[1]
+	 * (hash length or modulus size); the wolfssl families only arg[0..1]. */
+	uint32_t arg[2];
+	/* Op-specific shared-SRAM buffers. Four are enough: genkey needs 2, sign
+	 * and verify 4 (a public key travels packed as X||Y in one buffer). */
+	uint8_t *data[4];
 };
 
 /* ---------------------------------------------------------------- client */
