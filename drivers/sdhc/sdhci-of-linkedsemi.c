@@ -595,7 +595,7 @@ static int find_max_consecutive_ones_region(sys_bitarray_t *bitarray, size_t *st
     return max_length;
 }
 
-static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev)
+__maybe_unused static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev)
 {
     struct linkedsemi_sdhci_data *dev_data = dev->data;
     struct sdhci_host *host = &dev_data->host;
