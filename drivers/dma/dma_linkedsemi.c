@@ -19,9 +19,9 @@
 #include <zephyr/irq.h>
 LOG_MODULE_REGISTER(dma_dw, CONFIG_DMA_LOG_LEVEL);
 
-#include <soc.h>
 #include <soc_dma.h>
 #include "dma_dw_common.h"
+#include <soc.h>
 
 #if defined(CONFIG_DMA_DW_HW_LLI)
 BUILD_ASSERT(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL,
