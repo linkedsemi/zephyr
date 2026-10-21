@@ -49,10 +49,6 @@ struct host_vuart_reg {
   uint8_t scr;
 };
 
-struct retain_uart_var {
-    struct host_vuart_reg data_reg;
-};
-
 struct host_vuart_cfg {
     IF_ENABLED(CONFIG_CLOCK_CONTROL, (struct ls_clk_cfg ccfg;))
     IF_ENABLED(CONFIG_RESET, (struct reset_dt_spec reset;))
@@ -63,7 +59,6 @@ struct host_vuart_cfg {
     struct host_bmc_msg_exch hb_exch;
     struct host_vuart_fifo *vuart_fifo_base;
     reg_dwuart_t *reg;
-    struct retain_uart_var *retain;
     uint32_t clock_source;
     uint32_t baudrate;
     uint16_t local_irq;
@@ -71,8 +66,9 @@ struct host_vuart_cfg {
 };
 
 struct host_vuart_data {
-  struct peri_ioport ioport[PORT_NUM];
   struct k_spinlock lock;
+  struct peri_ioport ioport[PORT_NUM];
+  struct host_vuart_reg data_reg;
   bool break_pending;
 };
 
@@ -128,9 +124,9 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
     const struct host_vuart_cfg *cfg = dev->config;
     struct host_vuart_data *ptr_data = dev->data;
     k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
-    uint8_t iir = (cfg->retain->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
+    uint8_t iir = (ptr_data->data_reg.fcr & 0x1) ? 0xC0 : 0x00;
     uint8_t lsr = cfg->reg->LSR;
-    uint8_t ier = cfg->retain->data_reg.ier;
+    uint8_t ier = ptr_data->data_reg.ier;
 
     if (ptr_data->break_pending && (ier & IER_ELSI)) {
         iir |= IIR_RLS;
@@ -212,9 +208,10 @@ static void host_vuart_reg0_read(const struct peri_ioport_content *ioport, uint8
 {
     struct device *dev = ioport->ctx;
     const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
     uint8_t *val = (uint8_t *)res;
-    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
-        *val = cfg->retain->data_reg.dll;
+    if (ptr_data->data_reg.lcr & LCR_DLAB) {
+        *val = ptr_data->data_reg.dll;
     } else{
         uint8_t val1,val2=0;
         val1 = cfg->reg->RBR_THR_DLL;
@@ -238,8 +235,9 @@ static void host_vuart_reg0_write(const struct peri_ioport_content *ioport, uint
 {
     struct device *dev = ioport->ctx;
     const struct host_vuart_cfg *cfg = dev->config;
-    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
-        cfg->retain->data_reg.dll = *val;
+    struct host_vuart_data *ptr_data = dev->data;
+    if (ptr_data->data_reg.lcr & LCR_DLAB) {
+        ptr_data->data_reg.dll = *val;
     } else {
         cfg->reg->RBR_THR_DLL = *val;
         vuart_send_char_h2b(dev,*val);
@@ -250,12 +248,12 @@ static void host_vuart_reg0_write(const struct peri_ioport_content *ioport, uint
 static void host_vuart_reg1_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
     uint8_t *val = (uint8_t *)res;
-    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
-        *val = cfg->retain->data_reg.dlh;
+    if (ptr_data->data_reg.lcr & LCR_DLAB) {
+        *val = ptr_data->data_reg.dlh;
     } else {
-        *val = cfg->retain->data_reg.ier & ~(1 << 6);
+        *val = ptr_data->data_reg.ier & ~(1 << 6);
     }
 }
 
@@ -264,10 +262,11 @@ static void host_vuart_reg1_write(const struct peri_ioport_content *ioport, uint
 {
     struct device *dev = ioport->ctx;
     const struct host_vuart_cfg *cfg = dev->config;
-    if (cfg->retain->data_reg.lcr & LCR_DLAB) {
-        cfg->retain->data_reg.dlh = *val;
+    struct host_vuart_data *ptr_data = dev->data;
+    if (ptr_data->data_reg.lcr & LCR_DLAB) {
+        ptr_data->data_reg.dlh = *val;
     } else {
-        cfg->retain->data_reg.ier = *val;
+        ptr_data->data_reg.ier = *val;
         if(cfg->vuart_fifo_base->host_rx_from_vuart) {
             cfg->reg->DLH_IER = *val & (IER_THRE|IER_ELSI);
             host_vuart_report_up_irq(dev);
@@ -289,38 +288,38 @@ static void host_vuart_reg2_read(const struct peri_ioport_content *ioport, uint8
 static void host_vuart_reg2_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
-    cfg->retain->data_reg.fcr = *val;
+    struct host_vuart_data *ptr_data = dev->data;
+    ptr_data->data_reg.fcr = *val;
 }
 
 static void host_vuart_reg3_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
     uint8_t *val = (uint8_t *)res;
-    *val = cfg->retain->data_reg.lcr;
+    *val = ptr_data->data_reg.lcr;
 }
 
 static void host_vuart_reg3_write(const struct peri_ioport_content *ioport, uint8_t size, uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
-    cfg->retain->data_reg.lcr = *val;
+    struct host_vuart_data *ptr_data = dev->data;
+    ptr_data->data_reg.lcr = *val;
 }
 
 static void host_vuart_reg4_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
     uint8_t *val = (uint8_t *)res;
-    *val = cfg->retain->data_reg.mcr;
+    *val = ptr_data->data_reg.mcr;
 }
 
 static void host_vuart_reg4_write(const struct peri_ioport_content *ioport, uint8_t size,uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
-    cfg->retain->data_reg.mcr = *val;
+    struct host_vuart_data *ptr_data = dev->data;
+    ptr_data->data_reg.mcr = *val;
 }
 
 static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
@@ -377,17 +376,17 @@ static void host_vuart_reg6_write(const struct peri_ioport_content *ioport, uint
 static void host_vuart_reg7_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
     uint8_t *val = (uint8_t *)res;
-    *val = cfg->retain->data_reg.scr;
+    *val = ptr_data->data_reg.scr;
 }
 
 static void host_vuart_reg7_write(const struct peri_ioport_content *ioport, uint8_t size,
                 uint8_t *val)
 {
     const struct device *dev = ioport->ctx;
-    const struct host_vuart_cfg *cfg = dev->config;
-    cfg->retain->data_reg.scr = *val;
+    struct host_vuart_data *ptr_data = dev->data;
+    ptr_data->data_reg.scr = *val;
 }
 
 
@@ -475,7 +474,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
     struct host_vuart_data *ptr_data = dev->data;
     k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
     cfg->vuart_fifo_base->host_rx_from_vuart = host_rx_from_vuart;
-    if(cfg->retain->data_reg.ier & IER_RDA)
+    if(ptr_data->data_reg.ier & IER_RDA)
     {
         if(host_rx_from_vuart)
         {
@@ -532,10 +531,8 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
               .ctx = (void *)DEVICE_DT_INST_GET(inst),                 \
               .addr = DT_INST_PROP(inst, port) + 7},\
   };\
-  static struct retain_uart_var host_vuart_retain_var_##inst __attribute__((section("SHMEM.98."#inst)));  \
   static struct host_vuart_data host_vuart_data_##inst __noinit; \
   static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
-    .retain = &host_vuart_retain_var_##inst,                                            \
     .local_irq = DT_INST_IRQN(inst),                                                                             \
     .ioport_content = host_vuart_ioport_##inst,             \
     .espi_lpc = DEVICE_DT_GET(DT_INST_PHANDLE(inst,espi_lpc)),\
