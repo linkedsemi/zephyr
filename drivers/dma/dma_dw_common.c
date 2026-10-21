@@ -175,6 +175,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	struct dw_lli *lli_desc_head;
 	struct dw_lli *lli_desc_tail;
 	uint32_t msize;
+	uint32_t block_ts_mask = dw_ctlh_block_ts_mask(dev_cfg);
 	uint32_t block_size = 0;
 	int ret = 0;
 
@@ -430,7 +431,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			dev->name, lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi,
 			chan_data->cfg_lo);
 
-		if (block_cfg->block_size > DW_CTLH_BLOCK_TS_MASK) {
+		if (block_cfg->block_size > block_ts_mask) {
 			LOG_ERR("%s: channel %d block size too big %d", dev->name, channel,
 				block_cfg->block_size);
 			ret = -EINVAL;
@@ -439,10 +440,10 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 
 		/* Set class and transfer size */
 #if defined(CONFIG_DMA_DW_2_20A)
-		lli_desc->ctrl_hi |= block_cfg->block_size & DW_CTLH_BLOCK_TS_MASK;
+		lli_desc->ctrl_hi |= block_cfg->block_size & block_ts_mask;
 #else
 		lli_desc->ctrl_hi |= DW_CTLH_CLASS(dev_data->channel_data->chan[channel].class) |
-			(block_cfg->block_size & DW_CTLH_BLOCK_TS_MASK);
+			(block_cfg->block_size & block_ts_mask);
 #endif /* CONFIG_DMA_DW_2_20A */
 
 		LOG_DBG("%s: block_size, class: lli_desc %p, ctrl_lo %x, cfg_hi %x, cfg_lo %x",
@@ -621,7 +622,7 @@ int dw_dma_start(const struct device *dev, uint32_t channel)
 #ifdef CONFIG_DMA_DW_HW_LLI
 	if (lli->ctrl_lo & DW_CTLL_D_SCAT_EN) {
 		LOG_DBG("%s: configuring DW_DSR", dev->name);
-		uint32_t words_per_tfr = (lli->ctrl_hi & DW_CTLH_BLOCK_TS_MASK) >>
+		uint32_t words_per_tfr = (lli->ctrl_hi & dw_ctlh_block_ts_mask(dev_cfg)) >>
 			((lli->ctrl_lo & DW_CTLL_DST_WIDTH_MASK) >> DW_CTLL_DST_WIDTH_SHIFT);
 		dw_write(dev_cfg->base, DW_DSR(channel),
 			 DW_DSR_DSC(words_per_tfr) | DW_DSR_DSI(words_per_tfr));

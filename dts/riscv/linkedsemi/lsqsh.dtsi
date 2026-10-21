@@ -156,6 +156,7 @@
             dma-buf-addr-alignment = <4>;
             dma-buf-size-alignment = <32>;
             dma-copy-alignment = <32>;
+            ctlh-block-ts-mask = <0x7ff>;
             status = "disabled";
         };
 
@@ -171,6 +172,7 @@
             dma-buf-addr-alignment = <4>;
             dma-buf-size-alignment = <32>;
             dma-copy-alignment = <32>;
+            ctlh-block-ts-mask = <0x7ff>;
             status = "disabled";
         };
 

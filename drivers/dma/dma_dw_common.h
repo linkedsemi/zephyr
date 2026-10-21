@@ -184,7 +184,6 @@ extern "C" {
 #define DW_CTLH_WEIGHT(x)	SET_BITS(28, 18, x)
 #define DW_CTLH_DONE(x)		SET_BIT(17, x)
 #endif /* CONFIG_DMA_DW_2_20A */
-#define DW_CTLH_BLOCK_TS_MASK	MASK(16, 0)
 
 /* DSR */
 #define DW_DSR_DSC(x)		SET_BITS(31, 20, x)
@@ -319,7 +318,13 @@ struct dw_dma_dev_data {
 struct dw_dma_dev_cfg {
 	uintptr_t base;
 	void (*irq_config)(void);
+	uint32_t ctlh_block_ts_mask;
 };
+
+static ALWAYS_INLINE uint32_t dw_ctlh_block_ts_mask(const struct dw_dma_dev_cfg *dev_cfg)
+{
+	return dev_cfg->ctlh_block_ts_mask ? dev_cfg->ctlh_block_ts_mask : MASK(16, 0);
+}
 
 static ALWAYS_INLINE void dw_write(uintptr_t dma_base, uint32_t reg, uint32_t value)
 {
