@@ -15,9 +15,9 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
-#include <soc.h>
 #include <zephyr/drivers/dma/dma_dw.h>
 #include "dma_dw_common.h"
+#include <soc.h>
 
 #define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
 #include <zephyr/logging/log.h>
