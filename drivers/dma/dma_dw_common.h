@@ -16,9 +16,7 @@ extern "C" {
 
 #define MASK(b_hi, b_lo)					\
 	(((1ULL << ((b_hi) - (b_lo) + 1ULL)) - 1ULL) << (b_lo))
-/* DW_SET_BIT, not SET_BIT: the LinkSemi HAL (field_manipulate.h, pulled in via
- * soc.h) already defines SET_BIT(REG, BIT) with register-write semantics. */
-#define DW_SET_BIT(b, x) (((x) & 1) << (b))
+#define SET_BIT(b, x) (((x) & 1) << (b))
 #define SET_BITS(b_hi, b_lo, x)	\
 	(((x) & ((1ULL << ((b_hi) - (b_lo) + 1ULL)) - 1ULL)) << (b_lo))
 
@@ -154,8 +152,8 @@ extern "C" {
 #endif /* ! CONFIG_DMA_DW_2_20A */
 #define DW_CTLL_LLP_S_EN	BIT(28)
 #define DW_CTLL_LLP_D_EN	BIT(27)
-#define DW_CTLL_SMS(x)		DW_SET_BIT(25, x)
-#define DW_CTLL_DMS(x)		DW_SET_BIT(23, x)
+#define DW_CTLL_SMS(x)		SET_BIT(25, x)
+#define DW_CTLL_DMS(x)		SET_BIT(23, x)
 #define DW_CTLL_FC_P2P		SET_BITS(21, 20, 3)
 #define DW_CTLL_FC_P2M		SET_BITS(21, 20, 2)
 #define DW_CTLL_FC_M2P		SET_BITS(21, 20, 1)
@@ -184,7 +182,7 @@ extern "C" {
 #else
 #define DW_CTLH_CLASS(x)	SET_BITS(31, 29, x)
 #define DW_CTLH_WEIGHT(x)	SET_BITS(28, 18, x)
-#define DW_CTLH_DONE(x)		DW_SET_BIT(17, x)
+#define DW_CTLH_DONE(x)		SET_BIT(17, x)
 #endif /* CONFIG_DMA_DW_2_20A */
 #define DW_CTLH_BLOCK_TS_MASK	MASK(16, 0)
 
