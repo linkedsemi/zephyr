@@ -51,19 +51,18 @@ void sdhci_reg_display(struct sdhci_host *host)
 void sdhci_reset(struct sdhci_host *host, uint8_t mask)
 {
     const struct device *dev = host->dev;
-    int64_t start_time;
-    int64_t loop_time;
+    unsigned long timeout;
 
     /* Wait max 100 ms */
+    timeout = 100;
     sdhci_writeb(host, mask, SDHCI_SOFTWARE_RESET);
-    if (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
-        start_time = k_uptime_get();
-        while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
-            loop_time = k_uptime_delta(&start_time);
-            if (loop_time > 100) {
-                DEV_ERR(dev, "Reset 0x%x never completed", (int)mask);
-            }
+    while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
+        if (timeout == 0) {
+            DEV_ERR(dev, "%s: Reset 0x%x never completed.", __func__, (int)mask);
+            return;
         }
+        timeout--;
+        k_msleep(1);
     }
 }
 
