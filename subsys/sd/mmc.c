@@ -53,7 +53,6 @@
 #define MMC_SWITCH_MODE_CMD_SET     0x00 /* Change the command set */
 #define MMC_SWITCH_MODE_SET_BITS    0x01 /* Set bits which are 1 in value */
 #define MMC_SWITCH_MODE_CLEAR_BITS  0x02 /* Clear bits which are 1 in value */
-#define MMC_SWITCH_MODE_WRITE_BYTE  0x03 /* Set target to value */
 
 LOG_MODULE_DECLARE(sd, CONFIG_SD_LOG_LEVEL);
 
@@ -201,6 +200,25 @@ int mmc_card_init(struct sd_card *card)
 	ret = mmc_read_ext_csd(card, &card->card_ext_csd);
 	if (ret) {
 		return ret;
+	}
+
+	if (card->card_ext_csd.rev >= MMC_4_4 && (card->card_buffer[EXT_CSD_BKOPS_SUPPORT] & 0x1)) {
+		uint8_t bkops_en = card->card_buffer[EXT_CSD_BKOPS_EN];
+
+		card->bkops_auto_en = (bkops_en & EXT_CSD_BKOPS_EN_AUTO) != 0;
+		card->bkops_man_en = (bkops_en & EXT_CSD_BKOPS_EN_MANUAL) != 0;
+
+		if (card->bkops_auto_en) {
+			LOG_WRN("AUTO_EN is set: device runs background ops autonomously");
+		} else if (!card->bkops_man_en) {
+			ret = card_ext_csd_write(card, EXT_CSD_BKOPS_EN,
+						 EXT_CSD_BKOPS_EN_MANUAL | bkops_en);
+			if (ret) {
+				LOG_WRN("Failed to enable MANUAL_EN: %d", ret);
+			} else {
+				card->bkops_man_en = true;
+			}
+		}
 	}
 
 	/* Set timing to fastest supported */

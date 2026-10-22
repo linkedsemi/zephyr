@@ -1,4 +1,10 @@
 /*
+ * Copyright 2025 linkedsemi
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/*
  * Copyright (c) 2006-2021, RT-Thread Development Team
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -498,8 +504,29 @@ struct sdhci_host {
     uint32_t current_speed;
     enum sdhc_timing_mode timing;
     bool execute_tuning;
+    uint32_t err_counters[16];
 };
 
+#define SDHCI_ERR_NAMES \
+    "CMD_TIMEOUT", "CMD_CRC", "CMD_ENDBIT", "CMD_INDEX", \
+    "DAT_TIMEOUT", "DAT_CRC", "DAT_ENDBIT", "BUS_POWER", \
+    "AUTO_CMD", "ADMA", "TUNING", "RESP", \
+    "", "", "", ""
+
+void sdhci_count_errors(struct sdhci_host *host, uint32_t status);
+
+/* Poll condition with k_uptime_delta() timeout.  On timeout execute
+ * the statements in @a act (typically return / break / goto).
+ */
+#define SDHCI_WAIT_TIMEOUT(cond, timeout_ms, act) \
+    do { \
+        int64_t _start = k_uptime_get(); \
+        while (cond) { \
+            if ((k_uptime_get() - _start) > (timeout_ms)) { \
+                act; \
+            } \
+        } \
+    } while (0)
 
 #define CACHE_LINESIZE (32)
 #ifndef BIT

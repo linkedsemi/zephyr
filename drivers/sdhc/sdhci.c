@@ -1,3 +1,9 @@
+/*
+ * Copyright 2025 linkedsemi
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
 #include <zephyr/sys/barrier.h>
@@ -51,20 +57,12 @@ void sdhci_reg_display(struct sdhci_host *host)
 void sdhci_reset(struct sdhci_host *host, uint8_t mask)
 {
     const struct device *dev = host->dev;
-    int64_t start_time;
-    int64_t loop_time;
 
     /* Wait max 100 ms */
     sdhci_writeb(host, mask, SDHCI_SOFTWARE_RESET);
-    if (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
-        start_time = k_uptime_get();
-        while (sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask) {
-            loop_time = k_uptime_delta(&start_time);
-            if (loop_time > 100) {
-                DEV_ERR(dev, "Reset 0x%x never completed", (int)mask);
-            }
-        }
-    }
+    SDHCI_WAIT_TIMEOUT(sdhci_readb(host, SDHCI_SOFTWARE_RESET) & mask,
+                       100,
+                       { DEV_ERR(dev, "Reset 0x%x never completed", (int)mask); break; });
 }
 
 uint32_t sdhci_get_present_status_flag(struct sdhci_host *sdhci_host)
@@ -85,6 +83,17 @@ uint32_t sdhci_get_int_status_flag(struct sdhci_host *sdhci_host)
 void sdhci_clear_int_status_flag(struct sdhci_host *sdhci_host, uint32_t mask)
 {
     sdhci_writel(sdhci_host, mask, SDHCI_INT_STATUS);
+}
+
+void sdhci_count_errors(struct sdhci_host *host, uint32_t status)
+{
+    uint32_t err = (status >> 16) & 0xffff;
+
+    for (int i = 0; i < 16; i++) {
+        if (err & BIT(i)) {
+            host->err_counters[i]++;
+        }
+    }
 }
 
 void sdhic_error_recovery(struct sdhci_host *sdhci_host)
@@ -238,7 +247,9 @@ void sdhci_init(struct sdhci_host *host)
     sdhci_writeb(host, 0x7, SDHCI_TIMEOUT_CONTROL);
     sdhci_writeb(host, SDHCI_POWER_ON | SDHCI_POWER_330, SDHCI_POWER_CONTROL);
     sdhci_writew(host, SDHCI_CLOCK_INT_EN, SDHCI_CLOCK_CONTROL);
-    while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
+    SDHCI_WAIT_TIMEOUT(!(sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE),
+                       100,
+                       { DEV_ERR(host->dev, "Internal clock never stabilised"); return; });
     sdhci_writel(host, SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_INT_ENABLE);
     sdhci_writel(host, SDHCI_INT_CARD_INT, SDHCI_SIGNAL_ENABLE);
     mshc_ctrl_r = sdhci_readb(host, MSHC_CTRL_R);
@@ -256,6 +267,14 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
 
     if (clock == 0)
         return;
+
+    /* Wait for any ongoing command/data transfer to complete before
+     * touching the clock.  Max 100 ms.
+     */
+    SDHCI_WAIT_TIMEOUT(sdhci_get_present_status_flag(host) & (SDHCI_CMD_INHIBIT | SDHCI_DATA_INHIBIT),
+                       100,
+                       { DEV_ERR(host->dev, "%s: timeout waiting for CMD/DAT inhibit", __func__);
+                         return; });
 
     val = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
     val &= ~(SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE);
@@ -277,7 +296,9 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
         << SDHCI_DIVIDER_HI_SHIFT;
     val |= SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE;
     sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
-    while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
+    SDHCI_WAIT_TIMEOUT(!(sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE),
+                       100,
+                       { DEV_ERR(host->dev, "Internal clock never stabilised"); return; });
 }
 
 #else /* CONFIG_DIV_REG_VAILD */
@@ -298,6 +319,14 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
     if (clock == 0)
         return;
 
+    /* Wait for any ongoing command/data transfer to complete before
+     * touching the clock.  Max 100 ms.
+     */
+    SDHCI_WAIT_TIMEOUT(sdhci_get_present_status_flag(host) & (SDHCI_CMD_INHIBIT | SDHCI_DATA_INHIBIT),
+                       100,
+                       { DEV_ERR(dev, "%s: timeout for CMD/DAT inhibit", __func__);
+                         return; });
+
     div = 0;
     val = sdhci_readw(host, SDHCI_CLOCK_CONTROL);
     val &= ~(SDHCI_CLOCK_CARD_EN | SDHCI_PROG_CLOCK_MODE);
@@ -313,7 +342,9 @@ void mmc_clock_freq_change(struct sdhci_host *host, uint32_t clock)
 
     lsqsh_emmc_txck_rxck_config(host->mapbase, host->max_clk, clock);
     sdhci_writew(host, val, SDHCI_CLOCK_CONTROL);
-    while ((sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE) == 0);
+    SDHCI_WAIT_TIMEOUT(!(sdhci_readw(host, SDHCI_CLOCK_CONTROL) & SDHCI_CLOCK_INT_STABLE),
+                       100,
+                       { DEV_ERR(dev, "Internal clock never stabilised"); return; });
 }
 
 #endif /* CONFIG_DIV_REG_VAILD */

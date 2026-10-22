@@ -17,6 +17,16 @@ properties:
   "#dma-cells":
     const: 2
 
+  ctlh-block-ts-mask:
+    type: int
+    description: |
+      Mask of the BLOCK_TS field inside the channel CTRL_HI register. The field
+      width is integration dependent: the original DW_ahb_dmac IP uses 17 bits
+      (0x1ffff), while some SoC integrations implement fewer, e.g. 11 bits
+      (0x7ff). The driver rejects transfers larger than the mask and never
+      writes block size bits outside it, so a too large mask would corrupt the
+      neighbouring CTRL_HI fields (DONE, CLASS/WEIGHT).
+
 dma-cells:
   - channel
   - handshake

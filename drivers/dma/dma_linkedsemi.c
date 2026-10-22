@@ -19,9 +19,9 @@
 #include <zephyr/irq.h>
 LOG_MODULE_REGISTER(dma_dw, CONFIG_DMA_LOG_LEVEL);
 
-#include <soc.h>
 #include <soc_dma.h>
 #include "dma_dw_common.h"
+#include <soc.h>
 
 #if defined(CONFIG_DMA_DW_HW_LLI)
 BUILD_ASSERT(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL,
@@ -138,6 +138,7 @@ static const struct dma_driver_api dw_dma_driver_api = {
         .dw_cfg = {                                                                                   \
             .base = DT_INST_REG_ADDR(inst),                                                           \
             .irq_config = dw_dma##inst##_irq_config,                                                  \
+            .ctlh_block_ts_mask = DT_INST_PROP_OR(inst, ctlh_block_ts_mask, 0),                       \
         },                                                                                            \
         IF_ENABLED(CONFIG_VENDER_DEFINE_DMA_DW_LLI_POOL, (.lli_pool = lli_pool_##inst,))              \
         IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                         \

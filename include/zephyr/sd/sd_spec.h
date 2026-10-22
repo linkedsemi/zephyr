@@ -666,6 +666,16 @@ enum mmc_ext_csd_rev {
 #define EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_A 268 /* RO */
 #define EXT_CSD_DEVICE_LIFE_TIME_EST_TYP_B 269 /* RO */
 
+#define EXT_CSD_EXCEPTION_EVENTS_STATUS 54
+#define EXT_CSD_BKOPS_EN                163
+#define EXT_CSD_BKOPS_START             164
+#define EXT_CSD_BKOPS_STATUS            246
+#define EXT_CSD_BKOPS_SUPPORT           502
+#define EXT_CSD_BKOPS_LEVEL_2           2
+
+#define EXT_CSD_BKOPS_EN_MANUAL 0x1
+#define EXT_CSD_BKOPS_EN_AUTO   0x2
+
 /**
  * @brief MMC extended card specific data register
  *

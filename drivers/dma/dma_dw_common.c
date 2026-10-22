@@ -15,9 +15,9 @@
 #include <zephyr/drivers/dma.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
-#include <soc.h>
 #include <zephyr/drivers/dma/dma_dw.h>
 #include "dma_dw_common.h"
+#include <soc.h>
 
 #define LOG_LEVEL CONFIG_DMA_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -59,6 +59,9 @@ void dw_dma_isr(const struct device *dev)
 			channel = find_lsb_set(status_err) - 1;
 			status_err &= ~(1 << channel);
 			chan_data = &dev_data->chan[channel];
+
+			dw_write(dev_cfg->base, DW_DMA_CHAN_EN, DW_CHAN_MASK(channel));
+			chan_data->state = DW_DMA_IDLE;
 
 			if (chan_data->dma_errcallback) {
 				LOG_DBG("%s: Dispatching err complete callback for channel %d\n", dev->name,
@@ -175,7 +178,9 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 	struct dw_lli *lli_desc_head;
 	struct dw_lli *lli_desc_tail;
 	uint32_t msize;
+	uint32_t block_ts_mask = dw_ctlh_block_ts_mask(dev_cfg);
 	uint32_t block_size = 0;
+	int idx;
 	int ret = 0;
 
 	if (channel >= DW_CHAN_COUNT) {
@@ -226,6 +231,19 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 #endif
 	LOG_DBG("%s: channel %d m_size=%d", dev->name, channel, msize);
 	__ASSERT_NO_MSG(msize <= DW_MSIZE_MAX);
+
+	for (idx = 0, block_cfg = cfg->head_block; idx < cfg->block_count;
+	     idx++, block_cfg = block_cfg->next_block) {
+		if (!block_cfg) {
+			return -EINVAL;
+		}
+		if (block_cfg->source_address == block_cfg->dest_address) {
+			LOG_ERR("%s: channel %d block %d: source and destination address are identical (0x%x)",
+				dev->name, channel, idx, block_cfg->source_address);
+			ret = -EINVAL;
+			goto out;
+		}
+	}
 
 	/* default channel config */
 	chan_data->direction = cfg->channel_direction;
@@ -430,7 +448,7 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 			dev->name, lli_desc, lli_desc->ctrl_lo, chan_data->cfg_hi,
 			chan_data->cfg_lo);
 
-		if (block_cfg->block_size > DW_CTLH_BLOCK_TS_MASK) {
+		if (block_cfg->block_size > block_ts_mask) {
 			LOG_ERR("%s: channel %d block size too big %d", dev->name, channel,
 				block_cfg->block_size);
 			ret = -EINVAL;
@@ -439,10 +457,10 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 
 		/* Set class and transfer size */
 #if defined(CONFIG_DMA_DW_2_20A)
-		lli_desc->ctrl_hi |= block_cfg->block_size & DW_CTLH_BLOCK_TS_MASK;
+		lli_desc->ctrl_hi |= block_cfg->block_size & block_ts_mask;
 #else
 		lli_desc->ctrl_hi |= DW_CTLH_CLASS(dev_data->channel_data->chan[channel].class) |
-			(block_cfg->block_size & DW_CTLH_BLOCK_TS_MASK);
+			(block_cfg->block_size & block_ts_mask);
 #endif /* CONFIG_DMA_DW_2_20A */
 
 		LOG_DBG("%s: block_size, class: lli_desc %p, ctrl_lo %x, cfg_hi %x, cfg_lo %x",
@@ -504,13 +522,20 @@ int dw_dma_config(const struct device *dev, uint32_t channel,
 		chan_data->blkuser_data = cfg->user_data;
 		chan_data->dma_dsttrancallback = cfg->dma_callback;
 		chan_data->dsttranuser_data = cfg->user_data;
+		chan_data->dma_tfrcallback = NULL;
+		chan_data->tfruser_data = NULL;
 		dw_write(dev_cfg->base, DW_MASK_BLOCK, DW_CHAN_UNMASK(channel));
 		dw_write(dev_cfg->base, DW_MASK_DST_TRAN, DW_CHAN_UNMASK(channel));
 	} else {
 		chan_data->dma_tfrcallback = cfg->dma_callback;
 		chan_data->tfruser_data = cfg->user_data;
-		dw_write(dev_cfg->base, DW_MASK_TFR, DW_CHAN_UNMASK(channel));
+		chan_data->dma_blkcallback = NULL;
+		chan_data->blkuser_data = NULL;
+		chan_data->dma_dsttrancallback = NULL;
+		chan_data->dsttranuser_data = NULL;
 	}
+
+	dw_write(dev_cfg->base, DW_MASK_TFR, DW_CHAN_UNMASK(channel));
 
 	dw_write(dev_cfg->base, DW_MASK_ERR, DW_CHAN_UNMASK(channel));
 
@@ -621,7 +646,7 @@ int dw_dma_start(const struct device *dev, uint32_t channel)
 #ifdef CONFIG_DMA_DW_HW_LLI
 	if (lli->ctrl_lo & DW_CTLL_D_SCAT_EN) {
 		LOG_DBG("%s: configuring DW_DSR", dev->name);
-		uint32_t words_per_tfr = (lli->ctrl_hi & DW_CTLH_BLOCK_TS_MASK) >>
+		uint32_t words_per_tfr = (lli->ctrl_hi & dw_ctlh_block_ts_mask(dev_cfg)) >>
 			((lli->ctrl_lo & DW_CTLL_DST_WIDTH_MASK) >> DW_CTLL_DST_WIDTH_SHIFT);
 		dw_write(dev_cfg->base, DW_DSR(channel),
 			 DW_DSR_DSC(words_per_tfr) | DW_DSR_DSI(words_per_tfr));
@@ -662,6 +687,9 @@ int dw_dma_stop(const struct device *dev, uint32_t channel)
 	}
 
 	if (!dw_dma_is_enabled(dev, channel) && chan_data->state != DW_DMA_SUSPENDED) {
+		if (chan_data->state == DW_DMA_ACTIVE) {
+			chan_data->state = DW_DMA_IDLE;
+		}
 		ret = 0;
 		goto out;
 	}

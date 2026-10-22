@@ -59,4 +59,6 @@ int sdmmc_read_status(struct sd_card *card);
 
 int sdmmc_wait_ready(struct sd_card *card);
 
+int card_ext_csd_write(struct sd_card *card, uint8_t index, uint8_t value);
+
 #endif /* ZEPHYR_SUBSYS_SD_SD_OPS_H_ */

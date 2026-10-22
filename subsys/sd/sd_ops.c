@@ -12,6 +12,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/kernel.h>
 
+#include "sd_ops.h"
 #include "sd_utils.h"
 
 LOG_MODULE_DECLARE(sd, CONFIG_SD_LOG_LEVEL);
@@ -53,6 +54,10 @@ int sdmmc_read_status(struct sd_card *card)
 		return 0;
 	}
 	/* Otherwise, check native card response */
+	if (cmd.response[0U] & SD_R1_FX_EVENT) {
+		card->exception_event = true;
+		LOG_DBG("Card reported EXCEPTION_EVENT");
+	}
 	if ((cmd.response[0U] & SD_R1_RDY_DATA) &&
 	    (SD_R1_CURRENT_STATE(cmd.response[0U]) == SDMMC_R1_TRANSFER)) {
 		return 0;
@@ -87,6 +92,177 @@ int sdmmc_wait_ready(struct sd_card *card)
 		timeout -= 125;
 	} while (timeout > 0);
 	return -EBUSY;
+}
+
+#define BKOPS_READY_POLL_MS 1
+
+static int card_wait_ready_sleep(struct sd_card *card, int timeout_ms)
+{
+	int64_t deadline = k_uptime_get() + timeout_ms;
+	int ret;
+
+	do {
+		if (!sdhc_card_busy(card->sdhc)) {
+			ret = sd_retry(sdmmc_read_status, card, CONFIG_SD_RETRY_COUNT);
+			if (ret == 0) {
+				return 0;
+			}
+			if (ret != -EBUSY && ret != -ETIMEDOUT) {
+				return ret;
+			}
+		}
+		k_msleep(BKOPS_READY_POLL_MS);
+	} while (k_uptime_get() < deadline);
+
+	return -ETIMEDOUT;
+}
+
+static int card_send_stop_transmission(struct sd_card *card, bool write)
+{
+	int ret;
+
+	LOG_WRN("Recovering card after data transfer error");
+
+	if (!card->host_props.is_spi) {
+		struct sdhc_command cmd = {0};
+
+		cmd.opcode = SD_STOP_TRANSMISSION;
+		cmd.arg = 0;
+		cmd.response_type = write ? SD_RSP_TYPE_R1b : SD_RSP_TYPE_R1;
+		cmd.retries = CONFIG_SD_CMD_RETRIES;
+		cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
+
+		ret = sdhc_request(card->sdhc, &cmd, NULL);
+		if (ret) {
+			LOG_ERR("Failed to send CMD12 during recovery: %d", ret);
+			return ret;
+		}
+	}
+
+	return card_wait_ready_sleep(card, CONFIG_SD_DATA_TIMEOUT);
+}
+
+static int card_ext_csd_read_raw(struct sd_card *card, uint8_t *buf)
+{
+	struct sdhc_command cmd = {0};
+	struct sdhc_data data = {0};
+	uint32_t retries;
+	int ret;
+
+	cmd.opcode = MMC_SEND_EXT_CSD;
+	cmd.arg = 0;
+	cmd.response_type = SD_RSP_TYPE_R1;
+	cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
+
+	data.block_size = MMC_EXT_CSD_BYTES;
+	data.blocks = 1;
+	data.data = buf;
+	data.timeout_ms = CONFIG_SD_DATA_TIMEOUT;
+
+	retries = CONFIG_SD_DATA_RETRIES;
+	do {
+		cmd.retries = 0;
+		ret = sdhc_request(card->sdhc, &cmd, &data);
+		if (!ret) {
+			break;
+		}
+		if (card_send_stop_transmission(card, false)) {
+			LOG_ERR("Failed to recover card after ext_csd read error %d", ret);
+		}
+	} while (retries-- > 0);
+
+	return ret;
+}
+
+static int card_ext_csd_write_raw(struct sd_card *card, uint8_t index, uint8_t value)
+{
+	struct sdhc_command cmd = {0};
+	uint32_t retries;
+	int ret;
+
+	cmd.opcode = SD_SWITCH;
+	cmd.arg = (MMC_SWITCH_MODE_WRITE_BYTE << 24) | (index << 16) | (value << 8);
+	cmd.response_type = SD_RSP_TYPE_R1b;
+	cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
+
+	retries = CONFIG_SD_DATA_RETRIES;
+	do {
+		cmd.retries = 0;
+		ret = sdhc_request(card->sdhc, &cmd, NULL);
+		if (!ret) {
+			break;
+		}
+		if (card_wait_ready_sleep(card, CONFIG_SD_DATA_TIMEOUT)) {
+			LOG_ERR("Failed to recover card after ext_csd write error %d", ret);
+		}
+	} while (retries-- > 0);
+
+	if (ret) {
+		return ret;
+	}
+
+	return card_wait_ready_sleep(card, CONFIG_SD_DATA_TIMEOUT);
+}
+
+int card_ext_csd_write(struct sd_card *card, uint8_t index, uint8_t value)
+{
+	int ret;
+
+	ret = k_mutex_lock(&card->lock, K_MSEC(CONFIG_SD_DATA_TIMEOUT));
+	if (ret) {
+		return -EBUSY;
+	}
+	ret = card_ext_csd_write_raw(card, index, value);
+	k_mutex_unlock(&card->lock);
+
+	return ret;
+}
+
+#define BKOPS_CHECK_INTERVAL_MS 1000
+
+static void card_handle_urgent_bkops(struct sd_card *card)
+{
+	int64_t now;
+	int ret;
+
+	if (card->type != CARD_MMC || card->host_props.is_spi) {
+		return;
+	}
+
+	if (!card->bkops_man_en || card->bkops_auto_en) {
+		return;
+	}
+
+	if (!card->exception_event) {
+		return;
+	}
+	now = k_uptime_get();
+	if ((now - card->bkops_last_check) < BKOPS_CHECK_INTERVAL_MS) {
+		return;
+	}
+
+	ret = card_ext_csd_read_raw(card, card->card_buffer);
+	if (ret) {
+		LOG_WRN("Failed to read bkops status: %d", ret);
+		card->bkops_last_check = k_uptime_get();
+		return;
+	}
+	card->exception_event = false;
+
+	LOG_INF("Card exception: EXCEPTION_EVENTS_STATUS=0x%x BKOPS_STATUS=0x%x",
+		card->card_buffer[EXT_CSD_EXCEPTION_EVENTS_STATUS],
+		card->card_buffer[EXT_CSD_BKOPS_STATUS]);
+
+	if (card->card_buffer[EXT_CSD_BKOPS_STATUS] >= EXT_CSD_BKOPS_LEVEL_2) {
+		LOG_INF("URGENT_BKOPS (level %d): running background ops",
+			card->card_buffer[EXT_CSD_BKOPS_STATUS]);
+		ret = card_ext_csd_write_raw(card, EXT_CSD_BKOPS_START, 1);
+		if (ret) {
+			LOG_WRN("Failed to start bkops: %d", ret);
+		}
+	}
+
+	card->bkops_last_check = k_uptime_get();
 }
 
 static inline void sdmmc_decode_csd(struct sd_csd *csd, uint32_t *raw_csd, uint32_t *blk_count,
@@ -491,6 +667,7 @@ int card_app_command(struct sd_card *card, int relative_card_address)
 static int card_read(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, uint32_t num_blocks)
 {
 	int ret;
+	uint32_t retries;
 	struct sdhc_command cmd;
 	struct sdhc_data data;
 
@@ -501,10 +678,10 @@ static int card_read(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 	 * However, the host specification defines support for "Auto CMD23" and
 	 * "Auto CMD12", where the host sends CMD23 and CMD12 automatically to
 	 * remove the overhead of interrupts in software from sending these
-	 * commands. Therefore, we will not handle CMD12 or CMD23 at this layer.
-	 * The host SDHC driver is expected to recognize CMD17, CMD18, CMD24,
-	 * and CMD25 as special read/write commands and handle CMD23 and
-	 * CMD12 appropriately.
+	 * commands. Therefore, we will not handle CMD23 at this layer: the host
+	 * SDHC driver is expected to recognize CMD17, CMD18, CMD24, and CMD25
+	 * as special read/write commands and handle CMD23 and CMD12
+	 * appropriately.
 	 */
 	cmd.opcode = (num_blocks == 1U) ? SD_READ_SINGLE_BLOCK : SD_READ_MULTIPLE_BLOCK;
 	if (!(card->flags & SD_HIGH_CAPACITY_FLAG)) {
@@ -514,7 +691,6 @@ static int card_read(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 		cmd.arg = start_block;
 	}
 	cmd.response_type = (SD_RSP_TYPE_R1 | SD_SPI_RSP_TYPE_R1);
-	cmd.retries = CONFIG_SD_DATA_RETRIES;
 	cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
 
 	data.block_addr = start_block;
@@ -525,7 +701,18 @@ static int card_read(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 
 	LOG_DBG("READ: Sector = %u, Count = %u", start_block, num_blocks);
 
-	ret = sdhc_request(card->sdhc, &cmd, &data);
+	retries = CONFIG_SD_DATA_RETRIES;
+	do {
+		cmd.retries = 0;
+		ret = sdhc_request(card->sdhc, &cmd, &data);
+		if (!ret) {
+			break;
+		}
+		if (card_send_stop_transmission(card, false)) {
+			LOG_ERR("Failed to recover card after read error %d", ret);
+		}
+	} while (retries-- > 0);
+
 	if (ret) {
 		LOG_ERR("Failed to read from SDMMC %d", ret);
 		return ret;
@@ -560,6 +747,7 @@ int card_read_blocks(struct sd_card *card, uint8_t *rbuf, uint32_t start_block, 
 		LOG_WRN("Could not get SD card mutex");
 		return -EBUSY;
 	}
+	card_handle_urgent_bkops(card);
 
 	/*
 	 * If the buffer we are provided with is aligned, we can use it
@@ -655,13 +843,13 @@ static int card_write(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 		      uint32_t num_blocks)
 {
 	int ret;
-	uint32_t blocks;
+	uint32_t retries;
 	struct sdhc_command cmd;
 	struct sdhc_data data;
 
 	/*
-	 * See the note in card_read() above. We will not issue CMD23
-	 * or CMD12, and expect the host to handle those details.
+	 * See the note in card_read() above. CMD23 is left to the host, and a
+	 * failed transfer is stopped with CMD12 before it is retried.
 	 */
 	cmd.opcode = (num_blocks == 1) ? SD_WRITE_SINGLE_BLOCK : SD_WRITE_MULTIPLE_BLOCK;
 	if (!(card->flags & SD_HIGH_CAPACITY_FLAG)) {
@@ -671,7 +859,6 @@ static int card_write(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 		cmd.arg = start_block;
 	}
 	cmd.response_type = (SD_RSP_TYPE_R1 | SD_SPI_RSP_TYPE_R1);
-	cmd.retries = CONFIG_SD_DATA_RETRIES;
 	cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
 
 	data.block_addr = start_block;
@@ -682,19 +869,29 @@ static int card_write(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 
 	LOG_DBG("WRITE: Sector = %u, Count = %u", start_block, num_blocks);
 
-	ret = sdhc_request(card->sdhc, &cmd, &data);
+	retries = CONFIG_SD_DATA_RETRIES;
+	do {
+		cmd.retries = 0;
+		ret = sdhc_request(card->sdhc, &cmd, &data);
+		if (!ret) {
+			break;
+		}
+		if (card_send_stop_transmission(card, true)) {
+			LOG_ERR("Failed to recover card after write error %d", ret);
+		}
+	} while (retries-- > 0);
+
 	if (ret) {
+		uint32_t blocks;
+
 		LOG_DBG("Write failed: %d", ret);
-		ret = sdmmc_wait_ready(card);
-		if (ret) {
-			return ret;
+		if (card->type != CARD_MMC) {
+			ret = card_query_written(card, &blocks);
+			if (ret) {
+				return ret < 0 ? ret : -EIO;
+			}
+			LOG_ERR("Only %d blocks of %d were written", blocks, num_blocks);
 		}
-		/* Query card to see how many blocks were actually written */
-		ret = card_query_written(card, &blocks);
-		if (ret) {
-			return ret;
-		}
-		LOG_ERR("Only %d blocks of %d were written", blocks, num_blocks);
 		return -EIO;
 	}
 	/* Verify card is back in transfer state after write */
@@ -727,6 +924,7 @@ int card_write_blocks(struct sd_card *card, const uint8_t *wbuf, uint32_t start_
 		LOG_WRN("Could not get SD card mutex");
 		return -EBUSY;
 	}
+	card_handle_urgent_bkops(card);
 	/*
 	 * If the buffer we are provided with is aligned, we can use it
 	 * directly. Otherwise, we need to use the card's internal buffer

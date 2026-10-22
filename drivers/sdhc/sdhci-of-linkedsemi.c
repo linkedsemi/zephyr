@@ -1,5 +1,5 @@
 /*
- * Copyright 2022 NXP
+ * Copyright 2025 linkedsemi
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,9 +12,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 #include <zephyr/cache.h>
-#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/bitarray.h>
-#include <errno.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
 #endif
@@ -30,40 +28,11 @@
 #include "sdhci.h"
 #include "reg_sysc_app_awo.h"
 #include "reg_sysc_app_cpu.h"
-
-/* HAL eMMC function declarations for coredump backend - avoid include due to enum conflicts */
-#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-extern void emmc_protection_init(void);
-#endif
-extern uint32_t ls_mmc_card_init(uint32_t mapbase);
-extern void ls_sdhci_reset(uint32_t mapbase, uint8_t mask);
-extern uint32_t ls_sdhci_request(uint32_t mapbase, struct sdhc_command *cmd, struct sdhc_data *data);
+#include <zephyr/shell/shell.h>
 
 LOG_MODULE_REGISTER(linkedsemi_sdhci, CONFIG_SDHC_LOG_LEVEL);
 
 #define LINKEDSEMI_SDHCI_TUNING_DELAY_MAX (SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_MASK >> SYSC_APP_CPU_EMMC1_RX_CLK_DLY_CTL_DLY_STP_POS)
-
-/* Time-based timeout helper for bare-metal context */
-#define TIMEOUT_MS_TO_CYCLES(ms) ((ms) * (uint32_t)(CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC / 1000))
-
-/**
- * @brief Check if time-based timeout has expired
- *
- * @param start Start cycle count from k_cycle_get_32()
- * @param timeout_ms Timeout in milliseconds
- * @return true if timeout expired
- */
-static inline bool timeout_expired(uint32_t start, uint32_t timeout_ms)
-{
-    uint32_t elapsed = (k_cycle_get_32() - start) & UINT32_MAX;
-    return elapsed >= TIMEOUT_MS_TO_CYCLES(timeout_ms);
-}
-
-#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-/* Flag to indicate if SDHCI is currently busy with a transfer */
-/* Initialized to 1 to ensure linkedsemi_sdhci_request completes at least once before card is considered ready */
-static atomic_t g_sdhci_busy = 1;
-#endif
 
 struct linkedsemi_sdhci_config {
     uint32_t response_timeout;
@@ -105,6 +74,7 @@ static void linkedsemi_sdhci_isr(const void *arg)
         host->error_code = (status >> 16) & 0xffff;
         if (host->error_code) {
             if (!host->execute_tuning) {
+                sdhci_count_errors(host, status);
                 uint32_t cmd_r = sdhci_readw(host, SDHCI_COMMAND);
                 uint32_t arg_r = sdhci_readl(host, SDHCI_ARGUMENT);
                 DEV_INF(dev, "isr_dbg: status: %#4.4x  CMD_R: %#x  ARG_R: %#x", status, cmd_r, arg_r);
@@ -225,10 +195,14 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
 
     DEV_DBG(dev, "%s: sdhci_clk=%d, bus_width:%d", __func__, ios->clock, ios->bus_width);
 
-    if (ios->clock != 0
-        && (ios->clock <= dev_config->max_bus_freq)
-        && (ios->clock >= dev_config->min_bus_freq)) {
+    if ((0 == ios->clock)
+        || ((ios->clock <= dev_config->max_bus_freq)
+        && (ios->clock >= dev_config->min_bus_freq))) {
         mmc_clock_freq_change(host, ios->clock);
+    } else {
+        DEV_ERR(dev, "%s: unsupported clock %u Hz (min %u Hz, max %u Hz)", __func__, ios->clock,
+                dev_config->min_bus_freq, dev_config->max_bus_freq);
+        return -EINVAL;
     }
 
     /* Toggle card power supply */
@@ -356,24 +330,34 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
     struct sdhci_data *sdhci_data = host->sdhci_data;
     host->use_dma = IS_ENABLED(CONFIG_SDHCI_SDMA_ENABLE);
     int ret = 0;
-
 #if defined(CONFIG_SOC_LSQSH)
     host->use_dma &= lsqsh_workaround_psram_use_dma(host);
 #endif
-    /* Wait until command/data bus out of busy status. */
-    while (sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG);
-    while (sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG));
+    /* Wait until command/data bus is free before sending a new command. */
+    {
+        uint32_t inhibit_mask = SDHCI_COMMAND_INHIBIT_FLAG;
+
+        if (!(sdhci_command->type == CARD_COMMAND_TYPE_ABORT) && sdhci_data) {
+            inhibit_mask |= SDHCI_DATA_INHIBIT_FLAG;
+        }
+        SDHCI_WAIT_TIMEOUT(sdhci_get_present_status_flag(host) & inhibit_mask,
+                           100,
+                           { DEV_ERR(dev, "%s: timeout for inhibit %#x",
+                                     __func__, inhibit_mask);
+                             ret = -ETIMEDOUT; goto cleanup; });
+    }
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
 
     ret = sdhci_set_transfer_config(host, sdhci_command, sdhci_data);
     if (ret) {
-        goto err;
+        goto cleanup;
     }
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) | SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK, SDHCI_SIGNAL_ENABLE);
 
     host->transfer_status = 0;
     host->block_curr = 0;
     host->error_code = 0;
+    host->irq_status = 0;
     k_sem_reset(&host->cmd_sem);
     k_sem_reset(&host->data_sem);
     sdhci_send_command(host, sdhci_command, host->use_dma);
@@ -382,7 +366,7 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
         ret = k_sem_take(&host->cmd_sem, K_MSEC(sdhci_command->timeout_ms));
         if (ret) {
             DEV_ERR(dev, "cmd transfer fail: %d", ret);
-            goto err;
+            goto cleanup;
         }
     }
     /* wait data done */
@@ -390,16 +374,39 @@ static int32_t linkedsemi_sdhci_transfer_blocking(struct sdhci_host *host)
         ret = k_sem_take(&host->data_sem, K_MSEC(sdhci_data->timeout_ms));
         if (ret) {
             DEV_ERR(dev, "data transfer fail: %d", ret);
-            goto err;
+            goto cleanup;
         }
     }
-    while ((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR)));
-    while ((sdhci_data && (sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) && (!(host->irq_status & SDHCI_INT_ERROR))));
-err:
+
+    if (!host->execute_tuning && (host->irq_status & SDHCI_INT_ERROR)) {
+        ret = (host->irq_status & (SDHCI_INT_DATA_TIMEOUT | SDHCI_INT_TIMEOUT)) ? -ETIMEDOUT : -EIO;
+    }
+
+    SDHCI_WAIT_TIMEOUT((sdhci_get_present_status_flag(host) & SDHCI_COMMAND_INHIBIT_FLAG) &&
+                         !(host->irq_status & SDHCI_INT_ERROR),
+                       100,
+                       { DEV_ERR(dev, "CMD inhibit timeout after transfer");
+                         ret = -ETIMEDOUT; goto cleanup; });
+    if (sdhci_data) {
+        SDHCI_WAIT_TIMEOUT((sdhci_get_present_status_flag(host) & SDHCI_DATA_INHIBIT_FLAG) &&
+                             !(host->irq_status & SDHCI_INT_ERROR),
+                           100,
+                           { DEV_ERR(dev, "DAT inhibit timeout after transfer");
+                             ret = -ETIMEDOUT; goto cleanup; });
+    }
+
+cleanup:
+    /* Disable interrupt signals to prevent ISR during cleanup */
     sdhci_writel(host, sdhci_readl(host, SDHCI_SIGNAL_ENABLE) & ~(SDHCI_INT_DATA_MASK | SDHCI_INT_CMD_MASK), SDHCI_SIGNAL_ENABLE);
     sdhci_writel(host, SDHCI_INT_ALL_MASK, SDHCI_INT_STATUS);
-    sdhci_reset(host, SDHCI_RESET_CMD | SDHCI_RESET_DATA);
 
+    /* Only reset CMD/DAT lines on error to avoid interrupting Auto CMD12
+     * that has successfully completed on the eMMC device side.
+     */
+    if (ret != 0 || (host->irq_status & SDHCI_INT_ERROR)) {
+        sdhci_reset(host, SDHCI_RESET_CMD);
+        sdhci_reset(host, SDHCI_RESET_DATA);
+    }
     return ret;
 }
 
@@ -426,11 +433,6 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         }
         return -EBUSY;
     }
-
-    /* Mark SDHCI as busy */
-#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-    atomic_set(&g_sdhci_busy, 1);
-#endif
 
     host->irq_status = 0;
     sdhci_command.index = cmd->opcode;
@@ -474,7 +476,8 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
             break;
         default:
             DEV_ERR(dev, "invalid opcode: %#x", cmd->opcode);
-            return -ENOTSUP;
+            ret = -ENOTSUP;
+            goto out;
         }
 
         host->sdhci_data = &sdhci_data;
@@ -497,55 +500,11 @@ static int linkedsemi_sdhci_request(const struct device *dev, struct sdhc_comman
         }
     } while (ret != 0 && (retries-- > 0));
 
-    /* Mark SDHCI as not busy */
-#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-    atomic_set(&g_sdhci_busy, 0);
-#endif
-
+out:
     k_mutex_unlock(&dev_data->access_mutex);
 
     return ret;
 }
-
-#if defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
-extern int emmc_get_coredump_info(uint32_t *start_sector, uint32_t *sector_count);
-
-/**
- * @brief Get eMMC coredump region information
- *
- * This function provides access to the coredump region configuration
- * from device tree via emmc_get_coredump_info().
- *
- * @param dev SDHC device (unused, kept for API compatibility)
- * @param start_block Output: pointer to store coredump start block
- * @param block_count Output: pointer to store reserved block count
- * @return 0 if successful, -ENODEV if coredump region not configured
- */
-int linkedsemi_sdhci_get_coredump_info(const struct device *dev, uint32_t *start_block, uint32_t *block_count)
-{
-    ARG_UNUSED(dev);
-
-    return emmc_get_coredump_info(start_block, block_count);
-}
-
-/**
- * @brief Check if eMMC card is ready for bare-metal operations
- *
- * @param dev SDHC device
- * @return true if card is ready, false otherwise
- */
-bool linkedsemi_sdhci_card_ready(const struct device *dev)
-{
-    ARG_UNUSED(dev);
-
-    /* Check if SDHCI is currently busy with a transfer */
-    if (atomic_get(&g_sdhci_busy)) {
-        return false;
-    }
-
-    return true;
-}
-#endif
 
 static const uint8_t tuning_blk_pattern_4bit[] = {
     0xff, 0x0f, 0xff, 0x00, 0xff, 0xcc, 0xc3, 0xcc,
@@ -640,9 +599,6 @@ static int find_max_consecutive_ones_region(sys_bitarray_t *bitarray, size_t *st
     return max_length;
 }
 
-/* Not wired into sdhc_driver_api yet (linkedsemi_sdhci_execute_tuning
- * dispatches to the HS200 path); kept referenced via __maybe_unused so it
- * does not trip -Wunused-function. */
 __maybe_unused static int linkedsemi_sdhci_execute_mmc_bus_test_tuning(const struct device *dev)
 {
     struct linkedsemi_sdhci_data *dev_data = dev->data;
@@ -808,13 +764,13 @@ static int linkedsemi_sdhci_execute_hs200_tuning(const struct device *dev)
         CLEAR_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S0_CCLK_RX_MASK);
         SET_BIT(SYSC_APP_CPU->EMMC1_CTRL, SYSC_APP_CPU_EMMC1_RX_CLK_SEL_S00_CCLK_RX_MASK);
     } else if (SDHC_TIMING_HS400 == host->timing) {
-        // tx no inv
-        // tx dll delay
-        // rx dll delay
-        while(1);
+        DEV_ERR(dev, "%s: HS400 tuning not implemented", __func__);
+        host->execute_tuning = false;
+        return -ENOTSUP;
     } else {
-        // error
-        while(1);
+        DEV_ERR(dev, "%s: unknown timing %d", __func__, host->timing);
+        host->execute_tuning = false;
+        return -ENOTSUP;
     }
 
     uint8_t emmc1_dll_ctrl_decoder_r = REG_FIELD_RD(SYSC_APP_CPU->EMMC1_DLL_CTRL, SYSC_APP_CPU_EMMC1_DLL_CTRL_DECODER_R);
@@ -901,38 +857,55 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     }
 #endif
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        if (!device_is_ready(clk_dev)) {
-            DEV_DBG(dev, "%s device not ready", clk_dev->name);
-            return -ENODEV;
-        }
-        clock_control_off(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-    }
-#endif
+    /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_DIV_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_SEL, 0x1);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
 
-#if defined(CONFIG_RESET)
-    if (dev_config->reset.dev != NULL) {
-        if (!device_is_ready(dev_config->reset.dev)) {
-            DEV_ERR(dev, "Reset controller device is not ready");
-            return -ENODEV;
-        }
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_DIV_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_SEL, 0x1);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+    /* SYSC_APP_AWO->EMMC1_TX_RX_CLK */
 
-        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
-        if (ret != 0) {
-            DEV_ERR(dev, "toggle reset line failed");
-            return ret;
-        }
-    }
-#endif
+    /* SYSC_APP_AWO->EMMC1_CORE_TIM_CLK */
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_DIV, 0);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_SEL, 0x2); /* dpll 200M */
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
 
-#if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-    }
-#endif
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_DIV_MASK);
+    REG_FIELD_WR(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_SEL, 0x1); /* hsi */
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
+    /* SYSC_APP_AWO->EMMC1_CORE_TIM_CLK */
+
+    ls_clock_control_off(EMMC1_CLOCK);
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
+
+    ls_reset_line_assert(EMMC1_RESET);
+    /* SYSC_APP_AWO->ETH_EMMC_RST */
+    CLEAR_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_TX_RST_N_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_RX_RST_N_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_CORE_RST_N_MASK);
+    CLEAR_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_TIM_RST_N_MASK);
+
+    /* SYSC_APP_AWO->ETH_EMMC_RST */
+    ls_reset_line_deassert(EMMC1_RESET);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_TX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_RX_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_CORE_RST_N_MASK);
+    SET_BIT(SYSC_APP_AWO->ETH_EMMC_RST, SYSC_APP_AWO_EMMC1_CLK_TIM_RST_N_MASK);
+
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_TX_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC1_TX_RX_CLK, SYSC_APP_AWO_EMMC1_CLK_RX_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_CORE_CG_MASK);
+    SET_BIT(SYSC_APP_AWO->EMMC1_CORE_TIM_CLK, SYSC_APP_AWO_EMMC1_CLK_TIM_CG_MASK);
+    ls_clock_control_on(EMMC1_CLOCK);
 
     host->dev = dev;
     host->index = 0;
@@ -948,9 +921,6 @@ static int linkedsemi_sdhci_init(const struct device *dev)
     k_sem_init(&host->data_sem, 0, 1);
 
     dev_config->irq_config_func(dev);
-
-    /* Initialize eMMC protection if configured */
-    IF_ENABLED(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC, (emmc_protection_init();));
 
     return 0;
 }
@@ -968,6 +938,43 @@ int linkedsemi_sdhci_deinit(const struct device *dev)
 
     return 0;
 }
+
+#if defined(CONFIG_SHELL)
+static const char *const sdhci_err_names[] = { SDHCI_ERR_NAMES };
+
+#define SDHC_SHELL_DEV(n) DEVICE_DT_INST_GET(n),
+
+static const struct device *const sdhc_instances[] = {
+    DT_INST_FOREACH_STATUS_OKAY(SDHC_SHELL_DEV)
+};
+
+static int cmd_sdhc_errors(const struct shell *sh, size_t argc, char **argv)
+{
+    ARG_UNUSED(argc); ARG_UNUSED(argv);
+
+    for (size_t idx = 0; idx < ARRAY_SIZE(sdhc_instances); idx++) {
+        const struct device *dev = sdhc_instances[idx];
+        struct linkedsemi_sdhci_data *data = dev->data;
+        struct sdhci_host *host = &data->host;
+        uint32_t total = 0;
+
+        shell_print(sh, "SDHCI error counters (%s):", dev->name);
+        for (int i = 0; i < 16; i++) {
+            uint32_t c = host->err_counters[i];
+            total += c;
+            if (sdhci_err_names[i][0] != '\0') {
+                shell_print(sh, "  %-14s  %u", sdhci_err_names[i], c);
+            }
+        }
+        shell_print(sh, "  %-14s  %u", "TOTAL", total);
+    }
+    return 0;
+}
+
+SHELL_CMD_REGISTER(sdhc_errors, NULL,
+                   "Show SDHCI error counters for all instances",
+                   cmd_sdhc_errors);
+#endif
 
 static const struct sdhc_driver_api linkedsemi_sdhci_api = {
     .reset = linkedsemi_sdhci_reset,
