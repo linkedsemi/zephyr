@@ -195,10 +195,14 @@ static int linkedsemi_sdhci_set_io(const struct device *dev, struct sdhc_io *ios
 
     DEV_DBG(dev, "%s: sdhci_clk=%d, bus_width:%d", __func__, ios->clock, ios->bus_width);
 
-    if (ios->clock != 0
-        && (ios->clock <= dev_config->max_bus_freq)
-        && (ios->clock >= dev_config->min_bus_freq)) {
+    if ((0 == ios->clock)
+        || ((ios->clock <= dev_config->max_bus_freq)
+        && (ios->clock >= dev_config->min_bus_freq))) {
         mmc_clock_freq_change(host, ios->clock);
+    } else {
+        DEV_ERR(dev, "%s: unsupported clock %u Hz (min %u Hz, max %u Hz)", __func__, ios->clock,
+                dev_config->min_bus_freq, dev_config->max_bus_freq);
+        return -EINVAL;
     }
 
     /* Toggle card power supply */
