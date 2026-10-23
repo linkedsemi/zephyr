@@ -86,11 +86,21 @@
  * on the wire; changing them would break a paired image silently. New families
  * take their own cluster.
  */
-#define OTBN_DELEG_OP_ECDSA_GENKEY    0x11
-#define OTBN_DELEG_OP_ECDSA_SIGN      0x22
-#define OTBN_DELEG_OP_ECDSA_VERIFY    0x33
-#define OTBN_DELEG_OP_RSA_MODEXP_PUB  0x41
-#define OTBN_DELEG_OP_RSA_MODEXP_PRV  0x42
+#define OTBN_DELEG_OP_ECDSA_GENKEY    		0x11
+#define OTBN_DELEG_OP_ECDSA_SIGN      		0x22
+#define OTBN_DELEG_OP_ECDSA_VERIFY    		0x33
+/* Client-supplied randomness variants. The requesting core fills data[2] with
+ * the keygen seed (genkey_rng) or the signing nonce (sign_rng); the serving
+ * core feeds it to the local OTBN instead of using its own entropy. */
+#define OTBN_DELEG_OP_ECDSA_GENKEY_RNG 		0x12
+#define OTBN_DELEG_OP_ECDSA_SIGN_RNG   		0x24
+/* Sign with a key that stays in the serving core's slot table: the request
+ * carries a slot id instead of the private scalar. */
+#define OTBN_DELEG_OP_ECDSA_SIGN_SLOT 		0x23
+/* Slot variant with a client-supplied nonce: data[2] is nonce-in / r-out. */
+#define OTBN_DELEG_OP_ECDSA_SIGN_SLOT_RNG 	0x25
+#define OTBN_DELEG_OP_RSA_MODEXP_PUB  		0x41
+#define OTBN_DELEG_OP_RSA_MODEXP_PRV  		0x42
 
 /*
  * wolfSSL families take their own cluster. The wire contract mirrors the
@@ -182,10 +192,20 @@ struct otbn_deleg_op {
  */
 int otbn_deleg_ecdsa_genkey(const struct otbn_delegate_params *req,
 			    struct otbn_delegate_params *reply);
+int otbn_deleg_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
+				struct otbn_delegate_params *reply);
 int otbn_deleg_ecdsa_sign(const struct otbn_delegate_params *req,
 			  struct otbn_delegate_params *reply);
+int otbn_deleg_ecdsa_sign_rng(const struct otbn_delegate_params *req,
+			      struct otbn_delegate_params *reply);
 int otbn_deleg_ecdsa_verify(const struct otbn_delegate_params *req,
 			    struct otbn_delegate_params *reply);
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX)
+int otbn_deleg_ecdsa_sign_slot(const struct otbn_delegate_params *req,
+			       struct otbn_delegate_params *reply);
+int otbn_deleg_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
+				   struct otbn_delegate_params *reply);
+#endif
 int otbn_deleg_rsa_modexp_pub(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply);
 int otbn_deleg_rsa_modexp_prv(const struct otbn_delegate_params *req,

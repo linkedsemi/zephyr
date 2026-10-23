@@ -32,12 +32,15 @@ extern "C" {
  * \brief   Generate an ECDSA key pair on the peer core.
  *
  *          Same contract as mbedtls_ecdsa_genkey(): the key pair is written
- *          into \p ctx. \p f_rng and \p p_rng are ignored -- the peer core
- *          supplies its own entropy.
+ *          into \p ctx. If \p f_rng is non-NULL, this core generates the
+ *          key-generation seed and sends it to the peer; \p p_rng is passed
+ *          to it. If \p f_rng is NULL, the peer supplies its own entropy.
  *
  * \param ctx       Context to fill with the generated key pair.
  * \param gid       Curve: SECP256R1, SECP384R1 or SM2. Any other curve fails
  *                  with -EIO before anything is sent.
+ * \param f_rng     Optional seed source; NULL lets the peer choose.
+ * \param p_rng     Context for \p f_rng.
  *
  * \return          0 on success, the peer's MBEDTLS_ERR_* code if the peer
  *                  reported a failure, -EIO if the request could not be sent,
@@ -51,10 +54,13 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
  *
  *          Same contract as mbedtls_ecdsa_sign(): \p buf / \p blen is the hash,
  *          truncated to the curve size when longer, and the signature is
- *          written to \p r and \p s. \p f_rng and \p p_rng are ignored -- the
- *          peer core supplies the per-signature nonce. \p grp must be loaded
- *          with a supported curve and \p d must be a valid private key for it;
- *          an unsupported curve fails with -EIO rather than being forwarded.
+ *          written to \p r and \p s. If \p f_rng is non-NULL, this core
+ *          generates the per-signature nonce and sends it to the peer; the
+ *          callback must supply a CSPRNG and unique value per signature, and
+ *          \p p_rng is passed to it. If \p f_rng is NULL, the peer supplies
+ *          the nonce. \p grp must be loaded with a supported curve and \p d
+ *          must be a valid private key for it; an unsupported curve fails with
+ *          -EIO rather than being forwarded.
  *
  * \return          0 on success, otherwise the peer's MBEDTLS_ERR_* code, -EIO
  *                  or -ETIMEDOUT as described above.
