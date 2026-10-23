@@ -87,6 +87,30 @@ config MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_SERVER
 	select MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
 	select LS_OTBN_DELEGATION_SERVER
 
+config MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX
+	bool "ECDSA signing by private-key slot (key stays on the serving core)"
+	depends on MBEDTLS
+	depends on MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+	depends on LS_OTBN_DELEGATION_CLIENT || LS_OTBN_DELEGATION_SERVER
+	default n
+	help
+	  Build the slot-based ECDSA signing path. On the requesting core it
+	  adds mbedtls_ls_otbn_ecdsa_sign_slot(), which sends only a slot id
+	  and the hash; on the serving core it adds
+	  ls_otbn_ecdsa_key_slot_register()/_unregister() and keeps the
+	  borrowed key pointers in a local table. Enable the same switch on
+	  both images.
+
+config LS_OTBN_ECDSA_SLOT_MBOX_COUNT
+	int "Number of ECDSA private-key slots on the serving core"
+	depends on MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX
+	depends on LS_OTBN_DELEGATION_SERVER
+	default 4
+	range 1 16
+	help
+	  Size of the private-key slot table. Slot ids passed over the
+	  delegation channel must be in [0, value - 1].
+
 config MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT
 	bool "LINKEDSEMI's hardware sha384 and sha512"
 	default n

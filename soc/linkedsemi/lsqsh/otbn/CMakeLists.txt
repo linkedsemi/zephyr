@@ -13,6 +13,9 @@ zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
                             mbedtls/mbedtls_otbn_ecdsa_mbox.c
                             mbedtls/mbedtls_otbn_rsa_mbox.c
                             )
+zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX
+                            mbedtls/mbedtls_otbn_ecdsa_slot_mbox.c
+                            )
 endif()
 
 # The delegation bus is crypto-library agnostic -- it must be built whenever

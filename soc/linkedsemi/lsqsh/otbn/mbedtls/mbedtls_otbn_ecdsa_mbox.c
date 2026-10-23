@@ -19,6 +19,7 @@
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ecdsa_alt.h"
 #include "mbedtls/ecp.h"
+#include "mbedtls/platform_util.h"
 
 #include "otbn_delegation.h"
 #include "mbedtls_otbn_ecdsa_mbox.h"
@@ -83,6 +84,7 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 	size_t n_size = ecdsa_curve_size(gid);
 	__attribute__((aligned(32))) uint8_t public_key[MAX_OTBN_CURVE_LEN * 2];
 	__attribute__((aligned(32))) uint8_t private_key[MAX_OTBN_CURVE_LEN];
+	__attribute__((aligned(32))) uint8_t seed[MAX_OTBN_CURVE_LEN];
 	struct otbn_delegate_params req = {0};
 	const struct otbn_delegate_params *rpy;
 
@@ -90,11 +92,6 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 	if (n_size == 0) {
 		return -EIO;
 	}
-	/* f_rng/p_rng are unused: the peer generates the key pair and supplies its
-	 * own entropy. Kept in the signature so this is a drop-in for
-	 * mbedtls_ecdsa_genkey(). */
-	ARG_UNUSED(f_rng);
-	ARG_UNUSED(p_rng);
 
 	/* mbedtls_ecdsa_genkey() loads the group and callers rely on ctx->grp
 	 * afterwards (mbedtls_ecp_check_pubkey(), point export). Keep that. */
@@ -103,13 +100,30 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 		return err;
 	}
 
+	/* With a caller RNG the seed is generated here and carried to the peer;
+	 * without one the peer supplies its own entropy. */
+	if (f_rng != NULL) {
+		err = f_rng(p_rng, seed, n_size);
+		if (err != 0) {
+			return err;
+		}
+		otbn_deleg_cache_flush(seed, MAX_OTBN_CURVE_LEN);
+	} else {
+		ARG_UNUSED(p_rng);
+	}
+
 	otbn_deleg_cache_flush(private_key, MAX_OTBN_CURVE_LEN);
 	otbn_deleg_cache_flush(public_key, MAX_OTBN_CURVE_LEN * 2);
 
-	req.op = OTBN_DELEG_OP_ECDSA_GENKEY;
 	req.arg[0] = (uint32_t)gid;
 	req.data[0] = private_key;
 	req.data[1] = public_key;
+	if (f_rng != NULL) {
+		req.op = OTBN_DELEG_OP_ECDSA_GENKEY_RNG;
+		req.data[2] = seed;
+	} else {
+		req.op = OTBN_DELEG_OP_ECDSA_GENKEY;
+	}
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err) {
@@ -158,23 +172,40 @@ int mbedtls_ls_otbn_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_m
 	}
 	buf_len = blen > n_size ? n_size : blen;
 
-	/* The peer supplies the per-signature nonce. */
-	ARG_UNUSED(f_rng);
-	ARG_UNUSED(p_rng);
-
 	memcpy(user_buf, buf, buf_len);
 	ECDSA_MPI_WRITE(d, private_key, n_size);
 
+	/* With a caller RNG the nonce is generated here; r_buf doubles as the
+	 * nonce input and the r output. Without one the peer supplies the nonce. */
+	if (f_rng != NULL) {
+		err = f_rng(p_rng, r_buf, n_size);
+		if (err != 0) {
+			return err;
+		}
+		otbn_deleg_cache_flush(r_buf, MAX_OTBN_CURVE_LEN);
+	} else {
+		ARG_UNUSED(p_rng);
+	}
+
 	otbn_deleg_cache_flush(private_key, MAX_OTBN_CURVE_LEN);
 	otbn_deleg_cache_flush(user_buf, MAX_OTBN_CURVE_LEN);
+	/* r/s are outputs. Clean any dirty stack line before the peer writes them;
+	 * otherwise an eviction while this call waits could write stale data back
+	 * over the peer's result. */
+	otbn_deleg_cache_flush(r_buf, MAX_OTBN_CURVE_LEN);
+	otbn_deleg_cache_flush(s_buf, MAX_OTBN_CURVE_LEN);
 
-	req.op = OTBN_DELEG_OP_ECDSA_SIGN;
 	req.arg[0] = (uint32_t)grp->id;
 	req.arg[1] = (uint32_t)buf_len;
 	req.data[0] = private_key;
 	req.data[1] = user_buf;
 	req.data[2] = r_buf;
 	req.data[3] = s_buf;
+	if (f_rng != NULL) {
+		req.op = OTBN_DELEG_OP_ECDSA_SIGN_RNG;
+	} else {
+		req.op = OTBN_DELEG_OP_ECDSA_SIGN;
+	}
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err) {
@@ -292,6 +323,28 @@ static int ecdsa_server_get_random(void *unused, unsigned char *buf, size_t size
 	return entropy_get_entropy(otbn_deleg_trng, buf, size);
 }
 
+/* One-shot RNG: serves the client-supplied seed/nonce exactly once. The OTBN
+ * alt ignores the f_rng return value, so the handler also checks `used` after
+ * the operation. */
+struct otbn_deleg_rng_once {
+	const uint8_t *bytes;
+	size_t size;
+	bool used;
+};
+
+static int otbn_deleg_rng_once(void *ctx, unsigned char *buf, size_t size)
+{
+	struct otbn_deleg_rng_once *rng = ctx;
+
+	if (rng->used || size != rng->size) {
+		memset(buf, 0, size);
+		return MBEDTLS_ERR_ECP_RANDOM_FAILED;
+	}
+	memcpy(buf, rng->bytes, size);
+	rng->used = true;
+	return 0;
+}
+
 static bool ecdsa_curve_supported(mbedtls_ecp_group_id gid)
 {
 	return gid == MBEDTLS_ECP_DP_SECP384R1 || gid == MBEDTLS_ECP_DP_SECP256R1 ||
@@ -407,6 +460,126 @@ int otbn_deleg_ecdsa_sign(const struct otbn_delegate_params *req,
 	LOG_HEXDUMP_DBG(req->data[3], curve_size, "sign s_buf");
 
 out:
+	ecdsa_ctx_free(&ctx, &r, &s);
+	return err;
+}
+
+int otbn_deleg_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
+				struct otbn_delegate_params *reply)
+{
+	mbedtls_ecdsa_context ctx;
+	mbedtls_mpi r, s;
+	mbedtls_ecp_group_id gid = (mbedtls_ecp_group_id)req->arg[0];
+	__attribute__((aligned(32))) uint8_t seed_buf[MAX_OTBN_CURVE_LEN];
+	struct otbn_deleg_rng_once rng;
+	uint8_t curve_size;
+	int err;
+
+	if (!ecdsa_curve_supported(gid)) {
+		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
+		return -EOPNOTSUPP;
+	}
+	if (req->data[2] == NULL) {
+		return -EINVAL;
+	}
+
+	ecdsa_ctx_init(&ctx, &r, &s);
+	err = mbedtls_ecp_group_load(&ctx.private_grp, gid);
+	if (err) {
+		goto out;
+	}
+	curve_size = (ctx.private_grp.nbits + 7) / 8;
+
+	otbn_deleg_cache_invd(req->data[0], MAX_OTBN_CURVE_LEN);
+	otbn_deleg_cache_invd(req->data[1], MAX_OTBN_CURVE_LEN * 2);
+	otbn_deleg_cache_invd(req->data[2], curve_size);
+	memcpy(seed_buf, req->data[2], curve_size);
+	rng.bytes = seed_buf;
+	rng.size = curve_size;
+	rng.used = false;
+
+	err = mbedtls_ecdsa_genkey(&ctx, gid, otbn_deleg_rng_once, &rng);
+	if (err == 0 && !rng.used) {
+		err = MBEDTLS_ERR_ECP_RANDOM_FAILED;
+	}
+	if (err) {
+		goto out;
+	}
+
+	mbedtls_mpi_write_binary_le(&ctx.private_d, req->data[0], curve_size);
+	mbedtls_mpi_write_binary_le(&ctx.private_Q.private_X, req->data[1], curve_size);
+	mbedtls_mpi_write_binary_le(&ctx.private_Q.private_Y, req->data[1] + curve_size, curve_size);
+	otbn_deleg_cache_flush(req->data[0], MAX_OTBN_CURVE_LEN);
+	otbn_deleg_cache_flush(req->data[1], MAX_OTBN_CURVE_LEN * 2);
+	reply->data[0] = req->data[0];
+	reply->data[1] = req->data[1];
+
+	LOG_HEXDUMP_DBG(req->data[0], curve_size, "private key");
+	LOG_HEXDUMP_DBG(req->data[1], curve_size * 2, "public_x key");
+
+out:
+	mbedtls_platform_zeroize(seed_buf, sizeof(seed_buf));
+	ecdsa_ctx_free(&ctx, &r, &s);
+	return err;
+}
+
+int otbn_deleg_ecdsa_sign_rng(const struct otbn_delegate_params *req,
+			      struct otbn_delegate_params *reply)
+{
+	mbedtls_ecdsa_context ctx;
+	mbedtls_mpi r, s;
+	mbedtls_ecp_group_id gid = (mbedtls_ecp_group_id)req->arg[0];
+	__attribute__((aligned(32))) uint8_t nonce_buf[MAX_OTBN_CURVE_LEN];
+	struct otbn_deleg_rng_once rng;
+	uint8_t curve_size;
+	int err;
+
+	if (!ecdsa_curve_supported(gid)) {
+		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
+		return -EOPNOTSUPP;
+	}
+	if (req->data[2] == NULL) {
+		return -EINVAL;
+	}
+
+	ecdsa_ctx_init(&ctx, &r, &s);
+	err = mbedtls_ecp_group_load(&ctx.private_grp, gid);
+	if (err) {
+		goto out;
+	}
+	curve_size = (ctx.private_grp.nbits + 7) / 8;
+
+	otbn_deleg_cache_invd(req->data[0], curve_size);
+	otbn_deleg_cache_invd(req->data[1], req->arg[1]);
+	otbn_deleg_cache_invd(req->data[2], curve_size);
+	ECDSA_MPI_READ_S(err, &ctx.private_d, req->data[0], curve_size);
+	memcpy(nonce_buf, req->data[2], curve_size);
+	rng.bytes = nonce_buf;
+	rng.size = curve_size;
+	rng.used = false;
+
+	err = mbedtls_ecdsa_sign(&ctx.private_grp, &r, &s, &ctx.private_d,
+				 req->data[1], req->arg[1], otbn_deleg_rng_once, &rng);
+	if (err == 0 && !rng.used) {
+		err = MBEDTLS_ERR_ECP_RANDOM_FAILED;
+	}
+	if (err) {
+		goto out;
+	}
+
+	/* r overwrites the nonce in data[2]; the client reads it back. */
+	mbedtls_mpi_write_binary_le(&r, req->data[2], curve_size);
+	mbedtls_mpi_write_binary_le(&s, req->data[3], curve_size);
+	otbn_deleg_cache_flush(req->data[2], MAX_OTBN_CURVE_LEN);
+	otbn_deleg_cache_flush(req->data[3], MAX_OTBN_CURVE_LEN);
+	reply->data[2] = req->data[2];
+	reply->data[3] = req->data[3];
+
+	LOG_HEXDUMP_DBG(req->data[2], curve_size, "sign r_buf");
+	LOG_HEXDUMP_DBG(req->data[3], curve_size, "sign s_buf");
+
+out:
+	mbedtls_platform_zeroize(nonce_buf, sizeof(nonce_buf));
 	ecdsa_ctx_free(&ctx, &r, &s);
 	return err;
 }

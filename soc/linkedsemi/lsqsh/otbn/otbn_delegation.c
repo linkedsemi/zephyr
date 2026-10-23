@@ -180,8 +180,14 @@ K_MSGQ_DEFINE(otbn_deleg_msgq, sizeof(struct otbn_delegate_params), OTBN_DELEG_M
 static const struct otbn_deleg_op deleg_ops[] = {
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION)
 	{ OTBN_DELEG_OP_ECDSA_GENKEY,   otbn_deleg_ecdsa_genkey },
+	{ OTBN_DELEG_OP_ECDSA_GENKEY_RNG, otbn_deleg_ecdsa_genkey_rng },
 	{ OTBN_DELEG_OP_ECDSA_SIGN,     otbn_deleg_ecdsa_sign },
+	{ OTBN_DELEG_OP_ECDSA_SIGN_RNG, otbn_deleg_ecdsa_sign_rng },
 	{ OTBN_DELEG_OP_ECDSA_VERIFY,   otbn_deleg_ecdsa_verify },
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX)
+	{ OTBN_DELEG_OP_ECDSA_SIGN_SLOT, otbn_deleg_ecdsa_sign_slot },
+	{ OTBN_DELEG_OP_ECDSA_SIGN_SLOT_RNG, otbn_deleg_ecdsa_sign_slot_rng },
+#endif
 	{ OTBN_DELEG_OP_RSA_MODEXP_PUB, otbn_deleg_rsa_modexp_pub },
 	{ OTBN_DELEG_OP_RSA_MODEXP_PRV, otbn_deleg_rsa_modexp_prv },
 #endif
