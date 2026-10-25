@@ -527,6 +527,7 @@ static int dwmac_set_config(const struct device *dev,
 			    enum ethernet_config_type type,
 			    const struct ethernet_config *config)
 {
+	const struct eth_linkedsemi_config *dev_config = dev->config;
 	struct dwmac_priv *p = dev->data;
 	uint32_t reg_val;
 	int ret = 0;
@@ -557,6 +558,32 @@ static int dwmac_set_config(const struct device *dev,
 		}
 		break;
 #endif
+
+	case ETHERNET_CONFIG_TYPE_FILTER:
+		/*
+		 * ARP storm mitigation via DBF (Disable Broadcast Frames).
+		 *
+		 * MAC_PKT_FILTER.DBF (Bit 5):
+		 *   DBF=1 → hardware drops ALL broadcast frames
+		 *   DBF=0 → normal broadcast reception
+		 *   Unicast traffic (TCP/SSH/ICMP) is completely unaffected.
+		 */
+		reg_val = REG_READ(MAC_PKT_FILTER);
+		if (config->filter.set) {
+			reg_val |= MAC_PKT_FILTER_DBF;
+		} else {
+			reg_val &= ~MAC_PKT_FILTER_DBF;
+		}
+		REG_WRITE(MAC_PKT_FILTER, reg_val);
+		barrier_dsync_fence_full();
+		{
+			uint32_t readback = REG_READ(MAC_PKT_FILTER);
+
+			LOG_DBG("MAC_PKT_FILTER=0x%08x DBF=%u",
+				readback,
+				(readback & MAC_PKT_FILTER_DBF) ? 1 : 0);
+		}
+		break;
 
 	default:
 		ret = -ENOTSUP;
@@ -666,6 +693,13 @@ static void dwmac_iface_init(struct net_if *iface)
 	p->iface = iface;
 
 	ethernet_init(iface);
+
+	if (!device_is_ready(dev)) {
+		net_if_carrier_off(iface);
+		LOG_ERR("dwmac_iface_init exit due to device is not ready!");
+		return;
+	}
+
 	net_link_state_detect(dev, iface);
 
 	net_if_set_link_addr(iface, p->mac_addr, sizeof(p->mac_addr),
@@ -761,7 +795,8 @@ int dwmac_probe(const struct device *dev)
 	memset(dev_config->tx_descs, 0, NB_TX_DESCS * sizeof(struct dwmac_dma_desc));
 	memset(dev_config->rx_descs, 0, NB_RX_DESCS * sizeof(struct dwmac_dma_desc));
 
-	REG_WRITE(MTL_TXQn_OPERATION_MODE(0), MTL_TSF);
+	REG_WRITE(MTL_TXQn_OPERATION_MODE(0), MTL_OP_MODE_TSF);
+	REG_WRITE(MTL_RXQn_OPERATION_MODE(0), MTL_OP_MODE_RSF);
 	/* set up DMA */
 	REG_WRITE(DMA_CHn_TX_CTRL(0), 0);
 	REG_WRITE(DMA_CHn_RX_CTRL(0),

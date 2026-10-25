@@ -814,7 +814,8 @@ extern const struct ethernet_api dwmac_api;
 /* 17.3.1, 17.4.1 */
 
 #define MTL_TXQn_OPERATION_MODE(n)		(0x0d00 + 0x40 * (n))
-#define MTL_TSF			BIT(1)
+
+#define MTL_OP_MODE_TSF				BIT(1)
 
 /* 17.3.2, 17.4.2 */
 
@@ -855,6 +856,8 @@ extern const struct ethernet_api dwmac_api;
 /* 17.3.7, 17.4.11 */
 
 #define MTL_RXQn_OPERATION_MODE(n)		(0x0d30 + 0x40 * (n))
+
+#define MTL_OP_MODE_RSF				BIT(5)
 
 /* 17.3.8, 17.4.12 */
 
