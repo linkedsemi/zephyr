@@ -44,6 +44,8 @@ LOG_MODULE_REGISTER(udc_ls_fs, LOG_LEVEL_WRN);
 #define MUSB_RXCSR_P_WZC_BITS   \
     (USB_RXCSRL1_STALLED | USB_RXCSRL1_OVER | USB_RXCSRL1_RXRDY)
 
+#define MUSB_POWER_ENSUSPEND   0x01    /* Enable Suspend (POWER.D0) */
+
 typedef enum {
     USB_EP0_STAGE_SETUP,        /* received SETUP */
     USB_EP0_STAGE_TX,           /* IN data */
@@ -104,6 +106,7 @@ struct udc_ls_data
     struct udc_ep_item *ep_tx;
     linked_async_inst_t async_list;
     ep0_state_t ep0_state;
+    bool connected;
     struct k_thread thread;
     struct usb_setup_packet setup;
     bool is_set_addr;
@@ -180,18 +183,37 @@ static int udc_ls_unlock(const struct device *dev)
     return udc_unlock_internal(dev);
 }
 
+static void udc_ls_soft_disconnect(const struct device *dev)
+{
+    const struct udc_ls_config *usb_cfg = dev->config;
+
+    if (!usb_cfg->dp.port) {
+        return;
+    }
+
+    pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_PRIV_START);
+    gpio_pin_set_dt(&usb_cfg->dp, 0);
+}
+
+static void udc_ls_soft_connect(const struct device *dev)
+{
+    const struct udc_ls_config *usb_cfg = dev->config;
+
+    if (!usb_cfg->dp.port) {
+        return;
+    }
+
+    gpio_pin_set_dt(&usb_cfg->dp, 1);
+    pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_DEFAULT);
+}
+
 static int udc_ls_init(const struct device *dev)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     const struct udc_ls_config *usb_cfg = dev->config;
     reg_usb_t *usb_reg = usb_data->usb_instance;
 
-#ifdef CONFIG_SOC_LSQSH
-    pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_PRIV_START);
-    gpio_pin_set_dt(&usb_cfg->dp, 0);
-    k_usleep(50);
-    gpio_pin_set_dt(&usb_cfg->dp, 1);
-#endif
+    udc_ls_soft_disconnect(dev);
 
 #if defined(CONFIG_CLOCK_CONTROL)
     if (usb_cfg->ccfg.cctl_dev)
@@ -232,13 +254,8 @@ static int udc_ls_init(const struct device *dev)
     }
 #endif
 
-#if defined(CONFIG_PINCTRL)
-    if (pinctrl_apply_state(usb_cfg->pcfg, PINCTRL_STATE_DEFAULT) < 0) {
-        LOG_DBG("%s: Could not configure pins", dev->name);
-    }
 #ifdef CONFIG_SOC_LS1010
-    PD00_PD01_PowerOn();
-#endif
+        PD00_PD01_PowerOn();
 #endif
 
     for (uint8_t i = 1; i < usb_cfg->num_endpoints; ++i)
@@ -251,9 +268,6 @@ static int udc_ls_init(const struct device *dev)
     }
     k_sem_init(&usb_data->out_buf_valid, 0, 1);
     k_sem_init(&usb_data->send_stall, 0, 1);
-
-    k_msgq_init(&usb_data->msgq, (char *)usb_data->msgq_buf, sizeof(struct ls_event), USB_MSGQ_LENGTH);
-    usb_cfg->make_thread(dev);
 
     return 0;
 }
@@ -272,28 +286,66 @@ static int udc_ls_enable(const struct device *dev)
     }
 
     usb_reg->IE |= USB_IE_SUSPND;
-    usb_reg->POWER |= USB_POWER_SOFTCONN;
     usb_reg->FADDR = 0;
+    usb_data->connected = true;
     usb_cfg->irq_connect(dev);
+
+    udc_ls_soft_connect(dev);
 
     return 0;
 }
 
-static int udc_ls_disable(const struct device *dev)
+static void udc_ls_async_flush(const struct device *dev)
+{
+    struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
+
+    while (!co_list_is_empty(&usb_data->async_list.list)) {
+        struct co_list_hdr *hdr = linked_async_list_pop(&usb_data->async_list);
+        struct udc_ep_item *item = (struct udc_ep_item *)hdr;
+        udc_ep_set_busy(dev, USB_EP_DIR_IN | item->ep_index, false);
+        item->buf = NULL;
+    }
+}
+
+static void udc_ls_quiesce(const struct device *dev)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     const struct udc_ls_config *usb_cfg = dev->config;
-    reg_usb_t *usb_reg = usb_data->usb_instance;
 
-    if (udc_ep_disable_internal(dev, USB_CONTROL_EP_OUT) || udc_ep_disable_internal(dev, USB_CONTROL_EP_IN))
-    {
-        LOG_ERR("Failed to disable control endpoint");
-        return -EIO;
-    }
-    usb_reg->POWER &= ~USB_POWER_SOFTCONN;
     usb_cfg->irq_disconnect(dev);
+    // clear irq pending bit
+    usb_data->usb_instance->IS;
+    usb_data->usb_instance->TXIS;
+    usb_data->usb_instance->RXIS;
 
-    return 0;
+    usb_data->connected = false;
+    k_sem_give(&usb_data->out_buf_valid);
+
+    usb_data->ep0_state = USB_EP0_STAGE_SETUP;
+    usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
+    usb_data->addr = 0;
+    usb_data->is_set_addr = false;
+    k_msgq_purge(&usb_data->msgq);
+}
+
+static int udc_ls_disable(const struct device *dev)
+{
+    int ret = 0;
+
+    /* 1. quiesce usb controller */
+    udc_ls_quiesce(dev);
+    /* 2. soft disconnect */
+    udc_ls_soft_disconnect(dev);
+    /* 3. flush async transactions */
+    udc_ls_async_flush(dev);
+
+    if (udc_ep_disable_internal(dev, USB_CONTROL_EP_OUT) ||
+        udc_ep_disable_internal(dev, USB_CONTROL_EP_IN)) {
+        LOG_ERR("Failed to disable control endpoint");
+        ret = -EIO;
+    }
+
+    return ret;
 }
 
 static int udc_ls_tx(const struct device *dev, uint8_t ep_index,
@@ -372,7 +424,7 @@ static int udc_ls_enqueue(const struct device *dev, struct udc_ep_config *const 
         if (USB_EP_DIR_IS_IN(cfg->addr))
         {
             if (udc_ep_is_busy(dev, cfg->addr))
-                return 0;
+                return -EBUSY;
             udc_buf_put(cfg, buf);
             udc_ep_set_busy(dev, cfg->addr, true);
             usb_data->ep_tx[USB_EP_GET_IDX(cfg->addr)].buf = buf;
@@ -485,13 +537,24 @@ static int udc_ls_ep_clear_halt(const struct device *dev, struct udc_ep_config *
     return 0;
 }
 
-
 static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *const cfg)
 {
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     uint8_t ep_index = USB_EP_GET_IDX(cfg->addr);
     reg_usb_t *usb_reg = usb_data->usb_instance;
     musb_set_active_ep(usb_reg, ep_index);
+
+    if (ep_index == 0) {
+        usb_reg->CSRL0 = USB_CSRL0_RXRDYC | USB_CSRL0_SETENDC;
+        usb_reg->CSRH0 = USB_CSRH0_FLUSH;
+        usb_reg->TXIE &= ~USB_TXIE_EP0;
+
+        struct net_buf *buf = udc_buf_get_all(dev, cfg->addr);
+        if (buf) {
+            net_buf_unref(buf);
+        }
+        return 0;
+    }
 
     if (USB_EP_DIR_IS_IN(cfg->addr))
     {
@@ -504,7 +567,6 @@ static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *con
             usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
         usb_reg->TXFIFO_SIZE[0]  = 0;
         usb_reg->TXFIFO_SIZE[1]  = 0;
-        usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
     }
     else
     {
@@ -517,15 +579,7 @@ static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *con
             usb_reg->RXCSRL = USB_RXCSRL1_CLRDT;
         usb_reg->RXFIFO_SIZE[0]  = 0;
         usb_reg->RXFIFO_SIZE[1]  = 0;
-    }
-
-    if (cfg->addr == USB_CONTROL_EP_OUT)
-    {
-        struct net_buf *buf = udc_buf_get_all(dev, cfg->addr);
-        if (buf)
-        {
-            net_buf_unref(buf);
-        }
+        usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
     }
 
     return 0;
@@ -538,6 +592,13 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
     reg_usb_t *usb_reg = usb_data->usb_instance;
     musb_set_active_ep(usb_reg, ep_index);
 
+    if (ep_index == 0) {
+        usb_reg->CSRL0 = USB_CSRL0_RXRDYC | USB_CSRL0_SETENDC;
+        usb_reg->CSRH0 = USB_CSRH0_FLUSH;
+        usb_reg->TXIE |= USB_TXIE_EP0;
+        return 0;
+    }
+
     if (USB_EP_DIR_IS_IN(cfg->addr))
     {
         usb_reg->TXMAXP = cfg->mps;
@@ -547,6 +608,9 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
         else
             usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
         usb_reg->TXIE |= BIT(ep_index);
+
+        usb_reg->TXFIFO_SIZE[0] = USB_TX_BUF_ADDR;
+        usb_reg->TXFIFO_SIZE[1] = USB_TX_FIFO_SZ << USB_TX_FIFO_SIZE_POS; // 32bytes
     }
     else
     {
@@ -557,42 +621,31 @@ static int udc_ls_ep_enable(const struct device *dev, struct udc_ep_config *cons
         else
             usb_reg->RXCSRL = USB_RXCSRL1_CLRDT;
         usb_reg->RXIE |= BIT(ep_index);
-    }
 
-    if (ep_index)
-    {
-        if (USB_EP_DIR_IS_IN(cfg->addr)) 
+        usb_reg->RXFIFO_SIZE[0] = usb_data->rx_fifo_addr;
+        switch(cfg->mps)
         {
-            usb_reg->TXFIFO_SIZE[0] = USB_TX_BUF_ADDR;
-            usb_reg->TXFIFO_SIZE[1] = USB_TX_FIFO_SZ << USB_TX_FIFO_SIZE_POS; // 32bytes
+        case 8:
+            usb_reg->RXFIFO_SIZE[1] = 0 << USB_RX_FIFO_SIZE_POS;
+            usb_data->rx_fifo_addr += 1;
+        break;
+        case 16:
+            usb_reg->RXFIFO_SIZE[1] = 1 << USB_RX_FIFO_SIZE_POS;
+            usb_data->rx_fifo_addr += 2;
+        break;
+        case 32:
+            usb_reg->RXFIFO_SIZE[1] = 2 << USB_RX_FIFO_SIZE_POS;
+            usb_data->rx_fifo_addr += 4;
+        break;
+        case 64:
+            usb_reg->RXFIFO_SIZE[1] = 3 << USB_RX_FIFO_SIZE_POS;
+            usb_data->rx_fifo_addr += 8;
+        break;
+        default:
+            __ASSERT(0, "no enough fifo");
+        break;
         }
-        else
-        {
-            usb_reg->RXFIFO_SIZE[0] = usb_data->rx_fifo_addr;
-            switch(cfg->mps)
-            {
-            case 8:
-                usb_reg->RXFIFO_SIZE[1] = 0 << USB_RX_FIFO_SIZE_POS;
-                usb_data->rx_fifo_addr += 1;
-            break;
-            case 16:
-                usb_reg->RXFIFO_SIZE[1] = 1 << USB_RX_FIFO_SIZE_POS;
-                usb_data->rx_fifo_addr += 2;
-            break;
-            case 32:
-                usb_reg->RXFIFO_SIZE[1] = 2 << USB_RX_FIFO_SIZE_POS;
-                usb_data->rx_fifo_addr += 4;
-            break;
-            case 64:
-                usb_reg->RXFIFO_SIZE[1] = 3 << USB_RX_FIFO_SIZE_POS;
-                usb_data->rx_fifo_addr += 8;
-            break;
-            default:
-                __ASSERT(0, "no enough fifo");
-            break;
-            }
-            __ASSERT(usb_data->rx_fifo_addr <= 16, "no enough fifo");
-        }
+        __ASSERT(usb_data->rx_fifo_addr <= 16, "no enough fifo");
     }
 
     return 0;
@@ -603,9 +656,10 @@ static int udc_ls_shutdown(const struct device *dev)
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     const struct udc_ls_config *usb_cfg = dev->config;
 
-    usb_data->usb_instance->POWER |= USB_POWER_PWRDNPHY;
+    udc_ls_quiesce(dev);
+
     usb_data->usb_instance->TXIE = 1;
-    usb_data->usb_instance->RXIE = 0; 
+    usb_data->usb_instance->RXIE = 0;
 
     for (uint8_t i = 1; i < usb_cfg->num_endpoints; ++i)
     {
@@ -615,6 +669,13 @@ static int udc_ls_shutdown(const struct device *dev)
         usb_data->usb_instance->RXFIFO_SIZE[0] = 0;
         usb_data->usb_instance->RXFIFO_SIZE[1] = 0;
     }
+
+#if defined(CONFIG_CLOCK_CONTROL)
+    if (usb_cfg->ccfg.cctl_dev)
+    {
+        clock_control_off(usb_cfg->ccfg.cctl_dev, (clock_control_subsys_t)&usb_cfg->ccfg);
+    }
+#endif
 
     return 0;
 }
@@ -834,13 +895,21 @@ static void ls_handle_evt_in_zlp(const struct device *dev, uint8_t ep)
 
 static void ls_handle_evt_out_xfer(const struct device *dev, uint8_t ep)
 {
-    /* wait out buffer valid */
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     struct net_buf *buf = udc_buf_peek(dev, ep);
 
-    while (buf == NULL) {
-        k_sem_take(&usb_data->out_buf_valid, K_FOREVER);
-        buf = udc_buf_peek(dev, ep);
+    if (buf == NULL) {
+        udc_unlock_internal(dev);
+        do {
+            /* wait upper layer prepare rx buffer */
+            k_sem_take(&usb_data->out_buf_valid, K_FOREVER);
+            buf = udc_buf_peek(dev, ep);
+        } while (buf == NULL && usb_data->connected);
+        udc_lock_internal(dev, K_FOREVER);
+
+        /* check soft disconnect */
+        if (!usb_data->connected)
+            return;
     }
 
     udc_ls_rx(dev, ep, buf);
@@ -853,7 +922,17 @@ static void udc_ls_thread_handler(void *dev)
 
     while (1)
     {
-        k_msgq_get(&usb_data->msgq, &evt, K_FOREVER);
+        if (k_msgq_get(&usb_data->msgq, &evt, K_FOREVER) != 0) {
+            continue;
+        }
+
+        udc_lock_internal(dev, K_FOREVER);
+
+        if (!usb_data->connected) {
+            udc_unlock_internal(dev);
+            continue;
+        }
+
         switch (evt.type)
         {
             case LS_EVT_EP0_XFER:
@@ -874,6 +953,8 @@ static void udc_ls_thread_handler(void *dev)
             default:
                 __ASSERT(0, "error");
         }
+
+        udc_unlock_internal(dev);
     }
 }
 
@@ -1095,6 +1176,10 @@ static void udc_ls_irq(const struct device *dev)
     reg_usb_t *usb_instance = usb_data->usb_instance;
     uint8_t old_ep = musb_get_active_ep(usb_data->usb_instance);
 
+    if (!usb_data->connected) {
+        return;
+    }
+
     is   = usb_instance->IS;
     txis = usb_instance->TXIS;
     rxis = usb_instance->RXIS;
@@ -1109,12 +1194,14 @@ static void udc_ls_irq(const struct device *dev)
     }
 
     if (is & USB_IS_RESET) {
-        usb_instance->POWER |= USB_POWER_PWRDNPHY;
+        usb_instance->POWER |= MUSB_POWER_ENSUSPEND;
         usb_data->ep0_state = USB_EP0_STAGE_SETUP;
+        usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
         udc_submit_event(dev, UDC_EVT_RESET, 0);
     }
 
     if (is & USB_IS_RESUME) {
+        udc_set_suspended(dev, false);
         udc_submit_event(dev, UDC_EVT_RESUME, 0);
     }
 
@@ -1155,6 +1242,8 @@ static int udc_ls_driver_preinit(const struct device *dev)
     struct udc_ep_config *ep_cfg_out = usb_data->ep_cfg_out;
     struct udc_ep_config *ep_cfg_in = usb_data->ep_cfg_in;
     int err;
+
+    udc_ls_soft_disconnect(dev);
 
     /* init udc data */
     data->caps.hs = 0;
@@ -1214,6 +1303,9 @@ static int udc_ls_driver_preinit(const struct device *dev)
         }
     }
     linked_async_init(&usb_data->async_list, async_tx_process, async_tx_end);
+
+    k_msgq_init(&usb_data->msgq, (char *)usb_data->msgq_buf, sizeof(struct ls_event), USB_MSGQ_LENGTH);
+    usb_cfg->make_thread(dev);
 
     return 0;
 }
