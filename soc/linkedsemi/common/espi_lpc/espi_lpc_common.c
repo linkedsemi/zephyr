@@ -36,7 +36,7 @@ bool iowr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint16_t addr,uin
 	return false;
 }
 
-bool memwr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,uint8_t *data)
+bool espi_lpc_memwr(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t size,uint8_t *data)
 {
 	sys_snode_t *ptr;
 	SYS_SLIST_FOR_EACH_NODE(&espi_lpc->peri_mem,ptr){
@@ -49,12 +49,12 @@ bool memwr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,ui
 	return false;
 }
 
-bool memrd_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,void *res)
+bool espi_lpc_memrd(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t size,void *buf)
 {
 	sys_snode_t *ptr;
 	SYS_SLIST_FOR_EACH_NODE(&espi_lpc->peri_mem,ptr){
 		struct peri_mem *mem = CONTAINER_OF(ptr,struct peri_mem,node);
-		if(mem->content->mem_read(mem->content,addr,size,res))
+		if(mem->content->mem_read(mem->content,addr,size,buf))
 		{
 			return true;
 		}

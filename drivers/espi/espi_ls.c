@@ -10,13 +10,13 @@
 #include "soc.h"
 
 #define ESPI_INTR_STT_DN_VW_MASK (ESPI_INTR_STT_DN_VWIR_P00_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P01_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P02_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P03_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P04_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P05_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P06_MASK|\
-                                    ESPI_INTR_STT_DN_VWIR_P07_MASK)
+									ESPI_INTR_STT_DN_VWIR_P01_MASK|\
+									ESPI_INTR_STT_DN_VWIR_P02_MASK|\
+									ESPI_INTR_STT_DN_VWIR_P03_MASK|\
+									ESPI_INTR_STT_DN_VWIR_P04_MASK|\
+									ESPI_INTR_STT_DN_VWIR_P05_MASK|\
+									ESPI_INTR_STT_DN_VWIR_P06_MASK|\
+									ESPI_INTR_STT_DN_VWIR_P07_MASK)
 
 LOG_MODULE_REGISTER(espi, CONFIG_ESPI_LOG_LEVEL);
 
@@ -27,27 +27,27 @@ static uint8_t pc_tx_buf[0x100];
 static uint8_t vw_tx_buf[0x100];
 static inline uint8_t *pc_rx_buf_get(const struct device *dev)
 {
-    return pc_rx_buf;
+	return pc_rx_buf;
 }
 
 static inline uint8_t *np_rx_buf_get(const struct device *dev)
 {
-    return np_rx_buf;
+	return np_rx_buf;
 }
 
 static inline uint8_t *pc_tx_buf_get(const struct device *dev)
 {
-    return pc_tx_buf;
+	return pc_tx_buf + 4;
 }
 
 static inline uint8_t *vw_tx_buf_get(const struct device *dev)
 {
-    return vw_tx_buf;
+	return vw_tx_buf;
 }
 
 static inline uint32_t espi_buf_addr_to_reg(const struct device *dev,uint8_t *addr)
 {
-    return (uint32_t)addr;
+	return (uint32_t)addr;
 }
 
 #else
@@ -59,32 +59,32 @@ static inline uint32_t espi_buf_addr_to_reg(const struct device *dev,uint8_t *ad
 
 static inline uint8_t *pc_rx_buf_get(const struct device *dev)
 {
-    const struct espi_lpc_ls_config *cfg = dev->config;
-    return (uint8_t *)cfg->reg + ESPI_PC_RX_BUF_OFFSET;
+	const struct espi_lpc_ls_config *cfg = dev->config;
+	return (uint8_t *)cfg->reg + ESPI_PC_RX_BUF_OFFSET;
 }
 
 static inline uint8_t *np_rx_buf_get(const struct device *dev)
 {
-    const struct espi_lpc_ls_config *cfg = dev->config;
-    return (uint8_t *)cfg->reg + ESPI_NP_RX_BUF_OFFSET;
+	const struct espi_lpc_ls_config *cfg = dev->config;
+	return (uint8_t *)cfg->reg + ESPI_NP_RX_BUF_OFFSET;
 }
 
 static inline uint8_t *pc_tx_buf_get(const struct device *dev)
 {
-    const struct espi_lpc_ls_config *cfg = dev->config;
-    return (uint8_t *)cfg->reg + ESPI_PC_TX_BUF_OFFSET;
+	const struct espi_lpc_ls_config *cfg = dev->config;
+	return (uint8_t *)cfg->reg + ESPI_PC_TX_BUF_OFFSET + 4;
 }
 
 static inline uint8_t *vw_tx_buf_get(const struct device *dev)
 {
-    const struct espi_lpc_ls_config *cfg = dev->config;
-    return (uint8_t *)cfg->reg + ESPI_VW_TX_BUF_OFFSET;
+	const struct espi_lpc_ls_config *cfg = dev->config;
+	return (uint8_t *)cfg->reg + ESPI_VW_TX_BUF_OFFSET;
 }
 
 static inline uint32_t espi_buf_addr_to_reg(const struct device *dev,uint8_t *addr)
 {
-    const struct espi_lpc_ls_config *cfg = dev->config;
-    return (uint32_t)addr - (uint32_t)cfg->reg;
+	const struct espi_lpc_ls_config *cfg = dev->config;
+	return (uint32_t)addr - (uint32_t)cfg->reg;
 }
 #endif
 
@@ -92,12 +92,12 @@ static void espi_vw_tx(const struct device *dev,uint8_t count,uint8_t idx,uint8_
 {
 	const struct espi_lpc_ls_config *cfg = dev->config;
 	struct espi_lpc_ls_data *data = dev->data;
-    reg_espi_t *reg = cfg->reg;
+	reg_espi_t *reg = cfg->reg;
 	va_list vargs;
 	uint32_t vw_first_word = val<<16|idx<<8|(count - 1);
 	uint8_t *vw_tx = vw_tx_buf_get(dev);
-    k_sem_take(&data->u.espi.vw_tx_sem,K_FOREVER);
-    reg->UP_VWIR_LEN_M1 = count*2;
+	k_sem_take(&data->u.espi.vw_tx_sem,K_FOREVER);
+	reg->UP_VWIR_LEN_M1 = count*2;
 	count--;
 	va_start(vargs,val);
 	if(count>0)
@@ -116,18 +116,10 @@ static void espi_vw_tx(const struct device *dev,uint8_t count,uint8_t idx,uint8_
 		*vw_tx++ = val;
 	}
 	va_end(vargs);
-    reg->UP_VWIR_DAT = vw_first_word;
-    reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK|ESPI_STATUS_SET_VWIRE_AVAIL_MASK;
+	reg->UP_VWIR_DAT = vw_first_word;
+	reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK|ESPI_STATUS_SET_VWIRE_AVAIL_MASK;
 }
 
-static void mem_io_rd_rsp_pkt_build(uint8_t len,uint32_t data,uint8_t *up_data_buf,uint32_t *up_first_word,uint16_t *up_len)
-{
-	*up_first_word = 0x0f| len<<16|(data & 0xff)<<24;
-	*up_len = 3+len;
-	up_data_buf[0] = data>>8;
-	up_data_buf[1] = data>>16;
-	up_data_buf[2] = data>>24;
-}
 
 #define ESPI_SEND_OOB_RST_ACK_TYPE -3
 #define ESPI_SEND_HOST_RST_ACK_TYPE -2
@@ -135,150 +127,196 @@ static void mem_io_rd_rsp_pkt_build(uint8_t len,uint32_t data,uint8_t *up_data_b
 #define ESPI_SEND_VW_TYPE_INT_BASE 0x0
 #define ESPI_SEND_VW_TYPE_OTHERS_BASE 0x200
 struct vw_tx_msg {
-    const struct device *dev;
-    int type;
+	const struct device *dev;
+	int type;
 };
 
 K_MSGQ_DEFINE(vw_tx_msgq,sizeof(struct vw_tx_msg),CONFIG_ESPI_VW_TX_MSG_MAX,4);
 
 static void vw_tx_msgq_put(const struct device *dev,int type)
 {
-    struct vw_tx_msg msg = {
-        .dev = dev,
-        .type = type,
-    };
-    int ret = k_msgq_put(&vw_tx_msgq,&msg,K_NO_WAIT);
-    if (ret != 0) {
-        LOG_ERR("vw_tx_msgq put failed, type=%d, ret=%d", type, ret);
-    }
+	struct vw_tx_msg msg = {
+		.dev = dev,
+		.type = type,
+	};
+	int ret = k_msgq_put(&vw_tx_msgq,&msg,K_NO_WAIT);
+	if (ret != 0) {
+		LOG_ERR("vw_tx_msgq put failed, type=%d, ret=%d", type, ret);
+	}
 }
 
 static void espi_send_oob_rst_ack(const struct device *dev)
 {
-    vw_tx_msgq_put(dev,ESPI_SEND_OOB_RST_ACK_TYPE);
+	vw_tx_msgq_put(dev,ESPI_SEND_OOB_RST_ACK_TYPE);
 }
 
 static void espi_send_host_rst_ack(const struct device *dev)
 {
-    vw_tx_msgq_put(dev,ESPI_SEND_HOST_RST_ACK_TYPE);
+	vw_tx_msgq_put(dev,ESPI_SEND_HOST_RST_ACK_TYPE);
 }
 
 static void espi_send_boot_done(const struct device *dev)
 {
-    vw_tx_msgq_put(dev,ESPI_SEND_BOOT_DONE_TYPE);
+	vw_tx_msgq_put(dev,ESPI_SEND_BOOT_DONE_TYPE);
 }
 
 static void espi_send_edge_irq(const struct device *dev,uint8_t idx)
 {
-    vw_tx_msgq_put(dev,idx);
+	vw_tx_msgq_put(dev,idx);
 }
 
 static void espi_reg_init(const struct device *dev)
 {
 	const struct espi_lpc_ls_config *const cfg = dev->config;
-    reg_espi_t *reg = cfg->reg;
-    reg->DW_NPST_ADR = espi_buf_addr_to_reg(dev,np_rx_buf_get(dev));
-    reg->DW_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_rx_buf_get(dev));
-    reg->UP_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_tx_buf_get(dev));
-    reg->UP_VWIR_ADR = espi_buf_addr_to_reg(dev,vw_tx_buf_get(dev));
-    reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
-                        |ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
+	reg_espi_t *reg = cfg->reg;
+	reg->DW_NPST_ADR = espi_buf_addr_to_reg(dev,np_rx_buf_get(dev));
+	reg->DW_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_rx_buf_get(dev));
+	reg->UP_PSTC_ADR = espi_buf_addr_to_reg(dev,pc_tx_buf_get(dev));
+	reg->UP_VWIR_ADR = espi_buf_addr_to_reg(dev,vw_tx_buf_get(dev));
+	reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK
+						|ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
 
-    reg->GEN_CFG = 0<<ESPI_GEN_CFG_IO_MODE_SUPP_POS|0<<ESPI_GEN_CFG_OP_FREQ_POS|0xf<<ESPI_GEN_CFG_CH_SUPP_POS;
-    reg->PER_CH0_CFG = 1<<ESPI_CH0_CFG_PER_MAX_PLOAD_SUPP_POS|ESPI_CH0_CFG_PER_CH_RDY_MASK;
-    reg->VWIR_CH1_CFG = 0x1f<<ESPI_CH1_CFG_VWIR_MAX_CNT_SUPP_POS|ESPI_CH1_CFG_VWIR_CH_RDY_MASK;
-    reg->OOB_CH2_CFG = 1<<ESPI_CH2_CFG_OOB_MAX_PLOAD_SUPP_POS|ESPI_CH2_CFG_OOB_CH_RDY_MASK;
-    reg->FLS_CH3_CFG = 3<<ESPI_CH3_CFG_FLS_SHARE_MODE_POS|1<<ESPI_CH3_CFG_FLS_MAX_PLOAD_SUPP_POS|ESPI_CH3_CFG_FLS_CH_RDY_MASK;
-    reg->STATUS_SET = ESPI_STATUS_ALERT_CLEAR_MASK|ESPI_STATUS_SET_VWIRE_FREE_MASK
-                        |ESPI_STATUS_SET_OOB_FREE_MASK|ESPI_STATUS_SET_NP_FREE_MASK
-                        |ESPI_STATUS_SET_PC_FREE_MASK|ESPI_STATUS_SET_FLASH_C_FREE_MASK
-                        |ESPI_STATUS_SET_FLASH_NP_FREE_MASK;
-    espi_send_boot_done(dev);
-    memset(cfg->h2b_vw_base,0,sizeof(*cfg->h2b_vw_base));
-    uint32_t vw_mask = 0;
-    volatile uint32_t *VW_IDX_CTRL = &reg->DN_VWIR_IDX_CTRL0;
-    for(int i=0;i<MS_VW_GROUP_SIZE;i++)
-    {
-        if(cfg->ms_vw_idx[i])
-        {
-            uint32_t shift = (i % 4) * 8;
+	reg->GEN_CFG = 0<<ESPI_GEN_CFG_IO_MODE_SUPP_POS|0<<ESPI_GEN_CFG_OP_FREQ_POS|0xf<<ESPI_GEN_CFG_CH_SUPP_POS;
+	reg->PER_CH0_CFG = 1<<ESPI_CH0_CFG_PER_MAX_PLOAD_SUPP_POS|ESPI_CH0_CFG_PER_CH_RDY_MASK;
+	reg->VWIR_CH1_CFG = 0x1f<<ESPI_CH1_CFG_VWIR_MAX_CNT_SUPP_POS|ESPI_CH1_CFG_VWIR_CH_RDY_MASK;
+	reg->OOB_CH2_CFG = 1<<ESPI_CH2_CFG_OOB_MAX_PLOAD_SUPP_POS|ESPI_CH2_CFG_OOB_CH_RDY_MASK;
+	reg->FLS_CH3_CFG = 3<<ESPI_CH3_CFG_FLS_SHARE_MODE_POS|1<<ESPI_CH3_CFG_FLS_MAX_PLOAD_SUPP_POS|ESPI_CH3_CFG_FLS_CH_RDY_MASK;
+	reg->STATUS_SET = ESPI_STATUS_ALERT_CLEAR_MASK|ESPI_STATUS_SET_VWIRE_FREE_MASK
+						|ESPI_STATUS_SET_OOB_FREE_MASK|ESPI_STATUS_SET_NP_FREE_MASK
+						|ESPI_STATUS_SET_PC_FREE_MASK|ESPI_STATUS_SET_FLASH_C_FREE_MASK
+						|ESPI_STATUS_SET_FLASH_NP_FREE_MASK;
+	espi_send_boot_done(dev);
+	memset(cfg->h2b_vw_base,0,sizeof(*cfg->h2b_vw_base));
+	uint32_t vw_mask = 0;
+	volatile uint32_t *VW_IDX_CTRL = &reg->DN_VWIR_IDX_CTRL0;
+	for(int i=0;i<MS_VW_GROUP_SIZE;i++)
+	{
+		if(cfg->ms_vw_idx[i])
+		{
+			uint32_t shift = (i % 4) * 8;
 
-            vw_mask |= 1 << (i + ESPI_INTR_STT_DN_VWIR_P00_POS);
-            MODIFY_REG(VW_IDX_CTRL[i / 4], 0xffU << shift,
-                (uint32_t)cfg->ms_vw_idx[i] << shift);
-	    }
-    }
-    reg->INTERRUPT_MASK = vw_mask|ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK
-                        |ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK|ESPI_INTR_STT_VWIR_AVAL_MASK
-                        |ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
+			vw_mask |= 1 << (i + ESPI_INTR_STT_DN_VWIR_P00_POS);
+			MODIFY_REG(VW_IDX_CTRL[i / 4], 0xffU << shift,
+				(uint32_t)cfg->ms_vw_idx[i] << shift);
+		}
+	}
+	reg->INTERRUPT_MASK = vw_mask|ESPI_INTR_STT_DN_CNFG_MASK|ESPI_INTR_STT_DN_REST_MASK
+						|ESPI_INTR_STT_PSTC_FREE_MASK|ESPI_INTR_STT_NPST_FREE_MASK|ESPI_INTR_STT_VWIR_AVAL_MASK
+						|ESPI_INTR_STT_DN_VWIR_02_MASK|ESPI_INTR_STT_DN_VWIR_03_MASK|ESPI_INTR_STT_DN_VWIR_07_MASK;
 }
 
 static int espi_reset(const struct device *dev)
 {
-    const struct espi_lpc_ls_config *dev_config = dev->config;
-    int ret = 0;
-    #if defined(CONFIG_RESET)
-    if (dev_config->reset.dev != NULL) {
-        if (!device_is_ready(dev_config->reset.dev)) {
-            LOG_ERR("Reset controller device is not ready");
-            return -ENODEV;
-        }
+	const struct espi_lpc_ls_config *dev_config = dev->config;
+	int ret = 0;
+	#if defined(CONFIG_RESET)
+	if (dev_config->reset.dev != NULL) {
+		if (!device_is_ready(dev_config->reset.dev)) {
+			LOG_ERR("Reset controller device is not ready");
+			return -ENODEV;
+		}
 
-        ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
-        if (ret != 0) {
-            LOG_ERR("toggle reset line failed");
-            return ret;
-        }
-    }
-    #endif
-    espi_reg_init(dev);
-    return 0;
+		ret = reset_line_toggle(dev_config->reset.dev, dev_config->reset.id);
+		if (ret != 0) {
+			LOG_ERR("toggle reset line failed");
+			return ret;
+		}
+	}
+	#endif
+	espi_reg_init(dev);
+	return 0;
 }
 
 static void espi_reset_callback(const struct device *port,struct gpio_callback *cb,gpio_port_pins_t pins)
 {
-    struct espi_data *espi = CONTAINER_OF(cb,struct espi_data,reset_cb);
-    struct espi_lpc_ls_data *data = CONTAINER_OF(espi,struct espi_lpc_ls_data,u.espi);
-    espi_reset(data->dev);
+	struct espi_data *espi = CONTAINER_OF(cb,struct espi_data,reset_cb);
+	struct espi_lpc_ls_data *data = CONTAINER_OF(espi,struct espi_lpc_ls_data,u.espi);
+	espi_reset(data->dev);
 }
 
 static int espi_reset_gpio_init(const struct device *dev)
 {
-    const struct espi_lpc_ls_config *cfg = dev->config;
-    struct espi_lpc_ls_data *data = dev->data;
-    int ret;
+	const struct espi_lpc_ls_config *cfg = dev->config;
+	struct espi_lpc_ls_data *data = dev->data;
+	int ret;
 
-    if (cfg->reset_gpio.port == NULL) {
-        LOG_DBG("%s: reset gpio not configured", dev->name);
-        return 0;
-    }
+	if (cfg->reset_gpio.port == NULL) {
+		LOG_DBG("%s: reset gpio not configured", dev->name);
+		return 0;
+	}
 
-    if (!gpio_is_ready_dt(&cfg->reset_gpio)) {
-        LOG_ERR("reset gpio device not ready");
-        return -ENODEV;
-    }
+	if (!gpio_is_ready_dt(&cfg->reset_gpio)) {
+		LOG_ERR("reset gpio device not ready");
+		return -ENODEV;
+	}
 
-    ret = gpio_pin_configure_dt(&cfg->reset_gpio,GPIO_INPUT);
-    if (ret != 0) {
-        LOG_ERR("reset gpio pin configure failed, ret=%d", ret);
-        return ret;
-    }
+	ret = gpio_pin_configure_dt(&cfg->reset_gpio,GPIO_INPUT);
+	if (ret != 0) {
+		LOG_ERR("reset gpio pin configure failed, ret=%d", ret);
+		return ret;
+	}
 
-    gpio_init_callback(&data->u.espi.reset_cb,espi_reset_callback,1<<cfg->reset_gpio.pin);
+	gpio_init_callback(&data->u.espi.reset_cb,espi_reset_callback,1<<cfg->reset_gpio.pin);
 
-    ret = gpio_add_callback_dt(&cfg->reset_gpio,&data->u.espi.reset_cb);
-    if (ret != 0) {
-        LOG_ERR("reset gpio add callback failed, ret=%d", ret);
-        return ret;
-    }
+	ret = gpio_add_callback_dt(&cfg->reset_gpio,&data->u.espi.reset_cb);
+	if (ret != 0) {
+		LOG_ERR("reset gpio add callback failed, ret=%d", ret);
+		return ret;
+	}
 
-    ret = gpio_pin_interrupt_configure_dt(&cfg->reset_gpio,GPIO_INT_EDGE_FALLING);
-    if (ret != 0) {
-        LOG_ERR("reset gpio interrupt configure failed, ret=%d", ret);
-        return ret;
-    }
+	ret = gpio_pin_interrupt_configure_dt(&cfg->reset_gpio,GPIO_INT_EDGE_FALLING);
+	if (ret != 0) {
+		LOG_ERR("reset gpio interrupt configure failed, ret=%d", ret);
+		return ret;
+	}
 
-    return 0;
+	return 0;
+}
+
+static inline uint8_t is_cycle_type_64bit(uint8_t cycle_type)
+{
+	return cycle_type&0x2;
+}
+
+uint8_t *get_addr_from_pkt(uint64_t *addr,uint8_t *data,uint8_t bit64)
+{
+	*addr = 0;
+	*addr |= *data++;
+	*addr <<= 8;
+	*addr |= *data++;
+	*addr <<= 8;
+	*addr |= *data++;
+	*addr <<= 8;
+	*addr |= *data++;
+	if(bit64)
+	{
+		*addr <<= 8;
+		*addr |= *data++;
+		*addr <<= 8;
+		*addr |= *data++;
+		*addr <<= 8;
+		*addr |= *data++;
+		*addr <<= 8;
+		*addr |= *data++;
+	}
+	return data;
+}
+
+static void rsp_build(bool success,uint16_t len,uint8_t data,uint8_t tag,uint32_t *up_first_word,uint16_t *up_len)
+{
+	if(success)
+	{
+		*up_first_word = 0x0f |
+					((uint32_t)((tag << 4) | (len >> 8)) << 8) |
+					((uint32_t)(len & 0xff) << 16) |
+					((uint32_t)data << 24);
+		*up_len = 3+len;
+	}else
+	{
+		*up_first_word = 0x0e | (uint32_t)(tag << 12);
+		*up_len = 3;
+	}
+
 }
 
 static void ls_espi_isr(void *arg)
@@ -286,170 +324,184 @@ static void ls_espi_isr(void *arg)
 	struct device *dev = (struct device *) arg;
 	const struct espi_lpc_ls_config *cfg = dev->config;
 	struct espi_lpc_ls_data *data = dev->data;
-    reg_espi_t *reg = cfg->reg;
-    uint32_t stt = reg->INTERRUPT_STT;
-    if(stt&ESPI_INTR_STT_PSTC_FREE_MASK)
-    {
+	reg_espi_t *reg = cfg->reg;
+	uint32_t stt = reg->INTERRUPT_STT;
+	if(stt&ESPI_INTR_STT_PSTC_FREE_MASK)
+	{
 		uint8_t *rx = pc_rx_buf_get(dev);
 		uint8_t opcode = rx[0];
+		uint8_t cycle_type = rx[1];
+		uint16_t len;
+		uint64_t addr;
 		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_PSTC_FREE_MASK;
-		if((opcode&~0x3)==0x4c) //PUT_MEMWR32_SHORT
+		if(opcode == 0 && (cycle_type & ~0x2) == 0x1 ) //PUT_PC && memwr
 		{
-			uint8_t len = (opcode & 0x3) + 1;
-			uint32_t addr = rx[1]<<24|rx[2]<<16|rx[3]<<8|rx[4];
-			memwr_short(data,len,addr,&rx[5]);
+			len = (rx[2]&0xf)<<8|rx[3];
+			uint8_t *data_buf = get_addr_from_pkt(&addr,&rx[4],is_cycle_type_64bit(cycle_type));
+			espi_lpc_memwr(data,addr,len,data_buf);
+		}else if((opcode&~0x3)==0x4c) //PUT_MEMWR32_SHORT
+		{
+			len = (opcode & 0x3) + 1;
+			addr = (uint32_t)rx[1]<<24|rx[2]<<16|rx[3]<<8|rx[4];
+			espi_lpc_memwr(data,addr,len,&rx[5]);
 		}
-        reg->STATUS_SET = ESPI_STATUS_SET_PC_FREE_MASK;
-    }
-    if(stt&ESPI_INTR_STT_NPST_FREE_MASK)
-    {
+		reg->STATUS_SET = ESPI_STATUS_SET_PC_FREE_MASK;
+	}
+	if(stt&ESPI_INTR_STT_NPST_FREE_MASK)
+	{
 		uint8_t *rx = np_rx_buf_get(dev);
 		uint8_t opcode = rx[0];
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_NPST_FREE_MASK;
-		if((opcode&~0xf)==0x40)
+		uint8_t cycle_type = rx[1];
+		uint8_t tag = rx[2]>>4;
+		uint32_t up_first_word;
+		uint16_t up_len;
+		uint8_t *data_buf = pc_tx_buf_get(dev) - 1;
+		bool success = false;
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_NPST_FREE_MASK;
+		if(opcode == 2 && (cycle_type & ~0x2) == 0x0 ) //PUT_NP && memrd
 		{
-			uint32_t up_first_word = 0;
-			uint16_t up_len = 1;
+			uint64_t addr;
+			uint16_t len = (rx[2]&0xf)<<8|rx[3];
+			get_addr_from_pkt(&addr,&rx[4],is_cycle_type_64bit(cycle_type));
+			success = espi_lpc_memrd(data,addr,len,data_buf);
+			rsp_build(success,len,data_buf[0],tag,&up_first_word,&up_len);
+		}else if((opcode&~0xf)==0x40)
+		{
 			uint8_t len = (opcode&0x3) + 1;
-			uint8_t *up_data_remain = pc_tx_buf_get(dev); 
-			uint32_t res = 0;
 			if(opcode&0x8)	//PUT_MEMRD32_SHORT
 			{
-				uint32_t addr = rx[1]<<24|rx[2]<<16|rx[3]<<8|rx[4];
-				memrd_short(data,len,addr,&res);
-				mem_io_rd_rsp_pkt_build(len,res,up_data_remain,&up_first_word,&up_len);
+				uint32_t addr = (uint32_t)rx[1]<<24|rx[2]<<16|rx[3]<<8|rx[4];
+				success = espi_lpc_memrd(data,addr,len,data_buf);
+				rsp_build(success,len,data_buf[0],0,&up_first_word,&up_len);
 			}else
 			{
 				uint16_t addr = rx[1]<<8 | rx[2];
-                bool success;
 				if(opcode&0x4) //PUT_IOWR_SHORT
 				{
 					success = iowr_short(data,len,addr,&rx[3]);
-                    up_first_word = 6;
-                    up_len = 3;
+					up_first_word = success ? 0x6: 0xe;
+					up_len = 3;
 				}else	//PUT_IORD_SHORT
 				{
-					success = iord_short(data,len,addr,&res);
-					mem_io_rd_rsp_pkt_build(len,res,up_data_remain,&up_first_word,&up_len);
+					success = iord_short(data,len,addr,data_buf);
+					rsp_build(success,len,data_buf[0],0,&up_first_word,&up_len);
 				}
-                if(!success)
-                {
-                    up_first_word = 0xe;
-                    up_len = 3;
-                }
 			}
-            reg->UP_PSTC_DAT = up_first_word;
-            reg->UP_PSTC_LEN_M1 = up_len - 1;
+		}else
+		{
+			rsp_build(false, 0, 0, tag, &up_first_word, &up_len);
 		}
-        reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK | ESPI_STATUS_SET_PC_AVAIL_MASK | ESPI_STATUS_SET_NP_FREE_MASK;
-    }
-    if(stt&ESPI_INTR_STT_VWIR_FREE_MASK)
-    {
+		reg->UP_PSTC_DAT = up_first_word;
+		reg->UP_PSTC_LEN_M1 = up_len - 1;
+		reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK | ESPI_STATUS_SET_PC_AVAIL_MASK | ESPI_STATUS_SET_NP_FREE_MASK;
+	}
+	if(stt&ESPI_INTR_STT_VWIR_FREE_MASK)
+	{
 
-    }
-    if(stt&ESPI_INTR_STT_OOBP_FREE_MASK)
-    {
+	}
+	if(stt&ESPI_INTR_STT_OOBP_FREE_MASK)
+	{
 
-    }
-    if(stt&ESPI_INTR_STT_VWIR_AVAL_MASK)
-    {
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_VWIR_AVAL_MASK;
-        k_sem_give(&data->u.espi.vw_tx_sem);
-    }
-    if(stt&ESPI_INTR_STT_DN_CNFG_MASK)
-    {
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_CNFG_MASK;
-    }
-    if(stt&ESPI_INTR_STT_DN_VWIR_02_MASK)
-    {
-        uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
-        cfg->h2b_vw_base->s02_ms = dn_vwir_sys0>>16&0xf;
-        espi_vwire_msg_send(&cfg->hb_exch,2,cfg->h2b_vw_base->s02_ms);
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_02_MASK;
+	}
+	if(stt&ESPI_INTR_STT_VWIR_AVAL_MASK)
+	{
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_VWIR_AVAL_MASK;
+		k_sem_give(&data->u.espi.vw_tx_sem);
+	}
+	if(stt&ESPI_INTR_STT_DN_CNFG_MASK)
+	{
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_CNFG_MASK;
+	}
+	if(stt&ESPI_INTR_STT_DN_VWIR_02_MASK)
+	{
+		uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
+		cfg->h2b_vw_base->s02_ms = dn_vwir_sys0>>16&0xf;
+		espi_vwire_msg_send(&cfg->hb_exch,2,cfg->h2b_vw_base->s02_ms);
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_02_MASK;
 
-    }
-    if(stt&ESPI_INTR_STT_DN_VWIR_03_MASK)
-    {
-        uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
-        uint8_t s03 = dn_vwir_sys0>>24&0xf;
-        cfg->h2b_vw_base->s03_ms = s03;
-        espi_vwire_msg_send(&cfg->hb_exch,3,cfg->h2b_vw_base->s03_ms);
-        if(s03&ESPI_SYS_EVT_3_OOB_RST_WARN)
-        {
+	}
+	if(stt&ESPI_INTR_STT_DN_VWIR_03_MASK)
+	{
+		uint32_t dn_vwir_sys0 = reg->DN_VWIR_SYS0;
+		uint8_t s03 = dn_vwir_sys0>>24&0xf;
+		cfg->h2b_vw_base->s03_ms = s03;
+		espi_vwire_msg_send(&cfg->hb_exch,3,cfg->h2b_vw_base->s03_ms);
+		if(s03&ESPI_SYS_EVT_3_OOB_RST_WARN)
+		{
 			espi_send_oob_rst_ack(dev);
-        }
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_03_MASK;
+		}
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_03_MASK;
 
-    }
-    if(stt&ESPI_INTR_STT_DN_VWIR_07_MASK)
-    {
-        uint32_t dn_vwir_sys1 = reg->DN_VWIR_SYS1;
+	}
+	if(stt&ESPI_INTR_STT_DN_VWIR_07_MASK)
+	{
+		uint32_t dn_vwir_sys1 = reg->DN_VWIR_SYS1;
 		uint8_t s07 = dn_vwir_sys1>>24&0xf;
-        cfg->h2b_vw_base->s07_ms = s07;
-        espi_vwire_msg_send(&cfg->hb_exch,7,cfg->h2b_vw_base->s07_ms);
+		cfg->h2b_vw_base->s07_ms = s07;
+		espi_vwire_msg_send(&cfg->hb_exch,7,cfg->h2b_vw_base->s07_ms);
 		if(s07&ESPI_SYS_EVT_7_HOST_RST_WARN)
 		{
 			espi_send_host_rst_ack(dev);
 		}
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_07_MASK;
-    }
-    if(stt&ESPI_INTR_STT_DN_VW_MASK)
-    {
-        uint32_t mask,i;
-        volatile uint32_t *DN_VWIR_VAL = &reg->DN_VWIR_VAL0;
-        for(mask = ESPI_INTR_STT_DN_VWIR_P00_MASK, i = 0;
-            mask <= ESPI_INTR_STT_DN_VWIR_P07_MASK; mask <<= 1, ++i) 
-        {
-            if(mask&stt)
-            {
-                cfg->h2b_vw_base->ms_vw_val[i] = DN_VWIR_VAL[i/4]>>((i%4)*8)&0xff;
-                espi_vwire_msg_send(&cfg->hb_exch,cfg->ms_vw_idx[i],cfg->h2b_vw_base->ms_vw_val[i]);
-                reg->INTERRUPT_CLEAR = mask;
-            }
-        }
-    }
-    if(stt&ESPI_INTR_STT_DN_REST_MASK)
-    {
-        reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_REST_MASK;
-        espi_reset(dev);
-    }
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_VWIR_07_MASK;
+	}
+	if(stt&ESPI_INTR_STT_DN_VW_MASK)
+	{
+		uint32_t mask,i;
+		volatile uint32_t *DN_VWIR_VAL = &reg->DN_VWIR_VAL0;
+		for(mask = ESPI_INTR_STT_DN_VWIR_P00_MASK, i = 0;
+			mask <= ESPI_INTR_STT_DN_VWIR_P07_MASK; mask <<= 1, ++i) 
+		{
+			if(mask&stt)
+			{
+				cfg->h2b_vw_base->ms_vw_val[i] = DN_VWIR_VAL[i/4]>>((i%4)*8)&0xff;
+				espi_vwire_msg_send(&cfg->hb_exch,cfg->ms_vw_idx[i],cfg->h2b_vw_base->ms_vw_val[i]);
+				reg->INTERRUPT_CLEAR = mask;
+			}
+		}
+	}
+	if(stt&ESPI_INTR_STT_DN_REST_MASK)
+	{
+		reg->INTERRUPT_CLEAR = ESPI_INTR_STT_DN_REST_MASK;
+		espi_reset(dev);
+	}
 }
 
 void host_espi_rx_callback(const struct device *dev,void *msg)
 {
 	struct espi_vwire_msg *vw_msg = msg;
-    vw_tx_msgq_put(dev,vw_msg->vw_idx<<8|vw_msg->vw_val);
+	vw_tx_msgq_put(dev,vw_msg->vw_idx<<8|vw_msg->vw_val);
 }
 
 static void vw_tx_thread(void *p1,void *p2,void *p3)
 {
-    struct vw_tx_msg msg;
-    while(1)
-    {
-        k_msgq_get(&vw_tx_msgq,&msg,K_FOREVER);
-        switch(msg.type) {
-        case ESPI_SEND_OOB_RST_ACK_TYPE:
-	        espi_vw_tx(msg.dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
-        break;
-        case ESPI_SEND_HOST_RST_ACK_TYPE:
-	        espi_vw_tx(msg.dev,1,6,ESPI_SYS_EVT_6_HOST_RST_ACK_VLD|ESPI_SYS_EVT_6_HOST_RST_ACK);
-        break;
-        case ESPI_SEND_BOOT_DONE_TYPE:
-	        espi_vw_tx(msg.dev,1,5,ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE|
+	struct vw_tx_msg msg;
+	while(1)
+	{
+		k_msgq_get(&vw_tx_msgq,&msg,K_FOREVER);
+		switch(msg.type) {
+		case ESPI_SEND_OOB_RST_ACK_TYPE:
+			espi_vw_tx(msg.dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
+		break;
+		case ESPI_SEND_HOST_RST_ACK_TYPE:
+			espi_vw_tx(msg.dev,1,6,ESPI_SYS_EVT_6_HOST_RST_ACK_VLD|ESPI_SYS_EVT_6_HOST_RST_ACK);
+		break;
+		case ESPI_SEND_BOOT_DONE_TYPE:
+			espi_vw_tx(msg.dev,1,5,ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_DONE|
 						ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS_VLD|ESPI_SYS_EVT_5_SLAVE_BOOT_LOAD_STATUS);
-        break;
-        default: {
-            if(msg.type >= ESPI_SEND_VW_TYPE_OTHERS_BASE) {
-                int idx = msg.type >> 8;
-                int val = msg.type & 0xff;
-                espi_vw_tx(msg.dev,1,idx,val);
-            }else {
-                int idx = msg.type;
-                espi_vw_tx(msg.dev,2,idx&0x80?1:0,1<<7|(idx&0x7f),idx&0x80?1:0,idx&0x7f);
-            }
-        }break;
-        }
-    }
+		break;
+		default: {
+			if(msg.type >= ESPI_SEND_VW_TYPE_OTHERS_BASE) {
+				int idx = msg.type >> 8;
+				int val = msg.type & 0xff;
+				espi_vw_tx(msg.dev,1,idx,val);
+			}else {
+				int idx = msg.type;
+				espi_vw_tx(msg.dev,2,idx&0x80?1:0,1<<7|(idx&0x7f),idx&0x80?1:0,idx&0x7f);
+			}
+		}break;
+		}
+	}
 }
 
 K_KERNEL_THREAD_DEFINE(espi_vw_tx_thread,CONFIG_ESPI_VW_TX_THREAD_STACK_SIZE,vw_tx_thread,NULL,NULL,NULL,CONFIG_ESPI_VW_TX_THREAD_PRIORITY,0,0);
@@ -458,76 +510,76 @@ static int espi_ls_init(const struct device *dev)
 {
 	const struct espi_lpc_ls_config *const dev_config = dev->config;
 	struct espi_lpc_ls_data *const data = dev->data;
-    bool inited = false;
-    __maybe_unused int ret;
-    data->cfg = dev_config;
-    data->dev = dev;
+	bool inited = false;
+	__maybe_unused int ret;
+	data->cfg = dev_config;
+	data->dev = dev;
 	sys_slist_init(&data->peri_io);
 	sys_slist_init(&data->peri_mem);
 
-    #if defined(CONFIG_CLOCK_CONTROL)
-    if (dev_config->ccfg.cctl_dev) {
-        const struct device *clk_dev = dev_config->ccfg.cctl_dev;
-        if (!device_is_ready(clk_dev)) {
-            LOG_DBG("%s device not ready", clk_dev->name);
-            return -ENODEV;
-        }
-        if(clock_control_get_status(clk_dev,(clock_control_subsys_t)&dev_config->ccfg) == CLOCK_CONTROL_STATUS_OFF)
-        {
-            clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
-        }else
-        {
-            inited = true;
-        }
-    }
-    #endif
-    k_sem_init(&data->u.espi.vw_tx_sem,1,1);
-    if(inited == false)
-    {
-        #if defined(CONFIG_PINCTRL)
-        ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
-        if (ret < 0) {
-            LOG_DBG("%s: Could not configure pins", dev->name);
-        }
-        #endif
-        espi_reg_init(dev);
-    }
-    host_bmc_msg_exch_init(&dev_config->hb_exch);
+	#if defined(CONFIG_CLOCK_CONTROL)
+	if (dev_config->ccfg.cctl_dev) {
+		const struct device *clk_dev = dev_config->ccfg.cctl_dev;
+		if (!device_is_ready(clk_dev)) {
+			LOG_DBG("%s device not ready", clk_dev->name);
+			return -ENODEV;
+		}
+		if(clock_control_get_status(clk_dev,(clock_control_subsys_t)&dev_config->ccfg) == CLOCK_CONTROL_STATUS_OFF)
+		{
+			clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
+		}else
+		{
+			inited = true;
+		}
+	}
+	#endif
+	k_sem_init(&data->u.espi.vw_tx_sem,1,1);
+	if(inited == false)
+	{
+		#if defined(CONFIG_PINCTRL)
+		ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			LOG_DBG("%s: Could not configure pins", dev->name);
+		}
+		#endif
+		espi_reg_init(dev);
+	}
+	host_bmc_msg_exch_init(&dev_config->hb_exch);
 
-    ret = espi_reset_gpio_init(dev);
-    if (ret != 0) {
-        return ret;
-    }
+	ret = espi_reset_gpio_init(dev);
+	if (ret != 0) {
+		return ret;
+	}
 
-    dev_config->irq_config_func(dev);
+	dev_config->irq_config_func(dev);
 
-    return 0;
+	return 0;
 }
 
 #define LS_ESPI_INIT(idx)\
 	IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(idx);))\
-    static void espi_ls_irq_config_func_##idx(const struct device *dev)	\
-    {\
-        IRQ_CONNECT(DT_INST_IRQN(idx),DT_INST_IRQ(idx, priority),\
-                ls_espi_isr,DEVICE_DT_INST_GET(idx), 0);\
-        irq_enable(DT_INST_IRQN(idx));\
-    }\
-    static const struct espi_lpc_ls_config espi_ls_cfg_##idx = {\
-        .reg = (reg_espi_t *)DT_INST_REG_ADDR(idx),\
-        .irq_config_func = espi_ls_irq_config_func_##idx,\
-        .raise_edge_irq = espi_send_edge_irq,\
-        .set_level_irq = NULL,\
-        .hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,host_espi_rx_callback,bmc_espi_rx_callback),\
-        .h2b_vw_base = (struct espi_h2b_vw_base *)DT_INST_PROP(idx,h2b_vw_base),\
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, reset_gpios), (.reset_gpio = GPIO_DT_SPEC_INST_GET(idx, reset_gpios), )) \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, ms_vw_idx),(.ms_vw_idx = {DT_INST_FOREACH_PROP_ELEM_SEP(idx,ms_vw_idx,DT_PROP_BY_IDX,(,))},))\
-        IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), )) \
-        IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), )) \
-        IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), )) \
-    };\
-    static struct espi_lpc_ls_data espi_ls_data_##idx;\
-    DEVICE_DT_INST_DEFINE(idx,espi_ls_init,NULL,&espi_ls_data_##idx,\
-        &espi_ls_cfg_##idx,PRE_KERNEL_2,CONFIG_ESPI_INIT_PRIORITY,\
-        NULL);
+	static void espi_ls_irq_config_func_##idx(const struct device *dev)	\
+	{\
+		IRQ_CONNECT(DT_INST_IRQN(idx),DT_INST_IRQ(idx, priority),\
+				ls_espi_isr,DEVICE_DT_INST_GET(idx), 0);\
+		irq_enable(DT_INST_IRQN(idx));\
+	}\
+	static const struct espi_lpc_ls_config espi_ls_cfg_##idx = {\
+		.reg = (reg_espi_t *)DT_INST_REG_ADDR(idx),\
+		.irq_config_func = espi_ls_irq_config_func_##idx,\
+		.raise_edge_irq = espi_send_edge_irq,\
+		.set_level_irq = NULL,\
+		.hb_exch = HOST_BMC_MSG_EXCH_INIT(idx,host_espi_rx_callback,bmc_espi_rx_callback),\
+		.h2b_vw_base = (struct espi_h2b_vw_base *)DT_INST_PROP(idx,h2b_vw_base),\
+		IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, reset_gpios), (.reset_gpio = GPIO_DT_SPEC_INST_GET(idx, reset_gpios), )) \
+		IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, ms_vw_idx),(.ms_vw_idx = {DT_INST_FOREACH_PROP_ELEM_SEP(idx,ms_vw_idx,DT_PROP_BY_IDX,(,))},))\
+		IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx), )) \
+		IF_ENABLED(DT_HAS_CLOCKS(idx), (.ccfg = LS_DT_CLK_CFG_ITEM(idx), )) \
+		IF_ENABLED(DT_INST_NODE_HAS_PROP(idx, resets), (.reset = RESET_DT_SPEC_INST_GET(idx), )) \
+	};\
+	static struct espi_lpc_ls_data espi_ls_data_##idx;\
+	DEVICE_DT_INST_DEFINE(idx,espi_ls_init,NULL,&espi_ls_data_##idx,\
+		&espi_ls_cfg_##idx,PRE_KERNEL_2,CONFIG_ESPI_INIT_PRIORITY,\
+		NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(LS_ESPI_INIT)
