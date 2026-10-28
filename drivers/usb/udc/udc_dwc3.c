@@ -1357,6 +1357,10 @@ static void dwc3_dev_reset(const struct device *dev, const union evt_buf_u *evt)
             dwc3_dep_end_transfer(dev, i, dwc3_data->ep_res_index[i], true);
         }
         dwc3_data->ep_res_allocated[i] = false;
+
+        if (udc_get_ep_cfg(dev, PHY_EP_IDX_2_EP_ADDR(i)) != NULL) {
+            udc_ep_set_busy(dev, PHY_EP_IDX_2_EP_ADDR(i), false);
+        }
     }
 
     dwc3_dev->DCTL &= ~DWC3_DCTL_TSTCTRL_MASK;
@@ -2314,7 +2318,11 @@ static int udc_dwc3_ep_clear_halt(const struct device *dev, struct udc_ep_config
 
 static int udc_dwc3_ep_enqueue(const struct device *dev, struct udc_ep_config *const cfg, struct net_buf *const buf)
 {
-    __ASSERT(!udc_ep_is_busy(dev, cfg->addr), "ep %x is busy", cfg->addr);
+    if (udc_ep_is_busy(dev, cfg->addr)) {
+        LOG_ERR("ep %x is busy", cfg->addr);
+        return -EBUSY;
+    }
+
     const struct udc_dwc3_config *config = dev->config;
     uint8_t addr = cfg->addr;
     struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
