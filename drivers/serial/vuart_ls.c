@@ -362,21 +362,23 @@ static int ls_vuart_init(const struct device *dev)
 DT_INST_FOREACH_STATUS_OKAY(LS_VUART_INIT)
 
 #if defined(CONFIG_ESPI_LPC_MBOX) && defined(CONFIG_SOC_LSQSH_CPU1)
-static int cmd_uart_switch_app(const struct shell *sh, size_t argc, char **argv)
+/* Hand the VUART over to the peer (app) core: stop local TX toward the peer
+ * and set the B2H mode so the host streams to/from the peer.
+ */
+int vuart_ls_switch_app(const struct device *dev)
 {
-    const struct device *dev = VUART_DEV;
     const struct ls_vuart_cfg *cfg = dev->config;
     struct ls_vuart_data *data = dev->data;
 
     if (!device_is_ready(dev)) {
-        shell_error(sh, "vuart not ready");
         return -ENODEV;
     }
+
     data->peer_rx_valid = false;
     vuart_b2h_mode_set(&cfg->hb_exch, true, true);
+
     return 0;
 }
-SHELL_CMD_REGISTER(uart_switch_app, NULL, "Switch uart to peer core", cmd_uart_switch_app);
 #endif
 
 #ifdef CONFIG_ESPI_LPC_MBOX

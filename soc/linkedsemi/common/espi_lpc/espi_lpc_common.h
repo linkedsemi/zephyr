@@ -281,4 +281,8 @@ void bmc_pcc_rx_callback(const struct device *dev,void *msg);
 void post_code_msg_send(const struct host_bmc_msg_exch *exch,struct pcc_data *data);
 
 void vuart_ls_send_break(const struct device *dev);
+
+#if defined(CONFIG_ESPI_LPC_MBOX) && defined(CONFIG_SOC_LSQSH_CPU1)
+int vuart_ls_switch_app(const struct device *dev);
+#endif
 #endif
