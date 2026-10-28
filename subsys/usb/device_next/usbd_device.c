@@ -325,6 +325,7 @@ int usbd_shutdown(struct usbd_context *const uds_ctx)
 		LOG_ERR("Failed to shutdown USB device");
 	}
 
+	uds_ctx->msg_cb = NULL;
 	uds_ctx->status.initialized = false;
 	usbd_device_unlock(uds_ctx);
 
