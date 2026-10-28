@@ -1841,6 +1841,8 @@ static void spi_dw_wip_only(const struct device *dev,
 	struct spi_config cfg_single = *config;
 	cfg_single.operation &= ~SPI_LINES_MASK;
 	cfg_single.operation |= SPI_LINES_SINGLE;
+	cfg_single.operation &= ~SPI_WORD_SIZE_MASK;
+	cfg_single.operation |= (8U << SPI_WORD_SIZE_SHIFT);
 
 	const struct spi_driver_api *api =
 		(const struct spi_driver_api *)dev->api;
@@ -1871,6 +1873,8 @@ static void spi_dw_wait_wip_and_wren(const struct device *dev,
 	struct spi_config cfg_single = *config;
 	cfg_single.operation &= ~SPI_LINES_MASK;
 	cfg_single.operation |= SPI_LINES_SINGLE;
+	cfg_single.operation &= ~SPI_WORD_SIZE_MASK;
+	cfg_single.operation |= (8U << SPI_WORD_SIZE_SHIFT);
 	const struct spi_driver_api *api =
 		(const struct spi_driver_api *)dev->api;
 
