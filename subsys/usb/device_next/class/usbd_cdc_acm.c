@@ -490,6 +490,7 @@ static int usbd_cdc_acm_init(struct usbd_class_data *const c_data)
 	struct usbd_cdc_acm_desc *desc = data->desc;
 
 	desc->iad.bFirstInterface = desc->if0.bInterfaceNumber;
+	desc->if0_cm.bDataInterface = desc->if1.bInterfaceNumber;
 	desc->if0_union.bControlInterface = desc->if0.bInterfaceNumber;
 	desc->if0_union.bSubordinateInterface0 = desc->if1.bInterfaceNumber;
 
