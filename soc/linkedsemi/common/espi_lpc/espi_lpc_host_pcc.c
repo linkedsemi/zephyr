@@ -16,7 +16,7 @@ struct host_pcc_ls_config {
 };
 
 struct host_pcc_ls_data {
-    struct k_spinlock lock;
+    uint8_t dummy;
 };
 
 static void host_pcc_port_io_read(const struct peri_ioport_content *ioport,uint8_t size,void *res)
@@ -53,13 +53,11 @@ static int host_pcc_ls_init(const struct device *dev)
     }
     host_bmc_msg_exch_init(&cfg->hb_exch);
     sw_fifo_init(&cfg->pcc_env->fifo,cfg->pcc_env->data,CONFIG_ESPI_LPC_PCC_FIFO_LENGTH,sizeof(struct pcc_data));
-    k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
     for(uint8_t i = 0; i < cfg->port_num; i++)
     {
         cfg->ports[i].content = &cfg->ports_content[i];
         espi_lpc_add_ioport(cfg->espi_lpc,&cfg->ports[i]);
     }
-    k_spin_unlock(&ptr_data->lock, key);
     return 0;
 }
 
