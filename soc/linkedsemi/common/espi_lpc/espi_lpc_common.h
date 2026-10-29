@@ -155,6 +155,8 @@ struct espi_lpc_ls_config {
 struct espi_lpc_ls_data {
     const struct espi_lpc_ls_config *cfg;
     const struct device *dev;
+    struct k_spinlock io_lock;
+    struct k_spinlock mem_lock;
     sys_slist_t peri_io;
     sys_slist_t peri_mem;
     union{

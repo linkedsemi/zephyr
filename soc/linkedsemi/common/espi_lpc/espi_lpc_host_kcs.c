@@ -19,7 +19,6 @@ struct host_kcs_ls_config {
 struct host_kcs_ls_data {
     struct peri_ioport io_data;
     struct peri_ioport io_cmd_stt;
-    k_spinlock_t lock;
 };
 
 static void data_cmd_stt_iowr(const struct device *dev,uint8_t size,uint8_t *data,bool is_data)
@@ -92,10 +91,8 @@ static int host_kcs_ls_init(const struct device *dev)
     memset(cfg->kcs_env,0,sizeof(*cfg->kcs_env));
     data->io_data.content = &cfg->data;
     data->io_cmd_stt.content = &cfg->cmd_stt;
-    k_spinlock_key_t key = k_spin_lock(&data->lock);
     espi_lpc_add_ioport(cfg->espi_lpc,&data->io_data);
     espi_lpc_add_ioport(cfg->espi_lpc,&data->io_cmd_stt);
-    k_spin_unlock(&data->lock, key);
     return 0;
 }
 

@@ -456,13 +456,10 @@ static int host_vuart_init(const struct device *dev)
     cfg->reg->DLH_IER = divisor>>8;
     cfg->reg->LCR &= ~LCR_DLAB;
 
-
-    k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
     for (uint32_t i = 0; i < PORT_NUM; i++) {
         ptr_data->ioport[i].content = &cfg->ioport_content[i];
         espi_lpc_add_ioport(cfg->espi_lpc, (struct peri_ioport *)(&ptr_data->ioport[i]));
     }
-    k_spin_unlock(&ptr_data->lock, key);
 
     cfg->irq_config_func(dev);
     return 0;

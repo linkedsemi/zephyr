@@ -65,25 +65,33 @@ bool espi_lpc_memrd(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t siz
 void espi_lpc_add_ioport(const struct device *dev,struct peri_ioport *ioport)
 {
     struct espi_lpc_ls_data *data = dev->data;
+    k_spinlock_key_t key = k_spin_lock(&data->io_lock);
 	sys_slist_append(&data->peri_io,&ioport->node);
+    k_spin_unlock(&data->io_lock, key);
 }
 
 void espi_lpc_add_mem(const struct device *dev,struct peri_mem *mem)
 {
     struct espi_lpc_ls_data *data = dev->data;
+    k_spinlock_key_t key = k_spin_lock(&data->mem_lock);
 	sys_slist_append(&data->peri_mem,&mem->node);
+    k_spin_unlock(&data->mem_lock, key);
 }
 
 void espi_lpc_remove_ioport(const struct device *dev,struct peri_ioport *ioport)
 {
     struct espi_lpc_ls_data *data = dev->data;
+    k_spinlock_key_t key = k_spin_lock(&data->io_lock);
 	sys_slist_find_and_remove(&data->peri_io,&ioport->node);
+    k_spin_unlock(&data->io_lock, key);
 }
 
 void espi_lpc_remove_mem(const struct device *dev,struct peri_mem *mem)
 {
     struct espi_lpc_ls_data *data = dev->data;
+    k_spinlock_key_t key = k_spin_lock(&data->mem_lock);
 	sys_slist_find_and_remove(&data->peri_mem,&mem->node);
+    k_spin_unlock(&data->mem_lock, key);
 }
 
 unsigned int kcs_env_lock(struct host_kcs_env *env)
