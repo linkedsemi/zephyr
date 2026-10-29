@@ -36,7 +36,7 @@ bool iowr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint16_t addr,uin
 	return false;
 }
 
-bool memwr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,uint8_t *data)
+bool espi_lpc_memwr(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t size,uint8_t *data)
 {
 	sys_snode_t *ptr;
 	SYS_SLIST_FOR_EACH_NODE(&espi_lpc->peri_mem,ptr){
@@ -49,12 +49,12 @@ bool memwr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,ui
 	return false;
 }
 
-bool memrd_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,void *res)
+bool espi_lpc_memrd(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t size,void *buf)
 {
 	sys_snode_t *ptr;
 	SYS_SLIST_FOR_EACH_NODE(&espi_lpc->peri_mem,ptr){
 		struct peri_mem *mem = CONTAINER_OF(ptr,struct peri_mem,node);
-		if(mem->content->mem_read(mem->content,addr,size,res))
+		if(mem->content->mem_read(mem->content,addr,size,buf))
 		{
 			return true;
 		}
@@ -162,6 +162,11 @@ void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 	espi_lpc_mbox_msg_send(&exch->mbox,&kcs_msg,sizeof(kcs_msg));
 }
 
+void mmbi_msg_send(const struct host_bmc_msg_exch *exch,struct mmbi_msg *msg)
+{
+	espi_lpc_mbox_msg_send(&exch->mbox,msg,sizeof(*msg));
+}
+
 void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val)
 {
 	struct espi_vwire_msg vw_msg = {.vw_idx = vw_idx,.vw_val = vw_val};
@@ -207,6 +212,14 @@ void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch)
 {
 	enum kcs_hb_msg_type kcs_msg = KCS_OBF_EVENT;
 	exch->peer_rx_callback(exch->peer,&kcs_msg);
+}
+
+void mmbi_msg_send(const struct host_bmc_msg_exch *exch,struct mmbi_msg *msg)
+{
+	if (exch->peer == NULL || exch->peer_rx_callback == NULL) {
+		return;
+	}
+	exch->peer_rx_callback(exch->peer,msg);
 }
 
 void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val)

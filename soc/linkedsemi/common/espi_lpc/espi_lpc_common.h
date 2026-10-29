@@ -70,8 +70,8 @@ struct peri_ioport {
 };
 
 struct peri_mem_content {
-    bool (*mem_read)(struct peri_mem_content *mem,uint32_t addr,uint8_t size,void *res);
-    bool (*mem_write)(struct peri_mem_content *mem,uint32_t addr,uint8_t size,uint8_t *data);
+    bool (*mem_read)(struct peri_mem_content *mem,uint64_t addr,uint16_t size,void *buf);
+    bool (*mem_write)(struct peri_mem_content *mem,uint64_t addr,uint16_t size,uint8_t *data);
     void *ctx;
 };
 
@@ -99,9 +99,6 @@ struct upstream_irq_type {
 #define UPSTREAM_IRQ_DT_CONFIG_GET(node_id) &UP_IRQ_CONFIG_NAME(node_id)
 
 #define UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst) UPSTREAM_IRQ_DT_CONFIG_GET(DT_DRV_INST(inst))
-
-
-#define ESPI_RECOVER_MAGIC {'E','S','P','I','R','C','V','R'}
 
 #define UP_IRQ_EDGE_TYPE 0
 
@@ -224,7 +221,31 @@ struct host_pcc_env {
     struct pcc_data data[CONFIG_ESPI_LPC_PCC_FIFO_LENGTH];
 };
 
+struct mmbi_info {
+    uint32_t base;
+    uint32_t size;
+};
 
+struct mmbi_host_int {
+    uint8_t vw_idx;
+    uint8_t vw_data;
+};
+
+enum mmbi_msg_type {
+    MMBI_INFO,
+    MMBI_HOST_INT,
+    MMBI_HOST_RWS_WR,
+};
+
+struct mmbi_msg {
+    enum mmbi_msg_type type;
+    union {
+        struct mmbi_info info;
+        struct mmbi_host_int host_int;
+    }u;
+};
+
+void espi_send_sci(const struct device *dev);
 
 void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx);
 
@@ -240,9 +261,9 @@ bool iord_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint16_t addr,voi
 
 bool iowr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint16_t addr,uint8_t *data);
 
-bool memwr_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,uint8_t *data);
+bool espi_lpc_memwr(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t size,uint8_t *data);
 
-bool memrd_short(struct espi_lpc_ls_data *espi_lpc,uint8_t size,uint32_t addr,void *res);
+bool espi_lpc_memrd(struct espi_lpc_ls_data *espi_lpc,uint64_t addr,uint16_t size,void *buf);
 
 void host_bmc_msg_exch_init(const struct host_bmc_msg_exch *exch);
 
@@ -259,6 +280,8 @@ void kcs_env_unlock(struct host_kcs_env *env,unsigned int key);
 void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch);
 
 void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch);
+
+void mmbi_msg_send(const struct host_bmc_msg_exch *exch,struct mmbi_msg *msg);
 
 void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val);
 

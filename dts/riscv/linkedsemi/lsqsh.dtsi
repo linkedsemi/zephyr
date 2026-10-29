@@ -552,12 +552,6 @@
                     port = <0x2e>;
                     status = "disabled";
                 };
-                mmbi1: mmbi1 {
-                    compatible = "linkedsemi,ls-mmbi";
-                    host-addr = <0xf6810000>;
-                    size-order = <0>;
-                    status = "disabled";
-                };
             };
             espibmc1: espibmc1 {
                 compatible = "linkedsemi,ls-espi-bmc";
@@ -609,6 +603,23 @@
             pcc1: pcc1 {
                 compatible = "linkedsemi,ls-pcc";
                 pcc-env-addr = <0x40045e00>;
+                status = "disabled";
+            };
+        };
+
+        host_bmc_container_mmbi1: host_bmc_container_mmbi1 {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            status = "disabled";
+            host_mmbi1: host_mmbi1 {
+                compatible = "linkedsemi,ls-host-mmbi";
+                espi_lpc = <&espi1>;
+                status = "disabled";
+            };
+            mmbi1: mmbi1@10000000 {
+                compatible = "linkedsemi,ls-mmbi";
+                reg = <0x10000000 0x100>;
                 status = "disabled";
             };
         };
