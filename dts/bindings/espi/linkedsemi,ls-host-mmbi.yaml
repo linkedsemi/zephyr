@@ -1,0 +1,22 @@
+description: Linkedsemi eSPI slave to mmbi
+
+compatible: "linkedsemi,ls-host-mmbi"
+
+include: base.yaml
+
+properties:
+    espi_lpc:
+      type: phandle
+      required: true
+      description: espi lpc device handle
+
+    mbox:
+      type: phandle
+
+    host-map-addr-hi:
+      type: int
+      required: true
+
+    host-map-addr-lo:
+      type: int
+      required: true

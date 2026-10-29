@@ -36,10 +36,10 @@ config ESPI_LPC_SIO
     help
         Enable Linkedsemi ESPI/LPC sio driver.
 
-config ESPI_LPC_MMBI
+config ESPI_LPC_HOST_MMBI
     bool "Linkedsemi ESPI/LPC mmbi driver"
     default y
-    depends on DT_HAS_LINKEDSEMI_LS_MMBI_ENABLED
+    depends on DT_HAS_LINKEDSEMI_LS_HOST_MMBI_ENABLED
     help
         Enable Linkedsemi ESPI/LPC mmbi driver.
 

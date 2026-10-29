@@ -120,12 +120,13 @@ static void espi_vw_tx(const struct device *dev,uint8_t count,uint8_t idx,uint8_
 	reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK|ESPI_STATUS_SET_VWIRE_AVAIL_MASK;
 }
 
+#define ESPI_SEND_SCI_TYPE (-4)
+#define ESPI_SEND_OOB_RST_ACK_TYPE (-3)
+#define ESPI_SEND_HOST_RST_ACK_TYPE (-2)
+#define ESPI_SEND_BOOT_DONE_TYPE (-1)
+#define ESPI_SEND_VW_TYPE_INT_BASE (0x0)
+#define ESPI_SEND_VW_TYPE_OTHERS_BASE (0x200)
 
-#define ESPI_SEND_OOB_RST_ACK_TYPE -3
-#define ESPI_SEND_HOST_RST_ACK_TYPE -2
-#define ESPI_SEND_BOOT_DONE_TYPE -1
-#define ESPI_SEND_VW_TYPE_INT_BASE 0x0
-#define ESPI_SEND_VW_TYPE_OTHERS_BASE 0x200
 struct vw_tx_msg {
 	const struct device *dev;
 	int type;
@@ -143,6 +144,11 @@ static void vw_tx_msgq_put(const struct device *dev,int type)
 	if (ret != 0) {
 		LOG_ERR("vw_tx_msgq put failed, type=%d, ret=%d", type, ret);
 	}
+}
+
+void espi_send_sci(const struct device *dev)
+{
+	vw_tx_msgq_put(dev,ESPI_SEND_SCI_TYPE);
 }
 
 static void espi_send_oob_rst_ack(const struct device *dev)
@@ -480,6 +486,9 @@ static void vw_tx_thread(void *p1,void *p2,void *p3)
 	{
 		k_msgq_get(&vw_tx_msgq,&msg,K_FOREVER);
 		switch(msg.type) {
+		case ESPI_SEND_SCI_TYPE:
+			espi_vw_tx(msg.dev,1,6,ESPI_SYS_EVT_6_SCI_N_VLD|ESPI_SYS_EVT_6_SCI_N);
+		break;
 		case ESPI_SEND_OOB_RST_ACK_TYPE:
 			espi_vw_tx(msg.dev,1,4,ESPI_SYS_EVT_4_OOB_RST_ACK_VLD|ESPI_SYS_EVT_4_OOB_RST_ACK);
 		break;

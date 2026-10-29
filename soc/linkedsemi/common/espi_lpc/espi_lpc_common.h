@@ -100,9 +100,6 @@ struct upstream_irq_type {
 
 #define UPSTREAM_IRQ_DT_INST_CONFIG_GET(inst) UPSTREAM_IRQ_DT_CONFIG_GET(DT_DRV_INST(inst))
 
-
-#define ESPI_RECOVER_MAGIC {'E','S','P','I','R','C','V','R'}
-
 #define UP_IRQ_EDGE_TYPE 0
 
 #define MS_VW_GROUP_SIZE 8
@@ -224,7 +221,31 @@ struct host_pcc_env {
     struct pcc_data data[CONFIG_ESPI_LPC_PCC_FIFO_LENGTH];
 };
 
+struct mmbi_info {
+    uint32_t base;
+    uint32_t size;
+};
 
+struct mmbi_host_int {
+    uint8_t vw_idx;
+    uint8_t vw_data;
+};
+
+enum mmbi_msg_type {
+    MMBI_INFO,
+    MMBI_HOST_INT,
+    MMBI_HOST_RWS_WR,
+};
+
+struct mmbi_msg {
+    enum mmbi_msg_type type;
+    union {
+        struct mmbi_info info;
+        struct mmbi_host_int host_int;
+    }u;
+};
+
+void espi_send_sci(const struct device *dev);
 
 void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx);
 
@@ -259,6 +280,8 @@ void kcs_env_unlock(struct host_kcs_env *env,unsigned int key);
 void kcs_h2b_send_ibf(const struct host_bmc_msg_exch *exch);
 
 void kcs_b2h_send_obf(const struct host_bmc_msg_exch *exch);
+
+void mmbi_msg_send(const struct host_bmc_msg_exch *exch,struct mmbi_msg *msg);
 
 void espi_vwire_msg_send(const struct host_bmc_msg_exch *exch,uint8_t vw_idx,uint8_t vw_val);
 
