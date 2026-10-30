@@ -60,7 +60,7 @@
 
         mbox_consumer_qspi1: mbox-consumer_qspi1 {
             compatible = "vnd,mbox-consumer";
-            mboxes = <&mbox 0 24 1 24 1>;
+            mboxes = <&mbox 0 24 2 24 2>;
             mbox-names = "mbox";
         };
         mbox_consumer_otbn_crypto: mbox-consumer_otbn_crypto {
