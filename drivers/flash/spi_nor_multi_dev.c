@@ -1116,6 +1116,7 @@ out:
 #define SPI_NOR_QE_SR1_BIT6       0x2 /* MXIC, ISSI */
 #define SPI_NOR_QE_SR2_BIT1       0x4 /* Winbond */
 #define SPI_NOR_QE_CF1_BIT1       0x5 /* Cypress */
+#define SPI_NOR_QE_SR2_BIT1_1B    0x6 /* Winbond W25QxxRV*/
 
 static int spi_nor_qe_config(const struct device *dev, uint32_t qer)
 {
@@ -1139,6 +1140,9 @@ static int spi_nor_qe_config(const struct device *dev, uint32_t qer)
 		break;
 	case SPI_NOR_QE_CF1_BIT1:
 		ret = spi_nor_cf1_bit1_config(dev);
+		break;
+	case SPI_NOR_QE_SR2_BIT1_1B:
+		ret = spi_nor_sr2_bit1_config(dev);
 		break;
 	default:
 		LOG_INF("Disable QSPI bit");
