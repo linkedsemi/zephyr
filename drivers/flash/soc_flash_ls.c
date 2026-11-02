@@ -472,7 +472,7 @@ static void delegation_server_mbox_callback(const struct device *dev,
 
 static void Flash_Handler()
 {
-    struct arch_esf *args = *(struct arch_esf **)(_current_cpu->irq_stack - 16);
+    struct arch_esf *args = *(struct arch_esf **)(_current_cpu->irq_stack - RISCV_IRQ_STACK_SP_SLOT_SIZE);
     uint32_t (*func)(uint32_t,uint32_t,uint32_t,uint32_t) = (void *)args->a4;
     args->a0 = func(args->a0, args->a1, args->a2, args->a3);
 }
