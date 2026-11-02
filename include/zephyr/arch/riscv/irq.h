@@ -26,6 +26,8 @@ extern "C" {
 #include <stdbool.h>
 #endif /* !_ASMLANGUAGE */
 
+#define RISCV_IRQ_STACK_SP_SLOT_SIZE 16
+
 /* Exceptions 0-15 (MCAUSE interrupt=0) */
 
 /* Environment Call from U-mode */
