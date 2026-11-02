@@ -614,7 +614,7 @@ is_interrupt:
 	 * Save thread stack pointer on interrupt stack
 	 * In RISC-V, stack pointer needs to be 16-byte aligned
 	 */
-	addi sp, sp, -16
+	addi sp, sp, -RISCV_IRQ_STACK_SP_SLOT_SIZE
 	sr t0, 0(sp)
 
 on_irq_stack:
