@@ -906,6 +906,15 @@ static int unix_accept(void *obj, struct sockaddr *addr,
 
 accepted:
 	/*
+	 * Drop the level latch on the listener.
+	 */
+	k_mutex_lock(&s->lock, K_FOREVER);
+	if (sys_slist_is_empty(&s->accept_queue)) {
+		k_poll_signal_reset(&s->readable);
+	}
+	k_mutex_unlock(&s->lock);
+
+	/*
 	 * Create a new server-side endpoint and pair it with the
 	 * client endpoint.
 	 */
