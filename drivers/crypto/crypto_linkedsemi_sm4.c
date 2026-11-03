@@ -17,6 +17,8 @@
 
 LOG_MODULE_REGISTER(sm4_linkedsemi, LOG_LEVEL_DBG);
 
+#define SM4_OP_TIMEOUT_MS 1000
+
 void sm4_linkedsemi_isr(const struct device *dev)
 {
     const struct sm4_linkedsemi_config *cfg = dev->config;
@@ -53,9 +55,17 @@ static int sm4_linkedsemi_single_block(const struct device *dev, uint8_t *data_i
 	reg->SM4_CTRL = FIELD_BUILD(SM4_CALC_DEC, is_decrypt);
 	reg->SM4_START = SM4_CALC_START_MASK;
 
-	k_sem_take(&dev_data->wait_data_sem, K_FOREVER);
+	if (k_sem_take(&dev_data->wait_data_sem, K_MSEC(SM4_OP_TIMEOUT_MS)) != 0) {
+		LOG_ERR("SM4 data wait timeout");
+		k_mutex_unlock(&dev_data->sm4_engine_mutex);
+		return -ETIMEDOUT;
+	}
 
-	k_sem_take(&dev_data->cal_end_sem, K_FOREVER);
+	if (k_sem_take(&dev_data->cal_end_sem, K_MSEC(SM4_OP_TIMEOUT_MS)) != 0) {
+		LOG_ERR("SM4 calc end timeout");
+		k_mutex_unlock(&dev_data->sm4_engine_mutex);
+		return -ETIMEDOUT;
+	}
 	uint32_t out[] = {
 		[0] = reg->CALC_RSLT0,
 		[1] = reg->CALC_RSLT1,
@@ -68,7 +78,7 @@ static int sm4_linkedsemi_single_block(const struct device *dev, uint8_t *data_i
 	return 0;
 }
 
-static void sm4_linkedsemi_key_expansion(const struct device *dev, const uint8_t *key)
+static int sm4_linkedsemi_key_expansion(const struct device *dev, const uint8_t *key)
 {
     struct sm4_linkedsemi_data *dev_data = dev->data;
     const struct sm4_linkedsemi_config *cfg = dev->config;
@@ -77,7 +87,7 @@ static void sm4_linkedsemi_key_expansion(const struct device *dev, const uint8_t
 	
 	k_mutex_lock(&dev_data->sm4_engine_mutex, K_FOREVER);
 
-    sys_memcpy_swap(u32_key, key, SM4_KEY_LENGTH);
+    memcpy(u32_key, key, SM4_KEY_LENGTH);
 	reg->SM4_KEY0 = u32_key[0];
 	reg->SM4_KEY1 = u32_key[1];
 	reg->SM4_KEY2 = u32_key[2];
@@ -85,9 +95,14 @@ static void sm4_linkedsemi_key_expansion(const struct device *dev, const uint8_t
 
 	reg->INTR_CLR = SM4_KEY_END_MASK;
 	reg->SM4_START = SM4_KEY_START_MASK;
-    k_sem_take(&dev_data->key_ex_sem, K_FOREVER);
+    if (k_sem_take(&dev_data->key_ex_sem, K_MSEC(SM4_OP_TIMEOUT_MS)) != 0) {
+        LOG_ERR("SM4 key expansion timeout");
+        k_mutex_unlock(&dev_data->sm4_engine_mutex);
+        return -ETIMEDOUT;
+    }
 
     k_mutex_unlock(&dev_data->sm4_engine_mutex);
+    return 0;
 }
 
 static int sm4_linkedsemi_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt *pkt)
@@ -95,9 +110,23 @@ static int sm4_linkedsemi_ecb_encrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 	const struct device *dev = ctx->device;
 	int ret;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (pkt->in_len == 0) {
+		/* Zero-length input is a valid no-op (cf. mbedtls AES, si32). */
+		pkt->out_len = 0;
+		return 0;
+	}
+	if (pkt->in_len % SM4_BLOCK_LENGTH != 0) {
+		LOG_ERR("%s: in_len %d must be a multiple of block size",
+			__func__, pkt->in_len);
+		return -EINVAL;
+	}
 
-	for (uint8_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
+
+	for (uint32_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
 		ret = sm4_linkedsemi_single_block(dev, 
 										pkt->in_buf + i * SM4_BLOCK_LENGTH,
 						  				pkt->out_buf + i * SM4_BLOCK_LENGTH, 
@@ -118,9 +147,23 @@ static int sm4_linkedsemi_ecb_decrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 	const struct device *dev = ctx->device;
 	int ret;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (pkt->in_len == 0) {
+		/* Zero-length input is a valid no-op (cf. mbedtls AES, si32). */
+		pkt->out_len = 0;
+		return 0;
+	}
+	if (pkt->in_len % SM4_BLOCK_LENGTH != 0) {
+		LOG_ERR("%s: in_len %d must be a multiple of block size",
+			__func__, pkt->in_len);
+		return -EINVAL;
+	}
 
-	for (uint8_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
+
+	for (uint32_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
 		ret = sm4_linkedsemi_single_block(dev, 
 										pkt->in_buf + i * SM4_BLOCK_LENGTH,
 						  				pkt->out_buf + i * SM4_BLOCK_LENGTH, 
@@ -143,10 +186,24 @@ static int sm4_linkedsemi_cbc_encrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 	uint8_t c_iv[SM4_BLOCK_LENGTH];
 	int ret;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (pkt->in_len == 0) {
+		/* Zero-length input is a valid no-op (cf. mbedtls AES, si32). */
+		pkt->out_len = 0;
+		return 0;
+	}
+	if (pkt->in_len % SM4_BLOCK_LENGTH != 0) {
+		LOG_ERR("%s: in_len %d must be a multiple of block size",
+			__func__, pkt->in_len);
+		return -EINVAL;
+	}
+
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
 
 	memcpy(c_iv, iv, SM4_BLOCK_LENGTH);
-	for (uint8_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
+	for (uint32_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
 		mem_xor_128(in_data, pkt->in_buf + i * SM4_BLOCK_LENGTH, c_iv);
 		ret = sm4_linkedsemi_single_block(dev, in_data, pkt->out_buf + i * SM4_BLOCK_LENGTH, false);
 		if (ret == 0) {
@@ -168,9 +225,23 @@ static int sm4_linkedsemi_cbc_decrypt(struct cipher_ctx *ctx, struct cipher_pkt 
 	uint8_t *c_iv = iv;
 	int ret;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (pkt->in_len == 0) {
+		/* Zero-length input is a valid no-op (cf. mbedtls AES, si32). */
+		pkt->out_len = 0;
+		return 0;
+	}
+	if (pkt->in_len % SM4_BLOCK_LENGTH != 0) {
+		LOG_ERR("%s: in_len %d must be a multiple of block size",
+			__func__, pkt->in_len);
+		return -EINVAL;
+	}
 
-	for (uint8_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
+
+	for (uint32_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
 		ret = sm4_linkedsemi_single_block(dev, pkt->in_buf + i * SM4_BLOCK_LENGTH, out_data, true);
 		if (ret == 0) {
 			mem_xor_128(pkt->out_buf + i * SM4_BLOCK_LENGTH, out_data, c_iv);
@@ -201,12 +272,15 @@ static int sm4_linkedsemi_ctr_crypt(struct cipher_ctx *ctx, struct cipher_pkt *p
     const uint8_t cntlen = ctx->mode_params.ctr_info.ctr_len >> 3;
     const uint8_t ivlen = SM4_BLOCK_LENGTH - cntlen;
     const uint32_t unalign_block_len = pkt->in_len % SM4_BLOCK_LENGTH;
-	int ret;
+	int ret = 0;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
 
     memcpy(iv, ctr, ivlen);
-	for (uint8_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
+	for (uint32_t i = 0; i < pkt->in_len / SM4_BLOCK_LENGTH; i++) {
 		ret = sm4_linkedsemi_single_block(dev, iv, out, false);
 		if (ret == 0) {
             inc_ctr(iv + ivlen, cntlen);
@@ -350,6 +424,13 @@ static int sm4_linkedsemi_gcm_encrypt(struct cipher_ctx *ctx, struct cipher_aead
 	const struct device *dev = ctx->device;
 	struct cipher_pkt *pkt = apkt->pkt;
 
+	if ((pkt->out_buf == NULL) || ((pkt->in_len > 0) && (pkt->in_buf == NULL)) ||
+	    ((apkt->ad_len > 0) && (apkt->ad == NULL)) || (apkt->tag == NULL) ||
+	    (nonce == NULL)) {
+		LOG_ERR("NULL input/output/AAD/tag/nonce buffer");
+		return -EINVAL;
+	}
+
 	uint8_t gcm_h[SM4_BLOCK_LENGTH] = {0};
 	uint8_t c_j0[SM4_BLOCK_LENGTH] = {0};
 	uint8_t iv[SM4_BLOCK_LENGTH] = {0};
@@ -360,7 +441,10 @@ static int sm4_linkedsemi_gcm_encrypt(struct cipher_ctx *ctx, struct cipher_aead
 	const uint32_t unalign_block_len = pkt->in_len % SM4_BLOCK_LENGTH;
 	int ret = 0;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
 
 	memcpy(iv, nonce, ivlen);
     inc_ctr(iv + ivlen, cntlen);
@@ -425,6 +509,13 @@ static int sm4_linkedsemi_gcm_decrypt(struct cipher_ctx *ctx, struct cipher_aead
     const struct device *dev = ctx->device;
     struct cipher_pkt *pkt = apkt->pkt;
 
+    if ((pkt->out_buf == NULL) || ((pkt->in_len > 0) && (pkt->in_buf == NULL)) ||
+        ((apkt->ad_len > 0) && (apkt->ad == NULL)) || (apkt->tag == NULL) ||
+        (nonce == NULL)) {
+        LOG_ERR("NULL input/output/AAD/tag/nonce buffer");
+        return -EINVAL;
+    }
+
     uint8_t gcm_h[SM4_BLOCK_LENGTH] = {0};
     uint8_t c_j0[SM4_BLOCK_LENGTH] = {0};
     uint8_t t_prime[SM4_BLOCK_LENGTH] = {0};
@@ -436,7 +527,10 @@ static int sm4_linkedsemi_gcm_decrypt(struct cipher_ctx *ctx, struct cipher_aead
     const uint32_t unalign_block_len = pkt->in_len % SM4_BLOCK_LENGTH;
     int ret = 0;
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
 
     memcpy(iv, nonce, ivlen);
     inc_ctr(iv + ivlen, cntlen);
@@ -489,7 +583,7 @@ static int sm4_linkedsemi_gcm_decrypt(struct cipher_ctx *ctx, struct cipher_aead
 
     if (memcmp(t_prime, apkt->tag, ctx->mode_params.gcm_info.tag_len) != 0) {
         LOG_ERR("tag error");
-        return -EFAULT;
+        return -EBADMSG;
     }
 /* end GMAC */
 
@@ -576,12 +670,32 @@ static int sm4_linkedsemi_ccm_encrypt(struct cipher_ctx *ctx, struct cipher_aead
 	int ret = 0;
 
 	if ((pkt->out_buf == NULL) || ((pkt->in_len > 0) && (pkt->in_buf == NULL)) ||
-	    ((apkt->ad_len > 0) && (apkt->ad == NULL)) || (apkt->ad_len >= SM4_CCM_AAD_MAX_BYTES) ||
-	    (pkt->in_len >= SM4_CCM_PAYLOAD_MAX_BYTES) || (pkt->out_buf_max < pkt->in_len) ||
-	    (tag_len < 4) || (tag_len > 16) || (tag_len & 1)) {
+	    ((apkt->ad_len > 0) && (apkt->ad == NULL)) || (apkt->tag == NULL) ||
+	    (nonce == NULL)) {
+		LOG_ERR("NULL input/output/AAD/tag/nonce buffer");
 		return -EINVAL;
 	}
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (apkt->ad_len >= SM4_CCM_AAD_MAX_BYTES) {
+		LOG_ERR("AAD length %u exceeds max", apkt->ad_len);
+		return -EMSGSIZE;
+	}
+	if (pkt->in_len >= SM4_CCM_PAYLOAD_MAX_BYTES) {
+		LOG_ERR("Payload length %d exceeds max", pkt->in_len);
+		return -EMSGSIZE;
+	}
+	if (pkt->out_buf_max < pkt->in_len) {
+		LOG_ERR("Output buffer too small: %d < %d", pkt->out_buf_max, pkt->in_len);
+		/* Buffer-size errors follow the ecosystem convention (-EINVAL). */
+		return -EINVAL;
+	}
+	if ((tag_len < 4) || (tag_len > 16) || (tag_len & 1)) {
+		LOG_ERR("Invalid tag length: %u", (unsigned int)tag_len);
+		return -EINVAL;
+	}
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
 
 	b[0] = ((apkt->ad_len > 0) ? 0x40 : 0) | (((tag_len - 2) / 2 << 3)) | (q - 1);
 	memcpy(&b[1], nonce, nonce_len);
@@ -633,12 +747,33 @@ static int sm4_linkedsemi_ccm_decrypt(struct cipher_ctx *ctx, struct cipher_aead
 	int ret = 0;
 
 	if ((pkt->out_buf == NULL) || ((pkt->in_len > 0) && (pkt->in_buf == NULL)) ||
-	    ((apkt->ad_len > 0) && (apkt->ad == NULL)) || (apkt->ad_len >= SM4_CCM_AAD_MAX_BYTES) ||
-	    (pkt->in_len >= SM4_CCM_PAYLOAD_MAX_BYTES) || (pkt->out_buf_max < (pkt->in_len))) {
+	    ((apkt->ad_len > 0) && (apkt->ad == NULL)) || (apkt->tag == NULL) ||
+	    (nonce == NULL)) {
+		LOG_ERR("NULL input/output/AAD/tag/nonce buffer");
+		return -EINVAL;
+	}
+	if (apkt->ad_len >= SM4_CCM_AAD_MAX_BYTES) {
+		LOG_ERR("AAD length %u exceeds max", apkt->ad_len);
+		return -EMSGSIZE;
+	}
+	if (pkt->in_len >= SM4_CCM_PAYLOAD_MAX_BYTES) {
+		LOG_ERR("Payload length %d exceeds max", pkt->in_len);
+		return -EMSGSIZE;
+	}
+	if (pkt->out_buf_max < pkt->in_len) {
+		LOG_ERR("Output buffer too small: %d < %d", pkt->out_buf_max, pkt->in_len);
+		/* Buffer-size errors follow the ecosystem convention (-EINVAL). */
+		return -EINVAL;
+	}
+	if ((tag_len < 4) || (tag_len > 16) || (tag_len & 1)) {
+		LOG_ERR("Invalid tag length: %u", (unsigned int)tag_len);
 		return -EINVAL;
 	}
 
-	sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	ret = sm4_linkedsemi_key_expansion(dev, ctx->key.bit_stream);
+	if (ret != 0) {
+		return ret;
+	}
 
 	b[0] = q - 1;
 	memcpy(&b[1], nonce, nonce_len);
@@ -676,7 +811,7 @@ static int sm4_linkedsemi_ccm_decrypt(struct cipher_ctx *ctx, struct cipher_aead
 		ret = 0;
 	} else {
 		// memset(pkt->out_buf, 0, pkt->in_len);
-		ret = -1;
+		ret = -EBADMSG;
 	}
 
 	pkt->out_len = pkt->in_len;
@@ -756,7 +891,8 @@ static int sm4_linkedsemi_cipher_begin_session(const struct device *dev, struct 
 	}
 
 	if (ctx->keylen != SM4_KEY_LENGTH) {
-		LOG_ERR("Unsupported");
+		LOG_ERR("Invalid key length: %u", (unsigned int)ctx->keylen);
+		/* Session-level unsupported parameter: -ENOTSUP per O-55 方案②. */
 		return -ENOTSUP;
 	}
 
@@ -778,7 +914,7 @@ static int sm4_linkedsemi_cipher_begin_session(const struct device *dev, struct 
 			ctx->ops.ccm_crypt_hndlr = sm4_linkedsemi_ccm_encrypt;
 			break;
 		default:
-			LOG_ERR("Unsupported");
+			LOG_ERR("Unsupported mode");
 			return -ENOTSUP;
 		}
 	} else {
@@ -799,7 +935,7 @@ static int sm4_linkedsemi_cipher_begin_session(const struct device *dev, struct 
 			ctx->ops.ccm_crypt_hndlr = sm4_linkedsemi_ccm_decrypt;
 			break;
 	    default:
-		    LOG_ERR("Unsupported");
+		    LOG_ERR("Unsupported mode");
 		    return -ENOTSUP;
 	    }
     }
