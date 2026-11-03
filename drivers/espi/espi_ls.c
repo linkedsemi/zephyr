@@ -399,7 +399,12 @@ static void ls_espi_isr(void *arg)
 		}
 		reg->UP_PSTC_DAT = up_first_word;
 		reg->UP_PSTC_LEN_M1 = up_len - 1;
+		unsigned int key = irq_lock();
 		reg->STATUS_SET = ESPI_STATUS_ALERT_SET_MASK | ESPI_STATUS_SET_PC_AVAIL_MASK | ESPI_STATUS_SET_NP_FREE_MASK;
+		while (!(reg->STATUS & ESPI_STATUS_SET_NP_FREE_MASK)) {
+			reg->STATUS_SET = ESPI_STATUS_SET_NP_FREE_MASK;
+		}
+		irq_unlock(key);
 	}
 	if(stt&ESPI_INTR_STT_VWIR_FREE_MASK)
 	{
