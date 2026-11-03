@@ -825,6 +825,7 @@ static int sm4_linkedsemi_init(const struct device *dev)
 	reg_sm4_t *reg = dev_config->reg;
     __maybe_unused int ret;
 
+#if !defined(CONFIG_SM4_LINKEDSEMI_NO_CLOCK_RESET)
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
@@ -857,6 +858,7 @@ static int sm4_linkedsemi_init(const struct device *dev)
         clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
     }
 #endif
+#endif /* !CONFIG_SM4_LINKEDSEMI_NO_CLOCK_RESET */
 
     dev_config->irq_config_func(dev);
 	reg->INTR_CLR = SM4_INTR_END_MASK | SM4_INTR_DATA_MASK | SM4_KEY_END_MASK;

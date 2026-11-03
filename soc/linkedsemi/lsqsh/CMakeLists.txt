@@ -5,6 +5,7 @@ zephyr_sources(psram.c)
 zephyr_sources(dma.c)
 zephyr_sources(soc_reset_reason.c)
 zephyr_sources(soc_reboot.c)
+zephyr_sources(ls_crypto_clock.c)
 zephyr_sources_ifdef(CONFIG_NETWORKING_MODULE plugin_section.c)
 
 zephyr_library_sources_ifdef(CONFIG_IOPMP_LINKEDSEMI iopmp.c)
