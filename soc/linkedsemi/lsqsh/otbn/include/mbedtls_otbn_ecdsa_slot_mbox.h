@@ -38,6 +38,8 @@
 #include "mbedtls/ecdsa.h"
 #include "mbedtls/ecp.h"
 
+#include "ls_otbn_err.h"
+
 /*
  * This header is only usable when the slot-mbox family is built. Turn a
  * missing switch (or a build without a delegation role) into a compile-time
@@ -71,7 +73,8 @@ extern "C" {
  *          supply a CSPRNG and unique value per signature, and \p p_rng is
  *          passed to it. If \p f_rng is NULL, the peer supplies the nonce.
  *          \p grp must be loaded with a supported curve (SECP256R1, SECP384R1
- *          or SM2); any other curve fails with -EIO before anything is sent.
+ *          or SM2); any other curve fails with LS_OTBN_ERR_NOSUPP before
+ *          anything is sent.
  *
  * \param grp       Group of the key registered in \p slot_id.
  * \param r         Output signature component r.
@@ -82,11 +85,32 @@ extern "C" {
  * \param f_rng     Optional nonce source; NULL lets the peer choose.
  * \param p_rng     Context for \p f_rng.
  *
- * \return          0 on success, the peer's code on failure: -ENOENT if the
- *                  slot is not registered, -EINVAL if the slot's curve does
- *                  not match \p grp, -EOPNOTSUPP if the peer does not support
- *                  the curve; -EIO if the request could not be sent,
- *                  -ETIMEDOUT if no matching reply arrived in time.
+ * \return          0 on success. Every failure cause has its own value; this
+ *                  entry point returns only LS_OTBN_ERR_* (never an errno or
+ *                  an MBEDTLS_ERR_* value):
+ *                  LS_OTBN_ERR_INVAL    a required argument is NULL
+ *                  LS_OTBN_ERR_NOSUPP   \p grp's curve is not supported
+ *                  LS_OTBN_ERR_RANGE    \p slot_id is not a valid slot on the
+ *                                       serving core
+ *                  LS_OTBN_ERR_NOENT    \p slot_id is not registered
+ *                  LS_OTBN_ERR_CURVE    the key in \p slot_id belongs to a
+ *                                       different curve than \p grp
+ *                  LS_OTBN_ERR_PROTO    the serving core's slot entry is
+ *                                       inconsistent (internal fault;
+ *                                       register() rejects such a key)
+ *                  LS_OTBN_ERR_MSGSIZE  the peer rejected the hash length
+ *                  LS_OTBN_ERR_ACCESS   another delegated call is in flight
+ *                  LS_OTBN_ERR_IO       the request could not be sent
+ *                  LS_OTBN_ERR_TIMEOUT  no matching reply arrived in time
+ *                  LS_OTBN_ERR_BUSY     the peer's request queue is full
+ *                  LS_OTBN_ERR_NOSYS    the peer does not serve this op
+ *                  LS_OTBN_ERR_RNG      the nonce source (the caller's f_rng)
+ *                                       failed
+ *                  LS_OTBN_ERR_MBEDTLS   the crypto layer on the serving core
+ *                                       failed (invalid key, allocation,
+ *                                       entropy, feature unavailable, ...);
+ *                                       the _ex form reports the backend's
+ *                                       exact code in \p status
  */
 int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
                                     mbedtls_mpi *r, mbedtls_mpi *s,
@@ -94,6 +118,23 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
                                     const unsigned char *buf, size_t blen,
                                     int (*f_rng)(void *, unsigned char *, size_t),
                                     void *p_rng);
+
+/**
+ * \brief   Same as mbedtls_ls_otbn_ecdsa_sign_slot(), plus the backend detail.
+ *
+ *          The return value is identical to the plain form. When it is
+ *          LS_OTBN_ERR_MBEDTLS, \p status receives the exact value the crypto
+ *          backend returned on the serving core (an MBEDTLS_ERR_* code, or a
+ *          raw driver value that layer passed through); for every other
+ *          result \p status is 0. \p status may be NULL.
+ */
+int mbedtls_ls_otbn_ecdsa_sign_slot_ex(mbedtls_ecp_group *grp,
+                                       mbedtls_mpi *r, mbedtls_mpi *s,
+                                       uint32_t slot_id,
+                                       const unsigned char *buf, size_t blen,
+                                       int (*f_rng)(void *, unsigned char *, size_t),
+                                       void *p_rng,
+                                       int *status);
 
 #endif /* CONFIG_LS_OTBN_DELEGATION_CLIENT */
 
@@ -118,10 +159,16 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
  * \param gid       Curve of \p d.
  * \param d         Borrowed private key buffer, little-endian.
  *
- * \return          0 on success, -EINVAL if \p slot_id is out of range or
- *                  \p d is NULL, -EOPNOTSUPP if \p gid is not one of the
- *                  supported curves, otherwise the mbedtls ECP error from
- *                  key validation (for example MBEDTLS_ERR_ECP_INVALID_KEY).
+ * \return          0 on success. Every failure cause has its own value; this
+ *                  entry point returns only LS_OTBN_ERR_*:
+ *                  LS_OTBN_ERR_INVAL    \p d is NULL
+ *                  LS_OTBN_ERR_RANGE    \p slot_id is not a valid slot on
+ *                                       this core
+ *                  LS_OTBN_ERR_NOSUPP   \p gid is not a supported curve
+ *                  LS_OTBN_ERR_MBEDTLS   the mbedtls validation failed (for
+ *                                       example the scalar is 0 or >= n, or
+ *                                       an allocation failed); the _ex form
+ *                                       reports its exact code in \p status
  */
 int ls_otbn_ecdsa_key_slot_register(uint32_t slot_id,
                                     mbedtls_ecp_group_id gid,
@@ -132,16 +179,28 @@ int ls_otbn_ecdsa_key_slot_register(uint32_t slot_id,
  *
  *          Clears the descriptor only. The caller's key buffer is not freed
  *          or zeroed -- that remains the caller's responsibility. Signing
- *          requests for the slot fail with -ENOENT afterwards.
+ *          requests for the slot fail with LS_OTBN_ERR_NOENT afterwards.
  *
  *          Only available on the serving core (the delegation server build).
  *
  * \param slot_id   Slot index.
  *
- * \return          0 on success, -EINVAL if \p slot_id is out of range,
- *                  -ENOENT if the slot is not registered.
+ * \return          0 on success; LS_OTBN_ERR_RANGE if \p slot_id is out of
+ *                  range; LS_OTBN_ERR_NOENT if the slot is not registered.
  */
 int ls_otbn_ecdsa_key_slot_unregister(uint32_t slot_id);
+
+/**
+ * \brief   Same as ls_otbn_ecdsa_key_slot_register(), plus the backend detail.
+ *
+ *          The return value is identical to the plain form. When it is
+ *          LS_OTBN_ERR_MBEDTLS, \p status receives the exact value the mbedtls
+ *          validation returned; otherwise it is 0. \p status may be NULL.
+ */
+int ls_otbn_ecdsa_key_slot_register_ex(uint32_t slot_id,
+                                       mbedtls_ecp_group_id gid,
+                                       const uint8_t *d,
+                                       int *status);
 
 #endif /* CONFIG_LS_OTBN_DELEGATION_SERVER */
 

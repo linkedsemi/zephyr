@@ -3,10 +3,10 @@
  * (mbedtls_otbn_rsa_mbox.c).
  *
  * The same split as the ECDSA family applies: the client functions below exist
- * whenever CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT is enabled and
- * forward the operation to the peer core over the delegation bus; the peer
- * needs its own OTBN RSA support (CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT) to
- * answer them.
+ * whenever CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX is enabled on the delegation
+ * client and forward the operation to the peer core over the delegation bus;
+ * the peer needs the same family switch and its own OTBN RSA support
+ * (CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT) to answer them.
  *
  * Buffers are big-endian and num_bytes wide, matching mbedtls_rsa_public_otbn()
  * / mbedtls_rsa_private_otbn(), so a caller can switch between the local OTBN
@@ -37,9 +37,15 @@ extern "C" {
  * \param n_size_bits   Modulus size: 2048, 3072 or 4096.
  * \param out           Big-endian result, n_size_bits/8 bytes.
  *
- * \return              0 on success, the peer's error code, or -EINVAL for an
- *                      unsupported modulus size, -EIO / -ETIMEDOUT when the
- *                      peer could not be reached.
+ * \return              0 on success. An unsupported modulus size (not a whole
+ *                      number of bytes, or not 2048/3072/4096 bits) returns
+ *                      MBEDTLS_ERR_ECP_FEATURE_UNAVAILABLE before anything is
+ *                      sent; a peer-side crypto failure returns its exact
+ *                      MBEDTLS_ERR_*; transport failures return
+ *                      MBEDTLS_ERR_LS_OTBN_BUSY (another call / peer queue
+ *                      full), MBEDTLS_ERR_PLATFORM_HW_ACCEL_FAILED
+ *                      (send/timeout/protocol) or
+ *                      MBEDTLS_ERR_PLATFORM_FEATURE_UNSUPPORTED (family off).
  */
 int mbedtls_ls_otbn_rsa_modexp_encrypt(const uint8_t *in, const uint8_t *exp,
 				       const uint8_t *n, uint32_t n_size_bits,

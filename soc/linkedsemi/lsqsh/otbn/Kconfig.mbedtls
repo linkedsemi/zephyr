@@ -1,34 +1,18 @@
-# TLS/DTLS related options
+# TLS/DTLS related options for the LINKEDSEMI OTBN port.
+#
+# Sections:
+#   1. OTBN core and the local ECDSA alternative
+#   2. Hash / cipher accelerators (hardware and OTBN)
+#   3. RSA: local OTBN accelerator
+#   4. OTBN delegation: transport, roles, and one switch per proxy family
+#   5. Misc
 
-config MBEDTLS_CIPHER_AES_LINKEDSEMI
-	bool "LINKEDSEMI's hardware AES"
-	default n
-	#select MBEDTLS_CIPHER_AES_ENABLED
+# --------------------------------------------------------------- 1. OTBN core
 
 config MBEDTLS_LINKEDSEMI_OTBN
 	bool "LINKEDSEMI's otbn module enable"
 	default n
 	select LINKEDSEMI_OTBN
-
-config MBEDTLS_SHA224_SHA256_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sha224 and sha256"
-	default n
-
-config MBEDTLS_SM3_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sm3"
-	default n
-
-config MBEDTLS_SHA224_SHA256_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's otbn module calculate sha224 and sha256"
-	default n
-	select MBEDTLS_LINKEDSEMI_OTBN
-	#select MBEDTLS_ECDSA_C
-
-config MBEDTLS_SM3_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's otbn module calculate sm3"
-	default n
-	select MBEDTLS_LINKEDSEMI_OTBN
-	#select MBEDTLS_ECDSA_C
 
 config MBEDTLS_ECP_DP_SM2_ENABLED
 	bool "SM2 elliptic curve, implementation based on LINKEDSEMI’s OTBN moudle"
@@ -56,8 +40,51 @@ config MBEDTLS_ECDSA_SECP256R1_SECP384R1_SM2_LINKEDSEMI_OTBN_ALT
 config MBEDTLS_ECDSA_LINKEDSEMI_OTBN_ALT_VIA_DELEGATION
 	bool "The peer core's OTBN, reached through the delegation proxy"
 	select MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_CLIENT
+	select MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX
 
 endchoice
+
+# --------------------------------------------- 2. Hash / cipher accelerators
+
+config MBEDTLS_CIPHER_AES_LINKEDSEMI
+	bool "LINKEDSEMI's hardware AES"
+	default n
+	#select MBEDTLS_CIPHER_AES_ENABLED
+
+config MBEDTLS_SHA224_SHA256_LINKEDSEMI_HARDWARE_ALT
+	bool "LINKEDSEMI's hardware sha224 and sha256"
+	default n
+
+config MBEDTLS_SM3_LINKEDSEMI_HARDWARE_ALT
+	bool "LINKEDSEMI's hardware sm3"
+	default n
+
+config MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT
+	bool "LINKEDSEMI's hardware sha384 and sha512"
+	default n
+	#select MBEDTLS_SHA512
+
+config MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT
+	bool "LINKEDSEMI's hardware sm4"
+	default n
+
+config MBEDTLS_SHA224_SHA256_LINKEDSEMI_OTBN_ALT
+	bool "LINKEDSEMI's otbn module calculate sha224 and sha256"
+	default n
+	select MBEDTLS_LINKEDSEMI_OTBN
+
+config MBEDTLS_SM3_LINKEDSEMI_OTBN_ALT
+	bool "LINKEDSEMI's otbn module calculate sm3"
+	default n
+	select MBEDTLS_LINKEDSEMI_OTBN
+
+config MBEDTLS_SHA384_SHA512_LINKEDSEMI_OTBN_ALT
+	bool "LINKEDSEMI's otbn module calculate sha384 and sha512"
+	default n
+	select MBEDTLS_LINKEDSEMI_OTBN
+	#select MBEDTLS_SHA512
+
+# -------------------------------------------------- 3. RSA local accelerator
 
 config MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT
 	bool "LINKEDSEMI's RSA public/private modexp and keygen using OTBN"
@@ -71,6 +98,10 @@ config MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT
 	  public exponent F4 (65537); other configurations fall back to
 	  the software implementation.
 
+# --------------------------------------------- 4. OTBN delegation (proxy bus)
+
+# Transport master. Each role selects it; the family switches below only
+# decide which payloads the channel may carry.
 config MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
 	bool "enable linedsemi's otbn delegation"
 	default n
@@ -86,6 +117,34 @@ config MBEDTLS_LINKEDSEMI_OTBN_DELEGATION_SERVER
 	default n
 	select MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
 	select LS_OTBN_DELEGATION_SERVER
+
+# One switch per proxy family. A family that is off is neither compiled nor
+# registered in the bus op table, so it costs neither code nor proxy-thread
+# stack. This is what lets a server keep the local OTBN RSA accelerator
+# (MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT) without serving RSA requests.
+config MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX
+	bool "ECDSA genkey/sign/verify over the OTBN delegation bus"
+	depends on MBEDTLS
+	depends on MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+	depends on LS_OTBN_DELEGATION_CLIENT || LS_OTBN_DELEGATION_SERVER
+	default y if MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+	help
+	  ECDSA family of the delegation channel: the explicit
+	  mbedtls_ls_otbn_ecdsa_genkey()/_sign()/_verify() entry points and the
+	  matching server handlers. Defaults on when the channel is enabled so
+	  existing ECDSA delegation builds keep working.
+
+config MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX
+	bool "RSA modexp over the OTBN delegation bus"
+	depends on MBEDTLS
+	depends on MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+	depends on LS_OTBN_DELEGATION_CLIENT || LS_OTBN_DELEGATION_SERVER
+	default n
+	help
+	  RSA family of the delegation channel. Opt-in: a server that only uses
+	  its own OTBN RSA should leave this off. The RSA handler is then kept
+	  out of the image and the proxy thread can use the smaller
+	  ECDSA-sized stack.
 
 config MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX
 	bool "ECDSA signing by private-key slot (key stays on the serving core)"
@@ -111,20 +170,7 @@ config LS_OTBN_ECDSA_SLOT_MBOX_COUNT
 	  Size of the private-key slot table. Slot ids passed over the
 	  delegation channel must be in [0, value - 1].
 
-config MBEDTLS_SHA384_SHA512_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sha384 and sha512"
-	default n
-	#select MBEDTLS_SHA512
-
-config MBEDTLS_SHA384_SHA512_LINKEDSEMI_OTBN_ALT
-	bool "LINKEDSEMI's otbn module calculate sha384 and sha512"
-	default n
-	select MBEDTLS_LINKEDSEMI_OTBN
-	#select MBEDTLS_SHA512
-
-config MBEDTLS_SM4_LINKEDSEMI_HARDWARE_ALT
-	bool "LINKEDSEMI's hardware sm4"
-	default n
+# -------------------------------------------------------------------- 5. Misc
 
 config MBEDTLS_THREADING_LINKEDSEMI_ALT
 	bool "MbedTLS runs in the Zephyr operating system."

@@ -13,6 +13,17 @@
 
 #include "otbn_delegation.h"
 #include "ls_otbn_delegation.h"
+#include "ls_otbn_err.h"
+
+/*
+ * This file compiles one half per image (#if client ... #else server), and the
+ * bring-up calls each side under its own switch. Two roles in one image would
+ * therefore compile only the client half and fail to link the server init;
+ * make that a clear build error instead.
+ */
+#if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT) && defined(CONFIG_LS_OTBN_DELEGATION_SERVER)
+#error "an image must be either the delegation client or the server, not both"
+#endif
 
 #include <zephyr/logging/log.h>
 /* Own REGISTER: this file is built for delegation, while the shared
@@ -96,7 +107,7 @@ int otbn_deleg_call(struct otbn_delegate_params *req, uint32_t timeout_ms)
 	int64_t deadline;
 
 	if (k_sem_take(&client_sem, K_FOREVER) != 0) {
-		return -EACCES;
+		return LS_OTBN_ERR_ACCESS;
 	}
 
 	/* seq 0 is the "no reply stored" sentinel, so never hand it out: on wrap
@@ -112,7 +123,7 @@ int otbn_deleg_call(struct otbn_delegate_params *req, uint32_t timeout_ms)
 	if (mbox_send_dt(&otbn_deleg_client, &msg) != 0) {
 		LOG_WRN("delegation: mbox send failed");
 		k_sem_give(&client_sem);
-		return -EIO;
+		return LS_OTBN_ERR_IO;
 	}
 
 	deadline = k_uptime_get() + timeout_ms;
@@ -134,7 +145,7 @@ int otbn_deleg_call(struct otbn_delegate_params *req, uint32_t timeout_ms)
 
 	LOG_WRN("delegation: no reply within %u ms", timeout_ms);
 	k_sem_give(&client_sem);
-	return -ETIMEDOUT;
+	return LS_OTBN_ERR_TIMEOUT;
 }
 
 const struct otbn_delegate_params *otbn_deleg_reply(void)
@@ -151,16 +162,22 @@ static struct mbox_dt_spec otbn_deleg_server =
  * reasons:
  *  - An RSA modexp occupies the peer for hundreds of milliseconds; running that
  *    from the system workqueue stalls every other system work item.
- *  - The handlers need real stack: a single mbedtls_ls_otbn_rsa_modexp() frame
- *    holds four MBEDTLS_MPI_MAX_SIZE buffers, and the ECDSA path adds an
- *    mbedtls_ecdsa_context on top. The system workqueue's stack
- *    (CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE, 1024 here) does not cover that, and
- *    running the handlers there ended in a kernel panic on the first delegated
- *    ECDSA signing request. That panic is gone since the handlers moved here;
- *    the stack figure above is what the two observations are consistent with,
- *    not a measured high-water mark.
+ *  - The handlers need real stack. The heaviest is
+ *    mbedtls_ls_otbn_rsa_modexp() (~1.6 KB: three 512-byte scratch buffers,
+ *    see RSA_MODEOP_MAX_BYTES in rsa_alt.c), and it is only reachable when the
+ *    RSA proxy family and the local OTBN RSA backend are both enabled.
+ *    Measured high-water marks on this target (INIT_STACKS scan of the server
+ *    thread stack): RSA 2044 B, slot P384 1020 B, ECDSA 908 B. The system
+ *    workqueue's stack (CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE, 1024 here) does
+ *    not cover that, and running the handlers there ended in a kernel panic on
+ *    the first delegated ECDSA signing request.
  */
-#define OTBN_DELEG_SERVER_STACK_SIZE 8192
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX) && \
+	defined(CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT)
+#define OTBN_DELEG_SERVER_STACK_SIZE 3072
+#else
+#define OTBN_DELEG_SERVER_STACK_SIZE 2048
+#endif
 #define OTBN_DELEG_SERVER_PRIORITY   K_PRIO_PREEMPT(2)
 
 /* Statically initialised so the thread below can block on it before
@@ -178,18 +195,20 @@ K_MSGQ_DEFINE(otbn_deleg_msgq, sizeof(struct otbn_delegate_params), OTBN_DELEG_M
  * handlers, which are not compiled into the image at all -- an unconditional
  * reference here would fail to link. */
 static const struct otbn_deleg_op deleg_ops[] = {
-#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION)
-	{ OTBN_DELEG_OP_ECDSA_GENKEY,   otbn_deleg_ecdsa_genkey },
-	{ OTBN_DELEG_OP_ECDSA_GENKEY_RNG, otbn_deleg_ecdsa_genkey_rng },
-	{ OTBN_DELEG_OP_ECDSA_SIGN,     otbn_deleg_ecdsa_sign },
-	{ OTBN_DELEG_OP_ECDSA_SIGN_RNG, otbn_deleg_ecdsa_sign_rng },
-	{ OTBN_DELEG_OP_ECDSA_VERIFY,   otbn_deleg_ecdsa_verify },
-#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX)
-	{ OTBN_DELEG_OP_ECDSA_SIGN_SLOT, otbn_deleg_ecdsa_sign_slot },
-	{ OTBN_DELEG_OP_ECDSA_SIGN_SLOT_RNG, otbn_deleg_ecdsa_sign_slot_rng },
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX)
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_GENKEY,   otbn_deleg_mbedtls_ecdsa_genkey },
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_GENKEY_RNG, otbn_deleg_mbedtls_ecdsa_genkey_rng },
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN,     otbn_deleg_mbedtls_ecdsa_sign },
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_RNG, otbn_deleg_mbedtls_ecdsa_sign_rng },
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_VERIFY,   otbn_deleg_mbedtls_ecdsa_verify },
 #endif
-	{ OTBN_DELEG_OP_RSA_MODEXP_PUB, otbn_deleg_rsa_modexp_pub },
-	{ OTBN_DELEG_OP_RSA_MODEXP_PRV, otbn_deleg_rsa_modexp_prv },
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX)
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT, otbn_deleg_mbedtls_ecdsa_sign_slot },
+	{ OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT_RNG, otbn_deleg_mbedtls_ecdsa_sign_slot_rng },
+#endif
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX)
+	{ OTBN_DELEG_OP_MBEDTLS_RSA_MODEXP_PUB, otbn_deleg_mbedtls_rsa_modexp_pub },
+	{ OTBN_DELEG_OP_MBEDTLS_RSA_MODEXP_PRV, otbn_deleg_mbedtls_rsa_modexp_prv },
 #endif
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION)
 	{ OTBN_DELEG_OP_WOLFSSL_GENKEY,         otbn_deleg_wolfssl_genkey },
@@ -249,7 +268,7 @@ static void server_mbox_handler(const struct otbn_delegate_params *param)
 	/* Queue full: answer immediately so the caller fails fast instead of
 	 * burning its whole timeout. */
 	LOG_WRN("delegation: request queue full");
-	server_reply(param, -EBUSY, NULL);
+	server_reply(param, LS_OTBN_ERR_BUSY, NULL);
 }
 
 static void server_mbox_callback(const struct device *dev,

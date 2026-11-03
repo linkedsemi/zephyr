@@ -41,7 +41,7 @@
  *   op table -> family handler                 takes the one-call lock,
  *   executes on the local OTBN                 assigns req.seq, sends,
  *   stamps status/op/seq, sends the reply ---> waits for that seq
- *                                            returns 0 / -EIO / -ETIMEDOUT
+ *                                            returns 0 / LS_OTBN_ERR_*
  *                                            otbn_deleg_reply() -> struct
  *                                            check .status, read own buffers
  *
@@ -54,15 +54,17 @@
  * What callers must keep:
  *  - Bring the client up once (idempotent) before the first call. A call made
  *    before ls_otbn_delegation_client_init() has no reply path and can only time out.
- *  - One call in flight per core: otbn_deleg_call() returns -EACCES if another
- *    is still running. The request's buffers belong to the caller and must not
+ *  - One call in flight per core: a second otbn_deleg_call() blocks until the
+ *    first returns (the bus serializes callers). The request's buffers belong
+ *    to the caller and must not
  *    be touched until the call returns -- after a timeout the peer may still be
  *    writing into them.
  *  - The reply points at the same buffers the request pointed at (both cores
  *    share SRAM), so invalidate them before reading; the family entry points
  *    already do this.
- *  - Every failure is an ordinary return value, never silence: -EIO (send
- *    failed), -ETIMEDOUT (no matching reply in time), -EBUSY (the peer's queue
+ *  - Every failure is an ordinary return value, never silence: LS_OTBN_ERR_IO
+ *    (send failed), LS_OTBN_ERR_TIMEOUT (no matching reply in time),
+ *    LS_OTBN_ERR_BUSY (the peer's queue
  *    is full), OTBN_DELEG_ERR_UNKNOWN_OP (the peer does not serve this op --
  *    normally a mixed pair of images).
  *
@@ -81,26 +83,28 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "ls_otbn_err.h"
+
 /*
  * Op code space. 0x11/0x22/0x33 keep the values the ECDSA proxy has always put
  * on the wire; changing them would break a paired image silently. New families
  * take their own cluster.
  */
-#define OTBN_DELEG_OP_ECDSA_GENKEY    		0x11
-#define OTBN_DELEG_OP_ECDSA_SIGN      		0x22
-#define OTBN_DELEG_OP_ECDSA_VERIFY    		0x33
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_GENKEY    		0x11
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN      		0x22
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_VERIFY    		0x33
 /* Client-supplied randomness variants. The requesting core fills data[2] with
  * the keygen seed (genkey_rng) or the signing nonce (sign_rng); the serving
  * core feeds it to the local OTBN instead of using its own entropy. */
-#define OTBN_DELEG_OP_ECDSA_GENKEY_RNG 		0x12
-#define OTBN_DELEG_OP_ECDSA_SIGN_RNG   		0x24
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_GENKEY_RNG 		0x12
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_RNG   		0x24
 /* Sign with a key that stays in the serving core's slot table: the request
  * carries a slot id instead of the private scalar. */
-#define OTBN_DELEG_OP_ECDSA_SIGN_SLOT 		0x23
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT 		0x23
 /* Slot variant with a client-supplied nonce: data[2] is nonce-in / r-out. */
-#define OTBN_DELEG_OP_ECDSA_SIGN_SLOT_RNG 	0x25
-#define OTBN_DELEG_OP_RSA_MODEXP_PUB  		0x41
-#define OTBN_DELEG_OP_RSA_MODEXP_PRV  		0x42
+#define OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT_RNG 	0x25
+#define OTBN_DELEG_OP_MBEDTLS_RSA_MODEXP_PUB  		0x41
+#define OTBN_DELEG_OP_MBEDTLS_RSA_MODEXP_PRV  		0x42
 
 /*
  * wolfSSL families take their own cluster. The wire contract mirrors the
@@ -119,8 +123,9 @@
 #define OTBN_DELEG_OP_WOLFSSL_RSA_MODEXP_PRV 0x56
 
 /* Reply status for an op the receiver does not serve (image mismatch, or a
- * family compiled out). Outside the mbedtls error space on purpose. */
-#define OTBN_DELEG_ERR_UNKNOWN_OP     (-38) /* -ENOSYS */
+ * family compiled out). It is a driver code, so each family translates it into
+ * its own domain instead of passing a library-specific value through. */
+#define OTBN_DELEG_ERR_UNKNOWN_OP     LS_OTBN_ERR_NOSYS
 
 struct otbn_delegate_params {
 	int32_t status;
@@ -153,9 +158,9 @@ struct otbn_delegate_params {
  * slower than ECDSA, so one shared value would either cut RSA short or make an
  * ECDSA failure take far too long to surface.
  *
- * Returns 0 on success, -EACCES if another call is in flight (calls are
- * serialized), -EIO if the send failed, -ETIMEDOUT if no matching reply
- * arrived in time.
+ * Returns 0 on success. Calls are serialized, so a call made while another is
+ * in flight waits for it to complete. LS_OTBN_ERR_IO if the send failed,
+ * LS_OTBN_ERR_TIMEOUT if no matching reply arrived in time.
  */
 int otbn_deleg_call(struct otbn_delegate_params *req, uint32_t timeout_ms);
 
@@ -190,26 +195,30 @@ struct otbn_deleg_op {
  * place lists every delegated operation, which is what makes "how do I add a
  * family" a two-function question.
  */
-int otbn_deleg_ecdsa_genkey(const struct otbn_delegate_params *req,
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX)
+int otbn_deleg_mbedtls_ecdsa_genkey(const struct otbn_delegate_params *req,
 			    struct otbn_delegate_params *reply);
-int otbn_deleg_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
 				struct otbn_delegate_params *reply);
-int otbn_deleg_ecdsa_sign(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign(const struct otbn_delegate_params *req,
 			  struct otbn_delegate_params *reply);
-int otbn_deleg_ecdsa_sign_rng(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign_rng(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply);
-int otbn_deleg_ecdsa_verify(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_verify(const struct otbn_delegate_params *req,
 			    struct otbn_delegate_params *reply);
+#endif
 #if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX)
-int otbn_deleg_ecdsa_sign_slot(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign_slot(const struct otbn_delegate_params *req,
 			       struct otbn_delegate_params *reply);
-int otbn_deleg_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
 				   struct otbn_delegate_params *reply);
 #endif
-int otbn_deleg_rsa_modexp_pub(const struct otbn_delegate_params *req,
+#if defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX)
+int otbn_deleg_mbedtls_rsa_modexp_pub(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply);
-int otbn_deleg_rsa_modexp_prv(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_rsa_modexp_prv(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply);
+#endif
 
 #if defined(CONFIG_WOLFSSL_LINKEDSEMI_OTBN_DELEGATION)
 /* wolfSSL family handlers, defined in wolfssl/wolfssl_otbn_crypto_mbox.c. They

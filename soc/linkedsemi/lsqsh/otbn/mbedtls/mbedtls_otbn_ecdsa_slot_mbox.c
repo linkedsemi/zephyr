@@ -5,7 +5,7 @@
  * request whose data[0] points at a slot id instead of a private key.
  *
  * Server side (the core that owns the OTBN): the key table below keeps a
- * borrowed pointer per slot; otbn_deleg_ecdsa_sign_slot() looks the key up and
+ * borrowed pointer per slot; otbn_deleg_mbedtls_ecdsa_sign_slot() looks the key up and
  * runs the local mbedtls/OTBN signing path. See mbedtls_otbn_ecdsa_slot_mbox.h for
  * the lifetime contract of the borrowed buffer.
  */
@@ -25,6 +25,7 @@
 
 #include "otbn_delegation.h"
 #include "mbedtls_otbn_ecdsa_slot_mbox.h"
+#include "ls_otbn_err_mbedtls.h"
 
 #define MAX_OTBN_CURVE_LEN 48 /* P384 -> 384 bit == 48 byte */
 
@@ -48,13 +49,25 @@ static size_t slot_curve_size(mbedtls_ecp_group_id gid)
 	return 0;
 }
 
+/* Record the backend's code for the _ex form, then return the driver code.
+ * crypto_rc is the mbedtls value when the failure came from the crypto layer,
+ * 0 for a driver cause. */
+static int slot_result(int *status, int code, int crypto_rc)
+{
+	if (status != NULL) {
+		*status = crypto_rc;
+	}
+	return code;
+}
+
 #if defined(CONFIG_LS_OTBN_DELEGATION_CLIENT)
 
-int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
-				    mbedtls_mpi *r, mbedtls_mpi *s,
-				    uint32_t slot_id,
-				    const unsigned char *buf, size_t blen,
-				    int (*f_rng)(void *, unsigned char *, size_t), void *p_rng)
+static int slot_sign_impl(mbedtls_ecp_group *grp,
+			  mbedtls_mpi *r, mbedtls_mpi *s,
+			  uint32_t slot_id,
+			  const unsigned char *buf, size_t blen,
+			  int (*f_rng)(void *, unsigned char *, size_t), void *p_rng,
+			  int *status)
 {
 	int err;
 	size_t n_size;
@@ -67,7 +80,7 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
 	const struct otbn_delegate_params *rpy;
 
 	if (grp == NULL || r == NULL || s == NULL || buf == NULL) {
-		return -EINVAL;
+		return slot_result(status, LS_OTBN_ERR_INVAL, 0);
 	}
 
 	/* Derive the size from the whitelist instead of grp->nbits: the buffers
@@ -75,18 +88,20 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
 	 * a larger n_size overflow them. Failing here also saves a round trip. */
 	n_size = slot_curve_size(grp->id);
 	if (n_size == 0) {
-		return -EIO;
+		return slot_result(status, LS_OTBN_ERR_NOSUPP, 0);
 	}
 	buf_len = blen > n_size ? n_size : blen;
 
 	memcpy(user_buf, buf, buf_len);
 
 	/* With a caller RNG the nonce is generated here; r_buf doubles as the
-	 * nonce input and the r output. Without one the peer supplies the nonce. */
+	 * nonce input and the r output. Without one the peer supplies the nonce.
+	 * The callback's own error is folded into LS_OTBN_ERR_RNG; the _ex form
+	 * still reports the value the callback returned. */
 	if (f_rng != NULL) {
 		err = f_rng(p_rng, r_buf, n_size);
 		if (err != 0) {
-			return err;
+			return slot_result(status, LS_OTBN_ERR_RNG, 0);
 		}
 		otbn_deleg_cache_flush(r_buf, MAX_OTBN_CURVE_LEN);
 	} else {
@@ -103,8 +118,8 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
 	otbn_deleg_cache_flush(r_buf, MAX_OTBN_CURVE_LEN);
 	otbn_deleg_cache_flush(s_buf, MAX_OTBN_CURVE_LEN);
 
-	req.op = (f_rng != NULL) ? OTBN_DELEG_OP_ECDSA_SIGN_SLOT_RNG
-				 : OTBN_DELEG_OP_ECDSA_SIGN_SLOT;
+	req.op = (f_rng != NULL) ? OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT_RNG
+				 : OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_SLOT;
 	req.arg[0] = (uint32_t)grp->id;
 	req.arg[1] = (uint32_t)buf_len;
 	req.data[0] = (uint8_t *)&slot;
@@ -114,12 +129,17 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err != 0) {
-		return err;
+		return slot_result(status, err, 0);
 	}
 	rpy = otbn_deleg_reply();
 	if (rpy->status != 0) {
-		/* Peer reported a failure: its result buffers are not valid. */
-		return rpy->status;
+		/* Peer reported a failure: its result buffers are not valid. For
+		 * LS_OTBN_ERR_MBEDTLS the serving core puts the backend's exact
+		 * code in arg[0]; for a driver cause there is nothing to add. */
+		int peer = (int)(int32_t)rpy->arg[0];
+
+		return slot_result(status, rpy->status,
+				   rpy->status == LS_OTBN_ERR_MBEDTLS ? peer : 0);
 	}
 
 	otbn_deleg_cache_invd(rpy->data[2], n_size);
@@ -127,9 +147,29 @@ int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
 
 	err = mbedtls_mpi_read_binary_le(r, rpy->data[2], n_size);
 	if (err != 0) {
-		return err;
+		return slot_result(status, ls_otbn_err_from_mbedtls(err), err);
 	}
-	return mbedtls_mpi_read_binary_le(s, rpy->data[3], n_size);
+	err = mbedtls_mpi_read_binary_le(s, rpy->data[3], n_size);
+	return slot_result(status, ls_otbn_err_from_mbedtls(err), err);
+}
+
+int mbedtls_ls_otbn_ecdsa_sign_slot(mbedtls_ecp_group *grp,
+				    mbedtls_mpi *r, mbedtls_mpi *s,
+				    uint32_t slot_id,
+				    const unsigned char *buf, size_t blen,
+				    int (*f_rng)(void *, unsigned char *, size_t), void *p_rng)
+{
+	return slot_sign_impl(grp, r, s, slot_id, buf, blen, f_rng, p_rng, NULL);
+}
+
+int mbedtls_ls_otbn_ecdsa_sign_slot_ex(mbedtls_ecp_group *grp,
+				       mbedtls_mpi *r, mbedtls_mpi *s,
+				       uint32_t slot_id,
+				       const unsigned char *buf, size_t blen,
+				       int (*f_rng)(void *, unsigned char *, size_t),
+				       void *p_rng, int *status)
+{
+	return slot_sign_impl(grp, r, s, slot_id, buf, blen, f_rng, p_rng, status);
 }
 
 #endif /* CONFIG_LS_OTBN_DELEGATION_CLIENT */
@@ -229,28 +269,35 @@ static int key_slots_init(void)
 
 SYS_INIT(key_slots_init, PRE_KERNEL_1, 0);
 
-int ls_otbn_ecdsa_key_slot_register(uint32_t slot_id,
-				    mbedtls_ecp_group_id gid,
-				    const uint8_t *d)
+static int slot_register_impl(uint32_t slot_id,
+			      mbedtls_ecp_group_id gid,
+			      const uint8_t *d,
+			      int *status)
 {
 	size_t klen;
 	int err;
 
-	if (slot_id >= ARRAY_SIZE(key_slots) || d == NULL) {
-		return -EINVAL;
+	if (slot_id >= ARRAY_SIZE(key_slots)) {
+		return slot_result(status, LS_OTBN_ERR_RANGE, 0);
+	}
+	if (d == NULL) {
+		return slot_result(status, LS_OTBN_ERR_INVAL, 0);
 	}
 
 	klen = slot_curve_size(gid);
 	if (klen == 0) {
-		return -EOPNOTSUPP;
+		return slot_result(status, LS_OTBN_ERR_NOSUPP, 0);
 	}
 
 	/* Validate before publishing the descriptor: a bad scalar must never
 	 * reach the signing path, and the caller's buffer must already hold the
-	 * fixed-size little-endian value at this point. */
+	 * fixed-size little-endian value at this point. Validation is the one
+	 * place that still runs through mbedtls, so its codes are classified
+	 * here: 0 < d < n is the caller's key, anything else is the crypto
+	 * layer. */
 	err = slot_key_validate(gid, d, klen);
 	if (err != 0) {
-		return err;
+		return slot_result(status, ls_otbn_err_from_mbedtls(err), err);
 	}
 
 	k_mutex_lock(&key_slots_lock, K_FOREVER);
@@ -261,19 +308,26 @@ int ls_otbn_ecdsa_key_slot_register(uint32_t slot_id,
 	key_slots[slot_id].written = OTBN_KEY_SLOT_WRITTEN;
 	k_mutex_unlock(&key_slots_lock);
 
-	return 0;
+	return slot_result(status, 0, 0);
+}
+
+int ls_otbn_ecdsa_key_slot_register(uint32_t slot_id,
+				    mbedtls_ecp_group_id gid,
+				    const uint8_t *d)
+{
+	return slot_register_impl(slot_id, gid, d, NULL);
 }
 
 int ls_otbn_ecdsa_key_slot_unregister(uint32_t slot_id)
 {
 	if (slot_id >= ARRAY_SIZE(key_slots)) {
-		return -EINVAL;
+		return LS_OTBN_ERR_RANGE;
 	}
 
 	k_mutex_lock(&key_slots_lock, K_FOREVER);
 	if (key_slots[slot_id].written == 0) {
 		k_mutex_unlock(&key_slots_lock);
-		return -ENOENT;
+		return LS_OTBN_ERR_NOENT;
 	}
 	/* Descriptor only: the key buffer belongs to the caller. */
 	mbedtls_platform_zeroize(&key_slots[slot_id], sizeof(key_slots[slot_id]));
@@ -282,7 +336,7 @@ int ls_otbn_ecdsa_key_slot_unregister(uint32_t slot_id)
 	return 0;
 }
 
-int otbn_deleg_ecdsa_sign_slot(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign_slot(const struct otbn_delegate_params *req,
 			       struct otbn_delegate_params *reply)
 {
 	mbedtls_ecp_group grp;
@@ -296,14 +350,14 @@ int otbn_deleg_ecdsa_sign_slot(const struct otbn_delegate_params *req,
 
 	if (req->data[0] == NULL || req->data[1] == NULL ||
 	    req->data[2] == NULL || req->data[3] == NULL) {
-		return -EINVAL;
+		return LS_OTBN_ERR_PROTO;
 	}
 
 	/* data[0] points at a uint32_t in the requesting core's memory. */
 	otbn_deleg_cache_invd(req->data[0], sizeof(slot_id));
 	memcpy(&slot_id, req->data[0], sizeof(slot_id));
 	if (slot_id >= ARRAY_SIZE(key_slots)) {
-		return -ENOENT;
+		return LS_OTBN_ERR_RANGE;
 	}
 
 	mbedtls_ecp_group_init(&grp);
@@ -316,7 +370,7 @@ int otbn_deleg_ecdsa_sign_slot(const struct otbn_delegate_params *req,
 	if (key_slots[slot_id].written == 0 ||
 	    key_slots[slot_id].d == NULL) {
 		k_mutex_unlock(&key_slots_lock);
-		err = -ENOENT;
+		err = LS_OTBN_ERR_NOENT;
 		goto out;
 	}
 
@@ -325,11 +379,21 @@ int otbn_deleg_ecdsa_sign_slot(const struct otbn_delegate_params *req,
 	n_size = slot_curve_size(gid);
 	/* Validate everything that does not need the key before copying it: a
 	 * corrupted descriptor, a curve mismatch, or a bogus length must not
-	 * touch the private scalar at all. */
-	if (n_size == 0 || klen != n_size ||
-	    (uint32_t)gid != req->arg[0] || req->arg[1] > n_size) {
+	 * touch the private scalar at all. Each cause keeps its own code so the
+	 * client can tell "wrong curve" from "this core's table is corrupt". */
+	if (n_size == 0 || klen != n_size) {
 		k_mutex_unlock(&key_slots_lock);
-		err = -EINVAL;
+		err = LS_OTBN_ERR_PROTO;
+		goto out;
+	}
+	if ((uint32_t)gid != req->arg[0]) {
+		k_mutex_unlock(&key_slots_lock);
+		err = LS_OTBN_ERR_CURVE;
+		goto out;
+	}
+	if (req->arg[1] > n_size) {
+		k_mutex_unlock(&key_slots_lock);
+		err = LS_OTBN_ERR_MSGSIZE;
 		goto out;
 	}
 	memcpy(key_buf, key_slots[slot_id].d, klen);
@@ -371,10 +435,17 @@ out:
 	mbedtls_mpi_free(&s);
 	mbedtls_ecp_group_free(&grp);
 	mbedtls_platform_zeroize(key_buf, sizeof(key_buf));
+	/* A failure raised by mbedtls/the OTBN alt is classified here, so the
+	 * status on the wire is always a driver code. arg[0] carries the
+	 * underlying value for the client's _ex form (0 for driver causes). */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = ls_otbn_err_from_mbedtls(err);
+	}
 	return err;
 }
 
-int otbn_deleg_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
 				   struct otbn_delegate_params *reply)
 {
 	mbedtls_ecp_group grp;
@@ -390,13 +461,13 @@ int otbn_deleg_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
 
 	if (req->data[0] == NULL || req->data[1] == NULL ||
 	    req->data[2] == NULL || req->data[3] == NULL) {
-		return -EINVAL;
+		return LS_OTBN_ERR_PROTO;
 	}
 
 	otbn_deleg_cache_invd(req->data[0], sizeof(slot_id));
 	memcpy(&slot_id, req->data[0], sizeof(slot_id));
 	if (slot_id >= ARRAY_SIZE(key_slots)) {
-		return -ENOENT;
+		return LS_OTBN_ERR_RANGE;
 	}
 
 	mbedtls_ecp_group_init(&grp);
@@ -409,17 +480,28 @@ int otbn_deleg_ecdsa_sign_slot_rng(const struct otbn_delegate_params *req,
 	if (key_slots[slot_id].written == 0 ||
 	    key_slots[slot_id].d == NULL) {
 		k_mutex_unlock(&key_slots_lock);
-		err = -ENOENT;
+		err = LS_OTBN_ERR_NOENT;
 		goto out;
 	}
 
 	gid = (mbedtls_ecp_group_id)key_slots[slot_id].gid;
 	klen = key_slots[slot_id].klen;
 	n_size = slot_curve_size(gid);
-	if (n_size == 0 || klen != n_size ||
-	    (uint32_t)gid != req->arg[0] || req->arg[1] > n_size) {
+	/* Same split as otbn_deleg_mbedtls_ecdsa_sign_slot(): descriptor corruption and
+	 * a curve mismatch are different causes and keep different codes. */
+	if (n_size == 0 || klen != n_size) {
 		k_mutex_unlock(&key_slots_lock);
-		err = -EINVAL;
+		err = LS_OTBN_ERR_PROTO;
+		goto out;
+	}
+	if ((uint32_t)gid != req->arg[0]) {
+		k_mutex_unlock(&key_slots_lock);
+		err = LS_OTBN_ERR_CURVE;
+		goto out;
+	}
+	if (req->arg[1] > n_size) {
+		k_mutex_unlock(&key_slots_lock);
+		err = LS_OTBN_ERR_MSGSIZE;
 		goto out;
 	}
 	memcpy(key_buf, key_slots[slot_id].d, klen);
@@ -471,7 +553,20 @@ out:
 	mbedtls_ecp_group_free(&grp);
 	mbedtls_platform_zeroize(key_buf, sizeof(key_buf));
 	mbedtls_platform_zeroize(nonce_buf, sizeof(nonce_buf));
+	/* Same classification as otbn_deleg_mbedtls_ecdsa_sign_slot(). */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = ls_otbn_err_from_mbedtls(err);
+	}
 	return err;
+}
+
+int ls_otbn_ecdsa_key_slot_register_ex(uint32_t slot_id,
+				       mbedtls_ecp_group_id gid,
+				       const uint8_t *d,
+				       int *status)
+{
+	return slot_register_impl(slot_id, gid, d, status);
 }
 
 #endif /* CONFIG_LS_OTBN_DELEGATION_SERVER */
