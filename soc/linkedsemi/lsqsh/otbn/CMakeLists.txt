@@ -9,8 +9,12 @@ zephyr_include_directories(${ZEPHYR_BASE}/../modules/crypto/mbedtls/include/)
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN
                             mbedtls/mbedtls_otbn_msp.c
                             )
-zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_DELEGATION
+# One translation unit per proxy family, gated by that family's switch: a
+# family that is off contributes no code at all.
+zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX
                             mbedtls/mbedtls_otbn_ecdsa_mbox.c
+                            )
+zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX
                             mbedtls/mbedtls_otbn_rsa_mbox.c
                             )
 zephyr_library_sources_ifdef(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_SLOT_MBOX

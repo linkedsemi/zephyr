@@ -6,7 +6,7 @@
  * -- the local RSA OTBN support is a hook (mbedtls_rsa_public_otbn() and
  * friends in rsa_alt.c), not an ALT, so a delegated RSA call is always explicit.
  *
- * Server side: otbn_deleg_rsa_*() run the request on the local OTBN through
+ * Server side: otbn_deleg_mbedtls_rsa_*() run the request on the local OTBN through
  * the byte-level backend in rsa_alt.c.
  */
 
@@ -14,6 +14,17 @@
 
 #include "otbn_delegation.h"
 #include "mbedtls_otbn_rsa_mbox.h"
+#include "ls_otbn_err_mbedtls.h"
+
+/*
+ * This translation unit is the RSA proxy family. CMake builds it only when the
+ * family switch is on; keep the file self-describing for any build path that
+ * compiles sources directly, so "family off" can never silently ship the
+ * client entry points or the server handlers.
+ */
+#if !defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX)
+#error "mbedtls_otbn_rsa_mbox.c requires CONFIG_MBEDTLS_LINKEDSEMI_OTBN_RSA_MBOX"
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(mbedtls_otbn_mbox, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
@@ -48,8 +59,10 @@ static int rsa_modexp_call(uint8_t op, const uint8_t *in, const uint8_t *exp,
 	size_t num_bytes = n_size_bits / 8;
 	int err;
 
-	if (!rsa_modulus_supported(num_bytes)) {
-		return -EINVAL;
+	/* Reject a bit size that is not a whole number of bytes: dividing it
+	 * would truncate 2049 bits to the accepted 2048-byte size. */
+	if ((n_size_bits % 8U) != 0U || !rsa_modulus_supported(num_bytes)) {
+		return ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSUPP);
 	}
 
 	/* The peer reads these buffers and writes the result into `out`; both
@@ -67,11 +80,16 @@ static int rsa_modexp_call(uint8_t op, const uint8_t *in, const uint8_t *exp,
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_RSA_MS);
 	if (err) {
-		return err;
+		return ls_otbn_err_to_mbedtls(err);
 	}
 	rpy = otbn_deleg_reply();
 	if (rpy->status != 0) {
-		return rpy->status;
+		/* Crypto-layer failure: the serving core put the backend's exact
+		 * value in arg[0]; restore it so the mbedtls contract holds. */
+		if (rpy->status == LS_OTBN_ERR_MBEDTLS && rpy->arg[0] != 0) {
+			return (int)(int32_t)rpy->arg[0];
+		}
+		return ls_otbn_err_to_mbedtls(rpy->status);
 	}
 
 	otbn_deleg_cache_invd(rpy->data[3], num_bytes);
@@ -82,14 +100,14 @@ int mbedtls_ls_otbn_rsa_modexp_encrypt(const uint8_t *in, const uint8_t *exp,
 				       const uint8_t *n, uint32_t n_size_bits,
 				       uint8_t *out)
 {
-	return rsa_modexp_call(OTBN_DELEG_OP_RSA_MODEXP_PUB, in, exp, n, n_size_bits, out);
+	return rsa_modexp_call(OTBN_DELEG_OP_MBEDTLS_RSA_MODEXP_PUB, in, exp, n, n_size_bits, out);
 }
 
 int mbedtls_ls_otbn_rsa_modexp_decrypt(const uint8_t *in, const uint8_t *d,
 				       const uint8_t *n, uint32_t n_size_bits,
 				       uint8_t *out)
 {
-	return rsa_modexp_call(OTBN_DELEG_OP_RSA_MODEXP_PRV, in, d, n, n_size_bits, out);
+	return rsa_modexp_call(OTBN_DELEG_OP_MBEDTLS_RSA_MODEXP_PRV, in, d, n, n_size_bits, out);
 }
 
 #else /* server */
@@ -102,9 +120,11 @@ static int rsa_modexp_server(const struct otbn_delegate_params *req,
 	size_t num_bytes = req->arg[0] / 8;
 	int err;
 
-	if (!rsa_modulus_supported(num_bytes)) {
+	/* See rsa_modexp_call(): a partial byte must not truncate into an
+	 * accepted size (4097 bits would become 512 bytes). */
+	if ((req->arg[0] % 8U) != 0U || !rsa_modulus_supported(num_bytes)) {
 		LOG_WRN("delegation: unsupported RSA modulus %u bits", req->arg[0]);
-		return -EOPNOTSUPP;
+		return LS_OTBN_ERR_NOSUPP;
 	}
 
 	otbn_deleg_cache_invd(req->data[0], num_bytes);
@@ -114,7 +134,10 @@ static int rsa_modexp_server(const struct otbn_delegate_params *req,
 	err = mbedtls_ls_otbn_rsa_modexp(req->data[0], req->data[3], req->data[1],
 					 req->data[2], num_bytes, is_public);
 	if (err) {
-		return err;
+		/* Same classification as the ECDSA family: the wire carries a
+		 * driver code and the backend's exact value travels in arg[0]. */
+		reply->arg[0] = (uint32_t)err;
+		return LS_OTBN_ERR_MBEDTLS;
 	}
 
 	otbn_deleg_cache_flush(req->data[3], num_bytes);
@@ -135,18 +158,18 @@ static int rsa_modexp_server(const struct otbn_delegate_params *req,
 	ARG_UNUSED(is_public);
 
 	LOG_WRN("delegation: RSA request received but the local OTBN RSA is off");
-	return -EOPNOTSUPP;
+	return LS_OTBN_ERR_NOSUPP;
 }
 
 #endif /* CONFIG_MBEDTLS_RSA_LINKEDSEMI_OTBN_ALT */
 
-int otbn_deleg_rsa_modexp_pub(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_rsa_modexp_pub(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply)
 {
 	return rsa_modexp_server(req, reply, true);
 }
 
-int otbn_deleg_rsa_modexp_prv(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_rsa_modexp_prv(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply)
 {
 	return rsa_modexp_server(req, reply, false);

@@ -35,14 +35,15 @@
  *
  *   - Bring the client up once before the first call. A call made before init
  *     has no reply path and can only time out.
- *   - One delegated call at a time per core; a second concurrent call is
- *     refused with -EACCES.
+ *   - One delegated call at a time per core; a second concurrent call waits
+ *     until the first returns (the bus serializes callers).
  *   - The buffers handed to a call must stay alive and untouched until it
  *     returns. After a timeout the peer may still be writing into them.
  *   - Every outcome is a return value, never silence: 0 on success, the peer's
- *     mbedtls error code when it rejected the operation, -EIO (request could
- *     not be sent), -ETIMEDOUT (no answer in time), -EBUSY (the peer's request
- *     queue is full), -EOPNOTSUPP (the peer does not have this core's OTBN
+ *     mbedtls error code when it rejected the operation, LS_OTBN_ERR_IO
+ *     (request could not be sent), LS_OTBN_ERR_TIMEOUT (no answer in time),
+ *     LS_OTBN_ERR_BUSY (the peer's request queue is full),
+ *     LS_OTBN_ERR_NOSUPP (the peer does not have this core's OTBN
  *     support for that family switched on).
  *
  * The transport itself -- wire format, operation table, timeouts, and how to

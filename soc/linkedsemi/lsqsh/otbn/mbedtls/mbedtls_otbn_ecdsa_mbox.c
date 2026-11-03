@@ -6,7 +6,7 @@
  * asks the delegation to BE the ECDSA alternative, the plain mbedtls_ecdsa_*
  * names forward here as well (see the bottom of this file).
  *
- * Server side: otbn_deleg_ecdsa_*() execute the request with the local OTBN
+ * Server side: otbn_deleg_mbedtls_ecdsa_*() execute the request with the local OTBN
  * through mbedtls_ecdsa_*.
  */
 
@@ -23,6 +23,17 @@
 
 #include "otbn_delegation.h"
 #include "mbedtls_otbn_ecdsa_mbox.h"
+#include "ls_otbn_err_mbedtls.h"
+
+/*
+ * This translation unit is the ECDSA proxy family. CMake builds it only when
+ * the family switch is on; keep the file self-describing for any build path
+ * that compiles sources directly, so "family off" can never silently ship the
+ * client entry points or the server handlers.
+ */
+#if !defined(CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX)
+#error "mbedtls_otbn_ecdsa_mbox.c requires CONFIG_MBEDTLS_LINKEDSEMI_OTBN_ECDSA_MBOX"
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(mbedtls_otbn_mbox, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
@@ -33,13 +44,15 @@ LOG_MODULE_DECLARE(mbedtls_otbn_mbox, CONFIG_LINKEDSEMI_OTBN_LOG_LEVEL);
  * passes its own bound, which is why the bus takes the timeout per call. */
 #define OTBN_DELEG_TIMEOUT_ECDSA_MS 1000
 
-/* mbedtls_mpi_read_binary_le() can only fail when the value does not fit the
- * MPI, which the fixed curve sizes cannot produce. Keep the historical return
- * value so callers see no change if it ever does. */
+/* Importing a peer result of a fixed curve size can only fail on allocation.
+ * Report mbedtls's own code (BUFFER_TOO_SMALL is reserved for an input that
+ * does not fit the curve) and jump to the caller's exit label so its
+ * key/nonce scratch buffers are zeroized on this path too. */
 #define ECDSA_MPI_READ(dst, src, len)                                        \
 	do {                                                                 \
-		if (mbedtls_mpi_read_binary_le((dst), (src), (len)) != 0) {  \
-			return MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL;             \
+		err = mbedtls_mpi_read_binary_le((dst), (src), (len));       \
+		if (err != 0) {                                              \
+			goto exit;                                           \
 		}                                                            \
 	} while (0)
 
@@ -77,6 +90,18 @@ static size_t ecdsa_curve_size(mbedtls_ecp_group_id gid)
 	return 0;
 }
 
+/* Restore an mbedtls-parity return value from a reply. A crypto-layer failure
+ * carries the backend's exact code in arg[0]; every other status is a driver
+ * code and is translated. */
+static int ecdsa_peer_rc(const struct otbn_delegate_params *rpy)
+{
+	if (rpy->status == LS_OTBN_ERR_MBEDTLS && rpy->arg[0] != 0) {
+		return (int)(int32_t)rpy->arg[0];
+	}
+
+	return ls_otbn_err_to_mbedtls(rpy->status);
+}
+
 int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_id gid,
 				 int (*f_rng)(void *, unsigned char *, size_t), void *p_rng)
 {
@@ -90,14 +115,15 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 
 	/* The peer's whitelist is the same set; failing here saves a round trip. */
 	if (n_size == 0) {
-		return -EIO;
+		err = ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSUPP);
+		goto exit;
 	}
 
 	/* mbedtls_ecdsa_genkey() loads the group and callers rely on ctx->grp
 	 * afterwards (mbedtls_ecp_check_pubkey(), point export). Keep that. */
 	err = mbedtls_ecp_group_load(&ctx->private_grp, gid);
 	if (err) {
-		return err;
+		goto exit;
 	}
 
 	/* With a caller RNG the seed is generated here and carried to the peer;
@@ -105,7 +131,7 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 	if (f_rng != NULL) {
 		err = f_rng(p_rng, seed, n_size);
 		if (err != 0) {
-			return err;
+			goto exit;
 		}
 		otbn_deleg_cache_flush(seed, MAX_OTBN_CURVE_LEN);
 	} else {
@@ -119,20 +145,22 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 	req.data[0] = private_key;
 	req.data[1] = public_key;
 	if (f_rng != NULL) {
-		req.op = OTBN_DELEG_OP_ECDSA_GENKEY_RNG;
+		req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_GENKEY_RNG;
 		req.data[2] = seed;
 	} else {
-		req.op = OTBN_DELEG_OP_ECDSA_GENKEY;
+		req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_GENKEY;
 	}
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err) {
-		return err;
+		err = ls_otbn_err_to_mbedtls(err);
+		goto exit;
 	}
 	rpy = otbn_deleg_reply();
 	if (rpy->status != 0) {
 		/* Peer reported a failure: its result buffers are not valid. */
-		return rpy->status;
+		err = ecdsa_peer_rc(rpy);
+		goto exit;
 	}
 
 	otbn_deleg_cache_invd(rpy->data[0], n_size);
@@ -142,11 +170,22 @@ int mbedtls_ls_otbn_ecdsa_genkey(mbedtls_ecdsa_context *ctx, mbedtls_ecp_group_i
 	ECDSA_MPI_READ(&ctx->private_Q.private_Y, rpy->data[1] + n_size, n_size);
 	/* data[1] carries affine X||Y; set Z=1 so this is a real affine point
 	 * rather than the Z==0 point at infinity that check_pubkey() rejects. */
-	mbedtls_mpi_lset(&ctx->private_Q.private_Z, 1);
+	err = mbedtls_mpi_lset(&ctx->private_Q.private_Z, 1);
+	if (err != 0) {
+		goto exit;
+	}
 
 	LOG_HEXDUMP_DBG(rpy->data[0], n_size, "private key");
 	LOG_HEXDUMP_DBG(rpy->data[1], n_size * 2, "public_x key");
-	return 0;
+	err = 0;
+
+exit:
+	/* The peer writes the generated private key into this stack buffer; wipe
+	 * it (and the caller's seed) on every return path. */
+	mbedtls_platform_zeroize(private_key, sizeof(private_key));
+	mbedtls_platform_zeroize(seed, sizeof(seed));
+	mbedtls_platform_zeroize(public_key, sizeof(public_key));
+	return err;
 }
 
 int mbedtls_ls_otbn_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_mpi *s,
@@ -168,19 +207,25 @@ int mbedtls_ls_otbn_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_m
 	const struct otbn_delegate_params *rpy;
 
 	if (n_size == 0) {
-		return -EIO;
+		err = ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSUPP);
+		goto exit;
 	}
 	buf_len = blen > n_size ? n_size : blen;
 
 	memcpy(user_buf, buf, buf_len);
-	ECDSA_MPI_WRITE(d, private_key, n_size);
+	/* Same value as ECDSA_MPI_WRITE(), but through `exit` so the key copy is
+	 * wiped even on this path. */
+	if (mbedtls_mpi_write_binary_le(d, private_key, n_size) != 0) {
+		err = MBEDTLS_ERR_ECP_BUFFER_TOO_SMALL;
+		goto exit;
+	}
 
 	/* With a caller RNG the nonce is generated here; r_buf doubles as the
 	 * nonce input and the r output. Without one the peer supplies the nonce. */
 	if (f_rng != NULL) {
 		err = f_rng(p_rng, r_buf, n_size);
 		if (err != 0) {
-			return err;
+			goto exit;
 		}
 		otbn_deleg_cache_flush(r_buf, MAX_OTBN_CURVE_LEN);
 	} else {
@@ -202,18 +247,20 @@ int mbedtls_ls_otbn_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_m
 	req.data[2] = r_buf;
 	req.data[3] = s_buf;
 	if (f_rng != NULL) {
-		req.op = OTBN_DELEG_OP_ECDSA_SIGN_RNG;
+		req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN_RNG;
 	} else {
-		req.op = OTBN_DELEG_OP_ECDSA_SIGN;
+		req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_SIGN;
 	}
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err) {
-		return err;
+		err = ls_otbn_err_to_mbedtls(err);
+		goto exit;
 	}
 	rpy = otbn_deleg_reply();
 	if (rpy->status != 0) {
-		return rpy->status;
+		err = ecdsa_peer_rc(rpy);
+		goto exit;
 	}
 
 	otbn_deleg_cache_invd(rpy->data[2], n_size);
@@ -223,7 +270,16 @@ int mbedtls_ls_otbn_ecdsa_sign(mbedtls_ecp_group *grp, mbedtls_mpi *r, mbedtls_m
 
 	LOG_HEXDUMP_DBG(rpy->data[2], n_size, "sign r_buf");
 	LOG_HEXDUMP_DBG(rpy->data[3], n_size, "sign s_buf");
-	return 0;
+	err = 0;
+
+exit:
+	/* The caller's private key and the nonce both lived in these stack
+	 * buffers; wipe them on every return path. */
+	mbedtls_platform_zeroize(private_key, sizeof(private_key));
+	mbedtls_platform_zeroize(r_buf, sizeof(r_buf));
+	mbedtls_platform_zeroize(s_buf, sizeof(s_buf));
+	mbedtls_platform_zeroize(user_buf, sizeof(user_buf));
+	return err;
 }
 
 int mbedtls_ls_otbn_ecdsa_verify(mbedtls_ecp_group *grp,
@@ -245,7 +301,7 @@ int mbedtls_ls_otbn_ecdsa_verify(mbedtls_ecp_group *grp,
 	/* See the note in _sign(): derive the size from the whitelist so an
 	 * unsupported group cannot overflow the fixed buffers. */
 	if (n_size == 0) {
-		return -EIO;
+		return ls_otbn_err_to_mbedtls(LS_OTBN_ERR_NOSUPP);
 	}
 	buf_len = blen > n_size ? n_size : blen;
 
@@ -260,7 +316,7 @@ int mbedtls_ls_otbn_ecdsa_verify(mbedtls_ecp_group *grp,
 	otbn_deleg_cache_flush(r_buf, MAX_OTBN_CURVE_LEN);
 	otbn_deleg_cache_flush(s_buf, MAX_OTBN_CURVE_LEN);
 
-	req.op = OTBN_DELEG_OP_ECDSA_VERIFY;
+	req.op = OTBN_DELEG_OP_MBEDTLS_ECDSA_VERIFY;
 	req.arg[0] = (uint32_t)grp->id;
 	req.arg[1] = (uint32_t)buf_len;
 	req.data[0] = public_key;
@@ -270,13 +326,13 @@ int mbedtls_ls_otbn_ecdsa_verify(mbedtls_ecp_group *grp,
 
 	err = otbn_deleg_call(&req, OTBN_DELEG_TIMEOUT_ECDSA_MS);
 	if (err) {
-		return err;
+		return ls_otbn_err_to_mbedtls(err);
 	}
 	rpy = otbn_deleg_reply();
 	if (rpy->status != 0) {
 		LOG_DBG("ecdsa verification failed or input parameters are incorrect");
 	}
-	return rpy->status;
+	return ecdsa_peer_rc(rpy);
 }
 
 /* Only when the build asks the delegation to BE the ECDSA alternative do we
@@ -373,7 +429,7 @@ static void ecdsa_ctx_free(mbedtls_ecdsa_context *ctx, mbedtls_mpi *r, mbedtls_m
 	mbedtls_mpi_free(s);
 }
 
-int otbn_deleg_ecdsa_genkey(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_genkey(const struct otbn_delegate_params *req,
 			    struct otbn_delegate_params *reply)
 {
 	mbedtls_ecdsa_context ctx;
@@ -384,7 +440,7 @@ int otbn_deleg_ecdsa_genkey(const struct otbn_delegate_params *req,
 
 	if (!ecdsa_curve_supported(gid)) {
 		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
-		return -EOPNOTSUPP;
+		return LS_OTBN_ERR_NOSUPP;
 	}
 
 	ecdsa_ctx_init(&ctx, &r, &s);
@@ -415,10 +471,16 @@ int otbn_deleg_ecdsa_genkey(const struct otbn_delegate_params *req,
 
 out:
 	ecdsa_ctx_free(&ctx, &r, &s);
+	/* The wire carries driver codes only; the exact backend value travels in
+	 * arg[0] so the mbedtls-parity client can restore it. */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = LS_OTBN_ERR_MBEDTLS;
+	}
 	return err;
 }
 
-int otbn_deleg_ecdsa_sign(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign(const struct otbn_delegate_params *req,
 			  struct otbn_delegate_params *reply)
 {
 	mbedtls_ecdsa_context ctx;
@@ -429,7 +491,7 @@ int otbn_deleg_ecdsa_sign(const struct otbn_delegate_params *req,
 
 	if (!ecdsa_curve_supported(gid)) {
 		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
-		return -EOPNOTSUPP;
+		return LS_OTBN_ERR_NOSUPP;
 	}
 
 	ecdsa_ctx_init(&ctx, &r, &s);
@@ -461,10 +523,16 @@ int otbn_deleg_ecdsa_sign(const struct otbn_delegate_params *req,
 
 out:
 	ecdsa_ctx_free(&ctx, &r, &s);
+	/* The wire carries driver codes only; the exact backend value travels in
+	 * arg[0] so the mbedtls-parity client can restore it. */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = LS_OTBN_ERR_MBEDTLS;
+	}
 	return err;
 }
 
-int otbn_deleg_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
 				struct otbn_delegate_params *reply)
 {
 	mbedtls_ecdsa_context ctx;
@@ -477,10 +545,10 @@ int otbn_deleg_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
 
 	if (!ecdsa_curve_supported(gid)) {
 		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
-		return -EOPNOTSUPP;
+		return LS_OTBN_ERR_NOSUPP;
 	}
 	if (req->data[2] == NULL) {
-		return -EINVAL;
+		return LS_OTBN_ERR_INVAL;
 	}
 
 	ecdsa_ctx_init(&ctx, &r, &s);
@@ -520,10 +588,16 @@ int otbn_deleg_ecdsa_genkey_rng(const struct otbn_delegate_params *req,
 out:
 	mbedtls_platform_zeroize(seed_buf, sizeof(seed_buf));
 	ecdsa_ctx_free(&ctx, &r, &s);
+	/* The wire carries driver codes only; the exact backend value travels in
+	 * arg[0] so the mbedtls-parity client can restore it. */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = LS_OTBN_ERR_MBEDTLS;
+	}
 	return err;
 }
 
-int otbn_deleg_ecdsa_sign_rng(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_sign_rng(const struct otbn_delegate_params *req,
 			      struct otbn_delegate_params *reply)
 {
 	mbedtls_ecdsa_context ctx;
@@ -536,10 +610,10 @@ int otbn_deleg_ecdsa_sign_rng(const struct otbn_delegate_params *req,
 
 	if (!ecdsa_curve_supported(gid)) {
 		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
-		return -EOPNOTSUPP;
+		return LS_OTBN_ERR_NOSUPP;
 	}
 	if (req->data[2] == NULL) {
-		return -EINVAL;
+		return LS_OTBN_ERR_INVAL;
 	}
 
 	ecdsa_ctx_init(&ctx, &r, &s);
@@ -581,10 +655,16 @@ int otbn_deleg_ecdsa_sign_rng(const struct otbn_delegate_params *req,
 out:
 	mbedtls_platform_zeroize(nonce_buf, sizeof(nonce_buf));
 	ecdsa_ctx_free(&ctx, &r, &s);
+	/* The wire carries driver codes only; the exact backend value travels in
+	 * arg[0] so the mbedtls-parity client can restore it. */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = LS_OTBN_ERR_MBEDTLS;
+	}
 	return err;
 }
 
-int otbn_deleg_ecdsa_verify(const struct otbn_delegate_params *req,
+int otbn_deleg_mbedtls_ecdsa_verify(const struct otbn_delegate_params *req,
 			    struct otbn_delegate_params *reply)
 {
 	mbedtls_ecdsa_context ctx;
@@ -593,11 +673,9 @@ int otbn_deleg_ecdsa_verify(const struct otbn_delegate_params *req,
 	uint8_t curve_size;
 	int err;
 
-	ARG_UNUSED(reply);
-
 	if (!ecdsa_curve_supported(gid)) {
 		LOG_WRN("delegation: unsupported curve 0x%x", (unsigned int)gid);
-		return -EOPNOTSUPP;
+		return LS_OTBN_ERR_NOSUPP;
 	}
 
 	ecdsa_ctx_init(&ctx, &r, &s);
@@ -624,6 +702,12 @@ int otbn_deleg_ecdsa_verify(const struct otbn_delegate_params *req,
 
 out:
 	ecdsa_ctx_free(&ctx, &r, &s);
+	/* The wire carries driver codes only; the exact backend value travels in
+	 * arg[0] so the mbedtls-parity client can restore it. */
+	if (err != 0 && !ls_otbn_err_is_custom(err)) {
+		reply->arg[0] = (uint32_t)err;
+		err = LS_OTBN_ERR_MBEDTLS;
+	}
 	return err;
 }
 
