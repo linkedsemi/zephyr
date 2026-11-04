@@ -1533,66 +1533,6 @@ static void udc_dwc3_isr_handler(const struct device *dev)
     __ASSERT(!k_msgq_put(&dwc3_data->msgq, &msg, K_NO_WAIT), "dwc3 udc isr msgq error");
 }
 
-static int dwc3_driver_preinit(const struct device *dev)
-{
-    const struct udc_dwc3_config *config = dev->config;
-    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
-    struct udc_data *data = dev->data;
-    uint16_t mps = 512;
-    int err;
-
-    k_mutex_init(&data->mutex);
-    data->caps.rwup = true;
-    data->caps.mps0 = UDC_MPS0_64;
-    data->caps.hs = 1;
-
-    for (int i = 0; i < config->num_out_eps; i++) {
-        config->ep_cfg_out[i].caps.out = 1;
-        if (i == 0) {
-            config->ep_cfg_out[i].caps.control = 1;
-            config->ep_cfg_out[i].caps.mps = 64;
-        } else {
-            config->ep_cfg_out[i].caps.bulk = 1;
-            config->ep_cfg_out[i].caps.interrupt = 1;
-            config->ep_cfg_out[i].caps.iso = 1;
-            config->ep_cfg_out[i].caps.mps = mps;
-        }
-
-        config->ep_cfg_out[i].addr = USB_EP_DIR_OUT | i;
-        err = udc_register_ep(dev, &config->ep_cfg_out[i]);
-        if (err != 0) {
-            LOG_ERR("Failed to register endpoint");
-            return err;
-        }
-    }
-
-    for (int i = 0; i < config->num_in_eps; i++) {
-        config->ep_cfg_in[i].caps.in = 1;
-        if (i == 0) {
-            config->ep_cfg_in[i].caps.control = 1;
-            config->ep_cfg_in[i].caps.mps = 64;
-        } else {
-            config->ep_cfg_in[i].caps.bulk = 1;
-            config->ep_cfg_in[i].caps.interrupt = 1;
-            config->ep_cfg_in[i].caps.iso = 1;
-            config->ep_cfg_in[i].caps.mps = mps;
-        }
-
-        config->ep_cfg_in[i].addr = USB_EP_DIR_IN | i;
-        err = udc_register_ep(dev, &config->ep_cfg_in[i]);
-        if (err != 0) {
-            LOG_ERR("Failed to register endpoint");
-            return err;
-        }
-    }
-
-    dwc3_data->dev = dev;
-    k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
-    config->make_thread(dev);
-
-    return 0;
-}
-
 static int udc_dwc3_lock(const struct device *dev)
 {
     return udc_lock_internal(dev, K_FOREVER);
@@ -2059,7 +1999,7 @@ static int udc_dwc3_init(const struct device *dev)
 #endif
     dwc3_phy_setup(dev);
 
-    return 0;
+    return dwc3_core_soft_reset(dev);
 }
 
 static int udc_dwc3_enable(const struct device *dev)
@@ -2472,6 +2412,72 @@ static void udc_dwc3_thread_handler(void *dev)
             evt.handler(dev, evt.param);
         udc_unlock_internal(dev);
     }
+}
+
+static int dwc3_driver_preinit(const struct device *dev)
+{
+    const struct udc_dwc3_config *config = dev->config;
+    struct udc_dwc3_data *dwc3_data = udc_get_private(dev);
+    struct udc_data *data = dev->data;
+    uint16_t mps = 512;
+    int err;
+
+    err = udc_dwc3_init(dev);
+    if (err) {
+        LOG_ERR("Failed to initialize DWC3");
+        return err;
+    }
+
+    k_mutex_init(&data->mutex);
+    data->caps.rwup = true;
+    data->caps.mps0 = UDC_MPS0_64;
+    data->caps.hs = 1;
+
+    for (int i = 0; i < config->num_out_eps; i++) {
+        config->ep_cfg_out[i].caps.out = 1;
+        if (i == 0) {
+            config->ep_cfg_out[i].caps.control = 1;
+            config->ep_cfg_out[i].caps.mps = 64;
+        } else {
+            config->ep_cfg_out[i].caps.bulk = 1;
+            config->ep_cfg_out[i].caps.interrupt = 1;
+            config->ep_cfg_out[i].caps.iso = 1;
+            config->ep_cfg_out[i].caps.mps = mps;
+        }
+
+        config->ep_cfg_out[i].addr = USB_EP_DIR_OUT | i;
+        err = udc_register_ep(dev, &config->ep_cfg_out[i]);
+        if (err != 0) {
+            LOG_ERR("Failed to register endpoint");
+            return err;
+        }
+    }
+
+    for (int i = 0; i < config->num_in_eps; i++) {
+        config->ep_cfg_in[i].caps.in = 1;
+        if (i == 0) {
+            config->ep_cfg_in[i].caps.control = 1;
+            config->ep_cfg_in[i].caps.mps = 64;
+        } else {
+            config->ep_cfg_in[i].caps.bulk = 1;
+            config->ep_cfg_in[i].caps.interrupt = 1;
+            config->ep_cfg_in[i].caps.iso = 1;
+            config->ep_cfg_in[i].caps.mps = mps;
+        }
+
+        config->ep_cfg_in[i].addr = USB_EP_DIR_IN | i;
+        err = udc_register_ep(dev, &config->ep_cfg_in[i]);
+        if (err != 0) {
+            LOG_ERR("Failed to register endpoint");
+            return err;
+        }
+    }
+
+    dwc3_data->dev = dev;
+    k_msgq_init(&dwc3_data->msgq, (char *)dwc3_data->msgq_buf, sizeof(struct dwc3_msgq_type), DWC3_MSGQ_LENGTH);
+    config->make_thread(dev);
+
+    return 0;
 }
 
 #define UDC_DWC3_DEVICE_DEFINE(n)                                                                                                           \
