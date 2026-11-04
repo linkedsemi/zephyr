@@ -3253,19 +3253,15 @@
 //     pinctrl-names = "default";
 // };
 
-// &sgpio1 {
-//     pinctrl-0 = <
-//         &sgpio1_mck_pn02
-//         &sgpio1_mld_pn03
-//         &sgpio1_mdi0_pn04
-//         &sgpio1_mdi1_pn05
-//         &sgpio1_mst_ck_pb07
-//         &sgpio1_mst_di_pb08
-//         &sgpio1_mst_do_pn00
-//         &sgpio1_mst_ld_pn01
-//     >;
-//     pinctrl-names = "default";
-// };
+&sgpio1 {
+    pinctrl-0 = <
+        &sgpio1_mst_ck_pb07
+        &sgpio1_mst_di_pb08
+        &sgpio1_mst_do_pn00
+        &sgpio1_mst_ld_pn01
+    >;
+    pinctrl-names = "default";
+};
 
 // &mjtag1 {
 //     pinctrl-0 = <
