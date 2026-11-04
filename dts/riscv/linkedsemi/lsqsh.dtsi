@@ -334,7 +334,6 @@
             compatible = "linkedsemi,sgpiom";
             reg = <0x40097000 0x400>;
             interrupts = <151 3>;
-            interrupts = <CALC_SM4_IRQN 3>;
             clocks = <SGPIO1_MST_CLOCK>;
             resets = <SGPIO1_MST_RESET>;
             ngpios = <256>;
