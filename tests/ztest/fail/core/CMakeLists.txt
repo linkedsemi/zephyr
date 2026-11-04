@@ -1,7 +1,7 @@
 # Copyright (c) 2022 Google LLC
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 set(KCONFIG_ROOT ${CMAKE_CURRENT_LIST_DIR}/../Kconfig)
 
@@ -21,6 +21,10 @@ elseif(CONFIG_ZTEST_FAIL_TEST_PASS_TEARDOWN)
   list(APPEND test_sources src/pass_teardown.cpp)
 elseif(CONFIG_ZTEST_FAIL_TEST_UNEXPECTED_ASSUME)
   list(APPEND test_sources src/unexpected_assume.cpp)
+endif()
+
+if(CONFIG_ZTEST_FAIL_ON_ASSUME)
+  add_definitions(-DCONFIG_ZTEST_FAIL_ON_ASSUME=1)
 endif()
 
 if(BOARD STREQUAL "unit_testing" OR BOARD STREQUAL "unit_testing/unit_testing")

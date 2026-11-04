@@ -7,6 +7,7 @@
 /**
  * @file
  * @brief Extended public API for TI's TMP108 temperature sensor
+ * @ingroup tmp108_interface
  *
  * This exposes attributes for the TMP108 which can be used for
  * setting the on-chip Temperature Mode and alert parameters.
@@ -19,6 +20,14 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Texas Instruments TMP108 temperature sensor
+ * @defgroup tmp108_interface TMP108
+ * @ingroup sensor_interface_ext_ti
+ * @{
+ */
+
+/** @brief Custom sensor attributes for TMP108 */
 enum sensor_attribute_tmp_108 {
 	/** Turn on power saving/one shot mode */
 	SENSOR_ATTR_TMP108_ONE_SHOT_MODE = SENSOR_ATTR_PRIV_START,
@@ -30,14 +39,7 @@ enum sensor_attribute_tmp_108 {
 	SENSOR_ATTR_TMP108_ALERT_POLARITY
 };
 
-/** a tmp108 mask for the over temp alert bit in the status word*/
-#define TMP108_OVER_TEMP_MASK 0x1000U
-
-/** a tmp108 mask for the under temp alert bit in the status word*/
-#define TMP108_UNDER_TEMP_MASK	0x0800U
-
-/** a as6212 mask for the over temp alert bit in the status word*/
-#define A6212_ALERT_TEMP_MASK	0x0020U
+/** @} */
 
 #ifdef __cplusplus
 }

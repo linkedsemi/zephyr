@@ -13,12 +13,17 @@
 	model = "Nuvoton PFM M487 board";
 	compatible = "nuvoton,pfm-m487", "nuvoton,m487";
 
+	cpus {
+		timebase-frequency = <DT_FREQ_M(192)>;
+	};
+
 	aliases {
 		led0 = &red_led;
 		led1 = &yellow_led;
 		led2 = &green_led;
 		sw0 = &sw2;
 		sw1 = &sw3;
+		watchdog0 = &wdt;
 	};
 
 	chosen {
@@ -30,14 +35,17 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			gpios = <&gpioh 0 GPIO_ACTIVE_LOW>;
 			label = "User LED Red";
 		};
+
 		yellow_led: led_1 {
 			gpios = <&gpioh 1 GPIO_ACTIVE_LOW>;
 			label = "User LED Yellow";
 		};
+
 		green_led: led_2 {
 			gpios = <&gpioh 2 GPIO_ACTIVE_LOW>;
 			label = "User LED Green";
@@ -46,17 +54,33 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		sw2: button_0 {
 			gpios = <&gpiog 15 GPIO_ACTIVE_LOW>;
 			label = "User SW2";
 			zephyr,code = <INPUT_KEY_0>;
 		};
+
 		sw3: button_1 {
 			gpios = <&gpiof 11 GPIO_ACTIVE_LOW>;
 			label = "User SW3";
 			zephyr,code = <INPUT_KEY_1>;
 		};
 	};
+};
+
+&clk_lirc {
+	status = "okay";
+};
+
+&clk_hxt {
+	clock-frequency = <DT_FREQ_M(12)>;
+	status = "okay";
+};
+
+&pll {
+	clocks = <&clk_hxt>;
+	status = "okay";
 };
 
 &flash0 {

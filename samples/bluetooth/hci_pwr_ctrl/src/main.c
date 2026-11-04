@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/bluetooth/gap.h>
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <zephyr/sys/printk.h>
@@ -20,6 +21,9 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/services/hrs.h>
+
+BUILD_ASSERT(IS_ENABLED(CONFIG_BT_HAS_HCI_VS),
+	     "This app requires Zephyr-specific HCI vendor extensions");
 
 static struct bt_conn *default_conn;
 static uint16_t default_conn_handle;
@@ -42,8 +46,8 @@ static K_THREAD_STACK_DEFINE(pwr_thread_stack, 512);
 
 static const int8_t txpower[DEVICE_BEACON_TXPOWER_NUM] = {4, 0, -3, -8,
 							  -15, -18, -23, -30};
-static const struct bt_le_adv_param *param =
-	BT_LE_ADV_PARAM(BT_LE_ADV_OPT_CONN, 0x0020, 0x0020, NULL);
+static const struct bt_le_adv_param *param = BT_LE_ADV_PARAM(
+	BT_LE_ADV_OPT_CONN, BT_GAP_MS_TO_ADV_INTERVAL(20), BT_GAP_MS_TO_ADV_INTERVAL(20), NULL);
 
 static void read_conn_rssi(uint16_t handle, int8_t *rssi)
 {
@@ -53,7 +57,7 @@ static void read_conn_rssi(uint16_t handle, int8_t *rssi)
 
 	int err;
 
-	buf = bt_hci_cmd_create(BT_HCI_OP_READ_RSSI, sizeof(*cp));
+	buf = bt_hci_cmd_alloc(K_FOREVER);
 	if (!buf) {
 		printk("Unable to allocate command buffer\n");
 		return;
@@ -82,8 +86,7 @@ static void set_tx_power(uint8_t handle_type, uint16_t handle, int8_t tx_pwr_lvl
 	struct net_buf *buf, *rsp = NULL;
 	int err;
 
-	buf = bt_hci_cmd_create(BT_HCI_OP_VS_WRITE_TX_POWER_LEVEL,
-				sizeof(*cp));
+	buf = bt_hci_cmd_alloc(K_FOREVER);
 	if (!buf) {
 		printk("Unable to allocate command buffer\n");
 		return;
@@ -115,8 +118,7 @@ static void get_tx_power(uint8_t handle_type, uint16_t handle, int8_t *tx_pwr_lv
 	int err;
 
 	*tx_pwr_lvl = 0xFF;
-	buf = bt_hci_cmd_create(BT_HCI_OP_VS_READ_TX_POWER_LEVEL,
-				sizeof(*cp));
+	buf = bt_hci_cmd_alloc(K_FOREVER);
 	if (!buf) {
 		printk("Unable to allocate command buffer\n");
 		return;
@@ -141,7 +143,6 @@ static void get_tx_power(uint8_t handle_type, uint16_t handle, int8_t *tx_pwr_lv
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
 	int8_t txp;
 	int ret;
 
@@ -155,10 +156,8 @@ static void connected(struct bt_conn *conn, uint8_t err)
 			printk("No connection handle (err %d)\n", ret);
 		} else {
 			/* Send first at the default selected power */
-			bt_addr_le_to_str(bt_conn_get_dst(conn),
-							  addr, sizeof(addr));
 			printk("Connected via connection (%d) at %s\n",
-			       default_conn_handle, addr);
+			       default_conn_handle, bt_conn_dst_str(conn));
 			get_tx_power(BT_HCI_VS_LL_HANDLE_TYPE_CONN,
 				     default_conn_handle, &txp);
 			printk("Connection (%d) - Initial Tx Power = %d\n",
@@ -179,10 +178,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	printk("Disconnected, reason 0x%02x %s\n", reason, bt_hci_err_to_str(reason));
 
-	if (default_conn) {
-		bt_conn_unref(default_conn);
-		default_conn = NULL;
-	}
+	bt_conn_drop(&default_conn);
 }
 
 BT_CONN_CB_DEFINE(conn_callbacks) = {

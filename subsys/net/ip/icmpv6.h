@@ -106,7 +106,7 @@ struct net_icmpv6_mld_query {
 	uint16_t max_response_code;
 	uint16_t reserved;
 	uint8_t mcast_address[NET_IPV6_ADDR_SIZE];
-	uint16_t flagg; /*S, QRV & QQIC */
+	uint16_t flag; /*S, QRV & QQIC */
 	uint16_t num_sources;
 } __packed;
 
@@ -117,6 +117,9 @@ struct net_icmpv6_mld_mcast_record {
 	uint8_t mcast_address[NET_IPV6_ADDR_SIZE];
 } __packed;
 
+struct net_icmpv6_ptb {
+	uint32_t mtu;
+} __packed;
 
 #define NET_ICMPV6_ND_O_FLAG(flag) ((flag) & 0x40)
 #define NET_ICMPV6_ND_M_FLAG(flag) ((flag) & 0x80)
@@ -125,6 +128,7 @@ struct net_icmpv6_mld_mcast_record {
 #define NET_ICMPV6_ND_OPT_TLLAO       2
 #define NET_ICMPV6_ND_OPT_PREFIX_INFO 3
 #define NET_ICMPV6_ND_OPT_MTU         5
+#define NET_ICMPV6_ND_OPT_NONCE       14
 #define NET_ICMPV6_ND_OPT_ROUTE       24
 #define NET_ICMPV6_ND_OPT_RDNSS       25
 #define NET_ICMPV6_ND_OPT_DNSSL       31
@@ -145,10 +149,13 @@ struct net_icmpv6_mld_mcast_record {
 #define NET_ICMPV6_TIME_EXCEEDED  3	/* Time exceeded */
 #define NET_ICMPV6_PARAM_PROBLEM  4	/* IPv6 header is bad */
 #define NET_ICMPV6_MLD_QUERY    130	/* Multicast Listener Query */
+#define NET_ICMPV6_MLDv1_REPORT 131	/* Multicast Listener Report v1 */
+#define NET_ICMPV6_MLDv1_DONE   132	/* Multicast Listener Done v1 */
 #define NET_ICMPV6_RS           133	/* Router Solicitation */
 #define NET_ICMPV6_RA           134	/* Router Advertisement */
 #define NET_ICMPV6_NS           135	/* Neighbor Solicitation */
 #define NET_ICMPV6_NA           136	/* Neighbor Advertisement */
+#define NET_ICMPV6_REDIRECT     137	/* Redirect */
 #define NET_ICMPV6_MLDv2        143	/* Multicast Listener Report v2 */
 
 /* Codes for ICMPv6 Destination Unreachable message */

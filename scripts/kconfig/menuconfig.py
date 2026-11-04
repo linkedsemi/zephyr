@@ -7,7 +7,7 @@
 Overview
 ========
 
-A curses-based Python 2/3 menuconfig implementation. The interface should feel
+A curses-based Python 3 menuconfig implementation. The interface should feel
 familiar to people used to mconf ('make menuconfig').
 
 Supports the same keys as mconf, and also supports a set of keybindings
@@ -985,12 +985,7 @@ def _init():
     # Looking for this in addition to KEY_BACKSPACE (which is unreliable) makes
     # backspace work with TERM=vt100. That makes it likely to work in sane
     # environments.
-    _ERASE_CHAR = curses.erasechar()
-    if sys.version_info[0] >= 3:
-        # erasechar() returns a one-byte bytes object on Python 3. This sets
-        # _ERASE_CHAR to a blank string if it can't be decoded, which should be
-        # harmless.
-        _ERASE_CHAR = _ERASE_CHAR.decode("utf-8", "ignore")
+    _ERASE_CHAR = curses.erasechar().decode("utf-8", "ignore")
 
     _init_styles()
 
@@ -2129,11 +2124,7 @@ def _jump_to_dialog():
 
             except re.error as e:
                 # Bad regex. Remember the error message so we can show it.
-                bad_re = "Bad regular expression"
-                # re.error.msg was added in Python 3.5
-                if hasattr(e, "msg"):
-                    bad_re += ": " + e.msg
-
+                bad_re = f"Bad regular expression: {e.msg}"
                 matches = []
 
             # Reset scroll and jump to the top of the list of matches
@@ -2636,7 +2627,7 @@ def _help_info(sc):
 
     for node in sc.nodes:
         if node.help is not None:
-            s += "Help:\n\n{}\n\n".format(_indent(node.help, 2))
+            s += "Help:\n\n{}\n\n".format(textwrap.indent(node.help, "  "))
 
     return s
 
@@ -2778,7 +2769,7 @@ def _kconfig_def_info(item):
              .format(node.filename, node.linenr,
                      _include_path_info(node),
                      _menu_path_info(node),
-                     _indent(node.custom_str(_name_and_val_str), 2))
+                     textwrap.indent(node.custom_str(_name_and_val_str), "  "))
 
     return s
 
@@ -2808,13 +2799,6 @@ def _menu_path_info(node):
                          standard_sc_expr_str(node.item)) + path
 
     return "(Top)" + path
-
-
-def _indent(s, n):
-    # Returns 's' with each line indented 'n' spaces. textwrap.indent() is not
-    # available in Python 2 (it's 3.3+).
-
-    return "\n".join(n*" " + line for line in s.split("\n"))
 
 
 def _name_and_val_str(sc):
@@ -3096,7 +3080,7 @@ def _check_valid(sym, s):
                .format(s, TYPE_TO_STR[sym.orig_type]))
         return False
 
-    for low_sym, high_sym, cond in sym.ranges:
+    for low_sym, high_sym, cond, _ in sym.ranges:
         if expr_value(cond):
             low_s = low_sym.str_value
             high_s = high_sym.str_value
@@ -3116,7 +3100,7 @@ def _range_info(sym):
     # 'sym', or None if 'sym' doesn't have a range
 
     if sym.orig_type in (INT, HEX):
-        for low, high, cond in sym.ranges:
+        for low, high, cond, _ in sym.ranges:
             if expr_value(cond):
                 return "Range: {}-{}".format(low.str_value, high.str_value)
 
@@ -3143,9 +3127,7 @@ def _is_num(name):
 
 
 def _getch_compat(win):
-    # Uses get_wch() if available (Python 3.3+) and getch() otherwise.
-    #
-    # Also falls back on getch() if get_wch() raises curses.error, to work
+    # Fall back on getch() if get_wch() raises curses.error, to work
     # around an issue when resizing the terminal on at least macOS Catalina.
     # See https://github.com/ulfalizer/Kconfiglib/issues/84.
     #

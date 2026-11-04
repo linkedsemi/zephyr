@@ -8,9 +8,14 @@
 #define DT_DRV_COMPAT raspberrypi_pico_clock_controller
 
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/clock_control/clock_control_rpi_pico.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/reset.h>
-#include <zephyr/dt-bindings/clock/rpi_pico_clock.h>
+#if defined(CONFIG_SOC_SERIES_RP2040)
+#include <zephyr/dt-bindings/clock/rpi_pico_rp2040_clock.h>
+#else
+#include <zephyr/dt-bindings/clock/rpi_pico_rp2350_clock.h>
+#endif
 
 #include <hardware/clocks.h>
 #include <hardware/xosc.h>
@@ -18,6 +23,7 @@
 #include <hardware/pll.h>
 #include <hardware/watchdog.h>
 #include <hardware/resets.h>
+#include <hardware/ticks.h>
 
 /* Undefine to prevent conflicts with header definitions */
 #undef pll_sys
@@ -77,6 +83,7 @@
 #define CLOCK_FREQ_clk_gpout1 DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_gpout1), clock_frequency)
 #define CLOCK_FREQ_clk_gpout2 DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_gpout2), clock_frequency)
 #define CLOCK_FREQ_clk_gpout3 DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_gpout3), clock_frequency)
+#define CLOCK_FREQ_clk_hstx   DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_hstx), clock_frequency)
 #define CLOCK_FREQ_clk_ref    DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_ref), clock_frequency)
 #define CLOCK_FREQ_clk_sys    DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_sys), clock_frequency)
 #define CLOCK_FREQ_clk_usb    DT_PROP(DT_INST_CLOCKS_CTLR_BY_NAME(0, clk_usb), clock_frequency)
@@ -102,9 +109,16 @@
 #define AUXSRC_clk_sys   CLK_SYS
 #define AUXSRC_clk_usb   CLK_USB
 #define AUXSRC_clk_adc   CLK_ADC
-#define AUXSRC_clk_rtc   CLK_RTC
 #define AUXSRC_clk_gpin0 CLKSRC_GPIN0
 #define AUXSRC_clk_gpin1 CLKSRC_GPIN1
+#if defined(CONFIG_SOC_SERIES_RP2040)
+#define AUXSRC_clk_rtc CLK_RTC
+#else
+#define AUXSRC_pll_usb_primary_ref_opcg CLKSRC_PLL_PLL_USB_PRIMARY_REF_OPCG
+#define AUXSRC_lposc LPOSC_CLKSRC
+#define AUXSRC_clk_hstx CLK_HSTX
+#define AUXSRC_otp_clk2fc OTP_CLK2FC
+#endif
 
 #define AUXSTEM_clk_gpout0 CLOCKS_CLK_GPOUT0_CTRL_AUXSRC_VALUE_
 #define AUXSTEM_clk_gpout1 CLOCKS_CLK_GPOUT1_CTRL_AUXSRC_VALUE_
@@ -114,8 +128,12 @@
 #define AUXSTEM_clk_sys    CLOCKS_CLK_SYS_CTRL_AUXSRC_VALUE_
 #define AUXSTEM_clk_usb    CLOCKS_CLK_USB_CTRL_AUXSRC_VALUE_
 #define AUXSTEM_clk_adc    CLOCKS_CLK_ADC_CTRL_AUXSRC_VALUE_
-#define AUXSTEM_clk_rtc    CLOCKS_CLK_RTC_CTRL_AUXSRC_VALUE_
-#define AUXSTEM_clk_peri   CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_
+#define AUXSTEM_clk_peri CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_
+#if defined(CONFIG_SOC_SERIES_RP2040)
+#define AUXSTEM_clk_rtc CLOCKS_CLK_RTC_CTRL_AUXSRC_VALUE_
+#else
+#define AUXSTEM_clk_hstx CLOCKS_CLK_HSTX_CTRL_AUXSRC_VALUE_
+#endif
 
 #define TUPLE_ENTRY(n, p, i)                                                                       \
 	{                                                                                          \
@@ -141,7 +159,9 @@ enum rpi_pico_clkid {
 	rpi_pico_clkid_clk_peri = RPI_PICO_CLKID_CLK_PERI,
 	rpi_pico_clkid_clk_usb = RPI_PICO_CLKID_CLK_USB,
 	rpi_pico_clkid_clk_adc = RPI_PICO_CLKID_CLK_ADC,
+#if defined(RPI_PICO_CLKID_CLK_RTC)
 	rpi_pico_clkid_clk_rtc = RPI_PICO_CLKID_CLK_RTC,
+#endif
 	rpi_pico_clkid_pll_sys = RPI_PICO_CLKID_PLL_SYS,
 	rpi_pico_clkid_pll_usb = RPI_PICO_CLKID_PLL_USB,
 	rpi_pico_clkid_xosc = RPI_PICO_CLKID_XOSC,
@@ -223,9 +243,11 @@ uint64_t rpi_pico_frequency_count(const struct device *dev, clock_control_subsys
 	case rpi_pico_clkid_clk_adc:
 		fc0_id = CLOCKS_FC0_SRC_VALUE_CLK_ADC;
 		break;
+#if defined(CONFIG_SOC_SERIES_RP2040)
 	case rpi_pico_clkid_clk_rtc:
 		fc0_id = CLOCKS_FC0_SRC_VALUE_CLK_RTC;
 		break;
+#endif
 	case rpi_pico_clkid_pll_sys:
 		fc0_id = CLOCKS_FC0_SRC_VALUE_PLL_SYS_CLKSRC_PRIMARY;
 		break;
@@ -245,7 +267,7 @@ uint64_t rpi_pico_frequency_count(const struct device *dev, clock_control_subsys
 		fc0_id = CLOCKS_FC0_SRC_VALUE_CLKSRC_GPIN0;
 		break;
 	case rpi_pico_clkid_gpin1:
-		fc0_id = CLOCKS_FC0_SRC_VALUE_CLKSRC_GPIN0;
+		fc0_id = CLOCKS_FC0_SRC_VALUE_CLKSRC_GPIN1;
 		break;
 	default:
 		return -1;
@@ -257,7 +279,8 @@ uint64_t rpi_pico_frequency_count(const struct device *dev, clock_control_subsys
 	       ((fc0->result & CLOCKS_FC0_RESULT_FRAC_BITS) * 1000 / CLOCKS_FC0_RESULT_FRAC_BITS);
 }
 
-static int rpi_pico_rosc_write(const struct device *dev, io_rw_32 *addr, uint32_t value)
+__maybe_unused static int rpi_pico_rosc_write(const struct device *dev, io_rw_32 *addr,
+					      uint32_t value)
 {
 	hw_clear_bits(&rosc_hw->status, ROSC_STATUS_BADWRITE_BITS);
 
@@ -284,10 +307,13 @@ static int rpi_pico_rosc_write(const struct device *dev, io_rw_32 *addr, uint32_
 static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum rpi_pico_clkid id)
 {
 	const struct clock_control_rpi_pico_config *config = dev->config;
-	enum rpi_pico_clkid srcid = rpi_pico_clkid_none;
+	enum rpi_pico_clkid srcid;
 
-	if (id == rpi_pico_clkid_clk_gpout0 || id == rpi_pico_clkid_clk_gpout1 ||
-	    id == rpi_pico_clkid_clk_gpout2 || id == rpi_pico_clkid_clk_gpout3) {
+	switch (id) {
+	case rpi_pico_clkid_clk_gpout0:
+	case rpi_pico_clkid_clk_gpout1:
+	case rpi_pico_clkid_clk_gpout2:
+	case rpi_pico_clkid_clk_gpout3: {
 		const static enum rpi_pico_clkid table[] = {
 			rpi_pico_clkid_pll_sys,
 			rpi_pico_clkid_gpin0,
@@ -298,7 +324,9 @@ static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum
 			rpi_pico_clkid_clk_sys,
 			rpi_pico_clkid_clk_usb,
 			rpi_pico_clkid_clk_adc,
+#if defined(CONFIG_SOC_SERIES_RP2040)
 			rpi_pico_clkid_clk_rtc,
+#endif
 			rpi_pico_clkid_clk_ref,
 		};
 
@@ -306,7 +334,9 @@ static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum
 		uint32_t aux = ((clock_hw->ctrl & CTRL_AUXSRC_BITS) >> CTRL_AUXSRC_LSB);
 
 		srcid = table[aux];
-	} else if (id == rpi_pico_clkid_clk_ref) {
+		break;
+	}
+	case rpi_pico_clkid_clk_ref: {
 		const static enum rpi_pico_clkid table[] = {
 			rpi_pico_clkid_pll_usb,
 			rpi_pico_clkid_gpin0,
@@ -324,7 +354,9 @@ static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum
 		} else {
 			srcid = table[aux];
 		}
-	} else if (id == rpi_pico_clkid_clk_sys) {
+		break;
+	}
+	case rpi_pico_clkid_clk_sys: {
 		const static enum rpi_pico_clkid table[] = {
 			rpi_pico_clkid_pll_sys,
 			rpi_pico_clkid_pll_usb,
@@ -343,7 +375,9 @@ static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum
 		} else {
 			srcid = table[aux];
 		}
-	} else if (id == rpi_pico_clkid_clk_peri) {
+		break;
+	}
+	case rpi_pico_clkid_clk_peri: {
 		const static enum rpi_pico_clkid table[] = {
 			rpi_pico_clkid_clk_sys,
 			rpi_pico_clkid_pll_sys,
@@ -358,8 +392,16 @@ static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum
 		uint32_t aux = ((clock_hw->ctrl & CTRL_AUXSRC_BITS) >> CTRL_AUXSRC_LSB);
 
 		srcid = table[aux];
-	} else if (id == rpi_pico_clkid_clk_usb || id == rpi_pico_clkid_clk_adc ||
-		   id == rpi_pico_clkid_clk_rtc) {
+		break;
+	}
+	case rpi_pico_clkid_clk_usb:
+	case rpi_pico_clkid_clk_adc:
+#if defined(RPI_PICO_CLKID_CLK_RTC)
+	case rpi_pico_clkid_clk_rtc:
+#else
+
+#endif
+	{
 		const static enum rpi_pico_clkid table[] = {
 			rpi_pico_clkid_pll_usb,
 			rpi_pico_clkid_pll_sys,
@@ -373,8 +415,16 @@ static enum rpi_pico_clkid rpi_pico_get_clock_src(const struct device *dev, enum
 		uint32_t aux = ((clock_hw->ctrl & CTRL_AUXSRC_BITS) >> CTRL_AUXSRC_LSB);
 
 		srcid = table[aux];
-	} else if (id == rpi_pico_clkid_pll_sys || id == rpi_pico_clkid_pll_usb) {
+		break;
+	}
+	case rpi_pico_clkid_pll_sys:
+	case rpi_pico_clkid_pll_usb: {
 		srcid = rpi_pico_clkid_xosc;
+		break;
+	}
+	default:
+		srcid = rpi_pico_clkid_none;
+		break;
 	}
 
 	return srcid;
@@ -396,7 +446,9 @@ static bool rpi_pico_is_clock_enabled(const struct device *dev, enum rpi_pico_cl
 	} else if (id == rpi_pico_clkid_clk_usb ||
 		   id == rpi_pico_clkid_clk_peri ||
 		   id == rpi_pico_clkid_clk_adc ||
+#if defined(RPI_PICO_CLKID_CLK_RTC)
 		   id == rpi_pico_clkid_clk_rtc ||
+#endif
 		   id == rpi_pico_clkid_clk_gpout0 ||
 		   id == rpi_pico_clkid_clk_gpout1 ||
 		   id == rpi_pico_clkid_clk_gpout2 ||
@@ -444,7 +496,9 @@ static float rpi_pico_calc_clock_freq(const struct device *dev, enum rpi_pico_cl
 	if (id == rpi_pico_clkid_clk_sys ||
 	    id == rpi_pico_clkid_clk_usb ||
 	    id == rpi_pico_clkid_clk_adc ||
+#if defined(RPI_PICO_CLKID_CLK_RTC)
 	    id == rpi_pico_clkid_clk_rtc ||
+#endif
 	    id == rpi_pico_clkid_clk_ref ||
 	    id == rpi_pico_clkid_clk_gpout0 ||
 	    id == rpi_pico_clkid_clk_gpout1 ||
@@ -569,14 +623,16 @@ static int clock_control_rpi_pico_get_rate(const struct device *dev, clock_contr
 	return 0;
 }
 
-void rpi_pico_clkid_tuple_swap(struct rpi_pico_clkid_tuple *lhs, struct rpi_pico_clkid_tuple *rhs)
+__maybe_unused static void rpi_pico_clkid_tuple_swap(struct rpi_pico_clkid_tuple *lhs,
+						     struct rpi_pico_clkid_tuple *rhs)
 {
 	struct rpi_pico_clkid_tuple tmp = *lhs;
 	*lhs = *rhs;
 	*rhs = tmp;
 }
 
-void rpi_pico_clkid_tuple_reorder_by_dependencies(struct rpi_pico_clkid_tuple *tuples, size_t len)
+__maybe_unused static void
+rpi_pico_clkid_tuple_reorder_by_dependencies(struct rpi_pico_clkid_tuple *tuples, size_t len)
 {
 	uint32_t sorted_idx = 0;
 	uint32_t checked_idx = 0;
@@ -593,34 +649,24 @@ void rpi_pico_clkid_tuple_reorder_by_dependencies(struct rpi_pico_clkid_tuple *t
 	}
 }
 
-static int clock_control_rpi_pico_init(const struct device *dev)
+/**
+ * @brief Reapply the devicetree-declared XOSC/PLL/clock topology.
+ *
+ * Configures XOSC, PLL_SYS/PLL_USB, and every clock listed in the "clock-names"
+ * property, in dependency order, from the config data generated from devicetree.
+ * Used both by clock_control_rpi_pico_init() at boot and to restore clocks after a
+ * low-power mode that resets them, so that resume restores the board's actual
+ * devicetree-configured clock rates instead of a hardcoded/duplicated subset.
+ *
+ * @param dev clock-controller device
+ * @return 0 on success, -EINVAL if a clock could not be configured
+ */
+int clock_control_rpi_pico_reconfigure(const struct device *dev)
 {
 	const struct clock_control_rpi_pico_config *config = dev->config;
-	struct clock_control_rpi_pico_data *data = dev->data;
-	clocks_hw_t *clocks_regs = config->clocks_regs;
-	rosc_hw_t *rosc_regs = config->rosc_regs;
 	pll_hw_t *plls[] = {config->pll_sys_regs, config->pll_usb_regs};
 	struct rpi_pico_clkid_tuple tuples[] = {
 		DT_INST_FOREACH_PROP_ELEM_SEP(0, clock_names, TUPLE_ENTRY, (,))};
-	uint32_t rosc_div;
-	int ret;
-
-	/* Reset all function before clock configuring */
-	reset_block(~(RESETS_RESET_IO_QSPI_BITS | RESETS_RESET_PADS_QSPI_BITS |
-		      RESETS_RESET_PLL_USB_BITS | RESETS_RESET_USBCTRL_BITS |
-		      RESETS_RESET_PLL_USB_BITS | RESETS_RESET_SYSCFG_BITS |
-		      RESETS_RESET_PLL_SYS_BITS));
-
-	unreset_block_wait(RESETS_RESET_BITS &
-			   ~(RESETS_RESET_ADC_BITS | RESETS_RESET_RTC_BITS |
-			     RESETS_RESET_SPI0_BITS | RESETS_RESET_SPI1_BITS |
-			     RESETS_RESET_UART0_BITS | RESETS_RESET_UART1_BITS |
-			     RESETS_RESET_USBCTRL_BITS | RESETS_RESET_PWM_BITS));
-
-	/* Start tick in watchdog */
-	watchdog_hw->tick = ((CLOCK_FREQ_xosc/1000000) | WATCHDOG_TICK_ENABLE_BITS);
-
-	clocks_regs->resus.ctrl = 0;
 
 	/* Configure xosc */
 	xosc_init();
@@ -655,6 +701,49 @@ static int clock_control_rpi_pico_init(const struct device *dev)
 				      config->clocks_data[tuples[i].clk].rate))) {
 			return -EINVAL;
 		}
+	}
+
+	return 0;
+}
+
+static int clock_control_rpi_pico_init(const struct device *dev)
+{
+#if !defined(CONFIG_RPI_PICO_SKIP_CLOCK_INIT)
+	const uint32_t cycles_per_tick = CLOCK_FREQ_xosc / 1000000;
+	const struct clock_control_rpi_pico_config *config = dev->config;
+	struct clock_control_rpi_pico_data *data = dev->data;
+	clocks_hw_t *clocks_regs = config->clocks_regs;
+	rosc_hw_t *rosc_regs = config->rosc_regs;
+	uint32_t rosc_div;
+	int ret;
+
+	/* Reset all function before clock configuring */
+	reset_block(~(RESETS_RESET_IO_QSPI_BITS | RESETS_RESET_PADS_QSPI_BITS |
+		      RESETS_RESET_PLL_USB_BITS | RESETS_RESET_USBCTRL_BITS |
+		      RESETS_RESET_SYSCFG_BITS | RESETS_RESET_PLL_SYS_BITS));
+
+	unreset_block_wait(RESETS_RESET_BITS &
+			   ~(RESETS_RESET_ADC_BITS |
+#if defined(RESETS_RESET_RTC_BITS)
+			     RESETS_RESET_RTC_BITS |
+#endif
+#if defined(RESETS_RESET_HSTX_BITS)
+			     RESETS_RESET_HSTX_BITS |
+#endif
+			     RESETS_RESET_SPI0_BITS | RESETS_RESET_SPI1_BITS |
+			     RESETS_RESET_UART0_BITS | RESETS_RESET_UART1_BITS |
+			     RESETS_RESET_USBCTRL_BITS));
+
+	/* Start all the tick generators. */
+	for (tick_gen_num_t i = 0; i < TICK_COUNT; i++) {
+		tick_start(i, cycles_per_tick);
+	}
+
+	clocks_regs->resus.ctrl = 0;
+
+	ret = clock_control_rpi_pico_reconfigure(dev);
+	if (ret < 0) {
+		return ret;
 	}
 
 	hw_clear_bits(&clocks_regs->clk[rpi_pico_clkid_clk_gpout0].ctrl, CTRL_ENABLE_BITS);
@@ -714,14 +803,15 @@ static int clock_control_rpi_pico_init(const struct device *dev)
 	}
 
 	ret = pinctrl_apply_state(config->pcfg, PINCTRL_STATE_DEFAULT);
-	if (ret < 0) {
+	if (ret < 0 && ret != -ENOENT) {
 		return ret;
 	}
 
+#endif /* CONFIG_RPI_PICO_SKIP_CLOCK_INIT */
 	return 0;
 }
 
-static const struct clock_control_driver_api clock_control_rpi_pico_api = {
+static DEVICE_API(clock_control, clock_control_rpi_pico_api) = {
 	.on = clock_control_rpi_pico_on,
 	.off = clock_control_rpi_pico_off,
 	.get_rate = clock_control_rpi_pico_get_rate,
@@ -756,8 +846,10 @@ BUILD_ASSERT(SRC_CLOCK_FREQ(clk_usb) >= CLOCK_FREQ_clk_usb,
 	     "clk_usb: clock divider is out of range");
 BUILD_ASSERT(SRC_CLOCK_FREQ(clk_adc) >= CLOCK_FREQ_clk_adc,
 	     "clk_adc: clock divider is out of range");
+#if defined(CONFIG_SOC_SERIES_RP2040)
 BUILD_ASSERT(SRC_CLOCK_FREQ(clk_rtc) >= CLOCK_FREQ_clk_rtc,
 	     "clk_rtc: clock divider is out of range");
+#endif
 BUILD_ASSERT(SRC_CLOCK_FREQ(clk_peri) >= CLOCK_FREQ_clk_peri,
 	     "clk_peri: clock divider is out of range");
 
@@ -839,12 +931,21 @@ static const struct clock_control_rpi_pico_config clock_control_rpi_pico_config 
 			.source_rate = SRC_CLOCK_FREQ(clk_adc),
 			.rate = CLOCK_FREQ(clk_adc),
 		},
+#if defined(RPI_PICO_CLKID_CLK_RTC)
 		[RPI_PICO_CLKID_CLK_RTC] = {
 			.source = 0,
 			.aux_source = CLOCK_AUX_SOURCE(clk_rtc),
 			.source_rate = SRC_CLOCK_FREQ(clk_rtc),
 			.rate = CLOCK_FREQ(clk_rtc),
 		},
+#elif defined(RPI_PICO_CLKID_CLK_HSTX)
+		[RPI_PICO_CLKID_CLK_HSTX] = {
+			.source = 0,
+			.aux_source = CLOCK_AUX_SOURCE(clk_hstx),
+			.source_rate = SRC_CLOCK_FREQ(clk_hstx),
+			.rate = CLOCK_FREQ(clk_hstx),
+		},
+#endif
 	},
 	.plls_data = {
 		[RPI_PICO_PLL_SYS] = {

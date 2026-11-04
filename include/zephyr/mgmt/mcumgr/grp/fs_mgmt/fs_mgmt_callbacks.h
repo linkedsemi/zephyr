@@ -5,26 +5,47 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef H_MCUMGR_FS_MGMT_CALLBACKS_
-#define H_MCUMGR_FS_MGMT_CALLBACKS_
+/**
+ * @file
+ * @brief Header file for MCUmgr file system management callback definitions.
+ * @ingroup mcumgr_callback_api_fs_mgmt
+ */
+
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_FS_MGMT_FS_MGMT_CALLBACKS_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_FS_MGMT_FS_MGMT_CALLBACKS_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief MCUmgr fs_mgmt callback API
- * @defgroup mcumgr_callback_api_fs_mgmt MCUmgr fs_mgmt callback API
+ * @brief MCUmgr File System Management Callbacks API
+ * @defgroup mcumgr_callback_api_fs_mgmt File System Management Callbacks
+ * @ingroup mcumgr_fs_mgmt
  * @ingroup mcumgr_callback_api
  * @{
  */
 
+/**
+ * MGMT event opcodes for filesystem management group.
+ */
+enum fs_mgmt_group_events {
+	/** Callback when a file has been accessed, data is @ref fs_mgmt_file_access. */
+	MGMT_EVT_OP_FS_MGMT_FILE_ACCESS		= MGMT_DEF_EVT_OP_ID(MGMT_EVT_GRP_FS, 0),
+
+	/** Callback when a file upload/download is finished, data is @ref fs_mgmt_file_access. */
+	MGMT_EVT_OP_FS_MGMT_FILE_ACCESS_DONE	= MGMT_DEF_EVT_OP_ID(MGMT_EVT_GRP_FS, 1),
+
+	/** Used to enable all fs_mgmt_group events. */
+	MGMT_EVT_OP_FS_MGMT_ALL			= MGMT_DEF_EVT_OP_ALL(MGMT_EVT_GRP_FS),
+};
+
 /** The type of operation that is being requested for a given file access callback. */
 enum fs_mgmt_file_access_types {
-	/** Access to read file (file upload). */
+	/** Access to read file (file download). */
 	FS_MGMT_FILE_ACCESS_READ,
 
-	/** Access to write file (file download). */
+	/** Access to write file (file upload). */
 	FS_MGMT_FILE_ACCESS_WRITE,
 
 	/** Access to get status of file. */
@@ -60,4 +81,4 @@ struct fs_mgmt_file_access {
 }
 #endif
 
-#endif
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_FS_MGMT_FS_MGMT_CALLBACKS_H_ */

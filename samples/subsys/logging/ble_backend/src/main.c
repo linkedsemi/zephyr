@@ -57,11 +57,7 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 
 static void auth_cancel(struct bt_conn *conn)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	LOG_INF("Pairing cancelled: %s", addr);
+	LOG_INF("Pairing cancelled: %s", bt_conn_dst_str(conn));
 }
 
 static struct bt_conn_auth_cb auth_cb_display = {
@@ -73,9 +69,9 @@ void backend_ble_hook(bool status, void *ctx)
 	ARG_UNUSED(ctx);
 
 	if (status) {
-		LOG_INF("BLE Logger Backend enabled.");
+		LOG_INF("Bluetooth Logger Backend enabled.");
 	} else {
-		LOG_INF("BLE Logger Backend disabled.");
+		LOG_INF("Bluetooth Logger Backend disabled.");
 	}
 }
 
@@ -84,7 +80,7 @@ int main(void)
 {
 	int err;
 
-	LOG_INF("BLE LOG Demo");
+	LOG_INF("Bluetooth LOG Demo");
 	logger_backend_ble_set_hook(backend_ble_hook, NULL);
 	err = bt_enable(NULL);
 	if (err) {

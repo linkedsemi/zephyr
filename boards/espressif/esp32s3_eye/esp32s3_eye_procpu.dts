@@ -1,15 +1,17 @@
 /*
- * Copyright (c) 2024 Espressif Systems (Shanghai) Co., Ltd.
+ * Copyright (c) 2024-2025 Espressif Systems (Shanghai) Co., Ltd.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 /dts-v1/;
 
-#include "espressif/esp32s3/esp32s3_wroom_n8r8.dtsi"
+#include <espressif/esp32s3/esp32s3.dtsi>
 #include "esp32s3_eye-pinctrl.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/input/esp32-touch-sensor-input.h>
 #include <zephyr/dt-bindings/mipi_dbi/mipi_dbi.h>
+#include <espressif/partitions_0x0_amp.dtsi>
+#include <zephyr/dt-bindings/display/panel.h>
 
 / {
 	model = "Espressif ESP32S3-EYE PROCPU";
@@ -20,21 +22,23 @@
 		watchdog0 = &wdt0;
 		sw0 = &button0;
 		led0 = &green_led;
+		sdhc0 = &sdhc0;
 	};
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &usb_serial;
 		zephyr,shell-uart = &usb_serial;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
 		zephyr,bt-hci = &esp32_bt_hci;
 		zephyr,display = &st7789v;
-		zephyr,camera = &lcd_cam;
+		zephyr,camera = &lcd_cam_dvp;
 	};
 
 	buttons {
 		compatible = "gpio-keys";
+
 		button0: button_0 {
 			gpios = <&gpio0 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "BOOT Button";
@@ -71,8 +75,9 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		green_led: led0 {
-			gpios =  <&gpio0 3 GPIO_OPEN_DRAIN>;
+			gpios = <&gpio0 3 GPIO_OPEN_DRAIN>;
 			label = "Power LED";
 		};
 	};
@@ -99,18 +104,27 @@
 			vdvs = <0x20>;
 			mdac = <0x00>;
 			gamma = <0x01>;
-			colmod = <0x55>;
+			pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
 			lcm = <0x2c>;
 			porch-param = [0c 0c 00 33 33];
 			cmd2en-param = [5a 69 02 01];
 			pwctrl1-param = [a4 a1];
-			pvgam-param = [D0 04 0D 11 13 2B 3F 54 4C 18 0D 0B 1F 23];
-			nvgam-param = [D0 04 0C 11 13 2C 3F 44 51 2F 1F 1F 20 23];
-			ram-param = [00 F0];
-			rgb-param = [CD 08 14];
-			mipi-mode = <MIPI_DBI_MODE_SPI_4WIRE>;
+			pvgam-param = [d0 04 0d 11 13 2b 3f 54 4c 18 0d 0b 1f 23];
+			nvgam-param = [d0 04 0c 11 13 2c 3f 44 51 2f 1f 1f 20 23];
+			ram-param = [00 f0];
+			rgb-param = [cd 08 14];
+			mipi-mode = "MIPI_DBI_MODE_SPI_4WIRE";
 		};
 	};
+};
+
+&flash0 {
+	reg = <0x0 DT_SIZE_M(8)>;
+	ranges = <0x0 0x0 DT_SIZE_M(8)>;
+};
+
+&psram0 {
+	size = <DT_SIZE_M(8)>;
 };
 
 &dma {
@@ -122,31 +136,36 @@
 	clock-frequency = <I2C_BITRATE_STANDARD>;
 	pinctrl-0 = <&i2c1_default>;
 	pinctrl-names = "default";
+
 	ov2640: ov2640@30 {
-			compatible = "ovti,ov2640";
-			reg = <0x30>;
-			status = "okay";
-			clock-rate-control = <0x80>;
-			port {
-					ov2640_ep_out: endpoint {
-							remote-endpoint = <&dvp_ep_in>;
-					};
+		compatible = "ovti,ov2640";
+		reg = <0x30>;
+		status = "okay";
+		clock-rate-control = <0x80>;
+
+		port {
+			ov2640_ep_out: endpoint {
+				remote-endpoint = <&dvp_ep_in>;
 			};
+		};
 	};
 };
 
 &lcd_cam {
 	status = "okay";
-	cam-clk = < 10000000 >;
 	pinctrl-0 = <&lcd_cam_default>;
 	pinctrl-names = "default";
+};
+
+&lcd_cam_dvp {
+	status = "okay";
+	cam-clk = <10000000>;
 	source = <&ov2640>;
-	dmas = <&dma 2>;
-	dma-names = "rx";
+
 	port {
-			dvp_ep_in: endpoint {
-					remote-endpoint = <&ov2640_ep_out>;
-			};
+		dvp_ep_in: endpoint {
+			remote-endpoint = <&ov2640_ep_out>;
+		};
 	};
 };
 
@@ -200,45 +219,35 @@
 	status = "okay";
 };
 
-&flash0 {
+&esp32_bt_hci {
 	status = "okay";
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
+};
 
-		/* Reserve 64kB for the bootloader */
-		boot_partition: partition@0 {
-			label = "mcuboot";
-			reg = <0x00000000 0x00010000>;
-			read-only;
-		};
+&wifi {
+	status = "okay";
+};
 
-		/* Reserve 1024kB for the application in slot 0 */
-		slot0_partition: partition@10000 {
-			label = "image-0";
-			reg = <0x00010000 0x00100000>;
-		};
+&sdhc {
+	sdhc0: sdhc@0 {
+		status = "okay";
 
-		/* Reserve 1024kB for the application in slot 1 */
-		slot1_partition: partition@110000 {
-			label = "image-1";
-			reg = <0x00110000 0x00100000>;
-		};
+		pinctrl-0 = <&sdhc0_default>;
+		pinctrl-names = "default";
+		max-bus-freq = <52000000>;
+		bus-width = <1>;
 
-		/* Reserve 256kB for the scratch partition */
-		scratch_partition: partition@210000 {
-			   label = "image-scratch";
-			   reg = <0x00210000 0x00040000>;
-		};
-
-		storage_partition: partition@250000 {
-			label = "storage";
-			reg = <0x00250000 0x00006000>;
+		mmc {
+			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
+			status = "okay";
 		};
 	};
 };
 
-&esp32_bt_hci {
+zephyr_udc0: &usb_otg {
+	status = "okay";
+};
+
+zephyr_uhc0: &usb_otg {
 	status = "okay";
 };

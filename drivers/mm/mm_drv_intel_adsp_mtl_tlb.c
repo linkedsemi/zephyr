@@ -62,10 +62,15 @@ SYS_MEM_BLOCKS_DEFINE_WITH_EXT_BUF(
 		L2_SRAM_PAGES_NUM,
 		(uint8_t *) L2_SRAM_BASE);
 
+uintptr_t adsp_mm_get_unused_l2_start_aligned(void)
+{
+	return UNUSED_L2_START_ALIGNED;
+}
+
 /**
  * Calculate the index to the TLB table.
  *
- * @param vaddr Page-aligned virutal address.
+ * @param vaddr Page-aligned virtual address.
  * @return Index to the TLB table.
  */
 static uint32_t get_tlb_entry_idx(uintptr_t vaddr)
@@ -135,6 +140,57 @@ static uint16_t tlb_perms_to_flags(uint16_t perms)
 }
 #endif
 
+#ifdef CONFIG_MMU
+/**
+ * Map a page in the MMU through both its cached and uncached aliases.
+ *
+ * The L2 TLB translates both aliases of a virtual page, but the MMU
+ * page tables hold them as separate entries. Only the part of the
+ * virtual space backed 1:1 by physical L2 is mapped statically through
+ * both aliases, so the uncached alias must be mapped here as well, or
+ * coherent accesses to pages beyond physical L2 end would fault.
+ * The uncached alias is never made executable.
+ *
+ * @param va Page-aligned cached virtual address.
+ * @param flags Access flags (SYS_MM_MEM_PERM_* and SYS_MM_MEM_CACHE_*)
+ * @return 0 on success, negative error code otherwise.
+ */
+static int tlb_mmu_map_page(uintptr_t va, uint32_t flags)
+{
+	uintptr_t va_uc = POINTER_TO_UINT(sys_cache_uncached_ptr_get(
+			(__sparse_force void __sparse_cache *)UINT_TO_POINTER(va)));
+	uint32_t flags_uc = (flags & ~(K_MEM_CACHE_MASK | K_MEM_PERM_EXEC)) | K_MEM_CACHE_NONE;
+	int ret;
+
+	ret = arch_mem_map(UINT_TO_POINTER(va), va, CONFIG_MM_DRV_PAGE_SIZE, flags);
+	if (ret != 0) {
+		return ret;
+	}
+
+	return arch_mem_map(UINT_TO_POINTER(va_uc), va_uc, CONFIG_MM_DRV_PAGE_SIZE, flags_uc);
+}
+
+/**
+ * Unmap both the cached and uncached aliases of a page from the MMU.
+ *
+ * @param va Page-aligned cached virtual address.
+ * @return 0 on success, negative error code otherwise.
+ */
+static int tlb_mmu_unmap_page(uintptr_t va)
+{
+	void *va_uc = sys_cache_uncached_ptr_get(
+			(__sparse_force void __sparse_cache *)UINT_TO_POINTER(va));
+	int ret;
+
+	ret = arch_mem_unmap(UINT_TO_POINTER(va), CONFIG_MM_DRV_PAGE_SIZE);
+	if (ret != 0) {
+		return ret;
+	}
+
+	return arch_mem_unmap(va_uc, CONFIG_MM_DRV_PAGE_SIZE);
+}
+#endif
+
 static int sys_mm_drv_hpsram_pwr(uint32_t bank_idx, bool enable, bool non_blocking)
 {
 #if defined(CONFIG_SOC_SERIES_INTEL_ADSP_ACE)
@@ -143,6 +199,10 @@ static int sys_mm_drv_hpsram_pwr(uint32_t bank_idx, bool enable, bool non_blocki
 	}
 
 	HPSRAM_REGS(bank_idx)->HSxPGCTL = !enable;
+
+	if (enable) {
+		HPSRAM_REGS(bank_idx)->HSxRMCTL = IS_ENABLED(CONFIG_SRAM_RETENTION_MODE);
+	}
 
 	if (!non_blocking) {
 		while (HPSRAM_REGS(bank_idx)->HSxPGISTS == enable) {
@@ -186,8 +246,6 @@ int sys_mm_drv_map_page(void *virt, uintptr_t phys, uint32_t flags)
 	 */
 	uintptr_t pa = POINTER_TO_UINT(sys_cache_cached_ptr_get(UINT_TO_POINTER(phys)));
 	uintptr_t va = POINTER_TO_UINT(sys_cache_cached_ptr_get(virt));
-
-	ARG_UNUSED(flags);
 
 	/* Make sure VA is page-aligned */
 	CHECKIF(!sys_mm_drv_is_addr_aligned(va)) {
@@ -270,7 +328,12 @@ int sys_mm_drv_map_page(void *virt, uintptr_t phys, uint32_t flags)
 	tlb_entries[entry_idx] = entry;
 
 #ifdef CONFIG_MMU
-	arch_mem_map(virt, va, CONFIG_MM_DRV_PAGE_SIZE, flags);
+	ret = tlb_mmu_map_page(va, flags);
+	__ASSERT(ret == 0, "arch_mem_map() failed %d\n", ret);
+	if (ret != 0) {
+		/* TODO: properly handle failed arch_mem_map(). */
+		k_panic();
+	}
 #endif
 	/*
 	 * Invalid the cache of the newly mapped virtual page to
@@ -379,7 +442,11 @@ static int sys_mm_drv_unmap_page_wflush(void *virt, bool flush_data)
 	if (flush_data) {
 		sys_cache_data_flush_range(virt, CONFIG_MM_DRV_PAGE_SIZE);
 #ifdef CONFIG_MMU
-		arch_mem_unmap(virt, CONFIG_MM_DRV_PAGE_SIZE);
+		ret = tlb_mmu_unmap_page(va);
+		__ASSERT(ret == 0, "arch_mem_unmap() failed %d\n", ret);
+		if (ret != 0) {
+			k_panic();
+		}
 #endif
 	}
 
@@ -462,6 +529,15 @@ int sys_mm_drv_update_page_flags(void *virt, uint32_t flags)
 	entry |= flags_to_tlb_perms(flags);
 
 	tlb_entries[entry_idx] = entry;
+
+#ifdef CONFIG_MMU
+	ret = tlb_mmu_map_page(va, flags);
+	__ASSERT(ret == 0, "arch_mem_map() failed %d\n", ret);
+	if (ret != 0) {
+		/* TODO: properly handle failed arch_mem_map(); */
+		k_panic();
+	}
+#endif
 
 out:
 	k_spin_unlock(&tlb_lock, key);
@@ -728,7 +804,7 @@ static int sys_mm_drv_mm_init(const struct device *dev)
 	ARG_UNUSED(dev);
 
 	/*
-	 * Change size of avalible physical memory according to fw register information
+	 * Change size of available physical memory according to fw register information
 	 * in runtime.
 	 */
 
@@ -736,10 +812,6 @@ static int sys_mm_drv_mm_init(const struct device *dev)
 
 	L2_PHYS_SRAM_REGION.info.num_blocks = avalible_memory_size / CONFIG_MM_DRV_PAGE_SIZE;
 
-	ret = calculate_memory_regions(UNUSED_L2_START_ALIGNED);
-	CHECKIF(ret != 0) {
-		return ret;
-	}
 	/*
 	 * Initialize memblocks that will store physical
 	 * page usage. Initially all physical pages are
@@ -838,18 +910,32 @@ static void adsp_mm_save_context(void *storage_buffer)
 
 		if (((tlb_entries[entry_idx] & TLB_PADDR_MASK) != entry) ||
 		    ((tlb_entries[entry_idx] & TLB_ENABLE_BIT) != TLB_ENABLE_BIT)) {
-			/* this page needs remapping, invalidate cache to avoid stalled data
-			 * all cache data has been flushed before
-			 * do this for pages to remap only
-			 */
-			sys_cache_data_invd_range(UINT_TO_POINTER(phys_addr),
-						  CONFIG_MM_DRV_PAGE_SIZE);
+			/* This page needs remapping */
 
 			/* Enable the translation in the TLB entry */
 			entry |= TLB_ENABLE_BIT;
 
 			/* map the page 1:1 virtual to physical */
 			tlb_entries[entry_idx] = entry;
+
+#ifdef CONFIG_MMU
+			int ret = arch_mem_map(UINT_TO_POINTER(phys_addr), phys_addr,
+					       CONFIG_MM_DRV_PAGE_SIZE,
+					       K_MEM_CACHE_WB | K_MEM_PERM_RW);
+
+			__ASSERT(ret == 0, "arch_mem_map() failed %d\n", ret);
+			if (ret != 0) {
+				/* TODO: properly handle failed arch_mem_map() */
+				k_panic();
+			}
+#endif
+
+			/* Invalidate cache to avoid stalled data
+			 * all cache data has been flushed before
+			 * do this for pages to remap only
+			 */
+			sys_cache_data_invd_range(UINT_TO_POINTER(phys_addr),
+						  CONFIG_MM_DRV_PAGE_SIZE);
 		}
 
 		/* save physical address */
@@ -901,6 +987,7 @@ __imr void adsp_mm_restore_context(void *storage_buffer)
 		/* turn on memory bank power, wait till the power is on */
 		__ASSERT_NO_MSG(bank_idx <= ace_hpsram_get_bank_count());
 		HPSRAM_REGS(bank_idx)->HSxPGCTL = 0;
+		HPSRAM_REGS(bank_idx)->HSxRMCTL = IS_ENABLED(CONFIG_SRAM_RETENTION_MODE);
 		while (HPSRAM_REGS(bank_idx)->HSxPGISTS == 1) {
 			/* k_busy_wait cannot be used here - not available */
 		}

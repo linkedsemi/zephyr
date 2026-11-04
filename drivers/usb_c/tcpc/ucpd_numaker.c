@@ -258,6 +258,8 @@ struct numaker_tcpc_data {
 		tcpc_vconn_control_cb_t vconn_cb;
 		/* VCONN discharge callback function */
 		tcpc_vconn_discharge_cb_t vconn_discharge_cb;
+		/* USB-C connector device passed to VCONN callbacks */
+		const struct device *usbc_dev;
 	} dpm;
 };
 
@@ -1813,11 +1815,13 @@ static int numaker_tcpc_set_cc(const struct device *dev, enum tc_cc_pull pull)
  *	  the VCONN control capabilities of the TCPC
  */
 static void numaker_tcpc_set_vconn_discharge_cb(const struct device *dev,
-						tcpc_vconn_discharge_cb_t cb)
+						tcpc_vconn_discharge_cb_t cb,
+						const struct device *usbc_dev)
 {
 	struct numaker_tcpc_data *data = dev->data;
 
 	data->dpm.vconn_discharge_cb = cb;
+	data->dpm.usbc_dev = usbc_dev;
 }
 
 /**
@@ -1825,11 +1829,13 @@ static void numaker_tcpc_set_vconn_discharge_cb(const struct device *dev,
  *	  unable to or the system is configured in a way that does not use
  *	  the VCONN control capabilities of the TCPC
  */
-static void numaker_tcpc_set_vconn_cb(const struct device *dev, tcpc_vconn_control_cb_t vconn_cb)
+static void numaker_tcpc_set_vconn_cb(const struct device *dev, tcpc_vconn_control_cb_t vconn_cb,
+				      const struct device *usbc_dev)
 {
 	struct numaker_tcpc_data *data = dev->data;
 
 	data->dpm.vconn_cb = vconn_cb;
+	data->dpm.usbc_dev = usbc_dev;
 }
 
 /**
@@ -1851,7 +1857,7 @@ static int numaker_tcpc_vconn_discharge(const struct device *dev, bool enable)
 
 	/* Use DPM supplied VCONN discharge */
 	if (data->dpm.vconn_discharge_cb) {
-		return data->dpm.vconn_discharge_cb(dev, polarity, enable);
+		return data->dpm.vconn_discharge_cb(dev, data->dpm.usbc_dev, polarity, enable);
 	}
 
 	/* Use GPIO VCONN discharge */
@@ -1886,7 +1892,7 @@ static int numaker_tcpc_set_vconn(const struct device *dev, bool enable)
 
 	/* Use DPM supplied VCONN */
 	if (data->dpm.vconn_cb) {
-		return data->dpm.vconn_cb(dev, polarity, enable);
+		return data->dpm.vconn_cb(dev, data->dpm.usbc_dev, polarity, enable);
 	}
 
 	/* Use UTCPD VCONN */
@@ -2304,7 +2310,19 @@ int numaker_tcpc_vbus_enable(const struct device *dev, bool enable)
 
 /* End of "*_tcpc_vbus_*" functions */
 
-static const struct tcpc_driver_api numaker_tcpc_driver_api = {
+/**
+ * @brief Report whether this port applies the Dead Battery resistor
+ *
+ * @retval 0 on success
+ */
+static int numaker_tcpc_dead_battery_enabled(const struct device *dev, bool *enabled)
+{
+	*enabled = numaker_utcpd_deadbattery_query_enable(dev);
+
+	return 0;
+}
+
+static DEVICE_API(tcpc, numaker_tcpc_driver_api) = {
 	.init = numaker_tcpc_init_recycle,
 	.get_cc = numaker_tcpc_get_cc,
 	.select_rp_value = numaker_tcpc_select_rp_value,
@@ -2325,6 +2343,7 @@ static const struct tcpc_driver_api numaker_tcpc_driver_api = {
 	.sop_prime_enable = numaker_tcpc_sop_prime_enable,
 	.set_bist_test_mode = numaker_tcpc_set_bist_test_mode,
 	.set_alert_handler_cb = numaker_tcpc_set_alert_handler_cb,
+	.dead_battery_enabled = numaker_tcpc_dead_battery_enabled,
 };
 
 /* Same as RESET_DT_SPEC_INST_GET_BY_IDX, except by name */
@@ -2374,21 +2393,17 @@ static const struct tcpc_driver_api numaker_tcpc_driver_api = {
 								   : 0)
 
 /* UTCPD.VBVOL.VBSCALE cast */
-#define NUMAKER_UTCPD_VBUS_DIVIDE_CAST(inst) NUMAKER_UTCPD_VBUS_DIVIDE_CAST_NO_DIVIDE(inst)
-/* no_divide */
-#define NUMAKER_UTCPD_VBUS_DIVIDE_CAST_NO_DIVIDE(inst)                                             \
-	COND_CODE_1(DT_ENUM_HAS_VALUE(DT_DRV_INST(inst), vbus_divide, no_divice),                  \
-		    ({.bit = (0 << UTCPD_VBVOL_VBSCALE_Pos), .value = 1}),                         \
+#define NUMAKER_UTCPD_VBUS_DIVIDE_CAST(inst) NUMAKER_UTCPD_VBUS_DIVIDE_CAST_DIVIDE_20(inst)
+/* divide_20 */
+#define NUMAKER_UTCPD_VBUS_DIVIDE_CAST_DIVIDE_20(inst)                                             \
+	COND_CODE_1(DT_ENUM_HAS_VALUE(DT_DRV_INST(inst), vbus_divide, divide_20),                  \
+		    ({.bit = (0 << UTCPD_VBVOL_VBSCALE_Pos), .value = 20}),                        \
 		    (NUMAKER_UTCPD_VBUS_DIVIDE_CAST_DIVIDE_10(inst)))
 /* divide_10 */
 #define NUMAKER_UTCPD_VBUS_DIVIDE_CAST_DIVIDE_10(inst)                                             \
 	COND_CODE_1(DT_ENUM_HAS_VALUE(DT_DRV_INST(inst), vbus_divide, divide_10),                  \
 		    ({.bit = (1 << UTCPD_VBVOL_VBSCALE_Pos), .value = 10}),                        \
-		    (NUMAKER_UTCPD_VBUS_DIVIDE_CAST_DIVIDE_20(inst)))
-/* divide_20 */
-#define NUMAKER_UTCPD_VBUS_DIVIDE_CAST_DIVIDE_20(inst)                                             \
-	COND_CODE_1(DT_ENUM_HAS_VALUE(DT_DRV_INST(inst), vbus_divide, divide_20),                  \
-		    ({.bit = (2 << UTCPD_VBVOL_VBSCALE_Pos), .value = 20}), (no_divide error))
+		    (vbus-divide error))
 
 /* UTCPD.PINPL */
 #define NUMAKER_UTCPD_PINPL_INIT(inst)                                                             \

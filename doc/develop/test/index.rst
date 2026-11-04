@@ -7,9 +7,7 @@ Testing
    :maxdepth: 1
 
    ztest
-   twister
-   twister_statuses
-   twister/twister_blackbox
-   pytest
+   benchmark
    coverage
    BabbleSim<bsim>
+   ci_test_plan

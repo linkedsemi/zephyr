@@ -3,6 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief X86 specific kernel interface header
+ *
+ * This header contains the X86 specific kernel interfaces for both
+ * IA-32 and Intel-64.  It is included by the kernel interface
+ * architecture-abstraction header (include/zephyr/arch/cpu.h).
+ */
+
 #ifndef ZEPHYR_INCLUDE_ARCH_X86_ARCH_H_
 #define ZEPHYR_INCLUDE_ARCH_X86_ARCH_H_
 
@@ -22,6 +31,7 @@
 #include <zephyr/irq.h>
 #include <zephyr/arch/x86/mmustructs.h>
 #include <zephyr/arch/x86/thread_stack.h>
+#include <zephyr/arch/x86/cet.h>
 #include <zephyr/linker/sections.h>
 
 #ifdef __cplusplus
@@ -205,6 +215,22 @@ static ALWAYS_INLINE int sys_test_and_clear_bit(mem_addr_t addr,
 	return ret;
 }
 
+static ALWAYS_INLINE void sys_set_bits(mem_addr_t addr, unsigned int mask)
+{
+	__asm__ volatile("orl %1, %0"
+			 : "+m" (*(volatile uint32_t *) (addr))
+			 : "ir" (mask)
+			 : "memory");
+}
+
+static ALWAYS_INLINE void sys_clear_bits(mem_addr_t addr, unsigned int mask)
+{
+	__asm__ volatile("andl %1, %0"
+			 : "+m" (*(volatile uint32_t *) (addr))
+			 : "ir" (~mask)
+			 : "memory");
+}
+
 #define sys_bitfield_set_bit sys_set_bit
 #define sys_bitfield_clear_bit sys_clear_bit
 #define sys_bitfield_test_bit sys_test_bit
@@ -249,19 +275,25 @@ void arch_irq_disable(unsigned int irq);
 
 uint32_t sys_clock_cycle_get_32(void);
 
-__pinned_func
+/** @cond INTERNAL_HIDDEN */
+
 static inline uint32_t arch_k_cycle_get_32(void)
 {
 	return sys_clock_cycle_get_32();
 }
 
+/** @endcond */
+
 uint64_t sys_clock_cycle_get_64(void);
 
-__pinned_func
+/** @cond INTERNAL_HIDDEN */
+
 static inline uint64_t arch_k_cycle_get_64(void)
 {
 	return sys_clock_cycle_get_64();
 }
+
+/** @endcond */
 
 static ALWAYS_INLINE bool arch_irq_unlocked(unsigned int key)
 {
@@ -285,7 +317,6 @@ static ALWAYS_INLINE uint32_t z_do_read_cpu_timestamp32(void)
  *  @brief read timestamp register ensuring serialization
  */
 
-__pinned_func
 static inline uint64_t z_tsc_read(void)
 {
 	union {

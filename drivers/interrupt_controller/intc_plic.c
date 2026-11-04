@@ -93,7 +93,7 @@ struct plic_config {
 	uint32_t nr_irqs;
 	uint32_t irq;
 	riscv_plic_irq_config_func_t irq_config_func;
-	struct _isr_table_entry *isr_table;
+	const struct _isr_table_entry *isr_table;
 	const uint32_t *const hart_context;
 };
 
@@ -103,6 +103,7 @@ struct plic_stats {
 };
 
 struct plic_data {
+	struct k_spinlock lock;
 
 #ifdef CONFIG_PLIC_SHELL_IRQ_COUNT
 	struct plic_stats stats;
@@ -195,13 +196,6 @@ static inline mem_addr_t get_threshold_priority_addr(const struct device *dev, u
 	return config->reg + (get_hart_context(dev, hartid) * CONTEXT_SIZE);
 }
 
-static ALWAYS_INLINE uint32_t local_irq_to_irq(const struct device *dev, uint32_t local_irq)
-{
-	const struct plic_config *config = dev->config;
-
-	return irq_to_level_2(local_irq) | config->irq;
-}
-
 #ifdef CONFIG_PLIC_SUPPORTS_SOFT_INTERRUPT
 static inline mem_addr_t get_pending_reg(const struct device *dev, uint32_t local_irq)
 {
@@ -268,6 +262,23 @@ static void plic_irq_enable_set_state(uint32_t irq, bool enable)
 }
 
 /**
+ * @brief Clear a riscv PLIC-specific interrupt line
+ *
+ * This routine clear a RISCV PLIC-specific interrupt line.
+ * riscv_plic_irq_complete is called by RISCV_PRIVILEGED
+ *
+ * @param irq IRQ number to enable
+ */
+void riscv_plic_irq_complete(uint32_t irq)
+{
+	const struct device *dev = get_plic_dev_from_irq(irq);
+	const uint32_t local_irq = irq_from_level_2(irq);
+	mem_addr_t claim_complete_addr = get_claim_complete_addr(dev);
+
+	sys_write32(local_irq, claim_complete_addr);
+}
+
+/**
  * @brief Enable a riscv PLIC-specific interrupt line
  *
  * This routine enables a RISCV PLIC-specific interrupt line.
@@ -279,11 +290,13 @@ static void plic_irq_enable_set_state(uint32_t irq, bool enable)
  */
 void riscv_plic_irq_enable(uint32_t irq)
 {
-	uint32_t key = irq_lock();
+	const struct device *dev = get_plic_dev_from_irq(irq);
+	struct plic_data *data = dev->data;
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
 	plic_irq_enable_set_state(irq, true);
 
-	irq_unlock(key);
+	k_spin_unlock(&data->lock, key);
 }
 
 /**
@@ -298,11 +311,34 @@ void riscv_plic_irq_enable(uint32_t irq)
  */
 void riscv_plic_irq_disable(uint32_t irq)
 {
-	uint32_t key = irq_lock();
+	const struct device *dev = get_plic_dev_from_irq(irq);
+	struct plic_data *data = dev->data;
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
 	plic_irq_enable_set_state(irq, false);
 
-	irq_unlock(key);
+	k_spin_unlock(&data->lock, key);
+}
+
+/* Check if the local IRQ of a PLIC instance is enabled */
+static int local_irq_is_enabled(const struct device *dev, uint32_t local_irq)
+{
+	uint32_t bit_position = local_irq & PLIC_REG_MASK;
+	int is_enabled = IS_ENABLED(CONFIG_PLIC_IRQ_AFFINITY) ? 0 : 1;
+
+	for (uint32_t cpu_num = 0; cpu_num < arch_num_cpus(); cpu_num++) {
+		mem_addr_t en_addr =
+			get_context_en_addr(dev, cpu_num) + local_irq_to_reg_offset(local_irq);
+		uint32_t en_value = sys_read32(en_addr);
+
+		if (IS_ENABLED(CONFIG_PLIC_IRQ_AFFINITY)) {
+			is_enabled |= !!(en_value & BIT(bit_position));
+		} else {
+			is_enabled &= !!(en_value & BIT(bit_position));
+		}
+	}
+
+	return is_enabled;
 }
 
 /**
@@ -316,27 +352,15 @@ void riscv_plic_irq_disable(uint32_t irq)
 int riscv_plic_irq_is_enabled(uint32_t irq)
 {
 	const struct device *dev = get_plic_dev_from_irq(irq);
+	struct plic_data *data = dev->data;
 	const uint32_t local_irq = irq_from_level_2(irq);
-	uint32_t bit_position = local_irq & PLIC_REG_MASK;
-	uint32_t en_value;
-	int is_enabled = IS_ENABLED(CONFIG_PLIC_IRQ_AFFINITY) ? 0 : 1;
-	uint32_t key = irq_lock();
+	int ret = 0;
 
-	for (uint32_t cpu_num = 0; cpu_num < arch_num_cpus(); cpu_num++) {
-		mem_addr_t en_addr =
-			get_context_en_addr(dev, cpu_num) + local_irq_to_reg_offset(local_irq);
-
-		en_value = sys_read32(en_addr);
-		if (IS_ENABLED(CONFIG_PLIC_IRQ_AFFINITY)) {
-			is_enabled |= !!(en_value & BIT(bit_position));
-		} else {
-			is_enabled &= !!(en_value & BIT(bit_position));
-		}
+	K_SPINLOCK(&data->lock) {
+		ret = local_irq_is_enabled(dev, local_irq);
 	}
 
-	irq_unlock(key);
-
-	return is_enabled;
+	return ret;
 }
 
 /**
@@ -388,7 +412,7 @@ void riscv_plic_irq_set_pending(uint32_t irq)
  */
 unsigned int riscv_plic_get_irq(void)
 {
-	return save_irq[arch_proc_id()];
+	return save_irq[arch_curr_cpu()->id];
 }
 
 /**
@@ -400,7 +424,7 @@ unsigned int riscv_plic_get_irq(void)
  */
 const struct device *riscv_plic_get_dev(void)
 {
-	return save_dev[arch_proc_id()];
+	return save_dev[arch_curr_cpu()->id];
 }
 
 #ifdef CONFIG_PLIC_IRQ_AFFINITY
@@ -413,9 +437,10 @@ const struct device *riscv_plic_get_dev(void)
 int riscv_plic_irq_set_affinity(uint32_t irq, uint32_t cpumask)
 {
 	const struct device *dev = get_plic_dev_from_irq(irq);
-	const struct plic_data *data = dev->data;
+	struct plic_data *data = dev->data;
 	__maybe_unused const struct plic_config *config = dev->config;
 	const uint32_t local_irq = irq_from_level_2(irq);
+	k_spinlock_key_t key;
 
 	if (local_irq >= config->nr_irqs) {
 		__ASSERT(false, "overflow: irq %d, local_irq %d", irq, local_irq);
@@ -427,17 +452,15 @@ int riscv_plic_irq_set_affinity(uint32_t irq, uint32_t cpumask)
 		return -EINVAL;
 	}
 
-	uint32_t key = irq_lock();
-
+	key = k_spin_lock(&data->lock);
 	/* Updated irq_cpumask for next time setting plic enable register */
 	data->irq_cpumask[local_irq] = (plic_cpumask_t)cpumask;
 
 	/* If irq is enabled, apply the new irq affinity */
-	if (riscv_plic_irq_is_enabled(irq)) {
-		riscv_plic_irq_enable(irq);
+	if (local_irq_is_enabled(dev, local_irq)) {
+		plic_irq_enable_set_state(irq, true);
 	}
-
-	irq_unlock(key);
+	k_spin_unlock(&data->lock, key);
 
 	return 0;
 }
@@ -484,8 +507,8 @@ static void plic_irq_handler(const struct device *dev)
 {
 	const struct plic_config *config = dev->config;
 	mem_addr_t claim_complete_addr = get_claim_complete_addr(dev);
-	struct _isr_table_entry *ite;
-	uint32_t cpu_id = arch_proc_id();
+	const struct _isr_table_entry *ite;
+	uint32_t cpu_id = arch_curr_cpu()->id;
 	/* Get the IRQ number generating the interrupt */
 	const uint32_t local_irq = sys_read32(claim_complete_addr);
 
@@ -572,7 +595,9 @@ static int plic_init(const struct device *dev)
 {
 	const struct plic_config *config = dev->config;
 	mem_addr_t en_addr, thres_prio_addr;
+#if !defined(CONFIG_PLIC_WARM_BOOT)
 	mem_addr_t prio_addr = config->prio;
+#endif
 
 	/* Iterate through each of the contexts, HART + PRIV */
 	for (uint32_t cpu_num = 0; cpu_num < arch_num_cpus(); cpu_num++) {
@@ -588,10 +613,12 @@ static int plic_init(const struct device *dev)
 		sys_write32(0U, thres_prio_addr);
 	}
 
+#if !defined(CONFIG_PLIC_WARM_BOOT)
 	/* Set priority of each interrupt line to 0 initially */
 	for (uint32_t i = 0; i < config->nr_irqs; i++) {
 		sys_write32(0U, prio_addr + (i * sizeof(uint32_t)));
 	}
+#endif
 
 	/* Configure IRQ for PLIC driver */
 	config->irq_config_func();
@@ -705,6 +732,13 @@ static int cmd_stats_clear(const struct shell *sh, size_t argc, char *argv[])
 #endif /* CONFIG_PLIC_SHELL_IRQ_COUNT */
 
 #ifdef CONFIG_PLIC_SHELL_IRQ_AFFINITY
+static ALWAYS_INLINE uint32_t local_irq_to_irq(const struct device *dev, uint32_t local_irq)
+{
+	const struct plic_config *config = dev->config;
+
+	return irq_to_level_2(local_irq) | config->irq;
+}
+
 static int cmd_affinity_set(const struct shell *sh, size_t argc, char **argv)
 {
 	ARG_UNUSED(argc);
@@ -743,7 +777,7 @@ static int cmd_affinity_set(const struct shell *sh, size_t argc, char **argv)
 		riscv_plic_irq_set_affinity(irq, mask);
 		shell_print(sh, "IRQ %d affinity set to 0x%X", local_irq, mask);
 	} else {
-		for (local_irq = 1; local_irq <= config->nr_irqs; local_irq++) {
+		for (local_irq = 1; local_irq < config->nr_irqs; local_irq++) {
 			irq = local_irq_to_irq(dev, local_irq);
 			riscv_plic_irq_set_affinity(irq, mask);
 		}
@@ -843,7 +877,9 @@ SHELL_STATIC_SUBCMD_SET_CREATE(plic_cmds,
 SHELL_CMD_REGISTER(plic, &plic_cmds, "PLIC shell commands", NULL);
 #endif /* CONFIG_PLIC_SHELL */
 
-#define PLIC_MIN_IRQ_NUM(n) MIN(DT_INST_PROP(n, riscv_ndev), CONFIG_MAX_IRQ_PER_AGGREGATOR)
+/* IRQ ID 0 is reserved, so valid local IRQs are 1..riscv,ndev (ndev + 1 IDs) */
+#define PLIC_NR_IRQS(n)     (DT_INST_PROP(n, riscv_ndev) + 1)
+#define PLIC_MIN_IRQ_NUM(n) MIN(PLIC_NR_IRQS(n), CONFIG_MAX_IRQ_PER_AGGREGATOR)
 
 #ifdef CONFIG_PLIC_SHELL_IRQ_COUNT
 #define PLIC_INTC_IRQ_COUNT_BUF_DEFINE(n)                                                          \

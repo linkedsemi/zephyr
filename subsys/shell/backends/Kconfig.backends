@@ -16,11 +16,8 @@ DT_CHOSEN_Z_SHELL_UART := zephyr,shell-uart
 
 config SHELL_BACKEND_SERIAL
 	bool "Serial backend"
-	# Serial (UART) requires interrupts and the RTT backend cannot be used from an ISR context.
-	default n if SHELL_BACKEND_RTT
 	default "$(dt_chosen_enabled,$(DT_CHOSEN_Z_SHELL_UART))"
 	select SERIAL
-	select RING_BUFFER
 	help
 	  Enable serial backend.
 
@@ -43,7 +40,7 @@ config SHELL_PROMPT_UART
 
 config SHELL_BACKEND_SERIAL_INTERRUPT_DRIVEN
 	bool "Interrupt driven"
-	default y
+	default y if !UART_NATIVE_PTY
 	depends on SERIAL_SUPPORT_INTERRUPT
 
 config SHELL_ASYNC_API
@@ -99,6 +96,15 @@ config SHELL_BACKEND_SERIAL_RX_RING_BUFFER_SIZE
 	  usually enough if ring buffer is few bytes (more than one due to
 	  escape sequences). However, if bulk data is transferred it may be
 	  required to increase it.
+
+config SHELL_BACKEND_SERIAL_NEEDS_LARGE_RING_BUFFER
+	bool
+	default y if SHELL_BACKEND_SERIAL_TX_RING_BUFFER_SIZE > $(INT16_MAX)
+	default y if SHELL_BACKEND_SERIAL_RX_RING_BUFFER_SIZE > $(INT16_MAX)
+	select RING_BUFFER_LARGE
+	help
+	  This is a helper Kconfig to select RING_BUFFER_LARGE when the implementation
+	  requires a ring buffer of > 32kB.
 
 if SHELL_BACKEND_SERIAL_API_ASYNC
 
@@ -275,6 +281,8 @@ config SHELL_BACKEND_RTT
 	select RTT_CONSOLE
 	select SEGGER_RTT_CUSTOM_LOCKING
 	depends on USE_SEGGER_RTT
+	# RTT backend can only be called from thread context.
+	depends on !(SHELL_LOG_BACKEND && LOG_MODE_IMMEDIATE)
 	help
 	  Enable RTT backend.
 
@@ -372,8 +380,7 @@ config SHELL_BACKEND_MQTT
 	select DNS_RESOLVER
 	select HWINFO
 	select MQTT_LIB
-	select NET_MGMT
-	select NET_MGMT_EVENT
+	select NET_CONNECTION_MANAGER
 	help
 	  Enable MQTT backend.
 
@@ -407,12 +414,50 @@ config SHELL_MQTT_RX_BUF_SIZE
 	help
 	  Buffer size for the MQTT data reception.
 
+config SHELL_MQTT_NEEDS_LARGE_RING_BUFFER
+	bool
+	default y if SHELL_MQTT_RX_BUF_SIZE > $(INT16_MAX)
+	select RING_BUFFER_LARGE
+	help
+	  This is a helper Kconfig to select RING_BUFFER_LARGE when the implementation
+	  requires a ring buffer of > 32kB.
+
 config SHELL_MQTT_TX_BUF_SIZE
 	int "TX buffer size"
 	range 32 $(UINT16_MAX)
 	default 256
 	help
 	  Buffer size for the MQTT data transmission.
+
+config SHELL_MQTT_CONNECT_TIMEOUT_MS
+	int "MQTT connect timeout [ms]"
+	default 2000
+	help
+	  Time to await MQTT connect acknowledge in milliseconds.
+
+config SHELL_MQTT_WORK_DELAY_MS
+	int "MQTT work delay [ms]"
+	default 1000
+	help
+	  Period between MQTT work in milliseconds.
+
+config SHELL_MQTT_LISTEN_TIMEOUT_MS
+	int "MQTT listen timeout [ms]"
+	default 500
+	help
+	  Time to listen for incoming packets in milliseconds.
+
+config SHELL_MQTT_TOPIC_RX_ID
+	string "MQTT topic receive identifier"
+	default "/sh/rx"
+	help
+	  String used as receive identifier in the MQTT topic.
+
+config SHELL_MQTT_TOPIC_TX_ID
+	string "MQTT topic transmit identifier"
+	default "/sh/tx"
+	help
+	  String used as transmit identifier in the MQTT topic.
 
 module = SHELL_BACKEND_MQTT
 default-timeout = 100
@@ -467,6 +512,11 @@ config SHELL_BACKEND_RPMSG
 	  Enable RPMsg backend.
 
 if SHELL_BACKEND_RPMSG
+
+config SHELL_BACKEND_RPMSG_FORCE_TX_BLOCKING_MODE
+	bool "Force blocking mode for TX"
+	help
+	  Force the RPMsg shell backend to wait for an available TX buffer.
 
 config SHELL_PROMPT_RPMSG
 	string "Displayed prompt name"
@@ -545,6 +595,27 @@ source "subsys/logging/Kconfig.template.log_config"
 
 endif # SHELL_BACKEND_RPMSG
 
+config SHELL_BACKEND_SSH
+	bool "SSH backend."
+	depends on SSH
+	default y
+	help
+	  Enable SSH (secure shell) backend.
+
+if SHELL_BACKEND_SSH
+
+config SHELL_PROMPT_SSH
+	string "Displayed prompt name"
+	default "zephyr:~$ "
+	help
+	  Displayed prompt name for SSH backend.
+
+module = SHELL_SSH
+module-str = SSH shell backend
+source "subsys/logging/Kconfig.template.log_config"
+
+endif # SHELL_BACKEND_SSH
+
 config SHELL_BACKEND_TELNET
 	bool "TELNET backend."
 	depends on NET_TCP
@@ -553,6 +624,14 @@ config SHELL_BACKEND_TELNET
 	select NET_SOCKETS
 	help
 	  Enable TELNET backend.
+
+	  Security warning: this backend exposes the full Zephyr shell over an
+	  unauthenticated, unencrypted TCP port. Anyone able to reach the device
+	  on the network gets the same control as a local console user, which
+	  typically includes flash erase/write, reboot, settings modification
+	  and secret exfiltration through any shell-exposed subsystem. It is
+	  strongly discouraged in production unless the network path itself is
+	  trusted.
 
 if SHELL_BACKEND_TELNET
 

@@ -15,6 +15,7 @@
 #include <zephyr/pm/device.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
 
 #include <zephyr/logging/log.h>
 
@@ -25,6 +26,25 @@ LOG_MODULE_REGISTER(BME280, CONFIG_SENSOR_LOG_LEVEL);
 #if DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 0
 #warning "BME280 driver enabled without any devices"
 #endif
+
+/* Maximum oversampling rate on each channel is 16x.
+ * Maximum measurement time is given by (Datasheet appendix B 9.1):
+ *    1.25 + [2.3 * T_over] + [2.3 * P_over + 0.575] + [2.3 * H_over + 0.575]
+ *    = 112.8 ms
+ */
+#define BME280_MEASUREMENT_TIMEOUT_MS 150
+
+/* Start-up time - Time to first communication after both Vdd > 1.58V and
+ * Vddio > 0.65V
+ */
+#define BME280_START_UP_TIME_MS 2
+
+/* Equation 9.1, with the fractional parts rounded down */
+#define BME280_EXPECTED_SAMPLE_TIME_MS                                                             \
+	1 + BME280_TEMP_SAMPLE_TIME + BME280_PRESS_SAMPLE_TIME + BME280_HUMIDITY_SAMPLE_TIME
+
+BUILD_ASSERT(BME280_EXPECTED_SAMPLE_TIME_MS < BME280_MEASUREMENT_TIMEOUT_MS,
+	     "Expected duration over timeout duration");
 
 struct bme280_config {
 	union bme280_bus bus;
@@ -112,12 +132,14 @@ static uint32_t bme280_compensate_humidity(struct bme280_data *data,
 	h = (h - (((((h >> 15) * (h >> 15)) >> 7) *
 		((int32_t)data->dig_h1)) >> 4));
 	h = (h > 419430400 ? 419430400 : h);
+	h = (h < 0 ? 0 : h);
 
 	return (uint32_t)(h >> 12);
 }
 
-static int bme280_wait_until_ready(const struct device *dev)
+static int bme280_wait_until_ready(const struct device *dev, k_timeout_t timeout)
 {
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 	uint8_t status;
 	int ret;
 
@@ -129,6 +151,10 @@ static int bme280_wait_until_ready(const struct device *dev)
 		}
 		if (!(status & (BME280_STATUS_MEASURING | BME280_STATUS_IM_UPDATE))) {
 			break;
+		}
+		/* Check if waiting has timed out */
+		if (sys_timepoint_expired(end)) {
+			return -EAGAIN;
 		}
 		k_sleep(K_MSEC(3));
 	}
@@ -142,28 +168,26 @@ int bme280_sample_fetch_helper(const struct device *dev,
 	struct bme280_data *dev_data = dev->data;
 	uint8_t buf[8];
 	int32_t adc_press, adc_temp, adc_humidity;
+	uint32_t poll_timeout;
+	uint32_t comp_press;
 	int size = 6;
 	int ret;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
-
-#ifdef CONFIG_PM_DEVICE
-	enum pm_device_state state;
-	(void)pm_device_state_get(dev, &state);
-	/* Do not allow sample fetching from suspended state */
-	if (state == PM_DEVICE_STATE_SUSPENDED) {
-		return -EIO;
-	}
-#endif
 
 #ifdef CONFIG_BME280_MODE_FORCED
 	ret = bme280_reg_write(dev, BME280_REG_CTRL_MEAS, BME280_CTRL_MEAS_VAL);
 	if (ret < 0) {
 		return ret;
 	}
+	/* Wait until the expected measurement time elapses */
+	k_sleep(K_MSEC(BME280_EXPECTED_SAMPLE_TIME_MS));
+	poll_timeout = BME280_MEASUREMENT_TIMEOUT_MS - BME280_EXPECTED_SAMPLE_TIME_MS;
+#else
+	poll_timeout = BME280_MEASUREMENT_TIMEOUT_MS;
 #endif
 
-	ret = bme280_wait_until_ready(dev);
+	ret = bme280_wait_until_ready(dev, K_MSEC(poll_timeout));
 	if (ret < 0) {
 		return ret;
 	}
@@ -180,7 +204,14 @@ int bme280_sample_fetch_helper(const struct device *dev,
 	adc_temp = (buf[3] << 12) | (buf[4] << 4) | (buf[5] >> 4);
 
 	reading->comp_temp = bme280_compensate_temp(dev_data, adc_temp);
-	reading->comp_press = bme280_compensate_press(dev_data, adc_press);
+
+	comp_press = bme280_compensate_press(dev_data, adc_press);
+	if (comp_press == 0) {
+		LOG_ERR("Pressure compensation failed");
+		return -EIO;
+	}
+
+	reading->comp_press = comp_press;
 
 	if (dev_data->chip_id == BME280_CHIP_ID) {
 		adc_humidity = (buf[6] << 8) | buf[7];
@@ -242,7 +273,7 @@ static int bme280_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api bme280_api_funcs = {
+static DEVICE_API(sensor, bme280_api_funcs) = {
 	.sample_fetch = bme280_sample_fetch,
 	.channel_get = bme280_channel_get,
 #ifdef CONFIG_SENSOR_ASYNC_API
@@ -296,8 +327,9 @@ static int bme280_read_compensation(const struct device *dev)
 
 		data->dig_h2 = (hbuf[1] << 8) | hbuf[0];
 		data->dig_h3 = hbuf[2];
-		data->dig_h4 = (hbuf[3] << 4) | (hbuf[4] & 0x0F);
-		data->dig_h5 = ((hbuf[4] >> 4) & 0x0F) | (hbuf[5] << 4);
+		/* dig_h4 and dig_h5 are signed 12-bit values */
+		data->dig_h4 = sign_extend((hbuf[3] << 4) | (hbuf[4] & 0x0F), 11);
+		data->dig_h5 = sign_extend(((hbuf[4] >> 4) & 0x0F) | (hbuf[5] << 4), 11);
 		data->dig_h6 = hbuf[6];
 	}
 
@@ -315,6 +347,8 @@ static int bme280_chip_init(const struct device *dev)
 		return err;
 	}
 
+	k_msleep(BME280_START_UP_TIME_MS);
+
 	err = bme280_reg_read(dev, BME280_REG_ID, &data->chip_id, 1);
 	if (err < 0) {
 		LOG_DBG("ID read failed: %d", err);
@@ -331,12 +365,14 @@ static int bme280_chip_init(const struct device *dev)
 		return -ENOTSUP;
 	}
 
+	/* reset the sensor. This will put the sensor is sleep mode */
 	err = bme280_reg_write(dev, BME280_REG_RESET, BME280_CMD_SOFT_RESET);
 	if (err < 0) {
 		LOG_DBG("Soft-reset failed: %d", err);
 	}
 
-	err = bme280_wait_until_ready(dev);
+	/* The only mention of a soft reset duration is 2ms from the self test timeouts */
+	err = bme280_wait_until_ready(dev, K_MSEC(100));
 	if (err < 0) {
 		return err;
 	}
@@ -355,17 +391,21 @@ static int bme280_chip_init(const struct device *dev)
 		}
 	}
 
-	err = bme280_reg_write(dev, BME280_REG_CTRL_MEAS,
-			       BME280_CTRL_MEAS_VAL);
+	/* Writes to "config" register may be ignored in normal
+	 * mode, but never in sleep mode [datasheet 5.4.6].
+	 *
+	 * So perform "config" write before "ctrl_meas", as "ctrl_meas"
+	 * could cause the sensor to transition from sleep to normal mode.
+	 */
+	err = bme280_reg_write(dev, BME280_REG_CONFIG, BME280_CONFIG_VAL);
 	if (err < 0) {
-		LOG_DBG("CTRL_MEAS write failed: %d", err);
+		LOG_DBG("CONFIG write failed: %d", err);
 		return err;
 	}
 
-	err = bme280_reg_write(dev, BME280_REG_CONFIG,
-			       BME280_CONFIG_VAL);
+	err = bme280_reg_write(dev, BME280_REG_CTRL_MEAS, BME280_CTRL_MEAS_VAL);
 	if (err < 0) {
-		LOG_DBG("CONFIG write failed: %d", err);
+		LOG_DBG("CTRL_MEAS write failed: %d", err);
 		return err;
 	}
 	/* Wait for the sensor to be ready */
@@ -409,7 +449,7 @@ static int bme280_pm_action(const struct device *dev,
 #define BME280_CONFIG_SPI(inst)				\
 	{						\
 		.bus.spi = SPI_DT_SPEC_INST_GET(	\
-			inst, BME280_SPI_OPERATION, 0),	\
+			inst, BME280_SPI_OPERATION),	\
 		.bus_io = &bme280_bus_io_spi,		\
 	}
 

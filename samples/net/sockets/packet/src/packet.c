@@ -16,6 +16,9 @@ LOG_MODULE_REGISTER(net_pkt_sock_sample, LOG_LEVEL_DBG);
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/net_mgmt.h>
 
+#include <zephyr/posix/sys/socket.h>
+#include <zephyr/posix/unistd.h>
+
 #define STACK_SIZE 1024
 #if defined(CONFIG_NET_TC_THREAD_COOPERATIVE)
 #define THREAD_PRIORITY K_PRIO_COOP(CONFIG_NUM_COOP_PRIORITIES - 1)
@@ -86,6 +89,52 @@ static int start_socket(int *sock)
 	return 0;
 }
 
+#if defined(CONFIG_NET_SAMPLE_MCAST_MEMBERSHIP)
+/* Ask the interface to listen to one extra multicast MAC address, or to stop
+ * listening to it. Note that the memberships of a socket are dropped
+ * automatically when the socket is closed, the explicit drop here is only
+ * done to show how the option is used.
+ */
+static int mcast_membership(int sock, int optname)
+{
+	const char *action = optname == PACKET_ADD_MEMBERSHIP ? "join" : "leave";
+	struct packet_mreq mreq = { 0 };
+	int ret;
+
+	mreq.mr_ifindex = net_if_get_by_iface(net_if_get_default());
+	mreq.mr_type = PACKET_MR_MULTICAST;
+	mreq.mr_alen = sizeof(struct net_eth_addr);
+
+	ret = net_bytes_from_str(mreq.mr_address, mreq.mr_alen,
+				 CONFIG_NET_SAMPLE_MCAST_ADDR);
+	if (ret < 0) {
+		LOG_ERR("Invalid multicast MAC address '%s'",
+			CONFIG_NET_SAMPLE_MCAST_ADDR);
+		return ret;
+	}
+
+	ret = setsockopt(sock, SOL_PACKET, optname, &mreq, sizeof(mreq));
+	if (ret < 0) {
+		LOG_ERR("Failed to %s multicast group %s, errno %d", action,
+			CONFIG_NET_SAMPLE_MCAST_ADDR, errno);
+		return -errno;
+	}
+
+	LOG_INF("Multicast group %s %s", CONFIG_NET_SAMPLE_MCAST_ADDR,
+		optname == PACKET_ADD_MEMBERSHIP ? "joined" : "left");
+
+	return 0;
+}
+#else
+static int mcast_membership(int sock, int optname)
+{
+	ARG_UNUSED(sock);
+	ARG_UNUSED(optname);
+
+	return 0;
+}
+#endif /* CONFIG_NET_SAMPLE_MCAST_MEMBERSHIP */
+
 static int recv_packet_socket(struct packet_data *packet)
 {
 	int ret = 0;
@@ -139,13 +188,22 @@ static void recv_packet(void)
 		return;
 	}
 
+	ret = mcast_membership(sock_packet.recv_sock, PACKET_ADD_MEMBERSHIP);
+	if (ret < 0) {
+		quit();
+		return;
+	}
+
 	while (ret == 0) {
 		ret = recv_packet_socket(&sock_packet);
 		if (ret < 0) {
-			quit();
-			return;
+			break;
 		}
 	}
+
+	(void)mcast_membership(sock_packet.recv_sock, PACKET_DROP_MEMBERSHIP);
+
+	quit();
 }
 
 static int send_packet_socket(struct packet_data *packet)
@@ -229,7 +287,7 @@ static void send_packet(void)
 }
 
 static void iface_up_handler(struct net_mgmt_event_callback *cb,
-			     uint32_t mgmt_event, struct net_if *iface)
+			     uint64_t mgmt_event, struct net_if *iface)
 {
 	if (mgmt_event == NET_EVENT_IF_UP) {
 		k_sem_give(&iface_up);

@@ -2,9 +2,16 @@
 #
 # Copyright (c) 2018-2022 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
+import logging
+import traceback
+
+logger = logging.getLogger('twister')
+
 
 class TwisterException(Exception):
-    pass
+    def __init__(self, message="TwisterException"):
+        super().__init__(message)
+        logger.error(''.join(["Twister call stack dump:\n"] + traceback.format_stack()[:-1]))
 
 
 class TwisterRuntimeError(TwisterException):
@@ -25,6 +32,14 @@ class ExecutionError(TwisterException):
 
 
 class StatusAttributeError(TwisterException):
-    def __init__(self, cls : type, value):
+    def __init__(self, cls: type, value):
         msg = f'{cls.__name__} assigned status {value}, which could not be cast to a TwisterStatus.'
         super().__init__(msg)
+
+
+class NoDeviceAvailableException(RuntimeError):
+    """Raised when no free device is available for reservation."""
+
+
+class NoRequiredApplicationNotReadyException(RuntimeError):
+    """Raised when required applications are not ready."""

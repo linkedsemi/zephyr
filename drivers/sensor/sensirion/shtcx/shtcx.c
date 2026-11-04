@@ -183,7 +183,7 @@ static int shtcx_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api shtcx_driver_api = {
+static DEVICE_API(sensor, shtcx_driver_api) = {
 	.sample_fetch = shtcx_sample_fetch,
 	.channel_get = shtcx_channel_get,
 };
@@ -194,7 +194,7 @@ static int shtcx_init(const struct device *dev)
 	uint16_t product_id;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 

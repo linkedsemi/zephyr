@@ -16,7 +16,7 @@
 #define LOG_LEVEL	CONFIG_LWM2M_LOG_LEVEL
 
 #include <zephyr/logging/log.h>
-#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/sys/ringq.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include "lwm2m_engine.h"
@@ -306,11 +306,11 @@ int lwm2m_delete_obj_inst(uint16_t obj_id, uint16_t obj_inst_id)
 
 	/* reset obj_inst and res_inst data structure */
 	for (i = 0; i < obj_inst->resource_count; i++) {
-		clear_attrs(&obj_inst->resources[i]);
+		clear_attrs(LWM2M_PATH_LEVEL_RESOURCE, &obj_inst->resources[i]);
 		(void)memset(obj_inst->resources + i, 0, sizeof(struct lwm2m_engine_res));
 	}
 
-	clear_attrs(obj_inst);
+	clear_attrs(LWM2M_PATH_LEVEL_OBJECT_INST, obj_inst);
 	(void)memset(obj_inst, 0, sizeof(struct lwm2m_engine_obj_inst));
 	k_mutex_unlock(&registry_lock);
 	return ret;
@@ -380,18 +380,15 @@ int path_to_objs(const struct lwm2m_obj_path *path, struct lwm2m_engine_obj_inst
 
 	oi = get_engine_obj_inst(path->obj_id, path->obj_inst_id);
 	if (!oi) {
-		LOG_ERR("obj instance %d/%d not found", path->obj_id, path->obj_inst_id);
 		return -ENOENT;
 	}
 
 	if (!oi->resources || oi->resource_count == 0U) {
-		LOG_ERR("obj instance has no resources");
 		return -EINVAL;
 	}
 
 	of = lwm2m_get_engine_obj_field(oi->obj, path->res_id);
 	if (!of) {
-		LOG_ERR("obj field %d not found", path->res_id);
 		return -ENOENT;
 	}
 
@@ -403,12 +400,6 @@ int path_to_objs(const struct lwm2m_obj_path *path, struct lwm2m_engine_obj_inst
 	}
 
 	if (!r) {
-		if (LWM2M_HAS_PERM(of, BIT(LWM2M_FLAG_OPTIONAL))) {
-			LOG_DBG("resource %d not found", path->res_id);
-		} else {
-			LOG_ERR("resource %d not found", path->res_id);
-		}
-
 		return -ENOENT;
 	}
 
@@ -477,7 +468,6 @@ int lwm2m_set_res_buf(const struct lwm2m_obj_path *path, void *buffer_ptr, uint1
 	}
 
 	if (!res_inst) {
-		LOG_ERR("res instance %d not found", path->res_inst_id);
 		k_mutex_unlock(&registry_lock);
 		return -ENOENT;
 	}
@@ -507,30 +497,54 @@ static bool lwm2m_validate_time_resource_lenghts(uint16_t resource_length, uint1
 
 static int lwm2m_check_buf_sizes(uint8_t data_type, uint16_t resource_length, uint16_t buf_length)
 {
+	size_t expected_len;
+
 	switch (data_type) {
 	case LWM2M_RES_TYPE_OPAQUE:
 	case LWM2M_RES_TYPE_STRING:
 		if (resource_length > buf_length) {
 			return -ENOMEM;
 		}
-		break;
+		return 0;
 	case LWM2M_RES_TYPE_U32:
-	case LWM2M_RES_TYPE_U16:
-	case LWM2M_RES_TYPE_U8:
-	case LWM2M_RES_TYPE_S64:
 	case LWM2M_RES_TYPE_S32:
+		expected_len = sizeof(uint32_t);
+		break;
+	case LWM2M_RES_TYPE_U16:
 	case LWM2M_RES_TYPE_S16:
+		expected_len = sizeof(uint16_t);
+		break;
+	case LWM2M_RES_TYPE_U8:
 	case LWM2M_RES_TYPE_S8:
+		expected_len = sizeof(uint8_t);
+		break;
 	case LWM2M_RES_TYPE_BOOL:
+		expected_len = sizeof(bool);
+		break;
+	case LWM2M_RES_TYPE_S64:
+		expected_len = sizeof(int64_t);
+		break;
 	case LWM2M_RES_TYPE_FLOAT:
+		expected_len = sizeof(double);
+		break;
 	case LWM2M_RES_TYPE_OBJLNK:
-		if (resource_length != buf_length) {
-			return -EINVAL;
-		}
+		expected_len = sizeof(struct lwm2m_objlnk);
 		break;
 	default:
 		return 0;
 	}
+
+	/* For fixed-width types the switch statements in the get/set paths access
+	 * the buffers using the C type matching the resource data type, so both
+	 * the resource data and the user buffer must be exactly that size. Merely
+	 * checking that the two lengths match is not enough: a buffer smaller than
+	 * the accessed type (e.g. reading a float resource into a bool via the
+	 * wrong getter) would overflow.
+	 */
+	if (resource_length != expected_len || buf_length != expected_len) {
+		return -EINVAL;
+	}
+
 	return 0;
 }
 
@@ -544,6 +558,10 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 	size_t max_data_len = 0;
 	int ret = 0;
 	bool changed = false;
+
+	if (value == NULL && len > 0) {
+		return -EINVAL;
+	}
 
 	if (path->level < LWM2M_PATH_LEVEL_RESOURCE) {
 		LOG_ERR("path must have at least 3 parts");
@@ -562,7 +580,6 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 	}
 
 	if (!res_inst) {
-		LOG_ERR("res instance %d not found", path->res_inst_id);
 		k_mutex_unlock(&registry_lock);
 		return -ENOENT;
 	}
@@ -600,7 +617,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 		return ret;
 	}
 
-	if (memcmp(data_ptr, value, len) != 0 || res_inst->data_len != len) {
+	if ((value != NULL && memcmp(data_ptr, value, len) != 0) || res_inst->data_len != len) {
 		changed = true;
 	}
 
@@ -648,6 +665,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 		if (!lwm2m_validate_time_resource_lenghts(max_data_len, len)) {
 			LOG_ERR("Time Set: buffer length %u  max data len %zu not supported", len,
 				max_data_len);
+			k_mutex_unlock(&registry_lock);
 			return -EINVAL;
 		}
 
@@ -834,7 +852,6 @@ int lwm2m_get_res_buf(const struct lwm2m_obj_path *path, void **buffer_ptr, uint
 	}
 
 	if (!res_inst) {
-		LOG_ERR("res instance %d not found", path->res_inst_id);
 		k_mutex_unlock(&registry_lock);
 		return -ENOENT;
 	}
@@ -882,7 +899,6 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 	}
 
 	if (!res_inst) {
-		LOG_ERR("res instance %d not found", path->res_inst_id);
 		k_mutex_unlock(&registry_lock);
 		return -ENOENT;
 	}
@@ -924,6 +940,7 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 			if (!lwm2m_validate_time_resource_lenghts(data_len, buflen)) {
 				LOG_ERR("Time get buffer length %u  data len %zu not supported",
 					buflen, data_len);
+				k_mutex_unlock(&registry_lock);
 				return -EINVAL;
 			}
 
@@ -1087,7 +1104,7 @@ int lwm2m_get_resource(const struct lwm2m_obj_path *path, struct lwm2m_engine_re
 size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in, uint8_t *buf, size_t buflen,
 				    struct lwm2m_opaque_context *opaque, bool *last_block)
 {
-	uint32_t in_len = opaque->remaining;
+	uint32_t in_len = opaque->len - opaque->offset;
 	uint16_t remaining = in->in_cpkt->max_len - in->offset;
 
 	if (in_len > buflen) {
@@ -1098,9 +1115,8 @@ size_t lwm2m_engine_get_opaque_more(struct lwm2m_input_context *in, uint8_t *buf
 		in_len = remaining;
 	}
 
-	opaque->remaining -= in_len;
 	remaining -= in_len;
-	if (opaque->remaining == 0U || remaining == 0) {
+	if (opaque->offset + in_len >= opaque->len) {
 		*last_block = true;
 	}
 
@@ -1244,7 +1260,6 @@ int lwm2m_delete_res_inst(const struct lwm2m_obj_path *path)
 	}
 
 	if (!res_inst) {
-		LOG_ERR("res instance %u not found", path->res_inst_id);
 		k_mutex_unlock(&registry_lock);
 		return -ENOENT;
 	}
@@ -1475,6 +1490,7 @@ lwm2m_cache_entry_allocate(const struct lwm2m_obj_path *path)
 	for (i = 0; i < ARRAY_SIZE(lwm2m_cache_entries); i++) {
 		if (lwm2m_cache_entries[i].path.level == 0) {
 			lwm2m_cache_entries[i].path = *path;
+			lwm2m_cache_entries[i].filter_cb = NULL;
 			sys_slist_append(&lwm2m_timed_cache_list, &lwm2m_cache_entries[i].node);
 			return &lwm2m_cache_entries[i];
 		}
@@ -1549,6 +1565,14 @@ static void lwm2m_engine_cache_write(const struct lwm2m_engine_obj_field *obj_fi
 	default:
 		elements.f = *(double *)value;
 		break;
+	}
+
+	if (cache_entry->filter_cb &&
+	    !cache_entry->filter_cb(&cache_entry->path, &elements)) {
+		LOG_DBG("Cache filter dropped sample for %u/%u/%u",
+			cache_entry->path.obj_id, cache_entry->path.obj_inst_id,
+			cache_entry->path.res_id);
+		return;
 	}
 
 	if (!lwm2m_cache_write(cache_entry, &elements)) {
@@ -1627,12 +1651,57 @@ int lwm2m_enable_cache(const struct lwm2m_obj_path *path, struct lwm2m_time_seri
 		return -ENODATA;
 	}
 
-	ring_buf_init(&cache_entry->rb, cache_entry_size * cache_len, (uint8_t *)data_cache);
+	sys_ringq_init(&cache_entry->fifo, (uint8_t *)data_cache, cache_entry_size * cache_len,
+	       cache_entry_size);
 
 	return 0;
 #else
 	LOG_ERR("LwM2M resource cache is only supported for "
 		"CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT");
+	return -ENOTSUP;
+#endif /* CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT */
+}
+
+int lwm2m_set_cache_filter(const struct lwm2m_obj_path *path,
+			   lwm2m_cache_filter_cb_t filter_cb)
+{
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
+	struct lwm2m_time_series_resource *cache_entry;
+
+	if (path == NULL) {
+		return -EINVAL;
+	}
+
+	cache_entry = lwm2m_cache_entry_get_by_object(path);
+	if (cache_entry == NULL) {
+		return -ENOENT;
+	}
+
+	cache_entry->filter_cb = filter_cb;
+
+	return 0;
+#else
+	return -ENOTSUP;
+#endif /* CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT */
+}
+
+int lwm2m_cache_free_slots_get(const struct lwm2m_obj_path *path)
+{
+#if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
+	struct lwm2m_time_series_resource *cache_entry;
+
+	if (path == NULL) {
+		return -EINVAL;
+	}
+
+	cache_entry = lwm2m_cache_entry_get_by_object(path);
+	if (cache_entry == NULL) {
+		return -ENOENT;
+	}
+
+	return sys_ringq_space(&cache_entry->fifo);
+#else
+	ARG_UNUSED(path);
 	return -ENOTSUP;
 #endif /* CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT */
 }
@@ -1656,34 +1725,22 @@ bool lwm2m_cache_write(struct lwm2m_time_series_resource *cache_entry,
 		       struct lwm2m_time_series_elem *buf)
 {
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
-	uint32_t length;
-	uint8_t *buf_ptr;
-	uint32_t element_size = sizeof(struct lwm2m_time_series_elem);
 
-	if (ring_buf_space_get(&cache_entry->rb) < element_size) {
+	if (sys_ringq_full(&cache_entry->fifo)) {
+		struct lwm2m_time_series_elem tmp;
+
 		/* No space  */
 		if (IS_ENABLED(CONFIG_LWM2M_CACHE_DROP_LATEST)) {
 			return false;
 		}
 		/* Free entry */
-		length = ring_buf_get_claim(&cache_entry->rb, &buf_ptr, element_size);
-		ring_buf_get_finish(&cache_entry->rb, length);
+		sys_ringq_get(&cache_entry->fifo, &tmp);
 	}
 
-	length = ring_buf_put_claim(&cache_entry->rb, &buf_ptr, element_size);
-
-	if (length != element_size) {
-		ring_buf_put_finish(&cache_entry->rb, 0);
-		LOG_ERR("Allocation failed %u", length);
-		return false;
-	}
-
-	ring_buf_put_finish(&cache_entry->rb, length);
-	/* Store data */
-	memcpy(buf_ptr, buf, element_size);
+	sys_ringq_put(&cache_entry->fifo, buf);
 	return true;
 #else
-	return NULL;
+	return false;
 #endif
 }
 
@@ -1691,46 +1748,17 @@ bool lwm2m_cache_read(struct lwm2m_time_series_resource *cache_entry,
 		      struct lwm2m_time_series_elem *buf)
 {
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
-	uint32_t length;
-	uint8_t *buf_ptr;
-	uint32_t element_size = sizeof(struct lwm2m_time_series_elem);
-
-	if (ring_buf_is_empty(&cache_entry->rb)) {
-		return false;
-	}
-
-	length = ring_buf_get_claim(&cache_entry->rb, &buf_ptr, element_size);
-
-	if (length != element_size) {
-		LOG_ERR("Cache read fail %u", length);
-		ring_buf_get_finish(&cache_entry->rb, 0);
-		return false;
-	}
-
-	/* Read Data */
-	memcpy(buf, buf_ptr, element_size);
-	ring_buf_get_finish(&cache_entry->rb, length);
-	return true;
+	return sys_ringq_get(&cache_entry->fifo, buf) == 0;
 
 #else
-	return NULL;
+	return false;
 #endif
 }
 
 size_t lwm2m_cache_size(const struct lwm2m_time_series_resource *cache_entry)
 {
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
-	uint32_t bytes_available;
-
-	/* ring_buf_is_empty() takes non-const pointer but still does not modify */
-	if (ring_buf_is_empty((struct ring_buf *) &cache_entry->rb)) {
-		return 0;
-	}
-
-	/* ring_buf_size_get() takes non-const pointer but still does not modify */
-	bytes_available = ring_buf_size_get((struct ring_buf *) &cache_entry->rb);
-
-	return (bytes_available / sizeof(struct lwm2m_time_series_elem));
+	return sys_ringq_size(&cache_entry->fifo);
 #else
 	return 0;
 #endif

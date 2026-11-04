@@ -1,4 +1,4 @@
-# Bluetooth ATT/GATT configuration options
+# Bluetooth L2CAP configuration options
 
 # Copyright (c) 2019 Intel Corporation
 # Copyright (c) 2023 Nordic Semiconductor
@@ -62,7 +62,6 @@ config BT_L2CAP_SEG_RECV
 	bool "L2CAP Receive segment direct API [EXPERIMENTAL]"
 	select EXPERIMENTAL
 	help
-
 	  Enable API for direct receiving of L2CAP SDU segments, bypassing the
 	  Host's fixed-function SDU re-assembler, RX SDU buffer management and
 	  credit issuer.
@@ -70,4 +69,16 @@ config BT_L2CAP_SEG_RECV
 	  This API enforces conformance with L2CAP TS, but is otherwise as
 	  flexible and semantically simple as possible.
 
+config BT_L2CAP_RECONFIGURE_EXPLICIT
+	bool "L2CAP Explicit reconfigure API [EXPERIMENTAL]"
+	select EXPERIMENTAL
+	help
+	  Enable API for explicit reconfiguration of an L2CAP channel's MTU and
+	  MPS.
+
+config BT_L2CAP_CONN_RTX_TIMEOUT
+	int
+	prompt "L2CAP RTX timer for conn requests (seconds)" if BT_TESTING
+	default 40
+	range 1 60
 endmenu

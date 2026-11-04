@@ -4,13 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "skeleton.dtsi"
+#include <freq.h>
+#include <skeleton.dtsi>
 
 #include <zephyr/dt-bindings/i2c/i2c.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 
 / {
 	cpus {
+		timebase-frequency = <DT_FREQ_M(144)>;
 		#address-cells = <1>;
 		#size-cells = <0>;
 
@@ -48,7 +50,6 @@
 		reg = <0x80000000 0x20000>;
 	};
 
-
 	sram: memory@30000000 {
 		compatible = "mmio-sram";
 		reg = <0x30000000 0x20000>;
@@ -70,7 +71,6 @@
 		#size-cells = <1>;
 		compatible = "simple-bus";
 		ranges;
-
 
 		uart0: uart@80014000 {
 			compatible = "ns16550";
@@ -191,7 +191,6 @@
 			status = "disabled";
 		};
 
-
 		i2c0: i2c@80012000 {
 			clock-frequency = <I2C_BITRATE_STANDARD>;
 			#address-cells = <1>;
@@ -266,6 +265,5 @@
 			interrupt-parent = <&intc>;
 			status = "disabled";
 		};
-
 	};
 };

@@ -1,6 +1,6 @@
 #
 # Copyright (c) 2019-2021 Linaro Limited
-# Copyright 2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+# Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -11,14 +11,16 @@ type: mcu
 arch: arm
 ram: 512
 flash: 512
-simulation: qemu
+simulation:
+  - name: qemu
+  - name: armfvp
 toolchain:
   - gnuarmemb
   - zephyr
-  - xtools
 supported:
   - gpio
 testing:
+  default: true
   ignore_tags:
     - drivers
     - bluetooth

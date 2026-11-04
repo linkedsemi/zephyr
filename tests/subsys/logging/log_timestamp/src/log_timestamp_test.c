@@ -62,16 +62,16 @@ ZTEST(test_timestamp, test_custom_timestamp)
 	}
 	static const char *exp_str = IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_CUSTOM_TIMESTAMP) ?
 			"custom-timestamp: " DNAME "/" SNAME ": " TEST_STR "\r\n" :
-			"[00000001] " DNAME "/" SNAME ": " TEST_STR "\r\n";
+			"[0000000001] " DNAME "/" SNAME ": " TEST_STR "\r\n";
 
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	uint32_t flags = LOG_OUTPUT_FLAG_TIMESTAMP;
 	int err;
 
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 1, DNAME, SNAME, NULL, LOG_LEVEL_INF,
+	log_output_process(&log_output, 1, DNAME, SNAME, NULL, 0, LOG_LEVEL_INF,
 			   package, NULL, 0, flags);
 
 	mock_buffer[mock_len] = '\0';

@@ -16,10 +16,13 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		timebase-frequency = <111111111>;
 
 		cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a9";
+			i-cache-line-size = <32>;
+			d-cache-line-size = <32>;
 			reg = <0>;
 		};
 	};
@@ -34,12 +37,17 @@
 	};
 
 	chosen {
-		zephyr,flash      = &flash0;
-		zephyr,sram       = &sram0;
-		zephyr,console    = &uart0;
+		zephyr,flash = &flash0;
+		zephyr,sram = &sram0;
+		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
-		zephyr,ocm        = &ocm_low;
-		zephyr,uart-pipe  = &uart1;
+		zephyr,ocm = &ocm_low;
+		zephyr,uart-pipe = &uart1;
+		zephyr,sdhc = &sdhc0;
+	};
+
+	aliases {
+		sdhc0 = &sdhc0;
 	};
 };
 
@@ -57,7 +65,27 @@
 
 &gem0 {
 	status = "okay";
+	phy-handle = <&gem0_phy>;
 	clock-frequency = <1000000000>;
-	mdc-divider = <XLNX_GEM_MDC_DIVIDER_224>;
 	local-mac-address = [00 00 00 01 02 03];
+};
+
+&gem0_mdio {
+	status = "okay";
+
+	gem0_phy: phy@0 {
+		compatible = "ethernet-phy";
+		reg = <0>;
+		status = "okay";
+	};
+};
+
+&sdhc0 {
+	status = "okay";
+
+	sdmmc {
+		compatible = "zephyr,sdmmc-disk";
+		disk-name = "SD";
+		status = "okay";
+	};
 };

@@ -9,6 +9,7 @@ supported:
   - dac
   - gpio
   - i2c
+  - i2s
   - watchdog
   - uart
   - nvs
@@ -17,8 +18,10 @@ supported:
   - counter
   - entropy
   - input
+  - crypto
+  - retained_mem
+  - netif:wifi
 testing:
   ignore_tags:
-    - net
     - bluetooth
 vendor: espressif

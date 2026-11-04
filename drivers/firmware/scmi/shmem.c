@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 NXP
+ * Copyright 2024,2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -26,15 +26,6 @@ struct scmi_shmem_data {
 	mm_reg_t regmap;
 };
 
-struct scmi_shmem_layout {
-	volatile uint32_t res0;
-	volatile uint32_t chan_status;
-	volatile uint32_t res1[2];
-	volatile uint32_t chan_flags;
-	volatile uint32_t len;
-	volatile uint32_t msg_hdr;
-};
-
 int scmi_shmem_get_channel_status(const struct device *dev, uint32_t *status)
 {
 	struct scmi_shmem_data *data;
@@ -48,6 +39,17 @@ int scmi_shmem_get_channel_status(const struct device *dev, uint32_t *status)
 	return 0;
 }
 
+void scmi_shmem_mark_channel_free(const struct device *dev)
+{
+	struct scmi_shmem_data *data;
+	struct scmi_shmem_layout *layout;
+
+	data = dev->data;
+	layout = (struct scmi_shmem_layout *)data->regmap;
+
+	layout->chan_status |= SCMI_SHMEM_CHAN_STATUS_BUSY_BIT;
+}
+
 static void scmi_shmem_memcpy(mm_reg_t dst, mm_reg_t src, uint32_t bytes)
 {
 	int i;
@@ -55,6 +57,40 @@ static void scmi_shmem_memcpy(mm_reg_t dst, mm_reg_t src, uint32_t bytes)
 	for (i = 0; i < bytes; i++) {
 		sys_write8(*(uint8_t *)(src + i), dst + i);
 	}
+}
+
+__weak int scmi_shmem_vendor_read_message(const struct scmi_shmem_layout *layout)
+{
+	return 0;
+}
+
+__weak int scmi_shmem_vendor_write_message(struct scmi_shmem_layout *layout)
+{
+	return 0;
+}
+
+int scmi_shmem_read_hdr(const struct device *shmem, uint32_t *hdr)
+{
+	struct scmi_shmem_layout *layout;
+	struct scmi_shmem_data *data;
+
+	data = shmem->data;
+	layout = (struct scmi_shmem_layout *)data->regmap;
+
+	/* some sanity checks first */
+	if (!hdr) {
+		return -EINVAL;
+	}
+
+	if (scmi_shmem_vendor_read_message(layout) < 0) {
+		LOG_ERR("vendor specific validation failed");
+		return -EINVAL;
+	}
+
+	scmi_shmem_memcpy(POINTER_TO_UINT(hdr),
+			data->regmap + offsetof(struct scmi_shmem_layout, msg_hdr), sizeof(*hdr));
+
+	return 0;
 }
 
 int scmi_shmem_read_message(const struct device *shmem, struct scmi_message *msg)
@@ -67,7 +103,7 @@ int scmi_shmem_read_message(const struct device *shmem, struct scmi_message *msg
 	cfg = shmem->config;
 	layout = (struct scmi_shmem_layout *)data->regmap;
 
-	/* some sanity checks first */
+	/* some input validation first */
 	if (!msg) {
 		return -EINVAL;
 	}
@@ -96,6 +132,11 @@ int scmi_shmem_read_message(const struct device *shmem, struct scmi_message *msg
 		return -EINVAL;
 	}
 
+	if (scmi_shmem_vendor_read_message(layout) < 0) {
+		LOG_ERR("vendor specific validation failed");
+		return -EINVAL;
+	}
+
 	if (msg->content) {
 		scmi_shmem_memcpy(POINTER_TO_UINT(msg->content),
 				  data->regmap + sizeof(*layout), msg->len);
@@ -104,7 +145,9 @@ int scmi_shmem_read_message(const struct device *shmem, struct scmi_message *msg
 	return 0;
 }
 
-int scmi_shmem_write_message(const struct device *shmem, struct scmi_message *msg)
+int scmi_shmem_write_message(const struct device *shmem,
+			     struct scmi_message *msg,
+			     bool use_polling)
 {
 	struct scmi_shmem_layout *layout;
 	struct scmi_shmem_data *data;
@@ -114,7 +157,7 @@ int scmi_shmem_write_message(const struct device *shmem, struct scmi_message *ms
 	cfg = shmem->config;
 	layout = (struct scmi_shmem_layout *)data->regmap;
 
-	/* some sanity checks first */
+	/* some input validation first */
 	if (!msg) {
 		return -EINVAL;
 	}
@@ -138,6 +181,12 @@ int scmi_shmem_write_message(const struct device *shmem, struct scmi_message *ms
 		scmi_shmem_memcpy(data->regmap + sizeof(*layout),
 				  POINTER_TO_UINT(msg->content), msg->len);
 	}
+
+	if (scmi_shmem_vendor_write_message(layout) < 0) {
+		return -EINVAL;
+	}
+
+	layout->chan_flags = !use_polling ? SCMI_SHMEM_CHAN_FLAG_IRQ_BIT : 0;
 
 	/* done, mark channel as busy and proceed */
 	layout->chan_status &= ~SCMI_SHMEM_CHAN_STATUS_BUSY_BIT;

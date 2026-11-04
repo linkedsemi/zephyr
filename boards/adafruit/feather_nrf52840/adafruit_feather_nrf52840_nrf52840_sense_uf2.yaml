@@ -5,11 +5,10 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - adc
-  - usb_device
-  - ble
+  - usbd
+  - bluetooth
   - watchdog
   - counter
   - feather_serial

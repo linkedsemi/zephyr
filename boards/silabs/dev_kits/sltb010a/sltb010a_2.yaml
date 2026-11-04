@@ -7,12 +7,14 @@ flash: 512
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - bluetooth
   - counter
   - gpio
   - uart
   - i2c
+  - dma
+  - pwm
   - spi
+  - watchdog
 vendor: silabs

@@ -34,6 +34,7 @@ These boards include models of some of the nRF5340 SOC peripherals:
 * DPPI (Distributed Programmable Peripheral Interconnect)
 * EGU (Event Generator Unit)
 * FICR (Factory Information Configuration Registers)
+* GPIO & GPIOTE
 * IPC (Interprocessor communication)
 * MUTEX (Mutual exclusive peripheral)
 * NVMC (Non-Volatile Memory Controller / Flash)
@@ -42,6 +43,7 @@ These boards include models of some of the nRF5340 SOC peripherals:
 * RTC (Real Time Counter)
 * TEMP (Temperature sensor)
 * TIMER
+* UARTE (UART with Easy DMA)
 * UICR (User Information Configuration Registers)
 
 and will use the same drivers as the nrf5340dk targets for these.
@@ -113,11 +115,11 @@ ARM's TrustZone is not modelled in these boards. This means that:
 * There is no differentiation between secure and non secure execution states or bus accesses.
 * All RAM, flash and peripherals are in principle accessible from all SW. Peripherals with their
   own interconnect master ports can, in principle, access any other peripheral or RAM area.
-* There is no nrf5340bsim/nrf5340/cpuapp/ns board/build target, or posibility of mixing secure
+* There is no nrf5340bsim/nrf5340/cpuapp/ns board/build target, or possibility of mixing secure
   and non-secure images.
 * Currently there is no model of the SPU, and therefore neither flash, RAM areas or peripherals
   can be labelled as restricted for secure or non secure access.
 * TF-M cannot be used.
 
-Note that the ARM cryptocell-312 peripheral is not modelled. The mbedTLS library can still be used
+Note that the ARM cryptocell-312 peripheral is not modelled. The Mbed TLS library can still be used
 but with a SW crypto backend instead of the cryptocell HW acceleration.

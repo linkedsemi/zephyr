@@ -8,13 +8,20 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
 
 LOG_MODULE_REGISTER(mss_spi, CONFIG_SPI_LOG_LEVEL);
+
+/* Is MSS SPI module 'resets' line property defined */
+#define MSS_SPI_RESET_ENABLED DT_ANY_INST_HAS_PROP_STATUS_OKAY(resets)
+
+#if MSS_SPI_RESET_ENABLED
+#include <zephyr/drivers/reset.h>
+#endif
 
 #include "spi_context.h"
 
@@ -63,8 +70,8 @@ LOG_MODULE_REGISTER(mss_spi, CONFIG_SPI_LOG_LEVEL);
 #define MSS_SPI_SSEL_MASK (0xff)
 #define MSS_SPI_DIRECT    (0x100)
 #define MSS_SPI_SSELOUT   (0x200)
-#define MSS_SPI_MIN_SLAVE (0)
-#define MSS_SPI_MAX_SLAVE (7)
+#define MSS_SPI_MIN_PERIPHERAL (0)
+#define MSS_SPI_MAX_PERIPHERAL (7)
 
 /* SPIST bit definitions */
 #define MSS_SPI_STATUS_ACTIVE                 BIT(14)
@@ -102,6 +109,9 @@ struct mss_spi_config {
 	mm_reg_t base;
 	uint8_t clk_gen;
 	int clock_freq;
+#if MSS_SPI_RESET_ENABLED
+	struct reset_dt_spec reset_spec;
+#endif
 };
 
 struct mss_spi_transfer {
@@ -182,53 +192,46 @@ static inline void mss_spi_readwr_fifo(const struct device *dev)
 	struct mss_spi_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
 	struct mss_spi_transfer *xfer = &data->xfer;
-	uint32_t rx_raw = 0, rd_byte_size, tr_len;
+	uint32_t rx_raw = 0;
 	uint32_t data8, transfer_idx = 0;
 	int count;
 
-	tr_len = spi_context_longest_current_buf(ctx);
 	count = spi_context_total_tx_len(ctx);
-	if (ctx->rx_buf) {
-		rd_byte_size = count - tr_len;
-	} else {
-		rd_byte_size = 0;
-	}
 	mss_spi_hw_tfsz_set(cfg, count);
 
 	mss_spi_enable_ints(cfg);
-	spi_context_update_rx(ctx, 1, xfer->rx_len);
 	while (transfer_idx < count) {
 		if (!(mss_spi_read(cfg, MSS_SPI_REG_STATUS) & MSS_SPI_STATUS_RXFIFO_EMPTY)) {
 			rx_raw = mss_spi_read(cfg, MSS_SPI_REG_RX_DATA);
-			if (transfer_idx >= tr_len) {
-				if (spi_context_rx_buf_on(ctx)) {
-					UNALIGNED_PUT(rx_raw, (uint8_t *)ctx->rx_buf);
-					spi_context_update_rx(ctx, 1, 1);
-				}
+			if (spi_context_rx_buf_on(ctx)) {
+				UNALIGNED_PUT(rx_raw, (uint8_t *)ctx->rx_buf);
 			}
+			spi_context_update_rx(ctx, 1, 1);
 			++transfer_idx;
 		}
 
 		if (!(mss_spi_read(cfg, MSS_SPI_REG_STATUS) & MSS_SPI_STATUS_TXFIFO_FULL)) {
-			if (spi_context_tx_buf_on(ctx)) {
-				data8 = ctx->tx_buf[0];
-				mss_spi_write(cfg, MSS_SPI_REG_TX_DATA, data8);
+			if (spi_context_tx_on(ctx)) {
+				if (spi_context_tx_buf_on(ctx)) {
+					data8 = ctx->tx_buf[0];
+					mss_spi_write(cfg, MSS_SPI_REG_TX_DATA, data8);
+				} else {
+					mss_spi_write(cfg, MSS_SPI_REG_TX_DATA, 0x0);
+				}
 				spi_context_update_tx(ctx, 1, 1);
-			} else {
-				mss_spi_write(cfg, MSS_SPI_REG_TX_DATA, 0x0);
 			}
 		}
 	}
 }
 
-static inline int mss_spi_select_slave(const struct mss_spi_config *cfg, int cs)
+static inline int mss_spi_select_peripheral(const struct mss_spi_config *cfg, int cs)
 {
-	uint32_t slave;
+	uint32_t peripheral;
 	uint32_t reg = mss_spi_read(cfg, MSS_SPI_REG_SS);
 
-	slave = (cs >= MSS_SPI_MIN_SLAVE && cs <= MSS_SPI_MAX_SLAVE) ? (1 << cs) : 0;
+	peripheral = (cs >= MSS_SPI_MIN_PERIPHERAL && cs <= MSS_SPI_MAX_PERIPHERAL) ? (1 << cs) : 0;
 	reg &= ~MSS_SPI_SSEL_MASK;
-	reg |= slave;
+	reg |= peripheral;
 
 	mss_spi_write(cfg, MSS_SPI_REG_SS, reg);
 
@@ -332,7 +335,7 @@ static int mss_spi_configure(const struct device *dev, const struct spi_config *
 	struct mss_spi_transfer *xfer = &data->xfer;
 	uint32_t control;
 
-	if (spi_cfg->operation & (SPI_TRANSFER_LSB | SPI_OP_MODE_SLAVE | SPI_MODE_LOOP)) {
+	if (spi_cfg->operation & (SPI_TRANSFER_LSB | SPI_OP_MODE_PERIPHERAL | SPI_MODE_LOOP)) {
 		LOG_WRN("not supported operation\n\r");
 		return -ENOTSUP;
 	}
@@ -342,12 +345,12 @@ static int mss_spi_configure(const struct device *dev, const struct spi_config *
 	}
 
 	ctx->config = spi_cfg;
-	mss_spi_select_slave(cfg, spi_cfg->slave);
+	mss_spi_select_peripheral(cfg, spi_cfg->peripheral);
 	control = mss_spi_read(cfg, MSS_SPI_REG_CONTROL);
 
 	/*
 	 * Fill up the default values
-	 * Slave select behaviour set
+	 * Chip select behaviour set
 	 * Fifo depth greater than 4 frames
 	 * Methodology to calculate SPI Clock:
 	 *	0:	SPICLK = 1 / (2 CLK_GEN + 1) , CLK_GEN is from 0 to 15
@@ -426,12 +429,18 @@ static int mss_spi_init(const struct device *dev)
 	int ret = 0;
 	uint32_t control = 0;
 
+#if MSS_SPI_RESET_ENABLED
+	if (cfg->reset_spec.dev != NULL) {
+		(void)reset_line_deassert_dt(&cfg->reset_spec);
+	}
+#endif
+
 	/* Remove SPI from Reset  */
 	control = mss_spi_read(cfg, MSS_SPI_REG_CONTROL);
 	control &= ~MSS_SPI_CONTROL_RESET;
 	mss_spi_write(cfg, MSS_SPI_REG_CONTROL, control);
 
-	/* Set master mode */
+	/* Set controller mode */
 	mss_spi_disable_controller(cfg);
 	xfer->control = (MSS_SPI_CONTROL_SPS | MSS_SPI_CONTROL_BIGFIFO | MSS_SPI_CONTROL_MASTER |
 			 MSS_SPI_CONTROL_CLKMODE);
@@ -443,7 +452,7 @@ static int mss_spi_init(const struct device *dev)
 
 #define MICROCHIP_SPI_PM_OPS (NULL)
 
-static const struct spi_driver_api mss_spi_driver_api = {
+static DEVICE_API(spi, mss_spi_driver_api) = {
 	.transceive = mss_spi_transceive_blocking,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = mss_spi_transceive_async,
@@ -470,6 +479,8 @@ static const struct spi_driver_api mss_spi_driver_api = {
 	static const struct mss_spi_config mss_spi_config_##n = {                                  \
 		.base = DT_INST_REG_ADDR(n),                                                       \
 		.clock_freq = DT_INST_PROP(n, clock_frequency),                                    \
+		IF_ENABLED(DT_INST_NODE_HAS_PROP(n, resets),                                       \
+			(.reset_spec = RESET_DT_SPEC_INST_GET(n),))                                \
 	};                                                                                         \
                                                                                                    \
 	static struct mss_spi_data mss_spi_data_##n = {                                            \
@@ -477,8 +488,8 @@ static const struct spi_driver_api mss_spi_driver_api = {
 		SPI_CONTEXT_INIT_SYNC(mss_spi_data_##n, ctx),                                      \
 	};                                                                                         \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(n, mss_spi_init_##n, NULL, &mss_spi_data_##n, &mss_spi_config_##n,   \
-			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,                     \
-			      &mss_spi_driver_api);
+	SPI_DEVICE_DT_INST_DEFINE(n, mss_spi_init_##n, NULL, &mss_spi_data_##n,                    \
+				  &mss_spi_config_##n, POST_KERNEL,                                \
+				  CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &mss_spi_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(MSS_SPI_INIT)

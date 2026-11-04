@@ -8,10 +8,11 @@
 #include <zephyr/ztest.h>
 #include <zephyr/types.h>
 
+/** Bookkeeping shared with the timer expiry/stop callbacks. */
 struct timer_data {
-	int expire_cnt;
-	int stop_cnt;
-	int64_t timestamp;
+	int expire_cnt;     /**< Number of times the expiry function ran. */
+	int stop_cnt;       /**< Number of times the stop function ran. */
+	int64_t timestamp;  /**< Uptime captured at the last expiry. */
 };
 
 #define DURATION 100
@@ -28,7 +29,7 @@ struct timer_data {
  */
 #define INEXACT_MS_CONVERT ((CONFIG_SYS_CLOCK_TICKS_PER_SEC % MSEC_PER_SEC) != 0)
 
-#if CONFIG_NRF_RTC_TIMER
+#if CONFIG_NRF_RTC_TIMER || CONFIG_NRF_GRTC_TIMER
 /* On Nordic SOCs one or both of the tick and busy-wait clocks may
  * derive from sources that have slews that sum to +/- 13%.
  */
@@ -64,6 +65,7 @@ static struct k_timer status_timer;
 static struct k_timer status_anytime_timer;
 static struct k_timer status_sync_timer;
 static struct k_timer remain_timer;
+static struct k_timer overdue_timer;
 
 static ZTEST_BMEM struct timer_data tdata;
 
@@ -90,6 +92,12 @@ static void init_timer_data(void)
 static bool interval_check(int64_t interval, int64_t desired)
 {
 	int64_t slop = INEXACT_MS_CONVERT ? 1 : 0;
+
+	/* z_add_timeout() rounds up by one tick to guarantee "at least
+	 * N ticks" -- that can push the first fire a whole tick past
+	 * the nominal duration.
+	 */
+	slop += k_ticks_to_ms_ceil32(1);
 
 	/* Tickless kernels will advance time inside of an ISR, so it
 	 * is always possible (especially with high tick rates and
@@ -180,8 +188,11 @@ static void status_stop(struct k_timer *timer)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_stop(), k_uptime_get(),
- * k_busy_wait()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_busy_wait()
  */
 ZTEST_USER(timer_api, test_timer_duration_period)
 {
@@ -200,6 +211,37 @@ ZTEST_USER(timer_api, test_timer_duration_period)
 }
 
 /**
+ * @brief Verify run-time initialization of a timer.
+ *
+ * @details A timer initialized at run time with k_timer_init() must start
+ * out inactive -- no expiries recorded and no time remaining -- and be
+ * immediately usable: starting it as a one-shot makes it expire once.
+ *
+ * @ingroup kernel_timer_tests
+ *
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_status_get()
+ */
+ZTEST(timer_api, test_timer_init_runtime)
+{
+	static struct k_timer runtime_timer;
+
+	k_timer_init(&runtime_timer, NULL, NULL);
+
+	/* freshly initialized: inactive, no expiries */
+	zassert_equal(k_timer_status_get(&runtime_timer), 0);
+	zassert_equal(k_timer_remaining_get(&runtime_timer), 0);
+
+	/* immediately usable as a one-shot timer */
+	k_timer_start(&runtime_timer, K_MSEC(DURATION), K_NO_WAIT);
+	busy_wait_ms(DURATION + 50);
+	zassert_equal(k_timer_status_get(&runtime_timer), 1);
+
+	k_timer_stop(&runtime_timer);
+}
+
+/**
  *
  * @brief Test restart the timer
  *
@@ -209,8 +251,11 @@ ZTEST_USER(timer_api, test_timer_duration_period)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_stop, k_uptime_get(),
- * k_busy_wait()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_busy_wait()
  *
  */
 ZTEST_USER(timer_api, test_timer_restart)
@@ -244,8 +289,11 @@ ZTEST_USER(timer_api, test_timer_restart)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_stop(), k_uptime_get(),
- * k_busy_wait()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_busy_wait()
  */
 ZTEST_USER(timer_api, test_timer_period_0)
 {
@@ -281,8 +329,11 @@ ZTEST_USER(timer_api, test_timer_period_0)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_stop(), k_uptime_get(),
- * k_busy_wait()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_busy_wait()
  */
 ZTEST_USER(timer_api, test_timer_period_k_forever)
 {
@@ -320,8 +371,11 @@ ZTEST_USER(timer_api, test_timer_period_k_forever)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_stop(), k_uptime_get(),
- * k_busy_wait()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_busy_wait()
  */
 ZTEST_USER(timer_api, test_timer_expirefn_null)
 {
@@ -364,8 +418,12 @@ static void tick_sync(void)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_status_sync(),
- * k_timer_stop(), k_uptime_get(), k_uptime_delta()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_status_sync()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_uptime_delta()
  */
 ZTEST_USER(timer_api, test_timer_periodicity)
 {
@@ -432,8 +490,11 @@ ZTEST_USER(timer_api, test_timer_periodicity)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_status_get(),
- * k_timer_remaining_get(), k_timer_stop()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_status_get()
+ * @see k_timer_remaining_get()
+ * @see k_timer_stop()
  */
 ZTEST_USER(timer_api, test_timer_status_get)
 {
@@ -461,8 +522,11 @@ ZTEST_USER(timer_api, test_timer_status_get)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_status_get(),
- * k_timer_stop(), k_busy_wait()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_status_get()
+ * @see k_timer_stop()
+ * @see k_busy_wait()
  */
 ZTEST_USER(timer_api, test_timer_status_get_anytime)
 {
@@ -495,8 +559,10 @@ ZTEST_USER(timer_api, test_timer_status_get_anytime)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_status_sync(),
- * k_timer_stop()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_status_sync()
+ * @see k_timer_stop()
  */
 ZTEST_USER(timer_api, test_timer_status_sync)
 {
@@ -535,8 +601,11 @@ ZTEST_USER(timer_api, test_timer_status_sync)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_start(), K_TIMER_DEFINE(), k_timer_stop()
- * k_uptime_get(), k_busy_wait()
+ * @see k_timer_start()
+ * @see K_TIMER_DEFINE()
+ * @see k_timer_stop()
+ * @see k_uptime_get()
+ * @see k_busy_wait()
  */
 ZTEST_USER(timer_api, test_timer_k_define)
 {
@@ -619,8 +688,11 @@ static void user_data_timer_handler(struct k_timer *timer)
  *
  * @ingroup kernel_timer_tests
  *
- * @see K_TIMER_DEFINE(), k_timer_user_data_set(), k_timer_start(),
- * k_timer_user_data_get(), k_timer_stop()
+ * @see K_TIMER_DEFINE()
+ * @see k_timer_user_data_set()
+ * @see k_timer_start()
+ * @see k_timer_user_data_get()
+ * @see k_timer_stop()
  */
 ZTEST_USER(timer_api, test_timer_user_data)
 {
@@ -671,19 +743,30 @@ ZTEST_USER(timer_api, test_timer_user_data)
  *
  * @ingroup kernel_timer_tests
  *
- * @see k_timer_init(), k_timer_start(), k_timer_stop(),
- * k_timer_remaining_get()
+ * @see k_timer_init()
+ * @see k_timer_start()
+ * @see k_timer_stop()
+ * @see k_timer_remaining_get()
  */
 
 ZTEST_USER(timer_api, test_timer_remaining)
 {
-	uint32_t dur_ticks = k_ms_to_ticks_ceil32(DURATION);
 	uint32_t target_rem_ticks = k_ms_to_ticks_ceil32(DURATION / 2);
 	uint32_t rem_ms, rem_ticks, exp_ticks;
+	uint32_t latency_ticks;
 	int32_t delta_ticks;
 	uint32_t slew_ticks;
 	uint64_t now;
 
+	/* Test is running in a user space thread so there is an additional latency
+	 * involved in executing k_busy_wait and k_timer_remaining_ticks. Due
+	 * to that latency, returned ticks won't be exact as expected even if
+	 * k_busy_wait is running using the same clock source as the system clock.
+	 * If system clock frequency is low (e.g. 100Hz) 1 tick will be enough but
+	 * for cases where clock frequency is much higher we need to accept higher
+	 * deviation (in ticks). Arbitrary value of 100 us processing overhead is used.
+	 */
+	latency_ticks = k_us_to_ticks_ceil32(100);
 
 	init_timer_data();
 	k_timer_start(&remain_timer, K_MSEC(DURATION), K_NO_WAIT);
@@ -701,33 +784,77 @@ ZTEST_USER(timer_api, test_timer_remaining)
 	 * the k_timer api is limited by the system tick abstraction. As result
 	 * the value obtained through k_timer_remaining_get() could be larger
 	 * than actual remaining time with maximum error equal to one tick.
+	 * That one tick of error has to be converted to ms by rounding up:
+	 * a tick shorter than a millisecond would otherwise round down to a
+	 * zero tolerance and the legitimate one-tick overshoot would trip the
+	 * check on high tick rate platforms.
 	 */
-	zassert_true(rem_ms <= (DURATION / 2) + k_ticks_to_ms_floor64(1),
+	zassert_true(rem_ms <= (DURATION / 2) + k_ticks_to_ms_ceil64(1),
 		     NULL);
 
-	/* Half the value of DURATION in ticks may not be the value of
-	 * half DURATION in ticks, when DURATION/2 is not an integer
-	 * multiple of ticks, so target_rem_ticks is used rather than
-	 * dur_ticks/2.  Also set a threshold based on expected clock
-	 * skew.
+	/* We stopped half way through the wait, so the remaining ticks
+	 * should match the half duration converted to ticks. That is
+	 * target_rem_ticks, k_ms_to_ticks_ceil32(DURATION / 2). Halving
+	 * the full duration in ticks would not do: it truncates when
+	 * DURATION / 2 is not a whole number of ticks (at a 2048 Hz tick
+	 * rate the full duration rounds to 205 ticks, half of which floors
+	 * to 102 while ceil(50 ms) is 103). Allow the larger of the
+	 * busy-wait clock skew and the read latency.
 	 */
 	delta_ticks = (int32_t)(rem_ticks - target_rem_ticks);
 	slew_ticks = BUSY_SLEW_THRESHOLD_TICKS(DURATION * USEC_PER_MSEC / 2U);
-	zassert_true(abs(delta_ticks) <= MAX(slew_ticks, 1U),
+	zassert_true(abs(delta_ticks) <= MAX(slew_ticks, latency_ticks),
 		     "tick/busy slew %d larger than test threshold %u",
 		     delta_ticks, slew_ticks);
 
-	/* Note +1 tick precision: even though we're calculating in
-	 * ticks, we're waiting in k_busy_wait(), not for a timer
-	 * interrupt, so it's possible for that to take 1 tick longer
-	 * than expected on systems where the requested microsecond
-	 * delay cannot be exactly represented as an integer number of
-	 * ticks.
-	 * As above, use higher tolerance on platforms where the clock used
-	 * by the kernel timer and the one used for busy-waiting may be skewed.
+	/* k_timer_expires_ticks() returns the absolute expiry tick, so
+	 * "now" plus the remaining ticks must land on it. This checks the
+	 * three queries agree; it is not another half-way check, so neither
+	 * the duration nor the busy-wait slew enter into it.
+	 *
+	 * rem_ticks, now and exp_ticks are read in three separate syscalls.
+	 * exp_ticks is invariant over time, but "now" can only have advanced
+	 * past the rem_ticks sample, so (exp_ticks - now) is at most rem_ticks
+	 * and falls short of it by at most the read latency.
 	 */
-	zassert_true(((int64_t)exp_ticks - (int64_t)now)
-		     <= (dur_ticks / 2) + 1 + slew_ticks, NULL);
+	zassert_between_inclusive((int64_t)rem_ticks -
+				  ((int64_t)exp_ticks - (int64_t)now),
+				  0, latency_ticks, NULL);
+}
+
+/**
+ * @brief Overdue timers must report 0 remaining ticks, not a wrapped value
+ *
+ * Start a 1-tick timer, then hold IRQs and busy-wait so announce cannot
+ * run while time still advances. Remaining ticks must saturate at 0.
+ *
+ * @ingroup kernel_timer_tests
+ *
+ * @see k_timer_remaining_ticks()
+ */
+ZTEST(timer_api, test_timer_remaining_overdue)
+{
+	k_ticks_t rem;
+	k_ticks_t expires;
+	int64_t t1;
+	unsigned int key;
+
+	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
+		k_usleep(1); /* align to tick */
+	}
+
+	k_timer_start(&overdue_timer, K_TICKS(1), K_NO_WAIT);
+
+	key = irq_lock();
+	k_busy_wait(k_ticks_to_us_ceil32(3));
+	t1 = k_uptime_ticks();
+	expires = k_timer_expires_ticks(&overdue_timer);
+	rem = k_timer_remaining_ticks(&overdue_timer);
+	k_timer_stop(&overdue_timer);
+	irq_unlock(key);
+
+	zassume_true(t1 > expires, "busy wait did not overshoot the timeout");
+	zassert_equal(rem, 0, "overdue remaining was %lld", (long long)rem);
 }
 
 ZTEST_USER(timer_api, test_timeout_abs)
@@ -738,17 +865,51 @@ ZTEST_USER(timer_api, test_timeout_abs)
 	uint64_t exp_ticks = k_ms_to_ticks_ceil64(exp_ms);
 	k_timeout_t t = K_TIMEOUT_ABS_TICKS(exp_ticks), t2;
 	uint64_t t0, t1;
+	uint32_t rpt;
+
+	/* Ensure second alignment for K_TIMEOUT_ABS_SEC */
+	zassert_true(exp_ms % MSEC_PER_SEC == 0);
+
+	/* Check K_TIMEOUT_ABS_TICKS() and Z_IS_TIMEOUT_RELATIVE macros */
+	t2 = K_NO_WAIT;
+	zassert_true(Z_IS_TIMEOUT_RELATIVE(t2));
+	t2 = K_TICKS(1);
+	zassert_true(Z_IS_TIMEOUT_RELATIVE(t2));
+	t2 = K_TICKS(INT64_MAX-1);
+	zassert_true(Z_IS_TIMEOUT_RELATIVE(t2));
+	t2 = K_TICKS(INT64_MAX);
+	zassert_true(Z_IS_TIMEOUT_RELATIVE(t2));
+
+	zassert_false(Z_IS_TIMEOUT_RELATIVE(t));
+	t2 = K_TIMEOUT_ABS_TICKS(1);
+	zassert_false(Z_IS_TIMEOUT_RELATIVE(t2));
+	t2 = K_TIMEOUT_ABS_TICKS(INT64_MAX-1);
+	zassert_false(Z_IS_TIMEOUT_RELATIVE(t2));
+
+	/* Check when INT64_MAX passed to K_TIMEOUT_ABS_TICKS(), with
+	 * both a literal and variable argument.
+	 */
+	t2 = K_TIMEOUT_ABS_TICKS(INT64_MAX);
+	zassert_false(Z_IS_TIMEOUT_RELATIVE(t2));
+
+	uint64_t max_int64 = INT64_MAX;
+
+	t2 = K_TIMEOUT_ABS_TICKS(max_int64);
+	zassert_false(Z_IS_TIMEOUT_RELATIVE(t2));
 
 	/* Check the other generator macros to make sure they produce
 	 * the same (whiteboxed) converted values
 	 */
+	t2 = K_TIMEOUT_ABS_SEC(exp_ms / MSEC_PER_SEC);
+	zassert_true(t2.ticks == t.ticks);
+
 	t2 = K_TIMEOUT_ABS_MS(exp_ms);
 	zassert_true(t2.ticks == t.ticks);
 
-	t2 = K_TIMEOUT_ABS_US(1000 * exp_ms);
+	t2 = K_TIMEOUT_ABS_US(USEC_PER_MSEC * exp_ms);
 	zassert_true(t2.ticks == t.ticks);
 
-	t2 = K_TIMEOUT_ABS_NS(1000 * 1000 * exp_ms);
+	t2 = K_TIMEOUT_ABS_NS(NSEC_PER_MSEC * exp_ms);
 	zassert_true(t2.ticks == t.ticks);
 
 	t2 = K_TIMEOUT_ABS_CYC(k_ms_to_cyc_ceil64(exp_ms));
@@ -768,18 +929,68 @@ ZTEST_USER(timer_api, test_timeout_abs)
 		k_usleep(1);
 	}
 
+	/* Attempt to read rem_ticks and a known point in time. If that is not possible,
+	 * due to target being slow and system clock being fast, then use known tick range to
+	 * validate rem_ticks.
+	 */
+	rpt = 4;
 	do {
 		t0 = k_uptime_ticks();
 		rem_ticks = k_timer_remaining_ticks(&remain_timer);
 		t1 = k_uptime_ticks();
-	} while (t0 != t1);
+		rpt--;
+	} while ((t0 != t1) && (rpt > 0));
 
-	zassert_true(t0 + rem_ticks == exp_ticks,
-		     "Wrong remaining: now %lld rem %lld expires %lld (%d)",
-		     (uint64_t)t0, (uint64_t)rem_ticks, (uint64_t)exp_ticks,
-		     t0+rem_ticks-exp_ticks);
+	if (t0 == t1) {
+		zassert_true(t0 + rem_ticks == exp_ticks,
+		     "Wrong remaining: now %lld rem %lld expires %lld (%lld)",
+		     t0, rem_ticks, exp_ticks, t0 + rem_ticks - exp_ticks);
+	} else {
+		zassert_true(IN_RANGE(exp_ticks, t0 + rem_ticks, t1 + rem_ticks),
+		     "Wrong remaining: now %lld-%lld rem %lld expires %lld",
+		     t0, t1, rem_ticks, exp_ticks);
+	}
+
 
 	k_timer_stop(&remain_timer);
+
+	/* Rerun test with t set to INT64_MAX. K_TIMEOUT_ABS_TICKS()
+	 * should adjust the abs timeout to INT64_MAX-1 because the negative
+	 * range used for absolute timeouts needs to reserve -1 for
+	 * K_TIMEOUT_FOREVER.
+	 */
+	init_timer_data();
+	exp_ticks = INT64_MAX - 1;
+	k_timer_start(&remain_timer, K_TIMEOUT_ABS_TICKS(INT64_MAX), K_FOREVER);
+
+	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
+		k_usleep(1);
+	}
+
+	/* Attempt to read rem_ticks and a known point in time. If that is not possible,
+	 * due to target being slow and system clock being fast, then use known tick range to
+	 * validate rem_ticks.
+	 */
+	rpt = 4;
+	do {
+		t0 = k_uptime_ticks();
+		rem_ticks = k_timer_remaining_ticks(&remain_timer);
+		t1 = k_uptime_ticks();
+		rpt--;
+	} while ((t0 != t1) && (rpt > 0));
+
+	if (t0 == t1) {
+		zassert_true(t0 + rem_ticks == exp_ticks,
+		     "Wrong remaining: now %lld rem %lld expires %lld (%lld)",
+		     t0, rem_ticks, exp_ticks, t0 + rem_ticks - exp_ticks);
+	} else {
+		zassert_true(IN_RANGE(exp_ticks, t0 + rem_ticks, t1 + rem_ticks),
+		     "Wrong remaining: now %lld-%lld rem %lld expires %lld",
+		     t0, t1, rem_ticks, exp_ticks);
+	}
+
+	k_timer_stop(&remain_timer);
+
 #endif
 }
 
@@ -799,13 +1010,21 @@ ZTEST_USER(timer_api, test_sleep_abs)
 	k_sleep(K_TIMEOUT_ABS_TICKS(start + sleep_ticks));
 	end = k_uptime_ticks();
 
-	/* Systems with very high tick rates and/or slow idle resume
-	 * (I've seen this on intel_adsp) can occasionally take more
-	 * than a tick to return from k_sleep().  Set a 100us real
-	 *  time slop or more depending on the time to resume
+	/* Systems with very high tick rates, slow idle resume, or QEMU
+	 * timing instability can occasionally take more than a tick to
+	 * return from k_sleep().
+	 *
+	 * The Xilinx QEMU, used to emulate the ZynqMP and Versal platforms,
+	 * is particularly unstable in terms of timing and can be several
+	 * ticks late waking from sleep.
 	 */
 	k_ticks_t late = end - (start + sleep_ticks);
+#if defined(CONFIG_SOC_XILINX_ZYNQMP) || defined(CONFIG_SOC_VERSAL_RPU)
+	/* QEMU timing instability requires larger margin */
+	int slop = MAX(10, k_us_to_ticks_ceil32(1000));
+#else
 	int slop = MAX(2, k_us_to_ticks_ceil32(250));
+#endif
 
 	zassert_true(late >= 0 && late <= slop,
 		     "expected wakeup at %lld, got %lld (late %lld)",
@@ -831,6 +1050,134 @@ ZTEST_USER(timer_api, test_sleep_abs)
 
 }
 
+static struct k_timer isr_ctx_timer;
+static volatile bool isr_ctx_expiry_ran;
+static volatile bool isr_ctx_expiry_in_isr;
+
+static void isr_ctx_expire(struct k_timer *timer)
+{
+	isr_ctx_expiry_in_isr = k_is_in_isr();
+	isr_ctx_expiry_ran = true;
+}
+
+/**
+ * @brief Test that a timer expiry function runs in interrupt context
+ *
+ * @ingroup kernel_timer_tests
+ *
+ * @details Start a one-shot timer whose expiry callback records, via
+ * k_is_in_isr(), whether it executes in interrupt context. After the timer has
+ * expired, verify the callback ran and that it observed itself running in
+ * interrupt context.
+ *
+ * @see k_timer_start()
+ * @see k_is_in_isr()
+ */
+ZTEST(timer_api, test_timer_expiry_in_isr)
+{
+	isr_ctx_expiry_ran = false;
+	isr_ctx_expiry_in_isr = false;
+
+	k_timer_init(&isr_ctx_timer, isr_ctx_expire, NULL);
+	k_timer_start(&isr_ctx_timer, K_MSEC(DURATION), K_NO_WAIT);
+
+	/* Wait long enough for the one-shot timer to expire. */
+	k_msleep(DURATION * 2);
+
+	zassert_true(isr_ctx_expiry_ran,
+		     "timer expiry function did not run");
+	zassert_true(isr_ctx_expiry_in_isr,
+		     "timer expiry function did not run in interrupt context");
+
+	k_timer_stop(&isr_ctx_timer);
+}
+
+static struct k_timer cleanup_timer;
+
+/**
+ * @brief Test releasing the resources associated with a timer
+ *
+ * @ingroup kernel_timer_tests
+ *
+ * @details Start and stop a timer so it has no pending waiters, then call
+ * k_timer_cleanup() and verify it succeeds (returns 0), indicating the timer's
+ * resources may be released.
+ *
+ * @see k_timer_cleanup()
+ */
+ZTEST(timer_api, test_timer_cleanup)
+{
+	k_timer_init(&cleanup_timer, NULL, NULL);
+	k_timer_start(&cleanup_timer, K_MSEC(DURATION), K_NO_WAIT);
+	k_timer_stop(&cleanup_timer);
+
+	/* No threads are waiting on the timer, so cleanup must succeed. */
+	zassert_equal(k_timer_cleanup(&cleanup_timer), 0,
+		      "cleanup of an idle timer should succeed");
+}
+
+#if defined(CONFIG_MULTITHREADING)
+static struct k_timer cleanup_pending_timer;
+static struct k_thread cleanup_thread;
+static K_THREAD_STACK_DEFINE(cleanup_stack, 512 + CONFIG_TEST_EXTRA_STACK_SIZE);
+static K_SEM_DEFINE(cleanup_started, 0, 1);
+static void cleanup_waiter(void *p1, void *p2, void *p3)
+{
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	k_sem_give(&cleanup_started);
+	/* Block on the timer's wait queue. The timer is armed far in the
+	 * future, so this thread stays pending until the timer is stopped.
+	 */
+	k_timer_status_sync(&cleanup_pending_timer);
+}
+#endif
+
+/**
+ * @brief Test cleaning up a timer that still has waiting threads
+ *
+ * @ingroup kernel_timer_tests
+ *
+ * @details Arm a timer with a far-future expiry and have a separate thread
+ * block on it via k_timer_status_sync(). While that thread is pending on the
+ * timer, call k_timer_cleanup() and verify it returns -EAGAIN, indicating the
+ * cleanup could not be performed. Then stop the timer to release the waiter.
+ *
+ * @see k_timer_cleanup()
+ * @see k_timer_status_sync()
+ */
+ZTEST(timer_api, test_timer_cleanup_pending)
+{
+#if !defined(CONFIG_MULTITHREADING)
+	ztest_test_skip();
+#else
+	k_timer_init(&cleanup_pending_timer, NULL, NULL);
+	/* Far-future one-shot: the timeout stays active but does not fire,
+	 * so a thread synchronizing on it pends on the timer's wait queue.
+	 */
+	k_timer_start(&cleanup_pending_timer, K_SECONDS(3600), K_NO_WAIT);
+
+	k_tid_t tid = k_thread_create(&cleanup_thread, cleanup_stack,
+				      K_THREAD_STACK_SIZEOF(cleanup_stack),
+				      cleanup_waiter, NULL, NULL, NULL,
+				      K_HIGHEST_THREAD_PRIO, 0, K_NO_WAIT);
+
+	k_sem_take(&cleanup_started, K_FOREVER);
+	/* Give the waiter time to reach k_timer_status_sync() and pend. */
+	k_msleep(10);
+
+	/* A thread is pending on the timer, so cleanup must be refused. */
+	zassert_equal(k_timer_cleanup(&cleanup_pending_timer), -EAGAIN,
+		      "cleanup with a pending waiter should return -EAGAIN");
+
+	/* Release the waiter and join it. */
+	k_timer_stop(&cleanup_pending_timer);
+	k_thread_join(tid, K_FOREVER);
+#endif
+}
+
 static void timer_init(struct k_timer *timer, k_timer_expiry_t expiry_fn,
 		       k_timer_stop_t stop_fn)
 {
@@ -852,6 +1199,7 @@ void *setup_timer_api(void)
 	timer_init(&status_anytime_timer, NULL, NULL);
 	timer_init(&status_sync_timer, duration_expire, duration_stop);
 	timer_init(&remain_timer, duration_expire, duration_stop);
+	timer_init(&overdue_timer, NULL, NULL);
 
 	if (IS_ENABLED(CONFIG_MULTITHREADING)) {
 		k_thread_access_grant(k_current_get(), &ktimer, &timer0, &timer1,

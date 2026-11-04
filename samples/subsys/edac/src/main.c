@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020 Intel Corporation
+ * Copyright 2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,8 +14,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main, CONFIG_LOG_DEFAULT_LEVEL);
 
-#define STACKSIZE	1024
-#define PRIORITY	7
+#define STACKSIZE 1024
+#define PRIORITY  15
 
 static atomic_t handled;
 
@@ -23,19 +24,22 @@ static atomic_t handled;
  */
 static void notification_callback(const struct device *dev, void *data)
 {
-	/* Special care need to be taken for NMI callback:
-	 * delayed_work, mutex and semaphores are not working stable
-	 * here, using integer increment for now
+	ARG_UNUSED(dev);
+	ARG_UNUSED(data);
+
+	/* This runs in interrupt (ISR) context: k_work/mutex/semaphore are
+	 * not safe here, so just raise an atomic flag for the worker thread
+	 * to observe.
 	 */
-	atomic_set(&handled, true);
+	atomic_set(&handled, 1);
 }
 
 int main(void)
 {
-	const struct device *const dev = DEVICE_DT_GET(DT_NODELABEL(ibecc));
+	const struct device *const dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_edac));
 
 	if (!device_is_ready(dev)) {
-		printk("%s: device not ready.\n", dev->name);
+		LOG_ERR_DEVICE_NOT_READY(dev);
 		return 0;
 	}
 
@@ -48,17 +52,16 @@ int main(void)
 	return 0;
 }
 
-void thread_function(void)
+static void thread_function(void)
 {
 	LOG_DBG("Thread started");
 
 	while (true) {
-		if (atomic_cas(&handled, true, false)) {
-			printk("Got notification about IBECC event\n");
+		if (atomic_cas(&handled, 1, 0)) {
+			printk("Got notification about ECC event\n");
 			k_sleep(K_MSEC(300));
 		}
 	}
 }
 
-K_THREAD_DEFINE(thread_id, STACKSIZE, thread_function, NULL, NULL, NULL,
-		PRIORITY, 0, 0);
+K_THREAD_DEFINE(thread_edac, STACKSIZE, thread_function, NULL, NULL, NULL, PRIORITY, 0, 0);

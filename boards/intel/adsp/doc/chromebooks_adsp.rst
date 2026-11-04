@@ -205,7 +205,7 @@ place it in the home directory here for simplicity:
     dev$ cd $HOME
     dev$ git clone https://chromium.googlesource.com/chromiumos/third_party/kernel
     dev$ cd kernel
-    dev$ git checkout chromeos-5.10
+    dev$ git switch chromeos-5.10
 
 (*Once again, we are typing into a different shell.  We introduce the
 hostname "dev" here to represent the development machine on which you
@@ -350,9 +350,9 @@ but anywhere is acceptable):
 
      dev$ cd $HOME
      dev$ git clone https://github.com/thesofproject/rimage
-     dev$ cd rimage/
      dev$ git submodule init
      dev$ git submodule update
+     dev$ cd tools/rimage/
      dev$ cmake .
      dev$ make
 
@@ -386,7 +386,7 @@ a "zephyr.ri" file to be copied to the device.
 
     dev$ west build -b intel_adsp/cavs25 samples/hello_world
     dev$ west sign --tool-data=~/rimage/config -t ~/rimage/rimage -- \
-                -k $ZEPHYR_BASE/../modules/audio/sof/keys/otc_private_key_3k.pem
+                -k $ZEPHYR_BASE/boards/intel/adsp/support/otc_private_key_3k.pem
 
 Run it!
 =======
@@ -412,4 +412,4 @@ https://www.chromium.org/chromium-os/developer-library/reference/device/disk-for
 
 This is great too, with an eye toward booting things other than ChromeOS:
 
-https://www.chromium.org/chromium-os/developer-information-for-chrome-os-devices/custom-firmware
+https://www.chromium.org/chromium-os/developer-library/reference/development/developer-information-for-chrome-os-devices/custom-firmware/

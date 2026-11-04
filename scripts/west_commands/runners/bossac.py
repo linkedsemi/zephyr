@@ -13,7 +13,7 @@ import subprocess
 import sys
 import time
 
-from runners.core import ZephyrBinaryRunner, RunnerCaps
+from runners.core import RunnerCaps, ZephyrBinaryRunner
 
 if platform.system() == 'Darwin':
     DEFAULT_BOSSAC_PORT = None
@@ -25,12 +25,13 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
     '''Runner front-end for bossac.'''
 
     def __init__(self, cfg, bossac='bossac', port=DEFAULT_BOSSAC_PORT,
-                 speed=DEFAULT_BOSSAC_SPEED, boot_delay=0):
+                 speed=DEFAULT_BOSSAC_SPEED, boot_delay=0, erase=False):
         super().__init__(cfg)
         self.bossac = bossac
         self.port = port
         self.speed = speed
         self.boot_delay = boot_delay
+        self.erase = erase
 
     @classmethod
     def name(cls):
@@ -38,7 +39,7 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def capabilities(cls):
-        return RunnerCaps(commands={'flash'})
+        return RunnerCaps(commands={'flash'}, erase=True)
 
     @classmethod
     def do_add_parser(cls, parser):
@@ -60,7 +61,7 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
     def do_create(cls, cfg, args):
         return BossacBinaryRunner(cfg, bossac=args.bossac,
                                   port=args.bossac_port, speed=args.speed,
-                                  boot_delay=args.delay)
+                                  boot_delay=args.delay, erase=args.erase)
 
     def read_help(self):
         """Run bossac --help and return the output as a list of lines"""
@@ -76,19 +77,13 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
 
     def supports(self, flag):
         """Check if bossac supports a flag by searching the help"""
-        for line in self.read_help():
-            if flag in line:
-                return True
-        return False
+        return any(flag in line for line in self.read_help())
 
     def is_extended_samba_protocol(self):
         ext_samba_versions = ['CONFIG_BOOTLOADER_BOSSA_ARDUINO',
                               'CONFIG_BOOTLOADER_BOSSA_ADAFRUIT_UF2']
 
-        for x in ext_samba_versions:
-            if self.build_conf.getboolean(x):
-                return True
-        return False
+        return any(self.build_conf.getboolean(x) for x in ext_samba_versions)
 
     def is_partition_enabled(self):
         return self.build_conf.getboolean('CONFIG_USE_DT_CODE_PARTITION')
@@ -102,8 +97,7 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
         b = pathlib.Path(self.cfg.build_dir)
         edt_pickle = b / 'zephyr' / 'edt.pickle'
         if not edt_pickle.is_file():
-            error_msg = "can't load devicetree; expected to find:" \
-	                + str(edt_pickle)
+            error_msg = "can't load devicetree; expected to find:" + str(edt_pickle)
 
             raise RuntimeError(error_msg)
 
@@ -111,10 +105,10 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
         try:
             with open(edt_pickle, 'rb') as f:
                 edt = pickle.load(f)
-        except ModuleNotFoundError:
+        except ModuleNotFoundError as err:
             error_msg = "could not load devicetree, something may be wrong " \
                     + "with the python environment"
-            raise RuntimeError(error_msg)
+            raise RuntimeError(error_msg) from err
 
         return edt.chosen_node('zephyr,code-partition')
 
@@ -124,14 +118,52 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
 
         return self.build_conf['CONFIG_BOARD']
 
+    def get_flash_base_of_partition(self, partition_nd):
+        # Return the memory-mapped base address of the flash (NVM) memory node
+        # that contains 'partition_nd'.
+        #
+        # A partition's reg address is translated through any parent 'ranges'
+        # properties, so partition_nd.regs[0].addr is the absolute, memory-mapped
+        # address. To turn that into an offset within the flash device, subtract
+        # the base of the enclosing flash memory node. Walk up the parents to
+        # find it rather than assuming a fixed depth: fixed-partitions nest the
+        # partition under a 'partitions' wrapper node, while zephyr,mapped-partition
+        # nodes may be nested directly inside one another and inside the flash.
+        #
+        # The flash memory node is the nearest ancestor that carries a reg (a
+        # memory-mapped address) and is not itself a partition. Wrapper nodes
+        # such as the fixed-partitions 'partitions' node have no reg and are
+        # skipped; nested partitions are skipped so the offset is resolved
+        # relative to the physical flash rather than an enclosing partition.
+        # Use the node's DTS 'compatible' list rather than matching_compat, as
+        # the latter is None when a node has no matched binding.
+        node = partition_nd.parent
+        while node is not None:
+            is_partition = any('partition' in compat for compat in node.compats)
+            if node.regs and not is_partition:
+                return node.regs[0].addr
+            node = node.parent
+
+        raise RuntimeError(
+            f'could not find the flash memory node containing {partition_nd.path}')
+
     def get_dts_img_offset(self):
         if self.build_conf.getboolean('CONFIG_BOOTLOADER_BOSSA_LEGACY'):
             return 0
 
-        if self.build_conf.getboolean('CONFIG_HAS_FLASH_LOAD_OFFSET'):
-            return self.build_conf['CONFIG_FLASH_LOAD_OFFSET']
+        # Derive the flash offset entirely from the devicetree.
+        # flash_address_from_build_conf() returns the absolute (memory-mapped)
+        # address of the code image, handling zephyr,mapped-partition (where
+        # CONFIG_FLASH_LOAD_OFFSET is disallowed), CONFIG_FLASH_LOAD_OFFSET and
+        # the plain base-address cases alike. Subtract the base address of the
+        # flash node that actually contains the code partition to get the
+        # offset within that flash.
+        code_partition_nd = self.get_chosen_code_partition_node()
+        if code_partition_nd is None:
+            return 0
 
-        return 0
+        flash_base_address = self.get_flash_base_of_partition(code_partition_nd)
+        return self.flash_address_from_build_conf(self.build_conf) - flash_base_address
 
     def get_image_offset(self, supports_offset):
         """Validates and returns the flash offset"""
@@ -151,7 +183,9 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
 
     def is_gnu_coreutils_stty(self):
         try:
-            result = subprocess.run(['stty', '--version'], capture_output=True, text=True, check=True)
+            result = subprocess.run(
+                ['stty', '--version'], capture_output=True, text=True, check=True
+            )
             return 'coreutils' in result.stdout
         except subprocess.CalledProcessError:
             return False
@@ -185,8 +219,11 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
 
     def make_bossac_cmd(self):
         self.ensure_output('bin')
-        cmd_flash = [self.bossac, '-p', self.port, '-R', '-e', '-w', '-v',
+        cmd_flash = [self.bossac, '-p', self.port, '-R', '-w', '-v',
                      '-b', self.cfg.bin_file]
+
+        if self.erase:
+            cmd_flash += ['-e']
 
         dt_chosen_code_partition_nd = self.get_chosen_code_partition_node()
 
@@ -200,7 +237,7 @@ class BossacBinaryRunner(ZephyrBinaryRunner):
             offset = self.get_image_offset(self.supports('--offset'))
 
             if offset is not None and int(str(offset), 16) > 0:
-                cmd_flash += ['-o', '%s' % offset]
+                cmd_flash += ['-o', str(offset)]
 
         elif dt_chosen_code_partition_nd is not None:
             error_msg = 'There is no CONFIG_USE_DT_CODE_PARTITION Kconfig' \

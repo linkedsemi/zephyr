@@ -20,15 +20,6 @@ static void bmi08x_handle_drdy_gyr(const struct device *dev)
 {
 	struct bmi08x_gyro_data *data = dev->data;
 
-#ifdef CONFIG_PM_DEVICE
-	enum pm_device_state state;
-
-	(void)pm_device_state_get(dev, &state);
-	if (state != PM_DEVICE_STATE_ACTIVE) {
-		return;
-	}
-#endif
-
 	if (data->handler_drdy_gyr) {
 		data->handler_drdy_gyr(dev, data->drdy_trig_gyr);
 	}
@@ -89,8 +80,8 @@ int bmi08x_trigger_set_gyr(const struct device *dev, const struct sensor_trigger
 	struct bmi08x_gyro_data *data = dev->data;
 
 	if ((trig->chan == SENSOR_CHAN_GYRO_XYZ) && (trig->type == SENSOR_TRIG_DATA_READY)) {
-		data->handler_drdy_gyr = handler;
 		data->drdy_trig_gyr = trig;
+		data->handler_drdy_gyr = handler;
 		return 0;
 	}
 
@@ -104,7 +95,7 @@ int bmi08x_gyr_trigger_mode_init(const struct device *dev)
 	int ret;
 
 	if (!gpio_is_ready_dt(&cfg->int_gpio)) {
-		LOG_ERR("GPIO device not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->int_gpio.port);
 		return -ENODEV;
 	}
 

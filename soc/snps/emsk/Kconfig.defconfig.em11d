@@ -14,19 +14,16 @@ config NUM_IRQ_PRIO_LEVELS
 
 config NUM_IRQS
 	# must be > the highest interrupt number used
-	default 38 if "$(BOARD_REVISION)" = "2.3"
-	default 36 if "$(BOARD_REVISION)" = "2.2"
+	default 38 if "$(BOARD_REVISION)" = "2.3.0"
+	default 36 if "$(BOARD_REVISION)" = "2.2.0"
 
 config RGF_NUM_BANKS
 	default 2
 
-config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default 20000000
-
 config HARVARD
 	default n
 
-config CACHE_MANAGEMENT
+configdefault CACHE_MANAGEMENT
 	default y
 
 config FP_FPU_DA

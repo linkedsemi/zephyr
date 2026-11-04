@@ -15,38 +15,47 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include <zephyr/drivers/timer/system_timer.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/irq.h>
 #include <zephyr/drivers/counter.h>
+#include <zephyr/drivers/reset.h>
 #include <zephyr/pm/policy.h>
 
 #include <zephyr/spinlock.h>
 
+/* Define for grep-ability, even though this will not be used */
 #define DT_DRV_COMPAT st_stm32_lptim
 
-#if DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) > 1
-#error Only one LPTIM instance should be enabled
+#define LPTIM_SYSTIMER_NODE DT_CHOSEN(zephyr_system_timer)
+
+#if DT_NUM_CLOCKS(LPTIM_SYSTIMER_NODE) <= 1
+#error "LPTIM source clock must be provided in Device Tree"
 #endif
 
-#define LPTIM (LPTIM_TypeDef *) DT_INST_REG_ADDR(0)
+#define LPTIM ((LPTIM_TypeDef *)DT_REG_ADDR(LPTIM_SYSTIMER_NODE))
 
-#if DT_INST_NUM_CLOCKS(0) == 1
-#warning Kconfig for LPTIM source clock (LSI/LSE) is deprecated, use device tree.
-static const struct stm32_pclken lptim_clk[] = {
-	STM32_CLOCK_INFO(0, DT_DRV_INST(0)),
-	/* Use Kconfig to configure source clocks fields */
-	/* Fortunately, values are consistent across enabled series */
-#ifdef CONFIG_STM32_LPTIM_CLOCK_LSI
-	{.bus = STM32_SRC_LSI, .enr = LPTIM1_SEL(1)}
-#else
-	{.bus = STM32_SRC_LSE, .enr = LPTIM1_SEL(3)}
-#endif
-};
-#else
-static const struct stm32_pclken lptim_clk[] = STM32_DT_INST_CLOCKS(0);
-#endif
+#if defined(CONFIG_SOC_SERIES_STM32MP1X)
+#define LL_LPTIM_ClearFlag_ARRM  LL_LPTIM_ClearFLAG_ARRM
+#define LL_LPTIM_ClearFlag_CMPM  LL_LPTIM_ClearFLAG_CMPM
+#endif /* CONFIG_SOC_SERIES_STM32MP1X */
+
+#if defined(CONFIG_STM32_HAL2)
+#define STM32_LPTIM_OCPOLARITY_HIGH    LL_LPTIM_OCPOLARITY_HIGH
+#define STM32_LPTIM_OCPOLARITY_LOW     LL_LPTIM_OCPOLARITY_LOW
+#define STM32_LPTIM_PRELOAD_DISABLED   LL_LPTIM_PRELOAD_DISABLED
+#define STM32_LPTIM_PRELOAD_ENABLED    LL_LPTIM_PRELOAD_ENABLED
+#else /* CONFIG_STM32_HAL2 */
+#define STM32_LPTIM_OCPOLARITY_HIGH    LL_LPTIM_OUTPUT_POLARITY_REGULAR
+#define STM32_LPTIM_OCPOLARITY_LOW     LL_LPTIM_OUTPUT_POLARITY_INVERSE
+#define STM32_LPTIM_PRELOAD_DISABLED   LL_LPTIM_UPDATE_MODE_IMMEDIATE
+#define STM32_LPTIM_PRELOAD_ENABLED    LL_LPTIM_UPDATE_MODE_ENDOFPERIOD
+#endif /* CONFIG_STM32_HAL2 */
+
+static const struct stm32_pclken lptim_clk[] = STM32_DT_CLOCKS(LPTIM_SYSTIMER_NODE);
 
 static const struct device *const clk_ctrl = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
+
+static const struct reset_dt_spec lptim_reset = RESET_DT_SPEC_GET(LPTIM_SYSTIMER_NODE);
 
 /*
  * Assumptions and limitations:
@@ -66,7 +75,7 @@ static const struct device *const clk_ctrl = DEVICE_DT_GET(STM32_CLOCK_CONTROL_N
 static int32_t lptim_time_base;
 static uint32_t lptim_clock_freq = CONFIG_STM32_LPTIM_CLOCK;
 /* The prescaler given by the DTS and to apply to the lptim_clock_freq */
-static uint32_t lptim_clock_presc = DT_PROP(DT_DRV_INST(0), st_prescaler);
+static uint32_t lptim_clock_presc = DT_PROP(LPTIM_SYSTIMER_NODE, st_prescaler);
 
 /* Minimum nb of clock cycles to have to set autoreload register correctly */
 #define LPTIM_GUARD_VALUE 2
@@ -83,9 +92,6 @@ static bool autoreload_ready = true;
 static struct k_spinlock lock;
 
 #ifdef CONFIG_STM32_LPTIM_STDBY_TIMER
-
-#define CURRENT_CPU \
-	(COND_CODE_1(CONFIG_SMP, (arch_curr_cpu()->id), (_current_cpu->id)))
 
 #define cycle_t uint32_t
 
@@ -107,6 +113,123 @@ static uint32_t stdby_timer_pre_stdby;
 static const struct device *stdby_timer = DEVICE_DT_GET(DT_CHOSEN(st_lptim_stdby_timer));
 
 #endif /* CONFIG_STM32_LPTIM_STDBY_TIMER */
+
+/**
+ * @brief Enable autonomous clock for the LPTIM instance in use
+ *
+ * Enables autonomous mode (if supported) for whichever LPTIM instance
+ * is configured as the system timer. This allows the LPTIM to continue
+ * running in low power modes.
+ */
+static void lptim_enable_autonomous_mode(void)
+{
+	const uint32_t lptim_base = (uint32_t)LPTIM;
+
+	switch (lptim_base) {
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim1)) && defined(LL_SRDAMR_GRP1_PERIPH_LPTIM1AMEN)
+	case DT_REG_ADDR(DT_NODELABEL(lptim1)):
+		LL_SRDAMR_GRP1_EnableAutonomousClock(LL_SRDAMR_GRP1_PERIPH_LPTIM1AMEN);
+		break;
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim3)) && defined(LL_SRDAMR_GRP1_PERIPH_LPTIM3AMEN)
+	case DT_REG_ADDR(DT_NODELABEL(lptim3)):
+		LL_SRDAMR_GRP1_EnableAutonomousClock(LL_SRDAMR_GRP1_PERIPH_LPTIM3AMEN);
+		break;
+#endif
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim4)) && defined(LL_SRDAMR_GRP1_PERIPH_LPTIM4AMEN)
+	case DT_REG_ADDR(DT_NODELABEL(lptim4)):
+		LL_SRDAMR_GRP1_EnableAutonomousClock(LL_SRDAMR_GRP1_PERIPH_LPTIM4AMEN);
+		break;
+#endif
+	default:
+		/* Note: LPTIM2, LPTIM5, LPTIM6 do not support autonomous mode */
+		break;
+	}
+}
+
+/**
+ * @brief Freeze LPTIM during debug for the instance in use
+ *
+ * Configures the debug subsystem to freeze the LPTIM counter when the CPU
+ * is halted in a debugger. Handles all LPTIM instances across different buses.
+ */
+static void lptim_freeze_during_debug(void)
+{
+#ifdef CONFIG_DEBUG
+	const uint32_t lptim_base = (uint32_t)LPTIM;
+
+	switch (lptim_base) {
+		/* LPTIM1 - can be on APB1_GRP1, APB3_GRP1, or APB7_GRP1 */
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim1))
+	case DT_REG_ADDR(DT_NODELABEL(lptim1)):
+#if defined(LL_DBGMCU_APB1_GRP1_LPTIM1_STOP)
+		LL_DBGMCU_APB1_GRP1_FreezePeriph(LL_DBGMCU_APB1_GRP1_LPTIM1_STOP);
+#elif defined(LL_DBGMCU_APB3_GRP1_LPTIM1_STOP)
+		LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM1_STOP);
+#elif defined(LL_DBGMCU_APB7_GRP1_LPTIM1_STOP)
+		LL_DBGMCU_APB7_GRP1_FreezePeriph(LL_DBGMCU_APB7_GRP1_LPTIM1_STOP);
+#endif
+		break;
+#endif
+		/* LPTIM2 - can be on APB1_GRP1, APB1_GRP2, APB3_GRP1, or APB4_GRP1 */
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim2))
+	case DT_REG_ADDR(DT_NODELABEL(lptim2)):
+#if defined(LL_DBGMCU_APB1_GRP1_LPTIM2_STOP)
+		LL_DBGMCU_APB1_GRP1_FreezePeriph(LL_DBGMCU_APB1_GRP1_LPTIM2_STOP);
+#elif defined(LL_DBGMCU_APB1_GRP2_LPTIM2_STOP)
+		LL_DBGMCU_APB1_GRP2_FreezePeriph(LL_DBGMCU_APB1_GRP2_LPTIM2_STOP);
+#elif defined(LL_DBGMCU_APB3_GRP1_LPTIM2_STOP)
+		LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM2_STOP);
+#elif defined(LL_DBGMCU_APB4_GRP1_LPTIM2_STOP)
+		LL_DBGMCU_APB4_GRP1_FreezePeriph(LL_DBGMCU_APB4_GRP1_LPTIM2_STOP);
+#endif
+		break;
+#endif
+		/* LPTIM3 - can be on APB1_GRP2, APB3_GRP1, or APB4_GRP1 */
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim3))
+	case DT_REG_ADDR(DT_NODELABEL(lptim3)):
+#if defined(LL_DBGMCU_APB1_GRP2_LPTIM3_STOP)
+		LL_DBGMCU_APB1_GRP2_FreezePeriph(LL_DBGMCU_APB1_GRP2_LPTIM3_STOP);
+#elif defined(LL_DBGMCU_APB3_GRP1_LPTIM3_STOP)
+		LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM3_STOP);
+#elif defined(LL_DBGMCU_APB4_GRP1_LPTIM3_STOP)
+		LL_DBGMCU_APB4_GRP1_FreezePeriph(LL_DBGMCU_APB4_GRP1_LPTIM3_STOP);
+#endif
+		break;
+#endif
+		/* LPTIM4 - can be on APB3_GRP1 or APB4_GRP1 */
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim4))
+	case DT_REG_ADDR(DT_NODELABEL(lptim4)):
+#if defined(LL_DBGMCU_APB3_GRP1_LPTIM4_STOP)
+		LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM4_STOP);
+#elif defined(LL_DBGMCU_APB4_GRP1_LPTIM4_STOP)
+		LL_DBGMCU_APB4_GRP1_FreezePeriph(LL_DBGMCU_APB4_GRP1_LPTIM4_STOP);
+#endif
+		break;
+#endif
+		/* LPTIM5 - can be on APB3_GRP1 or APB4_GRP1 */
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim5))
+	case DT_REG_ADDR(DT_NODELABEL(lptim5)): {
+#if defined(LL_DBGMCU_APB3_GRP1_LPTIM5_STOP)
+		LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM5_STOP);
+#elif defined(LL_DBGMCU_APB4_GRP1_LPTIM5_STOP)
+		LL_DBGMCU_APB4_GRP1_FreezePeriph(LL_DBGMCU_APB4_GRP1_LPTIM5_STOP);
+#endif
+	}
+#endif
+	/* LPTIM6 - on APB3_GRP1 */
+#if DT_NODE_EXISTS(DT_NODELABEL(lptim6))
+	case DT_REG_ADDR(DT_NODELABEL(lptim6)):
+#if defined(LL_DBGMCU_APB3_GRP1_LPTIM6_STOP)
+		LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM6_STOP);
+#endif
+		break;
+#endif
+	default:
+		break;
+	}
+#endif /* CONFIG_DEBUG */
+}
 
 static inline bool arrm_state_get(void)
 {
@@ -136,7 +259,7 @@ static void lptim_irq_handler(const struct device *unused)
 		k_spinlock_key_t key = k_spin_lock(&lock);
 
 		/* do not change ARR yet, sys_clock_announce will do */
-		LL_LPTIM_ClearFLAG_ARRM(LPTIM);
+		LL_LPTIM_ClearFlag_ARRM(LPTIM);
 
 		/* increase the total nb of autoreload count
 		 * used in the sys_clock_cycle_get_32() function.
@@ -192,7 +315,7 @@ static inline uint32_t z_clock_lptim_getcounter(void)
 	return lp_time;
 }
 
-void sys_clock_set_timeout(int32_t ticks, bool idle)
+void sys_clock_set_timeout(uint32_t ticks, bool idle)
 {
 	/* new LPTIM AutoReload value to set (aligned on Kernel ticks) */
 	uint32_t next_arr = 0;
@@ -203,7 +326,7 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 #ifdef CONFIG_STM32_LPTIM_STDBY_TIMER
 	const struct pm_state_info *next;
 
-	next = pm_policy_next_state(CURRENT_CPU, ticks);
+	next = pm_policy_next_state(_current_cpu->id, ticks);
 
 	/* Check if STANBY or STOP3 is requested */
 	timeout_stdby = false;
@@ -244,6 +367,9 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 		counter_get_value(stdby_timer, &stdby_timer_pre_stdby);
 		lptim_cnt_pre_stdby = z_clock_lptim_getcounter();
 
+		LL_LPTIM_DisableIT_ARROK(LPTIM);
+		LL_LPTIM_ClearFlag_ARROK(LPTIM);
+		k_irq_clear_pending(DT_IRQN(LPTIM_SYSTIMER_NODE));
 		/* Stop clocks for LPTIM, since RTC is used instead */
 		clock_control_off(clk_ctrl, (clock_control_subsys_t) &lptim_clk[0]);
 
@@ -256,10 +382,13 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 	}
 
 	/*
-	 * When CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE = y, ticks equals to -1
-	 * is treated as a lptim off ; never waking up ; lptim not clocked anymore
+	 * The kernel has no pending timeout, which it signals with
+	 * ticks == SYS_CLOCK_MAX_WAIT. Under sloppy idle the LPTIM can be
+	 * turned off entirely (never waking up, not clocked anymore).
+	 * Without sloppy idle we fall through and schedule the (capped)
+	 * timeout so the uptime tick count stays correct.
 	 */
-	if (ticks == K_TICKS_FOREVER) {
+	if (IS_ENABLED(CONFIG_SYSTEM_CLOCK_SLOPPY_IDLE) && ticks == SYS_CLOCK_MAX_WAIT) {
 		clock_control_off(clk_ctrl, (clock_control_subsys_t) &lptim_clk[0]);
 		return;
 	}
@@ -274,12 +403,17 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 	if (err < 0) {
 		return;
 	}
+
+	if (idle) {
+		return;
+	}
+
 	/* passing ticks==1 means "announce the next tick",
-	 * ticks value of zero (or even negative) is legal and
+	 * ticks value of zero is legal and
 	 * treated identically: it simply indicates the kernel would like the
 	 * next tick announcement as soon as possible.
 	 */
-	ticks = CLAMP(ticks - 1, 1, lptim_time_base);
+	ticks = CLAMP(ticks, 2, lptim_time_base) - 1;
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
@@ -351,7 +485,6 @@ static uint32_t sys_clock_lp_time_get(void)
 	return lp_time;
 }
 
-
 uint32_t sys_clock_elapsed(void)
 {
 	if (!IS_ENABLED(CONFIG_TICKLESS_KERNEL)) {
@@ -391,10 +524,10 @@ uint32_t sys_clock_cycle_get_32(void)
 	return (uint32_t)(ret);
 }
 
-/* Wait for the IER register of the stm32U5 ready, after any bit write operation */
+/* Wait for the IER register to be ready, after any bit write operation */
 void stm32_lptim_wait_ready(void)
 {
-#ifdef CONFIG_SOC_SERIES_STM32U5X
+#if defined(LL_LPTIM_ISR_DIEROK)
 	while (LL_LPTIM_IsActiveFlag_DIEROK(LPTIM) == 0) {
 	}
 	LL_LPTIM_ClearFlag_DIEROK(LPTIM);
@@ -408,9 +541,8 @@ static int sys_clock_driver_init(void)
 	uint32_t count_per_tick;
 	int err;
 
-	if (!device_is_ready(clk_ctrl)) {
-		return -ENODEV;
-	}
+	/* Reset timer to default state using RCC */
+	(void)reset_line_toggle_dt(&lptim_reset);
 
 	/* Enable LPTIM bus clock */
 	err = clock_control_on(clk_ctrl, (clock_control_subsys_t) &lptim_clk[0]);
@@ -418,9 +550,8 @@ static int sys_clock_driver_init(void)
 		return -EIO;
 	}
 
-#if defined(LL_SRDAMR_GRP1_PERIPH_LPTIM1AMEN)
-	LL_SRDAMR_GRP1_EnableAutonomousClock(LL_SRDAMR_GRP1_PERIPH_LPTIM1AMEN);
-#endif
+	/* Enable autonomous mode for the LPTIM instance in use */
+	lptim_enable_autonomous_mode();
 
 	/* Enable LPTIM clock source */
 	err = clock_control_configure(clk_ctrl,
@@ -450,6 +581,22 @@ static int sys_clock_driver_init(void)
 	}
 #endif
 
+#if DT_NODE_HAS_PROP(LPTIM_SYSTIMER_NODE, st_timeout)
+	uint32_t timeout = DT_PROP(LPTIM_SYSTIMER_NODE, st_timeout);
+
+	if (timeout > (lptim_clock_presc * 0xFFFF) / lptim_clock_freq) {
+		__ASSERT(0,
+			"st,timeout can't be higher than range defined by LPTIM presc and freq");
+		return -EIO;
+	}
+
+
+	/*
+	 * Define the lptim_time_base that should be set to expire at "timeout" seconds
+	 * running counter at (lptim_clock_freq divided by lptim_clock_presc) Hz
+	 */
+	lptim_time_base = (lptim_clock_freq * timeout) / lptim_clock_presc;
+#else
 	/* Set LPTIM time base based on clock source freq */
 	if (lptim_clock_freq == KHZ(32)) {
 		lptim_time_base = 0xF9FF;
@@ -458,6 +605,8 @@ static int sys_clock_driver_init(void)
 	} else {
 		return -EIO;
 	}
+
+#endif /* st_timeout */
 
 #if !defined(CONFIG_STM32_LPTIM_TICK_FREQ_RATIO_OVERRIDE)
 	/*
@@ -479,10 +628,10 @@ static int sys_clock_driver_init(void)
 	lptim_clock_freq = lptim_clock_freq / lptim_clock_presc;
 
 	/* Clear the event flag and possible pending interrupt */
-	IRQ_CONNECT(DT_INST_IRQN(0),
-		    DT_INST_IRQ(0, priority),
+	IRQ_CONNECT(DT_IRQN(LPTIM_SYSTIMER_NODE),
+		    DT_IRQ(LPTIM_SYSTIMER_NODE, priority),
 		    lptim_irq_handler, 0, 0);
-	irq_enable(DT_INST_IRQN(0));
+	irq_enable(DT_IRQN(LPTIM_SYSTIMER_NODE));
 
 #ifdef CONFIG_SOC_SERIES_STM32WLX
 	/* Enable the LPTIM wakeup EXTI line */
@@ -494,52 +643,46 @@ static int sys_clock_driver_init(void)
 	/* the LPTIM clock freq is affected by the prescaler */
 	LL_LPTIM_SetPrescaler(LPTIM, (__CLZ(__RBIT(lptim_clock_presc)) << LPTIM_CFGR_PRESC_Pos));
 
-#if defined(CONFIG_SOC_SERIES_STM32U5X) || \
-	defined(CONFIG_SOC_SERIES_STM32H5X) || \
-	defined(CONFIG_SOC_SERIES_STM32WBAX)
-	LL_LPTIM_OC_SetPolarity(LPTIM, LL_LPTIM_CHANNEL_CH1,
-				LL_LPTIM_OUTPUT_POLARITY_REGULAR);
-#else
-	LL_LPTIM_SetPolarity(LPTIM, LL_LPTIM_OUTPUT_POLARITY_REGULAR);
-#endif
-	LL_LPTIM_SetUpdateMode(LPTIM, LL_LPTIM_UPDATE_MODE_IMMEDIATE);
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim)
+	LL_LPTIM_OC_SetPolarity(LPTIM, LL_LPTIM_CHANNEL_CH1, STM32_LPTIM_OCPOLARITY_HIGH);
+#else /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim) */
+	LL_LPTIM_SetPolarity(LPTIM, STM32_LPTIM_OCPOLARITY_HIGH);
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim) */
+	LL_LPTIM_SetUpdateMode(LPTIM, STM32_LPTIM_PRELOAD_DISABLED);
 	LL_LPTIM_SetCounterMode(LPTIM, LL_LPTIM_COUNTER_MODE_INTERNAL);
 	LL_LPTIM_DisableTimeout(LPTIM);
 	/* counting start is initiated by software */
 	LL_LPTIM_TrigSw(LPTIM);
 
-#if defined(CONFIG_SOC_SERIES_STM32U5X) || \
-	defined(CONFIG_SOC_SERIES_STM32H5X) || \
-	defined(CONFIG_SOC_SERIES_STM32WBAX)
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim)
 	/* Enable the LPTIM before proceeding with configuration */
 	LL_LPTIM_Enable(LPTIM);
 
 	LL_LPTIM_DisableIT_CC1(LPTIM);
 	stm32_lptim_wait_ready();
-	LL_LPTIM_ClearFLAG_CC1(LPTIM);
-#else
+	LL_LPTIM_ClearFlag_CC1(LPTIM);
+#else /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim) */
 	/* LPTIM interrupt set-up before enabling */
 	/* no Compare match Interrupt */
 	LL_LPTIM_DisableIT_CMPM(LPTIM);
-	LL_LPTIM_ClearFLAG_CMPM(LPTIM);
-#endif
+	LL_LPTIM_ClearFlag_CMPM(LPTIM);
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim) */
 
 	/* Autoreload match Interrupt */
 	LL_LPTIM_EnableIT_ARRM(LPTIM);
 	stm32_lptim_wait_ready();
-	LL_LPTIM_ClearFLAG_ARRM(LPTIM);
+	LL_LPTIM_ClearFlag_ARRM(LPTIM);
 
 	/* ARROK bit validates the write operation to ARR register */
+	autoreload_ready = true;
 	LL_LPTIM_EnableIT_ARROK(LPTIM);
 	stm32_lptim_wait_ready();
 	LL_LPTIM_ClearFlag_ARROK(LPTIM);
 
-#if !defined(CONFIG_SOC_SERIES_STM32U5X) && \
-	!defined(CONFIG_SOC_SERIES_STM32H5X) && \
-	!defined(CONFIG_SOC_SERIES_STM32WBAX)
+#if !DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim)
 	/* Enable the LPTIM counter */
 	LL_LPTIM_Enable(LPTIM);
-#endif
+#endif /* !DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_lptim) */
 
 	/* Set the Autoreload value once the timer is enabled */
 	if (IS_ENABLED(CONFIG_TICKLESS_KERNEL)) {
@@ -555,15 +698,9 @@ static int sys_clock_driver_init(void)
 	/* Start the LPTIM counter in continuous mode */
 	LL_LPTIM_StartCounter(LPTIM, LL_LPTIM_OPERATING_MODE_CONTINUOUS);
 
-#ifdef CONFIG_DEBUG
-	/* stop LPTIM during DEBUG */
-#if defined(LL_DBGMCU_APB1_GRP1_LPTIM1_STOP)
-	LL_DBGMCU_APB1_GRP1_FreezePeriph(LL_DBGMCU_APB1_GRP1_LPTIM1_STOP);
-#elif defined(LL_DBGMCU_APB3_GRP1_LPTIM1_STOP)
-	LL_DBGMCU_APB3_GRP1_FreezePeriph(LL_DBGMCU_APB3_GRP1_LPTIM1_STOP);
-#endif
+	/* Freeze LPTIM during debug */
+	lptim_freeze_during_debug();
 
-#endif
 	return 0;
 }
 
@@ -605,7 +742,7 @@ void sys_clock_idle_exit(void)
 		stdby_timer_us = counter_ticks_to_us(stdby_timer, stdby_timer_diff);
 
 		/* Convert standby time in LPTIM cnt */
-		missed_lptim_cnt = (sys_clock_hw_cycles_per_sec() * stdby_timer_us) /
+		missed_lptim_cnt = (CONFIG_STM32_LPTIM_CLOCK * stdby_timer_us) /
 				   USEC_PER_SEC;
 		/* Add the LPTIM cnt pre standby */
 		missed_lptim_cnt += lptim_cnt_pre_stdby;

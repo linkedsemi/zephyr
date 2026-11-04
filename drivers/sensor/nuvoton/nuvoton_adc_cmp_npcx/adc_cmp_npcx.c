@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(adc_cmp_npcx, CONFIG_SENSOR_LOG_LEVEL);
 struct adc_cmp_npcx_data {
 	/* Work queue to be notified when threshold assertion happens */
 	struct k_work work;
-	/* Sensor trigger hanlder to notify user of assetion */
+	/* Sensor trigger handler to notify user of assetion */
 	sensor_trigger_handler_t handler;
 	/* ADC NPCX driver reference */
 	const struct device *dev;
@@ -26,7 +26,7 @@ struct adc_cmp_npcx_data {
 struct adc_cmp_npcx_config {
 	/*
 	 * Pointer of ADC device that will be performing measurement, this
-	 * must be provied by device tree.
+	 * must be provided by device tree.
 	 */
 	const struct device *adc;
 	/*
@@ -243,7 +243,7 @@ static int adc_cmp_npcx_channel_get(const struct device *dev,
 	return -ENOTSUP;
 }
 
-static const struct sensor_driver_api adc_cmp_npcx_api = {
+static DEVICE_API(sensor, adc_cmp_npcx_api) = {
 	.attr_set = adc_cmp_npcx_attr_set,
 	.attr_get = adc_cmp_npcx_attr_get,
 	.trigger_set = adc_cmp_npcx_trigger_set,

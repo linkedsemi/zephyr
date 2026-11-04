@@ -1,28 +1,9 @@
-/***********************************************************************************************//**
- * \file cyabs_rtos_zephyr.c
- *
- * \brief
- * Implementation for Zephyr RTOS abstraction
- *
- ***************************************************************************************************
- * \copyright
- * Copyright 2018-2022 Cypress Semiconductor Corporation (an Infineon company) or
- * an affiliate of Cypress Semiconductor Corporation
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Infineon Technologies AG,
+ * SPDX-FileCopyrightText: or an affiliate of Infineon Technologies AG. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- **************************************************************************************************/
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -231,11 +212,8 @@ cy_rslt_t cy_rtos_get_thread_state(cy_thread_t *thread, cy_thread_state_t *state
 				*state = CY_THREAD_STATE_UNKNOWN;
 				break;
 
-			case _THREAD_PRESTART:
-				*state = CY_THREAD_STATE_INACTIVE;
-				break;
-
 			case _THREAD_SUSPENDED:
+			case _THREAD_SLEEPING:
 			case _THREAD_PENDING:
 				*state = CY_THREAD_STATE_BLOCKED;
 				break;
@@ -311,10 +289,8 @@ cy_rslt_t cy_rtos_wait_thread_notification(cy_time_t timeout_ms)
 	return status;
 }
 
-cy_rslt_t cy_rtos_thread_set_notification(cy_thread_t *thread, bool in_isr)
+cy_rslt_t cy_rtos_thread_set_notification(cy_thread_t *thread)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rslt_t status = CY_RSLT_SUCCESS;
 
 	if (thread == NULL) {
@@ -429,8 +405,6 @@ cy_rslt_t cy_rtos_init_semaphore(cy_semaphore_t *semaphore, uint32_t maxcount, u
 
 cy_rslt_t cy_rtos_get_semaphore(cy_semaphore_t *semaphore, cy_time_t timeout_ms, bool in_isr)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rtos_error_t status_internal;
 	cy_rslt_t status;
 
@@ -440,9 +414,11 @@ cy_rslt_t cy_rtos_get_semaphore(cy_semaphore_t *semaphore, cy_time_t timeout_ms,
 		/* Convert timeout value */
 		k_timeout_t k_timeout;
 
-		if (k_is_in_isr()) {
+		if (k_is_in_isr() || k_is_pre_kernel()) {
 			/* NOTE: Based on Zephyr documentation when k_sem_take
 			 * is called from ISR timeout must be set to K_NO_WAIT.
+			 * Also before the kernel is started k_sem_take cannot
+			 * block.
 			 */
 			k_timeout = K_NO_WAIT;
 		} else if (timeout_ms == CY_RTOS_NEVER_TIMEOUT) {
@@ -465,8 +441,6 @@ cy_rslt_t cy_rtos_get_semaphore(cy_semaphore_t *semaphore, cy_time_t timeout_ms,
 
 cy_rslt_t cy_rtos_set_semaphore(cy_semaphore_t *semaphore, bool in_isr)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rslt_t status = CY_RSLT_SUCCESS;
 
 	if (semaphore == NULL) {
@@ -526,8 +500,6 @@ cy_rslt_t cy_rtos_init_event(cy_event_t *event)
 
 cy_rslt_t cy_rtos_setbits_event(cy_event_t *event, uint32_t bits, bool in_isr)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rslt_t status = CY_RSLT_SUCCESS;
 
 	if (event == NULL) {
@@ -542,8 +514,6 @@ cy_rslt_t cy_rtos_setbits_event(cy_event_t *event, uint32_t bits, bool in_isr)
 
 cy_rslt_t cy_rtos_clearbits_event(cy_event_t *event, uint32_t bits, bool in_isr)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rslt_t status = CY_RSLT_SUCCESS;
 
 	if (event == NULL) {
@@ -648,8 +618,6 @@ cy_rslt_t cy_rtos_init_queue(cy_queue_t *queue, size_t length, size_t itemsize)
 cy_rslt_t cy_rtos_put_queue(cy_queue_t *queue, const void *item_ptr, cy_time_t timeout_ms,
 			    bool in_isr)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rtos_error_t status_internal;
 	cy_rslt_t status;
 
@@ -677,8 +645,6 @@ cy_rslt_t cy_rtos_put_queue(cy_queue_t *queue, const void *item_ptr, cy_time_t t
 
 cy_rslt_t cy_rtos_get_queue(cy_queue_t *queue, void *item_ptr, cy_time_t timeout_ms, bool in_isr)
 {
-	CY_UNUSED_PARAMETER(in_isr);
-
 	cy_rtos_error_t status_internal;
 	cy_rslt_t status;
 

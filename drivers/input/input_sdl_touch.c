@@ -26,6 +26,21 @@ static void sdl_input_callback(struct sdl_input_data *data)
 		input_report_abs(data->dev, INPUT_ABS_Y, data->y, false, K_FOREVER);
 		input_report_key(data->dev, INPUT_BTN_TOUCH, 1, true, K_FOREVER);
 	}
+
+	if (data->middle_pending) {
+		input_report_key(data->dev, INPUT_BTN_MIDDLE, data->middle, true, K_FOREVER);
+		data->middle_pending = false;
+	}
+
+	if (data->right_pending) {
+		input_report_key(data->dev, INPUT_BTN_RIGHT, data->right, true, K_FOREVER);
+		data->right_pending = false;
+	}
+
+	if (data->wheel != 0) {
+		input_report_rel(data->dev, INPUT_REL_WHEEL, data->wheel, true, K_FOREVER);
+		data->wheel = 0;
+	}
 }
 
 static int sdl_init(const struct device *dev)
@@ -41,7 +56,11 @@ static int sdl_init(const struct device *dev)
 	return 0;
 }
 
-static struct sdl_input_data sdl_data_0;
+#define INPUT_SDL_TOUCH_DEFINE(inst)                                                               \
+	static struct sdl_input_data sdl_data_##inst = {                                           \
+		.display_dev = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(inst, display)),              \
+	};                                                                                         \
+	DEVICE_DT_INST_DEFINE(inst, sdl_init, NULL, &sdl_data_##inst, NULL, POST_KERNEL,           \
+			      CONFIG_INPUT_INIT_PRIORITY, NULL);
 
-DEVICE_DT_INST_DEFINE(0, sdl_init, NULL, &sdl_data_0, NULL,
-		    POST_KERNEL, CONFIG_INPUT_INIT_PRIORITY, NULL);
+DT_INST_FOREACH_STATUS_OKAY(INPUT_SDL_TOUCH_DEFINE)

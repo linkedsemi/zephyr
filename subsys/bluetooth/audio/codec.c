@@ -16,15 +16,18 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/types.h>
 
 #include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/assigned_numbers.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net_buf.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/sys/check.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/util_utf8.h>
 
 LOG_MODULE_REGISTER(bt_audio_codec, CONFIG_BT_AUDIO_CODEC_LOG_LEVEL);
 
@@ -129,11 +132,26 @@ static int ltv_set_val(struct net_buf_simple *buf, uint8_t type, const uint8_t *
 		       size_t data_len)
 {
 	size_t new_buf_len;
+	uint16_t i = 0U;
 
-	for (uint16_t i = 0U; i < buf->len;) {
-		uint8_t *len = &buf->data[i++];
-		const uint8_t data_type = buf->data[i++];
-		const uint8_t value_len = *len - sizeof(data_type);
+	while (i < buf->len) {
+		uint8_t *len_ptr = &buf->data[i];
+		const uint8_t len = buf->data[i];
+		uint8_t data_type;
+		uint8_t value_len;
+
+		i += sizeof(len);
+
+		if (i + len > buf->len || len < sizeof(data_type)) {
+			LOG_DBG("Invalid len %u at i = %u", len, i);
+
+			return -EINVAL;
+		}
+
+		data_type = buf->data[i];
+		i += sizeof(data_type);
+
+		value_len = len - sizeof(data_type);
 
 		if (data_type == type) {
 			uint8_t *value = &buf->data[i];
@@ -177,7 +195,7 @@ static int ltv_set_val(struct net_buf_simple *buf, uint8_t type, const uint8_t *
 						return -ENOMEM;
 					}
 
-					if (data_len_to_move > 0) {
+					if (data_len_to_move > 0U) {
 						memmove(new_next_data_start, old_next_data_start,
 							data_len_to_move);
 					}
@@ -185,7 +203,7 @@ static int ltv_set_val(struct net_buf_simple *buf, uint8_t type, const uint8_t *
 				}
 
 				buf->len += diff;
-				*len += diff;
+				*len_ptr += diff;
 			}
 
 			return buf->len;
@@ -199,7 +217,7 @@ static int ltv_set_val(struct net_buf_simple *buf, uint8_t type, const uint8_t *
 	if (new_buf_len <= buf->size) {
 		net_buf_simple_add_u8(buf, data_len + sizeof(type)); /* len */
 		net_buf_simple_add_u8(buf, type); /* type */
-		if (data_len > 0) {
+		if (data_len > 0U) {
 			net_buf_simple_add_mem(buf, data, data_len); /* value */
 		}
 	} else {
@@ -213,11 +231,26 @@ static int ltv_set_val(struct net_buf_simple *buf, uint8_t type, const uint8_t *
 
 static int ltv_unset_val(struct net_buf_simple *buf, uint8_t type)
 {
-	for (uint16_t i = 0U; i < buf->len;) {
+	uint16_t i = 0U;
+
+	while (i < buf->len) {
 		uint8_t *ltv_start = &buf->data[i];
-		const uint8_t len = buf->data[i++];
-		const uint8_t data_type = buf->data[i++];
-		const uint8_t value_len = len - sizeof(data_type);
+		const uint8_t len = buf->data[i];
+		uint8_t data_type;
+		uint8_t value_len;
+
+		i += sizeof(len);
+
+		if (i + len > buf->len || len < sizeof(data_type)) {
+			LOG_DBG("Invalid len %u at i = %u", len, i);
+
+			return -EINVAL;
+		}
+
+		data_type = buf->data[i];
+		i += sizeof(data_type);
+
+		value_len = len - sizeof(data_type);
 
 		if (data_type == type) {
 			const uint8_t ltv_size = value_len + sizeof(data_type) + sizeof(len);
@@ -268,12 +301,12 @@ static void init_net_buf_simple_from_codec_cfg(struct net_buf_simple *buf,
 int bt_audio_codec_cfg_get_val(const struct bt_audio_codec_cfg *codec_cfg,
 			       enum bt_audio_codec_cfg_type type, const uint8_t **data)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data == NULL) {
+	if (data == NULL) {
 		LOG_DBG("data is NULL");
 		return -EINVAL;
 	}
@@ -288,17 +321,17 @@ int bt_audio_codec_cfg_set_val(struct bt_audio_codec_cfg *codec_cfg,
 	struct net_buf_simple buf;
 	int ret;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data == NULL) {
+	if (data == NULL) {
 		LOG_DBG("data is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data_len == 0U || data_len > UINT8_MAX) {
+	if (data_len == 0U || data_len > UINT8_MAX) {
 		LOG_DBG("Invalid data_len %zu", data_len);
 		return -EINVAL;
 	}
@@ -319,7 +352,7 @@ int bt_audio_codec_cfg_unset_val(struct bt_audio_codec_cfg *codec_cfg,
 	struct net_buf_simple buf;
 	int ret;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -340,7 +373,7 @@ int bt_audio_codec_cfg_get_freq(const struct bt_audio_codec_cfg *codec_cfg)
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec is NULL");
 		return -EINVAL;
 	}
@@ -385,7 +418,7 @@ int bt_audio_codec_cfg_get_frame_dur(const struct bt_audio_codec_cfg *codec_cfg)
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec is NULL");
 		return -EINVAL;
 	}
@@ -433,12 +466,12 @@ int bt_audio_codec_cfg_get_chan_allocation(const struct bt_audio_codec_cfg *code
 
 	*chan_allocation = 0;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(chan_allocation == NULL) {
+	if (chan_allocation == NULL) {
 		return -EINVAL;
 	}
 
@@ -485,7 +518,7 @@ int bt_audio_codec_cfg_get_octets_per_frame(const struct bt_audio_codec_cfg *cod
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec is NULL");
 		return -EINVAL;
 	}
@@ -521,7 +554,7 @@ int bt_audio_codec_cfg_get_frame_blocks_per_sdu(const struct bt_audio_codec_cfg 
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec is NULL");
 		return -EINVAL;
 	}
@@ -566,12 +599,12 @@ static void init_net_buf_simple_from_meta(struct net_buf_simple *buf, uint8_t me
 static int codec_meta_get_val(const uint8_t meta[], size_t meta_len,
 			      enum bt_audio_metadata_type type, const uint8_t **data)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data == NULL) {
+	if (data == NULL) {
 		LOG_DBG("data is NULL");
 		return -EINVAL;
 	}
@@ -585,17 +618,17 @@ static int codec_meta_set_val(uint8_t meta[], size_t meta_len, size_t meta_size,
 {
 	struct net_buf_simple buf;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data == NULL && data_len != 0) {
+	if (data == NULL && data_len != 0U) {
 		LOG_DBG("data is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data_len > UINT8_MAX) {
+	if (data_len > UINT8_MAX) {
 		LOG_DBG("Invalid data_len %zu", data_len);
 		return -EINVAL;
 	}
@@ -610,7 +643,7 @@ static int codec_meta_unset_val(uint8_t meta[], size_t meta_len, size_t meta_siz
 {
 	struct net_buf_simple buf;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -625,7 +658,7 @@ static int codec_meta_get_pref_context(const uint8_t meta[], size_t meta_len)
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -647,7 +680,7 @@ static int codec_meta_set_pref_context(uint8_t meta[], size_t meta_len, size_t m
 {
 	uint16_t ctx_le16;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -668,7 +701,7 @@ static int codec_meta_get_stream_context(const uint8_t meta[], size_t meta_len)
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -690,7 +723,7 @@ static int codec_meta_set_stream_context(uint8_t meta[], size_t meta_len, size_t
 {
 	uint16_t ctx_le16;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -712,12 +745,12 @@ static int codec_meta_get_program_info(const uint8_t meta[], size_t meta_len,
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(program_info == NULL) {
+	if (program_info == NULL) {
 		LOG_DBG("program_info is NULL");
 		return -EINVAL;
 	}
@@ -735,12 +768,12 @@ static int codec_meta_get_program_info(const uint8_t meta[], size_t meta_len,
 static int codec_meta_set_program_info(uint8_t meta[], size_t meta_len, size_t meta_size,
 				       const uint8_t *program_info, size_t program_info_len)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(program_info == NULL) {
+	if (program_info == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -754,12 +787,12 @@ static int codec_meta_get_lang(const uint8_t meta[], size_t meta_len, const uint
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(lang == NULL) {
+	if (lang == NULL) {
 		LOG_DBG("lang is NULL");
 		return -EINVAL;
 	}
@@ -781,12 +814,12 @@ static int codec_meta_get_lang(const uint8_t meta[], size_t meta_len, const uint
 static int codec_meta_set_lang(uint8_t meta[], size_t meta_len, size_t meta_size,
 			       const uint8_t lang[BT_AUDIO_LANG_SIZE])
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(lang == NULL) {
+	if (lang == NULL) {
 		LOG_DBG("lang is NULL");
 		return -EINVAL;
 	}
@@ -801,12 +834,12 @@ static int codec_meta_get_ccid_list(const uint8_t meta[], size_t meta_len,
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(ccid_list == NULL) {
+	if (ccid_list == NULL) {
 		LOG_DBG("ccid_list is NULL");
 		return -EINVAL;
 	}
@@ -824,12 +857,12 @@ static int codec_meta_get_ccid_list(const uint8_t meta[], size_t meta_len,
 static int codec_meta_set_ccid_list(uint8_t meta[], size_t meta_len, size_t meta_size,
 				    const uint8_t *ccid_list, size_t ccid_list_len)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(ccid_list == NULL) {
+	if (ccid_list == NULL) {
 		LOG_DBG("ccid_list is NULL");
 		return -EINVAL;
 	}
@@ -843,7 +876,7 @@ static int codec_meta_get_parental_rating(const uint8_t meta[], size_t meta_len)
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -865,7 +898,7 @@ static int codec_meta_set_parental_rating(uint8_t meta[], size_t meta_len, size_
 {
 	uint8_t parental_rating_u8;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -887,12 +920,12 @@ static int codec_meta_get_program_info_uri(const uint8_t meta[], size_t meta_len
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(program_info_uri == NULL) {
+	if (program_info_uri == NULL) {
 		LOG_DBG("program_info_uri is NULL");
 		return -EINVAL;
 	}
@@ -911,12 +944,12 @@ static int codec_meta_set_program_info_uri(uint8_t meta[], size_t meta_len, size
 					   const uint8_t *program_info_uri,
 					   size_t program_info_uri_len)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(program_info_uri == NULL) {
+	if (program_info_uri == NULL) {
 		LOG_DBG("program_info_uri is NULL");
 		return -EINVAL;
 	}
@@ -931,7 +964,7 @@ static int codec_meta_get_audio_active_state(const uint8_t meta[], size_t meta_l
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -953,7 +986,7 @@ static int codec_meta_set_audio_active_state(uint8_t meta[], size_t meta_len, si
 {
 	uint8_t state_u8;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -973,7 +1006,7 @@ static int codec_meta_get_bcast_audio_immediate_rend_flag(const uint8_t meta[], 
 {
 	const uint8_t *data;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -985,7 +1018,7 @@ static int codec_meta_get_bcast_audio_immediate_rend_flag(const uint8_t meta[], 
 static int codec_meta_set_bcast_audio_immediate_rend_flag(uint8_t meta[], size_t meta_len,
 							  size_t meta_size)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -999,7 +1032,7 @@ static int codec_meta_get_assisted_listening_stream(const uint8_t meta[], size_t
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -1023,7 +1056,7 @@ static int codec_meta_set_assisted_listening_stream(uint8_t meta[], size_t meta_
 {
 	uint8_t val_u8;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
@@ -1043,15 +1076,17 @@ static int codec_meta_set_assisted_listening_stream(uint8_t meta[], size_t meta_
 static int codec_meta_get_broadcast_name(const uint8_t meta[], size_t meta_len,
 					 const uint8_t **broadcast_name)
 {
+	char broadcast_name_str[BT_AUDIO_BROADCAST_NAME_LEN_MAX + sizeof((char)'\0')];
 	const uint8_t *data;
+	int char_cnt;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(broadcast_name == NULL) {
+	if (broadcast_name == NULL) {
 		LOG_DBG("broadcast_name is NULL");
 		return -EINVAL;
 	}
@@ -1059,6 +1094,23 @@ static int codec_meta_get_broadcast_name(const uint8_t meta[], size_t meta_len,
 	ret = codec_meta_get_val(meta, meta_len, BT_AUDIO_METADATA_TYPE_BROADCAST_NAME, &data);
 	if (data == NULL) {
 		return -ENODATA;
+	}
+
+	if (!IN_RANGE(ret, BT_AUDIO_BROADCAST_NAME_LEN_MIN, BT_AUDIO_BROADCAST_NAME_LEN_MAX)) {
+		LOG_DBG("Invalid broadcast name len %d", ret);
+		return -EBADMSG;
+	}
+
+	/* Since the input is not a NULL-terminated string, we need to copy it to add a NULL
+	 * terminator before we can use utf8_count_chars to verify the number of characters
+	 */
+	(void)memcpy(broadcast_name_str, data, ret);
+	broadcast_name_str[ret] = '\0';
+	char_cnt = utf8_count_chars(broadcast_name_str);
+	if (!IN_RANGE(char_cnt, BT_AUDIO_BROADCAST_NAME_CHAR_MIN,
+		      BT_AUDIO_BROADCAST_NAME_CHAR_MAX)) {
+		LOG_DBG("Invalid broadcast name %s", broadcast_name_str);
+		return -EBADMSG;
 	}
 
 	*broadcast_name = data;
@@ -1069,13 +1121,34 @@ static int codec_meta_get_broadcast_name(const uint8_t meta[], size_t meta_len,
 static int codec_meta_set_broadcast_name(uint8_t meta[], size_t meta_len, size_t meta_size,
 					 const uint8_t *broadcast_name, size_t broadcast_name_len)
 {
-	CHECKIF(meta == NULL) {
+	char broadcast_name_str[BT_AUDIO_BROADCAST_NAME_LEN_MAX + sizeof((char)'\0')];
+	int char_cnt;
+
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(broadcast_name == NULL) {
+	if (broadcast_name == NULL) {
 		LOG_DBG("broadcast_name is NULL");
+		return -EINVAL;
+	}
+
+	if (!IN_RANGE(broadcast_name_len, BT_AUDIO_BROADCAST_NAME_LEN_MIN,
+		      BT_AUDIO_BROADCAST_NAME_LEN_MAX)) {
+		LOG_DBG("Invalid broadcast name len %zu", broadcast_name_len);
+		return -EINVAL;
+	}
+
+	/* Since the input is not a NULL-terminated string, we need to copy it to add a NULL
+	 * terminator before we can use utf8_count_chars to verify the number of characters
+	 */
+	(void)memcpy(broadcast_name_str, broadcast_name, broadcast_name_len);
+	broadcast_name_str[broadcast_name_len] = '\0';
+	char_cnt = utf8_count_chars(broadcast_name_str);
+	if (!IN_RANGE(char_cnt, BT_AUDIO_BROADCAST_NAME_CHAR_MIN,
+		      BT_AUDIO_BROADCAST_NAME_CHAR_MAX)) {
+		LOG_DBG("Invalid broadcast name %s", broadcast_name_str);
 		return -EINVAL;
 	}
 
@@ -1089,12 +1162,12 @@ static int codec_meta_get_extended(const uint8_t meta[], size_t meta_len,
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(extended_meta == NULL) {
+	if (extended_meta == NULL) {
 		LOG_DBG("extended_meta is NULL");
 		return -EINVAL;
 	}
@@ -1112,12 +1185,12 @@ static int codec_meta_get_extended(const uint8_t meta[], size_t meta_len,
 static int codec_meta_set_extended(uint8_t meta[], size_t meta_len, size_t meta_size,
 				   const uint8_t *extended, size_t extended_len)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(extended == NULL) {
+	if (extended == NULL) {
 		LOG_DBG("extended is NULL");
 		return -EINVAL;
 	}
@@ -1131,12 +1204,12 @@ static int codec_meta_get_vendor(const uint8_t meta[], size_t meta_len, const ui
 	const uint8_t *data;
 	int ret;
 
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(vendor_meta == NULL) {
+	if (vendor_meta == NULL) {
 		LOG_DBG("vendor_meta is NULL");
 		return -EINVAL;
 	}
@@ -1154,12 +1227,12 @@ static int codec_meta_get_vendor(const uint8_t meta[], size_t meta_len, const ui
 static int codec_meta_set_vendor(uint8_t meta[], size_t meta_len, size_t meta_size,
 				 const uint8_t *vendor, size_t vendor_len)
 {
-	CHECKIF(meta == NULL) {
+	if (meta == NULL) {
 		LOG_DBG("meta is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(vendor == NULL) {
+	if (vendor == NULL) {
 		LOG_DBG("vendor is NULL");
 		return -EINVAL;
 	}
@@ -1172,7 +1245,7 @@ static int codec_meta_set_vendor(uint8_t meta[], size_t meta_len, size_t meta_si
 int bt_audio_codec_cfg_meta_get_val(const struct bt_audio_codec_cfg *codec_cfg, uint8_t type,
 				    const uint8_t **data)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1186,7 +1259,7 @@ int bt_audio_codec_cfg_meta_set_val(struct bt_audio_codec_cfg *codec_cfg,
 {
 	int ret;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1205,7 +1278,7 @@ int bt_audio_codec_cfg_meta_unset_val(struct bt_audio_codec_cfg *codec_cfg,
 {
 	int ret;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1224,7 +1297,7 @@ int bt_audio_codec_cfg_meta_get_pref_context(const struct bt_audio_codec_cfg *co
 {
 	int ret;
 
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1254,7 +1327,7 @@ int bt_audio_codec_cfg_meta_set_pref_context(struct bt_audio_codec_cfg *codec_cf
 
 int bt_audio_codec_cfg_meta_get_stream_context(const struct bt_audio_codec_cfg *codec_cfg)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1279,7 +1352,7 @@ int bt_audio_codec_cfg_meta_set_stream_context(struct bt_audio_codec_cfg *codec_
 int bt_audio_codec_cfg_meta_get_program_info(const struct bt_audio_codec_cfg *codec_cfg,
 					     const uint8_t **program_info)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1305,7 +1378,7 @@ int bt_audio_codec_cfg_meta_set_program_info(struct bt_audio_codec_cfg *codec_cf
 int bt_audio_codec_cfg_meta_get_lang(const struct bt_audio_codec_cfg *codec_cfg,
 				     const uint8_t **lang)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1330,7 +1403,7 @@ int bt_audio_codec_cfg_meta_set_lang(struct bt_audio_codec_cfg *codec_cfg,
 int bt_audio_codec_cfg_meta_get_ccid_list(const struct bt_audio_codec_cfg *codec_cfg,
 					  const uint8_t **ccid_list)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1354,7 +1427,7 @@ int bt_audio_codec_cfg_meta_set_ccid_list(struct bt_audio_codec_cfg *codec_cfg,
 
 int bt_audio_codec_cfg_meta_get_parental_rating(const struct bt_audio_codec_cfg *codec_cfg)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1379,7 +1452,7 @@ int bt_audio_codec_cfg_meta_set_parental_rating(struct bt_audio_codec_cfg *codec
 int bt_audio_codec_cfg_meta_get_program_info_uri(const struct bt_audio_codec_cfg *codec_cfg,
 						 const uint8_t **program_info_uri)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1406,7 +1479,7 @@ int bt_audio_codec_cfg_meta_set_program_info_uri(struct bt_audio_codec_cfg *code
 
 int bt_audio_codec_cfg_meta_get_audio_active_state(const struct bt_audio_codec_cfg *codec_cfg)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1431,7 +1504,7 @@ int bt_audio_codec_cfg_meta_set_audio_active_state(struct bt_audio_codec_cfg *co
 int bt_audio_codec_cfg_meta_get_bcast_audio_immediate_rend_flag(
 	const struct bt_audio_codec_cfg *codec_cfg)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1456,7 +1529,7 @@ int bt_audio_codec_cfg_meta_set_bcast_audio_immediate_rend_flag(
 int bt_audio_codec_cfg_meta_get_assisted_listening_stream(
 	const struct bt_audio_codec_cfg *codec_cfg)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1481,7 +1554,7 @@ int bt_audio_codec_cfg_meta_set_assisted_listening_stream(
 int bt_audio_codec_cfg_meta_get_extended(const struct bt_audio_codec_cfg *codec_cfg,
 					 const uint8_t **extended_meta)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1507,7 +1580,7 @@ int bt_audio_codec_cfg_meta_set_extended(struct bt_audio_codec_cfg *codec_cfg,
 int bt_audio_codec_cfg_meta_get_vendor(const struct bt_audio_codec_cfg *codec_cfg,
 				       const uint8_t **vendor_meta)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1532,7 +1605,7 @@ int bt_audio_codec_cfg_meta_set_vendor(struct bt_audio_codec_cfg *codec_cfg,
 int bt_audio_codec_cfg_meta_get_broadcast_name(const struct bt_audio_codec_cfg *codec_cfg,
 					       const uint8_t **broadcast_name)
 {
-	CHECKIF(codec_cfg == NULL) {
+	if (codec_cfg == NULL) {
 		LOG_DBG("codec_cfg is NULL");
 		return -EINVAL;
 	}
@@ -1561,7 +1634,7 @@ int bt_audio_codec_cfg_meta_set_broadcast_name(struct bt_audio_codec_cfg *codec_
 int bt_audio_codec_cap_meta_get_val(const struct bt_audio_codec_cap *codec_cap, uint8_t type,
 				    const uint8_t **data)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1575,7 +1648,7 @@ int bt_audio_codec_cap_meta_set_val(struct bt_audio_codec_cap *codec_cap,
 {
 	int ret;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1594,7 +1667,7 @@ int bt_audio_codec_cap_meta_unset_val(struct bt_audio_codec_cap *codec_cap,
 {
 	int ret;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1610,7 +1683,7 @@ int bt_audio_codec_cap_meta_unset_val(struct bt_audio_codec_cap *codec_cap,
 
 int bt_audio_codec_cap_meta_get_pref_context(const struct bt_audio_codec_cap *codec_cap)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1634,7 +1707,7 @@ int bt_audio_codec_cap_meta_set_pref_context(struct bt_audio_codec_cap *codec_ca
 
 int bt_audio_codec_cap_meta_get_stream_context(const struct bt_audio_codec_cap *codec_cap)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1659,7 +1732,7 @@ int bt_audio_codec_cap_meta_set_stream_context(struct bt_audio_codec_cap *codec_
 int bt_audio_codec_cap_meta_get_program_info(const struct bt_audio_codec_cap *codec_cap,
 					     const uint8_t **program_info)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1685,7 +1758,7 @@ int bt_audio_codec_cap_meta_set_program_info(struct bt_audio_codec_cap *codec_ca
 int bt_audio_codec_cap_meta_get_lang(const struct bt_audio_codec_cap *codec_cap,
 				     const uint8_t **lang)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1710,7 +1783,7 @@ int bt_audio_codec_cap_meta_set_lang(struct bt_audio_codec_cap *codec_cap,
 int bt_audio_codec_cap_meta_get_ccid_list(const struct bt_audio_codec_cap *codec_cap,
 					  const uint8_t **ccid_list)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1734,7 +1807,7 @@ int bt_audio_codec_cap_meta_set_ccid_list(struct bt_audio_codec_cap *codec_cap,
 
 int bt_audio_codec_cap_meta_get_parental_rating(const struct bt_audio_codec_cap *codec_cap)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1759,7 +1832,7 @@ int bt_audio_codec_cap_meta_set_parental_rating(struct bt_audio_codec_cap *codec
 int bt_audio_codec_cap_meta_get_program_info_uri(const struct bt_audio_codec_cap *codec_cap,
 						 const uint8_t **program_info_uri)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1786,7 +1859,7 @@ int bt_audio_codec_cap_meta_set_program_info_uri(struct bt_audio_codec_cap *code
 
 int bt_audio_codec_cap_meta_get_audio_active_state(const struct bt_audio_codec_cap *codec_cap)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1811,7 +1884,7 @@ int bt_audio_codec_cap_meta_set_audio_active_state(struct bt_audio_codec_cap *co
 int bt_audio_codec_cap_meta_get_bcast_audio_immediate_rend_flag(
 	const struct bt_audio_codec_cap *codec_cap)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1836,7 +1909,7 @@ int bt_audio_codec_cap_meta_set_bcast_audio_immediate_rend_flag(
 int bt_audio_codec_cap_meta_get_assisted_listening_stream(
 	const struct bt_audio_codec_cap *codec_cap)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1861,7 +1934,7 @@ int bt_audio_codec_cap_meta_set_assisted_listening_stream(
 int bt_audio_codec_cap_meta_get_extended(const struct bt_audio_codec_cap *codec_cap,
 					 const uint8_t **extended_meta)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1887,7 +1960,7 @@ int bt_audio_codec_cap_meta_set_extended(struct bt_audio_codec_cap *codec_cap,
 int bt_audio_codec_cap_meta_get_vendor(const struct bt_audio_codec_cap *codec_cap,
 				       const uint8_t **vendor_meta)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1912,7 +1985,7 @@ int bt_audio_codec_cap_meta_set_vendor(struct bt_audio_codec_cap *codec_cap,
 int bt_audio_codec_cap_meta_get_broadcast_name(const struct bt_audio_codec_cap *codec_cap,
 					       const uint8_t **broadcast_name)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -1954,12 +2027,12 @@ static void init_net_buf_simple_from_codec_cap(struct net_buf_simple *buf,
 int bt_audio_codec_cap_get_val(const struct bt_audio_codec_cap *codec_cap,
 			       enum bt_audio_codec_cap_type type, const uint8_t **data)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data == NULL) {
+	if (data == NULL) {
 		LOG_DBG("data is NULL");
 		return -EINVAL;
 	}
@@ -1974,17 +2047,17 @@ int bt_audio_codec_cap_set_val(struct bt_audio_codec_cap *codec_cap,
 	struct net_buf_simple buf;
 	int ret;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data == NULL) {
+	if (data == NULL) {
 		LOG_DBG("data is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(data_len == 0U || data_len > UINT8_MAX) {
+	if (data_len == 0U || data_len > UINT8_MAX) {
 		LOG_DBG("Invalid data_len %zu", data_len);
 		return -EINVAL;
 	}
@@ -2005,7 +2078,7 @@ int bt_audio_codec_cap_unset_val(struct bt_audio_codec_cap *codec_cap,
 	struct net_buf_simple buf;
 	int ret;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2025,7 +2098,7 @@ int bt_audio_codec_cap_get_freq(const struct bt_audio_codec_cap *codec_cap)
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2047,7 +2120,7 @@ int bt_audio_codec_cap_set_freq(struct bt_audio_codec_cap *codec_cap,
 {
 	uint16_t freq_le16;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2068,7 +2141,7 @@ int bt_audio_codec_cap_get_frame_dur(const struct bt_audio_codec_cap *codec_cap)
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2090,7 +2163,7 @@ int bt_audio_codec_cap_set_frame_dur(struct bt_audio_codec_cap *codec_cap,
 {
 	uint8_t frame_dur_u8;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2130,7 +2203,7 @@ int bt_audio_codec_cap_get_supported_audio_chan_counts(const struct bt_audio_cod
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2156,7 +2229,7 @@ int bt_audio_codec_cap_set_supported_audio_chan_counts(
 {
 	uint8_t chan_count_u8;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2179,12 +2252,12 @@ int bt_audio_codec_cap_get_octets_per_frame(
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(codec_frame == NULL) {
+	if (codec_frame == NULL) {
 		LOG_DBG("codec_frame is NULL");
 		return -EINVAL;
 	}
@@ -2210,12 +2283,12 @@ int bt_audio_codec_cap_set_octets_per_frame(
 {
 	uint8_t codec_frame_le32[4];
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
 
-	CHECKIF(codec_frame == NULL) {
+	if (codec_frame == NULL) {
 		LOG_DBG("codec_frame is NULL");
 		return -EINVAL;
 	}
@@ -2238,7 +2311,7 @@ int bt_audio_codec_cap_get_max_codec_frames_per_sdu(const struct bt_audio_codec_
 	const uint8_t *data;
 	uint8_t data_len;
 
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}
@@ -2263,7 +2336,7 @@ int bt_audio_codec_cap_get_max_codec_frames_per_sdu(const struct bt_audio_codec_
 int bt_audio_codec_cap_set_max_codec_frames_per_sdu(struct bt_audio_codec_cap *codec_cap,
 						    uint8_t codec_frames_per_sdu)
 {
-	CHECKIF(codec_cap == NULL) {
+	if (codec_cap == NULL) {
 		LOG_DBG("codec_cap is NULL");
 		return -EINVAL;
 	}

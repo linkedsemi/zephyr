@@ -141,10 +141,21 @@ static int sdio_io_rw_extended(struct sd_card *card,
 	cmd.response_type = (SD_RSP_TYPE_R5 | SD_SPI_RSP_TYPE_R5);
 	cmd.timeout_ms = CONFIG_SD_CMD_TIMEOUT;
 	if (blocks == 0) {
-		/* Byte mode */
+		/* Byte mode: 9-bit byte count, 0 = 512 per spec. */
 		cmd.arg |= (block_size == 512) ? 0 : block_size;
 	} else {
-		/* Block mode */
+		/* Block mode: 9-bit block count, valid range 1..511. Per the
+		 * SDIO spec, count = 0 in block mode means "transfer until
+		 * I/O-abort", not 512 blocks; 512 itself has no valid
+		 * encoding. Reject blocks > 511 so the caller gets a clear
+		 * error rather than either silent register-address corruption
+		 * (bit 9 leaking from blocks=0x200) or a silent unbounded
+		 * transfer (a naive 9-bit mask of 512 yielding 0). Callers
+		 * needing more than 511 blocks must issue multiple CMD53s.
+		 */
+		if (blocks > 511) {
+			return -EINVAL;
+		}
 		cmd.arg |= BIT(SDIO_EXTEND_CMD_ARG_BLK_SHIFT) | blocks;
 	}
 
@@ -196,6 +207,12 @@ static int sdio_io_rw_extended_helper(struct sdio_func *func,
 		}
 	}
 	/* Remaining data must be written using byte I/O */
+	if (func->cis.max_blk_size == 0U) {
+		/* A zero max_blk_size would make MIN(remaining, 0) == 0 and
+		 * the loop below spin forever without making progress.
+		 */
+		return -EIO;
+	}
 	while (remaining > 0) {
 		size = MIN(remaining, func->cis.max_blk_size);
 
@@ -549,6 +566,7 @@ int sdio_card_init(struct sd_card *card)
 {
 	int ret;
 	uint32_t ocr_arg = 0U;
+	uint32_t cid[4] = {0};
 
 	/* Probe card with SDIO OCR CM5 */
 	ret = sdio_send_ocr(card, ocr_arg);
@@ -589,10 +607,11 @@ int sdio_card_init(struct sd_card *card)
 		 * If card and host support 1.8V, perform voltage switch sequence now.
 		 * note that we skip this switch if the UHS protocol is not enabled.
 		 */
-		if ((card->flags & SD_1800MV_FLAG) &&
-			(!card->host_props.is_spi) &&
-			(card->host_props.host_caps.vol_180_support) &&
-			IS_ENABLED(CONFIG_SD_UHS_PROTOCOL)) {
+		if (IS_ENABLED(CONFIG_SD_UHS_PROTOCOL) &&
+		    (card->flags & SD_1800MV_FLAG) &&
+		    (!card->host_props.is_spi) &&
+		    (card->host_props.host_caps.vol_180_support) &&
+		    (card->bus_io.signal_voltage != SD_VOL_1_8_V)) {
 			ret = sdmmc_switch_voltage(card);
 			if (ret) {
 				/* Disable host support for 1.8 V */
@@ -605,11 +624,17 @@ int sdio_card_init(struct sd_card *card)
 				card->status = CARD_ERROR;
 				return SD_RESTART;
 			}
+		} else if (IS_ENABLED(CONFIG_SD_UHS_PROTOCOL) &&
+			   (card->flags & SD_1800MV_FLAG) &&
+			   (!card->host_props.is_spi) &&
+			   (card->host_props.host_caps.vol_180_support) &&
+			   (card->bus_io.signal_voltage == SD_VOL_1_8_V)) {
+			LOG_DBG("Skipping CMD11 voltage switch: bus already at 1.8V");
 		}
 		if ((card->flags & SD_MEM_PRESENT_FLAG) &&
 			((card->flags & SD_SDHC_FLAG) == 0)) {
 			/* We must send CMD2 to get card cid */
-			ret = card_read_cid(card);
+			ret = card_read_cid(card, cid);
 			if (ret) {
 				return ret;
 			}
@@ -670,18 +695,6 @@ int sdio_card_init(struct sd_card *card)
 	return ret;
 }
 
-/**
- * @brief Initialize SDIO function.
- *
- * Initializes SDIO card function. The card function will not be enabled,
- * but after this call returns the SDIO function structure can be used to read
- * and write data from the card.
- * @param func: function structure to initialize
- * @param card: SD card to enable function on
- * @param num: function number to initialize
- * @retval 0 function was initialized successfully
- * @retval -EIO: I/O error
- */
 int sdio_init_func(struct sd_card *card, struct sdio_func *func,
 		   enum sdio_func_num num)
 {
@@ -693,18 +706,6 @@ int sdio_init_func(struct sd_card *card, struct sdio_func *func,
 	return sdio_read_cis(func, cis_tuples, ARRAY_SIZE(cis_tuples));
 }
 
-
-
-/**
- * @brief Enable SDIO function
- *
- * Enables SDIO card function. @ref sdio_init_func must be called to
- * initialized the function structure before enabling it in the card.
- * @param func: function to enable
- * @retval 0 function was enabled successfully
- * @retval -ETIMEDOUT: card I/O timed out
- * @retval -EIO: I/O error
- */
 int sdio_enable_func(struct sdio_func *func)
 {
 	int ret;
@@ -742,17 +743,6 @@ int sdio_enable_func(struct sdio_func *func)
 	return -ETIMEDOUT;
 }
 
-/**
- * @brief Set block size of SDIO function
- *
- * Set desired block size for SDIO function, used by block transfers
- * to SDIO registers.
- * @param func: function to set block size for
- * @param bsize: block size
- * @retval 0 block size was set
- * @retval -EINVAL: unsupported/invalid block size
- * @retval -EIO: I/O error
- */
 int sdio_set_block_size(struct sdio_func *func, uint16_t bsize)
 {
 	int ret;
@@ -773,18 +763,6 @@ int sdio_set_block_size(struct sdio_func *func, uint16_t bsize)
 	return 0;
 }
 
-/**
- * @brief Read byte from SDIO register
- *
- * Reads byte from SDIO register
- * @param func: function to read from
- * @param reg: register address to read from
- * @param val: filled with byte value read from register
- * @retval 0 read succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card read timed out
- * @retval -EIO: I/O error
- */
 int sdio_read_byte(struct sdio_func *func, uint32_t reg, uint8_t *val)
 {
 	int ret;
@@ -803,18 +781,6 @@ int sdio_read_byte(struct sdio_func *func, uint32_t reg, uint8_t *val)
 	return ret;
 }
 
-/**
- * @brief Write byte to SDIO register
- *
- * Writes byte to SDIO register
- * @param func: function to write to
- * @param reg: register address to write to
- * @param write_val: value to write to register
- * @retval 0 write succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card write timed out
- * @retval -EIO: I/O error
- */
 int sdio_write_byte(struct sdio_func *func, uint32_t reg, uint8_t write_val)
 {
 	int ret;
@@ -834,19 +800,6 @@ int sdio_write_byte(struct sdio_func *func, uint32_t reg, uint8_t write_val)
 	return ret;
 }
 
-/**
- * @brief Write byte to SDIO register, and read result
- *
- * Writes byte to SDIO register, and reads the register after write
- * @param func: function to write to
- * @param reg: register address to write to
- * @param write_val: value to write to register
- * @param read_val: filled with value read from register
- * @retval 0 write succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card write timed out
- * @retval -EIO: I/O error
- */
 int sdio_rw_byte(struct sdio_func *func, uint32_t reg, uint8_t write_val,
 		 uint8_t *read_val)
 {
@@ -867,20 +820,6 @@ int sdio_rw_byte(struct sdio_func *func, uint32_t reg, uint8_t write_val,
 	return ret;
 }
 
-/**
- * @brief Read bytes from SDIO fifo
- *
- * Reads bytes from SDIO register, treating it as a fifo. Reads will
- * all be done from same address.
- * @param func: function to read from
- * @param reg: register address of fifo
- * @param data: filled with data read from fifo
- * @param len: length of data to read from card
- * @retval 0 read succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card read timed out
- * @retval -EIO: I/O error
- */
 int sdio_read_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 		   uint32_t len)
 {
@@ -901,20 +840,6 @@ int sdio_read_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 	return ret;
 }
 
-/**
- * @brief Write bytes to SDIO fifo
- *
- * Writes bytes to SDIO register, treating it as a fifo. Writes will
- * all be done to same address.
- * @param func: function to write to
- * @param reg: register address of fifo
- * @param data: data to write to fifo
- * @param len: length of data to write to card
- * @retval 0 write succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card write timed out
- * @retval -EIO: I/O error
- */
 int sdio_write_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 		    uint32_t len)
 {
@@ -935,20 +860,6 @@ int sdio_write_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 	return ret;
 }
 
-/**
- * @brief Read blocks from SDIO fifo
- *
- * Reads blocks from SDIO register, treating it as a fifo. Reads will
- * all be done from same address.
- * @param func: function to read from
- * @param reg: register address of fifo
- * @param data: filled with data read from fifo
- * @param blocks: number of blocks to read from fifo
- * @retval 0 read succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card read timed out
- * @retval -EIO: I/O error
- */
 int sdio_read_blocks_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 			  uint32_t blocks)
 {
@@ -969,20 +880,6 @@ int sdio_read_blocks_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 	return ret;
 }
 
-/**
- * @brief Write blocks to SDIO fifo
- *
- * Writes blocks from SDIO register, treating it as a fifo. Writes will
- * all be done to same address.
- * @param func: function to write to
- * @param reg: register address of fifo
- * @param data: data to write to fifo
- * @param blocks: number of blocks to write to fifo
- * @retval 0 write succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card write timed out
- * @retval -EIO: I/O error
- */
 int sdio_write_blocks_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 			   uint32_t blocks)
 {
@@ -1003,19 +900,6 @@ int sdio_write_blocks_fifo(struct sdio_func *func, uint32_t reg, uint8_t *data,
 	return ret;
 }
 
-/**
- * @brief Copy bytes from an SDIO card
- *
- * Copies bytes from an SDIO card, starting from provided address.
- * @param func: function to read from
- * @param reg: register address to start copy at
- * @param data: buffer to copy data into
- * @param len: length of data to read
- * @retval 0 read succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card read timed out
- * @retval -EIO: I/O error
- */
 int sdio_read_addr(struct sdio_func *func, uint32_t reg, uint8_t *data,
 		   uint32_t len)
 {
@@ -1036,20 +920,6 @@ int sdio_read_addr(struct sdio_func *func, uint32_t reg, uint8_t *data,
 	return ret;
 }
 
-/**
- * @brief Copy bytes to an SDIO card
- *
- * Copies bytes to an SDIO card, starting from provided address.
- *
- * @param func: function to write to
- * @param reg: register address to start copy at
- * @param data: buffer to copy data from
- * @param len: length of data to write
- * @retval 0 write succeeded
- * @retval -EBUSY: card is busy with another request
- * @retval -ETIMEDOUT: card write timed out
- * @retval -EIO: I/O error
- */
 int sdio_write_addr(struct sdio_func *func, uint32_t reg, uint8_t *data,
 		    uint32_t len)
 {

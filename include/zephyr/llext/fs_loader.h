@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_LLEXT_FS_LOADER_H
-#define ZEPHYR_LLEXT_FS_LOADER_H
+#ifndef ZEPHYR_INCLUDE_LLEXT_FS_LOADER_H_
+#define ZEPHYR_INCLUDE_LLEXT_FS_LOADER_H_
 
 #include <zephyr/llext/loader.h>
 #include <zephyr/fs/fs.h>
@@ -17,6 +17,7 @@ extern "C" {
 /**
  * @file
  * @brief LLEXT filesystem loader implementation.
+ * @ingroup llext_loader_apis
  *
  * @addtogroup llext_loader_apis
  * @{
@@ -57,6 +58,7 @@ void llext_fs_finalize(struct llext_loader *ldr);
 				.seek = llext_fs_seek,                                             \
 				.peek = NULL,                                                      \
 				.finalize = llext_fs_finalize,                                     \
+				.storage = LLEXT_STORAGE_TEMPORARY,                                \
 			},                                                                         \
 		.is_open = false,                                                                  \
 		.name = (_filename),                                                               \
@@ -70,4 +72,4 @@ void llext_fs_finalize(struct llext_loader *ldr);
 }
 #endif
 
-#endif /* ZEPHYR_LLEXT_FS_LOADER_H */
+#endif /* ZEPHYR_INCLUDE_LLEXT_FS_LOADER_H_ */

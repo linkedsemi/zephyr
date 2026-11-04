@@ -7,10 +7,14 @@ on:
         type: string
         required: true
 
+permissions:
+  contents: read
+
 jobs:
   all_jobs_passed:
     name: all jobs passed
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - name: "Check status of all required jobs"
         run: |-

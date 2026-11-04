@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 NXP
+ * Copyright 2024-2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,9 +8,7 @@
  * This file is included by both the default variant
  * which is run from internal flash and the QSPI variant.
  */
-/dts-v1/;
 
-#include <nxp/nxp_mcxn94x.dtsi>
 #include "frdm_mcxn947.dtsi"
 
 / {
@@ -27,11 +25,13 @@
 		zephyr,console = &flexcomm4_lpuart4;
 		zephyr,shell-uart = &flexcomm4_lpuart4;
 		zephyr,canbus = &flexcan0;
+		zephyr,code-cpu1-partition = &slot1_partition;
 	};
 
-	aliases{
+	aliases {
 		watchdog0 = &wwdt0;
 		pwm-0 = &flexpwm1_pwm0;
+		pwm-1 = &sc_timer;
 		rtc = &rtc;
 	};
 };
@@ -50,19 +50,37 @@
 	reg = <0x20000000 DT_SIZE_K(320)>;
 };
 
+&mbox {
+	status = "okay";
+};
+
+/* Required on MikroBus connector. */
+&gpio5 {
+	status = "okay";
+};
+
+/* Required on Arduino connector. */
 &gpio4 {
 	status = "okay";
 };
 
+/* Required on MikroBus connector. */
+&gpio3 {
+	status = "okay";
+};
+
+/* Required on SD card. */
+&gpio2 {
+	status = "okay";
+};
+
+/* Required on Arduino and MikroBus connector. */
 &gpio1 {
 	status = "okay";
 };
 
+/* Required on Arduino connector. */
 &gpio0 {
-	status = "okay";
-};
-
-&gpio2 {
 	status = "okay";
 };
 
@@ -86,23 +104,35 @@
 	status = "okay";
 };
 
+/* Required on Arduino connector. */
 &flexcomm1_lpspi1 {
 	status = "okay";
 };
 
+/*
+ * LPFLEXCOMM supports UART and I2C on the same instance, enable this for
+ * LPLEXCOMM2 with LPUART2 and LPI2C2.
+ */
 &flexcomm2 {
 	status = "okay";
 };
 
+/* Required on Arduino and FlexIO LCD (touch panel) connector. */
 &flexcomm2_lpi2c2 {
 	status = "okay";
 };
 
-/*
- *LPFLEXCOMM supports UART and I2C on the same instance, enable this for
- * LFLEXCOMM2
- */
+/* Required on Arduino connector. */
 &flexcomm2_lpuart2 {
+	status = "okay";
+};
+
+&flexcomm3 {
+	status = "okay";
+};
+
+/* Required on MikroBus connector. */
+&flexcomm3_lpi2c3 {
 	status = "okay";
 };
 
@@ -110,7 +140,19 @@
 	status = "okay";
 };
 
+/* Required for serial console and on Camera connector. */
 &flexcomm4_lpuart4 {
+	status = "okay";
+};
+
+/*
+ * LPFLEXCOMM6 supports SPI for MikroBus. Enable this for LPSPI6 but let
+ * LPSPI6 disabled as long as it is not needed because of two shared signals
+ * with SAI1 (P3_20 for SAI1_TXD0 and FC6_SPI_MOSI and P3_21 for SAI1_RXD0
+ * and FC6_SPI_SCK). There is also an additional MikroBus signal shared
+ * with SAI1 (P3_19 for SAI1_RX_FS and MikroBus:PWM).
+ */
+&flexcomm6 {
 	status = "okay";
 };
 
@@ -118,6 +160,7 @@
 	status = "okay";
 };
 
+/* Required on Camera connector. */
 &flexcomm7_lpi2c7 {
 	status = "okay";
 };
@@ -126,11 +169,31 @@
 	status = "okay";
 };
 
-&w25q64jvssiq {
+&ext_flash_ctrl {
 	status = "okay";
 };
 
+&w25q64jvssiq {
+	status = "okay";
+
+	partitions {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		storage_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x0 DT_SIZE_M(8)>;
+		};
+	};
+};
+
 &dac0 {
+	status = "okay";
+};
+
+&dac2 {
 	status = "okay";
 };
 
@@ -138,11 +201,11 @@
 	status = "okay";
 };
 
-&enet_mac {
+&enet_mdio {
 	status = "okay";
 };
 
-&enet_mdio {
+&phy {
 	status = "okay";
 };
 
@@ -164,6 +227,7 @@
 
 &usdhc0 {
 	status = "okay";
+
 	sdmmc {
 		compatible = "zephyr,sdmmc-disk";
 		disk-name = "SD";
@@ -181,9 +245,17 @@
 
 zephyr_udc0: &usb1 {
 	status = "okay";
+	phy-handle = <&usbphy1>;
 };
 
-&lpcmp0 {
+&usbphy1 {
+	status = "okay";
+	tx-d-cal = <4>;
+	tx-cal-45-dp-ohms = <7>;
+	tx-cal-45-dm-ohms = <7>;
+};
+
+&opamp0 {
 	status = "okay";
 };
 
@@ -206,3 +278,23 @@ zephyr_udc0: &usb1 {
 &rtc {
 	status = "okay";
 };
+
+&sc_timer {
+	status = "okay";
+};
+
+&sai1 {
+	status = "okay";
+};
+
+&sai0 {
+	status = "okay";
+};
+
+&tsi0 {
+	status = "okay";
+};
+
+m2_hci_bt_uart: &flexcomm2_lpuart2 {};
+
+m2_wifi_sdio: &usdhc0 {};

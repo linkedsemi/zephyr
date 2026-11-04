@@ -5,29 +5,32 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+#include <stdbool.h>
 #include <stddef.h>
-#include <errno.h>
-#include <stdio.h>
+#include <stdint.h>
+#include <string.h>
 
-#include <zephyr/types.h>
-#include <zephyr/kernel.h>
-
+#include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/mcc.h>
 #include <zephyr/bluetooth/audio/mcs.h>
-#include <../../subsys/bluetooth/audio/mpl_internal.h>
-#include <../../subsys/bluetooth/audio/mcc_internal.h>
-#include <zephyr/bluetooth/services/ots.h>
 #include <zephyr/bluetooth/audio/media_proxy.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/services/ots.h>
+#include <zephyr/kernel.h>
+#include <zephyr/net_buf.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/types.h>
 
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 
 #include "bap_endpoint.h"
 #include "btp/btp.h"
-#include "../../../../include/zephyr/bluetooth/audio/media_proxy.h"
+#include "../../subsys/bluetooth/audio/mpl_internal.h"
+#include "../../subsys/bluetooth/audio/mcc_internal.h"
 
 #define LOG_MODULE_NAME bttester_mcp
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_BTTESTER_LOG_LEVEL);
@@ -79,8 +82,6 @@ struct service_handles {
 };
 
 struct service_handles svc_chrc_handles;
-
-#define SEARCH_LEN_MAX 64
 
 static struct net_buf_simple *rx_ev_buf = NET_BUF_SIMPLE(SEARCH_LEN_MAX +
 							 sizeof(struct btp_mcp_search_cp_ev));
@@ -351,7 +352,7 @@ static void btp_send_search_cp_ev(struct bt_conn *conn, uint8_t status,
 	struct btp_mcp_search_cp_ev *ev;
 	uint8_t param[SEARCH_LEN_MAX];
 
-	net_buf_simple_init(rx_ev_buf, 0);
+	net_buf_simple_init(rx_ev_buf, 0U);
 
 	ev = net_buf_simple_add(rx_ev_buf, sizeof(*ev));
 
@@ -402,7 +403,7 @@ static void mcc_discover_cb(struct bt_conn *conn, int err)
 {
 	struct mcs_instance_t *mcc_inst;
 
-	if (err) {
+	if (err != 0) {
 		LOG_DBG("Discovery failed (%d)", err);
 	}
 
@@ -662,40 +663,11 @@ static uint8_t mcp_supported_commands(const void *cmd, uint16_t cmd_len, void *r
 {
 	struct btp_mcp_read_supported_commands_rp *rp = rsp;
 
-	/* octet 0 */
-	tester_set_bit(rp->data, BTP_MCP_READ_SUPPORTED_COMMANDS);
-	tester_set_bit(rp->data, BTP_MCP_DISCOVER);
-	tester_set_bit(rp->data, BTP_MCP_TRACK_DURATION_READ);
-	tester_set_bit(rp->data, BTP_MCP_TRACK_POSITION_READ);
-	tester_set_bit(rp->data, BTP_MCP_TRACK_POSITION_SET);
-	tester_set_bit(rp->data, BTP_MCP_PLAYBACK_SPEED_READ);
-	tester_set_bit(rp->data, BTP_MCP_PLAYBACK_SPEED_SET);
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
 
-	/* octet 1 */
-	tester_set_bit(rp->data, BTP_MCP_SEEKING_SPEED_READ);
-	tester_set_bit(rp->data, BTP_MCP_ICON_OBJ_ID_READ);
-	tester_set_bit(rp->data, BTP_MCP_NEXT_TRACK_OBJ_ID_READ);
-	tester_set_bit(rp->data, BTP_MCP_NEXT_TRACK_OBJ_ID_SET);
-	tester_set_bit(rp->data, BTP_MCP_PARENT_GROUP_OBJ_ID_READ);
-	tester_set_bit(rp->data, BTP_MCP_CURRENT_GROUP_OBJ_ID_READ);
-	tester_set_bit(rp->data, BTP_MCP_CURRENT_GROUP_OBJ_ID_SET);
-
-	/* octet 2 */
-	tester_set_bit(rp->data, BTP_MCP_PLAYING_ORDER_READ);
-	tester_set_bit(rp->data, BTP_MCP_PLAYING_ORDER_SET);
-	tester_set_bit(rp->data, BTP_MCP_PLAYING_ORDERS_SUPPORTED_READ);
-	tester_set_bit(rp->data, BTP_MCP_MEDIA_STATE_READ);
-	tester_set_bit(rp->data, BTP_MCP_OPCODES_SUPPORTED_READ);
-	tester_set_bit(rp->data, BTP_MCP_CONTENT_CONTROL_ID_READ);
-	tester_set_bit(rp->data, BTP_MCP_SEGMENTS_OBJ_ID_READ);
-
-	/* octet 3 */
-	tester_set_bit(rp->data, BTP_MCP_CURRENT_TRACK_OBJ_ID_READ);
-	tester_set_bit(rp->data, BTP_MCP_CURRENT_TRACK_OBJ_ID_SET);
-	tester_set_bit(rp->data, BTP_MCP_CMD_SEND);
-	tester_set_bit(rp->data, BTP_MCP_CMD_SEARCH);
-
-	*rsp_len = sizeof(*rp) + 1;
+	*rsp_len = tester_supported_commands(BTP_SERVICE_ID_MCP, rp->data);
+	*rsp_len += sizeof(*rp);
 
 	return BTP_STATUS_SUCCESS;
 }
@@ -706,6 +678,10 @@ static uint8_t mcp_discover(const void *cmd, uint16_t cmd_len, void *rsp, uint16
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
 	if (!conn) {
 		LOG_ERR("Unknown connection");
@@ -713,7 +689,7 @@ static uint8_t mcp_discover(const void *cmd, uint16_t cmd_len, void *rsp, uint16
 	}
 
 	err = bt_mcc_discover_mcs(conn, true);
-	if (err) {
+	if (err != 0) {
 		LOG_DBG("Discovery failed: %d", err);
 		return BTP_STATUS_FAILED;
 	}
@@ -728,6 +704,10 @@ static uint8_t mcp_track_duration_read(const void *cmd, uint16_t cmd_len, void *
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read track duration");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -737,7 +717,7 @@ static uint8_t mcp_track_duration_read(const void *cmd, uint16_t cmd_len, void *
 	}
 
 	err = bt_mcc_read_track_duration(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -751,6 +731,10 @@ static uint8_t mcp_track_position_read(const void *cmd, uint16_t cmd_len, void *
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read track position");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -760,7 +744,7 @@ static uint8_t mcp_track_position_read(const void *cmd, uint16_t cmd_len, void *
 	}
 
 	err = bt_mcc_read_track_position(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -775,6 +759,10 @@ static uint8_t mcp_track_position_set(const void *cmd, uint16_t cmd_len, void *r
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Set track position");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -784,7 +772,7 @@ static uint8_t mcp_track_position_set(const void *cmd, uint16_t cmd_len, void *r
 	}
 
 	err = bt_mcc_set_track_position(conn, pos);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -798,6 +786,10 @@ static uint8_t mcp_playback_speed_read(const void *cmd, uint16_t cmd_len, void *
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read playback speed");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -807,7 +799,7 @@ static uint8_t mcp_playback_speed_read(const void *cmd, uint16_t cmd_len, void *
 	}
 
 	err = bt_mcc_read_playback_speed(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -821,6 +813,10 @@ static uint8_t mcp_playback_speed_set(const void *cmd, uint16_t cmd_len, void *r
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Set playback speed");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -830,7 +826,7 @@ static uint8_t mcp_playback_speed_set(const void *cmd, uint16_t cmd_len, void *r
 	}
 
 	err = bt_mcc_set_playback_speed(conn, cp->speed);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -844,6 +840,10 @@ static uint8_t mcp_seeking_speed_read(const void *cmd, uint16_t cmd_len, void *r
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read seeking speed");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -853,7 +853,7 @@ static uint8_t mcp_seeking_speed_read(const void *cmd, uint16_t cmd_len, void *r
 	}
 
 	err = bt_mcc_read_seeking_speed(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -867,6 +867,10 @@ static uint8_t mcp_read_icon_obj_id(const void *cmd, uint16_t cmd_len, void *rsp
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read Icon Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -876,7 +880,7 @@ static uint8_t mcp_read_icon_obj_id(const void *cmd, uint16_t cmd_len, void *rsp
 	}
 
 	err = bt_mcc_read_icon_obj_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -890,6 +894,10 @@ static uint8_t mcp_read_next_track_obj_id(const void *cmd, uint16_t cmd_len, voi
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read Next Track Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -899,7 +907,7 @@ static uint8_t mcp_read_next_track_obj_id(const void *cmd, uint16_t cmd_len, voi
 	}
 
 	err = bt_mcc_read_next_track_obj_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -914,6 +922,10 @@ static uint8_t mcp_set_next_track_obj_id(const void *cmd, uint16_t cmd_len, void
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Set Next Track Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -923,7 +935,7 @@ static uint8_t mcp_set_next_track_obj_id(const void *cmd, uint16_t cmd_len, void
 	}
 
 	err = bt_mcc_set_next_track_obj_id(conn, id);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -937,6 +949,10 @@ static uint8_t mcp_parent_group_obj_id_read(const void *cmd, uint16_t cmd_len, v
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read Parent Group Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -946,7 +962,7 @@ static uint8_t mcp_parent_group_obj_id_read(const void *cmd, uint16_t cmd_len, v
 	}
 
 	err = bt_mcc_read_parent_group_obj_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -960,6 +976,10 @@ static uint8_t mcp_current_group_obj_id_read(const void *cmd, uint16_t cmd_len, 
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read Current Group Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -969,7 +989,7 @@ static uint8_t mcp_current_group_obj_id_read(const void *cmd, uint16_t cmd_len, 
 	}
 
 	err = bt_mcc_read_current_group_obj_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -984,6 +1004,10 @@ static uint8_t mcp_set_current_group_obj_id(const void *cmd, uint16_t cmd_len, v
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Set Next Track Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -993,7 +1017,7 @@ static uint8_t mcp_set_current_group_obj_id(const void *cmd, uint16_t cmd_len, v
 	}
 
 	err = bt_mcc_set_current_group_obj_id(conn, id);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1007,6 +1031,10 @@ static uint8_t mcp_playing_order_read(const void *cmd, uint16_t cmd_len, void *r
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Read Playing Order");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1016,7 +1044,7 @@ static uint8_t mcp_playing_order_read(const void *cmd, uint16_t cmd_len, void *r
 	}
 
 	err = bt_mcc_read_playing_order(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1030,6 +1058,10 @@ static uint8_t mcp_playing_order_set(const void *cmd, uint16_t cmd_len, void *rs
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Set Playing Order");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1039,7 +1071,7 @@ static uint8_t mcp_playing_order_set(const void *cmd, uint16_t cmd_len, void *rs
 	}
 
 	err = bt_mcc_set_playing_order(conn, cp->order);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1053,6 +1085,10 @@ static uint8_t mcp_playing_orders_supported_read(const void *cmd, uint16_t cmd_l
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Playing orders supported read");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1062,7 +1098,7 @@ static uint8_t mcp_playing_orders_supported_read(const void *cmd, uint16_t cmd_l
 	}
 
 	err = bt_mcc_read_playing_orders_supported(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1076,6 +1112,10 @@ static uint8_t mcp_media_state_read(const void *cmd, uint16_t cmd_len, void *rsp
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Media State read");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1085,7 +1125,7 @@ static uint8_t mcp_media_state_read(const void *cmd, uint16_t cmd_len, void *rsp
 	}
 
 	err = bt_mcc_read_media_state(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1099,6 +1139,10 @@ static uint8_t mcp_opcodes_supported_read(const void *cmd, uint16_t cmd_len, voi
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Supported opcodes read");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1108,7 +1152,7 @@ static uint8_t mcp_opcodes_supported_read(const void *cmd, uint16_t cmd_len, voi
 	}
 
 	err = bt_mcc_read_opcodes_supported(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1122,6 +1166,10 @@ static uint8_t mcp_content_control_id_read(const void *cmd, uint16_t cmd_len, vo
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Content Control ID read");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1131,7 +1179,7 @@ static uint8_t mcp_content_control_id_read(const void *cmd, uint16_t cmd_len, vo
 	}
 
 	err = bt_mcc_read_content_control_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1145,6 +1193,10 @@ static uint8_t mcp_segments_obj_id_read(const void *cmd, uint16_t cmd_len, void 
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Track Segments Object ID read");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1154,7 +1206,7 @@ static uint8_t mcp_segments_obj_id_read(const void *cmd, uint16_t cmd_len, void 
 	}
 
 	err = bt_mcc_read_segments_obj_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1168,6 +1220,10 @@ static uint8_t mcp_current_track_obj_id_read(const void *cmd, uint16_t cmd_len, 
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Current Track Object ID read");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1177,7 +1233,7 @@ static uint8_t mcp_current_track_obj_id_read(const void *cmd, uint16_t cmd_len, 
 	}
 
 	err = bt_mcc_read_current_track_obj_id(conn);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1192,6 +1248,10 @@ static uint8_t mcp_current_track_obj_id_set(const void *cmd, uint16_t cmd_len, v
 	struct bt_conn *conn;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCC Set Current Track Object ID");
 
 	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, &cp->address);
@@ -1201,7 +1261,7 @@ static uint8_t mcp_current_track_obj_id_set(const void *cmd, uint16_t cmd_len, v
 	}
 
 	err = bt_mcc_set_current_track_obj_id(conn, id);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1214,6 +1274,10 @@ static uint8_t mcp_cmd_send(const void *cmd, uint16_t cmd_len, void *rsp, uint16
 	struct mpl_cmd mcp_cmd;
 	struct bt_conn *conn;
 	int err;
+
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
 
 	LOG_DBG("MCC Send Command");
 
@@ -1228,7 +1292,7 @@ static uint8_t mcp_cmd_send(const void *cmd, uint16_t cmd_len, void *rsp, uint16
 	mcp_cmd.param = sys_le32_to_cpu(cp->param);
 
 	err = bt_mcc_send_cmd(conn, &mcp_cmd);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1242,6 +1306,9 @@ static uint8_t mcp_cmd_search(const void *cmd, uint16_t cmd_len, void *rsp, uint
 	struct mpl_sci scp_cmd;
 	struct bt_conn *conn;
 	int err;
+
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
 
 	LOG_DBG("MCC Send Search Control Point Command");
 
@@ -1299,7 +1366,7 @@ static uint8_t mcp_cmd_search(const void *cmd, uint16_t cmd_len, void *rsp, uint
 	}
 
 	err = bt_mcc_send_search(conn, &search_items);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1440,7 +1507,7 @@ uint8_t tester_init_mcp(void)
 	int err;
 
 	err = bt_mcc_init(&mcp_cb);
-	if (err) {
+	if (err != 0) {
 		LOG_DBG("Failed to initialize Media Control Client: %d", err);
 		return BTP_STATUS_FAILED;
 	}
@@ -1462,15 +1529,11 @@ static uint8_t mcs_supported_commands(const void *cmd, uint16_t cmd_len, void *r
 {
 	struct btp_mcs_read_supported_commands_rp *rp = rsp;
 
-	/* octet 0 */
-	tester_set_bit(rp->data, BTP_MCS_READ_SUPPORTED_COMMANDS);
-	tester_set_bit(rp->data, BTP_MCS_CMD_SEND);
-	tester_set_bit(rp->data, BTP_MCS_CURRENT_TRACK_OBJ_ID_GET);
-	tester_set_bit(rp->data, BTP_MCS_NEXT_TRACK_OBJ_ID_GET);
-	tester_set_bit(rp->data, BTP_MCS_INACTIVE_STATE_SET);
-	tester_set_bit(rp->data, BTP_MCS_PARENT_GROUP_SET);
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
 
-	*rsp_len = sizeof(*rp) + 1;
+	*rsp_len = tester_supported_commands(BTP_SERVICE_ID_GMCS, rp->data);
+	*rsp_len += sizeof(*rp);
 
 	return BTP_STATUS_SUCCESS;
 }
@@ -1481,6 +1544,10 @@ static uint8_t mcs_cmd_send(const void *cmd, uint16_t cmd_len, void *rsp, uint16
 	struct mpl_cmd mcp_cmd;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCS Send Command");
 
 	mcp_cmd.opcode = cp->opcode;
@@ -1488,7 +1555,7 @@ static uint8_t mcs_cmd_send(const void *cmd, uint16_t cmd_len, void *rsp, uint16
 	mcp_cmd.param = (cp->use_param != 0) ? sys_le32_to_cpu(cp->param) : 0;
 
 	err = media_proxy_ctrl_send_command(mcs_media_player, &mcp_cmd);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1501,10 +1568,13 @@ static uint8_t mcs_next_track_obj_id_get(const void *cmd, uint16_t cmd_len, void
 	struct btp_mcs_next_track_obj_id_rp *rp = rsp;
 	int err;
 
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
+
 	LOG_DBG("MCS Read Next Track Obj Id");
 
 	err = media_proxy_ctrl_get_next_track_id(mcs_media_player);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1521,10 +1591,13 @@ static uint8_t mcs_current_track_obj_id_get(const void *cmd, uint16_t cmd_len, v
 	struct btp_mcs_current_track_obj_id_rp *rp = rsp;
 	int err;
 
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
+
 	LOG_DBG("MCS Read Current Track Obj Id");
 
 	err = media_proxy_ctrl_get_current_track_id(mcs_media_player);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1540,10 +1613,15 @@ static uint8_t mcs_parent_group_set(const void *cmd, uint16_t cmd_len, void *rsp
 {
 	int err;
 
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	LOG_DBG("MCS Set Current Group to be it's own parent");
 
 	err = media_proxy_ctrl_get_current_group_id(mcs_media_player);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1551,7 +1629,7 @@ static uint8_t mcs_parent_group_set(const void *cmd, uint16_t cmd_len, void *rsp
 	mpl_test_unset_parent_group();
 
 	err = media_proxy_ctrl_get_parent_group_id(mcs_media_player);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 
@@ -1567,6 +1645,9 @@ static uint8_t mcs_inactive_state_set(const void *cmd, uint16_t cmd_len, void *r
 {
 	struct btp_mcs_state_set_rp *rp = rsp;
 
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
+
 	LOG_DBG("MCS Set Media Player to inactive state");
 
 	mpl_test_media_state_set(MEDIA_PROXY_STATE_INACTIVE);
@@ -1578,8 +1659,36 @@ static uint8_t mcs_inactive_state_set(const void *cmd, uint16_t cmd_len, void *r
 	return BTP_STATUS_SUCCESS;
 }
 
+static uint8_t mcs_player_name_set(const void *cmd, uint16_t cmd_len, void *rsp, uint16_t *rsp_len)
+{
+	const struct btp_mcs_player_name_set_cmd *cp = cmd;
+	char name[CONFIG_BT_MPL_MEDIA_PLAYER_NAME_MAX];
+	int err;
+
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
+	if (cmd_len < sizeof(*cp) || cmd_len != sizeof(*cp) + cp->name_len ||
+	    cp->name_len >= sizeof(name)) {
+		return BTP_STATUS_FAILED;
+	}
+
+	(void)memcpy(name, cp->name, cp->name_len);
+	name[cp->name_len] = '\0';
+
+	LOG_DBG("MCS Set Media Player Name");
+	err = media_proxy_ctrl_set_player_name(mcs_media_player, name);
+	if (err != 0) {
+		return BTP_STATUS_FAILED;
+	}
+
+	return BTP_STATUS_SUCCESS;
+}
+
 static void mcs_player_instance_cb(struct media_player *plr, int err)
 {
+	ARG_UNUSED(err);
+
 	mcs_media_player = plr;
 
 	LOG_DBG("Media PLayer Instance cb");
@@ -1587,11 +1696,18 @@ static void mcs_player_instance_cb(struct media_player *plr, int err)
 
 static void mcs_command_send_cb(struct media_player *player, int err, const struct mpl_cmd *cmd)
 {
+	ARG_UNUSED(player);
+	ARG_UNUSED(err);
+	ARG_UNUSED(cmd);
+
 	LOG_DBG("Media PLayer Send Command cb");
 }
 
 static void mcs_current_track_obj_id_cb(struct media_player *player, int err, uint64_t id)
 {
+	ARG_UNUSED(player);
+	ARG_UNUSED(err);
+
 	LOG_DBG("Media Player Current Track Object Id cb");
 
 	current_track_obj_id = id;
@@ -1599,6 +1715,9 @@ static void mcs_current_track_obj_id_cb(struct media_player *player, int err, ui
 
 static void mcs_next_track_obj_id_cb(struct media_player *player, int err, uint64_t id)
 {
+	ARG_UNUSED(player);
+	ARG_UNUSED(err);
+
 	LOG_DBG("Media PLayer Next Track Object ID cb");
 
 	next_track_obj_id = id;
@@ -1606,6 +1725,9 @@ static void mcs_next_track_obj_id_cb(struct media_player *player, int err, uint6
 
 static void mcs_media_state_cb(struct media_player *player, int err, uint8_t state)
 {
+	ARG_UNUSED(player);
+	ARG_UNUSED(err);
+
 	LOG_DBG("Media Player State cb");
 
 	media_player_state = state;
@@ -1613,6 +1735,9 @@ static void mcs_media_state_cb(struct media_player *player, int err, uint8_t sta
 
 static void mcs_current_group_id_cb(struct media_player *player, int err, uint64_t id)
 {
+	ARG_UNUSED(player);
+	ARG_UNUSED(err);
+
 	LOG_DBG("Media Player Current Group ID cb");
 
 	current_id = id;
@@ -1620,6 +1745,9 @@ static void mcs_current_group_id_cb(struct media_player *player, int err, uint64
 
 static void mcs_parent_group_id_cb(struct media_player *player, int err, uint64_t id)
 {
+	ARG_UNUSED(player);
+	ARG_UNUSED(err);
+
 	LOG_DBG("Media Player Parent Group ID cb");
 
 	parent_id = id;
@@ -1667,6 +1795,11 @@ static const struct btp_handler mcs_handlers[] = {
 		.expect_len = 0,
 		.func = mcs_parent_group_set,
 	},
+	{
+		.opcode = BTP_MCS_PLAYER_NAME_SET,
+		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
+		.func = mcs_player_name_set,
+	},
 };
 
 uint8_t tester_init_mcs(void)
@@ -1674,13 +1807,13 @@ uint8_t tester_init_mcs(void)
 	int err;
 
 	err = media_proxy_pl_init();
-	if (err) {
+	if (err != 0) {
 		LOG_DBG("Failed to initialize Media Player: %d", err);
 		return BTP_STATUS_FAILED;
 	}
 
 	err = media_proxy_ctrl_register(&mcs_cbs);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 

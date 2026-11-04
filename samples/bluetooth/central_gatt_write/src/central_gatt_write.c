@@ -16,18 +16,17 @@ extern int mtu_exchange(struct bt_conn *conn);
 extern int write_cmd(struct bt_conn *conn);
 extern struct bt_conn *conn_connected;
 extern uint32_t last_write_rate;
+extern uint32_t *write_countdown;
 extern void (*start_scan_func)(void);
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
-	char dev[BT_ADDR_LE_STR_LEN];
 	struct bt_conn *conn;
 	int err;
 
-	bt_addr_le_to_str(addr, dev, sizeof(dev));
 	printk("[DEVICE]: %s, AD evt type %u, AD data len %u, RSSI %i\n",
-	       dev, type, ad->len, rssi);
+	       bt_addr_le_str(addr), type, ad->len, rssi);
 
 	/* We're only interested in connectable events */
 	if (type != BT_GAP_ADV_TYPE_ADV_IND &&
@@ -94,6 +93,21 @@ uint32_t central_gatt_write(uint32_t count)
 
 	conn_connected = NULL;
 	last_write_rate = 0U;
+	write_countdown = &count;
+
+	if (count != 0U) {
+		printk("GATT Write countdown %u on connection.\n", count);
+	} else {
+		printk("GATT Write forever on connection.\n");
+	}
+
+#if defined(CONFIG_BT_USER_PHY_UPDATE)
+	err = bt_conn_le_set_default_phy(BT_GAP_LE_PHY_1M, BT_GAP_LE_PHY_1M);
+	if (err) {
+		printk("Failed to set default PHY (err %d)\n", err);
+		return 0U;
+	}
+#endif /* CONFIG_BT_USER_PHY_UPDATE */
 
 	start_scan_func = start_scan;
 	start_scan_func();
@@ -114,7 +128,14 @@ uint32_t central_gatt_write(uint32_t count)
 			(void)write_cmd(conn);
 			bt_conn_unref(conn);
 
+			/* Passing `0` will not use GATT Write Cmd countdown.
+			 * Below code block will be optimized out by the linker.
+			 */
 			if (count) {
+				if ((count % 1000U) == 0U) {
+					printk("GATT Write countdown %u\n", count);
+				}
+
 				count--;
 				if (!count) {
 					break;

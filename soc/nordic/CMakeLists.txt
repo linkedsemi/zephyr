@@ -17,11 +17,13 @@ zephyr_library_sources(
 # headers for different SoCs.
 set(dt_binding_includes ${DTS_INCLUDE_FILES})
 list(FILTER dt_binding_includes INCLUDE REGEX "/dt-bindings/.*\.h$")
-list(TRANSFORM dt_binding_includes PREPEND "-include;")
+
+set(include_flag $<TARGET_PROPERTY:compiler,include_file>$<SEMICOLON>)
+
 set_source_files_properties(
   validate_binding_headers.c
   DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-  PROPERTIES COMPILE_OPTIONS "${dt_binding_includes}"
+  PROPERTIES COMPILE_OPTIONS "${include_flag}$<JOIN:${dt_binding_includes},;${include_flag}>"
 )
 
 if(CONFIG_SOC_HAS_TIMING_FUNCTIONS AND NOT CONFIG_BOARD_HAS_TIMING_FUNCTIONS)
@@ -36,12 +38,27 @@ endif()
 if(CONFIG_BUILD_WITH_TFM)
   set_property(TARGET zephyr_property_target
     APPEND PROPERTY TFM_CMAKE_OPTIONS -DHAL_NORDIC_PATH=${ZEPHYR_HAL_NORDIC_MODULE_DIR}
-    )
+  )
+
+  if(CONFIG_SOC_NRF7120_TFM_MRAMC_SERVICE)
+    set(nrf_mramc_service ON)
+  else()
+    set(nrf_mramc_service OFF)
+  endif()
+
+  if(CONFIG_SOC_SERIES_NRF71_TFM_RAM_CTRL_SERVICE)
+    set(nrf_ram_ctrl_service ON)
+  else()
+    set(nrf_ram_ctrl_service OFF)
+  endif()
 
   set_property(TARGET zephyr_property_target
     APPEND PROPERTY TFM_CMAKE_OPTIONS -DNRF_NS_STORAGE=${CONFIG_TFM_NRF_NS_STORAGE}
-    )
+    APPEND PROPERTY TFM_CMAKE_OPTIONS -DSOC_NRF7120_TFM_MRAMC_SERVICE=${nrf_mramc_service}
+    APPEND PROPERTY TFM_CMAKE_OPTIONS -DNRF_RAM_CTRL_SERVICE=${nrf_ram_ctrl_service}
+  )
 endif()
 
-add_subdirectory(${SOC_SERIES})
+add_subdirectory(${CONFIG_SOC_SERIES})
+
 add_subdirectory(common)

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <freq.h>
+
 / {
 	#address-cells = <0x01>;
 	#size-cells = <0x01>;
@@ -12,13 +14,16 @@
 	cpus {
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
+		timebase-frequency = <DT_FREQ_M(1)>;
 
 		cpu@0 {
 			device_type = "cpu";
 			reg = <0x00>;
 			status = "okay";
 			compatible = "lowrisc,ibex", "riscv";
-			riscv,isa = "rv32imcb_zicsr_zifencei";
+			riscv,isa-base = "rv32i";
+			riscv,isa-extensions = "i", "m", "c", "zicsr", "zifencei",
+					       "zba", "zbb", "zbc", "zbs";
 
 			hlic: interrupt-controller {
 				#interrupt-cells = <0x01>;
@@ -45,11 +50,11 @@
 		};
 
 		mtimer: timer@40100000 {
-			compatible = "lowrisc,machine-timer";
-			reg = <0x40100000 0x200>;
-			interrupts = <7 0>;
-			interrupt-parent = <&hlic>;
-			status = "disabled";
+			compatible = "riscv,machine-timer";
+			/* "ctrl" holds the rv_timer regs the machine-timer binding doesn't cover */
+			reg = <0x40100000 0x104>, <0x40100110 0x8>, <0x40100118 0x8>;
+			reg-names = "ctrl", "mtime", "mtimecmp";
+			interrupts-extended = <&hlic 7>;
 		};
 
 		aontimer: aontimer@40470000 {
@@ -80,7 +85,7 @@
 			status = "okay";
 		};
 
-		uart0: serial@40000000{
+		uart0: serial@40000000 {
 			reg = <0x40000000 0x1000>;
 			compatible = "lowrisc,opentitan-uart";
 			status = "disabled";
@@ -105,4 +110,3 @@
 		};
 	};
 };
-

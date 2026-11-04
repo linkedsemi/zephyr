@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Espressif Systems (Shanghai) Co., Ltd.
+ * Copyright (c) 2020-2025 Espressif Systems (Shanghai) Co., Ltd.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,8 +8,10 @@
 
 /* Include esp-idf headers first to avoid redefining BIT() macro */
 #include <hal/spi_hal.h>
+#include <hal/spi_ll.h>
 #include <esp_attr.h>
 #include <esp_clk_tree.h>
+#include <zephyr/cache.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(esp32_spi, CONFIG_SPI_LOG_LEVEL);
@@ -17,29 +19,64 @@ LOG_MODULE_REGISTER(esp32_spi, CONFIG_SPI_LOG_LEVEL);
 #include <soc.h>
 #include <esp_memory_utils.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
-#if defined(CONFIG_SOC_SERIES_ESP32C2) || defined(CONFIG_SOC_SERIES_ESP32C3) ||                    \
-	defined(CONFIG_SOC_SERIES_ESP32C6)
-#include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
-#else
+#include "spi_rtio.h"
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
-#endif
 #ifdef SOC_GDMA_SUPPORTED
-#include <hal/gdma_hal.h>
-#include <hal/gdma_ll.h>
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/dma/dma_esp32.h>
 #endif
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/pm/policy.h>
 #include "spi_context.h"
 #include "spi_esp32_spim.h"
 
-#if defined(CONFIG_SOC_SERIES_ESP32C2) || defined(CONFIG_SOC_SERIES_ESP32C3) ||                    \
-	defined(CONFIG_SOC_SERIES_ESP32C6)
-#define ISR_HANDLER isr_handler_t
+#if CONFIG_ESP32_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_SPI_SUPPORT_SLEEP_RETENTION
+#define SPI_SLEEP_RETENTION_ENABLED 1
 #else
-#define ISR_HANDLER intr_handler_t
+#define SPI_SLEEP_RETENTION_ENABLED 0
+#endif
+
+#if SPI_SLEEP_RETENTION_ENABLED
+#include <soc/spi_periph.h>
+#include <esp_private/sleep_retention.h>
+#endif
+
+#if defined(CONFIG_SOC_SERIES_ESP32S2) && defined(CONFIG_ADC_ESP32_DMA) &&                         \
+	DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(spi3)) && DT_PROP(DT_NODELABEL(spi3), dma_enabled)
+#error "spi3 must not have dma-enabled if ADC_ESP32_DMA is enabled for ESP32-S2"
 #endif
 
 #define SPI_DMA_MAX_BUFFER_SIZE 4092
+
+#define SPI_DMA_RX 0
+#define SPI_DMA_TX 1
+
+#if CONFIG_PM
+static void spi_esp32_pm_policy_state_lock_get(const struct device *dev)
+{
+	struct spi_esp32_data *data = dev->data;
+	unsigned int key = irq_lock();
+
+	if (!data->pm_policy_state_on) {
+		data->pm_policy_state_on = true;
+		pm_policy_state_all_lock_get();
+	}
+
+	irq_unlock(key);
+}
+
+static void spi_esp32_pm_policy_state_lock_put(const struct device *dev)
+{
+	struct spi_esp32_data *data = dev->data;
+	unsigned int key = irq_lock();
+
+	if (data->pm_policy_state_on) {
+		data->pm_policy_state_on = false;
+		pm_policy_state_all_lock_put();
+	}
+	irq_unlock(key);
+}
+#endif
 
 static bool spi_esp32_transfer_ongoing(struct spi_esp32_data *data)
 {
@@ -47,7 +84,7 @@ static bool spi_esp32_transfer_ongoing(struct spi_esp32_data *data)
 }
 
 static inline void spi_esp32_complete(const struct device *dev,
-				      struct spi_esp32_data *data,
+				      struct spi_esp32_data *data __maybe_unused,
 				      spi_dev_t *spi, int status)
 {
 #ifdef CONFIG_SPI_ESP32_INTERRUPT
@@ -60,8 +97,110 @@ static inline void spi_esp32_complete(const struct device *dev,
 #ifdef CONFIG_SPI_ESP32_INTERRUPT
 	spi_context_complete(&data->ctx, dev, status);
 #endif
-
 }
+
+#ifdef SOC_GDMA_SUPPORTED
+static int spi_esp32_gdma_config(const struct device *dev, uint8_t dir, uint8_t *buf, size_t len)
+{
+	const struct spi_esp32_config *cfg = dev->config;
+	struct dma_config dma_cfg = {};
+	struct dma_status dma_status = {};
+	struct dma_block_config dma_blk = {};
+	int err = 0;
+
+	uint8_t dma_channel = (dir == SPI_DMA_RX) ? cfg->dma_rx_ch : cfg->dma_tx_ch;
+
+	if (dma_channel == 0xFF) {
+		LOG_ERR("DMA channel is not configured in device tree");
+		return -EINVAL;
+	}
+
+	err = dma_get_status(cfg->dma_dev, dma_channel, &dma_status);
+	if (err) {
+		return -EINVAL;
+	}
+
+	if (dma_status.busy) {
+		LOG_ERR("DMA channel %d is busy", dma_channel);
+		return -EBUSY;
+	}
+
+	if (dir == SPI_DMA_RX) {
+		dma_cfg.channel_direction = PERIPHERAL_TO_MEMORY;
+		dma_blk.dest_address = (uint32_t)buf;
+	} else {
+		dma_cfg.channel_direction = MEMORY_TO_PERIPHERAL;
+		dma_blk.source_address = (uint32_t)buf;
+	}
+	/* dma-host selects the SPI host (0 -> SPI2, 1 -> SPI3), while the GDMA
+	 * expects the peripheral trigger id. Derive the trigger from the SPI2
+	 * base so the correct peripheral is connected on SoCs where the SPI2
+	 * trigger is not zero (e.g. ESP32-C5, ESP32-C61).
+	 */
+	dma_cfg.dma_slot = SOC_GDMA_TRIG_PERIPH_SPI2 + cfg->dma_host;
+	dma_cfg.block_count = 1;
+	dma_cfg.head_block = &dma_blk;
+	dma_blk.block_size = len;
+
+	err = dma_config(cfg->dma_dev, dma_channel, &dma_cfg);
+	if (err) {
+		LOG_ERR("Error configuring DMA (%d)", err);
+	}
+
+	return err;
+}
+
+static int spi_esp32_gdma_start(const struct device *dev, uint8_t dir)
+{
+	const struct spi_esp32_config *cfg = dev->config;
+	uint8_t dma_channel = (dir == SPI_DMA_RX) ? cfg->dma_rx_ch : cfg->dma_tx_ch;
+
+	return dma_start(cfg->dma_dev, dma_channel);
+}
+#else  /* !SOC_GDMA_SUPPORTED - ESP32/ESP32-S2 integrated SPI-DMA */
+
+/* Setup DMA descriptor for ESP32/ESP32-S2 integrated DMA */
+static void spi_esp32_dma_desc_setup(lldesc_t *desc, uint8_t *buf, size_t len, bool is_rx)
+{
+	memset(desc, 0, sizeof(lldesc_t));
+	desc->size = len;
+	desc->length = is_rx ? 0 : len;
+	desc->buf = buf;
+	desc->owner = 1;
+	desc->eof = 1;
+	desc->sosf = 0;
+	desc->offset = 0;
+	desc->qe.stqe_next = NULL;
+}
+
+static void spi_esp32_dma_rx_start(const struct device *dev, uint8_t *buf, size_t len)
+{
+	const struct spi_esp32_config *cfg = dev->config;
+	struct spi_esp32_data *data = dev->data;
+	spi_dev_t *hw = cfg->spi;
+
+	spi_esp32_dma_desc_setup(&data->dma_desc_rx, buf, len, true);
+
+	/* Reset DMA channel, prepare SPI HW for RX, then start DMA */
+	spi_dma_ll_rx_reset((spi_dma_dev_t *)hw, 0);
+	spi_hal_hw_prepare_rx(hw);
+	spi_dma_ll_rx_start((spi_dma_dev_t *)hw, 0, &data->dma_desc_rx);
+}
+
+static void spi_esp32_dma_tx_start(const struct device *dev, uint8_t *buf, size_t len)
+{
+	const struct spi_esp32_config *cfg = dev->config;
+	struct spi_esp32_data *data = dev->data;
+	spi_dev_t *hw = cfg->spi;
+
+	spi_esp32_dma_desc_setup(&data->dma_desc_tx, buf, len, false);
+
+	/* Reset DMA channel, prepare SPI HW for TX, then start DMA */
+	spi_dma_ll_tx_reset((spi_dma_dev_t *)hw, 0);
+	spi_hal_hw_prepare_tx(hw);
+	spi_dma_ll_tx_start((spi_dma_dev_t *)hw, 0, &data->dma_desc_tx);
+}
+#endif /* SOC_GDMA_SUPPORTED */
 
 static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 {
@@ -79,8 +218,10 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 	size_t bit_len = transfer_len_bytes << 3;
 	uint8_t *rx_temp = NULL;
 	uint8_t *tx_temp = NULL;
-	uint8_t dma_len_tx = MIN(ctx->tx_len * data->dfs, SPI_DMA_MAX_BUFFER_SIZE);
-	uint8_t dma_len_rx = MIN(ctx->rx_len * data->dfs, SPI_DMA_MAX_BUFFER_SIZE);
+	size_t dma_len_tx = MIN(ctx->tx_len * data->dfs, SPI_DMA_MAX_BUFFER_SIZE);
+	size_t dma_len_rx = MIN(ctx->rx_len * data->dfs, SPI_DMA_MAX_BUFFER_SIZE);
+	bool prepare_data = true;
+	int err = 0;
 
 	if (cfg->dma_enabled) {
 		/* bit_len needs to be at least one byte long when using DMA */
@@ -93,6 +234,16 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 				return -ENOMEM;
 			}
 			memcpy(tx_temp, &ctx->tx_buf[0], dma_len_tx);
+		} else if (!ctx->tx_buf && ctx->rx_buf && !hal_dev->half_duplex) {
+			/* Full-duplex RX-only transfer: allocate zero-filled TX buffer.
+			 * In loopback configurations (GPIO matrix or external wire),
+			 * SDO must actively output zeros so SDI receives zeros.
+			 */
+			tx_temp = k_calloc(dma_len_rx, sizeof(uint8_t));
+			if (!tx_temp) {
+				LOG_ERR("Error allocating zero buffer for RX-only");
+				return -ENOMEM;
+			}
 		}
 		if (ctx->rx_buf && (!esp_ptr_dma_capable((uint32_t *)&ctx->rx_buf[0]) ||
 				    ((int)&ctx->rx_buf[0] % 4 != 0) || (dma_len_rx % 4 != 0))) {
@@ -104,28 +255,139 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 			rx_temp = k_calloc(((dma_len_rx << 3) + 31) / 8, sizeof(uint8_t));
 			if (!rx_temp) {
 				LOG_ERR("Error allocating temp buffer Rx");
-				k_free(tx_temp);
-				return -ENOMEM;
+				err = -ENOMEM;
+				goto free;
 			}
 		}
 	}
 
 	/* clean up and prepare SPI hal */
-	memset((uint32_t *)hal->hw->data_buf, 0, sizeof(hal->hw->data_buf));
+	for (size_t i = 0; i < ARRAY_SIZE(hal->hw->data_buf); ++i) {
+#if defined(CONFIG_SOC_SERIES_ESP32C5) || defined(CONFIG_SOC_SERIES_ESP32C61) ||                   \
+	defined(CONFIG_SOC_SERIES_ESP32C6) || defined(CONFIG_SOC_SERIES_ESP32H2) ||                \
+	defined(CONFIG_SOC_SERIES_ESP32P4)
+		hal->hw->data_buf[i].val = 0;
+#else
+		hal->hw->data_buf[i] = 0;
+#endif
+	}
+
 	hal_trans->send_buffer = tx_temp ? tx_temp : (uint8_t *)ctx->tx_buf;
 	hal_trans->rcv_buffer = rx_temp ? rx_temp : ctx->rx_buf;
 	hal_trans->tx_bitlen = bit_len;
 	hal_trans->rx_bitlen = bit_len;
 
-	/* keep cs line active until last transmission */
+	/* Use the remaining length, not the buffer count, so trailing
+	 * zero-length buffers do not keep CS asserted.
+	 */
+	size_t tx_remaining =
+		(ctx->tx_len > transfer_len_frames) ? (ctx->tx_len - transfer_len_frames) : 0;
+	size_t rx_remaining =
+		(ctx->rx_len > transfer_len_frames) ? (ctx->rx_len - transfer_len_frames) : 0;
+
+	for (size_t i = 1; i < ctx->tx_count; i++) {
+		tx_remaining += ctx->current_tx[i].len;
+	}
+	for (size_t i = 1; i < ctx->rx_count; i++) {
+		rx_remaining += ctx->current_rx[i].len;
+	}
+
 	hal_trans->cs_keep_active =
-		(!ctx->num_cs_gpios &&
-		 (ctx->rx_count > 1 || ctx->tx_count > 1 || ctx->rx_len > transfer_len_frames ||
-		  ctx->tx_len > transfer_len_frames));
+		(UTIL_OR(IS_ENABLED(DT_SPI_CTX_HAS_NO_CS_GPIOS), (ctx->num_cs_gpios == 0)) &&
+		 (tx_remaining > 0 || rx_remaining > 0));
 
 	/* configure SPI */
 	spi_hal_setup_trans(hal, hal_dev, hal_trans);
-	spi_hal_prepare_data(hal, hal_dev, hal_trans);
+
+#if defined(SOC_GDMA_SUPPORTED)
+	if (cfg->dma_enabled && hal_trans->rcv_buffer) {
+		sys_cache_data_flush_and_invd_range(hal_trans->rcv_buffer, transfer_len_bytes);
+		err = spi_esp32_gdma_config(dev, SPI_DMA_RX, hal_trans->rcv_buffer,
+					    transfer_len_bytes);
+		if (err) {
+			goto free;
+		}
+	}
+
+	if (cfg->dma_enabled && hal_trans->send_buffer) {
+		sys_cache_data_flush_range(hal_trans->send_buffer, transfer_len_bytes);
+		err = spi_esp32_gdma_config(dev, SPI_DMA_TX, hal_trans->send_buffer,
+					    transfer_len_bytes);
+		if (err) {
+			goto free;
+		}
+	}
+
+	if (cfg->dma_enabled && hal_trans->rcv_buffer) {
+		spi_ll_dma_rx_fifo_reset(hal->hw);
+		spi_ll_infifo_full_clr(hal->hw);
+		spi_ll_dma_rx_enable(hal->hw, 1);
+
+		err = spi_esp32_gdma_start(dev, SPI_DMA_RX);
+		if (err) {
+			goto free;
+		}
+	}
+
+	if (cfg->dma_enabled && hal_trans->send_buffer) {
+		spi_ll_dma_tx_fifo_reset(hal->hw);
+		spi_ll_outfifo_empty_clr(hal->hw);
+		spi_ll_dma_tx_enable(hal->hw, 1);
+
+		err = spi_esp32_gdma_start(dev, SPI_DMA_TX);
+		if (err) {
+			goto free;
+		}
+	}
+
+	if (cfg->dma_enabled) {
+		/* Enable SDO/SDI data lines AFTER DMA is configured.
+		 * Note: For full-duplex RX-only DMA, we allocate a zero-filled TX
+		 * buffer above, so send_buffer is always set when rcv_buffer is set.
+		 */
+		spi_hal_enable_data_line(hal->hw, hal_trans->send_buffer != NULL,
+					 hal_trans->rcv_buffer != NULL);
+	}
+
+	prepare_data = !cfg->dma_enabled;
+#else /* !SOC_GDMA_SUPPORTED - ESP32/ESP32-S2 integrated SPI-DMA */
+	/*
+	 * For ESP32/ESP32-S2, DMA is integrated into the SPI peripheral.
+	 * Use spi_dma_ll_* functions to control it.
+	 */
+	if (cfg->dma_enabled && hal_trans->rcv_buffer) {
+		spi_esp32_dma_rx_start(dev, hal_trans->rcv_buffer, transfer_len_bytes);
+	}
+#if defined(CONFIG_SOC_SERIES_ESP32)
+	else if (cfg->dma_enabled && !hal_dev->half_duplex) {
+		/* ESP32: RX DMA channel must be running for TX-only full-duplex
+		 * transfers, otherwise DMA does not operate correctly.
+		 */
+		spi_ll_dma_rx_enable(hal->hw, 1);
+		spi_dma_ll_rx_start((spi_dma_dev_t *)hal->hw, 0, NULL);
+	}
+#endif
+
+	if (cfg->dma_enabled && hal_trans->send_buffer) {
+		spi_esp32_dma_tx_start(dev, hal_trans->send_buffer, transfer_len_bytes);
+	}
+
+	if (cfg->dma_enabled) {
+		spi_hal_enable_data_line(hal->hw, hal_trans->send_buffer != NULL,
+					 hal_trans->rcv_buffer != NULL);
+	}
+
+	prepare_data = !cfg->dma_enabled;
+#endif /* SOC_GDMA_SUPPORTED */
+
+	if (prepare_data) {
+		spi_hal_push_tx_buffer(hal, hal_trans);
+		spi_hal_enable_data_line(hal->hw,
+					 (hal_trans->send_buffer != NULL) ||
+						 (!hal_dev->half_duplex &&
+						  (hal_trans->rcv_buffer != NULL)),
+					 hal_trans->rcv_buffer != NULL);
+	}
 
 	/* send data */
 	spi_hal_user_start(hal);
@@ -135,8 +397,26 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 		/* nop */
 	}
 
-	/* read data */
-	spi_hal_fetch_result(hal);
+#if defined(SOC_GDMA_SUPPORTED)
+	if (cfg->dma_enabled) {
+		if (hal_trans->rcv_buffer) {
+			dma_stop(cfg->dma_dev, cfg->dma_rx_ch);
+			/* Invalidate cache for the RX buffer so the CPU reads fresh
+			 * data the DMA just wrote to memory. No-op when CACHE_MANAGEMENT
+			 * is disabled.
+			 */
+			sys_cache_data_invd_range(hal_trans->rcv_buffer, transfer_len_bytes);
+		}
+		if (hal_trans->send_buffer) {
+			dma_stop(cfg->dma_dev, cfg->dma_tx_ch);
+		}
+	}
+#endif
+
+	if (!cfg->dma_enabled) {
+		/* read data */
+		spi_hal_fetch_result(hal);
+	}
 
 	if (rx_temp) {
 		memcpy(&ctx->rx_buf[0], rx_temp, transfer_len_bytes);
@@ -144,11 +424,122 @@ static int IRAM_ATTR spi_esp32_transfer(const struct device *dev)
 
 	spi_context_update_rx(&data->ctx, data->dfs, transfer_len_frames);
 
+free:
 	k_free(tx_temp);
 	k_free(rx_temp);
 
-	return 0;
+	return err;
 }
+
+#ifdef CONFIG_ESP32_SPI_TARGET
+/*
+ * A controller clocks the whole frame within one chip-select assertion, so the
+ * scattered transfer buffers are coalesced into a single FIFO-sized transfer.
+ */
+static void IRAM_ATTR spi_esp32_target_arm(const struct device *dev)
+{
+	struct spi_esp32_data *data = dev->data;
+	struct spi_context *ctx = &data->ctx;
+	spi_slave_hal_context_t *hal = &data->target_hal;
+	size_t max_frames = SOC_SPI_MAXIMUM_BUFFER_SIZE / data->dfs;
+	size_t off = 0;
+	size_t frames = 0;
+
+	data->target_rx_seg_cnt = 0;
+
+	while (frames < max_frames && (spi_context_tx_on(ctx) || spi_context_rx_on(ctx))) {
+		size_t chunk = spi_context_max_continuous_chunk(ctx);
+
+		/* Stop gathering rather than clock data that could not be
+		 * scattered back: a receive buffer that does not fit in the
+		 * segment table would be silently dropped.
+		 */
+		if (ctx->rx_buf && data->target_rx_seg_cnt >= CONFIG_SPI_ESP32_TARGET_MAX_BUFS) {
+			LOG_WRN("Target rx segments exceed %d; truncating transfer",
+				CONFIG_SPI_ESP32_TARGET_MAX_BUFS);
+			break;
+		}
+
+		chunk = MIN(chunk, max_frames - frames);
+
+		if (ctx->tx_buf) {
+			memcpy(&data->target_tx_buf[off], ctx->tx_buf, chunk * data->dfs);
+		} else {
+			memset(&data->target_tx_buf[off], 0, chunk * data->dfs);
+		}
+
+		if (ctx->rx_buf) {
+			data->target_rx_seg[data->target_rx_seg_cnt].buf = ctx->rx_buf;
+			data->target_rx_seg[data->target_rx_seg_cnt].off = off;
+			data->target_rx_seg[data->target_rx_seg_cnt].len = chunk * data->dfs;
+			data->target_rx_seg_cnt++;
+		}
+
+		off += chunk * data->dfs;
+		frames += chunk;
+
+		spi_context_update_tx(ctx, data->dfs, chunk);
+		spi_context_update_rx(ctx, data->dfs, chunk);
+	}
+
+	data->target_frames = frames;
+
+	hal->tx_buffer = data->target_tx_buf;
+	hal->rx_buffer = data->target_rx_buf;
+	hal->bitlen = (frames * data->dfs) << 3;
+
+#ifdef SOC_GDMA_SUPPORTED
+	hal->use_dma = false;
+	spi_slave_hal_hw_reset(hal);
+	spi_slave_hal_push_tx_buffer(hal);
+	/* Reset the TX FIFO after the push so it reloads from the registers. */
+	spi_slave_hal_hw_fifo_reset(hal, true, false);
+	spi_slave_hal_set_trans_bitlen(hal);
+	spi_slave_hal_user_start(hal);
+#else
+	size_t len = frames * data->dfs;
+
+	hal->use_dma = true;
+
+	spi_esp32_dma_desc_setup(&data->dma_desc_tx, data->target_tx_buf, len, false);
+	spi_esp32_dma_desc_setup(&data->dma_desc_rx, data->target_rx_buf, len, true);
+
+	spi_slave_hal_hw_reset(hal);
+
+	spi_dma_ll_tx_reset((spi_dma_dev_t *)hal->hw, 0);
+	spi_dma_ll_rx_reset((spi_dma_dev_t *)hal->hw, 0);
+	spi_slave_hal_hw_prepare_tx(hal->hw);
+	spi_slave_hal_hw_prepare_rx(hal->hw);
+	spi_dma_ll_tx_start((spi_dma_dev_t *)hal->hw, 0, &data->dma_desc_tx);
+	spi_dma_ll_rx_start((spi_dma_dev_t *)hal->hw, 0, &data->dma_desc_rx);
+
+	spi_slave_hal_set_trans_bitlen(hal);
+	spi_slave_hal_enable_data_line(hal);
+	spi_slave_hal_user_start(hal);
+#endif
+}
+
+/* Scatter the received data back into the original spi_context RX buffers. */
+static void IRAM_ATTR spi_esp32_target_transfer(const struct device *dev)
+{
+	struct spi_esp32_data *data = dev->data;
+	struct spi_context *ctx = &data->ctx;
+	spi_slave_hal_context_t *hal = &data->target_hal;
+	size_t rcv_bytes = 0;
+
+	spi_slave_hal_store_result(hal);
+
+	for (size_t i = 0; i < data->target_rx_seg_cnt; i++) {
+		memcpy(data->target_rx_seg[i].buf, &data->target_rx_buf[data->target_rx_seg[i].off],
+		       data->target_rx_seg[i].len);
+		rcv_bytes += data->target_rx_seg[i].len;
+	}
+
+	/* Arming counted all armed frames; report only those actually stored. */
+	ctx->recv_frames -= data->target_frames;
+	ctx->recv_frames += rcv_bytes / data->dfs;
+}
+#endif /* CONFIG_ESP32_SPI_TARGET */
 
 #ifdef CONFIG_SPI_ESP32_INTERRUPT
 static void IRAM_ATTR spi_esp32_isr(void *arg)
@@ -157,11 +548,33 @@ static void IRAM_ATTR spi_esp32_isr(void *arg)
 	const struct spi_esp32_config *cfg = dev->config;
 	struct spi_esp32_data *data = dev->data;
 
+#ifdef CONFIG_ESP32_SPI_TARGET
+	if (data->target_mode) {
+		spi_esp32_target_transfer(dev);
+
+		if (spi_esp32_transfer_ongoing(data)) {
+			spi_esp32_target_arm(dev);
+		} else {
+			spi_ll_disable_int(cfg->spi);
+			spi_ll_clear_int_stat(cfg->spi);
+			spi_context_complete(&data->ctx, dev, 0);
+#if CONFIG_PM
+			spi_esp32_pm_policy_state_lock_put(dev);
+#endif
+		}
+		return;
+	}
+#endif /* CONFIG_ESP32_SPI_TARGET */
+
 	do {
 		spi_esp32_transfer(dev);
 	} while (spi_esp32_transfer_ongoing(data));
 
 	spi_esp32_complete(dev, data, cfg->spi, 0);
+
+#if CONFIG_PM
+	spi_esp32_pm_policy_state_lock_put(dev);
+#endif
 }
 #endif
 
@@ -169,57 +582,76 @@ static int spi_esp32_init_dma(const struct device *dev)
 {
 	const struct spi_esp32_config *cfg = dev->config;
 	struct spi_esp32_data *data = dev->data;
-	uint8_t channel_offset;
 
+#ifdef SOC_GDMA_SUPPORTED
+	if (cfg->dma_dev) {
+		if (!device_is_ready(cfg->dma_dev)) {
+			LOG_ERR("DMA device is not ready");
+			return -ENODEV;
+		}
+	}
+	/* For GDMA platforms, DMA is handled by the GDMA driver, not SPI HAL */
+	data->hal.dma_enabled = false;
+#else
 	if (clock_control_on(cfg->clock_dev, (clock_control_subsys_t)cfg->dma_clk_src)) {
 		LOG_ERR("Could not enable DMA clock");
 		return -EIO;
 	}
-
-#ifdef SOC_GDMA_SUPPORTED
-	gdma_hal_init(&data->hal_gdma, 0);
-	gdma_ll_enable_clock(data->hal_gdma.dev, true);
-	gdma_ll_tx_reset_channel(data->hal_gdma.dev, cfg->dma_host);
-	gdma_ll_rx_reset_channel(data->hal_gdma.dev, cfg->dma_host);
-	gdma_ll_tx_connect_to_periph(data->hal_gdma.dev, cfg->dma_host, GDMA_TRIG_PERIPH_SPI,
-				     cfg->dma_host);
-	gdma_ll_rx_connect_to_periph(data->hal_gdma.dev, cfg->dma_host, GDMA_TRIG_PERIPH_SPI,
-				     cfg->dma_host);
-	channel_offset = 0;
-#else
-	channel_offset = 1;
+	data->hal.dma_enabled = true;
 #endif /* SOC_GDMA_SUPPORTED */
+
 #ifdef CONFIG_SOC_SERIES_ESP32
-	/*Connect SPI and DMA*/
+	/* Connect SPI and DMA */
 	DPORT_SET_PERI_REG_BITS(DPORT_SPI_DMA_CHAN_SEL_REG, 3, cfg->dma_host + 1,
 				((cfg->dma_host + 1) * 2));
 #endif /* CONFIG_SOC_SERIES_ESP32 */
 
-	data->hal_config.dma_in = (spi_dma_dev_t *)cfg->spi;
-	data->hal_config.dma_out = (spi_dma_dev_t *)cfg->spi;
-	data->hal_config.dma_enabled = true;
-	data->hal_config.tx_dma_chan = cfg->dma_host + channel_offset;
-	data->hal_config.rx_dma_chan = cfg->dma_host + channel_offset;
-	data->hal_config.dmadesc_n = 1;
-	data->hal_config.dmadesc_rx = &data->dma_desc_rx;
-	data->hal_config.dmadesc_tx = &data->dma_desc_tx;
-
-	if (data->hal_config.dmadesc_tx == NULL || data->hal_config.dmadesc_rx == NULL) {
-		k_free(data->hal_config.dmadesc_tx);
-		k_free(data->hal_config.dmadesc_rx);
-		return -ENOMEM;
-	}
-
-	spi_hal_init(&data->hal, cfg->dma_host + 1, &data->hal_config);
 	return 0;
 }
+
+#if SPI_SLEEP_RETENTION_ENABLED
+static esp_err_t spi_esp32_create_sleep_retention_cb(void *arg)
+{
+	const struct device *dev = arg;
+	const struct spi_esp32_config *cfg = dev->config;
+	unsigned int idx = cfg->dma_host;
+
+	return sleep_retention_entries_create(
+		spi_reg_retention_info[idx].entry_array, spi_reg_retention_info[idx].array_size,
+		REGDMA_LINK_PRI_GPSPI, spi_reg_retention_info[idx].module_id);
+}
+
+static void spi_esp32_sleep_retention_init(const struct device *dev)
+{
+	const struct spi_esp32_config *cfg = dev->config;
+	unsigned int idx = cfg->dma_host;
+
+	sleep_retention_module_t module = spi_reg_retention_info[idx].module_id;
+	sleep_retention_module_init_param_t init_param = {
+		.cbs = {.create = {.handle = spi_esp32_create_sleep_retention_cb,
+				   .arg = (void *)dev}},
+		.attribute = SLEEP_RETENTION_MODULE_ATTR_ATTACH,
+		.depends = RETENTION_MODULE_BITMAP_INIT(CLOCK_SYSTEM)};
+
+	esp_err_t err = sleep_retention_module_init(module, &init_param);
+
+	if (err == ESP_OK) {
+		err = sleep_retention_module_allocate(module);
+	}
+	if (err == ESP_OK) {
+		err = sleep_retention_module_attach(module);
+	}
+	if (err != ESP_OK) {
+		LOG_WRN("SPI sleep retention init failed (%d)", err);
+	}
+}
+#endif /* SPI_SLEEP_RETENTION_ENABLED */
 
 static int spi_esp32_init(const struct device *dev)
 {
 	int err;
 	const struct spi_esp32_config *cfg = dev->config;
 	struct spi_esp32_data *data = dev->data;
-	spi_hal_context_t *hal = &data->hal;
 
 	if (!cfg->clock_dev) {
 		return -EINVAL;
@@ -237,10 +669,24 @@ static int spi_esp32_init(const struct device *dev)
 		return err;
 	}
 
-	spi_ll_master_init(hal->hw);
+	/* Initialize SPI HAL */
+	spi_hal_init(&data->hal, cfg->dma_host + 1);
+
+#ifdef CONFIG_ESP32_SPI_TARGET
+	data->target_hal.hw = cfg->spi;
+#endif
+
+	/* Enable internal SPI clock - new HAL requires explicit call */
+	spi_ll_enable_clock(cfg->dma_host + 1, true);
+
+	spi_ll_set_clk_source(cfg->spi, cfg->clock_source);
 
 	if (cfg->dma_enabled) {
-		spi_esp32_init_dma(dev);
+		err = spi_esp32_init_dma(dev);
+		if (err) {
+			LOG_ERR("Error initializing SPI DMA");
+			return err;
+		}
 	}
 
 #ifdef CONFIG_SPI_ESP32_INTERRUPT
@@ -250,7 +696,7 @@ static int spi_esp32_init(const struct device *dev)
 	err = esp_intr_alloc(cfg->irq_source,
 			ESP_PRIO_TO_FLAGS(cfg->irq_priority) |
 			ESP_INT_FLAGS_CHECK(cfg->irq_flags) | ESP_INTR_FLAG_IRAM,
-			(ISR_HANDLER)spi_esp32_isr,
+			(intr_handler_t)spi_esp32_isr,
 			(void *)dev,
 			NULL);
 
@@ -259,6 +705,12 @@ static int spi_esp32_init(const struct device *dev)
 		return err;
 	}
 #endif
+
+	err = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+	if (err < 0) {
+		LOG_ERR("Failed to configure SPI pins");
+		return err;
+	}
 
 	err = spi_context_cs_configure_all(&data->ctx);
 	if (err < 0) {
@@ -274,10 +726,14 @@ static int spi_esp32_init(const struct device *dev)
 
 	spi_context_unlock_unconditionally(&data->ctx);
 
+#if SPI_SLEEP_RETENTION_ENABLED
+	spi_esp32_sleep_retention_init(dev);
+#endif
+
 	return 0;
 }
 
-static inline uint8_t spi_esp32_get_line_mode(uint16_t operation)
+static inline uint8_t spi_esp32_get_line_mode(spi_operation_t operation)
 {
 	if (IS_ENABLED(CONFIG_SPI_EXTENDED_MODES)) {
 		switch (operation & SPI_LINES_MASK) {
@@ -297,6 +753,36 @@ static inline uint8_t spi_esp32_get_line_mode(uint16_t operation)
 	return 1;
 }
 
+#ifdef SPI_LL_SRC_PRE_DIV_MAX
+
+/* Peripheral hardware limitation for the clock rate entering the peripheral */
+#define SPI_ESP32_PERIPH_SRC_FREQ_MAX (80 * 1000 * 1000)
+
+static uint32_t spi_esp32_find_clock_src_pre_div(uint32_t src_freq, uint32_t target_freq)
+{
+	/* Pre-division must be even and at least 2 */
+	uint32_t min_div = (DIV_ROUND_UP(src_freq, SPI_ESP32_PERIPH_SRC_FREQ_MAX) + 1) & (~0x01UL);
+
+	min_div = min_div < 2 ? 2 : min_div;
+
+	if (target_freq == 0) {
+		return min_div;
+	}
+
+	uint32_t total_div = src_freq / target_freq;
+
+	for (uint32_t pre_div = min_div; pre_div <= MIN(total_div, SPI_LL_SRC_PRE_DIV_MAX);
+	     pre_div += 2) {
+		if ((total_div % pre_div) || (total_div / pre_div) > SPI_LL_PERIPH_CLK_DIV_MAX) {
+			continue;
+		}
+		return pre_div;
+	}
+	return min_div;
+}
+
+#endif /* SPI_LL_SRC_PRE_DIV_MAX */
+
 static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 					 const struct spi_config *spi_cfg)
 {
@@ -305,7 +791,6 @@ static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 	struct spi_context *ctx = &data->ctx;
 	spi_hal_context_t *hal = &data->hal;
 	spi_hal_dev_config_t *hal_dev = &data->dev_config;
-	int freq;
 
 	if (spi_context_configured(ctx, spi_cfg)) {
 		return 0;
@@ -318,9 +803,52 @@ static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (spi_cfg->operation & SPI_OP_MODE_SLAVE) {
-		LOG_ERR("Slave mode not supported");
+	if (spi_cfg->operation & SPI_OP_MODE_PERIPHERAL) {
+#ifdef CONFIG_ESP32_SPI_TARGET
+		spi_slave_hal_context_t *shal = &data->target_hal;
+
+		shal->mode = 0;
+		if (SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPHA) {
+			shal->mode = BIT(0);
+		}
+		if (SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPOL) {
+			shal->mode |= BIT(1);
+		}
+		shal->tx_lsbfirst = (spi_cfg->operation & SPI_TRANSFER_LSB) ? 1 : 0;
+		shal->rx_lsbfirst = (spi_cfg->operation & SPI_TRANSFER_LSB) ? 1 : 0;
+#ifdef SOC_GDMA_SUPPORTED
+		shal->use_dma = false;
+#else
+		/* CPU/FIFO peripheral mode drops the final received byte on these
+		 * socs, so the target is driven via the integrated SPI-DMA.
+		 */
+		if (!cfg->dma_enabled) {
+			LOG_ERR("Target mode on this soc requires dma-enabled");
+			return -EINVAL;
+		}
+		shal->use_dma = true;
+		shal->dmadesc_tx = (spi_dma_desc_t *)&data->dma_desc_tx;
+		shal->dmadesc_rx = (spi_dma_desc_t *)&data->dma_desc_rx;
+		shal->dmadesc_n = 1;
+#endif
+
+		/* spi_slave_hal_init force-enables a trans-done interrupt; mask
+		 * it until the device is armed in transceive().
+		 */
+		unsigned int key = irq_lock();
+
+		data->target_mode = true;
+		spi_slave_hal_init(shal, &(spi_slave_hal_config_t){.host_id = cfg->dma_host + 1});
+		spi_slave_hal_setup_device(shal);
+		spi_ll_disable_int(cfg->spi);
+		spi_ll_clear_int_stat(cfg->spi);
+
+		irq_unlock(key);
+		return 0;
+#else
+		LOG_ERR("Target mode requires CONFIG_ESP32_SPI_TARGET");
 		return -ENOTSUP;
+#endif /* CONFIG_ESP32_SPI_TARGET */
 	}
 
 	if (spi_cfg->operation & SPI_MODE_LOOP) {
@@ -328,13 +856,31 @@ static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	hal_dev->cs_pin_id = ctx->config->slave;
-	int ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
-
-	if (ret) {
-		LOG_ERR("Failed to configure SPI pins");
-		return ret;
+	/*
+	 * CS handling:
+	 * - When using GPIO CS (cs-gpios property), the spi_context manages
+	 *   chip select via GPIO. Hardware CS must be disabled by setting
+	 *   cs_pin_id outside valid range (0-2). Any value > 2 disables all
+	 *   hardware CS lines per documentation.
+	 * - When using hardware CS (directly via pinctrl), the peripheral
+	 *   number maps to the hardware CS pin (CS0, CS1, CS2).
+	 */
+	if (spi_cs_is_gpio(spi_cfg)) {
+		hal_dev->cs_pin_id = -1;
+	} else {
+		hal_dev->cs_pin_id = ctx->config->peripheral;
 	}
+
+	uint32_t clk_src_hz = data->clock_source_hz;
+
+#ifdef SPI_LL_SRC_PRE_DIV_MAX
+	uint32_t pre_div = spi_esp32_find_clock_src_pre_div(clk_src_hz, spi_cfg->frequency);
+
+	/* The timing configuration below is computed from the rate that
+	 * enters the peripheral, after the pre-divider
+	 */
+	clk_src_hz /= pre_div;
+#endif
 
 	/* input parameters to calculate timing configuration */
 	spi_hal_timing_param_t timing_param = {
@@ -344,12 +890,22 @@ static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 		.duty_cycle = cfg->duty_cycle == 0 ? 128 : cfg->duty_cycle,
 		.input_delay_ns = cfg->input_delay_ns,
 		.use_gpio = !cfg->use_iomux,
-		.clk_src_hz = data->clock_source_hz,
+		.clk_src_hz = clk_src_hz,
 	};
 
-	spi_hal_cal_clock_conf(&timing_param, &freq, &hal_dev->timing_conf);
+	if (spi_hal_cal_clock_conf(&timing_param, &hal_dev->timing_conf) != ESP_OK) {
+		LOG_ERR("Frequency %u Hz not supported in full-duplex mode, set half-duplex or "
+			"dummy-comp in devicetree or lower the frequency",
+			spi_cfg->frequency);
+		/* Force a full reconfiguration at the next transfer */
+		ctx->config = NULL;
+		return -ENOTSUP;
+	}
 
-	data->trans_config.dummy_bits = hal_dev->timing_conf.timing_dummy;
+#ifdef SPI_LL_SRC_PRE_DIV_MAX
+	hal_dev->timing_conf.source_pre_div = pre_div;
+	hal_dev->timing_conf.source_real_freq = clk_src_hz;
+#endif
 
 	hal_dev->tx_lsbfirst = spi_cfg->operation & SPI_TRANSFER_LSB ? 1 : 0;
 	hal_dev->rx_lsbfirst = spi_cfg->operation & SPI_TRANSFER_LSB ? 1 : 0;
@@ -378,7 +934,19 @@ static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 
 	spi_hal_setup_device(hal, hal_dev);
 
-	/* Workaround to handle default state of MISO and MOSI lines */
+#ifdef SPI_LL_SRC_PRE_DIV_MAX
+	/* The pre-divider fields share a clkrst register with the other
+	 * SPI host, so the read-modify-write must not be preempted
+	 */
+	unsigned int key = irq_lock();
+
+	/* Program the pre-divider; hs_div times mst_div is the total pre-division */
+	spi_ll_clk_source_pre_div(hal->hw, pre_div / 2, 2);
+
+	irq_unlock(key);
+#endif
+
+	/* Workaround to handle default state of SDI and SDO lines */
 #ifndef CONFIG_SOC_SERIES_ESP32
 	spi_dev_t *hw = hal->hw;
 
@@ -392,12 +960,12 @@ static int IRAM_ATTR spi_esp32_configure(const struct device *dev,
 #endif
 
 	/*
-	 * Workaround for ESP32S3 and ESP32Cx SoC's. This dummy transaction is needed
-	 * to sync CLK and software controlled CS when SPI is in mode 3
+	 * Workaround: dummy transaction needed to sync CLK and software
+	 * controlled CS when SPI is in mode 3. Not needed on ESP32/ESP32-S2.
 	 */
-#if defined(CONFIG_SOC_SERIES_ESP32S3) || defined(CONFIG_SOC_SERIES_ESP32C2) ||                    \
-	defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
-	if (ctx->num_cs_gpios && (hal_dev->mode & (SPI_MODE_CPOL | SPI_MODE_CPHA))) {
+#if !defined(CONFIG_SOC_SERIES_ESP32) && !defined(CONFIG_SOC_SERIES_ESP32S2) &&                    \
+	!defined(DT_SPI_CTX_HAS_NO_CS_GPIOS)
+	if ((ctx->num_cs_gpios != 0) && (hal_dev->mode & (SPI_MODE_CPOL | SPI_MODE_CPHA))) {
 		spi_esp32_transfer(dev);
 	}
 #endif
@@ -426,11 +994,7 @@ static int transceive(const struct device *dev,
 {
 	const struct spi_esp32_config *cfg = dev->config;
 	struct spi_esp32_data *data = dev->data;
-	int ret;
-
-	if (!tx_bufs && !rx_bufs) {
-		return 0;
-	}
+	int ret = 0;
 
 #ifndef CONFIG_SPI_ESP32_INTERRUPT
 	if (asynchronous) {
@@ -442,18 +1006,64 @@ static int transceive(const struct device *dev,
 
 	data->dfs = spi_esp32_get_frame_size(spi_cfg);
 
+	spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, data->dfs);
+
+	if (data->ctx.tx_buf == NULL && data->ctx.rx_buf == NULL) {
+		goto done;
+	}
+
+#if CONFIG_PM
+	spi_esp32_pm_policy_state_lock_get(dev);
+#endif
+
 	ret = spi_esp32_configure(dev, spi_cfg);
 	if (ret) {
 		goto done;
 	}
 
-	spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, data->dfs);
+#ifdef CONFIG_ESP32_SPI_TARGET
+	if (data->target_mode) {
+		spi_esp32_target_arm(dev);
+		spi_ll_enable_int(cfg->spi);
+
+		if (asynchronous) {
+			/* Delivered via the callback. Cannot use
+			 * spi_context_wait_for_completion(): arming advanced
+			 * recv_frames, which it would return instead of 0.
+			 */
+			return 0;
+		}
+
+		ret = spi_context_wait_for_completion(&data->ctx);
+
+		spi_context_release(&data->ctx, ret);
+		return ret;
+	}
+#endif /* CONFIG_ESP32_SPI_TARGET */
 
 	spi_context_cs_control(&data->ctx, true);
 
 #ifdef CONFIG_SPI_ESP32_INTERRUPT
 	spi_ll_enable_int(cfg->spi);
 	spi_ll_set_int_stat(cfg->spi);
+
+	if (!asynchronous) {
+		ret = spi_context_wait_for_completion(&data->ctx);
+		if (ret != 0) {
+			/* A late ISR completion must not signal the context of
+			 * the next transfer
+			 */
+			spi_ll_disable_int(cfg->spi);
+			spi_ll_clear_int_stat(cfg->spi);
+			spi_context_cs_control(&data->ctx, false);
+#ifdef CONFIG_PM
+			spi_esp32_pm_policy_state_lock_put(dev);
+#endif
+		}
+	}
+
+	spi_context_release(&data->ctx, ret);
+	return ret;
 #else
 
 	do {
@@ -465,6 +1075,10 @@ static int transceive(const struct device *dev,
 #endif  /* CONFIG_SPI_ESP32_INTERRUPT */
 
 done:
+#if CONFIG_PM
+	spi_esp32_pm_policy_state_lock_put(dev);
+#endif
+
 	spi_context_release(&data->ctx, ret);
 
 	return ret;
@@ -500,7 +1114,7 @@ static int spi_esp32_release(const struct device *dev,
 	return 0;
 }
 
-static const struct spi_driver_api spi_api = {
+static DEVICE_API(spi, spi_api) = {
 	.transceive = spi_esp32_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_esp32_transceive_async,
@@ -516,6 +1130,16 @@ static const struct spi_driver_api spi_api = {
 #else
 #define GET_AS_CS(idx)
 #endif
+
+#if defined(SOC_GDMA_SUPPORTED)
+#define SPI_DMA_CFG(idx)					\
+	.dma_dev = ESP32_DT_INST_DMA_CTLR(idx, tx),		\
+	.dma_tx_ch = ESP32_DT_INST_DMA_CELL(idx, tx, channel),	\
+	.dma_rx_ch = ESP32_DT_INST_DMA_CELL(idx, rx, channel)
+#else
+#define SPI_DMA_CFG(idx)					\
+	.dma_clk_src = DT_INST_PROP(idx, dma_clk)
+#endif /* defined(SOC_GDMA_SUPPORTED) */
 
 #define ESP32_SPI_INIT(idx)	\
 				\
@@ -551,15 +1175,15 @@ static const struct spi_driver_api spi_api = {
 			(clock_control_subsys_t)DT_INST_CLOCKS_CELL(idx, offset),	\
 		.use_iomux = DT_INST_PROP(idx, use_iomux),	\
 		.dma_enabled = DT_INST_PROP(idx, dma_enabled),	\
-		.dma_clk_src = DT_INST_PROP(idx, dma_clk),	\
 		.dma_host = DT_INST_PROP(idx, dma_host),	\
+		SPI_DMA_CFG(idx),				\
 		.cs_setup = DT_INST_PROP_OR(idx, cs_setup_time, 0), \
 		.cs_hold = DT_INST_PROP_OR(idx, cs_hold_time, 0), \
 		.line_idle_low = DT_INST_PROP(idx, line_idle_low), \
 		.clock_source = SPI_CLK_SRC_DEFAULT,	\
 	};	\
 		\
-	DEVICE_DT_INST_DEFINE(idx, spi_esp32_init,	\
+	SPI_DEVICE_DT_INST_DEFINE(idx, spi_esp32_init,	\
 			      NULL, &spi_data_##idx,	\
 			      &spi_config_##idx, POST_KERNEL,	\
 			      CONFIG_SPI_INIT_PRIORITY, &spi_api);

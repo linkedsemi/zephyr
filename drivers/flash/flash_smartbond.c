@@ -5,7 +5,6 @@
  */
 
 #define DT_DRV_COMPAT renesas_smartbond_flash_controller
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
 #define QSPIF_NODE DT_NODELABEL(qspif)
 
 #include <stddef.h>
@@ -16,6 +15,9 @@
 #include <zephyr/drivers/flash.h>
 #include <zephyr/sys/byteorder.h>
 #include <DA1469xAB.h>
+#include "flash_priv.h"
+
+#define SOC_NV_FLASH_NODE SOC_NV_FLASH_CHILD_NODE(0)
 
 #define FLASH_ERASE_SIZE	DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
 #define FLASH_PAGE_SIZE		256
@@ -270,7 +272,7 @@ void flash_smartbond_page_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
-static const struct flash_driver_api flash_smartbond_driver_api = {
+static DEVICE_API(flash, flash_smartbond_driver_api) = {
 	.read = flash_smartbond_read,
 	.write = flash_smartbond_write,
 	.erase = flash_smartbond_erase,

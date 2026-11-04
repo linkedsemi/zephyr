@@ -3,7 +3,7 @@
 function(runners_yaml_append content)
   # Append ${content}\n to a target property which is later evaluated as a
   # generator expression when writing the flash runner yaml file.
-  # We define this function here to have access to the `flash` target.
+  # We define this function here, next to the runners.yaml generation it feeds.
 
   set_property(
     TARGET         runners_yaml_props_target
@@ -59,6 +59,10 @@ function(runners_yaml_append_config)
   if(CONFIG_BUILD_OUTPUT_UF2)
     get_runners_prop(uf2_file uf2 "${KERNEL_UF2_NAME}")
     runners_yaml_append("  uf2_file: ${uf2}")
+  endif()
+  if(CONFIG_BUILD_OUTPUT_MOT)
+    get_runners_prop(mot_file mot "${KERNEL_MOT_NAME}")
+    runners_yaml_append("  mot_file: ${mot}")
   endif()
 
   zephyr_get(OPENOCD)
@@ -146,65 +150,3 @@ get_property(RUNNERS GLOBAL PROPERTY ZEPHYR_RUNNERS)
 if(RUNNERS)
   create_runners_yaml(${RUNNERS})
 endif()
-
-zephyr_get(WEST_DIR)
-if(WEST_DIR)
-  set(WEST "PYTHONPATH=${WEST_DIR}/src" "${PYTHON_EXECUTABLE};${WEST_DIR}/src/west/app/main.py;--zephyr-base=${ZEPHYR_BASE} ")
-endif()
-
-# Generate the flash, debug, debugserver, attach targets within the build
-# system itself.
-foreach(target flash debug debugserver attach)
-  if(target STREQUAL flash)
-    set(comment "Flashing ${BOARD}")
-  elseif(target STREQUAL debug)
-    set(comment "Debugging ${BOARD}")
-  elseif(target STREQUAL debugserver)
-    set(comment "Debugging ${BOARD}")
-    if(SUPPORTED_EMU_PLATFORMS)
-      # cmake/qemu/CMakeLists.txt will add a debugserver target for
-      # emulation platforms, so we don't add one here
-      continue()
-    endif()
-  elseif(target STREQUAL attach)
-    set(comment "Debugging ${BOARD}")
-  endif()
-  string(TOUPPER ${target} TARGET_UPPER)
-
-  list(APPEND RUNNERS_DEPS ${logical_target_for_zephyr_elf})
-
-  # Enable verbose output, if requested.
-  if(CMAKE_VERBOSE_MAKEFILE)
-    set(RUNNER_VERBOSE "--verbose")
-  else()
-    set(RUNNER_VERBOSE)
-  endif()
-
-  if(WEST)
-    add_custom_target(${target}
-      # This script will print an error message and fail if <target> has added
-      # dependencies. This is done using dedicated CMake script, as
-      # `cmake -E {true|false}` is not available until CMake 3.16.
-      COMMAND ${CMAKE_COMMAND}
-        -DTARGET=${target}
-        -DDEPENDENCIES="$<TARGET_PROPERTY:${target},MANUALLY_ADDED_DEPENDENCIES>"
-        -P ${CMAKE_CURRENT_LIST_DIR}/check_runner_dependencies.cmake
-      COMMAND
-        ${CMAKE_COMMAND} -E env
-        ${WEST}
-        ${RUNNER_VERBOSE}
-        ${target}
-      WORKING_DIRECTORY
-        ${APPLICATION_BINARY_DIR}
-      COMMENT
-        ${comment}
-      USES_TERMINAL
-    )
-  else()
-    add_custom_target(${target}
-      COMMAND ${CMAKE_COMMAND} -E echo \"West was not found in path. To support
-          '${CMAKE_MAKE_PROGRAM} ${target}', please create a west workspace.\"
-      USES_TERMINAL
-      )
-  endif(WEST)
-endforeach()

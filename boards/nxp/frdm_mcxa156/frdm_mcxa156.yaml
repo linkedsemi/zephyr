@@ -5,7 +5,7 @@
 #
 
 identifier: frdm_mcxa156
-name: NXP FRDM MCXA156
+name: NXP FRDM-MCXA156
 type: mcu
 arch: arm
 ram: 128
@@ -13,7 +13,22 @@ flash: 1024
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
+  - adc
+  - arduino_gpio
+  - flash
   - gpio
+  - can
+  - counter
+  - dac
+  - dma
+  - i2c
+  - i3c
+  - pwm
+  - spi
+  - usb_device
+  - usbd
+  - watchdog
+  - edac
+  - crc
 vendor: nxp

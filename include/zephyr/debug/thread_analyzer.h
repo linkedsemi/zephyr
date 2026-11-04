@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __STACK_SIZE_ANALYZER_H
-#define __STACK_SIZE_ANALYZER_H
+#ifndef ZEPHYR_INCLUDE_DEBUG_THREAD_ANALYZER_H_
+#define ZEPHYR_INCLUDE_DEBUG_THREAD_ANALYZER_H_
 
 #include <stddef.h>
 #include <zephyr/kernel/thread.h>
@@ -15,7 +15,7 @@ extern "C" {
 #endif
 
 /** @defgroup thread_analyzer Thread analyzer
- *  @ingroup os_services
+ *  @ingroup debug
  *  @brief Module for analyzing threads
  *
  *  This module implements functions and the configuration that simplifies
@@ -40,6 +40,10 @@ struct thread_analyzer_info {
 #endif
 #endif
 
+#ifdef CONFIG_THREAD_ANALYZER_STACK_SAFETY
+	uint32_t stack_safety;
+#endif
+
 #ifdef CONFIG_THREAD_ANALYZER_PRIV_STACK_USAGE
 	/** Total size of privileged stack */
 	size_t priv_stack_size;
@@ -47,7 +51,48 @@ struct thread_analyzer_info {
 	/** Privileged stack size in used */
 	size_t priv_stack_used;
 #endif
+#ifdef CONFIG_THREAD_ANALYZER_PRINT_THREAD_PRIORITY
+	int8_t prio;
+#endif
 };
+
+/** Stack safety issue codes */
+
+/* No stack safety issues detected */
+#define THREAD_ANALYZE_STACK_SAFETY_NO_ISSUES 0
+
+/* Unused stack space is below the defined threshold */
+#define THREAD_ANALYZE_STACK_SAFETY_THRESHOLD_EXCEEDED 1
+
+/* No unused stack space is left */
+#define THREAD_ANALYZE_STACK_SAFETY_AT_LIMIT 2
+
+/* Stack overflow detected */
+#define THREAD_ANALYZE_STACK_SAFETY_OVERFLOW 3
+
+/** @brief Thread analyzer stack safety callback function
+ *
+ *  Stack safety callback function.
+ *
+ *  @param thread Pointer to the thread being analyzed.
+ *  @param unused_space Amount of unused stack space.
+ *  @param stack_issue Pointer to variable to store stack safety issue code
+ */
+typedef void (*thread_analyzer_stack_safety_handler)(struct k_thread *thread,
+						     size_t unused_space,
+						     uint32_t *stack_issue);
+
+/** @brief Change the thread analyzer stack safety callback function
+ *
+ *  This function changes the thread analyzer's stack safety handler. This
+ *  allows an application to customize behavior when a thread's unused stack
+ *  drops below its configured threshold.
+ *
+ *  @param handler Function pointer to the new handler (NULL for default)
+ */
+void thread_analyzer_stack_safety_handler_set(thread_analyzer_stack_safety_handler handler);
+
+
 
 /** @brief Thread analyzer stack size callback function
  *
@@ -86,4 +131,4 @@ void thread_analyzer_print(unsigned int cpu);
 }
 #endif
 
-#endif /* __STACK_SIZE_ANALYZER_H */
+#endif /* ZEPHYR_INCLUDE_DEBUG_THREAD_ANALYZER_H_ */

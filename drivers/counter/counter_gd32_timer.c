@@ -448,7 +448,7 @@ static int counter_gd32_timer_init(const struct device *dev)
 	return 0;
 }
 
-static const struct counter_driver_api counter_api = {
+static DEVICE_API(counter, counter_api) = {
 	.start = counter_gd32_timer_start,
 	.stop = counter_gd32_timer_stop,
 	.get_value = counter_gd32_timer_get_value,
@@ -472,11 +472,11 @@ static const struct counter_driver_api counter_api = {
 	}                                                                      \
 	static void set_irq_pending_##n(void)                                  \
 	{                                                                      \
-		(NVIC_SetPendingIRQ(DT_INST_IRQ_BY_NAME(n, global, irq)));     \
+		(k_irq_set_pending(DT_INST_IRQ_BY_NAME(n, global, irq)));     \
 	}                                                                      \
 	static uint32_t get_irq_pending_##n(void)                              \
 	{                                                                      \
-		return NVIC_GetPendingIRQ(                                     \
+		return k_irq_is_pending(\
 			DT_INST_IRQ_BY_NAME(n, global, irq));                  \
 	}
 
@@ -494,11 +494,11 @@ static const struct counter_driver_api counter_api = {
 	}                                                                      \
 	static void set_irq_pending_##n(void)                                  \
 	{                                                                      \
-		(NVIC_SetPendingIRQ(DT_INST_IRQ_BY_NAME(n, cc, irq)));         \
+		(k_irq_set_pending(DT_INST_IRQ_BY_NAME(n, cc, irq)));         \
 	}                                                                      \
 	static uint32_t get_irq_pending_##n(void)                              \
 	{                                                                      \
-		return NVIC_GetPendingIRQ(DT_INST_IRQ_BY_NAME(n, cc, irq));    \
+		return k_irq_is_pending(DT_INST_IRQ_BY_NAME(n, cc, irq));    \
 	}
 
 #define GD32_TIMER_INIT(n)                                                     \

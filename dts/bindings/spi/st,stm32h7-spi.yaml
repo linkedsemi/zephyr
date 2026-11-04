@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-        STM32H7 SPI controller
+        STM32H7 SPI controller.
+
         This compatible stands for all SPI hardware blocks matching the
         version available in STM32H7 SoCs.
         This version of STM32 SPI hardware block could be identified by the
@@ -28,6 +29,30 @@ properties:
       (Master SS Idleness) minimum clock inserted between
       start and first data transaction.
 
-  fifo-enable:
+  fifo-size:
+    type: int
+    required: true
+    description: Size of the Tx and Rx FIFOs (in bytes).
+
+  fifo-max-transfer-size:
+    type: int
+    required: true
+    description: Maximal transfer size (in bytes) when FIFO is used.
+
+  st,fifo-threshold:
+    type: int
+    default: 1
+    min: 1
+    max: 16
+    description: |
+      Threshold level for the Tx and Rx FIFOs (in bytes).
+      This value defines the maximum number of bytes in a single packet. It is
+      recommended that the size of a packet does not exceed half of the FIFO size.
+
+  st,gpio-control:
     type: boolean
-    description: Enable the SPI FIFO usage for performance improvement.
+    description: |
+      When set, the SPI driver will control the SPI GPIOs (e.g. SCK, SDO, SDI)
+      even when the SPI peripheral is disabled. This can be used to ensure a known
+      state on the SPI lines at all times, which may be required for certain
+      peripherals (e.g. LED strips) that are sensitive to line states during idle.

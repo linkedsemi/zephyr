@@ -2,13 +2,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stddef.h>
 #include <stdint.h>
+#include <string.h>
+#include <testlib/scan.h>
+#include <zephyr/bluetooth/addr.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys/__assert.h>
+#include <zephyr/logging/log_core.h>
 #include <zephyr/logging/log.h>
-
-#include <testlib/scan.h>
+#include <zephyr/net_buf.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(bt_testlib_scan, LOG_LEVEL_INF);
 
@@ -87,9 +94,7 @@ int bt_testlib_scan_find_name(bt_addr_le_t *result, const char *name)
 	k_sem_give(&g_ctx_free);
 
 	if (!api_err) {
-		char str[BT_ADDR_LE_STR_LEN];
-		(void)bt_addr_le_to_str(result, str, ARRAY_SIZE(str));
-		LOG_INF("Scan match: %s", str);
+		LOG_INF("Scan match: %s", bt_addr_le_str(result));
 	} else {
 		LOG_ERR("Scan error: %d", api_err);
 	}

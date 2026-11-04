@@ -550,7 +550,7 @@ static int adxl372_attr_set_odr(const struct device *dev,
 				const struct sensor_value *val)
 {
 	enum adxl372_odr odr;
-	struct adxl372_dev_config *cfg = (struct adxl372_dev_config *)dev->config;
+	struct adxl372_data *data = dev->data;
 
 	switch (val->val1) {
 	case 400:
@@ -575,7 +575,7 @@ static int adxl372_attr_set_odr(const struct device *dev,
 	int ret = adxl372_set_odr(dev, odr);
 
 	if (ret == 0) {
-		cfg->odr = odr;
+		data->odr = odr;
 	}
 
 	return ret;
@@ -692,7 +692,7 @@ static int adxl372_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api adxl372_api_funcs = {
+static DEVICE_API(sensor, adxl372_api_funcs) = {
 	.attr_set = adxl372_attr_set,
 	.sample_fetch = adxl372_sample_fetch,
 	.channel_get = adxl372_channel_get,
@@ -870,8 +870,8 @@ static int adxl372_init(const struct device *dev)
  */
 #define ADXL372_SPI_CFG SPI_WORD_SET(8) | SPI_TRANSFER_MSB
 
-#define ADXL372_RTIO_DEFINE(inst)                                                                  \
-	SPI_DT_IODEV_DEFINE(adxl372_iodev_##inst, DT_DRV_INST(inst), ADXL372_SPI_CFG, 0U);         \
+#define ADXL372_RTIO_DEFINE(inst)                                                                 \
+	SPI_DT_IODEV_DEFINE(adxl372_iodev_##inst, DT_DRV_INST(inst), ADXL372_SPI_CFG);            \
 	RTIO_DEFINE(adxl372_rtio_ctx_##inst, 16, 16);
 
 #ifdef CONFIG_ADXL372_TRIGGER
@@ -900,15 +900,17 @@ static int adxl372_init(const struct device *dev)
 		.inactivity_th.enable = 1,						\
 		.inactivity_time = CONFIG_ADXL372_INACTIVITY_TIME,			\
 		.filter_settle = ADXL372_FILTER_SETTLE_370,				\
-		.fifo_config.fifo_mode = ADXL372_FIFO_STREAMED,				\
-		.fifo_config.fifo_format = ADXL372_XYZ_PEAK_FIFO,			\
-		.fifo_config.fifo_samples = 128,					\
+		.fifo_config.fifo_mode =						\
+			DT_INST_PROP_OR(inst, fifo_mode, ADXL372_FIFO_BYPASSED),	\
+		.fifo_config.fifo_format = ADXL372_XYZ_FIFO,				\
+		.fifo_config.fifo_samples =						\
+			DT_INST_PROP_OR(inst, fifo_watermark, 0x80),			\
 		.op_mode = ADXL372_FULL_BW_MEASUREMENT,					\
 
 #define ADXL372_CONFIG_SPI(inst)					\
 	{								\
 		.bus_init = adxl372_spi_init,				\
-		.spi = SPI_DT_SPEC_INST_GET(inst, ADXL372_SPI_CFG, 0),		\
+		.spi = SPI_DT_SPEC_INST_GET(inst, ADXL372_SPI_CFG),	\
 		ADXL372_CONFIG(inst)					\
 		COND_CODE_1(DT_INST_NODE_HAS_PROP(inst, int1_gpios),	\
 		(ADXL372_CFG_IRQ(inst)), ())				\

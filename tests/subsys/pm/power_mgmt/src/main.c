@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020 Intel Corporation.
+ * Copyright 2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,7 +12,9 @@
 #include <zephyr/ztest.h>
 #include <ksched.h>
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/pm/pm.h>
+#include <zephyr/pm/policy.h>
 #include "dummy_driver.h"
 
 #define SLEEP_MSEC 100
@@ -27,6 +30,50 @@ static bool idle_entered;
 static bool testing_device_runtime;
 static bool testing_device_order;
 static bool testing_force_state;
+static bool exit_post_ops_called;
+static int32_t policy_ticks;
+#ifdef CONFIG_TEST_PM_TIMER_RESTART
+static bool testing_timer_restart;
+static bool resume_timer_progressed;
+
+enum resume_event {
+	RESUME_POST_OPS,
+	RESUME_TIMER,
+	RESUME_DEVICE,
+	RESUME_NOTIFY,
+};
+
+static enum resume_event resume_events[4];
+static size_t resume_event_count;
+
+static void record_resume_event(enum resume_event event)
+{
+	zassert_false(arch_cpu_irqs_are_enabled(), "Interrupts enabled during resume");
+	zassert_true(resume_event_count < ARRAY_SIZE(resume_events),
+		     "Too many resume events");
+	resume_events[resume_event_count++] = event;
+}
+
+void __real_sys_clock_idle_exit(void);
+
+void __wrap_sys_clock_idle_exit(void)
+{
+	if (testing_timer_restart) {
+		record_resume_event(RESUME_TIMER);
+	}
+	__real_sys_clock_idle_exit();
+}
+
+static void notify_timer_test_exit(enum pm_state state)
+{
+	ARG_UNUSED(state);
+	record_resume_event(RESUME_NOTIFY);
+}
+
+static struct pm_notifier timer_test_notifier = {
+	.state_exit = notify_timer_test_exit,
+};
+#endif
 
 enum pm_state forced_state;
 static const struct device *device_dummy;
@@ -89,6 +136,19 @@ static int device_b_pm_action(const struct device *dev,
 {
 	enum pm_device_state state_a;
 	enum pm_device_state state_c;
+
+#ifdef CONFIG_TEST_PM_TIMER_RESTART
+	if ((pm_action == PM_DEVICE_ACTION_RESUME) && testing_timer_restart) {
+		uint32_t start_cycles = k_cycle_get_32();
+
+		for (volatile uint32_t i = 0U; i < 10000U; i++) {
+			arch_nop();
+		}
+
+		resume_timer_progressed = k_cycle_get_32() != start_cycles;
+		record_resume_event(RESUME_DEVICE);
+	}
+#endif
 
 	if (!testing_device_order) {
 		return 0;
@@ -175,6 +235,21 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 	ARG_UNUSED(substate_id);
 	ARG_UNUSED(state);
 
+	if (!IS_ENABLED(CONFIG_PM_STATE_SET_IRQ_UNLOCKED)) {
+		zassert_equal(_kernel.idle, 0,
+			      "PM state set ran before idle wake sentinel was cleared");
+	}
+
+#ifdef CONFIG_TEST_PM_TIMER_RESTART
+	if (testing_timer_restart) {
+		k_spinlock_key_t key = sys_clock_lock();
+
+		sys_clock_idle_enter(SYS_CLOCK_IDLE_FOREVER);
+		sys_clock_unlock(key);
+		return;
+	}
+#endif
+
 	enum pm_device_state device_power_state;
 
 #ifndef CONFIG_PM_DEVICE_SYSTEM_MANAGED
@@ -182,12 +257,10 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 	 * device power management is not enabled.
 	 **/
 	pm_device_state_get(device_a, &device_power_state);
-	zassert_true(device_power_state == PM_DEVICE_STATE_ACTIVE,
-			NULL);
+	zassert_true(device_power_state == PM_DEVICE_STATE_ACTIVE);
 
 	pm_device_state_get(device_c, &device_power_state);
-	zassert_true(device_power_state == PM_DEVICE_STATE_ACTIVE,
-			NULL);
+	zassert_true(device_power_state == PM_DEVICE_STATE_ACTIVE);
 #else
 	/* If testing device order this function does not need to anything */
 	if (testing_device_order) {
@@ -197,7 +270,7 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 	if (testing_force_state) {
 		/* if forced to given power state was called */
 		set_pm = true;
-		zassert_equal(state, forced_state, NULL);
+		zassert_equal(state, forced_state);
 		testing_force_state = false;
 
 		/* We have forced a state that does not trigger device power management.
@@ -239,16 +312,32 @@ void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 	ARG_UNUSED(state);
 	ARG_UNUSED(substate_id);
 
-	/* pm_system_suspend is entered with irq locked
-	 * unlock irq before leave pm_system_suspend
-	 */
-	irq_unlock(0);
+	exit_post_ops_called = true;
+#ifdef CONFIG_TEST_PM_TIMER_RESTART
+	if (testing_timer_restart) {
+		record_resume_event(RESUME_POST_OPS);
+	}
+#endif
+	zassert_false(arch_cpu_irqs_are_enabled(),
+		      "PM exit post ops ran with interrupts enabled");
 }
+
+#ifdef CONFIG_PM_CUSTOM_TICKS_HOOK
+/* Ticks reported by the custom hook; -1 means no custom event is pending */
+static int64_t custom_ticks = -1;
+
+int64_t pm_policy_next_custom_ticks(void)
+{
+	return custom_ticks;
+}
+#endif /* CONFIG_PM_CUSTOM_TICKS_HOOK */
 
 /* Our PM policy handler */
 const struct pm_state_info *pm_policy_next_state(uint8_t cpu, int32_t ticks)
 {
 	const struct pm_state_info *cpu_states;
+
+	policy_ticks = ticks;
 
 	zassert_true(pm_state_cpu_get_all(cpu, &cpu_states) == 2,
 		     "There is no power state defined");
@@ -333,6 +422,88 @@ ZTEST(power_management_1cpu, test_power_idle)
 	zassert_true(idle_entered, "Never entered idle thread");
 }
 
+/*
+ * @brief test that a far future event does not truncate the policy tick count
+ *
+ * @details
+ *  - pm_policy_next_event_ticks() reports the ticks until the next registered
+ *    event as an int64_t, while pm_policy_next_state() takes an int32_t.
+ *  - An event scheduled beyond the int32_t tick range must therefore be
+ *    saturated, not truncated: a truncated value wraps negative, which both
+ *    trips the assertions in the PM subsystem and makes the far future event
+ *    look nearer than the kernel timeout.
+ *  - The nearer kernel timeout must still be the one handed to the policy.
+ *
+ * @see pm_policy_event_register(), pm_policy_next_event_ticks()
+ *
+ * @ingroup power_tests
+ */
+ZTEST(power_management_1cpu, test_next_event_far_future_ticks)
+{
+	struct pm_policy_event evt;
+
+	policy_ticks = -1;
+	idle_entered = false;
+
+	/*
+	 * Schedule the event past the int32_t tick range, with a one second
+	 * margin so that the remaining tick count is still out of range by the
+	 * time the idle thread evaluates it. Using an uptime relative target
+	 * keeps this independent of the tick rate.
+	 */
+	pm_policy_event_register(&evt, k_uptime_ticks() + (int64_t)INT32_MAX +
+					      CONFIG_SYS_CLOCK_TICKS_PER_SEC);
+
+	/* give way to idle thread */
+	k_sleep(SLEEP_TIMEOUT);
+
+	pm_policy_event_unregister(&evt);
+
+	zassert_true(idle_entered, "Never entered idle thread");
+	zassert_true(policy_ticks >= 0,
+		     "Far future event truncated to a negative tick count: %d",
+		     policy_ticks);
+}
+
+#ifdef CONFIG_PM_CUSTOM_TICKS_HOOK
+/*
+ * @brief test that a far future custom event does not truncate the policy ticks
+ *
+ * @details
+ *  - pm_policy_next_custom_ticks() reports int64_t ticks and has the same
+ *    narrowing hazard as pm_policy_next_event_ticks(), so it must be saturated
+ *    the same way before reaching pm_policy_next_state().
+ *  - Outside of this test the hook reports -1, so every other test in this
+ *    configuration also covers the case where one side has nothing pending
+ *    while the other carries a real deadline.
+ *
+ * @see pm_policy_next_custom_ticks()
+ *
+ * @ingroup power_tests
+ */
+ZTEST(power_management_1cpu, test_custom_ticks_far_future)
+{
+	policy_ticks = -1;
+	idle_entered = false;
+
+	/*
+	 * The hook reports a relative tick count, so put it just past the
+	 * int32_t range. The kernel timeout below stays the nearer deadline.
+	 */
+	custom_ticks = (int64_t)INT32_MAX + CONFIG_SYS_CLOCK_TICKS_PER_SEC;
+
+	/* give way to idle thread */
+	k_sleep(SLEEP_TIMEOUT);
+
+	custom_ticks = -1;
+
+	zassert_true(idle_entered, "Never entered idle thread");
+	zassert_true(policy_ticks >= 0,
+		     "Far future custom event truncated to a negative tick count: %d",
+		     policy_ticks);
+}
+#endif /* CONFIG_PM_CUSTOM_TICKS_HOOK */
+
 static struct pm_notifier notifier = {
 	.state_entry = notify_pm_state_entry,
 	.state_exit = notify_pm_state_exit,
@@ -357,6 +528,7 @@ ZTEST(power_management_1cpu, test_power_state_trans)
 
 	pm_notifier_register(&notifier);
 	enter_low_power = true;
+	exit_post_ops_called = false;
 
 	ret = pm_device_runtime_disable(device_dummy);
 	zassert_true(ret == 0, "Failed to disable device runtime PM");
@@ -364,12 +536,44 @@ ZTEST(power_management_1cpu, test_power_state_trans)
 	/* give way to idle thread */
 	k_sleep(SLEEP_TIMEOUT);
 	zassert_true(leave_idle);
+	zassert_true(exit_post_ops_called);
 
 	ret = pm_device_runtime_enable(device_dummy);
 	zassert_true(ret == 0, "Failed to enable device runtime PM");
 
 	pm_notifier_unregister(&notifier);
 }
+
+#ifdef CONFIG_TEST_PM_TIMER_RESTART
+ZTEST(power_management_1cpu, test_timer_resume_order)
+{
+	static const enum resume_event early_order[] = {
+		RESUME_POST_OPS, RESUME_TIMER, RESUME_DEVICE, RESUME_NOTIFY,
+	};
+	static const enum resume_event legacy_order[] = {
+		RESUME_DEVICE, RESUME_POST_OPS, RESUME_NOTIFY, RESUME_TIMER,
+	};
+	const enum resume_event *expected =
+		IS_ENABLED(CONFIG_PM_EARLY_SYSTEM_TIMER_RESUME) ? early_order : legacy_order;
+
+	pm_notifier_register(&timer_test_notifier);
+	enter_low_power = true;
+	testing_timer_restart = true;
+	resume_timer_progressed = false;
+	resume_event_count = 0;
+
+	k_sleep(SLEEP_TIMEOUT);
+
+	testing_timer_restart = false;
+	pm_notifier_unregister(&timer_test_notifier);
+	zassert_equal(resume_event_count, ARRAY_SIZE(resume_events));
+	for (size_t i = 0; i < ARRAY_SIZE(resume_events); i++) {
+		zassert_equal(resume_events[i], expected[i], "Unexpected resume event at %zu", i);
+	}
+	zassert_equal(resume_timer_progressed, IS_ENABLED(CONFIG_PM_EARLY_SYSTEM_TIMER_RESUME),
+		      "Unexpected timer state during device resume");
+}
+#endif
 
 /*
  * @brief notification between system and device
@@ -458,7 +662,7 @@ ZTEST(power_management_1cpu, test_empty_states)
 	const struct pm_state_info *cpu_states;
 	uint8_t state = pm_state_cpu_get_all(1u, &cpu_states);
 
-	zassert_equal(state, 0, NULL);
+	zassert_equal(state, 0);
 }
 
 ZTEST(power_management_1cpu, test_force_state)

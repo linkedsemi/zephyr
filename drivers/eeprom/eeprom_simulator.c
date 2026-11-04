@@ -95,11 +95,11 @@ static int eeprom_range_is_valid(const struct device *dev, off_t offset,
 {
 	const struct eeprom_sim_config *config = dev->config;
 
-	if ((offset + len) <= config->size) {
-		return 1;
+	if ((offset < 0) || (((size_t)offset + len) > config->size)) {
+		return 0;
 	}
 
-	return 0;
+	return 1;
 }
 
 static int eeprom_sim_read(const struct device *dev, off_t offset, void *data,
@@ -198,7 +198,7 @@ static size_t eeprom_sim_size(const struct device *dev)
 	return config->size;
 }
 
-static const struct eeprom_driver_api eeprom_sim_api = {
+static DEVICE_API(eeprom, eeprom_sim_api) = {
 	.read = eeprom_sim_read,
 	.write = eeprom_sim_write,
 	.size = eeprom_sim_size,

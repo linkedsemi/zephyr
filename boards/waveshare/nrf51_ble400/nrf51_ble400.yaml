@@ -5,10 +5,9 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 32
 supported:
-  - ble
+  - bluetooth
   - gpio
   - i2c
 testing:

@@ -151,7 +151,6 @@ static void rm68200_get_capabilities(const struct device *dev,
 {
 	const struct rm68200_config *config = dev->config;
 
-	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = config->panel_width;
 	capabilities->y_resolution = config->panel_height;
 	capabilities->supported_pixel_formats = config->pixel_format;
@@ -159,7 +158,7 @@ static void rm68200_get_capabilities(const struct device *dev,
 	capabilities->current_orientation = DISPLAY_ORIENTATION_NORMAL;
 }
 
-static const struct display_driver_api rm68200_api = {
+static DEVICE_API(display, rm68200_api) = {
 	.blanking_on = rm68200_blanking_on,
 	.blanking_off = rm68200_blanking_off,
 	.write = rm68200_write,

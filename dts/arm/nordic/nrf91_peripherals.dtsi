@@ -4,34 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-flash_controller: flash-controller@39000 {
-	compatible = "nordic,nrf91-flash-controller";
-	reg = <0x39000 0x1000>;
-	partial-erase;
-
-	#address-cells = <1>;
-	#size-cells = <1>;
-
-
-	flash0: flash@0 {
-		compatible = "soc-nv-flash";
-		erase-block-size = <4096>;
-		write-block-size = <4>;
-	};
-};
-
 adc: adc@e000 {
 	compatible = "nordic,nrf-saadc";
 	reg = <0xe000 0x1000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
 	interrupts = <14 NRF_DEFAULT_IRQ_PRIORITY>;
 	status = "disabled";
 	#io-channel-cells = <1>;
+	zephyr,pm-device-runtime-auto;
 };
 
-dppic: dppic@17000 {
+dppic0: dppic: dppic@17000 {
 	compatible = "nordic,nrf-dppic";
 	reg = <0x17000 0x1000>;
 	status = "okay";
+	channels = <16>;
+	groups = <6>;
 };
 
 egu0: egu@1b000 {
@@ -341,6 +330,16 @@ clock: clock@5000 {
 	reg = <0x5000 0x1000>;
 	interrupts = <5 NRF_DEFAULT_IRQ_PRIORITY>;
 	status = "okay";
+
+	hfclk: hfclk {
+		compatible = "nordic,nrf-clock-hfclk";
+		status = "okay";
+	};
+
+	lfclk: lfclk {
+		compatible = "nordic,nrf-clock-lfclk";
+		status = "okay";
+	};
 };
 
 power: power@5000 {

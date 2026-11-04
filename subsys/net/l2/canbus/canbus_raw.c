@@ -16,28 +16,33 @@ LOG_MODULE_REGISTER(net_l2_canbus, LOG_LEVEL_NONE);
 static inline enum net_verdict canbus_recv(struct net_if *iface,
 					   struct net_pkt *pkt)
 {
-	net_pkt_lladdr_src(pkt)->addr = NULL;
+	memset(net_pkt_lladdr_src(pkt)->addr, 0, sizeof(net_pkt_lladdr_src(pkt)->addr));
 	net_pkt_lladdr_src(pkt)->len = 0U;
 	net_pkt_lladdr_src(pkt)->type = NET_LINK_CANBUS_RAW;
-	net_pkt_lladdr_dst(pkt)->addr = NULL;
+	memset(net_pkt_lladdr_dst(pkt)->addr, 0, sizeof(net_pkt_lladdr_dst(pkt)->addr));
 	net_pkt_lladdr_dst(pkt)->len = 0U;
 	net_pkt_lladdr_dst(pkt)->type = NET_LINK_CANBUS_RAW;
 
-	net_pkt_set_family(pkt, AF_CAN);
+	net_pkt_set_family(pkt, NET_AF_CAN);
 
 	return NET_CONTINUE;
 }
 
 static inline int canbus_send(struct net_if *iface, struct net_pkt *pkt)
 {
-	const struct canbus_api *api = net_if_get_device(iface)->api;
+	const struct device *dev = net_if_get_device(iface);
+	const struct canbus_api *api;
 	int ret;
+
+	NET_ASSERT(dev != NULL);
+
+	api = dev->api;
 
 	if (!api) {
 		return -ENOENT;
 	}
 
-	ret = net_l2_send(api->send, net_if_get_device(iface), iface, pkt);
+	ret = net_l2_send(api->send, dev, iface, pkt);
 	if (!ret) {
 		ret = net_pkt_get_len(pkt);
 		net_pkt_unref(pkt);

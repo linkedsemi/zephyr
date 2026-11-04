@@ -13,12 +13,7 @@ supported:
   - uart
   - nvs
   - pwm
-  - dac
   - spi
   - counter
   - entropy
-testing:
-  ignore_tags:
-    - net
-    - bluetooth
 vendor: vcc-gnd

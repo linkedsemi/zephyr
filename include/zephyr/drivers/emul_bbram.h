@@ -3,6 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Backend APIs for the BBRAM emulators.
+ * @ingroup bbram_emulator_backend
+ */
+
 #ifndef INCLUDE_ZEPHYR_DRIVERS_EMUL_BBRAM_H_
 #define INCLUDE_ZEPHYR_DRIVERS_EMUL_BBRAM_H_
 
@@ -13,7 +19,8 @@
 /**
  * @brief BBRAM emulator backend API
  * @defgroup bbram_emulator_backend BBRAM emulator backend API
- * @ingroup io_interfaces
+ * @ingroup io_emulators
+ * @ingroup bbram_interface
  * @{
  */
 

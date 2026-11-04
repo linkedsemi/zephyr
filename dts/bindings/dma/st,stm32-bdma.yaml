@@ -57,7 +57,7 @@ description: |
   using dmamux2
 
     &adc3 {
-       dmas = < &dmamux2 0 17 0x2C80 >;
+       dmas = <&dmamux2 0 17 0x2C80>;
        dma-names = "dmamux";
     };
 
@@ -86,11 +86,11 @@ properties:
       plus the nb of dma channels of the 1st dma instance, etc.
 
   "#dma-cells":
-    const: 4
+    const: 3
 
 # Parameter syntax of stm32 follows the dma client dts syntax
 # in the Linux kernel declared in
-# https://git.kernel.org/pub/scm/linux/kernel/git/devicetree/devicetree-rebasing.git/plain/Bindings/dma/st,stm32-dma.yaml
+# https://git.kernel.org/pub/scm/linux/kernel/git/devicetree/devicetree-rebasing.git/plain/Bindings/dma/stm32/st,stm32-dma.yaml
 
 dma-cells:
   - channel

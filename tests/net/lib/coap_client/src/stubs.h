@@ -36,21 +36,21 @@
 #define ZSOCK_POLLNVAL 0x20
 /** @} */
 
+/* Socket fds 0 and 1, plus the cancel-wakeup eventfd at NUM_FD - 1. */
+#define NUM_FD 3
 
-void set_socket_events(short events);
-void clear_socket_events(short events);
+void set_socket_events(int fd, short events);
+void clear_socket_events(int fd, short events);
 
 DECLARE_FAKE_VALUE_FUNC(uint32_t, z_impl_sys_rand32_get);
-DECLARE_FAKE_VOID_FUNC(z_impl_sys_rand_get, void *, size_t);
-DECLARE_FAKE_VALUE_FUNC(ssize_t, z_impl_zsock_recvfrom, int, void *, size_t, int, struct sockaddr *,
-			socklen_t *);
+DECLARE_FAKE_VALUE_FUNC(ssize_t, z_impl_zsock_recvfrom, int, void *, size_t, int,
+			struct net_sockaddr *, net_socklen_t *);
 DECLARE_FAKE_VALUE_FUNC(ssize_t, z_impl_zsock_sendto, int, void*, size_t, int,
-			const struct sockaddr *, socklen_t);
+			const struct net_sockaddr *, net_socklen_t);
 
 #define DO_FOREACH_FAKE(FUNC)                                                                      \
 	do {                                                                                       \
 		FUNC(z_impl_sys_rand32_get)                                                        \
-		FUNC(z_impl_sys_rand_get)                                                          \
 		FUNC(z_impl_zsock_recvfrom)                                                        \
 		FUNC(z_impl_zsock_sendto)                                                          \
 	} while (0)

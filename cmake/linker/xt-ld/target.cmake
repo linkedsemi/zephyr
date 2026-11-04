@@ -11,14 +11,14 @@ find_program(CMAKE_LINKER xt-ld ${LD_SEARCH_PATH})
 
 set_ifndef(LINKERFLAGPREFIX -Wl)
 
-if(CONFIG_CPP_EXCEPTIONS)
+if(CONFIG_CPP_EXCEPTIONS AND CRTBEGIN_PATH AND CRTEND_PATH)
   # When building with C++ Exceptions, it is important that crtbegin and crtend
   # are linked at specific locations.
   # The location is so important that we cannot let this be controlled by normal
   # link libraries, instead we must control the link command specifically as
   # part of toolchain.
   set(CMAKE_CXX_LINK_EXECUTABLE
-      "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> ${LIBGCC_DIR}/crtbegin.o <OBJECTS> -o <TARGET> <LINK_LIBRARIES> ${LIBGCC_DIR}/crtend.o")
+      "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> <LINK_FLAGS> ${CRTBEGIN_PATH} <OBJECTS> -o <TARGET> <LINK_LIBRARIES> ${CRTEND_PATH}")
 endif()
 
 # Run $LINKER_SCRIPT file through the C preprocessor, producing ${linker_script_gen}
@@ -68,7 +68,11 @@ macro(configure_linker_script linker_script_gen linker_pass_define)
       ${extra_dependencies}
       # NB: 'linker_script_dep' will use a keyword that ends 'DEPENDS'
       ${linker_script_dep}
-      COMMAND ${CMAKE_C_COMPILER}
+      # Make sure the FLAGS are passed so xtensa-core is set correctly.
+      # Otherwise, if linker.ld includes a core specific file, like core-isa.h,
+      # the compiler may pickup the wrong file if the toolchain registry
+      # has more than one core registered.
+      COMMAND ${CMAKE_C_COMPILER} ${TOOLCHAIN_C_FLAGS}
       -x assembler-with-cpp
       ${NOSYSDEF_CFLAG}
       -MD -MF ${linker_script_gen}.dep -MT ${linker_script_gen}
@@ -154,7 +158,19 @@ macro(toolchain_linker_finalize)
  set(CMAKE_ASM_LINK_EXECUTABLE "<CMAKE_ASM_COMPILER> <FLAGS> <CMAKE_ASM_LINK_FLAGS> ${common_link}")
  set(CMAKE_C_LINK_EXECUTABLE   "<CMAKE_C_COMPILER> <FLAGS> <CMAKE_C_LINK_FLAGS> ${common_link}")
  set(CMAKE_CXX_LINK_EXECUTABLE "<CMAKE_CXX_COMPILER> <FLAGS> <CMAKE_CXX_LINK_FLAGS> ${common_link}")
+
+ compiler_file_path(crtbegin.o CRTBEGIN_PATH)
+ compiler_file_path(crtend.o CRTEND_PATH)
+
 endmacro()
+
+# Function to map compiler flags into suitable linker flags
+# When using the compiler driver to run the linker, just pass
+# them all through
+
+function(toolchain_linker_add_compiler_options)
+  add_link_options(${ARGV})
+endfunction()
 
 # xt-ld is Xtensa's own version of binutils' ld.
 # So we can reuse most of the ld configurations.

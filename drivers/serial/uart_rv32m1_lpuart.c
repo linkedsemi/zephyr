@@ -213,11 +213,6 @@ static int rv32m1_lpuart_irq_is_pending(const struct device *dev)
 		|| rv32m1_lpuart_irq_rx_pending(dev));
 }
 
-static int rv32m1_lpuart_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 static void rv32m1_lpuart_irq_callback_set(const struct device *dev,
 					   uart_irq_callback_user_data_t cb,
 					   void *cb_data)
@@ -281,7 +276,7 @@ static int rv32m1_lpuart_init(const struct device *dev)
 	return 0;
 }
 
-static const struct uart_driver_api rv32m1_lpuart_driver_api = {
+static DEVICE_API(uart, rv32m1_lpuart_driver_api) = {
 	.poll_in = rv32m1_lpuart_poll_in,
 	.poll_out = rv32m1_lpuart_poll_out,
 	.err_check = rv32m1_lpuart_err_check,
@@ -298,7 +293,6 @@ static const struct uart_driver_api rv32m1_lpuart_driver_api = {
 	.irq_err_enable = rv32m1_lpuart_irq_err_enable,
 	.irq_err_disable = rv32m1_lpuart_irq_err_disable,
 	.irq_is_pending = rv32m1_lpuart_irq_is_pending,
-	.irq_update = rv32m1_lpuart_irq_update,
 	.irq_callback_set = rv32m1_lpuart_irq_callback_set,
 #endif
 };

@@ -21,6 +21,7 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led_1: led_1 {
 			gpios = <&gpiob 5 GPIO_ACTIVE_HIGH>;
 			label = "User LD1";
@@ -68,6 +69,8 @@
 &i2c2 {
 	pinctrl-0 = <&i2c2_sda_pb3 &i2c2_scl_pb10>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 3 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -90,7 +93,7 @@
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+	clocks = <&rcc STM32_CLOCK(APB1, 28)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };

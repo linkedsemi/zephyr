@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief LittleFS file system mount structures and configuration macros.
+ * @ingroup file_system_api
+ */
+
 #ifndef ZEPHYR_INCLUDE_FS_LITTLEFS_H_
 #define ZEPHYR_INCLUDE_FS_LITTLEFS_H_
 
@@ -17,25 +23,43 @@
 extern "C" {
 #endif
 
+/**
+ * @brief Get the major part of the littlefs disk version
+ *
+ * @param disk_version The disk version of littlefs partition
+ * @return The major part of the littlefs disk version.
+ */
+#define FS_LITTLEFS_DISK_VERSION_MAJOR_GET(disk_version) FIELD_GET(GENMASK(31, 16), disk_version)
+
+/**
+ * @brief Get the minor part of the littlefs disk version
+ *
+ * @param disk_version The disk version of littlefs partition
+ * @return The minor part of the littlefs disk version.
+ */
+#define FS_LITTLEFS_DISK_VERSION_MINOR_GET(disk_version) FIELD_GET(GENMASK(15, 0), disk_version)
+
 /** @brief Filesystem info structure for LittleFS mount */
 struct fs_littlefs {
-	/* Defaulted in driver, customizable before mount. */
+	/** littlefs configuration, defaulted in driver, customizable before mount. */
 	struct lfs_config cfg;
 
-	/* Must be cfg.cache_size */
+	/** Read cache buffer, must be cfg.cache_size */
 	uint8_t *read_buffer;
 
-	/* Must be cfg.cache_size */
+	/** Program cache buffer, must be cfg.cache_size */
 	uint8_t *prog_buffer;
 
-	/* Must be cfg.lookahead_size/4 elements, and
+	/** Lookahead buffer, must be cfg.lookahead_size/4 elements, and
 	 * cfg.lookahead_size must be a multiple of 8.
 	 */
 	uint32_t *lookahead_buffer[CONFIG_FS_LITTLEFS_LOOKAHEAD_SIZE / sizeof(uint32_t)];
 
-	/* These structures are filled automatically at mount. */
+	/** littlefs state, filled automatically at mount. */
 	struct lfs lfs;
+	/** Storage backend, filled automatically at mount. */
 	void *backend;
+	/** Mutex protecting the instance, filled automatically at mount. */
 	struct k_mutex mutex;
 };
 

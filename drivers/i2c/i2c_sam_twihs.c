@@ -10,7 +10,7 @@
 /** @file
  * @brief I2C bus (TWIHS) driver for Atmel SAM MCU family.
  *
- * Only I2C Master Mode with 7 bit addressing is currently supported.
+ * Only I2C Controller Mode with 7 bit addressing is currently supported.
  */
 
 
@@ -65,6 +65,7 @@ struct twihs_msg {
 
 /* Device run time data */
 struct i2c_sam_twihs_dev_data {
+	struct k_sem lock;
 	struct k_sem sem;
 	struct twihs_msg msg;
 };
@@ -104,12 +105,13 @@ static int i2c_clk_set(Twihs *const twihs, uint32_t speed)
 static int i2c_sam_twihs_configure(const struct device *dev, uint32_t config)
 {
 	const struct i2c_sam_twihs_dev_cfg *const dev_cfg = dev->config;
+	struct i2c_sam_twihs_dev_data *const dev_data = dev->data;
 	Twihs *const twihs = dev_cfg->regs;
 	uint32_t bitrate;
 	int ret;
 
 	if (!(config & I2C_MODE_CONTROLLER)) {
-		LOG_ERR("Master Mode is not enabled");
+		LOG_ERR("Controller Mode is not enabled");
 		return -EIO;
 	}
 
@@ -132,25 +134,31 @@ static int i2c_sam_twihs_configure(const struct device *dev, uint32_t config)
 		return -EIO;
 	}
 
+	k_sem_take(&dev_data->lock, K_FOREVER);
+
 	/* Setup clock waveform */
 	ret = i2c_clk_set(twihs, bitrate);
 	if (ret < 0) {
-		return ret;
+		goto unlock;
 	}
 
-	/* Disable Slave Mode */
+	/* Disable Target Mode */
 	twihs->TWIHS_CR = TWIHS_CR_SVDIS;
 
-	/* Enable Master Mode */
+	/* Enable Controller Mode */
 	twihs->TWIHS_CR = TWIHS_CR_MSEN;
 
-	return 0;
+	ret = 0;
+unlock:
+	k_sem_give(&dev_data->lock);
+
+	return ret;
 }
 
 static void write_msg_start(Twihs *const twihs, struct twihs_msg *msg,
 			    uint8_t daddr)
 {
-	/* Set slave address. */
+	/* Set target address. */
 	twihs->TWIHS_MMR = TWIHS_MMR_DADR(daddr);
 
 	/* Write first data byte on I2C bus */
@@ -165,16 +173,17 @@ static void read_msg_start(Twihs *const twihs, struct twihs_msg *msg,
 {
 	uint32_t twihs_cr_stop;
 
-	/* Set slave address and number of internal address bytes */
+	/* Set target address and number of internal address bytes */
 	twihs->TWIHS_MMR = TWIHS_MMR_MREAD | TWIHS_MMR_DADR(daddr);
-
-	/* Enable Receive Ready and Transmission Completed interrupts */
-	twihs->TWIHS_IER = TWIHS_IER_RXRDY | TWIHS_IER_TXCOMP | TWIHS_IER_NACK;
 
 	/* In single data byte read the START and STOP must both be set */
 	twihs_cr_stop = (msg->len == 1U) ? TWIHS_CR_STOP : 0;
+
 	/* Start the transfer by sending START condition */
 	twihs->TWIHS_CR = TWIHS_CR_START | twihs_cr_stop;
+
+	/* Enable Receive Ready and Transmission Completed interrupts */
+	twihs->TWIHS_IER = TWIHS_IER_RXRDY | TWIHS_IER_TXCOMP | TWIHS_IER_NACK;
 }
 
 static int i2c_sam_twihs_transfer(const struct device *dev,
@@ -184,11 +193,11 @@ static int i2c_sam_twihs_transfer(const struct device *dev,
 	const struct i2c_sam_twihs_dev_cfg *const dev_cfg = dev->config;
 	struct i2c_sam_twihs_dev_data *const dev_data = dev->data;
 	Twihs *const twihs = dev_cfg->regs;
+	int ret;
 
 	__ASSERT_NO_MSG(msgs);
-	if (!num_msgs) {
-		return 0;
-	}
+
+	k_sem_take(&dev_data->lock, K_FOREVER);
 
 	/* Clear pending interrupts, such as NACK. */
 	(void)twihs->TWIHS_SR;
@@ -212,11 +221,15 @@ static int i2c_sam_twihs_transfer(const struct device *dev,
 
 		if (dev_data->msg.twihs_sr > 0) {
 			/* Something went wrong */
-			return -EIO;
+			ret = -EIO;
+			goto unlock;
 		}
 	}
 
-	return 0;
+	ret = 0;
+unlock:
+	k_sem_give(&dev_data->lock);
+	return ret;
 }
 
 static void i2c_sam_twihs_isr(const struct device *dev)
@@ -290,6 +303,7 @@ static int i2c_sam_twihs_initialize(const struct device *dev)
 	dev_cfg->irq_config();
 
 	/* Initialize semaphore */
+	k_sem_init(&dev_data->lock, 1, 1);
 	k_sem_init(&dev_data->sem, 0, 1);
 
 	/* Connect pins to the peripheral */
@@ -321,7 +335,7 @@ static int i2c_sam_twihs_initialize(const struct device *dev)
 	return 0;
 }
 
-static const struct i2c_driver_api i2c_sam_twihs_driver_api = {
+static DEVICE_API(i2c, i2c_sam_twihs_driver_api) = {
 	.configure = i2c_sam_twihs_configure,
 	.transfer = i2c_sam_twihs_transfer,
 };

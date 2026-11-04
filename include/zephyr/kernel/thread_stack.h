@@ -14,6 +14,8 @@
  * @brief Thread Stack APIs
  * @ingroup kernel_apis
  * @defgroup thread_stack_api Thread Stack APIs
+ * @since 1.8
+ * @version 1.0.0
  * @{
  * @}
  */
@@ -112,6 +114,156 @@ static inline char *z_stack_ptr_align(char *ptr)
  * @{
  */
 
+#ifdef CONFIG_HW_SHADOW_STACK
+/**
+ * @typedef k_thread_hw_shadow_stack_t
+ * @brief Typedef of arch_thread_hw_shadow_stack_t
+ *
+ * This is an opaque type that represents a hardware shadow stack.
+ * The architecture implementation defines the actual type.
+ */
+#define k_thread_hw_shadow_stack_t arch_thread_hw_shadow_stack_t
+
+/**
+ * @brief Calculate the size of a hardware shadow stack
+ *
+ * This macro calculates the size to be allocated for a hardware shadow
+ * stack. It accepts the indicated "size" as a parameter and pads some
+ * extra bytes (e.g. for alignment).
+ *
+ * @param size_ Size of the shadow stack memory region
+ */
+#define K_THREAD_HW_SHADOW_STACK_SIZE(size_) \
+	ARCH_THREAD_HW_SHADOW_STACK_SIZE(size_)
+
+/**
+ * @brief Declare a hardware shadow stack
+ *
+ * This macro declares the symbol of a hardware shadow stack defined
+ * elsewhere in the current scope.
+ *
+ * @param sym Hardware shadow stack symbol name
+ * @param size Size of the shadow stack memory region
+ */
+#define K_KERNEL_HW_SHADOW_STACK_DECLARE(sym, size) \
+	ARCH_THREAD_HW_SHADOW_STACK_DECLARE(__ ## sym ## _shstk, size)
+
+/**
+ * @brief Declare a hardware shadow stack array
+ *
+ * This macro declares the symbol of a hardware shadow stack array defined
+ * elsewhere in the current scope.
+ *
+ * @param sym Hardware shadow stack array symbol name
+ * @param nmemb Number of stacks defined
+ * @param size Size of the shadow stack memory region
+ */
+#define K_KERNEL_HW_SHADOW_STACK_ARRAY_DECLARE(sym, nmemb, size) \
+	ARCH_THREAD_HW_SHADOW_STACK_ARRAY_DECLARE(__ ## sym ## _shstk_arr, \
+						  nmemb, size)
+
+struct _stack_to_hw_shadow_stack {
+	k_thread_stack_t *stack;
+	k_thread_hw_shadow_stack_t *shstk_addr;
+	size_t size;
+};
+
+
+/**
+ * @brief Define a hardware shadow stack
+ *
+ * This macro defines a hardware shadow stack. Note that an application
+ * usually doesn't have to define a hardware shadow stack directly,
+ * as it is automatically defined by the kernel when a thread stack is
+ * defined with K_THREAD_STACK_DEFINE().
+ *
+ * @param sym Hardware shadow stack symbol name
+ * @param size_ Size of the shadow stack memory region
+ */
+#define K_THREAD_HW_SHADOW_STACK_DEFINE(sym, size_) \
+	ARCH_THREAD_HW_SHADOW_STACK_DEFINE(__ ## sym ## _shstk, size_); \
+	static const STRUCT_SECTION_ITERABLE(_stack_to_hw_shadow_stack, \
+		sym ## _stack_to_shstk_attach) = { \
+		.stack = sym, \
+		.shstk_addr = __ ## sym ## _shstk, \
+		.size = size_, \
+	}
+
+struct _stack_to_hw_shadow_stack_arr {
+	uintptr_t stack_addr;
+	uintptr_t shstk_addr;
+	size_t stack_size;
+	size_t shstk_size;
+	size_t nmemb;
+};
+
+/**
+ * @brief Define a hardware shadow stack array
+ *
+ * This macro defines a hardware shadow stack array. Note that an application
+ * usually doesn't have to define a hardware shadow stack array directly,
+ * as it is automatically defined by the kernel when a thread stack array is
+ * defined with K_THREAD_STACK_ARRAY_DEFINE().
+ *
+ * @param sym Hardware shadow stack array symbol name
+ * @param nmemb_ Number of stacks defined
+ * @param size_ Size of the shadow stack memory region
+ */
+#define K_THREAD_HW_SHADOW_STACK_ARRAY_DEFINE(sym, nmemb_, size_) \
+	ARCH_THREAD_HW_SHADOW_STACK_ARRAY_DEFINE(__ ## sym ## _shstk_arr, nmemb_, \
+			K_THREAD_HW_SHADOW_STACK_SIZE(size_)); \
+	static const STRUCT_SECTION_ITERABLE(_stack_to_hw_shadow_stack_arr, \
+		sym ## _stack_to_shstk_attach) = { \
+		.stack_addr = (uintptr_t)sym, \
+		.stack_size = K_KERNEL_STACK_LEN(size_), \
+		.nmemb = nmemb_, \
+		.shstk_addr = (uintptr_t)__ ## sym ## _shstk_arr, \
+		.shstk_size = K_THREAD_HW_SHADOW_STACK_SIZE(size_), \
+	}
+
+/**
+ * @brief Attach a hardware shadow stack to a thread
+ *
+ * This macro attaches a hardware shadow stack to a thread. Note that an
+ * application usually doesn't have to attach a hardware shadow stack
+ * directly, as it is automatically attached by the kernel when a thread
+ * is created.
+ */
+#define k_thread_hw_shadow_stack_attach arch_thread_hw_shadow_stack_attach
+
+struct _thread_hw_shadow_stack_static {
+	struct k_thread *thread;
+	k_thread_hw_shadow_stack_t *shstk_addr;
+	size_t size;
+};
+
+/**
+ * @brief Attach a hardware shadow stack to a thread
+ *
+ * This macro attaches a hardware shadow stack to a thread. Note that an
+ * application usually doesn't have to attach a hardware shadow stack
+ * directly, as it is automatically attached by the kernel when a thread
+ * is created.
+ *
+ * @param thread_ Thread to attach the hardware shadow stack to
+ * @param shstk_addr_ Address of the hardware shadow stack
+ * @param size_ Size of the hardware shadow stack memory region
+ */
+#define K_THREAD_HW_SHADOW_STACK_ATTACH(thread_, shstk_addr_, size_) \
+	static const STRUCT_SECTION_ITERABLE(_thread_hw_shadow_stack_static, \
+		thread ## _shstk_attach_static) = { \
+		.thread = thread_, \
+		.shstk_addr = shstk_addr_, \
+		.size = size_, \
+	}
+
+#else
+#define K_KERNEL_HW_SHADOW_STACK_DECLARE(sym, size)
+#define K_KERNEL_HW_SHADOW_STACK_ARRAY_DECLARE(sym, nmemb, size)
+#define K_THREAD_HW_SHADOW_STACK_DEFINE(sym, size)
+#define K_THREAD_HW_SHADOW_STACK_ARRAY_DEFINE(sym, nmemb, size_)
+#endif
+
 /**
  * @brief Declare a reference to a thread stack
  *
@@ -122,6 +274,7 @@ static inline char *z_stack_ptr_align(char *ptr)
  * @param size Size of the stack memory region
  */
 #define K_KERNEL_STACK_DECLARE(sym, size) \
+	K_KERNEL_HW_SHADOW_STACK_DECLARE(sym, K_THREAD_HW_SHADOW_STACK_SIZE(size)); \
 	extern struct z_thread_stack_element \
 		sym[K_KERNEL_STACK_LEN(size)]
 
@@ -136,20 +289,7 @@ static inline char *z_stack_ptr_align(char *ptr)
  * @param size Size of the stack memory region
  */
 #define K_KERNEL_STACK_ARRAY_DECLARE(sym, nmemb, size) \
-	extern struct z_thread_stack_element \
-		sym[nmemb][K_KERNEL_STACK_LEN(size)]
-
-/**
- * @brief Declare a reference to a pinned thread stack array
- *
- * This macro declares the symbol of a pinned thread stack array defined
- * elsewhere in the current scope.
- *
- * @param sym Thread stack symbol name
- * @param nmemb Number of stacks defined
- * @param size Size of the stack memory region
- */
-#define K_KERNEL_PINNED_STACK_ARRAY_DECLARE(sym, nmemb, size) \
+	K_KERNEL_HW_SHADOW_STACK_ARRAY_DECLARE(sym, nmemb, K_THREAD_HW_SHADOW_STACK_SIZE(size)); \
 	extern struct z_thread_stack_element \
 		sym[nmemb][K_KERNEL_STACK_LEN(size)]
 
@@ -212,27 +352,9 @@ static inline char *z_stack_ptr_align(char *ptr)
  * @param size Size of the stack memory region
  */
 #define K_KERNEL_STACK_DEFINE(sym, size) \
-	Z_KERNEL_STACK_DEFINE_IN(sym, size, __kstackmem)
-
-/**
- * @brief Define a toplevel kernel stack memory region in pinned section
- *
- * See K_KERNEL_STACK_DEFINE() for more information and constraints.
- *
- * This puts the stack into the pinned noinit linker section if
- * CONFIG_LINKER_USE_PINNED_SECTION is enabled, or else it would
- * put the stack into the same section as K_KERNEL_STACK_DEFINE().
- *
- * @param sym Thread stack symbol name
- * @param size Size of the stack memory region
- */
-#if defined(CONFIG_LINKER_USE_PINNED_SECTION)
-#define K_KERNEL_PINNED_STACK_DEFINE(sym, size) \
-	Z_KERNEL_STACK_DEFINE_IN(sym, size, __pinned_noinit)
-#else
-#define K_KERNEL_PINNED_STACK_DEFINE(sym, size) \
-	Z_KERNEL_STACK_DEFINE_IN(sym, size, __kstackmem)
-#endif /* CONFIG_LINKER_USE_PINNED_SECTION */
+	Z_KERNEL_STACK_DEFINE_IN(sym, size, __kstackmem); \
+	K_THREAD_HW_SHADOW_STACK_DEFINE(sym, \
+					K_THREAD_HW_SHADOW_STACK_SIZE(size))
 
 /**
  * @brief Define a toplevel array of kernel stack memory regions
@@ -244,28 +366,8 @@ static inline char *z_stack_ptr_align(char *ptr)
  * @param size Size of the stack memory region
  */
 #define K_KERNEL_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-	Z_KERNEL_STACK_ARRAY_DEFINE_IN(sym, nmemb, size, __kstackmem)
-
-/**
- * @brief Define a toplevel array of kernel stack memory regions in pinned section
- *
- * See K_KERNEL_STACK_ARRAY_DEFINE() for more information and constraints.
- *
- * This puts the stack into the pinned noinit linker section if
- * CONFIG_LINKER_USE_PINNED_SECTION is enabled, or else it would
- * put the stack into the same section as K_KERNEL_STACK_ARRAY_DEFINE().
- *
- * @param sym Kernel stack array symbol name
- * @param nmemb Number of stacks to define
- * @param size Size of the stack memory region
- */
-#if defined(CONFIG_LINKER_USE_PINNED_SECTION)
-#define K_KERNEL_PINNED_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-	Z_KERNEL_STACK_ARRAY_DEFINE_IN(sym, nmemb, size, __pinned_noinit)
-#else
-#define K_KERNEL_PINNED_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-	Z_KERNEL_STACK_ARRAY_DEFINE_IN(sym, nmemb, size, __kstackmem)
-#endif /* CONFIG_LINKER_USE_PINNED_SECTION */
+	Z_KERNEL_STACK_ARRAY_DEFINE_IN(sym, nmemb, size, __kstackmem); \
+	K_THREAD_HW_SHADOW_STACK_ARRAY_DEFINE(sym, nmemb, size)
 
 /**
  * @brief Define an embedded stack memory region
@@ -296,9 +398,6 @@ static inline char *K_KERNEL_STACK_BUFFER(k_thread_stack_t *sym)
 #define K_THREAD_STACK_BUFFER		K_KERNEL_STACK_BUFFER
 #define K_THREAD_STACK_DECLARE		K_KERNEL_STACK_DECLARE
 #define K_THREAD_STACK_ARRAY_DECLARE	K_KERNEL_STACK_ARRAY_DECLARE
-#define K_THREAD_PINNED_STACK_DEFINE	K_KERNEL_PINNED_STACK_DEFINE
-#define K_THREAD_PINNED_STACK_ARRAY_DEFINE \
-					K_KERNEL_PINNED_STACK_ARRAY_DEFINE
 #else
 /**
  * @brief Indicate how much additional memory is reserved for stack objects
@@ -517,44 +616,6 @@ static inline char *K_KERNEL_STACK_BUFFER(k_thread_stack_t *sym)
 	Z_THREAD_STACK_DEFINE_IN(sym, size, __stackmem)
 
 /**
- * @brief Define a toplevel thread stack memory region in pinned section
- *
- * This defines a region of memory suitable for use as a thread's stack.
- *
- * This is the generic, historical definition. Align to Z_THREAD_STACK_OBJ_ALIGN
- * and put in 'noinit' section so that it isn't zeroed at boot
- *
- * The defined symbol will always be a k_thread_stack_t which can be passed to
- * k_thread_create(), but should otherwise not be manipulated. If the buffer
- * inside needs to be examined, examine thread->stack_info for the associated
- * thread object to obtain the boundaries.
- *
- * It is legal to precede this definition with the 'static' keyword.
- *
- * It is NOT legal to take the sizeof(sym) and pass that to the stackSize
- * parameter of k_thread_create(), it may not be the same as the
- * 'size' parameter. Use K_THREAD_STACK_SIZEOF() instead.
- *
- * Some arches may round the size of the usable stack region up to satisfy
- * alignment constraints. K_THREAD_STACK_SIZEOF() will return the aligned
- * size.
- *
- * This puts the stack into the pinned noinit linker section if
- * CONFIG_LINKER_USE_PINNED_SECTION is enabled, or else it would
- * put the stack into the same section as K_THREAD_STACK_DEFINE().
- *
- * @param sym Thread stack symbol name
- * @param size Size of the stack memory region
- */
-#if defined(CONFIG_LINKER_USE_PINNED_SECTION)
-#define K_THREAD_PINNED_STACK_DEFINE(sym, size) \
-	Z_THREAD_STACK_DEFINE_IN(sym, size, __pinned_noinit)
-#else
-#define K_THREAD_PINNED_STACK_DEFINE(sym, size) \
-	K_THREAD_STACK_DEFINE(sym, size)
-#endif /* CONFIG_LINKER_USE_PINNED_SECTION */
-
-/**
  * @brief Calculate size of stacks to be allocated in a stack array
  *
  * This macro calculates the size to be allocated for the stacks
@@ -586,31 +647,6 @@ static inline char *K_KERNEL_STACK_BUFFER(k_thread_stack_t *sym)
  */
 #define K_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size) \
 	Z_THREAD_STACK_ARRAY_DEFINE_IN(sym, nmemb, size, __stackmem)
-
-/**
- * @brief Define a toplevel array of thread stack memory regions in pinned section
- *
- * Create an array of equally sized stacks. See K_THREAD_STACK_DEFINE
- * definition for additional details and constraints.
- *
- * This is the generic, historical definition. Align to Z_THREAD_STACK_OBJ_ALIGN
- * and put in 'noinit' section so that it isn't zeroed at boot
- *
- * This puts the stack into the pinned noinit linker section if
- * CONFIG_LINKER_USE_PINNED_SECTION is enabled, or else it would
- * put the stack into the same section as K_THREAD_STACK_DEFINE().
- *
- * @param sym Thread stack symbol name
- * @param nmemb Number of stacks to define
- * @param size Size of the stack memory region
- */
-#if defined(CONFIG_LINKER_USE_PINNED_SECTION)
-#define K_THREAD_PINNED_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-	Z_THREAD_PINNED_STACK_DEFINE_IN(sym, nmemb, size, __pinned_noinit)
-#else
-#define K_THREAD_PINNED_STACK_ARRAY_DEFINE(sym, nmemb, size) \
-	K_THREAD_STACK_ARRAY_DEFINE(sym, nmemb, size)
-#endif /* CONFIG_LINKER_USE_PINNED_SECTION */
 
 /** @} */
 

@@ -88,7 +88,7 @@ static struct led_rgb *pixel_address(const struct led_strip_matrix_config *confi
 static inline int check_descriptor(const struct led_strip_matrix_config *config, const uint16_t x,
 				   const uint16_t y, const struct display_buffer_descriptor *desc)
 {
-	__ASSERT(desc->width <= desc->pitch, "Pitch is smaller then width");
+	__ASSERT(desc->width <= desc->pitch, "Pitch is smaller than width");
 	__ASSERT(desc->pitch <= config->width, "Pitch in descriptor is larger than screen size");
 	__ASSERT(desc->height <= config->height, "Height in descriptor is larger than screen size");
 	__ASSERT(x + desc->pitch <= config->width,
@@ -195,7 +195,6 @@ static void led_strip_matrix_get_capabilities(const struct device *dev,
 {
 	const struct led_strip_matrix_config *config = dev->config;
 
-	memset(caps, 0, sizeof(struct display_capabilities));
 	caps->x_resolution = config->width;
 	caps->y_resolution = config->height;
 	caps->supported_pixel_formats = PIXEL_FORMAT_ARGB_8888 | PIXEL_FORMAT_RGB_888;
@@ -203,7 +202,7 @@ static void led_strip_matrix_get_capabilities(const struct device *dev,
 	caps->screen_info = 0;
 }
 
-static const struct display_driver_api led_strip_matrix_api = {
+static DEVICE_API(display, led_strip_matrix_api) = {
 	.write = led_strip_matrix_write,
 	.read = led_strip_matrix_read,
 	.get_capabilities = led_strip_matrix_get_capabilities,

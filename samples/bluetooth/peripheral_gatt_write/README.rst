@@ -20,7 +20,12 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/peripheral_gatt_write`
-in the Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/peripheral_gatt_write
+   :board: <board>
+   :goals: build flash
+   :compact:
 
 See :zephyr:code-sample-category:`bluetooth` samples for details.

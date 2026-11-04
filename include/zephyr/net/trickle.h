@@ -1,7 +1,7 @@
 /** @file
  * @brief Trickle timer library
  *
- * This implements Trickle timer as specified in RFC 6206
+ * This implements Trickle timer as specified in @rfc{6206}
  */
 
 /*
@@ -48,7 +48,7 @@ typedef void (*net_trickle_cb_t)(struct net_trickle *trickle,
 				 bool do_suppress, void *user_data);
 
 /**
- * The variable names are taken directly from RFC 6206 when applicable.
+ * The variable names are taken directly from @rfc{6206} when applicable.
  * Note that the struct members should not be accessed directly but
  * only via the Trickle API.
  */
@@ -79,7 +79,7 @@ struct net_trickle {
  * @param trickle Pointer to Trickle struct.
  * @param Imin Imin configuration parameter in ms.
  * @param Imax Max number of doublings.
- * @param k Redundancy constant parameter. See RFC 6206 for details.
+ * @param k Redundancy constant parameter. See @rfc{6206} for details.
  *
  * @return Return 0 if ok and <0 if error.
  */
@@ -136,7 +136,9 @@ void net_trickle_inconsistency(struct net_trickle *trickle);
  */
 static inline bool net_trickle_is_running(struct net_trickle *trickle)
 {
-	NET_ASSERT(trickle);
+	if (trickle == NULL) {
+		return false;
+	}
 
 	return trickle->I != 0U;
 }

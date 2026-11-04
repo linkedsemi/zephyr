@@ -12,7 +12,6 @@
 #include <zephyr/kernel.h>
 #include <errno.h>
 #include <zephyr/device.h>
-#include <zephyr/drivers/peci.h>
 #include <soc.h>
 #include <soc_dt.h>
 #include <zephyr/logging/log.h>
@@ -301,7 +300,7 @@ static void peci_it8xxx2_isr(const struct device *dev)
 	k_sem_give(&data->device_sync_sem);
 }
 
-static const struct peci_driver_api peci_it8xxx2_driver_api = {
+static DEVICE_API(peci, peci_it8xxx2_driver_api) = {
 	.config = peci_it8xxx2_configure,
 	.enable = peci_it8xxx2_enable,
 	.disable = peci_it8xxx2_disable,

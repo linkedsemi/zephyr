@@ -6,12 +6,13 @@
 /**
  * @file
  * @brief USB-C Device APIs
+ * @ingroup _usbc_device_api
  *
  * This file contains the USB-C Device APIs.
  */
 
-#ifndef ZEPHYR_INCLUDE_USBC_H_
-#define ZEPHYR_INCLUDE_USBC_H_
+#ifndef ZEPHYR_INCLUDE_USB_C_USBC_H_
+#define ZEPHYR_INCLUDE_USB_C_USBC_H_
 
 #include <zephyr/types.h>
 #include <zephyr/device.h>
@@ -99,6 +100,10 @@ enum usbc_policy_notify_t {
 	DATA_ROLE_IS_UFP,
 	/** Data Role has been set to Downstream Facing Port (DFP) */
 	DATA_ROLE_IS_DFP,
+	/** Power Role has been set to Source */
+	POWER_ROLE_IS_SOURCE,
+	/** Power Role has been set to Sink */
+	POWER_ROLE_IS_SINK,
 	/** A PD Explicit Contract is in place */
 	PD_CONNECTED,
 	/** No PD Explicit Contract is in place */
@@ -352,6 +357,8 @@ int usbc_suspend(const struct device *dev);
  */
 int usbc_request(const struct device *dev, const enum usbc_policy_request_t req);
 
+/** @cond INTERNAL_HIDDEN */
+
 /**
  * @internal
  * @brief Bypass the next USB-C stack sleep and execute one more iteration of the state machines.
@@ -360,6 +367,8 @@ int usbc_request(const struct device *dev, const enum usbc_policy_request_t req)
  * @param dev Runtime device structure
  */
 void usbc_bypass_next_sleep(const struct device *dev);
+
+/** @endcond */
 
 /**
  * @brief Set pointer to Device Policy Manager (DPM) data
@@ -374,7 +383,7 @@ void usbc_set_dpm_data(const struct device *dev, void *dpm_data);
  *
  * @param dev Runtime device structure
  *
- * @retval pointer to dpm data that was set with usbc_set_dpm_data
+ * @return pointer to dpm data that was set with usbc_set_dpm_data
  * @retval NULL if dpm data was not set
  */
 void *usbc_get_dpm_data(const struct device *dev);
@@ -536,4 +545,4 @@ void usbc_set_policy_cb_set_port_partner_snk_cap(const struct device *dev,
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_USBC_H_ */
+#endif /* ZEPHYR_INCLUDE_USB_C_USBC_H_ */

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <mem.h>
 #include <st/h7rs/stm32h7r3.dtsi>
 
 /*
@@ -13,5 +12,18 @@
 / {
 	soc {
 		compatible = "st,stm32h7s3", "st,stm32h7rs", "simple-bus";
+
+		cryp: crypto@48020800 {
+			compatible = "st,stm32-cryp";
+			reg = <0x48020800 0x800>;
+			clocks = <&rcc STM32_CLOCK(AHB3, 2)>;
+			resets = <&rctl STM32_RESET(AHB3, 2)>;
+			interrupts = <34 0>;
+			status = "disabled";
+		};
 	};
+};
+
+&mac {
+	memory-regions = <&sram1>;
 };

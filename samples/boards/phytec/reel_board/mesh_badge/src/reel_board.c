@@ -25,9 +25,9 @@
 #include "board.h"
 
 #define STORAGE_PARTITION		storage_partition
-#define STORAGE_PARTITION_DEV		FIXED_PARTITION_DEVICE(STORAGE_PARTITION)
-#define STORAGE_PARTITION_OFFSET	FIXED_PARTITION_OFFSET(STORAGE_PARTITION)
-#define STORAGE_PARTITION_SIZE		FIXED_PARTITION_SIZE(STORAGE_PARTITION)
+#define STORAGE_PARTITION_DEV		PARTITION_DEVICE(STORAGE_PARTITION)
+#define STORAGE_PARTITION_OFFSET	PARTITION_OFFSET(STORAGE_PARTITION)
+#define STORAGE_PARTITION_SIZE		PARTITION_SIZE(STORAGE_PARTITION)
 
 enum font_size {
 	FONT_SMALL = 0,
@@ -197,7 +197,7 @@ static int add_hello(uint16_t addr, const char *name)
 		}
 
 		if (stat->addr == addr) {
-			/* Update name, incase it has changed */
+			/* Update name, in case it has changed */
 			strncpy(stat->name, name, sizeof(stat->name) - 1);
 
 			if (stat->hello_count < 0xffff) {

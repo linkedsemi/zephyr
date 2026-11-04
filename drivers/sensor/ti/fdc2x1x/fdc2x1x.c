@@ -32,13 +32,19 @@ static void fdc2x1x_raw_to_freq(const struct device *dev,
 {
 	struct fdc2x1x_data *data = dev->data;
 	const struct fdc2x1x_config *cfg = dev->config;
+	/* f_REFx = f_CLK / CHx_FREF_DIVIDER, in MHz */
+	double fref_mhz = (cfg->fref / 1000.0) / cfg->ch_cfg[ch].fref_divider;
 
 	if (data->fdc221x) {
-		*freq = (cfg->ch_cfg->fin_sel * (cfg->fref / 1000.0) *
+		*freq = (cfg->ch_cfg[ch].fin_sel * fref_mhz *
 			 data->channel_buf[ch]) / pow(2, 28);
 	} else {
-		*freq = cfg->ch_cfg->fin_sel * (cfg->fref / 1000.0) *
-			((data->channel_buf[ch] / pow(2, 12 + cfg->output_gain)) +
+		/* OUTPUT_GAIN codes 0..3 select a gain of 1/4/8/16 */
+		static const uint8_t gain_shift[4] = { 0, 2, 3, 4 };
+
+		*freq = cfg->ch_cfg[ch].fin_sel * fref_mhz *
+			((data->channel_buf[ch] /
+			  pow(2, 12 + gain_shift[cfg->output_gain & 0x3])) +
 			 (cfg->ch_cfg[ch].offset / pow(2, 16)));
 	}
 }
@@ -56,7 +62,7 @@ static void fdc2x1x_raw_to_capacitance(const struct device *dev,
 {
 	const struct fdc2x1x_config *cfg = dev->config;
 
-	*capacitance = 1 / ((cfg->ch_cfg->inductance / 1000000.0) *
+	*capacitance = 1 / ((cfg->ch_cfg[ch].inductance / 1000000.0) *
 			    pow((2 * PI * freq), 2));
 }
 
@@ -516,7 +522,7 @@ static int fdc2x1x_device_pm_action(const struct device *dev,
 
 		break;
 	case PM_DEVICE_ACTION_TURN_OFF:
-		if (cfg->sd_gpio.port->name) {
+		if (cfg->sd_gpio.port != NULL) {
 			ret = fdc2x1x_set_shutdown(dev, true);
 		} else {
 			LOG_ERR("SD pin not defined");
@@ -608,16 +614,6 @@ static int fdc2x1x_get_cap_data(const struct device *dev)
 static int fdc2x1x_sample_fetch(const struct device *dev,
 				enum sensor_channel chan)
 {
-#ifdef CONFIG_PM_DEVICE
-	enum pm_device_state state;
-
-	(void)pm_device_state_get(dev, &state);
-	if (state != PM_DEVICE_STATE_ACTIVE) {
-		LOG_ERR("Sample fetch failed, device is not in active mode");
-		return -ENXIO;
-	}
-#endif
-
 	return fdc2x1x_get_cap_data(dev);
 }
 
@@ -718,7 +714,7 @@ static int fdc2x1x_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api fdc2x1x_api_funcs = {
+static DEVICE_API(sensor, fdc2x1x_api_funcs) = {
 	.attr_set = fdc2x1x_attr_set,
 	.sample_fetch = fdc2x1x_sample_fetch,
 	.channel_get = fdc2x1x_channel_get,
@@ -887,7 +883,7 @@ static int fdc2x1x_init_sd_pin(const struct device *dev)
 	const struct fdc2x1x_config *cfg = dev->config;
 
 	if (!gpio_is_ready_dt(&cfg->sd_gpio)) {
-		LOG_ERR("%s: sd_gpio device not ready", cfg->sd_gpio.port->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->sd_gpio.port);
 		return -ENODEV;
 	}
 
@@ -920,14 +916,14 @@ static int fdc2x1x_init(const struct device *dev)
 		return -EINVAL;
 	}
 
-	if (cfg->sd_gpio.port->name) {
+	if (cfg->sd_gpio.port != NULL) {
 		if (fdc2x1x_init_sd_pin(dev) < 0) {
 			return -ENODEV;
 		}
 	}
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 

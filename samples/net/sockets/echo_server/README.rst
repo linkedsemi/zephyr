@@ -52,6 +52,10 @@ echo-server directory:
 - :file:`overlay-tunnel.conf`
   This overlay config enables support for IP tunneling.
 
+- :file:`overlay-vlan.conf`
+  This overlay config enables support for Virtual LAN.
+  See :ref:`networking_samples_common` for details.
+
 Build echo-server sample application like this:
 
 .. zephyr-app-commands::
@@ -107,6 +111,12 @@ The certificate used by the sample can be found in the sample's ``src``
 directory. The default certificates used by Socket Echo Server and
 :zephyr:code-sample:`sockets-echo-client` enable establishing a secure connection
 between the samples.
+
+Wi-Fi
+=====
+
+The IPv4 Wi-Fi support can be enabled in the sample with
+:ref:`Wi-Fi snippet <snippet-wifi-ipv4>`.
 
 Running echo-client in Linux Host
 =================================

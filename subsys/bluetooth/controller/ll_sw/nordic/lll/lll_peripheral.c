@@ -18,7 +18,6 @@
 #include "util/util.h"
 #include "util/memq.h"
 #include "util/dbuf.h"
-#include "util/util.h"
 
 #include "pdu_df.h"
 #include "pdu_vendor.h"
@@ -73,7 +72,7 @@ void lll_periph_prepare(void *param)
 	int err;
 
 	err = lll_hfclock_on();
-	LL_ASSERT(err >= 0);
+	LL_ASSERT_ERR(err >= 0);
 
 	p = param;
 
@@ -82,7 +81,7 @@ void lll_periph_prepare(void *param)
 	/* Invoke common pipeline handling of prepare */
 	err = lll_prepare(lll_conn_peripheral_is_abort_cb, lll_conn_abort_cb,
 			  prepare_cb, 0U, param);
-	LL_ASSERT(!err || err == -EINPROGRESS);
+	LL_ASSERT_ERR(!err || err == -EINPROGRESS);
 }
 
 static int init_reset(void)
@@ -143,7 +142,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 					       lll->data_chan_count);
 #else /* !CONFIG_BT_CTLR_CHAN_SEL_2 */
 		data_chan_use = 0;
-		LL_ASSERT(0);
+		LL_ASSERT_DBG(0);
 #endif /* !CONFIG_BT_CTLR_CHAN_SEL_2 */
 	} else {
 		data_chan_use = lll_chan_sel_1(&lll->data_chan_use,
@@ -154,28 +153,30 @@ static int prepare_cb(struct lll_prepare_param *p)
 	}
 
 	/* Accumulate window widening */
-	lll->periph.window_widening_prepare_us +=
-	    lll->periph.window_widening_periodic_us * (lll->lazy_prepare + 1U);
-	if (lll->periph.window_widening_prepare_us >
-	    lll->periph.window_widening_max_us) {
-		lll->periph.window_widening_prepare_us =
-			lll->periph.window_widening_max_us;
+	lll->periph.window_widening_prepare_us += lll->periph.window_widening_periodic_us *
+						  lll->lazy_prepare;
+	if (lll->periph.window_widening_prepare_us > lll->periph.window_widening_max_us) {
+		lll->periph.window_widening_prepare_us = lll->periph.window_widening_max_us;
 	}
 
-	/* current window widening */
-	lll->periph.window_widening_event_us +=
-		lll->periph.window_widening_prepare_us;
-	lll->periph.window_widening_prepare_us = 0;
-	if (lll->periph.window_widening_event_us >
-	    lll->periph.window_widening_max_us) {
-		lll->periph.window_widening_event_us =
-			lll->periph.window_widening_max_us;
+	/* Current window widening */
+	lll->periph.window_widening_event_us += lll->periph.window_widening_prepare_us;
+	if (lll->periph.window_widening_event_us > lll->periph.window_widening_max_us) {
+		lll->periph.window_widening_event_us = lll->periph.window_widening_max_us;
 	}
+
+	/* Pre-increment window widening */
+	lll->periph.window_widening_prepare_us = lll->periph.window_widening_periodic_us;
 
 	/* current window size */
 	lll->periph.window_size_event_us +=
 		lll->periph.window_size_prepare_us;
 	lll->periph.window_size_prepare_us = 0;
+
+#if defined(CONFIG_BT_CTLR_PHY)
+	/* back up rx PHY for use in drift compensation */
+	lll->periph.phy_rx_event = lll->phy_rx;
+#endif /* CONFIG_BT_CTLR_PHY */
 
 	/* Ensure that empty flag reflects the state of the Tx queue, as a
 	 * peripheral if this is the first connection event and as no prior PDU
@@ -244,10 +245,13 @@ static int prepare_cb(struct lll_prepare_param *p)
 #if defined(CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE)
 /* Use special API for SOC that requires compensation for PHYEND event delay. */
 #if defined(CONFIG_BT_CTLR_PHY)
-	radio_switch_complete_with_delay_compensation_and_tx(lll->phy_rx, 0, lll->phy_tx,
+	radio_switch_complete_with_delay_compensation_and_tx(lll->phy_rx,
+							     PHY_FLAGS_UNUSED, lll->phy_tx,
 							     lll->phy_flags, end_evt_delay);
 #else /* !CONFIG_BT_CTLR_PHY */
-	radio_switch_complete_with_delay_compensation_and_tx(0, 0, 0, 0, end_evt_delay);
+	radio_switch_complete_with_delay_compensation_and_tx(PHY_LEGACY,
+							     PHY_FLAGS_UNUSED, PHY_LEGACY,
+							     PHY_FLAGS_UNUSED, end_evt_delay);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
 #endif /* CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE */
@@ -259,9 +263,11 @@ static int prepare_cb(struct lll_prepare_param *p)
 	 */
 	if (!IS_ENABLED(CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE)) {
 #if defined(CONFIG_BT_CTLR_PHY)
-		radio_switch_complete_and_tx(lll->phy_rx, 0, lll->phy_tx, lll->phy_flags);
+		radio_switch_complete_and_tx(lll->phy_rx, PHY_FLAGS_UNUSED, lll->phy_tx,
+					     lll->phy_flags);
 #else /* !CONFIG_BT_CTLR_PHY && !CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE */
-		radio_switch_complete_and_tx(0, 0, 0, 0);
+		radio_switch_complete_and_tx(PHY_LEGACY, PHY_FLAGS_UNUSED,
+					     PHY_LEGACY, PHY_FLAGS_UNUSED);
 #endif /* !CONFIG_BT_CTLR_PHY */
 	}
 
@@ -289,13 +295,13 @@ static int prepare_cb(struct lll_prepare_param *p)
 	       lll->periph.window_size_event_us;
 
 #if defined(CONFIG_BT_CTLR_PHY)
-	hcto += radio_rx_ready_delay_get(lll->phy_rx, 1);
+	hcto += radio_rx_ready_delay_get(lll->phy_rx, PHY_FLAGS_S8);
 	hcto += addr_us_get(lll->phy_rx);
-	hcto += radio_rx_chain_delay_get(lll->phy_rx, 1);
+	hcto += radio_rx_chain_delay_get(lll->phy_rx, PHY_FLAGS_S8);
 #else /* !CONFIG_BT_CTLR_PHY */
-	hcto += radio_rx_ready_delay_get(0, 0);
+	hcto += radio_rx_ready_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED);
 	hcto += addr_us_get(0);
-	hcto += radio_rx_chain_delay_get(0, 0);
+	hcto += radio_rx_chain_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
 	radio_tmr_hcto_configure(hcto);
@@ -305,11 +311,11 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 #if defined(CONFIG_BT_CTLR_PHY)
 	radio_gpio_pa_lna_enable(remainder_us +
-				 radio_rx_ready_delay_get(lll->phy_rx, 1) -
+				 radio_rx_ready_delay_get(lll->phy_rx, PHY_FLAGS_S8) -
 				 HAL_RADIO_GPIO_LNA_OFFSET);
 #else /* !CONFIG_BT_CTLR_PHY */
 	radio_gpio_pa_lna_enable(remainder_us +
-				 radio_rx_ready_delay_get(0, 0) -
+				 radio_rx_ready_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED) -
 				 HAL_RADIO_GPIO_LNA_OFFSET);
 #endif /* !CONFIG_BT_CTLR_PHY */
 #endif /* HAL_RADIO_GPIO_HAVE_LNA_PIN */
@@ -334,17 +340,26 @@ static int prepare_cb(struct lll_prepare_param *p)
 	overhead = lll_preempt_calc(ull, (TICKER_ID_CONN_BASE + lll->handle), ticks_at_event);
 	/* check if preempt to start has changed */
 	if (overhead) {
-		LL_ASSERT_OVERHEAD(overhead);
+		int err;
+
+		if (p->defer == 1U) {
+			/* We accept the overlap as previous event elected to continue */
+			err = 0;
+		} else {
+			LL_ASSERT_OVERHEAD(overhead);
+
+			err = -ECANCELED;
+		}
 
 		radio_isr_set(lll_isr_abort, lll);
 		radio_disable();
 
-		return -ECANCELED;
+		return err;
 	}
 #endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
 
 	ret = lll_prepare_done(lll);
-	LL_ASSERT(!ret);
+	LL_ASSERT_ERR(!ret);
 
 	DEBUG_RADIO_START_S(1);
 

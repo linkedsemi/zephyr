@@ -7,8 +7,10 @@ Status classes to be used instead of str statuses.
 """
 from __future__ import annotations
 
-from colorama import Fore
 from enum import Enum
+
+from colorama import Fore
+from twisterlib.error import StatusAttributeError
 
 
 class TwisterStatus(str, Enum):
@@ -34,7 +36,7 @@ class TwisterStatus(str, Enum):
             TwisterStatus.STARTED: Fore.MAGENTA,
             TwisterStatus.NONE: Fore.MAGENTA
         }
-        return status2color[status] if status in status2color else Fore.RESET
+        return status2color.get(status, Fore.RESET)
 
     # All statuses below this comment can be used for TestCase
     BLOCK = 'blocked'
@@ -51,3 +53,26 @@ class TwisterStatus(str, Enum):
     FAIL = 'failed'
     PASS = 'passed'
     SKIP = 'skipped'
+
+
+class StatusMixin:
+    """Mixin providing a validated ``status`` property backed by ``_status``.
+
+    Assigning a value that is not a valid TwisterStatus (by name or value)
+    raises StatusAttributeError, so illegal statuses fail loudly at the
+    assignment site. Shared by TestCase, TestSuite and TestInstance.
+    """
+    _status: TwisterStatus = TwisterStatus.NONE
+
+    @property
+    def status(self) -> TwisterStatus:
+        return self._status
+
+    @status.setter
+    def status(self, value: TwisterStatus) -> None:
+        # Check for illegal assignments by value
+        try:
+            key = value.name if isinstance(value, Enum) else value
+            self._status = TwisterStatus[key]
+        except KeyError as err:
+            raise StatusAttributeError(self.__class__, value) from err

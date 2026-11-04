@@ -86,7 +86,7 @@ struct cb_msg {
 	uint8_t ep;
 };
 
-K_MSGQ_DEFINE(usb_dc_msgq, sizeof(struct cb_msg), 10, 4);
+K_MSGQ_DEFINE_STATIC_TYPE(usb_dc_msgq, struct cb_msg, 10);
 
 static struct udc_rpi_ep_state *udc_rpi_get_ep_state(uint8_t ep)
 {
@@ -523,6 +523,9 @@ static int udc_rpi_init(void)
 		/* Present full speed device by enabling pull up on DP */
 		hw_set_alias(usb_hw)->sie_ctrl = USB_SIE_CTRL_PULLUP_EN_BITS;
 	}
+
+	IRQ_CONNECT(USB_IRQ, USB_IRQ_PRI, udc_rpi_isr, 0, 0);
+	irq_enable(USB_IRQ);
 
 	return 0;
 }
@@ -1071,9 +1074,6 @@ static int usb_rpi_init(void)
 	if (ret < 0) {
 		return ret;
 	}
-
-	IRQ_CONNECT(USB_IRQ, USB_IRQ_PRI, udc_rpi_isr, 0, 0);
-	irq_enable(USB_IRQ);
 
 	return 0;
 }

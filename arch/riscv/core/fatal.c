@@ -5,7 +5,6 @@
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
 #include <inttypes.h>
 #include <zephyr/arch/common/exc_handle.h>
@@ -40,7 +39,7 @@ uintptr_t z_riscv_get_sp_before_exc(const struct arch_esf *esf)
 	uintptr_t sp = (uintptr_t)esf + sizeof(struct arch_esf);
 
 #ifdef CONFIG_USERSPACE
-	if ((esf->mstatus & MSTATUS_MPP) == PRV_U) {
+	if ((esf->mstatus & RV_STATUS_PP) == RV_STATUS_PP_U) {
 		/*
 		 * Exception happened in user space:
 		 * consider the saved user stack instead.
@@ -77,66 +76,71 @@ const char *z_riscv_mcause_str(unsigned long cause)
 	return mcause_str[MIN(cause, ARRAY_SIZE(mcause_str) - 1)];
 }
 
-FUNC_NORETURN void z_riscv_fatal_error(unsigned int reason,
+void z_riscv_fatal_error(unsigned int reason,
 				       const struct arch_esf *esf)
 {
-	z_riscv_fatal_error_csf(reason, esf, NULL);
-}
-
-FUNC_NORETURN void z_riscv_fatal_error_csf(unsigned int reason, const struct arch_esf *esf,
-					   const _callee_saved_t *csf)
-{
+	__maybe_unused _callee_saved_t *csf = NULL;
 	unsigned long mcause;
 
+#ifdef CONFIG_RISCV_S_MODE
+	__asm__ volatile("csrr %0, scause" : "=r" (mcause));
+#else
 	__asm__ volatile("csrr %0, mcause" : "=r" (mcause));
+#endif
 
 	mcause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
-	LOG_ERR("");
-	LOG_ERR(" mcause: %ld, %s", mcause, z_riscv_mcause_str(mcause));
+	EXCEPTION_DUMP("");
+	EXCEPTION_DUMP(" mcause: %ld, %s", mcause, z_riscv_mcause_str(mcause));
 
 #ifndef CONFIG_SOC_OPENISA_RV32M1
 	unsigned long mtval;
 
+#ifdef CONFIG_RISCV_S_MODE
+	__asm__ volatile("csrr %0, stval" : "=r" (mtval));
+#else
 	__asm__ volatile("csrr %0, mtval" : "=r" (mtval));
-	LOG_ERR("  mtval: %lx", mtval);
+#endif
+	EXCEPTION_DUMP("  mtval: %lx", mtval);
 #endif /* CONFIG_SOC_OPENISA_RV32M1 */
 
 #ifdef CONFIG_EXCEPTION_DEBUG
 	if (esf != NULL) {
-		LOG_ERR("     a0: " PR_REG "    t0: " PR_REG, esf->a0, esf->t0);
-		LOG_ERR("     a1: " PR_REG "    t1: " PR_REG, esf->a1, esf->t1);
-		LOG_ERR("     a2: " PR_REG "    t2: " PR_REG, esf->a2, esf->t2);
+		EXCEPTION_DUMP("     a0: " PR_REG "    t0: " PR_REG, esf->a0, esf->t0);
+		EXCEPTION_DUMP("     a1: " PR_REG "    t1: " PR_REG, esf->a1, esf->t1);
+		EXCEPTION_DUMP("     a2: " PR_REG "    t2: " PR_REG, esf->a2, esf->t2);
 #if defined(CONFIG_RISCV_ISA_RV32E)
-		LOG_ERR("     a3: " PR_REG, esf->a3);
-		LOG_ERR("     a4: " PR_REG, esf->a4);
-		LOG_ERR("     a5: " PR_REG, esf->a5);
+		EXCEPTION_DUMP("     a3: " PR_REG, esf->a3);
+		EXCEPTION_DUMP("     a4: " PR_REG, esf->a4);
+		EXCEPTION_DUMP("     a5: " PR_REG, esf->a5);
 #else
-		LOG_ERR("     a3: " PR_REG "    t3: " PR_REG, esf->a3, esf->t3);
-		LOG_ERR("     a4: " PR_REG "    t4: " PR_REG, esf->a4, esf->t4);
-		LOG_ERR("     a5: " PR_REG "    t5: " PR_REG, esf->a5, esf->t5);
-		LOG_ERR("     a6: " PR_REG "    t6: " PR_REG, esf->a6, esf->t6);
-		LOG_ERR("     a7: " PR_REG, esf->a7);
+		EXCEPTION_DUMP("     a3: " PR_REG "    t3: " PR_REG, esf->a3, esf->t3);
+		EXCEPTION_DUMP("     a4: " PR_REG "    t4: " PR_REG, esf->a4, esf->t4);
+		EXCEPTION_DUMP("     a5: " PR_REG "    t5: " PR_REG, esf->a5, esf->t5);
+		EXCEPTION_DUMP("     a6: " PR_REG "    t6: " PR_REG, esf->a6, esf->t6);
+		EXCEPTION_DUMP("     a7: " PR_REG, esf->a7);
 #endif /* CONFIG_RISCV_ISA_RV32E */
-		LOG_ERR("     sp: " PR_REG, z_riscv_get_sp_before_exc(esf));
-		LOG_ERR("     ra: " PR_REG, esf->ra);
-		LOG_ERR("   mepc: " PR_REG, esf->mepc);
-		LOG_ERR("mstatus: " PR_REG, esf->mstatus);
-		LOG_ERR("");
+		EXCEPTION_DUMP("     sp: " PR_REG, z_riscv_get_sp_before_exc(esf));
+		EXCEPTION_DUMP("     ra: " PR_REG, esf->ra);
+		EXCEPTION_DUMP("   mepc: " PR_REG, esf->mepc);
+		EXCEPTION_DUMP("mstatus: " PR_REG, esf->mstatus);
+		EXCEPTION_DUMP("");
+
+		csf = esf->csf;
 	}
 
 	if (csf != NULL) {
 #if defined(CONFIG_RISCV_ISA_RV32E)
-		LOG_ERR("     s0: " PR_REG, csf->s0);
-		LOG_ERR("     s1: " PR_REG, csf->s1);
+		EXCEPTION_DUMP("     s0: " PR_REG, csf->s0);
+		EXCEPTION_DUMP("     s1: " PR_REG, csf->s1);
 #else
-		LOG_ERR("     s0: " PR_REG "    s6: " PR_REG, csf->s0, csf->s6);
-		LOG_ERR("     s1: " PR_REG "    s7: " PR_REG, csf->s1, csf->s7);
-		LOG_ERR("     s2: " PR_REG "    s8: " PR_REG, csf->s2, csf->s8);
-		LOG_ERR("     s3: " PR_REG "    s9: " PR_REG, csf->s3, csf->s9);
-		LOG_ERR("     s4: " PR_REG "   s10: " PR_REG, csf->s4, csf->s10);
-		LOG_ERR("     s5: " PR_REG "   s11: " PR_REG, csf->s5, csf->s11);
+		EXCEPTION_DUMP("     s0: " PR_REG "    s6: " PR_REG, csf->s0, csf->s6);
+		EXCEPTION_DUMP("     s1: " PR_REG "    s7: " PR_REG, csf->s1, csf->s7);
+		EXCEPTION_DUMP("     s2: " PR_REG "    s8: " PR_REG, csf->s2, csf->s8);
+		EXCEPTION_DUMP("     s3: " PR_REG "    s9: " PR_REG, csf->s3, csf->s9);
+		EXCEPTION_DUMP("     s4: " PR_REG "   s10: " PR_REG, csf->s4, csf->s10);
+		EXCEPTION_DUMP("     s5: " PR_REG "   s11: " PR_REG, csf->s5, csf->s11);
 #endif /* CONFIG_RISCV_ISA_RV32E */
-		LOG_ERR("");
+		EXCEPTION_DUMP("");
 	}
 #endif /* CONFIG_EXCEPTION_DEBUG */
 
@@ -145,7 +149,6 @@ FUNC_NORETURN void z_riscv_fatal_error_csf(unsigned int reason, const struct arc
 #endif /* CONFIG_EXCEPTION_STACK_TRACE */
 
 	z_fatal_error(reason, esf);
-	CODE_UNREACHABLE;
 }
 
 static bool bad_stack_pointer(struct arch_esf *esf)
@@ -172,15 +175,35 @@ static bool bad_stack_pointer(struct arch_esf *esf)
 	}
 #endif /* CONFIG_USERSPACE */
 
+#if CONFIG_MULTITHREADING
 	if (sp >= _current->stack_info.start - K_KERNEL_STACK_RESERVED &&
 	    sp <  _current->stack_info.start - K_KERNEL_STACK_RESERVED
 		  + Z_RISCV_STACK_GUARD_SIZE) {
 		return true;
 	}
+#else
+	uintptr_t isr_stack = (uintptr_t)z_interrupt_stacks;
+	uintptr_t main_stack = (uintptr_t)z_main_stack;
+
+	if ((sp >= isr_stack && sp < isr_stack + Z_RISCV_STACK_GUARD_SIZE) ||
+	    (sp >= main_stack && sp < main_stack + Z_RISCV_STACK_GUARD_SIZE)) {
+		return true;
+	}
+#endif /* CONFIG_MULTITHREADING */
 #endif /* CONFIG_PMP_STACK_GUARD */
 
+#ifdef CONFIG_CUSTOM_STACK_GUARD
+	if (z_riscv_custom_stack_guard_is_fault(esf)) {
+		return true;
+	}
+#endif /* CONFIG_CUSTOM_STACK_GUARD */
+
 #ifdef CONFIG_USERSPACE
-	if ((esf->mstatus & MSTATUS_MPP) == 0 &&
+	/*
+	 * Check whether the user-mode stack pointer is within bounds.
+	 * Only do this when the exception was actually taken from U-mode.
+	 */
+	if ((esf->mstatus & RV_STATUS_PP) == RV_STATUS_PP_U &&
 	    (esf->sp < _current->stack_info.start ||
 	     esf->sp > _current->stack_info.start +
 		       _current->stack_info.size -
@@ -193,7 +216,7 @@ static bool bad_stack_pointer(struct arch_esf *esf)
 	return false;
 }
 
-void _Fault(struct arch_esf *esf)
+void z_riscv_fault(struct arch_esf *esf)
 {
 #ifdef CONFIG_USERSPACE
 	/*
@@ -214,16 +237,24 @@ void _Fault(struct arch_esf *esf)
 	unsigned int reason = K_ERR_CPU_EXCEPTION;
 
 	if (bad_stack_pointer(esf)) {
-#ifdef CONFIG_PMP_STACK_GUARD
+#if defined(CONFIG_PMP_STACK_GUARD) && defined(CONFIG_MULTITHREADING)
 		/*
 		 * Remove the thread's PMP setting to prevent triggering a stack
 		 * overflow error again due to the previous configuration.
 		 */
-		z_riscv_pmp_stackguard_disable();
+		z_riscv_pmp_kernelmode_disable();
 #endif /* CONFIG_PMP_STACK_GUARD */
 		reason = K_ERR_STACK_CHK_FAIL;
 	}
 
+	/*
+	 * z_riscv_fatal_error() may return: when the fatal error is handled
+	 * (e.g. an expected fault in test mode aborting the current thread),
+	 * z_fatal_error() returns and the exception exit path in isr.S takes
+	 * care of rescheduling. Do not mark this as unreachable: the compiler
+	 * would place a trapping instruction (or arbitrary code) on the
+	 * return path, causing a fatal error loop.
+	 */
 	z_riscv_fatal_error(reason, esf);
 }
 
@@ -238,11 +269,19 @@ void z_impl_user_fault(unsigned int reason)
 {
 	struct arch_esf *oops_esf = _current->syscall_frame;
 
+#ifdef CONFIG_EXCEPTION_DEBUG
+	/* csf isn't populated in the syscall frame */
+	if (oops_esf != NULL) {
+		oops_esf->csf = NULL;
+	}
+#endif /* CONFIG_EXCEPTION_DEBUG */
+
 	if (((_current->base.user_options & K_USER) != 0) &&
 		reason != K_ERR_STACK_CHK_FAIL) {
 		reason = K_ERR_KERNEL_OOPS;
 	}
 	z_riscv_fatal_error(reason, oops_esf);
+	CODE_UNREACHABLE;
 }
 
 static void z_vrfy_user_fault(unsigned int reason)

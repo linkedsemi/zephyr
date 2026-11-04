@@ -310,7 +310,7 @@ static int entropy_nrf5_get_entropy_isr(const struct device *dev,
 
 static int entropy_nrf5_init(const struct device *dev);
 
-static const struct entropy_driver_api entropy_nrf5_api_funcs = {
+static DEVICE_API(entropy, entropy_nrf5_api_funcs) = {
 	.get_entropy = entropy_nrf5_get_entropy,
 	.get_entropy_isr = entropy_nrf5_get_entropy_isr
 };
@@ -329,7 +329,7 @@ static int entropy_nrf5_init(const struct device *dev)
 	/* Locking semaphore initialized to 1 (unlocked) */
 	k_sem_init(&entropy_nrf5_data.sem_lock, 1, 1);
 
-	/* Synching semaphore */
+	/* Syncing semaphore */
 	k_sem_init(&entropy_nrf5_data.sem_sync, 0, 1);
 
 	rng_pool_init((struct rng_pool *)(entropy_nrf5_data.thr),

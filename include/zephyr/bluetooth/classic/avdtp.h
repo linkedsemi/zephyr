@@ -8,12 +8,16 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef ZEPHYR_INCLUDE_BLUETOOTH_AVDTP_H_
-#define ZEPHYR_INCLUDE_BLUETOOTH_AVDTP_H_
+#ifndef ZEPHYR_INCLUDE_BLUETOOTH_CLASSIC_AVDTP_H_
+#define ZEPHYR_INCLUDE_BLUETOOTH_CLASSIC_AVDTP_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+#define AVDTP_VERSION_1_3 0x0103 /**< AVDTP version 1.3 value */
+
+#define AVDTP_VERSION AVDTP_VERSION_1_3 /**< AVDTP version used by Zephyr */
 
 /**
  * @brief AVDTP error code
@@ -56,7 +60,7 @@ enum bt_avdtp_err_code {
 	/** The format of Multiplexing Service Capability is not correct */
 	BT_AVDTP_BAD_MULTIPLEXING_FORMAT = 0x28,
 	/** Configuration not supported */
-	BT_AVDTP_UNSUPPORTED_CONFIGURAION = 0x29,
+	BT_AVDTP_UNSUPPORTED_CONFIGURATION = 0x29,
 	/** Indicates that the ACP state machine is in an invalid state in order to process the
 	 * signal. This also includes the situation when an INT receives a request for the
 	 * same command that it is currently expecting a response
@@ -87,11 +91,11 @@ enum bt_avdtp_media_type {
  */
 struct bt_avdtp_sep_info {
 	/** End Point usage status */
-	uint8_t inuse:1;
+	uint8_t inuse: 1;
 	/** Stream End Point ID that is the identifier of the stream endpoint */
-	uint8_t id:6;
+	uint8_t id: 6;
 	/** Reserved */
-	uint8_t reserved:1;
+	uint8_t reserved: 1;
 	/** Stream End-point Type that indicates if the stream end-point is SNK or SRC */
 	enum bt_avdtp_sep_type tsep;
 	/** Media-type of the End Point
@@ -120,17 +124,64 @@ enum bt_avdtp_service_category {
 	BT_AVDTP_SERVICE_DELAY_REPORTING = 0x08,
 };
 
+/** @brief service category Recovery Capabilities type*/
+enum bt_avdtp_recovery_type {
+	/** Forbidden */
+	BT_AVDTP_RECOVERY_TYPE_FORBIDDEN = 0x00,
+	/** RFC2733 */
+	BT_ADVTP_RECOVERY_TYPE_RFC2733 = 0x01,
+};
+
+struct bt_avdtp_sep;
+
+/** @brief avdtp sep operations structure */
+struct bt_avdtp_sep_ops {
+	/** @brief Stream End Point (SEP) l2cap connected callback
+	 *
+	 *  If this callback is provided it will be called whenever the
+	 *  stream l2cap connection completes.
+	 *
+	 *  @param sep The sep that has been connected
+	 */
+	void (*connected)(struct bt_avdtp_sep *sep);
+
+	/** @brief Stream End Point (SEP) l2cap disconnected callback
+	 *
+	 *  If this callback is provided it will be called whenever the
+	 *  stream l2cap channel is disconnected, including when a
+	 *  connection gets rejected.
+	 *
+	 *  @param sep The sep that has been disconnected
+	 */
+	void (*disconnected)(struct bt_avdtp_sep *sep);
+
+	/** @brief Stream End Point (SEP) received data
+	 *
+	 *  If this callback is provided it will be called whenever the
+	 *  stream l2cap channel receives data.
+	 *
+	 *  @param sep The sep that has received data.
+	 *  @param buf The data buf
+	 */
+	void (*media_data_cb)(struct bt_avdtp_sep *sep, struct net_buf *buf);
+};
+
 /** @brief AVDTP Stream End Point */
 struct bt_avdtp_sep {
 	/** Stream End Point information */
 	struct bt_avdtp_sep_info sep_info;
 	/** Media Transport Channel*/
 	struct bt_l2cap_br_chan chan;
-	/** the endpoint media data */
-	void (*media_data_cb)(struct bt_avdtp_sep *sep,
-				struct net_buf *buf);
+	/* semaphore for lock/unlock */
+	struct k_sem sem_lock;
 	/** avdtp session */
 	struct bt_avdtp *session;
+	/** sep ops */
+	const struct bt_avdtp_sep_ops *ops;
+	/** delay worker for disconnecting l2cap media channel */
+	struct k_work_delayable _delay_work;
+	/** delay_work_state */
+	uint8_t _delay_work_state;
 	/** SEP state */
 	uint8_t state;
 	/* Internally used list node */
@@ -141,4 +192,4 @@ struct bt_avdtp_sep {
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_BLUETOOTH_AVDTP_H_ */
+#endif /* ZEPHYR_INCLUDE_BLUETOOTH_CLASSIC_AVDTP_H_ */

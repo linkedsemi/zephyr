@@ -93,7 +93,10 @@ SECTIONS
 	__text_region_start = .;
 	z_mapped_start = .;
 	*(.text)
+	KEEP (*(.text*personality*))
 	*(.text.*)
+
+	#include <snippets-text-sections.ld>
 
 	#include <zephyr/linker/kobject-text.ld>
 
@@ -148,7 +151,6 @@ SECTIONS
 	_app_smem_size = _app_smem_end - _app_smem_start;
 	_app_smem_num_words = _app_smem_size >> 2;
 	_app_smem_rom_start = LOADADDR(_APP_SMEM_SECTION_NAME);
-	_app_smem_num_words = _app_smem_size >> 2;
 #endif /* CONFIG_USERSPACE */
 
 /* This should be put here before BSS section, otherwise the .bss.__gcov will
@@ -164,6 +166,12 @@ SECTIONS
 #endif
 	__kernel_ram_start = .;
 	__bss_start = .;
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-bss.ld>
+
 	*(.bss)
 	*(.bss.*)
 	*(COMMON)
@@ -188,6 +196,32 @@ SECTIONS
 #include <zephyr/linker/common-ram.ld>
 #include <zephyr/linker/cplusplus-ram.ld>
 #include <zephyr/arch/x86/pagetables.ld>
+
+#ifdef CONFIG_HW_SHADOW_STACK
+SECTION_PROLOGUE(.x86shadowstack,,)
+{
+    MMU_PAGE_ALIGN
+
+    __x86shadowstack_start = .;
+
+    *(.x86shadowstack)
+
+    MMU_PAGE_ALIGN
+
+} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+
+SECTION_PROLOGUE(.x86shadowstack.arr,,)
+{
+    MMU_PAGE_ALIGN
+
+    *(.x86shadowstack.arr*)
+
+    MMU_PAGE_ALIGN
+
+    __x86shadowstack_end = .;
+
+} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+#endif
 
 /* Located in generated directory. This file is populated by the
  * zephyr_linker_sources() Cmake function.
@@ -219,16 +253,9 @@ SECTIONS
 	*(.igot.plt)
 	*(.iplt)
 	*(.plt)
-	*(.note.GNU-stack)
 	*(.rel.*)
 	*(.rela.*)
 	}
-/*
- * eh_frame section won't be removed even with "--gc-sections" by LLVM lld.
- */
-#if !defined(CONFIG_CPP_EXCEPTIONS)
-	/DISCARD/ : { *(.eh_frame) }
-#endif
 
 /*
  * The sections below are still treated as warnings
@@ -240,7 +267,5 @@ SECTIONS
 	.shstrtab 0 : { *(.shstrtab) }
 #endif
 
-#ifdef CONFIG_LLEXT
-	#include <zephyr/linker/llext-sections.ld>
-#endif
+#include <zephyr/linker/llext-sections.ld>
 }

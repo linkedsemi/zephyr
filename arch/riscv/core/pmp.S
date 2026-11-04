@@ -9,9 +9,6 @@
 #include <zephyr/arch/cpu.h>
 #include "asm_macros.inc"
 
-#define CSR_PMPCFG_BASE  0x3a0
-#define CSR_PMPADDR_BASE 0x3b0
-
 /*
  * Prototype:
  *
@@ -92,6 +89,18 @@ pmpcfg_done:
 	slli a0, a0, 2  /* 4-byte instruction blocks */
 	add t0, t0, a0
 	jr t0
+
+/*
+ * Prototype:
+ *
+ * void z_riscv_clear_all_pmp_entries(void)
+ *
+ * Called from pmp.c to clear all PMP entries.
+ *
+ * Note: this is shared with tail clearing code above, hence the same section.
+ */
+GTEXT(z_riscv_clear_all_pmp_entries)
+z_riscv_clear_all_pmp_entries:
 
 pmpcfg_zerotail:
 

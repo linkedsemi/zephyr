@@ -102,6 +102,7 @@ struct rylr_data {
 	uint8_t pending_async_flags;
 	struct k_poll_signal *async_tx_signal;
 	lora_recv_cb async_rx_cb;
+	void *async_user_data;
 	const struct device *dev;
 	uint8_t msgq_buffer[CONFIG_RYLRXXX_UNSOLICITED_RX_MSGQ_SIZE];
 	struct modem_pipe *modem_pipe;
@@ -170,17 +171,19 @@ static void on_rx(struct modem_chat *chat, char **argv, uint16_t argc, void *use
 	msg.snr = atoi(argv[5]);
 
 	if (RYLR_IS_RX_PENDING(driver_data->pending_async_flags)) {
-		driver_data->async_rx_cb(driver_data->dev, msg.data, msg.length, msg.rssi, msg.snr);
+		driver_data->async_rx_cb(driver_data->dev, msg.data, msg.length, msg.rssi, msg.snr,
+					 driver_data->async_user_data);
 	} else {
 		err = k_msgq_put(&driver_data->rx_msgq, &msg, K_NO_WAIT);
 		if (err != 0) {
-			LOG_ERR("error adding messgae to queue: %d", err);
+			LOG_ERR("error adding message to queue: %d", err);
 			driver_data->handler_error = err;
 		}
 	}
 }
 
 static void on_script_finished(struct modem_chat *chat, enum modem_chat_script_result result,
+			       const struct modem_chat_script_completion_info *info,
 			       void *user_data)
 {
 	struct rylr_data *driver_data = user_data;
@@ -321,7 +324,7 @@ static int rylr_set_power(const struct device *dev, uint32_t power)
 	return rylr_send_cmd_buffer(dev);
 }
 
-static int rylr_config(const struct device *dev, struct lora_modem_config *config)
+static int rylr_config(const struct device *dev, const struct lora_modem_config *config)
 {
 	int err = 0;
 	struct rylr_data *data = dev->data;
@@ -333,7 +336,7 @@ static int rylr_config(const struct device *dev, struct lora_modem_config *confi
 	}
 
 	if (RYLR_IS_ASYNC_OP_PENDING(data->pending_async_flags)) {
-		LOG_ERR("pending async opperation");
+		LOG_ERR("pending async operation");
 		err = -EBUSY;
 		goto exit;
 	}
@@ -377,7 +380,7 @@ int rylr_send(const struct device *dev, uint8_t *payload, uint32_t payload_len)
 	}
 
 	if (RYLR_IS_ASYNC_OP_PENDING(data->pending_async_flags)) {
-		LOG_ERR("pending async opperation");
+		LOG_ERR("pending async operation");
 		err = -EBUSY;
 		goto exit;
 	}
@@ -388,13 +391,15 @@ int rylr_send(const struct device *dev, uint8_t *payload, uint32_t payload_len)
 		goto exit;
 	}
 
-	if (cmd_len > CONFIG_LORA_RYLRXX_CMD_BUF_SIZE) {
+	/* snprintf requires an extra byte for the terminating NULL */
+	if (cmd_len > (CONFIG_LORA_RYLRXX_CMD_BUF_SIZE - 1)) {
 		LOG_ERR("payload too long");
 		err = -EINVAL;
 		goto exit;
 	}
 
-	snprintf(data->cmd_buffer, cmd_len + 1, RYLR_CMD_SEND_FORMAT, payload_len, payload);
+	snprintf(data->cmd_buffer, sizeof(data->cmd_buffer), RYLR_CMD_SEND_FORMAT, payload_len,
+		 payload);
 	data->curr_cmd_len = cmd_len;
 	err = rylr_send_cmd_buffer(dev);
 	if (err != 0) {
@@ -421,7 +426,7 @@ int rylr_send_async(const struct device *dev, uint8_t *payload, uint32_t payload
 	}
 
 	if (RYLR_IS_ASYNC_OP_PENDING(data->pending_async_flags)) {
-		LOG_ERR("pending async opperation");
+		LOG_ERR("pending async operation");
 		err = -EBUSY;
 		goto bail;
 	}
@@ -435,7 +440,8 @@ int rylr_send_async(const struct device *dev, uint8_t *payload, uint32_t payload
 	}
 
 	cmd_len = RYLR_CMD_SEND_LENGTH(payload_len);
-	if (cmd_len > CONFIG_LORA_RYLRXX_CMD_BUF_SIZE) {
+	/* snprintf requires an extra byte for the terminating NULL */
+	if (cmd_len > (CONFIG_LORA_RYLRXX_CMD_BUF_SIZE - 1)) {
 		LOG_ERR("payload too long");
 		err = -EINVAL;
 		goto bail;
@@ -448,8 +454,8 @@ int rylr_send_async(const struct device *dev, uint8_t *payload, uint32_t payload
 	}
 
 	data->async_tx_signal = async;
-	data->curr_cmd_len =
-		snprintf(data->cmd_buffer, cmd_len + 1, RYLR_CMD_SEND_FORMAT, payload_len, payload);
+	data->curr_cmd_len = snprintf(data->cmd_buffer, sizeof(data->cmd_buffer),
+				      RYLR_CMD_SEND_FORMAT, payload_len, payload);
 	rylr_reset_dynamic_script(data);
 	data->dynamic_chat.request = data->cmd_buffer;
 	data->dynamic_chat.request_size = data->curr_cmd_len;
@@ -482,7 +488,7 @@ int rylr_recv(const struct device *dev, uint8_t *ret_msg, uint8_t size, k_timeou
 	}
 
 	if (RYLR_IS_ASYNC_OP_PENDING(data->pending_async_flags)) {
-		LOG_ERR("pending async opperation");
+		LOG_ERR("pending async operation");
 		ret = -EBUSY;
 		goto exit;
 	}
@@ -515,7 +521,7 @@ exit:
 	return ret;
 }
 
-int rylr_recv_async(const struct device *dev, lora_recv_cb cb)
+int rylr_recv_async(const struct device *dev, lora_recv_cb cb, void *user_data)
 {
 	int err = 0;
 	struct rylr_data *data = dev->data;
@@ -526,7 +532,7 @@ int rylr_recv_async(const struct device *dev, lora_recv_cb cb)
 		return err;
 	}
 
-	/* This is not a user error but the documeted way to cancel async reception in lora api*/
+	/* This is not a user error but the documented way to cancel async reception in lora api*/
 	if (cb == NULL) {
 		goto bail;
 	}
@@ -538,8 +544,9 @@ int rylr_recv_async(const struct device *dev, lora_recv_cb cb)
 	}
 
 	data->async_rx_cb = cb;
+	data->async_user_data = user_data;
 	if (RYLR_IS_ASYNC_OP_PENDING(data->pending_async_flags)) {
-		LOG_ERR("pending async opperation");
+		LOG_ERR("pending async operation");
 		err = -EBUSY;
 		goto bail;
 	}
@@ -664,7 +671,7 @@ static int rylr_init(const struct device *dev)
 	return err;
 }
 
-static const struct lora_driver_api rylr_lora_api = {
+static DEVICE_API(lora, rylr_lora_api) = {
 	.config = rylr_config,
 	.send = rylr_send,
 	.send_async = rylr_send_async,

@@ -18,12 +18,13 @@ compatible: "x-powers,axp192-gpio"
 
 include: gpio-controller.yaml
 
+on-bus: axp192
+
 properties:
   "#gpio-cells":
     const: 2
 
   ngpios:
-    required: true
     const: 6
     description: |
       Number of GPIOs available on axp192.

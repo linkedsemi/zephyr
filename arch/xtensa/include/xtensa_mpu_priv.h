@@ -99,6 +99,15 @@
  * @}
  */
 
+#ifndef XTENSA_MPU_DEFAULT_ACCESS_RIGHTS
+/** Default MPU access rights */
+#define XTENSA_MPU_DEFAULT_ACCESS_RIGHTS		XTENSA_MPU_ACCESS_P_RW_U_NA
+#endif
+
+#ifndef XTENSA_MPU_DEFAULT_MEMORY_TYPE
+/** Default MPU memory type */
+#define XTENSA_MPU_DEFAULT_MEMORY_TYPE			0x6U
+#endif
 
 /**
  * Define one MPU entry of type struct xtensa_mpu_entry.
@@ -336,7 +345,7 @@ void xtensa_mpu_entry_attributes_set(struct xtensa_mpu_entry *entry,
  * This sets the starting address, enable bit, access rights and memory type
  * of an entry.
  *
- * Note that this preserves the valud of the segment field.
+ * Note that this preserves the value of the segment field.
  *
  * @param entry Pointer to the entry to be manipulated.
  * @param start_address Start address to be set.

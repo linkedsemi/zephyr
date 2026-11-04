@@ -12,9 +12,6 @@
 #include <zephyr/pm/pm.h>
 #include <zephyr/init.h>
 
-/* ambiq-sdk includes */
-#include <am_mcu_apollo.h>
-
 LOG_MODULE_DECLARE(soc, CONFIG_SOC_LOG_LEVEL);
 
 void pm_state_set(enum pm_state state, uint8_t substate_id)
@@ -96,7 +93,7 @@ void ambiq_power_init(void)
 #if defined(CONFIG_SOC_APOLLO3P_BLUE)
 	/*
 	 * If user has enabled AM_HAL_SYSCTRL_DEEPSLEEP_WA in am_hal_sysctrl.h
-	 * this will allow user to acheive lower current draw in deepsleep
+	 * this will allow user to achieve lower current draw in deepsleep
 	 */
 	am_hal_sysctrl_control(AM_HAL_SYSCTRL_CONTROL_DEEPSLEEP_MINPWR_EN, 0);
 #endif

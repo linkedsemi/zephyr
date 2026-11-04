@@ -8,6 +8,7 @@
 #define DT_DRV_COMPAT regulator_fixed
 
 #include <stdint.h>
+#include <zephyr/kernel.h>
 
 #include <zephyr/drivers/regulator.h>
 #include <zephyr/drivers/gpio.h>
@@ -74,16 +75,24 @@ static int regulator_fixed_list_voltage(const struct device *dev,
 	return 0;
 }
 
-static const struct regulator_driver_api regulator_fixed_api = {
+static int regulator_fixed_get_voltage(const struct device *dev, int32_t *volt_uv)
+{
+	return regulator_common_get_min_voltage(dev, volt_uv);
+}
+
+static DEVICE_API(regulator, regulator_fixed_api) = {
 	.enable = regulator_fixed_enable,
 	.disable = regulator_fixed_disable,
 	.count_voltages = regulator_fixed_count_voltages,
 	.list_voltage = regulator_fixed_list_voltage,
+	.get_voltage = regulator_fixed_get_voltage,
 };
 
 static int regulator_fixed_init(const struct device *dev)
 {
 	const struct regulator_fixed_config *cfg = dev->config;
+	const bool should_enable = cfg->common.flags & REGULATOR_INIT_ENABLED;
+	int ret;
 
 	regulator_common_data_init(dev);
 
@@ -93,14 +102,19 @@ static int regulator_fixed_init(const struct device *dev)
 			return -ENODEV;
 		}
 
-		int ret = gpio_pin_configure_dt(&cfg->enable, GPIO_OUTPUT);
+		ret = gpio_pin_configure_dt(&cfg->enable, should_enable ? GPIO_OUTPUT_ACTIVE
+									: GPIO_OUTPUT_INACTIVE);
 
 		if (ret < 0) {
 			return ret;
 		}
 	}
 
-	return regulator_common_init(dev, false);
+	if (should_enable && cfg->common.startup_delay_us > 0U) {
+		k_usleep(cfg->common.startup_delay_us);
+	}
+
+	return regulator_common_init(dev, should_enable);
 }
 
 #define REGULATOR_FIXED_DEFINE(inst)                                              \

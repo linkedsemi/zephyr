@@ -1,5 +1,6 @@
 /*
  * Copyright 2024 (c) TOKITA Hiroshi
+ * Copyright 2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,28 +9,50 @@
 #include <zephyr/ztest.h>
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
 
 LOG_MODULE_DECLARE(display_api, CONFIG_DISPLAY_LOG_LEVEL);
 
 static const struct device *dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
 static const uint32_t display_width = DT_PROP(DT_CHOSEN(zephyr_display), width);
 static const uint32_t display_height = DT_PROP(DT_CHOSEN(zephyr_display), height);
+#ifdef CONFIG_DISPLAY_BUFFER_USE_GENERIC_SECTION
+Z_GENERIC_SECTION(CONFIG_DISPLAY_BUFFER_SECTION)
+#endif
 static uint8_t disp_buffer[DT_PROP(DT_CHOSEN(zephyr_display), width) *
-			   DT_PROP(DT_CHOSEN(zephyr_display), height) * 4];
+			   DT_PROP(DT_CHOSEN(zephyr_display), height) * 4]
+	__aligned(CONFIG_DISPLAY_BUFFER_ALIGNMENT);
 static struct display_capabilities cfg;
 static uint8_t bpp;
-static bool is_tiled;
+static bool is_vtiled;
+static bool is_htiled;
+
+static inline size_t buffer_size(size_t width, size_t height)
+{
+	if (is_vtiled || is_htiled) {
+		return DIV_ROUND_UP(width * height, 8U);
+	}
+
+	return width * height * bpp;
+}
 
 static inline uint8_t bytes_per_pixel(enum display_pixel_format pixel_format)
 {
 	switch (pixel_format) {
 	case PIXEL_FORMAT_ARGB_8888:
+	case PIXEL_FORMAT_XRGB_8888:
+	case PIXEL_FORMAT_ABGR_8888:
+	case PIXEL_FORMAT_RGBA_8888:
+	case PIXEL_FORMAT_BGRA_8888:
 		return 4;
 	case PIXEL_FORMAT_RGB_888:
+	case PIXEL_FORMAT_BGR_888:
 		return 3;
 	case PIXEL_FORMAT_RGB_565:
-	case PIXEL_FORMAT_BGR_565:
+	case PIXEL_FORMAT_RGB_565X:
+	case PIXEL_FORMAT_AL_88:
 		return 2;
+	case PIXEL_FORMAT_L_8:
 	case PIXEL_FORMAT_MONO01:
 	case PIXEL_FORMAT_MONO10:
 	default:
@@ -45,23 +68,19 @@ static void verify_bytes_of_area(uint8_t *data, int cmp_x, int cmp_y, size_t wid
 		.height = height,
 		.pitch = width,
 		.width = width,
-		.buf_size = height * width * bpp,
+		.buf_size = buffer_size(width, height),
 	};
 
 	int err = display_read(dev, cmp_x, cmp_y, &desc, disp_buffer);
 
 	zassert_ok(err, "display_read failed");
 
-	if (is_tiled) {
-		zassert_mem_equal(data, disp_buffer, width * height / 8, NULL);
-	} else {
-		zassert_mem_equal(data, disp_buffer, width * height * bpp, NULL);
-	}
+	zassert_mem_equal(data, disp_buffer, buffer_size(width, height));
 }
 
 static void verify_background_color(int x, int y, size_t width, size_t height, uint32_t color)
 {
-	size_t buf_size = is_tiled ? (height * width / 8) : (height * width * bpp);
+	size_t buf_size = buffer_size(width, height);
 	struct display_buffer_descriptor desc = {
 		.height = height,
 		.pitch = width,
@@ -79,13 +98,13 @@ static void verify_background_color(int x, int y, size_t width, size_t height, u
 	for (size_t i = 0; i < width * height; i++) {
 		switch (bpp) {
 		case 4:
-			zassert_equal(buf32[i], color, "@%d", i);
+			zassert_equal(buf32[i], color, "@%zu", i);
 			break;
 		case 2:
-			zassert_equal(buf16[i], (uint16_t)color, "@%d", i);
+			zassert_equal(buf16[i], (uint16_t)color, "@%zu", i);
 			break;
 		case 1:
-			if (is_tiled) {
+			if (is_vtiled) {
 				uint16_t x = i % (width);
 				uint16_t line = (i - x) / width;
 				uint16_t tile = line / 8;
@@ -93,9 +112,13 @@ static void verify_background_color(int x, int y, size_t width, size_t height, u
 
 				uint8_t *tptr = disp_buffer + (tile * width + x);
 
-				zassert_equal(!!(*tptr & BIT(y)), !!(color), "@%d", i);
+				zassert_equal(!!(*tptr & BIT(y)), !!(color), "@%zu", i);
+			} else if (is_htiled) {
+				uint8_t *tptr = disp_buffer + i / 8;
+
+				zassert_equal(!!(*tptr & BIT(i % 8)), !!(color), "@%zu", i);
 			} else {
-				zassert_equal(buf8[i], (uint8_t)color, "@%d", i);
+				zassert_equal(buf8[i], (uint8_t)color, "@%zu", i);
 			}
 			break;
 		}
@@ -109,7 +132,8 @@ static void display_before(void *text_fixture)
 {
 	display_get_capabilities(dev, &cfg);
 	bpp = bytes_per_pixel(cfg.current_pixel_format);
-	is_tiled = ((bpp == 1) && (cfg.screen_info & SCREEN_INFO_MONO_VTILED));
+	is_vtiled = (bpp == 1 && (cfg.screen_info & SCREEN_INFO_MONO_VTILED));
+	is_htiled = (bpp == 1 && !(cfg.screen_info & SCREEN_INFO_MONO_VTILED));
 
 	struct display_buffer_descriptor desc = {
 		.height = display_height,
@@ -138,8 +162,8 @@ ZTEST(display_read_write, test_clear)
 ZTEST(display_read_write, test_write_to_buffer_head)
 {
 	uint8_t data[4] = {0xFA, 0xAF, 0x9F, 0xFA};
-	uint8_t height = (is_tiled ? 8 : 1);
-	uint16_t width = sizeof(data) / bpp;
+	uint8_t height = (is_vtiled ? 8 : 1);
+	uint16_t width = sizeof(data) / bpp * (is_htiled ? 8 : 1);
 	uint16_t buf_size = width * bpp;
 	struct display_buffer_descriptor desc = {
 		.height = height,
@@ -166,8 +190,8 @@ ZTEST(display_read_write, test_write_to_buffer_head)
 ZTEST(display_read_write, test_write_to_buffer_tail)
 {
 	uint8_t data[4] = {0xFA, 0xAF, 0x9F, 0xFA};
-	uint16_t height = (is_tiled ? 8 : 1);
-	uint16_t width = sizeof(data) / bpp;
+	uint16_t height = (is_vtiled ? 8 : 1);
+	uint16_t width = sizeof(data) / bpp * (is_htiled ? 8 : 1);
 	uint16_t buf_size = width * bpp;
 	struct display_buffer_descriptor desc = {
 		.height = height,
@@ -179,7 +203,7 @@ ZTEST(display_read_write, test_write_to_buffer_tail)
 		.height = display_height,
 		.pitch = display_width,
 		.width = display_width,
-		.buf_size = display_height * display_width * bpp / height,
+		.buf_size = buffer_size(display_width, display_height),
 	};
 	int err;
 
@@ -191,15 +215,11 @@ ZTEST(display_read_write, test_write_to_buffer_tail)
 	zassert_ok(err, "display_read failed");
 
 	/* check write data and read data are same */
-	if (is_tiled) {
-		zassert_mem_equal(data,
-				  disp_buffer + (display_width * display_height / 8 - buf_size),
-				  buf_size, NULL);
-	} else {
-		zassert_mem_equal(data,
-				  disp_buffer + (display_width * display_height * bpp - buf_size),
-				  buf_size, NULL);
-	}
+	size_t total_bytes = buffer_size(display_width, display_height);
+	size_t area_bytes = buffer_size(width, height);
+	uint8_t *compare = disp_buffer + (total_bytes - area_bytes);
+
+	zassert_mem_equal(data, compare, area_bytes);
 
 	/* check remaining region still black */
 	verify_background_color(0, 0, display_width, display_height - height, 0);
@@ -212,8 +232,8 @@ ZTEST(display_read_write, test_write_to_buffer_tail)
 ZTEST(display_read_write, test_read_does_not_clear_existing_buffer)
 {
 	uint8_t data[4] = {0xFA, 0xAF, 0x9F, 0xFA};
-	uint8_t height = (is_tiled ? 8 : 1);
-	uint16_t width = sizeof(data) / bpp;
+	uint8_t height = (is_vtiled ? 8 : 1);
+	uint16_t width = sizeof(data) / bpp * (is_htiled ? 8 : 1);
 	uint16_t buf_size = width * bpp;
 	struct display_buffer_descriptor desc = {
 		.height = height,
@@ -225,7 +245,7 @@ ZTEST(display_read_write, test_read_does_not_clear_existing_buffer)
 		.height = display_height,
 		.pitch = display_width,
 		.width = display_width,
-		.buf_size = display_height * display_width * bpp / height,
+		.buf_size = buffer_size(display_width, display_height),
 	};
 	int err;
 
@@ -247,15 +267,11 @@ ZTEST(display_read_write, test_read_does_not_clear_existing_buffer)
 	zassert_ok(err, "display_read failed");
 
 	/* checking correctly write to the tail of buffer */
-	if (is_tiled) {
-		zassert_mem_equal(data,
-				  disp_buffer + (display_width * display_height / 8 - buf_size),
-				  buf_size, NULL);
-	} else {
-		zassert_mem_equal(data,
-				  disp_buffer + (display_width * display_height * bpp - buf_size),
-				  buf_size, NULL);
-	}
+	size_t total_bytes = buffer_size(display_width, display_height);
+	size_t area_bytes = buffer_size(width, height);
+	uint8_t *compare = disp_buffer + (total_bytes - area_bytes);
+
+	zassert_mem_equal(data, compare, area_bytes);
 
 	/* checking if the content written before reading is kept */
 	verify_bytes_of_area(data, 0, 0, width, height);

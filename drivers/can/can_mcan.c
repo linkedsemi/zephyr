@@ -6,10 +6,11 @@
  */
 
 #include <zephyr/drivers/can.h>
-#include <zephyr/drivers/can/can_mcan.h>
+#include "can_mcan.h"
 #include <zephyr/drivers/can/transceiver.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/pm/device.h>
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/sys/util.h>
 
@@ -197,7 +198,7 @@ unlock:
 int can_mcan_set_timing(const struct device *dev, const struct can_timing *timing)
 {
 	struct can_mcan_data *data = dev->data;
-	uint32_t nbtp = 0U;
+	uint32_t nbtp;
 	int err;
 
 	if (data->common.started) {
@@ -206,17 +207,13 @@ int can_mcan_set_timing(const struct device *dev, const struct can_timing *timin
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	nbtp |= FIELD_PREP(CAN_MCAN_NBTP_NSJW, timing->sjw - 1UL) |
+	nbtp = FIELD_PREP(CAN_MCAN_NBTP_NSJW, timing->sjw - 1UL) |
 		FIELD_PREP(CAN_MCAN_NBTP_NTSEG1, timing->phase_seg1 - 1UL) |
 		FIELD_PREP(CAN_MCAN_NBTP_NTSEG2, timing->phase_seg2 - 1UL) |
 		FIELD_PREP(CAN_MCAN_NBTP_NBRP, timing->prescaler - 1UL);
 
 	err = can_mcan_write_reg(dev, CAN_MCAN_NBTP, nbtp);
-	if (err != 0) {
-		goto unlock;
-	}
 
-unlock:
 	k_mutex_unlock(&data->lock);
 
 	return err;
@@ -227,7 +224,7 @@ int can_mcan_set_timing_data(const struct device *dev, const struct can_timing *
 {
 	const uint8_t tdco_max = FIELD_GET(CAN_MCAN_TDCR_TDCO, CAN_MCAN_TDCR_TDCO);
 	struct can_mcan_data *data = dev->data;
-	uint32_t dbtp = 0U;
+	uint32_t dbtp;
 	uint8_t tdco;
 	int err;
 
@@ -237,7 +234,7 @@ int can_mcan_set_timing_data(const struct device *dev, const struct can_timing *
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	dbtp |= FIELD_PREP(CAN_MCAN_DBTP_DSJW, timing_data->sjw - 1UL) |
+	dbtp = FIELD_PREP(CAN_MCAN_DBTP_DSJW, timing_data->sjw - 1UL) |
 		FIELD_PREP(CAN_MCAN_DBTP_DTSEG1, timing_data->phase_seg1 - 1UL) |
 		FIELD_PREP(CAN_MCAN_DBTP_DTSEG2, timing_data->phase_seg2 - 1UL) |
 		FIELD_PREP(CAN_MCAN_DBTP_DBRP, timing_data->prescaler - 1UL);
@@ -260,9 +257,6 @@ int can_mcan_set_timing_data(const struct device *dev, const struct can_timing *
 	}
 
 	err = can_mcan_write_reg(dev, CAN_MCAN_DBTP, dbtp);
-	if (err != 0) {
-		goto unlock;
-	}
 
 unlock:
 	k_mutex_unlock(&data->lock);
@@ -292,7 +286,7 @@ int can_mcan_start(const struct device *dev)
 {
 	const struct can_mcan_config *config = dev->config;
 	struct can_mcan_data *data = dev->data;
-	int err;
+	int err = 0;
 
 	if (data->common.started) {
 		return -EALREADY;
@@ -311,19 +305,41 @@ int can_mcan_start(const struct device *dev)
 
 	err = can_mcan_leave_init_mode(dev, K_MSEC(CAN_INIT_TIMEOUT_MS));
 	if (err != 0) {
-		LOG_ERR("failed to leave init mode");
+		LOG_ERR("failed to leave init mode (err %d)", err);
 
 		if (config->common.phy != NULL) {
 			/* Attempt to disable the CAN transceiver in case of error */
 			(void)can_transceiver_disable(config->common.phy);
 		}
 
-		return -EIO;
+		return err;
 	}
 
 	data->common.started = true;
+	pm_device_busy_set(dev);
 
-	return 0;
+	return err;
+}
+
+static bool can_mcan_rx_filters_exist(const struct device *dev)
+{
+	const struct can_mcan_config *config = dev->config;
+	const struct can_mcan_callbacks *cbs = config->callbacks;
+	int i;
+
+	for (i = 0; i < cbs->num_std; i++) {
+		if (cbs->std[i].function != NULL) {
+			return true;
+		}
+	}
+
+	for (i = 0; i < cbs->num_ext; i++) {
+		if (cbs->ext[i].function != NULL) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 int can_mcan_stop(const struct device *dev)
@@ -367,6 +383,12 @@ int can_mcan_stop(const struct device *dev)
 			k_sem_give(&data->tx_sem);
 		}
 	}
+
+	k_mutex_lock(&data->lock, K_FOREVER);
+	if (!can_mcan_rx_filters_exist(dev)) {
+		pm_device_busy_clear(dev);
+	}
+	k_mutex_unlock(&data->lock);
 
 	return 0;
 }
@@ -453,11 +475,8 @@ static void can_mcan_state_change_handler(const struct device *dev)
 {
 	const struct can_mcan_config *config = dev->config;
 	struct can_mcan_data *data = dev->data;
-	const can_state_change_callback_t state_cb = data->common.state_change_cb;
-	void *state_cb_data = data->common.state_change_cb_user_data;
 	const struct can_mcan_callbacks *cbs = config->callbacks;
 	can_tx_callback_t tx_cb;
-	uint32_t tx_idx;
 	struct can_bus_err_cnt err_cnt;
 	enum can_state state;
 	uint32_t cccr;
@@ -468,9 +487,7 @@ static void can_mcan_state_change_handler(const struct device *dev)
 		return;
 	}
 
-	if (state_cb != NULL) {
-		state_cb(dev, state, err_cnt, state_cb_data);
-	}
+	can_fire_state_change_callbacks(dev, state, err_cnt);
 
 	if (state == CAN_STATE_BUS_OFF) {
 		/* Request all TX buffers to be cancelled */
@@ -480,7 +497,7 @@ static void can_mcan_state_change_handler(const struct device *dev)
 		}
 
 		/* Call all TX queue callbacks with -ENETUNREACH */
-		for (tx_idx = 0U; tx_idx < cbs->num_tx; tx_idx++) {
+		for (uint32_t tx_idx = 0U; tx_idx < cbs->num_tx; tx_idx++) {
 			tx_cb = cbs->tx[tx_idx].function;
 
 			if (tx_cb != NULL) {
@@ -551,12 +568,16 @@ static void can_mcan_tx_event_handler(const struct device *dev)
 
 		__ASSERT_NO_MSG(tx_idx < cbs->num_tx);
 		tx_cb = cbs->tx[tx_idx].function;
-		user_data = cbs->tx[tx_idx].user_data;
-		cbs->tx[tx_idx].function = NULL;
 
-		k_sem_give(&data->tx_sem);
+		/* The bus-off handler may already have completed this Tx Buffer */
+		if (tx_cb != NULL) {
+			user_data = cbs->tx[tx_idx].user_data;
+			cbs->tx[tx_idx].function = NULL;
 
-		tx_cb(dev, 0, user_data);
+			k_sem_give(&data->tx_sem);
+
+			tx_cb(dev, 0, user_data);
+		}
 
 		err = can_mcan_read_reg(dev, CAN_MCAN_TXEFS, &txefs);
 		if (err != 0) {
@@ -684,7 +705,7 @@ static void can_mcan_get_message(const struct device *dev, uint16_t fifo_offset,
 	const struct can_mcan_config *config = dev->config;
 	const struct can_mcan_callbacks *cbs = config->callbacks;
 	struct can_mcan_rx_fifo_hdr hdr;
-	struct can_frame frame = {0};
+	struct can_frame frame;
 	can_rx_callback_t cb;
 	void *user_data;
 	uint32_t get_idx;
@@ -709,6 +730,8 @@ static void can_mcan_get_message(const struct device *dev, uint16_t fifo_offset,
 			LOG_ERR("failed to read Rx FIFO header (err %d)", err);
 			return;
 		}
+
+		memset(&frame, 0, sizeof(frame));
 
 		frame.dlc = hdr.dlc;
 
@@ -922,7 +945,7 @@ int can_mcan_send(const struct device *dev, const struct can_frame *frame, k_tim
 #endif /* !CONFIG_CAN_FD_MODE */
 		.efc = 1U,
 	};
-	uint32_t put_idx = -1;
+	uint32_t put_idx = UINT32_MAX;
 	uint32_t reg;
 	int err;
 
@@ -997,6 +1020,8 @@ int can_mcan_send(const struct device *dev, const struct can_frame *frame, k_tim
 		}
 	}
 
+	/* A free TX buffer should always be available since the data->tx_sem was acquired */
+	__ASSERT_NO_MSG(put_idx < cbs->num_tx);
 	tx_hdr.mm = put_idx;
 
 	if ((frame->flags & CAN_FRAME_IDE) != 0U) {
@@ -1011,7 +1036,7 @@ int can_mcan_send(const struct device *dev, const struct can_frame *frame, k_tim
 				  &tx_hdr, sizeof(struct can_mcan_tx_buffer_hdr));
 	if (err != 0) {
 		LOG_ERR("failed to write Tx Buffer header (err %d)", err);
-		goto err_unlock;
+		goto unlock;
 	}
 
 	if ((frame->flags & CAN_FRAME_RTR) == 0U && data_length != 0U) {
@@ -1021,24 +1046,23 @@ int can_mcan_send(const struct device *dev, const struct can_frame *frame, k_tim
 					&frame->data_32, ROUND_UP(data_length, sizeof(uint32_t)));
 		if (err != 0) {
 			LOG_ERR("failed to write Tx Buffer data (err %d)", err);
-			goto err_unlock;
+			goto unlock;
 		}
 	}
 
-	__ASSERT_NO_MSG(put_idx < cbs->num_tx);
 	cbs->tx[put_idx].function = callback;
 	cbs->tx[put_idx].user_data = user_data;
 
 	err = can_mcan_write_reg(dev, CAN_MCAN_TXBAR, BIT(put_idx));
 	if (err != 0) {
 		cbs->tx[put_idx].function = NULL;
-		goto err_unlock;
+		goto unlock;
 	}
 
 	k_mutex_unlock(&data->tx_mtx);
 	return 0;
 
-err_unlock:
+unlock:
 	k_mutex_unlock(&data->tx_mtx);
 	k_sem_give(&data->tx_sem);
 
@@ -1075,11 +1099,10 @@ int can_mcan_add_rx_filter_std(const struct device *dev, can_rx_callback_t callb
 	};
 	int filter_id = -ENOSPC;
 	int err;
-	int i;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	for (i = 0; i < cbs->num_std; i++) {
+	for (int i = 0; i < cbs->num_std; i++) {
 		if (cbs->std[i].function == NULL) {
 			filter_id = i;
 			break;
@@ -1092,24 +1115,24 @@ int can_mcan_add_rx_filter_std(const struct device *dev, can_rx_callback_t callb
 		return -ENOSPC;
 	}
 
-	/* TODO proper fifo balancing */
-	filter_element.sfec = filter_id & 0x01 ? CAN_MCAN_XFEC_FIFO1 : CAN_MCAN_XFEC_FIFO0;
+	/* Always use FIFO0 to ensure frames are delivered to callbacks in the order received */
+	filter_element.sfec = CAN_MCAN_XFEC_FIFO0;
 
 	err = can_mcan_write_mram(dev, config->mram_offsets[CAN_MCAN_MRAM_CFG_STD_FILTER] +
 				  filter_id * sizeof(struct can_mcan_std_filter),
 				  &filter_element, sizeof(filter_element));
 	if (err != 0) {
 		LOG_ERR("failed to write std filter element (err %d)", err);
+		k_mutex_unlock(&data->lock);
 		return err;
 	}
 
-	k_mutex_unlock(&data->lock);
-
-	LOG_DBG("Attached std filter at %d", filter_id);
-
-	__ASSERT_NO_MSG(filter_id < cbs->num_std);
 	cbs->std[filter_id].function = callback;
 	cbs->std[filter_id].user_data = user_data;
+
+	k_mutex_unlock(&data->lock);
+
+	LOG_DBG("added std filter at index %d", filter_id);
 
 	return filter_id;
 }
@@ -1127,11 +1150,10 @@ static int can_mcan_add_rx_filter_ext(const struct device *dev, can_rx_callback_
 	};
 	int filter_id = -ENOSPC;
 	int err;
-	int i;
 
 	k_mutex_lock(&data->lock, K_FOREVER);
 
-	for (i = 0; i < cbs->num_ext; i++) {
+	for (int i = 0; i < cbs->num_ext; i++) {
 		if (cbs->ext[i].function == NULL) {
 			filter_id = i;
 			break;
@@ -1144,24 +1166,24 @@ static int can_mcan_add_rx_filter_ext(const struct device *dev, can_rx_callback_
 		return -ENOSPC;
 	}
 
-	/* TODO proper fifo balancing */
-	filter_element.efec = filter_id & 0x01 ? CAN_MCAN_XFEC_FIFO1 : CAN_MCAN_XFEC_FIFO0;
+	/* Always use FIFO0 to ensure frames are delivered to callbacks in the order received */
+	filter_element.efec = CAN_MCAN_XFEC_FIFO0;
 
 	err = can_mcan_write_mram(dev, config->mram_offsets[CAN_MCAN_MRAM_CFG_EXT_FILTER] +
 				  filter_id * sizeof(struct can_mcan_ext_filter),
 				  &filter_element, sizeof(filter_element));
 	if (err != 0) {
 		LOG_ERR("failed to write std filter element (err %d)", err);
+		k_mutex_unlock(&data->lock);
 		return err;
 	}
 
-	k_mutex_unlock(&data->lock);
-
-	LOG_DBG("Attached ext filter at %d", filter_id);
-
-	__ASSERT_NO_MSG(filter_id < cbs->num_ext);
 	cbs->ext[filter_id].function = callback;
 	cbs->ext[filter_id].user_data = user_data;
+
+	k_mutex_unlock(&data->lock);
+
+	LOG_DBG("added ext filter at index %d", filter_id);
 
 	return filter_id;
 }
@@ -1187,6 +1209,8 @@ int can_mcan_add_rx_filter(const struct device *dev, can_rx_callback_t callback,
 		filter_id = can_mcan_add_rx_filter_std(dev, callback, user_data, filter);
 	}
 
+	pm_device_busy_set(dev);
+
 	return filter_id;
 }
 
@@ -1197,7 +1221,7 @@ void can_mcan_remove_rx_filter(const struct device *dev, int filter_id)
 	struct can_mcan_data *data = dev->data;
 	int err;
 
-	if (filter_id < 0) {
+	if (filter_id < 0 || filter_id >= (cbs->num_std + cbs->num_ext)) {
 		LOG_ERR("filter ID %d out of bounds", filter_id);
 		return;
 	}
@@ -1206,11 +1230,6 @@ void can_mcan_remove_rx_filter(const struct device *dev, int filter_id)
 
 	if (filter_id >= cbs->num_std) {
 		filter_id -= cbs->num_std;
-		if (filter_id >= cbs->num_ext) {
-			LOG_ERR("filter ID %d out of bounds", filter_id);
-			k_mutex_unlock(&data->lock);
-			return;
-		}
 
 		cbs->ext[filter_id].function = NULL;
 		cbs->ext[filter_id].user_data = NULL;
@@ -1233,16 +1252,11 @@ void can_mcan_remove_rx_filter(const struct device *dev, int filter_id)
 		}
 	}
 
+	if (!can_mcan_rx_filters_exist(dev) && !data->common.started) {
+		pm_device_busy_clear(dev);
+	}
+
 	k_mutex_unlock(&data->lock);
-}
-
-void can_mcan_set_state_change_callback(const struct device *dev,
-					can_state_change_callback_t callback, void *user_data)
-{
-	struct can_mcan_data *data = dev->data;
-
-	data->common.state_change_cb = callback;
-	data->common.state_change_cb_user_data = user_data;
 }
 
 /* helper function allowing mcan drivers without access to private mcan
@@ -1258,18 +1272,12 @@ void can_mcan_enable_configuration_change(const struct device *dev)
 	k_mutex_lock(&data->lock, K_FOREVER);
 
 	err = can_mcan_read_reg(dev, CAN_MCAN_CCCR, &cccr);
-	if (err != 0) {
-		goto unlock;
+	if (err == 0) {
+		cccr |= CAN_MCAN_CCCR_CCE;
+
+		(void)can_mcan_write_reg(dev, CAN_MCAN_CCCR, cccr);
 	}
 
-	cccr |= CAN_MCAN_CCCR_CCE;
-
-	err = can_mcan_write_reg(dev, CAN_MCAN_CCCR, cccr);
-	if (err != 0) {
-		goto unlock;
-	}
-
-unlock:
 	k_mutex_unlock(&data->lock);
 }
 
@@ -1349,6 +1357,7 @@ int can_mcan_configure_mram(const struct device *dev, uintptr_t mrba, uintptr_t 
 		return err;
 	}
 
+#if defined(CONFIG_CAN_FD_MODE) || defined(CONFIG_CAN_MCAN_FIXED_MRAM_LAYOUT)
 	/* 64 byte Tx Buffer data fields size */
 	reg = CAN_MCAN_TXESC_TBDS;
 	err = can_mcan_write_reg(dev, CAN_MCAN_TXESC, reg);
@@ -1362,6 +1371,7 @@ int can_mcan_configure_mram(const struct device *dev, uintptr_t mrba, uintptr_t 
 	if (err != 0) {
 		return err;
 	}
+#endif /* defined(CONFIG_CAN_FD_MODE) || defined(CONFIG_CAN_MCAN_FIXED_MRAM_LAYOUT) */
 
 	return 0;
 }
@@ -1389,15 +1399,11 @@ int can_mcan_init(const struct device *dev)
 	__ASSERT_NO_MSG(cbs->num_std <= config->mram_elements[CAN_MCAN_MRAM_CFG_STD_FILTER]);
 	__ASSERT_NO_MSG(cbs->num_ext <= config->mram_elements[CAN_MCAN_MRAM_CFG_EXT_FILTER]);
 
-	k_mutex_init(&data->lock);
-	k_mutex_init(&data->tx_mtx);
 	k_sem_init(&data->tx_sem, cbs->num_tx, cbs->num_tx);
 
-	if (config->common.phy != NULL) {
-		if (!device_is_ready(config->common.phy)) {
-			LOG_ERR("CAN transceiver not ready");
-			return -ENODEV;
-		}
+	if (config->common.phy != NULL && !device_is_ready(config->common.phy)) {
+		LOG_ERR_DEVICE_NOT_READY(config->common.phy);
+		return -ENODEV;
 	}
 
 	err = can_mcan_exit_sleep_mode(dev);
@@ -1435,6 +1441,23 @@ int can_mcan_init(const struct device *dev)
 		 CAN_MCAN_CCCR_ASM);
 
 	err = can_mcan_write_reg(dev, CAN_MCAN_CCCR, reg);
+	if (err != 0) {
+		return err;
+	}
+
+#ifdef CONFIG_CAN_RX_TIMESTAMP
+	/*
+	 * Enable the internal timestamp counter by default. SoC-specific driver frontends can
+	 * overwrite this if configured for using a SoC-specific, external timestamp counter.
+	 */
+	reg = FIELD_PREP(CAN_MCAN_TSCC_TCP, config->timestamp_prescaler - 1U) |
+		FIELD_PREP(CAN_MCAN_TSCC_TSS, 1U);
+#else /* CONFIG_CAN_RX_TIMESTAMP */
+	/* Disable timestamp counter */
+	reg = 0U;
+#endif /* !CONFIG_CAN_RX_TIMESTAMP */
+
+	err = can_mcan_write_reg(dev, CAN_MCAN_TSCC, reg);
 	if (err != 0) {
 		return err;
 	}

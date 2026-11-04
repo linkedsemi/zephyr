@@ -7,12 +7,20 @@
 Overview
 ********
 
-A simple application demonstrating the responder side of the BLE
+A simple application demonstrating the responder side of the Bluetooth LE
 Periodic Advertising Connection Procedure.
 
-This sample will send its address in response to the advertiser when receiving
-subevent data. Once the connection is established, it will disconnect and wait
-for a new connection to be established.
+This sample starts as a connectable advertiser so that the initiator
+(:zephyr:code-sample:`ble_periodic_adv_conn`) can connect to it first over a
+regular connection and learn its address. After the initiator disconnects,
+this sample scans for the PAwR advertiser, synchronizes to it, and responds
+to subevent data (with its device name, only to prove liveness, since the
+initiator already knows its address). Once the initiator connects using the
+Periodic Advertising Connection Procedure, this device will disconnect and
+wait for a new connection to be established.
+
+The responder uses its identity address so that the address learned during the
+initial connection remains valid for the subsequent PAwR connection.
 
 Requirements
 ************
@@ -23,11 +31,19 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/periodic_sync_conn` in
-the Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-Use the sample found under :zephyr_file:`samples/bluetooth/periodic_adv_conn` on
-another board that will start periodic advertising and connect to this sample
-once synced.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/periodic_sync_conn
+   :board: <board>
+   :goals: build flash
+   :compact:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+Start this sample first. After flashing, the device will advertise as connectable so
+the initiator can connect and learn its address. Once the initiator disconnects, this
+device will scan for the PAwR advertiser, synchronize to it, and respond to subevent
+data. Once the initiator connects using the Periodic Advertising Connection Procedure,
+this device will disconnect and wait for a new connection.
+
+Use the :zephyr:code-sample:`ble_periodic_adv_conn` sample on a second board to connect
+to this device, then start PAwR advertising and connect to it once synced.

@@ -13,10 +13,13 @@ LOG_MODULE_REGISTER(net_ipv4, CONFIG_NET_IPV4_LOG_LEVEL);
 
 #include <errno.h>
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_stats.h>
 #include <zephyr/net/net_context.h>
 #include <zephyr/net/virtual.h>
+#include <zephyr/net/ethernet.h>
+#include <zephyr/net/ipv4_nat.h>
 #include "net_private.h"
 #include "connection.h"
 #include "net_stats.h"
@@ -25,15 +28,17 @@ LOG_MODULE_REGISTER(net_ipv4, CONFIG_NET_IPV4_LOG_LEVEL);
 #include "tcp_internal.h"
 #include "dhcpv4/dhcpv4_internal.h"
 #include "ipv4.h"
+#include "pmtu.h"
+#include "route_ipv4.h"
 
-BUILD_ASSERT(sizeof(struct in_addr) == NET_IPV4_ADDR_SIZE);
+BUILD_ASSERT(sizeof(struct net_in_addr) == NET_IPV4_ADDR_SIZE);
 
 /* Timeout for various buffer allocations in this file. */
 #define NET_BUF_TIMEOUT K_MSEC(50)
 
 int net_ipv4_create_full(struct net_pkt *pkt,
-			 const struct in_addr *src,
-			 const struct in_addr *dst,
+			 const struct net_in_addr *src,
+			 const struct net_in_addr *dst,
 			 uint8_t tos,
 			 uint16_t id,
 			 uint8_t flags,
@@ -86,23 +91,30 @@ int net_ipv4_create_full(struct net_pkt *pkt,
 }
 
 int net_ipv4_create(struct net_pkt *pkt,
-		    const struct in_addr *src,
-		    const struct in_addr *dst)
+		    const struct net_in_addr *src,
+		    const struct net_in_addr *dst)
 {
 	uint8_t tos = 0;
+	uint8_t flags = 0U;
 
 	if (IS_ENABLED(CONFIG_NET_IP_DSCP_ECN)) {
 		net_ipv4_set_dscp(&tos, net_pkt_ip_dscp(pkt));
 		net_ipv4_set_ecn(&tos, net_pkt_ip_ecn(pkt));
 	}
 
-	return net_ipv4_create_full(pkt, src, dst, tos, 0U, 0U, 0U);
+	if ((IS_ENABLED(CONFIG_NET_IPV4_PMTU) && net_pkt_ipv4_pmtu(pkt)) ||
+	    net_pkt_dont_fragment(pkt)) {
+		flags = NET_IPV4_DF;
+	}
+
+	return net_ipv4_create_full(pkt, src, dst, tos, 0U, flags, 0U);
 }
 
 int net_ipv4_finalize(struct net_pkt *pkt, uint8_t next_header_proto)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(ipv4_access, struct net_ipv4_hdr);
 	struct net_ipv4_hdr *ipv4_hdr;
+	int ret;
 
 	net_pkt_set_overwrite(pkt, true);
 
@@ -119,22 +131,35 @@ int net_ipv4_finalize(struct net_pkt *pkt, uint8_t next_header_proto)
 		}
 	}
 
-	ipv4_hdr->len   = htons(net_pkt_get_len(pkt));
+	ipv4_hdr->len   = net_htons(net_pkt_get_len(pkt));
 	ipv4_hdr->proto = next_header_proto;
+	ipv4_hdr->chksum = 0U;
 
 	if (net_if_need_calc_tx_checksum(net_pkt_iface(pkt), NET_IF_CHECKSUM_IPV4_HEADER)) {
-		ipv4_hdr->chksum = net_calc_chksum_ipv4(pkt);
+		uint16_t chksum = 0;
+
+		ret = net_calc_chksum_ipv4(pkt, &chksum);
+		if (ret < 0) {
+			return ret;
+		}
+
+		ipv4_hdr->chksum = chksum;
 	}
 
-	net_pkt_set_data(pkt, &ipv4_access);
+	ret = net_pkt_set_data(pkt, &ipv4_access);
+	if (ret < 0) {
+		return ret;
+	}
+
+	net_pkt_set_ll_proto_type(pkt, NET_ETH_PTYPE_IP);
 
 	if (IS_ENABLED(CONFIG_NET_UDP) &&
-	    next_header_proto == IPPROTO_UDP) {
+	    next_header_proto == NET_IPPROTO_UDP) {
 		return net_udp_finalize(pkt, false);
 	} else if (IS_ENABLED(CONFIG_NET_TCP) &&
-		   next_header_proto == IPPROTO_TCP) {
+		   next_header_proto == NET_IPPROTO_TCP) {
 		return net_tcp_finalize(pkt, false);
-	} else if (next_header_proto == IPPROTO_ICMP) {
+	} else if (next_header_proto == NET_IPPROTO_ICMP) {
 		return net_icmpv4_finalize(pkt, false);
 	}
 
@@ -206,6 +231,7 @@ int net_ipv4_parse_hdr_options(struct net_pkt *pkt,
 			break;
 		case NET_IPV4_OPTS_RR:
 		case NET_IPV4_OPTS_TS:
+		case NET_IPV4_OPTS_RA:
 			if (net_pkt_read(pkt, opt_data, opt_len)) {
 				return -EINVAL;
 			}
@@ -232,7 +258,77 @@ int net_ipv4_parse_hdr_options(struct net_pkt *pkt,
 }
 #endif
 
-enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
+#if defined(CONFIG_NET_IPV4_FORWARDING)
+static enum net_verdict ipv4_route_packet(struct net_pkt *pkt,
+					  struct net_ipv4_hdr *hdr)
+{
+	struct net_route_entry *route;
+	struct net_in_addr *nexthop;
+	struct net_if *iface = NULL;
+	struct net_in_addr dst_ip;
+	int ret;
+
+	/* Broadcasts stay on the link they were sent to, RFC 1812 ch. 5.3.5 */
+	if (net_ipv4_is_addr_bcast_raw(NULL, hdr->dst) ||
+	    net_ipv4_is_addr_unspecified_raw(hdr->dst)) {
+		return NET_DROP;
+	}
+
+	net_ipv4_addr_copy_raw(dst_ip.s4_addr, hdr->dst);
+
+	if (net_route_ipv4_get_info(NULL, &dst_ip, &route, &nexthop)) {
+		net_pkt_set_orig_iface(pkt, net_pkt_iface(pkt));
+
+		if (route != NULL) {
+			net_pkt_set_iface(pkt, route->iface);
+		}
+
+		/* Re-sending a packet received for another host is forwarding
+		 * even when it leaves through the interface it arrived on. The
+		 * flag makes the send path decrement the TTL.
+		 */
+		net_pkt_set_forwarding(pkt, true);
+
+		ret = net_route_ipv4_packet(pkt, nexthop);
+		if (ret < 0) {
+			NET_DBG("Cannot re-route pkt %p via %s at iface %p (%d)",
+				pkt, net_sprint_ipv4_addr(nexthop),
+				net_pkt_iface(pkt), ret);
+			goto out;
+		}
+
+		return NET_OK;
+	}
+
+	/* iface is NULL here so that net_if_ipv4_addr_onlink() searches all
+	 * interfaces for the best on-link match, mirroring the IPv6 path.
+	 */
+	if (net_if_ipv4_addr_onlink(&iface, &dst_ip)) {
+		ret = net_route_packet_if(pkt, iface);
+		if (ret < 0) {
+			NET_DBG("Cannot re-route pkt %p at iface %p (%d)",
+				pkt, net_pkt_iface(pkt), ret);
+			goto out;
+		}
+
+		return NET_OK;
+	}
+
+out:
+	return NET_DROP;
+}
+#else
+static inline enum net_verdict ipv4_route_packet(struct net_pkt *pkt,
+						 struct net_ipv4_hdr *hdr)
+{
+	ARG_UNUSED(pkt);
+	ARG_UNUSED(hdr);
+
+	return NET_DROP;
+}
+#endif /* CONFIG_NET_IPV4_FORWARDING */
+
+enum net_verdict net_ipv4_input(struct net_pkt *pkt)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(ipv4_access, struct net_ipv4_hdr);
 	NET_PKT_DATA_ACCESS_DEFINE(udp_access, struct net_udp_hdr);
@@ -245,6 +341,7 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 	uint8_t hdr_len;
 	uint8_t opts_len;
 	int pkt_len;
+	int ret;
 
 #if defined(CONFIG_NET_L2_IPIP)
 	struct net_pkt_cursor hdr_start;
@@ -284,7 +381,7 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 
 	net_pkt_set_ipv4_opts_len(pkt, opts_len);
 
-	pkt_len = ntohs(hdr->len);
+	pkt_len = net_ntohs(hdr->len);
 	if (real_len < pkt_len) {
 		NET_DBG("DROP: pkt len per hdr %d != pkt real len %d",
 			pkt_len, real_len);
@@ -293,67 +390,94 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 		net_pkt_update_length(pkt, pkt_len);
 	}
 
-	if (!is_loopback) {
-		if (net_ipv4_is_addr_loopback((struct in_addr *)hdr->dst) ||
-		    net_ipv4_is_addr_loopback((struct in_addr *)hdr->src)) {
+	if (!net_pkt_is_loopback(pkt)) {
+		if (net_ipv4_is_addr_loopback_raw(hdr->dst) ||
+		    net_ipv4_is_addr_loopback_raw(hdr->src)) {
 			NET_DBG("DROP: localhost packet");
 			goto drop;
 		}
 
-		if (net_ipv4_is_my_addr((struct in_addr *)hdr->src)) {
+		if (net_ipv4_is_my_addr_raw(hdr->src)) {
 			NET_DBG("DROP: src addr is %s", "mine");
 			goto drop;
 		}
 	}
 
-	if (net_ipv4_is_addr_mcast((struct in_addr *)hdr->src)) {
+	if (net_ipv4_is_addr_mcast_raw(hdr->src)) {
 		NET_DBG("DROP: src addr is %s", "mcast");
 		goto drop;
 	}
 
-	if (net_ipv4_is_addr_bcast(net_pkt_iface(pkt), (struct in_addr *)hdr->src)) {
+	if (net_ipv4_is_addr_bcast_raw(net_pkt_iface(pkt), hdr->src)) {
 		NET_DBG("DROP: src addr is %s", "bcast");
 		goto drop;
 	}
 
-	if (net_ipv4_is_addr_unspecified((struct in_addr *)hdr->src) &&
-	    !net_ipv4_is_addr_bcast(net_pkt_iface(pkt), (struct in_addr *)hdr->dst) &&
-	    (hdr->proto != IPPROTO_IGMP)) {
+	if (net_ipv4_is_addr_unspecified_raw(hdr->src) &&
+	    !net_ipv4_is_addr_bcast_raw(net_pkt_iface(pkt), hdr->dst) &&
+	    (hdr->proto != NET_IPPROTO_IGMP)) {
 		NET_DBG("DROP: src addr is %s", "unspecified");
 		goto drop;
 	}
 
-	if (net_if_need_calc_rx_checksum(net_pkt_iface(pkt), NET_IF_CHECKSUM_IPV4_HEADER) &&
-	    net_calc_chksum_ipv4(pkt) != 0U) {
-		NET_DBG("DROP: invalid chksum");
-		goto drop;
+	if (net_if_need_calc_rx_checksum(net_pkt_iface(pkt), NET_IF_CHECKSUM_IPV4_HEADER)) {
+		uint16_t chksum = 0;
+
+		ret = net_calc_chksum_ipv4(pkt, &chksum);
+		if (ret < 0 || chksum != 0U) {
+			NET_DBG("DROP: invalid chksum or error %d", ret);
+			goto drop;
+		}
 	}
 
 	net_pkt_set_ipv4_ttl(pkt, hdr->ttl);
 
-	net_pkt_set_family(pkt, PF_INET);
+	net_pkt_set_family(pkt, NET_PF_INET);
 
 	if (!net_pkt_filter_ip_recv_ok(pkt)) {
 		/* drop the packet */
+		net_stats_update_filter_rx_ipv4_drop(net_pkt_iface(pkt));
 		return NET_DROP;
 	}
 
-	if ((!net_ipv4_is_my_addr((struct in_addr *)hdr->dst) &&
-	     !net_ipv4_is_addr_mcast((struct in_addr *)hdr->dst) &&
-	     !(hdr->proto == IPPROTO_UDP &&
-	       (net_ipv4_addr_cmp((struct in_addr *)hdr->dst, net_ipv4_broadcast_address()) ||
+	if ((!net_ipv4_is_my_addr_raw(hdr->dst) &&
+	     !net_ipv4_is_addr_mcast_raw(hdr->dst) &&
+	     !(hdr->proto == NET_IPPROTO_UDP &&
+	       (net_ipv4_addr_cmp_raw(hdr->dst, net_ipv4_broadcast_address()->s4_addr) ||
 		/* RFC 1122 ch. 3.3.6 The 0.0.0.0 is non-standard bcast addr */
 		(IS_ENABLED(CONFIG_NET_IPV4_ACCEPT_ZERO_BROADCAST) &&
-		 net_ipv4_addr_cmp((struct in_addr *)hdr->dst,
-				   net_ipv4_unspecified_address())) ||
+		 net_ipv4_addr_cmp_raw(hdr->dst,
+				       net_ipv4_unspecified_address()->s4_addr)) ||
 		net_dhcpv4_accept_unicast(pkt)))) ||
-	    (hdr->proto == IPPROTO_TCP &&
-	     net_ipv4_is_addr_bcast(net_pkt_iface(pkt), (struct in_addr *)hdr->dst))) {
+	    (hdr->proto == NET_IPPROTO_TCP &&
+	     net_ipv4_is_addr_bcast_raw(net_pkt_iface(pkt), hdr->dst))) {
+		/* Only a forwarder may keep a packet that is not for us */
+		if (ipv4_route_packet(pkt, hdr) == NET_OK) {
+			return NET_OK;
+		}
+
 		NET_DBG("DROP: not for me");
 		goto drop;
 	}
 
-	net_pkt_acknowledge_data(pkt, &ipv4_access);
+	if (net_ipv4_is_addr_mcast_raw(hdr->dst)) {
+		struct net_if *iface = net_pkt_iface(pkt);
+		struct net_if_mcast_addr *if_mcast_addr;
+		struct net_in_addr dst;
+
+		net_ipv4_addr_copy_raw(dst.s4_addr, hdr->dst);
+		if_mcast_addr = net_if_ipv4_maddr_lookup(&dst, &iface);
+		if (!net_if_ipv4_maddr_is_joined(if_mcast_addr)) {
+			NET_DBG("DROP: mcast not for me");
+			goto drop;
+		}
+	}
+
+	ret = net_pkt_acknowledge_data(pkt, &ipv4_access);
+	if (ret < 0) {
+		NET_DBG("DROP: cannot acknowledge data");
+		goto drop;
+	}
 
 	if (opts_len) {
 		/* Only few options are handled in EchoRequest, rest skipped */
@@ -365,7 +489,7 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 
 	if (IS_ENABLED(CONFIG_NET_IPV4_FRAGMENT)) {
 		/* Check if this is a fragmented packet, and if so, handle reassembly */
-		if ((ntohs(*((uint16_t *)&hdr->offset[0])) &
+		if ((net_ntohs(*((uint16_t *)&hdr->offset[0])) &
 		     (NET_IPV4_FRAGH_OFFSET_MASK | NET_IPV4_MORE_FRAG_MASK)) != 0) {
 			return net_ipv4_handle_fragment_hdr(pkt, hdr);
 		}
@@ -375,28 +499,36 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 		net_sprint_ipv4_addr(&hdr->src),
 		net_sprint_ipv4_addr(&hdr->dst));
 
+	ip.ipv4 = hdr;
+
+	if (IS_ENABLED(CONFIG_NET_SOCKETS_INET_RAW)) {
+		if (net_conn_raw_ip_input(pkt, &ip, hdr->proto) == NET_DROP) {
+			goto drop;
+		}
+	}
+
 	switch (hdr->proto) {
-	case IPPROTO_ICMP:
+	case NET_IPPROTO_ICMP:
 		verdict = net_icmpv4_input(pkt, hdr);
 		if (verdict == NET_DROP) {
 			goto drop;
 		}
 		return verdict;
 #if defined(CONFIG_NET_IPV4_IGMP)
-	case IPPROTO_IGMP:
+	case NET_IPPROTO_IGMP:
 		verdict = net_ipv4_igmp_input(pkt, hdr);
 		if (verdict == NET_DROP) {
 			goto drop;
 		}
 		return verdict;
 #endif
-	case IPPROTO_TCP:
+	case NET_IPPROTO_TCP:
 		proto_hdr.tcp = net_tcp_input(pkt, &tcp_access);
 		if (proto_hdr.tcp) {
 			verdict = NET_OK;
 		}
 		break;
-	case IPPROTO_UDP:
+	case NET_IPPROTO_UDP:
 		proto_hdr.udp = net_udp_input(pkt, &udp_access);
 		if (proto_hdr.udp) {
 			verdict = NET_OK;
@@ -404,16 +536,16 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 		break;
 
 #if defined(CONFIG_NET_L2_IPIP)
-	case IPPROTO_IPV6:
-	case IPPROTO_IPIP: {
-		struct sockaddr_in remote_addr = { 0 };
+	case NET_IPPROTO_IPV6:
+	case NET_IPPROTO_IPIP: {
+		struct net_sockaddr_in remote_addr = { 0 };
 		struct net_if *tunnel_iface;
 
-		remote_addr.sin_family = AF_INET;
+		remote_addr.sin_family = NET_AF_INET;
 		net_ipv4_addr_copy_raw((uint8_t *)&remote_addr.sin_addr, hdr->src);
 
-		net_pkt_set_remote_address(pkt, (struct sockaddr *)&remote_addr,
-					   sizeof(struct sockaddr_in));
+		net_pkt_set_remote_address(pkt, (struct net_sockaddr *)&remote_addr,
+					   sizeof(struct net_sockaddr_in));
 
 		/* Get rid of the old IP header */
 		net_pkt_cursor_restore(pkt, &hdr_start);
@@ -432,8 +564,6 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 		goto drop;
 	}
 
-	ip.ipv4 = hdr;
-
 	verdict = net_conn_input(pkt, &ip, hdr->proto, &proto_hdr);
 	if (verdict != NET_DROP) {
 		return verdict;
@@ -444,13 +574,49 @@ drop:
 	return NET_DROP;
 }
 
+enum net_verdict net_ipv4_prepare_for_send(struct net_pkt *pkt)
+{
+	/* ARP packets share the AF_INET family but are not IPv4 datagrams, so
+	 * their L2 protocol type is used to skip them here. Otherwise the code
+	 * below would read the ARP body as an IPv4 header and create bogus PMTU
+	 * cache entries.
+	 */
+	if (IS_ENABLED(CONFIG_NET_IPV4_PMTU) &&
+	    net_pkt_ll_proto_type(pkt) == NET_ETH_PTYPE_IP) {
+		struct net_pmtu_entry *entry;
+		struct net_sockaddr_in dst = {
+			.sin_family = NET_AF_INET,
+		};
+		int ret;
+
+		net_ipv4_addr_copy_raw((uint8_t *)&dst.sin_addr,
+				       NET_IPV4_HDR(pkt)->dst);
+		entry = net_pmtu_get_entry((struct net_sockaddr *)&dst);
+		if (entry == NULL) {
+			ret = net_pmtu_update_mtu((struct net_sockaddr *)&dst,
+						  net_if_get_mtu(net_pkt_iface(pkt)));
+			if (ret < 0) {
+				NET_DBG("Cannot update PMTU for %s (%d)",
+					net_sprint_ipv4_addr(&dst.sin_addr),
+					ret);
+			}
+		}
+	}
+
+#if defined(CONFIG_NET_IPV4_FRAGMENT)
+	return net_ipv4_prepare_for_send_fragment(pkt);
+#else
+	return NET_OK;
+#endif
+}
+
 void net_ipv4_init(void)
 {
 	if (IS_ENABLED(CONFIG_NET_IPV4_FRAGMENT)) {
 		net_ipv4_setup_fragment_buffers();
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV4_ACD)) {
-		net_ipv4_acd_init();
+	if (IS_ENABLED(CONFIG_NET_IPV4_NAT)) {
+		net_ipv4_nat_init();
 	}
 }

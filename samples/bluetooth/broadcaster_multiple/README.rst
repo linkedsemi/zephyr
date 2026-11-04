@@ -27,11 +27,15 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under
-:zephyr_file:`samples/bluetooth/broadcaster_multiple` in the Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-To test this sample use the Observer sample with Extended Scanning enabled,
-found under
-:zephyr_file:`samples/bluetooth/observer` in the Zephyr tree.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/broadcaster_multiple
+   :board: <board>
+   :goals: build flash
+   :compact:
 
-See :zephyr:code-sample-category:`Bluetooth samples section <bluetooth>` for details.
+You can use the :zephyr:code-sample:`bluetooth_observer` sample with Extended Scanning
+enabled on another board to receive the advertising reports from these sets.
+
+See :zephyr:code-sample-category:`bluetooth` samples for details.

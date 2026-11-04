@@ -8,7 +8,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/pm/device.h>
 
 #define LOG_LEVEL CONFIG_SPI_LOG_LEVEL
@@ -39,7 +39,8 @@ static int spi_sedi_configure(const struct device *dev,
 {
 	struct spi_sedi_data *data = dev->data;
 	const struct spi_sedi_config *info = dev->config;
-	uint32_t word_size, cpol, cpha, loopback;
+	uint32_t word_size, loopback;
+	bool cpol_mode, cpha_mode;
 
 	if (spi_context_configured(&data->ctx, config) == true) {
 		return 0;
@@ -50,23 +51,23 @@ static int spi_sedi_configure(const struct device *dev,
 			 word_size);
 
 	/* CPOL and CPHA */
-	cpol = SPI_MODE_GET(config->operation) & SPI_MODE_CPOL;
-	cpha = SPI_MODE_GET(config->operation) & SPI_MODE_CPHA;
 
-	if ((cpol == 0) && (cpha == 0)) {
+	cpol_mode = ((SPI_MODE_GET(config->operation) & SPI_MODE_CPOL) != 0);
+	cpha_mode = ((SPI_MODE_GET(config->operation) & SPI_MODE_CPHA) != 0);
+
+	if (!cpol_mode && !cpha_mode) {
 		sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_CPOL0_CPHA0,
 				 0);
-	} else if ((cpol == 0) && (cpha == 1U)) {
+	} else if (!cpol_mode && cpha_mode) {
 		sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_CPOL0_CPHA1,
 				 0);
-	} else if ((cpol == 1) && (cpha == 0U)) {
+	} else if (cpol_mode && !cpha_mode) {
 		sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_CPOL1_CPHA0,
 				 0);
 	} else {
 		sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_CPOL1_CPHA1,
 				 0);
 	}
-
 	/* MSB and LSB */
 	if (config->operation & SPI_TRANSFER_LSB) {
 		sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_LSB, 0);
@@ -80,7 +81,7 @@ static int spi_sedi_configure(const struct device *dev,
 	sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_SPEED_SET,
 			 config->frequency);
 
-	sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_CS_HW, config->slave);
+	sedi_spi_control(info->spi_device, SEDI_SPI_IOCTL_CS_HW, config->peripheral);
 
 	data->ctx.config = config;
 	spi_context_cs_control(&data->ctx, true);
@@ -297,7 +298,7 @@ void spi_sedi_callback(uint32_t event, void *param)
 	}
 }
 
-static const struct spi_driver_api sedi_spi_api = {
+static DEVICE_API(spi, sedi_spi_api) = {
 	.transceive = spi_sedi_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_sedi_transceive_async,
@@ -385,10 +386,10 @@ static int spi_sedi_device_ctrl(const struct device *dev,
 
 #endif /* CONFIG_PM_DEVICE */
 
-#define SPI_SEDI_IRQ_FLAGS_SENSE0(n) 0
-#define SPI_SEDI_IRQ_FLAGS_SENSE1(n) DT_INST_IRQ(n, sense)
+#define SPI_SEDI_IRQ_FLAGS0(n) 0
+#define SPI_SEDI_IRQ_FLAGS1(n) DT_INST_IRQ(n, flags)
 #define SPI_SEDI_IRQ_FLAGS(n) \
-	_CONCAT(SPI_SEDI_IRQ_FLAGS_SENSE, DT_INST_IRQ_HAS_CELL(n, sense))(n)
+	_CONCAT(SPI_SEDI_IRQ_FLAGS, DT_INST_IRQ_HAS_CELL(n, flags))(n)
 
 #define CREATE_SEDI_SPI_INSTANCE(num)					       \
 	static void spi_##num##_irq_init(void)			               \
@@ -406,10 +407,10 @@ static int spi_sedi_device_ctrl(const struct device *dev,
 		DEVICE_MMIO_ROM_INIT(DT_DRV_INST(num)),                        \
 		.spi_device = num, .irq_config = spi_##num##_irq_init,         \
 	};								       \
-	PM_DEVICE_DEFINE(spi_##num, spi_sedi_device_ctrl);		       \
-	DEVICE_DT_INST_DEFINE(num,					       \
+	PM_DEVICE_DT_INST_DEFINE(spi_##num, spi_sedi_device_ctrl);	       \
+	SPI_DEVICE_DT_INST_DEFINE(num,					       \
 			      spi_sedi_init,				       \
-			      PM_DEVICE_GET(spi_##num),		               \
+			      PM_DEVICE_DT_INST_GET(spi_##num),	               \
 			      &spi_##num##_data,			       \
 			      &spi_##num##_config,			       \
 			      POST_KERNEL,				       \

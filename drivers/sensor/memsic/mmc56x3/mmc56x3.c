@@ -196,11 +196,16 @@ static int mmc56x3_chip_init(const struct device *dev)
 	const struct mmc56x3_config *config = &data->config;
 
 	ret = mmc56x3_chip_set_continuous_mode(dev, config->magn_odr);
+	if (ret < 0) {
+		return ret;
+	}
 
 	ret = mmc56x3_chip_set_decimation_filter(dev, config->bw0, config->bw1);
+	if (ret < 0) {
+		return ret;
+	}
 
 	ret = mmc56x3_chip_set_auto_self_reset(dev, config->auto_sr);
-
 	if (ret < 0) {
 		return ret;
 	}
@@ -352,7 +357,7 @@ static int mmc56x3_chip_configure(const struct device *dev, struct mmc56x3_confi
 	}
 
 	if (new_config->auto_sr != config->auto_sr) {
-		ret = mmc56x3_chip_set_auto_self_reset(dev, config->auto_sr);
+		ret = mmc56x3_chip_set_auto_self_reset(dev, new_config->auto_sr);
 	}
 
 	return ret;
@@ -439,7 +444,7 @@ static int mmc56x3_attr_get(const struct device *dev, enum sensor_channel chan,
 	return ret;
 }
 
-static const struct sensor_driver_api mmc56x3_api_funcs = {
+static DEVICE_API(sensor, mmc56x3_api_funcs) = {
 	.sample_fetch = mmc56x3_sample_fetch,
 	.channel_get = mmc56x3_channel_get,
 	.attr_get = mmc56x3_attr_get,

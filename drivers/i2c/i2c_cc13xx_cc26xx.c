@@ -29,6 +29,9 @@ struct i2c_cc13xx_cc26xx_data {
 	struct k_sem lock;
 	struct k_sem complete;
 	volatile uint32_t error;
+#ifdef CONFIG_I2C_TARGET
+	struct i2c_target_config *target_cfg;
+#endif /* I2C_TARGET */
 #ifdef CONFIG_PM
 	Power_NotifyObj postNotify;
 	uint32_t dev_config;
@@ -40,160 +43,88 @@ struct i2c_cc13xx_cc26xx_config {
 	const struct pinctrl_dev_config *pcfg;
 };
 
-static int i2c_cc13xx_cc26xx_transmit(const struct device *dev,
-				      const uint8_t *buf,
-				      uint32_t len, uint16_t addr)
+static int i2c_cc13xx_cc26xx_transmit(const struct device *dev, const struct i2c_msg *msg,
+				      const uint8_t addr)
 {
 	const struct i2c_cc13xx_cc26xx_config *config = dev->config;
 	const uint32_t base = config->base;
 	struct i2c_cc13xx_cc26xx_data *data = dev->data;
-
-	/* Sending address without data is not supported */
-	if (len == 0) {
-		return -EIO;
-	}
 
 	I2CMasterSlaveAddrSet(base, addr, false);
 
-	/* The following assumes a single master. Use I2CMasterBusBusy() if
-	 * wanting to implement multiple master support.
-	 */
+	for (int i = 0; i < msg->len; i++) {
+		uint32_t command = I2C_MCTRL_RUN;
 
-	/* Single transmission */
-	if (len == 1) {
-		I2CMasterDataPut(base, *buf);
+		if (i == 0 && msg->flags & I2C_MSG_RESTART) {
+			command |= I2C_MCTRL_START;
+		}
 
-		I2CMasterControl(base, I2C_MASTER_CMD_SINGLE_SEND);
+		if (i == msg->len - 1 && msg->flags & I2C_MSG_STOP) {
+			command |= I2C_MCTRL_STOP;
+		}
 
-		k_sem_take(&data->complete, K_FOREVER);
-
-		return data->error == I2C_MASTER_ERR_NONE ? 0 : -EIO;
-	}
-
-	/* Burst transmission */
-	I2CMasterDataPut(base, buf[0]);
-
-	I2CMasterControl(base, I2C_MASTER_CMD_BURST_SEND_START);
-
-	k_sem_take(&data->complete, K_FOREVER);
-
-	if (data->error != I2C_MASTER_ERR_NONE) {
-		goto send_error_stop;
-	}
-
-	for (int i = 1; i < len - 1; i++) {
-		I2CMasterDataPut(base, buf[i]);
-
-		I2CMasterControl(base, I2C_MASTER_CMD_BURST_SEND_CONT);
-
+		I2CMasterDataPut(base, msg->buf[i]);
+		I2CMasterControl(base, command);
 		k_sem_take(&data->complete, K_FOREVER);
 
 		if (data->error != I2C_MASTER_ERR_NONE) {
-			goto send_error_stop;
+			if ((command & I2C_MCTRL_STOP) == 0) {
+				I2CMasterControl(base, I2C_MCTRL_STOP);
+			}
+			return -EIO;
 		}
 	}
 
-	I2CMasterDataPut(base, buf[len - 1]);
-
-	I2CMasterControl(base, I2C_MASTER_CMD_BURST_SEND_FINISH);
-
-	k_sem_take(&data->complete, K_FOREVER);
-
-	if (data->error != I2C_MASTER_ERR_NONE) {
-		return -EIO;
-	}
-
 	return 0;
-
-send_error_stop:
-	I2CMasterControl(base, I2C_MASTER_CMD_BURST_SEND_ERROR_STOP);
-	return -EIO;
 }
 
-static int i2c_cc13xx_cc26xx_receive(const struct device *dev, uint8_t *buf,
-				     uint32_t len,
-				     uint16_t addr)
+static int i2c_cc13xx_cc26xx_receive(const struct device *dev, const struct i2c_msg *msg,
+				     const uint8_t addr)
 {
+	struct i2c_cc13xx_cc26xx_data *data = dev->data;
 	const struct i2c_cc13xx_cc26xx_config *config = dev->config;
 	const uint32_t base = config->base;
-	struct i2c_cc13xx_cc26xx_data *data = dev->data;
-
-	/* Sending address without data is not supported */
-	if (len == 0) {
-		return -EIO;
-	}
 
 	I2CMasterSlaveAddrSet(base, addr, true);
 
-	/* The following assumes a single master. Use I2CMasterBusBusy() if
-	 * wanting to implement multiple master support.
-	 */
+	for (int i = 0; i < msg->len; i++) {
+		uint32_t command = I2C_MCTRL_RUN;
 
-	/* Single receive */
-	if (len == 1) {
-		I2CMasterControl(base, I2C_MASTER_CMD_SINGLE_RECEIVE);
+		if (i == 0 && msg->flags & I2C_MSG_RESTART) {
+			command |= I2C_MCTRL_START;
+		}
+
+		if (i == msg->len - 1 && msg->flags & I2C_MSG_STOP) {
+			command |= I2C_MCTRL_STOP;
+		} else if (i < msg->len - 1) {
+			command |= I2C_MCTRL_ACK;
+		}
+
+		I2CMasterControl(base, command);
 
 		k_sem_take(&data->complete, K_FOREVER);
 
 		if (data->error != I2C_MASTER_ERR_NONE) {
+			if ((command & I2C_MCTRL_STOP) == 0) {
+				I2CMasterControl(base, I2C_MCTRL_STOP);
+			}
 			return -EIO;
 		}
 
-		*buf = I2CMasterDataGet(base);
-
-		return 0;
+		msg->buf[i] = I2CMasterDataGet(base);
 	}
-
-	/* Burst receive */
-	I2CMasterControl(base, I2C_MASTER_CMD_BURST_RECEIVE_START);
-
-	k_sem_take(&data->complete, K_FOREVER);
-
-	if (data->error != I2C_MASTER_ERR_NONE) {
-		goto recv_error_stop;
-	}
-
-	buf[0] = I2CMasterDataGet(base);
-
-	for (int i = 1; i < len - 1; i++) {
-		I2CMasterControl(base, I2C_MASTER_CMD_BURST_RECEIVE_CONT);
-
-		k_sem_take(&data->complete, K_FOREVER);
-
-		if (data->error != I2C_MASTER_ERR_NONE) {
-			goto recv_error_stop;
-		}
-
-		buf[i] = I2CMasterDataGet(base);
-	}
-
-	I2CMasterControl(base, I2C_MASTER_CMD_BURST_RECEIVE_FINISH);
-
-	k_sem_take(&data->complete, K_FOREVER);
-
-	if (data->error != I2C_MASTER_ERR_NONE) {
-		return -EIO;
-	}
-
-	buf[len - 1] = I2CMasterDataGet(base);
 
 	return 0;
-
-recv_error_stop:
-	I2CMasterControl(base, I2C_MASTER_CMD_BURST_RECEIVE_ERROR_STOP);
-	return -EIO;
 }
 
-static int i2c_cc13xx_cc26xx_transfer(const struct device *dev,
-				      struct i2c_msg *msgs,
-				      uint8_t num_msgs, uint16_t addr)
+static int i2c_cc13xx_cc26xx_transfer(const struct device *dev, struct i2c_msg *msgs,
+				      const uint8_t num_msgs, const uint16_t addr)
 {
 	struct i2c_cc13xx_cc26xx_data *data = dev->data;
 	int ret = 0;
 
-	if (num_msgs == 0) {
-		return 0;
-	}
+	/* Always a start condition in the first message */
+	msgs[0].flags |= I2C_MSG_RESTART;
 
 	k_sem_take(&data->lock, K_FOREVER);
 
@@ -206,12 +137,16 @@ static int i2c_cc13xx_cc26xx_transfer(const struct device *dev,
 			break;
 		}
 
+		/* Sending address without data is not supported */
+		if (msgs[i].len == 0) {
+			ret = -EIO;
+			break;
+		}
+
 		if ((msgs[i].flags & I2C_MSG_RW_MASK) == I2C_MSG_WRITE) {
-			ret = i2c_cc13xx_cc26xx_transmit(dev, msgs[i].buf,
-							 msgs[i].len, addr);
+			ret = i2c_cc13xx_cc26xx_transmit(dev, &msgs[i], addr);
 		} else {
-			ret = i2c_cc13xx_cc26xx_receive(dev, msgs[i].buf,
-							msgs[i].len, addr);
+			ret = i2c_cc13xx_cc26xx_receive(dev, &msgs[i], addr);
 		}
 
 		if (ret) {
@@ -245,9 +180,9 @@ static int i2c_cc13xx_cc26xx_configure(const struct device *dev,
 		return -EIO;
 	}
 
-	/* Support for slave mode has not been implemented */
+	/* Support for target mode has not been implemented */
 	if (!(dev_config & I2C_MODE_CONTROLLER)) {
-		LOG_ERR("Slave mode is not supported");
+		LOG_ERR("Target mode is not supported");
 		return -EIO;
 	}
 
@@ -257,7 +192,7 @@ static int i2c_cc13xx_cc26xx_configure(const struct device *dev,
 		return -EIO;
 	}
 
-	/* Enables and configures I2C master */
+	/* Enables and configures I2C controller */
 	I2CMasterInitExpClk(config->base, CPU_FREQ, fast);
 
 #ifdef CONFIG_PM
@@ -274,6 +209,11 @@ static void i2c_cc13xx_cc26xx_isr(const struct device *dev)
 	const struct i2c_cc13xx_cc26xx_config *config = dev->config;
 	struct i2c_cc13xx_cc26xx_data *data = dev->data;
 	const uint32_t base = config->base;
+#ifdef CONFIG_I2C_TARGET
+	uint32_t target_int, target_status;
+	uint8_t val;
+	int ret;
+#endif /* I2C_TARGET */
 
 	if (I2CMasterIntStatus(base, true)) {
 		I2CMasterIntClear(base);
@@ -282,6 +222,67 @@ static void i2c_cc13xx_cc26xx_isr(const struct device *dev)
 
 		k_sem_give(&data->complete);
 	}
+
+#ifdef CONFIG_I2C_TARGET
+	if (!data->target_cfg) {
+		return;
+	}
+
+	target_int = I2CSlaveIntStatus(base, true);
+	if (!target_int) {
+		return;
+	}
+
+	target_status = I2CSlaveStatus(base);
+	I2CSlaveIntClear(base, target_int);
+
+	/* Target R/W requests
+	 *  - TREQ     → Controller is requesting data (target transmit / read request)
+	 *  - RREQ_FBR → Controller is sending data (target receive / write request)
+	 */
+	if ((target_int & I2C_SLAVE_INT_DATA) != 0) {
+		/* READ REQUEST (Target → Controller) */
+		if (target_status & I2C_SLAVE_ACT_TREQ) {
+			/* Select callback based on transaction phase:
+			 *  - START flag set  → first byte of read transaction
+			 *  - otherwise       → subsequent bytes
+			 */
+			if (target_int & I2C_SLAVE_INT_START) {
+				/* Start of target read request. */
+				ret = data->target_cfg->callbacks->read_requested(data->target_cfg,
+										  &val);
+			} else {
+				/* Continuation of target read request. */
+				ret = data->target_cfg->callbacks->read_processed(data->target_cfg,
+										  &val);
+			}
+
+			if (ret == 0) {
+				I2CSlaveDataPut(base, val);
+			}
+		}
+
+		/* WRITE REQUEST (Controller → Target) */
+		if (target_status & I2C_SLAVE_ACT_RREQ_FBR) {
+			/* On START condition, notify target that a write transaction begins.
+			 * Unlike read_requested(), write_requested() does not return a byte,
+			 * it only signals the start of reception.
+			 */
+			if (target_int & I2C_SLAVE_INT_START) {
+				ret = data->target_cfg->callbacks->write_requested(
+					data->target_cfg);
+			}
+
+			val = I2CSlaveDataGet(base);
+			data->target_cfg->callbacks->write_received(data->target_cfg, val);
+		}
+	}
+
+	/* STOP condition. The current transaction has ended. */
+	if (target_int & I2C_SLAVE_INT_STOP) {
+		data->target_cfg->callbacks->stop(data->target_cfg);
+	}
+#endif /* I2C_TARGET */
 }
 
 #ifdef CONFIG_PM
@@ -419,9 +420,46 @@ static int i2c_cc13xx_cc26xx_init(const struct device *dev)
 	return 0;
 }
 
-static const struct i2c_driver_api i2c_cc13xx_cc26xx_driver_api = {
+#ifdef CONFIG_I2C_TARGET
+static int i2c_cc13xx_cc26xx_target_register(const struct device *dev,
+					     struct i2c_target_config *cfg)
+{
+	const struct i2c_cc13xx_cc26xx_config *config = dev->config;
+	struct i2c_cc13xx_cc26xx_data *data = dev->data;
+
+	data->target_cfg = cfg;
+	I2CSlaveInit(config->base, cfg->address);
+	I2CSlaveIntEnable(config->base,
+			  I2C_SLAVE_INT_START | I2C_SLAVE_INT_DATA | I2C_SLAVE_INT_STOP);
+
+	return 0;
+}
+
+static int i2c_cc13xx_cc26xx_target_unregister(const struct device *dev,
+					       struct i2c_target_config *cfg)
+{
+	const struct i2c_cc13xx_cc26xx_config *config = dev->config;
+	struct i2c_cc13xx_cc26xx_data *data = dev->data;
+
+	I2CSlaveDisable(config->base);
+	I2CSlaveIntDisable(config->base,
+			   I2C_SLAVE_INT_START | I2C_SLAVE_INT_DATA | I2C_SLAVE_INT_STOP);
+	I2CSlaveIntClear(config->base,
+			 I2C_SLAVE_INT_START | I2C_SLAVE_INT_DATA | I2C_SLAVE_INT_STOP);
+
+	data->target_cfg = NULL;
+
+	return 0;
+}
+#endif /* I2C_TARGET */
+
+static DEVICE_API(i2c, i2c_cc13xx_cc26xx_driver_api) = {
 	.configure = i2c_cc13xx_cc26xx_configure,
 	.transfer = i2c_cc13xx_cc26xx_transfer,
+#ifdef CONFIG_I2C_TARGET
+	.target_register = i2c_cc13xx_cc26xx_target_register,
+	.target_unregister = i2c_cc13xx_cc26xx_target_unregister,
+#endif /* I2C_TARGET */
 #ifdef CONFIG_I2C_RTIO
 	.iodev_submit = i2c_iodev_submit_fallback,
 #endif

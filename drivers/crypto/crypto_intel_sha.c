@@ -16,20 +16,28 @@ LOG_MODULE_REGISTER(SHA);
 
 static struct sha_session sha_sessions[SHA_MAX_SESSIONS];
 
+/* Serializes the allocation and the release of the session slots above. */
+static K_MUTEX_DEFINE(sha_sessions_lock);
+
 static int intel_sha_get_unused_session_idx(void)
 {
 	int i;
 
+	k_mutex_lock(&sha_sessions_lock, K_FOREVER);
+
 	for (i = 0; i < SHA_MAX_SESSIONS; i++) {
 		if (!sha_sessions[i].in_use) {
 			sha_sessions[i].in_use = true;
+			k_mutex_unlock(&sha_sessions_lock);
 			return i;
 		}
 	}
+
+	k_mutex_unlock(&sha_sessions_lock);
 	return -1;
 }
 
-static int intel_sha_set_ctl_enable(struct sha_container *sha, int status)
+static void intel_sha_set_ctl_enable(struct sha_container *sha, int status)
 {
 	/* wait until not busy when turning off */
 	if (status == 0 && sha->dfsha->shactl.part.en == 1) {
@@ -38,7 +46,6 @@ static int intel_sha_set_ctl_enable(struct sha_container *sha, int status)
 	}
 
 	sha->dfsha->shactl.part.en = status;
-	return 0;
 }
 
 static int intel_sha_set_resume_length_dw0(struct sha_container *sha, uint32_t lower_length)
@@ -53,10 +60,9 @@ static int intel_sha_set_resume_length_dw0(struct sha_container *sha, uint32_t l
 	return err;
 }
 
-static int intel_sha_set_resume_length_dw1(struct sha_container *sha, uint32_t upper_length)
+static void intel_sha_set_resume_length_dw1(struct sha_container *sha, uint32_t upper_length)
 {
 	sha->dfsha->sharldw1.full = upper_length;
-	return 0;
 }
 
 static int intel_sha_regs_cpy(void *dst, const void *src, size_t len)
@@ -87,10 +93,7 @@ static int intel_sha_device_run(const struct device *dev, const void *buf_in, si
 	/* align to OWORD */
 	const size_t aligned_buff_size = ROUND_UP(buf_in_size, 0x10);
 
-	err = intel_sha_set_ctl_enable(self, 0);
-	if (err) {
-		return err;
-	}
+	intel_sha_set_ctl_enable(self, 0);
 
 	/* set processing element disable */
 	self->dfsha->pibcs.part.peen = 0;
@@ -120,10 +123,8 @@ static int intel_sha_device_run(const struct device *dev, const void *buf_in, si
 		if (err) {
 			return err;
 		}
-		err = intel_sha_set_resume_length_dw1(self, self->dfsha->shaaldw1.full);
-		if (err) {
-			return err;
-		}
+		intel_sha_set_resume_length_dw1(self, self->dfsha->shaaldw1.full);
+
 		err = intel_sha_regs_cpy((void *)self->dfsha->initial_vector,
 					 (void *)self->dfsha->sha_result,
 					 sizeof(self->dfsha->initial_vector));
@@ -142,14 +143,11 @@ static int intel_sha_device_run(const struct device *dev, const void *buf_in, si
 	/* increment pointer */
 	self->dfsha->pibfpi.full = buf_in_size;
 
-	err = intel_sha_set_ctl_enable(self, 1);
-	if (err) {
-		return err;
-	}
+	intel_sha_set_ctl_enable(self, 1);
 
-	err = intel_sha_set_ctl_enable(self, 0);
+	intel_sha_set_ctl_enable(self, 0);
 
-	return err;
+	return 0;
 }
 
 static int intel_sha_copy_hash(struct sha_container *const self, void *dst, size_t len)
@@ -315,8 +313,11 @@ static int intel_sha_device_free(const struct device *dev, struct hash_ctx *ctx)
 	(void)memset((void *)self->dfsha, 0, sizeof(struct sha_hw_regs));
 	(void)memset(&session->sha_ctx, 0, sizeof(struct sha_context));
 	(void)memset(&session->state, 0, sizeof(union sha_state));
-	session->in_use = 0;
 	session->algo = 0;
+
+	k_mutex_lock(&sha_sessions_lock, K_FOREVER);
+	session->in_use = false;
+	k_mutex_unlock(&sha_sessions_lock);
 	return 0;
 }
 
@@ -325,7 +326,7 @@ static int intel_sha_device_hw_caps(const struct device *dev)
 	return (CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS);
 }
 
-static struct crypto_driver_api hash_enc_funcs = {
+static DEVICE_API(crypto, hash_enc_funcs) = {
 	.hash_begin_session = intel_sha_device_set_hash_type,
 	.hash_free_session = intel_sha_device_free,
 	.hash_async_callback_set = NULL,

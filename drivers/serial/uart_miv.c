@@ -288,11 +288,6 @@ static int uart_miv_irq_is_pending(const struct device *dev)
 	return !!(uart->status & STATUS_RXFULL_MASK);
 }
 
-static int uart_miv_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 static void uart_miv_irq_handler(const struct device *dev)
 {
 	struct uart_miv_data *data = dev->data;
@@ -361,7 +356,7 @@ static int uart_miv_init(const struct device *dev)
 	return 0;
 }
 
-static const struct uart_driver_api uart_miv_driver_api = {
+static DEVICE_API(uart, uart_miv_driver_api) = {
 	.poll_in          = uart_miv_poll_in,
 	.poll_out         = uart_miv_poll_out,
 	.err_check        = uart_miv_err_check,
@@ -378,7 +373,6 @@ static const struct uart_driver_api uart_miv_driver_api = {
 	.irq_err_enable   = uart_miv_irq_err_enable,
 	.irq_err_disable  = uart_miv_irq_err_disable,
 	.irq_is_pending   = uart_miv_irq_is_pending,
-	.irq_update       = uart_miv_irq_update,
 	.irq_callback_set = uart_miv_irq_callback_set,
 #endif
 };

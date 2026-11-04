@@ -23,42 +23,7 @@ Hardware
 Supported Features
 ==================
 
-The xiao_ble board configuration supports the following hardware features:
-
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| ADC       | on-chip    | adc                  |
-+-----------+------------+----------------------+
-| CLOCK     | on-chip    | clock_control        |
-+-----------+------------+----------------------+
-| FLASH     | on-chip    | flash, QSPI flash    |
-+-----------+------------+----------------------+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| I2C(M)    | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| MPU       | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| NVIC      | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| PWM       | on-chip    | pwm                  |
-+-----------+------------+----------------------+
-| RADIO     | on-chip    | Bluetooth,           |
-|           |            | ieee802154           |
-+-----------+------------+----------------------+
-| RTC       | on-chip    | system clock         |
-+-----------+------------+----------------------+
-| SPI(M/S)  | on-chip    | spi                  |
-+-----------+------------+----------------------+
-| UART      | on-chip    | serial               |
-+-----------+------------+----------------------+
-| USB       | on-chip    | usb                  |
-+-----------+------------+----------------------+
-| WDT       | on-chip    | watchdog             |
-+-----------+------------+----------------------+
-
-Other hardware features have not been enabled yet for this board.
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -76,6 +41,8 @@ LED
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 The XIAO BLE ships with the `Adafruit nRF52 Bootloader`_ which supports flashing
 using `UF2`_. Doing so allows easy flashing of new images, but does not support
 debugging the device. For debugging please use `External Debugger`_.
@@ -84,7 +51,7 @@ UF2 Flashing
 ============
 
 To enter the bootloader, connect the USB port of the XIAO BLE to your host, and
-double tap the reset botton to the left of the USB connector. A mass storage
+double tap the reset button to the left of the USB connector. A mass storage
 device named ``XIAO BLE`` should appear on the host. Using the command line, or
 your file manager copy the :file:`zephyr/zephyr.uf2` file from your build to the base
 of the ``XIAO BLE`` mass storage device. The XIAO BLE will automatically reset

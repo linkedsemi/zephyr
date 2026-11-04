@@ -12,19 +12,40 @@
 #include <zephyr/kernel_structs.h>
 #include "csr.h"
 
-static ALWAYS_INLINE uint32_t arch_proc_id(void)
-{
-	return csr_read(mhartid) & ((uintptr_t)CONFIG_RISCV_HART_MASK);
-}
-
 static ALWAYS_INLINE _cpu_t *arch_curr_cpu(void)
 {
 #if defined(CONFIG_SMP) || defined(CONFIG_USERSPACE)
+#ifdef CONFIG_RISCV_S_MODE
+	return (_cpu_t *)csr_read(sscratch);
+#else
 	return (_cpu_t *)csr_read(mscratch);
+#endif
 #else
 	return &_kernel.cpus[0];
 #endif
 }
+
+static ALWAYS_INLINE uint32_t arch_proc_id(void)
+{
+#ifdef CONFIG_RISCV_S_MODE
+#if defined(CONFIG_SMP) || (CONFIG_MP_MAX_NUM_CPUS > 1)
+	return arch_curr_cpu()->arch.hartid;
+#else
+	return CONFIG_RV_BOOT_HART;
+#endif
+#else
+	return csr_read(mhartid) & ((uintptr_t)CONFIG_RISCV_HART_MASK);
+#endif
+}
+
+#ifdef CONFIG_RISCV_CURRENT_VIA_GP
+
+register struct k_thread *__arch_current_thread __asm__("gp");
+
+#define arch_current_thread() __arch_current_thread
+#define arch_current_thread_set(thread) ({ __arch_current_thread = (thread); })
+
+#endif /* CONFIG_RISCV_CURRENT_VIA_GP */
 
 static ALWAYS_INLINE unsigned int arch_num_cpus(void)
 {

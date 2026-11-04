@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Internal helpers backing the cbprintf() implementation.
+ */
+
 #ifndef ZEPHYR_INCLUDE_SYS_CBPRINTF_INTERNAL_H_
 #define ZEPHYR_INCLUDE_SYS_CBPRINTF_INTERNAL_H_
 
@@ -15,6 +20,8 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/arch/cpu.h>
+
+/** @cond INTERNAL_HIDDEN */
 
 /*
  * Special alignment cases
@@ -33,8 +40,10 @@
 #elif defined(CONFIG_ARC)
 #define VA_STACK_MIN_ALIGN	ARCH_STACK_PTR_ALIGN
 #elif defined(__riscv)
-#ifdef CONFIG_RISCV_ISA_RV32E
+#if defined(CONFIG_RISCV_ISA_RV32E)
+#if !defined(CONFIG_CBPRINTF_RV32E_USE_DEFAULT_ALIGNMENT)
 #define VA_STACK_ALIGN(type)	4
+#endif
 #else
 #define VA_STACK_MIN_ALIGN	(__riscv_xlen / 8)
 #endif /* CONFIG_RISCV_ISA_RV32E */
@@ -51,6 +60,8 @@
 #ifndef VA_STACK_ALIGN
 #define VA_STACK_ALIGN(type)	MAX(VA_STACK_MIN_ALIGN, __alignof__(type))
 #endif
+
+/** @endcond */
 
 static inline void z_cbprintf_wcpy(int *dst, int *src, size_t len)
 {
@@ -82,9 +93,17 @@ extern "C" {
 #define Z_CBPRINTF_VA_STACK_LL_DBL_MEMCPY	0
 #endif
 
+/** Trick compiler to allow working with all types of arguments, including bitfields,
+ * opaque struct pointers. Alternative is to add + 0 but that requires suppressing
+ * compiler warning about pointer arithmetic and does not cover opaque structs.
+ */
+#define Z_ARGIFY(arg) ((0) ? 0 : (arg))
+
 /** @brief Return 1 if argument is a pointer to char or wchar_t
  *
  * @param x argument.
+ *
+ * @param flags Package flags.
  *
  * @return 1 if char * or wchar_t *, 0 otherwise.
  */
@@ -92,9 +111,25 @@ extern "C" {
 #define Z_CBPRINTF_IS_PCHAR(x, flags) \
 	z_cbprintf_cxx_is_pchar(x, (flags) & CBPRINTF_PACKAGE_CONST_CHAR_RO)
 #else
+
+/*
+ * On platforms where wchar_t is 4 bytes (e.g. typedef int), wchar_t *
+ * aliases int * in _Generic, causing any int * argument to be falsely
+ * detected as a string pointer. Skip wchar_t associations in that case.
+ */
+#if __SIZEOF_WCHAR_T__ == 4
+#define Z_CBPRINTF_IS_PCHAR_WCHAR(flags)
+#else
+#define Z_CBPRINTF_IS_PCHAR_WCHAR(flags) \
+	wchar_t * : 1, \
+	const wchar_t * : ((flags) & CBPRINTF_PACKAGE_CONST_CHAR_RO) ? 0 : 1, \
+	volatile wchar_t * : 1, \
+	const volatile wchar_t * : 1,
+#endif
+
 /* NOLINTBEGIN(misc-redundant-expression) */
 #define Z_CBPRINTF_IS_PCHAR(x, flags) \
-	_Generic((x) + 0, \
+	_Generic(Z_ARGIFY(x), \
 		/* char * */ \
 		char * : 1, \
 		const char * : ((flags) & CBPRINTF_PACKAGE_CONST_CHAR_RO) ? 0 : 1, \
@@ -105,11 +140,7 @@ extern "C" {
 		const unsigned char * : ((flags) & CBPRINTF_PACKAGE_CONST_CHAR_RO) ? 0 : 1, \
 		volatile unsigned char * : 1, \
 		const volatile unsigned char * : 1,\
-		/* wchar_t * */ \
-		wchar_t * : 1, \
-		const wchar_t * : ((flags) & CBPRINTF_PACKAGE_CONST_CHAR_RO) ? 0 : 1, \
-		volatile wchar_t * : 1, \
-		const volatile wchar_t * : 1, \
+		Z_CBPRINTF_IS_PCHAR_WCHAR(flags) \
 		default : \
 			0)
 /* NOLINTEND(misc-redundant-expression) */
@@ -154,7 +185,7 @@ extern "C" {
 #define Z_CBPRINTF_IS_NONE_CHAR_PTR(x) z_cbprintf_cxx_is_none_char_ptr(x)
 #else
 #define Z_CBPRINTF_IS_NONE_CHAR_PTR(x) \
-	_Generic((x) + 0, \
+	_Generic(Z_ARGIFY(x), \
 		char * : 0, \
 		volatile char * : 0, \
 		const char * : 0, \
@@ -506,6 +537,8 @@ extern "C" {
 
 /** @brief Calculate number of char * or wchar_t * arguments in the arguments.
  *
+ * @param flags Flags. See @p CBPRINTF_PACKAGE_FLAGS.
+ *
  * @param fmt string.
  *
  * @param ... string arguments.
@@ -528,22 +561,15 @@ extern "C" {
  * @retval 1 if string must be packaged at runtime.
  * @retval 0 if string can be statically packaged.
  */
-#if Z_C_GENERIC
 #define Z_CBPRINTF_MUST_RUNTIME_PACKAGE(flags, ...) ({\
-	_Pragma("GCC diagnostic push") \
-	_Pragma("GCC diagnostic ignored \"-Wpointer-arith\"") \
 	int _rv; \
 	if ((flags) & CBPRINTF_PACKAGE_ADD_RW_STR_POS) { \
 		_rv = 0; \
 	} else { \
 		_rv = Z_CBPRINTF_PCHAR_COUNT(flags, __VA_ARGS__) > 0 ? 1 : 0; \
 	} \
-	_Pragma("GCC diagnostic pop")\
 	_rv; \
 })
-#else
-#define Z_CBPRINTF_MUST_RUNTIME_PACKAGE(flags, ...) 1
-#endif
 
 /** @brief Get storage size for given argument.
  *
@@ -557,17 +583,21 @@ extern "C" {
 #ifdef __cplusplus
 #define Z_CBPRINTF_ARG_SIZE(v) z_cbprintf_cxx_arg_size(v)
 #else
-#define Z_CONSTIFY(v) (_Generic((v), char * : (const char *)(uintptr_t)(v), default : (v)))
+#define Z_CONSTIFY(v) ({ \
+	__auto_type _uv = (v); \
+	__typeof__(_uv) const _cv = _uv; \
+	_cv; \
+})
 #define Z_CBPRINTF_ARG_SIZE(v) ({\
-	__auto_type __v = (Z_CONSTIFY(v)) + 0; \
+	__auto_type __v = Z_ARGIFY(Z_CONSTIFY(v)); \
 	/* Static code analysis may complain about unused variable. */ \
 	(void)__v; \
-	size_t __arg_size = _Generic((v), \
+	size_t __measured_size = _Generic((v), \
 		float : sizeof(double), \
 		default : \
-			sizeof((__v)) \
+			sizeof((__v)) /* NOLINT(bugprone-sizeof-expression) */ \
 		); \
-	__arg_size; \
+	__measured_size; \
 })
 #endif
 
@@ -583,21 +613,21 @@ extern "C" {
 #define Z_CBPRINTF_STORE_ARG(buf, arg) do { \
 	if (Z_CBPRINTF_VA_STACK_LL_DBL_MEMCPY) { \
 		/* If required, copy arguments by word to avoid unaligned access.*/ \
-		__auto_type _v = (Z_CONSTIFY(arg)) + 0; \
-		double _d = _Generic((arg) + 0, \
-				float : (arg) + 0, \
+		__auto_type _v = Z_ARGIFY(Z_CONSTIFY(arg)); \
+		double _d = _Generic(Z_ARGIFY(arg), \
+				float : Z_ARGIFY(arg), \
 				default : \
 					0.0); \
 		/* Static code analysis may complain about unused variable. */ \
 		(void)_v; \
 		(void)_d; \
-		size_t arg_size = Z_CBPRINTF_ARG_SIZE(arg); \
-		size_t _wsize = arg_size / sizeof(int); \
+		size_t _stored_size = Z_CBPRINTF_ARG_SIZE(arg); \
+		size_t _wsize = _stored_size / sizeof(int); \
 		z_cbprintf_wcpy((int *)(buf), \
-			      (int *) _Generic((arg) + 0, float : &_d, default : &_v), \
+			      (int *) _Generic(Z_ARGIFY(arg), float : &_d, default : &_v), \
 			      _wsize); \
 	} else { \
-		*_Generic((arg) + 0, \
+		*_Generic(Z_ARGIFY(arg), \
 			char : (int *)(buf), \
 			unsigned char: (int *)(buf), \
 			short : (int *)(buf), \
@@ -627,14 +657,14 @@ extern "C" {
 #define Z_CBPRINTF_ALIGNMENT(_arg) z_cbprintf_cxx_alignment(_arg)
 #else
 #define Z_CBPRINTF_ALIGNMENT(_arg) \
-	MAX(_Generic((_arg) + 0, \
+	MAX(_Generic(Z_ARGIFY(_arg), \
 		float : VA_STACK_ALIGN(double), \
 		double : VA_STACK_ALIGN(double), \
 		long double : VA_STACK_ALIGN(long double), \
 		long long : VA_STACK_ALIGN(long long), \
 		unsigned long long : VA_STACK_ALIGN(long long), \
 		default : \
-			__alignof__((_arg) + 0)), VA_STACK_MIN_ALIGN)
+			__alignof__(Z_ARGIFY(_arg))), VA_STACK_MIN_ALIGN)
 #endif
 
 /** @brief Detect long double variable as a constant expression.
@@ -655,13 +685,15 @@ extern "C" {
 #endif
 #else
 #define Z_CBPRINTF_IS_LONGDOUBLE(x) \
-	_Generic((x) + 0, long double : 1, default : 0)
+	_Generic(Z_ARGIFY(x), long double : 1, default : 0)
 #endif
 
 /** @brief Safely package arguments to a buffer.
  *
  * Argument is put into the buffer if capable buffer is provided. Length is
  * incremented even if data is not packaged.
+ *
+ * @param arg_idx Argument index.
  *
  * @param _buf buffer.
  *
@@ -683,56 +715,56 @@ do { \
 		(_idx) += sizeof(int); \
 		(_align_offset) += sizeof(int); \
 	} \
-	uint32_t _arg_size = Z_CBPRINTF_ARG_SIZE(_arg); \
+	uint32_t _packed_size = Z_CBPRINTF_ARG_SIZE(_arg); \
 	uint8_t _loc = (uint8_t)(_idx / sizeof(int)); \
 	if (arg_idx < 1 + _fros_cnt) { \
 		if (_ros_pos_en) { \
-			_ros_pos_buf[_ros_pos_idx++] = _loc; \
+			_ros_pos_buf[_ros_pos_idx] = _loc; \
+			_ros_pos_idx++; \
 		} \
 	} else if (Z_CBPRINTF_IS_PCHAR(_arg, 0)) { \
 		if (_cros_en) { \
 			if (Z_CBPRINTF_IS_X_PCHAR(arg_idx, _arg, _flags)) { \
 				if (_rws_pos_en) { \
-					_rws_buffer[_rws_pos_idx++] = arg_idx - 1; \
-					_rws_buffer[_rws_pos_idx++] = _loc; \
+					_rws_buffer[_rws_pos_idx] = arg_idx - 1; \
+					_rws_pos_idx++; \
+					_rws_buffer[_rws_pos_idx] = _loc; \
+					_rws_pos_idx++; \
 				} \
 			} else { \
 				if (_ros_pos_en) { \
-					_ros_pos_buf[_ros_pos_idx++] = _loc; \
+					_ros_pos_buf[_ros_pos_idx] = _loc; \
+					_ros_pos_idx++; \
 				} \
 			} \
 		} else if (_rws_pos_en) { \
-			_rws_buffer[_rws_pos_idx++] = arg_idx - 1; \
-			_rws_buffer[_rws_pos_idx++] = (uint8_t)(_idx / sizeof(int)); \
+			_rws_buffer[_rws_pos_idx] = arg_idx - 1; \
+			_rws_pos_idx++; \
+			_rws_buffer[_rws_pos_idx] = (uint8_t)(_idx / sizeof(int)); \
+			_rws_pos_idx++; \
+		} else { \
+			/* Neither position buffer is enabled, nothing to record. */ \
 		} \
+	} else { \
+		/* Not a read-only string argument, nothing to record. */ \
 	} \
 	if ((_buf) && (_idx) < (int)(_max)) { \
 		Z_CBPRINTF_STORE_ARG(&(_buf)[(_idx)], _arg); \
 	} \
-	(_idx) += (_arg_size); \
-	(_align_offset) += (_arg_size); \
+	(_idx) += (_packed_size); \
+	(_align_offset) += (_packed_size); \
 } while (false)
 
 /** @brief Package single argument.
  *
  * Macro is called in a loop for each argument in the string.
  *
+ * @param arg_idx Argument index.
+ *
  * @param arg argument.
  */
 #define Z_CBPRINTF_PACK_ARG(arg_idx, arg) \
 	Z_CBPRINTF_PACK_ARG2(arg_idx, _pbuf, _pkg_len, _pkg_offset, _pmax, arg)
-
-/* When using clang additional warning needs to be suppressed since each
- * argument of fmt string is used for sizeof() which results in the warning
- * if argument is a string literal. Suppression is added here instead of
- * the macro which generates the warning to not slow down the compiler.
- */
-#ifdef __clang__
-#define Z_CBPRINTF_SUPPRESS_SIZEOF_ARRAY_DECAY \
-	_Pragma("GCC diagnostic ignored \"-Wsizeof-array-decay\"")
-#else
-#define Z_CBPRINTF_SUPPRESS_SIZEOF_ARRAY_DECAY
-#endif
 
 /* Allocation to avoid using VLA and alloca. Alloc frees space when leaving
  * a function which can lead to increased stack usage if logging is used
@@ -760,6 +792,17 @@ do { \
 		 _name##_buf32)))
 #endif
 
+/* On Xtensa the cbprintf_package_desc requires
+ * an additional alignment array. This creates an
+ * initial value to hush the compiler when compiling
+ * with C++.
+ */
+#if defined(CONFIG_XTENSA) && defined(__cplusplus)
+#define Z_CBPRINTF_XTENSA_PKG_DESC_PADDING_INITIALIZER .xtensa_padding = { },
+#else
+#define Z_CBPRINTF_XTENSA_PKG_DESC_PADDING_INITIALIZER
+#endif
+
 /** @brief Statically package a formatted string with arguments.
  *
  * @param buf buffer. If null then only length is calculated.
@@ -778,9 +821,6 @@ do { \
 #define Z_CBPRINTF_STATIC_PACKAGE_GENERIC(buf, _inlen, _outlen, _align_offset, \
 					  flags, ... /* fmt, ... */) \
 do { \
-	_Pragma("GCC diagnostic push") \
-	_Pragma("GCC diagnostic ignored \"-Wpointer-arith\"") \
-	Z_CBPRINTF_SUPPRESS_SIZEOF_ARRAY_DECAY \
 	BUILD_ASSERT(!IS_ENABLED(CONFIG_XTENSA) || \
 		     (IS_ENABLED(CONFIG_XTENSA) && \
 		      !((_align_offset) % CBPRINTF_PACKAGE_ALIGNMENT)), \
@@ -836,10 +876,12 @@ do { \
 		/* Append string locations. */ \
 		uint8_t *_pbuf_loc = &_pbuf[_pkg_len]; \
 		for (size_t _ros_idx = 0; _ros_idx < _ros_cnt; _ros_idx++) { \
-			*_pbuf_loc++ = _ros_pos_buf[_ros_idx]; \
+			*_pbuf_loc = _ros_pos_buf[_ros_idx]; \
+			_pbuf_loc++; \
 		} \
 		for (size_t _rws_idx = 0; _rws_idx < (2 * _rws_cnt); _rws_idx++) { \
-			*_pbuf_loc++ = _rws_buffer[_rws_idx]; \
+			*_pbuf_loc = _rws_buffer[_rws_idx]; \
+			_pbuf_loc++; \
 		} \
 	} \
 	/* Store length */ \
@@ -852,32 +894,19 @@ do { \
 				.str_cnt = 0, \
 				.ro_str_cnt = _ros_cnt, \
 				.rw_str_cnt = _rws_cnt, \
+				Z_CBPRINTF_XTENSA_PKG_DESC_PADDING_INITIALIZER \
 			} \
 		}; \
 		IF_ENABLED(CONFIG_CBPRINTF_PACKAGE_HEADER_STORE_CREATION_FLAGS, \
 			   (pkg_hdr.desc.pkg_flags = flags)); \
 		*_len_loc = pkg_hdr; \
 	} \
-	_Pragma("GCC diagnostic pop") \
 } while (false)
 
-#if Z_C_GENERIC
 #define Z_CBPRINTF_STATIC_PACKAGE(packaged, inlen, outlen, align_offset, flags, \
 				  ... /* fmt, ... */) \
 	Z_CBPRINTF_STATIC_PACKAGE_GENERIC(packaged, inlen, outlen, \
 					  align_offset, flags, __VA_ARGS__)
-#else
-#define Z_CBPRINTF_STATIC_PACKAGE(packaged, inlen, outlen, align_offset, flags, \
-				  ... /* fmt, ... */) \
-do { \
-	/* Small trick needed to avoid warning on always true */ \
-	if (((uintptr_t)packaged + 1) != 1) { \
-		outlen = cbprintf_package(packaged, inlen, flags, __VA_ARGS__); \
-	} else { \
-		outlen = cbprintf_package(NULL, align_offset, flags, __VA_ARGS__); \
-	} \
-} while (false)
-#endif /* Z_C_GENERIC */
 
 #ifdef __cplusplus
 }

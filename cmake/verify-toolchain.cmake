@@ -10,7 +10,7 @@
 # it takes the following arguments:
 # FORMAT=json: Print the output as a json formatted string, useful for Python
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 if(NOT CMAKE_SCRIPT_MODE_FILE)
   message(FATAL_ERROR "verify-toolchain.cmake is a script and must be invoked "
@@ -32,10 +32,12 @@ find_package(HostTools)
 if("${FORMAT}" STREQUAL "json")
   set(json "{\"ZEPHYR_TOOLCHAIN_VARIANT\" : \"${ZEPHYR_TOOLCHAIN_VARIANT}\", ")
   string(APPEND json "\"SDK_VERSION\": \"${SDK_VERSION}\", ")
+  string(APPEND json "\"TOOLCHAIN_VARIANT_COMPILER\": \"${TOOLCHAIN_VARIANT_COMPILER}\", ")
   string(APPEND json "\"ZEPHYR_SDK_INSTALL_DIR\" : \"${ZEPHYR_SDK_INSTALL_DIR}\"}")
   _message("${json}")
 else()
   message(STATUS "ZEPHYR_TOOLCHAIN_VARIANT: ${ZEPHYR_TOOLCHAIN_VARIANT}")
+  message(STATUS "TOOLCHAIN_VARIANT_COMPILER: ${TOOLCHAIN_VARIANT_COMPILER}")
   if(DEFINED SDK_VERSION)
     message(STATUS "SDK_VERSION: ${SDK_VERSION}")
   endif()

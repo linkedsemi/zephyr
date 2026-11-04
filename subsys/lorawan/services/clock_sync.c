@@ -11,11 +11,12 @@
 
 #include "lorawan_services.h"
 
-#include <LoRaMac.h>
 #include <zephyr/kernel.h>
 #include <zephyr/lorawan/lorawan.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/random/random.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/byteorder.h>
 
 LOG_MODULE_REGISTER(lorawan_clock_sync, CONFIG_LORAWAN_SERVICES_LOG_LEVEL);
 
@@ -69,13 +70,11 @@ static struct clock_sync_context ctx;
  *
  * @returns number of bytes written or -ENOSPC in case of error
  */
-static int clock_sync_serialize_device_time(uint8_t *buf, size_t size)
+static uint8_t clock_sync_serialize_device_time(uint8_t *buf, size_t size)
 {
 	uint32_t device_time = k_uptime_seconds() + ctx.time_offset;
 
-	if (size < sizeof(uint32_t)) {
-		return -ENOSPC;
-	}
+	__ASSERT_NO_MSG(size >= sizeof(uint32_t));
 
 	buf[0] = (device_time >> 0) & 0xFF;
 	buf[1] = (device_time >> 8) & 0xFF;
@@ -91,7 +90,7 @@ static inline k_timeout_t clock_sync_calc_periodicity(void)
 	return K_SECONDS(ctx.periodicity - 30 + sys_rand32_get() % 61);
 }
 
-static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
+static void clock_sync_package_callback(uint8_t port, uint8_t flags, int16_t rssi, int8_t snr,
 					uint8_t len, const uint8_t *rx_buf)
 {
 	uint8_t tx_buf[3 * MAX_CLOCK_SYNC_ANS_LEN];
@@ -119,12 +118,18 @@ static void clock_sync_package_callback(uint8_t port, bool data_pending, int16_t
 			/* answer from application server */
 			int32_t time_correction;
 
+			/* AppTimeAns carries a 4-byte time correction plus a
+			 * 1-byte token; make sure they are present before reading.
+			 */
+			if ((len - rx_pos) < (sizeof(int32_t) + sizeof(uint8_t))) {
+				LOG_ERR("AppTimeAns too short");
+				return;
+			}
+
 			ctx.nb_transmissions = 0;
 
-			time_correction = rx_buf[rx_pos++];
-			time_correction	+= rx_buf[rx_pos++] << 8;
-			time_correction	+= rx_buf[rx_pos++] << 16;
-			time_correction	+= rx_buf[rx_pos++] << 24;
+			time_correction = (int32_t)sys_get_le32(&rx_buf[rx_pos]);
+			rx_pos += sizeof(int32_t);
 
 			uint8_t token = rx_buf[rx_pos++] & 0x0F;
 

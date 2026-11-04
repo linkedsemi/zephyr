@@ -27,22 +27,15 @@ static void cmd_run(const struct shell *sh, size_t argc, char **argv)
 
 	hawkbit_autohandler(false);
 
-	switch (hawkbit_autohandler_wait(UINT32_MAX, K_FOREVER)) {
+	switch (hawkbit_autohandler_wait(UINT32_MAX,
+					 K_MSEC(CONFIG_HAWKBIT_SHELL_AUTOHANDLER_TIMEOUT))) {
 	case HAWKBIT_UNCONFIRMED_IMAGE:
 		shell_error(sh, "Image is unconfirmed."
 				"Rebooting to revert back to previous confirmed image");
 		break;
 
-	case HAWKBIT_CANCEL_UPDATE:
-		shell_info(sh, "hawkBit update cancelled from server");
-		break;
-
 	case HAWKBIT_NO_UPDATE:
 		shell_info(sh, "No update found");
-		break;
-
-	case HAWKBIT_OK:
-		shell_info(sh, "Image already updated");
 		break;
 
 	case HAWKBIT_UPDATE_INSTALLED:
@@ -63,6 +56,10 @@ static void cmd_run(const struct shell *sh, size_t argc, char **argv)
 
 	case HAWKBIT_NOT_INITIALIZED:
 		shell_error(sh, "hawkBit not initialized");
+		break;
+
+	case HAWKBIT_NO_RESPONSE:
+		shell_info(sh, "hawkBit is still running, see log for more information");
 		break;
 
 	default:
@@ -88,10 +85,7 @@ static int cmd_info(const struct shell *sh, size_t argc, char *argv)
 	shell_print(sh, "Firmware Version: %s", firmware_version);
 	shell_print(sh, "Server address: %s", hawkbit_get_server_addr());
 	shell_print(sh, "Server port: %d", hawkbit_get_server_port());
-	shell_print(sh, "DDI security token: %s",
-		    (IS_ENABLED(CONFIG_HAWKBIT_DDI_NO_SECURITY)
-			     ? "<disabled>"
-			     : hawkbit_get_ddi_security_token()));
+	shell_print(sh, "DDI security token: %s", hawkbit_get_ddi_security_token());
 
 	return 0;
 }
@@ -146,7 +140,6 @@ static int cmd_set_port(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
-#ifndef CONFIG_HAWKBIT_DDI_NO_SECURITY
 static int cmd_set_token(const struct shell *sh, size_t argc, char **argv)
 {
 	if (argc < 2) {
@@ -158,15 +151,12 @@ static int cmd_set_token(const struct shell *sh, size_t argc, char **argv)
 
 	return 0;
 }
-#endif /* CONFIG_HAWKBIT_DDI_NO_SECURITY */
 
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sub_hawkbit_set,
 	SHELL_CMD(addr, NULL, "Set hawkBit server address", cmd_set_addr),
 	SHELL_CMD(port, NULL, "Set hawkBit server port", cmd_set_port),
-#ifndef CONFIG_HAWKBIT_DDI_NO_SECURITY
 	SHELL_CMD(ddi_token, NULL, "Set hawkBit DDI Security token", cmd_set_token),
-#endif
 	SHELL_SUBCMD_SET_END);
 #endif /* CONFIG_HAWKBIT_SET_SETTINGS_RUNTIME */
 

@@ -1,12 +1,4 @@
-.. _native_sim:
-
-Native simulator - native_sim
-#############################
-
-.. contents::
-   :depth: 1
-   :backlinks: entry
-   :local:
+.. zephyr:board:: native_sim
 
 Overview
 ********
@@ -26,7 +18,7 @@ See `Peripherals`_ for more information.
 
 .. note::
 
-   | ``native_sim`` is an evolution of the older :ref:`native_posix<native_posix>`.
+   | ``native_sim`` is an evolution of its predecessor ``native_posix``.
    | Some components, code, options names, and documentation will still use the old native_posix
      names. But all components which worked with native_posix will work with native_sim.
 
@@ -186,9 +178,26 @@ When building with either :ref:`minimal <c_library_minimal>` or :ref:`Picolibc<c
 you will build your code in a more similar way as when building for the embedded target,
 you will be able to test your code interacting with that C library,
 and there will be no conflicts with the :ref:`POSIX OS abstraction<posix_support>` shim,
-but, accessing the host for test purposes from your embedded code will be more
-difficult, and you will have a limited choice of
-:ref:`drivers and backends to chose from<native_sim_peripherals_c_compat>`.
+but, accessing the host for test purposes from your embedded code will be more difficult.
+
+.. _native_sim_peripherals_c_compat:
+
+Peripherals and backends C library compatibility
+================================================
+
+While most native_sim drivers and backends support any C library, the drivers listed below have
+limited compatibility:
+
+.. csv-table:: Drivers/backends limited to some libCs
+   :header: "Driver class", "Driver name", "Driver Kconfig", "libC choices"
+
+   "Bluetooth", ":ref:`Userchan <nsim_bt_host_cont>`", ":kconfig:option:`CONFIG_BT_USERCHAN`", "Host and pico libC"
+   "USB", ":ref:`USB native posix <nsim_per_usb>`", ":kconfig:option:`CONFIG_USB_NATIVE_POSIX`", "Host libC"
+
+Cross-compiling native_sim
+**************************
+
+It is possible to :ref:`cross compile native_sim<posix_arch_cross_compile>`.
 
 Rationale for this port and comparison with other options
 *********************************************************
@@ -293,7 +302,9 @@ All times are kept in microseconds.
 Peripherals
 ***********
 
-The following peripherals are currently provided with this board:
+.. zephyr:board-supported-hw::
+
+Here are more details on the peripherals that are currently provided with this board:
 
 **Interrupt controller**
   A simple yet generic interrupt controller is provided. It can nest interrupts
@@ -310,15 +321,48 @@ The following peripherals are currently provided with this board:
 **UART/Serial**
    Two optional native UART drivers are available:
 
-   **PTTY driver (UART_NATIVE_POSIX)**
-      With this driver, one or two Zephyr UART devices can be created. These
+   **PTY driver (UART_NATIVE_PTY)**
+      With this driver, Zephyr UART devices can be created. These
       can be connected to the Linux process stdin/stdout or a newly created
-      pseudo-tty. For more information refer to the section `PTTY UART`_.
+      pseudo-tty. For more information refer to the section `PTY UART`_.
 
    **TTY driver (UART_NATIVE_TTY)**
       An UART driver for interacting with host-attached serial port devices
       (eg. USB to UART dongles). For more information refer to the section
       `TTY UART`_.
+
+**Digital microphone (DMIC)**
+  A file-backed DMIC driver is available for native_sim. It reads PCM sample
+  data from a binary file on the host file system and presents it through the
+  Zephyr DMIC API, which is useful for testing audio capture pipelines.
+
+  By default the input file path is taken from
+  :kconfig:option:`CONFIG_AUDIO_DMIC_NATIVE_SIM_FILE_PATH`. Each DMIC instance
+  exposes its own command line override in the form
+  ``--<device>_file=<path>``. For the default native_sim instance this is
+  ``--dmic0_file=<path>``.
+
+  If the configured host input file does not exist, the driver prints a warning
+  from the native simulator runner side and provides zeroes (silence).
+
+**Inter-IC sound (I2S)**
+  A file-backed I2S driver is which can be configured
+  for RX, TX, or both directions. It reads or writes PCM sample data from
+  or to files on the host file system through the Zephyr I2S API. This is
+  useful for testing stream handling and loopback scenarios.
+
+  By default the RX and TX file paths are taken from
+  :kconfig:option:`CONFIG_I2S_NATIVE_SIM_RX_FILE_PATH` and
+  :kconfig:option:`CONFIG_I2S_NATIVE_SIM_TX_FILE_PATH`. Each I2S instance
+  exposes its own command line overrides in the form of
+  ``--<device>_rx=<path>`` and ``--<device>_tx=<path>``. For example, the
+  default bidirectional native_sim instance uses ``--i2s_rxtx_rx=<path>`` and
+  ``--i2s_rxtx_tx=<path>``.
+
+  If an RX input file cannot be opened, the driver prints a warning from the
+  native simulator runner side and feeds silence for that stream run. If a TX
+  output file cannot be opened, the driver prints a warning and discards TX
+  data for that stream run.
 
 **Real time clock**
   The real time clock model provides a model of a constantly powered clock.
@@ -377,6 +421,70 @@ The following peripherals are currently provided with this board:
   Note that this device can only be used with Linux hosts.
 
 .. _`net-tools`: https://github.com/zephyrproject-rtos/net-tools
+
+.. _nsim_per_wifi:
+
+**Wi-Fi driver**
+  A native_sim Wi-Fi driver is provided which presents a Wi-Fi station
+  interface in Zephyr backed by a Linux host radio. It runs the Zephyr
+  wpa_supplicant and drives a simulated Linux ``mac80211_hwsim`` radio through
+  the host ``nl80211`` interface. The radio is simulated by the Linux kernel,
+  but the ``nl80211``/``mac80211`` stack driving it is the normal Linux one, so
+  the scan / connect (open and WPA2-PSK) / disconnect flow can be exercised
+  entirely on the host.
+
+  .. figure:: native_sim_wifi.svg
+     :align: center
+
+     native_sim Wi-Fi driver: components, control/data paths and threads.
+
+  The driver is built when a node with the ``zephyr,native-sim-wifi`` compatible
+  is present in the devicetree (add one through a devicetree overlay). The
+  ``host-interface`` property selects the Linux interface the driver binds to,
+  and the MAC address is taken from the standard ``local-mac-address`` /
+  ``zephyr,random-mac-address`` properties:
+
+  .. code-block:: devicetree
+
+     / {
+             wifi0: wifi {
+                     compatible = "zephyr,native-sim-wifi";
+                     host-interface = "zwifi";
+                     zephyr,random-mac-address;
+             };
+     };
+
+  Both can also be overridden from the command line with the ``--wifi-if=<name>``
+  and ``--wifi-mac-addr=<mac>`` options.
+
+  64-bit ``native_sim`` (``native_sim/native/64``) is not supported yet, as the
+  hostap sources the driver pulls in do not build cleanly for 64-bit, so the
+  driver can only be built for a 32-bit ``native_sim`` image on a Linux host.
+  The build links the host ``libnl``, which has to match the word size of the
+  image, so it requires the 32-bit ``libnl`` development libraries; on a
+  Debian/Ubuntu host:
+
+  .. code-block:: console
+
+     $ sudo dpkg --add-architecture i386
+     $ sudo apt update
+     $ sudo apt install gcc-multilib pkg-config libnl-3-dev:i386 libnl-genl-3-dev:i386
+     $ export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
+
+  The simulated radio and the access points it connects to are created on the
+  host with the ``net-setup.sh`` script and the ``zwifi`` configuration from the
+  `net-tools`_ repository. That setup loads the ``mac80211_hwsim`` kernel
+  module, creates the ``zwifi`` station interface, and starts ``hostapd`` and
+  ``dnsmasq`` access points, so ``iw``, ``hostapd`` and ``dnsmasq`` must also be
+  installed. As the binary opens ``AF_PACKET`` and ``nl80211`` sockets,
+  ``zephyr.exe`` must be granted the ``cap_net_raw`` and ``cap_net_admin``
+  capabilities (e.g. ``sudo setcap cap_net_raw,cap_net_admin+ep zephyr.exe``) or
+  be run as root.
+
+  A complete, runnable example including the host setup (and an optional Docker
+  wrapper) is provided by the :zephyr_file:`tests/net/wifi/interop` test.
+
+  Note that this driver can only be used with Linux hosts.
 
 .. _nsim_per_offloaded_sockets:
 
@@ -444,6 +552,89 @@ The following peripherals are currently provided with this board:
 .. _SDL2:
    https://www.libsdl.org
 
+.. _nsim_per_video_fifo:
+
+**Video capture driver**
+  A video capture driver is provided that reads raw frames from a named pipe
+  (FIFO) on the host, and presents them through the :ref:`video_api` as an
+  ordinary ``zephyr,camera`` device. This makes it possible to feed an
+  application with frames coming from a real webcam, a video file, or a
+  generated test pattern, without any camera hardware.
+
+  The device can be instantiated using the :ref:`snippet-video-native-fifo`
+  snippet, or by adding a devicetree node with the
+  ``zephyr,native-sim-video-fifo`` compatible. The application selects the
+  pixel format and the frame size, up to 1920x1080, with
+  :c:func:`video_set_format`. The default is 320x240 RGB565. The host writer
+  must produce frames of that format, as the driver does no scaling or
+  conversion. In ``ffmpeg``, RGB565, YUYV and GREY are ``rgb565le``,
+  ``yuyv422`` and ``gray``.
+
+  The FIFO path is taken from the ``fifo-path`` devicetree property, and
+  defaults to ``/tmp/zephyr-<device>-<pid>.fifo``. Each instance exposes its own
+  command line override in the form ``--<device>=<path>``. For a node named
+  ``video-fifo`` this is ``--video-fifo=<path>``. A FIFO created by the driver
+  is removed when the simulator exits.
+
+  The FIFO is created by the driver when the application starts streaming. A
+  writer must therefore either create the FIFO itself, for instance with
+  ``mkfifo``, or be started afterwards. For example:
+
+  .. code-block:: console
+
+     $ mkfifo /tmp/zephyr-cam.fifo
+     $ zephyr.exe --video-fifo=/tmp/zephyr-cam.fifo
+
+  Then, from another terminal, feed it a test pattern in the default format:
+
+  .. code-block:: console
+
+     $ ffmpeg -re -f lavfi -i testsrc2=size=320x240:rate=10 \
+         -pix_fmt rgb565le -f rawvideo -y /tmp/zephyr-cam.fifo
+
+  To capture from a webcam instead:
+
+  .. code-block:: console
+
+     $ ffmpeg -f v4l2 -i /dev/video0 \
+         -vf "scale=320:240:force_original_aspect_ratio=increase,crop=320:240,fps=10" \
+         -pix_fmt rgb565le -f rawvideo -y /tmp/zephyr-cam.fifo
+
+  If the path exists but is not a FIFO, the driver prints an error and refuses
+  to start streaming. The FIFO is opened non-blocking and polled from a
+  dedicated thread, so the simulation is never blocked: while no host writer is
+  attached, no frame is delivered. If a writer disconnects in the middle of a
+  frame, the incomplete frame is discarded so that the next writer resumes on a
+  frame boundary.
+
+  Frames are handed to the application as soon as they arrive, without any
+  pacing of its own: the frame rate is entirely the one the host writer
+  produces. When the host has more data pending and the application still has a
+  free buffer, the driver keeps reading without waiting; ``poll-interval-ms``
+  only applies once the host has nothing more to offer.
+
+  The driver enlarges the host pipe to hold two frames. Unprivileged processes
+  are limited by ``/proc/sys/fs/pipe-max-size`` for each pipe (1 MiB by
+  default), and by ``/proc/sys/fs/pipe-user-pages-soft`` for all their pipes
+  together. When the pipe cannot hold two frames, the driver logs a warning, as
+  the frame rate may be limited: the host writer then waits for the driver to
+  make room, which it does every ``poll-interval-ms``. To avoid this, run
+  ``zephyr.exe`` with root privileges (or the CAP_SYS_RESOURCE POSIX
+  capability, to be exact), or raise the limit beforehand. 16 MiB fits two
+  frames of any supported format:
+
+  .. code-block:: console
+
+     $ sudo sysctl fs.pipe-max-size=16777216
+
+  A shorter ``poll-interval-ms`` also helps, down to one system tick, see
+  :kconfig:option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC`.
+
+  When the application holds every buffer, the driver stops reading and the
+  host writer blocks once the pipe is full, so the driver drops nothing. Use a
+  rate-limited writer such as ``ffmpeg -re``: an unpaced one is read as fast as
+  the application returns buffers.
+
 .. _nsim_per_flash_simu:
 
 **EEPROM simulator**
@@ -454,8 +645,8 @@ The following peripherals are currently provided with this board:
   Some more information can be found in :ref:`the emulators page <emul_eeprom_simu_brief>`.
 
 **Flash simulator**
-  The flash simulator can also be used in the native targets. In this you have the option to keep
-  the flash content in a binary file on the host file system or in RAM. The behavior of the flash
+  The flash simulator can also be used in the native targets. In these, you have the option to keep
+  the flash content in a binary file on the host filesystem or in RAM. The behavior of the flash
   device can be configured through the native_sim board devicetree or Kconfig settings under
   :kconfig:option:`CONFIG_FLASH_SIMULATOR`.
 
@@ -463,13 +654,13 @@ The following peripherals are currently provided with this board:
   working directory. The location of this file can be changed through the
   command line parameter ``--flash``. The flash data will be stored in raw format
   and the file will be truncated to match the size specified in the devicetree
-  configuration. In case the file does not exists the driver will take care of
-  creating the file, else the existing file is used.
+  configuration. If the file does not exist, the driver creates it; otherwise, the existing file is
+  used.
 
   Some more information can be found in :ref:`the emulators page <emul_flash_simu_brief>`.
 
   The flash content can be accessed from the host system, as explained in the
-  `Host based flash access`_ section.
+  `Host (FUSE) filesystem access`_ section.
 
 **Input events**
   Two optional native input drivers are available:
@@ -504,52 +695,105 @@ The following peripherals are currently provided with this board:
   enabled with :kconfig:option:`CONFIG_CAN_NATIVE_LINUX` and configured with the device tree binding
   :dtcompatible:`zephyr,native-linux-can`.
 
-  It is possible to specify which CAN interface will be used by the app using the ``--can-if``
-  command-line option. This option overrides **every** Linux SocketCAN driver instance to use the specified
-  interface.
+  By default, the native simulator expects a SocketCAN network device called ``zcan0``. It is
+  possible to specify which SocketCAN network device will be used by the app by using the
+  ``--can-if`` command-line option. This option overrides **every** Linux SocketCAN driver instance
+  to use the specified interface.
+
+  SocketCAN support can be enabled by using the :ref:`snippet-socketcan-native-sim`.
+
+**LED device**
+  Implements a Zephyr LED device backed by a Linux LED. You configure which
+  Linux LED to use by setting the DT ``path`` property to the name of the LED
+  as it shows in ``/sys/class/leds``.
+
+  .. code-block:: dts
+
+      leds {
+        compatible = "zephyr,native-linux-leds";
+
+        led0: led_0 {
+          /* /sys/class/leds/tpacpi::lid_logo_dot/brightness */
+          path = "tpacpi::lid_logo_dot";
+        };
+        led1: led_1 {
+          /* /sys/class/leds/tpacpi::power/brightness */
+          path = "tpacpi::power";
+        };
+      };
+
+.. _native_linux_temp_sensor:
+
+**Temperature sensor**
+  A sensor driver is available for reading a temperature value from a file on
+  the Linux host through the Zephyr sensor API. It can be enabled with
+  :kconfig:option:`CONFIG_NATIVE_LINUX_TEMP` and configured with the devicetree
+  binding :dtcompatible:`zephyr,native-linux-temp`.
+
+  Linux hwmon temperature files typically expose values in millidegrees Celsius,
+  for example ``/sys/class/hwmon/hwmon0/temp1_input``.
+
+  .. code-block:: dts
+
+     temp_sensor: host_temp {
+       compatible = "zephyr,native-linux-temp";
+       path = "/sys/class/hwmon/hwmon0/temp1_input";
+     };
 
 .. _native_ptty_uart:
 
-PTTY UART
+PTY UART
 =========
 
-This driver can be configured with :kconfig:option:`CONFIG_UART_NATIVE_POSIX`
-to instantiate up to two UARTs. By default only one UART is enabled.
-With :kconfig:option:`CONFIG_UART_NATIVE_POSIX_PORT_1_ENABLE`
-you can enable the second one.
+This driver is automatically enabled when devicetree contains nodes with the
+``"zephyr,native-pty-uart"`` compatible property and ``okay`` status and
+:kconfig:option:`CONFIG_SERIAL` is set.
+By default one ready UART of this type is setup in DTS, but any number can be enabled as desired.
 
-For the first UART, it can link it to a new
-pseudoterminal (i.e. :file:`/dev/pts{<nbr>}`), or map the UART input and
-output to the executable's ``stdin`` and ``stdout``.
-This is chosen by selecting either
-:kconfig:option:`CONFIG_NATIVE_UART_0_ON_OWN_PTY` or
-:kconfig:option:`CONFIG_NATIVE_UART_0_ON_STDINOUT`
-For interactive use with the :ref:`shell_api`, choose the first (OWN_PTY) option.
-The second (STDINOUT) option can be used with the shell for automated
-testing, such as when piping other processes' output to control it.
-This is because the shell subsystem expects access to a raw terminal,
+Normally these UARTs are connected to new pseudoterminals PTYs, i.e. :file:`/dev/pts{<nbr>}`,
+but it is also possible to map one of them to the executable's ``stdin`` and ``stdout``.
+This can be done in two ways, either with the command line option ``--<uart_name>_stdinout``
+(where ``<uart_name>`` is the UART DTS node name), or, for the first PTY UART instance by choosing
+:kconfig:option:`CONFIG_UART_NATIVE_PTY_0_ON_STDINOUT` instead of the default
+:kconfig:option:`CONFIG_UART_NATIVE_PTY_0_ON_OWN_PTY`.
+For interactive use with the :ref:`shell_api`, it is recommended to choose the PTY option.
+The ``STDINOUT`` option can be used for automated testing, such as when piping other processes'
+output to control it. This is because the shell subsystem expects access to a raw terminal,
 which (by default) a normal Linux terminal is not.
 
-When :kconfig:option:`CONFIG_NATIVE_UART_0_ON_OWN_PTY` is chosen, the name of the
-newly created UART pseudo-terminal will be displayed in the console.
-If you want to interact with it manually, you should attach a terminal emulator
-to it. This can be done, for example with the command:
+When a UART is connected to a new PTY, the name of the newly created UART pseudo-terminal will be
+displayed in the console.
+If you want to interact with it manually, you should attach a terminal emulator to it.
+This can be done, for example with the command:
 
 .. code-block:: console
 
-   $ xterm -e screen /dev/<ttyn> &
+   $ xterm -e screen /dev/<ptyn> &
+   # Or if you prefer gnome-terminal:
+   $ gnome-terminal -- screen /dev/<ptyn> &
 
-where :file:`/dev/tty{<n>}` should be replaced with the actual TTY device.
+where :file:`/dev/{<ptyn>}` should be replaced with the actual PTY device.
 
-You may also chose to automatically attach a terminal emulator to the first UART
-by passing the command line option ``-attach_uart`` to the executable.
-The command used for attaching to the new shell can be set with the command line
-option ``-attach_uart_cmd=<"cmd">``. Where the default command is given by
-:kconfig:option:`CONFIG_NATIVE_UART_AUTOATTACH_DEFAULT_CMD`.
-Note that the default command assumes both ``xterm`` and ``screen`` are
-installed in the system.
+You may also chose to automatically attach a terminal emulator to any of these UARTs.
+To automatically attach one to all these UARTs, pass the command line option ``-attach_uart`` to the
+executable. To automatically attach one to a single UART use ``-<uart_name>_attach_uart``.
+The command used for attaching to the new shell can be set for all UARTs with the command line
+option ``-attach_uart_cmd=<"cmd">``, or for each individual UART with
+``-<uart_name>_attach_uart_cmd``. Where the default command is given by
+:kconfig:option:`CONFIG_UART_NATIVE_PTY_AUTOATTACH_DEFAULT_CMD`.
+Note that the default command assumes both ``xterm`` and ``screen`` are installed in the system.
 
-This driver only supports poll mode. Interrupt and async mode are not supported.
+Note that these ``uart_cmd`` commands can be effectively any shell command including lists of
+commands. Therefore it is possible to invoke any other script or program from it.
+Those commands will be run right after the PTY is created.
+For example, if one wanted to create a link to the newly created PTY, and have it removed when the
+program ends, one could do:
+
+.. code-block:: console
+
+   $ zephyr.exe --uart_attach_uart_cmd='ln -s %s /tmp/somename' ; rm /tmp/somename
+
+This driver supports poll mode, interrupt mode and async mode.
 Neither runtime configuration or line control are supported.
 
 .. _native_tty_uart:
@@ -557,9 +801,8 @@ Neither runtime configuration or line control are supported.
 TTY UART
 ========
 
-With this driver an application can use the polling UART API (``uart_poll_out``,
-``uart_poll_in``) to write and read characters to and from a connected serial
-port device.
+With this driver an application can use the polling and interrupt based UART APIs to write and read
+characters to and from a connected serial port device.
 
 This driver is automatically enabled when a devicetree contains a node
 with ``"zephyr,native-tty-uart"`` compatible property and ``okay`` status, such
@@ -612,7 +855,7 @@ development by integrating more seamlessly with the host operating system:
   redirect any :c:func:`printk` write to the native host application's
   ``stdout``.
 
-  This driver is selected by default if the `PTTY UART`_ is not compiled in.
+  This driver is selected by default if no UART driver is compiled in.
   Otherwise :kconfig:option:`CONFIG_UART_CONSOLE` will be set to select the UART as
   console backend.
 
@@ -646,21 +889,18 @@ All :ref:`available HW emulators <emulators>` can be used with native_sim.
 
 .. _native_fuse_flash:
 
-Host based flash access
-***********************
+Host (FUSE) filesystem access
+*****************************
 
-If a flash device is present, the file system partitions on the flash
-device can be exposed through the host file system by enabling
-:kconfig:option:`CONFIG_FUSE_FS_ACCESS`. This option enables a FUSE
-(File system in User space) layer that maps the Zephyr file system calls to
-the required UNIX file system calls, and provides access to the flash file
-system partitions with normal operating system commands such as ``cd``,
-``ls`` and ``mkdir``.
+When building Zephyr with a filesystem, the device partitions can be exposed through the host file
+system by enabling :kconfig:option:`CONFIG_FUSE_FS_ACCESS`. This option enables a FUSE
+(File system in User space) layer that mounts the simulated embedded filesystem in the host
+filesystem, maps the Zephyr file system calls to the required UNIX file system calls, and provides
+access to its partitions with normal operating system commands such as ``cd``, ``ls`` and ``mkdir``.
 
 By default the partitions are exposed through the directory :file:`flash/` in the
 current working directory. This directory can be changed via the command line
-option ``--flash-mount``. As this directory operates as a mount point for FUSE
-you have to ensure that it exists before starting the native_sim board.
+option ``--flash-mount``.
 
 On exit, the native_sim board application will take care of unmounting the
 directory. In the unfortunate case that the native_sim board application
@@ -671,54 +911,41 @@ crashes, you can cleanup the stale mount point by using the program
 
    $ fusermount -u flash
 
-Note that this feature requires a 32-bit version of the FUSE library, with a
-minimal version of 2.6, on the host system and ``pkg-config`` settings to
-correctly pickup the FUSE install path and compiler flags.
+You can chose to use the v2 FUSE host library or the v3 with
+:kconfig:option:`CONFIG_FUSE_LIBRARY_VERSION`. By default v3 is selected.
+When using the v2, a minimal version of 2.6 is necessary. For v3, 3.0 should suffice.
+You will also need ``pkg-config`` setup to correctly pickup the FUSE install path and compiler flags.
+Note that using this feature with the 32-bit native_sim variant requires the 32-bit version of the
+corresponding FUSE library.
 
-On a Ubuntu 22.04 host system, for example, install the ``pkg-config`` and
-``libfuse-dev:i386`` packages, and configure the pkg-config search path with
-these commands:
+For example, to use the v3 of the library, on a Ubuntu 24.04 host system, install the ``pkg-config``
+and ``libfuse3-dev:i386`` for 32-bit builds, and ``libfuse3-dev`` for 64-bit builds:
 
 .. code-block:: console
 
    $ sudo dpkg --add-architecture i386
    $ sudo apt update
-   $ sudo apt-get install pkg-config libfuse-dev:i386
+   $ sudo apt-get install pkg-config libfuse3-dev:i386 libfuse3-dev
    $ export PKG_CONFIG_PATH=/usr/lib/i386-linux-gnu/pkgconfig
 
-.. _native_sim_peripherals_c_compat:
+Similarly ``libfuse-dev:i386`` and ``libfuse-dev`` provide the 32 and 64-bit FUSE v2 library
+and headers.
 
-Peripherals and backends C library compatibility
-************************************************
+.. _native_mount_fs:
 
-Today, some native_sim peripherals and backends are, so far, only available when compiling with the
-host libC (:kconfig:option:`CONFIG_EXTERNAL_LIBC`):
+Host filesystem mount
+*********************
 
-.. csv-table:: Drivers/backends vs libC choice
-   :header: Driver class, driver name, driver kconfig, libC choices
+Enabling :kconfig:option:`CONFIG_FILE_SYSTEM_NATIVE_MOUNT` allows mounting a path from the host
+filesystem into Zephyr's filesystem hierarchy. This allows Zephyr to access, and modify, host files
+and folders like any other embedded mount point.
 
-     ADC, ADC emul, :kconfig:option:`CONFIG_ADC_EMUL`, All
-     Bluetooth, :ref:`Userchan <nsim_bt_host_cont>`, :kconfig:option:`CONFIG_BT_USERCHAN`, Host libC
-     CAN, CAN native Linux, :kconfig:option:`CONFIG_CAN_NATIVE_LINUX`, All
-     Console backend, :ref:`POSIX arch console <nsim_back_console>`, :kconfig:option:`CONFIG_POSIX_ARCH_CONSOLE`, All
-     Display, :ref:`Display SDL <nsim_per_disp_sdl>`, :kconfig:option:`CONFIG_SDL_DISPLAY`, All
-     Entropy, :ref:`Native posix entropy <nsim_per_entr>`, :kconfig:option:`CONFIG_FAKE_ENTROPY_NATIVE_POSIX`, All
-     EEPROM, EEPROM simulator, :kconfig:option:`CONFIG_EEPROM_SIMULATOR`, All
-     EEPROM, EEPROM emulator, :kconfig:option:`CONFIG_EEPROM_EMULATOR`, All
-     Ethernet, :ref:`Eth native_posix <nsim_per_ethe>`, :kconfig:option:`CONFIG_ETH_NATIVE_POSIX`, All
-     Flash, :ref:`Flash simulator <nsim_per_flash_simu>`, :kconfig:option:`CONFIG_FLASH_SIMULATOR`, All
-     Flash, :ref:`Host based flash access <native_fuse_flash>`, :kconfig:option:`CONFIG_FUSE_FS_ACCESS`, Host libC
-     GPIO, GPIO emulator, :kconfig:option:`CONFIG_GPIO_EMUL`, All
-     GPIO, SDL GPIO emulator, :kconfig:option:`CONFIG_GPIO_EMUL_SDL`, All
-     I2C, I2C emulator, :kconfig:option:`CONFIG_I2C_EMUL`, All
-     Input, Input SDL touch, :kconfig:option:`CONFIG_INPUT_SDL_TOUCH`, All
-     Input, Linux evdev, :kconfig:option:`CONFIG_NATIVE_LINUX_EVDEV`, All
-     Logger backend, :ref:`Native backend <nsim_back_logger>`, :kconfig:option:`CONFIG_LOG_BACKEND_NATIVE_POSIX`, All
-     Offloaded sockets, :ref:`nsim_per_offloaded_sockets`, :kconfig:option:`CONFIG_NET_NATIVE_OFFLOADED_SOCKETS`, All
-     RTC, RTC emul, :kconfig:option:`CONFIG_RTC_EMUL`, All
-     Serial, :ref:`UART native posix/PTTY <native_ptty_uart>`, :kconfig:option:`CONFIG_UART_NATIVE_POSIX`, All
-     Serial, :ref:`UART native TTY <native_tty_uart>`, :kconfig:option:`CONFIG_UART_NATIVE_TTY`, All
-     SPI, SPI emul, :kconfig:option:`CONFIG_SPI_EMUL`, All
-     System tick, Native_posix timer, :kconfig:option:`CONFIG_NATIVE_POSIX_TIMER`, All
-     Tracing, :ref:`Posix tracing backend <nsim_back_trace>`, :kconfig:option:`CONFIG_TRACING_BACKEND_POSIX`, All
-     USB, :ref:`USB native posix <nsim_per_usb>`, :kconfig:option:`CONFIG_USB_NATIVE_POSIX`, Host libC
+To mount a host directory, pass the ``-volume`` option to the executable on the command line:
+
+.. code-block:: console
+
+   $ zephyr.exe -volume=/host/dir:/zephyr/dir
+
+The option follows Docker volume mount syntax: ``HOST-DIR:ZEPHYR-DIR[:ro]``. An optional ``:ro``
+suffix mounts the volume as read-only. The option can be provided multiple times to mount several
+host directories.

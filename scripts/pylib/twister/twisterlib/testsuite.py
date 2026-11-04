@@ -1,25 +1,23 @@
 # vim: set syntax=python ts=4 :
 #
-# Copyright (c) 2018-2022 Intel Corporation
+# Copyright (c) 2018-2024 Intel Corporation
 # SPDX-License-Identifier: Apache-2.0
 
-from enum import Enum
-import os
-from pathlib import Path
-import re
-import logging
 import contextlib
-import mmap
 import glob
-from typing import List
+import logging
+import mmap
+import os
+import re
+from pathlib import Path
+from typing import Any
 
-from twisterlib.mixins import DisablePyTestCollectionMixin
-from twisterlib.environment import canonical_zephyr_base
-from twisterlib.error import StatusAttributeError, TwisterException, TwisterRuntimeError
-from twisterlib.statuses import TwisterStatus
+from twisterlib.constants import PYTEST_HARNESSES, canonical_zephyr_base
+from twisterlib.error import TwisterException, TwisterRuntimeError
+from twisterlib.statuses import StatusMixin, TwisterStatus
+from twisterlib.testsuitedata import HarnessConfig, RequiredApplication
 
 logger = logging.getLogger('twister')
-logger.setLevel(logging.DEBUG)
 
 class ScanPathResult:
     """Result of the scan_tesuite_path function call.
@@ -39,12 +37,14 @@ class ScanPathResult:
         ztest_suite_names                Names of found ztest suites
     """
     def __init__(self,
-                 matches: List[str] = None,
+                 matches: list[str] = None,
                  warnings: str = None,
                  has_registered_test_suites: bool = False,
                  has_run_registered_test_suites: bool = False,
                  has_test_main: bool = False,
-                 ztest_suite_names: List[str] = []):
+                 ztest_suite_names: list[str] = None):
+        if ztest_suite_names is None:
+            ztest_suite_names = []
         self.matches = matches
         self.warnings = warnings
         self.has_registered_test_suites = has_registered_test_suites
@@ -106,8 +106,13 @@ def scan_file(inf_name):
         if os.name == 'nt':
             mmap_args = {'fileno': inf.fileno(), 'length': 0, 'access': mmap.ACCESS_READ}
         else:
-            mmap_args = {'fileno': inf.fileno(), 'length': 0, 'flags': mmap.MAP_PRIVATE, 'prot': mmap.PROT_READ,
-                            'offset': 0}
+            mmap_args = {
+                'fileno': inf.fileno(),
+                'length': 0,
+                'flags': mmap.MAP_PRIVATE,
+                'prot': mmap.PROT_READ,
+                'offset': 0
+            }
 
         with contextlib.closing(mmap.mmap(**mmap_args)) as main_c:
             regular_suite_regex_matches = \
@@ -129,13 +134,19 @@ def scan_file(inf_name):
             if regular_suite_regex_matches:
                 ztest_suite_names = \
                     _extract_ztest_suite_names(regular_suite_regex_matches)
-                testcase_names, warnings = \
-                    _find_regular_ztest_testcases(main_c, regular_suite_regex_matches, has_registered_test_suites)
+                testcase_names, warnings = _find_regular_ztest_testcases(
+                    main_c,
+                    regular_suite_regex_matches,
+                    has_registered_test_suites
+                )
             elif registered_suite_regex_matches:
                 ztest_suite_names = \
                     _extract_ztest_suite_names(registered_suite_regex_matches)
-                testcase_names, warnings = \
-                    _find_regular_ztest_testcases(main_c, registered_suite_regex_matches, has_registered_test_suites)
+                testcase_names, warnings = _find_regular_ztest_testcases(
+                    main_c,
+                    registered_suite_regex_matches,
+                    has_registered_test_suites
+                )
             elif new_suite_regex_matches or new_suite_testcase_regex_matches:
                 ztest_suite_names = \
                     _extract_ztest_suite_names(new_suite_regex_matches)
@@ -233,9 +244,14 @@ def _find_new_ztest_testcases(search_area):
     Find regular ztest testcases like "ZTEST", "ZTEST_F" etc. Return
     testcases' names and eventually found warnings.
     """
+    # The negative lookahead rejects names built with the ## token-paste
+    # operator (e.g. ZTEST(suite, test_dma##idx##_m2m_loop)); those cannot be
+    # resolved statically, so registering the truncated name would create a
+    # phantom testcase that never runs. Such cases are still discovered at
+    # runtime from the harness output.
     testcase_regex = re.compile(
         br"^\s*(?:ZTEST|ZTEST_F|ZTEST_USER|ZTEST_USER_F)\(\s*(?P<suite_name>[a-zA-Z0-9_]+)\s*,"
-        br"\s*(?P<testcase_name>[a-zA-Z0-9_]+)\s*",
+        br"\s*(?P<testcase_name>[a-zA-Z0-9_]+)(?![a-zA-Z0-9_#])\s*",
         re.MULTILINE)
 
     return _find_ztest_testcases(search_area, testcase_regex)
@@ -247,22 +263,31 @@ def _find_ztest_testcases(search_area, testcase_regex):
     """
     testcase_regex_matches = \
         [m for m in testcase_regex.finditer(search_area)]
-    testcase_names = \
-        [m.group("testcase_name") for m in testcase_regex_matches]
-    testcase_names = [name.decode("UTF-8") for name in testcase_names]
+    testcase_names = [
+        (
+            m.group("suite_name") if m.groupdict().get("suite_name") else b'',
+            m.group("testcase_name")
+        ) for m in testcase_regex_matches
+    ]
+    testcase_names = [
+        (ts_name.decode("UTF-8"), tc_name.decode("UTF-8")) for ts_name, tc_name in testcase_names
+    ]
     warnings = None
     for testcase_name in testcase_names:
-        if not testcase_name.startswith("test_"):
+        if not testcase_name[1].startswith("test_"):
             warnings = "Found a test that does not start with test_"
     testcase_names = \
-        [tc_name.replace("test_", "", 1) for tc_name in testcase_names]
+        [(ts_name + '.' if ts_name else '') + f"{tc_name.replace('test_', '', 1)}" \
+         for (ts_name, tc_name) in testcase_names]
 
     return testcase_names, warnings
 
-def find_c_files_in(path: str, extensions: list = ['c', 'cpp', 'cxx', 'cc']) -> list:
+def find_c_files_in(path: str, extensions: list = None) -> list:
     """
     Find C or C++ sources in the directory specified by "path"
     """
+    if extensions is None:
+        extensions = ['c', 'cpp', 'cxx', 'cc']
     if not os.path.isdir(path):
         return []
 
@@ -296,9 +321,8 @@ def scan_testsuite_path(testsuite_path):
         try:
             result: ScanPathResult = scan_file(filename)
             if result.warnings:
-                logger.error("%s: %s" % (filename, result.warnings))
-                raise TwisterRuntimeError(
-                    "%s: %s" % (filename, result.warnings))
+                logger.error(f"{filename}: {result.warnings}")
+                raise TwisterRuntimeError(f"{filename}: {result.warnings}")
             if result.matches:
                 subcases += result.matches
             if result.has_registered_test_suites:
@@ -311,7 +335,7 @@ def scan_testsuite_path(testsuite_path):
                 ztest_suite_names += result.ztest_suite_names
 
         except ValueError as e:
-            logger.error("%s: error parsing source file: %s" % (filename, e))
+            logger.error(f"{filename}: error parsing source file: {e}")
 
     src_dir_pathlib_path = Path(src_dir_path)
     for filename in find_c_files_in(testsuite_path):
@@ -323,13 +347,13 @@ def scan_testsuite_path(testsuite_path):
         try:
             result: ScanPathResult = scan_file(filename)
             if result.warnings:
-                logger.error("%s: %s" % (filename, result.warnings))
+                logger.error(f"{filename}: {result.warnings}")
             if result.matches:
                 subcases += result.matches
             if result.ztest_suite_names:
                 ztest_suite_names += result.ztest_suite_names
         except ValueError as e:
-            logger.error("%s: can't find: %s" % (filename, e))
+            logger.error(f"{filename}: can't find: {e}")
 
     if (has_registered_test_suites and has_test_main and
             not has_run_registered_test_suites):
@@ -355,44 +379,42 @@ def _find_src_dir_path(test_dir_path):
         return src_dir_path
     return ""
 
-class TestCase(DisablePyTestCollectionMixin):
 
-    def __init__(self, name=None, testsuite=None):
-        self.duration = 0
+class TestCase(StatusMixin):
+    """Class representing a single test case."""
+    __test__ = False
+
+    def __init__(self, name: str) -> None:
         self.name = name
-        self._status = TwisterStatus.NONE
-        self.reason = None
-        self.testsuite = testsuite
-        self.output = ""
-        self.freeform = False
-
-    @property
-    def status(self) -> TwisterStatus:
-        return self._status
-
-    @status.setter
-    def status(self, value : TwisterStatus) -> None:
-        # Check for illegal assignments by value
-        try:
-            key = value.name if isinstance(value, Enum) else value
-            self._status = TwisterStatus[key]
-        except KeyError:
-            raise StatusAttributeError(self.__class__, value)
+        self.duration: float = 0
+        self._status: TwisterStatus = TwisterStatus.NONE
+        self.reason: str | None = None
+        self.output: str = ""
+        self.freeform: bool = False
 
     def __lt__(self, other):
         return self.name < other.name
 
     def __repr__(self):
-        return "<TestCase %s with %s>" % (self.name, self.status)
+        return f"<TestCase {self.name} with {self.status}>"
 
     def __str__(self):
         return self.name
 
-class TestSuite(DisablePyTestCollectionMixin):
-    """Class representing a test application
-    """
 
-    def __init__(self, suite_root, suite_path, name, data=None, detailed_test_id=True):
+class TestSuite(StatusMixin):
+    """Class representing a test application."""
+
+    __test__ = False
+
+    def __init__(
+        self,
+        suite_root: str | Path,
+        suite_path: str | Path,
+        name: str,
+        data: dict[str, Any] | None = None,
+        detailed_test_id: bool = True
+    ) -> None:
         """TestSuite constructor.
 
         This gets called by TestPlan as it finds and reads test yaml files.
@@ -420,30 +442,27 @@ class TestSuite(DisablePyTestCollectionMixin):
         self.id = name
 
         self.source_dir = suite_path
-        self.source_dir_rel = os.path.relpath(os.path.realpath(suite_path), start=canonical_zephyr_base)
+        self.source_dir_rel = os.path.relpath(
+            os.path.realpath(suite_path), start=canonical_zephyr_base
+        )
         self.yamlfile = suite_path
-        self.testcases = []
+        self.testcases: list[TestCase] = []
         self.integration_platforms = []
 
         self.ztest_suite_names = []
 
         self._status = TwisterStatus.NONE
 
+        self.harness_config: HarnessConfig | None = None
+        self.sidecar: str | None = None
+        # Per-sidecar configuration, namespaced by sidecar name (see the
+        # `sidecar_config` schema key). Left as a raw dict here; each sidecar
+        # coerces its own block into a typed config when it is configured.
+        self.sidecar_config: dict = {}
+        self.required_applications: list[RequiredApplication] = []
+
         if data:
             self.load(data)
-
-    @property
-    def status(self) -> TwisterStatus:
-        return self._status
-
-    @status.setter
-    def status(self, value : TwisterStatus) -> None:
-        # Check for illegal assignments by value
-        try:
-            key = value.name if isinstance(value, Enum) else value
-            self._status = TwisterStatus[key]
-        except KeyError:
-            raise StatusAttributeError(self.__class__, value)
 
     def load(self, data):
         for k, v in data.items():
@@ -451,27 +470,34 @@ class TestSuite(DisablePyTestCollectionMixin):
                 setattr(self, k, v)
 
         if self.harness == 'console' and not self.harness_config:
-            raise Exception('Harness config error: console harness defined without a configuration.')
+            raise Exception(
+                'Harness config error: console harness defined without a configuration.'
+            )
+        self.harness_config = HarnessConfig.from_dict(self.harness_config)
+        self.required_applications = [
+            RequiredApplication(**app) for app in self.required_applications
+        ]
+
+    def compose_case_name(self, tc_name) -> str:
+        return f"{self.id}.{tc_name}" if self.id != tc_name else tc_name
 
     def add_subcases(self, data, parsed_subcases=None, suite_names=None):
         testcases = data.get("testcases", [])
         if testcases:
             for tc in testcases:
-                self.add_testcase(name=f"{self.id}.{tc}")
+                self.add_testcase(name=self.compose_case_name(tc))
         else:
             if not parsed_subcases:
                 self.add_testcase(self.id, freeform=True)
             else:
                 # only add each testcase once
-                for sub in set(parsed_subcases):
-                    name = "{}.{}".format(self.id, sub)
-                    self.add_testcase(name)
-
+                for tc in set(parsed_subcases):
+                    self.add_testcase(name=self.compose_case_name(tc))
         if suite_names:
             self.ztest_suite_names = suite_names
 
     def add_testcase(self, name, freeform=False):
-        tc = TestCase(name=name, testsuite=self)
+        tc = TestCase(name=name)
         tc.freeform = freeform
         self.testcases.append(tc)
 
@@ -488,7 +514,9 @@ class TestSuite(DisablePyTestCollectionMixin):
             relative_ts_root = ""
 
         # workdir can be "."
-        unique = os.path.normpath(os.path.join(relative_ts_root, workdir, name)).replace(os.sep, '/')
+        unique = os.path.normpath(
+            os.path.join(relative_ts_root, workdir, name)
+        ).replace(os.sep, '/')
         return unique
 
     @staticmethod
@@ -500,3 +528,27 @@ Tests should reference the category and subsystem with a dot as a separator.
                     """
                     )
         return True
+
+    def resolve_required_applications(self):
+        """Validate and update the list of required applications."""
+        if not self.build:
+            if self.harness not in PYTEST_HARNESSES + ['bsim']:
+                msg = f"{self.name}: `build: false` not supported with {self.harness} harness"
+                logger.error(msg)
+                raise TwisterException(msg)
+            if not self.required_applications:
+                msg = f"{self.name}: `build: false` set but no required applications specified"
+                logger.error(msg)
+                raise TwisterException(msg)
+
+        for req_dev in self.harness_config.required_devices:
+            if not (req_dev.application or req_dev.platform):
+                # if neither application nor platform is specified, use the same application
+                continue
+            req_app = RequiredApplication(
+                application=req_dev.application or self.id,
+                platform=req_dev.platform,
+                path=req_dev.path
+            )
+            if req_app not in self.required_applications:
+                self.required_applications.append(req_app)

@@ -29,6 +29,7 @@ LOG_MODULE_REGISTER(net_test, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include <zephyr/tc_util.h>
 
 #include "6lo.h"
+#include "6lo_private.h"
 #include "ieee802154_6lo_fragment.h"
 
 #define NET_LOG_ENABLED 1
@@ -101,7 +102,7 @@ LOG_MODULE_REGISTER(net_test, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #define udp_src_port_8bit_y 0xf011 /* compressible */
 #define udp_dst_port_8bit   0xf122
 
-/* uncompressible ports */
+/* incompressible ports */
 #define udp_src_port_16bit 0xff11
 #define udp_dst_port_16bit 0xff22
 
@@ -239,14 +240,14 @@ static struct net_pkt *create_pkt(struct net_fragment_data *data)
 
 	pkt = net_pkt_alloc_on_iface(
 		net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY)), K_FOREVER);
-	if (!pkt) {
+	if (pkt == NULL) {
 		return NULL;
 	}
 
 	net_pkt_set_ip_hdr_len(pkt, NET_IPV6H_LEN);
 
 	buf = net_pkt_get_frag(pkt, NET_IPV6UDPH_LEN, K_FOREVER);
-	if (!buf) {
+	if (buf == NULL) {
 		net_pkt_unref(pkt);
 		return NULL;
 	}
@@ -265,8 +266,8 @@ static struct net_pkt *create_pkt(struct net_fragment_data *data)
 	buf->data[44] = len >> 8;
 	buf->data[45] = (uint8_t) len;
 
-	data->ipv6.len = htons(len);
-	data->udp.len = htons(len);
+	data->ipv6.len = net_htons(len);
+	data->udp.len = net_htons(len);
 
 	while (remaining > 0) {
 		uint8_t copy;
@@ -290,9 +291,9 @@ static struct net_pkt *create_pkt(struct net_fragment_data *data)
 	}
 
 	/* Setup link layer addresses. */
-	net_pkt_lladdr_dst(pkt)->addr = (uint8_t *)&dummy_short_addr;
-	net_pkt_lladdr_dst(pkt)->len = sizeof(dummy_short_addr);
-	net_pkt_lladdr_dst(pkt)->type = NET_LINK_IEEE802154;
+	(void)net_linkaddr_create(net_pkt_lladdr_dst(pkt),
+				  (const uint8_t *)&dummy_short_addr, sizeof(dummy_short_addr),
+				  NET_LINK_IEEE802154);
 
 	memcpy(net_pkt_lladdr_src(pkt),
 	       net_if_get_link_addr(
@@ -307,12 +308,12 @@ static struct net_fragment_data test_data_1 = {
 	.ipv6.tcflow = 0x00,
 	.ipv6.flow = 0x00,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam00,
 	.ipv6.dst = dst_dam00,
-	.udp.src_port = htons(udp_src_port_4bit),
-	.udp.dst_port = htons(udp_dst_port_4bit),
+	.udp.src_port = net_htons(udp_src_port_4bit),
+	.udp.dst_port = net_htons(udp_dst_port_4bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 70,
@@ -324,12 +325,12 @@ static struct net_fragment_data test_data_2 = {
 	.ipv6.tcflow = 0x20,
 	.ipv6.flow = 0x3412,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam01,
 	.ipv6.dst = dst_dam01,
-	.udp.src_port = htons(udp_src_port_8bit_y),
-	.udp.dst_port = htons(udp_dst_port_8bit),
+	.udp.src_port = net_htons(udp_src_port_8bit_y),
+	.udp.dst_port = net_htons(udp_dst_port_8bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 200,
@@ -341,12 +342,12 @@ static struct net_fragment_data test_data_3 = {
 	.ipv6.tcflow = 0x21,
 	.ipv6.flow = 0x3412,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam10,
 	.ipv6.dst = dst_dam10,
-	.udp.src_port = htons(udp_src_port_8bit),
-	.udp.dst_port = htons(udp_dst_port_8bit_y),
+	.udp.src_port = net_htons(udp_src_port_8bit),
+	.udp.dst_port = net_htons(udp_dst_port_8bit_y),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 300,
@@ -358,12 +359,12 @@ static struct net_fragment_data test_data_4 = {
 	.ipv6.tcflow = 0x20,
 	.ipv6.flow = 0x00,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam00,
 	.ipv6.dst = dst_m1_dam00,
-	.udp.src_port = htons(udp_src_port_16bit),
-	.udp.dst_port = htons(udp_dst_port_16bit),
+	.udp.src_port = net_htons(udp_src_port_16bit),
+	.udp.dst_port = net_htons(udp_dst_port_16bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 400,
@@ -375,12 +376,12 @@ static struct net_fragment_data test_data_5 = {
 	.ipv6.tcflow = 0x23,
 	.ipv6.flow = 0x4567,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam01,
 	.ipv6.dst = dst_m1_dam01,
-	.udp.src_port = htons(udp_src_port_16bit),
-	.udp.dst_port = htons(udp_dst_port_16bit),
+	.udp.src_port = net_htons(udp_src_port_16bit),
+	.udp.dst_port = net_htons(udp_dst_port_16bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 500,
@@ -392,12 +393,12 @@ static struct net_fragment_data test_data_6 = {
 	.ipv6.tcflow = 0x0,
 	.ipv6.flow = 0x0,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam10,
 	.ipv6.dst = dst_m1_dam10,
-	.udp.src_port = htons(udp_src_port_8bit),
-	.udp.dst_port = htons(udp_dst_port_8bit),
+	.udp.src_port = net_htons(udp_src_port_8bit),
+	.udp.dst_port = net_htons(udp_dst_port_8bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 1200,
@@ -409,12 +410,12 @@ static struct net_fragment_data test_data_7 = {
 	.ipv6.tcflow = 0x20,
 	.ipv6.flow = 0x00,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sac1_sam00,
 	.ipv6.dst = dst_m1_dam00,
-	.udp.src_port = htons(udp_src_port_16bit),
-	.udp.dst_port = htons(udp_dst_port_16bit),
+	.udp.src_port = net_htons(udp_src_port_16bit),
+	.udp.dst_port = net_htons(udp_dst_port_16bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 70,
@@ -426,12 +427,12 @@ static struct net_fragment_data test_data_8 = {
 	.ipv6.tcflow = 0x20,
 	.ipv6.flow = 0x00,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sac1_sam00,
 	.ipv6.dst = dst_m1_dam00,
-	.udp.src_port = htons(udp_src_port_16bit),
-	.udp.dst_port = htons(udp_dst_port_16bit),
+	.udp.src_port = net_htons(udp_src_port_16bit),
+	.udp.dst_port = net_htons(udp_dst_port_16bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 1200,
@@ -444,12 +445,12 @@ static struct net_fragment_data test_data_9 = {
 	.ipv6.tcflow = 0x20,
 	.ipv6.flow = 0x00,
 	.ipv6.len = 0,
-	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.nexthdr = NET_IPPROTO_UDP,
 	.ipv6.hop_limit = 0xff,
 	.ipv6.src = src_sam00,
 	.ipv6.dst = dst_m1_dam01,
-	.udp.src_port = htons(udp_src_port_16bit),
-	.udp.dst_port = htons(udp_dst_port_16bit),
+	.udp.src_port = net_htons(udp_src_port_16bit),
+	.udp.dst_port = net_htons(udp_dst_port_16bit),
 	.udp.len = 0x00,
 	.udp.chksum = 0x00,
 	.len = 90,
@@ -465,7 +466,11 @@ static struct net_buf frame_buf = {
 	.__buf = frame_buffer_data,
 };
 
-static bool test_fragment(struct net_fragment_data *data)
+/* Fragments the data and feeds at most max_frags fragments to reassembly.
+ * Returns true if all max_frags fragments are accepted before reassembly
+ * completes, or if reassembly completes and the result matches the data.
+ */
+static bool deliver_fragments(struct net_fragment_data *data, size_t max_frags)
 {
 	struct net_pkt *rxpkt = NULL;
 	struct net_pkt *f_pkt = NULL;
@@ -473,10 +478,11 @@ static bool test_fragment(struct net_fragment_data *data)
 	struct ieee802154_6lo_fragment_ctx ctx;
 	struct net_buf *buf, *dfrag;
 	struct net_pkt *pkt;
+	size_t delivered = 0U;
 	int hdr_diff;
 
 	pkt = create_pkt(data);
-	if (!pkt) {
+	if (pkt == NULL) {
 		TC_PRINT("%s: failed to create buffer\n", __func__);
 		goto end;
 	}
@@ -493,14 +499,36 @@ static bool test_fragment(struct net_fragment_data *data)
 	}
 
 	if (!ieee802154_6lo_requires_fragmentation(pkt, 0, 0)) {
-		f_pkt = pkt;
+		size_t pkt_len = net_pkt_get_len(pkt);
+		size_t copied;
+
+		f_pkt = net_pkt_alloc(K_FOREVER);
+		if (f_pkt == NULL) {
+			goto end;
+		}
+
+		dfrag = net_pkt_get_frag(f_pkt, pkt_len, K_FOREVER);
+		if (dfrag == NULL) {
+			goto end;
+		}
+
+		net_pkt_frag_add(f_pkt, dfrag);
+
+		copied = net_buf_linearize(dfrag->data, net_buf_tailroom(dfrag), pkt->buffer, 0,
+					   pkt_len);
+		if (copied != pkt_len) {
+			goto end;
+		}
+
+		net_buf_add(dfrag, copied);
+		net_pkt_unref(pkt);
 		pkt = NULL;
 
 		goto reassemble;
 	}
 
 	f_pkt = net_pkt_alloc(K_FOREVER);
-	if (!f_pkt) {
+	if (f_pkt == NULL) {
 		goto end;
 	}
 
@@ -512,7 +540,7 @@ static bool test_fragment(struct net_fragment_data *data)
 		buf = ieee802154_6lo_fragment(&ctx, &frame_buf, data->iphc);
 
 		dfrag = net_pkt_get_frag(f_pkt, frame_buf.len, K_FOREVER);
-		if (!dfrag) {
+		if (dfrag == NULL) {
 			goto end;
 		}
 
@@ -538,12 +566,12 @@ reassemble:
 	buf = f_pkt->buffer;
 	while (buf) {
 		rxpkt = net_pkt_rx_alloc(K_FOREVER);
-		if (!rxpkt) {
+		if (rxpkt == NULL) {
 			goto end;
 		}
 
 		dfrag = net_pkt_get_frag(rxpkt, buf->len, K_FOREVER);
-		if (!dfrag) {
+		if (dfrag == NULL) {
 			goto end;
 		}
 
@@ -556,6 +584,13 @@ reassemble:
 
 		switch (ieee802154_6lo_reassemble(rxpkt)) {
 		case NET_OK:
+			/* Reassembly now owns the fragment */
+			rxpkt = NULL;
+			if (++delivered == max_frags) {
+				result = true;
+				goto end;
+			}
+
 			buf = buf->frags;
 			break;
 		case NET_CONTINUE:
@@ -578,19 +613,24 @@ compare:
 	}
 
 end:
-	if (pkt) {
+	if (pkt != NULL) {
 		net_pkt_unref(pkt);
 	}
 
-	if (f_pkt) {
+	if (f_pkt != NULL) {
 		net_pkt_unref(f_pkt);
 	}
 
-	if (rxpkt) {
+	if (rxpkt != NULL) {
 		net_pkt_unref(rxpkt);
 	}
 
 	return result;
+}
+
+static bool test_fragment(struct net_fragment_data *data)
+{
+	return deliver_fragments(data, SIZE_MAX);
 }
 
 ZTEST(ieee802154_6lo_fragment, test_fragment_sam00_dam00)
@@ -654,6 +694,78 @@ ZTEST(ieee802154_6lo_fragment, test_fragment_ipv6_no_fragmentation_after_iphc)
 	bool ret = test_fragment(&test_data_9);
 
 	zassert_true(ret);
+}
+
+/* An incomplete datagram must release its reassembly cache entry when the
+ * reassembly timeout expires, so the entry can take a new datagram.
+ */
+ZTEST(ieee802154_6lo_fragment, test_fragment_reassembly_timeout)
+{
+	zassert_true(deliver_fragments(&test_data_2, 1), "First fragment was not cached");
+
+	k_sleep(K_MSEC(CONFIG_NET_L2_IEEE802154_REASSEMBLY_TIMEOUT * MSEC_PER_SEC + 200));
+
+	zassert_true(test_fragment(&test_data_2), "Reassembly failed after timeout");
+}
+
+static enum net_verdict reassemble_raw(const uint8_t *payload, size_t len)
+{
+	struct net_pkt *pkt;
+	struct net_buf *frag;
+	enum net_verdict verdict;
+
+	pkt = net_pkt_rx_alloc(K_FOREVER);
+	zassert_not_null(pkt);
+
+	frag = net_pkt_get_frag(pkt, len, K_FOREVER);
+	zassert_not_null(frag);
+
+	memcpy(frag->data, payload, len);
+	frag->len = len;
+
+	net_pkt_frag_add(pkt, frag);
+	net_pkt_set_overwrite(pkt, true);
+
+	verdict = ieee802154_6lo_reassemble(pkt);
+	if (verdict == NET_DROP) {
+		net_pkt_unref(pkt);
+	}
+
+	return verdict;
+}
+
+/* Fragments shorter than their header are dropped before the datagram
+ * size and tag are parsed, whatever the dispatch byte is.
+ */
+ZTEST(ieee802154_6lo_fragment, test_fragment_too_short)
+{
+	static const uint8_t frag1_short[] = { 0xC0, 0x00, 0x00 };
+	static const uint8_t fragn_short[] = { 0xE0, 0x00, 0x00, 0x00 };
+
+	zassert_equal(reassemble_raw(frag1_short, sizeof(frag1_short)), NET_DROP);
+	zassert_equal(reassemble_raw(fragn_short, sizeof(fragn_short)), NET_DROP);
+}
+
+/* Only FRAG1 and FRAGN are supported; any other dispatch in the 11xxxxxx
+ * range (RFC 8025 paging, RFC 8931 RFRAG, reserved values) is dropped
+ * before it can enter the reassembly cache.
+ */
+ZTEST(ieee802154_6lo_fragment, test_fragment_unsupported_dispatch)
+{
+	static const uint8_t unsupported[] = { 0xC8, 0xD0, 0xD8, 0xE8, 0xF0, 0xF8 };
+	uint8_t payload[NET_6LO_FRAGN_HDR_LEN + 8];
+
+	memset(payload, 0, sizeof(payload));
+
+	for (size_t i = 0; i < ARRAY_SIZE(unsupported); i++) {
+		payload[0] = unsupported[i];
+
+		/* Both a truncated and a full-size fragment */
+		zassert_equal(reassemble_raw(payload, 1), NET_DROP,
+			      "dispatch 0x%02x accepted", unsupported[i]);
+		zassert_equal(reassemble_raw(payload, sizeof(payload)), NET_DROP,
+			      "dispatch 0x%02x accepted", unsupported[i]);
+	}
 }
 
 ZTEST_SUITE(ieee802154_6lo_fragment, NULL, NULL, NULL, NULL, NULL);

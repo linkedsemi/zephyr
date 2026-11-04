@@ -10,6 +10,9 @@
 #include <zephyr/bluetooth/hci_vs.h>
 #include <zephyr/bluetooth/addr.h>
 
+BUILD_ASSERT(IS_ENABLED(CONFIG_BT_HAS_HCI_VS),
+	     "This app requires Zephyr-specific HCI vendor extensions");
+
 #define DEVICE_NAME CONFIG_BT_DEVICE_NAME
 #define DEVICE_NAME_LENGTH (sizeof(DEVICE_NAME) - 1)
 
@@ -41,15 +44,6 @@ static const struct bt_data scan_rsp_data[] = {
 	BT_DATA(BT_DATA_MANUFACTURER_DATA, scan_data, sizeof(scan_data)),
 };
 
-static const char *bt_addr_le_str(const bt_addr_le_t *addr)
-{
-	static char str[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(addr, str, sizeof(str));
-
-	return str;
-}
-
 /* Bluetooth specification doesn't allow the scan request event with legacy advertisements.
  * Ref: Bluetooth Core Specification v5.4, section 7.7.65.19 "LE Scan Request Received event" :
  *      "This event shall only be generated if advertising was enabled using the
@@ -62,7 +56,7 @@ static void enable_legacy_adv_scan_request_event(bool enable)
 	struct net_buf *buf;
 	int err;
 
-	buf = bt_hci_cmd_create(BT_HCI_OP_VS_SET_SCAN_REQ_REPORTS, sizeof(*cp));
+	buf = bt_hci_cmd_alloc(K_FOREVER);
 	if (!buf) {
 		printk("%s: Unable to allocate HCI command buffer\n", __func__);
 		return;

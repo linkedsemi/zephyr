@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config CAN_XMC4XXX
-	bool "Infineon XMC4xxx CAN Driver"
+	bool "Infineon XMC4xxx CAN driver"
 	default y
 	depends on DT_HAS_INFINEON_XMC4XXX_CAN_NODE_ENABLED
+	select PINCTRL
 	help
 	  Enable Infineon XMC4xxx CAN Driver
 
@@ -34,9 +35,9 @@ config CAN_XMC4XXX_INTERNAL_BUS_MODE
 	  Connects all XMC4XXX CAN devices to an internal bus. Enables
 	  message exchange between MCU CAN devices without any external connectors.
 
-config CAN_MAX_FILTER
+config CAN_XMC4XXX_MAX_FILTERS
 	int "Maximum number of concurrent active filters"
-	default 4
+	default 16
 	range 1 32
 	help
 	  Maximum number of filters supported by the can_add_rx_callback() API call.

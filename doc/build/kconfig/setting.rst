@@ -149,13 +149,6 @@ used.
 
    3. From the CMake variable cache
 
-   Furthermore if ``CONF_FILE`` is set as single configuration file of the
-   form :file:`prj_<build>.conf` and if file
-   :file:`boards/<BOARD>_<build>.conf` exists in same folder as file
-   :file:`prj_<build>.conf`, the result of merging :file:`prj_<build>.conf` and
-   :file:`boards/<BOARD>_<build>.conf` is used - note that this feature is
-   deprecated, :ref:`application-file-suffixes` should be used instead.
-
 #. Otherwise, if :file:`boards/<BOARD>.conf` exists in the application
    configuration directory, the result of merging it with :file:`prj.conf` is
    used.
@@ -168,10 +161,10 @@ used.
 #. Otherwise, :file:`prj.conf` is used from the application configuration
    directory. If it does not exist then a fatal error will be emitted.
 
-Furthermore, applications can have SoC overlay configuration that is applied to
-it, the file :file:`socs/<SOC>_<BOARD_QUALIFIERS>.conf` will be applied if it exists,
-after the main project configuration has been applied and before any board overlay
-configuration files have been applied.
+Furthermore, applications can have SoC Kconfig fragments added to the configuration,
+the file :file:`socs/<SOC>_<BOARD_QUALIFIERS>.conf` will be applied if it exists,
+after the main project configuration has been applied and before any board Kconfig
+fragments files have been applied.
 
 All configuration files will be taken from the application's configuration
 directory except for files with an absolute path that are given with the
@@ -196,6 +189,29 @@ As long as :file:`zephyr/.config` exists and is up-to-date (is newer than any
 to producing a new merged configuration. :file:`zephyr/.config` is also the
 configuration that gets modified when making changes in the :ref:`interactive
 configuration interfaces <menuconfig>`.
+
+
+.. _kconfig_warning_as_error:
+
+Treating Kconfig warnings as errors
+***********************************
+
+Some Kconfig warnings abort the build by default, for example assignments to
+undefined symbols. Others are only printed, for example when a symbol is set
+more than once, or when an assignment is ignored because the dependencies of
+the symbol are not satisfied.
+
+Set the :makevar:`KCONFIG_WARNING_AS_ERROR` CMake variable to treat *every*
+Kconfig warning as an error:
+
+.. code-block:: console
+
+   west build -b <board> <app> -- -DKCONFIG_WARNING_AS_ERROR=y
+
+This is useful in CI, where a silently ignored configuration setting is likely
+to be a mistake. It is read with ``zephyr_get()``, so it can also be given as
+an :ref:`environment variable <env_vars>` or through a
+:ref:`cmake_build_config_package`.
 
 
 Tracking Kconfig symbols

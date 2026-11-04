@@ -17,6 +17,8 @@
 
 #include <kernel_arch_data.h>
 
+#include <zephyr/platform/hooks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -24,6 +26,7 @@ extern "C" {
 #ifndef _ASMLANGUAGE
 static ALWAYS_INLINE void arch_kernel_init(void)
 {
+	soc_per_core_init_hook();
 }
 
 void z_sparc_context_switch(struct k_thread *newt, struct k_thread *oldt);

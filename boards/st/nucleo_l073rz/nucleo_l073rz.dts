@@ -21,10 +21,12 @@
 		zephyr,shell-uart = &usart2;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,system-timer = &lptim1;
 	};
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led_2: led_2 {
 			gpios = <&gpioa 5 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
@@ -33,6 +35,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
@@ -52,6 +55,7 @@
 
 	aliases {
 		led0 = &green_led_2;
+		rtc = &rtc;
 		sw0 = &user_button;
 		pwm-led0 = &green_pwm_led;
 		watchdog0 = &iwdg;
@@ -90,13 +94,13 @@
 	apb2-prescaler = <1>;
 };
 
-stm32_lp_tick_source: &lptim1 {
+&lptim1 {
 	/*
 	 * LSI freq is 37KHz but stm32_lptim driver is using 32000Hz
 	 * resulting in time running 1.13 faster than reality
 	 */
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x80000000>,
-		<&rcc STM32_SRC_LSI LPTIM1_SEL(1)>;
+	clocks = <&rcc STM32_CLOCK(APB1, 31)>,
+		 <&rcc STM32_SRC_LSI LPTIM1_SEL(1)>;
 	status = "okay";
 };
 
@@ -116,6 +120,8 @@ stm32_lp_tick_source: &lptim1 {
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -123,6 +129,8 @@ stm32_lp_tick_source: &lptim1 {
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pb11>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -137,11 +145,15 @@ stm32_lp_tick_source: &lptim1 {
 	status = "okay";
 };
 
+&adc1_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
 &adc1 {
 	pinctrl-0 = <&adc_in0_pa0>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <4>;
 	status = "okay";
 };
 
@@ -167,7 +179,7 @@ stm32_lp_tick_source: &lptim1 {
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+	clocks = <&rcc STM32_CLOCK(APB1, 28)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
@@ -181,5 +193,9 @@ stm32_lp_tick_source: &lptim1 {
 };
 
 &vref {
+	status = "okay";
+};
+
+&crc {
 	status = "okay";
 };

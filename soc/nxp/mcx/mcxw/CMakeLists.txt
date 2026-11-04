@@ -1,11 +1,11 @@
-# Copyright 2023-2024 NXP
+# Copyright 2023-2026 NXP
 #
 # SPDX-License-Identifier: Apache-2.0
 
-zephyr_sources(soc.c mcxw71_platform_init.S)
+add_subdirectory(${CONFIG_SOC_SERIES})
 
-zephyr_include_directories(.)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../common/CMakeLists.txt)
 
-set(SOC_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/linker.ld CACHE INTERNAL "")
-
-zephyr_linker_sources_ifdef(CONFIG_BT RAM_SECTIONS sections.ld)
+zephyr_sources_ifdef(CONFIG_NXP_NBU
+  ../../common/nxp_nbu.c
+  )

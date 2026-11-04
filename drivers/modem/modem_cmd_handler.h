@@ -159,6 +159,35 @@ int modem_cmd_handler_update_cmds(struct modem_cmd_handler_data *data,
 				  bool reset_error_flag);
 
 /**
+ * @brief  Wait until semaphore is given
+ *
+ * This function does the same wait behavior as @ref modem_cmd_send, but can wait without sending
+ * any command first. Useful for waiting for asynchronous responses.
+ *
+ * @param  data: handler data to use
+ * @param  sem: wait for semaphore.
+ * @param  timeout: wait timeout.
+ *
+ * @retval 0 if ok, < 0 if error.
+ */
+int modem_cmd_handler_await(struct modem_cmd_handler_data *data,
+			    struct k_sem *sem, k_timeout_t timeout);
+
+/**
+ * @brief  send data directly to interface w/o TX lock.
+ *
+ * This function just writes directly to the modem interface.
+ * Recommended to use to get verbose logging for all data sent to the interface.
+ * @param  iface: interface to use
+ * @param  buf: send buffer (not NULL terminated)
+ * @param  len: length of send buffer.
+ *
+ * @retval 0 if ok, < 0 if error.
+ */
+int modem_cmd_send_data_nolock(struct modem_iface *iface,
+			       const uint8_t *buf, size_t len);
+
+/**
  * @brief  send AT command to interface with behavior defined by flags
  *
  * This function is similar to @ref modem_cmd_send, but it allows to choose a
@@ -272,7 +301,6 @@ int modem_cmd_handler_setup_cmds_nolock(struct modem_iface *iface,
  * command handler data context. The struct is initialized and then passed
  * to modem_cmd_handler_init().
  *
- * @retval 0 if ok, < 0 if error.
  * @param match_buf Buffer used for matching commands
  * @param match_buf_len Length of buffer used for matching commands
  * @param buf_pool Initialized buffer pool used to store incoming data
@@ -281,8 +309,8 @@ int modem_cmd_handler_setup_cmds_nolock(struct modem_iface *iface,
  * @param user_data Free to use data which can be retrieved from within command handlers
  * @param response_cmds Array of response command handlers
  * @param response_cmds_len Length of response command handlers array
- * @param unsol_cmds Array of unsolicitet command handlers
- * @param unsol_cmds_len Length of unsolicitet command handlers array
+ * @param unsol_cmds Array of unsolicited command handlers
+ * @param unsol_cmds_len Length of unsolicited command handlers array
  */
 struct modem_cmd_handler_config {
 	char *match_buf;
@@ -351,7 +379,7 @@ void modem_cmd_handler_tx_unlock(struct modem_cmd_handler *handler);
  * @note This function should be invoked from a dedicated thread, which only handles
  * commands.
  *
- * @param handler The handler wich will handle the command when processed
+ * @param handler The handler which will handle the command when processed
  * @param iface The interface which receives incoming data
  */
 static inline void modem_cmd_handler_process(struct modem_cmd_handler *handler,

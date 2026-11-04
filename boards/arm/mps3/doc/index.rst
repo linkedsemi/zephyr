@@ -1,31 +1,40 @@
-.. _mps3_board:
-
-ARM MPS3
-###############
+.. zephyr:board:: mps3
 
 Overview
 ********
 
 The mps3 board configuration is used by Zephyr applications that run
-on the MPS3 board. It provides support for the following devices:
+on the MPS3 board. It provides support for multiple Arm FPGA images and
+simulation models:
+
+- AN536 supports Arm Cortex-R52 CPU
+- AN547 and AN552 support Arm Cortex-M55 CPU
+- AN555 support Arm Cortex-M85 CPU
+- Corstone-300 and Corstone-310 FVPs are supported for selected Cortex-M
+  configurations
+
+Depending on the selected board target, it provides support for the following
+devices:
 
 - Nested Vectored Interrupt Controller (NVIC)
 - System Tick System Clock (SYSTICK)
+- Generic Interrupt Controller v3 (GICv3)
+- Arm architectural timer
 - Cortex-M System Design Kit GPIO
 - Cortex-M System Design Kit UART
 - Ethos-U55 NPU
-- AN547 and AN552 support Arm Cortex-M55 CPU
-- AN555 support Arm Cortex-M85 CPU
 
 .. image:: img/mps3.jpg
      :align: center
      :alt: ARM MPS3
 
-`Corstone-300 FVP`_/`Corstone-310 FVP`_ (Fixed Virtual Platforms) is a complete
-simulations of the Arm system, including processor, memory and peripherals.
+`Corstone-300 FVP`_/`Corstone-310 FVP`_ (Fixed Virtual Platforms) are complete
+simulations of Arm systems, including processor, memory and peripherals.
 They are available free of charge for Linux and Windows systems.
 The FVPs have been selected for simulation since they provide access to the
 Ethos-U55 NPU, which is unavailable in QEMU or other simulation platforms.
+
+The AN536 Cortex-R52x2 subsystem is supported with QEMU using the ``mps3-an536`` machine.
 
 
 Zephyr board options
@@ -59,7 +68,7 @@ Zephyr board options
 
     .. code-block:: bash
 
-     $ west build -b mps3_an547 samples/hello_world -DEMU_PLATFORM=qemu -t run
+     $ west build -b mps3/corstone300/an547 samples/hello_world -DEMU_PLATFORM=qemu -t run
 
   .. tab:: MPS3 Corstone-300 (AN552)
 
@@ -175,9 +184,36 @@ Zephyr board options
    QEMU Usage:
     - N/A.
 
+  .. tab:: MPS3 AN536
+
+   The MPS3 AN536 is an example Cortex-R52x2 subsystem. Zephyr currently
+   supports building for CPU0.
+
+   The BOARD option is summarized below:
+
+   +---------------------+------------------------------------+
+   |   BOARD             | Description                        |
+   +=====================+====================================+
+   | ``mps3/an536/cpu0`` | For building firmware for R52 CPU0 |
+   +---------------------+------------------------------------+
+
+   FPGA Usage:
+    - N/A.
+
+   FVP Usage:
+    - N/A.
+
+   QEMU Usage:
+    - To run with QEMU:
+
+    .. code-block:: bash
+
+       west build -b mps3/an536/cpu0 samples/hello_world -t run
+
   .. note::
      Board qualifier must include the board name as mentioned above.
-     ``mps3/corstone300`` or ``mps3/corstone310`` without the board name is not a valid qualifier.
+     ``mps3/corstone300``, ``mps3/corstone310`` or ``mps3/an536`` without
+     the full board qualifier is not valid.
 
 Hardware
 ********
@@ -190,6 +226,8 @@ ARM MPS3 provides the following hardware components:
     Soft Macro Model (SMM) implementation of SSE-300 subsystem
   - AN555 support Arm Cortex-M85 CPU and
     Soft Macro Model (SMM) implementation of SSE-310 subsystem
+  - AN536 supports Arm Cortex-R52 CPU and
+    an example Cortex-R52x2 subsystem
 
 - Memory
 
@@ -224,31 +262,7 @@ ARM MPS3 provides the following hardware components:
 Supported Features
 ===================
 
-The ``MPS3`` board configuration supports the following hardware features:
-
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| SYSTICK   | on-chip    | systick                             |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-
-Other hardware features are not currently supported by the port.
-See the `MPS3 FPGA Website`_ for a complete list of MPS3 AN547 board hardware
-features.
-
-The default configuration can be found in
- - For AN547: :zephyr_file:`boards/arm/mps3/mps3_corstone300_an547_defconfig`.
- - For AN552: :zephyr_file:`boards/arm/mps3/mps3_corstone300_an552_defconfig`.
- - For FVP  : :zephyr_file:`boards/arm/mps3/mps3_corstone300_fvp_defconfig`.
- - For AN555: :zephyr_file:`boards/arm/mps3/mps3_corstone310_an555_defconfig`.
-
+.. zephyr:board-supported-hw::
 
 Serial Port
 ===========
@@ -263,6 +277,10 @@ Serial port 1 on the Debug USB interface is connected to UART 0.
 Serial port 2 on the Debug USB interface is connected to UART 1.
 
 Serial port 3 on the Debug USB interface is connected to UART 2.
+
+For AN536, the Cortex-R52x2 subsystem provides LLPP UART0 and LLPP UART1
+as CPU-private UARTs, and additional shared CMSDK UARTs. The
+``mps3/an536/cpu0`` target uses LLPP UART0 as the Zephyr console.
 
 .. Programming and Debugging:
 
@@ -338,12 +356,38 @@ serial port:
 
    Hello World! mps3
 
+Building and running an application with AN536
+----------------------------------------------
+
+You can build applications in the usual way. Here is an example for
+the :zephyr:code-sample:`hello_world` application with AN536.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: mps3/an536/cpu0
+   :goals: build
+
+To run the application with QEMU:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/hello_world
+   :board: mps3/an536/cpu0
+   :goals: run
+
+You should see the following message:
+
+.. code-block:: console
+
+   Hello World! mps3/an536/cpu0
+
 
 For more details refer to:
+ - `MPS3 AN536 Application Note`_
  - `MPS3 AN547 Technical Reference Manual (TRM)`_
  - `MPS3 AN552 Technical Reference Manual (TRM)`_
  - `MPS3 AN555 Technical Reference Manual (TRM)`_
  - `MPS3 FPGA Prototyping Board Technical Reference Manual (TRM)`_
+ - `Cortex R52 Technical Reference Manual`_
  - `Cortex M55 Generic User Guide`_
  - `Cortex M85 Generic User Guide`_
  - `Corelink SSE-300 Example Subsystem`_
@@ -355,8 +399,8 @@ For more details refer to:
 .. _Corstone-310 FVP:
    https://developer.arm.com/tools-and-software/open-source-software/arm-platforms-software/arm-ecosystem-fvps
 
-.. _MPS3 FPGA Website:
-   https://developer.arm.com/tools-and-software/development-boards/fpga-prototyping-boards/mps3
+.. _MPS3 AN536 Application Note:
+   https://developer.arm.com/documentation/dai0536/latest
 
 .. _MPS3 AN547 Technical Reference Manual (TRM):
    https://developer.arm.com/-/media/Arm%20Developer%20Community/PDF/DAI0547B_SSE300_PLUS_U55_FPGA_for_mps3.pdf
@@ -369,6 +413,9 @@ For more details refer to:
 
 .. _MPS3 FPGA Prototyping Board Technical Reference Manual (TRM):
    https://developer.arm.com/documentation/100765/latest
+
+.. _Cortex R52 Technical Reference Manual:
+   https://developer.arm.com/documentation/100026/latest
 
 .. _Cortex M55 Generic User Guide:
    https://developer.arm.com/documentation/101051/latest

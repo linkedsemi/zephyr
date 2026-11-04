@@ -20,15 +20,26 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(fs, CONFIG_FS_LOG_LEVEL);
 
+/*
+ * Some SDHC drivers (e.g. i.MX USDHC with DMA) require wider alignment for IO
+ * buffers. CONFIG_SDHC_BUFFER_ALIGNMENT is not always defined (e.g. when SDHC
+ * is not enabled), so fall back to 4-byte alignment.
+ */
+#ifdef CONFIG_SDHC_BUFFER_ALIGNMENT
+#define FATFS_WORKBUF_ALIGNMENT CONFIG_SDHC_BUFFER_ALIGNMENT
+#else
+#define FATFS_WORKBUF_ALIGNMENT 4
+#endif
+
 #define FATFS_MAX_FILE_NAME 12 /* Uses 8.3 SFN */
 
 /* Memory pool for FatFs directory objects */
-K_MEM_SLAB_DEFINE(fatfs_dirp_pool, sizeof(DIR),
-			CONFIG_FS_FATFS_NUM_DIRS, 4);
+K_MEM_SLAB_DEFINE_TYPE(fatfs_dirp_pool, DIR,
+	CONFIG_FS_FATFS_NUM_DIRS);
 
 /* Memory pool for FatFs file objects */
-K_MEM_SLAB_DEFINE(fatfs_filep_pool, sizeof(FIL),
-			CONFIG_FS_FATFS_NUM_FILES, 4);
+K_MEM_SLAB_DEFINE_TYPE(fatfs_filep_pool, FIL,
+	CONFIG_FS_FATFS_NUM_FILES);
 
 static int translate_error(int error)
 {
@@ -495,7 +506,7 @@ static int fatfs_mount(struct fs_mount_t *mountp)
 	/* If no file system found then create one */
 	if (res == FR_NO_FILESYSTEM &&
 	    (mountp->flags & FS_MOUNT_FLAG_NO_FORMAT) == 0) {
-		uint8_t work[FF_MAX_SS];
+		uint8_t work[FF_MAX_SS] __aligned(FATFS_WORKBUF_ALIGNMENT);
 		MKFS_PARM mkfs_opt = {
 			.fmt = FM_ANY | FM_SFD,	/* Any suitable FAT */
 			.n_fat = 1,		/* One FAT fs table */
@@ -555,7 +566,7 @@ static MKFS_PARM def_cfg = {
 static int fatfs_mkfs(uintptr_t dev_id, void *cfg, int flags)
 {
 	FRESULT res;
-	uint8_t work[FF_MAX_SS];
+	uint8_t work[FF_MAX_SS] __aligned(FATFS_WORKBUF_ALIGNMENT);
 	MKFS_PARM *mkfs_opt = &def_cfg;
 
 	if (cfg != NULL) {
@@ -594,10 +605,84 @@ static const struct fs_file_system_t fatfs_fs = {
 #endif
 };
 
+#define DT_DRV_COMPAT zephyr_fstab_fatfs
+
+#define DEFINE_FS(inst)                                                                            \
+	BUILD_ASSERT(DT_INST_PROP(inst, disk_access), "FATFS needs disk-access");                  \
+	BUILD_ASSERT(!DT_INST_PROP(inst, read_only),                                               \
+		     "READ_ONLY not supported for individual instances see FS_FATFS_READ_ONLY");   \
+	BUILD_ASSERT(!DT_INST_PROP(inst, no_format),                                               \
+		     "NO_FORMAT not supported for individual instanzes FS_FATFS_MKFS");            \
+	static FATFS fs_data_##inst;                                                               \
+	struct fs_mount_t FS_FSTAB_ENTRY(DT_DRV_INST(inst)) = {                                    \
+		.type = FS_FATFS,                                                                  \
+		.mnt_point = FSTAB_ENTRY_DT_INST_MOUNT_POINT(inst),                                \
+		.fs_data = &fs_data_##inst,                                                        \
+		.storage_dev = NULL,                                                               \
+		.flags = FSTAB_ENTRY_DT_MOUNT_FLAGS(DT_DRV_INST(inst)),                            \
+	};
+
+DT_INST_FOREACH_STATUS_OKAY(DEFINE_FS);
+
+#ifdef CONFIG_FS_FATFS_FSTAB_AUTOMOUNT
+#define REFERENCE_MOUNT(inst)                                                                      \
+	IF_ENABLED(DT_INST_PROP(inst, automount), ((&FS_FSTAB_ENTRY(DT_DRV_INST(inst))),))
+
+static void automount_if_enabled(struct fs_mount_t *mountp)
+{
+	int ret;
+
+	/* We already filter it during build. */
+	__ASSERT_NO_MSG((mountp->flags & FS_MOUNT_FLAG_AUTOMOUNT) != 0);
+
+	ret = fs_mount(mountp);
+	if (ret < 0) {
+		LOG_ERR("Error mounting filesystem: at %s: %d", mountp->mnt_point, ret);
+	} else {
+		LOG_DBG("FATFS Filesystem \"%s\" initialized", mountp->mnt_point);
+	}
+}
+#endif /* CONFIG_FS_FATFS_FSTAB_AUTOMOUNT */
+
+#if CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT
+const char *VolumeStr[CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT];
+#endif /* CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT */
+
 static int fatfs_init(void)
 {
+#if CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT
+	static char mount_points[] = CONFIG_FS_FATFS_CUSTOM_MOUNT_POINTS;
+	int mount_point_count = 0;
 
-	return fs_register(FS_FATFS, &fatfs_fs);
+	VolumeStr[0] = mount_points;
+	for (int i = 0; i < ARRAY_SIZE(mount_points) - 1; i++) {
+		if (mount_points[i] == ',') {
+			mount_points[i] = 0;
+			mount_point_count++;
+			if (mount_point_count >= ARRAY_SIZE(VolumeStr)) {
+				LOG_ERR("Mount point count not sufficient for defined mount "
+					"points.");
+				return -1;
+			}
+			VolumeStr[mount_point_count] = &mount_points[i + 1];
+		}
+	}
+#endif /* CONFIG_FS_FATFS_CUSTOM_MOUNT_POINT_COUNT */
+	int rc = fs_register(FS_FATFS, &fatfs_fs);
+
+#ifdef CONFIG_FS_FATFS_FSTAB_AUTOMOUNT
+	if (rc == 0) {
+		struct fs_mount_t *partitions[] = {DT_INST_FOREACH_STATUS_OKAY(REFERENCE_MOUNT)};
+
+		for (size_t i = 0; i < ARRAY_SIZE(partitions); i++) {
+			struct fs_mount_t *mpi = partitions[i];
+
+			automount_if_enabled(mpi);
+		}
+	}
+#endif /* CONFIG_FS_FATFS_FSTAB_AUTOMOUNT */
+
+	return rc;
 }
 
 SYS_INIT(fatfs_init, POST_KERNEL, CONFIG_FILE_SYSTEM_INIT_PRIORITY);

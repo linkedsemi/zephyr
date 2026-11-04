@@ -6,7 +6,6 @@
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/kernel_structs.h>
 #include <kernel_arch_interface.h>
 #include <zephyr/sys/atomic.h>
 
@@ -62,12 +61,12 @@ static inline void DBG(char *msg, struct k_thread *t) { }
 
 static void z_riscv_fpu_disable(void)
 {
-	unsigned long status = csr_read(mstatus);
+	unsigned long status = z_riscv_status_read();
 
-	__ASSERT((status & MSTATUS_IEN) == 0, "must be called with IRQs disabled");
+	__ASSERT((status & RV_STATUS_IE) == 0, "must be called with IRQs disabled");
 
 	if ((status & MSTATUS_FS) != 0) {
-		csr_clear(mstatus, MSTATUS_FS);
+		z_riscv_status_clear(MSTATUS_FS);
 
 		/* remember its clean/dirty state */
 		_current_cpu->arch.fpu_state = (status & MSTATUS_FS);
@@ -76,16 +75,17 @@ static void z_riscv_fpu_disable(void)
 
 static void z_riscv_fpu_load(void)
 {
-	__ASSERT((csr_read(mstatus) & MSTATUS_IEN) == 0,
+	__ASSERT((z_riscv_status_read() & RV_STATUS_IE) == 0,
 		 "must be called with IRQs disabled");
-	__ASSERT((csr_read(mstatus) & MSTATUS_FS) == 0,
+	__ASSERT((z_riscv_status_read() & MSTATUS_FS) == 0,
 		 "must be called with FPU access disabled");
 
 	/* become new owner */
 	atomic_ptr_set(&_current_cpu->arch.fpu_owner, _current);
+	_current->base.user_options |= K_FP_REGS;
 
 	/* restore our content */
-	csr_set(mstatus, MSTATUS_FS_INIT);
+	z_riscv_status_set(MSTATUS_FS_INIT);
 	z_riscv_fpu_restore(&_current->arch.saved_fp_context);
 	DBG("restore", _current);
 }
@@ -100,9 +100,9 @@ static void z_riscv_fpu_load(void)
  */
 void arch_flush_local_fpu(void)
 {
-	__ASSERT((csr_read(mstatus) & MSTATUS_IEN) == 0,
+	__ASSERT((z_riscv_status_read() & RV_STATUS_IE) == 0,
 		 "must be called with IRQs disabled");
-	__ASSERT((csr_read(mstatus) & MSTATUS_FS) == 0,
+	__ASSERT((z_riscv_status_read() & MSTATUS_FS) == 0,
 		 "must be called with FPU access disabled");
 
 	struct k_thread *owner = atomic_ptr_get(&_current_cpu->arch.fpu_owner);
@@ -112,7 +112,7 @@ void arch_flush_local_fpu(void)
 
 		if (dirty) {
 			/* turn on FPU access */
-			csr_set(mstatus, MSTATUS_FS_CLEAN);
+			z_riscv_status_set(MSTATUS_FS_CLEAN);
 			/* save current owner's content */
 			z_riscv_fpu_save(&owner->arch.saved_fp_context);
 		}
@@ -121,7 +121,7 @@ void arch_flush_local_fpu(void)
 		owner->arch.fpu_recently_used = dirty;
 
 		/* disable FPU access */
-		csr_clear(mstatus, MSTATUS_FS);
+		z_riscv_status_clear(MSTATUS_FS);
 
 		/* release ownership */
 		atomic_ptr_clear(&_current_cpu->arch.fpu_owner);
@@ -132,7 +132,7 @@ void arch_flush_local_fpu(void)
 #ifdef CONFIG_SMP
 static void flush_owned_fpu(struct k_thread *thread)
 {
-	__ASSERT((csr_read(mstatus) & MSTATUS_IEN) == 0,
+	__ASSERT((z_riscv_status_read() & RV_STATUS_IE) == 0,
 		 "must be called with IRQs disabled");
 
 	int i;
@@ -187,6 +187,78 @@ void z_riscv_fpu_enter_exc(void)
 	z_riscv_fpu_disable();
 }
 
+#ifdef CONFIG_RISCV_FPU_INSN_VALIDATE
+/*
+ * Rigorous FP instruction validation used only during debug/assertion builds.
+ * It ensures the fast-path assembly hasn't accidentally trapped a non-FP
+ * instruction (like a Vector instruction) into the FPU context switch.
+ */
+static inline int debug_is_fp_insn(uint32_t instruction)
+{
+	/* 1. Check for Compressed (16-bit) Instructions */
+	if ((instruction & 0x3) != 0x3) {
+#ifdef CONFIG_RISCV_ISA_EXT_C
+		/* RVC Quadrants 00 and 10 are the only ones with FP loads/stores */
+		if ((instruction & 0x1) != 0) {
+			return 0;
+		}
+
+		uint32_t op = (instruction >> 13) & 0x7;
+#ifdef CONFIG_64BIT
+		/* valid FP instructions */
+		/* 00: C.FLD (001) C.FSD (101) */
+		/* 10: C.FLDSP (001) C.FSDSP (101) */
+		return (op & 3) == 0b01;
+#else
+		/* valid FP instructions */
+		/* 00: C.FLD (001) C.FSD (101)
+		 * C.FLW (011) C.FSW (111)
+		 */
+		/* 10: C.FLDSP (001) C.FSDSP (101)
+		 * C.FLWSP (011) C.FSWSP (111)
+		 */
+		return (op & 1) == 1;
+#endif
+#else
+		return 0;
+#endif
+	}
+
+	/* 2. Check Standard 32-bit Instructions */
+	uint32_t opcode = instruction & 0x7F;
+
+	switch (opcode) {
+	case 0b0000111: /* LOAD-FP */
+	case 0b0100111: /* STORE-FP */
+	{
+		/* Valid FP widths:
+		 * Half (1), Single (2), Double (3), Quad (4)
+		 */
+		uint32_t funct3 = (instruction >> 12) & 7;
+
+		return (funct3 >= 1 && funct3 <= 4);
+	}
+	case 0b1000011: /* FMADD */
+	case 0b1000111: /* FMSUB */
+	case 0b1001011: /* FNMSUB */
+	case 0b1001111: /* FNMADD */
+	case 0b1010011: /* FP-OP */
+		return 1;
+
+	case 0b1110011: /* SYSTEM (CSR accesses) */
+	{
+		/* Accessing fflags (1), frm (2), or fcsr (3) traps if FPU is off */
+		uint32_t funct3 = (instruction >> 12) & 0x7;
+		uint32_t csr = instruction >> 20;
+
+		return ((funct3 & 3) != 0) && (csr >= 1 && csr <= 3);
+	}
+	default:
+		return 0;
+	}
+}
+#endif
+
 /*
  * Process the FPU trap.
  *
@@ -207,8 +279,36 @@ void z_riscv_fpu_enter_exc(void)
 void z_riscv_fpu_trap(struct arch_esf *esf)
 {
 	__ASSERT((esf->mstatus & MSTATUS_FS) == 0 &&
-		 (csr_read(mstatus) & MSTATUS_FS) == 0,
+		 (z_riscv_status_read() & MSTATUS_FS) == 0,
 		 "called despite FPU being accessible");
+
+#ifdef CONFIG_RISCV_FPU_INSN_VALIDATE
+	/* Safely fetch instruction to avoid unaligned access faults */
+#ifdef CONFIG_RISCV_NO_MTVAL_ON_FP_TRAP
+	uint32_t instruction = *(uint16_t *)(esf->mepc);
+
+	if ((instruction & 3) == 3) {
+		/* It's a 32-bit instruction, fetch the upper 16 bits */
+		instruction |= ((uint32_t)*(uint16_t *)(esf->mepc + 2)) << 16;
+	}
+#else
+#ifdef CONFIG_RISCV_S_MODE
+	uint32_t instruction = csr_read(stval);
+#else
+	uint32_t instruction = csr_read(mtval);
+#endif
+#endif
+
+	/* Force a fatal error if the trap was triggered by a non-FPU instruction */
+	if (!debug_is_fp_insn(instruction)) {
+		__ASSERT(false,
+			 "Fatal Error: Non-FPU instruction (0x%08x) incorrectly routed to FPU trap "
+			 "handler.\n",
+			 instruction);
+
+		CODE_UNREACHABLE;
+	}
+#endif
 
 	/* save current owner's content  if any */
 	arch_flush_local_fpu();
@@ -220,7 +320,7 @@ void z_riscv_fpu_trap(struct arch_esf *esf)
 		 * by disabling IRQs as we wouldn't be able to preserve the
 		 * interrupted exception's FPU context.
 		 */
-		esf->mstatus &= ~MSTATUS_MPIE_EN;
+		esf->mstatus &= ~RV_STATUS_PIE;
 
 		/* make it accessible to the returning context */
 		esf->mstatus |= MSTATUS_FS_INIT;
@@ -253,7 +353,7 @@ void z_riscv_fpu_trap(struct arch_esf *esf)
  */
 static bool fpu_access_allowed(unsigned int exc_update_level)
 {
-	__ASSERT((csr_read(mstatus) & MSTATUS_IEN) == 0,
+	__ASSERT((z_riscv_status_read() & RV_STATUS_IE) == 0,
 		 "must be called with IRQs disabled");
 
 	if (_current->arch.exception_depth == exc_update_level) {
@@ -312,35 +412,74 @@ void z_riscv_fpu_exit_exc(struct arch_esf *esf)
 void z_riscv_fpu_thread_context_switch(void)
 {
 	if (fpu_access_allowed(0)) {
-		csr_clear(mstatus, MSTATUS_FS);
-		csr_set(mstatus, _current_cpu->arch.fpu_state);
+		z_riscv_status_clear(MSTATUS_FS);
+		z_riscv_status_set(_current_cpu->arch.fpu_state);
 	} else {
 		z_riscv_fpu_disable();
 	}
 }
 
-int arch_float_disable(struct k_thread *thread)
+#ifdef CONFIG_RISCV_S_MODE
+/*
+ * Called from arch_irq_offload() in S-mode to restore FPU state after the
+ * simulated ISR returns.  Mirrors z_riscv_fpu_exit_exc() but applies the
+ * FS bits directly to the live status register instead of to a saved ESF,
+ * because the S-mode irq_offload path has no real exception frame.
+ */
+void z_riscv_fpu_irq_offload_exit(void)
 {
-	if (thread != NULL) {
-		unsigned int key = arch_irq_lock();
+	if (fpu_access_allowed(1)) {
+		z_riscv_status_clear(MSTATUS_FS);
+		z_riscv_status_set(_current_cpu->arch.fpu_state);
+	} else {
+		z_riscv_status_clear(MSTATUS_FS);
+	}
+}
+#endif /* CONFIG_RISCV_S_MODE */
+
+/*
+ * Flush the FPU context for a thread without altering its user_options or
+ * fpu_recently_used state. This is used internally by the lazy-FPU IPI path
+ * and by arch_float_disable().
+ */
+void z_riscv_fpu_flush_thread(struct k_thread *thread)
+{
+	if (thread == NULL) {
+		return;
+	}
+
+	unsigned int key = arch_irq_lock();
 
 #ifdef CONFIG_SMP
-		flush_owned_fpu(thread);
+	flush_owned_fpu(thread);
 #else
-		if (thread == _current_cpu->arch.fpu_owner) {
-			z_riscv_fpu_disable();
-			arch_flush_local_fpu();
-		}
+	if (thread == _current_cpu->arch.fpu_owner) {
+		z_riscv_fpu_disable();
+		arch_flush_local_fpu();
+	}
 #endif
 
-		arch_irq_unlock(key);
+	arch_irq_unlock(key);
+}
+
+int arch_float_disable(struct k_thread *thread)
+{
+	if (thread == NULL) {
+		return -EINVAL;
 	}
+
+	z_riscv_fpu_flush_thread(thread);
+	thread->base.user_options &= ~K_FP_REGS;
+	thread->arch.fpu_recently_used = false;
 
 	return 0;
 }
 
 int arch_float_enable(struct k_thread *thread, unsigned int options)
 {
+	ARG_UNUSED(thread);
+	ARG_UNUSED(options);
+
 	/* floats always gets enabled automatically at the moment */
 	return 0;
 }

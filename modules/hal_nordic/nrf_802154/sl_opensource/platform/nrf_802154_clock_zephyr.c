@@ -9,20 +9,20 @@
 
 #include <stddef.h>
 
-#include <compiler_abstraction.h>
+#include <nrfx.h>
 #include <zephyr/kernel.h>
-#if defined(CONFIG_CLOCK_CONTROL_NRF)
 #include <zephyr/drivers/clock_control/nrf_clock_control.h>
-#include <zephyr/drivers/clock_control.h>
-#elif !defined(NRF54H_SERIES)
-#error No implementation to start or stop HFCLK due to missing clock_control.
-#endif
+#include <nrf_sys_event.h>
 
 static bool hfclk_is_running;
 
 void nrf_802154_clock_init(void)
 {
-	/* Intentionally empty. */
+#ifdef NRF54L_SERIES
+	uint32_t clock_latency_us = z_nrf_clock_bt_ctlr_hf_get_startup_time_us();
+
+	nrf_802154_clock_hfclk_latency_set(clock_latency_us);
+#endif
 }
 
 void nrf_802154_clock_deinit(void)
@@ -35,7 +35,6 @@ bool nrf_802154_clock_hfclk_is_running(void)
 	return hfclk_is_running;
 }
 
-#if defined(CONFIG_CLOCK_CONTROL_NRF)
 
 static struct onoff_client hfclk_cli;
 
@@ -48,67 +47,91 @@ static void hfclk_on_callback(struct onoff_manager *mgr,
 	nrf_802154_clock_hfclk_ready();
 }
 
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
+
 void nrf_802154_clock_hfclk_start(void)
 {
-	int ret;
-	struct onoff_manager *mgr =
-		z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF);
+	struct onoff_manager *mgr = z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF);
 
 	__ASSERT_NO_MSG(mgr != NULL);
 
 	sys_notify_init_callback(&hfclk_cli.notify, hfclk_on_callback);
 
-	ret = onoff_request(mgr, &hfclk_cli);
+	/*
+	 * todo: replace constlat request with PM policy API when
+	 * controlling the event latency becomes possible.
+	 */
+	if (IS_ENABLED(CONFIG_NRF_802154_CONSTLAT_CONTROL)) {
+		nrf_sys_event_request_global_constlat();
+	}
+
+	int ret = onoff_request(mgr, &hfclk_cli);
+
 	__ASSERT_NO_MSG(ret >= 0);
+	(void)ret;
 }
 
 void nrf_802154_clock_hfclk_stop(void)
 {
-	int ret;
-	struct onoff_manager *mgr =
-		z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF);
+	struct onoff_manager *mgr = z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF);
 
 	__ASSERT_NO_MSG(mgr != NULL);
 
-	ret = onoff_cancel_or_release(mgr, &hfclk_cli);
+	int ret = onoff_cancel_or_release(mgr, &hfclk_cli);
+
 	__ASSERT_NO_MSG(ret >= 0);
+	(void)ret;
+
+	if (IS_ENABLED(CONFIG_NRF_802154_CONSTLAT_CONTROL)) {
+		nrf_sys_event_release_global_constlat();
+	}
+
 	hfclk_is_running = false;
 }
 
-#elif defined(NRF54H_SERIES)
+#else /* CONFIG_CLOCK_CONTROL_NRF */
 
-#define NRF_LRCCONF_RADIO_PD NRF_LRCCONF010
-/* HF clock time to ramp-up. */
-#define MAX_HFXO_RAMP_UP_TIME_US 550
-
-static void hfclk_started_timer_handler(struct k_timer *dummy)
-{
-	hfclk_is_running = true;
-	nrf_802154_clock_hfclk_ready();
-}
-
-K_TIMER_DEFINE(hfclk_started_timer, hfclk_started_timer_handler, NULL);
+#ifndef CONFIG_HAS_NORDIC_MULTI_OPTION_CLOCKS
+#define CLK_DEV                                                                                    \
+	DEVICE_DT_GET_ONE(                                                                         \
+		COND_CODE_1(NRF_CLOCK_HAS_HFCLK, (nordic_nrf_clock_hfclk), (nordic_nrf_clock_xo)))
+#else
+#define CLK_DEV DEVICE_DT_GET(DT_NODELABEL(hfxo))
+#endif
 
 void nrf_802154_clock_hfclk_start(void)
 {
-	/* Use register directly, there is no support for that task in nrf_lrcconf_task_trigger.
-	 * This code might cause troubles if there are other HFXO users in this CPU.
-	 */
-	NRF_LRCCONF_RADIO_PD->EVENTS_HFXOSTARTED = 0x0;
-	NRF_LRCCONF_RADIO_PD->TASKS_REQHFXO = 0x1;
+	sys_notify_init_callback(&hfclk_cli.notify, hfclk_on_callback);
 
-	k_timer_start(&hfclk_started_timer, K_USEC(MAX_HFXO_RAMP_UP_TIME_US), K_NO_WAIT);
+#ifndef CONFIG_HAS_NORDIC_MULTI_OPTION_CLOCKS
+	/*
+	 * todo: replace constlat request with PM policy API when
+	 * controlling the event latency becomes possible.
+	 */
+	if (IS_ENABLED(CONFIG_NRF_802154_CONSTLAT_CONTROL)) {
+		nrf_sys_event_request_global_constlat();
+	}
+#endif
+
+	int ret = nrf_clock_control_request(CLK_DEV, NULL, &hfclk_cli);
+
+	__ASSERT_NO_MSG(ret >= 0);
+	(void)ret;
 }
 
 void nrf_802154_clock_hfclk_stop(void)
 {
-	/* Use register directly, there is no support for that task in nrf_lrcconf_task_trigger.
-	 * This code might cause troubles if there are other HFXO users in this CPU.
-	 */
-	NRF_LRCCONF_RADIO_PD->TASKS_STOPREQHFXO = 0x1;
-	NRF_LRCCONF_RADIO_PD->EVENTS_HFXOSTARTED = 0x0;
+	int ret = nrf_clock_control_cancel_or_release(CLK_DEV, NULL, &hfclk_cli);
+
+	__ASSERT_NO_MSG(ret >= 0);
+	(void)ret;
+
+#ifndef CONFIG_HAS_NORDIC_MULTI_OPTION_CLOCKS
+	if (IS_ENABLED(CONFIG_NRF_802154_CONSTLAT_CONTROL)) {
+		nrf_sys_event_release_global_constlat();
+	}
+#endif
 
 	hfclk_is_running = false;
 }
-
-#endif
+#endif /* CONFIG_CLOCK_CONTROL_NRF */

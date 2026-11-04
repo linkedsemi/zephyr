@@ -182,11 +182,12 @@ static void ism330dhcx_handle_interrupt(const struct device *dev)
 			return;
 		}
 
-		if ((status.xlda == 0) && (status.gda == 0)
+		if (!((status.xlda && (ism330dhcx->handler_drdy_acc != NULL)) ||
+		      (status.gda && (ism330dhcx->handler_drdy_gyr != NULL))
 #if defined(CONFIG_ISM330DHCX_ENABLE_TEMP)
-					&& (status.tda == 0)
+		      || (status.tda && (ism330dhcx->handler_drdy_temp != NULL))
 #endif
-					) {
+		      )) {
 			break;
 		}
 
@@ -258,7 +259,7 @@ int ism330dhcx_init_interrupt(const struct device *dev)
 	int ret;
 
 	if (!gpio_is_ready_dt(&cfg->drdy_gpio)) {
-		LOG_ERR("GPIO device not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->drdy_gpio.port);
 		return -ENODEV;
 	}
 

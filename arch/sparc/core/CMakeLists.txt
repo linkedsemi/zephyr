@@ -13,8 +13,11 @@ zephyr_library_sources(
   thread.c
   window_trap.S
   sw_trap_set_pil.S
-  trap_table_mvt.S
 )
 
+zephyr_library_sources_ifdef(CONFIG_SPARC_SVT trap_table_svt.S)
+zephyr_library_sources_ifndef(CONFIG_SPARC_SVT trap_table_mvt.S)
 zephyr_library_sources_ifdef(CONFIG_IRQ_OFFLOAD irq_offload.c)
 zephyr_library_sources_ifdef(CONFIG_THREAD_LOCAL_STORAGE tls.c)
+
+zephyr_linker_sources(NOINIT noinit.ld)

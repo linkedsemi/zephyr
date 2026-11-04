@@ -37,9 +37,9 @@ APA020 and LPD880x
 
 #. Ensure your Zephyr board, the 5V power supply, and the LED strip
    share a common ground.
-#. Connect the MOSI pin of your board's SPI master to the data input
+#. Connect the SDO pin of your board's SPI controller to the data input
    pin of the first IC in the strip.
-#. Connect the SCLK pin of your board's SPI master to the clock input
+#. Connect the SCLK pin of your board's SPI controller to the clock input
    pin of the first IC in the strip.
 #. Connect the 5V power supply pin to the 5V input of the LED strip.
 
@@ -47,7 +47,7 @@ WS2812
 ======
 
 #. Ensure your Zephyr board, and the LED strip share a common ground.
-#. Connect the LED strip control pin (either I2S SDOUT, SPI MOSI or GPIO) from
+#. Connect the LED strip control pin (either I2S SDOUT, SPI SDO or GPIO) from
    your board to the data input pin of the first WS2812 IC in the strip.
 #. Power the LED strip at an I/O level compatible with the control pin signals.
 
@@ -64,6 +64,9 @@ Building and Running
 
 The sample updates the LED strip periodically. The update frequency can be
 modified by changing the :kconfig:option:`CONFIG_SAMPLE_LED_UPDATE_DELAY`.
+
+The brightness level of each LED can be adjusted by changing the
+:kconfig:option:`CONFIG_SAMPLE_LED_BRIGHTNESS` configuration option.
 
 Then build and flash the application:
 
@@ -89,11 +92,13 @@ References
 - `LPD8806 datasheet`_
 - `APA102C datasheet`_
 - `74AHCT125 datasheet`_
-- `RGB LED strips: an overview`_
+- `LED strip anatomy explained`_
+- `LED strip light (Wikipedia)`_
 - An excellent `blog post on WS2812 timing`_.
 
 .. _WS2812 datasheet: https://cdn-shop.adafruit.com/datasheets/WS2812.pdf
 .. _LPD8806 datasheet: https://cdn-shop.adafruit.com/datasheets/lpd8806+english.pdf
 .. _APA102C datasheet: https://cdn-shop.adafruit.com/product-files/2477/APA102C-iPixelLED.pdf
 .. _blog post on WS2812 timing: https://wp.josh.com/2014/05/13/ws2812-neopixels-are-not-so-finicky-once-you-get-to-know-them/
-.. _RGB LED strips\: an overview: http://nut-bolt.nl/2012/rgb-led-strips/
+.. _LED strip anatomy explained: https://littleanvil.com/journal/2020/4/16/led-strip-anatomy-explained
+.. _LED strip light (Wikipedia): https://en.wikipedia.org/wiki/LED_strip_light

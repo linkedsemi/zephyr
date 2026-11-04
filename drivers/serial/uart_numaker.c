@@ -231,6 +231,15 @@ static int uart_numaker_init(const struct device *dev)
 
 	UART_Open(config->uart, pData->ucfg.baudrate);
 
+	if (pData->ucfg.flow_ctrl == UART_CFG_FLOW_CTRL_NONE) {
+		UART_DisableFlowCtrl(config->uart);
+	} else if (pData->ucfg.flow_ctrl == UART_CFG_FLOW_CTRL_RTS_CTS) {
+		UART_EnableFlowCtrl(config->uart);
+	} else {
+		LOG_ERR("H/W flow control (%d) not support", pData->ucfg.flow_ctrl);
+		return -ENOTSUP;
+	}
+
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	config->irq_config_func(dev);
 #endif
@@ -349,14 +358,6 @@ static int uart_numaker_irq_is_pending(const struct device *dev)
 	return (uart_numaker_irq_tx_ready(dev) || (uart_numaker_irq_rx_ready(dev)));
 }
 
-static int uart_numaker_irq_update(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	/* nothing to be done */
-	return 1;
-}
-
 static void uart_numaker_irq_callback_set(const struct device *dev,
 					  uart_irq_callback_user_data_t cb, void *cb_data)
 {
@@ -377,7 +378,7 @@ static void uart_numaker_isr(const struct device *dev)
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
-static const struct uart_driver_api uart_numaker_driver_api = {
+static DEVICE_API(uart, uart_numaker_driver_api) = {
 	.poll_in = uart_numaker_poll_in,
 	.poll_out = uart_numaker_poll_out,
 	.err_check = uart_numaker_err_check,
@@ -398,7 +399,6 @@ static const struct uart_driver_api uart_numaker_driver_api = {
 	.irq_err_enable = uart_numaker_irq_err_enable,
 	.irq_err_disable = uart_numaker_irq_err_disable,
 	.irq_is_pending = uart_numaker_irq_is_pending,
-	.irq_update = uart_numaker_irq_update,
 	.irq_callback_set = uart_numaker_irq_callback_set,
 #endif
 };
@@ -439,6 +439,9 @@ static const struct uart_driver_api uart_numaker_driver_api = {
 		.ucfg =                                                                            \
 			{                                                                          \
 				.baudrate = DT_INST_PROP(inst, current_speed),                     \
+				.flow_ctrl = COND_CODE_1(DT_INST_PROP_OR(inst, hw_flow_control, 0),\
+							 (UART_CFG_FLOW_CTRL_RTS_CTS),             \
+							 (UART_CFG_FLOW_CTRL_NONE)),               \
 			},                                                                         \
 	};                                                                                         \
                                                                                                    \

@@ -26,7 +26,7 @@ int icm42605_set_fs(const struct device *dev, uint16_t a_sf, uint16_t g_sf)
 	}
 	databuf &= ~BIT_ACCEL_FSR;
 
-	databuf |= a_sf;
+	databuf |= (a_sf << SHIFT_ACCEL_FS_SEL) & BIT_ACCEL_FSR;
 
 	result = inv_spi_single_write(&cfg->spi, REG_ACCEL_CONFIG0, &databuf);
 
@@ -37,7 +37,7 @@ int icm42605_set_fs(const struct device *dev, uint16_t a_sf, uint16_t g_sf)
 	}
 
 	databuf &= ~BIT_GYRO_FSR;
-	databuf |= g_sf;
+	databuf |= (g_sf << SHIFT_GYRO_FS_SEL) & BIT_GYRO_FSR;
 
 	result = inv_spi_single_write(&cfg->spi, REG_GYRO_CONFIG0, &databuf);
 
@@ -425,14 +425,15 @@ int icm42605_turn_on_sensor(const struct device *dev)
 
 int icm42605_turn_off_sensor(const struct device *dev)
 {
+	struct icm42605_data *drv_data = dev->data;
 	const struct icm42605_config *cfg = dev->config;
 	uint8_t v = 0;
 	int result = 0;
 
 	result = inv_spi_read(&cfg->spi, REG_PWR_MGMT0, &v, 1);
 
-	v ^= BIT_ACCEL_MODE_LNM;
-	v ^= BIT_GYRO_MODE_LNM;
+	v &= ~BIT_ACCEL_MODE_LNM;
+	v &= ~BIT_GYRO_MODE_LNM;
 
 	result = inv_spi_single_write(&cfg->spi, REG_PWR_MGMT0, &v);
 	if (result) {
@@ -445,6 +446,8 @@ int icm42605_turn_off_sensor(const struct device *dev)
 	k_msleep(100);
 
 	icm42605_turn_off_fifo(dev);
+
+	drv_data->sensor_started = false;
 
 	return 0;
 }

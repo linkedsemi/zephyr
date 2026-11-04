@@ -9,34 +9,37 @@ config SOC_SERIES_ESP32S2
 	select PINCTRL
 	select HAS_ESPRESSIF_HAL
 	select ARCH_SUPPORTS_COREDUMP
+	select ARCH_HAS_WORD_GRANULAR_ACCESS_INSTR_MEM
+	select CPU_HAS_DCACHE
 	select HAS_PM
 	select HAS_POWEROFF
+	imply XTENSA_ENABLE_BACKTRACE
 
 if SOC_SERIES_ESP32S2
 
 menu "Cache config"
 
-choice
+choice ESP32S2_INSTRUCTION_CACHE_LINE_SIZE
 	prompt "Instruction cache line size"
 	default ESP32S2_INSTRUCTION_CACHE_LINE_32B
 
-	config ESP32S2_INSTRUCTION_CACHE_LINE_16B
-		bool "16 Bytes"
+config ESP32S2_INSTRUCTION_CACHE_LINE_16B
+	bool "16 Bytes"
 
-	config ESP32S2_INSTRUCTION_CACHE_LINE_32B
-		bool "32 Bytes"
+config ESP32S2_INSTRUCTION_CACHE_LINE_32B
+	bool "32 Bytes"
 
 endchoice
 
-choice
+choice ESP32S2_INSTRUCTION_CACHE_SIZE
 	prompt "Instruction cache size"
 	default ESP32S2_INSTRUCTION_CACHE_8KB
 
-	config ESP32S2_INSTRUCTION_CACHE_8KB
-		bool "8KB instruction cache size"
+config ESP32S2_INSTRUCTION_CACHE_8KB
+	bool "8KB instruction cache size"
 
-	config ESP32S2_INSTRUCTION_CACHE_16KB
-		bool "16KB instruction cache size"
+config ESP32S2_INSTRUCTION_CACHE_16KB
+	bool "16KB instruction cache size"
 
 endchoice
 
@@ -44,14 +47,17 @@ choice ESP32S2_DATA_CACHE_SIZE
 	prompt "Data cache size"
 	default ESP32S2_DATA_CACHE_8KB
 	help
-		Data cache size to be set on application startup.
-	config ESP32S2_DATA_CACHE_0KB
-		depends on !ESP_SPIRAM
-		bool "0KB"
-	config ESP32S2_DATA_CACHE_8KB
-		bool "8KB"
-	config ESP32S2_DATA_CACHE_16KB
-		bool "16KB"
+	  Data cache size to be set on application startup.
+
+config ESP32S2_DATA_CACHE_0KB
+	depends on !ESP_SPIRAM
+	bool "0KB"
+
+config ESP32S2_DATA_CACHE_8KB
+	bool "8KB"
+
+config ESP32S2_DATA_CACHE_16KB
+	bool "16KB"
 
 endchoice
 
@@ -59,11 +65,11 @@ choice
 	prompt "Data cache line size"
 	default ESP32S2_DATA_CACHE_LINE_32B
 
-	config ESP32S2_DATA_CACHE_LINE_16B
-		bool "16 Bytes"
+config ESP32S2_DATA_CACHE_LINE_16B
+	bool "16 Bytes"
 
-	config ESP32S2_DATA_CACHE_LINE_32B
-		bool "32 Bytes"
+config ESP32S2_DATA_CACHE_LINE_32B
+	bool "32 Bytes"
 
 endchoice
 
@@ -79,5 +85,7 @@ config ESP32S2_DATA_CACHE_SIZE
 	default 0x0000
 
 endmenu  # Cache config
+
+rsource "Kconfig.caps"
 
 endif # SOC_SERIES_ESP32S2

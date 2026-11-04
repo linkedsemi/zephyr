@@ -1,7 +1,4 @@
-.. _it82xx2_evb:
-
-ITE IT82XX2 series
-######################
+.. zephyr:board:: it82xx2_evb
 
 Overview
 ********
@@ -40,63 +37,8 @@ Listing the IT82202 hardware features as following:
 
 Supported Features
 ==================
-currently supports the following hardware features:
 
-.. list-table:: Supported Features
-   :header-rows: 1
-   :widths: auto
-
-   * - Interface
-     - Controller
-     - Driver/Component
-   * - NVIC
-     - on-chip
-     - interrupt controller
-   * - FLASH
-     - on-chip
-     - flash controller
-   * - PINCTRL
-     - on-chip
-     - pin controller
-   * - ESPI
-     - on-chip
-     - espi
-   * - PECI
-     - on-chip
-     - peci
-   * - UART
-     - on-chip
-     - serial
-   * - GPIO
-     - on-chip
-     - gpio
-   * - PWM
-     - on-chip
-     - pwm
-   * - ADC
-     - on-chip
-     - adc
-   * - TIMER
-     - on-chip
-     - timer
-   * - WATCHDOG
-     - on-chip
-     - watchdog
-   * - KSCAN
-     - on-chip
-     - kscan
-   * - SENSOR
-     - on-chip
-     - voltage comparator
-   * - I2C
-     - on-chip
-     - i2c
-
-
-Other hardware features are not currently supported by Zephyr.
-
-The default configuration can be found in the
-:zephyr_file:`boards/ite/it82xx2_evb/it82xx2_evb_defconfig` Kconfig file.
+.. zephyr:board-supported-hw::
 
 Programming and debugging on it82202
 ************************************
@@ -152,7 +94,7 @@ Building
 ========
 
 #. Build :zephyr:code-sample:`hello_world` application as you would normally do
-   (see :`Zephyr Getting Started Guide`_):.
+   (see :ref:`Zephyr Getting Started Guide <getting_started>`):.
 
    .. zephyr-app-commands::
       :board: it82xx2_evb
@@ -244,4 +186,3 @@ References
 .. target-notes::
 
 .. _ITE's website: https://www.ite.com.tw/zh-tw/product/view?mid=169
-.. _Zephyr Getting Started Guide: https://docs.zephyrproject.org/latest/getting_started/index.html

@@ -25,6 +25,7 @@ LOG_MODULE_REGISTER(dac_dacx3608, CONFIG_DAC_LOG_LEVEL);
 #define DACX3608_SW_RST         0x0A	/* STATUS_TRIGGER[SW_RST] */
 #define DACX3608_POR_DELAY      5
 #define DACX3608_MAX_CHANNEL    8
+#define MAX_RESOLUTION          10
 
 struct dacx3608_config {
 	struct i2c_dt_spec bus;
@@ -146,7 +147,8 @@ static int dacx3608_write_value(const struct device *dev, uint8_t channel,
 	 * Check if channel is initialized
 	 * If broadcast channel is used, check if any channel is initialized
 	 */
-	if ((brdcast && !data->configured) || (!(data->configured & BIT(channel)))) {
+	if ((brdcast && !data->configured) ||
+	    (channel < DACX3608_MAX_CHANNEL && !(data->configured & BIT(channel)))) {
 		LOG_ERR("Channel %d not initialized", channel);
 		return -EINVAL;
 	}
@@ -161,11 +163,11 @@ static int dacx3608_write_value(const struct device *dev, uint8_t channel,
 	 *
 	 * DACn_DATA register format:
 	 *
-	 * | 15 14 13 12 |      11 10 9 8 7 6 5 4 3 2      |    1 0     |
-	 * |-------------|---------------------------------|------------|
-	 * | Don't Care  |  DAC53608[9:0] / DAC43608[7:0]  | Don't Care |
+	 * | 15 14 13 12 |      11 10 9 8 7 6 5 4 3 2         |    1 0     |
+	 * |-------------|------------------------------------|------------|
+	 * | Don't Care  |  DAC53608[9:0] / DAC43608[7:0],x,x | Don't Care |
 	 */
-	regval = value << 2;
+	regval = value << 2 << (MAX_RESOLUTION - config->resolution); /* Align MSB to bit 11 */
 	regval &= 0xFFFF;
 
 	const uint8_t reg = brdcast ? DACX3608_REG_BRDCAST : DACX3608_REG_DACA_DATA + channel;
@@ -246,7 +248,7 @@ static int dacx3608_init(const struct device *dev)
 	return 0;
 }
 
-static const struct dac_driver_api dacx3608_driver_api = {
+static DEVICE_API(dac, dacx3608_driver_api) = {
 	.channel_setup = dacx3608_channel_setup,
 	.write_value = dacx3608_write_value,
 };

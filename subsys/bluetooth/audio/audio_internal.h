@@ -2,9 +2,11 @@
  * @brief Internal APIs for LE Audio
  *
  * Copyright (c) 2022 Codecoup
+ * Copyright (c) 2026 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <sys/types.h>
@@ -61,21 +63,23 @@ ssize_t bt_audio_ccc_cfg_write(struct bt_conn *conn, const struct bt_gatt_attr *
 			       uint16_t value);
 
 /** Helper to define LE Audio CCC descriptor. */
-#define BT_AUDIO_CCC(_changed)								\
-	BT_GATT_CCC_MANAGED(((struct _bt_gatt_ccc[])					\
-		{BT_GATT_CCC_INITIALIZER(_changed, bt_audio_ccc_cfg_write, NULL)}),	\
+#define BT_AUDIO_CCC(_changed)                                                                     \
+	BT_GATT_CCC_MANAGED(                                                                       \
+		((struct bt_gatt_ccc_managed_user_data[]){BT_GATT_CCC_MANAGED_USER_DATA_INIT(      \
+			_changed, bt_audio_ccc_cfg_write, NULL)}),                                 \
 		(BT_GATT_PERM_READ | BT_GATT_PERM_WRITE_ENCRYPT))
 
-static inline const char *bt_audio_dir_str(enum bt_audio_dir dir)
-{
-	switch (dir) {
-	case BT_AUDIO_DIR_SINK:
-		return "sink";
-	case BT_AUDIO_DIR_SOURCE:
-		return "source";
-	}
-
-	return "Unknown";
-}
-
 bool bt_audio_valid_ltv(const uint8_t *data, uint8_t data_len);
+
+/** Checks the security of an ACL connection
+ *
+ * LE Audio requires a 128-bit key from LE Secure connections or where OOB data was used
+ *
+ * @param conn The ACL connection pointer
+ *
+ * @retval BT_ATT_ERR_SUCCESS Success
+ * @retval BT_ATT_ERR_UNLIKELY Invalid @p conn (NULL, not connected or not ACL)
+ * @retval BT_ATT_ERR_AUTHENTICATION Missing LE Secure Connection or OOB data
+ * @retval BT_ATT_ERR_ENCRYPTION_KEY_SIZE Key size is not 128-bit
+ */
+uint8_t bt_audio_security_check(const struct bt_conn *conn);

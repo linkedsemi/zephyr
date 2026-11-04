@@ -7,7 +7,8 @@ The ``/zephyr,user`` node
 Zephyr's devicetree scripts handle the ``/zephyr,user`` node as a special case:
 you can put essentially arbitrary properties inside it and retrieve their
 values without having to write a binding. It is meant as a convenient container
-when only a few simple properties are needed.
+when only a few simple properties are needed. The type is inferred from the
+values assigned to the property.
 
 .. note::
 
@@ -79,19 +80,16 @@ device pointers like this:
    const struct device *my_device =
    	DEVICE_DT_GET(DT_PROP(ZEPHYR_USER_NODE, handle));
 
-   #define PHANDLE_TO_DEVICE(node_id, prop, idx) \
-        DEVICE_DT_GET(DT_PHANDLE_BY_IDX(node_id, prop, idx)),
-
    /*
     * Same thing as:
     *
     * ... *my_devices[] = {
     *         DEVICE_DT_GET(DT_NODELABEL(gpio0)),
-    *         DEVICE_DT_GET(DT_NODELABEL(gpio1)),
+    *         DEVICE_DT_GET(DT_NODELABEL(gpio1))
     * };
     */
    const struct device *my_devices[] = {
-   	DT_FOREACH_PROP_ELEM(ZEPHYR_USER_NODE, handles, PHANDLE_TO_DEVICE)
+        DT_FOREACH_PROP_ELEM_SEP(ZEPHYR_USER_NODE, handles, DEVICE_DT_GET_BY_IDX, (,))
    };
 
 GPIOs
@@ -99,6 +97,11 @@ GPIOs
 
 The ``/zephyr,user`` node is a convenient place to store application-specific
 GPIOs that you want to be able to reconfigure with a devicetree overlay.
+
+.. note::
+
+   All properties with a value containing at least one phandle and a number will
+   be inferred as a phandle-array. example ``<&adc0 1>``.
 
 For example, with this devicetree overlay:
 

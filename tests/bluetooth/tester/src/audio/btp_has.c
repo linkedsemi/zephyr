@@ -5,14 +5,21 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <zephyr/arch/common/ffs.h>
+#include <zephyr/autoconf.h>
 #include <zephyr/bluetooth/audio/has.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
 
 #include "btp/btp.h"
-#include <zephyr/sys/byteorder.h>
-#include <zephyr/arch/common/ffs.h>
-#include <stdint.h>
 
-#include <zephyr/logging/log.h>
 #define LOG_MODULE_NAME bttester_has
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_BTTESTER_LOG_LEVEL);
 
@@ -21,14 +28,11 @@ static uint8_t has_supported_commands(const void *cmd, uint16_t cmd_len,
 {
 	struct btp_has_read_supported_commands_rp *rp = rsp;
 
-	tester_set_bit(rp->data, BTP_HAS_READ_SUPPORTED_COMMANDS);
-	tester_set_bit(rp->data, BTP_HAS_SET_ACTIVE_INDEX);
-	tester_set_bit(rp->data, BTP_HAS_SET_PRESET_NAME);
-	tester_set_bit(rp->data, BTP_HAS_REMOVE_PRESET);
-	tester_set_bit(rp->data, BTP_HAS_ADD_PRESET);
-	tester_set_bit(rp->data, BTP_HAS_SET_PROPERTIES);
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
 
-	*rsp_len = sizeof(*rp) + 1;
+	*rsp_len = tester_supported_commands(BTP_SERVICE_ID_HAS, rp->data);
+	*rsp_len += sizeof(*rp);
 
 	return BTP_STATUS_SUCCESS;
 }
@@ -38,6 +42,10 @@ static uint8_t has_set_active_index(const void *cmd, uint16_t cmd_len,
 {
 	const struct btp_has_set_active_index_cmd *cp = cmd;
 	int err = bt_has_preset_active_set(cp->index);
+
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
 
 	return BTP_STATUS_VAL(err);
 }
@@ -51,6 +59,9 @@ static uint8_t has_set_preset_name(const void *cmd, uint16_t cmd_len,
 	const struct btp_has_set_preset_name_cmd *cp = cmd;
 	const uint16_t fixed_size = sizeof(*cp);
 	int err = -1;
+
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
 
 	if (cmd_len >= fixed_size && cmd_len >= (fixed_size + cp->length)) {
 		int name_len = MIN(cp->length, BT_HAS_PRESET_NAME_MAX);
@@ -68,20 +79,24 @@ static uint8_t has_remove_preset(const void *cmd, uint16_t cmd_len,
 	const struct btp_has_remove_preset_cmd *cp = cmd;
 	int err = 0;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	if (cp->index == BT_HAS_PRESET_INDEX_NONE) {
 		while (has_presets) {
 			uint8_t index = find_lsb_set(has_presets);
 
 			err = bt_has_preset_unregister(index);
-			if (err) {
+			if (err != 0) {
 				break;
 			}
-			has_presets &= ~(1 << (index - 1));
+			has_presets &= ~(1U << (index - 1U));
 		}
 	} else {
 		err = bt_has_preset_unregister(cp->index);
-		if (!err) {
-			has_presets &= ~(1 << (cp->index - 1));
+		if (err == 0) {
+			has_presets &= ~(1U << (cp->index - 1U));
 		}
 	}
 	return BTP_STATUS_VAL(err);
@@ -89,6 +104,9 @@ static uint8_t has_remove_preset(const void *cmd, uint16_t cmd_len,
 
 static int has_preset_selected(unsigned char index, bool sync)
 {
+	ARG_UNUSED(index);
+	ARG_UNUSED(sync);
+
 	return BTP_STATUS_SUCCESS;
 }
 
@@ -103,6 +121,9 @@ static uint8_t has_add_preset(const void *cmd, uint16_t cmd_len,
 	const uint16_t fixed_size = sizeof(*cp);
 	int err = -1;
 
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	if (cmd_len >= fixed_size && cmd_len >= (fixed_size + cp->length)) {
 		int name_len = MIN(cp->length, BT_HAS_PRESET_NAME_MAX);
 
@@ -112,8 +133,8 @@ static uint8_t has_add_preset(const void *cmd, uint16_t cmd_len,
 			cp->index, cp->props, temp_name, &has_preset_ops
 		};
 		err = bt_has_preset_register(&preset_params);
-		if (!err) {
-			has_presets |= 1 << (cp->index - 1);
+		if (err == 0) {
+			has_presets |= 1U << (cp->index - 1U);
 		}
 	}
 	return BTP_STATUS_VAL(err);
@@ -126,6 +147,10 @@ static uint8_t has_set_properties(const void *cmd, uint16_t cmd_len,
 	int err = (cp->props & BT_HAS_PROP_AVAILABLE) ?
 		bt_has_preset_available(cp->index) :
 		bt_has_preset_unavailable(cp->index);
+
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
 
 	return BTP_STATUS_VAL(err);
 }
@@ -171,7 +196,7 @@ uint8_t tester_init_has(void)
 
 	struct bt_has_features_param params = {
 		.type = BT_HAS_HEARING_AID_TYPE_BINAURAL,
-		.preset_sync_support = false,
+		.preset_sync_support = true,
 		.independent_presets = IS_ENABLED(CONFIG_BT_HAS_PRESET_SUPPORT)
 	};
 	int err = bt_has_register(&params);

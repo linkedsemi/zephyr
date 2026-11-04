@@ -9,6 +9,8 @@ Abstract Class for Dictionary-based Logging Parsers
 """
 
 import abc
+import re
+
 from colorama import Fore
 
 from .data_types import DataTypes
@@ -18,8 +20,9 @@ LOG_LEVELS = [
     ('err', Fore.RED),
     ('wrn', Fore.YELLOW),
     ('inf', Fore.GREEN),
-    ('dbg', Fore.BLUE)
+    ('dbg', Fore.BLUE),
 ]
+
 
 def get_log_level_str_color(lvl):
     """Convert numeric log level to string"""
@@ -35,27 +38,30 @@ def formalize_fmt_string(fmt_str):
 
     for spec in ['d', 'i', 'o', 'u', 'x', 'X']:
         # Python doesn't support %ll for integer specifiers, so remove extra 'l'
-        new_str = new_str.replace("%ll" + spec, "%l" + spec)
+        new_str = re.sub(r'%(\#?\d*)ll' + spec, r'%\1l' + spec, new_str)
 
         if spec in ['x', 'X']:
-            new_str = new_str.replace("%#ll" + spec, "%#l" + spec)
+            new_str = re.sub(r'%\#(\d*)ll' + spec, r'%#\1l' + spec, new_str)
 
         # Python doesn't support %hh for integer specifiers, so remove extra 'h'
-        new_str = new_str.replace("%hh" + spec, "%h" + spec)
+        new_str = re.sub(r'%(\#?\d*)hh' + spec, r'%\1h' + spec, new_str)
 
     # No %p for pointer either, so use %x
     new_str = new_str.replace("%p", "0x%x")
+
+    # No %z support, use %d instead
+    new_str = new_str.replace("%z", "%d")
 
     return new_str
 
 
 class LogParser(abc.ABC):
     """Abstract class of log parser"""
+
     def __init__(self, database):
         self.database = database
 
         self.data_types = DataTypes(self.database)
-
 
     @abc.abstractmethod
     def parse_log_data(self, logdata, debug=False):

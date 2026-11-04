@@ -11,7 +11,6 @@
 #ifndef ZEPHYR_DRIVERS_SENSOR_LIS2DW12_LIS2DW12_H_
 #define ZEPHYR_DRIVERS_SENSOR_LIS2DW12_LIS2DW12_H_
 
-#include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/sensor.h>
@@ -28,7 +27,8 @@
 
 /* Return ODR reg value based on data rate set */
 #define LIS2DW12_ODR_TO_REG(_odr) \
-	((_odr <= 1) ? LIS2DW12_XL_ODR_1Hz6_LP_ONLY : \
+	((_odr == 0) ? LIS2DW12_XL_ODR_OFF : \
+	 (_odr <= 1) ? LIS2DW12_XL_ODR_1Hz6_LP_ONLY : \
 	 (_odr <= 12) ? LIS2DW12_XL_ODR_12Hz5 : \
 	 ((31 - __builtin_clz(_odr / 25))) + 3)
 

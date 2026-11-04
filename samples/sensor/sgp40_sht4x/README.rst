@@ -24,8 +24,8 @@ To make use of the heater have a look at the Kconfig options for this applicatio
 References
 **********
 
- - `SHT4X sensor <https://www.sensirion.com/en/environmental-sensors/humidity-sensors/humidity-sensor-sht4x/>`_
- - `SGP40 sensor <https://www.sensirion.com/en/environmental-sensors/gas-sensors/sgp40/>`_
+ - `SHT4X sensor <https://sensirion.com/products/catalog/SHT40>`_
+ - `SGP40 sensor <https://sensirion.com/products/catalog/SGP40>`_
 
 Wiring
 ******
@@ -62,6 +62,6 @@ Sample Output
         SHT4X: 23.66 Temp. [C] ; 32.16 RH [%] -- SGP40: 30541 Gas [a.u.]
         SHT4X: 23.63 Temp. [C] ; 30.83 RH [%] -- SGP40: 30522 Gas [a.u.]
 
-The datasheet states that the raw sensor signal for the SGP40 ist proportional
+The datasheet states that the raw sensor signal for the SGP40 is proportional
 to the logarithm of the sensors resistance, hence it is labeled as [a.u.]
 (arbitrary units) in the example.

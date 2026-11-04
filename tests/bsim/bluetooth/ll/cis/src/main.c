@@ -1,19 +1,23 @@
 /* main.c - Application main entry point */
 
 /*
- * Copyright (c) 2023 Nordic Semiconductor ASA
+ * Copyright (c) 2023-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/bluetooth/gap.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/byteorder.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/iso.h>
 #include <zephyr/bluetooth/hci.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/clock.h>
 
 #include "bs_types.h"
 #include "bs_tracing.h"
@@ -52,19 +56,20 @@ static bt_addr_le_t peer_addr;
 #define ISO_LATENCY_MS       DIV_ROUND_UP(ISO_INTERVAL_US, USEC_PER_MSEC)
 #define ISO_LATENCY_FT_MS    20U
 
-#define BT_CONN_US_TO_INTERVAL(t) ((uint16_t)((t) * 4U / 5U / USEC_PER_MSEC))
-
 #if (CONFIG_BT_CTLR_CENTRAL_SPACING == 0)
-#define CONN_INTERVAL_MIN    BT_CONN_US_TO_INTERVAL(ISO_INTERVAL_US)
+#define CONN_INTERVAL_MIN_US ISO_INTERVAL_US
 #else /* CONFIG_BT_CTLR_CENTRAL_SPACING > 0 */
-#define CONN_INTERVAL_MIN    BT_CONN_US_TO_INTERVAL(ISO_INTERVAL_US * CONFIG_BT_MAX_CONN)
+#define CONN_INTERVAL_MIN_US (ISO_INTERVAL_US * CONFIG_BT_MAX_CONN)
 #endif /* CONFIG_BT_CTLR_CENTRAL_SPACING > 0 */
+#define CONN_INTERVAL_MAX_US CONN_INTERVAL_MIN_US
 
-#define CONN_INTERVAL_MAX    CONN_INTERVAL_MIN
-#define CONN_TIMEOUT         MAX((BT_CONN_INTERVAL_TO_MS(CONN_INTERVAL_MAX) * 6U / 10U), 10U)
+#define CONN_INTERVAL_MIN BT_GAP_US_TO_CONN_INTERVAL(CONN_INTERVAL_MIN_US)
+#define CONN_INTERVAL_MAX BT_GAP_US_TO_CONN_INTERVAL(CONN_INTERVAL_MAX_US)
+#define CONN_TIMEOUT                                                                               \
+	MAX(BT_GAP_US_TO_CONN_TIMEOUT(CONN_INTERVAL_MAX_US * 6U), BT_GAP_MS_TO_CONN_TIMEOUT(100U))
 
-#define ADV_INTERVAL_MIN     0x0020
-#define ADV_INTERVAL_MAX     0x0020
+#define ADV_INTERVAL_MIN BT_GAP_MS_TO_ADV_INTERVAL(20)
+#define ADV_INTERVAL_MAX BT_GAP_MS_TO_ADV_INTERVAL(20)
 
 #define BT_CONN_LE_CREATE_CONN_CUSTOM  \
 	BT_CONN_LE_CREATE_PARAM(BT_CONN_LE_OPT_NONE, \
@@ -120,18 +125,16 @@ static const char *phy2str(uint8_t phy)
 static void scan_recv(const struct bt_le_scan_recv_info *info,
 		      struct net_buf_simple *buf)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
 	char name[NAME_LEN];
 
 	(void)memset(name, 0, sizeof(name));
 
 	bt_data_parse(buf, data_cb, name);
 
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
 	printk("[DEVICE]: %s, AD evt type %u, Tx Pwr: %i, RSSI %i %s "
 	       "C:%u S:%u D:%u SR:%u E:%u Prim: %s, Secn: %s, "
 	       "Interval: 0x%04x (%u ms), SID: %u\n",
-	       le_addr, info->adv_type, info->tx_power, info->rssi, name,
+	       bt_addr_le_str(info->addr), info->adv_type, info->tx_power, info->rssi, name,
 	       (info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE) != 0,
 	       (info->adv_props & BT_GAP_ADV_PROP_SCANNABLE) != 0,
 	       (info->adv_props & BT_GAP_ADV_PROP_DIRECTED) != 0,
@@ -150,14 +153,10 @@ static struct bt_le_scan_cb scan_callbacks = {
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (err) {
 		struct bt_conn_info conn_info;
 
-		printk("Failed to connect to %s (%u)\n", addr, err);
+		printk("Failed to connect to %s (%u)\n", bt_conn_dst_str(conn), err);
 
 		err = bt_conn_get_info(conn, &conn_info);
 		if (err) {
@@ -165,7 +164,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 			return;
 		}
 
-		printk("%s: %s role %u\n", __func__, addr, conn_info.role);
+		printk("%s: %s role %u\n", __func__, bt_conn_dst_str(conn), conn_info.role);
 
 		if (conn_info.role == BT_CONN_ROLE_CENTRAL) {
 			bt_conn_unref(conn);
@@ -174,7 +173,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	printk("Connected: %s\n", addr);
+	printk("Connected: %s\n", bt_conn_dst_str(conn));
 
 	k_sem_give(&sem_peer_conn);
 }
@@ -182,12 +181,9 @@ static void connected(struct bt_conn *conn, uint8_t err)
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	struct bt_conn_info conn_info;
-	char addr[BT_ADDR_LE_STR_LEN];
 	int err;
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("Disconnected: %s (reason 0x%02x)\n", addr, reason);
+	printk("Disconnected: %s (reason 0x%02x)\n", bt_conn_dst_str(conn), reason);
 
 	err = bt_conn_get_info(conn, &conn_info);
 	if (err) {
@@ -195,7 +191,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 		return;
 	}
 
-	printk("%s: %s role %u\n", __func__, addr, conn_info.role);
+	printk("%s: %s role %u\n", __func__, bt_conn_dst_str(conn), conn_info.role);
 
 	if (conn_info.role == BT_CONN_ROLE_CENTRAL) {
 		bt_conn_unref(conn);
@@ -211,15 +207,12 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 
 static void disconnect(struct bt_conn *conn, void *data)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
 	int err;
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("Disconnecting %s...\n", addr);
+	printk("Disconnecting %s...\n", bt_conn_dst_str(conn));
 	err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	if (err) {
-		FAIL("Failed disconnection %s.\n", addr);
+		FAIL("Failed disconnection %s.\n", bt_conn_dst_str(conn));
 		return;
 	}
 	printk("success.\n");
@@ -308,16 +301,65 @@ void iso_sent(struct bt_iso_chan *chan)
 
 static void iso_connected(struct bt_iso_chan *chan)
 {
+	const struct bt_iso_chan_path hci_path = {
+		.pid = BT_ISO_DATA_PATH_HCI,
+		.format = BT_HCI_CODING_FORMAT_TRANSPARENT,
+	};
+	struct bt_iso_info iso_info;
+	int err;
+
+	err = bt_iso_chan_get_info(chan, &iso_info);
+	if (err != 0) {
+		FAIL("Failed to get ISO info: %d\n", err);
+		return;
+	}
+
 	printk("ISO Channel %p connected\n", chan);
 
 	k_sem_give(&sem_iso_conn);
+
+	if (iso_info.can_recv) {
+		err = bt_iso_setup_data_path(chan, BT_HCI_DATAPATH_DIR_CTLR_TO_HOST, &hci_path);
+		if (err != 0) {
+			FAIL("Failed to setup ISO RX data path: %d\n", err);
+		}
+	}
+
+	if (iso_info.can_send) {
+		err = bt_iso_setup_data_path(chan, BT_HCI_DATAPATH_DIR_HOST_TO_CTLR, &hci_path);
+		if (err != 0) {
+			FAIL("Failed to setup ISO TX data path: %d\n", err);
+		}
+	}
 }
 
 static void iso_disconnected(struct bt_iso_chan *chan, uint8_t reason)
 {
+	struct bt_iso_info iso_info;
+	int err;
+
 	printk("ISO Channel %p disconnected (reason 0x%02x)\n", chan, reason);
 
 	k_sem_give(&sem_iso_disc);
+
+	err = bt_iso_chan_get_info(chan, &iso_info);
+	if (err != 0) {
+		FAIL("Failed to get ISO info: %d\n", err);
+	} else if (iso_info.type == BT_ISO_CHAN_TYPE_CENTRAL) {
+		if (iso_info.can_recv) {
+			err = bt_iso_remove_data_path(chan, BT_HCI_DATAPATH_DIR_CTLR_TO_HOST);
+			if (err != 0) {
+				FAIL("Failed to remove ISO RX data path: %d\n", err);
+			}
+		}
+
+		if (iso_info.can_send) {
+			err = bt_iso_remove_data_path(chan, BT_HCI_DATAPATH_DIR_HOST_TO_CTLR);
+			if (err != 0) {
+				FAIL("Failed to remove ISO TX data path: %d\n", err);
+			}
+		}
+	}
 }
 
 static struct bt_iso_chan_ops iso_ops = {
@@ -354,7 +396,6 @@ static void test_cis_central(void)
 	for (int i = 0; i < CONFIG_BT_ISO_MAX_CHAN; i++) {
 		iso_tx[i].sdu = CONFIG_BT_ISO_TX_MTU;
 		iso_tx[i].phy = BT_GAP_LE_PHY_2M;
-		iso_tx[i].path = NULL;
 		if (IS_ENABLED(CONFIG_TEST_FT_SKIP_SUBEVENTS)) {
 			iso_tx[i].rtn = 2U;
 		} else {
@@ -370,7 +411,6 @@ static void test_cis_central(void)
 
 		iso_rx[i].sdu = CONFIG_BT_ISO_RX_MTU;
 		iso_rx[i].phy = BT_GAP_LE_PHY_2M;
-		iso_rx[i].path = NULL;
 		if (IS_ENABLED(CONFIG_TEST_FT_SKIP_SUBEVENTS)) {
 			iso_rx[i].rtn = 2U;
 		} else {
@@ -385,9 +425,6 @@ static void test_cis_central(void)
 
 		iso_chan[i].ops = &iso_ops;
 		iso_chan[i].qos = &iso_qos[i];
-#if defined(CONFIG_BT_SMP)
-		iso_chan[i].required_sec_level = BT_SECURITY_L2,
-#endif /* CONFIG_BT_SMP */
 
 		channels[i] = &iso_chan[i];
 	}
@@ -632,9 +669,6 @@ static int iso_accept(const struct bt_iso_accept_info *info,
 }
 
 static struct bt_iso_server iso_server = {
-#if defined(CONFIG_BT_SMP)
-	.sec_level = BT_SECURITY_L1,
-#endif /* CONFIG_BT_SMP */
 	.accept = iso_accept,
 };
 
@@ -654,7 +688,6 @@ static void test_cis_peripheral(void)
 	for (int i = 0; i < CONFIG_BT_ISO_MAX_CHAN; i++) {
 		iso_tx_p[i].sdu = CONFIG_BT_ISO_TX_MTU;
 		iso_tx_p[i].phy = BT_GAP_LE_PHY_2M;
-		iso_tx_p[i].path = NULL;
 		if (IS_ENABLED(CONFIG_TEST_FT_SKIP_SUBEVENTS)) {
 			iso_tx_p[i].rtn = 2U;
 		} else {

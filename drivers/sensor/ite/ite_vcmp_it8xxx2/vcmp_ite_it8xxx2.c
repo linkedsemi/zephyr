@@ -67,7 +67,7 @@ struct vcmp_it8xxx2_data {
 	struct adc_channel_cfg adc_ch_cfg;
 	/* Work queue to be notified when threshold assertion happens */
 	struct k_work work;
-	/* Sensor trigger hanlder to notify user of assetion */
+	/* Sensor trigger handler to notify user of assetion */
 	sensor_trigger_handler_t handler;
 	const struct sensor_trigger *trig;
 	/* Pointer of voltage comparator device */
@@ -288,7 +288,7 @@ static int vcmp_it8xxx2_init(const struct device *dev)
 	 * so we need to set ADC channel to alternate mode first.
 	 */
 	if (!device_is_ready(config->adc)) {
-		LOG_ERR("ADC device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->adc);
 		return -ENODEV;
 	}
 	adc_channel_setup(config->adc, &data->adc_ch_cfg);
@@ -352,7 +352,7 @@ static int vcmp_it8xxx2_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api vcmp_ite_it8xxx2_api = {
+static DEVICE_API(sensor, vcmp_ite_it8xxx2_api) = {
 	.attr_set = vcmp_ite_it8xxx2_attr_set,
 	.trigger_set = vcmp_ite_it8xxx2_trigger_set,
 	.channel_get = vcmp_it8xxx2_channel_get,

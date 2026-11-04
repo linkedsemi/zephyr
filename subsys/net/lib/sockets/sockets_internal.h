@@ -20,6 +20,13 @@ int zsock_poll_internal(struct zsock_pollfd *fds, int nfds, k_timeout_t timeout)
 
 int zsock_wait_data(struct net_context *ctx, k_timeout_t *timeout);
 
+#if defined(CONFIG_NET_NATIVE)
+/* Native IP sockets all share this vtable; used to tell them apart from
+ * offloaded sockets by the vtable installed on an fd.
+ */
+extern const struct socket_op_vtable sock_fd_op_vtable;
+#endif
+
 static inline void sock_set_flag(struct net_context *ctx, uintptr_t mask,
 				 uintptr_t flag)
 {
@@ -47,37 +54,52 @@ static inline bool net_socket_is_tls(void *obj)
 }
 #endif
 
+/* Offloaded sockets bind their local port in the offload engine, outside the
+ * net_context list. socket_offload.c tracks those bindings; the socket layer
+ * records one here after every successful bind() so net_socket_port_in_use()
+ * covers native and offloaded sockets alike.
+ */
+#if defined(CONFIG_NET_SOCKETS_OFFLOAD_PORT_TRACKING)
+void net_socket_offloaded_port_bind(int fd, const struct net_sockaddr *addr);
+void net_socket_offloaded_port_untrack(int fd);
+#else
+static inline void net_socket_offloaded_port_bind(int fd, const struct net_sockaddr *addr)
+{
+	ARG_UNUSED(fd);
+	ARG_UNUSED(addr);
+}
+
+static inline void net_socket_offloaded_port_untrack(int fd)
+{
+	ARG_UNUSED(fd);
+}
+#endif /* CONFIG_NET_SOCKETS_OFFLOAD_PORT_TRACKING */
+
 #define sock_is_eof(ctx) sock_get_flag(ctx, SOCK_EOF)
 #define sock_set_eof(ctx) sock_set_flag(ctx, SOCK_EOF, SOCK_EOF)
 #define sock_is_nonblock(ctx) sock_get_flag(ctx, SOCK_NONBLOCK)
 #define sock_is_error(ctx) sock_get_flag(ctx, SOCK_ERROR)
-#define sock_set_error(ctx) sock_set_flag(ctx, SOCK_ERROR, SOCK_ERROR)
 
-struct socket_op_vtable {
-	struct fd_op_vtable fd_vtable;
-	int (*shutdown)(void *obj, int how);
-	int (*bind)(void *obj, const struct sockaddr *addr, socklen_t addrlen);
-	int (*connect)(void *obj, const struct sockaddr *addr,
-		       socklen_t addrlen);
-	int (*listen)(void *obj, int backlog);
-	int (*accept)(void *obj, struct sockaddr *addr, socklen_t *addrlen);
-	ssize_t (*sendto)(void *obj, const void *buf, size_t len, int flags,
-			  const struct sockaddr *dest_addr, socklen_t addrlen);
-	ssize_t (*recvfrom)(void *obj, void *buf, size_t max_len, int flags,
-			    struct sockaddr *src_addr, socklen_t *addrlen);
-	int (*getsockopt)(void *obj, int level, int optname,
-			  void *optval, socklen_t *optlen);
-	int (*setsockopt)(void *obj, int level, int optname,
-			  const void *optval, socklen_t optlen);
-	ssize_t (*sendmsg)(void *obj, const struct msghdr *msg, int flags);
-	ssize_t (*recvmsg)(void *obj, struct msghdr *msg, int flags);
-	int (*getpeername)(void *obj, struct sockaddr *addr,
-			   socklen_t *addrlen);
-	int (*getsockname)(void *obj, struct sockaddr *addr,
-			   socklen_t *addrlen);
-};
+/* Record a pending socket error (positive errno) and flag the context.
+ * The value is stored in a dedicated net_context field rather than being
+ * stashed in user_data, which the stack also uses to carry the parent
+ * context pointer for accept callbacks.
+ */
+static inline void sock_set_error(struct net_context *ctx, int err)
+{
+	ctx->sock_error = err;
+	sock_set_flag(ctx, SOCK_ERROR, SOCK_ERROR);
+}
 
-size_t msghdr_non_empty_iov_count(const struct msghdr *msg);
+/* Retrieve the pending socket error (positive errno) previously recorded
+ * by sock_set_error(). Only meaningful while sock_is_error() is true.
+ */
+static inline int sock_get_error(struct net_context *ctx)
+{
+	return ctx->sock_error;
+}
+
+size_t msghdr_non_empty_iov_count(const struct net_msghdr *msg);
 
 #if defined(CONFIG_NET_SOCKETS_OBJ_CORE)
 int sock_obj_core_alloc(int sock, struct net_socket_register *reg,

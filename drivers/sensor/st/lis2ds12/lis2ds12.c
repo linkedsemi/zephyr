@@ -184,22 +184,27 @@ static int lis2ds12_sample_fetch_accel(const struct device *dev)
 static int lis2ds12_sample_fetch(const struct device *dev,
 				 enum sensor_channel chan)
 {
+	int ret = 0;
+
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
-		lis2ds12_sample_fetch_accel(dev);
+		ret = lis2ds12_sample_fetch_accel(dev);
 		break;
 #if defined(CONFIG_LIS2DS12_ENABLE_TEMP)
 	case SENSOR_CHAN_DIE_TEMP:
 		/* ToDo:
-		lis2ds12_sample_fetch_temp(dev)
+		ret = lis2ds12_sample_fetch_temp(dev)
 		*/
 		break;
 #endif
 	case SENSOR_CHAN_ALL:
-		lis2ds12_sample_fetch_accel(dev);
+		ret = lis2ds12_sample_fetch_accel(dev);
+		if (ret != 0) {
+			break;
+		}
 #if defined(CONFIG_LIS2DS12_ENABLE_TEMP)
 		/* ToDo:
-		lis2ds12_sample_fetch_temp(dev)
+		ret = lis2ds12_sample_fetch_temp(dev)
 		*/
 #endif
 		break;
@@ -207,7 +212,7 @@ static int lis2ds12_sample_fetch(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	return 0;
+	return ret;
 }
 
 static inline void lis2ds12_convert(struct sensor_value *val, int raw_val,
@@ -258,7 +263,7 @@ static int lis2ds12_channel_get(const struct device *dev,
 	return lis2ds12_get_channel(chan, val, data, data->gain);
 }
 
-static const struct sensor_driver_api lis2ds12_driver_api = {
+static DEVICE_API(sensor, lis2ds12_driver_api) = {
 	.attr_set = lis2ds12_attr_set,
 #if defined(CONFIG_LIS2DS12_TRIGGER)
 	.trigger_set = lis2ds12_trigger_set,
@@ -361,7 +366,7 @@ static int lis2ds12_init(const struct device *dev)
 			(LIS2DS12_CFG_IRQ(inst)), ())
 
 #define LIS2DS12_SPI_OPERATION (SPI_WORD_SET(8) |			\
-				SPI_OP_MODE_MASTER |			\
+				SPI_OP_MODE_CONTROLLER |		\
 				SPI_MODE_CPOL |				\
 				SPI_MODE_CPHA)				\
 
@@ -370,8 +375,7 @@ static int lis2ds12_init(const struct device *dev)
 		STMEMSC_CTX_SPI(&lis2ds12_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
-					   LIS2DS12_SPI_OPERATION,	\
-					   0),				\
+					   LIS2DS12_SPI_OPERATION)	\
 		},							\
 		LIS2DS12_CONFIG_COMMON(inst)				\
 	}

@@ -31,7 +31,6 @@ LOG_MODULE_REGISTER(net_ppp, LOG_LEVEL);
 #include <zephyr/sys/crc.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/random/random.h>
-#include <zephyr/posix/net/if_arp.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/capture.h>
 
@@ -95,7 +94,6 @@ struct ppp_driver_context {
 #endif
 
 	uint8_t mac_addr[6];
-	struct net_linkaddr ll_addr;
 
 	/* Flag that tells whether this instance is initialized or not */
 	atomic_t modem_init_done;
@@ -292,6 +290,14 @@ static void uart_recovery(struct k_work *work)
 				K_MSEC(CONFIG_NET_PPP_ASYNC_UART_RX_RECOVERY_TIMEOUT));
 	}
 }
+
+/* Wait for the previous asynchronous transfer to complete */
+static void wait_for_async_tx(void)
+{
+	k_sem_take(&uarte_tx_finished, K_FOREVER);
+}
+#else
+#define wait_for_async_tx(...)
 #endif
 
 static int ppp_save_byte(struct ppp_driver_context *ppp, uint8_t byte)
@@ -302,7 +308,7 @@ static int ppp_save_byte(struct ppp_driver_context *ppp, uint8_t byte)
 		ppp->pkt = net_pkt_rx_alloc_with_buffer(
 			ppp->iface,
 			CONFIG_NET_BUF_DATA_SIZE,
-			AF_UNSPEC, 0, K_NO_WAIT);
+			NET_AF_UNSPEC, 0, K_NO_WAIT);
 		if (!ppp->pkt) {
 			LOG_ERR("[%p] cannot allocate pkt", ppp);
 			return -ENOMEM;
@@ -326,7 +332,7 @@ static int ppp_save_byte(struct ppp_driver_context *ppp, uint8_t byte)
 	if (ppp->available == 1) {
 		ret = net_pkt_alloc_buffer(ppp->pkt,
 					   CONFIG_NET_BUF_DATA_SIZE + ppp->available,
-					   AF_UNSPEC, K_NO_WAIT);
+					   NET_AF_UNSPEC, K_NO_WAIT);
 		if (ret < 0) {
 			LOG_ERR("[%p] cannot allocate new data buffer", ppp);
 			goto out_of_mem;
@@ -384,7 +390,7 @@ static void ppp_change_state(struct ppp_driver_context *ctx,
 	NET_ASSERT(new_state >= STATE_HDLC_FRAME_START &&
 		   new_state <= STATE_HDLC_FRAME_DATA);
 
-	NET_DBG("[%p] state %s (%d) => %s (%d)",
+	LOG_DBG("[%p] state %s (%d) => %s (%d)",
 		ctx, ppp_driver_state_str(ctx->state), ctx->state,
 		ppp_driver_state_str(new_state), new_state);
 
@@ -426,7 +432,13 @@ static int ppp_send_flush(struct ppp_driver_context *ppp, int off)
 				? CONFIG_NET_PPP_ASYNC_UART_TX_TIMEOUT * USEC_PER_MSEC
 				: SYS_FOREVER_US;
 
-	k_sem_take(&uarte_tx_finished, K_FOREVER);
+	if (off == 0) {
+		/* ppp_send_bytes() might've already flushed the buffer, so if
+		 * there's nothing else to send, just exit
+		 */
+		k_sem_give(&uarte_tx_finished);
+		return 0;
+	}
 
 	ret = uart_tx(ppp->dev, buf, off, timeout);
 	if (ret) {
@@ -445,13 +457,23 @@ static int ppp_send_flush(struct ppp_driver_context *ppp, int off)
 static int ppp_send_bytes(struct ppp_driver_context *ppp,
 			  const uint8_t *data, int len, int off)
 {
+	bool wait = false;
 	int i;
 
 	for (i = 0; i < len; i++) {
+		if (wait) {
+			/* Wait for the transfer to complete (in async mode),
+			 * before modifying the TX buffer again
+			 */
+			wait_for_async_tx();
+			wait = false;
+		}
+
 		ppp->send_buf[off++] = data[i];
 
 		if (off >= sizeof(ppp->send_buf)) {
 			off = ppp_send_flush(ppp, off);
+			wait = true;
 		}
 	}
 
@@ -483,6 +505,8 @@ static void ppp_handle_client(struct ppp_driver_context *ppp, uint8_t byte)
 	++ppp->client_index;
 	if (ppp->client_index >= (sizeof(CLIENT) - 1)) {
 		LOG_DBG("Received complete CLIENT string");
+		/* Wait for the previous transfer to complete before starting a new one. */
+		wait_for_async_tx();
 		offset = ppp_send_bytes(ppp, clientserver,
 					sizeof(CLIENTSERVER) - 1, 0);
 		(void)ppp_send_flush(ppp, offset);
@@ -502,6 +526,7 @@ static int ppp_input_byte(struct ppp_driver_context *ppp, uint8_t byte)
 		if (byte == 0x7e) {
 			/* Note that we do not save the sync flag */
 			LOG_DBG("Sync byte (0x%02x) start", byte);
+			ppp->next_escaped = false;
 			ppp_change_state(ppp, STATE_HDLC_FRAME_ADDRESS);
 #if defined(CONFIG_PPP_CLIENT_CLIENTSERVER)
 		} else {
@@ -512,38 +537,22 @@ static int ppp_input_byte(struct ppp_driver_context *ppp, uint8_t byte)
 		break;
 
 	case STATE_HDLC_FRAME_ADDRESS:
-		if (byte != 0xff) {
-			/* Check if we need to sync again */
-			if (byte == 0x7e) {
-				/* Just skip to the start of the pkt byte */
-				return -EAGAIN;
-			}
-
-			LOG_DBG("Invalid (0x%02x) byte, expecting Address",
-				byte);
-
-			/* If address is != 0xff, then ignore this
-			 * frame. RFC 1662 ch 3.1
-			 */
-			ppp_change_state(ppp, STATE_HDLC_FRAME_START);
-		} else {
-			LOG_DBG("Address byte (0x%02x) start", byte);
-
-			ppp_change_state(ppp, STATE_HDLC_FRAME_DATA);
-
-			/* Save the address field so that we can calculate
-			 * the FCS. The address field will not be passed
-			 * to upper stack.
-			 */
-			ret = ppp_save_byte(ppp, byte);
-			if (ret < 0) {
-				ppp_change_state(ppp, STATE_HDLC_FRAME_START);
-			}
-
-			ret = -EAGAIN;
+		/* Check if we need to sync again */
+		if (byte == 0x7e) {
+			/* Just skip to the start of the pkt byte */
+			ppp->next_escaped = false;
+			return -EAGAIN;
 		}
 
-		break;
+		LOG_DBG("Frame start byte (0x%02x)", byte);
+
+		/* The first octet is the Address field, or the Protocol field
+		 * if the peer compressed the Address and Control fields away
+		 * (RFC 1662 ch. 3.2). Handle both as frame data;
+		 * ppp_process_msg() tells them apart.
+		 */
+		ppp_change_state(ppp, STATE_HDLC_FRAME_DATA);
+		__fallthrough;
 
 	case STATE_HDLC_FRAME_DATA:
 		/* If the next frame starts, then send this one
@@ -551,6 +560,11 @@ static int ppp_input_byte(struct ppp_driver_context *ppp, uint8_t byte)
 		 */
 		if (byte == 0x7e) {
 			LOG_DBG("End of pkt (0x%02x)", byte);
+			/* An escape at the very end of a frame (0x7d 0x7e) is
+			 * an aborted frame, RFC 1662 ch. 4.2. Do not let the
+			 * pending escape leak into the next frame.
+			 */
+			ppp->next_escaped = false;
 			ppp_change_state(ppp, STATE_HDLC_FRAME_ADDRESS);
 			ret = 0;
 		} else {
@@ -655,34 +669,29 @@ static void ppp_process_msg(struct ppp_driver_context *ppp)
 					 NET_ETH_PTYPE_HDLC);
 		}
 
-		/* Remove the Address (0xff), Control (0x03) and
-		 * FCS fields (16-bit) as the PPP L2 layer does not need
-		 * those bytes.
+		/* Remove the Address (0xff), Control (0x03) and FCS fields
+		 * (16-bit) as the PPP L2 layer does not need those bytes. The
+		 * peer may have compressed the Address and Control fields away
+		 * (RFC 1662 ch. 3.2); 0xff 0x03 cannot be mistaken for a
+		 * Protocol field, whose first octet is always even.
 		 */
-		uint16_t addr_and_ctrl = net_buf_pull_be16(ppp->pkt->buffer);
+		struct net_buf *buf = ppp->pkt->buffer;
 
-		/* Currently we do not support compressed Address and Control
-		 * fields so they must always be present.
+		if (buf->len >= 2 && buf->data[0] == 0xff && buf->data[1] == 0x03) {
+			(void)net_buf_pull_be16(buf);
+		}
+
+		/* Remove FCS bytes (2) */
+		net_pkt_remove_tail(ppp->pkt, 2);
+
+		/* Make sure we now start reading from PPP header in
+		 * PPP L2 recv()
 		 */
-		if (addr_and_ctrl != (0xff << 8 | 0x03)) {
-#if defined(CONFIG_NET_STATISTICS_PPP)
-			ppp->stats.drop++;
-			ppp->stats.pkts.rx++;
-#endif
+		net_pkt_cursor_init(ppp->pkt);
+		net_pkt_set_overwrite(ppp->pkt, true);
+
+		if (net_recv_data(ppp->iface, ppp->pkt) < 0) {
 			net_pkt_unref(ppp->pkt);
-		} else {
-			/* Remove FCS bytes (2) */
-			net_pkt_remove_tail(ppp->pkt, 2);
-
-			/* Make sure we now start reading from PPP header in
-			 * PPP L2 recv()
-			 */
-			net_pkt_cursor_init(ppp->pkt);
-			net_pkt_set_overwrite(ppp->pkt, true);
-
-			if (net_recv_data(ppp->iface, ppp->pkt) < 0) {
-				net_pkt_unref(ppp->pkt);
-			}
 		}
 	}
 
@@ -690,6 +699,13 @@ static void ppp_process_msg(struct ppp_driver_context *ppp)
 }
 
 #if defined(CONFIG_NET_TEST)
+static void (*ppp_send_cb)(struct net_pkt *pkt);
+
+void ppp_driver_register_send_cb(void (*cb)(struct net_pkt *pkt))
+{
+	ppp_send_cb = cb;
+}
+
 static uint8_t *ppp_recv_cb(uint8_t *buf, size_t *off)
 {
 	struct ppp_driver_context *ppp =
@@ -813,6 +829,10 @@ static int ppp_send(const struct device *dev, struct net_pkt *pkt)
 	int i, offset;
 
 #if defined(CONFIG_NET_TEST)
+	if (ppp_send_cb != NULL) {
+		ppp_send_cb(pkt);
+	}
+
 	return 0;
 #endif
 
@@ -827,10 +847,10 @@ static int ppp_send(const struct device *dev, struct net_pkt *pkt)
 	 * value here.
 	 */
 	if (!net_pkt_is_ppp(pkt)) {
-		if (net_pkt_family(pkt) == AF_INET) {
-			protocol = htons(PPP_IP);
-		} else if (net_pkt_family(pkt) == AF_INET6) {
-			protocol = htons(PPP_IPV6);
+		if (net_pkt_family(pkt) == NET_AF_INET) {
+			protocol = net_htons(PPP_IP);
+		} else if (net_pkt_family(pkt) == NET_AF_INET6) {
+			protocol = net_htons(PPP_IPV6);
 		}  else {
 			return -EPROTONOSUPPORT;
 		}
@@ -840,6 +860,9 @@ static int ppp_send(const struct device *dev, struct net_pkt *pkt)
 		return -ENOMEM;
 	}
 
+	/* Wait for the previous transfer to complete before starting a new one. */
+	wait_for_async_tx();
+
 	/* Sync, Address & Control fields */
 	sync_addr_ctrl = sys_cpu_to_be32(0x7e << 24 | 0xff << 16 |
 					 0x7d << 8 | 0x23);
@@ -847,12 +870,12 @@ static int ppp_send(const struct device *dev, struct net_pkt *pkt)
 				  sizeof(sync_addr_ctrl), send_off);
 
 	if (protocol > 0) {
-		escaped = htons(ppp_escape_byte(protocol, &offset));
+		escaped = net_htons(ppp_escape_byte(protocol, &offset));
 		send_off = ppp_send_bytes(ppp, (uint8_t *)&escaped + offset,
 					  offset ? 1 : 2,
 					  send_off);
 
-		escaped = htons(ppp_escape_byte(protocol >> 8, &offset));
+		escaped = net_htons(ppp_escape_byte(protocol >> 8, &offset));
 		send_off = ppp_send_bytes(ppp, (uint8_t *)&escaped + offset,
 					  offset ? 1 : 2,
 					  send_off);
@@ -869,7 +892,7 @@ static int ppp_send(const struct device *dev, struct net_pkt *pkt)
 	while (buf) {
 		for (i = 0; i < buf->len; i++) {
 			/* Escape illegal bytes */
-			escaped = htons(ppp_escape_byte(buf->data[i], &offset));
+			escaped = net_htons(ppp_escape_byte(buf->data[i], &offset));
 			send_off = ppp_send_bytes(ppp,
 						  (uint8_t *)&escaped + offset,
 						  offset ? 1 : 2,
@@ -879,12 +902,12 @@ static int ppp_send(const struct device *dev, struct net_pkt *pkt)
 		buf = buf->frags;
 	}
 
-	escaped = htons(ppp_escape_byte(fcs, &offset));
+	escaped = net_htons(ppp_escape_byte(fcs, &offset));
 	send_off = ppp_send_bytes(ppp, (uint8_t *)&escaped + offset,
 				  offset ? 1 : 2,
 				  send_off);
 
-	escaped = htons(ppp_escape_byte(fcs >> 8, &offset));
+	escaped = net_htons(ppp_escape_byte(fcs >> 8, &offset));
 	send_off = ppp_send_bytes(ppp, (uint8_t *)&escaped + offset,
 				  offset ? 1 : 2,
 				  send_off);
@@ -902,10 +925,8 @@ static int ppp_consume_ringbuf(struct ppp_driver_context *ppp)
 {
 	uint8_t *data;
 	size_t len, tmp;
-	int ret;
 
-	len = ring_buf_get_claim(&ppp->rx_ringbuf, &data,
-				 CONFIG_NET_PPP_RINGBUF_SIZE);
+	len = ring_buf_get_ptr(&ppp->rx_ringbuf, &data, 0);
 	if (len == 0) {
 		LOG_DBG("Ringbuf %p is empty!", &ppp->rx_ringbuf);
 		return 0;
@@ -927,10 +948,7 @@ static int ppp_consume_ringbuf(struct ppp_driver_context *ppp)
 		}
 	} while (--tmp);
 
-	ret = ring_buf_get_finish(&ppp->rx_ringbuf, len);
-	if (ret < 0) {
-		LOG_DBG("Cannot flush ring buffer (%d)", ret);
-	}
+	ring_buf_consume(&ppp->rx_ringbuf, len);
 
 	return -EAGAIN;
 }
@@ -960,7 +978,7 @@ static int ppp_driver_init(const struct device *dev)
 	k_work_queue_start(&ppp->cb_workq, ppp_workq,
 			   K_KERNEL_STACK_SIZEOF(ppp_workq),
 			   K_PRIO_COOP(PPP_WORKQ_PRIORITY), NULL);
-	k_thread_name_set(&ppp->cb_workq.thread, "ppp_workq");
+	k_thread_name_set(ppp->cb_workq.thread_id, "ppp_workq");
 #if defined(CONFIG_NET_PPP_ASYNC_UART)
 	k_work_init_delayable(&ppp->uart_recovery_work, uart_recovery);
 #endif
@@ -974,18 +992,9 @@ static int ppp_driver_init(const struct device *dev)
 	return 0;
 }
 
-static inline struct net_linkaddr *ppp_get_mac(struct ppp_driver_context *ppp)
-{
-	ppp->ll_addr.addr = ppp->mac_addr;
-	ppp->ll_addr.len = sizeof(ppp->mac_addr);
-
-	return &ppp->ll_addr;
-}
-
 static void ppp_iface_init(struct net_if *iface)
 {
 	struct ppp_driver_context *ppp = net_if_get_device(iface)->data;
-	struct net_linkaddr *ll_addr;
 
 	LOG_DBG("[%p] iface %p", ppp, iface);
 
@@ -997,11 +1006,6 @@ static void ppp_iface_init(struct net_if *iface)
 
 	ppp->init_done = true;
 	ppp->iface = iface;
-
-	/* The mac address is not really used but network interface expects
-	 * to find one.
-	 */
-	ll_addr = ppp_get_mac(ppp);
 
 	if (CONFIG_PPP_MAC_ADDR[0] != 0) {
 		if (net_bytes_from_str(ppp->mac_addr, sizeof(ppp->mac_addr),
@@ -1019,8 +1023,9 @@ use_random_mac:
 		ppp->mac_addr[5] = sys_rand8_get();
 	}
 
-	net_if_set_link_addr(iface, ll_addr->addr, ll_addr->len,
-			     NET_LINK_ETHERNET);
+	/* The MAC address is not really used, but the network interface expects to find one. */
+
+	net_if_set_link_addr(iface, ppp->mac_addr, sizeof(ppp->mac_addr), NET_LINK_ETHERNET);
 
 	if (IS_ENABLED(CONFIG_NET_PPP_CAPTURE)) {
 		static bool capture_setup_done;
@@ -1029,7 +1034,7 @@ use_random_mac:
 			int ret;
 
 			ret = net_capture_cooked_setup(&ppp_capture_ctx->cooked,
-						       ARPHRD_PPP,
+						       NET_ARPHRD_PPP,
 						       sizeof(ppp->mac_addr),
 						       ppp->mac_addr);
 			if (ret < 0) {
@@ -1041,6 +1046,12 @@ use_random_mac:
 	}
 
 	memset(ppp->buf, 0, sizeof(ppp->buf));
+
+	/*
+	 * Set the point-to-point interface flag. This is needed at least for IPv6 neighbor
+	 * discovery to handle packets correctly.
+	 */
+	net_if_flag_set(iface, NET_IF_POINTOPOINT);
 
 #if defined(CONFIG_PPP_NET_IF_NO_AUTO_START)
 	/*
@@ -1076,10 +1087,16 @@ static void ppp_uart_isr(const struct device *uart, void *user_data)
 	int rx = 0, ret;
 
 	/* get all of the data off UART as fast as we can */
-	while (uart_irq_update(uart) && uart_irq_rx_ready(uart)) {
+	uart_irq_update(uart);
+
+	if (uart_irq_rx_ready(uart) <= 0) {
+		return;
+	}
+
+	while (true) {
 		rx = uart_fifo_read(uart, context->buf, sizeof(context->buf));
 		if (rx <= 0) {
-			continue;
+			return;
 		}
 
 		ret = ring_buf_put(&context->rx_ringbuf, context->buf, rx);
@@ -1087,7 +1104,7 @@ static void ppp_uart_isr(const struct device *uart, void *user_data)
 			LOG_ERR("Rx buffer doesn't have enough space. "
 				"Bytes pending: %d, written: %d",
 				rx, ret);
-			break;
+			return;
 		}
 
 		k_work_submit_to_queue(&context->cb_workq, &context->cb_work);

@@ -3,20 +3,25 @@
 # Copyright (c) 2019 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-config SOC_SERIES_NRF53X
+config SOC_SERIES_NRF53
 	bool
 	select ARM
 	select SOC_COMPATIBLE_NRF53X
+	select SOC_EARLY_INIT_HOOK
 	select CPU_CORTEX_M33
 	select CPU_CORTEX_M_HAS_DWT
 	select CPU_HAS_ARM_MPU
 	imply XIP
 	select HAS_NRFX
 	select HAS_NORDIC_DRIVERS
+	select HAS_NORDIC_RAM_CTRL
 	select HAS_SEGGER_RTT if ZEPHYR_SEGGER_MODULE
 	select HAS_SWO
 	help
 	 Enable support for NRF53 MCU series
+
+config SOC_SERIES_NRF53X
+	select DEPRECATED
 
 config SOC_NRF5340_CPUAPP
 	select CPU_HAS_NRF_IDAU
@@ -35,10 +40,18 @@ config SOC_NRF5340_CPUNET
 	imply SOC_NRF53_RTC_PRETICK if !WDT_NRFX
 	imply SOC_NRF53_ANOMALY_168_WORKAROUND
 
-if SOC_SERIES_NRF53X
+if SOC_SERIES_NRF53
 
 VREGMAIN_PATH := $(dt_nodelabel_path,vregmain)
 VREGRADIO_PATH := $(dt_nodelabel_path,vregradio)
+
+config SOC_NRF53_ANOMALY_47_WORKAROUND
+	bool "Anomaly 47 workaround"
+	depends on NRFX_TWIM
+	help
+	  Due to Anomaly 47 the low period of SCL clock is too short to meet
+	  the I2C specification at 400 kHz. This workaround configures the I2C
+	  frequency to 390 kHz instead of 400 kHz.
 
 config SOC_NRF53_ANOMALY_160_WORKAROUND_NEEDED
 	bool "Workaround for nRF5340 anomaly 160"
@@ -82,7 +95,7 @@ config SOC_NRF53_ANOMALY_168_WORKAROUND_FOR_EXECUTION_FROM_RAM
 config SOC_NRF53_RTC_PRETICK
 	bool "Pre-tick workaround for nRF5340 anomaly 165"
 	depends on (SYS_CLOCK_EXISTS && SOC_NRF5340_CPUNET) || SOC_NRF5340_CPUAPP
-	select NRFX_DPPI
+	select NRFX_GPPI
 	select ARM_ON_ENTER_CPU_IDLE_HOOK if SOC_NRF5340_CPUNET
 	select ARM_ON_ENTER_CPU_IDLE_PREPARE_HOOK if SOC_NRF5340_CPUNET
 	help
@@ -109,46 +122,14 @@ endif
 
 if SOC_NRF5340_CPUAPP
 
-config SOC_DCDC_NRF53X_APP
-	bool
-	imply SOC_NRF53_ANOMALY_160_WORKAROUND_NEEDED
-	select DEPRECATED
+config SOC_NRF53_ANOMALY_166_WORKAROUND
+	bool "Workaround for nRF5340 anomaly 166"
+	depends on "$(dt_node_int_prop_int,$(VREGMAIN_PATH),regulator-initial-mode)" = 0
 	help
-	  This option is deprecated, use devicetree instead. Example
-	  configuration:
-
-	  &vregmain {
-	    regulator-initial-mode = <NRF5X_REG_MODE_DCDC>;
-	  };
-
-	  Enable nRF53 series System on Chip Application MCU DC/DC converter.
-
-config SOC_DCDC_NRF53X_NET
-	bool
-	imply SOC_NRF53_ANOMALY_160_WORKAROUND_NEEDED
-	select DEPRECATED
-	help
-	  This option is deprecated, use devicetree instead. Example
-	  configuration:
-
-	  &vregradio {
-	    regulator-initial-mode = <NRF5X_REG_MODE_DCDC>;
-	  };
-
-	  Enable nRF53 series System on Chip Network MCU DC/DC converter.
-
-config SOC_DCDC_NRF53X_HV
-	bool
-	select DEPRECATED
-	help
-	  This option is deprecated, use devicetree instead. Example
-	  configuration:
-
-	  &vregh {
-	    status = "okay";
-	  };
-
-	  Enable nRF53 series System on Chip High Voltage DC/DC converter.
+	  Indicates that the workaround for the anomaly 166 that affects
+	  the nRF5340 SoC should be applied.
+	  The workaround applies only to application core and VREGMAIN in LDO mode.
+	  It is disabled by default as it increases power consumption noticeably.
 
 config NRF_SPU_FLASH_REGION_SIZE
 	hex
@@ -190,77 +171,7 @@ config SOC_NRF53_CPUNET_ENABLE
 	  secure firmware image must already have configured GPIO allocation for the
 	  Network MCU.
 
-config BOARD_ENABLE_CPUNET
-	bool "[DEPRECATED] NRF53 Network MCU is enabled at boot time"
-	select SOC_NRF53_CPUNET_ENABLE
-	select DEPRECATED
-	help
-	  Use SOC_NRF53_CPUNET_ENABLE instead.
-
 if !TRUSTED_EXECUTION_NONSECURE || BUILD_WITH_TFM
-
-config SOC_ENABLE_LFXO
-	bool "LFXO"
-	select DEPRECATED
-	help
-	  This option is deprecated, use DT instead. For this option to apply,
-	  make sure to select either "internal" or "external" in the
-	  load-capacitors property.
-
-	  Enable the low-frequency oscillator (LFXO) functionality on XL1 and
-	  XL2 pins.
-	  This option must be enabled if either application or network core is
-	  to use the LFXO. Otherwise, XL1 and XL2 pins will behave as regular
-	  GPIOs.
-
-choice SOC_LFXO_LOAD_CAPACITANCE
-	prompt "LFXO load capacitance"
-	depends on SOC_ENABLE_LFXO
-
-config SOC_LFXO_CAP_EXTERNAL
-	bool "Use external load capacitors"
-	select DEPRECATED
-	help
-	  This option is deprecated, use DT instead. Example configuration:
-
-	  &lfxo {
-	      load-capacitors = "external";
-	  };
-
-config SOC_LFXO_CAP_INT_6PF
-	bool "6 pF internal load capacitance"
-	select DEPRECATED
-	help
-	  This option is deprecated, use DT instead. Example configuration:
-
-	  &lfxo {
-	      load-capacitors = "internal";
-	      load-capacitance-picofarad = <6>;
-	  };
-
-config SOC_LFXO_CAP_INT_7PF
-	bool "7 pF internal load capacitance"
-	select DEPRECATED
-	help
-	  This option is deprecated, use DT instead. Example configuration:
-
-	  &lfxo {
-	      load-capacitors = "internal";
-	      load-capacitance-picofarad = <7>;
-	  };
-
-config SOC_LFXO_CAP_INT_9PF
-	bool "9 pF internal load capacitance"
-	select DEPRECATED
-	help
-	  This option is deprecated, use DT instead. Example configuration:
-
-	  &lfxo {
-	      load-capacitors = "internal";
-	      load-capacitance-picofarad = <9>;
-	  };
-
-endchoice
 
 choice SOC_HFXO_LOAD_CAPACITANCE
 	prompt "HFXO load capacitance"
@@ -344,4 +255,4 @@ config BUILD_WITH_TFM
 
 rsource "Kconfig.sync_rtc"
 
-endif # SOC_SERIES_NRF53X
+endif # SOC_SERIES_NRF53

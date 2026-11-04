@@ -5,7 +5,10 @@
  */
 
 #define DT_DRV_COMPAT ite_it8xxx2_flash_controller
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
+
+#include "flash_priv.h"
+
+#define SOC_NV_FLASH_NODE SOC_NV_FLASH_CHILD_NODE(0)
 
 #define FLASH_WRITE_BLK_SZ DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
 #define FLASH_ERASE_BLK_SZ DT_PROP(SOC_NV_FLASH_NODE, erase_block_size)
@@ -25,8 +28,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(flash_ite_it8xxx2);
 
-#define FLASH_IT8XXX2_REG_BASE \
-		((struct smfi_it8xxx2_regs *)DT_INST_REG_ADDR(0))
+#define FLASH_ITE_EC_REGS_BASE ((struct smfi_ite_ec_regs *)DT_INST_REG_ADDR(0))
 
 struct flash_it8xxx2_dev_data {
 	struct k_sem sem;
@@ -93,7 +95,8 @@ static const struct flash_parameters flash_it8xxx2_parameters = {
 
 void __soc_ram_code ramcode_reset_i_cache(void)
 {
-	struct gctrl_it8xxx2_regs *const gctrl_regs = GCTRL_IT8XXX2_REGS_BASE;
+#ifdef CONFIG_SOC_SERIES_IT8XXX2
+	struct gctrl_ite_ec_regs *const gctrl_regs = GCTRL_ITE_EC_REGS_BASE;
 
 	/* I-Cache tag sram reset */
 	gctrl_regs->GCTRL_MCCR |= IT8XXX2_GCTRL_ICACHE_RESET;
@@ -102,11 +105,14 @@ void __soc_ram_code ramcode_reset_i_cache(void)
 
 	gctrl_regs->GCTRL_MCCR &= ~IT8XXX2_GCTRL_ICACHE_RESET;
 	__asm__ volatile ("fence.i" ::: "memory");
+#else
+	custom_reset_instr_cache();
+#endif
 }
 
 void __soc_ram_code ramcode_flash_follow_mode(void)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 	/*
 	 * ECINDAR3-0 are EC-indirect memory address registers.
 	 *
@@ -127,7 +133,7 @@ void __soc_ram_code ramcode_flash_follow_mode(void)
 
 void __soc_ram_code ramcode_flash_follow_mode_exit(void)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 
 	/* Exit follow mode, and keep the setting of selecting internal flash */
 	flash_regs->SMFI_ECINDAR3 = EC_INDIRECT_READ_INTERNAL_FLASH;
@@ -136,8 +142,8 @@ void __soc_ram_code ramcode_flash_follow_mode_exit(void)
 
 void __soc_ram_code ramcode_flash_fsce_high(void)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
-	struct gctrl_it8xxx2_regs *const gctrl_regs = GCTRL_IT8XXX2_REGS_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
+	struct gctrl_ite_ec_regs *const gctrl_regs = GCTRL_ITE_EC_REGS_BASE;
 
 	/* FSCE# high level */
 	flash_regs->SMFI_ECINDAR1 = (FLASH_FSCE_HIGH_ADDRESS >> 8) & GENMASK(7, 0);
@@ -160,7 +166,7 @@ void __soc_ram_code ramcode_flash_fsce_high(void)
 
 void __soc_ram_code ramcode_flash_write_dat(uint8_t wdata)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 
 	/* Write data to FMOSI */
 	flash_regs->SMFI_ECINDDR = wdata;
@@ -169,7 +175,7 @@ void __soc_ram_code ramcode_flash_write_dat(uint8_t wdata)
 void __soc_ram_code ramcode_flash_transaction(int wlen, uint8_t *wbuf, int rlen, uint8_t *rbuf,
 					      enum flash_transaction_cmd cmd_end)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 	int i;
 
 	/*  FSCE# with low level */
@@ -191,7 +197,7 @@ void __soc_ram_code ramcode_flash_transaction(int wlen, uint8_t *wbuf, int rlen,
 void __soc_ram_code ramcode_flash_cmd_read_status(enum flash_status_mask mask,
 						  enum flash_status_mask target)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 	uint8_t cmd_rs[] = {FLASH_CMD_RS};
 
 	/* Send read status command */
@@ -206,7 +212,9 @@ void __soc_ram_code ramcode_flash_cmd_read_status(enum flash_status_mask mask,
 	 */
 	while ((flash_regs->SMFI_ECINDDR & mask) != target) {
 		/* read status and check if it is we want. */
-		;
+		for (volatile int delay = 0; delay < 100; delay++) {
+			/* Inline delay to ensure this is RAM resident */
+		}
 	}
 
 	/* transaction done, drive #CS high */
@@ -343,7 +351,7 @@ void __soc_ram_code ramcode_flash_erase(int addr, int cmd)
 static int __soc_ram_code flash_it8xxx2_read(const struct device *dev, off_t offset, void *data,
 					     size_t len)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 	uint8_t *data_t = data;
 	int i;
 
@@ -464,7 +472,7 @@ flash_it8xxx2_get_parameters(const struct device *dev)
 
 static int flash_it8xxx2_init(const struct device *dev)
 {
-	struct smfi_it8xxx2_regs *const flash_regs = FLASH_IT8XXX2_REG_BASE;
+	struct smfi_ite_ec_regs *const flash_regs = FLASH_ITE_EC_REGS_BASE;
 	struct flash_it8xxx2_dev_data *data = dev->data;
 
 	/* By default, select internal flash for indirect fast read. */
@@ -475,7 +483,7 @@ static int flash_it8xxx2_init(const struct device *dev)
 	 * than 256K-byte, enable the page program cycle constructed
 	 * by EC-Indirect Follow Mode.
 	 */
-	flash_regs->SMFI_FLHCTRL6R |= IT8XXX2_SMFI_MASK_ECINDPP;
+	flash_regs->SMFI_FLHCTRL6R |= ITE_EC_SMFI_MASK_ECINDPP;
 
 	/* Initialize mutex for flash controller */
 	k_sem_init(&data->sem, 1, 1);
@@ -499,7 +507,7 @@ static void flash_it8xxx2_pages_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
-static const struct flash_driver_api flash_it8xxx2_api = {
+static DEVICE_API(flash, flash_it8xxx2_api) = {
 	.erase = flash_it8xxx2_erase,
 	.write = flash_it8xxx2_write,
 	.read = flash_it8xxx2_read,

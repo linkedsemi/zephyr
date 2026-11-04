@@ -111,6 +111,7 @@ void radio_switch_complete_and_b2b_rx(uint8_t phy_curr, uint8_t flags_curr,
 void radio_switch_complete_and_b2b_tx_disable(void);
 void radio_switch_complete_and_b2b_rx_disable(void);
 void radio_switch_complete_and_disable(void);
+void radio_switch_complete_end_capture_and_disable(void);
 
 uint8_t radio_phy_flags_rx_get(void);
 
@@ -146,8 +147,10 @@ uint32_t radio_tmr_start_tick(uint8_t trx, uint32_t ticks_start);
 uint32_t radio_tmr_start_us(uint8_t trx, uint32_t us);
 uint32_t radio_tmr_start_now(uint8_t trx);
 uint32_t radio_tmr_start_get(void);
+uint32_t radio_tmr_start_latency_get(void);
 void radio_tmr_stop(void);
-void radio_tmr_hcto_configure(uint32_t hcto);
+void radio_tmr_hcto_configure(uint32_t hcto_us);
+void radio_tmr_hcto_configure_abs(uint32_t hcto_from_start_us);
 void radio_tmr_aa_capture(void);
 uint32_t radio_tmr_aa_get(void);
 void radio_tmr_aa_save(uint32_t aa);
@@ -177,6 +180,7 @@ void *radio_ccm_tx_pkt_set(struct ccm *ccm, void *pkt);
 void *radio_ccm_iso_tx_pkt_set(struct ccm *ccm, uint8_t pdu_type, void *pkt);
 uint32_t radio_ccm_is_done(void);
 uint32_t radio_ccm_mic_is_valid(void);
+void radio_ccm_disable(void);
 
 void radio_ar_configure(uint32_t nirk, void *irk, uint8_t flags);
 uint32_t radio_ar_match_get(void);

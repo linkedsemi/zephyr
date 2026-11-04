@@ -6,12 +6,11 @@
 
 /dts-v1/;
 
+#include <freq.h>
 #include <arm/armv8-m.dtsi>
 
 / {
 	compatible = "arm,v2m-musca";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	aliases {
 		led0 = &red_led;
@@ -28,14 +27,17 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			gpios = <&gpio 2 0>;
 			label = "User LED1";
 		};
+
 		green_led: led_1 {
 			gpios = <&gpio 3 0>;
 			label = "User LED2";
 		};
+
 		blue_led: led_2 {
 			gpios = <&gpio 4 0>;
 			label = "User LED3";
@@ -45,6 +47,7 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		timebase-frequency = <DT_FREQ_M(50)>;
 
 		cpu@0 {
 			device_type = "cpu";
@@ -92,10 +95,9 @@
 			#size-cells = <1>;
 			ranges = <0x0 0x50000000 0x10000000>;
 
-			#include "v2m_musca_s1-common.dtsi"
+#include "v2m_musca_s1-common.dtsi"
 		};
 	};
-
 };
 
 &nvic {

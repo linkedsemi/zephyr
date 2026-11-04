@@ -10,11 +10,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef ZEPHYR_SUBSYS_NET_IP_NET_PRIVATE_H_
+#define ZEPHYR_SUBSYS_NET_IP_NET_PRIVATE_H_
+
 #include <errno.h>
 #include <zephyr/sys/printk.h>
+#include <zephyr/net/ethernet.h>
 #include <zephyr/net/net_context.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/icmp.h>
+#include <zephyr/net/net_core.h>
 
 #ifdef CONFIG_NET_MGMT_EVENT_INFO
 
@@ -25,7 +30,7 @@
 #include <zephyr/net/wifi_mgmt.h>
 #endif /* CONFIG_NET_L2_WIFI_MGMT */
 
-#define DEFAULT_NET_EVENT_INFO_SIZE 32
+#define DEFAULT_NET_EVENT_INFO_SIZE CONFIG_NET_MGMT_EVENT_INFO_DEFAULT_DATA_SIZE
 /* NOTE: Update this union with all *big* event info structs */
 union net_mgmt_events {
 #if defined(CONFIG_NET_DHCPV4)
@@ -39,10 +44,13 @@ union net_mgmt_events {
 #endif /* CONFIG_NET_L2_WIFI_MGMT */
 #if defined(CONFIG_NET_IPV6)
 	struct net_event_ipv6_prefix ipv6_prefix;
-#if defined(CONFIG_NET_IPV6_MLD)
+#if defined(CONFIG_NET_IPV6_ROUTE)
 	struct net_event_ipv6_route ipv6_route;
-#endif /* CONFIG_NET_IPV6_MLD */
+#endif /* CONFIG_NET_IPV6_ROUTE */
 #endif /* CONFIG_NET_IPV6 */
+#if defined(CONFIG_NET_IPV4_ROUTE)
+	struct net_event_ipv4_route ipv4_route;
+#endif /* CONFIG_NET_IPV4_ROUTE */
 #if defined(CONFIG_NET_HOSTNAME_ENABLE)
 	struct net_event_l4_hostname hostname;
 #endif /* CONFIG_NET_HOSTNAME_ENABLE */
@@ -59,17 +67,29 @@ extern void net_if_init(void);
 extern void net_if_post_init(void);
 extern void net_if_stats_reset(struct net_if *iface);
 extern void net_if_stats_reset_all(void);
+extern const char *net_if_oper_state2str(enum net_if_oper_state state);
 extern void net_process_rx_packet(struct net_pkt *pkt);
 extern void net_process_tx_packet(struct net_pkt *pkt);
 
-extern int net_icmp_call_ipv4_handlers(struct net_pkt *pkt,
-				       struct net_ipv4_hdr *ipv4_hdr,
-				       struct net_icmp_hdr *icmp_hdr);
-extern int net_icmp_call_ipv6_handlers(struct net_pkt *pkt,
-				       struct net_ipv6_hdr *ipv6_hdr,
-				       struct net_icmp_hdr *icmp_hdr);
+extern struct net_if_addr *net_if_ipv4_addr_get_first_by_index(int ifindex);
+
+extern enum net_verdict net_icmp_call_ipv4_handlers(struct net_pkt *pkt,
+						    struct net_ipv4_hdr *ipv4_hdr,
+						    struct net_icmp_hdr *icmp_hdr);
+extern enum net_verdict net_icmp_call_ipv6_handlers(struct net_pkt *pkt,
+						    struct net_ipv6_hdr *ipv6_hdr,
+						    struct net_icmp_hdr *icmp_hdr);
 
 extern struct net_if *net_ipip_get_virtual_interface(struct net_if *input_iface);
+
+#if defined(CONFIG_NET_STATISTICS_VIA_PROMETHEUS)
+extern void net_stats_prometheus_init(struct net_if *iface);
+#else
+static inline void net_stats_prometheus_init(struct net_if *iface)
+{
+	ARG_UNUSED(iface);
+}
+#endif /* CONFIG_NET_STATISTICS_VIA_PROMETHEUS */
 
 #if defined(CONFIG_NET_SOCKETS_SERVICE)
 extern void socket_service_init(void);
@@ -78,19 +98,18 @@ static inline void socket_service_init(void) { }
 #endif
 
 #if defined(CONFIG_NET_NATIVE) || defined(CONFIG_NET_OFFLOAD)
-extern void net_context_init(void);
 extern const char *net_context_state(struct net_context *context);
 extern bool net_context_is_reuseaddr_set(struct net_context *context);
 extern bool net_context_is_reuseport_set(struct net_context *context);
 extern bool net_context_is_v6only_set(struct net_context *context);
 extern bool net_context_is_recv_pktinfo_set(struct net_context *context);
+extern bool net_context_is_recv_hoplimit_set(struct net_context *context);
 extern bool net_context_is_timestamping_set(struct net_context *context);
 extern void net_pkt_init(void);
 int net_context_get_local_addr(struct net_context *context,
-			       struct sockaddr *addr,
-			       socklen_t *addrlen);
+			       struct net_sockaddr *addr,
+			       net_socklen_t *addrlen);
 #else
-static inline void net_context_init(void) { }
 static inline void net_pkt_init(void) { }
 static inline const char *net_context_state(struct net_context *context)
 {
@@ -112,6 +131,11 @@ static inline bool net_context_is_recv_pktinfo_set(struct net_context *context)
 	ARG_UNUSED(context);
 	return false;
 }
+static inline bool net_context_is_recv_hoplimit_set(struct net_context *context)
+{
+	ARG_UNUSED(context);
+	return false;
+}
 static inline bool net_context_is_timestamping_set(struct net_context *context)
 {
 	ARG_UNUSED(context);
@@ -119,8 +143,8 @@ static inline bool net_context_is_timestamping_set(struct net_context *context)
 }
 
 static inline int net_context_get_local_addr(struct net_context *context,
-					     struct sockaddr *addr,
-					     socklen_t *addrlen)
+					     struct net_sockaddr *addr,
+					     net_socklen_t *addrlen)
 {
 	ARG_UNUSED(context);
 	ARG_UNUSED(addr);
@@ -130,38 +154,50 @@ static inline int net_context_get_local_addr(struct net_context *context,
 }
 #endif
 
-#if defined(CONFIG_DNS_SOCKET_DISPATCHER)
-extern void dns_dispatcher_init(void);
-#else
-static inline void dns_dispatcher_init(void) { }
-#endif
-
 #if defined(CONFIG_MDNS_RESPONDER)
 extern void mdns_init_responder(void);
 #else
 static inline void mdns_init_responder(void) { }
 #endif /* CONFIG_MDNS_RESPONDER */
 
+#if defined(CONFIG_DNS_RESOLVER)
+#include <zephyr/net/dns_resolve.h>
+extern int dns_resolve_name_internal(struct dns_resolve_context *ctx,
+				     const char *query,
+				     enum dns_query_type type,
+				     uint16_t *dns_id,
+				     dns_resolve_cb_t cb,
+				     void *user_data,
+				     int32_t timeout,
+				     bool use_cache);
+#include <zephyr/net/socket_service.h>
+extern int dns_resolve_init_with_svc(struct dns_resolve_context *ctx,
+				     const char *servers[],
+				     const struct net_sockaddr *servers_sa[],
+				     const struct net_socket_service_desc *svc,
+				     uint16_t port, int interfaces[]);
+#endif /* CONFIG_DNS_RESOLVER */
+
+#if defined(CONFIG_NET_TEST)
+extern void loopback_enable_address_swap(bool swap_addresses);
+#endif /* CONFIG_NET_TEST */
+
 #if defined(CONFIG_NET_NATIVE)
-enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback);
-enum net_verdict net_ipv6_input(struct net_pkt *pkt, bool is_loopback);
+enum net_verdict net_ipv4_input(struct net_pkt *pkt);
+enum net_verdict net_ipv6_input(struct net_pkt *pkt);
 extern void net_tc_tx_init(void);
 extern void net_tc_rx_init(void);
 #else
-static inline enum net_verdict net_ipv4_input(struct net_pkt *pkt,
-					      bool is_loopback)
+static inline enum net_verdict net_ipv4_input(struct net_pkt *pkt)
 {
 	ARG_UNUSED(pkt);
-	ARG_UNUSED(is_loopback);
 
 	return NET_CONTINUE;
 }
 
-static inline enum net_verdict net_ipv6_input(struct net_pkt *pkt,
-					      bool is_loopback)
+static inline enum net_verdict net_ipv6_input(struct net_pkt *pkt)
 {
 	ARG_UNUSED(pkt);
-	ARG_UNUSED(is_loopback);
 
 	return NET_CONTINUE;
 }
@@ -169,15 +205,36 @@ static inline enum net_verdict net_ipv6_input(struct net_pkt *pkt,
 static inline void net_tc_tx_init(void) { }
 static inline void net_tc_rx_init(void) { }
 #endif
-extern bool net_tc_submit_to_tx_queue(uint8_t tc, struct net_pkt *pkt);
-extern void net_tc_submit_to_rx_queue(uint8_t tc, struct net_pkt *pkt);
+enum net_verdict net_tc_try_submit_to_tx_queue(uint8_t tc, struct net_pkt *pkt,
+					       k_timeout_t timeout);
+extern enum net_verdict net_tc_submit_to_rx_queue(uint8_t tc, struct net_pkt *pkt);
+extern int net_tc_tx_thread_priority(int tc);
+extern int net_tc_rx_thread_priority(int tc);
+static inline bool net_tc_tx_is_immediate(int tc, int prio)
+{
+	ARG_UNUSED(prio);
+	bool high_prio = (tc == NET_TC_TX_EFFECTIVE_COUNT - 1);
+	bool skipping = IS_ENABLED(CONFIG_NET_TC_TX_SKIP_FOR_HIGH_PRIO);
+	bool no_queues = (0 == NET_TC_TX_COUNT);
+
+	return no_queues || (high_prio && skipping);
+}
+static inline bool net_tc_rx_is_immediate(int tc, int prio)
+{
+	ARG_UNUSED(prio);
+	bool high_prio = (tc == NET_TC_RX_EFFECTIVE_COUNT - 1);
+	bool skipping = IS_ENABLED(CONFIG_NET_TC_RX_SKIP_FOR_HIGH_PRIO);
+	bool no_queues = (0 == NET_TC_RX_COUNT);
+
+	return no_queues || (high_prio && skipping);
+}
 extern enum net_verdict net_promisc_mode_input(struct net_pkt *pkt);
 
-char *net_sprint_addr(sa_family_t af, const void *addr);
+char *net_sprint_addr(net_sa_family_t af, const void *addr);
 
-#define net_sprint_ipv4_addr(_addr) net_sprint_addr(AF_INET, _addr)
+#define net_sprint_ipv4_addr(_addr) net_sprint_addr(NET_AF_INET, _addr)
 
-#define net_sprint_ipv6_addr(_addr) net_sprint_addr(AF_INET6, _addr)
+#define net_sprint_ipv6_addr(_addr) net_sprint_addr(NET_AF_INET6, _addr)
 
 #if defined(CONFIG_COAP)
 /**
@@ -191,6 +248,17 @@ static inline void net_coap_init(void)
 {
 	return;
 }
+#endif
+
+#if defined(CONFIG_QUIC)
+/**
+ * @brief QUIC init function declaration. It belongs here because we don't want
+ * to expose it as a public API -- it should only be called once, and only by
+ * net_core.
+ */
+extern void net_quic_init(void);
+#else
+#define net_quic_init()
 #endif
 
 #if defined(CONFIG_NET_SOCKETS_OBJ_CORE)
@@ -217,26 +285,13 @@ struct sock_obj {
 /* This is needed by ipv6_pe.c when privacy extension support is enabled */
 void net_if_ipv6_start_dad(struct net_if *iface,
 			   struct net_if_addr *ifaddr);
+
+/* Same as net_if_ipv6_addr_update_lifetime() for a caller that already
+ * holds the lock of the interface owning the address.
+ */
+void net_if_ipv6_addr_update_lifetime_locked(struct net_if_addr *ifaddr,
+					     uint32_t vlifetime);
 #endif
-
-#if defined(CONFIG_NET_GPTP)
-/**
- * @brief Initialize Precision Time Protocol Layer.
- */
-void net_gptp_init(void);
-
-/**
- * @brief Process a ptp message.
- *
- * @param buf Buffer with a valid PTP Ethernet type.
- *
- * @return Return the policy for network buffer.
- */
-enum net_verdict net_gptp_recv(struct net_if *iface, struct net_pkt *pkt);
-#else
-#define net_gptp_init()
-#define net_gptp_recv(iface, pkt) NET_DROP
-#endif /* CONFIG_NET_GPTP */
 
 #if defined(CONFIG_NET_IPV4_FRAGMENT)
 int net_ipv4_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
@@ -245,7 +300,7 @@ int net_ipv4_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 
 #if defined(CONFIG_NET_IPV6_FRAGMENT)
 int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
-				 uint16_t pkt_len);
+				 uint16_t pkt_len, uint16_t mtu);
 #endif
 
 extern const char *net_verdict2str(enum net_verdict verdict);
@@ -254,7 +309,7 @@ extern char *net_byte_to_hex(char *ptr, uint8_t byte, char base, bool pad);
 extern char *net_sprint_ll_addr_buf(const uint8_t *ll, uint8_t ll_len,
 				    char *buf, int buflen);
 extern uint16_t calc_chksum(uint16_t sum_in, const uint8_t *data, size_t len);
-extern uint16_t net_calc_chksum(struct net_pkt *pkt, uint8_t proto);
+extern int net_calc_chksum(struct net_pkt *pkt, uint8_t proto, uint16_t *out_chksum);
 
 /**
  * @brief Deliver the incoming packet through the recv_cb of the net_context
@@ -276,7 +331,9 @@ enum net_verdict net_context_packet_received(struct net_conn *conn,
 					     void *user_data);
 
 #if defined(CONFIG_NET_IPV4)
-extern uint16_t net_calc_chksum_ipv4(struct net_pkt *pkt);
+int net_calc_chksum_ipv4(struct net_pkt *pkt, uint16_t *out_chksum);
+#else
+#define net_calc_chksum_ipv4(pkt, out_chksum) -ENOTSUP
 #endif /* CONFIG_NET_IPV4 */
 
 #if defined(CONFIG_NET_IPV4_IGMP)
@@ -289,39 +346,49 @@ void net_ipv4_igmp_init(struct net_if *iface);
 #endif /* CONFIG_NET_IPV4_IGMP */
 
 #if defined(CONFIG_NET_IPV4_IGMP)
-uint16_t net_calc_chksum_igmp(struct net_pkt *pkt);
+int net_calc_chksum_igmp(struct net_pkt *pkt, uint16_t *out_chksum);
 enum net_verdict net_ipv4_igmp_input(struct net_pkt *pkt,
 				     struct net_ipv4_hdr *ip_hdr);
 #else
 #define net_ipv4_igmp_input(...)
-#define net_calc_chksum_igmp(pkt) 0U
+#define net_calc_chksum_igmp(pkt, out_chksum) -ENOTSUP
 #endif /* CONFIG_NET_IPV4_IGMP */
 
-static inline uint16_t net_calc_chksum_icmpv6(struct net_pkt *pkt)
+static inline int net_calc_chksum_icmpv6(struct net_pkt *pkt, uint16_t *out_chksum)
 {
-	return net_calc_chksum(pkt, IPPROTO_ICMPV6);
+	return net_calc_chksum(pkt, NET_IPPROTO_ICMPV6, out_chksum);
 }
 
-static inline uint16_t net_calc_chksum_icmpv4(struct net_pkt *pkt)
+static inline int net_calc_chksum_icmpv4(struct net_pkt *pkt, uint16_t *out_chksum)
 {
-	return net_calc_chksum(pkt, IPPROTO_ICMP);
+	return net_calc_chksum(pkt, NET_IPPROTO_ICMP, out_chksum);
 }
 
-static inline uint16_t net_calc_chksum_udp(struct net_pkt *pkt)
+static inline int net_calc_chksum_udp(struct net_pkt *pkt, uint16_t *out_chksum)
 {
-	uint16_t chksum = net_calc_chksum(pkt, IPPROTO_UDP);
+	uint16_t chksum = 0;
+	int ret;
 
-	return chksum == 0U ? 0xffff : chksum;
+	ret = net_calc_chksum(pkt, NET_IPPROTO_UDP, &chksum);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (out_chksum) {
+		*out_chksum = (chksum == 0U) ? 0xffff : chksum;
+	}
+
+	return 0;
 }
 
-static inline uint16_t net_calc_verify_chksum_udp(struct net_pkt *pkt)
+static inline int net_calc_verify_chksum_udp(struct net_pkt *pkt, uint16_t *out_chksum)
 {
-	return net_calc_chksum(pkt, IPPROTO_UDP);
+	return net_calc_chksum(pkt, NET_IPPROTO_UDP, out_chksum);
 }
 
-static inline uint16_t net_calc_chksum_tcp(struct net_pkt *pkt)
+static inline int net_calc_chksum_tcp(struct net_pkt *pkt, uint16_t *out_chksum)
 {
-	return net_calc_chksum(pkt, IPPROTO_TCP);
+	return net_calc_chksum(pkt, NET_IPPROTO_TCP, out_chksum);
 }
 
 static inline char *net_sprint_ll_addr(const uint8_t *ll, uint8_t ll_len)
@@ -376,8 +443,8 @@ static inline void net_pkt_print_buffer_info(struct net_pkt *pkt, const char *st
 	}
 
 	while (buf) {
-		printk("%p[%ld/%u (%u/%u)]", buf, atomic_get(&pkt->atomic_ref),
-		       buf->len, net_buf_max_len(buf), buf->size);
+		printk("%p[%ld/%u (%zu/%u)]", buf, atomic_get(&pkt->atomic_ref),
+		       buf->len, net_buf_tailroom(buf), buf->size);
 
 		buf = buf->frags;
 		if (buf) {
@@ -387,3 +454,44 @@ static inline void net_pkt_print_buffer_info(struct net_pkt *pkt, const char *st
 
 	printk("\n");
 }
+
+/**
+ * Initialize externally allocated TX packet.
+ *
+ * @param pkt The network packet to initialize.
+ */
+void net_pkt_tx_init(struct net_pkt *pkt);
+
+/** Rejoin IGMP mcast group w/o registering address, for internal use only. */
+#if defined(CONFIG_NET_IPV4_IGMP)
+int net_ipv4_igmp_rejoin(struct net_if *iface, struct net_if_mcast_addr *addr);
+#else
+#define net_ipv4_igmp_rejoin(...) -ENOSYS
+#endif
+
+/** Rejoin MLD mcast group w/o registering address, for internal use only. */
+#if defined(CONFIG_NET_IPV6_MLD)
+int net_ipv6_mld_rejoin(struct net_if *iface, struct net_if_mcast_addr *addr);
+#else
+#define net_ipv6_mld_rejoin(...) -ENOSYS
+#endif
+
+#if defined(CONFIG_NET_IPV4_IGMP)
+void net_ipv4_igmp_send_leave(struct net_if *iface, const struct net_if_mcast_addr *addr);
+#else
+static inline void net_ipv4_igmp_send_leave(struct net_if *iface __unused,
+					    const struct net_if_mcast_addr *addr __unused)
+{
+}
+#endif
+
+#if defined(CONFIG_NET_IPV6_MLD)
+void net_ipv6_mld_send_leave(struct net_if *iface, const struct net_if_mcast_addr *addr);
+#else
+static inline void net_ipv6_mld_send_leave(struct net_if *iface __unused,
+					   const struct net_if_mcast_addr *addr __unused)
+{
+}
+#endif /* CONFIG_NET_IPV6_MLD */
+
+#endif /* ZEPHYR_SUBSYS_NET_IP_NET_PRIVATE_H_ */

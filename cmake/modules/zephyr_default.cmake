@@ -15,7 +15,7 @@ include_guard(GLOBAL)
 # Unfortunately CMake requires the toplevel CMakeLists.txt file to define the
 # required version, not even invoking it from a CMake module is sufficient.
 # It is however permitted to have multiple invocations of cmake_minimum_required.
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 message(STATUS "Application: ${APPLICATION_SOURCE_DIR}")
 
@@ -50,21 +50,6 @@ find_package(ZephyrAppConfiguration
   NO_CMAKE_SYSTEM_PACKAGE_REGISTRY
 )
 
-# Test and error-out if we are affected by the PyPI CMake 3.22.1 / 3.22.2 bug
-if(${CMAKE_VERSION} VERSION_EQUAL 3.22.1 OR ${CMAKE_VERSION} VERSION_EQUAL 3.22.2)
-  # It seems only pip-installed builds are affected so we test to see if we are affected
-  cmake_path(GET ZEPHYR_BASE PARENT_PATH test_cmake_path)
-  if(ZEPHYR_BASE STREQUAL test_cmake_path)
-    message(FATAL_ERROR "The CMake version ${CMAKE_VERSION} installed suffers"
-            " the \n 'cmake_path(... PARENT_PATH)' bug, see: \n"
-	    "https://gitlab.kitware.com/cmake/cmake/-/issues/23187\n"
-	    "https://github.com/scikit-build/cmake-python-distributions/issues/221\n"
-	    "Please install another CMake version or use a build of CMake that"
-	    " does not come from PyPI."
-    )
-  endif()
-endif()
-
 # Prepare user cache
 list(APPEND zephyr_cmake_modules python)
 list(APPEND zephyr_cmake_modules user_cache)
@@ -81,7 +66,6 @@ list(APPEND zephyr_cmake_modules basic_settings)
 #
 
 list(APPEND zephyr_cmake_modules west)
-list(APPEND zephyr_cmake_modules ccache)
 list(APPEND zephyr_cmake_modules yaml)
 
 # Load default root settings
@@ -97,7 +81,6 @@ list(APPEND zephyr_cmake_modules zephyr_module)
 list(APPEND zephyr_cmake_modules boards)
 list(APPEND zephyr_cmake_modules shields)
 list(APPEND zephyr_cmake_modules snippets)
-list(APPEND zephyr_cmake_modules arch_v1)
 list(APPEND zephyr_cmake_modules hwm_v2)
 list(APPEND zephyr_cmake_modules configuration_files)
 list(APPEND zephyr_cmake_modules generated_file_directories)
@@ -110,9 +93,8 @@ list(APPEND zephyr_cmake_modules "\${pre_dt_board}")
 # kconfig and dts should be available at the same time.
 list(APPEND zephyr_cmake_modules dts)
 list(APPEND zephyr_cmake_modules kconfig)
-list(APPEND zephyr_cmake_modules arch_v2)
-list(APPEND zephyr_cmake_modules soc_v1)
-list(APPEND zephyr_cmake_modules soc_v2)
+list(APPEND zephyr_cmake_modules arch)
+list(APPEND zephyr_cmake_modules soc)
 
 foreach(component ${SUB_COMPONENTS})
   if(NOT ${component} IN_LIST zephyr_cmake_modules)
@@ -132,9 +114,18 @@ foreach(module IN LISTS zephyr_cmake_modules)
   string(CONFIGURE "${module}" module)
   include(${module})
 
+  if(NOT "${module}" MATCHES ";")
+    if(COMMAND ${module}_init)
+      cmake_language(CALL ${module}_init)
+    endif()
+  endif()
+
   list(REMOVE_ITEM SUB_COMPONENTS ${module})
   if(DEFINED SUB_COMPONENTS AND NOT SUB_COMPONENTS)
     # All requested Zephyr CMake modules have been loaded, so let's return.
+    if(COMMAND yaml_save)
+      yaml_save(NAME build_info)
+    endif()
     return()
   endif()
 endforeach()

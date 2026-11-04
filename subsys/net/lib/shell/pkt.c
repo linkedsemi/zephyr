@@ -113,8 +113,8 @@ static void net_pkt_buffer_info(const struct shell *sh, struct net_pkt *pkt)
 	}
 
 	while (buf) {
-		PR("%p[%ld/%u (%u/%u)]", buf, atomic_get(&pkt->atomic_ref),
-		   buf->len, net_buf_max_len(buf), buf->size);
+		PR("%p[%ld/%u (%zu/%u)]", buf, atomic_get(&pkt->atomic_ref),
+		   buf->len, net_buf_tailroom(buf), buf->size);
 
 		buf = buf->frags;
 		if (buf) {
@@ -172,8 +172,7 @@ static int cmd_net_pkt(const struct shell *sh, size_t argc, char *argv[])
 
 SHELL_STATIC_SUBCMD_SET_CREATE(net_cmd_pkt,
 	SHELL_CMD(--help, NULL,
-		  "'net pkt <ptr in hex>' "
-		  "Print information about given net_pkt",
+		  SHELL_HELP("Print information about given net_pkt", "<ptr in hex>"),
 		  cmd_net_pkt),
 	SHELL_SUBCMD_SET_END
 );

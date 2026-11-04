@@ -5,10 +5,9 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 32
 flash: 256
 supported:
-  - ble
+  - bluetooth
   - nvs
 vendor: nordic

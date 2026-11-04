@@ -38,7 +38,7 @@ static int dummy_display_write(const struct device *dev, const uint16_t x,
 {
 	const struct dummy_display_config *config = dev->config;
 
-	__ASSERT(desc->width <= desc->pitch, "Pitch is smaller then width");
+	__ASSERT(desc->width <= desc->pitch, "Pitch is smaller than width");
 	__ASSERT(desc->pitch <= config->width,
 		"Pitch in descriptor is larger than screen size");
 	__ASSERT(desc->height <= config->height,
@@ -85,7 +85,6 @@ static void dummy_display_get_capabilities(const struct device *dev,
 	const struct dummy_display_config *config = dev->config;
 	struct dummy_display_data *disp_data = dev->data;
 
-	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = config->width;
 	capabilities->y_resolution = config->height;
 	capabilities->supported_pixel_formats = PIXEL_FORMAT_ARGB_8888 |
@@ -106,7 +105,7 @@ static int dummy_display_set_pixel_format(const struct device *dev,
 	return 0;
 }
 
-static const struct display_driver_api dummy_display_api = {
+static DEVICE_API(display, dummy_display_api) = {
 	.blanking_on = dummy_display_blanking_on,
 	.blanking_off = dummy_display_blanking_off,
 	.write = dummy_display_write,

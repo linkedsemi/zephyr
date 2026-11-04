@@ -14,9 +14,10 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/http/service.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/sys/base64.h>
-#include <mbedtls/sha1.h>
 #include <zephyr/net/websocket.h>
+#include <psa/crypto.h>
 
 LOG_MODULE_DECLARE(net_http_server, CONFIG_NET_HTTP_SERVER_LOG_LEVEL);
 
@@ -40,19 +41,27 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 		"Sec-WebSocket-Accept: ";
 	char key_accept[HTTP_SERVER_WS_MAX_SEC_KEY_LEN + sizeof(WS_MAGIC)];
 	char accept[20];
-	char tmp[64];
+	size_t accept_len;
+	char tmp[128];
 	size_t key_len;
 	size_t olen;
 	int ret;
+	psa_status_t psa_status;
 
 	key_len = MIN(sizeof(key_accept) - 1, sizeof(client->ws_sec_key));
 	strncpy(key_accept, client->ws_sec_key, key_len);
 	key_len = strlen(key_accept);
 
 	olen = MIN(sizeof(key_accept) - 1 - key_len, sizeof(WS_MAGIC) - 1);
-	strncpy(key_accept + key_len, WS_MAGIC, olen);
+	memcpy(key_accept + key_len, WS_MAGIC, olen);
 
-	mbedtls_sha1(key_accept, olen + key_len, accept);
+	psa_status = psa_hash_compute(PSA_ALG_SHA_1, key_accept, olen + key_len,
+			 accept, sizeof(accept), &accept_len);
+	if (psa_status != PSA_SUCCESS) {
+		NET_DBG("Failed to compute hash for websocket key (%d)", psa_status);
+		ret = -EIO;
+		goto error;
+	}
 
 	ret = base64_encode(tmp, sizeof(tmp) - 1, &olen, accept, sizeof(accept));
 	if (ret) {
@@ -70,14 +79,28 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 		goto error;
 	}
 
+	client->http1_headers_sent = true;
+
 	ret = http_server_sendall(client, tmp, strlen(tmp));
 	if (ret < 0) {
 		NET_DBG("Cannot write to socket (%d)", ret);
 		goto error;
 	}
 
-	ret = snprintk(tmp, sizeof(tmp), "\r\nUser-Agent: %s\r\n\r\n",
-		       ZEPHYR_USER_AGENT);
+	/* RFC 6455 sec. 4.2.2: if the client offered subprotocols via
+	 * Sec-WebSocket-Protocol, echo the one we selected. The HTTP/1
+	 * parser stores the first token from the client's list in
+	 * ws_sec_protocol; an empty value means the client did not
+	 * negotiate a subprotocol, in which case we omit the header.
+	 */
+	if (client->ws_sec_protocol[0] != '\0') {
+		ret = snprintk(tmp, sizeof(tmp),
+			       "\r\nSec-WebSocket-Protocol: %s\r\nUser-Agent: %s\r\n\r\n",
+			       client->ws_sec_protocol, ZEPHYR_USER_AGENT);
+	} else {
+		ret = snprintk(tmp, sizeof(tmp), "\r\nUser-Agent: %s\r\n\r\n",
+			       ZEPHYR_USER_AGENT);
+	}
 	if (ret < 0 || ret >= sizeof(tmp)) {
 		goto error;
 	}
@@ -93,7 +116,10 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 	 */
 	if (client->parser_state == HTTP1_MESSAGE_COMPLETE_STATE) {
 		struct http_resource_detail_websocket *ws_detail;
+		struct http_request_ctx request_ctx;
 		int ws_sock;
+		char *params;
+		size_t params_len;
 
 		ws_detail = (struct http_resource_detail_websocket *)client->current_detail;
 
@@ -105,9 +131,14 @@ int handle_http1_to_websocket_upgrade(struct http_client_ctx *client)
 			goto error;
 		}
 
+		memset(&request_ctx, 0, sizeof(request_ctx));
+		params = &client->url_buffer[client->current_detail->path_len];
+		params_len = strlen(params);
+		populate_request_ctx(&request_ctx, params, params_len, &client->header_capture_ctx);
+
+		ret = ws_detail->cb(ws_sock, &request_ctx, ws_detail->user_data);
 		http_server_release_client(client);
 
-		ret = ws_detail->cb(ws_sock, ws_detail->user_data);
 		if (ret < 0) {
 			NET_DBG("WS connection failed (%d)", ret);
 			websocket_unregister(ws_sock);

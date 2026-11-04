@@ -60,6 +60,10 @@ static int transceive_packet(const struct device *dev, union r502a_packet *tx_pa
 		uart_irq_rx_enable(cfg->dev);
 		if (k_sem_take(&drv_data->uart_rx_sem, K_MSEC(1500)) != 0) {
 			LOG_ERR("Rx data timeout");
+			uart_irq_rx_disable(cfg->dev);
+			k_sem_reset(&drv_data->uart_rx_sem);
+			drv_data->rx_buf.data = NULL;
+			drv_data->rx_buf.len = 0;
 			return -ETIMEDOUT;
 		}
 	}
@@ -70,7 +74,7 @@ static int transceive_packet(const struct device *dev, union r502a_packet *tx_pa
 static int r502a_validate_rx_packet(union r502a_packet *rx_packet)
 {
 	uint16_t recv_cks = 0, calc_cks = 0;
-	uint8_t cks_start_idx;
+	uint16_t cks_start_idx;
 
 	if (sys_be16_to_cpu(rx_packet->start) == R502A_STARTCODE) {
 		LOG_DBG("startcode matched 0x%X", sys_be16_to_cpu(rx_packet->start));
@@ -101,7 +105,15 @@ static int r502a_validate_rx_packet(union r502a_packet *rx_packet)
 		return -EINVAL;
 	}
 
-	cks_start_idx = sys_be16_to_cpu(rx_packet->len) - R502A_CHECKSUM_LEN;
+	const uint16_t packet_len = sys_be16_to_cpu(rx_packet->len);
+
+	if (packet_len < R502A_CHECKSUM_LEN ||
+	    packet_len > (R502A_MAX_BUF_SIZE - R502A_HEADER_LEN)) {
+		LOG_ERR("Invalid packet length %d", packet_len);
+		return -EINVAL;
+	}
+
+	cks_start_idx = packet_len - R502A_CHECKSUM_LEN;
 
 	recv_cks = sys_get_be16(&rx_packet->data[cks_start_idx]);
 
@@ -149,12 +161,23 @@ static void uart_cb_handler(const struct device *dev, void *user_data)
 	int len = 0;
 	int offset = drv_data->rx_buf.len;
 
-	if ((uart_irq_update(dev) > 0) && (uart_irq_is_pending(dev) > 0)) {
+	while (true) {
+		uart_irq_update(dev);
+
+		if (uart_irq_is_pending(dev) <= 0) {
+			break;
+		}
+
 		if (uart_irq_tx_ready(dev)) {
 			uart_cb_tx_handler(uart_dev);
 		}
 
-		while (uart_irq_rx_ready(dev)) {
+		if (uart_irq_rx_ready(dev)) {
+			if (drv_data->rx_buf.data == NULL) {
+				uart_irq_rx_disable(dev);
+				break;
+			}
+
 			len = uart_fifo_read(dev, &drv_data->rx_buf.data[offset],
 								drv_data->pkt_len);
 			offset += len;
@@ -169,6 +192,16 @@ static void uart_cb_handler(const struct device *dev, void *user_data)
 				drv_data->pkt_len = sys_get_be16(
 							&drv_data->rx_buf.data[R502A_PKG_LEN_IDX]
 							);
+
+				/* Body must fit in the caller's packet buffer */
+				if (drv_data->pkt_len < R502A_CHECKSUM_LEN ||
+				    drv_data->pkt_len > CONFIG_R502A_DATA_PKT_SIZE) {
+					LOG_ERR("Invalid packet length %u", drv_data->pkt_len);
+					uart_irq_rx_disable(dev);
+					k_sem_give(&drv_data->uart_rx_sem);
+					break;
+				}
+
 				continue;
 			}
 
@@ -1114,13 +1147,13 @@ static int grow_r502a_init(const struct device *dev)
 	int ret;
 
 	if (!device_is_ready(cfg->dev)) {
-		LOG_ERR("%s: grow_r502a device not ready", dev->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->dev);
 		return -ENODEV;
 	}
 
 	if (IS_ENABLED(CONFIG_GROW_R502A_GPIO_POWER)) {
 		if (!gpio_is_ready_dt(&cfg->vin_gpios)) {
-			LOG_ERR("GPIO port %s not ready", cfg->vin_gpios.port->name);
+			LOG_ERR_DEVICE_NOT_READY(cfg->vin_gpios.port);
 			return -ENODEV;
 		}
 
@@ -1133,7 +1166,7 @@ static int grow_r502a_init(const struct device *dev)
 		k_sleep(K_MSEC(R502A_DELAY));
 
 		if (!gpio_is_ready_dt(&cfg->act_gpios)) {
-			LOG_ERR("GPIO port %s not ready", cfg->act_gpios.port->name);
+			LOG_ERR_DEVICE_NOT_READY(cfg->act_gpios.port);
 			return -ENODEV;
 		}
 
@@ -1168,7 +1201,7 @@ static int grow_r502a_init(const struct device *dev)
 	return fps_init(dev);
 }
 
-static const struct sensor_driver_api grow_r502a_api = {
+static DEVICE_API(sensor, grow_r502a_api) = {
 	.sample_fetch = grow_r502a_sample_fetch,
 	.channel_get = grow_r502a_channel_get,
 	.attr_set = grow_r502a_attr_set,
@@ -1196,6 +1229,7 @@ static int grow_r502a_led_set_color(const struct device *dev, uint32_t led,
 static int grow_r502a_led_on(const struct device *dev, uint32_t led)
 {
 	struct grow_r502a_data *drv_data = dev->data;
+	int ret;
 
 	if (!drv_data->led_color) {
 		drv_data->led_color = R502A_LED_COLOR_BLUE;
@@ -1206,19 +1240,30 @@ static int grow_r502a_led_on(const struct device *dev, uint32_t led)
 		.color_idx = drv_data->led_color,
 	};
 
-	return fps_led_control(dev, &led_ctrl);
+	k_mutex_lock(&drv_data->lock, K_FOREVER);
+	ret = fps_led_control(dev, &led_ctrl);
+	k_mutex_unlock(&drv_data->lock);
+
+	return ret;
 }
 
 static int grow_r502a_led_off(const struct device *dev, uint32_t led)
 {
+	struct grow_r502a_data *drv_data = dev->data;
+	int ret;
+
 	struct r502a_led_params led_ctrl = {
 		.ctrl_code = R502A_LED_CTRL_OFF_ALWAYS,
 	};
 
-	return fps_led_control(dev, &led_ctrl);
+	k_mutex_lock(&drv_data->lock, K_FOREVER);
+	ret = fps_led_control(dev, &led_ctrl);
+	k_mutex_unlock(&drv_data->lock);
+
+	return ret;
 }
 
-static const struct led_driver_api grow_r502a_leds_api = {
+static DEVICE_API(led, grow_r502a_leds_api) = {
 	.set_color = grow_r502a_led_set_color,
 	.on = grow_r502a_led_on,
 	.off = grow_r502a_led_off,

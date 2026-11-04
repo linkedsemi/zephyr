@@ -327,7 +327,7 @@ ZTEST(gnss_nmea0183, test_parse_gga_fix)
 		      "Incorrectly parsed fix status");
 
 	zassert_equal(data.info.satellites_cnt, 6,
-		      "Incorrectly parsed number of satelites");
+		      "Incorrectly parsed number of satellites");
 
 	zassert_equal(data.info.hdop, 1410, "Incorrectly parsed HDOP");
 	zassert_equal(data.nav_data.altitude, 15234, "Incorrectly parsed altitude");
@@ -648,6 +648,51 @@ static const struct gnss_satellite gbgsv_8_8_25_sats[] = {
 	 .system = GNSS_SYSTEM_BEIDOU, .is_tracked = true},
 };
 
+/*
+ * Some receivers pad the last GSV message with empty satellite fields
+ *
+ * $GPGSV,1,1,03,10,,,25,12,,,28,15,,,16,,,,*76
+ */
+const char *gpgsv_1_1_3[21] = {
+	"$GPGSV",
+	"1",
+	"1",
+	"03",
+	"10",
+	"",
+	"",
+	"25",
+	"12",
+	"",
+	"",
+	"28",
+	"15",
+	"",
+	"",
+	"16",
+	"",
+	"",
+	"",
+	"",
+	"76",
+};
+
+static const struct gnss_nmea0183_gsv_header gpgsv_1_1_3_header = {
+	.system = GNSS_SYSTEM_GPS,
+	.number_of_messages = 1,
+	.message_number = 1,
+	.number_of_svs = 3
+};
+
+static const struct gnss_satellite gpgsv_1_1_3_sats[] = {
+	{.prn = 10, .elevation = 0, .azimuth = 0, .snr = 25,
+	 .system = GNSS_SYSTEM_GPS, .is_tracked = true},
+	{.prn = 12, .elevation = 0, .azimuth = 0, .snr = 28,
+	 .system = GNSS_SYSTEM_GPS, .is_tracked = true},
+	{.prn = 15, .elevation = 0, .azimuth = 0, .snr = 16,
+	 .system = GNSS_SYSTEM_GPS, .is_tracked = true},
+};
+
 struct test_gsv_sample {
 	const char **argv;
 	uint16_t argc;
@@ -673,6 +718,8 @@ static const struct test_gsv_sample gsv_samples[] = {
 	 .satellites = glgsv_8_7_25_sats, .number_of_svs = ARRAY_SIZE(glgsv_8_7_25_sats)},
 	{.argv = gbgsv_8_8_25, .argc = ARRAY_SIZE(gbgsv_8_8_25), .header = &gbgsv_8_8_25_header,
 	 .satellites = gbgsv_8_8_25_sats, .number_of_svs = ARRAY_SIZE(gbgsv_8_8_25_sats)},
+	{.argv = gpgsv_1_1_3, .argc = ARRAY_SIZE(gpgsv_1_1_3), .header = &gpgsv_1_1_3_header,
+	 .satellites = gpgsv_1_1_3_sats, .number_of_svs = ARRAY_SIZE(gpgsv_1_1_3_sats)},
 };
 
 ZTEST(gnss_nmea0183, test_gsv_parse_headers)

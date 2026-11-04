@@ -43,19 +43,19 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #endif
 
 /* Interface 1 addresses */
-static struct in6_addr my_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
+static struct net_in6_addr my_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
 					0, 0, 0, 0, 0, 0, 0, 0x1 } } };
 
 /* Interface 2 addresses */
-static struct in6_addr my_addr2 = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
+static struct net_in6_addr my_addr2 = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
 					0, 0, 0, 0, 0, 0, 0, 0x1 } } };
 
 /* Interface 3 addresses */
-static struct in6_addr my_addr3 = { { { 0x20, 0x01, 0x0d, 0xb8, 2, 0, 0, 0,
+static struct net_in6_addr my_addr3 = { { { 0x20, 0x01, 0x0d, 0xb8, 2, 0, 0, 0,
 					0, 0, 0, 0, 0, 0, 0, 0x1 } } };
 
 /* Extra address is assigned to ll_addr */
-static struct in6_addr ll_addr = { { { 0xfe, 0x80, 0x43, 0xb8, 0, 0, 0, 0,
+static struct net_in6_addr ll_addr = { { { 0xfe, 0x80, 0x43, 0xb8, 0, 0, 0, 0,
 				       0, 0, 0, 0xf2, 0xaa, 0x29, 0x02,
 				       0x04 } } };
 
@@ -119,12 +119,8 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	return 0;
 }
 
-static enum ethernet_hw_caps eth_capabilities(const struct device *dev)
-{
-	return ETHERNET_PTP;
-}
-
-static const struct device *eth_get_ptp_clock(const struct device *dev)
+static const struct device *eth_get_ptp_clock(const struct device *dev,
+					      struct net_if *iface __unused)
 {
 	struct eth_context *context = dev->data;
 
@@ -134,7 +130,6 @@ static const struct device *eth_get_ptp_clock(const struct device *dev)
 static struct ethernet_api api_funcs = {
 	.iface_api.init = eth_iface_init,
 
-	.get_capabilities = eth_capabilities,
 	.get_ptp_clock = eth_get_ptp_clock,
 	.send = eth_tx,
 };
@@ -226,7 +221,7 @@ static int my_ptp_clock_rate_adjust(const struct device *dev, double ratio)
 static struct ptp_context ptp_test_1_context;
 static struct ptp_context ptp_test_2_context;
 
-static const struct ptp_clock_driver_api api = {
+static DEVICE_API(ptp_clock, api) = {
 	.set = my_ptp_clock_set,
 	.get = my_ptp_clock_get,
 	.adjust = my_ptp_clock_adjust,

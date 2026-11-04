@@ -2,10 +2,10 @@
 # Reason for that is because not a single command covers all use cases,
 # and it must therefore be possible to call individual commands, depending
 # on the arguments used.
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 # Handle stripping
-if (STRIP_DEBUG OR STRIP_ALL)
+if(STRIP_DEBUG OR STRIP_ALL)
   set(obj_copy_target_output "--elf")
   if(STRIP_ALL)
     set(obj_copy_strip "--strip=all")

@@ -10,6 +10,7 @@
 #define ZEPHYR_DRIVERS_FLASH_FLASH_STM32_H_
 
 #include <zephyr/drivers/flash.h>
+#include "stm32_hsem.h"
 
 #if DT_NODE_HAS_PROP(DT_INST(0, st_stm32_flash_controller), clocks) || \
 	DT_NODE_HAS_PROP(DT_INST(0, st_stm32h7_flash_controller), clocks)
@@ -40,12 +41,12 @@ struct flash_stm32_priv {
 #endif
 
 #if defined(CONFIG_SOC_SERIES_STM32H5X)
-/* FLASH register names differ for this serie */
+/* FLASH register names differ for this series */
 #define FLASH_NSSR_BSY FLASH_SR_BSY
 #define OPTR OPTCR
 #endif /* CONFIG_SOC_SERIES_STM32H5X */
 
-/* Register mapping for the stm32H7RS serie (single bank)*/
+/* Register mapping for the stm32H7RS series (single bank)*/
 #if defined(CONFIG_SOC_SERIES_STM32H7RSX)
 #define FLASH_NB_32BITWORD_IN_FLASHWORD 4 /* 128 bits */
 #define CR1 CR
@@ -60,6 +61,11 @@ struct flash_stm32_priv {
 #if defined(FLASH_NSSR_NSBSY) || defined(FLASH_NSSR_BSY) /* For mcu w. TZ in non-secure mode */
 #define FLASH_SECURITY_NS
 #define FLASH_STM32_SR		NSSR
+#if defined(CONFIG_SOC_SERIES_STM32H5X)
+#define FLASH_STM32_CCR		NSCCR
+#else /* CONFIG_SOC_SERIES_STM32H5X */
+#define FLASH_STM32_CCR		FLASH_STM32_SR
+#endif /* CONFIG_SOC_SERIES_STM32H5X */
 #elif defined(FLASH_SECSR_SECBSY)	/* For mcu w. TZ  in secured mode */
 #error Flash is not supported in secure mode
 #define FLASH_SECURITY_SEC
@@ -68,12 +74,15 @@ struct flash_stm32_priv {
 					 *  secured or non-secured mode
 					 */
 #define FLASH_STM32_SR		SR
+#if defined(CONFIG_SOC_SERIES_STM32C5X)
+#define FLASH_STM32_CCR		CCR
+#else /* CONFIG_SOC_SERIES_STM32C5X */
+#define FLASH_STM32_CCR		FLASH_STM32_SR
+#endif /* CONFIG_SOC_SERIES_STM32C5X */
 #endif
-
 
 #define FLASH_STM32_PRIV(dev) ((struct flash_stm32_priv *)((dev)->data))
 #define FLASH_STM32_REGS(dev) (FLASH_STM32_PRIV(dev)->regs)
-
 
 /* Redefinitions of flags and masks to harmonize stm32 series: */
 #if defined(CONFIG_SOC_SERIES_STM32U5X)
@@ -87,6 +96,18 @@ struct flash_stm32_priv {
 #define FLASH_STM32_NSPNB_POS FLASH_NSCR_PNB_Pos
 #define FLASH_STM32_NSPNB FLASH_NSCR_PNB
 #define FLASH_STM32_NSSTRT FLASH_NSCR_STRT
+#define FLASH_PAGE_SIZE_128_BITS FLASH_PAGE_SIZE
+#elif defined(CONFIG_SOC_SERIES_STM32U3X)
+#define FLASH_STM32_NSLOCK FLASH_CR_LOCK
+#define FLASH_STM32_DBANK FLASH_OPTR_DUALBANK
+#define FLASH_STM32_NSPG FLASH_CR_PG
+#define FLASH_STM32_NSBKER_MSK FLASH_CR_BKER_Msk
+#define FLASH_STM32_NSBKER FLASH_CR_BKER
+#define FLASH_STM32_NSPER FLASH_CR_PER
+#define FLASH_STM32_NSPNB_MSK FLASH_CR_PNB_Msk
+#define FLASH_STM32_NSPNB_POS FLASH_CR_PNB_Pos
+#define FLASH_STM32_NSPNB FLASH_CR_PNB
+#define FLASH_STM32_NSSTRT FLASH_CR_STRT
 #define FLASH_PAGE_SIZE_128_BITS FLASH_PAGE_SIZE
 #elif defined(CONFIG_SOC_SERIES_STM32H5X)
 #define FLASH_OPTR_SWAP_BANK FLASH_OPTCR_SWAP_BANK
@@ -130,7 +151,12 @@ struct flash_stm32_priv {
 #define FLASH_STM32_NSPNB_POS FLASH_NSCR1_PNB_Pos
 #define FLASH_STM32_NSPNB FLASH_NSCR1_PNB
 #define FLASH_STM32_NSSTRT FLASH_NSCR1_STRT
+/* STM32WBA6x has DUAL bank flash */
+#if defined(FLASH_OPTR_DUAL_BANK)
+#define FLASH_STM32_DBANK FLASH_OPTR_DUAL_BANK
+#endif /* FLASH_OPTR_DUAL_BANK */
 #endif /* CONFIG_SOC_SERIES_STM32U5X */
+
 #if defined(FLASH_OPTR_DBANK)
 #define FLASH_STM32_DBANK FLASH_OPTR_DBANK
 #endif /* FLASH_OPTR_DBANK */
@@ -141,6 +167,8 @@ struct flash_stm32_priv {
 #else
 #define FLASH_STM32_SR_BUSY	(FLASH_SR_BSY1)
 #endif /* defined(FLASH_FLAG_BSY2) */
+#elif defined(CONFIG_STM32_HAL2)
+#define FLASH_STM32_SR_BUSY	LL_FLASH_FLAG_BSY
 #else
 #define FLASH_STM32_SR_BUSY	(FLASH_FLAG_BSY)
 #endif
@@ -238,6 +266,9 @@ struct flash_stm32_priv {
 
 #endif /* !defined(CONFIG_SOC_SERIES_STM32G0X) */
 
+#if defined(CONFIG_SOC_SERIES_STM32C5X)
+#define FLASH_STM32_SR_ERRORS	LL_FLASH_FLAG_ERRORS_ALL
+#else /* CONFIG_SOC_SERIES_STM32C5X */
 #define FLASH_STM32_SR_ERRORS  (FLASH_STM32_SR_OPERR |			\
 				FLASH_STM32_SR_PGERR |			\
 				FLASH_STM32_SR_PROGERR |		\
@@ -249,6 +280,7 @@ struct flash_stm32_priv {
 				FLASH_STM32_SR_FASTERR |		\
 				FLASH_STM32_SR_RDERR |			\
 				FLASH_STM32_SR_PGPERR)
+#endif /* CONFIG_SOC_SERIES_STM32C5X */
 
 #define FLASH_STM32_RDP0 0xAA
 #define FLASH_STM32_RDP2 0xCC
@@ -271,6 +303,40 @@ static inline bool flash_stm32_range_exists(const struct device *dev,
 }
 #endif	/* CONFIG_FLASH_PAGE_LAYOUT */
 
+
+#if defined(CONFIG_MULTITHREADING) || defined(CONFIG_STM32H7_DUAL_CORE)
+/*
+ * This is named flash_stm32_sem_take instead of flash_stm32_lock (and
+ * similarly for flash_stm32_sem_give) to avoid confusion with locking
+ * actual flash pages.
+ */
+
+static inline void _flash_stm32_sem_take(const struct device *dev)
+{
+	k_sem_take(&FLASH_STM32_PRIV(dev)->sem, K_FOREVER);
+	z_stm32_hsem_lock(CFG_HW_FLASH_SEMID, HSEM_LOCK_WAIT_FOREVER);
+}
+
+static inline void _flash_stm32_sem_give(const struct device *dev)
+{
+	z_stm32_hsem_unlock(CFG_HW_FLASH_SEMID);
+	k_sem_give(&FLASH_STM32_PRIV(dev)->sem);
+}
+
+#define flash_stm32_sem_init(dev) k_sem_init(&FLASH_STM32_PRIV(dev)->sem, 1, 1)
+#define flash_stm32_sem_take(dev) _flash_stm32_sem_take(dev)
+#define flash_stm32_sem_give(dev) _flash_stm32_sem_give(dev)
+#else
+#define flash_stm32_sem_init(dev)
+#define flash_stm32_sem_take(dev)
+#define flash_stm32_sem_give(dev)
+#endif /* CONFIG_MULTITHREADING */
+
+#ifdef CONFIG_FLASH_EX_OP_ENABLED
+int flash_stm32_ex_op(const struct device *dev, uint16_t code,
+			     const uintptr_t in, void *out);
+#endif /* CONFIG_FLASH_EX_OP_ENABLED */
+
 static inline bool flash_stm32_valid_write(off_t offset, uint32_t len)
 {
 	return ((offset % FLASH_STM32_WRITE_BLOCK_SIZE == 0) &&
@@ -289,7 +355,34 @@ int flash_stm32_block_erase_loop(const struct device *dev,
 
 int flash_stm32_wait_flash_idle(const struct device *dev);
 
-int flash_stm32_option_bytes_lock(const struct device *dev, bool enable);
+uint32_t flash_stm32_option_bytes_read(const struct device *dev);
+
+#if defined(CONFIG_OTP_STM32_NVM_PROGRAMMING_SUPPORT)
+/** @cond INTERNAL_HIDDEN */
+/*
+ * Program half-words into an OTP area located in embedded NVM.
+ *
+ * Called by the STM32 NVM OTP driver (drivers/otp/otp_nvm_stm32.c). The default
+ * implementation in flash_stm32.c returns -ENOSYS; series that support it
+ * provide a strong definition in their flash driver (e.g. flash_stm32l5x.c for
+ * STM32H5). The programming is serialized against regular flash operations
+ * using the flash driver's own lock.
+ *
+ * @param dev      flash controller device (parent of the OTP node)
+ * @param otp_base memory-mapped base address of the OTP area
+ * @param offset   byte offset within the OTP area (half-word aligned)
+ * @param data     source buffer
+ * @param len      number of bytes to program (multiple of a half-word)
+ */
+int flash_stm32_otp_program(const struct device *dev, uint8_t *otp_base, off_t offset,
+			    const void *data, size_t len);
+/** @endcond **/
+#endif /* CONFIG_OTP_STM32_NVM_PROGRAMMING_SUPPORT */
+
+int flash_stm32_option_bytes_write(const struct device *dev, uint32_t mask,
+				   uint32_t value);
+
+int flash_stm32_cr_lock(const struct device *dev, bool enable);
 
 #ifdef CONFIG_SOC_SERIES_STM32WBX
 int flash_stm32_check_status(const struct device *dev);
@@ -304,26 +397,21 @@ void flash_stm32_page_layout(const struct device *dev,
 #if defined(CONFIG_FLASH_STM32_WRITE_PROTECT)
 
 int flash_stm32_update_wp_sectors(const struct device *dev,
-				  uint32_t changed_sectors,
-				  uint32_t protected_sectors);
+				  uint64_t changed_sectors,
+				  uint64_t protected_sectors);
 
 int flash_stm32_get_wp_sectors(const struct device *dev,
-			       uint32_t *protected_sectors);
+			       uint64_t *protected_sectors);
 #endif
 #if defined(CONFIG_FLASH_STM32_READOUT_PROTECTION)
 uint8_t flash_stm32_get_rdp_level(const struct device *dev);
 
-void flash_stm32_set_rdp_level(const struct device *dev, uint8_t level);
+int flash_stm32_set_rdp_level(const struct device *dev, uint8_t level);
 #endif
 
-/* Flash extended operations */
-#if defined(CONFIG_FLASH_STM32_WRITE_PROTECT)
-int flash_stm32_ex_op_sector_wp(const struct device *dev, const uintptr_t in,
-				void *out);
-#endif
-#if defined(CONFIG_FLASH_STM32_READOUT_PROTECTION)
-int flash_stm32_ex_op_rdp(const struct device *dev, const uintptr_t in,
-			  void *out);
+#if defined(CONFIG_FLASH_STM32_BLOCK_REGISTERS)
+int flash_stm32_control_register_disable(const struct device *dev);
+int flash_stm32_option_bytes_disable(const struct device *dev);
 #endif
 
 #endif /* ZEPHYR_DRIVERS_FLASH_FLASH_STM32_H_ */

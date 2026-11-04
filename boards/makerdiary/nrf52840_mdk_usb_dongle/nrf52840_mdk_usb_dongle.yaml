@@ -7,9 +7,8 @@ flash: 1024
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
-  - usb_device
-  - ble
+  - usbd
+  - bluetooth
   - watchdog
   - counter

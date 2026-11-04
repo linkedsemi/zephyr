@@ -1,4 +1,4 @@
-.. xenvm:
+.. zephyr:board:: xenvm
 
 ARMv8 Xen Virtual Machine Example
 #################################
@@ -20,22 +20,7 @@ Hardware
 Supported Features
 ==================
 
-The following hardware features are supported:
-
-+--------------+-------------+----------------------+
-| Interface    | Controller  | Driver/Component     |
-+==============+=============+======================+
-| GIC          | virtualized | interrupt controller |
-+--------------+-------------+----------------------+
-| ARM TIMER    | virtualized | system clock         |
-+--------------+-------------+----------------------+
-
-The kernel currently does not support other hardware features on this platform.
-
-The default configuration for this board can be found in these files:
-
-- :zephyr_file:`boards/xen/xenvm/Kconfig.defconfig`
-- :zephyr_file:`boards/xen/xenvm/xenvm_defconfig`
+.. zephyr:board-supported-hw::
 
 Devices
 ========
@@ -90,6 +75,15 @@ Now only following features are supported:
 * Xen PV console (2 versions: regular ring buffer based for DomU and consoleio for Dom0)
 * Xen early console_io interface (mainly for debug purposes - requires debug version of Xen)
 * Xen grant tables (granting access for own grants and map/unmap foreign grants)
+* Xen domain watchdog
+
+Watchdog
+--------
+
+The board device tree describes the Xen domain watchdog as a Zephyr watchdog
+device. The watchdog timer is owned by Xen and expires the whole guest domain
+according to the domain's Xen ``on_watchdog`` policy. Zephyr applications can
+use the standard watchdog API to install, set up, and feed watchdog channels.
 
 Building and Running
 ********************

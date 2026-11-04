@@ -7,10 +7,9 @@
 if SOC_SERIES_SAMD51
 
 config NUM_IRQS
-	int
 	default 137
 
-config ROM_START_OFFSET
-	default 0x400 if BOOTLOADER_MCUBOOT
+config BUILD_OUTPUT_UF2_FAMILY_ID
+	default "0x55114460"
 
 endif # SOC_SERIES_SAMD51

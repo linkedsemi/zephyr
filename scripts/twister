@@ -12,8 +12,8 @@ build each test case on one platform per architecture, using a precedence
 list defined in an architecture configuration file, and if possible
 run the tests in any available emulators or simulators on the system.
 
-Test cases are detected by the presence of a 'testcase.yaml' or a sample.yaml
-files in the application's project directory. This file may contain one or more
+Test cases are detected by the presence of a 'tests.yaml' file in the
+application's project directory. This file may contain one or more
 blocks, each identifying a test scenario. The title of the block is a name for
 the test case, which only needs to be unique for the test cases specified in
 that testsuite meta-data. The full canonical name for each test case is <path to
@@ -163,7 +163,7 @@ pairs:
         filter = not ARCH in ["x86", "arc"]
 
     but unlike "filter", these cause platforms to be filtered already during the testplan
-    generation. While "filter" does not exclue platforms at the testplan generation, and instead
+    generation. While "filter" does not exclude platforms at the testplan generation, and instead
     relies on the result of running the build configuration stage. That is, to evaluate the filter
     expression, cmake is run for that target, and then the filter evaluated as a gate for the
     build and run steps.
@@ -186,7 +186,6 @@ import os
 import sys
 from pathlib import Path
 
-
 ZEPHYR_BASE = os.getenv("ZEPHYR_BASE")
 if not ZEPHYR_BASE:
     # This file has been zephyr/scripts/twister for years,
@@ -203,22 +202,7 @@ if not ZEPHYR_BASE:
 sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts/pylib/twister/"))
 sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts/pylib/build_helpers"))
 
-from twisterlib.environment import add_parse_arguments, parse_arguments, python_version_guard
-from twisterlib.twister_main import main
-
+from twisterlib.twister_main import main  # noqa: E402
 
 if __name__ == "__main__":
-    ret = 0
-    try:
-        python_version_guard()
-
-        parser = add_parse_arguments()
-        options = parse_arguments(parser, sys.argv[1:])
-        default_options = parse_arguments(parser, [], on_init=False)
-        ret = main(options, default_options)
-    finally:
-        if (os.name != "nt") and os.isatty(1):
-            # (OS is not Windows) and (stdout is interactive)
-            os.system("stty sane <&1")
-
-    sys.exit(ret)
+    sys.exit(main())

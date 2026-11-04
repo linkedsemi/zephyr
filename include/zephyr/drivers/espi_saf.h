@@ -21,12 +21,14 @@ extern "C" {
 #endif
 
 /**
- * @brief eSPI SAF Driver APIs
- * @defgroup espi_interface ESPI Driver APIs
- * @ingroup io_interfaces
+ * @brief Interfaces for eSPI SAF (Serial Attached Flash)
+ *        controllers.
+ * @defgroup espi_saf_interface eSPI SAF
+ * @since 2.6
+ * @version 0.8.0
+ * @ingroup espi_interface
  * @{
  */
-
 
 /**
  * @code
@@ -93,6 +95,23 @@ extern "C" {
 
 /** @endcond */
 
+/**
+ * @brief eSPI TAF notification type.
+ *
+ * eSPI TAF notification event details indicates the event which triggered
+ * the callback.
+ */
+enum espi_taf_event {
+	/** TAF generic event */
+	ESPI_TAF_EVENT_NO_REQUEST = 0,
+	/** TAF flash access request was from the Host eSPI controller */
+	ESPI_TAF_EVENT_HOST_REQUEST,
+	/** TAF flash access request was from EC firmware portal 0 */
+	ESPI_TAF_EVENT_EC0_REQUEST,
+	/** maximum request */
+	ESPI_TAF_EVENT_MAX_REQUEST,
+};
+
 struct espi_saf_hw_cfg;
 struct espi_saf_flash_cfg;
 struct espi_saf_pr;
@@ -122,54 +141,97 @@ struct espi_saf_packet {
  */
 
 /**
- * @cond INTERNAL_HIDDEN
- *
- * eSPI driver API definition and system call entry points
- *
- * (Internal use only.)
+ * @def_driverbackendgroup{eSPI SAF,espi_saf_interface}
+ * @{
+ */
+
+/**
+ * @brief Callback API to configure the eSPI SAF controller.
+ * See espi_saf_config() for argument description.
  */
 typedef int (*espi_saf_api_config)(const struct device *dev,
 				   const struct espi_saf_cfg *cfg);
 
+/**
+ * @brief Callback API to set one or more SAF protection regions.
+ * See espi_saf_set_protection_regions() for argument description.
+ */
 typedef int (*espi_saf_api_set_protection_regions)(
 				const struct device *dev,
 				const struct espi_saf_protection *pr);
 
+/**
+ * @brief Callback API to activate the SAF block.
+ * See espi_saf_activate() for argument description.
+ */
 typedef int (*espi_saf_api_activate)(const struct device *dev);
 
+/**
+ * @brief Callback API to query if SAF is ready.
+ * See espi_saf_get_channel_status() for argument description.
+ */
 typedef bool (*espi_saf_api_get_channel_status)(const struct device *dev);
 
+/**
+ * @brief Callback API to send a read request for slave attached flash.
+ * See espi_saf_flash_read() for argument description.
+ */
 typedef int (*espi_saf_api_flash_read)(const struct device *dev,
 				       struct espi_saf_packet *pckt);
+/**
+ * @brief Callback API to send a write request for slave attached flash.
+ * See espi_saf_flash_write() for argument description.
+ */
 typedef int (*espi_saf_api_flash_write)(const struct device *dev,
 					struct espi_saf_packet *pckt);
+/**
+ * @brief Callback API to send an erase request for slave attached flash.
+ * See espi_saf_flash_erase() for argument description.
+ */
 typedef int (*espi_saf_api_flash_erase)(const struct device *dev,
 					struct espi_saf_packet *pckt);
+/**
+ * @brief Callback API to respond unsuccessful completion for slave attached flash.
+ * See espi_saf_flash_unsuccess() for argument description.
+ */
 typedef int (*espi_saf_api_flash_unsuccess)(const struct device *dev,
 					struct espi_saf_packet *pckt);
-/* Callbacks and traffic intercept */
+/**
+ * @brief Callback API to manage (add or remove) application callbacks.
+ * See espi_saf_add_callback() and espi_saf_remove_callback() for argument description.
+ */
 typedef int (*espi_saf_api_manage_callback)(const struct device *dev,
 					    struct espi_callback *callback,
 					    bool set);
 
+/**
+ * @driver_ops{eSPI SAF}
+ */
 __subsystem struct espi_saf_driver_api {
+	/** @driver_ops_mandatory @copybrief espi_saf_config */
 	espi_saf_api_config config;
+	/** @driver_ops_mandatory @copybrief espi_saf_set_protection_regions */
 	espi_saf_api_set_protection_regions set_protection_regions;
+	/** @driver_ops_mandatory @copybrief espi_saf_activate */
 	espi_saf_api_activate activate;
+	/** @driver_ops_mandatory @copybrief espi_saf_get_channel_status */
 	espi_saf_api_get_channel_status get_channel_status;
+	/** @driver_ops_optional @copybrief espi_saf_flash_read */
 	espi_saf_api_flash_read flash_read;
+	/** @driver_ops_optional @copybrief espi_saf_flash_write */
 	espi_saf_api_flash_write flash_write;
+	/** @driver_ops_optional @copybrief espi_saf_flash_erase */
 	espi_saf_api_flash_erase flash_erase;
+	/** @driver_ops_optional @copybrief espi_saf_flash_unsuccess */
 	espi_saf_api_flash_unsuccess flash_unsuccess;
+	/** @driver_ops_optional Manage (add or remove) application callbacks. */
 	espi_saf_api_manage_callback manage_callback;
 };
 
-/**
- * @endcond
- */
+/** @} */
 
 /**
- * @brief Configure operation of a eSPI controller.
+ * @brief Configure operation of an eSPI controller.
  *
  * This routine provides a generic interface to override eSPI controller
  * capabilities.
@@ -222,10 +284,7 @@ __syscall int espi_saf_config(const struct device *dev,
 static inline int z_impl_espi_saf_config(const struct device *dev,
 					 const struct espi_saf_cfg *cfg)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
-
-	return api->config(dev, cfg);
+	return DEVICE_API_GET(espi_saf, dev)->config(dev, cfg);
 }
 
 /**
@@ -250,10 +309,7 @@ static inline int z_impl_espi_saf_set_protection_regions(
 					const struct device *dev,
 					const struct espi_saf_protection *pr)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
-
-	return api->set_protection_regions(dev, pr);
+	return DEVICE_API_GET(espi_saf, dev)->set_protection_regions(dev, pr);
 }
 
 /**
@@ -272,10 +328,7 @@ __syscall int espi_saf_activate(const struct device *dev);
 
 static inline int z_impl_espi_saf_activate(const struct device *dev)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
-
-	return api->activate(dev);
+	return DEVICE_API_GET(espi_saf, dev)->activate(dev);
 }
 
 /**
@@ -293,10 +346,7 @@ __syscall bool espi_saf_get_channel_status(const struct device *dev);
 static inline bool z_impl_espi_saf_get_channel_status(
 					const struct device *dev)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
-
-	return api->get_channel_status(dev);
+	return DEVICE_API_GET(espi_saf, dev)->get_channel_status(dev);
 }
 
 /**
@@ -318,8 +368,7 @@ __syscall int espi_saf_flash_read(const struct device *dev,
 static inline int z_impl_espi_saf_flash_read(const struct device *dev,
 					     struct espi_saf_packet *pckt)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
+	const struct espi_saf_driver_api *api = DEVICE_API_GET(espi_saf, dev);
 
 	if (!api->flash_read) {
 		return -ENOTSUP;
@@ -347,8 +396,7 @@ __syscall int espi_saf_flash_write(const struct device *dev,
 static inline int z_impl_espi_saf_flash_write(const struct device *dev,
 					      struct espi_saf_packet *pckt)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
+	const struct espi_saf_driver_api *api = DEVICE_API_GET(espi_saf, dev);
 
 	if (!api->flash_write) {
 		return -ENOTSUP;
@@ -358,9 +406,9 @@ static inline int z_impl_espi_saf_flash_write(const struct device *dev,
 }
 
 /**
- * @brief Sends a write request packet for slave attached flash.
+ * @brief Sends an erase request packet for slave attached flash.
  *
- * This routines provides an interface to send a request to write to the flash
+ * This routines provides an interface to send a request to erase the flash
  * components shared between the eSPI master and eSPI slaves.
  *
  * @param dev Pointer to the device structure for the driver instance.
@@ -376,8 +424,7 @@ __syscall int espi_saf_flash_erase(const struct device *dev,
 static inline int z_impl_espi_saf_flash_erase(const struct device *dev,
 					      struct espi_saf_packet *pckt)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
+	const struct espi_saf_driver_api *api = DEVICE_API_GET(espi_saf, dev);
 
 	if (!api->flash_erase) {
 		return -ENOTSUP;
@@ -405,8 +452,7 @@ __syscall int espi_saf_flash_unsuccess(const struct device *dev,
 static inline int z_impl_espi_saf_flash_unsuccess(const struct device *dev,
 						  struct espi_saf_packet *pckt)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
+	const struct espi_saf_driver_api *api = DEVICE_API_GET(espi_saf, dev);
 
 	if (!api->flash_unsuccess) {
 		return -ENOTSUP;
@@ -511,8 +557,7 @@ static inline void espi_saf_init_callback(struct espi_callback *callback,
 static inline int espi_saf_add_callback(const struct device *dev,
 					struct espi_callback *callback)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
+	const struct espi_saf_driver_api *api = DEVICE_API_GET(espi_saf, dev);
 
 	if (!api->manage_callback) {
 		return -ENOTSUP;
@@ -540,8 +585,7 @@ static inline int espi_saf_add_callback(const struct device *dev,
 static inline int espi_saf_remove_callback(const struct device *dev,
 					   struct espi_callback *callback)
 {
-	const struct espi_saf_driver_api *api =
-		(const struct espi_saf_driver_api *)dev->api;
+	const struct espi_saf_driver_api *api = DEVICE_API_GET(espi_saf, dev);
 
 	if (!api->manage_callback) {
 		return -ENOTSUP;

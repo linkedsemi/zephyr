@@ -22,7 +22,14 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/broadcaster` in the
-Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/broadcaster
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+To verify the sample is working, use a Bluetooth scanner app on a smartphone (e.g. nRF Connect
+or LightBlue) and observe the advertising packets. Alternatively, flash the
+:zephyr:code-sample:`bluetooth_observer` sample on a second board and observe the console output.

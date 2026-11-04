@@ -120,8 +120,8 @@ static void lis2mdl_channel_get_temp(const struct device *dev,
 	struct lis2mdl_data *drv_data = dev->data;
 
 	/* formula is temp = 25 + (temp / 8) C */
-	val->val1 = 25  + drv_data->temp_sample / 8;
-	val->val2 = (drv_data->temp_sample % 8) * 1000000 / 8;
+	sensor_value_from_micro(val,
+				25000000LL + ((int64_t)drv_data->temp_sample * 1000000LL) / 8);
 }
 
 static int lis2mdl_channel_get(const struct device *dev,
@@ -192,6 +192,9 @@ static int get_single_mode_raw_data(const struct device *dev,
 	const struct lis2mdl_config *cfg = dev->config;
 	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
 	int rc = 0;
+
+	/* drop any count left over from a conversion nobody consumed */
+	k_sem_reset(&lis2mdl->fetch_sem);
 
 	rc = lis2mdl_operating_mode_set(ctx, LIS2MDL_SINGLE_TRIGGER);
 	if (rc) {
@@ -289,28 +292,33 @@ static int lis2mdl_sample_fetch_temp(const struct device *dev)
 static int lis2mdl_sample_fetch(const struct device *dev,
 				enum sensor_channel chan)
 {
+	int ret = 0;
+
 	switch (chan) {
 	case SENSOR_CHAN_MAGN_X:
 	case SENSOR_CHAN_MAGN_Y:
 	case SENSOR_CHAN_MAGN_Z:
 	case SENSOR_CHAN_MAGN_XYZ:
-		lis2mdl_sample_fetch_mag(dev);
+		ret = lis2mdl_sample_fetch_mag(dev);
 		break;
 	case SENSOR_CHAN_DIE_TEMP:
-		lis2mdl_sample_fetch_temp(dev);
+		ret = lis2mdl_sample_fetch_temp(dev);
 		break;
 	case SENSOR_CHAN_ALL:
-		lis2mdl_sample_fetch_mag(dev);
-		lis2mdl_sample_fetch_temp(dev);
+		ret = lis2mdl_sample_fetch_mag(dev);
+		if (ret != 0) {
+			break;
+		}
+		ret = lis2mdl_sample_fetch_temp(dev);
 		break;
 	default:
 		return -ENOTSUP;
 	}
 
-	return 0;
+	return ret;
 }
 
-static const struct sensor_driver_api lis2mdl_driver_api = {
+static DEVICE_API(sensor, lis2mdl_driver_api) = {
 	.attr_set = lis2mdl_attr_set,
 #if CONFIG_LIS2MDL_TRIGGER
 	.trigger_set = lis2mdl_trigger_set,
@@ -347,7 +355,7 @@ static int lis2mdl_init(const struct device *dev)
 	}
 
 	/* reset sensor configuration */
-	if (lis2mdl_reset_set(ctx, PROPERTY_ENABLE) < 0) {
+	if (lis2mdl_sw_reset(ctx) < 0) {
 		LOG_ERR("s/w reset failed");
 		return -EIO;
 	}
@@ -411,7 +419,7 @@ static int lis2mdl_init(const struct device *dev)
 		}
 
 		/* Reboot sensor after setting the configuration registers */
-		rc = lis2mdl_boot_set(ctx, 1);
+		rc = lis2mdl_reboot(ctx);
 		if (rc) {
 			LOG_ERR("Reboot failed.");
 			return rc;
@@ -518,7 +526,7 @@ static int lis2mdl_pm_action(const struct device *dev,
 			(LIS2MDL_CFG_IRQ(inst)), ())
 
 #define LIS2MDL_SPI_OPERATION (SPI_WORD_SET(8) |			\
-				SPI_OP_MODE_MASTER |			\
+				SPI_OP_MODE_CONTROLLER |		\
 				SPI_MODE_CPOL |				\
 				SPI_MODE_CPHA)				\
 
@@ -527,8 +535,7 @@ static int lis2mdl_pm_action(const struct device *dev,
 		STMEMSC_CTX_SPI(&lis2mdl_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
-						LIS2MDL_SPI_OPERATION,	\
-						0),			\
+						LIS2MDL_SPI_OPERATION)	\
 		},							\
 		.spi_4wires = DT_INST_PROP(inst, duplex) ==		\
 						SPI_FULL_DUPLEX,	\

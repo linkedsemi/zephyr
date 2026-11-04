@@ -217,7 +217,7 @@ static int gpio_sam_manage_callback(const struct device *port,
 	return gpio_manage_callback(&context->cb, callback, set);
 }
 
-static const struct gpio_driver_api gpio_sam_api = {
+static DEVICE_API(gpio, gpio_sam_api) = {
 	.pin_configure = gpio_sam_config,
 	.port_get_raw = gpio_sam_port_get_raw,
 	.port_set_masked_raw = gpio_sam_port_set_masked_raw,
@@ -254,9 +254,7 @@ int gpio_sam_init(const struct device *dev)
 	static void port_##n##_sam_config_func(const struct device *dev);\
 									\
 	static const struct gpio_sam_config port_##n##_sam_config = {	\
-		.common = {						\
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),\
-		},							\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),		\
 		.regs = (Gpio *)DT_INST_REG_ADDR(n),			\
 		.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(n),		\
 		.config_func = port_##n##_sam_config_func,		\

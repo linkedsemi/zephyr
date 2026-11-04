@@ -1,4 +1,4 @@
-# Copyright 2024 NXP
+# Copyright 2024-2025 NXP
 # SPDX-License-Identifier: Apache-2.0
 
 identifier: imx93_evk/mimx9352/m33
@@ -11,6 +11,9 @@ toolchain:
 ram: 128
 flash: 128
 supported:
+  - adc
   - gpio
+  - i2c
+  - pwm
   - uart
 vendor: nxp

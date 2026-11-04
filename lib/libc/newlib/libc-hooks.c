@@ -11,6 +11,7 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/posix/sys/stat.h>
 #include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/minmax.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/errno_private.h>
 #include <zephyr/sys/heap_listener.h>
@@ -23,10 +24,14 @@
 #include <zephyr/kernel/mm.h>
 #include <sys/time.h>
 
+#ifdef CONFIG_XTENSA
+#include <xtensa/config/core-isa.h>
+#endif
+
 int _fstat(int fd, struct stat *st);
 int _read(int fd, void *buf, int nbytes);
 int _write(int fd, const void *buf, int nbytes);
-int _open(const char *name, int mode);
+int _open(const char *name, int flags, ...);
 int _close(int file);
 int _lseek(int file, int ptr, int dir);
 int _kill(int pid, int sig);
@@ -88,6 +93,9 @@ int _getpid(void);
 		#elif defined(CONFIG_ARC)
 			#define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, \
 							  Z_ARC_MPU_ALIGN)
+		#elif defined(CONFIG_XTENSA)
+			#define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, \
+							  XCHAL_MPU_ALIGN)
 		#elif defined(CONFIG_RISCV)
 			#define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, \
 							  Z_RISCV_STACK_PMP_ALIGN)
@@ -107,8 +115,8 @@ int _getpid(void);
 		#define MAX_HEAP_SIZE	(POINTER_TO_UINT(&_heap_sentry) - \
 					 HEAP_BASE)
 	#else
-		#define MAX_HEAP_SIZE	(KB(CONFIG_SRAM_SIZE) - (HEAP_BASE - \
-					 CONFIG_SRAM_BASE_ADDRESS))
+		#define MAX_HEAP_SIZE	(DT_CHOSEN_SRAM_SIZE - (HEAP_BASE - \
+					 DT_CHOSEN_SRAM_ADDR))
 	#endif /* CONFIG_XTENSA */
 #endif
 
@@ -117,7 +125,7 @@ static int malloc_prepare(void)
 
 #ifdef USE_MALLOC_PREPARE
 #ifdef CONFIG_MMU
-	max_heap_size = MIN(CONFIG_NEWLIB_LIBC_MAX_MAPPED_REGION_SIZE,
+	max_heap_size = min(CONFIG_NEWLIB_LIBC_MAX_MAPPED_REGION_SIZE,
 			    k_mem_free_get());
 
 	if (max_heap_size != 0) {
@@ -162,7 +170,7 @@ static int _stdout_hook_default(int c)
 
 static int (*_stdout_hook)(int) = _stdout_hook_default;
 
-void __stdout_hook_install(int (*hook)(int))
+void __stdout_hook_install(int (*hook)(int c))
 {
 	_stdout_hook = hook;
 }
@@ -242,7 +250,7 @@ int _write(int fd, const void *buf, int nbytes)
 }
 __weak FUNC_ALIAS(_write, write, int);
 
-int _open(const char *name, int mode)
+int _open(const char *name, int flags, ...)
 {
 	return -1;
 }
@@ -521,7 +529,7 @@ int _open_r(struct _reent *r, const char *name, int flags, int mode)
 	ARG_UNUSED(r);
 	ARG_UNUSED(flags);
 
-	return _open(name, mode);
+	return _open(name, flags, mode);
 }
 
 int _close_r(struct _reent *r, int file)

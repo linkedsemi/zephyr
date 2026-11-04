@@ -14,13 +14,9 @@
 #include <zephyr/init.h>
 #include <zephyr/sys/barrier.h>
 #include <soc.h>
-#if defined(CONFIG_SOC_SERIES_STM32H7RSX)
-#include <stm32h7rsxx_ll_bus.h>
-#include <stm32h7rsxx_ll_utils.h>
-#else
-#include <stm32h7xx_ll_bus.h>
-#include <stm32h7xx_ll_utils.h>
-#endif /* CONFIG_SOC_SERIES_STM32H7RSX */
+#include <stm32_bitops.h>
+#include <stm32_ll_bus.h>
+#include <stm32_ll_utils.h>
 
 #include "flash_stm32.h"
 #include "stm32_hsem.h"
@@ -30,29 +26,33 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_DOMAIN);
 
+BUILD_ASSERT(DT_NODE_EXISTS(DT_INST(0, st_stm32_nv_flash)), "st,stm32-nv-flash node missing");
+
 /* Let's wait for double the max erase time to be sure that the operation is
  * completed.
  */
-#define STM32H7_FLASH_TIMEOUT (2 * DT_PROP(DT_INST(0, st_stm32_nv_flash), max_erase_time))
+#define STM32H7_FLASH_TIMEOUT     (2 * DT_PROP(DT_INST(0, st_stm32_nv_flash), max_erase_time))
+/* No information in documentation about that. */
+#define STM32H7_FLASH_OPT_TIMEOUT_MS 800
 
-#define STM32H7_M4_FLASH_SIZE DT_PROP_OR(DT_INST(0, st_stm32_nv_flash), bank2_flash_size, 0)
-#ifdef CONFIG_CPU_CORTEX_M4
-#if STM32H7_M4_FLASH_SIZE == 0
-#error Flash driver on M4 requires the DT property bank2-flash-size
+#if defined(CONFIG_STM32H7_DUAL_CORE)
+/* Dual core STM32H7x products feature two banks of the same size */
+#define REAL_FLASH_SIZE_KB (DT_REG_SIZE(DT_INST(0, st_stm32_nv_flash)) * 2)
 #else
-#define REAL_FLASH_SIZE_KB (KB(STM32H7_M4_FLASH_SIZE * 2))
-#endif
-#else
-#define REAL_FLASH_SIZE_KB KB(LL_GetFlashSize())
-#endif
+#define REAL_FLASH_SIZE_KB DT_REG_SIZE(DT_INST(0, st_stm32_nv_flash))
+#endif /* CONFIG_STM32H7_DUAL_CORE */
+
 #define SECTOR_PER_BANK ((REAL_FLASH_SIZE_KB / FLASH_SECTOR_SIZE) / 2)
 #if defined(DUAL_BANK)
 #define STM32H7_SERIES_MAX_FLASH_KB KB(2048)
 #define BANK2_OFFSET                (STM32H7_SERIES_MAX_FLASH_KB / 2)
 /* When flash is dual bank and flash size is smaller than Max flash size of
- * the serie, there is a discontinuty between bank1 and bank2.
+ * the series, there is a discontinuty between bank1 and bank2.
  */
 #define DISCONTINUOUS_BANKS         (REAL_FLASH_SIZE_KB < STM32H7_SERIES_MAX_FLASH_KB)
+#define NUMBER_OF_BANKS             2
+#else
+#define NUMBER_OF_BANKS             1
 #endif
 
 struct flash_stm32_sector_t {
@@ -62,32 +62,247 @@ struct flash_stm32_sector_t {
 	volatile uint32_t *sr;
 };
 
-#if defined(CONFIG_MULTITHREADING) || defined(CONFIG_STM32H7_DUAL_CORE)
-/*
- * This is named flash_stm32_sem_take instead of flash_stm32_lock (and
- * similarly for flash_stm32_sem_give) to avoid confusion with locking
- * actual flash sectors.
- */
-static inline void _flash_stm32_sem_take(const struct device *dev)
+#if defined(CONFIG_FLASH_STM32_READOUT_PROTECTION) || defined(CONFIG_FLASH_STM32_WRITE_PROTECT)
+
+static int commit_optb(const struct device *dev)
 {
-	k_sem_take(&FLASH_STM32_PRIV(dev)->sem, K_FOREVER);
-	z_stm32_hsem_lock(CFG_HW_FLASH_SEMID, HSEM_LOCK_WAIT_FOREVER);
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+	int64_t timeout_time = k_uptime_get() + STM32H7_FLASH_OPT_TIMEOUT_MS;
+
+	/* Make sure previous write is completed before committing option bytes. */
+	barrier_dsync_fence_full();
+	regs->OPTCR |= FLASH_OPTCR_OPTSTART;
+	barrier_dsync_fence_full();
+	while (regs->OPTSR_CUR & FLASH_OPTSR_OPT_BUSY) {
+		if (k_uptime_get() > timeout_time) {
+			LOG_ERR("Timeout writing option bytes.");
+			return -ETIMEDOUT;
+		}
+	}
+
+	return 0;
 }
 
-static inline void _flash_stm32_sem_give(const struct device *dev)
+/* Returns negative value on error, 0 if a change was not need, 1 if a change has been made. */
+static int write_opt(const struct device *dev, uint32_t mask, uint32_t value, uintptr_t cur,
+		     bool commit)
 {
-	z_stm32_hsem_unlock(CFG_HW_FLASH_SEMID);
-	k_sem_give(&FLASH_STM32_PRIV(dev)->sem);
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+	/* PRG register always follows CUR register. */
+	uintptr_t prg = cur + 4;
+	int rc = 0;
+
+	if (regs->OPTCR & FLASH_OPTCR_OPTLOCK) {
+		LOG_ERR("Option bytes locked");
+		return -EIO;
+	}
+
+	rc = flash_stm32_wait_flash_idle(dev);
+	if (rc < 0) {
+		LOG_ERR("Err flash no idle");
+		return rc;
+	}
+
+	if ((sys_read32(cur) & mask) == value) {
+		/* A change not needed, return 0. */
+		return 0;
+	}
+
+	sys_write32((sys_read32(cur) & ~mask) | value, prg);
+
+	if (commit) {
+		rc = commit_optb(dev);
+		if (rc < 0) {
+			return rc;
+		}
+	}
+
+	/* A change has been made, return 1. */
+	return 1;
 }
 
-#define flash_stm32_sem_init(dev) k_sem_init(&FLASH_STM32_PRIV(dev)->sem, 1, 1)
-#define flash_stm32_sem_take(dev) _flash_stm32_sem_take(dev)
-#define flash_stm32_sem_give(dev) _flash_stm32_sem_give(dev)
-#else
-#define flash_stm32_sem_init(dev)
-#define flash_stm32_sem_take(dev)
-#define flash_stm32_sem_give(dev)
-#endif
+#endif /* CONFIG_FLASH_STM32_WRITE_PROTECT || CONFIG_FLASH_STM32_READOUT_PROTECTION */
+
+#if defined(CONFIG_FLASH_STM32_READOUT_PROTECTION)
+static int write_optsr(const struct device *dev, uint32_t mask, uint32_t value)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+	uintptr_t cur = (uintptr_t)regs + offsetof(FLASH_TypeDef, OPTSR_CUR);
+
+	return write_opt(dev, mask, value, cur, true);
+}
+
+uint8_t flash_stm32_get_rdp_level(const struct device *dev)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+
+	return (regs->OPTSR_CUR & FLASH_OPTSR_RDP_Msk) >> FLASH_OPTSR_RDP_Pos;
+}
+
+int flash_stm32_set_rdp_level(const struct device *dev, uint8_t level)
+{
+	return write_optsr(dev, FLASH_OPTSR_RDP_Msk, (uint32_t)level << FLASH_OPTSR_RDP_Pos);
+}
+#endif /* CONFIG_FLASH_STM32_READOUT_PROTECTION */
+
+#if defined(CONFIG_FLASH_STM32_WRITE_PROTECT)
+
+#define WP_MSK FLASH_WPSN_WRPSN_Msk
+#define WP_POS FLASH_WPSN_WRPSN_Pos
+
+static int write_optwp(const struct device *dev, uint32_t mask, uint32_t value, uint32_t bank)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+	uintptr_t cur = (uintptr_t)regs + offsetof(FLASH_TypeDef, WPSN_CUR1);
+
+	if (bank >= NUMBER_OF_BANKS) {
+		return -EINVAL;
+	}
+
+#ifdef DUAL_BANK
+	if (bank == 1) {
+		cur = (uintptr_t)regs + offsetof(FLASH_TypeDef, WPSN_CUR2);
+	}
+#endif /* DUAL_BANK */
+
+	return write_opt(dev, mask, value, cur, false);
+}
+
+int flash_stm32_update_wp_sectors(const struct device *dev, uint64_t changed_sectors,
+				  uint64_t protected_sectors)
+{
+	/* All banks share the same sector mask. */
+	const uint64_t bank_mask = WP_MSK >> WP_POS;
+	const uint32_t sectors_per_bank = __builtin_popcount(WP_MSK);
+	uint64_t sectors_mask = 0;
+	uint32_t protected_sectors_reg;
+	uint32_t changed_sectors_reg;
+	int ret, ret2 = 0;
+	bool commit = false;
+
+	for (int i = 0; i < NUMBER_OF_BANKS; i++) {
+		sectors_mask |= bank_mask << (sectors_per_bank * i);
+	}
+
+	if ((changed_sectors & sectors_mask) != changed_sectors) {
+		return -EINVAL;
+	}
+
+	for (int i = 0; i < NUMBER_OF_BANKS; i++) {
+		/* Prepare protected and changed masks per bank. */
+		protected_sectors_reg = (protected_sectors >> sectors_per_bank * i) & bank_mask;
+		changed_sectors_reg = (changed_sectors >> sectors_per_bank * i) & bank_mask;
+
+		if (changed_sectors_reg == 0) {
+			continue;
+		}
+		changed_sectors_reg <<= WP_POS;
+		protected_sectors_reg <<= WP_POS;
+		/* Sector is protected when bit == 0. Flip protected_sectors bits */
+		protected_sectors_reg = ~protected_sectors_reg;
+
+		ret = write_optwp(dev, changed_sectors_reg, protected_sectors_reg, i);
+		/* Option byte was successfully changed if the return value is greater than 0. */
+		if (ret > 0) {
+			commit = true;
+		} else if (ret < 0) {
+			/* Do not continue changing WP on error. */
+			ret2 = ret;
+			break;
+		}
+	}
+
+	if (commit) {
+		ret = commit_optb(dev);
+		/* Make sure to return the first error. */
+		if (ret < 0 && ret2 == 0) {
+			ret2 = ret;
+		}
+	}
+
+	return ret2;
+}
+
+int flash_stm32_get_wp_sectors(const struct device *dev, uint64_t *protected_sectors)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+
+	*protected_sectors = (~regs->WPSN_CUR1 & WP_MSK) >> WP_POS;
+#ifdef DUAL_BANK
+	/* Available only for STM32H7x */
+	uint64_t proctected_sectors_2 =
+		(~regs->WPSN_CUR2 & WP_MSK) >> WP_POS;
+	const uint32_t sectors_per_bank = __builtin_popcount(WP_MSK);
+	*protected_sectors |= proctected_sectors_2 << sectors_per_bank;
+#endif /* DUAL_BANK */
+
+	return 0;
+}
+#endif /* CONFIG_FLASH_STM32_WRITE_PROTECT */
+
+#ifdef CONFIG_FLASH_STM32_BLOCK_REGISTERS
+int flash_stm32_control_register_disable(const struct device *dev)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+
+	/*
+	 * Access to control register can be disabled by writing wrong key to
+	 * the key register. Option register will remain disabled until reset.
+	 * Writing wrong key causes a bus fault, so we need to set FAULTMASK to
+	 * disable faults, and clear bus fault pending bit before enabling them
+	 * again.
+	 */
+	regs->CR1 |= FLASH_CR_LOCK;
+#ifdef DUAL_BANK
+	regs->CR2 |= FLASH_CR_LOCK;
+#endif /* DUAL_BANK */
+
+	__set_FAULTMASK(1);
+	regs->KEYR1 = 0xffffffff;
+
+#ifdef DUAL_BANK
+	regs->KEYR2 = 0xffffffff;
+#endif /* DUAL_BANK */
+	/* Make sure that the fault occurs before we clear it. */
+	barrier_dsync_fence_full();
+
+	/* Clear Bus Fault pending bit */
+	SCB->SHCSR &= ~SCB_SHCSR_BUSFAULTPENDED_Msk;
+	/* Make sure to clear the fault before changing the fault mask. */
+	barrier_dsync_fence_full();
+
+	__set_FAULTMASK(0);
+
+	return 0;
+}
+
+int flash_stm32_option_bytes_disable(const struct device *dev)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+
+	/*
+	 * Access to option register can be disabled by writing wrong key to
+	 * the key register. Option register will remain disabled until reset.
+	 * Writing wrong key causes a bus fault, so we need to set FAULTMASK to
+	 * disable faults, and clear bus fault pending bit before enabling them
+	 * again.
+	 */
+	regs->OPTCR |= FLASH_OPTCR_OPTLOCK;
+
+	__set_FAULTMASK(1);
+	regs->OPTKEYR = 0xffffffff;
+	/* Make sure that the fault occurs before we clear it. */
+	barrier_dsync_fence_full();
+
+	/* Clear Bus Fault pending bit */
+	SCB->SHCSR &= ~SCB_SHCSR_BUSFAULTPENDED_Msk;
+	/* Make sure to clear the fault before changing the fault mask. */
+	barrier_dsync_fence_full();
+	__set_FAULTMASK(0);
+
+	return 0;
+}
+#endif /* CONFIG_FLASH_STM32_BLOCK_REGISTERS */
 
 bool flash_stm32_valid_range(const struct device *dev, off_t offset, uint32_t len, bool write)
 {
@@ -99,7 +314,7 @@ bool flash_stm32_valid_range(const struct device *dev, off_t offset, uint32_t le
 		 * Locations beyond bank2 are caught by flash_stm32_range_exists
 		 */
 		if ((offset < BANK2_OFFSET) && (offset + len > REAL_FLASH_SIZE_KB / 2)) {
-			LOG_ERR("Range ovelaps flash bank discontinuity");
+			LOG_ERR("Range overlaps flash bank discontinuity");
 			return false;
 		}
 	}
@@ -109,7 +324,7 @@ bool flash_stm32_valid_range(const struct device *dev, off_t offset, uint32_t le
 		if ((offset % (FLASH_NB_32BITWORD_IN_FLASHWORD * 4)) != 0) {
 			LOG_ERR("Write offset not aligned on flashword length. "
 				"Offset: 0x%lx, flashword length: %d",
-				(unsigned long)offset, FLASH_NB_32BITWORD_IN_FLASHWORD * 4);
+				(long)offset, FLASH_NB_32BITWORD_IN_FLASHWORD * 4);
 			return false;
 		}
 	}
@@ -173,7 +388,7 @@ static int flash_stm32_check_status(const struct device *dev)
 
 #ifdef DUAL_BANK
 	sr = regs->SR2;
-	if (sr & (FLASH_FLAG_SNECCERR_BANK1 | FLASH_FLAG_DBECCERR_BANK1)) {
+	if (sr & (FLASH_FLAG_SNECCERR_BANK2 | FLASH_FLAG_DBECCERR_BANK2)) {
 		uint32_t word = regs->ECC_FA2 & FLASH_ECC_FA_FAIL_ECC_ADDR;
 
 		LOG_WRN("Bank%d ECC error at 0x%08x", 2,
@@ -203,7 +418,8 @@ static int flash_stm32_check_status(const struct device *dev)
 
 int flash_stm32_wait_flash_idle(const struct device *dev)
 {
-	int64_t timeout_time = k_uptime_get() + STM32H7_FLASH_TIMEOUT;
+	k_timepoint_t timeout = sys_timepoint_calc(K_MSEC(STM32H7_FLASH_TIMEOUT));
+	bool expired = false;
 	int rc;
 
 	rc = flash_stm32_check_status(dev);
@@ -217,10 +433,16 @@ int flash_stm32_wait_flash_idle(const struct device *dev)
 	while (FLASH_STM32_REGS(dev)->SR1 & FLASH_SR_QW)
 #endif
 	{
-		if (k_uptime_get() > timeout_time) {
-			LOG_ERR("Timeout! val: %d", STM32H7_FLASH_TIMEOUT);
+		if (expired) {
+			LOG_ERR("Timeout! val: %d ms", STM32H7_FLASH_TIMEOUT);
 			return -EIO;
 		}
+
+		/* Check if expired, but always read status register one more time.
+		 * If the calling thread is pre-emptive we may have been scheduled out after reading
+		 * the status register, and scheduled back after timeout has expired.
+		 */
+		expired = sys_timepoint_expired(timeout);
 	}
 
 	return 0;
@@ -234,9 +456,10 @@ static struct flash_stm32_sector_t get_sector(const struct device *dev, off_t of
 #ifdef DUAL_BANK
 	off_t temp_offset = offset + (CONFIG_FLASH_BASE_ADDRESS & 0xffffff);
 
-	bool bank_swap;
 	/* Check whether bank1/2 are swapped */
-	bank_swap = (READ_BIT(FLASH->OPTCR, FLASH_OPTCR_SWAP_BANK) == FLASH_OPTCR_SWAP_BANK);
+	bool bank_swap = stm32_reg_read_bits(&FLASH->OPTCR, FLASH_OPTCR_SWAP_BANK) ==
+			 FLASH_OPTCR_SWAP_BANK;
+
 	sector.sector_index = offset / FLASH_SECTOR_SIZE;
 	if ((temp_offset < (REAL_FLASH_SIZE_KB / 2)) && !bank_swap) {
 		sector.bank = 1;
@@ -342,7 +565,7 @@ static int wait_write_queue(const struct flash_stm32_sector_t *sector)
 
 static int write_ndwords(const struct device *dev, off_t offset, const uint64_t *data, uint8_t n)
 {
-	volatile uint64_t *flash = (uint64_t *)(offset + FLASH_STM32_BASE_ADDRESS);
+	volatile uint64_t *flash = (uint64_t *)((uintptr_t)offset + FLASH_STM32_BASE_ADDRESS);
 	int rc;
 	int i;
 	struct flash_stm32_sector_t sector = get_sector(dev, offset);
@@ -429,7 +652,7 @@ int flash_stm32_write_range(const struct device *dev, unsigned int offset, const
 	return rc;
 }
 
-static int flash_stm32h7_write_protection(const struct device *dev, bool enable)
+static int flash_stm32h7_cr_lock(const struct device *dev, bool enable)
 {
 	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
 
@@ -481,7 +704,8 @@ static void flash_stm32h7_flush_caches(const struct device *dev, off_t offset, s
 		return; /* Cache not enabled */
 	}
 
-	SCB_InvalidateDCache_by_Addr((uint32_t *)(FLASH_STM32_BASE_ADDRESS + offset), len);
+	SCB_InvalidateDCache_by_Addr((uint32_t *)(uintptr_t)(FLASH_STM32_BASE_ADDRESS +
+							     offset), len);
 }
 #endif /* CONFIG_CPU_CORTEX_M7 */
 
@@ -508,7 +732,7 @@ static int flash_stm32h7_erase(const struct device *dev, off_t offset, size_t le
 
 	LOG_DBG("Erase offset: %ld, len: %zu", (long)offset, len);
 
-	rc = flash_stm32h7_write_protection(dev, false);
+	rc = flash_stm32h7_cr_lock(dev, false);
 	if (rc) {
 		goto done;
 	}
@@ -524,7 +748,7 @@ static int flash_stm32h7_erase(const struct device *dev, off_t offset, size_t le
 	}
 #endif /* CONFIG_CPU_CORTEX_M7 */
 done:
-	rc2 = flash_stm32h7_write_protection(dev, true);
+	rc2 = flash_stm32h7_cr_lock(dev, true);
 
 	if (!rc) {
 		rc = rc2;
@@ -552,17 +776,20 @@ static int flash_stm32h7_write(const struct device *dev, off_t offset, const voi
 
 	LOG_DBG("Write offset: %ld, len: %zu", (long)offset, len);
 
-	rc = flash_stm32h7_write_protection(dev, false);
+	rc = flash_stm32h7_cr_lock(dev, false);
 	if (!rc) {
 		rc = flash_stm32_write_range(dev, offset, data, len);
 	}
 
-	int rc2 = flash_stm32h7_write_protection(dev, true);
+	int rc2 = flash_stm32h7_cr_lock(dev, true);
 
 	if (!rc) {
 		rc = rc2;
 	}
 
+#ifdef CONFIG_DCACHE
+	flash_stm32h7_flush_caches(dev, offset, len);
+#endif
 	flash_stm32_sem_give(dev);
 
 	return rc;
@@ -616,6 +843,20 @@ static const struct flash_parameters *flash_stm32h7_get_parameters(const struct 
 	return &flash_stm32h7_parameters;
 }
 
+/* Gives the total logical device size in bytes and return 0. */
+static int flash_stm32h7_get_size(const struct device *dev, uint64_t *size)
+{
+	ARG_UNUSED(dev);
+
+#ifdef CONFIG_SOC_SERIES_STM32H7RSX
+	*size = (uint64_t)0x10000U; /* The series has only 64K of user flash memory */
+#else
+	*size = (uint64_t)LL_GetFlashSize() * 1024U;
+#endif /* CONFIG_SOC_SERIES_STM32H7RSX */
+
+	return 0;
+}
+
 void flash_stm32_page_layout(const struct device *dev, const struct flash_pages_layout **layout,
 			     size_t *layout_size)
 {
@@ -664,17 +905,21 @@ void flash_stm32_page_layout(const struct device *dev, const struct flash_pages_
 static struct flash_stm32_priv flash_data = {
 	.regs = (FLASH_TypeDef *)DT_INST_REG_ADDR(0),
 #if DT_NODE_HAS_PROP(DT_INST(0, st_stm32h7_flash_controller), clocks)
-	.pclken = {.bus = DT_INST_CLOCKS_CELL(0, bus), .enr = DT_INST_CLOCKS_CELL(0, bits)},
+	.pclken = STM32_DT_INST_CLOCK_INFO(0),
 #endif
 };
 
-static const struct flash_driver_api flash_stm32h7_api = {
+static DEVICE_API(flash, flash_stm32h7_api) = {
 	.erase = flash_stm32h7_erase,
 	.write = flash_stm32h7_write,
 	.read = flash_stm32h7_read,
 	.get_parameters = flash_stm32h7_get_parameters,
+	.get_size = flash_stm32h7_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_stm32_page_layout,
+#endif
+#ifdef CONFIG_FLASH_EX_OP_ENABLED
+	.ex_op = flash_stm32_ex_op,
 #endif
 };
 
@@ -684,11 +929,6 @@ static int stm32h7_flash_init(const struct device *dev)
 	/* Only stm32h7 dual core devices have the clocks property */
 	struct flash_stm32_priv *p = FLASH_STM32_PRIV(dev);
 	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
-
-	if (!device_is_ready(clk)) {
-		LOG_ERR("clock control device not ready");
-		return -ENODEV;
-	}
 
 	/* enable clock : enable the RCC_AHB3ENR_FLASHEN bit */
 	if (clock_control_on(clk, (clock_control_subsys_t)&p->pclken) != 0) {
@@ -711,8 +951,8 @@ static int stm32h7_flash_init(const struct device *dev)
 	}
 #endif
 
-	return flash_stm32h7_write_protection(dev, false);
+	return 0;
 }
 
-DEVICE_DT_INST_DEFINE(0, stm32h7_flash_init, NULL, &flash_data, NULL, POST_KERNEL,
+DEVICE_DT_INST_DEFINE(0, stm32h7_flash_init, NULL, &flash_data, NULL, PRE_KERNEL_1,
 		      CONFIG_FLASH_INIT_PRIORITY, &flash_stm32h7_api);

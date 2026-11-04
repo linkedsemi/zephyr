@@ -156,7 +156,7 @@ int usbd_config_attrib_rwup(struct usbd_context *const uds_ctx,
 	usbd_device_lock(uds_ctx);
 
 	if (usbd_is_enabled(uds_ctx)) {
-		ret = -EALREADY;
+		ret = -EBUSY;
 		goto attrib_rwup_exit;
 	}
 
@@ -197,7 +197,7 @@ int usbd_config_attrib_self(struct usbd_context *const uds_ctx,
 	usbd_device_lock(uds_ctx);
 
 	if (usbd_is_enabled(uds_ctx)) {
-		ret = -EALREADY;
+		ret = -EBUSY;
 		goto attrib_self_exit;
 	}
 
@@ -231,7 +231,7 @@ int usbd_config_maxpower(struct usbd_context *const uds_ctx,
 	usbd_device_lock(uds_ctx);
 
 	if (usbd_is_enabled(uds_ctx)) {
-		ret = -EALREADY;
+		ret = -EBUSY;
 		goto maxpower_exit;
 	}
 
@@ -264,6 +264,12 @@ int usbd_add_configuration(struct usbd_context *const uds_ctx,
 	if (usbd_is_initialized(uds_ctx)) {
 		LOG_ERR("USB device support is initialized");
 		ret = -EBUSY;
+		goto add_configuration_exit;
+	}
+
+	if (speed == USBD_SPEED_HS && !USBD_SUPPORTS_HIGH_SPEED) {
+		LOG_ERR("Stack was compiled without High-Speed support");
+		ret = -ENOTSUP;
 		goto add_configuration_exit;
 	}
 

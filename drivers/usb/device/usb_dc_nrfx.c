@@ -178,12 +178,8 @@ struct usbd_event {
  * be derived from the theoretical number of backlog events possible depending
  * on the number of endpoints configured.
  */
-#define FIFO_ELEM_SZ            sizeof(struct usbd_event)
-#define FIFO_ELEM_ALIGN         sizeof(unsigned int)
-
-K_MEM_SLAB_DEFINE(fifo_elem_slab, FIFO_ELEM_SZ,
-		  CONFIG_USB_NRFX_EVT_QUEUE_SIZE, FIFO_ELEM_ALIGN);
-
+K_MEM_SLAB_DEFINE_TYPE(fifo_elem_slab, struct usbd_event,
+		       CONFIG_USB_NRFX_EVT_QUEUE_SIZE);
 
 /** Number of IN Endpoints configured (including control) */
 #define CFG_EPIN_CNT (DT_INST_PROP(0, num_in_endpoints) +	\
@@ -226,7 +222,13 @@ static uint8_t ep_isoout_bufs[CFG_EP_ISOOUT_CNT][ISO_EP_BUF_MAX_SZ]
  * @param status_cb	Status callback for USB DC notifications
  * @param setup		Setup packet for Control requests
  * @param hfxo_cli	Onoff client used to control HFXO
+ * #ifdef CONFIG_CLOCK_CONTROL_NRF
  * @param hfxo_mgr	Pointer to onoff manager associated with HFXO.
+ * #elif defined(CONFIG_CLOCK_CONTROL_NRF_HFCLK192M) || \
+ *       defined(CONFIG_CLOCK_CONTROL_NRF_HFCLK) || \
+ *       defined(CONFIG_CLOCK_CONTROL_NRF_XO)
+ * @param hfxo_dev	Pointer to HFXO device.
+ * #endif
  * @param clk_requested	Flag used to protect against double stop.
  * @param attached	USBD Attached flag
  * @param ready		USBD Ready flag set after pullup
@@ -239,7 +241,11 @@ struct nrf_usbd_ctx {
 	usb_dc_status_callback status_cb;
 	struct usb_setup_packet setup;
 	struct onoff_client hfxo_cli;
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 	struct onoff_manager *hfxo_mgr;
+#else
+	const struct device *hfxo_dev;
+#endif
 	atomic_t clk_requested;
 
 	bool attached;
@@ -534,7 +540,11 @@ static void usb_dc_power_event_handler(nrfx_power_usb_evt_t event)
 static int hfxo_stop(struct nrf_usbd_ctx *ctx)
 {
 	if (atomic_cas(&ctx->clk_requested, 1, 0)) {
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 		return onoff_cancel_or_release(ctx->hfxo_mgr, &ctx->hfxo_cli);
+#else
+		return nrf_clock_control_cancel_or_release(ctx->hfxo_dev, NULL, &ctx->hfxo_cli);
+#endif
 	}
 
 	return 0;
@@ -545,7 +555,11 @@ static int hfxo_start(struct nrf_usbd_ctx *ctx)
 	if (atomic_cas(&ctx->clk_requested, 0, 1)) {
 		sys_notify_init_spinwait(&ctx->hfxo_cli.notify);
 
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 		return onoff_request(ctx->hfxo_mgr, &ctx->hfxo_cli);
+#else
+		return nrf_clock_control_request(ctx->hfxo_dev, NULL, &ctx->hfxo_cli);
+#endif
 	}
 
 	return 0;
@@ -795,9 +809,9 @@ static inline void usbd_work_process_recvreq(struct nrf_usbd_ctx *ctx,
 	k_mutex_lock(&ctx->drv_lock, K_FOREVER);
 	NRF_USBD_COMMON_TRANSFER_OUT(transfer, ep_ctx->buf.data,
 				     ep_ctx->cfg.max_sz);
-	nrfx_err_t err = nrf_usbd_common_ep_transfer(
+	int err = nrf_usbd_common_ep_transfer(
 		ep_addr_to_nrfx(ep_ctx->cfg.addr), &transfer);
-	if (err != NRFX_SUCCESS) {
+	if (err != 0) {
 		LOG_ERR("nRF USBD transfer error (OUT): 0x%02x", err);
 	}
 	k_mutex_unlock(&ctx->drv_lock);
@@ -1146,7 +1160,7 @@ static void usbd_event_handler(nrf_usbd_common_evt_t const *const p_event)
 static inline void usbd_reinit(void)
 {
 	int ret;
-	nrfx_err_t err;
+	int err;
 
 	nrfx_power_usbevt_disable();
 	nrf_usbd_common_disable();
@@ -1160,7 +1174,7 @@ static inline void usbd_reinit(void)
 	nrfx_power_usbevt_enable();
 	err = nrf_usbd_common_init(usbd_event_handler);
 
-	if (err != NRFX_SUCCESS) {
+	if (err != 0) {
 		LOG_DBG("nRF USBD driver reinit failed. Code: %d", err);
 		__ASSERT_NO_MSG(0);
 	}
@@ -1276,11 +1290,19 @@ int usb_dc_attach(void)
 	}
 
 	k_mutex_init(&ctx->drv_lock);
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 	ctx->hfxo_mgr =
 		z_nrf_clock_control_get_onoff(
 			COND_CODE_1(NRF_CLOCK_HAS_HFCLK192M,
 				    (CLOCK_CONTROL_NRF_SUBSYS_HF192M),
 				    (CLOCK_CONTROL_NRF_SUBSYS_HF)));
+#else
+	ctx->hfxo_dev = DEVICE_DT_GET_ONE(COND_CODE_1(NRF_CLOCK_HAS_HFCLK192M,
+						      (nordic_nrf_clock_hfclk192m),
+						      (COND_CODE_1(NRF_CLOCK_HAS_HFCLK,
+								   (nordic_nrf_clock_hfclk),
+								   (nordic_nrf_clock_xo)))));
+#endif
 
 	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority),
 		    nrfx_isr, nrf_usbd_common_irq_handler, 0);
@@ -1692,9 +1714,9 @@ int usb_dc_ep_write(const uint8_t ep, const uint8_t *const data,
 
 	ep_ctx->write_in_progress = true;
 	NRF_USBD_COMMON_TRANSFER_IN(transfer, data, data_len, 0);
-	nrfx_err_t err = nrf_usbd_common_ep_transfer(ep_addr_to_nrfx(ep), &transfer);
+	int err = nrf_usbd_common_ep_transfer(ep_addr_to_nrfx(ep), &transfer);
 
-	if (err != NRFX_SUCCESS) {
+	if (err != 0) {
 		ep_ctx->write_in_progress = false;
 		if (ret_bytes) {
 			*ret_bytes = 0;
@@ -1883,23 +1905,28 @@ int usb_dc_wakeup_request(void)
 static int usb_init(void)
 {
 	struct nrf_usbd_ctx *ctx = get_usbd_ctx();
-	nrfx_err_t err;
+	int err;
 
 #ifdef CONFIG_HAS_HW_NRF_USBREG
 	/* Use CLOCK/POWER priority for compatibility with other series where
 	 * USB events are handled by CLOCK interrupt handler.
 	 */
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 	IRQ_CONNECT(USBREGULATOR_IRQn,
 		    DT_IRQ(DT_INST(0, nordic_nrf_clock), priority),
 		    nrfx_isr, nrfx_usbreg_irq_handler, 0);
-	irq_enable(USBREGULATOR_IRQn);
+#else
+	IRQ_CONNECT(USBREGULATOR_IRQn,
+		    DT_IRQ(DT_INST(0, nordic_nrf_clock), priority),
+		    nrfx_isr, nrfx_usbreg_irq_handler, 0);
+#endif
 #endif
 
 	static const nrfx_power_config_t power_config = {
 		.dcdcen = (DT_PROP(DT_INST(0, nordic_nrf5x_regulator), regulator_initial_mode)
 			   == NRF5X_REG_MODE_DCDC),
 #if NRFX_POWER_SUPPORTS_DCDCEN_VDDH
-		.dcdcenhv = COND_CODE_1(CONFIG_SOC_SERIES_NRF52X,
+		.dcdcenhv = COND_CODE_1(CONFIG_SOC_SERIES_NRF52,
 			(DT_NODE_HAS_STATUS_OKAY(DT_INST(0, nordic_nrf52x_regulator_hv))),
 			(DT_NODE_HAS_STATUS_OKAY(DT_INST(0, nordic_nrf53x_regulator_hv)))),
 #endif
@@ -1910,12 +1937,12 @@ static int usb_init(void)
 	};
 
 	err = nrf_usbd_common_init(usbd_event_handler);
-	if (err != NRFX_SUCCESS) {
+	if (err != 0) {
 		LOG_DBG("nRF USBD driver init failed. Code: %d", (uint32_t)err);
 		return -EIO;
 	}
 
-	/* Ignore the return value, as NRFX_ERROR_ALREADY_INITIALIZED is not
+	/* Ignore the return value, as -EALREADY is not
 	 * a problem here.
 	 */
 	(void)nrfx_power_init(&power_config);
@@ -1926,7 +1953,7 @@ static int usb_init(void)
 			   K_KERNEL_STACK_SIZEOF(usbd_work_queue_stack),
 			   CONFIG_SYSTEM_WORKQUEUE_PRIORITY, NULL);
 
-	k_thread_name_set(&usbd_work_queue.thread, "usbd_workq");
+	k_thread_name_set(usbd_work_queue.thread_id, "usbd_workq");
 	k_work_init(&ctx->usb_work, usbd_work_handler);
 
 	return 0;

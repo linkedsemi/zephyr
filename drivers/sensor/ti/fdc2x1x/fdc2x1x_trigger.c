@@ -23,16 +23,6 @@ static void fdc2x1x_thread_cb(const struct device *dev)
 	struct fdc2x1x_data *drv_data = dev->data;
 	uint16_t status;
 
-#ifdef CONFIG_PM_DEVICE
-	enum pm_device_state state;
-
-	/* INTB asserts after exiting shutdown mode. Drop this interrupt */
-	(void)pm_device_state_get(dev, &state);
-	if (state == PM_DEVICE_STATE_OFF) {
-		return;
-	}
-#endif
-
 	/* Clear the status */
 	if (fdc2x1x_get_status(dev, &status) < 0) {
 		LOG_ERR("Unable to get status.");
@@ -136,7 +126,7 @@ int fdc2x1x_init_interrupt(const struct device *dev)
 	k_mutex_init(&drv_data->trigger_mutex);
 
 	if (!gpio_is_ready_dt(&cfg->intb_gpio)) {
-		LOG_ERR("%s: intb_gpio device not ready", cfg->intb_gpio.port->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->intb_gpio.port);
 		return -ENODEV;
 	}
 

@@ -618,13 +618,13 @@ static void cc2520_rx(void *p1, void *p2, void *p3)
 		}
 
 		pkt = net_pkt_rx_alloc_with_buffer(cc2520->iface, pkt_len,
-						   AF_UNSPEC, 0, K_NO_WAIT);
+						   NET_AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No pkt available");
 			goto flush;
 		}
 
-		if (!IS_ENABLED(CONFIG_IEEE802154_RAW_MODE)) {
+		if (!IS_ENABLED(CONFIG_IEEE802154_L2_PKT_INCL_FCS)) {
 			pkt_len -= 2U;
 		}
 
@@ -789,7 +789,7 @@ static int cc2520_tx(const struct device *dev,
 	bool status;
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
-		NET_ERR("TX mode %d not supported", mode);
+		LOG_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
 	}
 
@@ -1044,7 +1044,7 @@ static void cc2520_iface_init(struct net_if *iface)
 }
 
 static const struct cc2520_config cc2520_config = {
-	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8), 0),
+	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8)),
 	.vreg_en = GPIO_DT_SPEC_INST_GET(0, vreg_en_gpios),
 	.reset = GPIO_DT_SPEC_INST_GET(0, reset_gpios),
 	.fifo = GPIO_DT_SPEC_INST_GET(0, fifo_gpios),
@@ -1397,7 +1397,7 @@ static int cc2520_crypto_init(const struct device *dev)
 	return 0;
 }
 
-struct crypto_driver_api cc2520_crypto_api = {
+DEVICE_API(crypto, cc2520_crypto_api) = {
 	.query_hw_caps			= cc2520_crypto_hw_caps,
 	.cipher_begin_session			= cc2520_crypto_begin_session,
 	.cipher_free_session			= cc2520_crypto_free_session,

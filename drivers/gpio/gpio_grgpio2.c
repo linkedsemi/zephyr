@@ -157,7 +157,7 @@ static int pin_interrupt_configure(const struct device *dev,
 	volatile struct grgpio_regs *regs = cfg->regs;
 	int ret = 0;
 	const uint32_t mask = 1 << pin;
-	uint32_t polmask;
+	uint32_t polmask = 0;
 	k_spinlock_key_t key;
 
 	if ((mask & data->imask) == 0) {
@@ -166,7 +166,7 @@ static int pin_interrupt_configure(const struct device *dev,
 	}
 	if (mode != GPIO_INT_MODE_DISABLED) {
 		if (trig == GPIO_INT_TRIG_LOW) {
-			polmask = 0;
+			/* polmask is already 0 initialized */
 		} else if (trig == GPIO_INT_TRIG_HIGH) {
 			polmask = mask;
 		} else {
@@ -269,7 +269,7 @@ static int grgpio_init(const struct device *dev)
 	return 0;
 }
 
-static const struct gpio_driver_api driver_api = {
+static DEVICE_API(gpio, driver_api) = {
 	.pin_configure                  = pin_configure,
 	.port_get_raw                   = port_get_raw,
 	.port_set_masked_raw            = port_set_masked_raw,
@@ -283,9 +283,7 @@ static const struct gpio_driver_api driver_api = {
 
 #define GRGPIO_INIT(n)							\
 	static const struct cfg cfg_##n = {				\
-		.common = {						\
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),\
-		},							\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),		\
 		.regs = (void *) DT_INST_REG_ADDR(n),			\
 		.interrupt = DT_INST_IRQN(n),				\
 	};								\

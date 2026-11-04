@@ -64,18 +64,73 @@ struct adsp_debug_slot {
 	uint8_t data[ADSP_DW_SLOT_SIZE - sizeof(uint32_t) * 2];
 } __packed;
 
+#ifdef CONFIG_INTEL_ADSP_DEBUG_SLOT_MANAGER
+#ifdef CONFIG_LOG_MULTI_SLOT
+static struct adsp_debug_slot *slots[CONFIG_MP_MAX_NUM_CPUS];
+#else
+static struct adsp_debug_slot *slots[1];
+#endif
+#endif
+
 static void mtrace_init(void)
 {
-	if (ADSP_DW->descs[0].type == MTRACE_LOGGING_SLOT_TYPE(MTRACE_CORE)) {
+#ifdef CONFIG_INTEL_ADSP_DEBUG_SLOT_MANAGER
+#ifdef CONFIG_LOG_MULTI_SLOT
+	for (unsigned int core = 0; core < CONFIG_MP_MAX_NUM_CPUS; core++) {
+		if (!slots[core]) {
+			struct adsp_dw_desc desc = {
+				.type = MTRACE_LOGGING_SLOT_TYPE(core),
+			};
+
+			slots[core] = adsp_dw_request_slot(&desc, NULL);
+			if (slots[core]) {
+				slots[core]->host_ptr = 0;
+				slots[core]->dsp_ptr = 0;
+			}
+		}
+	}
+#else
+	struct adsp_dw_desc slot_desc = { .type = MTRACE_LOGGING_SLOT_TYPE(MTRACE_CORE), };
+
+	if (slots[0]) {
 		return;
 	}
 
-	ADSP_DW->descs[0].type = MTRACE_LOGGING_SLOT_TYPE(MTRACE_CORE);
+	slots[0] = adsp_dw_request_slot(&slot_desc, NULL);
+	if (slots[0]) {
+		slots[0]->host_ptr = 0;
+		slots[0]->dsp_ptr = 0;
+	}
+#endif
+#else
+	struct adsp_debug_slot *slot = (struct adsp_debug_slot *)
+		ADSP_DW->slots[ADSP_DW_SLOT_NUM_MTRACE];
+
+	if (ADSP_DW->descs[ADSP_DW_SLOT_NUM_MTRACE].type == MTRACE_LOGGING_SLOT_TYPE(MTRACE_CORE)) {
+		return;
+	}
+
+	ADSP_DW->descs[ADSP_DW_SLOT_NUM_MTRACE].type = MTRACE_LOGGING_SLOT_TYPE(MTRACE_CORE);
+	slot->host_ptr = 0;
+	slot->dsp_ptr = 0;
+#endif
 }
 
-static size_t mtrace_out(int8_t *str, size_t len, size_t *space_left)
+static size_t mtrace_out(int8_t *str, size_t len, size_t *space_left,
+			 unsigned int core)
 {
-	struct adsp_debug_slot *slot = (struct adsp_debug_slot *)(ADSP_DW->slots[0]);
+#ifdef CONFIG_INTEL_ADSP_DEBUG_SLOT_MANAGER
+	struct adsp_debug_slot *slot = slots[core];
+
+	/* Debug slot is not allocated */
+	if (!slot) {
+		return 0;
+	}
+#else
+	struct adsp_debug_slot *slot = (struct adsp_debug_slot *)
+		ADSP_DW->slots[ADSP_DW_SLOT_NUM_MTRACE];
+#endif
+
 	uint8_t *data = slot->data;
 	uint32_t r = slot->host_ptr;
 	uint32_t w = slot->dsp_ptr;
@@ -119,16 +174,53 @@ out:
 	return out;
 }
 
+#if CONFIG_MTRACE_LOG_CACHE_BUF_SIZE > ADSP_DW_SLOT_SIZE
+static uint8_t cache_buf[CONFIG_MTRACE_LOG_CACHE_BUF_SIZE];
+static size_t cache_buf_head;
+static size_t cache_buf_len;
+#endif
+
 static int char_out(uint8_t *data, size_t length, void *ctx)
 {
 	size_t space_left = 0;
 	size_t out;
+#ifdef CONFIG_LOG_MULTI_SLOT
+	unsigned int core = (unsigned int)(uintptr_t)ctx;
+#else
+	unsigned int core = 0;
+#endif
 
 	/*
 	 * we handle the data even if mtrace notifier is not
 	 * active. this ensures we can capture early boot messages.
 	 */
-	out = mtrace_out(data, length, &space_left);
+#if CONFIG_MTRACE_LOG_CACHE_BUF_SIZE > ADSP_DW_SLOT_SIZE
+	size_t bytes_copy = MIN(CONFIG_MTRACE_LOG_CACHE_BUF_SIZE - cache_buf_len, length);
+	size_t bytes_write = 0;
+	size_t r_pos = cache_buf_head;
+	size_t w_pos = (cache_buf_head + cache_buf_len) % CONFIG_MTRACE_LOG_CACHE_BUF_SIZE;
+
+	memcpy(cache_buf + w_pos, data,
+	       MIN(bytes_copy, CONFIG_MTRACE_LOG_CACHE_BUF_SIZE - w_pos));
+	if (bytes_copy > CONFIG_MTRACE_LOG_CACHE_BUF_SIZE - w_pos) {
+		memcpy(cache_buf, data + (CONFIG_MTRACE_LOG_CACHE_BUF_SIZE - w_pos),
+		       bytes_copy - (CONFIG_MTRACE_LOG_CACHE_BUF_SIZE - w_pos));
+	}
+	cache_buf_len += bytes_copy;
+
+	bytes_write = MIN(cache_buf_len, CONFIG_MTRACE_LOG_CACHE_BUF_SIZE - r_pos);
+	out = mtrace_out(cache_buf + r_pos, bytes_write, &space_left, core);
+	if (space_left > 0 && cache_buf_len > bytes_write) {
+		out += mtrace_out(cache_buf,
+				  MIN(space_left, cache_buf_len - bytes_write),
+				  &space_left, core);
+	}
+
+	cache_buf_head = (cache_buf_head + out) % CONFIG_MTRACE_LOG_CACHE_BUF_SIZE;
+	cache_buf_len -= out;
+#else
+	out = mtrace_out(data, length, &space_left, core);
+#endif
 
 	if (mtrace_active && mtrace_hook) {
 
@@ -163,6 +255,14 @@ static uint32_t format_flags(void)
 		flags |= LOG_OUTPUT_FLAG_FORMAT_TIMESTAMP;
 	}
 
+	if (IS_ENABLED(CONFIG_LOG_CORE_ID_PREFIX)) {
+		flags |= LOG_OUTPUT_FLAG_CORE;
+	}
+
+	if (IS_ENABLED(CONFIG_LOG_THREAD_ID_PREFIX)) {
+		flags |= LOG_OUTPUT_FLAG_THREAD;
+	}
+
 	return flags;
 }
 
@@ -184,6 +284,10 @@ static void process(const struct log_backend *const backend,
 
 	k_spinlock_key_t key = k_spin_lock(&mtrace_lock);
 
+#ifdef CONFIG_LOG_MULTI_SLOT
+	log_output_ctx_set(&log_output_adsp_mtrace,
+			   (void *)(uintptr_t)log_msg_get_core_id(&msg->log));
+#endif
 	log_output_func(&log_output_adsp_mtrace, &msg->log, format_flags());
 
 	k_spin_unlock(&mtrace_lock, key);
@@ -221,7 +325,7 @@ void adsp_mtrace_log_init(adsp_mtrace_log_hook_t hook)
 	mtrace_init();
 
 	mtrace_hook = hook;
-	mtrace_active = true;
+	mtrace_active = !!hook;
 }
 
 const struct log_backend *log_backend_adsp_mtrace_get(void)

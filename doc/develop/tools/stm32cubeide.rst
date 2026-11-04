@@ -87,24 +87,31 @@ Project Setup
    The project can be run using the :guilabel:`Run` button, as well as debugged
    using the :guilabel:`Debug` button.
 
-Troubleshooting
-***************
+Debugging only
+**************
 
-When configuring your project you see an error that looks similar to:
+If you only want to use STM32CubeIDE to debug your project you can proceed as follows:
 
-.. code-block::
+#. First, make sure to compile your project and have the ``zephyr.elf`` available.
 
-  Error message: Traceback (most recent call last):
+#. Run STM32CubeIDE and import your project by going to :menuselection:`File --> Import...`:
 
-    File "/path/to/zephyr/scripts/list_boards.py", line 11, in <module>
-      import pykwalify.core
+   .. figure:: img/stm32cube_menu_import.webp
+      :align: center
+      :alt: Import project
 
-  ModuleNotFoundError: No module named 'pykwalify'
+#. Select :menuselection:`C/C++ --> STM32 Cortex-M Executable`, then click :guilabel:`Next`:
 
+   .. figure:: img/stm32cube_import_project.webp
+      :align: center
+      :alt: Import project selection
 
-This means that you did not start the IDE in a Zephyr environment.  You must
-delete the ``config_default`` build directory and start STM32CubeIDE again,
-making sure that you can run ``west`` in the shell that you start STM32CubeIDE
-from.
+#. Click on :guilabel:`Browse` to browse to your build folder and select your ``zephyr.elf``.
+
+#. Click on :guilabel:`Select` to select your MCU. If relevant, choose also your CPU and/or core.
+
+#. Click on :guilabel:`Finish`.
+
+#. The project can now be debugged using the :guilabel:`Debug` button.
 
 .. _STM32CubeIDE: https://www.st.com/en/development-tools/stm32cubeide.html

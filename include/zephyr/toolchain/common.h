@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2010-2014 Wind River Systems, Inc.
+ * Copyright (c) 2025 Siemens AG
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -61,6 +62,57 @@
 #endif
 
 /*
+ * Assembler directives to emit into a section other than the current one and
+ * then restore it, for use from inline assembly.
+ *
+ * Example:
+ *
+ *    __asm__(PUSHSECTION_DIRECTIVE " .my_section,\"\"\n\t"
+ *            ".asciz \"payload\"\n\t"
+ *            POPSECTION_DIRECTIVE);
+ */
+#if defined(CONFIG_ARC) && defined(__CCAC__)
+/* The ARC MWDT assembler spells these differently. */
+  #define PUSHSECTION_DIRECTIVE ".pushsect"
+  #define POPSECTION_DIRECTIVE  ".popsect"
+#else
+  #define PUSHSECTION_DIRECTIVE ".pushsection"
+  #define POPSECTION_DIRECTIVE  ".popsection"
+#endif
+
+/*
+ * General directive for assembly code, to align the following symbol, in bytes.
+ *
+ * Example:
+ *
+ *    ALIGN(4)
+ *    test_symbol:
+ *
+ * 'test_symbol' will get aligned to 4 bytes.
+ */
+
+#if defined(_ASMLANGUAGE) && !defined(_LINKER)
+
+  #if defined(CONFIG_X86) || defined(CONFIG_ARM) || defined(CONFIG_ARM64) || \
+	defined(CONFIG_RISCV) || defined(CONFIG_XTENSA) || defined(CONFIG_MIPS) || \
+	defined(CONFIG_ARCH_POSIX) || defined(CONFIG_RX) || defined(CONFIG_OPENRISC)
+    #define   ALIGN(x)    .balign   x
+  #elif defined(CONFIG_ARC)
+    /* .align assembler directive is supported by all ARC toolchains and it is
+     * implemented in the same way across ARC toolchains.
+     */
+    #define   ALIGN(x)    .align    x
+  #elif defined(CONFIG_SPARC) || defined(CONFIG_TRICORE)
+    #define   ALIGN(x)    .align    x
+  #elif defined(CONFIG_HEXAGON)
+    #define   ALIGN(x)    .balign   x
+  #else
+    #error Architecture unsupported
+  #endif
+
+#endif /* defined(_ASMLANGUAGE) && !defined(_LINKER) */
+
+/*
  * If the project is being built for speed (i.e. not for minimum size) then
  * align functions and branches in executable sections to improve performance.
  */
@@ -86,15 +138,20 @@
      */
     #define PERFOPT_ALIGN .align  4
 
-  #elif defined(CONFIG_NIOS2) || defined(CONFIG_RISCV) || \
-	  defined(CONFIG_XTENSA) || defined(CONFIG_MIPS)
+  #elif defined(CONFIG_RISCV) ||  defined(CONFIG_XTENSA) || \
+	  defined(CONFIG_MIPS) || defined(CONFIG_RX) || \
+	  defined(CONFIG_OPENRISC)
     #define PERFOPT_ALIGN .balign 4
 
   #elif defined(CONFIG_ARCH_POSIX)
 
-  #elif defined(CONFIG_SPARC)
+  #elif defined(CONFIG_SPARC) || defined(CONFIG_TRICORE)
 
     #define PERFOPT_ALIGN .align  4
+
+  #elif defined(CONFIG_HEXAGON)
+
+    #define PERFOPT_ALIGN .balign 4
 
   #else
 
@@ -193,6 +250,20 @@
  * into a single section in the end.
  */
 #define Z_DECL_ALIGN(type) __aligned(__alignof(type)) type
+
+/**
+ * @brief Align an object or type to a data-cache line on cached SMP systems.
+ *
+ * Uses CONFIG_DCACHE_LINE_SIZE when multiple CPUs are configured. Otherwise,
+ * or on uniprocessor and cacheless systems, keeps natural alignment. For arrays,
+ * apply this to the element type to align every element rather than only the
+ * array's start.
+ */
+#if defined(CONFIG_SMP) && (CONFIG_MP_MAX_NUM_CPUS > 1) && defined(CONFIG_DCACHE)
+#define Z_DCACHE_ALIGN_SMP __aligned(CONFIG_DCACHE_LINE_SIZE)
+#else
+#define Z_DCACHE_ALIGN_SMP
+#endif
 
 /* Check if a pointer is aligned for against a specific byte boundary  */
 #define IS_PTR_ALIGNED_BYTES(ptr, bytes) ((((uintptr_t)ptr) % bytes) == 0)

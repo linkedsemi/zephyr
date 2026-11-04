@@ -13,7 +13,7 @@
 
 #ifdef CONFIG_SOC_XMC4500
 #define PMU_FLASH_WS		(0x3U)
-#elif CONFIG_SOC_XMC4700
+#elif (CONFIG_SOC_XMC4700 || CONFIG_SOC_XMC4800)
 #define PMU_FLASH_WS		(0x4U)
 #endif
 
@@ -38,7 +38,7 @@ void soc_reset_hook(void)
 #ifdef CONFIG_PWM_XMC4XXX_CCU8
 				     | XMC_SCU_CLOCK_SLEEP_MODE_CONFIG_ENABLE_CCU
 #endif
-#ifdef CONFIG_ETH_XMC4XXX
+#if defined(CONFIG_ETH_XMC4XXX) || defined(CONFIG_ETH_XMC_DWC_ETHER_1000)
 				     | XMC_SCU_CLOCK_SLEEP_MODE_CONFIG_ENABLE_ETH
 #endif
 	);

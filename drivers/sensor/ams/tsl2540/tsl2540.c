@@ -105,32 +105,39 @@ static int tsl2540_attr_set_gain(const struct device *dev, enum sensor_gain_tsl2
 	const struct tsl2540_config *cfg = dev->config;
 	struct tsl2540_data *data = dev->data;
 	uint8_t value = 0;
+	uint8_t value2 = 0;
 	double again = 0.0;
 
 	switch (gain) {
 	case TSL2540_SENSOR_GAIN_1_2:
 		value = TSL2540_CFG1_G1_2;
+		value2 = TSL2540_CFG2_G1_2;
 		again = TSL2540_AGAIN_S1_2;
 		break;
 	case TSL2540_SENSOR_GAIN_1:
 		value = TSL2540_CFG1_G1;
+		value2 = TSL2540_CFG2_G1;
 		again = TSL2540_AGAIN_S1;
 		break;
 	case TSL2540_SENSOR_GAIN_4:
 		value = TSL2540_CFG1_G4;
+		value2 = TSL2540_CFG2_G4;
 		again = TSL2540_AGAIN_S4;
 		break;
 	case TSL2540_SENSOR_GAIN_16:
 		value = TSL2540_CFG1_G16;
+		value2 = TSL2540_CFG2_G16;
 		again = TSL2540_AGAIN_S16;
 		break;
 	case TSL2540_SENSOR_GAIN_64:
 		value = TSL2540_CFG1_G64;
+		value2 = TSL2540_CFG2_G64;
 		again = TSL2540_AGAIN_S64;
 		break;
 	case TSL2540_SENSOR_GAIN_128:
 		value = TSL2540_CFG1_G128;
-		again = TSL2540_CFG2_G128;
+		value2 = TSL2540_CFG2_G128;
+		again = TSL2540_AGAIN_S128;
 		break;
 	}
 
@@ -138,7 +145,7 @@ static int tsl2540_attr_set_gain(const struct device *dev, enum sensor_gain_tsl2
 		return -EIO;
 	}
 
-	if (i2c_reg_write_byte_dt(&cfg->i2c_spec, TSL2540_REG_CFG_2, value) < 0) {
+	if (i2c_reg_write_byte_dt(&cfg->i2c_spec, TSL2540_REG_CFG_2, value2) < 0) {
 		return -EIO;
 	}
 
@@ -156,7 +163,7 @@ static int tsl2540_attr_set(const struct device *dev, enum sensor_channel chan,
 	uint8_t temp;
 	double it;
 
-	if ((chan != SENSOR_CHAN_IR) & (chan != SENSOR_CHAN_LIGHT)) {
+	if ((chan != SENSOR_CHAN_IR) && (chan != SENSOR_CHAN_LIGHT)) {
 		return -ENOTSUP;
 	}
 
@@ -200,8 +207,7 @@ static int tsl2540_attr_set(const struct device *dev, enum sensor_channel chan,
 			thld = sensor_value_to_double(val) * cpl;
 			LOG_DBG("attr: %d, cpl: %g, thld: %x\n", attr, cpl, thld);
 
-			le16_buffer = sys_cpu_to_le16(sys_cpu_to_le16(thld));
-
+			le16_buffer = sys_cpu_to_le16(thld);
 			ret = i2c_burst_write_dt(
 				&((const struct tsl2540_config *)dev->config)->i2c_spec,
 				TSL2540_REG_AILT_LOW, (uint8_t *)&le16_buffer, sizeof(le16_buffer));
@@ -301,7 +307,7 @@ static int tsl2540_init(const struct device *dev)
 	k_sem_init(&data->sem, 1, K_SEM_MAX_LIMIT);
 
 	if (!i2c_is_ready_dt(&cfg->i2c_spec)) {
-		LOG_ERR("I2C dev %s not ready", cfg->i2c_spec.bus->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c_spec.bus);
 		return -ENODEV;
 	}
 
@@ -335,7 +341,7 @@ static int tsl2540_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api tsl2540_driver_api = {
+static DEVICE_API(sensor, tsl2540_driver_api) = {
 	.sample_fetch = tsl2540_sample_fetch,
 	.channel_get = tsl2540_channel_get,
 	.attr_set = tsl2540_attr_set,

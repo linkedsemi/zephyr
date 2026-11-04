@@ -13,7 +13,7 @@ LOG_MODULE_REGISTER(spi_xec, CONFIG_SPI_LOG_LEVEL);
 #include <errno.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/drivers/pinctrl.h>
 #include <soc.h>
 
@@ -189,7 +189,7 @@ static int qmspi_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (config->operation & (SPI_TRANSFER_LSB | SPI_OP_MODE_SLAVE
+	if (config->operation & (SPI_TRANSFER_LSB | SPI_OP_MODE_PERIPHERAL
 				 | SPI_MODE_LOOP)) {
 		return -ENOTSUP;
 	}
@@ -657,7 +657,7 @@ static int qmspi_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api spi_qmspi_driver_api = {
+static DEVICE_API(spi, spi_qmspi_driver_api) = {
 	.transceive = qmspi_transceive_sync,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = qmspi_transceive_async,
@@ -703,7 +703,7 @@ static struct spi_qmspi_data spi_qmspi_0_dev_data = {
 	SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(0), ctx)
 };
 
-DEVICE_DT_INST_DEFINE(0,
+SPI_DEVICE_DT_INST_DEFINE(0,
 		    qmspi_init, NULL, &spi_qmspi_0_dev_data,
 		    &spi_qmspi_0_config, POST_KERNEL,
 		    CONFIG_SPI_INIT_PRIORITY, &spi_qmspi_driver_api);

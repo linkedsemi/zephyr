@@ -13,7 +13,7 @@ properties:
 
   miso-src:
     description: |
-      Connects the SPI miso line (USIC DX0 input) to a specific GPIO pin.
+      Connects the SPI SDI line (USIC DX0 input) to a specific GPIO pin.
       The USIC DX0 input is a multiplexer which connects to different GPIO pins.
       Refer to the XMC4XXX reference manual for the GPIO pin/mux mappings. DX0G
       is the loopback input line.
@@ -62,7 +62,7 @@ properties:
       For example, say we select interrupt 85 on USIC0, dma0, channel 3, priority 4, and line 7.
       The interrupt would map to SR1. From Table "DMA Request Source Selection", request_source
       would need to be set to 10 and the dts entry would be:
-      dma = <&dma0 3 4 XMC4XXX_SET_CONFIG(7,10) ... >;
+      dma = <&dma0 3 4 XMC4XXX_SET_CONFIG(7,10) ...>;
 
   dma-names:
     description: |

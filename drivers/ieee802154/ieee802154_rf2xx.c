@@ -208,14 +208,12 @@ static void rf2xx_trx_rx(const struct device *dev)
 		return;
 	}
 
-	if (!IS_ENABLED(CONFIG_IEEE802154_RAW_MODE) &&
-	    !IS_ENABLED(CONFIG_NET_L2_OPENTHREAD) &&
-	    pkt_len >= RX2XX_FRAME_FCS_LENGTH) {
+	if (!IS_ENABLED(CONFIG_IEEE802154_L2_PKT_INCL_FCS) && pkt_len >= RX2XX_FRAME_FCS_LENGTH) {
 		pkt_len -= RX2XX_FRAME_FCS_LENGTH;
 	}
 
 	pkt = net_pkt_rx_alloc_with_buffer(ctx->iface, pkt_len,
-					   AF_UNSPEC, 0, K_NO_WAIT);
+					   NET_AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
 		LOG_ERR("No RX buffer available");
 		return;
@@ -677,7 +675,7 @@ static int rf2xx_tx(const struct device *dev,
 		case IEEE802154_TX_MODE_TXTIME:
 		case IEEE802154_TX_MODE_TXTIME_CCA:
 		default:
-			NET_ERR("TX mode %d not supported", mode);
+			LOG_ERR("TX mode %d not supported", mode);
 			return -ENOTSUP;
 		}
 
@@ -1131,7 +1129,7 @@ static const struct ieee802154_radio_api rf2xx_radio_api = {
 		.dig2_gpio = GPIO_DT_SPEC_INST_GET_OR(n, dig2_gpios, {}), \
 		.clkm_gpio = GPIO_DT_SPEC_INST_GET_OR(n, clkm_gpios, {}), \
 		.spi = SPI_DT_SPEC_INST_GET(n, SPI_WORD_SET(8) |	  \
-				 SPI_TRANSFER_MSB, 0),			  \
+				 SPI_TRANSFER_MSB),			  \
 									  \
 		.tx_pwr_min = DT_INST_PROP_OR(n, tx_pwr_min, 0),	  \
 		.tx_pwr_max = DT_INST_PROP_OR(n, tx_pwr_max, 0),	  \

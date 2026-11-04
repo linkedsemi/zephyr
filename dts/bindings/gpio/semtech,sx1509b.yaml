@@ -1,7 +1,7 @@
 # Copyright (c) 2018, Aapo Vienamo
 # SPDX-License-Identifier: Apache-2.0
 
-description: SX1509B GPIO node
+description: SX1509B GPIO
 
 compatible: "semtech,sx1509b"
 
@@ -12,7 +12,6 @@ properties:
     const: 2
 
   ngpios:
-    required: true
     const: 16
 
   nint-gpios:

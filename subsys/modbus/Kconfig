@@ -14,6 +14,22 @@ config MODBUS_BUFFER_SIZE
 	help
 	  Modbus buffer size.
 
+config MODBUS_WORKQUEUE
+	bool "Use dedicated workqueue in Modbus"
+	help
+	  Use the dedicated queue to process received ADUs if the system work
+	  queue cannot be used due to performance issues or other conflicts.
+	  For example, a client transaction can time out when the system work
+	  queue is busy or is itself the caller's context, because response
+	  handling shares that single queue.
+
+config MODBUS_STACK_SIZE
+	int "Modbus workqueue stack size"
+	depends on MODBUS_WORKQUEUE
+	default 1024
+	help
+	  Modbus workqueue stack size.
+
 choice
 	prompt "Supported node roles"
 	default MODBUS_ROLE_CLIENT_SERVER
@@ -48,6 +64,12 @@ config MODBUS_SERIAL
 	help
 	  Enable Modbus over serial line support.
 
+config MODBUS_SERIAL_ASYNC_API
+	depends on MODBUS_SERIAL && UART_ASYNC_API
+	bool "Modbus over serial line UART ASYNC API support"
+	help
+	  Use UART ASYNC API for Modbus over serial line.
+
 config MODBUS_ASCII_MODE
 	depends on MODBUS_SERIAL
 	bool "Modbus transmission mode ASCII"
@@ -78,6 +100,12 @@ config MODBUS_FC08_DIAGNOSTIC
 	default y
 	help
 	  Enable function code 08 Diagnostic support
+
+config MODBUS_NONCOMPLIANT_SERIAL_MODE
+	bool "Non-compliant serial mode"
+	depends on MODBUS_SERIAL
+	help
+	  Allow non-compliant stop and parity bit settings.
 
 module = MODBUS
 module-str = Modbus Support

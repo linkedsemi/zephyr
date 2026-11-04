@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Decoded data types for the sensor API
+ * @ingroup sensor_interface
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_SENSOR_DATA_TYPES_H
 #define ZEPHYR_INCLUDE_DRIVERS_SENSOR_DATA_TYPES_H
 
@@ -16,6 +22,12 @@
 extern "C" {
 #endif
 
+/**
+ * @addtogroup sensor_interface
+ * @{
+ */
+
+/** Header common to all decoded sensor data types. */
 struct sensor_data_header {
 	/**
 	 * The closest timestamp for when the first frame was generated as attained by
@@ -32,22 +44,12 @@ struct sensor_data_header {
 
 /**
  * Data for a sensor channel which reports on three axes. This is used by:
- * - :c:enum:`SENSOR_CHAN_ACCEL_X`
- * - :c:enum:`SENSOR_CHAN_ACCEL_Y`
- * - :c:enum:`SENSOR_CHAN_ACCEL_Z`
  * - :c:enum:`SENSOR_CHAN_ACCEL_XYZ`
- * - :c:enum:`SENSOR_CHAN_GYRO_X`
- * - :c:enum:`SENSOR_CHAN_GYRO_Y`
- * - :c:enum:`SENSOR_CHAN_GYRO_Z`
  * - :c:enum:`SENSOR_CHAN_GYRO_XYZ`
- * - :c:enum:`SENSOR_CHAN_MAGN_X`
- * - :c:enum:`SENSOR_CHAN_MAGN_Y`
- * - :c:enum:`SENSOR_CHAN_MAGN_Z`
  * - :c:enum:`SENSOR_CHAN_MAGN_XYZ`
- * - :c:enum:`SENSOR_CHAN_POS_DX`
- * - :c:enum:`SENSOR_CHAN_POS_DY`
- * - :c:enum:`SENSOR_CHAN_POS_DZ`
  * - :c:enum:`SENSOR_CHAN_POS_DXYZ`
+ * - :c:enum:`SENSOR_CHAN_GRAVITY_VECTOR`
+ * - :c:enum:`SENSOR_CHAN_GBIAS_XYZ`
  */
 struct sensor_three_axis_data {
 	struct sensor_data_header header;
@@ -75,6 +77,38 @@ struct sensor_three_axis_data {
 		PRIq_arg((data_).readings[(readings_offset_)].z, 6, (data_).shift)
 
 /**
+ * Data for a sensor channel which reports game rotation vector data. This is used by:
+ * - :c:enum:`SENSOR_CHAN_GAME_ROTATION_VECTOR`
+ */
+struct sensor_game_rotation_vector_data {
+	struct sensor_data_header header;
+	int8_t shift;
+	struct sensor_game_rotation_vector_sample_data {
+		uint32_t timestamp_delta;
+		union {
+			q31_t values[4];
+			q31_t v[4];
+			struct {
+				q31_t x;
+				q31_t y;
+				q31_t z;
+				q31_t w;
+			};
+		};
+	} readings[1];
+};
+
+#define PRIsensor_game_rotation_vector_data PRIu64                                                 \
+	"ns, (%" PRIq(6) ", %" PRIq(6) ", %" PRIq(6)  ", %" PRIq(6) ")"
+
+#define PRIsensor_game_rotation_vector_data_arg(data_, readings_offset_)                           \
+	(data_).header.base_timestamp_ns + (data_).readings[(readings_offset_)].timestamp_delta,   \
+		PRIq_arg((data_).readings[(readings_offset_)].x, 6, (data_).shift),                \
+		PRIq_arg((data_).readings[(readings_offset_)].y, 6, (data_).shift),                \
+		PRIq_arg((data_).readings[(readings_offset_)].z, 6, (data_).shift),                \
+		PRIq_arg((data_).readings[(readings_offset_)].w, 6, (data_).shift)
+
+/**
  * Data from a sensor where we only care about an event occurring. This is used to report triggers.
  */
 struct sensor_occurrence_data {
@@ -89,6 +123,9 @@ struct sensor_occurrence_data {
 #define PRIsensor_occurrence_data_arg(data_, readings_offset_)                                     \
 	(data_).header.base_timestamp_ns + (data_).readings[(readings_offset_)].timestamp_delta
 
+/**
+ * Data for a sensor channel which reports a scalar data.
+ */
 struct sensor_q31_data {
 	struct sensor_data_header header;
 	int8_t shift;
@@ -162,6 +199,8 @@ struct sensor_uint64_data {
 #define PRIsensor_uint64_data_arg(data_, readings_offset_)                                         \
 	(data_).header.base_timestamp_ns + (data_).readings[(readings_offset_)].timestamp_delta,   \
 		(data_).readings[(readings_offset_)].value
+
+/** @} */
 
 #ifdef __cplusplus
 }

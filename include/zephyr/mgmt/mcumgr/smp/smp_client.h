@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef H_SMP_CLIENT_
-#define H_SMP_CLIENT_
+/**
+ * @file
+ * @brief Header file for the MCUmgr SMP client API.
+ * @ingroup mcumgr_smp_client
+ */
+
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_SMP_SMP_CLIENT_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_SMP_SMP_CLIENT_H_
 
 #include <zephyr/kernel.h>
 #include <zephyr/net_buf.h>
@@ -15,7 +21,7 @@
 
 /**
  * @brief MCUmgr SMP client API
- * @defgroup mcumgr_smp_client SMP client API
+ * @defgroup mcumgr_smp_client SMP client
  * @ingroup mcumgr
  * @{
  */
@@ -32,6 +38,8 @@ struct smp_client_object {
 	struct smp_transport *smpt;
 	/** SMP SEQ */
 	uint8_t smp_seq;
+	/** SMP transport data. Allows multiple client_object for single smp_transport. */
+	void *priv;
 };
 
 #ifdef __cplusplus
@@ -50,6 +58,27 @@ extern "C" {
 int smp_client_object_init(struct smp_client_object *smp_client, int smp_type);
 
 /**
+ * @brief Set private data for SMP transport.
+ *
+ * @param smp_client	The Client to set private data for.
+ * @param data		SMP transport private data.
+ */
+static inline void smp_client_object_set_data(struct smp_client_object *smp_client, void *data)
+{
+	smp_client->priv = data;
+}
+
+/**
+ * @brief Get private data for SMP transport.
+ *
+ * @param smp_client	The Client to set private data for.
+ */
+static inline void *smp_client_object_get_data(struct smp_client_object *smp_client)
+{
+	return smp_client->priv;
+}
+
+/**
  * @brief Response callback for SMP send.
  *
  * @param nb net_buf for response
@@ -63,13 +92,18 @@ typedef int (*smp_client_res_fn)(struct net_buf *nb, void *user_data);
 /**
  * @brief SMP client response handler.
  *
- * @param nb response net_buf
- * @param res_hdr Parsed SMP header
+ * A response only completes a pending command that was sent on @p smpt and has the
+ * same group and command id.
  *
- * @return 0 on success.
- * @return @ref mcumgr_err_t code on failure.
+ * @param smpt SMP transport the response was received on.
+ * @param nb Response net_buf.
+ * @param res_hdr Parsed SMP header, in host byte order.
+ *
+ * @retval MGMT_ERR_EOK The response completed a pending command.
+ * @retval MGMT_ERR_ENOENT No pending command with a callback matches the response.
  */
-int smp_client_single_response(struct net_buf *nb, const struct smp_hdr *res_hdr);
+int smp_client_single_response(const struct smp_transport *smpt, struct net_buf *nb,
+			       const struct smp_hdr *res_hdr);
 
 /**
  * @brief Allocate buffer and initialize with SMP header.
@@ -117,4 +151,4 @@ int smp_client_send_cmd(struct smp_client_object *smp_client, struct net_buf *nb
 }
 #endif
 
-#endif /* H_SMP_CLIENT_ */
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_SMP_SMP_CLIENT_H_ */

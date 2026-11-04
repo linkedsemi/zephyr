@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "kernel_shell.h"
+#include <kernel_shell.h>
 
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/kernel.h>
@@ -75,14 +75,24 @@ static void shell_tdata_dump(const struct k_thread *cthread, void *user_data)
 	tname = k_thread_name_get(thread);
 
 	shell_print(sh, "%s%p %-10s",
-		      (thread == k_current_get()) ? "*" : " ",
-		      thread,
-		      tname ? tname : "NA");
+		    (thread == k_current_get()) ? "*" : " ",
+		    thread,
+		    tname ? tname : "NA");
+	/* Raw backend scheduling field: delta-ticks or encoded slot for the
+	 * delta-list, wheel and bucket backends, absolute expiry tick for the
+	 * min-heap and skip-list backends.
+	 */
+#if defined(CONFIG_TIMEOUT_BACKEND_MINHEAP) || defined(CONFIG_TIMEOUT_BACKEND_SKIPLIST)
+	int64_t timeout_raw = (int64_t)thread->base.timeout.abs_ticks;
+#else
+	int64_t timeout_raw = (int64_t)thread->base.timeout.dticks;
+#endif
+
 	/* Cannot use lld as it's less portable. */
 	shell_print(sh, "\toptions: 0x%x, priority: %d timeout: %" PRId64,
-		      thread->base.user_options,
-		      thread->base.prio,
-		      (int64_t)thread->base.timeout.dticks);
+		    thread->base.user_options,
+		    thread->base.prio,
+		    timeout_raw);
 	shell_print(sh, "\tstate: %s, entry: %p",
 		    k_thread_state_str(thread, state_str, sizeof(state_str)),
 		    thread->entry.pEntry);
@@ -114,7 +124,11 @@ static int cmd_kernel_thread_list(const struct shell *sh, size_t argc, char **ar
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	shell_print(sh, "Scheduler: %u since last call", sys_clock_elapsed());
+	k_spinlock_key_t key = sys_clock_lock();
+	uint32_t elapsed = sys_clock_elapsed();
+
+	sys_clock_unlock(key);
+	shell_print(sh, "Scheduler: %u since last call", elapsed);
 	shell_print(sh, "Threads:");
 
 	/*

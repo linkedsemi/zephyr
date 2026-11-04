@@ -83,7 +83,7 @@ int pipeget(struct k_pipe *pipe, enum pipe_options option, int size, int count,
 			unsigned int *time)
 {
 	int i;
-	unsigned int t;
+	uint64_t t;
 	timing_t  start;
 	timing_t  end;
 	size_t sizexferd_total = 0;
@@ -95,12 +95,9 @@ int pipeget(struct k_pipe *pipe, enum pipe_options option, int size, int count,
 	for (i = 0; option == _1_TO_N || (i < count); i++) {
 		size_t sizexferd = 0;
 		size_t size2xfer = MIN(size, size2xfer_total - sizexferd_total);
-		int ret;
 
-		ret = k_pipe_get(pipe, data_recv, size2xfer,
-				 &sizexferd, option, K_FOREVER);
-
-		if (ret != 0) {
+		sizexferd = k_pipe_read(pipe, data_recv, size2xfer, K_FOREVER);
+		if (sizexferd  < 0) {
 			return 1;
 		}
 
@@ -119,8 +116,8 @@ int pipeget(struct k_pipe *pipe, enum pipe_options option, int size, int count,
 	}
 
 	end = timing_timestamp_get();
-	t = (unsigned int) timing_cycles_get(&start, &end);
-	*time = SYS_CLOCK_HW_CYCLES_TO_NS_AVG(t, count);
+	t = timing_cycles_get(&start, &end);
+	*time = test_timing_cycles_to_ns_avg(t, count);
 
 	return 0;
 }

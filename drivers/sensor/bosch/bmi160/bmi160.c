@@ -759,7 +759,7 @@ static int bmi160_attr_get(const struct device *dev, enum sensor_channel chan,
 					int32_t udeg =
 						(FIELD_GET(GENMASK((2 * i) + 1, 2 * i), data[6])
 						 << 8) |
-						data[3 + i];
+						(uint8_t)data[3 + i];
 
 					udeg |= 0 - (udeg & 0x200);
 					udeg *= 61000;
@@ -853,21 +853,13 @@ static int bmi160_sample_fetch(const struct device *dev,
 	uint8_t status;
 	size_t i;
 	int ret = 0;
-	enum pm_device_state pm_state;
-
-	(void)pm_device_state_get(dev, &pm_state);
-	if (pm_state != PM_DEVICE_STATE_ACTIVE) {
-		LOG_DBG("Device is suspended, fetch is unavailable");
-		ret = -EIO;
-		goto out;
-	}
 
 	if (chan == SENSOR_CHAN_DIE_TEMP) {
 		/* Die temperature is only valid when at least one measurement is active */
 		if (data->pmu_sts.raw == 0U) {
 			return -EINVAL;
 		}
-		return bmi160_word_read(dev, BMI160_REG_TEMPERATURE0, &data->sample.temperature);
+		return bmi160_word_read(dev, BMI160_REG_TEMPERATURE0, &data->temperature);
 	}
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
@@ -970,10 +962,10 @@ static int bmi160_temp_channel_get(const struct device *dev,
 	struct bmi160_data *data = dev->data;
 
 	/* the scale is 1/2^9/LSB = 1953 micro degrees */
-	int32_t temp_micro = BMI160_TEMP_OFFSET * 1000000ULL + data->sample.temperature * 1953ULL;
+	int32_t temp_micro = BMI160_TEMP_OFFSET * 1000000 + (int16_t)data->temperature * 1953;
 
-	val->val1 = temp_micro / 1000000ULL;
-	val->val2 = temp_micro % 1000000ULL;
+	val->val1 = temp_micro / 1000000;
+	val->val2 = temp_micro % 1000000;
 
 	return 0;
 }
@@ -1009,7 +1001,7 @@ static int bmi160_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api bmi160_api = {
+static DEVICE_API(sensor, bmi160_api) = {
 	.attr_set = bmi160_attr_set,
 	.attr_get = bmi160_attr_get,
 #ifdef CONFIG_BMI160_TRIGGER
@@ -1054,7 +1046,7 @@ int bmi160_init(const struct device *dev)
 	int32_t acc_range, gyr_range;
 
 	if (!cfg->bus_io->ready(dev)) {
-		LOG_ERR("Bus not ready");
+		LOG_ERR_DEVICE_NOT_READY(dev);
 		return -EINVAL;
 	}
 
@@ -1171,10 +1163,10 @@ int bmi160_pm(const struct device *dev, enum pm_device_action action)
 
 	switch (action) {
 	case PM_DEVICE_ACTION_RESUME:
-		bmi160_resume(dev);
+		ret = bmi160_resume(dev);
 		break;
 	case PM_DEVICE_ACTION_SUSPEND:
-		bmi160_suspend(dev);
+		ret = bmi160_suspend(dev);
 		break;
 	default:
 		ret = -ENOTSUP;
@@ -1202,7 +1194,7 @@ int bmi160_pm(const struct device *dev, enum pm_device_action action)
 #define BMI160_DEFINE_SPI(inst)						   \
 	static struct bmi160_data bmi160_data_##inst;			   \
 	static const struct bmi160_cfg bmi160_cfg_##inst = {		   \
-		.bus.spi = SPI_DT_SPEC_INST_GET(inst, SPI_WORD_SET(8), 0), \
+		.bus.spi = SPI_DT_SPEC_INST_GET(inst, SPI_WORD_SET(8)),	   \
 		.bus_io = &bmi160_bus_io_spi,				   \
 		BMI160_TRIGGER_CFG(inst)				   \
 	};								   \

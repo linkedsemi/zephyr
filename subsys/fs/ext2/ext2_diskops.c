@@ -127,17 +127,32 @@ static void fill_disk_inode(struct ext2_disk_inode *dino, struct ext2_inode *ino
 
 struct ext2_direntry *ext2_fetch_direntry(struct ext2_disk_direntry *disk_de)
 {
+	uint16_t rec_len = sys_le16_to_cpu(disk_de->de_rec_len);
 
-	if (disk_de->de_name_len > EXT2_MAX_FILE_NAME) {
+	/*
+	 * Structural sanity on the on-disk record before copying any name
+	 * bytes.
+	 *
+	 *  - the fixed entry header must fit in the remaining block,
+	 *  - rec_len must be at least the fixed header and 4-byte aligned,
+	 *  - name_len must fit between the header and rec_len,
+	 *  - name_len must not exceed EXT2_MAX_FILE_NAME,
+	 *  - rec_len must not cross the directory block boundary.
+	 */
+	if ((rec_len < sizeof(struct ext2_disk_direntry)) ||
+	    ((rec_len % 4U) != 0U) ||
+	    (disk_de->de_name_len > (rec_len - sizeof(struct ext2_disk_direntry))) ||
+	    (disk_de->de_name_len > EXT2_MAX_FILE_NAME)) {
 		return NULL;
 	}
+
 	uint32_t prog_rec_len = sizeof(struct ext2_direntry) + disk_de->de_name_len;
 	struct ext2_direntry *de = k_heap_alloc(&direntry_heap, prog_rec_len, K_FOREVER);
 
 	__ASSERT(de != NULL, "allocated direntry can't be NULL");
 
 	de->de_inode     = sys_le32_to_cpu(disk_de->de_inode);
-	de->de_rec_len   = sys_le16_to_cpu(disk_de->de_rec_len);
+	de->de_rec_len   = rec_len;
 	de->de_name_len  = disk_de->de_name_len;
 	de->de_file_type = disk_de->de_file_type;
 	memcpy(de->de_name, disk_de->de_name, de->de_name_len);
@@ -249,7 +264,7 @@ int ext2_fetch_block_group(struct ext2_data *fs, uint32_t group)
 	LOG_DBG("ngroups:%d", ngroups);
 	LOG_DBG("cur_group:%d fetch_group:%d", bg->num, group);
 
-	if (group > ngroups) {
+	if (group >= ngroups) {
 		return -ERANGE;
 	}
 
@@ -349,8 +364,16 @@ int ext2_fetch_bg_bbitmap(struct ext2_bgroup *bg)
 static int32_t get_itable_entry(struct ext2_data *fs, uint32_t ino)
 {
 	int rc;
-	uint32_t ino_group = (ino - 1) / fs->sblock.s_inodes_per_group;
-	uint32_t ino_index = (ino - 1) % fs->sblock.s_inodes_per_group;
+	uint32_t ino_group;
+	uint32_t ino_index;
+
+	if (ino < 1 || ino > fs->sblock.s_inodes_count ||
+	    fs->sblock.s_inodes_per_group == 0 || fs->sblock.s_inode_size == 0) {
+		return -EINVAL;
+	}
+
+	ino_group = (ino - 1) / fs->sblock.s_inodes_per_group;
+	ino_index = (ino - 1) % fs->sblock.s_inodes_per_group;
 
 	LOG_DBG("ino_group:%d ino_index:%d", ino_group, ino_index);
 
@@ -669,6 +692,10 @@ int64_t ext2_inode_remove_blocks(struct ext2_inode *inode, uint32_t first)
 
 	max_lvl = get_level_offsets(inode->i_fs, first, offsets);
 
+	if (max_lvl < 0) {
+		return max_lvl;
+	}
+
 	if (all_zero(&offsets[1], max_lvl)) {
 		/* The first block to remove is either:
 		 *  - one of the first 12 blocks in the indode
@@ -779,11 +806,8 @@ int ext2_commit_superblock(struct ext2_data *fs)
 	fill_disk_sblock(disk_sb, &fs->sblock);
 
 	ret = ext2_write_block(fs, b);
-	if (ret < 0) {
-		return ret;
-	}
 	ext2_drop_block(b);
-	return 0;
+	return ret;
 }
 
 int ext2_commit_bg(struct ext2_data *fs)
@@ -807,11 +831,8 @@ int ext2_commit_bg(struct ext2_data *fs)
 	fill_disk_bgroup(disk_bg, bg);
 
 	ret = ext2_write_block(fs, b);
-	if (ret < 0) {
-		return ret;
-	}
 	ext2_drop_block(b);
-	return 0;
+	return ret;
 }
 
 int ext2_commit_inode(struct ext2_inode *inode)
@@ -991,6 +1012,10 @@ int32_t ext2_alloc_inode(struct ext2_data *fs)
 		return r;
 	}
 
+	if ((uint32_t)r >= fs->sblock.s_inodes_count) {
+		return -ENOSPC;
+	}
+
 	/* Add 1 because inodes are counted from 1 not 0. */
 	global_idx = group * fs->sblock.s_inodes_per_group + r + 1;
 
@@ -1099,9 +1124,17 @@ int ext2_free_inode(struct ext2_data *fs, uint32_t ino, bool directory)
 	LOG_DBG("Free inode %d", ino);
 
 	int rc;
-	uint32_t group = (ino - 1) / fs->sblock.s_inodes_per_group;
-	uint32_t bitmap_off = (ino - 1) % fs->sblock.s_inodes_per_group;
+	uint32_t group;
+	uint32_t bitmap_off;
 	uint32_t set;
+
+	if (ino < 1 || ino > fs->sblock.s_inodes_count ||
+	    fs->sblock.s_inodes_per_group == 0) {
+		return -EINVAL;
+	}
+
+	group = (ino - 1) / fs->sblock.s_inodes_per_group;
+	bitmap_off = (ino - 1) % fs->sblock.s_inodes_per_group;
 
 	rc = ext2_fetch_block_group(fs, group);
 	if (rc < 0) {

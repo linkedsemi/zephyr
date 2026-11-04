@@ -4,15 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#if defined(CONFIG_IPM) || defined(CONFIG_MBOX)
+
 #include <stdlib.h>
 
 #include <zephyr/device.h>
-#include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/regulator.h>
-#include <zephyr/drivers/watchdog.h>
-#include <zephyr/dt-bindings/gpio/nordic-npm6001-gpio.h>
-#include <zephyr/dt-bindings/regulator/npm6001.h>
-#include <zephyr/posix/unistd.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/printk.h>
 
@@ -57,3 +53,4 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_amp,
 );
 
 SHELL_CMD_REGISTER(amp, &sub_amp, "AMP debug commands.", NULL);
+#endif

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Copyright 2018 Oticon A/S
 # SPDX-License-Identifier: Apache-2.0
+set -eo pipefail
 
 start=$SECONDS
 
@@ -41,7 +42,7 @@ fi
 
 err=0
 i=0
-sh_filter="(/_|run_parallel|compile|generate_coverage_report.sh|/ci\.)"
+sh_filter="(./_|run_parallel|compile|generate_coverage_report.sh|/ci\.)"
 
 if [ -n "${TESTS_FILE}" ]; then
 	#remove comments and empty lines from file
@@ -51,14 +52,21 @@ elif [ -n "${TESTS_LIST}" ]; then
 	all_cases=${TESTS_LIST}
 else
 	SEARCH_PATH="${SEARCH_PATH:-.}"
-	all_cases=`find ${SEARCH_PATH} -name "*.sh" | grep -Ev "${sh_filter}"`
+	all_cases=`find ${SEARCH_PATH} -name "*.sh" | grep -Ev "${sh_filter}"` \
+	          || (echo "No tests found"; exit 1)
 	#we dont run ourselves
 fi
 
 set -u
 
 RESULTS_FILE="${RESULTS_FILE:-`pwd`/../RunResults.xml}"
-tmp_res_file=tmp.xml
+tmp_res_file=$(mktemp --tmpdir run_parallel.XXXXXX.xml)
+
+if [[ -v BOARD ]]; then
+	export FAILURE_EXTRA_INFO=" on ${BOARD}"
+else
+  export FAILURE_EXTRA_INFO=""
+fi
 
 all_cases_a=( $all_cases )
 n_cases=$((${#all_cases_a[@]}))
@@ -82,7 +90,7 @@ if [ `command -v parallel` ]; then
     dur=$(($(date +%s%N) - $start))
     dur_s=$(awk -vdur=$dur "BEGIN { printf(\"%0.3f\", dur/1000000000)}")
     if [ $result -ne 0 ]; then
-      (>&2 echo -e "\e[91m{} FAILED\e[39m ($dur_s s)")
+      (>&2 echo -e "\e[91m{} FAILED${FAILURE_EXTRA_INFO}\e[39m ($dur_s s)")
       (>&2 cat {#}.log)
       echo "<failure message=\"failed\" type=\"failure\">"
       cat {#}.log | eval $CLEAN_XML
@@ -95,14 +103,15 @@ if [ `command -v parallel` ]; then
       rm {#}.log
       echo "</testcase>"
     fi
-    ' ::: $all_cases >> $tmp_res_file ; err=$?
+    ' ::: $all_cases >> $tmp_res_file || err=$?
   fi
 else #fallback in case parallel is not installed
+  set +e
   for case in $all_cases; do
     echo "<testcase name=\"$case\" time=\"0\">" >> $tmp_res_file
     $case $@ &> $i.log
     if [ $? -ne 0 ]; then
-      echo -e "\e[91m$case FAILED\e[39m"
+      echo -e "\e[91m$case FAILED${FAILURE_EXTRA_INFO}\e[39m"
       cat $i.log
       echo "<failure message=\"failed\" type=\"failure\">" >> $tmp_res_file
       cat $i.log | eval $CLEAN_XML >> $tmp_res_file

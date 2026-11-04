@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2024 Espressif Systems (Shanghai) Co., Ltd.
+ * Copyright (c) 2024-2025 Espressif Systems (Shanghai) Co., Ltd.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
-#include <espressif/esp32s2/esp32s2_solo_n4r2.dtsi>
+#include <espressif/esp32s2/esp32s2.dtsi>
 #include "esp32s2_devkitc-pinctrl.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/input/esp32-touch-sensor-input.h>
@@ -23,7 +23,7 @@
 	};
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,flash = &flash0;
@@ -32,12 +32,22 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: user_button {
 			label = "BOOT";
 			gpios = <&gpio0 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
+};
+
+&flash0 {
+	reg = <0x0 DT_SIZE_M(4)>;
+	ranges = <0x0 0x0 DT_SIZE_M(4)>;
+};
+
+&psram0 {
+	size = <DT_SIZE_M(2)>;
 };
 
 &uart0 {
@@ -96,6 +106,11 @@
 	pinctrl-names = "default";
 };
 
+&i2s0 {
+	pinctrl-0 = <&i2s0_default>;
+	pinctrl-names = "default";
+};
+
 &trng0 {
 	status = "okay";
 };
@@ -121,5 +136,9 @@
 };
 
 &dac {
+	status = "okay";
+};
+
+&wifi {
 	status = "okay";
 };

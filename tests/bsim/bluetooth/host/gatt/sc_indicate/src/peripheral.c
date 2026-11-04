@@ -1,5 +1,6 @@
 /**
  * Copyright (c) 2023 Nordic Semiconductor ASA
+ * Copyright (c) 2026 Silicon Laboratories Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -7,12 +8,15 @@
 
 #include <stdint.h>
 
+#include <zephyr/kernel.h>
 #include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/bluetooth/bluetooth.h>
+
+#include "babblekit/testcase.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(test_peripheral, LOG_LEVEL_DBG);
@@ -44,6 +48,50 @@ static struct bt_gatt_service svc = {
 	.attr_count = ARRAY_SIZE(attrs),
 };
 
+void peripheral_reboot_bond(void)
+{
+	int err;
+	struct bt_le_ext_adv *adv = NULL;
+
+	err = bt_enable(NULL);
+	TEST_ASSERT(!err, "bt_enable failed (%d)", err);
+
+	err = settings_load();
+	TEST_ASSERT(!err, "settings_load failed (%d)", err);
+
+	create_adv(&adv);
+	start_adv(adv);
+	wait_connected();
+
+	wait_disconnected();
+	clear_g_conn();
+
+	TEST_PASS("PASS");
+}
+
+void peripheral_reboot_indicate(void)
+{
+	int err;
+	struct bt_le_ext_adv *adv = NULL;
+
+	err = bt_enable(NULL);
+	TEST_ASSERT(!err, "bt_enable failed (%d)", err);
+
+	err = settings_load();
+	TEST_ASSERT(!err, "settings_load failed (%d)", err);
+
+	/* add a new service to trigger the service changed indication */
+	err = bt_gatt_service_register(&svc);
+	TEST_ASSERT(!err, "bt_gatt_service_register failed (%d)", err);
+	LOG_DBG("New service added");
+
+	create_adv(&adv);
+	start_adv(adv);
+	wait_connected();
+
+	TEST_PASS("PASS");
+}
+
 void peripheral(void)
 {
 	/*
@@ -60,10 +108,10 @@ void peripheral(void)
 	struct bt_le_ext_adv *adv = NULL;
 
 	err = bt_enable(NULL);
-	BSIM_ASSERT(!err, "bt_enable failed (%d)\n", err);
+	TEST_ASSERT(!err, "bt_enable failed (%d)", err);
 
 	err = settings_load();
-	BSIM_ASSERT(!err, "settings_load failed (%d)\n", err);
+	TEST_ASSERT(!err, "settings_load failed (%d)", err);
 
 	create_adv(&adv);
 	start_adv(adv);
@@ -76,11 +124,16 @@ void peripheral(void)
 
 	/* add a new service to trigger the service changed indication */
 	err = bt_gatt_service_register(&svc);
-	BSIM_ASSERT(!err, "bt_gatt_service_register failed (%d)\n", err);
+	TEST_ASSERT(!err, "bt_gatt_service_register failed (%d)", err);
 	LOG_DBG("New service added");
+
+#if defined(CONFIG_BT_PRIVACY)
+	/* Wait so that the central has time to rotate its RPA. */
+	k_sleep(K_SECONDS(CONFIG_BT_RPA_TIMEOUT + 1));
+#endif
 
 	start_adv(adv);
 	wait_connected();
 
-	PASS("Done\n");
+	TEST_PASS("Done");
 }

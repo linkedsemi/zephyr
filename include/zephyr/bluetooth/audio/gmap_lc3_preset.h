@@ -7,8 +7,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_GMAP_LC3_PRESET_
-#define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_GMAP_LC3_PRESET_
+#ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_GMAP_LC3_PRESET_H_
+#define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_GMAP_LC3_PRESET_H_
 
 /**
  * @brief Gaming Audio Profile (GMAP) LC3 Presets
@@ -26,6 +26,7 @@
  */
 
 #include <zephyr/bluetooth/audio/audio.h>
+#include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/audio/bap_lc3_preset.h>
 #include <zephyr/bluetooth/audio/lc3.h>
 
@@ -236,4 +237,4 @@ extern "C" {
 #endif
 /** @} */
 
-#endif /* ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_GMAP_LC3_PRESET_ */
+#endif /* ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_GMAP_LC3_PRESET_H_ */

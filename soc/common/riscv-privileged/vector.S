@@ -12,7 +12,7 @@ GTEXT(__start)
 
 /* imports */
 GTEXT(__initialize)
-#if defined(CONFIG_GEN_SW_ISR_TABLE)
+#if defined(CONFIG_USE_ISR_WRAPPER)
 GTEXT(_isr_wrapper)
 #endif
 
@@ -27,6 +27,10 @@ SECTION_FUNC(vectors, __start)
 
 	.option norvc;
 
+#if defined(CONFIG_SOC_RESET_HOOK)
+	call soc_reset_hook
+#endif
+
 #if defined(CONFIG_RISCV_VECTORED_MODE)
 #if defined(CONFIG_RISCV_HAS_CLIC)
 
@@ -37,7 +41,7 @@ SECTION_FUNC(vectors, __start)
 	 * mtvec.base must be aligned to 64 bytes (this is done using
 	 * CONFIG_RISCV_TRAP_HANDLER_ALIGNMENT)
 	 */
-#if defined(CONFIG_GEN_SW_ISR_TABLE)
+#if defined(CONFIG_USE_ISR_WRAPPER)
 	la t0, _isr_wrapper
 #else
 	add t0, zero, zero
@@ -76,7 +80,11 @@ SECTION_FUNC(vectors, __start)
 	 */
 	la t0, _irq_vector_table /* Load address of interrupt vector table */
 	addi t0, t0, 0x01 /* Enable vectored mode by setting LSB */
+#ifdef CONFIG_RISCV_S_MODE
+	csrw stvec, t0
+#else
 	csrw mtvec, t0
+#endif
 
 #endif /* CONFIG_RISCV_HAS_CLIC */
 
@@ -97,7 +105,11 @@ SECTION_FUNC(vectors, __start)
 	 * to _isr_wrapper.
 	 */
 	la t0, _isr_wrapper
+#ifdef CONFIG_RISCV_S_MODE
+	csrw stvec, t0
+#else
 	csrw mtvec, t0
+#endif
 
 #endif /* CONFIG_RISCV_HAS_CLIC&& !CONFIG_LEGACY_CLIC */
 

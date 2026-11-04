@@ -1,7 +1,4 @@
-.. _arduino_uno_r4:
-
-Arduino UNO R4
-##############
+.. zephyr:board:: arduino_uno_r4
 
 Overview
 ********
@@ -23,19 +20,37 @@ Hardware
 Supported Features
 ==================
 
-The Arduino UNO R4 Minima/Wifi  board configuration supports the following
-hardware features:
+.. zephyr:board-supported-hw::
 
-+-----------+------------+------------------------------------------+
-| Interface | Controller | Driver/Component                         |
-+===========+============+==========================================+
-| GPIO      | on-chip    | I/O ports                                |
-+-----------+------------+------------------------------------------+
-| UART      | on-chip    | Serial ports                             |
-+-----------+------------+------------------------------------------+
+Serial Console
+==============
+
+On the Arduino UNO R4 WiFi the console is routed over SCI9, which the on-board
+ESP32-S3 bridges to the USB-C connector as a USB CDC ACM port. No external
+adapter is needed -- open the same port you flash through, at 115200 baud.
+
+Do not open that port at 1200 or 2400 baud: the bridge firmware treats those
+line rates as a request to reset the RA4M1 or to enter its DFU bootloader.
+
+The UART on the D0/D1 header (SCI2) remains available. To use it as the console
+instead, override the choice in an application overlay:
+
+.. code-block:: devicetree
+
+   / {
+       chosen {
+           zephyr,console = &uart2;
+           zephyr,shell-uart = &uart2;
+       };
+   };
+
+On the Arduino UNO R4 Minima the console is on SCI2 (D0/D1); that board has no
+ESP32-S3 and so no USB bridge.
 
 Programming and debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Debug adapter
 =============
@@ -60,12 +75,12 @@ Here is an example for building and flashing the :zephyr:code-sample:`blinky` ap
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
-   :board: arduino_uno_r4_minima
+   :board: arduino_uno_r4@minima
    :goals: build flash
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
-   :board: arduino_uno_r4_wifi
+   :board: arduino_uno_r4@wifi
    :goals: build flash
 
 Debugging
@@ -77,13 +92,13 @@ Also, see the instructions specific to the debug server that you use.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
-   :board: arduino_uno_r4_minima
+   :board: arduino_uno_r4@minima
    :maybe-skip-config:
    :goals: debug
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky
-   :board: arduino_uno_r4_wifi
+   :board: arduino_uno_r4@wifi
    :maybe-skip-config:
    :goals: debug
 

@@ -370,7 +370,7 @@ static int dma_si32_start(const struct device *dev, const uint32_t channel)
 		 "Address location of the channel transfer descriptors (BASEPTR) must be set.");
 	__ASSERT(SI32_DMACTRL_A_is_primary_selected(SI32_DMACTRL_0, channel),
 		 "Primary descriptors must be used for basic and auto-request operations.");
-	__ASSERT(SI32_SCONFIG_0->CONFIG.FDMAEN, "Fast mode is recommened to be enabled.");
+	__ASSERT(SI32_SCONFIG_0->CONFIG.FDMAEN, "Fast mode is recommended to be enabled.");
 	__ASSERT(SI32_DMACTRL_0->CHSTATUS.U32 & BIT(channel),
 		 "Channel must be waiting for request");
 
@@ -417,11 +417,11 @@ static int dma_si32_stop(const struct device *dev, const uint32_t channel)
 	return 0;
 }
 
-static const struct dma_driver_api dma_si32_driver_api = {
+static DEVICE_API(dma, dma_si32_driver_api) = {
 	.config = dma_si32_config,
 	.start = dma_si32_start,
 	.stop = dma_si32_stop,
 };
 
-DEVICE_DT_INST_DEFINE(0, &dma_si32_init, NULL, NULL, NULL, POST_KERNEL, CONFIG_DMA_INIT_PRIORITY,
+DEVICE_DT_INST_DEFINE(0, dma_si32_init, NULL, NULL, NULL, POST_KERNEL, CONFIG_DMA_INIT_PRIORITY,
 		      &dma_si32_driver_api);

@@ -11,6 +11,8 @@ zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_LOCALTIME_R_UTC source/time/loca
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_CTIME source/time/ctime.c)
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_TIME source/time/time.c)
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_MALLOC source/stdlib/malloc.c)
+zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_CALLOC source/stdlib/calloc.c)
+zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_REALLOCARRAY source/stdlib/reallocarray.c)
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_STRNLEN source/string/strnlen.c)
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_THRD
     source/thrd/cnd.c
@@ -20,6 +22,12 @@ zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_THRD
     source/thrd/tss.c
     )
 zephyr_library_sources_ifdef(CONFIG_COMMON_LIBC_REMOVE source/stdio/remove.c)
+
+if(NOT CONFIG_ERRNO_IN_TLS AND NOT CONFIG_LIBC_ERRNO)
+  zephyr_syscall_header(${ZEPHYR_BASE}/include/zephyr/sys/errno_private.h)
+endif()
+
+zephyr_library_sources(source/errno/errno.c)
 
 # Prevent compiler from optimizing calloc into an infinite recursive call
 zephyr_library_compile_options($<TARGET_PROPERTY:compiler,no_builtin_malloc>)

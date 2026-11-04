@@ -5,6 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/pm/device_runtime.h>
 #include "test_gpio.h"
 
 /* Grotesque hack for pinmux boards */
@@ -14,7 +15,7 @@
 #include "device_imx.h"
 #elif defined(CONFIG_BOARD_MIMXRT1050_EVK)
 #include <fsl_iomuxc.h>
-#elif defined(CONFIG_BOARD_NRF52_BSIM)
+#elif defined(CONFIG_SOC_SERIES_BSIM_NRFXX)
 #include <NRF_GPIO.h>
 #endif
 
@@ -58,18 +59,23 @@ static void board_setup(void)
 				IOMUXC_SW_PAD_CTL_PAD_RGMII2_RD3_DSE(6);
 #elif defined(CONFIG_GPIO_EMUL)
 	extern struct gpio_callback gpio_emul_callback;
-	const struct device *const dev = DEVICE_DT_GET(DEV);
+	const struct device *const dev = DEVICE_DT_GET(DEV_OUT);
 
 	zassert_true(device_is_ready(dev), "GPIO dev is not ready");
 	int rc = gpio_add_callback(dev, &gpio_emul_callback);
 	__ASSERT(rc == 0, "gpio_add_callback() failed: %d", rc);
-#elif defined(CONFIG_BOARD_NRF52_BSIM)
+#elif defined(CONFIG_SOC_SERIES_BSIM_NRFXX)
 	static bool done;
 
 	if (!done) {
 		done = true;
 		/* This functions allows to programmatically short-circuit SOC GPIO pins */
+#if defined(CONFIG_BOARD_NRF5340BSIM_NRF5340_CPUAPP)
+		/* The 5340/cpuapp GPIO 1, is the HW models GPIO port 3 */
+		nrf_gpio_backend_register_short(3, PIN_OUT, 3, PIN_IN);
+#else
 		nrf_gpio_backend_register_short(1, PIN_OUT, 1, PIN_IN);
+#endif
 	}
 #endif
 }
@@ -78,20 +84,37 @@ static void *gpio_basic_setup(void)
 {
 	board_setup();
 
+	(void)pm_device_runtime_get(DEVICE_DT_GET(DEV_IN));
+	(void)pm_device_runtime_get(DEVICE_DT_GET(DEV_OUT));
+#ifdef CONFIG_UART_CONSOLE
+	(void)pm_device_runtime_get(DEVICE_DT_GET(DT_CHOSEN(zephyr_console)));
+#endif
+	k_object_access_grant(DEVICE_DT_GET(DEV_IN), k_current_get());
+	k_object_access_grant(DEVICE_DT_GET(DEV_OUT), k_current_get());
 	return NULL;
 }
 
+void gpio_basic_teardown(void *args)
+{
+	(void)args;
+	(void)pm_device_runtime_put(DEVICE_DT_GET(DEV_IN));
+	(void)pm_device_runtime_put(DEVICE_DT_GET(DEV_OUT));
+#ifdef CONFIG_UART_CONSOLE
+	(void)pm_device_runtime_put(DEVICE_DT_GET(DT_CHOSEN(zephyr_console)));
+#endif
+}
+
 /* Test GPIO port configuration */
-ZTEST_SUITE(gpio_port, NULL, gpio_basic_setup, NULL, NULL, NULL);
+ZTEST_SUITE(gpio_port, NULL, gpio_basic_setup, NULL, NULL, gpio_basic_teardown);
 
 /* Test GPIO callback management */
-ZTEST_SUITE(gpio_port_cb_mgmt, NULL, gpio_basic_setup, NULL, NULL, NULL);
+ZTEST_SUITE(gpio_port_cb_mgmt, NULL, gpio_basic_setup, NULL, NULL, gpio_basic_teardown);
 
 /* Test GPIO callbacks */
-ZTEST_SUITE(gpio_port_cb_vari, NULL, gpio_basic_setup, NULL, NULL, NULL);
+ZTEST_SUITE(gpio_port_cb_vari, NULL, gpio_basic_setup, NULL, NULL, gpio_basic_teardown);
 
 /* Test GPIO port configuration influence on callbacks. Want to run just
  * after flash, hence the name starting in 'a'
  */
 ZTEST_SUITE(after_flash_gpio_config_trigger, NULL, gpio_basic_setup, NULL, NULL,
-	    NULL);
+	    gpio_basic_teardown);

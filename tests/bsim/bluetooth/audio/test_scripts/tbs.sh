@@ -7,8 +7,9 @@
 
 source ${ZEPHYR_BASE}/tests/bsim/sh_common.source
 
-SIMULATION_ID="tbs_ccp"
+SIMULATION_ID="${BOARD_TS}_tbs_ccp"
 VERBOSITY_LEVEL=2
+EXECUTE_TIMEOUT=120
 
 cd ${BSIM_OUT_PATH}/bin
 

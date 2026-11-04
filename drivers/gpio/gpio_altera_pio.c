@@ -95,6 +95,7 @@ static int gpio_altera_configure(const struct device *dev,
 	} else if (flags == GPIO_OUTPUT) {
 		sys_set_bits(addr, BIT(pin));
 	} else {
+		k_spin_unlock(&data->lock, key);
 		return -EINVAL;
 	}
 
@@ -237,6 +238,7 @@ static int gpio_altera_pin_interrupt_configure(const struct device *dev,
 		irq_enable(cfg->irq_num);
 		break;
 	default:
+		k_spin_unlock(&data->lock, key);
 		return -EINVAL;
 	}
 
@@ -278,7 +280,7 @@ static void gpio_altera_irq_handler(const struct device *dev)
 	gpio_fire_callbacks(&data->cb, dev, port_value);
 }
 
-static const struct gpio_driver_api gpio_altera_driver_api = {
+static DEVICE_API(gpio, gpio_altera_driver_api) = {
 	.pin_configure		 = gpio_altera_configure,
 	.port_get_raw		 = gpio_altera_port_get_raw,
 	.port_set_masked_raw	 = NULL,
@@ -299,10 +301,7 @@ static const struct gpio_driver_api gpio_altera_driver_api = {
 	static void gpio_altera_cfg_func_##n(void);			\
 	static struct gpio_altera_data gpio_altera_data_##n;		\
 	static struct gpio_altera_config gpio_config_##n = {		\
-		.common		= {					\
-		.port_pin_mask	=					\
-				  GPIO_PORT_PIN_MASK_FROM_DT_INST(n),	\
-		},						        \
+		.common		= GPIO_COMMON_CONFIG_FROM_DT_INST(n),	\
 		.reg_base	= DT_INST_REG_ADDR(n),			\
 		.direction	= DT_INST_ENUM_IDX(n, direction),	\
 		.irq_num	= COND_CODE_1(DT_INST_IRQ_HAS_IDX(n, 0), (DT_INST_IRQN(n)), (0)),\

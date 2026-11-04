@@ -231,7 +231,7 @@ static bool eeprom_at24_bus_is_ready(const struct device *dev)
  *
  * It allows to address several devices as a continuous memory region
  * but also to address higher part of eeprom for chips
- * with more than 2^(addr_width) adressable word.
+ * with more than 2^(addr_width) addressable word.
  */
 static uint16_t eeprom_at24_translate_offset(const struct device *dev,
 					     off_t *offset)
@@ -419,7 +419,6 @@ static int eeprom_at25_read(const struct device *dev, off_t offset, void *buf,
 			    size_t len)
 {
 	const struct eeprom_at2x_config *config = dev->config;
-	struct eeprom_at2x_data *data = dev->data;
 	size_t cmd_len = 1 + config->addr_width / 8;
 	uint8_t cmd[4] = { EEPROM_AT25_READ, 0, 0, 0 };
 	uint8_t *paddr;
@@ -458,6 +457,12 @@ static int eeprom_at25_read(const struct device *dev, off_t offset, void *buf,
 
 	paddr = &cmd[1];
 	switch (config->addr_width) {
+	case 9:
+		if (offset & BIT(8)) {
+			cmd[0] |= BIT(3);
+		}
+		*paddr = offset & 0xFF;
+		break;
 	case 24:
 		*paddr++ = offset >> 16;
 		__fallthrough;
@@ -474,7 +479,6 @@ static int eeprom_at25_read(const struct device *dev, off_t offset, void *buf,
 	err = eeprom_at25_wait_for_idle(dev);
 	if (err) {
 		LOG_ERR("EEPROM idle wait failed (err %d)", err);
-		k_mutex_unlock(&data->lock);
 		return err;
 	}
 
@@ -528,6 +532,12 @@ static int eeprom_at25_write(const struct device *dev, off_t offset,
 
 	paddr = &cmd[1];
 	switch (config->addr_width) {
+	case 9:
+		if (offset & BIT(8)) {
+			cmd[0] |= BIT(3);
+		}
+		*paddr = offset & 0xFF;
+		break;
 	case 24:
 		*paddr++ = offset >> 16;
 		__fallthrough;
@@ -593,7 +603,7 @@ static int eeprom_at2x_init(const struct device *dev)
 	return 0;
 }
 
-static const struct eeprom_driver_api eeprom_at2x_api = {
+static DEVICE_API(eeprom, eeprom_at2x_api) = {
 	.read = eeprom_at2x_read,
 	.write = eeprom_at2x_write,
 	.size = eeprom_at2x_size,
@@ -604,7 +614,7 @@ static const struct eeprom_driver_api eeprom_at2x_api = {
 		     "Unsupported address width")
 
 #define ASSERT_AT25_ADDR_W_VALID(w)			\
-	BUILD_ASSERT(w == 8U || w == 16U || w == 24U,	\
+	BUILD_ASSERT(w == 8U || w == 9U || w == 16U || w == 24U,	\
 		     "Unsupported address width")
 
 #define ASSERT_PAGESIZE_IS_POWER_OF_2(page) \
@@ -622,8 +632,8 @@ static const struct eeprom_driver_api eeprom_at2x_api = {
 
 #define EEPROM_AT25_BUS(n, t)						 \
 	{ .spi = SPI_DT_SPEC_GET(INST_DT_AT2X(n, t),			 \
-				 SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | \
-				 SPI_WORD_SET(8), 0) }
+				 SPI_OP_MODE_CONTROLLER | SPI_TRANSFER_MSB | \
+				 SPI_WORD_SET(8)) }
 
 #define EEPROM_AT2X_WP_GPIOS(id)					\
 	IF_ENABLED(DT_NODE_HAS_PROP(id, wp_gpios),			\
@@ -648,7 +658,7 @@ static const struct eeprom_driver_api eeprom_at2x_api = {
 		.write_fn = eeprom_at##t##_write, \
 	}; \
 	static struct eeprom_at2x_data eeprom_at##t##_data_##n; \
-	DEVICE_DT_DEFINE(INST_DT_AT2X(n, t), &eeprom_at2x_init, \
+	DEVICE_DT_DEFINE(INST_DT_AT2X(n, t), eeprom_at2x_init, \
 			    NULL, &eeprom_at##t##_data_##n, \
 			    &eeprom_at##t##_config_##n, POST_KERNEL, \
 			    CONFIG_EEPROM_AT2X_INIT_PRIORITY, \

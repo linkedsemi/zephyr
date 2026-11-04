@@ -15,9 +15,13 @@
 #include <zephyr/bluetooth/hci.h>
 
 static struct k_work work_adv_start;
+static uint8_t conn_count_max;
 static uint8_t volatile conn_count;
 static uint8_t id_current;
 static bool volatile is_disconnecting;
+#if defined(CONFIG_BT_OBSERVER)
+static bool scanning;
+#endif
 
 static const struct bt_data ad[] = {
 	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
@@ -49,7 +53,7 @@ static void adv_start(struct k_work *work)
 		if (id < 0) {
 			printk("Create id failed (%d)\n", id);
 			if (id_current == 0) {
-				id_current = CONFIG_BT_MAX_CONN;
+				id_current = conn_count_max;
 			}
 			id_current--;
 		} else {
@@ -60,6 +64,21 @@ static void adv_start(struct k_work *work)
 	printk("Using current id: %u\n", id_current);
 	adv_param.id = id_current;
 
+#if defined(CONFIG_BT_OBSERVER)
+	/* When privacy is enabled, we cannot start a legacy advertiser with an RPA generated for a
+	 * different identity than scanner role. Therefore, we need to stop scanning.
+	 */
+	if (adv_param.id != BT_ID_DEFAULT && scanning) {
+		err = bt_le_scan_stop();
+		if (err) {
+			printk("Failed to stop scanning (err %d)\n", err);
+			return;
+		}
+
+		scanning = false;
+	}
+#endif
+
 	err = bt_le_adv_start(&adv_param, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		printk("Advertising failed to start (err %d)\n", err);
@@ -67,7 +86,7 @@ static void adv_start(struct k_work *work)
 	}
 
 	id_current++;
-	if (id_current == CONFIG_BT_MAX_CONN) {
+	if (id_current == conn_count_max) {
 		id_current = 0;
 	}
 
@@ -76,30 +95,27 @@ static void adv_start(struct k_work *work)
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
 	if (err) {
 		printk("Connection failed, err 0x%02x %s\n", err, bt_hci_err_to_str(err));
 		return;
 	}
 
 	conn_count++;
-	if (conn_count < CONFIG_BT_MAX_CONN) {
+	if (conn_count < conn_count_max) {
 		k_work_submit(&work_adv_start);
 	}
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("Connected (%u): %s\n", conn_count, addr);
+	printk("Connected (%u): %s\n", conn_count, bt_conn_dst_str(conn));
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
+	printk("Disconnected %s, reason %s(0x%02x)\n", bt_conn_dst_str(conn),
+	       bt_hci_err_to_str(reason), reason);
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("Disconnected %s, reason %s(0x%02x)\n", addr, bt_hci_err_to_str(reason), reason);
+	if (reason == BT_HCI_ERR_CONN_TIMEOUT && conn_count < conn_count_max && !is_disconnecting) {
+		k_work_submit(&work_adv_start);
+	}
 
 	if ((conn_count == 1U) && is_disconnecting) {
 		is_disconnecting = false;
@@ -110,12 +126,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	printk("LE conn  param req: %s int (0x%04x, 0x%04x) lat %d to %d\n",
-	       addr, param->interval_min, param->interval_max, param->latency,
+	       bt_conn_dst_str(conn), param->interval_min, param->interval_max, param->latency,
 	       param->timeout);
 
 	return true;
@@ -124,23 +136,15 @@ static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 static void le_param_updated(struct bt_conn *conn, uint16_t interval,
 			     uint16_t latency, uint16_t timeout)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	printk("LE conn param updated: %s int 0x%04x lat %d to %d\n",
-	       addr, interval, latency, timeout);
+	       bt_conn_dst_str(conn), interval, latency, timeout);
 }
 
 #if defined(CONFIG_BT_USER_PHY_UPDATE)
 static void le_phy_updated(struct bt_conn *conn,
 			   struct bt_conn_le_phy_info *param)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("LE PHY Updated: %s Tx 0x%x, Rx 0x%x\n", addr, param->tx_phy,
+	printk("LE PHY Updated: %s Tx 0x%x, Rx 0x%x\n", bt_conn_dst_str(conn), param->tx_phy,
 	       param->rx_phy);
 }
 #endif /* CONFIG_BT_USER_PHY_UPDATE */
@@ -149,12 +153,8 @@ static void le_phy_updated(struct bt_conn *conn,
 static void le_data_len_updated(struct bt_conn *conn,
 				struct bt_conn_le_data_len_info *info)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	printk("Data length updated: %s max tx %u (%u us) max rx %u (%u us)\n",
-	       addr, info->tx_max_len, info->tx_max_time, info->rx_max_len,
+	       bt_conn_dst_str(conn), info->tx_max_len, info->tx_max_time, info->rx_max_len,
 	       info->rx_max_time);
 }
 #endif /* CONFIG_BT_USER_DATA_LEN_UPDATE */
@@ -163,25 +163,17 @@ static void le_data_len_updated(struct bt_conn *conn,
 static void security_changed(struct bt_conn *conn, bt_security_t level,
 			     enum bt_security_err err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (!err) {
-		printk("Security changed: %s level %u\n", addr, level);
+		printk("Security changed: %s level %u\n", bt_conn_dst_str(conn), level);
 	} else {
-		printk("Security failed: %s level %u err %s(%d)\n", addr, level,
+		printk("Security failed: %s level %u err %s(%d)\n", bt_conn_dst_str(conn), level,
 		       bt_security_err_to_str(err), err);
 	}
 }
 
 static void auth_cancel(struct bt_conn *conn)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("Pairing cancelled: %s\n", addr);
+	printk("Pairing cancelled: %s\n", bt_conn_dst_str(conn));
 }
 
 static struct bt_conn_auth_cb auth_callbacks = {
@@ -218,17 +210,31 @@ static struct bt_conn_cb conn_callbacks = {
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
-	char addr_str[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	printk("Device found: %s (RSSI %d)\n", addr_str, rssi);
+	printk("Device found: %s (RSSI %d)\n", bt_addr_le_str(addr), rssi);
 }
 #endif /* CONFIG_BT_OBSERVER */
 
-int init_peripheral(uint8_t iterations)
+static void disconnect(struct bt_conn *conn, void *data)
+{
+	int err;
+
+	printk("Disconnecting %s...\n", bt_conn_dst_str(conn));
+
+	err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	if (err) {
+		printk("Failed disconnection %s.\n", bt_conn_dst_str(conn));
+		return;
+	}
+
+	printk("Disconnect initiated\n");
+}
+
+int init_peripheral(uint8_t max_conn, uint8_t iterations)
 {
 	size_t id_count;
 	int err;
+
+	conn_count_max = max_conn;
 
 	err = bt_enable(NULL);
 	if (err) {
@@ -252,7 +258,10 @@ int init_peripheral(uint8_t iterations)
 		printk("Scan start failed (%d).\n", err);
 		return err;
 	}
-	printk("success.\n");
+
+	scanning = true;
+
+	printk("Scanning start success.\n");
 #endif /* CONFIG_BT_OBSERVER */
 
 	k_work_init(&work_adv_start, adv_start);
@@ -264,7 +273,7 @@ int init_peripheral(uint8_t iterations)
 
 		id_count = 0xFF;
 		bt_id_get(NULL, &id_count);
-	} while (id_count != CONFIG_BT_MAX_CONN);
+	} while (id_count != conn_count_max);
 
 	/* rotate identities so reconnections are attempted in case of any
 	 * disconnections
@@ -272,17 +281,32 @@ int init_peripheral(uint8_t iterations)
 	uint8_t prev_count = conn_count;
 	while (1) {
 		/* If maximum connections is reached, wait for disconnections
-		 * initiated by peer central devices.
 		 */
-		if (conn_count == CONFIG_BT_MAX_CONN) {
+		if (conn_count == conn_count_max) {
+			is_disconnecting = true;
+
+			/* Lets wait sufficiently to ensure a stable connection
+			 * before starting to disconnect for next iteration.
+			 */
+			printk("Waiting for stable connections...\n");
+			k_sleep(K_SECONDS(60));
+
 			if (!iterations) {
 				break;
 			}
 			iterations--;
 			printk("Iterations remaining: %u\n", iterations);
 
-			printk("Wait for disconnections...\n");
-			is_disconnecting = true;
+			/* Device needing multiple connections is the one
+			 * initiating the disconnects.
+			 */
+			if (conn_count_max > 1U) {
+				printk("Disconnecting all...\n");
+				bt_conn_foreach(BT_CONN_TYPE_LE, disconnect, NULL);
+			} else {
+				printk("Wait for disconnections...\n");
+			}
+
 			while (is_disconnecting) {
 				k_sleep(K_MSEC(10));
 			}
@@ -306,6 +330,9 @@ int init_peripheral(uint8_t iterations)
 			 * connections plus few seconds of margin.
 			 */
 			while ((prev_count == conn_count) && wait) {
+				printk("Waiting connections (%u/%u) %u...\n",
+				       prev_count, conn_count, wait);
+
 				wait--;
 
 				k_sleep(K_MSEC(10));

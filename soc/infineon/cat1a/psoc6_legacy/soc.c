@@ -9,12 +9,11 @@
 #include <zephyr/arch/cpu.h>
 #include <zephyr/irq.h>
 
-#include "cy_syslib.h"
-#include "cy_gpio.h"
-#include "cy_scb_uart.h"
-#include "cy_syslib.h"
-#include "cy_syspm.h"
-#include "cy_sysclk.h"
+#include <cy_syslib.h>
+#include <cy_gpio.h>
+#include <cy_scb_uart.h>
+#include <cy_syspm.h>
+#include <cy_sysclk.h>
 
 #define CY_CFG_SYSCLK_CLKFAST_ENABLED 1
 #define CY_CFG_SYSCLK_FLL_ENABLED 1
@@ -37,7 +36,7 @@
 #define CY_CFG_PWR_VDDA_MV 3300
 #define CY_CFG_PWR_USING_ULP 0
 
-/* Dummy symbols, requres for cy_sysint.c module.
+/* Dummy symbols, requires for cy_sysint.c module.
  * NOTE: in this PSOC 6 integration, PSOC 6 Zephyr drivers (uart, spi, gpio)
  * do not use cy_sysint.c implementation to handle interrupt routine.
  * Instead this they use IRQ_CONNECT to define ISR.
@@ -112,9 +111,24 @@ static inline void Cy_SysClk_ClkSlowInit(void)
 	Cy_SysClk_ClkSlowSetDivider(0u);
 }
 
+#ifdef CONFIG_RUNTIME_NMI
+	/* Address of the NMI handler extracted from startup_psoc6_0x_cm0plus.S */
+	#define CY_NMI_HANLDER_ADDR         0x0000000D
+#endif /* CONFIG_RUNTIME_NMI */
 
 static void init_cycfg_platform(void)
 {
+	#ifdef CONFIG_RUNTIME_NMI
+	/* This is required for System Calls, see following excerpt from
+	 * TRM section 8.4.2:
+	 * NMI exception handler address is automatically initialized to
+	 * the system call API located in SROM (at 0x0000000D) by the boot
+	 * code. The value should be retained during vector table relocations;
+	 * otherwise, no system call will be executed.
+	 */
+	z_arm_nmi_set_handler((void *)CY_NMI_HANLDER_ADDR);
+	#endif
+
 	/* Set worst case memory wait states (! ultra low power, 150 MHz), will
 	 * update at the end
 	 */
@@ -382,10 +396,7 @@ void Cy_SystemInit(void)
 #endif
 }
 
-static int init_cycfg_platform_wraper(void)
+void soc_early_init_hook(void)
 {
 	SystemInit();
-	return 0;
 }
-
-SYS_INIT(init_cycfg_platform_wraper, PRE_KERNEL_1, 0);

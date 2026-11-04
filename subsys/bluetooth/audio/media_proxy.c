@@ -18,11 +18,12 @@
 #include <zephyr/bluetooth/services/ots.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/check.h>
+#include <zephyr/toolchain.h>
 
 #include "media_proxy_internal.h"
 #include "mcs_internal.h"
 
-LOG_MODULE_REGISTER(media_proxy, CONFIG_MCTL_LOG_LEVEL);
+LOG_MODULE_REGISTER(bt_media_proxy, CONFIG_MCTL_LOG_LEVEL);
 
 /* Media player */
 struct media_player {
@@ -89,137 +90,273 @@ int media_proxy_sctrl_register(struct media_proxy_sctrl_cbs *sctrl_cbs)
 
 const char *media_proxy_sctrl_get_player_name(void)
 {
-	/* TODO: Add check for whether function pointer is non-NULL everywhere */
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_player_name == NULL) {
+		return "";
+	}
+
 	return mprx.local_player.calls->get_player_name();
 }
 
 #ifdef CONFIG_BT_MPL_OBJECTS
 uint64_t media_proxy_sctrl_get_icon_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_icon_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_icon_id();
 }
 #endif /* CONFIG_BT_MPL_OBJECTS */
 
 const char *media_proxy_sctrl_get_icon_url(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_icon_url == NULL) {
+		return "";
+	}
+
 	return mprx.local_player.calls->get_icon_url();
 }
 
 const char *media_proxy_sctrl_get_track_title(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_track_title == NULL) {
+		return "";
+	}
+
 	return mprx.local_player.calls->get_track_title();
 }
 
 int32_t media_proxy_sctrl_get_track_duration(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_track_duration == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_track_duration();
 }
 
 int32_t media_proxy_sctrl_get_track_position(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_track_position == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_track_position();
 }
 
 void media_proxy_sctrl_set_track_position(int32_t position)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->set_track_position == NULL) {
+		return;
+	}
+
 	mprx.local_player.calls->set_track_position(position);
 }
 
 int8_t media_proxy_sctrl_get_playback_speed(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_playback_speed == NULL) {
+		return 0;
+	}
+
 	return mprx.local_player.calls->get_playback_speed();
 }
 
 void media_proxy_sctrl_set_playback_speed(int8_t speed)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->set_playback_speed == NULL) {
+		return;
+	}
+
 	mprx.local_player.calls->set_playback_speed(speed);
 }
 
 int8_t media_proxy_sctrl_get_seeking_speed(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_seeking_speed == NULL) {
+		return 0;
+	}
+
 	return mprx.local_player.calls->get_seeking_speed();
 }
 
 #ifdef CONFIG_BT_MPL_OBJECTS
 uint64_t media_proxy_sctrl_get_track_segments_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_track_segments_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_track_segments_id();
 }
 
 uint64_t media_proxy_sctrl_get_current_track_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_current_track_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_current_track_id();
 }
 
 void media_proxy_sctrl_set_current_track_id(uint64_t id)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->set_current_track_id == NULL) {
+		return;
+	}
+
 	mprx.local_player.calls->set_current_track_id(id);
 }
 
 uint64_t media_proxy_sctrl_get_next_track_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_next_track_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_next_track_id();
 }
 
 void media_proxy_sctrl_set_next_track_id(uint64_t id)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->set_next_track_id == NULL) {
+		return;
+	}
+
 	mprx.local_player.calls->set_next_track_id(id);
 }
 
 uint64_t media_proxy_sctrl_get_parent_group_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_parent_group_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_parent_group_id();
 }
 
 uint64_t media_proxy_sctrl_get_current_group_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_current_group_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_current_group_id();
 }
 
 void media_proxy_sctrl_set_current_group_id(uint64_t id)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->set_current_group_id == NULL) {
+		return;
+	}
+
 	mprx.local_player.calls->set_current_group_id(id);
 }
 #endif /* CONFIG_BT_MPL_OBJECTS */
 
 uint8_t media_proxy_sctrl_get_playing_order(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_playing_order == NULL) {
+		return MEDIA_PROXY_PLAYING_ORDER_SINGLE_ONCE;
+	}
+
 	return mprx.local_player.calls->get_playing_order();
 }
 
 void media_proxy_sctrl_set_playing_order(uint8_t order)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->set_playing_order == NULL) {
+		return;
+	}
+
 	mprx.local_player.calls->set_playing_order(order);
 }
 
 uint16_t media_proxy_sctrl_get_playing_orders_supported(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_playing_orders_supported == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_playing_orders_supported();
 }
 
 uint8_t media_proxy_sctrl_get_media_state(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_media_state == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_media_state();
 }
 
 void media_proxy_sctrl_send_command(const struct mpl_cmd *cmd)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->send_command == NULL) {
+		struct mpl_cmd_ntf ntf = {
+			.requested_opcode = cmd->opcode,
+			.result_code = MEDIA_PROXY_CMD_NOT_SUPPORTED
+		};
+
+		media_proxy_pl_command_cb(&ntf);
+		return;
+	}
+
 	mprx.local_player.calls->send_command(cmd);
 }
 
 uint32_t media_proxy_sctrl_get_commands_supported(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_commands_supported == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_commands_supported();
 }
 
 #ifdef CONFIG_BT_MPL_OBJECTS
 void media_proxy_sctrl_send_search(const struct mpl_search *search)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->send_search == NULL) {
+		media_proxy_pl_search_cb(MEDIA_PROXY_SEARCH_FAILURE);
+		return;
+	}
+
 	mprx.local_player.calls->send_search(search);
 }
 
 uint64_t media_proxy_sctrl_get_search_results_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_search_results_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_search_results_id();
 }
 void media_proxy_sctrl_search_results_id_cb(uint64_t id);
@@ -227,6 +364,11 @@ void media_proxy_sctrl_search_results_id_cb(uint64_t id);
 
 uint8_t media_proxy_sctrl_get_content_ctrl_id(void)
 {
+	if (mprx.local_player.calls == NULL ||
+	    mprx.local_player.calls->get_content_ctrl_id == NULL) {
+		return 0U;
+	}
+
 	return mprx.local_player.calls->get_content_ctrl_id();
 }
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_REMOTE_CONTROL */
@@ -237,7 +379,9 @@ uint8_t media_proxy_sctrl_get_content_ctrl_id(void)
 
 static void mcc_discover_mcs_cb(struct bt_conn *conn, int err)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Discovery failed (%d)", err);
 	}
 
@@ -252,10 +396,12 @@ static void mcc_discover_mcs_cb(struct bt_conn *conn, int err)
 
 static void mcc_read_player_name_cb(struct bt_conn *conn, int err, const char *name)
 {
+	ARG_UNUSED(conn);
+
 	/* Debug statements for at least a couple of the callbacks, to show flow */
 	LOG_DBG("MCC player name callback");
 
-	if (err) {
+	if (err != 0) {
 		LOG_ERR("Player name failed");
 	}
 
@@ -269,9 +415,11 @@ static void mcc_read_player_name_cb(struct bt_conn *conn, int err, const char *n
 #ifdef CONFIG_MCTL_REMOTE_PLAYER_CONTROL_OBJECTS
 static void mcc_read_icon_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
+	ARG_UNUSED(conn);
+
 	LOG_DBG("Icon Object ID callback");
 
-	if (err) {
+	if (err != 0) {
 		LOG_ERR("Icon Object ID read failed (%d)", err);
 	}
 
@@ -286,7 +434,9 @@ static void mcc_read_icon_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 #if defined(CONFIG_BT_MCC_READ_MEDIA_PLAYER_ICON_URL)
 static void mcc_read_icon_url_cb(struct bt_conn *conn, int err, const char *url)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Icon URL read failed (%d)", err);
 	}
 
@@ -300,7 +450,9 @@ static void mcc_read_icon_url_cb(struct bt_conn *conn, int err, const char *url)
 
 static void mcc_track_changed_ntf_cb(struct bt_conn *conn, int err)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Track change notification failed (%d)", err);
 		return;
 	}
@@ -315,7 +467,9 @@ static void mcc_track_changed_ntf_cb(struct bt_conn *conn, int err)
 #if defined(CONFIG_BT_MCC_READ_TRACK_TITLE)
 static void mcc_read_track_title_cb(struct bt_conn *conn, int err, const char *title)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Track title read failed (%d)", err);
 	}
 
@@ -330,7 +484,9 @@ static void mcc_read_track_title_cb(struct bt_conn *conn, int err, const char *t
 #if defined(CONFIG_BT_MCC_READ_TRACK_DURATION)
 static void mcc_read_track_duration_cb(struct bt_conn *conn, int err, int32_t dur)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Track duration read failed (%d)", err);
 	}
 
@@ -345,7 +501,9 @@ static void mcc_read_track_duration_cb(struct bt_conn *conn, int err, int32_t du
 #if defined(CONFIG_BT_MCC_READ_TRACK_POSITION)
 static void mcc_read_track_position_cb(struct bt_conn *conn, int err, int32_t pos)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Track position read failed (%d)", err);
 	}
 
@@ -360,7 +518,9 @@ static void mcc_read_track_position_cb(struct bt_conn *conn, int err, int32_t po
 #if defined(CONFIG_BT_MCC_SET_TRACK_POSITION)
 static void mcc_set_track_position_cb(struct bt_conn *conn, int err, int32_t pos)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Track Position set failed (%d)", err);
 	}
 
@@ -375,7 +535,9 @@ static void mcc_set_track_position_cb(struct bt_conn *conn, int err, int32_t pos
 #if defined(CONFIG_BT_MCC_READ_PLAYBACK_SPEED)
 static void mcc_read_playback_speed_cb(struct bt_conn *conn, int err, int8_t speed)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Playback speed read failed (%d)", err);
 	}
 
@@ -390,7 +552,9 @@ static void mcc_read_playback_speed_cb(struct bt_conn *conn, int err, int8_t spe
 #if defined(CONFIG_BT_MCC_SET_PLAYBACK_SPEED)
 static void mcc_set_playback_speed_cb(struct bt_conn *conn, int err, int8_t speed)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Playback speed set failed (%d)", err);
 	}
 
@@ -405,7 +569,9 @@ static void mcc_set_playback_speed_cb(struct bt_conn *conn, int err, int8_t spee
 #if defined(CONFIG_BT_MCC_READ_SEEKING_SPEED)
 static void mcc_read_seeking_speed_cb(struct bt_conn *conn, int err, int8_t speed)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Seeking speed read failed (%d)", err);
 	}
 
@@ -420,7 +586,9 @@ static void mcc_read_seeking_speed_cb(struct bt_conn *conn, int err, int8_t spee
 #ifdef CONFIG_MCTL_REMOTE_PLAYER_CONTROL_OBJECTS
 static void mcc_read_segments_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Track Segments Object ID read failed (%d)", err);
 	}
 
@@ -433,7 +601,9 @@ static void mcc_read_segments_obj_id_cb(struct bt_conn *conn, int err, uint64_t 
 
 static void mcc_read_current_track_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Current Track Object ID read failed (%d)", err);
 	}
 
@@ -448,7 +618,9 @@ static void mcc_read_current_track_obj_id_cb(struct bt_conn *conn, int err, uint
 
 static void mcc_read_next_track_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Next Track Object ID read failed (%d)", err);
 	}
 
@@ -463,7 +635,9 @@ static void mcc_read_next_track_obj_id_cb(struct bt_conn *conn, int err, uint64_
 
 static void mcc_read_parent_group_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Parent Group Object ID read failed (%d)", err);
 	}
 
@@ -476,7 +650,9 @@ static void mcc_read_parent_group_obj_id_cb(struct bt_conn *conn, int err, uint6
 
 static void mcc_read_current_group_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Current Group Object ID read failed (%d)", err);
 	}
 
@@ -494,7 +670,9 @@ static void mcc_read_current_group_obj_id_cb(struct bt_conn *conn, int err, uint
 #if defined(CONFIG_BT_MCC_READ_PLAYING_ORDER)
 static void mcc_read_playing_order_cb(struct bt_conn *conn, int err, uint8_t order)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Playing order read failed (%d)", err);
 	}
 
@@ -509,7 +687,9 @@ static void mcc_read_playing_order_cb(struct bt_conn *conn, int err, uint8_t ord
 #if defined(CONFIG_BT_MCC_SET_PLAYING_ORDER)
 static void mcc_set_playing_order_cb(struct bt_conn *conn, int err, uint8_t order)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Playing order set failed (%d)", err);
 	}
 
@@ -524,7 +704,9 @@ static void mcc_set_playing_order_cb(struct bt_conn *conn, int err, uint8_t orde
 #if defined(CONFIG_BT_MCC_READ_PLAYING_ORDER_SUPPORTED)
 static void mcc_read_playing_orders_supported_cb(struct bt_conn *conn, int err, uint16_t orders)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Playing orders supported read failed (%d)", err);
 	}
 
@@ -539,7 +721,9 @@ static void mcc_read_playing_orders_supported_cb(struct bt_conn *conn, int err, 
 #if defined(CONFIG_BT_MCC_READ_MEDIA_STATE)
 static void mcc_read_media_state_cb(struct bt_conn *conn, int err, uint8_t state)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Media State read failed (%d)", err);
 	}
 
@@ -554,7 +738,9 @@ static void mcc_read_media_state_cb(struct bt_conn *conn, int err, uint8_t state
 #if defined(CONFIG_BT_MCC_SET_MEDIA_CONTROL_POINT)
 static void mcc_send_cmd_cb(struct bt_conn *conn, int err, const struct mpl_cmd *cmd)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Command send failed (%d) - opcode: %d, param: %d", err, cmd->opcode,
 			cmd->param);
 	}
@@ -570,7 +756,9 @@ static void mcc_send_cmd_cb(struct bt_conn *conn, int err, const struct mpl_cmd 
 static void mcc_cmd_ntf_cb(struct bt_conn *conn, int err,
 			   const struct mpl_cmd_ntf *ntf)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Command notification error (%d) - command opcode: %d, result: %d", err,
 			ntf->requested_opcode, ntf->result_code);
 	}
@@ -585,7 +773,9 @@ static void mcc_cmd_ntf_cb(struct bt_conn *conn, int err,
 #if defined(CONFIG_BT_MCC_READ_MEDIA_CONTROL_POINT_OPCODES_SUPPORTED)
 static void mcc_read_opcodes_supported_cb(struct bt_conn *conn, int err, uint32_t opcodes)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Opcodes supported read failed (%d)", err);
 	}
 
@@ -600,7 +790,9 @@ static void mcc_read_opcodes_supported_cb(struct bt_conn *conn, int err, uint32_
 #ifdef CONFIG_MCTL_REMOTE_PLAYER_CONTROL_OBJECTS
 static void mcc_send_search_cb(struct bt_conn *conn, int err, const struct mpl_search *search)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Search send failed (%d)", err);
 	}
 
@@ -613,7 +805,9 @@ static void mcc_send_search_cb(struct bt_conn *conn, int err, const struct mpl_s
 
 static void mcc_search_ntf_cb(struct bt_conn *conn, int err, uint8_t result_code)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Search notification error (%d), result code: %d", err, result_code);
 	}
 
@@ -626,7 +820,9 @@ static void mcc_search_ntf_cb(struct bt_conn *conn, int err, uint8_t result_code
 
 static void mcc_read_search_results_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Search Results Object ID read failed (%d)", err);
 	}
 
@@ -641,7 +837,9 @@ static void mcc_read_search_results_obj_id_cb(struct bt_conn *conn, int err, uin
 #if defined(CONFIG_BT_MCC_READ_CONTENT_CONTROL_ID)
 static void mcc_read_content_control_id_cb(struct bt_conn *conn, int err, uint8_t ccid)
 {
-	if (err) {
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
 		LOG_ERR("Content Control ID read failed (%d)", err);
 	}
 
@@ -682,9 +880,14 @@ int media_proxy_ctrl_register(struct media_proxy_ctrl_cbs *ctrl_cbs)
 #ifdef CONFIG_MCTL_REMOTE_PLAYER_CONTROL
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
+	ARG_UNUSED(reason);
+
+	if (!bt_conn_is_type(conn, BT_CONN_TYPE_LE)) {
+		return;
+	}
+
 	if (mprx.remote_player.conn == conn) {
-		bt_conn_unref(mprx.remote_player.conn);
-		mprx.remote_player.conn = NULL;
+		bt_conn_drop(&mprx.remote_player.conn);
 	}
 }
 
@@ -694,6 +897,7 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 
 int media_proxy_ctrl_discover_player(struct bt_conn *conn)
 {
+	struct bt_conn *ref;
 	int err;
 
 	CHECKIF(!conn) {
@@ -768,22 +972,28 @@ int media_proxy_ctrl_discover_player(struct bt_conn *conn)
 #endif /* defined(CONFIG_BT_MCC_READ_CONTENT_CONTROL_ID) */
 
 	err = bt_mcc_init(&mprx.mcc_cbs);
-	if (err) {
+	if (err != 0) {
 		LOG_ERR("Failed to initialize MCC");
 		return err;
 	}
 
+	ref = bt_conn_ref(conn);
+	if (ref == NULL) {
+		return -ENOTCONN;
+	}
+
 	/* Start discovery of remote MCS, subscribe to notifications */
 	err = bt_mcc_discover_mcs(conn, 1);
-	if (err) {
+	if (err != 0) {
 		LOG_ERR("Discovery failed");
+		bt_conn_unref(ref);
 		return err;
 	}
 
 	if (mprx.remote_player.conn != NULL) {
 		bt_conn_unref(mprx.remote_player.conn);
 	}
-	mprx.remote_player.conn = bt_conn_ref(conn);
+	mprx.remote_player.conn = ref;
 	mprx.remote_player.registered = true;  /* TODO: Do MCC init and "registration" at startup */
 
 	return 0;
@@ -825,6 +1035,29 @@ int media_proxy_ctrl_get_player_name(struct media_player *player)
 		return bt_mcc_read_player_name(mprx.remote_player.conn);
 	}
 #endif /* CONFIG_MCTL_REMOTE_PLAYER_CONTROL */
+
+	return -EINVAL;
+}
+
+int media_proxy_ctrl_set_player_name(struct media_player *player, const char *name)
+{
+	CHECKIF(player == NULL || name == NULL) {
+		LOG_DBG("player or name is NULL");
+		return -EINVAL;
+	}
+
+#if defined(CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL)
+	if (mprx.local_player.registered && player == &mprx.local_player) {
+		if (mprx.local_player.calls->set_player_name != NULL) {
+			mprx.local_player.calls->set_player_name(name);
+
+			return 0;
+		}
+
+		LOG_DBG("No call");
+		return -EOPNOTSUPP;
+	}
+#endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
 
 	return -EINVAL;
 }
@@ -1777,160 +2010,12 @@ uint8_t media_proxy_ctrl_get_content_ctrl_id(struct media_player *player)
 #if defined(CONFIG_MCTL_LOCAL_PLAYER_CONTROL)
 /* Player calls *******************************************/
 
-static bool pl_calls_is_valid(const struct media_proxy_pl_calls *pl_calls)
-{
-	if (pl_calls == NULL) {
-		LOG_DBG("pl_calls is NULL");
-		return false;
-	}
 
-	if (pl_calls->get_player_name == NULL) {
-		LOG_DBG("get_player_name is NULL");
-		return false;
-	}
-
-#ifdef CONFIG_BT_MPL_OBJECTS
-	if (pl_calls->get_icon_id == NULL) {
-		LOG_DBG("get_icon_id is NULL");
-		return false;
-	}
-#endif /* CONFIG_BT_MPL_OBJECTS */
-
-	if (pl_calls->get_icon_url == NULL) {
-		LOG_DBG("get_icon_url is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_track_title == NULL) {
-		LOG_DBG("get_track_title is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_track_duration == NULL) {
-		LOG_DBG("get_track_duration is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_track_position == NULL) {
-		LOG_DBG("get_track_position is NULL");
-		return false;
-	}
-
-	if (pl_calls->set_track_position == NULL) {
-		LOG_DBG("set_track_position is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_playback_speed == NULL) {
-		LOG_DBG("get_playback_speed is NULL");
-		return false;
-	}
-
-	if (pl_calls->set_playback_speed == NULL) {
-		LOG_DBG("set_playback_speed is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_seeking_speed == NULL) {
-		LOG_DBG("get_seeking_speed is NULL");
-		return false;
-	}
-
-#ifdef CONFIG_BT_MPL_OBJECTS
-	if (pl_calls->get_track_segments_id == NULL) {
-		LOG_DBG("get_track_segments_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_current_track_id == NULL) {
-		LOG_DBG("get_current_track_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->set_current_track_id == NULL) {
-		LOG_DBG("set_current_track_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_next_track_id == NULL) {
-		LOG_DBG("get_next_track_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->set_next_track_id == NULL) {
-		LOG_DBG("set_next_track_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_parent_group_id == NULL) {
-		LOG_DBG("get_parent_group_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_current_group_id == NULL) {
-		LOG_DBG("get_current_group_id is NULL");
-		return false;
-	}
-
-	if (pl_calls->set_current_group_id == NULL) {
-		LOG_DBG("set_current_group_id is NULL");
-		return false;
-	}
-
-#endif /* CONFIG_BT_MPL_OBJECTS */
-	if (pl_calls->get_playing_order == NULL) {
-		LOG_DBG("get_playing_order is NULL");
-		return false;
-	}
-
-	if (pl_calls->set_playing_order == NULL) {
-		LOG_DBG("set_playing_order is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_playing_orders_supported == NULL) {
-		LOG_DBG("get_playing_orders_supported is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_media_state == NULL) {
-		LOG_DBG("get_media_state is NULL");
-		return false;
-	}
-
-	if (pl_calls->send_command == NULL) {
-		LOG_DBG("send_command is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_commands_supported == NULL) {
-		LOG_DBG("get_commands_supported is NULL");
-		return false;
-	}
-
-#ifdef CONFIG_BT_MPL_OBJECTS
-	if (pl_calls->send_search == NULL) {
-		LOG_DBG("send_search is NULL");
-		return false;
-	}
-
-	if (pl_calls->get_search_results_id == NULL) {
-		LOG_DBG("get_search_results_id is NULL");
-		return false;
-	}
-
-#endif /* CONFIG_BT_MPL_OBJECTS */
-	if (pl_calls->get_content_ctrl_id == NULL) {
-		LOG_DBG("get_content_ctrl_id is NULL");
-		return false;
-	}
-
-	return true;
-}
 
 int media_proxy_pl_register(struct media_proxy_pl_calls *pl_calls)
 {
-	CHECKIF(!pl_calls_is_valid(pl_calls)) {
+	CHECKIF(pl_calls == NULL) {
+		LOG_DBG("pl_calls is NULL");
 		return -EINVAL;
 	}
 

@@ -95,7 +95,7 @@ static int tmp007_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api tmp007_driver_api = {
+static DEVICE_API(sensor, tmp007_driver_api) = {
 #ifdef CONFIG_TMP007_TRIGGER
 	.attr_set = tmp007_attr_set,
 	.trigger_set = tmp007_trigger_set,
@@ -109,7 +109,7 @@ int tmp007_init(const struct device *dev)
 	const struct tmp007_config *cfg = dev->config;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 

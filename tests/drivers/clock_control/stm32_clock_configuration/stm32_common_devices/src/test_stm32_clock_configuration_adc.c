@@ -25,18 +25,17 @@
 #define PERIPHCLK_ADC		RCC_PERIPHCLK_ADC12
 #define ADC_IS_CLK_ENABLED	__HAL_RCC_ADC12_IS_CLK_ENABLED
 #define GET_ADC_SOURCE		__HAL_RCC_GET_ADC12_SOURCE
-#define ADC_SOURCE_SYSCLK	RCC_ADC12CLKSOURCE_SYSCLK
 #elif defined(__HAL_RCC_GET_ADC_SOURCE)
 #define PERIPHCLK_ADC		RCC_PERIPHCLK_ADC
 #define ADC_IS_CLK_ENABLED	__HAL_RCC_ADC_IS_CLK_ENABLED
 #define GET_ADC_SOURCE		__HAL_RCC_GET_ADC_SOURCE
-#define ADC_SOURCE_SYSCLK	RCC_ADCCLKSOURCE_SYSCLK
 #else
 #define PERIPHCLK_ADC		(-1)
 #define ADC_IS_CLK_ENABLED	__HAL_RCC_ADC1_IS_CLK_ENABLED
 #define GET_ADC_SOURCE()	(-1);
 #endif
 
+/* Not all the stm32 series have all the clock sources */
 #if defined(RCC_ADC12CLKSOURCE_PLL)
 #define ADC_SOURCE_PLL		RCC_ADC12CLKSOURCE_PLL
 #elif defined(RCC_ADCCLKSOURCE_PLLADC)
@@ -47,9 +46,25 @@
 #define ADC_SOURCE_PLL		(-1)
 #endif
 
+#if defined(RCC_ADC12CLKSOURCE_SYSCLK)
+#define ADC_SOURCE_SYSCLK	RCC_ADC12CLKSOURCE_SYSCLK
+#elif defined(RCC_ADCCLKSOURCE_SYSCLK)
+#define ADC_SOURCE_SYSCLK	RCC_ADCCLKSOURCE_SYSCLK
+#else
+#define ADC_SOURCE_SYSCLK	(-1)
+#endif
+
+#if defined(CONFIG_SOC_SERIES_STM32L4X)
+#define ADC_COMMON_NODE adc123_common
+#elif defined(CONFIG_SOC_SERIES_STM32F3X) || defined(CONFIG_SOC_SERIES_STM32G4X)
+#define ADC_COMMON_NODE adc12_common
+#else
+#define ADC_COMMON_NODE adc1_common
+#endif
+
 ZTEST(stm32_common_devices_clocks, test_adc_clk_config)
 {
-	static const struct stm32_pclken pclken[] = STM32_DT_CLOCKS(DT_NODELABEL(adc1));
+	static const struct stm32_pclken pclken[] = STM32_DT_CLOCKS(DT_NODELABEL(ADC_COMMON_NODE));
 
 	uint32_t dev_dt_clk_freq, dev_actual_clk_freq;
 	uint32_t dev_actual_clk_src;
@@ -74,7 +89,8 @@ ZTEST(stm32_common_devices_clocks, test_adc_clk_config)
 		     "[Zephyr] ADC1 gating clock should be on");
 	TC_PRINT("ADC1 gating clock on\n");
 
-	if (IS_ENABLED(STM32_ADC_DOMAIN_CLOCK_SUPPORT) && DT_NUM_CLOCKS(DT_NODELABEL(adc1)) > 1) {
+	if (IS_ENABLED(STM32_ADC_DOMAIN_CLOCK_SUPPORT) &&
+	    DT_NUM_CLOCKS(DT_NODELABEL(ADC_COMMON_NODE)) > 1) {
 		/* Test clock_on(domain_clk) */
 		r = clock_control_configure(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE),
 					    (clock_control_subsys_t) &pclken[1],
@@ -87,13 +103,18 @@ ZTEST(stm32_common_devices_clocks, test_adc_clk_config)
 		dev_actual_clk_src = GET_ADC_SOURCE();
 
 		switch (pclken[1].bus) {
+		case STM32_SRC_SYSCLK:
+			zassert_equal(dev_actual_clk_src, ADC_SOURCE_SYSCLK,
+					"Expected ADC1 src: SYSCLK (0x%x). Actual ADC1 src: 0x%x",
+					(uint32_t)ADC_SOURCE_SYSCLK, dev_actual_clk_src);
+			break;
 #if defined(STM32_SRC_PLL_P)
 		case STM32_SRC_PLL_P:
 			zassert_equal(dev_actual_clk_src, ADC_SOURCE_PLL,
-					"Expected ADC1 src: PLL (0x%lx). Actual ADC1 src: 0x%x",
-					ADC_SOURCE_PLL, dev_actual_clk_src);
+					"Expected ADC1 src: PLL (0x%x). Actual ADC1 src: 0x%x",
+					(uint32_t)ADC_SOURCE_PLL, dev_actual_clk_src);
 			break;
-#endif
+#endif /* STM32_SRC_PLL_P */
 		default:
 			zassert_true(0, "Unexpected src clk (%d)", dev_actual_clk_src);
 		}
@@ -116,7 +137,8 @@ ZTEST(stm32_common_devices_clocks, test_adc_clk_config)
 
 		TC_PRINT("ADC1 clock source rate: %d Hz\n", dev_dt_clk_freq);
 	} else {
-		zassert_true((DT_NUM_CLOCKS(DT_NODELABEL(adc1)) == 1), "test config issue");
+		zassert_true((DT_NUM_CLOCKS(DT_NODELABEL(ADC_COMMON_NODE)) == 1),
+			     "test config issue");
 		/* No domain clock available, don't check gating clock as for adc there is no
 		 * uniform way to verify via hal.
 		 */

@@ -57,6 +57,16 @@ static void i2c_gpio_set_scl(void *io_context, int state)
 	gpio_pin_set_dt(&config->scl_gpio, state);
 }
 
+#ifdef CONFIG_I2C_GPIO_CLOCK_STRETCHING
+static int i2c_gpio_get_scl(void *io_context)
+{
+	const struct i2c_gpio_config *config = io_context;
+	int rc = gpio_pin_get_dt(&config->scl_gpio);
+
+	return rc != 0;
+}
+#endif
+
 static void i2c_gpio_set_sda(void *io_context, int state)
 {
 	const struct i2c_gpio_config *config = io_context;
@@ -75,6 +85,9 @@ static int i2c_gpio_get_sda(void *io_context)
 
 static const struct i2c_bitbang_io io_fns = {
 	.set_scl = &i2c_gpio_set_scl,
+#ifdef CONFIG_I2C_GPIO_CLOCK_STRETCHING
+	.get_scl = &i2c_gpio_get_scl,
+#endif
 	.set_sda = &i2c_gpio_set_sda,
 	.get_sda = &i2c_gpio_get_sda,
 };
@@ -111,7 +124,7 @@ static int i2c_gpio_get_config(const struct device *dev, uint32_t *config)
 }
 
 static int i2c_gpio_transfer(const struct device *dev, struct i2c_msg *msgs,
-				uint8_t num_msgs, uint16_t slave_address)
+				uint8_t num_msgs, uint16_t target_address)
 {
 	struct i2c_gpio_context *context = dev->data;
 	int rc;
@@ -119,7 +132,7 @@ static int i2c_gpio_transfer(const struct device *dev, struct i2c_msg *msgs,
 	k_mutex_lock(&context->mutex, K_FOREVER);
 
 	rc = i2c_bitbang_transfer(&context->bitbang, msgs, num_msgs,
-				    slave_address);
+				    target_address);
 
 	k_mutex_unlock(&context->mutex);
 
@@ -140,7 +153,7 @@ static int i2c_gpio_recover_bus(const struct device *dev)
 	return rc;
 }
 
-static const struct i2c_driver_api api = {
+static DEVICE_API(i2c, api) = {
 	.configure = i2c_gpio_configure,
 	.get_config = i2c_gpio_get_config,
 	.transfer = i2c_gpio_transfer,
@@ -162,7 +175,14 @@ static int i2c_gpio_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+#ifdef CONFIG_I2C_GPIO_CLOCK_STRETCHING
+	err = gpio_pin_configure_dt(&config->scl_gpio, GPIO_INPUT | GPIO_OUTPUT_HIGH);
+	if (err == -ENOTSUP) {
+		err = gpio_pin_configure_dt(&config->scl_gpio, GPIO_OUTPUT_HIGH);
+	}
+#else
 	err = gpio_pin_configure_dt(&config->scl_gpio, GPIO_OUTPUT_HIGH);
+#endif
 	if (err) {
 		LOG_ERR("failed to configure SCL GPIO pin (err %d)", err);
 		return err;

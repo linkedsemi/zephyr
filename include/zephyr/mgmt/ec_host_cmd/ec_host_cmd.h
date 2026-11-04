@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Header file for the embedded controller (EC) host command APIs.
+ * @ingroup ec_host_cmd_interface
+ */
+
 #ifndef ZEPHYR_INCLUDE_MGMT_EC_HOST_CMD_EC_HOST_CMD_H_
 #define ZEPHYR_INCLUDE_MGMT_EC_HOST_CMD_EC_HOST_CMD_H_
 
@@ -12,7 +18,7 @@
  * @defgroup ec_host_cmd_interface EC Host Command Interface
  * @since 2.4
  * @version 0.1.0
- * @ingroup io_interfaces
+ * @ingroup device_mgmt
  * @{
  */
 
@@ -69,30 +75,65 @@ enum ec_host_cmd_status {
 	/** Can't resend response. */
 	EC_HOST_CMD_DUP_UNAVAILABLE = 20,
 
-	EC_HOST_CMD_MAX = UINT16_MAX /* Force enum to be 16 bits. */
+	/** @cond INTERNAL_HIDDEN */
+	EC_HOST_CMD_MAX = UINT16_MAX /* Force enum to be 16 bits */
+	/** @endcond */
 } __packed;
 
+/**
+ * @brief Host command log levels
+ */
 enum ec_host_cmd_log_level {
-	EC_HOST_CMD_DEBUG_OFF, /* No Host Command debug output */
-	EC_HOST_CMD_DEBUG_NORMAL, /* Normal output mode; skips repeated commands */
-	EC_HOST_CMD_DEBUG_EVERY, /* Print every command */
-	EC_HOST_CMD_DEBUG_PARAMS, /* ... and print params for request/response */
-	EC_HOST_CMD_DEBUG_MODES /* Number of host command debug modes */
+	EC_HOST_CMD_DEBUG_OFF,    /**< No Host Command debug output */
+	EC_HOST_CMD_DEBUG_NORMAL, /**< Normal output mode; skips repeated commands */
+	EC_HOST_CMD_DEBUG_EVERY,  /**< Print every command */
+	EC_HOST_CMD_DEBUG_PARAMS, /**< ... and print params for request/response */
+	EC_HOST_CMD_DEBUG_MODES   /**< Number of host command debug modes */
 };
 
+/**
+ * @brief Host command state
+ */
 enum ec_host_cmd_state {
-	EC_HOST_CMD_STATE_DISABLED = 0,
-	EC_HOST_CMD_STATE_RECEIVING,
-	EC_HOST_CMD_STATE_PROCESSING,
-	EC_HOST_CMD_STATE_SENDING,
+	EC_HOST_CMD_STATE_DISABLED = 0, /**< Host command subsystem is disabled */
+	EC_HOST_CMD_STATE_RECEIVING,    /**< Receiving command data from host */
+	EC_HOST_CMD_STATE_PROCESSING,   /**< Processing received command */
+	EC_HOST_CMD_STATE_SENDING,      /**< Sending response to host */
 };
 
+/**
+ * @brief User callback function type for host command reception
+ *
+ * This callback is invoked after a host command is received and validated
+ * but before command processing begins. It allows user code to perform
+ * custom actions based on the received command.
+ *
+ * @param rx_ctx Pointer to the receive context containing command data
+ * @param user_data User-defined data pointer passed during callback registration
+ */
 typedef void (*ec_host_cmd_user_cb_t)(const struct ec_host_cmd_rx_ctx *rx_ctx, void *user_data);
+
+/**
+ * @brief In-progress callback function type
+ *
+ * This callback is executed asynchronously for commands that return
+ * EC_HOST_CMD_IN_PROGRESS status. It allows long-running operations
+ * to complete in the background.
+ *
+ * @param user_data User-provided data passed to the callback
+ * @return Final status code for the command
+ */
 typedef enum ec_host_cmd_status (*ec_host_cmd_in_progress_cb_t)(void *user_data);
 
+/**
+ * Host command context structure
+ */
 struct ec_host_cmd {
+	/** Context used to pass data received from the host. */
 	struct ec_host_cmd_rx_ctx rx_ctx;
+	/** Buffer used to send a response to the host. */
 	struct ec_host_cmd_tx_buf tx;
+	/** Backend used for communication with the host. */
 	struct ec_host_cmd_backend *backend;
 	/**
 	 * The backend gives rx_ready (by calling the ec_host_cmd_send_receive function),
@@ -106,11 +147,12 @@ struct ec_host_cmd {
 	 * function.
 	 */
 	ec_host_cmd_user_cb_t user_cb;
+	/** User data passed to @a user_cb. */
 	void *user_data;
+	/** Current state of the host command handler. */
 	enum ec_host_cmd_state state;
-#ifdef CONFIG_EC_HOST_CMD_DEDICATED_THREAD
-	struct k_thread thread;
-#endif /* CONFIG_EC_HOST_CMD_DEDICATED_THREAD */
+	/** Thread running the host command handler loop. */
+	k_tid_t thread;
 };
 
 /**
@@ -138,7 +180,19 @@ struct ec_host_cmd_handler_args {
 	uint16_t output_buf_size;
 };
 
+/**
+ * @brief Host command handler callback function type
+ *
+ * This callback is invoked to process a host command that matches the handler's
+ * command ID and version. The handler processes the incoming command data and
+ * generates a response.
+ *
+ * @param args Pointer to an @ref ec_host_cmd_handler_args structure containing command data and
+ *             buffers
+ * @return Status code indicating the result of command processing
+ */
 typedef enum ec_host_cmd_status (*ec_host_cmd_handler_cb)(struct ec_host_cmd_handler_args *args);
+
 /**
  * @brief Structure use for statically registering host command handlers
  */
@@ -180,11 +234,54 @@ struct ec_host_cmd_handler {
  *        @a _function.
  */
 #define EC_HOST_CMD_HANDLER(_id, _function, _version_mask, _request_type, _response_type)          \
-	const STRUCT_SECTION_ITERABLE(ec_host_cmd_handler, __cmd##_id) = {                         \
+	const STRUCT_SECTION_ITERABLE(ec_host_cmd_handler, __cmd_##_id) = {                        \
 		.handler = _function,                                                              \
 		.id = _id,                                                                         \
 		.version_mask = _version_mask,                                                     \
 		.min_rqt_size = sizeof(_request_type),                                             \
+		.min_rsp_size = sizeof(_response_type),                                            \
+	}
+
+/**
+ * @brief Statically define and register a request only host command handler.
+ *
+ * Helper macro to statically define and register a host command handler that
+ * has a compile-time-fixed size for its request structure.
+ *
+ * @param _id Id of host command to handle request for.
+ * @param _function Name of handler function.
+ * @param _version_mask The bitfield of all versions that the @a _function
+ *        supports. E.g. BIT(0) corresponds to version 0.
+ * @param _request_type The datatype of the request parameters for @a _function.
+ */
+#define EC_HOST_CMD_HANDLER_REQ_ONLY(_id, _function, _version_mask, _request_type)                 \
+	const STRUCT_SECTION_ITERABLE(ec_host_cmd_handler, __cmd_##_id) = {                        \
+		.handler = _function,                                                              \
+		.id = _id,                                                                         \
+		.version_mask = _version_mask,                                                     \
+		.min_rqt_size = sizeof(_request_type),                                             \
+		.min_rsp_size = 0,                                                                 \
+	}
+
+/**
+ * @brief Statically define and register a response only host command handler.
+ *
+ * Helper macro to statically define and register a host command handler that
+ * has a compile-time-fixed sizes for its response structure.
+ *
+ * @param _id Id of host command to handle request for.
+ * @param _function Name of handler function.
+ * @param _version_mask The bitfield of all versions that the @a _function
+ *        supports. E.g. BIT(0) corresponds to version 0.
+ * @param _response_type The datatype of the response parameters for
+ *        @a _function.
+ */
+#define EC_HOST_CMD_HANDLER_RESP_ONLY(_id, _function, _version_mask, _response_type)               \
+	const STRUCT_SECTION_ITERABLE(ec_host_cmd_handler, __cmd_##_id) = {                        \
+		.handler = _function,                                                              \
+		.id = _id,                                                                         \
+		.version_mask = _version_mask,                                                     \
+		.min_rqt_size = 0,                                                                 \
 		.min_rsp_size = sizeof(_response_type),                                            \
 	}
 
@@ -200,7 +297,7 @@ struct ec_host_cmd_handler {
  *        supports. E.g. BIT(0) corresponds to version 0.
  */
 #define EC_HOST_CMD_HANDLER_UNBOUND(_id, _function, _version_mask)                                 \
-	const STRUCT_SECTION_ITERABLE(ec_host_cmd_handler, __cmd##_id) = {                         \
+	const STRUCT_SECTION_ITERABLE(ec_host_cmd_handler, __cmd_##_id) = {                        \
 		.handler = _function,                                                              \
 		.id = _id,                                                                         \
 		.version_mask = _version_mask,                                                     \
@@ -334,38 +431,44 @@ const struct ec_host_cmd *ec_host_cmd_get_hc(void);
 FUNC_NORETURN void ec_host_cmd_task(void);
 #endif
 
-#ifdef CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS
+#if defined(CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS) || defined(__DOXYGEN__)
 /**
- * @brief Check if a Host Command that sent EC_HOST_CMD_IN_PROGRESS status has ended.
+ * @brief Check if a Host Command that sent @ref EC_HOST_CMD_IN_PROGRESS status has ended.
  *
- * A Host Command that sends EC_HOST_CMD_IN_PROGRESS status doesn't send a final result.
- * The final result can be get with the ec_host_cmd_send_in_progress_status function.
+ * A Host Command that sends @ref EC_HOST_CMD_IN_PROGRESS status doesn't send a final result.
+ * The final result can be obtained with the @ref ec_host_cmd_send_in_progress_status function.
+ *
+ * @kconfig_dep{CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS}
  *
  * @retval true if the Host Command endded
  */
 bool ec_host_cmd_send_in_progress_ended(void);
 
 /**
- * @brief Get final result of a last Host Command that has sent EC_HOST_CMD_IN_PROGRESS status.
+ * @brief Get final result of a last Host Command that has sent @ref EC_HOST_CMD_IN_PROGRESS status.
  *
- * A Host Command that sends EC_HOST_CMD_IN_PROGRESS status doesn't send a final result.
- * Get the saved status with this function. The status can be get only once. Further calls return
- * EC_HOST_CMD_UNAVAILABLE.
+ * A Host Command that sends @ref EC_HOST_CMD_IN_PROGRESS status doesn't send a final result.
+ * Get the saved status with this function. The status can be obtained only once. Further calls
+ * return @ref EC_HOST_CMD_UNAVAILABLE.
  *
  * Saving status of Host Commands that send response data is not supported.
+ *
+ * @kconfig_dep{CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS}
  *
  * @retval The final status or EC_HOST_CMD_UNAVAILABLE if not available.
  */
 enum ec_host_cmd_status ec_host_cmd_send_in_progress_status(void);
 
 /**
- * @brief Continue processing a handler in callback after returning EC_HOST_CMD_IN_PROGRESS.
+ * @brief Continue processing a handler in callback after returning @ref EC_HOST_CMD_IN_PROGRESS.
  *
- * A Host Command handler may return the EC_HOST_CMD_IN_PROGRESS, but needs to continue work.
- * This function should be called before returning EC_HOST_CMD_IN_PROGRESS with a callback that
- * will be executed. The return status of the callback will be stored and can be get with the
- * ec_host_cmd_send_in_progress_status function. The ec_host_cmd_send_in_progress_ended function
- * can be used to check if the callback has ended.
+ * A Host Command handler may return the @ref EC_HOST_CMD_IN_PROGRESS, but needs to continue work.
+ * This function should be called before returning @ref EC_HOST_CMD_IN_PROGRESS with a callback that
+ * will be executed. The return status of the callback will be stored and can be obtained with the
+ * @ref ec_host_cmd_send_in_progress_status function. The @ref ec_host_cmd_send_in_progress_ended
+ * function can be used to check if the callback has ended.
+ *
+ * @kconfig_dep{CONFIG_EC_HOST_CMD_IN_PROGRESS_STATUS}
  *
  * @param[in] cb          A callback to be called after returning from a command handler.
  * @param[in] user_data   User data to be passed to the callback.

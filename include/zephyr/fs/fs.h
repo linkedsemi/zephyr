@@ -5,6 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Public API for the file system subsystem.
+ * @ingroup file_system_api
+ */
+
 #ifndef ZEPHYR_INCLUDE_FS_FS_H_
 #define ZEPHYR_INCLUDE_FS_FS_H_
 
@@ -61,6 +67,15 @@ enum {
 	/** Identifier for in-tree Ext2 file system. */
 	FS_EXT2,
 
+	/** Identifier for in-tree Virtiofs file system. */
+	FS_VIRTIOFS,
+
+	/** Identifier for in-tree RpMsgFS file system */
+	FS_RPMSGFS,
+
+	/** Identifier for in-tree Native Simulator mount file system. */
+	FS_NATIVE_MOUNT,
+
 	/** Identifier for in-tree device file system. */
 	FS_DEVFS,
 
@@ -84,7 +99,7 @@ enum {
 /** Flag requests file system driver to use Disk Access API. When the flag is
  * set to the fs_mount_t.flags prior to fs_mount call, a file system
  * needs to use the Disk Access API, otherwise mount callback for the driver
- * should return -ENOSUP; when the flag is not set the file system driver
+ * should return -ENOTSUP; when the flag is not set the file system driver
  * should use Flash API by default, unless it only supports Disc Access API.
  * When file system will use Disk Access API and the flag is not set, the mount
  * callback for the file system should set the flag on success.
@@ -213,6 +228,24 @@ struct fs_statvfs {
 	 | (DT_PROP(node_id, disk_access) ? FS_MOUNT_FLAG_USE_DISK_ACCESS : 0))
 
 /**
+ * @brief Get the mount-point from an fstab entry.
+ *
+ * @param node_id The node identifier for a child entry in a zephyr,fstab node.
+ * @return The mount-point path.
+ */
+#define FSTAB_ENTRY_DT_MOUNT_POINT(node_id) \
+	DT_PROP(node_id, mount_point)
+
+/**
+ * @brief Get the mount-point from an fstab entry.
+ *
+ * @param inst Instance number
+ * @return The mount-point path.
+ */
+#define FSTAB_ENTRY_DT_INST_MOUNT_POINT(inst) \
+	DT_INST_PROP(inst, mount_point)
+
+/**
  * @brief The name under which a zephyr,fstab entry mount structure is
  * defined.
  *
@@ -282,7 +315,7 @@ static inline void fs_dir_t_init(struct fs_dir_t *zdp)
  * @warning If @p flags are set to 0 the function will open file, if it exists
  *          and is accessible, but you will have no read/write access to it.
  *
- * @param zfp Pointer to a file object
+ * @param zfp Pointer to an @b initialized file object
  * @param file_name The name of a file to open
  * @param flags The mode flags
  *
@@ -421,7 +454,7 @@ int fs_seek(struct fs_file_t *zfp, off_t offset, int whence);
  *
  * @param zfp Pointer to the file object
  *
- * @retval >= 0 a current position in file;
+ * @retval >=0 a current position in file;
  * @retval -EBADF when invoked on zfp that represents unopened/closed file;
  * @retval -ENOTSUP if not supported by underlying file system driver;
  * @retval <0 an other negative errno code on error.
@@ -482,7 +515,7 @@ int fs_sync(struct fs_file_t *zfp);
  * @retval -EROFS if @p path is within read-only directory, or when
  *         file system has been mounted with the FS_MOUNT_FLAG_READ_ONLY flag;
  * @retval -ENOTSUP when not implemented by underlying file system driver;
- * @retval <0 an other negative errno code on error
+ * @retval <0 another negative errno code on error
  */
 int fs_mkdir(const char *path);
 
@@ -491,7 +524,7 @@ int fs_mkdir(const char *path);
  *
  * Opens an existing directory specified by the path.
  *
- * @param zdp Pointer to the directory object
+ * @param zdp Pointer to the @b initialized directory object
  * @param path Path to the directory to open
  *
  * @retval 0 on success;
@@ -559,9 +592,12 @@ int fs_closedir(struct fs_dir_t *zdp);
  * @retval -ENOTSUP when not supported by underlying file system driver;
  *         when @c FS_MOUNT_FLAG_USE_DISK_ACCESS is set but driver does not
  *         support it.
+ * @retval -EBUSY when @p mp is already mounted, when another file system is
+ *	   already mounted at @c mp->mnt_point, or when @c mp->fs_data is
+ *	   already in use by another mount point;
  * @retval -EROFS if system requires formatting but @c FS_MOUNT_FLAG_READ_ONLY
  *	   has been set;
- * @retval <0 an other negative errno code on error.
+ * @retval <0 another negative errno code on error.
  */
 int fs_mount(struct fs_mount_t *mp);
 
@@ -628,9 +664,42 @@ int fs_stat(const char *path, struct fs_dirent *entry);
  * @retval 0 on success;
  * @retval -EINVAL when a bad path to a directory, or a file, is given;
  * @retval -ENOTSUP when not implemented by underlying file system driver;
- * @retval <0 an other negative errno code on error.
+ * @retval <0 another negative errno code on error.
  */
 int fs_statvfs(const char *path, struct fs_statvfs *stat);
+
+/**
+ * @brief Normalize a path
+ *
+ * Produces the normalized form of @p path: repeated and trailing path
+ * separators are collapsed, and "." and ".." components are resolved
+ * textually. The mount table is not consulted, so @p path need not name a
+ * mounted file system, and Zephyr does not support symbolic links, so no
+ * link resolution is performed.
+ *
+ * A ".." is resolved against the preceding component, and one that would
+ * climb above the leading "/" resolves to "/", as it does on a POSIX
+ * system. A caller that has to keep a path inside a particular subtree
+ * checks the normalized result against it.
+ *
+ * @p path and @p buf may be the same buffer, to normalize a path in place.
+ * When they are different buffers, they must not overlap.
+ *
+ * On error the contents of @p buf are unspecified. That matters for the
+ * in-place case: a rejected path leaves the caller's own buffer modified.
+ *
+ * @param path Absolute path to normalize
+ * @param buf Buffer to receive the normalized, null-terminated path
+ * @param len Size of @p buf, in bytes
+ *
+ * @retval 0 on success;
+ * @retval -EINVAL when @p path is not an absolute path, or when @p buf is
+ *	   NULL or @p len is zero;
+ * @retval -ENAMETOOLONG when @p buf is too small to hold the normalized
+ *	   path, or any prefix of it produced before a ".." was resolved;
+ * @retval <0 another negative errno code on error.
+ */
+int fs_normalize_path(const char *path, char *buf, size_t len);
 
 /**
  * @brief Create fresh file system
@@ -674,6 +743,21 @@ int fs_register(int type, const struct fs_file_system_t *fs);
  * @retval -EINVAL when file system of a given type has not been registered.
  */
 int fs_unregister(int type, const struct fs_file_system_t *fs);
+
+/**
+ * @brief Attempt to proactively clean file system
+ *
+ * Returns a negative error code on failure.
+ * Ignored cleaning request is not a failure.
+ *
+ * @param mp Pointer to the mounted fs_mount_t structure.
+ *
+ * @retval 0 on success;
+ * @retval -EINVAL when a bad path to a directory, or a file, is given;
+ * @retval -ENOTSUP when not implemented by underlying file system driver;
+ * @retval <0 another negative errno code on error.
+ */
+int fs_gc(struct fs_mount_t *mp);
 
 /**
  * @}

@@ -11,8 +11,9 @@
  */
 
 #include <zephyr/toolchain/common.h>
+#include <psa/crypto.h>
 
-#define WS_SHA1_OUTPUT_LEN 20
+#define WS_SHA1_OUTPUT_LEN PSA_HASH_LENGTH(PSA_ALG_SHA_1)
 
 /* Min Websocket header length */
 #define MIN_HEADER_LEN 2
@@ -117,8 +118,22 @@ __net_socket struct websocket_context {
 	/** Is Sec-WebSocket-Accept field correct */
 	uint8_t sec_accept_ok : 1;
 
+	/** How many bytes of the expected Sec-WebSocket-Accept value have
+	 * been matched so far. The parser can hand the value over in more
+	 * than one piece.
+	 */
+	uint8_t sec_accept_matched;
+
 	/** Did we receive all from peer during HTTP handshake */
 	uint8_t all_received : 1;
+
+	/** 1 if this websocket is a client, 0 if a server */
+	uint8_t is_client : 1;
+
+	/** A send failed in a way that may have left part of a frame with the
+	 * peer. The frame stream is torn, so nothing more is sent on it.
+	 */
+	uint8_t tx_broken : 1;
 };
 
 #if defined(CONFIG_NET_TEST)

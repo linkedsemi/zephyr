@@ -67,16 +67,24 @@ struct npcx_sha_session {
 
 struct npcx_sha_session npcx_sessions[NPCX_SHA_MAX_SESSION];
 
+/* Serializes the allocation and the release of the session slots above. */
+static K_MUTEX_DEFINE(npcx_sessions_lock);
+
 static int npcx_get_unused_session_index(void)
 {
 	int i;
 
+	k_mutex_lock(&npcx_sessions_lock, K_FOREVER);
+
 	for (i = 0; i < NPCX_SHA_MAX_SESSION; i++) {
 		if (!npcx_sessions[i].in_use) {
 			npcx_sessions[i].in_use = true;
+			k_mutex_unlock(&npcx_sessions_lock);
 			return i;
 		}
 	}
+
+	k_mutex_unlock(&npcx_sessions_lock);
 
 	return -1;
 }
@@ -99,7 +107,7 @@ static int npcx_sha_compute(struct hash_ctx *ctx, struct hash_pkt *pkt, bool fin
 		break;
 	default:
 		LOG_ERR("Unexpected algo: %d", npcx_session->algo);
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	if (!ctx->started) {
@@ -140,13 +148,13 @@ static int npcx_hash_session_setup(const struct device *dev, struct hash_ctx *ct
 
 	if (ctx->flags & ~(NPCX_HASH_CAPS_SUPPORT)) {
 		LOG_ERR("Unsupported flag");
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	if ((algo != CRYPTO_HASH_ALGO_SHA256) && (algo != CRYPTO_HASH_ALGO_SHA384) &&
 	    (algo != CRYPTO_HASH_ALGO_SHA512)) {
 		LOG_ERR("Unsupported algo: %d", algo);
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	ctx_idx = npcx_get_unused_session_index();
@@ -178,7 +186,10 @@ static int npcx_hash_session_free(const struct device *dev, struct hash_ctx *ctx
 	NPCX_NCL_SHA->reset(npcx_ctx->handle);
 	NPCX_NCL_SHA->power(npcx_ctx->handle, 0);
 	NPCX_NCL_SHA->finalize_context(npcx_ctx->handle);
+
+	k_mutex_lock(&npcx_sessions_lock, K_FOREVER);
 	npcx_session->in_use = false;
+	k_mutex_unlock(&npcx_sessions_lock);
 
 	return 0;
 }
@@ -202,7 +213,7 @@ static int npcx_hash_init(const struct device *dev)
 	return 0;
 }
 
-static const struct crypto_driver_api npcx_crypto_api = {
+static DEVICE_API(crypto, npcx_crypto_api) = {
 	.hash_begin_session = npcx_hash_session_setup,
 	.hash_free_session = npcx_hash_session_free,
 	.query_hw_caps = npcx_query_caps,

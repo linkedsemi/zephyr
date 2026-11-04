@@ -190,9 +190,11 @@ void z_shell_op_word_remove(const struct shell *sh)
 		--str;
 	}
 
-	/* Manage the buffer. */
+	/* Manage the buffer. Move the remainder of the line, including the
+	 * terminator, over the removed word.
+	 */
 	memmove(str + 1, str + 1 + chars_to_delete,
-		sh->ctx->cmd_buff_len - chars_to_delete);
+		strlen(str + 1 + chars_to_delete) + 1);
 	sh->ctx->cmd_buff_len -= chars_to_delete;
 	sh->ctx->cmd_buff[sh->ctx->cmd_buff_len] = '\0';
 
@@ -250,8 +252,29 @@ static void reprint_from_cursor(const struct shell *sh, uint16_t diff,
 			z_shell_raw_fprintf(sh->fprintf_ctx, "*");
 		}
 	} else {
-		z_shell_fprintf(sh, SHELL_NORMAL, "%s",
-			      &sh->ctx->cmd_buff[sh->ctx->cmd_buff_pos]);
+		/* Check if the reprint will cross a line boundary */
+		int line_len = sh->ctx->cmd_buff_len + z_shell_strlen(sh->ctx->prompt);
+		int buff_pos = sh->ctx->cmd_buff_pos + z_shell_strlen(sh->ctx->prompt);
+
+		if ((buff_pos / sh->ctx->vt100_ctx.cons.terminal_wid) !=
+		    (line_len / sh->ctx->vt100_ctx.cons.terminal_wid)) {
+		       /*
+			* Reprint will take multiple lines.
+			* Print each character directly.
+			*/
+			int pos = sh->ctx->cmd_buff_pos;
+
+			while (buff_pos < line_len) {
+				if (buff_pos++ % sh->ctx->vt100_ctx.cons.terminal_wid == 0U) {
+					z_cursor_next_line_move(sh);
+				}
+				z_shell_fprintf(sh, SHELL_NORMAL, "%c",
+					sh->ctx->cmd_buff[pos++]);
+			}
+		} else {
+			z_shell_fprintf(sh, SHELL_NORMAL, "%s",
+				&sh->ctx->cmd_buff[sh->ctx->cmd_buff_pos]);
+		}
 	}
 	sh->ctx->cmd_buff_pos = sh->ctx->cmd_buff_len;
 
@@ -367,6 +390,10 @@ void z_shell_cmd_line_erase(const struct shell *sh)
 
 static void print_prompt(const struct shell *sh)
 {
+	if (sh->ctx->readline_state != SHELL_READLINE_INACTIVE) {
+		return;
+	}
+
 	z_shell_fprintf(sh, SHELL_INFO, "%s", sh->ctx->prompt);
 }
 
@@ -411,14 +438,8 @@ static void shell_pend_on_txdone(const struct shell *sh)
 {
 	if (IS_ENABLED(CONFIG_MULTITHREADING) &&
 	    (sh->ctx->state < SHELL_STATE_PANIC_MODE_ACTIVE)) {
-		struct k_poll_event event;
-
-		k_poll_event_init(&event,
-				  K_POLL_TYPE_SIGNAL,
-				  K_POLL_MODE_NOTIFY_ONLY,
-				  &sh->ctx->signals[SHELL_SIGNAL_TXDONE]);
-		k_poll(&event, 1, K_FOREVER);
-		k_poll_signal_reset(&sh->ctx->signals[SHELL_SIGNAL_TXDONE]);
+		k_event_wait(&sh->ctx->signal_event, SHELL_SIGNAL_TXDONE, false, K_FOREVER);
+		k_event_clear(&sh->ctx->signal_event, SHELL_SIGNAL_TXDONE);
 	} else {
 		/* Blocking wait in case of bare metal. */
 		while (!z_flag_tx_rdy_get(sh)) {
@@ -442,6 +463,10 @@ void z_shell_write(const struct shell *sh, const void *data,
 		(void)err;
 		__ASSERT_NO_MSG(err == 0);
 		__ASSERT_NO_MSG(length >= tmp_cnt);
+		if (err < 0) {
+			break;
+		}
+
 		offset += tmp_cnt;
 		length -= tmp_cnt;
 		if (tmp_cnt == 0 &&
@@ -512,8 +537,8 @@ void z_shell_vt100_colors_restore(const struct shell *sh,
 	vt100_bgcolor_set(sh, color->bgcol);
 }
 
-void z_shell_vfprintf(const struct shell *sh, enum shell_vt100_color color,
-		      const char *fmt, va_list args)
+static void z_shell_print(const struct shell *sh, enum shell_vt100_color color, bool do_cbprintf,
+	void *ptr, va_list args)
 {
 	if (IS_ENABLED(CONFIG_SHELL_VT100_COLORS) &&
 	    z_flag_use_colors_get(sh)	  &&
@@ -523,12 +548,33 @@ void z_shell_vfprintf(const struct shell *sh, enum shell_vt100_color color,
 		z_shell_vt100_colors_store(sh, &col);
 		z_shell_vt100_color_set(sh, color);
 
-		z_shell_fprintf_fmt(sh->fprintf_ctx, fmt, args);
+		if (do_cbprintf) {
+			z_shell_cbpprintf_fmt(sh->fprintf_ctx, ptr);
+		} else {
+			z_shell_fprintf_fmt(sh->fprintf_ctx, (const char *)ptr, args);
+		}
 
 		z_shell_vt100_colors_restore(sh, &col);
 	} else {
-		z_shell_fprintf_fmt(sh->fprintf_ctx, fmt, args);
+		if (do_cbprintf) {
+			z_shell_cbpprintf_fmt(sh->fprintf_ctx, ptr);
+		} else {
+			z_shell_fprintf_fmt(sh->fprintf_ctx, (const char *)ptr, args);
+		}
 	}
+}
+
+void z_shell_cbpprintf(const struct shell *sh, enum shell_vt100_color color, void *package)
+{
+	va_list no_used = {0};
+
+	z_shell_print(sh, color, true, package, no_used);
+}
+
+void z_shell_vfprintf(const struct shell *sh, enum shell_vt100_color color,
+		      const char *fmt, va_list args)
+{
+	z_shell_print(sh, color, false, (void *)fmt, args);
 }
 
 void z_shell_fprintf(const struct shell *sh,

@@ -450,7 +450,8 @@ static void cm_iface_watch(struct net_if *iface, void *user_data)
 
 static void not_available(const struct shell *sh)
 {
-	PR_INFO("This command is not available unless CONFIG_NET_CONNECTION_MANAGER is enabled.\n");
+	PR_INFO("Set %s to enable %s support.\n",
+		"CONFIG_NET_CONNECTION_MANAGER", "connection manager");
 }
 
 #endif /* !defined(CONFIG_NET_CONNECTION_MANAGER) */
@@ -669,7 +670,7 @@ static int cmd_net_cm_disconnect(const struct shell *sh, size_t argc, char *argv
 			return 0;
 		}
 
-		PR("Instructing iface %s to disonnect.\n", iface_info);
+		PR("Instructing iface %s to disconnect.\n", iface_info);
 		conn_mgr_if_disconnect(target.iface);
 		return 0;
 	}
@@ -917,36 +918,36 @@ static int cmd_net_cm_timeout(const struct shell *sh, size_t argc, char *argv[])
 
 SHELL_STATIC_SUBCMD_SET_CREATE(net_cmd_cm,
 	SHELL_CMD_ARG(status, NULL,
-		  "'net cm status [target]' shows the connectivity status of the specified "
-		  "iface(s).",
-		  cmd_net_cm_status, 1, 2),
+		      SHELL_HELP("Shows the connectivity status of the specified interface",
+				 "[target]"),
+		      cmd_net_cm_status, 1, 2),
 	SHELL_CMD_ARG(ignore, NULL,
-		  "'net cm ignore [target]' ignores the specified iface(s).",
-		  cmd_net_cm_ignore, 1, 2),
+		      SHELL_HELP("Ignores the specified interface", "[target]"),
+		      cmd_net_cm_ignore, 1, 2),
 	SHELL_CMD_ARG(watch, NULL,
-		  "'net cm watch [target]' watches the specified iface(s).",
-		  cmd_net_cm_watch, 1, 2),
+		      SHELL_HELP("Watches the specified interface", "[target]"),
+		      cmd_net_cm_watch, 1, 2),
 	SHELL_CMD_ARG(connect, NULL,
-		  "'net cm connect [target]' connects the specified iface(s).",
-		  cmd_net_cm_connect, 1, 2),
+		      SHELL_HELP("Connects the specified interface", "[target]"),
+		      cmd_net_cm_connect, 1, 2),
 	SHELL_CMD_ARG(disconnect, NULL,
-		  "'net cm disconnect [target]' disconnects the specified iface(s).",
-		  cmd_net_cm_disconnect, 1, 2),
+		      SHELL_HELP("Disconnects the specified interface", "[target]"),
+		      cmd_net_cm_disconnect, 1, 2),
 	SHELL_CMD_ARG(up, NULL,
-		  "'net cm up [target]' takes the specified iface(s) admin-up.",
-		  cmd_net_cm_up, 1, 2),
+		      SHELL_HELP("Takes the specified interface admin-up", "[target]"),
+		      cmd_net_cm_up, 1, 2),
 	SHELL_CMD_ARG(down, NULL,
-		  "'net cm down [target]' takes the specified iface(s) admin-down.",
-		  cmd_net_cm_down, 1, 2),
+		      SHELL_HELP("Takes the specified interface admin-down", "[target]"),
+		      cmd_net_cm_down, 1, 2),
 	SHELL_CMD_ARG(flag, NULL,
-		  "'net cm flag [target] [get/set] [flag] [value]' gets or sets a flag "
-		  "for the specified iface.",
-		  cmd_net_cm_flag, 1, 5),
+		      SHELL_HELP("Gets or sets a flag for the specified interface",
+				 "[target] [get/set] [flag] [value]"),
+		      cmd_net_cm_flag, 1, 5),
 	SHELL_CMD_ARG(timeout, NULL,
-		  "'net cm timeout [target] [get/set] [value]' gets or sets the timeout "
-		  "for the specified iface.",
-		  cmd_net_cm_timeout, 1, 4),
-	SHELL_SUBCMD_SET_END
+		      SHELL_HELP("Gets or sets the timeout for the specified interface",
+				 "[target] [get/set] [value]"),
+		      cmd_net_cm_timeout, 1, 4),
+			       SHELL_SUBCMD_SET_END
 );
 
 SHELL_SUBCMD_ADD((net), cm, &net_cmd_cm, "Control conn_mgr.", NULL, 1, 0);

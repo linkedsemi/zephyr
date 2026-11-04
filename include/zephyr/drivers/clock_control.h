@@ -8,19 +8,25 @@
 
 /**
  * @file
- * @brief Public Clock Control APIs
+ * @ingroup clock_control_interface
+ * @brief Main header file for clock control driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_CLOCK_CONTROL_H_
 #define ZEPHYR_INCLUDE_DRIVERS_CLOCK_CONTROL_H_
 
 /**
- * @brief Clock Control Interface
- * @defgroup clock_control_interface Clock Control Interface
+ * @brief Interfaces for clock controllers.
+ * @defgroup clock_control_interface Clock Control
  * @since 1.0
  * @version 1.0.0
  * @ingroup io_interfaces
  * @{
+ *
+ * @defgroup clock_control_interface_ext Device-specific Clock Control API extensions
+ *
+ * @{
+ * @}
  */
 
 #include <errno.h>
@@ -37,31 +43,32 @@ extern "C" {
 
 /* Clock control API */
 
-/* Used to select all subsystem of a clock controller */
+/** @brief Subsystem selector representing all subsystems of a clock controller. */
 #define CLOCK_CONTROL_SUBSYS_ALL	NULL
 
 /**
  * @brief Current clock status.
  */
 enum clock_control_status {
-	CLOCK_CONTROL_STATUS_STARTING,
-	CLOCK_CONTROL_STATUS_OFF,
-	CLOCK_CONTROL_STATUS_ON,
-	CLOCK_CONTROL_STATUS_UNKNOWN
+	CLOCK_CONTROL_STATUS_STARTING, /**< Clock is starting. */
+	CLOCK_CONTROL_STATUS_OFF,      /**< Clock is off. */
+	CLOCK_CONTROL_STATUS_ON,       /**< Clock is on. */
+	CLOCK_CONTROL_STATUS_UNKNOWN   /**< Clock status is unknown. */
 };
 
 /**
- * clock_control_subsys_t is a type to identify a clock controller sub-system.
- * Such data pointed is opaque and relevant only to the clock controller
- * driver instance being used.
+ * @brief Opaque handle identifying a clock controller subsystem.
+ *
+ * The pointed-to data is opaque and only meaningful to the clock controller driver instance
+ * being used.
  */
 typedef void *clock_control_subsys_t;
 
 /**
- * clock_control_subsys_rate_t is a type to identify a clock
- * controller sub-system rate.  Such data pointed is opaque and
- * relevant only to set the clock controller rate of the driver
- * instance being used.
+ * @brief Opaque handle identifying the rate of a clock controller subsystem.
+ *
+ * The pointed-to data is opaque and only meaningful when setting the rate of the clock
+ * controller driver instance being used.
  */
 typedef void *clock_control_subsys_rate_t;
 
@@ -69,45 +76,92 @@ typedef void *clock_control_subsys_rate_t;
  *
  * @param dev		Device structure whose driver controls the clock.
  * @param subsys	Opaque data representing the clock.
- * @param user_data	User data.
+ * @param user_data	User data passed to clock_control_async_on().
  */
 typedef void (*clock_control_cb_t)(const struct device *dev,
 				   clock_control_subsys_t subsys,
 				   void *user_data);
 
-typedef int (*clock_control)(const struct device *dev,
-			     clock_control_subsys_t sys);
+/**
+ * @def_driverbackendgroup{Clock Control,clock_control_interface}
+ * @ingroup clock_control_interface
+ * @{
+ */
 
+/**
+ * @brief Callback API to enable or disable a clock.
+ *
+ * See clock_control_on() and clock_control_off() for argument description.
+ */
+typedef int (*clock_control)(const struct device *dev, clock_control_subsys_t sys);
+
+/**
+ * @brief Callback API to get a clock rate.
+ *
+ * See clock_control_get_rate() for argument description.
+ */
 typedef int (*clock_control_get)(const struct device *dev,
 				 clock_control_subsys_t sys,
 				 uint32_t *rate);
 
+/**
+ * @brief Callback API to start a clock asynchronously.
+ *
+ * See clock_control_async_on() for argument description.
+ */
 typedef int (*clock_control_async_on_fn)(const struct device *dev,
 					 clock_control_subsys_t sys,
 					 clock_control_cb_t cb,
 					 void *user_data);
 
+/**
+ * @brief Callback API to get a clock status.
+ *
+ * See clock_control_get_status() for argument description.
+ */
 typedef enum clock_control_status (*clock_control_get_status_fn)(
 						    const struct device *dev,
 						    clock_control_subsys_t sys);
 
+/**
+ * @brief Callback API to set a clock rate.
+ *
+ * See clock_control_set_rate() for argument description.
+ */
 typedef int (*clock_control_set)(const struct device *dev,
 				 clock_control_subsys_t sys,
 				 clock_control_subsys_rate_t rate);
 
+/**
+ * @brief Callback API to configure a clock.
+ *
+ * See clock_control_configure() for argument description.
+ */
 typedef int (*clock_control_configure_fn)(const struct device *dev,
 					  clock_control_subsys_t sys,
 					  void *data);
 
+/**
+ * @driver_ops{Clock Control}
+ */
 __subsystem struct clock_control_driver_api {
-	clock_control			on;
-	clock_control			off;
-	clock_control_async_on_fn	async_on;
-	clock_control_get		get_rate;
-	clock_control_get_status_fn	get_status;
-	clock_control_set		set_rate;
-	clock_control_configure_fn	configure;
+	/** @driver_ops_optional @copybrief clock_control_on */
+	clock_control on;
+	/** @driver_ops_optional @copybrief clock_control_off */
+	clock_control off;
+	/** @driver_ops_optional @copybrief clock_control_async_on */
+	clock_control_async_on_fn async_on;
+	/** @driver_ops_optional @copybrief clock_control_get_rate */
+	clock_control_get get_rate;
+	/** @driver_ops_optional @copybrief clock_control_get_status */
+	clock_control_get_status_fn get_status;
+	/** @driver_ops_optional @copybrief clock_control_set_rate */
+	clock_control_set set_rate;
+	/** @driver_ops_optional @copybrief clock_control_configure */
+	clock_control_configure_fn configure;
 };
+
+/** @} */
 
 /**
  * @brief Enable a clock controlled by the device
@@ -125,8 +179,11 @@ __subsystem struct clock_control_driver_api {
 static inline int clock_control_on(const struct device *dev,
 				   clock_control_subsys_t sys)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
+
+	if (api->on == NULL) {
+		return -ENOSYS;
+	}
 
 	return api->on(dev, sys);
 }
@@ -144,8 +201,11 @@ static inline int clock_control_on(const struct device *dev,
 static inline int clock_control_off(const struct device *dev,
 				    clock_control_subsys_t sys)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
+
+	if (api->off == NULL) {
+		return -ENOSYS;
+	}
 
 	return api->off(dev, sys);
 }
@@ -165,15 +225,14 @@ static inline int clock_control_off(const struct device *dev,
  * @retval -EALREADY if clock was already started and is starting or running.
  * @retval -ENOTSUP If the requested mode of operation is not supported.
  * @retval -ENOSYS if the interface is not implemented.
- * @retval other negative errno on vendor specific error.
+ * @retval <0 other negative errno on vendor specific error.
  */
 static inline int clock_control_async_on(const struct device *dev,
 					 clock_control_subsys_t sys,
 					 clock_control_cb_t cb,
 					 void *user_data)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
 
 	if (api->async_on == NULL) {
 		return -ENOSYS;
@@ -193,8 +252,7 @@ static inline int clock_control_async_on(const struct device *dev,
 static inline enum clock_control_status clock_control_get_status(const struct device *dev,
 								 clock_control_subsys_t sys)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
 
 	if (!api->get_status) {
 		return CLOCK_CONTROL_STATUS_UNKNOWN;
@@ -219,8 +277,7 @@ static inline int clock_control_get_rate(const struct device *dev,
 					 clock_control_subsys_t sys,
 					 uint32_t *rate)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
 
 	if (api->get_rate == NULL) {
 		return -ENOSYS;
@@ -243,14 +300,13 @@ static inline int clock_control_get_rate(const struct device *dev,
  * @retval -EALREADY if clock was already in the given rate.
  * @retval -ENOTSUP If the requested mode of operation is not supported.
  * @retval -ENOSYS if the interface is not implemented.
- * @retval other negative errno on vendor specific error.
+ * @retval <0 other negative errno on vendor specific error.
  */
 static inline int clock_control_set_rate(const struct device *dev,
 		clock_control_subsys_t sys,
 		clock_control_subsys_rate_t rate)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
 
 	if (api->set_rate == NULL) {
 		return -ENOSYS;
@@ -285,8 +341,7 @@ static inline int clock_control_configure(const struct device *dev,
 					  clock_control_subsys_t sys,
 					  void *data)
 {
-	const struct clock_control_driver_api *api =
-		(const struct clock_control_driver_api *)dev->api;
+	const struct clock_control_driver_api *api = DEVICE_API_GET(clock_control, dev);
 
 	if (api->configure == NULL) {
 		return -ENOSYS;

@@ -136,6 +136,18 @@
 #define NRF_FUN_QSPI_IO2 33U
 /** QSPI IO3 */
 #define NRF_FUN_QSPI_IO3 34U
+/** MSPI SCK */
+#define NRF_FUN_MSPI_SCK NRF_FUN_QSPI_SCK
+/** MSPI CSN */
+#define NRF_FUN_MSPI_CSN NRF_FUN_QSPI_CSN
+/** MSPI IO0 */
+#define NRF_FUN_MSPI_IO0 NRF_FUN_QSPI_IO0
+/** MSPI IO1 */
+#define NRF_FUN_MSPI_IO1 NRF_FUN_QSPI_IO1
+/** MSPI IO2 */
+#define NRF_FUN_MSPI_IO2 NRF_FUN_QSPI_IO2
+/** MSPI IO3 */
+#define NRF_FUN_MSPI_IO3 NRF_FUN_QSPI_IO3
 /** EXMIF CK */
 #define NRF_FUN_EXMIF_CK 35U
 /** EXMIF DQ0 */
@@ -162,6 +174,42 @@
 #define NRF_FUN_CAN_TX 46U
 /** CAN RX */
 #define NRF_FUN_CAN_RX 47U
+/** TWIS SCL */
+#define NRF_FUN_TWIS_SCL 48U
+/** TWIS SDA */
+#define NRF_FUN_TWIS_SDA 49U
+/** EXMIF RWDS */
+#define NRF_FUN_EXMIF_RWDS 50U
+/** GRTC fast clock output */
+#define NRF_FUN_GRTC_CLKOUT_FAST 55U
+/** GRTC slow clock output */
+#define NRF_FUN_GRTC_CLKOUT_32K  56U
+/** TDM SCK in master mode */
+#define NRF_FUN_TDM_SCK_M        71U
+/** TDM SCK in slave mode */
+#define NRF_FUN_TDM_SCK_S        72U
+/** TDM LRCK in master mode */
+#define NRF_FUN_TDM_FSYNC_M      73U
+/** TDM LRCK in slave mode */
+#define NRF_FUN_TDM_FSYNC_S      74U
+/** TDM SDIN */
+#define NRF_FUN_TDM_SDIN         75U
+/** TDM SDOUT */
+#define NRF_FUN_TDM_SDOUT        76U
+/** TDM MCK */
+#define NRF_FUN_TDM_MCK          77U
+/** SPI master CSN */
+#define NRF_FUN_SPIM_CSN         78U
+/** TPIU CLOCK */
+#define NRF_FUN_TPIU_CLOCK       79U
+/** TPIU DATA0 */
+#define NRF_FUN_TPIU_DATA0       80U
+/** TPIU DATA1 */
+#define NRF_FUN_TPIU_DATA1       81U
+/** TPIU DATA2 */
+#define NRF_FUN_TPIU_DATA2       82U
+/** TPIU DATA3 */
+#define NRF_FUN_TPIU_DATA3       83U
 
 /** @} */
 
@@ -231,7 +279,7 @@
 /**
  * @brief Utility macro to build nRF psels property entry.
  *
- * @param fun Pin function configuration (see NRF_FUNC_{name} macros).
+ * @param fun Pin function configuration (see NRF_FUN_{name} macros).
  * @param port Port (0 or 15).
  * @param pin Pin (0..31).
  */

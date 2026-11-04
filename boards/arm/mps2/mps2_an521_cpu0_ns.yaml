@@ -4,11 +4,12 @@ type: mcu
 arch: arm
 ram: 512
 flash: 512
-simulation: qemu
+simulation:
+  - name: qemu
+  - name: armfvp
 toolchain:
   - gnuarmemb
   - zephyr
-  - xtools
 testing:
   default: true
   only_tags:
@@ -16,3 +17,4 @@ testing:
     - kernel
     - userspace
     - trusted-firmware-m
+    - integration

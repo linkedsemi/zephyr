@@ -43,7 +43,7 @@ config OPENTHREAD_BACKBONE_ROUTER_MULTICAST_ROUTING
 	bool "BBR MR support"
 
 config OPENTHREAD_BLE_TCAT
-	bool "BLE TCAT support"
+	bool "BLE TCAT support [EXPERIMENTAL]"
 	select EXPERIMENTAL
 
 config OPENTHREAD_BORDER_AGENT
@@ -54,6 +54,9 @@ config OPENTHREAD_BORDER_AGENT_EPHEMERAL_KEY_ENABLE
 
 config OPENTHREAD_BORDER_AGENT_ID
 	bool "Create and save border agent ID"
+
+config OPENTHREAD_BORDER_AGENT_MESHCOP_SERVICE
+	bool "Border agent meshcop service"
 
 config OPENTHREAD_BORDER_ROUTER
 	bool "Border Router support"
@@ -67,8 +70,14 @@ config OPENTHREAD_BORDER_ROUTING_COUNTERS
 config OPENTHREAD_BORDER_ROUTING_DHCP6_PD
 	bool "DHCPv6-PD support in border routing"
 
+config OPENTHREAD_BORDER_ROUTING_DHCP6_PD_CLIENT
+	bool "DHCPv6-PD client support in border routing"
+
 config OPENTHREAD_CHANNEL_MONITOR
 	bool "Channel monitor support"
+
+config OPENTHREAD_CHANNEL_MONITOR_AUTO_START
+	bool "Start channel monitor with interface"
 
 config OPENTHREAD_CHANNEL_MANAGER
 	bool "Channel manager support"
@@ -97,7 +106,7 @@ config OPENTHREAD_COMMISSIONER
 	help
 	  Enable commissioner capability in OpenThread stack. Note, that DTLS
 	  handshake used in the commissioning procedure requires a larger
-	  mbedTLS heap than the default value. A minimum recommended value of
+	  Mbed TLS heap than the default value. A minimum recommended value of
 	  CONFIG_MBEDTLS_HEAP_SIZE for the commissioning is 10KB.
 
 config OPENTHREAD_CSL_DEBUG
@@ -127,6 +136,14 @@ config OPENTHREAD_DEVICE_PROP_LEADER_WEIGHT
 
 config OPENTHREAD_DATASET_UPDATER
 	bool "Dataset updater"
+
+config OPENTHREAD_WAKEUP_COORDINATOR
+	bool "Wake-up Coordinator support"
+	select OPENTHREAD_CSL_RECEIVER
+
+config OPENTHREAD_WAKEUP_END_DEVICE
+	bool "Wake-up End Device support"
+	imply OPENTHREAD_CSL_RECEIVER
 
 config OPENTHREAD_DHCP6_CLIENT
 	bool "DHCPv6 client support"
@@ -178,6 +195,15 @@ config OPENTHREAD_ENABLE_SERVICE
 config OPENTHREAD_EXTERNAL_HEAP
 	bool "External heap support"
 
+config OPENTHREAD_EXTERNAL_HEAP_SHARED_MULTI_HEAP
+	bool "Allocate OpenThread heap from external memory"
+	depends on OPENTHREAD_EXTERNAL_HEAP
+	depends on SHARED_MULTI_HEAP
+	help
+	  Use external memory via shared multi-heap for OpenThread dynamic
+	  memory allocations (otPlatCAlloc/otPlatFree). The platform must
+	  register an external memory region with the shared multi-heap pool.
+
 config OPENTHREAD_FIREWALL
 	bool "Firewall support"
 
@@ -195,8 +221,13 @@ config OPENTHREAD_JOINER
 	help
 	  Enable joiner capability in OpenThread stack. Note, that DTLS
 	  handshake used in the commissioning procedure requires a larger
-	  mbedTLS heap than the default value. A minimum recommended value of
+	  Mbed TLS heap than the default value. A minimum recommended value of
 	  CONFIG_MBEDTLS_HEAP_SIZE for the commissioning is 10KB.
+
+config OPENTHREAD_COMMISSIONER_JOINER
+	bool
+	default y
+	depends on OPENTHREAD_COMMISSIONER || OPENTHREAD_JOINER
 
 config OPENTHREAD_LEGACY
 	bool "Legacy network support"
@@ -219,6 +250,9 @@ config OPENTHREAD_LOG_LEVEL_DYNAMIC
 config OPENTHREAD_MAC_FILTER
 	bool "MAC filter support"
 
+config OPENTHREAD_MAC_BEACON_PAYLOAD_PARSING
+	bool "MAC beacon payload parsing support"
+
 config OPENTHREAD_MULTICAST_DNS
 	bool "Multicast DNS (mDNS)"
 
@@ -232,7 +266,7 @@ config OPENTHREAD_MESSAGE_USE_HEAP
 	bool "Heap allocator for message buffers"
 
 config OPENTHREAD_MLE_LONG_ROUTES
-	bool "MLE long routes extension (experimental)"
+	bool "MLE long routes extension [EXPERIMENTAL]"
 	select EXPERIMENTAL
 	help
 	  Enable MLE long routes extension (experimental, breaks Thread conformance)
@@ -247,6 +281,11 @@ config OPENTHREAD_MULTIPAN_RCP
 
 config OPENTHREAD_MULTIPLE_INSTANCE
 	bool "OpenThread multiple instances"
+
+config OPENTHREAD_MULTIPLE_INSTANCE_NUM
+	int "OpenThread number of instances"
+	depends on OPENTHREAD_MULTIPLE_INSTANCE
+	default 3
 
 config OPENTHREAD_NAT64_BORDER_ROUTING
 	bool "Border routing NAT64 support"
@@ -275,6 +314,11 @@ config OPENTHREAD_OTNS
 
 config OPENTHREAD_PING_SENDER
 	bool "Ping sender support"
+
+config OPENTHREAD_PLATFORM_RADIO_COEX_ENABLE
+	bool "Platform radio coexistence support"
+	help
+	  Enable radio coexistence support in the platform.
 
 config OPENTHREAD_PLATFORM_KEY_REF
 	bool "Platform cryptographic key reference support"
@@ -367,12 +411,23 @@ config OPENTHREAD_SRP_SERVER
 	select OPENTHREAD_NETDATA_PUBLISHER
 	select OPENTHREAD_ECDSA
 
+config OPENTHREAD_SRP
+	bool
+	default y
+	depends on OPENTHREAD_SRP_CLIENT || OPENTHREAD_SRP_SERVER
+
+config OPENTHREAD_SRP_SERVER_FAST_START
+	bool "SRP server fast start"
+
 config OPENTHREAD_TIME_SYNC
 	bool "The time synchronization service feature [EXPERIMENTAL]"
 	select EXPERIMENTAL
 
 config OPENTHREAD_TREL
 	bool "TREL radio link for Thread over Infrastructure feature"
+
+config OPENTHREAD_TREL_MANAGE_DNSSD
+	bool "TREL to manage DNSSD and peer discovery"
 
 config OPENTHREAD_TX_BEACON_PAYLOAD
 	bool "TX beacon payload support"
@@ -385,7 +440,7 @@ config OPENTHREAD_UDP_FORWARD
 
 config OPENTHREAD_UPTIME
 	bool "Openthread uptime counter"
-	default y if OPENTHREAD_FTD
+	default y if OPENTHREAD_FTD || OPENTHREAD_MTD
 
 config OPENTHREAD_VERHOEFF_CHECKSUM
 	bool "Verhoeff checksum"

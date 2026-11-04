@@ -22,22 +22,29 @@ struct bt_rfcomm_session {
 	struct bt_l2cap_br_chan br_chan;
 	/* Response Timeout eXpired (RTX) timer */
 	struct k_work_delayable rtx_work;
+	/* Retry work */
+	struct k_work_delayable retry_work;
+	/* Retry timeout expired timer */
+	struct k_work_delayable retry_timeout_work;
 	/* Binary sem for aggregate fc */
 	struct k_sem fc;
-	struct bt_rfcomm_dlc *dlcs;
+	/* DLC list */
+	sys_slist_t dlcs;
 	uint16_t mtu;
 	uint8_t state;
 	bt_rfcomm_role_t role;
 	bt_rfcomm_cfc_t cfc;
+	atomic_t flags;
 };
 
 enum {
 	BT_RFCOMM_STATE_IDLE,
 	BT_RFCOMM_STATE_INIT,
+	BT_RFCOMM_STATE_SECURITY_FAILED,
 	BT_RFCOMM_STATE_SECURITY_PENDING,
+	BT_RFCOMM_STATE_CONFIG,
 	BT_RFCOMM_STATE_CONNECTING,
 	BT_RFCOMM_STATE_CONNECTED,
-	BT_RFCOMM_STATE_CONFIG,
 	BT_RFCOMM_STATE_USER_DISCONNECT,
 	BT_RFCOMM_STATE_DISCONNECTING,
 	BT_RFCOMM_STATE_DISCONNECTED,
@@ -74,6 +81,37 @@ struct bt_rfcomm_pn {
 	uint8_t  credits;
 } __packed;
 
+/** @brief Bitmask for the FC (Flow Control) field in the RFCOMM MSC V.24 signals octet. */
+#define BT_RFCOMM_V24_SIGNALS_FC_MASK GENMASK(1, 1)
+
+/**
+ * @brief Extract the FC (Flow Control) field from the RFCOMM MSC V.24 signals octet.
+ *
+ * @param _v  V.24 signals octet value.
+ *
+ * @return FC field value (0 = ready to accept frames, 1 = unable to accept frames).
+ */
+#define BT_RFCOMM_V24_SIGNALS_GET_FC(_v) FIELD_GET(BT_RFCOMM_V24_SIGNALS_FC_MASK, _v)
+
+/**
+ * @brief Clear the FC (Flow Control) field from the RFCOMM MSC V.24 signals octet.
+ *
+ * @param _v  V.24 signals octet value.
+ *
+ * @return V.24 signals octet with FC field cleared.
+ */
+#define BT_RFCOMM_V24_SIGNALS_CLR_FC(_v) ((_v) & (~BT_RFCOMM_V24_SIGNALS_FC_MASK))
+
+/**
+ * @brief Set the FC (Flow Control) field to the RFCOMM MSC V.24 signals octet.
+ *
+ * @param _v  V.24 signals octet value.
+ *
+ * @return V.24 signals octet with FC field set.
+ */
+#define BT_RFCOMM_V24_SIGNALS_SET_FC(_v) \
+	(BT_RFCOMM_V24_SIGNALS_CLR_FC(_v) | FIELD_PREP(BT_RFCOMM_V24_SIGNALS_FC_MASK, 1))
+
 #define BT_RFCOMM_MSC    0x38
 struct bt_rfcomm_msc {
 	uint8_t  dlci;
@@ -90,15 +128,6 @@ struct bt_rfcomm_rls {
 } __packed;
 
 #define BT_RFCOMM_RPN   0x24
-struct bt_rfcomm_rpn {
-	uint8_t  dlci;
-	uint8_t  baud_rate;
-	uint8_t  line_settings;
-	uint8_t  flow_control;
-	uint8_t  xon_char;
-	uint8_t  xoff_char;
-	uint16_t param_mask;
-} __packed;
 
 #define BT_RFCOMM_TEST  0x08
 #define BT_RFCOMM_NSC   0x04
@@ -106,41 +135,14 @@ struct bt_rfcomm_rpn {
 #define BT_RFCOMM_FCON  0x28
 #define BT_RFCOMM_FCOFF 0x18
 
-/* Default RPN Settings */
-#define BT_RFCOMM_RPN_BAUD_RATE_9600    0x03
-#define BT_RFCOMM_RPN_DATA_BITS_8       0x03
-#define BT_RFCOMM_RPN_STOP_BITS_1       0x00
-#define BT_RFCOMM_RPN_PARITY_NONE       0x00
-#define BT_RFCOMM_RPN_FLOW_NONE         0x00
-#define BT_RFCOMM_RPN_XON_CHAR          0x11
-#define BT_RFCOMM_RPN_XOFF_CHAR         0x13
-
-/* Set 1 to all the param mask except reserved */
-#define BT_RFCOMM_RPN_PARAM_MASK_ALL    0x3f7f
-
-#define BT_RFCOMM_SET_LINE_SETTINGS(data, stop, parity) ((data & 0x3) | \
-							 ((stop & 0x1) << 2) | \
-							 ((parity & 0x7) << 3))
-
 /* DV = 1 IC = 0 RTR = 1 RTC = 1 FC = 0 EXT = 0 */
 #define BT_RFCOMM_DEFAULT_V24_SIG 0x8d
-
-#define BT_RFCOMM_GET_FC(v24_signal) (((v24_signal) & 0x02) >> 1)
 
 #define BT_RFCOMM_SIG_MIN_MTU   23
 #define BT_RFCOMM_SIG_MAX_MTU   32767
 
 #define BT_RFCOMM_CHECK_MTU(mtu) (!!((mtu) >= BT_RFCOMM_SIG_MIN_MTU && \
 				     (mtu) <= BT_RFCOMM_SIG_MAX_MTU))
-
-/* Helper to calculate needed outgoing buffer size.
- * Length in rfcomm header can be two bytes depending on user data length.
- * One byte in the tail should be reserved for FCS.
- */
-#define BT_RFCOMM_BUF_SIZE(mtu) (BT_BUF_RESERVE + \
-				 BT_HCI_ACL_HDR_SIZE + BT_L2CAP_HDR_SIZE + \
-				 sizeof(struct bt_rfcomm_hdr) + 1 + (mtu) + \
-				 BT_RFCOMM_FCS_SIZE)
 
 #define BT_RFCOMM_GET_DLCI(addr)                  (((addr) & 0xfc) >> 2)
 #define BT_RFCOMM_GET_FRAME_TYPE(ctrl)            ((ctrl) & 0xef)
@@ -192,7 +194,6 @@ struct bt_rfcomm_rpn {
 
 /* Length can be 2 bytes depending on data size */
 #define BT_RFCOMM_HDR_SIZE  (sizeof(struct bt_rfcomm_hdr) + 1)
-#define BT_RFCOMM_FCS_SIZE  1
 
 #define BT_RFCOMM_FCS_LEN_UIH      2
 #define BT_RFCOMM_FCS_LEN_NON_UIH  3
@@ -217,3 +218,23 @@ struct bt_rfcomm_rpn {
 
 /* Initialize RFCOMM signal layer */
 void bt_rfcomm_init(void);
+
+enum {
+	RFCOMM_FLAG_MSC_FC_CLEARED = 0,
+	RFCOMM_FLAG_MSC_FC_CLEAR_REQ = 1,
+	RFCOMM_FLAG_PN_REQ = 2,
+	RFCOMM_FLAG_PN_RSP = 3,
+	RFCOMM_FLAG_UA_FOR_SABM = 4,
+	RFCOMM_FLAG_UA_FOR_DISC = 5,
+	RFCOMM_FLAG_DM = 6,
+};
+
+enum {
+	RFCOMM_SESSION_FLAG_FC_ON = 0,
+	RFCOMM_SESSION_FLAG_FC_ON_REQ = 1,
+	RFCOMM_SESSION_FLAG_FC_ON_RSP = 2,
+	RFCOMM_SESSION_FLAG_FC_OFF_RSP = 3,
+	RFCOMM_SESSION_FLAG_UA_FOR_SABM = 4,
+	RFCOMM_SESSION_FLAG_UA_FOR_DISC = 5,
+	RFCOMM_SESSION_FLAG_DISCONN_REQ = 6,
+};

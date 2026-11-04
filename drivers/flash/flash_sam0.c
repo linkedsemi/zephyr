@@ -5,7 +5,6 @@
  */
 
 #define DT_DRV_COMPAT atmel_sam0_nvmctrl
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
 
 #define LOG_LEVEL CONFIG_FLASH_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -17,6 +16,9 @@ LOG_MODULE_REGISTER(flash_sam0);
 #include <zephyr/kernel.h>
 #include <soc.h>
 #include <string.h>
+#include "flash_priv.h"
+
+#define SOC_NV_FLASH_NODE SOC_NV_FLASH_CHILD_NODE(0)
 
 #define FLASH_WRITE_BLK_SZ DT_PROP(SOC_NV_FLASH_NODE, write_block_size)
 BUILD_ASSERT((FLASH_WRITE_BLK_SZ % sizeof(uint32_t)) == 0, "unsupported write-block-size");
@@ -47,7 +49,7 @@ BUILD_ASSERT((FLASH_WRITE_BLK_SZ % sizeof(uint32_t)) == 0, "unsupported write-bl
 
 #define PAGES_PER_ROW (ROW_SIZE / FLASH_PAGE_SIZE)
 
-#define FLASH_MEM(_a) ((uint32_t *)((uint8_t *)((_a) + CONFIG_FLASH_BASE_ADDRESS)))
+#define FLASH_MEM(_a) ((uint32_t *)((uint8_t *)((uintptr_t)(_a) + CONFIG_FLASH_BASE_ADDRESS)))
 
 struct flash_sam0_data {
 #if CONFIG_SOC_FLASH_SAM0_EMULATE_BYTE_PAGES
@@ -224,7 +226,7 @@ static int flash_sam0_commit(const struct device *dev, off_t base)
 	for (page = 0; page < PAGES_PER_ROW; page++) {
 		err = flash_sam0_write_page(
 			dev, base + page * FLASH_PAGE_SIZE,
-			&ctx->buf[page * FLASH_PAGE_SIZE], ROW_SIZE);
+			&ctx->buf[page * FLASH_PAGE_SIZE], FLASH_PAGE_SIZE);
 		if (err != 0) {
 			return err;
 		}
@@ -454,6 +456,13 @@ flash_sam0_get_parameters(const struct device *dev)
 	return &flash_sam0_parameters;
 }
 
+static int flash_sam0_get_size(const struct device *dev, uint64_t *size)
+{
+	*size = (uint64_t)CONFIG_FLASH_SIZE;
+
+	return 0;
+}
+
 static int flash_sam0_init(const struct device *dev)
 {
 #if defined(CONFIG_MULTITHREADING)
@@ -480,11 +489,12 @@ static int flash_sam0_init(const struct device *dev)
 	return flash_sam0_write_protection(dev, false);
 }
 
-static const struct flash_driver_api flash_sam0_api = {
+static DEVICE_API(flash, flash_sam0_api) = {
 	.erase = flash_sam0_erase,
 	.write = flash_sam0_write,
 	.read = flash_sam0_read,
 	.get_parameters = flash_sam0_get_parameters,
+	.get_size = flash_sam0_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_sam0_page_layout,
 #endif

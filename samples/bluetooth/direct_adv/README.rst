@@ -27,7 +27,15 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/direct_adv` in the
-Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/direct_adv
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+After flashing, the device will start advertising. If no bond exists,
+it performs undirected advertising. After pairing completes,
+the device reboots after 5 seconds. On subsequent boots it uses
+directed advertising towards the bonded peer.

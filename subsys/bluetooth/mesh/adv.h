@@ -8,7 +8,7 @@
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/sys/util_macro.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 #ifndef ZEPHYR_SUBSYS_BLUETOOTH_MESH_ADV_H_
 #define ZEPHYR_SUBSYS_BLUETOOTH_MESH_ADV_H_
@@ -58,7 +58,11 @@ struct bt_mesh_adv_ctx {
 };
 
 struct bt_mesh_adv {
-	sys_snode_t node;
+	void *adv_bearer;
+
+#if defined(CONFIG_BT_MESH_GATT)
+	void *gatt_bearer[CONFIG_BT_MAX_CONN];
+#endif
 
 	struct bt_mesh_adv_ctx ctx;
 

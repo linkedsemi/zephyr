@@ -3,18 +3,20 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include <errno.h>
 #include <zephyr/kernel.h>
-
-#include "bs_types.h"
-#include "bs_tracing.h"
-#include "time_machine.h"
-#include "bstests.h"
-
 #include <zephyr/types.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/sys/printk.h>
-
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/bluetooth/gatt.h>
 
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
 #include "common.h"
 
 extern enum bst_result_t bst_result;
@@ -23,39 +25,30 @@ static struct bt_conn *g_conn;
 static bt_addr_le_t per_addr;
 static uint8_t per_sid;
 
-CREATE_FLAG(flag_connected);
-CREATE_FLAG(flag_bonded);
-CREATE_FLAG(flag_per_adv);
-CREATE_FLAG(flag_per_adv_sync);
-CREATE_FLAG(flag_per_adv_sync_lost);
-CREATE_FLAG(flag_per_adv_recv);
+DEFINE_FLAG_STATIC(flag_connected);
+DEFINE_FLAG_STATIC(flag_bonded);
+DEFINE_FLAG_STATIC(flag_per_adv);
+DEFINE_FLAG_STATIC(flag_per_adv_sync);
+DEFINE_FLAG_STATIC(flag_per_adv_sync_lost);
+DEFINE_FLAG_STATIC(flag_per_adv_recv);
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (err != BT_HCI_ERR_SUCCESS) {
-		FAIL("Failed to connect to %s: %u\n", addr, err);
+		TEST_FAIL("Failed to connect to %s: %u", bt_conn_dst_str(conn), err);
 		return;
 	}
 
-	printk("Connected to %s\n", addr);
+	printk("Connected to %s\n", bt_conn_dst_str(conn));
 	g_conn = bt_conn_ref(conn);
 	SET_FLAG(flag_connected);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
+	printk("Disconnected: %s (reason %u)\n", bt_conn_dst_str(conn), reason);
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	printk("Disconnected: %s (reason %u)\n", addr, reason);
-
-	bt_conn_unref(g_conn);
-	g_conn = NULL;
+	bt_conn_drop(&g_conn);
 }
 
 static struct bt_conn_cb conn_cbs = {
@@ -77,24 +70,24 @@ static struct bt_conn_auth_info_cb auto_info_cbs = {
 static void scan_recv(const struct bt_le_scan_recv_info *info,
 		      struct net_buf_simple *buf)
 {
-	if (!TEST_FLAG(flag_connected) &&
+	if (!IS_FLAG_SET(flag_connected) &&
 	    info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE) {
 		int err;
 
 		printk("Stopping scan\n");
 		err = bt_le_scan_stop();
 		if (err != 0) {
-			FAIL("Failed to stop scan: %d", err);
+			TEST_FAIL("Failed to stop scan: %d", err);
 			return;
 		}
 
 		err = bt_conn_le_create(info->addr, BT_CONN_LE_CREATE_CONN,
 					BT_LE_CONN_PARAM_DEFAULT, &g_conn);
 		if (err != 0) {
-			FAIL("Could not connect to peer: %d", err);
+			TEST_FAIL("Could not connect to peer: %d", err);
 			return;
 		}
-	} else if (!TEST_FLAG(flag_per_adv) && info->interval != 0U) {
+	} else if (!IS_FLAG_SET(flag_per_adv) && info->interval != 0U) {
 
 		per_sid = info->sid;
 		bt_addr_le_copy(&per_addr, info->addr);
@@ -110,13 +103,9 @@ static struct bt_le_scan_cb scan_callbacks = {
 static void sync_cb(struct bt_le_per_adv_sync *sync,
 		    struct bt_le_per_adv_sync_synced_info *info)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-
 	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s synced, "
 	       "Interval 0x%04x (%u us)\n",
-	       bt_le_per_adv_sync_get_index(sync), le_addr,
+	       bt_le_per_adv_sync_get_index(sync), bt_addr_le_str(info->addr),
 	       info->interval, BT_CONN_INTERVAL_TO_US(info->interval));
 
 	SET_FLAG(flag_per_adv_sync);
@@ -125,12 +114,8 @@ static void sync_cb(struct bt_le_per_adv_sync *sync,
 static void term_cb(struct bt_le_per_adv_sync *sync,
 		    const struct bt_le_per_adv_sync_term_info *info)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-
 	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s sync terminated\n",
-	       bt_le_per_adv_sync_get_index(sync), le_addr);
+	       bt_le_per_adv_sync_get_index(sync), bt_addr_le_str(info->addr));
 
 	SET_FLAG(flag_per_adv_sync_lost);
 }
@@ -139,22 +124,20 @@ static void recv_cb(struct bt_le_per_adv_sync *recv_sync,
 		    const struct bt_le_per_adv_sync_recv_info *info,
 		    struct net_buf_simple *buf)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
 	uint8_t buf_data_len;
 
-	if (TEST_FLAG(flag_per_adv_recv)) {
+	if (IS_FLAG_SET(flag_per_adv_recv)) {
 		return;
 	}
 
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s advertisment received\n",
-	       bt_le_per_adv_sync_get_index(recv_sync), le_addr);
+	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s advertisement received\n",
+	       bt_le_per_adv_sync_get_index(recv_sync), bt_addr_le_str(info->addr));
 
 	while (buf->len > 0) {
 		buf_data_len = (uint8_t)net_buf_simple_pull_le16(buf);
 		if (buf->data[0] - 1 != sizeof(mfg_data) ||
 			memcmp(buf->data, mfg_data, sizeof(mfg_data))) {
-			FAIL("Unexpected adv data received\n");
+			TEST_FAIL("Unexpected adv data received");
 		}
 		net_buf_simple_pull(buf, ARRAY_SIZE(mfg_data));
 	}
@@ -175,7 +158,7 @@ static void common_init(void)
 	err = bt_enable(NULL);
 
 	if (err) {
-		FAIL("Bluetooth init failed: %d\n", err);
+		TEST_FAIL("Bluetooth init failed: %d", err);
 		return;
 	}
 
@@ -195,7 +178,7 @@ static void start_scan(void)
 			       BT_LE_SCAN_CODED_ACTIVE : BT_LE_SCAN_ACTIVE,
 			       NULL);
 	if (err) {
-		FAIL("Failed to start scan: %d\n", err);
+		TEST_FAIL("Failed to start scan: %d", err);
 		return;
 	}
 	printk("done.\n");
@@ -214,7 +197,7 @@ static void create_pa_sync(struct bt_le_per_adv_sync **sync)
 	sync_create_param.timeout = 0x0a;
 	err = bt_le_per_adv_sync_create(&sync_create_param, sync);
 	if (err) {
-		FAIL("Failed to create periodic advertising sync: %d\n", err);
+		TEST_FAIL("Failed to create periodic advertising sync: %d", err);
 		return;
 	}
 	printk("done.\n");
@@ -231,10 +214,20 @@ static void start_bonding(void)
 	printk("Setting security...");
 	err = bt_conn_set_security(g_conn, BT_SECURITY_L2);
 	if (err) {
-		FAIL("Failed to set security: %d\n", err);
+		TEST_FAIL("Failed to set security: %d", err);
 		return;
 	}
 	printk("done.\n");
+}
+
+static void unregister_cb(void)
+{
+	int err;
+
+	err = bt_le_per_adv_sync_cb_unregister(&sync_callbacks);
+	if (err != 0) {
+		TEST_FAIL("Failed to unregister callbacks: %d", err);
+	}
 }
 
 static void main_per_adv_sync(void)
@@ -253,7 +246,7 @@ static void main_per_adv_sync(void)
 	printk("Waiting for periodic sync lost...\n");
 	WAIT_FOR_FLAG(flag_per_adv_sync_lost);
 
-	PASS("Periodic advertising sync passed\n");
+	TEST_PASS("Periodic advertising sync passed");
 }
 
 static void main_per_adv_sync_app_not_scanning(void)
@@ -271,7 +264,7 @@ static void main_per_adv_sync_app_not_scanning(void)
 	printk("Stopping scan\n");
 	err = bt_le_scan_stop();
 	if (err != 0) {
-		FAIL("Failed to stop scan: %d", err);
+		TEST_FAIL("Failed to stop scan: %d", err);
 		return;
 	}
 
@@ -280,7 +273,7 @@ static void main_per_adv_sync_app_not_scanning(void)
 	printk("Waiting for periodic sync lost...\n");
 	WAIT_FOR_FLAG(flag_per_adv_sync_lost);
 
-	PASS("Periodic advertising sync passed\n");
+	TEST_PASS("Periodic advertising sync passed");
 }
 
 static void main_per_adv_conn_sync(void)
@@ -305,7 +298,7 @@ static void main_per_adv_conn_sync(void)
 	printk("Waiting for periodic sync lost...\n");
 	WAIT_FOR_FLAG(flag_per_adv_sync_lost);
 
-	PASS("Periodic advertising sync passed\n");
+	TEST_PASS("Periodic advertising sync passed");
 }
 
 static void main_per_adv_conn_privacy_sync(void)
@@ -336,7 +329,7 @@ static void main_per_adv_conn_privacy_sync(void)
 	printk("Waiting for periodic sync lost...\n");
 	WAIT_FOR_FLAG(flag_per_adv_sync_lost);
 
-	PASS("Periodic advertising sync passed\n");
+	TEST_PASS("Periodic advertising sync passed");
 }
 
 static void main_per_adv_long_data_sync(void)
@@ -353,13 +346,49 @@ static void main_per_adv_long_data_sync(void)
 
 	create_pa_sync(&sync);
 
-	printk("Waiting to receive periodic advertisment...\n");
+	printk("Waiting to receive periodic advertisement...\n");
 	WAIT_FOR_FLAG(flag_per_adv_recv);
 
 	printk("Waiting for periodic sync lost...\n");
 	WAIT_FOR_FLAG(flag_per_adv_sync_lost);
 #endif
-	PASS("Periodic advertising long data sync passed\n");
+	TEST_PASS("Periodic advertising long data sync passed");
+}
+
+static void main_per_adv_unregister_sync_cb(void)
+{
+	struct bt_le_per_adv_sync *sync = NULL;
+
+	common_init();
+	start_scan();
+
+	printk("Waiting for periodic advertising...\n");
+	WAIT_FOR_FLAG(flag_per_adv);
+	printk("Found periodic advertising.\n");
+
+	create_pa_sync(&sync);
+
+	printk("Waiting to receive periodic advertisement...\n");
+	WAIT_FOR_FLAG(flag_per_adv_recv);
+
+	unregister_cb();
+	UNSET_FLAG(flag_per_adv_recv);
+	k_sleep(K_SECONDS(2));
+
+	if (IS_FLAG_SET(flag_per_adv_recv)) {
+		/* Rarely the testcase might fail here due to a race condition as brought up in:
+		 * https://github.com/zephyrproject-rtos/zephyr/pull/98458#issuecomment-3474097193
+		 */
+		TEST_FAIL("Received a callback after bt_le_per_adv_sync_cb_unregister");
+		return;
+	}
+
+	bt_le_per_adv_sync_cb_register(&sync_callbacks);
+	WAIT_FOR_FLAG(flag_per_adv_recv);
+
+	printk("Waiting for periodic sync lost...\n");
+	WAIT_FOR_FLAG(flag_per_adv_sync_lost);
+	TEST_PASS("Periodic advertising sync callback unregister passed");
 }
 
 static const struct bst_test_instance per_adv_sync[] = {
@@ -367,8 +396,6 @@ static const struct bst_test_instance per_adv_sync[] = {
 		.test_id = "per_adv_sync",
 		.test_descr = "Basic periodic advertising sync test. "
 			      "Will just sync to a periodic advertiser.",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = main_per_adv_sync
 	},
 	{
@@ -376,8 +403,6 @@ static const struct bst_test_instance per_adv_sync[] = {
 		.test_descr = "Basic periodic advertising sync test but where "
 			      "the app stopped scanning before creating sync."
 			      "Expect the host to start scanning automatically.",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = main_per_adv_sync_app_not_scanning
 	},
 	{
@@ -385,8 +410,6 @@ static const struct bst_test_instance per_adv_sync[] = {
 		.test_descr = "Periodic advertising sync test, but where there "
 			      "is a connection between the advertiser and the "
 			      "synchronized device.",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = main_per_adv_conn_sync
 	},
 	{
@@ -394,18 +417,21 @@ static const struct bst_test_instance per_adv_sync[] = {
 		.test_descr = "Periodic advertising sync test, but where "
 			      "advertiser and synchronized device are bonded and using  "
 			      "privacy",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = main_per_adv_conn_privacy_sync
 	},
 	{
 		.test_id = "per_adv_long_data_sync",
 		.test_descr = "Periodic advertising sync test with larger "
 			      "data length. Test is used to verify that "
-			      "reassembly of long data is handeled correctly.",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
+			      "reassembly of long data is handled correctly.",
 		.test_main_f = main_per_adv_long_data_sync
+	},
+	{
+		.test_id = "per_adv_unregister_sync_cb",
+		.test_descr = "Periodic advertising sync test, but sync callbacks "
+			      "get unregistered. Test is used to verify that "
+			      "the sync callbacks can be properly unregistered.",
+		.test_main_f = main_per_adv_unregister_sync_cb
 	},
 	BSTEST_END_MARKER
 };

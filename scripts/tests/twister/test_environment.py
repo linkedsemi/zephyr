@@ -7,15 +7,13 @@
 Tests for environment.py classes' methods
 """
 
-import mock
 import os
-import pytest
 import shutil
-
 from contextlib import nullcontext
+from unittest import mock
 
+import pytest
 import twisterlib.environment
-
 
 TESTDATA_1 = [
     (
@@ -31,20 +29,6 @@ TESTDATA_1 = [
         None,
         ['--device-serial-pty', 'dummy'],
         '--device-serial-pty is not supported on Windows OS'
-    ),
-    (
-        None,
-        None,
-        None,
-        ['--west-runner=dummy'],
-        'west-runner requires west-flash to be enabled'
-    ),
-    (
-        None,
-        None,
-        None,
-        ['--west-flash=\"--board-id=dummy\"'],
-        'west-flash requires device-testing to be enabled'
     ),
     (
         None,
@@ -98,13 +82,6 @@ TESTDATA_1 = [
         None,
         None,
         None,
-        ['--shuffle-tests'],
-        '--shuffle-tests requires --subset'
-    ),
-    (
-        None,
-        None,
-        None,
         ['--shuffle-tests-seed', '0'],
         '--shuffle-tests-seed requires --shuffle-tests'
     ),
@@ -136,13 +113,10 @@ TESTDATA_1 = [
     ids=[
         'short build path without ninja',
         'device-serial-pty on Windows',
-        'west runner without west flash',
-        'west-flash without device-testing',
         'valgrind without executable',
         'device serial without platform',
         'device serial with multiple platforms',
         'device flash with test without device testing',
-        'shuffle-tests without subset',
         'shuffle-tests-seed without shuffle-tests',
         'unrecognised argument',
         'pytest-twister-harness installed'
@@ -332,6 +306,38 @@ def test_twisterenv_init(options, expected_env):
 
     assert twister_env.board_roots == expected_env.board_roots
     assert twister_env.outdir == expected_env.outdir
+
+
+# enable_coverage, environment beforehand, expected ccache environment afterwards
+TESTDATA_CCACHE = [
+    (False, {}, {'CCACHE_BASEDIR': 'foo', 'CCACHE_NOHASHDIR': 'true'}),
+    (False, {'CCACHE_BASEDIR': 'bar'}, {'CCACHE_BASEDIR': 'bar', 'CCACHE_NOHASHDIR': 'true'}),
+    (False, {'CCACHE_HASHDIR': 'true'}, {'CCACHE_BASEDIR': 'foo', 'CCACHE_HASHDIR': 'true'}),
+    (True, {}, {}),
+]
+
+
+@pytest.mark.parametrize(
+    'enable_coverage, preset_env, expected_env',
+    TESTDATA_CCACHE,
+    ids=[
+        'reuse objects',
+        'base directory already set',
+        'hash directory already set',
+        'coverage keeps the build directory paths'
+    ]
+)
+def test_twisterenv_setup_ccache(enable_coverage, preset_env, expected_env):
+    env = mock.Mock(
+        options=mock.Mock(enable_coverage=enable_coverage),
+        outdir='foo',
+    )
+
+    with mock.patch.dict(os.environ, preset_env, clear=True):
+        twisterlib.environment.TwisterEnv._setup_ccache(env)
+        ccache_env = {k: v for k, v in os.environ.items() if k.startswith('CCACHE_')}
+
+    assert ccache_env == expected_env
 
 
 def test_twisterenv_discover():
@@ -548,13 +554,16 @@ TESTDATA_6 = [
     (
         {
             'returncode': 0,
-            'stdout': '{\"ZEPHYR_TOOLCHAIN_VARIANT\": \"dummy toolchain\"}'
+            'stdout': (
+                '{\"ZEPHYR_TOOLCHAIN_VARIANT\": \"dummy toolchain\", '
+                '\"TOOLCHAIN_VARIANT_COMPILER\": \"gnu\"}'
+            )
         },
         None,
-        'Using \'dummy toolchain\' toolchain.'
+        'Using \'dummy toolchain/gnu\' toolchain variant.'
     ),
     (
-        {'returncode': 1},
+        {'returncode': 1, "returnmsg": "something went wrong"},
         2,
         None
     ),
@@ -588,7 +597,7 @@ def test_get_toolchain(caplog, script_result, exit_value, expected_log):
             twisterlib.environment.TwisterEnv,
             'run_cmake_script',
             mock.Mock(return_value=script_result)), \
-         pytest.raises(SystemExit) \
+         pytest.raises(SystemExit, match='2') \
             if exit_value is not None else nullcontext() as exit_info:
         twister_env.get_toolchain()
 

@@ -7,7 +7,7 @@ check_set_linker_property(TARGET linker PROPERTY base
                           ${LINKERFLAGPREFIX},--build-id=none
 )
 
-if(NOT CONFIG_MINIMAL_LIBCPP AND NOT CONFIG_NATIVE_LIBRARY AND NOT CONFIG_EXTERNAL_MODULE_LIBCPP)
+if(NOT CONFIG_NATIVE_LIBRARY AND NOT CONFIG_EXTERNAL_MODULE_LIBCPP)
   set_property(TARGET linker PROPERTY cpp_base -lstdc++)
 endif()
 
@@ -19,11 +19,11 @@ check_set_linker_property(TARGET linker PROPERTY baremetal
 )
 
 check_set_linker_property(TARGET linker PROPERTY orphan_warning
-			  ${LINKERFLAGPREFIX},--orphan-handling=warn
+                          ${LINKERFLAGPREFIX},--orphan-handling=warn
 )
 
 check_set_linker_property(TARGET linker PROPERTY orphan_error
-			  ${LINKERFLAGPREFIX},--orphan-handling=error
+                          ${LINKERFLAGPREFIX},--orphan-handling=error
 )
 
 set_property(TARGET linker PROPERTY partial_linking "-r")
@@ -34,3 +34,5 @@ check_set_linker_property(TARGET linker PROPERTY sort_alignment
                           ${LINKERFLAGPREFIX},--sort-common=descending
                           ${LINKERFLAGPREFIX},--sort-section=alignment
 )
+
+set_property(TARGET linker PROPERTY undefined ${LINKERFLAGPREFIX},--undefined=)

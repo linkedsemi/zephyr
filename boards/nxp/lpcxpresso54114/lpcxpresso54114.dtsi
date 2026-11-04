@@ -7,7 +7,7 @@
 #include "lpcxpresso54114-pinctrl.dtsi"
 
 / {
-	aliases{
+	aliases {
 		led0 = &red_led;
 		led1 = &green_led;
 		led2 = &blue_led;
@@ -17,16 +17,19 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			gpios = <&gpio0 29 GPIO_PULL_UP>;
 			label = "User LD1";
 			status = "disabled";
 		};
+
 		green_led: led_1 {
 			gpios = <&gpio1 10 GPIO_PULL_UP>;
 			label = "User LD2";
 			status = "disabled";
 		};
+
 		blue_led: led_2 {
 			gpios = <&gpio1 9 0>;
 			label = "User LD3";
@@ -61,14 +64,18 @@ arduino_spi: &flexcomm5 {
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
+		ranges;
 		#address-cells = <1>;
 		#size-cells = <1>;
+
 		slot0_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x00000000 0x00010000>;
 		};
+
 		slot1_partition: partition@10000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
 			reg = <0x00010000 0x00010000>;
 		};

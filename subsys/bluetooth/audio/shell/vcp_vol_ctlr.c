@@ -20,9 +20,11 @@
 #include <zephyr/shell/shell.h>
 #include <zephyr/shell/shell_string_conv.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
 #include <zephyr/types.h>
 
 #include "host/shell/bt.h"
+#include "common/bt_shell_private.h"
 
 static struct bt_vcp_vol_ctlr *vcp_vol_ctlr;
 static struct bt_vcp_included vcp_included;
@@ -31,97 +33,115 @@ static void vcs_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err,
 			    uint8_t vocs_count, uint8_t aics_count)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP discover failed (%d)", err);
+		bt_shell_error("VCP discover failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP discover done with %u VOCS and %u AICS", vocs_count,
-			    aics_count);
+		bt_shell_print("VCP discover done with %u VOCS and %u AICS", vocs_count,
+			       aics_count);
 
 		if (bt_vcp_vol_ctlr_included_get(vol_ctlr, &vcp_included)) {
-			shell_error(ctx_shell, "Could not get VCP context");
+			bt_shell_error("Could not get VCP context");
 		}
 	}
 }
 
 static void vcs_vol_down_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP vol_down failed (%d)", err);
+		bt_shell_error("VCP vol_down failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP vol_down done");
+		bt_shell_print("VCP vol_down done");
 	}
 }
 
 static void vcs_vol_up_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP vol_up failed (%d)", err);
+		bt_shell_error("VCP vol_up failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP vol_up done");
+		bt_shell_print("VCP vol_up done");
 	}
 }
 
 static void vcs_mute_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP mute failed (%d)", err);
+		bt_shell_error("VCP mute failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP mute done");
+		bt_shell_print("VCP mute done");
 	}
 }
 
 static void vcs_unmute_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP unmute failed (%d)", err);
+		bt_shell_error("VCP unmute failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP unmute done");
+		bt_shell_print("VCP unmute done");
 	}
 }
 
 static void vcs_vol_down_unmute_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP vol_down_unmute failed (%d)", err);
+		bt_shell_error("VCP vol_down_unmute failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP vol_down_unmute done");
+		bt_shell_print("VCP vol_down_unmute done");
 	}
 }
 
 static void vcs_vol_up_unmute_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP vol_up_unmute failed (%d)", err);
+		bt_shell_error("VCP vol_up_unmute failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP vol_up_unmute done");
+		bt_shell_print("VCP vol_up_unmute done");
 	}
 }
 
 static void vcs_vol_set_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP vol_set failed (%d)", err);
+		bt_shell_error("VCP vol_set failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP vol_set done");
+		bt_shell_print("VCP vol_set done");
 	}
 }
 
 static void vcs_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err,
 			 uint8_t volume, uint8_t mute)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP state get failed (%d)", err);
+		bt_shell_error("VCP state get failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP volume %u, mute %u", volume, mute);
+		bt_shell_print("VCP volume %u, mute %u", volume, mute);
 	}
 }
 
 static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err,
 			 uint8_t flags)
 {
+	ARG_UNUSED(vol_ctlr);
+
 	if (err != 0) {
-		shell_error(ctx_shell, "VCP flags get failed (%d)", err);
+		bt_shell_error("VCP flags get failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP flags 0x%02X", flags);
+		bt_shell_print("VCP flags 0x%02X", flags);
 	}
 }
 
@@ -129,53 +149,45 @@ static void vcs_flags_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err,
 static void vcs_aics_set_gain_cb(struct bt_aics *inst, int err)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "Set gain failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("Set gain failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "Gain set for inst %p", inst);
+		bt_shell_print("Gain set for inst %p", inst);
 	}
 }
 
 static void vcs_aics_unmute_cb(struct bt_aics *inst, int err)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "Unmute failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("Unmute failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "Unmuted inst %p", inst);
+		bt_shell_print("Unmuted inst %p", inst);
 	}
 }
 
 static void vcs_aics_mute_cb(struct bt_aics *inst, int err)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "Mute failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("Mute failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "Muted inst %p", inst);
+		bt_shell_print("Muted inst %p", inst);
 	}
 }
 
 static void vcs_aics_set_manual_mode_cb(struct bt_aics *inst, int err)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "Set manual mode failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("Set manual mode failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "Manual mode set for inst %p", inst);
+		bt_shell_print("Manual mode set for inst %p", inst);
 	}
 }
 
 static void vcs_aics_automatic_mode_cb(struct bt_aics *inst, int err)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "Set automatic mode failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("Set automatic mode failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "Automatic mode set for inst %p",
-			    inst);
+		bt_shell_print("Automatic mode set for inst %p", inst);
 	}
 }
 
@@ -183,12 +195,11 @@ static void vcs_aics_state_cb(struct bt_aics *inst, int err, int8_t gain,
 			      uint8_t mute, uint8_t mode)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "AICS state get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("AICS state get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell,
-			    "AICS inst %p state gain %d, mute %u, mode %u",
-			    inst, gain, mute, mode);
+		bt_shell_print("AICS inst %p state gain %d, mute %u, mode %s (0x%02X)", inst, gain,
+			       mute, bt_aics_mode_to_str(mode), mode);
 	}
 }
 
@@ -197,13 +208,11 @@ static void vcs_aics_gain_setting_cb(struct bt_aics *inst, int err,
 				     int8_t maximum)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "AICS gain settings get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("AICS gain settings get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell,
-			    "AICS inst %p gain settings units %u, min %d, max %d",
-			    inst, units, minimum, maximum);
+		bt_shell_print("AICS inst %p gain settings units %u, min %d, max %d",
+			       inst, units, minimum, maximum);
 	}
 }
 
@@ -211,37 +220,31 @@ static void vcs_aics_input_type_cb(struct bt_aics *inst, int err,
 				   uint8_t input_type)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "AICS input type get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("AICS input type get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "AICS inst %p input type %u",
-			    inst, input_type);
+		bt_shell_print("AICS inst %p input type %u", inst, input_type);
 	}
 }
 
 static void vcs_aics_status_cb(struct bt_aics *inst, int err, bool active)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "AICS status get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("AICS status get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell, "AICS inst %p status %s",
-			    inst, active ? "active" : "inactive");
+		bt_shell_print("AICS inst %p status %s",
+			       inst, active ? "active" : "inactive");
 	}
-
 }
 static void vcs_aics_description_cb(struct bt_aics *inst, int err,
 				    char *description)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "AICS description get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("AICS description get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell, "AICS inst %p description %s",
-			    inst, description);
+		bt_shell_print("AICS inst %p description %s",
+			       inst, description);
 	}
 }
 #endif /* CONFIG_BT_VCP_VOL_CTLR_MAX_AICS_INST > 0 */
@@ -250,20 +253,18 @@ static void vcs_aics_description_cb(struct bt_aics *inst, int err,
 static void vcs_vocs_set_offset_cb(struct bt_vocs *inst, int err)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "Set offset failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("Set offset failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "Offset set for inst %p", inst);
+		bt_shell_print("Offset set for inst %p", inst);
 	}
 }
 
 static void vcs_vocs_state_cb(struct bt_vocs *inst, int err, int16_t offset)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "VOCS state get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("VOCS state get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "VOCS inst %p offset %d", inst, offset);
+		bt_shell_print("VOCS inst %p offset %d", inst, offset);
 	}
 }
 
@@ -271,12 +272,9 @@ static void vcs_vocs_location_cb(struct bt_vocs *inst, int err,
 				 uint32_t location)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "VOCS location get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("VOCS location get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "VOCS inst %p location %u",
-			    inst, location);
+		bt_shell_print("VOCS inst %p location 0x%08X", inst, location);
 	}
 }
 
@@ -284,12 +282,9 @@ static void vcs_vocs_description_cb(struct bt_vocs *inst, int err,
 				    char *description)
 {
 	if (err != 0) {
-		shell_error(ctx_shell,
-			    "VOCS description get failed (%d) for inst %p",
-			    err, inst);
+		bt_shell_error("VOCS description get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "VOCS inst %p description %s",
-			    inst, description);
+		bt_shell_print("VOCS inst %p description %s", inst, description);
 	}
 }
 #endif /* CONFIG_BT_VCP_VOL_CTLR_MAX_VOCS_INST > 0 */
@@ -338,9 +333,8 @@ static int cmd_vcp_vol_ctlr_discover(const struct shell *sh, size_t argc,
 	static bool cb_registered;
 	int result;
 
-	if (!ctx_shell) {
-		ctx_shell = sh;
-	}
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (!cb_registered) {
 		result = bt_vcp_vol_ctlr_cb_register(&vcp_cbs);
@@ -370,6 +364,9 @@ static int cmd_vcp_vol_ctlr_state_get(const struct shell *sh, size_t argc,
 {
 	int result;
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -388,6 +385,9 @@ static int cmd_vcp_vol_ctlr_flags_get(const struct shell *sh, size_t argc,
 {
 	int result;
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -405,6 +405,9 @@ static int cmd_vcp_vol_ctlr_volume_down(const struct shell *sh, size_t argc,
 				      char **argv)
 {
 	int result;
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -425,6 +428,9 @@ static int cmd_vcp_vol_ctlr_volume_up(const struct shell *sh, size_t argc,
 {
 	int result;
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -443,6 +449,9 @@ static int cmd_vcp_vol_ctlr_unmute_volume_down(const struct shell *sh,
 {
 	int result;
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -460,6 +469,9 @@ static int cmd_vcp_vol_ctlr_unmute_volume_up(const struct shell *sh,
 					   size_t argc, char **argv)
 {
 	int result;
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -480,6 +492,8 @@ static int cmd_vcp_vol_ctlr_volume_set(const struct shell *sh, size_t argc,
 {
 	unsigned long volume;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -507,11 +521,13 @@ static int cmd_vcp_vol_ctlr_volume_set(const struct shell *sh, size_t argc,
 	return result;
 }
 
-
 static int cmd_vcp_vol_ctlr_unmute(const struct shell *sh, size_t argc,
 				 char **argv)
 {
 	int result;
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -531,6 +547,9 @@ static int cmd_vcp_vol_ctlr_mute(const struct shell *sh, size_t argc,
 {
 	int result;
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -549,6 +568,8 @@ static int cmd_vcp_vol_ctlr_vocs_state_get(const struct shell *sh, size_t argc,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -582,6 +603,8 @@ static int cmd_vcp_vol_ctlr_vocs_location_get(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -617,6 +640,8 @@ static int cmd_vcp_vol_ctlr_vocs_location_set(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -646,7 +671,6 @@ static int cmd_vcp_vol_ctlr_vocs_location_set(const struct shell *sh,
 	if (location > UINT32_MAX) {
 		shell_error(sh, "Invalid location %lu", location);
 		return -ENOEXEC;
-
 	}
 
 	result = bt_vocs_location_set(vcp_included.vocs[index], location);
@@ -663,6 +687,8 @@ static int cmd_vcp_vol_ctlr_vocs_offset_set(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 	long offset;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -711,6 +737,8 @@ static int cmd_vcp_vol_ctlr_vocs_output_description_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -743,6 +771,8 @@ static int cmd_vcp_vol_ctlr_vocs_output_description_set(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -777,6 +807,8 @@ static int cmd_vcp_vol_ctlr_aics_input_state_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -809,6 +841,8 @@ static int cmd_vcp_vol_ctlr_aics_gain_setting_get(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -843,6 +877,8 @@ static int cmd_vcp_vol_ctlr_aics_input_type_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -875,6 +911,8 @@ static int cmd_vcp_vol_ctlr_aics_input_status_get(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -909,6 +947,8 @@ static int cmd_vcp_vol_ctlr_aics_input_unmute(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -941,6 +981,8 @@ static int cmd_vcp_vol_ctlr_aics_input_mute(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -975,6 +1017,8 @@ static int cmd_vcp_vol_ctlr_aics_manual_input_gain_set(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -1007,6 +1051,8 @@ static int cmd_vcp_vol_ctlr_aics_auto_input_gain_set(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -1041,6 +1087,8 @@ static int cmd_vcp_vol_ctlr_aics_gain_set(const struct shell *sh, size_t argc,
 	unsigned long index;
 	int result = 0;
 	long gain;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -1085,6 +1133,8 @@ static int cmd_vcp_vol_ctlr_aics_input_description_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -1117,6 +1167,8 @@ static int cmd_vcp_vol_ctlr_aics_input_description_set(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");

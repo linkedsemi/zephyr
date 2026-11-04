@@ -29,7 +29,7 @@ static inline bool is_channel_valid(const struct device *dev, uint32_t ch)
 {
 	const struct mbox_plic_conf *conf = dev->config;
 
-	return (ch <= conf->channel_max) && conf->irq_sources[ch];
+	return (ch < conf->channel_max) && conf->irq_sources[ch];
 }
 
 static int mbox_plic_send(const struct device *dev, uint32_t ch, const struct mbox_msg *msg)
@@ -104,7 +104,7 @@ static int mbox_plic_set_enabled(const struct device *dev, uint32_t ch, bool ena
 	return 0;
 }
 
-static const struct mbox_driver_api mbox_plic_driver_api = {
+static DEVICE_API(mbox, mbox_plic_driver_api) = {
 	.send = mbox_plic_send,
 	.register_callback = mbox_plic_register_callback,
 	.mtu_get = mbox_plic_mtu_get,

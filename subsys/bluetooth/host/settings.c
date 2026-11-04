@@ -5,93 +5,168 @@
  */
 
 #include <errno.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
 
-#include <zephyr/kernel.h>
-#include <zephyr/settings/settings.h>
-
+#include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/hci.h>
+#include <zephyr/settings/settings.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
 
+#include "common/bt_settings_commit.h"
 #include "common/bt_str.h"
-
+#include "classic/br.h"
 #include "hci_core.h"
 #include "settings.h"
+#include "sys/types.h"
 
 #define LOG_LEVEL CONFIG_BT_SETTINGS_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_settings);
 
 #if defined(CONFIG_BT_SETTINGS_USE_PRINTK)
-void bt_settings_encode_key(char *path, size_t path_size, const char *subsys,
+int bt_settings_encode_key(char *path, size_t path_size, const char *subsys,
 			    const bt_addr_le_t *addr, const char *key)
 {
+	int err;
+
 	if (key) {
-		snprintk(path, path_size,
-			 "bt/%s/%02x%02x%02x%02x%02x%02x%u/%s", subsys,
-			 addr->a.val[5], addr->a.val[4], addr->a.val[3],
-			 addr->a.val[2], addr->a.val[1], addr->a.val[0],
-			 addr->type, key);
+		err = snprintk(path, path_size, "bt/%s/%02x%02x%02x%02x%02x%02x%u/%s", subsys,
+			       addr->a.val[5], addr->a.val[4], addr->a.val[3], addr->a.val[2],
+			       addr->a.val[1], addr->a.val[0], addr->type, key);
 	} else {
-		snprintk(path, path_size,
-			 "bt/%s/%02x%02x%02x%02x%02x%02x%u", subsys,
-			 addr->a.val[5], addr->a.val[4], addr->a.val[3],
-			 addr->a.val[2], addr->a.val[1], addr->a.val[0],
-			 addr->type);
+		err = snprintk(path, path_size, "bt/%s/%02x%02x%02x%02x%02x%02x%u", subsys,
+			       addr->a.val[5], addr->a.val[4], addr->a.val[3], addr->a.val[2],
+			       addr->a.val[1], addr->a.val[0], addr->type);
+	}
+
+	if ((err < 0) || (err >= path_size)) {
+		/* Error or output was truncated */
+		return -EINVAL;
 	}
 
 	LOG_DBG("Encoded path %s", path);
+
+	return 0;
 }
-#else
-void bt_settings_encode_key(char *path, size_t path_size, const char *subsys,
-			    const bt_addr_le_t *addr, const char *key)
+
+static int bt_settings_encode_key_no_addr(char *path, size_t path_size, const char *key)
 {
-	size_t len = 3;
+	int err;
 
-	/* Skip if path_size is less than 3; strlen("bt/") */
-	if (len < path_size) {
-		/* Key format:
-		 *  "bt/<subsys>/<addr><type>/<key>", "/<key>" is optional
-		 */
-		strcpy(path, "bt/");
-		strncpy(&path[len], subsys, path_size - len);
-		len = strlen(path);
-		if (len < path_size) {
-			path[len] = '/';
-			len++;
-		}
-
-		for (int8_t i = 5; i >= 0 && len < path_size; i--) {
-			len += bin2hex(&addr->a.val[i], 1, &path[len],
-				       path_size - len);
-		}
-
-		if (len < path_size) {
-			/* Type can be either BT_ADDR_LE_PUBLIC or
-			 * BT_ADDR_LE_RANDOM (value 0 or 1)
-			 */
-			path[len] = '0' + addr->type;
-			len++;
-		}
-
-		if (key && len < path_size) {
-			path[len] = '/';
-			len++;
-			strncpy(&path[len], key, path_size - len);
-			len += strlen(&path[len]);
-		}
-
-		if (len >= path_size) {
-			/* Truncate string */
-			path[path_size - 1] = '\0';
-		}
-	} else if (path_size > 0) {
-		*path = '\0';
+	err = snprintk(path, path_size, "bt/%s", key);
+	if ((err < 0) || (err >= path_size)) {
+		/* Error or output was truncated */
+		return -EINVAL;
 	}
 
-	LOG_DBG("Encoded path %s", path);
+	return 0;
 }
-#endif
+
+#else /* !CONFIG_BT_SETTINGS_USE_PRINTK */
+int bt_settings_encode_key(char *path, size_t path_size, const char *subsys,
+			   const bt_addr_le_t *addr, const char *key)
+{
+	/* Key format:
+	 *  "bt/<subsys>/<addr><type>/<key>", "/<key>" is optional
+	 */
+	const char delimiter = '/';
+	const char null_term = '\0';
+	const size_t prefix_len = sizeof("bt") - 1U;
+	const size_t subsys_len = strlen(subsys);
+	const size_t addr_str_len = sizeof("554433221100t") - 1U;
+	const size_t key_len = (key == NULL) ? 0U : strlen(key);
+	const size_t total_len = prefix_len +
+				 sizeof(delimiter) + subsys_len +
+				 sizeof(delimiter) + addr_str_len +
+				 ((key == NULL) ? 0U : (sizeof(delimiter) + key_len)) +
+				 sizeof(null_term);
+	size_t offset = 0U;
+	int err;
+
+	if (path_size < total_len) {
+		return -EINVAL;
+	}
+
+	memcpy(path, "bt", prefix_len);
+	offset += prefix_len;
+
+	path[offset] = delimiter;
+	offset++;
+	memcpy(&path[offset], subsys, subsys_len);
+	offset += subsys_len;
+
+	path[offset] = delimiter;
+	offset++;
+	for (int8_t i = 5; i >= 0; i--) {
+		/* We supply valid 0-15 as input */
+		err = hex2char(addr->a.val[i] >> 4, &path[offset]);
+		__ASSERT_NO_MSG(err == 0);
+		offset++;
+		/* We supply valid 0-15 as input */
+		err = hex2char(addr->a.val[i] & 0xf, &path[offset]);
+		__ASSERT_NO_MSG(err == 0);
+		offset++;
+	}
+	/* We are not checking hex2char return value as we supply valid 0-1 as input */
+	err = hex2char(addr->type, &path[offset]);
+	__ASSERT_NO_MSG(err == 0);
+	offset++;
+
+	if (key != NULL) {
+		path[offset] = delimiter;
+		offset++;
+		memcpy(&path[offset], key, key_len);
+		offset += key_len;
+	}
+
+	path[offset] = null_term;
+
+	LOG_DBG("Encoded path %s", path);
+
+	return 0;
+}
+
+static int bt_settings_encode_key_no_addr(char *path, size_t path_size, const char *key)
+{
+	/* Key format:
+	 *  "bt/<key>"
+	 */
+	const char delimiter = '/';
+	const char null_term = '\0';
+	const size_t prefix_len = sizeof("bt") - 1U;
+	const size_t key_len = strlen(key);
+	const size_t total_len = prefix_len + sizeof(delimiter) + key_len + sizeof(null_term);
+	size_t offset = 0U;
+
+	if (path_size < total_len) {
+		return -EINVAL;
+	}
+
+	memcpy(path, "bt", prefix_len);
+	offset += prefix_len;
+
+	path[offset] = delimiter;
+	offset++;
+	memcpy(&path[offset], key, key_len);
+	offset += key_len;
+
+	path[offset] = null_term;
+
+	LOG_DBG("Encoded path %s", path);
+
+	return 0;
+}
+#endif /* !CONFIG_BT_SETTINGS_USE_PRINTK */
 
 int bt_settings_decode_key(const char *key, bt_addr_le_t *addr)
 {
@@ -122,7 +197,7 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 	ssize_t len;
 	const char *next;
 
-	if (!atomic_test_bit(bt_dev.flags, BT_DEV_ENABLE)) {
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_OPEN)) {
 		/* The Bluetooth settings loader needs to communicate with the Bluetooth
 		 * controller to setup identities. This will not work before
 		 * bt_enable(). The doc on @ref bt_enable requires the "bt/" settings
@@ -139,7 +214,7 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 
 	len = settings_name_next(name, &next);
 
-	if (!strncmp(name, "id", len)) {
+	if ((len == 2) && (memcmp(name, "id", len) == 0)) {
 		/* Any previously provided identities supersede flash */
 		if (atomic_test_bit(bt_dev.flags, BT_DEV_PRESET_ID)) {
 			LOG_WRN("Ignoring identities stored in flash");
@@ -171,7 +246,7 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 	}
 
 #if defined(CONFIG_BT_DEVICE_NAME_DYNAMIC)
-	if (!strncmp(name, "name", len)) {
+	if ((len == 4) && (memcmp(name, "name", len) == 0)) {
 		len = read_cb(cb_arg, &bt_dev.name, sizeof(bt_dev.name) - 1);
 		if (len < 0) {
 			LOG_ERR("Failed to read device name from storage"
@@ -186,7 +261,7 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 #endif
 
 #if defined(CONFIG_BT_DEVICE_APPEARANCE_DYNAMIC)
-	if (!strncmp(name, "appearance", len)) {
+	if ((len == 10) && (memcmp(name, "appearance", len) == 0)) {
 		if (len_rd != sizeof(bt_dev.appearance)) {
 			LOG_ERR("Ignoring settings entry 'bt/appearance'. Wrong length.");
 			return -EINVAL;
@@ -202,7 +277,7 @@ static int set_setting(const char *name, size_t len_rd, settings_read_cb read_cb
 #endif
 
 #if defined(CONFIG_BT_PRIVACY)
-	if (!strncmp(name, "irk", len)) {
+	if ((len == 3) && (memcmp(name, "irk", len) == 0)) {
 		len = read_cb(cb_arg, bt_dev.irk, sizeof(bt_dev.irk));
 		if (len < sizeof(bt_dev.irk[0])) {
 			if (len < 0) {
@@ -234,7 +309,7 @@ static int commit_settings(void)
 
 	LOG_DBG("");
 
-	if (!atomic_test_bit(bt_dev.flags, BT_DEV_ENABLE)) {
+	if (!atomic_test_bit(bt_dev.flags, BT_DEV_OPEN)) {
 		/* The Bluetooth settings loader needs to communicate with the Bluetooth
 		 * controller to setup identities. This will not work before
 		 * bt_enable(). The doc on @ref bt_enable requires the "bt/" settings
@@ -246,14 +321,32 @@ static int commit_settings(void)
 
 #if defined(CONFIG_BT_DEVICE_NAME_DYNAMIC)
 	if (bt_dev.name[0] == '\0') {
-		bt_set_name(CONFIG_BT_DEVICE_NAME);
+		/* No name in flash — populate bt_dev.name with the default.
+		 * Skip bt_set_name() to avoid an unnecessary flash write.
+		 */
+		strncpy(bt_dev.name, CONFIG_BT_DEVICE_NAME,
+			CONFIG_BT_DEVICE_NAME_MAX);
+		bt_dev.name[CONFIG_BT_DEVICE_NAME_MAX] = '\0';
+	}
+
+	/* Push the name (restored or default) to all transports.
+	 * For BLE the GAP device name is already handled by the
+	 * advertising / scan-response path; for BR/EDR we must
+	 * issue the HCI Write Local Name command explicitly.
+	 */
+	if (IS_ENABLED(CONFIG_BT_CLASSIC)) {
+		err = bt_br_write_local_name(bt_dev.name);
+		if (err != 0) {
+			LOG_ERR("Unable to set BR/EDR local name (err %d)", err);
+			goto finalize;
+		}
 	}
 #endif
 	if (!bt_dev.id_count) {
 		err = bt_setup_public_id_addr();
 		if (err) {
 			LOG_ERR("Unable to setup an identity address");
-			return err;
+			goto finalize;
 		}
 	}
 
@@ -261,12 +354,8 @@ static int commit_settings(void)
 		err = bt_setup_random_id_addr();
 		if (err) {
 			LOG_ERR("Unable to setup an identity address");
-			return err;
+			goto finalize;
 		}
-	}
-
-	if (!atomic_test_bit(bt_dev.flags, BT_DEV_READY)) {
-		bt_finalize_init();
 	}
 
 	/* If any part of the Identity Information of the device has been
@@ -278,10 +367,16 @@ static int commit_settings(void)
 		bt_settings_store_irk();
 	}
 
-	return 0;
+	err = 0;
+
+finalize:
+	bt_finalize_init(err);
+
+	return err;
 }
 
-SETTINGS_STATIC_HANDLER_DEFINE(bt, "bt", NULL, set_setting, commit_settings, NULL);
+SETTINGS_STATIC_HANDLER_DEFINE_WITH_CPRIO(bt, "bt", NULL, set_setting, commit_settings, NULL,
+					  BT_SETTINGS_CPRIO_0);
 
 int bt_settings_init(void)
 {
@@ -298,24 +393,43 @@ int bt_settings_init(void)
 	return 0;
 }
 
+__weak void bt_testing_settings_store_hook(const char *key, const void *value, size_t val_len)
+{
+	ARG_UNUSED(key);
+	ARG_UNUSED(value);
+	ARG_UNUSED(val_len);
+}
+
+__weak void bt_testing_settings_delete_hook(const char *key)
+{
+	ARG_UNUSED(key);
+}
+
 int bt_settings_store(const char *key, uint8_t id, const bt_addr_le_t *addr, const void *value,
 		      size_t val_len)
 {
-	int err;
-	char id_str[4];
 	char key_str[BT_SETTINGS_KEY_MAX];
+	int err;
 
 	if (addr) {
+		char id_str[4];
+
 		if (id) {
 			u8_to_dec(id_str, sizeof(id_str), id);
 		}
 
-		bt_settings_encode_key(key_str, sizeof(key_str), key, addr, (id ? id_str : NULL));
+		err = bt_settings_encode_key(key_str, sizeof(key_str), key, addr,
+					     (id ? id_str : NULL));
 	} else {
-		err = snprintk(key_str, sizeof(key_str), "bt/%s", key);
-		if (err < 0) {
-			return -EINVAL;
-		}
+		err = bt_settings_encode_key_no_addr(key_str, sizeof(key_str), key);
+	}
+
+	if (err != 0) {
+		return err;
+	}
+
+	if (IS_ENABLED(CONFIG_BT_TESTING)) {
+		bt_testing_settings_store_hook(key_str, value, val_len);
 	}
 
 	return settings_save_one(key_str, value, val_len);
@@ -323,21 +437,28 @@ int bt_settings_store(const char *key, uint8_t id, const bt_addr_le_t *addr, con
 
 int bt_settings_delete(const char *key, uint8_t id, const bt_addr_le_t *addr)
 {
-	int err;
-	char id_str[4];
 	char key_str[BT_SETTINGS_KEY_MAX];
+	int err;
 
 	if (addr) {
+		char id_str[4];
+
 		if (id) {
 			u8_to_dec(id_str, sizeof(id_str), id);
 		}
 
-		bt_settings_encode_key(key_str, sizeof(key_str), key, addr, (id ? id_str : NULL));
+		err = bt_settings_encode_key(key_str, sizeof(key_str), key, addr,
+					     (id ? id_str : NULL));
 	} else {
-		err = snprintk(key_str, sizeof(key_str), "bt/%s", key);
-		if (err < 0) {
-			return -EINVAL;
-		}
+		err = bt_settings_encode_key_no_addr(key_str, sizeof(key_str), key);
+	}
+
+	if (err != 0) {
+		return err;
+	}
+
+	if (IS_ENABLED(CONFIG_BT_TESTING)) {
+		bt_testing_settings_delete_hook(key_str);
 	}
 
 	return settings_delete(key_str);
@@ -416,7 +537,7 @@ K_WORK_DEFINE(store_id_work, do_store_id);
 
 int bt_settings_store_id(void)
 {
-	k_work_submit(&store_id_work);
+	bt_work_submit(&store_id_work);
 
 	return 0;
 }
@@ -442,7 +563,7 @@ K_WORK_DEFINE(store_irk_work, do_store_irk);
 int bt_settings_store_irk(void)
 {
 #if defined(CONFIG_BT_PRIVACY)
-	k_work_submit(&store_irk_work);
+	bt_work_submit(&store_irk_work);
 #endif /* defined(CONFIG_BT_PRIVACY) */
 	return 0;
 }
@@ -450,6 +571,20 @@ int bt_settings_store_irk(void)
 int bt_settings_delete_irk(void)
 {
 	return bt_settings_delete("irk", 0, NULL);
+}
+
+void bt_settings_flush(void)
+{
+	struct k_work_sync sync;
+
+	/* The store handlers read the identity state that bt_disable() is
+	 * about to reset. Running after the reset they would persist empty or
+	 * torn records, while canceling them would silently lose the latest
+	 * identity update. Complete any pending stores now, while the state
+	 * is still valid.
+	 */
+	(void)k_work_flush(&store_id_work, &sync);
+	(void)k_work_flush(&store_irk_work, &sync);
 }
 
 int bt_settings_store_link_key(const bt_addr_le_t *addr, const void *value, size_t val_len)

@@ -22,6 +22,7 @@
 		zephyr,reference = "ADC_REF_EXTERNAL0";
 		zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
 		zephyr,resolution = <12>;
+		zephyr,input-positive = <MCUX_LPADC_CH2A>;
 	};
 
 	channel@1 {

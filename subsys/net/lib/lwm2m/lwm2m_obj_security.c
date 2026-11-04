@@ -139,7 +139,7 @@ static struct lwm2m_engine_obj_inst *security_create(uint16_t obj_inst_id)
 	/* default values */
 	security_uri[index][0] = '\0';
 	client_identity[index][0] = '\0';
-	bootstrap_flag[index] = 0;
+	bootstrap_flag[index] = false;
 	security_mode[index] = 0U;
 	short_server_id[index] = 0U;
 
@@ -180,7 +180,7 @@ static struct lwm2m_engine_obj_inst *security_create(uint16_t obj_inst_id)
 
 	inst[index].resources = res[index];
 	inst[index].resource_count = i;
-	LOG_DBG("Create LWM2M security instance: %d", obj_inst_id);
+	LOG_DBG("Create LwM2M security instance: %d", obj_inst_id);
 
 	return &inst[index];
 }
@@ -255,7 +255,7 @@ static int lwm2m_security_init(void)
 	/* auto create the first instance */
 	ret = lwm2m_create_obj_inst(LWM2M_OBJECT_SECURITY_ID, 0, &obj_inst);
 	if (ret < 0) {
-		LOG_ERR("Create LWM2M security instance 0 error: %d", ret);
+		LOG_ERR("Create LwM2M security instance 0 error: %d", ret);
 	}
 
 	return ret;

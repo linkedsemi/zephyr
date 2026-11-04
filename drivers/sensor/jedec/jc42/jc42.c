@@ -89,7 +89,7 @@ static int jc42_channel_get(const struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static const struct sensor_driver_api jc42_api_funcs = {
+static DEVICE_API(sensor, jc42_api_funcs) = {
 	.sample_fetch = jc42_sample_fetch,
 	.channel_get = jc42_channel_get,
 #ifdef CONFIG_JC42_TRIGGER
@@ -104,7 +104,7 @@ int jc42_init(const struct device *dev)
 	int rc = 0;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 

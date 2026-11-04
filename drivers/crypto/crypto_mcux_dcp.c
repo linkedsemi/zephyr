@@ -36,6 +36,8 @@ struct crypto_dcp_data {
 	struct crypto_dcp_session sessions[CONFIG_CRYPTO_MCUX_DCP_MAX_SESSION];
 };
 
+K_MUTEX_DEFINE(sessions_lock);
+
 /* Helper function to convert common FSL error status codes to errno codes */
 static inline int fsl_to_errno(status_t status)
 {
@@ -55,20 +57,25 @@ static struct crypto_dcp_session *get_session(const struct device *dev)
 {
 	struct crypto_dcp_data *data = dev->data;
 
+	k_mutex_lock(&sessions_lock, K_FOREVER);
 	for (size_t i = 0; i < CONFIG_CRYPTO_MCUX_DCP_MAX_SESSION; ++i) {
 		if (!data->sessions[i].in_use) {
 			data->sessions[i].in_use = true;
 
+			k_mutex_unlock(&sessions_lock);
 			return &data->sessions[i];
 		}
 	}
 
+	k_mutex_unlock(&sessions_lock);
 	return NULL;
 }
 
 static inline void free_session(struct crypto_dcp_session *session)
 {
+	k_mutex_lock(&sessions_lock, K_FOREVER);
 	session->in_use = false;
+	k_mutex_unlock(&sessions_lock);
 }
 
 static int crypto_dcp_query_hw_caps(const struct device *dev)
@@ -331,7 +338,7 @@ static int crypto_dcp_init(const struct device *dev)
 	return 0;
 }
 
-static const struct crypto_driver_api crypto_dcp_api = {
+static DEVICE_API(crypto, crypto_dcp_api) = {
 	.query_hw_caps = crypto_dcp_query_hw_caps,
 	.cipher_begin_session = crypto_dcp_cipher_begin_session,
 	.cipher_free_session = crypto_dcp_cipher_free_session,

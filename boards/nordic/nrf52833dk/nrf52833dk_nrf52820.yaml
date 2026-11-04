@@ -5,13 +5,12 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 32
 flash: 256
 supported:
   - usb_device
   - usbd
-  - ble
+  - bluetooth
   - gpio
   - watchdog
   - counter

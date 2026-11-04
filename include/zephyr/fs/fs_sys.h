@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief File system driver interface for file system implementations.
+ * @ingroup file_system_api
+ */
+
 #ifndef ZEPHYR_INCLUDE_FS_FS_SYS_H_
 #define ZEPHYR_INCLUDE_FS_FS_SYS_H_
 
@@ -186,9 +192,17 @@ struct fs_file_system_t {
 	 */
 	int (*statvfs)(struct fs_mount_t *mountp, const char *path,
 					struct fs_statvfs *stat);
-
 	int (*ioctl)(struct fs_file_t *filp, unsigned long request,
 					va_list args);
+#if defined(CONFIG_FILE_SYSTEM_GC) || defined(__DOXYGEN__)
+	/**
+	 * Attempt to proactively clean file system
+	 *
+	 * @param mountp Mount point.
+	 * @return 0 on success, negative errno code on fail.
+	 */
+	int (*gc)(struct fs_mount_t *mountp);
+#endif
 #if defined(CONFIG_FILE_SYSTEM_MKFS) || defined(__DOXYGEN__)
 	/**
 	 * Formats a device to specified file system type.

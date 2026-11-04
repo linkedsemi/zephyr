@@ -80,7 +80,7 @@ static int nxp_gau_dac_write_value(const struct device *dev,
 	return 0;
 };
 
-static const struct dac_driver_api nxp_gau_dac_driver_api = {
+static DEVICE_API(dac, nxp_gau_dac_driver_api) = {
 	.channel_setup = nxp_gau_dac_channel_setup,
 	.write_value = nxp_gau_dac_write_value,
 };
@@ -101,21 +101,25 @@ static int nxp_gau_dac_init(const struct device *dev)
 	return 0;
 };
 
+/* Map output range enum index to mcux dac_output_voltage_range_t */
+#define _NXP_MAP_OUTPUT_RANGE(idx)	\
+	((idx) == 0 ? kDAC_RangeSmall :	\
+	(idx) == 1 ? kDAC_RangeMiddle :	\
+	kDAC_RangeLarge)
+
 #define NXP_GAU_DAC_INIT(inst)							\
-										\
 	const struct nxp_gau_dac_config nxp_gau_dac_##inst##_config = {		\
-		.base = (DAC_Type *) DT_INST_REG_ADDR(inst),			\
+		.base = (DAC_Type *)DT_INST_REG_ADDR(inst),			\
 		.voltage_ref = DT_INST_ENUM_IDX(inst, nxp_dac_reference),	\
 		.conversion_rate = DT_INST_ENUM_IDX(inst, nxp_conversion_rate),	\
-		.output_range = DT_INST_ENUM_IDX(inst,				\
-						nxp_output_voltage_range),	\
+		.output_range = (dac_output_voltage_range_t)			\
+			_NXP_MAP_OUTPUT_RANGE(DT_INST_ENUM_IDX(inst,		\
+			nxp_output_voltage_range)),				\
 	};									\
-										\
-										\
 	DEVICE_DT_INST_DEFINE(inst, &nxp_gau_dac_init, NULL,			\
-				NULL,						\
-				&nxp_gau_dac_##inst##_config,			\
-				POST_KERNEL, CONFIG_DAC_INIT_PRIORITY,		\
-				&nxp_gau_dac_driver_api);
+		NULL,								\
+		&nxp_gau_dac_##inst##_config,					\
+		POST_KERNEL, CONFIG_DAC_INIT_PRIORITY,				\
+		&nxp_gau_dac_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(NXP_GAU_DAC_INIT)

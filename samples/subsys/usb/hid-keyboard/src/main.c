@@ -86,6 +86,27 @@ static int kb_get_report(const struct device *dev,
 	return 0;
 }
 
+static int kb_verify_set_report(const struct device *dev, const uint8_t type,
+				const uint8_t id, const uint16_t len)
+{
+	if (type != HID_REPORT_TYPE_OUTPUT) {
+		LOG_WRN("Unsupported report type");
+		return -ENOTSUP;
+	}
+
+	if (id != 0) {
+		LOG_ERR("Unsupported report id %d", id);
+		return -ENOTSUP;
+	}
+
+	if (len != 1) {
+		LOG_WRN("Unsupported report length %d", len);
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
 static int kb_set_report(const struct device *dev,
 			 const uint8_t type, const uint8_t id, const uint16_t len,
 			 const uint8_t *const buf)
@@ -136,6 +157,7 @@ static void kb_output_report(const struct device *dev, const uint16_t len,
 struct hid_device_ops kb_ops = {
 	.iface_ready = kb_iface_ready,
 	.get_report = kb_get_report,
+	.verify_set_report = kb_verify_set_report,
 	.set_report = kb_set_report,
 	.set_idle = kb_set_idle,
 	.get_idle = kb_get_idle,
@@ -204,6 +226,18 @@ int main(void)
 	if (ret != 0) {
 		LOG_ERR("Failed to register HID Device, %d", ret);
 		return ret;
+	}
+
+	if (IS_ENABLED(CONFIG_USBD_HID_SET_POLLING_PERIOD)) {
+		ret = hid_device_set_in_polling(hid_dev, 1000);
+		if (ret) {
+			LOG_WRN("Failed to set IN report polling period, %d", ret);
+		}
+
+		ret = hid_device_set_out_polling(hid_dev, 1000);
+		if (ret != 0 && ret != -ENOTSUP) {
+			LOG_WRN("Failed to set OUT report polling period, %d", ret);
+		}
 	}
 
 	sample_usbd = sample_usbd_init_device(msg_cb);
@@ -276,6 +310,18 @@ int main(void)
 
 		if (!kb_ready) {
 			LOG_INF("USB HID device is not ready");
+			continue;
+		}
+
+		if (IS_ENABLED(CONFIG_SAMPLE_USBD_REMOTE_WAKEUP) &&
+		    usbd_is_suspended(sample_usbd)) {
+			/* on a press of any button, send wakeup request */
+			if (kb_evt.value) {
+				ret = usbd_wakeup_request(sample_usbd);
+				if (ret) {
+					LOG_ERR("Remote wakeup error, %d", ret);
+				}
+			}
 			continue;
 		}
 

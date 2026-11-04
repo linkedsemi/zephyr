@@ -8,11 +8,11 @@
 /**
  * @file
  * @brief POSIX arch specific kernel interface header
- * This header contains the POSIX arch specific kernel interface.
- * It is included by the generic kernel interface header (include/arch/cpu.h)
  *
+ * This header contains the POSIX arch specific kernel interface. It is
+ * included by the kernel interface architecture-abstraction header
+ * (include/zephyr/arch/cpu.h).
  */
-
 
 #ifndef ZEPHYR_INCLUDE_ARCH_POSIX_ARCH_H_
 #define ZEPHYR_INCLUDE_ARCH_POSIX_ARCH_H_
@@ -22,7 +22,7 @@
 
 #include <zephyr/toolchain.h>
 #include <zephyr/irq.h>
-#include <zephyr/arch/posix/exception.h>
+#include <zephyr/arch/exception.h>
 #include <zephyr/arch/posix/asm_inline.h>
 #include <zephyr/arch/posix/thread.h>
 #include <board_irq.h> /* Each board must define this */
@@ -72,6 +72,19 @@ static ALWAYS_INLINE unsigned int arch_irq_lock(void)
 static ALWAYS_INLINE void arch_irq_unlock(unsigned int key)
 {
 	posix_irq_unlock(key);
+}
+
+/** Implementation of @ref arch_cpu_irqs_are_enabled. */
+static ALWAYS_INLINE bool arch_cpu_irqs_are_enabled(void)
+{
+	/* No direct non-modifying probe exported by the POSIX SoC
+	 * interface; briefly lock and restore instead.
+	 */
+	unsigned int key = posix_irq_lock();
+	bool enabled = (key == false);
+
+	posix_irq_unlock(key);
+	return enabled;
 }
 
 #ifdef __cplusplus

@@ -56,7 +56,7 @@ static int usbd_interface_modify(struct usbd_context *const uds_ctx,
 				 const uint8_t iface,
 				 const uint8_t alt)
 {
-	struct usb_desc_header **dhp;
+	struct usb_desc_header *const *dhp;
 	bool found_iface = false;
 	int ret;
 
@@ -94,7 +94,7 @@ static int usbd_interface_modify(struct usbd_context *const uds_ctx,
 				return ret;
 			}
 
-			LOG_INF("Modify interface %u ep 0x%02x by op %u ep_bm %x",
+			LOG_DBG("Modify interface %u ep 0x%02x by op %u ep_bm %x",
 				iface, ed->bEndpointAddress,
 				op, c_nd->ep_active);
 		}
@@ -115,23 +115,14 @@ int usbd_interface_shutdown(struct usbd_context *const uds_ctx,
 	SYS_SLIST_FOR_EACH_CONTAINER(&cfg_nd->class_list, c_nd, node) {
 		uint32_t *ep_bm = &c_nd->ep_active;
 
-		for (int idx = 1; idx < 16 && *ep_bm; idx++) {
-			uint8_t ep_in = USB_EP_DIR_IN | idx;
-			uint8_t ep_out = idx;
+		while (*ep_bm) {
+			const uint8_t ep = usbd_ep_bm_get_first(*ep_bm);
 			int ret;
 
-			if (usbd_ep_bm_is_set(ep_bm, ep_in)) {
-				ret = usbd_ep_disable(uds_ctx->dev, ep_in, ep_bm);
-				if (ret) {
-					return ret;
-				}
-			}
-
-			if (usbd_ep_bm_is_set(ep_bm, ep_out)) {
-				ret = usbd_ep_disable(uds_ctx->dev, ep_out, ep_bm);
-				if (ret) {
-					return ret;
-				}
+			/* usbd_ep_disable() clears the bit whenever it returns success */
+			ret = usbd_ep_disable(uds_ctx->dev, ep, ep_bm);
+			if (ret) {
+				return ret;
 			}
 		}
 	}
@@ -183,10 +174,11 @@ int usbd_interface_set(struct usbd_context *const uds_ctx,
 		return ret;
 	}
 
-	LOG_INF("Set Interfaces %u, alternate %u -> %u", iface, cur_alt, alt);
-	if (alt == cur_alt) {
-		return 0;
-	}
+	LOG_DBG("Set Interfaces %u, alternate %u -> %u", iface, cur_alt, alt);
+	/*
+	 * Disable/enable endpoints even if the new alternate is the same as
+	 * the current one, forcing the endpoint to reset to defaults.
+	 */
 
 	/* Test if interface or interface alternate exist */
 	ret = usbd_interface_modify(uds_ctx, class, EP_OP_TEST, iface, alt);

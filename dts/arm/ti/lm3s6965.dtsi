@@ -1,11 +1,13 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <freq.h>
 #include <arm/armv7-m.dtsi>
 
 / {
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		timebase-frequency = <DT_FREQ_M(12)>;
 
 		cpu@0 {
 			device_type = "cpu";
@@ -16,7 +18,7 @@
 
 	sram0: memory@20000000 {
 		compatible = "mmio-sram";
-		reg = <0x20000000 (64*1024)>;
+		reg = <0x20000000 (64 * 1024)>;
 	};
 
 	sysclk: system-clock {
@@ -26,7 +28,6 @@
 	};
 
 	soc {
-
 		flash-controller@400fd000 {
 			compatible = "ti,stellaris-flash-controller";
 			reg = <0x400fd000 0x1000>;
@@ -35,7 +36,7 @@
 
 			flash0: flash@0 {
 				compatible = "soc-nv-flash";
-				reg = <0x00000000 (256*1024)>;
+				reg = <0x00000000 (256 * 1024)>;
 			};
 		};
 

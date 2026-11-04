@@ -5,10 +5,9 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - adc
   - i2c
   - usb_device
-  - ble
+  - bluetooth
 vendor: electronutlabs

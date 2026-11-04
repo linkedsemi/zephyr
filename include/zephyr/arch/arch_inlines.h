@@ -9,8 +9,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_ARCH_INLINES_H_
-#define ZEPHYR_INCLUDE_ARCH_INLINES_H_
+#ifndef ZEPHYR_INCLUDE_ARCH_ARCH_INLINES_H_
+#define ZEPHYR_INCLUDE_ARCH_ARCH_INLINES_H_
 
 #if defined(CONFIG_X86)
 #include <zephyr/arch/x86/arch_inlines.h>
@@ -24,14 +24,22 @@
 #include <zephyr/arch/xtensa/arch_inlines.h>
 #elif defined(CONFIG_RISCV)
 #include <zephyr/arch/riscv/arch_inlines.h>
-#elif defined(CONFIG_NIOS2)
-#include <zephyr/arch/nios2/arch_inlines.h>
 #elif defined(CONFIG_MIPS)
 #include <zephyr/arch/mips/arch_inlines.h>
+#elif defined(CONFIG_OPENRISC)
+#include <zephyr/arch/openrisc/arch_inlines.h>
 #elif defined(CONFIG_ARCH_POSIX)
 #include <zephyr/arch/posix/arch_inlines.h>
 #elif defined(CONFIG_SPARC)
 #include <zephyr/arch/sparc/arch_inlines.h>
+#elif defined(CONFIG_RX)
+#include <zephyr/arch/rx/arch_inlines.h>
+#elif defined(CONFIG_HEXAGON)
+#include <zephyr/arch/hexagon/arch_inlines.h>
+#elif defined(CONFIG_TRICORE)
+#include <zephyr/arch/tricore/arch_inlines.h>
+#elif defined(CONFIG_ARCH_IS_SET)
+#error "The selected architecture is missing from this dispatch header"
 #endif
 
-#endif /* ZEPHYR_INCLUDE_ARCH_INLINES_H_ */
+#endif /* ZEPHYR_INCLUDE_ARCH_ARCH_INLINES_H_ */

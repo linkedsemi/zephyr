@@ -90,7 +90,7 @@ static int sdhc_cdns_request(const struct device *dev,
 				return -ENODATA;
 			}
 			ret = cdns_sdmmc_ops->cache_invd(data->block_addr, (uintptr_t)data->data,
-				data->block_size);
+				data->blocks * data->block_size);
 			if (ret != 0) {
 				return ret;
 			}
@@ -235,7 +235,7 @@ static int sdhc_cdns_set_io(const struct device *dev, struct sdhc_io *ios)
 	return 0;
 }
 
-static const struct sdhc_driver_api sdhc_cdns_api = {
+static DEVICE_API(sdhc, sdhc_cdns_api) = {
 	.request = sdhc_cdns_request,
 	.set_io = sdhc_cdns_set_io,
 	.get_host_props = sdhc_cdns_get_host_props,

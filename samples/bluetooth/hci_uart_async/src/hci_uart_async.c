@@ -6,12 +6,10 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/time_units.h>
 #include <zephyr/toolchain/common.h>
-#include <zephyr/drivers/bluetooth/hci_driver.h>
 #include <errno.h>
 #include <stddef.h>
 #include <string.h>
 
-#include <zephyr/kernel.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/logging/log.h>
@@ -151,7 +149,6 @@ static void send_hw_error(void)
 
 	struct net_buf *buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
 
-	net_buf_add_u8(buf, BT_HCI_H4_EVT);
 	net_buf_add_mem(buf, hci_evt_hw_err, sizeof(hci_evt_hw_err));
 
 	/* Inject the message into the c2h queue. */
@@ -182,8 +179,9 @@ static void recover_sync_by_reset_pattern(void)
 	}
 
 	LOG_DBG("Pattern found");
-	h2c_cmd_reset = bt_buf_get_tx(BT_BUF_H4, K_FOREVER, h4_cmd_reset, sizeof(h4_cmd_reset));
-	LOG_DBG("Fowarding reset");
+	h2c_cmd_reset = bt_buf_get_tx(BT_BUF_CMD, K_FOREVER,
+				      &h4_cmd_reset[1], sizeof(h4_cmd_reset) - 1);
+	LOG_DBG("Forwarding reset");
 
 	err = bt_send(h2c_cmd_reset);
 	__ASSERT(!err, "Failed to send reset: %d", err);
@@ -220,7 +218,7 @@ static void h2c_h4_transport(void)
 		LOG_DBG("h2c: h4_type %d", h4_type);
 
 		/* Allocate buf. */
-		buf = bt_buf_get_tx(BT_BUF_H4, K_FOREVER, &h4_type, sizeof(h4_type));
+		buf = bt_buf_get_tx(bt_buf_type_from_h4(h4_type, BT_BUF_OUT), K_FOREVER, NULL, 0);
 		LOG_DBG("h2c: buf %p", buf);
 
 		if (!buf) {
@@ -269,7 +267,7 @@ static void h2c_h4_transport(void)
 			/* Reset `buf` so all of it is available. */
 			net_buf_reset(buf);
 			discard_dst = net_buf_tail(buf);
-			discard_size = net_buf_max_len(buf);
+			discard_size = net_buf_tailroom(buf);
 
 			while (payload_size) {
 				uint16_t read_size = MIN(payload_size, discard_size);
@@ -357,11 +355,13 @@ SYS_INIT(hci_uart_init, APPLICATION, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
 
 const struct {
 	uint8_t h4;
-	struct bt_hci_evt_hdr hdr;
+	uint8_t evt;
+	uint8_t len;
 	struct bt_hci_evt_cmd_complete cc;
 } __packed cc_evt = {
 	.h4 = BT_HCI_H4_EVT,
-	.hdr = {.evt = BT_HCI_EVT_CMD_COMPLETE, .len = sizeof(struct bt_hci_evt_cmd_complete)},
+	.evt = BT_HCI_EVT_CMD_COMPLETE,
+	.len = sizeof(struct bt_hci_evt_cmd_complete),
 	.cc = {.ncmd = 1, .opcode = sys_cpu_to_le16(BT_OP_NOP)},
 };
 

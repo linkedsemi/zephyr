@@ -4,8 +4,6 @@
  */
 
 #include <zephyr/kernel.h>
-#include <ksched.h>
-#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
 #include <offsets_short.h>
 #include <x86_mmu.h>
@@ -82,4 +80,12 @@ int arch_float_enable(struct k_thread *thread, unsigned int options)
 	ARG_UNUSED(options);
 
 	return 0;
+}
+
+int arch_coprocessors_disable(struct k_thread *thread)
+{
+	/* x86-64 always has FP/SSE enabled so cannot be disabled */
+	ARG_UNUSED(thread);
+
+	return -ENOTSUP;
 }

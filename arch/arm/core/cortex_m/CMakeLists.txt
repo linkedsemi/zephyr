@@ -2,29 +2,49 @@
 
 zephyr_library()
 
+if(CONFIG_ARM_PACBTI_STANDARD)
+  zephyr_compile_options(-mbranch-protection=standard)
+elseif(CONFIG_ARM_PACBTI_PACRET)
+  zephyr_compile_options(-mbranch-protection=pac-ret)
+elseif(CONFIG_ARM_PACBTI_PACRET_LEAF)
+  zephyr_compile_options(-mbranch-protection=pac-ret+leaf)
+elseif(CONFIG_ARM_PACBTI_BTI)
+  zephyr_compile_options(-mbranch-protection=bti)
+elseif(CONFIG_ARM_PACBTI_PACRET_BTI)
+  zephyr_compile_options(-mbranch-protection=pac-ret+bti)
+elseif(CONFIG_ARM_PACBTI_PACRET_LEAF_BTI)
+  zephyr_compile_options(-mbranch-protection=pac-ret+leaf+bti)
+elseif(CONFIG_ARM_PACBTI_NONE)
+  #TODO: Enable this after Zephyr SDK updates to the latest GCC version
+  # zephyr_compile_options(-mbranch-protection=none)
+endif()
+
 zephyr_library_sources(
-  exc_exit.c
   fault.c
   fault_s.S
   fpu.c
   reset.S
   scb.c
-  thread_abort.c
   vector_table.S
-  swap.c
-  swap_helper.S
+  svc.S
   irq_manage.c
   prep_c.c
   thread.c
   cpu_idle.c
   )
 
+zephyr_library_sources_ifdef(CONFIG_USE_SWITCH arm-m-switch.c)
+zephyr_library_sources_ifndef(CONFIG_USE_SWITCH exc_exit.c thread_abort.c swap_helper.S)
+
 zephyr_library_sources_ifndef(CONFIG_ARM_CUSTOM_INTERRUPT_CONTROLLER irq_init.c)
 zephyr_library_sources_ifdef(CONFIG_GEN_SW_ISR_TABLE isr_wrapper.c)
+if(CONFIG_PROFILING_PERF AND CONFIG_PROFILING_PERF_BACKEND_ARM_CORTEX_M)
+  zephyr_library_sources(perf_sys_clock_isr.S)
+endif()
 zephyr_library_sources_ifdef(CONFIG_DEBUG_COREDUMP coredump.c)
 zephyr_library_sources_ifdef(CONFIG_THREAD_LOCAL_STORAGE __aeabi_read_tp.S)
 zephyr_library_sources_ifdef(CONFIG_SEMIHOST semihost.c)
-zephyr_library_sources_ifdef(CONFIG_PM_S2RAM pm_s2ram.c pm_s2ram.S)
+zephyr_library_sources_ifdef(CONFIG_PM_S2RAM pm_s2ram.c pm_s2ram_asm.S)
 zephyr_library_sources_ifdef(CONFIG_ARCH_CACHE cache.c)
 zephyr_library_sources_ifdef(CONFIG_SW_VECTOR_RELAY irq_relay.S)
 
@@ -33,13 +53,13 @@ if(CONFIG_NULL_POINTER_EXCEPTION_DETECTION_DWT)
 endif()
 
 if(CONFIG_CORTEX_M_DWT)
-	if (CONFIG_TIMING_FUNCTIONS)
-		zephyr_library_sources(timing.c)
-	endif()
+  if(CONFIG_TIMING_FUNCTIONS)
+    zephyr_library_sources(timing.c)
+  endif()
 endif()
 
-if (CONFIG_SW_VECTOR_RELAY)
-if (CONFIG_CPU_CORTEX_M_HAS_VTOR)
+if(CONFIG_SW_VECTOR_RELAY)
+if(CONFIG_CPU_CORTEX_M_HAS_VTOR)
   set(relay_vector_table_sort_key relay_vectors)
 else()
 # Using 0x0 prefix will result in placing the relay vector table section
@@ -56,9 +76,19 @@ zephyr_linker_sources(
   )
 endif()
 
-if (CONFIG_SW_VECTOR_RELAY OR CONFIG_SW_VECTOR_RELAY_CLIENT)
+if(CONFIG_SW_VECTOR_RELAY OR CONFIG_SW_VECTOR_RELAY_CLIENT)
 zephyr_linker_sources(
   RAM_SECTIONS
   vt_pointer_section.ld
   )
+endif()
+
+if(CONFIG_CPU_CORTEX_M_HAS_VTOR)
+zephyr_linker_sources_ifdef(CONFIG_SRAM_VECTOR_TABLE
+  RAM_SECTIONS
+  # Maybe need to be changed in order to be placed at the beginning of RAM
+  # (conflict with code relocation script)
+  SORT_KEY 0
+  ram_vector_table.ld
+)
 endif()

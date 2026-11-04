@@ -11,7 +11,7 @@
  * @brief I2C bus (TWI) driver for Atmel SAM MCU family.
  *
  * Limitations:
- * - Only I2C Master Mode with 7 bit addressing is currently supported.
+ * - Only I2C Controller Mode with 7 bit addressing is currently supported.
  * - No reentrancy support.
  */
 
@@ -70,17 +70,33 @@ struct i2c_sam_twi_dev_data {
 	struct twi_msg msg;
 };
 
-static int i2c_clk_set(Twi *const twi, uint32_t speed)
+static int i2c_clk_set(const struct device *dev, Twi * const twi, uint32_t speed)
 {
 	uint32_t ck_div = 0U;
 	uint32_t cl_div;
 	bool div_completed = false;
 
+#ifdef SOC_ATMEL_SAM_MCK_FREQ_HZ
+	ARG_UNUSED(dev);
+
+	const uint32_t rate = SOC_ATMEL_SAM_MCK_FREQ_HZ;
+#else
+	const struct i2c_sam_twi_dev_cfg *const config = dev->config;
+	uint32_t rate;
+	int ret;
+
+	ret = clock_control_get_rate(SAM_DT_PMC_CONTROLLER,
+				     (clock_control_subsys_t)&config->clock_cfg, &rate);
+	if (ret) {
+		return ret;
+	}
+#endif
+
 	/*  From the datasheet "TWI Clock Waveform Generator Register"
 	 *  T_low = ( ( CLDIV × 2^CKDIV ) + 4 ) × T_MCK
 	 */
 	while (!div_completed) {
-		cl_div =   ((SOC_ATMEL_SAM_MCK_FREQ_HZ / (speed * 2U)) - 4)
+		cl_div =   ((rate / (speed * 2U)) - 4)
 			 / (1 << ck_div);
 
 		if (cl_div <= 255U) {
@@ -111,7 +127,7 @@ static int i2c_sam_twi_configure(const struct device *dev, uint32_t config)
 	int ret;
 
 	if (!(config & I2C_MODE_CONTROLLER)) {
-		LOG_ERR("Master Mode is not enabled");
+		LOG_ERR("Controller Mode is not enabled");
 		return -EIO;
 	}
 
@@ -137,15 +153,15 @@ static int i2c_sam_twi_configure(const struct device *dev, uint32_t config)
 	k_sem_take(&dev_data->lock, K_FOREVER);
 
 	/* Setup clock waveform */
-	ret = i2c_clk_set(twi, bitrate);
+	ret = i2c_clk_set(dev, twi, bitrate);
 	if (ret < 0) {
 		goto unlock;
 	}
 
-	/* Disable Slave Mode */
+	/* Disable Target Mode */
 	twi->TWI_CR = TWI_CR_SVDIS;
 
-	/* Enable Master Mode */
+	/* Enable Controller Mode */
 	twi->TWI_CR = TWI_CR_MSEN;
 
 	ret = 0;
@@ -157,7 +173,7 @@ unlock:
 
 static void write_msg_start(Twi *const twi, struct twi_msg *msg, uint8_t daddr)
 {
-	/* Set slave address and number of internal address bytes. */
+	/* Set target address and number of internal address bytes. */
 	twi->TWI_MMR = TWI_MMR_DADR(daddr);
 
 	/* Write first data byte on I2C bus */
@@ -171,7 +187,7 @@ static void read_msg_start(Twi *const twi, struct twi_msg *msg, uint8_t daddr)
 {
 	uint32_t twi_cr_stop;
 
-	/* Set slave address and number of internal address bytes */
+	/* Set target address and number of internal address bytes */
 	twi->TWI_MMR = TWI_MMR_MREAD | TWI_MMR_DADR(daddr);
 
 	/* In single data byte read the START and STOP must both be set */
@@ -193,9 +209,7 @@ static int i2c_sam_twi_transfer(const struct device *dev,
 	int ret;
 
 	__ASSERT_NO_MSG(msgs);
-	if (!num_msgs) {
-		return 0;
-	}
+
 	k_sem_take(&dev_data->lock, K_FOREVER);
 
 	/* Clear pending interrupts, such as NACK. */
@@ -215,7 +229,7 @@ static int i2c_sam_twi_transfer(const struct device *dev,
 		 * REMARK: Dirty workaround:
 		 *
 		 * The controller does not have a documented, generic way to
-		 * issue RESTART when changing transfer direction as master.
+		 * issue RESTART when changing transfer direction as controller.
 		 * Send a stop condition in such a case.
 		 */
 		if (num_msgs > 1) {
@@ -277,7 +291,7 @@ static void i2c_sam_twi_isr(const struct device *dev)
 
 	/* Byte sent */
 	if (isr_status & TWI_SR_TXRDY) {
-		if (msg->idx == msg->len) {
+		if (msg->idx == msg->len || msg->len == 0) {
 			if (msg->flags & I2C_MSG_STOP) {
 				/* Send a STOP condition on the TWI */
 				twi->TWI_CR = TWI_CR_STOP;
@@ -350,7 +364,7 @@ static int i2c_sam_twi_initialize(const struct device *dev)
 	return 0;
 }
 
-static const struct i2c_driver_api i2c_sam_twi_driver_api = {
+static DEVICE_API(i2c, i2c_sam_twi_driver_api) = {
 	.configure = i2c_sam_twi_configure,
 	.transfer = i2c_sam_twi_transfer,
 #ifdef CONFIG_I2C_RTIO

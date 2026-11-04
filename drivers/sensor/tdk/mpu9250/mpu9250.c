@@ -175,10 +175,10 @@ static int mpu9250_channel_get(const struct device *dev,
 		return ak8963_convert_magn(val, drv_data->magn_z,
 				    drv_data->magn_scale_z,
 				    drv_data->magn_st2);
+#endif
 	case SENSOR_CHAN_DIE_TEMP:
 		mpu9250_convert_temp(val, drv_data->temp);
 		break;
-#endif
 	default:
 		return -ENOTSUP;
 	}
@@ -220,7 +220,7 @@ static int mpu9250_sample_fetch(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api mpu9250_driver_api = {
+static DEVICE_API(sensor, mpu9250_driver_api) = {
 #if CONFIG_MPU9250_TRIGGER
 	.trigger_set = mpu9250_trigger_set,
 #endif
@@ -241,7 +241,7 @@ static int mpu9250_init(const struct device *dev)
 	int ret;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("I2C dev %s not ready", cfg->i2c.bus->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 

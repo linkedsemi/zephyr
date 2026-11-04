@@ -6,6 +6,7 @@
 
 #include <zephyr/llext/elf.h>
 #include <zephyr/llext/llext.h>
+#include <zephyr/llext/llext_internal.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/byteorder.h>
@@ -56,6 +57,17 @@ LOG_MODULE_REGISTER(elf, CONFIG_LLEXT_LOG_LEVEL);
 #define R_AARCH64_LDST32_ABS_LO12_NC  285
 #define R_AARCH64_LDST64_ABS_LO12_NC  286
 #define R_AARCH64_LDST128_ABS_LO12_NC 299
+
+/* Local-exec TLS relocations (AArch64 ELF) */
+#define R_AARCH64_TLSLE_ADD_TPREL_HI12    549 /* 0x225 */
+#define R_AARCH64_TLSLE_ADD_TPREL_LO12_NC 551 /* 0x227 */
+
+/*
+ * Variant-I TLS: tpidr_el0 points at a two-pointer TCB, with the thread's
+ * TLS block immediately after it. Mirrors arch_tls_stack_setup() in
+ * arch/arm64/core/tls.c (stack_ptr -= sizeof(uintptr_t) * 2).
+ */
+#define AARCH64_TLS_TCB_SIZE (sizeof(uintptr_t) * 2)
 
 /* Masks for immediate values */
 #define AARCH64_MASK_IMM12 BIT_MASK(12)
@@ -193,7 +205,7 @@ static int movw_reloc_handler(elf_rela_t *rel, elf_word reloc_type, uintptr_t lo
 			      uintptr_t sym_base_addr)
 {
 	int64_t x;
-	uint32_t imm;
+	uint64_t imm;
 	int lsb = 0; /* LSB of X to be used */
 	bool is_movnz = false;
 	enum aarch64_reloc_type type = AARCH64_RELOC_TYPE_ABS;
@@ -262,10 +274,10 @@ static int movw_reloc_handler(elf_rela_t *rel, elf_word reloc_type, uintptr_t lo
 		opcode &= ~(AARCH64_MASK_MOV_OPCODE << AARCH64_SHIFT_MOV_OPCODE);
 
 		if (x >= 0) {
-			opcode |= (AARCH64_OPCODE_MOVN << AARCH64_SHIFT_MOV_OPCODE);
-		} else {
 			opcode |= (AARCH64_OPCODE_MOVZ << AARCH64_SHIFT_MOV_OPCODE);
-			/* Need to invert immediate value for MOVZ. */
+		} else {
+			opcode |= (AARCH64_OPCODE_MOVN << AARCH64_SHIFT_MOV_OPCODE);
+			/* Need to invert immediate value for MOVN. */
 			imm = ~imm;
 		}
 	}
@@ -401,12 +413,54 @@ static int imm_reloc_handler(elf_rela_t *rel, elf_word reloc_type, uintptr_t loc
 	/* Mask X sign bit and upper bits. */
 	x = (int64_t)(x & ~BIT_MASK(len - 1)) >> (len - 1);
 
-	/* Incrementing X will either overflow and set it to 0 or
-	 * set it 1. Any other case indicates that there was an overflow in relocation.
+	/* A value that fits a signed len-bit field leaves either all-zero
+	 * (positive) or all-one (negative) bits above the field, so the
+	 * check value is exactly 0 or -1. Anything else is an overflow.
 	 */
-	if ((int64_t)x++ > 1) {
+	if (x < -1 || x > 0) {
 		return -ERANGE;
 	}
+
+	return 0;
+}
+
+/**
+ * @brief Handler for AArch64 local-exec TLS relocations.
+ *
+ * The extension shares the loading thread's TLS block, so @p tls_value is the
+ * symbol's st_value (its offset within that block), not a resolved address. The
+ * thread-pointer-relative offset is computed and patched into the imm12 field of
+ * an ADD instruction.
+ *
+ * @param[in] rel Relocation data provided by ELF
+ * @param[in] reloc_type Type of relocation operation.
+ * @param[in] loc Address of an opcode to rewrite (P in AArch64 ELF).
+ * @param[in] tls_value TLS offset of the symbol (S in AArch64 ELF, st_value).
+ *
+ * @retval 0 Successful relocation
+ */
+static int tls_reloc_handler(elf_rela_t *rel, elf_word reloc_type, uintptr_t loc,
+			     uintptr_t tls_value)
+{
+	uint64_t tpoff = tls_value + rel->r_addend + AARCH64_TLS_TCB_SIZE;
+	uint32_t imm;
+	uint32_t opcode = sys_le32_to_cpu(*(uint32_t *)loc);
+
+	switch (reloc_type) {
+	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+		imm = (tpoff >> 12) & AARCH64_MASK_IMM12;
+		break;
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+		imm = tpoff & AARCH64_MASK_IMM12;
+		break;
+	default:
+		CODE_UNREACHABLE;
+	}
+
+	opcode &= ~(AARCH64_MASK_IMM12 << 10);
+	opcode |= imm << 10;
+
+	*(uint32_t *)loc = sys_cpu_to_le32(opcode);
 
 	return 0;
 }
@@ -430,12 +484,32 @@ static int imm_reloc_handler(elf_rela_t *rel, elf_word reloc_type, uintptr_t loc
  * @retval -ENOTSUP Unsupported relocation
  * @retval -ENOEXEC Invalid relocation
  */
-int arch_elf_relocate(elf_rela_t *rel, uintptr_t loc, uintptr_t sym_base_addr, const char *sym_name,
-		      uintptr_t load_bias)
+int arch_elf_relocate(struct llext_loader *ldr, struct llext *ext, elf_rela_t *rel,
+		      const elf_shdr_t *shdr)
 {
 	int ret = 0;
 	bool overflow_check = true;
 	elf_word reloc_type = ELF_R_TYPE(rel->r_info);
+	const uintptr_t loc = llext_get_reloc_instruction_location(ldr, ext, shdr->sh_info, rel);
+	elf_sym_t sym;
+	uintptr_t sym_base_addr;
+	const char *sym_name;
+
+	ret = llext_read_symbol(ldr, ext, rel, &sym);
+
+	if (ret != 0) {
+		LOG_ERR("Could not read symbol from binary!");
+		return ret;
+	}
+
+	sym_name = llext_symbol_name(ldr, ext, &sym);
+
+	ret = llext_lookup_symbol(ldr, ext, &sym_base_addr, rel, &sym, sym_name, shdr);
+
+	if (ret != 0) {
+		LOG_ERR("Could not find symbol %s!", sym_name);
+		return ret;
+	}
 
 	switch (reloc_type) {
 	case R_ARM_NONE:
@@ -498,6 +572,12 @@ int arch_elf_relocate(elf_rela_t *rel, uintptr_t loc, uintptr_t sym_base_addr, c
 	case R_AARCH64_JUMP26:
 		ret = imm_reloc_handler(rel, reloc_type, loc, sym_base_addr);
 		/* TODO Handle case when address exceeds +/- 128MB */
+		break;
+
+	case R_AARCH64_TLSLE_ADD_TPREL_HI12:
+	case R_AARCH64_TLSLE_ADD_TPREL_LO12_NC:
+		overflow_check = false;
+		ret = tls_reloc_handler(rel, reloc_type, loc, sym.st_value);
 		break;
 
 	default:

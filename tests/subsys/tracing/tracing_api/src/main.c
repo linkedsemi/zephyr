@@ -10,8 +10,9 @@
 #include <tracing_buffer.h>
 #include <tracing_core.h>
 #include <zephyr/tracing/tracing_format.h>
+
 #if defined(CONFIG_TRACING_BACKEND_UART)
-#include "../../../../subsys/tracing/include/tracing_backend.h"
+#include "../../../../../subsys/tracing/include/tracing_backend.h"
 #endif
 
 /**
@@ -38,7 +39,7 @@ static uint8_t *string_tracked[] = {
 	"sys_trace_k_thread_resume", "sys_trace_k_thread_ready",
 	"sys_trace_k_thread_sched_ready", "sys_trace_k_thread_sched_abort",
 	"sys_trace_k_thread_sched_resume", "sys_trace_k_thread_sched_suspend",
-	"sys_trace_k_thread_sleep_enter", "sys_trace_k_thread_sleep_exit",
+	"sys_trace_k_thread_sleep_ticks_enter", "sys_trace_k_thread_sleep_ticks_exit",
 	"sys_trace_k_thread_abort_enter", "sys_trace_k_thread_abort_exit",
 	"sys_trace_k_thread_yield", "sys_trace_k_thread_wakeup",
 	"sys_trace_k_thread_pend", "sys_trace_k_thread_info",
@@ -67,8 +68,15 @@ static void tracing_backends_output(
 	/* Check the output data. */
 #ifdef CONFIG_TRACING_ASYNC
 	if (async_tracing_api) {
-		/* Define static 'i' is for guaranteeing all strings of 0 ~ end
-		 * of the array string_tracked are tested.
+		/* This verification should run only once, hence the static
+		 * `i`. As soon as the tracing thread has a chance to run,
+		 * right at the sleep at the async version of
+		 * test_tracing_sys_api, it should have everything needed
+		 * for this check on its buffer, which is sent here.
+		 * Should SMP be ever enabled for this test, this logic
+		 * will break down and one will need some sort of internal
+		 * buffer to keep track of the tracing strings (or do the
+		 * verification in some other way).
 		 */
 		static int i;
 
@@ -139,8 +147,8 @@ ZTEST(tracing_api, test_tracing_sys_api)
 	sys_trace_k_thread_sched_abort(&thread);
 	sys_trace_k_thread_sched_resume(&thread);
 	sys_trace_k_thread_sched_suspend(&thread);
-	sys_trace_k_thread_sleep_enter(timeout);
-	sys_trace_k_thread_sleep_exit(timeout, ret);
+	sys_trace_k_thread_sleep_ticks_enter(timeout);
+	sys_trace_k_thread_sleep_ticks_exit(timeout, ret);
 	sys_trace_k_thread_abort_enter(&thread);
 	sys_trace_k_thread_abort_exit(&thread);
 	sys_trace_k_thread_yield();
@@ -163,8 +171,8 @@ ZTEST(tracing_api, test_tracing_sys_api)
 	sys_trace_k_condvar_signal_enter(&condvar);
 	sys_trace_k_condvar_signal_blocking(&condvar);
 	sys_trace_k_condvar_signal_exit(&condvar, ret);
-	sys_trace_k_condvar_wait_enter(&condvar, &mutex, timeout);
-	sys_trace_k_condvar_wait_exit(&condvar, &mutex, timeout, ret);
+	sys_trace_k_condvar_wait_enter(&condvar, timeout);
+	sys_trace_k_condvar_wait_exit(&condvar, timeout, ret);
 	/* sem api */
 	sys_trace_k_sem_init(&sem, ret);
 	sys_trace_k_sem_give_enter(&sem);
@@ -184,8 +192,8 @@ ZTEST(tracing_api, test_tracing_sys_api)
 
 	/* wait for some actions finished */
 	k_sleep(K_MSEC(100));
-	zassert_true(tracing_api_found, "Failded to check output from backend");
-	zassert_true(tracing_api_not_found == false, "Failded to check output from backend");
+	zassert_true(tracing_api_found, "Failed to check output from backend");
+	zassert_true(tracing_api_not_found == false, "Failed to check output from backend");
 	async_tracing_api = false;
 }
 #else

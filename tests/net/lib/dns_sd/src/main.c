@@ -18,13 +18,6 @@
 #include "dns_sd.h"
 
 #define BUFSZ 256
-#define IP_ADDR(a, b, c, d) ((uint32_t)		  \
-			     0			  \
-			     | ((a & 0xff) << 24) \
-			     | ((b & 0xff) << 16) \
-			     | ((c & 0xff) <<  8) \
-			     | ((d & 0xff) <<  0) \
-			     )
 
 extern bool label_is_valid(const char *label, size_t label_size);
 extern int add_a_record(const struct dns_sd_rec *inst, uint32_t ttl,
@@ -52,8 +45,9 @@ extern int add_srv_record(const struct dns_sd_rec *inst, uint32_t ttl,
 			  uint16_t *host_offset);
 extern size_t service_proto_size(const struct dns_sd_rec *ref);
 extern bool rec_is_valid(const struct dns_sd_rec *ref);
-extern int setup_dst_addr(int sock, sa_family_t family,
-			  struct sockaddr *dst, socklen_t *dst_len);
+extern int setup_dst_addr(int sock, net_sa_family_t family,
+			  struct net_sockaddr *src, net_socklen_t src_len,
+			  struct net_sockaddr *dst, net_socklen_t *dst_len);
 
 
 /** Text for advertised service */
@@ -101,8 +95,8 @@ static uint8_t *create_query(const struct dns_sd_rec *inst,
 	struct dns_header *hdr =
 		(struct dns_header *)&create_query_buf[0];
 
-	hdr->id = htons(0);
-	hdr->qdcount = htons(1);
+	hdr->id = net_htons(0);
+	hdr->qdcount = net_htons(1);
 	offs += sizeof(struct dns_header);
 
 	label_size = strlen(inst->service);
@@ -124,12 +118,12 @@ static uint8_t *create_query(const struct dns_sd_rec *inst,
 
 	struct dns_query *query =
 		(struct dns_query *)&create_query_buf[offs];
-	query->type = htons(rr_type);
-	query->class_ = htons(DNS_CLASS_IN);
+	query->type = net_htons(rr_type);
+	query->class_ = net_htons(DNS_CLASS_IN);
 	offs += sizeof(struct dns_query);
 
 	zassert_equal(expected_req_buf_size, offs,
-		      "sz: %zu offs: %u", expected_req_buf_size, offs);
+		      "sz: %u offs: %u", expected_req_buf_size, offs);
 
 	*size = offs;
 
@@ -440,7 +434,7 @@ ZTEST(dns_sd, test_add_a_record)
 	const uint32_t offset = 0;
 	const uint16_t host_offset = 0x59;
 	/* this one is made up */
-	const uint32_t addr = IP_ADDR(177, 5, 240, 13);
+	const struct net_in_addr addr = { { { 177, 5, 240, 13 } } };
 
 	static uint8_t actual_buf[BUFSZ];
 	static const uint8_t expected_buf[] = {
@@ -450,7 +444,7 @@ ZTEST(dns_sd, test_add_a_record)
 
 	int expected_int = sizeof(expected_buf);
 	int actual_int = add_a_record(&nasxxxxxx, ttl, host_offset,
-				      addr, actual_buf, offset,
+				      net_ntohl(addr.s_addr), actual_buf, offset,
 				      sizeof(actual_buf));
 
 	zassert_equal(actual_int, expected_int, "");
@@ -461,12 +455,12 @@ ZTEST(dns_sd, test_add_a_record)
 	/* test offset too large */
 	zassert_equal(-E2BIG,
 		      add_a_record(&nasxxxxxx, ttl, DNS_SD_PTR_MASK,
-				   addr, actual_buf, offset,
+				   net_ntohl(addr.s_addr), actual_buf, offset,
 				   sizeof(actual_buf)), "");
 
 	/* test buffer too small */
 	zassert_equal(-ENOSPC, add_a_record(&nasxxxxxx, ttl,
-					    host_offset, addr,
+					    host_offset, net_ntohl(addr.s_addr),
 					    actual_buf, offset,
 					    0), "");
 }
@@ -517,9 +511,7 @@ ZTEST(dns_sd, test_add_aaaa_record)
 /** Test for @ref dns_sd_handle_ptr_query */
 ZTEST(dns_sd, test_dns_sd_handle_ptr_query)
 {
-	struct in_addr addr = {
-		.s_addr = htonl(IP_ADDR(177, 5, 240, 13)),
-	};
+	struct net_in_addr addr = { { { 177, 5, 240, 13 } } };
 	static uint8_t actual_rsp[512];
 	static uint8_t expected_rsp[] = {
 		0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x01,
@@ -539,12 +531,12 @@ ZTEST(dns_sd, test_dns_sd_handle_ptr_query)
 		0x04, 0xb1, 0x05, 0xf0, 0x0d,
 	};
 	int expected_int = sizeof(expected_rsp);
-	int actual_int = dns_sd_handle_ptr_query(&nasxxxxxx,
+	int actual_int = dns_sd_handle_ptr_query(NULL, &nasxxxxxx,
 						 &addr,
 						 NULL,
 						 &actual_rsp[0],
 						 sizeof(actual_rsp) -
-						 sizeof(struct dns_header));
+						 sizeof(struct dns_header), false);
 
 	zassert_true(actual_int > 0,
 		     "dns_sd_handle_ptr_query() failed (%d)",
@@ -557,22 +549,131 @@ ZTEST(dns_sd, test_dns_sd_handle_ptr_query)
 
 	/* show non-advertisement for uninitialized port */
 	nonconst_port = 0;
-	zassert_equal(-EHOSTDOWN, dns_sd_handle_ptr_query(&nasxxxxxx_ephemeral,
+	zassert_equal(-EHOSTDOWN, dns_sd_handle_ptr_query(NULL, &nasxxxxxx_ephemeral,
 		&addr, NULL, &actual_rsp[0], sizeof(actual_rsp) -
-		sizeof(struct dns_header)), "port zero should not "
+		sizeof(struct dns_header), false), "port zero should not "
 		"produce any DNS-SD query response");
 
 	/* show advertisement for initialized port */
 	nonconst_port = CONST_PORT;
 	expected_int = sizeof(expected_rsp);
-	zassert_equal(expected_int, dns_sd_handle_ptr_query(&nasxxxxxx_ephemeral,
+	zassert_equal(expected_int, dns_sd_handle_ptr_query(NULL, &nasxxxxxx_ephemeral,
 		&addr, NULL, &actual_rsp[0], sizeof(actual_rsp) -
-		sizeof(struct dns_header)), "");
+		sizeof(struct dns_header), false), "");
 
 	zassert_equal(-EINVAL, dns_sd_handle_ptr_query(
-		&invalid_dns_sd_record,
+		NULL, &invalid_dns_sd_record,
 		&addr, NULL, &actual_rsp[0], sizeof(actual_rsp) -
-		sizeof(struct dns_header)), "");
+		sizeof(struct dns_header), false), "");
+}
+
+ZTEST(dns_sd, test_dns_sd_handle_srv_query)
+{
+	struct net_in_addr addr = {{{177, 5, 240, 13}}};
+	static uint8_t actual_rsp[512];
+	static const uint8_t expected_rsp[] = {
+		0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x01, 0x09, 0x4e, 0x41, 0x53,
+		0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x05, 0x5f,
+		0x68, 0x74, 0x74, 0x70, 0x04, 0x5f, 0x74, 0x63,
+		0x70, 0x05, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x00,
+		0x00, 0x21, 0x80, 0x01, 0x00, 0x00, 0x00, 0x78,
+		0x00, 0x12, 0x00, 0x00, 0x00, 0x00, 0x1f, 0x90,
+		0x09, 0x4e, 0x41, 0x53, 0x58, 0x58, 0x58, 0x58,
+		0x58, 0x58, 0xc0, 0x21, 0xc0, 0x38, 0x00, 0x01,
+		0x80, 0x01, 0x00, 0x00, 0x00, 0x78, 0x00, 0x04,
+		0xb1, 0x05, 0xf0, 0x0d,
+	};
+	int actual_len;
+
+	actual_len = dns_sd_handle_srv_query(NULL, &nasxxxxxx, &addr, NULL,
+					     actual_rsp, sizeof(actual_rsp));
+	zassert_equal(actual_len, sizeof(expected_rsp), "Unexpected response size");
+	zassert_mem_equal(actual_rsp, expected_rsp, sizeof(expected_rsp),
+			  "Unexpected SRV response");
+
+	nonconst_port = 0U;
+	zassert_equal(-EHOSTDOWN,
+		dns_sd_handle_srv_query(NULL, &nasxxxxxx_ephemeral, &addr, NULL,
+					actual_rsp, sizeof(actual_rsp)),
+		"Uninitialized service was advertised");
+	zassert_equal(-EINVAL,
+		dns_sd_handle_srv_query(NULL, &invalid_dns_sd_record, &addr, NULL,
+					actual_rsp, sizeof(actual_rsp)),
+		"Invalid service was advertised");
+	zassert_equal(-ENOSPC,
+		dns_sd_handle_srv_query(NULL, &nasxxxxxx, &addr, NULL, actual_rsp,
+					sizeof(struct dns_header)),
+		"Undersized buffer was accepted");
+}
+
+ZTEST(dns_sd, test_dns_sd_handle_txt_query)
+{
+	struct net_in_addr addr = {{{177, 5, 240, 13}}};
+	static uint8_t actual_rsp[512];
+	static const uint8_t expected_rsp[] = {
+		0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x01,
+		0x00, 0x00, 0x00, 0x00, 0x09, 0x4e, 0x41, 0x53,
+		0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0x05, 0x5f,
+		0x68, 0x74, 0x74, 0x70, 0x04, 0x5f, 0x74, 0x63,
+		0x70, 0x05, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x00,
+		0x00, 0x10, 0x80, 0x01, 0x00, 0x00, 0x11, 0x94,
+		0x00, 0x07, 0x06, 0x70, 0x61, 0x74, 0x68, 0x3d,
+		0x2f,
+	};
+	int actual_len;
+
+	actual_len = dns_sd_handle_txt_query(&nasxxxxxx, &addr, NULL,
+					     actual_rsp, sizeof(actual_rsp));
+	zassert_equal(actual_len, sizeof(expected_rsp), "Unexpected response size");
+	zassert_mem_equal(actual_rsp, expected_rsp, sizeof(expected_rsp),
+			  "Unexpected TXT response");
+
+	nonconst_port = 0U;
+	zassert_equal(-EHOSTDOWN,
+		dns_sd_handle_txt_query(&nasxxxxxx_ephemeral, &addr, NULL,
+					actual_rsp, sizeof(actual_rsp)),
+		"Uninitialized service was advertised");
+	zassert_equal(-EINVAL,
+		dns_sd_handle_txt_query(&invalid_dns_sd_record, &addr, NULL,
+					actual_rsp, sizeof(actual_rsp)),
+		"Invalid service was advertised");
+	zassert_equal(-ENOSPC,
+		dns_sd_handle_txt_query(&nasxxxxxx, &addr, NULL, actual_rsp,
+					sizeof(struct dns_header)),
+		"Undersized buffer was accepted");
+}
+
+/* RFC 6762 Section 8.3: unsolicited announcements must place every record in the
+ * Answer Section, not the Additional Record Section. Same wire bytes as
+ * test_dns_sd_handle_ptr_query's expected_rsp, except ancount/arcount in the header
+ * (offsets 6-7 and 10-11): all 4 non-PTR records move from arcount into ancount.
+ */
+ZTEST(dns_sd, test_dns_sd_handle_ptr_query_announce)
+{
+	struct net_in_addr addr = {{{177, 5, 240, 13}}};
+	static uint8_t actual_rsp[512];
+	static uint8_t expected_rsp[] = {
+		0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x05,
+		0x5f, 0x68, 0x74, 0x74, 0x70, 0x04, 0x5f, 0x74, 0x63, 0x70, 0x05, 0x6c, 0x6f,
+		0x63, 0x61, 0x6c, 0x00, 0x00, 0x0c, 0x00, 0x01, 0x00, 0x00, 0x11, 0x94, 0x00,
+		0x0c, 0x09, 0x4e, 0x41, 0x53, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0xc0, 0x0c,
+		0xc0, 0x28, 0x00, 0x10, 0x80, 0x01, 0x00, 0x00, 0x11, 0x94, 0x00, 0x07, 0x06,
+		0x70, 0x61, 0x74, 0x68, 0x3d, 0x2f, 0xc0, 0x28, 0x00, 0x21, 0x80, 0x01, 0x00,
+		0x00, 0x00, 0x78, 0x00, 0x12, 0x00, 0x00, 0x00, 0x00, 0x1f, 0x90, 0x09, 0x4e,
+		0x41, 0x53, 0x58, 0x58, 0x58, 0x58, 0x58, 0x58, 0xc0, 0x17, 0xc0, 0x59, 0x00,
+		0x01, 0x80, 0x01, 0x00, 0x00, 0x00, 0x78, 0x00, 0x04, 0xb1, 0x05, 0xf0, 0x0d,
+	};
+	int expected_int = sizeof(expected_rsp);
+	int actual_int =
+		dns_sd_handle_ptr_query(NULL, &nasxxxxxx, &addr, NULL, &actual_rsp[0],
+					sizeof(actual_rsp) - sizeof(struct dns_header), true);
+
+	zassert_true(actual_int > 0, "dns_sd_handle_ptr_query() failed (%d)", actual_int);
+
+	zassert_equal(actual_int, expected_int, "act: %d exp: %d", actual_int, expected_int);
+
+	zassert_mem_equal(actual_rsp, expected_rsp, MIN(actual_int, expected_int), "");
 }
 
 /** Test for @ref dns_sd_handle_ptr_query */
@@ -585,9 +686,7 @@ ZTEST(dns_sd, test_dns_sd_handle_service_type_enum)
 				DNS_SD_EMPTY_TXT,
 				CONST_PORT);
 
-	struct in_addr addr = {
-		.s_addr = htonl(IP_ADDR(177, 5, 240, 13)),
-	};
+	struct net_in_addr addr = { { { 177, 5, 240, 13 } } };
 	static uint8_t actual_rsp[512];
 	static uint8_t expected_rsp[] = {
 		0x00, 0x00, 0x84, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
@@ -600,12 +699,9 @@ ZTEST(dns_sd, test_dns_sd_handle_service_type_enum)
 		0x74, 0x04, 0x5f, 0x74, 0x63, 0x70, 0xc0, 0x23,
 	};
 	int expected_int = sizeof(expected_rsp);
-	int actual_int = dns_sd_handle_service_type_enum(&chromecast,
-						 &addr,
-						 NULL,
-						 &actual_rsp[0],
-						 sizeof(actual_rsp) -
-						 sizeof(struct dns_header));
+	int actual_int =
+		dns_sd_handle_service_type_enum(&chromecast, &addr, NULL, &actual_rsp[0],
+						sizeof(actual_rsp) - sizeof(struct dns_header));
 
 	zassert_true(actual_int > 0, "dns_sd_handle_service_type_enum() failed (%d)", actual_int);
 
@@ -615,16 +711,18 @@ ZTEST(dns_sd, test_dns_sd_handle_service_type_enum)
 
 	/* show non-advertisement for uninitialized port */
 	nonconst_port = 0;
-	zassert_equal(-EHOSTDOWN,
-		      dns_sd_handle_service_type_enum(&nasxxxxxx_ephemeral, &addr, NULL,
-				&actual_rsp[0], sizeof(actual_rsp) - sizeof(struct dns_header)),
-		      "port zero should not "
-		      "produce any DNS-SD query response");
+	zassert_equal(
+		-EHOSTDOWN,
+		dns_sd_handle_service_type_enum(&nasxxxxxx_ephemeral, &addr, NULL, &actual_rsp[0],
+						sizeof(actual_rsp) - sizeof(struct dns_header)),
+		"port zero should not "
+		"produce any DNS-SD query response");
 
-	zassert_equal(-EINVAL,
-		      dns_sd_handle_service_type_enum(&invalid_dns_sd_record, &addr, NULL,
-			  &actual_rsp[0], sizeof(actual_rsp) - sizeof(struct dns_header)),
-		      "");
+	zassert_equal(
+		-EINVAL,
+		dns_sd_handle_service_type_enum(&invalid_dns_sd_record, &addr, NULL, &actual_rsp[0],
+						sizeof(actual_rsp) - sizeof(struct dns_header)),
+		"");
 }
 
 /** Test @ref dns_sd_rec_match */
@@ -668,9 +766,9 @@ ZTEST(dns_sd, test_dns_sd_rec_match)
 ZTEST(dns_sd, test_setup_dst_addr)
 {
 	struct net_if *iface;
-	struct sockaddr dst;
-	socklen_t dst_len;
-	socklen_t optlen;
+	struct net_sockaddr dst;
+	net_socklen_t dst_len;
+	net_socklen_t optlen;
 	int ttl;
 
 	iface = net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY));
@@ -678,17 +776,17 @@ ZTEST(dns_sd, test_setup_dst_addr)
 
 	/* IPv4 case */
 	int v4;
-	struct in_addr addr_v4_expect = { { { 224, 0, 0, 251 } } };
+	struct net_in_addr addr_v4_expect = { { { 224, 0, 0, 251 } } };
 
-	memset(&dst, 0, sizeof(struct sockaddr));
+	memset(&dst, 0, sizeof(struct net_sockaddr));
 
-	v4 = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	v4 = zsock_socket(NET_AF_INET, NET_SOCK_DGRAM, NET_IPPROTO_UDP);
 	zassert_true(v4 >= 0, "Create IPv4 UDP context failed (%d)", -errno);
 
-	zassert_equal(0, setup_dst_addr(v4, AF_INET, &dst, &dst_len), "");
+	zassert_equal(0, setup_dst_addr(v4, NET_AF_INET, NULL, 0, &dst, &dst_len), "");
 
 	optlen = sizeof(int);
-	(void)zsock_getsockopt(v4, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, &optlen);
+	(void)zsock_getsockopt(v4, NET_IPPROTO_IP, ZSOCK_IP_MULTICAST_TTL, &ttl, &optlen);
 
 	zassert_equal(255, ttl, "TTL invalid (%d vs %d)", 255, ttl);
 	zassert_true(net_ipv4_addr_cmp(&addr_v4_expect,
@@ -700,18 +798,18 @@ ZTEST(dns_sd, test_setup_dst_addr)
 #if defined(CONFIG_NET_IPV6)
 	/* IPv6 case */
 	int v6;
-	struct in6_addr addr_v6_expect = { { { 0xff, 0x02, 0, 0, 0, 0, 0, 0,
-		0, 0, 0, 0, 0, 0, 0, 0xfb } } };
+	struct net_in6_addr addr_v6_expect = { { { 0xff, 0x02, 0, 0, 0, 0, 0, 0,
+						   0, 0, 0, 0, 0, 0, 0, 0xfb } } };
 
-	memset(&dst, 0, sizeof(struct sockaddr));
+	memset(&dst, 0, sizeof(struct net_sockaddr));
 
-	v6 = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	v6 = zsock_socket(NET_AF_INET, NET_SOCK_DGRAM, NET_IPPROTO_UDP);
 	zassert_true(v6 >= 0, "Create IPv6 UDP context failed (%d)", -errno);
 
-	zassert_equal(0, setup_dst_addr(v6, AF_INET6, &dst, &dst_len), "");
+	zassert_equal(0, setup_dst_addr(v6, NET_AF_INET6, NULL, 0, &dst, &dst_len), "");
 
 	optlen = sizeof(int);
-	(void)zsock_getsockopt(v6, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &ttl, &optlen);
+	(void)zsock_getsockopt(v6, NET_IPPROTO_IPV6, ZSOCK_IPV6_MULTICAST_HOPS, &ttl, &optlen);
 
 	zassert_equal(255, ttl, "Hoplimit invalid (%d vs %d)", 255, ttl);
 	zassert_true(net_ipv6_addr_cmp(&addr_v6_expect,
@@ -725,11 +823,11 @@ ZTEST(dns_sd, test_setup_dst_addr)
 
 	int xx;
 
-	xx = zsock_socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+	xx = zsock_socket(NET_AF_INET, NET_SOCK_DGRAM, NET_IPPROTO_UDP);
 	zassert_true(xx >= 0, "Create IPV4 udp socket failed");
 
 	zassert_equal(-EPFNOSUPPORT,
-		      setup_dst_addr(xx, AF_PACKET, &dst, &dst_len), "");
+		      setup_dst_addr(xx, NET_AF_PACKET, NULL, 0, &dst, &dst_len), "");
 }
 
 /** test for @ref dns_sd_is_service_type_enumeration */
@@ -761,11 +859,7 @@ ZTEST(dns_sd, test_is_service_type_enumeration)
 
 ZTEST(dns_sd, test_extract_service_type_enumeration)
 {
-	static const uint8_t query[] = {
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00, 0x00, 0x09, 0x5f,
-		0x73, 0x65, 0x72, 0x76, 0x69, 0x63, 0x65, 0x73, 0x07, 0x5f, 0x64, 0x6e, 0x73, 0x2d,
-		0x73, 0x64, 0x04, 0x5f, 0x75, 0x64, 0x70, 0x05, 0x6c, 0x6f, 0x63, 0x61, 0x6c, 0x00,
-	};
+	static const char name[] = "_services._dns-sd._udp.local";
 
 	struct dns_sd_rec record;
 	char instance[DNS_SD_INSTANCE_MAX_SIZE + 1];
@@ -792,11 +886,153 @@ ZTEST(dns_sd, test_extract_service_type_enumeration)
 	label[2] = proto;
 	label[3] = domain;
 
-	zassert_equal(ARRAY_SIZE(query),
-		      dns_sd_query_extract(query, ARRAY_SIZE(query), &record, label, size, &n),
+	zassert_equal(strlen(name),
+		      dns_sd_query_extract(name, strlen(name), &record, label, size, &n),
 		      "failed to extract service type enumeration");
 
 	zassert_true(dns_sd_is_service_type_enumeration(&record), "");
+}
+
+/* Buffers are all sized DNS_SD_DOMAIN_MAX_SIZE + 1 (rather than named per field,
+ * e.g. a tight DNS_SD_PROTO_SIZE-sized buffer) because which field lands in which
+ * label[] slot depends on the label *count*, not any fixed field-to-slot mapping --
+ * see mdns_responder.c's send_sd_response(), which sizes its own third buffer the
+ * same oversized way for exactly this reason. Shared by every test_extract_name_*
+ * case below that doesn't need a deliberately mis-sized buffer of its own.
+ */
+static int extract_name(const char *name, struct dns_sd_rec *record, size_t *n)
+{
+	static char buf[4][DNS_SD_DOMAIN_MAX_SIZE + 1];
+	char *label[4] = {buf[0], buf[1], buf[2], buf[3]};
+	size_t size[] = {sizeof(buf[0]), sizeof(buf[1]), sizeof(buf[2]), sizeof(buf[3])};
+
+	*n = ARRAY_SIZE(label);
+	return dns_sd_query_extract(name, strlen(name), record, label, size, n);
+}
+
+ZTEST(dns_sd, test_extract_name_basic)
+{
+	static const char name[] = "_zephyr._tcp.local";
+
+	struct dns_sd_rec record;
+	size_t n;
+
+	zassert_equal(strlen(name), extract_name(name, &record, &n),
+		      "failed to extract 3-label name");
+	zassert_equal(3, n, "wrong label count");
+	zassert_str_equal("_zephyr", record.service, "");
+	zassert_str_equal("_tcp", record.proto, "");
+	zassert_str_equal("local", record.domain, "");
+}
+
+ZTEST(dns_sd, test_extract_name_with_instance)
+{
+	static const char name[] = "Zephyr 42._zephyr._tcp.local";
+
+	struct dns_sd_rec record;
+	size_t n;
+
+	zassert_equal(strlen(name), extract_name(name, &record, &n),
+		      "failed to extract 4-label name");
+	zassert_equal(4, n, "wrong label count");
+	zassert_str_equal("Zephyr 42", record.instance, "");
+	zassert_str_equal("_zephyr", record.service, "");
+	zassert_str_equal("_tcp", record.proto, "");
+	zassert_str_equal("local", record.domain, "");
+}
+
+ZTEST(dns_sd, test_extract_name_too_few_labels)
+{
+	static const char name[] = "local";
+
+	struct dns_sd_rec record;
+	size_t n;
+
+	zassert_equal(-EINVAL, extract_name(name, &record, &n),
+		      "single-label name should be rejected");
+}
+
+/* A 5-label name must be rejected as unsupported even when the caller supplies
+ * enough buffer capacity to hold all 5 labels, and even when the first 4
+ * labels alone would form a valid instance/service/proto/domain record.
+ * dns_sd_validate_and_assign()'s DNS_SD_MAX_LABELS branch previously matched
+ * on qlabels >= DNS_SD_MAX_LABELS, which silently accepted and truncated any
+ * qlabels beyond 4 -- discarding the trailing "extra" label below and
+ * returning success -- as long as label_capacity covered them. The chosen
+ * name deliberately makes the first 4 labels individually valid so that this
+ * test only passes on the count check itself, not on an incidental
+ * validation failure elsewhere. Distinct from the ENOBUFS case below, which
+ * only triggers when capacity is too small to reach validation at all.
+ */
+ZTEST(dns_sd, test_extract_name_too_many_labels_with_capacity)
+{
+	static const char name[] = "Zephyr 42._zephyr._tcp.local.extra";
+
+	struct dns_sd_rec record;
+	char buf[5][DNS_SD_DOMAIN_MAX_SIZE + 1];
+	char *label[5] = {buf[0], buf[1], buf[2], buf[3], buf[4]};
+	size_t size[] = {sizeof(buf[0]), sizeof(buf[1]), sizeof(buf[2]), sizeof(buf[3]),
+			 sizeof(buf[4])};
+	size_t n = ARRAY_SIZE(label);
+
+	zassert_equal(-EINVAL,
+		      dns_sd_query_extract(name, strlen(name), &record, label, size, &n),
+		      "5-label name should be rejected even with enough buffer capacity");
+}
+
+/* Consecutive dots (empty label) must be rejected, not silently skipped -- an
+ * empty label is not a valid DNS name segment.
+ */
+ZTEST(dns_sd, test_extract_name_empty_label)
+{
+	static const char name[] = "_zephyr..local";
+
+	struct dns_sd_rec record;
+	size_t n;
+
+	zassert_equal(-EINVAL, extract_name(name, &record, &n),
+		      "empty label (consecutive dots) should be rejected");
+}
+
+ZTEST(dns_sd, test_extract_name_enobufs_too_many_labels)
+{
+	static const char name[] = "sub._sub._zephyr._tcp.local";
+
+	struct dns_sd_rec record;
+	/* Only room for DNS_SD_MAX_LABELS (4); this name has 5 labels. */
+	char buf[DNS_SD_MAX_LABELS][DNS_SD_DOMAIN_MAX_SIZE + 1];
+	char *label[DNS_SD_MAX_LABELS] = {buf[0], buf[1], buf[2], buf[3]};
+	size_t size[] = {sizeof(buf[0]), sizeof(buf[1]), sizeof(buf[2]), sizeof(buf[3])};
+	size_t n = ARRAY_SIZE(label);
+
+	zassert_equal(-ENOBUFS,
+		      dns_sd_query_extract(name, strlen(name), &record, label, size, &n),
+		      "too many labels for the buffer count should be rejected");
+}
+
+/* A 3-label name goes through dns_sd_validate_and_assign()'s DNS_SD_MIN_LABELS
+ * branch, which writes the first segment ("_zephyr") into label[0]. Shrink just
+ * that slot so the label doesn't fit, while leaving the other two slots (which
+ * hold "_tcp" and "local") comfortably sized, so a failure here can only be
+ * attributed to the first slot's bounds check.
+ */
+ZTEST(dns_sd, test_extract_name_enobufs_label_too_long)
+{
+	static const char name[] = "_zephyr._tcp.local";
+
+	struct dns_sd_rec record;
+	/* "_zephyr" is 7 chars; a 7-byte buffer has no room for the NUL. */
+	char buf0[7];
+	char buf1[DNS_SD_DOMAIN_MAX_SIZE + 1];
+	char buf2[DNS_SD_DOMAIN_MAX_SIZE + 1];
+	char buf3[DNS_SD_DOMAIN_MAX_SIZE + 1];
+	char *label[4] = {buf0, buf1, buf2, buf3};
+	size_t size[] = {sizeof(buf0), sizeof(buf1), sizeof(buf2), sizeof(buf3)};
+	size_t n = ARRAY_SIZE(label);
+
+	zassert_equal(-ENOBUFS,
+		      dns_sd_query_extract(name, strlen(name), &record, label, size, &n),
+		      "label that doesn't fit its buffer should be rejected");
 }
 
 ZTEST(dns_sd, test_wildcard_comparison)

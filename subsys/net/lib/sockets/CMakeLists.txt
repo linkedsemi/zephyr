@@ -9,12 +9,12 @@ zephyr_library_include_directories(.)
 zephyr_library_sources(
   getaddrinfo.c
   sockets.c
+  sockets_misc.c
 )
 
 if(NOT CONFIG_NET_SOCKETS_OFFLOAD)
 zephyr_library_sources(
   getnameinfo.c
-  sockets_misc.c
   )
 endif()
 
@@ -39,4 +39,4 @@ endif()
 zephyr_library_sources_ifdef(CONFIG_NET_SOCKETPAIR socketpair.c)
 zephyr_library_sources_ifdef(CONFIG_NET_SOCKETS_AF_UNIX af_unix.c)
 
-zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS mbedTLS)
+zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)

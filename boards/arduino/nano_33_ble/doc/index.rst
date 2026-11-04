@@ -1,7 +1,4 @@
-.. _arduino_nano_33_ble:
-
-Arduino Nano 33 BLE (Sense)
-#################################
+.. zephyr:board:: arduino_nano_33_ble
 
 Overview
 ********
@@ -11,11 +8,8 @@ nRF52840 ARM Cortex-M4F CPU. Arduino sells 2 variants of the board, the
 plain `BLE`_ type and the `BLE Sense`_ type. The "Sense" variant is distinguished by
 the inclusion of more sensors, but otherwise both variants are the same.
 
-.. image:: img/arduino_nano_33_ble_sense.jpg
-     :align: center
-     :alt: Arduino Nano 33 BLE (Sense variant)
-
-The Sense variant of the board
+The current hardware revision of these boards is **Rev2**, which has updated the
+IMU and temperature/humidity sensors (among others).
 
 Hardware
 ********
@@ -23,52 +17,14 @@ Hardware
 Supported Features
 ==================
 
-The package is configured to support the following hardware:
-
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| ADC       | on-chip    | adc                  |
-+-----------+------------+----------------------+
-| CLOCK     | on-chip    | clock_control        |
-+-----------+------------+----------------------+
-| FLASH     | on-chip    | flash                |
-+-----------+------------+----------------------+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| I2C0      | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| I2C1      | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| MPU       | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| NVIC      | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| PWM       | on-chip    | pwm                  |
-+-----------+------------+----------------------+
-| RADIO     | on-chip    | Bluetooth,           |
-|           |            | ieee802154           |
-+-----------+------------+----------------------+
-| RTC       | on-chip    | system clock         |
-+-----------+------------+----------------------+
-| SPI       | on-chip    | spi                  |
-+-----------+------------+----------------------+
-| UART      | on-chip    | serial               |
-+-----------+------------+----------------------+
-| USB       | on-chip    | usb                  |
-+-----------+------------+----------------------+
-| WDT       | on-chip    | watchdog             |
-+-----------+------------+----------------------+
-
-Other hardware features have not been enabled yet for this board.
-
-Notably, this includes the PDM (microphone) interface.
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
 
-The `schematic`_ will tell you everything
-you need to know about the pins.
+The `schematic BLE`_ will tell you everything
+you need to know about the pins for the BLE variant. For the "Sense" variant, refer to
+`schematic BLE Sense`_.
 
 The I2C pull-ups are enabled by setting pin P1.00 high. This is automatically
 done at system init. The pin is specified in the ``zephyr,user`` Devicetree node
@@ -76,6 +32,8 @@ as ``pull-up-gpios``.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 This board requires the Arduino variant of bossac. You will not
 be able to flash with the bossac included with the zephyr-sdk, or
@@ -113,14 +71,31 @@ You will also need to specify the COM port using the --bossac-port argument:
 Flashing
 ========
 
-Attach the board to your computer using the USB cable, and then
+.. note::
 
-   .. zephyr-app-commands::
-      :zephyr-app: samples/basic/blinky
-      :board: arduino_nano_33_ble
-      :goals: build
-      :compact:
+   Rev2 can be easily identified by looking at the board, which has the
+   name/revision printed on it: NANO 33 BLE REV2 (or NANO 33 BLE SENSE REV2 for
+   the "Sense" variant).
+   To build for Rev2, the tag ``@rev2`` **must be used**. Zephyr has always supported Rev1,
+   the build command remains unchanged. The tag ``@rev1`` is the default and can be omitted.
 
+To build :zephyr:code-sample:`blinky` for the board revision **Rev2**:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/blinky
+   :board: arduino_nano_33_ble@rev2
+   :goals: build
+   :compact:
+
+To build for the board revision **Rev1**:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/basic/blinky
+   :board: arduino_nano_33_ble
+   :goals: build
+   :compact:
+
+Attach the board to your computer using the USB cable.
 Double-tap the RESET button on your board. Your board should disconnect, reconnect,
 and there should be a pulsing orange LED near the USB port.
 
@@ -209,22 +184,22 @@ References
 .. target-notes::
 
 .. _BLE:
-    https://store.arduino.cc/products/arduino-nano-33-ble
+    https://store.arduino.cc/products/nano-33-ble-rev2
 
 .. _BLE SENSE:
-    https://store.arduino.cc/products/arduino-nano-33-ble-sense
+    https://store.arduino.cc/products/nano-33-ble-sense-rev2
 
-.. _pinouts:
-    https://learn.adafruit.com/introducing-the-adafruit-nrf52840-feather/pinouts
+.. _schematic BLE:
+    https://docs.arduino.cc/resources/schematics/ABX00071-schematics.pdf
 
-.. _schematic:
-    https://content.arduino.cc/assets/NANO33BLE_V2.0_sch.pdf
+.. _schematic BLE Sense:
+    https://docs.arduino.cc/resources/schematics/ABX00069-schematics.pdf
 
 .. _GDB Debug version TRACE32 for Arduino Nano 33 BLE:
     https://www.lauterbach.com/frames.html?register_arduino.php
 
 .. _Lauterbach TRACE32 GDB Front-End Debugger for Nano 33 BLE:
-    https://docs.arduino.cc/tutorials/nano-33-ble-sense/trace-32
+    https://docs.arduino.cc/tutorials/nano-33-ble-sense-rev2/lauterbach-debugger/
 
 .. _TRACE32 as GDB Front-End:
     https://www2.lauterbach.com/pdf/frontend_gdb.pdf

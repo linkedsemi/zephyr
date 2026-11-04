@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(net_ipv4_acd, CONFIG_NET_IPV4_ACD_LOG_LEVEL);
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/random/random.h>
@@ -25,10 +26,12 @@ LOG_MODULE_REGISTER(net_ipv4_acd, CONFIG_NET_IPV4_ACD_LOG_LEVEL);
 #include "net_private.h"
 #include "../l2/ethernet/arp.h"
 
-static K_MUTEX_DEFINE(lock);
+static K_MUTEX_DEFINE(ipv4_acd_lock);
+
+static void ipv4_acd_timeout(struct k_work *work);
 
 /* Address conflict detection timer. */
-static struct k_work_delayable ipv4_acd_timer;
+static K_WORK_DELAYABLE_DEFINE(ipv4_acd_timer, ipv4_acd_timeout);
 
 /* List of IPv4 addresses under an active conflict detection. */
 static sys_slist_t active_acd_timers;
@@ -71,30 +74,37 @@ enum ipv4_acd_state {
 };
 
 static struct net_pkt *ipv4_acd_prepare_arp(struct net_if *iface,
-					    struct in_addr *sender_ip,
-					    struct in_addr *target_ip)
+					    struct net_in_addr *sender_ip,
+					    struct net_in_addr *target_ip)
 {
-	struct net_pkt *pkt;
+	struct net_pkt *pkt, *arp;
+	int ret;
 
-	/* We provide AF_UNSPEC to the allocator: this packet does not
+	/* We provide NET_AF_UNSPEC to the allocator: this packet does not
 	 * need space for any IPv4 header.
 	 */
 	pkt = net_pkt_alloc_with_buffer(iface, sizeof(struct net_arp_hdr),
-					AF_UNSPEC, 0, BUF_ALLOC_TIMEOUT);
+					NET_AF_UNSPEC, 0, BUF_ALLOC_TIMEOUT);
 	if (!pkt) {
 		return NULL;
 	}
 
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 	net_pkt_set_ipv4_acd(pkt, true);
 
-	return net_arp_prepare(pkt, target_ip, sender_ip);
+	ret = net_arp_prepare(pkt, target_ip, sender_ip, &arp);
+	if (ret == NET_ARP_PKT_REPLACED) {
+		pkt = arp;
+	} else if (ret < 0)  {
+		pkt = NULL;
+	}
+	return pkt;
 }
 
 static void ipv4_acd_send_probe(struct net_if_addr *ifaddr)
 {
 	struct net_if *iface = net_if_get_by_index(ifaddr->ifindex);
-	struct in_addr unspecified = { 0 };
+	struct net_in_addr unspecified = { 0 };
 	struct net_pkt *pkt;
 
 	pkt = ipv4_acd_prepare_arp(iface, &unspecified, &ifaddr->address.in_addr);
@@ -217,7 +227,7 @@ static void ipv4_acd_timeout(struct k_work *work)
 
 	ARG_UNUSED(work);
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&ipv4_acd_lock, K_FOREVER);
 
 	SYS_SLIST_FOR_EACH_NODE_SAFE(&active_acd_timers, current, next) {
 		struct net_if_addr *ifaddr =
@@ -230,7 +240,7 @@ static void ipv4_acd_timeout(struct k_work *work)
 
 	acd_timer_reschedule();
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&ipv4_acd_lock);
 }
 
 static void acd_start_timer(struct net_if *iface, struct net_if_addr *ifaddr)
@@ -260,6 +270,8 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 	sys_snode_t *current, *next;
 	struct net_arp_hdr *arp_hdr;
 	struct net_if_ipv4 *ipv4;
+	struct net_linkaddr *dst_lladdr;
+	struct net_linkaddr *ll_addr;
 
 	if (net_pkt_get_len(pkt) < sizeof(struct net_arp_hdr)) {
 		NET_DBG("Invalid ARP header (len %zu, min %zu bytes)",
@@ -267,15 +279,25 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 		return NET_DROP;
 	}
 
+	dst_lladdr = net_pkt_lladdr_dst(pkt);
+	if ((dst_lladdr->type != NET_LINK_ETHERNET) ||
+	    (dst_lladdr->len != sizeof(struct net_eth_addr))) {
+		NET_ERR("Invalid LinkLayer in ARP");
+		return NET_DROP;
+	}
+
+	ll_addr = net_if_get_link_addr(iface);
+
+	NET_ASSERT(ll_addr != NULL);
+
 	arp_hdr = NET_ARP_HDR(pkt);
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&ipv4_acd_lock, K_FOREVER);
 
 	SYS_SLIST_FOR_EACH_NODE_SAFE(&active_acd_timers, current, next) {
 		struct net_if_addr *ifaddr =
 			CONTAINER_OF(current, struct net_if_addr, acd_node);
 		struct net_if *addr_iface = net_if_get_by_index(ifaddr->ifindex);
-		struct net_linkaddr *ll_addr;
 
 		if (iface != addr_iface) {
 			continue;
@@ -285,21 +307,20 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 			continue;
 		}
 
-		ll_addr = net_if_get_link_addr(addr_iface);
-
 		/* RFC 5227, ch. 2.1.1 Probe Details:
 		 * - ARP Request/Reply with Sender IP address match OR,
 		 * - ARP Probe where Target IP address match with different sender HW address,
 		 * indicate a conflict.
-		 * ARP Probe has an all-zero sender IP address
+		 * ARP Probe has an all-zero sender IP address and is broadcasted
 		 */
 		if (net_ipv4_addr_cmp_raw(arp_hdr->src_ipaddr,
 					  (uint8_t *)&ifaddr->address.in_addr) ||
 		    (net_ipv4_addr_cmp_raw(arp_hdr->dst_ipaddr,
-					  (uint8_t *)&ifaddr->address.in_addr) &&
-				 (memcmp(&arp_hdr->src_hwaddr, ll_addr->addr, ll_addr->len) != 0) &&
-				 (net_ipv4_addr_cmp_raw(arp_hdr->src_ipaddr,
-						(uint8_t *)&(struct in_addr)INADDR_ANY_INIT)))) {
+					   (uint8_t *)&ifaddr->address.in_addr) &&
+		     (memcmp(&arp_hdr->src_hwaddr, ll_addr->addr, ll_addr->len) != 0) &&
+		     (net_ipv4_addr_cmp_raw(arp_hdr->src_ipaddr,
+					    (uint8_t *)&(struct net_in_addr)NET_INADDR_ANY_INIT)) &&
+		     net_eth_is_addr_broadcast((struct net_eth_addr *)dst_lladdr->addr))) {
 			NET_DBG("Conflict detected from %s for %s",
 				net_sprint_ll_addr((uint8_t *)&arp_hdr->src_hwaddr,
 						   arp_hdr->hwlen),
@@ -309,13 +330,13 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 
 			net_if_ipv4_acd_failed(addr_iface, ifaddr);
 
-			k_mutex_unlock(&lock);
+			k_mutex_unlock(&ipv4_acd_lock);
 
 			return NET_DROP;
 		}
 	}
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&ipv4_acd_lock);
 
 	ipv4 = iface->config.ip.ipv4;
 	if (ipv4 == NULL) {
@@ -327,7 +348,6 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 	 */
 	ARRAY_FOR_EACH(ipv4->unicast, i) {
 		struct net_if_addr *ifaddr = &ipv4->unicast[i].ipv4;
-		struct net_linkaddr *ll_addr = net_if_get_link_addr(iface);
 
 		if (!ifaddr->is_used) {
 			continue;
@@ -361,7 +381,7 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 				net_mgmt_event_notify_with_info(
 					NET_EVENT_IPV4_ACD_CONFLICT, iface,
 					&ifaddr->address.in_addr,
-					sizeof(struct in_addr));
+					sizeof(struct net_in_addr));
 			}
 
 			break;
@@ -370,11 +390,6 @@ enum net_verdict net_ipv4_acd_input(struct net_if *iface, struct net_pkt *pkt)
 
 out:
 	return NET_CONTINUE;
-}
-
-void net_ipv4_acd_init(void)
-{
-	k_work_init_delayable(&ipv4_acd_timer, ipv4_acd_timeout);
 }
 
 int net_ipv4_acd_start(struct net_if *iface, struct net_if_addr *ifaddr)
@@ -388,7 +403,7 @@ int net_ipv4_acd_start(struct net_if *iface, struct net_if_addr *ifaddr)
 		return 0;
 	}
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&ipv4_acd_lock, K_FOREVER);
 
 	ifaddr->ifindex = net_if_get_by_iface(iface);
 	ifaddr->acd_state = IPV4_ACD_PROBE;
@@ -396,7 +411,7 @@ int net_ipv4_acd_start(struct net_if *iface, struct net_if_addr *ifaddr)
 
 	acd_start_timer(iface, ifaddr);
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&ipv4_acd_lock);
 
 	return 0;
 }
@@ -411,10 +426,10 @@ void net_ipv4_acd_cancel(struct net_if *iface, struct net_if_addr *ifaddr)
 		return;
 	}
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&ipv4_acd_lock, K_FOREVER);
 
 	sys_slist_find_and_remove(&active_acd_timers, &ifaddr->acd_node);
 	acd_timer_reschedule();
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&ipv4_acd_lock);
 }

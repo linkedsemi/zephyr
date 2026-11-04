@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_TIME_UNITS_H_
-#define ZEPHYR_INCLUDE_TIME_UNITS_H_
+#ifndef ZEPHYR_INCLUDE_SYS_TIME_UNITS_H_
+#define ZEPHYR_INCLUDE_SYS_TIME_UNITS_H_
 
 #include <zephyr/toolchain.h>
 #include <zephyr/sys/util.h>
@@ -40,24 +40,34 @@ extern "C" {
 
 /** @brief System-wide macro to convert milliseconds to kernel timeouts
  */
-#define SYS_TIMEOUT_MS(ms) Z_TIMEOUT_TICKS((ms) == SYS_FOREVER_MS ? \
-					   K_TICKS_FOREVER : Z_TIMEOUT_MS_TICKS(ms))
+#define SYS_TIMEOUT_MS(ms) \
+	Z_TIMEOUT_TICKS((ms) == SYS_FOREVER_MS ? \
+	K_TICKS_FOREVER : Z_TIMEOUT_MS_TICKS(ms))
 
 /* Exhaustively enumerated, highly optimized time unit conversion API */
 
-#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
-__syscall int sys_clock_hw_cycles_per_sec_runtime_get(void);
+#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) || \
+	defined(CONFIG_SYSTEM_CLOCK_HW_CYCLES_PER_SEC_RUNTIME_UPDATE)
+/**
+ * @brief Get the current system timer frequency.
+ *
+ * Returns the system timer frequency in Hz as a runtime value. This is used by
+ * sys_clock_hw_cycles_per_sec() and by time conversion helpers, and may change
+ * after boot on some platforms.
+ */
+__syscall unsigned int sys_clock_hw_cycles_per_sec_runtime_get(void);
 
-static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
+static inline unsigned int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 {
-	extern int z_clock_hw_cycles_per_sec;
+	extern unsigned int z_clock_hw_cycles_per_sec;
 
 	return z_clock_hw_cycles_per_sec;
 }
 #endif /* CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME */
 
 #if defined(__cplusplus) && (__cplusplus >= 201402L)
-  #if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
+	#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) || \
+		defined(CONFIG_SYSTEM_CLOCK_HW_CYCLES_PER_SEC_RUNTIME_UPDATE)
     #define TIME_CONSTEXPR
   #else
     #define TIME_CONSTEXPR constexpr
@@ -70,10 +80,11 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
  * @brief Get the system timer frequency.
  * @return system timer frequency in Hz
  */
-#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
+#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) || \
+	defined(CONFIG_SYSTEM_CLOCK_HW_CYCLES_PER_SEC_RUNTIME_UPDATE)
 #define sys_clock_hw_cycles_per_sec() sys_clock_hw_cycles_per_sec_runtime_get()
 #else
-#define sys_clock_hw_cycles_per_sec() CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC
+#define sys_clock_hw_cycles_per_sec() (uint32_t)CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC
 #endif
 
 /** @internal
@@ -154,7 +165,7 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
  * GNU extension; 2. everything in this file is designed to be computed
  * at compile time anyway.
  */
-#define z_tmcvt_divisor(a, b) ((a)/(b) ? (a)/(b) : 01u)
+#define z_tmcvt_divisor(a, b) ((a)/(b) ? (a)/(b) : 1U)
 
 /*
  * Compute the offset needed to round the result correctly when
@@ -169,10 +180,10 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 #define z_tmcvt_int_div_32(__t, __from_hz, __to_hz, __round_up, __round_off) \
 	((uint64_t) (__t) <= 0xffffffffU -				\
 	 z_tmcvt_off_div(__from_hz, __to_hz, __round_up, __round_off) ?	\
-	 ((uint32_t)((__t) +						\
+	 ((uint32_t)(((__t) +						\
 		     z_tmcvt_off_div(__from_hz, __to_hz,		\
 				     __round_up, __round_off)) /	\
-	  z_tmcvt_divisor(__from_hz, __to_hz))				\
+	  z_tmcvt_divisor(__from_hz, __to_hz)))				\
 	 :								\
 	 (uint32_t) (((uint64_t) (__t) +				\
 		      z_tmcvt_off_div(__from_hz, __to_hz,		\
@@ -182,7 +193,7 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 
 /* Integer multiplication 32-bit conversion */
 #define z_tmcvt_int_mul_32(__t, __from_hz, __to_hz)	\
-	(uint32_t) (__t)*((__to_hz) / (__from_hz))
+	((uint32_t) ((__t)*((__to_hz) / (__from_hz))))
 
 /* General 32-bit conversion */
 #define z_tmcvt_gen_32(__t, __from_hz, __to_hz, __round_up, __round_off) \
@@ -206,9 +217,9 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 
 /* Slow 64-bit conversion. This avoids overflowing the multiply */
 #define z_tmcvt_gen_64_slow(__t, __from_hz, __to_hz, __round_up, __round_off) \
-	(((uint64_t) (__t) / (__from_hz))*(__to_hz) +			\
-	 (((uint64_t) (__t) % (__from_hz))*(__to_hz) +		\
-	  z_tmcvt_off_gen(__from_hz, __to_hz, __round_up, __round_off)) / (__from_hz))
+	((((uint64_t) (__t) / (__from_hz))*(__to_hz)) +			\
+	 (((((uint64_t) (__t) % (__from_hz))*(__to_hz)) +		\
+	  z_tmcvt_off_gen(__from_hz, __to_hz, __round_up, __round_off)) / (__from_hz)))
 
 /* General 64-bit conversion. Uses one of the two above macros */
 #define z_tmcvt_gen_64(__t, __from_hz, __to_hz, __round_up, __round_off) \
@@ -340,7 +351,8 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 #define Z_HZ_ns 1000000000
 #define Z_HZ_cyc sys_clock_hw_cycles_per_sec()
 #define Z_HZ_ticks CONFIG_SYS_CLOCK_TICKS_PER_SEC
-#define Z_CCYC (!IS_ENABLED(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME))
+#define Z_CCYC (!IS_ENABLED(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) && \
+		!IS_ENABLED(CONFIG_SYSTEM_CLOCK_HW_CYCLES_PER_SEC_RUNTIME_UPDATE))
 
 /** @brief Convert seconds to hardware cycles. 32 bits. Truncates.
  *
@@ -1012,6 +1024,96 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
  */
 #define k_ns_to_cyc_ceil64(t) \
 	z_tmcvt_64(t, Z_HZ_ns, Z_HZ_cyc, Z_CCYC, true, false)
+
+
+/** @brief Convert nanoseconds to cycles at a given frequency. 32 bits. Truncates.
+ *
+ * Converts time values in nanoseconds to cycles at the specified frequency.
+ * Computes result in 32 bit precision.
+ * Truncates to the next lowest output unit.
+ *
+ * @param t Source time in nanoseconds. uint64_t
+ * @param freq Target frequency in Hz. uint32_t
+ *
+ * @return The converted time value in cycles. uint32_t
+ */
+#define ns_to_cyc_at_hz_floor32(t, freq) \
+	z_tmcvt_32(t, Z_HZ_ns, freq, false, false, false)
+
+
+/** @brief Convert nanoseconds to cycles at a given frequency. 64 bits. Truncates.
+ *
+ * Converts time values in nanoseconds to cycles at the specified frequency.
+ * Computes result in 64 bit precision.
+ * Truncates to the next lowest output unit.
+ *
+ * @param t Source time in nanoseconds. uint64_t
+ * @param freq Target frequency in Hz. uint32_t
+ *
+ * @return The converted time value in cycles. uint64_t
+ */
+#define ns_to_cyc_at_hz_floor64(t, freq) \
+	z_tmcvt_64(t, Z_HZ_ns, freq, false, false, false)
+
+
+/** @brief Convert nanoseconds to cycles at a given frequency. 32 bits. Round nearest.
+ *
+ * Converts time values in nanoseconds to cycles at the specified frequency.
+ * Computes result in 32 bit precision.
+ * Rounds to the nearest output unit.
+ *
+ * @param t Source time in nanoseconds. uint64_t
+ * @param freq Target frequency in Hz. uint32_t
+ *
+ * @return The converted time value in cycles. uint32_t
+ */
+#define ns_to_cyc_at_hz_near32(t, freq) \
+	z_tmcvt_32(t, Z_HZ_ns, freq, false, false, true)
+
+
+/** @brief Convert nanoseconds to cycles at a given frequency. 64 bits. Round nearest.
+ *
+ * Converts time values in nanoseconds to cycles at the specified frequency.
+ * Computes result in 64 bit precision.
+ * Rounds to the nearest output unit.
+ *
+ * @param t Source time in nanoseconds. uint64_t
+ * @param freq Target frequency in Hz. uint32_t
+ *
+ * @return The converted time value in cycles. uint64_t
+ */
+#define ns_to_cyc_at_hz_near64(t, freq) \
+	z_tmcvt_64(t, Z_HZ_ns, freq, false, false, true)
+
+
+/** @brief Convert nanoseconds to cycles at a given frequency. 32 bits. Rounds up.
+ *
+ * Converts time values in nanoseconds to cycles at the specified frequency.
+ * Computes result in 32 bit precision.
+ * Rounds up to the next highest output unit.
+ *
+ * @param t Source time in nanoseconds. uint64_t
+ * @param freq Target frequency in Hz. uint32_t
+ *
+ * @return The converted time value in cycles. uint32_t
+ */
+#define ns_to_cyc_at_hz_ceil32(t, freq) \
+	z_tmcvt_32(t, Z_HZ_ns, freq, false, true, false)
+
+
+/** @brief Convert nanoseconds to cycles at a given frequency. 64 bits. Rounds up.
+ *
+ * Converts time values in nanoseconds to cycles at the specified frequency.
+ * Computes result in 64 bit precision.
+ * Rounds up to the next highest output unit.
+ *
+ * @param t Source time in nanoseconds. uint64_t
+ * @param freq Target frequency in Hz. uint32_t
+ *
+ * @return The converted time value in cycles. uint64_t
+ */
+#define ns_to_cyc_at_hz_ceil64(t, freq) \
+	z_tmcvt_64(t, Z_HZ_ns, freq, false, true, false)
 
 
 /** @brief Convert nanoseconds to ticks. 32 bits. Truncates.
@@ -2069,7 +2171,8 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 #define k_ticks_to_cyc_ceil64(t) \
 	z_tmcvt_64(t, Z_HZ_ticks, Z_HZ_cyc, Z_CCYC, true, false)
 
-#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME)
+#if defined(CONFIG_TIMER_READS_ITS_FREQUENCY_AT_RUNTIME) || \
+	defined(CONFIG_SYSTEM_CLOCK_HW_CYCLES_PER_SEC_RUNTIME_UPDATE)
 #include <zephyr/syscalls/time_units.h>
 #endif
 
@@ -2083,4 +2186,4 @@ static inline int z_impl_sys_clock_hw_cycles_per_sec_runtime_get(void)
 } /* extern "C" */
 #endif
 
-#endif /* ZEPHYR_INCLUDE_TIME_UNITS_H_ */
+#endif /* ZEPHYR_INCLUDE_SYS_TIME_UNITS_H_ */

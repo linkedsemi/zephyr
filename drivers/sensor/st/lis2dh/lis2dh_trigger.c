@@ -121,8 +121,9 @@ static int lis2dh_start_trigger_int1(const struct device *dev)
 					 LIS2DH_EN_DRDY1_INT1);
 }
 
-#define LIS2DH_ANYM_CFG (LIS2DH_INT_CFG_ZHIE_ZUPE | LIS2DH_INT_CFG_YHIE_YUPE |\
-			 LIS2DH_INT_CFG_XHIE_XUPE)
+#define LIS2DH_ANYM_CFG (LIS2DH_INT_CFG_ZHIE_ZUPE | LIS2DH_INT_CFG_ZLIE_ZDOWNE |\
+			LIS2DH_INT_CFG_YHIE_YUPE | LIS2DH_INT_CFG_YLIE_YDOWNE |\
+			LIS2DH_INT_CFG_XHIE_XUPE | LIS2DH_INT_CFG_XLIE_XDOWNE)
 
 static inline void setup_int2(const struct device *dev,
 			      bool enable)
@@ -189,8 +190,15 @@ static int lis2dh_trigger_anym_tap_set(const struct device *dev,
 		lis2dh->trig_tap = trig;
 	}
 
-	if ((handler == NULL) || (status < 0)) {
+	if (status < 0) {
 		return status;
+	}
+
+	/* both int2 sources were torn down above, so only stay down if neither
+	 * of them is registered any more
+	 */
+	if ((lis2dh->handler_anymotion == NULL) && (lis2dh->handler_tap == NULL)) {
+		return 0;
 	}
 
 	/* serialize start of int2 in thread to synchronize output sampling
@@ -360,22 +368,6 @@ int lis2dh_acc_slope_config(const struct device *dev,
 
 	return status;
 }
-
-#ifdef CONFIG_LIS2DH_ACCEL_HP_FILTERS
-int lis2dh_acc_hp_filter_set(const struct device *dev, int32_t val)
-{
-	struct lis2dh_data *lis2dh = dev->data;
-	int status;
-
-	status = lis2dh->hw_tf->update_reg(dev, LIS2DH_REG_CTRL2,
-					   LIS2DH_HPIS_EN_MASK, val);
-	if (status < 0) {
-		LOG_ERR("Failed to set high pass filters");
-	}
-
-	return status;
-}
-#endif
 
 static void lis2dh_gpio_int1_callback(const struct device *dev,
 				      struct gpio_callback *cb, uint32_t pins)
@@ -563,7 +555,7 @@ int lis2dh_init_interrupt(const struct device *dev)
 	if (!gpio_is_ready_dt(&cfg->gpio_drdy)) {
 		/* API may return false even when ptr is NULL */
 		if (cfg->gpio_drdy.port != NULL) {
-			LOG_ERR("device %s is not ready", cfg->gpio_drdy.port->name);
+			LOG_ERR_DEVICE_NOT_READY(cfg->gpio_drdy.port);
 			return -ENODEV;
 		}
 
@@ -603,7 +595,7 @@ check_gpio_int:
 	if (!gpio_is_ready_dt(&cfg->gpio_int)) {
 		/* API may return false even when ptr is NULL */
 		if (cfg->gpio_int.port != NULL) {
-			LOG_ERR("device %s is not ready", cfg->gpio_int.port->name);
+			LOG_ERR_DEVICE_NOT_READY(cfg->gpio_int.port);
 			return -ENODEV;
 		}
 

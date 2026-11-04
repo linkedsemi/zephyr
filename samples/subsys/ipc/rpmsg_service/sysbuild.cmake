@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 # Copyright (c) 2019 Linaro Limited
 # Copyright (c) 2018-2021 Nordic Semiconductor ASA
 # Copyright (c) 2023 Arm Limited
@@ -13,3 +13,9 @@ ExternalZephyrProject_Add(
   )
 
 add_dependencies(${DEFAULT_IMAGE} rpmsg_service_remote)
+sysbuild_add_dependencies(CONFIGURE ${DEFAULT_IMAGE} rpmsg_service_remote)
+
+if(SB_CONFIG_BOOTLOADER_MCUBOOT)
+  # Make sure MCUboot is flashed first
+  sysbuild_add_dependencies(FLASH rpmsg_service_remote mcuboot)
+endif()

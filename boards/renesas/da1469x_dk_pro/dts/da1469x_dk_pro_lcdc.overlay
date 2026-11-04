@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
- #include <zephyr/dt-bindings/gpio/gpio.h>
- #include <zephyr/dt-bindings/display/panel.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/display/panel.h>
 
 / {
 	chosen {
@@ -16,7 +16,6 @@
 	lvgl_pointer {
 		input = <&display_touch>;
 		status = "okay";
-		swap-xy;
 	};
 };
 
@@ -47,6 +46,7 @@
 		status = "okay";
 		reg = <0x38>;
 		int-gpios = <&gpio0 31 GPIO_ACTIVE_LOW>;
+		swapped-x-y;
 	};
 };
 

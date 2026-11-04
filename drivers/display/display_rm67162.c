@@ -192,6 +192,12 @@ struct rm67162_config {
 	const struct gpio_dt_spec te_gpio;
 	uint16_t panel_width;
 	uint16_t panel_height;
+	uint16_t hsync;
+	uint16_t hbp;
+	uint16_t hfp;
+	uint16_t vfp;
+	uint16_t vbp;
+	uint16_t vsync;
 };
 
 
@@ -210,6 +216,37 @@ static void rm67162_te_isr_handler(const struct device *gpio_dev,
 	k_sem_give(&data->te_sem);
 }
 
+static int rm67162_set_column_page(const struct rm67162_config *config,
+				   uint16_t x, uint16_t y, uint16_t width, uint16_t height)
+{
+	uint16_t start, end;
+	uint8_t param[4];
+	int ret;
+
+	/* Set column address of target area */
+	/* First two bytes are starting X coordinate */
+	start = x;
+	end = x + width - 1;
+	sys_put_be16(start, &param[0]);
+	/* Second two bytes are ending X coordinate */
+	sys_put_be16(end, &param[2]);
+	ret = mipi_dsi_dcs_write(config->mipi_dsi, config->channel,
+				 MIPI_DCS_SET_COLUMN_ADDRESS, param, sizeof(param));
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Set page address of target area */
+	/* First two bytes are starting Y coordinate */
+	start = y;
+	end = y + height - 1;
+	sys_put_be16(start, &param[0]);
+	/* Second two bytes are ending X coordinate */
+	sys_put_be16(end, &param[2]);
+	return mipi_dsi_dcs_write(config->mipi_dsi, config->channel,
+				  MIPI_DCS_SET_PAGE_ADDRESS, param, sizeof(param));
+}
+
 static int rm67162_init(const struct device *dev)
 {
 	const struct rm67162_config *config = dev->config;
@@ -222,6 +259,16 @@ static int rm67162_init(const struct device *dev)
 	/* Attach to MIPI DSI host */
 	mdev.data_lanes = config->num_of_lanes;
 	mdev.pixfmt = data->pixel_format;
+	mdev.mode_flags = MIPI_DSI_MODE_VIDEO | MIPI_DSI_MODE_VIDEO_BURST | MIPI_DSI_MODE_LPM;
+
+	mdev.timings.hactive = config->panel_width;
+	mdev.timings.hbp = config->hbp;
+	mdev.timings.hfp = config->hfp;
+	mdev.timings.hsync = config->hsync;
+	mdev.timings.vactive = config->panel_height;
+	mdev.timings.vbp = config->vbp;
+	mdev.timings.vfp = config->vfp;
+	mdev.timings.vsync = config->vsync;
 
 	ret = mipi_dsi_attach(config->mipi_dsi, config->channel, &mdev);
 	if (ret < 0) {
@@ -250,7 +297,7 @@ static int rm67162_init(const struct device *dev)
 		}
 		/* Per datasheet, reset low pulse width should be at least 10usec */
 		k_sleep(K_USEC(30));
-		gpio_pin_set_dt(&config->reset_gpio, 1);
+		ret = gpio_pin_set_dt(&config->reset_gpio, 1);
 		if (ret < 0) {
 			LOG_ERR("Could not pull reset high (%d)", ret);
 			return ret;
@@ -334,10 +381,19 @@ static int rm67162_init(const struct device *dev)
 		/* Init and install GPIO callback */
 		gpio_init_callback(&data->te_gpio_cb, rm67162_te_isr_handler,
 				BIT(config->te_gpio.pin));
-		gpio_add_callback(config->te_gpio.port, &data->te_gpio_cb);
+		ret = gpio_add_callback(config->te_gpio.port, &data->te_gpio_cb);
+		if (ret < 0) {
+			LOG_ERR("Could not add TE gpio callback");
+			return ret;
+		}
 
 		/* Setup te pin semaphore */
 		k_sem_init(&data->te_sem, 0, 1);
+	}
+
+	ret = rm67162_set_column_page(config, 0, 0, config->panel_width, config->panel_height);
+	if (ret < 0) {
+		return ret;
 	}
 
 	/* Now, enable display */
@@ -347,11 +403,15 @@ static int rm67162_init(const struct device *dev)
 
 /* Helper to write framebuffer data to rm67162 via MIPI interface. */
 static int rm67162_write_fb(const struct device *dev, bool first_write,
-			const uint8_t *src, uint32_t len)
+			const uint8_t *src, const struct display_buffer_descriptor *desc)
 {
 	const struct rm67162_config *config = dev->config;
-	uint32_t wlen = 0;
+	struct rm67162_data *data = dev->data;
+	ssize_t wlen = 0;
 	struct mipi_dsi_msg msg = {0};
+	uint8_t *local_src = (uint8_t *)src;
+	uint32_t len = desc->height * desc->width * data->bytes_per_pixel;
+	uint32_t len_sent = 0U;
 
 	/* Note- we need to set custom flags on the DCS message,
 	 * so we bypass the mipi_dsi_dcs_write API
@@ -363,15 +423,23 @@ static int rm67162_write_fb(const struct device *dev, bool first_write,
 	}
 	msg.type = MIPI_DSI_DCS_LONG_WRITE;
 	msg.flags = MCUX_DSI_2L_FB_DATA;
+	msg.user_data = (void *)desc;
+
 	while (len > 0) {
 		msg.tx_len = len;
-		msg.tx_buf = src;
+		msg.tx_buf = local_src;
 		wlen = mipi_dsi_transfer(config->mipi_dsi, config->channel, &msg);
 		if (wlen < 0) {
-			return wlen;
+			return (int)wlen;
 		}
 		/* Advance source pointer and decrement remaining */
-		src += wlen;
+		if (desc->pitch > desc->width) {
+			len_sent += wlen;
+			local_src += wlen + len_sent / (desc->width * data->bytes_per_pixel) *
+				((desc->pitch - desc->width) * data->bytes_per_pixel);
+		} else {
+			local_src += wlen;
+		}
 		len -= wlen;
 		/* All future commands should use WRITE_MEMORY_CONTINUE */
 		msg.cmd = MIPI_DCS_WRITE_MEMORY_CONTINUE;
@@ -387,10 +455,8 @@ static int rm67162_write(const struct device *dev, const uint16_t x,
 	const struct rm67162_config *config = dev->config;
 	struct rm67162_data *data = dev->data;
 	int ret;
-	uint16_t start, end, h_idx;
 	const uint8_t *src;
 	bool first_cmd;
-	uint8_t param[4];
 
 	LOG_DBG("W=%d, H=%d @%d,%d", desc->width, desc->height, x, y);
 
@@ -399,31 +465,7 @@ static int rm67162_write(const struct device *dev, const uint16_t x,
 	 * to write to the video memory buffer on the RM67162 control IC,
 	 * and the IC will update the display automatically.
 	 */
-
-	/* Set column address of target area */
-	/* First two bytes are starting X coordinate */
-	start = x;
-	end = x + desc->width - 1;
-	sys_put_be16(start, &param[0]);
-	/* Second two bytes are ending X coordinate */
-	sys_put_be16(end, &param[2]);
-	ret = mipi_dsi_dcs_write(config->mipi_dsi, config->channel,
-				MIPI_DCS_SET_COLUMN_ADDRESS, param,
-				sizeof(param));
-	if (ret < 0) {
-		return ret;
-	}
-
-	/* Set page address of target area */
-	/* First two bytes are starting Y coordinate */
-	start = y;
-	end = y + desc->height - 1;
-	sys_put_be16(start, &param[0]);
-	/* Second two bytes are ending X coordinate */
-	sys_put_be16(end, &param[2]);
-	ret = mipi_dsi_dcs_write(config->mipi_dsi, config->channel,
-				MIPI_DCS_SET_PAGE_ADDRESS, param,
-				sizeof(param));
+	ret = rm67162_set_column_page(config, x, y, desc->width, desc->height);
 	if (ret < 0) {
 		return ret;
 	}
@@ -446,20 +488,7 @@ static int rm67162_write(const struct device *dev, const uint16_t x,
 	src = buf;
 	first_cmd = true;
 
-	if (desc->pitch == desc->width) {
-		/* Buffer is contiguous, we can perform entire transfer */
-		rm67162_write_fb(dev, first_cmd, src,
-			desc->height * desc->width * data->bytes_per_pixel);
-	} else {
-		/* Buffer is not contiguous, we must write each line separately */
-		for (h_idx = 0; h_idx < desc->height; h_idx++) {
-			rm67162_write_fb(dev, first_cmd, src,
-				desc->width * data->bytes_per_pixel);
-			first_cmd = false;
-			/* The pitch is not equal to width, account for it here */
-			src += data->bytes_per_pixel * (desc->pitch - desc->width);
-		}
-	}
+	rm67162_write_fb(dev, first_cmd, src, desc);
 
 	return 0;
 }
@@ -470,7 +499,6 @@ static void rm67162_get_capabilities(const struct device *dev,
 	const struct rm67162_config *config = dev->config;
 	const struct rm67162_data *data = dev->data;
 
-	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = config->panel_width;
 	capabilities->y_resolution = config->panel_height;
 	capabilities->supported_pixel_formats = PIXEL_FORMAT_RGB_565 |
@@ -522,20 +550,17 @@ static int rm67162_set_pixel_format(const struct device *dev,
 	switch (pixel_format) {
 	case PIXEL_FORMAT_RGB_565:
 		data->pixel_format = MIPI_DSI_PIXFMT_RGB565;
-		return 0;
+		param = MIPI_DCS_PIXEL_FORMAT_16BIT;
+		data->bytes_per_pixel = 2;
+		break;
 	case PIXEL_FORMAT_RGB_888:
 		data->pixel_format = MIPI_DSI_PIXFMT_RGB888;
-		return 0;
+		param = MIPI_DCS_PIXEL_FORMAT_24BIT;
+		data->bytes_per_pixel = 3;
+		break;
 	default:
 		/* Other display formats not implemented */
 		return -ENOTSUP;
-	}
-	if (data->pixel_format == MIPI_DSI_PIXFMT_RGB888) {
-		param = MIPI_DCS_PIXEL_FORMAT_24BIT;
-		data->bytes_per_pixel = 3;
-	} else if (data->pixel_format == MIPI_DSI_PIXFMT_RGB565) {
-		param = MIPI_DCS_PIXEL_FORMAT_16BIT;
-		data->bytes_per_pixel = 2;
 	}
 	return mipi_dsi_dcs_write(config->mipi_dsi, config->channel,
 				MIPI_DCS_SET_PIXEL_FORMAT, &param, 1);
@@ -576,7 +601,7 @@ static int rm67162_pm_action(const struct device *dev,
 
 #endif /* CONFIG_PM_DEVICE */
 
-static const struct display_driver_api rm67162_api = {
+static DEVICE_API(display, rm67162_api) = {
 	.blanking_on = rm67162_blanking_on,
 	.blanking_off = rm67162_blanking_off,
 	.get_capabilities = rm67162_get_capabilities,
@@ -595,6 +620,12 @@ static const struct display_driver_api rm67162_api = {
 		.te_gpio = GPIO_DT_SPEC_INST_GET_OR(id, te_gpios, {0}),		\
 		.panel_width = DT_INST_PROP(id, width),				\
 		.panel_height = DT_INST_PROP(id, height),			\
+		.hsync = DT_PROP_OR(DT_INST_CHILD(id, display_timings), hsync_len, 1),	\
+		.hbp = DT_PROP_OR(DT_INST_CHILD(id, display_timings), hback_porch, 1),	\
+		.hfp = DT_PROP_OR(DT_INST_CHILD(id, display_timings), hfront_porch, 1),	\
+		.vsync = DT_PROP_OR(DT_INST_CHILD(id, display_timings), vsync_len, 1),	\
+		.vbp = DT_PROP_OR(DT_INST_CHILD(id, display_timings), vback_porch, 1),	\
+		.vfp = DT_PROP_OR(DT_INST_CHILD(id, display_timings), vfront_porch, 1),	\
 	};									\
 	static struct rm67162_data rm67162_data_##id = {			\
 		.pixel_format = DT_INST_PROP(id, pixel_format),			\

@@ -17,6 +17,12 @@ static volatile bool custom_set_priority_called;
 static volatile bool custom_eoi_called;
 static volatile bool irq_handler_called;
 
+#if CONFIG_2ND_LVL_ISR_TBL_OFFSET > 0
+#define TEST_1ST_LEVEL_INTERRUPTS_MAX (CONFIG_2ND_LVL_ISR_TBL_OFFSET - 1)
+#else
+#define TEST_1ST_LEVEL_INTERRUPTS_MAX (CONFIG_NUM_IRQS - 1)
+#endif
+
 /* Define out custom SoC interrupt controller interface methods.
  * These closely match the normal Cortex-M implementations.
  */
@@ -29,7 +35,7 @@ void z_soc_irq_init(void)
 {
 	int irq = 0;
 
-	for (; irq < CONFIG_NUM_IRQS; irq++) {
+	for (; irq <= TEST_1ST_LEVEL_INTERRUPTS_MAX; irq++) {
 		NVIC_SetPriority((IRQn_Type)irq, _IRQ_PRIO_OFFSET);
 	}
 
@@ -55,6 +61,21 @@ void z_soc_irq_disable(unsigned int irq)
 int z_soc_irq_is_enabled(unsigned int irq)
 {
 	return NVIC->ISER[REG_FROM_IRQ(irq)] & BIT(BIT_FROM_IRQ(irq));
+}
+
+void z_soc_irq_clear_pending(unsigned int irq)
+{
+	NVIC_ClearPendingIRQ((IRQn_Type)irq);
+}
+
+void z_soc_irq_set_pending(unsigned int irq)
+{
+	NVIC_SetPendingIRQ((IRQn_Type)irq);
+}
+
+bool z_soc_irq_is_pending(unsigned int irq)
+{
+	return NVIC_GetPendingIRQ((IRQn_Type)irq) != 0U;
 }
 
 void z_soc_irq_eoi(unsigned int irq)
@@ -120,14 +141,14 @@ void arm_isr_handler(const void *args)
  * @{
  */
 
-ZTEST(arm_custom_interrupt, test_arm_interrupt)
+ZTEST(arm_custom_interrupt, test_arm_custom_interrupt)
 {
 	zassert_true(custom_init_called, "Custom IRQ init not called\n");
 
 	/* Determine an NVIC IRQ line that is not currently in use. */
 	int i;
 
-	for (i = CONFIG_NUM_IRQS - 1; i >= 0; i--) {
+	for (i = TEST_1ST_LEVEL_INTERRUPTS_MAX; i >= 0; i--) {
 		if (NVIC_GetEnableIRQ(i) == 0) {
 			/*
 			 * Interrupts configured statically with IRQ_CONNECT(.)

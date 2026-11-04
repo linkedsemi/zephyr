@@ -17,28 +17,29 @@ endif()
 
 find_program(CMAKE_C_COMPILER   clang   ${find_program_clang_args})
 find_program(CMAKE_CXX_COMPILER clang++ ${find_program_clang_args})
+find_program(CMAKE_LLVM_COV llvm-cov ${find_program_clang_args})
+set(CMAKE_GCOV "${CMAKE_LLVM_COV} gcov" CACHE FILEPATH "Path to a program.")
+
+if(SYSROOT_DIR)
+  # The toolchain has specified a sysroot dir, pass it to the compiler
+  list(APPEND TOOLCHAIN_C_FLAGS "--sysroot=${SYSROOT_DIR}")
+  list(APPEND TOOLCHAIN_LD_FLAGS "--sysroot=${SYSROOT_DIR}")
+endif()
 
 if(NOT "${ARCH}" STREQUAL "posix")
   include(${ZEPHYR_BASE}/cmake/gcc-m-cpu.cmake)
   include(${ZEPHYR_BASE}/cmake/gcc-m-fpu.cmake)
 
   if("${ARCH}" STREQUAL "arm")
-    list(APPEND TOOLCHAIN_C_FLAGS
-      -fshort-enums
-      )
-    list(APPEND TOOLCHAIN_LD_FLAGS
-      -fshort-enums
-      )
-
     include(${ZEPHYR_BASE}/cmake/compiler/clang/target_arm.cmake)
   elseif("${ARCH}" STREQUAL "arm64")
     include(${ZEPHYR_BASE}/cmake/compiler/clang/target_arm64.cmake)
+  elseif("${ARCH}" STREQUAL "hexagon")
+    include(${ZEPHYR_BASE}/cmake/compiler/clang/target_hexagon.cmake)
   elseif("${ARCH}" STREQUAL "riscv")
     include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_riscv.cmake)
-  endif()
-
-  if(DEFINED CMAKE_C_COMPILER_TARGET)
-    set(clang_target_flag "--target=${CMAKE_C_COMPILER_TARGET}")
+  elseif("${ARCH}" STREQUAL "tricore")
+    include(${CMAKE_CURRENT_LIST_DIR}/target_tricore.cmake)
   endif()
 
   foreach(file_name include/stddef.h)
@@ -72,7 +73,8 @@ if(NOT "${ARCH}" STREQUAL "posix")
   #
   # Other clang/LLVM distributions may come with other pre-built C libraries.
   # clang/LLVM supports using an alternative C library, either by direct linking,
-  # or by specifying '--sysroot <path>'.
+  # or by specifying '--sysroot <path>'. Sysroot can also be passed using the
+  # CMake variable SYSROOT_DIR which will append the '--sysroot <path>' flags.
   #
   # LLVM for Arm provides a 'newlib.cfg' file for newlib C selection.
   # Let us support this principle by looking for a dedicated 'newlib.cfg' or
@@ -100,22 +102,62 @@ if(NOT "${ARCH}" STREQUAL "posix")
     endif()
   endif()
 
-  # This libgcc code is partially duplicated in compiler/*/target.cmake
-  execute_process(
-    COMMAND ${CMAKE_C_COMPILER} ${clang_target_flag} ${TOOLCHAIN_C_FLAGS}
-            --print-libgcc-file-name
-    OUTPUT_VARIABLE RTLIB_FILE_NAME
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    )
-
-  get_filename_component(RTLIB_DIR ${RTLIB_FILE_NAME} DIRECTORY)
-  get_filename_component(RTLIB_NAME_WITH_PREFIX ${RTLIB_FILE_NAME} NAME_WLE)
-  string(REPLACE lib "" RTLIB_NAME ${RTLIB_NAME_WITH_PREFIX})
-
-  set_property(TARGET linker PROPERTY lib_include_dir "-L${RTLIB_DIR}")
-  set_property(TARGET linker PROPERTY rt_library "-l${RTLIB_NAME}")
+  # Compiler capability probes run through try_compile(), which only sees
+  # CMAKE_REQUIRED_FLAGS. The target flags gathered in TOOLCHAIN_C_FLAGS are
+  # applied as target properties and never reach it. CMake does propagate
+  # '--target=<triple>', but the triples used by the LLVM toolchain only pin the
+  # architecture profile, so the CPU, FPU and ABI have to be passed explicitly
+  # for probe results to describe the target actually being built.
+  if("${ARCH}" STREQUAL "arm")
+    list(APPEND CMAKE_REQUIRED_FLAGS ${ARM_C_FLAGS})
+  elseif("${ARCH}" STREQUAL "arm64")
+    if(DEFINED GCC_M_CPU)
+      list(APPEND CMAKE_REQUIRED_FLAGS -mcpu=${GCC_M_CPU})
+    endif()
+    if(DEFINED GCC_M_ARCH)
+      list(APPEND CMAKE_REQUIRED_FLAGS -march=${GCC_M_ARCH})
+    endif()
+  elseif("${ARCH}" STREQUAL "riscv")
+    list(APPEND CMAKE_REQUIRED_FLAGS ${RISCV_C_FLAGS})
+  endif()
 
   list(APPEND CMAKE_REQUIRED_FLAGS -nostartfiles -nostdlib ${isystem_include_flags})
   string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
 
 endif()
+
+# Override the default implementation in target_template.cmake.
+function(compiler_set_linker_properties)
+
+  compiler_simple_options(simple_options)
+
+  if(NOT CONFIG_CPP_EXCEPTIONS)
+    get_property(no_exceptions TARGET compiler-cpp PROPERTY no_exceptions)
+    list(APPEND simple_options ${no_exceptions})
+  endif()
+
+  if(NOT CONFIG_CPP_RTTI)
+    get_property(no_rtti TARGET compiler-cpp PROPERTY no_rtti)
+    list(APPEND simple_options ${no_rtti})
+  endif()
+
+  if(DEFINED CMAKE_C_COMPILER_TARGET)
+    set(target_flag "--target=${CMAKE_C_COMPILER_TARGET}")
+  endif()
+
+  execute_process(
+    COMMAND ${CMAKE_C_COMPILER} ${TOOLCHAIN_C_FLAGS} ${COMPILER_OPTIMIZATION_FLAG} ${simple_options}
+    ${target_flag}
+    --print-libgcc-file-name
+    OUTPUT_VARIABLE library_path
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+
+  get_filename_component(library_dir ${library_path} DIRECTORY)
+  set_linker_property(PROPERTY lib_include_dir "-L\"${library_dir}\"")
+
+  get_filename_component(library_basename ${library_path} NAME_WLE)
+  string(REPLACE lib "" library_name ${library_basename})
+
+  set_linker_property(PROPERTY rt_library "-l${library_name}")
+endfunction()

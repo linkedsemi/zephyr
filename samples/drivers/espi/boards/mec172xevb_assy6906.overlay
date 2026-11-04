@@ -6,15 +6,13 @@
 
 / {
 	board_power: resources {
-		compatible = "microchip,mec172x-board-power";
-		/* MCHP_GPIO_012 */
-		pwrg-gpios = <&gpio_000_036 10 GPIO_ACTIVE_HIGH>;
-		/* MCHP_GPIO_0054 */
-		rsm-gpios = <&gpio_040_076 12 GPIO_ACTIVE_HIGH>;
+		compatible = "intel,rvp-board-power";
+		pwrg-gpios = <MCHP_GPIO_DECODE_012 GPIO_ACTIVE_HIGH>;
+		rsm-gpios = <MCHP_GPIO_DECODE_054 GPIO_ACTIVE_HIGH>;
 	};
 };
 
-&espi_saf0 {
+&espi_taf0 {
 	status = "okay";
 };
 
@@ -43,9 +41,7 @@
 	reset-source = "ESPI_RESET";
 };
 
-&spi0 {
+&qspi0 {
 	status = "okay";
 	clock-frequency = <24000000>;
-	chip-select = <0>;
-	lines = <4>;
 };

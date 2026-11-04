@@ -13,7 +13,7 @@
  *
  *      Copyright 2003-2020 Silicon Laboratories Inc. www.silabs.com
  *
- *                   SPDX-License-Identifier: APACHE-2.0
+ *                   SPDX-License-Identifier: Apache-2.0
  *
  * This software is subject to an open source license and is distributed by
  *  Silicon Laboratories Inc. pursuant to the terms of the Apache License,
@@ -88,6 +88,7 @@ struct modbus_serial_config {
 };
 
 #define MODBUS_STATE_CONFIGURED		0
+#define MODBUS_STATE_RX_ENABLED		1
 
 struct modbus_context {
 	/* Interface name */
@@ -162,6 +163,18 @@ int modbus_iface_get_by_ctx(const struct modbus_context *ctx);
  * @param ctx        Modbus interface context
  */
 void modbus_tx_adu(struct modbus_context *ctx);
+
+/**
+ * @brief Submit received ADU processing to the Modbus work queue.
+ *
+ * Uses the dedicated work queue if CONFIG_MODBUS_WORKQUEUE is enabled,
+ * the system work queue otherwise.
+ *
+ * @param work       Work item to submit
+ *
+ * @retval           Value as returned by k_work_submit_to_queue().
+ */
+int modbus_work_submit(struct k_work *work);
 
 /**
  * @brief Send ADU and wait certain time for response.

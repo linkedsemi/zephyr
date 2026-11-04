@@ -13,6 +13,7 @@
  *   dtc -I dtb -O dts virt.dtb
  */
 
+#include <freq.h>
 #include <mem.h>
 #include <arm64/armv8-a.dtsi>
 #include <zephyr/dt-bindings/interrupt-controller/arm-gic.h>
@@ -25,17 +26,22 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		timebase-frequency = <DT_FREQ_K(62500)>;
 
 		cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53";
 			reg = <0>;
+			i-cache-line-size = <64>;
+			d-cache-line-size = <64>;
 		};
 
 		cpu@1 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a53";
 			reg = <1>;
+			i-cache-line-size = <64>;
+			d-cache-line-size = <64>;
 		};
 	};
 
@@ -107,29 +113,27 @@
 			reg = <0x40 0x10000000 0x00 0x10000000>;
 			#size-cells = <0x02>;
 			#address-cells = <0x03>;
-			ranges = <0x1000000 0x00 0x00        0x00 0x3eff0000  0x00 0x10000
-				  0x2000000 0x00 0x10000000  0x00 0x10000000  0x00 0x2eff0000
-				  0x3000000 0x80 0x00        0x80 0x00        0x80 0x00>;
+			ranges = <0x1000000 0x00 0x00 0x00 0x3eff0000 0x00 0x10000
+				  0x2000000 0x00 0x10000000 0x00 0x10000000 0x00 0x2eff0000
+				  0x3000000 0x80 0x00 0x80 0x00 0x80 0x00>;
 			#interrupt-cells = <0x01>;
 			interrupt-map-mask = <0x1800 0x00 0x00 0x07>;
-			interrupt-map = <0x00   0x00 0x00 1 &gic 0 0 GIC_SPI
+			interrupt-map = <0x00 0x00 0x00 1 &gic 0 0 GIC_SPI
 					 0x03 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-					 0x00   0x00 0x00 2 &gic 0 0 GIC_SPI
+					 0x00 0x00 0x00 2 &gic 0 0 GIC_SPI
 					 0x04 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-					 0x00   0x00 0x00 3 &gic 0 0 GIC_SPI
+					 0x00 0x00 0x00 3 &gic 0 0 GIC_SPI
 					 0x05 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-					 0x00   0x00 0x00 4 &gic 0 0 GIC_SPI
+					 0x00 0x00 0x00 4 &gic 0 0 GIC_SPI
 					 0x06 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-
-					 0x800  0x00 0x00 1 &gic 0 0 GIC_SPI
+					 0x800 0x00 0x00 1 &gic 0 0 GIC_SPI
 					 0x04 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-					 0x800  0x00 0x00 2 &gic 0 0 GIC_SPI
+					 0x800 0x00 0x00 2 &gic 0 0 GIC_SPI
 					 0x05 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-					 0x800  0x00 0x00 3 &gic 0 0 GIC_SPI
+					 0x800 0x00 0x00 3 &gic 0 0 GIC_SPI
 					 0x06 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-					 0x800  0x00 0x00 4 &gic 0 0 GIC_SPI
+					 0x800 0x00 0x00 4 &gic 0 0 GIC_SPI
 					 0x03 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-
 					 0x1000 0x00 0x00 1 &gic 0 0 GIC_SPI
 					 0x05 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
 					 0x1000 0x00 0x00 2 &gic 0 0 GIC_SPI
@@ -138,7 +142,6 @@
 					 0x03 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
 					 0x1000 0x00 0x00 4 &gic 0 0 GIC_SPI
 					 0x04 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
-
 					 0x1800 0x00 0x00 1 &gic 0 0 GIC_SPI
 					 0x06 IRQ_TYPE_EDGE IRQ_DEFAULT_PRIORITY
 					 0x1800 0x00 0x00 2 &gic 0 0 GIC_SPI

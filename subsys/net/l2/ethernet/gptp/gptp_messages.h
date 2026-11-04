@@ -22,6 +22,11 @@
 extern "C" {
 #endif
 
+/* Destination MAC address of every gPTP message, the nearest bridge group
+ * address of IEEE 802.1AS.
+ */
+extern const struct net_eth_addr gptp_multicast_eth_addr;
+
 /* Helpers to access gPTP messages. */
 #define GPTP_HDR(pkt) gptp_get_hdr(pkt)
 #define GPTP_ANNOUNCE(pkt) ((struct gptp_announce *)gptp_data(pkt))
@@ -67,7 +72,7 @@ extern "C" {
  */
 #define GPTP_ANNOUNCE_LEN(pkt) \
 	(sizeof(struct gptp_hdr) + sizeof(struct gptp_announce) \
-	 + ntohs(GPTP_ANNOUNCE(pkt)->tlv.len) \
+	 + net_ntohs(GPTP_ANNOUNCE(pkt)->tlv.len) \
 	 - sizeof(struct gptp_path_trace_tlv) + 4)
 
 #define GPTP_CHECK_LEN(pkt, len) \
@@ -107,13 +112,16 @@ extern "C" {
 
 /* Other default values. */
 #define GPTP_RESP_LOG_MSG_ITV           0x7F
-#define GPTP_ANNOUNCE_MSG_PATH_SEQ_TYPE htons(0x8)
+#define GPTP_ANNOUNCE_MSG_PATH_SEQ_TYPE net_htons(0x8)
 
 /* Organization Id used for TLV. */
 #define GPTP_FUP_TLV_ORG_ID_BYTE_0  0x00
 #define GPTP_FUP_TLV_ORG_ID_BYTE_1  0x80
 #define GPTP_FUP_TLV_ORG_ID_BYTE_2  0xC2
 #define GPTP_FUP_TLV_ORG_SUB_TYPE   0x01
+
+/* Organizationally Unique Identifiers */
+#define OUI_IEEE_802_1_COMMITTEE 0x00, 0x80, 0xC2
 
 /**
  * @brief gPTP Clock Quality
@@ -446,6 +454,16 @@ void gptp_handle_signaling(int port, struct net_pkt *pkt);
  * @param pkt Sync message.
  */
 void gptp_send_sync(int port, struct net_pkt *pkt);
+
+/**
+ * @brief Unregister the Sync transmit timestamp callback.
+ *
+ * Unregisters the timestamp callback of a Sync that will not be
+ * timestamped, so that the next Sync registers one of its own.
+ *
+ * @param port gPTP port number.
+ */
+void gptp_sync_timestamp_cb_unregister(int port);
 
 /**
  * @brief Send a Follow Up message.

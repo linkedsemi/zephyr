@@ -10,6 +10,7 @@
 /**
  * @file
  * @brief Public API for CPU Power Management
+ * @ingroup power_management_cpu_api
  */
 
 #include <zephyr/types.h>
@@ -20,11 +21,15 @@
 extern "C" {
 #endif
 
-/* System reset types. */
+/** Warm system reset, used as argument to pm_system_reset(). */
 #define SYS_WARM_RESET 0
+
+/** Cold system reset, used as argument to pm_system_reset(). */
 #define SYS_COLD_RESET 1
 /**
  * @defgroup power_management_cpu_api CPU Power Management
+ * @since 2.6
+ * @version 0.8.0
  * @ingroup subsys_pm
  * @{
  */
@@ -35,7 +40,7 @@ extern "C" {
  * This call is intended for use in hotplug. A core that is powered down by
  * cpu_off can only be powered up again in response to a cpu_on
  *
- * @retval The call does not return when successful
+ * @return The call does not return when successful
  * @retval -ENOTSUP If the operation is not supported
  */
 int pm_cpu_off(void);
@@ -50,7 +55,7 @@ int pm_cpu_off(void);
  * @param cpuid CPU id to power on
  * @param entry_point Address at which the core must commence execution
  *
- * @retval 0 on success, a negative errno otherwise
+ * @return 0 on success, a negative errno otherwise
  * @retval -ENOTSUP If the operation is not supported
  */
 int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point);
@@ -62,7 +67,7 @@ int pm_cpu_on(unsigned long cpuid, uintptr_t entry_point);
  *
  * @param reset system reset type, cold or warm.
  *
- * @retval 0 on success, a negative errno otherwise
+ * @return 0 on success, a negative errno otherwise
  */
 int pm_system_reset(unsigned char reset);
 

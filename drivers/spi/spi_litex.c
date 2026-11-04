@@ -21,13 +21,13 @@ struct spi_litex_data {
 };
 
 struct spi_litex_cfg {
-	uint32_t control_addr;
-	uint32_t status_addr;
-	uint32_t mosi_addr;
-	uint32_t miso_addr;
-	uint32_t cs_addr;
-	uint32_t loopback_addr;
-	uint32_t clk_divider_addr;
+	mem_addr_t control_addr;
+	mem_addr_t status_addr;
+	mem_addr_t mosi_addr;
+	mem_addr_t miso_addr;
+	mem_addr_t cs_addr;
+	mem_addr_t loopback_addr;
+	mem_addr_t clk_divider_addr;
 	bool clk_divider_exists;
 	int data_width;
 	int max_cs;
@@ -38,7 +38,7 @@ static void spi_set_frequency(const struct device *dev, const struct spi_config 
 	const struct spi_litex_cfg *dev_config = dev->config;
 
 	if (!dev_config->clk_divider_exists) {
-		/* The clk_divider is optional, thats why we check. */
+		/* The clk_divider is optional, that's why we check. */
 		LOG_WRN("No clk_divider found, can't change frequency");
 		return;
 	}
@@ -54,8 +54,8 @@ static int spi_config(const struct device *dev, const struct spi_config *config,
 	const struct spi_litex_cfg *dev_config = dev->config;
 	struct spi_litex_data *dev_data = dev->data;
 
-	if (config->slave >= dev_config->max_cs) {
-		LOG_ERR("More slaves than supported");
+	if (config->peripheral >= dev_config->max_cs) {
+		LOG_ERR("More peripherals than supported");
 		return -ENOTSUP;
 	}
 
@@ -95,8 +95,8 @@ static int spi_config(const struct device *dev, const struct spi_config *config,
 		return -ENOTSUP;
 	}
 
-	if (config->operation & SPI_OP_MODE_SLAVE) {
-		LOG_ERR("Slave mode not supported");
+	if (config->operation & SPI_OP_MODE_PERIPHERAL) {
+		LOG_ERR("Peripheral mode not supported");
 		return -ENOTSUP;
 	}
 
@@ -137,7 +137,7 @@ static uint32_t spi_litex_recv(const struct device *dev)
 {
 	const struct spi_litex_cfg *dev_config = dev->config;
 
-	/* Return data inside MISO register */
+	/* Return data inside SDI register */
 	return litex_read32(dev_config->miso_addr);
 }
 
@@ -151,7 +151,7 @@ static void spi_litex_xfer(const struct device *dev,
 	uint32_t txd, rxd;
 
 	/* Set CS */
-	litex_write16(BIT(config->slave), dev_config->cs_addr);
+	litex_write16(BIT(config->peripheral), dev_config->cs_addr);
 
 	do {
 		/* Send a frame */
@@ -223,7 +223,7 @@ static int spi_litex_release(const struct device *dev, const struct spi_config *
 }
 
 /* Device Instantiation */
-static const struct spi_driver_api spi_litex_api = {
+static DEVICE_API(spi, spi_litex_api) = {
 	.transceive = spi_litex_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_litex_transceive_async,
@@ -251,7 +251,7 @@ static const struct spi_driver_api spi_litex_api = {
 		.data_width = DT_INST_PROP(n, data_width),                                         \
 		.max_cs = DT_INST_PROP(n, max_cs),                                                 \
 	};                                                                                         \
-	DEVICE_DT_INST_DEFINE(n,                                                                   \
+	SPI_DEVICE_DT_INST_DEFINE(n,                                                               \
 			NULL,                                                                      \
 			NULL,                                                                      \
 			&spi_litex_data_##n,                                                       \

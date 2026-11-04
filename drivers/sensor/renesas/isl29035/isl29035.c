@@ -65,7 +65,7 @@ static int isl29035_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api isl29035_api = {
+static DEVICE_API(sensor, isl29035_api) = {
 #if CONFIG_ISL29035_TRIGGER
 	.attr_set = &isl29035_attr_set,
 	.trigger_set = &isl29035_trigger_set,
@@ -80,7 +80,7 @@ static int isl29035_init(const struct device *dev)
 	const struct isl29035_config *config = dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

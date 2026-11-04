@@ -23,8 +23,8 @@
 #define CACHE_INVALID_REG	0xa54
 #define CACHE_FUNC_CTRL_REG	0xa58
 
-#define CACHED_SRAM_ADDR	CONFIG_SRAM_BASE_ADDRESS
-#define CACHED_SRAM_SIZE	KB(CONFIG_SRAM_SIZE)
+#define CACHED_SRAM_ADDR	DT_CHOSEN_SRAM_ADDR
+#define CACHED_SRAM_SIZE	DT_CHOSEN_SRAM_SIZE
 #define CACHED_SRAM_END		(CACHED_SRAM_ADDR + CACHED_SRAM_SIZE - 1)
 
 #define CACHE_AREA_SIZE_LOG2	15
@@ -66,7 +66,7 @@ static void aspeed_cache_init(void)
 }
 
 /**
- * @brief get aligned address and the number of cachline to be invalied
+ * @brief get aligned address and the number of cacheline to be invalidated
  * @param [IN] addr - start address to be invalidated
  * @param [IN] size - size in byte
  * @param [OUT] p_aligned_addr - pointer to the cacheline aligned address variable

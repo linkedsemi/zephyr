@@ -23,7 +23,7 @@
  */
 static inline int _mpu_configure(uint8_t type, uint32_t base, uint32_t size)
 {
-	int32_t region_index =  get_region_index_by_type(type);
+	int32_t region_index = get_region_index_by_type(type);
 	uint32_t region_attr = get_region_attr_by_type(type);
 
 	LOG_DBG("Region info: 0x%x 0x%x", base, size);
@@ -50,7 +50,7 @@ void arc_core_mpu_enable(void)
 {
 	/* Enable MPU */
 	z_arc_v2_aux_reg_write(_ARC_V2_MPU_EN,
-		z_arc_v2_aux_reg_read(_ARC_V2_MPU_EN) | AUX_MPU_EN_ENABLE);
+			       z_arc_v2_aux_reg_read(_ARC_V2_MPU_EN) | AUX_MPU_EN_ENABLE);
 }
 
 /**
@@ -58,9 +58,9 @@ void arc_core_mpu_enable(void)
  */
 void arc_core_mpu_disable(void)
 {
-    /* Disable MPU */
+	/* Disable MPU */
 	z_arc_v2_aux_reg_write(_ARC_V2_MPU_EN,
-		z_arc_v2_aux_reg_read(_ARC_V2_MPU_EN) & AUX_MPU_EN_DISABLE);
+			       z_arc_v2_aux_reg_read(_ARC_V2_MPU_EN) & AUX_MPU_EN_DISABLE);
 }
 
 /**
@@ -74,9 +74,8 @@ void arc_core_mpu_configure_thread(struct k_thread *thread)
 	/* configure stack region of user thread */
 	if (thread->base.user_options & K_USER) {
 		LOG_DBG("configure user thread %p's stack", thread);
-		if (_mpu_configure(THREAD_STACK_USER_REGION,
-					 (uint32_t)thread->stack_info.start,
-					 thread->stack_info.size) < 0) {
+		if (_mpu_configure(THREAD_STACK_USER_REGION, (uint32_t)thread->stack_info.start,
+				   thread->stack_info.size) < 0) {
 			LOG_ERR("user thread %p's stack failed", thread);
 			return;
 		}
@@ -87,7 +86,6 @@ void arc_core_mpu_configure_thread(struct k_thread *thread)
 #endif
 }
 
-
 /**
  * @brief configure the default region
  *
@@ -95,7 +93,7 @@ void arc_core_mpu_configure_thread(struct k_thread *thread)
  */
 void arc_core_mpu_default(uint32_t region_attr)
 {
-	uint32_t val =  z_arc_v2_aux_reg_read(_ARC_V2_MPU_EN) & (~AUX_MPU_RDP_ATTR_MASK);
+	uint32_t val = z_arc_v2_aux_reg_read(_ARC_V2_MPU_EN) & (~AUX_MPU_RDP_ATTR_MASK);
 
 	region_attr &= AUX_MPU_RDP_ATTR_MASK;
 	z_arc_v2_aux_reg_write(_ARC_V2_MPU_EN, region_attr | val);
@@ -134,6 +132,7 @@ void arc_core_mpu_configure_mem_domain(struct k_thread *thread)
 	uint32_t num_partitions;
 	struct k_mem_partition *pparts;
 	struct k_mem_domain *mem_domain = NULL;
+	uint32_t slot = 0U;
 
 	if (thread) {
 		mem_domain = thread->mem_domain_info.mem_domain;
@@ -150,16 +149,25 @@ void arc_core_mpu_configure_mem_domain(struct k_thread *thread)
 	}
 
 	for (; region_index >= 0; region_index--) {
-		if (num_partitions) {
-			LOG_DBG("set region 0x%x 0x%lx 0x%x",
-				 region_index, pparts->start, pparts->size);
-			_region_init(region_index, pparts->start, pparts->size, pparts->attr);
+		/*
+		 * Skip zero-sized holes: they must not consume a region slot
+		 * or the remaining-partition counter
+		 */
+		while (num_partitions && slot < CONFIG_MAX_DOMAIN_PARTITIONS &&
+		       pparts[slot].size == 0U) {
+			slot++;
+		}
+		if (num_partitions && slot < CONFIG_MAX_DOMAIN_PARTITIONS) {
+			LOG_DBG("set region 0x%x 0x%lx 0x%x", region_index, pparts[slot].start,
+				pparts[slot].size);
+			_region_init(region_index, pparts[slot].start, pparts[slot].size,
+				     pparts[slot].attr);
 			num_partitions--;
+			slot++;
 		} else {
 			/* clear the left mpu entries */
 			_region_init(region_index, 0, 0, 0);
 		}
-		pparts++;
 	}
 }
 
@@ -187,13 +195,36 @@ void arc_core_mpu_remove_mem_domain(struct k_mem_domain *mem_domain)
  */
 void arc_core_mpu_remove_mem_partition(struct k_mem_domain *domain, uint32_t part_id)
 {
-	ARG_UNUSED(domain);
-
 	int region_index = get_region_index_by_type(THREAD_DOMAIN_PARTITION_REGION);
+	uint32_t i;
 
-	LOG_DBG("disable region 0x%x", region_index + part_id);
+	if (part_id >= CONFIG_MAX_DOMAIN_PARTITIONS || domain->partitions[part_id].size == 0U) {
+		return;
+	}
+
+	/*
+	 * arc_core_mpu_configure_mem_domain() programs valid partitions in
+	 * array order into consecutive region slots counting down from the
+	 * domain-partition base region, skipping holes; count the valid
+	 * partitions before this one to derive its region slot.
+	 */
+	for (i = 0; i < part_id; i++) {
+		if (domain->partitions[i].size != 0U) {
+			region_index--;
+		}
+	}
+
+	/*
+	 * Defensive: unreachable while the kernel caps partitions at
+	 * base + 1 via arch_mem_domain_max_partitions_get().
+	 */
+	if (region_index < 0) {
+		return;
+	}
+
+	LOG_DBG("disable region 0x%x", region_index);
 	/* Disable region */
-	_region_init(region_index + part_id, 0, 0, 0);
+	_region_init(region_index, 0, 0, 0);
 }
 
 /**
@@ -209,11 +240,16 @@ int arc_core_mpu_get_max_domain_partition_regions(void)
  */
 int arc_core_mpu_buffer_validate(const void *addr, size_t size, int write)
 {
+	/* Lock IRQs to protect MPU bank selection during region iteration */
+#if CONFIG_ARC_MPU_VER == 6
+	int key = arch_irq_lock();
+#endif
+	int result = -EPERM;
+
 	/*
 	 * For ARC MPU, smaller region number takes priority.
 	 * we can stop the iteration immediately once we find the
 	 * matched region that grants permission or denies access.
-	 *
 	 */
 	for (int r_index = 0; r_index < get_num_regions(); r_index++) {
 		if (!_is_enabled_region(r_index) || !_is_in_region(r_index, (uint32_t)addr, size)) {
@@ -221,13 +257,17 @@ int arc_core_mpu_buffer_validate(const void *addr, size_t size, int write)
 		}
 
 		if (_is_user_accessible_region(r_index, write)) {
-			return 0;
+			result = 0;
 		} else {
-			return -EPERM;
+			result = -EPERM;
 		}
+		break;
 	}
 
-	return -EPERM;
+#if CONFIG_ARC_MPU_VER == 6
+	arch_irq_unlock(key);
+#endif
+	return result;
 }
 #endif /* CONFIG_USERSPACE */
 
@@ -268,7 +308,7 @@ void arc_mpu_init(void)
 	/* configure the static regions */
 	for (uint32_t i = 0U; i < mpu_config.num_regions; i++) {
 		_region_init(r_index, mpu_config.mpu_regions[i].base,
-			 mpu_config.mpu_regions[i].size, mpu_config.mpu_regions[i].attr);
+			     mpu_config.mpu_regions[i].size, mpu_config.mpu_regions[i].attr);
 		r_index++;
 	}
 
@@ -278,6 +318,5 @@ void arc_mpu_init(void)
 	/* Enable MPU */
 	arc_core_mpu_enable();
 }
-
 
 #endif /* ZEPHYR_ARCH_ARC_CORE_MPU_ARC_MPU_COMMON_INTERNAL_H_ */

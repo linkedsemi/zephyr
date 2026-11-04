@@ -53,17 +53,27 @@ In these other cases, however, manual wiring is necessary:
      - connect PWM1 (PA8) to an LED
    * - :zephyr:board:`nucleo_wb55rg`
      - connect PWM1 (PA8) to an LED
-   * - :zephyr:board:`esp32_devkitc_wroom`
+   * - :zephyr:board:`esp32_devkitc`
      - connect GPIO2 to an LED
    * - :zephyr:board:`esp32s2_saola`
      - connect GPIO2 to an LED
    * - :zephyr:board:`esp32c3_devkitm`
      - connect GPIO2 to an LED
+   * - :zephyr:board:`imx943_evk`
+     - connect PWM6 (J47-6) to an LED
+   * - :zephyr:board:`imx95_evk`
+     - connect PWM2 (R881) to an LED
+   * - :zephyr:board:`imx8mm_evk`
+     - connect PWM3 (J1001-47) to an LED
+   * - :zephyr:board:`imx8mn_evk`
+     - connect PWM3 (J1001-47) to an LED
+   * - :zephyr:board:`imx8mp_evk`
+     - connect PWM4 (J21-32) to an LED
 
 Building and Running
 ********************
 
-To build and flash this sample for the :ref:`nrf52840dk_nrf52840`:
+To build and flash this sample for the :zephyr:board:`nrf52840dk`:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/basic/blinky_pwm

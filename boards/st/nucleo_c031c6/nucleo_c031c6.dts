@@ -23,6 +23,7 @@
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led_4: led_4 {
 			gpios = <&gpioa 5 GPIO_ACTIVE_HIGH>;
 			label = "User LD4";
@@ -39,6 +40,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "user button";
 			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
@@ -54,6 +56,19 @@
 		watchdog0 = &iwdg;
 		die-temp0 = &die_temp;
 		volt-sensor0 = &vref;
+	};
+};
+
+/* Add the STM32C031Cx package-specific wake-up pins */
+&pwr {
+	wakeup-controller {
+		wkup@2 {
+			wkup-gpios = <&gpioc 13 STM32_PWR_WKUP_PIN_NOT_MUXED>;
+		};
+
+		wkup@6 {
+			wkup-gpios = <&gpiob 5 STM32_PWR_WKUP_PIN_NOT_MUXED>;
+		};
 	};
 };
 
@@ -87,7 +102,7 @@
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x00000400>,
+	clocks = <&rcc STM32_CLOCK(APB1, 10)>,
 		 <&rcc STM32_SRC_LSE RTC_SEL(1)>;
 	status = "okay";
 };
@@ -110,15 +125,24 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+&adc1_common {
+	clocks = <&rcc STM32_CLOCK(APB1_2, 20)>,
+		 <&rcc STM32_SRC_SYSCLK ADC_SEL(0)>;
+	clock-names = "adcx", "adc_ker";
+	st,adc-clock-source = "ASYNC";
+	st,adc-prescaler = <32>;
+	status = "okay";
 };
 
 &adc1 {
 	pinctrl-0 = <&adc1_in0_pa0 &adc1_in1_pa1 &adc1_in4_pa4>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <4>;
 	status = "okay";
 };
 

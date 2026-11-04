@@ -76,7 +76,7 @@ static bool source_id_cmp(uintptr_t id0, uintptr_t id1)
 
 /** @brief Return link and relative domain id based on absolute domain id.
  *
- * @param[in]  domain_id	Aboslute domain ID.
+ * @param[in]  domain_id	Absolute domain ID.
  * @param[out] rel_domain_id	Domain ID elative to the link domain ID as output.
  *
  * @return Link to which given domain belongs. NULL if link was not found.
@@ -229,8 +229,9 @@ static const char *link_source_name_get(uint8_t domain_id, uint32_t source_id)
 		__ASSERT_NO_MSG(link != NULL);
 
 		err = log_link_get_source_name(link, rel_domain_id, source_id,
-					       cached, &cache_size);
+					       (char *)cached, &cache_size);
 		if (err < 0) {
+			log_cache_release(&sname_cache, cached);
 			return NULL;
 		}
 
@@ -276,7 +277,8 @@ static const char *link_domain_name_get(uint8_t domain_id)
 
 		__ASSERT_NO_MSG(link != NULL);
 
-		err = log_link_get_domain_name(link, rel_domain_id, cached, &cache_size);
+		err = log_link_get_domain_name(link, rel_domain_id, (char *)cached,
+					       &cache_size);
 		if (err < 0) {
 			log_cache_release(&dname_cache, cached);
 			return invalid_domain;
@@ -354,8 +356,15 @@ void z_log_runtime_filters_init(void)
 	 */
 	for (int i = 0; i < z_log_sources_count(); i++) {
 		uint32_t *filters = z_log_dynamic_filters_get(i);
-		uint8_t level = log_compiled_level_get(Z_LOG_LOCAL_DOMAIN_ID, i);
+		uint8_t level;
 
+#ifdef CONFIG_LOG_RUNTIME_DEFAULT_LEVEL
+		/* Use configured runtime default level for initial filter */
+		level = CONFIG_LOG_RUNTIME_DEFAULT_LEVEL;
+#else
+		/* Fall back to compile-time level */
+		level = log_compiled_level_get(Z_LOG_LOCAL_DOMAIN_ID, i);
+#endif
 		level = MAX(level, CONFIG_LOG_OVERRIDE_LEVEL);
 		LOG_FILTER_SLOT_SET(filters,
 				    LOG_FILTER_AGGR_SLOT_IDX,
@@ -421,7 +430,12 @@ static void set_runtime_filter(uint8_t backend_id, uint8_t domain_id,
 
 static uint32_t filter_get(uint8_t id, uint32_t domain_id, int16_t source_id, bool runtime)
 {
-	__ASSERT_NO_MSG(source_id < log_src_cnt_get(domain_id));
+	/* source_id can originate from another domain over IPC, so the bound
+	 * must hold without CONFIG_ASSERT.
+	 */
+	if (source_id >= (int16_t)log_src_cnt_get(domain_id)) {
+		return LOG_LEVEL_NONE;
+	}
 
 	if (IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) && runtime) {
 		if (source_id < 0) {
@@ -441,8 +455,12 @@ uint32_t filter_set(int id, uint32_t domain_id, int16_t source_id, uint32_t leve
 		return log_compiled_level_get(domain_id, source_id);
 	}
 
-	__ASSERT_NO_MSG(source_id < log_src_cnt_get(domain_id));
-
+	/* As in filter_get(): an out-of-range source would index the dynamic
+	 * filter table out of bounds.
+	 */
+	if (source_id >= (int16_t)log_src_cnt_get(domain_id)) {
+		return LOG_LEVEL_NONE;
+	}
 
 	if (id < 0) {
 		uint32_t max = 0U;
@@ -497,7 +515,7 @@ uint32_t z_vrfy_log_filter_set(struct log_backend const *const backend,
 		"Setting per-backend filters from user mode is not supported"));
 	K_OOPS(K_SYSCALL_VERIFY_MSG(domain_id == Z_LOG_LOCAL_DOMAIN_ID,
 		"Invalid log domain_id"));
-	K_OOPS(K_SYSCALL_VERIFY_MSG(src_id < (int16_t)log_src_cnt_get(domain_id),
+	K_OOPS(K_SYSCALL_VERIFY_MSG((uint32_t)src_id < log_src_cnt_get(domain_id),
 		"Invalid log source id"));
 	K_OOPS(K_SYSCALL_VERIFY_MSG(
 		(level <= LOG_LEVEL_DBG),
@@ -560,12 +578,6 @@ void log_backend_enable(struct log_backend const *const backend,
 			void *ctx,
 			uint32_t level)
 {
-	/* As first slot in filtering mask is reserved, backend ID has offset.*/
-	uint32_t id = LOG_FILTER_FIRST_BACKEND_SLOT_IDX;
-
-	id += backend - log_backend_get(0);
-
-	log_backend_id_set(backend, id);
 	backend->cb->level = level;
 	backend_filter_set(backend, level);
 	log_backend_activate(backend, ctx);

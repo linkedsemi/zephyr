@@ -285,7 +285,7 @@ static int stmpe1600_init(const struct device *dev)
 	return ret;
 }
 
-static const struct gpio_driver_api stmpe1600_drv_api = {
+static DEVICE_API(gpio, stmpe1600_drv_api) = {
 	.pin_configure = stmpe1600_configure,
 	.port_get_raw = stmpe1600_port_get_raw,
 	.port_set_masked_raw = stmpe1600_port_set_masked_raw,
@@ -296,7 +296,7 @@ static const struct gpio_driver_api stmpe1600_drv_api = {
 
 #define STMPE1600_INIT(inst)					     \
 	static struct stmpe1600_config stmpe1600_##inst##_config = { \
-		.common = { .port_pin_mask = 0xffff },		     \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(inst),     \
 		.i2c = I2C_DT_SPEC_INST_GET(inst),		     \
 	};							     \
 								     \

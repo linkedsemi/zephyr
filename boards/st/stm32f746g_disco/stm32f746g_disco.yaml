@@ -5,13 +5,13 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 256
 flash: 1024
 supported:
   - arduino_i2c
   - netif:eth
   - i2c
+  - ptp_clock
   - spi
   - gpio
   - pwm

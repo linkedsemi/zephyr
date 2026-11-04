@@ -18,20 +18,27 @@
  *
  *   Independent watchdog (IWDG)
  *
+ *   Notice that the STM32 IWDG cannot pause in sleep from software.
+ *   However, some newer implementations have the IWDG_STDBY and
+ *   IWDG_STOP bits in the flash option bytes. Check an appropriate reference manual
+ *   whether any specific SoC has these option bits. When unset (0), these freeze the watchdog
+ *   in standby or stop mode, respectively. The factory default is to keep the
+ *   watchdog running in standby and stop mode (both bits are set (1)).
+ *   Lastly, be aware that option bytes do not reset to factory
+ *   defaults on a mass erase.
+ *
  */
 
-/* driver data */
-struct iwdg_stm32_data {
+struct iwdg_stm32_config {
 	/* IWDG peripheral instance. */
-	IWDG_TypeDef *Instance;
-	uint32_t prescaler;
-	uint32_t reload;
+	IWDG_TypeDef *instance;
 };
 
-#define IWDG_STM32_DATA(dev)					\
-	((struct iwdg_stm32_data * const)(dev)->data)
-
-#define IWDG_STM32_STRUCT(dev)					\
-	((IWDG_TypeDef *)(IWDG_STM32_DATA(dev))->Instance)
+struct iwdg_stm32_data {
+	uint32_t prescaler;
+	uint32_t reload;
+	/* IWDG user defined callback on EWI */
+	wdt_callback_t callback;
+};
 
 #endif	/* ZEPHYR_DRIVERS_WATCHDOG_IWDG_STM32_H_ */

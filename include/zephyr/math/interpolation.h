@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_ZEPHYR_MATH_INTERPOLATION_H_
-#define ZEPHYR_INCLUDE_ZEPHYR_MATH_INTERPOLATION_H_
+#ifndef ZEPHYR_INCLUDE_MATH_INTERPOLATION_H_
+#define ZEPHYR_INCLUDE_MATH_INTERPOLATION_H_
 
 #include <stdint.h>
 #include <math.h>
@@ -20,15 +20,22 @@ extern "C" {
  */
 
 /**
+ * @defgroup math_interpolation Math Interpolation Functions
+ * @ingroup utilities
+ * @brief Linear interpolation utilities for mathematical operations
+ * @{
+ */
+
+/**
  * @brief Perform a linear interpolation across an arbitrary curve
  *
  * @note Result rounding occurs away from 0, e.g:
  *       1.5 -> 2, -5.5 -> -6
  *
- * @param x_axis Ascending list of X co-ordinates for @a y_axis data points
- * @param y_axis Y co-ordinates for each X data point
+ * @param x_axis Ascending list of X coordinates for @a y_axis data points
+ * @param y_axis Y coordinates for each X data point
  * @param len Length of the @a x_axis and @a y_axis arrays
- * @param x X co-ordinate to lookup
+ * @param x X coordinate to lookup
  *
  * @retval y_axis[0] if x < x_axis[0]
  * @retval y_axis[len - 1] if x > x_axis[len - 1]
@@ -68,8 +75,12 @@ static inline int32_t linear_interpolate(const int32_t *x_axis, const int32_t *y
 	return roundf(y_axis[idx_low] + (slope * x_shifted));
 }
 
+/**
+ * @}
+ */
+
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_ZEPHYR_MATH_INTERPOLATION_H_ */
+#endif /* ZEPHYR_INCLUDE_MATH_INTERPOLATION_H_ */

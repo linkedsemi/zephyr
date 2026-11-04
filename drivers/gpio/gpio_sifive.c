@@ -84,20 +84,6 @@ static inline unsigned int gpio_sifive_pin_irq(unsigned int base_irq, int pin)
 	return pin_irq;
 }
 
-/* Given the PLIC source number, return the number of the GPIO pin associated
- * with the interrupt
- */
-static inline int gpio_sifive_plic_to_pin(unsigned int base_irq, int plic_irq)
-{
-	unsigned int level = irq_get_level(base_irq);
-
-	if (level == 2) {
-		base_irq = irq_from_level_2(base_irq);
-	}
-
-	return (plic_irq - base_irq);
-}
-
 static void gpio_sifive_irq_handler(const struct device *dev)
 {
 	struct gpio_sifive_data *data = DEV_GPIO_DATA(dev);
@@ -306,7 +292,7 @@ static int gpio_sifive_port_get_dir(const struct device *dev, gpio_port_pins_t m
 }
 #endif /* CONFIG_GPIO_GET_DIRECTION */
 
-static const struct gpio_driver_api gpio_sifive_driver = {
+static DEVICE_API(gpio, gpio_sifive_driver) = {
 	.pin_configure           = gpio_sifive_config,
 	.port_get_raw            = gpio_sifive_port_get_raw,
 	.port_set_masked_raw     = gpio_sifive_port_set_masked_raw,
@@ -355,9 +341,7 @@ static int gpio_sifive_init(const struct device *dev)
 static void gpio_sifive_cfg_0(void);
 
 static const struct gpio_sifive_config gpio_sifive_config0 = {
-	.common = {
-		.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(0),
-	},
+	.common = GPIO_COMMON_CONFIG_FROM_DT_INST(0),
 	.gpio_base_addr = DT_INST_REG_ADDR(0),
 	.gpio_irq_base  = DT_INST_IRQN(0),
 	.gpio_cfg_func  = gpio_sifive_cfg_0,

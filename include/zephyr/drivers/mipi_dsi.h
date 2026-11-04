@@ -6,18 +6,19 @@
 
 /**
  * @file
- * @brief Public APIs for MIPI-DSI drivers
+ * @ingroup mipi_dsi_interface
+ * @brief Main header file for MIPI-DSI (Display Serial Interface) driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_MIPI_DSI_H_
 #define ZEPHYR_INCLUDE_DRIVERS_MIPI_DSI_H_
 
 /**
- * @brief MIPI-DSI driver APIs
- * @defgroup mipi_dsi_interface MIPI-DSI driver APIs
+ * @brief Interfaces for MIPI-DSI (Display Serial Interface).
+ * @defgroup mipi_dsi_interface MIPI-DSI
  * @since 3.1
- * @version 0.1.0
- * @ingroup io_interfaces
+ * @version 1.0.0
+ * @ingroup display_interface
  * @{
  */
 #include <errno.h>
@@ -116,17 +117,51 @@ struct mipi_dsi_msg {
 	size_t rx_len;
 	/** Reception buffer. */
 	void *rx_buf;
+	/** User data. */
+	void *user_data;
 };
 
-/** MIPI-DSI host driver API. */
+/**
+ * @def_driverbackendgroup{MIPI-DSI,mipi_dsi_interface}
+ * @{
+ */
+
+/**
+ * @brief Attach a new device to the MIPI-DSI bus.
+ * See mipi_dsi_attach() for argument description.
+ */
+typedef int (*mipi_dsi_api_attach_t)(const struct device *dev, uint8_t channel,
+				     const struct mipi_dsi_device *mdev);
+
+/**
+ * @brief Transfer data to/from a device attached to the MIPI-DSI bus.
+ * See mipi_dsi_transfer() for argument description.
+ */
+typedef ssize_t (*mipi_dsi_api_transfer_t)(const struct device *dev, uint8_t channel,
+					   struct mipi_dsi_msg *msg);
+
+/**
+ * @brief Detach a device from the MIPI-DSI bus.
+ * See mipi_dsi_detach() for argument description.
+ */
+typedef int (*mipi_dsi_api_detach_t)(const struct device *dev, uint8_t channel,
+				     const struct mipi_dsi_device *mdev);
+
+/**
+ * @driver_ops{MIPI-DSI}
+ */
 __subsystem struct mipi_dsi_driver_api {
-	int (*attach)(const struct device *dev, uint8_t channel,
-		      const struct mipi_dsi_device *mdev);
-	ssize_t (*transfer)(const struct device *dev, uint8_t channel,
-			    struct mipi_dsi_msg *msg);
-	int (*detach)(const struct device *dev, uint8_t channel,
-		      const struct mipi_dsi_device *mdev);
+	/** @driver_ops_mandatory @copybrief mipi_dsi_attach */
+	mipi_dsi_api_attach_t attach;
+	/** @driver_ops_mandatory @copybrief mipi_dsi_transfer */
+	mipi_dsi_api_transfer_t transfer;
+	/** @driver_ops_optional @copybrief mipi_dsi_detach */
+	mipi_dsi_api_detach_t detach;
 };
+
+/**
+ * @}
+ */
 
 /**
  * @brief Attach a new device to the MIPI-DSI bus.
@@ -141,9 +176,7 @@ static inline int mipi_dsi_attach(const struct device *dev,
 				  uint8_t channel,
 				  const struct mipi_dsi_device *mdev)
 {
-	const struct mipi_dsi_driver_api *api = (const struct mipi_dsi_driver_api *)dev->api;
-
-	return api->attach(dev, channel, mdev);
+	return DEVICE_API_GET(mipi_dsi, dev)->attach(dev, channel, mdev);
 }
 
 /**
@@ -159,9 +192,7 @@ static inline ssize_t mipi_dsi_transfer(const struct device *dev,
 					uint8_t channel,
 					struct mipi_dsi_msg *msg)
 {
-	const struct mipi_dsi_driver_api *api = (const struct mipi_dsi_driver_api *)dev->api;
-
-	return api->transfer(dev, channel, msg);
+	return DEVICE_API_GET(mipi_dsi, dev)->transfer(dev, channel, msg);
 }
 
 /**
@@ -235,7 +266,7 @@ static inline int mipi_dsi_detach(const struct device *dev,
 				  uint8_t channel,
 				  const struct mipi_dsi_device *mdev)
 {
-	const struct mipi_dsi_driver_api *api = (const struct mipi_dsi_driver_api *)dev->api;
+	const struct mipi_dsi_driver_api *api = DEVICE_API_GET(mipi_dsi, dev);
 
 	if (api->detach == NULL) {
 		return -ENOSYS;

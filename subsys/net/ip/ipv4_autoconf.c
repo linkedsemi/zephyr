@@ -19,13 +19,12 @@ LOG_MODULE_REGISTER(net_ipv4_autoconf, CONFIG_NET_IPV4_AUTO_LOG_LEVEL);
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/random/random.h>
-
-static struct net_mgmt_event_callback mgmt4_acd_cb;
 
 static inline void ipv4_autoconf_addr_set(struct net_if_ipv4_autoconf *ipv4auto)
 {
-	struct in_addr netmask = { { { 255, 255, 0, 0 } } };
+	struct net_in_addr netmask = { { { 255, 255, 0, 0 } } };
 
 	if (ipv4auto->state == NET_IPV4_AUTOCONF_INIT) {
 		ipv4auto->requested_ip.s4_addr[0] = 169U;
@@ -54,11 +53,11 @@ static inline void ipv4_autoconf_addr_set(struct net_if_ipv4_autoconf *ipv4auto)
 	ipv4auto->state = NET_IPV4_AUTOCONF_ASSIGNED;
 }
 
-static void acd_event_handler(struct net_mgmt_event_callback *cb,
-			      uint32_t mgmt_event, struct net_if *iface)
+static void acd_event_handler(uint64_t mgmt_event, struct net_if *iface, void *info,
+			      size_t info_length, void *user_data __unused)
 {
 	struct net_if_config *cfg;
-	struct in_addr *addr;
+	struct net_in_addr *addr;
 
 	cfg = net_if_get_config(iface);
 	if (!cfg) {
@@ -75,11 +74,11 @@ static void acd_event_handler(struct net_mgmt_event_callback *cb,
 		return;
 	}
 
-	if (cb->info_length != sizeof(struct in_addr)) {
+	if (info_length != sizeof(struct net_in_addr)) {
 		return;
 	}
 
-	addr = (struct in_addr *)cb->info;
+	addr = (struct net_in_addr *)info;
 
 	if (!net_ipv4_addr_cmp(&cfg->ipv4auto.requested_ip, addr)) {
 		return;
@@ -101,6 +100,11 @@ static void acd_event_handler(struct net_mgmt_event_callback *cb,
 		break;
 	}
 }
+
+NET_MGMT_REGISTER_EVENT_HANDLER(ipv4_autoconf_events,
+				NET_EVENT_IPV4_ACD_SUCCEED | NET_EVENT_IPV4_ACD_FAILED |
+					NET_EVENT_IPV4_ACD_CONFLICT,
+				acd_event_handler, NULL);
 
 void net_ipv4_autoconf_start(struct net_if *iface)
 {
@@ -138,22 +142,18 @@ void net_ipv4_autoconf_start(struct net_if *iface)
 void net_ipv4_autoconf_reset(struct net_if *iface)
 {
 	struct net_if_config *cfg;
+	struct net_if_addr *ifaddr;
+	struct net_if *ret;
 
 	cfg = net_if_get_config(iface);
 	if (!cfg) {
 		return;
 	}
 
-	net_if_ipv4_addr_rm(iface, &cfg->ipv4auto.requested_ip);
+	ifaddr = net_if_ipv4_addr_lookup(&cfg->ipv4auto.requested_ip, &ret);
+	if (ifaddr != NULL && ret == iface) {
+		net_if_ipv4_addr_rm(iface, &cfg->ipv4auto.requested_ip);
+	}
 
 	NET_DBG("Autoconf reset for %p", iface);
-}
-
-void net_ipv4_autoconf_init(void)
-{
-	net_mgmt_init_event_callback(&mgmt4_acd_cb, acd_event_handler,
-				     NET_EVENT_IPV4_ACD_SUCCEED |
-				     NET_EVENT_IPV4_ACD_FAILED |
-				     NET_EVENT_IPV4_ACD_CONFLICT);
-	net_mgmt_add_event_callback(&mgmt4_acd_cb);
 }

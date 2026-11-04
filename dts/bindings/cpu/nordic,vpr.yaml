@@ -5,7 +5,7 @@ description: Nordic Semiconductor RISC-V VPR CPU
 
 compatible: "nordic,vpr"
 
-include: riscv,cpus.yaml
+include: riscv-common.yaml
 
 properties:
   nordic,bus-width:
@@ -16,3 +16,8 @@ properties:
     required: true
     description:
       Bus width of the CPU.
+
+  nordic,vpr-ready-event:
+    type: int
+    description:
+      Event which is set by the VPR core (cpuppr) to indicate that it is running.

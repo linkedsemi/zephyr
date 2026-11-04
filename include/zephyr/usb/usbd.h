@@ -6,7 +6,7 @@
 
 /**
  * @file
- * @brief New experimental USB device stack APIs and structures
+ * @brief New USB device stack APIs and structures
  *
  * This file contains the USB device stack APIs and structures.
  */
@@ -18,7 +18,7 @@
 #include <zephyr/usb/bos.h>
 #include <zephyr/usb/usb_ch9.h>
 #include <zephyr/usb/usbd_msg.h>
-#include <zephyr/drivers/usb/udc_buf.h>
+#include <zephyr/drivers/usb/usb_buf.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/slist.h>
 #include <zephyr/logging/log.h>
@@ -33,21 +33,15 @@ extern "C" {
  * @defgroup usbd_api USB device core API
  * @ingroup usb
  * @since 3.3
- * @version 0.1.0
+ * @version 0.2.0
  * @{
  */
 
-/*
- * The USB Unicode bString is encoded in UTF16LE, which means it takes up
- * twice the amount of bytes than the same string encoded in ASCII7.
- * Use this macro to determine the length of the bString array.
- *
- * bString length without null character:
- *   bString_length = (sizeof(initializer_string) - 1) * 2
- * or:
- *   bString_length = sizeof(initializer_string) * 2 - 2
- */
-#define USB_BSTRING_LENGTH(s)		(sizeof(s) * 2 - 2)
+/* 1 if USB device stack is compiled with High-Speed support */
+#define USBD_SUPPORTS_HIGH_SPEED IS_EQ(CONFIG_USBD_MAX_SPEED, 1)
+
+/* Maximum bulk max packet size the stack supports */
+#define USBD_MAX_BULK_MPS COND_CODE_1(USBD_SUPPORTS_HIGH_SPEED, (512), (64))
 
 /*
  * The length of the string descriptor (bLength) is calculated from the
@@ -60,6 +54,8 @@ extern "C" {
  * Use this macro to determine the bLength of the string descriptor.
  */
 #define USB_STRING_DESCRIPTOR_LENGTH(s)	(sizeof(s) * 2)
+
+struct usbd_context;
 
 /** Used internally to keep descriptors in order
  * @cond INTERNAL_HIDDEN
@@ -75,6 +71,7 @@ enum usbd_str_desc_utype {
 
 enum usbd_bos_desc_utype {
 	USBD_DUT_BOS_NONE,
+	USBD_DUT_BOS_VREQ,
 };
 /** @endcond */
 
@@ -93,11 +90,77 @@ struct usbd_str_desc_data {
 };
 
 /**
+ * USBD vendor request node
+ *
+ * Vendor request node is identified by the vendor code and is used to register
+ * callbacks to handle the vendor request with the receiving device.
+ * When the device stack receives a request with type Vendor and recipient
+ * Device, and bRequest value equal to the vendor request code, it will call
+ * the vendor callbacks depending on the direction of the request.
+ *
+ * Example callback code fragment:
+ *
+ * @code{.c}
+ * static struct net_buf *foo_to_host_cb(const struct usbd_context *const ctx,
+ *                                       const struct usb_setup_packet *const setup)
+ * {
+ *     if (setup->wIndex == WEBUSB_REQ_GET_URL) {
+ *         struct net_buf *buf;
+ *         uint16_t len;
+ *         uint8_t index = USB_GET_DESCRIPTOR_INDEX(setup->wValue);
+ *
+ *         if (index != SAMPLE_WEBUSB_LANDING_PAGE) {
+ *             return NULL;
+ *         }
+ *
+ *         len = MIN(setup->wLength, sizeof(webusb_origin_url));
+ *         buf = usbd_ep_ctrl_data_in_alloc(ctx, len);
+ *         if (buf == NULL) {
+ *             return NULL;
+ *         }
+ *
+ *         net_buf_add_mem(buf, &webusb_origin_url, len);
+ *
+ *         return buf;
+ *     }
+ *
+ *     return NULL;
+ * }
+ * @endcode
+ */
+struct usbd_vreq_node {
+	/** Node information for the dlist */
+	sys_dnode_t node;
+	/** Vendor code (bRequest value) */
+	const uint8_t code;
+	/** Vendor request callback for device-to-host direction */
+	struct net_buf *(*to_host)(const struct usbd_context *const ctx,
+				   const struct usb_setup_packet *const setup);
+	/**
+	 * Vendor request callback for host-to-device direction
+	 *
+	 * For requests with Data OUT stage (wLength != 0), the callback will
+	 * be called first with NULL buf before Data OUT stage is received to
+	 * check if data should be received. The callback will be called second
+	 * time, with non-NULL buf, after data is received.
+	 *
+	 * For requests without Data Stage (wLength == 0), the callback is
+	 * called just once with NULL buf.
+	 */
+	int (*to_dev)(const struct usbd_context *const ctx,
+		      const struct usb_setup_packet *const setup,
+		      const struct net_buf *const buf);
+};
+
+/**
  * USBD BOS Device Capability descriptor data
  */
 struct usbd_bos_desc_data {
 	/** Descriptor usage type (not bDescriptorType) */
 	enum usbd_bos_desc_utype utype : 8;
+	union {
+		struct usbd_vreq_node *const vreq_nd;
+	};
 };
 
 /**
@@ -162,8 +225,6 @@ enum usbd_ch9_state {
 struct usbd_ch9_data {
 	/** Setup packet, up-to-date for the respective control request */
 	struct usb_setup_packet setup;
-	/** Control type, internally used for stage verification */
-	int ctrl_type;
 	/** Protocol state of the USB device stack */
 	enum usbd_ch9_state state;
 	/** Halted endpoints bitmap */
@@ -200,19 +261,23 @@ struct usbd_status {
 	unsigned int suspended : 1;
 	/** USB remote wake-up feature is enabled */
 	unsigned int rwup : 1;
+	/** USB device is self-powered */
+	unsigned int self_powered : 1;
 	/** USB device speed */
 	enum usbd_speed speed : 2;
 };
 
-struct usbd_context;
-
 /**
  * @brief Callback type definition for USB device message delivery
  *
- * The implementation uses the system workqueue, and a callback provided and
- * registered by the application. The application callback is called in the
- * context of the system workqueue. Notification messages are stored in a queue
- * and delivered to the callback in sequence.
+ * If the Kconfig option USBD_MSG_DEFERRED_MODE is enabled, then the callback
+ * is executed in the context of the system workqueue. Notification messages are
+ * stored in a queue and delivered to the callback in sequence.
+ *
+ * If the Kconfig option USBD_MSG_DEFERRED_MODE is disabled, the callback is
+ * executed in the context of the USB device stack thread. The user should make
+ * sure that the callback execution does not block or disrupt device stack
+ * handling.
  *
  * @param[in] ctx Pointer to USB device support context
  * @param[in] msg Pointer to USB device message
@@ -235,6 +300,10 @@ struct usbd_context {
 	const struct device *dev;
 	/** Notification message recipient callback */
 	usbd_msg_cb_t msg_cb;
+	/** slist to keep endpoint events */
+	sys_slist_t ep_events;
+	/** Endpoint event list spinlock */
+	struct k_spinlock ep_event_lock;
 	/** Middle layer runtime data */
 	struct usbd_ch9_data ch9_data;
 	/** slist to manage descriptors like string, BOS */
@@ -243,12 +312,16 @@ struct usbd_context {
 	sys_slist_t fs_configs;
 	/** slist to manage High-Speed device configurations */
 	sys_slist_t hs_configs;
+	/** dlist to manage vendor requests with recipient device */
+	sys_dlist_t vreqs;
 	/** Status of the USB device support */
 	struct usbd_status status;
 	/** Pointer to Full-Speed device descriptor */
 	void *fs_desc;
 	/** Pointer to High-Speed device descriptor */
 	void *hs_desc;
+	/** Pre-allocated buffer for control transfer SETUP stage */
+	struct net_buf *setup_buf;
 };
 
 /**
@@ -284,9 +357,8 @@ struct usbd_class_api {
 			      const struct net_buf *const buf);
 
 	/** USB control request handler to host */
-	int (*control_to_host)(struct usbd_class_data *const c_data,
-			       const struct usb_setup_packet *const setup,
-			       struct net_buf *const buf);
+	struct net_buf *(*control_to_host)(struct usbd_class_data *const c_data,
+					   const struct usb_setup_packet *const setup);
 
 	/** Endpoint request completion event handler */
 	int (*request)(struct usbd_class_data *const c_data,
@@ -314,8 +386,8 @@ struct usbd_class_api {
 	void (*shutdown)(struct usbd_class_data *const c_data);
 
 	/** Get function descriptor based on speed parameter */
-	void *(*get_desc)(struct usbd_class_data *const c_data,
-			  const enum usbd_speed speed);
+	const void *(*get_desc)(struct usbd_class_data *const c_data,
+				const enum usbd_speed speed);
 };
 
 /**
@@ -431,6 +503,7 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
 		.iSerialNumber = 0,					\
 		.bNumConfigurations = 0,				\
 	};								\
+	IF_ENABLED(USBD_SUPPORTS_HIGH_SPEED, (				\
 	static struct usb_device_descriptor				\
 	hs_desc_##device_name = {					\
 		.bLength = sizeof(struct usb_device_descriptor),	\
@@ -448,11 +521,15 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
 		.iSerialNumber = 0,					\
 		.bNumConfigurations = 0,				\
 	};								\
+	))								\
 	static STRUCT_SECTION_ITERABLE(usbd_context, device_name) = {	\
 		.name = STRINGIFY(device_name),				\
+		.mutex = Z_MUTEX_INITIALIZER(device_name.mutex),	\
 		.dev = udc_dev,						\
 		.fs_desc = &fs_desc_##device_name,			\
+		IF_ENABLED(USBD_SUPPORTS_HIGH_SPEED, (			\
 		.hs_desc = &hs_desc_##device_name,			\
+		))							\
 	}
 
 /**
@@ -504,7 +581,7 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
  * @param name Language string descriptor node identifier.
  */
 #define USBD_DESC_LANG_DEFINE(name)					\
-	static uint16_t langid_##name = sys_cpu_to_le16(0x0409);	\
+	static const uint16_t langid_##name = sys_cpu_to_le16(0x0409);	\
 	static struct usbd_desc_node name = {				\
 		.str = {						\
 			.idx = 0,					\
@@ -527,7 +604,7 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
  * @param d_utype  String descriptor usage type
  */
 #define USBD_DESC_STRING_DEFINE(d_name, d_string, d_utype)			\
-	static uint8_t ascii_##d_name[USB_BSTRING_LENGTH(d_string)] = d_string;	\
+	static const uint8_t ascii_##d_name[sizeof(d_string)] = d_string;	\
 	static struct usbd_desc_node d_name = {					\
 		.str = {							\
 			.utype = d_utype,					\
@@ -571,12 +648,16 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
  *
  * This macro defines a descriptor node that, when added to the device context,
  * is automatically used as the serial number string descriptor. A valid serial
- * number is generated from HWID (HWINFO= whenever this string descriptor is
- * requested.
+ * number is obtained from @ref hwinfo_interface whenever this string
+ * descriptor is requested.
+ *
+ * @note The HWINFO driver must be available and the Kconfig option HWINFO
+ *       enabled.
  *
  * @param d_name   String descriptor node identifier.
  */
 #define USBD_DESC_SERIAL_NUMBER_DEFINE(d_name)					\
+	BUILD_ASSERT(IS_ENABLED(CONFIG_HWINFO), "HWINFO not enabled");		\
 	static struct usbd_desc_node d_name = {					\
 		.str = {							\
 			.utype = USBD_DUT_STRING_SERIAL_NUMBER,			\
@@ -604,14 +685,70 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
  * The application defines a BOS capability descriptor node for descriptors
  * such as USB 2.0 Extension Descriptor.
  *
+ * @note It requires Kconfig options USBD_BOS_SUPPORT to be enabled.
+ *
  * @param name       Descriptor node identifier
  * @param len        Device Capability descriptor length
  * @param subset     Pointer to a Device Capability descriptor
  */
 #define USBD_DESC_BOS_DEFINE(name, len, subset)					\
+	BUILD_ASSERT(IS_ENABLED(CONFIG_USBD_BOS_SUPPORT),			\
+		     "USB device BOS support is disabled");			\
 	static struct usbd_desc_node name = {					\
 		.bos = {							\
 			.utype = USBD_DUT_BOS_NONE,				\
+		},								\
+		.ptr = subset,							\
+		.bLength = len,							\
+		.bDescriptorType = USB_DESC_BOS,				\
+	}
+
+/**
+ * @brief Define a vendor request with recipient device
+ *
+ * @note It requires Kconfig options USBD_VREQ_SUPPORT to be enabled.
+ *
+ * @param name      Vendor request identifier
+ * @param vcode     Vendor request code
+ * @param vto_host  Vendor callback for to-host direction request
+ * @param vto_dev   Vendor callback for to-device direction request
+ */
+#define USBD_VREQUEST_DEFINE(name, vcode, vto_host, vto_dev)			\
+	BUILD_ASSERT(IS_ENABLED(CONFIG_USBD_VREQ_SUPPORT),			\
+		     "USB device vendor request support is disabled");		\
+	static struct usbd_vreq_node name = {					\
+		.code = vcode,							\
+		.to_host = vto_host,						\
+		.to_dev = vto_dev,						\
+	}
+
+/**
+ * @brief Define BOS Device Capability descriptor node with vendor request
+ *
+ * This macro defines a BOS descriptor, usually a platform capability, with a
+ * vendor request node.
+ *
+ * USBD_DESC_BOS_VREQ_DEFINE(bos_vreq_webusb, sizeof(bos_cap_webusb), &bos_cap_webusb,
+ *                           SAMPLE_WEBUSB_VENDOR_CODE, webusb_to_host_cb, NULL);
+ *
+ * @note It requires Kconfig options USBD_VREQ_SUPPORT and USBD_BOS_SUPPORT to
+ *       be enabled.
+ *
+ * @param name      Descriptor node identifier
+ * @param len       Device Capability descriptor length
+ * @param subset    Pointer to a Device Capability descriptor
+ * @param vcode     Vendor request code
+ * @param vto_host  Vendor callback for to-host direction request
+ * @param vto_dev   Vendor callback for to-device direction request
+ */
+#define USBD_DESC_BOS_VREQ_DEFINE(name, len, subset, vcode, vto_host, vto_dev)	\
+	BUILD_ASSERT(IS_ENABLED(CONFIG_USBD_BOS_SUPPORT),			\
+		     "USB device BOS support is disabled");			\
+	USBD_VREQUEST_DEFINE(vreq_nd_##name, vcode, vto_host, vto_dev);		\
+	static struct usbd_desc_node name = {					\
+		.bos = {							\
+			.utype = USBD_DUT_BOS_VREQ,				\
+			.vreq_nd = &vreq_nd_##name,				\
 		},								\
 		.ptr = subset,							\
 		.bLength = len,							\
@@ -640,10 +777,12 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
 		usbd_class_fs, usbd_class_node, class_name##_fs) = {		\
 		.c_data = &class_name,						\
 	};									\
+	IF_ENABLED(USBD_SUPPORTS_HIGH_SPEED, (					\
 	static STRUCT_SECTION_ITERABLE_ALTERNATE(				\
 		usbd_class_hs, usbd_class_node, class_name##_hs) = {		\
 		.c_data = &class_name,						\
-	}
+	}									\
+	))
 
 /** @brief Helper to declare request table of usbd_cctx_vendor_req
  *
@@ -661,8 +800,8 @@ static inline void *usbd_class_get_private(const struct usbd_class_data *const c
  *  @param _reqs Variable number of vendor requests
  */
 #define USBD_VENDOR_REQ(_reqs...) \
-	VENDOR_REQ_DEFINE(((uint8_t []) { _reqs }), \
-			  sizeof((uint8_t []) { _reqs }))
+	VENDOR_REQ_DEFINE(((const uint8_t []) { _reqs }), \
+			  sizeof((const uint8_t []) { _reqs }))
 
 
 /**
@@ -744,14 +883,30 @@ int usbd_register_class(struct usbd_context *uds_ctx,
  * usbd_register_class for any device, configuration number, or instance,
  * either usbd_register_class or this function will fail.
  *
+ * There may be situations where a particular function should not be
+ * registered, for example, when using the USB DFU implementation, the DFU mode
+ * function must be excluded during normal device operation. To do this, the
+ * device can pass a blocklist in the form shown below as an optional argument.
+ * If the blocklist is not needed, the argument should be NULL.
+ *
+ * @code{.c}
+ * static const char *const blocklist[] = {
+ *         "dfu_dfu",
+ *         NULL,
+ * };
+ * @endcode
+ *
  * @param[in] uds_ctx Pointer to USB device support context
  * @param[in] speed   Configuration speed
  * @param[in] cfg     Configuration value (bConfigurationValue)
+ * @param[in] blocklist Null pointer terminated array of pointers to string
+ *                      literals to be used as a block list
  *
  * @return 0 on success, other values on fail.
  */
 int usbd_register_all_classes(struct usbd_context *uds_ctx,
-			      const enum usbd_speed speed, uint8_t cfg);
+			      const enum usbd_speed speed, uint8_t cfg,
+			      const char *const blocklist[]);
 
 /**
  * @brief Unregister an USB class instance
@@ -890,6 +1045,19 @@ struct net_buf *usbd_ep_buf_alloc(const struct usbd_class_data *const c_data,
 				  const uint8_t ep, const size_t size);
 
 /**
+ * @brief Allocate buffer for USB control transfer data stage
+ *
+ * Allocate a new buffer from controller's driver buffer pool.
+ *
+ * @param[in] uds_ctx Pointer to USB device support context
+ * @param[in] size    Size of the request buffer
+ *
+ * @return pointer to allocated request or NULL on error.
+ */
+struct net_buf *usbd_ep_ctrl_data_in_alloc(const struct usbd_context *const uds_ctx,
+					   const size_t size);
+
+/**
  * @brief Queue USB device control request
  *
  * Add control request to the queue.
@@ -942,16 +1110,29 @@ int usbd_ep_buf_free(struct usbd_context *uds_ctx, struct net_buf *buf);
  *
  * @param[in] uds_ctx Pointer to USB device support context
  *
- * @return true if endpoint is halted, false otherwise
+ * @return true if the device is suspended, false otherwise
  */
 bool usbd_is_suspended(struct usbd_context *uds_ctx);
 
 /**
  * @brief Initiate the USB remote wakeup (TBD)
  *
+ * @param[in] uds_ctx Pointer to USB device support context
+ *
  * @return 0 on success, other values on fail.
  */
 int usbd_wakeup_request(struct usbd_context *uds_ctx);
+
+/**
+ * @brief Set the self-powered status of the USB device
+ *
+ * The status is used in the Self Powered field of the Get Status request
+ * response to indicate whether the device is currently self-powered.
+ *
+ * @param[in] uds_ctx Pointer to a device context
+ * @param[in] status Sets self-powered status if true, clears it otherwise
+ */
+void usbd_self_powered(struct usbd_context *uds_ctx, const bool status);
 
 /**
  * @brief Get actual device speed
@@ -1087,6 +1268,20 @@ int usbd_config_maxpower(struct usbd_context *const uds_ctx,
  * @return true if controller can detect VBUS state change, false otherwise
  */
 bool usbd_can_detect_vbus(struct usbd_context *const uds_ctx);
+
+/**
+ * @brief Register an USB vendor request with recipient device
+ *
+ * The vendor request with the recipient device applies to all configurations
+ * within the device.
+ *
+ * @param[in] uds_ctx Pointer to USB device support context
+ * @param[in] vreq_nd Pointer to vendor request node
+ *
+ * @return 0 on success, other values on fail.
+ */
+int usbd_device_register_vreq(struct usbd_context *const uds_ctx,
+			      struct usbd_vreq_node *const vreq_nd);
 
 /**
  * @}

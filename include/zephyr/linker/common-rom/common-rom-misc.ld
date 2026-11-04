@@ -1,4 +1,8 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright (c) 2026 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <zephyr/linker/iterable_sections.h>
 
@@ -8,6 +12,10 @@
 
 #if defined(CONFIG_SETTINGS)
 	ITERABLE_SECTION_ROM(settings_handler_static, Z_LINK_ITERABLE_SUBALIGN)
+#endif
+
+#if defined(CONFIG_MODEM_CELLULAR)
+	ITERABLE_SECTION_ROM(modem_cellular_board_init, Z_LINK_ITERABLE_SUBALIGN)
 #endif
 
 #if defined(CONFIG_SENSING)
@@ -20,6 +28,10 @@
 
 #if defined(CONFIG_SENSOR_ASYNC_API)
 	ITERABLE_SECTION_ROM(sensor_decoder_api, Z_LINK_ITERABLE_SUBALIGN)
+#endif
+
+#if defined(CONFIG_ADC_STREAM)
+	ITERABLE_SECTION_ROM(adc_decoder_api, Z_LINK_ITERABLE_SUBALIGN)
 #endif
 
 #if defined(CONFIG_MCUMGR)
@@ -46,9 +58,9 @@
 
 	SECTION_DATA_PROLOGUE(symbol_to_keep,,)
 	{
-		__symbol_to_keep_start = .;
+		PLACE_SYMBOL_HERE(__symbol_to_keep_start);
 		KEEP(*(SORT(.symbol_to_keep*)));
-		__symbol_to_keep_end = .;
+		PLACE_SYMBOL_HERE(__symbol_to_keep_end);
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
 	ITERABLE_SECTION_ROM(shell, Z_LINK_ITERABLE_SUBALIGN)
@@ -59,6 +71,8 @@
 
 	ITERABLE_SECTION_ROM(shell_dynamic_subcmds, Z_LINK_ITERABLE_SUBALIGN)
 
+	ITERABLE_SECTION_ROM(shell_remote, Z_LINK_ITERABLE_SUBALIGN)
+
 	ITERABLE_SECTION_ROM(cfb_font, Z_LINK_ITERABLE_SUBALIGN)
 
 #if defined(CONFIG_GNSS)
@@ -67,4 +81,8 @@
 
 #if defined(CONFIG_GNSS_SATELLITES)
 	ITERABLE_SECTION_ROM(gnss_satellites_callback, Z_LINK_ITERABLE_SUBALIGN)
+#endif
+
+#if defined(CONFIG_GNSS_RTK)
+	ITERABLE_SECTION_ROM(gnss_rtk_data_callback, Z_LINK_ITERABLE_SUBALIGN)
 #endif

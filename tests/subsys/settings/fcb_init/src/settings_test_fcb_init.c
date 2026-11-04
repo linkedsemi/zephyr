@@ -18,11 +18,11 @@
 #define TEST_PARTITION		storage_partition
 #define CODE_PARTITION		slot0_partition
 
-#define TEST_PARTITION_ID	FIXED_PARTITION_ID(TEST_PARTITION)
+#define TEST_PARTITION_ID	PARTITION_ID(TEST_PARTITION)
 
 #define CODE_PARTITION_NODE	DT_NODELABEL(CODE_PARTITION)
-#define CODE_PARTITION_ID	FIXED_PARTITION_ID(CODE_PARTITION)
-#define CODE_PARTITION_EXISTS	FIXED_PARTITION_EXISTS(CODE_PARTITION)
+#define CODE_PARTITION_ID	PARTITION_ID(CODE_PARTITION)
+#define CODE_PARTITION_EXISTS	PARTITION_EXISTS(CODE_PARTITION)
 
 static uint32_t val32;
 
@@ -34,15 +34,27 @@ static uint32_t val32;
 
 /* leverage that this area has to be embedded flash part */
 #if CODE_PARTITION_EXISTS
-#if DT_NODE_HAS_PROP(DT_GPARENT(CODE_PARTITION_NODE), write_block_size)
+#if DT_NODE_HAS_COMPAT(CODE_PARTITION_NODE, zephyr_mapped_partition) && \
+	DT_NODE_HAS_PROP(DT_MEM_FROM_PARTITION(CODE_PARTITION_NODE), write_block_size)
+#define FLASH_WRITE_BLOCK_SIZE \
+	DT_PROP(DT_MEM_FROM_PARTITION(CODE_PARTITION_NODE), write_block_size)
+#elif DT_NODE_HAS_PROP(DT_GPARENT(CODE_PARTITION_NODE), write_block_size)
 #define FLASH_WRITE_BLOCK_SIZE \
 	DT_PROP(DT_GPARENT(CODE_PARTITION_NODE), write_block_size)
+#endif
 static const volatile __attribute__((section(".rodata")))
 __aligned(FLASH_WRITE_BLOCK_SIZE)
 uint8_t prepared_mark[FLASH_WRITE_BLOCK_SIZE] = {ERASED_VAL};
+
+#if DT_NODE_HAS_COMPAT(CODE_PARTITION_NODE, zephyr_mapped_partition)
+#define PREPARED_MARK_OFFSET ((uintptr_t)&prepared_mark - \
+			      DT_REG_ADDR(DT_MEM_FROM_MAPPED_PARTITION(CODE_PARTITION_NODE)))
+#else
+#define PREPARED_MARK_OFFSET ((uintptr_t)&prepared_mark)
+#endif
+
 #else
 #error "Test not prepared to run from flash with no write-block-size property in DTS"
-#endif
 #endif
 
 static int c1_set(const char *name, size_t len, settings_read_cb read_cb,
@@ -120,7 +132,7 @@ void test_prepare_storage(void)
 
 		(void)memset(new_val, (~ERASED_VAL) & 0xFF,
 			     FLASH_WRITE_BLOCK_SIZE);
-		err = flash_write(dev, (off_t)&prepared_mark, &new_val,
+		err = flash_write(dev, PREPARED_MARK_OFFSET, &new_val,
 				  sizeof(new_val));
 		zassert_true(err == 0, "can't write prepared_mark");
 	}

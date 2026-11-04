@@ -4,8 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_SHELL_WEBSOCKET_H_
-#define ZEPHYR_INCLUDE_SHELL_WEBSOCKET_H_
+/**
+ * @file
+ * @brief Header file for the WebSocket shell backend.
+ * @ingroup shell_websocket
+ */
+
+#ifndef ZEPHYR_INCLUDE_SHELL_SHELL_WEBSOCKET_H_
+#define ZEPHYR_INCLUDE_SHELL_SHELL_WEBSOCKET_H_
 
 #include <zephyr/net/socket.h>
 #include <zephyr/net/http/server.h>
@@ -15,6 +21,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** @cond INTERNAL_HIDDEN */
 
 #define SHELL_WEBSOCKET_SERVICE_COUNT CONFIG_SHELL_WEBSOCKET_BACKEND_COUNT
 
@@ -41,6 +49,9 @@ struct shell_websocket {
 	/** Array for sockets used by the websocket service. */
 	struct zsock_pollfd fds[1];
 
+	/** Mutex protecting the socket access. */
+	struct k_mutex socket_lock;
+
 	/** Input buffer. */
 	uint8_t rx_buf[CONFIG_SHELL_CMD_BUFF_SIZE];
 
@@ -62,8 +73,8 @@ struct shell_websocket {
 };
 
 extern const struct shell_transport_api shell_websocket_transport_api;
-extern int shell_websocket_setup(int ws_socket, void *user_data);
-extern int shell_websocket_enable(const struct shell *sh);
+int shell_websocket_setup(int ws_socket, struct http_request_ctx *request_ctx, void *user_data);
+int shell_websocket_enable(const struct shell *sh);
 
 #define GET_WS_NAME(_service) ws_ctx_##_service
 #define GET_WS_SHELL_NAME(_name) shell_websocket_##_name
@@ -109,9 +120,28 @@ extern int shell_websocket_enable(const struct shell *sh);
 		     CONFIG_SHELL_WEBSOCKET_LOG_MESSAGE_QUEUE_TIMEOUT,		\
 		     SHELL_FLAG_OLF_CRLF);					\
 	DEFINE_WEBSOCKET_HTTP_SERVICE(_service)
+/** @endcond */
+
+/**
+ * @defgroup shell_websocket Websocket shell backend
+ * @ingroup shell_backends
+ * @brief Shell access over a WebSocket connection.
+ * @{
+ */
 
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
 /* Use a secure connection only for Websocket. */
+/**
+ * @brief Define a websocket shell service.
+ *
+ * Defines the websocket shell transport, its shell instance, and the HTTP(S)
+ * service that exposes it at @kconfig{CONFIG_SHELL_WEBSOCKET_ENDPOINT_URL}.
+ *
+ * @param _service           Name of the websocket service instance.
+ * @param _sec_tag_list      TLS security tag list for the secure (HTTPS)
+ *                           connection. Ignored when TLS is not enabled.
+ * @param _sec_tag_list_size Number of entries in @p _sec_tag_list.
+ */
 #define WEBSOCKET_CONSOLE_DEFINE(_service, _sec_tag_list, _sec_tag_list_size) \
 	static uint16_t SHELL_WS_PORT_NAME(_service) =			  \
 		CONFIG_SHELL_WEBSOCKET_PORT;				  \
@@ -121,6 +151,8 @@ extern int shell_websocket_enable(const struct shell *sh);
 			     SHELL_WEBSOCKET_SERVICE_COUNT,		  \
 			     SHELL_WEBSOCKET_SERVICE_COUNT,		  \
 			     NULL,					  \
+			     NULL,                                        \
+			     NULL,                                        \
 			     _sec_tag_list,				  \
 			     _sec_tag_list_size);			  \
 	DEFINE_WEBSOCKET_SERVICE(_service);				  \
@@ -128,6 +160,17 @@ extern int shell_websocket_enable(const struct shell *sh);
 
 #else /* CONFIG_NET_SOCKETS_SOCKOPT_TLS */
 /* TLS not possible so define only normal HTTP service */
+/**
+ * @brief Define a websocket shell service.
+ *
+ * Defines the websocket shell transport, its shell instance, and the HTTP(S)
+ * service that exposes it at @kconfig{CONFIG_SHELL_WEBSOCKET_ENDPOINT_URL}.
+ *
+ * @param _service           Name of the websocket service instance.
+ * @param _sec_tag_list      TLS security tag list for the secure (HTTPS)
+ *                           connection. Ignored when TLS is not enabled.
+ * @param _sec_tag_list_size Number of entries in @p _sec_tag_list.
+ */
 #define WEBSOCKET_CONSOLE_DEFINE(_service, _sec_tag_list, _sec_tag_list_size) \
 	static uint16_t SHELL_WS_PORT_NAME(_service) =			\
 		CONFIG_SHELL_WEBSOCKET_PORT;				\
@@ -136,16 +179,23 @@ extern int shell_websocket_enable(const struct shell *sh);
 			    &SHELL_WS_PORT_NAME(_service),		\
 			    SHELL_WEBSOCKET_SERVICE_COUNT,		\
 			    SHELL_WEBSOCKET_SERVICE_COUNT,		\
-			    NULL);					\
+			    NULL, NULL, NULL);				\
 	DEFINE_WEBSOCKET_SERVICE(_service)
 
 #endif /* CONFIG_NET_SOCKETS_SOCKOPT_TLS */
 
+/**
+ * @brief Enable a websocket shell service defined with @ref WEBSOCKET_CONSOLE_DEFINE.
+ *
+ * @param _service Name of the websocket service instance.
+ */
 #define WEBSOCKET_CONSOLE_ENABLE(_service)				\
 	(void)shell_websocket_enable(&GET_WS_SHELL_NAME(_service))
+
+/** @} */
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_SHELL_WEBSOCKET_H_ */
+#endif /* ZEPHYR_INCLUDE_SHELL_SHELL_WEBSOCKET_H_ */

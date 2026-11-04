@@ -3,6 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Header file for the logging core.
+ * @ingroup log_api
+ */
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_CORE_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_CORE_H_
 
@@ -16,15 +23,37 @@
 /* This header file keeps all macros and functions needed for creating logging
  * messages (macros like @ref LOG_ERR).
  */
+
+/**
+ * @addtogroup log_api
+ * @{
+ */
+
+/**
+ * @name Severity levels
+ * @{
+ */
+
+/** @brief Severity level used to disable logging for a source. */
 #define LOG_LEVEL_NONE 0
+/** @brief Error severity level. */
 #define LOG_LEVEL_ERR  1
+/** @brief Warning severity level. */
 #define LOG_LEVEL_WRN  2
+/** @brief Informational severity level. */
 #define LOG_LEVEL_INF  3
+/** @brief Debug severity level. */
 #define LOG_LEVEL_DBG  4
+
+/** @} */
+
+/** @} */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** @cond INTERNAL_HIDDEN */
 
 #ifndef CONFIG_LOG
 #define CONFIG_LOG_DEFAULT_LEVEL 0
@@ -175,15 +204,15 @@ extern "C" {
  *
  * It uses the level from the dynamic structure.
  *
- * @param _level Log level.
- * @param _source Data associated with the source.
+ * @param _lvl Log level.
+ * @param _src Data associated with the source.
  *
  * @retval true Continue with log message creation.
  * @retval false Drop that message.
  */
-#define Z_LOG_DYNAMIC_LEVEL_CHECK(_level, _source)                                                 \
-	(!IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) || k_is_user_context() ||                       \
-	 ((_level) <= Z_LOG_RUNTIME_FILTER(((struct log_source_dynamic_data *)_source)->filters)))
+#define Z_LOG_DYNAMIC_LEVEL_CHECK(_lvl, _src)                                                      \
+	(!IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ||                                              \
+	 ((_lvl) <= Z_LOG_RUNTIME_FILTER(((const struct log_source_dynamic_data *)_src)->filters)))
 
 /** @brief Check if message shall be created.
  *
@@ -199,7 +228,30 @@ extern "C" {
 #define Z_LOG_LEVEL_ALL_CHECK(_level, _inst, _source)                                              \
 	(Z_LOG_CONST_LEVEL_CHECK(_level) &&                                                        \
 	 Z_LOG_STATIC_INST_LEVEL_CHECK(_level, _inst, _source) &&                                  \
-	 Z_LOG_DYNAMIC_LEVEL_CHECK(_level, _source))
+	 COND_CODE_0(IS_ENABLED(CONFIG_USERSPACE),                                                 \
+		     (Z_LOG_DYNAMIC_LEVEL_CHECK(_level, _source)),                                 \
+		     (true))                                                                       \
+	)
+
+/** @brief Check if the message shall be created, otherwise break.
+ *
+ * Aggregate all checks into a single one. Calls break to skip message creation. Userspace safe.
+ *
+ * @param _level Log level.
+ * @param _inst 1 is source is the instance of a module.
+ * @param _source Data associated with the source.
+ */
+#define Z_LOG_LEVEL_ALL_CHECK_BREAK(_level, _inst, _source)                                        \
+	if (!Z_LOG_LEVEL_ALL_CHECK((_level), (_inst), (_source))) {                                \
+		break;                                                                             \
+	}                                                                                          \
+	IF_ENABLED(CONFIG_USERSPACE, (                                                             \
+	if (!k_is_user_context()) {                                                                \
+		compiler_barrier();                                                                \
+		if (!Z_LOG_DYNAMIC_LEVEL_CHECK((_level), (_source))) {                             \
+			break;                                                                     \
+		}                                                                                  \
+	}))
 
 /** @brief Get current module data that is used for source id retrieving.
  *
@@ -262,10 +314,9 @@ static inline char z_log_minimal_level_to_char(int level)
 			     GET_ARG_N(1, __VA_ARGS__))
 
 #define LOG_POINTERS_VALIDATE(string_ok, ...) \
-	_Pragma("GCC diagnostic push") \
-	_Pragma("GCC diagnostic ignored \"-Wpointer-arith\"") \
+	TOOLCHAIN_DISABLE_GCC_WARNING(TOOLCHAIN_WARNING_POINTER_ARITH); \
 	string_ok = Z_CBPRINTF_POINTERS_VALIDATE(__VA_ARGS__); \
-	_Pragma("GCC diagnostic pop")
+	TOOLCHAIN_ENABLE_GCC_WARNING(TOOLCHAIN_WARNING_POINTER_ARITH);
 #else
 #define LOG_POINTERS_VALIDATE(string_ok, ...) string_ok = true
 #define LOG_STRING_WARNING(_mode, _src, ...)
@@ -290,10 +341,9 @@ static inline char z_log_minimal_level_to_char(int level)
  * @param ... String with arguments.
  */
 #define Z_LOG2(_level, _inst, _source, ...)                                                        \
+	TOOLCHAIN_DISABLE_CLANG_WARNING(TOOLCHAIN_WARNING_USED_BUT_MARKED_UNUSED)                  \
 	do {                                                                                       \
-		if (!Z_LOG_LEVEL_ALL_CHECK(_level, _inst, _source)) {                              \
-			break;                                                                     \
-		}                                                                                  \
+		Z_LOG_LEVEL_ALL_CHECK_BREAK(_level, _inst, _source)                                \
 		if (IS_ENABLED(CONFIG_LOG_MODE_MINIMAL)) {                                         \
 			Z_LOG_TO_PRINTK(_level, __VA_ARGS__);                                      \
 			break;                                                                     \
@@ -314,7 +364,8 @@ static inline char z_log_minimal_level_to_char(int level)
 			/* evaluated once when log is enabled.*/                                   \
 			z_log_printf_arg_checker(__VA_ARGS__);                                     \
 		}                                                                                  \
-	} while (false)
+	} while (false)                                                                            \
+	TOOLCHAIN_ENABLE_CLANG_WARNING(TOOLCHAIN_WARNING_USED_BUT_MARKED_UNUSED)
 
 #define Z_LOG(_level, ...)                 Z_LOG2(_level, 0, Z_LOG_CURRENT_DATA(), __VA_ARGS__)
 #define Z_LOG_INSTANCE(_level, _inst, ...) Z_LOG2(_level, 1, Z_LOG_INST(_inst), __VA_ARGS__)
@@ -343,24 +394,25 @@ static inline char z_log_minimal_level_to_char(int level)
  * @param ... String.
  */
 #define Z_LOG_HEXDUMP2(_level, _inst, _source, _data, _len, ...)                                   \
+	TOOLCHAIN_DISABLE_CLANG_WARNING(TOOLCHAIN_WARNING_USED_BUT_MARKED_UNUSED)                  \
 	do {                                                                                       \
-		if (!Z_LOG_LEVEL_ALL_CHECK(_level, _inst, _source)) {                              \
-			break;                                                                     \
-		}                                                                                  \
+		Z_LOG_LEVEL_ALL_CHECK_BREAK(_level, _inst, _source)                                \
 		const char *_str = GET_ARG_N(1, __VA_ARGS__);                                      \
 		if (IS_ENABLED(CONFIG_LOG_MODE_MINIMAL)) {                                         \
 			Z_LOG_TO_PRINTK(_level, "%s", _str);                                       \
 			z_log_minimal_hexdump_print((_level), (const char *)(_data), (_len));      \
 			break;                                                                     \
 		}                                                                                  \
-		int mode;                                                                          \
-		Z_LOG_MSG_CREATE(UTIL_NOT(IS_ENABLED(CONFIG_USERSPACE)), mode,                     \
+		int _mode;                                                                         \
+		Z_LOG_MSG_CREATE(UTIL_NOT(IS_ENABLED(CONFIG_USERSPACE)), _mode,                    \
 				 Z_LOG_LOCAL_DOMAIN_ID, _source, _level, _data, _len,              \
 				 COND_CODE_0(NUM_VA_ARGS_LESS_1(_, ##__VA_ARGS__), \
 				(), \
 			  (COND_CODE_0(NUM_VA_ARGS_LESS_1(__VA_ARGS__), \
 				  ("%s", __VA_ARGS__), (__VA_ARGS__)))));   \
-	} while (false)
+		(void)_mode;                                                                       \
+	} while (false)                                                                            \
+	TOOLCHAIN_ENABLE_CLANG_WARNING(TOOLCHAIN_WARNING_USED_BUT_MARKED_UNUSED)
 
 #define Z_LOG_HEXDUMP(_level, _data, _length, ...)                                                 \
 	Z_LOG_HEXDUMP2(_level, 0, Z_LOG_CURRENT_DATA(), _data, _length, __VA_ARGS__)
@@ -400,12 +452,12 @@ static inline char z_log_minimal_level_to_char(int level)
 #define LOG_FILTER_SLOT_GET(_filters, _id) \
 	((*(_filters) >> LOG_FILTER_SLOT_SHIFT(_id)) & LOG_FILTER_SLOT_MASK)
 
-#define LOG_FILTER_SLOT_SET(_filters, _id, _filter)		     \
-	do {							     \
-		*(_filters) &= ~(LOG_FILTER_SLOT_MASK <<	     \
-				 LOG_FILTER_SLOT_SHIFT(_id));	     \
-		*(_filters) |= ((_filter) & LOG_FILTER_SLOT_MASK) << \
-			       LOG_FILTER_SLOT_SHIFT(_id);	     \
+#define LOG_FILTER_SLOT_SET(_filters, _id, _filter)			      \
+	do {								      \
+		uint32_t others = *(_filters) & ~(LOG_FILTER_SLOT_MASK <<     \
+				 LOG_FILTER_SLOT_SHIFT(_id));		      \
+		*(_filters) = others | (((_filter) & LOG_FILTER_SLOT_MASK) << \
+			       LOG_FILTER_SLOT_SHIFT(_id));		      \
 	} while (false)
 
 #define LOG_FILTER_AGGR_SLOT_IDX 0
@@ -457,8 +509,12 @@ TYPE_SECTION_END_EXTERN(struct log_source_const_data, log_const);
 			  LOG_LEVEL_INTERNAL_RAW_STRING, NULL, 0, __VA_ARGS__);\
 } while (0)
 
+/** @endcond */
+
 /** @brief Get index of the log source based on the address of the constant data
  *         associated with the source.
+ *
+ * @ingroup log_api
  *
  * @param data Address of the constant data.
  *
@@ -470,6 +526,8 @@ static inline uint32_t log_const_source_id(
 	return ((const uint8_t *)data - (uint8_t *)TYPE_SECTION_START(log_const))/
 			sizeof(struct log_source_const_data);
 }
+
+/** @cond INTERNAL_HIDDEN */
 
 TYPE_SECTION_START_EXTERN(struct log_source_dynamic_data, log_dynamic);
 TYPE_SECTION_END_EXTERN(struct log_source_dynamic_data, log_dynamic);
@@ -483,20 +541,26 @@ TYPE_SECTION_END_EXTERN(struct log_source_dynamic_data, log_dynamic);
 #define LOG_INSTANCE_DYNAMIC_DATA(_module_name, _inst) \
 	LOG_ITEM_DYNAMIC_DATA(Z_LOG_INSTANCE_FULL_NAME(_module_name, _inst))
 
+/** @endcond */
+
 /** @brief Get index of the log source based on the address of the dynamic data
  *         associated with the source.
+ *
+ * @ingroup log_api
  *
  * @param data Address of the dynamic data.
  *
  * @return Source ID.
  */
-static inline uint32_t log_dynamic_source_id(struct log_source_dynamic_data *data)
+static inline uint32_t log_dynamic_source_id(const struct log_source_dynamic_data *data)
 {
-	return ((uint8_t *)data - (uint8_t *)TYPE_SECTION_START(log_dynamic))/
+	return ((const uint8_t *)data - (const uint8_t *)TYPE_SECTION_START(log_dynamic))/
 			sizeof(struct log_source_dynamic_data);
 }
 
 /** @brief Get index of the log source based on the address of the associated data.
+ *
+ * @ingroup log_api
  *
  * @param source Address of the data structure (dynamic if runtime filtering is
  * enabled and static otherwise).
@@ -506,7 +570,7 @@ static inline uint32_t log_dynamic_source_id(struct log_source_dynamic_data *dat
 static inline uint32_t log_source_id(const void *source)
 {
 	return IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ?
-		log_dynamic_source_id((struct log_source_dynamic_data *)source) :
+		log_dynamic_source_id((const struct log_source_dynamic_data *)source) :
 		log_const_source_id((const struct log_source_const_data *)source);
 }
 
@@ -520,9 +584,11 @@ void z_log_printf_arg_checker(const char *fmt, ...)
 /**
  * @brief Write a generic log message.
  *
+ * @ingroup log_api
+ *
  * @note This function is intended to be used when porting other log systems.
  *
- * @param level          Log level..
+ * @param level          Log level.
  * @param fmt            String to format.
  * @param ap             Pointer to arguments list.
  */

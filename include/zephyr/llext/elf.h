@@ -5,8 +5,8 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  */
-#ifndef ZEPHYR_LLEXT_ELF_H
-#define ZEPHYR_LLEXT_ELF_H
+#ifndef ZEPHYR_INCLUDE_LLEXT_ELF_H_
+#define ZEPHYR_INCLUDE_LLEXT_ELF_H_
 
 #include <stdint.h>
 
@@ -211,10 +211,14 @@ struct elf64_shdr {
 #define SHT_PREINIT_ARRAY 0x10  /**< Array of pointers to early init functions */
 
 /** ELF section flags */
-#define SHF_WRITE 0x1           /**< Section is writable */
-#define SHF_ALLOC 0x2           /**< Section is present in memory */
-#define SHF_EXECINSTR 0x4       /**< Section contains executable instructions */
+#define SHF_WRITE 0x1                   /**< Section is writable */
+#define SHF_ALLOC 0x2                   /**< Section is present in memory */
+#define SHF_EXECINSTR 0x4               /**< Section contains executable instructions */
+#define SHF_TLS 0x400                   /**< Section holds thread-local storage */
+#define SHF_MASKOS 0x0ff00000           /**< OS specific flags */
+#define SHF_LLEXT_HAS_RELOCS 0x00100000 /**< Section is a target for relocations */
 
+/** Mask selecting the basic section flags */
 #define SHF_BASIC_TYPE_MASK	(SHF_WRITE | SHF_ALLOC | SHF_EXECINSTR)
 
 /**
@@ -518,4 +522,4 @@ typedef struct elf32_sym elf_sym_t;
  * @}
  */
 
-#endif /* ZEPHYR_LLEXT_ELF_H */
+#endif /* ZEPHYR_INCLUDE_LLEXT_ELF_H_ */

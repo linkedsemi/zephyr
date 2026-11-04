@@ -1,7 +1,7 @@
 # Bluetooth Audio - Media control configuration options
 
 #
-# Copyright (c) 2020-2022 Nordic Semiconductor
+# Copyright (c) 2020-2026 Nordic Semiconductor
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -11,8 +11,8 @@
 config BT_MCS
 	bool "Media Control Service Support"
 	depends on MCTL_LOCAL_PLAYER_REMOTE_CONTROL
-	depends on UTF8
 	depends on BT_GATT_DYNAMIC_DB
+	depends on BT_SMP
 	help
 	  This option enables support for the Media Control Service.
 
@@ -20,8 +20,9 @@ config BT_MCS
 
 config BT_MCC
 	bool "Media Control Client Support"
-	select BT_GATT_CLIENT
-	select BT_GATT_AUTO_DISCOVER_CCC
+	depends on BT_GATT_CLIENT
+	depends on BT_GATT_AUTO_DISCOVER_CCC
+	depends on BT_SMP
 	help
 	  This option enables support for the Media Control Client.
 

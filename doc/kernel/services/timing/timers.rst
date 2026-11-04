@@ -52,18 +52,26 @@ A timer is **started** by specifying a duration and a period.
 The timer's status is reset to zero, and then the timer enters
 the **running** state and begins counting down towards expiry.
 
-Note that the timer's duration and period parameters specify
-**minimum** delays that will elapse.  Because of internal system timer
-precision (and potentially runtime interactions like interrupt delay)
-it is possible that more time may have passed as measured by reads
-from the relevant system time APIs.  But at least this much time is
-guaranteed to have elapsed.
+.. note::
+
+   The timer's duration is a **minimum** delay relative to the time the timer
+   was started. The timer's period is a **minimum** delay relative to the last
+   time the timer "should" have expired. This means that a periodic timer will
+   not drift relative to the system timer, and that its periodic delay can be
+   shorter or longer than the specified period.
+
+   To ensure a minimum delay until the timer expires, restart the timer from
+   within the **expiry function** or after the timer expired.
+
+   The variability of the delays stem from system variables like interrupt
+   handling delays and execution time of preceding timer handlers.
 
 When a running timer expires its status is incremented
 and the timer executes its expiry function, if one exists;
 If a thread is waiting on the timer, it is unblocked.
 If the timer's period is zero the timer enters the stopped state;
-otherwise, the timer restarts with a new duration equal to its period.
+otherwise, the timer restarts with a new duration equal to the delta between
+the time the timer "should" have expired and its period.
 
 A running timer can be stopped in mid-countdown, if desired.
 The timer's status is left unchanged, then the timer enters the stopped state
@@ -96,6 +104,22 @@ returns the timer's status and resets it to zero.
     Similarly, only a single thread at a time should synchronize
     with a given timer. ISRs are not permitted to synchronize with timers,
     since ISRs are not allowed to block.
+
+Timer Observers
+***************
+
+When :kconfig:option:`CONFIG_TIMER_OBSERVER` is enabled, code can register
+:dfn:`timer observers` that are notified of timer lifecycle events across all
+timers in the system. An observer is a set of optional callbacks invoked when a
+timer is initialized, started, stopped, or expires. This allows external modules
+-- for example tracing, profiling, or power-management code -- to react to timer
+activity without modifying kernel internals or the individual timers.
+
+An observer is defined statically with :c:macro:`K_TIMER_OBSERVER_DEFINE`, which
+takes pointers to the ``on_init``, ``on_start``, ``on_stop``, and ``on_expiry``
+callbacks; any callback that is not needed may be passed as ``NULL``. Because the
+expiry callback runs in interrupt context, it must be kept short and
+non-blocking.
 
 Implementation
 **************

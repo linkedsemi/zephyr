@@ -6,6 +6,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
+#include <zephyr/sys/__assert.h>
 #include <zephyr/sys/sys_heap.h>
 #include <zephyr/mem_mgmt/mem_attr.h>
 #include <zephyr/sys/multi_heap.h>
@@ -15,12 +16,26 @@
 struct ma_heap {
 	struct sys_heap heap;
 	uint32_t attr;
+#ifdef CONFIG_MULTITHREADING
+	struct k_spinlock lock;
+#endif
 };
+
+#ifdef CONFIG_MULTITHREADING
+#define MAH_LOCK(mh)   k_spinlock_key_t __mah_key = k_spin_lock(&(mh)->lock)
+#define MAH_UNLOCK(mh) k_spin_unlock(&(mh)->lock, __mah_key)
+#else
+#define MAH_LOCK(mh)   do {} while (0)
+#define MAH_UNLOCK(mh) do {} while (0)
+#endif
 
 struct {
 	struct ma_heap ma_heaps[MAX_MULTI_HEAPS];
 	struct sys_multi_heap multi_heap;
 	int nheaps;
+#ifdef CONFIG_ASSERT
+	bool initialized;
+#endif
 } mah_data;
 
 static void *mah_choice(struct sys_multi_heap *m_heap, void *cfg, size_t align, size_t size)
@@ -46,7 +61,9 @@ static void *mah_choice(struct sys_multi_heap *m_heap, void *cfg, size_t align, 
 			continue;
 		}
 
+		MAH_LOCK(h);
 		block = sys_heap_aligned_alloc(&h->heap, align, size);
+		MAH_UNLOCK(h);
 		if (block != NULL) {
 			break;
 		}
@@ -57,23 +74,38 @@ static void *mah_choice(struct sys_multi_heap *m_heap, void *cfg, size_t align, 
 
 void mem_attr_heap_free(void *block)
 {
-	sys_multi_heap_free(&mah_data.multi_heap, block);
+	__ASSERT(mah_data.initialized, "mem_attr_heap is not initialized!");
+	const struct sys_multi_heap_rec *heap_rec;
+	struct ma_heap *mh;
+
+	/* Cannot use sys_multi_heap_free() since we need to lock the heap. */
+	heap_rec = sys_multi_heap_get_heap(&mah_data.multi_heap, block);
+	if (heap_rec == NULL) {
+		return;
+	}
+	mh = CONTAINER_OF(heap_rec->heap, struct ma_heap, heap);
+	MAH_LOCK(mh);
+	sys_heap_free(&mh->heap, block);
+	MAH_UNLOCK(mh);
 }
 
 void *mem_attr_heap_alloc(uint32_t attr, size_t bytes)
 {
+	__ASSERT(mah_data.initialized, "mem_attr_heap is not initialized!");
 	return sys_multi_heap_alloc(&mah_data.multi_heap,
 				    (void *)(long) attr, bytes);
 }
 
 void *mem_attr_heap_aligned_alloc(uint32_t attr, size_t align, size_t bytes)
 {
+	__ASSERT(mah_data.initialized, "mem_attr_heap is not initialized!");
 	return sys_multi_heap_aligned_alloc(&mah_data.multi_heap,
 					    (void *)(long) attr, align, bytes);
 }
 
 const struct mem_attr_region_t *mem_attr_heap_get_region(void *addr)
 {
+	__ASSERT(mah_data.initialized, "mem_attr_heap is not initialized!");
 	const struct sys_multi_heap_rec *heap_rec;
 
 	heap_rec = sys_multi_heap_get_heap(&mah_data.multi_heap, addr);
@@ -132,5 +164,8 @@ int mem_attr_heap_pool_init(void)
 		}
 	}
 
+#ifdef CONFIG_ASSERT
+	mah_data.initialized = true;
+#endif
 	return 0;
 }

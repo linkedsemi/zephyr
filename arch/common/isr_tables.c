@@ -78,7 +78,7 @@ void __irq_vector_table __attribute__((naked)) _irq_vector_table(void) {
 #else
 
 /* The IRQ vector table is an array of vector addresses */
-uintptr_t __irq_vector_table _irq_vector_table[IRQ_TABLE_SIZE] = {
+const uintptr_t __irq_vector_table _irq_vector_table[IRQ_TABLE_SIZE] = {
 	[0 ...(IRQ_TABLE_SIZE - 1)] = (uintptr_t)&IRQ_VECTOR_TABLE_DEFAULT_ISR,
 };
 #endif /* CONFIG_IRQ_VECTOR_TABLE_JUMP_BY_CODE */
@@ -87,14 +87,25 @@ uintptr_t __irq_vector_table _irq_vector_table[IRQ_TABLE_SIZE] = {
 /* If there are no interrupts at all, or all interrupts are of the 'direct'
  * type and bypass the _sw_isr_table, then do not generate one.
  */
-#ifdef CONFIG_GEN_SW_ISR_TABLE
-struct _isr_table_entry __sw_isr_table _sw_isr_table[IRQ_TABLE_SIZE] = {
-	[0 ...(IRQ_TABLE_SIZE - 1)] = {(const void *)0x42,
-				       &z_irq_spurious},
+#if defined(CONFIG_GEN_SW_ISR_TABLE_ARRAY)
+#ifndef CONFIG_DYNAMIC_INTERRUPTS
+const
+#endif /* CONFIG_DYNAMIC_INTERRUPTS */
+	struct _isr_table_entry __sw_isr_table _sw_isr_table[IRQ_TABLE_SIZE] = {
+		[0 ...(IRQ_TABLE_SIZE - 1)] = {(const void *)0x42, &z_irq_spurious},
 };
-#endif
+#elif defined(CONFIG_GEN_SW_ISR_TABLE_SWITCH)
+void __sw_isr_table get_isr_entry(int irq_number, struct _isr_table_entry *entry)
+{
+	entry->arg = (const void *)0x0;
+	entry->isr = z_irq_spurious;
+}
+#endif /* CONFIG_GEN_SW_ISR_TABLE_ARRAY */
 
 #ifdef CONFIG_SHARED_INTERRUPTS
+#ifndef CONFIG_DYNAMIC_INTERRUPTS
+const
+#endif
 struct z_shared_isr_table_entry __shared_sw_isr_table z_shared_sw_isr_table[IRQ_TABLE_SIZE] = {
 };
 #endif

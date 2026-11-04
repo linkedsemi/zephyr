@@ -5,10 +5,10 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
-  - ble
+  - bluetooth
   - gpio
-  - usb_device
+  - usbd
   - watchdog
+  - counter
 vendor: ct

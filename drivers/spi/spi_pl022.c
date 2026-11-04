@@ -11,7 +11,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/reset.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/sys/util.h>
 #include <zephyr/spinlock.h>
 #include <soc.h>
@@ -88,9 +88,9 @@ LOG_MODULE_REGISTER(spi_pl022);
 #define SSP_CR1_MASK_LBM SSP_MASK(CR1, LBM)
 /* Port Enable */
 #define SSP_CR1_MASK_SSE SSP_MASK(CR1, SSE)
-/* Controller/Peripheral (Master/Slave) select */
+/* Controller/Peripheral select */
 #define SSP_CR1_MASK_MS SSP_MASK(CR1, MS)
-/* Peripheral (Slave) mode output disabled */
+/* Peripheral mode output disabled */
 #define SSP_CR1_MASK_SOD SSP_MASK(CR1, SOD)
 
 /*
@@ -380,7 +380,7 @@ static int spi_pl022_configure(const struct device *dev,
 	}
 
 	/* Peripheral mode has not been implemented */
-	if (SPI_OP_MODE_GET(op) != SPI_OP_MODE_MASTER) {
+	if (SPI_OP_MODE_GET(op) != SPI_OP_MODE_CONTROLLER) {
 		LOG_ERR("Peripheral mode is not supported");
 		return -ENOTSUP;
 	}
@@ -406,6 +406,8 @@ static int spi_pl022_configure(const struct device *dev,
 	cr1 |= SSP_CR1_MASK_SSE; /* Always enable SPI */
 	cr1 |= (op & SPI_MODE_LOOP) ? SSP_CR1_MASK_LBM : 0;
 
+	/* Disable the SSP before it is reconfigured */
+	SSP_WRITE_REG(SSP_CR1(cfg->reg), 0);
 	SSP_WRITE_REG(SSP_CPSR(cfg->reg), prescale);
 	SSP_WRITE_REG(SSP_CR0(cfg->reg), cr0);
 	SSP_WRITE_REG(SSP_CR1(cfg->reg), cr1);
@@ -892,7 +894,7 @@ static int spi_pl022_release(const struct device *dev,
 	return 0;
 }
 
-static const struct spi_driver_api spi_pl022_api = {
+static DEVICE_API(spi, spi_pl022_api) = {
 	.transceive = spi_pl022_transceive,
 #if defined(CONFIG_SPI_ASYNC)
 	.transceive_async = spi_pl022_transceive_async,
@@ -909,7 +911,7 @@ static int spi_pl022_init(const struct device *dev)
 	const struct spi_config spicfg = {
 		.frequency = 0,
 		.operation = SPI_WORD_SET(8),
-		.slave = 0,
+		.peripheral = 0,
 	};
 	const struct spi_pl022_cfg *cfg = dev->config;
 	struct spi_pl022_data *data = dev->data;
@@ -1031,7 +1033,7 @@ static int spi_pl022_init(const struct device *dev)
 				(.dma_enabled = false,))                                           \
 		IF_ENABLED(CONFIG_SPI_PL022_INTERRUPT,                                             \
 					   (.irq_config = spi_pl022_irq_config_##idx,))};          \
-	DEVICE_DT_INST_DEFINE(idx, spi_pl022_init, NULL, &spi_pl022_data_##idx,                    \
+	SPI_DEVICE_DT_INST_DEFINE(idx, spi_pl022_init, NULL, &spi_pl022_data_##idx,                \
 			      &spi_pl022_cfg_##idx, POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,         \
 			      &spi_pl022_api);
 

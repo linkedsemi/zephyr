@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT nxp_kinetis_adc12
+#define DT_DRV_COMPAT nxp_adc12
 
 #include <zephyr/drivers/adc.h>
 #include <fsl_adc12.h>
@@ -20,6 +20,8 @@ LOG_MODULE_REGISTER(adc_mcux_adc12);
 
 #define ADC_CONTEXT_USES_KERNEL_TIMER
 #include "adc_context.h"
+
+#include "adc_common.h"
 
 struct mcux_adc12_config {
 	ADC_Type *base;
@@ -83,6 +85,13 @@ static int mcux_adc12_start_read(const struct device *dev,
 	ADC_Type *base = config->base;
 	int error;
 	uint32_t tmp32;
+
+	error = adc_sequence_validate_buffer(sequence, POPCOUNT(sequence->channels),
+					     sizeof(uint16_t));
+	if (error < 0) {
+		LOG_ERR("Buffer size too small");
+		return error;
+	}
 
 	switch (sequence->resolution) {
 	case 8:
@@ -269,7 +278,7 @@ static int mcux_adc12_init(const struct device *dev)
 				 (kADC12_ReferenceVoltageSourceVref))
 
 #define ADC12_MCUX_DRIVER_API(n)				\
-	static const struct adc_driver_api mcux_adc12_driver_api_##n = {	\
+	static DEVICE_API(adc, mcux_adc12_driver_api_##n) = {	\
 		.channel_setup = mcux_adc12_channel_setup,	\
 		.read = mcux_adc12_read,	\
 		IF_ENABLED(CONFIG_ADC_ASYNC, (.read_async = mcux_adc12_read_async,))	\
@@ -305,7 +314,7 @@ static int mcux_adc12_init(const struct device *dev)
 		ADC_CONTEXT_INIT_SYNC(mcux_adc12_data_##n, ctx),	\
 	};								\
 									\
-	DEVICE_DT_INST_DEFINE(n, &mcux_adc12_init,			\
+	DEVICE_DT_INST_DEFINE(n, mcux_adc12_init,			\
 			    NULL, &mcux_adc12_data_##n,			\
 			    &mcux_adc12_config_##n, POST_KERNEL,	\
 			    CONFIG_ADC_INIT_PRIORITY,			\

@@ -293,13 +293,15 @@ CBOR data of successful response:
 .. code-block:: none
 
     {
-        (str)<pool_name> {
-            (str)"blksiz"   : (int)
-            (str)"nblks"    : (int)
-            (str)"nfree"    : (int)
-            (str)"min'      : (int)
+        (str)"mpools" : {
+            (str)<pool_name> : {
+                (str)"blksiz"   : (int)
+                (str)"nblks"    : (int)
+                (str)"nfree"    : (int)
+                (str)"min'      : (int)
+            }
+            ...
         }
-        ...
     }
 
 In case of error the CBOR data takes the form:
@@ -334,7 +336,9 @@ where:
     | <pool_name>      | string representing the pool name, used as a key for dictionary with    |
     |                  | pool statistics data.                                                   |
     +------------------+-------------------------------------------------------------------------+
-    | "blksiz"         | size of the memory block in the pool.                                   |
+    | "blksiz"         | size of the memory block in the pool. This value is always 1 in Zephyr, |
+    |                  | it can be omitted from responses by enabling                            |
+    |                  | :kconfig:option:`CONFIG_MCUMGR_GRP_OS_MPSTAT_ONLY_SUPPORTED_STATS`.     |
     +------------------+-------------------------------------------------------------------------+
     | "nblks"          | number of blocks in the pool.                                           |
     +------------------+-------------------------------------------------------------------------+
@@ -570,6 +574,7 @@ following map may be sent to force a reset:
 
     {
         (opt)"force"       : (int)
+        (opt)"boot_mode"   : (uint)
     }
 
 where:
@@ -577,9 +582,13 @@ where:
 .. table::
     :align: center
 
-    +-----------------------+---------------------------------------------------+
-    | "force"               | Force reset if value > 0, optional if 0.          |
-    +-----------------------+---------------------------------------------------+
+    +-----------------------+-----------------------------------------------------------------+
+    | "force"               | Force reset if value > 0, optional if 0.                        |
+    +-----------------------+-----------------------------------------------------------------+
+    | "boot_mode"           | Specifies boot mode for image or application mode/selection,    |
+    |                       | requires :kconfig:option:`CONFIG_MCUMGR_GRP_OS_RESET_BOOT_MODE` |
+    |                       | to be enabled.                                                  |
+    +-----------------------+-----------------------------------------------------------------+
 
 
 System reset response

@@ -6,19 +6,17 @@
 
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <ksched.h>
-#include <ipi.h>
+#include <kernel_internal.h>
+#include <counters.h>
 #include <zephyr/irq.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/drivers/pm_cpu_ops.h>
-
-#ifdef CONFIG_SOC_SERIES_LSQSH
-/* ls_qsh platform */
-#include <stdio.h>
-#include "platform.h"
-#include "smp/lsqsh_smp.h"
+#include <zephyr/platform/hooks.h>
+#if defined(CONFIG_RISCV_IMSIC)
+#include <zephyr/drivers/interrupt_controller/riscv_imsic.h>
 #endif
+
 volatile struct {
 	arch_cpustart_t fn;
 	void *arg;
@@ -63,9 +61,27 @@ void arch_secondary_cpu_init(int hartid)
 	for (i = 0; i < CONFIG_MP_MAX_NUM_CPUS; i++) {
 		if (_kernel.cpus[i].arch.hartid == hartid) {
 			cpu_num = i;
+			break;
 		}
 	}
+
+#ifdef CONFIG_RISCV_S_MODE_EXTERNAL_SBI
+	csr_write(sscratch, &_kernel.cpus[cpu_num]);
+#else
 	csr_write(mscratch, &_kernel.cpus[cpu_num]);
+#endif
+
+	/*
+	 * The no-match check must sit after the mscratch write:
+	 * arch_curr_cpu() reads mscratch, so the fatal path needs the
+	 * per-CPU pointer set first. Note that on the no-match path
+	 * cpu_num is still 0, so the panic is reported against whatever
+	 * CPU 0 is running.
+	 */
+	if (i >= CONFIG_MP_MAX_NUM_CPUS) {
+		k_panic();
+	}
+
 #ifdef CONFIG_SMP
 	_kernel.cpus[cpu_num].arch.online = true;
 #endif
@@ -78,139 +94,36 @@ void arch_secondary_cpu_init(int hartid)
 #ifdef CONFIG_RISCV_PMP
 	z_riscv_pmp_init();
 #endif
+#ifdef CONFIG_RISCV_USER_COUNTER_ACCESS
+	z_riscv_counteren_init();
+#endif
+#ifdef CONFIG_CUSTOM_STACK_GUARD
+	z_riscv_custom_stack_guard_init();
+#endif /* CONFIG_CUSTOM_STACK_GUARD */
 #ifdef CONFIG_SMP
-#if defined(CONFIG_SOC_SERIES_LSQSH)
+#ifdef CONFIG_RISCV_S_MODE_EXTERNAL_SBI
+	irq_enable(RISCV_IRQ_SSOFT);
+#elif defined(CONFIG_SOC_SERIES_LSQSH)
 	lsqsh_secondary_cpu_init();
 #else
 	irq_enable(RISCV_IRQ_MSOFT);
 #endif
 #endif /* CONFIG_SMP */
-#ifdef CONFIG_PLIC_IRQ_AFFINITY
+#if defined(CONFIG_PLIC_IRQ_AFFINITY) || defined(CONFIG_RISCV_APLIC_DIRECT_IRQ_AFFINITY)
 	/* Enable on secondary cores so that they can respond to PLIC */
+#ifdef CONFIG_RISCV_S_MODE_EXTERNAL_SBI
+	irq_enable(RISCV_IRQ_SEXT);
+#else
 	irq_enable(RISCV_IRQ_MEXT);
-#endif /* CONFIG_PLIC_IRQ_AFFINITY */
+#endif
+#endif /* CONFIG_PLIC_IRQ_AFFINITY || CONFIG_RISCV_APLIC_DIRECT_IRQ_AFFINITY */
+#if defined(CONFIG_RISCV_IMSIC) && defined(CONFIG_SMP)
+	/* Initialize IMSIC on secondary CPU */
+	z_riscv_imsic_secondary_init();
+#endif /* CONFIG_RISCV_IMSIC && CONFIG_SMP */
+#ifdef CONFIG_RISCV_SMRNMI_ENABLE_NMI_DELIVERY
+	(void)csr_read_set(CSR_MNSTATUS, MNSTATUS_NMIE);
+#endif
+	soc_per_core_init_hook();
 	riscv_cpu_init[cpu_num].fn(riscv_cpu_init[cpu_num].arg);
 }
-
-#ifdef CONFIG_SMP
-
-#define MSIP_BASE 0x2000000UL
-#define MSIP(hartid) ((volatile uint32_t *)MSIP_BASE)[hartid]
-
-static atomic_val_t cpu_pending_ipi[CONFIG_MP_MAX_NUM_CPUS];
-#define IPI_SCHED	0
-#define IPI_FPU_FLUSH	1
-
-void arch_sched_directed_ipi(uint32_t cpu_bitmap)
-{
-	unsigned int key = arch_irq_lock();
-	unsigned int id = _current_cpu->id;
-	unsigned int num_cpus = arch_num_cpus();
-
-	for (unsigned int i = 0; i < num_cpus; i++) {
-		if ((i != id) && _kernel.cpus[i].arch.online &&
-		 ((cpu_bitmap & BIT(i)) != 0)) {
-			atomic_set_bit(&cpu_pending_ipi[i], IPI_SCHED);
-#if defined(CONFIG_SOC_SERIES_LSQSH)
-			lsqsh_ipi_intr_set(i);
-#else
-			MSIP(_kernel.cpus[i].arch.hartid) = 1;
-#endif
-		}
-	}
-
-	arch_irq_unlock(key);
-}
-
-void arch_sched_broadcast_ipi(void)
-{
-	arch_sched_directed_ipi(IPI_ALL_CPUS_MASK);
-}
-
-#ifdef CONFIG_FPU_SHARING
-void arch_flush_fpu_ipi(unsigned int cpu)
-{
-	atomic_set_bit(&cpu_pending_ipi[cpu], IPI_FPU_FLUSH);
-#if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_ipi_intr_set(cpu);
-#else
-	MSIP(_kernel.cpus[cpu].arch.hartid) = 1;
-#endif
-}
-#endif
-
-void sched_ipi_handler(const void *unused)
-{
-	ARG_UNUSED(unused);
-
-#if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_ipi_intr_clr(_current_cpu->id);
-#else
-	MSIP(csr_read(mhartid)) = 0;
-#endif
-
-	atomic_val_t pending_ipi = atomic_clear(&cpu_pending_ipi[_current_cpu->id]);
-
-	if (pending_ipi & ATOMIC_MASK(IPI_SCHED)) {
-		z_sched_ipi();
-	}
-#ifdef CONFIG_FPU_SHARING
-	if (pending_ipi & ATOMIC_MASK(IPI_FPU_FLUSH)) {
-		/* disable IRQs */
-		csr_clear(mstatus, MSTATUS_IEN);
-		/* perform the flush */
-		arch_flush_local_fpu();
-		/*
-		 * No need to re-enable IRQs here as long as
-		 * this remains the last case.
-		 */
-	}
-#endif
-#if defined(CONFIG_SOC_SERIES_LSQSH)
-	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK_WRITE)) {
-		poll_wait_xip_unlock(true);
-	}
-	if (pending_ipi & ATOMIC_MASK(IPI_XIP_LOCK_READ)) {
-		poll_wait_xip_unlock(false);
-	}
-	if (pending_ipi & ATOMIC_MASK(IPI_IRQ_AFFINITY)) {
-		lsqsh_clic_apply_affinity();
-	}
-#endif
-}
-
-#ifdef CONFIG_FPU_SHARING
-/*
- * Make sure there is no pending FPU flush request for this CPU while
- * waiting for a contended spinlock to become available. This prevents
- * a deadlock when the lock we need is already taken by another CPU
- * that also wants its FPU content to be reinstated while such content
- * is still live in this CPU's FPU.
- */
-void arch_spin_relax(void)
-{
-	atomic_val_t *pending_ipi = &cpu_pending_ipi[_current_cpu->id];
-
-	if (atomic_test_and_clear_bit(pending_ipi, IPI_FPU_FLUSH)) {
-		/*
-		 * We may not be in IRQ context here hence cannot use
-		 * arch_flush_local_fpu() directly.
-		 */
-		arch_float_disable(_current_cpu->arch.fpu_owner);
-	}
-}
-#endif
-
-int arch_smp_init(void)
-{
-
-#if defined(CONFIG_SOC_SERIES_LSQSH)
-	lsqsh_primary_cpu_smp_init(cpu_pending_ipi);
-#else
-	IRQ_CONNECT(RISCV_IRQ_MSOFT, 0, sched_ipi_handler, NULL, 0);
-	irq_enable(RISCV_IRQ_MSOFT);
-
-#endif
-	return 0;
-}
-#endif /* CONFIG_SMP */

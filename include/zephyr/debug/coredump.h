@@ -11,6 +11,10 @@
 #include <stdint.h>
 #include <sys/types.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * Define COREDUMP_*_STR as public to allow coredump_backend_other to re-use
  * these strings if necessary
@@ -29,7 +33,9 @@
  * @file
  *
  * @defgroup coredump_apis Coredump APIs
- * @ingroup os_services
+ * @since 2.4
+ * @version 1.0.0
+ * @ingroup debug
  * @brief Coredump APIs
  * @{
  */
@@ -152,6 +158,9 @@ struct coredump_cmd_copy_arg {
 #define	COREDUMP_MEM_HDR_ID		'M'
 #define COREDUMP_MEM_HDR_VER		1
 
+#define COREDUMP_CPU_SNAPSHOT_HDR_ID	'F'
+#define COREDUMP_CPU_SNAPSHOT_HDR_VER	1
+
 /* Target code */
 enum coredump_tgt_code {
 	COREDUMP_TGT_UNKNOWN = 0,
@@ -222,6 +231,32 @@ struct coredump_mem_hdr_t {
 	uintptr_t	end;
 } __packed;
 
+/*
+ * Live per-CPU register snapshot header (CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS).
+ *
+ * One of these precedes each frozen CPU's register block (same arch-specific
+ * payload layout as the COREDUMP_ARCH_HDR_ID block for the panicking thread,
+ * e.g. arm64_arch_block on ARM64), letting tooling show a correct backtrace
+ * for a thread that was actively running on another CPU at panic time,
+ * instead of falling back to its stale last-swapped-out saved context.
+ */
+struct coredump_cpu_snapshot_hdr_t {
+	/* COREDUMP_CPU_SNAPSHOT_HDR_ID */
+	char		id;
+
+	/* Header version */
+	uint16_t	hdr_version;
+
+	/* Number of bytes in the arch-specific payload that follows */
+	uint16_t	num_bytes;
+
+	/* CPU index (0..CONFIG_MP_MAX_NUM_CPUS-1) this snapshot came from */
+	uint32_t	cpu_id;
+
+	/* The k_thread that was .current on that CPU when it was frozen */
+	uintptr_t	thread_ptr;
+} __packed;
+
 typedef void (*coredump_backend_start_t)(void);
 typedef void (*coredump_backend_end_t)(void);
 typedef void (*coredump_backend_buffer_output_t)(uint8_t *buf, size_t buflen);
@@ -235,7 +270,7 @@ struct coredump_backend_api {
 	coredump_backend_start_t		start;
 
 	/* Signal to backend of the end of coredump. */
-	coredump_backend_end_t		end;
+	coredump_backend_end_t			end;
 
 	/* Raw buffer output */
 	coredump_backend_buffer_output_t	buffer_output;
@@ -353,5 +388,9 @@ static inline int coredump_cmd(enum coredump_cmd_id query_id, void *arg)
 /**
  * @}
  */
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ZEPHYR_INCLUDE_DEBUG_COREDUMP_H_ */

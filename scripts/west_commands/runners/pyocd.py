@@ -7,7 +7,7 @@
 import os
 from os import path
 
-from runners.core import ZephyrBinaryRunner, RunnerCaps, BuildConfiguration
+from runners.core import BuildConfiguration, RunnerCaps, ZephyrBinaryRunner
 
 DEFAULT_PYOCD_GDB_PORT = 3333
 DEFAULT_PYOCD_TELNET_PORT = 4444
@@ -18,7 +18,8 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
 
     def __init__(self, cfg, target,
                  pyocd='pyocd',
-                 dev_id=None, flash_addr=0x0, erase=False, flash_opts=None,
+                 dev_id=None, flash_addr=0x0, erase=False, load=True,
+                 flash_opts=None,
                  gdb_port=DEFAULT_PYOCD_GDB_PORT,
                  telnet_port=DEFAULT_PYOCD_TELNET_PORT, tui=False,
                  pyocd_config=None,
@@ -36,6 +37,7 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
         self.pyocd = pyocd
         self.flash_addr_args = ['-a', hex(flash_addr)] if flash_addr else []
         self.erase = erase
+        self.load = load
         self.gdb_cmd = [cfg.gdb] if cfg.gdb is not None else None
         self.gdb_port = gdb_port
         self.telnet_port = telnet_port
@@ -76,8 +78,8 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def capabilities(cls):
-        return RunnerCaps(commands={'flash', 'debug', 'debugserver', 'attach', 'rtt'},
-                          dev_id=True, flash_addr=True, erase=True,
+        return RunnerCaps(commands={'flash', 'debug', 'debugserver', 'attach', 'rtt', 'reset'},
+                          dev_id=True, flash_addr=True, erase=True, skip_load=True,
                           tool_opt=True, rtt=True)
 
     @classmethod
@@ -100,11 +102,9 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
         parser.add_argument('--frequency',
                             help='SWD clock frequency in Hz')
         parser.add_argument('--gdb-port', default=DEFAULT_PYOCD_GDB_PORT,
-                            help='pyocd gdb port, defaults to {}'.format(
-                                DEFAULT_PYOCD_GDB_PORT))
+                            help=f'pyocd gdb port, defaults to {DEFAULT_PYOCD_GDB_PORT}')
         parser.add_argument('--telnet-port', default=DEFAULT_PYOCD_TELNET_PORT,
-                            help='pyocd telnet port, defaults to {}'.format(
-                                DEFAULT_PYOCD_TELNET_PORT))
+                            help=f'pyocd telnet port, defaults to {DEFAULT_PYOCD_TELNET_PORT}')
         parser.add_argument('--tui', default=False, action='store_true',
                             help='if given, GDB uses -tui')
         parser.add_argument('--board-id', dest='dev_id',
@@ -123,17 +123,12 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
         ret = PyOcdBinaryRunner(
             cfg, args.target,
             pyocd=args.pyocd,
-            flash_addr=flash_addr, erase=args.erase, flash_opts=args.flash_opt,
-            gdb_port=args.gdb_port, telnet_port=args.telnet_port, tui=args.tui,
+            flash_addr=flash_addr, erase=args.erase, load=args.load,
+            flash_opts=args.flash_opt, gdb_port=args.gdb_port,
+            telnet_port=args.telnet_port, tui=args.tui,
             dev_id=args.dev_id, daparg=args.daparg,
             frequency=args.frequency,
             tool_opt=args.tool_opt)
-
-        daparg = os.environ.get('PYOCD_DAPARG')
-        if not ret.daparg_args and daparg:
-            ret.logger.warning('PYOCD_DAPARG is deprecated; use --daparg')
-            ret.logger.debug('--daparg={} via PYOCD_DAPARG'.format(daparg))
-            ret.daparg_args = ['-da', daparg]
 
         return ret
 
@@ -144,10 +139,25 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
         self.require(self.pyocd)
         if command == 'rtt':
             self.rtt(**kwargs)
+        elif command == 'reset':
+            self.reset(**kwargs)
         elif command == 'flash':
             self.flash(**kwargs)
         else:
             self.debug_debugserver(command, **kwargs)
+
+    def reset(self, **kwargs):
+        cmd = ([self.pyocd] +
+               ['reset'] +
+               self.pyocd_config_args +
+               self.daparg_args +
+               self.target_args +
+               self.board_args +
+               self.frequency_args +
+               self.tool_opt_args +
+               self.flash_extra)
+
+        self.check_call(cmd)
 
     def flash(self, **kwargs):
         # Use hex, bin or elf file provided by the buildsystem.
@@ -161,8 +171,8 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
             fname = self.elf_name
         else:
             raise ValueError(
-                'Cannot flash; no hex ({}), bin ({}) or elf ({}) files found. '.format(
-                    self.hex_name, self.bin_name, self.elf_name))
+                f'Cannot flash; no hex ({self.hex_name}), bin ({self.bin_name}) '
+                f'or elf ({self.elf_name}) files found. ')
 
         erase_method = 'chip' if self.erase else 'sector'
 
@@ -179,12 +189,11 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
                self.flash_extra +
                [fname])
 
-        self.logger.info('Flashing file: {}'.format(fname))
+        self.logger.info(f'Flashing file: {fname}')
         self.check_call(cmd)
 
     def log_gdbserver_message(self):
-        self.logger.info('pyOCD GDB server running on port {}'.
-                         format(self.gdb_port))
+        self.logger.info(f'pyOCD GDB server running on port {self.gdb_port}')
 
     def debug_debugserver(self, command, **kwargs):
         server_cmd = ([self.pyocd] +
@@ -207,11 +216,14 @@ class PyOcdBinaryRunner(ZephyrBinaryRunner):
             client_cmd = (self.gdb_cmd +
                           self.tui_args +
                           [self.elf_name] +
-                          ['-ex', 'target remote :{}'.format(self.gdb_port)])
+                          ['-ex', f'target remote :{self.gdb_port}'])
             if command == 'debug':
-                client_cmd += ['-ex', 'monitor halt',
-                               '-ex', 'monitor reset',
-                               '-ex', 'load']
+                if self.load:
+                    client_cmd += ['-ex', 'monitor halt',
+                                   '-ex', 'monitor reset',
+                                   '-ex', 'load']
+                else:
+                    client_cmd += ['-ex', 'monitor reset halt']
 
             self.require(client_cmd[0])
             self.log_gdbserver_message()

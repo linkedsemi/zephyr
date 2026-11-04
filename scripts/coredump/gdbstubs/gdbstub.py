@@ -10,7 +10,6 @@ import logging
 
 from coredump_parser.elf_parser import ThreadInfoOffset
 
-
 logger = logging.getLogger("gdbstub")
 
 
@@ -116,7 +115,7 @@ class GdbStub(abc.ABC):
                 continue
 
             offset = addr - r['start']
-            barray += r['data'][offset:offset+1]
+            barray += r['data'][offset : offset + 1]
 
             addr += 1
             remaining -= 1
@@ -179,31 +178,111 @@ class GdbStub(abc.ABC):
             # For packets qfThreadInfo/qsThreadInfo, obtain a list of all active thread IDs
             if pkt[0:12] == b"qfThreadInfo":
                 threads_metadata_data = self.logfile.get_threads_metadata()["data"]
+
+                if threads_metadata_data is None:
+                    self.put_gdb_packet(b"l")
+                    return
+
                 size_t_size = self.elffile.get_kernel_thread_info_size_t_size()
 
-                # First, find and store the thread that _kernel considers current
-                k_curr_thread_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_K_CURR_THREAD)
-                curr_thread_ptr_bytes = threads_metadata_data[k_curr_thread_offset:(k_curr_thread_offset + size_t_size)]
-                curr_thread_ptr = int.from_bytes(curr_thread_ptr_bytes, "little")
-                self.thread_ptrs.append(curr_thread_ptr)
+                # First, find and store the thread each CPU considers current.
+                # On SMP targets whose offsets table includes CPU_STRIDE/
+                # NUM_CPUS this is one thread per CPU; older or non-SMP
+                # targets don't have those two entries
+                # (get_kernel_thread_info_offset() returns None), so this
+                # degrades to the original single-CPU behavior.
+                k_curr_thread_offset = self.elffile.get_kernel_thread_info_offset(
+                    ThreadInfoOffset.THREAD_INFO_OFFSET_K_CURR_THREAD
+                )
+                cpu_stride = self.elffile.get_kernel_thread_info_offset(
+                    ThreadInfoOffset.THREAD_INFO_OFFSET_CPU_STRIDE
+                )
+                num_cpus = self.elffile.get_kernel_thread_info_offset(
+                    ThreadInfoOffset.THREAD_INFO_OFFSET_NUM_CPUS
+                )
+                if cpu_stride is None or num_cpus is None:
+                    cpu_stride = 0
+                    num_cpus = 1
 
-                thread_count = 1
-                response = b"m1"
+                curr_thread_ptrs = list()
+                for cpu in range(num_cpus):
+                    offset = k_curr_thread_offset + cpu * cpu_stride
+                    ptr_bytes = threads_metadata_data[offset : (offset + size_t_size)]
+                    ptr = int.from_bytes(ptr_bytes, "little")
+                    if ptr != 0 and ptr not in curr_thread_ptrs:
+                        curr_thread_ptrs.append(ptr)
+
+                # Thread 1 (selected_thread == 0) is expected by the
+                # architecture backend to be the panicking thread, whose
+                # real ESF/arch-data-block registers are already available
+                # without a memory read (see e.g. arm64.py). With more than
+                # one CPU, the loop above has no reason to have found that
+                # one first -- reorder it to the front.
+                #
+                # Preferred: a zero-length snapshot entry is a direct,
+                # unambiguous marker of the panicking thread (see
+                # arch_coredump_cpu_snapshot_dump() in
+                # arch/arm64/core/coredump.c). Fall back to "whichever CPU's
+                # current thread has no snapshot at all" only if no marker
+                # is present (older captures, or an arch that doesn't emit
+                # one) -- that fallback is not reliable on its own: if some
+                # *other* CPU's freeze also times out for an unrelated
+                # reason, its current thread looks identical (no snapshot)
+                # to the actual panicking one, and this could pick the
+                # wrong thread. Confirmed on hardware
+                # (hs3_smp_baseline: cpu 0's freeze timed out even though
+                # cpu 0 was not the panicking CPU).
+                if len(curr_thread_ptrs) > 1:
+                    panicking_ptr = None
+                    for s in self.logfile.get_cpu_snapshots():
+                        if len(s["data"]) == 0:
+                            panicking_ptr = s["thread_ptr"]
+                            break
+
+                    if panicking_ptr is None:
+                        snapshot_thread_ptrs = {
+                            s["thread_ptr"] for s in self.logfile.get_cpu_snapshots()
+                        }
+                        if snapshot_thread_ptrs:
+                            for ptr in curr_thread_ptrs:
+                                if ptr not in snapshot_thread_ptrs:
+                                    panicking_ptr = ptr
+                                    break
+
+                    if panicking_ptr is not None and panicking_ptr in curr_thread_ptrs:
+                        curr_thread_ptrs.remove(panicking_ptr)
+                        curr_thread_ptrs.insert(0, panicking_ptr)
+
+                self.thread_ptrs.extend(curr_thread_ptrs)
+
+                thread_count = len(curr_thread_ptrs)
+                response = b"m" + bytes(f'{1:x}', 'ascii')
+                for i in range(2, thread_count + 1):
+                    response += b"," + bytes(f'{i:x}', 'ascii')
 
                 # Next, find the pointer to the linked list of threads in the _kernel struct
-                k_threads_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_K_THREADS)
-                thread_ptr_bytes = threads_metadata_data[k_threads_offset:(k_threads_offset + size_t_size)]
+                k_threads_offset = self.elffile.get_kernel_thread_info_offset(
+                    ThreadInfoOffset.THREAD_INFO_OFFSET_K_THREADS
+                )
+                thread_ptr_bytes = threads_metadata_data[
+                    k_threads_offset : (k_threads_offset + size_t_size)
+                ]
                 thread_ptr = int.from_bytes(thread_ptr_bytes, "little")
 
-                if thread_ptr != curr_thread_ptr:
+                if thread_ptr not in curr_thread_ptrs:
                     self.thread_ptrs.append(thread_ptr)
                     thread_count += 1
-                    response += b"," + bytes(str(thread_count), 'ascii')
+                    response += b"," + bytes(f'{thread_count:x}', 'ascii')
 
-                # Next walk the linked list, counting the number of threads and construct the response for qfThreadInfo along the way
-                t_next_thread_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_T_NEXT_THREAD)
+                # Next walk the linked list, counting the number of threads and construct
+                # the response for qfThreadInfo along the way
+                t_next_thread_offset = self.elffile.get_kernel_thread_info_offset(
+                    ThreadInfoOffset.THREAD_INFO_OFFSET_T_NEXT_THREAD
+                )
                 while thread_ptr is not None:
-                    thread_ptr_bytes = self.get_memory(thread_ptr + t_next_thread_offset, size_t_size)
+                    thread_ptr_bytes = self.get_memory(
+                        thread_ptr + t_next_thread_offset, size_t_size
+                    )
 
                     if thread_ptr_bytes is not None:
                         thread_ptr = int.from_bytes(thread_ptr_bytes, "little")
@@ -211,7 +290,7 @@ class GdbStub(abc.ABC):
                             thread_ptr = None
                             continue
 
-                        if thread_ptr != curr_thread_ptr:
+                        if thread_ptr not in curr_thread_ptrs:
                             self.thread_ptrs.append(thread_ptr)
                             thread_count += 1
                             response += b"," + bytes(f'{thread_count:x}', 'ascii')
@@ -222,7 +301,8 @@ class GdbStub(abc.ABC):
             elif pkt[0:12] == b"qsThreadInfo":
                 self.put_gdb_packet(b"l")
 
-            # For qThreadExtraInfo, obtain a printable string description of thread attributes for the provided thread
+            # For qThreadExtraInfo, obtain a printable string description of thread attributes for
+            # the provided thread
             elif pkt[0:16] == b"qThreadExtraInfo":
                 thread_info_bytes = b''
 
@@ -231,35 +311,54 @@ class GdbStub(abc.ABC):
                     thread_index_str += chr(pkt[n])
 
                 thread_id = int(thread_index_str, 16)
-                if len(self.thread_ptrs) > thread_id:
+                # thread_id is 1-based and indexed below as thread_id - 1, so the
+                # last valid id equals len(self.thread_ptrs); use >= to include it
+                # (a bare > dropped the final thread's name/state in info threads).
+                if len(self.thread_ptrs) >= thread_id:
                     thread_info_bytes += b'name: '
                     thread_ptr = self.thread_ptrs[thread_id - 1]
-                    t_name_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_T_NAME)
+                    t_name_offset = self.elffile.get_kernel_thread_info_offset(
+                        ThreadInfoOffset.THREAD_INFO_OFFSET_T_NAME
+                    )
 
                     thread_name_next_byte = self.get_memory(thread_ptr + t_name_offset, 1)
                     index = 0
-                    while (thread_name_next_byte is not None) and (thread_name_next_byte != b'\x00'):
+                    while (thread_name_next_byte is not None) and (
+                        thread_name_next_byte != b'\x00'
+                    ):
                         thread_info_bytes += thread_name_next_byte
 
                         index += 1
-                        thread_name_next_byte = self.get_memory(thread_ptr + t_name_offset + index, 1)
+                        thread_name_next_byte = self.get_memory(
+                            thread_ptr + t_name_offset + index, 1
+                        )
 
-                    t_state_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_T_STATE)
+                    t_state_offset = self.elffile.get_kernel_thread_info_offset(
+                        ThreadInfoOffset.THREAD_INFO_OFFSET_T_STATE
+                    )
                     thread_state_byte = self.get_memory(thread_ptr + t_state_offset, 1)
                     if thread_state_byte is not None:
                         thread_state = int.from_bytes(thread_state_byte, "little")
                         thread_info_bytes += b', state: ' + bytes(hex(thread_state), 'ascii')
 
-                    t_user_options_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_T_USER_OPTIONS)
-                    thread_user_options_byte = self.get_memory(thread_ptr + t_user_options_offset, 1)
-                    if thread_user_options_byte is not None:
-                        thread_user_options = int.from_bytes(thread_user_options_byte, "little")
-                        thread_info_bytes += b', user_options: ' + bytes(hex(thread_user_options), 'ascii')
+                    t_user_options_offset = self.elffile.get_kernel_thread_info_offset(
+                        ThreadInfoOffset.THREAD_INFO_OFFSET_T_USER_OPTIONS
+                    )
+                    thread_user_options_halfword = self.get_memory(
+                        thread_ptr + t_user_options_offset, 2
+                    )
+                    if thread_user_options_halfword is not None:
+                        thread_user_options = int.from_bytes(thread_user_options_halfword, "little")
+                        thread_info_bytes += b', user_options: ' + bytes(
+                            hex(thread_user_options), 'ascii'
+                        )
 
-                    t_prio_offset = self.elffile.get_kernel_thread_info_offset(ThreadInfoOffset.THREAD_INFO_OFFSET_T_PRIO)
+                    t_prio_offset = self.elffile.get_kernel_thread_info_offset(
+                        ThreadInfoOffset.THREAD_INFO_OFFSET_T_PRIO
+                    )
                     thread_prio_byte = self.get_memory(thread_ptr + t_prio_offset, 1)
                     if thread_prio_byte is not None:
-                        thread_prio = int.from_bytes(thread_prio_byte, "little")
+                        thread_prio = int.from_bytes(thread_prio_byte, "little", signed=True)
                         thread_info_bytes += b', prio: ' + bytes(hex(thread_prio), 'ascii')
 
                 self.put_gdb_packet(binascii.hexlify(thread_info_bytes))

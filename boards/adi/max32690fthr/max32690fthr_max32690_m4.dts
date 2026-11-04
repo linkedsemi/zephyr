@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2023-2024 Analog Devices, Inc.
+ * Copyright (c) 2023-2026 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
-#include <adi/max32/max32690.dtsi>
+#include <adi/max32/max32690-m4.dtsi>
 #include <adi/max32/max32690-pinctrl.dtsi>
 #include <zephyr/dt-bindings/gpio/adi-max32-gpio.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -16,6 +16,7 @@
 	compatible = "adi,max32690fthr";
 
 	chosen {
+		zephyr,code-partition = &code_partition;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,sram = &sram0;
@@ -24,14 +25,17 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			gpios = <&gpio0 14 GPIO_ACTIVE_LOW>;
 			label = "LED0";
 		};
+
 		green_led: led_1 {
 			gpios = <&gpio2 24 GPIO_ACTIVE_LOW>;
 			label = "LED1";
 		};
+
 		blue_led: led_2 {
 			gpios = <&gpio2 25 GPIO_ACTIVE_LOW>;
 			label = "LED2";
@@ -40,11 +44,13 @@
 
 	buttons {
 		compatible = "gpio-keys";
+
 		pb1: pb1 {
 			gpios = <&gpio1 14 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "SW3";
 			zephyr,code = <INPUT_KEY_0>;
 		};
+
 		pb2: pb2 {
 			gpios = <&gpio1 15 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "SW4";
@@ -58,7 +64,7 @@
 		led2 = &blue_led;
 		sw0 = &pb1;
 		sw1 = &pb2;
-	 };
+	};
 
 	feather_header: feather_connector {
 		compatible = "adafruit-feather-header";
@@ -90,6 +96,10 @@
 };
 
 &clk_ibro {
+	status = "okay";
+};
+
+&clk_ertco {
 	status = "okay";
 };
 
@@ -139,4 +149,28 @@ feather_spi: &spi0 {
 	status = "okay";
 	pinctrl-0 = <&spi0b_mosi_p2_28 &spi0b_miso_p2_27 &spi0b_sck_p2_29>;
 	pinctrl-names = "default";
+};
+
+zephyr_udc0: &usbhs {
+	status = "okay";
+};
+
+&flash0 {
+	partitions {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		code_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-m4";
+			reg = <0x0 DT_SIZE_K(3008)>;
+		};
+
+		storage_partition: partition@2f0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x2f0000 DT_SIZE_K(64)>;
+		};
+	};
 };

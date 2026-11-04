@@ -12,6 +12,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/peci.h>
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/pm/policy.h>
 #include <zephyr/kernel.h>
 
 #include <zephyr/logging/log.h>
@@ -123,7 +124,7 @@ static int peci_npcx_enable(const struct device *dev)
 
 	reg->PECI_CTL_STS = BIT(NPCX_PECI_CTL_STS_DONE) | BIT(NPCX_PECI_CTL_STS_CRC_ERR) |
 			    BIT(NPCX_PECI_CTL_STS_ABRT_ERR);
-	NVIC_ClearPendingIRQ(DT_INST_IRQN(0));
+	k_irq_clear_pending(DT_INST_IRQN(0));
 	irq_enable(DT_INST_IRQN(0));
 
 	k_sem_give(&data->lock);
@@ -140,6 +141,12 @@ static int peci_npcx_transfer(const struct device *dev, struct peci_msg *msg)
 	struct peci_buf *peci_tx_buf = &msg->tx_buffer;
 	enum peci_command_code cmd_code = msg->cmd_code;
 	int ret = 0;
+
+	/*
+	 * suspend-to-idle stops PECI module clocks (derived from APB2), which
+	 * must remain active during a transaction
+	 */
+	pm_policy_state_lock_get(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
 
 	k_sem_take(&data->lock, K_FOREVER);
 
@@ -194,6 +201,7 @@ static int peci_npcx_transfer(const struct device *dev, struct peci_msg *msg)
 
 out:
 	k_sem_give(&data->lock);
+	pm_policy_state_lock_put(PM_STATE_SUSPEND_TO_IDLE, PM_ALL_SUBSTATES);
 	return ret;
 }
 
@@ -225,7 +233,7 @@ static void peci_npcx_isr(const struct device *dev)
 	k_sem_give(&data->trans_sync_sem);
 }
 
-static const struct peci_driver_api peci_npcx_driver_api = {
+static DEVICE_API(peci, peci_npcx_driver_api) = {
 	.config = peci_npcx_configure,
 	.enable = peci_npcx_enable,
 	.disable = peci_npcx_disable,

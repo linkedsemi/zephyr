@@ -26,6 +26,7 @@
 #include "foundation.h"
 #include "access.h"
 #include "proxy.h"
+#include "gatt.h"
 #include "proxy_msg.h"
 #include "pb_gatt_srv.h"
 
@@ -46,6 +47,9 @@ static int gatt_send(struct bt_conn *conn,
 
 static struct bt_mesh_proxy_role *cli;
 static bool service_registered;
+static bool adv_restart_pending;
+
+static int prov_gatt_service_unregister(void);
 
 static void proxy_msg_recv(struct bt_mesh_proxy_role *role)
 {
@@ -118,8 +122,10 @@ static void gatt_disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_mesh_pb_gatt_close(conn);
 
 	if (bt_mesh_is_provisioned()) {
-		(void)bt_mesh_pb_gatt_srv_disable();
+		(void)prov_gatt_service_unregister();
 	}
+
+	adv_restart_pending = true;
 }
 
 static void prov_ccc_changed(const struct bt_gatt_attr *attr, uint16_t value)
@@ -148,8 +154,8 @@ static ssize_t prov_ccc_write(struct bt_conn *conn,
 }
 
 /* Mesh Provisioning Service Declaration */
-static struct _bt_gatt_ccc prov_ccc =
-	BT_GATT_CCC_INITIALIZER(prov_ccc_changed, prov_ccc_write, NULL);
+static struct bt_gatt_ccc_managed_user_data prov_ccc =
+	BT_GATT_CCC_MANAGED_USER_DATA_INIT(prov_ccc_changed, prov_ccc_write, NULL);
 
 static struct bt_gatt_attr prov_attrs[] = {
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_MESH_PROV),
@@ -167,6 +173,18 @@ static struct bt_gatt_attr prov_attrs[] = {
 };
 
 static struct bt_gatt_service prov_svc = BT_GATT_SERVICE(prov_attrs);
+
+static int prov_gatt_service_unregister(void)
+{
+	if (!service_registered) {
+		return -EALREADY;
+	}
+
+	(void)bt_gatt_service_unregister(&prov_svc);
+	service_registered = false;
+
+	return 0;
+}
 
 int bt_mesh_pb_gatt_srv_enable(void)
 {
@@ -189,14 +207,14 @@ int bt_mesh_pb_gatt_srv_enable(void)
 
 int bt_mesh_pb_gatt_srv_disable(void)
 {
+	int err;
+
 	LOG_DBG("");
 
-	if (!service_registered) {
-		return -EALREADY;
+	err = prov_gatt_service_unregister();
+	if (err) {
+		return err;
 	}
-
-	bt_gatt_service_unregister(&prov_svc);
-	service_registered = false;
 
 	bt_mesh_adv_gatt_update();
 
@@ -242,13 +260,12 @@ static size_t gatt_prov_adv_create(struct bt_data prov_sd[2])
 	prov_sd_len += 1;
 
 dev_name:
-#if defined(CONFIG_BT_MESH_PB_GATT_USE_DEVICE_NAME)
-	prov_sd[prov_sd_len].type = BT_DATA_NAME_COMPLETE;
-	prov_sd[prov_sd_len].data_len = sizeof(CONFIG_BT_DEVICE_NAME) - 1;
-	prov_sd[prov_sd_len].data = CONFIG_BT_DEVICE_NAME;
-
-	prov_sd_len += 1;
-#endif
+	if (IS_ENABLED(CONFIG_BT_MESH_PB_GATT_USE_DEVICE_NAME)) {
+		prov_sd[prov_sd_len].type = BT_DATA_NAME_COMPLETE;
+		prov_sd[prov_sd_len].data_len = BT_DEVICE_NAME_LEN;
+		prov_sd[prov_sd_len].data = BT_DEVICE_NAME;
+		prov_sd_len += 1;
+	}
 
 	return prov_sd_len;
 }
@@ -310,7 +327,16 @@ int bt_mesh_pb_gatt_srv_adv_start(void)
 
 }
 
+static void conn_recycled(void)
+{
+	if (adv_restart_pending) {
+		adv_restart_pending = false;
+		bt_mesh_adv_gatt_update();
+	}
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = gatt_connected,
 	.disconnected = gatt_disconnected,
+	.recycled = conn_recycled,
 };

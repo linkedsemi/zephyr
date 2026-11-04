@@ -12,6 +12,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/reset.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/irq.h>
 
 LOG_MODULE_REGISTER(dw_timer, CONFIG_COUNTER_LOG_LEVEL);
 
@@ -297,7 +298,7 @@ uint32_t counter_dw_timer_get_freq(const struct device *timer_dev)
 #endif
 }
 
-static const struct counter_driver_api dw_timer_driver_api = {
+static DEVICE_API(counter, dw_timer_driver_api) = {
 	.start = counter_dw_timer_start,
 	.stop = counter_dw_timer_disable,
 	.get_value = counter_dw_timer_get_value,
@@ -318,7 +319,8 @@ static int counter_dw_timer_init(const struct device *timer_dev)
 
 	/*
 	 * get clock rate from clock_frequency property if valid,
-	 * otherwise, get clock rate from clock manager
+	 * otherwise, request the clock from the clock manager and get its
+	 * rate
 	 */
 #if DT_ANY_INST_HAS_PROP_STATUS_OKAY(clocks)
 	struct counter_dw_timer_drv_data *const data = DEV_DATA(timer_dev);
@@ -327,6 +329,13 @@ static int counter_dw_timer_init(const struct device *timer_dev)
 		LOG_ERR("clock controller device not ready");
 		return -ENODEV;
 	}
+
+	ret = clock_control_on(timer_config->clk_dev, timer_config->clkid);
+	if (ret != 0 && ret != -ENOSYS && ret != -EALREADY) {
+		LOG_ERR("Unable to enable clock: err:%d", ret);
+		return ret;
+	}
+
 	ret = clock_control_get_rate(timer_config->clk_dev,
 					timer_config->clkid, &data->freq);
 	if (ret != 0) {

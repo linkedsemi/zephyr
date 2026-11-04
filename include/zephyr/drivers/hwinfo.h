@@ -1,21 +1,21 @@
-/**
- * @file
- *
- * @brief Public APIs to get device Information.
- */
-
 /*
  * Copyright (c) 2018 Alexander Wachter
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @ingroup hwinfo_interface
+ * @brief Main header file for hardware information (hwinfo) driver API.
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_HWINFO_H_
 #define ZEPHYR_INCLUDE_DRIVERS_HWINFO_H_
 
 /**
- * @brief Hardware Information Interface
- * @defgroup hwinfo_interface Hardware Info Interface
+ * @brief Interfaces allowing to obtain hardware information.
+ * @defgroup hwinfo_interface Hardware Info
  * @since 1.14
  * @version 1.0.0
  * @ingroup io_interfaces
@@ -67,6 +67,10 @@ extern "C" {
 #define RESET_USER				BIT(13)
 /** Temperature reset */
 #define RESET_TEMPERATURE			BIT(14)
+/** Bootloader reset (entry / exit) */
+#define RESET_BOOTLOADER			BIT(15)
+/** Flash ECC reset */
+#define RESET_FLASH				BIT(16)
 /**
  * @}
  */
@@ -87,9 +91,8 @@ extern "C" {
  * @param buffer  Buffer to write the ID to.
  * @param length  Max length of the buffer.
  *
- * @retval size of the device ID copied.
- * @retval -ENOSYS if there is no implementation for the particular device.
- * @retval any negative value on driver specific errors.
+ * @return Size of the device ID copied, negative errno value on failure.
+ * @retval -ENOSYS There is no implementation for the particular device.
  */
 __syscall ssize_t hwinfo_get_device_id(uint8_t *buffer, size_t length);
 
@@ -103,9 +106,8 @@ ssize_t z_impl_hwinfo_get_device_id(uint8_t *buffer, size_t length);
  *
  * @param buffer  Buffer of 8 bytes to write the ID to.
  *
- * @retval zero if successful.
- * @retval -ENOSYS if there is no implementation for the particular device.
- * @retval any negative value on driver specific errors.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS There is no implementation for the particular device.
  */
 __syscall int hwinfo_get_device_eui64(uint8_t *buffer);
 
@@ -127,9 +129,8 @@ int z_impl_hwinfo_get_device_eui64(uint8_t *buffer);
  * Successive calls to this routine will return the same value, unless
  * `hwinfo_clear_reset_cause` has been called.
  *
- * @retval zero if successful.
- * @retval -ENOSYS if there is no implementation for the particular device.
- * @retval any negative value on driver specific errors.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS There is no implementation for the particular device.
  */
 __syscall int hwinfo_get_reset_cause(uint32_t *cause);
 
@@ -140,9 +141,8 @@ int z_impl_hwinfo_get_reset_cause(uint32_t *cause);
  *
  * Clears reset cause flags.
  *
- * @retval zero if successful.
- * @retval -ENOSYS if there is no implementation for the particular device.
- * @retval any negative value on driver specific errors.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS There is no implementation for the particular device.
  */
 __syscall int hwinfo_clear_reset_cause(void);
 
@@ -155,9 +155,8 @@ int z_impl_hwinfo_clear_reset_cause(void);
  *
  * Retrieves all `reset_cause` flags that are supported by this device.
  *
- * @retval zero if successful.
- * @retval -ENOSYS if there is no implementation for the particular device.
- * @retval any negative value on driver specific errors.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS There is no implementation for the particular device.
  */
 __syscall int hwinfo_get_supported_reset_cause(uint32_t *supported);
 

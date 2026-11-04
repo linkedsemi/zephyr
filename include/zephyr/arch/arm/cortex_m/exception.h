@@ -43,23 +43,26 @@
 #define _EXCEPTION_RESERVED_PRIO 0
 #endif
 
-#define _EXC_FAULT_PRIO 0
+#define _EXC_FAULT_PRIO             0
 #define _EXC_ZERO_LATENCY_IRQS_PRIO 0
-#define _EXC_SVC_PRIO COND_CODE_1(CONFIG_ZERO_LATENCY_IRQS,		\
+#define _EXC_SVC_PRIO               COND_CODE_1(CONFIG_ZERO_LATENCY_IRQS,		\
 				  (CONFIG_ZERO_LATENCY_LEVELS), (0))
-#define _IRQ_PRIO_OFFSET (_EXCEPTION_RESERVED_PRIO + _EXC_SVC_PRIO)
-#define IRQ_PRIO_LOWEST (BIT(NUM_IRQ_PRIO_BITS) - (_IRQ_PRIO_OFFSET) - 1)
+#define _IRQ_PRIO_OFFSET            (_EXCEPTION_RESERVED_PRIO + _EXC_SVC_PRIO)
+#define IRQ_PRIO_LOWEST             (BIT(NUM_IRQ_PRIO_BITS) - (_IRQ_PRIO_OFFSET) - 1)
 
 #define _EXC_IRQ_DEFAULT_PRIO Z_EXC_PRIO(_IRQ_PRIO_OFFSET)
 
 /* Use lowest possible priority level for PendSV */
-#define _EXC_PENDSV_PRIO 0xff
+#define _EXC_PENDSV_PRIO      0xff
 #define _EXC_PENDSV_PRIO_MASK Z_EXC_PRIO(_EXC_PENDSV_PRIO)
 
 #ifdef _ASMLANGUAGE
+#ifndef CONFIG_USE_SWITCH
 GTEXT(z_arm_exc_exit);
+#endif
 #else
 #include <zephyr/types.h>
+#include <zephyr/arch/arm/arm-m-switch.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -95,11 +98,28 @@ struct __extra_esf_info {
 	_callee_saved_t *callee;
 	uint32_t msp;
 	uint32_t exc_return;
+#if defined(CONFIG_ARMV7_M_ARMV8_M_MAINLINE)
+	/* System control registers inspected and/or modified during fault handling */
+	uint32_t cfsr;
+	uint32_t hfsr;
+	uint32_t dfsr;
+	uint32_t mmfar;
+	uint32_t bfar;
+#if defined(CONFIG_ARM_SECURE_FIRMWARE)
+	uint32_t sfsr;
+	uint32_t sfar;
+	/* Exception entry occurred in Non-Secure stack */
+	bool non_secure;
+#endif /* CONFIG_ARM_SECURE_FIRMWARE*/
+#endif /* CONFIG_ARMV7_M_ARMV8_M_MAINLINE */
 };
 #endif /* CONFIG_EXTRA_EXCEPTION_INFO */
 
 /* ARM GPRs are often designated by two different names */
-#define sys_define_gpr_with_alias(name1, name2) union { uint32_t name1, name2; }
+#define sys_define_gpr_with_alias(name1, name2)                                                    \
+	union {                                                                                    \
+		uint32_t name1, name2;                                                             \
+	}
 
 struct arch_esf {
 	struct __basic_sf {
@@ -122,7 +142,14 @@ struct arch_esf {
 
 extern uint32_t z_arm_coredump_fault_sp;
 
+#ifdef CONFIG_USE_SWITCH
+static inline void z_arm_exc_exit(void)
+{
+	arm_m_exc_tail();
+}
+#else
 extern void z_arm_exc_exit(void);
+#endif
 
 #ifdef __cplusplus
 }

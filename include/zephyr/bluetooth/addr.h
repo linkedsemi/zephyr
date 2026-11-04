@@ -22,6 +22,8 @@ extern "C" {
 /**
  * @brief Bluetooth device address definitions and utilities.
  * @defgroup bt_addr Device Address
+ * @since 1.0
+ * @version 1.0.0
  * @ingroup bluetooth
  * @{
  */
@@ -84,8 +86,8 @@ static inline int bt_addr_cmp(const bt_addr_t *a, const bt_addr_t *b)
 
 /** @brief Determine equality of two Bluetooth device addresses.
  *
- *  @retval #true if the two addresses are equal
- *  @retval #false otherwise
+ *  @retval true if the two addresses are equal
+ *  @retval false otherwise
  */
 static inline bool bt_addr_eq(const bt_addr_t *a, const bt_addr_t *b)
 {
@@ -111,8 +113,8 @@ static inline int bt_addr_le_cmp(const bt_addr_le_t *a, const bt_addr_le_t *b)
  *  The Bluetooth LE addresses are equal if and only if both the types and
  *  the 48-bit addresses are numerically equal.
  *
- *  @retval #true if the two addresses are equal
- *  @retval #false otherwise
+ *  @retval true if the two addresses are equal
+ *  @retval false otherwise
  */
 static inline bool bt_addr_le_eq(const bt_addr_le_t *a, const bt_addr_le_t *b)
 {
@@ -137,6 +139,18 @@ static inline void bt_addr_copy(bt_addr_t *dst, const bt_addr_t *src)
 static inline void bt_addr_le_copy(bt_addr_le_t *dst, const bt_addr_le_t *src)
 {
 	memcpy(dst, src, sizeof(*dst));
+}
+
+/** @brief Copy Bluetooth LE device address from Bluetooth device address and type.
+ *
+ *  @param dst Bluetooth LE device address destination buffer.
+ *  @param src Bluetooth device address source buffer.
+ *  @param src_type Bluetooth device address source type.
+ */
+static inline void bt_addr_le_copy_addr(bt_addr_le_t *dst, const bt_addr_t *src, uint8_t src_type)
+{
+	bt_addr_copy(&dst->a, src);
+	dst->type = src_type;
 }
 
 /** Check if a Bluetooth LE random address is resolvable private address. */
@@ -208,9 +222,9 @@ static inline bool bt_addr_le_is_identity(const bt_addr_le_t *addr)
  *
  *  @details The recommended length guarantee the output of address
  *  conversion will not lose valuable information about address being
- *  processed.
+ *  processed. Format: "P:XX:XX:XX:XX:XX:XX" or "R:XX:XX:XX:XX:XX:XX"
  */
-#define BT_ADDR_LE_STR_LEN 30
+#define BT_ADDR_LE_STR_LEN 20
 
 /** @brief Converts binary Bluetooth address to string.
  *
@@ -231,6 +245,18 @@ static inline int bt_addr_to_str(const bt_addr_t *addr, char *str, size_t len)
 
 /** @brief Converts binary LE Bluetooth address to string.
  *
+ *  Converts the LE Bluetooth address to a string representation in the format:
+ *  - "P:XX:XX:XX:XX:XX:XX" for public addresses
+ *  - "R:XX:XX:XX:XX:XX:XX" for random addresses
+ *
+ *  Address type values that carry additional HCI-level information, such as
+ *  @c BT_ADDR_LE_PUBLIC_ID and @c BT_ADDR_LE_RANDOM_ID, are formatted according
+ *  to their base type (public or random). The HCI sentinels for an unresolved
+ *  RPA (@c BT_ADDR_LE_UNRESOLVED) and an anonymous advertiser
+ *  (@c BT_ADDR_LE_ANONYMOUS) are formatted as random addresses. The additional
+ *  information is not part of the string and has to be conveyed separately by
+ *  the caller.
+ *
  *  @param addr Address of buffer containing binary LE Bluetooth address.
  *  @param str Address of user buffer with enough room to store
  *  formatted string containing binary LE address.
@@ -242,30 +268,64 @@ static inline int bt_addr_to_str(const bt_addr_t *addr, char *str, size_t len)
 static inline int bt_addr_le_to_str(const bt_addr_le_t *addr, char *str,
 				    size_t len)
 {
-	char type[10];
+	char type_char;
 
 	switch (addr->type) {
 	case BT_ADDR_LE_PUBLIC:
-		strcpy(type, "public");
-		break;
-	case BT_ADDR_LE_RANDOM:
-		strcpy(type, "random");
-		break;
 	case BT_ADDR_LE_PUBLIC_ID:
-		strcpy(type, "public-id");
-		break;
-	case BT_ADDR_LE_RANDOM_ID:
-		strcpy(type, "random-id");
+		type_char = 'P';
 		break;
 	default:
-		snprintk(type, sizeof(type), "0x%02x", addr->type);
+		/* BT_ADDR_LE_RANDOM, BT_ADDR_LE_RANDOM_ID and the unresolved-RPA
+		 * and anonymous sentinels, none of which are public addresses.
+		 */
+		type_char = 'R';
 		break;
 	}
 
-	return snprintk(str, len, "%02X:%02X:%02X:%02X:%02X:%02X (%s)",
+	return snprintk(str, len, "%c:%02X:%02X:%02X:%02X:%02X:%02X",
+			type_char,
 			addr->a.val[5], addr->a.val[4], addr->a.val[3],
-			addr->a.val[2], addr->a.val[1], addr->a.val[0], type);
+			addr->a.val[2], addr->a.val[1], addr->a.val[0]);
 }
+
+/** @cond INTERNAL_HIDDEN */
+struct bt_addr_tmp_str {
+	char str[BT_ADDR_STR_LEN];
+};
+
+struct bt_addr_tmp_str bt_addr_tmp_str(const bt_addr_t *addr);
+
+struct bt_addr_le_tmp_str {
+	char str[BT_ADDR_LE_STR_LEN];
+};
+
+struct bt_addr_le_tmp_str bt_addr_le_tmp_str(const bt_addr_le_t *addr);
+/** @endcond  */
+
+/**
+ * @brief Convert a Bluetooth address to a string
+ * @def bt_addr_str()
+ *
+ * @param _addr Pointer to the Bluetooth address (bt_addr_t)
+ *
+ * @return A string pointer which is only valid until the end of the full expression.
+ *         In practice this means that this is primarily useful as an input parameter
+ *         to printk/printf or logging calls.
+ */
+#define bt_addr_str(_addr) bt_addr_tmp_str(_addr).str
+
+/**
+ * @brief Convert a Bluetooth LE address to a string
+ * @def bt_addr_le_str()
+ *
+ * @param _addr Pointer to the Bluetooth LE address (bt_addr_le_t)
+ *
+ * @return A string pointer which is only valid until the end of the full expression.
+ *         In practice this means that this is primarily useful as an input parameter
+ *         to printk/printf or logging calls.
+ */
+#define bt_addr_le_str(_addr) bt_addr_le_tmp_str(_addr).str
 
 /** @brief Convert Bluetooth address from string to binary.
  *
@@ -279,14 +339,44 @@ int bt_addr_from_str(const char *str, bt_addr_t *addr);
 
 /** @brief Convert LE Bluetooth address from string to binary.
  *
+ *  The string must use the format produced by bt_addr_le_to_str():
+ *  "P:XX:XX:XX:XX:XX:XX" for a public address or "R:XX:XX:XX:XX:XX:XX" for a
+ *  random address. The type prefix and the hexadecimal digits are
+ *  case-insensitive.
+ *
  *  @param[in]  str   The string representation of an LE Bluetooth address.
- *  @param[in]  type  The string representation of the LE Bluetooth address
- *                   type.
  *  @param[out] addr  Address of buffer to store the LE Bluetooth address
  *
- *  @return Zero on success or (negative) error code otherwise.
+ *  @retval 0 Success. The parsed address is stored in @p addr.
+ *  @retval -EINVAL Invalid address string. @p str has an unknown type prefix or is
+ *                  not a well-formed Bluetooth address.
  */
-int bt_addr_le_from_str(const char *str, const char *type, bt_addr_le_t *addr);
+int bt_addr_le_from_str(const char *str, bt_addr_le_t *addr);
+
+/** @brief Resolve a Bluetooth LE Resolvable Private Address (RPA) to its identity address.
+ *
+ *  This function attempts to resolve a RPA to its corresponding identity
+ *  address (public or random static) using the host Identity Resolving Key
+ *  (IRK) database.
+ *
+ *  @kconfig_dep{CONFIG_BT_PRIVACY}
+ *
+ *  @param[in]  id            Local identity whose IRK database is used.
+ *                            Must be less than @kconfig{CONFIG_BT_ID_MAX}.
+ *  @param[in]  addr          The RPA to resolve.
+ *  @param[out] resolved_addr On success, contains the resolved identity address.
+ *                            This will be either a public address
+ *                            (@ref BT_ADDR_LE_PUBLIC) or random static address
+ *                            (@ref BT_ADDR_LE_RANDOM).
+ *
+ *  @retval 0 Success. The address has been resolved.
+ *            @p resolved_addr contains the identity address.
+ *  @retval -ENOENT @p addr is an RPA but no matching IRK was found in the database.
+ *                  The address could not be resolved.
+ *  @retval -EINVAL Invalid arguments: @p addr or @p resolved_addr is NULL,
+ *                  @p id is invalid, or @p addr is not an RPA.
+ */
+int bt_addr_le_rpa_resolve(uint8_t id, const bt_addr_le_t *addr, bt_addr_le_t *resolved_addr);
 
 /**
  * @}

@@ -2,36 +2,49 @@
 
 /*
  * Copyright (c) 2015-2016 Intel Corporation
+ * Copyright (c) 2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
-#include <zephyr/kernel.h>
-#include <string.h>
 #include <errno.h>
 #include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/addr.h>
+#include <zephyr/bluetooth/att.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
+#include <zephyr/bluetooth/l2cap.h>
+#include <zephyr/bluetooth/uuid.h>
+#include <zephyr/kernel.h>
+#include <zephyr/kernel/thread.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/net_buf.h>
+#include <zephyr/spinlock.h>
+#include <zephyr/sys/__assert.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/slist.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/sys/clock.h>
+#include <zephyr/toolchain.h>
+#include <sys/types.h>
 
-#include <zephyr/bluetooth/hci.h>
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/uuid.h>
-#include <zephyr/bluetooth/att.h>
-#include <zephyr/bluetooth/gatt.h>
-#include <zephyr/drivers/bluetooth/hci_driver.h>
-
+#include "att_internal.h"
 #include "common/bt_str.h"
-
-#include "hci_core.h"
 #include "conn_internal.h"
+#include "gatt_internal.h"
+#include "hci_core.h"
 #include "l2cap_internal.h"
 #include "smp.h"
-#include "att_internal.h"
-#include "gatt_internal.h"
 
 #define LOG_LEVEL CONFIG_BT_ATT_LOG_LEVEL
-#include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_att);
 
 #define ATT_CHAN(_ch) CONTAINER_OF(_ch, struct bt_att_chan, chan.chan)
@@ -68,8 +81,8 @@ NET_BUF_POOL_DEFINE(prep_pool, CONFIG_BT_ATT_PREPARE_COUNT, BT_ATT_BUF_SIZE,
 		    sizeof(struct bt_attr_data), NULL);
 #endif /* CONFIG_BT_ATT_PREPARE_COUNT */
 
-K_MEM_SLAB_DEFINE(req_slab, sizeof(struct bt_att_req),
-		  CONFIG_BT_ATT_TX_COUNT, __alignof__(struct bt_att_req));
+K_MEM_SLAB_DEFINE_STATIC_TYPE(req_slab, struct bt_att_req,
+			      CONFIG_BT_ATT_TX_COUNT);
 
 enum {
 	ATT_CONNECTED,
@@ -93,10 +106,6 @@ struct bt_att_tx_meta_data {
 	bt_gatt_complete_func_t func;
 	void *user_data;
 	enum bt_att_chan_opt chan_opt;
-};
-
-struct bt_att_tx_meta {
-	struct bt_att_tx_meta_data *data;
 };
 
 /* ATT channel specific data */
@@ -131,11 +140,6 @@ static uint16_t bt_att_mtu(struct bt_att_chan *chan)
 	return MIN(chan->chan.rx.mtu, chan->chan.tx.mtu);
 }
 
-/* Descriptor of application-specific authorization callbacks that are used
- * with the CONFIG_BT_GATT_AUTHORIZATION_CUSTOM Kconfig enabled.
- */
-const static struct bt_gatt_authorization_cb *authorization_cb;
-
 /* ATT connection specific data */
 struct bt_att {
 	struct bt_conn		*conn;
@@ -159,11 +163,10 @@ struct bt_att {
 #endif /* CONFIG_BT_EATT */
 };
 
-K_MEM_SLAB_DEFINE(att_slab, sizeof(struct bt_att),
-		  CONFIG_BT_MAX_CONN, __alignof__(struct bt_att));
-K_MEM_SLAB_DEFINE(chan_slab, sizeof(struct bt_att_chan),
-		  CONFIG_BT_MAX_CONN * ATT_CHAN_MAX,
-		  __alignof__(struct bt_att_chan));
+K_MEM_SLAB_DEFINE_STATIC_TYPE(att_slab, struct bt_att,
+			      CONFIG_BT_MAX_CONN);
+K_MEM_SLAB_DEFINE_STATIC_TYPE(chan_slab, struct bt_att_chan,
+			      CONFIG_BT_MAX_CONN * ATT_CHAN_MAX);
 static struct bt_att_req cancel;
 
 /** The thread ATT response handlers likely run on.
@@ -182,7 +185,7 @@ static k_tid_t att_handle_rsp_thread;
 
 static struct bt_att_tx_meta_data tx_meta_data_storage[CONFIG_BT_ATT_TX_COUNT];
 
-struct bt_att_tx_meta_data *bt_att_get_tx_meta_data(const struct net_buf *buf);
+static struct bt_att_tx_meta_data *att_get_tx_meta_data(const struct net_buf *buf);
 static void att_on_sent_cb(struct bt_att_tx_meta_data *meta);
 
 #if defined(CONFIG_BT_ATT_ERR_TO_STR)
@@ -241,10 +244,37 @@ const char *bt_att_err_to_str(uint8_t att_err)
 }
 #endif /* CONFIG_BT_ATT_ERR_TO_STR */
 
-static void att_tx_destroy(struct net_buf *buf)
+static void att_tx_destroy_work_handler(struct k_work *work);
+static K_WORK_DEFINE(att_tx_destroy_work, att_tx_destroy_work_handler);
+static struct k_spinlock tx_destroy_queue_lock;
+static sys_slist_t tx_destroy_queue = SYS_SLIST_STATIC_INIT(&tx_destroy_queue);
+
+static void att_tx_destroy_work_handler(struct k_work *work)
 {
-	struct bt_att_tx_meta_data *p_meta = bt_att_get_tx_meta_data(buf);
+	struct net_buf *buf;
+	struct bt_att_tx_meta_data *p_meta;
 	struct bt_att_tx_meta_data meta;
+	sys_snode_t *buf_node;
+	k_spinlock_key_t key;
+	bool resubmit;
+
+	key = k_spin_lock(&tx_destroy_queue_lock);
+	buf_node = sys_slist_get(&tx_destroy_queue);
+	/* If there are more items in the queue, those likely have
+	 * been there before this handler started running and
+	 * coalesced into a single work submission, so we need to
+	 * resubmit.
+	 */
+	resubmit = !sys_slist_is_empty(&tx_destroy_queue);
+	k_spin_unlock(&tx_destroy_queue_lock, key);
+
+	/* Spurious wakeups can occur in with some thread interleavings. */
+	if (buf_node == NULL) {
+		return;
+	}
+
+	buf = CONTAINER_OF(buf_node, struct net_buf, node);
+	p_meta = att_get_tx_meta_data(buf);
 
 	LOG_DBG("%p", buf);
 
@@ -259,8 +289,8 @@ static void att_tx_destroy(struct net_buf *buf)
 	 */
 	memset(p_meta, 0x00, sizeof(*p_meta));
 
-	/* After this point, p_meta doesn't belong to us.
-	 * The user data will be memset to 0 on allocation.
+	/* After this point, p_meta doesn't belong to us. The user data will
+	 * be memset to 0 on allocation.
 	 */
 	net_buf_destroy(buf);
 
@@ -271,13 +301,58 @@ static void att_tx_destroy(struct net_buf *buf)
 	if (meta.opcode != 0) {
 		att_on_sent_cb(&meta);
 	}
+
+	/* We resubmit this work instead of looping to allow other work on
+	 * the work queue to run.
+	 */
+	if (resubmit) {
+		int err = k_work_submit_to_queue(NULL, work);
+
+		if (err < 0) {
+			LOG_ERR("Failed to re-submit %s: %d", __func__, err);
+			k_oops();
+		}
+	}
+}
+
+static void att_tx_destroy(struct net_buf *buf)
+{
+	int err;
+	k_spinlock_key_t key;
+
+	/* We need to invoke att_on_sent_cb, which may block. We
+	 * don't want to block in a net buf destroy callback, so we
+	 * defer to a sensible workqueue.
+	 *
+	 * bt_workq cannot be used because it currently forms a
+	 * deadlock with att_pool: bt_workq -> bt_att_recv ->
+	 * send_err_rsp waits for att pool.
+	 *
+	 * We use the system work queue to preserve earlier
+	 * behavior. The tx_processor used to run on the system work
+	 * queue, and it could end up here: tx_processor ->
+	 * bt_hci_send -> net_buf_unref.
+	 *
+	 * A possible alternative is tx_notify_workqueue_get() since
+	 * this workqueue is processing similar "completion" events.
+	 */
+	key = k_spin_lock(&tx_destroy_queue_lock);
+	sys_slist_append(&tx_destroy_queue, &buf->node);
+	k_spin_unlock(&tx_destroy_queue_lock, key);
+
+	err = k_work_submit(&att_tx_destroy_work);
+	if (err < 0) {
+		LOG_ERR("Failed to submit att_tx_destroy_work: %d", err);
+		k_oops();
+	}
+	/* Continues in att_tx_destroy_work_handler() */
 }
 
 NET_BUF_POOL_DEFINE(att_pool, CONFIG_BT_ATT_TX_COUNT,
 		    BT_L2CAP_SDU_BUF_SIZE(BT_ATT_BUF_SIZE),
 		    CONFIG_BT_CONN_TX_USER_DATA_SIZE, att_tx_destroy);
 
-struct bt_att_tx_meta_data *bt_att_get_tx_meta_data(const struct net_buf *buf)
+static struct bt_att_tx_meta_data *att_get_tx_meta_data(const struct net_buf *buf)
 {
 	__ASSERT_NO_MSG(net_buf_pool_get(buf->pool_id) == &att_pool);
 
@@ -292,28 +367,26 @@ static int bt_att_chan_send(struct bt_att_chan *chan, struct net_buf *buf);
 static void att_chan_mtu_updated(struct bt_att_chan *updated_chan);
 static void bt_att_disconnected(struct bt_l2cap_chan *chan);
 
-struct net_buf *bt_att_create_rsp_pdu(struct bt_att_chan *chan, uint8_t op);
+static struct net_buf *att_create_rsp_pdu(struct bt_att_chan *chan, uint8_t op);
 
-static void bt_att_sent(struct bt_l2cap_chan *ch);
-
-static void att_sent(void *user_data)
+static void att_disconnect(struct bt_att_chan *chan)
 {
-	struct bt_att_tx_meta_data *data = user_data;
-	struct bt_att_chan *att_chan = data->att_chan;
-	struct bt_conn *conn = att_chan->att->conn;
-	struct bt_l2cap_chan *chan = &att_chan->chan.chan;
+	int err;
 
-	__ASSERT_NO_MSG(!bt_att_is_enhanced(att_chan));
-
-	LOG_DBG("conn %p chan %p", conn, chan);
-
-	/* For EATT, `bt_att_sent` is assigned to the `.sent` L2 callback.
-	 * L2CAP will then call it once the SDU has finished sending.
-	 *
-	 * For UATT, this won't happen, as static LE l2cap channels don't have
-	 * SDUs. Call it manually instead.
+	/* In rare circumstances we are "forced" to disconnect the ATT bearer and the ACL.
+	 * Examples of when this is right course of action is when there is an ATT timeout, we
+	 * receive an unexpected response from the server, or the response from the server is
+	 * invalid
 	 */
-	bt_att_sent(chan);
+
+	LOG_DBG("ATT disconnecting device %s", bt_conn_dst_str(chan->att->conn));
+
+	bt_att_disconnected(&chan->chan.chan);
+
+	err = bt_conn_disconnect(chan->chan.chan.conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	if (err) {
+		LOG_ERR("Disconnecting failed (err %d)", err);
+	}
 }
 
 /* In case of success the ownership of the buffer is transferred to the stack
@@ -328,7 +401,7 @@ static int chan_send(struct bt_att_chan *chan, struct net_buf *buf)
 	struct bt_att_hdr *hdr;
 	struct net_buf_simple_state state;
 	int err;
-	struct bt_att_tx_meta_data *data = bt_att_get_tx_meta_data(buf);
+	struct bt_att_tx_meta_data *data = att_get_tx_meta_data(buf);
 	struct bt_att_chan *prev_chan = data->att_chan;
 
 	hdr = (void *)buf->data;
@@ -397,15 +470,31 @@ static int chan_send(struct bt_att_chan *chan, struct net_buf *buf)
 	}
 
 	if (hdr->code == BT_ATT_OP_SIGNED_WRITE_CMD) {
+		net_buf_simple_save(&buf->b, &state);
+
 		err = bt_smp_sign(chan->att->conn, buf);
-		if (err) {
+		if (err != 0) {
 			LOG_ERR("Error signing data");
-			net_buf_unref(buf);
+			/* Restore the buffer state, since the callers retain
+			 * ownership of the buffer on failure and may retry
+			 * sending it later.
+			 */
+			net_buf_simple_restore(&buf->b, &state);
 			return err;
 		}
-	}
 
-	net_buf_simple_save(&buf->b, &state);
+		/* Keep the pre-signing state saved above: bt_smp_sign()
+		 * already consumed and persisted a sign counter value, so if
+		 * the send below fails the buffer must be restored to its
+		 * unsigned form. Retrying will then sign it again (consuming
+		 * the next counter value, which is fine since the spec only
+		 * requires the counter to strictly increase). Restoring the
+		 * already-signed state instead would let a retry append a
+		 * second signature onto a buffer sized for only one.
+		 */
+	} else {
+		net_buf_simple_save(&buf->b, &state);
+	}
 
 	data->att_chan = chan;
 
@@ -438,6 +527,14 @@ static bool att_chan_matches_chan_opt(struct bt_att_chan *chan, enum bt_att_chan
 	}
 }
 
+/* L2CAP refuses an SDU that exceeds the peer's MTU of an EATT bearer, so such
+ * a PDU is left for a bearer it fits instead of blocking this one.
+ */
+static bool att_chan_can_carry(struct bt_att_chan *chan, struct net_buf *buf)
+{
+	return !bt_att_is_enhanced(chan) || buf->len <= chan->chan.tx.mtu;
+}
+
 static struct net_buf *get_first_buf_matching_chan(struct k_fifo *fifo, struct bt_att_chan *chan)
 {
 	if (IS_ENABLED(CONFIG_BT_EATT)) {
@@ -449,9 +546,10 @@ static struct net_buf *get_first_buf_matching_chan(struct k_fifo *fifo, struct b
 		k_fifo_init(&skipped);
 
 		while ((buf = k_fifo_get(fifo, K_NO_WAIT))) {
-			meta = bt_att_get_tx_meta_data(buf);
+			meta = att_get_tx_meta_data(buf);
 			if (!ret &&
-			    att_chan_matches_chan_opt(chan, meta->chan_opt)) {
+			    att_chan_matches_chan_opt(chan, meta->chan_opt) &&
+			    att_chan_can_carry(chan, buf)) {
 				ret = buf;
 			} else {
 				k_fifo_put(&skipped, buf);
@@ -479,8 +577,15 @@ static struct bt_att_req *get_first_req_matching_chan(sys_slist_t *reqs, struct 
 		struct bt_att_tx_meta_data *meta = NULL;
 
 		SYS_SLIST_FOR_EACH_NODE(reqs, curr) {
-			meta = bt_att_get_tx_meta_data(ATT_REQ(curr)->buf);
-			if (att_chan_matches_chan_opt(chan, meta->chan_opt)) {
+			struct net_buf *buf = ATT_REQ(curr)->buf;
+
+			/* bt_att_chan_req_send() refuses a request that exceeds
+			 * the ATT_MTU of the bearer, so such a request is left
+			 * for a bearer it fits instead of blocking this one.
+			 */
+			meta = att_get_tx_meta_data(buf);
+			if (att_chan_matches_chan_opt(chan, meta->chan_opt) &&
+			    net_buf_frags_len(buf) <= bt_att_mtu(chan)) {
 				break;
 			}
 
@@ -515,7 +620,7 @@ static int process_queue(struct bt_att_chan *chan, struct k_fifo *queue)
 		err = bt_att_chan_send(chan, buf);
 		if (err) {
 			/* Push it back if it could not be send */
-			k_queue_prepend(&queue->_queue, buf);
+			k_queue_prepend(&queue->_queue, net_buf_take(&buf));
 			return err;
 		}
 
@@ -526,7 +631,7 @@ static int process_queue(struct bt_att_chan *chan, struct k_fifo *queue)
 }
 
 /* Send requests without taking tx_sem */
-static int chan_req_send(struct bt_att_chan *chan, struct bt_att_req *req)
+static int bt_att_chan_req_send(struct bt_att_chan *chan, struct bt_att_req *req)
 {
 	struct net_buf *buf;
 	int err;
@@ -540,12 +645,14 @@ static int chan_req_send(struct bt_att_chan *chan, struct bt_att_req *req)
 	chan->req = req;
 
 	/* Release since bt_l2cap_send_cb takes ownership of the buffer */
-	buf = req->buf;
-	req->buf = NULL;
+	buf = net_buf_take(&req->buf);
 
 	/* This lock makes sure the value of `bt_att_mtu(chan)` does not
-	 * change.
+	 * change; the scheduler lock keeps the RX-path request handling,
+	 * which does not take the host lock, from preempting a preemptible
+	 * caller.
 	 */
+	bt_dev_lock();
 	k_sched_lock();
 	err = bt_att_chan_send(chan, buf);
 	if (err) {
@@ -556,6 +663,7 @@ static int chan_req_send(struct bt_att_chan *chan, struct bt_att_req *req)
 		bt_gatt_req_set_mtu(req, bt_att_mtu(chan));
 	}
 	k_sched_unlock();
+	bt_dev_unlock();
 
 	return err;
 }
@@ -580,15 +688,18 @@ static void bt_att_sent(struct bt_l2cap_chan *ch)
 	 * processed before they may always contain a buffer starving the
 	 * request queue.
 	 */
-	if (!chan->req && !sys_slist_is_empty(&att->reqs)) {
-		sys_snode_t *node = sys_slist_get(&att->reqs);
+	if (!chan->req) {
+		struct bt_att_req *req = get_first_req_matching_chan(&att->reqs, chan);
 
-		if (chan_req_send(chan, ATT_REQ(node)) >= 0) {
-			return;
+		if (req != NULL) {
+			err = bt_att_chan_req_send(chan, req);
+			if (err == 0) {
+				return;
+			}
+
+			/* Prepend back to the list as it could not be sent */
+			sys_slist_prepend(&att->reqs, &req->node);
 		}
-
-		/* Prepend back to the list as it could not be sent */
-		sys_slist_prepend(&att->reqs, node);
 	}
 
 	/* Process channel queue */
@@ -617,7 +728,7 @@ static void chan_rebegin_att_timeout(struct bt_att_tx_meta_data *user_data)
 	 * in-flight.
 	 */
 	if (chan->req) {
-		k_work_reschedule(&chan->timeout_work, BT_ATT_TIMEOUT);
+		bt_work_reschedule(&chan->timeout_work, BT_ATT_TIMEOUT);
 	}
 }
 
@@ -663,9 +774,20 @@ static void att_on_sent_cb(struct bt_att_tx_meta_data *meta)
 	}
 
 	if (!bt_att_is_enhanced(meta->att_chan)) {
-		/* For EATT, L2CAP will call it after the SDU is fully sent. */
-		LOG_DBG("UATT bearer, calling att_sent");
-		att_sent(meta);
+		struct bt_att_chan *att_chan = meta->att_chan;
+		struct bt_conn *conn = att_chan->att->conn;
+		struct bt_l2cap_chan *l2cap_chan = &att_chan->chan.chan;
+
+		ARG_UNUSED(conn);
+		LOG_DBG("UATT bearer, calling bt_att_sent: conn %p chan %p", conn, l2cap_chan);
+
+		/* For EATT, `bt_att_sent` is assigned to the `.sent` L2 callback.
+		 * L2CAP will then call it once the SDU has finished sending.
+		 *
+		 * For UATT, this won't happen, as static LE l2cap channels don't have
+		 * SDUs. Call it manually instead.
+		 */
+		bt_att_sent(l2cap_chan);
 	}
 
 	switch (op_type) {
@@ -706,21 +828,32 @@ static struct net_buf *bt_att_chan_create_pdu(struct bt_att_chan *chan, uint8_t 
 		/* Use a timeout only when responding/confirming */
 		timeout = BT_ATT_TIMEOUT;
 		break;
-	default:
-		timeout = K_FOREVER;
+	default: {
+		k_tid_t current_thread = k_current_get();
+
+		if (current_thread == k_work_queue_thread_get(&k_sys_work_q)) {
+			/* No blocking in the sysqueue. */
+			timeout = K_NO_WAIT;
+		} else if (current_thread == att_handle_rsp_thread) {
+			/* Blocking would cause deadlock. */
+			timeout = K_NO_WAIT;
+		} else {
+			timeout = K_FOREVER;
+		}
+	}
 	}
 
 	/* This will reserve headspace for lower layers */
 	buf = bt_l2cap_create_pdu_timeout(&att_pool, 0, timeout);
 	if (!buf) {
-		LOG_ERR("Unable to allocate buffer for op 0x%02x", op);
+		LOG_DBG("Unable to allocate buffer for op 0x%02x", op);
 		return NULL;
 	}
 
 	/* If we got a buf from `att_pool`, then the metadata slot at its index
 	 * is officially ours to use.
 	 */
-	data = bt_att_get_tx_meta_data(buf);
+	data = att_get_tx_meta_data(buf);
 
 	if (IS_ENABLED(CONFIG_BT_EATT)) {
 		net_buf_reserve(buf, BT_L2CAP_SDU_BUF_SIZE(0));
@@ -740,7 +873,7 @@ static int bt_att_chan_send(struct bt_att_chan *chan, struct net_buf *buf)
 		((struct bt_att_hdr *)buf->data)->code);
 
 	if (IS_ENABLED(CONFIG_BT_EATT) &&
-	    !att_chan_matches_chan_opt(chan, bt_att_get_tx_meta_data(buf)->chan_opt)) {
+	    !att_chan_matches_chan_opt(chan, att_get_tx_meta_data(buf)->chan_opt)) {
 		return -EINVAL;
 	}
 
@@ -754,10 +887,11 @@ static void att_send_process(struct bt_att *att)
 
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&att->chans, chan, tmp, node) {
 		if (err == -ENOENT && prev &&
-		    (bt_att_is_enhanced(chan) == bt_att_is_enhanced(prev))) {
+		    (bt_att_is_enhanced(chan) == bt_att_is_enhanced(prev)) &&
+		    (chan->chan.tx.mtu <= prev->chan.tx.mtu)) {
 			/* If there was nothing to send for the previous channel and the current
-			 * channel has the same "enhancedness", there will be nothing to send for
-			 * this channel either.
+			 * channel has the same "enhancedness" and no larger MTU, there will be
+			 * nothing to send for this channel either.
 			 */
 			continue;
 		}
@@ -779,7 +913,7 @@ static void bt_att_chan_send_rsp(struct bt_att_chan *chan, struct net_buf *buf)
 	err = chan_send(chan, buf);
 	if (err) {
 		/* Responses need to be sent back using the same channel */
-		k_fifo_put(&chan->tx_queue, buf);
+		k_fifo_put(&chan->tx_queue, net_buf_take(&buf));
 	}
 }
 
@@ -796,6 +930,7 @@ static void send_err_rsp(struct bt_att_chan *chan, uint8_t req, uint16_t handle,
 
 	buf = bt_att_chan_create_pdu(chan, BT_ATT_OP_ERROR_RSP, sizeof(*rsp));
 	if (!buf) {
+		LOG_ERR("Unable to create err rsp PDU");
 		return;
 	}
 
@@ -832,7 +967,7 @@ static uint8_t att_mtu_req(struct bt_att_chan *chan, struct net_buf *buf)
 		return BT_ATT_ERR_INVALID_PDU;
 	}
 
-	pdu = bt_att_create_rsp_pdu(chan, BT_ATT_OP_MTU_RSP);
+	pdu = att_create_rsp_pdu(chan, BT_ATT_OP_MTU_RSP);
 	if (!pdu) {
 		return BT_ATT_ERR_UNLIKELY;
 	}
@@ -869,19 +1004,6 @@ static uint8_t att_mtu_req(struct bt_att_chan *chan, struct net_buf *buf)
 	return 0;
 }
 
-static int bt_att_chan_req_send(struct bt_att_chan *chan,
-				struct bt_att_req *req)
-{
-	__ASSERT_NO_MSG(chan);
-	__ASSERT_NO_MSG(req);
-	__ASSERT_NO_MSG(req->func);
-	__ASSERT_NO_MSG(!chan->req);
-
-	LOG_DBG("req %p", req);
-
-	return chan_req_send(chan, req);
-}
-
 static void att_req_send_process(struct bt_att *att)
 {
 	struct bt_att_req *req = NULL;
@@ -893,10 +1015,11 @@ static void att_req_send_process(struct bt_att *att)
 			continue;
 		}
 
-		if (!req && prev && (bt_att_is_enhanced(chan) == bt_att_is_enhanced(prev))) {
+		if (!req && prev && (bt_att_is_enhanced(chan) == bt_att_is_enhanced(prev)) &&
+		    (bt_att_mtu(chan) <= bt_att_mtu(prev))) {
 			/* If there was nothing to send for the previous channel and the current
-			 * channel has the same "enhancedness", there will be nothing to send for
-			 * this channel either.
+			 * channel has the same "enhancedness" and no larger ATT_MTU, there will
+			 * be nothing to send for this channel either.
 			 */
 			continue;
 		}
@@ -909,7 +1032,7 @@ static void att_req_send_process(struct bt_att *att)
 			continue;
 		}
 
-		if (bt_att_chan_req_send(chan, req) >= 0) {
+		if (bt_att_chan_req_send(chan, req) == 0) {
 			return;
 		}
 
@@ -931,7 +1054,8 @@ static uint8_t att_handle_rsp(struct bt_att_chan *chan, void *pdu, uint16_t len,
 
 	if (!chan->req) {
 		LOG_WRN("No pending ATT request");
-		goto process;
+		att_disconnect(chan);
+		return 0; /* Returning a non-0 value would attempt to send an error response */
 	}
 
 	/* Check if request has been cancelled */
@@ -1084,7 +1208,7 @@ static uint8_t att_find_info_rsp(struct bt_att_chan *chan, uint16_t start_handle
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_FIND_INFO_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_FIND_INFO_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -1238,7 +1362,7 @@ static uint8_t att_find_type_rsp(struct bt_att_chan *chan, uint16_t start_handle
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_FIND_TYPE_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_FIND_TYPE_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -1325,20 +1449,6 @@ struct read_type_data {
 
 typedef bool (*attr_read_cb)(struct net_buf *buf, ssize_t read,
 			     void *user_data);
-
-static bool attr_read_authorize(struct bt_conn *conn,
-				const struct bt_gatt_attr *attr)
-{
-	if (!IS_ENABLED(CONFIG_BT_GATT_AUTHORIZATION_CUSTOM)) {
-		return true;
-	}
-
-	if (!authorization_cb || !authorization_cb->read_authorize) {
-		return true;
-	}
-
-	return authorization_cb->read_authorize(conn, attr);
-}
 
 static bool attr_read_type_cb(struct net_buf *frag, ssize_t read,
 			      void *user_data)
@@ -1450,7 +1560,7 @@ static uint8_t read_type_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	}
 
 	/* Check the attribute authorization logic */
-	if (!attr_read_authorize(conn, attr)) {
+	if (!bt_gatt_attr_read_authorize(conn, attr)) {
 		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
@@ -1488,7 +1598,7 @@ static uint8_t att_read_type_rsp(struct bt_att_chan *chan, struct bt_uuid *uuid,
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_READ_TYPE_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_READ_TYPE_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -1549,15 +1659,22 @@ static uint8_t att_read_type_req(struct bt_att_chan *chan, struct net_buf *buf)
 		return 0;
 	}
 
-	/* Reading Database Hash is special as it may be used to make client change aware
+	/* If a client that has indicated support for robust caching (by setting the Robust
+	 * Caching bit in the Client Supported Features characteristic) is change-unaware
+	 * then the server shall send an ATT_ERROR_RSP PDU with the Error Code
+	 * parameter set to Database Out Of Sync (0x12) when either of the following happen:
+	 * • That client requests an operation at any Attribute Handle or list of Attribute
+	 *   Handles by sending an ATT request.
+	 * • That client sends an ATT_READ_BY_TYPE_REQ PDU with Attribute Type
+	 *   other than «Include» or «Characteristic» and an Attribute Handle range
+	 *   other than 0x0001 to 0xFFFF.
 	 * (Core Specification 5.4 Vol 3. Part G. 2.5.2.1 Robust Caching).
-	 *
-	 * GATT client shall always use GATT Read Using Characteristic UUID sub-procedure for
-	 * reading Database Hash
-	 * (Core Specification 5.4 Vol 3. Part G. 7.3 Databse Hash)
 	 */
-	if (bt_uuid_cmp(&u.uuid, BT_UUID_GATT_DB_HASH) != 0) {
-		if (!bt_gatt_change_aware(chan->att->conn, true)) {
+	if (!bt_gatt_change_aware(chan->chan.chan.conn, true)) {
+		if (bt_uuid_cmp(&u.uuid, BT_UUID_GATT_INCLUDE) != 0 &&
+		    bt_uuid_cmp(&u.uuid, BT_UUID_GATT_CHRC) != 0 &&
+		    (start_handle != BT_ATT_FIRST_ATTRIBUTE_HANDLE ||
+		     end_handle != BT_ATT_LAST_ATTRIBUTE_HANDLE)) {
 			if (!atomic_test_and_set_bit(chan->flags, ATT_OUT_OF_SYNC_SENT)) {
 				return BT_ATT_ERR_DB_OUT_OF_SYNC;
 			} else {
@@ -1599,7 +1716,7 @@ static uint8_t read_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	}
 
 	/* Check the attribute authorization logic */
-	if (!attr_read_authorize(conn, attr)) {
+	if (!bt_gatt_attr_read_authorize(conn, attr)) {
 		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
@@ -1633,7 +1750,7 @@ static uint8_t att_read_rsp(struct bt_att_chan *chan, uint8_t op, uint8_t rsp,
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, rsp);
+	data.buf = att_create_rsp_pdu(chan, rsp);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -1706,7 +1823,7 @@ static uint8_t att_read_mult_req(struct bt_att_chan *chan, struct net_buf *buf)
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_READ_MULT_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_READ_MULT_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -1770,7 +1887,7 @@ static uint8_t read_vl_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	}
 
 	/* Check the attribute authorization logic */
-	if (!attr_read_authorize(conn, attr)) {
+	if (!bt_gatt_attr_read_authorize(conn, attr)) {
 		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
@@ -1810,7 +1927,7 @@ static uint8_t att_read_mult_vl_req(struct bt_att_chan *chan, struct net_buf *bu
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_READ_MULT_VL_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_READ_MULT_VL_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -1932,7 +2049,7 @@ static uint8_t att_read_group_rsp(struct bt_att_chan *chan, struct bt_uuid *uuid
 
 	(void)memset(&data, 0, sizeof(data));
 
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_READ_GROUP_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_READ_GROUP_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -2011,27 +2128,12 @@ static uint8_t att_read_group_req(struct bt_att_chan *chan, struct net_buf *buf)
 
 struct write_data {
 	struct bt_conn *conn;
-	struct net_buf *buf;
-	uint8_t req;
+	uint8_t op;
 	const void *value;
 	uint16_t len;
 	uint16_t offset;
 	uint8_t err;
 };
-
-static bool attr_write_authorize(struct bt_conn *conn,
-				 const struct bt_gatt_attr *attr)
-{
-	if (!IS_ENABLED(CONFIG_BT_GATT_AUTHORIZATION_CUSTOM)) {
-		return true;
-	}
-
-	if (!authorization_cb || !authorization_cb->write_authorize) {
-		return true;
-	}
-
-	return authorization_cb->write_authorize(conn, attr);
-}
 
 static uint8_t write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 			void *user_data)
@@ -2050,16 +2152,18 @@ static uint8_t write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	}
 
 	/* Check the attribute authorization logic */
-	if (!attr_write_authorize(data->conn, attr)) {
+	if (!bt_gatt_attr_write_authorize(data->conn, attr)) {
 		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
 
 	/* Set command flag if not a request */
-	if (!data->req) {
+	if (data->op == BT_ATT_OP_WRITE_CMD || data->op == BT_ATT_OP_SIGNED_WRITE_CMD) {
 		flags |= BT_GATT_WRITE_FLAG_CMD;
-	} else if (data->req == BT_ATT_OP_EXEC_WRITE_REQ) {
+	} else if (data->op == BT_ATT_OP_EXEC_WRITE_REQ) {
 		flags |= BT_GATT_WRITE_FLAG_EXECUTE;
+	} else {
+		__ASSERT(data->op == BT_ATT_OP_WRITE_REQ, "Invalid data->op: %u", data->op);
 	}
 
 	/* Write attribute value */
@@ -2075,13 +2179,23 @@ static uint8_t write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	return BT_GATT_ITER_CONTINUE;
 }
 
-static uint8_t att_write_rsp(struct bt_att_chan *chan, uint8_t req, uint8_t rsp,
-			  uint16_t handle, uint16_t offset, const void *value,
-			  uint16_t len)
+static bool is_gatt_request(uint8_t op)
+{
+	switch (op) {
+	case BT_ATT_OP_WRITE_CMD:
+	case BT_ATT_OP_SIGNED_WRITE_CMD:
+		return false;
+	default:
+		return true;
+	}
+}
+
+static uint8_t perform_write(struct bt_att_chan *chan, uint8_t op, uint16_t handle,
+			     uint16_t offset, const void *value, uint16_t len)
 {
 	struct write_data data;
 
-	if (!bt_gatt_change_aware(chan->att->conn, req ? true : false)) {
+	if (!bt_gatt_change_aware(chan->att->conn, is_gatt_request(op))) {
 		if (!atomic_test_and_set_bit(chan->flags, ATT_OUT_OF_SYNC_SENT)) {
 			return BT_ATT_ERR_DB_OUT_OF_SYNC;
 		} else {
@@ -2095,16 +2209,8 @@ static uint8_t att_write_rsp(struct bt_att_chan *chan, uint8_t req, uint8_t rsp,
 
 	(void)memset(&data, 0, sizeof(data));
 
-	/* Only allocate buf if required to respond */
-	if (rsp) {
-		data.buf = bt_att_chan_create_pdu(chan, rsp, 0);
-		if (!data.buf) {
-			return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
-		}
-	}
-
 	data.conn = chan->att->conn;
-	data.req = req;
+	data.op = op;
 	data.offset = offset;
 	data.value = value;
 	data.len = len;
@@ -2112,33 +2218,31 @@ static uint8_t att_write_rsp(struct bt_att_chan *chan, uint8_t req, uint8_t rsp,
 
 	bt_gatt_foreach_attr(handle, handle, write_cb, &data);
 
-	if (data.err) {
-		/* In case of error discard data and respond with an error */
-		if (rsp) {
-			net_buf_unref(data.buf);
-			/* Respond here since handle is set */
-			send_err_rsp(chan, req, handle, data.err);
-		}
-		return req == BT_ATT_OP_EXEC_WRITE_REQ ? data.err : 0;
-	}
-
-	if (data.buf) {
-		bt_att_chan_send_rsp(chan, data.buf);
-	}
-
-	return 0;
+	return data.err;
 }
 
 static uint8_t att_write_req(struct bt_att_chan *chan, struct net_buf *buf)
 {
 	uint16_t handle;
+	uint8_t err;
 
 	handle = net_buf_pull_le16(buf);
 
 	LOG_DBG("handle 0x%04x", handle);
 
-	return att_write_rsp(chan, BT_ATT_OP_WRITE_REQ, BT_ATT_OP_WRITE_RSP,
-			     handle, 0, buf->data, buf->len);
+	err = perform_write(chan, BT_ATT_OP_WRITE_REQ, handle, 0, buf->data, buf->len);
+	if (err == 0) {
+		buf = bt_att_chan_create_pdu(chan, BT_ATT_OP_WRITE_RSP, 0);
+		if (buf == NULL) {
+			LOG_ERR("Unable to create rsp PDU");
+			return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
+		}
+		bt_att_chan_send_rsp(chan, buf);
+	} else {
+		send_err_rsp(chan, BT_ATT_OP_WRITE_REQ, handle, err);
+	}
+
+	return 0;
 }
 
 #if CONFIG_BT_ATT_PREPARE_COUNT > 0
@@ -2168,7 +2272,7 @@ static uint8_t prep_write_cb(const struct bt_gatt_attr *attr, uint16_t handle,
 	}
 
 	/* Check the attribute authorization logic */
-	if (!attr_write_authorize(data->conn, attr)) {
+	if (!bt_gatt_attr_write_authorize(data->conn, attr)) {
 		data->err = BT_ATT_ERR_AUTHORIZATION;
 		return BT_GATT_ITER_STOP;
 	}
@@ -2206,7 +2310,7 @@ append:
 }
 
 static uint8_t att_prep_write_rsp(struct bt_att_chan *chan, uint16_t handle,
-			       uint16_t offset, const void *value, uint8_t len)
+			       uint16_t offset, const void *value, uint16_t len)
 {
 	struct prep_data data;
 	struct bt_att_prepare_write_rsp *rsp;
@@ -2243,10 +2347,10 @@ static uint8_t att_prep_write_rsp(struct bt_att_chan *chan, uint16_t handle,
 	LOG_DBG("buf %p handle 0x%04x offset %u", data.buf, handle, offset);
 
 	/* Store buffer in the outstanding queue */
-	net_buf_slist_put(&chan->att->prep_queue, data.buf);
+	net_buf_slist_put(&chan->att->prep_queue, net_buf_take(&data.buf));
 
 	/* Generate response */
-	data.buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_PREPARE_WRITE_RSP);
+	data.buf = att_create_rsp_pdu(chan, BT_ATT_OP_PREPARE_WRITE_RSP);
 	if (!data.buf) {
 		return BT_ATT_ERR_INSUFFICIENT_RESOURCES;
 	}
@@ -2261,13 +2365,9 @@ static uint8_t att_prep_write_rsp(struct bt_att_chan *chan, uint16_t handle,
 
 	return 0;
 }
-#endif /* CONFIG_BT_ATT_PREPARE_COUNT */
 
 static uint8_t att_prepare_write_req(struct bt_att_chan *chan, struct net_buf *buf)
 {
-#if CONFIG_BT_ATT_PREPARE_COUNT == 0
-	return BT_ATT_ERR_NOT_SUPPORTED;
-#else
 	struct bt_att_prepare_write_req *req;
 	uint16_t handle, offset;
 
@@ -2279,10 +2379,8 @@ static uint8_t att_prepare_write_req(struct bt_att_chan *chan, struct net_buf *b
 	LOG_DBG("handle 0x%04x offset %u", handle, offset);
 
 	return att_prep_write_rsp(chan, handle, offset, buf->data, buf->len);
-#endif /* CONFIG_BT_ATT_PREPARE_COUNT */
 }
 
-#if CONFIG_BT_ATT_PREPARE_COUNT > 0
 static uint8_t exec_write_reassemble(uint16_t handle, uint16_t offset,
 				     sys_slist_t *list,
 				     struct net_buf_simple *buf)
@@ -2336,10 +2434,28 @@ static uint8_t exec_write_reassemble(uint16_t handle, uint16_t offset,
 	return BT_ATT_ERR_SUCCESS;
 }
 
+static void att_prep_queue_clear(struct bt_att *att)
+{
+	struct net_buf *buf;
+
+	buf = net_buf_slist_get(&att->prep_queue);
+	while (buf != NULL) {
+		net_buf_unref(buf);
+		buf = net_buf_slist_get(&att->prep_queue);
+	}
+}
+
 static uint8_t att_exec_write_rsp(struct bt_att_chan *chan, uint8_t flags)
 {
 	struct net_buf *buf;
-	uint8_t err = 0U;
+
+	if (flags != BT_ATT_FLAG_EXEC) {
+		/* Core v6.3 Vol 3 Part F 3.4.6.3: the prepared values are
+		 * discarded, the queue is cleared and the response is sent.
+		 */
+		att_prep_queue_clear(chan->att);
+		goto rsp;
+	}
 
 	/* The following code will iterate on all prepare writes in the
 	 * prep_queue, and reassemble those that share the same handle.
@@ -2349,6 +2465,7 @@ static uint8_t att_exec_write_rsp(struct bt_att_chan *chan, uint8_t flags)
 	while (!sys_slist_is_empty(&chan->att->prep_queue)) {
 		struct bt_attr_data *data;
 		uint16_t handle;
+		uint8_t err;
 
 		NET_BUF_SIMPLE_DEFINE_STATIC(reassembled_data,
 					     MIN(BT_ATT_MAX_ATTRIBUTE_LEN,
@@ -2367,33 +2484,30 @@ static uint8_t att_exec_write_rsp(struct bt_att_chan *chan, uint8_t flags)
 					    &chan->att->prep_queue,
 					    &reassembled_data);
 		if (err != BT_ATT_ERR_SUCCESS) {
+			/* Discard queued buffers */
+			net_buf_unref(buf);
+			att_prep_queue_clear(chan->att);
 			send_err_rsp(chan, BT_ATT_OP_EXEC_WRITE_REQ,
 				     handle, err);
 			return 0;
 		}
 
-		/* Just discard the data if an error was set */
-		if (!err && flags == BT_ATT_FLAG_EXEC) {
-			err = att_write_rsp(chan, BT_ATT_OP_EXEC_WRITE_REQ, 0,
-					    handle, data->offset,
-					    reassembled_data.data,
-					    reassembled_data.len);
-			if (err) {
-				/* Respond here since handle is set */
-				send_err_rsp(chan, BT_ATT_OP_EXEC_WRITE_REQ,
-					     data->handle, err);
-			}
-		}
-
+		err = perform_write(chan, BT_ATT_OP_EXEC_WRITE_REQ, handle, data->offset,
+				    reassembled_data.data, reassembled_data.len);
 		net_buf_unref(buf);
+		if (err != BT_ATT_ERR_SUCCESS) {
+			/* Core v6.3 Vol 3 Part F 3.4.6.3: the queue is cleared
+			 * and only an Error Response is sent.
+			 */
+			att_prep_queue_clear(chan->att);
+			send_err_rsp(chan, BT_ATT_OP_EXEC_WRITE_REQ, handle, err);
+			return 0;
+		}
 	}
 
-	if (err) {
-		return 0;
-	}
-
+rsp:
 	/* Generate response */
-	buf = bt_att_create_rsp_pdu(chan, BT_ATT_OP_EXEC_WRITE_RSP);
+	buf = att_create_rsp_pdu(chan, BT_ATT_OP_EXEC_WRITE_RSP);
 	if (!buf) {
 		return BT_ATT_ERR_UNLIKELY;
 	}
@@ -2402,14 +2516,9 @@ static uint8_t att_exec_write_rsp(struct bt_att_chan *chan, uint8_t flags)
 
 	return 0;
 }
-#endif /* CONFIG_BT_ATT_PREPARE_COUNT */
-
 
 static uint8_t att_exec_write_req(struct bt_att_chan *chan, struct net_buf *buf)
 {
-#if CONFIG_BT_ATT_PREPARE_COUNT == 0
-	return BT_ATT_ERR_NOT_SUPPORTED;
-#else
 	struct bt_att_exec_write_req *req;
 
 	req = (void *)buf->data;
@@ -2417,8 +2526,8 @@ static uint8_t att_exec_write_req(struct bt_att_chan *chan, struct net_buf *buf)
 	LOG_DBG("flags 0x%02x", req->flags);
 
 	return att_exec_write_rsp(chan, req->flags);
-#endif /* CONFIG_BT_ATT_PREPARE_COUNT */
 }
+#endif /* CONFIG_BT_ATT_PREPARE_COUNT > 0 */
 
 static uint8_t att_write_cmd(struct bt_att_chan *chan, struct net_buf *buf)
 {
@@ -2428,7 +2537,11 @@ static uint8_t att_write_cmd(struct bt_att_chan *chan, struct net_buf *buf)
 
 	LOG_DBG("handle 0x%04x", handle);
 
-	return att_write_rsp(chan, 0, 0, handle, 0, buf->data, buf->len);
+	if (perform_write(chan, BT_ATT_OP_WRITE_CMD, handle, 0, buf->data, buf->len)) {
+		/* Nothing we can do here, as this is a write command */
+	}
+
+	return 0;
 }
 
 #if defined(CONFIG_BT_SIGNING)
@@ -2465,8 +2578,12 @@ static uint8_t att_signed_write_cmd(struct bt_att_chan *chan, struct net_buf *bu
 	net_buf_pull(buf, sizeof(struct bt_att_hdr));
 	net_buf_pull(buf, sizeof(*req));
 
-	return att_write_rsp(chan, 0, 0, handle, 0, buf->data,
-			     buf->len - sizeof(struct bt_att_signature));
+	if (perform_write(chan, BT_ATT_OP_SIGNED_WRITE_CMD, handle, 0, buf->data,
+			  buf->len - sizeof(struct bt_att_signature)) != 0) {
+		/* Nothing we can do here, as this is a write command */
+	}
+
+	return 0;
 }
 #endif /* CONFIG_BT_SIGNING */
 
@@ -2701,6 +2818,7 @@ static uint8_t att_indicate(struct bt_att_chan *chan, struct net_buf *buf)
 
 	buf = bt_att_chan_create_pdu(chan, BT_ATT_OP_CONFIRM, 0);
 	if (!buf) {
+		LOG_ERR("Unable to create confirm PDU");
 		return 0;
 	}
 
@@ -2776,6 +2894,7 @@ static const struct att_handler {
 		sizeof(struct bt_att_write_req),
 		ATT_REQUEST,
 		att_write_req },
+#if CONFIG_BT_ATT_PREPARE_COUNT > 0
 	{ BT_ATT_OP_PREPARE_WRITE_REQ,
 		sizeof(struct bt_att_prepare_write_req),
 		ATT_REQUEST,
@@ -2784,6 +2903,7 @@ static const struct att_handler {
 		sizeof(struct bt_att_exec_write_req),
 		ATT_REQUEST,
 		att_exec_write_req },
+#endif /* CONFIG_BT_ATT_PREPARE_COUNT > 0 */
 	{ BT_ATT_OP_CONFIRM,
 		0,
 		ATT_CONFIRMATION,
@@ -3034,7 +3154,7 @@ struct net_buf *bt_att_create_pdu(struct bt_conn *conn, uint8_t op, size_t len)
 	return NULL;
 }
 
-struct net_buf *bt_att_create_rsp_pdu(struct bt_att_chan *chan, uint8_t op)
+static struct net_buf *att_create_rsp_pdu(struct bt_att_chan *chan, uint8_t op)
 {
 	size_t headroom;
 	struct bt_att_hdr *hdr;
@@ -3055,7 +3175,7 @@ struct net_buf *bt_att_create_rsp_pdu(struct bt_att_chan *chan, uint8_t op)
 
 	net_buf_reserve(buf, headroom);
 
-	data = bt_att_get_tx_meta_data(buf);
+	data = att_get_tx_meta_data(buf);
 	data->att_chan = chan;
 
 	hdr = net_buf_add(buf, sizeof(*hdr));
@@ -3070,9 +3190,7 @@ static void att_reset(struct bt_att *att)
 
 #if CONFIG_BT_ATT_PREPARE_COUNT > 0
 	/* Discard queued buffers */
-	while ((buf = net_buf_slist_get(&att->prep_queue))) {
-		net_buf_unref(buf);
-	}
+	att_prep_queue_clear(att);
 #endif /* CONFIG_BT_ATT_PREPARE_COUNT > 0 */
 
 #if defined(CONFIG_BT_EATT)
@@ -3131,14 +3249,11 @@ static void att_chan_detach(struct bt_att_chan *chan)
 
 static void att_timeout(struct k_work *work)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
-	struct bt_att_chan *chan = CONTAINER_OF(dwork, struct bt_att_chan,
-						timeout_work);
-	int err;
+	struct bt_att_chan *chan = CONTAINER_OF(dwork, struct bt_att_chan, timeout_work);
 
-	bt_addr_le_to_str(bt_conn_get_dst(chan->att->conn), addr, sizeof(addr));
-	LOG_ERR("ATT Timeout for device %s. Disconnecting...", addr);
+	LOG_ERR("ATT Timeout for device %s. Disconnecting...",
+		bt_conn_dst_str(chan->att->conn));
 
 	/* BLUETOOTH SPECIFICATION Version 4.2 [Vol 3, Part F] page 480:
 	 *
@@ -3148,17 +3263,13 @@ static void att_timeout(struct k_work *work)
 	 * requests, commands, indications or notifications shall be sent to the
 	 * target device on this ATT Bearer.
 	 */
-	bt_att_disconnected(&chan->chan.chan);
 
 	/* The timeout state is local and can block new ATT operations, but does not affect the
 	 * remote side. Disconnecting the GATT connection upon ATT timeout simplifies error handling
 	 * for developers. This reduces rare failure conditions to a common one, allowing developers
 	 * to handle unexpected disconnections without needing special cases for ATT timeouts.
 	 */
-	err = bt_conn_disconnect(chan->chan.chan.conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
-	if (err) {
-		LOG_ERR("Disconnecting failed (err %d)", err);
-	}
+	att_disconnect(chan);
 }
 
 static struct bt_att_chan *att_get_fixed_chan(struct bt_conn *conn)
@@ -3228,6 +3339,7 @@ static void bt_att_disconnected(struct bt_l2cap_chan *chan)
 }
 
 #if defined(CONFIG_BT_SMP)
+#if defined(CONFIG_BT_ATT_RETRY_ON_SEC_ERR)
 static uint8_t att_req_retry(struct bt_att_chan *att_chan)
 {
 	struct bt_att_req *req = att_chan->req;
@@ -3242,6 +3354,7 @@ static uint8_t att_req_retry(struct bt_att_chan *att_chan)
 
 	buf = bt_att_chan_create_pdu(att_chan, req->att_op, req->len);
 	if (!buf) {
+		LOG_ERR("Unable to create retry PDU (%u)", req->att_op);
 		return BT_ATT_ERR_UNLIKELY;
 	}
 
@@ -3257,6 +3370,7 @@ static uint8_t att_req_retry(struct bt_att_chan *att_chan)
 
 	return BT_ATT_ERR_SUCCESS;
 }
+#endif /* CONFIG_BT_ATT_RETRY_ON_SEC_ERR */
 
 static void bt_att_encrypt_change(struct bt_l2cap_chan *chan,
 				  uint8_t hci_status)
@@ -3264,7 +3378,6 @@ static void bt_att_encrypt_change(struct bt_l2cap_chan *chan,
 	struct bt_att_chan *att_chan = ATT_CHAN(chan);
 	struct bt_l2cap_le_chan *le_chan = BT_L2CAP_LE_CHAN(chan);
 	struct bt_conn *conn = le_chan->chan.conn;
-	uint8_t err;
 
 	LOG_DBG("chan %p conn %p handle %u sec_level 0x%02x status 0x%02x %s", le_chan, conn,
 		conn->handle, conn->sec_level, hci_status, bt_hci_err_to_str(hci_status));
@@ -3279,10 +3392,12 @@ static void bt_att_encrypt_change(struct bt_l2cap_chan *chan,
 	 * outstanding request about security failure.
 	 */
 	if (hci_status) {
+#if defined(CONFIG_BT_ATT_RETRY_ON_SEC_ERR)
 		if (att_chan->req && att_chan->req->retrying) {
 			att_handle_rsp(att_chan, NULL, 0,
 				       BT_ATT_ERR_AUTHENTICATION);
 		}
+#endif /* CONFIG_BT_ATT_RETRY_ON_SEC_ERR */
 
 		return;
 	}
@@ -3292,6 +3407,9 @@ static void bt_att_encrypt_change(struct bt_l2cap_chan *chan,
 	if (conn->sec_level == BT_SECURITY_L1) {
 		return;
 	}
+
+#if defined(CONFIG_BT_ATT_RETRY_ON_SEC_ERR)
+	uint8_t err;
 
 	if (!(att_chan->req && att_chan->req->retrying)) {
 		return;
@@ -3304,13 +3422,14 @@ static void bt_att_encrypt_change(struct bt_l2cap_chan *chan,
 		LOG_DBG("Retry failed (%d)", err);
 		att_handle_rsp(att_chan, NULL, 0, err);
 	}
+#endif /* CONFIG_BT_ATT_RETRY_ON_SEC_ERR */
 }
 #endif /* CONFIG_BT_SMP */
 
 static void bt_att_status(struct bt_l2cap_chan *ch, atomic_t *status)
 {
 	struct bt_att_chan *chan = ATT_CHAN(ch);
-	sys_snode_t *node;
+	struct bt_att_req *req;
 
 	LOG_DBG("chan %p status %p", ch, status);
 
@@ -3329,17 +3448,17 @@ static void bt_att_status(struct bt_l2cap_chan *ch, atomic_t *status)
 	}
 
 	/* Pull next request from the list */
-	node = sys_slist_get(&chan->att->reqs);
-	if (!node) {
+	req = get_first_req_matching_chan(&chan->att->reqs, chan);
+	if (req == NULL) {
 		return;
 	}
 
-	if (bt_att_chan_req_send(chan, ATT_REQ(node)) >= 0) {
+	if (bt_att_chan_req_send(chan, req) == 0) {
 		return;
 	}
 
 	/* Prepend back to the list as it could not be sent */
-	sys_slist_prepend(&chan->att->reqs, node);
+	sys_slist_prepend(&chan->att->reqs, &req->node);
 }
 
 static void bt_att_released(struct bt_l2cap_chan *ch)
@@ -3347,6 +3466,18 @@ static void bt_att_released(struct bt_l2cap_chan *ch)
 	struct bt_att_chan *chan = ATT_CHAN(ch);
 
 	LOG_DBG("chan %p", chan);
+
+	/* Drop any pending/in-flight ATT TX metadata still referencing this
+	 * channel, so the deferred att_on_sent_cb()/bt_att_sent() work cannot
+	 * dereference the channel after it is freed here. Bluetooth uses a
+	 * cooperative system workqueue, so this runs serialized with
+	 * att_tx_destroy_work_handler() and aligned pointer writes are atomic.
+	 */
+	ARRAY_FOR_EACH(tx_meta_data_storage, i) {
+		if (tx_meta_data_storage[i].att_chan == chan) {
+			tx_meta_data_storage[i].att_chan = NULL;
+		}
+	}
 
 	k_mem_slab_free(&chan_slab, (void *)chan);
 }
@@ -3491,6 +3622,7 @@ static int bt_att_accept(struct bt_conn *conn, struct bt_l2cap_chan **ch)
 
 	chan = att_chan_new(att, 0);
 	if (!chan) {
+		k_mem_slab_free(&att_slab, (void *)att);
 		return -ENOMEM;
 	}
 
@@ -3503,7 +3635,10 @@ static int bt_att_accept(struct bt_conn *conn, struct bt_l2cap_chan **ch)
  * placed as the last one to ensure that SMP channel is properly initialized before bt_att_connected
  * tries to send security request.
  */
-BT_L2CAP_CHANNEL_DEFINE(z_att_fixed_chan, BT_L2CAP_CID_ATT, bt_att_accept, NULL);
+BT_L2CAP_FIXED_CHANNEL_DEFINE(z_att_fixed_chan) = {
+	.cid = BT_L2CAP_CID_ATT,
+	.accept = bt_att_accept,
+};
 
 #if defined(CONFIG_BT_EATT)
 static k_timeout_t credit_based_connection_delay(struct bt_conn *conn)
@@ -3534,7 +3669,7 @@ static k_timeout_t credit_based_connection_delay(struct bt_conn *conn)
 		 * result in an overflow
 		 */
 		const uint32_t calculated_delay_us =
-			2 * (conn->le.latency + 1) * BT_CONN_INTERVAL_TO_US(conn->le.interval);
+			2 * (conn->le.latency + 1) * conn->le.interval_us;
 		const uint32_t calculated_delay_ms = calculated_delay_us / USEC_PER_MSEC;
 
 		return K_MSEC(MAX(100, calculated_delay_ms + rand_delay));
@@ -3555,8 +3690,7 @@ static int att_schedule_eatt_connect(struct bt_conn *conn, uint8_t chans_to_conn
 
 	att->eatt.chans_to_connect = chans_to_connect;
 
-	return k_work_reschedule(&att->eatt.connection_work,
-				 credit_based_connection_delay(conn));
+	return bt_work_reschedule(&att->eatt.connection_work, credit_based_connection_delay(conn));
 }
 
 static void handle_potential_collision(struct bt_att *att)
@@ -3669,7 +3803,7 @@ int bt_eatt_connect(struct bt_conn *conn, size_t num_channels)
 	}
 
 	while (offset < i) {
-		/* bt_l2cap_ecred_chan_connect() uses the first L2CAP_ECRED_CHAN_MAX_PER_REQ
+		/* bt_l2cap_ecred_chan_connect() uses the first BT_L2CAP_ECRED_CHAN_MAX_PER_REQ
 		 * elements of the array or until a null-terminator is reached.
 		 */
 		err = bt_l2cap_ecred_chan_connect(conn, &chan[offset], BT_EATT_PSM);
@@ -3677,7 +3811,7 @@ int bt_eatt_connect(struct bt_conn *conn, size_t num_channels)
 			return err;
 		}
 
-		offset += L2CAP_ECRED_CHAN_MAX_PER_REQ;
+		offset += BT_L2CAP_ECRED_CHAN_MAX_PER_REQ;
 	}
 
 	return 0;
@@ -3689,15 +3823,15 @@ static void eatt_auto_connect(struct bt_conn *conn, bt_security_t level,
 {
 	int eatt_err;
 
-	if (err || level < BT_SECURITY_L2 || !bt_att_fixed_chan_only(conn)) {
+	if (!bt_conn_is_le(conn) || (err != 0) || level < BT_SECURITY_L2 ||
+	    !bt_att_fixed_chan_only(conn)) {
 		return;
 	}
 
 	eatt_err = att_schedule_eatt_connect(conn, CONFIG_BT_EATT_MAX);
 	if (eatt_err < 0) {
 		LOG_WRN("Automatic creation of EATT bearers failed on "
-			"connection %s with error %d",
-			bt_addr_le_str(bt_conn_get_dst(conn)), eatt_err);
+			"connection %s with error %d", bt_conn_dst_str(conn), eatt_err);
 	}
 }
 
@@ -3768,7 +3902,7 @@ int bt_eatt_reconfigure(struct bt_conn *conn, uint16_t mtu)
 	}
 
 	while (offset < i) {
-		/* bt_l2cap_ecred_chan_reconfigure() uses the first L2CAP_ECRED_CHAN_MAX_PER_REQ
+		/* bt_l2cap_ecred_chan_reconfigure() uses the first BT_L2CAP_ECRED_CHAN_MAX_PER_REQ
 		 * elements of the array or until a null-terminator is reached.
 		 */
 		err = bt_l2cap_ecred_chan_reconfigure(&chans[offset], mtu);
@@ -3776,7 +3910,7 @@ int bt_eatt_reconfigure(struct bt_conn *conn, uint16_t mtu)
 			return err;
 		}
 
-		offset += L2CAP_ECRED_CHAN_MAX_PER_REQ;
+		offset += BT_L2CAP_ECRED_CHAN_MAX_PER_REQ;
 	}
 
 	return 0;
@@ -3882,6 +4016,54 @@ uint16_t bt_att_get_uatt_mtu(struct bt_conn *conn)
 	return 0;
 }
 
+int bt_att_get_max_notify_size(struct bt_conn *conn, enum bt_att_chan_opt chan_opt)
+{
+	/* Opcode (1 octet) + attribute handle (2 octets) */
+	const uint16_t att_ntf_hdr_size = sizeof(struct bt_att_hdr) + sizeof(struct bt_att_notify);
+	struct bt_att_chan *chan, *tmp;
+	struct bt_att *att;
+	uint16_t mtu = 0;
+
+	if (conn == NULL) {
+		return -EINVAL;
+	}
+
+	if (!bt_conn_is_le(conn)) {
+		LOG_DBG("conn %p is not LE ACL", conn);
+		return -EINVAL;
+	}
+
+	if (conn->state != BT_CONN_CONNECTED) {
+		LOG_DBG("conn %p is not connected (%d)", conn, conn->state);
+		return -ENOTCONN;
+	}
+
+	if ((!IS_ENABLED(CONFIG_BT_EATT) && (chan_opt & BT_ATT_CHAN_OPT_ENHANCED_ONLY) != 0) ||
+	    !(chan_opt == BT_ATT_CHAN_OPT_NONE || chan_opt == BT_ATT_CHAN_OPT_UNENHANCED_ONLY ||
+	      chan_opt == BT_ATT_CHAN_OPT_ENHANCED_ONLY)) {
+		LOG_DBG("Invalid channel options %d for conn %p", chan_opt, conn);
+		return -EINVAL;
+	}
+
+	att = att_get(conn);
+	if (att == NULL) {
+		LOG_DBG("Could not get ATT for conn %p", conn);
+		return -ENOTCONN;
+	}
+
+	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&att->chans, chan, tmp, node) {
+		if (att_chan_matches_chan_opt(chan, chan_opt) && (bt_att_mtu(chan) > mtu)) {
+			mtu = bt_att_mtu(chan);
+		}
+	}
+
+	if (mtu > att_ntf_hdr_size) {
+		return (int)(mtu - att_ntf_hdr_size);
+	}
+
+	return 0;
+}
+
 static void att_chan_mtu_updated(struct bt_att_chan *updated_chan)
 {
 	struct bt_att *att = updated_chan->att;
@@ -3909,12 +4091,25 @@ static void att_chan_mtu_updated(struct bt_att_chan *updated_chan)
 struct bt_att_req *bt_att_req_alloc(k_timeout_t timeout)
 {
 	struct bt_att_req *req = NULL;
+	k_tid_t current_thread = k_current_get();
 
-	if (k_current_get() == att_handle_rsp_thread) {
-		/* No req will be fulfilled while blocking on the bt_recv thread.
-		 * Blocking would cause deadlock.
+	if (current_thread == att_handle_rsp_thread ||
+	    current_thread == k_work_queue_thread_get(&k_sys_work_q)) {
+		/* bt_att_req are released by the att_handle_rsp_thread.
+		 * A blocking allocation the same thread would cause a
+		 * deadlock.
+		 *
+		 * Likewise, the system work queue is used for
+		 * tx_processor(), which is needed to send currently
+		 * pending requests. Blocking here in a situation where
+		 * all the request holding a bt_att_req have yet to go
+		 * through the tx_processor() would cause a deadlock.
+		 *
+		 * Note the att_handle_rsp_thread might be the system
+		 * work queue thread or the dedicated BT RX WQ thread,
+		 * depending on kconfig.
 		 */
-		LOG_DBG("Timeout discarded. No blocking on bt_recv thread.");
+		LOG_DBG("Timeout discarded. No blocking on BT RX WQ or SYS WQ threads.");
 		timeout = K_NO_WAIT;
 	}
 
@@ -3935,10 +4130,7 @@ void bt_att_req_free(struct bt_att_req *req)
 {
 	LOG_DBG("req %p", req);
 
-	if (req->buf) {
-		net_buf_unref(req->buf);
-		req->buf = NULL;
-	}
+	net_buf_drop(&req->buf);
 
 	k_mem_slab_free(&req_slab, (void *)req);
 }
@@ -3956,7 +4148,7 @@ int bt_att_send(struct bt_conn *conn, struct net_buf *buf)
 		return -ENOTCONN;
 	}
 
-	k_fifo_put(&att->tx_queue, buf);
+	k_fifo_put(&att->tx_queue, net_buf_take(&buf));
 	att_send_process(att);
 
 	return 0;
@@ -3971,11 +4163,18 @@ int bt_att_req_send(struct bt_conn *conn, struct bt_att_req *req)
 	__ASSERT_NO_MSG(conn);
 	__ASSERT_NO_MSG(req);
 
+	/* att_handle_rsp() processes the request queue on the RX workqueue
+	 * without the host lock, relying on cooperative scheduling: hold the
+	 * scheduler lock as well so that it cannot preempt a preemptible
+	 * caller mid-update.
+	 */
+	bt_dev_lock();
 	k_sched_lock();
 
 	att = att_get(conn);
 	if (!att) {
 		k_sched_unlock();
+		bt_dev_unlock();
 		return -ENOTCONN;
 	}
 
@@ -3983,6 +4182,7 @@ int bt_att_req_send(struct bt_conn *conn, struct bt_att_req *req)
 	att_req_send_process(att);
 
 	k_sched_unlock();
+	bt_dev_unlock();
 
 	return 0;
 }
@@ -3993,6 +4193,21 @@ static bool bt_att_chan_req_cancel(struct bt_att_chan *chan,
 	if (chan->req != req) {
 		return false;
 	}
+
+#if defined(CONFIG_BT_ATT_RETRY_ON_SEC_ERR)
+	/* A request waiting for a security retry has already had its error
+	 * response consumed and its timeout stopped, so neither a response
+	 * nor a timeout is left to clear the placeholder: release the bearer
+	 * now and let the next queued request use it.
+	 */
+	if (req->retrying) {
+		chan->req = NULL;
+		bt_att_req_free(req);
+		att_req_send_process(chan->att);
+
+		return true;
+	}
+#endif /* CONFIG_BT_ATT_RETRY_ON_SEC_ERR */
 
 	chan->req = &cancel;
 
@@ -4036,13 +4251,17 @@ struct bt_att_req *bt_att_find_req_by_user_data(struct bt_conn *conn, const void
 	struct bt_att_chan *chan;
 	struct bt_att_req *req;
 
+	if (user_data == NULL) {
+		return NULL;
+	}
+
 	att = att_get(conn);
 	if (!att) {
 		return NULL;
 	}
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&att->chans, chan, node) {
-		if (chan->req->user_data == user_data) {
+		if (chan->req != NULL && chan->req->user_data == user_data) {
 			return chan->req;
 		}
 	}
@@ -4096,7 +4315,7 @@ bool bt_att_out_of_sync_sent_on_fixed(struct bt_conn *conn)
 void bt_att_set_tx_meta_data(struct net_buf *buf, bt_gatt_complete_func_t func, void *user_data,
 			     enum bt_att_chan_opt chan_opt)
 {
-	struct bt_att_tx_meta_data *data = bt_att_get_tx_meta_data(buf);
+	struct bt_att_tx_meta_data *data = att_get_tx_meta_data(buf);
 
 	data->func = func;
 	data->user_data = user_data;
@@ -4106,7 +4325,7 @@ void bt_att_set_tx_meta_data(struct net_buf *buf, bt_gatt_complete_func_t func, 
 
 void bt_att_increment_tx_meta_data_attr_count(struct net_buf *buf, uint16_t attr_count)
 {
-	struct bt_att_tx_meta_data *data = bt_att_get_tx_meta_data(buf);
+	struct bt_att_tx_meta_data *data = att_get_tx_meta_data(buf);
 
 	data->attr_count += attr_count;
 }
@@ -4114,7 +4333,7 @@ void bt_att_increment_tx_meta_data_attr_count(struct net_buf *buf, uint16_t attr
 bool bt_att_tx_meta_data_match(const struct net_buf *buf, bt_gatt_complete_func_t func,
 			       const void *user_data, enum bt_att_chan_opt chan_opt)
 {
-	const struct bt_att_tx_meta_data *meta = bt_att_get_tx_meta_data(buf);
+	const struct bt_att_tx_meta_data *meta = att_get_tx_meta_data(buf);
 
 	return ((meta->func == func) &&
 		(meta->user_data == user_data) &&
@@ -4136,24 +4355,4 @@ bool bt_att_chan_opt_valid(struct bt_conn *conn, enum bt_att_chan_opt chan_opt)
 	}
 
 	return true;
-}
-
-int bt_gatt_authorization_cb_register(const struct bt_gatt_authorization_cb *cb)
-{
-	if (!IS_ENABLED(CONFIG_BT_GATT_AUTHORIZATION_CUSTOM)) {
-		return -ENOSYS;
-	}
-
-	if (!cb) {
-		authorization_cb = NULL;
-		return 0;
-	}
-
-	if (authorization_cb) {
-		return -EALREADY;
-	}
-
-	authorization_cb = cb;
-
-	return 0;
 }

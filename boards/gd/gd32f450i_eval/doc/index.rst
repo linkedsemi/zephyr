@@ -43,44 +43,7 @@ For more information about the GD32F450 SoC and GD32F450I-EVAL board:
 Supported Features
 ==================
 
-The board configuration supports the following hardware features:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Peripheral
-     - Kconfig option
-     - Devicetree compatible
-   * - EXTI
-     - :kconfig:option:`CONFIG_GD32_EXTI`
-     - :dtcompatible:`gd,gd32-exti`
-   * - GPIO
-     - :kconfig:option:`CONFIG_GPIO`
-     - :dtcompatible:`gd,gd32-gpio`
-   * - NVIC
-     - N/A
-     - :dtcompatible:`arm,v7m-nvic`
-   * - PWM
-     - :kconfig:option:`CONFIG_PWM`
-     - :dtcompatible:`gd,gd32-pwm`
-   * - SYSTICK
-     - N/A
-     - N/A
-   * - USART
-     - :kconfig:option:`CONFIG_SERIAL`
-     - :dtcompatible:`gd,gd32-usart`
-   * - DAC
-     - :kconfig:option:`CONFIG_DAC`
-     - :dtcompatible:`gd,gd32-dac`
-   * - I2C
-     - :kconfig:option:`CONFIG_I2C`
-     - :dtcompatible:`gd,gd32-i2c`
-   * - EEPROM
-     - :kconfig:option:`CONFIG_EEPROM`
-     - :dtcompatible:`atmel,at24`
-   * - ADC
-     - :kconfig:option:`CONFIG_ADC`
-     - :dtcompatible:`gd,gd32-adc`
+.. zephyr:board-supported-hw::
 
 Serial Port
 ===========
@@ -90,6 +53,8 @@ is USART0 with TX connected at PA9 and RX at PA10.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Before programming your board make sure to configure boot and serial jumpers
 as follows:
@@ -150,10 +115,10 @@ allows flash programming and debugging over USB. There is also a JTAG header
    https://www.gigadevice.com/products/microcontrollers/gd32/arm-cortex-m4/stretch-performance-line/
 
 .. _GD32F450xx Datasheet:
-	https://gd32mcu.21ic.com/data/documents/shujushouce/GD32F450xx_Datasheet_Rev1.1.pdf
+	https://www.gd32mcu.com/data/documents/datasheet/GD32F450xx_Datasheet_Rev2.3.pdf
 
 .. _GD32F4xx User Manual:
-	https://www.gigadevice.com/manual/gd32f450xxxx-user-manual/
+	https://www.gd32mcu.com/data/documents/userManual/GD32F4xx_User_Manual_Rev3.0.pdf
 
 .. _GD32F450I-EVAL User Manual:
 	http://www.gd32mcu.com/download/down/document_id/120/path_type/1

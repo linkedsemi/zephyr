@@ -210,11 +210,6 @@ static int mcux_lpsci_irq_is_pending(const struct device *dev)
 		|| mcux_lpsci_irq_rx_pending(dev));
 }
 
-static int mcux_lpsci_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 static void mcux_lpsci_irq_callback_set(const struct device *dev,
 					uart_irq_callback_user_data_t cb,
 					void *cb_data)
@@ -270,7 +265,7 @@ static int mcux_lpsci_init(const struct device *dev)
 	return 0;
 }
 
-static const struct uart_driver_api mcux_lpsci_driver_api = {
+static DEVICE_API(uart, mcux_lpsci_driver_api) = {
 	.poll_in = mcux_lpsci_poll_in,
 	.poll_out = mcux_lpsci_poll_out,
 	.err_check = mcux_lpsci_err_check,
@@ -287,7 +282,6 @@ static const struct uart_driver_api mcux_lpsci_driver_api = {
 	.irq_err_enable = mcux_lpsci_irq_err_enable,
 	.irq_err_disable = mcux_lpsci_irq_err_disable,
 	.irq_is_pending = mcux_lpsci_irq_is_pending,
-	.irq_update = mcux_lpsci_irq_update,
 	.irq_callback_set = mcux_lpsci_irq_callback_set,
 #endif
 };

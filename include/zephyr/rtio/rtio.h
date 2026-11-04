@@ -1,5 +1,7 @@
 /*
- * Copyright (c) 2022 Intel Corporation
+ * SPDX-FileCopyrightText: Copyright (c) 2022 Intel Corporation
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Infineon Technologies AG,
+ * SPDX-FileCopyrightText: or an affiliate of Infineon Technologies AG. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,6 +9,7 @@
 /**
  * @file
  * @brief Real-Time IO device API for moving bytes with low effort
+ * @ingroup rtio
  *
  * RTIO is a context for asynchronous batch operations using a submission and completion queue.
  *
@@ -36,7 +39,9 @@
 #include <zephyr/sys/mem_blocks.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/iterable_sections.h>
-#include <zephyr/sys/mpsc_lockfree.h>
+#include <zephyr/rtio/sqe.h>
+#include <zephyr/rtio/cqe.h>
+#include <zephyr/rtio/iodev.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -47,277 +52,22 @@ extern "C" {
  * @brief RTIO
  * @defgroup rtio RTIO
  * @since 3.2
- * @version 0.1.0
+ * @version 0.3.0
  * @ingroup os_services
  * @{
  */
 
-/**
- * @brief RTIO Predefined Priorities
- * @defgroup rtio_sqe_prio RTIO Priorities
- * @ingroup rtio
- * @{
- */
-
-/**
- * @brief Low priority
- */
-#define RTIO_PRIO_LOW 0U
-
-/**
- * @brief Normal priority
- */
-#define RTIO_PRIO_NORM 127U
-
-/**
- * @brief High priority
- */
-#define RTIO_PRIO_HIGH 255U
-
-/**
- * @}
- */
-
-
-/**
- * @brief RTIO SQE Flags
- * @defgroup rtio_sqe_flags RTIO SQE Flags
- * @ingroup rtio
- * @{
- */
-
-/**
- * @brief The next request in the queue should wait on this one.
- *
- * Chained SQEs are individual units of work describing patterns of
- * ordering and failure cascading. A chained SQE must be started only
- * after the one before it. They are given to the iodevs one after another.
- */
-#define RTIO_SQE_CHAINED BIT(0)
-
-/**
- * @brief The next request in the queue is part of a transaction.
- *
- * Transactional SQEs are sequential parts of a unit of work.
- * Only the first transactional SQE is submitted to an iodev, the
- * remaining SQEs are never individually submitted but instead considered
- * to be part of the transaction to the single iodev. The first sqe in the
- * sequence holds the iodev that will be used and the last holds the userdata
- * that will be returned in a single completion on failure/success.
- */
-#define RTIO_SQE_TRANSACTION BIT(1)
-
-
-/**
- * @brief The buffer should be allocated by the RTIO mempool
- *
- * This flag can only exist if the CONFIG_RTIO_SYS_MEM_BLOCKS Kconfig was
- * enabled and the RTIO context was created via the RTIO_DEFINE_WITH_MEMPOOL()
- * macro. If set, the buffer associated with the entry was allocated by the
- * internal memory pool and should be released as soon as it is no longer
- * needed via a call to rtio_release_mempool().
- */
-#define RTIO_SQE_MEMPOOL_BUFFER BIT(2)
-
-/**
- * @brief The SQE should not execute if possible
- *
- * If possible (not yet executed), the SQE should be canceled by flagging it as failed and returning
- * -ECANCELED as the result.
- */
-#define RTIO_SQE_CANCELED BIT(3)
-
-/**
- * @brief The SQE should continue producing CQEs until canceled
- *
- * This flag must exist along @ref RTIO_SQE_MEMPOOL_BUFFER and signals that when a read is
- * complete. It should be placed back in queue until canceled.
- */
-#define RTIO_SQE_MULTISHOT BIT(4)
-
-/**
- * @brief The SQE does not produce a CQE.
- */
-#define RTIO_SQE_NO_RESPONSE BIT(5)
-
-/**
- * @}
- */
-
-/**
- * @brief RTIO CQE Flags
- * @defgroup rtio_cqe_flags RTIO CQE Flags
- * @ingroup rtio
- * @{
- */
-
-/**
- * @brief The entry's buffer was allocated from the RTIO's mempool
- *
- * If this bit is set, the buffer was allocated from the memory pool and should be recycled as
- * soon as the application is done with it.
- */
-#define RTIO_CQE_FLAG_MEMPOOL_BUFFER BIT(0)
-
-#define RTIO_CQE_FLAG_GET(flags) FIELD_GET(GENMASK(7, 0), (flags))
-
-/**
- * @brief Get the block index of a mempool flags
- *
- * @param flags The CQE flags value
- * @return The block index portion of the flags field.
- */
-#define RTIO_CQE_FLAG_MEMPOOL_GET_BLK_IDX(flags) FIELD_GET(GENMASK(19, 8), (flags))
-
-/**
- * @brief Get the block count of a mempool flags
- *
- * @param flags The CQE flags value
- * @return The block count portion of the flags field.
- */
-#define RTIO_CQE_FLAG_MEMPOOL_GET_BLK_CNT(flags) FIELD_GET(GENMASK(31, 20), (flags))
-
-/**
- * @brief Prepare CQE flags for a mempool read.
- *
- * @param blk_idx The mempool block index
- * @param blk_cnt The mempool block count
- * @return A shifted and masked value that can be added to the flags field with an OR operator.
- */
-#define RTIO_CQE_FLAG_PREP_MEMPOOL(blk_idx, blk_cnt)                                               \
-	(FIELD_PREP(GENMASK(7, 0), RTIO_CQE_FLAG_MEMPOOL_BUFFER) |                                 \
-	 FIELD_PREP(GENMASK(19, 8), blk_idx) | FIELD_PREP(GENMASK(31, 20), blk_cnt))
-
-/**
- * @}
- */
-
-/**
- * @brief Equivalent to the I2C_MSG_STOP flag
- */
-#define RTIO_IODEV_I2C_STOP BIT(1)
-
-/**
- * @brief Equivalent to the I2C_MSG_RESTART flag
- */
-#define RTIO_IODEV_I2C_RESTART BIT(2)
-
-/**
- * @brief Equivalent to the I2C_MSG_ADDR_10_BITS
- */
-#define RTIO_IODEV_I2C_10_BITS BIT(3)
-
-/** @cond ignore */
 struct rtio;
-struct rtio_cqe;
-struct rtio_sqe;
-struct rtio_sqe_pool;
-struct rtio_cqe_pool;
-struct rtio_iodev;
-struct rtio_iodev_sqe;
-/** @endcond */
 
 /**
- * @typedef rtio_callback_t
- * @brief Callback signature for RTIO_OP_CALLBACK
- * @param r RTIO context being used with the callback
- * @param sqe Submission for the callback op
- * @param arg0 Argument option as part of the sqe
+ * @brief RTIO completion queue event callback
+ *
+ * Called every time a new completion queue event is submitted to RTIO context, if set.
+ *
+ * @param r The RTIO context to which the completion queue event was submitted
+ * @param user_data User data specified with @ref rtio_set_cqe_callback
  */
-typedef void (*rtio_callback_t)(struct rtio *r, const struct rtio_sqe *sqe, void *arg0);
-
-/**
- * @brief A submission queue event
- */
-struct rtio_sqe {
-	uint8_t op; /**< Op code */
-
-	uint8_t prio; /**< Op priority */
-
-	uint16_t flags; /**< Op Flags */
-
-	uint16_t iodev_flags; /**< Op iodev flags */
-
-	uint16_t _resv0;
-
-	const struct rtio_iodev *iodev; /**< Device to operation on */
-
-	/**
-	 * User provided data which is returned upon operation completion. Could be a pointer or
-	 * integer.
-	 *
-	 * If unique identification of completions is desired this should be
-	 * unique as well.
-	 */
-	void *userdata;
-
-	union {
-
-		/** OP_TX */
-		struct {
-			uint32_t buf_len; /**< Length of buffer */
-			const uint8_t *buf; /**< Buffer to write from */
-		} tx;
-
-		/** OP_RX */
-		struct {
-			uint32_t buf_len; /**< Length of buffer */
-			uint8_t *buf; /**< Buffer to read into */
-		} rx;
-
-		/** OP_TINY_TX */
-		struct {
-			uint8_t buf_len; /**< Length of tiny buffer */
-			uint8_t buf[7]; /**< Tiny buffer */
-		} tiny_tx;
-
-		/** OP_CALLBACK */
-		struct {
-			rtio_callback_t callback;
-			void *arg0; /**< Last argument given to callback */
-		} callback;
-
-		/** OP_TXRX */
-		struct {
-			uint32_t buf_len; /**< Length of tx and rx buffers */
-			const uint8_t *tx_buf; /**< Buffer to write from */
-			uint8_t *rx_buf; /**< Buffer to read into */
-		} txrx;
-
-		/** OP_I2C_CONFIGURE */
-		uint32_t i2c_config;
-	};
-};
-
-/** @cond ignore */
-/* Ensure the rtio_sqe never grows beyond a common cacheline size of 64 bytes */
-BUILD_ASSERT(sizeof(struct rtio_sqe) <= 64);
-/** @endcond */
-
-/**
- * @brief A completion queue event
- */
-struct rtio_cqe {
-	struct mpsc_node q;
-
-	int32_t result; /**< Result from operation */
-	void *userdata; /**< Associated userdata with operation */
-	uint32_t flags; /**< Flags associated with the operation */
-};
-
-struct rtio_sqe_pool {
-	struct mpsc free_q;
-	const uint16_t pool_size;
-	uint16_t pool_free;
-	struct rtio_iodev_sqe *pool;
-};
-
-struct rtio_cqe_pool {
-	struct mpsc free_q;
-	const uint16_t pool_size;
-	uint16_t pool_free;
-	struct rtio_cqe *pool;
-};
+typedef void (*rtio_cqe_callback_t)(struct rtio *r, void *user_data);
 
 /**
  * @brief An RTIO context containing what can be viewed as a pair of queues.
@@ -348,18 +98,16 @@ struct rtio {
 	struct k_sem *consume_sem;
 #endif
 
-	/* Total number of completions */
+	/** Total number of completions */
 	atomic_t cq_count;
 
-	/* Number of completions that were unable to be submitted with results
-	 * due to the cq spsc being full
-	 */
+	/** Number of completions dropped because no CQE was available */
 	atomic_t xcqcnt;
 
-	/* Submission queue object pool with free list */
+	/** Submission queue object pool with free list */
 	struct rtio_sqe_pool *sqe_pool;
 
-	/* Complete queue object pool with free list */
+	/** Completion queue object pool with free list */
 	struct rtio_cqe_pool *cqe_pool;
 
 #ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
@@ -367,15 +115,55 @@ struct rtio {
 	struct sys_mem_blocks *block_pool;
 #endif
 
-	/* Submission queue */
+	/** Submission queue */
 	struct mpsc sq;
 
-	/* Completion queue */
+	/** Completion queue */
 	struct mpsc cq;
+
+#ifdef CONFIG_RTIO_CQE_CALLBACK
+	/* Completion queue event callback */
+	rtio_cqe_callback_t cqe_cb;
+
+	/* Completion queue event callback user data */
+	void *cqe_cb_user_data;
+#endif
 };
 
-/** The memory partition associated with all RTIO context information */
-extern struct k_mem_partition rtio_partition;
+/* @cond ignore */
+#define Z_RTIO_DEFINE(name, _sqe_pool, _cqe_pool, _block_pool)                                     \
+	IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM,                                                         \
+		   (static K_SEM_DEFINE(CONCAT(_submit_sem_, name), 0, K_SEM_MAX_LIMIT)))          \
+	IF_ENABLED(CONFIG_RTIO_CONSUME_SEM,                                                        \
+		   (static K_SEM_DEFINE(CONCAT(_consume_sem_, name), 0, K_SEM_MAX_LIMIT)))         \
+	STRUCT_SECTION_ITERABLE(rtio, name) = {                                                    \
+		IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM, (.submit_sem = &CONCAT(_submit_sem_, name),))   \
+		IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM, (.submit_count = 0,))                           \
+		IF_ENABLED(CONFIG_RTIO_CONSUME_SEM, (.consume_sem = &CONCAT(_consume_sem_, name),))\
+		.cq_count = ATOMIC_INIT(0),                                                        \
+		.xcqcnt = ATOMIC_INIT(0),                                                          \
+		.sqe_pool = _sqe_pool,                                                             \
+		.cqe_pool = _cqe_pool,                                                             \
+		IF_ENABLED(CONFIG_RTIO_SYS_MEM_BLOCKS, (.block_pool = _block_pool,))               \
+		.sq = MPSC_INIT((name.sq)),                                                        \
+		.cq = MPSC_INIT((name.cq)),                                                        \
+		IF_ENABLED(CONFIG_RTIO_CQE_CALLBACK, (.cqe_cb = NULL, .cqe_cb_user_data = NULL,))  \
+	}
+/* @endcond */
+
+/**
+ * @brief Statically define and initialize an RTIO context
+ *
+ * @param name Name of the RTIO
+ * @param sq_sz Size of the submission queue entry pool
+ * @param cq_sz Size of the completion queue entry pool
+ */
+#define RTIO_DEFINE(name, sq_sz, cq_sz)						\
+	Z_RTIO_SQE_POOL_DEFINE(CONCAT(name, _sqe_pool), sq_sz);			\
+	Z_RTIO_CQE_POOL_DEFINE(CONCAT(name, _cqe_pool), cq_sz);			\
+	Z_RTIO_DEFINE(name, &CONCAT(name, _sqe_pool),				\
+		      &CONCAT(name, _cqe_pool), NULL)
+
 
 /**
  * @brief Get the mempool block size of the RTIO context
@@ -404,7 +192,7 @@ static inline size_t rtio_mempool_block_size(const struct rtio *r)
  * @param[in] ptr Memory pointer in the mempool
  * @return Index of the mempool block associated with the pointer. Or UINT16_MAX if invalid.
  */
-#ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
+#if defined(CONFIG_RTIO_SYS_MEM_BLOCKS) || defined(__DOXYGEN__)
 static inline uint16_t __rtio_compute_mempool_block_index(const struct rtio *r, const void *ptr)
 {
 	uintptr_t addr = (uintptr_t)ptr;
@@ -421,275 +209,7 @@ static inline uint16_t __rtio_compute_mempool_block_index(const struct rtio *r, 
 }
 #endif
 
-/**
- * @brief IO device submission queue entry
- *
- * May be cast safely to and from a rtio_sqe as they occupy the same memory provided by the pool
- */
-struct rtio_iodev_sqe {
-	struct rtio_sqe sqe;
-	struct mpsc_node q;
-	struct rtio_iodev_sqe *next;
-	struct rtio *r;
-};
-
-/**
- * @brief API that an RTIO IO device should implement
- */
-struct rtio_iodev_api {
-	/**
-	 * @brief Submit to the iodev an entry to work on
-	 *
-	 * This call should be short in duration and most likely
-	 * either enqueue or kick off an entry with the hardware.
-	 *
-	 * @param iodev_sqe Submission queue entry
-	 */
-	void (*submit)(struct rtio_iodev_sqe *iodev_sqe);
-};
-
-/**
- * @brief An IO device with a function table for submitting requests
- */
-struct rtio_iodev {
-	/* Function pointer table */
-	const struct rtio_iodev_api *api;
-
-	/* Data associated with this iodev */
-	void *data;
-};
-
-/** An operation that does nothing and will complete immediately */
-#define RTIO_OP_NOP 0
-
-/** An operation that receives (reads) */
-#define RTIO_OP_RX (RTIO_OP_NOP+1)
-
-/** An operation that transmits (writes) */
-#define RTIO_OP_TX (RTIO_OP_RX+1)
-
-/** An operation that transmits tiny writes by copying the data to write */
-#define RTIO_OP_TINY_TX (RTIO_OP_TX+1)
-
-/** An operation that calls a given function (callback) */
-#define RTIO_OP_CALLBACK (RTIO_OP_TINY_TX+1)
-
-/** An operation that transceives (reads and writes simultaneously) */
-#define RTIO_OP_TXRX (RTIO_OP_CALLBACK+1)
-
-/** An operation to recover I2C buses */
-#define RTIO_OP_I2C_RECOVER (RTIO_OP_TXRX+1)
-
-/** An operation to configure I2C buses */
-#define RTIO_OP_I2C_CONFIGURE (RTIO_OP_I2C_RECOVER+1)
-
-/**
- * @brief Prepare a nop (no op) submission
- */
-static inline void rtio_sqe_prep_nop(struct rtio_sqe *sqe,
-				const struct rtio_iodev *iodev,
-				void *userdata)
-{
-	memset(sqe, 0, sizeof(struct rtio_sqe));
-	sqe->op = RTIO_OP_NOP;
-	sqe->iodev = iodev;
-	sqe->userdata = userdata;
-}
-
-/**
- * @brief Prepare a read op submission
- */
-static inline void rtio_sqe_prep_read(struct rtio_sqe *sqe,
-				      const struct rtio_iodev *iodev,
-				      int8_t prio,
-				      uint8_t *buf,
-				      uint32_t len,
-				      void *userdata)
-{
-	memset(sqe, 0, sizeof(struct rtio_sqe));
-	sqe->op = RTIO_OP_RX;
-	sqe->prio = prio;
-	sqe->iodev = iodev;
-	sqe->rx.buf_len = len;
-	sqe->rx.buf = buf;
-	sqe->userdata = userdata;
-}
-
-/**
- * @brief Prepare a read op submission with context's mempool
- *
- * @see rtio_sqe_prep_read()
- */
-static inline void rtio_sqe_prep_read_with_pool(struct rtio_sqe *sqe,
-						const struct rtio_iodev *iodev, int8_t prio,
-						void *userdata)
-{
-	rtio_sqe_prep_read(sqe, iodev, prio, NULL, 0, userdata);
-	sqe->flags = RTIO_SQE_MEMPOOL_BUFFER;
-}
-
-static inline void rtio_sqe_prep_read_multishot(struct rtio_sqe *sqe,
-						const struct rtio_iodev *iodev, int8_t prio,
-						void *userdata)
-{
-	rtio_sqe_prep_read_with_pool(sqe, iodev, prio, userdata);
-	sqe->flags |= RTIO_SQE_MULTISHOT;
-}
-
-/**
- * @brief Prepare a write op submission
- */
-static inline void rtio_sqe_prep_write(struct rtio_sqe *sqe,
-				       const struct rtio_iodev *iodev,
-				       int8_t prio,
-				       const uint8_t *buf,
-				       uint32_t len,
-				       void *userdata)
-{
-	memset(sqe, 0, sizeof(struct rtio_sqe));
-	sqe->op = RTIO_OP_TX;
-	sqe->prio = prio;
-	sqe->iodev = iodev;
-	sqe->tx.buf_len = len;
-	sqe->tx.buf = buf;
-	sqe->userdata = userdata;
-}
-
-/**
- * @brief Prepare a tiny write op submission
- *
- * Unlike the normal write operation where the source buffer must outlive the call
- * the tiny write data in this case is copied to the sqe. It must be tiny to fit
- * within the specified size of a rtio_sqe.
- *
- * This is useful in many scenarios with RTL logic where a write of the register to
- * subsequently read must be done.
- */
-static inline void rtio_sqe_prep_tiny_write(struct rtio_sqe *sqe,
-					    const struct rtio_iodev *iodev,
-					    int8_t prio,
-					    const uint8_t *tiny_write_data,
-					    uint8_t tiny_write_len,
-					    void *userdata)
-{
-	__ASSERT_NO_MSG(tiny_write_len <= sizeof(sqe->tiny_tx.buf));
-
-	memset(sqe, 0, sizeof(struct rtio_sqe));
-	sqe->op = RTIO_OP_TINY_TX;
-	sqe->prio = prio;
-	sqe->iodev = iodev;
-	sqe->tiny_tx.buf_len = tiny_write_len;
-	memcpy(sqe->tiny_tx.buf, tiny_write_data, tiny_write_len);
-	sqe->userdata = userdata;
-}
-
-/**
- * @brief Prepare a callback op submission
- *
- * A somewhat special operation in that it may only be done in kernel mode.
- *
- * Used where general purpose logic is required in a queue of io operations to do
- * transforms or logic.
- */
-static inline void rtio_sqe_prep_callback(struct rtio_sqe *sqe,
-					  rtio_callback_t callback,
-					  void *arg0,
-					  void *userdata)
-{
-	memset(sqe, 0, sizeof(struct rtio_sqe));
-	sqe->op = RTIO_OP_CALLBACK;
-	sqe->prio = 0;
-	sqe->iodev = NULL;
-	sqe->callback.callback = callback;
-	sqe->callback.arg0 = arg0;
-	sqe->userdata = userdata;
-}
-
-/**
- * @brief Prepare a callback op submission that does not create a CQE
- *
- * Similar to @ref rtio_sqe_prep_callback, but the @ref RTIO_SQE_NO_RESPONSE
- * flag is set on the SQE to prevent the generation of a CQE upon completion.
- *
- * This can be useful when the callback is the last operation in a sequence
- * whose job is to clean up all the previous CQE's. Without @ref RTIO_SQE_NO_RESPONSE
- * the completion itself will result in a CQE that cannot be consumed in the callback.
- */
-static inline void rtio_sqe_prep_callback_no_cqe(struct rtio_sqe *sqe,
-						 rtio_callback_t callback,
-						 void *arg0,
-						 void *userdata)
-{
-	rtio_sqe_prep_callback(sqe, callback, arg0, userdata);
-	sqe->flags |= RTIO_SQE_NO_RESPONSE;
-}
-
-/**
- * @brief Prepare a transceive op submission
- */
-static inline void rtio_sqe_prep_transceive(struct rtio_sqe *sqe,
-					    const struct rtio_iodev *iodev,
-					    int8_t prio,
-					    const uint8_t *tx_buf,
-					    uint8_t *rx_buf,
-					    uint32_t buf_len,
-					    void *userdata)
-{
-	memset(sqe, 0, sizeof(struct rtio_sqe));
-	sqe->op = RTIO_OP_TXRX;
-	sqe->prio = prio;
-	sqe->iodev = iodev;
-	sqe->txrx.buf_len = buf_len;
-	sqe->txrx.tx_buf = tx_buf;
-	sqe->txrx.rx_buf = rx_buf;
-	sqe->userdata = userdata;
-}
-
-static inline struct rtio_iodev_sqe *rtio_sqe_pool_alloc(struct rtio_sqe_pool *pool)
-{
-	struct mpsc_node *node = mpsc_pop(&pool->free_q);
-
-	if (node == NULL) {
-		return NULL;
-	}
-
-	struct rtio_iodev_sqe *iodev_sqe = CONTAINER_OF(node, struct rtio_iodev_sqe, q);
-
-	pool->pool_free--;
-
-	return iodev_sqe;
-}
-
-static inline void rtio_sqe_pool_free(struct rtio_sqe_pool *pool, struct rtio_iodev_sqe *iodev_sqe)
-{
-	mpsc_push(&pool->free_q, &iodev_sqe->q);
-
-	pool->pool_free++;
-}
-
-static inline struct rtio_cqe *rtio_cqe_pool_alloc(struct rtio_cqe_pool *pool)
-{
-	struct mpsc_node *node = mpsc_pop(&pool->free_q);
-
-	if (node == NULL) {
-		return NULL;
-	}
-
-	struct rtio_cqe *cqe = CONTAINER_OF(node, struct rtio_cqe, q);
-
-	memset(cqe, 0, sizeof(struct rtio_cqe));
-
-	pool->pool_free--;
-
-	return cqe;
-}
-
-static inline void rtio_cqe_pool_free(struct rtio_cqe_pool *pool, struct rtio_cqe *cqe)
-{
-	mpsc_push(&pool->free_q, &cqe->q);
-
-	pool->pool_free++;
-}
+/** @cond INTERNAL_HIDDEN */
 
 static inline int rtio_block_pool_alloc(struct rtio *r, size_t min_sz,
 					  size_t max_sz, uint8_t **buf, uint32_t *buf_len)
@@ -739,46 +259,21 @@ static inline void rtio_block_pool_free(struct rtio *r, void *buf, uint32_t buf_
 	ARG_UNUSED(buf);
 	ARG_UNUSED(buf_len);
 #else
-	size_t num_blks = buf_len >> r->block_pool->info.blk_sz_shift;
+	/* Round up, a caller may name the bytes it used rather than the whole buffer */
+	size_t num_blks = DIV_ROUND_UP(buf_len, BIT(r->block_pool->info.blk_sz_shift));
 
 	sys_mem_blocks_free_contiguous(r->block_pool, buf, num_blks);
 #endif
 }
 
+/** @endcond */
+
+
+/** The memory partition associated with all RTIO context information */
+extern struct k_mem_partition rtio_partition;
+
+
 /* Do not try and reformat the macros */
-/* clang-format off */
-
-/**
- * @brief Statically define and initialize an RTIO IODev
- *
- * @param name Name of the iodev
- * @param iodev_api Pointer to struct rtio_iodev_api
- * @param iodev_data Data pointer
- */
-#define RTIO_IODEV_DEFINE(name, iodev_api, iodev_data)		\
-	STRUCT_SECTION_ITERABLE(rtio_iodev, name) = {		\
-		.api = (iodev_api),				\
-		.data = (iodev_data),				\
-	}
-
-#define Z_RTIO_SQE_POOL_DEFINE(name, sz)			\
-	static struct rtio_iodev_sqe CONCAT(_sqe_pool_, name)[sz];	\
-	STRUCT_SECTION_ITERABLE(rtio_sqe_pool, name) = {	\
-		.free_q = MPSC_INIT((name.free_q)),	\
-		.pool_size = sz,				\
-		.pool_free = sz,				\
-		.pool = CONCAT(_sqe_pool_, name),		\
-	}
-
-
-#define Z_RTIO_CQE_POOL_DEFINE(name, sz)			\
-	static struct rtio_cqe CONCAT(_cqe_pool_, name)[sz];	\
-	STRUCT_SECTION_ITERABLE(rtio_cqe_pool, name) = {	\
-		.free_q = MPSC_INIT((name.free_q)),	\
-		.pool_size = sz,				\
-		.pool_free = sz,				\
-		.pool = CONCAT(_cqe_pool_, name),		\
-	}
 
 /**
  * @brief Allocate to bss if available
@@ -789,7 +284,13 @@ static inline void rtio_block_pool_free(struct rtio *r, void *buf, uint32_t buf_
  * If CONFIG_USERSPACE is disabled, allocate as plain static:
  *   static
  */
+#if CONFIG_RTIO_BLOCK_POOL_PLACEMENT_DTCM
+#define RTIO_BMEM Z_GENERIC_SECTION(".dtcm_bss") static
+#elif defined(CONFIG_RTIO_BLOCK_POOL_PLACEMENT_NOCACHE)
+#define RTIO_BMEM __nocache static
+#else
 #define RTIO_BMEM COND_CODE_1(CONFIG_USERSPACE, (K_APP_BMEM(rtio_partition) static), (static))
+#endif
 
 /**
  * @brief Allocate as initialized memory if available
@@ -800,44 +301,24 @@ static inline void rtio_block_pool_free(struct rtio *r, void *buf, uint32_t buf_
  * If CONFIG_USERSPACE is disabled, allocate as plain static:
  *   static
  */
+#if CONFIG_RTIO_BLOCK_POOL_PLACEMENT_DTCM
+#define RTIO_DMEM Z_GENERIC_SECTION(".dtcm_data") static
+#elif defined(CONFIG_RTIO_BLOCK_POOL_PLACEMENT_NOCACHE)
+#define RTIO_DMEM __nocache_load static
+#else
 #define RTIO_DMEM COND_CODE_1(CONFIG_USERSPACE, (K_APP_DMEM(rtio_partition) static), (static))
+#endif
 
+/* clang-format off */
+/* @cond ignore */
 #define Z_RTIO_BLOCK_POOL_DEFINE(name, blk_sz, blk_cnt, blk_align)                                 \
 	RTIO_BMEM uint8_t __aligned(WB_UP(blk_align))                                              \
-	CONCAT(_block_pool_, name)[blk_cnt*WB_UP(blk_sz)];                                         \
-	_SYS_MEM_BLOCKS_DEFINE_WITH_EXT_BUF(name, WB_UP(blk_sz), blk_cnt,                          \
+	CONCAT(_block_pool_, name)[(blk_cnt) * WB_UP(blk_sz)];                                     \
+	_SYS_MEM_BLOCKS_DEFINE_WITH_EXT_BUF(name, WB_UP(blk_sz), (blk_cnt),                        \
 					    CONCAT(_block_pool_, name),	RTIO_DMEM)
 
-#define Z_RTIO_DEFINE(name, _sqe_pool, _cqe_pool, _block_pool)                                     \
-	IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM,                                                         \
-		   (static K_SEM_DEFINE(CONCAT(_submit_sem_, name), 0, K_SEM_MAX_LIMIT)))          \
-	IF_ENABLED(CONFIG_RTIO_CONSUME_SEM,                                                        \
-		   (static K_SEM_DEFINE(CONCAT(_consume_sem_, name), 0, K_SEM_MAX_LIMIT)))         \
-	STRUCT_SECTION_ITERABLE(rtio, name) = {                                                    \
-		IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM, (.submit_sem = &CONCAT(_submit_sem_, name),))   \
-		IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM, (.submit_count = 0,))                           \
-		IF_ENABLED(CONFIG_RTIO_CONSUME_SEM, (.consume_sem = &CONCAT(_consume_sem_, name),))\
-		.cq_count = ATOMIC_INIT(0),                                                        \
-		.xcqcnt = ATOMIC_INIT(0),                                                          \
-		.sqe_pool = _sqe_pool,                                                             \
-		.cqe_pool = _cqe_pool,                                                             \
-		IF_ENABLED(CONFIG_RTIO_SYS_MEM_BLOCKS, (.block_pool = _block_pool,))               \
-		.sq = MPSC_INIT((name.sq)),                                                        \
-		.cq = MPSC_INIT((name.cq)),                                                        \
-	}
+/* @endcond */
 
-/**
- * @brief Statically define and initialize an RTIO context
- *
- * @param name Name of the RTIO
- * @param sq_sz Size of the submission queue entry pool
- * @param cq_sz Size of the completion queue entry pool
- */
-#define RTIO_DEFINE(name, sq_sz, cq_sz)						\
-	Z_RTIO_SQE_POOL_DEFINE(CONCAT(name, _sqe_pool), sq_sz);			\
-	Z_RTIO_CQE_POOL_DEFINE(CONCAT(name, _cqe_pool), cq_sz);			\
-	Z_RTIO_DEFINE(name, &CONCAT(name, _sqe_pool),				\
-		      &CONCAT(name, _cqe_pool), NULL)
 
 /* clang-format on */
 
@@ -872,54 +353,6 @@ static inline uint32_t rtio_sqe_acquirable(struct rtio *r)
 }
 
 /**
- * @brief Get the next sqe in the transaction
- *
- * @param iodev_sqe Submission queue entry
- *
- * @retval NULL if current sqe is last in transaction
- * @retval struct rtio_sqe * if available
- */
-static inline struct rtio_iodev_sqe *rtio_txn_next(const struct rtio_iodev_sqe *iodev_sqe)
-{
-	if (iodev_sqe->sqe.flags & RTIO_SQE_TRANSACTION) {
-		return iodev_sqe->next;
-	} else {
-		return NULL;
-	}
-}
-
-
-/**
- * @brief Get the next sqe in the chain
- *
- * @param iodev_sqe Submission queue entry
- *
- * @retval NULL if current sqe is last in chain
- * @retval struct rtio_sqe * if available
- */
-static inline struct rtio_iodev_sqe *rtio_chain_next(const struct rtio_iodev_sqe *iodev_sqe)
-{
-	if (iodev_sqe->sqe.flags & RTIO_SQE_CHAINED) {
-		return iodev_sqe->next;
-	} else {
-		return NULL;
-	}
-}
-
-/**
- * @brief Get the next sqe in the chain or transaction
- *
- * @param iodev_sqe Submission queue entry
- *
- * @retval NULL if current sqe is last in chain
- * @retval struct rtio_iodev_sqe * if available
- */
-static inline struct rtio_iodev_sqe *rtio_iodev_sqe_next(const struct rtio_iodev_sqe *iodev_sqe)
-{
-	return iodev_sqe->next;
-}
-
-/**
  * @brief Acquire a single submission queue event if available
  *
  * @param r RTIO context
@@ -929,15 +362,63 @@ static inline struct rtio_iodev_sqe *rtio_iodev_sqe_next(const struct rtio_iodev
  */
 static inline struct rtio_sqe *rtio_sqe_acquire(struct rtio *r)
 {
+	SYS_PORT_TRACING_FUNC_ENTER(rtio, sqe_acquire, r);
 	struct rtio_iodev_sqe *iodev_sqe = rtio_sqe_pool_alloc(r->sqe_pool);
 
 	if (iodev_sqe == NULL) {
+		SYS_PORT_TRACING_FUNC_EXIT(rtio, sqe_acquire, r, NULL);
 		return NULL;
 	}
 
 	mpsc_push(&r->sq, &iodev_sqe->q);
 
+	SYS_PORT_TRACING_FUNC_EXIT(rtio, sqe_acquire, r, &iodev_sqe->sqe);
 	return &iodev_sqe->sqe;
+}
+
+/**
+ * @brief Acquire a number of submission queue events if available
+ *
+ * @warning The sqe array is in an undefined state if the return value is -ENOMEM
+ *
+ * @param r RTIO context
+ * @param n Number of submission queue events to acquire
+ * @param sqes A pointer to an array of rtio_sqe struct pointers of size n
+ *
+ * @retval 0 success
+ * @retval -ENOMEM out of memory
+ */
+static inline int rtio_sqe_acquire_array(struct rtio *r, size_t n, struct rtio_sqe **sqes)
+{
+	struct rtio_iodev_sqe *iodev_sqe;
+	size_t i;
+
+	for (i = 0; i < n; i++) {
+		iodev_sqe = rtio_sqe_pool_alloc(r->sqe_pool);
+		if (iodev_sqe == NULL) {
+			break;
+		}
+		sqes[i] = &iodev_sqe->sqe;
+	}
+
+	/* Not enough SQEs in the pool */
+	if (i < n) {
+		while (i > 0) {
+			i--;
+			iodev_sqe = CONTAINER_OF(sqes[i], struct rtio_iodev_sqe, sqe);
+			rtio_sqe_pool_free(r->sqe_pool, iodev_sqe);
+			sqes[i] = NULL;
+		}
+
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < n; i++) {
+		iodev_sqe = CONTAINER_OF(sqes[i], struct rtio_iodev_sqe, sqe);
+		mpsc_push(&r->sq, &iodev_sqe->q);
+	}
+
+	return 0;
 }
 
 /**
@@ -962,15 +443,52 @@ static inline void rtio_sqe_drop_all(struct rtio *r)
  */
 static inline struct rtio_cqe *rtio_cqe_acquire(struct rtio *r)
 {
+	SYS_PORT_TRACING_FUNC_ENTER(rtio, cqe_acquire, r);
 	struct rtio_cqe *cqe = rtio_cqe_pool_alloc(r->cqe_pool);
 
 	if (cqe == NULL) {
+		SYS_PORT_TRACING_FUNC_EXIT(rtio, cqe_acquire, r, NULL);
 		return NULL;
 	}
 
 	memset(cqe, 0, sizeof(struct rtio_cqe));
 
+	SYS_PORT_TRACING_FUNC_EXIT(rtio, cqe_acquire, r, cqe);
 	return cqe;
+}
+
+/**
+ * @brief Set the completion queue event callback
+ *
+ * The callback will be called every time a new completion queue event is produced
+ *
+ * @warning The callback can only be set safely while no SQE is being executed
+ *
+ * @note Set the callback to NULL to disable the it
+ *
+ * @param r RTIO context
+ * @param callback The callback to set
+ * @param user_data User data passed to callback
+ *
+ * @retval 0 Callback set successfully
+ * @retval -ENOTSUP CQE callback is not supported
+ */
+static inline int rtio_set_cqe_callback(struct rtio *r,
+					rtio_cqe_callback_t callback,
+					void *user_data)
+{
+#ifdef CONFIG_RTIO_CQE_CALLBACK
+	r->cqe_cb = callback;
+	r->cqe_cb_user_data = user_data;
+
+	return 0;
+#else
+	ARG_UNUSED(r);
+	ARG_UNUSED(callback);
+	ARG_UNUSED(user_data);
+
+	return -ENOTSUP;
+#endif
 }
 
 /**
@@ -994,21 +512,25 @@ static inline void rtio_cqe_produce(struct rtio *r, struct rtio_cqe *cqe)
  */
 static inline struct rtio_cqe *rtio_cqe_consume(struct rtio *r)
 {
+	SYS_PORT_TRACING_FUNC_ENTER(rtio, cqe_consume, r);
 	struct mpsc_node *node;
 	struct rtio_cqe *cqe = NULL;
 
 #ifdef CONFIG_RTIO_CONSUME_SEM
 	if (k_sem_take(r->consume_sem, K_NO_WAIT) != 0) {
+		SYS_PORT_TRACING_FUNC_EXIT(rtio, cqe_consume, r, NULL);
 		return NULL;
 	}
 #endif
 
 	node = mpsc_pop(&r->cq);
 	if (node == NULL) {
+		SYS_PORT_TRACING_FUNC_EXIT(rtio, cqe_consume, r, NULL);
 		return NULL;
 	}
 	cqe = CONTAINER_OF(node, struct rtio_cqe, q);
 
+	SYS_PORT_TRACING_FUNC_EXIT(rtio, cqe_consume, r, cqe);
 	return cqe;
 }
 
@@ -1048,7 +570,56 @@ static inline struct rtio_cqe *rtio_cqe_consume_block(struct rtio *r)
  */
 static inline void rtio_cqe_release(struct rtio *r, struct rtio_cqe *cqe)
 {
+	SYS_PORT_TRACING_FUNC(rtio, cqe_release, r, cqe);
 	rtio_cqe_pool_free(r->cqe_pool, cqe);
+}
+
+/**
+ * @brief Flush completion queue
+ *
+ * @param r RTIO context
+ * @return The operation completion result
+ * @retval 0 if the queued operations completed with no error
+ * @retval <0 on error
+ */
+static inline int rtio_flush_completion_queue(struct rtio *r)
+{
+	struct rtio_cqe *cqe;
+	int res = 0;
+
+	do {
+		cqe = rtio_cqe_consume(r);
+		if (cqe != NULL) {
+			if ((cqe->result < 0) && (res == 0)) {
+				res = cqe->result;
+			}
+			rtio_cqe_release(r, cqe);
+		}
+	} while (cqe != NULL);
+
+	return res;
+}
+
+/**
+ * @brief Signal an AWAIT SQE
+ *
+ * If the SQE is currently blocking execution, execution is unblocked. If the SQE is not
+ * currently blocking execution, The SQE will be skipped.
+ *
+ * @note To await the AWAIT SQE blocking execution, chain a nop or callback SQE before
+ * the await SQE.
+ *
+ * @param[in] sqe The SQE to signal
+ */
+__syscall void rtio_sqe_signal(struct rtio_sqe *sqe);
+
+static inline void z_impl_rtio_sqe_signal(struct rtio_sqe *sqe)
+{
+	struct rtio_iodev_sqe *iodev_sqe = CONTAINER_OF(sqe, struct rtio_iodev_sqe, sqe);
+
+	if (!atomic_cas(&iodev_sqe->rt.await.ok, 0, 1)) {
+		iodev_sqe->rt.await.callback(iodev_sqe, iodev_sqe->rt.await.userdata);
+	}
 }
 
 /**
@@ -1065,10 +636,14 @@ static inline uint32_t rtio_cqe_compute_flags(struct rtio_iodev_sqe *iodev_sqe)
 	if (iodev_sqe->sqe.op == RTIO_OP_RX && iodev_sqe->sqe.flags & RTIO_SQE_MEMPOOL_BUFFER) {
 		struct rtio *r = iodev_sqe->r;
 		struct sys_mem_blocks *mem_pool = r->block_pool;
-		int blk_index = (iodev_sqe->sqe.rx.buf - mem_pool->buffer) >>
-				mem_pool->info.blk_sz_shift;
-		int blk_count = iodev_sqe->sqe.rx.buf_len >> mem_pool->info.blk_sz_shift;
+		unsigned int blk_index = 0;
+		unsigned int blk_count = 0;
 
+		if (iodev_sqe->rt.rx_bind.buf) {
+			blk_index = (iodev_sqe->rt.rx_bind.buf - mem_pool->buffer) >>
+				    mem_pool->info.blk_sz_shift;
+			blk_count = iodev_sqe->rt.rx_bind.buf_len >> mem_pool->info.blk_sz_shift;
+		}
 		flags = RTIO_CQE_FLAG_PREP_MEMPOOL(blk_index, blk_count);
 	}
 #else
@@ -1101,15 +676,21 @@ static inline int z_impl_rtio_cqe_get_mempool_buffer(const struct rtio *r, struc
 {
 #ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
 	if (RTIO_CQE_FLAG_GET(cqe->flags) == RTIO_CQE_FLAG_MEMPOOL_BUFFER) {
-		int blk_idx = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_IDX(cqe->flags);
-		int blk_count = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_CNT(cqe->flags);
+		unsigned int blk_idx = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_IDX(cqe->flags);
+		unsigned int blk_count = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_CNT(cqe->flags);
 		uint32_t blk_size = rtio_mempool_block_size(r);
 
-		*buff = r->block_pool->buffer + blk_idx * blk_size;
 		*buff_len = blk_count * blk_size;
-		__ASSERT_NO_MSG(*buff >= r->block_pool->buffer);
-		__ASSERT_NO_MSG(*buff <
+
+		if (blk_count > 0) {
+			*buff = r->block_pool->buffer + blk_idx * blk_size;
+
+			__ASSERT_NO_MSG(*buff >= r->block_pool->buffer);
+			__ASSERT_NO_MSG(*buff <
 				r->block_pool->buffer + blk_size * r->block_pool->info.num_blocks);
+		} else {
+			*buff = NULL;
+		}
 		return 0;
 	}
 	return -EINVAL;
@@ -1123,9 +704,13 @@ static inline int z_impl_rtio_cqe_get_mempool_buffer(const struct rtio *r, struc
 #endif
 }
 
+/** @cond INTERNAL_HIDDEN */
+
 void rtio_executor_submit(struct rtio *r);
 void rtio_executor_ok(struct rtio_iodev_sqe *iodev_sqe, int result);
 void rtio_executor_err(struct rtio_iodev_sqe *iodev_sqe, int result);
+
+/** @endcond */
 
 /**
  * @brief Inform the executor of a submission completion with success
@@ -1166,6 +751,7 @@ static inline void rtio_iodev_sqe_err(struct rtio_iodev_sqe *iodev_sqe, int resu
  */
 static inline void rtio_cqe_submit(struct rtio *r, int result, void *userdata, uint32_t flags)
 {
+	SYS_PORT_TRACING_FUNC_ENTER(rtio, cqe_submit, r, result, flags);
 	struct rtio_cqe *cqe = rtio_cqe_acquire(r);
 
 	if (cqe == NULL) {
@@ -1175,9 +761,26 @@ static inline void rtio_cqe_submit(struct rtio *r, int result, void *userdata, u
 		cqe->userdata = userdata;
 		cqe->flags = flags;
 		rtio_cqe_produce(r, cqe);
+#ifdef CONFIG_RTIO_CONSUME_SEM
+		k_sem_give(r->consume_sem);
+#endif
+#ifdef CONFIG_RTIO_CQE_CALLBACK
+		if (r->cqe_cb != NULL) {
+			r->cqe_cb(r, r->cqe_cb_user_data);
+		}
+#endif
 	}
 
-	atomic_inc(&r->cq_count);
+	/* atomic_t isn't guaranteed to wrap correctly as it could be signed, so
+	 * we must resort to a cas loop.
+	 */
+	atomic_t val, new_val;
+
+	do {
+		val = atomic_get(&r->cq_count);
+		new_val = (atomic_t)((uintptr_t)val + 1);
+	} while (!atomic_cas(&r->cq_count, val, new_val));
+
 #ifdef CONFIG_RTIO_SUBMIT_SEM
 	if (r->submit_count > 0) {
 		r->submit_count--;
@@ -1186,9 +789,7 @@ static inline void rtio_cqe_submit(struct rtio *r, int result, void *userdata, u
 		}
 	}
 #endif
-#ifdef CONFIG_RTIO_CONSUME_SEM
-	k_sem_give(r->consume_sem);
-#endif
+	SYS_PORT_TRACING_FUNC_EXIT(rtio, cqe_submit, r);
 }
 
 #define __RTIO_MEMPOOL_GET_NUM_BLKS(num_bytes, blk_size) (((num_bytes) + (blk_size)-1) / (blk_size))
@@ -1205,28 +806,32 @@ static inline void rtio_cqe_submit(struct rtio *r, int result, void *userdata, u
  * @return 0 if @p buf and @p buf_len were successfully filled
  * @return -ENOMEM Not enough memory for @p min_buf_len
  */
-static inline int rtio_sqe_rx_buf(const struct rtio_iodev_sqe *iodev_sqe, uint32_t min_buf_len,
+static inline int rtio_sqe_rx_buf(struct rtio_iodev_sqe *iodev_sqe, uint32_t min_buf_len,
 				  uint32_t max_buf_len, uint8_t **buf, uint32_t *buf_len)
 {
-	struct rtio_sqe *sqe = (struct rtio_sqe *)&iodev_sqe->sqe;
+	const struct rtio_sqe *sqe = &iodev_sqe->sqe;
 
 #ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
 	if (sqe->op == RTIO_OP_RX && sqe->flags & RTIO_SQE_MEMPOOL_BUFFER) {
 		struct rtio *r = iodev_sqe->r;
 
-		if (sqe->rx.buf != NULL) {
-			if (sqe->rx.buf_len < min_buf_len) {
+		/* The mempool buffer is bound at runtime and kept in the wrapper so
+		 * the submission description itself stays immutable.
+		 */
+		if (iodev_sqe->rt.rx_bind.buf != NULL) {
+			if (iodev_sqe->rt.rx_bind.buf_len < min_buf_len) {
 				return -ENOMEM;
 			}
-			*buf = sqe->rx.buf;
-			*buf_len = sqe->rx.buf_len;
+			*buf = iodev_sqe->rt.rx_bind.buf;
+			*buf_len = iodev_sqe->rt.rx_bind.buf_len;
 			return 0;
 		}
 
 		int rc = rtio_block_pool_alloc(r, min_buf_len, max_buf_len, buf, buf_len);
+
 		if (rc == 0) {
-			sqe->rx.buf = *buf;
-			sqe->rx.buf_len = *buf_len;
+			iodev_sqe->rt.rx_bind.buf = *buf;
+			iodev_sqe->rt.rx_bind.buf_len = *buf_len;
 			return 0;
 		}
 
@@ -1278,6 +883,9 @@ static inline void z_impl_rtio_release_buffer(struct rtio *r, void *buff, uint32
 
 /**
  * Grant access to an RTIO context to a user thread
+ *
+ * @param r RTIO context
+ * @param t Thread to grant permissions to
  */
 static inline void rtio_access_grant(struct rtio *r, struct k_thread *t)
 {
@@ -1290,6 +898,91 @@ static inline void rtio_access_grant(struct rtio *r, struct k_thread *t)
 #ifdef CONFIG_RTIO_CONSUME_SEM
 	k_object_access_grant(r->consume_sem, t);
 #endif
+
+#ifdef CONFIG_RTIO_OP_DELAY
+	/* Delay submissions are dispatched to the shared timeout iodev, so a thread
+	 * allowed to use this context must also be able to reference it.
+	 */
+	k_object_access_grant(&rtio_timeout_iodev, t);
+#endif
+}
+
+
+/**
+ * Revoke access to an RTIO context from a user thread
+ *
+ * @param r RTIO context
+ * @param t Thread to revoke permissions from
+ */
+static inline void rtio_access_revoke(struct rtio *r, struct k_thread *t)
+{
+	k_object_access_revoke(r, t);
+
+#ifdef CONFIG_RTIO_SUBMIT_SEM
+	k_object_access_revoke(r->submit_sem, t);
+#endif
+
+#ifdef CONFIG_RTIO_CONSUME_SEM
+	k_object_access_revoke(r->consume_sem, t);
+#endif
+
+#ifdef CONFIG_RTIO_OP_DELAY
+	k_object_access_revoke(&rtio_timeout_iodev, t);
+#endif
+}
+
+/**
+ * @brief Capture an opaque, validatable handle for a live submission
+ *
+ * The handle encodes the entry's pool block index and current generation. It can
+ * later be resolved with rtio_iodev_sqe_from_handle(), which rejects the handle if
+ * the entry has since completed and been recycled. This is the identity primitive
+ * used for cancellation instead of a raw, un-validatable @ref rtio_sqe pointer.
+ *
+ * @param[in] r   RTIO context that owns @p sqe
+ * @param[in] sqe A submission acquired from @p r
+ * @return An opaque handle for @p sqe
+ */
+static inline rtio_sqe_handle_t rtio_sqe_handle(const struct rtio *r, const struct rtio_sqe *sqe)
+{
+	const struct rtio_iodev_sqe *iodev_sqe = CONTAINER_OF(sqe, struct rtio_iodev_sqe, sqe);
+	uint32_t blk_index = (uint32_t)(iodev_sqe - r->sqe_pool->pool);
+	uint32_t gen = (uint32_t)(atomic_get(&iodev_sqe->status) & RTIO_SQE_GEN_MASK);
+
+	return (blk_index << 16) | gen;
+}
+
+/**
+ * @brief Resolve a handle to a live submission, validating identity
+ *
+ * Bounds-checks the block index against the context's pool, then verifies the
+ * slot is still allocated and its generation matches the handle. A garbage,
+ * out-of-range, or stale (completed/recycled) handle resolves to NULL without
+ * dereferencing any freed memory.
+ *
+ * @param[in] r      RTIO context that produced the handle
+ * @param[in] handle Handle previously returned by rtio_sqe_handle()
+ * @retval iodev_sqe The live submission the handle refers to
+ * @retval NULL      The handle is out of range, unallocated, or stale
+ */
+static inline struct rtio_iodev_sqe *rtio_iodev_sqe_from_handle(struct rtio *r,
+								rtio_sqe_handle_t handle)
+{
+	uint32_t blk_index = handle >> 16;
+	uint32_t gen = handle & RTIO_SQE_GEN_MASK;
+
+	if (blk_index >= r->sqe_pool->pool_size) {
+		return NULL;
+	}
+
+	struct rtio_iodev_sqe *iodev_sqe = &r->sqe_pool->pool[blk_index];
+	atomic_val_t status = atomic_get(&iodev_sqe->status);
+
+	if ((status & RTIO_SQE_ALLOCD) == 0 || (uint32_t)(status & RTIO_SQE_GEN_MASK) != gen) {
+		return NULL;
+	}
+
+	return iodev_sqe;
 }
 
 /**
@@ -1298,20 +991,85 @@ static inline void rtio_access_grant(struct rtio *r, struct k_thread *t)
  * If possible (not currently executing), cancel an SQE and generate a failure with -ECANCELED
  * result.
  *
- * @param[in] sqe The SQE to cancel
- * @return 0 if the SQE was flagged for cancellation
+ * The submission is identified by an opaque @ref rtio_sqe_handle_t previously
+ * captured from @p r (e.g. via rtio_sqe_copy_in_get_handles()). If the submission
+ * has already completed and its pool slot been recycled, the handle no longer
+ * resolves and the cancel is a satisfied no-op: the outstanding request is
+ * already gone. The identity check (bounds + allocated + generation) and the
+ * canceled mark are performed as one atomic compare-and-set on the entry's
+ * status word, so a handle whose submission completes concurrently either
+ * misses (the free bumped the generation) and no-ops, or lands while the entry
+ * was still provably the caller's; a stale or garbage handle cannot mark an
+ * unrelated occupant of the slot.
+ *
+ * Only the submission @p handle names is marked. Cancellation is best effort,
+ * and to cancel a chain or a transaction the caller holds every handle
+ * rtio_sqe_copy_in_get_handles() produced and cancels each one; the rest of
+ * the chain is not reachable from a single handle. Marking a member before it
+ * is dispatched does stop it, because the executor checks each member's status
+ * on the way to its iodev, but a member whose predecessor completes before or
+ * while it is being marked may already be running and will then run to
+ * completion.
+ *
+ * @param[in] r      RTIO context that produced @p handle
+ * @param[in] handle Handle of the SQE to cancel
+ * @return 0 if the SQE was flagged for cancellation (or had already completed)
  * @return <0 on error
  */
-__syscall int rtio_sqe_cancel(struct rtio_sqe *sqe);
+__syscall int rtio_sqe_cancel(struct rtio *r, rtio_sqe_handle_t handle);
 
-static inline int z_impl_rtio_sqe_cancel(struct rtio_sqe *sqe)
+static inline int z_impl_rtio_sqe_cancel(struct rtio *r, rtio_sqe_handle_t handle)
 {
-	struct rtio_iodev_sqe *iodev_sqe = CONTAINER_OF(sqe, struct rtio_iodev_sqe, sqe);
+	SYS_PORT_TRACING_FUNC(rtio, sqe_cancel, handle);
 
-	do {
-		iodev_sqe->sqe.flags |= RTIO_SQE_CANCELED;
-		iodev_sqe = rtio_iodev_sqe_next(iodev_sqe);
-	} while (iodev_sqe != NULL);
+	uint16_t blk_index = rtio_sqe_handle_index(handle);
+	uint16_t gen = rtio_sqe_handle_generation(handle);
+
+	if (blk_index >= r->sqe_pool->pool_size) {
+		return 0;
+	}
+
+	struct rtio_iodev_sqe *iodev_sqe = &r->sqe_pool->pool[blk_index];
+
+	/* Validate identity and mark canceled in one atomic step so a concurrent
+	 * completion cannot recycle the slot between the check and the mark: if
+	 * the entry is freed meanwhile the CAS fails and the re-read observes the
+	 * bumped generation, turning the cancel into a no-op.
+	 */
+	while (true) {
+		atomic_val_t status = atomic_get(&iodev_sqe->status);
+
+		if ((status & RTIO_SQE_ALLOCD) == 0 ||
+		    (uint16_t)(status & RTIO_SQE_GEN_MASK) != gen) {
+			return 0;
+		}
+
+		if (atomic_cas(&iodev_sqe->status, status,
+			       status | RTIO_SQE_STATUS_CANCELED)) {
+			break;
+		}
+	}
+
+	/* Give the iodev a chance to abort a submission it is already sitting on,
+	 * which nothing else would wake.
+	 *
+	 * The entry is not owned here, so re-read the status after taking the iodev
+	 * out of it: every free bumps the generation, so an unchanged generation
+	 * proves no completion recycled the slot in between and the iodev really is
+	 * this submission's. The hook is handed the handle rather than the entry,
+	 * because the entry may still be completed before the hook runs; the iodev
+	 * resolves the handle under its own lock.
+	 */
+	const struct rtio_iodev *iodev = iodev_sqe->sqe.iodev;
+	atomic_val_t status = atomic_get(&iodev_sqe->status);
+
+	if ((status & RTIO_SQE_ALLOCD) == 0 || (uint16_t)(status & RTIO_SQE_GEN_MASK) != gen) {
+		return 0;
+	}
+
+	if (iodev != NULL && iodev->api->cancel != NULL) {
+		iodev->api->cancel(iodev, r, handle);
+	}
 
 	return 0;
 }
@@ -1322,20 +1080,24 @@ static inline int z_impl_rtio_sqe_cancel(struct rtio_sqe *sqe)
  * Copies one or more SQEs into the RTIO context and optionally returns their generated SQE handles.
  * Handles can be used to cancel events via the rtio_sqe_cancel() call.
  *
+ * One handle is written per copied SQE, so @p handles holds @p sqe_count of them. Cancellation
+ * only marks the submission it is given, so a caller that wants to cancel a chain or a
+ * transaction keeps all of them and cancels each.
+ *
  * @param[in]  r RTIO context
  * @param[in]  sqes Pointer to an array of SQEs
- * @param[out] handle Optional pointer to @ref rtio_sqe pointer to store the handle of the
- *             first generated SQE. Use NULL to ignore.
+ * @param[out] handles Optional array of @p sqe_count @ref rtio_sqe_handle_t to store the handle
+ *             of each generated SQE. Use NULL to ignore.
  * @param[in]  sqe_count Count of sqes in array
  *
  * @retval 0 success
  * @retval -ENOMEM not enough room in the queue
  */
 __syscall int rtio_sqe_copy_in_get_handles(struct rtio *r, const struct rtio_sqe *sqes,
-					   struct rtio_sqe **handle, size_t sqe_count);
+					   rtio_sqe_handle_t *handles, size_t sqe_count);
 
 static inline int z_impl_rtio_sqe_copy_in_get_handles(struct rtio *r, const struct rtio_sqe *sqes,
-						      struct rtio_sqe **handle,
+						      rtio_sqe_handle_t *handles,
 						      size_t sqe_count)
 {
 	struct rtio_sqe *sqe;
@@ -1348,8 +1110,8 @@ static inline int z_impl_rtio_sqe_copy_in_get_handles(struct rtio *r, const stru
 	for (unsigned long i = 0; i < sqe_count; i++) {
 		sqe = rtio_sqe_acquire(r);
 		__ASSERT_NO_MSG(sqe != NULL);
-		if (handle != NULL && i == 0) {
-			*handle = sqe;
+		if (handles != NULL) {
+			handles[i] = rtio_sqe_handle(r, sqe);
 		}
 		*sqe = sqes[i];
 	}
@@ -1428,6 +1190,8 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
  * submission chain, freeing submission queue events when done, and
  * producing completion queue events as submissions are completed.
  *
+ * @warning It is undefined behavior to have re-entrant calls to submit
+ *
  * @param r RTIO context
  * @param wait_count Number of submissions to wait for completion of.
  *
@@ -1435,13 +1199,12 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
  */
 __syscall int rtio_submit(struct rtio *r, uint32_t wait_count);
 
+#ifdef CONFIG_RTIO_SUBMIT_SEM
 static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
 {
+	SYS_PORT_TRACING_FUNC_ENTER(rtio, submit, r, wait_count);
 	int res = 0;
 
-#ifdef CONFIG_RTIO_SUBMIT_SEM
-	/* TODO undefined behavior if another thread calls submit of course
-	 */
 	if (wait_count > 0) {
 		__ASSERT(!k_is_in_isr(),
 			 "expected rtio submit with wait count to be called from a thread");
@@ -1449,35 +1212,148 @@ static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
 		k_sem_reset(r->submit_sem);
 		r->submit_count = wait_count;
 	}
-#else
-	uintptr_t cq_count = (uintptr_t)atomic_get(&r->cq_count) + wait_count;
-#endif
 
-	/* Submit the queue to the executor which consumes submissions
-	 * and produces completions through ISR chains or other means.
-	 */
 	rtio_executor_submit(r);
-
-
-	/* TODO could be nicer if we could suspend the thread and not
-	 * wake up on each completion here.
-	 */
-#ifdef CONFIG_RTIO_SUBMIT_SEM
 
 	if (wait_count > 0) {
 		res = k_sem_take(r->submit_sem, K_FOREVER);
 		__ASSERT(res == 0,
 			 "semaphore was reset or timed out while waiting on completions!");
 	}
+
+	SYS_PORT_TRACING_FUNC_EXIT(rtio, submit, r);
+	return res;
+}
 #else
-	while ((uintptr_t)atomic_get(&r->cq_count) < cq_count) {
+static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
+{
+
+	SYS_PORT_TRACING_FUNC_ENTER(rtio, submit, r, wait_count);
+	int res = 0;
+	uintptr_t cq_count = (uintptr_t)atomic_get(&r->cq_count);
+	uintptr_t cq_complete_count = cq_count + wait_count;
+	bool wraps = cq_complete_count < cq_count;
+
+	rtio_executor_submit(r);
+
+	if (wraps) {
+		while ((uintptr_t)atomic_get(&r->cq_count) >= cq_count) {
+			Z_SPIN_DELAY(10);
+			k_yield();
+		}
+	}
+
+	while ((uintptr_t)atomic_get(&r->cq_count) < cq_complete_count) {
 		Z_SPIN_DELAY(10);
 		k_yield();
 	}
-#endif
 
+	SYS_PORT_TRACING_FUNC_EXIT(rtio, submit, r);
 	return res;
 }
+#endif /* CONFIG_RTIO_SUBMIT_SEM */
+
+/**
+ * @brief Pool of RTIO contexts to use with dynamically created threads
+ */
+struct rtio_pool {
+	/** Size of the pool */
+	size_t pool_size;
+
+	/** Array containing contexts of the pool */
+	struct rtio **contexts;
+
+	/** Atomic bitmap to signal a member is used/unused */
+	atomic_t *used;
+};
+
+/**
+ * @brief Obtain an RTIO context from a pool
+ *
+ * @param pool RTIO pool to acquire a context from
+ *
+ * @retval NULL no available contexts
+ * @retval r Valid context with permissions granted to the calling thread
+ */
+__syscall struct rtio *rtio_pool_acquire(struct rtio_pool *pool);
+
+static inline struct rtio *z_impl_rtio_pool_acquire(struct rtio_pool *pool)
+{
+	struct rtio *r = NULL;
+
+	for (size_t i = 0; i < pool->pool_size; i++) {
+		if (atomic_test_and_set_bit(pool->used, i) == 0) {
+			r = pool->contexts[i];
+			break;
+		}
+	}
+
+	if (r != NULL) {
+		rtio_access_grant(r, k_current_get());
+	}
+
+	return r;
+}
+
+/**
+ * @brief Return an RTIO context to a pool
+ *
+ * @param pool RTIO pool to return a context to
+ * @param r RTIO context to return to the pool
+ */
+__syscall void rtio_pool_release(struct rtio_pool *pool, struct rtio *r);
+
+static inline void z_impl_rtio_pool_release(struct rtio_pool *pool, struct rtio *r)
+{
+
+	if (k_is_user_context()) {
+		rtio_access_revoke(r, k_current_get());
+	}
+
+	for (size_t i = 0; i < pool->pool_size; i++) {
+		if (pool->contexts[i] == r) {
+			atomic_clear_bit(pool->used, i);
+			break;
+		}
+	}
+}
+
+/* clang-format off */
+
+/** @cond ignore */
+
+#define Z_RTIO_POOL_NAME_N(n, name)                                             \
+	name##_##n
+
+#define Z_RTIO_POOL_DEFINE_N(n, name, sq_sz, cq_sz)				\
+	RTIO_DEFINE(Z_RTIO_POOL_NAME_N(n, name), sq_sz, cq_sz)
+
+#define Z_RTIO_POOL_REF_N(n, name)                                              \
+	&Z_RTIO_POOL_NAME_N(n, name)
+
+/** @endcond */
+
+/**
+ * @brief Statically define and initialize a pool of RTIO contexts
+ *
+ * @param name Name of the RTIO pool
+ * @param pool_sz Number of RTIO contexts to allocate in the pool
+ * @param sq_sz Size of the submission queue entry pool per context
+ * @param cq_sz Size of the completion queue entry pool per context
+ */
+#define RTIO_POOL_DEFINE(name, pool_sz, sq_sz, cq_sz)				\
+	LISTIFY(pool_sz, Z_RTIO_POOL_DEFINE_N, (;), name, sq_sz, cq_sz);        \
+	static struct rtio *name##_contexts[] = {                               \
+		LISTIFY(pool_sz, Z_RTIO_POOL_REF_N, (,), name)                  \
+	};                                                                      \
+	ATOMIC_DEFINE(name##_used, pool_sz);                                    \
+	STRUCT_SECTION_ITERABLE(rtio_pool, name) = {                            \
+		.pool_size = pool_sz,                                           \
+		.contexts = name##_contexts,                                    \
+		.used = name##_used,                                            \
+	}
+
+/* clang-format on */
 
 /**
  * @}

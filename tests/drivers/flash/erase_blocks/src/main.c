@@ -1,5 +1,7 @@
 /*
  * Copyright (c) 2023 Bjarki Arge Andreasen
+ * SPDX-FileCopyrightText: Copyright (c) 2026 Infineon Technologies AG,
+ * SPDX-FileCopyrightText: or an affiliate of Infineon Technologies AG. All rights reserved.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,6 +9,7 @@
 #include <zephyr/kernel.h>
 #include <string.h>
 #include <zephyr/drivers/flash.h>
+#include <zephyr/storage/flash_map.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/ztest.h>
 #include <zephyr/logging/log.h>
@@ -26,7 +29,7 @@ LOG_MODULE_REGISTER(test_flash);
 #endif
 
 #define TEST_FLASH_PART_OFFSET \
-	DT_REG_ADDR(TEST_FLASH_PART_NODE)
+	PARTITION_NODE_OFFSET(TEST_FLASH_PART_NODE)
 
 #define TEST_FLASH_PART_SIZE \
 	DT_REG_SIZE(TEST_FLASH_PART_NODE)
@@ -35,11 +38,11 @@ LOG_MODULE_REGISTER(test_flash);
 	(TEST_FLASH_PART_OFFSET + TEST_FLASH_PART_SIZE)
 
 #define TEST_FLASH_CONTROLLER_NODE \
-	DT_MTD_FROM_FIXED_PARTITION(TEST_FLASH_PART_NODE)
+	DT_MTD_FROM_PARTITION(TEST_FLASH_PART_NODE)
 
 static const struct device *flash_controller = DEVICE_DT_GET(TEST_FLASH_CONTROLLER_NODE);
-static uint8_t test_write_block[512];
-static uint8_t test_read_block[512];
+static uint8_t test_write_block[CONFIG_TEST_FLASH_ERASE_BLOCKS_BUFFER_SIZE];
+static uint8_t test_read_block[CONFIG_TEST_FLASH_ERASE_BLOCKS_BUFFER_SIZE];
 
 static void test_flash_fill_test_write_block(void)
 {

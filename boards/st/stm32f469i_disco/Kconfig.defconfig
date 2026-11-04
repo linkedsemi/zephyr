@@ -5,9 +5,24 @@
 
 if BOARD_STM32F469I_DISCO
 
-config SPI_STM32_INTERRUPT
+if LVGL
+
+# Double frame buffer maintained by lvgl.
+config STM32_LTDC_FB_NUM
+	default 0
+
+config LV_Z_DOUBLE_VDB
 	default y
-	depends on SPI
 
+config LV_Z_VDB_ZEPHYR_REGION
+	default y
 
+config LV_Z_VDB_ZEPHYR_REGION_NAME
+	default "SDRAM1"
+
+choice LV_Z_RENDERING_MODE
+	default LV_Z_FULL_REFRESH
+endchoice
+
+endif #LVGL
 endif # BOARD_STM32F469I_DISCO

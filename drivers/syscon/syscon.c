@@ -12,6 +12,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
+#include <zephyr/spinlock.h>
 
 #include <zephyr/drivers/syscon.h>
 
@@ -25,36 +26,26 @@ struct syscon_generic_config {
 struct syscon_generic_data {
 	DEVICE_MMIO_RAM;
 	size_t size;
+	struct k_spinlock lock;
 };
 
 static int syscon_generic_get_base(const struct device *dev, uintptr_t *addr)
 {
-	if (!dev) {
-		return -ENODEV;
-	}
-
 	*addr = DEVICE_MMIO_GET(dev);
 	return 0;
 }
 
-static int syscon_generic_read_reg(const struct device *dev, uint16_t reg, uint32_t *val)
+static int syscon_generic_read_nolock(const struct device *dev, uint32_t reg, uint32_t *val)
 {
-	const struct syscon_generic_config *config;
-	struct syscon_generic_data *data;
+	const struct syscon_generic_config *config = dev->config;
+	struct syscon_generic_data *data = dev->data;
 	uintptr_t base_address;
-
-	if (!dev) {
-		return -ENODEV;
-	}
-
-	data = dev->data;
-	config = dev->config;
 
 	if (!val) {
 		return -EINVAL;
 	}
 
-	if (syscon_sanitize_reg(&reg, data->size, config->reg_width)) {
+	if (syscon_sanitize_reg(reg, data->size, config->reg_width)) {
 		return -EINVAL;
 	}
 
@@ -77,20 +68,13 @@ static int syscon_generic_read_reg(const struct device *dev, uint16_t reg, uint3
 	return 0;
 }
 
-static int syscon_generic_write_reg(const struct device *dev, uint16_t reg, uint32_t val)
+static int syscon_generic_write_nolock(const struct device *dev, uint32_t reg, uint32_t val)
 {
-	const struct syscon_generic_config *config;
-	struct syscon_generic_data *data;
+	const struct syscon_generic_config *config = dev->config;
+	struct syscon_generic_data *data = dev->data;
 	uintptr_t base_address;
 
-	if (!dev) {
-		return -ENODEV;
-	}
-
-	data = dev->data;
-	config = dev->config;
-
-	if (syscon_sanitize_reg(&reg, data->size, config->reg_width)) {
+	if (syscon_sanitize_reg(reg, data->size, config->reg_width)) {
 		return -EINVAL;
 	}
 
@@ -113,6 +97,53 @@ static int syscon_generic_write_reg(const struct device *dev, uint16_t reg, uint
 	return 0;
 }
 
+static int syscon_generic_read_reg(const struct device *dev, uint32_t reg, uint32_t *val)
+{
+	struct syscon_generic_data *data = dev->data;
+	k_spinlock_key_t key;
+	int ret;
+
+	key = k_spin_lock(&data->lock);
+	ret = syscon_generic_read_nolock(dev, reg, val);
+	k_spin_unlock(&data->lock, key);
+
+	return ret;
+}
+
+static int syscon_generic_write_reg(const struct device *dev, uint32_t reg, uint32_t val)
+{
+	struct syscon_generic_data *data = dev->data;
+	k_spinlock_key_t key;
+	int ret;
+
+	key = k_spin_lock(&data->lock);
+	ret = syscon_generic_write_nolock(dev, reg, val);
+	k_spin_unlock(&data->lock, key);
+
+	return ret;
+}
+
+static int syscon_generic_update_bits(const struct device *dev, uint32_t reg,
+				      uint32_t mask, uint32_t val)
+{
+	struct syscon_generic_data *data = dev->data;
+	k_spinlock_key_t key;
+	uint32_t tmp;
+	int ret;
+
+	key = k_spin_lock(&data->lock);
+
+	ret = syscon_generic_read_nolock(dev, reg, &tmp);
+	if (ret == 0) {
+		tmp = (tmp & ~mask) | (val & mask);
+		ret = syscon_generic_write_nolock(dev, reg, tmp);
+	}
+
+	k_spin_unlock(&data->lock, key);
+
+	return ret;
+}
+
 static int syscon_generic_get_size(const struct device *dev, size_t *size)
 {
 	struct syscon_generic_data *data = dev->data;
@@ -121,9 +152,10 @@ static int syscon_generic_get_size(const struct device *dev, size_t *size)
 	return 0;
 }
 
-static const struct syscon_driver_api syscon_generic_driver_api = {
+static DEVICE_API(syscon, syscon_generic_driver_api) = {
 	.read = syscon_generic_read_reg,
 	.write = syscon_generic_write_reg,
+	.update_bits = syscon_generic_update_bits,
 	.get_base = syscon_generic_get_base,
 	.get_size = syscon_generic_get_size,
 };

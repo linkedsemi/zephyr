@@ -10,9 +10,13 @@
 #include <zephyr/arch/riscv/csr.h>
 #include <zephyr/irq_multilevel.h>
 #include <zephyr/sw_isr_table.h>
+#include <zephyr/pm/pm.h>
 
 #ifdef CONFIG_RISCV_HAS_PLIC
 #include <zephyr/drivers/interrupt_controller/riscv_plic.h>
+#endif
+#ifdef CONFIG_RISCV_APLIC_DIRECT
+#include <zephyr/drivers/interrupt_controller/riscv_aplic_direct.h>
 #endif
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
@@ -25,24 +29,36 @@ FUNC_NORETURN void z_irq_spurious(const void *unused)
 
 	CODE_UNREACHABLE;
 #else
-	unsigned long mcause;
+	unsigned long cause;
 
 	ARG_UNUSED(unused);
 
-	mcause = csr_read(mcause);
+#ifdef CONFIG_RISCV_S_MODE
+	cause = csr_read(scause);
+#else
+	cause = csr_read(mcause);
+#endif
 
-	mcause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
+	cause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
 
-	LOG_ERR("Spurious interrupt detected! IRQ: %ld", mcause);
+	LOG_ERR("Spurious interrupt detected! IRQ: %ld", cause);
 #if defined(CONFIG_RISCV_HAS_PLIC)
-	if (mcause == RISCV_IRQ_MEXT) {
+	if (cause == RISCV_IRQ_MEXT) {
 		unsigned int save_irq = riscv_plic_get_irq();
 		const struct device *save_dev = riscv_plic_get_dev();
 
 		LOG_ERR("PLIC interrupt line causing the IRQ: %d (%p)", save_irq, save_dev);
 	}
+#elif defined(CONFIG_RISCV_APLIC_DIRECT)
+	if (cause == RISCV_IRQ_MEXT) {
+		unsigned int save_irq = riscv_aplic_get_saved_irq();
+		const struct device *save_dev = riscv_aplic_get_saved_dev();
+
+		LOG_ERR("APLIC interrupt line causing the IRQ: %d (%p)", save_irq, save_dev);
+	}
 #endif
 	z_riscv_fatal_error(K_ERR_SPURIOUS_IRQ, NULL);
+	CODE_UNREACHABLE;
 #endif /* CONFIG_EMPTY_IRQ_SPURIOUS */
 }
 
@@ -53,7 +69,8 @@ int arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
 {
 	z_isr_install(irq + CONFIG_RISCV_RESERVED_IRQ_ISR_TABLES_OFFSET, routine, parameter);
 
-#if defined(CONFIG_RISCV_HAS_PLIC) || defined(CONFIG_RISCV_HAS_CLIC)
+#if defined(CONFIG_RISCV_HAS_PLIC) || defined(CONFIG_RISCV_HAS_CLIC) ||                            \
+	defined(CONFIG_RISCV_HAS_AIA)
 	z_riscv_irq_priority_set(irq, priority, flags);
 #else
 	ARG_UNUSED(flags);
@@ -75,3 +92,19 @@ int arch_irq_disconnect_dynamic(unsigned int irq, unsigned int priority,
 }
 #endif /* CONFIG_SHARED_INTERRUPTS */
 #endif /* CONFIG_DYNAMIC_INTERRUPTS */
+
+#ifdef CONFIG_PM
+void arch_isr_direct_pm(void)
+{
+	unsigned int key;
+
+	key = irq_lock();
+
+	if (_kernel.idle) {
+		_kernel.idle = 0;
+		pm_system_resume();
+	}
+
+	irq_unlock(key);
+}
+#endif

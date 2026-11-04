@@ -214,7 +214,7 @@ static int sgp40_init(const struct device *dev)
 	struct sensor_value comp_data;
 
 	if (!device_is_ready(cfg->bus.bus)) {
-		LOG_ERR("Device not ready.");
+		LOG_ERR_DEVICE_NOT_READY(cfg->bus.bus);
 		return -ENODEV;
 	}
 
@@ -242,7 +242,7 @@ static int sgp40_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api sgp40_api = {
+static DEVICE_API(sensor, sgp40_api) = {
 	.sample_fetch = sgp40_sample_fetch,
 	.channel_get = sgp40_channel_get,
 	.attr_set = sgp40_attr_set,

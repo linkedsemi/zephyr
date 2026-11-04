@@ -12,6 +12,7 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/pm/device.h>
+#include <zephyr/drivers/sensor/lis2dh.h>
 
 LOG_MODULE_REGISTER(lis2dh, CONFIG_SENSOR_LOG_LEVEL);
 #include "lis2dh.h"
@@ -73,12 +74,20 @@ static int lis2dh_sample_fetch_temp(const struct device *dev)
 		if (cfg->temperature.fractional_bits == 0) {
 			lis2dh->temperature.val2 = 0;
 		} else {
-			lis2dh->temperature.val2 =
-				(raw[0] >> (8 - cfg->temperature.fractional_bits));
-			lis2dh->temperature.val2 = (lis2dh->temperature.val2 * 1000000);
-			lis2dh->temperature.val2 >>= cfg->temperature.fractional_bits;
-			if (lis2dh->temperature.val1 < 0) {
-				lis2dh->temperature.val2 *= -1;
+			int32_t frac = raw[0] >> (8 - cfg->temperature.fractional_bits);
+
+			frac = (frac * 1000000) >> cfg->temperature.fractional_bits;
+
+			if (lis2dh->temperature.val1 < 0 && frac != 0) {
+				/*
+				 * The raw value is two's complement, so the fractional
+				 * part is always a positive addend.  Renormalize it so
+				 * that val1 and val2 have the same sign.
+				 */
+				lis2dh->temperature.val1 += 1;
+				lis2dh->temperature.val2 = frac - 1000000;
+			} else {
+				lis2dh->temperature.val2 = frac;
 			}
 		}
 	}
@@ -132,13 +141,12 @@ static int lis2dh_fetch_xyz(const struct device *dev,
 			       enum sensor_channel chan)
 {
 	struct lis2dh_data *lis2dh = dev->data;
-	int status = -ENODATA;
 	size_t i;
 	/*
 	 * since status and all accel data register addresses are consecutive,
 	 * a burst read can be used to read all the samples
 	 */
-	status = lis2dh->hw_tf->read_data(dev, LIS2DH_REG_STATUS,
+	int status = lis2dh->hw_tf->read_data(dev, LIS2DH_REG_STATUS,
 					  lis2dh->sample.raw,
 					  sizeof(lis2dh->sample.raw));
 	if (status < 0) {
@@ -153,11 +161,11 @@ static int lis2dh_fetch_xyz(const struct device *dev,
 		*sample = sys_le16_to_cpu(*sample);
 	}
 
-	if (lis2dh->sample.status & LIS2DH_STATUS_DRDY_MASK) {
-		status = 0;
+	if (!(lis2dh->sample.status & LIS2DH_STATUS_DRDY_MASK)) {
+		return -ENODATA;
 	}
 
-	return status;
+	return 0;
 }
 
 static int lis2dh_sample_fetch(const struct device *dev,
@@ -206,6 +214,7 @@ static int lis2dh_acc_odr_set(const struct device *dev, uint16_t freq)
 	int odr;
 	int status;
 	uint8_t value;
+	bool lp;
 	struct lis2dh_data *data = dev->data;
 
 	odr = lis2dh_freq_to_odr_val(freq);
@@ -218,14 +227,21 @@ static int lis2dh_acc_odr_set(const struct device *dev, uint16_t freq)
 		return status;
 	}
 
+	lp = (value & LIS2DH_LP_EN_BIT_MASK) != 0U;
+
 	/* some odr values cannot be set in certain power modes */
-	if ((value & LIS2DH_LP_EN_BIT_MASK) == 0U && odr == LIS2DH_ODR_8) {
+	if (!lp && (odr == LIS2DH_ODR_8 || odr == LIS2DH_ODR_9 + 1)) {
+		/* 1620 Hz and 5376 Hz are low power mode only */
+		return -ENOTSUP;
+	}
+
+	if (lp && odr == LIS2DH_ODR_9) {
+		/* 1344 Hz is normal/high resolution mode only */
 		return -ENOTSUP;
 	}
 
 	/* adjust odr index for LP enabled mode, see table above */
-	if (((value & LIS2DH_LP_EN_BIT_MASK) == LIS2DH_LP_EN_BIT_MASK) &&
-		(odr == LIS2DH_ODR_9 + 1)) {
+	if (lp && odr == LIS2DH_ODR_9 + 1) {
 		odr--;
 	}
 
@@ -271,6 +287,31 @@ static int lis2dh_acc_range_set(const struct device *dev, int32_t range)
 }
 #endif
 
+#ifdef CONFIG_LIS2DH_ACCEL_HP_FILTERS
+static int lis2dh_acc_hp_filter_set(const struct device *dev, int32_t val)
+{
+	struct lis2dh_data *lis2dh = dev->data;
+	int status;
+
+	status = lis2dh->hw_tf->write_reg(dev, LIS2DH_REG_CTRL2, val);
+	if (status < 0) {
+		LOG_ERR("Failed to set high pass filters");
+	}
+
+	return status;
+}
+#endif
+
+#ifdef CONFIG_LIS2DH_SELF_TEST
+static int lis2dh_self_test_set(const struct device *dev, int32_t val)
+{
+	struct lis2dh_data *lis2dh = dev->data;
+	uint8_t value = (val << LIS2DH_CTRL4_ST_SHIFT) & LIS2DH_CTRL4_ST_MASK;
+
+	return lis2dh->hw_tf->update_reg(dev, LIS2DH_REG_CTRL4, LIS2DH_CTRL4_ST_MASK, value);
+}
+#endif
+
 static int lis2dh_acc_config(const struct device *dev,
 			     enum sensor_channel chan,
 			     enum sensor_attribute attr,
@@ -293,6 +334,10 @@ static int lis2dh_acc_config(const struct device *dev,
 #ifdef CONFIG_LIS2DH_ACCEL_HP_FILTERS
 	case SENSOR_ATTR_CONFIGURATION:
 		return lis2dh_acc_hp_filter_set(dev, val->val1);
+#endif
+#ifdef CONFIG_LIS2DH_SELF_TEST
+	case SENSOR_ATTR_LIS2DH_SELF_TEST:
+		return lis2dh_self_test_set(dev, val->val1);
 #endif
 	default:
 		LOG_DBG("Accel attribute not supported.");
@@ -320,7 +365,7 @@ static int lis2dh_attr_set(const struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static const struct sensor_driver_api lis2dh_driver_api = {
+static DEVICE_API(sensor, lis2dh_driver_api) = {
 	.attr_set = lis2dh_attr_set,
 #if CONFIG_LIS2DH_TRIGGER
 	.trigger_set = lis2dh_trigger_set,
@@ -329,7 +374,7 @@ static const struct sensor_driver_api lis2dh_driver_api = {
 	.channel_get = lis2dh_channel_get,
 };
 
-int lis2dh_init(const struct device *dev)
+int lis2dh_init_chip(const struct device *dev)
 {
 	struct lis2dh_data *lis2dh = dev->data;
 	const struct lis2dh_config *cfg = dev->config;
@@ -337,10 +382,8 @@ int lis2dh_init(const struct device *dev)
 	uint8_t id;
 	uint8_t raw[6];
 
-	status = cfg->bus_init(dev);
-	if (status < 0) {
-		return status;
-	}
+	/* AN5005: LIS2DH needs 5ms delay to boot */
+	k_sleep(K_MSEC(LIS2DH_POR_WAIT_MS));
 
 	status = lis2dh->hw_tf->read_reg(dev, LIS2DH_REG_WAI, &id);
 	if (status < 0) {
@@ -426,20 +469,21 @@ int lis2dh_init(const struct device *dev)
 		(uint8_t)LIS2DH_LP_EN_BIT, lis2dh->scale);
 
 	/* enable accel measurements and set power mode and data rate */
-	return lis2dh->hw_tf->write_reg(dev, LIS2DH_REG_CTRL1,
-					LIS2DH_ACCEL_EN_BITS | LIS2DH_LP_EN_BIT |
-					LIS2DH_ODR_BITS);
+	lis2dh->reg_ctrl1_active_val = LIS2DH_ACCEL_EN_BITS | LIS2DH_LP_EN_BIT | LIS2DH_ODR_BITS;
+	return lis2dh->hw_tf->write_reg(dev, LIS2DH_REG_CTRL1, lis2dh->reg_ctrl1_active_val);
 }
 
-#ifdef CONFIG_PM_DEVICE
 static int lis2dh_pm_action(const struct device *dev,
 			    enum pm_device_action action)
 {
-	int status;
+	int status = 0;
 	struct lis2dh_data *lis2dh = dev->data;
 	uint8_t regdata;
 
 	switch (action) {
+	case PM_DEVICE_ACTION_TURN_ON:
+		status = lis2dh_init_chip(dev);
+		break;
 	case PM_DEVICE_ACTION_RESUME:
 		/* read REFERENCE register (see datasheet rev 6 section 8.9 footnote 1) */
 		status = lis2dh->hw_tf->read_reg(dev, LIS2DH_REG_REFERENCE, &regdata);
@@ -452,7 +496,7 @@ static int lis2dh_pm_action(const struct device *dev,
 		status = lis2dh->hw_tf->write_reg(dev, LIS2DH_REG_CTRL1,
 						  lis2dh->reg_ctrl1_active_val);
 		if (status < 0) {
-			LOG_ERR("failed to write reg_crtl1");
+			LOG_ERR("failed to write reg_ctrl1");
 			return status;
 		}
 		break;
@@ -461,23 +505,38 @@ static int lis2dh_pm_action(const struct device *dev,
 		status = lis2dh->hw_tf->read_reg(dev, LIS2DH_REG_CTRL1,
 						 &lis2dh->reg_ctrl1_active_val);
 		if (status < 0) {
-			LOG_ERR("failed to read reg_crtl1");
+			LOG_ERR("failed to read reg_ctrl1");
 			return status;
 		}
 		status = lis2dh->hw_tf->write_reg(dev, LIS2DH_REG_CTRL1,
 						  LIS2DH_SUSPEND);
 		if (status < 0) {
-			LOG_ERR("failed to write reg_crtl1");
+			LOG_ERR("failed to write reg_ctrl1");
 			return status;
 		}
+		break;
+	case PM_DEVICE_ACTION_TURN_OFF:
 		break;
 	default:
 		return -ENOTSUP;
 	}
 
-	return 0;
+	return status;
 }
-#endif /* CONFIG_PM_DEVICE */
+
+static int lis2dh_init(const struct device *dev)
+{
+	const struct lis2dh_config *cfg = dev->config;
+	int status;
+
+	status = cfg->bus_init(dev);
+	if (status < 0) {
+		LOG_ERR("Failed to initialize the bus.");
+		return status;
+	}
+
+	return pm_device_driver_init(dev, lis2dh_pm_action);
+}
 
 #if DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 0
 #warning "LIS2DH driver enabled without any devices"
@@ -564,10 +623,9 @@ static int lis2dh_pm_action(const struct device *dev,
 		.bus_init = lis2dh_spi_init,				\
 		.bus_cfg = { .spi = SPI_DT_SPEC_INST_GET(inst,		\
 					SPI_WORD_SET(8) |		\
-					SPI_OP_MODE_MASTER |		\
+					SPI_OP_MODE_CONTROLLER |	\
 					SPI_MODE_CPOL |			\
-					SPI_MODE_CPHA,			\
-					0) },				\
+					SPI_MODE_CPHA)},		\
 		.hw = { .is_lsm303agr_dev = IS_LSM303AGR_DEV(inst),	\
 			.disc_pull_up = DISC_PULL_UP(inst),		\
 			.anym_on_int1 = ANYM_ON_INT1(inst),		\

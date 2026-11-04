@@ -42,7 +42,11 @@ void check_error(void)
 	/* Check backend error if backend supports this query */
 	ret = coredump_query(COREDUMP_QUERY_GET_ERROR, NULL);
 	if (ret != -ENOTSUP) {
-		zassert_equal(ret, 0, "Error encountered! (%d)", ret);
+		if (IS_ENABLED(CONFIG_TEST_BACKEND_ERROR)) {
+			zassert_not_equal(ret, 0, "Expected a backend error");
+		} else {
+			zassert_equal(ret, 0, "Error encountered! (%d)", ret);
+		}
 	}
 }
 
@@ -251,7 +255,7 @@ void test_get_stored_dump_size(int size_expected)
 	}
 }
 
-/* Excecute tests in exact sequence with the stored core dump. */
+/* Execute tests in exact sequence with the stored core dump. */
 
 ZTEST(coredump_backends, test_coredump_0_ready) {
 	check_error();

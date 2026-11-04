@@ -30,18 +30,21 @@
 		gpios = <&gpioa 7 (GPIO_PULL_DOWN | GPIO_ACTIVE_HIGH)>;
 		chain-length = <1>;
 		color-mapping = <LED_COLOR_ID_BLUE
-				LED_COLOR_ID_GREEN
-				LED_COLOR_ID_RED>;
+				 LED_COLOR_ID_GREEN
+				 LED_COLOR_ID_RED>;
+		/* NOTE: optional LED strip on PA7, keep disabled by default */
 		status = "disabled";
 	};
 
 	buttons {
 		compatible = "gpio-keys";
+
 		button0: button_0 {
 			gpios = <&gpioc 12 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 1";
 			zephyr,code = <INPUT_KEY_0>;
 		};
+
 		button1: button_1 {
 			gpios = <&gpioc 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 2";
@@ -100,7 +103,6 @@
 	status = "okay";
 };
 
-
 &lpuart1 {
 	pinctrl-0 = <&lpuart1_tx_pa2 &lpuart1_rx_pa3>;
 	pinctrl-names = "default";
@@ -108,11 +110,15 @@
 	status = "okay";
 };
 
+&adc1_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
 &adc1 {
 	pinctrl-0 = <&adc1_in3_pc2>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <4>;
 	status = "okay";
 };
 
@@ -132,9 +138,9 @@ zephyr_udc0: &usb {
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 
 		/*
 		 * Configure partitions while leaving space for M0 BLE f/w
@@ -144,26 +150,30 @@ zephyr_udc0: &usb {
 		 */
 
 		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "mcuboot";
 			reg = <0x00000000 DT_SIZE_K(48)>;
 		};
+
 		slot0_partition: partition@c000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x0000c000 DT_SIZE_K(400)>;
 		};
+
 		slot1_partition: partition@70000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
-			reg = <0x00070000 DT_SIZE_K(400)>;
+			reg = <0x00070000 DT_SIZE_K(404)>;
 		};
-		scratch_partition: partition@d4000 {
-			label = "image-scratch";
-			reg = <0x000d4000 DT_SIZE_K(16)>;
-		};
+
+		/* Area [0xd5000..0xd7fff] is unused */
+
 		storage_partition: partition@d8000 {
+			compatible = "zephyr,mapped-partition";
 			label = "storage";
 			reg = <0x000d8000 DT_SIZE_K(8)>;
 		};
-
 	};
 };
 
@@ -172,6 +182,7 @@ zephyr_udc0: &usb {
 		gpios = <1 GPIO_ACTIVE_HIGH>;
 		gpio-hog;
 		output-high;
+		/* NOTE: only assert when the external LED strip is used */
 		status = "disabled";
 	};
 };
@@ -179,6 +190,8 @@ zephyr_udc0: &usb {
 &i2c3 {
 	pinctrl-0 = <&i2c3_scl_pb13 &i2c3_sda_pb11>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 13 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 
@@ -192,8 +205,8 @@ zephyr_udc0: &usb {
 		compatible = "st,ism330dhcx";
 		reg = <0x6b>;
 		drdy-gpios = <&gpiod 2 GPIO_ACTIVE_HIGH>;
-		accel-odr= <ISM330DHCX_DT_ODR_52Hz>;
-		gyro-odr= <ISM330DHCX_DT_ODR_26H>;
+		accel-odr = <ISM330DHCX_DT_ODR_52Hz>;
+		gyro-odr = <ISM330DHCX_DT_ODR_26H>;
 	};
 };
 

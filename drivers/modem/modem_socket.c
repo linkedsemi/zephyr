@@ -241,8 +241,8 @@ void modem_socket_put(struct modem_socket_config *cfg, int sock_fd)
 	sock->sock_fd = -1;
 	sock->is_waiting = false;
 	sock->is_connected = false;
-	(void)memset(&sock->src, 0, sizeof(struct sockaddr));
-	(void)memset(&sock->dst, 0, sizeof(struct sockaddr));
+	(void)memset(&sock->src, 0, sizeof(struct net_sockaddr));
+	(void)memset(&sock->dst, 0, sizeof(struct net_sockaddr));
 	memset(&sock->packet_sizes, 0, sizeof(sock->packet_sizes));
 	sock->packet_count = 0;
 	k_sem_reset(&sock->sem_data_ready);
@@ -437,6 +437,7 @@ int modem_socket_init(struct modem_socket_config *cfg, struct modem_socket *sock
 		k_sem_init(&cfg->sockets[i].sem_data_ready, 0, 1);
 		k_poll_signal_init(&cfg->sockets[i].sig_data_ready);
 		cfg->sockets[i].id = -1;
+		cfg->sockets[i].sock_fd = -1;
 	}
 	return 0;
 }

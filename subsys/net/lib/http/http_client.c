@@ -21,13 +21,15 @@ LOG_MODULE_REGISTER(net_http_client, CONFIG_NET_HTTP_LOG_LEVEL);
 #include <stdlib.h>
 
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/http/client.h>
+#include <zephyr/net/http/status.h>
 
 #include "net_private.h"
 
 #define HTTP_CONTENT_LEN_SIZE 11
-#define MAX_SEND_BUF_LEN 192
+#define MAX_SEND_BUF_LEN CONFIG_HTTP_CLIENT_SEND_BUF_SIZE
 
 static int sendall(int sock, const void *buf, size_t len,
 			const k_timepoint_t req_end_timepoint)
@@ -40,7 +42,8 @@ static int sendall(int sock, const void *buf, size_t len,
 			int pollres;
 			k_ticks_t req_timeout_ticks =
 				sys_timepoint_timeout(req_end_timepoint).ticks;
-			int req_timeout_ms = k_ticks_to_ms_floor32(req_timeout_ticks);
+			int req_timeout_ms = (req_timeout_ticks == K_TICKS_FOREVER) ?
+					     -1 : k_ticks_to_ms_ceil32(req_timeout_ticks);
 
 			pfd.fd = sock;
 			pfd.events = ZSOCK_POLLOUT;
@@ -166,9 +169,11 @@ static void print_header_field(size_t len, const char *str)
 			len = sizeof(output) - 1;
 		}
 
-		snprintk(output, len + 1, "%s", str);
+		/* str is not NUL terminated */
+		memcpy(output, str, len);
+		output[len] = '\0';
 
-		NET_DBG("[%zd] %s", len, output);
+		NET_DBG("[%zu] %s", len, output);
 	}
 }
 
@@ -217,12 +222,17 @@ static int on_header_field(struct http_parser *parser, const char *at,
 	struct http_request *req = CONTAINER_OF(parser,
 						struct http_request,
 						internal.parser);
-	const char *content_len = "Content-Length";
-	uint16_t len;
+	static const char content_len[] = "Content-Length";
+	static const char content_range[] = "Content-Range";
 
-	len = strlen(content_len);
-	if (length >= len && strncasecmp(at, content_len, len) == 0) {
+	uint16_t content_len_len = sizeof(content_len) - 1;
+	uint16_t content_range_len = sizeof(content_range) - 1;
+
+	if (length >= content_len_len && strncasecmp(at, content_len, content_len_len) == 0) {
 		req->internal.response.cl_present = true;
+	} else if (length >= content_range_len &&
+		   strncasecmp(at, content_range, content_range_len) == 0) {
+		req->internal.response.cr_present = true;
 	}
 
 	print_header_field(length, at);
@@ -264,6 +274,13 @@ static int on_header_value(struct http_parser *parser, const char *at,
 		req->internal.response.cl_present = false;
 	}
 
+	if (req->internal.response.cr_present) {
+		req->internal.response.content_range.start = parser->content_range.start;
+		req->internal.response.content_range.end = parser->content_range.end;
+		req->internal.response.content_range.total = parser->content_range.total;
+		req->internal.response.cr_present = false;
+	}
+
 	if (req->internal.response.http_cb &&
 	    req->internal.response.http_cb->on_header_value) {
 		req->internal.response.http_cb->on_header_value(parser, at,
@@ -275,11 +292,30 @@ static int on_header_value(struct http_parser *parser, const char *at,
 	return 0;
 }
 
+static int http_report_progress(struct http_request *req);
+
 static int on_body(struct http_parser *parser, const char *at, size_t length)
 {
 	struct http_request *req = CONTAINER_OF(parser,
 						struct http_request,
 						internal.parser);
+
+	/* A chunked body yields one fragment per chunk, separated by the chunk
+	 * framing, so a single receive buffer can hold several of them. Hand
+	 * a pending fragment to the application before starting a new one,
+	 * otherwise only the last one would be reported.
+	 */
+	if (req->internal.response.body_frag_start != NULL &&
+	    req->internal.response.body_frag_start +
+	    req->internal.response.body_frag_len != (const uint8_t *)at) {
+		if (http_report_progress(req) < 0) {
+			req->internal.aborted = true;
+			return -1;
+		}
+
+		req->internal.response.body_frag_start = NULL;
+		req->internal.response.body_frag_len = 0;
+	}
 
 	req->internal.response.body_found = 1;
 	req->internal.response.processed += length;
@@ -292,14 +328,12 @@ static int on_body(struct http_parser *parser, const char *at, size_t length)
 		req->internal.response.http_cb->on_body(parser, at, length);
 	}
 
-	/* Reset the body_frag_start pointer for each fragment. */
-	if (!req->internal.response.body_frag_start) {
+	if (req->internal.response.body_frag_start == NULL) {
 		req->internal.response.body_frag_start = (uint8_t *)at;
+		req->internal.response.body_frag_len = length;
+	} else {
+		req->internal.response.body_frag_len += length;
 	}
-
-	/* Calculate the length of the body contained in the recv_buf */
-	req->internal.response.body_frag_len = req->internal.response.data_len -
-		(req->internal.response.body_frag_start - req->internal.response.recv_buf);
 
 	return 0;
 }
@@ -315,8 +349,8 @@ static int on_headers_complete(struct http_parser *parser)
 		req->internal.response.http_cb->on_headers_complete(parser);
 	}
 
-	if (parser->status_code >= 500 && parser->status_code < 600) {
-		NET_DBG("Status %d, skipping body", parser->status_code);
+	if (parser->status_code == HTTP_101_SWITCHING_PROTOCOLS) {
+		NET_DBG("Switching protocols, skipping body");
 		return 1;
 	}
 
@@ -442,27 +476,31 @@ static void http_report_complete(struct http_request *req)
 {
 	if (req->internal.response.cb) {
 		NET_DBG("Calling callback for %zd len data", req->internal.response.data_len);
-		req->internal.response.cb(&req->internal.response, HTTP_DATA_FINAL,
-					  req->internal.user_data);
+		(void)req->internal.response.cb(&req->internal.response,
+						HTTP_DATA_FINAL,
+						req->internal.user_data);
 	}
 }
 
 /* Report that some data has been received, but the HTTP transaction is still ongoing. */
-static void http_report_progress(struct http_request *req)
+static int http_report_progress(struct http_request *req)
 {
 	if (req->internal.response.cb) {
 		NET_DBG("Calling callback for partitioned %zd len data",
 			req->internal.response.data_len);
 
-		req->internal.response.cb(&req->internal.response, HTTP_DATA_MORE,
-					  req->internal.user_data);
+		return req->internal.response.cb(&req->internal.response,
+						 HTTP_DATA_MORE,
+						 req->internal.user_data);
 	}
+
+	return 0;
 }
 
 static int http_wait_data(int sock, struct http_request *req, const k_timepoint_t req_end_timepoint)
 {
 	int total_received = 0;
-	size_t offset = 0;
+	size_t offset = 0, processed = 0;
 	int received, ret;
 	struct zsock_pollfd fds[1];
 	int nfds = 1;
@@ -473,7 +511,8 @@ static int http_wait_data(int sock, struct http_request *req, const k_timepoint_
 	do {
 		k_ticks_t req_timeout_ticks =
 			sys_timepoint_timeout(req_end_timepoint).ticks;
-		int req_timeout_ms = k_ticks_to_ms_floor32(req_timeout_ticks);
+		int req_timeout_ms = (req_timeout_ticks == K_TICKS_FOREVER) ?
+				     -1 : k_ticks_to_ms_ceil32(req_timeout_ticks);
 
 		ret = zsock_poll(fds, nfds, req_timeout_ms);
 		if (ret == 0) {
@@ -484,50 +523,110 @@ static int http_wait_data(int sock, struct http_request *req, const k_timepoint_
 			ret = -errno;
 			goto error;
 		}
-		if (fds[0].revents & (ZSOCK_POLLERR | ZSOCK_POLLNVAL)) {
-			ret = -errno;
+
+		if (fds[0].revents & ZSOCK_POLLERR) {
+			int sock_err;
+			net_socklen_t optlen = sizeof(sock_err);
+
+			(void)zsock_getsockopt(sock, ZSOCK_SOL_SOCKET, ZSOCK_SO_ERROR,
+					       &sock_err, &optlen);
+			ret = -sock_err;
 			goto error;
-		} else if (fds[0].revents & ZSOCK_POLLHUP) {
-			/* Connection closed */
-			goto closed;
+		} else if (fds[0].revents & ZSOCK_POLLNVAL) {
+			ret = -EBADF;
+			goto error;
 		} else if (fds[0].revents & ZSOCK_POLLIN) {
 			received = zsock_recv(sock, req->internal.response.recv_buf + offset,
 					      req->internal.response.recv_buf_len - offset, 0);
-			if (received == 0) {
-				/* Connection closed */
+			if (received == 0 && total_received == 0) {
+				/* Connection closed, no data received */
 				goto closed;
 			} else if (received < 0) {
 				ret = -errno;
 				goto error;
-			} else {
-				req->internal.response.data_len += received;
-
-				(void)http_parser_execute(
-					&req->internal.parser, &req->internal.parser_settings,
-					req->internal.response.recv_buf + offset, received);
 			}
 
 			total_received += received;
 			offset += received;
 
+			/* Initialize the data length with the received data length. */
+			req->internal.response.data_len = offset;
+
+			/* In case of EOF on a socket, indicate this by passing
+			 * 0 length to the parser.
+			 */
+			processed = http_parser_execute(
+				&req->internal.parser, &req->internal.parser_settings,
+				req->internal.response.recv_buf, received > 0 ? offset : 0);
+
+			if (processed > offset) {
+				LOG_ERR("HTTP parser error, too much data consumed");
+				ret = -EBADMSG;
+				goto error;
+			}
+
+			if (req->internal.aborted) {
+				LOG_DBG("Connection aborted by the application");
+				return -ECONNABORTED;
+			}
+
+			if (req->internal.parser.http_errno != HPE_OK) {
+				LOG_ERR("HTTP parsing error, %d",
+					req->internal.parser.http_errno);
+				ret = -EBADMSG;
+				goto error;
+			}
+
+			/* Update the response data length with the actually
+			 * processed bytes.
+			 */
+			req->internal.response.data_len = processed;
+			offset -= processed;
+
 			if (offset >= req->internal.response.recv_buf_len) {
-				offset = 0;
+				/* This means the parser did not consume any data
+				 * and we can't fit any more in the buffer.
+				 */
+				LOG_ERR("HTTP RX buffer full, cannot proceed");
+				ret = -ENOMEM;
+				goto error;
 			}
 
 			if (req->internal.response.message_complete) {
 				http_report_complete(req);
-				break;
-			} else if (offset == 0) {
-				http_report_progress(req);
+			} else {
+				ret = http_report_progress(req);
+				if (ret < 0) {
+					LOG_DBG("Connection aborted by the application (%d)",
+						ret);
+					return -ECONNABORTED;
+				}
 
 				/* Re-use the result buffer and start to fill it again */
 				req->internal.response.data_len = 0;
 				req->internal.response.body_frag_start = NULL;
 				req->internal.response.body_frag_len = 0;
 			}
+
+			if (offset > 0) {
+				/* In case there are any unprocessed data left,
+				 * move them to the front of the buffer.
+				 */
+				memmove(req->internal.response.recv_buf,
+					req->internal.response.recv_buf + processed,
+					offset);
+			}
+		} else if (fds[0].revents & ZSOCK_POLLHUP) {
+			/* Connection closed */
+			goto closed;
 		}
 
-	} while (true);
+	} while (!req->internal.response.message_complete);
+
+	/* If there's still some data left in the buffer after HTTP processing,
+	 * reflect this in data_len variable.
+	 */
+	req->data_len = offset;
 
 	return total_received;
 
@@ -578,6 +677,7 @@ int http_client_req(int sock, struct http_request *req,
 	req->internal.response.recv_buf_len = req->recv_buf_len;
 	req->internal.user_data = user_data;
 	req->internal.sock = sock;
+	req->internal.aborted = false;
 
 	method = http_method_str(req->method);
 

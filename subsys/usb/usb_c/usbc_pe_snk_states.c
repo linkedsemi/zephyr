@@ -78,16 +78,20 @@ void pe_snk_startup_entry(void *obj)
 	/* Set power role to Sink */
 	pe->power_role = TC_ROLE_SINK;
 
+	/* Notify DPM of power role */
+	policy_notify(dev, POWER_ROLE_IS_SINK);
+
 	/* Invalidate explicit contract */
 	atomic_clear_bit(pe->flags, PE_FLAGS_EXPLICIT_CONTRACT);
 
+	/* Inform Device Policy Manager that PD is not connected */
 	policy_notify(dev, NOT_PD_CONNECTED);
 }
 
 /**
  * @brief PE_SNK_Startup Run State
  */
-void pe_snk_startup_run(void *obj)
+enum smf_state_result pe_snk_startup_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -99,6 +103,7 @@ void pe_snk_startup_run(void *obj)
 	if (prl_is_running(dev)) {
 		pe_set_state(dev, PE_SNK_DISCOVERY);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -106,13 +111,20 @@ void pe_snk_startup_run(void *obj)
  */
 void pe_snk_discovery_entry(void *obj)
 {
+	struct policy_engine *pe = (struct policy_engine *)obj;
+	const struct device *dev = pe->dev;
+	struct usbc_port_data *data = dev->data;
+	const struct device *vbus = data->vbus;
+
 	LOG_INF("PE_SNK_Discovery");
+
+	usbc_vbus_enable(vbus, true);
 }
 
 /**
  * @brief PE_SNK_Discovery Run State
  */
-void pe_snk_discovery_run(void *obj)
+enum smf_state_result pe_snk_discovery_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -126,6 +138,7 @@ void pe_snk_discovery_run(void *obj)
 	if (usbc_vbus_check_level(vbus, TC_VBUS_PRESENT)) {
 		pe_set_state(dev, PE_SNK_WAIT_FOR_CAPABILITIES);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -144,7 +157,7 @@ void pe_snk_wait_for_capabilities_entry(void *obj)
 /**
  * @brief PE_SNK_Wait_For_Capabilities Run State
  */
-void pe_snk_wait_for_capabilities_run(void *obj)
+enum smf_state_result pe_snk_wait_for_capabilities_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -160,7 +173,7 @@ void pe_snk_wait_for_capabilities_run(void *obj)
 		header = prl_rx->emsg.header;
 		if (received_data_message(dev, header, PD_DATA_SOURCE_CAP)) {
 			pe_set_state(dev, PE_SNK_EVALUATE_CAPABILITY);
-			return;
+			return SMF_EVENT_PROPAGATE;
 		}
 	}
 
@@ -169,6 +182,7 @@ void pe_snk_wait_for_capabilities_run(void *obj)
 		atomic_set_bit(pe->flags, PE_FLAGS_SNK_WAIT_CAP_TIMEOUT);
 		pe_set_state(dev, PE_SNK_HARD_RESET);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -231,15 +245,13 @@ void pe_snk_select_capability_entry(void *obj)
 
 	/* Send Request */
 	pe_send_request_msg(dev, rdo);
-	/* Inform Device Policy Manager that we are PD Connected */
-	policy_notify(dev, PD_CONNECTED);
 }
 
 /**
  * @brief PE_SNK_Select_Capability Run State
  *	  NOTE: Sender Response Timer is handled in super state.
  */
-void pe_snk_select_capability_run(void *obj)
+enum smf_state_result pe_snk_select_capability_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -284,8 +296,6 @@ void pe_snk_select_capability_run(void *obj)
 		 */
 		/* Only look at control messages */
 		if (received_control_message(dev, header, PD_CTRL_ACCEPT)) {
-			/* explicit contract is now in place */
-			atomic_set_bit(pe->flags, PE_FLAGS_EXPLICIT_CONTRACT);
 			pe_set_state(dev, PE_SNK_TRANSITION_SINK);
 		} else if (received_control_message(dev, header, PD_CTRL_REJECT) ||
 			   received_control_message(dev, header, PD_CTRL_WAIT)) {
@@ -317,8 +327,9 @@ void pe_snk_select_capability_run(void *obj)
 		} else {
 			pe_send_soft_reset(dev, prl_rx->emsg.type);
 		}
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -337,7 +348,7 @@ void pe_snk_transition_sink_entry(void *obj)
 /**
  * @brief PE_SNK_Transition_Sink Run State
  */
-void pe_snk_transition_sink_run(void *obj)
+enum smf_state_result pe_snk_transition_sink_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -364,12 +375,20 @@ void pe_snk_transition_sink_run(void *obj)
 			 * the Power Supply
 			 */
 			policy_notify(dev, TRANSITION_PS);
+			/*
+			 * Only notify DPM PD_CONNECTED if this is the first contract
+			 * and not a renegotiation.
+			 */
+			if (!atomic_test_and_set_bit(pe->flags, PE_FLAGS_EXPLICIT_CONTRACT)) {
+				/* Inform Device Policy Manager that PD is connected */
+				policy_notify(dev, PD_CONNECTED);
+			}
 			pe_set_state(dev, PE_SNK_READY);
 		} else {
 			/* Protocol Error */
 			pe_set_state(dev, PE_SNK_HARD_RESET);
 		}
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
 
 	/*
@@ -378,6 +397,7 @@ void pe_snk_transition_sink_run(void *obj)
 	if (usbc_timer_expired(&pe->pd_t_ps_transition)) {
 		pe_set_state(dev, PE_SNK_HARD_RESET);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -408,7 +428,7 @@ void pe_snk_ready_entry(void *obj)
 /**
  * @brief PE_SNK_Ready Run State
  */
-void pe_snk_ready_run(void *obj)
+enum smf_state_result pe_snk_ready_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -425,17 +445,26 @@ void pe_snk_ready_run(void *obj)
 		/* Extended Message Request */
 		if (header.extended) {
 			extended_message_not_supported(dev);
-			return;
+			return SMF_EVENT_PROPAGATE;
 		} else if (header.number_of_data_objects > 0) {
 			/* Data Messages */
 			switch (header.message_type) {
 			case PD_DATA_SOURCE_CAP:
 				pe_set_state(dev, PE_SNK_EVALUATE_CAPABILITY);
 				break;
+			case PD_DATA_VENDOR_DEF:
+				/**
+				 * VDM is unsupported. PD2.0 ignores and PD3.0
+				 * reply with not supported.
+				 */
+				if (prl_get_rev(dev, PD_PACKET_SOP) > PD_REV20) {
+					pe_set_state(dev, PE_SEND_NOT_SUPPORTED);
+				}
+				break;
 			default:
 				pe_set_state(dev, PE_SEND_NOT_SUPPORTED);
 			}
-			return;
+			return SMF_EVENT_PROPAGATE;
 		} else {
 			/* Control Messages */
 			switch (header.message_type) {
@@ -447,10 +476,10 @@ void pe_snk_ready_run(void *obj)
 				break;
 			case PD_CTRL_GET_SINK_CAP:
 				pe_set_state(dev, PE_SNK_GIVE_SINK_CAP);
-				return;
+				return SMF_EVENT_PROPAGATE;
 			case PD_CTRL_DR_SWAP:
 				pe_set_state(dev, PE_DRS_EVALUATE_SWAP);
-				return;
+				return SMF_EVENT_PROPAGATE;
 			case PD_CTRL_NOT_SUPPORTED:
 				/* Do nothing */
 				break;
@@ -464,14 +493,14 @@ void pe_snk_ready_run(void *obj)
 			case PD_CTRL_WAIT:
 			case PD_CTRL_PS_RDY:
 				pe_send_soft_reset(dev, prl_rx->emsg.type);
-				return;
+				return SMF_EVENT_PROPAGATE;
 			/*
 			 * Receiving an unknown or unsupported message
 			 * shall be responded to with a not supported message.
 			 */
 			default:
 				pe_set_state(dev, PE_SEND_NOT_SUPPORTED);
-				return;
+				return SMF_EVENT_PROPAGATE;
 			}
 		}
 	}
@@ -482,10 +511,10 @@ void pe_snk_ready_run(void *obj)
 	if (usbc_timer_expired(&pe->pd_t_wait_to_resend)) {
 		if (atomic_test_and_clear_bit(pe->flags, PE_FLAGS_WAIT_SINK_REQUEST)) {
 			pe_set_state(dev, PE_SNK_SELECT_CAPABILITY);
-			return;
+			return SMF_EVENT_PROPAGATE;
 		} else if (atomic_test_and_clear_bit(pe->flags, PE_FLAGS_WAIT_DATA_ROLE_SWAP)) {
 			pe_set_state(dev, PE_DRS_SEND_SWAP);
-			return;
+			return SMF_EVENT_PROPAGATE;
 		}
 	}
 
@@ -493,6 +522,7 @@ void pe_snk_ready_run(void *obj)
 	 * Handle Device Policy Manager Requests
 	 */
 	sink_dpm_requests(dev);
+	return SMF_EVENT_PROPAGATE;
 }
 
 void pe_snk_ready_exit(void *obj)
@@ -549,7 +579,7 @@ void pe_snk_hard_reset_entry(void *obj)
 /**
  * @brief PE_SNK_Hard_Reset Run State
  */
-void pe_snk_hard_reset_run(void *obj)
+enum smf_state_result pe_snk_hard_reset_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -559,10 +589,11 @@ void pe_snk_hard_reset_run(void *obj)
 	 *  1) The Hard Reset is complete.
 	 */
 	if (atomic_test_bit(pe->flags, PE_FLAGS_HARD_RESET_PENDING)) {
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
 
 	pe_set_state(dev, PE_SNK_TRANSITION_TO_DEFAULT);
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -577,24 +608,20 @@ void pe_snk_transition_to_default_entry(void *obj)
 
 	/* Reset flags */
 	atomic_clear(pe->flags);
-	pe->data_role = TC_ROLE_UFP;
 
 	/*
 	 * Indicate to the Device Policy Manager that the Sink Shall
 	 * transition to default
 	 */
 	policy_notify(dev, SNK_TRANSITION_TO_DEFAULT);
-	/*
-	 * Request the Device Policy Manger that the Port Data Role is
-	 * set to UFP
-	 */
-	policy_notify(dev, DATA_ROLE_IS_UFP);
+	/* Reset the data role of the policy engine to UFP */
+	pe_set_data_role(dev, TC_ROLE_UFP);
 }
 
 /**
  * @brief PE_SNK_Transition_to_default Run State
  */
-void pe_snk_transition_to_default_run(void *obj)
+enum smf_state_result pe_snk_transition_to_default_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -608,6 +635,7 @@ void pe_snk_transition_to_default_run(void *obj)
 		prl_hard_reset_complete(dev);
 		pe_set_state(dev, PE_SNK_STARTUP);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -634,7 +662,7 @@ void pe_snk_get_source_cap_entry(void *obj)
  * @brief PE_SNK_Get_Source_Cap Run State
  *	  NOTE: Sender Response Timer is handled in super state.
  */
-void pe_snk_get_source_cap_run(void *obj)
+enum smf_state_result pe_snk_get_source_cap_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -656,6 +684,7 @@ void pe_snk_get_source_cap_run(void *obj)
 			pe_set_state(dev, PE_SNK_EVALUATE_CAPABILITY);
 		}
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -682,7 +711,7 @@ void pe_snk_give_sink_cap_entry(void *obj)
 /**
  * @brief PE_SNK_Give_Sink_Cap Run state
  */
-void pe_snk_give_sink_cap_run(void *obj)
+enum smf_state_result pe_snk_give_sink_cap_run(void *obj)
 {
 	struct policy_engine *pe = (struct policy_engine *)obj;
 	const struct device *dev = pe->dev;
@@ -695,4 +724,5 @@ void pe_snk_give_sink_cap_run(void *obj)
 	} else if (atomic_test_and_clear_bit(pe->flags, PE_FLAGS_MSG_DISCARDED)) {
 		pe_send_soft_reset(dev, prl_rx->emsg.type);
 	}
+	return SMF_EVENT_PROPAGATE;
 }

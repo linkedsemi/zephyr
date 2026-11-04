@@ -6,7 +6,7 @@
 
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/sensor.h>
-
+#include <zephyr/drivers/sensor_clock.h>
 #include "adxl345.h"
 
 LOG_MODULE_DECLARE(ADXL345, CONFIG_SENSOR_LOG_LEVEL);
@@ -35,8 +35,17 @@ void adxl345_submit_stream(const struct device *dev, struct rtio_iodev_sqe *iode
 		uint8_t status;
 	if (fifo_watermark_irq != data->fifo_watermark_irq) {
 		data->fifo_watermark_irq = fifo_watermark_irq;
+
+		/* Disable watermark interrupt in INT_ENABLE before reconfiguring INT_MAP */
+		rc = adxl345_reg_write_mask(dev, ADXL345_INT_ENABLE,
+					    ADXL345_INT_MAP_WATERMARK_MSK, 0);
+		if (rc < 0) {
+			return;
+		}
+
+		/* Configure interrupt mapping */
 		rc = adxl345_reg_write_mask(dev, ADXL345_INT_MAP, ADXL345_INT_MAP_WATERMARK_MSK,
-						int_value);
+					    cfg_345->route_to_int2 ? int_value : ~int_value);
 		if (rc < 0) {
 			return;
 		}
@@ -52,6 +61,16 @@ void adxl345_submit_stream(const struct device *dev, struct rtio_iodev_sqe *iode
 		adxl345_configure_fifo(dev, current_fifo_mode, data->fifo_config.fifo_trigger,
 				data->fifo_config.fifo_samples);
 		rc = adxl345_reg_read_byte(dev, ADXL345_FIFO_STATUS_REG, &status);
+
+		/* Re-enable watermark interrupt in INT_ENABLE after configuration */
+		if (fifo_watermark_irq) {
+			rc = adxl345_reg_write_mask(dev, ADXL345_INT_ENABLE,
+						    ADXL345_INT_MAP_WATERMARK_MSK,
+						    ADXL345_INT_MAP_WATERMARK_MSK);
+			if (rc < 0) {
+				return;
+			}
+		}
 	}
 
 	rc = gpio_pin_interrupt_configure_dt(&cfg_345->interrupt,
@@ -62,8 +81,10 @@ void adxl345_submit_stream(const struct device *dev, struct rtio_iodev_sqe *iode
 	data->sqe = iodev_sqe;
 }
 
-static void adxl345_irq_en_cb(struct rtio *r, const struct rtio_sqe *sqr, void *arg)
+static void adxl345_irq_en_cb(struct rtio *r, const struct rtio_sqe *sqe, int result, void *arg)
 {
+	ARG_UNUSED(result);
+
 	const struct device *dev = (const struct device *)arg;
 	const struct adxl345_dev_config *cfg = dev->config;
 
@@ -102,8 +123,11 @@ static void adxl345_fifo_flush_rtio(const struct device *dev)
 	rtio_submit(data->rtio_ctx, 0);
 }
 
-static void adxl345_fifo_read_cb(struct rtio *rtio_ctx, const struct rtio_sqe *sqe, void *arg)
+static void adxl345_fifo_read_cb(struct rtio *rtio_ctx, const struct rtio_sqe *sqe,
+				 int result, void *arg)
 {
+	ARG_UNUSED(result);
+
 	const struct device *dev = (const struct device *)arg;
 	struct adxl345_dev_data *data = (struct adxl345_dev_data *) dev->data;
 	const struct adxl345_dev_config *cfg = (const struct adxl345_dev_config *) dev->config;
@@ -117,8 +141,11 @@ static void adxl345_fifo_read_cb(struct rtio *rtio_ctx, const struct rtio_sqe *s
 
 }
 
-static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sqe *sqr, void *arg)
+static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sqe *sqe,
+					    int result, void *arg)
 {
+	ARG_UNUSED(result);
+
 	const struct device *dev = (const struct device *)arg;
 	struct adxl345_dev_data *data = (struct adxl345_dev_data *) dev->data;
 	const struct adxl345_dev_config *cfg = (const struct adxl345_dev_config *) dev->config;
@@ -159,7 +186,7 @@ static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 	hdr->int_status = data->status1;
 	hdr->is_full_res = data->is_full_res;
 	hdr->selected_range = data->selected_range;
-	hdr->accel_odr = cfg->odr;
+	hdr->accel_odr = data->odr;
 	hdr->sample_set_size = sample_set_size;
 
 	uint32_t buf_avail = buf_len;
@@ -175,6 +202,8 @@ static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 	}
 
 	((struct adxl345_fifo_data *)buf)->fifo_byte_count = read_len;
+
+	uint16_t read_samples = read_len / sample_set_size;
 
 	uint8_t *read_buf = buf + sizeof(*hdr);
 
@@ -200,8 +229,9 @@ static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 	}
 
 
-	data->fifo_samples = fifo_samples;
-	for (size_t i = 0; i < fifo_samples; i++) {
+	data->fifo_total_bytes = 0;
+	data->fifo_samples = read_samples;
+	for (size_t i = 0; i < read_samples; i++) {
 		struct rtio_sqe *write_fifo_addr = rtio_sqe_acquire(data->rtio_ctx);
 		struct rtio_sqe *read_fifo_data = rtio_sqe_acquire(data->rtio_ctx);
 
@@ -211,15 +241,18 @@ static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 
 		rtio_sqe_prep_tiny_write(write_fifo_addr, data->iodev, RTIO_PRIO_NORM, &reg_addr,
 								1, NULL);
-		write_fifo_addr->flags = RTIO_SQE_TRANSACTION;
+		write_fifo_addr->flags |= RTIO_SQE_TRANSACTION;
 		rtio_sqe_prep_read(read_fifo_data, data->iodev, RTIO_PRIO_NORM,
 							read_buf + data->fifo_total_bytes,
 							SAMPLE_SIZE, current_sqe);
 		data->fifo_total_bytes += SAMPLE_SIZE;
-		if (i == fifo_samples-1) {
+		if (cfg->bus_type == ADXL345_BUS_I2C) {
+			read_fifo_data->iodev_flags |= RTIO_IODEV_I2C_STOP | RTIO_IODEV_I2C_RESTART;
+		}
+		if (i == read_samples - 1U) {
 			struct rtio_sqe *complete_op = rtio_sqe_acquire(data->rtio_ctx);
 
-			read_fifo_data->flags = RTIO_SQE_CHAINED;
+			read_fifo_data->flags |= RTIO_SQE_CHAINED;
 			rtio_sqe_prep_callback(complete_op, adxl345_fifo_read_cb, (void *)dev,
 				current_sqe);
 		}
@@ -228,8 +261,11 @@ static void adxl345_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 	}
 }
 
-static void adxl345_process_status1_cb(struct rtio *r, const struct rtio_sqe *sqr, void *arg)
+static void adxl345_process_status1_cb(struct rtio *r, const struct rtio_sqe *sqe,
+				       int result, void *arg)
 {
+	ARG_UNUSED(result);
+
 	const struct device *dev = (const struct device *)arg;
 	struct adxl345_dev_data *data = (struct adxl345_dev_data *) dev->data;
 	const struct adxl345_dev_config *cfg = (const struct adxl345_dev_config *) dev->config;
@@ -238,6 +274,7 @@ static void adxl345_process_status1_cb(struct rtio *r, const struct rtio_sqe *sq
 	uint8_t status1 = data->status1;
 
 	if (data->sqe == NULL) {
+		data->fifo_watermark_irq = 0;
 		return;
 	}
 
@@ -295,11 +332,9 @@ static void adxl345_process_status1_cb(struct rtio *r, const struct rtio_sqe *sq
 		return;
 	}
 
-	enum sensor_stream_data_opt data_opt;
-
-	if (fifo_wmark_cfg != NULL) {
-		data_opt = fifo_wmark_cfg->opt;
-	}
+	/* fifo_wmark_cfg is guaranteed to be non-NULL here since fifo_full_irq is true */
+	__ASSERT_NO_MSG(fifo_wmark_cfg != NULL);
+	enum sensor_stream_data_opt data_opt = fifo_wmark_cfg->opt;
 
 	if (data_opt == SENSOR_STREAM_DATA_NOP || data_opt == SENSOR_STREAM_DATA_DROP) {
 		uint8_t *buf;
@@ -338,10 +373,13 @@ static void adxl345_process_status1_cb(struct rtio *r, const struct rtio_sqe *sq
 	const uint8_t reg_addr = ADXL345_REG_READ(ADXL345_FIFO_STATUS_REG);
 
 	rtio_sqe_prep_tiny_write(write_fifo_addr, data->iodev, RTIO_PRIO_NORM, &reg_addr, 1, NULL);
-	write_fifo_addr->flags = RTIO_SQE_TRANSACTION;
+	write_fifo_addr->flags |= RTIO_SQE_TRANSACTION;
 	rtio_sqe_prep_read(read_fifo_data, data->iodev, RTIO_PRIO_NORM, data->fifo_ent, 1,
 						current_sqe);
-	read_fifo_data->flags = RTIO_SQE_CHAINED;
+	read_fifo_data->flags |= RTIO_SQE_CHAINED;
+	if (cfg->bus_type == ADXL345_BUS_I2C) {
+		read_fifo_data->iodev_flags |= RTIO_IODEV_I2C_STOP | RTIO_IODEV_I2C_RESTART;
+	}
 	rtio_sqe_prep_callback(complete_op, adxl345_process_fifo_samples_cb, (void *)dev,
 							current_sqe);
 
@@ -351,21 +389,36 @@ static void adxl345_process_status1_cb(struct rtio *r, const struct rtio_sqe *sq
 void adxl345_stream_irq_handler(const struct device *dev)
 {
 	struct adxl345_dev_data *data = (struct adxl345_dev_data *) dev->data;
+	const struct adxl345_dev_config *cfg = (const struct adxl345_dev_config *) dev->config;
+	uint64_t cycles;
+	int rc;
 
 	if (data->sqe == NULL) {
+		data->fifo_watermark_irq = 0;
 		return;
 	}
-	data->timestamp = k_ticks_to_ns_floor64(k_uptime_ticks());
+
+	rc = sensor_clock_get_cycles(&cycles);
+	if (rc != 0) {
+		LOG_ERR("Failed to get sensor clock cycles");
+		rtio_iodev_sqe_err(data->sqe, rc);
+		return;
+	}
+
+	data->timestamp = sensor_clock_cycles_to_ns(cycles);
 	struct rtio_sqe *write_status_addr = rtio_sqe_acquire(data->rtio_ctx);
 	struct rtio_sqe *read_status_reg = rtio_sqe_acquire(data->rtio_ctx);
 	struct rtio_sqe *check_status_reg = rtio_sqe_acquire(data->rtio_ctx);
 	uint8_t reg = ADXL345_REG_READ(ADXL345_INT_SOURCE);
 
 	rtio_sqe_prep_tiny_write(write_status_addr, data->iodev, RTIO_PRIO_NORM, &reg, 1, NULL);
-	write_status_addr->flags = RTIO_SQE_TRANSACTION;
+	write_status_addr->flags |= RTIO_SQE_TRANSACTION;
 	rtio_sqe_prep_read(read_status_reg, data->iodev, RTIO_PRIO_NORM, &data->status1, 1, NULL);
-	read_status_reg->flags = RTIO_SQE_CHAINED;
+	read_status_reg->flags |= RTIO_SQE_CHAINED;
 
+	if (cfg->bus_type == ADXL345_BUS_I2C) {
+		read_status_reg->iodev_flags |= RTIO_IODEV_I2C_STOP | RTIO_IODEV_I2C_RESTART;
+	}
 	rtio_sqe_prep_callback(check_status_reg, adxl345_process_status1_cb, (void *)dev, NULL);
 	rtio_submit(data->rtio_ctx, 0);
 }

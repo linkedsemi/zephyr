@@ -1,9 +1,9 @@
 description: |
-  ST STM32F4 family flash memory.
+  STM32F4 flash memory.
 
 include: st,stm32-nv-flash.yaml
 
-compatible: st,stm32f4-nv-flash
+compatible: "st,stm32f4-nv-flash"
 
 properties:
   write-block-size:
@@ -14,7 +14,6 @@ properties:
       - 2
       - 4
       - 8
-    default: 1
     description: |
       Number of bytes used in write operations. Default value is based on the
       reset value of Flash Control Register (FLASH_CR).

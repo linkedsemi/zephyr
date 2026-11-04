@@ -317,7 +317,7 @@ static int tach_npcx_init(const struct device *dev)
 	int ret;
 
 	if (!device_is_ready(clk_dev)) {
-		LOG_ERR("clock control device not ready");
+		LOG_ERR_DEVICE_NOT_READY(clk_dev);
 		return -ENODEV;
 	}
 
@@ -363,7 +363,7 @@ static int tach_npcx_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api tach_npcx_driver_api = {
+static DEVICE_API(sensor, tach_npcx_driver_api) = {
 	.sample_fetch = tach_npcx_sample_fetch,
 	.channel_get = tach_npcx_channel_get,
 };

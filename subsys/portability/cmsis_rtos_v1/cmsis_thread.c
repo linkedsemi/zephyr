@@ -14,7 +14,7 @@ static inline int _is_thread_cmsis_inactive(struct k_thread *thread)
 {
 	uint8_t state = thread->base.thread_state;
 
-	return state & (_THREAD_PRESTART | _THREAD_DEAD);
+	return state & _THREAD_DEAD;
 }
 
 static inline int32_t zephyr_to_cmsis_priority(uint32_t z_prio)
@@ -51,7 +51,6 @@ void thread_abort_hook(struct k_thread *thread)
 
 #ifdef CONFIG_THREAD_STACK_MEM_MAPPED
 		/* The offset calculation below requires physical address. */
-		extern int arch_page_phys_get(void *virt, uintptr_t *phys);
 		(void)arch_page_phys_get((void *)thread->stack_info.start, &stack_start);
 #else
 		stack_start = thread->stack_info.start;

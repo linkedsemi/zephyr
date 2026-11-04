@@ -31,8 +31,8 @@ K_THREAD_STACK_DEFINE(smp_work_queue_stack, CONFIG_MCUMGR_TRANSPORT_WORKQUEUE_ST
 
 static struct k_work_q smp_work_queue;
 
-#ifdef CONFIG_SMP_CLIENT
-static sys_slist_t smp_transport_clients;
+#if defined(CONFIG_SMP_CLIENT) || defined(CONFIG_MCUMGR_GRP_TRANSPORT)
+static sys_slist_t smp_transport_clients = SYS_SLIST_STATIC_INIT(&smp_transport_clients);
 #endif
 
 static const struct k_work_queue_config smp_work_queue_config = {
@@ -51,6 +51,39 @@ struct net_buf *smp_packet_alloc(void)
 void smp_packet_free(struct net_buf *nb)
 {
 	net_buf_unref(nb);
+}
+
+#if defined(CONFIG_MCUMGR_TRANSPORT_NETBUF_AVAILABLE)
+size_t smp_packet_buffers_available(void)
+{
+	return net_buf_get_available(&pkt_pool);
+}
+#endif
+
+/**
+ * @brief Allocates a request buffer.
+ *
+ * @param arg		The streamer providing the callback.
+ * @param priv		The streamer private data.
+ *
+ * @return	Newly-allocated buffer on success
+ *		NULL on failure.
+ */
+struct net_buf *smp_alloc_req(void *arg, void *priv)
+{
+	struct net_buf *req_nb;
+	struct smp_transport *smpt = arg;
+
+	req_nb = smp_packet_alloc();
+	if (req_nb == NULL) {
+		return NULL;
+	}
+
+	if (smpt->functions.ud_init) {
+		smpt->functions.ud_init(req_nb, priv);
+	}
+
+	return req_nb;
 }
 
 /**
@@ -160,7 +193,7 @@ int smp_transport_init(struct smp_transport *smpt)
 	return 0;
 }
 
-#ifdef CONFIG_SMP_CLIENT
+#if defined(CONFIG_SMP_CLIENT) || defined(CONFIG_MCUMGR_GRP_TRANSPORT)
 struct smp_transport *smp_client_transport_get(int smpt_type)
 {
 	struct smp_client_transport_entry *entry;
@@ -174,6 +207,22 @@ struct smp_transport *smp_client_transport_get(int smpt_type)
 	return NULL;
 }
 
+bool smp_client_transport_foreach(mgmt_client_transport_cb_t user_cb, void *user_data)
+{
+	sys_snode_t *snp, *sns;
+
+	SYS_SLIST_FOR_EACH_NODE_SAFE(&smp_transport_clients, snp, sns) {
+		struct smp_client_transport_entry *entry =
+			CONTAINER_OF(snp, struct smp_client_transport_entry, node);
+
+		if (!user_cb(entry, user_data)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 void smp_client_transport_register(struct smp_client_transport_entry *entry)
 {
 	if (smp_client_transport_get(entry->smpt_type)) {
@@ -184,8 +233,7 @@ void smp_client_transport_register(struct smp_client_transport_entry *entry)
 	sys_slist_append(&smp_transport_clients, &entry->node);
 
 }
-
-#endif /* CONFIG_SMP_CLIENT */
+#endif /* CONFIG_SMP_CLIENT || CONFIG_MCUMGR_GRP_TRANSPORT */
 
 /**
  * @brief Enqueues an incoming SMP request packet for processing.
@@ -194,7 +242,7 @@ void smp_client_transport_register(struct smp_client_transport_entry *entry)
  *
  * @param smpt                  The transport to use to send the corresponding
  *                                  response(s).
- * @param nb                    The request packet to process.
+ * @param nb                    The request packet
  */
 WEAK void
 smp_rx_req(struct smp_transport *smpt, struct net_buf *nb)
@@ -204,16 +252,16 @@ smp_rx_req(struct smp_transport *smpt, struct net_buf *nb)
 }
 
 #ifdef CONFIG_SMP_CLIENT
-void smp_tx_req(struct k_work *work)
+struct k_work_q *smp_get_wq(void)
 {
-	k_work_submit_to_queue(&smp_work_queue, work);
+	return &smp_work_queue;
 }
 #endif
 
 void smp_rx_remove_invalid(struct smp_transport *zst, void *arg)
 {
 	struct net_buf *nb;
-	struct k_fifo temp_fifo;
+	sys_slist_t temp_list;
 
 	if (zst->functions.query_valid_check == NULL) {
 		/* No check check function registered, abort check */
@@ -226,20 +274,20 @@ void smp_rx_remove_invalid(struct smp_transport *zst, void *arg)
 	}
 
 	/* Run callback function and remove all buffers that are no longer needed. Store those
-	 * that are in a temporary FIFO
+	 * that are in a temporary list
 	 */
-	k_fifo_init(&temp_fifo);
+	sys_slist_init(&temp_list);
 
 	while ((nb = k_fifo_get(&zst->fifo, K_NO_WAIT)) != NULL) {
 		if (!zst->functions.query_valid_check(nb, arg)) {
 			smp_free_buf(nb, zst);
 		} else {
-			k_fifo_put(&temp_fifo, nb);
+			net_buf_slist_put(&temp_list, nb);
 		}
 	}
 
 	/* Re-insert the remaining queued operations into the original FIFO */
-	while ((nb = k_fifo_get(&temp_fifo, K_NO_WAIT)) != NULL) {
+	while ((nb = net_buf_slist_get(&temp_list)) != NULL) {
 		k_fifo_put(&zst->fifo, nb);
 	}
 
@@ -266,10 +314,6 @@ void smp_rx_clear(struct smp_transport *zst)
 
 static int smp_init(void)
 {
-#ifdef CONFIG_SMP_CLIENT
-	sys_slist_init(&smp_transport_clients);
-#endif
-
 	k_work_queue_init(&smp_work_queue);
 
 	k_work_queue_start(&smp_work_queue, smp_work_queue_stack,

@@ -22,7 +22,7 @@
 
 LOG_MODULE_REGISTER(SX9500, CONFIG_SENSOR_LOG_LEVEL);
 
-static uint8_t sx9500_reg_defaults[] = {
+static const uint8_t sx9500_reg_defaults[] = {
 	/*
 	 * First number is register address to write to.  The chip
 	 * auto-increments the address for subsequent values in a single
@@ -75,7 +75,7 @@ static int sx9500_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api sx9500_api_funcs = {
+static DEVICE_API(sensor, sx9500_api_funcs) = {
 	.sample_fetch = sx9500_sample_fetch,
 	.channel_get = sx9500_channel_get,
 #ifdef CONFIG_SX9500_TRIGGER
@@ -115,7 +115,7 @@ int sx9500_init(const struct device *dev)
 	const struct sx9500_config *cfg = dev->config;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 

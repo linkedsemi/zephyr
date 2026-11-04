@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Analog Devices, Inc.
+ * Copyright (c) 2024-2026 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,6 +17,7 @@
 	compatible = "adi,max32672evkit";
 
 	chosen {
+		zephyr,code-partition = &code_partition;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,sram = &sram3;
@@ -26,10 +27,12 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		led1: led_1 {
 			gpios = <&gpio0 22 GPIO_ACTIVE_LOW>;
 			label = "Red LED";
 		};
+
 		led2: led_2 {
 			gpios = <&gpio0 23 GPIO_ACTIVE_LOW>;
 			label = "Green LED";
@@ -38,6 +41,7 @@
 
 	buttons {
 		compatible = "gpio-keys";
+
 		pb1: pb1 {
 			gpios = <&gpio0 18 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "SW3";
@@ -45,7 +49,7 @@
 		};
 	};
 
-	 /* These aliases are provided for compatibility with samples */
+	/* These aliases are provided for compatibility with samples */
 	aliases {
 		led0 = &led1;
 		led1 = &led2;
@@ -66,7 +70,7 @@
 		st7735: st7735@0 {
 			compatible = "sitronix,st7735r";
 			mipi-max-frequency = <DT_FREQ_M(6)>;
-			mipi-mode = <MIPI_DBI_MODE_SPI_3WIRE>;
+			mipi-mode = "MIPI_DBI_MODE_SPI_3WIRE";
 
 			reg = <0>;
 			width = <130>;
@@ -103,6 +107,13 @@
 	status = "okay";
 };
 
+/*
+ * ERTCO is required for counter RTC
+ */
+&clk_ertco {
+	status = "okay";
+};
+
 &gpio0 {
 	status = "okay";
 };
@@ -136,16 +147,40 @@
 };
 
 &spi0a_mosi_p0_3 {
-	power-source=<MAX32_VSEL_VDDIOH>;
+	power-source = <MAX32_VSEL_VDDIOH>;
 };
 
 &spi0a_sck_p0_4 {
-	power-source=<MAX32_VSEL_VDDIOH>;
+	power-source = <MAX32_VSEL_VDDIOH>;
 };
 
 &spi0 {
 	status = "okay";
 	pinctrl-0 = <&spi0a_mosi_p0_3 &spi0a_miso_p0_2 &spi0a_sck_p0_4>;
 	pinctrl-names = "default";
-	cs-gpios = <&gpio0 5 (GPIO_ACTIVE_LOW | MAX32_VSEL_VDDIOH)>;
+	cs-gpios = <&gpio0 5 GPIO_ACTIVE_LOW>;
+};
+
+&rtc_counter {
+	status = "okay";
+};
+
+&flash0 {
+	partitions {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		code_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			reg = <0x0 DT_SIZE_K(960)>;
+			read-only;
+		};
+
+		storage_partition: partition@f0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0xf0000 DT_SIZE_K(64)>;
+		};
+	};
 };

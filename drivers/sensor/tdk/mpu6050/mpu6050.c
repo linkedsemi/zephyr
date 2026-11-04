@@ -53,7 +53,7 @@ static inline void mpu6050_convert_temp(enum mpu6050_device_type device_type,
 
 	case DEVICE_TYPE_MPU6050:
 	default:
-		tmp_val = (tmp_val / 340) + 36000000;
+		tmp_val = (tmp_val / 340) + 36530000;
 	};
 
 	val->val1 = tmp_val / 1000000;
@@ -141,7 +141,7 @@ static int mpu6050_sample_fetch(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api mpu6050_driver_api = {
+static DEVICE_API(sensor, mpu6050_driver_api) = {
 #if CONFIG_MPU6050_TRIGGER
 	.trigger_set = mpu6050_trigger_set,
 #endif
@@ -156,7 +156,7 @@ int mpu6050_init(const struct device *dev)
 	uint8_t id, i;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -169,11 +169,11 @@ int mpu6050_init(const struct device *dev)
 	if (id == MPU6050_CHIP_ID || id == MPU9250_CHIP_ID || id == MPU6880_CHIP_ID) {
 		LOG_DBG("MPU6050/MPU9250/MPU6880 detected");
 		drv_data->device_type = DEVICE_TYPE_MPU6050;
-	} else if (id == MPU6500_CHIP_ID) {
-		LOG_DBG("MPU6500 detected");
+	} else if (id == MPU6500_CHIP_ID || id == MPU6515_CHIP_ID) {
+		LOG_DBG("MPU6500/MPU6515 detected (WHO_AM_I=0x%02x)", id);
 		drv_data->device_type = DEVICE_TYPE_MPU6500;
 	} else {
-		LOG_ERR("Invalid chip ID.");
+		LOG_ERR("Invalid chip ID: 0x%02x.", id);
 		return -EINVAL;
 	}
 
@@ -186,7 +186,7 @@ int mpu6050_init(const struct device *dev)
 
 	/* set accelerometer full-scale range */
 	for (i = 0U; i < 4; i++) {
-		if (BIT(i+1) == CONFIG_MPU6050_ACCEL_FS) {
+		if (BIT(i+1) == cfg->accel_fs) {
 			break;
 		}
 	}
@@ -206,7 +206,7 @@ int mpu6050_init(const struct device *dev)
 
 	/* set gyroscope full-scale range */
 	for (i = 0U; i < 4; i++) {
-		if (BIT(i) * 250 == CONFIG_MPU6050_GYRO_FS) {
+		if (BIT(i) * 250 == cfg->gyro_fs) {
 			break;
 		}
 	}
@@ -223,6 +223,12 @@ int mpu6050_init(const struct device *dev)
 	}
 
 	drv_data->gyro_sensitivity_x10 = mpu6050_gyro_sensitivity_x10[i];
+
+	if (i2c_reg_write_byte_dt(&cfg->i2c, MPU6050_REG_SMPLRT_DIV,
+				  cfg->smplrt_div) < 0) {
+		LOG_ERR("Failed to write samplerate divider.");
+		return -EIO;
+	}
 
 #ifdef CONFIG_MPU6050_TRIGGER
 	if (cfg->int_gpio.port) {
@@ -241,6 +247,9 @@ int mpu6050_init(const struct device *dev)
 												\
 	static const struct mpu6050_config mpu6050_config_##inst = {				\
 		.i2c = I2C_DT_SPEC_INST_GET(inst),						\
+		.accel_fs = DT_INST_PROP(inst, accel_fs),					\
+		.gyro_fs = DT_INST_PROP(inst, gyro_fs),						\
+		.smplrt_div = DT_INST_PROP(inst, smplrt_div),					\
 		IF_ENABLED(CONFIG_MPU6050_TRIGGER,						\
 			   (.int_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, { 0 }),))	\
 	};											\

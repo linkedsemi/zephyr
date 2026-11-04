@@ -9,7 +9,7 @@
  */
 
 /* Use highest log level if both IPv4 and IPv6 are defined */
-#if defined(CONFIG_NET_IPV4) && defined(CONFIG_NET_IPV6)
+#if defined(CONFIG_NET_NATIVE_IPV4) && defined(CONFIG_NET_NATIVE_IPV6)
 
 #if CONFIG_NET_ICMPV4_LOG_LEVEL > CONFIG_NET_ICMPV6_LOG_LEVEL
 #define ICMP_LOG_LEVEL CONFIG_NET_ICMPV4_LOG_LEVEL
@@ -17,9 +17,9 @@
 #define ICMP_LOG_LEVEL CONFIG_NET_ICMPV6_LOG_LEVEL
 #endif
 
-#elif defined(CONFIG_NET_IPV4)
+#elif defined(CONFIG_NET_NATIVE_IPV4)
 #define ICMP_LOG_LEVEL CONFIG_NET_ICMPV4_LOG_LEVEL
-#elif defined(CONFIG_NET_IPV6)
+#elif defined(CONFIG_NET_NATIVE_IPV6)
 #define ICMP_LOG_LEVEL CONFIG_NET_ICMPV6_LOG_LEVEL
 #else
 #define ICMP_LOG_LEVEL LOG_LEVEL_INF
@@ -31,6 +31,7 @@ LOG_MODULE_REGISTER(net_icmp, ICMP_LOG_LEVEL);
 #include <errno.h>
 #include <zephyr/random/random.h>
 #include <zephyr/sys/slist.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/icmp.h>
 
@@ -41,7 +42,7 @@ LOG_MODULE_REGISTER(net_icmp, ICMP_LOG_LEVEL);
 #include "ipv6.h"
 #include "net_stats.h"
 
-static K_MUTEX_DEFINE(lock);
+static K_MUTEX_DEFINE(icmp_lock);
 static sys_slist_t handlers = SYS_SLIST_STATIC_INIT(&handlers);
 
 #if defined(CONFIG_NET_OFFLOADING_SUPPORT)
@@ -50,24 +51,30 @@ static sys_slist_t offload_handlers = SYS_SLIST_STATIC_INIT(&offload_handlers);
 
 #define PKT_WAIT_TIME K_SECONDS(1)
 
-int net_icmp_init_ctx(struct net_icmp_ctx *ctx, uint8_t type, uint8_t code,
-		      net_icmp_handler_t handler)
+int net_icmp_init_ctx(struct net_icmp_ctx *ctx, uint8_t family, uint8_t type,
+		      uint8_t code, net_icmp_handler_t handler)
 {
 	if (ctx == NULL || handler == NULL) {
+		return -EINVAL;
+	}
+
+	if (family != NET_AF_INET && family != NET_AF_INET6) {
+		NET_ERR("Wrong address family");
 		return -EINVAL;
 	}
 
 	memset(ctx, 0, sizeof(struct net_icmp_ctx));
 
 	ctx->handler = handler;
+	ctx->family = family;
 	ctx->type = type;
 	ctx->code = code;
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 	sys_slist_prepend(&handlers, &ctx->node);
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 
 	return 0;
 }
@@ -81,7 +88,7 @@ static void set_offload_handler(struct net_if *iface,
 		return;
 	}
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 #if defined(CONFIG_NET_OFFLOADING_SUPPORT)
 	SYS_SLIST_FOR_EACH_CONTAINER(&offload_handlers, offload, node) {
@@ -94,7 +101,7 @@ static void set_offload_handler(struct net_if *iface,
 	ARG_UNUSED(offload);
 #endif
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 }
 
 int net_icmp_cleanup_ctx(struct net_icmp_ctx *ctx)
@@ -103,11 +110,11 @@ int net_icmp_cleanup_ctx(struct net_icmp_ctx *ctx)
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 	sys_slist_find_and_remove(&handlers, &ctx->node);
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 
 	set_offload_handler(ctx->iface, NULL);
 
@@ -116,18 +123,19 @@ int net_icmp_cleanup_ctx(struct net_icmp_ctx *ctx)
 	return 0;
 }
 
-#if defined(CONFIG_NET_IPV4)
+#if defined(CONFIG_NET_NATIVE_IPV4)
 static int send_icmpv4_echo_request(struct net_icmp_ctx *ctx,
 				    struct net_if *iface,
-				    struct in_addr *dst,
+				    struct net_in_addr *dst,
 				    struct net_icmp_ping_params *params,
-				    void *user_data)
+				    void *user_data,
+				    k_timeout_t timeout)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(icmpv4_access,
 					      struct net_icmpv4_echo_req);
 	int ret = -ENOBUFS;
 	struct net_icmpv4_echo_req *echo_req;
-	const struct in_addr *src;
+	const struct net_in_addr *src;
 	struct net_pkt *pkt;
 
 	if (!iface->config.ip.ipv4) {
@@ -139,8 +147,8 @@ static int send_icmpv4_echo_request(struct net_icmp_ctx *ctx,
 	pkt = net_pkt_alloc_with_buffer(iface,
 					sizeof(struct net_icmpv4_echo_req)
 					+ params->data_size,
-					AF_INET, IPPROTO_ICMP,
-					PKT_WAIT_TIME);
+					NET_AF_INET, NET_IPPROTO_ICMP,
+					timeout);
 	if (!pkt) {
 		return -ENOMEM;
 	}
@@ -171,24 +179,36 @@ static int send_icmpv4_echo_request(struct net_icmp_ctx *ctx,
 		goto drop;
 	}
 
-	echo_req->identifier = htons(params->identifier);
-	echo_req->sequence   = htons(params->sequence);
+	echo_req->identifier = net_htons(params->identifier);
+	echo_req->sequence   = net_htons(params->sequence);
 
-	net_pkt_set_data(pkt, &icmpv4_access);
+	ret = net_pkt_set_data(pkt, &icmpv4_access);
+	if (ret < 0) {
+		goto drop;
+	}
 
 	if (params->data != NULL && params->data_size > 0) {
-		net_pkt_write(pkt, params->data, params->data_size);
+		ret = net_pkt_write(pkt, params->data, params->data_size);
+		if (ret < 0) {
+			goto drop;
+		}
 	} else if (params->data == NULL && params->data_size > 0) {
 		/* Generate payload. */
 		if (params->data_size >= sizeof(uint32_t)) {
-			uint32_t time_stamp = htonl(k_cycle_get_32());
+			uint32_t time_stamp = net_htonl(k_cycle_get_32());
 
-			net_pkt_write(pkt, &time_stamp, sizeof(time_stamp));
+			ret = net_pkt_write(pkt, &time_stamp, sizeof(time_stamp));
+			if (ret < 0) {
+				goto drop;
+			}
 			params->data_size -= sizeof(time_stamp);
 		}
 
 		for (size_t i = 0; i < params->data_size; i++) {
-			net_pkt_write_u8(pkt, (uint8_t)i);
+			ret = net_pkt_write_u8(pkt, (uint8_t)i);
+			if (ret < 0) {
+				goto drop;
+			}
 		}
 	} else {
 		/* No payload. */
@@ -196,7 +216,7 @@ static int send_icmpv4_echo_request(struct net_icmp_ctx *ctx,
 
 	net_pkt_cursor_init(pkt);
 
-	net_ipv4_finalize(pkt, IPPROTO_ICMP);
+	net_ipv4_finalize(pkt, NET_IPPROTO_ICMP);
 
 	NET_DBG("Sending ICMPv4 Echo Request type %d from %s to %s",
 		NET_ICMPV4_ECHO_REQUEST,
@@ -206,7 +226,7 @@ static int send_icmpv4_echo_request(struct net_icmp_ctx *ctx,
 	ctx->user_data = user_data;
 	ctx->iface = iface;
 
-	if (net_send_data(pkt) >= 0) {
+	if (net_try_send_data(pkt, K_NO_WAIT) >= 0) {
 		net_stats_update_icmp_sent(iface);
 		return 0;
 	}
@@ -224,31 +244,34 @@ drop:
 #else
 static int send_icmpv4_echo_request(struct net_icmp_ctx *ctx,
 				    struct net_if *iface,
-				    struct in_addr *dst,
+				    struct net_in_addr *dst,
 				    struct net_icmp_ping_params *params,
-				    void *user_data)
+				    void *user_data,
+				    k_timeout_t timeout)
 {
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(iface);
 	ARG_UNUSED(dst);
 	ARG_UNUSED(params);
+	ARG_UNUSED(timeout);
 
 	return -ENOTSUP;
 }
 #endif
 
-#if defined(CONFIG_NET_IPV6)
+#if defined(CONFIG_NET_NATIVE_IPV6)
 static int send_icmpv6_echo_request(struct net_icmp_ctx *ctx,
 				    struct net_if *iface,
-				    struct in6_addr *dst,
+				    struct net_in6_addr *dst,
 				    struct net_icmp_ping_params *params,
-				    void *user_data)
+				    void *user_data,
+				    k_timeout_t timeout)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(icmpv6_access,
 					      struct net_icmpv6_echo_req);
 	int ret = -ENOBUFS;
 	struct net_icmpv6_echo_req *echo_req;
-	const struct in6_addr *src;
+	const struct net_in6_addr *src;
 	struct net_pkt *pkt;
 
 	if (!iface->config.ip.ipv6) {
@@ -260,8 +283,8 @@ static int send_icmpv6_echo_request(struct net_icmp_ctx *ctx,
 	pkt = net_pkt_alloc_with_buffer(iface,
 					sizeof(struct net_icmpv6_echo_req)
 					+ params->data_size,
-					AF_INET6, IPPROTO_ICMPV6,
-					PKT_WAIT_TIME);
+					NET_AF_INET6, NET_IPPROTO_ICMPV6,
+					timeout);
 	if (!pkt) {
 		return -ENOMEM;
 	}
@@ -292,31 +315,43 @@ static int send_icmpv6_echo_request(struct net_icmp_ctx *ctx,
 		goto drop;
 	}
 
-	echo_req->identifier = htons(params->identifier);
-	echo_req->sequence   = htons(params->sequence);
+	echo_req->identifier = net_htons(params->identifier);
+	echo_req->sequence   = net_htons(params->sequence);
 
-	net_pkt_set_data(pkt, &icmpv6_access);
+	ret = net_pkt_set_data(pkt, &icmpv6_access);
+	if (ret < 0) {
+		goto drop;
+	}
 
 	if (params->data != NULL && params->data_size > 0) {
-		net_pkt_write(pkt, params->data, params->data_size);
+		ret = net_pkt_write(pkt, params->data, params->data_size);
+		if (ret < 0) {
+			goto drop;
+		}
 	} else if (params->data == NULL && params->data_size > 0) {
 		/* Generate payload. */
 		if (params->data_size >= sizeof(uint32_t)) {
-			uint32_t time_stamp = htonl(k_cycle_get_32());
+			uint32_t time_stamp = net_htonl(k_cycle_get_32());
 
-			net_pkt_write(pkt, &time_stamp, sizeof(time_stamp));
+			ret = net_pkt_write(pkt, &time_stamp, sizeof(time_stamp));
+			if (ret < 0) {
+				goto drop;
+			}
 			params->data_size -= sizeof(time_stamp);
 		}
 
 		for (size_t i = 0; i < params->data_size; i++) {
-			net_pkt_write_u8(pkt, (uint8_t)i);
+			ret = net_pkt_write_u8(pkt, (uint8_t)i);
+			if (ret < 0) {
+				goto drop;
+			}
 		}
 	} else {
 		/* No payload. */
 	}
 
 	net_pkt_cursor_init(pkt);
-	net_ipv6_finalize(pkt, IPPROTO_ICMPV6);
+	net_ipv6_finalize(pkt, NET_IPPROTO_ICMPV6);
 
 	NET_DBG("Sending ICMPv6 Echo Request type %d from %s to %s",
 		NET_ICMPV6_ECHO_REQUEST,
@@ -326,7 +361,7 @@ static int send_icmpv6_echo_request(struct net_icmp_ctx *ctx,
 	ctx->user_data = user_data;
 	ctx->iface = iface;
 
-	if (net_send_data(pkt) >= 0) {
+	if (net_try_send_data(pkt, K_NO_WAIT) >= 0) {
 		net_stats_update_icmp_sent(iface);
 		return 0;
 	}
@@ -343,14 +378,16 @@ drop:
 #else
 static int send_icmpv6_echo_request(struct net_icmp_ctx *ctx,
 				    struct net_if *iface,
-				    struct in6_addr *dst,
+				    struct net_in6_addr *dst,
 				    struct net_icmp_ping_params *params,
-				    void *user_data)
+				    void *user_data,
+				    k_timeout_t timeout)
 {
 	ARG_UNUSED(ctx);
 	ARG_UNUSED(iface);
 	ARG_UNUSED(dst);
 	ARG_UNUSED(params);
+	ARG_UNUSED(timeout);
 
 	return -ENOTSUP;
 }
@@ -385,7 +422,7 @@ static int get_offloaded_ping_handler(struct net_if *iface,
 
 	ret = -ENOENT;
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 #if defined(CONFIG_NET_OFFLOADING_SUPPORT)
 	SYS_SLIST_FOR_EACH_CONTAINER(&offload_handlers, offload, node) {
@@ -399,25 +436,26 @@ static int get_offloaded_ping_handler(struct net_if *iface,
 	ARG_UNUSED(offload);
 #endif
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 
 	return ret;
 }
 
-int net_icmp_send_echo_request(struct net_icmp_ctx *ctx,
-			       struct net_if *iface,
-			       struct sockaddr *dst,
-			       struct net_icmp_ping_params *params,
-			       void *user_data)
+static int net_icmp_send_echo_request_timeout(struct net_icmp_ctx *ctx,
+					      struct net_if *iface,
+					      struct net_sockaddr *dst,
+					      struct net_icmp_ping_params *params,
+					      void *user_data,
+					      k_timeout_t timeout)
 {
 	if (ctx == NULL || dst == NULL) {
 		return -EINVAL;
 	}
 
 	if (iface == NULL) {
-		if (IS_ENABLED(CONFIG_NET_IPV4) && dst->sa_family == AF_INET) {
+		if (IS_ENABLED(CONFIG_NET_IPV4) && dst->sa_family == NET_AF_INET) {
 			iface = net_if_ipv4_select_src_iface(&net_sin(dst)->sin_addr);
-		} else if (IS_ENABLED(CONFIG_NET_IPV6) && dst->sa_family == AF_INET6) {
+		} else if (IS_ENABLED(CONFIG_NET_IPV6) && dst->sa_family == NET_AF_INET6) {
 			iface = net_if_ipv6_select_src_iface(&net_sin6(dst)->sin6_addr);
 		}
 
@@ -445,37 +483,69 @@ int net_icmp_send_echo_request(struct net_icmp_ctx *ctx,
 		return ping_handler(ctx, iface, dst, params, user_data);
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV4) && dst->sa_family == AF_INET) {
+	if (IS_ENABLED(CONFIG_NET_IPV4) && dst->sa_family == NET_AF_INET) {
 		if (params == NULL) {
 			params = get_default_params();
 		}
 
 		return send_icmpv4_echo_request(ctx, iface, &net_sin(dst)->sin_addr,
-						params, user_data);
+						params, user_data, timeout);
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV6) && dst->sa_family == AF_INET6) {
+	if (IS_ENABLED(CONFIG_NET_IPV6) && dst->sa_family == NET_AF_INET6) {
 		if (params == NULL) {
 			params = get_default_params();
 		}
 
 		return send_icmpv6_echo_request(ctx, iface, &net_sin6(dst)->sin6_addr,
-						params, user_data);
+						params, user_data, timeout);
 	}
 
 	return -ENOENT;
 }
 
-static int icmp_call_handlers(struct net_pkt *pkt,
-			      struct net_icmp_ip_hdr *ip_hdr,
-			      struct net_icmp_hdr *icmp_hdr)
+int net_icmp_send_echo_request(struct net_icmp_ctx *ctx,
+			       struct net_if *iface,
+			       struct net_sockaddr *dst,
+			       struct net_icmp_ping_params *params,
+			       void *user_data)
+{
+	return net_icmp_send_echo_request_timeout(ctx,
+						  iface,
+						  dst,
+						  params,
+						  user_data,
+						  PKT_WAIT_TIME);
+}
+
+int net_icmp_send_echo_request_no_wait(struct net_icmp_ctx *ctx,
+				       struct net_if *iface,
+				       struct net_sockaddr *dst,
+				       struct net_icmp_ping_params *params,
+				       void *user_data)
+{
+	return net_icmp_send_echo_request_timeout(ctx,
+						  iface,
+						  dst,
+						  params,
+						  user_data,
+						  K_NO_WAIT);
+}
+
+static enum net_verdict icmp_call_handlers(struct net_pkt *pkt,
+					   struct net_icmp_ip_hdr *ip_hdr,
+					   struct net_icmp_hdr *icmp_hdr)
 {
 	struct net_icmp_ctx *ctx;
-	int ret = -ENOENT;
+	enum net_verdict ret = NET_DROP;
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&handlers, ctx, node) {
+		if (ip_hdr->family != ctx->family) {
+			continue;
+		}
+
 		if (ctx->type == icmp_hdr->type &&
 		    (ctx->code == icmp_hdr->code || ctx->code == 0U)) {
 			/* Do not use a handler that is expecting data from different
@@ -486,39 +556,44 @@ static int icmp_call_handlers(struct net_pkt *pkt,
 			}
 
 			ret = ctx->handler(ctx, pkt, ip_hdr, icmp_hdr, ctx->user_data);
-			if (ret < 0) {
-				goto out;
+			if (ret == NET_CONTINUE) {
+				continue;
 			}
+
+			/**
+			 * Any handler returning NET_OK or NET_DROP has processed and
+			 * possibly modified the pkt
+			 */
+			break;
 		}
 	}
 
-out:
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 
 	return ret;
 }
 
 
-int net_icmp_call_ipv4_handlers(struct net_pkt *pkt,
-				struct net_ipv4_hdr *ipv4_hdr,
-				struct net_icmp_hdr *icmp_hdr)
+enum net_verdict net_icmp_call_ipv4_handlers(struct net_pkt *pkt,
+					     struct net_ipv4_hdr *ipv4_hdr,
+					     struct net_icmp_hdr *icmp_hdr)
 {
 	struct net_icmp_ip_hdr ip_hdr;
 
 	ip_hdr.ipv4 = ipv4_hdr;
-	ip_hdr.family = AF_INET;
+	ip_hdr.family = NET_AF_INET;
 
 	return icmp_call_handlers(pkt, &ip_hdr, icmp_hdr);
 }
 
-int net_icmp_call_ipv6_handlers(struct net_pkt *pkt,
-				struct net_ipv6_hdr *ipv6_hdr,
-				struct net_icmp_hdr *icmp_hdr)
+enum net_verdict net_icmp_call_ipv6_handlers(struct net_pkt *pkt,
+					     struct net_ipv6_hdr *ipv6_hdr,
+					     struct net_icmp_hdr *icmp_hdr)
 {
 	struct net_icmp_ip_hdr ip_hdr;
 
 	ip_hdr.ipv6 = ipv6_hdr;
-	ip_hdr.family = AF_INET6;
+	ip_hdr.family = NET_AF_INET6;
 
 	return icmp_call_handlers(pkt, &ip_hdr, icmp_hdr);
 }
@@ -544,13 +619,13 @@ int net_icmp_register_offload_ping(struct net_icmp_offload *ctx,
 	ctx->ping_handler = ping_handler;
 	ctx->iface = iface;
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 #if defined(CONFIG_NET_OFFLOADING_SUPPORT)
 	sys_slist_prepend(&offload_handlers, &ctx->node);
 #endif
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 
 	return 0;
 }
@@ -565,13 +640,13 @@ int net_icmp_unregister_offload_ping(struct net_icmp_offload *ctx)
 		return -EINVAL;
 	}
 
-	k_mutex_lock(&lock, K_FOREVER);
+	k_mutex_lock(&icmp_lock, K_FOREVER);
 
 #if defined(CONFIG_NET_OFFLOADING_SUPPORT)
 	sys_slist_find_and_remove(&offload_handlers, &ctx->node);
 #endif
 
-	k_mutex_unlock(&lock);
+	k_mutex_unlock(&icmp_lock);
 
 	memset(ctx, 0, sizeof(struct net_icmp_offload));
 

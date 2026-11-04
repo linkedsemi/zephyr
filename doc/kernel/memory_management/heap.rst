@@ -34,6 +34,15 @@ until memory is available.  The final argument is a
 sleep before returning, or else one of the constant timeout values
 :c:macro:`K_NO_WAIT` or :c:macro:`K_FOREVER`.
 
+When a block with a specific alignment is required, :c:func:`k_heap_aligned_alloc`
+allocates a block whose start address is a multiple of a caller-supplied power-of-two
+alignment.  :c:func:`k_heap_calloc` allocates and zero-initializes an array.
+
+The size of an existing allocation can be changed with :c:func:`k_heap_realloc`,
+which returns a block of the requested size while preserving the contents up to
+the smaller of the old and new sizes.  As with the standard C ``realloc()``, the
+returned pointer may differ from the original.
+
 Releasing Memory
 ================
 
@@ -42,6 +51,16 @@ Memory allocated with :c:func:`k_heap_alloc` must be released using
 provided must be either a ``NULL`` value or a pointer previously
 returned by :c:func:`k_heap_alloc` for the same heap.  Freeing a
 ``NULL`` value is defined to have no effect.
+
+Enumerating Heaps
+=================
+
+All heaps defined statically with :c:macro:`K_HEAP_DEFINE` are placed in a
+dedicated linker section, which allows them to be enumerated at run time.
+:c:func:`k_heap_array_get` returns the address of the array of statically
+defined heaps and the number of entries it contains.  This is primarily useful
+for instrumentation and diagnostics that need to inspect every heap in the
+system.
 
 Low Level Heap Allocator
 ************************
@@ -126,6 +145,13 @@ callback function provided at initialization time.  This
 application-provided callback is responsible for doing the underlying
 allocation from one of the managed heaps, and may use the
 configuration parameter in any way it likes to make that decision.
+
+For modifying the size of an allocated buffer (whether shrinking
+or enlarging it), you can use the
+:c:func:`sys_multi_heap_realloc` and
+:c:func:`sys_multi_heap_aligned_realloc` APIs.  If the buffer cannot be
+enlarged on the heap where it currently resides,
+any of the eligible heaps specified by the configuration parameter may be used.
 
 When unused, a multi heap may be freed via
 :c:func:`sys_multi_heap_free`.  The application does not need to pass

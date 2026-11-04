@@ -1,8 +1,9 @@
 /*
- * Copyright (c) 2023 Nordic Semiconductor ASA
+ * Copyright (c) 2023-2026 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -10,6 +11,7 @@
 
 #include <zephyr/autoconf.h>
 #include <zephyr/bluetooth/addr.h>
+#include <zephyr/bluetooth/assigned_numbers.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/audio/bap_lc3_preset.h>
@@ -28,16 +30,20 @@
 #include <zephyr/kernel.h>
 #include <zephyr/net_buf.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
 
 #include "bstests.h"
 #include "common.h"
+#include "bap_common.h"
+
+LOG_MODULE_REGISTER(cap_commander_test);
 
 #if defined(CONFIG_BT_CAP_COMMANDER)
 
-#define SEM_TIMEOUT K_SECONDS(5)
+#define SEM_TIMEOUT K_SECONDS(10)
 
 extern enum bst_result_t bst_result;
 
@@ -51,6 +57,8 @@ static uint32_t broadcaster_broadcast_id;
 
 static uint8_t received_base[UINT8_MAX];
 static uint8_t received_base_size;
+static uint8_t src_ids[CONFIG_BT_MAX_CONN];
+static bool valid_src_id[CONFIG_BT_MAX_CONN];
 
 static struct k_sem sem_disconnected;
 static struct k_sem sem_cas_discovered;
@@ -59,13 +67,18 @@ static struct k_sem sem_mics_discovered;
 static struct k_sem sem_bass_discovered;
 
 CREATE_FLAG(flag_mtu_exchanged);
+CREATE_FLAG(flag_cap_canceled);
 CREATE_FLAG(flag_volume_changed);
 CREATE_FLAG(flag_volume_mute_changed);
 CREATE_FLAG(flag_volume_offset_changed);
 CREATE_FLAG(flag_microphone_mute_changed);
 CREATE_FLAG(flag_microphone_gain_changed);
 
-CREATE_FLAG(flag_broadcast_reception_start);
+CREATE_FLAG(flag_broadcast_reception_started);
+CREATE_FLAG(flag_broadcast_reception_start_failed);
+CREATE_FLAG(flag_broadcast_reception_stopped);
+CREATE_FLAG(flag_broadcast_reception_stop_failed);
+CREATE_FLAG(flag_broadcast_code_distributed);
 CREATE_FLAG(flag_broadcaster_found);
 CREATE_FLAG(flag_base_received);
 CREATE_FLAG(flag_recv_state_updated_with_bis_sync);
@@ -77,6 +90,8 @@ static void cap_discovery_complete_cb(struct bt_conn *conn, int err,
 				      const struct bt_csip_set_coordinator_set_member *member,
 				      const struct bt_csip_set_coordinator_csis_inst *csis_inst)
 {
+	ARG_UNUSED(member);
+
 	if (err != 0) {
 		FAIL("Discover failed on %p: %d\n", (void *)conn, err);
 
@@ -90,9 +105,9 @@ static void cap_discovery_complete_cb(struct bt_conn *conn, int err,
 			return;
 		}
 
-		printk("Found CAS on %p with CSIS %p\n", (void *)conn, csis_inst);
+		LOG_INF("Found CAS on %p with CSIS %p", (void *)conn, csis_inst);
 	} else {
-		printk("Found CAS on %p\n", (void *)conn);
+		LOG_INF("Found CAS on %p", (void *)conn);
 	}
 
 	k_sem_give(&sem_cas_discovered);
@@ -101,6 +116,12 @@ static void cap_discovery_complete_cb(struct bt_conn *conn, int err,
 #if defined(CONFIG_BT_VCP_VOL_CTLR)
 static void cap_volume_changed_cb(struct bt_conn *conn, int err)
 {
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+		return;
+	}
+
 	if (err != 0) {
 		FAIL("Failed to change volume for conn %p: %d\n", conn, err);
 		return;
@@ -111,6 +132,12 @@ static void cap_volume_changed_cb(struct bt_conn *conn, int err)
 
 static void cap_volume_mute_changed_cb(struct bt_conn *conn, int err)
 {
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+		return;
+	}
+
 	if (err != 0) {
 		FAIL("Failed to change volume mute for conn %p: %d\n", conn, err);
 		return;
@@ -122,6 +149,12 @@ static void cap_volume_mute_changed_cb(struct bt_conn *conn, int err)
 #if defined(CONFIG_BT_VCP_VOL_CTLR_VOCS)
 static void cap_volume_offset_changed_cb(struct bt_conn *conn, int err)
 {
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+		return;
+	}
+
 	if (err != 0) {
 		FAIL("Failed to change volume offset for conn %p: %d\n", conn, err);
 		return;
@@ -135,6 +168,12 @@ static void cap_volume_offset_changed_cb(struct bt_conn *conn, int err)
 #if defined(CONFIG_BT_MICP_MIC_CTLR)
 static void cap_microphone_mute_changed_cb(struct bt_conn *conn, int err)
 {
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+		return;
+	}
+
 	if (err != 0) {
 		FAIL("Failed to change microphone mute for conn %p: %d\n", conn, err);
 		return;
@@ -146,6 +185,12 @@ static void cap_microphone_mute_changed_cb(struct bt_conn *conn, int err)
 #if defined(CONFIG_BT_MICP_MIC_CTLR_AICS)
 static void cap_microphone_gain_changed_cb(struct bt_conn *conn, int err)
 {
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+		return;
+	}
+
 	if (err != 0) {
 		FAIL("Failed to change microphone gain for conn %p: %d\n", conn, err);
 		return;
@@ -159,12 +204,43 @@ static void cap_microphone_gain_changed_cb(struct bt_conn *conn, int err)
 #if defined(CONFIG_BT_BAP_BROADCAST_ASSISTANT)
 static void cap_broadcast_reception_start_cb(struct bt_conn *conn, int err)
 {
-	if (err != 0) {
-		FAIL("Failed to perform broadcast reception start for conn %p: %d\n", conn, err);
-		return;
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+	} else if (err != 0) {
+		LOG_ERR("Failed to perform broadcast reception start for conn %p: %d", conn, err);
+		SET_FLAG(flag_broadcast_reception_start_failed);
+	} else {
+		LOG_INF("CAP broadcast reception started");
+		SET_FLAG(flag_broadcast_reception_started);
 	}
+}
 
-	SET_FLAG(flag_broadcast_reception_start);
+static void cap_broadcast_reception_stop_cb(struct bt_conn *conn, int err)
+{
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+	} else if (err != 0) {
+		LOG_ERR("Failed to perform broadcast reception stop for conn %p: %d", conn, err);
+		SET_FLAG(flag_broadcast_reception_stop_failed);
+	} else {
+		LOG_INF("CAP broadcast reception stopped");
+		SET_FLAG(flag_broadcast_reception_stopped);
+	}
+}
+
+static void distribute_broadcast_code_cb(struct bt_conn *conn, int err)
+{
+	if (err == -ECANCELED) {
+		LOG_INF("CAP command cancelled for conn %p", conn);
+		SET_FLAG(flag_cap_canceled);
+	} else if (err != 0) {
+		FAIL("Failed to perform distribute broadcast code for conn %p: %d\n", conn, err);
+	} else {
+		LOG_INF("CAP broadcast code distributed");
+		SET_FLAG(flag_broadcast_code_distributed);
+	}
 }
 #endif /* CONFIG_BT_BAP_BROADCAST_ASSISTANT*/
 
@@ -185,6 +261,8 @@ static struct bt_cap_commander_cb cap_cb = {
 #endif /* CONFIG_BT_MICP_MIC_CTLR */
 #if defined(CONFIG_BT_BAP_BROADCAST_ASSISTANT)
 	.broadcast_reception_start = cap_broadcast_reception_start_cb,
+	.broadcast_reception_stop = cap_broadcast_reception_stop_cb,
+	.distribute_broadcast_code = distribute_broadcast_code_cb,
 #endif /* CONFIG_BT_BAP_BROADCAST_ASSISTANT*/
 };
 
@@ -197,7 +275,7 @@ static void cap_vcp_discover_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8
 		return;
 	}
 
-	printk("VCS for %p found with %u VOCS and %u AICS\n", vol_ctlr, vocs_count, aics_count);
+	LOG_INF("VCS for %p found with %u VOCS and %u AICS", vol_ctlr, vocs_count, aics_count);
 	k_sem_give(&sem_vcs_discovered);
 }
 
@@ -209,7 +287,7 @@ static void cap_vcp_state_cb(struct bt_vcp_vol_ctlr *vol_ctlr, int err, uint8_t 
 		return;
 	}
 
-	printk("State for %p: volume %u, mute %u\n", vol_ctlr, volume, mute);
+	LOG_INF("State for %p: volume %u, mute %u", vol_ctlr, volume, mute);
 }
 
 static struct bt_vcp_vol_ctlr_cb vcp_cb = {
@@ -225,7 +303,7 @@ static void cap_micp_discover_cb(struct bt_micp_mic_ctlr *mic_ctlr, int err, uin
 		return;
 	}
 
-	printk("MICS for %p found with %u AICS\n", mic_ctlr, aics_count);
+	LOG_INF("MICS for %p found with %u AICS", mic_ctlr, aics_count);
 	k_sem_give(&sem_mics_discovered);
 }
 
@@ -235,7 +313,11 @@ static struct bt_micp_mic_ctlr_cb micp_cb = {
 
 static void att_mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 {
-	printk("MTU exchanged\n");
+	ARG_UNUSED(conn);
+	ARG_UNUSED(tx);
+	ARG_UNUSED(rx);
+
+	LOG_INF("MTU exchanged");
 	SET_FLAG(flag_mtu_exchanged);
 }
 
@@ -245,6 +327,9 @@ static struct bt_gatt_cb gatt_callbacks = {
 
 static void cap_disconnected_cb(struct bt_conn *conn, uint8_t reason)
 {
+	ARG_UNUSED(reason);
+
+	valid_src_id[bt_conn_index(conn)] = false;
 	k_sem_give(&sem_disconnected);
 }
 
@@ -266,13 +351,12 @@ static int pa_sync_create(void)
 static bool scan_check_and_sync_broadcast(struct bt_data *data, void *user_data)
 {
 	const struct bt_le_scan_recv_info *info = user_data;
-	char le_addr[BT_ADDR_LE_STR_LEN];
 	struct bt_uuid_16 adv_uuid;
 	uint32_t broadcast_id;
 
 	if (TEST_FLAG(flag_broadcaster_found)) {
 		/* no-op*/
-		printk("NO OP\n");
+		LOG_DBG("NO OP");
 		return false;
 	}
 
@@ -294,11 +378,9 @@ static bool scan_check_and_sync_broadcast(struct bt_data *data, void *user_data)
 
 	broadcast_id = sys_get_le24(data->data + BT_UUID_SIZE_16);
 
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-
-	printk("Found broadcaster with ID 0x%06X and addr %s and sid 0x%02X\n", broadcast_id,
-	       le_addr, info->sid);
-	printk("Adv type %02X interval %u", info->adv_type, info->interval);
+	LOG_INF("Found broadcaster with ID 0x%06X and addr %s and sid 0x%02X", broadcast_id,
+	       bt_addr_le_str(info->addr), info->sid);
+	LOG_DBG("Adv type %02X interval %u", info->adv_type, info->interval);
 
 	SET_FLAG(flag_broadcaster_found);
 
@@ -325,8 +407,10 @@ static struct bt_le_scan_cb bap_scan_cb = {
 static void bap_pa_sync_synced_cb(struct bt_le_per_adv_sync *sync,
 				  struct bt_le_per_adv_sync_synced_info *info)
 {
+	ARG_UNUSED(info);
+
 	if (sync == g_pa_sync) {
-		printk("PA sync %p synced for broadcast sink with broadcast ID 0x%06X\n", sync,
+		LOG_INF("PA sync %p synced for broadcast sink with broadcast ID 0x%06X", sync,
 		       broadcaster_broadcast_id);
 		SET_FLAG(flag_pa_synced);
 	}
@@ -336,7 +420,7 @@ static void bap_pa_sync_terminated_cb(struct bt_le_per_adv_sync *sync,
 				      const struct bt_le_per_adv_sync_term_info *info)
 {
 	if (sync == g_pa_sync) {
-		printk("CAP commander test PA sync %p lost with reason %u\n", sync, info->reason);
+		LOG_INF("CAP commander test PA sync %p lost with reason %u", sync, info->reason);
 		g_pa_sync = NULL;
 
 		SET_FLAG(flag_pa_sync_lost);
@@ -349,6 +433,8 @@ static bool base_store(struct bt_data *data, void *user_data)
 	uint8_t base_size;
 	int base_subgroup_count;
 
+	ARG_UNUSED(user_data);
+
 	/* Base is NULL if the data does not contain a valid BASE */
 	if (base == NULL) {
 		return true;
@@ -357,7 +443,7 @@ static bool base_store(struct bt_data *data, void *user_data)
 	/* Can not fit all the received subgroups with the size CONFIG_BT_BAP_BASS_MAX_SUBGROUPS */
 	base_subgroup_count = bt_bap_base_get_subgroup_count(base);
 	if (base_subgroup_count < 0 || base_subgroup_count > CONFIG_BT_BAP_BASS_MAX_SUBGROUPS) {
-		printk("Got invalid subgroup count: %d\n", base_subgroup_count);
+		LOG_ERR("Got invalid subgroup count: %d", base_subgroup_count);
 		return true;
 	}
 
@@ -376,6 +462,9 @@ static bool base_store(struct bt_data *data, void *user_data)
 static void pa_recv(struct bt_le_per_adv_sync *sync,
 		    const struct bt_le_per_adv_sync_recv_info *info, struct net_buf_simple *buf)
 {
+	ARG_UNUSED(sync);
+	ARG_UNUSED(info);
+
 	if (TEST_FLAG(flag_base_received)) {
 		return;
 	}
@@ -394,9 +483,9 @@ static void bap_broadcast_assistant_discover_cb(struct bt_conn *conn, int err,
 						uint8_t recv_state_count)
 {
 	if (err == 0) {
-		printk("BASS discover done with %u recv states\n", recv_state_count);
+		LOG_INF("BASS discover done with %u recv states", recv_state_count);
 	} else {
-		printk("BASS discover failed (%d)\n", err);
+		LOG_ERR("BASS discover failed on %p (%d)", conn, err);
 	}
 
 	k_sem_give(&sem_bass_discovered);
@@ -405,9 +494,9 @@ static void bap_broadcast_assistant_discover_cb(struct bt_conn *conn, int err,
 static void bap_broadcast_assistant_add_src_cb(struct bt_conn *conn, int err)
 {
 	if (err == 0) {
-		printk("BASS add source successful\n");
+		LOG_INF("BASS add source successful");
 	} else {
-		printk("BASS add source failed (%d)\n", err);
+		LOG_ERR("BASS add source failed on %p (%d)", conn, err);
 	}
 }
 
@@ -415,9 +504,11 @@ static bool metadata_entry(struct bt_data *data, void *user_data)
 {
 	char metadata[CONFIG_BT_AUDIO_CODEC_CFG_MAX_METADATA_SIZE];
 
+	ARG_UNUSED(user_data);
+
 	(void)bin2hex(data->data, data->data_len, metadata, sizeof(metadata));
 
-	printk("\t\tMetadata length %u, type %u, data: %s\n", data->data_len, data->type, metadata);
+	LOG_DBG("\t\tMetadata length %u, type %u, data: %s", data->data_len, data->type, metadata);
 
 	return true;
 }
@@ -426,7 +517,7 @@ static void
 bap_broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 				      const struct bt_bap_scan_delegator_recv_state *state)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
+	const uint8_t conn_index = bt_conn_index(conn);
 	char bad_code[BT_ISO_BROADCAST_CODE_SIZE * 2 + 1];
 
 	if (err != 0) {
@@ -436,33 +527,38 @@ bap_broadcast_assistant_recv_state_cb(struct bt_conn *conn, int err,
 
 	if (state == NULL) {
 		/* Empty receive state */
+		valid_src_id[conn_index] = false;
 		return;
 	}
 
-	bt_addr_le_to_str(&state->addr, le_addr, sizeof(le_addr));
 	(void)bin2hex(state->bad_code, BT_ISO_BROADCAST_CODE_SIZE, bad_code, sizeof(bad_code));
-	printk("BASS recv state: src_id %u, addr %s, sid %u, sync_state %u, "
-	       "encrypt_state %u%s%s\n",
-	       state->src_id, le_addr, state->adv_sid, state->pa_sync_state, state->encrypt_state,
-	       state->encrypt_state == BT_BAP_BIG_ENC_STATE_BAD_CODE ? ", bad code" : "", bad_code);
+	LOG_INF("BASS recv state from %p: src_id %u, addr %s, sid %u, sync_state %u, "
+	       "encrypt_state %u%s%s",
+	       conn, state->src_id, bt_addr_le_str(&state->addr), state->adv_sid,
+	       state->pa_sync_state, state->encrypt_state,
+	       state->encrypt_state == BT_BAP_BIG_ENC_STATE_BAD_CODE ? ", bad code" : "",
+	       state->encrypt_state == BT_BAP_BIG_ENC_STATE_BAD_CODE ? bad_code : "");
 
 	if (state->encrypt_state == BT_BAP_BIG_ENC_STATE_BAD_CODE) {
 		FAIL("Encryption state is BT_BAP_BIG_ENC_STATE_BAD_CODE");
 		return;
 	}
 
-	for (uint8_t i = 0; i < state->num_subgroups; i++) {
+	src_ids[conn_index] = state->src_id;
+	valid_src_id[conn_index] = true;
+
+	for (uint8_t i = 0U; i < state->num_subgroups; i++) {
 		const struct bt_bap_bass_subgroup *subgroup = &state->subgroups[i];
 		struct net_buf_simple buf;
 
-		printk("\t[%d]: BIS sync %u, metadata_len %u\n", i, subgroup->bis_sync,
+		LOG_DBG("\t[%d]: BIS sync %u, metadata_len %u", i, subgroup->bis_sync,
 		       subgroup->metadata_len);
 
 		net_buf_simple_init_with_data(&buf, (void *)subgroup->metadata,
 					      subgroup->metadata_len);
 		bt_data_parse(&buf, metadata_entry, NULL);
 
-		if (subgroup->bis_sync != 0) {
+		if (subgroup->bis_sync != 0U) {
 			SET_FLAG(flag_recv_state_updated_with_bis_sync);
 		}
 	}
@@ -487,8 +583,71 @@ static struct bt_bap_broadcast_assistant_cb ba_cbs = {
 	.add_src = bap_broadcast_assistant_add_src_cb,
 };
 
+static bool check_audio_support_and_connect_cb(struct bt_data *data, void *user_data)
+{
+	bt_addr_le_t *addr = user_data;
+	const struct bt_uuid *uuid;
+	uint16_t uuid_val;
+	int err;
+
+	LOG_DBG("data->type %u", data->type);
+
+	if (data->type != BT_DATA_SVC_DATA16) {
+		return true; /* Continue parsing to next AD data type */
+	}
+
+	if (data->data_len < sizeof(uuid_val)) {
+		return true; /* Continue parsing to next AD data type */
+	}
+
+	/* We are looking for the CAS service data */
+	uuid_val = sys_get_le16(data->data);
+	uuid = BT_UUID_DECLARE_16(uuid_val);
+	if (bt_uuid_cmp(uuid, BT_UUID_CAS) != 0) {
+		return true; /* Continue parsing to next AD data type */
+	}
+
+	LOG_INF("Device found: %s", bt_addr_le_str(addr));
+
+	LOG_INF("Stopping scan");
+	if (bt_le_scan_stop()) {
+		FAIL("Could not stop scan");
+		return false;
+	}
+
+	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, BT_BAP_CONN_PARAM_RELAXED,
+				&connected_conns[connected_conn_cnt]);
+	if (err != 0) {
+		FAIL("Could not connect to peer: %d", err);
+	}
+
+	return false; /* Stop parsing */
+}
+
+static void scan_recv_cb(const struct bt_le_scan_recv_info *info, struct net_buf_simple *buf)
+{
+	struct bt_conn *conn;
+
+	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, info->addr);
+	if (conn != NULL) {
+		/* Already connected to this device */
+		bt_conn_unref(conn);
+		return;
+	}
+
+	/* Check for connectable, extended advertising */
+	if (((info->adv_props & BT_GAP_ADV_PROP_EXT_ADV) != 0) &&
+	    ((info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE)) != 0) {
+		/* Check for TMAS support in advertising data */
+		bt_data_parse(buf, check_audio_support_and_connect_cb, (void *)info->addr);
+	}
+}
+
 static void init(size_t acceptor_cnt)
 {
+	static struct bt_le_scan_cb scan_callbacks = {
+		.recv = scan_recv_cb,
+	};
 	static struct bt_conn_cb conn_cb = {
 		.disconnected = cap_disconnected_cb,
 	};
@@ -501,6 +660,12 @@ static void init(size_t acceptor_cnt)
 	}
 
 	bt_gatt_cb_register(&gatt_callbacks);
+	err = bt_le_scan_cb_register(&scan_callbacks);
+	if (err != 0) {
+		FAIL("Failed to register scan callbacks (err %d)\n", err);
+		return;
+	}
+
 	bt_conn_cb_register(&conn_cb);
 
 	err = bt_cap_commander_register_cb(&cap_cb);
@@ -537,13 +702,15 @@ static void init(size_t acceptor_cnt)
 	k_sem_init(&sem_mics_discovered, 0, acceptor_cnt);
 
 	UNSET_FLAG(flag_mtu_exchanged);
+	UNSET_FLAG(flag_cap_canceled);
 	UNSET_FLAG(flag_volume_changed);
 	UNSET_FLAG(flag_volume_mute_changed);
 	UNSET_FLAG(flag_volume_offset_changed);
 	UNSET_FLAG(flag_microphone_mute_changed);
 	UNSET_FLAG(flag_microphone_gain_changed);
 
-	UNSET_FLAG(flag_broadcast_reception_start);
+	UNSET_FLAG(flag_broadcast_reception_started);
+	UNSET_FLAG(flag_broadcast_reception_stopped);
 	UNSET_FLAG(flag_broadcaster_found);
 	UNSET_FLAG(flag_base_received);
 	UNSET_FLAG(flag_recv_state_updated_with_bis_sync);
@@ -552,46 +719,33 @@ static void init(size_t acceptor_cnt)
 	UNSET_FLAG(flag_syncable);
 }
 
-static void cap_device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
-			     struct net_buf_simple *ad)
+static void deinit(void)
 {
-	char addr_str[BT_ADDR_LE_STR_LEN];
-	struct bt_conn *conn;
 	int err;
 
-	/* We're only interested in connectable events */
-	if (type != BT_HCI_ADV_IND && type != BT_HCI_ADV_DIRECT_IND) {
+	bt_le_scan_cb_unregister(&bap_scan_cb);
+
+	err = bt_bap_broadcast_assistant_unregister_cb(&ba_cbs);
+	if (err != 0) {
+		FAIL("Failed to unregister broadcast assistant callbacks (err %d)\n", err);
+	}
+
+	err = bt_vcp_vol_ctlr_cb_unregister(&vcp_cb);
+	if (err != 0) {
+		FAIL("Failed to unregister VCP callbacks (err %d)\n", err);
 		return;
 	}
 
-	conn = bt_conn_lookup_addr_le(BT_ID_DEFAULT, addr);
-	if (conn != NULL) {
-		/* Already connected to this device */
-		bt_conn_unref(conn);
+	err = bt_cap_commander_unregister_cb(&cap_cb);
+	if (err != 0) {
+		FAIL("Failed to unregister CAP callbacks (err %d)\n", err);
 		return;
 	}
 
-	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	printk("Device found: %s (RSSI %d)\n", addr_str, rssi);
-
-	/* connect only to devices in close proximity */
-	if (rssi < -70) {
-		FAIL("RSSI too low");
+	err = bt_gatt_cb_unregister(&gatt_callbacks);
+	if (err != 0) {
+		FAIL("Failed to unregister GATT callbacks (err %d)\n", err);
 		return;
-	}
-
-	printk("Stopping scan\n");
-	if (bt_le_scan_stop()) {
-		FAIL("Could not stop scan");
-		return;
-	}
-
-	err = bt_conn_le_create(
-		addr, BT_CONN_LE_CREATE_CONN,
-		BT_LE_CONN_PARAM(BT_GAP_INIT_CONN_INT_MIN, BT_GAP_INIT_CONN_INT_MIN, 0, 400),
-		&connected_conns[connected_conn_cnt]);
-	if (err) {
-		FAIL("Could not connect to peer: %d", err);
 	}
 }
 
@@ -601,26 +755,26 @@ static void scan_and_connect(void)
 
 	UNSET_FLAG(flag_connected);
 
-	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, cap_device_found);
+	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
 	if (err != 0) {
 		FAIL("Scanning failed to start (err %d)\n", err);
 		return;
 	}
 
-	printk("Scanning successfully started\n");
+	LOG_INF("Scanning successfully started");
 	WAIT_FOR_FLAG(flag_connected);
 	connected_conn_cnt++;
 }
 
-static void disconnect_acl(size_t acceptor_cnt)
+static void disconnect_acl(struct bt_conn *conns[], size_t conn_cnt)
 {
 	k_sem_reset(&sem_disconnected);
 
-	for (size_t i = 0U; i < acceptor_cnt; i++) {
-		struct bt_conn *conn = connected_conns[i];
+	for (size_t i = 0U; i < conn_cnt; i++) {
+		struct bt_conn *conn = conns[i];
 		int err;
 
-		printk("Disconnecting %p\n", (void *)conn);
+		LOG_INF("Disconnecting %p", (void *)conn);
 
 		err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 		if (err != 0) {
@@ -629,13 +783,13 @@ static void disconnect_acl(size_t acceptor_cnt)
 		}
 	}
 
-	for (size_t i = 0U; i < acceptor_cnt; i++) {
+	for (size_t i = 0U; i < conn_cnt; i++) {
 		const int err = k_sem_take(&sem_disconnected, SEM_TIMEOUT);
 
 		if (err == 0) {
 			connected_conn_cnt--;
 		} else {
-			const struct bt_conn *conn = connected_conns[i];
+			const struct bt_conn *conn = conns[i];
 
 			FAIL("Failed to take sem_disconnected for %p: %d", (void *)conn, err);
 			return;
@@ -652,7 +806,7 @@ static void discover_cas(size_t acceptor_cnt)
 		struct bt_conn *conn = connected_conns[i];
 		int err;
 
-		printk("Discovering CAS on %p\n", (void *)conn);
+		LOG_INF("Discovering CAS on %p", (void *)conn);
 
 		err = bt_cap_commander_discover(conn);
 		if (err != 0) {
@@ -675,12 +829,6 @@ static void discover_cas(size_t acceptor_cnt)
 static void discover_bass(size_t acceptor_cnt)
 {
 	k_sem_reset(&sem_bass_discovered);
-
-	if (acceptor_cnt > 1) {
-		FAIL("Current implementation does not support multiple connections for the "
-		     "broadcast assistant");
-		return;
-	}
 
 	for (size_t i = 0U; i < acceptor_cnt; i++) {
 		int err;
@@ -712,7 +860,7 @@ static void pa_sync_to_broadcaster(void)
 		return;
 	}
 
-	printk("Searching for a broadcaster\n");
+	LOG_INF("Searching for a broadcaster");
 	WAIT_FOR_FLAG(flag_broadcaster_found);
 
 	err = bt_le_scan_stop();
@@ -721,7 +869,7 @@ static void pa_sync_to_broadcaster(void)
 		return;
 	}
 
-	printk("Scan stopped, attempting to PA sync to the broadcaster with id 0x%06X\n",
+	LOG_INF("Scan stopped, attempting to PA sync to the broadcaster with id 0x%06X",
 	       broadcaster_broadcast_id);
 	err = pa_sync_create();
 	if (err != 0) {
@@ -731,7 +879,7 @@ static void pa_sync_to_broadcaster(void)
 
 	WAIT_FOR_FLAG(flag_pa_synced); /* todo from bap_pa_sync_synced_cb, bap_pa_sync_cb */
 
-	printk("Broadcast source PA synced, waiting for BASE\n");
+	LOG_INF("Broadcast source PA synced, waiting for BASE");
 	WAIT_FOR_FLAG(flag_base_received);
 }
 
@@ -745,7 +893,7 @@ static void discover_vcs(size_t acceptor_cnt)
 		struct bt_vcp_vol_ctlr *vol_ctlr;
 		int err;
 
-		printk("Discovering VCS on %p\n", (void *)conn);
+		LOG_INF("Discovering VCS on %p", (void *)conn);
 
 		err = bt_vcp_vol_ctlr_discover(conn, &vol_ctlr);
 		if (err != 0) {
@@ -791,7 +939,7 @@ static void discover_mics(size_t acceptor_cnt)
 	}
 }
 
-static void test_change_volume(void)
+static void init_change_volume(void)
 {
 	union bt_cap_set_member members[CONFIG_BT_MAX_CONN];
 	const struct bt_cap_commander_change_volume_param param = {
@@ -802,8 +950,7 @@ static void test_change_volume(void)
 	};
 	int err;
 
-	printk("Changing volume to %u\n", param.volume);
-	UNSET_FLAG(flag_volume_changed);
+	LOG_INF("Changing volume to %u", param.volume);
 
 	for (size_t i = 0U; i < param.count; i++) {
 		param.members[i].member = connected_conns[i];
@@ -814,9 +961,13 @@ static void test_change_volume(void)
 		FAIL("Failed to change volume: %d\n", err);
 		return;
 	}
+}
 
+static void test_change_volume(void)
+{
+	UNSET_FLAG(flag_volume_changed);
+	init_change_volume();
 	WAIT_FOR_FLAG(flag_volume_changed);
-	printk("Volume changed to %u\n", param.volume);
 }
 
 static void test_change_volume_mute(bool mute)
@@ -830,7 +981,7 @@ static void test_change_volume_mute(bool mute)
 	};
 	int err;
 
-	printk("Changing volume mute state to %d\n", param.mute);
+	LOG_INF("Changing volume mute state to %d", param.mute);
 	UNSET_FLAG(flag_volume_mute_changed);
 
 	for (size_t i = 0U; i < param.count; i++) {
@@ -844,7 +995,7 @@ static void test_change_volume_mute(bool mute)
 	}
 
 	WAIT_FOR_FLAG(flag_volume_mute_changed);
-	printk("Volume mute state changed to %d\n", param.mute);
+	LOG_INF("Volume mute state changed to %d", param.mute);
 }
 
 static void test_change_volume_offset(void)
@@ -857,7 +1008,7 @@ static void test_change_volume_offset(void)
 	};
 	int err;
 
-	printk("Changing volume offset\n");
+	LOG_INF("Changing volume offset");
 	UNSET_FLAG(flag_volume_offset_changed);
 
 	for (size_t i = 0U; i < param.count; i++) {
@@ -872,7 +1023,7 @@ static void test_change_volume_offset(void)
 	}
 
 	WAIT_FOR_FLAG(flag_volume_offset_changed);
-	printk("Volume offset changed\n");
+	LOG_INF("Volume offset changed");
 }
 
 static void test_change_microphone_mute(bool mute)
@@ -886,7 +1037,7 @@ static void test_change_microphone_mute(bool mute)
 	};
 	int err;
 
-	printk("Changing microphone mute state to %d\n", param.mute);
+	LOG_INF("Changing microphone mute state to %d", param.mute);
 	UNSET_FLAG(flag_microphone_mute_changed);
 
 	for (size_t i = 0U; i < param.count; i++) {
@@ -900,7 +1051,7 @@ static void test_change_microphone_mute(bool mute)
 	}
 
 	WAIT_FOR_FLAG(flag_microphone_mute_changed);
-	printk("Microphone mute state changed to %d\n", param.mute);
+	LOG_INF("Microphone mute state changed to %d", param.mute);
 }
 
 static void test_change_microphone_gain(void)
@@ -914,7 +1065,7 @@ static void test_change_microphone_gain(void)
 	};
 	int err;
 
-	printk("Changing microphone gain\n");
+	LOG_INF("Changing microphone gain");
 	UNSET_FLAG(flag_microphone_gain_changed);
 
 	for (size_t i = 0U; i < param.count; i++) {
@@ -929,10 +1080,10 @@ static void test_change_microphone_gain(void)
 	}
 
 	WAIT_FOR_FLAG(flag_microphone_gain_changed);
-	printk("Microphone gain changed\n");
+	LOG_INF("Microphone gain changed");
 }
 
-static void test_broadcast_reception_start(size_t acceptor_count)
+static void test_broadcast_reception_start(struct bt_conn *conns[], size_t conn_cnt)
 {
 	struct bt_cap_commander_broadcast_reception_start_param reception_start_param = {0};
 	struct bt_cap_commander_broadcast_reception_start_member_param param[CONFIG_BT_MAX_CONN] = {
@@ -940,14 +1091,14 @@ static void test_broadcast_reception_start(size_t acceptor_count)
 	int err;
 
 	reception_start_param.type = BT_CAP_SET_TYPE_AD_HOC;
-	reception_start_param.count = acceptor_count;
+	reception_start_param.count = conn_cnt;
 	reception_start_param.param = param;
 
-	for (size_t i = 0; i < acceptor_count; i++) {
+	for (size_t i = 0U; i < conn_cnt; i++) {
 		uint32_t bis_sync[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS];
 		size_t num_subgroups;
 
-		reception_start_param.param[i].member.member = connected_conns[i];
+		reception_start_param.param[i].member.member = conns[i];
 		bt_addr_le_copy(&reception_start_param.param[i].addr, &broadcaster_addr);
 		reception_start_param.param[i].adv_sid = broadcaster_info.sid;
 		reception_start_param.param[i].pa_interval = broadcaster_info.interval;
@@ -962,7 +1113,7 @@ static void test_broadcast_reception_start(size_t acceptor_count)
 		}
 
 		reception_start_param.param[i].num_subgroups = num_subgroups;
-		for (size_t j = 0; j < num_subgroups; j++) {
+		for (size_t j = 0U; j < num_subgroups; j++) {
 			reception_start_param.param[i].subgroups[j].bis_sync = bis_sync[j];
 		}
 	}
@@ -972,22 +1123,70 @@ static void test_broadcast_reception_start(size_t acceptor_count)
 		FAIL("Could not initiate broadcast reception start: %d\n", err);
 		return;
 	}
-
-	WAIT_FOR_FLAG(flag_broadcast_reception_start);
 }
 
-static void test_broadcast_reception_stop(size_t acceptor_count)
+static void test_broadcast_reception_stop(struct bt_conn *conns[], size_t conn_cnt)
 {
-	struct bt_cap_commander_broadcast_reception_stop_param reception_stop_param;
+	struct bt_cap_commander_broadcast_reception_stop_param reception_stop_param = {0};
+	struct bt_cap_commander_broadcast_reception_stop_member_param param[CONFIG_BT_MAX_CONN] = {
+		0};
+
 	int err;
 
-	/* reception stop is not implemented yet, for now the following command will fail*/
 	reception_stop_param.type = BT_CAP_SET_TYPE_AD_HOC;
-	reception_stop_param.param = NULL;
-	reception_stop_param.count = 0U;
+	reception_stop_param.param = param;
+	reception_stop_param.count = conn_cnt;
+	for (size_t i = 0U; i < conn_cnt; i++) {
+		uint8_t num_subgroups;
+
+		reception_stop_param.param[i].member.member = conns[i];
+
+		reception_stop_param.param[i].src_id = src_ids[bt_conn_index(conns[i])];
+		num_subgroups =
+			bt_bap_base_get_subgroup_count((const struct bt_bap_base *)received_base);
+		reception_stop_param.param[i].num_subgroups = num_subgroups;
+	}
 	err = bt_cap_commander_broadcast_reception_stop(&reception_stop_param);
 	if (err != 0) {
-		printk("Command not implemented yet, could not stop broadcast reception %d\n", err);
+		FAIL("Could not initiate broadcast reception stop: %d\n", err);
+		return;
+	}
+}
+
+static void test_distribute_broadcast_code(struct bt_conn *conns[], size_t conn_cnt)
+{
+	struct bt_cap_commander_distribute_broadcast_code_param distribute_broadcast_code_param = {
+		0};
+	struct bt_cap_commander_distribute_broadcast_code_member_param param[CONFIG_BT_MAX_CONN] = {
+		0};
+	int err;
+
+	distribute_broadcast_code_param.type = BT_CAP_SET_TYPE_AD_HOC;
+	distribute_broadcast_code_param.param = param;
+	distribute_broadcast_code_param.count = conn_cnt;
+	memcpy(distribute_broadcast_code_param.broadcast_code, BROADCAST_CODE,
+	       sizeof(BROADCAST_CODE));
+	for (size_t i = 0U; i < conn_cnt; i++) {
+		distribute_broadcast_code_param.param[i].member.member = conns[i];
+		distribute_broadcast_code_param.param[i].src_id = src_ids[bt_conn_index(conns[i])];
+	}
+
+	err = bt_cap_commander_distribute_broadcast_code(&distribute_broadcast_code_param);
+	if (err != 0) {
+		FAIL("Could not distribute broadcast code: %d\n", err);
+		return;
+	}
+}
+
+static void test_cancel(bool cap_in_progress)
+{
+	const int expected_err = cap_in_progress ? 0 : -EALREADY;
+	int err;
+
+	err = bt_cap_commander_cancel();
+	if (err != expected_err) {
+		FAIL("Could not cancel CAP command: %d\n", err);
+		return;
 	}
 }
 
@@ -1035,7 +1234,9 @@ static void test_main_cap_commander_capture_and_render(void)
 	}
 
 	/* Disconnect all CAP acceptors */
-	disconnect_acl(acceptor_cnt);
+	disconnect_acl(connected_conns, connected_conn_cnt);
+
+	deinit();
 
 	PASS("CAP commander capture and rendering passed\n");
 }
@@ -1050,7 +1251,58 @@ static void test_main_cap_commander_broadcast_reception(void)
 	 * This leaves N - 2 devices for the acceptor
 	 */
 	acceptor_count = get_dev_cnt() - 2;
-	printk("Acceptor count: %d\n", acceptor_count);
+	LOG_DBG("Acceptor count: %d", acceptor_count);
+
+	init(acceptor_count);
+
+	for (size_t i = 0U; i < acceptor_count; i++) {
+		scan_and_connect();
+
+		WAIT_FOR_FLAG(flag_mtu_exchanged);
+
+		update_security(connected_conns[i]);
+	}
+
+	/* TODO: We should use CSIP to find set members */
+	discover_cas(acceptor_count);
+	discover_bass(acceptor_count);
+
+	pa_sync_to_broadcaster();
+
+	test_broadcast_reception_start(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_reception_started);
+
+	test_distribute_broadcast_code(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_code_distributed);
+
+	for (size_t i = 0U; i < connected_conn_cnt; i++) {
+		backchannel_sync_wait_any(); /* wait for the acceptor to receive data */
+	}
+
+	test_broadcast_reception_stop(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_reception_stopped);
+
+	/* Disconnect all CAP acceptors */
+	disconnect_acl(connected_conns, connected_conn_cnt);
+
+	backchannel_sync_send_all(); /* let others know we have received what we wanted */
+
+	deinit();
+
+	PASS("Broadcast reception passed\n");
+}
+
+static void test_main_cap_commander_broadcast_reception_error(void)
+{
+	size_t acceptor_count;
+
+	/* The test consists of N devices
+	 * 1 device is the broadcast source
+	 * 1 device is the CAP commander
+	 * This leaves N - 2 devices for the acceptor
+	 */
+	acceptor_count = get_dev_cnt() - 2;
+	LOG_DBG("Acceptor count: %d", acceptor_count);
 
 	init(acceptor_count);
 
@@ -1066,21 +1318,149 @@ static void test_main_cap_commander_broadcast_reception(void)
 
 	pa_sync_to_broadcaster();
 
-	test_broadcast_reception_start(acceptor_count);
+	/* Expect each acceptor to reject the first request */
+	for (size_t i = 0U; i < connected_conn_cnt; i++) {
+		LOG_INF("Attempting reception start on %zu connections, expecting failure on #%zu",
+		       connected_conn_cnt, i + 1);
+		test_broadcast_reception_start(connected_conns, connected_conn_cnt);
+		WAIT_FOR_AND_CLEAR_FLAG(flag_broadcast_reception_start_failed);
+		if (TEST_FLAG(flag_broadcast_reception_started)) {
+			FAIL("Expected reception start to fail\n");
+			return;
+		}
 
-	backchannel_sync_wait_any(); /* wait for the acceptor to receive data */
+		/* Since we may have partial success, we need to restore the state of the acceptors
+		 * that have started broadcast reception so that we can restart the procedure with
+		 * all acceptors again
+		 * The failing devices should be failing in the order that they appear in
+		 * connected_conns
+		 */
+		if (i > 0U && connected_conn_cnt > 1U) {
+			LOG_INF("Attempting reception stop on %zu connections",
+			       connected_conn_cnt - i);
+			test_broadcast_reception_stop(connected_conns, connected_conn_cnt - i);
+			WAIT_FOR_AND_CLEAR_FLAG(flag_broadcast_reception_stopped);
+		}
+	}
 
-	backchannel_sync_wait_any(); /* wait for the acceptor to receive a metadata update
-				      */
+	/* Expect success */
+	LOG_INF("Attempting reception start on %zu connections, expecting success",
+	       connected_conn_cnt);
+	test_broadcast_reception_start(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_reception_started);
 
-	test_broadcast_reception_stop(acceptor_count);
+	/* Expect success
+	 * We cannot easily test the case where broadcast code is not successful as there are no
+	 * invalid values that we can rely on, nor does the Scan Delegator API support rejecting
+	 * broadcast codes.
+	 */
+	test_distribute_broadcast_code(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_code_distributed);
 
-	backchannel_sync_wait_any(); /* wait for the acceptor to stop reception */
+	for (size_t i = 0U; i < connected_conn_cnt; i++) {
+		backchannel_sync_wait_any(); /* wait for the acceptor to receive data */
+	}
+
+	/* Expect success */
+	test_broadcast_reception_stop(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_reception_stopped);
 
 	/* Disconnect all CAP acceptors */
-	disconnect_acl(acceptor_count);
+	disconnect_acl(connected_conns, connected_conn_cnt);
+
+	backchannel_sync_send_all(); /* let others know we have received what we wanted */
+
+	deinit();
+
+	PASS("Broadcast reception error passed\n");
+}
+
+static void test_main_cap_commander_cancel(void)
+{
+	size_t acceptor_count;
+
+	/* The test consists of N devices
+	 * 1 device is the broadcast source
+	 * 1 device is the CAP commander
+	 * This leaves N - 2 devices for the acceptor
+	 */
+	acceptor_count = get_dev_cnt() - 1;
+	LOG_DBG("Acceptor count: %d", acceptor_count);
+
+	init(acceptor_count);
+
+	for (size_t i = 0U; i < acceptor_count; i++) {
+		scan_and_connect();
+
+		WAIT_FOR_FLAG(flag_mtu_exchanged);
+	}
+
+	/* TODO: We should use CSIP to find set members */
+	discover_cas(acceptor_count);
+
+	if (IS_ENABLED(CONFIG_BT_CSIP_SET_COORDINATOR)) {
+		if (IS_ENABLED(CONFIG_BT_VCP_VOL_CTLR)) {
+			discover_vcs(acceptor_count);
+
+			init_change_volume();
+
+			test_cancel(true);
+			WAIT_FOR_FLAG(flag_cap_canceled);
+		}
+	}
+
+	test_cancel(false);
+
+	/* Disconnect all CAP acceptors */
+	disconnect_acl(connected_conns, connected_conn_cnt);
+
+	deinit();
+	/* restore the default callback */
+	cap_cb.volume_changed = cap_volume_changed_cb;
 
 	PASS("Broadcast reception passed\n");
+}
+
+static void test_main_cap_commander_disconnect(void)
+{
+	size_t acceptor_count;
+
+	/* The test consists of N devices
+	 * 1 device is the broadcast source
+	 * 1 device is the CAP commander
+	 * This leaves N - 2 devices for the acceptor
+	 */
+	if (get_dev_cnt() < 3U) {
+		FAIL("Test needs at least 3 devices");
+		return;
+	}
+
+	acceptor_count = get_dev_cnt() - 2U;
+	LOG_DBG("Acceptor count: %zu", acceptor_count);
+
+	init(acceptor_count);
+
+	for (size_t i = 0U; i < acceptor_count; i++) {
+		scan_and_connect();
+
+		WAIT_FOR_FLAG(flag_mtu_exchanged);
+	}
+
+	/* TODO: We should use CSIP to find set members */
+	discover_cas(acceptor_count);
+	discover_bass(acceptor_count);
+
+	pa_sync_to_broadcaster();
+
+	LOG_INF("Attempting reception start on %zu connections", connected_conn_cnt);
+	test_broadcast_reception_start(connected_conns, connected_conn_cnt);
+	WAIT_FOR_FLAG(flag_broadcast_reception_start_failed);
+
+	backchannel_sync_send_all(); /* let others know we have received what we wanted */
+
+	deinit();
+
+	PASS("CAP Commander disconnect passed\n");
 }
 
 static const struct bst_test_instance test_cap_commander[] = {
@@ -1095,6 +1475,24 @@ static const struct bst_test_instance test_cap_commander[] = {
 		.test_post_init_f = test_init,
 		.test_tick_f = test_tick,
 		.test_main_f = test_main_cap_commander_broadcast_reception,
+	},
+	{
+		.test_id = "cap_commander_broadcast_reception_error",
+		.test_post_init_f = test_init,
+		.test_tick_f = test_tick,
+		.test_main_f = test_main_cap_commander_broadcast_reception_error,
+	},
+	{
+		.test_id = "cap_commander_cancel",
+		.test_post_init_f = test_init,
+		.test_tick_f = test_tick,
+		.test_main_f = test_main_cap_commander_cancel,
+	},
+	{
+		.test_id = "cap_commander_disconnect",
+		.test_post_init_f = test_init,
+		.test_tick_f = test_tick,
+		.test_main_f = test_main_cap_commander_disconnect,
 	},
 	BSTEST_END_MARKER,
 };

@@ -5,7 +5,7 @@ Overview
 
 This is a SoM that is used as a radio module by the GARDENA smart gateway (manual_, `FOSS parts`_).
 
-.. _manual: https://www.gardena.com/tdrdownload//pub000070911/doc000120830
+.. _manual: https://content.tdr.dss.husqvarnagroup.net/pub000094159/doc000240276
 .. _FOSS parts: https://github.com/husqvarnagroup/smart-garden-gateway-public
 
 Hardware
@@ -18,30 +18,13 @@ Hardware
 - UART is connected to the Linux SoC. Usually it's used for PPP, but it can also be used for
   debugging when PPP is not active.
 
-.. _SiM3U167-B-GM: https://www.silabs.com/mcu/32-bit-microcontrollers/precision32-sim3u1xx/device.SiM3U167-B-GQ?tab=specs
+.. _SiM3U167-B-GM: https://www.silabs.com/products/mcu/32-bit/precision32-sim3u1xx/device.sim3u167-b-gm
 .. _Si4467: https://www.silabs.com/wireless/proprietary/ezradiopro-sub-ghz-ics/device.si4467?tab=specs
 
 Supported Features
 ==================
 
-The ``sgrm`` board target supports the following hardware features:
-
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| SYSTICK   | on-chip    | systick                             |
-+-----------+------------+-------------------------------------+
-| DMA       | on-chip    | dma                                 |
-+-----------+------------+-------------------------------------+
-| FLASH     | on-chip    | flash memory                        |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -76,6 +59,8 @@ Connections and IOs
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Flashing
 ========

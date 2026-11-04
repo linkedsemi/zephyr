@@ -10,7 +10,7 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 #include <SI32_CLKCTRL_A_Type.h>
 #include <SI32_USART_A_Type.h>
@@ -191,13 +191,6 @@ static int usart_si32_irq_is_pending(const struct device *dev)
 	return usart_si32_irq_rx_ready(dev) || usart_si32_irq_tx_ready(dev);
 }
 
-static int usart_si32_irq_update(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	return 1;
-}
-
 static void usart_si32_irq_callback_set(const struct device *dev, uart_irq_callback_user_data_t cb,
 					void *cb_data)
 {
@@ -219,7 +212,7 @@ static void usart_si32_irq_handler(const struct device *dev)
 }
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
-static const struct uart_driver_api usart_si32_driver_api = {
+static DEVICE_API(uart, usart_si32_driver_api) = {
 	.poll_in = usart_si32_poll_in,
 	.poll_out = usart_si32_poll_out,
 	.err_check = usart_si32_err_check,
@@ -236,7 +229,6 @@ static const struct uart_driver_api usart_si32_driver_api = {
 	.irq_err_enable = usart_si32_irq_err_enable,
 	.irq_err_disable = usart_si32_irq_err_disable,
 	.irq_is_pending = usart_si32_irq_is_pending,
-	.irq_update = usart_si32_irq_update,
 	.irq_callback_set = usart_si32_irq_callback_set,
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 };
@@ -378,7 +370,7 @@ static int usart_si32_init(const struct device *dev)
 	static const struct usart_si32_config usart_si32_cfg_##index = {                           \
 		.usart = (SI32_USART_A_Type *)DT_INST_REG_ADDR(index),                             \
 		.hw_flow_control = DT_INST_PROP(index, hw_flow_control),                           \
-		.parity = DT_INST_ENUM_IDX_OR(index, parity, UART_CFG_PARITY_NONE),                \
+		.parity = DT_INST_ENUM_IDX(index, parity),                                         \
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(index)),                            \
 		SI32_USART_IRQ_HANDLER_FUNC(index)};                                               \
                                                                                                    \
@@ -386,7 +378,7 @@ static int usart_si32_init(const struct device *dev)
 		.baud_rate = DT_INST_PROP(index, current_speed),                                   \
 	};                                                                                         \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(index, &usart_si32_init, NULL, &usart_si32_data_##index,             \
+	DEVICE_DT_INST_DEFINE(index, usart_si32_init, NULL, &usart_si32_data_##index,              \
 			      &usart_si32_cfg_##index, PRE_KERNEL_1, CONFIG_SERIAL_INIT_PRIORITY,  \
 			      &usart_si32_driver_api);                                             \
                                                                                                    \

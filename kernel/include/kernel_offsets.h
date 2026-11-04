@@ -3,12 +3,12 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#ifndef ZEPHYR_KERNEL_INCLUDE_KERNEL_OFFSETS_H_
+#define ZEPHYR_KERNEL_INCLUDE_KERNEL_OFFSETS_H_
+
 #include <zephyr/device.h>
 #include <zephyr/pm/device.h>
 #include "kernel_internal.h"
-
-#ifndef ZEPHYR_KERNEL_INCLUDE_KERNEL_OFFSETS_H_
-#define ZEPHYR_KERNEL_INCLUDE_KERNEL_OFFSETS_H_
 
 #include <zephyr/syscall_list.h>
 
@@ -47,10 +47,6 @@ GEN_OFFSET_SYM(_kernel_t, ready_q);
 #ifndef CONFIG_SMP
 GEN_OFFSET_SYM(_ready_q_t, cache);
 #endif /* CONFIG_SMP */
-
-#ifdef CONFIG_FPU_SHARING
-GEN_OFFSET_SYM(_kernel_t, current_fp);
-#endif /* CONFIG_FPU_SHARING */
 
 GEN_OFFSET_SYM(_thread_base_t, user_options);
 

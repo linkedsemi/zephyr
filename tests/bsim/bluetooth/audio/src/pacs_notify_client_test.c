@@ -11,17 +11,18 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/gatt.h>
-
-#include "bstests.h"
-#include "common.h"
-#include "common/bt_str.h"
-
 #include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/logging/log_core.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
+
+#include "bstests.h"
+#include "common.h"
+#include "common/bt_str.h"
+
 LOG_MODULE_REGISTER(pacs_notify_client_test, LOG_LEVEL_DBG);
 
 struct pacs_instance_t {
@@ -50,6 +51,7 @@ CREATE_FLAG(flag_available_contexts_discovered);
 CREATE_FLAG(flag_supported_contexts_discovered);
 CREATE_FLAG(flag_all_notifications_received);
 CREATE_FLAG(flag_available_contexts_received);
+CREATE_FLAG(flag_snk_pac_received);
 
 static struct bt_uuid_16 uuid = BT_UUID_INIT_16(0);
 
@@ -59,33 +61,42 @@ static uint8_t pacs_notify_handler(struct bt_conn *conn,
 				  struct bt_gatt_subscribe_params *params,
 				  const void *data, uint16_t length)
 {
+	ARG_UNUSED(conn);
+	ARG_UNUSED(length);
+
+	if (data == NULL) {
+		LOG_DBG("%p subscription removed", params);
+		return BT_GATT_ITER_CONTINUE;
+	}
+
 	LOG_DBG("%p", params);
 
 	if (params == &pacs_instance.sink_pacs_sub) {
 		LOG_DBG("Received sink_pacs_sub notification");
-		pacs_instance.notify_received_mask |= BIT(0);
+		pacs_instance.notify_received_mask |= BIT(0U);
+		SET_FLAG(flag_snk_pac_received);
 	} else if (params == &pacs_instance.source_pacs_sub) {
 		LOG_DBG("Received source_pacs_sub notification");
-		pacs_instance.notify_received_mask |= BIT(1);
+		pacs_instance.notify_received_mask |= BIT(1U);
 	} else if (params == &pacs_instance.sink_loc_sub) {
 		LOG_DBG("Received sink_loc_sub notification");
-		pacs_instance.notify_received_mask |= BIT(2);
+		pacs_instance.notify_received_mask |= BIT(2U);
 	} else if (params == &pacs_instance.source_loc_sub) {
 		LOG_DBG("Received source_loc_sub notification");
-		pacs_instance.notify_received_mask |= BIT(3);
+		pacs_instance.notify_received_mask |= BIT(3U);
 	} else if (params == &pacs_instance.available_contexts_sub) {
 		LOG_DBG("Received available_contexts_sub notification");
-		pacs_instance.notify_received_mask |= BIT(4);
+		pacs_instance.notify_received_mask |= BIT(4U);
 		SET_FLAG(flag_available_contexts_received);
 	} else if (params == &pacs_instance.supported_contexts_sub) {
 		LOG_DBG("Received supported_contexts_sub notification");
-		pacs_instance.notify_received_mask |= BIT(5);
+		pacs_instance.notify_received_mask |= BIT(5U);
 	}
 
 	LOG_DBG("pacs_instance.notify_received_mask is %d", pacs_instance.notify_received_mask);
 
 	if (pacs_instance.notify_received_mask ==
-	    (BIT(0) | BIT(1) | BIT(2) | BIT(3) | BIT(4) | BIT(5))) {
+	    (BIT(0U) | BIT(1U) | BIT(2U) | BIT(3U) | BIT(4U) | BIT(5U))) {
 		pacs_instance.notify_received_mask = 0;
 		SET_FLAG(flag_all_notifications_received);
 	}
@@ -115,7 +126,7 @@ static uint8_t discover_supported_contexts(struct bt_conn *conn, const struct bt
 		subscribe_params->value_handle = bt_gatt_attr_value_handle(attr);
 
 		err = bt_gatt_discover(conn, &pacs_instance.discover_params);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
 	} else if (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_CCC)) {
@@ -126,7 +137,7 @@ static uint8_t discover_supported_contexts(struct bt_conn *conn, const struct bt
 		subscribe_params->ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, subscribe_params);
-		if (err && err != -EALREADY) {
+		if (err != 0 && err != -EALREADY) {
 			LOG_DBG("Subscribe failed (err %d)", err);
 		} else {
 			SET_FLAG(flag_supported_contexts_discovered);
@@ -182,7 +193,7 @@ static uint8_t discover_available_contexts(struct bt_conn *conn, const struct bt
 		subscribe_params->value_handle = bt_gatt_attr_value_handle(attr);
 
 		err = bt_gatt_discover(conn, &pacs_instance.discover_params);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
 	} else if (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_CCC)) {
@@ -193,7 +204,7 @@ static uint8_t discover_available_contexts(struct bt_conn *conn, const struct bt
 		subscribe_params->ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, subscribe_params);
-		if (err && err != -EALREADY) {
+		if (err != 0 && err != -EALREADY) {
 			LOG_DBG("Subscribe failed (err %d)", err);
 		} else {
 			SET_FLAG(flag_available_contexts_discovered);
@@ -249,7 +260,7 @@ static uint8_t discover_src_loc(struct bt_conn *conn, const struct bt_gatt_attr 
 		subscribe_params->value_handle = bt_gatt_attr_value_handle(attr);
 
 		err = bt_gatt_discover(conn, &pacs_instance.discover_params);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
 	} else if (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_CCC)) {
@@ -260,7 +271,7 @@ static uint8_t discover_src_loc(struct bt_conn *conn, const struct bt_gatt_attr 
 		subscribe_params->ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, subscribe_params);
-		if (err && err != -EALREADY) {
+		if (err != 0 && err != -EALREADY) {
 			LOG_DBG("Subscribe failed (err %d)", err);
 		} else {
 			SET_FLAG(flag_src_loc_discovered);
@@ -316,7 +327,7 @@ static uint8_t discover_snk_loc(struct bt_conn *conn, const struct bt_gatt_attr 
 		subscribe_params->value_handle = bt_gatt_attr_value_handle(attr);
 
 		err = bt_gatt_discover(conn, &pacs_instance.discover_params);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
 	} else if (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_CCC)) {
@@ -327,7 +338,7 @@ static uint8_t discover_snk_loc(struct bt_conn *conn, const struct bt_gatt_attr 
 		subscribe_params->ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, subscribe_params);
-		if (err && err != -EALREADY) {
+		if (err != 0 && err != -EALREADY) {
 			LOG_DBG("Subscribe failed (err %d)", err);
 		} else {
 			SET_FLAG(flag_snk_loc_discovered);
@@ -383,7 +394,7 @@ static uint8_t discover_pacs_src(struct bt_conn *conn, const struct bt_gatt_attr
 		subscribe_params->value_handle = bt_gatt_attr_value_handle(attr);
 
 		err = bt_gatt_discover(conn, &pacs_instance.discover_params);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
 	} else if (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_CCC)) {
@@ -394,7 +405,7 @@ static uint8_t discover_pacs_src(struct bt_conn *conn, const struct bt_gatt_attr
 		subscribe_params->ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, subscribe_params);
-		if (err && err != -EALREADY) {
+		if (err != 0 && err != -EALREADY) {
 			LOG_DBG("Subscribe failed (err %d)", err);
 		} else {
 			SET_FLAG(flag_pacs_src_discovered);
@@ -450,7 +461,7 @@ static uint8_t discover_pacs_snk(struct bt_conn *conn, const struct bt_gatt_attr
 		subscribe_params->value_handle = bt_gatt_attr_value_handle(attr);
 
 		err = bt_gatt_discover(conn, &pacs_instance.discover_params);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)", err);
 		}
 	} else if (!bt_uuid_cmp(params->uuid, BT_UUID_GATT_CCC)) {
@@ -461,7 +472,7 @@ static uint8_t discover_pacs_snk(struct bt_conn *conn, const struct bt_gatt_attr
 		subscribe_params->ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, subscribe_params);
-		if (err && err != -EALREADY) {
+		if (err != 0 && err != -EALREADY) {
 			LOG_DBG("Subscribe failed (err %d)", err);
 		} else {
 			SET_FLAG(flag_pacs_snk_discovered);
@@ -518,11 +529,7 @@ static void test_main(void)
 	WAIT_FOR_FLAG(flag_connected);
 
 	LOG_DBG("Raising security");
-	err = bt_conn_set_security(default_conn, BT_SECURITY_L2);
-	if (err) {
-		FAIL("Failed to ser security level %d (err %d)", BT_SECURITY_L2, err);
-		return;
-	}
+	update_security(default_conn);
 
 	LOG_DBG("Starting Discovery");
 
@@ -564,11 +571,7 @@ static void test_main(void)
 	WAIT_FOR_FLAG(flag_connected);
 
 	LOG_DBG("Raising security");
-	err = bt_conn_set_security(default_conn, BT_SECURITY_L2);
-	if (err) {
-		FAIL("Failed to ser security level %d (err %d)", BT_SECURITY_L2, err);
-		return;
-	}
+	update_security(default_conn);
 
 	LOG_DBG("Waiting for all notifications to be received");
 	WAIT_FOR_FLAG(flag_all_notifications_received);
@@ -588,11 +591,7 @@ static void test_main(void)
 	WAIT_FOR_FLAG(flag_connected);
 
 	LOG_DBG("Raising security");
-	err = bt_conn_set_security(default_conn, BT_SECURITY_L2);
-	if (err) {
-		FAIL("Failed to ser security level %d (err %d)", BT_SECURITY_L2, err);
-		return;
-	}
+	update_security(default_conn);
 
 	LOG_DBG("Waiting for available contexts notification to be received");
 	WAIT_FOR_FLAG(flag_available_contexts_received);
@@ -612,11 +611,7 @@ static void test_main(void)
 	WAIT_FOR_FLAG(flag_connected);
 
 	LOG_DBG("Raising security");
-	err = bt_conn_set_security(default_conn, BT_SECURITY_L2);
-	if (err) {
-		FAIL("Failed to ser security level %d (err %d)", BT_SECURITY_L2, err);
-		return;
-	}
+	update_security(default_conn);
 
 	LOG_DBG("Waiting for available contexts notification to be received");
 	WAIT_FOR_FLAG(flag_available_contexts_received);
@@ -628,12 +623,61 @@ static void test_main(void)
 	PASS("GATT client Passed\n");
 }
 
+static void test_main_retry(void)
+{
+	int err;
+
+	err = bt_enable(NULL);
+	if (err != 0) {
+		FAIL("Bluetooth enable failed (err %d)", err);
+		return;
+	}
+
+	err = bt_le_scan_cb_register(&common_scan_cb);
+	if (err != 0) {
+		FAIL("Failed to register scan callbacks (err %d)\n", err);
+		return;
+	}
+
+	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
+	if (err != 0) {
+		FAIL("Could not start scanning (err %d)", err);
+		return;
+	}
+
+	WAIT_FOR_FLAG(flag_connected);
+
+	update_security(default_conn);
+
+	discover_and_subscribe_snk_pacs();
+	WAIT_FOR_FLAG(flag_pacs_snk_discovered);
+
+	LOG_DBG("Waiting for Sink PAC notification");
+	WAIT_FOR_FLAG(flag_snk_pac_received);
+
+	err = bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+	if (err != 0) {
+		FAIL("Failed to disconnect (err %d)\n", err);
+		return;
+	}
+
+	WAIT_FOR_UNSET_FLAG(flag_connected);
+
+	PASS("PACS Notify Retry Client passed\n");
+}
+
 static const struct bst_test_instance test_pacs_notify_client[] = {
 	{
 		.test_id = "pacs_notify_client",
 		.test_pre_init_f = test_init,
 		.test_tick_f = test_tick,
 		.test_main_f = test_main,
+	},
+	{
+		.test_id = "pacs_notify_retry_client",
+		.test_pre_init_f = test_init,
+		.test_tick_f = test_tick,
+		.test_main_f = test_main_retry,
 	},
 	BSTEST_END_MARKER,
 };

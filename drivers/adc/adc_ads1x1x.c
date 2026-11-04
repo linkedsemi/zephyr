@@ -26,8 +26,13 @@ LOG_MODULE_REGISTER(ADS1X1X, CONFIG_ADC_LOG_LEVEL);
 	DT_ANY_COMPAT_HAS_PROP_STATUS_OKAY(ti_ads1015, alert_rdy_gpios) || \
 	DT_ANY_COMPAT_HAS_PROP_STATUS_OKAY(ti_ads1014, alert_rdy_gpios)
 
-#define ADC_ADS1X1X_TRIGGER
+#define ADC_ADS1X1X_TRIGGER 1
 
+#endif
+
+#if defined(CONFIG_ADC_CONFIGURABLE_INPUTS) && \
+	(DT_HAS_COMPAT_STATUS_OKAY(ti_ads1015) || DT_HAS_COMPAT_STATUS_OKAY(ti_ads1115))
+#define ADC_ADS1X1X_CONFIGURABLE_INPUTS 1
 #endif
 
 #define ADS1X1X_CONFIG_OS BIT(15)
@@ -392,6 +397,7 @@ static int ads1x1x_channel_setup(const struct device *dev,
 		return -ENOTSUP;
 	}
 
+#ifdef ADC_ADS1X1X_CONFIGURABLE_INPUTS
 	if (ads_config->multiplexer) {
 		/* the device has an input multiplexer */
 		if (channel_cfg->differential) {
@@ -426,15 +432,9 @@ static int ads1x1x_channel_setup(const struct device *dev,
 				return -ENOTSUP;
 			}
 		}
-	} else {
-		/* only differential supported without multiplexer */
-		if (!((channel_cfg->differential) &&
-		      (channel_cfg->input_positive == 0 && channel_cfg->input_negative == 1))) {
-			LOG_ERR("unsupported input positive '%d' and input negative '%d'",
-				channel_cfg->input_positive, channel_cfg->input_negative);
-			return -ENOTSUP;
-		}
 	}
+#endif /* ADC_ADS1X1X_CONFIGURABLE_INPUTS */
+
 	/* store differential mode to determine supported resolution */
 	data->differential = channel_cfg->differential;
 
@@ -786,7 +786,7 @@ static int ads1x1x_init(const struct device *dev)
 	return 0;
 }
 
-static const struct adc_driver_api ads1x1x_api = {
+static DEVICE_API(adc, ads1x1x_api) = {
 	.channel_setup = ads1x1x_channel_setup,
 	.read = ads1x1x_read,
 	.ref_internal = 2048,

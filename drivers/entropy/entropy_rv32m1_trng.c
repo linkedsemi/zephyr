@@ -32,7 +32,7 @@ static int entropy_rv32m1_trng_get_entropy(const struct device *dev,
 	return 0;
 }
 
-static const struct entropy_driver_api entropy_rv32m1_trng_api_funcs = {
+static DEVICE_API(entropy, entropy_rv32m1_trng_api_funcs) = {
 	.get_entropy = entropy_rv32m1_trng_get_entropy
 };
 
@@ -40,7 +40,7 @@ static struct rv32m1_entropy_config entropy_rv32m1_config = {
 	.base = (TRNG_Type *)DT_INST_REG_ADDR(0)
 };
 
-static int entropy_rv32m1_trng_init(const struct device *);
+static int entropy_rv32m1_trng_init(const struct device *dev);
 
 DEVICE_DT_INST_DEFINE(0,
 		    entropy_rv32m1_trng_init, NULL,

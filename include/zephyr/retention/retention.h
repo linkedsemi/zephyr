@@ -9,8 +9,8 @@
  * @brief Public API for retention API
  */
 
-#ifndef ZEPHYR_INCLUDE_RETENTION_
-#define ZEPHYR_INCLUDE_RETENTION_
+#ifndef ZEPHYR_INCLUDE_RETENTION_RETENTION_H_
+#define ZEPHYR_INCLUDE_RETENTION_RETENTION_H_
 
 #include <stdint.h>
 #include <stddef.h>
@@ -31,22 +31,6 @@ extern "C" {
  * @ingroup os_services
  * @{
  */
-
-typedef ssize_t (*retention_size_api)(const struct device *dev);
-typedef int (*retention_is_valid_api)(const struct device *dev);
-typedef int (*retention_read_api)(const struct device *dev, off_t offset, uint8_t *buffer,
-				  size_t size);
-typedef int (*retention_write_api)(const struct device *dev, off_t offset,
-				   const uint8_t *buffer, size_t size);
-typedef int (*retention_clear_api)(const struct device *dev);
-
-struct retention_api {
-	retention_size_api size;
-	retention_is_valid_api is_valid;
-	retention_read_api read;
-	retention_write_api write;
-	retention_clear_api clear;
-};
 
 /**
  * @brief		Returns the size of the retention area.
@@ -114,4 +98,4 @@ int retention_clear(const struct device *dev);
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_RETENTION_ */
+#endif /* ZEPHYR_INCLUDE_RETENTION_RETENTION_H_ */

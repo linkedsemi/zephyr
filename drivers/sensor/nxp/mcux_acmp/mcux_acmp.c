@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2020 Vestas Wind Systems A/S
- * Copyright 2022, 2024 NXP
+ * Copyright 2022, 2024-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -40,49 +40,6 @@ BUILD_ASSERT(kACMP_VrefSourceVin2 == 1);
 BUILD_ASSERT(kACMP_PortInputFromDAC == 0);
 BUILD_ASSERT(kACMP_PortInputFromMux == 1);
 #endif /* MCUX_ACMP_HAS_INPSEL || MCUX_ACMP_HAS_INNSEL */
-
-/*
- * prop New property name
- * depr Deprecated property name
- */
-#define MCUX_ACMP_DT_INST_PROP(inst, prop, depr)						\
-	COND_CODE_1(										\
-		DT_INST_NODE_HAS_PROP(inst, prop),						\
-		(DT_INST_PROP(inst, prop)),							\
-		(DT_INST_PROP(inst, depr))							\
-	)
-
-/*
- * prop New property name
- * depr Deprecated property name
- */
-#define MCUX_ACMP_DT_INST_PROP_OR(inst, prop, depr, default_value)				\
-	COND_CODE_1(										\
-		DT_INST_NODE_HAS_PROP(inst, prop) || DT_INST_NODE_HAS_PROP(inst, depr),		\
-		(MCUX_ACMP_DT_INST_PROP(inst, prop, depr)),					\
-		(default_value)									\
-	)
-
-#define MCUX_ACMP_DT_INST_ENABLE_SAMPLE(inst) \
-	MCUX_ACMP_DT_INST_PROP(inst, filter_enable_sample, nxp_enable_sample)
-
-#define MCUX_ACMP_DT_INST_FILTER_COUNT(inst) \
-	MCUX_ACMP_DT_INST_PROP_OR(inst, filter_count, nxp_filter_count, 0)
-
-#define MCUX_ACMP_DT_INST_FILTER_PERIOD(inst) \
-	MCUX_ACMP_DT_INST_PROP_OR(inst, filter_period, nxp_filter_period, 0)
-
-#define MCUX_ACMP_DT_INST_HIGH_SPEED(inst) \
-	MCUX_ACMP_DT_INST_PROP(inst, enable_high_speed_mode, nxp_high_speed_mode)
-
-#define MCUX_ACMP_DT_INST_USE_UNFILTERED_MODE(inst) \
-	MCUX_ACMP_DT_INST_PROP(inst, use_unfiltered_output, nxp_use_unfiltered_output)
-
-#define MCUX_ACMP_DT_INST_USE_ENABLE_PIN_OUT(inst) \
-	MCUX_ACMP_DT_INST_PROP(inst, enable_pin_out, nxp_enable_output_pin)
-
-#define MCUX_ACMP_DT_INST_ENABLE_WINDOW_MODE(inst) \
-	MCUX_ACMP_DT_INST_PROP(inst, enable_window_mode, nxp_window_mode)
 
 struct mcux_acmp_config {
 	CMP_Type *base;
@@ -176,7 +133,7 @@ static int mcux_acmp_attr_set(const struct device *dev,
 	case SENSOR_ATTR_MCUX_ACMP_DAC_VALUE:
 		if (val1 >= 0 && val1 < MCUX_ACMP_DAC_LEVELS) {
 			LOG_DBG("dac = %d", val1);
-			data->dac.DACValue = val1;
+			data->dac.DACValue = val1 - 1;
 			ACMP_SetDACConfig(config->base, &data->dac);
 		} else {
 			return -EINVAL;
@@ -382,8 +339,6 @@ static int mcux_acmp_sample_fetch(const struct device *dev,
 	struct mcux_acmp_data *data = dev->data;
 	uint32_t status;
 
-	__ASSERT_NO_MSG(val != NULL);
-
 	if (chan != SENSOR_CHAN_ALL &&
 	    (int16_t)chan != SENSOR_CHAN_MCUX_ACMP_OUTPUT) {
 		return -ENOTSUP;
@@ -498,7 +453,9 @@ static int mcux_acmp_init(const struct device *dev)
 	ACMP_SetDiscreteModeConfig(config->base, &data->discrete_config);
 #endif
 
+#if MCUX_ACMP_HAS_WINDOW_MODE
 	ACMP_EnableWindowMode(config->base, config->window);
+#endif
 	ACMP_SetFilterConfig(config->base, &config->filter);
 	ACMP_SetChannelConfig(config->base, &data->channels);
 
@@ -520,7 +477,7 @@ static int mcux_acmp_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api mcux_acmp_driver_api = {
+static DEVICE_API(sensor, mcux_acmp_driver_api) = {
 	.attr_set = mcux_acmp_attr_set,
 	.attr_get = mcux_acmp_attr_get,
 #ifdef CONFIG_SENSOR_MCUX_ACMP_TRIGGER
@@ -534,14 +491,17 @@ static const struct sensor_driver_api mcux_acmp_driver_api = {
 static const struct mcux_acmp_config mcux_acmp_config_##n = {		\
 	.base = (CMP_Type *)DT_INST_REG_ADDR(n),			\
 	.filter = {							\
-		.enableSample = MCUX_ACMP_DT_INST_ENABLE_SAMPLE(n),	\
-		.filterCount = MCUX_ACMP_DT_INST_FILTER_COUNT(n),	\
-		.filterPeriod = MCUX_ACMP_DT_INST_FILTER_PERIOD(n),	\
+		COND_CODE_1(MCUX_ACMP_HAS_SAMPLE_CLOCK_SELECTION,	\
+		(.enableSample =					\
+		DT_INST_PROP(n, filter_enable_sample),),		\
+		())							\
+		.filterCount = DT_INST_PROP_OR(n, filter_count, 0),	\
+		.filterPeriod = DT_INST_PROP_OR(n, filter_period, 0),	\
 	},								\
-	.high_speed = MCUX_ACMP_DT_INST_HIGH_SPEED(n),			\
-	.unfiltered = MCUX_ACMP_DT_INST_USE_UNFILTERED_MODE(n),		\
-	.output = MCUX_ACMP_DT_INST_USE_ENABLE_PIN_OUT(n),		\
-	.window = MCUX_ACMP_DT_INST_ENABLE_WINDOW_MODE(n),		\
+	.high_speed = DT_INST_PROP(n, enable_high_speed_mode),		\
+	.unfiltered = DT_INST_PROP(n, use_unfiltered_output),		\
+	.output = DT_INST_PROP(n, enable_pin_out),			\
+	.window = DT_INST_PROP(n, enable_window_mode),			\
 	.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),			\
 	config_func_init						\
 }

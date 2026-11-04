@@ -30,34 +30,7 @@ For more information about the GD32F450 SoC and GD32F450V-START board:
 Supported Features
 ==================
 
-The board configuration supports the following hardware features:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Peripheral
-     - Kconfig option
-     - Devicetree compatible
-   * - EXTI
-     - :kconfig:option:`CONFIG_GD32_EXTI`
-     - :dtcompatible:`gd,gd32-exti`
-   * - GPIO
-     - :kconfig:option:`CONFIG_GPIO`
-     - :dtcompatible:`gd,gd32-gpio`
-   * - NVIC
-     - N/A
-     - :dtcompatible:`arm,v8m-nvic`
-   * - PWM
-     - :kconfig:option:`CONFIG_PWM`
-     - :dtcompatible:`gd,gd32-pwm`
-   * - SYSTICK
-     - N/A
-     - N/A
-   * - USART
-     - :kconfig:option:`CONFIG_SERIAL`
-     - :dtcompatible:`gd,gd32-usart`
-
-Other peripherals may be used if shields are connected to the board.
+.. zephyr:board-supported-hw::
 
 Serial Port
 ===========
@@ -69,6 +42,8 @@ UART-USB adapter.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Before programming your board make sure to configure boot jumpers as
 follows:
@@ -130,7 +105,7 @@ allows flash programming and debugging over USB. There is also a SWD header
    https://gd32mcu.com/data/documents/datasheet/GD32F450xx_Datasheet_Rev2.3.pdf
 
 .. _GD32F4xx User Manual:
-   https://www.gigadevice.com/manual/gd32f450xxxx-user-manual/
+   https://www.gd32mcu.com/data/documents/userManual/GD32F4xx_User_Manual_Rev3.0.pdf
 
 .. _GD32F450V-START User Manual:
    https://gd32mcu.com/data/documents/evaluationBoard/GD32F4xx_Demo_Suites_V2.6.1.rar

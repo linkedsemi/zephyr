@@ -107,22 +107,19 @@ static int lm75_temp_write(const struct device *dev, uint8_t reg, int16_t value)
 
 static void lm75_sensor_value_to_temp(const struct sensor_value *val, int16_t *temp)
 {
-	*temp = val->val1 * 10;
-	*temp += val->val2 / 100000U;
+	/* Register: 1/256 °C per LSB; division truncates toward zero */
+	int64_t t = ((int64_t)val->val1 * 1000000 + val->val2) * 256 / 1000000;
 
-	*temp = (*temp * 256) / 10;
+	*temp = (int16_t)CLAMP(t, INT16_MIN, INT16_MAX);
 }
 
 static void lm75_temp_to_sensor_value(int16_t temp, struct sensor_value *val)
 {
-	/* shift right by 7, multiply by 10 to get 0.1° and divide by 2 to get °C */
-	temp = (temp / 128) * 10 / 2;
-
 	/* Integer part in degrees Celsius */
-	val->val1 = temp / 10;
+	val->val1 = (temp / 256);
 
 	/* Fractional part in micro degrees Celsius */
-	val->val2 = (temp - val->val1 * 10) * 100000U;
+	val->val2 = ((temp - (val->val1 * 256)) * 1000000) / 256;
 }
 
 static int lm75_attr_set(const struct device *dev, enum sensor_channel chan,
@@ -270,14 +267,7 @@ static inline int lm75_fetch_temp(const struct device *dev)
 
 static int lm75_sample_fetch(const struct device *dev, enum sensor_channel chan)
 {
-	enum pm_device_state pm_state;
 	int ret;
-
-	(void)pm_device_state_get(dev, &pm_state);
-	if (pm_state != PM_DEVICE_STATE_ACTIVE) {
-		ret = -EIO;
-		return ret;
-	}
 
 	switch (chan) {
 	case SENSOR_CHAN_ALL:
@@ -306,7 +296,7 @@ static int lm75_channel_get(const struct device *dev, enum sensor_channel chan,
 	}
 }
 
-static const struct sensor_driver_api lm75_driver_api = {
+static DEVICE_API(sensor, lm75_driver_api) = {
 	.attr_set = lm75_attr_set,
 	.attr_get = lm75_attr_get,
 #if LM75_TRIGGER_SUPPORT
@@ -325,7 +315,7 @@ int lm75_init(const struct device *dev)
 #endif /* LM75_TRIGGER_SUPPORT */
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("I2C dev not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -354,11 +344,11 @@ int lm75_init(const struct device *dev)
 		data->dev = dev;
 		k_work_queue_start(&data->workq, data->stack, K_THREAD_STACK_SIZEOF(data->stack),
 				CONFIG_LM75_TRIGGER_THREAD_PRIO, NULL);
-		k_thread_name_set(&data->workq.thread, "lm75_trigger");
+		k_thread_name_set(data->workq.thread_id, "lm75_trigger");
 		k_work_init(&data->work, lm75_trigger_work_handler);
 
 		if (!device_is_ready(cfg->int_gpio.port)) {
-			LOG_ERR("INT GPIO not ready");
+			LOG_ERR_DEVICE_NOT_READY(cfg->int_gpio.port);
 			return -EINVAL;
 		}
 

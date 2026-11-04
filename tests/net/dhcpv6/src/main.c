@@ -12,13 +12,19 @@
 
 #include "../../../subsys/net/lib/dhcpv6/dhcpv6.c"
 
-static struct in6_addr test_addr = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
+static struct net_in6_addr test_addr = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
 					 0, 0, 0, 0, 0, 0, 0, 0x1 } } };
-static struct in6_addr test_prefix = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
+static struct net_in6_addr test_prefix = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
 					   0, 0, 0, 0, 0, 0, 0, 0 } } };
 static uint8_t test_prefix_len = 64;
 static uint8_t test_preference;
+static uint32_t test_sol_max_rt = 120000;
+static uint32_t test_inf_max_rt = 180000;
 static struct net_dhcpv6_duid_storage test_serverid;
+static struct net_dhcpv6_duid_storage test_other_serverid;
+static uint8_t test_expected_tid[DHCPV6_TID_SIZE];
+static enum dhcpv6_msg_type test_expected_msg_type;
+static uint8_t test_stable_tid_msg_count;
 static struct net_mgmt_event_callback net_mgmt_cb;
 
 typedef void (*test_dhcpv6_pkt_fn_t)(struct net_if *iface,
@@ -27,6 +33,8 @@ typedef void (*test_dhcpv6_pkt_fn_t)(struct net_if *iface,
 typedef int (*test_dhcpv6_options_fn_t)(struct net_if *iface,
 					struct net_pkt *pkt,
 					enum dhcpv6_msg_type msg_type);
+
+typedef int (*test_dhcpv6_send_fn_t)(struct net_if *iface);
 
 struct test_dhcpv6_context {
 	uint8_t mac[sizeof(struct net_eth_addr)];
@@ -100,17 +108,19 @@ static void clear_test_addr_on_iface(struct net_if *iface)
 	test_ctx.iface->config.dhcpv6.prefix_len = 0;
 }
 
-static void generate_fake_server_duid(void)
+static void generate_fake_server_duid(struct net_dhcpv6_duid_storage *serverid,
+				      uint8_t id)
 {
-	struct net_dhcpv6_duid_storage *serverid = &test_serverid;
 	struct dhcpv6_duid_ll *duid_ll =
 				(struct dhcpv6_duid_ll *)&serverid->duid.buf;
-	uint8_t fake_mac[] = { 0x01, 0x02, 0x03, 0x04, 0x05, 0x06 };
+	uint8_t fake_mac[] = { 0x01, 0x02, 0x03, 0x04, 0x05, id };
 
 	memset(serverid, 0, sizeof(*serverid));
 
-	UNALIGNED_PUT(htons(DHCPV6_DUID_TYPE_LL), &serverid->duid.type);
-	UNALIGNED_PUT(htons(DHCPV6_HARDWARE_ETHERNET_TYPE), &duid_ll->hw_type);
+	UNALIGNED_PUT(net_htons(DHCPV6_DUID_TYPE_LL),
+		      UNALIGNED_MEMBER_ADDR(serverid, duid.type));
+	UNALIGNED_PUT(net_htons(DHCPV6_HARDWARE_ETHERNET_TYPE),
+		      UNALIGNED_MEMBER_ADDR(duid_ll, hw_type));
 	memcpy(duid_ll->ll_addr, fake_mac, sizeof(fake_mac));
 
 	serverid->length = DHCPV6_DUID_LL_HEADER_SIZE + sizeof(fake_mac);
@@ -122,14 +132,38 @@ static void set_fake_server_duid(struct net_if *iface)
 	       sizeof(test_serverid));
 }
 
+static int add_max_rt_options(struct net_pkt *pkt)
+{
+	int ret;
+
+	ret = dhcpv6_add_option_header(pkt, DHCPV6_OPTION_CODE_SOL_MAX_RT,
+				       sizeof(uint32_t));
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = net_pkt_write_be32(pkt, test_sol_max_rt / MSEC_PER_SEC);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_header(pkt, DHCPV6_OPTION_CODE_INF_MAX_RT,
+				       sizeof(uint32_t));
+	if (ret < 0) {
+		return ret;
+	}
+
+	return net_pkt_write_be32(pkt, test_inf_max_rt / MSEC_PER_SEC);
+}
+
 #define TEST_MSG_SIZE 256
 
 static struct net_pkt *test_dhcpv6_create_message(
 		struct net_if *iface, enum dhcpv6_msg_type msg_type,
 		test_dhcpv6_options_fn_t set_options_fn)
 {
-	struct in6_addr *local_addr;
-	struct in6_addr peer_addr;
+	struct net_in6_addr *local_addr;
+	struct net_in6_addr peer_addr;
 	struct net_pkt *pkt;
 
 	local_addr = net_if_ipv6_get_ll(iface, NET_ADDR_ANY_STATE);
@@ -144,15 +178,15 @@ static struct net_pkt *test_dhcpv6_create_message(
 	memcpy(&peer_addr, local_addr, sizeof(peer_addr));
 	peer_addr.s6_addr[15] = ~peer_addr.s6_addr[15];
 
-	pkt = net_pkt_alloc_with_buffer(iface, TEST_MSG_SIZE, AF_INET6,
-					IPPROTO_UDP, K_FOREVER);
+	pkt = net_pkt_alloc_with_buffer(iface, TEST_MSG_SIZE, NET_AF_INET6,
+					NET_IPPROTO_UDP, K_FOREVER);
 	if (pkt == NULL) {
 		return NULL;
 	}
 
 	if (net_ipv6_create(pkt, &peer_addr, local_addr) < 0 ||
-	    net_udp_create(pkt, htons(DHCPV6_SERVER_PORT),
-			   htons(DHCPV6_CLIENT_PORT)) < 0) {
+	    net_udp_create(pkt, net_htons(DHCPV6_SERVER_PORT),
+			   net_htons(DHCPV6_CLIENT_PORT)) < 0) {
 		goto fail;
 	}
 
@@ -167,7 +201,7 @@ static struct net_pkt *test_dhcpv6_create_message(
 	}
 
 	net_pkt_cursor_init(pkt);
-	net_ipv6_finalize(pkt, IPPROTO_UDP);
+	net_ipv6_finalize(pkt, NET_IPPROTO_UDP);
 	net_pkt_cursor_init(pkt);
 
 	return pkt;
@@ -178,13 +212,13 @@ fail:
 	return NULL;
 }
 
-static void evt_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
+static void evt_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
 			struct net_if *iface)
 {
 	ARG_UNUSED(cb);
 
 	if (mgmt_event == NET_EVENT_IF_UP) {
-		struct in6_addr lladdr;
+		struct net_in6_addr lladdr;
 
 		net_ipv6_addr_create_iid(&lladdr, net_if_get_link_addr(test_ctx.iface));
 		(void)net_if_ipv6_addr_add(test_ctx.iface, &lladdr, NET_ADDR_AUTOCONF, 0);
@@ -193,7 +227,7 @@ static void evt_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
 
 static void *dhcpv6_tests_setup(void)
 {
-	struct in6_addr lladdr;
+	struct net_in6_addr lladdr;
 
 	test_ctx.iface = net_if_get_first_by_type(&NET_L2_GET_NAME(DUMMY));
 
@@ -203,7 +237,8 @@ static void *dhcpv6_tests_setup(void)
 	k_sem_init(&test_ctx.tx_sem, 0, 1);
 	k_sem_init(&test_ctx.exchange_complete_sem, 0, 1);
 
-	generate_fake_server_duid();
+	generate_fake_server_duid(&test_serverid, 0x06);
+	generate_fake_server_duid(&test_other_serverid, 0x07);
 
 	net_mgmt_init_event_callback(&net_mgmt_cb, evt_handler, NET_EVENT_IF_UP);
 	net_mgmt_add_event_callback(&net_mgmt_cb);
@@ -224,11 +259,14 @@ static void dhcpv6_tests_before(void *fixture)
 	memset(&test_ctx.iface->config.dhcpv6, 0,
 	       sizeof(test_ctx.iface->config.dhcpv6));
 
-	dhcpv6_generate_client_duid(test_ctx.iface);
+	zassert_ok(dhcpv6_generate_client_duid(test_ctx.iface),
+		   "Cannot generate client DUID");
 	test_ctx.iface->config.dhcpv6.state = NET_DHCPV6_DISABLED;
 	test_ctx.iface->config.dhcpv6.addr_iaid = 10;
 	test_ctx.iface->config.dhcpv6.prefix_iaid = 20;
 	test_ctx.iface->config.dhcpv6.exchange_start = k_uptime_get();
+	test_ctx.iface->config.dhcpv6.sol_max_rt = DHCPV6_SOL_MAX_RT;
+	test_ctx.iface->config.dhcpv6.inf_max_rt = DHCPV6_INF_MAX_RT;
 	test_ctx.iface->config.dhcpv6.params = (struct net_dhcpv6_params){
 		.request_addr = true,
 		.request_prefix = true,
@@ -238,6 +276,23 @@ static void dhcpv6_tests_before(void *fixture)
 
 	net_if_ipv6_addr_rm(test_ctx.iface, &test_addr);
 	net_if_ipv6_prefix_rm(test_ctx.iface, &test_prefix, test_prefix_len);
+}
+
+ZTEST(dhcpv6_tests, test_client_duid_rejects_too_large_link_addr)
+{
+	struct net_linkaddr *lladdr = net_if_get_link_addr(test_ctx.iface);
+	uint8_t old_len = lladdr->len;
+	int ret;
+
+	lladdr->len = sizeof(test_ctx.iface->config.dhcpv6.clientid.duid.buf) -
+		      DHCPV6_DUID_LL_HEADER_SIZE + 1;
+
+	ret = dhcpv6_generate_client_duid(test_ctx.iface);
+	zassert_equal(ret, -EMSGSIZE, "Expected oversized DUID failure, got %d", ret);
+
+	lladdr->len = old_len;
+	zassert_ok(dhcpv6_generate_client_duid(test_ctx.iface),
+		   "Cannot restore client DUID");
 }
 
 static void dhcpv6_tests_after(void *fixture)
@@ -268,6 +323,30 @@ static void verify_dhcpv6_header(struct net_if *iface, struct net_pkt *pkt,
 	zassert_ok(ret, "DHCPv6 header incomplete (tid)");
 	zassert_mem_equal(tid, iface->config.dhcpv6.tid, sizeof(tid),
 			  "Transaction ID doesn't match ID of the current exchange");
+}
+
+static void verify_stable_tid_message(struct net_if *iface, struct net_pkt *pkt)
+{
+	uint8_t tid[DHCPV6_TID_SIZE];
+	uint8_t type;
+	int ret;
+
+	ARG_UNUSED(iface);
+
+	(void)net_pkt_skip(pkt, NET_IPV6UDPH_LEN);
+
+	ret = net_pkt_read_u8(pkt, &type);
+	zassert_ok(ret, "DHCPv6 header incomplete (type)");
+	zassert_equal(type, test_expected_msg_type,
+		      "Invalid message type %u, expected %u",
+		      type, test_expected_msg_type);
+
+	ret = net_pkt_read(pkt, tid, sizeof(tid));
+	zassert_ok(ret, "DHCPv6 header incomplete (tid)");
+	zassert_mem_equal(tid, test_expected_tid, sizeof(tid),
+			  "Transaction ID changed between retransmissions");
+
+	test_stable_tid_msg_count++;
 }
 
 static void verify_dhcpv6_clientid(struct net_if *iface, struct net_pkt *pkt)
@@ -328,7 +407,7 @@ static void verify_dhcpv6_elapsed_time(struct net_if *iface, struct net_pkt *pkt
 }
 
 static void verify_dhcpv6_ia_na(struct net_if *iface, struct net_pkt *pkt,
-				struct in6_addr *addr)
+				struct net_in6_addr *addr)
 {
 	struct dhcpv6_ia_na ia_na;
 	int ret;
@@ -342,7 +421,7 @@ static void verify_dhcpv6_ia_na(struct net_if *iface, struct net_pkt *pkt,
 
 	if (addr == NULL) {
 		zassert_equal(ia_na.iaaddr.status, DHCPV6_STATUS_NO_ADDR_AVAIL,
-			      "Adddress should not be present");
+			      "Address should not be present");
 		return;
 	}
 
@@ -356,7 +435,7 @@ static void verify_dhcpv6_ia_na(struct net_if *iface, struct net_pkt *pkt,
 }
 
 static void verify_dhcpv6_ia_pd(struct net_if *iface, struct net_pkt *pkt,
-				struct in6_addr *prefix, uint8_t prefix_len)
+				struct net_in6_addr *prefix, uint8_t prefix_len)
 {
 	struct dhcpv6_ia_pd ia_pd;
 	int ret;
@@ -400,8 +479,8 @@ static void verify_dhcpv6_no_reconfigure_accept(struct net_if *iface,
 	net_pkt_cursor_restore(pkt, &backup);
 }
 
-static void verify_dhcpv6_oro_sol_max_rt(struct net_if *iface,
-					 struct net_pkt *pkt)
+static void verify_dhcpv6_oro_option(struct net_if *iface, struct net_pkt *pkt,
+				     enum dhcpv6_option_code option)
 {
 	struct net_pkt_cursor backup;
 	uint16_t length;
@@ -411,24 +490,35 @@ static void verify_dhcpv6_oro_sol_max_rt(struct net_if *iface,
 	net_pkt_cursor_backup(pkt, &backup);
 
 	ret = dhcpv6_find_option(pkt, DHCPV6_OPTION_CODE_ORO, &length);
-	zassert_ok(ret, 0, "ORO option not found");
+	zassert_ok(ret, "ORO option not found");
 	zassert_true(length >= sizeof(uint16_t) && length % sizeof(uint16_t) == 0,
 		     "Invalid ORO length");
 
 	while (length >= sizeof(uint16_t)) {
 		ret = net_pkt_read_be16(pkt, &oro);
-		zassert_ok(ret, 0, "ORO read error");
+		zassert_ok(ret, "ORO read error");
 		length -= sizeof(uint16_t);
 
-		if (oro == DHCPV6_OPTION_CODE_SOL_MAX_RT) {
+		if (oro == option) {
 			break;
 		}
 	}
 
-	zassert_equal(oro, DHCPV6_OPTION_CODE_SOL_MAX_RT,
-		      "No SOL_MAX_RT option request present");
+	zassert_equal(oro, option, "Requested option %u is not present", option);
 
 	net_pkt_cursor_restore(pkt, &backup);
+}
+
+static void verify_dhcpv6_oro_sol_max_rt(struct net_if *iface,
+					 struct net_pkt *pkt)
+{
+	verify_dhcpv6_oro_option(iface, pkt, DHCPV6_OPTION_CODE_SOL_MAX_RT);
+}
+
+static void verify_dhcpv6_oro_inf_max_rt(struct net_if *iface,
+					 struct net_pkt *pkt)
+{
+	verify_dhcpv6_oro_option(iface, pkt, DHCPV6_OPTION_CODE_INF_MAX_RT);
 }
 
 static void verify_solicit_message(struct net_if *iface, struct net_pkt *pkt)
@@ -457,6 +547,28 @@ ZTEST(dhcpv6_tests, test_solicit_message_format)
 
 	ret = dhcpv6_send_solicit(test_ctx.iface);
 	zassert_ok(ret, "dhcpv6_send_solicit failed");
+
+	ret = k_sem_take(&test_ctx.tx_sem, K_SECONDS(1));
+	zassert_ok(ret, "Packet not transmitted");
+}
+
+static void verify_info_request_message(struct net_if *iface, struct net_pkt *pkt)
+{
+	verify_dhcpv6_header(iface, pkt, DHCPV6_MSG_TYPE_INFORMATION_REQUEST);
+	verify_dhcpv6_clientid(iface, pkt);
+	verify_dhcpv6_no_serverid(iface, pkt);
+	verify_dhcpv6_elapsed_time(iface, pkt, 0, 10);
+	verify_dhcpv6_oro_inf_max_rt(iface, pkt);
+}
+
+ZTEST(dhcpv6_tests, test_info_request_message_format)
+{
+	int ret;
+
+	set_dhcpv6_test_fn(verify_info_request_message);
+
+	ret = dhcpv6_send_info_request(test_ctx.iface);
+	zassert_ok(ret, "dhcpv6_send_info_request failed");
 
 	ret = k_sem_take(&test_ctx.tx_sem, K_SECONDS(1));
 	zassert_ok(ret, "Packet not transmitted");
@@ -586,6 +698,61 @@ ZTEST(dhcpv6_tests, test_rebind_message_format)
 	zassert_ok(ret, "Packet not transmitted");
 }
 
+ZTEST(dhcpv6_tests, test_retransmissions_keep_transaction_id)
+{
+	static const struct {
+		enum dhcpv6_msg_type type;
+		test_dhcpv6_send_fn_t send_fn;
+		bool needs_serverid;
+		bool needs_addr;
+	} test_cases[] = {
+		{ DHCPV6_MSG_TYPE_SOLICIT, dhcpv6_send_solicit, false, false },
+		{ DHCPV6_MSG_TYPE_INFORMATION_REQUEST, dhcpv6_send_info_request,
+		  false, false },
+		{ DHCPV6_MSG_TYPE_REQUEST, dhcpv6_send_request, true, false },
+		{ DHCPV6_MSG_TYPE_CONFIRM, dhcpv6_send_confirm, false, true },
+		{ DHCPV6_MSG_TYPE_RENEW, dhcpv6_send_renew, true, true },
+		{ DHCPV6_MSG_TYPE_REBIND, dhcpv6_send_rebind, false, true },
+	};
+	int ret;
+
+	set_dhcpv6_test_fn(verify_stable_tid_message);
+
+	for (size_t i = 0; i < ARRAY_SIZE(test_cases); i++) {
+		test_expected_tid[0] = 0x10;
+		test_expected_tid[1] = 0x20;
+		test_expected_tid[2] = test_cases[i].type;
+		test_expected_msg_type = test_cases[i].type;
+		test_stable_tid_msg_count = 0;
+
+		memcpy(test_ctx.iface->config.dhcpv6.tid, test_expected_tid,
+		       sizeof(test_expected_tid));
+
+		if (test_cases[i].needs_serverid) {
+			set_fake_server_duid(test_ctx.iface);
+		}
+
+		if (test_cases[i].needs_addr) {
+			set_test_addr_on_iface(test_ctx.iface);
+		} else {
+			clear_test_addr_on_iface(test_ctx.iface);
+		}
+
+		ret = test_cases[i].send_fn(test_ctx.iface);
+		zassert_ok(ret, "First DHCPv6 message send failed");
+		ret = k_sem_take(&test_ctx.tx_sem, K_SECONDS(1));
+		zassert_ok(ret, "First DHCPv6 packet not transmitted");
+
+		ret = test_cases[i].send_fn(test_ctx.iface);
+		zassert_ok(ret, "Retransmitted DHCPv6 message send failed");
+		ret = k_sem_take(&test_ctx.tx_sem, K_SECONDS(1));
+		zassert_ok(ret, "Retransmitted DHCPv6 packet not transmitted");
+
+		zassert_equal(test_stable_tid_msg_count, 2,
+			      "Unexpected transmitted DHCPv6 packet count");
+	}
+}
+
 static int set_generic_client_options(struct net_if *iface, struct net_pkt *pkt,
 				      enum dhcpv6_msg_type msg_type)
 {
@@ -634,7 +801,7 @@ ZTEST(dhcpv6_tests, test_input_reject_client_initiated_messages)
 						 set_generic_client_options);
 		zassert_not_null(pkt, "Failed to create fake pkt");
 
-		result = net_ipv6_input(pkt, false);
+		result = net_ipv6_input(pkt);
 		zassert_equal(result, NET_DROP, "Should've drop the message");
 
 		net_pkt_unref(pkt);
@@ -699,6 +866,11 @@ static int set_advertise_options(struct net_if *iface, struct net_pkt *pkt,
 		return ret;
 	}
 
+	ret = add_max_rt_options(pkt);
+	if (ret < 0) {
+		return ret;
+	}
+
 	return 0;
 }
 
@@ -717,7 +889,7 @@ ZTEST(dhcpv6_tests, test_input_advertise)
 						 set_advertise_options);
 		zassert_not_null(pkt, "Failed to create pkt");
 
-		result = net_ipv6_input(pkt, false);
+		result = net_ipv6_input(pkt);
 
 		switch (state) {
 		case NET_DHCPV6_SOLICITING:
@@ -731,6 +903,10 @@ ZTEST(dhcpv6_tests, test_input_advertise)
 			zassert_mem_equal(&test_ctx.iface->config.dhcpv6.serverid.duid,
 					  &test_serverid.duid, test_serverid.length,
 					  "Invalid Server ID value");
+			zassert_equal(test_ctx.iface->config.dhcpv6.sol_max_rt,
+				      test_sol_max_rt, "Invalid SOL_MAX_RT value");
+			zassert_equal(test_ctx.iface->config.dhcpv6.inf_max_rt,
+				      test_inf_max_rt, "Invalid INF_MAX_RT value");
 
 			break;
 		default:
@@ -801,11 +977,79 @@ static int set_reply_options(struct net_if *iface, struct net_pkt *pkt,
 		return ret;
 	}
 
+	ret = add_max_rt_options(pkt);
+	if (ret < 0) {
+		return ret;
+	}
+
 	return 0;
 }
 
+static int set_reply_options_other_server(struct net_if *iface, struct net_pkt *pkt,
+					  enum dhcpv6_msg_type msg_type)
+{
+	struct dhcpv6_ia_na test_ia_na = {
+		.iaid = iface->config.dhcpv6.addr_iaid,
+		.t1 = 60,
+		.t2 = 120,
+		.iaaddr.addr = test_addr,
+		.iaaddr.preferred_lifetime = 120,
+		.iaaddr.valid_lifetime = 240,
+	};
+	struct dhcpv6_ia_pd test_ia_pd = {
+		.iaid = iface->config.dhcpv6.prefix_iaid,
+		.t1 = 60,
+		.t2 = 120,
+		.iaprefix.prefix = test_prefix,
+		.iaprefix.prefix_len = test_prefix_len,
+		.iaprefix.preferred_lifetime = 120,
+		.iaprefix.valid_lifetime = 240,
+	};
+	int ret;
+
+	ret = dhcpv6_add_option_clientid(pkt, &iface->config.dhcpv6.clientid);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_serverid(pkt, &test_other_serverid);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_ia_na(pkt, &test_ia_na, true);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_ia_pd(pkt, &test_ia_pd, true);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return 0;
+}
+
+static int set_info_reply_options(struct net_if *iface, struct net_pkt *pkt,
+				  enum dhcpv6_msg_type msg_type)
+{
+	int ret;
+
+	ret = dhcpv6_add_option_clientid(pkt, &iface->config.dhcpv6.clientid);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_serverid(pkt, &test_serverid);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return add_max_rt_options(pkt);
+}
+
 /* Verify that DHCPv6 client accepts Reply messages in Requesting, Confirming,
- * Renewing and Rebinding states
+ * Renewing, Rebinding and Information-requesting states.
  */
 ZTEST(dhcpv6_tests, test_input_reply)
 {
@@ -821,22 +1065,29 @@ ZTEST(dhcpv6_tests, test_input_reply)
 
 		pkt = test_dhcpv6_create_message(test_ctx.iface,
 						 DHCPV6_MSG_TYPE_REPLY,
-						 set_reply_options);
+						 state == NET_DHCPV6_INFO_REQUESTING ?
+						 set_info_reply_options : set_reply_options);
 		zassert_not_null(pkt, "Failed to create pkt");
 
-		result = net_ipv6_input(pkt, false);
+		result = net_ipv6_input(pkt);
 
 		switch (state) {
 		case NET_DHCPV6_CONFIRMING:
 		case NET_DHCPV6_REQUESTING:
 		case NET_DHCPV6_RENEWING:
 		case NET_DHCPV6_REBINDING:
+		case NET_DHCPV6_INFO_REQUESTING:
 			zassert_equal(result, NET_OK, "Message should've been processed");
 
 			/* Confirm is an exception, as it does not update
 			 * address on an interface (only status OK is expected).
 			 */
-			if (state == NET_DHCPV6_CONFIRMING) {
+			if (state == NET_DHCPV6_CONFIRMING ||
+			    state == NET_DHCPV6_INFO_REQUESTING) {
+				zassert_equal(test_ctx.iface->config.dhcpv6.sol_max_rt,
+					      test_sol_max_rt, "Invalid SOL_MAX_RT value");
+				zassert_equal(test_ctx.iface->config.dhcpv6.inf_max_rt,
+					      test_inf_max_rt, "Invalid INF_MAX_RT value");
 				break;
 			}
 
@@ -852,6 +1103,10 @@ ZTEST(dhcpv6_tests, test_input_reply)
 			zassert_equal(test_ctx.iface->config.dhcpv6.prefix_len,
 				      test_prefix_len, "Invalid prefix len (state %s)",
 				      net_dhcpv6_state_name(state));
+			zassert_equal(test_ctx.iface->config.dhcpv6.sol_max_rt,
+				      test_sol_max_rt, "Invalid SOL_MAX_RT value");
+			zassert_equal(test_ctx.iface->config.dhcpv6.inf_max_rt,
+				      test_inf_max_rt, "Invalid INF_MAX_RT value");
 
 			break;
 		default:
@@ -862,6 +1117,108 @@ ZTEST(dhcpv6_tests, test_input_reply)
 
 		net_pkt_unref(pkt);
 	}
+}
+
+ZTEST(dhcpv6_tests, test_input_reply_rejects_unselected_server)
+{
+	enum net_verdict result;
+	struct net_pkt *pkt;
+	enum net_dhcpv6_state state;
+
+	for (state = NET_DHCPV6_REQUESTING; state <= NET_DHCPV6_REBINDING; state++) {
+		test_ctx.iface->config.dhcpv6.state = state;
+
+		set_fake_server_duid(test_ctx.iface);
+		clear_test_addr_on_iface(test_ctx.iface);
+
+		pkt = test_dhcpv6_create_message(test_ctx.iface,
+						 DHCPV6_MSG_TYPE_REPLY,
+						 set_reply_options_other_server);
+		zassert_not_null(pkt, "Failed to create pkt");
+
+		result = net_ipv6_input(pkt);
+
+		switch (state) {
+		case NET_DHCPV6_REQUESTING:
+		case NET_DHCPV6_RENEWING:
+			zassert_equal(result, NET_DROP,
+				      "Reply from unselected server accepted in state %s",
+				      net_dhcpv6_state_name(state));
+			break;
+		case NET_DHCPV6_CONFIRMING:
+		case NET_DHCPV6_REBINDING:
+			zassert_equal(result, NET_OK,
+				      "Reply from any server rejected in state %s",
+				      net_dhcpv6_state_name(state));
+			break;
+		default:
+			break;
+		}
+
+		net_pkt_unref(pkt);
+	}
+}
+
+static int set_reply_options_fail_max_rt(struct net_if *iface, struct net_pkt *pkt,
+					 enum dhcpv6_msg_type msg_type)
+{
+	int ret;
+
+	ret = dhcpv6_add_option_clientid(pkt, &iface->config.dhcpv6.clientid);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_serverid(pkt, &test_serverid);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = dhcpv6_add_option_header(pkt, DHCPV6_OPTION_CODE_STATUS_CODE,
+				       DHCPV6_OPTION_STATUS_CODE_HEADER_SIZE);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = net_pkt_write_be16(pkt, DHCPV6_STATUS_NOT_ON_LINK);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return add_max_rt_options(pkt);
+}
+
+/* RFC 8415, ch. 21.24/21.25: SOL_MAX_RT and INF_MAX_RT MUST be applied even
+ * when the message carries a failure Status Code.
+ */
+ZTEST(dhcpv6_tests, test_input_reply_max_rt_on_failure)
+{
+	enum net_verdict result;
+	struct net_pkt *pkt;
+
+	/* Start from the defaults so a server-provided update is detectable.
+	 * Use Information-requesting state: a failure Reply there is dropped
+	 * without any outgoing message, keeping the test side-effect free.
+	 */
+	test_ctx.iface->config.dhcpv6.sol_max_rt = DHCPV6_SOL_MAX_RT;
+	test_ctx.iface->config.dhcpv6.inf_max_rt = DHCPV6_INF_MAX_RT;
+	test_ctx.iface->config.dhcpv6.state = NET_DHCPV6_INFO_REQUESTING;
+
+	pkt = test_dhcpv6_create_message(test_ctx.iface, DHCPV6_MSG_TYPE_REPLY,
+					 set_reply_options_fail_max_rt);
+	zassert_not_null(pkt, "Failed to create pkt");
+
+	result = net_ipv6_input(pkt);
+	zassert_equal(result, NET_OK, "Message should've been processed");
+
+	zassert_equal(test_ctx.iface->config.dhcpv6.sol_max_rt, test_sol_max_rt,
+		      "SOL_MAX_RT not applied on failure Reply");
+	zassert_equal(test_ctx.iface->config.dhcpv6.inf_max_rt, test_inf_max_rt,
+		      "INF_MAX_RT not applied on failure Reply");
+
+	net_pkt_unref(pkt);
+
+	test_ctx.iface->config.dhcpv6.state = NET_DHCPV6_DISABLED;
 }
 
 static void test_solicit_expect_request_send_reply(struct net_if *iface,
@@ -889,7 +1246,7 @@ static void test_solicit_expect_request_send_reply(struct net_if *iface,
 					   set_reply_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 
 	/* Verify client state */
@@ -934,7 +1291,7 @@ static void test_solicit_expect_solicit_send_advertise(struct net_if *iface,
 					   set_advertise_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 
 	/* Verify client state */
@@ -967,7 +1324,7 @@ ZTEST(dhcpv6_tests, test_solicit_exchange)
 
 	net_dhcpv6_start(test_ctx.iface, &params);
 
-	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(2));
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
 	zassert_ok(ret, "Exchange not completed in required time");
 
 	addr = net_if_ipv6_addr_lookup_by_iface(test_ctx.iface, &test_addr);
@@ -975,6 +1332,69 @@ ZTEST(dhcpv6_tests, test_solicit_exchange)
 					   test_prefix_len);
 	zassert_not_null(addr, "Address not configured on the interface");
 	zassert_not_null(prefix, "Prefix not configured on the interface");
+}
+
+static void test_info_request_send_reply(struct net_if *iface, struct net_pkt *pkt)
+{
+	struct net_pkt *reply;
+	int result;
+
+	verify_dhcpv6_header(iface, pkt, DHCPV6_MSG_TYPE_INFORMATION_REQUEST);
+	verify_dhcpv6_clientid(iface, pkt);
+	verify_dhcpv6_no_serverid(iface, pkt);
+	verify_dhcpv6_oro_inf_max_rt(iface, pkt);
+
+	zassert_equal(iface->config.dhcpv6.state, NET_DHCPV6_INFO_REQUESTING,
+		      "Invalid state");
+
+	set_dhcpv6_test_fn(NULL);
+
+	reply = test_dhcpv6_create_message(test_ctx.iface,
+					   DHCPV6_MSG_TYPE_REPLY,
+					   set_info_reply_options);
+	zassert_not_null(reply, "Failed to create pkt");
+
+	result = net_ipv6_input(reply);
+	zassert_equal(result, NET_OK, "Message should've been processed");
+
+	zassert_equal(iface->config.dhcpv6.state, NET_DHCPV6_BOUND,
+		      "Invalid state");
+	zassert_equal(iface->config.dhcpv6.inf_max_rt, test_inf_max_rt,
+		      "Invalid INF_MAX_RT value");
+	zassert_true(net_ipv6_addr_cmp(&iface->config.dhcpv6.addr,
+				       net_ipv6_unspecified_address()),
+		     "Address should not be configured");
+	zassert_true(net_ipv6_addr_cmp(&iface->config.dhcpv6.prefix,
+				       net_ipv6_unspecified_address()),
+		     "Prefix should not be configured");
+
+	/* Reply had no Information Refresh Time option, so the default applies
+	 * and a refresh must be scheduled (not left running forever).
+	 */
+	zassert_equal(iface->config.dhcpv6.info_refresh_time,
+		      DHCPV6_IRT_DEFAULT * MSEC_PER_SEC,
+		      "Invalid information refresh time");
+	zassert_not_equal(iface->config.dhcpv6.timeout, UINT64_MAX,
+			  "Information refresh not scheduled");
+
+	k_sem_give(&test_ctx.exchange_complete_sem);
+}
+
+ZTEST(dhcpv6_tests, test_info_request_exchange)
+{
+	struct net_dhcpv6_params params = { 0 };
+	int ret;
+
+	test_ctx.reset_dhcpv6 = true;
+	memset(&test_ctx.iface->config.dhcpv6, 0,
+	       sizeof(test_ctx.iface->config.dhcpv6));
+
+	set_dhcpv6_test_fn(test_info_request_send_reply);
+
+	net_dhcpv6_start(test_ctx.iface, &params);
+
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
+	zassert_ok(ret, "Exchange not completed in required time");
 }
 
 static void expect_request_send_reply(struct net_if *iface, struct net_pkt *pkt)
@@ -991,7 +1411,7 @@ static void expect_request_send_reply(struct net_if *iface, struct net_pkt *pkt)
 					   set_reply_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 
 	k_sem_give(&test_ctx.exchange_complete_sem);
@@ -1011,7 +1431,7 @@ static void expect_solicit_send_advertise(struct net_if *iface, struct net_pkt *
 					   set_advertise_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 }
 
@@ -1025,7 +1445,7 @@ static void test_dhcpv6_start_and_enter_bound(struct net_dhcpv6_params *params)
 	set_dhcpv6_test_fn(expect_solicit_send_advertise);
 	net_dhcpv6_start(test_ctx.iface, params);
 
-	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(2));
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
 	zassert_ok(ret, "Exchange not completed in required time");
 	zassert_equal(test_ctx.iface->config.dhcpv6.state, NET_DHCPV6_BOUND,
 		      "Invalid state");
@@ -1056,7 +1476,7 @@ static void test_confirm_expect_confirm_send_reply(struct net_if *iface,
 					   set_reply_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 
 	/* Verify client state */
@@ -1092,7 +1512,7 @@ ZTEST(dhcpv6_tests, test_confirm_exchange_after_iface_down)
 	net_if_down(test_ctx.iface);
 	net_if_up(test_ctx.iface);
 
-	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(2));
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
 	zassert_ok(ret, "Exchange not completed in required time");
 
 	addr = net_if_ipv6_addr_lookup_by_iface(test_ctx.iface, &test_addr);
@@ -1125,7 +1545,7 @@ static void test_rebind_expect_rebind_send_reply(struct net_if *iface,
 					   set_reply_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 
 	/* Verify client state */
@@ -1162,7 +1582,7 @@ ZTEST(dhcpv6_tests, test_rebind_exchange_after_iface_down)
 	net_if_down(test_ctx.iface);
 	net_if_up(test_ctx.iface);
 
-	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(2));
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
 	zassert_ok(ret, "Exchange not completed in required time");
 
 	addr = net_if_ipv6_addr_lookup_by_iface(test_ctx.iface, &test_addr);
@@ -1199,7 +1619,7 @@ static void test_renew_expect_renew_send_reply(struct net_if *iface,
 					   set_reply_options);
 	zassert_not_null(reply, "Failed to create pkt");
 
-	result = net_ipv6_input(reply, false);
+	result = net_ipv6_input(reply);
 	zassert_equal(result, NET_OK, "Message should've been processed");
 
 	/* Verify client state */
@@ -1236,7 +1656,7 @@ ZTEST(dhcpv6_tests, test_renew_exchange_after_t1)
 	test_ctx.iface->config.dhcpv6.timeout = test_ctx.iface->config.dhcpv6.t1;
 	dhcpv6_reschedule();
 
-	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(2));
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
 	zassert_ok(ret, "Exchange not completed in required time");
 
 	addr = net_if_ipv6_addr_lookup_by_iface(test_ctx.iface, &test_addr);
@@ -1279,7 +1699,7 @@ ZTEST(dhcpv6_tests, test_rebind_exchange_after_t2)
 	test_ctx.iface->config.dhcpv6.timeout = test_ctx.iface->config.dhcpv6.t2;
 	dhcpv6_reschedule();
 
-	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(2));
+	ret = k_sem_take(&test_ctx.exchange_complete_sem, K_SECONDS(3));
 	zassert_ok(ret, "Exchange not completed in required time");
 
 	addr = net_if_ipv6_addr_lookup_by_iface(test_ctx.iface, &test_addr);

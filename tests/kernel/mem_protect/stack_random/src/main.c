@@ -6,6 +6,7 @@
 
 #include <zephyr/ztest.h>
 #include <zephyr/kernel.h>
+#include <zephyr/test_toolchain.h>
 
 #define STACKSIZE       2048
 #define THREAD_COUNT	64
@@ -18,11 +19,8 @@ volatile unsigned int changed;
  * The `alternate_thread` function deliberately makes use of a dangling pointer
  * in order to test stack randomisation.
  */
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wpragmas"
-#pragma GCC diagnostic ignored "-Wdangling-pointer"
-#endif
+TOOLCHAIN_DISABLE_WARNING(TOOLCHAIN_WARNING_PRAGMAS)
+TOOLCHAIN_DISABLE_GCC_WARNING(TOOLCHAIN_WARNING_DANGLING_POINTER)
 
 void alternate_thread(void *p1, void *p2, void *p3)
 {
@@ -46,25 +44,46 @@ void alternate_thread(void *p1, void *p2, void *p3)
 	last_sp = sp_val;
 }
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+TOOLCHAIN_ENABLE_GCC_WARNING(TOOLCHAIN_WARNING_DANGLING_POINTER)
+TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_PRAGMAS)
 
 K_THREAD_STACK_DEFINE(alt_thread_stack_area, STACKSIZE);
 static struct k_thread alt_thread_data;
 
 /**
- * @brief Test stack pointer randomization
+ * @brief Verify that thread stack pointers are randomized between threads.
  *
  * @ingroup kernel_memprotect_tests
  *
+ * @details
+ * With stack pointer randomization the kernel offsets each thread's initial
+ * stack pointer by a random amount, so an attacker cannot predict where a
+ * thread's stack begins. The same stack area is reused by many short-lived
+ * threads in turn; each one records the address of a local variable, which
+ * tracks its initial stack pointer, and compares it against the address the
+ * previous thread saw. Without randomization every thread would start at the
+ * same offset and the address would never change.
+ *
+ * Test steps:
+ * - Lower the test thread to a preemptible priority so each spawned thread
+ *   runs to completion.
+ * - Create 64 threads in turn on one stack area, at the highest priority.
+ * - In each thread, take the address of a local variable and compare it with
+ *   the address recorded by the previous thread, counting the differences.
+ * - Restore the test thread's priority.
+ *
+ * Expected result:
+ * - The observed stack pointer differs between threads at least once, so the
+ *   initial stack pointer is not fixed.
+ *
+ * @see k_thread_create()
  */
 ZTEST(stack_pointer_randomness, test_stack_pt_randomization)
 {
 	int i, sp_changed;
 	int old_prio = k_thread_priority_get(k_current_get());
 
-	/* Set preemptable priority */
+	/* Set preemptible priority */
 	k_thread_priority_set(k_current_get(), K_PRIO_PREEMPT(1));
 
 	printk("Test Stack pointer randomization\n");

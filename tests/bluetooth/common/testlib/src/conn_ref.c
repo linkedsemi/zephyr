@@ -3,11 +3,11 @@
  */
 
 #include <stddef.h>
-
-#include <zephyr/bluetooth/conn.h>
-#include <zephyr/sys/atomic_builtin.h>
-
+#include <stdint.h>
 #include <testlib/conn.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/sys/__assert.h>
+#include <zephyr/sys/atomic_builtin.h>
 
 /**
  * @file
@@ -26,7 +26,7 @@
  * would be overwritten.
  *
  * The functions in this file are intended to guard against undefined
- * behavor due to NULL pointer dereferencing. They will assert on any
+ * behavior due to NULL pointer dereferencing. They will assert on any
  * relevant pointers.
  */
 

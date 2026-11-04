@@ -1,11 +1,11 @@
 /*
  * Copyright (c) 2016 Intel Corporation.
+ * Copyright 2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* Sample to illustrate the usage of crypto APIs. The sample plaintext
- * and ciphertexts used for crosschecking are from TinyCrypt.
+/* Sample to illustrate the usage of crypto APIs.
  */
 
 #include <zephyr/device.h>
@@ -17,22 +17,36 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(main);
 
-#ifdef CONFIG_CRYPTO_TINYCRYPT_SHIM
-#define CRYPTO_DRV_NAME CONFIG_CRYPTO_TINYCRYPT_SHIM_DRV_NAME
-#elif CONFIG_CRYPTO_MBEDTLS_SHIM
+#ifdef CONFIG_CRYPTO_MBEDTLS_SHIM
 #define CRYPTO_DRV_NAME CONFIG_CRYPTO_MBEDTLS_SHIM_DRV_NAME
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_cryp)
 #define CRYPTO_DEV_COMPAT st_stm32_cryp
 #elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32_aes)
 #define CRYPTO_DEV_COMPAT st_stm32_aes
+#elif DT_HAS_COMPAT_STATUS_OKAY(microchip_aes_g1)
+#define CRYPTO_DEV_COMPAT microchip_aes_g1
 #elif DT_HAS_COMPAT_STATUS_OKAY(nxp_mcux_dcp)
 #define CRYPTO_DEV_COMPAT nxp_mcux_dcp
+#elif DT_HAS_COMPAT_STATUS_OKAY(nxp_s32_crypto_hse_mu)
+#define CRYPTO_DEV_COMPAT nxp_s32_crypto_hse_mu
 #elif CONFIG_CRYPTO_NRF_ECB
 #define CRYPTO_DEV_COMPAT nordic_nrf_ecb
 #elif DT_HAS_COMPAT_STATUS_OKAY(renesas_smartbond_crypto)
 #define CRYPTO_DEV_COMPAT renesas_smartbond_crypto
+#elif DT_HAS_COMPAT_STATUS_OKAY(ti_cc23x0_aes)
+#define CRYPTO_DEV_COMPAT ti_cc23x0_aes
 #elif CONFIG_CRYPTO_SI32
 #define CRYPTO_DEV_COMPAT silabs_si32_aes
+#elif CONFIG_CRYPTO_ESP32_AES
+#define CRYPTO_DEV_COMPAT espressif_esp32_aes
+#elif DT_HAS_COMPAT_STATUS_OKAY(sifli_sf32lb_crypto)
+#define CRYPTO_DEV_COMPAT sifli_sf32lb_crypto
+#elif DT_HAS_COMPAT_STATUS_OKAY(bflb_sec_eng_aes)
+#define CRYPTO_DEV_COMPAT bflb_sec_eng_aes
+#elif DT_HAS_COMPAT_STATUS_OKAY(realtek_bee_aes)
+#define CRYPTO_DEV_COMPAT realtek_bee_aes
+#elif CONFIG_CRYPTO_MSPM0_AES
+#define CRYPTO_DEV_COMPAT ti_mspm0_aes
 #else
 #error "You need to enable one crypto device"
 #endif
@@ -90,7 +104,7 @@ int validate_hw_compatibility(const struct device *dev)
 	flags = crypto_query_hwcaps(dev);
 	if ((flags & CAP_RAW_KEY) == 0U) {
 		LOG_INF("Please provision the key separately "
-			"as the module doesnt support a raw key");
+			"as the module doesn't support a raw key");
 		return -1;
 	}
 
@@ -263,7 +277,6 @@ void cbc_mode(const struct device *dev)
 		return;
 	}
 
-	/* TinyCrypt keeps IV at the start of encrypted buffer */
 	if (cipher_cbc_op(&ini, &decrypt, encrypted)) {
 		LOG_ERR("CBC mode DECRYPT - Failed");
 		goto out;
@@ -280,6 +293,171 @@ void cbc_mode(const struct device *dev)
 	}
 
 	LOG_INF("CBC mode DECRYPT - Match");
+out:
+	cipher_free_session(dev, &ini);
+}
+
+static const uint8_t cfb_ciphertext[64] = {
+	0x3b, 0x3f, 0xd9, 0x2e, 0xb7, 0x2d, 0xad, 0x20, 0x33, 0x34, 0x49, 0xf8,
+	0xe8, 0x3c, 0xfb, 0x4a, 0xc8, 0xa6, 0x45, 0x37, 0xa0, 0xb3, 0xa9, 0x3f,
+	0xcd, 0xe3, 0xcd, 0xad, 0x9f, 0x1c, 0xe5, 0x8b, 0x26, 0x75, 0x1f, 0x67,
+	0xa3, 0xcb, 0xb1, 0x40, 0xb1, 0x80, 0x8c, 0xf1, 0x87, 0xa4, 0xf4, 0xdf,
+	0xc0, 0x4b, 0x05, 0x35, 0x7c, 0x5d, 0x1c, 0x0e, 0xea, 0xc4, 0xc6, 0x6f,
+	0x9f, 0xf7, 0xf2, 0xe6
+};
+
+void cfb_mode(const struct device *dev)
+{
+	uint8_t encrypted[64] __aligned(IO_ALIGNMENT_BYTES) = {0};
+	uint8_t decrypted[64] __aligned(IO_ALIGNMENT_BYTES) = {0};
+	struct cipher_ctx ini = {
+		.keylen = sizeof(key),
+		.key.bit_stream = key,
+		.flags = cap_flags,
+	};
+	struct cipher_pkt encrypt = {
+		.in_buf = plaintext,
+		.in_len = sizeof(plaintext),
+		.out_buf_max = sizeof(encrypted),
+		.out_buf = encrypted,
+	};
+	struct cipher_pkt decrypt = {
+		.in_buf = encrypt.out_buf,
+		.in_len = sizeof(encrypted),
+		.out_buf = decrypted,
+		.out_buf_max = sizeof(decrypted),
+	};
+
+	static uint8_t iv[16] = {
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+	};
+
+	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES, CRYPTO_CIPHER_MODE_CFB,
+				 CRYPTO_CIPHER_OP_ENCRYPT)) {
+		return;
+	}
+
+	if (cipher_cfb_op(&ini, &encrypt, iv)) {
+		LOG_ERR("CFB mode ENCRYPT - Failed");
+		goto out;
+	}
+
+	LOG_INF("Output length (encryption): %d", encrypt.out_len);
+
+	if (memcmp(encrypt.out_buf, cfb_ciphertext, sizeof(cfb_ciphertext))) {
+		LOG_ERR("CFB mode ENCRYPT - Mismatch between expected and "
+			    "returned cipher text");
+		print_buffer_comparison(cfb_ciphertext, encrypt.out_buf,
+					sizeof(cfb_ciphertext));
+		goto out;
+	}
+
+	LOG_INF("CFB mode ENCRYPT - Match");
+	cipher_free_session(dev, &ini);
+
+	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES, CRYPTO_CIPHER_MODE_CFB,
+				 CRYPTO_CIPHER_OP_DECRYPT)) {
+		return;
+	}
+
+	if (cipher_cfb_op(&ini, &decrypt, iv)) {
+		LOG_ERR("CFB mode DECRYPT - Failed");
+		goto out;
+	}
+
+	LOG_INF("Output length (decryption): %d", decrypt.out_len);
+
+	if (memcmp(decrypt.out_buf, plaintext, sizeof(plaintext))) {
+		LOG_ERR("CFB mode DECRYPT - Mismatch between plaintext and "
+			    "decrypted cipher text");
+		print_buffer_comparison(plaintext, decrypt.out_buf, sizeof(plaintext));
+		goto out;
+	}
+
+	LOG_INF("CFB mode DECRYPT - Match");
+out:
+	cipher_free_session(dev, &ini);
+}
+
+static const uint8_t ofb_ciphertext[64] = {
+	0x3b, 0x3f, 0xd9, 0x2e, 0xb7, 0x2d, 0xad, 0x20, 0x33, 0x34, 0x49, 0xf8,
+	0xe8, 0x3c, 0xfb, 0x4a, 0x77, 0x89, 0x50, 0x8d, 0x16, 0x91, 0x8f, 0x03,
+	0xf5, 0x3c, 0x52, 0xda, 0xc5, 0x4e, 0xd8, 0x25, 0x97, 0x40, 0x05, 0x1e,
+	0x9c, 0x5f, 0xec, 0xf6, 0x43, 0x44, 0xf7, 0xa8, 0x22, 0x60, 0xed, 0xcc,
+	0x30, 0x4c, 0x65, 0x28, 0xf6, 0x59, 0xc7, 0x78, 0x66, 0xa5, 0x10, 0xd9,
+	0xc1, 0xd6, 0xae, 0x5e
+};
+
+void ofb_mode(const struct device *dev)
+{
+	uint8_t encrypted[64] __aligned(IO_ALIGNMENT_BYTES) = {0};
+	uint8_t decrypted[64] __aligned(IO_ALIGNMENT_BYTES) = {0};
+	struct cipher_ctx ini = {
+		.keylen = sizeof(key),
+		.key.bit_stream = key,
+		.flags = cap_flags,
+	};
+	struct cipher_pkt encrypt = {
+		.in_buf = plaintext,
+		.in_len = sizeof(plaintext),
+		.out_buf_max = sizeof(encrypted),
+		.out_buf = encrypted,
+	};
+	struct cipher_pkt decrypt = {
+		.in_buf = encrypt.out_buf,
+		.in_len = sizeof(encrypted),
+		.out_buf = decrypted,
+		.out_buf_max = sizeof(decrypted),
+	};
+
+	static uint8_t iv[16] = {
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+		0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f
+	};
+
+	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES, CRYPTO_CIPHER_MODE_OFB,
+				 CRYPTO_CIPHER_OP_ENCRYPT)) {
+		return;
+	}
+
+	if (cipher_ofb_op(&ini, &encrypt, iv)) {
+		LOG_ERR("OFB mode ENCRYPT - Failed");
+		goto out;
+	}
+
+	LOG_INF("Output length (encryption): %d", encrypt.out_len);
+
+	if (memcmp(encrypt.out_buf, ofb_ciphertext, sizeof(ofb_ciphertext))) {
+		LOG_ERR("OFB mode ENCRYPT - Mismatch between expected and "
+			    "returned cipher text");
+		print_buffer_comparison(ofb_ciphertext, encrypt.out_buf, sizeof(ofb_ciphertext));
+		goto out;
+	}
+
+	LOG_INF("OFB mode ENCRYPT - Match");
+	cipher_free_session(dev, &ini);
+
+	if (cipher_begin_session(dev, &ini, CRYPTO_CIPHER_ALGO_AES, CRYPTO_CIPHER_MODE_OFB,
+				 CRYPTO_CIPHER_OP_DECRYPT)) {
+		return;
+	}
+
+	if (cipher_ofb_op(&ini, &decrypt, iv)) {
+		LOG_ERR("OFB mode DECRYPT - Failed");
+		goto out;
+	}
+
+	LOG_INF("Output length (decryption): %d", decrypt.out_len);
+
+	if (memcmp(decrypt.out_buf, plaintext, sizeof(plaintext))) {
+		LOG_ERR("OFB mode DECRYPT - Mismatch between plaintext and "
+			    "decrypted cipher text");
+		print_buffer_comparison(plaintext, decrypt.out_buf, sizeof(plaintext));
+		goto out;
+	}
+
+	LOG_INF("OFB mode DECRYPT - Match");
 out:
 	cipher_free_session(dev, &ini);
 }
@@ -396,7 +574,7 @@ static const uint8_t ccm_expected[31] = {0x58, 0x8c, 0x97, 0x9a, 0x61, 0xc6, 0x6
 void ccm_mode(const struct device *dev)
 {
 	uint8_t encrypted[50] __aligned(IO_ALIGNMENT_BYTES);
-	uint8_t decrypted[25] __aligned(IO_ALIGNMENT_BYTES);
+	uint8_t decrypted[32] __aligned(IO_ALIGNMENT_BYTES);
 	struct cipher_ctx ini = {
 		.keylen = sizeof(ccm_key),
 		.key.bit_stream = ccm_key,
@@ -416,12 +594,6 @@ void ccm_mode(const struct device *dev)
 		.ad = ccm_hdr,
 		.ad_len = sizeof(ccm_hdr),
 		.pkt = &encrypt,
-		/* TinyCrypt always puts the tag at the end of the ciphered
-		 * text, but other library such as mbedtls might be more
-		 * flexible and can take a different buffer for it.  So to
-		 * make sure test passes on all backends: enforcing the tag
-		 * buffer to be after the ciphered text.
-		 */
 		.tag = encrypted + sizeof(ccm_data),
 	};
 	struct cipher_pkt decrypt = {
@@ -528,12 +700,6 @@ void gcm_mode(const struct device *dev)
 		.ad = gcm_hdr,
 		.ad_len = sizeof(gcm_hdr),
 		.pkt = &encrypt,
-		/* TinyCrypt always puts the tag at the end of the ciphered
-		 * text, but other library such as mbedtls might be more
-		 * flexible and can take a different buffer for it.  So to
-		 * make sure test passes on all backends: enforcing the tag
-		 * buffer to be after the ciphered text.
-		 */
 		.tag = encrypted + sizeof(gcm_data),
 	};
 	struct cipher_pkt decrypt = {
@@ -620,6 +786,8 @@ int main(void)
 	const struct mode_test modes[] = {
 		{ .mode = "ECB Mode", .mode_func = ecb_mode },
 		{ .mode = "CBC Mode", .mode_func = cbc_mode },
+		{ .mode = "CFB Mode", .mode_func = cfb_mode },
+		{ .mode = "OFB Mode", .mode_func = ofb_mode },
 		{ .mode = "CTR Mode", .mode_func = ctr_mode },
 		{ .mode = "CCM Mode", .mode_func = ccm_mode },
 		{ .mode = "GCM Mode", .mode_func = gcm_mode },

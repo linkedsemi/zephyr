@@ -17,7 +17,7 @@ struct parameter {
 	uintptr_t value;
 };
 
-#ifndef KERNEL
+#ifdef ZTEST_UNITTEST
 
 #include <stdlib.h>
 #include <stdarg.h>
@@ -64,7 +64,7 @@ int snprintk(char *str, size_t size, const char *fmt, ...)
 	int ret;
 
 	va_start(ap, fmt);
-	ret = snprintf(str, size, fmt, ap);
+	ret = vsnprintf(str, size, fmt, ap);
 	va_end(ap);
 
 	return ret;
@@ -76,13 +76,12 @@ int snprintk(char *str, size_t size, const char *fmt, ...)
  * FIXME: move to sys_io.h once the argument signature for bitmap has
  * been fixed to void* or similar GH-2825
  */
-#define BITS_PER_UL                 (8 * sizeof(unsigned long))
-#define DEFINE_BITFIELD(name, bits) unsigned long(name)[DIV_ROUND_UP(bits, BITS_PER_UL)]
+#define DEFINE_BITFIELD(name, bits) unsigned long(name)[DIV_ROUND_UP(bits, BITS_PER_LONG)]
 
 static inline int sys_bitfield_find_first_clear(const unsigned long *bitmap,
 						const unsigned int bits)
 {
-	const size_t words = DIV_ROUND_UP(bits, BITS_PER_UL);
+	const size_t words = DIV_ROUND_UP(bits, BITS_PER_LONG);
 	size_t cnt;
 	unsigned int long neg_bitmap;
 
@@ -97,10 +96,10 @@ static inline int sys_bitfield_find_first_clear(const unsigned long *bitmap,
 			continue;
 		} else if (neg_bitmap == ~0UL) {
 			/* First bit is free */
-			return cnt * BITS_PER_UL;
+			return cnt * BITS_PER_LONG;
 		} else {
 			const unsigned int bit =
-				(cnt * BITS_PER_UL) + __builtin_ffsl(neg_bitmap) - 1;
+				(cnt * BITS_PER_LONG) + __builtin_ffsl(neg_bitmap) - 1;
 			/* Ensure first free bit is within total bits count */
 			if (bit < bits) {
 				return bit;
@@ -207,6 +206,8 @@ void z_ztest_check_expected_value(const char *fn, const char *name, uintptr_t va
 	if (!param) {
 		PRINT_DATA("Failed to find parameter %s for %s\n", name, fn);
 		ztest_test_fail();
+		/* ztest_test_fail() may return, depending on the test phase. */
+		return;
 	}
 
 	expected = param->value;
@@ -254,7 +255,7 @@ void z_ztest_check_expected_data(const char *fn, const char *name, void *data, u
 		ztest_test_fail();
 	} else if (data != NULL) {
 		if (memcmp(data, expected, length) != 0) {
-			PRINT_DATA("%s:%s data provided don't match\n", fn, name);
+			PRINT_DATA("%s:%s data provided doesn't match\n", fn, name);
 			ztest_test_fail();
 		}
 	}
@@ -301,6 +302,8 @@ uintptr_t z_ztest_get_return_value(const char *fn)
 	if (!param) {
 		PRINT_DATA("Failed to find return value for function %s\n", fn);
 		ztest_test_fail();
+		/* ztest_test_fail() may return, depending on the test phase. */
+		return 0;
 	}
 
 	value = param->value;
@@ -330,7 +333,7 @@ int z_cleanup_mock(void)
 		fail = 1;
 	}
 	if (return_value_list.next) {
-		PRINT_DATA("Return value no used by mock: %s\n", return_value_list.next->fn);
+		PRINT_DATA("Return value not used by mock: %s\n", return_value_list.next->fn);
 		fail = 2;
 	}
 

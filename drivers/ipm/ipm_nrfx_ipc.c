@@ -43,7 +43,7 @@ static void nrfx_ipc_handler(uint8_t event_idx, void *p_context)
 static int ipm_nrf_send(const struct device *dev, int wait, uint32_t id,
 			const void *data, int size)
 {
-	if (id > NRFX_IPC_ID_MAX_VALUE) {
+	if (id >= NRFX_IPC_ID_MAX_VALUE) {
 		return -EINVAL;
 	}
 
@@ -66,7 +66,7 @@ static uint32_t ipm_nrf_max_id_val_get(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	return NRFX_IPC_ID_MAX_VALUE;
+	return NRFX_IPC_ID_MAX_VALUE - 1;
 }
 
 static void ipm_nrf_register_callback(const struct device *dev,
@@ -96,7 +96,7 @@ static int ipm_nrf_init(const struct device *dev)
 	return 0;
 }
 
-static const struct ipm_driver_api ipm_nrf_driver_api = {
+static DEVICE_API(ipm, ipm_nrf_driver_api) = {
 	.send = ipm_nrf_send,
 	.register_callback = ipm_nrf_register_callback,
 	.max_data_size_get = ipm_nrf_max_data_size_get,
@@ -162,7 +162,7 @@ static int vipm_nrf_##_idx##_send(const struct device *dev, int wait,	\
 		return -EINVAL;						\
 	}								\
 									\
-	if (id > NRFX_IPC_ID_MAX_VALUE) {				\
+	if (id >= NRFX_IPC_ID_MAX_VALUE) {				\
 		return -EINVAL;						\
 	}								\
 									\
@@ -208,7 +208,7 @@ static int vipm_nrf_##_idx##_set_enabled(const struct device *dev, int enable)\
 	return 0;							\
 }									\
 									\
-static const struct ipm_driver_api vipm_nrf_##_idx##_driver_api = {	\
+static DEVICE_API(ipm, vipm_nrf_##_idx##_driver_api) = {	\
 	.send = vipm_nrf_##_idx##_send,					\
 	.register_callback = vipm_nrf_##_idx##_register_callback,	\
 	.max_data_size_get = vipm_nrf_max_data_size_get,		\

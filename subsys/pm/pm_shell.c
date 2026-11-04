@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <stdio.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
@@ -31,7 +30,7 @@ static int pm_cmd_suspend(const struct shell *sh, size_t argc, char *argv[])
 	const struct device *dev;
 	int ret;
 
-	dev = device_get_binding(argv[1]);
+	dev = shell_device_get_binding(argv[1]);
 	if (dev == NULL) {
 		shell_error(sh, "Invalid device: %s", argv[1]);
 		return -ENODEV;
@@ -57,7 +56,7 @@ static int pm_cmd_resume(const struct shell *sh, size_t argc, char *argv[])
 	const struct device *dev;
 	int ret;
 
-	dev = device_get_binding(argv[1]);
+	dev = shell_device_get_binding(argv[1]);
 	if (dev == NULL) {
 		shell_error(sh, "Invalid device: %s", argv[1]);
 		return -ENODEV;
@@ -84,7 +83,7 @@ static int pm_cmd_runtime_get(const struct shell *sh, size_t argc, char *argv[])
 	const struct device *dev;
 	int ret;
 
-	dev = device_get_binding(argv[1]);
+	dev = shell_device_get_binding(argv[1]);
 	if (dev == NULL) {
 		shell_error(sh, "Invalid device: %s", argv[1]);
 		return -ENODEV;
@@ -109,7 +108,7 @@ static int pm_cmd_runtime_put(const struct shell *sh, size_t argc, char *argv[])
 	const struct device *dev;
 	int ret;
 
-	dev = device_get_binding(argv[1]);
+	dev = shell_device_get_binding(argv[1]);
 	if (dev == NULL) {
 		shell_error(sh, "Invalid device: %s", argv[1]);
 		return -ENODEV;
@@ -134,7 +133,7 @@ static int pm_cmd_runtime_put_async(const struct shell *sh, size_t argc, char *a
 	const struct device *dev;
 	int ret;
 
-	dev = device_get_binding(argv[1]);
+	dev = shell_device_get_binding(argv[1]);
 	if (dev == NULL) {
 		shell_error(sh, "Invalid device: %s", argv[1]);
 		return -ENODEV;
@@ -158,20 +157,20 @@ static int pm_cmd_runtime_put_async(const struct shell *sh, size_t argc, char *a
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sub_pm_cmds,
 	SHELL_CMD_ARG(suspend, &dsub_device_name,
-		      "Call the PM suspend action on a device",
+		      SHELL_HELP("Call the PM suspend action on a device", "<device>"),
 		      pm_cmd_suspend, 2, 0),
 	SHELL_CMD_ARG(resume, &dsub_device_name,
-		      "Call the PM resume action on a device",
+		      SHELL_HELP("Call the PM resume action on a device", "<device>"),
 		      pm_cmd_resume, 2, 0),
 #if defined(CONFIG_PM_DEVICE_RUNTIME)
 	SHELL_CMD_ARG(runtime-get, &dsub_device_name,
-		      "Call the PM runtime get on a device",
+		      SHELL_HELP("Call the PM runtime get on a device", "<device>"),
 		      pm_cmd_runtime_get, 2, 0),
 	SHELL_CMD_ARG(runtime-put, &dsub_device_name,
-		      "Call the PM runtime put on a device",
+		      SHELL_HELP("Call the PM runtime put on a device", "<device>"),
 		      pm_cmd_runtime_put, 2, 0),
 	SHELL_CMD_ARG(runtime-put-async, &dsub_device_name,
-		      "Call the PM runtime put async on a device",
+		      SHELL_HELP("Call the PM runtime put async on a device", "<device>"),
 		      pm_cmd_runtime_put_async, 2, 0),
 #endif /* CONFIG_PM_DEVICE_RUNTIME */
 	SHELL_SUBCMD_SET_END);

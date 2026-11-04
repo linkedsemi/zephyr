@@ -152,15 +152,6 @@ static int vcnl36825t_sample_fetch(const struct device *dev, enum sensor_channel
 	struct vcnl36825t_data *data = dev->data;
 	int rc;
 
-#if CONFIG_PM_DEVICE
-	enum pm_device_state state;
-
-	(void)pm_device_state_get(dev, &state);
-	if (state != PM_DEVICE_STATE_ACTIVE) {
-		return -EBUSY;
-	}
-#endif
-
 	switch (chan) {
 	case SENSOR_CHAN_ALL:
 	case SENSOR_CHAN_PROX:
@@ -197,12 +188,17 @@ static int vcnl36825t_sample_fetch(const struct device *dev, enum sensor_channel
 static int vcnl36825t_channel_get(const struct device *dev, enum sensor_channel chan,
 				  struct sensor_value *val)
 {
+	const struct vcnl36825t_config *config = dev->config;
 	struct vcnl36825t_data *data = dev->data;
 
 	switch (chan) {
 	case SENSOR_CHAN_ALL:
 	case SENSOR_CHAN_PROX:
-		val->val1 = data->proximity & VCNL36825T_OS_DATA_MSK;
+		if (config->high_dynamic_output) {
+			val->val1 = data->proximity;
+		} else {
+			val->val1 = data->proximity & VCNL36825T_OS_DATA_MSK;
+		}
 		val->val2 = 0;
 		break;
 	default:
@@ -494,7 +490,7 @@ static int vcnl36825t_init(const struct device *dev)
 	uint16_t reg_value;
 
 	if (!i2c_is_ready_dt(&config->i2c)) {
-		LOG_ERR("device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -533,7 +529,7 @@ static int vcnl36825t_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api vcnl36825t_driver_api = {
+static DEVICE_API(sensor, vcnl36825t_driver_api) = {
 	.sample_fetch = vcnl36825t_sample_fetch,
 	.channel_get = vcnl36825t_channel_get,
 	.attr_set = vcnl36825t_attr_set,

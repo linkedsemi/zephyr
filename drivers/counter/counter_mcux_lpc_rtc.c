@@ -9,6 +9,7 @@
 #include <fsl_rtc.h>
 #include "fsl_power.h"
 #include <zephyr/logging/log.h>
+#include <soc.h>
 
 LOG_MODULE_REGISTER(mcux_rtc, CONFIG_COUNTER_LOG_LEVEL);
 
@@ -99,9 +100,6 @@ static int mcux_lpc_rtc_stop(const struct device *dev)
 
 	RTC_EnableTimer(config->base, false);
 
-	/* clear out any set alarms */
-	RTC_SetSecondsTimerMatch(config->base, 0);
-
 	return 0;
 }
 
@@ -145,12 +143,19 @@ static int mcux_lpc_rtc_set_alarm(const struct device *dev, uint8_t chan_id,
 	}
 
 	if ((alarm_cfg->flags & COUNTER_ALARM_CFG_ABSOLUTE) == 0) {
+		/*
+		 * A relative alarm cannot be late by definition, so the
+		 * late check below only applies to absolute alarms.
+		 */
 		ticks += current;
-	}
-
-	if (ticks < current) {
-		LOG_ERR("Alarm cannot be earlier than current time");
-		return -EINVAL;
+	} else if (ticks <= current) {
+		/*
+		 * The RTC alarm fires when the seconds counter increments to
+		 * equal the match value, so an absolute target at or before
+		 * the current time can never match. Report it as late.
+		 */
+		LOG_ERR("Absolute alarm was set too late");
+		return -ETIME;
 	}
 
 	data->alarm_callback = alarm_cfg->callback;
@@ -219,7 +224,7 @@ static int mcux_lpc_rtc_init(const struct device *dev)
 	return 0;
 }
 
-static const struct counter_driver_api mcux_rtc_driver_api = {
+static DEVICE_API(counter, mcux_rtc_driver_api) = {
 	.start = mcux_lpc_rtc_start,
 	.stop = mcux_lpc_rtc_stop,
 	.get_value = mcux_lpc_rtc_get_value,
@@ -255,9 +260,11 @@ static const struct counter_driver_api mcux_rtc_driver_api = {
 			DT_INST_IRQ(id, priority),				\
 			mcux_lpc_rtc_isr, DEVICE_DT_INST_GET(id), 0);		\
 		irq_enable(DT_INST_IRQN(id));					\
-		if (DT_INST_PROP(id, wakeup_source)) {				\
-			EnableDeepSleepIRQ(DT_INST_IRQN(id));			\
-		}								\
+		IF_ENABLED(CONFIG_PM, (						\
+			if (DT_INST_PROP(id, wakeup_source)) {			\
+				NXP_ENABLE_WAKEUP_SIGNAL(DT_INST_IRQN(id));	\
+			}							\
+		))								\
 	}
 
 DT_INST_FOREACH_STATUS_OKAY(COUNTER_LPC_RTC_DEVICE)
@@ -413,7 +420,7 @@ static int mcux_lpc_rtc_highres_init(const struct device *dev)
 	return 0;
 }
 
-static const struct counter_driver_api mcux_rtc_highres_driver_api = {
+static DEVICE_API(counter, mcux_rtc_highres_driver_api) = {
 	.start = mcux_lpc_rtc_highres_start,
 	.stop = mcux_lpc_rtc_highres_stop,
 	.get_value = mcux_lpc_rtc_highres_get_value,
@@ -431,9 +438,11 @@ static const struct counter_driver_api mcux_rtc_highres_driver_api = {
 			mcux_lpc_rtc_isr,							\
 			DEVICE_DT_INST_GET(n), 0);						\
 		irq_enable(DT_IRQN(DT_INST_PARENT(n)));						\
-		if (DT_INST_PROP(n, wakeup_source)) {						\
-			EnableDeepSleepIRQ(DT_IRQN(DT_INST_PARENT(n)));				\
-		}										\
+		IF_ENABLED(CONFIG_PM, (								\
+			if (DT_INST_PROP(n, wakeup_source)) {					\
+				NXP_ENABLE_WAKEUP_SIGNAL(DT_IRQN(DT_INST_PARENT(n)));		\
+			}									\
+		))										\
 	} while (false)
 
 #define COUNTER_LPC_RTC_HIGHRES_DEVICE(id)							\

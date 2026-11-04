@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <espressif/esp32s3/esp32s3_mini_n8.dtsi>
+#include <espressif/esp32s3/esp32s3.dtsi>
 #include "esp32s3_luatos_core-pinctrl.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <espressif/partitions_0x0_amp.dtsi>
@@ -12,10 +12,12 @@
 / {
 	leds {
 		compatible = "gpio-leds";
+
 		led0: led0 {
 			gpios = <&gpio0 10 GPIO_ACTIVE_HIGH>;
 			label = "LEDA";
 		};
+
 		led1: led1 {
 			gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>;
 			label = "LEDB";
@@ -24,12 +26,18 @@
 
 	buttons {
 		compatible = "gpio-keys";
+
 		button0: button_0 {
 			gpios = <&gpio0 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "BOOT Button";
 			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
+};
+
+&flash0 {
+	reg = <0x0 DT_SIZE_M(8)>;
+	ranges = <0x0 0x0 DT_SIZE_M(8)>;
 };
 
 &uart0 {
@@ -105,5 +113,9 @@
 };
 
 &esp32_bt_hci {
+	status = "okay";
+};
+
+&wifi {
 	status = "okay";
 };

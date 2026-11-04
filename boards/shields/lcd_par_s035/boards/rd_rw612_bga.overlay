@@ -13,7 +13,7 @@
  * - Populate resistors R286, R19, R246, R242, R123, R239, R124, R125, R236,
  *   R233, and R12
  * - Remove jumper JP30
- * - Set jumper JP40 to postion 1-2, JP38 to 1-2, and JP16 to position 2-3
+ * - Set jumper JP40 to position 1-2, JP38 to 1-2, and JP16 to position 2-3
  */
 
 /*
@@ -46,25 +46,25 @@
 &pinmux_lcdic {
 	group0 {
 		pinmux = <IO_MUX_LCD_8080_IO42>,
-			<IO_MUX_LCD_8080_IO43>,
-			<IO_MUX_LCD_8080_IO44>,
-			<IO_MUX_LCD_8080_IO45>,
-			<IO_MUX_LCD_8080_IO46>,
-			<IO_MUX_LCD_8080_IO47>,
-			<IO_MUX_LCD_8080_IO48>,
-			<IO_MUX_LCD_8080_IO49>,
-			<IO_MUX_LCD_8080_IO51>,
-			<IO_MUX_LCD_8080_IO52>,
-			<IO_MUX_LCD_8080_IO53>,
-			<IO_MUX_LCD_8080_IO54>,
-			<IO_MUX_LCD_8080_IO56>,
-			<IO_MUX_LCD_8080_IO57>;
+			 <IO_MUX_LCD_8080_IO43>,
+			 <IO_MUX_LCD_8080_IO44>,
+			 <IO_MUX_LCD_8080_IO45>,
+			 <IO_MUX_LCD_8080_IO46>,
+			 <IO_MUX_LCD_8080_IO47>,
+			 <IO_MUX_LCD_8080_IO48>,
+			 <IO_MUX_LCD_8080_IO49>,
+			 <IO_MUX_LCD_8080_IO51>,
+			 <IO_MUX_LCD_8080_IO52>,
+			 <IO_MUX_LCD_8080_IO53>,
+			 <IO_MUX_LCD_8080_IO54>,
+			 <IO_MUX_LCD_8080_IO56>,
+			 <IO_MUX_LCD_8080_IO57>;
 		slew-rate = "ultra";
 	};
 };
 
 &st7796s {
-	mipi-mode = <MIPI_DBI_MODE_8080_BUS_8_BIT>;
+	mipi-mode = "MIPI_DBI_MODE_8080_BUS_8_BIT";
 	/*
 	 * Display supports minimum write cycle time of 66ns. This
 	 * means we can clock the LCDIC module at 30MHz, as
@@ -84,6 +84,8 @@
 	 * software
 	 */
 	rgb-is-inverted;
+	/* Enable TE synchronization, using the rising edge */
+	te-mode = "MIPI_DBI_TE_RISING_EDGE";
 };
 
 &lcdic {
@@ -92,4 +94,8 @@
 	/* Set pulse width for write active and write inactive to min value */
 	nxp,write-active-cycles = <1>;
 	nxp,write-inactive-cycles = <1>;
+	/* Raise the timer0 ratio to enable longer reset delay */
+	nxp,timer0-ratio = <15>;
+	/* Lower timer1 ratio to enable shorter TE delay */
+	nxp,timer1-ratio = <0>;
 };

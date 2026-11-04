@@ -14,6 +14,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/cache.h>
 #include <zephyr/drivers/regulator.h>
+#include "sdhc_helpers.h"
 
 #include "rcar_mmc_registers.h"
 
@@ -407,7 +408,7 @@ static int rcar_mmc_enable_clock(const struct device *dev, bool enable)
  *
  * @param response_type SDHC response type without SPI flags
  *
- * @retval positiv number (partial configuration of CMD register) on
+ * @retval positive number (partial configuration of CMD register) on
  *         success, negative errno code otherwise
  */
 static int32_t rcar_mmc_convert_sd_to_mmc_resp(uint32_t response_type)
@@ -974,45 +975,6 @@ static int rcar_mmc_request(const struct device *dev, struct sdhc_command *cmd,
 	return ret;
 }
 
-/* convert sd_voltage to string */
-static inline const char *const rcar_mmc_get_signal_voltage_str(enum sd_voltage voltage)
-{
-	static const char *const sig_vol_str[] = {
-		[0] = "Unset",		 [SD_VOL_3_3_V] = "3.3V", [SD_VOL_3_0_V] = "3.0V",
-		[SD_VOL_1_8_V] = "1.8V", [SD_VOL_1_2_V] = "1.2V",
-	};
-
-	if (voltage >= 0 && voltage < ARRAY_SIZE(sig_vol_str)) {
-		return sig_vol_str[voltage];
-	} else {
-		return "Unknown";
-	}
-}
-
-/* convert sdhc_timing_mode to string */
-static inline const char *const rcar_mmc_get_timing_str(enum sdhc_timing_mode timing)
-{
-	static const char *const timing_str[] = {
-		[0] = "Unset",
-		[SDHC_TIMING_LEGACY] = "LEGACY",
-		[SDHC_TIMING_HS] = "HS",
-		[SDHC_TIMING_SDR12] = "SDR12",
-		[SDHC_TIMING_SDR25] = "SDR25",
-		[SDHC_TIMING_SDR50] = "SDR50",
-		[SDHC_TIMING_SDR104] = "SDR104",
-		[SDHC_TIMING_DDR50] = "DDR50",
-		[SDHC_TIMING_DDR52] = "DDR52",
-		[SDHC_TIMING_HS200] = "HS200",
-		[SDHC_TIMING_HS400] = "HS400",
-	};
-
-	if (timing >= 0 && timing < ARRAY_SIZE(timing_str)) {
-		return timing_str[timing];
-	} else {
-		return "Unknown";
-	}
-}
-
 /* change voltage of MMC */
 static int rcar_mmc_change_voltage(const struct mmc_rcar_cfg *cfg, struct sdhc_io *host_io,
 				   struct sdhc_io *ios)
@@ -1206,7 +1168,7 @@ static int rcar_mmc_set_bus_width(const struct device *dev, struct sdhc_io *ios)
 		reg_width = RCAR_MMC_OPTION_WIDTH_1;
 		break;
 	case SDHC_BUS_WIDTH4BIT:
-		if (data->props.host_caps.bus_4_bit_support) {
+		if (data->props.bus_4_bit_support) {
 			reg_width = RCAR_MMC_OPTION_WIDTH_4;
 		} else {
 			LOG_ERR("SDHC I/O: 4-bits bus width isn't supported");
@@ -1331,7 +1293,7 @@ static int rcar_mmc_set_timings(const struct device *dev, struct sdhc_io *ios)
 		}
 		break;
 	case SDHC_TIMING_HS400:
-		if (!data->props.host_caps.hs400_support) {
+		if (!data->props.hs400_support) {
 			LOG_ERR("SDHC I/O: HS400 timing isn't supported");
 			return -ENOTSUP;
 		}
@@ -1347,7 +1309,7 @@ static int rcar_mmc_set_timings(const struct device *dev, struct sdhc_io *ios)
 		data->ddr_mode = 1;
 		break;
 	case SDHC_TIMING_HS200:
-		if (!data->props.host_caps.hs200_support) {
+		if (!data->props.hs200_support) {
 			LOG_ERR("SDHC I/O: HS200 timing isn't supported");
 			return -ENOTSUP;
 		}
@@ -1399,11 +1361,9 @@ static int rcar_mmc_set_io(const struct device *dev, struct sdhc_io *ios)
 	data = dev->data;
 	host_io = &data->host_io;
 
-	LOG_DBG("SDHC I/O: bus width %d, clock %dHz, card power %s, "
-		"timing %s, voltage %s",
+	LOG_DBG("SDHC I/O: bus width %d, clock %dHz, card power %s, timing %s, voltage %s",
 		ios->bus_width, ios->clock, ios->power_mode == SDHC_POWER_ON ? "ON" : "OFF",
-		rcar_mmc_get_timing_str(ios->timing),
-		rcar_mmc_get_signal_voltage_str(ios->signal_voltage));
+		sdhc_timing_mode_str(ios->timing), sd_voltage_str(ios->signal_voltage));
 
 	/* Set host clock */
 	ret = rcar_mmc_set_clk_rate(dev, ios);
@@ -1579,7 +1539,7 @@ static const uint8_t tun_block_8_bits_bus[] = {
 
 /*
  * In 4 bit mode the same pattern is used as shown above,
- * but only first 4 bits least significant from every byte is used, examle:
+ * but only first 4 bits least significant from every byte is used, example:
  *    8-bits pattern: 0xff, 0xff, 0x00, 0xff, 0xff, 0xff, 0x00, 0x00 ...
  *                       f     f     0     f     f     f     0     0 ...
  *    4-bits pattern:      0xff        0x0f        0xff        0x00  ...
@@ -1684,7 +1644,7 @@ static int rcar_mmc_execute_tuning(const struct device *dev)
 	 * two runs is better for detecting TAP ok cases like next:
 	 *   - one burn: 0b10000011
 	 *   - two burns: 0b1000001110000011
-	 * it is more easly to detect 3 OK taps in a row
+	 * it is more easily to detect 3 OK taps in a row
 	 */
 	for (tap_idx = 0; tap_idx < 2 * RENESAS_TAPNUM; tap_idx++) {
 		/* clear flags */
@@ -1877,7 +1837,7 @@ static int rcar_mmc_get_host_props(const struct device *dev, struct sdhc_host_pr
 	return 0;
 }
 
-static const struct sdhc_driver_api rcar_sdhc_api = {
+static DEVICE_API(sdhc, rcar_sdhc_api) = {
 	.card_busy = rcar_mmc_card_busy,
 #ifdef CONFIG_RCAR_MMC_SCC_SUPPORT
 	.execute_tuning = rcar_mmc_execute_tuning,
@@ -1947,7 +1907,7 @@ static void rcar_mmc_init_host_props(const struct device *dev)
 	case SDHC_BUS_WIDTH8BIT:
 		host_caps->bus_8_bit_support = 1;
 	case SDHC_BUS_WIDTH4BIT:
-		host_caps->bus_4_bit_support = 1;
+		props->bus_4_bit_support = 1;
 	default:
 		break;
 	}
@@ -1958,9 +1918,9 @@ static void rcar_mmc_init_host_props(const struct device *dev)
 	host_caps->sdr50_support = cfg->uhs_support;
 	/* neither Linux nor U-boot support DDR50 mode, that's why we don't support it too */
 	host_caps->ddr50_support = 0;
-	host_caps->hs200_support = cfg->mmc_hs200_1_8v;
+	props->hs200_support = cfg->mmc_hs200_1_8v;
 	/* TODO: add support */
-	host_caps->hs400_support = 0;
+	props->hs400_support = 0;
 #endif
 
 	host_caps->vol_330_support =

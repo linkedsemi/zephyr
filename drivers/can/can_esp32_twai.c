@@ -7,7 +7,7 @@
 
 #define DT_DRV_COMPAT espressif_esp32_twai
 
-#include <zephyr/drivers/can/can_sja1000.h>
+#include "can_sja1000.h"
 
 #include <zephyr/drivers/can.h>
 #include <zephyr/drivers/clock_control.h>
@@ -170,7 +170,7 @@ static int can_esp32_twai_init(const struct device *dev)
 	int err;
 
 	if (!device_is_ready(twai_config->clock_dev)) {
-		LOG_ERR("clock control device not ready");
+		LOG_ERR_DEVICE_NOT_READY(twai_config->clock_dev);
 		return -ENODEV;
 	}
 
@@ -216,7 +216,7 @@ static int can_esp32_twai_init(const struct device *dev)
 	return err;
 }
 
-const struct can_driver_api can_esp32_twai_driver_api = {
+DEVICE_API(can, can_esp32_twai_driver_api) = {
 	.get_capabilities = can_sja1000_get_capabilities,
 	.start = can_sja1000_start,
 	.stop = can_sja1000_stop,
@@ -230,7 +230,6 @@ const struct can_driver_api can_esp32_twai_driver_api = {
 	.add_rx_filter = can_sja1000_add_rx_filter,
 	.remove_rx_filter = can_sja1000_remove_rx_filter,
 	.get_state = can_sja1000_get_state,
-	.set_state_change_callback = can_sja1000_set_state_change_callback,
 	.get_core_clock = can_esp32_twai_get_core_clock,
 	.get_max_filters = can_sja1000_get_max_filters,
 #ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE

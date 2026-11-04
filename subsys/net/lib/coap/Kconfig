@@ -1,6 +1,7 @@
 # CoAP implementation for Zephyr
 
 # Copyright (c) 2017 Intel Corporation
+# Copyright (c) 2026 Siemens AG
 # SPDX-License-Identifier: Apache-2.0
 
 config COAP
@@ -19,12 +20,17 @@ config COAP_TEST_API_ENABLE
 
 config COAP_WELL_KNOWN_BLOCK_WISE
 	bool "CoAP ./well-known/core services block wise support"
+	imply SYS_HASH_FUNC32
 	help
 	  This option enables the block wise support of CoAP response
 	  to ./well-known/core request. Without this option all resource's
 	  information will be sent in a single IP packet (can be multiple
 	  fragments depends on MTU size). This will be useful in mesh kind
 	  of networks.
+
+	  When CONFIG_SYS_HASH_FUNC32 is enabled, the responses include an
+	  ETag option, so clients can verify that the blocks they reassemble
+	  belong to the same representation (RFC 7959, section 2.4).
 
 config COAP_WELL_KNOWN_BLOCK_WISE_SIZE
 	int "CoAP ./well-known/core services block wise support"
@@ -101,13 +107,27 @@ config COAP_KEEP_USER_DATA
 	help
 	  This option enables keeping application-specific user data
 
-config COAP_CLIENT
-	bool "CoAP client support [EXPERIMENTAL]"
+config COAP_OVER_RELIABLE_TRANSPORT
+	bool "CoAP over reliable transports (RFC8323) [EXPERIMENTAL]"
 	select EXPERIMENTAL
+	help
+	  Enables the implementation support of RFC8323
+	  (CoAP (Constrained Application Protocol) over TCP, TLS, and WebSockets)
+
+config COAP_CLIENT
+	bool "CoAP client support"
+	select ZVFS
+	select ZVFS_EVENTFD
 	help
 	  This option enables the API for CoAP-client for sending CoAP requests
 
 if COAP_CLIENT
+
+config ZVFS_EVENTFD_ADD_SIZE_COAP_CLIENT
+	int "Number of eventfds needed by the CoAP client"
+	default 1
+	help
+	  The CoAP client allocates one zvfs eventfd to wake up its poll loop.
 
 config COAP_CLIENT_THREAD_PRIORITY
 	int "Coap client thread priority"
@@ -116,7 +136,7 @@ config COAP_CLIENT_THREAD_PRIORITY
 	  Priority of receive thread of the CoAP client.
 
 config COAP_CLIENT_BLOCK_SIZE
-	int "LWM2M CoAP block-wise transfer size"
+	int "CoAP block-wise transfer block size"
 	default 256
 	range 64 1024
 	help
@@ -135,6 +155,16 @@ config COAP_CLIENT_MESSAGE_HEADER_SIZE
 	range 24 128
 	help
 	  Extra room allocated to handle CoAP header data
+
+config COAP_CLIENT_MAX_PATH_LENGTH
+	int "Maximum length of the path string"
+	default 64
+	range 1 128
+
+config COAP_CLIENT_MAX_EXTRA_OPTIONS
+	int "Maximum number of application-provided extra CoAP options"
+	default 2
+	range 1 16
 
 config COAP_CLIENT_STACK_SIZE
 	int "Stack size of the CoAP client thread"
@@ -160,17 +190,68 @@ config COAP_CLIENT_TRUNCATE_MSGS
 	  receive network stack notifications about block truncation.
 	  Otherwise it happens silently.
 
+config COAP_CLIENT_MULTICAST
+	bool "CoAP client multicast support"
+	help
+	  Enable multicast request support for the CoAP client. When enabled,
+	  requests can specify a multicast_timeout_ms to receive multiple
+	  responses from different servers within a timeout period.
+
+	  Per RFC 7252, multicast requests are always non-confirmable.
+
 endif # COAP_CLIENT
 
+if COAP_OVER_RELIABLE_TRANSPORT
+
+config COAP_CLIENT_TCP
+	bool "CoAP TCP client support"
+	help
+	  This option enables the CoAP client for reliable transports
+	  (TCP/TLS) as specified in RFC 8323.
+
+config COAP_CLIENT_TCP_REQUEST_TIMEOUT
+	int "Timeout for TCP CoAP requests in milliseconds"
+	default 30000
+	range 1000 300000
+	help
+	  Timeout for TCP-based CoAP requests. Unlike UDP, TCP requests
+	  have a single timeout with no retransmission. Default is 30 seconds
+	  as recommended by RFC 8323. Range is 1-300 seconds.
+
+config COAP_CLIENT_TCP_EXCHANGE_LIFETIME
+	int "Exchange lifetime for TCP CoAP in milliseconds"
+	default 247000
+	range 60000 600000
+	help
+	  Maximum lifetime of a TCP CoAP exchange from initial request to
+	  final response. Default is 247 seconds as per RFC 8323.
+	  Used to determine when request contexts can be safely released.
+
+config COAP_CLIENT_TCP_BLOCKWISE_REUSE_TOKEN
+	bool "Reuse the request token when requesting further blocks"
+	help
+	  This config exists for compatibility reasons when communicating with
+	  other CoAP libraries (e.g., go-coap) that expect token reuse during
+	  blockwise transfers.
+
+endif # COAP_OVER_RELIABLE_TRANSPORT
+
 config COAP_SERVER
-	bool "CoAP server support [EXPERIMENTAL]"
-	select EXPERIMENTAL
+	bool "CoAP server support"
 	select NET_SOCKETS
-	select NET_SOCKETPAIR
+	select NET_CONTEXT_RECV_PKTINFO if NET_UDP
+	select ZVFS
+	select ZVFS_EVENTFD
 	help
 	  This option enables the API for CoAP-services to register resources.
 
 if COAP_SERVER
+
+config ZVFS_EVENTFD_ADD_SIZE_COAP_SERVER
+	int "Number of eventfds needed by the CoAP server"
+	default 1
+	help
+	  The CoAP server allocates one zvfs eventfd to wake up its poll loop.
 
 config COAP_SERVER_STACK_SIZE
 	int "CoAP server thread stack size"
@@ -247,6 +328,14 @@ config COAP_SERVER_PENDING_ALLOCATOR_STATIC_BLOCKS
 	help
 	  The number of data blocks to reserve for pending messages to retransmit.
 
+config COAP_SERVER_TRUNCATE_MSGS
+	bool "Handle truncated messages"
+	default y
+	help
+	  Include ZSOCK_MSG_TRUNC in flags passed to zsock_recvfrom() to
+	  receive network stack notifications about block truncation.
+	  Otherwise it happens silently.
+
 config COAP_SERVER_SHELL
 	bool "CoAP service shell commands"
 	depends on SHELL
@@ -254,6 +343,8 @@ config COAP_SERVER_SHELL
 	  Enable CoAP service shell commands.
 
 endif
+
+rsource "Kconfig.oscore"
 
 module = COAP
 module-dep = NET_LOG

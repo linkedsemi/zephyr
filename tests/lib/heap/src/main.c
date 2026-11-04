@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Intel Corporation
+ * Copyright (c) 2026 Qualcomm Technologies, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,7 +14,7 @@
  * platform, with workarounds.
  */
 
-#if defined(CONFIG_SOC_MPS2_AN521) && defined(CONFIG_QEMU_TARGET)
+#if defined(CONFIG_SOC_AN521) && defined(CONFIG_QEMU_TARGET)
 /* mps2/an521 blows up if allowed to link into large area, even though
  * the link is successful and it claims the memory is there.  We get
  * hard faults on boot in qemu before entry to cstart() once MEMSZ is
@@ -21,7 +22,7 @@
  */
 # define MEMSZ (192 * 1024)
 #elif defined(CONFIG_ARCH_POSIX)
-/* POSIX arch based targets don't support CONFIG_SRAM_SIZE at all (because
+/* POSIX arch based targets don't support DT_CHOSEN_SRAM_SIZE at all (because
  * they can link anything big enough to fit on the host), so just use a
  * reasonable value.
  */
@@ -33,22 +34,11 @@
  */
 # define MEMSZ (16 * 1024)
 #else
-/* Otherwise just trust CONFIG_SRAM_SIZE
- */
-# define MEMSZ (1024 * (size_t) CONFIG_SRAM_SIZE)
+# define MEMSZ DT_CHOSEN_SRAM_SIZE
 #endif
 
 #define BIG_HEAP_SZ MIN(256 * 1024, MEMSZ / 3)
 #define SMALL_HEAP_SZ MIN(BIG_HEAP_SZ, 2048)
-
-/* With enabling SYS_HEAP_RUNTIME_STATS, the size of struct z_heap
- * will increase 16 bytes on 64 bit CPU.
- */
-#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
-#define SOLO_FREE_HEADER_HEAP_SZ (80)
-#else
-#define SOLO_FREE_HEADER_HEAP_SZ (64)
-#endif
 
 #define SCRATCH_SZ (sizeof(heapmem) / 2)
 
@@ -57,6 +47,8 @@
  */
 void *heapmem[BIG_HEAP_SZ / sizeof(void *)];
 void *scratchmem[SCRATCH_SZ / sizeof(void *)];
+/* Chunk aligned memory buffer for predictable behaviour */
+static uint8_t alignedmem[4096] __aligned(8);
 
 /* How many alloc/free operations are tested on each heap.  Two per
  * byte of heap sounds about right to get exhaustive coverage without
@@ -130,7 +122,7 @@ void *testalloc(void *arg, size_t bytes)
 		size_t expect = ROUND_UP(bytes + hdr, 8) - hdr;
 
 		zassert_equal(blksz, expect,
-			      "wrong size block returned bytes = %ld ret = %ld",
+			      "wrong size block returned bytes = %zu ret = %zu",
 			      bytes, blksz);
 	}
 
@@ -236,36 +228,6 @@ ZTEST(lib_heap, test_big_heap)
 			100, &result);
 
 	log_result(BIG_HEAP_SZ, &result);
-}
-
-/* Test a heap with a solo free header.  A solo free header can exist
- * only on a heap with 64 bit CPU (or chunk_header_bytes() == 8).
- * With 64 bytes heap and 1 byte allocation on a big heap, we get:
- *
- *   0   1   2   3   4   5   6   7
- * | h | h | b | b | c | 1 | s | f |
- *
- * where
- * - h: chunk0 header
- * - b: buckets in chunk0
- * - c: chunk header for the first allocation
- * - 1: chunk mem
- * - s: solo free header
- * - f: end marker / footer
- */
-ZTEST(lib_heap, test_solo_free_header)
-{
-	struct sys_heap heap;
-
-	TC_PRINT("Testing solo free header in a heap\n");
-
-	sys_heap_init(&heap, heapmem, SOLO_FREE_HEADER_HEAP_SZ);
-	if (sizeof(void *) > 4U) {
-		sys_heap_alloc(&heap, 1);
-		zassert_true(sys_heap_validate(&heap), "");
-	} else {
-		ztest_test_skip();
-	}
 }
 
 /* Simple clobber detection */
@@ -441,7 +403,7 @@ ZTEST(lib_heap, test_heap_listeners)
 
 	zassert_equal(listener_heap_id,
 		      HEAP_ID_FROM_POINTER(&listener_heap),
-		      "Heap ID mismatched: 0x%lx != %p", listener_heap_id,
+		      "Heap ID mismatched: %p != %p", (void *)listener_heap_id,
 		      &listener_heap);
 	zassert_equal(listener_mem, mem,
 		      "Heap allocated pointer mismatched: %p != %p",
@@ -450,7 +412,7 @@ ZTEST(lib_heap, test_heap_listeners)
 	sys_heap_free(&listener_heap, mem);
 	zassert_equal(listener_heap_id,
 		      HEAP_ID_FROM_POINTER(&listener_heap),
-		      "Heap ID mismatched: 0x%lx != %p", listener_heap_id,
+		      "Heap ID mismatched: %p != %p", (void *)listener_heap_id,
 		      &listener_heap);
 	zassert_equal(listener_mem, mem,
 		      "Heap allocated pointer mismatched: %p != %p",
@@ -461,7 +423,7 @@ ZTEST(lib_heap, test_heap_listeners)
 
 	zassert_equal(listener_heap_id,
 		      HEAP_ID_FROM_POINTER(&listener_heap),
-		      "Heap ID mismatched: 0x%lx != %p", listener_heap_id,
+		      "Heap ID mismatched: %p != %p", (void *)listener_heap_id,
 		      &listener_heap);
 	zassert_equal(listener_mem, mem,
 		      "Heap allocated pointer mismatched: %p != %p",
@@ -470,7 +432,7 @@ ZTEST(lib_heap, test_heap_listeners)
 	sys_heap_free(&listener_heap, mem);
 	zassert_equal(listener_heap_id,
 		      HEAP_ID_FROM_POINTER(&listener_heap),
-		      "Heap ID mismatched: 0x%lx != %p", listener_heap_id,
+		      "Heap ID mismatched: %p != %p", (void *)listener_heap_id,
 		      &listener_heap);
 	zassert_equal(listener_mem, mem,
 		      "Heap allocated pointer mismatched: %p != %p",
@@ -483,6 +445,101 @@ ZTEST(lib_heap, test_heap_listeners)
 #else /* CONFIG_SYS_HEAP_LISTENER */
 	ztest_test_skip();
 #endif /* CONFIG_SYS_HEAP_LISTENER */
+}
+
+static int find_maximum_single_allocation(struct sys_heap *heap, int base_size)
+{
+	void *mem;
+
+	for (int i = base_size + 16; i > 0; i--) {
+		mem = sys_heap_alloc(heap, i);
+		if (mem) {
+			sys_heap_free(heap, mem);
+			return i;
+		}
+	}
+	return 0;
+}
+
+ZTEST(lib_heap, test_heap_overhead)
+{
+	int16_t base_heap_sizes[] = {64, 128, 256, 512, 1024, 2048};
+	struct sys_heap heap;
+	int base;
+	int no_overhead;
+	int min_overhead;
+	int min_size_for;
+
+	TC_PRINT("Base |  Raw | Z_HEAP_MIN_SIZE | Z_HEAP_MIN_SIZE_FOR\n");
+
+	for (int i = 0; i < ARRAY_SIZE(base_heap_sizes); i++) {
+		base = base_heap_sizes[i];
+
+		if (base < Z_HEAP_MIN_SIZE) {
+			/* Avoid assertions */
+			no_overhead = 0;
+		} else {
+			sys_heap_init(&heap, alignedmem, base);
+			no_overhead = find_maximum_single_allocation(&heap, base);
+		}
+		sys_heap_init(&heap, alignedmem, base + Z_HEAP_MIN_SIZE);
+		min_overhead = find_maximum_single_allocation(&heap, base);
+		sys_heap_init(&heap, alignedmem, Z_HEAP_MIN_SIZE_FOR(base));
+		min_size_for = find_maximum_single_allocation(&heap, base);
+
+		TC_PRINT("%4u | %4u | %15u | %19u\n", base, no_overhead, min_overhead,
+			 min_size_for);
+
+		zassert_true(min_size_for >= base,
+			"Z_HEAP_MIN_SIZE_FOR(%d) could not allocate %d", base, base);
+	}
+}
+
+ZTEST(lib_heap, test_largest_free_block)
+{
+#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
+	struct sys_heap heap;
+	size_t before;
+	size_t after;
+	void *ptr;
+
+	sys_heap_init(&heap, alignedmem, sizeof(alignedmem));
+
+	/* Invalid arguments */
+	zassert_equal(sys_heap_get_largest_free_block(NULL, &before),
+		      -EINVAL, "");
+
+	zassert_equal(sys_heap_get_largest_free_block(&heap, NULL),
+		      -EINVAL, "");
+
+	/* Initial heap state */
+	zassert_equal(sys_heap_get_largest_free_block(&heap, &before),
+		      0, "");
+
+	zassert_true(before > 0,
+		     "largest free block should be non-zero");
+
+	/* Allocate some memory */
+	ptr = sys_heap_alloc(&heap, 64);
+	zassert_not_null(ptr, "");
+
+	zassert_equal(sys_heap_get_largest_free_block(&heap, &after),
+		      0, "");
+
+	zassert_true(after < before,
+		     "largest free block should decrease");
+
+	/* Free memory */
+	sys_heap_free(&heap, ptr);
+
+	zassert_equal(sys_heap_get_largest_free_block(&heap, &after),
+		      0, "");
+
+	zassert_true(after >= before,
+		     "largest free block should recover");
+#else
+	ztest_test_skip();
+#endif
 }
 
 ZTEST_SUITE(lib_heap, NULL, NULL, NULL, NULL, NULL);

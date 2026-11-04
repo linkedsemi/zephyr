@@ -13,7 +13,7 @@ K_FIFO_DEFINE(kfifo_c);
 
 struct k_fifo fifo_c;
 
-static K_THREAD_STACK_DEFINE(tstack, STACK_SIZE);
+static K_THREAD_STACK_DEFINE(tstack_cancel, STACK_SIZE);
 static struct k_thread thread;
 
 static void t_cancel_wait_entry(void *p1, void *p2, void *p3)
@@ -24,7 +24,7 @@ static void t_cancel_wait_entry(void *p1, void *p2, void *p3)
 
 static void tfifo_thread_thread(struct k_fifo *pfifo)
 {
-	k_tid_t tid = k_thread_create(&thread, tstack, STACK_SIZE,
+	k_tid_t tid = k_thread_create(&thread, tstack_cancel, STACK_SIZE,
 				      t_cancel_wait_entry, pfifo, NULL, NULL,
 				      K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
 	uint32_t start_t = k_uptime_get_32();
@@ -51,15 +51,30 @@ static void tfifo_thread_thread(struct k_fifo *pfifo)
 }
 
 /**
- * @addtogroup kernel_fifo_tests
+ * @addtogroup tests_kernel_fifo
  * @{
  */
 
 /**
- * @brief Test cancel waiting on a FIFO queue.
- * @details This routine causes first thread pending on fifo (if any),
- * to return from k_fifo_get() with NULL value (as if timeout expired).
- * @see k_fifo_init(),k_fifo_get(), k_fifo_cancel_wait()
+ * @brief Verify k_fifo_cancel_wait() wakes a pending getter with NULL.
+ *
+ * @details
+ * A thread blocked in k_fifo_get() with a long timeout must return immediately
+ * with NULL when another thread calls k_fifo_cancel_wait() on that FIFO, rather
+ * than waiting for its own timeout to expire. The test confirms both the NULL
+ * return and that it happened well before the 500 ms get timeout.
+ *
+ * Test steps:
+ * - Start a helper thread that sleeps briefly then calls k_fifo_cancel_wait().
+ * - In the main thread, call k_fifo_get() with a 500 ms timeout and time it.
+ * - Verify the get returned NULL and far sooner than its timeout.
+ * - Repeat for a statically defined FIFO.
+ *
+ * Expected result:
+ * - k_fifo_get() returns NULL promptly due to the cancel, not the timeout.
+ *
+ * @see k_fifo_cancel_wait()
+ * @see k_fifo_get()
  */
 ZTEST(fifo_api_1cpu, test_fifo_cancel_wait)
 {

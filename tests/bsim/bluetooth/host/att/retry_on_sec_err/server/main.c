@@ -2,7 +2,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <argparse.h>
+#include <bsim_args_runner.h>
 
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/logging/log.h>
@@ -12,8 +12,11 @@
 #include "testlib/adv.h"
 #include "testlib/security.h"
 
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
+
 #include "../common_defs.h"
-#include "../test_utils.h"
+
 
 LOG_MODULE_REGISTER(server, LOG_LEVEL_DBG);
 
@@ -47,7 +50,7 @@ static void test_server(void)
 {
 	test_common(NULL);
 
-	PASS("PASS\n");
+	TEST_PASS("PASS");
 }
 
 static void test_server_security_request(void)
@@ -60,21 +63,61 @@ static void test_server_security_request(void)
 	err = bt_testlib_secure(conn, BT_SECURITY_L2);
 	__ASSERT(!err, "err %d", err);
 
-	PASS("PASS\n");
+	TEST_PASS("PASS");
+}
+
+DEFINE_FLAG_STATIC(flag_pairing_confirm_requested);
+
+static void auth_cancel_cb(struct bt_conn *conn)
+{
+}
+
+static void auth_pairing_confirm_cb(struct bt_conn *conn)
+{
+	SET_FLAG(flag_pairing_confirm_requested);
+}
+
+static struct bt_conn_auth_cb auth_cb = {
+	.cancel = auth_cancel_cb,
+	.pairing_confirm = auth_pairing_confirm_cb,
+};
+
+static void test_server_cancel_retrying(void)
+{
+	struct bt_conn *conn = NULL;
+	int err;
+
+	err = bt_conn_auth_cb_register(&auth_cb);
+	__ASSERT_NO_MSG(!err);
+
+	test_common(&conn);
+
+	/* Hold the pairing that the client's read triggers, so that the
+	 * client cancels the read while it is waiting for its retry.
+	 */
+	WAIT_FOR_FLAG(flag_pairing_confirm_requested);
+	k_sleep(K_SECONDS(3));
+
+	err = bt_conn_auth_pairing_confirm(conn);
+	__ASSERT_NO_MSG(!err);
+
+	bt_conn_drop(&conn);
+
+	TEST_PASS("PASS");
 }
 
 static const struct bst_test_instance server_tests[] = {
 	{
 		.test_id = "test_server",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_server,
 	},
 	{
 		.test_id = "test_server_security_request",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_server_security_request,
+	},
+	{
+		.test_id = "test_server_cancel_retrying",
+		.test_main_f = test_server_cancel_retrying,
 	},
 	BSTEST_END_MARKER,
 };

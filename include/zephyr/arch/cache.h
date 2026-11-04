@@ -13,9 +13,8 @@
 #define ZEPHYR_INCLUDE_ARCH_CACHE_H_
 
 /**
- * @brief Cache Controller Interface
- * @defgroup cache_arch_interface Cache Controller Interface
- * @ingroup io_interfaces
+ * @defgroup arch-cache Architecture-specific cache controllers.
+ * @ingroup arch-interface
  * @{
  */
 
@@ -24,6 +23,9 @@
 #elif defined(CONFIG_XTENSA)
 #include <zephyr/arch/xtensa/cache.h>
 #endif
+
+#include <stddef.h>
+#include <stdbool.h>
 
 #if defined(CONFIG_DCACHE) || defined(__DOXYGEN__)
 
@@ -157,7 +159,7 @@ int arch_dcache_flush_and_invd_range(void *addr, size_t size);
 #define cache_data_flush_and_invd_range(addr, size) \
 	arch_dcache_flush_and_invd_range(addr, size)
 
-#if defined(CONFIG_DCACHE_LINE_SIZE_DETECT) || defined(__DOXYGEN__)
+#if defined(CONFIG_DCACHE_LINE_SIZE_DETECT_SUPPORT) || defined(__DOXYGEN__)
 
 /**
  *
@@ -166,7 +168,7 @@ int arch_dcache_flush_and_invd_range(void *addr, size_t size);
  * The API is provided to dynamically detect the data cache line size at run
  * time.
  *
- * The function must be implemented only when CONFIG_DCACHE_LINE_SIZE_DETECT is
+ * The function must be implemented only when CONFIG_DCACHE_LINE_SIZE_DETECT_SUPPORT is
  * defined.
  *
  * @retval size Size of the d-cache line.
@@ -176,7 +178,7 @@ size_t arch_dcache_line_size_get(void);
 
 #define cache_data_line_size_get arch_dcache_line_size_get
 
-#endif /* CONFIG_DCACHE_LINE_SIZE_DETECT || __DOXYGEN__ */
+#endif /* CONFIG_DCACHE_LINE_SIZE_DETECT_SUPPORT || __DOXYGEN__ */
 
 #endif /* CONFIG_DCACHE || __DOXYGEN__ */
 
@@ -311,7 +313,7 @@ int arch_icache_flush_and_invd_range(void *addr, size_t size);
 #define cache_instr_flush_and_invd_range(addr, size) \
 	arch_icache_flush_and_invd_range(addr, size)
 
-#if defined(CONFIG_ICACHE_LINE_SIZE_DETECT) || defined(__DOXYGEN__)
+#if defined(CONFIG_ICACHE_LINE_SIZE_DETECT_SUPPORT) || defined(__DOXYGEN__)
 
 /**
  *
@@ -320,7 +322,7 @@ int arch_icache_flush_and_invd_range(void *addr, size_t size);
  * The API is provided to dynamically detect the instruction cache line size at
  * run time.
  *
- * The function must be implemented only when CONFIG_ICACHE_LINE_SIZE_DETECT is
+ * The function must be implemented only when CONFIG_ICACHE_LINE_SIZE_DETECT_SUPPORT is
  * defined.
  *
  * @retval size Size of the d-cache line.
@@ -331,11 +333,11 @@ size_t arch_icache_line_size_get(void);
 
 #define cache_instr_line_size_get arch_icache_line_size_get
 
-#endif /* CONFIG_ICACHE_LINE_SIZE_DETECT || __DOXYGEN__ */
+#endif /* CONFIG_ICACHE_LINE_SIZE_DETECT_SUPPORT || __DOXYGEN__ */
 
 #endif /* CONFIG_ICACHE || __DOXYGEN__ */
 
-#if CONFIG_CACHE_DOUBLEMAP  || __DOXYGEN__
+#if CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS  || __DOXYGEN__
 bool arch_cache_is_ptr_cached(void *ptr);
 #define cache_is_ptr_cached(ptr) arch_cache_is_ptr_cached(ptr)
 
@@ -347,10 +349,14 @@ void __sparse_cache *arch_cache_cached_ptr_get(void *ptr);
 
 void *arch_cache_uncached_ptr_get(void __sparse_cache *ptr);
 #define cache_uncached_ptr(ptr) arch_cache_uncached_ptr_get(ptr)
-#endif /* CONFIG_CACHE_DOUBLEMAP */
+#endif /* CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS */
 
 
 void arch_cache_init(void);
+
+#if defined(CONFIG_CACHE_CAN_SAY_MEM_COHERENCE) || defined(__DOXYGEN__)
+#define cache_is_mem_coherent(ptr) arch_mem_coherent(ptr)
+#endif
 
 /**
  * @}

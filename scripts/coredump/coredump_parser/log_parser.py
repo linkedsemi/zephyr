@@ -7,7 +7,6 @@
 import logging
 import struct
 
-
 # Note: keep sync with C code
 COREDUMP_HDR_ID = b'ZE'
 COREDUMP_HDR_VER = 2
@@ -26,6 +25,14 @@ COREDUMP_MEM_HDR_ID = b'M'
 COREDUMP_MEM_HDR_VER = 1
 LOG_MEM_HDR_STRUCT = "<cH"
 LOG_MEM_HDR_SIZE = struct.calcsize(LOG_MEM_HDR_STRUCT)
+
+# Live per-CPU register snapshot (CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS).
+# One of these precedes each frozen CPU's arch-specific register block
+# (same payload layout as the COREDUMP_ARCH_HDR_ID block), tagged with
+# which CPU and which thread it came from.
+COREDUMP_CPU_SNAPSHOT_HDR_ID = b'F'
+LOG_CPU_SNAPSHOT_HDR_STRUCT = "<cHHI"
+LOG_CPU_SNAPSHOT_HDR_SIZE = struct.calcsize(LOG_CPU_SNAPSHOT_HDR_STRUCT)
 
 
 logger = logging.getLogger("parser")
@@ -62,6 +69,8 @@ class CoredumpLogFile:
         self.log_hdr = None
         self.arch_data = list()
         self.memory_regions = list()
+        self.threads_metadata = {"hdr_ver": None, "data": None}
+        self.cpu_snapshots = list()
 
     def open(self):
         self.fd = open(self.logfile, "rb")
@@ -78,13 +87,16 @@ class CoredumpLogFile:
     def get_threads_metadata(self):
         return self.threads_metadata
 
+    def get_cpu_snapshots(self):
+        return self.cpu_snapshots
+
     def parse_arch_section(self):
         hdr = self.fd.read(LOG_ARCH_HDR_SIZE)
         _, hdr_ver, num_bytes = struct.unpack(LOG_ARCH_HDR_STRUCT, hdr)
 
         arch_data = self.fd.read(num_bytes)
 
-        self.arch_data = {"hdr_ver" : hdr_ver, "data" : arch_data}
+        self.arch_data = {"hdr_ver": hdr_ver, "data": arch_data}
 
         return True
 
@@ -94,7 +106,36 @@ class CoredumpLogFile:
 
         data = self.fd.read(num_bytes)
 
-        self.threads_metadata = {"hdr_ver" : hdr_ver, "data" : data}
+        self.threads_metadata = {"hdr_ver": hdr_ver, "data": data}
+
+        return True
+
+    def parse_cpu_snapshot_section(self):
+        hdr = self.fd.read(LOG_CPU_SNAPSHOT_HDR_SIZE)
+        _, hdr_ver, num_bytes, cpu_id = struct.unpack(LOG_CPU_SNAPSHOT_HDR_STRUCT, hdr)
+
+        ptr_fmt = None
+        if self.log_hdr["ptr_size"] == 64:
+            ptr_fmt = "Q"
+        elif self.log_hdr["ptr_size"] == 32:
+            ptr_fmt = "I"
+        else:
+            return False
+
+        ptr_data = self.fd.read(struct.calcsize(ptr_fmt))
+        (thread_ptr,) = struct.unpack(ptr_fmt, ptr_data)
+
+        data = self.fd.read(num_bytes)
+
+        snapshot = {
+            "hdr_ver": hdr_ver,
+            "cpu_id": cpu_id,
+            "thread_ptr": thread_ptr,
+            "data": data,
+        }
+        self.cpu_snapshots.append(snapshot)
+
+        logger.info("CPU snapshot: cpu=%d thread=0x%x (%d bytes)", cpu_id, thread_ptr, num_bytes)
 
         return True
 
@@ -125,8 +166,7 @@ class CoredumpLogFile:
         mem = {"start": saddr, "end": eaddr, "data": data}
         self.memory_regions.append(mem)
 
-        logger.info("Memory: 0x%x to 0x%x of size %d" %
-                    (saddr, eaddr, size))
+        logger.info(f"Memory: 0x{saddr:x} to 0x{eaddr:x} of size {size:d}")
 
         return True
 
@@ -146,17 +186,17 @@ class CoredumpLogFile:
             logger.error(f"Log version: {hdr_ver}, expected: {COREDUMP_HDR_VER}!")
             return False
 
-        ptr_size = 2 ** ptr_size
+        ptr_size = 2**ptr_size
 
         self.log_hdr = {
-                        "hdr_version": hdr_ver,
-                        "tgt_code": tgt_code,
-                        "ptr_size": ptr_size,
-                        "flags": flags,
-                        "reason": reason,
-                        }
+            "hdr_version": hdr_ver,
+            "tgt_code": tgt_code,
+            "ptr_size": ptr_size,
+            "flags": flags,
+            "reason": reason,
+        }
 
-        logger.info("Reason: {0}".format(reason_string(reason)))
+        logger.info(f"Reason: {reason_string(reason)}")
         logger.info(f"Pointer size {ptr_size}")
 
         del id1, id2, hdr_ver, tgt_code, ptr_size, flags, reason
@@ -167,7 +207,7 @@ class CoredumpLogFile:
                 # no more data to read
                 break
 
-            self.fd.seek(-1, 1) # go back 1 byte
+            self.fd.seek(-1, 1)  # go back 1 byte
             if section_id == COREDUMP_ARCH_HDR_ID:
                 if not self.parse_arch_section():
                     logger.error("Cannot parse architecture section")
@@ -179,6 +219,10 @@ class CoredumpLogFile:
             elif section_id == COREDUMP_MEM_HDR_ID:
                 if not self.parse_memory_section():
                     logger.error("Cannot parse memory section")
+                    return False
+            elif section_id == COREDUMP_CPU_SNAPSHOT_HDR_ID:
+                if not self.parse_cpu_snapshot_section():
+                    logger.error("Cannot parse CPU snapshot section")
                     return False
             else:
                 # Unknown section in log file

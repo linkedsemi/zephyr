@@ -13,7 +13,8 @@ if NET_IPV4
 
 config NET_IF_MAX_IPV4_COUNT
 	int "Max number of IPv4 network interfaces in the system"
-	default NET_VLAN_COUNT if NET_VLAN
+	default NET_VLAN_COUNT if NET_VLAN && NET_VLAN_COUNT > 0
+	default 2 if NRF70_ENABLE_DUAL_VIF
 	default 2 if NET_LOOPBACK
 	default 1
 	help
@@ -22,16 +23,45 @@ config NET_IF_MAX_IPV4_COUNT
 
 config NET_IF_UNICAST_IPV4_ADDR_COUNT
 	int "Max number of unicast IPv4 addresses per network interface"
+	default 4 if NET_NATIVE_OFFLOADED_SOCKETS
 	default 2 if NET_IPV4_AUTO
 	default 2 if NET_LOOPBACK
 	default 1
 
 config NET_IF_MCAST_IPV4_ADDR_COUNT
 	int "Max number of multicast IPv4 addresses per network interface"
+	default 3 if PTP_DELAY_MECHANISM_P2P && PTP_UDP_IPV4_PROTOCOL
 	default 2 if NET_IPV4_IGMP
 	default 1
 
+config NET_L2_ETHERNET_MCAST_FILTER_ADD_COUNT_IPV4
+	int
+	depends on NET_L2_ETHERNET
+	depends on NET_NATIVE_IPV4
+	default NET_IF_MCAST_IPV4_ADDR_COUNT
+	help
+	  Every joined IPv4 multicast address needs a link layer multicast
+	  address on an Ethernet interface. Several IPv4 addresses can map to
+	  the same link layer address, so this is an upper bound.
+
+config NET_IPV4_DEFAULT_NETMASK
+	int "The default netmask length for registered IPv4 addresses"
+	range 1 32
+	default 24
+	help
+	  The default netmask length for the registered IPv4 addresses.
+	  The application can set a custom netmask with
+	  net_if_ipv4_set_netmask_by_addr() API if needed.
+
 if NET_NATIVE_IPV4
+
+config NET_IPV4_MTU
+	int "Initial IPv4 MTU value"
+	default 576
+	range 576 1500
+	help
+	  The value should normally be 576 which is the minimum IPv4 packet
+	  size that implementations need to support without fragmentation.
 
 config NET_INITIAL_TTL
 	int "Initial IPv4 time to live value for unicast packets"
@@ -55,6 +85,13 @@ config NET_INITIAL_MCAST_TTL
 	  The default is 1 (same as in Linux) which means that multicast packets
 	  don't leave the local network unless the application explicitly
 	  requests it.
+
+config NET_INITIAL_IPV4_MCAST_LOOP
+	bool "Control whether the socket sees multicast packets sent by itself"
+	default y
+	help
+	  Assign initial value to IPV4_MULTICAST_LOOP in socket options,
+	  if not set by the user using setsockopt().
 
 config NET_IF_MCAST_IPV4_SOURCE_COUNT
 	int "Max number of IPv4 sources per mcast address to be included or excluded"
@@ -88,6 +125,29 @@ config NET_IPV4_IGMPV3
 	help
 	  Use IGMPv3 for managing the multicast groups.
 
+config NET_IPV4_IGMP_ROBUSTNESS
+	int "IGMP Robustness Variable"
+	depends on NET_IPV4_IGMP
+	range 1 7
+	default 2
+	help
+	  The Robustness Variable of RFC 3376 ch 8.1 allows tuning for the
+	  expected packet loss on a network, it should not be set to one. The
+	  unsolicited report of a join is sent Robustness Variable times in
+	  total, and an older version querier is remembered for Robustness
+	  Variable times the Query Interval plus one Query Response Interval
+	  after its last query.
+
+config NET_IPV4_IGMP_REQUIRE_ROUTER_ALERT
+	bool "Ignore IGMPv2 and IGMPv3 queries without the Router Alert option"
+	depends on NET_IPV4_IGMP
+	help
+	  Queries are sent with the IP Router Alert option, and a query without
+	  it may have been forged from outside the local network, so hosts
+	  should ignore it (RFC 3376 ch 9.1). Some queriers, IGMP snooping
+	  switches among them, leave the option out and their queries would go
+	  unanswered, so the check is off unless enabled here.
+
 config NET_IPV4_ACD
 	bool "Activate IPv4 address conflict detection (RFC 5227)"
 	depends on NET_ARP
@@ -96,9 +156,8 @@ config NET_IPV4_ACD
 	  The conflict detection is based on ARP probes/announcements.
 
 config NET_IPV4_AUTO
-	bool "IPv4 autoconfiguration [EXPERIMENTAL]"
+	bool "IPv4 autoconfiguration"
 	depends on NET_ARP
-	select EXPERIMENTAL
 	select NET_IPV4_ACD
 	select NET_MGMT
 	select NET_MGMT_EVENT
@@ -130,6 +189,14 @@ config NET_IPV4_FRAGMENT_MAX_COUNT
 	  simultaneously. You may need to increase the network buffer
 	  count.
 
+	  A datagram whose fragments never all arrive keeps its slot until
+	  NET_IPV4_FRAGMENT_TIMEOUT expires. While every slot is taken,
+	  fragments of any other datagram are dropped. With the default of
+	  one slot, a single incomplete datagram blocks all fragmented
+	  traffic for the whole timeout. Increase this value, or lower the
+	  timeout, if the device must keep receiving fragmented packets
+	  while stray or malicious fragments arrive.
+
 config NET_IPV4_FRAGMENT_MAX_PKT
 	int "How many fragments can be handled to reassemble a packet"
 	default 2
@@ -151,10 +218,130 @@ config NET_IPV4_FRAGMENT_TIMEOUT
 	  How long to wait for IPv4 fragment to arrive before the reassembly
 	  will timeout. This value is in seconds.
 
+	  An incomplete datagram holds one of the NET_IPV4_FRAGMENT_MAX_COUNT
+	  slots for this long, so a shorter timeout frees slots faster at the
+	  cost of giving up on slow senders sooner.
+
+config NET_IPV4_PMTU
+	bool "IPv4 Path MTU Discovery"
+	help
+	  Enables IPv4 Path MTU Discovery (see RFC 1191)
+
+config NET_IPV4_PMTU_DESTINATION_CACHE_ENTRIES
+	int "Number of IPv4 PMTU destination cache entries"
+	default 3
+	depends on NET_IPV4_PMTU
+	help
+	  How many PMTU entries we can track for each destination address.
+
+config NET_IPV4_PMTU_PTB
+	bool "IPv4 PMTU Discovery using ICMP messages"
+	default y
+	depends on NET_IPV4_PMTU
+	help
+	  Enables IPv4 Path MTU Discovery (see RFC 1191)
+
+config NET_IPV4_PMTU_DPLPMTUD
+	bool "IPv4 PMTU Discovery using datagram messages"
+	depends on NET_UDP
+	depends on NET_IPV4_PMTU
+	help
+	  Enables IPv4 Datagram Packetization Layer Path MTU Discovery (see RFC 8899)
+
+config NET_IPV4_NBR_CACHE
+	bool "Neighbor cache"
+	default y if NET_ARP
+	help
+	  The value depends on your network needs. You might need to enable
+	  neighbor cache and IPv4 route table support if you have multiple
+	  network interfaces and you want to control where IPv4 packets are
+	  sent.
+
+config NET_IPV4_MAX_NEIGHBORS
+	int "How many IPv4 neighbors are supported"
+	depends on NET_IPV4_NBR_CACHE
+	default 8
+	range 1 254
+	help
+	  The value depends on your network needs.
+
+config NET_IPV4_ROUTE
+	bool "IPv4 unicast route table support"
+	depends on NET_IPV4_NBR_CACHE
+	default y if NET_IPV4_NBR_CACHE
+	help
+	  Enable the IPv4 unicast route table and route-aware destination
+	  selection for locally originated traffic.
+
+	  This option is needed for static IPv4 routes, route lookups from
+	  networking shell commands, and host-side route selection such as
+	  VPN traffic steering. Enable NET_IPV4_FORWARDING as well if the
+	  device must forward packets between interfaces.
+
+config NET_IPV4_FORWARDING
+	bool "IPv4 forwarding between interfaces"
+	default y if NET_IPV4_ROUTING
+	depends on NET_IPV4_ROUTE
+	help
+	  Allow the device to forward IPv4 packets between different network
+	  interfaces and technologies.
+
+	  This is separate from NET_IPV4_ROUTE, which only enables the IPv4
+	  route table for host-side route selection and shell route commands.
+
+config NET_IPV4_ROUTING
+	bool "IPv4 routing between interfaces [DEPRECATED]"
+	depends on NET_IPV4_ROUTE
+	select DEPRECATED
+	help
+	  This symbol is deprecated, use NET_IPV4_FORWARDING instead.
+
+config NET_IPV4_MAX_ROUTES
+	int "Max number of routing entries stored."
+	default NET_IPV4_MAX_NEIGHBORS
+	depends on NET_IPV4_ROUTE
+	help
+	  This determines how many entries can be stored in routing table.
+
+config NET_IPV4_NAT
+	bool "IPv4 Network Address Translation (EXPERIMENTAL)"
+	depends on NET_IPV4_FORWARDING
+	select NET_PKT_FILTER
+	select NET_PKT_FILTER_IPV4_HOOK
+	select EXPERIMENTAL
+	help
+	  Update address and ports of packets for other interfaces.
+	  And pass them to route process.
+	  Add iptable rule to allow specific packets to be forwarded.
+
+if NET_IPV4_NAT
+
+config NET_IPV4_CONN_TRACK_MAX_NUM
+	int "Maximum connection track maintained for IP forward"
+	default 10
+	help
+	  Maximum number of active connection tracks maintained
+	  in the same time.
+	  The connection track will age out after inactive timeout.
+
+config NET_IPV4_IPTABLE_RULE_MAX_NUM
+	int "Maximum IP table rule number for IP forward"
+	default 3
+	help
+	  Maximum number of active IP table rules.
+
+endif
+
 module = NET_IPV4
 module-dep = NET_LOG
 module-str = Log level for core IPv4
 module-help = Enables core IPv4 code to output debug messages.
+source "subsys/net/Kconfig.template.log_config.net"
+
+module = NET_IPV4_ROUTE
+module-dep = NET_LOG
+module-str = Log level for IPv4 route management
+module-help = Enables IPv4 routing engine debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
 
 module = NET_ICMPV4
@@ -163,21 +350,26 @@ module-str = Log level for ICMPv4
 module-help = Enables ICMPv4 code to output debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
 
-#if NET_IPV4_ACD
+if NET_IPV4_ACD
+
 module = NET_IPV4_ACD
 module-dep = NET_LOG
 module-str = Log level for IPv4 address conflict detection
 module-help = Enables IPv4 address conflict detection debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
-#endif
+
+endif
 
 if NET_IPV4_AUTO
+
 module = NET_IPV4_AUTO
 module-dep = NET_LOG
 module-str = Log level for IPv4 autoconf client
 module-help = Enable debug diagnostic from IPv4 autoconf client.
 source "subsys/net/Kconfig.template.log_config.net"
+
 endif # NET_IPV4_AUTO
 
 endif # NET_NATIVE_IPV4
+
 endif # NET_IPV4

@@ -14,8 +14,8 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/linear_range.h>
 
-#include "zephyr/logging/log.h"
-LOG_MODULE_REGISTER(max20335_charger);
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(max20335_charger, CONFIG_CHARGER_LOG_LEVEL);
 
 #define MAX20335_REG_STATUSA 0x02
 #define MAX20335_REG_STATUSB 0x03
@@ -544,6 +544,7 @@ static void max20335_int_routine_work_handler(struct k_work *work)
 		if (ret < 0) {
 			LOG_WRN("Failed to read charger status: %d", ret);
 		} else {
+			LOG_INF("Charging status: %d", data->charger_status);
 			if (data->charger_status_notifier != NULL) {
 				data->charger_status_notifier(data->charger_status);
 			}
@@ -555,6 +556,7 @@ static void max20335_int_routine_work_handler(struct k_work *work)
 		if (ret < 0) {
 			LOG_WRN("Failed to read charger online %d", ret);
 		} else {
+			LOG_INF("Online status: %d", data->charger_online);
 			if (data->charger_online_notifier != NULL) {
 				data->charger_online_notifier(data->charger_online);
 			}
@@ -646,7 +648,7 @@ static int max20335_init(const struct device *dev)
 	return 0;
 }
 
-static const struct charger_driver_api max20335_driver_api = {
+static DEVICE_API(charger, max20335_driver_api) = {
 	.get_property = max20335_get_prop,
 	.set_property = max20335_set_prop,
 	.charge_enable = max20335_set_enabled,

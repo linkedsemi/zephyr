@@ -21,6 +21,7 @@ LOG_MODULE_REGISTER(net_ieee802154_6lo_fragment, CONFIG_NET_L2_IEEE802154_LOG_LE
 
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_stats.h>
 #include <zephyr/net/udp.h>
@@ -46,6 +47,10 @@ struct frag_cache {
 };
 
 static struct frag_cache cache[REASS_CACHE_SIZE];
+static bool cache_init_done;
+
+/* Serializes the reassembly cache between the RX path and the timeout handler */
+static K_MUTEX_DEFINE(reass_lock);
 
 /**
  *  RFC 4944, section 5.3
@@ -226,34 +231,44 @@ static inline uint16_t get_datagram_tag(uint8_t *ptr)
 	return (ptr[0] << 8) | ptr[1];
 }
 
-static void update_protocol_header_lengths(struct net_pkt *pkt, uint16_t size)
+static int update_protocol_header_lengths(struct net_pkt *pkt, uint16_t size)
 {
 	NET_PKT_DATA_ACCESS_DEFINE(ipv6_access, struct net_ipv6_hdr);
 	struct net_ipv6_hdr *ipv6;
+	int ret;
 
 	ipv6 = (struct net_ipv6_hdr *)net_pkt_get_data(pkt, &ipv6_access);
 	if (!ipv6) {
 		NET_ERR("Could not get IPv6 header");
-		return;
+		return -ENOBUFS;
 	}
 
 	net_pkt_set_ip_hdr_len(pkt, NET_IPV6H_LEN);
-	ipv6->len = htons(size - NET_IPV6H_LEN);
+	ipv6->len = net_htons(size - NET_IPV6H_LEN);
 
-	net_pkt_set_data(pkt, &ipv6_access);
+	ret = net_pkt_set_data(pkt, &ipv6_access);
+	if (ret < 0) {
+		return ret;
+	}
 
-	if (ipv6->nexthdr == IPPROTO_UDP) {
+	if (ipv6->nexthdr == NET_IPPROTO_UDP) {
 		NET_PKT_DATA_ACCESS_DEFINE(udp_access, struct net_udp_hdr);
 		struct net_udp_hdr *udp;
 
 		udp = (struct net_udp_hdr *)net_pkt_get_data(pkt, &udp_access);
 		if (udp) {
-			udp->len = htons(size - NET_IPV6H_LEN);
-			net_pkt_set_data(pkt, &udp_access);
+			udp->len = net_htons(size - NET_IPV6H_LEN);
+			ret = net_pkt_set_data(pkt, &udp_access);
+			if (ret < 0) {
+				return ret;
+			}
 		} else {
 			NET_ERR("Could not get UDP header");
+			return -ENOBUFS;
 		}
 	}
+
+	return 0;
 }
 
 static inline void clear_reass_cache(uint16_t size, uint16_t tag)
@@ -286,6 +301,16 @@ static void reass_timeout(struct k_work *work)
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct frag_cache *fcache = CONTAINER_OF(dwork, struct frag_cache, timer);
 
+	k_mutex_lock(&reass_lock, K_FOREVER);
+
+	/* While this handler waited for the lock, the RX path may have released
+	 * the entry, or released it and stored a new datagram in it.
+	 */
+	if (!fcache->used || k_work_delayable_remaining_get(dwork) != 0) {
+		k_mutex_unlock(&reass_lock);
+		return;
+	}
+
 	if (fcache->pkt) {
 		net_pkt_unref(fcache->pkt);
 	}
@@ -294,6 +319,8 @@ static void reass_timeout(struct k_work *work)
 	fcache->size = 0U;
 	fcache->tag = 0U;
 	fcache->used = false;
+
+	k_mutex_unlock(&reass_lock);
 }
 
 /**
@@ -315,7 +342,6 @@ static inline struct frag_cache *set_reass_cache(struct net_pkt *pkt, uint16_t s
 		cache[i].tag = tag;
 		cache[i].used = true;
 
-		k_work_init_delayable(&cache[i].timer, reass_timeout);
 		k_work_reschedule(&cache[i].timer, FRAG_REASSEMBLY_TIMEOUT);
 		return &cache[i];
 	}
@@ -485,13 +511,27 @@ static inline enum net_verdict fragment_add_to_cache(struct net_pkt *pkt)
 	struct net_buf *frag;
 	uint16_t size;
 	uint16_t tag;
+	uint8_t hdr_len;
 	uint8_t type;
+	int ret;
 
 	frag = pkt->buffer;
 	type = get_datagram_type(frag->data);
 
-	if ((type == NET_6LO_DISPATCH_FRAG1 && frag->len < NET_6LO_FRAG1_HDR_LEN) ||
-	    (type == NET_6LO_DISPATCH_FRAGN && frag->len < NET_6LO_FRAGN_HDR_LEN)) {
+	/* Only FRAG1 (11000xxx) and FRAGN (11100xxx) are supported. Other
+	 * dispatch values in this range, such as RFC 8025 paging or RFC 8931
+	 * RFRAG, are not implemented.
+	 */
+	if (type == NET_6LO_DISPATCH_FRAG1) {
+		hdr_len = NET_6LO_FRAG1_HDR_LEN;
+	} else if (type == NET_6LO_DISPATCH_FRAGN) {
+		hdr_len = NET_6LO_FRAGN_HDR_LEN;
+	} else {
+		NET_ERR("Unsupported fragment dispatch (0x%02x): fragment dropped", frag->data[0]);
+		return NET_DROP;
+	}
+
+	if (frag->len < hdr_len) {
 		NET_ERR("Fragment too short (%u): fragment dropped", frag->len);
 		return NET_DROP;
 	}
@@ -507,10 +547,21 @@ static inline enum net_verdict fragment_add_to_cache(struct net_pkt *pkt)
 	 */
 	pkt->buffer = NULL;
 
+	k_mutex_lock(&reass_lock, K_FOREVER);
+
+	if (!cache_init_done) {
+		for (int i = 0; i < REASS_CACHE_SIZE; i++) {
+			k_work_init_delayable(&cache[i].timer, reass_timeout);
+		}
+
+		cache_init_done = true;
+	}
+
 	fcache = get_reass_cache(size, tag);
 	if (!fcache) {
 		fcache = set_reass_cache(pkt, size, tag);
 		if (!fcache) {
+			k_mutex_unlock(&reass_lock);
 			NET_ERR("Could not allocate fragment cache, consider increasing "
 				"CONFIG_NET_L2_IEEE802154_FRAGMENT_REASS_CACHE_SIZE: packet "
 				"dropped");
@@ -539,6 +590,8 @@ static inline enum net_verdict fragment_add_to_cache(struct net_pkt *pkt)
 
 		clear_reass_cache(size, tag);
 
+		k_mutex_unlock(&reass_lock);
+
 		if (!fragment_packet_valid(pkt)) {
 			NET_ERR("Invalid fragment type: packet dropped");
 			return NET_DROP;
@@ -553,7 +606,11 @@ static inline enum net_verdict fragment_add_to_cache(struct net_pkt *pkt)
 
 		net_pkt_cursor_init(pkt);
 
-		update_protocol_header_lengths(pkt, size);
+		ret = update_protocol_header_lengths(pkt, size);
+		if (ret < 0) {
+			NET_ERR("Failed to update header lengths");
+			return NET_DROP;
+		}
 
 		net_pkt_cursor_init(pkt);
 
@@ -561,6 +618,8 @@ static inline enum net_verdict fragment_add_to_cache(struct net_pkt *pkt)
 
 		return NET_CONTINUE;
 	}
+
+	k_mutex_unlock(&reass_lock);
 
 	/* Unref Rx part of original packet */
 	if (!first_frag) {

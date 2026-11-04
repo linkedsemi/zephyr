@@ -13,13 +13,12 @@ LOG_MODULE_DECLARE(net_shell);
 #include "net_shell_private.h"
 
 #if defined(CONFIG_NET_L2_PPP)
-#include <zephyr/net/ppp.h>
 #include "ppp/ppp_internal.h"
 #endif
 
 static int cmd_net_ppp_ping(const struct shell *sh, size_t argc, char *argv[])
 {
-#if defined(CONFIG_NET_PPP)
+#if defined(CONFIG_NET_L2_PPP)
 	if (argv[1]) {
 		int ret, idx = get_iface_idx(sh, argv[1]);
 
@@ -58,7 +57,7 @@ static int cmd_net_ppp_ping(const struct shell *sh, size_t argc, char *argv[])
 
 static int cmd_net_ppp_status(const struct shell *sh, size_t argc, char *argv[])
 {
-#if defined(CONFIG_NET_PPP)
+#if defined(CONFIG_NET_L2_PPP)
 	int idx = 0;
 	struct ppp_context *ctx;
 
@@ -120,8 +119,7 @@ static int cmd_net_ppp_status(const struct shell *sh, size_t argc, char *argv[])
 #endif /* CONFIG_NET_L2_PPP_PAP */
 
 #else
-	PR_INFO("Set %s to enable %s support.\n",
-		"CONFIG_NET_L2_PPP and CONFIG_NET_PPP", "PPP");
+	PR_INFO("Set %s to enable %s support.\n", "CONFIG_NET_L2_PPP", "PPP");
 #endif
 	return 0;
 }
@@ -131,7 +129,7 @@ static int cmd_net_ppp_status(const struct shell *sh, size_t argc, char *argv[])
 #define MAX_IFACE_HELP_STR_LEN sizeof("longbearername (0xabcd0123)")
 #define MAX_IFACE_STR_LEN sizeof("xxx")
 
-#if defined(CONFIG_NET_PPP)
+#if defined(CONFIG_NET_L2_PPP)
 static char iface_ppp_help_buffer[MAX_IFACE_COUNT][MAX_IFACE_HELP_STR_LEN];
 static char iface_ppp_index_buffer[MAX_IFACE_COUNT][MAX_IFACE_STR_LEN];
 
@@ -205,7 +203,7 @@ static void iface_ppp_index_get(size_t idx, struct shell_static_entry *entry)
 #define IFACE_PPP_DYN_CMD &iface_ppp_index
 #else
 #define IFACE_PPP_DYN_CMD NULL
-#endif /* CONFIG_NET_PPP */
+#endif /* CONFIG_NET_L2_PPP */
 
 #else
 #define IFACE_PPP_DYN_CMD NULL
@@ -213,10 +211,10 @@ static void iface_ppp_index_get(size_t idx, struct shell_static_entry *entry)
 
 SHELL_STATIC_SUBCMD_SET_CREATE(net_cmd_ppp,
 	SHELL_CMD(ping, IFACE_PPP_DYN_CMD,
-		  "'net ppp ping <index>' sends Echo-request to PPP interface.",
+		  SHELL_HELP("Sends Echo-request to PPP interface", "<index>"),
 		  cmd_net_ppp_ping),
 	SHELL_CMD(status, NULL,
-		  "'net ppp status' prints information about PPP.",
+		  SHELL_HELP("Prints information about PPP", ""),
 		  cmd_net_ppp_status),
 	SHELL_SUBCMD_SET_END
 );

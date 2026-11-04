@@ -6,11 +6,20 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief MIPS specific kernel interface header
+ *
+ * This header contains the MIPS specific kernel interface.  It is
+ * included by the kernel interface architecture-abstraction header
+ * (include/zephyr/arch/cpu.h).
+ */
+
 #ifndef ZEPHYR_INCLUDE_ARCH_MIPS_ARCH_H_
 #define ZEPHYR_INCLUDE_ARCH_MIPS_ARCH_H_
 
 #include <zephyr/arch/mips/thread.h>
-#include <zephyr/arch/mips/exception.h>
+#include <zephyr/arch/exception.h>
 #include <zephyr/arch/common/sys_bitops.h>
 #include <zephyr/arch/common/sys_io.h>
 #include <zephyr/arch/common/ffs.h>
@@ -87,6 +96,12 @@ static ALWAYS_INLINE void arch_irq_unlock(unsigned int key)
 static ALWAYS_INLINE bool arch_irq_unlocked(unsigned int key)
 {
 	return key != 0;
+}
+
+/** Implementation of @ref arch_cpu_irqs_are_enabled. */
+static ALWAYS_INLINE bool arch_cpu_irqs_are_enabled(void)
+{
+	return (read_c0_status() & ST0_IE) != 0;
 }
 
 static ALWAYS_INLINE void arch_nop(void)

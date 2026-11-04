@@ -25,13 +25,13 @@ LOG_MODULE_REGISTER(lpd880x);
 #include <zephyr/sys/util.h>
 
 /*
- * LPD880X SPI master configuration:
+ * LPD880X SPI controller configuration:
  *
  * - mode 0 (the default), 8 bit, MSB first, one-line SPI
  * - no shenanigans (no CS hold, release device lock, not an EEPROM)
  */
-#define LPD880X_SPI_OPERATION (SPI_OP_MODE_MASTER | \
-			       SPI_TRANSFER_MSB |   \
+#define LPD880X_SPI_OPERATION (SPI_OP_MODE_CONTROLLER | \
+			       SPI_TRANSFER_MSB |       \
 			       SPI_WORD_SET(8))
 
 struct lpd880x_config {
@@ -146,11 +146,11 @@ static int lpd880x_strip_init(const struct device *dev)
 }
 
 static const struct lpd880x_config lpd880x_config = {
-	.bus = SPI_DT_SPEC_INST_GET(0, LPD880X_SPI_OPERATION, 0),
+	.bus = SPI_DT_SPEC_INST_GET(0, LPD880X_SPI_OPERATION),
 	.length = DT_INST_PROP(0, chain_length),
 };
 
-static const struct led_strip_driver_api lpd880x_strip_api = {
+static DEVICE_API(led_strip, lpd880x_strip_api) = {
 	.update_rgb = lpd880x_strip_update_rgb,
 	.update_channels = lpd880x_strip_update_channels,
 	.length = lpd880x_strip_length,

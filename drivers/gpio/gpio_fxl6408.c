@@ -393,7 +393,7 @@ int gpio_fxl6408_init(const struct device *dev)
 	return 0;
 }
 
-static const struct gpio_driver_api gpio_fxl_driver = {
+static DEVICE_API(gpio, gpio_fxl_driver) = {
 	.pin_configure = gpio_fxl6408_pin_config,
 	.port_get_raw = gpio_fxl6408_port_get_raw,
 	.port_set_masked_raw = gpio_fxl6408_port_set_masked_raw,
@@ -404,9 +404,7 @@ static const struct gpio_driver_api gpio_fxl_driver = {
 
 #define GPIO_FXL6408_DEVICE_INSTANCE(inst)                                     \
 	static const struct gpio_fxl6408_config gpio_fxl6408_##inst##_cfg = {  \
-		.common = {                                                    \
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(inst),\
-		},                                                             \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(inst),                \
 		.i2c = I2C_DT_SPEC_INST_GET(inst)                              \
 	};                                                                     \
 \

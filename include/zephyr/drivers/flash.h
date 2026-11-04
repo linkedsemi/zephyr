@@ -7,16 +7,17 @@
 
 /**
  * @file
- * @brief Public API for FLASH drivers
+ * @ingroup flash_interface
+ * @brief Main header file for Flash driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_FLASH_H_
 #define ZEPHYR_INCLUDE_DRIVERS_FLASH_H_
 
 /**
- * @brief FLASH internal Interface
- * @defgroup flash_internal_interface FLASH internal Interface
- * @ingroup io_interfaces
+ * @brief Internal interfaces for flash memory controllers.
+ * @defgroup flash_internal_interface Flash Internal
+ * @ingroup flash_interface
  * @{
  */
 
@@ -31,24 +32,31 @@
 extern "C" {
 #endif
 
-#if defined(CONFIG_FLASH_PAGE_LAYOUT)
+/**
+ * @brief Describes a sequence of flash pages of the same size.
+ */
 struct flash_pages_layout {
-	size_t pages_count; /* count of pages sequence of the same size */
-	size_t pages_size;
+	size_t pages_count; /**< Number of pages of the same size in the sequence */
+	size_t pages_size;  /**< Size of each page in the sequence, in bytes */
 };
-#endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
 /**
  * @}
  */
 
 /**
- * @brief FLASH Interface
- * @defgroup flash_interface FLASH Interface
+ * @brief Interfaces for flash memory controllers.
+ * @defgroup flash_interface Flash
  * @since 1.2
  * @version 1.0.0
  * @ingroup io_interfaces
+ *
  * @{
+ *
+ * @defgroup flash_ex_op Extended Operations
+ * @brief Vendor-specific extended operations for flash drivers.
+ * @{
+ * @}
  */
 
 /**
@@ -71,6 +79,11 @@ struct flash_parameters {
 		 * do not require it.
 		 */
 		bool no_explicit_erase: 1;
+
+		/* Erased area does not read back as erase_value, for example
+		 * because the read path decrypts what is stored.
+		 */
+		bool erase_value_readback_unsupported: 1;
 	} caps;
 	/** @endcond */
 	/** Value the device is filled in erased areas */
@@ -85,12 +98,15 @@ struct flash_parameters {
  */
 #define FLASH_ERASE_CAPS_UNSET		(int)-1
 /* The values below are now reserved but not used */
+/** Reserved, not used */
 #define FLASH_ERASE_C_SUPPORTED		0x02
+/** Reserved, not used */
 #define FLASH_ERASE_C_VAL_BIT		0x04
+/** Reserved, not used */
 #define FLASH_ERASE_UNIFORM_PAGE	0x08
 
-
-/* @brief Parser for flash_parameters for retrieving erase capabilities
+/**
+ * @brief Parser for flash_parameters for retrieving erase capabilities
  *
  * The functions parses flash_parameters type object and returns combination
  * of erase capabilities of 0 if device does not have any.
@@ -113,8 +129,27 @@ int flash_params_get_erase_cap(const struct flash_parameters *p)
 	ARG_UNUSED(p);
 	return FLASH_ERASE_C_EXPLICIT;
 #endif
+#else
+	ARG_UNUSED(p);
 #endif
 	return 0;
+}
+
+/**
+ * @brief Check if erased area reads back as the erase value
+ *
+ * Returns false on devices that transform the content on read, typically
+ * transparent decryption, so an erased area does not read back as
+ * flash_parameters.erase_value. Storage systems should then rely on the erase
+ * status reported by the driver instead of reading the erase value back.
+ *
+ * @param p		pointer to flash_parameters type object
+ *
+ * @return true if erased area reads back as erase_value, false otherwise.
+ */
+static inline bool flash_params_erase_value_readable(const struct flash_parameters *p)
+{
+	return !p->caps.erase_value_readback_unsupported;
 }
 
 /**
@@ -122,10 +157,23 @@ int flash_params_get_erase_cap(const struct flash_parameters *p)
  */
 
 /**
- * @addtogroup flash_internal_interface
+ * @def_driverbackendgroup{Flash,flash_interface}
+ * @ingroup flash_interface
  * @{
  */
 
+/**
+ * @brief Flash read implementation handler type
+ *
+ * @return 0 on success or len is zero, -EINVAL if page offset doesn't exist or data
+ *         destination is NULL
+ *
+ * @note Any necessary read protection management must be performed by
+ * the driver.
+ *
+ * For consistency across implementations, value check len parameter equal zero and
+ * return result 0 before validating the data destination parameter.
+ */
 typedef int (*flash_api_read)(const struct device *dev, off_t offset,
 			      void *data,
 			      size_t len);
@@ -156,9 +204,50 @@ typedef int (*flash_api_write)(const struct device *dev, off_t offset,
 typedef int (*flash_api_erase)(const struct device *dev, off_t offset,
 			       size_t size);
 
+#if defined(CONFIG_FLASH_HAS_DRIVER_FILL)
+/**
+ * @brief Flash fill implementation handler type
+ *
+ * Fills a range of flash memory with the specified value, honoring the
+ * device's write_block_size constraint. This callback is optional; when
+ * not provided, flash_fill() falls back to a generic implementation
+ * emulated via flash_api_write.
+ *
+ * @note Intended primarily for RAM-type non-volatile memories
+ * (RRAM/MRAM) which do not require explicit erase, allowing a
+ * driver-level optimized memset-like operation. May also be provided
+ * by explicit-erase drivers when a more efficient path than a loop of
+ * writes is available.
+ *
+ * Implementations must return 0 when @p size is 0 without performing
+ * any work and without validating @p offset; there is nothing to do
+ * and treating an empty range as an error makes upper layers harder
+ * to write.
+ */
+typedef int (*flash_api_fill)(const struct device *dev, uint8_t val,
+			      off_t offset, size_t size);
+#endif /* CONFIG_FLASH_HAS_DRIVER_FILL */
+
+/**
+ * @brief Get device size in bytes.
+ *
+ * Returns total logical device size in bytes.
+ *
+ * @param[in] dev	flash device.
+ * @param[out] size	device size in bytes.
+ *
+ * @return 0 on success, negative errno code on error.
+ */
+typedef int (*flash_api_get_size)(const struct device *dev, uint64_t *size);
+
+/**
+ * @brief Get device parameters.
+ *
+ * @param[in] dev Flash device
+ * @return Pointer to the flash parameters structure holding the device's parameters.
+ */
 typedef const struct flash_parameters* (*flash_api_get_parameters)(const struct device *dev);
 
-#if defined(CONFIG_FLASH_PAGE_LAYOUT)
 /**
  * @brief Retrieve a flash device's layout.
  *
@@ -183,34 +272,72 @@ typedef const struct flash_parameters* (*flash_api_get_parameters)(const struct 
 typedef void (*flash_api_pages_layout)(const struct device *dev,
 				       const struct flash_pages_layout **layout,
 				       size_t *layout_size);
-#endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
+/**
+ * @brief Read data from Serial Flash Discoverable Parameters.
+ * See flash_sfdp_read() for argument descriptions.
+ */
 typedef int (*flash_api_sfdp_read)(const struct device *dev, off_t offset,
 				   void *data, size_t len);
+/**
+ * @brief Read the JEDEC ID of the device.
+ * See flash_read_jedec_id() for argument descriptions.
+ */
 typedef int (*flash_api_read_jedec_id)(const struct device *dev, uint8_t *id);
+/**
+ * @brief Perform an extended operation.
+ * See flash_ex_op() for argument descriptions.
+ */
 typedef int (*flash_api_ex_op)(const struct device *dev, uint16_t code,
 			       const uintptr_t in, void *out);
 
+/**
+ * @driver_ops{Flash}
+ */
 __subsystem struct flash_driver_api {
+	/** @driver_ops_mandatory @copybrief flash_read */
 	flash_api_read read;
+	/** @driver_ops_mandatory @copybrief flash_write */
 	flash_api_write write;
+	/** @driver_ops_optional @copybrief flash_erase */
 	flash_api_erase erase;
+#if defined(CONFIG_FLASH_HAS_DRIVER_FILL)
+	/** @driver_ops_optional @copybrief flash_fill */
+	flash_api_fill fill;
+#endif /* CONFIG_FLASH_HAS_DRIVER_FILL */
+	/** @driver_ops_mandatory @copybrief flash_get_parameters */
 	flash_api_get_parameters get_parameters;
-#if defined(CONFIG_FLASH_PAGE_LAYOUT)
+	/** @driver_ops_optional @copybrief flash_get_size */
+	flash_api_get_size get_size;
+#if defined(CONFIG_FLASH_PAGE_LAYOUT) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_mandatory @copybrief flash_api_pages_layout
+	 * @kconfig_dep{CONFIG_FLASH_PAGE_LAYOUT}
+	 */
 	flash_api_pages_layout page_layout;
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
-#if defined(CONFIG_FLASH_JESD216_API)
+#if defined(CONFIG_FLASH_JESD216_API) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief flash_sfdp_read
+	 * @kconfig_dep{CONFIG_FLASH_JESD216_API}
+	 */
 	flash_api_sfdp_read sfdp_read;
+	/**
+	 * @driver_ops_optional @copybrief flash_read_jedec_id
+	 * @kconfig_dep{CONFIG_FLASH_JESD216_API}
+	 */
 	flash_api_read_jedec_id read_jedec_id;
 #endif /* CONFIG_FLASH_JESD216_API */
-#if defined(CONFIG_FLASH_EX_OP_ENABLED)
+#if defined(CONFIG_FLASH_EX_OP_ENABLED) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief flash_ex_op
+	 * @kconfig_dep{CONFIG_FLASH_EX_OP_ENABLED}
+	 */
 	flash_api_ex_op ex_op;
 #endif /* CONFIG_FLASH_EX_OP_ENABLED */
 };
 
-/**
- * @}
- */
+/** @} */
 
 /**
  * @addtogroup flash_interface
@@ -237,10 +364,7 @@ static inline int z_impl_flash_read(const struct device *dev, off_t offset,
 				    void *data,
 				    size_t len)
 {
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
-
-	return api->read(dev, offset, data, len);
+	return DEVICE_API_GET(flash, dev)->read(dev, offset, data, len);
 }
 
 /**
@@ -268,13 +392,7 @@ __syscall int flash_write(const struct device *dev, off_t offset,
 static inline int z_impl_flash_write(const struct device *dev, off_t offset,
 				     const void *data, size_t len)
 {
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
-	int rc;
-
-	rc = api->write(dev, offset, data, len);
-
-	return rc;
+	return DEVICE_API_GET(flash, dev)->write(dev, offset, data, len);
 }
 
 /**
@@ -312,11 +430,37 @@ static inline int z_impl_flash_erase(const struct device *dev, off_t offset,
 {
 	int rc = -ENOSYS;
 
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
+	const struct flash_driver_api *api = DEVICE_API_GET(flash, dev);
 
 	if (api->erase != NULL) {
 		rc = api->erase(dev, offset, size);
+	}
+
+	return rc;
+}
+
+/**
+ * @brief Get device size in bytes.
+ *
+ * Returns total logical device size in bytes. Not all devices may support
+ * returning size, specifically those with non uniform page layouts or banked,
+ * in which case the function will return -ENOTSUP, and user has to rely
+ * on Flash page layout functions enabled by CONFIG_FLASH_PAGE_LAYOUT.
+ *
+ * @param[in] dev	flash device.
+ * @param[out] size	device size in bytes.
+ *
+ * @return 0 on success, negative errno code on error.
+ */
+__syscall int flash_get_size(const struct device *dev, uint64_t *size);
+
+static inline int z_impl_flash_get_size(const struct device *dev, uint64_t *size)
+{
+	int rc = -ENOSYS;
+	const struct flash_driver_api *api = DEVICE_API_GET(flash, dev);
+
+	if (api->get_size != NULL) {
+		rc = api->get_size(dev, size);
 	}
 
 	return rc;
@@ -378,15 +522,20 @@ __syscall int flash_fill(const struct device *dev, uint8_t val, off_t offset, si
  */
 __syscall int flash_flatten(const struct device *dev, off_t offset, size_t size);
 
+/**
+ * @brief Information about a flash page.
+ */
 struct flash_pages_info {
-	off_t start_offset; /* offset from the base of flash address */
-	size_t size;
-	uint32_t index;
+	off_t start_offset; /**< Offset of the page from the base of the flash address space */
+	size_t size;        /**< Size of the page in bytes */
+	uint32_t index;     /**< Index of the page, counted from 0 */
 };
 
-#if defined(CONFIG_FLASH_PAGE_LAYOUT)
+#if defined(CONFIG_FLASH_PAGE_LAYOUT) || defined(__DOXYGEN__)
 /**
  *  @brief  Get the size and start offset of flash page at certain flash offset.
+ *
+ * @kconfig_dep{CONFIG_FLASH_PAGE_LAYOUT}
  *
  *  @param  dev flash device
  *  @param  offset Offset within the page
@@ -401,6 +550,8 @@ __syscall int flash_get_page_info_by_offs(const struct device *dev,
 /**
  *  @brief  Get the size and start offset of flash page of certain index.
  *
+ * @kconfig_dep{CONFIG_FLASH_PAGE_LAYOUT}
+ *
  *  @param  dev flash device
  *  @param  page_index Index of the page. Index are counted from 0.
  *  @param  info Page Info structure to be filled
@@ -414,6 +565,8 @@ __syscall int flash_get_page_info_by_idx(const struct device *dev,
 /**
  *  @brief  Get the total number of flash pages.
  *
+ * @kconfig_dep{CONFIG_FLASH_PAGE_LAYOUT}
+ *
  *  @param  dev flash device
  *
  *  @return  Number of flash pages.
@@ -425,6 +578,8 @@ __syscall size_t flash_get_page_count(const struct device *dev);
  *
  * The callback should return true to continue iterating, and false to halt.
  *
+ * @kconfig_dep{CONFIG_FLASH_PAGE_LAYOUT}
+ *
  * @param info Information for current page
  * @param data Private data for callback
  * @return True to continue iteration, false to halt iteration.
@@ -434,6 +589,8 @@ typedef bool (*flash_page_cb)(const struct flash_pages_info *info, void *data);
 
 /**
  * @brief Iterate over all flash pages on a device
+ *
+ * @kconfig_dep{CONFIG_FLASH_PAGE_LAYOUT}
  *
  * This routine iterates over all flash pages on the given device,
  * ordered by increasing start offset. For each page, it invokes the
@@ -448,7 +605,7 @@ void flash_page_foreach(const struct device *dev, flash_page_cb cb,
 			void *data);
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
-#if defined(CONFIG_FLASH_JESD216_API)
+#if defined(CONFIG_FLASH_JESD216_API) || defined(__DOXYGEN__)
 /**
  * @brief Read data from Serial Flash Discoverable Parameters
  *
@@ -456,18 +613,15 @@ void flash_page_foreach(const struct device *dev, flash_page_cb cb,
  * the JEDEC JESD216 standard for encoding flash memory
  * characteristics.
  *
- * Availability of this API is conditional on selecting
- * @c CONFIG_FLASH_JESD216_API and support of that functionality in
- * the driver underlying @p dev.
+ * @kconfig_dep{CONFIG_FLASH_JESD216_API}
  *
  * @param dev device from which parameters will be read
  * @param offset address within the SFDP region containing data of interest
  * @param data where the data to be read will be placed
  * @param len the number of bytes of data to be read
  *
- * @retval 0 on success
- * @retval -ENOTSUP if the flash driver does not support SFDP access
- * @retval negative values for other errors.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOTSUP Flash driver does not support SFDP access.
  */
 __syscall int flash_sfdp_read(const struct device *dev, off_t offset,
 			      void *data, size_t len);
@@ -477,8 +631,7 @@ static inline int z_impl_flash_sfdp_read(const struct device *dev,
 					 void *data, size_t len)
 {
 	int rv = -ENOTSUP;
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
+	const struct flash_driver_api *api = DEVICE_API_GET(flash, dev);
 
 	if (api->sfdp_read != NULL) {
 		rv = api->sfdp_read(dev, offset, data, len);
@@ -489,13 +642,14 @@ static inline int z_impl_flash_sfdp_read(const struct device *dev,
 /**
  * @brief Read the JEDEC ID from a compatible flash device.
  *
+ * @kconfig_dep{CONFIG_FLASH_JESD216_API}
+ *
  * @param dev device from which id will be read
  * @param id pointer to a buffer of at least 3 bytes into which id
  * will be stored
  *
- * @retval 0 on successful store of 3-byte JEDEC id
- * @retval -ENOTSUP if flash driver doesn't support this function
- * @retval negative values for other errors
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOTSUP Flash driver doesn't support this function.
  */
 __syscall int flash_read_jedec_id(const struct device *dev, uint8_t *id);
 
@@ -503,8 +657,7 @@ static inline int z_impl_flash_read_jedec_id(const struct device *dev,
 					     uint8_t *id)
 {
 	int rv = -ENOTSUP;
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
+	const struct flash_driver_api *api = DEVICE_API_GET(flash, dev);
 
 	if (api->read_jedec_id != NULL) {
 		rv = api->read_jedec_id(dev, id);
@@ -528,10 +681,7 @@ __syscall size_t flash_get_write_block_size(const struct device *dev);
 
 static inline size_t z_impl_flash_get_write_block_size(const struct device *dev)
 {
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
-
-	return api->get_parameters(dev)->write_block_size;
+	return DEVICE_API_GET(flash, dev)->get_parameters(dev)->write_block_size;
 }
 
 
@@ -550,10 +700,7 @@ __syscall const struct flash_parameters *flash_get_parameters(const struct devic
 
 static inline const struct flash_parameters *z_impl_flash_get_parameters(const struct device *dev)
 {
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
-
-	return api->get_parameters(dev);
+	return DEVICE_API_GET(flash, dev)->get_parameters(dev);
 }
 
 /**
@@ -569,6 +716,8 @@ static inline const struct flash_parameters *z_impl_flash_get_parameters(const s
  *  flash controllers) or the API won't be able to represent the same feature on
  *  every flash controller.
  *
+ * @kconfig_dep{CONFIG_FLASH_EX_OP_ENABLED}
+ *
  *  @param dev Flash device
  *  @param code Operation which will be executed on the device.
  *  @param in Pointer to input data used by operation. If operation doesn't
@@ -576,10 +725,9 @@ static inline const struct flash_parameters *z_impl_flash_get_parameters(const s
  *  @param out Pointer to operation output data. If operation doesn't produce
  *             any output it could be NULL.
  *
- *  @retval 0 on success.
- *  @retval -ENOTSUP if given device doesn't support extended operation.
- *  @retval -ENOSYS if support for extended operations is not enabled in Kconfig
- *  @retval negative value on extended operation errors.
+ *  @return 0 on success, negative errno value on failure.
+ *  @retval -ENOTSUP Given device doesn't support extended operation.
+ *  @retval -ENOSYS Support for extended operations is not enabled in Kconfig.
  */
 __syscall int flash_ex_op(const struct device *dev, uint16_t code,
 			  const uintptr_t in, void *out);
@@ -628,25 +776,58 @@ __syscall int flash_copy(const struct device *src_dev, off_t src_offset,
  *  the same functionality. In this case, vendor operation could provide more
  *  specific access when abstraction in Zephyr counterpart is insufficient.
  */
+/** Base of the range of vendor-specific extended operation codes */
 #define FLASH_EX_OP_VENDOR_BASE 0x8000
+/**
+ * @brief Check if an extended operation code is vendor-specific
+ *
+ * @param c Extended operation code
+ * @return Non-zero if the code is in the vendor-specific range, 0 otherwise
+ */
 #define FLASH_EX_OP_IS_VENDOR(c) ((c) & FLASH_EX_OP_VENDOR_BASE)
 
 /**
  *  @brief Enumeration for extra flash operations
  */
 enum flash_ex_op_types {
-	/*
+	/**
 	 * Reset flash device.
 	 */
 	FLASH_EX_OP_RESET = 0,
+
+	/**
+	 * Checks whether a block is marked as bad. As input it takes the address of the block
+	 * (off_t *). As output it returns @ref flash_block_status (enum flash_block_status *).
+	 */
+	FLASH_EX_OP_IS_BAD_BLOCK = 1,
+
+	/**
+	 * Marks a block as bad. As input it takes the address of the block (off_t *). There is no
+	 * output.
+	 */
+	FLASH_EX_OP_MARK_BAD_BLOCK = 2,
+};
+
+/**
+ * @brief Enumeration for flash block status.
+ */
+enum flash_block_status {
+	/**
+	 * Block is functional.
+	 */
+	FLASH_BLOCK_GOOD = 0,
+
+	/**
+	 * Block is marked as bad.
+	 */
+	FLASH_BLOCK_BAD = 1,
 };
 
 static inline int z_impl_flash_ex_op(const struct device *dev, uint16_t code,
 				     const uintptr_t in, void *out)
 {
 #if defined(CONFIG_FLASH_EX_OP_ENABLED)
-	const struct flash_driver_api *api =
-		(const struct flash_driver_api *)dev->api;
+	const struct flash_driver_api *api = DEVICE_API_GET(flash, dev);
 
 	if (api->ex_op == NULL) {
 		return -ENOTSUP;

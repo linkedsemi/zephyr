@@ -1,4 +1,0 @@
-tests:
-  arch.riscv.fpu_sharing:
-    arch_allow: riscv
-    filter: CONFIG_CPU_HAS_FPU

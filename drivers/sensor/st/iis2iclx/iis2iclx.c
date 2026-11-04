@@ -22,8 +22,7 @@
 
 LOG_MODULE_REGISTER(IIS2ICLX, CONFIG_SENSOR_LOG_LEVEL);
 
-static const uint16_t iis2iclx_odr_map[] = {0, 12, 26, 52, 104, 208, 416, 833,
-					1660, 3330, 6660};
+static const uint16_t iis2iclx_odr_map[] = {0, 12, 26, 52, 104, 208, 416, 833};
 
 static int iis2iclx_freq_to_odr_val(uint16_t freq)
 {
@@ -63,20 +62,6 @@ static int iis2iclx_accel_range_to_fs_val(int32_t range)
 	}
 
 	return -EINVAL;
-}
-
-static inline int iis2iclx_reboot(const struct device *dev)
-{
-	const struct iis2iclx_config *cfg = dev->config;
-
-	if (iis2iclx_boot_set((stmdev_ctx_t *)&cfg->ctx, 1) < 0) {
-		return -EIO;
-	}
-
-	/* Wait sensor turn-on time as per datasheet */
-	k_msleep(35);
-
-	return 0;
 }
 
 static int iis2iclx_accel_set_fs_raw(const struct device *dev, uint8_t fs)
@@ -245,24 +230,31 @@ static int iis2iclx_sample_fetch(const struct device *dev,
 #if defined(CONFIG_IIS2ICLX_SENSORHUB)
 	struct iis2iclx_data *data = dev->data;
 #endif /* CONFIG_IIS2ICLX_SENSORHUB */
+	int ret = 0;
 
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
-		iis2iclx_sample_fetch_accel(dev);
+		ret = iis2iclx_sample_fetch_accel(dev);
 		break;
 #if defined(CONFIG_IIS2ICLX_ENABLE_TEMP)
 	case SENSOR_CHAN_DIE_TEMP:
-		iis2iclx_sample_fetch_temp(dev);
+		ret = iis2iclx_sample_fetch_temp(dev);
 		break;
 #endif
 	case SENSOR_CHAN_ALL:
-		iis2iclx_sample_fetch_accel(dev);
+		ret = iis2iclx_sample_fetch_accel(dev);
+		if (ret != 0) {
+			break;
+		}
 #if defined(CONFIG_IIS2ICLX_ENABLE_TEMP)
-		iis2iclx_sample_fetch_temp(dev);
+		ret = iis2iclx_sample_fetch_temp(dev);
+		if (ret != 0) {
+			break;
+		}
 #endif
 #if defined(CONFIG_IIS2ICLX_SENSORHUB)
 		if (data->shub_inited) {
-			iis2iclx_sample_fetch_shub(dev);
+			ret = iis2iclx_sample_fetch_shub(dev);
 		}
 #endif
 		break;
@@ -270,7 +262,7 @@ static int iis2iclx_sample_fetch(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	return 0;
+	return ret;
 }
 
 static inline void iis2iclx_accel_convert(struct sensor_value *val, int raw_val,
@@ -302,6 +294,9 @@ static inline int iis2iclx_accel_get_channel(enum sensor_channel chan,
 		for (i = 0; i < 2; i++) {
 			iis2iclx_accel_convert(val++, data->acc[i], sensitivity);
 		}
+		/* 2-axis part: there is no Z output register, report a defined 0 */
+		val->val1 = 0;
+		val->val2 = 0;
 		break;
 	default:
 		return -ENOTSUP;
@@ -382,8 +377,8 @@ static inline int iis2iclx_magn_get_channel(enum sensor_channel chan,
 	return 0;
 }
 
-static inline void iis2iclx_hum_convert(struct sensor_value *val,
-					  struct iis2iclx_data *data)
+static inline int iis2iclx_hum_convert(struct sensor_value *val,
+				       struct iis2iclx_data *data)
 {
 	float rh;
 	int16_t raw_val;
@@ -393,7 +388,7 @@ static inline void iis2iclx_hum_convert(struct sensor_value *val,
 	idx = iis2iclx_shub_get_idx(data->dev, SENSOR_CHAN_HUMIDITY);
 	if (idx < 0) {
 		LOG_DBG("external press/temp not supported");
-		return;
+		return -ENOTSUP;
 	}
 
 	raw_val = ((int16_t)(data->ext_data[idx][0] |
@@ -404,12 +399,13 @@ static inline void iis2iclx_hum_convert(struct sensor_value *val,
 	rh /= (ht->x1 - ht->x0);
 
 	/* convert humidity to integer and fractional part */
-	val->val1 = rh;
-	val->val2 = rh * 1000000;
+	sensor_value_from_float(val, rh);
+
+	return 0;
 }
 
-static inline void iis2iclx_press_convert(struct sensor_value *val,
-					    struct iis2iclx_data *data)
+static inline int iis2iclx_press_convert(struct sensor_value *val,
+					 struct iis2iclx_data *data)
 {
 	int32_t raw_val;
 	int idx;
@@ -417,7 +413,7 @@ static inline void iis2iclx_press_convert(struct sensor_value *val,
 	idx = iis2iclx_shub_get_idx(data->dev, SENSOR_CHAN_PRESS);
 	if (idx < 0) {
 		LOG_DBG("external press/temp not supported");
-		return;
+		return -ENOTSUP;
 	}
 
 	raw_val = (int32_t)(data->ext_data[idx][0] |
@@ -429,10 +425,12 @@ static inline void iis2iclx_press_convert(struct sensor_value *val,
 	val->val1 = (raw_val >> 12) / 10;
 	val->val2 = (raw_val >> 12) % 10 * 100000 +
 		(((int32_t)((raw_val) & 0x0FFF) * 100000L) >> 12);
+
+	return 0;
 }
 
-static inline void iis2iclx_temp_convert(struct sensor_value *val,
-					   struct iis2iclx_data *data)
+static inline int iis2iclx_temp_convert(struct sensor_value *val,
+					struct iis2iclx_data *data)
 {
 	int16_t raw_val;
 	int idx;
@@ -440,7 +438,7 @@ static inline void iis2iclx_temp_convert(struct sensor_value *val,
 	idx = iis2iclx_shub_get_idx(data->dev, SENSOR_CHAN_PRESS);
 	if (idx < 0) {
 		LOG_DBG("external press/temp not supported");
-		return;
+		return -ENOTSUP;
 	}
 
 	raw_val = (int16_t)(data->ext_data[idx][3] |
@@ -449,6 +447,8 @@ static inline void iis2iclx_temp_convert(struct sensor_value *val,
 	/* Temperature sensitivity is 100 LSB/deg C */
 	val->val1 = raw_val / 100;
 	val->val2 = (int32_t)raw_val % 100 * (10000);
+
+	return 0;
 }
 #endif
 
@@ -461,10 +461,8 @@ static int iis2iclx_channel_get(const struct device *dev,
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_X:
 	case SENSOR_CHAN_ACCEL_Y:
-	case SENSOR_CHAN_ACCEL_Z:
 	case SENSOR_CHAN_ACCEL_XYZ:
-		iis2iclx_accel_channel_get(chan, val, data);
-		break;
+		return iis2iclx_accel_channel_get(chan, val, data);
 #if defined(CONFIG_IIS2ICLX_ENABLE_TEMP)
 	case SENSOR_CHAN_DIE_TEMP:
 		iis2iclx_temp_channel_get(val, data);
@@ -480,8 +478,7 @@ static int iis2iclx_channel_get(const struct device *dev,
 			return -ENOTSUP;
 		}
 
-		iis2iclx_magn_get_channel(chan, val, data);
-		break;
+		return iis2iclx_magn_get_channel(chan, val, data);
 
 	case SENSOR_CHAN_HUMIDITY:
 		if (!data->shub_inited) {
@@ -489,8 +486,7 @@ static int iis2iclx_channel_get(const struct device *dev,
 			return -ENOTSUP;
 		}
 
-		iis2iclx_hum_convert(val, data);
-		break;
+		return iis2iclx_hum_convert(val, data);
 
 	case SENSOR_CHAN_PRESS:
 		if (!data->shub_inited) {
@@ -498,8 +494,7 @@ static int iis2iclx_channel_get(const struct device *dev,
 			return -ENOTSUP;
 		}
 
-		iis2iclx_press_convert(val, data);
-		break;
+		return iis2iclx_press_convert(val, data);
 
 	case SENSOR_CHAN_AMBIENT_TEMP:
 		if (!data->shub_inited) {
@@ -507,8 +502,7 @@ static int iis2iclx_channel_get(const struct device *dev,
 			return -ENOTSUP;
 		}
 
-		iis2iclx_temp_convert(val, data);
-		break;
+		return iis2iclx_temp_convert(val, data);
 #endif
 	default:
 		return -ENOTSUP;
@@ -517,7 +511,7 @@ static int iis2iclx_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api iis2iclx_driver_api = {
+static DEVICE_API(sensor, iis2iclx_driver_api) = {
 	.attr_set = iis2iclx_attr_set,
 #if CONFIG_IIS2ICLX_TRIGGER
 	.trigger_set = iis2iclx_trigger_set,
@@ -656,7 +650,7 @@ static int iis2iclx_init(const struct device *dev)
 		(IIS2ICLX_CFG_IRQ(inst)), ())
 
 #define IIS2ICLX_SPI_OPERATION (SPI_WORD_SET(8) |			\
-				SPI_OP_MODE_MASTER |			\
+				SPI_OP_MODE_CONTROLLER |		\
 				SPI_MODE_CPOL |				\
 				SPI_MODE_CPHA)				\
 
@@ -665,8 +659,7 @@ static int iis2iclx_init(const struct device *dev)
 		STMEMSC_CTX_SPI(&iis2iclx_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
-					   IIS2ICLX_SPI_OPERATION,	\
-					   0),				\
+					   IIS2ICLX_SPI_OPERATION)	\
 		},							\
 		IIS2ICLX_CONFIG_COMMON(inst)				\
 	}

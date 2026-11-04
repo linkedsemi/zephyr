@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -14,8 +14,8 @@
 
 static K_SEM_DEFINE(g_mbox_data_rx_sem, 0, 1);
 
-static uint32_t g_mbox_received_data;
-static uint32_t g_mbox_expected_data;
+static uint64_t g_mbox_received_data;
+static uint64_t g_mbox_expected_data;
 static uint32_t g_mbox_received_channel;
 static uint32_t g_mbox_expected_channel;
 
@@ -23,28 +23,17 @@ static bool g_received_size_error;
 static size_t g_received_size;
 static int g_max_transfer_size_bytes;
 
-#define CHANNELS_TO_TEST 4
 #define TX_CHANNEL_INDEX 0
 #define RX_CHANNEL_INDEX 1
 
-static const struct mbox_dt_spec channels[CHANNELS_TO_TEST][2] = {
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx0),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx0),
-	},
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx1),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx1),
-	},
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx2),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx2),
-	},
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx3),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx3),
-	},
-};
+#define CHANNEL_ENTRY(_i, ...)                                                                     \
+	{                                                                                          \
+		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), CONCAT(tx, _i)),                          \
+		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), CONCAT(rx, _i)),                          \
+	}
+
+static const struct mbox_dt_spec channels[CONFIG_CHANNELS_TO_TEST][2] = {
+	LISTIFY(CONFIG_CHANNELS_TO_TEST, CHANNEL_ENTRY, (,)) };
 
 static uint32_t current_channel_index;
 
@@ -66,22 +55,23 @@ static void callback(const struct device *dev, uint32_t channel, void *user_data
 
 static void mbox_data_tests_before(void *f)
 {
-	zassert_false(current_channel_index >= CHANNELS_TO_TEST, "Channel to test is out of range");
+	zassert_false(current_channel_index >= CONFIG_CHANNELS_TO_TEST,
+		      "Channel to test is out of range");
 
 	const struct mbox_dt_spec *tx_channel = &channels[current_channel_index][TX_CHANNEL_INDEX];
 	const struct mbox_dt_spec *rx_channel = &channels[current_channel_index][RX_CHANNEL_INDEX];
 	int ret_val = 0;
 
 	g_max_transfer_size_bytes = mbox_mtu_get_dt(tx_channel);
-	/* Test currently supports only transfer size up to 4 bytes */
-	if ((g_max_transfer_size_bytes < 0) || (g_max_transfer_size_bytes > 4)) {
+	/* Test currently supports only transfer size up to 8 bytes */
+	if ((g_max_transfer_size_bytes < 0) || (g_max_transfer_size_bytes > 8)) {
 		printk("mbox_mtu_get() error\n");
 		zassert_false(1, "mbox invalid maximum transfer unit: %d",
 			      g_max_transfer_size_bytes);
 	}
 
 	ret_val = mbox_register_callback_dt(rx_channel, callback, NULL);
-	zassert_false(ret_val != 0, "mbox failed to register callback. ret_val", ret_val);
+	zassert_false(ret_val != 0, "mbox failed to register callback. ret_val: %d", ret_val);
 
 	ret_val = mbox_set_enabled_dt(rx_channel, 1);
 	zassert_false(ret_val != 0, "mbox failed to enable mbox. ret_val: %d", ret_val);
@@ -89,7 +79,8 @@ static void mbox_data_tests_before(void *f)
 
 static void mbox_data_tests_after(void *f)
 {
-	zassert_false(current_channel_index >= CHANNELS_TO_TEST, "Channel to test is out of range");
+	zassert_false(current_channel_index >= CONFIG_CHANNELS_TO_TEST,
+		      "Channel to test is out of range");
 
 	const struct mbox_dt_spec *rx_channel = &channels[current_channel_index][RX_CHANNEL_INDEX];
 
@@ -102,10 +93,10 @@ static void mbox_data_tests_after(void *f)
 	current_channel_index++;
 }
 
-static void mbox_test(const uint32_t data)
+static void mbox_test(const uint64_t data)
 {
 	struct mbox_msg msg = {0};
-	uint32_t test_data = data;
+	uint64_t test_data = data;
 	int test_count = 0;
 	int ret_val = 0;
 
@@ -121,17 +112,22 @@ static void mbox_test(const uint32_t data)
 		ret_val = mbox_send_dt(tx_channel, &msg);
 		zassert_false(ret_val < 0, "mbox failed to send. ret_val: %d", ret_val);
 
-		/* Expect next received data will be incremented by one.
-		 * And based on Maximum Transfer Unit determine expected data.
-		 * Currently supported MTU's are 1, 2, 3, and 4 bytes.
+		/*
+		 * Determine expected received data based on the configured Maximum
+		 * Transfer Unit (MTU). Supported MTU sizes are 1-8 bytes.
+		 * If CONFIG_TEST_SINGLE_CPU is enabled, the received data should match
+		 * the sent data. Otherwise, it is expected to be incremented by one.
 		 */
-		g_mbox_expected_data = test_data & ~(0xFFFFFFFF << (g_max_transfer_size_bytes * 8));
+		g_mbox_expected_data = test_data & GENMASK64((g_max_transfer_size_bytes * 8) - 1,
+							   0); /* Mask data to MTU size */
+#ifndef CONFIG_TEST_SINGLE_CPU
 		g_mbox_expected_data++;
+#endif
 
 		k_sem_take(&g_mbox_data_rx_sem, K_FOREVER);
 
 		if (g_received_size_error) {
-			zassert_false(1, "mbox received invalid size in callback: %d",
+			zassert_false(1, "mbox received invalid size in callback: %zd",
 				      g_received_size);
 		}
 
@@ -139,7 +135,7 @@ static void mbox_test(const uint32_t data)
 
 		/* Main core check received data */
 		zassert_equal(g_mbox_expected_data, test_data,
-			      "Received test_data does not match!: Expected: %08X, Got: %08X",
+			      "Received test_data does not match!: Expected: %08llX, Got: %08llX",
 			      g_mbox_expected_data, test_data);
 
 		/* Expect reception of data on current RX channel */
@@ -169,6 +165,8 @@ ZTEST(mbox_data_tests, test_ping_pong_1)
 	mbox_test(0xADADADAD);
 }
 
+#if CONFIG_CHANNELS_TO_TEST >= 2
+
 /**
  * @brief MBOX Data transfer by ping pong for second set of channels
  *
@@ -179,6 +177,10 @@ ZTEST(mbox_data_tests, test_ping_pong_2)
 {
 	mbox_test(0xDADADADA);
 }
+
+#endif
+
+#if CONFIG_CHANNELS_TO_TEST >= 3
 
 /**
  * @brief MBOX Data transfer by ping pong for third set of channels
@@ -191,6 +193,10 @@ ZTEST(mbox_data_tests, test_ping_pong_3)
 	mbox_test(0xADADADAD);
 }
 
+#endif
+
+#if CONFIG_CHANNELS_TO_TEST >= 4
+
 /**
  * @brief MBOX Data transfer by ping pong for forth set of channels
  *
@@ -201,5 +207,7 @@ ZTEST(mbox_data_tests, test_ping_pong_4)
 {
 	mbox_test(0xDADADADA);
 }
+
+#endif
 
 ZTEST_SUITE(mbox_data_tests, NULL, NULL, mbox_data_tests_before, mbox_data_tests_after, NULL);

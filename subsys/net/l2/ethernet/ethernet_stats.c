@@ -17,11 +17,12 @@ LOG_MODULE_REGISTER(net_ethernet_stats, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 
 #if defined(CONFIG_NET_STATISTICS_USER_API)
 
-static int eth_stats_get(uint32_t mgmt_request, struct net_if *iface,
+static int eth_stats_get(uint64_t mgmt_request, struct net_if *iface,
 			 void *data, size_t len)
 {
 	size_t len_chk = 0;
 	void *src = NULL;
+	const struct device *dev = net_if_get_device(iface);
 	const struct ethernet_api *eth;
 
 	switch (NET_MGMT_GET_COMMAND(mgmt_request)) {
@@ -30,13 +31,18 @@ static int eth_stats_get(uint32_t mgmt_request, struct net_if *iface,
 			return -ENOENT;
 		}
 
-		eth = net_if_get_device(iface)->api;
-		if (eth == NULL || eth->get_stats == NULL) {
+		eth = dev->api;
+		if (eth == NULL ||
+		    (eth->get_stats == NULL && eth->get_stats_type == NULL)) {
 			return -ENOENT;
 		}
 
 		len_chk = sizeof(struct net_stats_eth);
-		src = eth->get_stats(net_if_get_device(iface));
+		if (eth->get_stats_type != NULL) {
+			src = eth->get_stats_type(dev, iface, ETHERNET_STATS_TYPE_ALL);
+		} else {
+			src = eth->get_stats(dev, iface);
+		}
 		break;
 	}
 

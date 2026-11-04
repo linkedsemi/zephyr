@@ -18,6 +18,7 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/pm/device.h>
 
 #include "lps2xdf.h"
 
@@ -42,6 +43,7 @@ static int lps2xdf_odr_set(const struct device *dev, uint16_t freq)
 	int odr;
 	const struct lps2xdf_config *const cfg = dev->config;
 	const struct lps2xdf_chip_api *chip_api = cfg->chip_api;
+	struct lps2xdf_data *data = dev->data;
 
 	for (odr = 0; odr < ARRAY_SIZE(lps2xdf_map); odr++) {
 		if (freq == lps2xdf_map[odr]) {
@@ -58,6 +60,9 @@ static int lps2xdf_odr_set(const struct device *dev, uint16_t freq)
 		LOG_DBG("failed to set sampling rate");
 		return -EIO;
 	}
+
+	/* Store odr for PM resume */
+	data->odr = odr;
 
 	return 0;
 }
@@ -87,7 +92,7 @@ static inline void lps2xdf_press_convert(const struct device *dev,
 {
 	const struct lps2xdf_config *const cfg = dev->config;
 	int32_t press_tmp = raw_val >> 8; /* raw value is left aligned (24 msb) */
-	int divider;
+	int divider, factor;
 
 	/* Pressure sensitivity is:
 	 * - 4096 LSB/hPa for Full-Scale of 260 - 1260 hPa:
@@ -96,15 +101,16 @@ static inline void lps2xdf_press_convert(const struct device *dev,
 	 */
 	if (cfg->fs == 0) {
 		divider = 40960;
+		/* For the decimal part use (3125 / 128) as a factor instead of
+		 * (1000000 / 40960) to avoid int32 overflow
+		 */
+		factor = 3125;
 	} else {
 		divider = 20480;
+		factor = 6250;
 	}
 	val->val1 = press_tmp / divider;
-
-	/* For the decimal part use (3125 / 128) as a factor instead of
-	 * (1000000 / 40960) to avoid int32 overflow
-	 */
-	val->val2 = (press_tmp % divider) * 3125 / 128;
+	val->val2 = (press_tmp % divider) * factor / 128;
 }
 
 
@@ -136,12 +142,12 @@ static int lps2xdf_sample_fetch(const struct device *dev, enum sensor_channel ch
 	const struct lps2xdf_config *const cfg = dev->config;
 	const struct lps2xdf_chip_api *chip_api = cfg->chip_api;
 
-	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
+	__ASSERT_NO_MSG(chan == SENSOR_CHAN_PRESS || chan == SENSOR_CHAN_ALL);
 
 	return chip_api->sample_fetch(dev, chan);
 }
 
-static const struct sensor_driver_api lps2xdf_driver_api = {
+static DEVICE_API(sensor, lps2xdf_driver_api) = {
 	.attr_set = lps2xdf_attr_set,
 	.sample_fetch = lps2xdf_sample_fetch,
 	.channel_get = lps2xdf_channel_get,
@@ -149,6 +155,35 @@ static const struct sensor_driver_api lps2xdf_driver_api = {
 	.trigger_set = lps2xdf_trigger_set,
 #endif
 };
+
+static int lps2xdf_pm_control(const struct device *dev, enum pm_device_action action)
+{
+	const struct lps2xdf_config *const cfg = dev->config;
+	const struct lps2xdf_chip_api *chip_api = cfg->chip_api;
+	struct lps2xdf_data *data = dev->data;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		/* Set ODR to 0 (power-down mode) */
+		return chip_api->mode_set_odr_raw(dev, 0);
+	case PM_DEVICE_ACTION_RESUME:
+		/* Restore previous ODR */
+		return chip_api->mode_set_odr_raw(dev, data->odr);
+	case PM_DEVICE_ACTION_TURN_OFF:
+		break;
+	case PM_DEVICE_ACTION_TURN_ON:
+		return chip_api->power_on(dev);
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static int lps2xdf_init(const struct device *dev)
+{
+	return pm_device_driver_init(dev, lps2xdf_pm_control);
+}
 
 #ifdef CONFIG_LPS2XDF_TRIGGER
 #define LPS2XDF_CFG_IRQ(inst)                                                  \
@@ -169,14 +204,14 @@ static const struct sensor_driver_api lps2xdf_driver_api = {
 	IF_ENABLED(DT_INST_NODE_HAS_PROP(inst, drdy_gpios),                    \
 		   (LPS2XDF_CFG_IRQ(inst)))
 
-#define LPS2XDF_SPI_OPERATION (SPI_WORD_SET(8) | SPI_OP_MODE_MASTER |          \
+#define LPS2XDF_SPI_OPERATION (SPI_WORD_SET(8) | SPI_OP_MODE_CONTROLLER |      \
 			       SPI_MODE_CPOL | SPI_MODE_CPHA)
 
 #define LPS2XDF_CONFIG_SPI(inst, name)                                         \
 {                                                                              \
 	STMEMSC_CTX_SPI(&lps2xdf_config_##name##_##inst.stmemsc_cfg),          \
 	.stmemsc_cfg = {                                                       \
-		.spi = SPI_DT_SPEC_INST_GET(inst, LPS2XDF_SPI_OPERATION, 0),   \
+		.spi = SPI_DT_SPEC_INST_GET(inst, LPS2XDF_SPI_OPERATION),      \
 	},                                                                     \
 	LPS2XDF_CONFIG_COMMON(inst, name)                                      \
 }
@@ -215,7 +250,10 @@ static const struct sensor_driver_api lps2xdf_driver_api = {
 			     (LPS2XDF_CONFIG_I3C_OR_I2C(inst, name)),                        \
 			     (LPS2XDF_CONFIG_I2C(inst, name)))));                            \
 											     \
-	SENSOR_DEVICE_DT_INST_DEFINE(inst, name##_init, NULL, &lps2xdf_data_##name##_##inst, \
+	PM_DEVICE_DT_INST_DEFINE(inst, lps2xdf_pm_control);                                  \
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, lps2xdf_init,                                     \
+				     PM_DEVICE_DT_INST_GET(inst),                            \
+				     &lps2xdf_data_##name##_##inst,                          \
 				     &lps2xdf_config_##name##_##inst, POST_KERNEL,           \
 				     CONFIG_SENSOR_INIT_PRIORITY, &lps2xdf_driver_api);
 

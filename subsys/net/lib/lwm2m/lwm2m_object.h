@@ -131,15 +131,12 @@
 
 BUILD_ASSERT(CONFIG_LWM2M_COAP_BLOCK_SIZE <= CONFIG_LWM2M_COAP_MAX_MSG_SIZE,
 	     "CoAP block size can't exceed maximum message size");
-
-#define MAX_PACKET_SIZE		(CONFIG_LWM2M_COAP_MAX_MSG_SIZE + \
-				 CONFIG_LWM2M_ENGINE_MESSAGE_HEADER_SIZE)
-
-#if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
-BUILD_ASSERT(CONFIG_LWM2M_COAP_ENCODE_BUFFER_SIZE >
-		     (CONFIG_LWM2M_COAP_BLOCK_SIZE + CONFIG_LWM2M_ENGINE_MESSAGE_HEADER_SIZE),
-	     "The buffer for serializing message needs to be bigger than a message with one block");
-#endif
+BUILD_ASSERT(CONFIG_LWM2M_COAP_BLOCK_SIZE == 64 ||
+	     CONFIG_LWM2M_COAP_BLOCK_SIZE == 128 ||
+	     CONFIG_LWM2M_COAP_BLOCK_SIZE == 256 ||
+	     CONFIG_LWM2M_COAP_BLOCK_SIZE == 512 ||
+	     CONFIG_LWM2M_COAP_BLOCK_SIZE == 1024,
+	     "CoAP block must be 64, 128, 256, 512 or 1024");
 
 /* buffer util macros */
 #define CPKT_BUF_WRITE(cpkt)	(cpkt)->data, &(cpkt)->offset, (cpkt)->max_len
@@ -248,7 +245,7 @@ struct lwm2m_engine_obj {
 #define _INIT_OBJ_RES_INST(_ri_ptr, _ri_idx, _ri_count, _ri_create, \
 			   _data_ptr, _data_sz, _data_len) \
 	do { \
-		if (_ri_ptr != NULL && _ri_count > 0) { \
+		if (_ri_count > 0) { \
 			for (int _i = 0; _i < _ri_count; _i++) { \
 				_ri_ptr[_ri_idx + _i].data_ptr = \
 						((uint8_t *) _data_ptr + (_i * _data_sz)); \
@@ -434,7 +431,7 @@ static inline void init_res_instance(struct lwm2m_engine_res_inst *ri,
 
 struct lwm2m_opaque_context {
 	size_t len;
-	size_t remaining;
+	size_t offset;
 };
 
 struct lwm2m_block_context {
@@ -494,7 +491,7 @@ struct lwm2m_message {
 	struct coap_packet cpkt;
 
 	/** Buffer data related outgoing message */
-	uint8_t msg_data[MAX_PACKET_SIZE];
+	uint8_t msg_data[CONFIG_LWM2M_COAP_MAX_MSG_SIZE];
 
 #if defined(CONFIG_LWM2M_COAP_BLOCK_TRANSFER)
 	/** Buffer data containing complete message */
@@ -528,7 +525,7 @@ struct lwm2m_message {
 	bool block_send : 1;
 };
 
-/* LWM2M format writer for the various formats supported */
+/* LwM2M format writer for the various formats supported */
 struct lwm2m_writer {
 	int (*put_begin)(struct lwm2m_output_context *out,
 			 struct lwm2m_obj_path *path);

@@ -107,7 +107,7 @@ int amg88xx_init(const struct device *dev)
 	const struct amg88xx_config *config = dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -EINVAL;
 	}
 
@@ -127,7 +127,7 @@ int amg88xx_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api amg88xx_driver_api = {
+static DEVICE_API(sensor, amg88xx_driver_api) = {
 #ifdef CONFIG_AMG88XX_TRIGGER
 	.attr_set = amg88xx_attr_set,
 	.trigger_set = amg88xx_trigger_set,

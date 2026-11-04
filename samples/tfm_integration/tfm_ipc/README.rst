@@ -197,11 +197,11 @@ the MCUboot bootloader image binary (``bl2.hex``).
 
 Finally, flash the concatenated TF-M + Zephyr binary.
 
-   Example, for nRF9160, using ``cmake`` and ``ninja``
+   Example, for nRF9160
 
    .. code-block:: bash
 
-      ninja flash
+      west flash
 
 On BL5340:
 ==========
@@ -225,6 +225,35 @@ Flash the concatenated TF-M + Zephyr binary.
    .. code-block:: bash
 
       west flash --hex-file zephyr/tfm_merged.hex
+
+On FRDM-MCXN947:
+================
+
+Build Zephyr with a non-secure configuration:
+
+   .. code-block:: bash
+
+      $ west build -p -b frdm_mcxn947/mcxn947/cpu0/ns samples/tfm_integration/tfm_ipc/
+
+Make sure your board is set up with :ref:`lpclink2-jlink-onboard-debug-probe`,
+since this isn't the default debug interface provided on factory-shipped boards;
+
+Once the build is complete, manually program the generated image (``tfm_merged.bin``) to the
+target using a J-Link probe as shown below: follows:
+
+   .. code-block:: console
+
+      JLinkExe -device MCXN947_M33_0 -if swd -speed 4000 -autoconnect 1
+      J-Link>r
+      J-Link>erase
+      J-Link>loadfile build/zephyr/tfm_merged.bin
+
+Issuing a reset followed by a full device erase ensures the device is unlocked and
+returned to a known state. This step is particularly useful if the board is in an
+unknown or protected state that prevents programming.
+
+After the image has been successfully flashed, manually reset the board to start
+execution of the newly programmed firmware.
 
 Sample Output
 =============

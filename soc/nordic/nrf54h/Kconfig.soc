@@ -3,17 +3,26 @@
 # Copyright (c) 2024 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
+config SOC_SERIES_NRF54H
+	bool
+	select SOC_FAMILY_NORDIC_NRF
+	help
+	  Nordic Semiconductor nRF54H series MCU
+
+config SOC_SERIES_NRF54HX
+	bool
+	select SOC_SERIES_NRF54H
+	help
+	  Deprecated Kconfig, use SOC_SERIES_NRF54H instead
+
+config SOC_SERIES
+	default "nrf54h" if SOC_SERIES_NRF54H
+
 config SOC_NRF54H20
 	bool
-	select SOC_SERIES_NRF54HX
+	select SOC_SERIES_NRF54H
 	help
 	  nRF54H20
-
-config SOC_NRF54H20_ENGB
-	bool
-	select SOC_SERIES_NRF54HX
-	help
-	  nRF54H20 (EngB)
 
 config SOC_NRF54H20_CPUAPP
 	bool
@@ -21,23 +30,11 @@ config SOC_NRF54H20_CPUAPP
 	help
 	  nRF54H20 CPUAPP
 
-config SOC_NRF54H20_ENGB_CPUAPP
-	bool
-	select SOC_NRF54H20_ENGB
-	help
-	  nRF54H20 (EngB) CPUAPP
-
 config SOC_NRF54H20_CPURAD
 	bool
 	select SOC_NRF54H20
 	help
 	  nRF54H20 CPURAD
-
-config SOC_NRF54H20_ENGB_CPURAD
-	bool
-	select SOC_NRF54H20_ENGB
-	help
-	  nRF54H20 (EngB) CPURAD
 
 config SOC_NRF54H20_CPUPPR
 	bool
@@ -45,23 +42,11 @@ config SOC_NRF54H20_CPUPPR
 	help
 	  nRF54H20 CPUPPR
 
-config SOC_NRF54H20_ENGB_CPUPPR
-	bool
-	select SOC_NRF54H20_ENGB
-	help
-	  nRF54H20 (EngB) CPUPPR
-
 config SOC_NRF54H20_CPUFLPR
 	bool
 	select SOC_NRF54H20
 	help
 	  nRF54H20 CPUFLPR
 
-config SOC_NRF54H20_ENGB_CPUFLPR
-	bool
-	select SOC_NRF54H20_ENGB
-	help
-	  nRF54H20 (EngB) CPUFLPR
-
 config SOC
-	default "nrf54h20" if SOC_NRF54H20 || SOC_NRF54H20_ENGB
+	default "nrf54h20" if SOC_NRF54H20

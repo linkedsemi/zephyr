@@ -5,6 +5,8 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "cap_commander.h"
 #include "conn.h"
@@ -33,7 +35,7 @@ void test_mocks_cleanup(void)
 
 void test_conn_init(struct bt_conn *conn)
 {
-	conn->index = 0;
+	conn->index = 0U;
 	conn->info.type = BT_CONN_TYPE_LE;
 	conn->info.role = BT_CONN_ROLE_PERIPHERAL;
 	conn->info.state = BT_CONN_STATE_CONNECTED;

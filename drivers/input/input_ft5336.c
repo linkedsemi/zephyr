@@ -8,6 +8,8 @@
 
 #define DT_DRV_COMPAT focaltech_ft5336
 
+#include <string.h>
+
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/input/input.h>
@@ -20,6 +22,7 @@
 LOG_MODULE_REGISTER(ft5336, CONFIG_INPUT_LOG_LEVEL);
 
 /* FT5336 used registers */
+#define REG_DEVICE_MODE		0x00U
 #define REG_TD_STATUS		0x02U
 #define REG_P1_XH		0x03U
 #define REG_G_PMODE		0xA5U
@@ -39,14 +42,18 @@ LOG_MODULE_REGISTER(ft5336, CONFIG_INPUT_LOG_LEVEL);
 
 /* REG_Pn_YH: Touch ID */
 #define TOUCH_ID_POS		4U
-#define TOUCH_ID_MSK		0x0FU
+#define TOUCH_ID_MSK		0xF0U
 
 #define TOUCH_ID_INVALID	0x0FU
 
 /* REG_Pn_XH and REG_Pn_YH: Position */
 #define POSITION_H_MSK		0x0FU
 
+/* Size of a single touch point register block. */
+#define TOUCH_POINT_SIZE	6U
+
 /* REG_G_PMODE: Power Consume Mode */
+#define PMOD_MONITOR            0x01U
 #define PMOD_HIBERNATE		0x03U
 
 /** FT5336 configuration (DT). */
@@ -59,6 +66,16 @@ struct ft5336_config {
 	/** Interrupt GPIO information. */
 	struct gpio_dt_spec int_gpio;
 #endif
+};
+
+/** FT5336 touch point. */
+struct ft5336_touch_point {
+	/** Track ID. */
+	uint8_t id;
+	/** Position along the controller X axis. */
+	uint16_t row;
+	/** Position along the controller Y axis. */
+	uint16_t col;
 };
 
 /** FT5336 data. */
@@ -74,11 +91,27 @@ struct ft5336_data {
 	/** Timer (polling mode). */
 	struct k_timer timer;
 #endif
-	/** Last pressed state. */
-	bool pressed_old;
+	/** Number of touch points reported by the previous scan. */
+	uint8_t prev_count;
+	/** Touch points reported by the previous scan. */
+	struct ft5336_touch_point prev_points[CONFIG_INPUT_FT5336_MAX_TOUCH_POINTS];
+
+	/** Initial valid read state */
+	bool got_valid_read;
 };
 
 INPUT_TOUCH_STRUCT_CHECK(struct ft5336_config);
+
+static void ft5336_report_touch(const struct device *dev, const struct ft5336_touch_point *point,
+				bool pressed)
+{
+	if (CONFIG_INPUT_FT5336_MAX_TOUCH_POINTS > 1) {
+		input_report_abs(dev, INPUT_ABS_MT_SLOT, point->id, true, K_FOREVER);
+	}
+
+	input_touchscreen_report_pos(dev, point->col, point->row, K_FOREVER);
+	input_report_key(dev, INPUT_BTN_TOUCH, pressed ? 1 : 0, true, K_FOREVER);
+}
 
 static int ft5336_process(const struct device *dev)
 {
@@ -87,9 +120,19 @@ static int ft5336_process(const struct device *dev)
 
 	int r;
 	uint8_t points;
-	uint8_t coords[4U];
-	uint16_t row, col;
-	bool pressed;
+	uint8_t count = 0;
+	uint8_t i, j;
+	uint8_t coords[CONFIG_INPUT_FT5336_MAX_TOUCH_POINTS * TOUCH_POINT_SIZE];
+	struct ft5336_touch_point cur_points[CONFIG_INPUT_FT5336_MAX_TOUCH_POINTS];
+
+	if (!data->got_valid_read) {
+		r = i2c_reg_read_byte_dt(&config->bus, REG_DEVICE_MODE, &points);
+		if (r != 0) {
+			return r;
+		}
+
+		data->got_valid_read = true;
+	}
 
 	/* obtain number of touch points */
 	r = i2c_reg_read_byte_dt(&config->bus, REG_TD_STATUS, &points);
@@ -97,45 +140,60 @@ static int ft5336_process(const struct device *dev)
 		return r;
 	}
 
-	points = FIELD_GET(TOUCH_POINTS_MSK, points);
+	points = MIN(FIELD_GET(TOUCH_POINTS_MSK, points), CONFIG_INPUT_FT5336_MAX_TOUCH_POINTS);
+
 	if (points != 0) {
-		/* Any number of touches still counts as one touch. All touch
-		 * points except the first are ignored. Obtain first point
-		 * X, Y coordinates from:
-		 * REG_P1_XH, REG_P1_XL, REG_P1_YH, REG_P1_YL.
+		/*
+		 * Obtain the X, Y coordinates and the track ID of each reported
+		 * point from REG_Pn_XH, REG_Pn_XL, REG_Pn_YH and REG_Pn_YL.
 		 * We ignore the Event Flag because Zephyr only cares about
 		 * pressed / not pressed and not press down / lift up
 		 */
-		r = i2c_burst_read_dt(&config->bus, REG_P1_XH, coords, sizeof(coords));
+		r = i2c_burst_read_dt(&config->bus, REG_P1_XH, coords, points * TOUCH_POINT_SIZE);
 		if (r < 0) {
 			return r;
 		}
+	}
 
-		row = ((coords[0] & POSITION_H_MSK) << 8U) | coords[1];
-		col = ((coords[2] & POSITION_H_MSK) << 8U) | coords[3];
+	for (i = 0; i < points; i++) {
+		const uint8_t *coord = &coords[i * TOUCH_POINT_SIZE];
+		uint16_t row = ((coord[0] & POSITION_H_MSK) << 8U) | coord[1];
+		uint16_t col = ((coord[2] & POSITION_H_MSK) << 8U) | coord[3];
+		uint8_t touch_id = FIELD_GET(TOUCH_ID_MSK, coord[2]);
 
-		uint8_t touch_id = FIELD_GET(TOUCH_ID_MSK, coords[2]);
-
-		if (touch_id != TOUCH_ID_INVALID) {
-			pressed = true;
-			LOG_DBG("points: %d, touch_id: %d, row: %d, col: %d",
-				 points, touch_id, row, col);
-		} else {
-			pressed = false;
+		if (touch_id == TOUCH_ID_INVALID) {
 			LOG_WRN("bad TOUCH_ID: row: %d, col: %d", row, col);
+			continue;
 		}
-	} else  {
-		/* no touch = no press */
-		pressed = false;
+
+		LOG_DBG("points: %d, touch_id: %d, row: %d, col: %d", points, touch_id, row, col);
+
+		cur_points[count].id = touch_id;
+		cur_points[count].row = row;
+		cur_points[count].col = col;
+		count++;
 	}
 
-	if (pressed) {
-		input_touchscreen_report_pos(dev, col, row, K_FOREVER);
-		input_report_key(dev, INPUT_BTN_TOUCH, 1, true, K_FOREVER);
-	} else if (data->pressed_old && !pressed) {
-		input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_FOREVER);
+	/* touch events */
+	for (i = 0; i < count; i++) {
+		ft5336_report_touch(dev, &cur_points[i], true);
 	}
-	data->pressed_old = pressed;
+
+	/* release events */
+	for (i = 0; i < data->prev_count; i++) {
+		for (j = 0; j < count; j++) {
+			if (data->prev_points[i].id == cur_points[j].id) {
+				break;
+			}
+		}
+
+		if (j == count) {
+			ft5336_report_touch(dev, &data->prev_points[i], false);
+		}
+	}
+
+	memcpy(data->prev_points, cur_points, count * sizeof(cur_points[0]));
+	data->prev_count = count;
 
 	return 0;
 }
@@ -171,7 +229,7 @@ static int ft5336_init(const struct device *dev)
 	int r;
 
 	if (!device_is_ready(config->bus.bus)) {
-		LOG_ERR("I2C controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->bus.bus);
 		return -ENODEV;
 	}
 
@@ -201,7 +259,7 @@ static int ft5336_init(const struct device *dev)
 
 #ifdef CONFIG_INPUT_FT5336_INTERRUPT
 	if (!gpio_is_ready_dt(&config->int_gpio)) {
-		LOG_ERR("Interrupt GPIO controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->int_gpio.port);
 		return -ENODEV;
 	}
 
@@ -227,8 +285,8 @@ static int ft5336_init(const struct device *dev)
 	}
 #else
 	k_timer_init(&data->timer, ft5336_timer_handler, NULL);
-	k_timer_start(&data->timer, K_MSEC(CONFIG_INPUT_FT5336_PERIOD),
-		      K_MSEC(CONFIG_INPUT_FT5336_PERIOD));
+	k_timer_start(&data->timer, K_MSEC(CONFIG_INPUT_FT5336_INIT_DELAY_MS),
+		      K_MSEC(CONFIG_INPUT_FT5336_PERIOD_MS));
 #endif
 
 	r = pm_device_runtime_enable(dev);
@@ -250,14 +308,17 @@ static int ft5336_pm_action(const struct device *dev,
 #endif
 	int ret;
 
-	if (config->reset_gpio.port == NULL) {
-		return -ENOTSUP;
-	}
-
 	switch (action) {
 	case PM_DEVICE_ACTION_SUSPEND:
+#ifdef CONFIG_INPUT_FT5336_PM_MODE_MONITOR
+		ret = i2c_reg_write_byte_dt(&config->bus, REG_G_PMODE, PMOD_MONITOR);
+#else
+		if (config->reset_gpio.port == NULL) {
+			return -ENOTSUP;
+		}
 		ret = i2c_reg_write_byte_dt(&config->bus,
 					    REG_G_PMODE, PMOD_HIBERNATE);
+#endif
 		if (ret < 0) {
 			return ret;
 		}
@@ -267,6 +328,10 @@ static int ft5336_pm_action(const struct device *dev,
 #endif
 		break;
 	case PM_DEVICE_ACTION_RESUME:
+#ifndef CONFIG_INPUT_FT5336_PM_MODE_MONITOR
+		if (config->reset_gpio.port == NULL) {
+			return -ENOTSUP;
+		}
 		ret = gpio_pin_set_dt(&config->reset_gpio, 1);
 		if (ret < 0) {
 			return ret;
@@ -278,11 +343,22 @@ static int ft5336_pm_action(const struct device *dev,
 		if (ret < 0) {
 			return ret;
 		}
+#endif /* !CONFIG_INPUT_FT5336_PM_MODE_MONITOR */
 
-#ifndef CONFIG_INPUT_FT5336_INTERRUPT
+#ifdef CONFIG_INPUT_FT5336_INTERRUPT
+		ret = gpio_pin_configure_dt(&config->int_gpio, GPIO_INPUT);
+		if (ret < 0) {
+			return ret;
+		}
+
+		ret = gpio_pin_interrupt_configure_dt(&config->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+		if (ret < 0) {
+			return ret;
+		}
+#else
 		k_timer_start(&data->timer,
-			      K_MSEC(CONFIG_INPUT_FT5336_PERIOD),
-			      K_MSEC(CONFIG_INPUT_FT5336_PERIOD));
+			      K_MSEC(CONFIG_INPUT_FT5336_PERIOD_MS),
+			      K_MSEC(CONFIG_INPUT_FT5336_PERIOD_MS));
 #endif
 		break;
 	default:
@@ -294,7 +370,7 @@ static int ft5336_pm_action(const struct device *dev,
 #endif
 
 #define FT5336_INIT(index)								\
-	PM_DEVICE_DT_INST_DEFINE(n, ft5336_pm_action);					\
+	PM_DEVICE_DT_INST_DEFINE(index, ft5336_pm_action);				\
 	static const struct ft5336_config ft5336_config_##index = {			\
 		.common = INPUT_TOUCH_DT_INST_COMMON_CONFIG_INIT(index),		\
 		.bus = I2C_DT_SPEC_INST_GET(index),					\
@@ -303,7 +379,7 @@ static int ft5336_pm_action(const struct device *dev,
 		(.int_gpio = GPIO_DT_SPEC_INST_GET(index, int_gpios),))			\
 	};										\
 	static struct ft5336_data ft5336_data_##index;					\
-	DEVICE_DT_INST_DEFINE(index, ft5336_init, PM_DEVICE_DT_INST_GET(n),		\
+	DEVICE_DT_INST_DEFINE(index, ft5336_init, PM_DEVICE_DT_INST_GET(index),		\
 			      &ft5336_data_##index, &ft5336_config_##index,		\
 			      POST_KERNEL, CONFIG_INPUT_INIT_PRIORITY, NULL);
 

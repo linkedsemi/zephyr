@@ -8,8 +8,8 @@
 #define ZEPHYR_INCLUDE_DRIVERS_VIRTUALIZATION_IVSHMEM_H_
 
 /**
- * @brief Inter-VM Shared Memory (ivshmem) reference API
- * @defgroup ivshmem Inter-VM Shared Memory (ivshmem) reference API
+ * @brief Interfaces for Inter-VM Shared Memory (ivshmem).
+ * @defgroup ivshmem Inter-VM Shared Memory
  * @ingroup io_interfaces
  * @{
  */
@@ -22,6 +22,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**  @cond INTERNAL_HIDDEN */
 
 #define IVSHMEM_V2_PROTO_UNDEFINED	0x0000
 #define IVSHMEM_V2_PROTO_NET		0x0001
@@ -81,6 +83,8 @@ __subsystem struct ivshmem_driver_api {
 #endif
 };
 
+/** @endcond */
+
 /**
  * @brief Get the inter-VM shared memory
  *
@@ -101,10 +105,7 @@ __syscall size_t ivshmem_get_mem(const struct device *dev,
 static inline size_t z_impl_ivshmem_get_mem(const struct device *dev,
 					    uintptr_t *memmap)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_mem(dev, memmap);
+	return DEVICE_API_GET(ivshmem, dev)->get_mem(dev, memmap);
 }
 
 /**
@@ -118,10 +119,7 @@ __syscall uint32_t ivshmem_get_id(const struct device *dev);
 
 static inline uint32_t z_impl_ivshmem_get_id(const struct device *dev)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_id(dev);
+	return DEVICE_API_GET(ivshmem, dev)->get_id(dev);
 }
 
 /**
@@ -135,10 +133,7 @@ __syscall uint16_t ivshmem_get_vectors(const struct device *dev);
 
 static inline uint16_t z_impl_ivshmem_get_vectors(const struct device *dev)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_vectors(dev);
+	return DEVICE_API_GET(ivshmem, dev)->get_vectors(dev);
 }
 
 /**
@@ -156,10 +151,7 @@ __syscall int ivshmem_int_peer(const struct device *dev,
 static inline int z_impl_ivshmem_int_peer(const struct device *dev,
 					  uint32_t peer_id, uint16_t vector)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->int_peer(dev, peer_id, vector);
+	return DEVICE_API_GET(ivshmem, dev)->int_peer(dev, peer_id, vector);
 }
 
 /**
@@ -185,16 +177,14 @@ static inline int z_impl_ivshmem_register_handler(const struct device *dev,
 						  struct k_poll_signal *signal,
 						  uint16_t vector)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->register_handler(dev, signal, vector);
+	return DEVICE_API_GET(ivshmem, dev)->register_handler(dev, signal, vector);
 }
 
-#ifdef CONFIG_IVSHMEM_V2
-
+#if defined(CONFIG_IVSHMEM_V2) || defined(__DOXYGEN__)
 /**
  * @brief Get the ivshmem read/write section (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  * @param memmap A pointer to fill in with the memory address
@@ -207,14 +197,13 @@ __syscall size_t ivshmem_get_rw_mem_section(const struct device *dev,
 static inline size_t z_impl_ivshmem_get_rw_mem_section(const struct device *dev,
 						       uintptr_t *memmap)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_rw_mem_section(dev, memmap);
+	return DEVICE_API_GET(ivshmem, dev)->get_rw_mem_section(dev, memmap);
 }
 
 /**
  * @brief Get the ivshmem output section for a peer (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  * @param peer_id The VM ID whose output memory section to get
@@ -230,14 +219,13 @@ static inline size_t z_impl_ivshmem_get_output_mem_section(const struct device *
 							   uint32_t peer_id,
 							   uintptr_t *memmap)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_output_mem_section(dev, peer_id, memmap);
+	return DEVICE_API_GET(ivshmem, dev)->get_output_mem_section(dev, peer_id, memmap);
 }
 
 /**
  * @brief Get the state value of a peer (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  * @param peer_id The VM ID whose state to get
@@ -250,14 +238,13 @@ __syscall uint32_t ivshmem_get_state(const struct device *dev,
 static inline uint32_t z_impl_ivshmem_get_state(const struct device *dev,
 						uint32_t peer_id)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_state(dev, peer_id);
+	return DEVICE_API_GET(ivshmem, dev)->get_state(dev, peer_id);
 }
 
 /**
  * @brief Set our state (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  * @param state The state value to set
@@ -270,14 +257,13 @@ __syscall int ivshmem_set_state(const struct device *dev,
 static inline int z_impl_ivshmem_set_state(const struct device *dev,
 					   uint32_t state)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->set_state(dev, state);
+	return DEVICE_API_GET(ivshmem, dev)->set_state(dev, state);
 }
 
 /**
  * @brief Get the maximum number of peers supported (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  *
@@ -287,14 +273,13 @@ __syscall uint32_t ivshmem_get_max_peers(const struct device *dev);
 
 static inline uint32_t z_impl_ivshmem_get_max_peers(const struct device *dev)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_max_peers(dev);
+	return DEVICE_API_GET(ivshmem, dev)->get_max_peers(dev);
 }
 
 /**
  * @brief Get the protocol used by this ivshmem instance (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  *
@@ -304,14 +289,13 @@ __syscall uint16_t ivshmem_get_protocol(const struct device *dev);
 
 static inline uint16_t z_impl_ivshmem_get_protocol(const struct device *dev)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->get_protocol(dev);
+	return DEVICE_API_GET(ivshmem, dev)->get_protocol(dev);
 }
 
 /**
  * @brief Set the interrupt enablement for our VM (ivshmem-v2 only)
+ *
+ * @kconfig_dep{CONFIG_IVSHMEM_V2}
  *
  * @param dev Pointer to the device structure for the driver instance
  * @param enable True to enable interrupts, false to disable
@@ -324,10 +308,7 @@ __syscall int ivshmem_enable_interrupts(const struct device *dev,
 static inline int z_impl_ivshmem_enable_interrupts(const struct device *dev,
 						   bool enable)
 {
-	const struct ivshmem_driver_api *api =
-		(const struct ivshmem_driver_api *)dev->api;
-
-	return api->enable_interrupts(dev, enable);
+	return DEVICE_API_GET(ivshmem, dev)->enable_interrupts(dev, enable);
 }
 
 #endif /* CONFIG_IVSHMEM_V2 */

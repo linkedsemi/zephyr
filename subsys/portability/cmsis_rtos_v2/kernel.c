@@ -7,7 +7,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <zephyr/kernel.h>
-#include <cmsis_os2.h>
+#include <zephyr/portability/cmsis_os2.h>
 
 extern uint32_t sys_clock_tick_get_32(void);
 
@@ -24,8 +24,7 @@ osStatus_t osKernelGetInfo(osVersion_t *version, char *id_buf, uint32_t id_size)
 	}
 
 	if ((id_buf != NULL) && (version != NULL)) {
-		snprintf(id_buf, id_size,
-			 "Zephyr V%2"PRIu32".%2"PRIu32".%2"PRIu32,
+		snprintf(id_buf, id_size, "Zephyr V%2" PRIu32 ".%2" PRIu32 ".%2" PRIu32,
 			 SYS_KERNEL_VER_MAJOR(version->kernel),
 			 SYS_KERNEL_VER_MINOR(version->kernel),
 			 SYS_KERNEL_VER_PATCHLEVEL(version->kernel));
@@ -78,9 +77,9 @@ int32_t osKernelRestoreLock(int32_t lock)
 	}
 
 	if (lock < 0) {
-		return 1;       /* locked */
+		return 1; /* locked */
 	} else {
-		return 0;       /* not locked */
+		return 0; /* not locked */
 	}
 }
 
@@ -135,14 +134,16 @@ osStatus_t osDelay(uint32_t ticks)
  */
 osStatus_t osDelayUntil(uint32_t ticks)
 {
-	uint32_t ticks_elapsed;
-
 	if (k_is_in_isr()) {
 		return osErrorISR;
 	}
 
-	ticks_elapsed = osKernelGetTickCount();
-	k_sleep(K_TICKS(ticks - ticks_elapsed));
+	/* https://github.com/ARM-software/CMSIS_5/issues/277#issuecomment-390646527 */
+	ticks = ticks - osKernelGetTickCount();
+	if (ticks == 0 || ticks >  0x7FFFFFFFU) {
+		return osErrorParameter;
+	}
 
+	k_sleep(K_TICKS(ticks));
 	return osOK;
 }

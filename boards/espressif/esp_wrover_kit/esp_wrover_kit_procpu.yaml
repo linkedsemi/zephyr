@@ -17,8 +17,7 @@ supported:
   - spi
   - counter
   - entropy
-testing:
-  ignore_tags:
-    - net
-    - bluetooth
+  - crypto
+  - retained_mem
+  - netif:wifi
 vendor: espressif

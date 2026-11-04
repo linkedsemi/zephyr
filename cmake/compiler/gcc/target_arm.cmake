@@ -16,7 +16,16 @@ if(CONFIG_BIG_ENDIAN)
 endif()
 
 if(CONFIG_FPU)
-  list(APPEND ARM_C_FLAGS   -mfpu=${GCC_M_FPU})
+  if("${GCC_M_FPU}" STREQUAL "auto" AND NOT CONFIG_CPU_HAS_FPU_DOUBLE_PRECISION)
+    # GCC derives MVE capability from -mcpu, so -mfpu=fpv5-sp-d16 does not
+    # disable mve.fp (unlike clang).  When the SoC has only a single-precision
+    # FPU but GCC_M_FPU resolved to "auto", gcc would otherwise assume the
+    # full double-precision FPU implied by the CPU default.  Override it
+    # explicitly so that double-precision FP instructions are not emitted.
+    list(APPEND ARM_C_FLAGS   -mfpu=fpv5-sp-d16)
+  else()
+    list(APPEND ARM_C_FLAGS   -mfpu=${GCC_M_FPU})
+  endif()
 
   if(CONFIG_DCLS AND NOT CONFIG_FP_HARDABI)
     # If the processor is equipped with VFP and configured in DCLS topology,
@@ -40,12 +49,8 @@ if(CONFIG_FP16)
   endif()
 endif()
 
-if(CONFIG_THREAD_LOCAL_STORAGE)
-    list(APPEND ARM_C_FLAGS -mtp=soft)
-endif()
-
 list(APPEND TOOLCHAIN_C_FLAGS ${ARM_C_FLAGS})
-list(APPEND TOOLCHAIN_LD_FLAGS NO_SPLIT ${ARM_C_FLAGS})
+list(APPEND TOOLCHAIN_GROUPED_LD_FLAGS ARM_C_FLAGS)
 
 # Flags not supported by llext linker
 # (regexps are supported and match whole word)
@@ -54,7 +59,6 @@ set(LLEXT_REMOVE_FLAGS
   -fno-pie
   -ffunction-sections
   -fdata-sections
-  -g.*
   -Os
 )
 
@@ -67,8 +71,9 @@ set(LLEXT_APPEND_FLAGS
 list(APPEND LLEXT_EDK_REMOVE_FLAGS
     --sysroot=.*
     -fmacro-prefix-map=.*
-    )
+    -g.*
+)
 
 list(APPEND LLEXT_EDK_APPEND_FLAGS
     -nodefaultlibs
-    )
+)

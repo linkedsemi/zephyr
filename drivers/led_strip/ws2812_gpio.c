@@ -27,6 +27,7 @@ LOG_MODULE_REGISTER(ws2812_gpio);
 
 struct ws2812_gpio_cfg {
 	struct gpio_dt_spec gpio;
+	uintptr_t gpio_outset_base;
 	uint8_t num_colors;
 	const uint8_t *color_mapping;
 	size_t length;
@@ -76,16 +77,26 @@ struct ws2812_gpio_cfg {
 static int send_buf(const struct device *dev, uint8_t *buf, size_t len)
 {
 	const struct ws2812_gpio_cfg *config = dev->config;
-	volatile uint32_t *base = (uint32_t *)&NRF_GPIO->OUTSET;
+	volatile uint32_t *base = (uint32_t *)config->gpio_outset_base;
 	const uint32_t val = BIT(config->gpio.pin);
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 	struct onoff_manager *mgr =
 		z_nrf_clock_control_get_onoff(CLOCK_CONTROL_NRF_SUBSYS_HF);
+#else
+	const struct device *clk_dev = DEVICE_DT_GET_ONE(COND_CODE_1(NRF_CLOCK_HAS_HFCLK,
+							       (nordic_nrf_clock_hfclk),
+							       (nordic_nrf_clock_xo)));
+#endif
 	struct onoff_client cli;
 	unsigned int key;
 	int rc;
 
 	sys_notify_init_spinwait(&cli.notify);
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 	rc = onoff_request(mgr, &cli);
+#else
+	rc = nrf_clock_control_request(clk_dev, NULL, &cli);
+#endif
 	if (rc < 0) {
 		return rc;
 	}
@@ -122,7 +133,11 @@ static int send_buf(const struct device *dev, uint8_t *buf, size_t len)
 
 	irq_unlock(key);
 
+#if defined(CONFIG_CLOCK_CONTROL_NRF)
 	rc = onoff_release(mgr);
+#else
+	rc = nrf_clock_control_release(clk_dev, NULL);
+#endif
 	/* Returns non-negative value on success. Cap to 0 as API states. */
 	rc = MIN(rc, 0);
 
@@ -140,6 +155,7 @@ static int ws2812_gpio_update_rgb(const struct device *dev,
 	/* Convert from RGB to on-wire format (e.g. GRB, GRBW, RGB, etc) */
 	for (i = 0; i < num_pixels; i++) {
 		uint8_t j;
+		const struct led_rgb current_pixel = pixels[i];
 
 		for (j = 0; j < config->num_colors; j++) {
 			switch (config->color_mapping[j]) {
@@ -148,13 +164,13 @@ static int ws2812_gpio_update_rgb(const struct device *dev,
 				*ptr++ = 0;
 				break;
 			case LED_COLOR_ID_RED:
-				*ptr++ = pixels[i].r;
+				*ptr++ = current_pixel.r;
 				break;
 			case LED_COLOR_ID_GREEN:
-				*ptr++ = pixels[i].g;
+				*ptr++ = current_pixel.g;
 				break;
 			case LED_COLOR_ID_BLUE:
-				*ptr++ = pixels[i].b;
+				*ptr++ = current_pixel.b;
 				break;
 			default:
 				return -EINVAL;
@@ -172,7 +188,7 @@ static size_t ws2812_gpio_length(const struct device *dev)
 	return config->length;
 }
 
-static const struct led_strip_driver_api ws2812_gpio_api = {
+static DEVICE_API(led_strip, ws2812_gpio_api) = {
 	.update_rgb = ws2812_gpio_update_rgb,
 	.length = ws2812_gpio_length,
 };
@@ -224,10 +240,17 @@ static const uint8_t ws2812_gpio_##idx##_color_mapping[] =		\
 		return gpio_pin_configure_dt(&cfg->gpio, GPIO_OUTPUT);	\
 	}								\
 									\
+	BUILD_ASSERT(WS2812_NUM_COLORS(idx) <= sizeof(struct led_rgb),  \
+		"Too many channels in color-mapping; "			\
+		"currently not supported by the ws2812_gpio driver");	\
+									\
 	WS2812_COLOR_MAPPING(idx);					\
 									\
 	static const struct ws2812_gpio_cfg ws2812_gpio_##idx##_cfg = { \
 		.gpio = GPIO_DT_SPEC_INST_GET(idx, gpios),		\
+		.gpio_outset_base =					\
+			DT_REG_ADDR(DT_GPIO_CTLR(DT_DRV_INST(idx), gpios)) + \
+			offsetof(NRF_GPIO_Type, OUTSET),		\
 		.num_colors = WS2812_NUM_COLORS(idx),			\
 		.color_mapping = ws2812_gpio_##idx##_color_mapping,	\
 		.length = DT_INST_PROP(idx, chain_length),		\

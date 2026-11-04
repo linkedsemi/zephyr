@@ -15,6 +15,7 @@ board:
 - Two types of extension resources:
 
   - Arduino Uno V3 connectivity
+  - ST Zio connector (CN7, CN8, CN9, CN10) extending Arduino Uno V3
   - ST morpho extension pin headers for full access to all STM32 I/Os
 
 - On-board ST-LINK/V3E debugger/programmer
@@ -25,25 +26,25 @@ board:
 
 - Three users LEDs
 - Two push-buttons: USER and RESET
-- USB Type-C |trade| Sink device FS
+- USB Type-C® Sink device FS
 
 Hardware
 ********
 
 The STM32U575xx devices are an ultra-low-power microcontrollers family (STM32U5
-Series) based on the high-performance Arm|reg| Cortex|reg|-M33 32-bit RISC core.
+Series) based on the high-performance Arm® Cortex®-M33 32-bit RISC core.
 They operate at a frequency of up to 160 MHz.
 
 - Ultra-low-power with FlexPowerControl (down to 300 nA Standby mode and 19.5 uA/MHz run mode)
-- Core: ARM |reg| 32-bit Cortex |reg| -M33 CPU with TrustZone |reg| and FPU.
+- Core: ARM® 32-bit Cortex®-M33 CPU with TrustZone® and FPU.
 - Performance benchmark:
 
   - 1.5 DMPIS/MHz (Drystone 2.1)
-  - 651 CoreMark |reg| (4.07 CoreMark |reg| /MHZ)
+  - 651 CoreMark® (4.07 CoreMark® /MHZ)
 
 - Security
 
-  - Arm |reg|  TrustZone |reg| and securable I/Os memories and peripherals
+  - Arm®  TrustZone® and securable I/Os memories and peripherals
   - Flexible life cycle scheme with RDP (readout protection) and password protected debug
   - Root of trust thanks to unique boot entry and secure hide protection area (HDP)
   - Secure Firmware Installation thanks to embedded Root Secure Services
@@ -58,10 +59,10 @@ They operate at a frequency of up to 160 MHz.
 
   - 4 to 50 MHz crystal oscillator
   - 32 kHz crystal oscillator for RTC (LSE)
-  - Internal 16 MHz factory-trimmed RC ( |plusminus| 1%)
-  - Internal low-power 32 kHz RC ( |plusminus| 5%)
+  - Internal 16 MHz factory-trimmed RC (±1%)
+  - Internal low-power 32 kHz RC (±5%)
   - 2 internal multispeed 100 kHz to 48 MHz oscillators, including one auto-trimmed by
-    LSE (better than  |plusminus| 0.25 % accuracy)
+    LSE (better than ±0.25 % accuracy)
   - 3 PLLs for system clock, USB, audio, ADC
   - Internal 48 MHz with clock recovery
 
@@ -117,7 +118,7 @@ They operate at a frequency of up to 160 MHz.
     sound-activity detection
 
 - CRC calculation unit
-- Development support: serial wire debug (SWD), JTAG, Embedded Trace Macrocell |trade|
+- Development support: serial wire debug (SWD), JTAG, Embedded Trace Macrocell™
 - True Random Number Generator (RNG)
 
 - Graphic features
@@ -138,47 +139,7 @@ More information about STM32U575ZI can be found here:
 Supported Features
 ==================
 
-The Zephyr nucleo_u575zi_q board configuration supports the following hardware features:
-
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| CAN/CANFD | on-chip    | canbus                              |
-+-----------+------------+-------------------------------------+
-| CLOCK     | on-chip    | reset and clock control             |
-+-----------+------------+-------------------------------------+
-| DAC       | on-chip    | DAC Controller                      |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| I2C       | on-chip    | i2c                                 |
-+-----------+------------+-------------------------------------+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| PINMUX    | on-chip    | pinmux                              |
-+-----------+------------+-------------------------------------+
-| SPI       | on-chip    | spi                                 |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
-| WATCHDOG  | on-chip    | independent watchdog                |
-+-----------+------------+-------------------------------------+
-| USB FS    | on-chip    | USB Full Speed device               |
-+-----------+------------+-------------------------------------+
-| BKP SRAM  | on-chip    | Backup SRAM                         |
-+-----------+------------+-------------------------------------+
-| RNG       | on-chip    | True Random number generator        |
-+-----------+------------+-------------------------------------+
-| RTC       | on-chip    | rtc                                 |
-+-----------+------------+-------------------------------------+
-
-
-Other hardware features are not yet supported on this Zephyr port.
-
-The default configuration can be found in the defconfig file:
-:zephyr_file:`boards/st/nucleo_u575zi_q/nucleo_u575zi_q_defconfig`
-
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -204,7 +165,7 @@ Default Zephyr Peripheral Mapping:
 - LD3 : PG2
 - LPUART_1_TX : PG7
 - LPUART_1_RX : PG8
-- SPI_1_NSS : PA4
+- SPI_1_CS : PD14
 - SPI_1_SCK : PA5
 - SPI_1_MISO : PA6
 - SPI_1_MOSI : PA7
@@ -237,6 +198,8 @@ do it by removing ``SB50`` jumper on the back side of the board.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Nucleo U575ZI-Q board includes an ST-LINK/V3 embedded debug tool interface.
 This probe allows to flash the board using various tools.

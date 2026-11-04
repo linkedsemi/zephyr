@@ -19,6 +19,8 @@
 
 #include <kernel_arch_data.h>
 
+#include <zephyr/platform/hooks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -26,6 +28,7 @@ extern "C" {
 #ifndef _ASMLANGUAGE
 static ALWAYS_INLINE void arch_kernel_init(void)
 {
+	soc_per_core_init_hook();
 }
 
 static ALWAYS_INLINE void
@@ -41,6 +44,8 @@ static inline bool arch_is_in_isr(void)
 {
 	return _current_cpu->nested != 0U;
 }
+
+int arch_swap(unsigned int key);
 
 #ifdef CONFIG_IRQ_OFFLOAD
 void z_irq_do_offload(void);

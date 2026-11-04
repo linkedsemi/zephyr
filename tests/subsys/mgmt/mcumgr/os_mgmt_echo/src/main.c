@@ -56,10 +56,47 @@ ZTEST(os_mgmt_echo, test_echo)
 	smp_dummy_disable();
 
 	zassert_equal(sizeof(expected_response), nb->len,
-		      "Expected to receive %d bytes but got %d\n", sizeof(expected_response),
+		      "Expected to receive %zu bytes but got %d\n", sizeof(expected_response),
 		      nb->len);
 
 	zassert_mem_equal(expected_response, nb->data, nb->len,
+			  "Expected received data mismatch");
+}
+
+/* Echo request with an empty map: the "d" key is absent. */
+static const uint8_t command_no_data[] = {
+	0x02, 0x00, 0x00, 0x02, 0x00, 0x00, 0x01, 0x00,
+	0xbf, 0xff,
+};
+
+/* Expected response: rc = MGMT_ERR_EINVAL. */
+static const uint8_t expected_response_no_data[] = {
+	0x03, 0x00, 0x00, 0x06, 0x00, 0x00, 0x01, 0x00,
+	0xbf, 0x62, 0x72, 0x63, 0x03, 0xff,
+};
+
+ZTEST(os_mgmt_echo, test_echo_no_data)
+{
+	struct net_buf *nb;
+
+	smp_dummy_enable();
+	smp_dummy_clear_state();
+
+	(void)smp_dummy_tx_pkt(command_no_data, sizeof(command_no_data));
+	smp_dummy_add_data();
+
+	bool received = smp_dummy_wait_for_data(SMP_RESPONSE_WAIT_TIME);
+
+	zassert_true(received, "Expected to receive data but timed out\n");
+
+	nb = smp_dummy_get_outgoing();
+	smp_dummy_disable();
+
+	zassert_equal(sizeof(expected_response_no_data), nb->len,
+		      "Expected to receive %zu bytes but got %d\n",
+		      sizeof(expected_response_no_data), nb->len);
+
+	zassert_mem_equal(expected_response_no_data, nb->data, nb->len,
 			  "Expected received data mismatch");
 }
 

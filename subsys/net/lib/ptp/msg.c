@@ -1,8 +1,11 @@
 /*
  * Copyright (c) 2024 BayLibre SAS
+ * Copyright (c) 2026 Philipp Steiner
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include <stddef.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(ptp_msg, CONFIG_PTP_LOG_LEVEL);
@@ -19,7 +22,7 @@ LOG_MODULE_REGISTER(ptp_msg, CONFIG_PTP_LOG_LEVEL);
 
 static struct k_mem_slab msg_slab;
 
-K_MEM_SLAB_DEFINE_STATIC(msg_slab, sizeof(struct ptp_msg), CONFIG_PTP_MSG_POLL_SIZE, 8);
+K_MEM_SLAB_DEFINE_STATIC_TYPE(msg_slab, struct ptp_msg, CONFIG_PTP_MSG_POLL_SIZE);
 
 static const char *msg_type_str(struct ptp_msg *msg)
 {
@@ -51,49 +54,42 @@ static const char *msg_type_str(struct ptp_msg *msg)
 
 static void msg_timestamp_post_recv(struct ptp_msg *msg, struct ptp_timestamp *ts)
 {
-	msg->timestamp.protocol._sec.high = ntohs(ts->seconds_high);
-	msg->timestamp.protocol._sec.low = ntohl(ts->seconds_low);
-	msg->timestamp.protocol.nanosecond = ntohl(ts->nanoseconds);
+	msg->timestamp.protocol._sec.high = net_ntohs(ts->seconds_high);
+	msg->timestamp.protocol._sec.low = net_ntohl(ts->seconds_low);
+	msg->timestamp.protocol.nanosecond = net_ntohl(ts->nanoseconds);
 }
 
 static void msg_timestamp_pre_send(struct ptp_timestamp *ts)
 {
-	ts->seconds_high = htons(ts->seconds_high);
-	ts->seconds_low = htonl(ts->seconds_low);
-	ts->nanoseconds = htonl(ts->nanoseconds);
+	ts->seconds_high = net_htons(ts->seconds_high);
+	ts->seconds_low = net_htonl(ts->seconds_low);
+	ts->nanoseconds = net_htonl(ts->nanoseconds);
 }
 
 static void msg_port_id_post_recv(struct ptp_port_id *port_id)
 {
-	port_id->port_number = ntohs(port_id->port_number);
+	port_id->port_number = net_ntohs(port_id->port_number);
 }
 
 static void msg_port_id_pre_send(struct ptp_port_id *port_id)
 {
-	port_id->port_number = htons(port_id->port_number);
+	port_id->port_number = net_htons(port_id->port_number);
 }
 
-static int msg_header_post_recv(struct ptp_header *header)
+static void msg_header_post_recv(struct ptp_header *header)
 {
-	if ((header->version & 0xF) != PTP_MAJOR_VERSION) {
-		/* Incompatible protocol version */
-		return -1;
-	}
-
-	header->msg_length = ntohs(header->msg_length);
-	header->correction = ntohll(header->correction);
-	header->sequence_id = ntohs(header->sequence_id);
+	header->msg_length = net_ntohs(header->msg_length);
+	header->correction = net_ntohll(header->correction);
+	header->sequence_id = net_ntohs(header->sequence_id);
 
 	msg_port_id_post_recv(&header->src_port_id);
-
-	return 0;
 }
 
 static void msg_header_pre_send(struct ptp_header *header)
 {
-	header->msg_length = htons(header->msg_length);
-	header->correction = htonll(header->correction);
-	header->sequence_id = htons(header->sequence_id);
+	header->msg_length = net_htons(header->msg_length);
+	header->correction = net_htonll(header->correction);
+	header->sequence_id = net_htons(header->sequence_id);
 
 	msg_port_id_pre_send(&header->src_port_id);
 }
@@ -156,8 +152,8 @@ static int msg_tlv_post_recv(struct ptp_msg *msg, int length)
 		}
 
 		tlv_container->tlv = (struct ptp_tlv *)suffix;
-		tlv_container->tlv->type = ntohs(tlv_container->tlv->type);
-		tlv_container->tlv->length = ntohs(tlv_container->tlv->length);
+		tlv_container->tlv->type = net_ntohs(tlv_container->tlv->type);
+		tlv_container->tlv->length = net_ntohs(tlv_container->tlv->length);
 
 		if (tlv_container->tlv->length % 2) {
 			/* IEEE 1588-2019 Section 5.3.8 - length is an even number */
@@ -180,7 +176,7 @@ static int msg_tlv_post_recv(struct ptp_msg *msg, int length)
 		suffix += tlv_container->tlv->length;
 		suffix_len += tlv_container->tlv->length;
 
-		ret = ptp_tlv_post_recv(tlv_container->tlv);
+		ret = ptp_tlv_post_recv(&tlv_container->tlv);
 		if (ret) {
 			ptp_tlv_free(tlv_container);
 			return ret;
@@ -196,8 +192,7 @@ static void msg_tlv_free(struct ptp_msg *msg)
 {
 	struct ptp_tlv_container *tlv_container;
 
-	for (sys_snode_t *iter = sys_slist_get(&msg->tlvs);
-	     iter;
+	for (sys_snode_t *iter = sys_slist_get(&msg->tlvs); iter;
 	     iter = sys_slist_get(&msg->tlvs)) {
 		tlv_container = CONTAINER_OF(iter, struct ptp_tlv_container, node);
 		ptp_tlv_free(tlv_container);
@@ -209,7 +204,7 @@ static void msg_tlv_pre_send(struct ptp_msg *msg)
 	struct ptp_tlv_container *tlv_container;
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&msg->tlvs, tlv_container, node) {
-		ptp_tlv_pre_send(tlv_container->tlv);
+		ptp_tlv_pre_send(&tlv_container->tlv);
 	}
 
 	/* No need to track TLVs attached to the message. */
@@ -219,7 +214,7 @@ static void msg_tlv_pre_send(struct ptp_msg *msg)
 struct ptp_msg *ptp_msg_alloc(void)
 {
 	struct ptp_msg *msg = NULL;
-	int ret = k_mem_slab_alloc(&msg_slab, (void **)&msg, K_FOREVER);
+	int ret = k_mem_slab_alloc(&msg_slab, (void **)&msg, K_NO_WAIT);
 
 	if (ret) {
 		LOG_ERR("Couldn't allocate memory for the message");
@@ -259,51 +254,133 @@ enum ptp_msg_type ptp_msg_type(const struct ptp_msg *msg)
 	return (enum ptp_msg_type)(msg->header.type_major_sdo_id & 0xF);
 }
 
-struct ptp_msg *ptp_msg_from_pkt(struct net_pkt *pkt)
+#if defined(CONFIG_PTP_UDP_IPV4_PROTOCOL) || defined(CONFIG_PTP_UDP_IPV6_PROTOCOL)
+static struct ptp_msg *msg_from_udp_pkt(struct net_pkt *pkt)
 {
-	static const size_t eth_hdr_len = IS_ENABLED(CONFIG_NET_VLAN) ?
-					  sizeof(struct net_eth_vlan_hdr) :
-					  sizeof(struct net_eth_hdr);
+	size_t eth_hdr_len = sizeof(struct net_eth_hdr);
 	struct net_udp_hdr *hdr;
 	struct ptp_msg *msg;
-	int port, payload;
+	int payload;
+	uint16_t port;
+
+	/* Check if the packet has a VLAN tag */
+	if (IS_ENABLED(CONFIG_NET_VLAN) && net_pkt_vlan_tag(pkt) != NET_VLAN_TAG_UNSPEC) {
+		eth_hdr_len = sizeof(struct net_eth_vlan_hdr);
+	}
 
 	if (pkt->buffer->len == eth_hdr_len) {
-		/* Packet contain Ethernet header at the beginning. */
+		/* Packet contains Ethernet header at the beginning. */
 		struct net_buf *buf;
 
-		/* remove packet temporarily. */
+		/* Remove packet temporarily. */
 		buf = pkt->buffer;
 		pkt->buffer = buf->frags;
+		buf->frags = NULL;
 
 		hdr = net_udp_get_hdr(pkt, NULL);
 
-		/* insert back temporarily femoved frag. */
+		/* Insert back temporarily removed frag. */
 		net_pkt_frag_insert(pkt, buf);
 	} else {
 		hdr = net_udp_get_hdr(pkt, NULL);
 	}
 
 	if (!hdr) {
-		LOG_ERR("Couldn't retrieve UDP header from the net packet");
 		return NULL;
 	}
 
-	payload = ntohs(hdr->len) - NET_UDPH_LEN;
-	port = ntohs(hdr->dst_port);
+	payload = net_ntohs(hdr->len) - NET_UDPH_LEN;
+	port = net_ntohs(hdr->dst_port);
 
 	if (port != PTP_SOCKET_PORT_EVENT && port != PTP_SOCKET_PORT_GENERAL) {
-		LOG_ERR("Couldn't retrieve PTP message from the net packet");
 		return NULL;
 	}
 
 	msg = (struct ptp_msg *)((uintptr_t)hdr + NET_UDPH_LEN);
-
-	if (payload == ntohs(msg->header.msg_length)) {
+	if (payload == net_ntohs(msg->header.msg_length)) {
 		return msg;
 	}
 
 	return NULL;
+}
+#endif /* CONFIG_PTP_UDP_IPV4_PROTOCOL || CONFIG_PTP_UDP_IPV6_PROTOCOL */
+
+#if defined(CONFIG_PTP_IEEE_802_3_PROTOCOL)
+static struct ptp_msg *msg_from_l2_pkt(struct net_pkt *pkt)
+{
+	struct net_buf *buf = pkt->frags;
+	struct ptp_msg *msg;
+	int payload;
+
+	if (!buf) {
+		return NULL;
+	}
+
+	if (buf->len >= sizeof(struct net_eth_hdr)) {
+		struct net_eth_hdr *eth = (struct net_eth_hdr *)buf->data;
+		uint16_t eth_type = net_ntohs(eth->type);
+		size_t ll_hdr_len = 0;
+
+		if (eth_type == NET_ETH_PTYPE_PTP) {
+			ll_hdr_len = sizeof(struct net_eth_hdr);
+		} else if (eth_type == NET_ETH_PTYPE_VLAN &&
+			   buf->len >= sizeof(struct net_eth_vlan_hdr) &&
+			   net_ntohs(((struct net_eth_vlan_hdr *)buf->data)->type) ==
+				   NET_ETH_PTYPE_PTP) {
+			ll_hdr_len = sizeof(struct net_eth_vlan_hdr);
+		} else {
+			ll_hdr_len = 0;
+		}
+
+		if (ll_hdr_len > 0) {
+			payload = net_pkt_get_len(pkt) - ll_hdr_len;
+			if (payload <= 0) {
+				return NULL;
+			}
+
+			if (buf->len == ll_hdr_len) {
+				buf = buf->frags;
+				if (!buf) {
+					return NULL;
+				}
+				msg = (struct ptp_msg *)buf->data;
+			} else {
+				msg = (struct ptp_msg *)((uint8_t *)buf->data + ll_hdr_len);
+			}
+
+			if (payload == net_ntohs(msg->header.msg_length)) {
+				return msg;
+			}
+
+			return NULL;
+		}
+	}
+
+	if (buf->len < sizeof(struct ptp_header)) {
+		return NULL;
+	}
+
+	msg = (struct ptp_msg *)buf->data;
+	payload = net_pkt_get_len(pkt);
+
+	if (payload == net_ntohs(msg->header.msg_length)) {
+		return msg;
+	}
+
+	return NULL;
+}
+#endif /* CONFIG_PTP_IEEE_802_3_PROTOCOL */
+
+struct ptp_msg *ptp_msg_from_pkt(struct net_pkt *pkt)
+{
+#if defined(CONFIG_PTP_UDP_IPV4_PROTOCOL) || defined(CONFIG_PTP_UDP_IPV6_PROTOCOL)
+	return msg_from_udp_pkt(pkt);
+#elif defined(CONFIG_PTP_IEEE_802_3_PROTOCOL)
+	return msg_from_l2_pkt(pkt);
+#else
+	(void)pkt;
+	return NULL;
+#endif
 }
 
 void ptp_msg_pre_send(struct ptp_msg *msg)
@@ -316,10 +393,12 @@ void ptp_msg_pre_send(struct ptp_msg *msg)
 	case PTP_MSG_SYNC:
 		break;
 	case PTP_MSG_DELAY_REQ:
-		current = k_uptime_get();
+		if (msg->timestamp.host.second == 0 && msg->timestamp.host.nanosecond == 0) {
+			current = k_uptime_get();
 
-		msg->timestamp.host.second = (uint64_t)(current / MSEC_PER_SEC);
-		msg->timestamp.host.nanosecond = (current % MSEC_PER_SEC) * NSEC_PER_MSEC;
+			msg->timestamp.host.second = (uint64_t)(current / MSEC_PER_SEC);
+			msg->timestamp.host.nanosecond = (current % MSEC_PER_SEC) * NSEC_PER_MSEC;
+		}
 		break;
 	case PTP_MSG_PDELAY_REQ:
 		break;
@@ -328,6 +407,7 @@ void ptp_msg_pre_send(struct ptp_msg *msg)
 		msg_port_id_pre_send(&msg->pdelay_resp.req_port_id);
 		break;
 	case PTP_MSG_FOLLOW_UP:
+		msg_timestamp_pre_send(&msg->follow_up.precise_origin_timestamp);
 		break;
 	case PTP_MSG_DELAY_RESP:
 		msg_timestamp_pre_send(&msg->delay_resp.receive_timestamp);
@@ -338,10 +418,10 @@ void ptp_msg_pre_send(struct ptp_msg *msg)
 		msg_port_id_pre_send(&msg->pdelay_resp_follow_up.req_port_id);
 		break;
 	case PTP_MSG_ANNOUNCE:
-		msg->announce.current_utc_offset = htons(msg->announce.current_utc_offset);
+		msg->announce.current_utc_offset = net_htons(msg->announce.current_utc_offset);
 		msg->announce.gm_clk_quality.offset_scaled_log_variance =
-			htons(msg->announce.gm_clk_quality.offset_scaled_log_variance);
-		msg->announce.steps_rm = htons(msg->announce.steps_rm);
+			net_htons(msg->announce.gm_clk_quality.offset_scaled_log_variance);
+		msg->announce.steps_rm = net_htons(msg->announce.steps_rm);
 		break;
 	case PTP_MSG_SIGNALING:
 		msg_port_id_pre_send(&msg->signaling.target_port_id);
@@ -357,30 +437,53 @@ void ptp_msg_pre_send(struct ptp_msg *msg)
 int ptp_msg_post_recv(struct ptp_port *port, struct ptp_msg *msg, int cnt)
 {
 	static const int msg_size[] = {
-		[PTP_MSG_SYNC]		        = sizeof(struct ptp_sync_msg),
-		[PTP_MSG_DELAY_REQ]	        = sizeof(struct ptp_delay_req_msg),
-		[PTP_MSG_PDELAY_REQ]	        = sizeof(struct ptp_pdelay_req_msg),
-		[PTP_MSG_PDELAY_RESP]	        = sizeof(struct ptp_pdelay_resp_msg),
-		[PTP_MSG_FOLLOW_UP]	        = sizeof(struct ptp_follow_up_msg),
-		[PTP_MSG_DELAY_RESP]	        = sizeof(struct ptp_delay_resp_msg),
+		[PTP_MSG_SYNC] = sizeof(struct ptp_sync_msg),
+		[PTP_MSG_DELAY_REQ] = sizeof(struct ptp_delay_req_msg),
+		[PTP_MSG_PDELAY_REQ] = sizeof(struct ptp_pdelay_req_msg),
+		[PTP_MSG_PDELAY_RESP] = sizeof(struct ptp_pdelay_resp_msg),
+		[PTP_MSG_FOLLOW_UP] = sizeof(struct ptp_follow_up_msg),
+		[PTP_MSG_DELAY_RESP] = sizeof(struct ptp_delay_resp_msg),
 		[PTP_MSG_PDELAY_RESP_FOLLOW_UP] = sizeof(struct ptp_pdelay_resp_follow_up_msg),
-		[PTP_MSG_ANNOUNCE]	        = sizeof(struct ptp_announce_msg),
-		[PTP_MSG_SIGNALING]	        = sizeof(struct ptp_signaling_msg),
-		[PTP_MSG_MANAGEMENT]	        = sizeof(struct ptp_management_msg),
+		[PTP_MSG_ANNOUNCE] = sizeof(struct ptp_announce_msg),
+		[PTP_MSG_SIGNALING] = sizeof(struct ptp_signaling_msg),
+		[PTP_MSG_MANAGEMENT] = sizeof(struct ptp_management_msg),
 	};
 	enum ptp_msg_type type = ptp_msg_type(msg);
 	int64_t current;
 	int tlv_len;
+
+	if (cnt < (int)sizeof(struct ptp_header)) {
+		LOG_ERR("Received message shorter than the header");
+		return -EBADMSG;
+	}
+
+	/* The version comes before the type and the length, since the meaning
+	 * of those fields depends on it.
+	 */
+	if ((msg->header.version & 0xF) != PTP_MAJOR_VERSION) {
+		/* Not an error: other PTP versions may share the multicast group */
+		LOG_DBG("Received message with unsupported PTP version");
+		return -EPROTONOSUPPORT;
+	}
+
+	/* type is a 4-bit field (0-15) taken straight off the wire, but
+	 * msg_size[] only has entries up to PTP_MSG_MANAGEMENT. Reject
+	 * undefined types before indexing to avoid an out-of-bounds read.
+	 */
+	if (type >= ARRAY_SIZE(msg_size)) {
+		LOG_ERR("Received message with unsupported type");
+		return -EBADMSG;
+	}
 
 	if (msg_size[type] > cnt) {
 		LOG_ERR("Received message with incorrect length");
 		return -EBADMSG;
 	}
 
-	if (msg_header_post_recv(&msg->header)) {
-		LOG_ERR("Received message incomplient with supported PTP version");
-		return -EBADMSG;
-	}
+	msg_header_post_recv(&msg->header);
+
+	/* Record local uptime for aging calculations */
+	msg->local_uptime_ms = k_uptime_get();
 
 	LOG_DBG("Port %d received %s message", port->port_ds.id.port_number, msg_type_str(msg));
 
@@ -408,15 +511,17 @@ int ptp_msg_post_recv(struct ptp_port *port, struct ptp_msg *msg, int cnt)
 		msg_port_id_post_recv(&msg->pdelay_resp_follow_up.req_port_id);
 		break;
 	case PTP_MSG_ANNOUNCE:
-		current = k_uptime_get();
+		if (msg->timestamp.host.second == 0 && msg->timestamp.host.nanosecond == 0) {
+			current = k_uptime_get();
 
-		msg->timestamp.host.second = (uint64_t)(current / MSEC_PER_SEC);
-		msg->timestamp.host.nanosecond = (current % MSEC_PER_SEC) * NSEC_PER_MSEC;
+			msg->timestamp.host.second = (uint64_t)(current / MSEC_PER_SEC);
+			msg->timestamp.host.nanosecond = (current % MSEC_PER_SEC) * NSEC_PER_MSEC;
+		}
 		msg_timestamp_post_recv(msg, &msg->announce.origin_timestamp);
-		msg->announce.current_utc_offset = ntohs(msg->announce.current_utc_offset);
+		msg->announce.current_utc_offset = net_ntohs(msg->announce.current_utc_offset);
 		msg->announce.gm_clk_quality.offset_scaled_log_variance =
-			ntohs(msg->announce.gm_clk_quality.offset_scaled_log_variance);
-		msg->announce.steps_rm = ntohs(msg->announce.steps_rm);
+			net_ntohs(msg->announce.gm_clk_quality.offset_scaled_log_variance);
+		msg->announce.steps_rm = net_ntohs(msg->announce.steps_rm);
 		break;
 	case PTP_MSG_SIGNALING:
 		msg_port_id_post_recv(&msg->signaling.target_port_id);
@@ -472,11 +577,10 @@ struct ptp_tlv *ptp_msg_add_tlv(struct ptp_msg *msg, int length)
 
 int ptp_msg_announce_cmp(const struct ptp_announce_msg *m1, const struct ptp_announce_msg *m2)
 {
-	int len = sizeof(m1->gm_priority1) + sizeof(m1->gm_clk_quality) +
-		  sizeof(m1->gm_priority1) + sizeof(m1->gm_id) +
-		  sizeof(m1->steps_rm);
+	size_t offset = offsetof(struct ptp_announce_msg, gm_priority1);
+	size_t len = offsetof(struct ptp_announce_msg, time_src) - offset;
 
-	return memcmp(&m1->gm_priority1, &m2->gm_priority1, len);
+	return memcmp((const uint8_t *)m1 + offset, (const uint8_t *)m2 + offset, len);
 }
 
 bool ptp_msg_current_parent(const struct ptp_msg *msg)

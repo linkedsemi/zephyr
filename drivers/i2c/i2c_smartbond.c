@@ -109,7 +109,6 @@ static int i2c_smartbond_apply_configure(const struct device *dev, uint32_t dev_
 	const struct i2c_smartbond_cfg *config = dev->config;
 	struct i2c_smartbond_data *data = dev->data;
 	uint32_t con_reg = 0x0UL;
-	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
 	/* Configure Speed (SCL frequency) */
 	switch (I2C_SPEED_GET(dev_config)) {
@@ -139,7 +138,9 @@ static int i2c_smartbond_apply_configure(const struct device *dev, uint32_t dev_
 		return -ENOTSUP;
 	}
 
-	/* Enable sending RESTART as master */
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+	/* Enable sending RESTART as controller */
 	con_reg |= I2C_I2C_CON_REG_I2C_RESTART_EN_Msk;
 
 	i2c_smartbond_disable_when_inactive(dev);
@@ -422,13 +423,15 @@ static int i2c_smartbond_transfer_cb(const struct device *dev, struct i2c_msg *m
 	const struct i2c_smartbond_cfg *config = dev->config;
 	struct i2c_smartbond_data *data = dev->data;
 	int ret = 0;
-	k_spinlock_key_t key = k_spin_lock(&data->lock);
 
 	if (cb == NULL) {
 		return -EINVAL;
 	}
 
+	k_spinlock_key_t key = k_spin_lock(&data->lock);
+
 	if (data->cb != NULL) {
+		k_spin_unlock(&data->lock, key);
 		return -EWOULDBLOCK;
 	}
 
@@ -548,7 +551,7 @@ static void i2c_smartbond_isr(const struct device *dev)
 #define I2C_SMARTBOND_CONFIGURE(id)
 #endif
 
-static const struct i2c_driver_api i2c_smartbond_driver_api = {
+static DEVICE_API(i2c, i2c_smartbond_driver_api) = {
 	.configure = i2c_smartbond_configure,
 	.get_config = i2c_smartbond_get_config,
 	.transfer = i2c_smartbond_transfer,

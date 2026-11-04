@@ -335,13 +335,24 @@ static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 
 	for (int i = 0; i < CC13XX_CC26XX_NUM_RX_BUF; i++) {
 		if (drv_data->rx_entry[i].status == DATA_ENTRY_FINISHED) {
+			/* The length byte covers the PSDU plus the status and
+			 * RSSI bytes the RF core appends. It comes from the
+			 * air, so reject values that would underflow the two
+			 * post-decrements below, or that would let the optional
+			 * CRC append write past the receive buffer.
+			 */
 			len = drv_data->rx_data[i][0];
+			if (len < 2U || len >= CC13XX_CC26XX_RX_BUF_SIZE) {
+				LOG_WRN("Invalid frame length");
+				drv_data->rx_entry[i].status = DATA_ENTRY_PENDING;
+				continue;
+			}
+
 			sdu = drv_data->rx_data[i] + 1;
 			status = drv_data->rx_data[i][len--];
 			rssi = drv_data->rx_data[i][len--];
 
-			/* TODO: Configure firmware to include CRC in raw mode. */
-			if (IS_ENABLED(CONFIG_IEEE802154_RAW_MODE) && len > 0) {
+			if (IS_ENABLED(CONFIG_IEEE802154_L2_PKT_INCL_FCS) && len > 0) {
 				/* append CRC-16/CCITT */
 				uint16_t crc = 0;
 
@@ -354,7 +365,7 @@ static void drv_rx_done(struct ieee802154_cc13xx_cc26xx_subg_data *drv_data)
 				len, rssi, status);
 
 			pkt = net_pkt_rx_alloc_with_buffer(
-				drv_data->iface, len, AF_UNSPEC, 0, K_NO_WAIT);
+				drv_data->iface, len, NET_AF_UNSPEC, 0, K_NO_WAIT);
 			if (!pkt) {
 				LOG_WRN("Cannot allocate packet");
 				continue;
@@ -683,7 +694,7 @@ static int ieee802154_cc13xx_cc26xx_subg_tx(const struct device *dev,
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
 		/* For backwards compatibility we only log an error but do not bail. */
-		NET_ERR("TX mode %d not supported - sending directly instead.", mode);
+		LOG_ERR("TX mode %d not supported - sending directly instead.", mode);
 	}
 
 	if (k_sem_take(&drv_data->lock, K_FOREVER)) {

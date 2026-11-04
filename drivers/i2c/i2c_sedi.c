@@ -11,7 +11,10 @@
 #include <zephyr/kernel.h>
 #include <sedi_driver_i2c.h>
 #include <zephyr/pm/device.h>
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(i2c_sedi);
 
+#include "i2c-priv.h"
 #define I2C_SEDI_TIMEOUT_MS (1000)
 
 struct i2c_sedi_context {
@@ -21,13 +24,24 @@ struct i2c_sedi_context {
 	struct k_mutex *mutex;
 	int err;
 	uint16_t addr_10bit;
+	uint32_t bitrate;
+	uint32_t cfg;
 };
 
 struct i2c_sedi_config {
 	DEVICE_MMIO_ROM;
 	sedi_i2c_event_cb_t cb_sedi;
 	void (*irq_config)(const struct device *dev);
+	void (*set_bus_data)(void);
 };
+
+static int i2c_sedi_api_get_config(const struct device *dev, uint32_t *dev_config)
+{
+	struct i2c_sedi_context *const context = dev->data;
+
+	*dev_config = context->cfg;
+	return 0;
+}
 
 static int i2c_sedi_api_configure(const struct device *dev, uint32_t dev_config)
 {
@@ -35,6 +49,8 @@ static int i2c_sedi_api_configure(const struct device *dev, uint32_t dev_config)
 	int speed = I2C_SPEED_GET(dev_config);
 	int sedi_speed;
 	struct i2c_sedi_context *const context = dev->data;
+
+	context->cfg = dev_config;
 
 	context->addr_10bit = (dev_config & I2C_ADDR_10_BITS) ? SEDI_I2C_ADDRESS_10BIT : 0;
 
@@ -67,9 +83,6 @@ static int i2c_sedi_api_full_io(const struct device *dev, struct i2c_msg *msgs, 
 	int ret = 0;
 	struct i2c_sedi_context *context = dev->data;
 
-	if (!num_msgs) {
-		return 0;
-	}
 	__ASSERT_NO_MSG(msgs);
 
 	k_mutex_lock(context->mutex, K_FOREVER);
@@ -104,6 +117,9 @@ static int i2c_sedi_api_full_io(const struct device *dev, struct i2c_msg *msgs, 
 	if (ret != 0) {
 		/* Abort current transfer */
 		sedi_i2c_control(context->sedi_device, SEDI_I2C_ABORT_TRANSFER, 0);
+		/* Discard any completion that raced with the transfer timeout. */
+		k_sem_reset(context->sem);
+		context->err = 0;
 		ret = -EIO;
 	}
 	pm_device_busy_clear(dev);
@@ -112,9 +128,10 @@ static int i2c_sedi_api_full_io(const struct device *dev, struct i2c_msg *msgs, 
 	return ret;
 }
 
-static const struct i2c_driver_api i2c_sedi_apis = {
+static DEVICE_API(i2c, i2c_sedi_apis) = {
 	.configure = i2c_sedi_api_configure,
 	.transfer = i2c_sedi_api_full_io,
+	.get_config = i2c_sedi_api_get_config,
 #ifdef CONFIG_I2C_RTIO
 	.iodev_submit = i2c_iodev_submit_fallback,
 #endif
@@ -192,6 +209,13 @@ static int i2c_sedi_init(const struct device *dev)
 		return -EIO;
 	}
 
+	config->set_bus_data();
+	ret = i2c_sedi_api_configure(dev,
+			I2C_MODE_CONTROLLER |
+			i2c_map_dt_bitrate(context->bitrate));
+	if (ret != 0) {
+		return -EIO;
+	}
 	config->irq_config(dev);
 
 	return 0;
@@ -204,15 +228,37 @@ static void i2c_sedi_isr(const struct device *dev)
 	sedi_i2c_isr_handler(context->sedi_device);
 }
 
-#define I2C_SEDI_IRQ_FLAGS_SENSE0(n) 0
-#define I2C_SEDI_IRQ_FLAGS_SENSE1(n) DT_INST_IRQ(n, sense)
-#define I2C_SEDI_IRQ_FLAGS(n) _CONCAT(I2C_SEDI_IRQ_FLAGS_SENSE, DT_INST_IRQ_HAS_CELL(n, sense))(n)
+#define I2C_SEDI_IRQ_FLAGS0(n) 0
+#define I2C_SEDI_IRQ_FLAGS1(n) DT_INST_IRQ(n, flags)
+#define I2C_SEDI_IRQ_FLAGS(n) _CONCAT(I2C_SEDI_IRQ_FLAGS, DT_INST_IRQ_HAS_CELL(n, flags))(n)
+
+#define I2C_SEDI_BUS_TIMING_CHECK_1(inst, prop)                                                    \
+	BUILD_ASSERT(DT_INST_PROP_LEN(inst, prop) == 3,                                            \
+		     "Property '" #prop "' must have exactly 3 values")
+#define I2C_SEDI_BUS_TIMING_CHECK_0(inst, prop)
+#define I2C_SEDI_BUS_TIMING_CHECK(inst, prop)                                                      \
+	_CONCAT(I2C_SEDI_BUS_TIMING_CHECK_, DT_INST_NODE_HAS_PROP(inst, prop))(inst, prop)
+
+#define I2C_SEDI_SET_BUS_DATA_1(inst, prop, ctrl_cmd)                                              \
+	do {                                                                                       \
+		sedi_i2c_bus_clk_t clk = DT_INST_PROP(inst, prop);                                 \
+		sedi_i2c_control(DT_INST_PROP(inst, peripheral_id), ctrl_cmd,                      \
+				 (uint32_t)(uintptr_t)&clk);                                       \
+	} while (0)
+#define I2C_SEDI_SET_BUS_DATA_0(inst, prop, ctrl_cmd)
+#define I2C_SEDI_SET_BUS_DATA(inst, prop, ctrl_cmd)                                                \
+	_CONCAT(I2C_SEDI_SET_BUS_DATA_, DT_INST_NODE_HAS_PROP(inst, prop))(inst, prop, ctrl_cmd)
 
 #define I2C_DEVICE_INIT_SEDI(n)                                                                    \
 	static K_SEM_DEFINE(i2c_sedi_sem_##n, 0, 1);                                               \
 	static K_MUTEX_DEFINE(i2c_sedi_mutex_##n);                                                 \
+	I2C_SEDI_BUS_TIMING_CHECK(n, bus_timings_std);                                             \
+	I2C_SEDI_BUS_TIMING_CHECK(n, bus_timings_fst);                                             \
+	I2C_SEDI_BUS_TIMING_CHECK(n, bus_timings_fsp);                                             \
+	I2C_SEDI_BUS_TIMING_CHECK(n, bus_timings_high);                                            \
 	static struct i2c_sedi_context i2c_sedi_data_##n = {                                       \
 		.sedi_device = DT_INST_PROP(n, peripheral_id),                                     \
+		.bitrate = DT_INST_PROP(n, clock_frequency),                                       \
 		.sem = &i2c_sedi_sem_##n,                                                          \
 		.mutex = &i2c_sedi_mutex_##n,                                                      \
 	};                                                                                         \
@@ -232,13 +278,21 @@ static void i2c_sedi_isr(const struct device *dev)
 			    DEVICE_DT_INST_GET(n), I2C_SEDI_IRQ_FLAGS(n));                         \
 		irq_enable(DT_INST_IRQN(n));                                                       \
 	};                                                                                         \
+	static void i2c_sedi_set_bus_data_##n(void)                                                \
+	{                                                                                          \
+		I2C_SEDI_SET_BUS_DATA(n, bus_timings_std, SEDI_I2C_SET_BUS_DATA_STD);              \
+		I2C_SEDI_SET_BUS_DATA(n, bus_timings_fst, SEDI_I2C_SET_BUS_DATA_FST);              \
+		I2C_SEDI_SET_BUS_DATA(n, bus_timings_fsp, SEDI_I2C_SET_BUS_DATA_FSP);              \
+		I2C_SEDI_SET_BUS_DATA(n, bus_timings_high, SEDI_I2C_SET_BUS_DATA_HIGH);            \
+	};                                                                                         \
 	static const struct i2c_sedi_config i2c_sedi_config_##n = {                                \
 		DEVICE_MMIO_ROM_INIT(DT_DRV_INST(n)),                                              \
 		.cb_sedi = &i2c_sedi_callback_##n,                                                 \
 		.irq_config = &i2c_sedi_irq_config_##n,                                            \
+		.set_bus_data = &i2c_sedi_set_bus_data_##n,                                        \
 	};                                                                                         \
-	PM_DEVICE_DT_DEFINE(DT_NODELABEL(i2c##n), i2c_sedi_pm_action);                             \
-	I2C_DEVICE_DT_INST_DEFINE(n, i2c_sedi_init, PM_DEVICE_DT_GET(DT_NODELABEL(i2c##n)),        \
+	PM_DEVICE_DT_INST_DEFINE(n, i2c_sedi_pm_action);                                           \
+	I2C_DEVICE_DT_INST_DEFINE(n, i2c_sedi_init, PM_DEVICE_DT_INST_GET(n),                      \
 				  &i2c_sedi_data_##n, &i2c_sedi_config_##n, PRE_KERNEL_2,          \
 				  CONFIG_I2C_INIT_PRIORITY, &i2c_sedi_apis);
 

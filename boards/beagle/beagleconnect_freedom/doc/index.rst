@@ -20,45 +20,12 @@ The CC1352P7 wireless MCU has a 48 MHz Arm Cortex-M4F SoC and a Bluetooth Low En
 The board also features a TI MSP430F5503 microcontroller used as a USB-to-serial bridge and
 GPIO expander.
 
+(NOTE: Rev C5 was pre-production revision and used TI CC1352P MCU. Rev C7, the production version uses TI CC1352P7.)
 
 Supported Features
 ==================
 
-The board configuration supports the following hardware features:
-
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| MPU       | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| NVIC      | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| PINMUX    | on-chip    | pinmux               |
-+-----------+------------+----------------------+
-| UART      | on-chip    | serial               |
-+-----------+------------+----------------------+
-| I2C       | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| SPI       | on-chip    | spi                  |
-+-----------+------------+----------------------+
-| HWINFO    | on-chip    | hwinfo               |
-+-----------+------------+----------------------+
-| I2C       | off-chip   | OPT3001              |
-+-----------+------------+----------------------+
-| I2C       | off-chip   | HDC2010              |
-+-----------+------------+----------------------+
-| I2C       | off-chip   | BCF_BRIDGE_MCU       |
-+-----------+------------+----------------------+
-| ADC       | on-chip    | adc                  |
-+-----------+------------+----------------------+
-| PWM       | on-chip    | pwm                  |
-+-----------+------------+----------------------+
-| FLASH     | on-chip    | flash                |
-+-----------+------------+----------------------+
-| RADIO     | on-chip    | ieee802154           |
-+-----------+------------+----------------------+
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================

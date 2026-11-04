@@ -48,7 +48,7 @@ static int gpio_iproc_configure(const struct device *dev, gpio_pin_t pin, gpio_f
 	const struct gpio_iproc_config *const cfg = DEV_CFG(dev);
 	mem_addr_t base = cfg->base;
 
-	/* Setup the pin direcion. */
+	/* Setup the pin direction. */
 	if (flags & GPIO_OUTPUT) {
 		/* configure pin for output */
 		sys_set_bit(base + IPROC_GPIO_OUT_EN_OFFSET, pin);
@@ -179,7 +179,7 @@ static int gpio_iproc_manage_callback(const struct device *port, struct gpio_cal
 	return gpio_manage_callback(&context->cb, callback, set);
 }
 
-static const struct gpio_driver_api gpio_iproc_api = {
+static DEVICE_API(gpio, gpio_iproc_api) = {
 	.pin_configure = gpio_iproc_configure,
 	.port_get_raw = gpio_iproc_port_get_raw,
 	.port_set_masked_raw = gpio_iproc_port_set_masked_raw,
@@ -208,10 +208,7 @@ int gpio_iproc_init(const struct device *dev)
 	}                                                                                          \
                                                                                                    \
 	static const struct gpio_iproc_config gpio_port_config_##n = {                             \
-		.common =                                                                          \
-			{                                                                          \
-				.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),               \
-			},                                                                         \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),                                      \
 		.base = DT_INST_REG_ADDR(n),                                                       \
 		.irq_config_func = port_iproc_config_func_##n,                                     \
 	};                                                                                         \

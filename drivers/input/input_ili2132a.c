@@ -9,6 +9,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/input/input.h>
+#include <zephyr/input/input_touch.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/sys/byteorder.h>
 
@@ -27,10 +28,13 @@ struct ili2132a_data {
 };
 
 struct ili2132a_config {
+	struct input_touchscreen_common_config common;
 	struct i2c_dt_spec i2c;
 	struct gpio_dt_spec rst;
 	struct gpio_dt_spec irq;
 };
+
+INPUT_TOUCH_STRUCT_CHECK(struct ili2132a_config);
 
 static void gpio_isr(const struct device *dev, struct gpio_callback *cb, uint32_t pin)
 {
@@ -44,13 +48,18 @@ static void ili2132a_process(const struct device *dev)
 	const struct ili2132a_config *dev_cfg = dev->config;
 	uint8_t buf[8];
 	uint16_t x, y;
+	int ret;
 
-	i2c_read_dt(&dev_cfg->i2c, buf, sizeof(buf));
+	ret = i2c_read_dt(&dev_cfg->i2c, buf, sizeof(buf));
+	if (ret < 0) {
+		LOG_ERR("Failed to read data: %d", ret);
+		return;
+	}
+
 	if (buf[TIP] & IS_TOUCHED_BIT) {
 		x = sys_get_le16(&buf[X_COORD]);
 		y = sys_get_le16(&buf[Y_COORD]);
-		input_report_abs(dev, INPUT_ABS_X, x, false, K_FOREVER);
-		input_report_abs(dev, INPUT_ABS_Y, y, false, K_FOREVER);
+		input_touchscreen_report_pos(dev, x, y, K_FOREVER);
 		input_report_key(dev, INPUT_BTN_TOUCH, 1, true, K_FOREVER);
 	} else {
 		input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_FOREVER);
@@ -71,17 +80,17 @@ static int ili2132a_init(const struct device *dev)
 	int ret;
 
 	if (!i2c_is_ready_dt(&dev_cfg->i2c)) {
-		LOG_ERR("%s is not ready", dev_cfg->i2c.bus->name);
+		LOG_ERR_DEVICE_NOT_READY(dev_cfg->i2c.bus);
 		return -ENODEV;
 	}
 
 	if (!gpio_is_ready_dt(&dev_cfg->rst)) {
-		LOG_ERR("Reset GPIO controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(dev_cfg->rst.port);
 		return -ENODEV;
 	}
 
 	if (!gpio_is_ready_dt(&dev_cfg->irq)) {
-		LOG_ERR("Interrupt GPIO controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(dev_cfg->irq.port);
 		return -ENODEV;
 	}
 
@@ -123,6 +132,7 @@ static int ili2132a_init(const struct device *dev)
 }
 #define ILI2132A_INIT(index)                                                                       \
 	static const struct ili2132a_config ili2132a_config_##index = {                            \
+		.common = INPUT_TOUCH_DT_INST_COMMON_CONFIG_INIT(index),                           \
 		.i2c = I2C_DT_SPEC_INST_GET(index),                                                \
 		.rst = GPIO_DT_SPEC_INST_GET(index, rst_gpios),                                    \
 		.irq = GPIO_DT_SPEC_INST_GET(index, irq_gpios),                                    \

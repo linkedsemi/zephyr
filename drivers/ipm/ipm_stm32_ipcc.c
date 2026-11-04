@@ -40,7 +40,7 @@ LOG_MODULE_REGISTER(ipm_stm32_ipcc, CONFIG_IPM_LOG_LEVEL);
 #define IPCC_EnableTransmitChannel(hipcc, ch)	\
 			LL_C1_IPCC_EnableTransmitChannel(hipcc, 1 << ch)
 #define IPCC_DisableReceiveChannel(hipcc, ch)	\
-			LL_C2_IPCC_DisableReceiveChannel(hipcc, 1 << ch)
+			LL_C1_IPCC_DisableReceiveChannel(hipcc, 1 << ch)
 #define IPCC_DisableTransmitChannel(hipcc, ch)	\
 			LL_C1_IPCC_DisableTransmitChannel(hipcc, 1 << ch)
 
@@ -88,7 +88,9 @@ LOG_MODULE_REGISTER(ipm_stm32_ipcc, CONFIG_IPM_LOG_LEVEL);
 struct stm32_ipcc_mailbox_config {
 	void (*irq_config_func)(const struct device *dev);
 	IPCC_TypeDef *ipcc;
+#if DT_INST_NUM_CLOCKS(0) != 0
 	struct stm32_pclken pclken;
+#endif
 };
 
 struct stm32_ipcc_mbx_data {
@@ -241,27 +243,24 @@ static int stm32_ipcc_mailbox_init(const struct device *dev)
 
 	struct stm32_ipcc_mbx_data *data = dev->data;
 	const struct stm32_ipcc_mailbox_config *cfg = dev->config;
-	const struct device *clk;
+	__maybe_unused const struct device *clk;
 	uint32_t i;
 
+#if DT_INST_NUM_CLOCKS(0) != 0
 	clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
-
-	if (!device_is_ready(clk)) {
-		LOG_ERR("clock control device not ready");
-		return -ENODEV;
-	}
 
 	/* enable clock */
 	if (clock_control_on(clk,
 			     (clock_control_subsys_t)&cfg->pclken) != 0) {
 		return -EIO;
 	}
+#endif
 
 	/* Disable RX and TX interrupts */
 	IPCC_DisableIT_TXF(cfg->ipcc);
 	IPCC_DisableIT_RXO(cfg->ipcc);
 
-	data->num_ch = LL_IPCC_GetChannelConfig(cfg->ipcc);
+	data->num_ch = LL_IPCC_GetChannelNumber(cfg->ipcc);
 
 	for (i = 0; i < data->num_ch; i++) {
 		/* Clear RX status */
@@ -276,7 +275,7 @@ static int stm32_ipcc_mailbox_init(const struct device *dev)
 	return 0;
 }
 
-static const struct ipm_driver_api stm32_ipcc_mailbox_driver_api = {
+static DEVICE_API(ipm, stm32_ipcc_mailbox_driver_api) = {
 	.send = stm32_ipcc_mailbox_ipm_send,
 	.register_callback = stm32_ipcc_mailbox_ipm_register_callback,
 	.max_data_size_get = stm32_ipcc_mailbox_ipm_max_data_size_get,
@@ -290,10 +289,9 @@ static void stm32_ipcc_mailbox_config_func(const struct device *dev);
 static const struct stm32_ipcc_mailbox_config stm32_ipcc_mailbox_0_config = {
 	.irq_config_func = stm32_ipcc_mailbox_config_func,
 	.ipcc = (IPCC_TypeDef *)DT_INST_REG_ADDR(0),
-	.pclken = { .bus = DT_INST_CLOCKS_CELL(0, bus),
-		    .enr = DT_INST_CLOCKS_CELL(0, bits)
-	},
-
+#if DT_INST_NUM_CLOCKS(0) != 0
+	.pclken = STM32_DT_INST_CLOCK_INFO(0),
+#endif
 };
 
 DEVICE_DT_INST_DEFINE(0,

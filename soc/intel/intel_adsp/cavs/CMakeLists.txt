@@ -13,10 +13,16 @@ zephyr_library_sources(
     power_down_cavs.S
     )
 
+zephyr_library_sources_ifdef(CONFIG_GDBSTUB
+    gdbstub.c
+    )
+
 if(CONFIG_SMP OR CONFIG_MP_MAX_NUM_CPUS GREATER 1)
     zephyr_library_sources(multiprocessing.c)
 endif()
 
 zephyr_library_sources_ifdef(CONFIG_CAVS_ICTL irq.c)
+
+zephyr_library_sources_ifdef(CONFIG_SOC_FAMILY_INTEL_ADSP_TRIPLE_FAULT_BREADCRUMB asm_breadcrumb.S)
 
 set(SOC_LINKER_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/include/xtensa-cavs-linker.ld CACHE INTERNAL "")

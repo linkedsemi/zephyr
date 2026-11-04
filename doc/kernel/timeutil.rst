@@ -6,8 +6,8 @@ Time Utilities
 Overview
 ********
 
-:ref:`kernel_timing_uptime` in Zephyr is based on the a tick counter.  With
-the default :kconfig:option:`CONFIG_TICKLESS_KERNEL` this counter advances at a
+:ref:`kernel_timing_uptime` in Zephyr is based on a tick counter.  With
+the default :kconfig:option:`CONFIG_TICKLESS_KERNEL`, this counter advances at a
 nominally constant rate from zero at the instant the system started. The POSIX
 equivalent to this counter is something like ``CLOCK_MONOTONIC`` or, in Linux,
 ``CLOCK_MONOTONIC_RAW``.  :c:func:`k_uptime_get()` provides a millisecond
@@ -28,6 +28,7 @@ The time utilities API supports:
 
 * :ref:`converting between time representations <timeutil_repr>`
 * :ref:`synchronizing and aligning time scales <timeutil_sync>`
+* :ref:`comparing, adding, and subtracting representations <timeutil_manip>`
 
 For terminology and concepts that support these functions see
 :ref:`timeutil_concepts`.
@@ -44,8 +45,7 @@ Time scale instants can be represented in multiple ways including:
 
 * Seconds since an epoch. POSIX representations of time in this form include
   ``time_t`` and ``struct timespec``, which are generally interpreted as a
-  representation of `"UNIX Time"
-  <https://tools.ietf.org/html/rfc8536#section-2>`__.
+  representation of "UNIX Time" (see :rfc:`8536#section-2`).
 
 * Calendar time as a year, month, day, hour, minutes, and seconds relative to
   an epoch. POSIX representations of time in this form include ``struct tm``.
@@ -65,6 +65,20 @@ The inverse transformation is not standardized: APIs like ``mktime()`` expect
 information about time zones.  Zephyr provides this transformation with
 :c:func:`timeutil_timegm` and :c:func:`timeutil_timegm64`.
 
+To convert between ``struct timespec`` and ``k_timeout_t`` durations,
+use :c:func:`timespec_to_timeout` and :c:func:`timespec_from_timeout`.
+
+.. code-block:: c
+
+    k_timeout_t to;
+    struct timespec ts;
+
+    timespec_from_timeout(K_FOREVER, &ts);
+    to = timespec_to_timeout(&ts); /* to == K_FOREVER */
+
+    timespec_from_timeout(K_MSEC(100), &ts);
+    to = timespec_to_timeout(&ts); /* to == K_MSEC(100) */
+
 .. doxygengroup:: timeutil_repr_apis
 
 .. _timeutil_sync:
@@ -74,13 +88,13 @@ Time Scale Synchronization
 
 There are several factors that affect synchronizing time scales:
 
-* The rate of discrete instant representation change.  For example Zephyr
+* The rate of discrete instant representation change.  For example, Zephyr
   uptime is tracked in ticks which advance at events that nominally occur at
   :kconfig:option:`CONFIG_SYS_CLOCK_TICKS_PER_SEC` Hertz, while an external time
   source may provide data in whole or fractional seconds (e.g. microseconds).
 * The absolute offset required to align the two scales at a single instant.
 * The relative error between observable instants in each scale, required to
-  align multiple instants consistently.  For example a reference clock that's
+  align multiple instants consistently.  For example, a reference clock that's
   conditioned by a 1-pulse-per-second GPS signal will be much more accurate
   than a Zephyr system clock driven by a RC oscillator with a +/- 250 ppm
   error.
@@ -105,6 +119,90 @@ process:
   :c:func:`timeutil_sync_estimate_skew`.
 
 .. doxygengroup:: timeutil_sync_apis
+
+.. _timeutil_manip:
+
+``timespec`` Manipulation
+=========================
+
+Checking the validity of a ``timespec`` can be done with :c:func:`timespec_is_valid`.
+
+.. code-block:: c
+
+    struct timespec ts = {
+        .tv_sec = 0,
+        .tv_nsec = -1, /* out of range! */
+    };
+
+    if (!timespec_is_valid(&ts)) {
+        /* error-handing code */
+    }
+
+In some cases, invalid ``timespec`` objects may be re-normalized using
+:c:func:`timespec_normalize`.
+
+.. code-block:: c
+
+    if (!timespec_normalize(&ts)) {
+        /* error-handling code */
+    }
+
+    /* ts should be normalized */
+    __ASSERT(timespec_is_valid(&ts) == true, "expected normalized timespec");
+
+It is possible to compare two ``timespec`` objects for equality using :c:func:`timespec_equal`.
+
+.. code-block:: c
+
+    if (timespec_equal(then, now)) {
+        /* time is up! */
+    }
+
+It is possible to compare and fully order (valid) ``timespec`` objects using
+:c:func:`timespec_compare`.
+
+.. code-block:: c
+
+    int cmp = timespec_compare(a, b);
+
+    switch (cmp) {
+    case 0:
+        /* a == b */
+        break;
+    case -1:
+        /* a < b */
+        break;
+    case +1:
+        /* a > b */
+        break;
+    }
+
+It is possible to add, subtract, and negate ``timespec`` objects using
+:c:func:`timespec_add`, :c:func:`timespec_sub`, and :c:func:`timespec_negate`,
+respectively. Like :c:func:`timespec_normalize`, these functions will output
+a normalized ``timespec`` when doing so would not result in overflow.
+On success, these functions return ``true``. If overflow would occur, the
+functions return ``false``.
+
+.. code-block:: c
+
+    /* a += b */
+    if (!timespec_add(&a, &b)) {
+        /* overflow */
+    }
+
+    /* a -= b */
+    if (!timespec_sub(&a, &b)) {
+        /* overflow */
+    }
+
+    /* a = -a */
+    if (!timespec_negate(&a)) {
+        /* overflow */
+    }
+
+.. doxygengroup:: timeutil_timespec_apis
+
 
 .. _timeutil_concepts:
 
@@ -151,17 +249,15 @@ influenced by longitude, but the offset may be adjusted ("daylight
 saving time") to align standard time to the local solar time. In a sense
 local time is "more discontinuous" than UT.
 
-`POSIX Time <https://tools.ietf.org/html/rfc8536#section-2>`__ is a time scale
-that counts seconds since the "POSIX epoch" at 1970-01-01T00:00:00Z (i.e. the
-start of 1970 UTC). `UNIX Time
-<https://tools.ietf.org/html/rfc8536#section-2>`__ is an extension of POSIX
+POSIX Time (see :rfc:`8536#section-2`) is a time scale
+that counts seconds since the "POSIX epoch" at 1970-01-01T00:00:00Z (i.e. the
+start of 1970 UTC). UNIX Time is an extension of POSIX
 time using negative values to represent times before the POSIX epoch. Both of
 these scales assume that every day has exactly 86400 seconds. In normal use
 instants in these scales correspond to times in the UTC scale, so they inherit
 the discontinuity.
 
-The continuous analogue is `UNIX Leap Time
-<https://tools.ietf.org/html/rfc8536#section-2>`__ which is UNIX time plus all
+The continuous analogue is UNIX Leap Time which is UNIX time plus all
 leap-second corrections added after the POSIX epoch (when TAI-UTC was 8 s).
 
 Example of Time Scale Differences
@@ -236,3 +332,20 @@ The mechanism used to populate synchronization points is not relevant: it may
 involve reading from a local high-precision RTC peripheral, exchanging packets
 over a network using a protocol like NTP or PTP, or processing NMEA messages
 received a GPS with or without a 1pps signal.
+
+``timespec`` Concepts
+=====================
+
+Originally from POSIX, ``struct timespec`` has been a part of the C standard
+since C11. The definition of ``struct timespec`` is as shown below.
+
+.. code-block:: c
+
+   struct timespec {
+       time_t tv_sec;  /* seconds */
+       long   tv_nsec; /* nanoseconds */
+   };
+
+The ``tv_nsec`` field is only valid with values in the range ``[0, 999999999]``. The
+``tv_sec`` field is the number of seconds since the epoch. If ``struct timespec`` is
+used to express a difference, the ``tv_sec`` field may fall into a negative range.

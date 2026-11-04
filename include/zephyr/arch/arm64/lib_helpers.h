@@ -12,6 +12,8 @@
 #include <zephyr/arch/arm64/cpu.h>
 #include <stdint.h>
 
+/** @cond INTERNAL_HIDDEN */
+
 /* All the macros need a memory clobber */
 
 #define read_sysreg(reg)						\
@@ -24,8 +26,9 @@
 
 #define write_sysreg(val, reg)						\
 ({									\
+	uint64_t reg_val = val;						\
 	__asm__ volatile ("msr " STRINGIFY(reg) ", %0"			\
-			  :: "r" (val) : "memory");			\
+			  :: "r" (reg_val) : "memory");			\
 })
 
 #define zero_sysreg(reg)						\
@@ -61,6 +64,8 @@ MAKE_REG_HELPER(cnthp_ctl_el2);
 MAKE_REG_HELPER(cnthps_ctl_el2);
 MAKE_REG_HELPER(cntv_ctl_el0)
 MAKE_REG_HELPER(cntv_cval_el0)
+MAKE_REG_HELPER(cntp_cval_el0)
+MAKE_REG_HELPER(cntps_cval_el1)
 MAKE_REG_HELPER(cntvct_el0);
 MAKE_REG_HELPER(cntvoff_el2);
 MAKE_REG_HELPER(currentel);
@@ -68,13 +73,18 @@ MAKE_REG_HELPER(csselr_el1);
 MAKE_REG_HELPER(daif)
 MAKE_REG_HELPER(hcr_el2);
 MAKE_REG_HELPER(id_aa64pfr0_el1);
+MAKE_REG_HELPER(id_aa64pfr1_el1);
 MAKE_REG_HELPER(id_aa64mmfr0_el1);
+MAKE_REG_HELPER(id_aa64isar0_el1);
+MAKE_REG_HELPER(id_aa64isar1_el1);
+MAKE_REG_HELPER(id_aa64isar2_el1);
 MAKE_REG_HELPER(mpidr_el1);
 MAKE_REG_HELPER(par_el1);
 #if !defined(CONFIG_ARMV8_R)
 MAKE_REG_HELPER(scr_el3);
 #endif /* CONFIG_ARMV8_R */
 MAKE_REG_HELPER(tpidrro_el0);
+MAKE_REG_HELPER(tpidr_el1);
 MAKE_REG_HELPER(vmpidr_el2);
 MAKE_REG_HELPER(sp_el0);
 
@@ -90,6 +100,7 @@ MAKE_REG_HELPER_EL123(spsr)
 MAKE_REG_HELPER_EL123(tcr)
 MAKE_REG_HELPER_EL123(ttbr0)
 MAKE_REG_HELPER_EL123(vbar)
+MAKE_REG_HELPER_EL123(zcr)
 
 #if defined(CONFIG_ARM_MPU)
 /* Armv8-R aarch64 mpu registers */
@@ -155,6 +166,14 @@ static ALWAYS_INLINE void disable_fiq(void)
 #define sev()	__asm__ volatile("sev" : : : "memory")
 #define wfe()	__asm__ volatile("wfe" : : : "memory")
 #define wfi()	__asm__ volatile("wfi" : : : "memory")
+#define wfet(v)	__asm__ volatile("msr S0_3_C1_C0_0, %0" :: "r"(v) : "memory")
+#define wfit(v)	__asm__ volatile("msr S0_3_C1_C0_1, %0" :: "r"(v) : "memory")
+
+static inline bool is_wfxt_implemented(void)
+{
+	return ((read_id_aa64isar2_el1() >> ID_AA64ISAR2_WFXT_SHIFT)
+		& ID_AA64ISAR2_WFXT_MASK) != 0;
+}
 
 static inline bool is_el_implemented(unsigned int el)
 {
@@ -179,8 +198,9 @@ static inline bool is_el_highest_implemented(void)
 
 	curr_el = GET_EL(read_currentel());
 
-	if (curr_el < el_highest)
+	if (curr_el < el_highest) {
 		return false;
+	}
 
 	return true;
 }
@@ -196,6 +216,40 @@ static inline bool is_in_secure_state(void)
 	/* We cannot read SCR_EL3 from EL2 or EL1 */
 	return !IS_ENABLED(CONFIG_ARMV8_A_NS);
 }
+
+static inline bool is_sve_implemented(void)
+{
+	return (((read_id_aa64pfr0_el1() >> ID_AA64PFR0_SVE_SHIFT) & ID_AA64PFR0_SVE_MASK) != 0U);
+}
+
+#if defined(CONFIG_ARM64_PMUV3)
+MAKE_REG_HELPER(id_aa64dfr0_el1);
+MAKE_REG_HELPER(pmcr_el0);
+MAKE_REG_HELPER(pmccntr_el0);
+MAKE_REG_HELPER(pmcntenset_el0);
+MAKE_REG_HELPER(pmcntenclr_el0);
+MAKE_REG_HELPER(pmovsclr_el0);
+MAKE_REG_HELPER(pmuserenr_el0);
+MAKE_REG_HELPER(pmselr_el0);
+MAKE_REG_HELPER(pmxevtyper_el0);
+MAKE_REG_HELPER(pmxevcntr_el0);
+#endif /* CONFIG_ARM64_PMUV3 */
+
+#ifdef CONFIG_ARM_PAC
+/* PAC Key Register Helpers */
+MAKE_REG_HELPER(apiakeylo_el1);
+MAKE_REG_HELPER(apiakeyhi_el1);
+MAKE_REG_HELPER(apibkeylo_el1);
+MAKE_REG_HELPER(apibkeyhi_el1);
+MAKE_REG_HELPER(apdakeylo_el1);
+MAKE_REG_HELPER(apdakeyhi_el1);
+MAKE_REG_HELPER(apdbkeylo_el1);
+MAKE_REG_HELPER(apdbkeyhi_el1);
+MAKE_REG_HELPER(apgakeylo_el1);
+MAKE_REG_HELPER(apgakeyhi_el1);
+#endif /* CONFIG_ARM_PAC */
+
+/** @endcond */
 
 #endif /* !_ASMLANGUAGE */
 

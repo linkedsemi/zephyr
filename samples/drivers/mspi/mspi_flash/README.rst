@@ -2,12 +2,12 @@
    :name: JEDEC MSPI-NOR flash
    :relevant-api: flash_interface
 
-   Use the flash API to interact with a MSPI NOR serial flash memory device.
+   Use the flash API to interact with an MSPI NOR serial flash memory device.
 
 Overview
 ********
 
-This sample demonstrates using the :ref:`flash API <flash_api>` on a MSPI NOR serial flash
+This sample demonstrates using the :ref:`flash API <flash_api>` on an MSPI NOR serial flash
 memory device.  While trivial it is an example of direct access and
 allows confirmation that the flash is working and that automatic power
 savings is correctly implemented.
@@ -18,7 +18,7 @@ Building and Running
 The application will build only for a target that has a :ref:`devicetree <dt-guide>`
 ``flash0`` alias that refers to an entry with the following bindings as a compatible:
 
-* :dtcompatible:`ambiq,mspi-device`, :dtcompatible:`mspi-atxp032`
+* :dtcompatible:`ambiq,mspi-device`, :dtcompatible:`atxp032`
 
 .. zephyr-app-commands::
    :zephyr-app: samples/drivers/mspi/mspi_flash

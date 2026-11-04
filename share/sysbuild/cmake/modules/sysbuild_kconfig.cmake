@@ -2,6 +2,28 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+#[=======================================================================[.rst:
+sysbuild_kconfig
+################
+
+Sysbuild's own Kconfig configuration.
+
+Sysbuild has a Kconfig tree of its own, rooted at the application's :file:`Kconfig.sysbuild` file
+and namespaced under ``SB_CONFIG_`` so that it cannot collide with an image's own ``CONFIG_``
+options. See :ref:`sysbuild_kconfig_namespacing`.
+
+This module locates the sysbuild configuration files and runs Kconfig over them. It also defines
+the ``sysbuild_menuconfig`` and ``sysbuild_guiconfig`` build targets, which edit sysbuild's own
+configuration rather than that of any image.
+
+Configuration input files are looked up in :cmake:variable:`SB_APPLICATION_CONFIG_DIR`, falling
+back to :cmake:variable:`APPLICATION_CONFIG_DIR`, and are controlled by:
+
+* :cmake:variable:`SB_CONF_FILE`
+* :cmake:variable:`SB_EXTRA_CONF_FILE`
+
+#]=======================================================================]
+
 set(EXTRA_KCONFIG_TARGET_COMMAND_FOR_sysbuild_menuconfig
   ${ZEPHYR_BASE}/scripts/kconfig/menuconfig.py
 )
@@ -66,9 +88,9 @@ endforeach()
 if(DEFINED SB_CONF_FILE AND NOT DEFINED CACHE{SB_CONF_FILE})
   # We only want to set this in cache it has been defined and is not already there.
   set(SB_CONF_FILE ${SB_CONF_FILE} CACHE STRING "If desired, you can build the application with \
-  SYSbuild configuration settings specified in an alternate .conf file using this parameter. \
-  These settings will override the settings in the application’s SYSBuild config file or its \
-  default .conf file. Multiple files may be listed, e.g. SB_CONF_FILE=\"sys1.conf sys2.conf\"")
+    SYSbuild configuration settings specified in an alternate .conf file using this parameter. \
+    These settings will override the settings in the application’s SYSBuild config file or its \
+    default .conf file. Multiple files may be listed, e.g. SB_CONF_FILE=\"sys1.conf sys2.conf\"")
 endif()
 
 if(NOT DEFINED SB_CONF_FILE)
@@ -80,13 +102,15 @@ endif()
 
 if(NOT EXISTS "${APPLICATION_CONFIG_DIR}")
   message(FATAL_ERROR "${APPLICATION_CONFIG_DIR} (APPLICATION_CONFIG_DIR) doesn't exist. "
-          "Unable to lookup sysbuild.conf or other related sysbuild configuration files. "
-	  "Please ensure APPLICATION_CONFIG_DIR points to a valid location."
+    "Unable to lookup sysbuild.conf or other related sysbuild configuration files. "
+    "Please ensure APPLICATION_CONFIG_DIR points to a valid location."
   )
 endif()
 
 # Empty files to make kconfig.py happy.
-file(TOUCH ${CMAKE_CURRENT_BINARY_DIR}/empty.conf)
+if(NOT EXISTS ${CMAKE_CURRENT_BINARY_DIR}/empty.conf)
+  file(TOUCH ${CMAKE_CURRENT_BINARY_DIR}/empty.conf)
+endif()
 set(APPLICATION_SOURCE_DIR ${sysbuild_toplevel_SOURCE_DIR})
 set(AUTOCONF_H             ${CMAKE_CURRENT_BINARY_DIR}/autoconf.h)
 set(CONF_FILE              ${SB_CONF_FILE})
@@ -102,9 +126,29 @@ set(shield_conf_files)
 list(APPEND ZEPHYR_KCONFIG_MODULES_DIR BOARD=${BOARD})
 set(KCONFIG_NAMESPACE SB_CONFIG)
 
+foreach(module_name ${ZEPHYR_MODULE_NAMES})
+  zephyr_string(SANITIZE TOUPPER MODULE_NAME_UPPER ${module_name})
+
+  if(SYSBUILD_${MODULE_NAME_UPPER}_KCONFIG)
+    list(APPEND
+         ZEPHYR_KCONFIG_MODULES_DIR
+         "SYSBUILD_${MODULE_NAME_UPPER}_KCONFIG=${SYSBUILD_${MODULE_NAME_UPPER}_KCONFIG}"
+    )
+  endif()
+endforeach()
+
 if(EXISTS ${APP_DIR}/Kconfig.sysbuild)
   set(KCONFIG_ROOT ${APP_DIR}/Kconfig.sysbuild)
 endif()
+
+# Apply any EXTRA_CONF_FILE variables from snippets
+zephyr_scope_exists(scope_defined snippets)
+if(scope_defined)
+  zephyr_get_scoped(snippets_EXTRA_CONF_FILE snippets SB_EXTRA_CONF_FILE)
+  list(APPEND EXTRA_CONF_FILE ${snippets_EXTRA_CONF_FILE})
+endif()
+
 include(${ZEPHYR_BASE}/cmake/modules/kconfig.cmake)
 set(CONF_FILE)
 set(EXTRA_CONF_FILE)
+set(SB_EXTRA_CONF_FILE)

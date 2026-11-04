@@ -8,6 +8,8 @@
 #define _NUVOTON_NPCX_SOC_ESPI_TAF_H_
 
 #include <zephyr/device.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/sys/util.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,18 +62,22 @@ extern "C" {
 /* ESPI TAF RPMC OP2 instruction */
 #define ESPI_TAF_RPMC_OP2_CMD                      0x96
 
-/* Timeout for checking transmit buffer available and no completion was sent */
-#define NPCX_FLASH_CHK_TIMEOUT                     10000
-
 /* Clear RSTBUFHEADS, FLASH_ACC_TX_AVAIL, and FLASH_ACC_NP_FREE */
 #define NPCX_FLASHCTL_ACCESS_MASK     (~(BIT(NPCX_FLASHCTL_RSTBUFHEADS) |   \
 					 BIT(NPCX_FLASHCTL_FLASH_NP_FREE) | \
-					 BIT(NPCX_FLASHCTL_FLASH_TX_AVAIL)))
+					 BIT(NPCX_FLASHCTL_FLASH_ACC_TX_AVAIL)))
 
 /* Flash Sharing Capability Support */
 #define NPCX_FLASH_SHARING_CAP_SUPP_CAF            0
 #define NPCX_FLASH_SHARING_CAP_SUPP_TAF            2
 #define NPCX_FLASH_SHARING_CAP_SUPP_TAF_AND_CAF    3
+
+#define NPCX_ESPI_FLASH_HEADER_LEN                 1
+#define NPCX_ESPI_FLASH_HEADER_ADDRESS_LEN         2
+
+/* Get the eSPI receive payload size from Devicetree. */
+#define NPCX_TAF_RX_PAYLOAD_BYTES DT_PROP(DT_INST(0, nuvoton_npcx_espi), rx_plsize)
+#define NPCX_TAF_RX_PAYLOAD_WORDS DIV_ROUND_UP(NPCX_TAF_RX_PAYLOAD_BYTES, sizeof(uint32_t))
 
 enum NPCX_ESPI_TAF_REQ {
 	NPCX_ESPI_TAF_REQ_READ,
@@ -107,7 +113,7 @@ enum NPCX_ESPI_TAF_MAX_READ_REQ {
 
 /*
  * The configurations of SPI flash are set in FIU module.
- * Thus, eSPI TAF driver of NPCX does not need additional hardware configuarations.
+ * Thus, eSPI TAF driver of NPCX does not need additional hardware configurations.
  * Therefore, define an empty structure here to comply with espi_saf.h
  */
 struct espi_saf_hw_cfg {
@@ -129,17 +135,13 @@ struct espi_saf_protection {
 	const struct espi_saf_pr *pregions;
 };
 
-struct espi_taf_npcx_pckt {
-	uint8_t tag;
-	uint8_t *data;
-};
-
 struct espi_taf_pckt {
 	uint8_t  type;
 	uint8_t  tag;
 	uint32_t addr;
 	uint16_t len;
-	uint32_t src[16];
+	uint32_t src[NPCX_TAF_RX_PAYLOAD_WORDS];
+	uint8_t  invalid_flag;
 };
 
 struct npcx_taf_head {
@@ -150,6 +152,8 @@ struct npcx_taf_head {
 };
 
 int npcx_init_taf(const struct device *dev, sys_slist_t *callbacks);
+
+int espi_taf_npcx_block(const struct device *dev, bool en_block);
 
 #ifdef __cplusplus
 }

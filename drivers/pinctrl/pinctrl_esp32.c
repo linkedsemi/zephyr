@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2022 Espressif Systems (Shanghai) Co., Ltd.
+ * Copyright (c) 2022-2026 Espressif Systems (Shanghai) Co., Ltd.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -7,8 +7,12 @@
 /* Include esp-idf headers first to avoid redefining BIT() macro */
 #include <hal/gpio_ll.h>
 #include <hal/rtc_io_hal.h>
+#include <soc/gpio_sig_map.h>
 
+#include <power.h>
+#include <esp_gpio_port.h>
 #include <soc.h>
+#include <zephyr/kernel.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/pinctrl/pinctrl_esp32_common.h>
 
@@ -23,16 +27,14 @@
 #define in in.data
 #define out_w1ts out_w1ts.val
 #define out_w1tc out_w1tc.val
-#elif CONFIG_SOC_SERIES_ESP32C6
-/* gpio structs in esp32c6 are also different */
+#elif defined(CONFIG_SOC_SERIES_ESP32C5) || defined(CONFIG_SOC_SERIES_ESP32C61) ||                 \
+	defined(CONFIG_SOC_SERIES_ESP32C6) || defined(CONFIG_SOC_SERIES_ESP32H2) ||                \
+	defined(CONFIG_SOC_SERIES_ESP32P4)
+/* gpio structs in esp32c6/h2 are also different */
 #define out out.out_data_orig
 #define in in.in_data_next
 #define out_w1ts out_w1ts.val
 #define out_w1tc out_w1tc.val
-#endif
-
-#ifndef SOC_GPIO_SUPPORT_RTC_INDEPENDENT
-#define SOC_GPIO_SUPPORT_RTC_INDEPENDENT 0
 #endif
 
 #define ESP32_INVALID_PORT_ADDR          0UL
@@ -66,74 +68,48 @@ static inline bool rtc_gpio_is_valid_gpio(uint32_t gpio_num)
 
 static inline bool esp32_pin_is_valid(uint32_t pin)
 {
-	return ((BIT(pin) & SOC_GPIO_VALID_GPIO_MASK) != 0);
+	return ((BIT64(pin) & SOC_GPIO_VALID_GPIO_MASK) != 0);
 }
 
 static inline bool esp32_pin_is_output_capable(uint32_t pin)
 {
-	return ((BIT(pin) & SOC_GPIO_VALID_OUTPUT_GPIO_MASK) != 0);
+	return ((BIT64(pin) & SOC_GPIO_VALID_OUTPUT_GPIO_MASK) != 0);
 }
 
 static int esp32_pin_apply_config(uint32_t pin, uint32_t flags)
 {
 	gpio_dev_t *const gpio_base = (gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio0));
-	uint32_t io_pin = (uint32_t) pin + ((ESP32_PORT_IDX(pin) == 1 && pin < 32) ? 32 : 0);
 	int ret = 0;
 
-	if (!esp32_pin_is_valid(io_pin)) {
+	if (!esp32_pin_is_valid(pin)) {
 		return -EINVAL;
 	}
 
 #if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
-	if (rtc_gpio_is_valid_gpio(io_pin)) {
-		rtcio_hal_function_select(rtc_io_num_map[io_pin], RTCIO_FUNC_DIGITAL);
+	if (rtc_gpio_is_valid_gpio(pin)) {
+		rtcio_hal_function_select(rtc_io_num_map[pin], RTCIO_LL_FUNC_DIGITAL);
 	}
 #endif
 
-	if (io_pin >= GPIO_NUM_MAX) {
+	if (pin >= GPIO_NUM_MAX) {
 		ret = -EINVAL;
 		goto end;
 	}
 
 	/* Set pin function as GPIO */
-	gpio_ll_iomux_func_sel(GPIO_PIN_MUX_REG[io_pin], PIN_FUNC_GPIO);
+	gpio_ll_func_sel(&GPIO, pin, PIN_FUNC_GPIO);
 
+	/*
+	 * Since we always configure the pin in DIGITAL mode (RTCIO_LL_FUNC_DIGITAL),
+	 * we must use the GPIO module's pull resistors, not the RTC IO pull resistors.
+	 * The RTC IO pull resistors only work when the pin is in RTC mode.
+	 */
 	if (flags & ESP32_PULL_UP_FLAG) {
-		if (!rtc_gpio_is_valid_gpio(io_pin) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
-			gpio_ll_pulldown_dis(&GPIO, io_pin);
-			gpio_ll_pullup_en(&GPIO, io_pin);
-		} else {
-#if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
-			int rtcio_num = rtc_io_num_map[io_pin];
-
-			rtcio_hal_pulldown_disable(rtc_io_num_map[io_pin]);
-
-			if (rtc_io_desc[rtcio_num].pullup) {
-				rtcio_hal_pullup_enable(rtc_io_num_map[io_pin]);
-			} else {
-				ret = -ENOTSUP;
-				goto end;
-			}
-#endif
-		}
+		gpio_ll_pulldown_dis(&GPIO, pin);
+		gpio_ll_pullup_en(&GPIO, pin);
 	} else if (flags & ESP32_PULL_DOWN_FLAG) {
-		if (!rtc_gpio_is_valid_gpio(io_pin) || SOC_GPIO_SUPPORT_RTC_INDEPENDENT) {
-			gpio_ll_pullup_dis(&GPIO, io_pin);
-			gpio_ll_pulldown_en(&GPIO, io_pin);
-		} else {
-#if SOC_RTCIO_INPUT_OUTPUT_SUPPORTED
-			int rtcio_num = rtc_io_num_map[io_pin];
-
-			rtcio_hal_pulldown_enable(rtc_io_num_map[io_pin]);
-
-			if (rtc_io_desc[rtcio_num].pullup) {
-				rtcio_hal_pullup_disable(rtc_io_num_map[io_pin]);
-			} else {
-				ret = -ENOTSUP;
-				goto end;
-			}
-#endif
-		}
+		gpio_ll_pullup_dis(&GPIO, pin);
+		gpio_ll_pulldown_en(&GPIO, pin);
 	}
 
 	if (flags & ESP32_DIR_OUT_FLAG) {
@@ -143,31 +119,31 @@ static int esp32_pin_apply_config(uint32_t pin, uint32_t flags)
 		}
 
 		if (flags & ESP32_OPEN_DRAIN_FLAG) {
-			gpio_ll_od_enable(gpio_base, io_pin);
+			gpio_ll_od_enable(gpio_base, pin);
 		} else {
-			gpio_ll_od_disable(gpio_base, io_pin);
+			gpio_ll_od_disable(gpio_base, pin);
 		}
 
 		/* Set output pin initial value */
 		if (flags & ESP32_PIN_OUT_HIGH_FLAG) {
-			gpio_ll_set_level(gpio_base, io_pin, 1);
+			gpio_ll_set_level(gpio_base, pin, 1);
 		} else if (flags & ESP32_PIN_OUT_LOW_FLAG) {
-			gpio_ll_set_level(gpio_base, io_pin, 0);
+			gpio_ll_set_level(gpio_base, pin, 0);
 		}
 
-		gpio_ll_output_enable(&GPIO, io_pin);
-		esp_rom_gpio_matrix_out(io_pin, SIG_GPIO_OUT_IDX, false, false);
+		gpio_ll_output_enable(&GPIO, pin);
+		esp_rom_gpio_matrix_out(pin, SIG_GPIO_OUT_IDX, false, false);
 	} else {
 		if (!(flags & ESP32_PIN_OUT_EN_FLAG)) {
-			gpio_ll_output_disable(&GPIO, io_pin);
+			gpio_ll_output_disable(&GPIO, pin);
 		}
 	}
 
 	if (flags & ESP32_DIR_INP_FLAG) {
-		gpio_ll_input_enable(&GPIO, io_pin);
+		gpio_ll_input_enable(&GPIO, pin);
 	} else {
 		if (!(flags & ESP32_PIN_IN_EN_FLAG)) {
-			gpio_ll_input_disable(&GPIO, io_pin);
+			gpio_ll_input_disable(&GPIO, pin);
 		}
 	}
 
@@ -183,11 +159,11 @@ static int esp32_pin_configure(const uint32_t pin_mux, const uint32_t pin_cfg)
 	uint32_t sig_out = ESP32_PIN_SIGO(pin_mux);
 	uint32_t flags = 0;
 
-	if (ESP32_PORT_IDX(pin_num) >= esp32_gpio_ports_cnt) {
+	if (esp_gpio_pad_port(pin_num) >= esp32_gpio_ports_cnt) {
 		return -EINVAL;
 	}
 
-	port_addr = esp32_gpio_ports_addrs[ESP32_PORT_IDX(pin_num)];
+	port_addr = esp32_gpio_ports_addrs[esp_gpio_pad_port(pin_num)];
 
 	if (port_addr == ESP32_INVALID_PORT_ADDR) {
 		return -EINVAL;
@@ -238,41 +214,38 @@ static int esp32_pin_configure(const uint32_t pin_mux, const uint32_t pin_cfg)
 		break;
 	}
 
-	switch (ESP32_PIN_EN_DIR(pin_cfg)) {
-	case ESP32_PIN_OUT_EN:
+	if (ESP32_PIN_EN_DIR(pin_cfg) & ESP32_PIN_OUT_EN) {
 		flags |= ESP32_PIN_OUT_EN_FLAG;
-		break;
-	case ESP32_PIN_IN_EN:
+	}
+
+	if (ESP32_PIN_EN_DIR(pin_cfg) & ESP32_PIN_IN_EN) {
 		flags |= ESP32_PIN_IN_EN_FLAG;
-		break;
-	default:
-		break;
+	}
+
+	if (ESP32_PIN_SLEEP_HOLD(pin_cfg) == ESP32_PIN_SLEEP_HOLD_EN) {
+		flags |= ESP32_SLEEP_HOLD_FLAG;
 	}
 
 	if (flags & ESP32_PIN_OUT_HIGH_FLAG) {
-		if (ESP32_PORT_IDX(pin_num) == 0) {
-			gpio_dev_t *const gpio_dev =
-				(gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio0));
+		gpio_dev_t *const gpio_dev = (gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio0));
+
+		if (esp_gpio_pad_port(pin_num) == 0) {
 			gpio_dev->out_w1ts = BIT(pin_num);
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(gpio1))
 		} else {
-			gpio_dev_t *const gpio_dev =
-				(gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio1));
-			gpio_dev->out1_w1ts.data = BIT(pin_num - 32);
+			gpio_dev->out1_w1ts.val = BIT(esp_gpio_pad_pin(pin_num));
 #endif
 		}
 	}
 
 	if (flags & ESP32_PIN_OUT_LOW_FLAG) {
-		if (ESP32_PORT_IDX(pin_num) == 0) {
-			gpio_dev_t *const gpio_dev =
-				(gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio0));
+		gpio_dev_t *const gpio_dev = (gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio0));
+
+		if (esp_gpio_pad_port(pin_num) == 0) {
 			gpio_dev->out_w1tc = BIT(pin_num);
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(gpio1))
 		} else {
-			gpio_dev_t *const gpio_dev =
-				(gpio_dev_t *)DT_REG_ADDR(DT_NODELABEL(gpio1));
-			gpio_dev->out1_w1tc.data = BIT(pin_num - 32);
+			gpio_dev->out1_w1tc.val = BIT(esp_gpio_pad_pin(pin_num));
 #endif
 		}
 	}
@@ -286,6 +259,17 @@ static int esp32_pin_configure(const uint32_t pin_mux, const uint32_t pin_cfg)
 	if (flags & ESP32_DIR_INP_FLAG) {
 		esp_rom_gpio_matrix_in(pin_num, sig_in, 0);
 	}
+
+#if CONFIG_PM
+	bool hold_en = (flags & ESP32_SLEEP_HOLD_FLAG);
+
+	int key = irq_lock();
+
+	/* Enable pin pad state hold while in low power mode */
+	esp32_sleep_gpio_hold_config(pin_num, hold_en);
+
+	irq_unlock(key);
+#endif
 
 	return 0;
 }

@@ -9,7 +9,11 @@ tool.
 Requirements
 ************
 
-The Perf tool is currently implemented only for RISC-V and x86_64 architectures.
+The Perf tool is currently implemented for RISC-V, x86, x86_64, and Cortex-M
+architectures. Cortex-M support requires SysTick, thread stack information,
+extra exception information, Arm stack walking support, and a uniprocessor
+configuration.
+The Cortex-M backend is unavailable for Non-secure Trusted Execution images.
 
 Usage example
 *************
@@ -62,7 +66,7 @@ Usage example
 
   .. code-block:: shell
 
-     python scripts/perf/stackcollapse.py perf_buf build/zephyr/zephyr.elf | <flamegraph_dir_path>/flamegraph.pl > graph.svg
+     python scripts/profiling/stackcollapse.py perf_buf build/zephyr/zephyr.elf | <flamegraph_dir_path>/flamegraph.pl > graph.svg
 
 Graph example
 =============

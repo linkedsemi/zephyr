@@ -229,10 +229,10 @@ static int ads1112_channel_setup(const struct device *dev,
 	case ADC_GAIN_2:
 		config |= ADS1112_CONFIG_GAIN(ADS1112_CONFIG_GAIN_2);
 		break;
-	case ADC_GAIN_3:
+	case ADC_GAIN_4:
 		config |= ADS1112_CONFIG_GAIN(ADS1112_CONFIG_GAIN_4);
 		break;
-	case ADC_GAIN_4:
+	case ADC_GAIN_8:
 		config |= ADS1112_CONFIG_GAIN(ADS1112_CONFIG_GAIN_8);
 		break;
 	default:
@@ -379,7 +379,7 @@ static int ads1112_init(const struct device *dev)
 	return rc;
 }
 
-static const struct adc_driver_api api = {
+static DEVICE_API(adc, api) = {
 	.channel_setup = ads1112_channel_setup,
 	.read = ads1112_read,
 	.ref_internal = ADS1112_REF_INTERNAL,

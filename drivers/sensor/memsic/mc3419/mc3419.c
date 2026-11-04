@@ -16,7 +16,7 @@
 LOG_MODULE_REGISTER(MC3419, CONFIG_SENSOR_LOG_LEVEL);
 
 static const uint16_t mc3419_accel_sense_map[] = {1, 2, 4, 8, 6};
-static struct mc3419_odr_map odr_map_table[] = {
+static const struct mc3419_odr_map odr_map_table[] = {
 	{25}, {50}, {62, 500}, {100},
 	{125}, {250}, {500}, {1000}
 };
@@ -256,7 +256,7 @@ static int mc3419_init(const struct device *dev)
 	const struct mc3419_config *cfg = dev->config;
 
 	if (!(i2c_is_ready_dt(&cfg->i2c))) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -285,7 +285,7 @@ static int mc3419_init(const struct device *dev)
 	return ret;
 }
 
-static const struct sensor_driver_api mc3419_api = {
+static DEVICE_API(sensor, mc3419_api) = {
 	.attr_set = mc3419_attr_set,
 #if defined(CONFIG_MC3419_TRIGGER)
 	.trigger_set = mc3419_trigger_set,

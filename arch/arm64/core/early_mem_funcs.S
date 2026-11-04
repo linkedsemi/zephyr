@@ -18,9 +18,9 @@ _ASM_FILE_PROLOGUE
  * to memset or memcpy on its own.
  */
 
-/* void z_early_memset(void *dst, int c, size_t n) */
-GTEXT(z_early_memset)
-SECTION_FUNC(TEXT, z_early_memset)
+/* void arch_early_memset(void *dst, int c, size_t n) */
+GTEXT(arch_early_memset)
+SECTION_FUNC(TEXT, arch_early_memset)
 
 	/* is dst pointer 8-bytes aligned? */
 	tst	x0, #0x7
@@ -46,14 +46,14 @@ SECTION_FUNC(TEXT, z_early_memset)
 
 3:	/* one byte at a time */
 	subs	x2, x2, #1
-	strb	w8, [x0], #1
+	strb	w1, [x0], #1
 	b.ne	3b
 
 4:	ret
 
-/* void z_early_memcpy(void *dst, const void *src, size_t n) */
-GTEXT(z_early_memcpy)
-SECTION_FUNC(TEXT, z_early_memcpy)
+/* void arch_early_memcpy(void *dst, const void *src, size_t n) */
+GTEXT(arch_early_memcpy)
+SECTION_FUNC(TEXT, arch_early_memcpy)
 
 	/* are dst and src pointers 8-bytes aligned? */
 	orr	x8, x1, x0

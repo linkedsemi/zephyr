@@ -8,15 +8,18 @@
 /**
  * @file
  * @brief RISCV specific kernel interface header
+ *
  * This header contains the RISCV specific kernel interface.  It is
- * included by the generic kernel interface header (arch/cpu.h)
+ * included by the kernel interface architecture-abstraction header
+ * (include/zephyr/arch/cpu.h).
  */
 
 #ifndef ZEPHYR_INCLUDE_ARCH_RISCV_ARCH_H_
 #define ZEPHYR_INCLUDE_ARCH_RISCV_ARCH_H_
 
+#include <zephyr/arch/riscv/bit_rev.h>
 #include <zephyr/arch/riscv/thread.h>
-#include <zephyr/arch/riscv/exception.h>
+#include <zephyr/arch/exception.h>
 #include <zephyr/arch/riscv/irq.h>
 #include <zephyr/arch/riscv/sys_io.h>
 #include <zephyr/arch/common/sys_bitops.h>
@@ -28,7 +31,6 @@
 #include <zephyr/sw_isr_table.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/arch/riscv/csr.h>
-#include <zephyr/arch/riscv/exception.h>
 
 /* stacks, for RISCV architecture stack should be 16byte-aligned */
 #define ARCH_STACK_PTR_ALIGN  16
@@ -158,7 +160,12 @@
  */
 
 #define MSTATUS_IEN     (1UL << 3)
-#define MSTATUS_MPP_M   (3UL << 11)
+/** @brief mstatus MPP field value for User mode */
+#define MSTATUS_MPP_U   (PRV_U << 11)
+/** @brief mstatus MPP field value for Supervisor mode */
+#define MSTATUS_MPP_S   (PRV_S << 11)
+/** @brief mstatus MPP field value for Machine mode */
+#define MSTATUS_MPP_M   (PRV_M << 11)
 #define MSTATUS_MPIE_EN (1UL << 7)
 
 #define MSTATUS_FS_OFF   (0UL << 13)
@@ -166,18 +173,45 @@
 #define MSTATUS_FS_CLEAN (2UL << 13)
 #define MSTATUS_FS_DIRTY (3UL << 13)
 
-/* This comes from openisa_rv32m1, but doesn't seem to hurt on other
+/**
+ * @brief Default status register value to restore when starting a new thread.
+ *
+ * This comes from openisa_rv32m1, but doesn't seem to hurt on other
  * platforms:
  * - Preserve machine privileges in MPP. If you see any documentation
  *   telling you that MPP is read-only on this SoC, don't believe its
  *   lies.
  * - Enable interrupts when exiting from exception into a new thread
  *   by setting MPIE now, so it will be copied into IE on mret.
+ *
+ * In S-mode (CONFIG_RISCV_S_MODE), use the sstatus equivalents:
+ * - SPP=1 so that sret returns to S-mode (not U-mode)
+ * - SPIE=1 so that interrupts are enabled after sret
  */
-#define MSTATUS_DEF_RESTORE (MSTATUS_MPP_M | MSTATUS_MPIE_EN)
+#ifdef CONFIG_RISCV_S_MODE
+#define RV_STATUS_DEF_RESTORE (SSTATUS_SPP | SSTATUS_SPIE)
+#else
+#define RV_STATUS_DEF_RESTORE (MSTATUS_MPP_M | MSTATUS_MPIE_EN)
+#endif
+
+/* Previous-privilege field and its user-mode value, abstracted across M/S mode.
+ * Use as: (esf->mstatus & RV_STATUS_PP) == RV_STATUS_PP_U
+ */
+#ifdef CONFIG_RISCV_S_MODE
+/** @brief Previous-privilege field mask in the status CSR (S-mode: SPP) */
+#define RV_STATUS_PP    SSTATUS_SPP
+/** @brief Previous-privilege field value representing User mode (S-mode) */
+#define RV_STATUS_PP_U  0
+#else
+/** @brief Previous-privilege field mask in the status CSR (M-mode: MPP) */
+#define RV_STATUS_PP    MSTATUS_MPP
+/** @brief Previous-privilege field value representing User mode (M-mode) */
+#define RV_STATUS_PP_U  PRV_U
+#endif
 
 #ifndef _ASMLANGUAGE
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/slist.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -216,6 +250,27 @@ extern "C" {
 #define K_MEM_PARTITION_P_RX_U_RX ((k_mem_partition_attr_t) \
 	{PMP_R | PMP_X})
 
+/**
+ * @brief Evaluate Write-ability
+ *
+ * Evaluate whether the access permissions include write-ability.
+ *
+ * @param attr The k_mem_partition_attr_t object holding the
+ *             PMP attributes to be checked against write-ability.
+ */
+#define K_MEM_PARTITION_IS_WRITABLE(attr) (attr.pmp_attr & PMP_W)
+
+/**
+ * @brief Evaluate Execution allowance
+ *
+ * Evaluate whether the access permissions include execution.
+ *
+ * @param attr The k_mem_partition_attr_t object holding the
+ *             PMP attributes to be checked against execution
+ *             allowance.
+ */
+#define K_MEM_PARTITION_IS_EXECUTABLE(attr) (attr.pmp_attr & PMP_X)
+
 /* Typedef for the k_mem_partition attribute */
 typedef struct {
 	uint8_t pmp_attr;
@@ -226,6 +281,52 @@ struct arch_mem_domain {
 };
 
 extern void z_irq_spurious(const void *unused);
+
+/* Privilege-level abstraction for IRQ enable/disable CSR and bit */
+#ifdef CONFIG_RISCV_S_MODE
+/** @brief Name of the interrupt-status CSR as a string literal (S-mode) */
+#define RV_STATUS_CSR "sstatus"
+/** @brief Interrupt-enable bit in the status CSR (S-mode: SIE) */
+#define RV_STATUS_IE  SSTATUS_SIE
+/** @brief Previous interrupt-enable bit in the status CSR (S-mode: SPIE) */
+#define RV_STATUS_PIE SSTATUS_SPIE
+#else
+/** @brief Name of the interrupt-status CSR as a string literal (M-mode) */
+#define RV_STATUS_CSR "mstatus"
+/** @brief Interrupt-enable bit in the status CSR (M-mode: MIE) */
+#define RV_STATUS_IE  MSTATUS_IEN
+/** @brief Previous interrupt-enable bit in the status CSR (M-mode: MPIE) */
+#define RV_STATUS_PIE MSTATUS_MPIE_EN
+#endif
+
+/**
+ * @brief Read the privilege-level status register (mstatus or sstatus).
+ *
+ * In M-mode this reads mstatus; in S-mode this reads sstatus.
+ */
+static ALWAYS_INLINE unsigned long z_riscv_status_read(void)
+{
+	unsigned long __rv;
+
+	__asm__ volatile ("csrr %0, " RV_STATUS_CSR : "=r" (__rv));
+	return __rv;
+}
+
+/**
+ * @brief Set bits in the privilege-level status register.
+ */
+static ALWAYS_INLINE void z_riscv_status_set(unsigned long val)
+{
+	__asm__ volatile ("csrs " RV_STATUS_CSR ", %0" : : "rK" (val) : "memory");
+}
+
+/**
+ * @brief Clear bits in the privilege-level status register.
+ */
+static ALWAYS_INLINE void z_riscv_status_clear(unsigned long val)
+{
+	__asm__ volatile ("csrc " RV_STATUS_CSR ", %0" : : "rK" (val) : "memory");
+}
 
 /*
  * use atomic instruction csrrc to lock global irq
@@ -238,9 +339,9 @@ static ALWAYS_INLINE unsigned int arch_irq_lock(void)
 #else
 	unsigned int key;
 
-	__asm__ volatile ("csrrc %0, mstatus, %1"
+	__asm__ volatile ("csrrc %0, " RV_STATUS_CSR ", %1"
 			  : "=r" (key)
-			  : "rK" (MSTATUS_IEN)
+			  : "rK" (RV_STATUS_IE)
 			  : "memory");
 
 	return key;
@@ -256,9 +357,9 @@ static ALWAYS_INLINE void arch_irq_unlock(unsigned int key)
 #ifdef CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_LOCK_OPS
 	z_soc_irq_unlock(key);
 #else
-	__asm__ volatile ("csrs mstatus, %0"
+	__asm__ volatile ("csrs " RV_STATUS_CSR ", %0"
 			  :
-			  : "r" (key & MSTATUS_IEN)
+			  : "r" (key & RV_STATUS_IE)
 			  : "memory");
 #endif
 }
@@ -268,7 +369,26 @@ static ALWAYS_INLINE bool arch_irq_unlocked(unsigned int key)
 #ifdef CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_LOCK_OPS
 	return z_soc_irq_unlocked(key);
 #else
-	return (key & MSTATUS_IEN) != 0;
+	return (key & RV_STATUS_IE) != 0;
+#endif
+}
+
+/** Implementation of @ref arch_cpu_irqs_are_enabled. */
+static ALWAYS_INLINE bool arch_cpu_irqs_are_enabled(void)
+{
+#ifdef CONFIG_RISCV_SOC_HAS_CUSTOM_IRQ_LOCK_OPS
+	/* No direct probe primitive in the SoC ops; fall back to
+	 * briefly locking and restoring.
+	 */
+	unsigned int key = z_soc_irq_lock();
+	bool enabled = z_soc_irq_unlocked(key);
+
+	z_soc_irq_unlock(key);
+	return enabled;
+#else
+	unsigned int status = z_riscv_status_read();
+
+	return (status & RV_STATUS_IE) != 0;
 #endif
 }
 

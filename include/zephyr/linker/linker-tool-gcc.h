@@ -42,8 +42,6 @@
 		OUTPUT_FORMAT("elf32-i386", "elf32-i386", "elf32-i386")
 		OUTPUT_ARCH("i386")
 	#endif
-#elif defined(CONFIG_NIOS2)
-	OUTPUT_FORMAT("elf32-littlenios2", "elf32-bignios2", "elf32-littlenios2")
 #elif defined(CONFIG_RISCV)
 	OUTPUT_ARCH("riscv")
 #ifdef CONFIG_64BIT
@@ -59,6 +57,14 @@
 	/* Not needed */
 #elif defined(CONFIG_SPARC)
 	OUTPUT_FORMAT("elf32-sparc")
+#elif defined(CONFIG_RX)
+	OUTPUT_FORMAT("elf32-rx-le")
+#elif defined(CONFIG_OPENRISC)
+	OUTPUT_FORMAT("elf32-or1k")
+#elif defined(CONFIG_HEXAGON)
+	OUTPUT_FORMAT("elf32-hexagon")
+#elif defined(CONFIG_TRICORE)
+	OUTPUT_FORMAT("elf32-tricore")
 #else
 	#error Arch not supported.
 #endif
@@ -81,7 +87,7 @@
  * the memory area specified by 'where' argument.
  *
  * This macro is intentionally undefined for CONFIG_MMU systems when
- * CONFIG_KERNEL_VM_BASE is not the same as CONFIG_SRAM_BASE_ADDRESS,
+ * CONFIG_KERNEL_VM_BASE is not the same as DT_CHOSEN_SRAM_ADDR,
  * as both the LMA and VMA destinations must be known for all sections
  * as this corresponds to physical vs. virtual location.
  *
@@ -100,11 +106,11 @@
  *
  * The GROUP_ROM_LINK_IN() macro is located at the end of the section
  * description and tells the linker that this a read-only section
- * that is physically placed at the 'lregion` argument.
+ * that is physically placed at the `lregion` argument.
  *
- * If CONFIG_XIP is active, the 'lregion' area is flash memory.
+ * If CONFIG_XIP is active, the `lregion` area is flash memory.
  *
- * If CONFIG_MMU is active, the vregion argument will be used to
+ * If CONFIG_MMU is active, the `vregion` argument will be used to
  * determine where this is located in the virtual memory map, otherwise
  * it is ignored.
  *

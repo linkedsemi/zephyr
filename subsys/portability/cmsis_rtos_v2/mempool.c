@@ -5,13 +5,15 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/portability/cmsis_types.h>
+#include <zephyr/sys/check.h>
 #include <string.h>
 #include "wrapper.h"
 
-#define TIME_OUT_TICKS  10
+#define TIME_OUT_TICKS 10
 
-K_MEM_SLAB_DEFINE(cv2_mem_slab, sizeof(struct cv2_mslab),
-		  CONFIG_CMSIS_V2_MEM_SLAB_MAX_COUNT, 4);
+K_MEM_SLAB_DEFINE_TYPE(cv2_mem_slab, struct cmsis_rtos_mempool_cb,
+		       CONFIG_CMSIS_V2_MEM_SLAB_MAX_COUNT);
 
 static const osMemoryPoolAttr_t init_mslab_attrs = {
 	.name = "ZephyrMemPool",
@@ -28,10 +30,9 @@ static const osMemoryPoolAttr_t init_mslab_attrs = {
 osMemoryPoolId_t osMemoryPoolNew(uint32_t block_count, uint32_t block_size,
 				 const osMemoryPoolAttr_t *attr)
 {
-	struct cv2_mslab *mslab;
+	struct cmsis_rtos_mempool_cb *mslab;
 
-	BUILD_ASSERT(K_HEAP_MEM_POOL_SIZE >=
-		     CONFIG_CMSIS_V2_MEM_SLAB_MAX_DYNAMIC_SIZE,
+	BUILD_ASSERT(K_HEAP_MEM_POOL_SIZE >= CONFIG_CMSIS_V2_MEM_SLAB_MAX_DYNAMIC_SIZE,
 		     "heap must be configured to be at least the max dynamic size");
 
 	if (k_is_in_isr()) {
@@ -46,20 +47,26 @@ osMemoryPoolId_t osMemoryPoolNew(uint32_t block_count, uint32_t block_size,
 		attr = &init_mslab_attrs;
 	}
 
-	if (k_mem_slab_alloc(&cv2_mem_slab, (void **)&mslab, K_MSEC(100)) == 0) {
-		(void)memset(mslab, 0, sizeof(struct cv2_mslab));
-	} else {
+	if (attr->cb_mem != NULL) {
+		CHECKIF(attr->cb_size < sizeof(struct cmsis_rtos_mempool_cb)) {
+			return NULL;
+		}
+		mslab = (struct cmsis_rtos_mempool_cb *)attr->cb_mem;
+	} else if (k_mem_slab_alloc(&cv2_mem_slab, (void **)&mslab, K_MSEC(100)) != 0) {
 		return NULL;
 	}
+	(void)memset(mslab, 0, sizeof(struct cmsis_rtos_mempool_cb));
+	mslab->is_cb_dynamic_allocation = attr->cb_mem == NULL;
 
 	if (attr->mp_mem == NULL) {
-		__ASSERT((block_count * block_size) <=
-			 CONFIG_CMSIS_V2_MEM_SLAB_MAX_DYNAMIC_SIZE,
+		__ASSERT((block_count * block_size) <= CONFIG_CMSIS_V2_MEM_SLAB_MAX_DYNAMIC_SIZE,
 			 "memory slab/pool size exceeds dynamic maximum");
 
 		mslab->pool = k_calloc(block_count, block_size);
 		if (mslab->pool == NULL) {
-			k_mem_slab_free(&cv2_mem_slab, (void *)mslab);
+			if (mslab->is_cb_dynamic_allocation) {
+				k_mem_slab_free(&cv2_mem_slab, (void *)mslab);
+			}
 			return NULL;
 		}
 		mslab->is_dynamic_allocation = TRUE;
@@ -69,21 +76,17 @@ osMemoryPoolId_t osMemoryPoolNew(uint32_t block_count, uint32_t block_size,
 	}
 
 	int rc = k_mem_slab_init(&mslab->z_mslab, mslab->pool, block_size, block_count);
-
 	if (rc != 0) {
-		k_mem_slab_free(&cv2_mem_slab, (void *)mslab);
+		if (mslab->is_cb_dynamic_allocation) {
+			k_mem_slab_free(&cv2_mem_slab, (void *)mslab);
+		}
 		if (attr->mp_mem == NULL) {
 			k_free(mslab->pool);
 		}
 		return NULL;
 	}
 
-	if (attr->name == NULL) {
-		strncpy(mslab->name, init_mslab_attrs.name,
-			sizeof(mslab->name) - 1);
-	} else {
-		strncpy(mslab->name, attr->name, sizeof(mslab->name) - 1);
-	}
+	mslab->name = (attr->name == NULL) ? init_mslab_attrs.name : attr->name;
 
 	return (osMemoryPoolId_t)mslab;
 }
@@ -93,7 +96,7 @@ osMemoryPoolId_t osMemoryPoolNew(uint32_t block_count, uint32_t block_size,
  */
 void *osMemoryPoolAlloc(osMemoryPoolId_t mp_id, uint32_t timeout)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 	int retval;
 	void *ptr;
 
@@ -107,17 +110,14 @@ void *osMemoryPoolAlloc(osMemoryPoolId_t mp_id, uint32_t timeout)
 	}
 
 	if (timeout == 0U) {
-		retval = k_mem_slab_alloc(
-			(struct k_mem_slab *)(&mslab->z_mslab),
-			(void **)&ptr, K_NO_WAIT);
+		retval = k_mem_slab_alloc((struct k_mem_slab *)(&mslab->z_mslab), (void **)&ptr,
+					  K_NO_WAIT);
 	} else if (timeout == osWaitForever) {
-		retval = k_mem_slab_alloc(
-			(struct k_mem_slab *)(&mslab->z_mslab),
-			(void **)&ptr, K_FOREVER);
+		retval = k_mem_slab_alloc((struct k_mem_slab *)(&mslab->z_mslab), (void **)&ptr,
+					  K_FOREVER);
 	} else {
-		retval = k_mem_slab_alloc(
-			(struct k_mem_slab *)(&mslab->z_mslab),
-			(void **)&ptr, K_TICKS(timeout));
+		retval = k_mem_slab_alloc((struct k_mem_slab *)(&mslab->z_mslab), (void **)&ptr,
+					  K_TICKS(timeout));
 	}
 
 	if (retval == 0) {
@@ -132,7 +132,7 @@ void *osMemoryPoolAlloc(osMemoryPoolId_t mp_id, uint32_t timeout)
  */
 osStatus_t osMemoryPoolFree(osMemoryPoolId_t mp_id, void *block)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
 	if (mslab == NULL) {
 		return osErrorParameter;
@@ -142,24 +142,24 @@ osStatus_t osMemoryPoolFree(osMemoryPoolId_t mp_id, void *block)
 	 *       osErrorResource: the memory pool specified by parameter mp_id
 	 *       is in an invalid memory pool state.
 	 */
-
-	k_mem_slab_free((struct k_mem_slab *)(&mslab->z_mslab), (void *)block);
-
+	if (mslab->is_cb_dynamic_allocation) {
+		k_mem_slab_free((struct k_mem_slab *)(&mslab->z_mslab), (void *)block);
+	}
 	return osOK;
 }
 
 /**
  * @brief Get name of a Memory Pool object.
+ * This function may be called from Interrupt Service Routines.
  */
 const char *osMemoryPoolGetName(osMemoryPoolId_t mp_id)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
-	if (!k_is_in_isr() && (mslab != NULL)) {
-		return mslab->name;
-	} else {
+	if (mslab == NULL) {
 		return NULL;
 	}
+	return mslab->name;
 }
 
 /**
@@ -167,7 +167,7 @@ const char *osMemoryPoolGetName(osMemoryPoolId_t mp_id)
  */
 uint32_t osMemoryPoolGetCapacity(osMemoryPoolId_t mp_id)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
 	if (mslab == NULL) {
 		return 0;
@@ -181,7 +181,7 @@ uint32_t osMemoryPoolGetCapacity(osMemoryPoolId_t mp_id)
  */
 uint32_t osMemoryPoolGetBlockSize(osMemoryPoolId_t mp_id)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
 	if (mslab == NULL) {
 		return 0;
@@ -195,7 +195,7 @@ uint32_t osMemoryPoolGetBlockSize(osMemoryPoolId_t mp_id)
  */
 uint32_t osMemoryPoolGetCount(osMemoryPoolId_t mp_id)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
 	if (mslab == NULL) {
 		return 0;
@@ -209,7 +209,7 @@ uint32_t osMemoryPoolGetCount(osMemoryPoolId_t mp_id)
  */
 uint32_t osMemoryPoolGetSpace(osMemoryPoolId_t mp_id)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
 	if (mslab == NULL) {
 		return 0;
@@ -223,7 +223,7 @@ uint32_t osMemoryPoolGetSpace(osMemoryPoolId_t mp_id)
  */
 osStatus_t osMemoryPoolDelete(osMemoryPoolId_t mp_id)
 {
-	struct cv2_mslab *mslab = (struct cv2_mslab *)mp_id;
+	struct cmsis_rtos_mempool_cb *mslab = (struct cmsis_rtos_mempool_cb *)mp_id;
 
 	if (mslab == NULL) {
 		return osErrorParameter;
@@ -241,7 +241,8 @@ osStatus_t osMemoryPoolDelete(osMemoryPoolId_t mp_id)
 	if (mslab->is_dynamic_allocation) {
 		k_free(mslab->pool);
 	}
-	k_mem_slab_free(&cv2_mem_slab, (void *)mslab);
-
+	if (mslab->is_cb_dynamic_allocation) {
+		k_mem_slab_free(&cv2_mem_slab, (void *)mslab);
+	}
 	return osOK;
 }

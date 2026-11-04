@@ -7,6 +7,7 @@ import io
 from logging import WARNING
 import os
 from pathlib import Path
+import textwrap
 
 import pytest
 
@@ -47,7 +48,7 @@ def test_warnings(caplog):
 
     enums_hpath = hpath('test-bindings/enums.yaml')
     expected_warnings = [
-        f"'oldprop' is marked as deprecated in 'properties:' in {hpath('test-bindings/deprecated.yaml')} for node /test-deprecated.",
+        f"'oldprop' is marked as deprecated in 'properties:' in '{hpath('test-bindings/deprecated.yaml')}' for node /test-deprecated (set in /test-deprecated).",
         "unit address and first address in 'reg' (0x1) don't match for /reg-zero-size-cells/node",
         "unit address and first address in 'reg' (0x5) don't match for /reg-ranges/parent/node",
         "unit address and first address in 'reg' (0x30000000200000001) don't match for /reg-nested-ranges/grandparent/parent/node",
@@ -97,10 +98,131 @@ def test_interrupts():
         edtlib.ControllerAndData(node=node, controller=controller_2, data={'one': 0, 'two': 0, 'three': 5}, name=None, basename=None)
     ]
 
-    node = edt.get_node("/interrupt-map-bitops-test/node@70000000E")
+    node = edt.get_node("/interrupt-map-test/node@2")
+    assert node.interrupts == [
+        edtlib.ControllerAndData(node=node, controller=controller_0, data={'one': 0}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_1, data={'one': 0, 'two': 1}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_2, data={'one': 0, 'two': 0, 'three': 2}, name=None, basename=None)
+    ]
+
+    node = edt.get_node("/interrupt-map-test/node@3")
+    assert node.interrupts == [
+        edtlib.ControllerAndData(node=node, controller=controller_0, data={'one': 0}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_1, data={'one': 0, 'two': 1}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_2, data={'one': 0, 'two': 0, 'three': 2}, name=None, basename=None)
+    ]
+
+    node = edt.get_node("/interrupt-map-test/node@4")
+    assert node.interrupts == [
+        edtlib.ControllerAndData(node=node, controller=controller_0, data={'one': 3}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_1, data={'one': 0, 'two': 4}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_2, data={'one': 0, 'two': 0, 'three': 5}, name=None, basename=None)
+    ]
+
+    node = edt.get_node("/interrupt-map-test/node@100000004")
+    assert node.interrupts == [
+        edtlib.ControllerAndData(node=node, controller=controller_0, data={'one': 3}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_1, data={'one': 0, 'two': 4}, name=None, basename=None),
+        edtlib.ControllerAndData(node=node, controller=controller_2, data={'one': 0, 'two': 0, 'three': 5}, name=None, basename=None)
+    ]
+
+    node = edt.get_node("/interrupt-map-bitops-test/node@70000000e")
     assert node.interrupts == [
         edtlib.ControllerAndData(node=node, controller=edt.get_node('/interrupt-map-bitops-test/controller'), data={'one': 3, 'two': 2}, name=None, basename=None)
     ]
+
+
+def test_maps():
+    '''Tests for the maps property.'''
+    with from_here():
+        edt = edtlib.EDT("test.dts", ["test-bindings"])
+
+    nexus = edt.get_node("/interrupt-map-test/nexus")
+    controller_0 = edt.get_node("/interrupt-map-test/controller-0")
+    controller_1 = edt.get_node("/interrupt-map-test/controller-1")
+    controller_2 = edt.get_node("/interrupt-map-test/controller-2")
+    controller_no_addr = edt.get_node("/interrupt-map-no-address/controller")
+
+    assert len(nexus.maps.keys()) == 1
+    assert "interrupt" in nexus.maps
+
+    entries = nexus.maps["interrupt"]
+    assert len(entries) == 7
+
+    assert entries[0] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 0],
+        child_specifiers=[0, 0],
+        parent=controller_0,
+        parent_addresses=[0],
+        parent_specifiers=[0],
+        basename="interrupt",
+    )
+
+    assert entries[1] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 0],
+        child_specifiers=[0, 1],
+        parent=controller_1,
+        parent_addresses=[0, 0],
+        parent_specifiers=[0, 1],
+        basename="interrupt",
+    )
+
+    assert entries[2] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 0],
+        child_specifiers=[0, 2],
+        parent=controller_2,
+        parent_addresses=[0, 0, 0],
+        parent_specifiers=[0, 0, 2],
+        basename="interrupt",
+    )
+
+    assert entries[3] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 1],
+        child_specifiers=[0, 0],
+        parent=controller_0,
+        parent_addresses=[0],
+        parent_specifiers=[3],
+        basename="interrupt",
+    )
+
+    assert entries[4] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 1],
+        child_specifiers=[0, 1],
+        parent=controller_1,
+        parent_addresses=[0, 0],
+        parent_specifiers=[0, 4],
+        basename="interrupt",
+    )
+
+    assert entries[5] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 1],
+        child_specifiers=[0, 2],
+        parent=controller_2,
+        parent_addresses=[0, 0, 0],
+        parent_specifiers=[0, 0, 5],
+        basename="interrupt",
+    )
+
+    assert entries[6] == edtlib.MapEntry(
+        node=nexus,
+        child_addresses=[0, 1],
+        child_specifiers=[1, 0],
+        parent=controller_no_addr,
+        parent_addresses=[],
+        parent_specifiers=[6],
+        basename="interrupt",
+    )
+
+    empty = edt.get_node("/interrupt-map-test/empty")
+    assert len(empty.maps) == 1
+    assert "interrupt" in empty.maps
+    assert len(empty.maps["interrupt"]) == 0
 
 def test_ranges():
     '''Tests for the ranges property'''
@@ -274,6 +396,41 @@ def test_include():
                  ['int', 'int', 'int', 'int'],
                  [0, 1, 2, 3])
 
+def test_class_merge():
+    '''Test the union merge of the 'class:' key across includes.'''
+    fname2path = {'class-base-1.yaml': 'test-bindings-include/class-base-1.yaml',
+                  'class-base-2.yaml': 'test-bindings-include/class-base-2.yaml'}
+
+    with from_here():
+        binding = edtlib.Binding('test-bindings-include/class-base-1.yaml', {})
+    assert binding.classes == ['class-a']
+
+    with from_here():
+        binding = edtlib.Binding('test-bindings-include/class-base-2.yaml', {})
+    assert binding.classes == ['class-b', 'class-a']
+
+    # The including binding's own 'class:' comes first, then the included
+    # bindings' classes in include order, without duplicates.
+    with from_here():
+        binding = edtlib.Binding('test-bindings-include/class-union.yaml',
+                                 fname2path)
+    assert binding.classes == ['class-c', 'class-a', 'class-b']
+
+    # The union also applies at child-binding roots.
+    with from_here():
+        binding = edtlib.Binding(
+            'test-bindings-include/class-child-union.yaml',
+            {'class-child-base.yaml':
+             'test-bindings-include/class-child-base.yaml'})
+    assert binding.classes == []
+    assert binding.child_binding.classes == ['class-child-b', 'class-child-a']
+
+    # Malformed names and duplicates are rejected.
+    for fname in ('class-bad-name.yaml', 'class-dup.yaml'):
+        with from_here():
+            with pytest.raises(edtlib.EDTError):
+                edtlib.Binding(f'test-bindings-include/{fname}', {})
+
 def test_include_filters():
     '''Test property-allowlist and property-blocklist in an include.'''
 
@@ -311,7 +468,7 @@ def test_include_filters():
             binding = edtlib.Binding("test-bindings-include/include-invalid-keys.yaml", fname2path)
     value_str = str(e.value)
     assert value_str.startswith(
-        "'include:' in test-bindings-include/include-invalid-keys.yaml should not have these "
+        "'include:' in 'test-bindings-include/include-invalid-keys.yaml' should not have these "
         "unexpected contents: ")
     assert 'bad-key-1' in value_str
     assert 'bad-key-2' in value_str
@@ -321,7 +478,7 @@ def test_include_filters():
             binding = edtlib.Binding("test-bindings-include/include-invalid-type.yaml", fname2path)
     value_str = str(e.value)
     assert value_str.startswith(
-        "'include:' in test-bindings-include/include-invalid-type.yaml "
+        "'include:' in 'test-bindings-include/include-invalid-type.yaml' "
         "should be a string or list, but has type ")
 
     with pytest.raises(edtlib.EDTError) as e:
@@ -330,7 +487,7 @@ def test_include_filters():
     value_str = str(e.value)
     assert value_str.startswith("'include:' element")
     assert value_str.endswith(
-        "in test-bindings-include/include-no-name.yaml should have a 'name' key")
+        "in 'test-bindings-include/include-no-name.yaml' should have a 'name' key")
 
     with from_here():
         binding = edtlib.Binding("test-bindings-include/allowlist.yaml", fname2path)
@@ -531,6 +688,36 @@ def test_bus():
     assert str(edt.get_node("/buses/foo-bus/node1/nested").binding_path) == \
         hpath("test-bindings/device-on-foo-bus.yaml")
 
+def test_binding_top_key():
+    fname2path = {'include.yaml': 'test-bindings-include/include.yaml',
+                  'include-2.yaml': 'test-bindings-include/include-2.yaml'}
+
+    with from_here():
+        binding = edtlib.Binding("test-bindings/defaults.yaml", fname2path)
+    title = binding.title
+    description = binding.description
+    compatible = binding.compatible
+    examples = binding.examples[0]
+
+    assert title == "Test binding"
+    assert description == "Property default value test"
+    assert compatible == "defaults"
+    assert examples == textwrap.dedent("""\
+    / {
+        leds {
+            compatible = "gpio-leds";
+
+            uled: led {
+                gpios = <&gpioe 12 GPIO_ACTIVE_HIGH>;
+            };
+        };
+
+        aliases {
+            led0 = &uled;
+        };
+    };
+    """)
+
 def test_child_binding():
     '''Test 'child-binding:' in bindings'''
     with from_here():
@@ -578,21 +765,21 @@ def test_props():
     ctrl_1, ctrl_2 = [edt.get_node(path) for path in ['/ctrl-1', '/ctrl-2']]
 
     verify_props(props_node,
-                 ['int',
+                 ['int', 'negative',
                   'existent-boolean', 'nonexistent-boolean',
-                  'array', 'uint8-array',
+                  'negative-array', 'array', 'uint8-array',
                   'string', 'string-array',
                   'phandle-ref', 'phandle-refs',
                   'path'],
-                 ['int',
+                 ['int', 'int',
                   'boolean', 'boolean',
-                  'array', 'uint8-array',
+                  'array', 'array', 'uint8-array',
                   'string', 'string-array',
                   'phandle', 'phandles',
                   'path'],
-                 [1,
+                 [1, -1,
                   True, False,
-                  [1,2,3], b'\x124',
+                  [-100,-10,0,10,100], [1,2,3], b'\x124',
                   'foo', ['foo','bar','baz'],
                   ctrl_1, [ctrl_1,ctrl_2],
                   ctrl_1])
@@ -611,6 +798,23 @@ def test_props():
     verify_phandle_array_prop(props_node,
                               'foo-gpios',
                               [(ctrl_1, {'gpio-one': 1})])
+
+    verify_phandle_array_prop(props_node,
+                              'bar-io-channels',
+                              [(ctrl_2, {'io-channel-one': 2})])
+
+def test_cpu_props_fallback_from_cpus_node():
+    """CPU property lookup falls back to parent /cpus when missing on cpu@N."""
+    with from_here():
+        edt = edtlib.EDT("test.dts", ["test-bindings"])
+
+    cpu0 = edt.get_node("/cpus/cpu@0")
+    cpu1 = edt.get_node("/cpus/cpu@1")
+
+    # Inherited from /cpus.
+    assert cpu0.props["clock-frequency"].val == 1000
+    # CPU-local value takes precedence.
+    assert cpu1.props["clock-frequency"].val == 2000
 
 def test_nexus():
     '''Test <prefix>-map via gpio-map (the most common case).'''
@@ -631,7 +835,9 @@ def test_prop_defaults():
     with from_here():
         edt = edtlib.EDT("test.dts", ["test-bindings"])
 
-    verify_props(edt.get_node("/defaults"),
+    node = edt.get_node("/defaults")
+
+    verify_props(node,
                  ['int',
                   'array', 'uint8-array',
                   'string', 'string-array',
@@ -644,6 +850,13 @@ def test_prop_defaults():
                   [1,2,3], b'\x89\xab\xcd',
                   'hello', ['hello','there'],
                   234])
+
+    # Verify HexInt preservation in PropertySpec.default (raw binding values)
+    # uint8-array default [0x89, 0xAB, 0xCD] should have HexInt elements
+    assert all(isinstance(v, edtlib.HexInt) for v in node.props["uint8-array"].spec.default)
+    # int/array defaults (decimal in binding) should NOT be HexInt
+    assert not isinstance(node.props["int"].spec.default, edtlib.HexInt)
+    assert not any(isinstance(v, edtlib.HexInt) for v in node.props["array"].spec.default)
 
 def test_prop_enums():
     '''test properties with enum: in the binding'''
@@ -696,6 +909,527 @@ def test_prop_enums():
     assert not no_enum.spec.enum_tokenizable
     assert not no_enum.spec.enum_upper_tokenizable
 
+def test_prop_ranges():
+    '''test properties with min:/max: in the binding'''
+
+    with from_here():
+        edt = edtlib.EDT("test.dts", ["test-bindings"])
+    props = edt.get_node('/ranges-node').props
+
+    int_with_min = props['int-with-min']
+    int_with_max = props['int-with-max']
+    int_with_range = props['int-with-range']
+    array_with_range = props['array-with-range']
+    no_range = props['no-range']
+    int_with_negative_range = props['int-with-negative-range']
+    array_with_signed_range = props['array-with-signed-range']
+
+    assert int_with_min.val == 10
+    assert int_with_max.val == 50
+    assert int_with_range.val == 42
+    assert array_with_range.val == [0, 25, 50]
+    assert int_with_negative_range.val == -42
+    assert array_with_signed_range.val == [-50, 0, 50]
+
+    assert int_with_min.spec.min == 5
+    assert int_with_min.spec.max is None
+
+    assert int_with_max.spec.min is None
+    assert int_with_max.spec.max == 100
+
+    assert int_with_range.spec.min == 0
+    assert int_with_range.spec.max == 100
+
+    assert array_with_range.spec.min == 0
+    assert array_with_range.spec.max == 50
+
+    assert no_range.spec.min is None
+    assert no_range.spec.max is None
+
+    assert int_with_negative_range.spec.min == -100
+    assert int_with_negative_range.spec.max == -10
+
+    assert array_with_signed_range.spec.min == -50
+    assert array_with_signed_range.spec.max == 50
+
+def test_prop_range_len():
+    '''test properties with min-len:/max-len: in the binding'''
+
+    with from_here():
+        edt = edtlib.EDT("test.dts", ["test-bindings"])
+    props = edt.get_node('/range-len-node').props
+
+    array_with_min_len = props['array-with-min-len']
+    array_with_max_len = props['array-with-max-len']
+    array_with_range_len = props['array-with-range-len']
+    string_array_with_range_len = props['string-array-with-range-len']
+    uint8_array_with_range_len = props['uint8-array-with-range-len']
+
+    assert array_with_min_len.val == [1, 2]
+    assert array_with_max_len.val == [1, 2, 3]
+    assert array_with_range_len.val == [1, 2, 3]
+    assert string_array_with_range_len.val == ["foo", "bar"]
+    assert uint8_array_with_range_len.val == b"\x01\x02\x03"
+
+    assert array_with_min_len.spec.min_len == 2
+    assert array_with_min_len.spec.max_len is None
+
+    assert array_with_max_len.spec.min_len is None
+    assert array_with_max_len.spec.max_len == 4
+
+    assert array_with_range_len.spec.min_len == 2
+    assert array_with_range_len.spec.max_len == 4
+
+    assert string_array_with_range_len.spec.min_len == 1
+    assert string_array_with_range_len.spec.max_len == 3
+
+    assert uint8_array_with_range_len.spec.min_len == 2
+    assert uint8_array_with_range_len.spec.max_len == 4
+
+def test_prop_range_errs(tmp_path):
+    '''Test errors when property values violate min:/max: constraints'''
+
+    dts_file = tmp_path / "test_range_err.dts"
+
+    def write_and_check(dts_content, expected_err):
+        with open(dts_file, "w", encoding="utf-8") as f:
+            f.write(dts_content)
+            f.flush()
+        with pytest.raises(edtlib.EDTError) as e:
+            with from_here():
+                edtlib.EDT(str(dts_file), ["test-bindings"])
+        assert str(e.value) == expected_err
+
+    binding_path = hpath("test-bindings/min-max.yaml")
+
+    # Value below min
+    write_and_check(
+        """\
+/dts-v1/;
+/ { ranges-node { compatible = "min-max"; int-with-min = <3>; }; };
+""",
+        f"value of property 'int-with-min' on /ranges-node in "
+        f"{str(dts_file)} (3) is less than the "
+        f"'min' value in {binding_path} (5)")
+
+    # Value above max
+    write_and_check(
+        """\
+/dts-v1/;
+/ { ranges-node { compatible = "min-max"; int-with-max = <200>; }; };
+""",
+        f"value of property 'int-with-max' on /ranges-node in "
+        f"{str(dts_file)} (200) is greater than the "
+        f"'max' value in {binding_path} (100)")
+
+    # Array element above max
+    write_and_check(
+        """\
+/dts-v1/;
+/ { ranges-node { compatible = "min-max"; array-with-range = <0 25 51>; }; };
+""",
+        f"value of property 'array-with-range' on /ranges-node in "
+        f"{str(dts_file)} (51) is greater than the "
+        f"'max' value in {binding_path} (50)")
+
+    # Negative value below negative min
+    write_and_check(
+        """\
+/dts-v1/;
+/ { ranges-node { compatible = "min-max"; int-with-negative-range = <(-101)>; }; };
+""",
+        f"value of property 'int-with-negative-range' on /ranges-node in "
+        f"{str(dts_file)} (-101) is less than the "
+        f"'min' value in {binding_path} (-100)")
+
+    # Negative value above negative max (i.e. less negative than allowed)
+    write_and_check(
+        """\
+/dts-v1/;
+/ { ranges-node { compatible = "min-max"; int-with-negative-range = <(-1)>; }; };
+""",
+        f"value of property 'int-with-negative-range' on /ranges-node in "
+        f"{str(dts_file)} (-1) is greater than the "
+        f"'max' value in {binding_path} (-10)")
+
+    # Array element below negative min
+    write_and_check(
+        """\
+/dts-v1/;
+/ { ranges-node { compatible = "min-max"; array-with-signed-range = <(-51) 0 50>; }; };
+""",
+        f"value of property 'array-with-signed-range' on /ranges-node in "
+        f"{str(dts_file)} (-51) is less than the "
+        f"'min' value in {binding_path} (-50)")
+
+def test_prop_range_len_errs(tmp_path):
+    '''Test errors when property values violate min-len:/max-len: constraints'''
+
+    dts_file = tmp_path / "test_range_len_err.dts"
+
+    def write_and_check(dts_content, expected_err):
+        with open(dts_file, "w", encoding="utf-8") as f:
+            f.write(dts_content)
+            f.flush()
+        with pytest.raises(edtlib.EDTError) as e:
+            with from_here():
+                edtlib.EDT(str(dts_file), ["test-bindings"])
+        assert str(e.value) == expected_err
+
+    binding_path = hpath("test-bindings/min-max-len.yaml")
+
+    # Array length below min-len
+    write_and_check(
+        """\
+/dts-v1/;
+/ { range-len-node { compatible = "min-max-len"; array-with-min-len = <1>; }; };
+""",
+        f"value of property 'array-with-min-len' on /range-len-node in "
+        f"{str(dts_file)} has length 1, which is less than the "
+        f"'min-len' value in {binding_path} (2)")
+
+    # Array length above max-len
+    write_and_check(
+        """\
+/dts-v1/;
+/ { range-len-node { compatible = "min-max-len"; array-with-max-len = <1 2 3 4 5>; }; };
+""",
+        f"value of property 'array-with-max-len' on /range-len-node in "
+        f"{str(dts_file)} has length 5, which is greater than the "
+        f"'max-len' value in {binding_path} (4)")
+
+    # String array length above max-len
+    write_and_check(
+        """\
+/dts-v1/;
+/ { range-len-node { compatible = "min-max-len"; string-array-with-range-len = "a", "b", "c", "d"; }; };
+""",
+        f"value of property 'string-array-with-range-len' on /range-len-node in "
+        f"{str(dts_file)} has length 4, which is greater than the "
+        f"'max-len' value in {binding_path} (3)")
+
+    # Uint8-array length below min-len
+    write_and_check(
+        """\
+/dts-v1/;
+/ { range-len-node { compatible = "min-max-len"; uint8-array-with-range-len = [01]; }; };
+""",
+        f"value of property 'uint8-array-with-range-len' on /range-len-node in "
+        f"{str(dts_file)} has length 1, which is less than the "
+        f"'min-len' value in {binding_path} (2)")
+
+def test_prop_range_binding_errs(tmp_path):
+    '''Test errors in binding definitions with invalid min:/max:'''
+
+    def check_binding_err(yaml_content, expected_err):
+        binding_file = tmp_path / "bad-ranges.yaml"
+        with open(binding_file, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+        with pytest.raises(edtlib.EDTError) as e:
+            edtlib.Binding(str(binding_file), {})
+        assert str(e.value) == expected_err
+
+    path = str(tmp_path / "bad-ranges.yaml")
+
+    # min/max on unsupported type
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: string
+    min: 0
+""",
+        f"'min:'/'max:' in '{path}' for 'foo' requires "
+        f"'type: int' or 'type: array', but has type 'string'")
+
+    # min/max combined with enum
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: 0
+    enum:
+      - 1
+      - 2
+""",
+        f"'min:'/'max:' cannot be combined with 'enum:' "
+        f"for 'foo' in '{path}'")
+
+    # min > max
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: 10
+    max: 5
+""",
+        f"'min:' (10) > 'max:' (5) for 'foo' in '{path}'")
+
+    # min > max (both negative)
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: -5
+    max: -10
+""",
+        f"'min:' (-5) > 'max:' (-10) for 'foo' in '{path}'")
+
+    # non-integer min
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: "bad"
+""",
+        f"'min:' for 'foo' in '{path}' is not an integer")
+
+    # non-integer max
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    max: "bad"
+""",
+        f"'max:' for 'foo' in '{path}' is not an integer")
+
+    # default below min
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: 10
+    default: 5
+""",
+        f"'default: 5' for 'foo' in '{path}' is less than 'min: 10'")
+
+    # default above max
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    max: 10
+    default: 20
+""",
+        f"'default: 20' for 'foo' in '{path}' is greater than 'max: 10'")
+
+    # boolean min (bool is a subclass of int in Python, must be rejected)
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: true
+""",
+        f"'min:' for 'foo' in '{path}' is not an integer")
+
+    # boolean max
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    max: false
+""",
+        f"'max:' for 'foo' in '{path}' is not an integer")
+
+    # const below min
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min: 10
+    const: 5
+""",
+        f"'const: 5' for 'foo' in '{path}' is less than 'min: 10'")
+
+    # const above max
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    max: 10
+    const: 20
+""",
+        f"'const: 20' for 'foo' in '{path}' is greater than 'max: 10'")
+
+    # const array element below min
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min: 5
+    const:
+      - 10
+      - 3
+""",
+        f"'const: [10, 3]' for 'foo' in '{path}' is less than 'min: 5'")
+
+    # const array element above max
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    max: 10
+    const:
+      - 5
+      - 15
+""",
+        f"'const: [5, 15]' for 'foo' in '{path}' is greater than 'max: 10'")
+
+def test_prop_range_len_binding_errs(tmp_path):
+    '''Test errors in binding definitions with invalid min-len:/max-len:'''
+
+    def check_binding_err(yaml_content, expected_err):
+        binding_file = tmp_path / "bad-range-len.yaml"
+        with open(binding_file, "w", encoding="utf-8") as f:
+            f.write(yaml_content)
+        with pytest.raises(edtlib.EDTError) as e:
+            edtlib.Binding(str(binding_file), {})
+        assert str(e.value) == expected_err
+
+    path = str(tmp_path / "bad-range-len.yaml")
+
+    # min-len on unsupported type (int)
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: int
+    min-len: 2
+""",
+        f"'min-len:'/'max-len:' in '{path}' for 'foo' "
+        f"requires an array type, but has type 'int'")
+
+    # min-len > max-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min-len: 5
+    max-len: 2
+""",
+        f"'min-len:' (5) > 'max-len:' (2) for 'foo' in '{path}'")
+
+    # non-integer min-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min-len: "bad"
+""",
+        f"'min-len:' for 'foo' in '{path}' is not a non-negative integer")
+
+    # negative min-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min-len: -1
+""",
+        f"'min-len:' for 'foo' in '{path}' is not a non-negative integer")
+
+    # boolean min-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min-len: true
+""",
+        f"'min-len:' for 'foo' in '{path}' is not a non-negative integer")
+
+    # default length below min-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min-len: 3
+    default: [1, 2]
+""",
+        f"'default: [1, 2]' for 'foo' in '{path}' has length 2, which is less than 'min-len: 3'")
+
+    # default length above max-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    max-len: 2
+    default: [1, 2, 3]
+""",
+        f"'default: [1, 2, 3]' for 'foo' in '{path}' has length 3, which is greater than 'max-len: 2'")
+
+    # const length below min-len
+    check_binding_err(
+        """\
+description: test
+compatible: "bad"
+properties:
+  foo:
+    type: array
+    min-len: 3
+    const: [1, 2]
+""",
+        f"'const: [1, 2]' for 'foo' in '{path}' has length 2, which is less than 'min-len: 3'")
+
 def test_binding_inference():
     '''Test inferred bindings for special zephyr-specific nodes.'''
     warnings = io.StringIO()
@@ -731,6 +1465,14 @@ def test_binding_inference():
                               'phandle-array-foos',
                               [(edt.get_node('/ctrl-2'), {'one': 1, 'two': 2})])
 
+    verify_phandle_array_prop(zephyr_user,
+                              'foo-gpios',
+                              [(ctrl_1, {'gpio-one': 1})])
+
+    verify_phandle_array_prop(zephyr_user,
+                              'bar-io-channels',
+                              [(ctrl_2, {'io-channel-one': 2})])
+
 def test_multi_bindings():
     '''Test having multiple directories with bindings'''
     with from_here():
@@ -753,7 +1495,7 @@ def test_dependencies():
     assert edt.get_node("/in-dir-1") in edt.get_node("/").required_by
 
 def test_child_dependencies():
-    '''Test dependencies relashionship with child nodes propagated to parent'''
+    '''Test dependencies relationship with child nodes propagated to parent'''
     with from_here():
         edt = edtlib.EDT("test.dts", ["test-bindings"])
 
@@ -765,6 +1507,32 @@ def test_child_dependencies():
     assert edt.get_node("/child-binding") in dep_node.required_by
     assert edt.get_node("/child-binding/child-1/grandchild") in dep_node.required_by
     assert edt.get_node("/child-binding/child-2") in dep_node.required_by
+
+def test_dependency_mode():
+    '''Test dependency relations affected by dependency-mode in bindings.'''
+    with from_here():
+        edt = edtlib.EDT("test.dts", ["test-bindings"])
+
+    target = edt.get_node("/dependency-mode-target")
+    normal = edt.get_node("/dependency-mode-normal")
+    reverse = edt.get_node("/dependency-mode-reverse")
+    ignore = edt.get_node("/dependency-mode-ignore")
+    child_ignore = edt.get_node("/dependency-mode-child-ignore")
+    local_child = edt.get_node("/dependency-mode-child-ignore/local-child")
+
+    assert target in normal.depends_on
+    assert normal in target.required_by
+
+    assert reverse in target.depends_on
+    assert target in reverse.required_by
+
+    assert target not in ignore.depends_on
+    assert ignore not in target.required_by
+
+    assert local_child not in child_ignore.depends_on
+    assert child_ignore not in local_child.required_by
+    assert target in child_ignore.depends_on
+    assert child_ignore in target.required_by
 
 def test_slice_errs(tmp_path):
     '''Test error messages from the internal _slice() helper'''
@@ -784,7 +1552,7 @@ def test_slice_errs(tmp_path):
 };
 """,
                  dts_file,
-                 f"'reg' property in <Node /sub in '{dts_file}'> has length 4, which is not evenly divisible by 12 (= 4*(<#address-cells> (= 1) + <#size-cells> (= 2))). Note that #*-cells properties come either from the parent node or from the controller (in the case of 'interrupts').")
+                 f"'reg' property in <Node /sub in {dts_file}:8> has length 4, which is not evenly divisible by 12 (= 4*(<#address-cells> (= 1) + <#size-cells> (= 2))). Note that #*-cells properties come either from the parent node or from the controller (in the case of 'interrupts').")
 
     verify_error("""
 /dts-v1/;
@@ -792,7 +1560,7 @@ def test_slice_errs(tmp_path):
 / {
 	sub {
 		interrupts = <1>;
-		interrupt-parent = < &{/controller} >;
+		interrupt-parent = <&{/controller}>;
 	};
 	controller {
 		interrupt-controller;
@@ -801,7 +1569,7 @@ def test_slice_errs(tmp_path):
 };
 """,
                  dts_file,
-                 f"'interrupts' property in <Node /sub in '{dts_file}'> has length 4, which is not evenly divisible by 8 (= 4*<#interrupt-cells>). Note that #*-cells properties come either from the parent node or from the controller (in the case of 'interrupts').")
+                 f"'interrupts' property in <Node /sub in {dts_file}:5> has length 4, which is not evenly divisible by 8 (= 4*<#interrupt-cells>). Note that #*-cells properties come either from the parent node or from the controller (in the case of 'interrupts').")
 
     verify_error("""
 /dts-v1/;
@@ -821,7 +1589,7 @@ def test_slice_errs(tmp_path):
 };
 """,
                  dts_file,
-                 f"'ranges' property in <Node /sub-1 in '{dts_file}'> has length 8, which is not evenly divisible by 24 (= 4*(<#address-cells> (= 2) + <#address-cells for parent> (= 1) + <#size-cells> (= 3))). Note that #*-cells properties come either from the parent node or from the controller (in the case of 'interrupts').")
+                 f"'ranges' property in <Node /sub-1 in {dts_file}:7> has length 8, which is not evenly divisible by 24 (= 4*(<#address-cells> (= 2) + <#address-cells for parent> (= 1) + <#size-cells> (= 3))). Note that #*-cells properties come either from the parent node or from the controller (in the case of 'interrupts').")
 
 def test_bad_compatible(tmp_path):
     # An invalid compatible should cause an error, even on a node with
@@ -855,6 +1623,33 @@ def test_wrong_props():
         value_str = str(e.value)
         assert value_str.startswith("'wrong-phandle-array-name' in 'properties:'")
         assert value_str.endswith("but no 'specifier-space' was provided.")
+
+        with pytest.raises(edtlib.EDTError) as e:
+            edtlib.Binding("test-wrong-bindings/wrong-status-default.yaml", None)
+        value_str = str(e.value)
+        assert value_str.startswith("invalid default value 'okay' specified for property "
+                                    "'status' in binding ")
+        assert "test-wrong-bindings/wrong-status-default.yaml" in value_str
+        assert value_str.endswith("; this property's default behavior is "
+                                  "defined in DT Specification §2.3.4 and a default in a binding is invalid")
+
+        with pytest.raises(edtlib.EDTError) as e:
+            edtlib.Binding("test-wrong-bindings/wrong-address-cells-default.yaml", None)
+        value_str = str(e.value)
+        assert value_str.startswith("invalid default value '2' specified for property "
+                                    "'#address-cells' in binding ")
+        assert "test-wrong-bindings/wrong-address-cells-default.yaml" in value_str
+        assert value_str.endswith("; this property's default behavior is "
+                                  "defined in DT Specification §2.3.5 and a default in a binding is invalid")
+
+        with pytest.raises(edtlib.EDTError) as e:
+            edtlib.Binding("test-wrong-bindings/wrong-size-cells-default.yaml", None)
+        value_str = str(e.value)
+        assert value_str.startswith("invalid default value '1' specified for property "
+                                    "'#size-cells' in binding ")
+        assert "test-wrong-bindings/wrong-size-cells-default.yaml" in value_str
+        assert value_str.endswith("; this property's default behavior is "
+                                  "defined in DT Specification §2.3.5 and a default in a binding is invalid")
 
 
 def test_deepcopy():

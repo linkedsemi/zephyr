@@ -31,3 +31,24 @@
 &pit2_channel3 {
 	status = "okay";
 };
+
+/* gpt runs in free-run mode (run-mode default comes from the SoC dtsi). */
+&gpt2 {
+	status = "okay";
+};
+
+&gpt3 {
+	status = "okay";
+};
+
+&gpt4 {
+	status = "okay";
+};
+
+&gpt5 {
+	status = "okay";
+};
+
+&gpt6 {
+	status = "okay";
+};

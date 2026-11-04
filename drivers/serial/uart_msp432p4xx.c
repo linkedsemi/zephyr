@@ -286,11 +286,6 @@ static int uart_msp432p4xx_irq_is_pending(const struct device *dev)
 	return (int_status & (EUSCI_A_IE_TXIE | EUSCI_A_IE_RXIE));
 }
 
-static int uart_msp432p4xx_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 static void uart_msp432p4xx_irq_callback_set(const struct device *dev,
 					     uart_irq_callback_user_data_t cb,
 					     void *cb_data)
@@ -327,7 +322,7 @@ static void uart_msp432p4xx_isr(const struct device *dev)
 }
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
-static const struct uart_driver_api uart_msp432p4xx_driver_api = {
+static DEVICE_API(uart, uart_msp432p4xx_driver_api) = {
 	.poll_in = uart_msp432p4xx_poll_in,
 	.poll_out = uart_msp432p4xx_poll_out,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
@@ -343,7 +338,6 @@ static const struct uart_driver_api uart_msp432p4xx_driver_api = {
 	.irq_err_enable	  = uart_msp432p4xx_irq_err_enable,
 	.irq_err_disable  = uart_msp432p4xx_irq_err_disable,
 	.irq_is_pending	  = uart_msp432p4xx_irq_is_pending,
-	.irq_update	  = uart_msp432p4xx_irq_update,
 	.irq_callback_set = uart_msp432p4xx_irq_callback_set,
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 };

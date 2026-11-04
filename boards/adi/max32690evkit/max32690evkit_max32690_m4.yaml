@@ -6,10 +6,10 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - gpio
   - serial
+  - hwinfo
   - spi
   - i2c
   - trng
@@ -17,8 +17,13 @@ supported:
   - watchdog
   - adc
   - counter
+  - rtc_counter
   - pwm
   - w1
   - flash
-ram: 1024
+  - usbd
+  - memc
+  - can
+  - mbox
+ram: 128
 flash: 3072

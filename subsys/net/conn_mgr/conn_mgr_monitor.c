@@ -12,6 +12,7 @@ LOG_MODULE_REGISTER(conn_mgr, CONFIG_NET_CONNECTION_MANAGER_LOG_LEVEL);
 #include <errno.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/sys/iterable_sections.h>
 #include <zephyr/net/conn_mgr_connectivity.h>
@@ -32,7 +33,7 @@ static struct k_thread conn_mgr_mon_thread;
  * conn_mgr_mon_get_if_by_index and conn_mgr_get_index_for_if are used to go back and forth between
  * iface_states indices and Zephyr iface pointers.
  */
-uint16_t iface_states[CONN_MGR_IFACE_MAX];
+static uint16_t iface_states[CONN_MGR_IFACE_MAX];
 
 /* Tracks the most recent total quantity of L4-ready ifaces (any, IPv4, IPv6) */
 static uint16_t last_ready_count;
@@ -49,6 +50,11 @@ K_SEM_DEFINE(conn_mgr_mon_updated, 1, 1);
 
 /* Used to protect conn_mgr_monitor state */
 K_MUTEX_DEFINE(conn_mgr_mon_lock);
+
+uint16_t *conn_mgr_if_state_internal(void)
+{
+	return iface_states;
+}
 
 /**
  * @brief Retrieves pointer to an iface by the index that corresponds to it in iface_states
@@ -114,6 +120,7 @@ static void conn_mgr_mon_handle_update(void)
 	bool was_ipv6_ready;
 	bool was_ipv4_ready;
 	bool is_ignored;
+	uint64_t mgmt_event;
 	int ready_count = 0;
 	int ready_count_ipv4 = 0;
 	int ready_count_ipv6 = 0;
@@ -160,6 +167,11 @@ static void conn_mgr_mon_handle_update(void)
 		/* If any states changed, track blame for possibly triggered events */
 		if (was_l4_ready != is_l4_ready) {
 			blame = conn_mgr_mon_get_if_by_index(idx);
+
+			/* Per-interface L4 events */
+			mgmt_event = is_l4_ready ? NET_EVENT_L4_IF_CONNECTED
+						 : NET_EVENT_L4_IF_DISCONNECTED;
+			net_mgmt_event_notify(mgmt_event, blame);
 		}
 		if (was_ipv6_ready != is_ipv6_ready) {
 			blame_ipv6 = conn_mgr_mon_get_if_by_index(idx);
@@ -214,47 +226,6 @@ static void conn_mgr_mon_handle_update(void)
 	k_mutex_unlock(&conn_mgr_mon_lock);
 }
 
-/**
- * @brief Initialize the internal state flags for the given iface using its current status
- *
- * @param iface - iface to initialize from.
- */
-static void conn_mgr_mon_initial_state(struct net_if *iface)
-{
-	int idx = conn_mgr_get_index_for_if(iface);
-
-	k_mutex_lock(&conn_mgr_mon_lock, K_FOREVER);
-
-	if (net_if_is_up(iface)) {
-		NET_DBG("Iface %p UP", iface);
-		iface_states[idx] |= CONN_MGR_IF_UP;
-	}
-
-	if (IS_ENABLED(CONFIG_NET_NATIVE_IPV6)) {
-		if (net_if_ipv6_get_global_addr(NET_ADDR_PREFERRED, &iface)) {
-			NET_DBG("IPv6 addr set");
-			iface_states[idx] |= CONN_MGR_IF_IPV6_SET;
-		}
-	}
-
-	if (IS_ENABLED(CONFIG_NET_NATIVE_IPV4)) {
-		if (net_if_ipv4_get_global_addr(iface, NET_ADDR_PREFERRED)) {
-			NET_DBG("IPv4 addr set");
-			iface_states[idx] |= CONN_MGR_IF_IPV4_SET;
-		}
-
-	}
-
-	k_mutex_unlock(&conn_mgr_mon_lock);
-}
-
-static void conn_mgr_mon_init_cb(struct net_if *iface, void *user_data)
-{
-	ARG_UNUSED(user_data);
-
-	conn_mgr_mon_initial_state(iface);
-}
-
 static void conn_mgr_mon_thread_fn(void *p1, void *p2, void *p3)
 {
 	ARG_UNUSED(p1);
@@ -264,10 +235,6 @@ static void conn_mgr_mon_thread_fn(void *p1, void *p2, void *p3)
 	k_mutex_lock(&conn_mgr_mon_lock, K_FOREVER);
 
 	conn_mgr_conn_init();
-
-	conn_mgr_init_events_handler();
-
-	net_if_foreach(conn_mgr_mon_init_cb, NULL);
 
 	k_mutex_unlock(&conn_mgr_mon_lock);
 
@@ -400,12 +367,6 @@ void conn_mgr_watch_l2(const struct net_l2 *l2)
 
 static int conn_mgr_mon_init(void)
 {
-	int i;
-
-	for (i = 0; i < ARRAY_SIZE(iface_states); i++) {
-		iface_states[i] = 0;
-	}
-
 	k_thread_create(&conn_mgr_mon_thread, conn_mgr_mon_stack,
 			CONFIG_NET_CONNECTION_MANAGER_MONITOR_STACK_SIZE,
 			conn_mgr_mon_thread_fn,

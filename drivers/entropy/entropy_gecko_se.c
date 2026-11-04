@@ -8,7 +8,6 @@
 
  #include <zephyr/drivers/entropy.h>
  #include <soc.h>
- #include "em_cmu.h"
  #include "sl_se_manager.h"
  #include "sl_se_manager_entropy.h"
 
@@ -49,7 +48,7 @@ static int entropy_gecko_se_init(const struct device *dev)
 	return 0;
 }
 
-static const struct entropy_driver_api entropy_gecko_se_api_funcs = {
+static DEVICE_API(entropy, entropy_gecko_se_api_funcs) = {
 	.get_entropy = entropy_gecko_se_get_entropy,
 };
 

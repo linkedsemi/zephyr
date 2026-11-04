@@ -184,8 +184,9 @@ static int st7735r_write(const struct device *dev,
 	struct display_buffer_descriptor mipi_desc;
 
 	__ASSERT(desc->width <= desc->pitch, "Pitch is smaller than width");
-	__ASSERT((desc->pitch * ST7735R_PIXEL_SIZE * desc->height)
-		 <= desc->buf_size, "Input buffer too small");
+	__ASSERT(((((size_t)desc->height - 1U) * desc->pitch + desc->width) *
+		  ST7735R_PIXEL_SIZE) <= desc->buf_size,
+		 "Input buffer too small");
 
 	LOG_DBG("Writing %dx%d (w,h) @ %dx%d (x,y)",
 		desc->width, desc->height, x, y);
@@ -198,7 +199,7 @@ static int st7735r_write(const struct device *dev,
 		write_h = 1U;
 		nbr_of_writes = desc->height;
 		mipi_desc.height = 1;
-		mipi_desc.buf_size = desc->pitch * ST7735R_PIXEL_SIZE;
+		mipi_desc.buf_size = desc->width * ST7735R_PIXEL_SIZE;
 	} else {
 		write_h = desc->height;
 		nbr_of_writes = 1U;
@@ -212,7 +213,7 @@ static int st7735r_write(const struct device *dev,
 
 
 	if (!(config->madctl & ST7735R_MADCTL_BGR) != !config->rgb_is_inverted) {
-		fmt = PIXEL_FORMAT_BGR_565;
+		fmt = PIXEL_FORMAT_RGB_565X;
 	} else {
 		fmt = PIXEL_FORMAT_RGB_565;
 	}
@@ -249,7 +250,6 @@ static void st7735r_get_capabilities(const struct device *dev,
 {
 	const struct st7735r_config *config = dev->config;
 
-	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = config->width;
 	capabilities->y_resolution = config->height;
 
@@ -262,8 +262,8 @@ static void st7735r_get_capabilities(const struct device *dev,
 	 * It is a workaround for supporting buggy modules that display RGB as BGR.
 	 */
 	if (!(config->madctl & ST7735R_MADCTL_BGR) != !config->rgb_is_inverted) {
-		capabilities->supported_pixel_formats = PIXEL_FORMAT_BGR_565;
-		capabilities->current_pixel_format = PIXEL_FORMAT_BGR_565;
+		capabilities->supported_pixel_formats = PIXEL_FORMAT_RGB_565X;
+		capabilities->current_pixel_format = PIXEL_FORMAT_RGB_565X;
 	} else {
 		capabilities->supported_pixel_formats = PIXEL_FORMAT_RGB_565;
 		capabilities->current_pixel_format = PIXEL_FORMAT_RGB_565;
@@ -282,7 +282,7 @@ static int st7735r_set_pixel_format(const struct device *dev,
 		return 0;
 	}
 
-	if ((pixel_format == PIXEL_FORMAT_BGR_565) &&
+	if ((pixel_format == PIXEL_FORMAT_RGB_565X) &&
 	    (config->madctl & ST7735R_MADCTL_BGR)) {
 		return 0;
 	}
@@ -479,7 +479,7 @@ static int st7735r_pm_action(const struct device *dev,
 }
 #endif /* CONFIG_PM_DEVICE */
 
-static const struct display_driver_api st7735r_api = {
+static DEVICE_API(display, st7735r_api) = {
 	.blanking_on = st7735r_blanking_on,
 	.blanking_off = st7735r_blanking_off,
 	.write = st7735r_write,
@@ -493,8 +493,8 @@ static const struct display_driver_api st7735r_api = {
 	const static struct st7735r_config st7735r_config_ ## inst = {		\
 		.mipi_dev = DEVICE_DT_GET(DT_INST_PARENT(inst)),		\
 		.dbi_config = MIPI_DBI_CONFIG_DT_INST(inst,			\
-				SPI_OP_MODE_MASTER |				\
-				((DT_INST_PROP(inst, mipi_mode) ==		\
+				SPI_OP_MODE_CONTROLLER |			\
+				((DT_INST_STRING_UPPER_TOKEN(inst, mipi_mode) == \
 				 MIPI_DBI_MODE_SPI_4WIRE) ? SPI_WORD_SET(8) :	\
 				 SPI_WORD_SET(9)) |				\
 				SPI_HOLD_ON_CS | SPI_LOCK_ON, 0),		\

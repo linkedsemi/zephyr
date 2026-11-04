@@ -8,6 +8,7 @@
 LOG_MODULE_DECLARE(net_l2_ppp, CONFIG_NET_L2_PPP_LOG_LEVEL);
 
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 
 #include <zephyr/net/ppp.h>
@@ -31,9 +32,11 @@ static int ipv6cp_add_iid(struct ppp_context *ctx, struct net_pkt *pkt)
 {
 	uint8_t *iid = ctx->ipv6cp.my_options.iid;
 	size_t iid_len = sizeof(ctx->ipv6cp.my_options.iid);
-	struct net_linkaddr *linkaddr;
+	struct net_linkaddr *linkaddr = net_if_get_link_addr(ctx->iface);
+	int ret;
 
-	linkaddr = net_if_get_link_addr(ctx->iface);
+	NET_ASSERT(linkaddr != NULL);
+
 	if (linkaddr->len == 8) {
 		memcpy(iid, linkaddr->addr, iid_len);
 	} else {
@@ -44,7 +47,11 @@ static int ipv6cp_add_iid(struct ppp_context *ctx, struct net_pkt *pkt)
 		memcpy(iid + 5, linkaddr->addr + 3, 3);
 	}
 
-	net_pkt_write_u8(pkt, INTERFACE_IDENTIFIER_OPTION_LEN);
+	ret = net_pkt_write_u8(pkt, INTERFACE_IDENTIFIER_OPTION_LEN);
+	if (ret < 0) {
+		return ret;
+	}
+
 	return net_pkt_write(pkt, iid, iid_len);
 }
 
@@ -206,7 +213,7 @@ static void ipv6cp_close(struct ppp_context *ctx, const uint8_t *reason)
 	ppp_fsm_close(&ctx->ipv6cp.fsm, reason);
 }
 
-static void setup_iid_address(uint8_t *iid, struct in6_addr *addr)
+static void setup_iid_address(uint8_t *iid, struct net_in6_addr *addr)
 {
 	addr->s6_addr[0] = 0xfe;
 	addr->s6_addr[1] = 0x80;
@@ -221,7 +228,7 @@ static void setup_iid_address(uint8_t *iid, struct in6_addr *addr)
 static void add_iid_address(struct net_if *iface, uint8_t *iid)
 {
 	struct net_if_addr *ifaddr;
-	struct in6_addr addr;
+	struct net_in6_addr addr;
 
 	setup_iid_address(iid, &addr);
 
@@ -242,7 +249,7 @@ static void ipv6cp_up(struct ppp_fsm *fsm)
 	struct ppp_context *ctx = CONTAINER_OF(fsm, struct ppp_context,
 					       ipv6cp.fsm);
 	struct net_nbr *nbr;
-	struct in6_addr peer_addr;
+	struct net_in6_addr peer_addr;
 	struct net_linkaddr peer_lladdr;
 
 	if (ctx->is_ipv6cp_up) {
@@ -261,29 +268,27 @@ static void ipv6cp_up(struct ppp_fsm *fsm)
 	/* Add peer to neighbor table */
 	setup_iid_address(ctx->ipv6cp.peer_options.iid, &peer_addr);
 
-	peer_lladdr.addr = ctx->ipv6cp.peer_options.iid;
-	peer_lladdr.len = sizeof(ctx->ipv6cp.peer_options.iid);
-
-	/* TODO: What should be the type? */
-	peer_lladdr.type = NET_LINK_DUMMY;
+	(void)net_linkaddr_create(&peer_lladdr, ctx->ipv6cp.peer_options.iid,
+				  sizeof(ctx->ipv6cp.peer_options.iid),
+				  NET_LINK_DUMMY);
 
 	nbr = net_ipv6_nbr_add(ctx->iface, &peer_addr, &peer_lladdr,
 			       false, NET_IPV6_NBR_STATE_STATIC);
 	if (!nbr) {
 		NET_ERR("[%s/%p] Cannot add peer %s to nbr table",
 			fsm->name, fsm,
-			net_sprint_addr(AF_INET6, (const void *)&peer_addr));
+			net_sprint_addr(NET_AF_INET6, (const void *)&peer_addr));
 	} else {
 		if (CONFIG_NET_L2_PPP_LOG_LEVEL >= LOG_LEVEL_DBG) {
 			uint8_t iid_str[sizeof("xx:xx:xx:xx:xx:xx:xx:xx")];
-			char dst[INET6_ADDRSTRLEN];
+			char dst[NET_INET6_ADDRSTRLEN];
 			char *addr_str;
 
 			net_sprint_ll_addr_buf(peer_lladdr.addr,
 					       peer_lladdr.len,
 					       iid_str, sizeof(iid_str));
 
-			addr_str = net_addr_ntop(AF_INET6, &peer_addr, dst,
+			addr_str = net_addr_ntop(NET_AF_INET6, &peer_addr, dst,
 						 sizeof(dst));
 
 			NET_DBG("[%s/%p] Peer %s [%s] %s nbr cache",
@@ -298,8 +303,8 @@ static void ipv6cp_down(struct ppp_fsm *fsm)
 	struct ppp_context *ctx = CONTAINER_OF(fsm, struct ppp_context,
 					       ipv6cp.fsm);
 	struct net_linkaddr peer_lladdr;
-	struct in6_addr my_addr;
-	struct in6_addr peer_addr;
+	struct net_in6_addr my_addr;
+	struct net_in6_addr peer_addr;
 	int ret;
 
 	if (!ctx->is_ipv6cp_up) {
@@ -317,28 +322,26 @@ static void ipv6cp_down(struct ppp_fsm *fsm)
 	/* Remove peer from neighbor table */
 	setup_iid_address(ctx->ipv6cp.peer_options.iid, &peer_addr);
 
-	peer_lladdr.addr = ctx->ipv6cp.peer_options.iid;
-	peer_lladdr.len = sizeof(ctx->ipv6cp.peer_options.iid);
-
-	/* TODO: What should be the type? */
-	peer_lladdr.type = NET_LINK_DUMMY;
+	(void)net_linkaddr_create(&peer_lladdr, ctx->ipv6cp.peer_options.iid,
+				  sizeof(ctx->ipv6cp.peer_options.iid),
+				  NET_LINK_DUMMY);
 
 	ret = net_ipv6_nbr_rm(ctx->iface, &peer_addr);
 	if (!ret) {
 		NET_ERR("[%s/%p] Cannot rm peer %s from nbr table",
 			fsm->name, fsm,
-			net_sprint_addr(AF_INET6, (const void *)&peer_addr));
+			net_sprint_addr(NET_AF_INET6, (const void *)&peer_addr));
 	} else {
 		if (CONFIG_NET_L2_PPP_LOG_LEVEL >= LOG_LEVEL_DBG) {
 			uint8_t iid_str[sizeof("xx:xx:xx:xx:xx:xx:xx:xx")];
-			char dst[INET6_ADDRSTRLEN];
+			char dst[NET_INET6_ADDRSTRLEN];
 			char *addr_str;
 
 			net_sprint_ll_addr_buf(ctx->ipv6cp.peer_options.iid,
 					sizeof(ctx->ipv6cp.peer_options.iid),
 					iid_str, sizeof(iid_str));
 
-			addr_str = net_addr_ntop(AF_INET6, &peer_addr, dst,
+			addr_str = net_addr_ntop(NET_AF_INET6, &peer_addr, dst,
 						 sizeof(dst));
 
 			NET_DBG("[%s/%p] Peer %s [%s] %s nbr cache",

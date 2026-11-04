@@ -15,7 +15,7 @@ extern "C" {
 
 /**
  * @defgroup mipi_stp_decoder_apis STP Decoder API
- * @ingroup os_services
+ * @ingroup debug
  * @{
  */
 
@@ -91,8 +91,9 @@ union mipi_stp_decoder_data {
  * @param data		Data. Data associated with a given @p type.
  * @param ts		Timestamp. Present if not NULL.
  * @param marked	Set to true if opcode was marked.
+ * @return true if the data is valid, false is data indicates synchronization loss.
  */
-typedef void (*mipi_stp_decoder_cb)(enum mipi_stp_decoder_ctrl_type type,
+typedef bool (*mipi_stp_decoder_cb)(enum mipi_stp_decoder_ctrl_type type,
 				    union mipi_stp_decoder_data data,
 				    uint64_t *ts, bool marked);
 
@@ -110,7 +111,7 @@ struct mipi_stp_decoder_config {
  * @param config	Configuration.
  *
  * @retval 0		On successful initialization.
- * @retval negative	On failure.
+ * @retval <0	On failure.
  */
 int mipi_stp_decoder_init(const struct mipi_stp_decoder_config *config);
 
@@ -122,7 +123,7 @@ int mipi_stp_decoder_init(const struct mipi_stp_decoder_config *config);
  * @param len		Data length.
  *
  * @retval 0		On successful decoding.
- * @retval negative	On failure.
+ * @retval <0	On failure.
  */
 int mipi_stp_decoder_decode(const uint8_t *data, size_t len);
 

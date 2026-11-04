@@ -19,9 +19,19 @@
 
 int single_sector_test(const struct device *flash_dev)
 {
-	const uint8_t expected[] = { 0x55, 0xaa, 0x66, 0x99 };
+#if CONFIG_DCACHE
+	const uint8_t expected[]__aligned(CONFIG_DCACHE_LINE_SIZE) = {
+#else
+	const uint8_t expected[] = {
+#endif
+					0x55, 0xaa, 0x66, 0x99};
 	const size_t len = sizeof(expected);
+#if CONFIG_DCACHE
+	uint8_t buf[sizeof(expected)]__aligned(CONFIG_DCACHE_LINE_SIZE);
+#else
 	uint8_t buf[sizeof(expected)];
+#endif
+
 	int rc;
 
 	printf("\nPerform test on single sector");
@@ -81,12 +91,21 @@ int single_sector_test(const struct device *flash_dev)
 #if defined SPI_FLASH_MULTI_SECTOR_TEST
 int multi_sector_test(const struct device *flash_dev)
 {
-	const uint8_t expected[] = { 0x55, 0xaa, 0x66, 0x99 };
+#if CONFIG_DCACHE
+	const uint8_t expected[]__aligned(CONFIG_DCACHE_LINE_SIZE) = {
+#else
+	const uint8_t expected[] = {
+#endif
+					0x55, 0xaa, 0x66, 0x99};
 	const size_t len = sizeof(expected);
+#if CONFIG_DCACHE
+	uint8_t buf[sizeof(expected)]__aligned(CONFIG_DCACHE_LINE_SIZE);
+#else
 	uint8_t buf[sizeof(expected)];
+#endif
 	int rc;
 
-	printf("\nPerform test on multiple consequtive sectors");
+	printf("\nPerform test on multiple consecutive sectors");
 
 	/* Write protection needs to be disabled before each write or
 	 * erase, since the flash component turns on write protection
@@ -97,7 +116,7 @@ int multi_sector_test(const struct device *flash_dev)
 
 	/* Full flash erase if SPI_FLASH_TEST_REGION_OFFSET = 0 and
 	 * SPI_FLASH_SECTOR_SIZE = flash size
-	 * Erase 2 sectors for check for erase of consequtive sectors
+	 * Erase 2 sectors for check for erase of consecutive sectors
 	 */
 	rc = flash_erase(flash_dev, SPI_FLASH_TEST_REGION_OFFSET, SPI_FLASH_SECTOR_SIZE * 2);
 	if (rc != 0) {
@@ -166,7 +185,11 @@ int multi_sector_test(const struct device *flash_dev)
 
 int main(void)
 {
+#if DT_HAS_ALIAS(ext_nor0)
+	const struct device *flash_dev = DEVICE_DT_GET(DT_ALIAS(ext_nor0));
+#else
 	const struct device *flash_dev = DEVICE_DT_GET(DT_ALIAS(flash0));
+#endif
 
 	if (!device_is_ready(flash_dev)) {
 		printk("%s: device not ready.\n", flash_dev->name);

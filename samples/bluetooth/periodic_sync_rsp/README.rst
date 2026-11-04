@@ -31,11 +31,19 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/periodic_sync_rsp` in
-the Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-Use the sample found under :zephyr_file:`samples/bluetooth/periodic_adv_rsp` on
-another board that will start periodic advertising, which will connect to this
-sample and transfer the synchronization info.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/periodic_sync_rsp
+   :board: <board>
+   :goals: build flash
+   :compact:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+After flashing, the device will advertise as connectable and wait for the PAwR advertiser
+to connect and assign it a subevent and response slot via GATT. Once assigned, it
+synchronizes to the PAwR train via PAST and echoes received subevent data back in its
+assigned response slot. Multiple boards can be flashed with this sample concurrently,
+each receiving a different subevent and response slot assignment.
+
+Use the :zephyr:code-sample:`ble_periodic_adv_rsp` sample on another board to start
+PAwR advertising and assign timing to this device.

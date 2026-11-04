@@ -3,6 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Backend APIs for the sensor emulators.
+ * @ingroup sensor_emulator_backend
+ */
+
 #include <zephyr/drivers/emul.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/drivers/sensor_attribute_types.h>
@@ -12,7 +18,8 @@
 /**
  * @brief Sensor emulator backend API
  * @defgroup sensor_emulator_backend Sensor emulator backend API
- * @ingroup io_interfaces
+ * @ingroup io_emulators
+ * @ingroup sensor_interface
  * @{
  */
 

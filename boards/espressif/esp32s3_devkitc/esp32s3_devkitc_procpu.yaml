@@ -10,15 +10,15 @@ supported:
   - i2c
   - i2s
   - spi
-  - can
   - counter
   - watchdog
   - entropy
   - pwm
   - dma
   - input
-testing:
-  ignore_tags:
-    - net
-    - bluetooth
+  - video
+  - crypto
+  - retained_mem
+  - netif:wifi
+  - pulse_io
 vendor: espressif

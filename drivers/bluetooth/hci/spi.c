@@ -47,9 +47,9 @@ LOG_MODULE_REGISTER(bt_driver);
 /* Max SPI buffer length for transceive operations.
  *
  * Buffer size needs to be at least the size of the larger RX/TX buffer
- * required by the SPI slave, as the legacy spi_transceive requires both RX/TX
- * to be the same length. Size also needs to be compatible with the
- * slave device used (e.g. nRF5X max buffer length for SPIS is 255).
+ * required by the SPI peripheral, as the legacy spi_transceive requires both
+ * RX/TX to be the same length. Size also needs to be compatible with the
+ * peripheral device used (e.g. nRF5X max buffer length for SPIS is 255).
  */
 #define SPI_MAX_MSG_LEN		255 /* As defined by X-NUCLEO-IDB04A1 BSP */
 
@@ -65,10 +65,6 @@ LOG_MODULE_REGISTER(bt_driver);
 #warning CONFIG_BT_L2CAP_TX_MTU is too large and can result in packets that cannot \
 	be transmitted across this HCI link
 #endif /* CONFIG_BT_L2CAP_TX_MTU > MAX_MTU */
-
-struct bt_spi_data {
-	bt_hci_recv_t recv;
-};
 
 static uint8_t __noinit rxmsg[SPI_MAX_MSG_LEN];
 static uint8_t __noinit txmsg[SPI_MAX_MSG_LEN];
@@ -86,7 +82,7 @@ static K_KERNEL_STACK_DEFINE(spi_rx_stack, CONFIG_BT_DRV_RX_STACK_SIZE);
 static struct k_thread spi_rx_thread_data;
 
 static const struct spi_dt_spec bus = SPI_DT_SPEC_INST_GET(
-	0, SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8), 0);
+	0, SPI_OP_MODE_CONTROLLER | SPI_TRANSFER_MSB | SPI_WORD_SET(8));
 
 static struct spi_buf spi_tx_buf;
 static struct spi_buf spi_rx_buf;
@@ -145,8 +141,8 @@ static bool bt_spi_handle_vendor_evt(uint8_t *msg)
 
 static int bt_spi_get_header(uint8_t op, uint16_t *size)
 {
-	uint8_t header_master[5] = {op, 0, 0, 0, 0};
-	uint8_t header_slave[5];
+	uint8_t header_controller[5] = {op, 0, 0, 0, 0};
+	uint8_t header_peripheral[5];
 	bool reading = (op == SPI_READ);
 	bool loop_cond;
 	uint8_t size_offset;
@@ -160,21 +156,21 @@ static int bt_spi_get_header(uint8_t op, uint16_t *size)
 	}
 
 	do {
-		ret = bt_spi_transceive(header_master, 5, header_slave, 5);
+		ret = bt_spi_transceive(header_controller, 5, header_peripheral, 5);
 		if (ret) {
 			break;
 		}
 		if (reading) {
 			/* When reading, keep looping if there is not yet any data */
-			loop_cond = header_slave[STATUS_HEADER_TOREAD] == 0U;
+			loop_cond = header_peripheral[STATUS_HEADER_TOREAD] == 0U;
 		} else {
 			/* When writing, keep looping if all bytes are zero */
-			loop_cond = ((header_slave[1] | header_slave[2] | header_slave[3] |
-					header_slave[4]) == 0U);
+			loop_cond = ((header_peripheral[1] | header_peripheral[2] |
+				      header_peripheral[3] | header_peripheral[4]) == 0U);
 		}
-	} while ((header_slave[STATUS_HEADER_READY] != READY_NOW) || loop_cond);
+	} while ((header_peripheral[STATUS_HEADER_READY] != READY_NOW) || loop_cond);
 
-	*size = (reading ? header_slave[size_offset] : SPI_MAX_MSG_LEN);
+	*size = (reading ? header_peripheral[size_offset] : SPI_MAX_MSG_LEN);
 
 	return ret;
 }
@@ -241,7 +237,6 @@ static struct net_buf *bt_spi_rx_buf_construct(uint8_t *msg)
 static void bt_spi_rx_thread(void *p1, void *p2, void *p3)
 {
 	const struct device *dev = p1;
-	struct bt_spi_data *hci = dev->data;
 
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
@@ -294,7 +289,7 @@ static void bt_spi_rx_thread(void *p1, void *p2, void *p3)
 		buf = bt_spi_rx_buf_construct(rxmsg);
 		if (buf) {
 			/* Handle the received HCI data */
-			hci->recv(dev, buf);
+			bt_hci_recv(dev, buf);
 		}
 	}
 }
@@ -309,27 +304,13 @@ static int bt_spi_send(const struct device *dev, struct net_buf *buf)
 
 	LOG_DBG("");
 
-	/* Buffer needs an additional byte for type */
-	if (buf->len >= SPI_MAX_MSG_LEN) {
+	if (buf->len > SPI_MAX_MSG_LEN) {
 		LOG_ERR("Message too long (%d)", buf->len);
 		return -EINVAL;
 	}
 
 	/* Wait for SPI bus to be available */
 	k_sem_take(&sem_busy, K_FOREVER);
-
-	switch (bt_buf_get_type(buf)) {
-	case BT_BUF_ACL_OUT:
-		net_buf_push_u8(buf, BT_HCI_H4_ACL);
-		break;
-	case BT_BUF_CMD:
-		net_buf_push_u8(buf, BT_HCI_H4_CMD);
-		break;
-	default:
-		LOG_ERR("Unsupported type");
-		k_sem_give(&sem_busy);
-		return -EINVAL;
-	}
 
 	ret = bt_spi_get_header(SPI_WRITE, &size);
 	size = MIN(buf->len, size);
@@ -359,25 +340,23 @@ static int bt_spi_send(const struct device *dev, struct net_buf *buf)
 
 	k_sem_give(&sem_busy);
 
-	if (ret) {
+	if (ret != 0) {
 		LOG_ERR("Error %d", ret);
-		goto out;
+		return ret;
 	}
 
 	LOG_HEXDUMP_DBG(buf->data, buf->len, "SPI TX");
 
-out:
 	net_buf_unref(buf);
 
-	return ret;
+	return 0;
 }
 
-static int bt_spi_open(const struct device *dev, bt_hci_recv_t recv)
+static int bt_spi_open(const struct device *dev)
 {
-	struct bt_spi_data *hci = dev->data;
 	int err;
 
-	/* Configure RST pin and hold BLE in Reset */
+	/* Configure RST pin and hold Bluetooth LE in Reset */
 	err = gpio_pin_configure_dt(&rst_gpio, GPIO_OUTPUT_ACTIVE);
 	if (err) {
 		return err;
@@ -401,9 +380,7 @@ static int bt_spi_open(const struct device *dev, bt_hci_recv_t recv)
 		return err;
 	}
 
-	hci->recv = recv;
-
-	/* Take BLE out of reset */
+	/* Take Bluetooth LE out of reset */
 	k_sleep(K_MSEC(DT_INST_PROP_OR(0, reset_assert_duration_ms, 0)));
 	gpio_pin_set_dt(&rst_gpio, 0);
 
@@ -413,14 +390,17 @@ static int bt_spi_open(const struct device *dev, bt_hci_recv_t recv)
 			bt_spi_rx_thread, (void *)dev, NULL, NULL,
 			K_PRIO_COOP(CONFIG_BT_DRIVER_RX_HIGH_PRIO),
 			0, K_NO_WAIT);
+	k_thread_name_set(&spi_rx_thread_data, "bt_spi_rx_thread");
 
 	/* Device will let us know when it's ready */
-	k_sem_take(&sem_initialised, K_FOREVER);
+	if (k_sem_take(&sem_initialised, K_SECONDS(CONFIG_BT_SPI_BOOT_TIMEOUT_SEC)) < 0) {
+		return -EIO;
+	}
 
 	return 0;
 }
 
-static const struct bt_hci_driver_api drv = {
+static DEVICE_API(bt_hci, drv) = {
 	.open		= bt_spi_open,
 	.send		= bt_spi_send,
 };
@@ -450,9 +430,11 @@ static int bt_spi_init(const struct device *dev)
 }
 
 #define HCI_DEVICE_INIT(inst) \
-	static struct bt_spi_data hci_data_##inst = { \
+	static struct bt_hci_driver_data hci_data_##inst = { \
 	}; \
-	DEVICE_DT_INST_DEFINE(inst, bt_spi_init, NULL, &hci_data_##inst, NULL, \
+	static const struct bt_hci_driver_config hci_config_##inst = \
+		BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst); \
+	DEVICE_DT_INST_DEFINE(inst, bt_spi_init, NULL, &hci_data_##inst, &hci_config_##inst, \
 			      POST_KERNEL, CONFIG_BT_SPI_INIT_PRIORITY, &drv)
 
 /* Only one instance supported right now */

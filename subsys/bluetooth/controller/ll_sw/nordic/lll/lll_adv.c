@@ -435,12 +435,12 @@ struct pdu_adv *lll_adv_pdu_alloc_pdu_adv(void)
 	}
 
 	err = k_sem_take(&sem_pdu_free, PDU_FREE_TIMEOUT);
-	LL_ASSERT(!err);
+	LL_ASSERT_DBG(!err);
 
 	k_sem_reset(&sem_pdu_free);
 
 	p = MFIFO_DEQUEUE(pdu_free);
-	LL_ASSERT(p);
+	LL_ASSERT_ERR(p);
 
 #if defined(CONFIG_BT_CTLR_ADV_PDU_LINK)
 	PDU_ADV_NEXT_PTR(p) = NULL;
@@ -681,10 +681,10 @@ void lll_adv_prepare(void *param)
 	int err;
 
 	err = lll_hfclock_on();
-	LL_ASSERT(err >= 0);
+	LL_ASSERT_ERR(err >= 0);
 
 	err = lll_prepare(is_abort_cb, abort_cb, prepare_cb, 0, param);
-	LL_ASSERT(!err || err == -EINPROGRESS);
+	LL_ASSERT_ERR(!err || err == -EINPROGRESS);
 }
 
 bool lll_adv_scan_req_check(struct lll_adv *lll, struct pdu_adv *sr,
@@ -836,7 +836,7 @@ static void *adv_extra_data_allocate(struct lll_adv_pdu *pdu, uint8_t last)
 	extra_data = MFIFO_DEQUEUE_PEEK(extra_data_free);
 	if (extra_data) {
 		err = k_sem_take(&sem_extra_data_free, K_NO_WAIT);
-		LL_ASSERT(!err);
+		LL_ASSERT_DBG(!err);
 
 		MFIFO_DEQUEUE(extra_data_free);
 		pdu->extra_data[last] = extra_data;
@@ -852,10 +852,10 @@ static void *adv_extra_data_allocate(struct lll_adv_pdu *pdu, uint8_t last)
 	}
 
 	err = k_sem_take(&sem_extra_data_free, PDU_FREE_TIMEOUT);
-	LL_ASSERT(!err);
+	LL_ASSERT_DBG(!err);
 
 	extra_data = MFIFO_DEQUEUE(extra_data_free);
-	LL_ASSERT(extra_data);
+	LL_ASSERT_ERR(extra_data);
 
 	pdu->extra_data[last] = (void *)extra_data;
 
@@ -913,7 +913,7 @@ static void extra_data_free_sem_give(void)
 
 	retval = mayfly_enqueue(TICKER_USER_ID_LLL, TICKER_USER_ID_ULL_HIGH, 0,
 				&mfy);
-	LL_ASSERT(!retval);
+	LL_ASSERT_ERR(!retval);
 }
 
 #else /* !CONFIG_BT_CTLR_ZLI */
@@ -970,7 +970,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT, PDU_AC_LEG_PAYLOAD_SIZE_MAX,
 			    RADIO_PKT_CONF_PHY(lll->phy_p));
 #else /* !CONFIG_BT_CTLR_ADV_EXT */
-	radio_phy_set(0, 0);
+	radio_phy_set(PHY_LEGACY, PHY_FLAGS_UNUSED);
 	radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT, PDU_AC_LEG_PAYLOAD_SIZE_MAX,
 			    RADIO_PKT_CONF_PHY(RADIO_PKT_CONF_PHY_LEGACY));
 #endif /* !CONFIG_BT_CTLR_ADV_EXT */
@@ -1024,7 +1024,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 #if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
 	radio_gpio_pa_setup();
-	radio_gpio_pa_lna_enable(start_us + radio_tx_ready_delay_get(0, 0) -
+	radio_gpio_pa_lna_enable(start_us + radio_tx_ready_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED) -
 				 HAL_RADIO_GPIO_PA_OFFSET);
 #else /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 	ARG_UNUSED(start_us);
@@ -1062,7 +1062,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 #endif
 
 	ret = lll_prepare_done(lll);
-	LL_ASSERT(!ret);
+	LL_ASSERT_ERR(!ret);
 
 	DEBUG_RADIO_START_A(1);
 
@@ -1102,7 +1102,7 @@ static int is_abort_cb(void *next, void *curr, lll_prepare_cb_t *resume_cb)
 
 			/* Retain HF clk */
 			err = lll_hfclock_on();
-			LL_ASSERT(err >= 0);
+			LL_ASSERT_ERR(err >= 0);
 
 			return -EAGAIN;
 #endif /* CONFIG_BT_PERIPHERAL */
@@ -1140,7 +1140,7 @@ static void abort_cb(struct lll_prepare_param *prepare_param, void *param)
 	 * currently in preparation pipeline.
 	 */
 	err = lll_hfclock_off();
-	LL_ASSERT(err >= 0);
+	LL_ASSERT_ERR(err >= 0);
 
 	lll_done(param);
 }
@@ -1164,20 +1164,30 @@ static void isr_tx(void *param)
 		node_rx_prof = lll_prof_reserve();
 	}
 
+	/* Call to ensure packet/event timer accumulates the elapsed time
+	 * under single timer use.
+	 */
+	(void)radio_is_tx_done();
+
 	/* Clear radio tx status and events */
 	lll_isr_tx_status_reset();
 
 	/* setup tIFS switching */
 	radio_tmr_tifs_set(EVENT_IFS_US);
-	radio_switch_complete_and_tx(phy_p, 0, phy_p, phy_flags);
+	radio_switch_complete_and_tx(phy_p, PHY_FLAGS_UNUSED, phy_p, phy_flags);
 
 	/* setup Rx buffer */
 	node_rx = ull_pdu_rx_alloc_peek(1);
-	LL_ASSERT(node_rx);
+	LL_ASSERT_DBG(node_rx);
 	radio_pkt_rx_set(node_rx->pdu);
 
 	/* assert if radio packet ptr is not set and radio started rx */
-	LL_ASSERT(!radio_is_ready());
+	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+		LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u", __func__,
+			      lll_prof_latency_get());
+	} else {
+		LL_ASSERT_ERR(!radio_is_ready());
+	}
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 		lll_prof_cputime_capture();
@@ -1197,9 +1207,12 @@ static void isr_tx(void *param)
 	hcto = radio_tmr_tifs_base_get() + EVENT_IFS_US +
 	       (EVENT_CLOCK_JITTER_US << 1) + RANGE_DELAY_US +
 	       HAL_RADIO_TMR_START_DELAY_US;
-	hcto += radio_rx_chain_delay_get(phy_p, 0);
+	/* RX delay uses the worst-case S8 coded reception; TX delay uses
+	 * the selected advertising coding scheme.
+	 */
+	hcto += radio_rx_chain_delay_get(phy_p, PHY_FLAGS_S8);
 	hcto += addr_us_get(phy_p);
-	hcto -= radio_tx_chain_delay_get(phy_p, 0);
+	hcto -= radio_tx_chain_delay_get(phy_p, phy_flags);
 	radio_tmr_hcto_configure(hcto);
 
 	/* capture end of CONNECT_IND PDU, used for calculating first
@@ -1222,14 +1235,11 @@ static void isr_tx(void *param)
 
 	radio_gpio_lna_setup();
 	radio_gpio_pa_lna_enable(radio_tmr_tifs_base_get() + EVENT_IFS_US - 4 -
-				 radio_tx_chain_delay_get(phy_p, 0) -
+				 radio_tx_chain_delay_get(phy_p, phy_flags) -
 				 HAL_RADIO_GPIO_LNA_OFFSET);
 #endif /* HAL_RADIO_GPIO_HAVE_LNA_PIN */
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
-		/* NOTE: as scratch packet is used to receive, it is safe to
-		 * generate profile event using rx nodes.
-		 */
 		lll_prof_reserve_send(node_rx_prof);
 	}
 }
@@ -1289,11 +1299,6 @@ static void isr_rx(void *param)
 		}
 	}
 
-	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
-		lll_prof_cputime_capture();
-		lll_prof_send();
-	}
-
 isr_rx_do_close:
 	radio_isr_set(isr_done, param);
 	radio_disable();
@@ -1335,6 +1340,10 @@ static void isr_done(void *param)
 
 		pdu = chan_prepare(lll);
 
+		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+			lll_prof_cputime_capture();
+		}
+
 #if defined(HAL_RADIO_GPIO_HAVE_PA_PIN) || defined(CONFIG_BT_CTLR_ADV_EXT)
 		start_us = radio_tmr_start_now(1);
 
@@ -1353,9 +1362,16 @@ static void isr_done(void *param)
 #endif /* !CONFIG_BT_CTLR_ADV_EXT */
 
 #if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
+		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+			/* PA/LNA enable is overwriting packet end used in ISR
+			 * profiling, hence back it up for later use.
+			 */
+			lll_prof_radio_end_backup();
+		}
+
 		radio_gpio_pa_setup();
 		radio_gpio_pa_lna_enable(start_us +
-					 radio_tx_ready_delay_get(0, 0) -
+					 radio_tx_ready_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED) -
 					 HAL_RADIO_GPIO_PA_OFFSET);
 #endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 #else /* !(HAL_RADIO_GPIO_HAVE_PA_PIN || defined(CONFIG_BT_CTLR_ADV_EXT)) */
@@ -1371,6 +1387,10 @@ static void isr_done(void *param)
 	}
 
 	radio_filter_disable();
+
+	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+		lll_prof_cputime_capture();
+	}
 
 #if defined(CONFIG_BT_PERIPHERAL)
 	if (!lll->is_hdcd)
@@ -1411,11 +1431,21 @@ static void isr_done(void *param)
 		struct event_done_extra *extra;
 
 		extra = ull_done_extra_type_set(EVENT_DONE_EXTRA_TYPE_ADV);
-		LL_ASSERT(extra);
+		LL_ASSERT_ERR(extra);
 	}
 #endif /* CONFIG_BT_CTLR_ADV_EXT || CONFIG_BT_CTLR_JIT_SCHEDULING */
 
 	lll_isr_cleanup(param);
+}
+
+static void isr_tx_done(void *param)
+{
+	/* Call to ensure packet/event timer accumulates the elapsed time
+	 * under single timer use.
+	 */
+	(void)radio_is_tx_done();
+
+	isr_done(param);
 }
 
 static void isr_abort(void *param)
@@ -1449,7 +1479,7 @@ static void isr_abort_all(void *param)
 	/* Abort any LLL prepare/resume enqueued in pipeline */
 	mfy.param = param;
 	ret = mayfly_enqueue(TICKER_USER_ID_LLL, TICKER_USER_ID_LLL, 1U, &mfy);
-	LL_ASSERT(!ret);
+	LL_ASSERT_ERR(!ret);
 }
 #endif /* CONFIG_BT_PERIPHERAL */
 
@@ -1460,7 +1490,7 @@ static struct pdu_adv *chan_prepare(struct lll_adv *lll)
 	uint8_t upd;
 
 	chan = find_lsb_set(lll->chan_map_curr);
-	LL_ASSERT(chan);
+	LL_ASSERT_DBG(chan);
 
 	lll->chan_map_curr &= (lll->chan_map_curr - 1);
 
@@ -1469,7 +1499,7 @@ static struct pdu_adv *chan_prepare(struct lll_adv *lll)
 	/* FIXME: get latest only when primary PDU without Aux PDUs */
 	upd = 0U;
 	pdu = lll_adv_data_latest_get(lll, &upd);
-	LL_ASSERT(pdu);
+	LL_ASSERT_DBG(pdu);
 
 	radio_pkt_tx_set(pdu);
 
@@ -1479,7 +1509,7 @@ static struct pdu_adv *chan_prepare(struct lll_adv *lll)
 		struct pdu_adv *scan_pdu;
 
 		scan_pdu = lll_adv_scan_rsp_latest_get(lll, &upd);
-		LL_ASSERT(scan_pdu);
+		LL_ASSERT_DBG(scan_pdu);
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 		if (upd) {
@@ -1498,8 +1528,17 @@ static struct pdu_adv *chan_prepare(struct lll_adv *lll)
 		radio_tmr_tifs_set(EVENT_IFS_US);
 		radio_switch_complete_and_rx(0);
 	} else {
-		radio_isr_set(isr_done, lll);
-		radio_switch_complete_and_disable();
+		radio_isr_set(isr_tx_done, lll);
+
+		if (IS_ENABLED(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER) &&
+		    IS_ENABLED(CONFIG_BT_CTLR_ADV_EXT)) {
+			/* Required under single time tIFS switching, to accumulate the packet
+			 * timer value at the time of clear on radio end.
+			 */
+			radio_switch_complete_end_capture_and_disable();
+		} else {
+			radio_switch_complete_and_disable();
+		}
 	}
 
 	return pdu;
@@ -1527,7 +1566,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 #endif /* CONFIG_BT_CTLR_PRIVACY */
 
 	node_rx = ull_pdu_rx_alloc_peek(1);
-	LL_ASSERT(node_rx);
+	LL_ASSERT_DBG(node_rx);
 
 	pdu_rx = (void *)node_rx->pdu;
 	pdu_adv = lll_adv_data_curr_get(lll);
@@ -1547,12 +1586,17 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 	    (tgt_addr == NULL) &&
 	    lll_adv_scan_req_check(lll, pdu_rx, tx_addr, addr, devmatch_ok,
 				    &rl_idx)) {
-		radio_isr_set(isr_done, lll);
+		radio_isr_set(isr_tx_done, lll);
 		radio_switch_complete_and_disable();
 		radio_pkt_tx_set(lll_adv_scan_rsp_curr_get(lll));
 
 		/* assert if radio packet ptr is not set and radio started tx */
-		LL_ASSERT(!radio_is_ready());
+		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+			LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u", __func__,
+				      lll_prof_latency_get());
+		} else {
+			LL_ASSERT_ERR(!radio_is_ready());
+		}
 
 		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 			lll_prof_cputime_capture();
@@ -1584,7 +1628,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		radio_gpio_pa_setup();
 		radio_gpio_pa_lna_enable(radio_tmr_tifs_base_get() +
 					 EVENT_IFS_US -
-					 radio_rx_chain_delay_get(0, 0) -
+					 radio_rx_chain_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED) -
 					 HAL_RADIO_GPIO_PA_OFFSET);
 #endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 		return 0;
@@ -1623,7 +1667,12 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		radio_disable();
 
 		/* assert if radio started tx */
-		LL_ASSERT(!radio_is_ready());
+		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+			LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u", __func__,
+				      lll_prof_latency_get());
+		} else {
+			LL_ASSERT_ERR(!radio_is_ready());
+		}
 
 		if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 			lll_prof_cputime_capture();
@@ -1647,7 +1696,7 @@ static inline int isr_rx_pdu(struct lll_adv *lll,
 		ftr->param = lll;
 		ftr->ticks_anchor = radio_tmr_start_get();
 		ftr->radio_end_us = radio_tmr_end_get() -
-				    radio_rx_chain_delay_get(0, 0);
+				    radio_rx_chain_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED);
 
 #if defined(CONFIG_BT_CTLR_PRIVACY)
 		ftr->rl_idx = irkmatch_ok ? rl_idx : FILTER_IDX_NONE;

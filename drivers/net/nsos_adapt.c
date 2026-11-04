@@ -14,20 +14,25 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <netinet/if_ether.h>
+#include <netpacket/packet.h>
 #include <poll.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 #include "nsos.h"
-#include "nsos_errno.h"
-#include "nsos_fcntl.h"
+#include "nsi_errno.h"
+#include "nsi_fcntl.h"
 #include "nsos_netdb.h"
 #include "nsos_socket.h"
 
@@ -53,7 +58,7 @@ static int nsos_adapt_nfds;
 
 int nsos_adapt_get_errno(void)
 {
-	return errno_to_nsos_mid(errno);
+	return nsi_errno_to_mid(errno);
 }
 
 static int socket_family_from_nsos_mid(int family_mid, int *family)
@@ -68,9 +73,15 @@ static int socket_family_from_nsos_mid(int family_mid, int *family)
 	case NSOS_MID_AF_INET6:
 		*family = AF_INET6;
 		break;
+	case NSOS_MID_AF_UNIX:
+		*family = AF_UNIX;
+		break;
+	case NSOS_MID_AF_PACKET:
+		*family = AF_PACKET;
+		break;
 	default:
 		nsi_print_warning("%s: socket family %d not supported\n", __func__, family_mid);
-		return -NSOS_MID_EAFNOSUPPORT;
+		return -NSI_ERRNO_MID_EAFNOSUPPORT;
 	}
 
 	return 0;
@@ -88,9 +99,15 @@ static int socket_family_to_nsos_mid(int family, int *family_mid)
 	case AF_INET6:
 		*family_mid = NSOS_MID_AF_INET6;
 		break;
+	case AF_UNIX:
+		*family_mid = NSOS_MID_AF_UNIX;
+		break;
+	case AF_PACKET:
+		*family_mid = NSOS_MID_AF_PACKET;
+		break;
 	default:
 		nsi_print_warning("%s: socket family %d not supported\n", __func__, family);
-		return -NSOS_MID_EAFNOSUPPORT;
+		return -NSI_ERRNO_MID_EAFNOSUPPORT;
 	}
 
 	return 0;
@@ -120,12 +137,18 @@ static int socket_proto_from_nsos_mid(int proto_mid, int *proto)
 	case NSOS_MID_IPPROTO_IPV6:
 		*proto = IPPROTO_IPV6;
 		break;
+	case NSOS_MID_IPPROTO_ICMPV6:
+		*proto = IPPROTO_ICMPV6;
+		break;
 	case NSOS_MID_IPPROTO_RAW:
 		*proto = IPPROTO_RAW;
 		break;
+	case NSOS_MID_IPPROTO_ETH_P_ALL:
+		*proto = htons(ETH_P_ALL);
+		break;
 	default:
 		nsi_print_warning("%s: socket protocol %d not supported\n", __func__, proto_mid);
-		return -NSOS_MID_EPROTONOSUPPORT;
+		return -NSI_ERRNO_MID_EPROTONOSUPPORT;
 	}
 
 	return 0;
@@ -155,12 +178,18 @@ static int socket_proto_to_nsos_mid(int proto, int *proto_mid)
 	case IPPROTO_IPV6:
 		*proto_mid = NSOS_MID_IPPROTO_IPV6;
 		break;
+	case IPPROTO_ICMPV6:
+		*proto_mid = NSOS_MID_IPPROTO_ICMPV6;
+		break;
 	case IPPROTO_RAW:
 		*proto_mid = NSOS_MID_IPPROTO_RAW;
 		break;
+	case ETH_P_ALL:
+		*proto_mid = htons(NSOS_MID_IPPROTO_ETH_P_ALL);
+		break;
 	default:
 		nsi_print_warning("%s: socket protocol %d not supported\n", __func__, proto);
-		return -NSOS_MID_EPROTONOSUPPORT;
+		return -NSI_ERRNO_MID_EPROTONOSUPPORT;
 	}
 
 	return 0;
@@ -180,7 +209,7 @@ static int socket_type_from_nsos_mid(int type_mid, int *type)
 		break;
 	default:
 		nsi_print_warning("%s: socket type %d not supported\n", __func__, type_mid);
-		return -NSOS_MID_ESOCKTNOSUPPORT;
+		return -NSI_ERRNO_MID_ESOCKTNOSUPPORT;
 	}
 
 	return 0;
@@ -200,7 +229,7 @@ static int socket_type_to_nsos_mid(int type, int *type_mid)
 		break;
 	default:
 		nsi_print_warning("%s: socket type %d not supported\n", __func__, type);
-		return -NSOS_MID_ESOCKTNOSUPPORT;
+		return -NSI_ERRNO_MID_ESOCKTNOSUPPORT;
 	}
 
 	return 0;
@@ -220,7 +249,7 @@ static int socket_flags_from_nsos_mid(int flags_mid)
 				 &flags, MSG_WAITALL);
 
 	if (flags_mid != 0) {
-		return -NSOS_MID_EINVAL;
+		return -NSI_ERRNO_MID_EINVAL;
 	}
 
 	return flags;
@@ -248,9 +277,9 @@ int nsos_adapt_socket(int family_mid, int type_mid, int proto_mid)
 		return ret;
 	}
 
-	ret = socket(family, type, proto);
+	ret = socket(family, type | SOCK_CLOEXEC, proto);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return ret;
@@ -296,9 +325,40 @@ static int sockaddr_from_nsos_mid(struct sockaddr **addr, socklen_t *addrlen,
 
 		return 0;
 	}
+	case NSOS_MID_AF_UNIX: {
+		const struct nsos_mid_sockaddr_un *addr_un_mid =
+			(const struct nsos_mid_sockaddr_un *)addr_mid;
+		struct sockaddr_un *addr_un = (struct sockaddr_un *)*addr;
+
+		addr_un->sun_family = AF_UNIX;
+		memcpy(addr_un->sun_path, addr_un_mid->sun_path,
+		       sizeof(addr_un->sun_path));
+
+		*addrlen = sizeof(*addr_un);
+
+		return 0;
+	}
+	case NSOS_MID_AF_PACKET: {
+		const struct nsos_mid_sockaddr_ll *addr_ll_mid =
+			(const struct nsos_mid_sockaddr_ll *)addr_mid;
+		struct sockaddr_ll *addr_ll = (struct sockaddr_ll *)*addr;
+
+		addr_ll->sll_family = AF_PACKET;
+		addr_ll->sll_protocol = addr_ll_mid->sll_protocol;
+		addr_ll->sll_ifindex = addr_ll_mid->sll_ifindex;
+		addr_ll->sll_hatype = addr_ll_mid->sll_hatype;
+		addr_ll->sll_pkttype = addr_ll_mid->sll_pkttype;
+		addr_ll->sll_halen = addr_ll_mid->sll_halen;
+		memcpy(addr_ll->sll_addr, addr_ll_mid->sll_addr,
+		       sizeof(addr_ll->sll_addr));
+
+		*addrlen = sizeof(*addr_ll);
+
+		return 0;
+	}
 	}
 
-	return -NSOS_MID_EINVAL;
+	return -NSI_ERRNO_MID_EINVAL;
 }
 
 static int sockaddr_to_nsos_mid(const struct sockaddr *addr, socklen_t addrlen,
@@ -347,11 +407,165 @@ static int sockaddr_to_nsos_mid(const struct sockaddr *addr, socklen_t addrlen,
 
 		return 0;
 	}
+	case AF_UNIX: {
+		struct nsos_mid_sockaddr_un *addr_un_mid =
+			(struct nsos_mid_sockaddr_un *)addr_mid;
+		const struct sockaddr_un *addr_un = (const struct sockaddr_un *)addr;
+
+		if (addr_un_mid) {
+			addr_un_mid->sun_family = NSOS_MID_AF_UNIX;
+			memcpy(addr_un_mid->sun_path, addr_un->sun_path,
+			       sizeof(addr_un_mid->sun_path));
+		}
+
+		if (addrlen_mid) {
+			*addrlen_mid = sizeof(*addr_un);
+		}
+
+		return 0;
+	}
+	case AF_PACKET: {
+		struct nsos_mid_sockaddr_ll *addr_ll_mid =
+			(struct nsos_mid_sockaddr_ll *)addr_mid;
+		const struct sockaddr_ll *addr_ll = (const struct sockaddr_ll *)addr;
+
+		if (addr_ll_mid) {
+			addr_ll_mid->sll_family = NSOS_MID_AF_PACKET;
+			addr_ll_mid->sll_protocol = addr_ll->sll_protocol;
+			addr_ll_mid->sll_ifindex = addr_ll->sll_ifindex;
+		}
+
+		if (addrlen_mid) {
+			*addrlen_mid = sizeof(*addr_ll);
+		}
+
+		return 0;
+	}
 	}
 
 	nsi_print_warning("%s: socket family %d not supported\n", __func__, addr->sa_family);
 
-	return -NSOS_MID_EINVAL;
+	return -NSI_ERRNO_MID_EINVAL;
+}
+
+/* Find the egress interface for a family: ask the kernel which source address
+ * it would use to reach a routable destination. connect() on a UDP socket only
+ * runs the route lookup no packet is sent.
+ */
+static unsigned int get_default_ifindex_by_family(int family)
+{
+	union {
+		struct sockaddr sa;
+		struct sockaddr_in in;
+		struct sockaddr_in6 in6;
+	} dst = {0}, src = {0};
+	struct ifaddrs *ifap;
+	socklen_t dstlen;
+	socklen_t srclen = sizeof(src);
+	unsigned int ifindex = 0;
+	int sock;
+
+	if (family == AF_INET) {
+		dst.in.sin_family = AF_INET;
+		dst.in.sin_port = htons(9);
+		dst.in.sin_addr.s_addr = htonl(0xc0000201u); /* 192.0.2.1, RFC 5737 */
+		dstlen = sizeof(dst.in);
+	} else if (family == AF_INET6) {
+		dst.in6.sin6_family = AF_INET6;
+		dst.in6.sin6_port = htons(9);
+		/* 2001:db8::1, RFC 3849 documentation prefix */
+		dst.in6.sin6_addr.s6_addr[0] = 0x20;
+		dst.in6.sin6_addr.s6_addr[1] = 0x01;
+		dst.in6.sin6_addr.s6_addr[2] = 0x0d;
+		dst.in6.sin6_addr.s6_addr[3] = 0xb8;
+		dst.in6.sin6_addr.s6_addr[15] = 0x01;
+		dstlen = sizeof(dst.in6);
+	} else {
+		return 0;
+	}
+
+	sock = socket(family, SOCK_DGRAM | SOCK_CLOEXEC, 0);
+	if (sock < 0) {
+		return 0;
+	}
+
+	if (connect(sock, &dst.sa, dstlen) < 0 || getsockname(sock, &src.sa, &srclen) < 0) {
+		close(sock);
+		return 0;
+	}
+
+	close(sock);
+
+	if (getifaddrs(&ifap) < 0) {
+		return 0;
+	}
+
+	/* Map the kernel-chosen source address back to a host interface. */
+	for (struct ifaddrs *ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+		if (ifa->ifa_addr == NULL || ifa->ifa_addr->sa_family != family) {
+			continue;
+		}
+
+		if (family == AF_INET) {
+			struct sockaddr_in *a = (struct sockaddr_in *)ifa->ifa_addr;
+
+			if (a->sin_addr.s_addr != src.in.sin_addr.s_addr) {
+				continue;
+			}
+		} else {
+			struct sockaddr_in6 *a = (struct sockaddr_in6 *)ifa->ifa_addr;
+
+			if (memcmp(&a->sin6_addr, &src.in6.sin6_addr, sizeof(a->sin6_addr)) != 0) {
+				continue;
+			}
+		}
+
+		ifindex = if_nametoindex(ifa->ifa_name);
+		break;
+	}
+
+	freeifaddrs(ifap);
+
+	return ifindex;
+}
+
+/* Pick the host interface the offloaded iface represents when none is
+ * configured: the default-route interface, preferring IPv4 when the two
+ * families' default routes point to different interfaces.
+ */
+static unsigned int nsos_adapt_auto_ifindex(void)
+{
+	unsigned int ipv4_idx = get_default_ifindex_by_family(AF_INET);
+	unsigned int ipv6_idx = get_default_ifindex_by_family(AF_INET6);
+
+	if (ipv4_idx != 0 && ipv6_idx != 0 && ipv4_idx != ipv6_idx) {
+		nsi_print_warning("IPv4 and IPv6 default routes differ; using IPv4\n");
+	}
+
+	return (ipv4_idx != 0) ? ipv4_idx : ipv6_idx;
+}
+
+/* Resolve the represented host interface index (negative mid-errno on failure).
+ * 'name' is the configured interface name; empty auto-picks the default-route
+ * interface.
+ */
+int nsos_adapt_host_ifindex(const char *name)
+{
+	unsigned int ifindex;
+
+	if (name != NULL && name[0] != '\0') {
+		errno = 0;
+		ifindex = if_nametoindex(name);
+		if (ifindex == 0) {
+			return -nsi_errno_to_mid(errno != 0 ? errno : ENODEV);
+		}
+	} else {
+		ifindex = nsos_adapt_auto_ifindex();
+		if (ifindex == 0) {
+			return -nsi_errno_to_mid(ENODEV);
+		}
+	}
+	return (int)ifindex;
 }
 
 int nsos_adapt_bind(int fd, const struct nsos_mid_sockaddr *addr_mid, size_t addrlen_mid)
@@ -368,7 +582,7 @@ int nsos_adapt_bind(int fd, const struct nsos_mid_sockaddr *addr_mid, size_t add
 
 	ret = bind(fd, addr, addrlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return ret;
@@ -388,7 +602,7 @@ int nsos_adapt_connect(int fd, const struct nsos_mid_sockaddr *addr_mid, size_t 
 
 	ret = connect(fd, addr, addrlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return ret;
@@ -400,7 +614,7 @@ int nsos_adapt_listen(int fd, int backlog)
 
 	ret = listen(fd, backlog);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return ret;
@@ -416,7 +630,7 @@ int nsos_adapt_accept(int fd, struct nsos_mid_sockaddr *addr_mid, size_t *addrle
 
 	ret = accept(fd, addr, &addrlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	err = sockaddr_to_nsos_mid(addr, addrlen, addr_mid, addrlen_mid);
@@ -428,12 +642,13 @@ int nsos_adapt_accept(int fd, struct nsos_mid_sockaddr *addr_mid, size_t *addrle
 	return ret;
 }
 
-int nsos_adapt_sendto(int fd, const void *buf, size_t len, int flags,
+int nsos_adapt_sendto(int fd, const void *buf, size_t len, int flags_mid,
 		      const struct nsos_mid_sockaddr *addr_mid, size_t addrlen_mid)
 {
 	struct sockaddr_storage addr_storage;
 	struct sockaddr *addr = (struct sockaddr *)&addr_storage;
 	socklen_t addrlen;
+	int flags;
 	int ret;
 
 	ret = sockaddr_from_nsos_mid(&addr, &addrlen, addr_mid, addrlen_mid);
@@ -441,23 +656,28 @@ int nsos_adapt_sendto(int fd, const void *buf, size_t len, int flags,
 		return ret;
 	}
 
-	ret = sendto(fd, buf, len,
-		     socket_flags_from_nsos_mid(flags) | MSG_NOSIGNAL,
+	flags = socket_flags_from_nsos_mid(flags_mid);
+	if (flags < 0) {
+		return flags;
+	}
+
+	ret = sendto(fd, buf, len, flags | MSG_NOSIGNAL,
 		     addr, addrlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return ret;
 }
 
-int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags)
+int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags_mid)
 {
 	struct sockaddr_storage addr_storage;
 	struct sockaddr *addr = (struct sockaddr *)&addr_storage;
 	struct msghdr msg;
 	struct iovec *msg_iov;
 	socklen_t addrlen;
+	int flags;
 	int ret;
 
 	ret = sockaddr_from_nsos_mid(&addr, &addrlen, msg_mid->msg_name, msg_mid->msg_namelen);
@@ -465,10 +685,14 @@ int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags)
 		return ret;
 	}
 
+	flags = socket_flags_from_nsos_mid(flags_mid);
+	if (flags < 0) {
+		return flags;
+	}
+
 	msg_iov = calloc(msg_mid->msg_iovlen, sizeof(*msg_iov));
 	if (!msg_iov) {
-		ret = -ENOMEM;
-		return ret;
+		return -NSI_ERRNO_MID_ENOMEM;
 	}
 
 	for (size_t i = 0; i < msg_mid->msg_iovlen; i++) {
@@ -484,9 +708,9 @@ int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags)
 	msg.msg_controllen = 0;
 	msg.msg_flags = 0;
 
-	ret = sendmsg(fd, &msg, socket_flags_from_nsos_mid(flags) | MSG_NOSIGNAL);
+	ret = sendmsg(fd, &msg, flags | MSG_NOSIGNAL);
 	if (ret < 0) {
-		ret = -errno_to_nsos_mid(errno);
+		ret = -nsi_errno_to_mid(errno);
 	}
 
 	free(msg_iov);
@@ -494,19 +718,25 @@ int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags)
 	return ret;
 }
 
-int nsos_adapt_recvfrom(int fd, void *buf, size_t len, int flags,
+int nsos_adapt_recvfrom(int fd, void *buf, size_t len, int flags_mid,
 			struct nsos_mid_sockaddr *addr_mid, size_t *addrlen_mid)
 {
 	struct sockaddr_storage addr_storage;
 	struct sockaddr *addr = (struct sockaddr *)&addr_storage;
 	socklen_t addrlen = sizeof(addr_storage);
+	int flags;
 	int ret;
 	int err;
 
-	ret = recvfrom(fd, buf, len, socket_flags_from_nsos_mid(flags),
+	flags = socket_flags_from_nsos_mid(flags_mid);
+	if (flags < 0) {
+		return flags;
+	}
+
+	ret = recvfrom(fd, buf, len, flags,
 		       addr, &addrlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	err = sockaddr_to_nsos_mid(addr, addrlen, addr_mid, addrlen_mid);
@@ -525,7 +755,7 @@ static int nsos_adapt_getsockopt_int(int fd, int level, int optname,
 
 	ret = getsockopt(fd, level, optname, optval, &optlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	*nsos_mid_optlen = optlen;
@@ -546,10 +776,10 @@ int nsos_adapt_getsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 
 			ret = getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &optlen);
 			if (ret < 0) {
-				return -errno_to_nsos_mid(errno);
+				return -nsi_errno_to_mid(errno);
 			}
 
-			*(int *)nsos_mid_optval = errno_to_nsos_mid(err);
+			*(int *)nsos_mid_optval = nsi_errno_to_mid(err);
 
 			return 0;
 		}
@@ -561,7 +791,7 @@ int nsos_adapt_getsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 
 			ret = getsockopt(fd, SOL_SOCKET, SO_TYPE, &type, &optlen);
 			if (ret < 0) {
-				return -errno_to_nsos_mid(errno);
+				return -nsi_errno_to_mid(errno);
 			}
 
 			err = socket_type_to_nsos_mid(type, nsos_mid_optval);
@@ -579,7 +809,7 @@ int nsos_adapt_getsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 
 			ret = getsockopt(fd, SOL_SOCKET, SO_PROTOCOL, &proto, &optlen);
 			if (ret < 0) {
-				return -errno_to_nsos_mid(errno);
+				return -nsi_errno_to_mid(errno);
 			}
 
 			err = socket_proto_to_nsos_mid(proto, nsos_mid_optval);
@@ -597,7 +827,7 @@ int nsos_adapt_getsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 
 			ret = getsockopt(fd, SOL_SOCKET, SO_DOMAIN, &family, &optlen);
 			if (ret < 0) {
-				return -errno_to_nsos_mid(errno);
+				return -nsi_errno_to_mid(errno);
 			}
 
 			err = socket_family_to_nsos_mid(family, nsos_mid_optval);
@@ -654,20 +884,62 @@ int nsos_adapt_getsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 		break;
 	}
 
-	return -NSOS_MID_EOPNOTSUPP;
+	return -NSI_ERRNO_MID_EOPNOTSUPP;
 }
 
-static int nsos_adapt_setsockopt_int(int fd, int level, int optname,
-				     const void *optval, size_t optlen)
+static int nsos_adapt_setsockopt_raw(int fd, int level, int optname, const void *optval,
+				     size_t optlen)
 {
 	int ret;
 
 	ret = setsockopt(fd, level, optname, optval, optlen);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return 0;
+}
+
+static int nsos_adapt_setsockopt_int(int fd, int level, int optname, const void *optval,
+				     size_t optlen)
+{
+	if (optlen != sizeof(int)) {
+		return -NSI_ERRNO_MID_EINVAL;
+	}
+
+	return nsos_adapt_setsockopt_raw(fd, level, optname, optval, optlen);
+}
+
+static int nsos_adapt_setsockopt_ip_mreqn(int fd, int optname, const void *optval, size_t optlen)
+{
+	const struct nsos_mid_ip_mreqn *mid = optval;
+	struct ip_mreqn mreqn = {0};
+
+	if (optlen != sizeof(*mid)) {
+		return -NSI_ERRNO_MID_EINVAL;
+	}
+
+	memcpy(&mreqn.imr_multiaddr, mid->imr_multiaddr, sizeof(mreqn.imr_multiaddr));
+	memcpy(&mreqn.imr_address, mid->imr_address, sizeof(mreqn.imr_address));
+	mreqn.imr_ifindex = mid->imr_ifindex;
+
+	return nsos_adapt_setsockopt_raw(fd, IPPROTO_IP, optname, &mreqn, sizeof(mreqn));
+}
+
+static int nsos_adapt_setsockopt_ipv6_mreq(int fd, const void *optval, size_t optlen)
+{
+	const struct nsos_mid_ipv6_mreq *mid = optval;
+	struct ipv6_mreq mreq = {0};
+
+	if (optlen != sizeof(*mid)) {
+		return -NSI_ERRNO_MID_EINVAL;
+	}
+
+	memcpy(&mreq.ipv6mr_multiaddr, mid->ipv6mr_multiaddr, sizeof(mreq.ipv6mr_multiaddr));
+	mreq.ipv6mr_interface = mid->ipv6mr_ifindex;
+
+	return nsos_adapt_setsockopt_raw(fd, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP, &mreq,
+					 sizeof(mreq));
 }
 
 int nsos_adapt_setsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
@@ -691,7 +963,7 @@ int nsos_adapt_setsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 			ret = setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
 					 &tv, sizeof(tv));
 			if (ret < 0) {
-				return -errno_to_nsos_mid(errno);
+				return -nsi_errno_to_mid(errno);
 			}
 
 			return 0;
@@ -707,7 +979,7 @@ int nsos_adapt_setsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 			ret = setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO,
 					 &tv, sizeof(tv));
 			if (ret < 0) {
-				return -errno_to_nsos_mid(errno);
+				return -nsi_errno_to_mid(errno);
 			}
 
 			return 0;
@@ -750,8 +1022,37 @@ int nsos_adapt_setsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 		}
 		break;
 
+	case NSOS_MID_IPPROTO_IP:
+		switch (nsos_mid_optname) {
+		case NSOS_MID_IP_MULTICAST_TTL:
+			return nsos_adapt_setsockopt_int(fd, IPPROTO_IP, IP_MULTICAST_TTL,
+							 nsos_mid_optval, nsos_mid_optlen);
+		case NSOS_MID_IP_MULTICAST_LOOP:
+			return nsos_adapt_setsockopt_int(fd, IPPROTO_IP, IP_MULTICAST_LOOP,
+							 nsos_mid_optval, nsos_mid_optlen);
+		case NSOS_MID_IP_ADD_MEMBERSHIP:
+			return nsos_adapt_setsockopt_ip_mreqn(fd, IP_ADD_MEMBERSHIP,
+							      nsos_mid_optval, nsos_mid_optlen);
+		case NSOS_MID_IP_MULTICAST_IF:
+			return nsos_adapt_setsockopt_ip_mreqn(fd, IP_MULTICAST_IF, nsos_mid_optval,
+							      nsos_mid_optlen);
+		}
+		break;
+
 	case NSOS_MID_IPPROTO_IPV6:
 		switch (nsos_mid_optname) {
+		case NSOS_MID_IPV6_MULTICAST_HOPS:
+			return nsos_adapt_setsockopt_int(fd, IPPROTO_IPV6, IPV6_MULTICAST_HOPS,
+							 nsos_mid_optval, nsos_mid_optlen);
+		case NSOS_MID_IPV6_MULTICAST_LOOP:
+			return nsos_adapt_setsockopt_int(fd, IPPROTO_IPV6, IPV6_MULTICAST_LOOP,
+							 nsos_mid_optval, nsos_mid_optlen);
+		case NSOS_MID_IPV6_ADD_MEMBERSHIP:
+			return nsos_adapt_setsockopt_ipv6_mreq(fd, nsos_mid_optval,
+							       nsos_mid_optlen);
+		case NSOS_MID_IPV6_MULTICAST_IF:
+			return nsos_adapt_setsockopt_int(fd, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+							 nsos_mid_optval, nsos_mid_optlen);
 		case NSOS_MID_IPV6_V6ONLY:
 			return nsos_adapt_setsockopt_int(fd, IPPROTO_IPV6, IPV6_V6ONLY,
 							 nsos_mid_optval, nsos_mid_optlen);
@@ -759,7 +1060,37 @@ int nsos_adapt_setsockopt(int fd, int nsos_mid_level, int nsos_mid_optname,
 		break;
 	}
 
-	return -NSOS_MID_EOPNOTSUPP;
+	return -NSI_ERRNO_MID_EOPNOTSUPP;
+}
+
+int nsos_adapt_getpeername(int fd, struct nsos_mid_sockaddr *addr_mid, size_t *addrlen_mid)
+{
+	struct sockaddr_storage addr_storage;
+	struct sockaddr *addr = (struct sockaddr *)&addr_storage;
+	socklen_t addrlen = sizeof(addr_storage);
+	int ret;
+
+	ret = getpeername(fd, addr, &addrlen);
+	if (ret < 0) {
+		return -nsi_errno_to_mid(errno);
+	}
+
+	return sockaddr_to_nsos_mid(addr, addrlen, addr_mid, addrlen_mid);
+}
+
+int nsos_adapt_getsockname(int fd, struct nsos_mid_sockaddr *addr_mid, size_t *addrlen_mid)
+{
+	struct sockaddr_storage addr_storage;
+	struct sockaddr *addr = (struct sockaddr *)&addr_storage;
+	socklen_t addrlen = sizeof(addr_storage);
+	int ret;
+
+	ret = getsockname(fd, addr, &addrlen);
+	if (ret < 0) {
+		return -nsi_errno_to_mid(errno);
+	}
+
+	return sockaddr_to_nsos_mid(addr, addrlen, addr_mid, addrlen_mid);
 }
 
 #define MAP_POLL_EPOLL(_event_from, _event_to)	\
@@ -872,7 +1203,7 @@ static int addrinfo_to_nsos_mid(struct addrinfo *res,
 
 	nsos_res_wraps = calloc(n_res, sizeof(*nsos_res_wraps));
 	if (!nsos_res_wraps) {
-		return -NSOS_MID_ENOMEM;
+		return -NSI_ERRNO_MID_ENOMEM;
 	}
 
 	for (struct addrinfo *res_p = res; res_p; res_p = res_p->ai_next, idx_res++) {
@@ -880,7 +1211,11 @@ static int addrinfo_to_nsos_mid(struct addrinfo *res,
 
 		wrap->addrinfo = res_p;
 
-		wrap->addrinfo_mid.ai_flags = res_p->ai_flags;
+		ret = addrinfo_flags_to_nsos_mid(res_p->ai_flags,
+						 &wrap->addrinfo_mid.ai_flags);
+		if (ret < 0) {
+			goto free_wraps;
+		}
 
 		ret = socket_family_to_nsos_mid(res_p->ai_family, &wrap->addrinfo_mid.ai_family);
 		if (ret < 0) {
@@ -941,7 +1276,11 @@ int nsos_adapt_getaddrinfo(const char *node, const char *service,
 	int ret;
 
 	if (hints_mid) {
-		hints.ai_flags = hints_mid->ai_flags;
+		ret = addrinfo_flags_from_nsos_mid(hints_mid->ai_flags,
+						   &hints.ai_flags);
+		if (ret < 0) {
+			return NSOS_MID_EAI_BADFLAGS;
+		}
 
 		ret = socket_family_from_nsos_mid(hints_mid->ai_family, &hints.ai_family);
 		if (ret < 0) {
@@ -965,8 +1304,8 @@ int nsos_adapt_getaddrinfo(const char *node, const char *service,
 	ret = getaddrinfo(node, service,
 			  hints_mid ? &hints : NULL,
 			  &res);
-	if (ret < 0) {
-		return ret;
+	if (ret != 0) {
+		return eai_to_nsos_mid(ret);
 	}
 
 	ret = addrinfo_to_nsos_mid(res, res_mid);
@@ -991,22 +1330,103 @@ void nsos_adapt_freeaddrinfo(struct nsos_mid_addrinfo *res_mid)
 	free(wrap);
 }
 
+/* Counts set bits, assuming the host netmask is contiguous (always true for a
+ * real interface netmask).
+ */
+static uint8_t netmask_to_prefix(const uint8_t *mask, size_t len)
+{
+	uint8_t prefix = 0;
+
+	for (size_t i = 0; i < len; i++) {
+		prefix += __builtin_popcount(mask[i]);
+	}
+
+	return prefix;
+}
+
+int nsos_adapt_get_ifaddrs(int ifindex, struct nsos_mid_ifaddr *addrs, size_t *count)
+{
+	struct ifaddrs *ifap;
+	size_t capacity = *count;
+	size_t stored = 0;
+	size_t total = 0;
+
+	if (ifindex <= 0) {
+		*count = 0;
+		return -NSI_ERRNO_MID_EINVAL;
+	}
+
+	if (getifaddrs(&ifap) < 0) {
+		return -nsi_errno_to_mid(errno);
+	}
+
+	/* Mirror only the represented host interface, and only up to capacity so
+	 * the caller can detect and report truncation.
+	 */
+	for (struct ifaddrs *ifa = ifap; ifa != NULL; ifa = ifa->ifa_next) {
+		struct nsos_mid_ifaddr entry;
+
+		if (ifa->ifa_addr == NULL) {
+			continue;
+		}
+
+		if (if_nametoindex(ifa->ifa_name) != (unsigned int)ifindex ||
+		    !(ifa->ifa_flags & IFF_UP)) {
+			continue;
+		}
+
+		if (ifa->ifa_addr->sa_family == AF_INET) {
+			struct sockaddr_in *addr = (struct sockaddr_in *)ifa->ifa_addr;
+			struct sockaddr_in *nm = (struct sockaddr_in *)ifa->ifa_netmask;
+
+			entry.family = NSOS_MID_AF_INET;
+			memcpy(entry.addr, &addr->sin_addr, 4);
+			entry.prefix_len = nm ? netmask_to_prefix((uint8_t *)&nm->sin_addr, 4) : 32;
+		} else if (ifa->ifa_addr->sa_family == AF_INET6) {
+			struct sockaddr_in6 *addr = (struct sockaddr_in6 *)ifa->ifa_addr;
+			struct sockaddr_in6 *nm = (struct sockaddr_in6 *)ifa->ifa_netmask;
+
+			/* Link-local addresses need a scope the Zephyr stack cannot map. */
+			if (IN6_IS_ADDR_LINKLOCAL(&addr->sin6_addr)) {
+				continue;
+			}
+
+			entry.family = NSOS_MID_AF_INET6;
+			memcpy(entry.addr, &addr->sin6_addr, 16);
+			entry.prefix_len = nm ? netmask_to_prefix(nm->sin6_addr.s6_addr, 16) : 128;
+		} else {
+			continue;
+		}
+
+		total++;
+
+		if (stored < capacity) {
+			addrs[stored++] = entry;
+		}
+	}
+
+	freeifaddrs(ifap);
+	*count = total;
+
+	return 0;
+}
+
 int nsos_adapt_fcntl_getfl(int fd)
 {
 	int flags;
 
 	flags = fcntl(fd, F_GETFL);
 
-	return fl_to_nsos_mid(flags);
+	return nsi_fcntl_to_mid(flags);
 }
 
 int nsos_adapt_fcntl_setfl(int fd, int flags)
 {
 	int ret;
 
-	ret = fcntl(fd, F_SETFL, fl_from_nsos_mid(flags));
+	ret = fcntl(fd, F_SETFL, nsi_fcntl_from_mid(flags));
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return 0;
@@ -1018,7 +1438,7 @@ int nsos_adapt_fionread(int fd, int *avail)
 
 	ret = ioctl(fd, FIONREAD, avail);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return 0;
@@ -1030,7 +1450,7 @@ int nsos_adapt_dup(int oldfd)
 
 	ret = dup(oldfd);
 	if (ret < 0) {
-		return -errno_to_nsos_mid(errno);
+		return -nsi_errno_to_mid(errno);
 	}
 
 	return ret;

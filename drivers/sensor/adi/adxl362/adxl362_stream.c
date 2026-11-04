@@ -6,14 +6,16 @@
 
 #include <zephyr/logging/log.h>
 #include <zephyr/drivers/sensor.h>
-
+#include <zephyr/drivers/sensor_clock.h>
 #include "adxl362.h"
 
 LOG_MODULE_DECLARE(ADXL362, CONFIG_SENSOR_LOG_LEVEL);
 
-static void adxl362_irq_en_cb(struct rtio *r, const struct rtio_sqe *sqr, void *arg)
+static void adxl362_irq_en_cb(struct rtio *r, const struct rtio_sqe *sqe, int result, void *arg)
 {
-	const struct device *dev = (const struct device *)arg;
+	ARG_UNUSED(result);
+
+	const struct device *dev = arg;
 	const struct adxl362_config *cfg = dev->config;
 
 	gpio_pin_interrupt_configure_dt(&cfg->interrupt, GPIO_INT_EDGE_TO_ACTIVE);
@@ -107,7 +109,8 @@ void adxl362_submit_stream(const struct device *dev, struct rtio_iodev_sqe *iode
 		}
 
 		if (fifo_mode == ADXL362_FIFO_DISABLE) {
-			fifo_mode = ADXL362_FIFO_STREAM;
+			LOG_ERR("ERROR: FIFO DISABLED");
+			return;
 		}
 
 		if (en_temp_read == 0) {
@@ -133,9 +136,12 @@ void adxl362_submit_stream(const struct device *dev, struct rtio_iodev_sqe *iode
 	data->sqe = iodev_sqe;
 }
 
-static void adxl362_fifo_read_cb(struct rtio *rtio_ctx, const struct rtio_sqe *sqe, void *arg)
+static void adxl362_fifo_read_cb(struct rtio *rtio_ctx, const struct rtio_sqe *sqe,
+				 int result, void *arg)
 {
-	const struct device *dev = (const struct device *)arg;
+	ARG_UNUSED(result);
+
+	const struct device *dev = arg;
 	const struct adxl362_config *cfg = (const struct adxl362_config *)dev->config;
 	struct rtio_iodev_sqe *iodev_sqe = sqe->userdata;
 
@@ -144,9 +150,12 @@ static void adxl362_fifo_read_cb(struct rtio *rtio_ctx, const struct rtio_sqe *s
 	gpio_pin_interrupt_configure_dt(&cfg->interrupt, GPIO_INT_EDGE_TO_ACTIVE);
 }
 
-static void adxl362_process_fifo_samples_cb(struct rtio *r, const struct rtio_sqe *sqr, void *arg)
+static void adxl362_process_fifo_samples_cb(struct rtio *r, const struct rtio_sqe *sqe,
+					    int result, void *arg)
 {
-	const struct device *dev = (const struct device *)arg;
+	ARG_UNUSED(result);
+
+	const struct device *dev = arg;
 	struct adxl362_data *data = (struct adxl362_data *)dev->data;
 	const struct adxl362_config *cfg = (const struct adxl362_config *)dev->config;
 	struct rtio_iodev_sqe *current_sqe = data->sqe;
@@ -190,6 +199,7 @@ static void adxl362_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 	hdr->timestamp = data->timestamp;
 	hdr->int_status = data->status;
 	hdr->selected_range = data->selected_range;
+	hdr->accel_odr = data->accel_odr;
 	hdr->has_tmp = data->en_temp_read;
 
 	uint32_t buf_avail = buf_len;
@@ -246,9 +256,12 @@ static void adxl362_process_fifo_samples_cb(struct rtio *r, const struct rtio_sq
 	rtio_submit(data->rtio_ctx, 0);
 }
 
-static void adxl362_process_status_cb(struct rtio *r, const struct rtio_sqe *sqr, void *arg)
+static void adxl362_process_status_cb(struct rtio *r, const struct rtio_sqe *sqe,
+				      int result, void *arg)
 {
-	const struct device *dev = (const struct device *)arg;
+	ARG_UNUSED(result);
+
+	const struct device *dev = arg;
 	struct adxl362_data *data = (struct adxl362_data *) dev->data;
 	const struct adxl362_config *cfg = (const struct adxl362_config *) dev->config;
 	struct rtio_iodev_sqe *current_sqe = data->sqe;
@@ -256,6 +269,7 @@ static void adxl362_process_status_cb(struct rtio *r, const struct rtio_sqe *sqr
 	uint8_t status = data->status;
 
 	if (data->sqe == NULL) {
+		data->fifo_wmark_irq = false;
 		return;
 	}
 
@@ -375,8 +389,7 @@ static void adxl362_process_status_cb(struct rtio *r, const struct rtio_sqe *sqr
 	rtio_sqe_prep_read(read_fifo_data, data->iodev, RTIO_PRIO_NORM, data->fifo_ent, 2,
 						current_sqe);
 	read_fifo_data->flags = RTIO_SQE_CHAINED;
-	rtio_sqe_prep_callback(complete_op, adxl362_process_fifo_samples_cb, (void *)dev,
-							current_sqe);
+	rtio_sqe_prep_callback(complete_op, adxl362_process_fifo_samples_cb, (void *)dev, NULL);
 
 	rtio_submit(data->rtio_ctx, 0);
 }
@@ -384,12 +397,22 @@ static void adxl362_process_status_cb(struct rtio *r, const struct rtio_sqe *sqr
 void adxl362_stream_irq_handler(const struct device *dev)
 {
 	struct adxl362_data *data = (struct adxl362_data *) dev->data;
+	uint64_t cycles;
+	int rc;
 
 	if (data->sqe == NULL) {
+		data->fifo_wmark_irq = false;
 		return;
 	}
 
-	data->timestamp = k_ticks_to_ns_floor64(k_uptime_ticks());
+	rc = sensor_clock_get_cycles(&cycles);
+	if (rc != 0) {
+		LOG_ERR("Failed to get sensor clock cycles");
+		rtio_iodev_sqe_err(data->sqe, rc);
+		return;
+	}
+
+	data->timestamp = sensor_clock_cycles_to_ns(cycles);
 
 	struct rtio_sqe *write_status_addr = rtio_sqe_acquire(data->rtio_ctx);
 	struct rtio_sqe *read_status_reg = rtio_sqe_acquire(data->rtio_ctx);

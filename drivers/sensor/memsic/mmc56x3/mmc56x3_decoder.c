@@ -55,6 +55,7 @@ static int mmc56x3_decoder_get_size_info(struct sensor_chan_spec chan_spec, size
 	case SENSOR_CHAN_MAGN_Z:
 		*base_size = sizeof(struct sensor_q31_sample_data);
 		*frame_size = sizeof(struct sensor_q31_sample_data);
+		return 0;
 	case SENSOR_CHAN_MAGN_XYZ:
 		*base_size = sizeof(struct sensor_three_axis_data);
 		*frame_size = sizeof(struct sensor_three_axis_sample_data);
@@ -99,6 +100,7 @@ static int mmc56x3_decoder_decode(const uint8_t *buffer, struct sensor_chan_spec
 		} else {
 			return -ENODATA;
 		}
+		break;
 	case SENSOR_CHAN_MAGN_Y:
 		if (edata->has_magn_y) {
 			struct sensor_q31_data *out = data_out;
@@ -110,6 +112,7 @@ static int mmc56x3_decoder_decode(const uint8_t *buffer, struct sensor_chan_spec
 		} else {
 			return -ENODATA;
 		}
+		break;
 	case SENSOR_CHAN_MAGN_Z:
 		if (edata->has_magn_z) {
 			struct sensor_q31_data *out = data_out;
@@ -121,6 +124,7 @@ static int mmc56x3_decoder_decode(const uint8_t *buffer, struct sensor_chan_spec
 		} else {
 			return -ENODATA;
 		}
+		break;
 	case SENSOR_CHAN_MAGN_XYZ: {
 		if (edata->has_magn_x && edata->has_magn_y && edata->has_magn_z) {
 			struct sensor_three_axis_data *out_3 = data_out;

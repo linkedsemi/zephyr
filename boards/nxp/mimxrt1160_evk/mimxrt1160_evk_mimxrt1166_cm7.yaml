@@ -5,25 +5,27 @@
 #
 
 identifier: mimxrt1160_evk/mimxrt1166/cm7
-name: NXP MIMXRT1160-EVK CM7
+name: NXP MIMXRT1160-EVK (CM7)
 type: mcu
 arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 256
 flash: 16384
 supported:
-  - counter
   - can
+  - counter
   - dma
+  - flash
   - gpio
   - hwinfo
   - i2c
   - netif:eth
+  - ptp_clock
   - pwm
   - spi
   - usb_device
+  - usbd
   - watchdog
 vendor: nxp

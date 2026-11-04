@@ -22,6 +22,16 @@ config HTTP_PARSER_STRICT
 	help
 	  This option enables the strict parsing option
 
+config HTTP_PARSER_MAX_HEADER_SIZE
+	int "HTTP maximum header size allowed"
+	default 81920
+	range 32 $(UINT32_MAX)
+	depends on HTTP_PARSER
+	help
+	  This option configures the HTTP maximum header size allowed.
+	  To remove the effective limit on the size of the header, configure this option to a very
+	  large number.
+
 config HTTP_CLIENT
 	bool "HTTP client API"
 	select HTTP_PARSER
@@ -29,43 +39,125 @@ config HTTP_CLIENT
 	help
 	  HTTP client API
 
-config HTTP_SERVER
+config HTTP_CLIENT_SEND_BUF_SIZE
+	int "HTTP client request send buffer size"
+	depends on HTTP_CLIENT
+	default 192
+	range 64 4096
+	help
+	  Size of the temporary stack buffer used by the HTTP client while
+	  constructing and sending request headers. Larger values can reduce
+	  socket send calls at the cost of additional stack usage.
+
+menuconfig HTTP_SERVER
 	bool "HTTP Server [EXPERIMENTAL]"
 	select HTTP_PARSER
 	select HTTP_PARSER_URL
 	select EXPERIMENTAL
+	select NET_SOCKETS
+	select ZVFS
+	select ZVFS_EVENTFD
 	imply NET_IPV4_MAPPING_TO_IPV6 if NET_IPV4 && NET_IPV6
 	help
-	  HTTP1 and HTTP2 server support.
+	  HTTP1, HTTP2 and HTTP3 server support.
 
 if HTTP_SERVER
 
+config ZVFS_EVENTFD_ADD_SIZE_HTTP_SERVER
+	int "Number of eventfds needed by the HTTP server"
+	default 1
+	help
+	  The HTTP server allocates one permanent zvfs eventfd to wake up its
+	  poll loop.
+
+config HTTP_SERVER_VERSION_1
+	bool "HTTP/1.x support"
+	select NET_TCP if NET_NATIVE
+	default y
+	help
+	  Support HTTP 1.x version.
+
+config HTTP_SERVER_VERSION_2
+	bool "HTTP/2 support"
+	select NET_TCP if NET_NATIVE
+	default y
+	help
+	  Support HTTP/2 version.
+
+config HTTP_SERVER_VERSION_3
+	bool "HTTP/3 support"
+	depends on QUIC
+	select NET_SOCKETS_SOCKOPT_TLS
+	default y
+	help
+	  Support HTTP/3 version. This depends on QUIC transport protocol support.
+
+config HTTP_SERVER_VERSION
+	int
+	default 123 if HTTP_SERVER_VERSION_1 && HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_3
+	default 23 if !HTTP_SERVER_VERSION_1 && HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_3
+	default 13 if HTTP_SERVER_VERSION_1 && !HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_3
+	default 12 if HTTP_SERVER_VERSION_1 && HTTP_SERVER_VERSION_2 && !HTTP_SERVER_VERSION_3
+	default 3 if !HTTP_SERVER_VERSION_1 && !HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_3
+	default 2 if !HTTP_SERVER_VERSION_1 && HTTP_SERVER_VERSION_2 && !HTTP_SERVER_VERSION_3
+	default 1 if HTTP_SERVER_VERSION_1 && !HTTP_SERVER_VERSION_2 && !HTTP_SERVER_VERSION_3
+	default 0
+	help
+	  What HTTP version is supported in HTTP server.
+
+config HTTP_SERVER_TO_H3_UPGRADE
+	bool "Advertise HTTP/3 upgrade by default"
+	depends on HTTP_SERVER_VERSION_3
+	default y
+	help
+	  If enabled, then services that support HTTP/3 send
+	      Alt-Svc: h3=":443"; ma=86400
+	  in HTTP/1 header so that the client can know it can connect using HTTP/3.
+	  Individual services can override this default in http_service_config.
+
+config HTTP_SERVER_TO_H3_UPGRADE_MAX_AGE_SECS
+	int "What is the max age of the HTTP/3 upgrade (in secs)"
+	depends on HTTP_SERVER_TO_H3_UPGRADE
+	default 86400
+	help
+	  Default is 1 day (86400 seconds)
+
 config HTTP_SERVER_STACK_SIZE
 	int "HTTP server thread stack size"
+	default 4096 if FILE_SYSTEM
 	default 3072
 	help
 	  HTTP server thread stack size for processing RX/TX events.
 
 config HTTP_SERVER_NUM_SERVICES
 	int "Number of HTTP Server Instances"
+	default QUIC_MAX_CONTEXTS if HTTP_SERVER_VERSION_3 && !HTTP_SERVER_VERSION_2 && \
+		!HTTP_SERVER_VERSION_1
+	default 3 if HTTP_SERVER_VERSION_3 && HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_1
+	default 2 if HTTP_SERVER_VERSION_3 && HTTP_SERVER_VERSION_2 && !HTTP_SERVER_VERSION_1
+	default 2 if HTTP_SERVER_VERSION_3 && !HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_1
+	default 2 if !HTTP_SERVER_VERSION_3 && HTTP_SERVER_VERSION_2 && HTTP_SERVER_VERSION_1
 	default 1
 	range 1 100
 	help
 	  This setting determines the number of http services that the server supports.
 
 config HTTP_SERVER_MAX_CLIENTS
-	int "Max number of HTTP/2 clients"
+	int "Max number of HTTP/2/3 clients"
+	default QUIC_MAX_ENDPOINTS if HTTP_SERVER_VERSION_3
 	default 3
 	range 1 100
 	help
-	  This setting determines the maximum number of HTTP/2 clients that the server can handle at once.
+	  This setting determines the maximum number of HTTP/2 or HTTP/3 clients that
+	  the server can handle at once.
 
 config HTTP_SERVER_MAX_STREAMS
 	int "Max number of HTTP/2 streams"
 	default 10
 	range 1 100
 	help
-	  This setting determines the maximum number of HTTP/2 streams for each client.
+	  This setting determines the maximum number of HTTP/2 streams
+	  for each client.
 
 config HTTP_SERVER_CLIENT_BUFFER_SIZE
 	int "Client Buffer Size"
@@ -123,6 +215,9 @@ config HTTP_SERVER_CAPTURE_HEADERS
 	help
 	  This setting enables the HTTP server to capture selected headers that have
 	  been registered by the application.
+	  Captured headers are delivered to the dynamic resource callback only in
+	  the first callback for a given request, and are not available in any
+	  subsequent callback.
 
 config HTTP_SERVER_CAPTURE_HEADER_BUFFER_SIZE
 	int "Size of buffer for capturing HTTP headers for application use"
@@ -144,6 +239,7 @@ config HTTP_SERVER_CAPTURE_HEADER_COUNT
 
 config HTTP_SERVER_CLIENT_INACTIVITY_TIMEOUT
 	int "Client inactivity timeout (seconds)"
+	default 5 if HTTP_SERVER_VERSION_3
 	default 10
 	range 1 86400
 	help
@@ -153,6 +249,7 @@ config HTTP_SERVER_CLIENT_INACTIVITY_TIMEOUT
 
 config HTTP_SERVER_WEBSOCKET
 	bool "Allow upgrading to Websocket connection"
+	select PSA_WANT_ALG_SHA_1
 	select WEBSOCKET_CLIENT
 	select WEBSOCKET
 	help
@@ -163,7 +260,8 @@ config HTTP_SERVER_WEBSOCKET
 
 config HTTP_SERVER_RESOURCE_WILDCARD
 	bool "Allow wildcard matching of resources"
-	select FNMATCH
+	# The POSIX_C_LIB_EXT will get fnmatch() support
+	select POSIX_C_LIB_EXT
 	help
 	  Allow user to specify wildcards when setting up resource strings.
 	  This means that instead of specifying multiple resources with exact
@@ -175,9 +273,26 @@ config HTTP_SERVER_RESTART_DELAY
 	range 1 60000
 	help
 	  In case server restarts for any reason, the server re-initialization
-	  will be delayed by this value (miliseconds). The delay is needed to
+	  will be delayed by this value (milliseconds). The delay is needed to
 	  allow any existing connections to finalize to avoid binding errors
 	  during initialization.
+
+config HTTP_SERVER_TLS_USE_ALPN
+	bool "ALPN support for HTTPS server"
+	depends on NET_SOCKETS_SOCKOPT_TLS
+#	depends on MBEDTLS_SSL_ALPN
+	default y if HTTP_SERVER_VERSION_3
+	help
+	  Use ALPN (application layer protocol negotiation) to negotiate HTTP2/3
+	  protocol for TLS connections. Web browsers use this mechanism to determine
+	  whether HTTP2 or HTTP3 is supported.
+
+config HTTP_SERVER_REPORT_FAILURE_REASON
+	bool "Report failure reason in HTTP 500 Internal Server Error reply"
+	help
+	  If enabled, the server will include the failure reason within
+	  HTTP 500 Internal Server Error response. Otherwise, no information
+	  is provided within the message.
 
 config WEBSOCKET_CONSOLE
 	bool
@@ -185,6 +300,41 @@ config WEBSOCKET_CONSOLE
 	help
 	  Hidden option that is enabled only when all the necessary options
 	  needed by websocket console are set.
+
+config HTTP_SERVER_COMPRESSION
+	bool "Compression support in HTTP fileserver"
+	help
+	  If enabled, the fileserver will parse the accept-encoding header
+	  from the client and extract the supported compression methods.
+	  Afterwards it will try to serve the first compressed file available
+	  by using the file ending as compression indicator in this order:
+	    1. brotli   -> .br
+	    2. gzip     -> .gz
+	    3. zstd     -> .zst
+	    4. compress -> .lzw
+	    5. deflate  -> .zz
+	    6. File without compression
+
+config HTTP_SERVER_STATIC_FS_RESPONSE_SIZE
+	int "Size of static file system response buffer"
+	depends on FILE_SYSTEM
+	default 1024
+	help
+	  The size of a single chunk when serving static files from the file system.
+	  This config value must be large enough to hold the headers in a single chunk.
+	  If set to 0, the server will use the minimal viable buffer size for the response.
+	  Please note that it is allocated on the stack of the HTTP server thread,
+	  so CONFIG_HTTP_SERVER_STACK_SIZE has to be sufficiently large.
+
+config HTTP_SERVER_COMPLETE_STATUS_PHRASES
+	bool "Complete HTTP status reason phrases"
+	help
+	  Include reason phrases for HTTP status codes in server responses.
+	  When disabled, HTTP responses will not include reason phrases,
+	  reducing code size. Note that reason phrases are optional per
+	  HTTP specification and their absence does not affect protocol
+	  compliance or client behavior.
+
 endif
 
 # Hidden option to avoid having multiple individual options that are ORed together

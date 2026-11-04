@@ -18,37 +18,13 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(bt_bsim_privacy, LOG_LEVEL_INF);
 
-#include "bs_types.h"
-#include "bs_tracing.h"
-#include "bstests.h"
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
 #include "bs_cmd_line.h"
 
-#define CREATE_FLAG(flag) static atomic_t flag = (atomic_t) false
-#define SET_FLAG(flag)	  (void)atomic_set(&flag, (atomic_t) true)
-#define GET_FLAG(flag)	  (bool)atomic_get(&flag)
-#define UNSET_FLAG(flag)  (void)atomic_set(&flag, (atomic_t) false)
-#define WAIT_FOR_FLAG(flag)                                                                        \
-	while (!(bool)atomic_get(&flag)) {                                                         \
-		(void)k_sleep(K_MSEC(1));                                                          \
-	}
-
-#define FAIL(...)                                                                                  \
-	do {                                                                                       \
-		bst_result = Failed;                                                               \
-		bs_trace_error_time_line(__VA_ARGS__);                                             \
-	} while (0)
-
-#define PASS(...)                                                                                  \
-	do {                                                                                       \
-		bst_result = Passed;                                                               \
-		bs_trace_info_time(1, __VA_ARGS__);                                                \
-	} while (0)
-
-extern enum bst_result_t bst_result;
-
-CREATE_FLAG(paired);
-CREATE_FLAG(rpa_tested);
-CREATE_FLAG(identity_tested);
+DEFINE_FLAG_STATIC(paired);
+DEFINE_FLAG_STATIC(rpa_tested);
+DEFINE_FLAG_STATIC(identity_tested);
 
 static void start_scan(void);
 
@@ -135,32 +111,29 @@ static void check_addresses(const bt_addr_le_t *peer_addr)
 		SET_FLAG(identity_tested);
 		addr_equal = bt_addr_le_eq(&peer_identity, peer_addr);
 		if (!addr_equal) {
-			FAIL("The peer address is not the same as the peer previously paired.\n");
+			TEST_FAIL(
+				"The peer address is not the same as the peer previously paired.");
 		}
 	} else if (test_addr_type == RPA) {
 		SET_FLAG(rpa_tested);
 		addr_equal = bt_addr_le_eq(&peer_identity, peer_addr);
 		if (!addr_equal) {
-			FAIL("The resolved address is not the same as the peer previously "
-			     "paired.\n");
+			TEST_FAIL("The resolved address is not the same as the peer previously "
+				  "paired.");
 		}
 	}
 }
 
-
-
 static void scan_recv(const struct bt_le_scan_recv_info *info,
 		      struct net_buf_simple *ad)
 {
-	char addr_str[BT_ADDR_LE_STR_LEN];
 	int err;
 
 	if (default_conn) {
 		return;
 	}
 
-	bt_addr_le_to_str(info->addr, addr_str, sizeof(addr_str));
-	LOG_INF("Device found: %s (RSSI %d)", addr_str, info->rssi);
+	LOG_INF("Device found: %s (RSSI %d)", bt_addr_le_str(info->addr), info->rssi);
 
 	/* In the case of extended advertising and active scanning, this
 	 * callback will be called twice: once for the AUX_ADV_IND and
@@ -174,30 +147,30 @@ static void scan_recv(const struct bt_le_scan_recv_info *info,
 	 * the address resolving keys, then this check should only apply after
 	 * the pairing is done.
 	 */
-	if (GET_FLAG(paired) &&
+	if (IS_FLAG_SET(paired) &&
 	    info->adv_props == (BT_GAP_ADV_PROP_EXT_ADV | BT_GAP_ADV_PROP_SCANNABLE)) {
 		LOG_DBG("skipping AUX_ADV_IND report, waiting for AUX_SCAN_REQ "
 			"(props: 0x%x)", info->adv_props);
 		return;
 	}
 
-	if (GET_FLAG(paired)) {
+	if (IS_FLAG_SET(paired)) {
 		check_addresses(info->addr);
 	}
 
-	if (connection_test || !GET_FLAG(paired)) {
+	if (connection_test || !IS_FLAG_SET(paired)) {
 		if (bt_le_scan_stop()) {
 			LOG_DBG("Failed to stop scanner");
 			return;
 		}
-		LOG_DBG("Scanner stopped: conn %d paired %d", connection_test, GET_FLAG(paired));
+		LOG_DBG("Scanner stopped: conn %d paired %d", connection_test, IS_FLAG_SET(paired));
 
 		err = bt_conn_le_create(info->addr,
 					BT_CONN_LE_CREATE_CONN,
 					BT_LE_CONN_PARAM_DEFAULT,
 					&default_conn);
 		if (err) {
-			LOG_DBG("Create conn to %s failed (%u)", addr_str, err);
+			LOG_DBG("Create conn to %s failed (%u)", bt_addr_le_str(info->addr), err);
 			start_scan();
 		}
 	}
@@ -217,7 +190,7 @@ static void start_scan(void)
 			       NULL);
 
 	if (err) {
-		FAIL("Scanning failed to start (err %d)\n", err);
+		TEST_FAIL("Scanning failed to start (err %d)", err);
 	}
 
 	LOG_DBG("Scanning successfully started");
@@ -225,27 +198,18 @@ static void start_scan(void)
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	LOG_DBG("Connected: %s", addr);
+	LOG_DBG("Connected: %s", bt_conn_dst_str(conn));
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
 	if (conn != default_conn) {
 		return;
 	}
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_DBG("Disconnected: %s (reason 0x%02x)", bt_conn_dst_str(conn), reason);
 
-	LOG_DBG("Disconnected: %s (reason 0x%02x)", addr, reason);
-
-	bt_conn_unref(default_conn);
-	default_conn = NULL;
+	bt_conn_drop(&default_conn);
 
 	start_scan();
 }
@@ -253,13 +217,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
 			      const bt_addr_le_t *identity)
 {
-	char addr_identity[BT_ADDR_LE_STR_LEN];
-	char addr_rpa[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(identity, addr_identity, sizeof(addr_identity));
-	bt_addr_le_to_str(rpa, addr_rpa, sizeof(addr_rpa));
-
-	LOG_DBG("Identity resolved %s -> %s", addr_rpa, addr_identity);
+	LOG_DBG("Identity resolved %s -> %s", bt_addr_le_str(rpa), bt_addr_le_str(identity));
 
 	bt_addr_le_copy(&peer_rpa, rpa);
 	bt_addr_le_copy(&peer_identity, identity);
@@ -284,7 +242,7 @@ void test_central(void)
 
 	err = bt_enable(NULL);
 	if (err) {
-		FAIL("Bluetooth init failed (err %d)\n", err);
+		TEST_FAIL("Bluetooth init failed (err %d)", err);
 	}
 
 	UNSET_FLAG(identity_tested);
@@ -311,5 +269,5 @@ void test_central_main(void)
 
 	test_central();
 
-	PASS("passed\n");
+	TEST_PASS("passed");
 }

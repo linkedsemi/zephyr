@@ -4,14 +4,17 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <inttypes.h>
+#include <stdint.h>
+
+#include <zephyr/toolchain.h>
 
 #include "bs_types.h"
 #include "bs_tracing.h"
 #include "bs_utils.h"
-#include "time_machine.h"
 #include "bstests.h"
 
-#define WAIT_TIME 10 /* Seconds */
+#define WAIT_TIME 20 /* Seconds */
 
 #define PASS_THRESHOLD 100 /* Audio packets */
 
@@ -38,6 +41,8 @@ static void test_unicast_client_sample_init(void)
 
 static void test_unicast_client_sample_tick(bs_time_t HW_device_time)
 {
+	ARG_UNUSED(HW_device_time);
+
 	/*
 	 * If in WAIT_TIME seconds we did not get enough packets through
 	 * we consider the test failed

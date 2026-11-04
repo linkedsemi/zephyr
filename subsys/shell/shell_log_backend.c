@@ -40,10 +40,18 @@ void z_shell_log_backend_enable(const struct shell_log_backend *backend,
 
 	if (err == 0) {
 		fifo_reset(backend);
-		log_backend_enable(backend->backend, ctx, init_log_level);
 		log_output_ctx_set(backend->log_output, ctx);
 		backend->control_block->dropped_cnt = 0;
 		backend->control_block->state = SHELL_LOG_BACKEND_ENABLED;
+		/*
+		 * Activate the backend in the logging core as the last step.
+		 * The core dispatches messages only to active backends, so
+		 * once this call returns process() may be invoked from any
+		 * context and must already see a fully initialized backend.
+		 * Otherwise a message processed before the state is set would
+		 * hit the SHELL_LOG_BACKEND_DISABLED case and be lost.
+		 */
+		log_backend_enable(backend->backend, ctx, init_log_level);
 	}
 }
 
@@ -155,16 +163,24 @@ static bool copy_to_pbuffer(struct mpsc_pbuf_buffer *mpsc_buffer,
 	return true;
 }
 
+/* Compile-time computed shell log output flags */
+#define SHELL_LOG_BASE_FLAGS                                                                       \
+	((IS_ENABLED(CONFIG_SHELL_LOG_OUTPUT_TIMESTAMP) ? LOG_OUTPUT_FLAG_TIMESTAMP : 0) |         \
+	 (IS_ENABLED(CONFIG_SHELL_LOG_FORMAT_TIMESTAMP) ? LOG_OUTPUT_FLAG_FORMAT_TIMESTAMP : 0) |  \
+	 (IS_ENABLED(CONFIG_SHELL_LOG_OUTPUT_LEVEL) ? LOG_OUTPUT_FLAG_LEVEL : 0) |                 \
+	 (IS_ENABLED(CONFIG_SHELL_LOG_OUTPUT_CRLF_NONE) ? LOG_OUTPUT_FLAG_CRLF_NONE : 0) |         \
+	 (IS_ENABLED(CONFIG_SHELL_LOG_OUTPUT_CRLF_LFONLY) ? LOG_OUTPUT_FLAG_CRLF_LFONLY : 0) |     \
+	 (IS_ENABLED(CONFIG_SHELL_LOG_OUTPUT_THREAD) ? LOG_OUTPUT_FLAG_THREAD : 0) |               \
+	 (IS_ENABLED(CONFIG_SHELL_LOG_OUTPUT_SKIP_SOURCE) ? LOG_OUTPUT_FLAG_SKIP_SOURCE : 0))
+
 static void process_log_msg(const struct shell *sh,
 			     const struct log_output *log_output,
 			     union log_msg_generic *msg,
 			     bool locked, bool colors)
 {
 	unsigned int key = 0;
-	uint32_t flags = LOG_OUTPUT_FLAG_LEVEL |
-		      LOG_OUTPUT_FLAG_TIMESTAMP |
-		      (IS_ENABLED(CONFIG_SHELL_LOG_FORMAT_TIMESTAMP) ?
-			LOG_OUTPUT_FLAG_FORMAT_TIMESTAMP : 0);
+	uint32_t flags = SHELL_LOG_BASE_FLAGS;
+	bool readline_active = sh->ctx->readline_state == SHELL_READLINE_ACTIVE;
 
 	if (colors) {
 		flags |= LOG_OUTPUT_FLAG_COLORS;
@@ -180,9 +196,12 @@ static void process_log_msg(const struct shell *sh,
 		if (k_is_in_isr()) {
 			key = irq_lock();
 		} else {
-			k_mutex_lock(&sh->ctx->wr_mtx, K_FOREVER);
+			z_shell_lock(sh);
 		}
-		if (!z_flag_cmd_ctx_get(sh)) {
+		if (readline_active) {
+			z_cursor_restore(sh);
+			z_clear_eos(sh);
+		} else if (!z_flag_cmd_ctx_get(sh) && !sh->ctx->bypass) {
 			z_shell_cmd_line_erase(sh);
 		}
 	}
@@ -190,13 +209,21 @@ static void process_log_msg(const struct shell *sh,
 	log_output_msg_process(log_output, &msg->log, flags);
 
 	if (locked) {
-		if (!z_flag_cmd_ctx_get(sh)) {
+		if (readline_active) {
+			z_cursor_save(sh);
+			if (sh->ctx->readline_prompt != NULL) {
+				z_shell_fprintf(sh, SHELL_NORMAL, "%s",
+						sh->ctx->readline_prompt);
+			}
+			z_shell_print_cmd(sh);
+			z_shell_op_cursor_position_synchronize(sh);
+		} else if (!z_flag_cmd_ctx_get(sh) && !sh->ctx->bypass) {
 			z_shell_print_prompt_and_cmd(sh);
 		}
 		if (k_is_in_isr()) {
 			irq_unlock(key);
 		} else {
-			k_mutex_unlock(&sh->ctx->wr_mtx);
+			z_shell_unlock(sh);
 		}
 	}
 }
@@ -231,7 +258,6 @@ static void process(const struct log_backend *const backend,
 	const struct log_output *log_output = log_backend->log_output;
 	bool colors = IS_ENABLED(CONFIG_SHELL_VT100_COLORS) &&
 			z_flag_use_colors_get(sh);
-	struct k_poll_signal *signal;
 
 	switch (sh->log_backend->control_block->state) {
 	case SHELL_LOG_BACKEND_ENABLED:
@@ -240,8 +266,8 @@ static void process(const struct log_backend *const backend,
 		} else {
 			if (copy_to_pbuffer(mpsc_buffer, msg, log_backend->timeout)) {
 				if (IS_ENABLED(CONFIG_MULTITHREADING)) {
-					signal = &sh->ctx->signals[SHELL_SIGNAL_LOG_MSG];
-					k_poll_signal_raise(signal, 0);
+					k_event_post(&sh->ctx->signal_event,
+						     SHELL_SIGNAL_LOG_MSG);
 				}
 			} else {
 				dropped(backend, 1);

@@ -4,11 +4,12 @@
  */
 
 /dts-v1/;
-#include <espressif/esp32s3/esp32s3_r2.dtsi>
+#include <espressif/esp32s3/esp32s3.dtsi>
 #include "esp32s3_touch_lcd_1_28-pinctrl.dtsi"
 #include <zephyr/dt-bindings/display/panel.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/pwm/pwm.h>
+#include <espressif/partitions_0x0_amp_16M.dtsi>
 
 / {
 	model = "ESP32-S3-Touch-LCD-1.28 PROCPU";
@@ -24,7 +25,7 @@
 	};
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,flash = &flash0;
@@ -37,6 +38,7 @@
 	/* Buttons */
 	buttons {
 		compatible = "gpio-keys";
+
 		button0: button_0 {
 			gpios = <&gpio0 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "BOOT Button";
@@ -44,15 +46,10 @@
 		};
 	};
 
-	/* Touch Controller */
-	lvgl_pointer {
-		compatible = "zephyr,lvgl-pointer-input";
-		input = <&cst816s>;
-	};
-
 	/* PWM */
 	pwmleds {
 		compatible = "pwm-leds";
+
 		pwm_lcd0: pwm_lcd0 {
 			pwms = <&ledc0 0 PWM_HZ(250) PWM_POLARITY_NORMAL>;
 		};
@@ -73,7 +70,7 @@
 			compatible = "galaxycore,gc9x01x";
 			reg = <0>;
 			mipi-max-frequency = <100000000>;
-			pixel-format = <PANEL_PIXEL_FORMAT_RGB_888>;
+			pixel-format = <PANEL_PIXEL_FORMAT_RGB_565>;
 			display-inversion;
 			width = <240>;
 			height = <240>;
@@ -82,40 +79,12 @@
 };
 
 &flash0 {
-	status = "okay";
 	reg = <0x0 DT_SIZE_M(16)>;
+	ranges = <0x0 0x0 DT_SIZE_M(16)>;
+};
 
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
-
-		boot_partition: partition@0 {
-			label = "mcuboot";
-			reg = <0x00000000 0x0000F000>;
-			read-only;
-		};
-
-		slot0_partition: partition@10000 {
-			label = "image-0";
-			reg = <0x00010000 0x00100000>;
-		};
-
-		slot1_partition: partition@110000 {
-			label = "image-1";
-			reg = <0x00110000 0x00100000>;
-		};
-
-		scratch_partition: partition@210000 {
-			label = "image-scratch";
-			reg = <0x00210000 0x00040000>;
-		};
-
-		storage_partition: partition@250000 {
-			label = "storage";
-			reg = <0x00250000 0x00006000>;
-		};
-	};
+&psram0 {
+	size = <DT_SIZE_M(2)>;
 };
 
 &gpio0 {
@@ -127,7 +96,7 @@
 };
 
 &i2c1 {
-	status ="okay";
+	status = "okay";
 	clock-frequency = <I2C_BITRATE_STANDARD>;
 	pinctrl-0 = <&i2c1_default>;
 	pinctrl-names = "default";
@@ -135,7 +104,7 @@
 	/* Hynitron CST816S Capacitive Touch Controller */
 	cst816s: cst816s@15 {
 		status = "okay";
-		compatible = "hynitron,cst816s";
+		compatible = "hynitron,cst8xx";
 		reg = <0x15>;
 		irq-gpios = <&gpio0 5 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 		rst-gpios = <&gpio0 13 GPIO_ACTIVE_LOW>;
@@ -148,14 +117,17 @@
 	pinctrl-names = "default";
 	#address-cells = <1>;
 	#size-cells = <0>;
+
 	channel0@0 {
 		reg = <0x0>;
 		timer = <0>;
 	};
+
 	channel1@1 {
 		reg = <0x1>;
 		timer = <1>;
 	};
+
 	channel2@2 {
 		reg = <0x2>;
 		timer = <2>;
@@ -187,5 +159,9 @@
 };
 
 &esp32_bt_hci {
+	status = "okay";
+};
+
+&wifi {
 	status = "okay";
 };

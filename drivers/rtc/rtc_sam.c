@@ -51,17 +51,20 @@ struct rtc_sam_data {
 #endif /* CONFIG_RTC_UPDATE */
 	struct k_spinlock lock;
 	struct k_sem cr_sec_evt_sem;
-	struct k_sem cr_upd_ack_sem;
 };
 
 static void rtc_sam_disable_wp(void)
 {
+#ifdef REG_RTC_WPMR
 	REG_RTC_WPMR = RTC_SAM_WPMR_DISABLE;
+#endif
 }
 
 static void rtc_sam_enable_wp(void)
 {
+#ifdef REG_RTC_WPMR
 	REG_RTC_WPMR = RTC_SAM_WPMR_ENABLE;
+#endif
 }
 
 static uint32_t rtc_sam_timr_from_tm(const struct rtc_time *timeptr)
@@ -96,19 +99,17 @@ static int rtc_sam_set_time(const struct device *dev, const struct rtc_time *tim
 	struct rtc_sam_data *data = dev->data;
 	const struct rtc_sam_config *config = dev->config;
 	Rtc *regs = config->regs;
+	uint32_t timeout_ms = 1100;
+	k_spinlock_key_t key;
 
 	if (rtc_utils_validate_rtc_time(timeptr, RTC_SAM_TIME_MASK) == false) {
 		return -EINVAL;
 	}
 
-	k_spinlock_key_t key = k_spin_lock(&data->lock);
-
 	k_sem_reset(&data->cr_sec_evt_sem);
 	k_sem_take(&data->cr_sec_evt_sem, K_MSEC(1100));
-	k_sem_reset(&data->cr_upd_ack_sem);
 
-	/* Enable update acknowledge interrupt */
-	regs->RTC_IER = RTC_IER_ACKEN;
+	key = k_spin_lock(&data->lock);
 
 	rtc_sam_disable_wp();
 
@@ -116,23 +117,27 @@ static int rtc_sam_set_time(const struct device *dev, const struct rtc_time *tim
 	regs->RTC_CR = (RTC_CR_UPDTIM | RTC_CR_UPDCAL);
 
 	/* Await update acknowledge */
-	if (k_sem_take(&data->cr_upd_ack_sem, K_MSEC(1100)) < 0) {
-		regs->RTC_CR = 0;
+	while (!(regs->RTC_SR & RTC_SR_ACKUPD)) {
+		if (timeout_ms == 0) {
+			regs->RTC_CR = 0;
 
-		rtc_sam_enable_wp();
+			rtc_sam_enable_wp();
 
-		/* Disable update acknowledge interrupt */
-		regs->RTC_IDR = RTC_IDR_ACKDIS;
-
+			k_spin_unlock(&data->lock, key);
+			return -EAGAIN;
+		}
 		k_spin_unlock(&data->lock, key);
-		return -EAGAIN;
+		k_msleep(1);
+		key = k_spin_lock(&data->lock);
+		timeout_ms--;
 	}
+
+	regs->RTC_SCCR = RTC_SCCR_ACKCLR;
 
 	regs->RTC_TIMR = rtc_sam_timr_from_tm(timeptr);
 	regs->RTC_CALR = rtc_sam_calr_from_tm(timeptr);
 	regs->RTC_CR = 0;
 	rtc_sam_enable_wp();
-	regs->RTC_IDR = RTC_IDR_ACKDIS;
 	k_spin_unlock(&data->lock, key);
 	return 0;
 }
@@ -183,16 +188,15 @@ static int rtc_sam_get_time(const struct device *dev, struct rtc_time *timeptr)
 
 static void rtc_sam_isr(const struct device *dev)
 {
+#if defined(CONFIG_RTC_ALARM) || defined(CONFIG_RTC_UPDATE)
 	struct rtc_sam_data *data = dev->data;
 	const struct rtc_sam_config *config = dev->config;
 	Rtc *regs = config->regs;
 
 	uint32_t sr = regs->RTC_SR;
-
-	if (sr & RTC_SR_ACKUPD) {
-		regs->RTC_SCCR = RTC_SCCR_ACKCLR;
-		k_sem_give(&data->cr_upd_ack_sem);
-	}
+#else
+	ARG_UNUSED(dev);
+#endif
 
 #ifdef CONFIG_RTC_ALARM
 	if (sr & RTC_SR_ALARM) {
@@ -616,7 +620,7 @@ static int rtc_sam_get_calibration(const struct device *dev, int32_t *calibratio
 }
 #endif /* CONFIG_RTC_CALIBRATION */
 
-static const struct rtc_driver_api rtc_sam_driver_api = {
+static DEVICE_API(rtc, rtc_sam_driver_api) = {
 	.set_time = rtc_sam_set_time,
 	.get_time = rtc_sam_get_time,
 #ifdef CONFIG_RTC_ALARM
@@ -642,7 +646,11 @@ static int rtc_sam_init(const struct device *dev)
 	Rtc *regs = config->regs;
 
 	rtc_sam_disable_wp();
+#ifdef RTC_MR_PERSIAN
 	regs->RTC_MR &= ~(RTC_MR_HRMOD | RTC_MR_PERSIAN);
+#else
+	regs->RTC_MR &= ~RTC_MR_HRMOD;
+#endif
 	regs->RTC_CR = 0;
 	rtc_sam_enable_wp();
 	regs->RTC_IDR = (RTC_IDR_ACKDIS
@@ -653,7 +661,6 @@ static int rtc_sam_init(const struct device *dev)
 			       | RTC_IDR_TDERRDIS);
 
 	k_sem_init(&data->cr_sec_evt_sem, 0, 1);
-	k_sem_init(&data->cr_upd_ack_sem, 0, 1);
 	config->irq_init_fn_ptr();
 	irq_enable(config->irq_num);
 	return 0;

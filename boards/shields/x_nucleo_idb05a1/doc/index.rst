@@ -52,8 +52,8 @@ expansion board could be made:
 
 You could check Figure 3 in `X-NUCLEO-IDB05A1 databrief`_ for more details.
 
-The stm32mp157c_dk2 board is known to need those CS/IRQ pin modifications
-(see boards/stm32mp157c_dk2.overlay)
+The stm32mp157x_dk2 board is known to need those CS/IRQ pin modifications
+(see boards/stm32mp157x_dk2.overlay)
 whereas nucleo_l476rg doesn't need hardware modifications.
 
 Hardware
@@ -67,7 +67,8 @@ X-NUCLEO-IDB05A1 provides a SPBTLE-RF chip with the following key features:
  - Chip antenna
 
 More information about X-NUCLEO-IDB05A1 can be found here:
-       - `X-NUCLEO-IDB05A1 databrief`_
+
+- `X-NUCLEO-IDB05A1 databrief`_
 
 Programming
 ***********

@@ -886,7 +886,7 @@ unlock:
 	return ret;
 }
 
-static const struct smbus_driver_api funcs = {
+static DEVICE_API(smbus, funcs) = {
 	.configure = pch_configure,
 	.get_config = pch_get_config,
 	.smbus_quick = pch_smbus_quick,
@@ -980,8 +980,8 @@ static void smbus_isr(const struct device *dev)
 /* Device macro initialization  / DTS hackery */
 
 #define SMBUS_PCH_IRQ_FLAGS(n)                                                 \
-	COND_CODE_1(DT_INST_IRQ_HAS_CELL(n, sense),                            \
-		    (DT_INST_IRQ(n, sense)),                                   \
+	COND_CODE_1(DT_INST_IRQ_HAS_CELL(n, flags),                            \
+		    (DT_INST_IRQ(n, flags)),                                   \
 		    (0))
 
 #define SMBUS_IRQ_CONFIG(n)                                                    \

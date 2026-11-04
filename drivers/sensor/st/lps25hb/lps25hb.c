@@ -46,7 +46,7 @@ static int lps25hb_sample_fetch(const struct device *dev,
 	uint8_t out[5];
 	int offset;
 
-	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
+	__ASSERT_NO_MSG(chan == SENSOR_CHAN_PRESS || chan == SENSOR_CHAN_ALL);
 
 	for (offset = 0; offset < sizeof(out); ++offset) {
 		if (i2c_reg_read_byte_dt(&config->i2c,
@@ -107,7 +107,7 @@ static int lps25hb_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api lps25hb_api_funcs = {
+static DEVICE_API(sensor, lps25hb_api_funcs) = {
 	.sample_fetch = lps25hb_sample_fetch,
 	.channel_get = lps25hb_channel_get,
 };
@@ -164,7 +164,7 @@ static int lps25hb_init(const struct device *dev)
 	const struct lps25hb_config * const config = dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

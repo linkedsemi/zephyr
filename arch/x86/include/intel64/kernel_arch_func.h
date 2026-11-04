@@ -8,6 +8,8 @@
 
 #include <zephyr/kernel_structs.h>
 
+#include <zephyr/platform/hooks.h>
+
 #ifndef _ASMLANGUAGE
 
 extern void z_x86_switch(void *switch_to, void **switched_from);
@@ -27,7 +29,7 @@ extern void z_x86_ipi_setup(void);
 
 static inline void arch_kernel_init(void)
 {
-	/* nothing */;
+	soc_per_core_init_hook();
 }
 
 FUNC_NORETURN void z_x86_cpu_init(struct x86_cpuboot *cpuboot);

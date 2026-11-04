@@ -9,8 +9,9 @@
  * should be used (uart_hvc_xen.c), this console will not be available.
  */
 
+#include <xen/public/xen.h>
+
 #include <zephyr/arch/arm64/hypercall.h>
-#include <zephyr/xen/public/xen.h>
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/uart.h>
@@ -41,7 +42,7 @@ static void xen_consoleio_poll_out(const struct device *dev,
 	(void) HYPERVISOR_console_io(CONSOLEIO_write, sizeof(c), &c);
 }
 
-static const struct uart_driver_api xen_consoleio_hvc_api = {
+static DEVICE_API(uart, xen_consoleio_hvc_api) = {
 	.poll_in = xen_consoleio_poll_in,
 	.poll_out = xen_consoleio_poll_out,
 };

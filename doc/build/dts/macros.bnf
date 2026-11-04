@@ -22,12 +22,17 @@ node-macro =  property-macro
 node-macro =/ pinctrl-macro
 ; A macro about the GPIO hog properties in a node.
 node-macro =/ gpiohogs-macro
+; A macro about the map properties in a node.
+node-macro =/ map-macro
 ; EXISTS macro: node exists in the devicetree
 node-macro =/ %s"DT_N" path-id %s"_EXISTS"
 ; Bus macros: the plain BUS is a way to access a node's bus controller.
 ; The additional dt-name suffix is added to match that node's bus type;
 ; the dt-name in this case is something like "spi" or "i2c".
 node-macro =/ %s"DT_N" path-id %s"_BUS" ["_" dt-name]
+; Device class macros: declares that the node's binding declares
+; membership of a device class; the dt-name is something like "adc".
+node-macro =/ %s"DT_N" path-id %s"_CLASS_" dt-name
 ; The reg property is special and has its own macros.
 node-macro =/ %s"DT_N" path-id %s"_REG_NUM"
 node-macro =/ %s"DT_N" path-id %s"_REG_IDX_" DIGIT "_EXISTS"
@@ -36,6 +41,10 @@ node-macro =/ %s"DT_N" path-id %s"_REG_IDX_" DIGIT
 node-macro =/ %s"DT_N" path-id %s"_REG_NAME_" dt-name
               %s"_VAL_" ( %s"ADDRESS" / %s"SIZE")
 node-macro =/ %s"DT_N" path-id %s"_REG_NAME_" dt-name "_EXISTS"
+node-macro =/ %s"DT_N" path-id %s"_FOREACH_REG"
+node-macro =/ %s"DT_N" path-id %s"_FOREACH_REG_SEP"
+node-macro =/ %s"DT_N" path-id %s"_FOREACH_REG_VARGS"
+node-macro =/ %s"DT_N" path-id %s"_FOREACH_REG_SEP_VARGS"
 ; The interrupts property is also special.
 node-macro =/ %s"DT_N" path-id %s"_IRQ_NUM"
 node-macro =/ %s"DT_N" path-id %s"_IRQ_LEVEL"
@@ -65,6 +74,12 @@ node-macro =/ %s"DT_N" path-id %s"_COMPAT_VENDOR_IDX_" DIGIT "_EXISTS"
 node-macro =/ %s"DT_N" path-id %s"_COMPAT_VENDOR_IDX_" DIGIT
 node-macro =/ %s"DT_N" path-id %s"_COMPAT_MODEL_IDX_" DIGIT "_EXISTS"
 node-macro =/ %s"DT_N" path-id %s"_COMPAT_MODEL_IDX_" DIGIT
+; The binding compatible (the compatible that matched a binding) as a token,
+; uppercased token, or unquoted string. Only defined for nodes with a
+; matching binding.
+node-macro =/ %s"DT_N" path-id %s"_BINDING_COMPAT_TOKEN"
+node-macro =/ %s"DT_N" path-id %s"_BINDING_COMPAT_UPPER_TOKEN"
+node-macro =/ %s"DT_N" path-id %s"_BINDING_COMPAT_UNQUOTED"
 ; Every non-root node gets one of these macros, which expands to the node
 ; identifier for that node's parent in the devicetree.
 node-macro =/ %s"DT_N" path-id %s"_PARENT"
@@ -77,6 +92,15 @@ node-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_FOREACH_PROP_ELEM_SEP_VARGS"
 ; These are used by DT_CHILD_NUM and DT_CHILD_NUM_STATUS_OKAY macros
 node-macro =/ %s"DT_N" path-id %s"_CHILD_NUM"
 node-macro =/ %s"DT_N" path-id %s"_CHILD_NUM_STATUS_OKAY"
+; These are used by DT_DESCENDANT_NUM_ON_BUS and
+; DT_DESCENDANT_NUM_ON_BUS_STATUS_OKAY
+; macros to count descendants on a given bus under a controller node.
+; Descendants behind child bus-controller nodes are excluded.
+; dt-name in this case is something like "spi" or "i2c".
+node-macro =/ %s"DT_N" path-id %s"_DESCENDANT_NUM_ON_BUS_" dt-name
+node-macro =/ %s"DT_N" path-id %s"_DESCENDANT_NUM_ON_BUS_" dt-name %s"_STATUS_OKAY"
+; This is used by DT_CHILD_BY_UNIT_ADDR_INT
+node-macro =/ %s"DT_N" path-id %s"_CHILD_UNIT_ADDR_INT_" DIGIT
 ; These are used internally by DT_FOREACH_CHILD, which iterates over
 ; each child node.
 node-macro =/ %s"DT_N" path-id %s"_FOREACH_CHILD"
@@ -231,6 +255,71 @@ gpiohogs-macro =/ %s"DT_N" path-id %s"_GPIO_HOGS_IDX_" DIGIT %s"_VAL_flags_EXIST
 ;   #define DT_N_<node-2 path>_GPIO_HOGS_IDX_0_VAL_flags 0x30
 gpiohogs-macro =/ %s"DT_N" path-id %s"_GPIO_HOGS_IDX_" DIGIT %s"_VAL_flags"
 
+
+; --------------------------------------------------------------------
+; map-macro: a macro related to map properties
+;
+; Macros are generated when there is a property ending with '-map' as shown below.
+;
+; connector {
+;     ...
+;     interrupt-map = <0 1 &intc0 2 3>;
+; };
+;
+; The existence of map entry;
+;
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_EXISTS 1
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_EXISTS"
+;
+; The child address length, value, and existence.
+;
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_CHILD_ADDRESS_LEN 1
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_CHILD_ADDRESS_IDX_0 0
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_CHILD_ADDRESS_IDX_0_EXISTS 1
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_CHILD_ADDRESS_LEN"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_CHILD_ADDRESS_IDX_" DIGIT
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_CHILD_ADDRESS_IDX_" DIGIT %s"_EXISTS"
+;
+; The length of child specifiers length, value, and existence.
+;
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_CHILD_SPECIFIER_LEN 1
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_CHILD_SPECIFIER_IDX_0_EXISTS 1
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_CHILD_SPECIFIER_IDX_0 0
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_CHILD_SPECIFIER_LEN"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_CHILD_SPECIFIER_IDX_" DIGIT
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_CHILD_SPECIFIER_IDX_" DIGIT %s"_EXISTS"
+;
+; The parent node of this map.
+;
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT DT_N_S_gpio_emul
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT"
+;
+; The length of parent address, value, and existence.
+;
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT_ADDRESS_LEN 1
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT_ADDRESS_IDX_0 2
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT_ADDRESS_IDX_0_EXISTS 1
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT_ADDRESS_LEN"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT_ADDRESS_IDX_" DIGIT
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT_ADDRESS_IDX_" DIGIT %s"_EXISTS"
+;
+; The length of parent specifiers length, value, and existence.
+;
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT_SPECIFIER_LEN 1
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT_SPECIFIER_IDX_0_EXISTS 1
+; #define DT_N_S_connector_P_interrupt_map_MAP_ENTRY_0_PARENT_SPECIFIER_IDX_0 3
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT_SPECIFIER_LEN"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT_SPECIFIER_IDX_" DIGIT
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_MAP_ENTRY_" DIGIT %s"_PARENT_SPECIFIER_IDX_" DIGIT %s"_EXISTS"
+;
+; Iteration helpers for map.
+;
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_FOREACH_MAP_ENTRY"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_FOREACH_MAP_ENTRY_SEP"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_FOREACH_MAP_ENTRY_VARGS"
+map-macro =/ %s"DT_N" path-id %s"_P_" prop-id %s"_FOREACH_MAP_ENTRY_SEP_VARGS"
+
+
 ; --------------------------------------------------------------------
 ; property-macro: a macro related to a node property
 ;
@@ -351,10 +440,24 @@ other-macro =/ %s"DT_COMPAT_" dt-name %s"_BUS_" dt-name
 ;
 ;   #define DT_COMPAT_HAS_OKAY_vnd_dev 1
 other-macro =/ %s"DT_COMPAT_HAS_OKAY_" dt-name
+; Declares that a device class has at least one status "okay" node,
+; and the count of such nodes.
+; Example:
+;
+;   #define DT_CLASS_HAS_OKAY_adc 1
+;   #define DT_N_CLASS_adc_NUM_OKAY 2
+other-macro =/ %s"DT_CLASS_HAS_OKAY_" dt-name
+other-macro =/ %s"DT_N_CLASS_" dt-name %s"_NUM_OKAY"
+; These are used internally by DT_FOREACH_CLASS_STATUS_OKAY,
+; which iterates over each enabled node of a device class.
+other-macro =/ %s"DT_FOREACH_OKAY_CLASS_" dt-name
+other-macro =/ %s"DT_FOREACH_OKAY_VARGS_CLASS_" dt-name
 ; Currently used to allow mapping a lowercase-and-underscores "label"
 ; property to a fixed-partitions node. See the flash map API docs
 ; for an example.
 other-macro =/ %s"DT_COMPAT_" dt-name %s"_LABEL_" dt-name
+; Get the node label of the phandle
+other-macro =/ %s"DT_N_NODELABEL_" %s"DT_N" path-id "_IDX_" DIGIT "_C_TOKEN"
 
 ; --------------------------------------------------------------------
 ; alternate-id: another way to specify a node besides a path-id

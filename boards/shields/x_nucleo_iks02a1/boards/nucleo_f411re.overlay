@@ -5,9 +5,11 @@
  */
 
 &plli2s {
+	div-m = <8>;
 	mul-n = <192>;
 	div-r = <3>;
-	status = "okay";
+	clocks = <&clk_hse>;
+	status = "okay"; /* 48MHz on PLLI2SQ */
 };
 
 &dma2 {

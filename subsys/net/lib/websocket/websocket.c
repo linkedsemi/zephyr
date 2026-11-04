@@ -22,19 +22,16 @@ LOG_MODULE_REGISTER(net_websocket, CONFIG_NET_WEBSOCKET_LOG_LEVEL);
 #include <zephyr/sys/fdtable.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_ip.h>
-#if defined(CONFIG_POSIX_API)
-#include <zephyr/posix/unistd.h>
-#include <zephyr/posix/sys/socket.h>
-#else
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/socket.h>
-#endif
 #include <zephyr/net/http/client.h>
 #include <zephyr/net/websocket.h>
 
 #include <zephyr/random/random.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/base64.h>
-#include <mbedtls/sha1.h>
+
+#include <psa/crypto.h>
 
 #include "net_private.h"
 #include "sockets_internal.h"
@@ -54,8 +51,30 @@ static struct k_sem contexts_lock;
 static const struct socket_op_vtable websocket_fd_op_vtable;
 
 #if defined(CONFIG_NET_TEST)
-int verify_sent_and_received_msg(struct msghdr *msg, bool split_msg);
+int verify_sent_and_received_msg(struct net_msghdr *msg, bool split_msg);
 #endif
+
+#if defined(CONFIG_WEBSOCKET_DEDICATED_HEAP)
+K_HEAP_DEFINE(websocket_heap, CONFIG_WEBSOCKET_DEDICATED_HEAP_SIZE);
+#endif
+
+static inline void *websocket_alloc(const size_t size)
+{
+#if defined(CONFIG_WEBSOCKET_DEDICATED_HEAP)
+	return k_heap_alloc(&websocket_heap, size, K_NO_WAIT);
+#else
+	return k_malloc(size);
+#endif
+}
+
+static inline void websocket_free(void *ptr)
+{
+#if defined(CONFIG_WEBSOCKET_DEDICATED_HEAP)
+	k_heap_free(&websocket_heap, ptr);
+#else
+	k_free(ptr);
+#endif
+}
 
 static const char *opcode2str(enum websocket_opcode opcode)
 {
@@ -99,8 +118,6 @@ static int websocket_context_unref(struct websocket_context *ctx)
 
 static inline bool websocket_context_is_used(struct websocket_context *ctx)
 {
-	NET_ASSERT(ctx);
-
 	return !!atomic_get(&ctx->refcount);
 }
 
@@ -151,9 +168,9 @@ static struct websocket_context *websocket_find(int real_sock)
 	return ctx;
 }
 
-static void response_cb(struct http_response *rsp,
-			enum http_final_call final_data,
-			void *user_data)
+static int response_cb(struct http_response *rsp,
+		       enum http_final_call final_data,
+		       void *user_data)
 {
 	struct websocket_context *ctx = user_data;
 
@@ -166,6 +183,8 @@ static void response_cb(struct http_response *rsp,
 			rsp->data_len);
 		ctx->all_received = true;
 	}
+
+	return 0;
 }
 
 static int on_header_field(struct http_parser *parser, const char *at,
@@ -181,6 +200,10 @@ static int on_header_field(struct http_parser *parser, const char *at,
 	len = strlen(ws_accept_str);
 	if (length >= len && strncasecmp(at, ws_accept_str, len) == 0) {
 		ctx->sec_accept_present = true;
+		ctx->sec_accept_matched = 0;
+	} else {
+		/* Any other header ends the value we were collecting */
+		ctx->sec_accept_present = false;
 	}
 
 	if (ctx->http_cb && ctx->http_cb->on_header_field) {
@@ -191,6 +214,26 @@ static int on_header_field(struct http_parser *parser, const char *at,
 }
 
 #define MAX_SEC_ACCEPT_LEN 32
+
+/* The parser gives a pointer and a length, and the header value is not
+ * terminated, so it cannot be handed to a %s conversion. Copy the part that
+ * fits and print that instead.
+ */
+static void log_sec_accept_mismatch(struct websocket_context *ctx,
+				    const char *expected, const char *at,
+				    size_t length)
+{
+	if (IS_ENABLED(CONFIG_NET_WEBSOCKET_LOG_LEVEL_DBG)) {
+		char got[MAX_SEC_ACCEPT_LEN];
+		size_t len = MIN(length, sizeof(got) - 1);
+
+		memcpy(got, at, len);
+		got[len] = '\0';
+
+		NET_DBG("[%p] Security keys do not match %s vs %s", ctx,
+			expected, got);
+	}
+}
 
 static int on_header_value(struct http_parser *parser, const char *at,
 			   size_t length)
@@ -206,17 +249,24 @@ static int on_header_value(struct http_parser *parser, const char *at,
 		size_t olen;
 
 		ctx->sec_accept_ok = false;
-		ctx->sec_accept_present = false;
 
 		ret = base64_encode(str, sizeof(str) - 1, &olen,
 				    ctx->sec_accept_key,
 				    WS_SHA1_OUTPUT_LEN);
 		if (ret == 0) {
-			if (strncmp(at, str, length)) {
-				NET_DBG("[%p] Security keys do not match "
-					"%s vs %s", ctx, str, at);
+			/* The value can be handed over in more than one piece,
+			 * so match it against the expected one as it arrives
+			 * and only accept it once every byte of the expected
+			 * value, and no more, has been seen.
+			 */
+			if (length <= olen - ctx->sec_accept_matched &&
+			    memcmp(at, str + ctx->sec_accept_matched, length) == 0) {
+				ctx->sec_accept_matched += length;
+				ctx->sec_accept_ok =
+					(ctx->sec_accept_matched == olen);
 			} else {
-				ctx->sec_accept_ok = true;
+				ctx->sec_accept_present = false;
+				log_sec_accept_mismatch(ctx, str, at, length);
 			}
 		}
 	}
@@ -253,6 +303,8 @@ int websocket_connect(int sock, struct websocket_request *wreq,
 		"Sec-WebSocket-Version: 13\r\n",
 		NULL
 	};
+	psa_status_t psa_status;
+	size_t hash_length;
 
 	fd = -1;
 
@@ -278,9 +330,16 @@ int websocket_connect(int sock, struct websocket_request *wreq,
 	ctx->recv_buf.size = wreq->tmp_buf_len;
 	ctx->sec_accept_key = sec_accept_key;
 	ctx->http_cb = wreq->http_cb;
+	ctx->is_client = 1;
+	ctx->tx_broken = 0;
 
-	mbedtls_sha1((const unsigned char *)&rnd_value, sizeof(rnd_value),
-			 sec_accept_key);
+	psa_status = psa_hash_compute(PSA_ALG_SHA_1, (const uint8_t *)&rnd_value, sizeof(rnd_value),
+				      sec_accept_key, sizeof(sec_accept_key), &hash_length);
+	if (psa_status != PSA_SUCCESS) {
+		NET_DBG("[%p] Cannot calculate sha1 (%d)", ctx, psa_status);
+		ret = -EPROTO;
+		goto out;
+	}
 
 	ret = base64_encode(sec_ws_key + sizeof("Sec-Websocket-Key: ") - 1,
 			    sizeof(sec_ws_key) -
@@ -340,10 +399,16 @@ int websocket_connect(int sock, struct websocket_request *wreq,
 		key_len);
 
 	olen = MIN(sizeof(key_accept) - 1 - key_len, sizeof(WS_MAGIC) - 1);
-	strncpy(key_accept + key_len, WS_MAGIC, olen);
+	memcpy(key_accept + key_len, WS_MAGIC, olen);
 
 	/* This SHA-1 value is then checked when we receive the response */
-	mbedtls_sha1(key_accept, olen + key_len, sec_accept_key);
+	psa_status = psa_hash_compute(PSA_ALG_SHA_1, (const uint8_t *)key_accept, olen + key_len,
+				      sec_accept_key, sizeof(sec_accept_key), &hash_length);
+	if (psa_status != PSA_SUCCESS) {
+		NET_DBG("[%p] Cannot calculate sha1 (%d)", ctx, psa_status);
+		ret = -EPROTO;
+		goto out;
+	}
 
 	ret = http_client_req(sock, &req, timeout, ctx);
 	if (ret < 0) {
@@ -385,15 +450,16 @@ int websocket_connect(int sock, struct websocket_request *wreq,
 
 	NET_DBG("[%p] WS connection to peer established (fd %d)", ctx, fd);
 
-	/* We will re-use the temp buffer in receive function if needed but
-	 * in order that to work the amount of data in buffer must be set to 0
+	/* We will re-use the temp buffer in receive function. If there were
+	 * any leftover data from HTTP headers processing, we need to reflect
+	 * this in the count variable.
 	 */
-	ctx->recv_buf.count = 0;
+	ctx->recv_buf.count = req.data_len;
 
 	/* Init parser FSM */
 	ctx->parser_state = WEBSOCKET_PARSER_STATE_OPCODE;
 
-	(void)sock_obj_core_alloc_find(ctx->real_sock, fd, SOCK_STREAM);
+	(void)sock_obj_core_alloc_find(ctx->real_sock, fd, NET_SOCK_STREAM);
 
 	return fd;
 
@@ -411,7 +477,7 @@ int websocket_disconnect(int ws_sock)
 	return zsock_close(ws_sock);
 }
 
-static int websocket_interal_disconnect(struct websocket_context *ctx)
+static int websocket_internal_disconnect(struct websocket_context *ctx)
 {
 	int ret;
 
@@ -421,10 +487,15 @@ static int websocket_interal_disconnect(struct websocket_context *ctx)
 
 	NET_DBG("[%p] Disconnecting", ctx);
 
-	ret = websocket_send_msg(ctx->sock, NULL, 0, WEBSOCKET_OPCODE_CLOSE,
-				 true, true, SYS_FOREVER_MS);
-	if (ret < 0) {
-		NET_DBG("[%p] Failed to send close message (err %d).", ctx, ret);
+	if (ctx->tx_broken) {
+		/* A CLOSE frame would land inside the torn frame */
+		ret = 0;
+	} else {
+		ret = websocket_send_msg(ctx->sock, NULL, 0, WEBSOCKET_OPCODE_CLOSE,
+					 ctx->is_client, true, SYS_FOREVER_MS);
+		if (ret < 0) {
+			NET_DBG("[%p] Failed to send close message (err %d).", ctx, ret);
+		}
 	}
 
 	(void)sock_obj_core_dealloc(ctx->sock);
@@ -439,7 +510,7 @@ static int websocket_close_vmeth(void *obj)
 	struct websocket_context *ctx = obj;
 	int ret;
 
-	ret = websocket_interal_disconnect(ctx);
+	ret = websocket_internal_disconnect(ctx);
 	if (ret < 0) {
 		/* Ignore error if we are not connected */
 		if (ret != -ENOTCONN) {
@@ -544,9 +615,21 @@ static int websocket_ioctl_vmeth(void *obj, unsigned int request, va_list args)
 }
 
 #if !defined(CONFIG_NET_TEST)
-static int sendmsg_all(int sock, const struct msghdr *message, int flags,
-			const k_timepoint_t req_end_timepoint)
+/* How long to back off when the stack is out of network buffers */
+#define NO_BUFS_RETRY K_MSEC(10)
+
+/* Send the whole message before the deadline: write the socket without
+ * blocking and wait for it to become writable until the deadline. On
+ * failure, *sent tells how much of the message the socket had accepted.
+ */
+static int sendmsg_all(int sock, const struct net_msghdr *message,
+			const k_timepoint_t req_end_timepoint, size_t *sent)
 {
+	/* Like the socket layer, do not wait for buffers indefinitely. The
+	 * limit counts only an unbroken run of buffer shortages.
+	 */
+	k_timepoint_t bufs_end_timepoint = { 0 };
+	bool waiting_bufs = false;
 	int ret, i;
 	size_t offset = 0;
 	size_t total_len = 0;
@@ -555,15 +638,51 @@ static int sendmsg_all(int sock, const struct msghdr *message, int flags,
 		total_len += message->msg_iov[i].iov_len;
 	}
 
+	*sent = 0;
+
 	while (offset < total_len) {
-		ret = zsock_sendmsg(sock, message, flags);
+		ret = zsock_sendmsg(sock, message, ZSOCK_MSG_DONTWAIT);
+
+		if (ret < 0 && errno == ENOBUFS) {
+			/* Short of buffers rather than of window: writability
+			 * does not track that, so back off and try again.
+			 */
+			k_timeout_t left = sys_timepoint_timeout(req_end_timepoint);
+
+			if (K_TIMEOUT_EQ(left, K_NO_WAIT)) {
+				return -ETIMEDOUT;
+			}
+
+			if (!waiting_bufs) {
+				waiting_bufs = true;
+				bufs_end_timepoint = sys_timepoint_calc(
+					K_MSEC(CONFIG_NET_SOCKET_MAX_SEND_WAIT));
+			} else if (sys_timepoint_expired(bufs_end_timepoint)) {
+				return -ENOMEM;
+			}
+
+			if (K_TIMEOUT_EQ(left, K_FOREVER) ||
+			    left.ticks > NO_BUFS_RETRY.ticks) {
+				left = NO_BUFS_RETRY;
+			}
+
+			k_sleep(left);
+			continue;
+		}
+
+		waiting_bufs = false;
 
 		if ((ret == 0) || (ret < 0 && errno == EAGAIN)) {
 			struct zsock_pollfd pfd;
 			int pollres;
-			k_ticks_t req_timeout_ticks =
-				sys_timepoint_timeout(req_end_timepoint).ticks;
-			int req_timeout_ms = k_ticks_to_ms_floor32(req_timeout_ticks);
+			k_timeout_t req_timeout = sys_timepoint_timeout(req_end_timepoint);
+			int req_timeout_ms;
+
+			if (K_TIMEOUT_EQ(req_timeout, K_FOREVER)) {
+				req_timeout_ms = SYS_FOREVER_MS;
+			} else {
+				req_timeout_ms = k_ticks_to_ms_floor32(req_timeout.ticks);
+			}
 
 			pfd.fd = sock;
 			pfd.events = ZSOCK_POLLOUT;
@@ -580,6 +699,7 @@ static int sendmsg_all(int sock, const struct msghdr *message, int flags,
 		}
 
 		offset += ret;
+		*sent = offset;
 		if (offset >= total_len) {
 			break;
 		}
@@ -607,8 +727,8 @@ static int websocket_prepare_and_send(struct websocket_context *ctx,
 				      uint8_t *payload, size_t payload_len,
 				      int32_t timeout)
 {
-	struct iovec io_vector[2];
-	struct msghdr msg;
+	struct net_iovec io_vector[2];
+	struct net_msghdr msg;
 
 	io_vector[0].iov_base = header;
 	io_vector[0].iov_len = header_len;
@@ -636,17 +756,26 @@ static int websocket_prepare_and_send(struct websocket_context *ctx,
 	return verify_sent_and_received_msg(&msg, !(header[1] & BIT(7)));
 #else
 	k_timeout_t tout = K_FOREVER;
+	size_t sent;
+	int ret;
 
 	if (timeout != SYS_FOREVER_MS) {
 		tout = K_MSEC(timeout);
 	}
 
-	k_timeout_t req_timeout = K_MSEC(timeout);
-	k_timepoint_t req_end_timepoint = sys_timepoint_calc(req_timeout);
+	ret = sendmsg_all(ctx->real_sock, &msg, sys_timepoint_calc(tout), &sent);
+	if (ret < 0 && (sent > 0 || timeout != 0)) {
+		/* Part of the frame may be on the wire, or be held by a TLS
+		 * layer that will flush it later; either way any later frame
+		 * would be parsed as the rest of this one. Only a zero timeout
+		 * that got nothing out is a plain "try again".
+		 */
+		NET_DBG("[%p] Send failed (%d) after %zu bytes, connection broken",
+			ctx, ret, sent);
+		ctx->tx_broken = 1;
+	}
 
-	return sendmsg_all(ctx->real_sock, &msg,
-			   K_TIMEOUT_EQ(tout, K_NO_WAIT) ? ZSOCK_MSG_DONTWAIT : 0,
-			   req_end_timepoint);
+	return ret;
 #endif /* CONFIG_NET_TEST */
 }
 
@@ -682,6 +811,10 @@ int websocket_send_msg(int ws_sock, const uint8_t *payload, size_t payload_len,
 		return -ENOENT;
 	}
 #endif /* !defined(CONFIG_NET_TEST) */
+
+	if (ctx->tx_broken) {
+		return -EPIPE;
+	}
 
 	NET_DBG("[%p] Len %zd %s/%d/%s", ctx, payload_len, opcode2str(opcode),
 		mask, final ? "final" : "more");
@@ -729,7 +862,7 @@ int websocket_send_msg(int ws_sock, const uint8_t *payload, size_t payload_len,
 		header[hdr_len++] |= ctx->masking_value;
 
 		if ((payload != NULL) && (payload_len > 0)) {
-			data_to_send = k_malloc(payload_len);
+			data_to_send = websocket_alloc(payload_len);
 			if (!data_to_send) {
 				return -ENOMEM;
 			}
@@ -751,7 +884,7 @@ int websocket_send_msg(int ws_sock, const uint8_t *payload, size_t payload_len,
 
 quit:
 	if (data_to_send != payload) {
-		k_free(data_to_send);
+		websocket_free(data_to_send);
 	}
 
 	/* Do no math with 0 and error codes */
@@ -840,7 +973,8 @@ static int websocket_parse(struct websocket_context *ctx, struct websocket_buffe
 				break;
 			case WEBSOCKET_PARSER_STATE_MASK:
 				ctx->parser_remaining--;
-				ctx->masking_value |= (data << (ctx->parser_remaining * 8));
+				ctx->masking_value |=
+					(uint32_t)((uint64_t)data << (ctx->parser_remaining * 8));
 				if (ctx->parser_remaining == 0) {
 					if (ctx->message_len == 0) {
 						ctx->parser_remaining = 0;
@@ -1005,6 +1139,12 @@ int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 
 			if (ret < 0) {
 				if ((ret == -EAGAIN) && (payload.count > 0)) {
+					if (remaining != NULL) {
+						*remaining = ctx->parser_remaining;
+					}
+					if (message_type != NULL) {
+						*message_type = ctx->message_type;
+					}
 					/* go to unmasking */
 					break;
 				}
@@ -1062,6 +1202,10 @@ int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 		}
 	}
 
+	/* A CLOSE frame, final or not, is reported to the application like any
+	 * other message. The application answers it by closing the websocket,
+	 * which sends our CLOSE and releases the context.
+	 */
 	return payload.count;
 }
 
@@ -1072,9 +1216,8 @@ static int websocket_send(struct websocket_context *ctx, const uint8_t *buf,
 
 	NET_DBG("[%p] Sending %zd bytes", ctx, buf_len);
 
-	ret = websocket_send_msg(ctx->sock, buf, buf_len,
-				 WEBSOCKET_OPCODE_DATA_TEXT,
-				 true, true, timeout);
+	ret = websocket_send_msg(ctx->sock, buf, buf_len, WEBSOCKET_OPCODE_DATA_TEXT,
+				 ctx->is_client, true, timeout);
 	if (ret < 0) {
 		errno = -ret;
 		return -1;
@@ -1130,8 +1273,8 @@ static ssize_t websocket_write_vmeth(void *obj, const void *buffer,
 
 static ssize_t websocket_sendto_ctx(void *obj, const void *buf, size_t len,
 				    int flags,
-				    const struct sockaddr *dest_addr,
-				    socklen_t addrlen)
+				    const struct net_sockaddr *dest_addr,
+				    net_socklen_t addrlen)
 {
 	struct websocket_context *ctx = obj;
 	int32_t timeout = SYS_FOREVER_MS;
@@ -1147,8 +1290,8 @@ static ssize_t websocket_sendto_ctx(void *obj, const void *buf, size_t len,
 }
 
 static ssize_t websocket_recvfrom_ctx(void *obj, void *buf, size_t max_len,
-				      int flags, struct sockaddr *src_addr,
-				      socklen_t *addrlen)
+				      int flags, struct net_sockaddr *src_addr,
+				      net_socklen_t *addrlen)
 {
 	struct websocket_context *ctx = obj;
 	int32_t timeout = SYS_FOREVER_MS;
@@ -1186,6 +1329,8 @@ int websocket_register(int sock, uint8_t *recv_buf, size_t recv_buf_len)
 	ctx->real_sock = sock;
 	ctx->recv_buf.buf = recv_buf;
 	ctx->recv_buf.size = recv_buf_len;
+	ctx->is_client = 0;
+	ctx->tx_broken = 0;
 
 	fd = zvfs_reserve_fd();
 	if (fd < 0) {
@@ -1202,7 +1347,7 @@ int websocket_register(int sock, uint8_t *recv_buf, size_t recv_buf_len)
 	ctx->recv_buf.count = 0;
 	ctx->parser_state = WEBSOCKET_PARSER_STATE_OPCODE;
 
-	(void)sock_obj_core_alloc_find(ctx->real_sock, fd, SOCK_STREAM);
+	(void)sock_obj_core_alloc_find(ctx->real_sock, fd, NET_SOCK_STREAM);
 
 	return fd;
 

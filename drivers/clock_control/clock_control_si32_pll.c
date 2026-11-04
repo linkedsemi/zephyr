@@ -80,8 +80,8 @@ static int clock_control_si32_pll_on(const struct device *dev, clock_control_sub
 	SI32_PLL_A_select_dco_frequency_lock_mode(config->pll);
 	while (!(SI32_PLL_A_is_locked(config->pll) ||
 		 SI32_PLL_A_is_saturation_low_interrupt_pending(config->pll) ||
-		 SI32_PLL_A_is_saturation_high_interrupt_pending(config->pll)))
-		;
+		 SI32_PLL_A_is_saturation_high_interrupt_pending(config->pll))) {
+	}
 
 	return 0;
 }
@@ -113,7 +113,7 @@ static int clock_control_si32_pll_set_rate(const struct device *dev, clock_contr
 	return 0;
 }
 
-static struct clock_control_driver_api clock_control_si32_pll_api = {
+static DEVICE_API(clock_control, clock_control_si32_pll_api) = {
 	.on = clock_control_si32_pll_on,
 	.off = clock_control_si32_pll_off,
 	.get_rate = clock_control_si32_pll_get_rate,

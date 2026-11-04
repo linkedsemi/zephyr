@@ -115,6 +115,17 @@ int wifi_nm_register_mgd_type_iface(struct wifi_nm_instance *nm,
 
 	k_mutex_lock(&wifi_nm_lock, K_FOREVER);
 	for (int i = 0; i < CONFIG_WIFI_NM_MAX_MANAGED_INTERFACES; i++) {
+		if (nm->mgd_ifaces[i].iface == iface) {
+			/* A single interface can serve multiple roles (e.g. both
+			 * STA and SAP in SoftAP-via-supplicant mode). Add the type
+			 * to the existing entry instead of consuming another slot,
+			 * so unregistration removes the interface in one step.
+			 */
+			nm->mgd_ifaces[i].type |= BIT(type);
+			k_mutex_unlock(&wifi_nm_lock);
+			return 0;
+		}
+
 		if (!nm->mgd_ifaces[i].iface) {
 			nm->mgd_ifaces[i].iface = iface;
 			nm->mgd_ifaces[i].type = BIT(type);
@@ -137,6 +148,7 @@ int wifi_nm_unregister_mgd_iface(struct wifi_nm_instance *nm, struct net_if *ifa
 	for (int i = 0; i < CONFIG_WIFI_NM_MAX_MANAGED_INTERFACES; i++) {
 		if (nm->mgd_ifaces[i].iface == iface) {
 			nm->mgd_ifaces[i].iface = NULL;
+			nm->mgd_ifaces[i].type = 0;
 			k_mutex_unlock(&wifi_nm_lock);
 			return 0;
 		}

@@ -86,48 +86,66 @@ struct usbfsotg_config {
 	struct usbfsotg_bd *bdt;
 	void (*irq_enable_func)(const struct device *dev);
 	void (*irq_disable_func)(const struct device *dev);
+	void (*make_thread)(const struct device *dev);
 	size_t num_of_eps;
 	struct udc_ep_config *ep_cfg_in;
 	struct udc_ep_config *ep_cfg_out;
 };
 
 enum usbfsotg_event_type {
-	/* Trigger next transfer, must not be used for control OUT */
-	USBFSOTG_EVT_XFER,
 	/* Setup packet received */
 	USBFSOTG_EVT_SETUP,
-	/* OUT transaction for specific endpoint is finished */
-	USBFSOTG_EVT_DOUT,
-	/* IN transaction for specific endpoint is finished */
-	USBFSOTG_EVT_DIN,
-	/* Workaround for clear halt in ISR */
-	USBFSOTG_EVT_CLEAR_HALT,
+	/* Trigger new transfer (except control endpoints) */
+	USBFSOTG_EVT_XFER_NEW,
+	/* Transfer for specific endpoint is finished */
+	USBFSOTG_EVT_XFER_FINISHED,
 };
-
-/* Structure for driver's endpoint events */
-struct usbfsotg_ep_event {
-	sys_snode_t node;
-	const struct device *dev;
-	enum usbfsotg_event_type event;
-	uint8_t ep;
-};
-
-K_MEM_SLAB_DEFINE(usbfsotg_ee_slab, sizeof(struct usbfsotg_ep_event),
-		  CONFIG_UDC_KINETIS_EVENT_COUNT, sizeof(void *));
 
 struct usbfsotg_data {
-	struct k_work work;
-	struct k_fifo fifo;
+	struct k_thread thread_data;
+	struct k_event events;
 	/*
-	 * Buffer pointers and busy flags used only for control OUT
-	 * to map the buffers to BDs when both are occupied
+	 * xfer_new and xfer_finished contain information on which endpoints
+	 * events USBFSOTG_EVT_XFER_NEW or USBFSOTG_EVT_XFER_FINISHED are
+	 * triggered. The mapping is bits 31..16 for IN endpoints and bits
+	 * 15..0 for OUT endpoints.
 	 */
-	struct net_buf *out_buf[2];
-	bool busy[2];
+	atomic_t xfer_new;
+	atomic_t xfer_finished;
+	struct usb_setup_packet setup;
+	uint32_t odd;
+	bool setup_valid;
 };
 
-static int usbfsotg_ep_clear_halt(const struct device *dev,
-				  struct udc_ep_config *const cfg);
+static inline int udc_ep_to_bnum(const uint8_t ep)
+{
+	if (USB_EP_DIR_IS_IN(ep)) {
+		return 16UL + USB_EP_GET_IDX(ep);
+	}
+
+	return USB_EP_GET_IDX(ep);
+}
+
+static inline uint8_t udc_pull_ep_from_bmsk(uint32_t *const bitmap)
+{
+	unsigned int bit;
+
+	__ASSERT_NO_MSG(bitmap && *bitmap);
+
+	bit = find_lsb_set(*bitmap) - 1;
+	*bitmap &= ~BIT(bit);
+
+	if (bit >= 16U) {
+		return USB_EP_DIR_IN | (bit - 16U);
+	}
+
+	return USB_EP_DIR_OUT | bit;
+}
+
+static uint8_t usbfsotg_get_odd_bit(const uint8_t ep)
+{
+	return USB_EP_DIR_IS_IN(ep) * 16U + USB_EP_GET_IDX(ep);
+}
 
 /* Get buffer descriptor (BD) based on endpoint address */
 static struct usbfsotg_bd *usbfsotg_get_ebd(const struct device *const dev,
@@ -135,14 +153,26 @@ static struct usbfsotg_bd *usbfsotg_get_ebd(const struct device *const dev,
 					    const bool opposite)
 {
 	const struct usbfsotg_config *config = dev->config;
+	struct usbfsotg_data *priv = udc_get_private(dev);
+	bool odd = priv->odd & BIT(usbfsotg_get_odd_bit(cfg->addr));
 	uint8_t bd_idx;
 
-	bd_idx = USB_EP_GET_IDX(cfg->addr) * 4U + (cfg->stat.odd ^ opposite);
+	bd_idx = USB_EP_GET_IDX(cfg->addr) * 4U + (odd ^ opposite);
 	if (USB_EP_DIR_IS_IN(cfg->addr)) {
 		bd_idx += 2U;
 	}
 
 	return &config->bdt[bd_idx];
+}
+
+static void usbfsotg_ebd_ctrl_discard(const struct device *const dev)
+{
+	const struct usbfsotg_config *config = dev->config;
+
+	config->bdt[0].set.bd_ctrl = 0;
+	config->bdt[1].set.bd_ctrl = 0;
+	config->bdt[2].set.bd_ctrl = 0;
+	config->bdt[3].set.bd_ctrl = 0;
 }
 
 static bool usbfsotg_bd_is_busy(const struct usbfsotg_bd *const bd)
@@ -177,6 +207,22 @@ static ALWAYS_INLINE void usbfsotg_resume_tx(const struct device *dev)
 	base->CTL &= ~USB_CTL_TXSUSPENDTOKENBUSY_MASK;
 }
 
+static bool usbfsotg_is_tx_suspended(const struct device *dev)
+{
+	const struct usbfsotg_config *config = dev->config;
+	USB_Type *base = config->base;
+
+	return base->CTL & USB_CTL_TXSUSPENDTOKENBUSY_MASK;
+}
+
+static ALWAYS_INLINE void set_control_in_pid_data1(const struct device *dev)
+{
+	struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_IN);
+
+	/* Set DATA1 PID for data or status stage */
+	ep_cfg->stat.data1 = true;
+}
+
 static int usbfsotg_xfer_continue(const struct device *dev,
 				  struct udc_ep_config *const cfg,
 				  struct net_buf *const buf)
@@ -204,10 +250,6 @@ static int usbfsotg_xfer_continue(const struct device *dev,
 
 	usbfsotg_bd_set_ctrl(bd, len, data_ptr, cfg->stat.data1);
 
-	if (USB_EP_GET_IDX(cfg->addr) == 0U) {
-		usbfsotg_resume_tx(dev);
-	}
-
 	LOG_DBG("xfer %p, bd %p, ENDPT 0x%x, bd field 0x%02x",
 		buf, bd, base->ENDPOINT[USB_EP_GET_IDX(cfg->addr)].ENDPT,
 		bd->bd_fields);
@@ -221,7 +263,7 @@ static int usbfsotg_xfer_next(const struct device *dev,
 {
 	struct net_buf *buf;
 
-	buf = udc_buf_peek(dev, cfg->addr);
+	buf = udc_buf_peek(cfg);
 	if (buf == NULL) {
 		return -ENODATA;
 	}
@@ -229,287 +271,111 @@ static int usbfsotg_xfer_next(const struct device *dev,
 	return usbfsotg_xfer_continue(dev, cfg, buf);
 }
 
-static inline int usbfsotg_ctrl_feed_start(const struct device *dev,
-					   struct net_buf *const buf)
+static inline int handle_evt_setup(const struct device *dev)
 {
 	struct usbfsotg_data *priv = udc_get_private(dev);
-	struct udc_ep_config *cfg;
-	struct usbfsotg_bd *bd;
-	size_t length;
 
-	cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_OUT);
-	if (priv->busy[cfg->stat.odd]) {
-		return -EBUSY;
-	}
+	usbfsotg_ebd_ctrl_discard(dev);
+	set_control_in_pid_data1(dev);
 
-	bd = usbfsotg_get_ebd(dev, cfg, false);
-	length = MIN(net_buf_tailroom(buf), udc_mps_ep_size(cfg));
-
-	priv->out_buf[cfg->stat.odd] = buf;
-	priv->busy[cfg->stat.odd] = true;
-	usbfsotg_bd_set_ctrl(bd, length, net_buf_tail(buf), cfg->stat.data1);
-	LOG_DBG("ep0 %p|odd: %u|d: %u", buf, cfg->stat.odd, cfg->stat.data1);
+	udc_setup_received(dev, priv->setup_valid ? &priv->setup : NULL);
 
 	return 0;
 }
 
-static inline int usbfsotg_ctrl_feed_start_next(const struct device *dev,
-						struct net_buf *const buf)
-{
-	struct usbfsotg_data *priv = udc_get_private(dev);
-	struct udc_ep_config *cfg;
-	struct usbfsotg_bd *bd;
-	size_t length;
-
-	cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_OUT);
-	if (priv->busy[!cfg->stat.odd]) {
-		return -EBUSY;
-	}
-
-	bd = usbfsotg_get_ebd(dev, cfg, true);
-	length = MIN(net_buf_tailroom(buf), udc_mps_ep_size(cfg));
-
-	priv->out_buf[!cfg->stat.odd] = buf;
-	priv->busy[!cfg->stat.odd] = true;
-	usbfsotg_bd_set_ctrl(bd, length, net_buf_tail(buf), cfg->stat.data1);
-	LOG_DBG("ep0 %p|odd: %u|d: %u (n)", buf, cfg->stat.odd, cfg->stat.data1);
-
-	return 0;
-}
-
-/*
- * Allocate buffer and initiate a new control OUT transfer,
- * use successive buffer descriptor when next is true.
- */
-static int usbfsotg_ctrl_feed_dout(const struct device *dev,
-				   const size_t length,
-				   const bool next,
-				   const bool resume_tx)
+static inline int handle_evt_finished(const struct device *dev,
+				     struct udc_ep_config *ep_cfg)
 {
 	struct net_buf *buf;
-	int ret;
 
-	buf = udc_ctrl_alloc(dev, USB_CONTROL_EP_OUT, length);
-	if (buf == NULL) {
-		return -ENOMEM;
-	}
-
-	if (next) {
-		ret = usbfsotg_ctrl_feed_start_next(dev, buf);
-	} else {
-		ret = usbfsotg_ctrl_feed_start(dev, buf);
-	}
-
-	if (ret) {
-		net_buf_unref(buf);
-		return ret;
-	}
-
-	if (resume_tx) {
-		usbfsotg_resume_tx(dev);
-	}
-
-	return 0;
-}
-
-static inline int work_handler_setup(const struct device *dev)
-{
-	struct net_buf *buf;
-	int err;
-
-	buf = udc_buf_get(dev, USB_CONTROL_EP_OUT);
+	buf = udc_buf_get(ep_cfg);
 	if (buf == NULL) {
 		return -ENODATA;
-	}
-
-	/* Update to next stage of control transfer */
-	udc_ctrl_update_stage(dev, buf);
-
-	if (udc_ctrl_stage_is_data_out(dev)) {
-		/*  Allocate and feed buffer for data OUT stage */
-		LOG_DBG("s:%p|feed for -out-", buf);
-		err = usbfsotg_ctrl_feed_dout(dev, udc_data_stage_length(buf),
-					      false, true);
-		if (err == -ENOMEM) {
-			err = udc_submit_ep_event(dev, buf, err);
-		}
-	} else if (udc_ctrl_stage_is_data_in(dev)) {
-		/*
-		 * Here we have to feed both descriptor tables so that
-		 * no setup packets are lost in case of successive
-		 * status OUT stage and next setup.
-		 */
-		LOG_DBG("s:%p|feed for -in-status >setup", buf);
-		err = usbfsotg_ctrl_feed_dout(dev, 8U, false, false);
-		if (err == 0) {
-			err = usbfsotg_ctrl_feed_dout(dev, 8U, true, true);
-		}
-
-		/* Finally alloc buffer for IN and submit to upper layer */
-		if (err == 0) {
-			err = udc_ctrl_submit_s_in_status(dev);
-		}
-	} else {
-		LOG_DBG("s:%p|feed >setup", buf);
-		/*
-		 * For all other cases we feed with a buffer
-		 * large enough for setup packet.
-		 */
-		err = usbfsotg_ctrl_feed_dout(dev, 8U, false, true);
-		if (err == 0) {
-			err = udc_ctrl_submit_s_status(dev);
-		}
-	}
-
-	return err;
-}
-
-static inline int work_handler_out(const struct device *dev,
-				   const uint8_t ep)
-{
-	struct net_buf *buf;
-	int err = 0;
-
-	buf = udc_buf_get(dev, ep);
-	if (buf == NULL) {
-		return -ENODATA;
-	}
-
-	if (ep == USB_CONTROL_EP_OUT) {
-		if (udc_ctrl_stage_is_status_out(dev)) {
-			/* s-in-status finished, next bd is already fed */
-			LOG_DBG("dout:%p|no feed", buf);
-			/* Status stage finished, notify upper layer */
-			udc_ctrl_submit_status(dev, buf);
-		} else {
-			/*
-			 * For all other cases we feed with a buffer
-			 * large enough for setup packet.
-			 */
-			LOG_DBG("dout:%p|feed >setup", buf);
-			err = usbfsotg_ctrl_feed_dout(dev, 8U, false, false);
-		}
-
-		/* Update to next stage of control transfer */
-		udc_ctrl_update_stage(dev, buf);
-
-		if (udc_ctrl_stage_is_status_in(dev)) {
-			err = udc_ctrl_submit_s_out_status(dev, buf);
-		}
-	} else {
-		err = udc_submit_ep_event(dev, buf, 0);
-	}
-
-	return err;
-}
-
-static inline int work_handler_in(const struct device *dev,
-				  const uint8_t ep)
-{
-	struct net_buf *buf;
-
-	buf = udc_buf_get(dev, ep);
-	if (buf == NULL) {
-		return -ENODATA;
-	}
-
-	if (ep == USB_CONTROL_EP_IN) {
-		if (udc_ctrl_stage_is_status_in(dev) ||
-		    udc_ctrl_stage_is_no_data(dev)) {
-			/* Status stage finished, notify upper layer */
-			udc_ctrl_submit_status(dev, buf);
-		}
-
-		/* Update to next stage of control transfer */
-		udc_ctrl_update_stage(dev, buf);
-
-		if (udc_ctrl_stage_is_status_out(dev)) {
-			/*
-			 * IN transfer finished, release buffer,
-			 * control OUT buffer should be already fed.
-			 */
-			net_buf_unref(buf);
-		}
-
-		return 0;
 	}
 
 	return udc_submit_ep_event(dev, buf, 0);
 }
 
-static void usbfsotg_event_submit(const struct device *dev,
-				 const uint8_t ep,
-				 const enum usbfsotg_event_type event)
+static void usbfsotg_xfer_new_submit(const struct device *dev, const uint8_t ep)
 {
 	struct usbfsotg_data *priv = udc_get_private(dev);
-	struct usbfsotg_ep_event *ev;
-	int ret;
 
-	ret = k_mem_slab_alloc(&usbfsotg_ee_slab, (void **)&ev, K_NO_WAIT);
-	if (ret) {
-		udc_submit_event(dev, UDC_EVT_ERROR, ret);
-		LOG_ERR("Failed to allocate slab");
-		return;
-	}
-
-	ev->dev = dev;
-	ev->ep = ep;
-	ev->event = event;
-	k_fifo_put(&priv->fifo, ev);
-	k_work_submit_to_queue(udc_get_work_q(), &priv->work);
+	atomic_set_bit(&priv->xfer_new, udc_ep_to_bnum(ep));
+	k_event_post(&priv->events, BIT(USBFSOTG_EVT_XFER_NEW));
 }
 
-static void xfer_work_handler(struct k_work *item)
+static void usbfsotg_xfer_finished_submit(const struct device *dev, const uint8_t ep)
 {
-	struct usbfsotg_ep_event *ev;
-	struct usbfsotg_data *priv;
+	struct usbfsotg_data *priv = udc_get_private(dev);
 
-	priv = CONTAINER_OF(item, struct usbfsotg_data, work);
-	while ((ev = k_fifo_get(&priv->fifo, K_NO_WAIT)) != NULL) {
-		struct udc_ep_config *ep_cfg;
-		int err = 0;
+	atomic_set_bit(&priv->xfer_finished, udc_ep_to_bnum(ep));
+	k_event_post(&priv->events, BIT(USBFSOTG_EVT_XFER_FINISHED));
+}
 
-		LOG_DBG("dev %p, ep 0x%02x, event %u",
-			ev->dev, ev->ep, ev->event);
-		ep_cfg = udc_get_ep_cfg(ev->dev, ev->ep);
-		if (unlikely(ep_cfg == NULL)) {
-			udc_submit_event(ev->dev, UDC_EVT_ERROR, -ENODATA);
-			goto xfer_work_error;
-		}
+static ALWAYS_INLINE void usbfsotg_thread_handler(const struct device *const dev)
+{
+	struct usbfsotg_data *priv = udc_get_private(dev);
+	struct udc_ep_config *ep_cfg;
+	uint32_t evt;
+	uint32_t eps;
+	uint8_t ep;
+	int err;
 
-		switch (ev->event) {
-		case USBFSOTG_EVT_SETUP:
-			err = work_handler_setup(ev->dev);
-			break;
-		case USBFSOTG_EVT_DOUT:
-			err = work_handler_out(ev->dev, ev->ep);
-			udc_ep_set_busy(ev->dev, ev->ep, false);
-			break;
-		case USBFSOTG_EVT_DIN:
-			err = work_handler_in(ev->dev, ev->ep);
-			udc_ep_set_busy(ev->dev, ev->ep, false);
-			break;
-		case USBFSOTG_EVT_CLEAR_HALT:
-			err = usbfsotg_ep_clear_halt(ev->dev, ep_cfg);
-		case USBFSOTG_EVT_XFER:
-		default:
-			break;
-		}
+	evt = k_event_wait(&priv->events, UINT32_MAX, false, K_FOREVER);
+	udc_lock_internal(dev, K_FOREVER);
 
-		if (unlikely(err)) {
-			udc_submit_event(ev->dev, UDC_EVT_ERROR, err);
-		}
+	if (evt & BIT(USBFSOTG_EVT_XFER_FINISHED)) {
+		k_event_clear(&priv->events, BIT(USBFSOTG_EVT_XFER_FINISHED));
+		eps = atomic_clear(&priv->xfer_finished);
 
-		/* Peek next transfer */
-		if (ev->ep != USB_CONTROL_EP_OUT && !udc_ep_is_busy(ev->dev, ev->ep)) {
-			if (usbfsotg_xfer_next(ev->dev, ep_cfg) == 0) {
-				udc_ep_set_busy(ev->dev, ev->ep, true);
+		while (eps) {
+			ep = udc_pull_ep_from_bmsk(&eps);
+			ep_cfg = udc_get_ep_cfg(dev, ep);
+			LOG_DBG("Finished event ep 0x%02x", ep);
+
+			err = handle_evt_finished(dev, ep_cfg);
+			if (unlikely(err)) {
+				udc_submit_event(dev, UDC_EVT_ERROR, err);
+			}
+
+			udc_ep_set_busy(ep_cfg, false);
+
+			/* Peek next transfer */
+			if (ep != USB_CONTROL_EP_OUT) {
+				if (usbfsotg_xfer_next(dev, ep_cfg) == 0) {
+					udc_ep_set_busy(ep_cfg, true);
+				}
 			}
 		}
-
-xfer_work_error:
-		k_mem_slab_free(&usbfsotg_ee_slab, (void *)ev);
 	}
+
+	if (evt & BIT(USBFSOTG_EVT_XFER_NEW)) {
+		k_event_clear(&priv->events, BIT(USBFSOTG_EVT_XFER_NEW));
+		eps = atomic_clear(&priv->xfer_new);
+
+		while (eps) {
+			ep = udc_pull_ep_from_bmsk(&eps);
+			ep_cfg = udc_get_ep_cfg(dev, ep);
+			LOG_DBG("New transfer ep 0x%02x in the queue", ep);
+
+			if (!udc_ep_is_busy(ep_cfg)) {
+				if (usbfsotg_xfer_next(dev, ep_cfg) == 0) {
+					udc_ep_set_busy(ep_cfg, true);
+				}
+			}
+		}
+	}
+
+	if (evt & BIT(USBFSOTG_EVT_SETUP)) {
+		k_event_clear(&priv->events, BIT(USBFSOTG_EVT_SETUP));
+
+		err = handle_evt_setup(dev);
+		if (unlikely(err)) {
+			udc_submit_event(dev, UDC_EVT_ERROR, err);
+		}
+	}
+
+	udc_unlock_internal(dev);
 }
 
 static ALWAYS_INLINE uint8_t stat_reg_get_ep(const uint8_t status)
@@ -524,22 +390,15 @@ static ALWAYS_INLINE bool stat_reg_is_odd(const uint8_t status)
 	return (status & USB_STAT_ODD_MASK) >> USB_STAT_ODD_SHIFT;
 }
 
-static ALWAYS_INLINE void set_control_in_pid_data1(const struct device *dev)
-{
-	struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_IN);
-
-	/* Set DATA1 PID for data or status stage */
-	ep_cfg->stat.data1 = true;
-}
-
 static ALWAYS_INLINE void isr_handle_xfer_done(const struct device *dev,
 					       const uint8_t istatus,
 					       const uint8_t status)
 {
 	struct usbfsotg_data *priv = udc_get_private(dev);
 	uint8_t ep = stat_reg_get_ep(status);
+	const uint8_t odd_bit = usbfsotg_get_odd_bit(ep);
 	bool odd = stat_reg_is_odd(status);
-	struct usbfsotg_bd *bd, *bd_op;
+	struct usbfsotg_bd *bd;
 	struct udc_ep_config *ep_cfg;
 	struct net_buf *buf;
 	uint8_t token_pid;
@@ -548,7 +407,6 @@ static ALWAYS_INLINE void isr_handle_xfer_done(const struct device *dev,
 
 	ep_cfg = udc_get_ep_cfg(dev, ep);
 	bd = usbfsotg_get_ebd(dev, ep_cfg, false);
-	bd_op = usbfsotg_get_ebd(dev, ep_cfg, true);
 	token_pid = bd->get.tok_pid;
 	len  = bd->get.bc;
 	data1 = bd->get.data1 ? true : false;
@@ -558,34 +416,24 @@ static ALWAYS_INLINE void isr_handle_xfer_done(const struct device *dev,
 
 	switch (token_pid) {
 	case USBFSOTG_SETUP_TOKEN:
-		ep_cfg->stat.odd = !odd;
+		WRITE_BIT(priv->odd, odd_bit, !odd);
 		ep_cfg->stat.data1 = true;
-		set_control_in_pid_data1(dev);
 
-		if (priv->out_buf[odd] != NULL) {
-			net_buf_add(priv->out_buf[odd], len);
-			udc_ep_buf_set_setup(priv->out_buf[odd]);
-			udc_buf_put(ep_cfg, priv->out_buf[odd]);
-			priv->busy[odd] = false;
-			priv->out_buf[odd] = NULL;
-			usbfsotg_event_submit(dev, ep, USBFSOTG_EVT_SETUP);
-		} else {
-			LOG_ERR("No buffer for ep 0x00");
-			udc_submit_event(dev, UDC_EVT_ERROR, -ENOBUFS);
+		/* Record whether the number of received setup data was valid */
+		priv->setup_valid = len == sizeof(struct usb_setup_packet);
+
+		/* Only copy the SETUP data if it is valid length */
+		if (len == sizeof(priv->setup)) {
+			memcpy(&priv->setup, UINT_TO_POINTER(bd->buf_addr), sizeof(priv->setup));
 		}
 
+		k_event_post(&priv->events, BIT(USBFSOTG_EVT_SETUP));
 		break;
 	case USBFSOTG_OUT_TOKEN:
-		ep_cfg->stat.odd = !odd;
+		WRITE_BIT(priv->odd, odd_bit, !odd);
 		ep_cfg->stat.data1 = !data1;
 
-		if (ep == USB_CONTROL_EP_OUT) {
-			buf = priv->out_buf[odd];
-			priv->busy[odd] = false;
-			priv->out_buf[odd] = NULL;
-		} else {
-			buf = udc_buf_peek(dev, ep_cfg->addr);
-		}
+		buf = udc_buf_peek(ep_cfg);
 
 		if (buf == NULL) {
 			LOG_ERR("No buffer for ep 0x%02x", ep);
@@ -596,25 +444,17 @@ static ALWAYS_INLINE void isr_handle_xfer_done(const struct device *dev,
 		net_buf_add(buf, len);
 		if (net_buf_tailroom(buf) >= udc_mps_ep_size(ep_cfg) &&
 		    len == udc_mps_ep_size(ep_cfg)) {
-			if (ep == USB_CONTROL_EP_OUT) {
-				usbfsotg_ctrl_feed_start(dev, buf);
-			} else {
-				usbfsotg_xfer_continue(dev, ep_cfg, buf);
-			}
+			usbfsotg_xfer_continue(dev, ep_cfg, buf);
 		} else {
-			if (ep == USB_CONTROL_EP_OUT) {
-				udc_buf_put(ep_cfg, buf);
-			}
-
-			usbfsotg_event_submit(dev, ep, USBFSOTG_EVT_DOUT);
+			usbfsotg_xfer_finished_submit(dev, ep);
 		}
 
 		break;
 	case USBFSOTG_IN_TOKEN:
-		ep_cfg->stat.odd = !odd;
+		WRITE_BIT(priv->odd, odd_bit, !odd);
 		ep_cfg->stat.data1 = !data1;
 
-		buf = udc_buf_peek(dev, ep_cfg->addr);
+		buf = udc_buf_peek(ep_cfg);
 		if (buf == NULL) {
 			LOG_ERR("No buffer for ep 0x%02x", ep);
 			udc_submit_event(dev, UDC_EVT_ERROR, -ENOBUFS);
@@ -631,7 +471,7 @@ static ALWAYS_INLINE void isr_handle_xfer_done(const struct device *dev,
 				break;
 			}
 
-			usbfsotg_event_submit(dev, ep, USBFSOTG_EVT_DIN);
+			usbfsotg_xfer_finished_submit(dev, ep);
 		}
 
 		break;
@@ -653,7 +493,7 @@ static void usbfsotg_isr_handler(const struct device *dev)
 	}
 
 	if (istatus == USB_ISTAT_SOFTOK_MASK) {
-		udc_submit_event(dev, UDC_EVT_SOF, 0);
+		udc_submit_sof_event(dev);
 	}
 
 	if (istatus == USB_ISTAT_ERROR_MASK) {
@@ -663,25 +503,7 @@ static void usbfsotg_isr_handler(const struct device *dev)
 	}
 
 	if (istatus & USB_ISTAT_STALL_MASK) {
-		struct udc_ep_config *ep_cfg;
-
 		LOG_DBG("STALL sent");
-
-		ep_cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_OUT);
-		if (ep_cfg->stat.halted) {
-			/*
-			 * usbfsotg_ep_clear_halt(dev, ep_cfg); cannot
-			 * be called in ISR context
-			 */
-			usbfsotg_event_submit(dev, USB_CONTROL_EP_OUT,
-					      USBFSOTG_EVT_CLEAR_HALT);
-		}
-
-		ep_cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_IN);
-		if (ep_cfg->stat.halted) {
-			usbfsotg_event_submit(dev, USB_CONTROL_EP_IN,
-					      USBFSOTG_EVT_CLEAR_HALT);
-		}
 	}
 
 	if (istatus & USB_ISTAT_TOKDNE_MASK) {
@@ -714,14 +536,63 @@ static int usbfsotg_ep_enqueue(const struct device *dev,
 			       struct udc_ep_config *const cfg,
 			       struct net_buf *const buf)
 {
+	/* Control transfer handling code synchronization relies on USBFSOTG CTL
+	 * TXSUSPENDTOKENBUSY bit and USB stack enqueue order.
+	 */
+	if (cfg->addr == USB_CONTROL_EP_OUT) {
+		struct udc_buf_info *bi = udc_get_buf_info(buf);
+		struct usbfsotg_bd *bd;
+		size_t length;
+		bool data1 = bi->setup ? false : true;
+		bool tx_suspended = usbfsotg_is_tx_suspended(dev);
+
+		if (udc_buf_peek(cfg)) {
+			/* STATUS OUT is already queued */
+			bd = usbfsotg_get_ebd(dev, cfg, true);
+		} else {
+			bd = usbfsotg_get_ebd(dev, cfg, false);
+		}
+
+		udc_buf_put(cfg, buf);
+
+		length = MIN(net_buf_tailroom(buf), udc_mps_ep_size(cfg));
+		usbfsotg_bd_set_ctrl(bd, length, net_buf_tail(buf), data1);
+
+		LOG_DBG("xfer %p, bd %p, ep 0x%02x, bd field 0x%02x",
+			buf, bd, cfg->addr, bd->bd_fields);
+
+		if (bi->setup) {
+			struct udc_ep_config *cfg_in;
+
+			cfg_in = udc_get_ep_cfg(dev, USB_CONTROL_EP_IN);
+			usbfsotg_xfer_next(dev, cfg_in);
+		}
+
+		if (bi->data || bi->setup) {
+			/* Signal resume only if CTL TXSUSPENDTOKENBUSY was set
+			 * before EP0OUT BD was updated.
+			 */
+			if (tx_suspended) {
+				usbfsotg_resume_tx(dev);
+			}
+		}
+
+		return 0;
+	}
 
 	udc_buf_put(cfg, buf);
+
+	if (cfg->addr == USB_CONTROL_EP_IN) {
+		/* Update BDT after USB stack is ready to process next SETUP */
+		return 0;
+	}
+
 	if (cfg->stat.halted) {
 		LOG_DBG("ep 0x%02x halted", cfg->addr);
 		return 0;
 	}
 
-	usbfsotg_event_submit(dev, cfg->addr, USBFSOTG_EVT_XFER);
+	usbfsotg_xfer_new_submit(dev, cfg->addr);
 
 	return 0;
 }
@@ -731,7 +602,6 @@ static int usbfsotg_ep_dequeue(const struct device *dev,
 {
 	struct usbfsotg_bd *bd;
 	unsigned int lock_key;
-	struct net_buf *buf;
 
 	bd = usbfsotg_get_ebd(dev, cfg, false);
 
@@ -740,35 +610,11 @@ static int usbfsotg_ep_dequeue(const struct device *dev,
 	irq_unlock(lock_key);
 
 	cfg->stat.halted = false;
-	buf = udc_buf_get_all(dev, cfg->addr);
-	if (buf) {
-		udc_submit_ep_event(dev, buf, -ECONNABORTED);
-	}
+	udc_ep_cancel_queued(dev, cfg);
 
-	udc_ep_set_busy(dev, cfg->addr, false);
+	udc_ep_set_busy(cfg, false);
 
 	return 0;
-}
-
-static void ctrl_drop_out_successor(const struct device *dev)
-{
-	struct usbfsotg_data *priv = udc_get_private(dev);
-	struct udc_ep_config *cfg;
-	struct usbfsotg_bd *bd;
-	struct net_buf *buf;
-
-	cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_OUT);
-
-	if (priv->busy[!cfg->stat.odd]) {
-		bd = usbfsotg_get_ebd(dev, cfg, true);
-		buf = priv->out_buf[!cfg->stat.odd];
-
-		bd->bd_fields = 0U;
-		priv->busy[!cfg->stat.odd] = false;
-		if (buf) {
-			net_buf_unref(buf);
-		}
-	}
 }
 
 static int usbfsotg_ep_set_halt(const struct device *dev,
@@ -781,15 +627,6 @@ static int usbfsotg_ep_set_halt(const struct device *dev,
 	cfg->stat.halted = true;
 	LOG_DBG("Halt ep 0x%02x bd %p", cfg->addr, bd);
 
-	if (cfg->addr == USB_CONTROL_EP_IN) {
-		/* Drop subsequent out transfer, current can be re-used */
-		ctrl_drop_out_successor(dev);
-	}
-
-	if (USB_EP_GET_IDX(cfg->addr) == 0U) {
-		usbfsotg_resume_tx(dev);
-	}
-
 	return 0;
 }
 
@@ -797,7 +634,6 @@ static int usbfsotg_ep_clear_halt(const struct device *dev,
 				  struct udc_ep_config *const cfg)
 {
 	const struct usbfsotg_config *config = dev->config;
-	struct usbfsotg_data *priv = udc_get_private(dev);
 	USB_Type *base = config->base;
 	uint8_t ep_idx = USB_EP_GET_IDX(cfg->addr);
 	struct usbfsotg_bd *bd;
@@ -816,20 +652,9 @@ static int usbfsotg_ep_clear_halt(const struct device *dev,
 	cfg->stat.halted = false;
 	base->ENDPOINT[ep_idx].ENDPT &= ~USB_ENDPT_EPSTALL_MASK;
 
-	if (cfg->addr == USB_CONTROL_EP_OUT) {
-		if (priv->busy[cfg->stat.odd]) {
-			LOG_DBG("bd %p restarted", bd);
-			bd->set.bd_ctrl = USBFSOTG_BD_DTS | USBFSOTG_BD_OWN;
-		} else {
-			usbfsotg_ctrl_feed_dout(dev, 8U, false, false);
-		}
-	}
-
-	if (USB_EP_GET_IDX(cfg->addr) == 0U) {
-		usbfsotg_resume_tx(dev);
-	} else {
+	if (USB_EP_GET_IDX(cfg->addr) != 0) {
 		/* trigger queued transfers */
-		usbfsotg_event_submit(dev, cfg->addr, USBFSOTG_EVT_XFER);
+		usbfsotg_xfer_new_submit(dev, cfg->addr);
 	}
 
 	return 0;
@@ -839,7 +664,6 @@ static int usbfsotg_ep_enable(const struct device *dev,
 			      struct udc_ep_config *const cfg)
 {
 	const struct usbfsotg_config *config = dev->config;
-	struct usbfsotg_data *priv = udc_get_private(dev);
 	USB_Type *base = config->base;
 	const uint8_t ep_idx = USB_EP_GET_IDX(cfg->addr);
 	struct usbfsotg_bd *bd_even, *bd_odd;
@@ -877,16 +701,6 @@ static int usbfsotg_ep_enable(const struct device *dev,
 		break;
 	default:
 		return -EINVAL;
-	}
-
-	if (cfg->addr == USB_CONTROL_EP_OUT) {
-		struct net_buf *buf;
-
-		priv->busy[0] = false;
-		priv->busy[1] = false;
-		buf = udc_ctrl_alloc(dev, USB_CONTROL_EP_OUT, USBFSOTG_EP0_SIZE);
-		usbfsotg_bd_set_ctrl(bd_even, buf->size, buf->data, false);
-		priv->out_buf[0] = buf;
 	}
 
 	return 0;
@@ -954,8 +768,7 @@ static int usbfsotg_disable(const struct device *dev)
 	const struct usbfsotg_config *config = dev->config;
 	USB_Type *base = config->base;
 
-	/* disable USB and DP Pullup */
-	base->CTL  &= ~USB_CTL_USBENSOFEN_MASK;
+	/* Disable DP Pullup */
 	base->CONTROL &= ~USB_CONTROL_DPPULLUPNONOTG_MASK;
 
 	return 0;
@@ -1016,7 +829,7 @@ static int usbfsotg_init(const struct device *dev)
 	base->INTEN = (USB_INTEN_SLEEPEN_MASK  |
 		       USB_INTEN_STALLEN_MASK |
 		       USB_INTEN_TOKDNEEN_MASK |
-		       USB_INTEN_SOFTOKEN_MASK |
+		       IF_ENABLED(CONFIG_UDC_ENABLE_SOF, (USB_INTEN_SOFTOKEN_MASK |))
 		       USB_INTEN_ERROREN_MASK |
 		       USB_INTEN_USBRSTEN_MASK);
 
@@ -1045,6 +858,7 @@ static int usbfsotg_init(const struct device *dev)
 static int usbfsotg_shutdown(const struct device *dev)
 {
 	const struct usbfsotg_config *config = dev->config;
+	struct usbfsotg_data *priv = udc_get_private(dev);
 
 	config->irq_disable_func(dev);
 
@@ -1066,17 +880,25 @@ static int usbfsotg_shutdown(const struct device *dev)
 	SIM->SOPT1 &= ~SIM_SOPT1_USBREGEN_MASK;
 #endif
 
+	/* Cleanup BDT */
+	memset(config->bdt, 0, sizeof(struct usbfsotg_bd) * config->num_of_eps * 2 * 2);
+
+	/* All controller odd bits are reset, update internal tracking */
+	priv->odd = 0;
+
 	return 0;
 }
 
-static int usbfsotg_lock(const struct device *dev)
+static void usbfsotg_lock(const struct device *dev)
 {
-	return udc_lock_internal(dev, K_FOREVER);
+	k_sched_lock();
+	udc_lock_internal(dev, K_FOREVER);
 }
 
-static int usbfsotg_unlock(const struct device *dev)
+static void usbfsotg_unlock(const struct device *dev)
 {
-	return udc_unlock_internal(dev);
+	udc_unlock_internal(dev);
+	k_sched_unlock();
 }
 
 static int usbfsotg_driver_preinit(const struct device *dev)
@@ -1087,8 +909,9 @@ static int usbfsotg_driver_preinit(const struct device *dev)
 	int err;
 
 	k_mutex_init(&data->mutex);
-	k_fifo_init(&priv->fifo);
-	k_work_init(&priv->work, xfer_work_handler);
+	k_event_init(&priv->events);
+	atomic_clear(&priv->xfer_new);
+	atomic_clear(&priv->xfer_finished);
 
 	for (int i = 0; i < config->num_of_eps; i++) {
 		config->ep_cfg_out[i].caps.out = 1;
@@ -1133,6 +956,8 @@ static int usbfsotg_driver_preinit(const struct device *dev)
 	data->caps.rwup = false;
 	data->caps.mps0 = USBFSOTG_MPS0;
 
+	config->make_thread(dev);
+
 	return 0;
 }
 
@@ -1154,14 +979,44 @@ static const struct udc_api usbfsotg_api = {
 	.unlock = usbfsotg_unlock,
 };
 
+#define USBFSOTG_IRQ_DEFINE_OR(n)						\
+	COND_CODE_1(CONFIG_UHC_NXP_KHCI,					\
+	(irq_connect_dynamic(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),		\
+			     (void (*)(const void *))usbfsotg_isr_handler,	\
+			     DEVICE_DT_INST_GET(n), 0)),			\
+	(IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),			\
+		     usbfsotg_isr_handler,					\
+		     DEVICE_DT_INST_GET(n), 0)))
+
 #define USBFSOTG_DEVICE_DEFINE(n)						\
+	K_THREAD_STACK_DEFINE(usbfsotg_stack_##n,				\
+			      CONFIG_UDC_KINETIS_STACK_SIZE);			\
+										\
+	static void usbfsotg_thread_##n(void *dev, void *arg1, void *arg2)	\
+	{									\
+		while (true) {							\
+			usbfsotg_thread_handler(dev);				\
+		}								\
+	}									\
+										\
+	static void usbfsotg_make_thread_##n(const struct device *dev)		\
+	{									\
+		struct usbfsotg_data *priv = udc_get_private(dev);		\
+										\
+		k_thread_create(&priv->thread_data,				\
+				usbfsotg_stack_##n,				\
+				K_THREAD_STACK_SIZEOF(usbfsotg_stack_##n),	\
+				usbfsotg_thread_##n,				\
+				(void *)dev, NULL, NULL,			\
+				K_PRIO_COOP(CONFIG_UDC_KINETIS_THREAD_PRIORITY),\
+				K_ESSENTIAL,					\
+				K_NO_WAIT);					\
+		k_thread_name_set(&priv->thread_data, dev->name);		\
+	}									\
+										\
 	static void udc_irq_enable_func##n(const struct device *dev)		\
 	{									\
-		IRQ_CONNECT(DT_INST_IRQN(n),					\
-			    DT_INST_IRQ(n, priority),				\
-			    usbfsotg_isr_handler,				\
-			    DEVICE_DT_INST_GET(n), 0);				\
-										\
+		USBFSOTG_IRQ_DEFINE_OR(n);					\
 		irq_enable(DT_INST_IRQN(n));					\
 	}									\
 										\
@@ -1174,18 +1029,19 @@ static const struct udc_api usbfsotg_api = {
 		bdt_##n[DT_INST_PROP(n, num_bidir_endpoints) * 2 * 2];		\
 										\
 	static struct udc_ep_config						\
-		ep_cfg_out[DT_INST_PROP(n, num_bidir_endpoints)];		\
+		ep_cfg_out_##n[DT_INST_PROP(n, num_bidir_endpoints)];		\
 	static struct udc_ep_config						\
-		ep_cfg_in[DT_INST_PROP(n, num_bidir_endpoints)];		\
+		ep_cfg_in_##n[DT_INST_PROP(n, num_bidir_endpoints)];		\
 										\
 	static struct usbfsotg_config priv_config_##n = {			\
 		.base = (USB_Type *)DT_INST_REG_ADDR(n),			\
 		.bdt = bdt_##n,							\
 		.irq_enable_func = udc_irq_enable_func##n,			\
 		.irq_disable_func = udc_irq_disable_func##n,			\
+		.make_thread = usbfsotg_make_thread_##n,			\
 		.num_of_eps = DT_INST_PROP(n, num_bidir_endpoints),		\
-		.ep_cfg_in = ep_cfg_out,					\
-		.ep_cfg_out = ep_cfg_in,					\
+		.ep_cfg_in = ep_cfg_in_##n,					\
+		.ep_cfg_out = ep_cfg_out_##n,					\
 	};									\
 										\
 	static struct usbfsotg_data priv_data_##n = {				\

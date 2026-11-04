@@ -44,19 +44,22 @@ extern "C" {
  * @{
  */
 /** No index */
-#define BT_HAS_PRESET_INDEX_NONE 0x00
+#define BT_HAS_PRESET_INDEX_NONE 0x00U
 /** First preset index */
-#define BT_HAS_PRESET_INDEX_FIRST 0x01
+#define BT_HAS_PRESET_INDEX_FIRST 0x01U
 /** Last preset index */
-#define BT_HAS_PRESET_INDEX_LAST 0xFF
+#define BT_HAS_PRESET_INDEX_LAST 0xFFU
 /** @} */
 
 /** Preset name minimum length */
-#define BT_HAS_PRESET_NAME_MIN 1
+#define BT_HAS_PRESET_NAME_MIN 1U
 /** Preset name maximum length */
-#define BT_HAS_PRESET_NAME_MAX 40
+#define BT_HAS_PRESET_NAME_MAX 40U
 
-/** @brief Opaque Hearing Access Service object. */
+/**
+ * @struct bt_has
+ * @brief Opaque Hearing Access Service object.
+ */
 struct bt_has;
 
 /** Hearing Aid device type */
@@ -84,16 +87,16 @@ enum bt_has_properties {
 	BT_HAS_PROP_NONE = 0,
 
 	/** Preset name can be written by the client */
-	BT_HAS_PROP_WRITABLE = BIT(0),
+	BT_HAS_PROP_WRITABLE = BIT(0U),
 
 	/** Preset availability */
-	BT_HAS_PROP_AVAILABLE = BIT(1),
+	BT_HAS_PROP_AVAILABLE = BIT(1U),
 };
 
 /** Hearing Aid device capabilities */
 enum bt_has_capabilities {
 	/** Indicate support for presets */
-	BT_HAS_PRESET_SUPPORT = BIT(0),
+	BT_HAS_PRESET_SUPPORT = BIT(0U),
 };
 
 /** @brief Structure for registering features of a Hearing Access Service instance. */
@@ -423,14 +426,6 @@ int bt_has_preset_available(uint8_t index);
  */
 int bt_has_preset_unavailable(uint8_t index);
 
-/** Enum for return values for @ref bt_has_preset_func_t functions */
-enum {
-	/** Stop iterating */
-	BT_HAS_PRESET_ITER_STOP = 0,
-	/** Continue iterating */
-	BT_HAS_PRESET_ITER_CONTINUE,
-};
-
 /**
  * @typedef bt_has_preset_func_t
  * @brief Preset iterator callback.
@@ -440,11 +435,11 @@ enum {
  * @param name Preset name.
  * @param user_data Data given.
  *
- * @return BT_HAS_PRESET_ITER_CONTINUE if should continue to the next preset.
- * @return BT_HAS_PRESET_ITER_STOP to stop.
+ * @retval true Continue iterating.
+ * @retval false Stop iterating.
  */
-typedef uint8_t (*bt_has_preset_func_t)(uint8_t index, enum bt_has_properties properties,
-					const char *name, void *user_data);
+typedef bool (*bt_has_preset_func_t)(uint8_t index, enum bt_has_properties properties,
+				     const char *name, void *user_data);
 
 /**
  * @brief Preset iterator.
@@ -454,8 +449,12 @@ typedef uint8_t (*bt_has_preset_func_t)(uint8_t index, enum bt_has_properties pr
  * @param index Preset index, passing @ref BT_HAS_PRESET_INDEX_NONE skips index matching.
  * @param func Callback function.
  * @param user_data Data to pass to the callback.
+ *
+ * @retval 0 Success
+ * @retval -ECANCELED Iteration was stopped by the callback function before complete.
+ * @retval -EINVAL @p func was NULL.
  */
-void bt_has_preset_foreach(uint8_t index, bt_has_preset_func_t func, void *user_data);
+int bt_has_preset_foreach(uint8_t index, bt_has_preset_func_t func, void *user_data);
 
 /**
  * @brief Set active preset.

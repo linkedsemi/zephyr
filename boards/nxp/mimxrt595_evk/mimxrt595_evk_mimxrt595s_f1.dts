@@ -4,6 +4,7 @@
  */
 
 /dts-v1/;
+#include <freq.h>
 #include <mem.h>
 #include <xtensa/xtensa.dtsi>
 
@@ -14,6 +15,7 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		timebase-frequency = <DT_FREQ_M(198)>;
 
 		cpu0: cpu@0 {
 			device_type = "cpu";
@@ -29,14 +31,17 @@
 		compatible = "mmio-sram";
 		/* Reserve first 512kB of shared memory for ADSP. */
 		reg = <0x0 DT_SIZE_K(512)>;
+
 		/* Reset section must always be at 0 and at least 1kB. */
 		adsp_reset: memory@0 {
 			reg = <0x0 DT_SIZE_K(1)>;
 		};
+
 		/* Code and data sections can be moved around and resized if needed. */
 		adsp_text: memory@400 {
 			reg = <0x400 DT_SIZE_K(255)>;
 		};
+
 		/* On RT595 ADSP shared RAM is mapped at offset 0 on the code bus and at
 		 * offset 0x800000 on the data bus.
 		 */

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_LLEXT_LOADER_H
-#define ZEPHYR_LLEXT_LOADER_H
+#ifndef ZEPHYR_INCLUDE_LLEXT_LOADER_H_
+#define ZEPHYR_INCLUDE_LLEXT_LOADER_H_
 
 #include <zephyr/llext/elf.h>
 #include <stddef.h>
@@ -29,8 +29,46 @@ extern "C" {
 #include <zephyr/llext/llext.h>
 
 /** @cond ignore */
-struct llext_elf_sect_map; /* defined in llext_priv.h */
+struct llext_elf_sect_map; /* defined in llext_internal.h */
 /** @endcond */
+
+/**
+ * @brief Storage type for the ELF data to be loaded.
+ *
+ * This enum defines the storage type of the ELF data that will be loaded. The
+ * storage type determines which memory optimizations can be tried by the LLEXT
+ * subsystem during the load process.
+ *
+ * @note Even with the most permissive option, LLEXT might still have to copy
+ * ELF data into a separate memory region to comply with other restrictions,
+ * such as hardware memory protection and/or alignment rules.
+ * Sections such as BSS that have no space in the file will also be allocated
+ * in the LLEXT heap.
+ */
+enum llext_storage_type {
+	/**
+	 * ELF data is only available during llext_load(); even if the loader
+	 * supports directly accessing the memory via llext_peek(), the buffer
+	 * contents will be discarded afterwards.
+	 * LLEXT will allocate copies of all required data into its heap.
+	 */
+	LLEXT_STORAGE_TEMPORARY,
+	/**
+	 * ELF data is stored in a *read-only* buffer that is guaranteed to be
+	 * always accessible for as long as the extension is loaded. LLEXT may
+	 * directly reuse constant data from the buffer, but may still allocate
+	 * copies if relocations need to be applied.
+	 */
+	LLEXT_STORAGE_PERSISTENT,
+	/**
+	 * ELF data is stored in a *writable* memory buffer that is guaranteed
+	 * to be always accessible for as long as the extension is loaded.
+	 * LLEXT may freely modify and reuse data in the buffer; so, after the
+	 * extension is unloaded, the contents should be re-initialized before
+	 * a subsequent llext_load() call.
+	 */
+	LLEXT_STORAGE_WRITABLE,
+};
 
 /**
  * @brief Linkable loadable extension loader context
@@ -84,7 +122,7 @@ struct llext_loader {
 	 * @param[in] ldr Loader
 	 * @param[in] pos Position to obtain a pointer to
 	 *
-	 * @returns a pointer into the buffer or `NULL` if not supported
+	 * @returns a pointer into the buffer or `NULL` if not supported or pointer out of bounds.
 	 */
 	void *(*peek)(struct llext_loader *ldr, size_t pos);
 
@@ -95,13 +133,15 @@ struct llext_loader {
 	 */
 	void (*finalize)(struct llext_loader *ldr);
 
+	/**
+	 * @brief Storage type of the underlying data accessed by this loader.
+	 */
+	enum llext_storage_type storage;
+
 	/** @cond ignore */
 	elf_ehdr_t hdr;
 	elf_shdr_t sects[LLEXT_MEM_COUNT];
-	elf_shdr_t *sect_hdrs;
-	bool sect_hdrs_on_heap;
 	struct llext_elf_sect_map *sect_map;
-	uint32_t sect_cnt;
 	/** @endcond */
 };
 
@@ -150,4 +190,4 @@ static inline void llext_finalize(struct llext_loader *l)
 }
 #endif
 
-#endif /* ZEPHYR_LLEXT_LOADER_H */
+#endif /* ZEPHYR_INCLUDE_LLEXT_LOADER_H_ */

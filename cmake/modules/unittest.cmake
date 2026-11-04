@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 include(extensions)
 include(west)
@@ -12,8 +12,8 @@ include(hwm_v2)
 include(configuration_files)
 
 include(kconfig)
-include(arch_v2)
-include(soc_v2)
+include(arch)
+include(soc)
 
 find_package(TargetTools)
 
@@ -44,8 +44,6 @@ if((NOT DEFINED ZEPHYR_BASE) AND (DEFINED ENV_ZEPHYR_BASE))
   set(ZEPHYR_BASE ${ENV_ZEPHYR_BASE} CACHE PATH "Zephyr base")
 endif()
 
-find_package(Deprecated COMPONENTS SOURCES)
-
 if(NOT SOURCES AND EXISTS main.c)
   set(SOURCES main.c)
 endif()
@@ -57,13 +55,14 @@ target_link_libraries(testbinary PRIVATE test_interface)
 set(KOBJ_TYPES_H_TARGET kobj_types_h_target)
 include(${ZEPHYR_BASE}/cmake/kobj.cmake)
 add_dependencies(test_interface ${KOBJ_TYPES_H_TARGET})
-gen_kobj(KOBJ_GEN_DIR)
+gen_kobject_list_headers(GEN_DIR_OUT_VAR KOBJ_GEN_DIR)
 
 # Generates empty header files to build
 set(INCL_GENERATED_DIR ${APPLICATION_BINARY_DIR}/zephyr/include/generated/zephyr)
 set(INCL_GENERATED_SYSCALL_DIR ${INCL_GENERATED_DIR}/syscalls)
 list(APPEND INCL_GENERATED_HEADERS
   ${INCL_GENERATED_DIR}/devicetree_generated.h
+  ${INCL_GENERATED_DIR}/heap_constants.h
   ${INCL_GENERATED_DIR}/offsets.h
   ${INCL_GENERATED_DIR}/syscall_list.h
   ${INCL_GENERATED_DIR}/syscall_macros.h
@@ -72,6 +71,7 @@ list(APPEND INCL_GENERATED_HEADERS
   ${INCL_GENERATED_SYSCALL_DIR}/log_core.h
   ${INCL_GENERATED_SYSCALL_DIR}/log_ctrl.h
   ${INCL_GENERATED_SYSCALL_DIR}/log_msg.h
+  ${INCL_GENERATED_SYSCALL_DIR}/sleep.h
   ${INCL_GENERATED_SYSCALL_DIR}/sys_clock.h
 )
 
@@ -112,6 +112,8 @@ target_compile_options(test_interface INTERFACE
   ${EXTRA_CFLAGS_AS_LIST}
   $<$<COMPILE_LANGUAGE:CXX>:${EXTRA_CXXFLAGS_AS_LIST}>
   $<$<COMPILE_LANGUAGE:ASM>:${EXTRA_AFLAGS_AS_LIST}>
+  -Wno-format-zero-length
+  -Wshadow
   )
 
 target_link_options(testbinary PRIVATE
@@ -130,6 +132,10 @@ if(CONFIG_COVERAGE)
   target_link_libraries(testbinary PRIVATE $<TARGET_PROPERTY:linker,coverage>)
 endif()
 
+if(CONFIG_COMPILER_WARNINGS_AS_ERRORS)
+  target_compile_options(test_interface INTERFACE $<TARGET_PROPERTY:compiler,warnings_as_errors>)
+endif()
+
 if(LIBS)
   message(FATAL_ERROR "This variable is not supported, see SOURCES instead")
 endif()
@@ -139,6 +145,7 @@ target_sources(testbinary PRIVATE
   ${ZEPHYR_BASE}/subsys/testsuite/ztest/src/ztest_mock.c
   ${ZEPHYR_BASE}/subsys/testsuite/ztest/src/ztest_rules.c
   ${ZEPHYR_BASE}/subsys/testsuite/ztest/src/ztest_defaults.c
+  ${ZEPHYR_BASE}/subsys/testsuite/ztest/src/ztest_unittest_assert.c
 )
 
 target_compile_definitions(test_interface INTERFACE ZTEST_UNITTEST)
@@ -156,6 +163,13 @@ if(VALGRIND_PROGRAM)
     --log-file=valgrind.log
     )
 endif()
+
+add_custom_target(run
+  COMMAND
+  $<TARGET_FILE:testbinary>
+  DEPENDS testbinary
+  WORKING_DIRECTORY ${APPLICATION_BINARY_DIR}
+  )
 
 add_custom_target(run-test
   COMMAND

@@ -144,7 +144,7 @@ static struct lwm2m_engine_obj_inst *lwm2m_gw_create(uint16_t obj_inst_id)
 
 	inst[index].resources = res[index];
 	inst[index].resource_count = i;
-	LOG_DBG("Created LWM2M gateway instance: %d", obj_inst_id);
+	LOG_DBG("Created LwM2M gateway instance: %d", obj_inst_id);
 	return &inst[index];
 }
 
@@ -157,6 +157,10 @@ int lwm2m_gw_handle_req(struct lwm2m_message *msg)
 				ARRAY_SIZE(options));
 	if (ret < 0) {
 		return ret;
+	}
+
+	if (ret == 0) {
+		return -ENOENT;
 	}
 
 	for (int index = 0; index < MAX_INSTANCE_COUNT; index++) {

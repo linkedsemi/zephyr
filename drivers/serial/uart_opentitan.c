@@ -93,7 +93,7 @@ static void uart_opentitan_poll_out(const struct device *dev, unsigned char c)
 	sys_write32(c, cfg->base + UART_WDATA_REG_OFFSET);
 }
 
-static const struct uart_driver_api uart_opentitan_driver_api = {
+static DEVICE_API(uart, uart_opentitan_driver_api) = {
 	.poll_in = uart_opentitan_poll_in,
 	.poll_out = uart_opentitan_poll_out,
 };
@@ -105,7 +105,7 @@ static const struct uart_driver_api uart_opentitan_driver_api = {
 #define NCO_REG(baud, clk) (BIT64(20) * (baud) / (clk))
 
 #define UART_OPENTITAN_INIT(n) \
-	static struct uart_opentitan_config uart_opentitan_config_##n = \
+	static const struct uart_opentitan_config uart_opentitan_config_##n = \
 	{ \
 		.base = DT_INST_REG_ADDR(n), \
 		.nco_reg = NCO_REG(DT_INST_PROP(n, current_speed), \

@@ -20,38 +20,14 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(bt_bsim_privacy, LOG_LEVEL_INF);
 
-#include "bs_types.h"
-#include "bs_tracing.h"
-#include "bstests.h"
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
 #include "bs_cmd_line.h"
 
-#define FAIL(...)                                                                                  \
-	do {                                                                                       \
-		bst_result = Failed;                                                               \
-		bs_trace_error_time_line(__VA_ARGS__);                                             \
-	} while (0)
-
-#define PASS(...)                                                                                  \
-	do {                                                                                       \
-		bst_result = Passed;                                                               \
-		bs_trace_info_time(1, __VA_ARGS__);                                                \
-	} while (0)
-
-extern enum bst_result_t bst_result;
-
-#define CREATE_FLAG(flag) static atomic_t flag = (atomic_t) false
-#define SET_FLAG(flag)	  (void)atomic_set(&flag, (atomic_t) true)
-#define GET_FLAG(flag)	  (bool)atomic_get(&flag)
-#define UNSET_FLAG(flag)  (void)atomic_set(&flag, (atomic_t) false)
-#define WAIT_FOR_FLAG(flag)                                                                        \
-	while (!(bool)atomic_get(&flag)) {                                                         \
-		(void)k_sleep(K_MSEC(1));                                                          \
-	}
-
-CREATE_FLAG(paired_flag);
-CREATE_FLAG(connected_flag);
-CREATE_FLAG(wait_disconnection);
-CREATE_FLAG(wait_scanned);
+DEFINE_FLAG_STATIC(paired_flag);
+DEFINE_FLAG_STATIC(connected_flag);
+DEFINE_FLAG_STATIC(wait_disconnection);
+DEFINE_FLAG_STATIC(wait_scanned);
 
 static struct bt_conn *default_conn;
 
@@ -288,7 +264,7 @@ static void disconnect(void)
 
 	err = bt_conn_disconnect(default_conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	if (err) {
-		FAIL("Disconnection failed (err %d)\n", err);
+		TEST_FAIL("Disconnection failed (err %d)", err);
 	}
 
 	WAIT_FOR_FLAG(wait_disconnection);
@@ -305,22 +281,18 @@ static void connected(struct bt_conn *conn, uint8_t err)
 {
 	LOG_DBG("Peripheral Connected function");
 
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (err) {
-		LOG_WRN("Failed to connect to %s (%u)", addr, err);
+		LOG_WRN("Failed to connect to %s (%u)", bt_conn_dst_str(conn), err);
 		return;
 	}
 
-	LOG_DBG("Connected: %s", addr);
+	LOG_DBG("Connected: %s", bt_conn_dst_str(conn));
 
 	default_conn = bt_conn_ref(conn);
 
-	if (!GET_FLAG(paired_flag)) {
+	if (!IS_FLAG_SET(paired_flag)) {
 		if (bt_conn_set_security(conn, BT_SECURITY_L2)) {
-			FAIL("Failed to set security\n");
+			TEST_FAIL("Failed to set security");
 		}
 	} else {
 		SET_FLAG(connected_flag);
@@ -329,18 +301,13 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
 	if (conn != default_conn) {
 		return;
 	}
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	LOG_DBG("Disconnected: %s (reason 0x%02x)", bt_conn_dst_str(conn), reason);
 
-	LOG_DBG("Disconnected: %s (reason 0x%02x)", addr, reason);
-
-	bt_conn_unref(default_conn);
-	default_conn = NULL;
+	bt_conn_drop(&default_conn);
 
 	LOG_DBG("Disconnected");
 	SET_FLAG(wait_disconnection);
@@ -349,25 +316,15 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
 			      const bt_addr_le_t *identity)
 {
-	char addr_identity[BT_ADDR_LE_STR_LEN];
-	char addr_rpa[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(identity, addr_identity, sizeof(addr_identity));
-	bt_addr_le_to_str(rpa, addr_rpa, sizeof(addr_rpa));
-
-	LOG_DBG("Identity resolved %s -> %s", addr_rpa, addr_identity);
+	LOG_DBG("Identity resolved %s -> %s", bt_addr_le_str(rpa), bt_addr_le_str(identity));
 }
 
 static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (!err) {
-		LOG_DBG("Security changed: %s level %u", addr, level);
+		LOG_DBG("Security changed: %s level %u", bt_conn_dst_str(conn), level);
 	} else {
-		LOG_ERR("Security failed: %s level %u err %d", addr, level);
+		LOG_ERR("Security failed: %s level %u err %d", bt_conn_dst_str(conn), level);
 	}
 }
 
@@ -406,7 +363,7 @@ static void test_peripheral_main(void)
 
 	err = bt_enable(NULL);
 	if (err) {
-		FAIL("Bluetooth init failed (err %d)\n", err);
+		TEST_FAIL("Bluetooth init failed (err %d)", err);
 	}
 
 	LOG_DBG("Bluetooth initialized");
@@ -460,5 +417,5 @@ void test_peripheral(void)
 
 	test_peripheral_main();
 
-	PASS("passed\n");
+	TEST_PASS("passed");
 }

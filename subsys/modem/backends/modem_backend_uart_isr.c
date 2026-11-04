@@ -5,11 +5,14 @@
  */
 
 #include "modem_backend_uart_isr.h"
-
+#include "../modem_workqueue.h"
+#include <zephyr/pm/device_runtime.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(modem_backend_uart_isr, CONFIG_MODEM_MODULES_LOG_LEVEL);
 
 #include <string.h>
+#include <zephyr/drivers/gpio.h>
 
 static void modem_backend_uart_isr_flush(struct modem_backend_uart *backend)
 {
@@ -28,25 +31,23 @@ static void modem_backend_uart_isr_irq_handler_receive_ready(struct modem_backen
 	int ret;
 
 	receive_rb = &backend->isr.receive_rdb[backend->isr.receive_rdb_used];
-	size = ring_buf_put_claim(receive_rb, &buffer, UINT32_MAX);
+	size = ring_buf_put_ptr(receive_rb, &buffer, 0);
 	if (size == 0) {
 		/* This can be caused by
 		 * - a too long CONFIG_MODEM_BACKEND_UART_ISR_RECEIVE_IDLE_TIMEOUT_MS
 		 * - or a too small receive_buf_size
 		 * relatively to the (too high) baud rate and amount of incoming data.
 		 */
-		LOG_WRN("Receive buffer overrun");
-		ring_buf_put_finish(receive_rb, 0);
+		LOG_WRN("%s: Receive buffer overrun", backend->uart->name);
 		ring_buf_reset(receive_rb);
-		size = ring_buf_put_claim(receive_rb, &buffer, UINT32_MAX);
+		size = ring_buf_put_ptr(receive_rb, &buffer, 0);
 	}
 
 	ret = uart_fifo_read(backend->uart, buffer, size);
 	if (ret <= 0) {
-		ring_buf_put_finish(receive_rb, 0);
 		return;
 	}
-	ring_buf_put_finish(receive_rb, (uint32_t)ret);
+	ring_buf_commit(receive_rb, (uint32_t)ret);
 
 	if (ring_buf_space_get(receive_rb) > ring_buf_capacity_get(receive_rb) / 20) {
 		/*
@@ -54,11 +55,11 @@ static void modem_backend_uart_isr_irq_handler_receive_ready(struct modem_backen
 		 * It temporarily disables the UART RX IRQ when swapping buffers
 		 * which can cause byte loss at higher baud rates.
 		 */
-		k_work_schedule(&backend->receive_ready_work,
-			K_MSEC(CONFIG_MODEM_BACKEND_UART_ISR_RECEIVE_IDLE_TIMEOUT_MS));
+		modem_work_schedule(&backend->receive_ready_work,
+				    K_MSEC(CONFIG_MODEM_BACKEND_UART_ISR_RECEIVE_IDLE_TIMEOUT_MS));
 	} else {
 		/* The buffer is getting full. Run the work item immediately to free up space. */
-		k_work_reschedule(&backend->receive_ready_work, K_NO_WAIT);
+		modem_work_reschedule(&backend->receive_ready_work, K_NO_WAIT);
 	}
 }
 
@@ -70,16 +71,14 @@ static void modem_backend_uart_isr_irq_handler_transmit_ready(struct modem_backe
 
 	if (ring_buf_is_empty(&backend->isr.transmit_rb) == true) {
 		uart_irq_tx_disable(backend->uart);
-		k_work_submit(&backend->transmit_idle_work);
+		modem_work_submit(&backend->transmit_idle_work);
 		return;
 	}
 
-	size = ring_buf_get_claim(&backend->isr.transmit_rb, &buffer, UINT32_MAX);
+	size = ring_buf_get_ptr(&backend->isr.transmit_rb, &buffer, 0);
 	ret = uart_fifo_fill(backend->uart, buffer, size);
-	if (ret < 0) {
-		ring_buf_get_finish(&backend->isr.transmit_rb, 0);
-	} else {
-		ring_buf_get_finish(&backend->isr.transmit_rb, (uint32_t)ret);
+	if (ret >= 0) {
+		ring_buf_consume(&backend->isr.transmit_rb, (uint32_t)ret);
 
 		/* Update transmit buf capacity tracker */
 		atomic_sub(&backend->isr.transmit_buf_len, (uint32_t)ret);
@@ -90,9 +89,7 @@ static void modem_backend_uart_isr_irq_handler(const struct device *uart, void *
 {
 	struct modem_backend_uart *backend = (struct modem_backend_uart *)user_data;
 
-	if (uart_irq_update(uart) < 1) {
-		return;
-	}
+	uart_irq_update(uart);
 
 	if (uart_irq_rx_ready(uart)) {
 		modem_backend_uart_isr_irq_handler_receive_ready(backend);
@@ -105,13 +102,27 @@ static void modem_backend_uart_isr_irq_handler(const struct device *uart, void *
 
 static int modem_backend_uart_isr_open(void *data)
 {
+	int ret;
 	struct modem_backend_uart *backend = (struct modem_backend_uart *)data;
 
 	ring_buf_reset(&backend->isr.receive_rdb[0]);
 	ring_buf_reset(&backend->isr.receive_rdb[1]);
 	ring_buf_reset(&backend->isr.transmit_rb);
 	atomic_set(&backend->isr.transmit_buf_len, 0);
+
+	ret = pm_device_runtime_get(backend->uart);
+	if (ret < 0) {
+		LOG_ERR_PM_DEVICE_RUNTIME_GET(backend->uart, ret);
+		return ret;
+	}
+	if (backend->dtr_gpio) {
+		gpio_pin_set_dt(backend->dtr_gpio, 1);
+	}
+
 	modem_backend_uart_isr_flush(backend);
+	if (backend->dtr_gpio) {
+		gpio_pin_set_dt(backend->dtr_gpio, 1);
+	}
 	uart_irq_rx_enable(backend->uart);
 	uart_irq_tx_enable(backend->uart);
 	modem_pipe_notify_opened(&backend->pipe);
@@ -165,17 +176,27 @@ static bool modem_backend_uart_isr_transmit_buf_above_limit(struct modem_backend
 	return backend->isr.transmit_buf_put_limit < get_transmit_buf_length(backend);
 }
 
-static int modem_backend_uart_isr_transmit(void *data, const uint8_t *buf, size_t size)
+static int modem_backend_uart_isr_transmit_chain(void *data,
+						 const struct modem_pipe_data_fragment *frags,
+						 size_t num_frags)
 {
 	struct modem_backend_uart *backend = (struct modem_backend_uart *)data;
-	int written;
+	int written = 0;
+	int put;
 
 	if (modem_backend_uart_isr_transmit_buf_above_limit(backend) == true) {
 		return 0;
 	}
 
 	uart_irq_tx_disable(backend->uart);
-	written = ring_buf_put(&backend->isr.transmit_rb, buf, size);
+	for (int i = 0; i < num_frags; i++) {
+		put = ring_buf_put(&backend->isr.transmit_rb, frags[i].data, frags[i].size);
+		written += put;
+		if (put < frags[i].size) {
+			/* No more space in buffer, terminate */
+			break;
+		}
+	}
 	uart_irq_tx_enable(backend->uart);
 
 	/* Update transmit buf capacity tracker */
@@ -206,6 +227,8 @@ static int modem_backend_uart_isr_receive(void *data, uint8_t *buf, size_t size)
 	read_bytes += ring_buf_get(&backend->isr.receive_rdb[receive_rdb_unused], buf, size);
 
 	if (ring_buf_is_empty(&backend->isr.receive_rdb[receive_rdb_unused]) == false) {
+		/* More data available in the buffer */
+		k_work_schedule(&backend->receive_ready_work, K_NO_WAIT);
 		return (int)read_bytes;
 	}
 
@@ -217,25 +240,41 @@ static int modem_backend_uart_isr_receive(void *data, uint8_t *buf, size_t size)
 	/* Read data from previously used buffer */
 	receive_rdb_unused = (backend->isr.receive_rdb_used == 1) ? 0 : 1;
 
-	read_bytes += ring_buf_get(&backend->isr.receive_rdb[receive_rdb_unused],
-				   &buf[read_bytes], (size - read_bytes));
+	read_bytes += ring_buf_get(&backend->isr.receive_rdb[receive_rdb_unused], &buf[read_bytes],
+				   (size - read_bytes));
+	if (ring_buf_is_empty(&backend->isr.receive_rdb[receive_rdb_unused]) == false) {
+		/* More data available in the buffer */
+		k_work_schedule(&backend->receive_ready_work, K_NO_WAIT);
+	}
 
 	return (int)read_bytes;
 }
 
 static int modem_backend_uart_isr_close(void *data)
 {
+	int ret;
 	struct modem_backend_uart *backend = (struct modem_backend_uart *)data;
 
+	if (backend->dtr_gpio) {
+		gpio_pin_set_dt(backend->dtr_gpio, 0);
+	}
 	uart_irq_rx_disable(backend->uart);
 	uart_irq_tx_disable(backend->uart);
+	if (backend->dtr_gpio) {
+		gpio_pin_set_dt(backend->dtr_gpio, 0);
+	}
+	ret = pm_device_runtime_put_async(backend->uart, K_NO_WAIT);
+	if (ret < 0) {
+		LOG_ERR_PM_DEVICE_RUNTIME_PUT(backend->uart, ret);
+		return ret;
+	}
 	modem_pipe_notify_closed(&backend->pipe);
 	return 0;
 }
 
 static const struct modem_pipe_api modem_backend_uart_isr_api = {
 	.open = modem_backend_uart_isr_open,
-	.transmit = modem_backend_uart_isr_transmit,
+	.transmit_chain = modem_backend_uart_isr_transmit_chain,
 	.receive = modem_backend_uart_isr_receive,
 	.close = modem_backend_uart_isr_close,
 };

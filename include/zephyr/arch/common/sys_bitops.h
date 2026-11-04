@@ -6,8 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/* Memory bits manipulation functions in non-arch-specific C code */
-
 #ifndef ZEPHYR_INCLUDE_ARCH_COMMON_SYS_BITOPS_H_
 #define ZEPHYR_INCLUDE_ARCH_COMMON_SYS_BITOPS_H_
 
@@ -21,25 +19,30 @@
 extern "C" {
 #endif
 
+/**
+ * @cond INTERNAL_HIDDEN
+ * Memory bits manipulation functions in non-arch-specific C code.
+ */
+
 static ALWAYS_INLINE void sys_set_bit(mem_addr_t addr, unsigned int bit)
 {
 	uint32_t temp = *(volatile uint32_t *)addr;
 
-	*(volatile uint32_t *)addr = temp | (1 << bit);
+	*(volatile uint32_t *)addr = temp | (1U << bit);
 }
 
 static ALWAYS_INLINE void sys_clear_bit(mem_addr_t addr, unsigned int bit)
 {
 	uint32_t temp = *(volatile uint32_t *)addr;
 
-	*(volatile uint32_t *)addr = temp & ~(1 << bit);
+	*(volatile uint32_t *)addr = temp & ~(1U << bit);
 }
 
 static ALWAYS_INLINE int sys_test_bit(mem_addr_t addr, unsigned int bit)
 {
 	uint32_t temp = *(volatile uint32_t *)addr;
 
-	return temp & (1 << bit);
+	return temp & (1U << bit);
 }
 
 static ALWAYS_INLINE void sys_set_bits(mem_addr_t addr, unsigned int mask)
@@ -120,6 +123,10 @@ static ALWAYS_INLINE
 
 	return ret;
 }
+
+/**
+ * @endcond
+ */
 
 #ifdef __cplusplus
 }

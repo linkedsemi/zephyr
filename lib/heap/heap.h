@@ -1,16 +1,19 @@
 /*
  * Copyright (c) 2019 Intel Corporation
+ * Copyright (c) 2026 Qualcomm Technologies, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef ZEPHYR_INCLUDE_LIB_OS_HEAP_H_
 #define ZEPHYR_INCLUDE_LIB_OS_HEAP_H_
 
+#include <zephyr/sys/minmax.h>
+
 /*
  * Internal heap APIs
  */
 
-/* Theese validation checks are non-trivially expensive, so enable
+/* These validation checks are non-trivially expensive, so enable
  * only when debugging the heap code.  They shouldn't be routine
  * assertions.
  */
@@ -19,6 +22,15 @@
 #else
 #define CHECK(x) /**/
 #endif
+
+/* Heap hardening level predicates.  Each is true when the configured
+ * hardening level is at or above the named level.  The compiler
+ * eliminates dead code at lower levels.
+ */
+#define SYS_HEAP_HARDENING_BASIC    (CONFIG_SYS_HEAP_HARDENING_LEVEL >= 1)
+#define SYS_HEAP_HARDENING_MODERATE (CONFIG_SYS_HEAP_HARDENING_LEVEL >= 2)
+#define SYS_HEAP_HARDENING_FULL     (CONFIG_SYS_HEAP_HARDENING_LEVEL >= 3)
+#define SYS_HEAP_HARDENING_EXTREME (CONFIG_SYS_HEAP_HARDENING_LEVEL >= 4)
 
 /* Chunks are identified by their offset in 8 byte units from the
  * first address in the buffer (a zero-valued chunkid_t is used as a
@@ -61,6 +73,60 @@ typedef struct { char bytes[CHUNK_UNIT]; } chunk_unit_t;
 typedef uint32_t chunkid_t;
 typedef uint32_t chunksz_t;
 
+#if defined(CONFIG_SYS_HEAP_CANARIES) || \
+    defined(CONFIG_SYS_HEAP_THREAD_STATS) || \
+    defined(CONFIG_SYS_HEAP_CALLER_POINTER)
+
+#ifdef CONFIG_SYS_HEAP_THREAD_STATS
+struct k_thread;
+#endif
+
+struct z_heap_chunk_trailer {
+#ifdef CONFIG_SYS_HEAP_CANARIES
+	uint32_t canary;
+#endif
+#ifdef CONFIG_SYS_HEAP_THREAD_STATS
+	struct k_thread *thread;
+#endif
+#ifdef CONFIG_SYS_HEAP_CALLER_POINTER
+	void *caller;
+#endif
+} __aligned(CHUNK_UNIT);
+
+#define CHUNK_TRAILER_SIZE (sizeof(struct z_heap_chunk_trailer) / CHUNK_UNIT)
+
+#else
+
+#define CHUNK_TRAILER_SIZE 0
+
+#endif
+
+#ifdef CONFIG_SYS_HEAP_THREAD_STATS
+
+struct z_heap_thread_stat {
+	struct k_thread *thread;
+#if defined(CONFIG_THREAD_NAME)
+	char name[CONFIG_THREAD_MAX_NAME_LEN];
+#endif
+	size_t total_alloc;
+};
+
+struct z_heap_stats {
+	size_t isr_alloc_bytes;
+	size_t boot_alloc_bytes;
+	size_t overflow_alloc_bytes;
+	size_t num_threads;
+	struct z_heap_thread_stat threads[CONFIG_SYS_HEAP_STATS_MAX_TRACKED_THREADS];
+};
+
+/*
+ * Sentinel stored in the chunk trailer thread field for allocations made
+ * before the Zephyr scheduler has started (k_is_pre_kernel() == true).
+ */
+#define Z_HEAP_BOOT_SENTINEL ((struct k_thread *)(uintptr_t)1U)
+
+#endif /* CONFIG_SYS_HEAP_THREAD_STATS */
+
 struct z_heap_bucket {
 	chunkid_t next;
 };
@@ -74,7 +140,13 @@ struct z_heap {
 	size_t allocated_bytes;
 	size_t max_allocated_bytes;
 #endif
-	struct z_heap_bucket buckets[0];
+#ifdef CONFIG_SYS_HEAP_CANARIES_RANDOM
+	uint32_t canary_base;
+#endif
+#ifdef CONFIG_SYS_HEAP_THREAD_STATS
+	struct z_heap_stats *stats;
+#endif
+	struct z_heap_bucket buckets[];
 };
 
 static inline bool big_heap_chunks(chunksz_t chunks)
@@ -212,11 +284,6 @@ static inline void set_left_chunk_size(struct z_heap *h, chunkid_t c,
 	chunk_set(h, c, LEFT_SIZE, size);
 }
 
-static inline bool solo_free_header(struct z_heap *h, chunkid_t c)
-{
-	return big_heap(h) && (chunk_size(h, c) == 1U);
-}
-
 static inline size_t chunk_header_bytes(struct z_heap *h)
 {
 	return big_heap(h) ? 8 : 4;
@@ -232,34 +299,60 @@ static inline chunksz_t chunksz(size_t bytes)
 	return (bytes + CHUNK_UNIT - 1U) / CHUNK_UNIT;
 }
 
-static inline chunksz_t bytes_to_chunksz(struct z_heap *h, size_t bytes)
+/**
+ * Convert the number of requested bytes to chunks and clamp it to facilitate
+ * error handling. As some of the heap is used for metadata, there will never
+ * be enough space for 'end_chunk' chunks. Also note that since 'size_t' may
+ * be 64-bits wide, clamping guards against overflow when converting to the
+ * 32-bit wide 'chunksz_t'.
+ */
+static ALWAYS_INLINE chunksz_t bytes_to_chunksz(struct z_heap *h, size_t bytes, size_t extra)
 {
-	return chunksz(chunk_header_bytes(h) + bytes);
+	size_t chunks = (bytes / CHUNK_UNIT) + (extra / CHUNK_UNIT);
+	size_t oddments = ((bytes % CHUNK_UNIT) + (extra % CHUNK_UNIT) +
+			   chunk_header_bytes(h) + CHUNK_UNIT - 1U) / CHUNK_UNIT;
+
+	return (chunksz_t)min(chunks + oddments + CHUNK_TRAILER_SIZE, h->end_chunk);
 }
 
 static inline chunksz_t min_chunk_size(struct z_heap *h)
 {
-	return bytes_to_chunksz(h, 1);
+	return chunksz(chunk_header_bytes(h) + 1) + CHUNK_TRAILER_SIZE;
 }
 
-static inline size_t chunksz_to_bytes(struct z_heap *h, chunksz_t chunksz_in)
+/*
+ * Return true if chunk is undersized, i.e. smaller than min_chunk_size().
+ * Such chunks are not added to the free list because:
+ * 1) they would be too small to be allocatable anyway, and
+ * 2) they might be too small to store free list pointers.
+ * It happens that min_chunk_size() is always >= the free pointer storage size.
+ * The initial conditions short-circuit the comparison with build-time constants
+ * when undersized chunks cannot occur.
+ */
+static inline bool undersized_chunk(struct z_heap *h, chunkid_t c)
 {
-	return chunksz_in * CHUNK_UNIT - chunk_header_bytes(h);
+	return (CHUNK_TRAILER_SIZE != 0 || big_heap(h)) &&
+		chunk_size(h, c) < min_chunk_size(h);
+}
+
+static inline size_t chunk_usable_bytes(struct z_heap *h, chunkid_t c)
+{
+	return chunk_size(h, c) * CHUNK_UNIT - chunk_header_bytes(h)
+	       - CHUNK_TRAILER_SIZE * CHUNK_UNIT;
+}
+
+static inline size_t mem_align_gap(struct z_heap *h, void *mem)
+{
+	if (chunk_header_bytes(h) == CHUNK_UNIT) {
+		return 0;
+	}
+	return ((uintptr_t)mem - chunk_header_bytes(h)) & (CHUNK_UNIT - 1);
 }
 
 static inline int bucket_idx(struct z_heap *h, chunksz_t sz)
 {
 	unsigned int usable_sz = sz - min_chunk_size(h) + 1;
 	return 31 - __builtin_clz(usable_sz);
-}
-
-static inline bool size_too_big(struct z_heap *h, size_t bytes)
-{
-	/*
-	 * Quick check to bail out early if size is too big.
-	 * Also guards against potential arithmetic overflows elsewhere.
-	 */
-	return (bytes / CHUNK_UNIT) >= h->end_chunk;
 }
 
 static inline void get_alloc_info(struct z_heap *h, size_t *alloc_bytes,
@@ -272,11 +365,51 @@ static inline void get_alloc_info(struct z_heap *h, size_t *alloc_bytes,
 
 	for (c = right_chunk(h, 0); c < h->end_chunk; c = right_chunk(h, c)) {
 		if (chunk_used(h, c)) {
-			*alloc_bytes += chunksz_to_bytes(h, chunk_size(h, c));
-		} else if (!solo_free_header(h, c)) {
-			*free_bytes += chunksz_to_bytes(h, chunk_size(h, c));
+			*alloc_bytes += chunk_usable_bytes(h, c);
+		} else if (!undersized_chunk(h, c)) {
+			*free_bytes += chunk_usable_bytes(h, c);
 		}
 	}
 }
+
+#if defined(CONFIG_SYS_HEAP_CANARIES) || \
+    defined(CONFIG_SYS_HEAP_THREAD_STATS) || \
+    defined(CONFIG_SYS_HEAP_CALLER_POINTER)
+
+/* Returns pointer to the chunk trailer (at the end of the chunk) */
+static inline struct z_heap_chunk_trailer *chunk_trailer(struct z_heap *h,
+							 chunkid_t c)
+{
+	chunk_unit_t *buf = chunk_buf(h);
+
+	return (struct z_heap_chunk_trailer *)&buf[c + chunk_size(h, c)
+						   - CHUNK_TRAILER_SIZE];
+}
+
+#endif
+
+#ifdef CONFIG_SYS_HEAP_THREAD_STATS
+struct sys_heap;
+void z_heap_stats_on_init(struct sys_heap *heap);
+void z_heap_stats_on_alloc(struct sys_heap *heap, chunkid_t c, void *mem);
+void z_heap_stats_on_free(struct sys_heap *heap, chunkid_t c, void *mem);
+void z_heap_stats_on_realloc(struct sys_heap *heap, chunkid_t c, void *ptr,
+			     size_t old_usable, struct k_thread *old_owner);
+#else
+#define z_heap_stats_on_init(heap)                    do { } while (false)
+#define z_heap_stats_on_alloc(heap, c, mem)           do { } while (false)
+#define z_heap_stats_on_free(heap, c, mem)            do { } while (false)
+#define z_heap_stats_on_realloc(heap, c, ptr, ob, oo) do { } while (false)
+#endif
+
+#ifdef CONFIG_SYS_HEAP_VALIDATE
+bool z_heap_full_check(struct z_heap *h);
+#else
+static inline bool z_heap_full_check(struct z_heap *h)
+{
+	ARG_UNUSED(h);
+	return true;
+}
+#endif
 
 #endif /* ZEPHYR_INCLUDE_LIB_OS_HEAP_H_ */

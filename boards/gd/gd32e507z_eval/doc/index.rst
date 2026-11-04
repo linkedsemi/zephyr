@@ -40,32 +40,7 @@ For more information about the GD32E507 SoC and GD32E507Z-EVAL board:
 Supported Features
 ==================
 
-The board configuration supports the following hardware features:
-
-.. list-table::
-   :header-rows: 1
-
-   * - Peripheral
-     - Kconfig option
-     - Devicetree compatible
-   * - EXTI
-     - :kconfig:option:`CONFIG_GD32_EXTI`
-     - :dtcompatible:`gd,gd32-exti`
-   * - GPIO
-     - :kconfig:option:`CONFIG_GPIO`
-     - :dtcompatible:`gd,gd32-gpio`
-   * - NVIC
-     - N/A
-     - :dtcompatible:`arm,v8m-nvic`
-   * - PWM
-     - :kconfig:option:`CONFIG_PWM`
-     - :dtcompatible:`gd,gd32-pwm`
-   * - SYSTICK
-     - N/A
-     - N/A
-   * - USART
-     - :kconfig:option:`CONFIG_SERIAL`
-     - :dtcompatible:`gd,gd32-usart`
+.. zephyr:board-supported-hw::
 
 Serial Port
 ===========
@@ -76,6 +51,8 @@ virtual COM port via the J1 USB connector.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Before programming your board make sure to configure boot jumpers as
 follows:
@@ -137,7 +114,7 @@ the JP2 header.
       :compact:
 
 .. _GigaDevice Cortex-M33 High Performance SoC Website:
-   https://www.gigadevice.com/products/microcontrollers/gd32/arm-cortex-m33/high-performance-line/
+   https://www.gigadevice.com/product/mcu/high-performance-mcus/gd32e5xx-series
 
 .. _GD32E507X Datasheet:
    https://gd32mcu.com/download/down/document_id/252/path_type/1

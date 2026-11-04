@@ -3,12 +3,20 @@
 
 if(CONFIG_ARM)
   zephyr_library_sources(soc.c)
-  if(CONFIG_PM OR CONFIG_POWEROFF)
-    zephyr_library_sources(power.c)
+  zephyr_library_sources(soc_power.c)
+  zephyr_code_relocate(
+    FILES soc_power.c
+    FILTER ".*\\.cache_retain_and_sleep"
+    LOCATION PMLocalRamfunc_TEXT
+  )
+  if(NOT CONFIG_SOC_NRF54H20_PM_S2RAM_OVERRIDE)
+    zephyr_library_sources_ifdef(CONFIG_PM_S2RAM soc_pm_s2ram.c)
   endif()
 endif()
 
-zephyr_library_sources_ifdef(CONFIG_PM_S2RAM pm_s2ram.c)
+if(CONFIG_NRFX_GPPI)
+  zephyr_library_sources_ifdef(CONFIG_SOC_NRF54H20_CPURAD nrfx_gppi_cpurad.c)
+endif()
 
 zephyr_include_directories(.)
 
@@ -16,4 +24,4 @@ zephyr_include_directories(.)
 # for the image correctly
 zephyr_linker_sources(SECTIONS SORT_KEY zzz_place_align_at_end align.ld)
 
-add_subdirectory(gpd)
+add_subdirectory(bicr)

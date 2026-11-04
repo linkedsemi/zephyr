@@ -4,7 +4,7 @@
 
 source ${ZEPHYR_BASE}/tests/bsim/sh_common.source
 
-simulation_id="$(guess_test_long_name)"
+simulation_id="${BOARD_TS}_$(guess_test_long_name)"
 verbosity_level=2
 test_exe="bs_${BOARD_TS}_$(guess_test_long_name)_prj_conf"
 
@@ -21,7 +21,7 @@ Execute ./"$test_exe" \
     -RealEncryption=1 -argstest data-set="${data_set}"
 
 Execute ./bs_2G4_phy_v1 -v=${verbosity_level} -s="${simulation_id}_${data_set}" \
-    -D=2 -sim_length=60e6 $@
+    -D=2 -sim_length=20e6 $@
 
 wait_for_background_jobs
 
@@ -36,6 +36,6 @@ Execute ./"$test_exe" \
     -RealEncryption=1 -argstest data-set="${data_set}"
 
 Execute ./bs_2G4_phy_v1 -v=${verbosity_level} -s="${simulation_id}_${data_set}" \
-    -D=2 -sim_length=60e6 $@
+    -D=2 -sim_length=20e6 $@
 
 wait_for_background_jobs

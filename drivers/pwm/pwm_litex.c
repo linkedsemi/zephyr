@@ -19,9 +19,9 @@
 #define NUMBER_OF_CHANNELS        1
 
 struct pwm_litex_cfg {
-	uint32_t reg_en;
-	uint32_t reg_width;
-	uint32_t reg_period;
+	mem_addr_t reg_en;
+	mem_addr_t reg_width;
+	mem_addr_t reg_period;
 };
 
 int pwm_litex_init(const struct device *dev)
@@ -61,7 +61,7 @@ int pwm_litex_get_cycles_per_sec(const struct device *dev, uint32_t channel,
 	return 0;
 }
 
-static const struct pwm_driver_api pwm_litex_driver_api = {
+static DEVICE_API(pwm, pwm_litex_driver_api) = {
 	.set_cycles = pwm_litex_set_cycles,
 	.get_cycles_per_sec = pwm_litex_get_cycles_per_sec,
 };

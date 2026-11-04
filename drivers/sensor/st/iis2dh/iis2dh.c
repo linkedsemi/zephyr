@@ -219,7 +219,7 @@ static int iis2dh_sample_fetch(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api iis2dh_driver_api = {
+static DEVICE_API(sensor, iis2dh_driver_api) = {
 	.attr_set = iis2dh_attr_set,
 #if CONFIG_IIS2DH_TRIGGER
 	.trigger_set = iis2dh_trigger_set,
@@ -302,7 +302,7 @@ static int iis2dh_init(const struct device *dev)
 
 #define IIS2DH_SPI(inst)                                                                           \
 	(.spi = SPI_DT_SPEC_INST_GET(                                                              \
-		 0, SPI_OP_MODE_MASTER | SPI_MODE_CPOL | SPI_MODE_CPHA | SPI_WORD_SET(8), 0),)
+		 0, SPI_OP_MODE_CONTROLLER | SPI_MODE_CPOL | SPI_MODE_CPHA | SPI_WORD_SET(8)),)
 
 #define IIS2DH_I2C(inst) (.i2c = I2C_DT_SPEC_INST_GET(inst),)
 

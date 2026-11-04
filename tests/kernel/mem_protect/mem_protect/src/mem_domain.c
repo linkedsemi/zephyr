@@ -8,7 +8,7 @@
 #include <kernel_internal.h> /* For z_main_thread */
 #include <zephyr/sys/libc-hooks.h> /* for z_libc_partition */
 
-struct k_thread child_thread;
+static struct k_thread child_thread;
 K_THREAD_STACK_DEFINE(child_stack, KOBJECT_STACK_SIZE);
 
 /* Special memory domain for test case purposes */
@@ -44,10 +44,10 @@ static void zzz_entry(void *p1, void *p2, void *p3)
 	k_sleep(K_FOREVER);
 }
 
-static K_THREAD_DEFINE(zzz_thread, 256 + CONFIG_TEST_EXTRA_STACK_SIZE,
+static K_THREAD_DEFINE(zzz_thread, 512 + CONFIG_TEST_EXTRA_STACK_SIZE,
 		       zzz_entry, NULL, NULL, NULL, 0, 0, 0);
 
-void test_mem_domain_setup(void)
+void *test_mem_domain_setup(void)
 {
 	int max_parts = arch_mem_domain_max_partitions_get();
 	struct k_mem_partition *parts[] = {
@@ -84,6 +84,18 @@ void test_mem_domain_setup(void)
 	for (unsigned int j = 0; j < MEM_REGION_ALLOC; j++) {
 		ro_buf[j] = (j % 256U);
 	}
+
+	return NULL;
+}
+
+void test_mem_domain_teardown(void *fixture)
+{
+	ARG_UNUSED(fixture);
+
+#if defined(CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT)
+	zassert_equal(k_mem_domain_deinit(&test_domain), 0,
+		      "failed to de-initialize memory domain");
+#endif /* CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT */
 }
 
 /* Helper function; run a function under a child user thread.
@@ -147,13 +159,25 @@ static void ro_write_entry(void *p1, void *p2, void *p3)
 }
 
 /**
- * @brief Check if the mem_domain is configured and accessible for userspace
- *
- * Join a memory domain with a read-write memory partition and a read-only
- * partition within it, and show that the data in the partition is accessible
- * as expected by the permissions provided.
+ * @brief Verify that partitions in a thread's domain are accessible as
+ *        declared.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * A user thread that is a member of a domain must reach the data in that
+ * domain's partitions with exactly the declared permissions: read-write data
+ * is writable, read-only data is readable.
+ *
+ * Test steps:
+ * - Spawn a user thread in the test domain that reads and writes the
+ *   read-write partition.
+ * - Spawn another that reads the read-only partition.
+ *
+ * Expected result:
+ * - Both accesses succeed with no fault.
+ *
+ * @see k_mem_domain_add_thread()
  */
 ZTEST(mem_protect_domain, test_mem_domain_valid_access)
 {
@@ -162,9 +186,23 @@ ZTEST(mem_protect_domain, test_mem_domain_valid_access)
 }
 
 /**
- * @brief Show that a user thread can't touch partitions not in its domain
+ * @brief Verify that partitions outside a thread's domain are unreachable.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * The same accesses as the valid case, made by a thread that was never added
+ * to the test domain, must fault: domain membership is what grants access,
+ * not the existence of the partition. The suite's fault hook marks the
+ * faults as expected.
+ *
+ * Test steps:
+ * - Spawn a user thread outside the test domain that touches the read-write
+ *   partition.
+ * - Spawn another that touches the read-only partition.
+ *
+ * Expected result:
+ * - Both accesses fault.
  */
 ZTEST(mem_protect_domain, test_mem_domain_invalid_access)
 {
@@ -174,9 +212,22 @@ ZTEST(mem_protect_domain, test_mem_domain_invalid_access)
 }
 
 /**
- * @brief Show that a read-only partition can't be written to
+ * @brief Verify that a read-only partition rejects writes from its own
+ *        domain.
  *
- * @ingroup kernel_memgroup_tests
+ * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Being inside the domain grants the declared permission, not more: a member
+ * thread writing data in the read-only partition must fault even though it
+ * can read it freely.
+ *
+ * Test steps:
+ * - Spawn a user thread in the test domain that writes a variable in the
+ *   read-only partition.
+ *
+ * Expected result:
+ * - The write faults.
  */
 ZTEST(mem_protect_domain, test_mem_domain_no_writes_to_ro)
 {
@@ -185,13 +236,26 @@ ZTEST(mem_protect_domain, test_mem_domain_no_writes_to_ro)
 }
 
 /**
- * @brief Show that adding/removing partitions works
- *
- * Show that removing a partition doesn't affect access to other partitions.
- * Show that removing a partition generates a fault if its data is accessed.
- * Show that adding a partition back restores access from a user thread.
+ * @brief Verify that partition removal and re-addition track access rights.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Removing a partition from a domain must revoke exactly that partition:
+ * other partitions stay reachable, the removed one faults, and adding it
+ * back restores access. All three transitions are observed from member user
+ * threads.
+ *
+ * Test steps:
+ * - Remove one read-write partition and show another is still accessible.
+ * - Access the removed partition and expect a fault.
+ * - Add the partition back and access it again.
+ *
+ * Expected result:
+ * - Access follows the domain's current partition set at each step.
+ *
+ * @see k_mem_domain_remove_partition()
+ * @see k_mem_domain_add_partition()
  */
 ZTEST(mem_protect_domain, test_mem_domain_remove_add_partition)
 {
@@ -228,6 +292,11 @@ static void mem_domain_init_entry(void *p1, void *p2, void *p3)
 	zassert_equal(
 		k_mem_domain_init(&no_access_domain, 0, NULL),
 		0, "failed to initialize memory domain");
+
+#if defined(CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT)
+	zassert_equal(k_mem_domain_deinit(&no_access_domain), 0,
+		      "failed to de-initialize memory domain");
+#endif /* CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT */
 }
 
 static void mem_domain_add_partition_entry(void *p1, void *p2, void *p3)
@@ -250,15 +319,26 @@ static void mem_domain_add_thread_entry(void *p1, void *p2, void *p3)
 }
 
 /**
- * @brief Test access memory domain APIs allowed to supervisor threads only
- *
- * Show that invoking any of the memory domain APIs from user mode leads to
- * a fault.
+ * @brief Verify that the memory domain APIs are supervisor-only.
  *
  * @ingroup kernel_memprotect_tests
  *
- * @see k_mem_domain_init(), k_mem_domain_add_partition(),
- *	k_mem_domain_remove_partition(), k_mem_domain_add_thread()
+ * @details
+ * The domain configuration calls have no syscall wrappers: they reshape the
+ * protection landscape and must be unreachable from user mode. A user thread
+ * invoking any of them has to fault on the attempt.
+ *
+ * Test steps:
+ * - From a user thread, call k_mem_domain_init(), add_partition,
+ *   remove_partition and add_thread in turn.
+ *
+ * Expected result:
+ * - Each call faults before doing anything.
+ *
+ * @see k_mem_domain_init()
+ * @see k_mem_domain_add_partition()
+ * @see k_mem_domain_remove_partition()
+ * @see k_mem_domain_add_thread()
  */
 ZTEST(mem_protect_domain, test_mem_domain_api_supervisor_only)
 {
@@ -270,13 +350,22 @@ ZTEST(mem_protect_domain, test_mem_domain_api_supervisor_only)
 }
 
 /**
- * @brief Show that boot threads belong to the default memory domain
- *
- * Static threads and the main thread are supposed to start as members of
- * the default memory domain. Prove this is the case by examining the
- * memory domain membership of z_main_thread and a static thread.
+ * @brief Verify that boot-time threads start in the default memory domain.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Threads that exist before the application configures anything -- the main
+ * thread and statically defined threads -- must be members of the default
+ * domain, or they would run with no defined memory view at all. Membership
+ * is read directly from the thread structures.
+ *
+ * Test steps:
+ * - Check z_main_thread's domain membership.
+ * - Start a static thread and check its membership.
+ *
+ * Expected result:
+ * - Both belong to k_mem_domain_default.
  */
 ZTEST(mem_protect_domain, test_mem_domain_boot_threads)
 {
@@ -308,16 +397,26 @@ static void spin_entry(void *p1, void *p2, void *p3)
 }
 
 /**
- * @brief Show that moving a thread from one domain to another works
- *
- * Start a thread and have it spin. Then while it is spinning, show that
- * adding it to another memory domain doesn't cause any faults.
- *
- * This test is of particular importance on SMP systems where the child
- * thread is spinning on a different CPU concurrently with the migration
- * operation.
+ * @brief Verify that a running thread can be migrated between domains.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * k_mem_domain_add_thread() may be applied to a thread that is actively
+ * running, and the migration must not fault it -- the destination domain
+ * also carries the partitions the thread is using. On SMP the thread spins
+ * on another CPU while the migration happens, which is the racy path this
+ * case exists for. Re-adding the thread to the domain it is already in must
+ * be a no-op.
+ *
+ * Test steps:
+ * - Start a user thread that spins on shared state.
+ * - While it runs, add it to the test domain, then add it again.
+ * - Release the spin and join the thread.
+ *
+ * Expected result:
+ * - The thread keeps running through the migration and the repeated add
+ *   changes nothing.
  *
  * @see k_mem_domain_add_thread()
  */
@@ -498,6 +597,58 @@ ZTEST(mem_protect_domain, test_mem_domain_init_fail)
 		k_mem_domain_init(&test_domain_fail, ARRAY_SIZE(no_parts),
 				  no_parts),
 		0, "should fail to initialize memory domain");
+
+#if defined(CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT)
+	zassert_equal(k_mem_domain_deinit(&test_domain_fail), 0,
+		      "cannot de-initialize memory domain");
+#endif /* CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT */
+}
+
+/**
+ * @brief Test error case of de-initializing memory domain fail
+ *
+ * @details Try to de-initialize a domain with various invalid
+ * conditions.
+ *
+ * @ingroup kernel_memprotect_tests
+ */
+ZTEST(mem_protect_domain, test_mem_domain_deinit_fail)
+{
+#if defined(CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT)
+	set_fault_valid(false);
+
+	/* Should not be able to de-init the default domain. */
+	zassert_equal(k_mem_domain_deinit(&k_mem_domain_default), -EINVAL,
+		      "should fail de-initializing default domain");
+
+	/* Create a thread and attach it to the test_domain.
+	 * We should not be able to de-initialize the domain while
+	 * there is a thread attached to it.
+	 */
+	k_thread_create(&child_thread, child_stack, K_THREAD_STACK_SIZEOF(child_stack),
+			rw_part_access,	NULL, NULL, NULL, 0, K_USER, K_FOREVER);
+	k_thread_name_set(&child_thread, "child_thread");
+	k_mem_domain_add_thread(&test_domain, &child_thread);
+
+	zassert_equal(k_mem_domain_deinit(&test_domain), -EBUSY,
+		      "should fail de-initializing test domain with threads attached");
+
+	/* Let the thread run to the end so any memory domain related
+	 * cleanup will be done.
+	 */
+	k_thread_start(&child_thread);
+	k_thread_join(&child_thread, K_FOREVER);
+
+	/* Note that we cannot test the proper de-initialization of test_domain
+	 * here (... where this should succeed). It is because the test_domain
+	 * is still being used for other tests in this test suite.
+	 * Instead, it will be tested in test_mem_domain_teardown() when all
+	 * tests have run.
+	 */
+
+#else  /* CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT */
+	ztest_test_skip();
+#endif /* CONFIG_ARCH_MEM_DOMAIN_SUPPORTS_DEINIT */
 }
 
 /**
@@ -600,13 +751,5 @@ ZTEST(mem_protect_domain, test_mem_part_remove_error_zerosize)
 		0, "should fail to remove memory partition");
 }
 
-/* setup function */
-void *mem_domain_setup(void)
-{
-	test_mem_domain_setup();
-
-	return NULL;
-}
-
-ZTEST_SUITE(mem_protect_domain, NULL, mem_domain_setup, NULL,
-		NULL, NULL);
+ZTEST_SUITE(mem_protect_domain, NULL, test_mem_domain_setup, NULL,
+		NULL, test_mem_domain_teardown);

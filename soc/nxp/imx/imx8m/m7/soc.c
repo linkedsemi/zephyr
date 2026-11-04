@@ -11,6 +11,7 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <soc.h>
+#include <zephyr/cache.h>
 
 #include <zephyr/dt-bindings/rdc/imx_rdc.h>
 
@@ -80,7 +81,7 @@ const ccm_analog_integer_pll_config_t g_sysPll3Config = {
 	.postDiv = 2U, /*!< SYSTEM PLL3 frequency  = 600MHZ */
 };
 
-static void SOC_ClockInit(void)
+__weak void SOC_ClockInit(void)
 {
 	/*
 	 * The following steps just show how to configure the PLL clock sources using the clock
@@ -205,6 +206,11 @@ static void gpio_init(void)
 
 void soc_early_init_hook(void)
 {
+
+#ifdef CONFIG_CACHE_MANAGEMENT
+	sys_cache_data_enable();
+	sys_cache_instr_enable();
+#endif /* CONFIG_CACHE_MANAGEMENT */
 
 	/* SoC specific RDC settings */
 	SOC_RdcInit();

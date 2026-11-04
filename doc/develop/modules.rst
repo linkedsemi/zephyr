@@ -424,9 +424,11 @@ this variable is defined unless you are adding a new module. The build system
 knows how to use west to set :makevar:`ZEPHYR_MODULES`. You can add additional
 modules to this list by setting the :makevar:`EXTRA_ZEPHYR_MODULES` CMake
 variable or by adding a :makevar:`EXTRA_ZEPHYR_MODULES` line to ``.zephyrrc``
-(See the section on :ref:`env_vars` for more details). This can be
-useful if you want to keep the list of modules found with west and also add
-your own.
+(See the section on :ref:`env_vars` for more details). This can be useful if you
+want to keep the list of modules found with west and also add your own. If
+:makevar:`EXTRA_ZEPHYR_MODULES` is set in multiple places, for example both as
+an environment variable and as a CMake variable, the final list of additional
+modules will be the merged result of all sources.
 
 .. note::
    If the module ``FOO`` is provided by :ref:`west <west>` but also given with
@@ -592,7 +594,7 @@ be monitored for your module. The supported formats are:
        - <an-other-module-related-cpe>
        - <module-related-purl>
 
-A real life example for ``mbedTLS`` module could look like this:
+A real life example for Mbed TLS module could look like this:
 
 .. code-block:: yaml
 
@@ -886,8 +888,8 @@ and inside the :file:`modules.cmake` file, add the following content
    set(ZEPHYR_FOO_CMAKE_DIR ${CMAKE_CURRENT_LIST_DIR}/foo)
    set(ZEPHYR_FOO_KCONFIG   ${CMAKE_CURRENT_LIST_DIR}/foo/Kconfig)
 
-Module integration files (zephyr/module.yml)
---------------------------------------------
+Module description file (zephyr/module.yml)
+-------------------------------------------
 
 The module description file :file:`zephyr/module.yml` can be used to specify
 that the build files, :file:`CMakeLists.txt` and :file:`Kconfig`, are located
@@ -967,8 +969,8 @@ requires the following folder structure:
    ├── modules
    └── soc
 
-Twister (Test Runner)
-=====================
+Test Runner (Twister) integration
+=================================
 
 To execute both tests and samples available in modules, the Zephyr test runner
 (twister) should be pointed to the directories containing those samples and
@@ -976,7 +978,6 @@ tests. This can be done by specifying the path to both samples and tests in the
 :file:`zephyr/module.yml` file.  Additionally, if a module defines out of tree
 boards, the module file can point twister to the path where those files
 are maintained in the module. For example:
-
 
 .. code-block:: yaml
 
@@ -988,6 +989,19 @@ are maintained in the module. For example:
       - tests
     boards:
       - boards
+
+Tests and Samples defined in the :file:`zephyr/module.yml` file are not detected
+by twister automatically. To make twister aware of the tests and samples defined
+in modules, the path for those tests and samples must be added to the command line
+when executing twister, for example:
+
+.. code-block:: shell
+
+  ./scripts/zephyr_module.py --twister-out module_tests.args
+  if [ -s module_tests.args ]; then
+      west twister +module_tests.args --outdir module_tests ...
+  fi
+
 
 .. _modules-bin-blobs:
 
@@ -1015,11 +1029,68 @@ maps, each of which has the following entries:
 - ``version``: A version string
 - ``license-path``: Path to the license file for this blob, relative to the root
   of the module repository
-- ``url``: URL that identifies the location the blob will be fetched from, as
-  well as the fetching scheme to use
+- ``url``: URL(s) that identify the location the blob will be fetched from, as
+  well as the fetching scheme to use. If it contains a list instead of a single string,
+  each URL will be considered as a fallback for fetching the same blob.
 - ``description``: Human-readable description of the binary blob
 - ``doc-url``: A URL pointing to the location of the official documentation for
   this blob
+
+The following entries may also be present:
+
+- ``click-through``: A boolean indicating if a click-through license must be
+  accepted to download this blob
+- ``size``: Size of the blob in bytes. May be required by some fetchers
+- ``fetcher``: The method used to download the blob. If not set, the method is
+  inferred from the URL
+
+Package manager dependencies
+============================
+
+Zephyr modules can describe dependencies available from package managers,
+currently only ``pip`` is supported.
+
+A west extension command ``west packages <manager>`` is available to list
+dependencies for Zephyr and present modules that leverage this feature in their
+``module.yml`` file.
+Run ``west help packages`` for more details.
+
+Python pip
+----------
+
+Calling ``west packages pip`` lists `requirement files`_ for Zephyr and modules.
+Passing ``--install`` installs these if there's an active virtual environment.
+
+The following example demonstrates a ``zephyr/module.yml`` file with some
+requirement files in the ``scripts`` directory of the module.
+
+
+.. code-block:: yaml
+
+    package-managers:
+      pip:
+        requirement-files:
+          - scripts/requirements-build.txt
+          - scripts/requirements-doc.txt
+
+
+.. _modules-runners:
+
+External Runners
+================
+
+If a module has out of tree boards that require custom :ref:`runners <west-runner>`,
+then it can add a list to its ``zephyr/module.yml`` file, for example:
+
+
+.. code-block:: yaml
+
+    runners:
+      - file: scripts/my-runner.py
+
+
+Each file entry is imported when executing ``west flash`` or ``west debug`` and
+subclasses of the ``ZephyrBinaryRunner`` are registered for use.
 
 Module Inclusion
 ================
@@ -1200,3 +1271,4 @@ revision needs to be changed to the commit hash from the module repository.
 .. _CMake list: https://cmake.org/cmake/help/latest/manual/cmake-language.7.html#lists
 .. _add_subdirectory(): https://cmake.org/cmake/help/latest/command/add_subdirectory.html
 .. _GitHub issues: https://github.com/zephyrproject-rtos/zephyr/issues
+.. _requirement files: https://pip.pypa.io/en/stable/reference/requirements-file-format/

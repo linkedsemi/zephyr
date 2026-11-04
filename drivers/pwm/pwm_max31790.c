@@ -269,7 +269,7 @@ static int max31790_set_cycles(const struct device *dev, uint32_t channel, uint3
 	LOG_DBG("set period %i with pulse %i for channel %i and flags 0x%04X", period_count,
 		pulse_count, channel, flags);
 
-	if (channel > MAX31790_CHANNEL_COUNT) {
+	if (channel >= MAX31790_CHANNEL_COUNT) {
 		LOG_ERR("invalid channel number %i", channel);
 		return -EINVAL;
 	}
@@ -295,7 +295,7 @@ static int max31790_get_cycles_per_sec(const struct device *dev, uint32_t channe
 	uint8_t pwm_frequency = 1;
 	uint16_t pwm_frequency_in_hz;
 
-	if (channel > MAX31790_CHANNEL_COUNT) {
+	if (channel >= MAX31790_CHANNEL_COUNT) {
 		LOG_ERR("invalid channel number %i", channel);
 		return -EINVAL;
 	}
@@ -321,7 +321,7 @@ static int max31790_get_cycles_per_sec(const struct device *dev, uint32_t channe
 	return 0;
 }
 
-static const struct pwm_driver_api max31790_pwm_api = {
+static DEVICE_API(pwm, max31790_pwm_api) = {
 	.set_cycles = max31790_set_cycles,
 	.get_cycles_per_sec = max31790_get_cycles_per_sec,
 };

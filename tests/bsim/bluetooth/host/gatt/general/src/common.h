@@ -6,47 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/kernel.h>
-
-#include "bs_types.h"
-#include "bs_tracing.h"
-#include "time_machine.h"
-#include "bstests.h"
-
-#include <zephyr/types.h>
-#include <stddef.h>
-#include <errno.h>
-
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/hci.h>
-#include <zephyr/bluetooth/conn.h>
-#include <zephyr/bluetooth/uuid.h>
-#include <zephyr/bluetooth/gatt.h>
-
-extern enum bst_result_t bst_result;
-
-#define WAIT_TIME (30 * 1e6) /*seconds*/
-
-#define CREATE_FLAG(flag) static atomic_t flag = (atomic_t)false
-#define SET_FLAG(flag) (void)atomic_set(&flag, (atomic_t)true)
-#define UNSET_FLAG(flag) (void)atomic_set(&flag, (atomic_t)false)
-#define WAIT_FOR_FLAG(flag) \
-	while (!(bool)atomic_get(&flag)) { \
-		(void)k_sleep(K_MSEC(1)); \
-	}
-
-#define FAIL(...) \
-	do { \
-		bst_result = Failed; \
-		bs_trace_error_time_line(__VA_ARGS__); \
-	} while (0)
-
-#define PASS(...) \
-	do { \
-		bst_result = Passed; \
-		bs_trace_info_time(1, __VA_ARGS__); \
-	} while (0)
-
 #define CHRC_SIZE 10
 #define LONG_CHRC_SIZE 40
 
@@ -70,5 +29,29 @@ extern enum bst_result_t bst_result;
 	BT_UUID_DECLARE_128(0x01, 0x23, 0x45, 0x67, 0x89, 0x01, 0x02, 0x03, \
 			    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0xFF, 0x33)
 
-void test_tick(bs_time_t HW_device_time);
-void test_init(void);
+#define EXEC_WRITE_CHRC_SIZE 4U
+
+#define EXEC_WRITE_APP_ERR 0x80U
+
+enum exec_write_stage {
+	EXEC_WRITE_STAGE_CHECK_CANCEL = 0,
+	EXEC_WRITE_STAGE_CHECK_ERROR = 1,
+};
+
+#define EXEC_WRITE_SVC_UUID_VAL \
+	0x11, 0x23, 0x45, 0x67, 0x89, 0x01, 0x02, 0x03, \
+	0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x00, 0x00
+
+#define EXEC_WRITE_SVC_UUID BT_UUID_DECLARE_128(EXEC_WRITE_SVC_UUID_VAL)
+
+#define EXEC_WRITE_FIRST_CHRC_UUID \
+	BT_UUID_DECLARE_128(0x11, 0x23, 0x45, 0x67, 0x89, 0x01, 0x02, 0x03, \
+			    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x01, 0x00)
+
+#define EXEC_WRITE_SECOND_CHRC_UUID \
+	BT_UUID_DECLARE_128(0x11, 0x23, 0x45, 0x67, 0x89, 0x01, 0x02, 0x03, \
+			    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x02, 0x00)
+
+#define EXEC_WRITE_CP_CHRC_UUID \
+	BT_UUID_DECLARE_128(0x11, 0x23, 0x45, 0x67, 0x89, 0x01, 0x02, 0x03, \
+			    0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x03, 0x00)

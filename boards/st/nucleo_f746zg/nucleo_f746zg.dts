@@ -28,18 +28,22 @@
 		zephyr,flash = &flash0;
 		zephyr,dtcm = &dtcm;
 		zephyr,canbus = &can1;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led: led_0 {
 			gpios = <&gpiob 0 GPIO_ACTIVE_HIGH>;
 			label = "User LD1";
 		};
+
 		blue_led: led_1 {
 			gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
 		};
+
 		red_led: led_2 {
 			gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
 			label = "User LD3";
@@ -48,6 +52,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button_0 {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -62,6 +67,7 @@
 		sw0 = &user_button;
 		watchdog0 = &iwdg;
 		die-temp0 = &die_temp;
+		rtc = &rtc;
 		volt-sensor0 = &vref;
 		volt-sensor1 = &vbat;
 	};
@@ -124,6 +130,8 @@ zephyr_udc0: &usbotg_fs {
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -131,6 +139,8 @@ zephyr_udc0: &usbotg_fs {
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pb11>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -158,7 +168,7 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+	clocks = <&rcc STM32_CLOCK(APB1, 28)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
@@ -173,11 +183,14 @@ zephyr_udc0: &usbotg_fs {
 	status = "okay";
 };
 
+&adc123_common {
+	st,adc-prescaler = <2>;
+	status = "okay";
+};
+
 &adc1 {
 	pinctrl-0 = <&adc1_in0_pa0>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <2>;
 	status = "okay";
 };
 
@@ -197,16 +210,27 @@ zephyr_udc0: &usbotg_fs {
 
 &mac {
 	status = "okay";
-	pinctrl-0 = <&eth_mdc_pc1
-		     &eth_rxd0_pc4
+	pinctrl-0 = <&eth_rxd0_pc4
 		     &eth_rxd1_pc5
 		     &eth_ref_clk_pa1
-		     &eth_mdio_pa2
 		     &eth_crs_dv_pa7
 		     &eth_tx_en_pg11
 		     &eth_txd0_pg13
 		     &eth_txd1_pb13>;
 	pinctrl-names = "default";
+	phy-connection-type = "rmii";
+	phy-handle = <&eth_phy>;
+};
+
+&mdio {
+	status = "okay";
+	pinctrl-0 = <&eth_mdio_pa2 &eth_mdc_pc1>;
+	pinctrl-names = "default";
+
+	eth_phy: ethernet-phy@0 {
+		compatible = "ethernet-phy";
+		reg = <0x00>;
+	};
 };
 
 &backup_sram {
@@ -218,5 +242,54 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &vbat {
+	status = "okay";
+};
+
+&flash0 {
+	partitions {
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges;
+
+		/* Sectors 0 and 1 (2x32kByte) */
+		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			label = "mcuboot";
+			reg = <0x00000000 DT_SIZE_K(64)>;
+		};
+
+		/* Sectors 2 and 3 (2x32kByte) */
+		storage_partition: partition@10000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x00010000 DT_SIZE_K(64)>;
+		};
+
+		/* Sector 4 (128kByte): spare/unused */
+
+		/* Sectors 5 (256kByte) */
+		slot0_partition: partition@40000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-0";
+			reg = <0x00040000 DT_SIZE_K(256)>;
+		};
+
+		/* Sectors 6 (256kByte) */
+		slot1_partition: partition@80000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-1";
+			reg = <0x00080000 DT_SIZE_K(256)>;
+		};
+
+		/* Sectors 7 (256kByte) */
+		scratch_partition: partition@c0000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-scratch";
+			reg = <0x000c0000 DT_SIZE_K(256)>;
+		};
+	};
+};
+
+&crc {
 	status = "okay";
 };

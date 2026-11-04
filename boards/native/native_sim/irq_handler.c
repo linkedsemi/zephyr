@@ -213,6 +213,11 @@ int posix_irq_is_enabled(unsigned int irq)
 	return hw_irq_ctrl_is_irq_enabled(irq);
 }
 
+int posix_irq_is_pending(unsigned int irq)
+{
+	return hw_irq_ctrl_is_irq_pending(irq);
+}
+
 int posix_get_current_irq(void)
 {
 	return currently_running_irq;
@@ -256,6 +261,11 @@ void posix_isr_declare(unsigned int irq_p, int flags, void isr_p(const void *),
  */
 void posix_irq_priority_set(unsigned int irq, unsigned int prio, uint32_t flags)
 {
+	if (irq >= N_IRQS) {
+		posix_print_error_and_exit("Attempted to configure not existent interrupt %u\n",
+					   irq);
+		return;
+	}
 	hw_irq_ctrl_prio_set(irq, prio);
 }
 

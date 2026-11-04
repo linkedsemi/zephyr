@@ -104,20 +104,6 @@ static int ism330dhcx_gyro_range_to_fs_val(int32_t range)
 	return -EINVAL;
 }
 
-static inline int ism330dhcx_reboot(const struct device *dev)
-{
-	struct ism330dhcx_data *data = dev->data;
-
-	if (ism330dhcx_boot_set(data->ctx, 1) < 0) {
-		return -EIO;
-	}
-
-	/* Wait sensor turn-on time as per datasheet */
-	k_busy_wait(35 * USEC_PER_MSEC);
-
-	return 0;
-}
-
 static int ism330dhcx_accel_set_fs_raw(const struct device *dev, uint8_t fs)
 {
 	struct ism330dhcx_data *data = dev->data;
@@ -364,36 +350,47 @@ static int ism330dhcx_sample_fetch_shub(const struct device *dev)
 static int ism330dhcx_sample_fetch(const struct device *dev,
 				   enum sensor_channel chan)
 {
+	int ret = 0;
+
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
-		ism330dhcx_sample_fetch_accel(dev);
+		ret = ism330dhcx_sample_fetch_accel(dev);
 #if defined(CONFIG_ISM330DHCX_SENSORHUB)
 		ism330dhcx_sample_fetch_shub(dev);
 #endif
 		break;
 	case SENSOR_CHAN_GYRO_XYZ:
-		ism330dhcx_sample_fetch_gyro(dev);
+		ret = ism330dhcx_sample_fetch_gyro(dev);
 		break;
 #if defined(CONFIG_ISM330DHCX_ENABLE_TEMP)
 	case SENSOR_CHAN_DIE_TEMP:
-		ism330dhcx_sample_fetch_temp(dev);
+		ret = ism330dhcx_sample_fetch_temp(dev);
 		break;
 #endif
 	case SENSOR_CHAN_ALL:
-		ism330dhcx_sample_fetch_accel(dev);
-		ism330dhcx_sample_fetch_gyro(dev);
+		ret = ism330dhcx_sample_fetch_accel(dev);
+		if (ret != 0) {
+			break;
+		}
+		ret = ism330dhcx_sample_fetch_gyro(dev);
+		if (ret != 0) {
+			break;
+		}
 #if defined(CONFIG_ISM330DHCX_ENABLE_TEMP)
-		ism330dhcx_sample_fetch_temp(dev);
+		ret = ism330dhcx_sample_fetch_temp(dev);
+		if (ret != 0) {
+			break;
+		}
 #endif
 #if defined(CONFIG_ISM330DHCX_SENSORHUB)
-		ism330dhcx_sample_fetch_shub(dev);
+		ret = ism330dhcx_sample_fetch_shub(dev);
 #endif
 		break;
 	default:
 		return -ENOTSUP;
 	}
 
-	return 0;
+	return ret;
 }
 
 static inline void ism330dhcx_accel_convert(struct sensor_value *val, int raw_val,
@@ -580,8 +577,7 @@ static inline void ism330dhcx_hum_convert(const struct device *dev, struct senso
 	rh /= (ht->x1 - ht->x0);
 
 	/* convert humidity to integer and fractional part */
-	val->val1 = rh;
-	val->val2 = rh * 1000000;
+	sensor_value_from_float(val, rh);
 }
 
 static inline void ism330dhcx_press_convert(const struct device *dev, struct sensor_value *val)
@@ -677,7 +673,7 @@ static int ism330dhcx_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api ism330dhcx_api_funcs = {
+static DEVICE_API(sensor, ism330dhcx_api_funcs) = {
 	.attr_set = ism330dhcx_attr_set,
 #if CONFIG_ISM330DHCX_TRIGGER
 	.trigger_set = ism330dhcx_trigger_set,
@@ -712,6 +708,15 @@ static int ism330dhcx_init_chip(const struct device *dev)
 	}
 
 	k_busy_wait(100);
+
+	/*
+	 * Set device_conf bit to 1 for a proper configuration
+	 * as stated in DS chapter paragraph 9.20
+	 */
+	if (ism330dhcx_device_conf_set(ism330dhcx->ctx, 1) < 0) {
+		LOG_DBG("Failed setting device_conf bit");
+		return -EIO;
+	}
 
 	LOG_DBG("accel range is %d", cfg->accel_range);
 	if (ism330dhcx_accel_range_set(dev, cfg->accel_range) < 0) {
@@ -792,9 +797,9 @@ static int ism330dhcx_init(const struct device *dev)
 		.gyro_range = DT_INST_PROP(inst, gyro_range),					\
 		COND_CODE_1(DT_INST_ON_BUS(inst, spi),						\
 			    (.bus_init = ism330dhcx_spi_init,					\
-			     .spi = SPI_DT_SPEC_INST_GET(inst, SPI_OP_MODE_MASTER |		\
+			     .spi = SPI_DT_SPEC_INST_GET(inst, SPI_OP_MODE_CONTROLLER |		\
 							 SPI_MODE_CPOL | SPI_MODE_CPHA |	\
-							 SPI_WORD_SET(8), 0),),			\
+							 SPI_WORD_SET(8)),),			\
 			    ())									\
 		COND_CODE_1(DT_INST_ON_BUS(inst, i2c),						\
 			    (.bus_init = ism330dhcx_i2c_init,					\

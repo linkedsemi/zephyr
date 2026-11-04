@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Carlo Caione <ccaione@baylibre.com>
+ * Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,11 +21,15 @@
 #ifndef ZEPHYR_ARCH_ARM_INCLUDE_CORTEX_M_KERNEL_ARCH_FUNC_H_
 #define ZEPHYR_ARCH_ARM_INCLUDE_CORTEX_M_KERNEL_ARCH_FUNC_H_
 
+#include <zephyr/platform/hooks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifndef _ASMLANGUAGE
+#include <zephyr/arch/arm/arm-m-switch.h>
+
 extern void z_arm_fault_init(void);
 extern void z_arm_cpu_idle_init(void);
 #ifdef CONFIG_ARM_MPU
@@ -32,9 +37,6 @@ extern void z_arm_configure_static_mpu_regions(void);
 extern void z_arm_configure_dynamic_mpu_regions(struct k_thread *thread);
 extern int z_arm_mpu_init(void);
 #endif /* CONFIG_ARM_MPU */
-#ifdef CONFIG_ARM_AARCH32_MMU
-extern int z_arm_mmu_init(void);
-#endif /* CONFIG_ARM_AARCH32_MMU */
 
 static ALWAYS_INLINE void arch_kernel_init(void)
 {
@@ -53,30 +55,61 @@ static ALWAYS_INLINE void arch_kernel_init(void)
 	 */
 	z_arm_configure_static_mpu_regions();
 #endif /* CONFIG_ARM_MPU */
+
+	soc_per_core_init_hook();
 }
 
-static ALWAYS_INLINE void
-arch_thread_return_value_set(struct k_thread *thread, unsigned int value)
+#ifndef CONFIG_USE_SWITCH
+static ALWAYS_INLINE void arch_thread_return_value_set(struct k_thread *thread, unsigned int value)
 {
 	thread->arch.swap_return_value = value;
 }
+#endif
 
 #if !defined(CONFIG_MULTITHREADING)
-extern FUNC_NORETURN void z_arm_switch_to_main_no_multithreading(
-	k_thread_entry_t main_func,
-	void *p1, void *p2, void *p3);
+extern FUNC_NORETURN void z_arm_switch_to_main_no_multithreading(k_thread_entry_t main_func,
+								 void *p1, void *p2, void *p3);
 
-#define ARCH_SWITCH_TO_MAIN_NO_MULTITHREADING \
-	z_arm_switch_to_main_no_multithreading
+#define ARCH_SWITCH_TO_MAIN_NO_MULTITHREADING z_arm_switch_to_main_no_multithreading
 
 #endif /* !CONFIG_MULTITHREADING */
 
-extern FUNC_NORETURN void z_arm_userspace_enter(k_thread_entry_t user_entry,
-					       void *p1, void *p2, void *p3,
-					       uint32_t stack_end,
-					       uint32_t stack_start);
+extern FUNC_NORETURN void z_arm_userspace_enter(k_thread_entry_t user_entry, void *p1, void *p2,
+						void *p3, uint32_t stack_end, uint32_t stack_start,
+						uint32_t sp_is_priv);
 
 extern void z_arm_fatal_error(unsigned int reason, const struct arch_esf *esf);
+
+#ifndef CONFIG_USE_SWITCH
+static ALWAYS_INLINE int arch_swap(unsigned int key)
+{
+	/* store off key and return value */
+	_current->arch.basepri = key;
+	_current->arch.swap_return_value = -EAGAIN;
+
+	/* Set the pending bit to make sure we will take a PendSV exception.
+	 * PENDSVSET is write-one-to-set and writing zero to the other ICSR
+	 * bits has no effect, so a plain store is sufficient (and avoids a
+	 * read-modify-write that could write back stale state bits).
+	 */
+	SCB->ICSR = SCB_ICSR_PENDSVSET_Msk;
+
+	/* clear mask or enable all irqs to take a pendsv */
+	irq_unlock(0);
+
+	/* The ISB guarantees the now-unmasked PendSV is recognized here,
+	 * and not a couple of instructions later, which could otherwise
+	 * let the return value load below execute before the context
+	 * switch and read a stale -EAGAIN when the thread resumes.
+	 */
+	__ISB();
+
+	/* Context switch is performed here. Returning implies the
+	 * thread has been context-switched-in again.
+	 */
+	return _current->arch.swap_return_value;
+}
+#endif
 
 #endif /* _ASMLANGUAGE */
 

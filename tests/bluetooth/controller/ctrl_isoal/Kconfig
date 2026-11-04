@@ -14,7 +14,7 @@ config BT_CTLR_CONN_ISO_GROUPS
 
 parent-module = BT
 module = BT_CTLR_ISOAL
-module-str = "Bluetooth Controller ISO-AL"
+module-str = Bluetooth Controller ISO-AL
 source "subsys/logging/Kconfig.template.log_config_inherit"
 
 config BT_CTLR_ISOAL_LOG_DBG_VERBOSE
@@ -56,6 +56,25 @@ config BT_CTLR_ISOAL_SN_STRICT
 	bool "Enforce Strict Tx ISO Data Sequence Number use"
 	depends on BT_CTLR_ADV_ISO || BT_CTLR_CONN_ISO
 	default y
+
+config BT_CTLR_ISOAL_FRAMED_BIS_OFFSET_MARGIN
+	int "Margin (in microseconds) to be used in framed time offset for BIS"
+	depends on BT_CTLR_ADV_ISO || BT_CTLR_CONN_ISO
+	default 2000
+	range 0 10000
+	help
+	  Needed margin for reliable delivery of payloads will vary, but should
+	  generally be EVENT_OVERHEAD_START_US + a small margin to cover ISOAL
+	  processing overhead
+
+config BT_CTLR_ISOAL_FRAMED_CIS_OFFSET_MARGIN
+	int "Margin (in microseconds) to be used in framed time offset for CIS"
+	depends on BT_CTLR_ADV_ISO || BT_CTLR_CONN_ISO
+	default 0
+	range 0 10000
+	help
+	  Note: Usually no margin is needed for CIS as Null PDUs can be used if a payload
+	  is too late for the first subevent
 
 source "tests/bluetooth/controller/common/Kconfig"
 

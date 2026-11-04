@@ -17,7 +17,7 @@ LOG_MODULE_REGISTER(spi_sam);
 #include <zephyr/spinlock.h>
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
@@ -75,7 +75,7 @@ static inline void spi_spin_unlock(const struct device *dev, k_spinlock_key_t ke
 	k_spin_unlock(&data->lock, key);
 }
 
-static int spi_slave_to_mr_pcs(int slave)
+static int spi_peripheral_to_mr_pcs(int peripheral)
 {
 	int pcs[SAM_SPI_CHIP_SELECT_COUNT] = {0x0, 0x1, 0x3, 0x7};
 
@@ -88,7 +88,7 @@ static int spi_slave_to_mr_pcs(int slave)
 	 * PCS = 0111    NPCS[3:0] = 0111
 	 */
 
-	return pcs[slave];
+	return pcs[peripheral];
 }
 
 static int spi_sam_configure(const struct device *dev,
@@ -98,7 +98,8 @@ static int spi_sam_configure(const struct device *dev,
 	struct spi_sam_data *data = dev->data;
 	Spi *regs = cfg->regs;
 	uint32_t spi_mr = 0U, spi_csr = 0U;
-	uint16_t spi_csr_idx = spi_cs_is_gpio(config) ? 0 : config->slave;
+	uint16_t spi_csr_idx = spi_cs_is_gpio(config) ? 0 : config->peripheral;
+	uint8_t word_size = SPI_WORD_SIZE_GET(config->operation);
 	int div;
 
 	if (spi_context_configured(&data->ctx, config)) {
@@ -110,22 +111,22 @@ static int spi_sam_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_MASTER) {
-		/* Slave mode is not implemented. */
+	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_CONTROLLER) {
+		/* Peripheral mode is not implemented. */
 		return -ENOTSUP;
 	}
 
-	if (config->slave > (SAM_SPI_CHIP_SELECT_COUNT - 1)) {
-		LOG_ERR("Slave %d is greater than %d",
-			config->slave, SAM_SPI_CHIP_SELECT_COUNT - 1);
+	if (spi_csr_idx > (SAM_SPI_CHIP_SELECT_COUNT - 1)) {
+		LOG_ERR("Peripheral %d is greater than %d",
+			spi_csr_idx, SAM_SPI_CHIP_SELECT_COUNT - 1);
 		return -EINVAL;
 	}
 
-	/* Set master mode, disable mode fault detection, set fixed peripheral
+	/* Set controller mode, disable mode fault detection, set fixed peripheral
 	 * select mode.
 	 */
 	spi_mr |= (SPI_MR_MSTR | SPI_MR_MODFDIS);
-	spi_mr |= SPI_MR_PCS(spi_slave_to_mr_pcs(spi_csr_idx));
+	spi_mr |= SPI_MR_PCS(spi_peripheral_to_mr_pcs(spi_csr_idx));
 
 	if (cfg->loopback) {
 		spi_mr |= SPI_MR_LLB;
@@ -139,11 +140,11 @@ static int spi_sam_configure(const struct device *dev,
 		spi_csr |= SPI_CSR_NCPHA;
 	}
 
-	if (SPI_WORD_SIZE_GET(config->operation) != 8) {
+	if (word_size < 8 || word_size > 16) {
+		LOG_ERR("Unsupported word size %u (must be 8-16)", word_size);
 		return -ENOTSUP;
-	} else {
-		spi_csr |= SPI_CSR_BITS(SPI_CSR_BITS_8_BIT);
 	}
+	spi_csr |= SPI_CSR_BITS(word_size - 8);
 
 	/* Use the requested or next highest possible frequency */
 	div = SOC_ATMEL_SAM_MCK_FREQ_HZ / config->frequency;
@@ -171,8 +172,17 @@ static void spi_sam_finish(Spi *regs)
 	}
 }
 
-/* Fast path that transmits a buf */
-static void spi_sam_fast_tx(Spi *regs, const uint8_t *tx_buf, const uint32_t tx_buf_len)
+/* True when the current configuration uses 9-16 bit words. */
+static inline bool spi_sam_is_wide(const struct device *dev)
+{
+	struct spi_sam_data *data = dev->data;
+
+	return SPI_WORD_SIZE_GET(data->ctx.config->operation) > 8;
+}
+
+/* Fast path that transmits a buf (8-bit words) */
+static void spi_sam_fast_tx_8(Spi *regs, const uint8_t *tx_buf,
+			      const uint32_t tx_buf_len)
 {
 	const uint8_t *p = tx_buf;
 	const uint8_t *pend = (uint8_t *)tx_buf + tx_buf_len;
@@ -188,8 +198,34 @@ static void spi_sam_fast_tx(Spi *regs, const uint8_t *tx_buf, const uint32_t tx_
 	}
 }
 
-/* Fast path that reads into a buf */
-static void spi_sam_fast_rx(Spi *regs, uint8_t *rx_buf, const uint32_t rx_buf_len)
+/* Fast path that transmits a buf (9-16 bit words, packed as uint16_t) */
+static void spi_sam_fast_tx_16(Spi *regs, const uint8_t *tx_buf,
+			       const uint32_t tx_buf_len)
+{
+	const uint16_t *p = (const uint16_t *)tx_buf;
+	size_t words = tx_buf_len / 2;
+
+	for (size_t i = 0; i < words; i++) {
+		while ((regs->SPI_SR & SPI_SR_TDRE) == 0) {
+		}
+		regs->SPI_TDR = SPI_TDR_TD(p[i]);
+	}
+}
+
+/* Fast path that transmits a buf */
+static void spi_sam_fast_tx(const struct device *dev, Spi *regs,
+			    const uint8_t *tx_buf, const uint32_t tx_buf_len)
+{
+	if (spi_sam_is_wide(dev)) {
+		spi_sam_fast_tx_16(regs, tx_buf, tx_buf_len);
+	} else {
+		spi_sam_fast_tx_8(regs, tx_buf, tx_buf_len);
+	}
+}
+
+/* Fast path that reads into a buf (8-bit words) */
+static void spi_sam_fast_rx_8(Spi *regs, uint8_t *rx_buf,
+			      const uint32_t rx_buf_len)
 {
 	uint8_t *rx = rx_buf;
 	int len = rx_buf_len;
@@ -225,11 +261,39 @@ static void spi_sam_fast_rx(Spi *regs, uint8_t *rx_buf, const uint32_t rx_buf_le
 	*rx = (uint8_t)regs->SPI_RDR;
 }
 
-/* Fast path that writes and reads bufs of the same length */
-static void spi_sam_fast_txrx(Spi *regs,
-			      const uint8_t *tx_buf,
-			      const uint8_t *rx_buf,
-			      const uint32_t len)
+/* Fast path that reads into a buf (9-16 bit words, packed as uint16_t) */
+static void spi_sam_fast_rx_16(Spi *regs, uint8_t *rx_buf,
+			       const uint32_t rx_buf_len)
+{
+	uint16_t *rx = (uint16_t *)rx_buf;
+	size_t words = rx_buf_len / 2;
+
+	for (size_t i = 0; i < words; i++) {
+		while ((regs->SPI_SR & SPI_SR_TDRE) == 0) {
+		}
+		regs->SPI_TDR = SPI_TDR_TD(0);
+		while ((regs->SPI_SR & SPI_SR_RDRF) == 0) {
+		}
+		rx[i] = (uint16_t)regs->SPI_RDR;
+	}
+}
+
+/* Fast path that reads into a buf */
+static void spi_sam_fast_rx(const struct device *dev, Spi *regs,
+			    uint8_t *rx_buf, const uint32_t rx_buf_len)
+{
+	if (spi_sam_is_wide(dev)) {
+		spi_sam_fast_rx_16(regs, rx_buf, rx_buf_len);
+	} else {
+		spi_sam_fast_rx_8(regs, rx_buf, rx_buf_len);
+	}
+}
+
+/* Fast path that writes and reads bufs of the same length (8-bit words) */
+static void spi_sam_fast_txrx_8(Spi *regs,
+				const uint8_t *tx_buf,
+				const uint8_t *rx_buf,
+				const uint32_t len)
 {
 	const uint8_t *tx = tx_buf;
 	const uint8_t *txend = tx_buf + len;
@@ -277,6 +341,36 @@ static void spi_sam_fast_txrx(Spi *regs,
 
 	*rx = (uint8_t)regs->SPI_RDR;
 
+}
+
+/* Fast path that writes and reads bufs of the same length (9-16 bit words) */
+static void spi_sam_fast_txrx_16(Spi *regs, const uint8_t *tx_buf,
+				 const uint8_t *rx_buf, const uint32_t len)
+{
+	const uint16_t *tx = (const uint16_t *)tx_buf;
+	uint16_t *rx = (uint16_t *)rx_buf;
+	size_t words = len / 2;
+
+	for (size_t i = 0; i < words; i++) {
+		while ((regs->SPI_SR & SPI_SR_TDRE) == 0) {
+		}
+		regs->SPI_TDR = SPI_TDR_TD(tx[i]);
+		while ((regs->SPI_SR & SPI_SR_RDRF) == 0) {
+		}
+		rx[i] = (uint16_t)regs->SPI_RDR;
+	}
+}
+
+/* Fast path that writes and reads bufs of the same length */
+static void spi_sam_fast_txrx(const struct device *dev, Spi *regs,
+			      const uint8_t *tx_buf, const uint8_t *rx_buf,
+			      const uint32_t len)
+{
+	if (spi_sam_is_wide(dev)) {
+		spi_sam_fast_txrx_16(regs, tx_buf, rx_buf, len);
+	} else {
+		spi_sam_fast_txrx_8(regs, tx_buf, rx_buf, len);
+	}
 }
 
 
@@ -448,14 +542,14 @@ static inline int spi_sam_rx(const struct device *dev,
 	if ((rx_buf_len < SAM_SPI_DMA_THRESHOLD || cfg->dma_dev == NULL) &&
 	    !IS_ENABLED(CONFIG_SPI_RTIO)) {
 		key = spi_spin_lock(dev);
-		spi_sam_fast_rx(regs, rx_buf, rx_buf_len);
+		spi_sam_fast_rx(dev, regs, rx_buf, rx_buf_len);
 	} else {
 		/* RTIO Transfers should always fall here */
 		return spi_sam_dma_txrx(dev, regs, NULL, rx_buf, rx_buf_len);
 	}
 #else
 	key = spi_spin_lock(dev);
-	spi_sam_fast_rx(regs, rx_buf, rx_buf_len);
+	spi_sam_fast_rx(dev, regs, rx_buf, rx_buf_len);
 #endif
 	spi_sam_finish(regs);
 
@@ -476,14 +570,14 @@ static inline int spi_sam_tx(const struct device *dev,
 	if ((tx_buf_len < SAM_SPI_DMA_THRESHOLD || cfg->dma_dev == NULL) &&
 	    !IS_ENABLED(CONFIG_SPI_RTIO)) {
 		key = spi_spin_lock(dev);
-		spi_sam_fast_tx(regs, tx_buf, tx_buf_len);
+		spi_sam_fast_tx(dev, regs, tx_buf, tx_buf_len);
 	} else {
 		/* RTIO Transfers should always fall here */
 		return spi_sam_dma_txrx(dev, regs, tx_buf, NULL, tx_buf_len);
 	}
 #else
 	key = spi_spin_lock(dev);
-	spi_sam_fast_tx(regs, tx_buf, tx_buf_len);
+	spi_sam_fast_tx(dev, regs, tx_buf, tx_buf_len);
 #endif
 	spi_sam_finish(regs);
 	spi_spin_unlock(dev, key);
@@ -505,14 +599,14 @@ static inline int spi_sam_txrx(const struct device *dev,
 	if ((buf_len < SAM_SPI_DMA_THRESHOLD || cfg->dma_dev == NULL) &&
 	    !IS_ENABLED(CONFIG_SPI_RTIO)) {
 		key = spi_spin_lock(dev);
-		spi_sam_fast_txrx(regs, tx_buf, rx_buf, buf_len);
+		spi_sam_fast_txrx(dev, regs, tx_buf, rx_buf, buf_len);
 	} else {
 		/* RTIO Transfers should always fall here */
 		return spi_sam_dma_txrx(dev, regs, tx_buf, rx_buf, buf_len);
 	}
 #else
 	key = spi_spin_lock(dev);
-	spi_sam_fast_txrx(regs, tx_buf, rx_buf, buf_len);
+	spi_sam_fast_txrx(dev, regs, tx_buf, rx_buf, buf_len);
 #endif
 	spi_sam_finish(regs);
 	spi_spin_unlock(dev, key);
@@ -577,7 +671,7 @@ static bool spi_sam_transfer_ongoing(struct spi_sam_data *data)
 	return spi_context_tx_on(&data->ctx) || spi_context_rx_on(&data->ctx);
 }
 
-static void spi_sam_shift_master(Spi *regs, struct spi_sam_data *data)
+static void spi_sam_shift_controller(Spi *regs, struct spi_sam_data *data)
 {
 	uint8_t tx;
 	uint8_t rx;
@@ -764,7 +858,7 @@ static int spi_sam_transceive(const struct device *dev,
 		spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, 1);
 
 		do {
-			spi_sam_shift_master(cfg->regs, data);
+			spi_sam_shift_controller(cfg->regs, data);
 		} while (spi_sam_transfer_ongoing(data));
 	}
 
@@ -843,7 +937,7 @@ static int spi_sam_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api spi_sam_driver_api = {
+static DEVICE_API(spi, spi_sam_driver_api) = {
 	.transceive = spi_sam_transceive_sync,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_sam_transceive_async,
@@ -890,7 +984,7 @@ static const struct spi_driver_api spi_sam_driver_api = {
 		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(n), ctx)				\
 		IF_ENABLED(CONFIG_SPI_RTIO, (.rtio_ctx = &spi_sam_rtio_##n))			\
 	};											\
-	DEVICE_DT_INST_DEFINE(n, &spi_sam_init, NULL,						\
+	SPI_DEVICE_DT_INST_DEFINE(n, &spi_sam_init, NULL,					\
 			    &spi_sam_dev_data_##n,						\
 			    &spi_sam_config_##n, POST_KERNEL,					\
 			    CONFIG_SPI_INIT_PRIORITY, &spi_sam_driver_api);

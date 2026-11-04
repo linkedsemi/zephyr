@@ -78,7 +78,7 @@ static int gls_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api gls_api = {
+static DEVICE_API(sensor, gls_api) = {
 	.sample_fetch = &gls_sample_fetch,
 	.channel_get = &gls_channel_get,
 };
@@ -89,7 +89,7 @@ static int gls_init(const struct device *dev)
 	const struct gls_config *cfg = dev->config;
 
 	if (!device_is_ready(cfg->adc)) {
-		LOG_ERR("ADC device is not ready.");
+		LOG_ERR_DEVICE_NOT_READY(cfg->adc);
 		return -EINVAL;
 	}
 
@@ -100,7 +100,7 @@ static int gls_init(const struct device *dev)
 		.acquisition_time = ADC_ACQ_TIME_DEFAULT,
 		.channel_id = cfg->adc_channel,
 #ifdef CONFIG_ADC_NRFX_SAADC
-		.input_positive = SAADC_CH_PSELP_PSELP_AnalogInput0 + cfg->adc_channel,
+		.input_positive = cfg->adc_channel,
 #endif
 	};
 	adc_table.buffer = &drv_data->raw;

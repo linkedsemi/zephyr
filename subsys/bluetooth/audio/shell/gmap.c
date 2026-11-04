@@ -16,10 +16,14 @@
 #include <string.h>
 
 #include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/assigned_numbers.h>
 #include <zephyr/bluetooth/audio/audio.h>
-#include <zephyr/bluetooth/audio/gmap_lc3_preset.h>
 #include <zephyr/bluetooth/audio/gmap.h>
+#include <zephyr/bluetooth/audio/gmap_lc3_preset.h>
+#include <zephyr/bluetooth/audio/lc3.h>
+#include <zephyr/bluetooth/audio/pacs.h>
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/data.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/kernel.h>
@@ -28,9 +32,11 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
 
-#include "host/shell/bt.h"
 #include "audio.h"
+#include "common/bt_shell_private.h"
+#include "host/shell/bt.h"
 
 #define UNICAST_SINK_SUPPORTED (CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT > 0)
 #define UNICAST_SRC_SUPPORTED  (CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SRC_COUNT > 0)
@@ -54,7 +60,7 @@ size_t gmap_ad_data_add(struct bt_data data[], size_t data_size)
 
 	ad_gmap[2] = (uint8_t)gmap_role;
 
-	__ASSERT(data > 0, "No space for ad_gmap");
+	__ASSERT(data_size > 0, "No space for ad_gmap");
 	data[0].type = BT_DATA_SVC_DATA16;
 	data[0].data_len = ARRAY_SIZE(ad_gmap);
 	data[0].data = &ad_gmap[0];
@@ -66,15 +72,14 @@ static void gmap_discover_cb(struct bt_conn *conn, int err, enum bt_gmap_role ro
 			     struct bt_gmap_feat features)
 {
 	if (err != 0) {
-		shell_error(ctx_shell, "gmap discovery (err %d)", err);
+		bt_shell_error("gmap discovery (err %d)", err);
 		return;
 	}
 
-	shell_print(ctx_shell,
-		    "gmap discovered for conn %p:\n\trole 0x%02x\n\tugg_feat 0x%02x\n\tugt_feat "
-		    "0x%02x\n\tbgs_feat 0x%02x\n\tbgr_feat 0x%02x",
-		    conn, role, features.ugg_feat, features.ugt_feat, features.bgs_feat,
-		    features.bgr_feat);
+	bt_shell_print("gmap discovered for conn %p:\n\trole 0x%02x\n\tugg_feat 0x%02x\n\tugt_feat "
+		       "0x%02x\n\tbgs_feat 0x%02x\n\tbgr_feat 0x%02x",
+		       conn, role, features.ugg_feat, features.ugt_feat, features.bgs_feat,
+		       features.bgr_feat);
 }
 
 static const struct bt_gmap_cb gmap_cb = {
@@ -124,8 +129,28 @@ static void set_gmap_features(struct bt_gmap_feat *features)
 
 static int cmd_gmap_init(const struct shell *sh, size_t argc, char **argv)
 {
+	static const struct bt_audio_codec_cap gmap_codec_cap = BT_AUDIO_CODEC_CAP_LC3(
+		BT_AUDIO_CODEC_CAP_FREQ_16KHZ | BT_AUDIO_CODEC_CAP_FREQ_32KHZ |
+			BT_AUDIO_CODEC_CAP_FREQ_48KHZ,
+		BT_AUDIO_CODEC_CAP_DURATION_ANY, BT_AUDIO_CODEC_CAP_CHAN_COUNT_SUPPORT(1U, 2U), 30U,
+		120U, MAX_CODEC_FRAMES_PER_SDU, BT_AUDIO_CONTEXT_TYPE_GAME);
 	struct bt_gmap_feat features;
+	static struct bt_pacs_cap gmap_cap_sink = {
+		.codec_cap = &gmap_codec_cap,
+	};
+	static struct bt_pacs_cap gmap_cap_source = {
+		.codec_cap = &gmap_codec_cap,
+	};
+	static bool initialized;
 	int err;
+
+	if (initialized) {
+		shell_print(sh, "Already initialized");
+		return -ENOEXEC;
+	}
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	gmap_role = (IS_ENABLED(CONFIG_BT_GMAP_UGG_SUPPORTED) ? BT_GMAP_ROLE_UGG : 0U) |
 		    (IS_ENABLED(CONFIG_BT_GMAP_UGT_SUPPORTED) ? BT_GMAP_ROLE_UGT : 0U) |
@@ -147,6 +172,27 @@ static int cmd_gmap_init(const struct shell *sh, size_t argc, char **argv)
 
 		return -ENOEXEC;
 	}
+
+	if (IS_ENABLED(CONFIG_BT_PAC_SNK)) {
+		err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &gmap_cap_sink);
+		if (err != 0) {
+			shell_error(sh, "Failed to register GMAP sink capabilities (err %d)", err);
+
+			return -ENOEXEC;
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_BT_PAC_SRC)) {
+		err = bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &gmap_cap_source);
+		if (err != 0) {
+			shell_error(sh, "Failed to register GMAP source capabilities (err %d)",
+				    err);
+
+			return -ENOEXEC;
+		}
+	}
+
+	initialized = true;
 
 	return 0;
 }
@@ -194,13 +240,12 @@ static int cmd_gmap_discover(const struct shell *sh, size_t argc, char **argv)
 {
 	int err;
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
-	}
-
-	if (!ctx_shell) {
-		ctx_shell = sh;
 	}
 
 	err = bt_gmap_discover(default_conn);
@@ -212,28 +257,28 @@ static int cmd_gmap_discover(const struct shell *sh, size_t argc, char **argv)
 }
 
 static struct named_lc3_preset gmap_unicast_snk_presets[] = {
-	{"32_1_gr", BT_GMAP_LC3_PRESET_32_1_GR(LOCATION, CONTEXT)},
-	{"32_2_gr", BT_GMAP_LC3_PRESET_32_2_GR(LOCATION, CONTEXT)},
-	{"48_1_gr", BT_GMAP_LC3_PRESET_48_1_GR(LOCATION, CONTEXT)},
-	{"48_2_gr", BT_GMAP_LC3_PRESET_48_2_GR(LOCATION, CONTEXT)},
-	{"48_3_gr", BT_GMAP_LC3_PRESET_48_3_GR(LOCATION, CONTEXT)},
-	{"48_4_gr", BT_GMAP_LC3_PRESET_48_4_GR(LOCATION, CONTEXT)},
+	{"32_1_gr", BT_GMAP_LC3_PRESET_32_1_GR(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"32_2_gr", BT_GMAP_LC3_PRESET_32_2_GR(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_1_gr", BT_GMAP_LC3_PRESET_48_1_GR(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_2_gr", BT_GMAP_LC3_PRESET_48_2_GR(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_3_gr", BT_GMAP_LC3_PRESET_48_3_GR(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_4_gr", BT_GMAP_LC3_PRESET_48_4_GR(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
 };
 
 static struct named_lc3_preset gmap_unicast_src_presets[] = {
-	{"16_1_gs", BT_GMAP_LC3_PRESET_16_1_GS(LOCATION, CONTEXT)},
-	{"16_2_gs", BT_GMAP_LC3_PRESET_16_2_GS(LOCATION, CONTEXT)},
-	{"32_1_gs", BT_GMAP_LC3_PRESET_32_1_GS(LOCATION, CONTEXT)},
-	{"32_2_gs", BT_GMAP_LC3_PRESET_32_2_GS(LOCATION, CONTEXT)},
-	{"48_1_gs", BT_GMAP_LC3_PRESET_48_1_GS(LOCATION, CONTEXT)},
-	{"48_2_gs", BT_GMAP_LC3_PRESET_48_2_GS(LOCATION, CONTEXT)},
+	{"16_1_gs", BT_GMAP_LC3_PRESET_16_1_GS(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"16_2_gs", BT_GMAP_LC3_PRESET_16_2_GS(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"32_1_gs", BT_GMAP_LC3_PRESET_32_1_GS(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"32_2_gs", BT_GMAP_LC3_PRESET_32_2_GS(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_1_gs", BT_GMAP_LC3_PRESET_48_1_GS(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_2_gs", BT_GMAP_LC3_PRESET_48_2_GS(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
 };
 
 static struct named_lc3_preset gmap_broadcast_presets[] = {
-	{"48_1_g", BT_GMAP_LC3_PRESET_48_1_G(LOCATION, CONTEXT)},
-	{"48_2_g", BT_GMAP_LC3_PRESET_48_2_G(LOCATION, CONTEXT)},
-	{"48_3_g", BT_GMAP_LC3_PRESET_48_3_G(LOCATION, CONTEXT)},
-	{"48_4_g", BT_GMAP_LC3_PRESET_48_4_G(LOCATION, CONTEXT)},
+	{"48_1_g", BT_GMAP_LC3_PRESET_48_1_G(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_2_g", BT_GMAP_LC3_PRESET_48_2_G(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_3_g", BT_GMAP_LC3_PRESET_48_3_G(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
+	{"48_4_g", BT_GMAP_LC3_PRESET_48_4_G(DEFAULT_LOCATION, BT_AUDIO_CONTEXT_TYPE_GAME)},
 };
 
 const struct named_lc3_preset *gmap_get_named_preset(bool is_unicast, enum bt_audio_dir dir,
@@ -268,7 +313,7 @@ const struct named_lc3_preset *gmap_get_named_preset(bool is_unicast, enum bt_au
 #if UNICAST_SINK_SUPPORTED
 static int cmd_gmap_ac_1(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_1",
 		.conn_cnt = 1,
 		.snk_cnt = {1U},
@@ -277,6 +322,9 @@ static int cmd_gmap_ac_1(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 0U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* UNICAST_SINK_SUPPORTED */
@@ -284,7 +332,7 @@ static int cmd_gmap_ac_1(const struct shell *sh, size_t argc, char **argv)
 #if UNICAST_SRC_SUPPORTED
 static int cmd_gmap_ac_2(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_2",
 		.conn_cnt = 1,
 		.snk_cnt = {0U},
@@ -293,6 +341,9 @@ static int cmd_gmap_ac_2(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 1U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* UNICAST_SRC_SUPPORTED */
@@ -300,7 +351,7 @@ static int cmd_gmap_ac_2(const struct shell *sh, size_t argc, char **argv)
 #if UNICAST_SINK_SUPPORTED && UNICAST_SRC_SUPPORTED
 static int cmd_gmap_ac_3(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_3",
 		.conn_cnt = 1U,
 		.snk_cnt = {1U},
@@ -309,6 +360,9 @@ static int cmd_gmap_ac_3(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 1U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* UNICAST_SINK_SUPPORTED && UNICAST_SRC_SUPPORTED */
@@ -316,7 +370,7 @@ static int cmd_gmap_ac_3(const struct shell *sh, size_t argc, char **argv)
 #if UNICAST_SINK_SUPPORTED
 static int cmd_gmap_ac_4(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_4",
 		.conn_cnt = 1U,
 		.snk_cnt = {1U},
@@ -325,6 +379,9 @@ static int cmd_gmap_ac_4(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 0U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* UNICAST_SINK_SUPPORTED */
@@ -332,7 +389,7 @@ static int cmd_gmap_ac_4(const struct shell *sh, size_t argc, char **argv)
 #if UNICAST_SINK_SUPPORTED && UNICAST_SRC_SUPPORTED
 static int cmd_gmap_ac_5(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_5",
 		.conn_cnt = 1U,
 		.snk_cnt = {1U},
@@ -340,6 +397,9 @@ static int cmd_gmap_ac_5(const struct shell *sh, size_t argc, char **argv)
 		.snk_chan_cnt = 2U,
 		.src_chan_cnt = 1U,
 	};
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	return cap_ac_unicast(sh, &param);
 }
@@ -349,7 +409,7 @@ static int cmd_gmap_ac_5(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT > 1
 static int cmd_gmap_ac_6_i(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_6_I",
 		.conn_cnt = 1U,
 		.snk_cnt = {2U},
@@ -358,6 +418,9 @@ static int cmd_gmap_ac_6_i(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 0U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT > 1 */
@@ -365,7 +428,7 @@ static int cmd_gmap_ac_6_i(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_MAX_CONN >= 2
 static int cmd_gmap_ac_6_ii(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_6_II",
 		.conn_cnt = 2,
 		.snk_cnt = {1U, 1U},
@@ -373,6 +436,9 @@ static int cmd_gmap_ac_6_ii(const struct shell *sh, size_t argc, char **argv)
 		.snk_chan_cnt = 1U,
 		.src_chan_cnt = 0U,
 	};
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	return cap_ac_unicast(sh, &param);
 }
@@ -383,7 +449,7 @@ static int cmd_gmap_ac_6_ii(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_MAX_CONN >= 2
 static int cmd_gmap_ac_7_ii(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_7_II",
 		.conn_cnt = 2,
 		.snk_cnt = {1U, 0U},
@@ -392,6 +458,9 @@ static int cmd_gmap_ac_7_ii(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 1U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* CONFIG_BT_MAX_CONN >= 2 */
@@ -399,7 +468,7 @@ static int cmd_gmap_ac_7_ii(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT > 1
 static int cmd_gmap_ac_8_i(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_8_I",
 		.conn_cnt = 1U,
 		.snk_cnt = {2U},
@@ -408,6 +477,9 @@ static int cmd_gmap_ac_8_i(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 1U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT > 1 */
@@ -415,7 +487,7 @@ static int cmd_gmap_ac_8_i(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_MAX_CONN >= 2
 static int cmd_gmap_ac_8_ii(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_8_II",
 		.conn_cnt = 2U,
 		.snk_cnt = {1U, 1U},
@@ -424,6 +496,9 @@ static int cmd_gmap_ac_8_ii(const struct shell *sh, size_t argc, char **argv)
 		.src_chan_cnt = 1U,
 	};
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	return cap_ac_unicast(sh, &param);
 }
 #endif /* CONFIG_BT_MAX_CONN >= 2 */
@@ -431,7 +506,7 @@ static int cmd_gmap_ac_8_ii(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT > 1 && CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SRC_COUNT > 1
 static int cmd_gmap_ac_11_i(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_11_I",
 		.conn_cnt = 1U,
 		.snk_cnt = {2U},
@@ -439,6 +514,9 @@ static int cmd_gmap_ac_11_i(const struct shell *sh, size_t argc, char **argv)
 		.snk_chan_cnt = 1U,
 		.src_chan_cnt = 1U,
 	};
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	return cap_ac_unicast(sh, &param);
 }
@@ -449,7 +527,7 @@ static int cmd_gmap_ac_11_i(const struct shell *sh, size_t argc, char **argv)
 #if CONFIG_BT_MAX_CONN >= 2
 static int cmd_gmap_ac_11_ii(const struct shell *sh, size_t argc, char **argv)
 {
-	const struct bap_unicast_ac_param param = {
+	const struct cap_unicast_ac_param param = {
 		.name = "AC_11_II",
 		.conn_cnt = 2U,
 		.snk_cnt = {1U, 1U},
@@ -457,6 +535,9 @@ static int cmd_gmap_ac_11_ii(const struct shell *sh, size_t argc, char **argv)
 		.snk_chan_cnt = 1U,
 		.src_chan_cnt = 1U,
 	};
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	return cap_ac_unicast(sh, &param);
 }

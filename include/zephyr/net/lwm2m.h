@@ -29,6 +29,7 @@
 
 #include <time.h>
 #include <zephyr/kernel.h>
+#include <zephyr/types.h>
 #include <zephyr/sys/mutex.h>
 #include <zephyr/net/coap.h>
 #include <zephyr/net/lwm2m_path.h>
@@ -76,9 +77,11 @@ extern "C" {
 #define IPSO_OBJECT_HUMIDITY_SENSOR_ID      3304 /**< IPSO Humidity Sensor object */
 #define IPSO_OBJECT_LIGHT_CONTROL_ID        3311 /**< IPSO Light Control object */
 #define IPSO_OBJECT_ACCELEROMETER_ID        3313 /**< IPSO Accelerometer object */
+#define IPSO_OBJECT_MAGNETOMETER_ID         3314 /**< IPSO Magnetometer object */
 #define IPSO_OBJECT_VOLTAGE_SENSOR_ID       3316 /**< IPSO Voltage Sensor object */
 #define IPSO_OBJECT_CURRENT_SENSOR_ID       3317 /**< IPSO Current Sensor object */
 #define IPSO_OBJECT_PRESSURE_ID             3323 /**< IPSO Pressure Sensor object */
+#define IPSO_OBJECT_TIME_ID                 3333 /**< IPSO Time object */
 #define IPSO_OBJECT_BUZZER_ID               3338 /**< IPSO Buzzer object */
 #define IPSO_OBJECT_TIMER_ID                3340 /**< IPSO Timer object */
 #define IPSO_OBJECT_ONOFF_SWITCH_ID         3342 /**< IPSO On/Off Switch object */
@@ -182,6 +185,7 @@ enum lwm2m_rd_client_event {
 typedef void (*lwm2m_ctx_event_cb_t)(struct lwm2m_ctx *ctx,
 				     enum lwm2m_rd_client_event event);
 
+typedef int (*lwm2m_set_sockopt_cb_t)(struct lwm2m_ctx *client_ctx);
 
 /**
  * @brief Different traffic states of the LwM2M socket.
@@ -205,7 +209,14 @@ enum lwm2m_socket_states {
  */
 struct lwm2m_ctx {
 	/** Destination address storage */
-	struct sockaddr remote_addr;
+	union {
+		/** Destination address */
+		struct net_sockaddr_storage remote_addr_storage;
+/** @cond INTERNAL_HIDDEN */
+		/* Use remote_addr_storage instead of remote_addr */
+		struct net_sockaddr remote_addr;
+/** @endcond */
+	};
 
 	/** @cond INTERNAL_HIDDEN
 	 * Private CoAP and networking structures + 1 is for RD Client own message
@@ -259,7 +270,7 @@ struct lwm2m_ctx {
 	 * a callback that is called after a socket is created and before
 	 * connect.
 	 */
-	int (*set_socketoptions)(struct lwm2m_ctx *client_ctx);
+	lwm2m_set_sockopt_cb_t set_socketoptions;
 
 	/** Flag to indicate if context should use DTLS.
 	 *  Enabled via the use of coaps:// protocol prefix in connection
@@ -346,6 +357,20 @@ struct lwm2m_time_series_elem {
 		/** @endcond */
 	};
 };
+
+/**
+ * @typedef lwm2m_cache_filter_cb_t
+ * @brief Callback type for filtering cached time series samples.
+ *
+ * Returning false skips storing the provided sample in the LwM2M cache.
+ *
+ * @param path    Object path of the cached resource.
+ * @param element Sample produced by the engine for the cache.
+ *
+ * @return true to keep the sample, false to discard it.
+ */
+typedef bool (*lwm2m_cache_filter_cb_t)(const struct lwm2m_obj_path *path,
+					const struct lwm2m_time_series_elem *element);
 
 /**
  * @brief Asynchronous callback to get a resource buffer and length.
@@ -511,7 +536,7 @@ int lwm2m_device_add_err(uint8_t error_code);
 
 
 /**
- * @name LWM2M Firmware Update object states
+ * @name LwM2M Firmware Update object states
  *
  * An LwM2M client or the LwM2M Firmware Update object use the following codes
  * to represent the LwM2M Firmware Update state (5/0/3).
@@ -538,7 +563,7 @@ int lwm2m_device_add_err(uint8_t error_code);
 /** @} */
 
 /**
- * @name LWM2M Firmware Update object result codes
+ * @name LwM2M Firmware Update object result codes
  *
  * After processing a firmware update, the client sets the result via one of
  * the following codes via lwm2m_set_u8("5/0/5", [result code])
@@ -673,7 +698,7 @@ lwm2m_engine_execute_cb_t lwm2m_firmware_get_update_cb_inst(uint16_t obj_inst_id
 /**
  * @brief Set callback to handle software activation requests
  *
- * The callback will be executed when the LWM2M execute operation gets called
+ * The callback will be executed when the LwM2M execute operation gets called
  * on the corresponding object's Activate resource instance.
  *
  * @param[in] obj_inst_id The instance number to set the callback for.
@@ -686,7 +711,7 @@ int lwm2m_swmgmt_set_activate_cb(uint16_t obj_inst_id, lwm2m_engine_execute_cb_t
 /**
  * @brief Set callback to handle software deactivation requests
  *
- * The callback will be executed when the LWM2M execute operation gets called
+ * The callback will be executed when the LwM2M execute operation gets called
  * on the corresponding object's Deactivate resource instance.
  *
  * @param[in] obj_inst_id The instance number to set the callback for.
@@ -699,7 +724,7 @@ int lwm2m_swmgmt_set_deactivate_cb(uint16_t obj_inst_id, lwm2m_engine_execute_cb
 /**
  * @brief Set callback to handle software install requests
  *
- * The callback will be executed when the LWM2M execute operation gets called
+ * The callback will be executed when the LwM2M execute operation gets called
  * on the corresponding object's Install resource instance.
  *
  * @param[in] obj_inst_id The instance number to set the callback for.
@@ -712,7 +737,7 @@ int lwm2m_swmgmt_set_install_package_cb(uint16_t obj_inst_id, lwm2m_engine_execu
 /**
  * @brief Set callback to handle software uninstall requests
  *
- * The callback will be executed when the LWM2M execute operation gets called
+ * The callback will be executed when the LwM2M execute operation gets called
  * on the corresponding object's Uninstall resource instance.
  *
  * @param[in] obj_inst_id The instance number to set the callback for.
@@ -725,7 +750,7 @@ int lwm2m_swmgmt_set_delete_package_cb(uint16_t obj_inst_id, lwm2m_engine_execut
 /**
  * @brief Set callback to read software package
  *
- * The callback will be executed when the LWM2M read operation gets called
+ * The callback will be executed when the LwM2M read operation gets called
  * on the corresponding object.
  *
  * @param[in] obj_inst_id The instance number to set the callback for.
@@ -738,7 +763,7 @@ int lwm2m_swmgmt_set_read_package_version_cb(uint16_t obj_inst_id, lwm2m_engine_
 /**
  * @brief Set data callback for software management block transfer.
  *
- * The callback will be executed when the LWM2M block write operation gets called
+ * The callback will be executed when the LwM2M block write operation gets called
  * on the corresponding object's resource instance.
  *
  * @param[in] obj_inst_id The instance number to set the callback for.
@@ -756,7 +781,7 @@ int lwm2m_swmgmt_set_write_package_cb(uint16_t obj_inst_id, lwm2m_engine_set_dat
  * @param[in] error_code The result code of the operation. Zero on success
  * otherwise it should be a negative integer.
  *
- * return 0 on success, otherwise a negative integer.
+ * @return 0 on success, otherwise a negative integer.
  */
 int lwm2m_swmgmt_install_completed(uint16_t obj_inst_id, int error_code);
 
@@ -767,7 +792,7 @@ int lwm2m_swmgmt_install_completed(uint16_t obj_inst_id, int error_code);
 /**
  * @brief Set callback to read log data
  *
- * The callback will be executed when the LWM2M read operation gets called
+ * The callback will be executed when the LwM2M read operation gets called
  * on the corresponding object.
  *
  * @param[in] cb A callback function for handling the read event.
@@ -782,7 +807,7 @@ void lwm2m_event_log_set_read_log_data_cb(lwm2m_engine_get_data_cb_t cb);
 #define LWM2M_OBJLNK_MAX_ID USHRT_MAX
 
 /**
- * @brief LWM2M Objlnk resource type structure
+ * @brief LwM2M Objlnk resource type structure
  */
 struct lwm2m_objlnk {
 	uint16_t obj_id;     /**< Object ID */
@@ -1590,6 +1615,30 @@ int lwm2m_enable_cache(const struct lwm2m_obj_path *path, struct lwm2m_time_seri
 		       size_t cache_len);
 
 /**
+ * @brief Register a filtering callback for cached resource samples.
+ *
+ * The callback is invoked whenever the LwM2M engine attempts to append a new
+ * sample to the resource cache. Returning false prevents the sample from being
+ * stored. Passing a NULL callback removes any previously registered filter.
+ *
+ * @param path      LwM2M path to the cached resource.
+ * @param filter_cb Callback used to decide whether samples should be cached.
+ *
+ * @return 0 for success or a negative errno code in case of error.
+ */
+int lwm2m_set_cache_filter(const struct lwm2m_obj_path *path,
+			   lwm2m_cache_filter_cb_t filter_cb);
+
+/**
+ * @brief Return number of free slots in a cached resource.
+ *
+ * @param path LwM2M path to the cached resource.
+ *
+ * @return Number of free slots, or negative errno code in case of error.
+ */
+int lwm2m_cache_free_slots_get(const struct lwm2m_obj_path *path);
+
+/**
  * @brief Security modes as defined in LwM2M Security object.
  */
 enum lwm2m_security_mode_e {
@@ -1621,6 +1670,17 @@ int lwm2m_security_mode(struct lwm2m_ctx *ctx);
  * @return 0 for success or negative in case of error.
  */
 int lwm2m_set_default_sockopt(struct lwm2m_ctx *ctx);
+
+/**
+ * @brief Set the @ref lwm2m_ctx::set_socketoptions callback for the pull context's client.
+ *
+ * This allows setting specific socket options on the socket that is used to pull
+ * firmware updates. The callback will be called after the pull context socket has been
+ * created and before it will connect.
+ *
+ * @param[in] set_sockopt_cb A callback function to set sockopts for the pull context client.
+ */
+void lwm2m_pull_context_set_sockopt_callback(lwm2m_set_sockopt_cb_t set_sockopt_cb);
 
 #ifdef __cplusplus
 }

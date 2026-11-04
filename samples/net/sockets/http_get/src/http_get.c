@@ -17,6 +17,12 @@
 
 #else
 
+#include <zephyr/posix/netinet/in.h>
+#include <zephyr/posix/sys/socket.h>
+#include <zephyr/posix/arpa/inet.h>
+#include <zephyr/posix/unistd.h>
+#include <zephyr/posix/netdb.h>
+
 #include <zephyr/net/socket.h>
 #include <zephyr/kernel.h>
 
@@ -40,11 +46,10 @@
 /* HTTP path to request */
 #define HTTP_PATH "/"
 
-
 #define SSTRLEN(s) (sizeof(s) - 1)
-#define CHECK(r) { if (r == -1) { printf("Error: " #r "\n"); exit(1); } }
+#define CHECK(r) { if (r < 0) { printf("Error: %d\n", (int)r); exit(1); } }
 
-#define REQUEST "GET " HTTP_PATH " HTTP/1.0\r\nHost: " HTTP_HOST "\r\n\r\n"
+#define REQUEST "GET " HTTP_PATH " HTTP/1.1\r\nHost: " HTTP_HOST "\r\n\r\n"
 
 static char response[1024];
 
@@ -52,9 +57,8 @@ void dump_addrinfo(const struct addrinfo *ai)
 {
 	printf("addrinfo @%p: ai_family=%d, ai_socktype=%d, ai_protocol=%d, "
 	       "sa_family=%d, sin_port=%x\n",
-	       ai, ai->ai_family, ai->ai_socktype, ai->ai_protocol,
-	       ai->ai_addr->sa_family,
-	       ((struct sockaddr_in *)ai->ai_addr)->sin_port);
+	       ai, ai->ai_family, ai->ai_socktype, ai->ai_protocol, ai->ai_addr->sa_family,
+	       ntohs(((struct sockaddr_in *)ai->ai_addr)->sin_port));
 }
 
 int main(void)
@@ -73,6 +77,7 @@ int main(void)
 	printf("Preparing HTTP GET request for http://" HTTP_HOST
 	       ":" HTTP_PORT HTTP_PATH "\n");
 
+	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_INET;
 	hints.ai_socktype = SOCK_STREAM;
 	st = getaddrinfo(HTTP_HOST, HTTP_PORT, &hints, &res);
@@ -84,8 +89,10 @@ int main(void)
 	}
 
 #if 0
-	for (; res; res = res->ai_next) {
-		dump_addrinfo(res);
+	struct addrinfo *temp_res = res;
+
+	for (; temp_res; temp_res = temp_res->ai_next) {
+		dump_addrinfo(temp_res);
 	}
 #endif
 
@@ -108,9 +115,18 @@ int main(void)
 
 	CHECK(setsockopt(sock, SOL_TLS, TLS_HOSTNAME,
 			 HTTP_HOST, sizeof(HTTP_HOST)))
+
+#if defined(CONFIG_NET_SAMPLE_TLS_SESSION_CACHE)
+	int session_cache = TLS_SESSION_CACHE_ENABLED;
+
+	CHECK(setsockopt(sock, SOL_TLS, TLS_SESSION_CACHE, &session_cache, sizeof(session_cache)));
 #endif
 
+#endif
+
+	printf("Connecting to server...\n");
 	CHECK(connect(sock, res->ai_addr, res->ai_addrlen));
+	printf("Connected!\r\nSending request...\n");
 	CHECK(send(sock, REQUEST, SSTRLEN(REQUEST), 0));
 
 	printf("Response:\n\n");
@@ -131,8 +147,10 @@ int main(void)
 		printf("%s", response);
 	}
 
-	printf("\n");
+	printf("\nClose socket\n");
 
 	(void)close(sock);
+	freeaddrinfo(res);
+
 	return 0;
 }

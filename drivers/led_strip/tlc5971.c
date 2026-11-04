@@ -32,7 +32,7 @@ struct tlc5971_data {
 };
 
 /** SPI operation word constant, SPI mode 0, CPOL = 0, CPHA = 0 */
-#define TLC5971_SPI_OPERATION (SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8))
+#define TLC5971_SPI_OPERATION (SPI_OP_MODE_CONTROLLER | SPI_TRANSFER_MSB | SPI_WORD_SET(8))
 
 /** Number of supported colors */
 #define TLC5971_NUMBER_OF_COLORS 3
@@ -40,7 +40,7 @@ struct tlc5971_data {
 /**
  * @brief Number of RGB pixels per TLC5791 device
  *
- * The TLC5971 has 4x RGB outputs per device, where each RGB group constitues a pixel from this
+ * The TLC5971 has 4x RGB outputs per device, where each RGB group constitutes a pixel from this
  * drivers point of view.
  */
 #define TLC5971_PIXELS_PER_DEVICE 4
@@ -322,7 +322,7 @@ static int tlc5971_init(const struct device *dev)
 	return 0;
 }
 
-static const struct led_strip_driver_api tlc5971_api = {
+static DEVICE_API(led_strip, tlc5971_api) = {
 	.update_rgb = tlc5971_update_rgb,
 	.length = tlc5971_length,
 };
@@ -333,7 +333,7 @@ static const struct led_strip_driver_api tlc5971_api = {
 #define TLC5971_DEVICE(inst)                                                                       \
 	static const uint8_t tlc5971_##inst##_color_mapping[] = DT_INST_PROP(inst, color_mapping); \
 	static const struct tlc5971_config tlc5971_##inst##_config = {                             \
-		.bus = SPI_DT_SPEC_INST_GET(inst, TLC5971_SPI_OPERATION, 0),                       \
+		.bus = SPI_DT_SPEC_INST_GET(inst, TLC5971_SPI_OPERATION),                          \
 		.num_pixels = DT_INST_PROP(inst, chain_length),                                    \
 		.num_colors = DT_INST_PROP_LEN(inst, color_mapping),                               \
 		.color_mapping = tlc5971_##inst##_color_mapping,                                   \

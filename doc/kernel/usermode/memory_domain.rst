@@ -28,10 +28,11 @@ contain the following:
   have an MPU region configuring it. It is strongly recommended to use this
   to maximize the number of available MPU regions for the end user. On
   ARMv7-M/ARMv8-M this is called the System Address Map, other CPUs may
-  have similar capabilities.
+  have similar capabilities. See :ref:`mem_mgmt_api` for information on
+  how to annotate the system map in the device tree.
 
-- A read-only, executable region or regions for program text and ro-data, that
-  is accessible to user mode. This could be further sub-divided into a
+- One or more read-only, executable regions for program text and ro-data that are
+  accessible to user mode. This could be further sub-divided into a
   read-only region for ro-data, and a read-only, executable region for text, but
   this will require an additional MPU region. This is required so that
   threads running in user mode can read ro-data and fetch instructions.
@@ -49,8 +50,8 @@ Hardware Stack Overflow
 :kconfig:option:`CONFIG_HW_STACK_PROTECTION` is an optional feature which detects stack
 buffer overflows when the system is running in supervisor mode. This
 catches issues when the entire stack buffer has overflowed, and not
-individual stack frames, use compiler-assisted :kconfig:option:`CONFIG_STACK_CANARIES`
-for that.
+individual stack frames. Use compiler-assisted :kconfig:option:`CONFIG_STACK_CANARIES`
+to detect overflow for individual frames.
 
 Like any crash in supervisor mode, no guarantees can be made about the overall
 health of the system after a supervisor mode stack overflow, and any instances
@@ -111,12 +112,6 @@ noted for users who do not want heap allocations within their application:
    user. An alternative is to declare k_stacks that are automatically
    initialized at boot with :c:macro:`K_STACK_DEFINE()`, or to initialize the
    k_stack in supervisor mode with :c:func:`k_stack_init`.
-
- - :c:func:`k_pipe_alloc_init` sets up a k_pipe object with its
-   storage buffer allocated out of a resource pool instead of a buffer provided
-   by the user. An alternative is to declare k_pipes that are automatically
-   initialized at boot with :c:macro:`K_PIPE_DEFINE()`, or to initialize the
-   k_pipe in supervisor mode with :c:func:`k_pipe_init`.
 
  - :c:func:`k_msgq_alloc_init` sets up a k_msgq object with its
    storage buffer allocated out of a resource pool instead of a buffer provided
@@ -321,7 +316,7 @@ There are a few memory partitions which are pre-defined by the system:
    Required when using either the Minimal C library or the Newlib C Library.
    Required when :kconfig:option:`CONFIG_STACK_CANARIES` is enabled.
 
-Library-specific partitions are listed in ``include/app_memory/partitions.h``.
+Library-specific partitions are listed in :zephyr_file:`include/zephyr/app_memory/partitions.h`.
 For example, to use the MBEDTLS library from user mode, the
 ``k_mbedtls_partition`` must be added to the domain.
 
@@ -433,7 +428,7 @@ dependent.
 
 The complete list of available partition attributes for a specific architecture
 is found in the architecture-specific include file
-``include/zephyr/arch/<arch name>/arch.h``, (for example, ``include/zehpyr/arch/arm/arch.h``.)
+``include/zephyr/arch/<arch name>/arch.h``, (for example, :zephyr_file:`include/zephyr/arch/arm/arch.h`.)
 Some examples of partition attributes are:
 
 .. code-block:: c

@@ -87,32 +87,7 @@ Hardware
 Supported Features
 ==================
 
-Below interfaces are supported by Zephyr on APARD32690.
-
-+-----------+------------+------------------------------------+
-| Interface | Controller | Driver/Component                   |
-+===========+============+====================================+
-| NVIC      | on-chip    | nested vector interrupt controller |
-+-----------+------------+------------------------------------+
-| SYSTICK   | on-chip    | systick                            |
-+-----------+------------+------------------------------------+
-| CLOCK     | on-chip    | clock and reset control            |
-+-----------+------------+------------------------------------+
-| GPIO      | on-chip    | gpio                               |
-+-----------+------------+------------------------------------+
-| UART      | on-chip    | serial                             |
-+-----------+------------+------------------------------------+
-| SPI       | on-chip    | spi                                |
-+-----------+------------+------------------------------------+
-| ADIN1110  | spi        | ADIN1110 10BASE-T1L mac/phy        |
-+-----------+------------+------------------------------------+
-| TRNG      | on-chip    | entropy                            |
-+-----------+------------+------------------------------------+
-| Timer     | on-chip    | counter                            |
-+-----------+------------+------------------------------------+
-| W1        | on-chip    | one wire master                    |
-+-----------+------------+------------------------------------+
-
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -182,6 +157,8 @@ Connections and IOs
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 Flashing
 ========
 
@@ -190,7 +167,8 @@ SWD port. SWD debug can be accessed through the Cortex 10-pin connector, P9.
 Logic levels are either 1.8V or 3.3V (based on P51 selection).
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 
@@ -199,6 +177,21 @@ Once the debug probe is connected to your host computer, then you can simply run
    appending ``--runner jlink`` to your ``west`` command(s). The J-Link should
    be connected to the standard 2*5 pin debug connector (P9) using an
    appropriate adapter board and cable.
+
+
+Flashing RV32 Core
+******************
+
+Flashing the RV32 core requires loading a firmware image onto the M4 core that will boot the
+RV32 core from the ``FLC1`` flash bank.
+
+For example:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/sysbuild/hello_world
+   :board: apard32690//m4
+   :goals: build flash
+   :west-args: --sysbuild
 
 Debugging
 =========
@@ -209,7 +202,7 @@ instead of ``west flash``.
 References
 **********
 
-- `AD-APARD32690-SL web page`_
+- `AD-APARD32690-SL solution center`_
 
-.. _AD-APARD32690-SL web page:
-   https://www.analog.com/en/resources/evaluation-hardware-and-software/evaluation-boards-kits/ad-apard32690-sl.html
+.. _AD-APARD32690-SL solution center:
+   https://developer.analog.com/solutions/max32690

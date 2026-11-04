@@ -5,15 +5,19 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
-ram: 368
+ram: 320
 flash: 1024
 supported:
   - gpio
   - netif:eth
   - memc
+  - mspi
   - adc
   - counter
   - can
+  - crypto
+  - aes
+  - ptp_clock
   - usb_device
+  - sdhc
 vendor: st

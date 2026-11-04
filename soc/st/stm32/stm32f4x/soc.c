@@ -12,9 +12,12 @@
 
 #include <zephyr/device.h>
 #include <zephyr/init.h>
+#include <zephyr/logging/log.h>
 
 #include <cmsis_core.h>
 #include <stm32_ll_system.h>
+
+LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
 extern void stm32_power_init(void);
 
@@ -26,7 +29,9 @@ extern void stm32_power_init(void);
 void soc_early_init_hook(void)
 {
 	/* Enable ART Flash I/D-cache and prefetch */
+#if defined(CONFIG_STM32_FLASH_PREFETCH)
 	LL_FLASH_EnablePrefetch();
+#endif
 	LL_FLASH_EnableInstCache();
 	LL_FLASH_EnableDataCache();
 

@@ -80,7 +80,6 @@ int nxp_s32_eth_initialize_common(const struct device *dev)
 		}
 	}
 
-	k_mutex_init(&ctx->tx_mutex);
 	k_sem_init(&ctx->rx_sem, 0, 1);
 
 	k_thread_create(&ctx->rx_thread, ctx->rx_thread_stack,
@@ -122,7 +121,7 @@ void nxp_s32_eth_mcast_filter(const struct device *dev, const struct ethernet_fi
 
 int nxp_s32_eth_tx(const struct device *dev, struct net_pkt *pkt)
 {
-	struct nxp_s32_eth_data *ctx = dev->data;
+	__maybe_unused struct nxp_s32_eth_data *ctx = dev->data;
 	const struct nxp_s32_eth_config *cfg = dev->config;
 	size_t pkt_len = net_pkt_get_len(pkt);
 	int res = 0;
@@ -130,8 +129,6 @@ int nxp_s32_eth_tx(const struct device *dev, struct net_pkt *pkt)
 	Netc_Eth_Ip_BufferType buf;
 
 	__ASSERT(pkt, "Packet pointer is NULL");
-
-	k_mutex_lock(&ctx->tx_mutex, K_FOREVER);
 
 	buf.length = (uint16_t)pkt_len;
 	buf.data = NULL;
@@ -143,31 +140,22 @@ int nxp_s32_eth_tx(const struct device *dev, struct net_pkt *pkt)
 	}
 	if (status != NETC_ETH_IP_STATUS_SUCCESS) {
 		LOG_ERR("Failed to get tx buffer: %d", status);
-		res = -ENOBUFS;
-		goto error;
+		return -ENOBUFS;
 	}
 	buf.length = (uint16_t)pkt_len;
 
 	res = net_pkt_read(pkt, buf.data, pkt_len);
 	if (res) {
 		LOG_ERR("Failed to copy packet to tx buffer: %d", res);
-		res = -ENOBUFS;
-		goto error;
+		return -ENOBUFS;
 	}
 
 	status = Netc_Eth_Ip_SendFrame(cfg->si_idx, cfg->tx_ring_idx, &buf, NULL);
 	if (status != NETC_ETH_IP_STATUS_SUCCESS) {
 		LOG_ERR("Failed to tx frame: %d", status);
-		res = -EIO;
-		goto error;
+		return -EIO;
 	}
 
-error:
-	k_mutex_unlock(&ctx->tx_mutex);
-
-	if (res != 0) {
-		eth_stats_update_errors_tx(ctx->iface);
-	}
 	return res;
 }
 
@@ -180,7 +168,7 @@ static struct net_pkt *nxp_s32_eth_get_pkt(const struct device *dev,
 
 	/* Use root iface, it will be updated later in net_recv_data() */
 	pkt = net_pkt_rx_alloc_with_buffer(ctx->iface, buf->length,
-					   AF_UNSPEC, 0, NETC_TIMEOUT);
+					   NET_AF_UNSPEC, 0, NETC_TIMEOUT);
 	if (!pkt) {
 		goto exit;
 	}
@@ -263,13 +251,12 @@ static void nxp_s32_eth_rx_thread(void *arg1, void *unused1, void *unused2)
 	}
 }
 
-enum ethernet_hw_caps nxp_s32_eth_get_capabilities(const struct device *dev)
+enum ethernet_hw_caps nxp_s32_eth_get_capabilities(const struct device *dev __unused,
+						   struct net_if *iface __unused)
 {
-	ARG_UNUSED(dev);
-
-	return (ETHERNET_LINK_10BASE_T
-		| ETHERNET_LINK_100BASE_T
-		| ETHERNET_LINK_1000BASE_T
+	return (ETHERNET_LINK_10BASE
+		| ETHERNET_LINK_100BASE
+		| ETHERNET_LINK_1000BASE
 		| ETHERNET_HW_RX_CHKSUM_OFFLOAD
 		| ETHERNET_HW_FILTERING
 #if defined(CONFIG_NET_VLAN)
@@ -281,7 +268,9 @@ enum ethernet_hw_caps nxp_s32_eth_get_capabilities(const struct device *dev)
 	);
 }
 
-int nxp_s32_eth_set_config(const struct device *dev, enum ethernet_config_type type,
+int nxp_s32_eth_set_config(const struct device *dev,
+			   struct net_if *iface __unused,
+			   enum ethernet_config_type type,
 			   const struct ethernet_config *config)
 {
 	struct nxp_s32_eth_data *ctx = dev->data;
@@ -293,8 +282,6 @@ int nxp_s32_eth_set_config(const struct device *dev, enum ethernet_config_type t
 		/* Set new Ethernet MAC address and register it with the upper layer */
 		memcpy(ctx->mac_addr, config->mac_address.addr, sizeof(ctx->mac_addr));
 		Netc_Eth_Ip_SetMacAddr(cfg->si_idx, (const uint8_t *)ctx->mac_addr);
-		net_if_set_link_addr(ctx->iface, ctx->mac_addr, sizeof(ctx->mac_addr),
-				     NET_LINK_ETHERNET);
 		LOG_INF("SI%d MAC set to: %02x:%02x:%02x:%02x:%02x:%02x", cfg->si_idx,
 			ctx->mac_addr[0], ctx->mac_addr[1], ctx->mac_addr[2],
 			ctx->mac_addr[3], ctx->mac_addr[4], ctx->mac_addr[5]);

@@ -25,10 +25,6 @@
 
 #define DT_DRV_COMPAT zephyr_bt_hci_test
 
-struct driver_data {
-	bt_hci_recv_t recv;
-};
-
 #define LOG_LEVEL CONFIG_BT_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(host_test_app);
@@ -124,7 +120,6 @@ static int cmd_handle_helper(uint16_t opcode, struct net_buf *cmd, struct net_bu
 static int cmd_handle(const struct device *dev, struct net_buf *cmd,
 		      const struct cmd_handler *handlers, size_t num_handlers)
 {
-	struct driver_data *drv = dev->data;
 	struct net_buf *evt = NULL;
 	struct bt_hci_evt_cc_status *ccst;
 	struct bt_hci_cmd_hdr *chdr;
@@ -142,7 +137,7 @@ static int cmd_handle(const struct device *dev, struct net_buf *cmd,
 	}
 
 	if (evt) {
-		drv->recv(dev, evt);
+		bt_hci_recv(dev, evt);
 	}
 
 	return err;
@@ -159,6 +154,19 @@ static void generic_success(struct net_buf *buf, struct net_buf **evt, uint8_t l
 	(void)memset(ccst, 0, len);
 
 	ccst->status = BT_HCI_ERR_SUCCESS;
+}
+
+/* Generic command status with success status. */
+static void generic_status(struct net_buf *buf, struct net_buf **evt, uint8_t len, uint16_t opcode)
+{
+	struct bt_hci_evt_cmd_status *cs;
+
+	*evt = bt_buf_get_evt(BT_HCI_EVT_CMD_STATUS, false, K_FOREVER);
+	evt_create(*evt, BT_HCI_EVT_CMD_STATUS, sizeof(*cs));
+	cs = net_buf_add(*evt, sizeof(*cs));
+	cs->status = BT_HCI_ERR_SUCCESS;
+	cs->ncmd = 1U;
+	cs->opcode = sys_cpu_to_le16(opcode);
 }
 
 /* Bogus handler for BT_HCI_OP_READ_LOCAL_FEATURES. */
@@ -224,24 +232,28 @@ static const struct cmd_handler cmds[] = {
 	{ BT_HCI_OP_LE_RAND, sizeof(struct bt_hci_rp_le_rand), generic_success },
 	{ BT_HCI_OP_LE_SET_RANDOM_ADDRESS, sizeof(struct bt_hci_cp_le_set_random_address),
 	  generic_success },
-	{ BT_HCI_OP_LE_SET_EXT_SCAN_PARAM, 0, generic_success },
-	{ BT_HCI_OP_LE_SET_EXT_SCAN_ENABLE, 0, generic_success },
-	{ BT_HCI_OP_RESET, 0, generic_success },
+	{ BT_HCI_OP_LE_SET_EXT_SCAN_PARAM, sizeof(struct bt_hci_evt_cc_status), generic_success },
+	{ BT_HCI_OP_LE_SET_EXT_SCAN_ENABLE, sizeof(struct bt_hci_evt_cc_status), generic_success },
+	{ BT_HCI_OP_LE_PER_ADV_CREATE_SYNC, 0, generic_status },
+	{ BT_HCI_OP_LE_PER_ADV_TERMINATE_SYNC, sizeof(struct bt_hci_evt_cc_status),
+	  generic_success },
+	{ BT_HCI_OP_RESET, sizeof(struct bt_hci_evt_cc_status), generic_success },
 };
 
 /* HCI driver open. */
-static int driver_open(const struct device *dev, bt_hci_recv_t recv)
+static int driver_open(const struct device *dev)
 {
-	struct driver_data *drv = dev->data;
-
-	drv->recv = recv;
-
+	ARG_UNUSED(dev);
 	return 0;
 }
 
 /*  HCI driver send.  */
 static int driver_send(const struct device *dev, struct net_buf *buf)
 {
+	uint8_t type = net_buf_pull_u8(buf);
+
+	zassert_true(type == BT_HCI_H4_CMD, "Unexpected command buffer, got %u", type);
+
 	zassert_true(cmd_handle(dev, buf, cmds, ARRAY_SIZE(cmds)) == 0, "Unknown HCI command");
 
 	net_buf_unref(buf);
@@ -249,15 +261,17 @@ static int driver_send(const struct device *dev, struct net_buf *buf)
 	return 0;
 }
 
-static const struct bt_hci_driver_api driver_api = {
+static DEVICE_API(bt_hci, driver_api) = {
 	.open = driver_open,
 	.send = driver_send,
 };
 
 #define TEST_DEVICE_INIT(inst) \
-	static struct driver_data driver_data_##inst = { \
+	static struct bt_hci_driver_data driver_data_##inst = { \
 	}; \
-	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &driver_data_##inst, NULL, \
+	static const struct bt_hci_driver_config driver_config_##inst = \
+						BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst); \
+	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &driver_data_##inst, &driver_config_##inst, \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &driver_api)
 
 DT_INST_FOREACH_STATUS_OKAY(TEST_DEVICE_INIT)
@@ -275,11 +289,10 @@ struct bt_recv_job_data {
 static void bt_recv_job_cb(struct k_work *item)
 {
 	const struct device *dev = DEVICE_DT_GET(DT_DRV_INST(0));
-	struct driver_data *drv = dev->data;
 	struct bt_recv_job_data *data = CONTAINER_OF(item, struct bt_recv_job_data, work);
 
 	/* Send net buffer to host */
-	drv->recv(dev, data->buf);
+	bt_hci_recv(dev, data->buf);
 
 	/* Wake up bt_recv_job_submit */
 	k_sem_give(job(data->buf)->sync);
@@ -329,7 +342,7 @@ static void *adv_report_evt(struct net_buf *buf, uint8_t data_len, uint16_t evt_
 	return net_buf_add(buf, data_len);
 }
 
-/* Send a prop event report wit the given data. */
+/* Send a prop event report with the given data. */
 static void send_adv_report(const struct test_adv_report *report)
 {
 	LOG_DBG("Sending adv report");
@@ -363,6 +376,84 @@ static void scan_timeout_cb(void)
 	zassert_unreachable("Timeout should not happen");
 }
 
+#define SYNC_HANDLE 0x0001
+
+/* Send a periodic advertising sync established event for the pending sync. */
+static void send_per_adv_sync_established(const bt_addr_le_t *addr, uint8_t sid)
+{
+	struct bt_hci_evt_le_meta_event *meta_evt;
+	struct bt_hci_evt_le_per_adv_sync_established *evt;
+	struct net_buf *buf;
+
+	buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+	evt_create(buf, BT_HCI_EVT_LE_META_EVENT, sizeof(*meta_evt) + sizeof(*evt));
+	meta_evt = net_buf_add(buf, sizeof(*meta_evt));
+	le_meta_evt_create(meta_evt, BT_HCI_EVT_LE_PER_ADV_SYNC_ESTABLISHED);
+	evt = net_buf_add(buf, sizeof(*evt));
+	evt->status = BT_HCI_ERR_SUCCESS;
+	evt->handle = sys_cpu_to_le16(SYNC_HANDLE);
+	evt->sid = sid;
+	bt_addr_le_copy(&evt->adv_addr, addr);
+	evt->phy = BT_HCI_LE_PHY_1M;
+	evt->interval = sys_cpu_to_le16(0x0100);
+	evt->clock_accuracy = 0;
+
+	bt_recv_job_submit(buf);
+}
+
+/* Send a periodic advertising report carrying data_len bytes of data, whose length
+ * field claims claimed_len bytes.
+ */
+static void send_per_adv_report(uint8_t data_status, const uint8_t *data, uint8_t data_len,
+				uint8_t claimed_len)
+{
+	struct bt_hci_evt_le_meta_event *meta_evt;
+	struct bt_hci_evt_le_per_advertising_report *evt;
+	struct net_buf *buf;
+
+	buf = bt_buf_get_rx(BT_BUF_EVT, K_FOREVER);
+	evt_create(buf, BT_HCI_EVT_LE_META_EVENT, sizeof(*meta_evt) + sizeof(*evt) + data_len);
+	meta_evt = net_buf_add(buf, sizeof(*meta_evt));
+	le_meta_evt_create(meta_evt, BT_HCI_EVT_LE_PER_ADVERTISING_REPORT);
+	evt = net_buf_add(buf, sizeof(*evt));
+	evt->handle = sys_cpu_to_le16(SYNC_HANDLE);
+	evt->tx_power = 0;
+	evt->rssi = 0;
+	evt->cte_type = BT_HCI_LE_NO_CTE;
+	evt->data_status = data_status;
+	evt->length = claimed_len;
+	net_buf_add_mem(buf, data, data_len);
+
+	bt_recv_job_submit(buf);
+}
+
+static K_SEM_DEFINE(per_adv_synced_sem, 0, 1);
+
+static void per_adv_sync_synced_cb(struct bt_le_per_adv_sync *sync,
+				   struct bt_le_per_adv_sync_synced_info *info)
+{
+	k_sem_give(&per_adv_synced_sem);
+}
+
+static void per_adv_sync_term_cb(struct bt_le_per_adv_sync *sync,
+				 const struct bt_le_per_adv_sync_term_info *info)
+{
+	zassert_equal(info->reason, BT_HCI_ERR_LOCALHOST_TERM_CONN,
+		      "Sync should only be deleted by the test (reason 0x%02x)", info->reason);
+}
+
+static void per_adv_sync_recv_cb(struct bt_le_per_adv_sync *sync,
+				 const struct bt_le_per_adv_sync_recv_info *info,
+				 struct net_buf_simple *buf)
+{
+	const struct test_adv_report expected = get_expected_report();
+
+	LOG_DBG("Received periodic adv report with length %u", buf->len);
+
+	zassert_equal(buf->len, expected.length, "Lengths should be equal");
+	zassert_mem_equal(buf->data, expected.data, buf->len, "Data should be equal");
+}
+
 static void generate_sequence(uint8_t *dest, uint16_t len, uint8_t range_start, uint8_t range_end)
 {
 	uint16_t written = 0;
@@ -377,14 +468,46 @@ static void generate_sequence(uint8_t *dest, uint16_t len, uint8_t range_start, 
 	}
 }
 
-ZTEST_SUITE(long_adv_rx_tests, NULL, NULL, NULL, NULL, NULL);
+static void *suite_setup(void)
+{
+	static struct bt_le_per_adv_sync_cb sync_callbacks = {
+		.synced = per_adv_sync_synced_cb,
+		.term = per_adv_sync_term_cb,
+		.recv = per_adv_sync_recv_cb,
+	};
+	int err;
+
+	zassert_true((bt_enable(NULL) == 0), "bt_enable failed");
+
+	err = bt_le_per_adv_sync_cb_register(&sync_callbacks);
+	zassert_equal(err, 0, "bt_le_per_adv_sync_cb_register failed (err %d)", err);
+
+	return NULL;
+}
+
+static struct bt_le_per_adv_sync *per_adv_sync;
+
+/* Runs after failed tests too, so that the next test gets a fresh sync */
+static void test_after(void *fixture)
+{
+	int err;
+
+	ARG_UNUSED(fixture);
+
+	if (per_adv_sync == NULL) {
+		return;
+	}
+
+	err = bt_le_per_adv_sync_delete(per_adv_sync);
+	per_adv_sync = NULL;
+	zassert_equal(err, 0, "bt_le_per_adv_sync_delete failed (err %d)", err);
+}
+
+ZTEST_SUITE(long_adv_rx_tests, NULL, suite_setup, NULL, test_after, NULL);
 
 ZTEST(long_adv_rx_tests, test_host_long_adv_recv)
 {
 	struct test_adv_report expected_reports[2];
-
-	/* Go! Wait until Bluetooth initialization is done  */
-	zassert_true((bt_enable(NULL) == 0), "bt_enable failed");
 
 	static struct bt_le_scan_cb scan_callbacks = { .recv = scan_recv_cb,
 						       .timeout = scan_timeout_cb };
@@ -511,5 +634,120 @@ ZTEST(long_adv_rx_tests, test_host_long_adv_recv)
 	/* Check that reports from a different advertiser works after truncation */
 	send_adv_report(&report_b_1);
 	send_adv_report(&report_b_2);
+	zassert_equal(1, get_expected_report_fake.call_count);
+}
+
+static void per_adv_sync_establish(void)
+{
+	struct bt_le_per_adv_sync_param param = {
+		.sid = 1,
+		.timeout = BT_GAP_PER_ADV_MIN_TIMEOUT,
+	};
+	int err;
+
+	bt_addr_le_create_static(&param.addr);
+
+	err = bt_le_per_adv_sync_create(&param, &per_adv_sync);
+	zassert_equal(err, 0, "bt_le_per_adv_sync_create failed (err %d)", err);
+
+	send_per_adv_sync_established(&param.addr, param.sid);
+	err = k_sem_take(&per_adv_synced_sem, K_SECONDS(1));
+	zassert_equal(err, 0, "Sync not established (err %d)", err);
+}
+
+ZTEST(long_adv_rx_tests, test_host_per_adv_report_bad_len)
+{
+	struct test_adv_report report = { .length = 20 };
+	uint8_t fragment[10];
+
+	/* Without a reassembly buffer, the Host drops every report in fragments
+	 * and checks no fragment lengths
+	 */
+	if (CONFIG_BT_PER_ADV_SYNC_BUF_SIZE == 0) {
+		ztest_test_skip();
+	}
+
+	per_adv_sync_establish();
+
+	RESET_FAKE(get_expected_report);
+	FFF_RESET_HISTORY();
+
+	generate_sequence(fragment, sizeof(fragment), 'A', 'Z');
+	generate_sequence(report.data, report.length, 'a', 'z');
+
+	/* A partial fragment claiming more data than the event carries. The report is
+	 * discarded up to and including the next complete fragment, and the one after
+	 * that is delivered intact.
+	 */
+	SET_RETURN_SEQ(get_expected_report, &report, 1);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL, fragment, sizeof(fragment),
+			    sizeof(fragment));
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL, fragment, sizeof(fragment),
+			    4 * sizeof(fragment));
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
+	zassert_equal(1, get_expected_report_fake.call_count);
+	RESET_FAKE(get_expected_report);
+	FFF_RESET_HISTORY();
+
+	/* Same with the complete fragment of a reassembled report being the bad one */
+	SET_RETURN_SEQ(get_expected_report, &report, 1);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL, fragment, sizeof(fragment),
+			    sizeof(fragment));
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, fragment, sizeof(fragment),
+			    4 * sizeof(fragment));
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
+	zassert_equal(1, get_expected_report_fake.call_count);
+}
+
+static ZTEST(long_adv_rx_tests, test_host_per_adv_report_incomplete)
+{
+	struct test_adv_report report = { .length = 20 };
+	uint8_t fragment[10];
+
+	per_adv_sync_establish();
+
+	RESET_FAKE(get_expected_report);
+	FFF_RESET_HISTORY();
+
+	generate_sequence(fragment, sizeof(fragment), 'A', 'Z');
+	generate_sequence(report.data, report.length, 'a', 'z');
+
+	/* A report that the Controller failed to receive in full ends with the
+	 * Incomplete data status. It is dropped, and the next report is delivered.
+	 */
+	SET_RETURN_SEQ(get_expected_report, &report, 1);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL, fragment, sizeof(fragment),
+			    sizeof(fragment));
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_INCOMPLETE, fragment, 0U, 0U);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
+	zassert_equal(1, get_expected_report_fake.call_count);
+	RESET_FAKE(get_expected_report);
+	FFF_RESET_HISTORY();
+
+	/* Same with the Incomplete report as the only one of its report */
+	SET_RETURN_SEQ(get_expected_report, &report, 1);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_INCOMPLETE, fragment, 0U, 0U);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
+	zassert_equal(1, get_expected_report_fake.call_count);
+	RESET_FAKE(get_expected_report);
+	FFF_RESET_HISTORY();
+
+	/* Same with a report that the Host already drops, here for a fragment
+	 * claiming more data than the event carries
+	 */
+	SET_RETURN_SEQ(get_expected_report, &report, 1);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_PARTIAL, fragment, sizeof(fragment),
+			    4 * sizeof(fragment));
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_INCOMPLETE, fragment, 0U, 0U);
+	send_per_adv_report(BT_HCI_LE_ADV_EVT_TYPE_DATA_STATUS_COMPLETE, report.data, report.length,
+			    report.length);
 	zassert_equal(1, get_expected_report_fake.call_count);
 }

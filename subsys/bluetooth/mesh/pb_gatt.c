@@ -39,10 +39,7 @@ static struct prov_link link;
 
 static void reset_state(void)
 {
-	if (link.conn) {
-		bt_conn_unref(link.conn);
-		link.conn = NULL;
-	}
+	bt_conn_drop(&link.conn);
 
 	/* If this fails, the protocol timeout handler will exit early. */
 	(void)k_work_cancel_delayable(&link.prot_timer);
@@ -198,6 +195,11 @@ static int link_accept(const struct prov_bearer_cb *cb, void *cb_data)
 
 	return 0;
 }
+
+static void link_cancel(void)
+{
+	(void)bt_mesh_pb_gatt_srv_disable();
+}
 #endif
 
 static void buf_send_end(struct bt_conn *conn, void *user_data)
@@ -246,6 +248,7 @@ const struct prov_bearer bt_mesh_pb_gatt = {
 #endif
 #if defined(CONFIG_BT_MESH_PB_GATT)
 	.link_accept = link_accept,
+	.link_cancel = link_cancel,
 #endif
 	.send = buf_send,
 	.clear_tx = clear_tx,

@@ -14,12 +14,14 @@ LOG_MODULE_REGISTER(net_ieee802154_mgmt_test, LOG_LEVEL_DBG);
 
 #include <zephyr/net/ieee802154.h>
 #include <zephyr/net/ieee802154_mgmt.h>
+#include <zephyr/net/ieee802154_radio.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/shell/shell.h>
 
-#include <ieee802154_frame.h>
+#include <zephyr/net/ieee802154_frame.h>
 
 extern struct net_pkt *current_pkt;
 extern struct k_sem driver_lock;
@@ -50,7 +52,7 @@ static bool expected_association_permitted_bit;
 #define EXPECTED_PAYLOAD_DATA EXPECTED_ENDDEVICE_EXT_ADDR_LE
 #define EXPECTED_PAYLOAD_LEN  8
 
-static void scan_result_cb(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
+static void scan_result_cb(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
 			   struct net_if *iface)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
@@ -180,7 +182,7 @@ static void test_associate_shell_cmd(struct ieee802154_context *ctx)
 	zassert_equal(ctx->pan_id, EXPECTED_COORDINATOR_PAN_CPU_ORDER,
 		      "Association: did not get associated to the expected PAN.");
 	zassert_equal(ctx->short_addr, EXPECTED_ENDDEVICE_SHORT_ADDR,
-		      "Association: did not get the expected short address asigned.");
+		      "Association: did not get the expected short address assigned.");
 	zassert_equal(ctx->coord_short_addr, IEEE802154_NO_SHORT_ADDRESS_ASSIGNED,
 		      "Association: co-ordinator should not use short address.");
 	zassert_mem_equal(
@@ -209,7 +211,7 @@ static int create_and_receive_packet(uint8_t *beacon_pkt, size_t length)
 {
 	struct net_pkt *pkt;
 
-	pkt = net_pkt_rx_alloc_with_buffer(net_iface, length, AF_UNSPEC, 0, K_FOREVER);
+	pkt = net_pkt_rx_alloc_with_buffer(net_iface, length, NET_AF_UNSPEC, 0, K_FOREVER);
 	if (!pkt) {
 		NET_ERR("*** No buffer to allocate");
 		return -1;
@@ -436,6 +438,34 @@ ZTEST(ieee802154_l2_shell, test_initiate_disassociation_from_coordinator)
 fail:
 	sys_memcpy_swap(ctx->ext_addr, params.dst.ext_addr, sizeof(ctx->ext_addr));
 	ztest_test_fail();
+}
+
+ZTEST(ieee802154_l2_shell, test_up_after_scan_while_down)
+{
+	struct ieee802154_req_params params = {
+		.channel_set = BIT(11 - 1),
+		.duration = 10,
+	};
+	int ret;
+
+	ret = net_if_down(net_iface);
+	zassert_equal(ret, 0, "Taking the interface down failed: %d", ret);
+
+	/* The scan starts the radio and leaves it running */
+	ret = net_mgmt(NET_REQUEST_IEEE802154_PASSIVE_SCAN, net_iface, &params, sizeof(params));
+	zexpect_equal(ret, 0, "Passive scan failed: %d", ret);
+
+	ret = net_if_up(net_iface);
+	zexpect_equal(ret, 0, "Taking the interface up after a scan failed: %d", ret);
+
+	/* Leave the interface up for the tests that follow */
+	if (!net_if_is_up(net_iface)) {
+		const struct device *dev = net_if_get_device(net_iface);
+		const struct ieee802154_radio_api *radio = dev->api;
+
+		(void)radio->stop(dev);
+		(void)net_if_up(net_iface);
+	}
 }
 
 ZTEST(ieee802154_l2_shell, test_set_ext_addr)

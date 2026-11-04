@@ -6,12 +6,13 @@
 
 /**
  * @file
- * @brief Public APIs for MIPI-DBI drivers
+ * @ingroup mipi_dbi_interface
+ * @brief Main header file for MIPI-DBI (Display Bus Interface) driver API.
  *
  * MIPI-DBI defines the following 3 interfaces:
- * Type A: Motorola 6800 type parallel bus
- * Type B: Intel 8080 type parallel bus
- * Type C: SPI Type (1 bit bus) with 3 options:
+ * - Type A: Motorola 6800 type parallel bus
+ * - Type B: Intel 8080 type parallel bus
+ * - Type C: SPI Type (1 bit bus) with 3 options:
  *     1. 9 write clocks per byte, final bit is command/data selection bit
  *     2. Same as above, but 16 write clocks per byte
  *     3. 8 write clocks per byte. Command/data selected via GPIO pin
@@ -22,11 +23,11 @@
 #define ZEPHYR_INCLUDE_DRIVERS_MIPI_DBI_H_
 
 /**
- * @brief MIPI-DBI driver APIs
- * @defgroup mipi_dbi_interface MIPI-DBI driver APIs
+ * @brief Interfaces for MIPI-DBI (Display Bus Interface).
+ * @defgroup mipi_dbi_interface MIPI-DBI
  * @since 3.6
- * @version 0.1.0
- * @ingroup io_interfaces
+ * @version 1.0.0
+ * @ingroup display_interface
  * @{
  */
 
@@ -39,6 +40,36 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/** @cond INTERNAL_HIDDEN */
+#define MIPI_DBI_DT_SPI_DEV(node_id)					\
+	DT_PHANDLE(DT_PARENT(node_id), spi_dev)
+/** @endcond */
+
+/**
+ * @brief Check whether a MIPI DBI SPI device has a chip select line configured
+ *
+ * The MIPI DBI counterpart of DT_SPI_DEV_HAS_CS_GPIOS(): the same per-device
+ * question, but the SPI controller is reached through the parent's spi-dev
+ * phandle rather than DT_BUS().
+ *
+ * @param node_id Devicetree node identifier for a MIPI DBI device
+ * @return 1 if the controller named by the parent's spi-dev property has a
+ *         chip select pin at index DT_REG_ADDR(node_id), 0 otherwise
+ */
+#define MIPI_DBI_SPI_DEV_HAS_CS_GPIOS(node_id)				\
+	DT_PROP_HAS_IDX(MIPI_DBI_DT_SPI_DEV(node_id), cs_gpios,		\
+			DT_REG_ADDR_RAW(node_id))
+
+/** @cond INTERNAL_HIDDEN */
+#define MIPI_DBI_SPI_CS_GPIOS_DT_SPEC_GET(node_id)			\
+	GPIO_DT_SPEC_GET_BY_IDX_OR(MIPI_DBI_DT_SPI_DEV(node_id),	\
+		cs_gpios, DT_REG_ADDR_RAW(node_id), {})
+
+#define MIPI_DBI_SPI_CS_CONTROL_INIT_GPIO(node_id, delay_)		\
+	.gpio = MIPI_DBI_SPI_CS_GPIOS_DT_SPEC_GET(node_id),		\
+	.delay = delay_,
+/** @endcond */
 
 /**
  * @brief initialize a MIPI DBI SPI configuration struct from devicetree
@@ -59,14 +90,13 @@ extern "C" {
 			COND_CODE_1(DT_PROP(node_id, mipi_cpol), SPI_MODE_CPOL, (0)) |	\
 			COND_CODE_1(DT_PROP(node_id, mipi_cpha), SPI_MODE_CPHA, (0)) |	\
 			COND_CODE_1(DT_PROP(node_id, mipi_hold_cs), SPI_HOLD_ON_CS, (0)),	\
-		.slave = DT_REG_ADDR(node_id),				\
-		.cs = {							\
-			.gpio = GPIO_DT_SPEC_GET_BY_IDX_OR(DT_PHANDLE(DT_PARENT(node_id), \
-							   spi_dev), cs_gpios, \
-							   DT_REG_ADDR_RAW(node_id), \
-							   {}),		\
-			.delay = (delay_),				\
-		},							\
+		.peripheral = DT_REG_ADDR(node_id),				\
+		.cs = {									\
+			COND_CODE_1(MIPI_DBI_SPI_DEV_HAS_CS_GPIOS(node_id),			\
+			(MIPI_DBI_SPI_CS_CONTROL_INIT_GPIO(node_id, delay_)),		\
+			(SPI_CS_CONTROL_INIT_NATIVE(node_id)))				\
+			.cs_is_gpio = MIPI_DBI_SPI_DEV_HAS_CS_GPIOS(node_id),		\
+		},									\
 	}
 
 /**
@@ -86,8 +116,10 @@ extern "C" {
  * @brief Initialize a MIPI DBI configuration from devicetree
  *
  * This helper allows drivers to initialize a MIPI DBI configuration
- * structure from devicetree. It sets the MIPI DBI mode, as well
- * as configuration fields in the SPI configuration structure
+ * structure from devicetree. It sets the MIPI DBI mode and color
+ * coding, as well as configuration fields in the SPI configuration
+ * structure. If the color-coding property is absent the color coding
+ * field is left at zero, meaning no Type A/B coding was specified.
  * @param node_id Devicetree node identifier for the MIPI DBI device to
  *                initialize
  * @param operation_ the desired operation field in the struct spi_config
@@ -96,7 +128,8 @@ extern "C" {
  */
 #define MIPI_DBI_CONFIG_DT(node_id, operation_, delay_)			\
 	{								\
-		.mode = DT_PROP(node_id, mipi_mode),			\
+		.mode = DT_STRING_UPPER_TOKEN(node_id, mipi_mode),	\
+		.color_coding = DT_STRING_UPPER_TOKEN_OR(node_id, color_coding, 0), \
 		.config = MIPI_DBI_SPI_CONFIG_DT(node_id, operation_, delay_), \
 	}
 
@@ -113,6 +146,35 @@ extern "C" {
 	MIPI_DBI_CONFIG_DT(DT_DRV_INST(inst), operation_, delay_)
 
 /**
+ * @brief Get the MIPI DBI TE mode from devicetree
+ *
+ * Gets the MIPI DBI TE mode from a devicetree property.
+ * @param node_id Devicetree node identifier for the MIPI DBI device with the
+ *                TE mode property
+ * @param edge_prop Property name for the TE mode that should be read from
+ *                  devicetree
+ */
+#define MIPI_DBI_TE_MODE_DT(node_id, edge_prop)                           \
+	DT_STRING_UPPER_TOKEN(node_id, edge_prop)
+
+/**
+ * @brief Get the MIPI DBI TE mode for device instance
+ *
+ * Gets the MIPI DBI TE mode from a devicetree property. Equivalent to
+ * MIPI_DBI_TE_MODE_DT(DT_DRV_INST(inst), edge_mode).
+ * @param inst Instance of the device to get the TE mode for
+ * @param edge_prop Property name for the TE mode that should be read from
+ *                  devicetree
+ */
+#define MIPI_DBI_TE_MODE_DT_INST(inst, edge_prop)                         \
+	DT_STRING_UPPER_TOKEN(DT_DRV_INST(inst), edge_prop)
+
+/**
+ * @def_driverbackendgroup{MIPI-DBI,mipi_dbi_interface}
+ * @{
+ */
+
+/**
  * @brief MIPI DBI controller configuration
  *
  * Configuration for MIPI DBI controller write
@@ -120,28 +182,88 @@ extern "C" {
 struct mipi_dbi_config {
 	/** MIPI DBI mode */
 	uint8_t mode;
+	/** MIPI DBI color coding for Type A or Type B(6800/8080) interface. */
+	uint8_t color_coding;
 	/** SPI configuration */
 	struct spi_config config;
 };
 
+/**
+ * @brief Callback API to write a command to the display controller.
+ * See mipi_dbi_command_write() for argument description
+ */
+typedef int (*mipi_dbi_command_write_t)(const struct device *dev,
+					const struct mipi_dbi_config *config, uint8_t cmd,
+					const uint8_t *data, size_t len);
 
-/** MIPI-DBI host driver API */
+/**
+ * @brief Callback API to read a command response from the display controller.
+ * See mipi_dbi_command_read() for argument description
+ */
+typedef int (*mipi_dbi_command_read_t)(const struct device *dev,
+				       const struct mipi_dbi_config *config, uint8_t *cmds,
+				       size_t num_cmds, uint8_t *response, size_t len);
+
+/**
+ * @brief Callback API to write a display buffer to the display controller.
+ * See mipi_dbi_write_display() for argument description
+ */
+typedef int (*mipi_dbi_write_display_t)(const struct device *dev,
+					const struct mipi_dbi_config *config,
+					const uint8_t *framebuf,
+					struct display_buffer_descriptor *desc,
+					enum display_pixel_format pixfmt);
+
+/**
+ * @brief Callback API to reset the attached display controller.
+ * See mipi_dbi_reset() for argument description
+ */
+typedef int (*mipi_dbi_reset_t)(const struct device *dev, k_timeout_t delay);
+
+/**
+ * @brief Callback API to release a locked MIPI DBI device.
+ * See mipi_dbi_release() for argument description
+ */
+typedef int (*mipi_dbi_release_t)(const struct device *dev, const struct mipi_dbi_config *config);
+
+/**
+ * @brief Callback API to configure the MIPI DBI tearing effect signal.
+ * See mipi_dbi_configure_te() for argument description
+ */
+typedef int (*mipi_dbi_configure_te_t)(const struct device *dev, uint8_t edge, k_timeout_t delay);
+
+/**
+ * @driver_ops{MIPI-DBI}
+ */
 __subsystem struct mipi_dbi_driver_api {
-	int (*command_write)(const struct device *dev,
-			     const struct mipi_dbi_config *config, uint8_t cmd,
-			     const uint8_t *data, size_t len);
-	int (*command_read)(const struct device *dev,
-			    const struct mipi_dbi_config *config, uint8_t *cmds,
-			    size_t num_cmds, uint8_t *response, size_t len);
-	int (*write_display)(const struct device *dev,
-			     const struct mipi_dbi_config *config,
-			     const uint8_t *framebuf,
-			     struct display_buffer_descriptor *desc,
-			     enum display_pixel_format pixfmt);
-	int (*reset)(const struct device *dev, k_timeout_t delay);
-	int (*release)(const struct device *dev,
-		       const struct mipi_dbi_config *config);
+	/**
+	 * @driver_ops_optional @copybrief mipi_dbi_command_write
+	 */
+	mipi_dbi_command_write_t command_write;
+	/**
+	 * @driver_ops_optional @copybrief mipi_dbi_command_read
+	 */
+	mipi_dbi_command_read_t command_read;
+	/**
+	 * @driver_ops_optional @copybrief mipi_dbi_write_display
+	 */
+	mipi_dbi_write_display_t write_display;
+	/**
+	 * @driver_ops_optional @copybrief mipi_dbi_reset
+	 */
+	mipi_dbi_reset_t reset;
+	/**
+	 * @driver_ops_optional @copybrief mipi_dbi_release
+	 */
+	mipi_dbi_release_t release;
+	/**
+	 * @driver_ops_optional @copybrief mipi_dbi_configure_te
+	 */
+	mipi_dbi_configure_te_t configure_te;
 };
+/**
+ * @}
+ */
 
 /**
  * @brief Write a command to the display controller
@@ -168,8 +290,7 @@ static inline int mipi_dbi_command_write(const struct device *dev,
 					 uint8_t cmd, const uint8_t *data,
 					 size_t len)
 {
-	const struct mipi_dbi_driver_api *api =
-		(const struct mipi_dbi_driver_api *)dev->api;
+	const struct mipi_dbi_driver_api *api = DEVICE_API_GET(mipi_dbi, dev);
 
 	if (api->command_write == NULL) {
 		return -ENOSYS;
@@ -199,8 +320,7 @@ static inline int mipi_dbi_command_read(const struct device *dev,
 					uint8_t *cmds, size_t num_cmd,
 					uint8_t *response, size_t len)
 {
-	const struct mipi_dbi_driver_api *api =
-		(const struct mipi_dbi_driver_api *)dev->api;
+	const struct mipi_dbi_driver_api *api = DEVICE_API_GET(mipi_dbi, dev);
 
 	if (api->command_read == NULL) {
 		return -ENOSYS;
@@ -233,8 +353,7 @@ static inline int mipi_dbi_write_display(const struct device *dev,
 					 struct display_buffer_descriptor *desc,
 					 enum display_pixel_format pixfmt)
 {
-	const struct mipi_dbi_driver_api *api =
-		(const struct mipi_dbi_driver_api *)dev->api;
+	const struct mipi_dbi_driver_api *api = DEVICE_API_GET(mipi_dbi, dev);
 
 	if (api->write_display == NULL) {
 		return -ENOSYS;
@@ -255,8 +374,7 @@ static inline int mipi_dbi_write_display(const struct device *dev,
  */
 static inline int mipi_dbi_reset(const struct device *dev, uint32_t delay_ms)
 {
-	const struct mipi_dbi_driver_api *api =
-		(const struct mipi_dbi_driver_api *)dev->api;
+	const struct mipi_dbi_driver_api *api = DEVICE_API_GET(mipi_dbi, dev);
 
 	if (api->reset == NULL) {
 		return -ENOSYS;
@@ -284,13 +402,50 @@ static inline int mipi_dbi_reset(const struct device *dev, uint32_t delay_ms)
 static inline int mipi_dbi_release(const struct device *dev,
 				   const struct mipi_dbi_config *config)
 {
-	const struct mipi_dbi_driver_api *api =
-		(const struct mipi_dbi_driver_api *)dev->api;
+	const struct mipi_dbi_driver_api *api = DEVICE_API_GET(mipi_dbi, dev);
 
 	if (api->release == NULL) {
 		return -ENOSYS;
 	}
 	return api->release(dev, config);
+}
+
+/**
+ * @brief Configures MIPI DBI tearing effect signal
+ *
+ * Many displays provide a tearing effect signal, which can be configured
+ * to pulse at each vsync interval or each hsync interval. This signal can be
+ * used by the MCU to determine when to transmit a new frame so that the
+ * read pointer of the display never overlaps with the write pointer from the
+ * MCU. This function configures the MIPI DBI controller to delay transmitting
+ * display frames until the selected tearing effect signal edge occurs.
+ *
+ * The delay will occur on the on each call to @ref mipi_dbi_write_display
+ * where the ``frame_incomplete`` flag was set within the buffer descriptor
+ * provided with the prior call, as this indicates the buffer being written
+ * in this call is the first buffer of a new frame.
+ *
+ * Note that most display controllers will need to enable the TE signal
+ * using vendor specific commands before the MIPI DBI controller can react
+ * to it.
+ *
+ * @param dev mipi dbi controller
+ * @param edge which edge of the TE signal to start transmitting on
+ * @param delay_us how many microseconds after TE edge to start transmission
+ * @retval -EIO I/O error
+ * @retval -ENOSYS not implemented
+ * @retval -ENOTSUP not supported
+ */
+static inline int mipi_dbi_configure_te(const struct device *dev,
+					uint8_t edge,
+					uint32_t delay_us)
+{
+	const struct mipi_dbi_driver_api *api = DEVICE_API_GET(mipi_dbi, dev);
+
+	if (api->configure_te == NULL) {
+		return -ENOSYS;
+	}
+	return api->configure_te(dev, edge, K_USEC(delay_us));
 }
 
 #ifdef __cplusplus

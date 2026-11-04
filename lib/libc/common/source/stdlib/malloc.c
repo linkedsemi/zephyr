@@ -101,20 +101,29 @@ static POOL_SECTION unsigned char __aligned(HEAP_ALIGN) malloc_arena[HEAP_SIZE];
 
 #   define HEAP_BASE	ROUND_UP(USED_RAM_END_ADDR, HEAP_ALIGN)
 
-#   if defined(CONFIG_XTENSA) && (defined(CONFIG_SOC_FAMILY_INTEL_ADSP) \
-	|| defined(CONFIG_HAS_ESPRESSIF_HAL))
+#   if (defined(CONFIG_XTENSA) && defined(CONFIG_SOC_FAMILY_INTEL_ADSP)) \
+	|| defined(CONFIG_HAS_ESPRESSIF_HAL)
 extern char _heap_sentry[];
-#    define HEAP_SIZE  ROUND_DOWN((POINTER_TO_UINT(_heap_sentry) - HEAP_BASE), HEAP_ALIGN)
+#    define HEAP_AVAIL	((POINTER_TO_UINT(_heap_sentry) > HEAP_BASE) ?		\
+			 (POINTER_TO_UINT(_heap_sentry) - HEAP_BASE) : 0)
 #   else
-#    define HEAP_SIZE	ROUND_DOWN((KB((size_t) CONFIG_SRAM_SIZE) -	\
-		((size_t) HEAP_BASE - (size_t) CONFIG_SRAM_BASE_ADDRESS)), HEAP_ALIGN)
+#    define HEAP_OFFSET	((size_t)HEAP_BASE - (size_t)DT_CHOSEN_SRAM_ADDR)
+#    define HEAP_AVAIL	((HEAP_OFFSET < (size_t)DT_CHOSEN_SRAM_SIZE) ?		\
+			 ((size_t)DT_CHOSEN_SRAM_SIZE - HEAP_OFFSET) : 0)
 #   endif /* else CONFIG_XTENSA */
+
+#   define HEAP_SIZE	ROUND_DOWN(HEAP_AVAIL, HEAP_ALIGN)
 
 #  endif /* else CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE > 0 */
 
 # endif /* else ALLOCATE_HEAP_AT_STARTUP */
 
 Z_LIBC_DATA static struct sys_heap z_malloc_heap;
+
+#if defined(CONFIG_SYS_HEAP_KASAN_MALLOC) && defined(HEAP_STATIC)
+#include <zephyr/sys/heap_kasan.h>
+SYS_HEAP_KASAN_ENABLE(z_malloc_heap, HEAP_SIZE);
+#endif /* CONFIG_SYS_HEAP_KASAN_MALLOC && HEAP_STATIC */
 
 #ifdef CONFIG_MULTITHREADING
 Z_LIBC_DATA SYS_MUTEX_DEFINE(z_malloc_heap_mutex);
@@ -139,11 +148,13 @@ malloc_unlock(void)
 
 void *malloc(size_t size)
 {
+	void *ret = NULL;
+
 	malloc_lock();
 
-	void *ret = sys_heap_aligned_alloc(&z_malloc_heap,
-					   __alignof__(z_max_align_t),
-					   size);
+	if (z_malloc_heap.heap != NULL) {
+		ret = sys_heap_aligned_alloc(&z_malloc_heap, __alignof__(z_max_align_t), size);
+	}
 	if (ret == NULL && size != 0) {
 		errno = ENOMEM;
 	}
@@ -155,11 +166,13 @@ void *malloc(size_t size)
 
 void *aligned_alloc(size_t alignment, size_t size)
 {
+	void *ret = NULL;
+
 	malloc_lock();
 
-	void *ret = sys_heap_aligned_alloc(&z_malloc_heap,
-					   alignment,
-					   size);
+	if (z_malloc_heap.heap != NULL) {
+		ret = sys_heap_aligned_alloc(&z_malloc_heap, alignment, size);
+	}
 	if (ret == NULL && size != 0) {
 		errno = ENOMEM;
 	}
@@ -202,7 +215,9 @@ static int malloc_prepare(void)
 		heap_base = k_mem_map(heap_size, K_MEM_PERM_RW);
 		__ASSERT(heap_base != NULL,
 			 "failed to allocate heap of size %zu", heap_size);
-
+		if (heap_base == NULL) {
+			heap_size = 0;
+		}
 	}
 #elif defined(Z_MALLOC_PARTITION_EXISTS) && \
 	defined(CONFIG_MPU) && \
@@ -227,11 +242,20 @@ static int malloc_prepare(void)
 	heap_size = HEAP_SIZE;
 #endif
 
+	if (heap_size < Z_HEAP_MIN_SIZE) {
+		LOG_WRN("malloc arena too small (%zu bytes)", heap_size);
+		heap_size = 0;
+	}
+
 #if Z_MALLOC_PARTITION_EXISTS && !defined(HEAP_STATIC)
 	z_malloc_partition.start = POINTER_TO_UINT(heap_base);
 	z_malloc_partition.size = heap_size;
 	z_malloc_partition.attr = K_MEM_PARTITION_P_RW_U_RW;
 #endif
+
+	if (heap_size == 0) {
+		return 0;
+	}
 
 	sys_heap_init(&z_malloc_heap, heap_base, heap_size);
 
@@ -240,11 +264,14 @@ static int malloc_prepare(void)
 
 void *realloc(void *ptr, size_t requested_size)
 {
+	void *ret = NULL;
+
 	malloc_lock();
 
-	void *ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr,
-					     __alignof__(z_max_align_t),
-					     requested_size);
+	if (z_malloc_heap.heap != NULL) {
+		ret = sys_heap_aligned_realloc(&z_malloc_heap, ptr, __alignof__(z_max_align_t),
+					       requested_size);
+	}
 
 	if (ret == NULL && requested_size != 0) {
 		errno = ENOMEM;
@@ -261,6 +288,23 @@ void free(void *ptr)
 	sys_heap_free(&z_malloc_heap, ptr);
 	malloc_unlock();
 }
+
+#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
+
+int malloc_runtime_stats_get(struct sys_memory_stats *stats)
+{
+	int ret;
+
+	malloc_lock();
+
+	ret = sys_heap_runtime_stats_get(&z_malloc_heap, stats);
+
+	malloc_unlock();
+
+	return ret;
+}
+
+#endif /* CONFIG_SYS_HEAP_RUNTIME_STATS */
 
 SYS_INIT(malloc_prepare, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_LIBC);
 #else /* No malloc arena */
@@ -288,37 +332,6 @@ void *realloc(void *ptr, size_t size)
 
 #endif /* CONFIG_COMMON_LIBC_MALLOC */
 
-#ifdef CONFIG_COMMON_LIBC_CALLOC
-void *calloc(size_t nmemb, size_t size)
-{
-	void *ret;
-
-	if (size_mul_overflow(nmemb, size, &size)) {
-		errno = ENOMEM;
-		return NULL;
-	}
-
-	ret = malloc(size);
-
-	if (ret != NULL) {
-		(void)memset(ret, 0, size);
-	}
-
-	return ret;
-}
-#endif /* CONFIG_COMMON_LIBC_CALLOC */
-
-#ifdef CONFIG_COMMON_LIBC_REALLOCARRAY
-void *reallocarray(void *ptr, size_t nmemb, size_t size)
-{
-	if (size_mul_overflow(nmemb, size, &size)) {
-		errno = ENOMEM;
-		return NULL;
-	}
-	return realloc(ptr, size);
-}
-#endif /* CONFIG_COMMON_LIBC_REALLOCARRAY */
-
 int libc_heap_runtime_stats_get(struct sys_memory_stats *stats)
 {
 #ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
@@ -330,3 +343,4 @@ int libc_heap_runtime_stats_get(struct sys_memory_stats *stats)
     return -ENOSYS;
 #endif
 }
+

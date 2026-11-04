@@ -17,20 +17,12 @@ config ROM_START_OFFSET
 config NUM_IRQS
 	default 76
 
-config ZTEST_NO_YIELD
-	default y if (PM && ZTEST)
-
-config MBEDTLS
-	default y if CSPRNG_ENABLED
-	depends on ENTROPY_GENERATOR
-
 if MBEDTLS
 #
 # MBEDTLS CTR_DRBG code path needs extra stack space for initialization than
 # what the ztest_thread_stack defaults to.
 #
 config TEST_EXTRA_STACK_SIZE
-	int
 	default 1024
 endif # MBEDTLS
 
@@ -66,9 +58,6 @@ endif # SOC_MIMXRT595S_CM33
 
 if SOC_MIMXRT595S_F1
 
-config SMP
-	default n
-
 config XTENSA_TIMER
 	default y
 
@@ -86,9 +75,6 @@ config TEST_LOGGING_DEFAULTS
 	default n
 	depends on TEST
 
-config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default 198000000
-
 config XTENSA_CCOUNT_HZ
 	default SYS_CLOCK_HW_CYCLES_PER_SEC
 
@@ -101,10 +87,10 @@ config DYNAMIC_INTERRUPTS
 config CACHE
 	default n
 
-config DCACHE
+configdefault DCACHE
 	default n
 
-config CACHE_MANAGEMENT
+configdefault CACHE_MANAGEMENT
 	default n
 
 config LOG

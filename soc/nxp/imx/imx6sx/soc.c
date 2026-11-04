@@ -8,7 +8,7 @@
 #include <zephyr/sys/barrier.h>
 #include <soc.h>
 #include <zephyr/dt-bindings/rdc/imx_rdc.h>
-#include "wdog_imx.h"
+#include <wdog_imx.h>
 
 #include <cmsis_core.h>
 
@@ -183,7 +183,7 @@ static void SOC_CacheInit(void)
 }
 
 /* Initialize clock. */
-static void SOC_ClockInit(void)
+void __weak SOC_ClockInit(void)
 {
 	/* OSC/PLL is already initialized by Cortex-A9 core */
 

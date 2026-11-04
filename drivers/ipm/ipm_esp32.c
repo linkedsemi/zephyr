@@ -5,8 +5,8 @@
  */
 
 #define DT_DRV_COMPAT espressif_esp32_ipm
-#include "soc/dport_reg.h"
-#include "soc/gpio_periph.h"
+#include <soc/dport_reg.h>
+#include <soc/gpio_periph.h>
 
 #include <stdint.h>
 #include <string.h>
@@ -110,7 +110,7 @@ static int esp32_ipm_send(const struct device *dev, int wait, uint32_t id,
 		return -EINVAL;
 	}
 
-	if (dev_data->shm_size < size) {
+	if ((dev_data->shm_size / 2) < size) {
 		LOG_ERR("Not enough memory in IPM channel");
 		return -ENOMEM;
 	}
@@ -121,18 +121,14 @@ static int esp32_ipm_send(const struct device *dev, int wait, uint32_t id,
 	while (!atomic_cas(&dev_data->control->lock,
 		ESP32_IPM_LOCK_FREE_VAL,
 		dev_data->this_core_id)) {
+		/* Do not wait for availability */
+		if (wait == 0) {
+			irq_unlock(key);
+
+			return -EBUSY;
+		}
 
 		k_busy_wait(1);
-
-		if ((wait != -1) && (wait > 0)) {
-			/* lock could not be held this time, return */
-			wait--;
-			if (wait == 0)  {
-				irq_unlock(key);
-
-				return -ETIMEDOUT;
-			}
-		}
 	}
 
 	/* Only the lower 16bits of id are used */
@@ -183,7 +179,7 @@ static int esp32_ipm_max_data_size_get(const struct device *dev)
 {
 	struct esp32_ipm_data *data = (struct esp32_ipm_data *)dev->data;
 
-	return data->shm_size;
+	return data->shm_size / 2;
 }
 
 static uint32_t esp_32_ipm_max_id_val_get(const struct device *dev)
@@ -268,7 +264,7 @@ static int esp32_ipm_init(const struct device *dev)
 	return 0;
 }
 
-static const struct ipm_driver_api esp32_ipm_driver_api = {
+static DEVICE_API(ipm, esp32_ipm_driver_api) = {
 	.send = esp32_ipm_send,
 	.register_callback = esp32_ipm_register_callback,
 	.max_data_size_get = esp32_ipm_max_data_size_get,

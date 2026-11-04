@@ -16,29 +16,26 @@
  * it guarantee that ALL functionality provided is working correctly.
  */
 
-#if defined(__GNUC__)
-/*
- * Don't complain about ridiculous alloc size requests
- */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Walloc-size-larger-than="
-#endif
-
 #define _BSD_SOURCE
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
+#include <zephyr/test_toolchain.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <time.h>
 #include <stdint.h>
+
+/*
+ * Don't complain about ridiculous alloc size requests
+ */
+TOOLCHAIN_DISABLE_GCC_WARNING(TOOLCHAIN_WARNING_ALLOC_SIZE_LARGER_THAN)
 
 #define TOO_BIG PTRDIFF_MAX
 
 /**
  *
  * @brief Test implementation-defined constants library
- * @defgroup libc_api
- * @ingroup all_tests
+ * @ingroup libc_api
  * @{
  *
  */
@@ -57,7 +54,8 @@ union aligntest {
 
 
 #if defined(CONFIG_COMMON_LIBC_MALLOC) && \
-	(CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE == 0)
+	(CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE >= 0) && \
+	(CONFIG_COMMON_LIBC_MALLOC_ARENA_SIZE <= 16)
 __no_optimization void _test_no_mem_malloc(void)
 {
 	int *iptr = NULL;
@@ -87,6 +85,22 @@ __no_optimization void _test_no_mem_realloc(void)
 ZTEST(c_lib_dynamic_memalloc, test_no_mem_realloc)
 {
 	_test_no_mem_realloc();
+}
+
+__no_optimization void _test_no_mem_calloc(void)
+{
+	char *ptr = NULL;
+
+	errno = 0;
+	ptr = calloc(BUF_LEN, 1);
+	zassert_is_null(ptr, "calloc failed, errno: %d", errno);
+	zassert_equal(errno, ENOMEM);
+	free(ptr);
+}
+
+ZTEST(c_lib_dynamic_memalloc, test_no_mem_calloc)
+{
+	_test_no_mem_calloc();
 }
 #else
 /* Make sure we can access some built-in types. */
@@ -295,7 +309,7 @@ ZTEST(c_lib_dynamic_memalloc, test_reallocarray)
 
 	cptr =  reallocarray(ptr, TOO_BIG, sizeof(int));
 	zassert_is_null((ptr), "reallocarray failed, errno: %d", errno);
-	zassert_is_null((cptr), "reallocarray failed, errno: %d");
+	zassert_is_null((cptr), "reallocarray failed, errno: %d", errno);
 	free(cptr);
 
 	ptr = malloc(orig_size);
@@ -352,10 +366,6 @@ ZTEST(c_lib_dynamic_memalloc, test_memalloc_all)
 }
 
 /**
- * @}
- */
-
-/**
  *
  * @brief Test dynamic memory allocation upto maximum size
  * Negative test case
@@ -376,5 +386,9 @@ ZTEST(c_lib_dynamic_memalloc, test_memalloc_max)
 	_test_memalloc_max();
 }
 #endif
+
+/**
+ * @}
+ */
 
 ZTEST_SUITE(c_lib_dynamic_memalloc, NULL, NULL, NULL, NULL, NULL);

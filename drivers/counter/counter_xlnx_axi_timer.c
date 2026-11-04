@@ -294,7 +294,7 @@ static int xlnx_axi_timer_init(const struct device *dev)
 	const struct xlnx_axi_timer_config *config = dev->config;
 
 	LOG_DBG("max top value = 0x%08x", config->info.max_top_value);
-	LOG_DBG("frequency = %d", config->info.freq);
+	LOG_DBG("frequency = %llu", (unsigned long long)config->info.freq);
 	LOG_DBG("channels = %d", config->info.channels);
 
 	xlnx_axi_timer_write32(dev, config->info.max_top_value, TLR0_OFFSET);
@@ -309,7 +309,7 @@ static int xlnx_axi_timer_init(const struct device *dev)
 	return 0;
 }
 
-static const struct counter_driver_api xlnx_axi_timer_driver_api = {
+static DEVICE_API(counter, xlnx_axi_timer_driver_api) = {
 	.start = xlnx_axi_timer_start,
 	.stop = xlnx_axi_timer_stop,
 	.get_value = xlnx_axi_timer_get_value,

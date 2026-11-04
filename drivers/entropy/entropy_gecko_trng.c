@@ -44,6 +44,25 @@
 #endif	/* _SILICON_LABS_32B_SERIES_2_CONFIG_* */
 #endif	/* CONFIG_CRYPTO_ACC_GECKO_TRNG */
 
+static int entropy_gecko_trng_init(const struct device *dev)
+{
+	/* Enable the TRNG0 clock. */
+#ifndef CONFIG_CRYPTO_ACC_GECKO_TRNG
+	CMU_ClockEnable(cmuClock_TRNG0, true);
+
+	/* Enable TRNG0. */
+	TRNG0->CONTROL = TRNG_CONTROL_ENABLE;
+#else
+	/* Enable the CRYPTO ACC clock. */
+	CMU_ClockEnable(cmuClock_CRYPTOACC, true);
+
+	/* Enable TRNG */
+	S2_CTRL |= S2_CTRL_ENABLE;
+#endif
+
+	return 0;
+}
+
 static void entropy_gecko_trng_read(uint8_t *output, size_t len)
 {
 #ifndef CONFIG_CRYPTO_ACC_GECKO_TRNG
@@ -76,16 +95,14 @@ static int entropy_gecko_trng_get_entropy(const struct device *dev,
 
 	ARG_UNUSED(dev);
 
+	entropy_gecko_trng_init(dev);
+
 	while (length) {
 #ifndef CONFIG_CRYPTO_ACC_GECKO_TRNG
 		available = TRNG0->FIFOLEVEL * 4;
 #else
 		available = S2_FIFO_LEVEL * 4;
 #endif
-		if (available == 0) {
-			return -EINVAL;
-		}
-
 		count = SL_MIN(length, available);
 		entropy_gecko_trng_read(buffer, count);
 		buffer += count;
@@ -107,6 +124,7 @@ static int entropy_gecko_trng_get_entropy_isr(const struct device *dev,
 #ifndef CONFIG_CRYPTO_ACC_GECKO_TRNG
 		size_t available = TRNG0->FIFOLEVEL * 4;
 #else
+		CMU_ClockEnable(cmuClock_CRYPTOACC, true);
 		size_t available = S2_FIFO_LEVEL * 4;
 #endif
 
@@ -129,26 +147,7 @@ static int entropy_gecko_trng_get_entropy_isr(const struct device *dev,
 	}
 }
 
-static int entropy_gecko_trng_init(const struct device *dev)
-{
-	/* Enable the TRNG0 clock. */
-#ifndef CONFIG_CRYPTO_ACC_GECKO_TRNG
-	CMU_ClockEnable(cmuClock_TRNG0, true);
-
-	/* Enable TRNG0. */
-	TRNG0->CONTROL = TRNG_CONTROL_ENABLE;
-#else
-	/* Enable the CRYPTO ACC clock. */
-	CMU_ClockEnable(cmuClock_CRYPTOACC, true);
-
-	/* Enable TRNG */
-	S2_CTRL |= S2_CTRL_ENABLE;
-#endif
-
-	return 0;
-}
-
-static struct entropy_driver_api entropy_gecko_trng_api_funcs = {
+static DEVICE_API(entropy, entropy_gecko_trng_api_funcs) = {
 	.get_entropy = entropy_gecko_trng_get_entropy,
 	.get_entropy_isr = entropy_gecko_trng_get_entropy_isr
 };

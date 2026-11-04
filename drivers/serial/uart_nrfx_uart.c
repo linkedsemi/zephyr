@@ -477,7 +477,7 @@ static int uart_nrfx_rx_enable(const struct device *dev, uint8_t *buf,
 		return -EBUSY;
 	}
 
-	uart0_cb.rx_enabled = 1;
+	uart0_cb.rx_enabled = true;
 	uart0_cb.rx_buffer = buf;
 	uart0_cb.rx_buffer_length = len;
 	uart0_cb.rx_counter = 0;
@@ -522,7 +522,7 @@ static int uart_nrfx_rx_disable(const struct device *dev)
 		return -EFAULT;
 	}
 
-	uart0_cb.rx_enabled = 0;
+	uart0_cb.rx_enabled = false;
 	if (uart0_cb.rx_timeout != SYS_FOREVER_US) {
 		k_timer_stop(&uart0_cb.rx_timeout_timer);
 	}
@@ -570,7 +570,7 @@ static void rx_reset_state(void)
 			     NRF_UART_INT_MASK_ERROR |
 			     NRF_UART_INT_MASK_RXTO);
 	uart0_cb.rx_buffer_length = 0;
-	uart0_cb.rx_enabled = 0;
+	uart0_cb.rx_enabled = false;
 	uart0_cb.rx_counter = 0;
 	uart0_cb.rx_offset = 0;
 	uart0_cb.rx_secondary_buffer_length = 0;
@@ -612,7 +612,7 @@ static void rx_isr(const struct device *dev)
 		unsigned int key = irq_lock();
 
 		if (uart0_cb.rx_secondary_buffer_length == 0) {
-			uart0_cb.rx_enabled = 0;
+			uart0_cb.rx_enabled = false;
 		}
 		irq_unlock(key);
 
@@ -915,12 +915,6 @@ static int uart_nrfx_irq_is_pending(const struct device *dev)
 		 uart_nrfx_irq_rx_ready(dev)));
 }
 
-/** Interrupt driven interrupt update function */
-static int uart_nrfx_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 /** Set the callback function */
 static void uart_nrfx_irq_callback_set(const struct device *dev,
 				       uart_irq_callback_user_data_t cb,
@@ -1044,7 +1038,7 @@ static int uart_nrfx_init(const struct device *dev)
 /* Common function: uart_nrfx_irq_tx_ready_complete is used for two API entries
  * because Nordic hardware does not distinguish between them.
  */
-static const struct uart_driver_api uart_nrfx_uart_driver_api = {
+static DEVICE_API(uart, uart_nrfx_uart_driver_api) = {
 #ifdef CONFIG_UART_0_ASYNC
 	.callback_set	  = uart_nrfx_callback_set,
 	.tx		  = uart_nrfx_tx,
@@ -1073,7 +1067,6 @@ static const struct uart_driver_api uart_nrfx_uart_driver_api = {
 	.irq_err_enable   = uart_nrfx_irq_err_enable,
 	.irq_err_disable  = uart_nrfx_irq_err_disable,
 	.irq_is_pending   = uart_nrfx_irq_is_pending,
-	.irq_update       = uart_nrfx_irq_update,
 	.irq_callback_set = uart_nrfx_irq_callback_set,
 #endif /* CONFIG_UART_0_INTERRUPT_DRIVEN */
 };

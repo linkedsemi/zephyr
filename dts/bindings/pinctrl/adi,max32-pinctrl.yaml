@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  MAX32 Pin controller Node
-  Based on pincfg-node.yaml binding.
+  MAX32 Pin Controller
 
+  Based on pincfg-node.yaml binding.
   Note: `bias-disable`  are default pin configurations.
 
 compatible: "adi,max32-pinctrl"
@@ -32,6 +32,7 @@ child-binding:
         - output-enable
         - power-source
         - drive-strength
+        - low-power-enable
 
   properties:
     pinmux:
@@ -58,11 +59,11 @@ child-binding:
         This macro is available here:
           -include/zephyr/dt-bindings/pinctrl/max32-pinctrl.h
         Some examples of macro usage:
-        P0.9 set as alernate function 1
+        P0.9 set as alternate function 1
         {
           pinmux = <MAX32_PINMUX(0, 9, AF1)>;
         };
-        P0.9 set as alernate function 2
+        P0.9 set as alternate function 2
         {
           pinmux = <MAX32_PINMUX(0, 9, AF2)>;
         };

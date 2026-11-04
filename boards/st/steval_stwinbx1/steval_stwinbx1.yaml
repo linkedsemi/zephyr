@@ -5,12 +5,12 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-ram: 786
+ram: 768
 flash: 2048
 supported:
   - counter
   - gpio
   - pwm
   - watchdog
-  - ble
+  - bluetooth
 vendor: st

@@ -6,7 +6,7 @@
 
 /dts-v1/;
 
-#include <rpi_pico/rp2040.dtsi>
+#include <raspberrypi/rpi_pico/rp2040.dtsi>
 #include "sparkfun_pro_micro_rp2040-pinctrl.dtsi"
 #include "sparkfun_pro_micro_connector.dtsi"
 #include <freq.h>
@@ -32,25 +32,27 @@
 	 * the second stage bootloader
 	 */
 	reg = <0x10000000 DT_SIZE_M(16)>;
+	ranges = <0x0 0x10000000 DT_SIZE_M(16)>;
 
 	partitions {
-		compatible = "fixed-partitions";
+		ranges;
 		#address-cells = <1>;
 		#size-cells = <1>;
 
 		/* Reserved memory for the second stage bootloader */
 		second_stage_bootloader: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "second_stage_bootloader";
 			reg = <0x00000000 0x100>;
 			read-only;
 		};
-
 
 		/*
 		 * Usable flash. Starts at 0x100, after the bootloader. The partition
 		 * size is 16MB minus the 0x100 bytes taken by the bootloader.
 		 */
 		code_partition: partition@100 {
+			compatible = "zephyr,mapped-partition";
 			label = "code-partition";
 			reg = <0x100 (DT_SIZE_M(16) - 0x100)>;
 			read-only;
@@ -58,16 +60,18 @@
 	};
 };
 
-&clocks {
-	pinctrl-0 = <&clocks_default>;
-	pinctrl-names = "default";
-};
-
 &uart0 {
 	current-speed = <115200>;
 	status = "okay";
 	pinctrl-0 = <&uart0_default>;
 	pinctrl-names = "default";
+};
+
+zephyr_i2c: &i2c0 {
+	status = "okay";
+	pinctrl-0 = <&i2c0_default>;
+	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
 &i2c1 {
@@ -126,6 +130,5 @@ zephyr_udc0: &usbd {
 };
 
 &vreg {
-	regulator-always-on;
-	regulator-allowed-modes = <REGULATOR_RPI_PICO_MODE_NORMAL>;
+	status = "okay";
 };

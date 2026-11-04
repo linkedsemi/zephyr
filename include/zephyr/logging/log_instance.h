@@ -3,6 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Header file for log instance registration.
+ * @ingroup log_api
+ */
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_INSTANCE_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_INSTANCE_H_
 
@@ -13,34 +20,34 @@
 extern "C" {
 #endif
 
+/** @cond INTERNAL_HIDDEN */
+
 /** @brief Constant data associated with the source of log messages. */
 struct log_source_const_data {
 	const char *name;
 	uint8_t level;
-#ifdef CONFIG_NIOS2
-	/* Workaround alert! Dummy data to ensure that structure is >8 bytes.
-	 * Nios2 uses global pointer register for structures <=8 bytes and
-	 * apparently does not handle well variables placed in custom sections.
-	 */
-	uint32_t dummy;
-#endif
 };
 
 /** @brief Dynamic data associated with the source of log messages. */
 struct log_source_dynamic_data {
 	uint32_t filters;
-#ifdef CONFIG_NIOS2
-	/* Workaround alert! Dummy data to ensure that structure is >8 bytes.
-	 * Nios2 uses global pointer register for structures <=8 bytes and
-	 * apparently does not handle well variables placed in custom sections.
-	 */
-	uint32_t dummy[2];
-#endif
 #if defined(CONFIG_64BIT)
 	/* Workaround: Ensure that structure size is a multiple of 8 bytes. */
 	uint32_t dummy_64;
 #endif
 };
+
+/** @endcond */
+
+/**
+ * @addtogroup log_api
+ * @{
+ */
+
+/**
+ * @name Instance registration
+ * @{
+ */
 
 /** @internal
  *
@@ -173,6 +180,10 @@ struct log_source_dynamic_data {
  */
 #define LOG_INSTANCE_REGISTER(_module_name, _inst_name, _level) \
 	IF_ENABLED(CONFIG_LOG, (Z_LOG_INSTANCE_REGISTER(_module_name, _inst_name, _level)))
+
+/** @} */
+
+/** @} */
 
 #ifdef __cplusplus
 }

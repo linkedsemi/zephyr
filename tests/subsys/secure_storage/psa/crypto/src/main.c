@@ -2,13 +2,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <zephyr/ztest.h>
+#include <zephyr/psa/key_ids.h>
+#include <zephyr/sys/util.h>
 #include <psa/crypto.h>
 #include <psa/internal_trusted_storage.h>
 #include <psa/protected_storage.h>
 
 ZTEST_SUITE(secure_storage_psa_crypto, NULL, NULL, NULL, NULL, NULL);
 
-#define ID       PSA_KEY_ID_USER_MIN
+#define ID       ZEPHYR_PSA_APPLICATION_KEY_ID_RANGE_BEGIN
 #define KEY_TYPE PSA_KEY_TYPE_AES
 #define ALG      PSA_ALG_CBC_NO_PADDING
 #define KEY_BITS 256
@@ -22,6 +24,16 @@ static void fill_key_attributes(psa_key_attributes_t *key_attributes)
 	psa_set_key_type(key_attributes, KEY_TYPE);
 	psa_set_key_algorithm(key_attributes, ALG);
 	psa_set_key_bits(key_attributes, KEY_BITS);
+}
+
+static void compare_key_attributes(const psa_key_attributes_t *l, const psa_key_attributes_t *r)
+{
+	zassert_equal(psa_get_key_lifetime(l), psa_get_key_lifetime(r));
+	zassert_equal(psa_get_key_usage_flags(l), psa_get_key_usage_flags(r));
+	zassert_equal(psa_get_key_id(l), psa_get_key_id(r));
+	zassert_equal(psa_get_key_type(l), psa_get_key_type(r));
+	zassert_equal(psa_get_key_algorithm(l), psa_get_key_algorithm(r));
+	zassert_equal(psa_get_key_bits(l), psa_get_key_bits(r));
 }
 
 static void fill_data(uint8_t *data, size_t size)
@@ -75,7 +87,7 @@ ZTEST(secure_storage_psa_crypto, test_its_caller_isolation)
 
 	ret = psa_get_key_attributes(ID, &retrieved_key_attributes);
 	zassert_equal(ret, PSA_SUCCESS);
-	zassert_mem_equal(&retrieved_key_attributes, &key_attributes, sizeof(key_attributes));
+	compare_key_attributes(&retrieved_key_attributes, &key_attributes);
 	ret = psa_destroy_key(ID);
 	zassert_equal(ret, PSA_SUCCESS);
 	ret = psa_get_key_attributes(ID, &retrieved_key_attributes);
@@ -87,7 +99,7 @@ ZTEST(secure_storage_psa_crypto, test_persistent_key_usage)
 	psa_status_t ret;
 	psa_key_attributes_t key_attributes;
 	psa_key_id_t key_id;
-	uint8_t key_material[KEY_BITS / 8];
+	uint8_t key_material[KEY_BITS / BITS_PER_BYTE];
 
 	fill_key_attributes(&key_attributes);
 	fill_data(key_material, sizeof(key_material));

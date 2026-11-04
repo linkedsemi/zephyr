@@ -5,10 +5,11 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 128
 flash: 1024
 supported:
   - counter
+  - netif:eth
+  - ptp_clock
   - usb_device
 vendor: olimex

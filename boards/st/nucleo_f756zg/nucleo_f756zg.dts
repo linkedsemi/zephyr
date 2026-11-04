@@ -32,14 +32,17 @@
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led: led_0 {
 			gpios = <&gpiob 0 GPIO_ACTIVE_HIGH>;
 			label = "User LD1";
 		};
+
 		blue_led: led_1 {
 			gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
 		};
+
 		red_led: led_2 {
 			gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
 			label = "User LD3";
@@ -48,6 +51,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button_0 {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -117,6 +121,8 @@ zephyr_udc0: &usbotg_fs {
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -141,29 +147,53 @@ zephyr_udc0: &usbotg_fs {
 
 &mac {
 	status = "okay";
-	pinctrl-0 = <&eth_mdc_pc1
-		     &eth_rxd0_pc4
+	pinctrl-0 = <&eth_rxd0_pc4
 		     &eth_rxd1_pc5
 		     &eth_ref_clk_pa1
-		     &eth_mdio_pa2
 		     &eth_crs_dv_pa7
 		     &eth_tx_en_pg11
 		     &eth_txd0_pg13
 		     &eth_txd1_pb13>;
 	pinctrl-names = "default";
+	phy-connection-type = "rmii";
+	phy-handle = <&eth_phy>;
+};
+
+&mdio {
+	status = "okay";
+	pinctrl-0 = <&eth_mdio_pa2 &eth_mdc_pc1>;
+	pinctrl-names = "default";
+
+	eth_phy: ethernet-phy@0 {
+		compatible = "ethernet-phy";
+		reg = <0x00>;
+	};
+};
+
+&hash {
+	status = "okay";
+};
+
+&cryp {
+	status = "okay";
+};
+
+&rng {
+	status = "okay";
 };
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 
 		/*
 		 * 256KB for bootloader. This is too large but
 		 * there is no way to make the part smaller.
 		 */
 		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "mcuboot";
 			reg = <0x00000000 DT_SIZE_K(256)>;
 			read-only;
@@ -171,21 +201,23 @@ zephyr_udc0: &usbotg_fs {
 
 		/* application image slot: 256KB */
 		slot0_partition: partition@40000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x00040000 DT_SIZE_K(256)>;
 		};
 
 		/* backup slot: 256KB */
 		slot1_partition: partition@80000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
 			reg = <0x00080000 DT_SIZE_K(256)>;
 		};
 
 		/* scratch slot: 256KB */
-		scratch_partition: partition@C0000 {
+		scratch_partition: partition@c0000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-scratch";
-			reg = <0x000C0000 DT_SIZE_K(256)>;
+			reg = <0x000c0000 DT_SIZE_K(256)>;
 		};
-
 	};
 };

@@ -61,6 +61,8 @@ High-level calls accessed through device-specific APIs, such as
 :file:`i2c.h` or :file:`spi.h`, are usually intended as synchronous. Thus,
 these calls should be blocking.
 
+.. _device_driver_api:
+
 Driver APIs
 ***********
 
@@ -68,20 +70,27 @@ The following APIs for device drivers are provided by :file:`device.h`. The APIs
 are intended for use in device drivers only and should not be used in
 applications.
 
-:c:func:`DEVICE_DEFINE()`
+:c:macro:`DEVICE_DEFINE()`
    Create device object and related data structures including setting it
    up for boot-time initialization.
 
-:c:func:`DEVICE_NAME_GET()`
+:c:macro:`DEVICE_NAME_GET()`
    Converts a device identifier to the global identifier for a device
    object.
 
-:c:func:`DEVICE_GET()`
+:c:macro:`DEVICE_GET()`
    Obtain a pointer to a device object by name.
 
-:c:func:`DEVICE_DECLARE()`
+:c:macro:`DEVICE_DECLARE()`
    Declare a device object.  Use this when you need a forward reference
    to a device that has not yet been defined.
+
+:c:macro:`DEVICE_API()`
+   Wrap a driver API declaration to assign it to its respective linker section.
+   Use of this macro is mandatory for any driver implementing an upstream driver
+   class, as :c:macro:`DEVICE_API_GET` and :c:macro:`DEVICE_API_IS` rely on API
+   instances being placed in their class linker section to validate the device's
+   API class at runtime.
 
 .. _device_struct:
 
@@ -97,8 +106,8 @@ split into read-only and runtime-mutable parts. At a high level we have:
   struct device {
 	const char *name;
 	const void *config;
-        const void *api;
-        void * const data;
+	const void *api;
+	void * const data;
   };
 
 The ``config`` member is for read-only configuration data set at build time. For
@@ -122,6 +131,11 @@ Most drivers will be implementing a device-independent subsystem API.
 Applications can simply program to that generic API, and application
 code is not specific to any particular driver implementation.
 
+Driver API instances must be declared with :c:macro:`DEVICE_API()` so that they
+are assigned to their respective API linker section. This is required for
+:c:macro:`DEVICE_API_GET` and :c:macro:`DEVICE_API_IS` to validate at runtime
+that a device's API belongs to the expected class.
+
 A subsystem API definition typically looks like this:
 
 .. code-block:: C
@@ -129,29 +143,24 @@ A subsystem API definition typically looks like this:
   typedef int (*subsystem_do_this_t)(const struct device *dev, int foo, int bar);
   typedef void (*subsystem_do_that_t)(const struct device *dev, void *baz);
 
-  struct subsystem_api {
+  __subsystem struct subsystem_driver_api {
         subsystem_do_this_t do_this;
         subsystem_do_that_t do_that;
   };
 
   static inline int subsystem_do_this(const struct device *dev, int foo, int bar)
   {
-        struct subsystem_api *api;
-
-        api = (struct subsystem_api *)dev->api;
-        return api->do_this(dev, foo, bar);
+        return DEVICE_API_GET(subsystem, dev)->do_this(dev, foo, bar);
   }
 
   static inline void subsystem_do_that(const struct device *dev, void *baz)
   {
-        struct subsystem_api *api;
-
-        api = (struct subsystem_api *)dev->api;
-        api->do_that(dev, baz);
+        DEVICE_API_GET(subsystem, dev)->do_that(dev, baz);
   }
 
 A driver implementing a particular subsystem will define the real implementation
-of these APIs, and populate an instance of subsystem_api structure:
+of these APIs, and populate an instance of subsystem_driver_api structure using
+the :c:macro:`DEVICE_API()` wrapper:
 
 .. code-block:: C
 
@@ -165,9 +174,9 @@ of these APIs, and populate an instance of subsystem_api structure:
         ...
   }
 
-  static struct subsystem_api my_driver_api_funcs = {
+  static DEVICE_API(subsystem, my_driver_api_funcs) = {
         .do_this = my_driver_do_this,
-        .do_that = my_driver_do_that
+        .do_that = my_driver_do_that,
   };
 
 The driver would then pass ``my_driver_api_funcs`` as the ``api`` argument to
@@ -181,6 +190,56 @@ The driver would then pass ``my_driver_api_funcs`` as the ``api`` argument to
         them. Providing for link-time size optimizations with driver APIs in
         most cases requires that the optional feature be controlled by a
         Kconfig option.
+
+API Class Inheritance
+*********************
+
+A subsystem API can extend another subsystem API, forming a parent-child
+relationship. This allows a device implementing the child API to also be
+recognized as implementing the parent API. For example, an I3C controller
+extends the I2C API, so it can be used wherever an I2C device is expected.
+
+To define a child API, embed the parent API struct as the **first member** of
+the child struct and declare the relationship with :c:macro:`DEVICE_API_EXTENDS`:
+
+.. code-block:: C
+
+  __subsystem struct child_driver_api {
+        struct subsystem_driver_api parent_api;
+        child_do_extra_t do_extra;
+  };
+
+  DEVICE_API_EXTENDS(child, subsystem, parent_api);
+
+A driver implementing the child API populates both the parent and child
+methods:
+
+.. code-block:: C
+
+  static DEVICE_API(child, my_child_api) = {
+        .parent_api = {
+                .do_this = my_child_do_this,
+                .do_that = my_child_do_that,
+        },
+        .do_extra = my_child_do_extra,
+  };
+
+With this in place, :c:macro:`DEVICE_API_IS` returns true for both the child
+and parent classes, and :c:macro:`DEVICE_API_GET` can retrieve the API as
+either type:
+
+.. code-block:: C
+
+  /* Both return true for a child device */
+  DEVICE_API_IS(subsystem, dev);
+  DEVICE_API_IS(child, dev);
+
+  /* Access through parent API */
+  DEVICE_API_GET(subsystem, dev)->do_this(dev, foo, bar);
+
+Multi-level inheritance is supported (e.g. grandchild extends child extends
+parent). Sibling relationships also work correctly: two different child APIs
+extending the same parent are distinguished by :c:macro:`DEVICE_API_IS`.
 
 Device-Specific API Extensions
 ******************************
@@ -249,12 +308,6 @@ implementation of both the subsystem API and the specific APIs:
 
 Applications use the device through both the subsystem and specific
 APIs.
-
-.. note::
-   Public API for device-specific extensions should be prefixed with the
-   compatible for the device to which it applies.  For example, if
-   adding special functions to support the Maxim DS3231 the identifier
-   fragment ``specific`` in the examples above would be ``maxim_ds3231``.
 
 Single Driver, Multiple Instances
 *********************************
@@ -340,7 +393,7 @@ Initialization Levels
 Drivers may depend on other drivers being initialized first, or require
 the use of kernel services. :c:func:`DEVICE_DEFINE()` and related APIs
 allow the user to specify at what time during the boot sequence the init
-function will be executed. Any driver will specify one of four
+function will be executed. Any driver will specify one of three
 initialization levels:
 
 ``PRE_KERNEL_1``
@@ -363,7 +416,7 @@ initialization levels:
 
 Within each initialization level you may specify a priority level, relative to
 other devices in the same initialization level. The priority level is specified
-as an integer value in the range 0 to 99; lower values indicate earlier
+as an integer value in the range 0 to 999; lower values indicate earlier
 initialization.  The priority level must be a decimal integer literal without
 leading zeroes or sign (e.g. 32), or an equivalent symbolic name (e.g.
 ``\#define MY_INIT_PRIO 32``); symbolic expressions are *not* permitted (e.g.
@@ -423,9 +476,7 @@ assertions.
 
 When it is appropriate to return error conditions for the caller to
 check, 0 should be returned on success and a POSIX :file:`errno.h` code
-returned on failure.  See
-https://github.com/zephyrproject-rtos/zephyr/wiki/Naming-Conventions#return-codes
-for details about this.
+returned on failure. See :c:group:`system_errno` for details about this.
 
 Memory Mapping
 **************
@@ -587,7 +638,7 @@ would be in the driver config struct:
 Drivers that do not use Zephyr Device Model
 ===========================================
 
-Some drivers or driver-like code may not user Zephyr's device model,
+Some drivers or driver-like code may not use Zephyr's device model,
 and alternative storage must be arranged for the MMIO data. An
 example of this are timer drivers, or interrupt controller code.
 

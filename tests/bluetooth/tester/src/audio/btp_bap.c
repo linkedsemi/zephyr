@@ -2,29 +2,37 @@
 
 /*
  * Copyright (c) 2023 Codecoup
+ * Copyright (c) 2024 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-
+#include <stdbool.h>
+#include <stdint.h>
 #include <stddef.h>
-#include <errno.h>
 
-#include <zephyr/types.h>
-#include <zephyr/kernel.h>
-#include <zephyr/sys/ring_buffer.h>
+#include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/assigned_numbers.h>
+#include <zephyr/bluetooth/audio/audio.h>
+#include <zephyr/bluetooth/audio/lc3.h>
 #include <zephyr/bluetooth/audio/pacs.h>
 #include <zephyr/bluetooth/audio/bap_lc3_preset.h>
-#include <hci_core.h>
-
+#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/types.h>
 #include <zephyr/sys/byteorder.h>
-#define LOG_MODULE_NAME bttester_bap
-LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_BTTESTER_LOG_LEVEL);
+
 #include "btp/btp.h"
 #include "btp_bap_audio_stream.h"
 #include "btp_bap_unicast.h"
 #include "btp_bap_broadcast.h"
+
+#include <hci_core.h>
+
+#define LOG_MODULE_NAME bttester_bap
+LOG_MODULE_REGISTER(LOG_MODULE_NAME, CONFIG_BTTESTER_LOG_LEVEL);
 
 #define SUPPORTED_SINK_CONTEXT	BT_AUDIO_CONTEXT_TYPE_ANY
 #define SUPPORTED_SOURCE_CONTEXT BT_AUDIO_CONTEXT_TYPE_ANY
@@ -64,10 +72,11 @@ static uint8_t btp_ascs_supported_commands(const void *cmd, uint16_t cmd_len,
 {
 	struct btp_ascs_read_supported_commands_rp *rp = rsp;
 
-	/* octet 0 */
-	tester_set_bit(rp->data, BTP_ASCS_READ_SUPPORTED_COMMANDS);
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
 
-	*rsp_len = sizeof(*rp) + 1;
+	*rsp_len = tester_supported_commands(BTP_SERVICE_ID_ASCS, rp->data);
+	*rsp_len += sizeof(*rp);
 
 	return BTP_STATUS_SUCCESS;
 }
@@ -195,14 +204,11 @@ static uint8_t pacs_supported_commands(const void *cmd, uint16_t cmd_len,
 {
 	struct btp_pacs_read_supported_commands_rp *rp = rsp;
 
-	/* octet 0 */
-	tester_set_bit(rp->data, BTP_PACS_READ_SUPPORTED_COMMANDS);
-	tester_set_bit(rp->data, BTP_PACS_UPDATE_CHARACTERISTIC);
-	tester_set_bit(rp->data, BTP_PACS_SET_LOCATION);
-	tester_set_bit(rp->data, BTP_PACS_SET_AVAILABLE_CONTEXTS);
-	tester_set_bit(rp->data, BTP_PACS_SET_SUPPORTED_CONTEXTS);
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
 
-	*rsp_len = sizeof(*rp) + 1;
+	*rsp_len = tester_supported_commands(BTP_SERVICE_ID_PACS, rp->data);
+	*rsp_len += sizeof(*rp);
 
 	return BTP_STATUS_SUCCESS;
 }
@@ -212,6 +218,10 @@ static uint8_t pacs_update_characteristic(const void *cmd, uint16_t cmd_len,
 {
 	const struct btp_pacs_update_characteristic_cmd *cp = cmd;
 	int err;
+
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
 
 	switch (cp->characteristic) {
 	case BTP_PACS_CHARACTERISTIC_SINK_PAC:
@@ -255,6 +265,10 @@ static uint8_t pacs_set_location(const void *cmd, uint16_t cmd_len,
 	const struct btp_pacs_set_location_cmd *cp = cmd;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	err = bt_pacs_set_location((enum bt_audio_dir)cp->dir,
 				   (enum bt_audio_location)cp->location);
 
@@ -267,9 +281,13 @@ static uint8_t pacs_set_available_contexts(const void *cmd, uint16_t cmd_len,
 	const struct btp_pacs_set_available_contexts_cmd *cp = cmd;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	err = bt_pacs_set_available_contexts(BT_AUDIO_DIR_SINK,
 					     (enum bt_audio_context)cp->sink_contexts);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 	err = bt_pacs_set_available_contexts(BT_AUDIO_DIR_SOURCE,
@@ -284,9 +302,13 @@ static uint8_t pacs_set_supported_contexts(const void *cmd, uint16_t cmd_len,
 	const struct btp_pacs_set_supported_contexts_cmd *cp = cmd;
 	int err;
 
+	ARG_UNUSED(cmd_len);
+	ARG_UNUSED(rsp);
+	ARG_UNUSED(rsp_len);
+
 	err = bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SINK,
 					     (enum bt_audio_context)cp->sink_contexts);
-	if (err) {
+	if (err != 0) {
 		return BTP_STATUS_FAILED;
 	}
 	err = bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SOURCE,
@@ -329,10 +351,29 @@ static uint8_t btp_bap_supported_commands(const void *cmd, uint16_t cmd_len,
 {
 	struct btp_bap_read_supported_commands_rp *rp = rsp;
 
-	/* octet 0 */
-	tester_set_bit(rp->data, BTP_BAP_READ_SUPPORTED_COMMANDS);
+	ARG_UNUSED(cmd);
+	ARG_UNUSED(cmd_len);
 
-	*rsp_len = sizeof(*rp) + 1;
+	*rsp_len = tester_supported_commands(BTP_SERVICE_ID_BAP, rp->data);
+	*rsp_len += sizeof(*rp);
+
+	return BTP_STATUS_SUCCESS;
+}
+
+uint8_t btp_bap_audio_stream_send(const void *cmd, uint16_t cmd_len, void *rsp, uint16_t *rsp_len)
+{
+	struct btp_bap_send_rp *rp = rsp;
+	const struct btp_bap_send_cmd *cp = cmd;
+
+	if ((cmd_len < sizeof(*cp)) || (cmd_len != sizeof(*cp) + cp->data_len)) {
+		return BTP_STATUS_FAILED;
+	}
+
+	/* Always send dummy success for now until the command has be deprecated
+	 * https://github.com/auto-pts/auto-pts/issues/1317
+	 */
+	rp->data_len = cp->data_len;
+	*rsp_len = sizeof(*rp);
 
 	return BTP_STATUS_SUCCESS;
 }
@@ -354,11 +395,21 @@ static const struct btp_handler bap_handlers[] = {
 		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
 		.func = btp_bap_audio_stream_send,
 	},
-#if defined(CONFIG_BT_BAP_BROADCAST_SINK) || defined(CONFIG_BT_BAP_BROADCAST_SINK)
+#if defined(CONFIG_BT_BAP_BROADCAST_SOURCE) || defined(CONFIG_BT_BAP_BROADCAST_SINK)
 	{
 		.opcode = BTP_BAP_BROADCAST_SOURCE_SETUP,
 		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
 		.func = btp_bap_broadcast_source_setup,
+	},
+	{
+		.opcode = BTP_BAP_BROADCAST_SOURCE_SETUP_V2,
+		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
+		.func = btp_bap_broadcast_source_setup_v2,
+	},
+	{
+		.opcode = BTP_BAP_BROADCAST_SOURCE_RECONFIGURE,
+		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
+		.func = btp_bap_broadcast_source_reconfigure,
 	},
 	{
 		.opcode = BTP_BAP_BROADCAST_SOURCE_RELEASE,
@@ -387,7 +438,7 @@ static const struct btp_handler bap_handlers[] = {
 	},
 	{
 		.opcode = BTP_BAP_BROADCAST_SINK_SETUP,
-		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
+		.expect_len = sizeof(struct btp_bap_broadcast_sink_setup_cmd),
 		.func = btp_bap_broadcast_sink_setup,
 	},
 	{
@@ -456,23 +507,73 @@ static const struct btp_handler bap_handlers[] = {
 		.func = btp_bap_broadcast_assistant_set_broadcast_code,
 	},
 	{
+		.opcode = BTP_BAP_BROADCAST_SINK_SET_BROADCAST_CODE,
+		.expect_len = sizeof(struct btp_bap_broadcast_sink_set_broadcast_code_cmd),
+		.func = btp_bap_set_sink_broadcast_code,
+	},
+	{
 		.opcode = BTP_BAP_SEND_PAST,
 		.expect_len = sizeof(struct btp_bap_send_past_cmd),
 		.func = btp_bap_broadcast_assistant_send_past,
 	},
-#endif /* CONFIG_BT_BAP_BROADCAST_SINK || CONFIG_BT_BAP_BROADCAST_SINK */
+	{
+		.opcode = BTP_BAP_SCAN_DELEGATOR_ADD_SRC,
+		.expect_len = BTP_HANDLER_LENGTH_VARIABLE,
+		.func = btp_bap_scan_delegator_add_src,
+	},
+#endif /* CONFIG_BT_BAP_BROADCAST_SOURCE || CONFIG_BT_BAP_BROADCAST_SINK */
 };
 
 uint8_t tester_init_pacs(void)
 {
+	const struct bt_pacs_register_param pacs_param = {
+#if defined(CONFIG_BT_PAC_SNK)
+		.snk_pac = true,
+#endif /* CONFIG_BT_PAC_SNK */
+#if defined(CONFIG_BT_PAC_SNK_LOC)
+		.snk_loc = true,
+#endif /* CONFIG_BT_PAC_SNK_LOC */
+#if defined(CONFIG_BT_PAC_SRC)
+		.src_pac = true,
+#endif /* CONFIG_BT_PAC_SRC */
+#if defined(CONFIG_BT_PAC_SRC_LOC)
+		.src_loc = true,
+#endif /* CONFIG_BT_PAC_SRC_LOC */
+	};
 	int err;
+
+	/* PACS shall be registered before ASCS in btp_bap_unicast_init */
+	err = bt_pacs_register(&pacs_param);
+	if (err != 0) {
+		LOG_DBG("Failed to register client callbacks: %d", err);
+		return BTP_STATUS_FAILED;
+	}
 
 	btp_bap_unicast_init();
 
-	bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &cap_sink);
-	bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &cap_source);
-	bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &vendor_cap_sink);
-	bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &vendor_cap_source);
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &cap_sink);
+	if (err != 0) {
+		LOG_DBG("Failed to register sink capabilities: %d", err);
+		return BTP_STATUS_FAILED;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &cap_source);
+	if (err != 0) {
+		LOG_DBG("Failed to register source capabilities: %d", err);
+		return BTP_STATUS_FAILED;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &vendor_cap_sink);
+	if (err != 0) {
+		LOG_DBG("Failed to register vendor sink capabilities: %d", err);
+		return BTP_STATUS_FAILED;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &vendor_cap_source);
+	if (err != 0) {
+		LOG_DBG("Failed to register vendor source capabilities: %d", err);
+		return BTP_STATUS_FAILED;
+	}
 
 	err = set_location();
 	if (err != 0) {
@@ -534,7 +635,7 @@ uint8_t tester_init_bap(void)
 		return BTP_STATUS_FAILED;
 	}
 
-	btp_bap_audio_stream_init_send_worker();
+	btp_bap_audio_stream_tx_init();
 
 	tester_register_command_handlers(BTP_SERVICE_ID_BAP, bap_handlers,
 					 ARRAY_SIZE(bap_handlers));

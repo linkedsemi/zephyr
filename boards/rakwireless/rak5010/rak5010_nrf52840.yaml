@@ -7,10 +7,9 @@ ram: 256
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - adc
-  - ble
+  - bluetooth
   - counter
   - gpio
   - i2c

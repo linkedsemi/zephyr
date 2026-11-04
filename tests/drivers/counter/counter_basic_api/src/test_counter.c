@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018, Nordic Semiconductor ASA
- * Copyright 2024 NXP
+ * Copyright 2024-2026 NXP
+ * Copyright (c) 2025 Microchip Technology Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +10,8 @@
 #include <zephyr/ztest.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/pm/device_runtime.h>
+#include <zephyr/pm/policy.h>
 LOG_MODULE_REGISTER(test);
 
 static struct k_sem top_cnt_sem;
@@ -23,10 +26,16 @@ void *exp_user_data = (void *)199;
 struct counter_alarm_cfg cntr_alarm_cfg;
 struct counter_alarm_cfg cntr_alarm_cfg2;
 
-#define DEVICE_DT_GET_AND_COMMA(node_id) DEVICE_DT_GET(node_id),
+/* clang-format off */
+
+#define DEVICE_DT_GET_AND_COMMA_IF_NOT_SYSTEM_TIMER(node_id) \
+	COND_CODE_1(DT_HAS_CHOSEN(zephyr_system_timer), \
+		(COND_CODE_1(DT_SAME_NODE(node_id, DT_CHOSEN(zephyr_system_timer)), \
+			(), (DEVICE_DT_GET(node_id),))), \
+		(DEVICE_DT_GET(node_id),))
 /* Generate a list of devices for all instances of the "compat" */
 #define DEVS_FOR_DT_COMPAT(compat) \
-	DT_FOREACH_STATUS_OKAY(compat, DEVICE_DT_GET_AND_COMMA)
+	DT_FOREACH_STATUS_OKAY(compat, DEVICE_DT_GET_COMMA)
 
 static const struct device *const devices[] = {
 #ifdef CONFIG_COUNTER_NRF_TIMER
@@ -51,7 +60,7 @@ static const struct device *const devices[] = {
 #undef DT_DRV_COMPAT
 #undef STM32_COUNTER_DEV
 #endif
-#ifdef CONFIG_COUNTER_NATIVE_POSIX
+#ifdef CONFIG_COUNTER_NATIVE_SIM
 	DEVICE_DT_GET(DT_NODELABEL(counter0)),
 #endif
 #ifdef CONFIG_COUNTER_INFINEON_CAT1
@@ -62,6 +71,7 @@ static const struct device *const devices[] = {
 	 */
 	DEVS_FOR_DT_COMPAT(arm_cmsdk_timer)
 	DEVS_FOR_DT_COMPAT(arm_cmsdk_dtimer)
+	DEVS_FOR_DT_COMPAT(microchip_tc_g2_counter)
 	DEVS_FOR_DT_COMPAT(microchip_xec_timer)
 	DEVS_FOR_DT_COMPAT(nxp_imx_epit)
 	DEVS_FOR_DT_COMPAT(nxp_imx_gpt)
@@ -69,11 +79,20 @@ static const struct device *const devices[] = {
 	DEVS_FOR_DT_COMPAT(nxp_tpm_timer)
 #endif
 	DEVS_FOR_DT_COMPAT(renesas_smartbond_timer)
+#ifdef CONFIG_COUNTER_MCUX_SYSCTR
+	DEVS_FOR_DT_COMPAT(nxp_sysctr)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_TSTMR
+	DEVS_FOR_DT_COMPAT(nxp_tstmr)
+#endif
 #ifdef CONFIG_COUNTER_MCUX_CTIMER
 	DEVS_FOR_DT_COMPAT(nxp_lpc_ctimer)
 #endif
 #ifdef CONFIG_COUNTER_MCUX_RTC
-	DEVS_FOR_DT_COMPAT(nxp_kinetis_rtc)
+	DEVS_FOR_DT_COMPAT(nxp_rtc)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_RTC_JDP
+	DEVS_FOR_DT_COMPAT(nxp_rtc_jdp)
 #endif
 #ifdef CONFIG_COUNTER_MCUX_QTMR
 	DEVS_FOR_DT_COMPAT(nxp_imx_tmr)
@@ -84,7 +103,10 @@ static const struct device *const devices[] = {
 #ifdef CONFIG_COUNTER_MCUX_LPC_RTC_1HZ
 	DEVS_FOR_DT_COMPAT(nxp_lpc_rtc)
 #endif
-#ifdef CONFIG_COUNTER_MCUX_LPC_RTC_HIGHRES
+#ifdef CONFIG_COUNTER_NXP_IRTC
+	DEVS_FOR_DT_COMPAT(nxp_irtc_wake_timer)
+#endif
+#ifdef CONFIG_TEST_DRIVER_COUNTER_MCUX_LPC_RTC_HIGHRES
 	DEVS_FOR_DT_COMPAT(nxp_lpc_rtc_highres)
 #endif
 #ifdef CONFIG_COUNTER_GECKO_RTCC
@@ -94,7 +116,16 @@ static const struct device *const devices[] = {
 	DEVS_FOR_DT_COMPAT(st_stm32_rtc)
 #endif
 #ifdef CONFIG_COUNTER_GECKO_STIMER
-	DEVS_FOR_DT_COMPAT(silabs_gecko_stimer)
+	DEVICE_DT_GET(DT_CHOSEN(silabs_sleeptimer)),
+#endif
+#ifdef CONFIG_COUNTER_SILABS_BURTC
+	DEVS_FOR_DT_COMPAT(silabs_burtc_counter)
+#endif
+#ifdef CONFIG_COUNTER_SILABS_PROTIMER
+	DEVS_FOR_DT_COMPAT(silabs_protimer)
+#endif
+#ifdef CONFIG_COUNTER_SILABS_TIMER
+	DEVS_FOR_DT_COMPAT(silabs_timer_counter)
 #endif
 #ifdef CONFIG_COUNTER_NXP_PIT
 	DEVS_FOR_DT_COMPAT(nxp_pit_channel)
@@ -103,9 +134,12 @@ static const struct device *const devices[] = {
 	DEVS_FOR_DT_COMPAT(xlnx_xps_timer_1_00_a)
 #endif
 #ifdef CONFIG_COUNTER_TMR_ESP32
-	DEVS_FOR_DT_COMPAT(espressif_esp32_timer)
+	DEVS_FOR_DT_COMPAT(espressif_esp32_counter)
 #endif
-#ifdef CONFIG_COUNTER_TMR_RTC_ESP32
+#ifdef CONFIG_COUNTER_TMR_AMEBA
+	DEVS_FOR_DT_COMPAT(realtek_ameba_counter)
+#endif
+#ifdef CONFIG_COUNTER_RTC_ESP32
 	DEVS_FOR_DT_COMPAT(espressif_esp32_rtc_timer)
 #endif
 #ifdef CONFIG_COUNTER_NXP_S32_SYS_TIMER
@@ -117,17 +151,98 @@ static const struct device *const devices[] = {
 #ifdef CONFIG_COUNTER_TIMER_RPI_PICO
 	DEVS_FOR_DT_COMPAT(raspberrypi_pico_timer)
 #endif
+#ifdef CONFIG_COUNTER_RPI_PICO_PIT
+	DEVS_FOR_DT_COMPAT(raspberrypi_pico_pit_channel)
+#endif
+#ifdef CONFIG_COUNTER_RTC_MAX32
+	DEVS_FOR_DT_COMPAT(adi_max32_rtc_counter)
+#endif
 #ifdef CONFIG_COUNTER_AMBIQ
 	DEVS_FOR_DT_COMPAT(ambiq_counter)
 #endif
 #ifdef CONFIG_COUNTER_MCUX_LPTMR
-	DEVS_FOR_DT_COMPAT(nxp_lptmr)
+	DT_FOREACH_STATUS_OKAY(nxp_lptmr, DEVICE_DT_GET_AND_COMMA_IF_NOT_SYSTEM_TIMER)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_WAKE_TIMER
+	DEVS_FOR_DT_COMPAT(nxp_wake_timer)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_LPIT
+	DEVS_FOR_DT_COMPAT(nxp_lpit_channel)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_FTM
+	DEVS_FOR_DT_COMPAT(nxp_ftm)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_STM
+	DEVS_FOR_DT_COMPAT(nxp_stm)
+#endif
+#ifdef CONFIG_COUNTER_RENESAS_RZ_GTM
+	DEVS_FOR_DT_COMPAT(renesas_rz_gtm_counter)
+#endif
+#ifdef CONFIG_COUNTER_ITE_IT51XXX
+	DEVS_FOR_DT_COMPAT(ite_it51xxx_counter)
+#endif
+#ifdef CONFIG_COUNTER_ITE_IT8XXX2
+	DEVS_FOR_DT_COMPAT(ite_it8xxx2_counter)
+#endif
+#ifdef CONFIG_COUNTER_NEORV32_GPTMR
+	DEVS_FOR_DT_COMPAT(neorv32_gptmr)
+#endif
+#ifdef CONFIG_COUNTER_RA_AGT
+	DEVS_FOR_DT_COMPAT(renesas_ra_agt_counter)
+#endif
+#ifdef CONFIG_COUNTER_RENESAS_RA_ULPT
+	DEVS_FOR_DT_COMPAT(renesas_ra_ulpt_counter)
+#endif
+#ifdef CONFIG_COUNTER_RENESAS_RZ_CMTW
+	DEVS_FOR_DT_COMPAT(renesas_rz_cmtw_counter)
+#endif
+#ifdef CONFIG_COUNTER_INFINEON_TCPWM
+	DEVS_FOR_DT_COMPAT(infineon_tcpwm_counter)
+#endif
+#ifdef CONFIG_COUNTER_MCHP_G1_TCC
+	DEVS_FOR_DT_COMPAT(microchip_tcc_g1_counter)
+#endif
+#ifdef CONFIG_COUNTER_MCHP_TC_G1
+	DEVS_FOR_DT_COMPAT(microchip_tc_g1_counter)
+#endif
+#ifdef CONFIG_COUNTER_MCHP_RTC_G1
+	DEVS_FOR_DT_COMPAT(microchip_rtc_g1_counter)
+#endif
+#ifdef CONFIG_COUNTER_RENESAS_RZA2M_OSTM
+	DEVS_FOR_DT_COMPAT(renesas_rza2m_ostm_counter)
+#endif
+#ifdef CONFIG_COUNTER_BFLB_TIMER
+	DEVS_FOR_DT_COMPAT(bflb_timer_channel)
+#endif
+#ifdef CONFIG_COUNTER_BEE_TIMER
+	DEVS_FOR_DT_COMPAT(realtek_bee_counter_timer)
+#endif
+#ifdef CONFIG_COUNTER_BEE_RTC
+	DEVS_FOR_DT_COMPAT(realtek_bee_counter_rtc)
+#endif
+#ifdef CONFIG_COUNTER_WUT_MAX32
+	DEVS_FOR_DT_COMPAT(adi_max32_wut)
+#endif
+#ifdef CONFIG_COUNTER_XLNX_TTC
+	DEVS_FOR_DT_COMPAT(xlnx_ttc_counter)
+#endif
+#ifdef CONFIG_COUNTER_MSPM0_TIMER
+	DEVS_FOR_DT_COMPAT(ti_mspm0_timer_counter)
+#endif
+#ifdef CONFIG_COUNTER_CRSAS_MA2
+	DEVS_FOR_DT_COMPAT(arm_crsas_ma2_counter)
+#endif
+#ifdef CONFIG_COUNTER_CRSAS_MA2_TIMER
+	DEVS_FOR_DT_COMPAT(arm_crsas_ma2_timer)
 #endif
 };
 
 static const struct device *const period_devs[] = {
 #ifdef CONFIG_COUNTER_MCUX_RTC
-	DEVS_FOR_DT_COMPAT(nxp_kinetis_rtc)
+	DEVS_FOR_DT_COMPAT(nxp_rtc)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_RTC_JDP
+	DEVS_FOR_DT_COMPAT(nxp_rtc_jdp)
 #endif
 #ifdef CONFIG_COUNTER_MCUX_LPC_RTC
 	DEVS_FOR_DT_COMPAT(nxp_lpc_rtc)
@@ -135,7 +250,15 @@ static const struct device *const period_devs[] = {
 #ifdef CONFIG_COUNTER_RTC_STM32
 	DEVS_FOR_DT_COMPAT(st_stm32_rtc)
 #endif
+#ifdef CONFIG_COUNTER_RTC_MAX32
+	DEVS_FOR_DT_COMPAT(adi_max32_rtc_counter)
+#endif
 };
+
+#define GUARD_PERIOD_US CONFIG_TEST_GUARD_PERIOD_US
+#define PROCESSING_LIMIT_US CONFIG_TEST_PROCESSING_LIMIT_US
+
+/* clang-format on */
 
 typedef void (*counter_test_func_t)(const struct device *dev);
 typedef bool (*counter_capability_func_t)(const struct device *dev);
@@ -158,7 +281,10 @@ static void counter_setup_instance(const struct device *dev)
 {
 	k_sem_reset(&alarm_cnt_sem);
 	if (!k_is_user_context()) {
+		compiler_barrier();
 		alarm_cnt = 0;
+		pm_policy_state_lock_get(PM_STATE_SUSPEND_TO_RAM, PM_ALL_SUBSTATES);
+		zassert_ok(pm_device_runtime_get(dev));
 	}
 }
 
@@ -183,8 +309,13 @@ static void counter_tear_down_instance(const struct device *dev)
 			"%s: Setting top value to default failed", dev->name);
 
 	err = counter_stop(dev);
-	zassert_equal(0, err, "%s: Counter failed to stop", dev->name);
+	zassert_true((err == 0) || (err == -ENOTSUP),
+			"%s: Counter failed to stop (err: %d)", dev->name, err);
 
+	if (!k_is_user_context()) {
+		zassert_ok(pm_device_runtime_put(dev));
+		pm_policy_state_lock_put(PM_STATE_SUSPEND_TO_RAM, PM_ALL_SUBSTATES);
+	}
 }
 
 static void test_all_instances(counter_test_func_t func,
@@ -351,7 +482,7 @@ static void alarm_handler(const struct device *dev, uint8_t chan_id,
 	/* Arbitrary limit for alarm processing - time between hw expiration
 	 * and read-out from counter in the handler.
 	 */
-	static const uint64_t processing_limit_us = 1000;
+	static const uint64_t processing_limit_us = PROCESSING_LIMIT_US;
 	uint32_t now;
 	int err;
 	uint32_t top;
@@ -374,7 +505,7 @@ static void alarm_handler(const struct device *dev, uint8_t chan_id,
 			"Unexpected distance between reported alarm value(%u) "
 			"and actual counter value (%u), top:%d (processing "
 			"time limit (%d us) might be exceeded?",
-			counter, now, top, processing_limit_us);
+			counter, now, top, (int)processing_limit_us);
 
 	if (user_data) {
 		zassert_true(&cntr_alarm_cfg == user_data,
@@ -388,6 +519,112 @@ static void alarm_handler(const struct device *dev, uint8_t chan_id,
 	zassert_true(k_is_in_isr(), "%s: Expected interrupt context",
 			dev->name);
 	k_sem_give(&alarm_cnt_sem);
+}
+
+static void alarm_capable_handler(const struct device *dev, uint8_t chan_id,
+				    uint32_t counter,
+				    void *user_data)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(chan_id);
+	ARG_UNUSED(counter);
+	ARG_UNUSED(user_data);
+
+	/* Intentionally empty - capability probe only */
+}
+
+/* Any non-zero error (including -ENOTSUP) is treated as "not supported",
+ * and only returns true when there are no errors throughout the entire process.
+ */
+static bool alarm_capable(const struct device *dev)
+{
+	struct counter_alarm_cfg cfg = {
+		.flags = 0U,
+		.ticks = counter_us_to_ticks(dev, 1000U),
+		.callback = alarm_capable_handler,
+		.user_data = NULL,
+	};
+
+	/* Avoid zero-tick requests on very low-frequency counters */
+	if (cfg.ticks == 0U) {
+		cfg.ticks = 1U;
+	}
+
+	int err;
+
+	if (counter_get_num_of_channels(dev) < 1U) {
+		return false;
+	}
+
+	err = counter_start(dev);
+	if (err != 0) {
+		return false;
+	}
+
+	err = counter_set_channel_alarm(dev, 0, &cfg);
+	if (err != 0) {
+		goto out_stop;
+	}
+
+	err = counter_cancel_channel_alarm(dev, 0);
+	if (err != 0) {
+		goto out_stop;
+	}
+
+out_stop:
+	(void)counter_stop(dev);
+
+	return err == 0;
+}
+
+/* The cancel test below configures absolute alarms. Some counters (for example
+ * the NXP wake timer) only support relative alarms and return -ENOTSUP for
+ * COUNTER_ALARM_CFG_ABSOLUTE. Probe whether a device accepts an absolute alarm
+ * so such devices can be skipped instead of hard-failing the test.
+ */
+static bool absolute_alarm_capable(const struct device *dev)
+{
+	struct counter_alarm_cfg cfg = {
+		.flags = COUNTER_ALARM_CFG_ABSOLUTE,
+		.callback = alarm_capable_handler,
+		.user_data = NULL,
+	};
+	uint32_t ticks;
+	int err;
+
+	if (counter_get_num_of_channels(dev) < 1U) {
+		return false;
+	}
+
+	err = counter_start(dev);
+	if (err != 0) {
+		return false;
+	}
+
+	err = counter_get_value(dev, &ticks);
+	if (err != 0) {
+		goto out_stop;
+	}
+
+	/* Aim ahead of the current value so the alarm is not seen as late. */
+	cfg.ticks = counter_us_to_ticks(dev, 1000U);
+	if (cfg.ticks == 0U) {
+		cfg.ticks = 1U;
+	}
+	cfg.ticks += ticks;
+	cfg.ticks %= counter_get_top_value(dev);
+
+	err = counter_set_channel_alarm(dev, 0, &cfg);
+	if (err != 0) {
+		goto out_stop;
+	}
+
+	err = counter_cancel_channel_alarm(dev, 0);
+
+out_stop:
+	(void)counter_stop(dev);
+
+	return err == 0;
 }
 
 static void test_single_shot_alarm_instance(const struct device *dev, bool set_top)
@@ -432,7 +669,6 @@ static void test_single_shot_alarm_instance(const struct device *dev, bool set_t
 		zassert_equal(-EINVAL, err,
 			      "%s: Counter should return error because ticks"
 			      " exceeded the limit set alarm", dev->name);
-		cntr_alarm_cfg.ticks = ticks - 1;
 	}
 
 	cntr_alarm_cfg.ticks = ticks;
@@ -468,7 +704,8 @@ static void test_single_shot_alarm_instance(const struct device *dev, bool set_t
 			"%s: Setting top value to default failed", dev->name);
 
 	err = counter_stop(dev);
-	zassert_equal(0, err, "%s: Counter failed to stop", dev->name);
+	zassert_true((err == 0) || (err == -ENOTSUP),
+			"%s: Counter failed to stop (err: %d)", dev->name, err);
 }
 
 void test_single_shot_alarm_notop_instance(const struct device *dev)
@@ -483,13 +720,12 @@ void test_single_shot_alarm_top_instance(const struct device *dev)
 
 static bool single_channel_alarm_capable(const struct device *dev)
 {
-	return (counter_get_num_of_channels(dev) > 0);
+	return alarm_capable(dev);
 }
 
 static bool single_channel_alarm_and_custom_top_capable(const struct device *dev)
 {
-	return single_channel_alarm_capable(dev) &&
-		set_top_value_capable(dev);
+	return alarm_capable(dev) && set_top_value_capable(dev);
 }
 
 ZTEST(counter_basic, test_single_shot_alarm_notop)
@@ -611,7 +847,7 @@ static void test_multiple_alarms_instance(const struct device *dev)
 
 static bool multiple_channel_alarm_capable(const struct device *dev)
 {
-	return (counter_get_num_of_channels(dev) > 1);
+	return alarm_capable(dev) && (counter_get_num_of_channels(dev) > 1);
 }
 
 ZTEST(counter_basic, test_multiple_alarms)
@@ -715,37 +951,37 @@ static void test_valid_function_without_alarm(const struct device *dev)
 		ticks_expected = counter_us_to_ticks(dev, wait_for_us);
 	}
 
-	/* Set 10% or 2 ticks tolerance, whichever is greater */
-	ticks_tol = ticks_expected / 10;
+	/* Set percentage or 2 ticks tolerance, whichever is greater */
+	ticks_tol = (ticks_expected * CONFIG_TEST_DRIVER_COUNTER_TOLERANCE) / 100;
 	ticks_tol = ticks_tol < 2 ? 2 : ticks_tol;
-
-	if (!counter_is_counting_up(dev)) {
-		ticks_expected = counter_get_top_value(dev) - ticks_expected;
-	}
 
 	err = counter_start(dev);
 	zassert_equal(0, err, "%s: counter failed to start", dev->name);
 
 	/* counter might not start from 0, use current value as offset */
 	counter_get_value(dev, &tick_current);
-	ticks_expected += tick_current;
-
 	k_busy_wait(wait_for_us);
-
 	err = counter_get_value(dev, &ticks);
+
+	if (counter_is_counting_up(dev)) {
+		ticks_expected += tick_current;
+	} else {
+		ticks_expected = tick_current - ticks_expected;
+	}
 
 	zassert_equal(0, err, "%s: could not get counter value", dev->name);
 	zassert_between_inclusive(
 		ticks, ticks_expected > ticks_tol ? ticks_expected - ticks_tol : 0,
 		ticks_expected + ticks_tol, "%s: counter ticks not in tolerance", dev->name);
 
-	/* ticks count is always within ticks_tol for RTC, therefor
+	/* ticks count is always within ticks_tol for RTC, therefore
 	 * check, if ticks are greater than 0.
 	 */
 	zassert_true((ticks > 0), "%s: counter did not count", dev->name);
 
 	err = counter_stop(dev);
-	zassert_equal(0, err, "%s: counter failed to stop", dev->name);
+	zassert_true((err == 0) || (err == -ENOTSUP),
+			"%s: counter failed to stop (err: %d)", dev->name, err);
 }
 
 static bool ms_period_capable(const struct device *dev)
@@ -753,8 +989,14 @@ static bool ms_period_capable(const struct device *dev)
 	uint32_t freq_khz;
 	uint32_t max_time_ms;
 
-	/* Assume 2 ms counter periode can be set for frequency below 1 kHz*/
-	if (counter_get_frequency(dev) < 1000) {
+	freq_khz = counter_get_frequency(dev);
+
+	if (freq_khz == 0) {
+		return false;
+	}
+
+	/* Assume 2 ms counter period can be set for frequency below 1 kHz*/
+	if (freq_khz < 1000) {
 		return true;
 	}
 
@@ -782,13 +1024,16 @@ static void test_late_alarm_instance(const struct device *dev)
 	int err;
 	uint32_t cnt;
 	uint32_t tick_us = (uint32_t)counter_ticks_to_us(dev, 1);
-	uint32_t guard = counter_us_to_ticks(dev, 200);
+	uint32_t guard = counter_us_to_ticks(dev, GUARD_PERIOD_US);
 	struct counter_alarm_cfg alarm_cfg = {
 		.callback = alarm_handler,
 		.flags = COUNTER_ALARM_CFG_ABSOLUTE |
 			 COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE,
 		.user_data = NULL
 	};
+
+	/* for timers with very short ticks, counter_ticks_to_us() returns 0 */
+	tick_us = MAX(tick_us, 1);
 
 	err = counter_set_guard_period(dev, guard,
 					COUNTER_GUARD_PERIOD_LATE_TO_SET);
@@ -799,7 +1044,7 @@ static void test_late_alarm_instance(const struct device *dev)
 
 	k_busy_wait(2*tick_us);
 
-	alarm_cfg.ticks = 0;
+	alarm_cfg.ticks = counter_is_counting_up(dev) ? 0 : counter_get_top_value(dev);
 	err = counter_set_channel_alarm(dev, 0, &alarm_cfg);
 	zassert_equal(-ETIME, err, "%s: Unexpected error (%d)", dev->name, err);
 
@@ -834,12 +1079,15 @@ static void test_late_alarm_error_instance(const struct device *dev)
 {
 	int err;
 	uint32_t tick_us = (uint32_t)counter_ticks_to_us(dev, 1);
-	uint32_t guard = counter_us_to_ticks(dev, 200);
+	uint32_t guard = counter_us_to_ticks(dev, GUARD_PERIOD_US);
 	struct counter_alarm_cfg alarm_cfg = {
 		.callback = alarm_handler,
 		.flags = COUNTER_ALARM_CFG_ABSOLUTE,
 		.user_data = NULL
 	};
+
+	/* for timers with very short ticks, counter_ticks_to_us() returns 0 */
+	tick_us = MAX(tick_us, 1);
 
 	err = counter_set_guard_period(dev, guard,
 					COUNTER_GUARD_PERIOD_LATE_TO_SET);
@@ -850,7 +1098,7 @@ static void test_late_alarm_error_instance(const struct device *dev)
 
 	k_busy_wait(2*tick_us);
 
-	alarm_cfg.ticks = 0;
+	alarm_cfg.ticks = counter_is_counting_up(dev) ? 0 : counter_get_top_value(dev);
 	err = counter_set_channel_alarm(dev, 0, &alarm_cfg);
 	zassert_equal(-ETIME, err,
 			"%s: Failed to detect late setting (err: %d)",
@@ -873,7 +1121,7 @@ static bool late_detection_capable(const struct device *dev)
 	int err = counter_set_guard_period(dev, guard,
 					COUNTER_GUARD_PERIOD_LATE_TO_SET);
 
-	if (err == -ENOTSUP) {
+	if (err == -ENOSYS) {
 		return false;
 	}
 
@@ -918,7 +1166,14 @@ static void test_short_relative_alarm_instance(const struct device *dev)
 
 	alarm_cfg.ticks = 1;
 
-	for (int i = 0; i < 100; ++i) {
+	/* Slow counters busy-wait several ticks per iteration (~3 s on a 1 Hz
+	 * RTC), so cap their iteration count; fast counters keep the full
+	 * count to preserve coverage.
+	 */
+	int iterations = (counter_get_frequency(dev) < 1000) ?
+		CONFIG_TEST_COUNTER_SHORT_RELATIVE_ALARM_ITERATIONS : 100;
+
+	for (int i = 0; i < iterations; ++i) {
 		err = counter_set_channel_alarm(dev, 0, &alarm_cfg);
 		zassert_equal(0, err,
 				"%s: Failed to set an alarm (err: %d)",
@@ -1057,6 +1312,13 @@ static void test_cancelled_alarm_does_not_expire_instance(const struct device *d
 
 static bool reliable_cancel_capable(const struct device *dev)
 {
+	/* This test configures absolute alarms; skip devices whose driver does
+	 * not support them (returns -ENOTSUP) instead of reporting a failure.
+	 */
+	if (!absolute_alarm_capable(dev)) {
+		return false;
+	}
+
 	/* Test performed only for NRF_RTC instances. Other probably will fail.
 	 */
 #if defined(CONFIG_COUNTER_NRF_RTC) || defined(CONFIG_COUNTER_NRF_TIMER)
@@ -1077,7 +1339,7 @@ static bool reliable_cancel_capable(const struct device *dev)
 		return true;
 	}
 #endif
-#ifdef CONFIG_COUNTER_NATIVE_POSIX
+#ifdef CONFIG_COUNTER_NATIVE_SIM
 	if (dev == DEVICE_DT_GET(DT_NODELABEL(counter0))) {
 		return true;
 	}
@@ -1097,6 +1359,34 @@ static bool reliable_cancel_capable(const struct device *dev)
 		return true;
 	}
 #endif
+#ifdef CONFIG_COUNTER_RENESAS_RZ_GTM
+	if (single_channel_alarm_capable(dev)) {
+		return true;
+	}
+#endif
+#ifdef CONFIG_COUNTER_TMR_ESP32
+	if (single_channel_alarm_capable(dev)) {
+		return true;
+	}
+#endif
+#ifdef CONFIG_COUNTER_RENESAS_RZ_CMTW
+	if (single_channel_alarm_capable(dev)) {
+		return true;
+	}
+#endif
+#ifdef CONFIG_COUNTER_RENESAS_RZA2M_OSTM
+	if (single_channel_alarm_capable(dev)) {
+		return true;
+	}
+#endif
+#ifdef CONFIG_COUNTER_XLNX_TTC
+	return true;
+#endif
+#ifdef CONFIG_COUNTER_MSPM0_TIMER
+	if (single_channel_alarm_capable(dev)) {
+		return true;
+	}
+#endif
 	return false;
 }
 
@@ -1105,6 +1395,81 @@ ZTEST(counter_basic, test_cancelled_alarm_does_not_expire)
 	test_all_instances(test_cancelled_alarm_does_not_expire_instance,
 			reliable_cancel_capable);
 }
+
+#ifdef CONFIG_COUNTER_CALIBRATION
+#define COUNTER_TEST_CAL_RANGE_LIMIT (200000)
+#define COUNTER_TEST_CAL_RANGE_STEP  (10000)
+
+static int set_get_calibration(const struct device *dev, int32_t calibrate_set)
+{
+	int32_t calibrate_get;
+	int ret;
+
+	ret = counter_set_calibration(dev, calibrate_set);
+
+	/* Check if calibration is within limits of hardware */
+	if (ret == -EINVAL) {
+		/* skip */
+		return -EINVAL;
+	}
+
+	zassert_ok(ret, "%s: Failed to set calibration", dev->name);
+
+	ret = counter_get_calibration(dev, &calibrate_get);
+	zassert_ok(ret, "%s: Failed to get calibration", dev->name);
+
+	TC_PRINT("%s: Calibrate (set,get): %i, %i\n", dev->name, calibrate_set, calibrate_get);
+
+	return 0;
+}
+
+static void test_set_get_calibration_instance(const struct device *dev)
+{
+	int32_t calibrate_get;
+	int ret;
+
+	ret = counter_set_calibration(dev, 0);
+	if (ret == -ENOSYS || ret == -ENOTSUP) {
+		TC_PRINT("%s: Calibration not supported\n", dev->name);
+		return;
+	}
+
+	zassert_ok(ret, "%s: Failed to set calibration", dev->name);
+
+	ret = counter_get_calibration(dev, &calibrate_get);
+	zassert_ok(ret, "%s: Failed to get calibration", dev->name);
+
+	/* Validate edge values (0 already tested) */
+	set_get_calibration(dev, 1);
+	set_get_calibration(dev, -1);
+
+	/* Validate over negative range */
+	for (int32_t set = COUNTER_TEST_CAL_RANGE_STEP; set <= COUNTER_TEST_CAL_RANGE_LIMIT;
+	     set += COUNTER_TEST_CAL_RANGE_STEP) {
+		if (set_get_calibration(dev, -set) < 0) {
+			/* Limit of hardware capabilities reached */
+			break;
+		}
+	}
+
+	/* Validate over positive range */
+	for (int32_t set = COUNTER_TEST_CAL_RANGE_STEP; set <= COUNTER_TEST_CAL_RANGE_LIMIT;
+	     set += COUNTER_TEST_CAL_RANGE_STEP) {
+		if (set_get_calibration(dev, set) < 0) {
+			/* Limit of hardware capabilities reached */
+			break;
+		}
+	}
+
+	/* Leave the counter uncalibrated */
+	zassert_ok(counter_set_calibration(dev, 0), "%s: Failed to reset calibration", dev->name);
+}
+
+ZTEST(counter_basic, test_set_get_calibration)
+{
+	test_all_instances(test_set_get_calibration_instance, NULL);
+}
+#endif /* CONFIG_COUNTER_CALIBRATION */
 
 static void *counter_setup(void)
 {

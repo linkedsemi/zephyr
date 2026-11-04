@@ -32,19 +32,30 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under
-:zephyr_file:`samples/bluetooth/encrypted_advertising` in the Zephyr tree.
+This sample uses two applications, so two devices need to be set up.
+Build and flash the peripheral application on the first board, replacing ``<board>``
+with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/encrypted_advertising/peripheral
+   :board: <board>
+   :goals: build flash
+   :compact:
 
-This sample uses two applications, so two devices need to be setup.
-Flash one device with the central application, and another device with the
-peripheral application.
+Build and flash the central application on a second board:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/encrypted_advertising/central
+   :board: <board>
+   :goals: build flash
+   :compact:
 
 The two devices should automatically connect if they are close enough.
 
 After the boards are connected, you will be asked to press the configured push
-button on both boards to confirm the pairing request.
+button on both boards to confirm the pairing request. Both boards require a
+button mapped to the ``sw0`` devicetree alias. If your board does not define
+``sw0`` by default, provide a devicetree overlay before building.
 
 Here are the outputs you should get by default:
 
@@ -54,7 +65,7 @@ Peripheral:
 
         *** Booting Zephyr OS build zephyr-v3.3.0-1872-g6fac3c7581dc ***
         <inf> ead_peripheral_sample: Advertising data size: 64
-        Passkey for 46:04:2E:6F:80:12 (random): 059306
+        Passkey for R:46:04:2E:6F:80:12: 059306
         Confirm passkey by pressing button at gpio@50000000 pin 11...
         Passkey confirmed.
         <inf> ead_peripheral_sample: Advertising data size: 64
@@ -65,7 +76,7 @@ Central:
 .. code-block:: console
 
         *** Booting Zephyr OS build zephyr-v3.3.0-1872-g6fac3c7581dc ***
-        Passkey for 6C:7F:67:C2:8B:29 (random): 059306
+        Passkey for R:6C:7F:67:C2:8B:29: 059306
         Confirm passkey by pressing button at gpio@50000000 pin 11...
         Passkey confirmed.
         <inf> ead_central_sample: Received data size: 64
