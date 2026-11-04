@@ -372,8 +372,11 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 
     // REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_FREE,free_timing+3);
 	REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_FREE,0x7f);
-	/* SDA_HD：SDA hold time 档位随 I3C 内部计数时钟（= 主频 × 2）配置：
-	 * 50MHz → 0，100MHz 及以上 → 1（config->clock_frequency 即内部计数时钟） */
+	/* SDA_HD: the field is 0.5 *internal counting-clock* cycles.  The
+	 * driver stores that counting clock in clock_frequency (2 x the DT
+	 * core clock), so >=100 MHz here means DT core clock >=50 MHz:
+	 * SDA_HD=1 at 50 MHz and above, 0 below (at 25 MHz one step is a
+	 * full core clock and the waveform breaks, e.g. DAA fails). */
 	if (config->clock_frequency >= 100000000) {
 		REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_SDA_HD,1);
 	} else {
@@ -947,13 +950,28 @@ static void ls_i3c_event_isr_rx(const struct device *dev)
 
 		break;
 	}
-	case LS_I3C_MSG_DAA: {
+	case LS_I3C_MSG_DAA:
+	case LS_I3C_MSG_CCC_P2:
+	case LS_I3C_MSG_CCC:
+		/* These three consume the RX FIFO themselves: ls_i3c_do_daa() and
+		 * the CCC path poll the payload out in thread context.  Draining
+		 * here would steal their bytes. */
 		break;
-	}
-	case LS_I3C_MSG_CCC_P2: {
-		break;
-	}
 	default:
+		/* LS_I3C_MSG_ERR (what an errored transfer leaves behind),
+		 * LS_I3C_MSG_IDLE, LS_I3C_MSG_INVAL: no owner, nobody will ever
+		 * read these bytes.
+		 *
+		 * RXFNE is LEVEL-triggered, so leaving it set keeps the line
+		 * asserted forever, and __soc_handle_all_irqs() re-dispatches it
+		 * in a loop with interrupts disabled around each call -- that
+		 * starves the scheduler, the tick and every watchdog, and welded
+		 * the whole core on the first errored transfer (measured
+		 * 2026-10-29: EVR&IER = RXFNEF while SDATACTRL showed RXEMPTY /
+		 * RXCOUNT=0). */
+		while (LL_I3C_IsActiveFlag_RXFNE(base)) {
+			(void)LL_I3C_ReceiveData8(base);
+		}
 		break;
 	}
 }
