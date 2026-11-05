@@ -100,8 +100,8 @@
  * @brief Struct used when setting a IPv4 multicast network interface.
  */
 struct ip_mreq {
-	struct in_addr imr_multiaddr;
-	struct in_addr imr_interface;
+	struct net_in_addr imr_multiaddr;
+	struct net_in_addr imr_interface;
 };
 
 #endif /* _IP_MREQ_DEFINED */

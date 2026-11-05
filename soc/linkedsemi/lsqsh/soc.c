@@ -731,8 +731,8 @@ __maybe_unused static int flash_ear_offset_set(const struct device *flash_dev, u
             LOG_ERR("flash_ls_write_ear err");
             while(1);
         }
-        const uint32_t a_app_image_partition_offset = FIXED_PARTITION_OFFSET(a_app_image_partition);
-        const uint32_t b_app_image_partition_offset = FIXED_PARTITION_OFFSET(b_app_image_partition) % MB(16);
+        const uint32_t a_app_image_partition_offset = PARTITION_OFFSET(a_app_image_partition);
+        const uint32_t b_app_image_partition_offset = PARTITION_OFFSET(b_app_image_partition) % MB(16);
         const int32_t offset = b_app_image_partition_offset - a_app_image_partition_offset;
         int ret = lsqspiv2_backup_offset_set((reg_lsqspiv2_t *)env->reg, offset);
         if (ret) {

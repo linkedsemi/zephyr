@@ -167,20 +167,14 @@ __syscall int jtag_freq_get(const struct device *dev, uint32_t *freq);
 
 static inline int z_impl_jtag_freq_get(const struct device *dev, uint32_t *freq)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->freq_get(dev, freq);
+	return DEVICE_API_GET(jtag, dev)->freq_get(dev, freq);
 }
 
 __syscall int jtag_freq_set(const struct device *dev, uint32_t freq);
 
 static inline int z_impl_jtag_freq_set(const struct device *dev, uint32_t freq)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->freq_set(dev, freq);
+	return DEVICE_API_GET(jtag, dev)->freq_set(dev, freq);
 }
 
 __syscall int jtag_tap_get(const struct device *dev, enum tap_state *state);
@@ -188,10 +182,7 @@ __syscall int jtag_tap_get(const struct device *dev, enum tap_state *state);
 static inline int z_impl_jtag_tap_get(const struct device *dev,
 				      enum tap_state *state)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->tap_get(dev, state);
+	return DEVICE_API_GET(jtag, dev)->tap_get(dev, state);
 }
 
 __syscall int jtag_tap_set(const struct device *dev, enum tap_state state);
@@ -199,10 +190,7 @@ __syscall int jtag_tap_set(const struct device *dev, enum tap_state state);
 static inline int z_impl_jtag_tap_set(const struct device *dev,
 				      enum tap_state state)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->tap_set(dev, state);
+	return DEVICE_API_GET(jtag, dev)->tap_set(dev, state);
 }
 
 __syscall int jtag_tck_run(const struct device *dev, uint32_t run_count);
@@ -210,10 +198,7 @@ __syscall int jtag_tck_run(const struct device *dev, uint32_t run_count);
 static inline int z_impl_jtag_tck_run(const struct device *dev,
 				      uint32_t run_count)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->tck_run(dev, run_count);
+	return DEVICE_API_GET(jtag, dev)->tck_run(dev, run_count);
 }
 
 __syscall int jtag_ir_scan(const struct device *dev, int num_bits,
@@ -224,9 +209,6 @@ static inline int z_impl_jtag_ir_scan(const struct device *dev, int num_bits,
 				      const uint8_t *out_value,
 				      uint8_t *in_value, enum tap_state state)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
 	struct scan_command_s scan;
 
 	scan.ir_scan = 1;
@@ -235,7 +217,7 @@ static inline int z_impl_jtag_ir_scan(const struct device *dev, int num_bits,
 	scan.fields.out_value = out_value;
 	scan.fields.in_value = in_value;
 
-	return api->xfer(dev, &scan);
+	return DEVICE_API_GET(jtag, dev)->xfer(dev, &scan);
 }
 
 __syscall int jtag_dr_scan(const struct device *dev, int num_bits,
@@ -246,9 +228,6 @@ static inline int z_impl_jtag_dr_scan(const struct device *dev, int num_bits,
 				      const uint8_t *out_value,
 				      uint8_t *in_value, enum tap_state state)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
 	struct scan_command_s scan;
 
 	scan.ir_scan = 0;
@@ -257,7 +236,7 @@ static inline int z_impl_jtag_dr_scan(const struct device *dev, int num_bits,
 	scan.fields.out_value = out_value;
 	scan.fields.in_value = in_value;
 
-	return api->xfer(dev, &scan);
+	return DEVICE_API_GET(jtag, dev)->xfer(dev, &scan);
 }
 
 __syscall int jtag_sw_xfer(const struct device *dev, enum jtag_pin pin,
@@ -266,30 +245,21 @@ __syscall int jtag_sw_xfer(const struct device *dev, enum jtag_pin pin,
 static inline int z_impl_jtag_sw_xfer(const struct device *dev, enum jtag_pin pin,
 			   uint8_t value)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->sw_xfer(dev, pin, value);
+	return DEVICE_API_GET(jtag, dev)->sw_xfer(dev, pin, value);
 }
 
 __syscall int jtag_tdo_get(const struct device *dev, uint8_t *value);
 
 static inline int z_impl_jtag_tdo_get(const struct device *dev, uint8_t *value)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->tdo_get(dev, value);
+	return DEVICE_API_GET(jtag, dev)->tdo_get(dev, value);
 }
 
 __syscall int jtag_tck_run_cycle(const struct device *dev, uint8_t tms, uint8_t tdi);
 
 static inline int z_impl_jtag_tck_run_cycle(const struct device *dev, uint8_t tms, uint8_t tdi)
 {
-	const struct jtag_driver_api *api =
-		(const struct jtag_driver_api *)dev->api;
-
-	return api->tck_run_cycle(dev, tms, tdi);
+	return DEVICE_API_GET(jtag, dev)->tck_run_cycle(dev, tms, tdi);
 }
 
 /**
@@ -300,6 +270,6 @@ static inline int z_impl_jtag_tck_run_cycle(const struct device *dev, uint8_t tm
 }
 #endif
 
-#include <syscalls/jtag.h>
+#include <zephyr/syscalls/jtag.h>
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_JTAG_H_ */
