@@ -14,8 +14,9 @@
 		#size-cells = <0>;
 		cpu0: cpu@0 {
             device_type = "cpu";
-            compatible = "linkedsemi,riscv";
-            riscv,isa = "e906";
+            compatible = "linkedsemi,riscv", "riscv";
+            riscv,isa-base = "rv32i";
+            riscv,isa-extensions = "i", "m", "a", "f", "c";
 			reg = <0>;
 		};
     };
@@ -54,9 +55,10 @@
             interrupt-controller;
         };
         mtimer: machine-timer@e0004000 {
-			compatible = "linkedsemi,machine-timer";
-			reg = <0xe0004000 0x8000>;
-			interrupts = <7 0>;
+			compatible = "riscv,machine-timer";
+			reg = <0xe0004000 0x8>, <0xe000bff8 0x8>;
+			reg-names = "mtimecmp", "mtime";
+			interrupts-extended = <&intc 7 0>;
 		};
 
         per_cctl: clock-controller@4008d000 {
