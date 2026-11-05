@@ -146,6 +146,9 @@ if(NOT CONFIG_RISCV_ISA_EXT_M AND
 endif()
 
 # T-Head extensions
+if(CONFIG_RISCV_ISA_EXT_THEAD)
+  string(APPEND riscv_march "_xtheade")
+endif()
 if(CONFIG_RISCV_ISA_EXT_XTHEAD_BA)
   string(APPEND riscv_march "_xtheadba")
 endif()
