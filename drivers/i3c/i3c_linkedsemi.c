@@ -928,6 +928,32 @@ static void ls_i3c_event_isr_tx(const struct device *dev)
 	}
 }
 
+/* Why the RXFNE drains are bounded, and why a stuck flag is recovered instead
+ * of retried:
+ *
+ *   - RXFNE is a LEVEL interrupt, and CEVR has NO clear-flag for it (it only
+ *     clears FC / RXTGTEND / ERR / IBI / CR / HJ).  So "read until RXFNE
+ *     drops" is not a bounded operation: if the FIFO ever reads empty while
+ *     the flag stays asserted, the loop cannot terminate and the level IRQ is
+ *     re-dispatched forever, which starves the scheduler and the watchdogs.
+ *   - The only way out is to restore the FIFO state machine.  Toggling
+ *     MASTER_EN is the recovery this driver already uses for a BUSY bit that
+ *     will not clear (xfer_reset()), so a stuck flag is handled the same way
+ *     rather than being waited on.
+ */
+#define LS_I3C_RX_DRAIN_MAX 64
+
+static inline bool ls_i3c_rx_fne_stuck(I3C_TypeDef *base)
+{
+	return LL_I3C_IsActiveFlag_RXFNE(base) != 0;
+}
+
+static inline void ls_i3c_recover_rx_stuck(I3C_TypeDef *base)
+{
+	REG_FIELD_WR(base->CFGR, I3C_CFGR_MASTER_EN, 0);
+	REG_FIELD_WR(base->CFGR, I3C_CFGR_MASTER_EN, 1);
+}
+
 static void ls_i3c_event_isr_rx(const struct device *dev)
 {
 	const struct ls_i3c_config *config = dev->config;
@@ -941,11 +967,16 @@ static void ls_i3c_event_isr_rx(const struct device *dev)
 		 * 若提前返回，RXTGTEND 检查 cur_num_xfer < len 会误判
 		 * 短读并提前 give 信号量。循环读至 RXFNE 清除，
 		 * 保证计数与硬件同步。 */		
-		while (LL_I3C_IsActiveFlag_RXFNE(base)) {
+		int budget = LS_I3C_RX_DRAIN_MAX;
+
+		while (LL_I3C_IsActiveFlag_RXFNE(base) && budget-- > 0) {
 			if (ls_i3c_drain_rx_fifo(dev)) {
 				ls_i3c_curr_msg_xfer_next(dev);
 				break;
 			}
+		}
+		if (budget <= 0 && ls_i3c_rx_fne_stuck(base)) {
+			ls_i3c_recover_rx_stuck(base);
 		}
 
 		break;
@@ -958,21 +989,25 @@ static void ls_i3c_event_isr_rx(const struct device *dev)
 		 * here would steal their bytes. */
 		break;
 	default:
-		/* LS_I3C_MSG_ERR (what an errored transfer leaves behind),
-		 * LS_I3C_MSG_IDLE, LS_I3C_MSG_INVAL: no owner, nobody will ever
-		 * read these bytes.
-		 *
-		 * RXFNE is LEVEL-triggered, so leaving it set keeps the line
-		 * asserted forever, and __soc_handle_all_irqs() re-dispatches it
-		 * in a loop with interrupts disabled around each call -- that
-		 * starves the scheduler, the tick and every watchdog, and welded
-		 * the whole core on the first errored transfer (measured
-		 * 2026-10-29: EVR&IER = RXFNEF while SDATACTRL showed RXEMPTY /
-		 * RXCOUNT=0). */
-		while (LL_I3C_IsActiveFlag_RXFNE(base)) {
+		/* ERR / IDLE / INVAL: no transfer owns these bytes, so take them
+		 * out of the FIFO -- otherwise RXFNE keeps this level IRQ
+		 * asserted with nobody to service it.  The drain is bounded and
+		 * the flag recovered on purpose; see the note next to
+		 * LS_I3C_RX_DRAIN_MAX for why that is the safe form. */
+	{
+		int budget = LS_I3C_RX_DRAIN_MAX;
+
+		while (LL_I3C_IsActiveFlag_RXFNE(base) && budget-- > 0) {
 			(void)LL_I3C_ReceiveData8(base);
 		}
+		if (ls_i3c_rx_fne_stuck(base)) {
+			/* Still asserted with the FIFO empty: waiting cannot clear it,
+			 * so restore the FIFO state machine.  No log from here -- the
+			 * log path runs too long for an interrupt this hot. */
+			ls_i3c_recover_rx_stuck(base);
+		}
 		break;
+	}
 	}
 }
 
@@ -1375,21 +1410,30 @@ static inline void ls_i3c_xfer_reset(I3C_TypeDef *base)
 		}
 	}
 	LL_I3C_RequestStatusFIFOFlush(base);
-	while(LL_I3C_IsActiveFlag_RXFNE(base))
-	{
-    	LL_I3C_RequestRxFIFOFlush(base);
+
+	/* Bounded on purpose: see the note above ls_i3c_rx_fne_stuck().  With an
+	 * errored transfer the FIFO can report empty while RXFNE stays set, and
+	 * these loops would otherwise never terminate. */
+	int budget = LS_I3C_RX_DRAIN_MAX;
+
+	while (LL_I3C_IsActiveFlag_RXFNE(base) && budget-- > 0) {
+		LL_I3C_RequestRxFIFOFlush(base);
 	}
-	while(LL_I3C_IsActiveFlag_RXFNE(base))
-	{
+	budget = LS_I3C_RX_DRAIN_MAX;
+	while (LL_I3C_IsActiveFlag_RXFNE(base) && budget-- > 0) {
 		(void)LL_I3C_ReceiveData8(base);
 	}
-	while(!LL_I3C_IsActiveFlag_TXFE(base))
-	{
-    	LL_I3C_RequestTxFIFOFlush(base);
+	budget = LS_I3C_RX_DRAIN_MAX;
+	while (!LL_I3C_IsActiveFlag_TXFE(base) && budget-- > 0) {
+		LL_I3C_RequestTxFIFOFlush(base);
 	}
-	while(!LL_I3C_IsActiveFlag_CFE(base))
-	{
+	budget = LS_I3C_RX_DRAIN_MAX;
+	while (!LL_I3C_IsActiveFlag_CFE(base) && budget-- > 0) {
 		LL_I3C_RequestControlFIFOFlush(base);
+	}
+	if (ls_i3c_rx_fne_stuck(base)) {
+		LOG_WRN("i3c: RXFNE stuck after flush, resetting master");
+		ls_i3c_recover_rx_stuck(base);
 	}
 	//i3c core_clk 和 pbus_clk之间可能存在时间差，需等待确保fifo状态为空
 }
