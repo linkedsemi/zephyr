@@ -14,7 +14,9 @@
 
 #define LOG_LEVEL CONFIG_SHA512_LOG_LEVEL
 
-#define SHA512_LINKEDSEMI_HASH_CAPS   (CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS)
+/* Hash sessions never consume a key.  CAP_RAW_KEY is advertised anyway so
+ * this driver's caps mask always names a key type. */
+#define SHA512_LINKEDSEMI_HASH_CAPS   (CAP_RAW_KEY | CAP_SEPARATE_IO_BUFS | CAP_SYNC_OPS)
 
 #define SHA512_MODE_SHA384          (0x2)
 #define SHA512_MODE_SHA512          (0x3)
