@@ -369,7 +369,7 @@ static int caseopen_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api caseopen_driver_api = {
+static DEVICE_API(sensor, caseopen_driver_api) = {
 	.sample_fetch = caseopen_sample_fetch,
 	.channel_get = caseopen_channel_get,
 	.attr_set = caseopen_attr_set,

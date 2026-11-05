@@ -957,7 +957,7 @@ static int i2c_ls_target_unregister(const struct device *dev, struct i2c_target_
     return 0;
 }
 
-static const struct i2c_driver_api api_funcs = {
+static DEVICE_API(i2c, api_funcs) = {
     .configure = i2c_runtime_configure,
     .get_config = i2c_ls_get_config,
     .transfer = i2c_ls_transfer,

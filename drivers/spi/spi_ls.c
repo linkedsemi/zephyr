@@ -392,7 +392,7 @@ static int spi_ls_release(const struct device *dev,
 	return 0;
 }
 
-static const struct spi_driver_api spi_ls_driver_api = {
+static DEVICE_API(spi, spi_ls_driver_api) = {
 	.transceive = spi_ls_transceive,
 	.release = spi_ls_release,
 };

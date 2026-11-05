@@ -733,7 +733,7 @@ static int jtag_ls_tck_run_cycle(const struct device *dev, uint8_t tms, uint8_t 
     return tdo;
 }
 
-static const struct jtag_driver_api jtag_ls_driver_api = {
+static DEVICE_API(jtag, jtag_ls_driver_api) = {
     .freq_get = jtag_ls_freq_get,
     .freq_set = jtag_ls_freq_set,
     .tap_get = jtag_ls_tap_get,

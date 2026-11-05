@@ -70,7 +70,7 @@ static int lpc_ls_write_request(const struct device *dev,enum lpc_peripheral_opc
     return 0;
 }
 
-static const struct lpc_driver_api lpc_ls_driver_api = {
+static DEVICE_API(lpc, lpc_ls_driver_api) = {
     .read_request = lpc_ls_read_request,
     .write_request = lpc_ls_write_request,
 };

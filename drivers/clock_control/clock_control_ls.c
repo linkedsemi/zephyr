@@ -153,7 +153,7 @@ static int ls_clock_control_get_rate(const struct device *dev, clock_control_sub
 #endif
 
 /* Clock controller driver registration */
-static const struct clock_control_driver_api ls_clock_control_api = {
+static DEVICE_API(clock_control, ls_clock_control_api) = {
 	.on = ls_clock_control_driver_on,
 	.off = ls_clock_control_driver_off,
 	.get_rate = ls_clock_control_get_rate,

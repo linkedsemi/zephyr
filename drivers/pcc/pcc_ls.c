@@ -55,7 +55,7 @@ static int pcc_ls_set_callback(const struct device *dev,pcc_callback_t callback)
     return 0;
 }
 
-static const struct pcc_driver_api pcc_ls_driver_api = {
+static DEVICE_API(pcc, pcc_ls_driver_api) = {
     .read_post_code = pcc_ls_read_post_code,
     .set_callback = pcc_ls_set_callback,
 };

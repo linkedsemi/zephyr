@@ -306,7 +306,7 @@ static int sha512_linkedsemi_cipher_free_session(const struct device *dev, struc
     return 0;
 }
 
-static struct crypto_driver_api sha512_driver_api = {
+static DEVICE_API(crypto, sha512_driver_api) = {
     .query_hw_caps = sha512_linkedsemi_query_caps,
     .hash_begin_session = sha512_linkedsemi_cipher_begin_session,
     .hash_free_session = sha512_linkedsemi_cipher_free_session,

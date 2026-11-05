@@ -290,7 +290,7 @@ static int mbox_linkedsemi_init(const struct device *dev)
 	return 0;
 }
 
-static struct mbox_driver_api mbox_linkedsemi_driver_api = {
+static DEVICE_API(mbox, mbox_linkedsemi_driver_api) = {
 	.send = mbox_linkedsemi_send,
 	.register_callback = mbox_linkedsemi_register_callback,
 	.max_channels_get = mbox_linkedsemi_max_channels_get,

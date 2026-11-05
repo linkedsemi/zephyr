@@ -454,7 +454,7 @@ static int rtc_ls_init(const struct device *dev){
 /**
  * @brief RTC driver API
  */
-static const struct rtc_driver_api rtc_ls_api = {
+static DEVICE_API(rtc, rtc_ls_api) = {
     .get_time = rtc_ls_get_time,
     .set_time = rtc_ls_set_time,
 

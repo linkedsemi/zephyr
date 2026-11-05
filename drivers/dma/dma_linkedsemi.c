@@ -116,7 +116,7 @@ int linkedsemi_dma_config(const struct device *dev, uint32_t channel, struct dma
     return dw_dma_config(dev, channel, cfg);
 }
 
-static const struct dma_driver_api dw_dma_driver_api = {
+static DEVICE_API(dma, dw_dma_driver_api) = {
     .config = linkedsemi_dma_config,
     .start = dw_dma_start,
     .stop = dw_dma_stop,

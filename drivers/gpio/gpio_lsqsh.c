@@ -639,7 +639,7 @@ static uint32_t gpio_ls_get_pending_int(const struct device *dev)
     return INT_STAT_BASE[port];
 }
 
-static const struct gpio_driver_api gpio_ls_driver_api = {
+static DEVICE_API(gpio, gpio_ls_driver_api) = {
     .pin_configure = gpio_ls_pin_configure,
 #ifdef CONFIG_GPIO_GET_CONFIG
     .pin_get_config = gpio_ls_pin_get_config,
@@ -657,7 +657,7 @@ static const struct gpio_driver_api gpio_ls_driver_api = {
 #endif /* CONFIG_GPIO_GET_DIRECTION */
 };
 
-static const struct gpio_driver_api gpio_ls_exti_driver_api = {
+static DEVICE_API(gpio, gpio_ls_exti_driver_api) = {
     .manage_callback = gpio_ls_manage_callback,
 };
 

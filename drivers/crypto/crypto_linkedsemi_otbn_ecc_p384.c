@@ -368,7 +368,7 @@ static int ls_ecc_p384_init(const struct device *dev)
     return 0;
 }
 
-static struct ecc_p384_driver_api  ls_ecc_p384_driver_api = {
+static DEVICE_API(ecc_p384, ls_ecc_p384_driver_api) = {
     .begin_session = ls_otbn_ecc_p384_session_setup,
     .free_session = ls_otbn_ecc_p384_session_free,
     .query_hw_caps = NULL,

@@ -454,7 +454,7 @@ error:
     return ret;
 }
 
-static const struct peci_driver_api peci_ls_driver_api = {
+static DEVICE_API(peci, peci_ls_driver_api) = {
     .config = peci_ls_configure,
     .enable = peci_ls_enable,
     .disable = peci_ls_disable,

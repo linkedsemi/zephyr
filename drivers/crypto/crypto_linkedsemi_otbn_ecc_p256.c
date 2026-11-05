@@ -385,7 +385,7 @@ static int ls_ecc_p256_init(const struct device *dev)
 
 
 
-static struct ecc_p256_driver_api  ls_ecc_p256_driver_api = {
+static DEVICE_API(ecc_p256, ls_ecc_p256_driver_api) = {
     .begin_session = ls_otbn_ecc_p256_session_setup,
     // .free_session = ls_otbn_ecc_p256_session_free,
     .query_hw_caps = NULL,

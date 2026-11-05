@@ -280,7 +280,7 @@ static int bt_le501x_close(const struct device *dev)
     return 0;
 }
 
-static const struct bt_hci_driver_api drv = {
+static DEVICE_API(bt_hci, drv) = {
 	.open	= bt_le501x_open,
 	.close	= bt_le501x_close,
 	.send	= bt_le501x_send,

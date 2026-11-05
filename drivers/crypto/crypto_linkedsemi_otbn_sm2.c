@@ -363,7 +363,7 @@ static int ls_sm2_init(const struct device *dev)
     return 0;
 }
 
-static struct sm2_driver_api ls_sm2_driver_api = {
+static DEVICE_API(sm2, ls_sm2_driver_api) = {
     .begin_session = ls_otbn_sm2_session_setup,
     .free_session = ls_otbn_sm2_session_free,
     .query_hw_caps = NULL,

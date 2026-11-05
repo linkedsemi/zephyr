@@ -104,7 +104,7 @@ static int rtc_timer_ls_init(const struct device *dev)
 	return 0;
 }
 
-static const struct rtc_driver_api rtc_timer_ls_api = {
+static DEVICE_API(rtc, rtc_timer_ls_api) = {
 	.set_time = rtc_timer_ls_set_time,
 	.get_time = rtc_timer_ls_get_time,
 };

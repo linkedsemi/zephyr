@@ -734,7 +734,7 @@ __ramfunc int flash_ls_ex_op(const struct device *dev, uint16_t code,
 }
 #endif
 
-static struct flash_driver_api flash_ls_api = {
+static DEVICE_API(flash, flash_ls_api) = {
 	.erase = flash_ls_erase,
 	.write = flash_ls_write,
 	.read = flash_ls_read,

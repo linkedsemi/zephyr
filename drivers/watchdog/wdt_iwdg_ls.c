@@ -2,7 +2,7 @@
 
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <errno.h>
 #include <zephyr/irq.h>
 #include <zephyr/logging/log.h>
@@ -194,7 +194,7 @@ static int iwdt_init(const struct device *dev)
 	return 0;
 }
 
-static const struct wdt_driver_api iwdt_ls_api = {
+static DEVICE_API(wdt, iwdt_ls_api) = {
 	.setup = iwdt_ls_setup,
 	.disable = iwdt_ls_disable,
 	.install_timeout = iwdt_ls_install_timeout,

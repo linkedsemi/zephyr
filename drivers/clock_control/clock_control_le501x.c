@@ -36,7 +36,7 @@ static inline int le501x_clock_control_off(const struct device *dev, clock_contr
 }
 
 /* Clock controller driver registration */
-static const struct clock_control_driver_api ls_clock_control_api = {
+static DEVICE_API(clock_control, ls_clock_control_api) = {
     .on = le501x_clock_control_on,
     .off = le501x_clock_control_off,
 };

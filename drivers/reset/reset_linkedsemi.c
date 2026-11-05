@@ -67,7 +67,7 @@ static int reset_linkedsemi_line_toggle(const struct device *dev, uint32_t id)
     return 0;
 }
 
-static const struct reset_driver_api reset_linkedsemi_driver_api = {
+static DEVICE_API(reset, reset_linkedsemi_driver_api) = {
     .status = reset_linkedsemi_status,
     .line_assert = reset_linkedsemi_line_assert,
     .line_deassert = reset_linkedsemi_line_deassert,

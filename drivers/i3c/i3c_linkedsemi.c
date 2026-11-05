@@ -2937,7 +2937,7 @@ static int ls_i3c_i2c_api_transfer(const struct device *dev,
 
 	return ret;
 }
-static const struct i3c_driver_api ls_i3c_driver_api = {
+static DEVICE_API(i3c, ls_i3c_driver_api) = {
 	.configure = ls_i3c_configure,
 	.config_get = ls_i3c_config_get,
 	// .recover_bus = ls_i3c_recover_bus,

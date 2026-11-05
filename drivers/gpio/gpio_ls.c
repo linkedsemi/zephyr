@@ -616,7 +616,7 @@ static int gpio_ls_manage_callback(const struct device *dev,
 	return gpio_manage_callback(&data->callbacks, callback, set);
 }
 
-static const struct gpio_driver_api gpio_ls_driver_api = {
+static DEVICE_API(gpio, gpio_ls_driver_api) = {
 	.pin_configure = gpio_ls_pin_configure,
 	.port_get_raw = gpio_ls_port_get_raw,
 	.port_set_masked_raw = gpio_ls_port_set_masked_raw,
@@ -627,7 +627,7 @@ static const struct gpio_driver_api gpio_ls_driver_api = {
 	.manage_callback = gpio_ls_manage_callback,
 };
 
-static const struct gpio_driver_api gpio_ls_common_driver_api = {
+static DEVICE_API(gpio, gpio_ls_common_driver_api) = {
 	.manage_callback = gpio_ls_manage_callback,
 };
 

@@ -89,7 +89,7 @@ static float mp5023_convert_direct(uint16_t raw_value, uint8_t cmd)
     return result;
 }
 
-static const struct sensor_driver_api mp5023_api = {
+static DEVICE_API(sensor, mp5023_api) = {
     .sample_fetch = mp5023_sample_fetch,
     .channel_get  = mp5023_channel_get,
     .attr_set     = mp5023_attr_set,

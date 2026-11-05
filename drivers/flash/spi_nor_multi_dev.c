@@ -23,7 +23,7 @@
 #include <zephyr/init.h>
 #include <string.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
 
@@ -2873,7 +2873,7 @@ flash_nor_get_parameters(const struct device *dev)
 	return &data->flash_nor_parameter;
 }
 
-static const struct flash_driver_api spi_nor_api = {
+static DEVICE_API(flash, spi_nor_api) = {
 	.read = spi_nor_read,
 	.write = spi_nor_write,
 	.erase = spi_nor_erase,

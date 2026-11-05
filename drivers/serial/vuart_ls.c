@@ -271,7 +271,7 @@ static void vuart_irq_callback_set(const struct device *dev, uart_irq_callback_u
 	ptr_data->irq_user_data = user_data;
 }
 
-static const struct uart_driver_api ls_vuart_api = {
+static DEVICE_API(uart, ls_vuart_api) = {
     .poll_in = vuart_poll_in,
     .poll_out = vuart_poll_out,
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
