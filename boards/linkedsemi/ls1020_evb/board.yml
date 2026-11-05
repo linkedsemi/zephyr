@@ -1,5 +1,6 @@
 board:
   name: ls1020_evb
+  full_name: LinkSemi 1020 Evaluation Board
   vendor: linkedsemi
   socs:
   - name: lsqsh

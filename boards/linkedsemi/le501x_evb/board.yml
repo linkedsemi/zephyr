@@ -1,5 +1,6 @@
 board:
   name: le501x_evb
+  full_name: LinkSemi 501X Evaluation Board
   vendor: linkedsemi
   socs:
   - name: le5010

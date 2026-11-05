@@ -1,5 +1,6 @@
 board:
   name: ls101x_evb
+  full_name: LinkSemi 101X Evaluation Board
   vendor: linkedsemi
   socs:
   - name: ls1010
