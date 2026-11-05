@@ -372,8 +372,11 @@ static int ls_i3c_cntlr_wave_init(const struct device *dev)
 
     // REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_FREE,free_timing+3);
 	REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_FREE,0x7f);
-	/* SDA_HD：SDA hold time 档位随 I3C 内部计数时钟（= 主频 × 2）配置：
-	 * 50MHz → 0，100MHz 及以上 → 1（config->clock_frequency 即内部计数时钟） */
+	/* SDA_HD: the field is 0.5 *internal counting-clock* cycles.  The
+	 * driver stores that counting clock in clock_frequency (2 x the DT
+	 * core clock), so >=100 MHz here means DT core clock >=50 MHz:
+	 * SDA_HD=1 at 50 MHz and above, 0 below (at 25 MHz one step is a
+	 * full core clock and the waveform breaks, e.g. DAA fails). */
 	if (config->clock_frequency >= 100000000) {
 		REG_FIELD_WR(base->TIMINGR1,I3C_TIMINGR1_SDA_HD,1);
 	} else {
@@ -947,13 +950,28 @@ static void ls_i3c_event_isr_rx(const struct device *dev)
 
 		break;
 	}
-	case LS_I3C_MSG_DAA: {
+	case LS_I3C_MSG_DAA:
+	case LS_I3C_MSG_CCC_P2:
+	case LS_I3C_MSG_CCC:
+		/* These three consume the RX FIFO themselves: ls_i3c_do_daa() and
+		 * the CCC path poll the payload out in thread context.  Draining
+		 * here would steal their bytes. */
 		break;
-	}
-	case LS_I3C_MSG_CCC_P2: {
-		break;
-	}
 	default:
+		/* LS_I3C_MSG_ERR (what an errored transfer leaves behind),
+		 * LS_I3C_MSG_IDLE, LS_I3C_MSG_INVAL: no owner, nobody will ever
+		 * read these bytes.
+		 *
+		 * RXFNE is LEVEL-triggered, so leaving it set keeps the line
+		 * asserted forever, and __soc_handle_all_irqs() re-dispatches it
+		 * in a loop with interrupts disabled around each call -- that
+		 * starves the scheduler, the tick and every watchdog, and welded
+		 * the whole core on the first errored transfer (measured
+		 * 2026-10-29: EVR&IER = RXFNEF while SDATACTRL showed RXEMPTY /
+		 * RXCOUNT=0). */
+		while (LL_I3C_IsActiveFlag_RXFNE(base)) {
+			(void)LL_I3C_ReceiveData8(base);
+		}
 		break;
 	}
 }
@@ -2037,7 +2055,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 						}
 					}
 				}
-				else if((data->state != LS_I3C_OP_STATE_RD) && I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_STREQRD_MASK))
+				else if((data->state != LS_I3C_OP_STATE_RD) && I3C_CHECK_FLAG(base->SSTATUS, I3C_SSTATUS_STREQRD_MASK))
 				{
 					/*controller read requset*/
 					uint8_t tx_data;
@@ -2060,14 +2078,19 @@ static void ls_i3c_target_isr(const struct device *dev)
 								(base->SDATACTRL & I3C_SDATACTRL_TXCOUNT_MASK) >>
 								I3C_SDATACTRL_TXCOUNT_POS;
 							if (txcount == 0U) {
-								status = target_cb->read_requested_cb(data->target_config,&tx_data);
+								status = target_cb->read_requested_cb(data->target_config, &tx_data);
 								if(status == 0)
 								{
 									base->SWDATAB = tx_data;
 								}
 								else if(status == 1)
 								{
-									base->SWDATAB = tx_data|I3C_SWDATAB_END0_MASK;
+									base->SWDATAB = tx_data | I3C_SWDATAB_END0_MASK;
+									base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
+								}
+								else if(status < 0)
+								{
+									base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
 								}
 							}
 						}
@@ -2088,10 +2111,6 @@ static void ls_i3c_target_isr(const struct device *dev)
 			{
 				rx_data = (uint8_t)base->SRDATAB;
 				target_cb->write_received_cb(data->target_config, rx_data);
-			}
-			if (base->SSTATUS & I3C_SSTATUS_RXPEND_MASK) {
-				/* 非写相位读 SRDATAB 不弹出导致 budget 耗尽仍有剩字节：
-				 * 只记计数（ISR 内不打印，避免影响时序），由外部观察 */
 			}
 			if(I3C_CHECK_FLAG(base->SSTATUS,I3C_SSTATUS_STREQRD_MASK))
 			{
@@ -2147,6 +2166,11 @@ static void ls_i3c_target_isr(const struct device *dev)
 					else if(status == 1)
 					{
 						base->SWDATAB = byte|I3C_SWDATAB_END0_MASK;
+						base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
+					}
+					else if(status < 0)
+					{
+						base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
 					}
 				}
 			}
@@ -2165,6 +2189,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 				else if(status == 1)
 				{
 					base->SWDATAB = byte|I3C_SWDATAB_END0_MASK;
+					base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
 					break;
 				}
 				else if(status < 0)
@@ -2172,15 +2197,7 @@ static void ls_i3c_target_isr(const struct device *dev)
 					base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
 					break;
 				}
-				// LOG_ERR("tx :SSTATUS=0x%x", base->SSTATUS);
 			}
-			// if(I3C_CHECK_FLAG(base->SINTMASKED,I3C_SINTMASK_TXSEND_MASK))
-			// {
-			// 	if((base->SSTATUS && I3C_SSTATUS_STMSG_MASK) == 0)
-			// 	{
-			// 		base->SINTCLR = I3C_SINTCLR_TXSEND_MASK;
-			// 	}
-			// }
 		}
 
 		if (I3C_CHECK_FLAG(base->SINTMASKED, I3C_SINTMASK_SLVRST_MASK)) {
@@ -2199,8 +2216,6 @@ static void ls_i3c_target_isr(const struct device *dev)
 				if ((data->state != LS_I3C_OP_STATE_RD) &&
 				    I3C_CHECK_FLAG(base->SSTATUS, I3C_SSTATUS_STREQRD_MASK)) {
 					uint8_t tx_data;
-					// LOG_DBG("START read branch, state=%d, SSTATUS=0x%x",
-					// 	data->state, base->SSTATUS);
 					data->state = LS_I3C_OP_STATE_RD;
 					base->SINTSET = I3C_SINTSET_TXSEND_MASK;
 					if ((target_cb != NULL) &&
@@ -2221,6 +2236,9 @@ static void ls_i3c_target_isr(const struct device *dev)
 								} else if (status == 1) {
 									base->SWDATAB = tx_data |
 										I3C_SWDATAB_END0_MASK;
+									base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
+								} else if (status < 0) {
+									base->SINTCLR = I3C_SINTSET_TXSEND_MASK;
 								}
 							}
 						}
@@ -2228,8 +2246,6 @@ static void ls_i3c_target_isr(const struct device *dev)
 				} else if ((data->state != LS_I3C_OP_STATE_WR) &&
 					   I3C_CHECK_FLAG(base->SSTATUS,
 							  I3C_SSTATUS_STREQWR_MASK)) {
-					// LOG_DBG("START write branch, state=%d, SSTATUS=0x%x",
-					// 	data->state, base->SSTATUS);
 					data->state = LS_I3C_OP_STATE_WR;
 					if ((target_cb != NULL) &&
 					    (target_cb->write_requested_cb != 0)) {
@@ -2290,8 +2306,6 @@ static void ls_i3c_target_isr(const struct device *dev)
 						(base->SDYNADDR&I3C_SDYNADDR_DADDR_MASK) >> I3C_SDYNADDR_DADDR_POS;
 				}
 			} else if (target_config != NULL) {
-				/* RSTDAA 等导致动态地址丢失：同步清掉软件记账，
-				 * 避免残留陈旧地址被应用误用 */
 				config_tgt->dynamic_addr = 0;
 			}
 		}
