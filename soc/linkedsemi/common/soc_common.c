@@ -1,6 +1,23 @@
 #include <zephyr/kernel.h>
 #include <kernel_arch_interface.h>
 
+#if defined(CONFIG_ARCH_HAS_RAMFUNC_SUPPORT)
+#include <zephyr/arch/riscv/pmp.h>
+
+extern char __ramfunc_start[];
+extern char __ramfunc_end[];
+
+/*
+ * The .ramfunc section is copied to SRAM and executed from there.
+ * With CONFIG_PMP_DATA_EXECUTION_PREVENTION the whole address space is
+ * execute-protected by default, so the ramfunc region must be whitelisted
+ * explicitly.
+ */
+PMP_SOC_REGION_DEFINE(linkedsemi_ramfunc,
+		      __ramfunc_start, __ramfunc_end,
+		      PMP_R | PMP_W | PMP_X);
+#endif /* CONFIG_ARCH_HAS_RAMFUNC_SUPPORT */
+
 __ramfunc int busy_poll(bool (*poll_fn)(void *),void *param,uint32_t usec_to_wait)
 {
 	uint64_t start_cycles = k_cycle_get_64();
