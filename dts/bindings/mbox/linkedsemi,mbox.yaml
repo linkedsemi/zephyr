@@ -8,14 +8,9 @@ compatible: "linkedsemi,mbox"
 include: [base.yaml, mailbox-controller.yaml]
 
 properties:
-  tx_fifo_first:
+  initiator:
     type: int
     required: true
-    description: |
-      Whether the TX fifo is placed in front of the RX fifo in the shared
-      MBOX memory for every channel.  Two peer images must use opposite
-      values so that the local TX fifo overlaps the peer's RX fifo.
-      0: RX fifo first, 1: TX fifo first
   intr_mask:
     type: int
     description: |

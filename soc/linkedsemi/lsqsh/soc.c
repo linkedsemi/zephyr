@@ -893,3 +893,8 @@ int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms)
 }
 
 #endif /* CONFIG_LINKEDSEMI_TPM_WWDT */
+
+uint8_t mbox_initiator_is_peer_working(void)
+{
+    return is_app_cpu_running();
+}
