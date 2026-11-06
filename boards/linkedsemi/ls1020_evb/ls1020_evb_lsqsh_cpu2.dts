@@ -54,11 +54,7 @@
         intr_clr = <0x40062020>;
         intr_mask = <0x40062024>;
         peer_intr_set = <0x40022028>;
-        /* TX fifo first in the shared MBOX region; the peer image
-         * (lsqsh_evb_cpu1) sets tx_fifo_first = <0> to overlap TX/RX
-         * fifos.
-         */
-        tx_fifo_first = <1>;
+        initiator = <0>;
         #mbox-cells = <5>;
 
         mbox_consumer_qspi1: mbox-consumer_qspi1 {
