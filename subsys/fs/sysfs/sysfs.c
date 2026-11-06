@@ -7,7 +7,7 @@
 #include <zephyr/fs/sysfs.h>
 #include <zephyr/sys/fdtable.h>
 
-LOG_MODULE_REGISTER(sysfs, LOG_LEVEL_INF);
+LOG_MODULE_REGISTER(sysfs, LOG_LEVEL_WRN);
 
 #define SYSFS_FILE_NUM_MAX              (CONFIG_SYSFS_FILE_NUM_MAX)
 #define SYSFS_OPENDIR_NUM_MAX           (16)
@@ -376,7 +376,7 @@ static int sysfs_ioctl(struct fs_file_t *filp, unsigned long cmd, va_list args)
 
     if (attr->ops->ioctl == NULL)
     {
-        LOG_ERR("invalid file pointer or ioctl not supported");
+        LOG_INF("invalid file pointer or ioctl not supported");
         return -ENOTSUP;
     }
 
@@ -386,7 +386,7 @@ static int sysfs_ioctl(struct fs_file_t *filp, unsigned long cmd, va_list args)
     rc = attr->ops->ioctl(attr, cmd, args);
     if (rc < 0)
     {
-        LOG_ERR("file ioctl error (%d)", rc);
+        LOG_INF("file ioctl error (%d)", rc);
     }
 
     return rc;
