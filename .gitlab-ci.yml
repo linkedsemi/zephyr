@@ -1,0 +1,22 @@
+# Merge request gate for the linkedsemi tree.
+# The job only reads git metadata: no build, no toolchain, a few seconds.
+# Local hooks catch a commit as it is made; this catches every commit a merge
+# request brings in, including ones made in another clone or with --no-verify.
+
+stages:
+  - gate
+
+commit-rules:
+  stage: gate
+  tags:
+    - linkedsemi-ci
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - base="$CI_MERGE_REQUEST_DIFF_BASE_SHA"
+    - head="$CI_COMMIT_SHA"
+    - git cat-file -e "$base^{commit}" || git fetch --no-tags origin "$base"
+    - git cat-file -e "$head^{commit}" || git fetch --no-tags origin "$head"
+    - python3 .githooks_linkedsemi.py --check-range "$base..$head"
