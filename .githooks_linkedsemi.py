@@ -11,7 +11,10 @@ state and flips it (installed -> remove, not installed -> install):
     bash .githooks_linkedsemi.py              # toggle
     bash .githooks_linkedsemi.py --install
     bash .githooks_linkedsemi.py --remove
+    bash .githooks_linkedsemi.py --check-range BASE..HEAD   # CI, no install
 
+--check-range runs the same rules over every commit a range brings in, which
+is what a merge request needs: the hooks only ever see one local commit.
 The script writes four standalone hook files into the hooks directory of the
 repository (the common git dir, so worktrees share them) and never runs by
 itself: each installed hook is a full copy of this file with its hook name
@@ -214,8 +217,8 @@ def emit(errors):
 
 
 
-def added_line_errors():
-    """Rules 3 to 5, one pass over the added lines of the index.
+def added_line_errors(diff=None):
+    r"""Rules 3 to 5, one pass over the added lines of the index.
 
     The hunk header carries the line counts, so a hunk is consumed exactly and
     an added line whose content starts with "++ " is never mistaken for a
@@ -230,7 +233,8 @@ def added_line_errors():
     hunk_done = False
     in_hunk = False
 
-    for line in staged_diff().split("\n"):
+    text = staged_diff() if diff is None else diff
+    for line in text.split("\n"):
         if in_hunk:
             tag = line[:1]
             if tag == "\\":
@@ -247,7 +251,9 @@ def added_line_errors():
                         errors.append("%s:%d: trailing whitespace"
                                       % (path, number))
                     indent = body[:len(body) - len(body.lstrip(" \t"))]
-                    if " " in indent and "\t" in indent:
+                    # A tab indent followed by alignment spaces is normal in
+                    # zephyr C: only spaces before a tab are a real mix.
+                    if indent.startswith(" ") and "\t" in indent:
                         errors.append("%s:%d: mixed tabs and spaces in "
                                       "indentation" % (path, number))
                     previous_added = True
@@ -323,27 +329,29 @@ def message_subject(path):
 
 
 
+def subject_errors(subject):
+    """Rule 7: the subject needs enough english words."""
+    words = WORD_PATTERN.findall(subject)
+    if len(words) >= MIN_SUBJECT_WORDS:
+        return []
+    return ["the commit message needs at least %d english words, got %d: %s"
+            % (MIN_SUBJECT_WORDS, len(words), subject or "<empty>")]
+
+
 def check_message(path):
-    """Rule 6: the subject needs enough english words."""
+    """Rule 7 on a message file, for the commit-msg hook."""
     if is_skipped_operation():
         return 0
 
-    subject = message_subject(path)
-    words = WORD_PATTERN.findall(subject)
-    if len(words) >= MIN_SUBJECT_WORDS:
+    errors = subject_errors(message_subject(path))
+    if not errors:
         return 0
-
-    return fail("the commit message needs at least %d english words, got %d: %s"
-                % (MIN_SUBJECT_WORDS, len(words), subject or "<empty>"))
+    return emit(errors)
 
 
 
-def check_staged():
-    """Rules 1 to 5 on the index. Every violation is reported in one run."""
-    changes = staged_changes()
-    if not changes:
-        return 0
-
+def content_errors(changes, diff_text):
+    """Rules 2 to 6 for one set of changes. Every violation is reported."""
     errors = []
 
     chinese = [path for status, path in changes
@@ -352,17 +360,90 @@ def check_staged():
         errors.append("chinese characters are not allowed in file names: %s"
                       % ", ".join(chinese))
 
-    errors.extend(added_line_errors())
+    errors.extend(added_line_errors(diff_text))
 
     outside = [path for _, path in changes if not is_in_free_dir(path)]
     if len(outside) > MAX_OUTSIDE_FREE_DIRS:
         errors.append("only one file can be committed outside free directories, "
                       "%d found: %s" % (len(outside), ", ".join(outside)))
 
+    return errors
+
+
+def check_staged():
+    """Rules 1 to 6 on the index. Every violation is reported in one run."""
+    changes = staged_changes()
+    if not changes:
+        return 0
+
+    errors = content_errors(changes, staged_diff())
     if not errors:
         return 0
     return emit(errors)
 
+
+def commit_short(sha):
+    return run_git(["rev-parse", "--short", sha]).stdout.strip()
+
+
+def commit_author(sha):
+    return run_git(["show", "-s", "--format=%ae", sha]).stdout.strip().lower()
+
+
+def commit_subject(sha):
+    return run_git(["show", "-s", "--format=%s", sha]).stdout.strip()
+
+
+def commit_changes(sha):
+    return parse_name_status(
+        run_git(["diff-tree", "--no-commit-id", "--root", "-r", "--name-status",
+                 "-z", sha]).stdout)
+
+
+def commit_diff(sha):
+    return run_git(["show", "--format=", "--patch", "--no-color",
+                    "--no-ext-diff", "--src-prefix=a/", "--dst-prefix=b/",
+                    "-U0", "--root", sha]).stdout
+
+
+def range_commits(spec):
+    """Every non-merge commit of BASE..HEAD, oldest first."""
+    base = spec
+    head = "HEAD"
+    if ".." in spec:
+        base, _, head = spec.partition("..")
+        head = head or "HEAD"
+    output = run_git(["rev-list", "--no-merges", "--reverse",
+                      "%s..%s" % (base, head)]).stdout
+    return [line for line in output.split("\n") if line]
+
+
+def check_range(spec):
+    """The same rules over every commit a merge request would bring in.
+
+    Used by CI: the hooks only see a local commit, a merge request brings a
+    whole range, and unreviewed commits can arrive from any clone."""
+    if not spec:
+        return fail("--check-range needs BASE..HEAD or CI_MERGE_REQUEST_DIFF_BASE_SHA")
+
+    commits = range_commits(spec)
+    errors = []
+    checked = 0
+    for sha in commits:
+        if not commit_author(sha).endswith(LINKEDSEMI_DOMAIN):
+            continue
+        checked += 1
+        short = commit_short(sha)
+        found = content_errors(commit_changes(sha), commit_diff(sha))
+        found.extend(subject_errors(commit_subject(sha)))
+        errors.extend("%s: %s" % (short, item) for item in found)
+
+    if errors:
+        return emit(errors)
+
+    sys.stdout.write("%d of %d commit(s) in %s checked, no violation\n"
+                     % (checked, len(commits), spec))
+    return 0
 
 
 SHIM_MARKER = "linkedsemi commit gate"
@@ -510,7 +591,9 @@ def usage():
         "usage: bash %s             install, or remove when installed\n"
         "       bash %s --install   install the commit gate\n"
         "       bash %s --remove    remove the commit gate\n"
-        % (SELF_NAME, SELF_NAME, SELF_NAME))
+        "       bash %s --check-range BASE..HEAD   check commits, for CI\n"
+        "default BASE for --check-range: CI_MERGE_REQUEST_DIFF_BASE_SHA\n"
+        % (SELF_NAME, SELF_NAME, SELF_NAME, SELF_NAME))
 
 
 def all_installed():
@@ -544,6 +627,12 @@ def command(argv):
         return install_verbose()
     if option in ("--remove", "-r"):
         return uninstall()
+    if option == "--check-range":
+        spec = argv[1] if len(argv) > 1 else os.environ.get(
+            "CI_MERGE_REQUEST_DIFF_BASE_SHA", "")
+        if spec and ".." not in spec:
+            spec = "%s..HEAD" % spec
+        return check_range(spec)
     if option == "":
         return toggle()
     if option in ("--help", "-h"):
@@ -590,7 +679,7 @@ def run_hook(hook, args):
 def main(argv):
     rest = argv[1:]
     if rest and rest[0] in ("--install", "-i", "--remove", "-r",
-                            "--help", "-h"):
+                            "--help", "-h", "--check-range"):
         return command(rest)
     if HOOK_NAME:
         return run_hook(HOOK_NAME, rest)
