@@ -233,6 +233,10 @@ struct mmbi_host_int {
     uint8_t vw_data;
 };
 
+struct mmbi_host_rws_wr {
+    uint8_t ch;
+};
+
 enum mmbi_msg_type {
     MMBI_INFO,
     MMBI_HOST_INT,
@@ -244,6 +248,7 @@ struct mmbi_msg {
     union {
         struct mmbi_info info;
         struct mmbi_host_int host_int;
+        struct mmbi_host_rws_wr host_rws_wr;
     }u;
 };
 
