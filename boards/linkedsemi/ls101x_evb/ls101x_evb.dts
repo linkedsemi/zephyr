@@ -259,12 +259,10 @@ zephyr_udc0: &usb {
 	e8042: e8042 {
 		compatible = "linkedsemi,ls-kcs";
 		port = <0x60 0x64>;
-		up-irq = <1 0>;
-		status = "okay";
+		status = "disabled";
 	};
 
-
-	status = "okay";
+	status = "disabled";
 };
 
 &peci0 {

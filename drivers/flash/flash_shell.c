@@ -41,11 +41,11 @@ static uint8_t CACHE_BUF_ALIGNMENT flash_load_buf[FLASH_LOAD_BUF_MAX];
  */
 #if defined(CONFIG_DCACHE)
 BUILD_ASSERT(0 < CONFIG_DCACHE_LINE_SIZE);
-#endif
-BUILD_ASSERT(1 <= BUF_ARRAY_CNT);
 BUILD_ASSERT(0 == (CONFIG_FLASH_SHELL_BUFFER_SIZE % CONFIG_DCACHE_LINE_SIZE));
 BUILD_ASSERT(0 == (BUF_ARRAY_CNT % CONFIG_DCACHE_LINE_SIZE));
 BUILD_ASSERT(0 == (FLASH_LOAD_BUF_MAX % CONFIG_DCACHE_LINE_SIZE));
+#endif
+BUILD_ASSERT(1 <= BUF_ARRAY_CNT);
 
 static const struct device *const zephyr_flash_controller =
 	DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_flash_controller));
@@ -230,7 +230,6 @@ static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 	int upto;
 	int cnt;
 	int ret;
-	size_t line_len = MIN(CMD_READ_BUF_SIZE, SHELL_HEXDUMP_BYTES_IN_LINE);
 
 	ret = parse_helper(sh, &argc, &argv, &flash_dev, &addr);
 	if (ret) {
@@ -253,6 +252,7 @@ static int cmd_read(const struct shell *sh, size_t argc, char *argv[])
 			return -EIO;
 		}
 #if defined(CONFIG_DCACHE)
+		size_t line_len = MIN(CMD_READ_BUF_SIZE, SHELL_HEXDUMP_BYTES_IN_LINE);
 		for (int off = 0; off < todo; off += line_len) {
 			shell_hexdump_line(sh, addr + off, data + off, line_len);
 		}
