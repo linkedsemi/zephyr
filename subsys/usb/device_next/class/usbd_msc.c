@@ -321,46 +321,9 @@ static void msc_queue_write(struct msc_bot_ctx *ctx)
 static void msc_queue_cbw(struct usbd_class_data *const c_data)
 {
 	struct msc_bot_ctx *ctx = usbd_class_get_private(c_data);
-	struct usbd_context *uds_ctx = usbd_class_get_ctx(c_data);
-
-	if (usbd_bus_speed(uds_ctx) == USBD_SPEED_HS) {
-		return ctx->desc->if0_hs_out_ep.wMaxPacketSize;
-	}
-
-	return ctx->desc->if0_out_ep.wMaxPacketSize;
-}
-
-static void msc_stall_bulk_out_ep(struct usbd_class_data *const c_data)
-{
-	uint8_t ep;
-
-	ep = msc_get_bulk_out(c_data);
-	usbd_ep_set_halt(usbd_class_get_ctx(c_data), ep);
-}
-
-static void msc_stall_bulk_in_ep(struct usbd_class_data *const c_data)
-{
-	uint8_t ep;
-
-	ep = msc_get_bulk_in(c_data);
-	usbd_ep_set_halt(usbd_class_get_ctx(c_data), ep);
-}
-
-static void msc_stall_and_wait_for_recovery(struct msc_bot_ctx *ctx)
-{
-	atomic_set_bit(&ctx->bits, MSC_BULK_IN_WEDGED);
-	atomic_set_bit(&ctx->bits, MSC_BULK_OUT_WEDGED);
-	msc_stall_bulk_in_ep(ctx->class_node);
-	msc_stall_bulk_out_ep(ctx->class_node);
-	ctx->state = MSC_BBB_WAIT_FOR_RESET_RECOVERY;
-}
-
-static void msc_queue_write(struct msc_bot_ctx *ctx)
-{
 	struct net_buf *buf;
 	uint8_t *scsi_buf;
 	uint8_t ep;
-	size_t len;
 	int ret;
 
 	if (ctx->num_out_queued) {
@@ -728,7 +691,6 @@ static void usbd_msc_handle_request(struct usbd_class_data *c_data,
 		if (err == -ECONNABORTED) {
 			LOG_WRN("request ep 0x%02x, len %u cancelled",
 				bi->ep, buf->len);
-			atomic_clear_bit(&ctx->bits, MSC_CLASS_ENABLED);
 		} else {
 			LOG_ERR("request ep 0x%02x, len %u failed",
 				bi->ep, buf->len);
