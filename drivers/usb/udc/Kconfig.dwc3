@@ -6,6 +6,7 @@ config UDC_DWC3
 	default y
 	depends on DT_HAS_SNPS_DWC3_ENABLED
 	select EVENTS
+	select UDC_DRIVER_HAS_HIGH_SPEED_SUPPORT
 	help
 	  DWC3 USB device controller driver.
 
