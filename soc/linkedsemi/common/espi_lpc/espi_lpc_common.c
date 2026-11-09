@@ -94,6 +94,32 @@ void espi_lpc_remove_mem(const struct device *dev,struct peri_mem *mem)
     k_spin_unlock(&data->mem_lock, key);
 }
 
+#ifdef CONFIG_KCS_AMP_PERTERSON_LOCK
+static inline void amp_lock(struct peterson_lock *lock,uint8_t id)
+{
+	lock->flag[id] = true;
+	lock->turn = !id;
+	while(lock->flag[!id] && lock->turn == !id);
+}
+
+static inline void amp_unlock(struct peterson_lock *lock,uint8_t id)
+{
+	lock->flag[id] = false;
+}
+
+unsigned int kcs_env_lock(struct host_kcs_env *env)
+{
+	unsigned int key = arch_irq_lock();
+	amp_lock(&env->lock,0);
+	return key;
+}
+
+void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
+{
+	amp_unlock(&env->lock,0);
+	arch_irq_unlock(key);
+}
+#else
 unsigned int kcs_env_lock(struct host_kcs_env *env)
 {
 	unsigned int key = arch_irq_lock();
@@ -109,6 +135,7 @@ void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
 	atomic_dec(&env->lock);
 	arch_irq_unlock(key);
 }
+#endif
 
 #ifdef CONFIG_ESPI_LPC_MBOX
 static void espi_lpc_mbox_msg_send(const struct mbox_dt_spec *mbox,void *msg_ptr,size_t size)
