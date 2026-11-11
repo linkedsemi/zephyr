@@ -2,8 +2,6 @@
 #include <zephyr/sys/util.h>
 #include "espi_lpc_common.h"
 
-#define KCS_ENV_LOCK_TIMEOUT_US 20u
-
 
 void espi_lpc_raise_edge_irq(const struct device *dev,uint8_t idx)
 {
@@ -100,14 +98,16 @@ void espi_lpc_remove_mem(const struct device *dev,struct peri_mem *mem)
 #ifdef CONFIG_KCS_AMP_PERTERSON_LOCK
 static inline bool amp_lock(struct peterson_lock *lock,uint8_t id)
 {
-	uint32_t limit = k_us_to_cyc_ceil32(KCS_ENV_LOCK_TIMEOUT_US);
+	uint32_t limit = k_us_to_cyc_ceil32(CONFIG_KCS_ENV_LOCK_TIMEOUT_US);
+	uint32_t elapsed;
 	uint32_t start = k_cycle_get_32();
 
 	lock->flag[id] = true;
 	lock->turn = !id;
 	while(lock->flag[!id] && lock->turn == !id)
 	{
-		if((k_cycle_get_32() - start) >= limit)
+		elapsed = k_cycle_get_32() - start;
+		if(elapsed >= limit)
 		{
 			/* Withdraw our own claim, same as amp_unlock(). */
 			lock->flag[id] = false;
@@ -141,7 +141,8 @@ void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
 #else
 bool kcs_env_lock(struct host_kcs_env *env,unsigned int *key)
 {
-	uint32_t limit = k_us_to_cyc_ceil32(KCS_ENV_LOCK_TIMEOUT_US);
+	uint32_t limit = k_us_to_cyc_ceil32(CONFIG_KCS_ENV_LOCK_TIMEOUT_US);
+	uint32_t elapsed;
 	uint32_t start;
 
 	*key = arch_irq_lock();
@@ -150,7 +151,8 @@ bool kcs_env_lock(struct host_kcs_env *env,unsigned int *key)
 	while(atomic_inc(&env->lock))
 	{
 		atomic_dec(&env->lock);
-		if((k_cycle_get_32() - start) >= limit)
+		elapsed = k_cycle_get_32() - start;
+		if(elapsed >= limit)
 		{
 			arch_irq_unlock(*key);
 			return false;
