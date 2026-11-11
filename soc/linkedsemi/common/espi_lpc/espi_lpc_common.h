@@ -206,7 +206,7 @@ struct peterson_lock {
     bool flag[2];
     uint8_t turn;
 } __attribute__((aligned(4)));
-typedef struct perterson_lock kcs_lock_t;
+typedef struct peterson_lock kcs_lock_t;
 #else
 typedef atomic_t kcs_lock_t;
 #endif
@@ -290,7 +290,7 @@ void vuart_b2h_mode_set(const struct host_bmc_msg_exch *exch,bool host_rx_from_v
 
 int get_host_vuart_mode_setting(const struct device *dev, uint8_t *rx_enable, uint8_t *tx_enable);
 
-unsigned int kcs_env_lock(struct host_kcs_env *env);
+bool kcs_env_lock(struct host_kcs_env *env,unsigned int *key);
 
 void kcs_env_unlock(struct host_kcs_env *env,unsigned int key);
 
