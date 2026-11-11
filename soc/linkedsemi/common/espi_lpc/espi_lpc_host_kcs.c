@@ -24,7 +24,12 @@ struct host_kcs_ls_data {
 static void data_cmd_stt_iowr(const struct device *dev,uint8_t size,uint8_t *data,bool is_data)
 {
     const struct host_kcs_ls_config *cfg = dev->config;
-    uint32_t key = kcs_env_lock(cfg->kcs_env);
+    uint32_t key;
+
+    if(!kcs_env_lock(cfg->kcs_env,&key))
+    {
+        return;
+    }
     cfg->kcs_env->data_in = data[0];
     cfg->kcs_env->status |= KCS_IBF;
     if(is_data)
@@ -43,7 +48,13 @@ static void data_io_read(const struct peri_ioport_content *ioport,uint8_t size,v
     uint8_t *val = res;
     struct device *dev = ioport->ctx;
     const struct host_kcs_ls_config *cfg = dev->config;
-    uint32_t key = kcs_env_lock(cfg->kcs_env);
+    uint32_t key;
+
+    if(!kcs_env_lock(cfg->kcs_env,&key))
+    {
+        *val = 0xFF;
+        return;
+    }
 	*val = cfg->kcs_env->data_out;
 	cfg->kcs_env->status &= ~KCS_OBF;
     kcs_env_unlock(cfg->kcs_env,key);
@@ -59,7 +70,13 @@ static void cmd_stt_io_read(const struct peri_ioport_content *ioport,uint8_t siz
     uint8_t *val = res;
     struct device *dev = ioport->ctx;
     const struct host_kcs_ls_config *cfg = dev->config;
-    uint32_t key = kcs_env_lock(cfg->kcs_env);
+    uint32_t key;
+
+    if(!kcs_env_lock(cfg->kcs_env,&key))
+    {
+        *val = 0xFF;
+        return;
+    }
 	*val = cfg->kcs_env->status;
     kcs_env_unlock(cfg->kcs_env,key);
 }
