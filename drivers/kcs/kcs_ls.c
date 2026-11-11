@@ -39,7 +39,13 @@ static int kcs_ls_read_data(const struct device *dev,uint8_t *data)
 {
     const struct kcs_ls_config *cfg = dev->config;
     int ret = 0;
-    uint32_t key = kcs_env_lock(cfg->kcs_env);
+    uint32_t key;
+
+    *data = 0xFF;
+    if(!kcs_env_lock(cfg->kcs_env,&key))
+    {
+        return -EBUSY;
+    }
     if(cfg->kcs_env->status & KCS_IBF)
     {
         cfg->kcs_env->status &= ~KCS_IBF;
@@ -56,7 +62,12 @@ static int kcs_ls_write_data(const struct device *dev,uint8_t data)
 {
     const struct kcs_ls_config *cfg = dev->config;
     int ret = 0;
-    uint32_t key = kcs_env_lock(cfg->kcs_env);
+    uint32_t key;
+
+    if(!kcs_env_lock(cfg->kcs_env,&key))
+    {
+        return -EBUSY;
+    }
     if(cfg->kcs_env->status & KCS_OBF)
     {
         ret = -EIO;
@@ -83,7 +94,12 @@ static int kcs_ls_read_status(const struct device *dev,uint8_t *status)
 static int kcs_ls_update_status(const struct device *dev,uint8_t mask,uint8_t val)
 {
     const struct kcs_ls_config *cfg = dev->config;
-    uint32_t key = kcs_env_lock(cfg->kcs_env);
+    uint32_t key;
+
+    if(!kcs_env_lock(cfg->kcs_env,&key))
+    {
+        return -EBUSY;
+    }
     cfg->kcs_env->status = (cfg->kcs_env->status & ~mask) | val;
     kcs_env_unlock(cfg->kcs_env,key);
     return 0;
