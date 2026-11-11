@@ -74,6 +74,17 @@ config LINKEDSEMI_TPM_WWDT
 
     help
       Enable wwdt1_tpm_init() in lsqsh soc.c
+
+config KCS_ENV_LOCK_TIMEOUT_US
+    int "KCS env lock timeout (microseconds)"
+    default 20
+    range 1 1000000
+    depends on ESPI_LPC
+
+    help
+        Maximum time kcs_env_lock() waits for the shared KCS environment
+        word before giving up and reporting the failure to the caller.
+
 rsource "*/Kconfig"
 
 endif
