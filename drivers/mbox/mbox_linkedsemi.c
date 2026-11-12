@@ -374,7 +374,7 @@ static inline void mbox_info_init(const struct device *dev)
 }
 #endif
 
-#if MBOX_INITIATOR
+#if MBOX_INITIATOR || defined(CONFIG_MBOX_LINKEDSEMI_TX_FIFO_INIT_LEGACY)
 static void fifo_env_init(struct fifo_env *fifo, uint16_t width, uint16_t depth)
 {
 	fifo->rd_idx = 0;
@@ -384,44 +384,43 @@ static void fifo_env_init(struct fifo_env *fifo, uint16_t width, uint16_t depth)
 	fifo->length = depth;
 }
 
-static int mbox_linkedsemi_init(const struct device *dev)
-{
-	const struct mbox_linkedsemi_config *dev_config = dev->config;
-	if (mbox_initiator_is_peer_working()) {
-		return mbox_check(dev);
-	} else {
-		mbox_info_init(dev);
-		for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
-			const struct mbox_fifo_cfg *cfg;
-			cfg = &dev_config->fifo.cfg[i][MBOX_FIFO_TX_SLOT];
-			if (!cfg->env) {continue;}
-			fifo_env_init(cfg->env, cfg->width, cfg->depth);
-			cfg = &dev_config->fifo.cfg[i][MBOX_FIFO_RX_SLOT];
-			__ASSERT_NO_MSG(cfg->env);
-			fifo_env_init(cfg->env, cfg->width, cfg->depth);
-		}
-		return 0;
-	}
-}
-#else
-
-#ifdef CONFIG_MBOX_LINKEDSEMI_TX_FIFO_INIT_LEGACY
-static void tx_fifo_init(const struct device *dev)
+static void mbox_channels_fifo_init(const struct device *dev, uint8_t fifo_slot)
 {
 	const struct mbox_linkedsemi_config *dev_config = dev->config;
 	for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
 		const struct mbox_fifo_cfg *cfg;
-		cfg = &dev_config->fifo.cfg[i][MBOX_FIFO_TX_SLOT];
+		cfg = &dev_config->fifo.cfg[i][fifo_slot];
 		if (!cfg->env) {continue;}
 		fifo_env_init(cfg->env, cfg->width, cfg->depth);
 	}
 }
-#else
-static void tx_fifo_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-}
 #endif
+
+#ifdef CONFIG_MBOX_LINKEDSEMI_TX_FIFO_INIT_LEGACY
+#define MBOX_INITIATOR_FIFO_INIT(dev) \
+	mbox_channels_fifo_init(dev, MBOX_FIFO_TX_SLOT)
+#define MBOX_FOLLOWER_FIFO_INIT(dev) \
+	mbox_channels_fifo_init(dev, MBOX_FIFO_TX_SLOT)
+#else
+#define MBOX_INITIATOR_FIFO_INIT(dev) do { \
+	mbox_channels_fifo_init(dev, MBOX_FIFO_TX_SLOT); \
+	mbox_channels_fifo_init(dev, MBOX_FIFO_RX_SLOT); \
+} while (0)
+#define MBOX_FOLLOWER_FIFO_INIT(dev) do { } while (0)
+#endif
+
+#if MBOX_INITIATOR
+static int mbox_linkedsemi_init(const struct device *dev)
+{
+	if (mbox_initiator_is_peer_working()) {
+		return mbox_check(dev);
+	} else {
+		mbox_info_init(dev);
+		MBOX_INITIATOR_FIFO_INIT(dev);
+		return 0;
+	}
+}
+#else
 
 static int mbox_linkedsemi_init(const struct device *dev)
 {
@@ -429,7 +428,7 @@ static int mbox_linkedsemi_init(const struct device *dev)
 	if(layout_check_result) {
 		return layout_check_result;
 	}
-	tx_fifo_init(dev);
+	MBOX_FOLLOWER_FIFO_INIT(dev);
 	return 0;
 }
 #endif
