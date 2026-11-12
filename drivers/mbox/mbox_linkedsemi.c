@@ -340,12 +340,11 @@ static int mbox_check(const struct device *dev)
 	for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
 		const struct mbox_fifo_cfg *cfg;
 		cfg = &dev_config->fifo.cfg[i][MBOX_FIFO_TX_SLOT];
-		if (!mbox_fifo_cfg_check(dev, cfg, &mbox_info->fifo.cfg[i][MBOX_FIFO_RX_SLOT])) {
+		if (!mbox_fifo_cfg_check(dev, cfg, &mbox_info->fifo.cfg[i][MBOX_FIFO_TX_SLOT])) {
 			return -ENODEV;
 		}
 		cfg = &dev_config->fifo.cfg[i][MBOX_FIFO_RX_SLOT];
-		if (!mbox_fifo_cfg_check(dev, cfg, &mbox_info->fifo.cfg[i][MBOX_FIFO_TX_SLOT])) {
-			DEV_ERR(dev, "MBOX RX/TX fifo env/width/depth mismatch, check image");
+		if (!mbox_fifo_cfg_check(dev, cfg, &mbox_info->fifo.cfg[i][MBOX_FIFO_RX_SLOT])) {
 			return -ENODEV;
 		}
 	}
