@@ -404,9 +404,33 @@ static int mbox_linkedsemi_init(const struct device *dev)
 	}
 }
 #else
+
+#ifdef CONFIG_MBOX_LINKEDSEMI_TX_FIFO_INIT_LEGACY
+static void tx_fifo_init(const struct device *dev)
+{
+	const struct mbox_linkedsemi_config *dev_config = dev->config;
+	for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
+		const struct mbox_fifo_cfg *cfg;
+		cfg = &dev_config->fifo.cfg[i][MBOX_FIFO_TX_SLOT];
+		if (!cfg->env) {continue;}
+		fifo_env_init(cfg->env, cfg->width, cfg->depth);
+	}
+}
+#else
+static void tx_fifo_init(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+}
+#endif
+
 static int mbox_linkedsemi_init(const struct device *dev)
 {
-	return mbox_check(dev);
+	int layout_check_result = mbox_check(dev);
+	if(layout_check_result) {
+		return layout_check_result;
+	}
+	tx_fifo_init(dev);
+	return 0;
 }
 #endif
 

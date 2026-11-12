@@ -26,3 +26,16 @@ config MBOX_LINKEDSEMI_LAYOUT_CHECK
 	  Disabling the check skips the cross-image validation, so a
 	  devicetree mismatch between the two images (channel count, fifo
 	  width/depth or shared region placement) is no longer detected.
+
+config MBOX_LINKEDSEMI_TX_FIFO_INIT_LEGACY
+	bool "Legacy TX fifo initialization on the peer core"
+	depends on MBOX_LINKEDSEMI
+	default y if !MBOX_LINKEDSEMI_LAYOUT_CHECK
+	help
+	  Initialize the local TX fifo environment on the non-initiator core
+	  during driver init (legacy behavior).
+
+	  Enabled by default when CONFIG_MBOX_LINKEDSEMI_LAYOUT_CHECK is
+	  disabled.  When the layout check is enabled, the peer core adopts
+	  the initiator-published shared memory layout, so re-initializing
+	  the TX fifo here is not needed and is disabled by default.
