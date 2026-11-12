@@ -16,7 +16,7 @@ properties:
     required: false
     enum:
       - temp
-      - psu
+      - pmbus
       - intrusion
       - peci_cputemp
     # NOTE: `sensor-type` is only a label (used for the hwmon `name` file).
@@ -44,6 +44,25 @@ properties:
       iin1, iout1, pin, pout1, should pick from labelMatch in PSUSensorMain). 
       If ":<label>" is omitted no label file is
       created and dbus-sensors falls back to the generic "output" property.
+  attr-set:
+    type: string
+    required: false
+    description: >
+      Name of a code-side attribute set in hwmon_general.c ("pmbus"), used
+      instead of listing every file in `meas`. A set is a table of hwmon ABI
+      file names for a conventional chip layout, so a device with dozens of
+      files needs one line here rather than dozens of `meas` entries.
+      Precedence: `meas` wins when both are present.
+  channels:
+    type: int
+    required: false
+    description: >
+      Optional cut-off for `attr-set`: entries whose file name carries a number
+      greater than `channels` are not created. Omit it to keep the whole set.
+      The number in a hwmon file name is the sensor driver's sub-channel
+      selector (val2 = number - 1), so this is a per-prefix limit (e.g.
+      channels = 2 keeps in1/in2 but drops in3), not a "number of output
+      rails" knob.
   hwmon-ins:
     type: phandle-array
   hwmon-outs:
