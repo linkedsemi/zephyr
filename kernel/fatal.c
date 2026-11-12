@@ -17,6 +17,21 @@
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
+/* Number of fatal errors seen since boot.
+ *
+ * Read by the application watchdog (openbmc_zephyr_app/app/src/watchdog_feed.c).
+ * A non-zero value means this system is running half-dead: z_fatal_error()
+ * below aborts only the faulting thread, so every other thread -- including the
+ * watchdog feeder -- keeps running as if nothing had happened, and the
+ * faulting thread may well have died while holding a spinlock, a mutex or the
+ * heap lock.
+ *
+ * Only a plain increment: this runs with interrupts locked, inside an
+ * exception, so nothing that could reschedule (k_sem_give(), k_work, ...) is
+ * allowed here. Deliberately not static so the application can poll it.
+ */
+volatile uint32_t z_fatal_error_count;
+
 /* LCOV_EXCL_START */
 FUNC_NORETURN __weak void arch_system_halt(unsigned int reason)
 {
@@ -91,6 +106,8 @@ void z_fatal_error(unsigned int reason, const struct arch_esf *esf)
 	unsigned int key = arch_irq_lock();
 	struct k_thread *thread = IS_ENABLED(CONFIG_MULTITHREADING) ?
 			_current : NULL;
+
+	z_fatal_error_count++;
 
 	/* twister looks for the "ZEPHYR FATAL ERROR" string, don't
 	 * change it without also updating twister
