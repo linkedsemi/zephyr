@@ -255,19 +255,16 @@ zephyr_udc0: &usb {
 	};
 };
 
-&espi {
-	e8042: e8042 {
-		compatible = "linkedsemi,ls-kcs";
-		port = <0x60 0x64>;
-		status = "disabled";
-	};
-
-	status = "disabled";
-};
-
 &peci0 {
 	status = "okay";
 	pinctrl-0 = <&peci_default_pc04>;
+	pinctrl-names = "default";
+};
+
+&espi {
+	pinctrl-0 = <&espi_alert_pd09 &espi_cs_pd10 &espi_dat3_pd11
+		     &espi_dat2_pd12 &espi_dat1_pd13 &espi_dat0_pd14
+		     &espi_clk_pd15>;
 	pinctrl-names = "default";
 };
 
