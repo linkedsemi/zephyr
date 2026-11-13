@@ -1,5 +1,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/mbox.h>
+#include <zephyr/interrupt_util.h>
 #include <zephyr/irq.h>
 #define LOG_LEVEL CONFIG_MBOX_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -51,6 +52,8 @@ struct mbox_linkedsemi_config {
 struct mbox_linkedsemi_data {
 	mbox_callback_t cb[MBOX_NCHANNELS];
 	void *user_data[MBOX_NCHANNELS];
+	bool enabled[MBOX_NCHANNELS];
+	int irq;
 };
 
 
@@ -129,7 +132,7 @@ static inline void mbox_linkedsemi_peer_intr_set(const struct mbox_linkedsemi_co
 }
 
 /* return true if the channel is present (status okay) in the devicetree */
-static inline bool mbox_linkedsemi_channel_enabled(const struct mbox_linkedsemi_config *dev_config,
+static inline bool mbox_linkedsemi_channel_configured(const struct mbox_linkedsemi_config *dev_config,
 						   uint32_t channel)
 {
 	return (dev_config->fifo.cfg[channel][MBOX_FIFO_TX_SLOT].env != NULL) &&
@@ -161,6 +164,12 @@ static void mbox_linkedsemi_rx_callback_handle(const struct device *dev, uint32_
 	} while (ret);
 }
 
+static inline bool mbox_linkedsemi_channel_enabled(const struct device *dev, uint32_t channel)
+{
+	const struct mbox_linkedsemi_data *dev_data = dev->data;
+	return dev_data->enabled[channel];
+}
+
 static void mbox_linkedsemi_isr(const struct device *dev)
 {
 	/* clear local pending interrupt first so that the peer can raise
@@ -170,10 +179,12 @@ static void mbox_linkedsemi_isr(const struct device *dev)
 
 	for (uint8_t i = 0; i < MBOX_NCHANNELS; i++) {
 		/* skip channels disabled in the devicetree */
-		if (!mbox_linkedsemi_channel_enabled(dev->config, i)) {
+		if (!mbox_linkedsemi_channel_configured(dev->config, i)) {
 			continue;
 		}
-		mbox_linkedsemi_rx_callback_handle(dev, i);
+		if (mbox_linkedsemi_channel_enabled(dev, i)) {
+			mbox_linkedsemi_rx_callback_handle(dev, i);
+		}
 	}
 }
 
@@ -187,7 +198,7 @@ static int mbox_linkedsemi_send(const struct device *dev, uint32_t channel, cons
 		return -EINVAL;
 	}
 
-	if (!mbox_linkedsemi_channel_enabled(dev_config, channel)) {
+	if (!mbox_linkedsemi_channel_configured(dev_config, channel)) {
 		DEV_ERR(dev, "channel: %d is disabled in DT\n", channel);
 		return -ENODEV;
 	}
@@ -224,7 +235,7 @@ static int mbox_linkedsemi_register_callback(const struct device *dev, uint32_t 
 		return -EINVAL;
 	}
 
-	if (!mbox_linkedsemi_channel_enabled(dev->config, channel)) {
+	if (!mbox_linkedsemi_channel_configured(dev->config, channel)) {
 		DEV_ERR(dev, "channel: %d is disabled in DT\n", channel);
 		return -ENODEV;
 	}
@@ -244,7 +255,7 @@ int mbox_linkedsemi_tx_mtu_get(const struct device *dev, uint32_t channel)
 		return -EINVAL;
 	}
 
-	if (!mbox_linkedsemi_channel_enabled(dev_config, channel)) {
+	if (!mbox_linkedsemi_channel_configured(dev_config, channel)) {
 		DEV_ERR(dev, "channel: %d is disabled in DT\n", channel);
 		return -ENODEV;
 	}
@@ -261,7 +272,7 @@ int mbox_linkedsemi_rx_mtu_get(const struct device *dev, uint32_t channel)
 		return -EINVAL;
 	}
 
-	if (!mbox_linkedsemi_channel_enabled(dev_config, channel)) {
+	if (!mbox_linkedsemi_channel_configured(dev_config, channel)) {
 		DEV_ERR(dev, "channel: %d is disabled in DT\n", channel);
 		return -ENODEV;
 	}
@@ -286,23 +297,17 @@ static int mbox_linkedsemi_set_enabled(const struct device *dev, uint32_t channe
 		return -EINVAL;
 	}
 
-	if (!mbox_linkedsemi_channel_enabled(dev_config, channel)) {
+	if (!mbox_linkedsemi_channel_configured(dev_config, channel)) {
 		DEV_ERR(dev, "channel: %d is disabled in DT\n", channel);
 		return -ENODEV;
 	}
-
+	if (dev_data->enabled[channel] == enable) {
+		DEV_WRN(dev, "channel: %d already %s\n", channel, enable ? "enabled" : "disabled");
+		return -EALREADY;
+	}
+	dev_data->enabled[channel] = enable;
 	if (enable) {
-		mbox_linkedsemi_intr_unmask(dev_config);
-		if (dev_data->cb[channel]) {
-			mbox_linkedsemi_rx_callback_handle(dev, channel);
-		}
-		if (!irq_is_enabled(DT_INST_IRQN(0))) {
-			dev_config->irq_config_func(dev);
-		}
-	} else {
-		irq_disable(DT_INST_IRQN(0));
-		mbox_linkedsemi_intr_clr(dev_config);
-		mbox_linkedsemi_intr_mask(dev_config);
+		trigger_irq(dev_data->irq);
 	}
 
 	return 0;
@@ -413,23 +418,33 @@ static void mbox_channels_fifo_init(const struct device *dev, uint8_t fifo_slot)
 #if MBOX_INITIATOR
 static int mbox_linkedsemi_init(const struct device *dev)
 {
+	const struct mbox_linkedsemi_config *dev_config = dev->config;
+	int ret = 0;
 	if (mbox_initiator_is_peer_working()) {
-		return mbox_check(dev);
+		ret = mbox_check(dev);
 	} else {
 		mbox_info_init(dev);
 		MBOX_INITIATOR_FIFO_INIT(dev);
-		return 0;
 	}
+	if (ret) {
+		return ret;
+	}
+	mbox_linkedsemi_intr_unmask(dev_config);
+	dev_config->irq_config_func(dev);
+	return 0;
 }
 #else
 
 static int mbox_linkedsemi_init(const struct device *dev)
 {
+	const struct mbox_linkedsemi_config *dev_config = dev->config;
 	int layout_check_result = mbox_check(dev);
-	if(layout_check_result) {
+	if (layout_check_result) {
 		return layout_check_result;
 	}
 	MBOX_FOLLOWER_FIFO_INIT(dev);
+	mbox_linkedsemi_intr_unmask(dev_config);
+	dev_config->irq_config_func(dev);
 	return 0;
 }
 #endif
@@ -444,6 +459,8 @@ static struct mbox_driver_api mbox_linkedsemi_driver_api = {
 #define MBOX_LINKEDSEMI_IRQ_HANDLER(inst)                                    \
 	static void mbox_linkedsemi_config_func_##inst(const struct device *dev) \
 	{                                                                        \
+		struct mbox_linkedsemi_data *data = dev->data;                     \
+		data->irq = DT_INST_IRQN(inst);                                    \
 		IRQ_CONNECT(DT_INST_IRQN(inst),                                      \
 			    DT_INST_IRQ(inst, priority),                             \
 			    mbox_linkedsemi_isr,                                     \
