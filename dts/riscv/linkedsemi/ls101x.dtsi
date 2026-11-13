@@ -22,7 +22,31 @@
 
     sram0: memory@1000006c{
         compatible = "mmio-sram";
-        reg = <0x1000006c 0x1ff94>;
+        reg = <0x1000006c 0x1fc00>;
+    };
+
+    espivw_shmem: memory@1001fc70 {
+        compatible = "zephyr,memory-region";
+        reg = <0x1001fc70 0x10>;
+        zephyr,memory-region = "ESPI_VW";
+    };
+
+    kcs_env_shmem: memory@1001fc80 {
+        compatible = "zephyr,memory-region";
+        reg = <0x1001fc80 0x10>;
+        zephyr,memory-region = "KCS_ENV";
+    };
+
+    pcc_env_shmem: memory@1001fc90 {
+        compatible = "zephyr,memory-region";
+        reg = <0x1001fc90 0x110>;
+        zephyr,memory-region = "PCC_ENV";
+    };
+
+    vuart_fifo_shmem: memory@1001fda0 {
+        compatible = "zephyr,memory-region";
+        reg = <0x1001fda0 0x50>;
+        zephyr,memory-region = "VUART_FIFO";
     };
 
     soc {
@@ -214,19 +238,123 @@
             reg-shift = <2>;
         };
 
-        espi: espi@40004000 {
-            compatible = "linkedsemi,ls-espi";
-            reg = <0x40004000 0x400>;
-            status = "disabled";
-            interrupts = <27 3>;
-            clocks = <&cpu_cctl LS_CCTL_CLKG0 LS_CLKG_SET_ESPI_POS LS_CLKG_CLR_ESPI_POS>;
+        host_bmc_container_espi: host_bmc_container_espi {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            status = "okay";
+
+            espi: espi@40004000 {
+                compatible = "linkedsemi,ls-espi";
+                reg = <0x40004000 0x1000>;
+                status = "disabled";
+                interrupts = <27 3>;
+                clocks = <&cpu_cctl LS_CCTL_CLKG LS_CLKG_SET_ESPI_POS LS_CLKG_CLR_ESPI_POS>;
+                h2b-vw-base = <0x1001fc70>;
+
+                sio: sio {
+                    compatible = "linkedsemi,ls-sio";
+                    port = <0x2e>;
+                    status = "disabled";
+                };
+            };
+
+            espibmc: espibmc {
+                compatible = "linkedsemi,ls-espi-bmc";
+                h2b-vw-base = <0x1001fc70>;
+                status = "disabled";
+            };
+        };
+
+        host_bmc_container_kcs: host_bmc_container_kcs {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            status = "okay";
+
+            e8042: e8042 {
+                compatible = "linkedsemi,ls-kcs";
+                port = <0x60 0x64>;
+                kcs-env-addr = <0x1001fc80>;
+                status = "disabled";
+            };
+
+            host_kcs: host_kcs {
+                compatible = "linkedsemi,ls-host-kcs";
+                port = <0x60 0x64>;
+                kcs-env-addr = <0x1001fc80>;
+                espi_lpc = <&espi>;
+                status = "disabled";
+            };
+        };
+
+        host_bmc_container_pcc: host_bmc_container_pcc {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            status = "okay";
+
+            host_pcc: host_pcc {
+                compatible = "linkedsemi,ls-host-pcc";
+                ports = <0x80 0x81 0x82 0x83>;
+                pcc-env-addr = <0x1001fc90>;
+                espi_lpc = <&espi>;
+                status = "disabled";
+            };
+
+            pcc: pcc {
+                compatible = "linkedsemi,ls-pcc";
+                pcc-env-addr = <0x1001fc90>;
+                status = "disabled";
+            };
+        };
+
+        host_bmc_container_vuart: host_bmc_container_vuart {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            status = "okay";
+
+            host_vuart: host_vuart@40085C00 {
+                compatible = "linkedsemi,ls-host-vuart";
+                reg = <0x40085C00 0x400>;
+                interrupts = <54 3>;
+                port = <0x3f8>;
+                clock-source = <CLK_SRC_PBUS4>;
+                up-irq = <0x4 0>;
+                fifo_base = <0x1001fda0>;
+                espi_lpc = <&espi>;
+                clocks = <&per_cctl LS_CCTL_CLKG1 LS_CLKG_SET_DWUART1_POS LS_CLKG_CLR_DWUART1_POS>;
+                status = "disabled";
+            };
+
+            vuart: vuart {
+                compatible = "linkedsemi,ls-vuart";
+                fifo_base = <0x1001fda0>;
+                status = "disabled";
+            };
+        };
+
+        host_bmc_container_mmbi: host_bmc_container_mmbi {
+            compatible = "linkedsemi,host-bmc-container";
+            #address-cells = <1>;
+            #size-cells = <1>;
+            status = "okay";
+
+            host_mmbi: host_mmbi {
+                compatible = "linkedsemi,ls-host-mmbi";
+                espi_lpc = <&espi>;
+                host-map-addr-hi = <0>;
+                host-map-addr-lo = <0x10000000>;
+                status = "disabled";
+            };
         };
         lpc: lpc@40005000 {
             compatible = "linkedsemi,ls-lpc";
             reg = <0x40005000 0x400>;
             status = "disabled";
             interrupts = <28 3>;
-            clocks = <&cpu_cctl LS_CCTL_CLKG0 LS_CLKG_SET_LPC_POS LS_CLKG_CLR_LPC_POS>;
+            clocks = <&cpu_cctl LS_CCTL_CLKG LS_CLKG_SET_LPC_POS LS_CLKG_CLR_LPC_POS>;
         };
 		spi1: spi@40087000 {
 			compatible = "snps,designware-spi";

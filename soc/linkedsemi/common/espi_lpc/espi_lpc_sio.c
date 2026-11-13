@@ -1,7 +1,6 @@
 #define DT_DRV_COMPAT linkedsemi_ls_sio
 
 #include <zephyr/kernel.h>
-#include <zephyr/dt-bindings/pinctrl/lsqsh-pinctrl.h>
 #include <zephyr/drivers/espi.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>

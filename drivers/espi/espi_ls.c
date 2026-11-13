@@ -213,9 +213,10 @@ static void espi_reg_init(const struct device *dev)
 
 static int espi_reset(const struct device *dev)
 {
+	#if defined(CONFIG_RESET)
 	const struct espi_lpc_ls_config *dev_config = dev->config;
 	int ret = 0;
-	#if defined(CONFIG_RESET)
+
 	if (dev_config->reset.dev != NULL) {
 		if (!device_is_ready(dev_config->reset.dev)) {
 			LOG_ERR("Reset controller device is not ready");

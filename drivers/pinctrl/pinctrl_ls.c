@@ -80,6 +80,19 @@ void gpio_analog_func2_init(uint8_t pin)
     gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
     SYSC_AWO->IO[x->port].AE |= 1<<x->num;
 }
+
+static void ls101x_espi_pin_enable(uint8_t alt_fun)
+{
+	if (alt_fun == FIO_ESPI_ALERT) {
+		SYSC_AWO->PIN_SEL0 =
+			(SYSC_AWO->PIN_SEL0 | SYSC_AWO_ESPI_ALERT_EN_MASK) &
+			~SYSC_AWO_LPC_SERIRQ_EN_MASK;
+	} else {
+		SYSC_AWO->PIN_SEL0 =
+			(SYSC_AWO->PIN_SEL0 | SYSC_AWO_ESPI_EN_MASK) &
+			~SYSC_AWO_LPC_EN_MASK;
+	}
+}
 #endif
 
 
@@ -139,11 +152,13 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     }
 
 #elif CONFIG_SOC_LS1010 == 1
-	if(alt_fun < 164){
-        per_func_enable(pin, alt_fun);
-    }else{
-        gpio_analog_func1_init(pin);
-    }
+	if (alt_fun >= FIO_ESPI_ALERT && alt_fun <= FIO_ESPI_CLK) {
+		ls101x_espi_pin_enable(alt_fun);
+	} else if (alt_fun < 164) {
+		per_func_enable(pin, alt_fun);
+	} else {
+		gpio_analog_func1_init(pin);
+	}
 #endif
 
 	return 0;

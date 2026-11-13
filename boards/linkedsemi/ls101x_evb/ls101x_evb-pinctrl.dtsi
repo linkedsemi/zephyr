@@ -381,4 +381,40 @@
 		bias-pull-down;
 		input-enable;
     };
+
+	/omit-if-no-ref/ espi_alert_pd09: espi_alert_pd09 {
+		pinmux = <LS_PINMUX_SET('D', 9, ESPI_ALERT)>;
+		input-enable;
+		drive-push-pull;
+	};
+	/omit-if-no-ref/ espi_cs_pd10: espi_cs_pd10 {
+		pinmux = <LS_PINMUX_SET('D', 10, ESPI_CS)>;
+		input-enable;
+		drive-push-pull;
+	};
+	/omit-if-no-ref/ espi_dat3_pd11: espi_dat3_pd11 {
+		pinmux = <LS_PINMUX_SET('D', 11, ESPI_DAT3)>;
+		input-enable;
+		drive-push-pull;
+	};
+	/omit-if-no-ref/ espi_dat2_pd12: espi_dat2_pd12 {
+		pinmux = <LS_PINMUX_SET('D', 12, ESPI_DAT2)>;
+		input-enable;
+		drive-push-pull;
+	};
+	/omit-if-no-ref/ espi_dat1_pd13: espi_dat1_pd13 {
+		pinmux = <LS_PINMUX_SET('D', 13, ESPI_DAT1)>;
+		input-enable;
+		drive-push-pull;
+	};
+	/omit-if-no-ref/ espi_dat0_pd14: espi_dat0_pd14 {
+		pinmux = <LS_PINMUX_SET('D', 14, ESPI_DAT0)>;
+		input-enable;
+		drive-push-pull;
+	};
+	/omit-if-no-ref/ espi_clk_pd15: espi_clk_pd15 {
+		pinmux = <LS_PINMUX_SET('D', 15, ESPI_CLK)>;
+		input-enable;
+		drive-push-pull;
+	};
 };
