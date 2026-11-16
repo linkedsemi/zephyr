@@ -78,12 +78,17 @@ config LINKEDSEMI_TPM_WWDT
 config KCS_ENV_LOCK_TIMEOUT_US
     int "KCS env lock timeout (microseconds)"
     default 20
-    range 1 1000000
+    range 1 1000
     depends on ESPI_LPC
 
     help
         Maximum time kcs_env_lock() waits for the shared KCS environment
         word before giving up and reporting the failure to the caller.
+
+        The wait runs with local interrupts disabled, so this value is also
+        the longest interrupt-off window of the KCS path.  The deadline is
+        compared with the signed 32-bit difference returned by time_diff(),
+        so keep timeout_us * CPU clock below 2^31.
 
 rsource "*/Kconfig"
 
