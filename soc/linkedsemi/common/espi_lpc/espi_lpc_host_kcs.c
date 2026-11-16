@@ -74,7 +74,7 @@ static void cmd_stt_io_read(const struct peri_ioport_content *ioport,uint8_t siz
 
     if(!kcs_env_lock(cfg->kcs_env,&key))
     {
-        *val = 0xFF;
+        *val = cfg->kcs_env->status;
         return;
     }
 	*val = cfg->kcs_env->status;
