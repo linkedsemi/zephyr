@@ -25,6 +25,9 @@ config MAIN_STACK_SIZE
 config USERSPACE
 	default n
 
+config XIP
+	default y
+
 config RISCV_PMP
 	default y
 	

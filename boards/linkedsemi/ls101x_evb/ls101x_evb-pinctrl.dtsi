@@ -166,6 +166,31 @@
         input-enable;
     };
 
+	/omit-if-no-ref/ spi1_nss_pb07: spi1_nss_pb07 {
+		pinmux = <LS_PINMUX_SET('B', 7, SPI1_NSS0)>;
+		bias-pull-up;
+		output-enable;
+		output-high;
+	};
+
+	/omit-if-no-ref/ spi1_mosi_pb08: spi1_mosi_pb08 {
+		pinmux = <LS_PINMUX_SET('B', 8, SPI1_DQ0)>;
+		output-enable;
+		output-high;
+	};
+
+	/omit-if-no-ref/ spi1_miso_pb09: spi1_miso_pb09 {
+		pinmux = <LS_PINMUX_SET('B', 9, SPI1_DQ1)>;
+		input-enable;
+	};
+
+	/omit-if-no-ref/ spi1_sck_pb10: spi1_sck_pb10 {
+		pinmux = <LS_PINMUX_SET('B', 10, SPI1_SCK)>;
+		bias-pull-down;
+		output-enable;
+		output-low;
+	};
+
     /* SPI2 */
     /omit-if-no-ref/spi2_sck_pb12: spi2_sck_pb12 {
 		pinmux = <LS_PINMUX_SET('B', 12, SPI2_SCK)>;
