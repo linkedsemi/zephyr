@@ -1,6 +1,5 @@
 config SOC_SERIES_LS101X
     select RISCV
-  	select XIP
     select TICKLESS_CAPABLE
     select INCLUDE_RESET_VECTOR
     select RISCV_PRIVILEGED
