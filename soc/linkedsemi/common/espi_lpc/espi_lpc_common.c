@@ -1,4 +1,6 @@
+#include <zephyr/sys/time_units.h>
 #include <zephyr/sys/util.h>
+#include "common.h"
 #include "espi_lpc_common.h"
 
 
@@ -95,11 +97,23 @@ void espi_lpc_remove_mem(const struct device *dev,struct peri_mem *mem)
 }
 
 #ifdef CONFIG_KCS_AMP_PERTERSON_LOCK
-static inline void amp_lock(struct peterson_lock *lock,uint8_t id)
+static inline bool amp_lock(struct peterson_lock *lock,uint8_t id)
 {
+	uint32_t limit = k_us_to_cyc_ceil32(CONFIG_KCS_ENV_LOCK_TIMEOUT_US);
+	uint32_t start = k_cycle_get_32();
+
 	lock->flag[id] = true;
 	lock->turn = !id;
-	while(lock->flag[!id] && lock->turn == !id);
+	while(lock->flag[!id] && lock->turn == !id)
+	{
+		if(time_diff(k_cycle_get_32(), start) >= (int32_t)limit)
+		{
+			/* Withdraw our own claim, same as amp_unlock(). */
+			lock->flag[id] = false;
+			return false;
+		}
+	}
+	return true;
 }
 
 static inline void amp_unlock(struct peterson_lock *lock,uint8_t id)
@@ -107,11 +121,15 @@ static inline void amp_unlock(struct peterson_lock *lock,uint8_t id)
 	lock->flag[id] = false;
 }
 
-unsigned int kcs_env_lock(struct host_kcs_env *env)
+bool kcs_env_lock(struct host_kcs_env *env,unsigned int *key)
 {
-	unsigned int key = arch_irq_lock();
-	amp_lock(&env->lock,0);
-	return key;
+	*key = arch_irq_lock();
+	if(!amp_lock(&env->lock,0))
+	{
+		arch_irq_unlock(*key);
+		return false;
+	}
+	return true;
 }
 
 void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
@@ -120,14 +138,24 @@ void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
 	arch_irq_unlock(key);
 }
 #else
-unsigned int kcs_env_lock(struct host_kcs_env *env)
+bool kcs_env_lock(struct host_kcs_env *env,unsigned int *key)
 {
-	unsigned int key = arch_irq_lock();
-    while(atomic_inc(&env->lock))
-    {
-        atomic_dec(&env->lock);
-    }
-	return key;
+	uint32_t limit = k_us_to_cyc_ceil32(CONFIG_KCS_ENV_LOCK_TIMEOUT_US);
+	uint32_t start;
+
+	*key = arch_irq_lock();
+	start = k_cycle_get_32();
+
+	while(atomic_inc(&env->lock))
+	{
+		atomic_dec(&env->lock);
+		if(time_diff(k_cycle_get_32(), start) >= (int32_t)limit)
+		{
+			arch_irq_unlock(*key);
+			return false;
+		}
+	}
+	return true;
 }
 
 void kcs_env_unlock(struct host_kcs_env *env,unsigned int key)
