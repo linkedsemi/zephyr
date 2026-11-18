@@ -45,7 +45,6 @@ void host_pcc_rx_callback(const struct device *dev,void *msg)
 static int host_pcc_ls_init(const struct device *dev)
 {
     const struct host_pcc_ls_config *cfg = dev->config;
-    struct host_pcc_ls_data *ptr_data = dev->data;
     if(!device_is_ready(cfg->espi_lpc))
     {
         LOG_DBG("%s device not ready", cfg->espi_lpc->name);

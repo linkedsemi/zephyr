@@ -1,0 +1,15 @@
+# Commit gate: the job only reads git metadata, no build, no toolchain.
+# Local hooks catch a commit as it is made; this catches every commit a
+# pipeline brings in, including ones made in another clone or with --no-verify.
+# No tags on purpose: any runner that accepts untagged jobs may take it.
+# python, not python3: the Windows runner has no python3 on PATH.
+
+stages:
+  - gate
+
+commit-rules:
+  stage: gate
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - python .githooks_linkedsemi.py --check-ci

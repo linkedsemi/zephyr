@@ -8,12 +8,34 @@ config MBOX_LINKEDSEMI
 	help
 	  MBOX Driver for LINKEDSEMI SOC
 
-if MBOX_LINKEDSEMI
+config MBOX_LINKEDSEMI_LAYOUT_CHECK
+	bool "MBOX layout check"
+	depends on MBOX_LINKEDSEMI
+	default y
+	help
+	  Check the mbox layout in shared memory.  The initiator publishes
+	  the shared info (magic, channel count and per-channel fifo config)
+	  and both cores validate it against their own build-time layout at
+	  init.
 
-config SIGNALLING_MODE_SUPPORT
-    bool "NULL msg support for mailbox"
-    default n
-    help
-      not support signalling mode
+	  Both core images must set this option identically.  If the
+	  initiator image disables it while the peer keeps it enabled, the
+	  peer fails to initialize with -ENODEV because the shared info is
+	  never published.
 
-endif # MBOX_LINKEDSEMI
+	  Disabling the check skips the cross-image validation, so a
+	  devicetree mismatch between the two images (channel count, fifo
+	  width/depth or shared region placement) is no longer detected.
+
+config MBOX_LINKEDSEMI_TX_FIFO_INIT_LEGACY
+	bool "Legacy TX fifo initialization on the peer core"
+	depends on MBOX_LINKEDSEMI
+	default y if !MBOX_LINKEDSEMI_LAYOUT_CHECK
+	help
+	  Initialize the local TX fifo environment on the non-initiator core
+	  during driver init (legacy behavior).
+
+	  Enabled by default when CONFIG_MBOX_LINKEDSEMI_LAYOUT_CHECK is
+	  disabled.  When the layout check is enabled, the peer core adopts
+	  the initiator-published shared memory layout, so re-initializing
+	  the TX fifo here is not needed and is disabled by default.

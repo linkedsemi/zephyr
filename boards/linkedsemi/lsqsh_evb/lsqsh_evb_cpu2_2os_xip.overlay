@@ -11,7 +11,8 @@
 };
 
 &sram {
-    reg = <0x10000000 DT_SIZE_K(760)>;
+    /* 52K PFR_TPM*/
+    reg = <0x10000000 (DT_SIZE_K(760) - DT_SIZE_K(52))>;
 };
 
 &qspi1 {

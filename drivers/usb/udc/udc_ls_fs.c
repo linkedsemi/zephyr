@@ -173,6 +173,43 @@ static uint8_t musb_get_active_ep(reg_usb_t *usb_instance)
     return usb_instance->EPIDX;
 }
 
+static void musb_ep_disable(reg_usb_t *usb_reg, uint8_t ep_index, bool is_in)
+{
+    musb_set_active_ep(usb_reg, ep_index);
+
+    if (ep_index == 0) {
+        usb_reg->CSRL0 = USB_CSRL0_RXRDYC | USB_CSRL0_SETENDC;
+        usb_reg->CSRH0 = USB_CSRH0_FLUSH;
+        usb_reg->TXIE &= ~USB_TXIE_EP0;
+        return;
+    }
+
+    if (is_in)
+    {
+        usb_reg->TXIE  &= ~BIT(ep_index);
+        usb_reg->TXMAXP = 0;
+        usb_reg->TXCSRH = 0;
+        if (usb_reg->TXCSRL & USB_TXCSRL1_TXRDY)
+            usb_reg->TXCSRL = USB_TXCSRL1_CLRDT | USB_TXCSRL1_FLUSH;
+        else
+            usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
+        usb_reg->TXFIFO_SIZE[0]  = 0;
+        usb_reg->TXFIFO_SIZE[1]  = 0;
+    }
+    else
+    {
+        usb_reg->RXIE  &= ~BIT(ep_index);
+        usb_reg->RXMAXP = 0;
+        usb_reg->RXCSRH = 0;
+        if (usb_reg->RXCSRL & USB_RXCSRL1_RXRDY)
+            usb_reg->RXCSRL = USB_RXCSRL1_CLRDT | USB_RXCSRL1_FLUSH;
+        else
+            usb_reg->RXCSRL = USB_RXCSRL1_CLRDT;
+        usb_reg->RXFIFO_SIZE[0]  = 0;
+        usb_reg->RXFIFO_SIZE[1]  = 0;
+    }
+}
+
 static int udc_ls_lock(const struct device *dev)
 {
     return udc_lock_internal(dev, K_FOREVER);
@@ -258,16 +295,20 @@ static int udc_ls_init(const struct device *dev)
         PD00_PD01_PowerOn();
 #endif
 
-    for (uint8_t i = 1; i < usb_cfg->num_endpoints; ++i)
+    for (uint8_t i = 0; i < usb_cfg->num_endpoints; ++i)
     {
-        usb_reg->EPIDX = i;
-        usb_reg->TXFIFO_SIZE[0] = 0;
-        usb_reg->TXFIFO_SIZE[1] = 0;
-        usb_reg->RXFIFO_SIZE[0] = 0;
-        usb_reg->RXFIFO_SIZE[1] = 0;
+        musb_ep_disable(usb_reg, i, true);
+        musb_ep_disable(usb_reg, i, false);
     }
     k_sem_init(&usb_data->out_buf_valid, 0, 1);
     k_sem_init(&usb_data->send_stall, 0, 1);
+
+    usb_data->connected = false;
+    usb_data->ep0_state = USB_EP0_STAGE_SETUP;
+    usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
+    usb_data->addr = 0;
+    usb_data->is_set_addr = false;
+    k_msgq_purge(&usb_data->msgq);
 
     return 0;
 }
@@ -542,43 +583,15 @@ static int udc_ls_ep_disable(const struct device *dev, struct udc_ep_config *con
     struct udc_ls_data *usb_data = (struct udc_ls_data *)udc_get_private(dev);
     uint8_t ep_index = USB_EP_GET_IDX(cfg->addr);
     reg_usb_t *usb_reg = usb_data->usb_instance;
-    musb_set_active_ep(usb_reg, ep_index);
+
+    musb_ep_disable(usb_reg, ep_index, USB_EP_DIR_IS_IN(cfg->addr));
 
     if (ep_index == 0) {
-        usb_reg->CSRL0 = USB_CSRL0_RXRDYC | USB_CSRL0_SETENDC;
-        usb_reg->CSRH0 = USB_CSRH0_FLUSH;
-        usb_reg->TXIE &= ~USB_TXIE_EP0;
-
         struct net_buf *buf = udc_buf_get_all(dev, cfg->addr);
         if (buf) {
             net_buf_unref(buf);
         }
-        return 0;
-    }
-
-    if (USB_EP_DIR_IS_IN(cfg->addr))
-    {
-        usb_reg->TXIE  &= ~BIT(ep_index);
-        usb_reg->TXMAXP = 0;
-        usb_reg->TXCSRH = 0;
-        if (usb_reg->TXCSRL & USB_TXCSRL1_TXRDY)
-            usb_reg->TXCSRL = USB_TXCSRL1_CLRDT | USB_TXCSRL1_FLUSH;
-        else
-            usb_reg->TXCSRL = USB_TXCSRL1_CLRDT;
-        usb_reg->TXFIFO_SIZE[0]  = 0;
-        usb_reg->TXFIFO_SIZE[1]  = 0;
-    }
-    else
-    {
-        usb_reg->RXIE  &= ~BIT(ep_index);
-        usb_reg->RXMAXP = 0;
-        usb_reg->RXCSRH = 0;
-        if (usb_reg->RXCSRL & USB_RXCSRL1_RXRDY)
-            usb_reg->RXCSRL = USB_RXCSRL1_CLRDT | USB_RXCSRL1_FLUSH;
-        else
-            usb_reg->RXCSRL = USB_RXCSRL1_CLRDT;
-        usb_reg->RXFIFO_SIZE[0]  = 0;
-        usb_reg->RXFIFO_SIZE[1]  = 0;
+    } else if (!USB_EP_DIR_IS_IN(cfg->addr)) {
         usb_data->rx_fifo_addr = USB_RX_BUF_ADDR;
     }
 
@@ -1243,7 +1256,7 @@ static int udc_ls_driver_preinit(const struct device *dev)
     struct udc_ep_config *ep_cfg_in = usb_data->ep_cfg_in;
     int err;
 
-    udc_ls_soft_disconnect(dev);
+    udc_ls_init(dev);
 
     /* init udc data */
     data->caps.hs = 0;

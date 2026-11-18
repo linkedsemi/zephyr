@@ -53,7 +53,8 @@ static int ls101x_init(void)
 {
     __set_MTVT((uint32_t)0);
     SystemInit();
-    sys_init_none();
+    clk_flash_init();
+    // sys_init_none();
     cpu_sleep_mode_config(0);
     driver_init();
     arch_irq_lock();

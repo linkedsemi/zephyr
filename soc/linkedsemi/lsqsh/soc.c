@@ -23,6 +23,7 @@
 #include "ls_hal_qspiv2.h"
 #include "ls_msp_qspiv2.h"
 #include "soc.h"
+#include "ls_crypto_clock.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
 #include "ls_otbn_config.h"
@@ -267,7 +268,7 @@ static void peripheral_init()
     REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_PSRAM_FLT, 0x2); /* bypass */
 #endif
     REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_USB2, 0x4); /* dpll_48M */
-    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_I3C, 0x1);
+    REG_FIELD_WR(SYSC_APP_AWO->PD_AWO_CLK_CTRL1, SYSC_APP_AWO_CLK_SEL_I3C, 0x2);
     /*
     i3c clock
         clk_pbus4: 0x4 , 75Mhz
@@ -417,10 +418,12 @@ static void peripheral_init()
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x2);
 
-    ls_clock_control_on_reset_line_toggle_once(CALC_SHA_CLOCK, CALC_SHA_RESET);
-    ls_clock_control_on_reset_line_toggle_once(SHA512_CLOCK, SHA512_RESET);
-    ls_clock_control_on_reset_line_toggle_once(CALC_SM4_CLOCK, CALC_SM4_RESET);
-    ls_clock_control_on_reset_line_toggle_once(CRYPT_CLOCK, CRYPT_RESET);
+    /* prepare() is a no-op when the clock is already on, so a CPU1 reset
+     * while CPU2 keeps running does not disturb an engine CPU2 is using. */
+    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_SHA256);
+    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_SHA512);
+    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_SM4);
+    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_AES256);
     ls_clock_control_on_reset_line_toggle_once(OTFAD_AES_CLOCK, OTFAD_AES_RESET);
     ls_clock_control_on_reset_line_toggle_once(WWDT1_CLOCK, WWDT1_RESET);
     ls_clock_control_on_reset_line_toggle_once(NIST_TRNG_CLOCK, NIST_TRNG_RESET);
@@ -890,3 +893,8 @@ int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms)
 }
 
 #endif /* CONFIG_LINKEDSEMI_TPM_WWDT */
+
+uint8_t mbox_initiator_is_peer_working(void)
+{
+    return is_app_cpu_running();
+}

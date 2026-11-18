@@ -52,10 +52,7 @@
         intr_clr = <0x40022028>;
         intr_mask = <0x4002202c>;
         peer_intr_set = <0x40062020>;
-        /* RX fifo first in the shared MBOX region; the peer image
-         * must set tx_fifo_first = <1> to overlap TX/RX fifos.
-         */
-        tx_fifo_first = <0>;
+        initiator = <1>;
         #mbox-cells = <5>;
 
         mbox_consumer_qspi1: mbox-consumer_qspi1 {

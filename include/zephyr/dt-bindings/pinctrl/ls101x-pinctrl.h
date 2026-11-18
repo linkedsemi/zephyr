@@ -168,6 +168,14 @@
 #define FIO_ADC				164
 #define FIO_DAC				166
 
+#define FIO_ESPI_ALERT		240
+#define FIO_ESPI_CS			241
+#define FIO_ESPI_DAT3		242
+#define FIO_ESPI_DAT2		243
+#define FIO_ESPI_DAT1		244
+#define FIO_ESPI_DAT0		245
+#define FIO_ESPI_CLK		246
+
 
 
 /* GP TIM A */
@@ -314,6 +322,14 @@
 #define PWM_CH8      FIO_PWM8
 /* PECI */
 #define PECI_DAT     FIO_PECI
+/* eSPI */
+#define ESPI_ALERT   FIO_ESPI_ALERT
+#define ESPI_CS      FIO_ESPI_CS
+#define ESPI_DAT3    FIO_ESPI_DAT3
+#define ESPI_DAT2    FIO_ESPI_DAT2
+#define ESPI_DAT1    FIO_ESPI_DAT1
+#define ESPI_DAT0    FIO_ESPI_DAT0
+#define ESPI_CLK     FIO_ESPI_CLK
 
 // RSV07
 // ANT0

@@ -36,4 +36,5 @@ BUILD_ASSERT(sizeof(struct adc_otp_trim) == 12);
 #define RESET_REASON_APP_ADDR (SHMEM_BASE_ADDR + SHMEM_SIZE - 4)
 #endif /* CONFIG_SOC_LSQSH */
 
+uint8_t mbox_initiator_is_peer_working(void);
 #endif /* _SOC_H_ */

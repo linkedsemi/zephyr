@@ -29,6 +29,13 @@ config ESPI_LPC_HOST_KCS
     help
         Enable Host-side KCS
 
+config KCS_AMP_PERTERSON_LOCK
+    bool "KCS Perterson Lock for AMP"
+    depends on ESPI_LPC_HOST_KCS
+
+    help
+        Use Peterson Lock for KCS env
+
 config ESPI_LPC_SIO
     bool "Linkedsemi ESPI/LPC sio driver"
     default y

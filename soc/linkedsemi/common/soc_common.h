@@ -95,7 +95,13 @@ enum {
 	FLASH_XFER_BUF_IDX_MAX = 3,
 };
 
-typedef struct __aligned(CONFIG_DCACHE_LINE_SIZE) flash_op_align_buf {
+#if defined(CONFIG_DCACHE_LINE_SIZE) && (CONFIG_DCACHE_LINE_SIZE > 0)
+#define FLASH_OP_BUF_ALIGN CONFIG_DCACHE_LINE_SIZE
+#else
+#define FLASH_OP_BUF_ALIGN __alignof__(struct flash_xfer_buf)
+#endif
+
+typedef struct __aligned(FLASH_OP_BUF_ALIGN) flash_op_align_buf {
 	struct flash_xfer_buf buf[FLASH_XFER_BUF_IDX_MAX];
 } flash_op_align_buf_t;
 

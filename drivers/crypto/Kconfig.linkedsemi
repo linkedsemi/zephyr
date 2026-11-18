@@ -22,6 +22,39 @@ config SHA512_LINKEDSEMI_NO_CLOCK_RESET
 	  Skip clock_control and reset_line_toggle in sha512_linkedsemi_init.
 	  Use when CCTL/RCTL is blocked by IOPMP.
 	  Clock/reset must be handled elsewhere if this is enabled.
+	  The clock/reset must then be handled on CPU1, for example with
+	  ls_crypto_clock_prepare(LS_CRYPTO_CLK_SHA512) before CPU2 boots.
+
+config SHA256_LINKEDSEMI_NO_CLOCK_RESET
+	bool "Skip SHA256 CCTL/RCTL access in driver init"
+	depends on CRYPTO_LINKEDSEMI_SHA256
+	help
+	  Skip clock_control and reset_line_toggle in sha256_linkedsemi_init.
+	  Use when the SEC_SYSC_CPU clock/reset registers are owned by the
+	  peer (security) core and are not accessible from this core.
+	  The clock/reset must then be handled on CPU1, for example with
+	  ls_crypto_clock_prepare(LS_CRYPTO_CLK_SHA256) before CPU2 boots.
+
+config AES256_LINKEDSEMI_NO_CLOCK_RESET
+	bool "Skip AES256 CCTL/RCTL access in driver init"
+	depends on CRYPTO_LINKEDSEMI_AES256
+	help
+	  Skip clock_control and reset_line_toggle in
+	  crypto_linkedsemi_aes256_init. Use when the SEC_SYSC_CPU
+	  clock/reset registers are owned by the peer (security) core and
+	  are not accessible from this core. The clock/reset must then be
+	  handled on CPU1, for example with
+	  ls_crypto_clock_prepare(LS_CRYPTO_CLK_AES256) before CPU2 boots.
+
+config SM4_LINKEDSEMI_NO_CLOCK_RESET
+	bool "Skip SM4 CCTL/RCTL access in driver init"
+	depends on CRYPTO_LINKEDSEMI_SM4
+	help
+	  Skip clock_control and reset_line_toggle in sm4_linkedsemi_init.
+	  Use when the SEC_SYSC_CPU clock/reset registers are owned by the
+	  peer (security) core and are not accessible from this core.
+	  The clock/reset must then be handled on CPU1, for example with
+	  ls_crypto_clock_prepare(LS_CRYPTO_CLK_SM4) before CPU2 boots.
 
 config CRYPTO_LINKEDSEMI_SM4
     bool "linkedsemi SM4 driver"

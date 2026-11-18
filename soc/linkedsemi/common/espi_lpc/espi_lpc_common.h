@@ -201,8 +201,18 @@ struct vuart_hb_msg {
     bool host_tx_to_vuart;
 };
 
+#ifdef CONFIG_KCS_AMP_PERTERSON_LOCK
+struct peterson_lock {
+    bool flag[2];
+    uint8_t turn;
+} __attribute__((aligned(4)));
+typedef struct perterson_lock kcs_lock_t;
+#else
+typedef atomic_t kcs_lock_t;
+#endif
+
 struct host_kcs_env {
-    atomic_t lock;
+    kcs_lock_t lock;
     uint8_t status;
     uint8_t data_out;
     uint8_t data_in;
@@ -233,6 +243,10 @@ struct mmbi_host_int {
     uint8_t vw_data;
 };
 
+struct mmbi_host_rws_wr {
+    uint8_t ch;
+};
+
 enum mmbi_msg_type {
     MMBI_INFO,
     MMBI_HOST_INT,
@@ -244,6 +258,7 @@ struct mmbi_msg {
     union {
         struct mmbi_info info;
         struct mmbi_host_int host_int;
+        struct mmbi_host_rws_wr host_rws_wr;
     }u;
 };
 

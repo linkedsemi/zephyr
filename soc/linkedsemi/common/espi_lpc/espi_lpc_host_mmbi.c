@@ -11,6 +11,9 @@ LOG_MODULE_REGISTER(mmbi, CONFIG_ESPI_LOG_LEVEL);
 
 #define MMBI_DESC_SIGNATURE "#MMBI$"
 
+/* DSP0282 1.1.0: up to 7 channels (CH0..CH6) per MMBI interface */
+#define MMBI_MAX_CH 7
+
 struct host_ros {
     uint32_t b2h_wp;
     uint32_t h2b_rp;
@@ -21,18 +24,25 @@ struct host_rws {
     uint32_t b2h_rp;
 };
 
-struct mmbi_desc {
-    uint8_t signature[6];
-    uint8_t version;
-    uint8_t os_use;
+/* Per-channel definition, identical to MMBI_Desc bytes 8..39 (DSP0282 Table 1) */
+struct mmbi_desc_ch {
     uint32_t b2h_ba;
     uint32_t h2b_ba;
     uint32_t b2h_l;
     uint32_t h2b_l;
     uint8_t buft;
-    uint8_t reserved0[7];
+    uint8_t h_int_v_ch;
+    uint8_t bmc_int_v_ch;
+    uint8_t reserved0[5];
     uint32_t h_ros_p;
     uint32_t h_rws_p;
+} __packed;
+
+struct mmbi_desc {
+    uint8_t signature[6];
+    uint8_t version;
+    uint8_t noi_os_use;             /* [7] reserved, [6:4] NOI, [3:1] reserved, [0] OS use */
+    struct mmbi_desc_ch ch0;        /* channel 0 definition (bytes 8..39) */
     uint8_t h_int_t;
     uint8_t h_int_l;
     uint8_t reserved1[3];
@@ -42,11 +52,23 @@ struct mmbi_desc {
     uint8_t reserved2[4];
     uint8_t bmc_int_v;
     uint8_t reserved3[8];
+    struct mmbi_desc_ch ch[MMBI_MAX_CH - 1];   /* channel 1..6 definitions (bytes 64..255) */
 } __packed;
+
+/* MMBI_Desc layout per DSP0282 1.1.0 Table 1 */
+BUILD_ASSERT(sizeof(struct mmbi_desc_ch) == 32);
+BUILD_ASSERT(sizeof(struct mmbi_desc) == 256);
+BUILD_ASSERT(offsetof(struct mmbi_desc, ch0) == 8);
+BUILD_ASSERT(offsetof(struct mmbi_desc, h_int_t) == 40);
+BUILD_ASSERT(offsetof(struct mmbi_desc, bmc_int_v) == 55);
+BUILD_ASSERT(offsetof(struct mmbi_desc, ch) == 64);
+BUILD_ASSERT(offsetof(struct mmbi_desc_ch, h_ros_p) == 24);
+BUILD_ASSERT(offsetof(struct mmbi_desc_ch, h_rws_p) == 28);
 
 struct mmbi_ls_data {
     struct mmbi_info info;
     struct peri_mem mem;
+    uint8_t ch_num;
 };
 
 struct mmbi_ls_config {
@@ -55,6 +77,11 @@ struct mmbi_ls_config {
     struct peri_mem_content content;
     uint64_t host_map_addr;
 };
+
+static const struct mmbi_desc_ch *mmbi_desc_ch_get(const struct mmbi_desc *desc, uint8_t ch)
+{
+    return (ch == 0U) ? &desc->ch0 : &desc->ch[ch - 1U];
+}
 
 static uint8_t *host_mmbi_mem_ptr(struct peri_mem_content *mem, uint64_t addr, uint16_t size)
 {
@@ -96,13 +123,14 @@ static bool host_mmbi_mem_write(struct peri_mem_content *mem, uint64_t addr, uin
     struct device *dev = mem->ctx;
     const struct mmbi_ls_config *dev_cfg = dev->config;
     struct mmbi_ls_data *dev_data = dev->data;
+    const struct mmbi_desc *desc =
+        (const struct mmbi_desc *)(uintptr_t)dev_data->info.base;
     struct mmbi_msg msg = {
         .type = MMBI_HOST_RWS_WR,
     };
     uint8_t *dst = host_mmbi_mem_ptr(mem, addr, size);
     uint32_t offset;
-    uint32_t rws_offset;
-    uint32_t rws_end;
+    uint8_t ch;
 
     if (dst == NULL || data == NULL) {
         return false;
@@ -111,11 +139,16 @@ static bool host_mmbi_mem_write(struct peri_mem_content *mem, uint64_t addr, uin
     memcpy(dst, data, size);
 
     offset = (uint32_t)(addr - dev_cfg->host_map_addr);
-    rws_offset =
-        ((const struct mmbi_desc *)(uintptr_t)dev_data->info.base)->h_rws_p * 8U;
-    rws_end = rws_offset + sizeof(struct host_rws);
-    if (offset < rws_end && offset + size > rws_offset) {
-        mmbi_msg_send(&dev_cfg->hb_exch, &msg);
+    for (ch = 0U; ch < dev_data->ch_num; ch++) {
+        const struct mmbi_desc_ch *ch_desc = mmbi_desc_ch_get(desc, ch);
+        uint32_t rws_offset = ch_desc->h_rws_p * 8U;
+        uint32_t rws_end = rws_offset + sizeof(struct host_rws);
+
+        if (offset < rws_end && offset + size > rws_offset) {
+            msg.u.host_rws_wr.ch = ch;
+            mmbi_msg_send(&dev_cfg->hb_exch, &msg);
+            break;
+        }
     }
 
     return true;
@@ -143,7 +176,16 @@ void host_mmbi_rx_callback(const struct device *dev,void *msg)
     struct mmbi_msg *m_msg = msg;
     if(m_msg->type == MMBI_INFO)
     {
+        const struct mmbi_desc *desc =
+            (const struct mmbi_desc *)(uintptr_t)m_msg->u.info.base;
+        uint8_t noi = (desc->noi_os_use >> 4U) & 0x7U;
+
         dev_data->info = m_msg->u.info;
+        if (noi >= MMBI_MAX_CH) {
+            LOG_WRN("Invalid MMBI NOI %u, using legacy mode", noi);
+            noi = 0U;
+        }
+        dev_data->ch_num = noi + 1U;
         espi_lpc_add_mem(cfg->espi_lpc, &dev_data->mem);
     }else if(m_msg->type == MMBI_HOST_INT)
     {

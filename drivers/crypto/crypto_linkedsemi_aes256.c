@@ -1064,6 +1064,7 @@ static int crypto_linkedsemi_aes256_init(const struct device *dev)
     struct crypto_linkedsemi_aes256_data *dev_data = dev->data;
     __maybe_unused int ret;
 
+#if !defined(CONFIG_AES256_LINKEDSEMI_NO_CLOCK_RESET)
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
@@ -1096,6 +1097,7 @@ static int crypto_linkedsemi_aes256_init(const struct device *dev)
         clock_control_on(clk_dev, (clock_control_subsys_t)&dev_config->ccfg);
     }
 #endif
+#endif /* !CONFIG_AES256_LINKEDSEMI_NO_CLOCK_RESET */
 
     k_mutex_init(&dev_data->cipher_mutex);
     k_sem_init(&dev_data->cipher_device_sync_sem, 0, K_SEM_MAX_LIMIT);
