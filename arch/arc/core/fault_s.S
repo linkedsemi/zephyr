@@ -19,7 +19,7 @@
 #include <zephyr/syscall.h>
 #include <zephyr/arch/arc/asm-compat/assembler.h>
 
-GTEXT(_Fault)
+GTEXT(z_arc_fault)
 GTEXT(__reset)
 GTEXT(__memory_error)
 GTEXT(__instruction_error)
@@ -99,11 +99,11 @@ _exc_entry:
 
 	_save_exc_regs_into_stack
 
-	/* sp is parameter of _Fault */
+	/* sp is parameter of z_arc_fault */
 	MOVR r0, sp
 	/* ilink is the thread's original sp */
 	MOVR r1, ilink
-	jl _Fault
+	jl z_arc_fault
 
 _exc_return:
 /* the exception cause must be fixed in exception handler when exception returns
@@ -120,7 +120,15 @@ _exc_return:
 
 	/* Save old thread into switch handle which is required by z_sched_switch_spin which
 	 * will be called during old thread abort.
+	 *
+	 * On SMP publish switch_handle only after all prior context stores are
+	 * globally visible. ARC HS is weakly ordered, so a store-store barrier
+	 * is required before the lock-free switch_handle publish that is
+	 * polled by other cores in z_sched_switch_spin().
 	 */
+#ifdef CONFIG_SMP
+	dmb ARC_DMB_STORE
+#endif
 	STR r2, r2, ___thread_t_switch_handle_OFFSET
 
 	MOVR r2, r0
@@ -193,7 +201,7 @@ _exc_return_from_exc:
 	MOVR sp, ilink
 	rtie
 
-/* separated entry for trap which may be used by irq_offload, USERPSACE */
+/* separated entry for trap which may be used by irq_offload, USERSPACE */
 SECTION_SUBSEC_FUNC(TEXT,__fault,__ev_trap)
 	/* get the id of trap_s */
 	LRR ilink, [_ARC_V2_ECR]

@@ -48,31 +48,23 @@ static int hp206c_read(const struct device *dev, uint8_t cmd, uint8_t *data,
 static int hp206c_read_reg(const struct device *dev, uint8_t reg_addr,
 			   uint8_t *reg_val)
 {
-	uint8_t cmd = HP206C_CMD_READ_REG | (reg_addr & HP206C_REG_ADDR_MASK);
-
-	return hp206c_read(dev, cmd, reg_val, 1);
-}
-
-static int hp206c_write(const struct device *dev, uint8_t cmd, uint8_t *data,
-			uint8_t len)
-{
 	const struct hp206c_device_config *cfg = dev->config;
+	uint8_t cmd = HP206C_CMD_READ_REG | (reg_addr & HP206C_REG_ADDR_MASK);
 
 	hp206c_bus_config(dev);
 
-	if (i2c_burst_write_dt(&cfg->i2c, cmd, data, len) < 0) {
-		return -EIO;
-	}
-
-	return 0;
+	return i2c_reg_read_byte_dt(&cfg->i2c, cmd, reg_val);
 }
 
 static int hp206c_write_reg(const struct device *dev, uint8_t reg_addr,
 			    uint8_t reg_val)
 {
+	const struct hp206c_device_config *cfg = dev->config;
 	uint8_t cmd = HP206C_CMD_WRITE_REG | (reg_addr & HP206C_REG_ADDR_MASK);
 
-	return hp206c_write(dev, cmd, &reg_val, 1);
+	hp206c_bus_config(dev);
+
+	return i2c_reg_write_byte_dt(&cfg->i2c, cmd, reg_val);
 }
 
 static int hp206c_cmd_send(const struct device *dev, uint8_t cmd)
@@ -91,7 +83,7 @@ static int hp206c_cmd_send(const struct device *dev, uint8_t cmd)
  * conversion wait time which looks like a good compromise provided the highest
  * precision computation takes 131.1ms.
  */
-static uint8_t hp206c_adc_time_ms[] = {
+static const uint8_t hp206c_adc_time_ms[] = {
 /*	conversion time(ms),   OSR  */
 	132,		    /* 4096 */
 	66,		    /* 2048 */
@@ -275,7 +267,7 @@ static int hp206c_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api hp206c_api = {
+static DEVICE_API(sensor, hp206c_api) = {
 	.attr_set = hp206c_attr_set,
 	.sample_fetch = hp206c_adc_acquire,
 	.channel_get = hp206c_channel_get,
@@ -287,7 +279,7 @@ static int hp206c_init(const struct device *dev)
 	const struct hp206c_device_config *cfg = dev->config;
 
 	if (!device_is_ready(cfg->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -EINVAL;
 	}
 

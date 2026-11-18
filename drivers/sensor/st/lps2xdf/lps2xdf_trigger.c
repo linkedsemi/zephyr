@@ -124,8 +124,7 @@ int lps2xdf_init_interrupt(const struct device *dev, enum sensor_variant variant
 	/* setup data ready gpio interrupt */
 	if (!gpio_is_ready_dt(&cfg->gpio_int) && !ON_I3C_BUS(cfg)) {
 		if (cfg->gpio_int.port) {
-			LOG_ERR("%s: device %s is not ready", dev->name,
-						cfg->gpio_int.port->name);
+			LOG_ERR_DEVICE_NOT_READY(cfg->gpio_int.port);
 			return -ENODEV;
 		}
 
@@ -179,7 +178,7 @@ int lps2xdf_init_interrupt(const struct device *dev, enum sensor_variant variant
 
 #if (DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lps22df, i3c) ||\
 	DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lps28dfw, i3c))
-	if (cfg->i3c.bus == NULL) {
+	if (cfg->i3c.bus != NULL) {
 		/* I3C IBI does not utilize GPIO interrupt. */
 		lps2xdf->i3c_dev->ibi_cb = lps2xdf_ibi_cb;
 

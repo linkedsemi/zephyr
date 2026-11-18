@@ -1106,7 +1106,7 @@ static int crypto_linkedsemi_aes256_init(const struct device *dev)
     return 0;
 }
 
-static struct crypto_driver_api crypto_enc_funcs = {
+static DEVICE_API(crypto, crypto_enc_funcs) = {
     .cipher_begin_session = crypto_linkedsemi_aes256_cipher_begin_session,
     .cipher_free_session = crypto_linkedsemi_aes256_cipher_free_session,
     .hash_begin_session = NULL,

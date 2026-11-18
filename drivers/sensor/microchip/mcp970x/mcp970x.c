@@ -91,7 +91,7 @@ static int get(const struct device *dev, enum sensor_channel chan, struct sensor
 	return 0;
 }
 
-static const struct sensor_driver_api mcp970x_api = {
+static DEVICE_API(sensor, mcp970x_api) = {
 	.sample_fetch = fetch,
 	.channel_get = get,
 };
@@ -103,7 +103,7 @@ static int init(const struct device *dev)
 	int ret;
 
 	if (!adc_is_ready_dt(&config->adc)) {
-		LOG_ERR("ADC is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->adc.dev);
 		return -ENODEV;
 	}
 

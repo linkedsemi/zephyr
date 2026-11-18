@@ -13,7 +13,6 @@
 extern "C" {
 #endif
 
-#if defined(CONFIG_ARM_MPU)
 struct k_thread;
 
 #if defined(CONFIG_USERSPACE)
@@ -76,7 +75,7 @@ struct k_thread;
  */
 #if (defined(CONFIG_MPU_REQUIRES_NON_OVERLAPPING_REGIONS) && \
 		defined(CONFIG_MPU_GAP_FILLING)) \
-	|| defined(CONFIG_CPU_HAS_NXP_MPU)
+	|| defined(CONFIG_CPU_HAS_NXP_SYSMPU)
 /*
  * When dynamic regions may not be defined on top of statically
  * allocated memory regions, defining a region for a supervisor
@@ -96,10 +95,9 @@ struct k_thread;
  * using a single MPU region.
  */
 #define ARM_CORE_MPU_NUM_MPU_REGIONS_FOR_MPU_STACK_GUARD 1
-#endif /* CONFIG_MPU_REQUIRES_NON_OVERLAPPING_REGIONS || CPU_HAS_NXP_MPU */
+#endif /* CONFIG_MPU_REQUIRES_NON_OVERLAPPING_REGIONS || CPU_HAS_NXP_SYSMPU */
 
 #endif /* CONFIG_USERSPACE */
-
 
 /* ARM Core MPU Driver API */
 
@@ -107,6 +105,23 @@ struct k_thread;
  * This API has to be implemented by all the MPU drivers that have
  * ARM_MPU support.
  */
+
+/**
+ * @brief initialize the MPU
+ *
+ * On SMP, this is called by each core and must initialize the local MPU.
+ */
+int z_arm_mpu_init(void);
+
+/**
+ * @brief enable the MPU
+ */
+void arm_core_mpu_enable(void);
+
+/**
+ * @brief disable the MPU
+ */
+void arm_core_mpu_disable(void);
 
 /**
  * @brief configure a set of fixed (static) MPU regions
@@ -188,27 +203,6 @@ void arm_core_mpu_configure_dynamic_mpu_regions(
 	const struct z_arm_mpu_partition *dynamic_regions,
 	uint8_t regions_num);
 
-#if defined(CONFIG_USERSPACE)
-/**
- * @brief update configuration of an active memory partition
- *
- * Internal API function to re-configure the access permissions of an
- * active memory partition, i.e. a partition that has earlier been
- * configured in the (current) thread context.
- *
- * @param partition Pointer to a structure holding the partition information
- *                  (must be valid).
- * @param new_attr  New access permissions attribute for the partition.
- *
- * The function shall assert if the operation cannot be not performed
- * successfully (e.g. the given partition can not be found).
- */
-void arm_core_mpu_mem_partition_config_update(
-	struct z_arm_mpu_partition *partition,
-	k_mem_partition_attr_t *new_attr);
-
-#endif /* CONFIG_USERSPACE */
-
 /**
  * @brief configure the base address and size for an MPU region
  *
@@ -262,8 +256,6 @@ int arm_core_mpu_get_max_available_dyn_regions(void);
  *       permit user access).
  */
 int arm_core_mpu_buffer_validate(const void *addr, size_t size, int write);
-
-#endif /* CONFIG_ARM_MPU */
 
 #ifdef __cplusplus
 }

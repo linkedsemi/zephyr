@@ -28,10 +28,6 @@ LOG_MODULE_REGISTER(hci_da1469x);
 
 #define DT_DRV_COMPAT renesas_bt_hci_da1469x
 
-struct hci_data {
-	bt_hci_recv_t recv;
-};
-
 static K_KERNEL_STACK_DEFINE(rng_thread_stack, CONFIG_BT_RX_STACK_SIZE);
 static struct k_thread rng_thread_data;
 struct k_sem rng_sem;
@@ -198,7 +194,7 @@ static void rx_isr_start(void)
 {
 	if (rx.deferred) {
 		rx.deferred = false;
-		NVIC_SetPendingIRQ(CMAC2SYS_IRQn);
+		k_irq_set_pending(CMAC2SYS_IRQn);
 	}
 
 	irq_enable(CMAC2SYS_IRQn);
@@ -212,7 +208,6 @@ static void rx_isr_stop(void)
 static void rx_thread(void *p1, void *p2, void *p3)
 {
 	const struct device *dev = p1;
-	struct hci_data *hci = dev->data;
 	struct net_buf *buf;
 
 	ARG_UNUSED(p2);
@@ -246,8 +241,8 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		do {
 			rx_isr_start();
 
-			LOG_DBG("Calling bt_recv(%p)", buf);
-			hci->recv(dev, buf);
+			LOG_DBG("Calling bt_hci_recv(%p)", buf);
+			bt_hci_recv(dev, buf);
 
 			/* Give other threads a chance to run if the ISR
 			 * is receiving data so fast that rx.fifo never
@@ -329,12 +324,6 @@ static inline void read_payload(void)
 
 	buf = rx.buf;
 	rx.buf = NULL;
-
-	if (rx.type == BT_HCI_H4_EVT) {
-		bt_buf_set_type(buf, BT_BUF_EVT);
-	} else {
-		bt_buf_set_type(buf, BT_BUF_ACL_IN);
-	}
 
 	reset_rx();
 
@@ -427,9 +416,8 @@ static void rng_thread(void *p1, void *p2, void *p3)
 	}
 }
 
-static int bt_da1469x_open(const struct device *dev, bt_hci_recv_t recv)
+static int bt_da1469x_open(const struct device *dev)
 {
-	struct hci_data *hci = dev->data;
 	k_tid_t tid;
 
 	tid = k_thread_create(&rx_thread_data, rx_thread_stack,
@@ -448,45 +436,23 @@ static int bt_da1469x_open(const struct device *dev, bt_hci_recv_t recv)
 			      0, K_NO_WAIT);
 	k_thread_name_set(tid, "bt_rng_thread");
 
-	hci->recv = recv;
-
 	cmac_enable();
 	irq_enable(CMAC2SYS_IRQn);
 
 	return 0;
 }
 
-#ifdef CONFIG_BT_HCI_HOST
 static int bt_da1469x_close(const struct device *dev)
 {
-	struct hci_data *hci = dev->data;
-
 	irq_disable(CMAC2SYS_IRQn);
 	cmac_disable();
 
-	hci->recv = NULL;
-
 	return 0;
 }
-#endif /* CONFIG_BT_HCI_HOST */
 
 static int bt_da1469x_send(const struct device *dev, struct net_buf *buf)
 {
 	ARG_UNUSED(dev);
-
-	switch (bt_buf_get_type(buf)) {
-	case BT_BUF_ACL_OUT:
-		LOG_DBG("ACL: buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
-		net_buf_push_u8(buf, BT_HCI_H4_ACL);
-		break;
-	case BT_BUF_CMD:
-		LOG_DBG("CMD: buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
-		net_buf_push_u8(buf, BT_HCI_H4_CMD);
-		break;
-	default:
-		LOG_ERR("Unsupported type");
-		return -EINVAL;
-	}
 
 	cmac_mbox_write(buf->data, buf->len);
 
@@ -495,7 +461,7 @@ static int bt_da1469x_send(const struct device *dev, struct net_buf *buf)
 	return 0;
 }
 
-static const struct bt_hci_driver_api drv = {
+static DEVICE_API(bt_hci, drv) = {
 	.open           = bt_da1469x_open,
 	.close          = bt_da1469x_close,
 	.send           = bt_da1469x_send,
@@ -516,9 +482,11 @@ static int bt_da1469x_init(const struct device *dev)
 }
 
 #define HCI_DEVICE_INIT(inst) \
-	static struct hci_data hci_data_##inst = { \
+	static struct bt_hci_driver_data hci_data_##inst = { \
 	}; \
-	DEVICE_DT_INST_DEFINE(inst, bt_da1469x_init, NULL, &hci_data_##inst, NULL, \
+	static const struct bt_hci_driver_config hci_config_##inst =                               \
+		BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst);                                            \
+	DEVICE_DT_INST_DEFINE(inst, bt_da1469x_init, NULL, &hci_data_##inst, &hci_config_##inst,   \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &drv)
 
 /* Only one instance supported right now */

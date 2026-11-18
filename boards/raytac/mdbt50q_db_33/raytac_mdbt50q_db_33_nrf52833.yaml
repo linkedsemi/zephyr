@@ -10,10 +10,9 @@ flash: 512
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - adc
-  - ble
+  - bluetooth
   - counter
   - gpio
   - i2c

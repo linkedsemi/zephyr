@@ -3,7 +3,7 @@
  *
  * Based on the i2c_mcux_lpi2c.c driver, which is:
  * Copyright (c) 2016 Freescale Semiconductor, Inc.
- * Copyright (c) 2019, NXP
+ * Copyright (c) 2019, 2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -49,8 +49,8 @@ static int rv32m1_lpi2c_configure(const struct device *dev,
 	int err;
 
 	if (!(I2C_MODE_CONTROLLER & dev_config)) {
-		/* Slave mode not supported - yet */
-		LOG_ERR("Slave mode not supported");
+		/* Target mode not supported - yet */
+		LOG_ERR("Target mode not supported");
 		return -ENOTSUP;
 	}
 
@@ -94,10 +94,10 @@ static int rv32m1_lpi2c_configure(const struct device *dev,
 	return 0;
 }
 
-static void rv32m1_lpi2c_master_transfer_callback(LPI2C_Type *base,
-						  lpi2c_master_handle_t *handle,
-						  status_t completionStatus,
-						  void *userData)
+static void rv32m1_lpi2c_controller_transfer_callback(LPI2C_Type *base,
+						      lpi2c_master_handle_t *handle,
+						      status_t completionStatus,
+						      void *userData)
 {
 	struct rv32m1_lpi2c_data *data = userData;
 
@@ -114,10 +114,6 @@ static uint32_t rv32m1_lpi2c_convert_flags(int msg_flags)
 
 	if (!(msg_flags & I2C_MSG_STOP)) {
 		flags |= kLPI2C_TransferNoStopFlag;
-	}
-
-	if (msg_flags & I2C_MSG_RESTART) {
-		flags |= kLPI2C_TransferRepeatedStartFlag;
 	}
 
 	return flags;
@@ -209,7 +205,7 @@ static int rv32m1_lpi2c_init(const struct device *dev)
 {
 	const struct rv32m1_lpi2c_config *config = dev->config;
 	struct rv32m1_lpi2c_data *data = dev->data;
-	lpi2c_master_config_t master_config;
+	lpi2c_master_config_t controller_config;
 	uint32_t clk_freq, dev_cfg;
 	int err;
 
@@ -232,10 +228,10 @@ static int rv32m1_lpi2c_init(const struct device *dev)
 		return -EINVAL;
 	}
 
-	LPI2C_MasterGetDefaultConfig(&master_config);
-	LPI2C_MasterInit(config->base, &master_config, clk_freq);
+	LPI2C_MasterGetDefaultConfig(&controller_config);
+	LPI2C_MasterInit(config->base, &controller_config, clk_freq);
 	LPI2C_MasterTransferCreateHandle(config->base, &data->handle,
-					 rv32m1_lpi2c_master_transfer_callback,
+					 rv32m1_lpi2c_controller_transfer_callback,
 					 data);
 
 	dev_cfg = i2c_map_dt_bitrate(config->bitrate);
@@ -255,7 +251,7 @@ static int rv32m1_lpi2c_init(const struct device *dev)
 	return 0;
 }
 
-static const struct i2c_driver_api rv32m1_lpi2c_driver_api = {
+static DEVICE_API(i2c, rv32m1_lpi2c_driver_api) = {
 	.configure = rv32m1_lpi2c_configure,
 	.transfer = rv32m1_lpi2c_transfer,
 #ifdef CONFIG_I2C_RTIO

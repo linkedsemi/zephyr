@@ -2,7 +2,7 @@
 /*
  ****************************************************************************
  * (C) 2006 - Cambridge University
- * (C) 2021-2022 - EPAM Systems
+ * (C) 2021-2026 - EPAM Systems
  ****************************************************************************
  *
  *        File: gnttab.c
@@ -17,12 +17,16 @@
  *
  ****************************************************************************
  */
+
+#include <xen/public/grant_table.h>
+#include <xen/public/memory.h>
+#include <xen/public/xen.h>
+
 #include <zephyr/arch/arm64/hypercall.h>
 #include <zephyr/xen/generic.h>
 #include <zephyr/xen/gnttab.h>
-#include <zephyr/xen/public/grant_table.h>
-#include <zephyr/xen/public/memory.h>
-#include <zephyr/xen/public/xen.h>
+#include <zephyr/xen/memory.h>
+#include <zephyr/xen/regions.h>
 #include <zephyr/sys/barrier.h>
 
 #include <zephyr/init.h>
@@ -35,16 +39,13 @@ LOG_MODULE_REGISTER(xen_gnttab);
 /* Timeout for grant table ops retrying */
 #define GOP_RETRY_DELAY 200
 
-#define GNTTAB_SIZE DT_REG_SIZE_BY_IDX(DT_INST(0, xen_xen), 0)
-BUILD_ASSERT(!(GNTTAB_SIZE % XEN_PAGE_SIZE), "Size of gnttab have to be aligned on XEN_PAGE_SIZE");
+#define GNTTAB_GREF_USED	(UINT32_MAX - 1)
+#define GNTTAB_SIZE		(CONFIG_NR_GRANT_FRAMES * XEN_PAGE_SIZE)
+#define NR_GRANT_ENTRIES	(GNTTAB_SIZE / sizeof(grant_entry_v1_t))
 
-/* NR_GRANT_FRAMES must be less than or equal to that configured in Xen */
-#define NR_GRANT_FRAMES (GNTTAB_SIZE / XEN_PAGE_SIZE)
-#define NR_GRANT_ENTRIES \
-	(NR_GRANT_FRAMES * XEN_PAGE_SIZE / sizeof(grant_entry_v1_t))
-
+BUILD_ASSERT(GNTTAB_SIZE <= DT_REG_SIZE_BY_IDX(DT_INST(0, xen_xen), 0),
+	     "Number of grant frames is bigger than grant table DT region!");
 BUILD_ASSERT(GNTTAB_SIZE <= CONFIG_KERNEL_VM_SIZE);
-DEVICE_MMIO_TOPLEVEL_STATIC(grant_tables, DT_INST(0, xen_xen));
 
 static struct gnttab {
 	struct k_sem sem;
@@ -64,6 +65,7 @@ static grant_ref_t get_free_entry(void)
 	__ASSERT((gref >= GNTTAB_NR_RESERVED_ENTRIES &&
 		gref < NR_GRANT_ENTRIES), "Invalid gref = %d", gref);
 	gnttab.gref_list[0] = gnttab.gref_list[gref];
+	gnttab.gref_list[gref] = GNTTAB_GREF_USED;
 	irq_unlock(flags);
 
 	return gref;
@@ -74,6 +76,12 @@ static void put_free_entry(grant_ref_t gref)
 	unsigned int flags;
 
 	flags = irq_lock();
+	if (gnttab.gref_list[gref] != GNTTAB_GREF_USED) {
+		LOG_WRN("Trying to put already free gref = %u", gref);
+
+		return;
+	}
+
 	gnttab.gref_list[gref] = gnttab.gref_list[0];
 	gnttab.gref_list[0] = gref;
 
@@ -189,67 +197,121 @@ static void gop_eagain_retry(int cmd, struct gnttab_map_grant_ref *gref)
 	}
 }
 
-void *gnttab_get_page(void)
+#ifdef CONFIG_XEN_REGIONS
+void *gnttab_get_pages(unsigned int npages)
 {
-	int ret;
-	void *page_addr;
-	struct xen_remove_from_physmap rfpm;
+	return xen_region_get_pages(npages);
+}
 
-	page_addr = k_aligned_alloc(XEN_PAGE_SIZE, XEN_PAGE_SIZE);
-	if (!page_addr) {
-		LOG_WRN("Failed to allocate memory for gnttab page!\n");
+int gnttab_put_pages(void *start_addr, unsigned int npages)
+{
+	return xen_region_put_pages(start_addr, npages);
+}
+#else /* CONFIG_XEN_REGIONS */
+void *gnttab_get_pages(unsigned int npages)
+{
+	int ret = 0;
+	void *page_addr;
+	unsigned int removed;
+	xen_pfn_t gfn;
+
+	if (npages == 0) {
 		return NULL;
 	}
 
-	rfpm.domid = DOMID_SELF;
-	rfpm.gpfn = xen_virt_to_gfn(page_addr);
+	page_addr = k_aligned_alloc(XEN_PAGE_SIZE, XEN_PAGE_SIZE * npages);
+	if (!page_addr) {
+		LOG_WRN("Failed to allocate memory for gnttab %u pages!", npages);
+		return NULL;
+	}
 
 	/*
 	 * GNTTABOP_map_grant_ref will simply replace the entry in the P2M
 	 * and not release any RAM that may have been associated with
 	 * page_addr, so we release this memory before mapping.
 	 */
-	ret = HYPERVISOR_memory_op(XENMEM_remove_from_physmap, &rfpm);
+	for (removed = 0; removed < npages; removed++) {
+		gfn = xen_virt_to_gfn(page_addr) + removed;
+
+		ret = xendom_remove_from_physmap(DOMID_SELF, gfn);
+		if (ret) {
+			break;
+		}
+	}
+
 	if (ret) {
-		LOG_WRN("Failed to remove gnttab page from physmap, ret = %d\n", ret);
+		LOG_WRN("xendom_remove_from_physmap failed: ret=%d, removed=%u, gfn=%llx",
+			ret, removed, (uint64_t)gfn);
+
+		if (removed > 0) {
+			ret = gnttab_put_pages(page_addr, removed);
+			if (ret) {
+				LOG_ERR("gnttab_put_pages failed ret=%d addr=%p", ret, page_addr);
+				k_panic();
+			}
+		}
+
 		return NULL;
 	}
 
 	return page_addr;
 }
 
-void gnttab_put_page(void *page_addr)
+int gnttab_put_pages(void *start_addr, unsigned int npages)
 {
-	int ret, nr_extents = 1;
+	int ret;
+	size_t i;
 	struct xen_memory_reservation reservation;
-	xen_pfn_t page = xen_virt_to_gfn(page_addr);
+	xen_pfn_t *pages;
 
-	/*
-	 * After unmapping there will be a 4Kb holes in address space
-	 * at 'page_addr' positions. To keep it contiguous and be able
-	 * to return such addresses to memory allocator we need to
-	 * populate memory on unmapped positions here.
-	 */
+	if (npages == 0) {
+		return -EINVAL;
+	}
+
+	pages = k_malloc(sizeof(*pages) * npages);
+	if (pages == NULL) {
+		LOG_WRN("Failed to allocate memory: npages=%u", npages);
+		return -ENOMEM;
+	}
+
+	for (i = 0; i < npages; i++) {
+		pages[i] = xen_virt_to_gfn(start_addr) + i;
+	}
+
 	memset(&reservation, 0, sizeof(reservation));
 	reservation.domid = DOMID_SELF;
 	reservation.extent_order = 0;
-	reservation.nr_extents = nr_extents;
-	set_xen_guest_handle(reservation.extent_start, &page);
+	reservation.nr_extents = npages;
+	set_xen_guest_handle(reservation.extent_start, pages);
 
 	ret = HYPERVISOR_memory_op(XENMEM_populate_physmap, &reservation);
-	if (ret != nr_extents) {
-		LOG_WRN("failed to populate physmap on gfn = 0x%llx, ret = %d\n",
-			page, ret);
-		return;
+	if (ret != npages) {
+		LOG_WRN("failed to populate physmap, ret = %d (npages=%u)", ret, npages);
+		k_free(pages);
+		return -EIO;
 	}
 
-	k_free(page_addr);
+	k_free(pages);
+	k_free(start_addr);
+
+	return 0;
 }
+#endif /* CONFIG_XEN_REGIONS */
 
 int gnttab_map_refs(struct gnttab_map_grant_ref *map_ops, unsigned int count)
 {
 	int i, ret;
 
+#ifdef CONFIG_XEN_REGIONS
+	/* Only addresses from extended regions is supported */
+	for (i = 0; i < count; i++) {
+		if (!xen_region_is_addr_extreg(xen_to_virt(map_ops[i].host_addr))) {
+			LOG_ERR("address 0x%llx not in extended region "
+				"for gnttab_map_grant_ref #%d\n", map_ops[i].host_addr, i);
+			return -EFAULT;
+		}
+	}
+#endif /* CONFIG_XEN_REGIONS */
 	ret = HYPERVISOR_grant_table_op(GNTTABOP_map_grant_ref, map_ops, count);
 	if (ret) {
 		return ret;
@@ -268,7 +330,16 @@ int gnttab_map_refs(struct gnttab_map_grant_ref *map_ops, unsigned int count)
 			i--;
 
 			break;
-
+#ifdef CONFIG_XEN_REGIONS
+		case GNTST_okay:
+			ret = xen_region_map(xen_to_virt(map_ops[i].host_addr), 1);
+			if (ret != 0) {
+				LOG_ERR("xen_region_map failed ret=%d addr=0x%llx",
+					ret, map_ops[i].host_addr);
+				k_panic();
+			}
+			break;
+#endif /* CONFIG_XEN_REGIONS */
 		default:
 			break;
 		}
@@ -277,11 +348,51 @@ int gnttab_map_refs(struct gnttab_map_grant_ref *map_ops, unsigned int count)
 	return 0;
 }
 
-int gnttab_unmap_refs(struct gnttab_map_grant_ref *unmap_ops, unsigned int count)
+int gnttab_unmap_refs(struct gnttab_unmap_grant_ref *unmap_ops, unsigned int count)
 {
+#ifdef CONFIG_XEN_REGIONS
+	int i, ret;
+
+	/* Only addresses from extended regions is supported */
+	for (i = 0; i < count; i++) {
+		if (!xen_region_is_addr_extreg(xen_to_virt(unmap_ops[i].host_addr))) {
+			LOG_ERR("address 0x%llx not in extended region "
+				"for gnttab_unmap_grant_ref #%d\n", unmap_ops[i].host_addr, i);
+			return -EFAULT;
+		}
+	}
+
+	for (i = 0; i < count; i++) {
+		ret = xen_region_unmap(xen_to_virt(unmap_ops[i].host_addr), 1);
+		if (ret != 0) {
+			LOG_ERR("xen_region_unmap failed ret=%d addr=0x%llx",
+					ret, unmap_ops[i].host_addr);
+			k_panic();
+		}
+	}
+#endif /* CONFIG_XEN_REGIONS */
 	return HYPERVISOR_grant_table_op(GNTTABOP_unmap_grant_ref, unmap_ops, count);
 }
 
+int gnttab_query_size(domid_t dom, uint32_t *nr_frames, uint32_t *max_nr_frames,
+		      int16_t *status)
+{
+	struct gnttab_query_size query = {
+		.dom = dom,
+	};
+	int ret;
+
+	if (!nr_frames || !max_nr_frames || !status) {
+		return -EINVAL;
+	}
+
+	ret = HYPERVISOR_grant_table_op(GNTTABOP_query_size, &query, 1);
+	*nr_frames = query.nr_frames;
+	*max_nr_frames = query.max_nr_frames;
+	*status = query.status;
+
+	return ret;
+}
 
 static const char * const gnttab_error_msgs[] = GNTTABOP_error_msgs;
 
@@ -295,44 +406,68 @@ const char *gnttabop_error(int16_t status)
 	}
 }
 
+/* Picked from Linux implementation */
+#define LEGACY_MAX_GNT_FRAMES_SUPPORTED		4
+static unsigned long gnttab_get_max_frames(void)
+{
+	int ret;
+	uint32_t nr_frames;
+	uint32_t max_nr_frames;
+	int16_t status;
+
+	ret = gnttab_query_size(DOMID_SELF, &nr_frames, &max_nr_frames, &status);
+	if ((ret < 0) || (status != GNTST_okay)) {
+		return LEGACY_MAX_GNT_FRAMES_SUPPORTED;
+	}
+
+	return max_nr_frames;
+}
+
 static int gnttab_init(void)
 {
 	grant_ref_t gref;
 	struct xen_add_to_physmap xatp;
-	struct gnttab_setup_table setup;
-	xen_pfn_t frames[NR_GRANT_FRAMES];
 	int rc = 0, i;
+	unsigned long xen_max_grant_frames;
+	uintptr_t gnttab_base = DT_REG_ADDR_BY_IDX(DT_INST(0, xen_xen), 0);
+	mm_reg_t gnttab_reg;
 
-	/* Will be taken/given during gnt_refs allocation/release */
-	k_sem_init(&gnttab.sem, 0, NR_GRANT_ENTRIES - GNTTAB_NR_RESERVED_ENTRIES);
-
-	for (
-		gref = GNTTAB_NR_RESERVED_ENTRIES;
-		gref < NR_GRANT_ENTRIES;
-		gref++
-	    ) {
-		put_free_entry(gref);
+	xen_max_grant_frames = gnttab_get_max_frames();
+	if (xen_max_grant_frames < CONFIG_NR_GRANT_FRAMES) {
+		LOG_ERR("Xen max_grant_frames is less than CONFIG_NR_GRANT_FRAMES!");
+		k_panic();
 	}
 
-	for (i = 0; i < NR_GRANT_FRAMES; i++) {
+	/* Will be taken/given during gnt_refs allocation/release */
+	k_sem_init(&gnttab.sem, NR_GRANT_ENTRIES - GNTTAB_NR_RESERVED_ENTRIES,
+		   NR_GRANT_ENTRIES - GNTTAB_NR_RESERVED_ENTRIES);
+
+	/* Initialize O(1) allocator, gnttab.gref_list[0] always shows first free entry */
+	gnttab.gref_list[0] = GNTTAB_NR_RESERVED_ENTRIES;
+	gnttab.gref_list[NR_GRANT_ENTRIES - 1] = 0;
+	for (gref = GNTTAB_NR_RESERVED_ENTRIES; gref < NR_GRANT_ENTRIES - 1; gref++) {
+		gnttab.gref_list[gref] = gref + 1;
+	}
+
+	for (i = CONFIG_NR_GRANT_FRAMES - 1; i >= 0; i--) {
 		xatp.domid = DOMID_SELF;
 		xatp.size = 0;
 		xatp.space = XENMAPSPACE_grant_table;
 		xatp.idx = i;
-		xatp.gpfn = xen_virt_to_gfn(Z_TOPLEVEL_ROM_NAME(grant_tables).phys_addr) + i;
+		xatp.gpfn = xen_virt_to_gfn(gnttab_base) + i;
 		rc = HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp);
 		__ASSERT(!rc, "add_to_physmap failed; status = %d\n", rc);
 	}
 
-	setup.dom = DOMID_SELF;
-	setup.nr_frames = NR_GRANT_FRAMES;
-	set_xen_guest_handle(setup.frame_list, frames);
-	rc = HYPERVISOR_grant_table_op(GNTTABOP_setup_table, &setup, 1);
-	__ASSERT((!rc) && (!setup.status), "Table setup failed; status = %s\n",
-		gnttabop_error(setup.status));
-
-	DEVICE_MMIO_TOPLEVEL_MAP(grant_tables, K_MEM_CACHE_WB | K_MEM_PERM_RW);
-	gnttab.table = (grant_entry_v1_t *)DEVICE_MMIO_TOPLEVEL_GET(grant_tables);
+	/*
+	 * Xen DT region reserved for grant table (first reg in hypervisor node)
+	 * may be much bigger than CONFIG_NR_GRANT_FRAMES multiplied by page size.
+	 * Thus, we need to map only part of region, that is limited by config.
+	 * The size of this part is calculated in GNTTAB_SIZE macro and used as
+	 * parameter for device_map()
+	 */
+	device_map(&gnttab_reg, gnttab_base, GNTTAB_SIZE, K_MEM_CACHE_WB | K_MEM_PERM_RW);
+	gnttab.table = (grant_entry_v1_t *)gnttab_reg;
 
 	LOG_DBG("%s: grant table mapped\n", __func__);
 

@@ -14,7 +14,7 @@
 #include <sys/_timespec.h>
 
 /* Minimal time.h to fulfill the requirements of certain libraries
- * like mbedTLS and to support time APIs.
+ * like Mbed TLS and to support time APIs.
  */
 
 #ifdef __cplusplus
@@ -67,5 +67,7 @@ time_t time(time_t *tloc);
 #ifdef __cplusplus
 }
 #endif
+
+#include <zephyr/posix/posix_time.h>
 
 #endif /* ZEPHYR_LIB_LIBC_MINIMAL_INCLUDE_STDIO_H_ */

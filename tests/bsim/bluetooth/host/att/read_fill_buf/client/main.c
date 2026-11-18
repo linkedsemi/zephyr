@@ -15,7 +15,7 @@
 #include <testlib/scan.h>
 #include <testlib/security.h>
 
-#include "../bs_macro.h"
+#include "babblekit/testcase.h"
 #include "../common_defs.h"
 
 LOG_MODULE_REGISTER(client, LOG_LEVEL_DBG);
@@ -69,7 +69,7 @@ void test_long_read(struct bt_conn *conn, enum bt_att_chan_opt bearer)
 	}
 }
 
-void the_test(void)
+static void test_cli_main(void)
 {
 	bt_addr_le_t scan_result;
 	int err;
@@ -100,8 +100,29 @@ void the_test(void)
 	err = bt_conn_disconnect(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	__ASSERT_NO_MSG(!err);
 
-	bt_conn_unref(conn);
-	conn = NULL;
+	bt_conn_drop(&conn);
 
-	PASS("PASS\n");
+	TEST_PASS("PASS");
+}
+
+static const struct bst_test_instance test_def[] = {
+	{
+		.test_id = "cli",
+		.test_main_f = test_cli_main,
+	},
+	BSTEST_END_MARKER,
+};
+
+static struct bst_test_list *install(struct bst_test_list *tests)
+{
+	return bst_add_tests(tests, test_def);
+};
+
+bst_test_install_t test_installers[] = {install, NULL};
+
+int main(void)
+{
+	bst_main();
+
+	return 0;
 }

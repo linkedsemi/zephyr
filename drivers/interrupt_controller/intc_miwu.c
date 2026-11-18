@@ -61,10 +61,8 @@
 LOG_MODULE_REGISTER(intc_miwu, LOG_LEVEL_ERR);
 
 /* MIWU module instances */
-#define NPCX_MIWU_DEV(inst) DEVICE_DT_INST_GET(inst),
-
 static const struct device *const miwu_devs[] = {
-	DT_INST_FOREACH_STATUS_OKAY(NPCX_MIWU_DEV)
+	DT_INST_FOREACH_STATUS_OKAY(DEVICE_DT_INST_GET_COMMA)
 };
 
 BUILD_ASSERT(ARRAY_SIZE(miwu_devs) == NPCX_MIWU_TABLE_COUNT,
@@ -133,10 +131,10 @@ static void npcx_miwu_set_pseudo_both_edge(uint8_t table, uint8_t group, uint8_t
 	uint8_t pmask = BIT(bit);
 
 	if (IS_BIT_SET(NPCX_WKST(base, group), bit)) {
-		/* Current signal level is high, set falling edge triger. */
+		/* Current signal level is high, set falling edge trigger. */
 		NPCX_WKEDG(base, group) |= pmask;
 	} else {
-		/* Current signal level is low, set rising edge triger. */
+		/* Current signal level is low, set rising edge trigger. */
 		NPCX_WKEDG(base, group) &= ~pmask;
 	}
 }

@@ -5,8 +5,15 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <errno.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stddef.h>
 
 #include <zephyr/bluetooth/audio/aics.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
 
 static struct bt_aics {
 	bool active;
@@ -23,6 +30,8 @@ int bt_aics_client_conn_get(const struct bt_aics *aics, struct bt_conn **conn)
 
 int bt_aics_gain_set(struct bt_aics *aics, int8_t gain)
 {
+	ARG_UNUSED(gain);
+
 	if (aics != NULL && aics->cb != NULL && aics->cb->set_gain != NULL) {
 		aics->cb->set_gain(aics, 0);
 	}
@@ -51,9 +60,15 @@ struct bt_aics *bt_aics_client_free_instance_get(void)
 int bt_aics_discover(struct bt_conn *conn, struct bt_aics *aics,
 		     const struct bt_aics_discover_param *param)
 {
+	ARG_UNUSED(param);
+
+	if (aics == NULL) {
+		return -EINVAL;
+	}
+
 	aics->conn = conn;
 
-	if (aics != NULL && aics->cb != NULL && aics->cb->discover != NULL) {
+	if (aics->cb != NULL && aics->cb->discover != NULL) {
 		aics->cb->discover(aics, 0);
 	}
 

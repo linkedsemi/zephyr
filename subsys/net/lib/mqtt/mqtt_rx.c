@@ -10,6 +10,7 @@ LOG_MODULE_REGISTER(net_mqtt_rx, CONFIG_MQTT_LOG_LEVEL);
 #include "mqtt_internal.h"
 #include "mqtt_transport.h"
 #include "mqtt_os.h"
+#include <zephyr/net/net_log.h>
 
 /** @file mqtt_rx.c
  *
@@ -23,7 +24,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 {
 	int err_code = 0;
 	bool notify_event = true;
-	struct mqtt_evt evt;
+	struct mqtt_evt evt = { 0 };
 
 	/* Success by default, overwritten in special cases. */
 	evt.result = 0;
@@ -38,6 +39,9 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 			NET_DBG("[CID %p]: return_code: %d", client,
 				 evt.param.connack.return_code);
 
+			/* For MQTT 5.0 this is still valid as MQTT_CONNACK_SUCCESS
+			 * is encoded as 0 as well.
+			 */
 			if (evt.param.connack.return_code ==
 						MQTT_CONNECTION_ACCEPTED) {
 				/* Set state. */
@@ -57,8 +61,8 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBLISH", client);
 
 		evt.type = MQTT_EVT_PUBLISH;
-		err_code = publish_decode(type_and_flags, var_length, buf,
-					  &evt.param.publish);
+		err_code = publish_decode(client, type_and_flags, var_length,
+					  buf, &evt.param.publish);
 		evt.result = err_code;
 
 		client->internal.remaining_payload =
@@ -75,7 +79,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBACK!", client);
 
 		evt.type = MQTT_EVT_PUBACK;
-		err_code = publish_ack_decode(buf, &evt.param.puback);
+		err_code = publish_ack_decode(client, buf, &evt.param.puback);
 		evt.result = err_code;
 		break;
 
@@ -83,7 +87,8 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBREC!", client);
 
 		evt.type = MQTT_EVT_PUBREC;
-		err_code = publish_receive_decode(buf, &evt.param.pubrec);
+		err_code = publish_receive_decode(client, buf,
+						  &evt.param.pubrec);
 		evt.result = err_code;
 		break;
 
@@ -91,7 +96,8 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBREL!", client);
 
 		evt.type = MQTT_EVT_PUBREL;
-		err_code = publish_release_decode(buf, &evt.param.pubrel);
+		err_code = publish_release_decode(client, buf,
+						  &evt.param.pubrel);
 		evt.result = err_code;
 		break;
 
@@ -99,7 +105,8 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_PUBCOMP!", client);
 
 		evt.type = MQTT_EVT_PUBCOMP;
-		err_code = publish_complete_decode(buf, &evt.param.pubcomp);
+		err_code = publish_complete_decode(client, buf,
+						   &evt.param.pubcomp);
 		evt.result = err_code;
 		break;
 
@@ -107,7 +114,7 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_SUBACK!", client);
 
 		evt.type = MQTT_EVT_SUBACK;
-		err_code = subscribe_ack_decode(buf, &evt.param.suback);
+		err_code = subscribe_ack_decode(client, buf, &evt.param.suback);
 		evt.result = err_code;
 		break;
 
@@ -115,7 +122,8 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 		NET_DBG("[CID %p]: Received MQTT_PKT_TYPE_UNSUBACK!", client);
 
 		evt.type = MQTT_EVT_UNSUBACK;
-		err_code = unsubscribe_ack_decode(buf, &evt.param.unsuback);
+		err_code = unsubscribe_ack_decode(client, buf,
+						  &evt.param.unsuback);
 		evt.result = err_code;
 		break;
 
@@ -131,6 +139,35 @@ static int mqtt_handle_packet(struct mqtt_client *client,
 
 		evt.type = MQTT_EVT_PINGRESP;
 		break;
+
+#if defined(CONFIG_MQTT_VERSION_5_0)
+	case MQTT_PKT_TYPE_DISCONNECT:
+		evt.type = MQTT_EVT_DISCONNECT;
+		err_code = disconnect_decode(client, buf, &evt.param.disconnect);
+		if (err_code == 0) {
+			evt.result = evt.param.disconnect.reason_code;
+			/* Don't notify yet, the code below will handle this. */
+			mqtt_client_disconnect(client, evt.result, false);
+		} else {
+			/* Again, don't notify yet, error handling code will
+			 * disconnect and report error.
+			 */
+			notify_event = false;
+		}
+
+		break;
+
+	case MQTT_PKT_TYPE_AUTH:
+		evt.type = MQTT_EVT_AUTH;
+		err_code = auth_decode(client, buf, &evt.param.auth);
+		if (err_code == 0) {
+			evt.result = evt.param.auth.reason_code;
+		} else {
+			notify_event = false;
+		}
+
+		break;
+#endif
 
 	default:
 		/* Nothing to notify. */
@@ -218,7 +255,42 @@ static int mqtt_read_publish_var_header(struct mqtt_client *client,
 		variable_header_length += sizeof(uint16_t);
 	}
 
-	/* Now we can read the whole header. */
+	if (mqtt_is_version_5_0(client)) {
+		struct buf_ctx backup;
+		uint8_t var_len = 1;
+		uint32_t prop_len = 0;
+
+		while (true) {
+			err_code = mqtt_read_message_chunk(
+				client, buf, variable_header_length + var_len);
+			if (err_code < 0) {
+				return err_code;
+			}
+
+			backup = *buf;
+			buf->cur += variable_header_length;
+
+			/* Try to decode variable integer, in case integer is
+			 * not complete, read more bytes from the stream and retry.
+			 */
+			err_code = unpack_variable_int(buf, &prop_len);
+			if (err_code >= 0) {
+				break;
+			}
+
+			if (err_code != -EAGAIN) {
+				return err_code;
+			}
+
+			/* Try again. */
+			var_len++;
+			*buf = backup;
+		}
+
+		*buf = backup;
+		variable_header_length += var_len + prop_len;
+	}
+
 	err_code = mqtt_read_message_chunk(client, buf,
 					   variable_header_length);
 	if (err_code < 0) {

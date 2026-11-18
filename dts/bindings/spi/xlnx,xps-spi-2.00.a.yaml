@@ -1,7 +1,7 @@
 # Copyright (c) 2020 Henrik Brix Andersen <henrik@brixandersen.dk>
 # SPDX-License-Identifier: Apache-2.0
 
-description: Xilinx AXI Quad SPI IP node
+description: Xilinx AXI Quad SPI controller
 
 compatible: "xlnx,xps-spi-2.00.a"
 
@@ -26,7 +26,7 @@ properties:
       - 3
       - 4
     description: |
-      Number of slave select bits implemented
+      Number of chip select bits implemented
 
   xlnx,num-transfer-bits:
     type: int

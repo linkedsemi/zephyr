@@ -7,17 +7,22 @@
 #define DT_DRV_COMPAT raspberrypi_pico_watchdog
 
 #include <hardware/watchdog.h>
+#include <hardware/ticks.h>
 #include <hardware/structs/psm.h>
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/watchdog.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(wdt_rpi_pico, CONFIG_WDT_LOG_LEVEL);
 
+#ifdef CONFIG_SOC_RP2040
 /* Maximum watchdog time is halved due to errata RP2040-E1 */
-#define RPI_PICO_MAX_WDT_TIME (0xffffff / 2)
 #define RPI_PICO_WDT_TIME_MULTIPLICATION_FACTOR 2
+#else
+#define RPI_PICO_WDT_TIME_MULTIPLICATION_FACTOR 1
+#endif
+#define RPI_PICO_MAX_WDT_TIME (0xffffff / RPI_PICO_WDT_TIME_MULTIPLICATION_FACTOR)
 
 /* Watchdog requires a 1MHz clock source, divided from the crystal oscillator */
 #define RPI_PICO_CLK_REF_FREQ_WDT_TICK_DIVISOR 1000000
@@ -89,8 +94,13 @@ static int wdt_rpi_pico_setup(const struct device *dev, uint8_t options)
 		return err;
 	}
 
+#ifdef CONFIG_SOC_RP2040
 	watchdog_hw->tick = (ref_clk / RPI_PICO_CLK_REF_FREQ_WDT_TICK_DIVISOR) |
 			    WATCHDOG_TICK_ENABLE_BITS;
+#else
+	ticks_hw->ticks[TICK_WATCHDOG].cycles = ref_clk / RPI_PICO_CLK_REF_FREQ_WDT_TICK_DIVISOR;
+	ticks_hw->ticks[TICK_WATCHDOG].ctrl = TICKS_WATCHDOG_CTRL_ENABLE_BITS;
+#endif
 
 	return 0;
 }
@@ -153,16 +163,7 @@ static int wdt_rpi_pico_feed(const struct device *dev, int channel_id)
 	return 0;
 }
 
-static int wdt_rpi_pico_init(const struct device *dev)
-{
-#ifndef CONFIG_WDT_DISABLE_AT_BOOT
-	return wdt_rpi_pico_setup(dev, WDT_OPT_PAUSE_HALTED_BY_DBG);
-#endif
-
-	return 0;
-}
-
-static const struct wdt_driver_api wdt_rpi_pico_driver_api = {
+static DEVICE_API(wdt, wdt_rpi_pico_driver_api) = {
 	.setup = wdt_rpi_pico_setup,
 	.disable = wdt_rpi_pico_disable,
 	.install_timeout = wdt_rpi_pico_install_timeout,
@@ -176,11 +177,10 @@ static const struct wdt_driver_api wdt_rpi_pico_driver_api = {
 	};                                                                                         \
 	static struct wdt_rpi_pico_data wdt_##idx##_data = {                                       \
 		.reset_type = WDT_FLAG_RESET_SOC,                                                  \
-		.load = (CONFIG_WDT_RPI_PICO_INITIAL_TIMEOUT *                                     \
-			 RPI_PICO_WDT_TIME_MULTIPLICATION_FACTOR),                                 \
+		.load = 0,                                                                         \
 		.enabled = false                                                                   \
 	};                                                                                         \
-	DEVICE_DT_DEFINE(DT_NODELABEL(wdt##idx), wdt_rpi_pico_init, NULL, &wdt_##idx##_data,       \
+	DEVICE_DT_DEFINE(DT_NODELABEL(wdt##idx), NULL, NULL, &wdt_##idx##_data,       \
 			 &wdt_##idx##_config, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,    \
 			 &wdt_rpi_pico_driver_api)
 

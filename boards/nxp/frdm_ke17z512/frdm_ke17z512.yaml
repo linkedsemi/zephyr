@@ -13,15 +13,17 @@ flash: 512
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - counter
   - gpio
+  - hwinfo
   - adc
+  - flash
   - uart
   - pwm
   - i2c
   - spi
   - dma
   - watchdog
+  - crc
 vendor: nxp

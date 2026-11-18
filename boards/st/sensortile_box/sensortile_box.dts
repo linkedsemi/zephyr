@@ -24,6 +24,7 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		blue_led: led {
 			gpios = <&gpiob 15 GPIO_ACTIVE_HIGH>;
 			label = "User LD1";
@@ -37,6 +38,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User PB1";
 			gpios = <&gpiog 1 GPIO_ACTIVE_LOW>;
@@ -72,7 +74,7 @@
 	div-m = <4>;
 	mul-n = <40>;
 	div-p = <7>;
-	div-q = <2>;
+	div-q = <4>;
 	div-r = <2>;
 	clocks = <&clk_hse>;
 	status = "okay";
@@ -103,6 +105,8 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 6 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 
@@ -122,6 +126,8 @@
 &i2c3 {
 	pinctrl-0 = <&i2c3_scl_pg7 &i2c3_sda_pg8>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiog 7 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiog 8 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 
@@ -138,7 +144,8 @@
 	pinctrl-names = "default";
 	status = "okay";
 
-	cs-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>, <&gpioe 12 GPIO_ACTIVE_LOW>, <&gpioe 10 GPIO_ACTIVE_LOW>;
+	cs-gpios = <&gpioe 11 GPIO_ACTIVE_LOW>, <&gpioe 12 GPIO_ACTIVE_LOW>,
+		   <&gpioe 10 GPIO_ACTIVE_LOW>;
 
 	lis2dw12: lis2dw12@0 {
 		compatible = "st,lis2dw12";
@@ -168,6 +175,7 @@
 	pinctrl-names = "default";
 	status = "okay";
 	cs-gpios = <&gpiod 0 GPIO_ACTIVE_LOW>;
+
 	spbtle_1s_sensortile_box: spbtle-1s@0 {
 		compatible = "st,hci-spi-v2";
 		reg = <0>;
@@ -176,6 +184,8 @@
 		spi-max-frequency = <DT_FREQ_M(1)>;
 		spi-cpha;
 		spi-hold-cs;
+		reset-event;
+		req-ll-only;
 		reset-assert-duration-ms = <6>;
 	};
 };
@@ -202,19 +212,19 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+	clocks = <&rcc STM32_CLOCK(APB1, 28)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 
 &flash0 {
-
 	partitions {
-		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 
 		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "mcuboot";
 			reg = <0x00000000 DT_SIZE_K(64)>;
 			read-only;
@@ -226,21 +236,34 @@ zephyr_udc0: &usbotg_fs {
 		 */
 
 		slot0_partition: partition@20000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x00020000 DT_SIZE_K(432)>;
 		};
+
 		slot1_partition: partition@8c000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
-			reg = <0x0008C000 DT_SIZE_K(432)>;
-		};
-		scratch_partition: partition@f8000 {
-			label = "image-scratch";
-			reg = <0x000F8000 DT_SIZE_K(24)>;
+			reg = <0x0008c000 DT_SIZE_K(432)>;
 		};
 
-		storage_partition: partition@fc000 {
+		scratch_partition: partition@f8000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-scratch";
+			reg = <0x000f8000 DT_SIZE_K(24)>;
+		};
+
+		storage_partition: partition@fe000 {
+			compatible = "zephyr,mapped-partition";
 			label = "storage";
-			reg = <0x000fc000 DT_SIZE_K(24)>;
+			reg = <0x000fe000 DT_SIZE_K(16)>;
 		};
 	};
+};
+
+&rng {
+	/* Change clock source to avoid using MSI */
+	clocks = <&rcc STM32_CLOCK(AHB2, 18)>,
+		 <&rcc STM32_SRC_PLL_Q CLK48_SEL(2)>;
+	status = "okay";
 };

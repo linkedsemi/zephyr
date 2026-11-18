@@ -330,7 +330,7 @@ static int cap_channel_get(const struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static const struct sensor_driver_api cap_driver_api = {
+static DEVICE_API(sensor, cap_driver_api) = {
 	.sample_fetch = cap_sample_fetch,
 	.channel_get = cap_channel_get,
 };

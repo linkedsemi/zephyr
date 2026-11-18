@@ -3,56 +3,54 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef ZEPHYR_INCLUDE_DT_BINDINGS_ST_LSM6DSV16X_H_
-#define ZEPHYR_INCLUDE_DT_BINDINGS_ST_LSM6DSV16X_H_
 
-/* Accel range */
-#define	LSM6DSV16X_DT_FS_2G			0
-#define	LSM6DSV16X_DT_FS_4G			1
-#define	LSM6DSV16X_DT_FS_8G			2
-#define	LSM6DSV16X_DT_FS_16G			3
+/**
+ * @file
+ * @brief Devicetree binding constants for the ST LSM6DSV16X IMU.
+ * @ingroup lsm6dsv16x_interface
+ */
 
-/* Gyro range */
-#define	LSM6DSV16X_DT_FS_125DPS			0x0
-#define	LSM6DSV16X_DT_FS_250DPS			0x1
-#define	LSM6DSV16X_DT_FS_500DPS			0x2
-#define	LSM6DSV16X_DT_FS_1000DPS		0x3
-#define	LSM6DSV16X_DT_FS_2000DPS		0x4
-#define	LSM6DSV16X_DT_FS_4000DPS		0xc
+#ifndef ZEPHYR_INCLUDE_DT_BINDINGS_SENSOR_LSM6DSV16X_H_
+#define ZEPHYR_INCLUDE_DT_BINDINGS_SENSOR_LSM6DSV16X_H_
 
-/* Accel and Gyro Data rates */
-#define LSM6DSV16X_DT_ODR_OFF			0x0
-#define LSM6DSV16X_DT_ODR_AT_1Hz875		0x1
-#define LSM6DSV16X_DT_ODR_AT_7Hz5		0x2
-#define LSM6DSV16X_DT_ODR_AT_15Hz		0x3
-#define LSM6DSV16X_DT_ODR_AT_30Hz		0x4
-#define LSM6DSV16X_DT_ODR_AT_60Hz		0x5
-#define LSM6DSV16X_DT_ODR_AT_120Hz		0x6
-#define LSM6DSV16X_DT_ODR_AT_240Hz		0x7
-#define LSM6DSV16X_DT_ODR_AT_480Hz		0x8
-#define LSM6DSV16X_DT_ODR_AT_960Hz		0x9
-#define LSM6DSV16X_DT_ODR_AT_1920Hz		0xA
-#define LSM6DSV16X_DT_ODR_AT_3840Hz		0xB
-#define LSM6DSV16X_DT_ODR_AT_7680Hz		0xC
-#define LSM6DSV16X_DT_ODR_HA01_AT_15Hz625	0x13
-#define LSM6DSV16X_DT_ODR_HA01_AT_31Hz25	0x14
-#define LSM6DSV16X_DT_ODR_HA01_AT_62Hz5		0x15
-#define LSM6DSV16X_DT_ODR_HA01_AT_125Hz		0x16
-#define LSM6DSV16X_DT_ODR_HA01_AT_250Hz		0x17
-#define LSM6DSV16X_DT_ODR_HA01_AT_500Hz		0x18
-#define LSM6DSV16X_DT_ODR_HA01_AT_1000Hz	0x19
-#define LSM6DSV16X_DT_ODR_HA01_AT_2000Hz	0x1A
-#define LSM6DSV16X_DT_ODR_HA01_AT_4000Hz	0x1B
-#define LSM6DSV16X_DT_ODR_HA01_AT_8000Hz	0x1C
-#define LSM6DSV16X_DT_ODR_HA02_AT_12Hz5		0x23
-#define LSM6DSV16X_DT_ODR_HA02_AT_25Hz		0x24
-#define LSM6DSV16X_DT_ODR_HA02_AT_50Hz		0x25
-#define LSM6DSV16X_DT_ODR_HA02_AT_100Hz		0x26
-#define LSM6DSV16X_DT_ODR_HA02_AT_200Hz		0x27
-#define LSM6DSV16X_DT_ODR_HA02_AT_400Hz		0x28
-#define LSM6DSV16X_DT_ODR_HA02_AT_800Hz		0x29
-#define LSM6DSV16X_DT_ODR_HA02_AT_1600Hz	0x2A
-#define LSM6DSV16X_DT_ODR_HA02_AT_3200Hz	0x2B
-#define LSM6DSV16X_DT_ODR_HA02_AT_6400Hz	0x2C
+#include "lsm6dsvxxx.h"
 
-#endif /* ZEPHYR_INCLUDE_DT_BINDINGS_ST_LSM6DSV16X_H_ */
+/**
+ * @defgroup lsm6dsv16x_interface LSM6DSV16X
+ * @ingroup sensor_interface_ext_st
+ * @brief STMicroelectronics LSM6DSV16X 6-axis IMU
+ *
+ * Output data rates and FIFO settings are shared across the family; see
+ * @ref lsm6dsvxxx_interface.
+ * @{
+ */
+
+/**
+ * @name Accelerometer full-scale range
+ *
+ * Values for the `accel-range` devicetree property.
+ * @{
+ */
+#define LSM6DSV16X_DT_FS_2G			2  /**< ±2 g */
+#define LSM6DSV16X_DT_FS_4G			4  /**< ±4 g */
+#define LSM6DSV16X_DT_FS_8G			8  /**< ±8 g */
+#define LSM6DSV16X_DT_FS_16G			16 /**< ±16 g */
+/** @} */
+
+/**
+ * @name Gyroscope full-scale range
+ *
+ * Values for the `gyro-range` devicetree property.
+ * @{
+ */
+#define LSM6DSV16X_DT_FS_125DPS			0x0 /**< ±125 dps */
+#define LSM6DSV16X_DT_FS_250DPS			0x1 /**< ±250 dps */
+#define LSM6DSV16X_DT_FS_500DPS			0x2 /**< ±500 dps */
+#define LSM6DSV16X_DT_FS_1000DPS		0x3 /**< ±1000 dps */
+#define LSM6DSV16X_DT_FS_2000DPS		0x4 /**< ±2000 dps */
+#define LSM6DSV16X_DT_FS_4000DPS		0xc /**< ±4000 dps */
+/** @} */
+
+/** @} */
+
+#endif /* ZEPHYR_INCLUDE_DT_BINDINGS_SENSOR_LSM6DSV16X_H_ */

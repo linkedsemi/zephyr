@@ -259,7 +259,7 @@ static int espi_bmc_ls_init(const struct device *dev)
     return 0;
 }
 
-static const struct espi_driver_api espi_bmc_ls_driver_api = {
+static DEVICE_API(espi, espi_bmc_ls_driver_api) = {
     .config = espi_ls_configure,
     .get_channel_status = espi_ls_get_channel_status,
     .read_lpc_request = espi_ls_read_lpc_request,

@@ -5,8 +5,9 @@
  */
 /dts-v1/;
 
-#include <espressif/esp32/esp32_wroom_32ue_n4.dtsi>
+#include <espressif/esp32/esp32.dtsi>
 #include "kincony_kc868_a32-pinctrl.dtsi"
+#include <espressif/partitions_0x1000_amp.dtsi>
 
 / {
 	model = "Kincony KC868_A32 PROCPU";
@@ -18,7 +19,7 @@
 	};
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,flash = &flash0;
@@ -27,11 +28,22 @@
 	};
 };
 
+&flash0 {
+	reg = <0x0 DT_SIZE_M(4)>;
+	ranges = <0x0 0x0 DT_SIZE_M(4)>;
+};
+
+&psram0 {
+	status = "disabled";
+};
+
 &gpio0 {
+	gpio-reserved-ranges = <6 6>, <20 1>, <24 1>, <28 4>;
 	status = "okay";
 };
 
 &gpio1 {
+	gpio-reserved-ranges = <5 2>;
 	status = "okay";
 };
 
@@ -43,36 +55,44 @@
 	pinctrl-0 = <&i2c0_default>;
 	pinctrl-names = "default";
 
-	i2c0_pcf8574@21 {
-		 compatible = "nxp,pcf857x";
-		 reg = <0x21>;
-		 gpio-controller;
-		 #gpio-cells = <2>;
-		 ngpios = <8>;
+	pcf8574_relays_17_24: i2c0_pcf8574@21 {
+		compatible = "nxp,pcf857x";
+		reg = <0x21>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <8>;
+		gpio-line-names = "RLY17", "RLY18", "RLY19", "RLY20",
+				  "RLY21", "RLY22", "RLY23", "RLY24";
 	};
 
-	i2c0_pcf8574@22 {
-		 compatible = "nxp,pcf857x";
-		 reg = <0x22>;
-		 gpio-controller;
-		 #gpio-cells = <2>;
-		 ngpios = <8>;
+	pcf8574_relays_25_32: i2c0_pcf8574@22 {
+		compatible = "nxp,pcf857x";
+		reg = <0x22>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <8>;
+		gpio-line-names = "RLY25", "RLY26", "RLY27", "RLY28",
+				  "RLY29", "RLY30", "RLY31", "RLY32";
 	};
 
-	i2c0_pcf8574@24 {
-		 compatible = "nxp,pcf857x";
-		 reg = <0x24>;
-		 gpio-controller;
-		 #gpio-cells = <2>;
-		 ngpios = <8>;
+	pcf8574_relays_1_8: i2c0_pcf8574@24 {
+		compatible = "nxp,pcf857x";
+		reg = <0x24>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <8>;
+		gpio-line-names = "RLY1", "RLY2", "RLY3", "RLY4",
+				  "RLY5", "RLY6", "RLY7", "RLY8";
 	};
 
-	i2c0_pcf8574@25 {
-		 compatible = "nxp,pcf857x";
-		 reg = <0x25>;
-		 gpio-controller;
-		 #gpio-cells = <2>;
-		 ngpios = <8>;
+	pcf8574_relays_9_16: i2c0_pcf8574@25 {
+		compatible = "nxp,pcf857x";
+		reg = <0x25>;
+		gpio-controller;
+		#gpio-cells = <2>;
+		ngpios = <8>;
+		gpio-line-names = "RLY9", "RLY10", "RLY11", "RLY12",
+				  "RLY13", "RLY14", "RLY15", "RLY16";
 	};
 };
 
@@ -84,36 +104,44 @@
 	pinctrl-0 = <&i2c1_default>;
 	pinctrl-names = "default";
 
-	i2c1_pcf8574@21 {
+	pcf8574_inputs_17_24: i2c1_pcf8574@21 {
 		compatible = "nxp,pcf857x";
 		reg = <0x21>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		ngpios = <8>;
+		gpio-line-names = "IN17", "IN18", "IN19", "IN20",
+				  "IN21", "IN22", "IN23", "IN24";
 	};
 
-	i2c1_pcf8574@22 {
+	pcf8574_inputs_25_32: i2c1_pcf8574@22 {
 		compatible = "nxp,pcf857x";
 		reg = <0x22>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		ngpios = <8>;
+		gpio-line-names = "IN25", "IN26", "IN27", "IN28",
+				  "IN29", "IN30", "IN31", "IN32";
 	};
 
-	i2c1_pcf8574@24 {
+	pcf8574_inputs_1_8: i2c1_pcf8574@24 {
 		compatible = "nxp,pcf857x";
 		reg = <0x24>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		ngpios = <8>;
+		gpio-line-names = "IN1", "IN2", "IN3", "IN4",
+				  "IN5", "IN6", "IN7", "IN8";
 	};
 
-	i2c1_pcf8574@25 {
+	pcf8574_inputs_9_16: i2c1_pcf8574@25 {
 		compatible = "nxp,pcf857x";
 		reg = <0x25>;
 		gpio-controller;
 		#gpio-cells = <2>;
 		ngpios = <8>;
+		gpio-line-names = "IN9", "IN10", "IN11", "IN12",
+				  "IN13", "IN14", "IN15", "IN16";
 	};
 };
 
@@ -133,10 +161,6 @@
 	status = "okay";
 	phy-handle = <&phy>;
 	ref-clk-output-gpios = <&gpio0 17 0>;
-};
-
-&psram0 {
-	status = "disabled";
 };
 
 &timer0 {
@@ -164,45 +188,6 @@
 	current-speed = <115200>;
 	pinctrl-0 = <&uart0_default>;
 	pinctrl-names = "default";
-};
-
-&flash0 {
-	status = "okay";
-	partitions {
-		compatible = "fixed-partitions";
-		#address-cells = <1>;
-		#size-cells = <1>;
-
-		/* Reserve 60kB for the bootloader */
-		boot_partition: partition@1000 {
-			label = "mcuboot";
-			reg = <0x00001000 0x0000F000>;
-			read-only;
-		};
-
-		/* Reserve 1024kB for the application in slot 0 */
-		slot0_partition: partition@10000 {
-			label = "image-0";
-			reg = <0x00010000 0x00100000>;
-		};
-
-		/* Reserve 1024kB for the application in slot 1 */
-		slot1_partition: partition@110000 {
-			label = "image-1";
-			reg = <0x00110000 0x00100000>;
-		};
-
-		/* Reserve 256kB for the scratch partition */
-		scratch_partition: partition@210000 {
-			   label = "image-scratch";
-			   reg = <0x00210000 0x00040000>;
-		};
-
-		storage_partition: partition@250000 {
-			label = "storage";
-			reg = <0x00250000 0x00006000>;
-		};
-	};
 };
 
 &esp32_bt_hci {

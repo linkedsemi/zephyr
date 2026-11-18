@@ -13,6 +13,7 @@
 #include <zephyr/arch/cpu.h>
 
 #include <zephyr/init.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/uart.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/byteorder.h>
@@ -21,6 +22,7 @@
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/drivers/bluetooth.h>
+#include <zephyr/drivers/bluetooth/h4.h>
 
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -33,9 +35,20 @@ LOG_MODULE_REGISTER(bt_driver);
 #define DT_DRV_COMPAT zephyr_bt_hci_uart
 
 struct h4_data {
+	/* bt_hci_driver_data must be first */
+	struct bt_hci_driver_data common;
+
+	struct {
+		uint8_t type;
+		struct net_buf *buf;
+		struct k_fifo fifo;
+	} tx;
+
 	struct {
 		struct net_buf *buf;
 		struct k_fifo   fifo;
+
+		struct k_sem    ready;
 
 		uint16_t        remaining;
 		uint16_t        discard;
@@ -54,20 +67,27 @@ struct h4_data {
 		};
 	} rx;
 
-	struct {
-		uint8_t         type;
-		struct net_buf *buf;
-		struct k_fifo   fifo;
-	} tx;
-
-	bt_hci_recv_t recv;
+#if defined(CONFIG_BT_H4_VND_OPEN)
+	/* Commands of the vendor extension, sent while opening */
+	struct bt_hci_lockstep lockstep;
+#endif
 };
 
 struct h4_config {
+	/* bt_hci_driver_config must be first */
+	struct bt_hci_driver_config common;
+
 	const struct device *uart;
 	k_thread_stack_t *rx_thread_stack;
 	size_t rx_thread_stack_size;
 	struct k_thread *rx_thread;
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
+	struct gpio_dt_spec reset;
+	uint16_t reset_ms;
+#endif /* DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios) */
+#if defined(CONFIG_BT_H4_VND_OPEN)
+	struct net_buf_pool *vnd_pool;
+#endif
 };
 
 static inline void h4_get_type(const struct device *dev)
@@ -193,6 +213,8 @@ static inline void copy_hdr(struct h4_data *h4)
 
 static void reset_rx(struct h4_data *h4)
 {
+	net_buf_drop(&h4->rx.buf);
+
 	h4->rx.type = BT_HCI_H4_NONE;
 	h4->rx.remaining = 0U;
 	h4->rx.have_hdr = false;
@@ -217,6 +239,22 @@ static struct net_buf *get_rx(struct h4_data *h4, k_timeout_t timeout)
 
 	return NULL;
 }
+
+#if defined(CONFIG_BT_H4_VND_OPEN)
+/* Responses to the vendor extension's own commands, sent while opening */
+static bool vnd_consumed(struct h4_data *h4, struct net_buf *buf)
+{
+	return bt_hci_lockstep_feed(&h4->lockstep, buf->data, buf->len);
+}
+#else
+static bool vnd_consumed(struct h4_data *h4, struct net_buf *buf)
+{
+	ARG_UNUSED(h4);
+	ARG_UNUSED(buf);
+
+	return false;
+}
+#endif
 
 static void rx_thread(void *p1, void *p2, void *p3)
 {
@@ -252,12 +290,18 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		/* Let the ISR continue receiving new packets */
 		uart_irq_rx_enable(cfg->uart);
 
-		buf = k_fifo_get(&h4->rx.fifo, K_FOREVER);
-		do {
+		k_sem_take(&h4->rx.ready, K_FOREVER);
+
+		buf = k_fifo_get(&h4->rx.fifo, K_NO_WAIT);
+		while (buf != NULL) {
 			uart_irq_rx_enable(cfg->uart);
 
-			LOG_DBG("Calling bt_recv(%p)", buf);
-			h4->recv(dev, buf);
+			if (vnd_consumed(h4, buf)) {
+				net_buf_unref(buf);
+			} else {
+				LOG_DBG("Calling bt_hci_recv(%p)", buf);
+				bt_hci_recv(dev, buf);
+			}
 
 			/* Give other threads a chance to run if the ISR
 			 * is receiving data so fast that rx.fifo never
@@ -267,7 +311,7 @@ static void rx_thread(void *p1, void *p2, void *p3)
 
 			uart_irq_rx_disable(cfg->uart);
 			buf = k_fifo_get(&h4->rx.fifo, K_NO_WAIT);
-		} while (buf);
+		}
 	}
 }
 
@@ -306,13 +350,25 @@ static inline void read_payload(const struct device *dev)
 
 			LOG_WRN("Failed to allocate, deferring to rx_thread");
 			uart_irq_rx_disable(cfg->uart);
+			/*
+			 * At this time, HCI UART RX is turned off, which means that no new
+			 * received data buffer will be put into the RX FIFO. This will cause
+			 * `rx.ready` to not be modified. It will probably remain unchanged and
+			 * the count of `rx.ready` will probably be 0.
+			 *
+			 * Since it is uncertain whether the RX thread is blocked waiting for
+			 * `rx.ready`, give a semaphore to try to wake up the RX thread.
+			 * Then there will be a renewed attempt at allocating an RX buffer in
+			 * the RX thread.
+			 */
+			k_sem_give(&h4->rx.ready);
 			return;
 		}
 
 		LOG_DBG("Allocated rx.buf %p", h4->rx.buf);
 
 		buf_tailroom = net_buf_tailroom(h4->rx.buf);
-		if (buf_tailroom < h4->rx.remaining) {
+		if (buf_tailroom < (h4->rx.remaining + h4->rx.hdr_len)) {
 			LOG_ERR("Not enough space in buffer %u/%zu", h4->rx.remaining,
 				buf_tailroom);
 			h4->rx.discard = h4->rx.remaining;
@@ -343,16 +399,11 @@ static inline void read_payload(const struct device *dev)
 	buf = h4->rx.buf;
 	h4->rx.buf = NULL;
 
-	if (h4->rx.type == BT_HCI_H4_EVT) {
-		bt_buf_set_type(buf, BT_BUF_EVT);
-	} else {
-		bt_buf_set_type(buf, BT_BUF_ACL_IN);
-	}
-
 	reset_rx(h4);
 
 	LOG_DBG("Putting buf %p to rx fifo", buf);
 	k_fifo_put(&h4->rx.fifo, buf);
+	k_sem_give(&h4->rx.ready);
 }
 
 static inline void read_header(const struct device *dev)
@@ -406,33 +457,6 @@ static inline void process_tx(const struct device *dev)
 		}
 	}
 
-	if (!h4->tx.type) {
-		switch (bt_buf_get_type(h4->tx.buf)) {
-		case BT_BUF_ACL_OUT:
-			h4->tx.type = BT_HCI_H4_ACL;
-			break;
-		case BT_BUF_CMD:
-			h4->tx.type = BT_HCI_H4_CMD;
-			break;
-		case BT_BUF_ISO_OUT:
-			if (IS_ENABLED(CONFIG_BT_ISO)) {
-				h4->tx.type = BT_HCI_H4_ISO;
-				break;
-			}
-			__fallthrough;
-		default:
-			LOG_ERR("Unknown buffer type");
-			goto done;
-		}
-
-		bytes = uart_fifo_fill(cfg->uart, &h4->tx.type, 1);
-		if (bytes != 1) {
-			LOG_WRN("Unable to send H:4 type");
-			h4->tx.type = BT_HCI_H4_NONE;
-			return;
-		}
-	}
-
 	bytes = uart_fifo_fill(cfg->uart, h4->tx.buf->data, h4->tx.buf->len);
 	if (unlikely(bytes < 0)) {
 		LOG_ERR("Unable to write to UART (err %d)", bytes);
@@ -444,7 +468,6 @@ static inline void process_tx(const struct device *dev)
 		return;
 	}
 
-done:
 	h4->tx.type = BT_HCI_H4_NONE;
 	net_buf_unref(h4->tx.buf);
 	h4->tx.buf = k_fifo_get(&h4->tx.fifo, K_NO_WAIT);
@@ -478,7 +501,13 @@ static void bt_uart_isr(const struct device *uart, void *user_data)
 {
 	struct device *dev = user_data;
 
-	while (uart_irq_update(uart) && uart_irq_is_pending(uart)) {
+	while (true) {
+		uart_irq_update(uart);
+
+		if (uart_irq_is_pending(uart) <= 0) {
+			break;
+		}
+
 		if (uart_irq_tx_ready(uart)) {
 			process_tx(dev);
 		}
@@ -494,12 +523,66 @@ static int h4_send(const struct device *dev, struct net_buf *buf)
 	const struct h4_config *cfg = dev->config;
 	struct h4_data *h4 = dev->data;
 
-	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
+	LOG_DBG("buf %p type %u len %u", buf, buf->data[0], buf->len);
 
 	k_fifo_put(&h4->tx.fifo, buf);
 	uart_irq_tx_enable(cfg->uart);
 
 	return 0;
+}
+
+#if defined(CONFIG_BT_H4_VND_OPEN)
+static int h4_send_raw(const struct device *dev, const uint8_t *pkt, size_t len)
+{
+	const struct h4_config *cfg = dev->config;
+	struct net_buf *buf;
+
+	/* The pool holds one packet: the previous command has been written to the
+	 * UART, and its buffer returned, before its response lets the next one out.
+	 */
+	buf = net_buf_alloc(cfg->vnd_pool, K_NO_WAIT);
+	if (buf == NULL) {
+		return -ENOBUFS;
+	}
+
+	if (len > net_buf_tailroom(buf)) {
+		/* Longer than CONFIG_BT_BUF_CMD_TX_SIZE allows */
+		net_buf_unref(buf);
+		return -EMSGSIZE;
+	}
+
+	net_buf_add_mem(buf, pkt, len);
+
+	return h4_send(dev, buf);
+}
+#endif /* CONFIG_BT_H4_VND_OPEN */
+
+/* Stops reception and transmission and drops what is queued or half received,
+ * so that the next open() starts from a clean transport.
+ */
+static void h4_stop(const struct device *dev)
+{
+	const struct h4_config *cfg = dev->config;
+	struct h4_data *h4 = dev->data;
+	struct net_buf *buf;
+
+	uart_irq_rx_disable(cfg->uart);
+	uart_irq_tx_disable(cfg->uart);
+
+	k_thread_abort(cfg->rx_thread);
+
+	reset_rx(h4);
+	h4->rx.discard = 0U;
+	while ((buf = k_fifo_get(&h4->rx.fifo, K_NO_WAIT)) != NULL) {
+		net_buf_unref(buf);
+	}
+	k_sem_reset(&h4->rx.ready);
+
+	net_buf_drop(&h4->tx.buf);
+	h4->tx.type = BT_HCI_H4_NONE;
+	while ((buf = k_fifo_get(&h4->tx.fifo, K_NO_WAIT)) != NULL) {
+		net_buf_unref(buf);
+	}
 }
 
 /** Setup the HCI transport, which usually means to reset the Bluetooth IC
@@ -514,7 +597,7 @@ int __weak bt_hci_transport_setup(const struct device *uart)
 	return 0;
 }
 
-static int h4_open(const struct device *dev, bt_hci_recv_t recv)
+static int h4_open(const struct device *dev)
 {
 	const struct h4_config *cfg = dev->config;
 	struct h4_data *h4 = dev->data;
@@ -531,9 +614,22 @@ static int h4_open(const struct device *dev, bt_hci_recv_t recv)
 		return -EIO;
 	}
 
-	h4->recv = recv;
-
 	uart_irq_callback_user_data_set(cfg->uart, bt_uart_isr, (void *)dev);
+
+#if DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios)
+	if (cfg->reset.port) {
+		(void)gpio_pin_configure_dt(&cfg->reset, GPIO_OUTPUT_ACTIVE);
+		k_sleep(K_MSEC(cfg->reset_ms));
+		gpio_pin_set_dt(&cfg->reset, 0);
+	}
+#endif
+
+#if defined(CONFIG_BT_H4_VND_OPEN)
+	/* Every open() starts a new session with the controller: what it allowed
+	 * or sent before does not count, and any reset of it happened above.
+	 */
+	bt_hci_lockstep_reset(&h4->lockstep);
+#endif
 
 	tid = k_thread_create(cfg->rx_thread, cfg->rx_thread_stack,
 			      cfg->rx_thread_stack_size,
@@ -541,6 +637,45 @@ static int h4_open(const struct device *dev, bt_hci_recv_t recv)
 			      K_PRIO_COOP(CONFIG_BT_RX_PRIO),
 			      0, K_NO_WAIT);
 	k_thread_name_set(tid, "bt_rx_thread");
+
+	/* Active rx_thread at first time */
+	k_sem_give(&h4->rx.ready);
+
+#if defined(CONFIG_BT_H4_VND_OPEN)
+	ret = bt_h4_vnd_open(dev, cfg->uart, &h4->lockstep);
+	if (ret < 0) {
+		LOG_ERR("Vendor initialization failed (err %d)", ret);
+		/* A failed open() is not followed by close() */
+		h4_stop(dev);
+		(void)bt_hci_transport_teardown(cfg->uart);
+		return ret;
+	}
+#endif
+
+	return 0;
+}
+
+int __weak bt_hci_transport_teardown(const struct device *dev)
+{
+	return 0;
+}
+
+static int h4_close(const struct device *dev)
+{
+	const struct h4_config *cfg = dev->config;
+	int err;
+
+	LOG_DBG("");
+
+	uart_irq_rx_disable(cfg->uart);
+	uart_irq_tx_disable(cfg->uart);
+
+	err = bt_hci_transport_teardown(cfg->uart);
+	if (err < 0) {
+		return err;
+	}
+
+	h4_stop(dev);
 
 	return 0;
 }
@@ -550,46 +685,78 @@ static int h4_setup(const struct device *dev, const struct bt_hci_setup_params *
 {
 	const struct h4_config *cfg = dev->config;
 
-	ARG_UNUSED(params);
-
 	/* Extern bt_h4_vnd_setup function.
 	 * This function executes vendor-specific commands sequence to
 	 * initialize BT Controller before BT Host executes Reset sequence.
 	 * bt_h4_vnd_setup function must be implemented in vendor-specific HCI
-	 * extansion module if CONFIG_BT_HCI_SETUP is enabled.
+	 * extension module if CONFIG_BT_HCI_SETUP is enabled.
 	 */
-	extern int bt_h4_vnd_setup(const struct device *dev);
+	extern int bt_h4_vnd_setup(const struct device *dev,
+				   const struct bt_hci_setup_params *params);
 
-	return bt_h4_vnd_setup(cfg->uart);
+	return bt_h4_vnd_setup(cfg->uart, params);
 }
 #endif
 
-static const struct bt_hci_driver_api h4_driver_api = {
+static int h4_init(const struct device *dev)
+{
+#if defined(CONFIG_BT_H4_VND_OPEN)
+	struct h4_data *h4 = dev->data;
+
+	bt_hci_lockstep_init(&h4->lockstep, dev, h4_send_raw);
+#endif
+
+	return 0;
+}
+
+static DEVICE_API(bt_hci, h4_driver_api) = {
 	.open = h4_open,
 	.send = h4_send,
+	.close = h4_close,
 #if defined(CONFIG_BT_HCI_SETUP)
 	.setup = h4_setup,
 #endif
 };
 
+#if defined(CONFIG_BT_H4_VND_OPEN)
+/* One command packet of the vendor extension, of up to CONFIG_BT_BUF_CMD_TX_SIZE
+ * parameter bytes: an extension with longer commands needs that option raised.
+ */
+#define BT_UART_VND_POOL_DEFINE(inst) \
+	NET_BUF_POOL_FIXED_DEFINE(vnd_pool_##inst, 1, \
+				  BT_HCI_PKT_CMD_SIZE(CONFIG_BT_BUF_CMD_TX_SIZE), 0, NULL)
+#define BT_UART_VND_POOL_INIT(inst) .vnd_pool = &vnd_pool_##inst,
+#else
+#define BT_UART_VND_POOL_DEFINE(inst)
+#define BT_UART_VND_POOL_INIT(inst)
+#endif
+
 #define BT_UART_DEVICE_INIT(inst) \
 	static K_KERNEL_STACK_DEFINE(rx_thread_stack_##inst, CONFIG_BT_DRV_RX_STACK_SIZE); \
 	static struct k_thread rx_thread_##inst; \
+	BT_UART_VND_POOL_DEFINE(inst); \
 	static const struct h4_config h4_config_##inst = { \
+		.common = BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst), \
 		.uart = DEVICE_DT_GET(DT_INST_PARENT(inst)), \
 		.rx_thread_stack = rx_thread_stack_##inst, \
 		.rx_thread_stack_size = K_KERNEL_STACK_SIZEOF(rx_thread_stack_##inst), \
 		.rx_thread = &rx_thread_##inst, \
+		COND_CODE_1(DT_ANY_INST_HAS_PROP_STATUS_OKAY(reset_gpios), \
+			(.reset = GPIO_DT_SPEC_INST_GET_OR(inst, reset_gpios, {0}), \
+			.reset_ms = DT_INST_PROP_OR(inst, reset_assert_duration_ms, 0), \
+		), ()) \
+		BT_UART_VND_POOL_INIT(inst) \
 	}; \
 	static struct h4_data h4_data_##inst = { \
 		.rx = { \
 			.fifo = Z_FIFO_INITIALIZER(h4_data_##inst.rx.fifo), \
+			.ready = Z_SEM_INITIALIZER(h4_data_##inst.rx.ready, 0, 1), \
 		}, \
 		.tx = { \
 			.fifo = Z_FIFO_INITIALIZER(h4_data_##inst.tx.fifo), \
 		}, \
 	}; \
-	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &h4_data_##inst, &h4_config_##inst, \
-			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &h4_driver_api)
+	DEVICE_DT_INST_DEFINE(inst, h4_init, NULL, &h4_data_##inst, &h4_config_##inst, \
+			      POST_KERNEL, CONFIG_BT_HCI_INIT_PRIORITY, &h4_driver_api)
 
 DT_INST_FOREACH_STATUS_OKAY(BT_UART_DEVICE_INIT)

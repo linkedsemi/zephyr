@@ -5,6 +5,7 @@
  */
 #include <zephyr/kernel.h>
 #include <zephyr/ztest.h>
+#include <zephyr/spinlock.h>
 
 
 #if defined(CONFIG_ZTEST_FATAL_HOOK)
@@ -44,11 +45,16 @@ static inline void z_vrfy_ztest_set_fault_valid(bool valid)
 __weak void ztest_post_fatal_error_hook(unsigned int reason,
 		const struct arch_esf *pEsf)
 {
+	ARG_UNUSED(reason);
+	ARG_UNUSED(pEsf);
 }
 
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
 {
-	k_tid_t curr_tid = k_current_get();
+	/* Use _current directly if pre-kernel to avoid k_current_get() assertion
+	 * failure, but use k_current_get() otherwise for proper userspace/TLS support.
+	 */
+	k_tid_t curr_tid = k_is_pre_kernel() ? _current : k_current_get();
 	bool valid_fault = (curr_tid == valid_fault_tid) || fault_in_isr;
 
 	printk("Caught system error -- reason %d %d\n", reason, valid_fault);
@@ -59,6 +65,10 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
 		/* reset back to normal */
 		reset_stored_fault_status();
 
+#ifdef CONFIG_SPIN_VALIDATE
+		/* Mark thread so z_assert_can_swap() exempts the forced abort swap. */
+		_current->base.swap_data = (void *)&z_spinlock_abort_sentinel;
+#endif
 		/* do some action after expected fatal error happened */
 		ztest_post_fatal_error_hook(reason, pEsf);
 	} else {
@@ -79,7 +89,7 @@ ZTEST_BMEM volatile k_tid_t valid_assert_tid;
 static inline void reset_stored_assert_status(void)
 {
 	valid_assert_tid = NULL;
-	assert_in_isr = 0;
+	assert_in_isr = false;
 }
 
 void z_impl_ztest_set_assert_valid(bool valid)
@@ -110,25 +120,33 @@ __weak void ztest_post_assert_fail_hook(void)
 	CODE_UNREACHABLE;
 }
 
-#ifdef CONFIG_ASSERT_NO_FILE_INFO
-void assert_post_action(void)
-#else
-void assert_post_action(const char *file, unsigned int line)
+#ifndef CONFIG_ASSERT_TEST
+FUNC_NORETURN
 #endif
+void zassert_post_action(const char *file, unsigned int line)
 {
-#ifndef CONFIG_ASSERT_NO_FILE_INFO
 	ARG_UNUSED(file);
 	ARG_UNUSED(line);
-#endif
 
 	printk("Caught assert failed\n");
 
-	if ((k_current_get() == valid_assert_tid) || assert_in_isr) {
+	/* Use _current directly if pre-kernel to avoid k_current_get() assertion
+	 * failure, but use k_current_get() otherwise for proper userspace/TLS support.
+	 */
+	k_tid_t curr_tid = k_is_pre_kernel() ? _current : k_current_get();
+
+	if ((curr_tid == valid_assert_tid) || assert_in_isr) {
 		printk("Assert error expected as part of test case.\n");
 
 		/* reset back to normal */
 		reset_stored_assert_status();
 
+#ifdef CONFIG_SPIN_VALIDATE
+		/* User-mode threads cannot hold spinlocks; skip the sentinel. */
+		if (!k_is_user_context()) {
+			_current->base.swap_data = (void *)&z_spinlock_abort_sentinel;
+		}
+#endif
 		/* It won't go back to caller when assert failed, and it
 		 * will terminate the thread.
 		 */
@@ -145,5 +163,9 @@ void assert_post_action(const char *file, unsigned int line)
 #endif
 		k_panic();
 	}
+
+#ifndef CONFIG_ASSERT_TEST
+	CODE_UNREACHABLE;
+#endif
 }
 #endif

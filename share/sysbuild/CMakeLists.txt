@@ -2,7 +2,12 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.28.0)
+
+
+if(NOT DEFINED APP_DIR AND DEFINED ENV{APP_DIR})
+  set(APP_DIR $ENV{APP_DIR})
+endif()
 
 if(NOT DEFINED APP_DIR)
   message(FATAL_ERROR "No main application specified")

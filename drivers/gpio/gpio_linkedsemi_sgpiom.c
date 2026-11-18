@@ -275,7 +275,7 @@ __maybe_unused static int sgpiom_linkedsemi_passthrough(const struct device *dev
 }
 
 /* GPIO driver registration */
-static const struct gpio_driver_api sgpiom_linkedsemi_driver = {
+static DEVICE_API(gpio, sgpiom_linkedsemi_driver) = {
     .pin_configure = sgpiom_linkedsemi_config,
     .port_get_raw = sgpiom_linkedsemi_port_get_raw,
     .port_set_masked_raw = sgpiom_linkedsemi_port_set_masked_raw,

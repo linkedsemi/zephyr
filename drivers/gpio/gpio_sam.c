@@ -66,8 +66,7 @@ static int gpio_sam_port_configure(const struct device *dev, uint32_t mask,
 		pio->PIO_PUDR = mask;
 #if defined(CONFIG_SOC_SERIES_SAM4S) || \
 	defined(CONFIG_SOC_SERIES_SAM4E) || \
-	defined(CONFIG_SOC_SERIES_SAME70) || \
-	defined(CONFIG_SOC_SERIES_SAMV71)
+	defined(CONFIG_SOC_SERIES_SAMX7X)
 		/* Disable pull-down. */
 		pio->PIO_PPDDR = mask;
 #endif
@@ -108,8 +107,7 @@ static int gpio_sam_port_configure(const struct device *dev, uint32_t mask,
 	pio->PIO_PUDR = mask;
 #if defined(CONFIG_SOC_SERIES_SAM4S) || \
 	defined(CONFIG_SOC_SERIES_SAM4E) || \
-	defined(CONFIG_SOC_SERIES_SAME70) || \
-	defined(CONFIG_SOC_SERIES_SAMV71)
+	defined(CONFIG_SOC_SERIES_SAMX7X)
 	pio->PIO_PPDDR = mask;
 #endif
 	if (flags & GPIO_PULL_UP) {
@@ -117,8 +115,7 @@ static int gpio_sam_port_configure(const struct device *dev, uint32_t mask,
 		pio->PIO_PUER = mask;
 #if defined(CONFIG_SOC_SERIES_SAM4S) || \
 	defined(CONFIG_SOC_SERIES_SAM4E) || \
-	defined(CONFIG_SOC_SERIES_SAME70) || \
-	defined(CONFIG_SOC_SERIES_SAMV71)
+	defined(CONFIG_SOC_SERIES_SAMX7X)
 
 	/* Setup Pull-down resistor. */
 	} else if (flags & GPIO_PULL_DOWN) {
@@ -136,8 +133,7 @@ static int gpio_sam_port_configure(const struct device *dev, uint32_t mask,
 	}
 #elif defined(CONFIG_SOC_SERIES_SAM4S) || \
 	defined(CONFIG_SOC_SERIES_SAM4E) || \
-	defined(CONFIG_SOC_SERIES_SAME70) || \
-	defined(CONFIG_SOC_SERIES_SAMV71)
+	defined(CONFIG_SOC_SERIES_SAMX7X)
 
 	/* Setup debounce. */
 	if (flags & SAM_GPIO_DEBOUNCE) {
@@ -279,7 +275,12 @@ static void gpio_sam_isr(const struct device *dev)
 	struct gpio_sam_runtime *context = dev->data;
 	uint32_t int_stat;
 
-	int_stat = pio->PIO_ISR;
+	/* ISR bits are set on input level or edge changes, regardless of whether an interrupt is
+	 * actually enabled on that line. Therefore, we check whether an interrupt is actually
+	 * enabled by masking with IMR. If we didn't do this, some other enabled interrupt firing
+	 * could also result in a callback for a disabled interrupt.
+	 */
+	int_stat = pio->PIO_ISR & pio->PIO_IMR;
 
 	gpio_fire_callbacks(&context->cb, dev, int_stat);
 }
@@ -293,7 +294,7 @@ static int gpio_sam_manage_callback(const struct device *port,
 	return gpio_manage_callback(&context->cb, callback, set);
 }
 
-static const struct gpio_driver_api gpio_sam_api = {
+static DEVICE_API(gpio, gpio_sam_api) = {
 	.pin_configure = gpio_sam_config,
 	.port_get_raw = gpio_sam_port_get_raw,
 	.port_set_masked_raw = gpio_sam_port_set_masked_raw,
@@ -321,9 +322,7 @@ int gpio_sam_init(const struct device *dev)
 	static void port_##n##_sam_config_func(const struct device *dev);	\
 									\
 	static const struct gpio_sam_config port_##n##_sam_config = {	\
-		.common = {						\
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n),\
-		},							\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),		\
 		.regs = (Pio *)DT_INST_REG_ADDR(n),			\
 		.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(n),		\
 		.config_func = port_##n##_sam_config_func,		\

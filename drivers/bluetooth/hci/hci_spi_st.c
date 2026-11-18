@@ -23,7 +23,7 @@
 
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/drivers/bluetooth.h>
-#include <zephyr/bluetooth/hci_raw.h>
+#include <zephyr/drivers/bluetooth/hci_lockstep.h>
 
 #define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -77,6 +77,12 @@ static const struct gpio_dt_spec rst_gpio = GPIO_DT_SPEC_INST_GET(0, reset_gpios
 
 static struct gpio_callback	gpio_cb;
 
+struct bt_spi_data {
+	/* bt_hci_driver_data must be first */
+	struct bt_hci_driver_data common;
+	struct bt_hci_lockstep lockstep;
+};
+
 static K_SEM_DEFINE(sem_initialised, 0, 1);
 static K_SEM_DEFINE(sem_request, 0, 1);
 static K_SEM_DEFINE(sem_busy, 1, 1);
@@ -90,12 +96,8 @@ static struct k_thread spi_rx_thread_data;
 #define BLUENRG_CONFIG_LL_ONLY_OFFSET       0x2C
 #define BLUENRG_CONFIG_LL_ONLY_LEN          0x01
 
-struct bt_spi_data {
-	bt_hci_recv_t recv;
-};
-
 static const struct spi_dt_spec bus = SPI_DT_SPEC_INST_GET(
-	0, SPI_OP_MODE_MASTER | SPI_TRANSFER_MSB | SPI_WORD_SET(8) | SPI_LOCK_ON, 0);
+	0, SPI_OP_MODE_CONTROLLER | SPI_TRANSFER_MSB | SPI_WORD_SET(8) | SPI_LOCK_ON);
 
 static struct spi_buf spi_tx_buf;
 static struct spi_buf spi_rx_buf;
@@ -160,9 +162,15 @@ static inline int bt_spi_transceive(void *tx, uint32_t tx_len,
 	return spi_transceive_dt(&bus, &spi_tx, &spi_rx);
 }
 
-static inline uint16_t bt_spi_get_cmd(uint8_t *msg)
+static inline uint16_t bt_spi_get_cmd(const uint8_t *msg)
 {
 	return (msg[CMD_OCF] << 8) | msg[CMD_OGF];
+}
+
+static inline bool bt_spi_is_reset(const uint8_t *pkt)
+{
+	return pkt[PACKET_TYPE] == BT_HCI_H4_CMD &&
+	       bt_spi_get_cmd(pkt) == BT_HCI_OP_RESET;
 }
 
 static inline uint16_t bt_spi_get_evt(uint8_t *msg)
@@ -217,12 +225,14 @@ static void release_cs(bool data_transaction)
 	spi_release_dt(&bus);
 }
 
-static int bt_spi_get_header(uint8_t op, uint16_t *size)
+static int bt_spi_get_header(uint8_t op, uint16_t *size, uint16_t write_size)
 {
-	uint8_t header_master[5] = {op, 0, 0, 0, 0};
-	uint8_t header_slave[5];
+	uint8_t header_controller[5] = {op, 0, 0, 0, 0};
+	uint8_t header_peripheral[5];
 	uint8_t size_offset, attempts;
 	int ret;
+
+	ARG_UNUSED(write_size);
 
 	if (op == SPI_READ) {
 		if (!IS_IRQ_HIGH) {
@@ -246,14 +256,14 @@ static int bt_spi_get_header(uint8_t op, uint16_t *size)
 		}
 		/* Make sure CS is raised before a new attempt */
 		gpio_pin_set_dt(&bus.config.cs.gpio, 0);
-		ret = bt_spi_transceive(header_master, 5, header_slave, 5);
+		ret = bt_spi_transceive(header_controller, 5, header_peripheral, 5);
 		if (ret) {
 			/* SPI transaction failed */
 			break;
 		}
 
-		*size = (header_slave[STATUS_HEADER_READY] == READY_NOW) ?
-				header_slave[size_offset] : 0;
+		*size = (header_peripheral[STATUS_HEADER_READY] == READY_NOW) ?
+				header_peripheral[size_offset] : 0;
 		attempts--;
 	} while ((*size == 0) && attempts);
 
@@ -278,10 +288,10 @@ static void release_cs(bool data_transaction)
 	spi_release_dt(&bus);
 }
 
-static int bt_spi_get_header(uint8_t op, uint16_t *size)
+static int bt_spi_get_header(uint8_t op, uint16_t *size, uint16_t write_size)
 {
-	uint8_t header_master[5] = {op, 0, 0, 0, 0};
-	uint8_t header_slave[5];
+	uint8_t header_controller[5] = {op, 0, 0, 0, 0};
+	uint8_t header_peripheral[5];
 	uint16_t cs_delay;
 	uint8_t size_offset;
 	int ret;
@@ -297,6 +307,8 @@ static int bt_spi_get_header(uint8_t op, uint16_t *size)
 		/* To make sure we have a minimum delay from previous release cs */
 		cs_delay = 100;
 		size_offset = STATUS_HEADER_TOWRITE;
+		header_controller[size_offset] = write_size & 0x00FF;
+		header_controller[size_offset + 1] = write_size >> 8;
 	} else {
 		return -EINVAL;
 	}
@@ -307,7 +319,7 @@ static int bt_spi_get_header(uint8_t op, uint16_t *size)
 	/* Perform a zero byte SPI transaction to acquire the SPI lock and lower CS
 	 * while waiting for IRQ to be raised
 	 */
-	bt_spi_transceive(header_master, 0, header_slave, 0);
+	bt_spi_transceive(header_controller, 0, header_peripheral, 0);
 	gpio_pin_interrupt_configure_dt(&irq_gpio, GPIO_INT_DISABLE);
 
 	/* Wait up to a maximum time of 100 ms */
@@ -316,61 +328,61 @@ static int bt_spi_get_header(uint8_t op, uint16_t *size)
 		return -EIO;
 	}
 
-	ret = bt_spi_transceive(header_master, 5, header_slave, 5);
-	*size = header_slave[size_offset] | (header_slave[size_offset + 1] << 8);
+	ret = bt_spi_transceive(header_controller, 5, header_peripheral, 5);
+	*size = header_peripheral[size_offset] | (header_peripheral[size_offset + 1] << 8);
+
+	if (DT_INST_PROP_OR(0, wait_irq_low, false)) {
+		/* Wait up to a maximum time of 10 ms */
+		if (!WAIT_FOR(!IS_IRQ_HIGH, 10000, k_usleep(50))) {
+			LOG_ERR("IRQ pin did not go low");
+			return -EIO;
+		}
+	}
 	return ret;
 }
 #endif /* DT_HAS_COMPAT_STATUS_OKAY(st_hci_spi_v1) */
 
 #if defined(CONFIG_BT_BLUENRG_ACI)
-static int bt_spi_send_aci_config(uint8_t offset, const uint8_t *value, size_t value_len)
+static int bt_spi_send_aci_config(struct bt_spi_data *data, uint8_t offset, const uint8_t *value,
+				  size_t value_len)
 {
-	struct net_buf *buf;
 	uint8_t *cmd_data;
-	size_t data_len = 2 + value_len;
-#if defined(CONFIG_BT_HCI_RAW)
-	struct bt_hci_cmd_hdr hdr;
 
-	hdr.opcode = sys_cpu_to_le16(BLUENRG_ACI_WRITE_CONFIG_DATA);
-	hdr.param_len = data_len;
-	buf = bt_buf_get_tx(BT_BUF_CMD, K_NO_WAIT, &hdr, sizeof(hdr));
-#else
-	buf = bt_hci_cmd_create(BLUENRG_ACI_WRITE_CONFIG_DATA, data_len);
-#endif /* CONFIG_BT_HCI_RAW */
+	BT_HCI_PKT_CMD_DEFINE(cmd, 2 + BLUENRG_CONFIG_PUBADDR_LEN);
 
-	if (!buf) {
-		return -ENOBUFS;
+	if (value_len > BLUENRG_CONFIG_PUBADDR_LEN) {
+		return -EINVAL;
 	}
 
-	cmd_data = net_buf_add(buf, data_len);
+	cmd_data = net_buf_simple_add(&cmd, 2 + value_len);
 	cmd_data[0] = offset;
 	cmd_data[1] = value_len;
-	memcpy(&cmd_data[2], value, value_len);
+	(void)memcpy(&cmd_data[2], value, value_len);
 
-#if defined(CONFIG_BT_HCI_RAW)
-	return bt_send(buf);
-#else
-	return bt_hci_cmd_send_sync(BLUENRG_ACI_WRITE_CONFIG_DATA, buf, NULL);
-#endif /* CONFIG_BT_HCI_RAW */
+	return bt_hci_lockstep_cmd_send_sync(&data->lockstep, BLUENRG_ACI_WRITE_CONFIG_DATA, &cmd,
+					     NULL);
 }
 
-#if !defined(CONFIG_BT_HCI_RAW)
-static int bt_spi_bluenrg_setup(const struct device *dev,
-				const struct bt_hci_setup_params *params)
+static int bt_spi_bluenrg_config(const struct device *dev)
 {
+	struct bt_spi_data *data = dev->data;
+	const bt_addr_t *addr = bt_hci_get_public_addr(dev);
 	int ret;
-	const bt_addr_t *addr = &params->public_addr;
 
-	/* force BlueNRG to be on controller mode */
-	uint8_t data = 1;
+	if (DT_INST_PROP_OR(0, req_ll_only, false)) {
+		/* force BlueNRG to be on controller mode */
+		uint8_t ll_only = 1;
 
-	bt_spi_send_aci_config(BLUENRG_CONFIG_LL_ONLY_OFFSET, &data, 1);
+		ret = bt_spi_send_aci_config(data, BLUENRG_CONFIG_LL_ONLY_OFFSET, &ll_only, 1);
+		if (ret != 0) {
+			LOG_ERR("Failed to set BlueNRG LL-only mode (%d)", ret);
+			return ret;
+		}
+	}
 
 	if (!bt_addr_eq(addr, BT_ADDR_NONE) && !bt_addr_eq(addr, BT_ADDR_ANY)) {
-		ret = bt_spi_send_aci_config(
-			BLUENRG_CONFIG_PUBADDR_OFFSET,
-			addr->val, sizeof(addr->val));
-
+		ret = bt_spi_send_aci_config(data, BLUENRG_CONFIG_PUBADDR_OFFSET, addr->val,
+					     sizeof(addr->val));
 		if (ret != 0) {
 			LOG_ERR("Failed to set BlueNRG public address (%d)", ret);
 			return ret;
@@ -379,8 +391,6 @@ static int bt_spi_bluenrg_setup(const struct device *dev,
 
 	return 0;
 }
-#endif /* !CONFIG_BT_HCI_RAW */
-
 #endif /* CONFIG_BT_BLUENRG_ACI */
 
 static int bt_spi_rx_buf_construct(uint8_t *msg, struct net_buf **bufp, uint16_t size)
@@ -502,7 +512,7 @@ static int bt_spi_rx_buf_construct(uint8_t *msg, struct net_buf **bufp, uint16_t
 static void bt_spi_rx_thread(void *p1, void *p2, void *p3)
 {
 	const struct device *dev = p1;
-	struct bt_spi_data *hci = dev->data;
+	struct bt_spi_data *data = dev->data;
 
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
@@ -515,14 +525,18 @@ static void bt_spi_rx_thread(void *p1, void *p2, void *p3)
 	while (true) {
 
 		/* Wait for interrupt pin to be active */
-		k_sem_take(&sem_request, K_FOREVER);
+		ret = k_sem_take(&sem_request, K_FOREVER);
+		if (ret) {
+			LOG_DBG("Failed to take the semaphore. The RX thread exits.");
+			break;
+		}
 
 		LOG_DBG("");
 
 		do {
 			/* Wait for SPI bus to be available */
 			k_sem_take(&sem_busy, K_FOREVER);
-			ret = bt_spi_get_header(SPI_READ, &size);
+			ret = bt_spi_get_header(SPI_READ, &size, 0);
 
 			/* Read data */
 			if (ret == 0 && size != 0) {
@@ -545,53 +559,45 @@ static void bt_spi_rx_thread(void *p1, void *p2, void *p3)
 			/* Construct net_buf from SPI data */
 			ret = bt_spi_rx_buf_construct(rxmsg, &buf, size);
 			if (!ret) {
-				/* Handle the received HCI data */
-				hci->recv(dev, buf);
+				/* Responses to the driver's own commands, sent
+				 * while opening
+				 */
+				if (bt_hci_lockstep_feed(&data->lockstep, buf->data, buf->len)) {
+					net_buf_unref(buf);
+				} else {
+					/* Handle the received HCI data */
+					bt_hci_recv(dev, buf);
+				}
 				buf = NULL;
 			}
 		} while (READ_CONDITION);
 	}
 }
 
-static int bt_spi_send(const struct device *dev, struct net_buf *buf)
+static int bt_spi_send_raw(const struct device *dev, const uint8_t *pkt, size_t len)
 {
 	uint16_t size;
 	uint8_t rx_first[1];
 	int ret;
 	uint8_t *data_ptr;
 	uint16_t remaining_bytes;
+	bool on_the_bus = false;
+
+	ARG_UNUSED(dev);
 
 	LOG_DBG("");
 
-	/* Buffer needs an additional byte for type */
-	if (buf->len >= SPI_MAX_MSG_LEN) {
-		LOG_ERR("Message too long (%d)", buf->len);
-		return -EINVAL;
-	}
-
-	switch (bt_buf_get_type(buf)) {
-	case BT_BUF_ACL_OUT:
-		net_buf_push_u8(buf, BT_HCI_H4_ACL);
-		break;
-	case BT_BUF_CMD:
-		net_buf_push_u8(buf, BT_HCI_H4_CMD);
-		break;
-#if defined(CONFIG_BT_ISO)
-	case BT_BUF_ISO_OUT:
-		net_buf_push_u8(buf, BT_HCI_H4_ISO);
-		break;
-#endif /* CONFIG_BT_ISO */
-	default:
-		LOG_ERR("Unsupported type");
+	if (len > SPI_MAX_MSG_LEN) {
+		LOG_ERR("Message too long (%zu)", len);
 		return -EINVAL;
 	}
 
 	/* Wait for SPI bus to be available */
 	k_sem_take(&sem_busy, K_FOREVER);
-	data_ptr = buf->data;
-	remaining_bytes = buf->len;
+	data_ptr = (uint8_t *)pkt;
+	remaining_bytes = len;
 	do {
-		ret = bt_spi_get_header(SPI_WRITE, &size);
+		ret = bt_spi_get_header(SPI_WRITE, &size, remaining_bytes);
 		size = MIN(remaining_bytes, size);
 
 #if DT_HAS_COMPAT_STATUS_OKAY(st_hci_spi_v2)
@@ -604,12 +610,25 @@ static int bt_spi_send(const struct device *dev, struct net_buf *buf)
 #endif /* DT_HAS_COMPAT_STATUS_OKAY(st_hci_spi_v2) */
 
 		if (!ret) {
-			/* Transmit the message */
+			/* Transmit the message. The controller may have room
+			 * for none of it yet, and then nothing of it goes out.
+			 */
+			if (size > 0U) {
+				on_the_bus = true;
+			}
+
 			ret = bt_spi_transceive(data_ptr, size, rx_first, 1);
 		}
 		remaining_bytes -= size;
 		data_ptr += size;
 	} while (remaining_bytes > 0 && !ret);
+
+	/* An EVT_BLUE_INITIALIZED from before this reset must not end the wait
+	 * for it. The one that follows cannot be read while the bus is held.
+	 */
+	if (DT_INST_PROP_OR(0, reset_event, false) && bt_spi_is_reset(pkt)) {
+		k_sem_reset(&sem_initialised);
+	}
 
 	release_cs(size > 0);
 
@@ -617,10 +636,21 @@ static int bt_spi_send(const struct device *dev, struct net_buf *buf)
 
 	if (ret) {
 		LOG_ERR("Error %d", ret);
-		return ret;
+
+		/* An error return says that no response to a command will
+		 * follow. Once part of a command has been on the bus that
+		 * cannot be said any more, as the controller may answer what
+		 * it got. The command then counts as sent, and what comes of
+		 * it shows in its response or in the lack of one.
+		 */
+		if (!on_the_bus || pkt[PACKET_TYPE] != BT_HCI_H4_CMD) {
+			return ret;
+		}
+
+		ret = 0;
 	}
 
-	LOG_HEXDUMP_DBG(buf->data, buf->len, "SPI TX");
+	LOG_HEXDUMP_DBG(pkt, len, "SPI TX");
 
 #if DT_HAS_COMPAT_STATUS_OKAY(st_hci_spi_v1)
 	/*
@@ -630,18 +660,65 @@ static int bt_spi_send(const struct device *dev, struct net_buf *buf)
 	 * RESET has actually taken place.  Instead, we use the vendor command
 	 * EVT_BLUE_INITIALIZED as an indication that it is safe to proceed.
 	 */
-	if (bt_spi_get_cmd(buf->data) == BT_HCI_OP_RESET) {
-		k_sem_take(&sem_initialised, K_FOREVER);
+	if (DT_INST_PROP_OR(0, reset_event, false) && bt_spi_is_reset(pkt)) {
+		if (k_sem_take(&sem_initialised, K_SECONDS(CONFIG_BT_SPI_BOOT_TIMEOUT_SEC)) < 0) {
+			/* The reset has been sent, so this is no failure to
+			 * send it. A controller that has not come up leaves
+			 * the commands that follow unanswered.
+			 */
+			LOG_ERR("No sign of the controller after the reset");
+		}
 	}
 #endif /* DT_HAS_COMPAT_STATUS_OKAY(st_hci_spi_v1) */
-	net_buf_unref(buf);
 
 	return ret;
 }
 
-static int bt_spi_open(const struct device *dev, bt_hci_recv_t recv)
+static int bt_spi_send(const struct device *dev, struct net_buf *buf)
 {
-	struct bt_spi_data *hci = dev->data;
+	int ret;
+
+	ret = bt_spi_send_raw(dev, buf->data, buf->len);
+	if (ret != 0) {
+		return ret;
+	}
+
+	net_buf_unref(buf);
+
+	return 0;
+}
+
+static void bt_spi_reset_controller(void)
+{
+	gpio_pin_set_dt(&rst_gpio, 1);
+	k_sleep(K_MSEC(DT_INST_PROP_OR(0, reset_assert_duration_ms, 0)));
+	gpio_pin_set_dt(&rst_gpio, 0);
+}
+
+static int bt_spi_close(const struct device *dev)
+{
+	int ret;
+
+	gpio_pin_interrupt_configure_dt(&irq_gpio, GPIO_INT_DISABLE);
+
+	/* To exit the thread safely */
+	k_sem_reset(&sem_request);
+	ret = k_thread_join(&spi_rx_thread_data, K_MSEC(100));
+	if (ret) {
+		LOG_DBG("bt_spi_rx_thread is unable to exit");
+		return ret;
+	}
+
+	bt_spi_reset_controller();
+
+	LOG_DBG("Bluetooth disabled");
+
+	return 0;
+}
+
+static int bt_spi_open(const struct device *dev)
+{
+	struct bt_spi_data *data = dev->data;
 	int err;
 
 	/* Configure RST pin and hold BLE in Reset */
@@ -668,11 +745,16 @@ static int bt_spi_open(const struct device *dev, bt_hci_recv_t recv)
 		return err;
 	}
 
-	hci->recv = recv;
+	/* An EVT_BLUE_INITIALIZED from before this reset must not end the wait for it */
+	k_sem_reset(&sem_initialised);
 
 	/* Take BLE out of reset */
 	k_sleep(K_MSEC(DT_INST_PROP_OR(0, reset_assert_duration_ms, 0)));
 	gpio_pin_set_dt(&rst_gpio, 0);
+	k_sleep(K_MSEC(DT_INST_PROP_OR(0, reset_delay_ms, 0)));
+
+	/* The controller starts afresh, allowing one command again */
+	bt_hci_lockstep_reset(&data->lockstep);
 
 	/* Start RX thread */
 	k_thread_create(&spi_rx_thread_data, spi_rx_stack,
@@ -681,28 +763,44 @@ static int bt_spi_open(const struct device *dev, bt_hci_recv_t recv)
 			K_PRIO_COOP(CONFIG_BT_DRIVER_RX_HIGH_PRIO),
 			0, K_NO_WAIT);
 
-	/* Device will let us know when it's ready */
-	k_sem_take(&sem_initialised, K_FOREVER);
+	if (DT_INST_PROP_OR(0, reset_event, false)) {
+		/* Device will let us know when it's ready */
+		if (k_sem_take(&sem_initialised, K_SECONDS(CONFIG_BT_SPI_BOOT_TIMEOUT_SEC)) < 0) {
+			err = -EIO;
+		}
+	}
 
-#if defined(CONFIG_BT_HCI_RAW) && defined(CONFIG_BT_BLUENRG_ACI)
-	/* force BlueNRG to be on controller mode */
-	uint8_t data = 1;
+#if defined(CONFIG_BT_BLUENRG_ACI)
+	if (err == 0) {
+		err = bt_spi_bluenrg_config(dev);
+	}
+#endif /* CONFIG_BT_BLUENRG_ACI */
 
-	bt_spi_send_aci_config(BLUENRG_CONFIG_LL_ONLY_OFFSET, &data, 1);
-#endif /* CONFIG_BT_HCI_RAW && CONFIG_BT_BLUENRG_ACI */
-	return 0;
+	if (err != 0) {
+		/* A failed open() is not followed by close(), so stop the RX
+		 * thread and reset the controller here. A thread that does not
+		 * exit, blocked in a buffer allocation or on the bus, is aborted,
+		 * so that nothing is left running for the next open() to trip
+		 * over.
+		 */
+		if (bt_spi_close(dev) != 0) {
+			k_thread_abort(&spi_rx_thread_data);
+			bt_spi_reset_controller();
+		}
+	}
+
+	return err;
 }
 
-static const struct bt_hci_driver_api drv = {
-#if defined(CONFIG_BT_BLUENRG_ACI) && !defined(CONFIG_BT_HCI_RAW)
-	.setup          = bt_spi_bluenrg_setup,
-#endif /* CONFIG_BT_BLUENRG_ACI && !CONFIG_BT_HCI_RAW */
+static DEVICE_API(bt_hci, drv) = {
 	.open		= bt_spi_open,
 	.send		= bt_spi_send,
+	.close		= bt_spi_close,
 };
 
 static int bt_spi_init(const struct device *dev)
 {
+	struct bt_spi_data *data = dev->data;
 
 	if (!spi_is_ready_dt(&bus)) {
 		LOG_ERR("SPI device not ready");
@@ -719,15 +817,18 @@ static int bt_spi_init(const struct device *dev)
 		return -ENODEV;
 	}
 
+	bt_hci_lockstep_init(&data->lockstep, dev, bt_spi_send_raw);
+
 	LOG_DBG("BT SPI initialized");
 
 	return 0;
 }
 
 #define HCI_DEVICE_INIT(inst) \
-	static struct bt_spi_data hci_data_##inst = { \
-	}; \
-	DEVICE_DT_INST_DEFINE(inst, bt_spi_init, NULL, &hci_data_##inst, NULL, \
+	static struct bt_spi_data hci_data_##inst; \
+	static const struct bt_hci_driver_config hci_config_##inst =                               \
+		BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst);                                            \
+	DEVICE_DT_INST_DEFINE(inst, bt_spi_init, NULL, &hci_data_##inst, &hci_config_##inst,       \
 			      POST_KERNEL, CONFIG_BT_SPI_INIT_PRIORITY, &drv)
 
 /* Only one instance supported right now */

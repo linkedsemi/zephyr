@@ -5,9 +5,9 @@
  */
 
 /**
- * @file drivers/tee.h
- *
- * @brief Public APIs for the tee driver.
+ * @file
+ * @ingroup tee_interface
+ * @brief Main header file for TEE (Trusted Execution Environment) driver API.
  */
 
 /*
@@ -44,8 +44,10 @@
 #include <zephyr/sys/util.h>
 
 /**
- * @brief Trusted Execution Environment Interface
- * @defgroup tee_interface TEE Interface
+ * @brief Interfaces to work with Trusted Execution Environment (TEE).
+ * @defgroup tee_interface TEE
+ * @since 3.7
+ * @version 0.1.0
  * @ingroup io_interfaces
  * @{
  *
@@ -255,16 +257,19 @@ struct tee_shm {
 };
 
 /**
- * @typedef tee_get_version_t
+ * @def_driverbackendgroup{TEE,tee_interface}
+ * @{
+ */
+
+/**
  *
  * @brief Callback API to get current tee version
  *
- * See @a tee_version_get() for argument definitions.
+ * See @a tee_get_version() for argument definitions.
  */
 typedef int (*tee_get_version_t)(const struct device *dev, struct tee_version_info *info);
 
 /**
- * @typedef tee_open_session_t
  *
  * @brief Callback API to open session to Trusted Application
  *
@@ -274,7 +279,6 @@ typedef int (*tee_open_session_t)(const struct device *dev, struct tee_open_sess
 				  unsigned int num_param, struct tee_param *param,
 				  uint32_t *session_id);
 /**
- * @typedef tee_close_session_t
  *
  * @brief Callback API to close session to TA
  *
@@ -283,7 +287,6 @@ typedef int (*tee_open_session_t)(const struct device *dev, struct tee_open_sess
 typedef int (*tee_close_session_t)(const struct device *dev, uint32_t session_id);
 
 /**
- * @typedef tee_cancel_t
  *
  * @brief Callback API to cancel open session of invoke function to TA
  *
@@ -292,7 +295,6 @@ typedef int (*tee_close_session_t)(const struct device *dev, uint32_t session_id
 typedef int (*tee_cancel_t)(const struct device *dev, uint32_t session_id, uint32_t cancel_id);
 
 /**
- * @typedef tee_invoke_func_t
  *
  * @brief Callback API to invoke function to TA
  *
@@ -301,7 +303,6 @@ typedef int (*tee_cancel_t)(const struct device *dev, uint32_t session_id, uint3
 typedef int (*tee_invoke_func_t)(const struct device *dev, struct tee_invoke_func_arg *arg,
 				 unsigned int num_param, struct tee_param *param);
 /**
- * @typedef tee_shm_register_t
  *
  * @brief Callback API to register shared memory
  *
@@ -310,7 +311,6 @@ typedef int (*tee_invoke_func_t)(const struct device *dev, struct tee_invoke_fun
 typedef int (*tee_shm_register_t)(const struct device *dev, struct tee_shm *shm);
 
 /**
- * @typedef tee_shm_unregister_t
  *
  * @brief Callback API to unregister shared memory
  *
@@ -319,7 +319,6 @@ typedef int (*tee_shm_register_t)(const struct device *dev, struct tee_shm *shm)
 typedef int (*tee_shm_unregister_t)(const struct device *dev, struct tee_shm *shm);
 
 /**
- * @typedef tee_suppl_recv_t
  *
  * @brief Callback API to receive a request for TEE supplicant
  *
@@ -329,7 +328,6 @@ typedef int (*tee_suppl_recv_t)(const struct device *dev, uint32_t *func, unsign
 				struct tee_param *param);
 
 /**
- * @typedef tee_suppl_send_t
  *
  * @brief Callback API to send a request for TEE supplicant
  *
@@ -338,17 +336,31 @@ typedef int (*tee_suppl_recv_t)(const struct device *dev, uint32_t *func, unsign
 typedef int (*tee_suppl_send_t)(const struct device *dev, unsigned int ret, unsigned int num_params,
 				struct tee_param *param);
 
+/**
+ * @driver_ops{TEE}
+ */
 __subsystem struct tee_driver_api {
+	/** @driver_ops_optional @copybrief tee_get_version */
 	tee_get_version_t get_version;
+	/** @driver_ops_optional @copybrief tee_open_session */
 	tee_open_session_t open_session;
+	/** @driver_ops_optional @copybrief tee_close_session */
 	tee_close_session_t close_session;
+	/** @driver_ops_optional @copybrief tee_cancel */
 	tee_cancel_t cancel;
+	/** @driver_ops_optional @copybrief tee_invoke_func */
 	tee_invoke_func_t invoke_func;
+	/** @driver_ops_optional @copybrief tee_shm_register */
 	tee_shm_register_t shm_register;
+	/** @driver_ops_optional @copybrief tee_shm_unregister */
 	tee_shm_unregister_t shm_unregister;
+	/** @driver_ops_optional @copybrief tee_suppl_recv */
 	tee_suppl_recv_t suppl_recv;
+	/** @driver_ops_optional @copybrief tee_suppl_send */
 	tee_suppl_send_t suppl_send;
 };
+
+/** @} */
 
 /**
  * @brief Get the current TEE version info
@@ -366,7 +378,7 @@ __syscall int tee_get_version(const struct device *dev, struct tee_version_info 
 
 static inline int z_impl_tee_get_version(const struct device *dev, struct tee_version_info *info)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->get_version) {
 		return -ENOSYS;
@@ -399,7 +411,7 @@ static inline int z_impl_tee_open_session(const struct device *dev,
 					  unsigned int num_param, struct tee_param *param,
 					  uint32_t *session_id)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->open_session) {
 		return -ENOSYS;
@@ -424,7 +436,7 @@ __syscall int tee_close_session(const struct device *dev, uint32_t session_id);
 
 static inline int z_impl_tee_close_session(const struct device *dev, uint32_t session_id)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->close_session) {
 		return -ENOSYS;
@@ -451,7 +463,7 @@ __syscall int tee_cancel(const struct device *dev, uint32_t session_id, uint32_t
 static inline int z_impl_tee_cancel(const struct device *dev, uint32_t session_id,
 				    uint32_t cancel_id)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->cancel) {
 		return -ENOSYS;
@@ -480,7 +492,7 @@ __syscall int tee_invoke_func(const struct device *dev, struct tee_invoke_func_a
 static inline int z_impl_tee_invoke_func(const struct device *dev, struct tee_invoke_func_arg *arg,
 					 unsigned int num_param, struct tee_param *param)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->invoke_func) {
 		return -ENOSYS;
@@ -622,7 +634,7 @@ __syscall int tee_suppl_recv(const struct device *dev, uint32_t *func, unsigned 
 static inline int z_impl_tee_suppl_recv(const struct device *dev, uint32_t *func,
 					unsigned int *num_params, struct tee_param *param)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->suppl_recv) {
 		return -ENOSYS;
@@ -640,7 +652,7 @@ static inline int z_impl_tee_suppl_recv(const struct device *dev, uint32_t *func
  * @param param List of the params for send/receive
  *
  * @retval -ENOSYS If callback was not implemented
- * @retval         Return value for sent request
+ * @return         Return value for sent request
  *
  * @retval 0       On success, negative on error
  */
@@ -650,7 +662,7 @@ __syscall int tee_suppl_send(const struct device *dev, unsigned int ret, unsigne
 static inline int z_impl_tee_suppl_send(const struct device *dev, unsigned int ret,
 					unsigned int num_params, struct tee_param *param)
 {
-	const struct tee_driver_api *api = (const struct tee_driver_api *)dev->api;
+	const struct tee_driver_api *api = DEVICE_API_GET(tee, dev);
 
 	if (!api->suppl_send) {
 		return -ENOSYS;

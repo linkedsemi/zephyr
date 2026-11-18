@@ -411,7 +411,8 @@ static int handle_event(struct lwm2m_swmgmt_data *instance, uint8_t event)
 			/* Inform the instance of DOWNLOAD_FAILED by calling
 			 * write_package_cb with a bunch of NULL parameters
 			 */
-			instance->write_package_cb(instance->obj_inst_id, 0, 0, NULL, 0, false, 0);
+			instance->write_package_cb(instance->obj_inst_id, 0, 0, NULL, 0,
+					 false, 0, 0);
 			break;
 		default:
 			ret = -EINVAL;
@@ -564,7 +565,7 @@ static int package_write_cb(uint16_t obj_inst_id, uint16_t res_id,
 			    uint16_t data_len, bool last_block,
 			    size_t total_size, size_t offset)
 {
-	int ret = -EINVAL;
+	int ret;
 	struct lwm2m_swmgmt_data *instance = NULL;
 
 	instance = find_index(obj_inst_id);
@@ -576,7 +577,7 @@ static int package_write_cb(uint16_t obj_inst_id, uint16_t res_id,
 	}
 
 	ret = instance->write_package_cb(obj_inst_id, res_id, res_inst_id, data, data_len,
-					 last_block, total_size);
+					 last_block, total_size, offset);
 
 	if (ret < 0) {
 		handle_event(instance, EVENT_DOWNLOAD_FAILED);
@@ -655,7 +656,20 @@ static int package_uri_write_cb(uint16_t obj_inst_id, uint16_t res_id,
 	int error_code;
 	struct lwm2m_swmgmt_data *instance = NULL;
 
+	/* writes every block of a block-wise transfer to the start of
+	 * the buffer, so it never holds the assembled URI. Reject the
+	 * write rather than act on whichever fragment happens to be present.
+	 */
+	if (!last_block) {
+		LOG_ERR("PACKAGE_URI: block-wise write is not supported");
+		return -EFBIG;
+	}
+
 	instance = find_index(obj_inst_id);
+	if (instance == NULL) {
+		LOG_ERR("Instance %u not found", obj_inst_id);
+		return -ENOENT;
+	}
 
 	struct requesting_object req = { .obj_inst_id = obj_inst_id,
 					 .is_firmware_uri = false,

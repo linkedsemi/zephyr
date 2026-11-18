@@ -12,9 +12,8 @@
 
 #ifdef CONFIG_LV_Z_FLUSH_THREAD
 
-K_SEM_DEFINE(flush_complete, 0, 1);
-/* Message queue will only ever need to queue one message */
-K_MSGQ_DEFINE(flush_queue, sizeof(struct lvgl_display_flush), 1, 1);
+/* There can be up to DISPLAY_COUNT flush events at the same time*/
+K_MSGQ_DEFINE_STATIC_TYPE(flush_queue, struct lvgl_display_flush, DT_ZEPHYR_DISPLAYS_COUNT);
 
 void lvgl_flush_thread_entry(void *arg1, void *arg2, void *arg3)
 {
@@ -23,31 +22,31 @@ void lvgl_flush_thread_entry(void *arg1, void *arg2, void *arg3)
 
 	while (1) {
 		k_msgq_get(&flush_queue, &flush, K_FOREVER);
-		data = (struct lvgl_disp_data *)flush.disp_drv->user_data;
+		data = (struct lvgl_disp_data *)lv_display_get_user_data(flush.display);
 
-		display_write(data->display_dev, flush.x, flush.y, &flush.desc,
-			      flush.buf);
+		flush.desc.frame_incomplete = !lv_display_flush_is_last(flush.display);
+		display_write(data->display_dev, flush.x, flush.y, &flush.desc, flush.buf);
 
-		lv_disp_flush_ready(flush.disp_drv);
-		k_sem_give(&flush_complete);
+		k_sem_give(&data->flush_complete);
 	}
 }
 
-K_THREAD_DEFINE(lvgl_flush_thread, CONFIG_LV_Z_FLUSH_THREAD_STACK_SIZE,
-		lvgl_flush_thread_entry, NULL, NULL, NULL,
-		K_PRIO_COOP(CONFIG_LV_Z_FLUSH_THREAD_PRIO), 0, 0);
+K_THREAD_DEFINE(lvgl_flush_thread, CONFIG_LV_Z_FLUSH_THREAD_STACK_SIZE, lvgl_flush_thread_entry,
+		NULL, NULL, NULL, CONFIG_LV_Z_FLUSH_THREAD_PRIORITY, 0, 0);
 
-
-void lvgl_wait_cb(lv_disp_drv_t *disp_drv)
+static void lvgl_wait_cb(lv_display_t *display)
 {
-	k_sem_take(&flush_complete, K_FOREVER);
+	struct lvgl_disp_data *data = (struct lvgl_disp_data *)lv_display_get_user_data(display);
+
+	k_sem_take(&data->flush_complete, K_FOREVER);
 }
 
 #endif /* CONFIG_LV_Z_FLUSH_THREAD */
 
 #ifdef CONFIG_LV_Z_USE_ROUNDER_CB
-void lvgl_rounder_cb(lv_disp_drv_t *disp_drv, lv_area_t *area)
+void lvgl_rounder_cb(lv_event_t *e)
 {
+	lv_area_t *area = lv_event_get_param(e);
 #if CONFIG_LV_Z_AREA_X_ALIGNMENT_WIDTH != 1
 	__ASSERT(POPCOUNT(CONFIG_LV_Z_AREA_X_ALIGNMENT_WIDTH) == 1, "Invalid X alignment width");
 
@@ -61,54 +60,72 @@ void lvgl_rounder_cb(lv_disp_drv_t *disp_drv, lv_area_t *area)
 	area->y2 |= (CONFIG_LV_Z_AREA_Y_ALIGNMENT_WIDTH - 1);
 #endif
 }
-#else
-#define lvgl_rounder_cb NULL
 #endif
 
-int set_lvgl_rendering_cb(lv_disp_drv_t *disp_drv)
+static inline void lvgl_add_rounder_event_cb(lv_display_t *display)
+{
+#ifdef CONFIG_LV_Z_USE_ROUNDER_CB
+	lv_display_add_event_cb(display, lvgl_rounder_cb, LV_EVENT_INVALIDATE_AREA, display);
+#else
+	ARG_UNUSED(display);
+#endif
+}
+
+int set_lvgl_rendering_cb(lv_display_t *display)
 {
 	int err = 0;
-	struct lvgl_disp_data *data = (struct lvgl_disp_data *)disp_drv->user_data;
+	struct lvgl_disp_data *data = (struct lvgl_disp_data *)lv_display_get_user_data(display);
 
 #ifdef CONFIG_LV_Z_FLUSH_THREAD
-	disp_drv->wait_cb = lvgl_wait_cb;
+	k_sem_init(&data->flush_complete, 0, 1);
+	lv_display_set_flush_wait_cb(display, lvgl_wait_cb);
 #endif
 
 	switch (data->cap.current_pixel_format) {
 	case PIXEL_FORMAT_ARGB_8888:
-		disp_drv->flush_cb = lvgl_flush_cb_32bit;
-		disp_drv->rounder_cb = lvgl_rounder_cb;
-#ifdef CONFIG_LV_COLOR_DEPTH_32
-		disp_drv->set_px_cb = NULL;
-#else
-		disp_drv->set_px_cb = lvgl_set_px_cb_32bit;
-#endif
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_ARGB8888);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_32bit);
+		lvgl_add_rounder_event_cb(display);
 		break;
 	case PIXEL_FORMAT_RGB_888:
-		disp_drv->flush_cb = lvgl_flush_cb_24bit;
-		disp_drv->rounder_cb = lvgl_rounder_cb;
-		disp_drv->set_px_cb = lvgl_set_px_cb_24bit;
+	case PIXEL_FORMAT_BGR_888:
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB888);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_24bit);
+		lvgl_add_rounder_event_cb(display);
 		break;
 	case PIXEL_FORMAT_RGB_565:
-	case PIXEL_FORMAT_BGR_565:
-		disp_drv->flush_cb = lvgl_flush_cb_16bit;
-		disp_drv->rounder_cb = lvgl_rounder_cb;
-#ifdef CONFIG_LV_COLOR_DEPTH_16
-		disp_drv->set_px_cb = NULL;
-#else
-		disp_drv->set_px_cb = lvgl_set_px_cb_16bit;
-#endif
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_16bit);
+		lvgl_add_rounder_event_cb(display);
 		break;
+	case PIXEL_FORMAT_RGB_565X:
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_RGB565_SWAPPED);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_16bit);
+		lvgl_add_rounder_event_cb(display);
+		break;
+	case PIXEL_FORMAT_L_8:
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_L8);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_8bit);
+		lvgl_add_rounder_event_cb(display);
+		break;
+	case PIXEL_FORMAT_AL_88:
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_AL88);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_16bit);
+		lvgl_add_rounder_event_cb(display);
+		break;
+#ifdef CONFIG_LV_Z_MONOCHROME_CONVERSION_BUFFER
 	case PIXEL_FORMAT_MONO01:
 	case PIXEL_FORMAT_MONO10:
-		disp_drv->flush_cb = lvgl_flush_cb_mono;
-		disp_drv->rounder_cb = lvgl_rounder_cb_mono;
-		disp_drv->set_px_cb = lvgl_set_px_cb_mono;
+		lv_display_set_color_format(display, LV_COLOR_FORMAT_I1);
+		lv_display_set_flush_cb(display, lvgl_flush_cb_mono);
+		lv_display_add_event_cb(display, lvgl_rounder_cb_mono, LV_EVENT_INVALIDATE_AREA,
+					display);
 		break;
+#endif /* CONFIG_LV_Z_MONOCHROME_CONVERSION_BUFFER */
+
 	default:
-		disp_drv->flush_cb = NULL;
-		disp_drv->rounder_cb = NULL;
-		disp_drv->set_px_cb = NULL;
+		lv_display_set_flush_cb(display, NULL);
+		lvgl_add_rounder_event_cb(display);
 		err = -ENOTSUP;
 		break;
 	}
@@ -118,22 +135,21 @@ int set_lvgl_rendering_cb(lv_disp_drv_t *disp_drv)
 
 void lvgl_flush_display(struct lvgl_display_flush *request)
 {
+	struct lvgl_disp_data *data =
+		(struct lvgl_disp_data *)lv_display_get_user_data(request->display);
 #ifdef CONFIG_LV_Z_FLUSH_THREAD
 	/*
 	 * LVGL will only start a flush once the previous one is complete,
 	 * so we can reset the flush state semaphore here.
 	 */
-	k_sem_reset(&flush_complete);
+	k_sem_reset(&data->flush_complete);
 	k_msgq_put(&flush_queue, request, K_FOREVER);
 	/* Explicitly yield, in case the calling thread is a cooperative one */
 	k_yield();
 #else
 	/* Write directly to the display */
-	struct lvgl_disp_data *data =
-		(struct lvgl_disp_data *)request->disp_drv->user_data;
-
-	display_write(data->display_dev, request->x, request->y,
-		      &request->desc, request->buf);
-	lv_disp_flush_ready(request->disp_drv);
+	request->desc.frame_incomplete = !lv_display_flush_is_last(request->display);
+	display_write(data->display_dev, request->x, request->y, &request->desc, request->buf);
+	lv_display_flush_ready(request->display);
 #endif
 }

@@ -22,6 +22,7 @@ extern "C" {
 /**
  * @brief Emulated ADC backend API
  * @defgroup adc_emul Emulated ADC
+ * @ingroup io_emulators
  * @ingroup adc_interface
  * @{
  *
@@ -73,6 +74,18 @@ int adc_emul_const_value_set(const struct device *dev, unsigned int chan,
 			     uint32_t value);
 
 /**
+ * @brief Set constant raw value input for emulated ADC @p chan
+ *
+ * @param dev The emulated ADC device
+ * @param chan The channel of ADC which input is assigned
+ * @param raw_value New raw value to assign to @p chan input
+ *
+ * @return 0 on success
+ * @return -EINVAL if an invalid argument is provided
+ */
+int adc_emul_const_raw_value_set(const struct device *dev, unsigned int chan, uint32_t raw_value);
+
+/**
  * @brief Set function used to obtain voltage for input of emulated
  *        ADC @p chan
  *
@@ -88,6 +101,21 @@ int adc_emul_value_func_set(const struct device *dev, unsigned int chan,
 			    adc_emul_value_func func, void *data);
 
 /**
+ * @brief Set function used to obtain voltage for raw input value of emulated
+ *        ADC @p chan
+ *
+ * @param dev The emulated ADC device
+ * @param chan The channel of ADC to which @p func is assigned
+ * @param func New function to assign to @p chan
+ * @param data Pointer to data passed to @p func on call
+ *
+ * @return 0 on success
+ * @return -EINVAL if an invalid argument is provided
+ */
+int adc_emul_raw_value_func_set(const struct device *dev, unsigned int chan,
+				adc_emul_value_func func, void *data);
+
+/**
  * @brief Set reference voltage
  *
  * @param dev The emulated ADC device
@@ -96,6 +124,9 @@ int adc_emul_value_func_set(const struct device *dev, unsigned int chan,
  *
  * @return 0 on success
  * @return -EINVAL if an invalid argument is provided
+ *
+ * @note Updates are also observed by @ref adc_ref_get() /
+ *       @ref adc_ref_internal() when the emul provides @c ref_get.
  */
 int adc_emul_ref_voltage_set(const struct device *dev, enum adc_reference ref,
 			     uint16_t value);

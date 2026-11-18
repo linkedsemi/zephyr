@@ -4,13 +4,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <errno.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
+#include <zephyr/bluetooth/assigned_numbers.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/lc3.h>
 #include <zephyr/bluetooth/audio/pacs.h>
+#include <zephyr/bluetooth/att.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/gatt.h>
@@ -28,6 +31,12 @@ LOG_MODULE_REGISTER(pacs_notify_server_test, LOG_LEVEL_DBG);
 
 extern enum bst_result_t bst_result;
 
+extern void bt_conn_suspend_tx(bool suspend);
+
+CREATE_FLAG(flag_att_tx_exhausted);
+
+static int att_tx_fill_err;
+
 static struct bt_audio_codec_cap lc3_codec_1 =
 	BT_AUDIO_CODEC_CAP_LC3(BT_AUDIO_CODEC_CAP_FREQ_16KHZ | BT_AUDIO_CODEC_CAP_FREQ_24KHZ,
 			   BT_AUDIO_CODEC_CAP_DURATION_10,
@@ -44,11 +53,16 @@ static struct bt_pacs_cap                    caps_1 = {
 static struct bt_pacs_cap                    caps_2 = {
 	.codec_cap = &lc3_codec_2,
 };
+static struct bt_pacs_cap retry_caps[] = {
+	{.codec_cap = &lc3_codec_1},
+	{.codec_cap = &lc3_codec_1},
+	{.codec_cap = &lc3_codec_1},
+};
 
 static bool is_peer_subscribed(struct bt_conn *conn)
 {
 	struct bt_gatt_attr *attr;
-	uint8_t nbr_subscribed = 0;
+	uint8_t nbr_subscribed = 0U;
 
 	attr = bt_gatt_find_by_uuid(NULL, 0, BT_UUID_PACS_SNK);
 	if (!attr) {
@@ -98,7 +112,7 @@ static bool is_peer_subscribed(struct bt_conn *conn)
 		nbr_subscribed++;
 	}
 
-	if (nbr_subscribed != 6) {
+	if (nbr_subscribed != 6U) {
 		return false;
 	}
 
@@ -130,8 +144,17 @@ static void trigger_notifications(void)
 	}
 
 	LOG_DBG("Changing Sink PACs");
-	bt_pacs_cap_register(BT_AUDIO_DIR_SINK, caps);
-	bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, caps);
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, caps);
+	if (err != 0) {
+		FAIL("Failed to register sink PAC (err %d)\n", err);
+		return;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, caps);
+	if (err != 0) {
+		FAIL("Failed to register source PAC (err %d)\n", err);
+		return;
+	}
 
 	LOG_DBG("Changing Sink Location");
 	err = bt_pacs_set_location(BT_AUDIO_DIR_SINK, snk_loc);
@@ -147,19 +170,31 @@ static void trigger_notifications(void)
 
 	LOG_DBG("Changing Supported Contexts Location");
 	supported = supported ^ BT_AUDIO_CONTEXT_TYPE_MEDIA;
-	bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SINK, supported);
+	err = bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SINK, supported);
+	if (err != 0) {
+		FAIL("Failed to set supported contexts (err %d)\n", err);
+		return;
+	}
 
 	LOG_DBG("Changing Available Contexts");
 	available = available ^ BT_AUDIO_CONTEXT_TYPE_MEDIA;
-	bt_pacs_set_available_contexts(BT_AUDIO_DIR_SINK, available);
+	err = bt_pacs_set_available_contexts(BT_AUDIO_DIR_SINK, available);
+	if (err != 0) {
+		FAIL("Failed to set available contexts (err %d)\n", err);
+		return;
+	}
 }
 
 static void test_main(void)
 {
 	int err;
 	enum bt_audio_context available, available_for_conn;
-	const struct bt_data ad[] = {
-		BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
+	struct bt_le_ext_adv *ext_adv;
+	const struct bt_pacs_register_param pacs_param = {
+		.snk_pac = true,
+		.snk_loc = true,
+		.src_pac = true,
+		.src_loc = true,
 	};
 
 	LOG_DBG("Enabling Bluetooth");
@@ -169,14 +204,48 @@ static void test_main(void)
 		return;
 	}
 
-	bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SINK, BT_AUDIO_CONTEXT_TYPE_ANY);
-	bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SOURCE, BT_AUDIO_CONTEXT_TYPE_ANY);
-	bt_pacs_set_available_contexts(BT_AUDIO_DIR_SINK, BT_AUDIO_CONTEXT_TYPE_ANY);
-	bt_pacs_set_available_contexts(BT_AUDIO_DIR_SOURCE, BT_AUDIO_CONTEXT_TYPE_ANY);
+	err = bt_pacs_register(&pacs_param);
+	if (err != 0) {
+		FAIL("Could not register PACS (err %d)\n", err);
+		return;
+	}
 
-	LOG_DBG("Registereding PACS");
-	bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &caps_1);
-	bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &caps_1);
+	err = bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SINK, BT_AUDIO_CONTEXT_TYPE_ANY);
+	if (err != 0) {
+		FAIL("Failed to set sink supported contexts (err %d)\n", err);
+		return;
+	}
+
+	err = bt_pacs_set_supported_contexts(BT_AUDIO_DIR_SOURCE, BT_AUDIO_CONTEXT_TYPE_ANY);
+	if (err != 0) {
+		FAIL("Failed to set source supported contexts (err %d)\n", err);
+		return;
+	}
+
+	err = bt_pacs_set_available_contexts(BT_AUDIO_DIR_SINK, BT_AUDIO_CONTEXT_TYPE_ANY);
+	if (err != 0) {
+		FAIL("Failed to set sink available contexts (err %d)\n", err);
+		return;
+	}
+
+	err = bt_pacs_set_available_contexts(BT_AUDIO_DIR_SOURCE, BT_AUDIO_CONTEXT_TYPE_ANY);
+	if (err != 0) {
+		FAIL("Failed to set source available contexts (err %d)\n", err);
+		return;
+	}
+
+	LOG_DBG("Registering PACS");
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &caps_1);
+	if (err != 0) {
+		FAIL("Failed to register sink PAC (err %d)\n", err);
+		return;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &caps_1);
+	if (err != 0) {
+		FAIL("Failed to register source PAC (err %d)\n", err);
+		return;
+	}
 
 	err = bt_pacs_set_location(BT_AUDIO_DIR_SINK, BT_AUDIO_LOCATION_FRONT_LEFT);
 	if (err != 0) {
@@ -191,11 +260,7 @@ static void test_main(void)
 	}
 
 	LOG_DBG("Start Advertising");
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err != 0) {
-		FAIL("Advertising failed to start (err %d)", err);
-		return;
-	}
+	setup_connectable_adv(&ext_adv);
 
 	LOG_DBG("Waiting to be connected");
 	WAIT_FOR_FLAG(flag_connected);
@@ -203,31 +268,31 @@ static void test_main(void)
 	LOG_DBG("Waiting to be subscribed");
 
 	while (!is_peer_subscribed(default_conn)) {
-		(void)k_sleep(K_MSEC(10));
+		(void)k_sleep(K_MSEC(10U));
 	}
 	LOG_DBG("Subscribed");
 
 	LOG_INF("Trigger changes while device is connected");
 	trigger_notifications();
 
-	/* Now wait for client to disconnect, then stop adv so it does not reconnect */
+	/* Now wait for client to disconnect */
 	LOG_DBG("Wait for client disconnect");
 	WAIT_FOR_UNSET_FLAG(flag_connected);
 	LOG_DBG("Client disconnected");
-
-	err = bt_le_adv_stop();
-	if (err != 0) {
-		FAIL("Advertising failed to stop (err %d)", err);
-		return;
-	}
 
 	LOG_INF("Trigger changes while device is disconnected");
 	trigger_notifications();
 
 	LOG_DBG("Start Advertising");
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+	err = bt_le_ext_adv_start(ext_adv, BT_LE_EXT_ADV_START_DEFAULT);
 	if (err != 0) {
-		FAIL("Advertising failed to start (err %d)", err);
+		FAIL("Failed to start advertising set (err %d)\n", err);
+
+		err = bt_le_ext_adv_delete(ext_adv);
+		if (err != 0) {
+			FAIL("Failed to delete extended advertising set (err %d)\n", err);
+		}
+
 		return;
 	}
 
@@ -235,16 +300,16 @@ static void test_main(void)
 	WAIT_FOR_UNSET_FLAG(flag_connected);
 	LOG_DBG("Client disconnected");
 
-	err = bt_le_adv_stop();
-	if (err != 0) {
-		FAIL("Advertising failed to stop (err %d)", err);
-		return;
-	}
-
 	LOG_DBG("Start Advertising");
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+	err = bt_le_ext_adv_start(ext_adv, BT_LE_EXT_ADV_START_DEFAULT);
 	if (err != 0) {
-		FAIL("Advertising failed to start (err %d)", err);
+		FAIL("Failed to start advertising set (err %d)\n", err);
+
+		err = bt_le_ext_adv_delete(ext_adv);
+		if (err != 0) {
+			FAIL("Failed to delete extended advertising set (err %d)\n", err);
+		}
+
 		return;
 	}
 
@@ -269,16 +334,16 @@ static void test_main(void)
 	WAIT_FOR_UNSET_FLAG(flag_connected);
 	LOG_DBG("Client disconnected");
 
-	err = bt_le_adv_stop();
-	if (err != 0) {
-		FAIL("Advertising failed to stop (err %d)", err);
-		return;
-	}
-
 	LOG_DBG("Start Advertising");
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), NULL, 0);
+	err = bt_le_ext_adv_start(ext_adv, BT_LE_EXT_ADV_START_DEFAULT);
 	if (err != 0) {
-		FAIL("Advertising failed to start (err %d)", err);
+		FAIL("Failed to start advertising set (err %d)\n", err);
+
+		err = bt_le_ext_adv_delete(ext_adv);
+		if (err != 0) {
+			FAIL("Failed to delete extended advertising set (err %d)\n", err);
+		}
+
 		return;
 	}
 
@@ -294,12 +359,117 @@ static void test_main(void)
 	PASS("PACS Notify Server passed\n");
 }
 
+static void att_tx_fill_handler(struct k_work *work)
+{
+	static const uint8_t data;
+
+	ARG_UNUSED(work);
+
+	for (int i = 0; i <= CONFIG_BT_ATT_TX_COUNT; i++) {
+		att_tx_fill_err = bt_gatt_write_without_response(
+			default_conn, BT_ATT_FIRST_ATTRIBUTE_HANDLE, &data, sizeof(data), false);
+		if (att_tx_fill_err != 0) {
+			break;
+		}
+	}
+
+	SET_FLAG(flag_att_tx_exhausted);
+}
+
+static K_WORK_DEFINE(att_tx_fill_work, att_tx_fill_handler);
+
+/* With TX suspended, the ATT TX buffers are filled so that the Sink PAC notification for
+ * caps_2 fails with -ENOMEM. retry_caps make that PAC longer than the ATT MTU allows, so it
+ * is truncated. TX is then resumed and the client must receive the Sink PAC from a retry.
+ */
+static void test_main_retry(void)
+{
+	struct bt_le_ext_adv *ext_adv;
+	const struct bt_pacs_register_param pacs_param = {
+		.snk_pac = true,
+		.snk_loc = true,
+		.src_pac = true,
+		.src_loc = true,
+	};
+	const struct bt_gatt_attr *snk_pac_attr;
+	int err;
+
+	err = bt_enable(NULL);
+	if (err != 0) {
+		FAIL("Bluetooth enable failed (err %d)", err);
+		return;
+	}
+
+	err = bt_pacs_register(&pacs_param);
+	if (err != 0) {
+		FAIL("Could not register PACS (err %d)\n", err);
+		return;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &caps_1);
+	if (err != 0) {
+		FAIL("Failed to register sink PAC (err %d)\n", err);
+		return;
+	}
+
+	ARRAY_FOR_EACH_PTR(retry_caps, cap) {
+		err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, cap);
+		if (err != 0) {
+			FAIL("Failed to register sink PAC (err %d)\n", err);
+			return;
+		}
+	}
+
+	setup_connectable_adv(&ext_adv);
+
+	WAIT_FOR_FLAG(flag_connected);
+
+	snk_pac_attr = bt_gatt_find_by_uuid(NULL, 0, BT_UUID_PACS_SNK);
+	if (snk_pac_attr == NULL) {
+		FAIL("No Sink PAC attribute\n");
+		return;
+	}
+
+	WAIT_FOR_COND(bt_gatt_is_subscribed(default_conn, snk_pac_attr, BT_GATT_CCC_NOTIFY));
+
+	bt_conn_suspend_tx(true);
+	err = k_work_submit(&att_tx_fill_work);
+	if (err < 0) {
+		FAIL("Failed to submit ATT TX fill work (err %d)\n", err);
+		return;
+	}
+
+	WAIT_FOR_FLAG(flag_att_tx_exhausted);
+	if (att_tx_fill_err != -ENOMEM) {
+		FAIL("ATT TX buffers not exhausted (err %d)\n", att_tx_fill_err);
+		return;
+	}
+
+	err = bt_pacs_cap_register(BT_AUDIO_DIR_SINK, &caps_2);
+	if (err != 0) {
+		FAIL("Failed to register sink PAC (err %d)\n", err);
+		return;
+	}
+
+	bt_conn_suspend_tx(false);
+
+	WAIT_FOR_UNSET_FLAG(flag_connected);
+
+	PASS("PACS Notify Retry Server passed\n");
+}
+
 static const struct bst_test_instance test_pacs_notify_server[] = {
 	{
 		.test_id = "pacs_notify_server",
 		.test_pre_init_f = test_init,
 		.test_tick_f = test_tick,
 		.test_main_f = test_main,
+	},
+	{
+		.test_id = "pacs_notify_retry_server",
+		.test_pre_init_f = test_init,
+		.test_tick_f = test_tick,
+		.test_main_f = test_main_retry,
 	},
 	BSTEST_END_MARKER,
 };

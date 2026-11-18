@@ -16,7 +16,6 @@ OUTPUT_ARCH(xtensa)
 #include <zephyr/devicetree.h>
 #include <xtensa/config/core-isa.h>
 #include <zephyr/linker/sections.h>
-#include <adsp-vectors.h>
 #include <adsp_memory.h>
 
 #include <zephyr/linker/linker-defs.h>
@@ -37,8 +36,8 @@ ENTRY(rom_entry);
  */
 #ifdef CONFIG_KERNEL_COHERENCE
 #define RPO_SET(addr, reg) ((addr & 0x1fffffff) | (reg << 29))
-#define SEGSTART_CACHED   RPO_SET(ALIGN(64), CONFIG_XTENSA_CACHED_REGION)
-#define SEGSTART_UNCACHED RPO_SET(ALIGN(64), CONFIG_XTENSA_UNCACHED_REGION)
+#define SEGSTART_CACHED   RPO_SET(ALIGN(64), CONFIG_INTEL_ADSP_CACHED_REGION)
+#define SEGSTART_UNCACHED RPO_SET(ALIGN(64), CONFIG_INTEL_ADSP_UNCACHED_REGION)
 #else
 #define SEGSTART_CACHED   .
 #define SEGSTART_UNCACHED .
@@ -57,63 +56,9 @@ ENTRY(rom_entry);
 #define NOLOAD_SIZE 0x100000
 
 MEMORY {
-  vector_base_text :
+  vectors :
 	org = VECBASE_RESET_PADDR_SRAM,
-        len = MEM_VECBASE_LIT_SIZE
-  vector_int2_lit :
-	org = INTLEVEL2_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_int2_text :
-        org = INTLEVEL2_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_int3_lit :
-	org = INTLEVEL3_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_int3_text :
-	org = INTLEVEL3_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_int4_lit :
-	org = INTLEVEL4_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_int4_text :
-	org = INTLEVEL4_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_int5_lit :
-	org = INTLEVEL5_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_int5_text :
-	org = INTLEVEL5_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_int6_lit :
-	org = INTLEVEL6_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_int6_text :
-	org = INTLEVEL6_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_int7_lit :
-	org = INTLEVEL7_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_int7_text :
-	org = INTLEVEL7_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_kernel_lit :
-	org = KERNEL_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_kernel_text :
-	org = KERNEL_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_user_lit :
-	org = USER_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_user_text :
-	org = USER_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
-  vector_double_lit :
-	org = DOUBLEEXC_VECTOR_PADDR_SRAM - MEM_VECT_LIT_SIZE,
-        len = MEM_VECT_LIT_SIZE
-  vector_double_text :
-	org = DOUBLEEXC_VECTOR_PADDR_SRAM,
-        len = MEM_VECT_TEXT_SIZE
+        len = VECTOR_TBL_SIZE
   imr :
         org = IMR_BOOT_LDR_TEXT_ENTRY_BASE,
         len = 0x100000
@@ -122,7 +67,7 @@ MEMORY {
 	len = RAM_SIZE
 #ifdef CONFIG_KERNEL_COHERENCE
   ucram :
-	org = RPO_SET(RAM_BASE, CONFIG_XTENSA_UNCACHED_REGION),
+	org = RPO_SET(RAM_BASE, CONFIG_INTEL_ADSP_UNCACHED_REGION),
 	len = RAM_SIZE
 #endif
 #ifdef CONFIG_GEN_ISR_TABLES
@@ -159,101 +104,9 @@ SECTIONS {
     *(.imrdata .imrdata.*)
   } >imr
 
-   .WindowVectors.text : {
-    _WindowVectors_text_start = .;
-    KEEP (*(.WindowVectors.text))
-    _WindowVectors_text_end = .;
-  } >vector_base_text
-  .Level2InterruptVector.literal : {
-    _Level2InterruptVector_literal_start = .;
-    *(.Level2InterruptVector.literal)
-    _Level2InterruptVector_literal_end = .;
-  } >vector_int2_lit
-  .Level2InterruptVector.text : {
-    _Level2InterruptVector_text_start = .;
-    KEEP (*(.Level2InterruptVector.text))
-    _Level2InterruptVector_text_end = .;
-  } >vector_int2_text
-  .Level3InterruptVector.literal : {
-    _Level3InterruptVector_literal_start = .;
-    *(.Level3InterruptVector.literal)
-    _Level3InterruptVector_literal_end = .;
-  } >vector_int3_lit
-  .Level3InterruptVector.text : {
-    _Level3InterruptVector_text_start = .;
-    KEEP (*(.Level3InterruptVector.text))
-    _Level3InterruptVector_text_end = .;
-  } >vector_int3_text
-  .Level4InterruptVector.literal : {
-    _Level4InterruptVector_literal_start = .;
-    *(.Level4InterruptVector.literal)
-    _Level4InterruptVector_literal_end = .;
-  } >vector_int4_lit
-  .Level4InterruptVector.text : {
-    _Level4InterruptVector_text_start = .;
-    KEEP (*(.Level4InterruptVector.text))
-    _Level4InterruptVector_text_end = .;
-  } >vector_int4_text
-  .Level5InterruptVector.literal : {
-    _Level5InterruptVector_literal_start = .;
-    *(.Level5InterruptVector.literal)
-    _Level5InterruptVector_literal_end = .;
-  } >vector_int5_lit
-  .Level5InterruptVector.text : {
-    _Level5InterruptVector_text_start = .;
-    KEEP (*(.Level5InterruptVector.text))
-    _Level5InterruptVector_text_end = .;
-  } >vector_int5_text
-  .DebugExceptionVector.literal : {
-    _DebugExceptionVector_literal_start = .;
-    *(.DebugExceptionVector.literal)
-    _DebugExceptionVector_literal_end = .;
-  } >vector_int6_lit
-  .DebugExceptionVector.text : {
-    _DebugExceptionVector_text_start = .;
-    KEEP (*(.DebugExceptionVector.text))
-    _DebugExceptionVector_text_end = .;
-  } >vector_int6_text
-  .NMIExceptionVector.literal : {
-    _NMIExceptionVector_literal_start = .;
-    *(.NMIExceptionVector.literal)
-    _NMIExceptionVector_literal_end = .;
-  } >vector_int7_lit
-  .NMIExceptionVector.text : {
-    _NMIExceptionVector_text_start = .;
-    KEEP (*(.NMIExceptionVector.text))
-    _NMIExceptionVector_text_end = .;
-  } >vector_int7_text
-  .KernelExceptionVector.literal : {
-    _KernelExceptionVector_literal_start = .;
-    *(.KernelExceptionVector.literal)
-    _KernelExceptionVector_literal_end = .;
-  } >vector_kernel_lit
-  .KernelExceptionVector.text : {
-    _KernelExceptionVector_text_start = .;
-    KEEP (*(.KernelExceptionVector.text))
-    _KernelExceptionVector_text_end = .;
-  } >vector_kernel_text
-  .UserExceptionVector.literal : {
-    _UserExceptionVector_literal_start = .;
-    *(.UserExceptionVector.literal)
-    _UserExceptionVector_literal_end = .;
-  } >vector_user_lit
-  .UserExceptionVector.text : {
-    _UserExceptionVector_text_start = .;
-    KEEP (*(.UserExceptionVector.text))
-    _UserExceptionVector_text_end = .;
-  } >vector_user_text
-  .DoubleExceptionVector.literal : {
-    _DoubleExceptionVector_literal_start = .;
-    *(.DoubleExceptionVector.literal)
-    _DoubleExceptionVector_literal_end = .;
-  } >vector_double_lit
-  .DoubleExceptionVector.text : {
-    _DoubleExceptionVector_text_start = .;
-    KEEP (*(.DoubleExceptionVector.text))
-    _DoubleExceptionVector_text_end = .;
-  } >vector_double_text
+/* Auto-generated vector linkage, to "vectors" memory region */
+#include <xtensa_vectors.ld>
+ >vectors
 
 #ifdef CONFIG_CODE_DATA_RELOCATION
 #include <linker_relocate.ld>
@@ -307,10 +160,6 @@ SECTIONS {
     *(.dynamic)
     *(.gnu.version_d)
     _image_ram_start = .;
-    _bss_table_start = .;
-    LONG(_bss_start)
-    LONG(_bss_end)
-    _bss_table_end = .;
     __rodata_region_end = .;
   } >RAM
 
@@ -382,6 +231,11 @@ SECTIONS {
 
 #include <zephyr/linker/common-ram.ld>
 
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources(DATA_SECTIONS ...) CMake function.
+ */
+#include <snippets-data-sections.ld>
+
   .tm_clone_table : {
     *(.tm_clone_table)
   } >RAM
@@ -405,7 +259,7 @@ SECTIONS {
 
   .bss SEGSTART_UNCACHED (NOLOAD) :
   {
-    _bss_start = .;
+    __bss_start = .;
     *(.dynsbss)
     *(.sbss)
     *(.sbss.*)
@@ -423,7 +277,7 @@ SECTIONS {
 #include <linker_sram_bss_relocate.ld>
 #endif
     . = ALIGN(8);
-    _bss_end = .;
+    __bss_end = .;
   } >ucram
 
   /* Heap start and end markers.  Mostly unused, though newlib likes them */
@@ -507,8 +361,5 @@ SECTIONS {
 #ifdef CONFIG_GEN_ISR_TABLES
 #include <zephyr/linker/intlist.ld>
 #endif
-
-#ifdef CONFIG_LLEXT
 #include <zephyr/linker/llext-sections.ld>
-#endif
 }

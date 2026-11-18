@@ -5,6 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef ZEPHYR_SUBSYS_NET_LIB_SHELL_NET_SHELL_PRIVATE_H_
+#define ZEPHYR_SUBSYS_NET_LIB_SHELL_NET_SHELL_PRIVATE_H_
+
 #include <zephyr/shell/shell.h>
 #include <zephyr/net/net_ip.h>
 
@@ -62,10 +65,14 @@ struct net_shell_user_data {
 };
 
 #if !defined(NET_VLAN_MAX_COUNT)
-#define MAX_IFACE_COUNT NET_IF_MAX_CONFIGS
+#define MAX_IFACE_COUNT 1
 #else
+#if NET_VLAN_MAX_COUNT > 0
 #define MAX_IFACE_COUNT NET_VLAN_MAX_COUNT
-#endif
+#else
+#define MAX_IFACE_COUNT 1
+#endif /* NET_VLAN_MAX_COUNT > 0 */
+#endif /* !NET_VLAN_MAX_COUNT */
 
 #if defined(CONFIG_NET_IPV6) && !defined(CONFIG_NET_IPV4)
 #define ADDR_LEN NET_IPV6_ADDR_LEN
@@ -90,3 +97,5 @@ void events_enable(void);
 int get_iface_idx(const struct shell *sh, char *index_str);
 const char *iface2str(struct net_if *iface, const char **extra);
 void ipv6_frag_cb(struct net_ipv6_reassembly *reass, void *user_data);
+
+#endif /* ZEPHYR_SUBSYS_NET_LIB_SHELL_NET_SHELL_PRIVATE_H_ */

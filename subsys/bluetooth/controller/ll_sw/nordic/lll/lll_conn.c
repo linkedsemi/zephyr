@@ -45,6 +45,7 @@
 
 static int init_reset(void);
 static void isr_done(void *param);
+static uint16_t max_rx_octets_get(struct lll_conn *lll);
 static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 			     uint8_t *is_rx_enqueue,
 			     struct node_tx **tx_release, uint8_t *is_done);
@@ -67,7 +68,9 @@ static struct pdu_data *get_last_tx_pdu(struct lll_conn *lll);
 static uint8_t crc_expire;
 static uint8_t crc_valid;
 static uint8_t is_aborted;
+static uint16_t tx_cnt;
 static uint16_t trx_cnt;
+static uint8_t trx_busy_iteration;
 
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 static uint8_t mic_state;
@@ -147,10 +150,12 @@ void lll_conn_flush(uint16_t handle, struct lll_conn *lll)
 
 void lll_conn_prepare_reset(void)
 {
+	tx_cnt = 0U;
 	trx_cnt = 0U;
 	crc_valid = 0U;
 	crc_expire = 0U;
 	is_aborted = 0U;
+	trx_busy_iteration = 0U;
 
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 	mic_state = LLL_CONN_MIC_NONE;
@@ -158,44 +163,72 @@ void lll_conn_prepare_reset(void)
 }
 
 #if defined(CONFIG_BT_CENTRAL)
+/* Number of times central event being aborted by same event instance be skipped */
+/* NOTE: Coded PHY S8 coding of 251 byte PDU at 7.5 ms connection interval need up to 4 events
+ *       to be skipped due to large connection event length.
+ */
+#define CENTRAL_TRX_BUSY_ITERATION_MAX MIN(4U, (EVENT_DEFER_MAX))
+
 int lll_conn_central_is_abort_cb(void *next, void *curr,
 				 lll_prepare_cb_t *resume_cb)
 {
 	struct lll_conn *lll = curr;
 
-	/* Do not abort if near supervision timeout */
-	if (lll->forced) {
-		return 0;
-	}
+	if (next != curr) {
+		/* Do not be aborted by a different event if near supervision timeout */
+		if ((lll->forced == 1U) && (trx_cnt < 1U)) {
+			return 0;
+		}
 
-	/* Do not be aborted by same event if a single central trx has not been
-	 * exchanged.
-	 */
-	if ((next == curr) && (trx_cnt < 1U)) {
+	} else if ((next == curr) && (trx_cnt < 1U) &&
+		   (trx_busy_iteration < CENTRAL_TRX_BUSY_ITERATION_MAX)) {
+		trx_busy_iteration++;
+
+		/* Do not be aborted by same event if a single central's Rx has not completed.
+		 * Cases where single trx duration can be greater than connection interval.
+		 */
 		return -EBUSY;
 	}
+
+	/* Without deferral support (EVENT_DEFER_MAX is 0) the event is always cancelled */
+	LL_ASSERT_DBG((CENTRAL_TRX_BUSY_ITERATION_MAX == 0U) ||
+		      (trx_busy_iteration < CENTRAL_TRX_BUSY_ITERATION_MAX));
 
 	return -ECANCELED;
 }
 #endif /* CONFIG_BT_CENTRAL */
 
 #if defined(CONFIG_BT_PERIPHERAL)
+/* Number of times peripheral event being aborted by same event instance be skipped */
+/* NOTE: Coded PHY S8 coding of 251 byte PDU at 7.5 ms connection interval need up to 4 events
+ *       to be skipped due to large connection event length.
+ */
+#define PERIPHERAL_TRX_BUSY_ITERATION_MAX MIN(4U, (EVENT_DEFER_MAX))
+
 int lll_conn_peripheral_is_abort_cb(void *next, void *curr,
 				    lll_prepare_cb_t *resume_cb)
 {
 	struct lll_conn *lll = curr;
 
-	/* Do not abort if near supervision timeout */
-	if (lll->forced) {
-		return 0;
-	}
+	if (next != curr) {
+		/* Do not be aborted by a different event if near supervision timeout */
+		if ((lll->forced == 1U) && (tx_cnt < 1U)) {
+			return 0;
+		}
 
-	/* Do not be aborted by same event if a single peripheral trx has not
-	 * been exchanged.
-	 */
-	if ((next == curr) && (trx_cnt <= 1U)) {
+	} else if ((next == curr) && (tx_cnt < 1U) &&
+		   (trx_busy_iteration < PERIPHERAL_TRX_BUSY_ITERATION_MAX)) {
+		trx_busy_iteration++;
+
+		/* Do not be aborted by same event if a single peripheral's Tx has not completed.
+		 * Cases where single trx duration can be greater than connection interval.
+		 */
 		return -EBUSY;
 	}
+
+	/* Without deferral support (EVENT_DEFER_MAX is 0) the event is always cancelled */
+	LL_ASSERT_DBG((PERIPHERAL_TRX_BUSY_ITERATION_MAX == 0U) ||
+		      (trx_busy_iteration < PERIPHERAL_TRX_BUSY_ITERATION_MAX));
 
 	return -ECANCELED;
 }
@@ -216,7 +249,7 @@ void lll_conn_abort_cb(struct lll_prepare_param *prepare_param, void *param)
 		 * back to central, otherwise let the supervision timeout
 		 * countdown be started.
 		 */
-		if ((lll->role == BT_HCI_ROLE_PERIPHERAL) && (trx_cnt <= 1U)) {
+		if ((lll->role == BT_HCI_ROLE_PERIPHERAL) && (tx_cnt < 1U)) {
 			is_aborted = 1U;
 		}
 
@@ -226,6 +259,13 @@ void lll_conn_abort_cb(struct lll_prepare_param *prepare_param, void *param)
 		 */
 		radio_isr_set(isr_done, param);
 		radio_disable();
+
+#if defined(CONFIG_BT_CTLR_LE_ENC)
+		if (lll->enc_rx) {
+			radio_ccm_disable();
+		}
+#endif /* CONFIG_BT_CTLR_LE_ENC */
+
 		return;
 	}
 
@@ -233,7 +273,7 @@ void lll_conn_abort_cb(struct lll_prepare_param *prepare_param, void *param)
 	 * currently in preparation pipeline.
 	 */
 	err = lll_hfclock_off();
-	LL_ASSERT(err >= 0);
+	LL_ASSERT_ERR(err >= 0);
 
 	/* Get reference to LLL connection context */
 	lll = prepare_param->param;
@@ -245,24 +285,23 @@ void lll_conn_abort_cb(struct lll_prepare_param *prepare_param, void *param)
 #if defined(CONFIG_BT_PERIPHERAL)
 	if (lll->role == BT_HCI_ROLE_PERIPHERAL) {
 		/* Accumulate window widening */
-		lll->periph.window_widening_prepare_us +=
-		    lll->periph.window_widening_periodic_us *
-		    (prepare_param->lazy + 1);
-		if (lll->periph.window_widening_prepare_us >
-		    lll->periph.window_widening_max_us) {
-			lll->periph.window_widening_prepare_us =
-				lll->periph.window_widening_max_us;
+		lll->periph.window_widening_prepare_us += lll->periph.window_widening_periodic_us *
+							  (prepare_param->lazy + 1);
+		if (lll->periph.window_widening_prepare_us > lll->periph.window_widening_max_us) {
+			lll->periph.window_widening_prepare_us = lll->periph.window_widening_max_us;
 		}
 	}
 #endif /* CONFIG_BT_PERIPHERAL */
 
 	/* Extra done event, to check supervision timeout */
 	e = ull_event_done_extra_get();
-	LL_ASSERT(e);
+	LL_ASSERT_ERR(e);
 
 	e->type = EVENT_DONE_EXTRA_TYPE_CONN;
 	e->trx_cnt = 0U;
 	e->crc_valid = 0U;
+	e->is_aborted = 1U;
+
 #if defined(CONFIG_BT_CTLR_LE_ENC)
 	e->mic_state = LLL_CONN_MIC_NONE;
 #endif /* CONFIG_BT_CTLR_LE_ENC */
@@ -277,9 +316,6 @@ void lll_conn_isr_rx(void *param)
 	struct pdu_data *pdu_data_tx;
 	struct node_rx_pdu *node_rx;
 	struct node_tx *tx_release;
-#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
-	uint32_t pa_lna_enable_us;
-#endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 	uint8_t is_rx_enqueue;
 	struct lll_conn *lll;
 	uint8_t rssi_ready;
@@ -333,7 +369,7 @@ void lll_conn_isr_rx(void *param)
 	lll = param;
 
 	node_rx = ull_pdu_rx_alloc_peek(1);
-	LL_ASSERT(node_rx);
+	LL_ASSERT_DBG(node_rx);
 
 	pdu_data_rx = (void *)node_rx->pdu;
 
@@ -343,14 +379,20 @@ void lll_conn_isr_rx(void *param)
 		err = isr_rx_pdu(lll, pdu_data_rx, &is_rx_enqueue, &tx_release,
 				 &is_done);
 		if (err) {
-			/* Disable radio trx switch on MIC failure for both
-			 * central and peripheral, and close the radio event.
+			/* Disable radio trx switch on MIC or length failure for
+			 * both central and peripheral, and close the radio
+			 * event.
 			 */
 			radio_isr_set(isr_done, param);
 			radio_disable();
 
 			/* assert if radio started tx before being disabled */
-			LL_ASSERT(!radio_is_ready());
+			if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+				LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u",
+					      __func__, lll_prof_latency_get());
+			} else {
+				LL_ASSERT_ERR(!radio_is_ready());
+			}
 
 			goto lll_conn_isr_rx_exit;
 		}
@@ -403,11 +445,27 @@ void lll_conn_isr_rx(void *param)
 		cte_len = 0U;
 	}
 
+#if defined(CONFIG_BT_PERIPHERAL)
+	/* Lets close early so that drift compensation is calculated before this event overlaps
+	 * with next interval.
+	 * TODO: Optimize, to improve throughput, by removing this early close and using the drift
+	 *       compensation value in the overlapping next interval, if under high throughput
+	 *       scenarios.
+	 */
+	is_done = is_done || ((lll->role == BT_HCI_ROLE_PERIPHERAL) &&
+			      (lll->periph.window_size_event_us != 0U));
+#endif /* CONFIG_BT_PERIPHERAL */
+
 	/* Decide on event continuation and hence Radio Shorts to use */
 	is_done = is_done || ((crc_ok) &&
 			      (pdu_data_rx->md == 0) &&
 			      (pdu_data_tx->md == 0) &&
 			      (pdu_data_tx->len == 0));
+	/* Do not continue anymore if this event had continued despite an abort requested by same
+	 * connection instance when overlapping due to connection event length being larger than
+	 * the connection interval.
+	 */
+	is_done = is_done || (trx_busy_iteration != 0U);
 
 	if (is_done) {
 		radio_isr_set(isr_done, param);
@@ -418,10 +476,13 @@ void lll_conn_isr_rx(void *param)
 		} else if (!lll->role) {
 			radio_disable();
 
-			/* assert if radio packet ptr is not set and radio
-			 * started tx.
-			 */
-			LL_ASSERT(!radio_is_ready());
+			/* assert if radio started tx before being disabled */
+			if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+				LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u",
+					      __func__, lll_prof_latency_get());
+			} else {
+				LL_ASSERT_ERR(!radio_is_ready());
+			}
 
 			/* Restore state if last transmitted was empty PDU */
 			lll->empty = is_empty_pdu_tx_retry;
@@ -457,6 +518,7 @@ void lll_conn_isr_rx(void *param)
 	lll_conn_tx_pkt_set(lll, pdu_data_tx);
 
 #if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
+	uint32_t pa_lna_enable_us;
 
 #if defined(CONFIG_BT_CTLR_PROFILE_ISR)
 	/* PA enable is overwriting packet end used in ISR profiling, hence
@@ -479,10 +541,10 @@ void lll_conn_isr_rx(void *param)
 
 	/* assert if radio packet ptr is not set and radio started tx */
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
-		LL_ASSERT_MSG(!radio_is_address(), "%s: Radio ISR latency: %u", __func__,
+		LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u", __func__,
 			      lll_prof_latency_get());
 	} else {
-		LL_ASSERT(!radio_is_address());
+		LL_ASSERT_ERR(!radio_is_ready());
 	}
 
 #if defined(CONFIG_BT_CTLR_TX_DEFER)
@@ -514,7 +576,7 @@ lll_conn_isr_rx_exit:
 	is_ull_rx = 0U;
 
 	if (tx_release) {
-		LL_ASSERT(lll->handle != 0xFFFF);
+		LL_ASSERT_DBG(lll->handle != 0xFFFF);
 
 		ull_conn_lll_ack_enqueue(lll->handle, tx_release);
 
@@ -607,6 +669,8 @@ void lll_conn_isr_tx(void *param)
 	/* Clear radio tx status and events */
 	lll_isr_tx_status_reset();
 
+	tx_cnt++;
+
 	lll = param;
 
 	/* setup tIFS switching */
@@ -650,10 +714,13 @@ void lll_conn_isr_tx(void *param)
 	/* Use special API for SOC that requires compensation for PHYEND event delay. */
 
 #if defined(CONFIG_BT_CTLR_PHY)
-	radio_switch_complete_with_delay_compensation_and_tx(lll->phy_rx, 0, lll->phy_tx,
+	radio_switch_complete_with_delay_compensation_and_tx(lll->phy_rx,
+							     PHY_FLAGS_UNUSED, lll->phy_tx,
 							     lll->phy_flags, end_evt_delay);
 #else /* !CONFIG_BT_CTLR_PHY */
-	radio_switch_complete_with_delay_compensation_and_tx(0, 0, 0, 0, end_evt_delay);
+	radio_switch_complete_with_delay_compensation_and_tx(PHY_LEGACY,
+							     PHY_FLAGS_UNUSED, PHY_LEGACY,
+							     PHY_FLAGS_UNUSED, end_evt_delay);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
 #endif /* CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE */
@@ -665,9 +732,10 @@ void lll_conn_isr_tx(void *param)
  */
 #if !defined(CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE)
 #if defined(CONFIG_BT_CTLR_PHY)
-	radio_switch_complete_and_tx(lll->phy_rx, 0, lll->phy_tx, lll->phy_flags);
+	radio_switch_complete_and_tx(lll->phy_rx, PHY_FLAGS_UNUSED, lll->phy_tx,
+				     lll->phy_flags);
 #else /* !CONFIG_BT_CTLR_PHY */
-	radio_switch_complete_and_tx(0, 0, 0, 0);
+	radio_switch_complete_and_tx(PHY_LEGACY, PHY_FLAGS_UNUSED, PHY_LEGACY, PHY_FLAGS_UNUSED);
 #endif /* !CONFIG_BT_CTLR_PHY */
 #endif /* !CONFIG_BT_CTLR_DF_PHYEND_OFFSET_COMPENSATION_ENABLE */
 
@@ -675,15 +743,15 @@ void lll_conn_isr_tx(void *param)
 
 	/* assert if radio packet ptr is not set and radio started rx */
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
-		LL_ASSERT_MSG(!radio_is_address(), "%s: Radio ISR latency: %u", __func__,
+		LL_ASSERT_MSG(!radio_is_ready(), "%s: Radio ISR latency: %u", __func__,
 			      lll_prof_latency_get());
 	} else {
-		LL_ASSERT(!radio_is_address());
+		LL_ASSERT_ERR(!radio_is_ready());
 	}
 
 #if defined(CONFIG_BT_CTLR_DF_CONN_CTE_TX)
 	pdu_tx = get_last_tx_pdu(lll);
-	LL_ASSERT(pdu_tx);
+	LL_ASSERT_DBG(pdu_tx);
 
 	if (pdu_tx->cp) {
 		cte_len = CTE_LEN_US(pdu_tx->octet3.cte_info.time);
@@ -692,21 +760,37 @@ void lll_conn_isr_tx(void *param)
 	}
 #endif /* CONFIG_BT_CTLR_DF_CONN_CTE_TX */
 
+#if !defined(CONFIG_BOARD_NRF52_BSIM) && \
+	!defined(CONFIG_BOARD_NRF5340BSIM_NRF5340_CPUNET) && \
+	!defined(CONFIG_BOARD_NRF54L15BSIM_NRF54L15_CPUAPP)
+
 	/* +/- 2us active clock jitter, +1 us PPI to timer start compensation */
 	hcto = radio_tmr_tifs_base_get() + lll->tifs_hcto_us +
 	       (EVENT_CLOCK_JITTER_US << 1) + RANGE_DELAY_US +
 	       HAL_RADIO_TMR_START_DELAY_US;
+
+#else /* FIXME: Why different for BabbleSIM? */
+	/* HACK: Have exact 150 us */
+	hcto = radio_tmr_tifs_base_get() + lll->tifs_hcto_us;
+
+	/* HACK: Could wrong MODE register value (next in tIFS switching) being
+	 *       use for Rx Chain Delay in BabbleSIM? or is there a bug in
+	 *       target implementation?
+	 */
+	hcto += radio_rx_chain_delay_get(lll->phy_tx, PHY_FLAGS_S8);
+#endif /* FIXME: Why different for BabbleSIM? */
+
 #if defined(CONFIG_BT_CTLR_DF_CONN_CTE_TX)
 	hcto += cte_len;
 #endif /* CONFIG_BT_CTLR_DF_CONN_CTE_TX */
 #if defined(CONFIG_BT_CTLR_PHY)
-	hcto += radio_rx_chain_delay_get(lll->phy_rx, 1);
+	hcto += radio_rx_chain_delay_get(lll->phy_rx, PHY_FLAGS_S8);
 	hcto += addr_us_get(lll->phy_rx);
 	hcto -= radio_tx_chain_delay_get(lll->phy_tx, lll->phy_flags);
 #else /* !CONFIG_BT_CTLR_PHY */
-	hcto += radio_rx_chain_delay_get(0, 0);
+	hcto += radio_rx_chain_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED);
 	hcto += addr_us_get(0);
-	hcto -= radio_tx_chain_delay_get(0, 0);
+	hcto -= radio_tx_chain_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
 	radio_tmr_hcto_configure(hcto);
@@ -742,16 +826,16 @@ void lll_conn_isr_tx(void *param)
 #else /* !CONFIG_BT_CTLR_PHY */
 	radio_gpio_pa_lna_enable(radio_tmr_tifs_base_get() + lll->tifs_rx_us -
 				 (EVENT_CLOCK_JITTER_US << 1) -
-				 radio_tx_chain_delay_get(0U, 0U) -
+				 radio_tx_chain_delay_get(PHY_LEGACY, PHY_FLAGS_UNUSED) -
 				 HAL_RADIO_GPIO_LNA_OFFSET);
 #endif /* !CONFIG_BT_CTLR_PHY */
 #endif /* HAL_RADIO_GPIO_HAVE_LNA_PIN */
 
 	radio_isr_set(lll_conn_isr_rx, param);
 
-#if defined(CONFIG_BT_CTLR_LOW_LAT_ULL)
+#if defined(CONFIG_BT_CTLR_LOW_LAT)
 	ull_conn_lll_tx_demux_sched(lll);
-#endif /* CONFIG_BT_CTLR_LOW_LAT_ULL */
+#endif /* CONFIG_BT_CTLR_LOW_LAT */
 }
 
 void lll_conn_rx_pkt_set(struct lll_conn *lll)
@@ -762,7 +846,7 @@ void lll_conn_rx_pkt_set(struct lll_conn *lll)
 	uint8_t phy;
 
 	node_rx = ull_pdu_rx_alloc_peek(1);
-	LL_ASSERT(node_rx);
+	LL_ASSERT_DBG(node_rx);
 
 	/* In case of ISR latencies, if packet pointer has not been set on time
 	 * then we do not want to check uninitialized length in rx buffer that
@@ -773,16 +857,7 @@ void lll_conn_rx_pkt_set(struct lll_conn *lll)
 	pdu_data_rx = (void *)node_rx->pdu;
 	pdu_data_rx->len = 0U;
 
-#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
-	max_rx_octets = lll->dle.eff.max_rx_octets;
-#else /* !CONFIG_BT_CTLR_DATA_LENGTH */
-	max_rx_octets = PDU_DC_PAYLOAD_SIZE_MIN;
-#endif /* !CONFIG_BT_CTLR_DATA_LENGTH */
-
-	if ((PDU_DC_CTRL_RX_SIZE_MAX > PDU_DC_PAYLOAD_SIZE_MIN) &&
-	    (max_rx_octets < PDU_DC_CTRL_RX_SIZE_MAX)) {
-		max_rx_octets = PDU_DC_CTRL_RX_SIZE_MAX;
-	}
+	max_rx_octets = max_rx_octets_get(lll);
 
 #if defined(CONFIG_BT_CTLR_PHY)
 	phy = lll->phy_rx;
@@ -790,7 +865,7 @@ void lll_conn_rx_pkt_set(struct lll_conn *lll)
 	phy = 0U;
 #endif /* !CONFIG_BT_CTLR_PHY */
 
-	radio_phy_set(phy, 0);
+	radio_phy_set(phy, PHY_FLAGS_S8);
 
 	if (0) {
 #if defined(CONFIG_BT_CTLR_LE_ENC)
@@ -967,7 +1042,7 @@ static void isr_done(void *param)
 	lll_isr_status_reset();
 
 	e = ull_event_done_extra_get();
-	LL_ASSERT(e);
+	LL_ASSERT_ERR(e);
 
 	e->type = EVENT_DONE_EXTRA_TYPE_CONN;
 	e->trx_cnt = trx_cnt;
@@ -987,7 +1062,7 @@ static void isr_done(void *param)
 
 #if defined(CONFIG_BT_CTLR_PHY)
 			preamble_to_addr_us =
-				addr_us_get(lll->phy_rx);
+				addr_us_get(lll->periph.phy_rx_event);
 #else /* !CONFIG_BT_CTLR_PHY */
 			preamble_to_addr_us =
 				addr_us_get(0);
@@ -1014,6 +1089,25 @@ static inline bool ctrl_pdu_len_check(uint8_t len)
 	return len <= (offsetof(struct pdu_data, llctrl) +
 		       sizeof(struct pdu_data_llctrl));
 
+}
+
+static uint16_t max_rx_octets_get(struct lll_conn *lll)
+{
+	uint16_t max_rx_octets;
+
+#if defined(CONFIG_BT_CTLR_DATA_LENGTH)
+	max_rx_octets = lll->dle.eff.max_rx_octets;
+#else /* !CONFIG_BT_CTLR_DATA_LENGTH */
+	ARG_UNUSED(lll);
+	max_rx_octets = PDU_DC_PAYLOAD_SIZE_MIN;
+#endif /* !CONFIG_BT_CTLR_DATA_LENGTH */
+
+	if ((PDU_DC_CTRL_RX_SIZE_MAX > PDU_DC_PAYLOAD_SIZE_MIN) &&
+	    (max_rx_octets < PDU_DC_CTRL_RX_SIZE_MAX)) {
+		max_rx_octets = PDU_DC_CTRL_RX_SIZE_MAX;
+	}
+
+	return max_rx_octets;
 }
 
 static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
@@ -1108,7 +1202,7 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 
 				FORCE_MD_CNT_SET();
 			} else {
-				LL_ASSERT(0);
+				LL_ASSERT_DBG(0);
 			}
 
 			if (IS_ENABLED(CONFIG_BT_CENTRAL) && !lll->role &&
@@ -1135,7 +1229,7 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 				uint32_t done;
 
 				done = radio_ccm_is_done();
-				LL_ASSERT(done);
+				LL_ASSERT_ERR(done);
 
 				bool mic_failure = !radio_ccm_mic_is_valid();
 
@@ -1177,6 +1271,17 @@ static inline int isr_rx_pdu(struct lll_conn *lll, struct pdu_data *pdu_data_rx,
 				mic_state = LLL_CONN_MIC_PASS;
 			}
 #endif /* CONFIG_BT_CTLR_LE_ENC */
+
+			/* Discard the received PDU, whether unencrypted or the
+			 * decrypted, with length that exceeds the configured
+			 * maximum receive data length used to setup the radio
+			 * packet reception. Encrypted PDUs include the MIC in
+			 * their on-air length, hence the check is performed here
+			 * after decryption.
+			 */
+			if (pdu_data_rx->len > max_rx_octets_get(lll)) {
+				return -EINVAL;
+			}
 
 			/* Enqueue non-empty PDU */
 			*is_rx_enqueue = 1U;

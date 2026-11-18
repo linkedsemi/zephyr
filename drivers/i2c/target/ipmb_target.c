@@ -129,7 +129,7 @@ static int ipmb_ls_set_rx_callback(const struct device *dev,void (*cb)(void *,ui
 	return 0;
 }
 
-static const struct ipmb_driver_api api_funcs = {
+static DEVICE_API(ipmb, api_funcs) = {
 	.drv_register = ipmb_target_register,
 	.drv_unregister = ipmb_target_unregister,
 	.write = ipmb_ls_write,

@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <string.h>
+
 #include <zephyr/device.h>
 #include <zephyr/drivers/eeprom.h>
 #include <zephyr/drivers/eeprom/eeprom_fake.h>
@@ -25,7 +27,20 @@ DEFINE_FAKE_VALUE_FUNC(int, fake_eeprom_write, const struct device *, off_t, con
 
 DEFINE_FAKE_VALUE_FUNC(size_t, fake_eeprom_size, const struct device *);
 
-size_t fake_eeprom_size_delegate(const struct device *dev)
+static int fake_eeprom_read_delegate(const struct device *dev, off_t offset, void *data, size_t len)
+{
+	const struct fake_eeprom_config *config = dev->config;
+
+	if (len > config->size) {
+		return -EINVAL;
+	}
+
+	memset(data, 0, len);
+
+	return 0;
+}
+
+static size_t fake_eeprom_size_delegate(const struct device *dev)
 {
 	const struct fake_eeprom_config *config = dev->config;
 
@@ -42,14 +57,15 @@ static void fake_eeprom_reset_rule_before(const struct ztest_unit_test *test, vo
 	RESET_FAKE(fake_eeprom_write);
 	RESET_FAKE(fake_eeprom_size);
 
-	/* Re-install default delegate for reporting the EEPROM size */
+	/* Re-install default delegates */
+	fake_eeprom_read_fake.custom_fake = fake_eeprom_read_delegate;
 	fake_eeprom_size_fake.custom_fake = fake_eeprom_size_delegate;
 }
 
 ZTEST_RULE(fake_eeprom_reset_rule, fake_eeprom_reset_rule_before, NULL);
 #endif /* CONFIG_ZTEST */
 
-static const struct eeprom_driver_api fake_eeprom_driver_api = {
+static DEVICE_API(eeprom, fake_eeprom_driver_api) = {
 	.read = fake_eeprom_read,
 	.write = fake_eeprom_write,
 	.size = fake_eeprom_size,
@@ -59,7 +75,8 @@ static int fake_eeprom_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
-	/* Install default delegate for reporting the EEPROM size */
+	/* Install default delegates */
+	fake_eeprom_read_fake.custom_fake = fake_eeprom_read_delegate;
 	fake_eeprom_size_fake.custom_fake = fake_eeprom_size_delegate;
 
 	return 0;

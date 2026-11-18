@@ -192,7 +192,7 @@ static int gpio_npm6001_port_toggle_bits(const struct device *dev,
 						~val & NPM6001_PIN_MSK);
 }
 
-static const struct gpio_driver_api gpio_npm6001_api = {
+static DEVICE_API(gpio, gpio_npm6001_api) = {
 	.pin_configure = gpio_npm6001_configure,
 	.port_get_raw = gpio_npm6001_port_get_raw,
 	.port_set_masked_raw = gpio_npm6001_port_set_masked_raw,
@@ -214,11 +214,7 @@ static int gpio_npm6001_init(const struct device *dev)
 
 #define GPIO_NPM6001_DEFINE(n)                                                 \
 	static const struct gpio_npm6001_config gpio_npm6001_config##n = {     \
-		.common =                                                      \
-			{                                                      \
-				.port_pin_mask =                               \
-					GPIO_PORT_PIN_MASK_FROM_DT_INST(n),    \
-			},                                                     \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),                  \
 		.bus = I2C_DT_SPEC_GET(DT_INST_PARENT(n))};                    \
                                                                                \
 	static struct gpio_npm6001_data gpio_npm6001_data##n;                  \

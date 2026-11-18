@@ -79,16 +79,16 @@ BUILD_ASSERT(offsetof(struct ppp_api, iface_api) == 0);
  * for details.
  */
 enum ppp_protocol_type {
-	PPP_IP     = 0x0021, /**< RFC 1332 */
-	PPP_IPV6   = 0x0057, /**< RFC 5072 */
-	PPP_IPCP   = 0x8021, /**< RFC 1332 */
-	PPP_ECP    = 0x8053, /**< RFC 1968 */
-	PPP_IPV6CP = 0x8057, /**< RFC 5072 */
-	PPP_CCP    = 0x80FD, /**< RFC 1962 */
-	PPP_LCP    = 0xc021, /**< RFC 1661 */
-	PPP_PAP    = 0xc023, /**< RFC 1334 */
-	PPP_CHAP   = 0xc223, /**< RFC 1334 */
-	PPP_EAP    = 0xc227, /**< RFC 2284 */
+	PPP_IP     = 0x0021, /**< @rfc{1332} */
+	PPP_IPV6   = 0x0057, /**< @rfc{5072} */
+	PPP_IPCP   = 0x8021, /**< @rfc{1332} */
+	PPP_ECP    = 0x8053, /**< @rfc{1968} */
+	PPP_IPV6CP = 0x8057, /**< @rfc{5072} */
+	PPP_CCP    = 0x80FD, /**< @rfc{1962} */
+	PPP_LCP    = 0xc021, /**< @rfc{1661} */
+	PPP_PAP    = 0xc023, /**< @rfc{1334} */
+	PPP_CHAP   = 0xc223, /**< @rfc{1334} */
+	PPP_EAP    = 0xc227, /**< @rfc{2284} */
 };
 
 /**
@@ -147,7 +147,7 @@ enum ppp_packet_type {
 /** @endcond */
 
 /**
- * LCP option types from RFC 1661 ch. 6
+ * LCP option types from @rfc{1661,section-6}
  */
 enum lcp_option_type {
 	/** Reserved option value (do not use) */
@@ -176,7 +176,7 @@ enum lcp_option_type {
 } __packed;
 
 /**
- * IPCP option types from RFC 1332
+ * IPCP option types from @rfc{1332}
  */
 enum ipcp_option_type {
 	/** Reserved IPCP option value (do not use) */
@@ -207,7 +207,7 @@ enum ipcp_option_type {
 } __packed;
 
 /**
- * IPV6CP option types from RFC 5072
+ * IPV6CP option types from @rfc{5072}
  */
 enum ipv6cp_option_type {
 	/** Reserved IPV6CP option value (do not use) */
@@ -353,7 +353,11 @@ struct ppp_my_option_data {
 	uint32_t flags;
 };
 
+#if defined(CONFIG_NET_L2_PPP_OPTION_DNS_USE)
 #define IPCP_NUM_MY_OPTIONS	3
+#else
+#define IPCP_NUM_MY_OPTIONS	1
+#endif
 #define IPV6CP_NUM_MY_OPTIONS	1
 
 enum ppp_flags {
@@ -375,22 +379,29 @@ struct lcp_options {
 
 	/** Which authentication protocol was negotiated (0 means none) */
 	uint16_t auth_proto;
+
+	/** Protocol-Field-Compression negotiated */
+	bool pfc;
+
+	/** Address-and-Control-Field-Compression negotiated */
+	bool acfc;
 };
 
-#if defined(CONFIG_NET_L2_PPP_OPTION_MRU)
-#define LCP_NUM_MY_OPTIONS	1
-#endif
+#define LCP_NUM_MY_OPTIONS	(1						\
+	+ IS_ENABLED(CONFIG_NET_L2_PPP_OPTION_MRU)			\
+	+ IS_ENABLED(CONFIG_NET_L2_PPP_OPTION_PFC)			\
+	+ IS_ENABLED(CONFIG_NET_L2_PPP_OPTION_ACFC))
 
 /** IPv4 control protocol options */
 struct ipcp_options {
 	/** IPv4 address */
-	struct in_addr address;
+	struct net_in_addr address;
 
 	/** Primary DNS server address */
-	struct in_addr dns1_address;
+	struct net_in_addr dns1_address;
 
 	/** Secondary DNS server address */
-	struct in_addr dns2_address;
+	struct net_in_addr dns2_address;
 };
 
 /** IPv6 control protocol options */
@@ -422,9 +433,9 @@ struct ppp_context {
 
 		/** Magic-Number value */
 		uint32_t magic;
-#if defined(CONFIG_NET_L2_PPP_OPTION_MRU)
+
+		/** Options data */
 		struct ppp_my_option_data my_options_data[LCP_NUM_MY_OPTIONS];
-#endif
 	} lcp;
 
 #if defined(CONFIG_NET_IPV4)
@@ -499,9 +510,6 @@ struct ppp_context {
 	/** Network interface related to this PPP connection */
 	struct net_if *iface;
 
-	/** Network management callback structure */
-	struct net_mgmt_event_callback mgmt_evt_cb;
-
 	/** Current phase of PPP link */
 	enum ppp_phase phase;
 
@@ -561,39 +569,67 @@ void net_ppp_init(struct net_if *iface);
 
 #define PPP_L2_CTX_TYPE	struct ppp_context
 
-#define _NET_PPP_LAYER	NET_MGMT_LAYER_L2
-#define _NET_PPP_CODE	0x209
-#define _NET_PPP_BASE	(NET_MGMT_IFACE_BIT |				\
-			 NET_MGMT_LAYER(_NET_PPP_LAYER) |		\
-			 NET_MGMT_LAYER_CODE(_NET_PPP_CODE))
-#define _NET_PPP_EVENT	(_NET_PPP_BASE | NET_MGMT_EVENT_BIT)
+#define NET_PPP_LAYER	NET_MGMT_LAYER_L2
+#define NET_PPP_CODE	NET_MGMT_LAYER_CODE_PPP
+#define NET_PPP_BASE	(NET_MGMT_IFACE_BIT |				\
+			 NET_MGMT_LAYER(NET_PPP_LAYER) |		\
+			 NET_MGMT_LAYER_CODE(NET_PPP_CODE))
+#define NET_PPP_EVENT	(NET_PPP_BASE | NET_MGMT_EVENT_BIT)
+
+enum {
+	NET_EVENT_PPP_CMD_CARRIER_ON_VAL,
+	NET_EVENT_PPP_CMD_CARRIER_OFF_VAL,
+	NET_EVENT_PPP_CMD_PHASE_RUNNING_VAL,
+	NET_EVENT_PPP_CMD_PHASE_DEAD_VAL,
+
+	NET_EVENT_PPP_CMD_MAX
+};
+
+BUILD_ASSERT(NET_EVENT_PPP_CMD_MAX <= NET_MGMT_MAX_COMMANDS,
+	     "Number of events in net_event_ppp_cmd exceeds the limit");
 
 enum net_event_ppp_cmd {
-	NET_EVENT_PPP_CMD_CARRIER_ON = 1,
-	NET_EVENT_PPP_CMD_CARRIER_OFF,
-	NET_EVENT_PPP_CMD_PHASE_RUNNING,
-	NET_EVENT_PPP_CMD_PHASE_DEAD,
+	NET_MGMT_CMD(NET_EVENT_PPP_CMD_CARRIER_ON),
+	NET_MGMT_CMD(NET_EVENT_PPP_CMD_CARRIER_OFF),
+	NET_MGMT_CMD(NET_EVENT_PPP_CMD_PHASE_RUNNING),
+	NET_MGMT_CMD(NET_EVENT_PPP_CMD_PHASE_DEAD),
 };
 
 struct net_if;
 
 /** @endcond */
 
+/** Default value for the PPP Asynchronous Control Character Map */
+#define NET_PPP_DEFAULT_ASYNC_MAP (0xffffffffU)
+
+/**
+ * @brief Retrieve the PPP peers Asynchronous Control Character Map
+ *
+ * Before PPP LCP negotiation is complete, this function will return the default value of
+ * 0xffffffff. After LCP negotiation, this function will return the value that peer has
+ * provided.
+ *
+ * @param iface PPP network interface.
+ *
+ * @return uint32_t Current bitmask for the Asynchronous Control Character Map
+ */
+uint32_t ppp_peer_async_control_character_map(struct net_if *iface);
+
 /** Event emitted when PPP carrier is on */
 #define NET_EVENT_PPP_CARRIER_ON					\
-	(_NET_PPP_EVENT | NET_EVENT_PPP_CMD_CARRIER_ON)
+	(NET_PPP_EVENT | NET_EVENT_PPP_CMD_CARRIER_ON)
 
 /** Event emitted when PPP carrier is off */
 #define NET_EVENT_PPP_CARRIER_OFF					\
-	(_NET_PPP_EVENT | NET_EVENT_PPP_CMD_CARRIER_OFF)
+	(NET_PPP_EVENT | NET_EVENT_PPP_CMD_CARRIER_OFF)
 
 /** Event emitted when PPP goes into running phase */
 #define NET_EVENT_PPP_PHASE_RUNNING					\
-	(_NET_PPP_EVENT | NET_EVENT_PPP_CMD_PHASE_RUNNING)
+	(NET_PPP_EVENT | NET_EVENT_PPP_CMD_PHASE_RUNNING)
 
 /** Event emitted when PPP goes into dead phase */
 #define NET_EVENT_PPP_PHASE_DEAD					\
-	(_NET_PPP_EVENT | NET_EVENT_PPP_CMD_PHASE_DEAD)
+	(NET_PPP_EVENT | NET_EVENT_PPP_CMD_PHASE_DEAD)
 
 /**
  * @brief Raise CARRIER_ON event when PPP is connected.

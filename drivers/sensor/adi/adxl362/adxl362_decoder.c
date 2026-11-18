@@ -11,7 +11,6 @@
 
 /* (2^31 / 2^8(shift) */
 #define ADXL362_TEMP_QSCALE   8388608
-#define ADXL362_TEMP_LSB_PER_C 15
 
 #define ADXL362_COMPLEMENT         0xf000
 
@@ -49,8 +48,10 @@ static inline void adxl362_temp_convert_q31(q31_t *out, int16_t data_in)
 		data_in |= ADXL362_COMPLEMENT;
 	}
 
-	*out = ((data_in - ADXL362_TEMP_BIAS_LSB) / ADXL362_TEMP_LSB_PER_C
-			+ ADXL362_TEMP_BIAS_TEST_CONDITION) * ADXL362_TEMP_QSCALE;
+	int32_t milli_c = (data_in - ADXL362_TEMP_BIAS_LSB) * ADXL362_TEMP_MC_PER_LSB +
+			  (ADXL362_TEMP_BIAS_TEST_CONDITION * 1000);
+
+	*out = (q31_t)(((int64_t)milli_c * ADXL362_TEMP_QSCALE) / 1000);
 }
 
 static inline void adxl362_accel_convert_q31(q31_t *out, int16_t data_in, int32_t range)
@@ -87,56 +88,68 @@ static int adxl362_decode_stream(const uint8_t *buffer, struct sensor_chan_spec 
 	}
 
 	uint64_t period_ns = accel_period_ns[enc_data->accel_odr];
+	uint16_t total_samples = sample_set_size > 0
+				 ? enc_data->fifo_byte_count / sample_set_size : 0;
+	uint64_t base_ts = enc_data->timestamp -
+			   (total_samples > 0 ? (total_samples - 1) : 0) * period_ns;
 
 	/* Calculate which sample is decoded. */
-	if ((uint8_t *)*fit >= buffer) {
-		sample_num = ((uint8_t *)*fit - buffer) / sample_set_size;
+	if (*fit >= (uintptr_t)buffer) {
+		sample_num = (*fit - (uintptr_t)buffer) / sample_set_size;
 	}
 
-	while (count < max_count && buffer < buffer_end) {
-		const uint8_t *sample_end = buffer;
+	if (chan_spec.chan_type == SENSOR_CHAN_DIE_TEMP) {
+		struct sensor_q31_data *data = (struct sensor_q31_data *)data_out;
 
-		sample_end += sample_set_size;
+		memset(data, 0, sizeof(struct sensor_q31_data));
+		data->header.base_timestamp_ns = base_ts;
+		data->shift = 8;
 
-		if ((uintptr_t)buffer < *fit) {
-			/* This frame was already decoded, move on to the next frame */
-			buffer = sample_end;
-			continue;
-		}
+		while (count < max_count && buffer < buffer_end) {
+			const uint8_t *sample_end = buffer + sample_set_size;
 
-		if (chan_spec.chan_type == SENSOR_CHAN_DIE_TEMP) {
+			if ((uintptr_t)buffer < *fit) {
+				buffer = sample_end;
+				continue;
+			}
+
 			if (enc_data->has_tmp) {
-				struct sensor_q31_data *data = (struct sensor_q31_data *)data_out;
-
-				memset(data, 0, sizeof(struct sensor_three_axis_data));
-				data->header.base_timestamp_ns = enc_data->timestamp;
-				data->header.reading_count = 1;
-				data->shift = 8;
-
-				data->readings[count].timestamp_delta =
-						period_ns * sample_num;
-
+				data->readings[count].timestamp_delta = period_ns * sample_num;
 				data_in = sys_le16_to_cpu(*((int16_t *)(buffer + 6)));
 
 				/* Check if this sample contains temperature value. */
 				if (ADXL362_FIFO_HDR_CHECK_TEMP(data_in)) {
-					adxl362_temp_convert_q31(&data->readings[count].temperature,
-										data_in);
+					adxl362_temp_convert_q31(
+						&data->readings[count].temperature, data_in);
 				}
 			}
-		} else {
-			struct sensor_three_axis_data *data =
-					(struct sensor_three_axis_data *)data_out;
 
-			memset(data, 0, sizeof(struct sensor_three_axis_data));
-			data->header.base_timestamp_ns = enc_data->timestamp;
-			data->header.reading_count = 1;
-			data->shift = range_to_shift[enc_data->selected_range];
+			buffer = sample_end;
+			*fit = (uintptr_t)sample_end;
+			sample_num++;
+			count++;
+		}
+		data->header.reading_count = count;
+	} else {
+		struct sensor_three_axis_data *data =
+				(struct sensor_three_axis_data *)data_out;
+
+		memset(data, 0, sizeof(struct sensor_three_axis_data));
+		data->header.base_timestamp_ns = base_ts;
+		data->shift = range_to_shift[enc_data->selected_range];
+
+		while (count < max_count && buffer < buffer_end) {
+			const uint8_t *sample_end = buffer + sample_set_size;
+
+			if ((uintptr_t)buffer < *fit) {
+				/* This frame was already decoded, move on to the next frame */
+				buffer = sample_end;
+				continue;
+			}
 
 			switch (chan_spec.chan_type) {
 			case SENSOR_CHAN_ACCEL_X:
-				data->readings[count].timestamp_delta = sample_num
-					* period_ns;
+				data->readings[count].timestamp_delta = sample_num * period_ns;
 
 				/* Convert received data into signeg integer. */
 				data_in = sys_le16_to_cpu(*((int16_t *)buffer));
@@ -148,8 +161,7 @@ static int adxl362_decode_stream(const uint8_t *buffer, struct sensor_chan_spec 
 				}
 				break;
 			case SENSOR_CHAN_ACCEL_Y:
-				data->readings[count].timestamp_delta = sample_num
-					* period_ns;
+				data->readings[count].timestamp_delta = sample_num * period_ns;
 
 				/* Convert received data into signeg integer. */
 				data_in = sys_le16_to_cpu(*((int16_t *)(buffer + 2)));
@@ -161,8 +173,7 @@ static int adxl362_decode_stream(const uint8_t *buffer, struct sensor_chan_spec 
 				}
 				break;
 			case SENSOR_CHAN_ACCEL_Z:
-				data->readings[count].timestamp_delta = sample_num
-					* period_ns;
+				data->readings[count].timestamp_delta = sample_num * period_ns;
 				/* Convert received data into signeg integer. */
 				data_in = sys_le16_to_cpu(*((int16_t *)(buffer + 4)));
 
@@ -205,16 +216,39 @@ static int adxl362_decode_stream(const uint8_t *buffer, struct sensor_chan_spec 
 			default:
 				return -ENOTSUP;
 			}
-		}
 
-		buffer = sample_end;
-		*fit = (uintptr_t)sample_end;
-		count++;
+			buffer = sample_end;
+			*fit = (uintptr_t)sample_end;
+			sample_num++;
+			count++;
+		}
+		data->header.reading_count = count;
 	}
+
 	return count;
 }
 
 #endif /* CONFIG_ADXL362_STREAM */
+
+static int adxl362_decoder_get_size_info(struct sensor_chan_spec chan_spec, size_t *base_size,
+					 size_t *frame_size)
+{
+	switch (chan_spec.chan_type) {
+	case SENSOR_CHAN_ACCEL_X:
+	case SENSOR_CHAN_ACCEL_Y:
+	case SENSOR_CHAN_ACCEL_Z:
+	case SENSOR_CHAN_ACCEL_XYZ:
+		*base_size = sizeof(struct sensor_three_axis_data);
+		*frame_size = sizeof(struct sensor_three_axis_sample_data);
+		return 0;
+	case SENSOR_CHAN_DIE_TEMP:
+		*base_size = sizeof(struct sensor_q31_data);
+		*frame_size = sizeof(struct sensor_q31_sample_data);
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
 
 static int adxl362_decoder_get_frame_count(const uint8_t *buffer,
 					     struct sensor_chan_spec chan_spec,
@@ -354,6 +388,7 @@ static bool adxl362_decoder_has_trigger(const uint8_t *buffer, enum sensor_trigg
 
 SENSOR_DECODER_API_DT_DEFINE() = {
 	.get_frame_count = adxl362_decoder_get_frame_count,
+	.get_size_info = adxl362_decoder_get_size_info,
 	.decode = adxl362_decoder_decode,
 	.has_trigger = adxl362_decoder_has_trigger,
 };

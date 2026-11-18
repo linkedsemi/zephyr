@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 NXP
+ * Copyright 2023,2026 NXP
  *
  * Based on clock_control_mcux_scg.c, which is:
  * Copyright (c) 2019-2021 Vestas Wind Systems A/S
@@ -64,6 +64,12 @@ static int mcux_scg_k4_get_rate(const struct device *dev, clock_control_subsys_t
 	case SCG_K4_RTCOSC_CLK:
 		clock_name = kCLOCK_RtcOscClk;
 		break;
+#ifndef CONFIG_SOC_MCXW70AC
+	/* MCX W70 does not support FLEXIO */
+	case SCG_K4_FLEXIO_CLK:
+		*rate = CLOCK_GetIpFreq(kCLOCK_Flexio0);
+		return 0;
+#endif
 	default:
 		LOG_ERR("Unsupported clock name");
 		return -EINVAL;
@@ -73,7 +79,7 @@ static int mcux_scg_k4_get_rate(const struct device *dev, clock_control_subsys_t
 	return 0;
 }
 
-static const struct clock_control_driver_api mcux_scg_driver_api = {
+static DEVICE_API(clock_control, mcux_scg_driver_api) = {
 	.on = mcux_scg_k4_on,
 	.off = mcux_scg_k4_off,
 	.get_rate = mcux_scg_k4_get_rate,

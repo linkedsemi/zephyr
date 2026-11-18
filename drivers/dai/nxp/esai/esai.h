@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,6 +11,8 @@
 #include <zephyr/drivers/dai.h>
 #include <zephyr/device.h>
 #include <zephyr/dt-bindings/dai/esai.h>
+#include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/pinctrl.h>
 
 #include <fsl_esai.h>
 
@@ -152,6 +154,34 @@ LOG_MODULE_REGISTER(nxp_dai_esai);
 #define ESAI_PIN_IS_USED(data, which)\
 	(((data)->pcrc & BIT(which)) && ((data->prrc) & BIT(which)))
 
+#define IDENTITY_VARGS(V, ...) IDENTITY(V)
+
+#define _ESAI_CLOCK_INDEX_ARRAY(inst)\
+	LISTIFY(DT_INST_PROP_LEN_OR(inst, clocks, 0), IDENTITY_VARGS, (,))
+
+#define _ESAI_GET_CLOCK_ID(clock_idx, inst)\
+	DT_INST_PHA_BY_IDX_OR(inst, clocks, clock_idx, name, 0x0)
+
+#define _ESAI_CLOCK_ID_ARRAY(inst)\
+	FOR_EACH_FIXED_ARG(_ESAI_GET_CLOCK_ID, (,), inst, _ESAI_CLOCK_INDEX_ARRAY(inst))
+
+#define _ESAI_GET_CLOCK_ARRAY(inst)						\
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_dai_esai), clocks),	\
+		    ({ _ESAI_CLOCK_ID_ARRAY(inst) }),				\
+		    ({ }))
+
+#define _ESAI_GET_CLOCK_CONTROLLER(inst)					\
+	COND_CODE_1(DT_NODE_HAS_PROP(DT_INST(inst, nxp_dai_esai), clocks),	\
+		    (DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(inst))),			\
+		    (NULL))
+
+#define ESAI_CLOCK_DATA_DECLARE(inst)				\
+{								\
+	.clocks = (uint32_t [])_ESAI_GET_CLOCK_ARRAY(inst),	\
+	.clock_num = DT_INST_PROP_LEN_OR(inst, clocks, 0),	\
+	.dev = _ESAI_GET_CLOCK_CONTROLLER(inst),		\
+}
+
 struct esai_data {
 	mm_reg_t regmap;
 	struct dai_config cfg;
@@ -170,6 +200,12 @@ struct esai_data {
 	uint32_t pcrc;
 };
 
+struct esai_clock_data {
+	uint32_t clock_num;
+	uint32_t *clocks;
+	const struct device *dev;
+};
+
 struct esai_config {
 	uint32_t regmap_phys;
 	uint32_t regmap_size;
@@ -182,6 +218,8 @@ struct esai_config {
 	uint32_t pinmodes_size;
 	uint32_t *clock_cfg;
 	uint32_t clock_cfg_size;
+	struct esai_clock_data clk_data;
+	const struct pinctrl_dev_config *pincfg;
 };
 
 /* this needs to perfectly match SOF's struct sof_ipc_dai_esai_params */
@@ -209,13 +247,13 @@ struct esai_bespoke_config {
 struct esai_transceiver_config {
 	/* enable/disable the HCLK prescaler */
 	bool hclk_prescaler_en;
-	/* controls the divison value of HCLK (i.e: TPM0-TPM7) */
+	/* controls the division value of HCLK (i.e: TPM0-TPM7) */
 	uint32_t hclk_div_ratio;
 	/* controls the division value of HCLK before reaching
 	 * BCLK consumers (i.e: TFP0-TFP3)
 	 */
 	uint32_t bclk_div_ratio;
-	/* should the HCLK divison be bypassed or not?
+	/* should the HCLK division be bypassed or not?
 	 * If in bypass, HCLK pad will be the same as EXTAL
 	 */
 	bool hclk_bypass;
@@ -249,7 +287,7 @@ struct esai_transceiver_config {
 	 */
 	bool fsync_early;
 
-	/* FSYNC divison value - for network mode this is
+	/* FSYNC division value - for network mode this is
 	 * the same as the number of slots - 1.
 	 */
 	uint32_t fsync_div;

@@ -139,7 +139,7 @@ extern uint8_t z_shared_kernel_page_start;
 /* Called from page fault handler. ptables here is the ptage tables for the
  * faulting user thread and not the current set of page tables
  */
-extern bool z_x86_kpti_is_access_ok(void *virt, pentry_t *ptables)
+extern bool z_x86_kpti_is_access_ok(void *virt, pentry_t *ptables);
 #endif /* CONFIG_DEMAND_PAGING */
 #endif /* CONFIG_X86_KPTI */
 #endif /* CONFIG_USERSPACE */
@@ -230,6 +230,14 @@ void z_x86_tlb_ipi(const void *arg);
 
 #ifdef CONFIG_X86_COMMON_PAGE_TABLE
 void z_x86_swap_update_common_page_table(struct k_thread *incoming);
+#endif
+
+#if defined(CONFIG_DEMAND_PAGING) && defined(CONFIG_EVICTION_LRU)
+/* If @addr is an LRU-tracked page, fix it up (restore P, clear the tracking
+ * bit), fill *phys with its physical address, and return true. Otherwise
+ * return false. Called from the x86 page fault handler.
+ */
+bool z_x86_lru_fault_try_handle(void *addr, uintptr_t *phys);
 #endif
 
 /* Early-boot paging setup tasks, called from prep_c */

@@ -11,6 +11,8 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/logging/log.h>
 #include <stdlib.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 
 LOG_MODULE_REGISTER(P3T1755, CONFIG_SENSOR_LOG_LEVEL);
 
@@ -29,21 +31,51 @@ static int p3t1755_i3c_write_reg(const struct device *dev, uint8_t reg, uint8_t 
 
 	return i3c_burst_write(data->i3c_dev, reg, byte, len);
 }
+
+static int p3t1755_i3c_get(const struct device *dev)
+{
+	const struct p3t1755_config *config = dev->config;
+
+	return pm_device_runtime_get(config->i3c.bus);
+}
+
+static int p3t1755_i3c_put(const struct device *dev)
+{
+	const struct p3t1755_config *config = dev->config;
+
+	return pm_device_runtime_put(config->i3c.bus);
+}
 #endif
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
-int p3t1755_i2c_read_reg(const struct device *dev, uint8_t reg, uint8_t *value, uint8_t len)
+__maybe_unused static int p3t1755_i2c_read_reg(const struct device *dev, uint8_t reg,
+					       uint8_t *value, uint8_t len)
 {
 	const struct p3t1755_config *config = dev->config;
 
 	return i2c_burst_read_dt(&config->bus_cfg.i2c, reg, value, len);
 }
 
-int p3t1755_i2c_write_reg(const struct device *dev, uint8_t reg, uint8_t *byte, uint8_t len)
+__maybe_unused static int p3t1755_i2c_write_reg(const struct device *dev, uint8_t reg,
+						uint8_t *byte, uint8_t len)
 {
 	const struct p3t1755_config *config = dev->config;
 
 	return i2c_burst_write_dt(&config->bus_cfg.i2c, reg, byte, len);
+}
+
+__maybe_unused static int p3t1755_i2c_get(const struct device *dev)
+{
+	const struct p3t1755_config *config = dev->config;
+
+	return pm_device_runtime_get(config->bus_cfg.i2c.bus);
+}
+
+__maybe_unused static int p3t1755_i2c_put(const struct device *dev)
+{
+	const struct p3t1755_config *config = dev->config;
+
+	return pm_device_runtime_put(config->bus_cfg.i2c.bus);
 }
 #endif
 
@@ -51,21 +83,49 @@ static int p3t1755_sample_fetch(const struct device *dev, enum sensor_channel ch
 {
 	const struct p3t1755_config *config = dev->config;
 	struct p3t1755_data *data = dev->data;
-	uint8_t raw_temp[2];
+	uint8_t raw_temp[2] = {0};
+	int ret;
+	int put_ret;
 
 	if (chan != SENSOR_CHAN_ALL && chan != SENSOR_CHAN_AMBIENT_TEMP) {
 		LOG_ERR("Invalid channel provided");
 		return -ENOTSUP;
 	}
 
+	ret = config->ops.get(dev);
+	if (ret != 0) {
+		LOG_ERR("Bus device get failed: %d", ret);
+		return ret;
+	}
+
 	if (config->oneshot_mode) {
 		data->config_reg |= P3T1755_CONFIG_REG_OS;
-		config->ops.write(dev, P3T1755_CONFIG_REG, &data->config_reg, 1);
+		ret = config->ops.write(dev, P3T1755_CONFIG_REG, &data->config_reg, 1);
+		if (ret != 0) {
+			LOG_ERR("One-shot configuration failed: %d", ret);
+			goto put_and_return;
+		}
 		/* Maximum one-shot conversion time per specification is 12ms */
 		k_sleep(K_MSEC(12));
 	}
 
-	config->ops.read(dev, P3T1755_TEMPERATURE_REG, raw_temp, 2);
+	ret = config->ops.read(dev, P3T1755_TEMPERATURE_REG, raw_temp, 2);
+	if (ret != 0) {
+		LOG_ERR("Temperature read failed: %d", ret);
+	}
+
+put_and_return:
+	put_ret = config->ops.put(dev);
+	if (put_ret != 0) {
+		LOG_ERR("Bus device put failed: %d", put_ret);
+		if (ret == 0) {
+			ret = put_ret;
+		}
+	}
+
+	if (ret != 0) {
+		return ret;
+	}
 
 	/* Byte 1 contains the MSByte and Byte 2 contains the LSByte, we need to swap the 2 bytes.
 	 * The 4 least significant bits of the LSByte are zero and should be ignored.
@@ -110,44 +170,93 @@ static int p3t1755_channel_get(const struct device *dev, enum sensor_channel cha
 	return 0;
 }
 
-static int p3t1755_init(const struct device *dev)
+static int p3t1755_pm_resume(const struct device *dev)
 {
 	const struct p3t1755_config *config = dev->config;
 	struct p3t1755_data *data = dev->data;
+	int put_ret;
+	int ret;
+
+	ret = config->ops.get(dev);
+	if (ret != 0) {
+		LOG_ERR("Bus device get failed: %d", ret);
+		return ret;
+	}
 
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i3c)
 	if (config->i3c.bus != NULL) {
 		data->i3c_dev = i3c_device_find(config->i3c.bus, &config->i3c.dev_id);
 		if (data->i3c_dev == NULL) {
 			LOG_ERR("Cannot find I3C device descriptor");
-			return -ENODEV;
+			goto put_and_ret;
 		}
 	}
 #endif
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
 	if (config->inst_on_bus == P3T1755_BUS_I2C) {
 		if (!i2c_is_ready_dt(&config->bus_cfg.i2c)) {
-			LOG_ERR("I2C bus device not ready");
-			return -ENODEV;
+			LOG_ERR_DEVICE_NOT_READY(config->bus_cfg.i2c.bus);
+			goto put_and_ret;
 		}
 	}
 #endif
 
 	if (config->oneshot_mode) {
-		config->ops.read(dev, P3T1755_CONFIG_REG, &data->config_reg, 1);
+		ret = config->ops.read(dev, P3T1755_CONFIG_REG, &data->config_reg, 1);
+		if (ret != 0) {
+			LOG_ERR("Configuration read failed: %d", ret);
+			goto put_and_ret;
+		}
+
 		/* Operate in shutdown mode. Set the OS bit to start the
 		 * one-shot temperature measurement.
 		 */
 		data->config_reg |= P3T1755_CONFIG_REG_SD;
-		config->ops.write(dev, P3T1755_CONFIG_REG, &data->config_reg, 1);
+		ret = config->ops.write(dev, P3T1755_CONFIG_REG, &data->config_reg, 1);
+		if (ret != 0) {
+			LOG_ERR("Configuration write failed: %d", ret);
+			goto put_and_ret;
+		}
 	}
 
-	LOG_DBG("Init complete");
+	ret = 0;
 
-	return 0;
+put_and_ret:
+	put_ret = config->ops.put(dev);
+	if (put_ret != 0) {
+		LOG_ERR("Bus device put failed: %d", put_ret);
+		if (ret == 0) {
+			ret = put_ret;
+		}
+	}
+
+	return ret;
 }
 
-static const struct sensor_driver_api p3t1755_driver_api = {
+static int p3t1755_pm_hook(const struct device *dev, enum pm_device_action action)
+{
+	int ret;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		ret = 0;
+		break;
+	case PM_DEVICE_ACTION_RESUME:
+		ret = p3t1755_pm_resume(dev);
+		break;
+	default:
+		ret = -ENOTSUP;
+	}
+
+	return ret;
+}
+
+static int p3t1755_init(const struct device *dev)
+{
+	return pm_device_driver_init(dev, p3t1755_pm_hook);
+}
+
+static DEVICE_API(sensor, p3t1755_driver_api) = {
 	.sample_fetch = p3t1755_sample_fetch,
 	.channel_get = p3t1755_channel_get,
 };
@@ -160,6 +269,8 @@ static const struct sensor_driver_api p3t1755_driver_api = {
 	.ops = {                                                                                   \
 		.read = p3t1755_i2c_read_reg,                                                      \
 		.write = p3t1755_i2c_write_reg,                                                    \
+		.get = p3t1755_i2c_get,                                                            \
+		.put = p3t1755_i2c_put,                                                            \
 	},                                                                                         \
 	.inst_on_bus = P3T1755_BUS_I2C,
 
@@ -171,6 +282,8 @@ static const struct sensor_driver_api p3t1755_driver_api = {
 	.ops = {                                                                                   \
 		.read = p3t1755_i3c_read_reg,                                                      \
 		.write = p3t1755_i3c_write_reg,                                                    \
+		.get = p3t1755_i3c_get,                                                            \
+		.put = p3t1755_i3c_put,                                                            \
 	},                                                                                         \
 	.inst_on_bus = P3T1755_BUS_I3C,                                                            \
 	.i3c.bus = DEVICE_DT_GET(DT_INST_BUS(inst)), .i3c.dev_id = I3C_DEVICE_ID_DT_INST(inst),
@@ -184,7 +297,8 @@ static const struct sensor_driver_api p3t1755_driver_api = {
 		.oneshot_mode = DT_INST_PROP(n, oneshot_mode),                                     \
 	};                                                                                         \
                                                                                                    \
-	SENSOR_DEVICE_DT_INST_DEFINE(n, p3t1755_init, NULL, &p3t1755_data_##n,                     \
+	PM_DEVICE_DT_INST_DEFINE(n, p3t1755_pm_hook);                                              \
+	SENSOR_DEVICE_DT_INST_DEFINE(n, p3t1755_init, PM_DEVICE_DT_INST_GET(n), &p3t1755_data_##n, \
 				     &p3t1755_config_##n, POST_KERNEL,                             \
 				     CONFIG_SENSOR_INIT_PRIORITY, &p3t1755_driver_api);
 

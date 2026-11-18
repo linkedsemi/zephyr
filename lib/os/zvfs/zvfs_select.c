@@ -10,6 +10,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/internal/syscall_handler.h>
 #include <zephyr/sys/math_extras.h>
+#include <zephyr/sys/timeutil.h>
 #include <zephyr/net/socket.h>
 
 /* Get size, in elements, of an array within a struct. */
@@ -19,7 +20,7 @@
 #define FD_SET_CALC_OFFSETS(set, word_idx, bit_mask) { \
 	unsigned int b_idx = fd % (sizeof(set->bitset[0]) * 8); \
 	word_idx = fd / (sizeof(set->bitset[0]) * 8); \
-	bit_mask = 1 << b_idx; \
+	bit_mask = 1UL << b_idx; \
 	}
 
 int zvfs_poll_internal(struct zvfs_pollfd *fds, int nfds, k_timeout_t timeout);
@@ -140,8 +141,7 @@ int z_impl_zvfs_select(int nfds, struct zvfs_fd_set *ZRESTRICT readfds,
 	if (timeout == NULL) {
 		poll_timeout = K_FOREVER;
 	} else {
-		poll_timeout =
-			K_USEC(timeout->tv_sec * USEC_PER_SEC + timeout->tv_nsec / NSEC_PER_USEC);
+		poll_timeout = timespec_to_timeout(timeout, NULL);
 	}
 
 	res = zvfs_poll_internal(pfds, num_pfds, poll_timeout);

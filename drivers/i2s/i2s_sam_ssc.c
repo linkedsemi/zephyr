@@ -23,6 +23,7 @@
 #include <string.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/ringq.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/drivers/dma.h>
@@ -57,14 +58,6 @@ struct queue_item {
 	size_t size;
 };
 
-/* Minimal ring buffer implementation */
-struct ring_buf {
-	struct queue_item *buf;
-	uint16_t len;
-	uint16_t head;
-	uint16_t tail;
-};
-
 /* Device constant configuration parameters */
 struct i2s_sam_dev_cfg {
 	const struct device *dev_dma;
@@ -83,7 +76,7 @@ struct stream {
 	uint8_t word_size_bytes;
 	bool last_block;
 	struct i2s_config cfg;
-	struct ring_buf mem_block_queue;
+	struct sys_ringq mem_block_queue;
 	void *mem_block;
 	int (*stream_start)(struct stream *, Ssc *const,
 			    const struct device *);
@@ -98,68 +91,58 @@ struct stream {
 struct i2s_sam_dev_data {
 	struct stream rx;
 	struct stream tx;
+	uint8_t rx_buffer[sizeof(struct queue_item) * CONFIG_I2S_SAM_SSC_RX_BLOCK_COUNT];
+	uint8_t tx_buffer[sizeof(struct queue_item) * CONFIG_I2S_SAM_SSC_TX_BLOCK_COUNT];
 };
 
 #define MODULO_INC(val, max) { val = (++val < max) ? val : 0; }
 
 static const struct device *get_dev_from_dma_channel(uint32_t dma_channel);
-static void dma_rx_callback(const struct device *, void *, uint32_t, int);
-static void dma_tx_callback(const struct device *, void *, uint32_t, int);
-static void rx_stream_disable(struct stream *, Ssc *const,
-			      const struct device *);
-static void tx_stream_disable(struct stream *, Ssc *const,
-			      const struct device *);
+static void dma_rx_callback(const struct device *dma_dev, void *user_data,
+			    uint32_t channel, int status);
+static void dma_tx_callback(const struct device *dma_dev, void *user_data,
+			    uint32_t channel, int status);
+static void rx_stream_disable(struct stream *stream, Ssc *ssc,
+			      const struct device *dev_dma);
+static void tx_stream_disable(struct stream *stream, Ssc *ssc,
+			      const struct device *dev_dma);
 
 /*
  * Get data from the queue
  */
-static int queue_get(struct ring_buf *rb, void **mem_block, size_t *size)
+static int queue_get(struct sys_ringq *f, void **mem_block, size_t *size)
 {
+	int rc;
 	unsigned int key;
+	struct queue_item item;
 
 	key = irq_lock();
-
-	if (rb->tail == rb->head) {
-		/* Ring buffer is empty */
-		irq_unlock(key);
-		return -ENOMEM;
+	rc = sys_ringq_get(f, &item);
+	if (rc == 0) {
+		*mem_block = item.mem_block;
+		*size = item.size;
 	}
-
-	*mem_block = rb->buf[rb->tail].mem_block;
-	*size = rb->buf[rb->tail].size;
-	MODULO_INC(rb->tail, rb->len);
-
 	irq_unlock(key);
-
-	return 0;
+	return rc;
 }
 
 /*
  * Put data in the queue
  */
-static int queue_put(struct ring_buf *rb, void *mem_block, size_t size)
+static int queue_put(struct sys_ringq *f, void *mem_block, size_t size)
 {
-	uint16_t head_next;
+	int rc;
 	unsigned int key;
+	struct queue_item item = {
+		.mem_block = mem_block,
+		.size = size,
+	};
 
 	key = irq_lock();
-
-	head_next = rb->head;
-	MODULO_INC(head_next, rb->len);
-
-	if (head_next == rb->tail) {
-		/* Ring buffer is full */
-		irq_unlock(key);
-		return -ENOMEM;
-	}
-
-	rb->buf[rb->head].mem_block = mem_block;
-	rb->buf[rb->head].size = size;
-	rb->head = head_next;
+	rc = sys_ringq_put(f, &item);
 
 	irq_unlock(key);
-
-	return 0;
+	return rc;
 }
 
 static int reload_dma(const struct device *dev_dma, uint32_t channel,
@@ -333,7 +316,7 @@ static int set_rx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 	uint8_t fslen = 0U;
 	uint32_t ssc_rcmr = 0U;
 	uint32_t ssc_rfmr = 0U;
-	bool frame_clk_master = !(i2s_cfg->options & I2S_OPT_FRAME_CLK_SLAVE);
+	bool frame_clk_controller = !(i2s_cfg->options & I2S_OPT_FRAME_CLK_TARGET);
 
 	switch (i2s_cfg->format & I2S_FMT_DATA_FORMAT_MASK) {
 
@@ -345,7 +328,7 @@ static int set_rx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 			   | (pin_rf_en ? SSC_RCMR_START_RF_FALLING : 0)
 			   | SSC_RCMR_STTDLY(1);
 
-		ssc_rfmr = (pin_rf_en && frame_clk_master
+		ssc_rfmr = (pin_rf_en && frame_clk_controller
 			    ? SSC_RFMR_FSOS_NEGATIVE : SSC_RFMR_FSOS_NONE);
 		break;
 
@@ -353,7 +336,7 @@ static int set_rx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 		ssc_rcmr = (pin_rf_en ? SSC_RCMR_START_RF_FALLING : 0)
 			   | SSC_RCMR_STTDLY(0);
 
-		ssc_rfmr = (pin_rf_en && frame_clk_master
+		ssc_rfmr = (pin_rf_en && frame_clk_controller
 			    ? SSC_RFMR_FSOS_POSITIVE : SSC_RFMR_FSOS_NONE);
 		break;
 
@@ -363,7 +346,7 @@ static int set_rx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 		ssc_rcmr = (pin_rf_en ? SSC_RCMR_START_RF_RISING : 0)
 			   | SSC_RCMR_STTDLY(0);
 
-		ssc_rfmr = (pin_rf_en && frame_clk_master
+		ssc_rfmr = (pin_rf_en && frame_clk_controller
 			    ? SSC_RFMR_FSOS_POSITIVE : SSC_RFMR_FSOS_NONE);
 		break;
 
@@ -374,7 +357,7 @@ static int set_rx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 			   | (pin_rf_en ? SSC_RCMR_START_RF_RISING : 0)
 			   | SSC_RCMR_STTDLY(0);
 
-		ssc_rfmr = (pin_rf_en && frame_clk_master
+		ssc_rfmr = (pin_rf_en && frame_clk_controller
 			    ? SSC_RFMR_FSOS_POSITIVE : SSC_RFMR_FSOS_NONE);
 		break;
 
@@ -384,7 +367,7 @@ static int set_rx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 	}
 
 	if (pin_rk_en) {
-		ssc_rcmr |= ((i2s_cfg->options & I2S_OPT_BIT_CLK_SLAVE)
+		ssc_rcmr |= ((i2s_cfg->options & I2S_OPT_BIT_CLK_TARGET)
 			     ? SSC_RCMR_CKS_RK : SSC_RCMR_CKS_MCK)
 			    | ((i2s_cfg->options & I2S_OPT_BIT_CLK_GATED)
 			       ? SSC_RCMR_CKO_TRANSFER : SSC_RCMR_CKO_CONTINUOUS);
@@ -473,7 +456,7 @@ static int set_tx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 	 * frame period with one bit resolution. In case the required
 	 * frame period is an odd number set it to be one bit longer.
 	 */
-	ssc_tcmr |= ((i2s_cfg->options & I2S_OPT_BIT_CLK_SLAVE)
+	ssc_tcmr |= ((i2s_cfg->options & I2S_OPT_BIT_CLK_TARGET)
 		     ? SSC_TCMR_CKS_TK : SSC_TCMR_CKS_MCK)
 		    | ((i2s_cfg->options & I2S_OPT_BIT_CLK_GATED)
 		       ? SSC_TCMR_CKO_TRANSFER : SSC_TCMR_CKO_CONTINUOUS)
@@ -482,7 +465,7 @@ static int set_tx_data_format(const struct i2s_sam_dev_cfg *const dev_cfg,
 	/* Transmit Clock Mode Register */
 	ssc->SSC_TCMR = ssc_tcmr;
 
-	if (i2s_cfg->options & I2S_OPT_FRAME_CLK_SLAVE) {
+	if (i2s_cfg->options & I2S_OPT_FRAME_CLK_TARGET) {
 		ssc_tfmr &= ~SSC_TFMR_FSOS_Msk;
 		ssc_tfmr |= SSC_TFMR_FSOS_NONE;
 	}
@@ -990,7 +973,7 @@ static int i2s_sam_initialize(const struct device *dev)
 	return 0;
 }
 
-static const struct i2s_driver_api i2s_sam_driver_api = {
+static DEVICE_API(i2s, i2s_sam_driver_api) = {
 	.configure = i2s_sam_configure,
 	.config_get = i2s_sam_config_get,
 	.read = i2s_sam_read,
@@ -1022,15 +1005,12 @@ static const struct i2s_sam_dev_cfg i2s0_sam_config = {
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 };
 
-struct queue_item rx_0_ring_buf[CONFIG_I2S_SAM_SSC_RX_BLOCK_COUNT + 1];
-struct queue_item tx_0_ring_buf[CONFIG_I2S_SAM_SSC_TX_BLOCK_COUNT + 1];
-
 static struct i2s_sam_dev_data i2s0_sam_data = {
 	.rx = {
 		.dma_channel = DT_INST_DMAS_CELL_BY_NAME(0, rx, channel),
 		.dma_perid = DT_INST_DMAS_CELL_BY_NAME(0, rx, perid),
-		.mem_block_queue.buf = rx_0_ring_buf,
-		.mem_block_queue.len = ARRAY_SIZE(rx_0_ring_buf),
+		.mem_block_queue = SYS_RINGQ_INIT(i2s0_sam_data.rx_buffer,
+			sizeof(struct queue_item), CONFIG_I2S_SAM_SSC_RX_BLOCK_COUNT),
 		.stream_start = rx_stream_start,
 		.stream_disable = rx_stream_disable,
 		.queue_drop = rx_queue_drop,
@@ -1039,8 +1019,8 @@ static struct i2s_sam_dev_data i2s0_sam_data = {
 	.tx = {
 		.dma_channel = DT_INST_DMAS_CELL_BY_NAME(0, tx, channel),
 		.dma_perid = DT_INST_DMAS_CELL_BY_NAME(0, tx, perid),
-		.mem_block_queue.buf = tx_0_ring_buf,
-		.mem_block_queue.len = ARRAY_SIZE(tx_0_ring_buf),
+		.mem_block_queue = SYS_RINGQ_INIT(i2s0_sam_data.tx_buffer,
+			sizeof(struct queue_item), CONFIG_I2S_SAM_SSC_TX_BLOCK_COUNT),
 		.stream_start = tx_stream_start,
 		.stream_disable = tx_stream_disable,
 		.queue_drop = tx_queue_drop,

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 NXP
+ * Copyright 2024-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,6 +16,19 @@ struct scmi_clock_data {
 	uint32_t clk_num;
 };
 
+static bool scmi_clk_supports_get_permissions(struct scmi_protocol *proto, uint32_t clk_id)
+{
+	struct scmi_clock_attributes attributes;
+	int ret;
+
+	ret = scmi_clock_attributes(proto, clk_id, &attributes);
+	if (ret) {
+		return false;
+	}
+
+	return SCMI_CLK_HAS_RESTRICTIONS(attributes.attributes);
+}
+
 static int scmi_clock_on_off(const struct device *dev,
 			     clock_control_subsys_t clk, bool on)
 {
@@ -23,6 +36,8 @@ static int scmi_clock_on_off(const struct device *dev,
 	struct scmi_protocol *proto;
 	uint32_t clk_id;
 	struct scmi_clock_config cfg;
+	uint32_t permissions;
+	int ret;
 
 	proto = dev->data;
 	data = proto->data;
@@ -30,6 +45,18 @@ static int scmi_clock_on_off(const struct device *dev,
 
 	if (clk_id >= data->clk_num) {
 		return -EINVAL;
+	}
+
+	if (scmi_clk_supports_get_permissions(proto, clk_id)) {
+		ret = scmi_clock_get_permissions(proto, clk_id, &permissions);
+		if (ret) {
+			LOG_ERR("failed to query clock permissions: %d", ret);
+			return ret;
+		}
+
+		if (!SCMI_CLK_STATE_CONTROL_ALLOWED(permissions)) {
+			return 0;
+		}
 	}
 
 	memset(&cfg, 0, sizeof(cfg));
@@ -68,10 +95,58 @@ static int scmi_clock_get_rate(const struct device *dev,
 	return scmi_clock_rate_get(proto, clk_id, rate);
 }
 
-static struct clock_control_driver_api scmi_clock_api = {
+static int scmi_clock_set_rate(const struct device *dev,
+			       clock_control_subsys_t clk,
+			       clock_control_subsys_rate_t rate)
+{
+	struct scmi_clock_data *data;
+	struct scmi_protocol *proto;
+	struct scmi_clock_rate_config cfg = {0};
+
+	proto = dev->data;
+	data = proto->data;
+	cfg.flags = SCMI_CLK_RATE_SET_FLAGS_ROUNDS_AUTO;
+	cfg.clk_id = POINTER_TO_UINT(clk);
+	cfg.rate[0] = (uintptr_t)rate;
+
+	if (cfg.clk_id >= data->clk_num) {
+		return -EINVAL;
+	}
+
+	return scmi_clock_rate_set(proto, &cfg);
+}
+
+static enum clock_control_status scmi_clock_get_status(const struct device *dev,
+						       clock_control_subsys_t clk)
+{
+	struct scmi_clock_data *data;
+	struct scmi_protocol *proto;
+	uint32_t clk_id, config;
+	int ret;
+
+	proto = dev->data;
+	data = proto->data;
+	clk_id = POINTER_TO_UINT(clk);
+
+	if (clk_id >= data->clk_num) {
+		return CLOCK_CONTROL_STATUS_UNKNOWN;
+	}
+
+	ret = scmi_clock_config_get(proto, clk_id, 0, &config);
+	if (ret < 0) {
+		return CLOCK_CONTROL_STATUS_UNKNOWN;
+	}
+
+	return SCMI_CLK_CONFIG_ENABLE_DISABLE(config) == 1U ? CLOCK_CONTROL_STATUS_ON
+							    : CLOCK_CONTROL_STATUS_OFF;
+}
+
+static DEVICE_API(clock_control, scmi_clock_api) = {
 	.on = scmi_clock_on,
 	.off = scmi_clock_off,
 	.get_rate = scmi_clock_get_rate,
+	.set_rate = scmi_clock_set_rate,
+	.get_status = scmi_clock_get_status,
 };
 
 static int scmi_clock_init(const struct device *dev)
@@ -84,7 +159,7 @@ static int scmi_clock_init(const struct device *dev)
 	proto = dev->data;
 	data = proto->data;
 
-	ret = scmi_clock_protocol_attributes(proto, &attributes);
+	ret = scmi_protocol_attributes_get(proto, &attributes);
 	if (ret < 0) {
 		LOG_ERR("failed to fetch clock attributes: %d", ret);
 		return ret;
@@ -99,4 +174,4 @@ static struct scmi_clock_data data;
 
 DT_INST_SCMI_PROTOCOL_DEFINE(0, &scmi_clock_init, NULL, &data, NULL,
 			     PRE_KERNEL_1, CONFIG_CLOCK_CONTROL_INIT_PRIORITY,
-			     &scmi_clock_api);
+			     &scmi_clock_api, SCMI_CLK_PROTOCOL_SUPPORTED_VERSION, NULL);

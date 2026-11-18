@@ -28,13 +28,15 @@ static void ptp_thread(void *p1, void *p2, void *p3)
 		offsetof(struct ptp_port, timers.announce),
 		offsetof(struct ptp_port, timers.delay),
 		offsetof(struct ptp_port, timers.sync),
-		offsetof(struct ptp_port, timers.qualification)
+		offsetof(struct ptp_port, timers.qualification),
+		offsetof(struct ptp_port, timers.pdelay)
 	};
 	static const int timeout_bit[] = {
 		PTP_PORT_TIMER_ANNOUNCE_TO,
 		PTP_PORT_TIMER_DELAY_TO,
 		PTP_PORT_TIMER_SYNC_TO,
 		PTP_PORT_TIMER_QUALIFICATION_TO,
+		PTP_PORT_TIMER_PDELAY_TO,
 	};
 
 	struct k_timer *timer;
@@ -114,3 +116,16 @@ static int ptp_init(void)
 }
 
 SYS_INIT(ptp_init, APPLICATION, CONFIG_PTP_INIT_PRIO);
+
+static enum net_verdict ptp_recv(struct net_if *iface, uint16_t ptype,
+				 struct net_pkt *pkt)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(ptype);
+
+	net_pkt_set_family(pkt, NET_AF_UNSPEC);
+
+	return NET_CONTINUE;
+}
+
+ETH_NET_L3_REGISTER(PTP, NET_ETH_PTYPE_PTP, ptp_recv);

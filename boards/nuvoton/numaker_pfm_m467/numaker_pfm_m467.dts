@@ -6,6 +6,7 @@
 
 /dts-v1/;
 
+#include <freq.h>
 #include <nuvoton/m46x.dtsi>
 #include "numaker_pfm_m467-pinctrl.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
@@ -14,6 +15,10 @@
 	model = "Nuvoton PFM M467 board";
 	compatible = "nuvoton,pfm-m467", "nuvoton,m467";
 
+	cpus {
+		timebase-frequency = <DT_FREQ_M(200)>;
+	};
+
 	aliases {
 		led0 = &green_led;
 		led1 = &blue_led;
@@ -21,7 +26,6 @@
 		sw0 = &user_button_1;
 		sw1 = &user_button_2;
 	};
-
 
 	chosen {
 		zephyr,console = &uart0;
@@ -32,17 +36,19 @@
 		zephyr,canbus = &canfd0;
 	};
 
-
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			gpios = <&gpioh 4 GPIO_ACTIVE_LOW>;
 			label = "User LD1";
 		};
+
 		green_led: led_1 {
 			gpios = <&gpioh 6 GPIO_ACTIVE_LOW>;
 			label = "User LD2";
 		};
+
 		blue_led: led_2 {
 			gpios = <&gpioh 5 GPIO_ACTIVE_LOW>;
 			label = "User LD3";
@@ -51,11 +57,13 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button_1: button_1 {
 			label = "User SW2";
 			gpios = <&gpioh 1 GPIO_ACTIVE_LOW>;
 			zephyr,code = <INPUT_KEY_0>;
 		};
+
 		user_button_2: button_2 {
 			label = "User SW3";
 			gpios = <&gpioh 0 GPIO_ACTIVE_LOW>;
@@ -78,19 +86,24 @@
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
+		ranges;
 		#address-cells = <1>;
 		#size-cells = <1>;
 
 		slot0_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x00000000 0x00080000>;
 		};
+
 		slot1_partition: partition@80000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
 			reg = <0x00080000 0x0007e000>;
 		};
+
 		storage_partition: partition@fe000 {
+			compatible = "zephyr,mapped-partition";
 			label = "storage";
 			reg = <0x000fe000 0x00002000>;
 		};
@@ -116,6 +129,24 @@
 
 &emac {
 	pinctrl-0 = <&emac_default>;
+	pinctrl-names = "default";
+	phy-handle = <&phy>;
+	status = "okay";
+};
+
+&mdio {
+	pinctrl-0 = <&emac_mdio_default>;
+	pinctrl-names = "default";
+	status = "okay";
+
+	phy: ethernet-phy@1 {
+		compatible = "ethernet-phy";
+		reg = <1>;
+	};
+};
+
+&ptp_clock {
+	pinctrl-0 = <&emac_ptp_default>;
 	pinctrl-names = "default";
 	status = "okay";
 };

@@ -12,6 +12,14 @@
 
 K_MEM_SLAB_DEFINE(kmslab, BLK_SZ, NUM_BLOCKS, 4);
 
+/**
+ * @brief Verify memory slab statistics routines reject invalid parameters
+ *
+ * @details Call the memory slab runtime statistics query and reset routines
+ * with invalid parameters and verify they return -EINVAL.
+ *
+ * @ingroup kernel_memory_slab_tests
+ */
 ZTEST(lib_mem_slab_stats_test, test_mem_slab_stats_invalid_params)
 {
 	struct sys_memory_stats  stats;
@@ -40,6 +48,15 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_stats_invalid_params)
 		      status, -EINVAL);
 }
 
+/**
+ * @brief Verify memory slab runtime usage statistics
+ *
+ * @details Query the runtime statistics of a memory slab and verify that the
+ * reported free, allocated and maximum-allocated byte counts track block
+ * allocations and frees, and that resetting the maximum works.
+ *
+ * @ingroup kernel_memory_slab_tests
+ */
 ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 {
 	struct sys_memory_stats  stats;
@@ -52,7 +69,7 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 	zassert_equal(status, 0, "Routine failed with status %d\n", status);
 
 	zassert_equal(stats.free_bytes, BLK_SZ * NUM_BLOCKS,
-		      "Expected %zu free bytes, not %zu\n",
+		      "Expected %d free bytes, not %zu\n",
 		      BLK_SZ * NUM_BLOCKS, stats.free_bytes);
 	zassert_equal(stats.allocated_bytes, 0,
 		      "Expected 0 allocated bytes, not %zu\n",
@@ -76,13 +93,13 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 	zassert_equal(status, 0, "Routine failed with status %d\n", status);
 
 	zassert_equal(stats.free_bytes, BLK_SZ * (NUM_BLOCKS - 3),
-		      "Expected %zu free bytes, not %zu\n",
+		      "Expected %d free bytes, not %zu\n",
 		      BLK_SZ * (NUM_BLOCKS - 3), stats.free_bytes);
 	zassert_equal(stats.allocated_bytes, 3 * BLK_SZ,
-		      "Expected %zu allocated bytes, not %zu\n",
+		      "Expected %d allocated bytes, not %zu\n",
 		      3 * BLK_SZ, stats.allocated_bytes);
 	zassert_equal(stats.max_allocated_bytes, 3 * BLK_SZ,
-		      "Expected %zu max allocated bytes, not %zu\n",
+		      "Expected %d max allocated bytes, not %zu\n",
 		      3 * BLK_SZ, stats.max_allocated_bytes);
 
 	/* Free blocks 1 and 2, and then verify the stats. */
@@ -94,13 +111,13 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 	zassert_equal(status, 0, "Routine failed with status %d\n", status);
 
 	zassert_equal(stats.free_bytes, BLK_SZ * (NUM_BLOCKS - 1),
-		      "Expected %zu free bytes, not %zu\n",
+		      "Expected %d free bytes, not %zu\n",
 		      BLK_SZ * (NUM_BLOCKS - 1), stats.free_bytes);
 	zassert_equal(stats.allocated_bytes, 1 * BLK_SZ,
-		      "Expected %zu allocated bytes, not %zu\n",
+		      "Expected %d allocated bytes, not %zu\n",
 		      1 * BLK_SZ, stats.allocated_bytes);
 	zassert_equal(stats.max_allocated_bytes, 3 * BLK_SZ,
-		      "Expected %zu max allocated bytes, not %zu\n",
+		      "Expected %d max allocated bytes, not %zu\n",
 		      3 * BLK_SZ, stats.max_allocated_bytes);
 
 	/* Allocate 1 block and verify the max is still at 3 */
@@ -112,13 +129,13 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 	zassert_equal(status, 0, "Routine failed with status %d\n", status);
 
 	zassert_equal(stats.free_bytes, BLK_SZ * (NUM_BLOCKS - 2),
-		      "Expected %zu free bytes, not %zu\n",
+		      "Expected %d free bytes, not %zu\n",
 		      BLK_SZ * (NUM_BLOCKS - 2), stats.free_bytes);
 	zassert_equal(stats.allocated_bytes, 2 * BLK_SZ,
-		      "Expected %zu allocated bytes, not %zu\n",
+		      "Expected %d allocated bytes, not %zu\n",
 		      2 * BLK_SZ, stats.allocated_bytes);
 	zassert_equal(stats.max_allocated_bytes, 3 * BLK_SZ,
-		      "Expected %zu max allocated bytes, not %zu\n",
+		      "Expected %d max allocated bytes, not %zu\n",
 		      3 * BLK_SZ, stats.max_allocated_bytes);
 
 
@@ -131,13 +148,13 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 	zassert_equal(status, 0, "Routine failed with status %d\n", status);
 
 	zassert_equal(stats.free_bytes, BLK_SZ * (NUM_BLOCKS - 2),
-		      "Expected %zu free bytes, not %zu\n",
+		      "Expected %d free bytes, not %zu\n",
 		      BLK_SZ * (NUM_BLOCKS - 2), stats.free_bytes);
 	zassert_equal(stats.allocated_bytes, 2 * BLK_SZ,
-		      "Expected %zu allocated bytes, not %zu\n",
+		      "Expected %d allocated bytes, not %zu\n",
 		      2 * BLK_SZ, stats.allocated_bytes);
 	zassert_equal(stats.max_allocated_bytes, 2 * BLK_SZ,
-		      "Expected %zu max allocated bytes, not %zu\n",
+		      "Expected %d max allocated bytes, not %zu\n",
 		      2 * BLK_SZ, stats.max_allocated_bytes);
 
 	/* Free the last two blocks; verify stats results */
@@ -149,13 +166,13 @@ ZTEST(lib_mem_slab_stats_test, test_mem_slab_runtime_stats)
 	zassert_equal(status, 0, "Routine failed with status %d\n", status);
 
 	zassert_equal(stats.free_bytes, BLK_SZ * NUM_BLOCKS,
-		      "Expected %zu free bytes, not %zu\n",
+		      "Expected %d free bytes, not %zu\n",
 		      BLK_SZ * NUM_BLOCKS, stats.free_bytes);
 	zassert_equal(stats.allocated_bytes, 0,
-		      "Expected %zu allocated bytes, not %zu\n",
+		      "Expected %d allocated bytes, not %zu\n",
 		      0, stats.allocated_bytes);
 	zassert_equal(stats.max_allocated_bytes, 2 * BLK_SZ,
-		      "Expected %zu max allocated bytes, not %zu\n",
+		      "Expected %d max allocated bytes, not %zu\n",
 		      2 * BLK_SZ, stats.max_allocated_bytes);
 }
 

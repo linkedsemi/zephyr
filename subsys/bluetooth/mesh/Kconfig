@@ -6,6 +6,7 @@
 menuconfig BT_MESH
 	bool "Bluetooth Mesh support"
 	depends on BT_OBSERVER && BT_BROADCASTER
+	select POLL
 	help
 	  This option enables Bluetooth Mesh support. The specific
 	  features that are available may depend on other features
@@ -45,6 +46,7 @@ config BT_MESH_PB_GATT_COMMON
 # Virtual option enabled whenever Generic Provisioning layer is needed
 config BT_MESH_PROV
 	bool
+	select BT_LONG_WQ
 
 ###################################################################################################
 # Visible options
@@ -72,7 +74,8 @@ if BT_MESH_ADV_LEGACY
 
 config BT_MESH_ADV_STACK_SIZE
 	int "Mesh advertiser thread stack size"
-	default 1024 if BT_HOST_CRYPTO
+	default 1800 if BT_MESH_PROVISIONER
+	default 1536 if BT_MESH_PROXY
 	default 776 if BT_MESH_PRIV_BEACONS
 	default 768
 	help
@@ -94,7 +97,7 @@ endif # BT_MESH_ADV_LEGACY
 
 menuconfig BT_MESH_ADV_EXT
 	bool "Extended advertising"
-	depends on BT_CTLR_ADV_EXT || !BT_CTLR
+	depends on BT_CTLR_ADV_EXT || !HAS_BT_CTLR
 	depends on BT_EXT_ADV
 	help
 	  Use extended advertising commands for operating the advertiser.
@@ -126,10 +129,12 @@ config BT_MESH_WORKQ_SYS
 	  refer to BT_MESH_ADV_STACK_SIZE for the recommended minimum.
 
 	  When this option is enabled and the mesh tries to send a message,
-	  and the host ran out the HCI command buffers controlled by
-	  CONFIG_BT_BUF_CMD_TX_COUNT, the host returns -ENOBUFS immediately
-	  and the mesh drops the message transmission. To mitigate this
-	  issue, make sure to have sufficient number of HCI command buffers.
+	  and the host ran out of the HCI command buffers controlled by
+	  CONFIG_BT_BUF_CMD_TX_COUNT, the system work queue will be blocked
+	  until an HCI command buffer has been freed. This may cause a deadlock
+	  where the host cannot use the system workqueue to free the buffer
+	  that the mesh is waiting for. To mitigate this issue, make sure to
+	  have a sufficient number of HCI command buffers.
 	  When this option is enabled, the latency of sending mesh messages
 	  will be affected by other users on the system work queue, resulting in
 	  reduced reliability for sending mesh messages.
@@ -140,8 +145,8 @@ if BT_MESH_WORKQ_MESH
 
 config BT_MESH_ADV_STACK_SIZE
 	int "Mesh extended advertiser thread stack size"
+	default 2048 if BT_MESH_PROVISIONER
 	default 1536 if BT_MESH_PROXY
-	default 1024 if BT_HOST_CRYPTO
 	default 776 if BT_MESH_PRIV_BEACONS
 	default 768
 	help
@@ -165,10 +170,12 @@ config BT_MESH_RELAY_ADV_SETS
 	int "Maximum of simultaneous relay message support"
 	default 0
 	range 0 BT_EXT_ADV_MAX_ADV_SET
-	depends on BT_MESH_RELAY
+	depends on BT_MESH_RELAY || BT_MESH_BRG_CFG_SRV
 	help
 	  Maximum of simultaneous relay message support. Requires controller support
 	  multiple advertising sets.
+
+	  Note that: The Subnet Bridge feature uses the relay advertising sets.
 
 config BT_MESH_ADV_EXT_RELAY_USING_MAIN_ADV_SET
 	bool "Use the main advertising set to relay messages"
@@ -356,6 +363,18 @@ config BT_MESH_OOB_AUTH_REQUIRED
 	bool "OOB authentication mandates to use HMAC SHA256"
 	depends on BT_MESH_ECDH_P256_HMAC_SHA256_AES_CCM
 
+config BT_MESH_PROV_OOB_API_LEGACY
+	bool "Reduced maximum OOB authentication size support [DEPRECATED]"
+	select DEPRECATED
+	depends on BT_MESH_PROV
+	help
+	  By default, the maximum OOB authentication size is 32 bytes.
+	  Enable this option to use the legacy API which is only compatible with
+	  specification v1.1 and earlier. This limits OOB authentication to 8
+	  bytes maximum.
+	  This option is intended for backward compatibility.
+	  Not recommended for new designs due to reduced security.
+
 config BT_MESH_PROVISIONER
 	bool "Provisioner support"
 	depends on BT_MESH_CDB
@@ -392,6 +411,16 @@ config BT_MESH_CDB_APP_KEY_COUNT
 	help
 	  This option specifies how many application keys that can at most
 	  be saved in the configuration database.
+
+config BT_MESH_CDB_KEY_SYNC
+	bool "Keys synchronization support"
+	default y
+	help
+	  Enable this option to have support for synchronizing keys between
+	  mesh stack and cdb.
+	  When this option is enabled, key operations (add, remove, update)
+	  performed on the mesh stack through Configuration Server messages
+	  are automatically mirrored to the CDB.
 
 endif # BT_MESH_CDB
 
@@ -471,8 +500,11 @@ config BT_MESH_RELAY_RETRANSMIT_INTERVAL
 	  messages, in milliseconds. Can be changed through runtime
 	  configuration.
 
+endif # BT_MESH_RELAY
+
 config BT_MESH_RELAY_BUF_COUNT
 	int "Number of advertising buffers for relayed messages"
+	depends on BT_MESH_RELAY || BT_MESH_BRG_CFG_SRV
 	default 32
 	range 1 256
 	help
@@ -486,7 +518,9 @@ config BT_MESH_RELAY_BUF_COUNT
 	  BT_MESH_RELAY_ADV_SETS allows the increase in the number of buffers
 	  while maintaining the latency.
 
-endif # BT_MESH_RELAY
+	  Note that: The Subnet Bridge feature uses the relay advertising buffers. If both the Relay
+	  feature and the Subnet Bridge feature is enabled, the added load should be taken into
+	  account.
 
 endmenu # Network layer
 
@@ -763,11 +797,11 @@ config BT_MESH_ACCESS_LAYER_MSG
 	  might wear out persistent memory.
 
 config BT_MESH_MODEL_VND_MSG_CID_FORCE
-	bool "Force vendor model to use the corresponding CID field message"
-	default y
+	bool "Force vendor model to use opcodes with matching CID [DEPRECATED]"
+	select DEPRECATED
 	help
-	  This option forces vendor model to use messages for the
-	  corresponding CID field.
+	  This option forces vendor models to only use opcodes with a CID field
+	  matching the models CID. It is deprecated and should no longer be used.
 
 config BT_MESH_MODEL_EXTENSIONS
 	bool "Support for Model extensions"
@@ -1029,9 +1063,41 @@ config BT_MESH_BLOB_IO_FLASH
 	default y
 	depends on BT_MESH_BLOB_SRV || BT_MESH_BLOB_CLI
 	depends on FLASH_MAP
+	depends on FLASH_PAGE_LAYOUT
 	help
 	  Enable the BLOB flash stream for reading and writing BLOBs directly to
 	  and from flash.
+
+if BT_MESH_BLOB_IO_FLASH
+
+config BT_MESH_BLOB_IO_FLASH_WRITE_BLOCK_SIZE_MAX
+	int "Maximum supported write block size"
+	default 4
+	help
+	  The BLOB IO Flash module will support flash devices with explicit erase
+	  when this value is set to a multiple of the device write block size.
+
+config BT_MESH_BLOB_IO_FLASH_BLOCK_CACHE
+	bool "Cache each BLOB block in RAM and flush write-block-aligned once"
+	help
+	  Buffer a whole BLOB block in RAM and program each flash write-block
+	  exactly once per erase, when the block's last chunk arrives, instead of
+	  programming on every received chunk.
+
+	  This is required for explicit-erase flash whose write block is an
+	  ECC-protected phrase that may be programmed only once per erase (for
+	  example the internal flash on some NXP MCXW SoCs). Without it, a BLOB
+	  chunk whose size is not a multiple of the flash write block makes two
+	  adjacent chunks each program the write block they share, and the second
+	  program corrupts the ECC syndrome, which faults on the next read.
+
+	  Enabling this costs one block-sized RAM buffer
+	  (CONFIG_BT_MESH_BLOB_BLOCK_SIZE_MAX) per BLOB flash stream. Leave it
+	  disabled on flash that allows a write block to be programmed more than
+	  once between erases (for example plain NOR or RRAM), where the default
+	  per-chunk write path is already correct and uses no extra RAM.
+
+endif # BT_MESH_BLOB_IO_FLASH
 
 config BT_MESH_DFU_SRV
 	bool "Support for Firmware Update Server model"
@@ -1052,10 +1118,15 @@ menu "Firmware Update model configuration"
 
 config BT_MESH_DFU_FWID_MAXLEN
 	int "DFU FWID max length"
-	default 16
+	default 106
 	range 0 106
 	help
-	  This value defines the maximum length of an image's firmware ID.
+	  This value defines the maximum length of the vendor-specific version information
+	  that the mesh stack can manage, describing the image. Please note that
+	  only 106 octets size allows the device to be compliant with
+	  the Bluetooth Mesh DFU specification. If smaller than 106 octets are set,
+	  then the device will fail with managing firmware images that have
+	  a longer vendor-specific version information.
 
 config BT_MESH_DFU_METADATA_MAXLEN
 	int "DFU metadata max length"
@@ -1445,33 +1516,14 @@ config BT_MESH_SOL_ADV_XMIT
 
 endmenu # Proxy
 
-choice BT_MESH_CRYPTO_LIB
-	prompt "Crypto library:"
-	default BT_MESH_USES_TFM_PSA if BUILD_WITH_TFM
-	default BT_MESH_USES_TINYCRYPT
-	help
-	  Crypto library selection for mesh security.
+config BT_MESH_SECURE_STORAGE
+	bool
+	depends on SECURE_STORAGE
 
-config BT_MESH_USES_TINYCRYPT
-	bool "TinyCrypt"
-	select TINYCRYPT
-	select TINYCRYPT_AES
-	select TINYCRYPT_AES_CMAC
-	select TINYCRYPT_ECC_DH
-	select TINYCRYPT_SHA256
-	select TINYCRYPT_SHA256_HMAC
-	select BT_HOST_CCM
-	help
-	  Use TinyCrypt library to perform crypto operations.
-
-config BT_MESH_USES_MBEDTLS_PSA
-	bool "mbed TLS PSA [EXPERIMENTAL]"
-	select EXPERIMENTAL
-	select MBEDTLS
-	select MBEDTLS_ENTROPY_C
-	select MBEDTLS_ENTROPY_POLL_ZEPHYR
-	select MBEDTLS_PSA_CRYPTO_C
-	select MBEDTLS_USE_PSA_CRYPTO
+config BT_MESH_CRYPTO_LIB
+	bool
+	default y
+	select PSA_CRYPTO
 	select PSA_WANT_KEY_TYPE_ECC_KEY_PAIR_IMPORT
 	select PSA_WANT_KEY_TYPE_ECC_KEY_PAIR_EXPORT
 	select PSA_WANT_KEY_TYPE_ECC_KEY_PAIR_GENERATE
@@ -1479,50 +1531,16 @@ config BT_MESH_USES_MBEDTLS_PSA
 	select PSA_WANT_ALG_CMAC
 	select PSA_WANT_ALG_ECB_NO_PADDING
 	select PSA_WANT_KEY_TYPE_AES
-	select MBEDTLS_CIPHER_AES_ENABLED
-	select MBEDTLS_AES_ROM_TABLES
 	select PSA_WANT_ALG_CCM
 	select PSA_WANT_KEY_TYPE_HMAC
 	select PSA_WANT_ALG_HMAC
 	select PSA_WANT_ALG_SHA_256
 	select PSA_WANT_ALG_ECDH
-	select PSA_WANT_ALG_ECDSA
-	select MBEDTLS_KEY_EXCHANGE_ECDH_ECDSA_ENABLED
 	select PSA_WANT_ECC_SECP_R1_256
-	select MBEDTLS_PK_WRITE_C
+	select BT_MESH_SECURE_STORAGE if BT_SETTINGS && PSA_CRYPTO_PROVIDER_MBEDTLS
+	imply MBEDTLS_AES_ROM_TABLES if PSA_CRYPTO_PROVIDER_MBEDTLS
 	help
-	  Use mbed TLS library to perform crypto operations. Support of
-	  mbed TLS and PSA is experimental and only BabbleSim tests were run.
-	  Mbed TLS still does not support ITS (internal trust storage) based
-	  on Zephyr's settings subsystem.
-	  Not possible to use for embedded devices yet.
-
-config BT_MESH_USES_TFM_PSA
-	bool "Use TF-M PSA [EXPERIMENTAL]"
-	select EXPERIMENTAL
-	depends on BUILD_WITH_TFM
-	help
-	  Use TF-M that implements PSA security framework. Support of TF-M is
-	  experimental. It is only possible to use with platforms that TF-M supports.
-	  For more platform details see TF-M documentation.
-
-endchoice
-
-if BT_MESH_USES_MBEDTLS_PSA || BT_MESH_USES_TFM_PSA
-
-config BT_MESH_PSA_KEY_ID_USER_MIN_OFFSET
-	int "Offset of BLE Mesh key id range regarding PSA_KEY_ID_USER_MIN"
-	default 0
-	help
-	  The PSA specification mandates to set key identifiers for keys
-	  with persistent lifetime. The users of the PSA API is responsible
-	  (BLE Mesh is user of PSA API) to provide correct and unique identifiers.
-	  The BLE Mesh identifier range should be between PSA_KEY_ID_USER_MIN and
-	  PSA_KEY_ID_USER_MAX. BLE Mesh requires two ids for each subnetwork, two ids
-	  for each application key, and two ids for the device key and device key candidate.
-	  It should consider the Mesh Configuration Database instances if database enabled.
-
-endif # BT_MESH_USES_MBEDTLS_PSA || BT_MESH_USES_TFM_PSA
+	  Crypto library support for mesh security.
 
 menu "Beacons"
 
@@ -1600,6 +1618,19 @@ config BT_MESH_LPN_ESTABLISHMENT
 	  is that the node may miss out on messages intended for it
 	  until it has successfully set up Friendship with a Friend
 	  node.
+
+config BT_MESH_LPN_OFFER_WAIT_TIMEOUT
+	int "Time to wait for Friend Offers after a Friend Request"
+	default 1000
+	range 100 10000
+	help
+	  Time in milliseconds that the Low Power node waits for Friend Offer
+	  messages, starting 100 ms after the Friend Request was sent. The
+	  Bluetooth Mesh Protocol specification recommends listening for up to
+	  1 second. When BT_MESH_LPN_ESTABLISHMENT is enabled, this is also the
+	  duration for which the scanner is kept enabled. If no acceptable
+	  Friend Offer is received, the next Friend Request is sent after
+	  BT_MESH_LPN_RETRY_TIMEOUT.
 
 config BT_MESH_LPN_AUTO
 	bool "Automatically start looking for Friend nodes once provisioned"
@@ -1824,8 +1855,16 @@ config BT_MESH_LABEL_COUNT
 
 endmenu # Capabilities
 
+config BT_MESH_PENDING_STORE
+	bool
+	default y if BT_SETTINGS
+	help
+	  Scheduler for deferred storing of pending mesh data. Enabled with the
+	  settings subsystem, and selected by storage backends that schedule
+	  their stores through it without the settings subsystem.
+
 menu "Persistent storage"
-	visible if BT_SETTINGS
+	visible if BT_MESH_PENDING_STORE
 
 config BT_MESH_STORE_TIMEOUT
 	int "Delay (in seconds) before storing anything persistently"
@@ -1839,8 +1878,8 @@ config BT_MESH_STORE_TIMEOUT
 config BT_MESH_SEQ_STORE_RATE
 	int "How often the sequence number gets updated in storage"
 	range 0 1000000
+	default 1 if !BT_SETTINGS
 	default 128
-	default 1 if !BT_SETTINGS # To keep compiling the code
 	help
 	  This value defines how often the local sequence number gets
 	  updated in persistent storage (i.e. flash). E.g. a value of 100
@@ -1853,32 +1892,31 @@ config BT_MESH_SEQ_STORE_RATE
 	  off with a value that's guaranteed to be larger than the last
 	  one used before power off.
 
-if BT_MESH_RPL_STORAGE_MODE_SETTINGS && BT_SETTINGS
-
 config BT_MESH_RPL_STORE_TIMEOUT
-	int "Minimum interval after which unsaved RPL and SRPL entries are updated in the settings subsystem"
+	int "Minimum interval after which unsaved RPL and SRPL entries are stored"
+	depends on BT_MESH_PENDING_STORE
 	range -1 1000000
 	default 5
 	help
 	  This value defines time in seconds until unsaved RPL and SRPL entries
-	  are written to the persistent storage. Setting this value
+	  are written to the persistent storage. The SRPL is always stored
+	  through the settings subsystem, whereas the RPL is only affected if
+	  its storage mode schedules stores with this timeout. Setting this value
 	  to a large number may lead to security vulnerabilities if a node
 	  gets powered off before the timer is fired. When flash is used
 	  as the persistent storage setting this value to a low number
 	  may wear out flash sooner or later. However, if the RPL gets
 	  updated infrequently a value as low as 0 (write immediately)
 	  may make sense. Setting this value to -1 will disable this timer.
-	  In this case, a user is responsible to store pending RPL entries
-	  using @ref bt_mesh_rpl_pending_store. In the mean time, when
-	  IV Index is updated, the outdated RPL entries will still be
-	  stored by @ref BT_MESH_STORE_TIMEOUT. Finding the right balance
+	  With the settings storage mode, a user is then responsible to store
+	  pending RPL entries using @ref bt_mesh_rpl_pending_store. In the
+	  mean time, the replay list invalidated by an IV Index update or
+	  recovery is still stored immediately. Finding the right balance
 	  between this timeout and calling @ref bt_mesh_rpl_pending_store
 	  may reduce a risk of security vulnerability and flash wear out.
 	  Failure to store the RPL and becoming vulnerable after reboot
 	  will cause the device to not perform the replay protection
 	  required by the spec.
-
-endif # BT_MESH_RPL_STORAGE_MODE_SETTINGS && BT_SETTINGS
 
 config BT_MESH_SETTINGS_WORKQ
 	bool "Store the Bluetooth Mesh settings in a separate work queue"
@@ -1904,7 +1942,7 @@ config BT_MESH_SETTINGS_WORKQ_PRIO
 config BT_MESH_SETTINGS_WORKQ_STACK_SIZE
 	int "Stack size of the settings workq"
 	default 1200 if BT_MESH_RPR_SRV
-	default 880
+	default 900
 	help
 	  Size of the settings workqueue stack.
 
@@ -1933,11 +1971,15 @@ config BT_MESH_SELF_TEST
 	  mesh networking is initialized.
 
 config BT_MESH_STATISTIC
-	bool "The frame handling statistics [EXPERIMENTAL]"
+	bool "Mesh communication statistics [EXPERIMENTAL]"
 	select EXPERIMENTAL
 	help
 	  The module gathers statistics of received, relayed, and transmitted
 	  frames. This helps to estimate the quality of the communication and
 	  the sufficiency of configured advertiser instances.
+
+	  When LPN functionality is enabled, the module also measures
+	  LPN friendship timing parameters (ReceiveDelay, ReceiveWindow) by
+	  timestamping protocol events during each poll cycle.
 
 endif # BT_MESH

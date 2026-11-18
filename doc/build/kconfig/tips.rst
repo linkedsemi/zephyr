@@ -248,14 +248,14 @@ FPU could be defined as follows:
    ...
 
    config SOC_FOO
-   	bool "FOO SoC"
-   	select CPU_HAS_FPU
+       bool
+       select CPU_HAS_FPU
 
    ...
 
    config SOC_BAR
-   	bool "BAR SoC"
-   	select CPU_HAS_FPU
+       bool
+       select CPU_HAS_FPU
 
 This makes it possible for other symbols to check for FPU support in a generic
 way, without having to look for particular architectures:
@@ -338,7 +338,9 @@ conditionally includes the file :file:`Kconfig.other`:
 .. code-block:: kconfig
 
    if DEP
+
    source "Kconfig.other"
+
    endif
 
 In reality, there are no conditional includes in Kconfig. ``if`` has no special
@@ -374,6 +376,8 @@ structure of the Kconfig files harder to understand, and also make changes more
 error-prone, since it can be hard to spot that the same dependency is added
 twice.
 
+
+.. _stuck_symbols:
 
 "Stuck" symbols in menuconfig and guiconfig
 *******************************************
@@ -626,6 +630,12 @@ argument, as follows:
         bool
         default y if $(dt_chosen_enabled,$(DT_CHOSEN_ZEPHYR_BAR))
 
+.. note::
+
+   A variable :samp:`DT_COMPAT_{VND_MY_DEVICE} := {vnd,my-device}`
+   is automatically created by Zephyr for every ``compatible`` found
+   in Devicetree bindings; there is no need to define such variables.
+   See :ref:`auto-dts-kconfig` for details.
 
 Checking changes in menuconfig/guiconfig
 ****************************************
@@ -876,31 +886,10 @@ For a Kconfig symbol that enables a driver/subsystem FOO, consider having just
 usually be clear in the context of an option that can be toggled on/off, and
 makes things consistent.
 
+Style
+=====
 
-Header comments and other nits
-==============================
-
-A few formatting nits, to help keep things consistent:
-
-- Use this format for any header comments at the top of ``Kconfig`` files:
-
-  .. code-block:: none
-
-     # <Overview of symbols defined in the file, preferably in plain English>
-     (Blank line)
-     # Copyright (c) 2019 ...
-     # SPDX-License-Identifier: <License>
-     (Blank line)
-     (Kconfig definitions)
-
-- Format comments as ``# Comment`` rather than ``#Comment``
-
-- Put a blank line before/after each top-level ``if`` and ``endif``
-
-- Use a single tab for each indentation
-
-- Indent help text with two extra spaces
-
+See :ref:`coding_style` for style guidelines.
 
 Lesser-known/used Kconfig features
 **********************************
@@ -920,8 +909,8 @@ to turn it off:
 .. code-block:: kconfig
 
    config SOC_FOO
-   	bool "FOO SoC"
-   	imply USB_KEYBOARD
+       bool
+       imply USB_KEYBOARD
 
    ...
 
@@ -1075,5 +1064,5 @@ Other resources
 ***************
 
 The *Intro to symbol values* section in the `Kconfiglib docstring
-<https://github.com/ulfalizer/Kconfiglib/blob/master/kconfiglib.py>`__ goes
+<https://github.com/zephyrproject-rtos/Kconfiglib/blob/main/kconfiglib.py>`__ goes
 over how symbols values are calculated in more detail.

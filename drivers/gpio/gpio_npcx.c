@@ -17,12 +17,11 @@
 #include "soc_miwu.h"
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(gpio_npcx, LOG_LEVEL_ERR);
+LOG_MODULE_REGISTER(gpio_npcx, CONFIG_GPIO_LOG_LEVEL);
 
 /* GPIO module instances */
-#define NPCX_GPIO_DEV(inst) DEVICE_DT_INST_GET(inst),
 static const struct device *const gpio_devs[] = {
-	DT_INST_FOREACH_STATUS_OKAY(NPCX_GPIO_DEV)
+	DT_INST_FOREACH_STATUS_OKAY(DEVICE_DT_INST_GET_COMMA)
 };
 
 /* Driver config */
@@ -380,7 +379,7 @@ static int gpio_npcx_manage_callback(const struct device *dev,
 }
 
 /* GPIO driver registration */
-static const struct gpio_driver_api gpio_npcx_driver = {
+static DEVICE_API(gpio, gpio_npcx_driver) = {
 	.pin_configure = gpio_npcx_config,
 #ifdef CONFIG_GPIO_GET_CONFIG
 	.pin_get_config = gpio_npcx_pin_get_config,
@@ -403,10 +402,7 @@ int gpio_npcx_init(const struct device *dev)
 
 #define NPCX_GPIO_DEVICE_INIT(inst)                                            \
 	static const struct gpio_npcx_config gpio_npcx_cfg_##inst = {          \
-		.common = {						       \
-			.port_pin_mask =                                       \
-			GPIO_PORT_PIN_MASK_FROM_NGPIOS(NPCX_GPIO_PORT_PIN_NUM),\
-		},                                                             \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(inst),               \
 		.base = DT_INST_REG_ADDR(inst),                                \
 		.port = inst,                                                  \
 		.wui_maps = NPCX_DT_WUI_ITEMS_LIST(inst),                      \

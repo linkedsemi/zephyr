@@ -4,9 +4,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig USB_DEVICE_STACK
-	bool "USB Device Support"
+	bool "USB Device Support [DEPRECATED]"
 	select USB_DEVICE_DRIVER
 	select HWINFO
+	select DEPRECATED
 	help
 	  Enable USB device stack.
 
@@ -95,7 +96,6 @@ config USB_REQUEST_BUFFER_SIZE
 	range 8 65536
 	default 256 if USB_DEVICE_NETWORK_RNDIS
 	default 266 if (USB_DEVICE_BLUETOOTH && USB_DEVICE_BLUETOOTH_BIG_BUF)
-	default 1024 if USB_DEVICE_LOOPBACK
 	default 128
 
 config USB_MAX_ALT_SETTING

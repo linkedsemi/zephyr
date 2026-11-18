@@ -953,7 +953,7 @@ static int sm4_linkedsemi_cipher_free_session(const struct device *dev, struct c
     return 0;
 }
 
-static struct crypto_driver_api sm4_driver_api = {
+static DEVICE_API(crypto, sm4_driver_api) = {
     .query_hw_caps = sm4_linkedsemi_query_caps,
     .cipher_begin_session = sm4_linkedsemi_cipher_begin_session,
     .cipher_free_session = sm4_linkedsemi_cipher_free_session,

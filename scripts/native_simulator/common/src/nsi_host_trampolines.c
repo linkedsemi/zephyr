@@ -26,9 +26,24 @@ void nsi_host_free(void *ptr)
 	free(ptr);
 }
 
+int nsi_host_fsync(int fd)
+{
+	return fsync(fd);
+}
+
+int nsi_host_ftruncate(int fd, long long length)
+{
+	return ftruncate(fd, length);
+}
+
 char *nsi_host_getcwd(char *buf, unsigned long size)
 {
 	return getcwd(buf, size);
+}
+
+char *nsi_host_getenv(const char *name)
+{
+	return getenv(name);
 }
 
 int nsi_host_isatty(int fd)
@@ -59,6 +74,11 @@ long nsi_host_read(int fd, void *buffer, unsigned long size)
 void *nsi_host_realloc(void *ptr, unsigned long size)
 {
 	return realloc(ptr, size);
+}
+
+int nsi_host_setenv(const char *name, const char *value, int overwrite)
+{
+	return setenv(name, value, overwrite);
 }
 
 void nsi_host_srandom(unsigned int seed)

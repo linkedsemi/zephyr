@@ -13,7 +13,7 @@
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/reset.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #ifdef CONFIG_SPI_GD32_DMA
 #include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_gd32.h>
@@ -130,8 +130,8 @@ static int spi_gd32_configure(const struct device *dev,
 		return 0;
 	}
 
-	if (SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_SLAVE) {
-		LOG_ERR("Slave mode not supported");
+	if (SPI_OP_MODE_GET(config->operation) == SPI_OP_MODE_PERIPHERAL) {
+		LOG_ERR("Peripheral mode not supported");
 		return -ENOTSUP;
 	}
 
@@ -152,7 +152,7 @@ static int spi_gd32_configure(const struct device *dev,
 		SPI_CTL0(cfg->reg) |= SPI_CTL0_SWNSSEN;
 	} else {
 		/*
-		 * For single master env,
+		 * For single controller env,
 		 * hardware NSS mode also need to set the NSSDRV bit.
 		 */
 		SPI_CTL1(cfg->reg) |= SPI_CTL1_NSSDRV;
@@ -212,7 +212,7 @@ static int spi_gd32_frame_exchange(const struct device *dev)
 		spi_context_update_tx(ctx, 1, 1);
 	} else {
 		if (spi_context_tx_buf_on(ctx)) {
-			tx_frame = UNALIGNED_GET((uint8_t *)(data->ctx.tx_buf));
+			tx_frame = UNALIGNED_GET((uint16_t *)(data->ctx.tx_buf));
 		}
 		SPI_DATA(cfg->reg) = tx_frame;
 
@@ -570,7 +570,7 @@ static int spi_gd32_release(const struct device *dev,
 	return 0;
 }
 
-static const struct spi_driver_api spi_gd32_driver_api = {
+static DEVICE_API(spi, spi_gd32_driver_api) = {
 	.transceive = spi_gd32_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_gd32_transceive_async,
@@ -683,7 +683,7 @@ int spi_gd32_init(const struct device *dev)
 		IF_ENABLED(CONFIG_SPI_GD32_DMA, (.dma = DMAS_DECL(idx),))      \
 		IF_ENABLED(CONFIG_SPI_GD32_INTERRUPT,			       \
 			   (.irq_configure = spi_gd32_irq_configure_##idx)) }; \
-	DEVICE_DT_INST_DEFINE(idx, spi_gd32_init, NULL,			       \
+	SPI_DEVICE_DT_INST_DEFINE(idx, spi_gd32_init, NULL,			       \
 			      &spi_gd32_data_##idx, &spi_gd32_config_##idx,    \
 			      POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,	       \
 			      &spi_gd32_driver_api);

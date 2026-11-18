@@ -10,6 +10,8 @@ See build.py for the build command itself.
 '''
 
 from collections import OrderedDict
+import argparse
+import logging
 import os.path
 import re
 import subprocess
@@ -17,8 +19,9 @@ import shutil
 import sys
 
 import packaging.version
-from west import log
 from west.util import quote_sh_list
+
+_logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE = 'CMakeCache.txt'
 
@@ -26,7 +29,7 @@ DEFAULT_CMAKE_GENERATOR = 'Ninja'
 '''Name of the default CMake generator.'''
 
 
-def run_cmake(args, cwd=None, capture_output=False, dry_run=False):
+def run_cmake(args, cwd=None, capture_output=False, dry_run=False, env=None):
     '''Run cmake to (re)generate a build system, a script, etc.
 
     :param args: arguments to pass to CMake
@@ -36,12 +39,13 @@ def run_cmake(args, cwd=None, capture_output=False, dry_run=False):
                            dry_run is also True)
     :param dry_run: don't actually execute the command, just print what
                     would have been run
+    :param env: used adjusted environment when running CMake
 
     If capture_output is set to True, returns the output of the command instead
     of displaying it on stdout/stderr..'''
     cmake = shutil.which('cmake')
     if cmake is None and not dry_run:
-        log.die('CMake is not installed or cannot be found; cannot build.')
+        sys.exit('CMake is not installed or cannot be found; cannot build.')
     _ensure_min_version(cmake, dry_run)
 
     cmd = [cmake] + args
@@ -56,19 +60,22 @@ def run_cmake(args, cwd=None, capture_output=False, dry_run=False):
 
     if dry_run:
         in_cwd = ' (in {})'.format(cwd) if cwd else ''
-        log.inf('Dry run{}:'.format(in_cwd), quote_sh_list(cmd))
+        _logger.info(f'Dry run{in_cwd}: {quote_sh_list(cmd)}')
         return None
 
-    log.dbg('Running CMake:', quote_sh_list(cmd), level=log.VERBOSE_NORMAL)
-    p = subprocess.Popen(cmd, **kwargs)
+    _logger.debug('Running CMake: %s', quote_sh_list(cmd))
+    p = subprocess.Popen(cmd, env=env, **kwargs)
     out, _ = p.communicate()
+    out = out.decode(sys.getdefaultencoding()) if out else None
     if p.returncode == 0:
         if out:
-            return out.decode(sys.getdefaultencoding()).splitlines()
+            return out.splitlines()
         else:
             return None
     else:
         # A real error occurred, raise an exception
+        if out:
+            _logger.error(out)
         raise subprocess.CalledProcessError(p.returncode, p.args)
 
 
@@ -82,8 +89,29 @@ def run_build(build_directory, **kwargs):
 
     Any additional keyword arguments are passed as-is to run_cmake().
     '''
+    cmake_env = None
     extra_args = kwargs.pop('extra_args', [])
-    return run_cmake(['--build', build_directory] + extra_args, **kwargs)
+
+    try:
+        index = extra_args.index('--') + 1
+        build_opt_parser = argparse.ArgumentParser(allow_abbrev=False)
+        build_opt_parser.add_argument('-j', '--jobs')
+        build_opt_parser.add_argument('-v', '--verbose', action='store_true')
+        build_opts, native_args = build_opt_parser.parse_known_args(extra_args[index:])
+        extra_args = extra_args[:index] + native_args
+
+        if build_opts:
+            cmake_env = os.environ.copy()
+            if build_opts.jobs:
+                cmake_env["CMAKE_BUILD_PARALLEL_LEVEL"] = build_opts.jobs
+
+            if build_opts.verbose:
+                cmake_env["VERBOSE"] = "1"
+
+    except ValueError:
+        pass # Ignore, no presence of '--' so nothing to do.
+
+    return run_cmake(['--build', build_directory] + extra_args, env=cmake_env, **kwargs)
 
 
 def make_c_identifier(string):
@@ -220,7 +248,7 @@ class CMakeCache:
     def load(self, cache_file):
         entries = []
         with open(cache_file, 'r', encoding="utf-8") as cache:
-            for line_no, line in enumerate(cache):
+            for line_no, line in enumerate(cache, start=1):
                 entry = CMakeCacheEntry.from_line(line, line_no)
                 if entry:
                     entries.append(entry)
@@ -270,34 +298,33 @@ class CMakeCache:
 def _ensure_min_version(cmake, dry_run):
     cmd = [cmake, '--version']
     if dry_run:
-        log.inf('Dry run:', quote_sh_list(cmd))
+        _logger.info(f'Dry run: {quote_sh_list(cmd)}')
         return
 
     try:
         version_out = subprocess.check_output(cmd, stderr=subprocess.DEVNULL)
     except subprocess.CalledProcessError as cpe:
-        log.die('cannot get cmake version:', str(cpe))
+        sys.exit('cannot get cmake version: {}'.format(cpe))
     decoded = version_out.decode('utf-8')
     lines = decoded.splitlines()
     if not lines:
-        log.die('can\'t get cmake version: ' +
-                'unexpected "cmake --version" output:\n{}\n'.
-                format(decoded) +
-                'Please install CMake ' + _MIN_CMAKE_VERSION_STR +
-                ' or higher (https://cmake.org/download/).')
+        sys.exit('can\'t get cmake version: ' +
+                 'unexpected "cmake --version" output:\n{}\n'.
+                 format(decoded) +
+                 'Please install CMake ' + _MIN_CMAKE_VERSION_STR +
+                 ' or higher (https://cmake.org/download/).')
     version = lines[0].split()[2]
     if '-' in version:
         # Handle semver cases like "3.19.20210206-g1e50ab6"
         # which Kitware uses for prerelease versions.
         version = version.split('-', 1)[0]
     if packaging.version.parse(version) < _MIN_CMAKE_VERSION:
-        log.die('cmake version', version,
-                'is less than minimum version {};'.
-                format(_MIN_CMAKE_VERSION_STR),
-                'please update your CMake (https://cmake.org/download/).')
+        sys.exit(f'cmake version {version} is less than minimum version '
+                 f'{_MIN_CMAKE_VERSION_STR}; please update your CMake '
+                 '(https://cmake.org/download/).')
     else:
-        log.dbg('cmake version', version, 'is OK; minimum version is',
-                _MIN_CMAKE_VERSION_STR)
+        _logger.debug('cmake version %s is OK; minimum version is %s',
+                      version, _MIN_CMAKE_VERSION_STR)
 
 _MIN_CMAKE_VERSION_STR = '3.13.1'
 _MIN_CMAKE_VERSION = packaging.version.parse(_MIN_CMAKE_VERSION_STR)

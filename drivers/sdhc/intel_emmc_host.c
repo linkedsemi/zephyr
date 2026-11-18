@@ -13,7 +13,6 @@
 #include <zephyr/cache.h>
 #include "intel_emmc_host.h"
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(pcie)
-BUILD_ASSERT(IS_ENABLED(CONFIG_PCIE), "DT need CONFIG_PCIE");
 #include <zephyr/drivers/pcie/pcie.h>
 #endif
 
@@ -417,7 +416,7 @@ static int emmc_dma_init(const struct device *dev, struct sdhc_data *data, bool 
 	if (IS_ENABLED(CONFIG_INTEL_EMMC_HOST_ADMA)) {
 		uint8_t *buff = data->data;
 
-		/* Setup DMA trasnfer using ADMA2 */
+		/* Setup DMA transfer using ADMA2 */
 		memset(emmc->desc_table, 0, sizeof(emmc->desc_table));
 
 #if defined(CONFIG_INTEL_EMMC_HOST_ADMA_DESC_SIZE)
@@ -446,7 +445,7 @@ static int emmc_dma_init(const struct device *dev, struct sdhc_data *data, bool 
 		LOG_DBG("adma: %llx %x %p", emmc->desc_table[0], regs->adma_sys_addr1,
 			emmc->desc_table);
 	} else {
-		/* Setup DMA trasnfer using SDMA */
+		/* Setup DMA transfer using SDMA */
 		regs->sdma_sysaddr = (uint32_t)((uintptr_t)data->data);
 		LOG_DBG("sdma_sysaddr: %x", regs->sdma_sysaddr);
 	}
@@ -653,10 +652,10 @@ static void update_cmd_response(const struct device *dev, struct sdhc_command *s
 
 		LOG_DBG("cmd resp: %x %x %x %x", resp0, resp1, resp2, resp3);
 
-		sdhc_cmd->response[0u] = resp3;
-		sdhc_cmd->response[1U] = resp2;
-		sdhc_cmd->response[2U] = resp1;
-		sdhc_cmd->response[3U] = resp0;
+		sdhc_cmd->response[0U] = resp0;
+		sdhc_cmd->response[1U] = resp1;
+		sdhc_cmd->response[2U] = resp2;
+		sdhc_cmd->response[3U] = resp3;
 	} else {
 		LOG_DBG("cmd resp: %x", resp0);
 		sdhc_cmd->response[0u] = resp0;
@@ -1057,7 +1056,7 @@ static int emmc_set_io(const struct device *dev, struct sdhc_io *ios)
 		LOG_DBG("signal_voltage: %d", ios->signal_voltage);
 		ret = emmc_set_voltage(dev, ios->signal_voltage);
 		if (ret) {
-			LOG_ERR("Set signal volatge failed:%d", ret);
+			LOG_ERR("Set signal voltage failed:%d", ret);
 			return ret;
 		}
 		host_io->signal_voltage = ios->signal_voltage;
@@ -1168,9 +1167,9 @@ static int emmc_get_host_props(const struct device *dev, struct sdhc_host_props 
 	props->host_caps.sdr104_support = (bool)(cap & BIT(33u));
 	props->host_caps.sdr50_support = (bool)(cap & BIT(32u));
 	props->host_caps.bus_8_bit_support = true;
-	props->host_caps.bus_4_bit_support = true;
-	props->host_caps.hs200_support = (bool)config->hs200_mode;
-	props->host_caps.hs400_support = (bool)config->hs400_mode;
+	props->bus_4_bit_support = true;
+	props->hs200_support = (bool)config->hs200_mode;
+	props->hs400_support = (bool)config->hs400_mode;
 
 	emmc->props = *props;
 
@@ -1267,7 +1266,7 @@ static int emmc_init(const struct device *dev)
 	return emmc_reset(dev);
 }
 
-static const struct sdhc_driver_api emmc_api = {
+static DEVICE_API(sdhc, emmc_api) = {
 	.reset = emmc_reset,
 	.request = emmc_request,
 	.set_io = emmc_set_io,
@@ -1277,10 +1276,10 @@ static const struct sdhc_driver_api emmc_api = {
 	.get_host_props = emmc_get_host_props,
 };
 
-#define EMMC_HOST_IRQ_FLAGS_SENSE0(n) 0
-#define EMMC_HOST_IRQ_FLAGS_SENSE1(n) DT_INST_IRQ(n, sense)
+#define EMMC_HOST_IRQ_FLAGS0(n) 0
+#define EMMC_HOST_IRQ_FLAGS1(n) DT_INST_IRQ(n, flags)
 #define EMMC_HOST_IRQ_FLAGS(n)\
-	_CONCAT(EMMC_HOST_IRQ_FLAGS_SENSE, DT_INST_IRQ_HAS_CELL(n, sense))(n)
+	_CONCAT(EMMC_HOST_IRQ_FLAGS, DT_INST_IRQ_HAS_CELL(n, flags))(n)
 
 /* Not PCI(e) */
 #define EMMC_HOST_IRQ_CONFIG_PCIE0(n)                                                              \
@@ -1298,8 +1297,6 @@ static const struct sdhc_driver_api emmc_api = {
 	{                                                                                          \
 		BUILD_ASSERT(DT_INST_IRQN(n) == PCIE_IRQ_DETECT,                                   \
 			     "Only runtime IRQ configuration is supported");                       \
-		BUILD_ASSERT(IS_ENABLED(CONFIG_DYNAMIC_INTERRUPTS),                                \
-			     "eMMC PCI device needs CONFIG_DYNAMIC_INTERRUPTS");                   \
 		const struct emmc_config *const dev_cfg = port->config;                            \
 		unsigned int irq = pcie_alloc_irq(dev_cfg->pcie->bdf);                             \
                                                                                                    \

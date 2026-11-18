@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <string.h>
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/linker/devicetree_regions.h>
 #include <zephyr/ztest.h>
@@ -22,15 +23,22 @@
 				| SPI_MODE_CPOL)
 #endif
 
-#define SPIM_OP	 (SPI_OP_MODE_MASTER | SPI_MODE)
-#define SPIS_OP	 (SPI_OP_MODE_SLAVE | SPI_MODE)
+#define SPIM_OP	 (SPI_OP_MODE_CONTROLLER | SPI_MODE)
+#define SPIS_OP	 (SPI_OP_MODE_PERIPHERAL | SPI_MODE)
 
-static struct spi_dt_spec spim = SPI_DT_SPEC_GET(DT_NODELABEL(dut_spi_dt), SPIM_OP, 0);
+#if CONFIG_TEST_INCORRECT_SCK_STATE && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), sck_gpios)
+static const struct gpio_dt_spec sck = GPIO_DT_SPEC_GET(DT_PATH(zephyr_user), sck_gpios);
+#endif
+
+static struct spi_dt_spec spim = SPI_DT_SPEC_GET(DT_NODELABEL(dut_spi_dt), SPIM_OP);
 static const struct device *spis_dev = DEVICE_DT_GET(DT_NODELABEL(dut_spis));
 static const struct spi_config spis_config = {
-	.operation = SPIS_OP
+	.operation = SPIS_OP,
+	.peripheral = DT_PROP_OR(DT_PATH(zephyr_user), peripheral_cs, 0),
+	.frequency = DT_PROP(DT_NODELABEL(dut_spi_dt), spi_max_frequency),
 };
 
+#ifdef CONFIG_SPI_ASYNC
 static struct k_poll_signal async_sig = K_POLL_SIGNAL_INITIALIZER(async_sig);
 static struct k_poll_event async_evt =
 	K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &async_sig);
@@ -38,11 +46,15 @@ static struct k_poll_event async_evt =
 static struct k_poll_signal async_sig_spim = K_POLL_SIGNAL_INITIALIZER(async_sig_spim);
 static struct k_poll_event async_evt_spim =
 	K_POLL_EVENT_INITIALIZER(K_POLL_TYPE_SIGNAL, K_POLL_MODE_NOTIFY_ONLY, &async_sig_spim);
+#endif /* CONFIG_SPI_ASYNC */
 
 #define MEMORY_SECTION(node)                                                                       \
-	COND_CODE_1(DT_NODE_HAS_PROP(node, memory_regions),                                        \
-		    (__attribute__((__section__(                                                   \
-			    LINKER_DT_NODE_REGION_NAME(DT_PHANDLE(node, memory_regions)))))),      \
+	COND_CODE_1(IS_ENABLED(CONFIG_PREALLOC_BUFFERS),                                           \
+		    (COND_CODE_1(DT_NODE_HAS_PROP(node, memory_regions),                           \
+				 (__attribute__((__section__(                                      \
+				     LINKER_DT_NODE_REGION_NAME(DT_PHANDLE(node,                   \
+									   memory_regions)))))),   \
+				 ())),                                                             \
 		    ())
 
 static uint8_t spim_buffer[32] MEMORY_SECTION(DT_BUS(DT_NODELABEL(dut_spi_dt)));
@@ -51,6 +63,7 @@ static uint8_t spis_buffer[32] MEMORY_SECTION(DT_NODELABEL(dut_spis));
 struct test_data {
 	struct k_work_delayable test_work;
 	struct k_sem sem;
+	struct k_sem half_duplex_sem;
 	int spim_alloc_idx;
 	int spis_alloc_idx;
 	struct spi_buf_set sets[4];
@@ -63,6 +76,11 @@ struct test_data {
 };
 
 static struct test_data tdata;
+
+struct k_work_q spim_spis_work_q;
+
+static K_KERNEL_STACK_DEFINE(spim_spis_work_q_stack,
+			CONFIG_SPI_CONTROLLER_PERIPHERAL_WORKQUEUE_STACK_SIZE);
 
 /* Allocate buffer from spim or spis space. */
 static uint8_t *buf_alloc(size_t len, bool spim)
@@ -90,12 +108,36 @@ static void work_handler(struct k_work *work)
 	struct test_data *td = CONTAINER_OF(dwork, struct test_data, test_work);
 	int rv;
 
-	if (!td->async) {
+#if CONFIG_TEST_INCORRECT_SCK_STATE && DT_NODE_HAS_PROP(DT_PATH(zephyr_user), sck_gpios)
+	gpio_pin_set_dt(&sck, CONFIG_TESTED_SPI_MODE > 1 ? 0 : 1);
+#endif
+
+	if (spim.config.operation & SPI_HALF_DUPLEX) {
+		if (!IS_ENABLED(CONFIG_TEST_SPI_NO_HOLD_ON_CS)) {
+			spim.config.operation |= SPI_HOLD_ON_CS;
+		}
+
+		rv = spi_write_dt(&spim, td->mtx_set);
+		spim.config.operation &= ~SPI_HOLD_ON_CS;
+		zassert_equal(rv, 0);
+
+		rv = k_sem_take(&td->half_duplex_sem, K_MSEC(1));
+		if (rv) {
+			return;
+		}
+
+		rv = spi_read_dt(&spim, td->mrx_set);
+
+		if (rv == 0) {
+			k_sem_give(&td->sem);
+		}
+	} else if (!td->async) {
 		rv = spi_transceive_dt(&spim, td->mtx_set, td->mrx_set);
 		if (rv == 0) {
 			k_sem_give(&td->sem);
 		}
 	} else {
+#ifdef CONFIG_SPI_ASYNC
 		rv = spi_transceive_signal(spim.bus, &spim.config, td->mtx_set, td->mrx_set,
 				&async_sig_spim);
 		zassert_equal(rv, 0);
@@ -111,6 +153,7 @@ static void work_handler(struct k_work *work)
 		async_evt_spim.state = K_POLL_STATE_NOT_READY;
 
 		k_sem_give(&td->sem);
+#endif /* CONFIG_SPI_ASYNC */
 	}
 }
 
@@ -204,16 +247,22 @@ static void run_test(bool m_same_size, bool s_same_size, bool async)
 	int periph_rv;
 	int srx_len;
 
+	if (spim.config.operation & SPI_HALF_DUPLEX) {
+		ztest_test_skip();
+		return;
+	}
+
 	tdata.async = async;
-	rv = k_work_schedule(&tdata.test_work, K_MSEC(10));
+	rv = k_work_schedule_for_queue(&spim_spis_work_q, &tdata.test_work, K_MSEC(10));
 	zassert_equal(rv, 1);
 
-	if (!async) {
+	if (!IS_ENABLED(CONFIG_SPI_ASYNC) || !async) {
 		periph_rv = spi_transceive(spis_dev, &spis_config, tdata.stx_set, tdata.srx_set);
 		if (periph_rv == -ENOTSUP) {
 			ztest_test_skip();
 		}
 	} else {
+#ifdef CONFIG_SPI_ASYNC
 		rv = spi_transceive_signal(spis_dev, &spis_config, tdata.stx_set, tdata.srx_set,
 					   &async_sig);
 		if (rv == -ENOTSUP) {
@@ -233,6 +282,7 @@ static void run_test(bool m_same_size, bool s_same_size, bool async)
 		/* Reinitializing for next call */
 		async_evt.signal->signaled = 0U;
 		async_evt.state = K_POLL_STATE_NOT_READY;
+#endif /* CONFIG_SPI_ASYNC */
 	}
 
 	rv = k_sem_take(&tdata.sem, K_MSEC(100));
@@ -246,6 +296,7 @@ static void run_test(bool m_same_size, bool s_same_size, bool async)
 	zassert_equal(rv, 0);
 
 	rv = check_buffers(tdata.stx_set, tdata.mrx_set, s_same_size);
+	TC_PRINT("stx check same size? %d is %d\n", s_same_size, rv);
 	zassert_equal(rv, 0);
 }
 
@@ -276,10 +327,12 @@ ZTEST(spi_controller_peripheral, test_basic)
 	test_basic(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_basic_async)
 {
 	test_basic(true);
 }
+#endif /* CONFIG_SPI_ASYNC */
 
 /** Basic test with zero length buffers.
  */
@@ -327,10 +380,12 @@ ZTEST(spi_controller_peripheral, test_basic_zero_len)
 	test_basic_zero_len(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_basic_zero_len_async)
 {
 	test_basic_zero_len(true);
 }
+#endif /* CONFIG_SPI_ASYNC */
 
 /** Setup a transfer where RX buffer on SPI controller and SPI peripheral are
  *  shorter than TX buffers. RX buffers shall contain beginning of TX data
@@ -367,12 +422,14 @@ ZTEST(spi_controller_peripheral, test_short_rx)
 	test_short_rx(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_short_rx_async)
 {
 	test_short_rx(true);
 }
+#endif /* CONFIG_SPI_ASYNC */
 
-/** Test where only master transmits. */
+/** Test where only controller transmits. */
 static void test_only_tx(bool async)
 {
 	size_t len = 16;
@@ -401,10 +458,12 @@ ZTEST(spi_controller_peripheral, test_only_tx)
 	test_only_tx(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_only_tx_async)
 {
 	test_only_tx(true);
 }
+#endif /* CONFIG_SPI_ASYNC */
 
 /** Test where only SPI controller transmits and SPI peripheral receives in chunks. */
 static void test_only_tx_in_chunks(bool async)
@@ -438,10 +497,12 @@ ZTEST(spi_controller_peripheral, test_only_tx_in_chunks)
 	test_only_tx_in_chunks(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_only_tx_in_chunks_async)
 {
 	test_only_tx_in_chunks(true);
 }
+#endif /* CONFIG_SPI_ASYNC */
 
 /** Test where only SPI peripheral transmits. */
 static void test_only_rx(bool async)
@@ -472,10 +533,12 @@ ZTEST(spi_controller_peripheral, test_only_rx)
 	test_only_rx(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_only_rx_async)
 {
 	test_only_rx(true);
 }
+#endif /* CONFIG_SPI_ASYNC */
 
 /** Test where only SPI peripheral transmits in chunks. */
 static void test_only_rx_in_chunks(bool async)
@@ -509,14 +572,176 @@ ZTEST(spi_controller_peripheral, test_only_rx_in_chunks)
 	test_only_rx_in_chunks(false);
 }
 
+#ifdef CONFIG_SPI_ASYNC
 ZTEST(spi_controller_peripheral, test_only_rx_in_chunks_async)
 {
 	test_only_rx_in_chunks(true);
+}
+#endif /* CONFIG_SPI_ASYNC */
+
+static void run_half_duplex_test(int len)
+{
+	int rv;
+	int periph_rv;
+	struct spi_config spis_half_duplex_config = spis_config;
+
+	if (!(spim.config.operation & SPI_HALF_DUPLEX)) {
+		ztest_test_skip();
+		return;
+	}
+
+	spis_half_duplex_config.operation |= SPI_HALF_DUPLEX;
+
+	if (!IS_ENABLED(CONFIG_TEST_SPI_NO_HOLD_ON_CS)) {
+		spim.config.operation |= SPI_HOLD_ON_CS;
+	}
+
+	tdata.async = false;
+	rv = k_work_schedule_for_queue(&spim_spis_work_q, &tdata.test_work, K_MSEC(10));
+	zassert_equal(rv, 1);
+
+	periph_rv = spi_read(spis_dev, &spis_half_duplex_config, tdata.srx_set);
+
+	TC_PRINT("Read %d\n", periph_rv);
+
+	if (periph_rv == -ENOTSUP) {
+		ztest_test_skip();
+		return;
+	}
+
+	zassert_equal(periph_rv, len);
+
+	k_sem_give(&tdata.half_duplex_sem);
+
+	TC_PRINT("WRITING!\n");
+
+	periph_rv = spi_write(spis_dev, &spis_half_duplex_config, tdata.stx_set);
+
+	TC_PRINT("Write %d\n", periph_rv);
+
+	if (periph_rv == -ENOTSUP) {
+		ztest_test_skip();
+		return;
+	}
+
+	rv = k_sem_take(&tdata.sem, K_MSEC(100));
+	zassert_equal(rv, 0);
+
+	zassert_equal(periph_rv, 0);
+
+	rv = check_buffers(tdata.mtx_set, tdata.srx_set, true);
+	zassert_equal(rv, 0);
+
+	rv = check_buffers(tdata.stx_set, tdata.mrx_set, true);
+	zassert_equal(rv, 0);
+
+}
+
+ZTEST(spi_controller_peripheral, test_half_duplex)
+{
+	size_t len = 16;
+
+	for (int i = 0; i < 4; i++) {
+		tdata.bufs[i].buf = buf_alloc(len, i < 2);
+		tdata.bufs[i].len = len;
+		tdata.sets[i].buffers = &tdata.bufs[i];
+		tdata.sets[i].count = 1;
+	}
+
+	tdata.mtx_set = &tdata.sets[0];
+	tdata.mrx_set = &tdata.sets[1];
+	tdata.stx_set = &tdata.sets[2];
+	tdata.srx_set = &tdata.sets[3];
+
+	run_half_duplex_test(len);
+}
+
+static void setup_split_buffer(uint8_t len)
+{
+	tdata.bufs[0].buf = buf_alloc(len / 2, true);
+	tdata.bufs[0].len = len / 2;
+	tdata.bufs[1].buf = buf_alloc(len / 2, true);
+	tdata.bufs[1].len = len / 2;
+	tdata.bufs[2].buf = buf_alloc(len, true);
+	tdata.bufs[2].len = len;
+	tdata.bufs[3].buf = buf_alloc(len, false);
+	tdata.bufs[3].len = len;
+	tdata.bufs[4].buf = buf_alloc(len, false);
+	tdata.bufs[4].len = len;
+
+	tdata.sets[0].buffers = &tdata.bufs[0];
+	tdata.sets[0].count = 2;
+
+	for (int i = 1; i < 4; i++) {
+		tdata.sets[i].buffers = &tdata.bufs[i+1];
+		tdata.sets[i].count = 1;
+	}
+}
+
+ZTEST(spi_controller_peripheral, test_half_duplex_split_controller_tx_buffers)
+{
+	size_t len = 16;
+
+	setup_split_buffer(len);
+
+	tdata.mtx_set = &tdata.sets[0];
+	tdata.mrx_set = &tdata.sets[1];
+	tdata.stx_set = &tdata.sets[2];
+	tdata.srx_set = &tdata.sets[3];
+
+	run_half_duplex_test(len);
+}
+
+ZTEST(spi_controller_peripheral, test_half_duplex_split_controller_rx_buffers)
+{
+	size_t len = 16;
+
+	setup_split_buffer(len);
+
+	tdata.mtx_set = &tdata.sets[1];
+	tdata.mrx_set = &tdata.sets[0];
+	tdata.stx_set = &tdata.sets[2];
+	tdata.srx_set = &tdata.sets[3];
+
+	run_half_duplex_test(len);
+}
+
+
+ZTEST(spi_controller_peripheral, test_half_duplex_split_peripheral_tx_buffers)
+{
+	size_t len = 16;
+
+	setup_split_buffer(len);
+
+	tdata.mtx_set = &tdata.sets[1];
+	tdata.mrx_set = &tdata.sets[2];
+	tdata.stx_set = &tdata.sets[0];
+	tdata.srx_set = &tdata.sets[3];
+
+	run_half_duplex_test(len);
+}
+
+ZTEST(spi_controller_peripheral, test_half_duplex_split_peripheral_rx_buffers)
+{
+	size_t len = 16;
+
+	setup_split_buffer(len);
+
+	tdata.mtx_set = &tdata.sets[1];
+	tdata.mrx_set = &tdata.sets[2];
+	tdata.stx_set = &tdata.sets[3];
+	tdata.srx_set = &tdata.sets[0];
+
+	run_half_duplex_test(len);
 }
 
 static void before(void *not_used)
 {
 	ARG_UNUSED(not_used);
+
+#if CONFIG_TEST_INCORRECT_SCK_STATE && !DT_NODE_HAS_PROP(DT_PATH(zephyr_user), sck_gpios)
+	ztest_test_skip();
+#endif
 
 	memset(&tdata, 0, sizeof(tdata));
 	for (size_t i = 0; i < sizeof(spim_buffer); i++) {
@@ -528,11 +753,29 @@ static void before(void *not_used)
 
 	k_work_init_delayable(&tdata.test_work, work_handler);
 	k_sem_init(&tdata.sem, 0, 1);
+	k_sem_init(&tdata.half_duplex_sem, 0, 1);
+}
+
+static void after(void *not_used)
+{
+	ARG_UNUSED(not_used);
+
+	k_work_cancel_delayable(&tdata.test_work);
 }
 
 static void *suite_setup(void)
 {
+	struct k_work_queue_config cfg = {
+		.name = "spim_spis_work",
+		.no_yield = false,
+	};
+
+	k_work_queue_start(&spim_spis_work_q,
+			   spim_spis_work_q_stack,
+			   K_KERNEL_STACK_SIZEOF(spim_spis_work_q_stack),
+			   CONFIG_SPI_CONTROLLER_PERIPHERAL_WORKQUEUE_PRIORITY, &cfg);
+
 	return NULL;
 }
 
-ZTEST_SUITE(spi_controller_peripheral, NULL, suite_setup, before, NULL, NULL);
+ZTEST_SUITE(spi_controller_peripheral, NULL, suite_setup, before, after, NULL);

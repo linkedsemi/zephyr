@@ -4,8 +4,21 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_LOG_BACKEND_WS_H_
-#define ZEPHYR_LOG_BACKEND_WS_H_
+/**
+ * @file
+ * @brief Header file for the websocket log backend.
+ * @ingroup log_backend_ws
+ */
+
+#ifndef ZEPHYR_INCLUDE_LOGGING_LOG_BACKEND_WS_H_
+#define ZEPHYR_INCLUDE_LOGGING_LOG_BACKEND_WS_H_
+
+/**
+ * @defgroup log_backend_ws Websocket log backend
+ * @ingroup log_backend
+ * @brief Logging backend that sends messages over a WebSocket connection.
+ * @{
+ */
 
 #include <stdbool.h>
 
@@ -53,4 +66,6 @@ void log_backend_ws_start(void);
 }
 #endif
 
-#endif /* ZEPHYR_LOG_BACKEND_WS_H_ */
+/** @} */
+
+#endif /* ZEPHYR_INCLUDE_LOGGING_LOG_BACKEND_WS_H_ */

@@ -3,6 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Header file for log messages.
+ * @ingroup log_msg
+ */
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_MSG_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_MSG_H_
 
@@ -27,9 +34,20 @@
 extern "C" {
 #endif
 
+/** @cond INTERNAL_HIDDEN */
 #define LOG_MSG_DEBUG 0
 #define LOG_MSG_DBG(...) IF_ENABLED(LOG_MSG_DEBUG, (printk(__VA_ARGS__)))
+/** @endcond */
 
+/**
+ * @brief Timestamp value associated with a log message.
+ *
+ * 32-bit wide by default, or 64-bit when @kconfig{CONFIG_LOG_TIMESTAMP_64BIT}
+ * is enabled. The meaning of the value (ticks, cycles, microseconds, ...)
+ * depends on the registered timestamp source; see log_set_timestamp_func().
+ *
+ * @ingroup log_msg
+ */
 #ifdef CONFIG_LOG_TIMESTAMP_64BIT
 typedef uint64_t log_timestamp_t;
 #else
@@ -37,12 +55,13 @@ typedef uint32_t log_timestamp_t;
 #endif
 
 /**
- * @brief Log message API
- * @defgroup log_msg Log message API
+ * @brief Log message
+ * @defgroup log_msg Log messages
  * @ingroup logger
  * @{
  */
 
+/** @cond INTERNAL_HIDDEN */
 #define Z_LOG_MSG_LOG 0
 
 #define Z_LOG_MSG_PACKAGE_BITS 11
@@ -82,6 +101,9 @@ struct log_msg_hdr {
 #if defined(CONFIG_LOG_THREAD_ID_PREFIX)
 	void *tid;
 #endif
+#if defined(CONFIG_LOG_CORE_ID_PREFIX)
+	uint8_t core_id;
+#endif
 };
 /* Messages are aligned to alignment required by cbprintf package. */
 #define Z_LOG_MSG_ALIGNMENT CBPRINTF_PACKAGE_ALIGNMENT
@@ -100,14 +122,8 @@ struct log_msg {
 	uint8_t data[];
 };
 
-/**
- * @cond INTERNAL_HIDDEN
- */
 BUILD_ASSERT(sizeof(struct log_msg) % Z_LOG_MSG_ALIGNMENT == 0,
 	     "Log msg size must aligned");
-/**
- * @endcond
- */
 
 
 struct log_msg_generic_hdr {
@@ -330,15 +346,21 @@ do { \
 	int _plen; \
 	uint32_t _options = Z_LOG_MSG_CBPRINTF_FLAGS(_cstr_cnt) | \
 			  CBPRINTF_PACKAGE_ADD_RW_STR_POS; \
-	if (GET_ARG_N(1, __VA_ARGS__) == NULL) { \
+	if (is_null_no_warn((void *)GET_ARG_N(1, __VA_ARGS__))) { \
 		_plen = 0; \
 	} else { \
 		CBPRINTF_STATIC_PACKAGE(NULL, 0, _plen, Z_LOG_MSG_ALIGN_OFFSET, _options, \
 					__VA_ARGS__); \
+		/* When GCOV was enabled it was seen that compilation could fail here. */ \
+		/* Adding protection like this helps. It is compile time resolved code */ \
+		/* so has no impact on performance. */ \
+		if (_plen < 0) { \
+			break; \
+		} \
 	} \
-	TOOLCHAIN_IGNORE_WSHADOW_BEGIN \
+	TOOLCHAIN_DISABLE_WARNING(TOOLCHAIN_WARNING_SHADOW) \
 	struct log_msg *_msg; \
-	TOOLCHAIN_IGNORE_WSHADOW_END \
+	TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_SHADOW) \
 	Z_LOG_MSG_ON_STACK_ALLOC(_msg, Z_LOG_MSG_LEN(_plen, 0)); \
 	Z_LOG_ARM64_VLA_PROTECT(); \
 	if (_plen != 0) { \
@@ -351,7 +373,7 @@ do { \
 					   (uint32_t)_plen, _dlen); \
 	LOG_MSG_DBG("creating message on stack: package len: %d, data len: %d\n", \
 			_plen, (int)(_dlen)); \
-	z_log_msg_static_create((void *)(_source), _desc, _msg->data, (_data)); \
+	z_log_msg_static_create((const void *)(_source), _desc, _msg->data, (_data)); \
 } while (false)
 
 #ifdef CONFIG_LOG_SPEED
@@ -372,7 +394,7 @@ do { \
 					Z_LOG_MSG_CBPRINTF_FLAGS(_cstr_cnt), \
 					__VA_ARGS__); \
 	} \
-	z_log_msg_finalize(_msg, (void *)_source, _desc, NULL); \
+	z_log_msg_finalize(_msg, (const void *)_source, _desc, NULL); \
 } while (false)
 #else
 /* Alternative empty macro created to speed up compilation when LOG_SPEED is
@@ -446,7 +468,8 @@ do { \
 	COND_CODE_0(NUM_VA_ARGS_LESS_1(_, ##__VA_ARGS__), \
 		    (/* No args provided, no variable */), \
 		    (static const char _name[] \
-		     __in_section(_log_strings, static, _CONCAT(_name, _)) __used __noasan = \
+		     __in_section(_log_strings, static, _CONCAT(_name, __COUNTER__)) \
+		     __used __noasan = \
 			GET_ARG_N(1, __VA_ARGS__);))
 
 /** @brief Create variable in the dedicated memory section (if enabled).
@@ -504,8 +527,8 @@ do { \
 			  _level, _data, _dlen, ...) \
 do {\
 	Z_LOG_MSG_STR_VAR(_fmt, ##__VA_ARGS__) \
-	z_log_msg_runtime_create((_domain_id), (void *)(_source), \
-				  (_level), (uint8_t *)(_data), (_dlen),\
+	z_log_msg_runtime_create((_domain_id), (const void *)(_source), \
+				  (_level), (const void *)(_data), (_dlen),\
 				  Z_LOG_MSG_CBPRINTF_FLAGS(_cstr_cnt) | \
 				  (IS_ENABLED(CONFIG_LOG_USE_TAGGED_ARGUMENTS) ? \
 				   CBPRINTF_PACKAGE_ARGS_ARE_TAGGED : 0), \
@@ -531,9 +554,10 @@ do { \
 			( \
 			bool can_simple = LOG_MSG_SIMPLE_CHECK(__VA_ARGS__); \
 			if (can_simple && ((_dlen) == 0) && !k_is_user_context()) { \
-				LOG_MSG_DBG("create fast message\n");\
+				compiler_barrier(); \
+				LOG_MSG_DBG("create fast message\n"); \
 				Z_LOG_MSG_SIMPLE_ARGS_CREATE(_domain_id, _source, _level, \
-						     Z_LOG_FMT_ARGS(_fmt, ##__VA_ARGS__)); \
+							     Z_LOG_FMT_ARGS(_fmt, ##__VA_ARGS__)); \
 				_mode = Z_LOG_MSG_MODE_SIMPLE; \
 				break; \
 			} \
@@ -560,7 +584,7 @@ do { \
 
 /* Create local variable from input variable (expect for the first (fmt) argument). */
 #define Z_LOG_LOCAL_ARG_CREATE(idx, arg) \
-	COND_CODE_0(idx, (), (Z_AUTO_TYPE Z_LOG_LOCAL_ARG_NAME(idx, arg) = (arg) + 0))
+	COND_CODE_0(idx, (), (Z_AUTO_TYPE Z_LOG_LOCAL_ARG_NAME(idx, arg) = Z_ARGIFY(arg)))
 
 /* First level of processing creates stack variables to be passed for further processing.
  * This is done to prevent multiple evaluations of input arguments (in case argument
@@ -569,10 +593,7 @@ do { \
 #define Z_LOG_MSG_CREATE2(_try_0cpy, _mode, _cstr_cnt,  _domain_id, _source, \
 			   _level, _data, _dlen, ...) \
 do { \
-	_Pragma("GCC diagnostic push") \
-	_Pragma("GCC diagnostic ignored \"-Wpointer-arith\"") \
 	FOR_EACH_IDX(Z_LOG_LOCAL_ARG_CREATE, (;), __VA_ARGS__); \
-	_Pragma("GCC diagnostic pop") \
 	Z_LOG_MSG_CREATE3(_try_0cpy, _mode,  _cstr_cnt, _domain_id, _source,\
 			   _level, _data, _dlen, \
 			   FOR_EACH_IDX(Z_LOG_LOCAL_ARG_NAME, (,), __VA_ARGS__)); \
@@ -721,6 +742,8 @@ static inline bool z_log_item_is_msg(const union log_msg_generic *msg)
 	return msg->generic.type == Z_LOG_MSG_LOG;
 }
 
+/** @endcond */
+
 /** @brief Get total length (in 32 bit words) of a log message.
  *
  * @param desc Log message descriptor.
@@ -816,6 +839,22 @@ static inline void *log_msg_get_tid(struct log_msg *msg)
 #else
 	ARG_UNUSED(msg);
 	return NULL;
+#endif
+}
+
+/** @brief Get Core ID.
+ *
+ * @param msg Log message.
+ *
+ * @return Core ID.
+ */
+static inline uint8_t log_msg_get_core_id(struct log_msg *msg)
+{
+#if defined(CONFIG_LOG_CORE_ID_PREFIX)
+	return msg->hdr.core_id;
+#else
+	ARG_UNUSED(msg);
+	return 0;
 #endif
 }
 

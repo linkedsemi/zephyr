@@ -4,14 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <zephyr/kernel.h>
-#include <kernel_internal.h>
+#include <kernel_arch_func.h>
+#include <kernel_arch_interface.h>
 #include <zephyr/platform/hooks.h>
-#include <zephyr/arch/cache.h>
+#include <zephyr/cache.h>
+#include <zephyr/arch/common/init.h>
 
 extern FUNC_NORETURN void z_cstart(void);
 
 /* defined by the SoC in case of CONFIG_SOC_HAS_RUNTIME_NUM_CPUS=y */
 extern void soc_num_cpus_init(void);
+
+/* Make sure the platform configuration matches what the toolchain
+ * thinks the hardware is doing.
+ */
+#ifdef CONFIG_DCACHE_LINE_SIZE
+BUILD_ASSERT(CONFIG_DCACHE_LINE_SIZE == XCHAL_DCACHE_LINESIZE);
+#endif
 
 /**
  *
@@ -20,11 +29,10 @@ extern void soc_num_cpus_init(void);
  * This routine prepares for the execution of and runs C code.
  *
  */
-void z_prep_c(void)
+FUNC_NORETURN void z_prep_c(void)
 {
-#if defined(CONFIG_SOC_PREP_HOOK)
 	soc_prep_hook();
-#endif
+
 #if CONFIG_SOC_HAS_RUNTIME_NUM_CPUS
 	soc_num_cpus_init();
 #endif
@@ -69,11 +77,26 @@ void z_prep_c(void)
 	 */
 	if (((uintptr_t)sp < (uintptr_t)stack_start) ||
 	    ((uintptr_t)sp >= (uintptr_t)stack_end)) {
-		memset(stack_start, 0xAA, stack_sz);
+		arch_early_memset(stack_start, 0xAA, stack_sz);
 	}
+
+#ifdef CONFIG_SMP
+	/* Initialize secondary CPU interrupt stacks. Unlike CPU0, secondary CPUs
+	 * are not yet running, so their stacks can be safely cleared without
+	 * checking the current SP.
+	 */
+	for (int i = 1; i < arch_num_cpus(); i++) {
+		stack_start = K_KERNEL_STACK_BUFFER(z_interrupt_stacks[i]);
+		stack_sz = K_KERNEL_STACK_SIZEOF(z_interrupt_stacks[i]);
+		arch_early_memset(stack_start, 0xAA, stack_sz);
+	}
+#endif
 #endif
 #if CONFIG_ARCH_CACHE
 	arch_cache_init();
+#endif
+#if CONFIG_SOC_CACHE
+	soc_cache_init();
 #endif
 
 #ifdef CONFIG_XTENSA_MMU

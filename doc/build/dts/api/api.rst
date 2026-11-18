@@ -33,10 +33,10 @@ devicetree data in C rvalue form using, for example, the
 :ref:`devicetree-property-access` API.
 
 The root node ``/`` has node identifier ``DT_ROOT``. You can create node
-identifiers for other devicetree nodes using :c:func:`DT_PATH`,
-:c:func:`DT_NODELABEL`, :c:func:`DT_ALIAS`, and :c:func:`DT_INST`.
+identifiers for other devicetree nodes using :c:macro:`DT_PATH`,
+:c:macro:`DT_NODELABEL`, :c:macro:`DT_ALIAS`, and :c:macro:`DT_INST`.
 
-There are also :c:func:`DT_PARENT` and :c:func:`DT_CHILD` macros which can be
+There are also :c:macro:`DT_PARENT` and :c:macro:`DT_CHILD` macros which can be
 used to create node identifiers for a given node's parent node or a particular
 child node, respectively.
 
@@ -71,7 +71,7 @@ binding indicates it is a PCIe bus node, as defined in the
 `PCI Bus Binding to: IEEE Std 1275-1994 Standard for Boot (Initialization Configuration) Firmware`_
 
 .. _PCI Bus Binding to\: IEEE Std 1275-1994 Standard for Boot (Initialization Configuration) Firmware:
-    https://www.openfirmware.info/data/docs/bus.pci.pdf
+    https://www.devicetree.org/open-firmware/bindings/pci/pci2_1.pdf
 
 .. doxygengroup:: devicetree-ranges-prop
 
@@ -104,12 +104,13 @@ does not apply to macros which take cell names as arguments.
 For-each macros
 ===============
 
-There is currently only one "generic" for-each macro,
-:c:func:`DT_FOREACH_CHILD`, which allows iterating over the children of a
-devicetree node.
+The :c:macro:`DT_FOREACH_ANCESTOR` macro allows iterating over the ancestor node
+of a devicetree node.
+Additionally, the :c:macro:`DT_FOREACH_CHILD` macro allows iterating over the
+children of a devicetree node.
 
 There are special-purpose for-each macros, like
-:c:func:`DT_INST_FOREACH_STATUS_OKAY`, but these require ``DT_DRV_COMPAT`` to
+:c:macro:`DT_INST_FOREACH_STATUS_OKAY`, but these require ``DT_DRV_COMPAT`` to
 be defined before use.
 
 .. doxygengroup:: devicetree-generic-foreach
@@ -120,7 +121,7 @@ Existence checks
 This section documents miscellaneous macros that can be used to test if a node
 exists, how many nodes of a certain type exist, whether a node has certain
 properties, etc. Some macros used for special purposes (such as
-:c:func:`DT_IRQ_HAS_IDX` and all macros which require ``DT_DRV_COMPAT``) are
+:c:macro:`DT_IRQ_HAS_IDX` and all macros which require ``DT_DRV_COMPAT``) are
 documented elsewhere on this page.
 
 .. doxygengroup:: devicetree-generic-exist
@@ -137,7 +138,8 @@ devicetree nodes, which is defined as the `transitive closure
 depends on" relation:
 
 - every non-root node directly depends on its parent node
-- a node directly depends on any nodes its properties refer to by phandle
+- a node directly depends on any nodes its properties refer to by phandle, this
+  can be changed with :ref:`dt-bindings-dependency-mode` in the node's binding
 - a node directly depends on its ``interrupt-parent`` if it has an
   ``interrupts`` property
 - a parent node inherits all dependencies from its child nodes
@@ -159,7 +161,7 @@ chosen is an implementation detail, but cyclic dependencies are detected and
 cause errors, so it's safe to assume there are none when using these macros.
 
 There are instance number-based conveniences as well; see
-:c:func:`DT_INST_DEP_ORD` and subsequent documentation.
+:c:macro:`DT_INST_DEP_ORD` and subsequent documentation.
 
 .. doxygengroup:: devicetree-dep-ord
 
@@ -201,7 +203,7 @@ with compatible ``vnd,serial``:
 
 .. warning::
 
-   Be careful making assumptions about instance numbers. See :c:func:`DT_INST`
+   Be careful making assumptions about instance numbers. See :c:macro:`DT_INST`
    for the API guarantees.
 
 As shown above, the ``DT_INST_*`` APIs are conveniences for addressing nodes by
@@ -210,8 +212,8 @@ instance number. They are almost all defined in terms of one of the
 removing ``INST_`` from the macro name. For example, ``DT_INST_PROP(inst,
 prop)`` is equivalent to ``DT_PROP(DT_DRV_INST(inst), prop)``. Similarly,
 ``DT_INST_REG_ADDR(inst)`` is equivalent to ``DT_REG_ADDR(DT_DRV_INST(inst))``,
-and so on. There are some exceptions: :c:func:`DT_ANY_INST_ON_BUS_STATUS_OKAY`
-and :c:func:`DT_INST_FOREACH_STATUS_OKAY` are special-purpose helpers without
+and so on. There are some exceptions: :c:macro:`DT_ANY_INST_ON_BUS_STATUS_OKAY`
+and :c:macro:`DT_INST_FOREACH_STATUS_OKAY` are special-purpose helpers without
 straightforward generic equivalents.
 
 Since ``DT_DRV_INST()`` requires ``DT_DRV_COMPAT`` to be defined, it's an error
@@ -256,14 +258,25 @@ controllers or channels, and properties related to them.
 
 .. doxygengroup:: devicetree-dmas
 
+.. _devicetree-display-api:
+
+Display
+=======
+
+These conveniences may be used for nodes which describe display
+controllers, and properties related to them.
+
+.. doxygengroup:: devicetree-display
+
 .. _devicetree-flash-api:
 
-Fixed flash partitions
-======================
+Fixed and mapped flash partitions
+=================================
 
 These conveniences may be used for the special-purpose ``fixed-partitions``
-compatible used to encode information about flash memory partitions in the
-device tree. See See :dtcompatible:`fixed-partition` for more details.
+and ``zephyr,mapped-partition`` compatibles used to encode information about
+flash memory partitions in the device tree. See :dtcompatible:`fixed-partitions`
+and :dtcompatible:`zephyr,mapped-partition` for more details.
 
 .. doxygengroup:: devicetree-fixed-partition
 
@@ -276,6 +289,16 @@ These conveniences may be used for nodes which describe GPIO controllers/pins,
 and properties related to them.
 
 .. doxygengroup:: devicetree-gpio
+
+.. _devicetree-hwspinlock-api:
+
+HWSpinlock
+==========
+
+These conveniences may be used for nodes which describe hardware spinlock,
+and properties related to them.
+
+.. doxygengroup:: devicetree-hwspinlock
 
 IO channels
 ===========
@@ -294,6 +317,36 @@ These conveniences may be used for nodes which describe MBOX controllers/users,
 and properties related to them.
 
 .. doxygengroup:: devicetree-mbox
+
+.. _devicetree-mux-api:
+
+MUX
+===
+
+These conveniences may be used for nodes which describe MUX controllers/consumers,
+and properties related to them.
+
+.. doxygengroup:: devicetree-mux
+
+.. _devicetree-nvmem-api:
+
+NVMEM
+=====
+
+These conveniences may be used for nodes which describe Non-Volatile
+Memory, and properties related to them.
+
+.. doxygengroup:: devicetree-nvmem
+
+.. _devicetree-ordinals-api:
+
+Ordinals
+========
+
+These conveniences may be used for nodes which describe Dependency
+tracking, and properties related to them.
+
+.. doxygengroup:: devicetree-dep-ord
 
 .. _devicetree-pinctrl-api:
 
@@ -355,10 +408,12 @@ Chosen nodes
 ************
 
 The special ``/chosen`` node contains properties whose values describe
-system-wide settings. The :c:func:`DT_CHOSEN()` macro can be used to get a node
+system-wide settings. The :c:macro:`DT_CHOSEN()` macro can be used to get a node
 identifier for a chosen node.
 
 .. doxygengroup:: devicetree-generic-chosen
+
+.. _devicetree-zephyr-chosen-nodes:
 
 Zephyr-specific chosen nodes
 ****************************
@@ -372,7 +427,8 @@ predates devicetree support in Zephyr. In other cases, there is no Kconfig
 option, and the devicetree node is used directly in the source code to select a
 device.
 
-.. Documentation maintainers: please keep this sorted by property name
+.. Keep list sorted by property name:
+.. zephyr-keep-sorted-start re(^\s+\* - \w+,\w+)
 
 .. list-table:: Zephyr-specific chosen properties
    :header-rows: 1
@@ -380,28 +436,45 @@ device.
 
    * - Property
      - Purpose
+   * - mcuboot,ram-load-dev
+     - When a Zephyr application is built to be loaded to RAM by MCUboot, with
+       :kconfig:option:`CONFIG_MCUBOOT_BOOTLOADER_MODE_SINGLE_APP_RAM_LOAD`,
+       this property is used to tell MCUboot the load address of the image, which
+       will be the ``reg`` of the chosen node.
+   * - zephyr,boot-mode
+     - Used for :ref:`boot_mode_api` selection, part of :ref:`retention_api`, which specifies
+       what image on a device should be booted.
+   * - zephyr,bootloader-info
+     - Selects the :ref:`retention_api` area used to share information with the bootloader.
    * - zephyr,bt-c2h-uart
      - Selects the UART used for host communication in the
        :zephyr:code-sample:`bluetooth_hci_uart`
-   * - zephyr,bt-mon-uart
-     - Sets UART device used for the Bluetooth monitor logging
    * - zephyr,bt-hci
      - Selects the HCI device used by the Bluetooth host stack
+   * - zephyr,bt-hci-ipc
+     - Selects the IPC device used to expose a Bluetooth controller to another
+       device or CPU in the :zephyr:code-sample:`bluetooth_hci_ipc` sample.
+   * - zephyr,bt-mon-uart
+     - Sets UART device used for the Bluetooth monitor logging
+   * - zephyr,camera
+     - Video input device, typically a camera.
    * - zephyr,canbus
      - Sets the default CAN controller
-   * - zephyr,ccm
-     - Core-Coupled Memory node on some STM32 SoCs
    * - zephyr,code-partition
      - Flash partition that the Zephyr image's text section should be linked
        into
    * - zephyr,console
      - Sets UART device used by console driver
+   * - zephyr,cpu-load-counter
+     - Selects the :ref:`counter_api` device used to track CPU idle time.
+   * - zephyr,crc
+     - Selects the CRC device used as an accelerator by the CRC subsystem
    * - zephyr,display
      - Sets the default display controller
-   * - zephyr,keyboard-scan
-     - Sets the default keyboard scan controller
    * - zephyr,dtcm
      - Data Tightly Coupled Memory node on some Arm SoCs
+   * - zephyr,edac
+     - Selects the :ref:`edac_api` device used by the EDAC subsystem.
    * - zephyr,entropy
      - A device which can be used as a system-wide entropy source
    * - zephyr,flash
@@ -412,22 +485,54 @@ device.
        the ``zephyr,flash`` node
    * - zephyr,gdbstub-uart
      - Sets UART device used by the :ref:`gdbstub` subsystem
+   * - zephyr,hdlc-rcp-if
+     - Selects the radio device used by the OpenThread HDLC RCP interface.
+       This device must have :c:struct:`hdlc_api` as its ``api``.
+   * - zephyr,host-cmd-espi-backend
+     - Refer to :ref:`ec_host_cmd_backend_api` API documentation.
+   * - zephyr,host-cmd-shi-backend
+     - Refer to :ref:`ec_host_cmd_backend_api` API documentation.
+   * - zephyr,host-cmd-spi-backend
+     - Refer to :ref:`ec_host_cmd_backend_api` API documentation.
+   * - zephyr,host-cmd-uart-backend
+     - Refer to :ref:`ec_host_cmd_backend_api` API documentation.
    * - zephyr,ieee802154
      - Used by the networking subsystem to set the IEEE 802.15.4 device
    * - zephyr,ipc
      - Used by the OpenAMP subsystem to specify the inter-process communication
        (IPC) device
+   * - zephyr,ipc_rsc_table
+     - Specifies a memory region that will be used for the OpenAMP resource table.
+       Only needed if :kconfig:option:`CONFIG_OPENAMP_COPY_RSC_TABLE` is enabled.
+   * - zephyr,ipc_rx
+     - Alternative to ``zephyr,ipc``. Selects the IPC device to use for reception
+       when separate devices are used for TX and RX. ``zephyr,ipc_tx`` must also
+       be provided alongside this chosen, and selects the IPC device to use for
+       transmission. When this chosen and ``zephyr,ipc_tx`` are provided, the
+       single-device ``zephyr,ipc`` compatible **must not** be provided.
    * - zephyr,ipc_shm
      - A node whose ``reg`` is used by the OpenAMP subsystem to determine the
        base address and size of the shared memory (SHM) usable for
        interprocess-communication (IPC)
+   * - zephyr,ipc_tx
+     - See description of ``zephyr,ipc_rx``.
    * - zephyr,itcm
      - Instruction Tightly Coupled Memory node on some Arm SoCs
+   * - zephyr,led-strip
+     - A LED-strip node which is used to determine the timings of the
+       WS2812 GPIO driver
+   * - zephyr,log-ipc
+     - Selects the IPC device used by the logging subsystem's IPC service backend.
    * - zephyr,log-uart
      - Sets the UART device(s) used by the logging subsystem's UART backend.
        If defined, the UART log backend would output to the devices listed in this node.
+   * - zephyr,modem-uart
+     - Selects the modem UART used by the :zephyr:code-sample:`at_client` sample.
    * - zephyr,ocm
      - On-chip memory node on Xilinx Zynq-7000 and ZynqMP SoCs
+   * - zephyr,openthread-counter
+     - Selects the counter device used by the OpenThread platform for microsecond alarm
+       timers when :kconfig:option:`CONFIG_OPENTHREAD_ALARM_COUNTER` is enabled.
    * - zephyr,osdp-uart
      - Sets UART device used by OSDP subsystem
    * - zephyr,ot-uart
@@ -436,6 +541,18 @@ device.
      - The node corresponding to the PCIe Controller
    * - zephyr,ppp-uart
      - Sets UART device used by PPP
+   * - zephyr,ram-console
+     - Selects the :dtcompatible:`RAM section <zephyr,memory-region>` in which
+       the console subsystem's RAM backend should place its buffer.
+   * - zephyr,rtc
+     - Sets the default RTC device (used for example by the :ref:`SNTP library <sntp_interface>` to
+       set the system time when :kconfig:option:`CONFIG_NET_CONFIG_CLOCK_SNTP_SET_RTC` is enabled)
+   * - zephyr,rtk-serial
+     - Selects the :ref:`uart_api` device used by the Serial GNSS RTK client.
+   * - zephyr,secure-storage-its-partition
+     - Fixed partition node. This selects the partition used by the Secure Storage ZMS backend.
+   * - zephyr,sensor-clock
+     - Selects the :ref:`counter_api` device used as sensor time source.
    * - zephyr,settings-partition
      - Fixed partition node. If defined this selects the partition used
        by the NVS and FCB settings backends.
@@ -444,17 +561,35 @@ device.
    * - zephyr,sram
      - A node whose ``reg`` sets the base address and size of SRAM memory
        available to the Zephyr image, used during linking
+   * - zephyr,system-timer
+     - Selects the hardware timer instance used as the Zephyr system timer,
+       which is a singleton system-wide function. This chosen is needed when the
+       selected system timer driver corresponds to timer hardware for which multiple
+       instances may exist: it selects one instance as the system timer and allows
+       using the other instances with other APIs. This chosen is ignored when the
+       selected system timer driver corresponds to timer hardware for which only one
+       instance may ever exist, such as the Cortex-M SysTick timer; otherwise, it
+       must corresponds to a node that the selected system timer driver can operate.
+       (Note: the Zephyr system timer *driver* is selected using Kconfig options such
+       as :kconfig:option:`CONFIG_CORTEX_M_SYSTICK` - not Devicetree!)
+   * - zephyr,system-timer-companion
+     - Selects the device used to keep time while the primary system timer is
+       inactive in low-power states. It must implement the :ref:`counter_api` API.
+   * - zephyr,tflm-storage
+     - Selects the :dtcompatible:`memory region <zephyr,memory-region>`
+       used by the :zephyr:code-sample:`tflite-ethosu` sample.
+   * - zephyr,touch
+     - Touchscreen controller device node. When LVGL is used, if
+       :kconfig:option:`CONFIG_LV_Z_POINTER_FROM_CHOSEN_TOUCH` is enabled, an LVGL
+       pointer input device is created using the touchscreen controller
+       as its input source.
    * - zephyr,tracing-uart
      - Sets UART device used by tracing subsystem
    * - zephyr,uart-mcumgr
      - UART used for :ref:`device_mgmt`
    * - zephyr,uart-pipe
      - Sets UART device used by serial pipe driver
-   * - zephyr,usb-device
-     - USB device node. If defined and has a ``vbus-gpios`` property, these
-       will be used by the USB subsystem to enable/disable VBUS
-   * - zephyr,led-strip
-     - A LED-strip node which is used to determine the timings of the
-       WS2812 GPIO driver
-   * - zephyr,touch
-     - touchscreen controller device node.
+   * - zephyr,videoenc
+     - Video encoder device, typically an H264 or MJPEG video encoder.
+
+.. zephyr-keep-sorted-stop

@@ -5,19 +5,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef H_IMG_MGMT_
-#define H_IMG_MGMT_
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_IMG_MGMT_IMG_MGMT_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_IMG_MGMT_IMG_MGMT_H_
+
+/**
+ * @file
+ * @brief Header file for the MCUmgr image management group API.
+ * @ingroup mcumgr_img_mgmt
+ */
 
 #include <inttypes.h>
-#include <zephyr/mgmt/mcumgr/mgmt/mgmt.h>
-#include <zephyr/mgmt/mcumgr/smp/smp.h>
 #include <bootutil/image.h>
 #include <zcbor_common.h>
 
+#ifdef CONFIG_MCUMGR_GRP_IMG_VERBOSE_ERR
+#include <zephyr/mgmt/mcumgr/mgmt/mgmt.h>
+#include <zephyr/mgmt/mcumgr/smp/smp.h>
+#endif
+
 /**
- * @brief MCUmgr img_mgmt API
- * @defgroup mcumgr_img_mgmt MCUmgr img_mgmt API
- * @ingroup mcumgr
+ * @brief MCUmgr Image Management API
+ * @defgroup mcumgr_img_mgmt Image Management
+ * @ingroup mcumgr_mgmt_api
  * @{
  */
 
@@ -28,35 +37,45 @@ extern "C" {
 #define IMG_MGMT_DATA_SHA_LEN	32 /* SHA256 */
 
 /**
- * Image state flags
+ * @name Image state flags
+ * @{
  */
+/** Image is set for next swap */
 #define IMG_MGMT_STATE_F_PENDING	0x01
+/** Image has been confirmed. */
 #define IMG_MGMT_STATE_F_CONFIRMED	0x02
+/** Image is currently active. */
 #define IMG_MGMT_STATE_F_ACTIVE		0x04
+/** Image is to stay in primary slot after the next boot. */
 #define IMG_MGMT_STATE_F_PERMANENT	0x08
+/** @} */
 
 /* 255.255.65535.4294967295\0 */
 #define IMG_MGMT_VER_MAX_STR_LEN	(sizeof("255.255.65535.4294967295"))
 
 /**
- * Swap Types for image management state machine
+ * @name Swap Types for image management state machine
+ * @{
  */
-#define IMG_MGMT_SWAP_TYPE_NONE		0
-#define IMG_MGMT_SWAP_TYPE_TEST		1
-#define IMG_MGMT_SWAP_TYPE_PERM		2
-#define IMG_MGMT_SWAP_TYPE_REVERT	3
-#define IMG_MGMT_SWAP_TYPE_UNKNOWN	255
+#define IMG_MGMT_SWAP_TYPE_NONE    0   /**< No swap */
+#define IMG_MGMT_SWAP_TYPE_TEST    1   /**< Test swap */
+#define IMG_MGMT_SWAP_TYPE_PERM    2   /**< Permanent swap */
+#define IMG_MGMT_SWAP_TYPE_REVERT  3   /**< Revert swap */
+#define IMG_MGMT_SWAP_TYPE_UNKNOWN 255 /**< Unknown swap */
+/** @} */
 
 /**
- * Command IDs for image management group.
+ * @name Command IDs for image management group.
+ * @{
  */
-#define IMG_MGMT_ID_STATE	0
-#define IMG_MGMT_ID_UPLOAD	1
-#define IMG_MGMT_ID_FILE	2
-#define IMG_MGMT_ID_CORELIST	3
-#define IMG_MGMT_ID_CORELOAD	4
-#define IMG_MGMT_ID_ERASE	5
-#define IMG_MGMT_ID_SLOT_INFO	6
+#define IMG_MGMT_ID_STATE     0 /**< State of images */
+#define IMG_MGMT_ID_UPLOAD    1 /**< Image upload */
+#define IMG_MGMT_ID_FILE      2 /**< File */
+#define IMG_MGMT_ID_CORELIST  3 /**< Corelist */
+#define IMG_MGMT_ID_CORELOAD  4 /**< Coreload */
+#define IMG_MGMT_ID_ERASE     5 /**< Image erase */
+#define IMG_MGMT_ID_SLOT_INFO 6 /**< Slot info */
+/** @} */
 
 /**
  * Command result codes for image management group.
@@ -383,4 +402,4 @@ extern const char *img_mgmt_err_str_data_overrun;
 }
 #endif
 
-#endif /* H_IMG_MGMT_ */
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_IMG_MGMT_IMG_MGMT_H_ */

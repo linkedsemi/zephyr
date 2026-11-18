@@ -10,6 +10,7 @@
 #include <soc.h>
 #include <fsl_common.h>
 #include <fsl_clock.h>
+#include <zephyr/dt-bindings/clock/kinetis_sim.h>
 #include <zephyr/arch/cpu.h>
 
 /*******************************************************************************
@@ -29,19 +30,23 @@
 
 #define CLOCK_DIVIDER(clk) DT_PROP_OR(CLOCK_NODEID(clk), clock_div, 1) - 1
 
+/* Decode the clock name selector from the encoded `name` cell */
+#define DT_CLOCK_NAME(node_id) \
+	KINETIS_SIM_CLOCK_DECODE_NAME(DT_PHA(node_id, clocks, name))
+
 #define LPUART_CLOCK_SEL(label) \
-	(DT_PHA(DT_NODELABEL(label), clocks, name) == kCLOCK_McgIrc48MClk \
+	(DT_CLOCK_NAME(DT_NODELABEL(label)) == kCLOCK_McgIrc48MClk \
 		 ? SIM_MODULE_CLK_SEL_IRC48M_CLK                                                   \
-	 : DT_PHA(DT_NODELABEL(label), clocks, name) == kCLOCK_Osc0ErClk \
+	 : DT_CLOCK_NAME(DT_NODELABEL(label)) == kCLOCK_Osc0ErClk \
 		 ? SIM_MODULE_CLK_SEL_OSCERCLK_CLK                                                 \
-	 : DT_PHA(DT_NODELABEL(label), clocks, name) == kCLOCK_McgInternalRefClk \
+	 : DT_CLOCK_NAME(DT_NODELABEL(label)) == kCLOCK_McgInternalRefClk \
 		 ? SIM_MODULE_CLK_SEL_MCGIRCLK_CLK                                                 \
 		 : SIM_MODULE_CLK_SEL_DISABLED)
 
 #define TPM_CLOCK_SEL(node_id)                                                                     \
-	(DT_PHA(node_id, clocks, name) == kCLOCK_McgIrc48MClk ? SIM_MODULE_CLK_SEL_IRC48M_CLK      \
-	 : DT_PHA(node_id, clocks, name) == kCLOCK_Osc0ErClk  ? SIM_MODULE_CLK_SEL_OSCERCLK_CLK    \
-	 : DT_PHA(node_id, clocks, name) == kCLOCK_McgInternalRefClk                               \
+	(DT_CLOCK_NAME(node_id) == kCLOCK_McgIrc48MClk ? SIM_MODULE_CLK_SEL_IRC48M_CLK      \
+	 : DT_CLOCK_NAME(node_id) == kCLOCK_Osc0ErClk  ? SIM_MODULE_CLK_SEL_OSCERCLK_CLK    \
+	 : DT_CLOCK_NAME(node_id) == kCLOCK_McgInternalRefClk                               \
 		 ? SIM_MODULE_CLK_SEL_MCGIRCLK_CLK                                                 \
 		 : SIM_MODULE_CLK_SEL_DISABLED)
 
@@ -68,7 +73,7 @@ const sim_clock_config_t simConfig_BOARD_BootClockRUN = {
 
 const osc_config_t oscConfig_BOARD_BootClockRUN = {
 	.freq = DT_PROP(OSC_NODE, clock_frequency),
-	.capLoad = 0,
+	.capLoad = DT_PROP_OR(OSC_NODE, load_capacitance_picofarads, 0),
 #if DT_ENUM_HAS_VALUE(OSC_NODE, mode, external)
 	.workMode = kOSC_ModeExt,
 #elif DT_ENUM_HAS_VALUE(OSC_NODE, mode, low_power)
@@ -83,7 +88,7 @@ const osc_config_t oscConfig_BOARD_BootClockRUN = {
 	}
 };
 
-static void clock_init(void)
+__weak void clock_init(void)
 {
 	/* Set the system clock dividers in SIM to safe value. */
 	CLOCK_SetSimSafeDivs();
@@ -96,9 +101,13 @@ static void clock_init(void)
 	CLOCK_SetSimConfig(&simConfig_BOARD_BootClockRUN);
 	/* Set SystemCoreClock variable. */
 	SystemCoreClock = DT_PROP(DT_NODELABEL(cpu0), clock_frequency);
-	/* Set LPUART0 clock source. */
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lpuart0))
+	/* Set LPUART0 clock source. */
 	CLOCK_SetLpuart0Clock(LPUART_CLOCK_SEL(lpuart0));
+#endif
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lpuart1))
+	/* Set LPUART1 clock source. */
+	CLOCK_SetLpuart1Clock(LPUART_CLOCK_SEL(lpuart1));
 #endif
 #if DT_HAS_COMPAT_STATUS_OKAY(nxp_kinetis_tpm)
 	/* All TPM instances share common clock source for counter clock.

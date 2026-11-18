@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2022 The Chromium OS Authors
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -84,6 +85,11 @@ void tc_unattached_snk_entry(void *obj)
 
 	LOG_INF("Unattached.SNK");
 
+#ifdef CONFIG_USBC_CSM_DRP
+	/* Start DRP toggle timer with tDRP Sink time */
+	usbc_timer_start_with_value(&tc->tc_t_drp_toggle, TC_T_DRP_SNK_MS);
+#endif
+
 	/*
 	 * Allow the state machine to immediately check the state of CC lines and go into
 	 * Attach.Wait state in case the Rp value is detected on the CC lines
@@ -94,18 +100,38 @@ void tc_unattached_snk_entry(void *obj)
 /**
  * @brief Unattached.SNK Run
  */
-void tc_unattached_snk_run(void *obj)
+enum smf_state_result tc_unattached_snk_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
+	struct usbc_port_data *data = dev->data;
+	const struct device *vbus = data->vbus;
 
 	/*
 	 * Transition to AttachWait.SNK when the SNK.Rp state is present
 	 * on at least one of its CC pins.
 	 */
 	if (tcpc_is_cc_rp(tc->cc1) || tcpc_is_cc_rp(tc->cc2)) {
+#ifdef CONFIG_USBC_CSM_DRP
+		/* Stop DRP toggle timer when CC connection detected */
+		usbc_timer_stop(&tc->tc_t_drp_toggle);
+#endif
+		usbc_vbus_enable(vbus, true);
 		tc_set_state(dev, TC_ATTACH_WAIT_SNK_STATE);
+		return SMF_EVENT_HANDLED;
 	}
+
+#ifdef CONFIG_USBC_CSM_DRP
+	/* Check if DRP toggle timer expired - transition to Unattached.SRC */
+	if (usbc_timer_expired(&tc->tc_t_drp_toggle)) {
+		tc_set_state(dev, TC_UNATTACHED_SRC_STATE);
+		/* Execute transition immediately to improve DRP timing accuracy */
+		usbc_bypass_next_sleep(tc->dev);
+		return SMF_EVENT_HANDLED;
+	}
+#endif
+
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -129,7 +155,7 @@ void tc_attach_wait_snk_entry(void *obj)
 /**
  * @brief AttachWait.SNK Run
  */
-void tc_attach_wait_snk_run(void *obj)
+enum smf_state_result tc_attach_wait_snk_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
@@ -158,7 +184,7 @@ void tc_attach_wait_snk_run(void *obj)
 			usbc_bypass_next_sleep(tc->dev);
 		}
 
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
 
 	/* Transition to UnAttached.SNK if CC lines are open */
@@ -183,6 +209,7 @@ void tc_attach_wait_snk_run(void *obj)
 	 * from new state.
 	 */
 	usbc_bypass_next_sleep(tc->dev);
+	return SMF_EVENT_PROPAGATE;
 }
 
 void tc_attach_wait_snk_exit(void *obj)
@@ -204,6 +231,9 @@ void tc_attached_snk_entry(void *obj)
 	int ret;
 
 	LOG_INF("Attached.SNK");
+
+	/* Clear cached CC voltage */
+	tc->cc_voltage = TC_CC_VOLT_OPEN;
 
 	/* Set CC polarity */
 	ret = tcpc_set_cc_polarity(tcpc, tc->cc_polarity);
@@ -228,7 +258,7 @@ void tc_attached_snk_entry(void *obj)
 /**
  * @brief Attached.SNK and DebugAccessory.SNK Run
  */
-void tc_attached_snk_run(void *obj)
+enum smf_state_result tc_attached_snk_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
@@ -236,15 +266,17 @@ void tc_attached_snk_run(void *obj)
 	const struct device *vbus = data->vbus;
 
 	/* Detach detection */
-	if (usbc_vbus_check_level(vbus, TC_VBUS_PRESENT) == false) {
+	if (usbc_vbus_check_level(vbus, TC_VBUS_REMOVED)) {
+		usbc_vbus_enable(vbus, false);
 		tc_set_state(dev, TC_UNATTACHED_SNK_STATE);
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
 
 	/* Run Sink Power Sub-State if not in an explicit contract */
 	if (pe_is_explicit_contract(dev) == false) {
 		sink_power_sub_states(dev);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -259,6 +291,9 @@ void tc_attached_snk_exit(void *obj)
 
 	/* Disable PD */
 	tc_pd_enable(dev, false);
+
+	/* Inform Device Policy Manager of the sink power change */
+	policy_notify(dev, POWER_CHANGE_0A0);
 
 	/* Disable sink path for the PPC */
 	if (data->ppc != NULL) {

@@ -50,13 +50,15 @@ of the `Panasonic Wireless Connectivity Development Hub`_.
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 Please use the ``pan1783_evb_cpuapp``, ``pan1783a_evb_cpuapp`` or
 ``pan1783a_pa_evb_cpuapp`` for application core and ``pan1783_evb_cpunet``,
 ``pan1783a_evb_cpunet`` or ``pan1783a_pa_evb_cpunet`` board configuration
 for network core when :ref:`build_an_application` and :ref:`application_run`.
 
 .. target-notes::
-.. _product website: https://industry.panasonic.eu/products/devices/wireless-connectivity/bluetooth-low-energy-modules
+.. _product website: https://pideu.panasonic.de/development-hub/pan1783/
 .. _Panasonic Wireless Connectivity Development Hub: https://pideu.panasonic.de/development-hub/
 .. _pan1783_evb user guide: https://pideu.panasonic.de/development-hub/pan1783/evaluation_board/user_guide/
 .. _pan1783a_evb user guide: https://pideu.panasonic.de/development-hub/pan1783a/evaluation_board/user_guide/

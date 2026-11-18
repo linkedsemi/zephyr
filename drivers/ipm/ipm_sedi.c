@@ -51,15 +51,22 @@ static void ipm_event_dispose(IN sedi_ipc_t device, IN uint32_t event, INOUT voi
 	switch (event) {
 	case SEDI_IPC_EVENT_MSG_IN:
 		if (ipm->rx_msg_notify_cb != NULL) {
-			set_ipm_dev_busy(dev, false);
 			sedi_ipc_read_dbl(device, &drbl_in);
 			len = IPC_HEADER_GET_LENGTH(drbl_in);
-			sedi_ipc_read_msg(device, ipm->incoming_data_buf, len);
-			ipm->rx_msg_notify_cb(dev,
+			if (len <= IPC_DATA_LEN_MAX) {
+				set_ipm_dev_busy(dev, false);
+				sedi_ipc_read_msg(device, ipm->incoming_data_buf, len);
+				ipm->rx_msg_notify_cb(dev,
 					      ipm->rx_msg_notify_cb_data,
 					      drbl_in, ipm->incoming_data_buf);
+			} else {
+				LOG_ERR("Invalid DRBL 0x%08x: payload length %u exceeds max %u;"
+						" discarding", drbl_in, len, IPC_DATA_LEN_MAX);
+				(void)sedi_ipc_send_ack_drbl(device, 0);
+			}
 		} else {
 			LOG_WRN("no handler for ipm new msg");
+			(void)sedi_ipc_send_ack_drbl(device, 0);
 		}
 		break;
 	case SEDI_IPC_EVENT_MSG_PEER_ACKED:
@@ -260,7 +267,7 @@ static int ipm_power_ctrl(const struct device *dev,
 }
 #endif
 
-static const struct ipm_driver_api ipm_funcs = {
+static DEVICE_API(ipm, ipm_funcs) = {
 	.send = ipm_sedi_send,
 	.register_callback = ipm_sedi_register_callback,
 	.max_data_size_get = ipm_sedi_get_max_data_size,
@@ -282,12 +289,12 @@ static const struct ipm_driver_api ipm_funcs = {
 		IRQ_CONNECT(DT_INST_IRQN(n),				\
 			    DT_INST_IRQ(n, priority), sedi_ipc_isr,	\
 			    DT_INST_PROP(n, peripheral_id),		\
-			    DT_INST_IRQ(n, sense));			\
+			    DT_INST_IRQ(n, flags));			\
 	}								\
-	PM_DEVICE_DT_DEFINE(DT_NODELABEL(ipm##n), ipm_power_ctrl);	\
+	PM_DEVICE_DT_INST_DEFINE(n, ipm_power_ctrl);			\
 	DEVICE_DT_INST_DEFINE(n,					\
 			      &ipm_init,				\
-			      PM_DEVICE_DT_GET(DT_NODELABEL(ipm##n)),   \
+			      PM_DEVICE_DT_INST_GET(n),			\
 			      &ipm_data_##n,				\
 			      &ipm_config_##n,				\
 			      POST_KERNEL,				\

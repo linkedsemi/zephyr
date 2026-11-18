@@ -26,6 +26,8 @@
 
 #include <v2/irq.h>
 
+#include <zephyr/platform/hooks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -33,6 +35,8 @@ extern "C" {
 static ALWAYS_INLINE void arch_kernel_init(void)
 {
 	z_irq_setup();
+
+	soc_per_core_init_hook();
 }
 
 

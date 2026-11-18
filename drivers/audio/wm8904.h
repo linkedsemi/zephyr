@@ -12,6 +12,8 @@
  ******************************************************************************/
 
 #define WM8904_REG_RESET                    (0x00)
+#define WM8904_REG_MIC_BIAS_CONTROL_0       (0x06)
+#define WM8904_REG_MIC_BIAS_CONTROL_1       (0x07)
 #define WM8904_REG_ANALOG_ADC_0             (0x0A)
 #define WM8904_REG_POWER_MGMT_0             (0x0C)
 #define WM8904_REG_POWER_MGMT_2             (0x0E)
@@ -48,11 +50,19 @@
 #define WM8904_REG_ANALOG_OUT2_RIGHT        (0x3C)
 #define WM8904_REG_GPIO_CONTROL_4           (0x7C)
 /* FLL control register */
-#define WM8904_REG_FLL_CONTROL_1 (0x74)
-#define WM8904_REG_FLL_CONTROL_2 (0x75)
-#define WM8904_REG_FLL_CONTROL_3 (0x76)
-#define WM8904_REG_FLL_CONTROL_4 (0x77)
-#define WM8904_REG_FLL_CONTROL_5 (0x78)
+#define WM8904_REG_FLL_CONTROL_1            (0x74)
+#define WM8904_REG_FLL_CONTROL_2            (0x75)
+#define WM8904_REG_FLL_CONTROL_3            (0x76)
+#define WM8904_REG_FLL_CONTROL_4            (0x77)
+#define WM8904_REG_FLL_CONTROL_5            (0x78)
+/* EQ register */
+#define WM8904_REG_EQ_ENA                   (0x86)
+#define WM8904_REG_EQ_B1_GAIN               (0x87)
+#define WM8904_REG_EQ_B2_GAIN               (0x88)
+#define WM8904_REG_EQ_B3_GAIN               (0x89)
+#define WM8904_REG_EQ_B4_GAIN               (0x8A)
+#define WM8904_REG_EQ_B5_GAIN               (0x8B)
+
 /* GPIO control register */
 #define WM8904_REG_GPIO_CONTROL_1 (0x79)
 #define WM8904_REG_GPIO_CONTROL_2 (0x7A)
@@ -95,6 +105,23 @@
 #define WM8904_REGMASK_IN_VOLUME	0b00011111
 
 /**
+ * WM8904_REG_MIC_BIAS_CONTROL_0:
+ * [0] - MICBIAS_ENA: Microphone bias enable
+ */
+#define WM8904_REGMASK_MICBIAS_ENA	0x0001
+
+/**
+ * WM8904_REG_MIC_BIAS_CONTROL_1:
+ * [2:0] - MICBIAS_SEL: Microphone bias voltage select
+ *         000 - 9/10 AVDD
+ *         001 - 10/9 AVDD
+ *         010 - 7/6 AVDD
+ *         011 - 4/3 AVDD
+ *         1xx - 3/2 AVDD
+ */
+#define WM8904_REGMASK_MICBIAS_SEL	0x0007
+
+/**
  * WM8904_ANALOG_LEFT_IN_1, WM8904_ANALOG_RIGHT_IN_1:
  * [6]   - INx_CM_ENA: Common-mode rejection enable (N/A for single-mode)
  * [5:4] - x_IP_SEL_N: Inverting input selection
@@ -102,7 +129,7 @@
  * [1:0] - x_MODE: Input mode
  */
 #define WM8904_REGVAL_INSEL(cm, nin, pin, mode) \
-	(((cm) & 0b1) << 6) | (((nin) & 0b11) << 4)
+	(((cm) & 0b1) << 6) | (((nin) & 0b11) << 4) | (((pin) & 0b11) << 2)
 #define WM8904_REGMASK_INSEL_CMENA		0b01000000
 #define WM8904_REGMASK_INSEL_IP_SEL_N	0b00110000
 #define WM8904_REGMASK_INSEL_IP_SEL_P	0b00001100
@@ -113,6 +140,15 @@
 #define WM8904_MAP_HEADPHONE_LINEOUT_MAX_VOLUME 0x3FU
 #define WM8904_DAC_MAX_VOLUME                   0xC0U
 
+/* EQ Bands in Hz */
+#define WM8904_EQ_BAND_1   100U
+#define WM8904_EQ_BAND_2   300U
+#define WM8904_EQ_BAND_3   875U
+#define WM8904_EQ_BAND_4   2400U
+#define WM8904_EQ_BAND_5   6900U
+/* EQ MAX/MIN Gain in dB */
+#define WM8904_EQ_MAX_GAIN 12
+#define WM8904_EQ_MIN_GAIN -12
 
 /*! @brief The audio data transfer protocol. */
 typedef enum _wm8904_protocol {
@@ -141,14 +177,11 @@ typedef enum _wm8904_fs_ratio {
 /*! @brief Sample rate. */
 typedef enum _wm8904_sample_rate {
 	kWM8904_SampleRate8kHz    = 0x0, /*!< 8 kHz */
-	kWM8904_SampleRate12kHz   = 0x1, /*!< 12kHz */
+	kWM8904_SampleRate12kHz   = 0x1, /*!< 11.025kHz, 12kHz */
 	kWM8904_SampleRate16kHz   = 0x2, /*!< 16kHz */
-	kWM8904_SampleRate24kHz   = 0x3, /*!< 24kHz */
+	kWM8904_SampleRate24kHz   = 0x3, /*!< 22.05kHz, 24kHz */
 	kWM8904_SampleRate32kHz   = 0x4, /*!< 32kHz */
-	kWM8904_SampleRate48kHz   = 0x5, /*!< 48kHz */
-	kWM8904_SampleRate11025Hz = 0x6, /*!< 11.025kHz */
-	kWM8904_SampleRate22050Hz = 0x7, /*!< 22.05kHz */
-	kWM8904_SampleRate44100Hz = 0x8  /*!< 44.1kHz */
+	kWM8904_SampleRate48kHz   = 0x5, /*!< 44.1kHz, 48kHz */
 } wm8904_sample_rate_t;
 
 #endif /* ZEPHYR_INCLUDE_CODEC_WM8904_H_ */

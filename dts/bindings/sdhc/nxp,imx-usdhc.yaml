@@ -5,7 +5,7 @@ description: NXP imx USDHC controller
 
 compatible: "nxp,imx-usdhc"
 
-include: [sdhc.yaml, pinctrl-device.yaml]
+include: [sdhc.yaml, pinctrl-device.yaml, reset-device.yaml]
 
 properties:
   reg:
@@ -29,7 +29,7 @@ properties:
     description: |
       Number of words used as write watermark level in FIFO queue for USDHC
 
-  max_current_330:
+  max-current-330:
     type: int
     default: 0
     description: |
@@ -42,6 +42,14 @@ properties:
     type: phandle-array
     description: |
       Power pin
+      This pin defaults to active high when consumed by the SD card. The
+      property value should ensure the flags properly describe the signal
+      that is presented to the driver.
+
+  sd-gpios:
+    type: phandle-array
+    description: |
+      SDIO Reset pin
       This pin defaults to active high when consumed by the SD card. The
       property value should ensure the flags properly describe the signal
       that is presented to the driver.
@@ -60,6 +68,21 @@ properties:
       When the external SD card circuit does not support 1.8V, add this
       property to disable 1.8v card voltage of SD card controller.
 
+  no-3-3-v:
+    type: boolean
+    description: |
+      When the host I/O voltage is 1.8V only and the SD card circuit does
+      not support 3.3V signaling, add this property to disable 3.3V card
+      voltage of SD card controller. This forces the controller to use a
+      lower voltage for initial card communication.
+
+  no-3-0-v:
+    type: boolean
+    description: |
+      When the host I/O voltage is 1.8V only and the SD card circuit does
+      not support 3.0V signaling, add this property to disable 3.0V card
+      voltage of SD card controller.
+
   detect-dat3:
     type: boolean
     description: |
@@ -73,3 +96,10 @@ properties:
       Use the host's internal card detect signal (USDHC_CD) to detect the SD
       card. This signal is available as an alternative to card detect via GPIO,
       and should be connected to the SD slot's detect pin if used.
+
+  non-removable:
+    type: boolean
+    description: |
+      Indicates a non-removable device such as an SDIO Wi-Fi module.
+      When set, the host treats the device as always present and skips
+      removable card detection.

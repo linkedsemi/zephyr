@@ -3,15 +3,21 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef ZEPHYR_INCLUDE_INPUT_TOUCH_H_
-#define ZEPHYR_INCLUDE_INPUT_TOUCH_H_
 
 /**
- * @brief Touch Events API
- * @defgroup touch_events Touchscreen Event Report API
+ * @file
+ * @brief Header file for touch events API.
+ * @ingroup touch_events
+ */
+
+#ifndef ZEPHYR_INCLUDE_INPUT_INPUT_TOUCH_H_
+#define ZEPHYR_INCLUDE_INPUT_INPUT_TOUCH_H_
+
+/**
+ * @defgroup touch_events Touchscreen Events
  * @since 3.7
  * @version 0.1.0
- * @ingroup io_interfaces
+ * @ingroup input_interface
  * @{
  */
 
@@ -26,21 +32,40 @@ extern "C" {
  *
  * This structure **must** be placed first in the driver's config structure.
  *
- * @param screen_width Horizontal resolution of touchscreen
- * @param screen_height Vertical resolution of touchscreen
- * @param inverted_x  X axis is inverted
- * @param inverted_y Y axis is inverted
- * @param swapped_x_y X and Y axes are swapped
- *
  * see touchscreem-common.yaml for more details
  */
 struct input_touchscreen_common_config {
+	/** Horizontal resolution of the touch controller's own coordinate space */
 	uint32_t screen_width;
+	/** Vertical resolution of the touch controller's own coordinate space */
 	uint32_t screen_height;
+	/** X axis is inverted */
 	bool inverted_x;
+	/** Y axis is inverted */
 	bool inverted_y;
+	/** X and Y axes are swapped */
 	bool swapped_x_y;
+	/** Horizontal resolution of the panel to scale into, 0 to disable scaling */
+	uint32_t output_width;
+	/** Vertical resolution of the panel to scale into, 0 to disable scaling */
+	uint32_t output_height;
 };
+
+/**
+ * @brief Select an output dimension from the display phandle, else the node's own property.
+ *
+ * Prefers the width/height of the node referenced by the @c display phandle; falls back to the
+ * node's own @c output-width / @c output-height when @c display is not set, and to 0 when
+ * neither is present, which disables scaling.
+ *
+ * @param node_id The devicetree node identifier.
+ * @param dim The display-controller dimension property (width or height).
+ * @param prop The touchscreen fallback property (output_width or output_height).
+ */
+#define INPUT_TOUCH_OUTPUT_DIM(node_id, dim, prop)			\
+	COND_CODE_1(DT_NODE_HAS_PROP(node_id, display),			\
+		(DT_PROP(DT_PHANDLE(node_id, display), dim)),		\
+		(DT_PROP_OR(node_id, prop, 0)))
 
 /**
  * @brief Initialize common touchscreen config from devicetree
@@ -53,7 +78,9 @@ struct input_touchscreen_common_config {
 		.screen_height = DT_PROP(node_id, screen_height),	\
 		.inverted_x = DT_PROP(node_id, inverted_x),		\
 		.inverted_y = DT_PROP(node_id, inverted_y),		\
-		.swapped_x_y = DT_PROP(node_id, swapped_x_y)		\
+		.swapped_x_y = DT_PROP(node_id, swapped_x_y),		\
+		.output_width = INPUT_TOUCH_OUTPUT_DIM(node_id, width, output_width),	\
+		.output_height = INPUT_TOUCH_OUTPUT_DIM(node_id, height, output_height),	\
 	}
 
 /**
@@ -91,4 +118,4 @@ void input_touchscreen_report_pos(const struct device *dev,
 
 /** @} */
 
-#endif /* ZEPHYR_INCLUDE_INPUT_TOUCH_H_ */
+#endif /* ZEPHYR_INCLUDE_INPUT_INPUT_TOUCH_H_ */

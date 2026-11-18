@@ -15,7 +15,7 @@
 
 #define Z_STATE_STR_DUMMY       "dummy"
 #define Z_STATE_STR_PENDING     "pending"
-#define Z_STATE_STR_PRESTART    "prestart"
+#define Z_STATE_STR_SLEEPING    "sleeping"
 #define Z_STATE_STR_DEAD        "dead"
 #define Z_STATE_STR_SUSPENDED   "suspended"
 #define Z_STATE_STR_ABORTING    "aborting"
@@ -30,6 +30,10 @@
 extern struct k_spinlock z_thread_monitor_lock;
 #endif /* CONFIG_THREAD_MONITOR */
 
+#ifdef CONFIG_MULTITHREADING
+extern struct k_thread z_idle_threads[CONFIG_MP_MAX_NUM_CPUS];
+#endif /* CONFIG_MULTITHREADING */
+
 void idle(void *unused1, void *unused2, void *unused3);
 
 /* clean up when a thread is aborted */
@@ -42,6 +46,7 @@ void z_thread_monitor_exit(struct k_thread *thread);
 	} while (false)
 #endif /* CONFIG_THREAD_MONITOR */
 
+void z_thread_abort(struct k_thread *thread);
 
 static inline void thread_schedule_new(struct k_thread *thread, k_timeout_t delay)
 {
@@ -52,19 +57,20 @@ static inline void thread_schedule_new(struct k_thread *thread, k_timeout_t dela
 		z_add_thread_timeout(thread, delay);
 	}
 #else
-	ARG_UNUSED(delay);
-	k_thread_start(thread);
+	if (!K_TIMEOUT_EQ(delay, K_FOREVER)) {
+		k_thread_start(thread);
+	}
 #endif /* CONFIG_SYS_CLOCK_EXISTS */
 }
 
-static inline int thread_is_preemptible(struct k_thread *thread)
+static inline int thread_is_preemptible(const struct k_thread *thread)
 {
 	/* explanation in kernel_struct.h */
 	return thread->base.preempt <= _PREEMPT_THRESHOLD;
 }
 
 
-static inline int thread_is_metairq(struct k_thread *thread)
+static inline int thread_is_metairq(const struct k_thread *thread)
 {
 #if CONFIG_NUM_METAIRQ_PRIORITIES > 0
 	return (thread->base.prio - K_HIGHEST_THREAD_PRIO)
@@ -75,57 +81,76 @@ static inline int thread_is_metairq(struct k_thread *thread)
 #endif /* CONFIG_NUM_METAIRQ_PRIORITIES */
 }
 
-#ifdef CONFIG_ASSERT
-static inline bool is_thread_dummy(struct k_thread *thread)
+static inline bool is_thread_dummy(const struct k_thread *thread)
 {
 	return (thread->base.thread_state & _THREAD_DUMMY) != 0U;
 }
-#endif /* CONFIG_ASSERT */
 
-
-static inline bool z_is_thread_suspended(struct k_thread *thread)
+static inline bool z_is_thread_suspended(const struct k_thread *thread)
 {
 	return (thread->base.thread_state & _THREAD_SUSPENDED) != 0U;
 }
 
-static inline bool z_is_thread_pending(struct k_thread *thread)
+static inline bool z_is_thread_pending(const struct k_thread *thread)
 {
 	return (thread->base.thread_state & _THREAD_PENDING) != 0U;
 }
 
-static inline bool z_is_thread_prevented_from_running(struct k_thread *thread)
+static inline bool z_is_thread_dead(const struct k_thread *thread)
+{
+	return (thread->base.thread_state & _THREAD_DEAD) != 0U;
+}
+
+/* Return true if the thread is aborting, else false */
+static inline bool z_is_thread_aborting(const struct k_thread *thread)
+{
+	return (thread->base.thread_state & _THREAD_ABORTING) != 0U;
+}
+
+/* Return true if the thread is aborting or suspending, else false */
+static inline bool z_is_thread_halting(const struct k_thread *thread)
+{
+	return (thread->base.thread_state &
+		(_THREAD_ABORTING | _THREAD_SUSPENDING)) != 0U;
+}
+
+
+static inline bool z_is_thread_prevented_from_running(const struct k_thread *thread)
 {
 	uint8_t state = thread->base.thread_state;
 
-	return (state & (_THREAD_PENDING | _THREAD_PRESTART | _THREAD_DEAD |
+	return (state & (_THREAD_PENDING | _THREAD_SLEEPING | _THREAD_DEAD |
 			 _THREAD_DUMMY | _THREAD_SUSPENDED)) != 0U;
-
 }
 
-static inline bool z_is_thread_timeout_active(struct k_thread *thread)
+static inline bool z_is_thread_timeout_active(const struct k_thread *thread)
 {
 	return !z_is_inactive_timeout(&thread->base.timeout);
 }
 
-static inline bool z_is_thread_ready(struct k_thread *thread)
+static inline bool z_is_thread_ready(const struct k_thread *thread)
 {
-	return !((z_is_thread_prevented_from_running(thread)) != 0U ||
-		 z_is_thread_timeout_active(thread));
+	return !z_is_thread_prevented_from_running(thread);
 }
 
-static inline bool z_has_thread_started(struct k_thread *thread)
-{
-	return (thread->base.thread_state & _THREAD_PRESTART) == 0U;
-}
-
-static inline bool z_is_thread_state_set(struct k_thread *thread, uint32_t state)
+static inline bool z_is_thread_state_set(const struct k_thread *thread, uint32_t state)
 {
 	return (thread->base.thread_state & state) != 0U;
 }
 
-static inline bool z_is_thread_queued(struct k_thread *thread)
+static inline bool z_is_thread_queued(const struct k_thread *thread)
 {
 	return z_is_thread_state_set(thread, _THREAD_QUEUED);
+}
+
+static inline void z_mark_thread_as_queued(struct k_thread *thread)
+{
+	thread->base.thread_state |= _THREAD_QUEUED;
+}
+
+static inline void z_mark_thread_as_not_queued(struct k_thread *thread)
+{
+	thread->base.thread_state &= ~_THREAD_QUEUED;
 }
 
 static inline void z_mark_thread_as_suspended(struct k_thread *thread)
@@ -142,11 +167,6 @@ static inline void z_mark_thread_as_not_suspended(struct k_thread *thread)
 	SYS_PORT_TRACING_FUNC(k_thread, sched_resume, thread);
 }
 
-static inline void z_mark_thread_as_started(struct k_thread *thread)
-{
-	thread->base.thread_state &= ~_THREAD_PRESTART;
-}
-
 static inline void z_mark_thread_as_pending(struct k_thread *thread)
 {
 	thread->base.thread_state |= _THREAD_PENDING;
@@ -155,6 +175,21 @@ static inline void z_mark_thread_as_pending(struct k_thread *thread)
 static inline void z_mark_thread_as_not_pending(struct k_thread *thread)
 {
 	thread->base.thread_state &= ~_THREAD_PENDING;
+}
+
+static inline bool z_is_thread_sleeping(struct k_thread *thread)
+{
+	return (thread->base.thread_state & _THREAD_SLEEPING) != 0U;
+}
+
+static inline void z_mark_thread_as_sleeping(struct k_thread *thread)
+{
+	thread->base.thread_state |= _THREAD_SLEEPING;
+}
+
+static inline void z_mark_thread_as_not_sleeping(struct k_thread *thread)
+{
+	thread->base.thread_state &= ~_THREAD_SLEEPING;
 }
 
 /*
@@ -181,13 +216,13 @@ static inline void z_thread_essential_clear(struct k_thread *thread)
  *
  * Returns true if current thread is essential, false if it is not.
  */
-static inline bool z_is_thread_essential(struct k_thread *thread)
+static inline bool z_is_thread_essential(const struct k_thread *thread)
 {
 	return (thread->base.user_options & K_ESSENTIAL) == K_ESSENTIAL;
 }
 
 
-static ALWAYS_INLINE bool should_preempt(struct k_thread *thread,
+static ALWAYS_INLINE bool should_preempt(const struct k_thread *thread,
 					 int preempt_ok)
 {
 	/* Preemption is OK if it's being explicitly allowed by
@@ -225,12 +260,12 @@ static ALWAYS_INLINE bool should_preempt(struct k_thread *thread,
 }
 
 
-static inline bool z_is_idle_thread_entry(void *entry_point)
+static inline bool z_is_idle_thread_entry(k_thread_entry_t entry_point)
 {
 	return entry_point == idle;
 }
 
-static inline bool z_is_idle_thread_object(struct k_thread *thread)
+static inline bool z_is_idle_thread_object(const struct k_thread *thread)
 {
 #ifdef CONFIG_MULTITHREADING
 #ifdef CONFIG_SMP

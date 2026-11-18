@@ -6,18 +6,17 @@ import abc
 import argparse
 import os
 import pathlib
-import pickle
-import platform
 import shutil
 import subprocess
 import sys
 
+from elftools.elf.elffile import ELFFile
+
 from west import manifest
-from west.commands import Verbosity
 from west.util import quote_sh_list
 
-from build_helpers import find_build_dir, is_zephyr_build, \
-    FIND_BUILD_DIR_DESCRIPTION
+from build_helpers import BUILD_HELPERS_LOGGER, find_build_dir, is_zephyr_build, \
+    forward_logging_to_west, FIND_BUILD_DIR_DESCRIPTION
 from runners.core import BuildConfiguration
 from zcmake import CMakeCache
 from zephyr_ext_common import Forceable, ZEPHYR_SCRIPTS
@@ -42,26 +41,6 @@ understand POSIX 12.2 Guideline 10, always use `--`.
 See tool-specific help below for details.'''
 
 SIGN_EPILOG = '''\
-imgtool
--------
-
-To build a signed binary you can load with MCUboot using imgtool,
-run this from your build directory:
-
-   west sign -t imgtool -- --key YOUR_SIGNING_KEY.pem
-
-For this to work, either imgtool must be installed (e.g. using pip3),
-or you must pass the path to imgtool.py using the -p option.
-
-Assuming your binary was properly built for processing and handling by
-imgtool, this creates zephyr.signed.bin and zephyr.signed.hex
-files which are ready for use by your bootloader.
-
-The version number, image header size, alignment, and slot sizes are
-determined from the build directory using .config and the device tree.
-As shown above, extra arguments after a '--' are passed to imgtool
-directly.
-
 rimage
 ------
 
@@ -77,28 +56,40 @@ You can also pass additional arguments to rimage thanks to [sign] and
 [rimage] sections in your west config file(s); this is especially useful
 when invoking west sign _indirectly_ through CMake/ninja. See how at
 https://docs.zephyrproject.org/latest/develop/west/sign.html
+
+silabs_commander
+----------------
+
+To create a signed binary with the silabs_commander tool, run this from your
+build directory:
+
+   west sign -t silabs_commander -- [--sign PRIVATE.pem] [--encrypt KEY] [--mic KEY]
+
+For this to work, either "commander" must be installed or you must pass
+the path to "commander" using the -p option.
+
+If an argument is not specified, the value provided by Kconfig
+(CONFIG_SIWX91X_SIGN_KEY, CONFIG_SIWX91X_MIC_KEY and CONFIG_SIWX91X_ENCRYPT)
+is used.
+
+The exact behavior of these option are described in Silabs UG574[1] or in the
+output of "commander rps converter --help"
+
+[1]: https://www.silabs.com/documents/public/user-guides/ug574-siwx917-soc-manufacturing-utility-user-guide.pdf
 '''
-
-class ToggleAction(argparse.Action):
-
-    def __call__(self, parser, args, ignored, option):
-        setattr(args, self.dest, not option.startswith('--no-'))
-
 
 class Sign(Forceable):
     def __init__(self):
         super(Sign, self).__init__(
             'sign',
-            # Keep this in sync with the string in west-commands.yml.
-            'sign a Zephyr binary for bootloader chain-loading',
-            SIGN_DESCRIPTION,
+            '',
+            description=SIGN_DESCRIPTION,
             accepts_unknown_args=False)
 
     def do_add_parser(self, parser_adder):
         parser = parser_adder.add_parser(
             self.name,
             epilog=SIGN_EPILOG,
-            help=self.help,
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description=self.description)
 
@@ -110,9 +101,9 @@ class Sign(Forceable):
 
         # general options
         group = parser.add_argument_group('tool control options')
-        group.add_argument('-t', '--tool', choices=['imgtool', 'rimage'],
-                           help='''image signing tool name; imgtool and rimage
-                           are currently supported (imgtool is deprecated)''')
+        group.add_argument('-t', '--tool', choices=['picotool', 'rimage', 'silabs_commander'],
+                           help='''image signing tool name; picotool, rimage and silabs_commander
+                           are currently supported''')
         group.add_argument('-p', '--tool-path', default=None,
                            help='''path to the tool itself, if needed''')
         group.add_argument('-D', '--tool-data', default=None,
@@ -125,8 +116,7 @@ schema (rimage "target") is not defined in board.cmake.''')
 
         # bin file options
         group = parser.add_argument_group('binary (.bin) file options')
-        group.add_argument('--bin', '--no-bin', dest='gen_bin', nargs=0,
-                           action=ToggleAction,
+        group.add_argument('--bin', dest='gen_bin', action=argparse.BooleanOptionalAction,
                            help='''produce a signed .bin file?
                            (default: yes, if supported and unsigned bin
                            exists)''')
@@ -137,8 +127,7 @@ schema (rimage "target") is not defined in board.cmake.''')
 
         # hex file options
         group = parser.add_argument_group('Intel HEX (.hex) file options')
-        group.add_argument('--hex', '--no-hex', dest='gen_hex', nargs=0,
-                           action=ToggleAction,
+        group.add_argument('--hex', dest='gen_hex', action=argparse.BooleanOptionalAction,
                            help='''produce a signed .hex file?
                            (default: yes, if supported and unsigned hex
                            exists)''')
@@ -151,9 +140,12 @@ schema (rimage "target") is not defined in board.cmake.''')
 
     def do_run(self, args, ignored):
         self.args = args        # for check_force
+        # Forward debug output from the build_helpers/zcmake module
+        # loggers so it is visible under "west -v" / "west -vv".
+        forward_logging_to_west(self, [BUILD_HELPERS_LOGGER, 'zcmake'])
 
         # Find the build directory and parse .config and DT.
-        build_dir = find_build_dir(args.build_dir)
+        build_dir = find_build_dir(args.build_dir, config=self.config)
         self.check_force(os.path.isdir(build_dir),
                          'no such build directory {}'.format(build_dir))
         self.check_force(is_zephyr_build(build_dir),
@@ -187,12 +179,12 @@ schema (rimage "target") is not defined in board.cmake.''')
             formats.append('hex')
 
         # Delegate to the signer.
-        if args.tool == 'imgtool':
-            if args.if_tool_available:
-                self.die('imgtool does not support --if-tool-available')
-            signer = ImgtoolSigner()
+        if args.tool == 'picotool':
+            signer = PicotoolSigner()
         elif args.tool == 'rimage':
             signer = RimageSigner()
+        elif args.tool == 'silabs_commander':
+            signer = CommanderSigner()
         # (Add support for other signers here in elif blocks)
         else:
             if args.tool is None:
@@ -220,190 +212,22 @@ class Signer(abc.ABC):
         '''
 
 
-class ImgtoolSigner(Signer):
+# Resolve a path to a tool binary using either --tool-path or the `which` utility
+def get_tool_path(command, tool_name):
+    if command.args.tool_path:
+        tool = command.args.tool_path
+        if not os.path.isfile(tool):
+            command.die(f'--tool-path {tool}: no such file')
+    else:
+        tool = shutil.which(tool_name)
+        if not tool:
+            command.die(f'"{tool_name}" not found; either make it available on PATH or provide --tool-path')
+    return tool
 
-    def sign(self, command, build_dir, build_conf, formats):
-        if not formats:
-            return
+# This function returns the path to build result, without the file extension
+def get_kernel_bin_name(build_conf):
+    return build_conf.get('CONFIG_KERNEL_BIN_NAME', "zephyr")
 
-        args = command.args
-        b = pathlib.Path(build_dir)
-
-        command.wrn("west sign using imgtool is deprecated and will be removed in a future release")
-
-        imgtool = self.find_imgtool(command, args)
-        # The vector table offset and application version are set in Kconfig:
-        appver = self.get_cfg(command, build_conf, 'CONFIG_MCUBOOT_IMGTOOL_SIGN_VERSION')
-        vtoff = self.get_cfg(command, build_conf, 'CONFIG_ROM_START_OFFSET')
-        # Flash device write alignment and the partition's slot size
-        # come from devicetree:
-        flash = self.edt_flash_node(command, b, args.quiet)
-        align, addr, size = self.edt_flash_params(command, flash)
-
-        if not build_conf.getboolean('CONFIG_BOOTLOADER_MCUBOOT'):
-            command.wrn("CONFIG_BOOTLOADER_MCUBOOT is not set to y in "
-                        f"{build_conf.path}; this probably won't work")
-
-        kernel = build_conf.get('CONFIG_KERNEL_BIN_NAME', 'zephyr')
-
-        if 'bin' in formats:
-            in_bin = b / 'zephyr' / f'{kernel}.bin'
-            if not in_bin.is_file():
-                command.die(f"no unsigned .bin found at {in_bin}")
-            in_bin = os.fspath(in_bin)
-        else:
-            in_bin = None
-        if 'hex' in formats:
-            in_hex = b / 'zephyr' / f'{kernel}.hex'
-            if not in_hex.is_file():
-                command.die(f"no unsigned .hex found at {in_hex}")
-            in_hex = os.fspath(in_hex)
-        else:
-            in_hex = None
-
-        if not args.quiet:
-            command.banner('image configuration:')
-            command.inf('partition offset: {0} (0x{0:x})'.format(addr))
-            command.inf('partition size: {0} (0x{0:x})'.format(size))
-            command.inf('rom start offset: {0} (0x{0:x})'.format(vtoff))
-
-        # Base sign command.
-        sign_base = imgtool + ['sign',
-                               '--version', str(appver),
-                               '--align', str(align),
-                               '--header-size', str(vtoff),
-                               '--slot-size', str(size)]
-        sign_base.extend(args.tool_args)
-
-        if not args.quiet:
-            command.banner('signing binaries')
-        if in_bin:
-            out_bin = args.sbin or str(b / 'zephyr' / 'zephyr.signed.bin')
-            sign_bin = sign_base + [in_bin, out_bin]
-            if not args.quiet:
-                command.inf(f'unsigned bin: {in_bin}')
-                command.inf(f'signed bin:   {out_bin}')
-                command.dbg(quote_sh_list(sign_bin))
-            subprocess.check_call(sign_bin, stdout=subprocess.PIPE if args.quiet else None)
-        if in_hex:
-            out_hex = args.shex or str(b / 'zephyr' / 'zephyr.signed.hex')
-            sign_hex = sign_base + [in_hex, out_hex]
-            if not args.quiet:
-                command.inf(f'unsigned hex: {in_hex}')
-                command.inf(f'signed hex:   {out_hex}')
-                command.dbg(quote_sh_list(sign_hex))
-            subprocess.check_call(sign_hex, stdout=subprocess.PIPE if args.quiet else None)
-
-    @staticmethod
-    def find_imgtool(cmd, args):
-        if args.tool_path:
-            imgtool = args.tool_path
-            if not os.path.isfile(imgtool):
-                cmd.die(f'--tool-path {imgtool}: no such file')
-        else:
-            imgtool = shutil.which('imgtool') or shutil.which('imgtool.py')
-            if not imgtool:
-                cmd.die('imgtool not found; either install it',
-                        '(e.g. "pip3 install imgtool") or provide --tool-path')
-
-        if platform.system() == 'Windows' and imgtool.endswith('.py'):
-            # Windows users may not be able to run .py files
-            # as executables in subprocesses, regardless of
-            # what the mode says. Always run imgtool as
-            # 'python path/to/imgtool.py' instead of
-            # 'path/to/imgtool.py' in these cases.
-            # https://github.com/zephyrproject-rtos/zephyr/issues/31876
-            return [sys.executable, imgtool]
-
-        return [imgtool]
-
-    @staticmethod
-    def get_cfg(command, build_conf, item):
-        try:
-            return build_conf[item]
-        except KeyError:
-            command.check_force(
-                False, "build .config is missing a {} value".format(item))
-            return None
-
-    @staticmethod
-    def edt_flash_node(cmd, b, quiet=False):
-        # Get the EDT Node corresponding to the zephyr,flash chosen DT
-        # node; 'b' is the build directory as a pathlib object.
-
-        # Ensure the build directory has a compiled DTS file
-        # where we expect it to be.
-        dts = b / 'zephyr' / 'zephyr.dts'
-        if not quiet:
-            cmd.dbg('DTS file:', dts, level=Verbosity.DBG_MORE)
-        edt_pickle = b / 'zephyr' / 'edt.pickle'
-        if not edt_pickle.is_file():
-            cmd.die("can't load devicetree; expected to find:", edt_pickle)
-
-        # Load the devicetree.
-        with open(edt_pickle, 'rb') as f:
-            edt = pickle.load(f)
-
-        # By convention, the zephyr,flash chosen node contains the
-        # partition information about the zephyr image to sign.
-        flash = edt.chosen_node('zephyr,flash')
-        if not flash:
-            cmd.die('devicetree has no chosen zephyr,flash node;',
-                    "can't infer flash write block or slot0_partition slot sizes")
-
-        return flash
-
-    @staticmethod
-    def edt_flash_params(cmd, flash):
-        # Get the flash device's write alignment and offset from the
-        # slot0_partition and the size from slot1_partition , out of the
-        # build directory's devicetree. slot1_partition size is used,
-        # when available, because in swap-move mode it can be one sector
-        # smaller. When not available, fallback to slot0_partition (single slot dfu).
-
-        # The node must have a "partitions" child node, which in turn
-        # must have child nodes with label slot0_partition and may have a child node
-        # with label slot1_partition. By convention, the slots for consumption by
-        # imgtool are linked into these partitions.
-        if 'partitions' not in flash.children:
-            cmd.die("DT zephyr,flash chosen node has no partitions,",
-                    "can't find partitions for MCUboot slots")
-
-        partitions = flash.children['partitions']
-        slots = {
-            label: node for node in partitions.children.values()
-                        for label in node.labels
-                        if label in set(['slot0_partition', 'slot1_partition'])
-        }
-
-        if 'slot0_partition' not in slots:
-            cmd.die("DT zephyr,flash chosen node has no slot0_partition partition,",
-                    "can't determine its address")
-
-        # Die on missing or zero alignment or slot_size.
-        if "write-block-size" not in flash.props:
-            cmd.die('DT zephyr,flash node has no write-block-size;',
-                    "can't determine imgtool write alignment")
-        align = flash.props['write-block-size'].val
-        if align == 0:
-            cmd.die('expected nonzero flash alignment, but got '
-                    'DT flash device write-block-size {}'.format(align))
-
-        # The partitions node, and its subnode, must provide
-        # the size of slot1_partition or slot0_partition partition via the regs property.
-        slot_key = 'slot1_partition' if 'slot1_partition' in slots else 'slot0_partition'
-        if not slots[slot_key].regs:
-            cmd.die(f'{slot_key} flash partition has no regs property;',
-                    "can't determine size of slot")
-
-        # always use addr of slot0_partition, which is where slots are run
-        addr = slots['slot0_partition'].regs[0].addr
-
-        size = slots[slot_key].regs[0].size
-        if size == 0:
-            cmd.die('expected nonzero slot size for {}'.format(slot_key))
-
-        return (align, addr, size)
 
 class RimageSigner(Signer):
 
@@ -414,10 +238,23 @@ class RimageSigner(Signer):
             conf_dir = pathlib.Path(args.tool_data)
         elif self.cmake_cache.get('RIMAGE_CONFIG_PATH'):
             conf_dir = pathlib.Path(self.cmake_cache['RIMAGE_CONFIG_PATH'])
-        else:
+        elif self.sof_src_dir:
             conf_dir = self.sof_src_dir / 'tools' / 'rimage' / 'config'
+        else:
+            conf_dir = pathlib.Path(self.cmake_cache['BOARD_DIR']) / 'support'
         self.command.dbg(f'rimage config directory={conf_dir}')
         return conf_dir
+
+    def generate_uuid_registry(self):
+        'Runs the uuid-registry.h generator script'
+
+        generate_cmd = [sys.executable, str(self.sof_src_dir / 'scripts' / 'gen-uuid-reg.py'),
+                        str(self.sof_src_dir / 'uuid-registry.txt'),
+                        str(pathlib.Path('zephyr') / 'include' / 'generated' / 'uuid-registry.h')
+                       ]
+
+        self.command.inf(quote_sh_list(generate_cmd))
+        subprocess.run(generate_cmd, check=True, cwd=self.build_dir)
 
     def preprocess_toml(self, config_dir, toml_basename, subdir):
         'Runs the C pre-processor on config_dir/toml_basename.h'
@@ -442,9 +279,16 @@ class RimageSigner(Signer):
         preproc_cmd += ['-I', str(self.sof_src_dir / 'src')]
         preproc_cmd += ['-imacros',
                         str(pathlib.Path('zephyr') / 'include' / 'generated' / 'zephyr' / 'autoconf.h')]
+        preproc_cmd += ['-imacros',
+                        str(pathlib.Path('zephyr') / 'include' / 'generated' / 'uuid-registry.h')]
+
+        # Need to preprocess the TOML file twice: once with
+        # LLEXT_FORCE_ALL_MODULAR defined and once without it
+        full_preproc_cmd = preproc_cmd + ['-o', str(subdir / 'rimage_config_full.toml'), '-DLLEXT_FORCE_ALL_MODULAR']
         preproc_cmd += ['-o', str(subdir / 'rimage_config.toml')]
         self.command.inf(quote_sh_list(preproc_cmd))
         subprocess.run(preproc_cmd, check=True, cwd=self.build_dir)
+        subprocess.run(full_preproc_cmd, check=True, cwd=self.build_dir)
 
     def sign(self, command, build_dir, build_conf, formats):
         self.command = command
@@ -467,21 +311,28 @@ class RimageSigner(Signer):
             else:
                 command.die(msg)
 
-        kernel_name = build_conf.get('CONFIG_KERNEL_BIN_NAME', 'zephyr')
+        kernel_name = pathlib.Path('zephyr') / get_kernel_bin_name(build_conf)
 
-        # TODO: make this a new sign.py --bootloader option.
-        if target in ('imx8', 'imx8m', 'imx8ulp', 'imx95'):
-            bootloader = None
-            kernel = str(b / 'zephyr' / f'{kernel_name}.elf')
-            out_bin = str(b / 'zephyr' / f'{kernel_name}.ri')
-            out_xman = str(b / 'zephyr' / f'{kernel_name}.ri.xman')
-            out_tmp = str(b / 'zephyr' / f'{kernel_name}.rix')
-        else:
+        bootloader = None
+        cold = None
+        kernel = str(b / f'{kernel_name}.elf')
+        out_bin = str(b / f'{kernel_name}.ri')
+        out_xman = str(b / f'{kernel_name}.ri.xman')
+        out_tmp = str(b / f'{kernel_name}.rix')
+
+        # Intel platforms generate a "boot.mod" and "main.mod" as
+        # separate intermediates to use.  Other platforms just use
+        # zephyr.elf directly.
+        if os.path.exists(str(b / 'zephyr' / 'boot.mod')):
             bootloader = str(b / 'zephyr' / 'boot.mod')
+        if os.path.exists(str(b / 'zephyr' / 'cold.mod')):
+            cold = str(b / 'zephyr' / 'cold.mod')
+            with open(cold, 'rb') as f_cold:
+                elf = ELFFile(f_cold)
+                if elf.get_section_by_name('.cold') is None:
+                    cold = None
+        if os.path.exists(str(b / 'zephyr' / 'main.mod')):
             kernel = str(b / 'zephyr' / 'main.mod')
-            out_bin = str(b / 'zephyr' / f'{kernel_name}.ri')
-            out_xman = str(b / 'zephyr' / f'{kernel_name}.ri.xman')
-            out_tmp = str(b / 'zephyr' / f'{kernel_name}.rix')
 
         # Clean any stale output. This is especially important when using --if-tool-available
         # (but not just)
@@ -494,6 +345,7 @@ class RimageSigner(Signer):
         )
         err_prefix = '--tool-path' if args.tool_path else 'west config'
 
+        # TODO: use get_tool_path
         if tool_path:
             command.check_force(shutil.which(tool_path),
                                 f'{err_prefix} {tool_path}: not an executable')
@@ -513,32 +365,23 @@ class RimageSigner(Signer):
         if not args.quiet:
             command.inf('Signing with tool {}'.format(tool_path))
 
-        try:
-            sof_proj = command.manifest.get_projects(['sof'], allow_paths=False)
-            sof_src_dir = pathlib.Path(sof_proj[0].abspath)
-        except ValueError: # sof is the manifest
-            sof_src_dir = pathlib.Path(manifest.manifest_path()).parent
+        # CONFIG_RIMAGE_SIGNING_SCHEMA is only defined in SOF tree.
+        # If this does not exist, we assume that we are not building SOF.
+        rimage_schema = build_conf.get('CONFIG_RIMAGE_SIGNING_SCHEMA', None)
+        if rimage_schema:
+            self.sof_src_dir = pathlib.Path(manifest.manifest_path()).parent
+            self.generate_uuid_registry()
 
-        self.sof_src_dir = sof_src_dir
+            no_manifest = False
+        else:
+            self.sof_src_dir = None
 
+            # Non-SOF build does not have extended manifest data for
+            # rimage to process, which might result in rimage error.
+            # So skip it when not doing SOF builds.
+            no_manifest = True
 
         command.inf('Signing for SOC target ' + target)
-
-        # FIXME: deprecate --no-manifest and replace it with a much
-        # simpler and more direct `-- -e` which the user can _already_
-        # pass today! With unclear consequences right now...
-        if '--no-manifest' in args.tool_args:
-            no_manifest = True
-            args.tool_args.remove('--no-manifest')
-        else:
-            no_manifest = False
-
-        # Non-SOF build does not have extended manifest data for
-        # rimage to process, which might result in rimage error.
-        # So skip it when not doing SOF builds.
-        is_sof_build = build_conf.getboolean('CONFIG_SOF')
-        if not is_sof_build:
-            no_manifest = True
 
         if no_manifest:
             extra_ri_args = [ ]
@@ -552,7 +395,10 @@ class RimageSigner(Signer):
         if not args.quiet and args.verbose:
             sign_base += ['-v'] * args.verbose
 
+        # Order is important
         components = [ ] if bootloader is None else [ bootloader ]
+        if cold is not None:
+            components += [ cold ]
         components += [ kernel ]
 
         sign_config_extra_args = command.config_get_words('rimage.extra-args', [])
@@ -560,7 +406,14 @@ class RimageSigner(Signer):
         if '-k' not in sign_config_extra_args + args.tool_args:
             # rimage requires a key argument even when it does not sign
             cmake_default_key = cache.get('RIMAGE_SIGN_KEY', 'key placeholder from sign.py')
-            extra_ri_args += [ '-k', str(sof_src_dir / 'keys' / cmake_default_key) ]
+            if os.path.exists(cmake_default_key):
+                extra_ri_args += [ '-k', str(cmake_default_key) ]
+            else:
+                if self.sof_src_dir:
+                    key_path = self.sof_src_dir / 'keys'
+                else:
+                    key_path = self.rimage_config_dir()
+                extra_ri_args += [ '-k', str(key_path / cmake_default_key) ]
 
         if args.tool_data and '-c' in args.tool_args:
             command.wrn('--tool-data ' + args.tool_data + ' ignored! Overridden by: -- -c ... ')
@@ -602,3 +455,78 @@ class RimageSigner(Signer):
 
         os.remove(out_bin)
         os.rename(out_tmp, out_bin)
+
+class CommanderSigner(Signer):
+    # TODO: replace with get_tool_path
+    @staticmethod
+    def get_tool(command):
+        if command.args.tool_path:
+            tool = command.args.tool_path
+            if not os.path.isfile(tool):
+                command.die(f'--tool-path {tool}: no such file')
+        else:
+            tool = shutil.which('commander')
+            if not tool:
+                command.die('"commander" not found; either install it or provide --tool-path')
+        return tool
+
+    @staticmethod
+    def get_keys(command, build_conf):
+        sign_key = getattr(command.args, 'sign',
+                           build_conf.get('CONFIG_SIWX91X_SIGN_KEY', None))
+        mic_key = getattr(command.args, 'mic',
+                          build_conf.get('CONFIG_SIWX91X_MIC_KEY', None))
+        encrypt_key = None
+        if build_conf.get('CONFIG_SIWX91X_ENCRYPT', False):
+            encrypt_key = mic_key
+        encrypt_key = getattr(command.args, 'encrypt', encrypt_key)
+        return (sign_key, mic_key, encrypt_key)
+
+    @staticmethod
+    def get_input_output(command, build_dir, build_conf):
+        kernel_prefix = pathlib.Path(build_dir) / 'zephyr' / get_kernel_bin_name(build_conf)
+        in_file = f'{kernel_prefix}.rps'
+        out_file = command.args.sbin or f'{kernel_prefix}.signed.rps'
+        return (in_file, out_file)
+
+    def sign(self, command, build_dir, build_conf, formats):
+        tool = self.get_tool(command)
+        in_file, out_file = self.get_input_output(command, build_dir, build_conf)
+        sign_key, mic_key, encrypt_key = self.get_keys(command, build_conf)
+
+        commandline = [ tool, "rps", "convert", out_file, "--app", in_file ]
+        if mic_key:
+            commandline.extend(["--mic", mic_key])
+        if encrypt_key:
+            commandline.extend(["--encrypt", encrypt_key])
+        if sign_key:
+            commandline.extend(["--sign", sign_key])
+        commandline.extend(command.args.tool_args)
+
+        if not command.args.quiet:
+            command.inf("Signing with:", ' '.join(commandline))
+        subprocess.run(commandline, check=True)
+
+class PicotoolSigner(Signer):
+    @staticmethod
+    def get_input_output(command, build_dir, build_conf):
+        kernel_prefix = pathlib.Path(build_dir) / 'zephyr' / get_kernel_bin_name(build_conf)
+        in_file = f'{kernel_prefix}.elf'
+        out_file = command.args.sbin or f'{kernel_prefix}.signed.elf'
+        return (in_file, out_file)
+
+    def sign(self, command, build_dir, build_conf, formats):
+        tool = get_tool_path(command, 'picotool')
+        in_file, out_file = self.get_input_output(command, build_dir, build_conf)
+        key_file = getattr(command.args, 'key',
+                           build_conf.get('CONFIG_RPI_PICO_SIGNING_KEY', None))
+
+        if not key_file:
+            command.die('Please provide a key file using RPI_PICO_SIGNING_KEY Kconfig option')
+
+        commandline = [ tool, "seal", "--sign", in_file, out_file, key_file ]
+        commandline.extend(command.args.tool_args)
+
+        if not command.args.quiet:
+            command.inf("Signing with:", ' '.join(commandline))
+        subprocess.run(commandline, check=True)

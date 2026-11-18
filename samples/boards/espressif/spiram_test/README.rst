@@ -19,6 +19,8 @@ The following SoCs are supported by this sample code so far:
 * ESP32
 * ESP32-S2
 * ESP32-S3
+* ESP32-C5
+* ESP32-P4
 
 Building and Running
 ********************
@@ -27,11 +29,11 @@ Make sure you have your board connected over USB port.
 
 .. code-block:: console
 
-   west build -b esp32s3_devkitm/esp32s3/procpu samples/boards/espressif/spiram_test
+   west build -b esp32s3_devkitc/esp32s3/procpu samples/boards/espressif/spiram_test
    west flash
 
 If using another supported Espressif board, replace the argument in the above
-command with a proper board name (e.g., ``esp32s2_saola``).
+command with a proper board name (e.g., ``esp32s2_devkitc``).
 
 Sample Output
 =============

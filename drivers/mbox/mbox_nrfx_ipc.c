@@ -190,7 +190,7 @@ static int mbox_nrf_init(const struct device *dev)
 	return 0;
 }
 
-static const struct mbox_driver_api mbox_nrf_driver_api = {
+static DEVICE_API(mbox, mbox_nrf_driver_api) = {
 	.send = mbox_nrf_send,
 	.register_callback = mbox_nrf_register_callback,
 	.mtu_get = mbox_nrf_mtu_get,
@@ -199,5 +199,5 @@ static const struct mbox_driver_api mbox_nrf_driver_api = {
 };
 
 DEVICE_DT_INST_DEFINE(0, mbox_nrf_init, NULL, &nrfx_mbox_data, &nrfx_mbox_conf,
-		    POST_KERNEL, CONFIG_MBOX_INIT_PRIORITY,
+		    PRE_KERNEL_1, CONFIG_MBOX_INIT_PRIORITY,
 		    &mbox_nrf_driver_api);

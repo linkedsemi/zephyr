@@ -63,22 +63,63 @@ struct shi_it8xxx2_cfg {
 	const struct gpio_dt_spec cs;
 };
 
+enum shi_ite_pm_policy_state_flag {
+	SHI_ITE_PM_POLICY_FLAG,
+	SHI_ITE_PM_POLICY_FLAG_COUNT,
+};
+
 struct shi_it8xxx2_data {
 	/* Peripheral data */
 	struct ec_host_cmd_rx_ctx *rx_ctx;
 	struct ec_host_cmd_tx_buf *tx;
 	struct gpio_callback cs_cb;
+	struct k_work_delayable cs_off_put;
 	/* Current state */
 	enum shi_state_machine shi_state;
 	/* Buffers */
 	uint8_t in_msg[SPI_RX_MAX_FIFO_SIZE] __aligned(4);
 	uint8_t out_msg[SPI_TX_MAX_FIFO_SIZE] __aligned(4);
+	ATOMIC_DEFINE(pm_policy_state_flag, SHI_ITE_PM_POLICY_FLAG_COUNT);
 };
 
 struct ec_host_cmd_shi_ite_ctx {
 	/* SHI device instance */
 	const struct device *dev;
 };
+
+static void shi_ite_pm_policy_state_lock_get(struct shi_it8xxx2_data *data,
+					     enum shi_ite_pm_policy_state_flag flag)
+{
+	if (atomic_test_and_set_bit(data->pm_policy_state_flag, flag) == 0) {
+		pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+		k_work_reschedule(&data->cs_off_put, K_SECONDS(3));
+	}
+}
+
+static void shi_ite_pm_policy_state_lock_put(struct shi_it8xxx2_data *data,
+					     enum shi_ite_pm_policy_state_flag flag)
+{
+	if (atomic_test_and_clear_bit(data->pm_policy_state_flag, flag) == 1) {
+		pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+		k_work_cancel_delayable(&data->cs_off_put);
+	}
+}
+
+/*
+ * When AP is In S0 state, AP assert CS of SPI for a new command transaction.
+ * Under the condition, SoC will not enter deep sleep until AP de-assert the CS.
+ * But If AP is powered off (G3 state) CS will go low (assert CS).
+ * This assertion will prevent SoC from entering deep sleep but the assertion
+ * is not for starting a new command transaction.
+ * This handler is used to resolve the situation.
+ */
+static void cs_off_put_handler(struct k_work *item)
+{
+	struct k_work_delayable *dwork = k_work_delayable_from_work(item);
+	struct shi_it8xxx2_data *data = CONTAINER_OF(dwork, struct shi_it8xxx2_data, cs_off_put);
+
+	shi_ite_pm_policy_state_lock_put(data, SHI_ITE_PM_POLICY_FLAG);
+}
 
 static const uint8_t out_preamble[EC_SHI_PREAMBLE_LENGTH] = {
 	EC_SHI_PROCESSING,
@@ -245,24 +286,27 @@ static int shi_ite_host_request_expected_size(const struct ec_host_cmd_request_h
 static void shi_ite_parse_header(const struct device *dev)
 {
 	struct shi_it8xxx2_data *data = dev->data;
-	struct ec_host_cmd_request_header *r = (struct ec_host_cmd_request_header *)data->in_msg;
+	struct ec_host_cmd_request_header r;
 
-	/* Store request data from Rx FIFO to in_msg buffer (rx_ctx->buf) */
-	shi_ite_host_request_data(data->in_msg, sizeof(*r));
+	/* Store request header from Rx FIFO to local buffer */
+	shi_ite_host_request_data((uint8_t *)&r, sizeof(r));
 
 	/* Protocol version 3 */
-	if (r->prtcl_ver == EC_HOST_REQUEST_VERSION) {
+	if (r.prtcl_ver == EC_HOST_REQUEST_VERSION) {
 		/* Check how big the packet should be */
-		data->rx_ctx->len = shi_ite_host_request_expected_size(r);
+		data->rx_ctx->len = shi_ite_host_request_expected_size(&r);
 
 		if (data->rx_ctx->len == 0 || data->rx_ctx->len > sizeof(data->in_msg)) {
 			shi_ite_bad_received_data(dev, data->rx_ctx->len);
 			return;
 		}
 
+		/* Copy verified header to in_msg buffer */
+		memcpy(data->in_msg, &r, sizeof(r));
+
 		/* Store request data from Rx FIFO to in_msg buffer */
-		shi_ite_host_request_data(data->rx_ctx->buf + sizeof(*r),
-					  data->rx_ctx->len - sizeof(*r));
+		shi_ite_host_request_data(data->rx_ctx->buf + sizeof(r),
+					  data->rx_ctx->len - sizeof(r));
 
 		ec_host_cmd_rx_notify();
 	} else {
@@ -276,7 +320,13 @@ static void shi_ite_int_handler(const struct device *dev)
 {
 	struct shi_it8xxx2_data *data = dev->data;
 
-	if (data->shi_state == SHI_STATE_DISABLED) {
+	if (data->shi_state == SHI_STATE_DISABLED || data->rx_ctx == NULL) {
+		if (data->rx_ctx == NULL) {
+			LOG_ERR("Interrupt fired before the backend is initialized");
+		}
+		/* Write clear the pending status to avoid an interrupt storm */
+		IT83XX_SPI_ISR = 0xff;
+		IT83XX_SPI_RX_VLISR = IT83XX_SPI_RVLI;
 		return;
 	}
 
@@ -293,7 +343,7 @@ static void shi_ite_int_handler(const struct device *dev)
 		/* CS# is deasserted, so write clear all slave status */
 		IT83XX_SPI_ISR = 0xff;
 		/* Allow the MCU to go into lower power mode */
-		pm_policy_state_lock_put(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+		shi_ite_pm_policy_state_lock_put(data, SHI_ITE_PM_POLICY_FLAG);
 	}
 
 	/*
@@ -303,6 +353,11 @@ static void shi_ite_int_handler(const struct device *dev)
 	if (IT83XX_SPI_RX_VLISR & IT83XX_SPI_RVLI) {
 		/* write clear slave status */
 		IT83XX_SPI_RX_VLISR = IT83XX_SPI_RVLI;
+		if (data->shi_state != SHI_STATE_READY_TO_RECV &&
+		    data->shi_state != SHI_STATE_RECEIVING) {
+			LOG_ERR("Received SPI RVLI in invalid state %d", data->shi_state);
+			return;
+		}
 		/* Move to processing state */
 		shi_ite_set_state(data, SHI_STATE_PROCESSING);
 		/* Parse header for version of spi-protocol */
@@ -314,15 +369,15 @@ void shi_ite_cs_callback(const struct device *port, struct gpio_callback *cb, gp
 {
 	struct shi_it8xxx2_data *data = CONTAINER_OF(cb, struct shi_it8xxx2_data, cs_cb);
 
-	if (data->shi_state == SHI_STATE_DISABLED) {
+	if (data->shi_state != SHI_STATE_READY_TO_RECV) {
 		return;
 	}
 
 	/* Prevent the MCU from sleeping during the transmission */
-	pm_policy_state_lock_get(PM_STATE_STANDBY, PM_ALL_SUBSTATES);
+	shi_ite_pm_policy_state_lock_get(data, SHI_ITE_PM_POLICY_FLAG);
 
-	/* Move to processing state */
-	shi_ite_set_state(data, SHI_STATE_PROCESSING);
+	/* Move to receiving state */
+	shi_ite_set_state(data, SHI_STATE_RECEIVING);
 }
 
 static int shi_ite_init_registers(const struct device *dev)
@@ -365,8 +420,8 @@ static int shi_ite_init_registers(const struct device *dev)
 
 	/*
 	 * General control register2
-	 * bit4 : Rx FIFO2 will not be overwrited once it's full.
-	 * bit3 : Rx FIFO1 will not be overwrited once it's full.
+	 * bit4 : Rx FIFO2 will not be overwritten once it's full.
+	 * bit3 : Rx FIFO1 will not be overwritten once it's full.
 	 * bit0 : Rx FIFO1/FIFO2 will reset after each CS_N goes high.
 	 */
 	IT83XX_SPI_GCR2 = IT83XX_SPI_RXF2OC | IT83XX_SPI_RXF1OC | IT83XX_SPI_RXFAR;
@@ -381,8 +436,8 @@ static int shi_ite_init_registers(const struct device *dev)
 	/* Reset fifo and prepare to for next transaction */
 	shi_ite_reset_rx_fifo();
 
-	/* Ready to receive */
-	shi_ite_set_state(dev->data, SHI_STATE_READY_TO_RECV);
+	/* Not ready to receive until the host command backend is initialized */
+	shi_ite_set_state(dev->data, SHI_STATE_DISABLED);
 
 	/* Interrupt status register(write one to clear) */
 	IT83XX_SPI_ISR = 0xff;
@@ -397,10 +452,9 @@ static int shi_ite_init_registers(const struct device *dev)
 		return status;
 	}
 
-	/* Enable SPI peripheral interrupt */
+	/* Connect SPI peripheral interrupt, unmasked by the backend init */
 	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority), shi_ite_int_handler,
 		    DEVICE_DT_INST_GET(0), 0);
-	irq_enable(DT_INST_IRQN(0));
 
 	return 0;
 }
@@ -436,6 +490,8 @@ static int shi_ite_init(const struct device *dev)
 		return -EINVAL;
 	}
 
+	k_work_init_delayable(&data->cs_off_put, cs_off_put_handler);
+
 	pm_device_init_suspended(dev);
 	return pm_device_runtime_enable(dev);
 }
@@ -460,6 +516,10 @@ static int shi_ite_backend_init(const struct ec_host_cmd_backend *backend,
 	tx->buf = data->out_msg + sizeof(out_preamble);
 	data->tx->len_max = CONFIG_EC_HOST_CMD_BACKEND_SHI_MAX_RESPONSE;
 
+	/* The buffers are ready, so the interrupt can be safely handled now */
+	shi_ite_set_state(data, SHI_STATE_READY_TO_RECV);
+	irq_enable(DT_INST_IRQN(0));
+
 	return 0;
 }
 
@@ -468,14 +528,27 @@ PINCTRL_DT_INST_DEFINE(0);
 #ifdef CONFIG_PM_DEVICE
 static int shi_ite_pm_cb(const struct device *dev, enum pm_device_action action)
 {
+	const struct shi_it8xxx2_cfg *cfg = dev->config;
 	struct shi_it8xxx2_data *data = dev->data;
-	int ret = 0;
+	int ret;
 
 	switch (action) {
 	case PM_DEVICE_ACTION_SUSPEND:
 		shi_ite_set_state(data, SHI_STATE_DISABLED);
+
+		ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_SLEEP);
+		if (ret < 0) {
+			LOG_ERR("%s: Failed to configure gpio pins", dev->name);
+			return ret;
+		}
 		break;
 	case PM_DEVICE_ACTION_RESUME:
+		ret = pinctrl_apply_state(cfg->pcfg, PINCTRL_STATE_DEFAULT);
+		if (ret < 0) {
+			LOG_ERR("%s: Failed to configure SHI pins", dev->name);
+			return ret;
+		}
+
 		shi_ite_set_state(data, SHI_STATE_READY_TO_RECV);
 		break;
 	default:
@@ -483,12 +556,15 @@ static int shi_ite_pm_cb(const struct device *dev, enum pm_device_action action)
 		break;
 	}
 
-	return ret;
+	return 0;
 }
 #endif
 
 /* Assume only one peripheral */
 PM_DEVICE_DT_INST_DEFINE(0, shi_ite_pm_cb);
+
+BUILD_ASSERT(!IS_ENABLED(CONFIG_PM_DEVICE_RUNTIME) || IS_ENABLED(CONFIG_PM_DEVICE_SYSTEM_MANAGED),
+	     "CONFIG_PM_DEVICE_SYSTEM_MANAGED must be enabled when using CONFIG_PM_DEVICE_RUNTIME");
 
 static const struct ec_host_cmd_backend_api ec_host_cmd_api = {
 	.init = shi_ite_backend_init,

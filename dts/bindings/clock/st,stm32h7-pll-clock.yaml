@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  PLL node binding for STM32H7 devices
+  STM32H7 main PLL.
 
   It can be used to describe 3 different PLLs: PLL1 (Main PLL), PLL2 and PLL3.
   Only PLL1 and PLL3 are supported for now.
@@ -20,7 +20,8 @@ description: |
 
       with f(VCOx clock) = f(REFx_CK) × (PLLNx / PLLMx)
 
-  The PLL output frequency must not exceed 80 MHz.
+  The maximum PLL output frequency is device-dependent.
+  Refer to your product's Reference Manual and Data Sheet for more details.
 
 compatible: "st,stm32h7-pll-clock"
 
@@ -39,35 +40,42 @@ properties:
     description: |
         Division factor for PLLx
         input clock
-        Valid range: 1 - 63
+    min: 1
+    max: 63
 
   mul-n:
     type: int
     required: true
     description: |
         Main PLL multiplication factor for VCOx
-        Valid range: 4 - 512
+    min: 4
+    max: 512
 
   div-p:
     type: int
     description: |
         PLL division factor for pllx_p_ck
-        Valid range: 1 - 128
+        Note: For PLL1, P division factor must be 1 or even.
+    min: 1
+    max: 128
 
   div-q:
     type: int
     description: |
         PLL division factor for pllx_q_ck
-        Valid range: 1 - 128
+    min: 1
+    max: 128
 
   div-r:
     type: int
     description: |
         PLL division factor for pllx_r_ck
-        Valid range: 1 - 128
+    min: 1
+    max: 128
 
   fracn:
     type: int
     description: |
         PLLx FRACN value
-        Valid range: 0 - 8191
+    min: 0
+    max: 8191

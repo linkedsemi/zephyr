@@ -36,7 +36,7 @@ if(ZEPHYR_MODULES)
   set(ZEPHYR_MODULES_ARG "--modules" ${ZEPHYR_MODULES})
 endif()
 
-zephyr_get(EXTRA_ZEPHYR_MODULES VAR EXTRA_ZEPHYR_MODULES ZEPHYR_EXTRA_MODULES)
+zephyr_get(EXTRA_ZEPHYR_MODULES MERGE VAR EXTRA_ZEPHYR_MODULES ZEPHYR_EXTRA_MODULES)
 if(EXTRA_ZEPHYR_MODULES)
   set(EXTRA_ZEPHYR_MODULES_ARG "--extra-modules" ${EXTRA_ZEPHYR_MODULES})
 endif()
@@ -85,9 +85,6 @@ if(WEST OR ZEPHYR_MODULES)
     endforeach()
   endif()
 
-  # Append ZEPHYR_BASE as a default ext root at lowest priority
-  list(APPEND MODULE_EXT_ROOT ${ZEPHYR_BASE})
-
   if(EXISTS ${cmake_modules_file})
     file(STRINGS ${cmake_modules_file} zephyr_modules_txt ENCODING UTF-8)
   endif()
@@ -114,9 +111,12 @@ if(WEST OR ZEPHYR_MODULES)
     list(APPEND SYSBUILD_MODULE_NAMES ${module_name})
   endforeach()
 
+  # Prepend ZEPHYR_BASE as a default ext root at lowest priority
+  list(PREPEND MODULE_EXT_ROOT ${ZEPHYR_BASE})
+
   # MODULE_EXT_ROOT is process order which means Zephyr module roots processed
-  # later wins. therefore we reverse the list before processing.
-  list(REVERSE MODULE_EXT_ROOT)
+  # later wins. Thus processing Zephyr first, and modules thereafter allows them
+  # to overrule default glue folder settings provided by higher level modules.cmake.
   foreach(root ${MODULE_EXT_ROOT})
     set(module_cmake_file_path modules/modules.cmake)
     if(NOT EXISTS ${root}/${module_cmake_file_path})
@@ -167,6 +167,10 @@ ${MODULE_NAME_UPPER} is a restricted name for Zephyr modules as it is used for \
     endif()
   endforeach()
 else()
+
+  file(WRITE ${KCONFIG_BINARY_DIR}/kconfig_module_dirs.env "")
+
+  file(WRITE ${KCONFIG_BINARY_DIR}/kconfig_module_dirs.cmake "")
 
   file(WRITE ${kconfig_modules_file}
     "# No west and no Zephyr modules\n"

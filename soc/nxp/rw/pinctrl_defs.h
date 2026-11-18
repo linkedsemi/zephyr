@@ -14,25 +14,25 @@
 #define IOMUX_SCTIMER_OUT_CLR(offset, enable) \
 	IOMUX_OFFSET_ENABLE(offset, enable, 0)
 #define IOMUX_SCTIMER_IN_CLR(offset, enable) \
-	IOMUX_OFFSET_ENABLE(offset, enable, 4)
+	IOMUX_OFFSET_ENABLE(offset, enable, 5)
 #define IOMUX_CTIMER_CLR(offset, enable)\
-	IOMUX_OFFSET_ENABLE(offset, enable, 8)
-#define IOMUX_FSEL_CLR(mask) ((mask) << 13)
+	IOMUX_OFFSET_ENABLE(offset, enable, 9)
+#define IOMUX_FSEL_CLR(mask) ((mask) << 14)
 #define IOMUX_FLEXCOMM_CLR(idx, mask) \
-	(((mask) << 45) | ((idx) << 56))
+	(((mask) << 46) | ((idx) << 57))
 
 /* GPIO configuration extraction macros */
 #define IOMUX_GET_SCTIMER_OUT_CLR_ENABLE(mux) ((mux) & 0x1)
-#define IOMUX_GET_SCTIMER_OUT_CLR_OFFSET(mux) (((mux) >> 1) & 0x7)
-#define IOMUX_GET_SCTIMER_IN_CLR_ENABLE(mux) (((mux) >> 4) & 0x1)
-#define IOMUX_GET_SCTIMER_IN_CLR_OFFSET(mux) (((mux) >> 5) & 0x7)
-#define IOMUX_GET_CTIMER_CLR_ENABLE(mux) (((mux) >> 8) & 0x1ULL)
-#define IOMUX_GET_CTIMER_CLR_OFFSET(mux) (((mux) >> 9) & 0xFULL)
-#define IOMUX_GET_FSEL_CLR_MASK(mux) (((mux) >> 13) & 0xFFFFFFFFULL)
+#define IOMUX_GET_SCTIMER_OUT_CLR_OFFSET(mux) (((mux) >> 1) & 0xF)
+#define IOMUX_GET_SCTIMER_IN_CLR_ENABLE(mux) (((mux) >> 5) & 0x1)
+#define IOMUX_GET_SCTIMER_IN_CLR_OFFSET(mux) (((mux) >> 6) & 0x7)
+#define IOMUX_GET_CTIMER_CLR_ENABLE(mux) (((mux) >> 9) & 0x1ULL)
+#define IOMUX_GET_CTIMER_CLR_OFFSET(mux) (((mux) >> 10) & 0xFULL)
+#define IOMUX_GET_FSEL_CLR_MASK(mux) (((mux) >> 14) & 0xFFFFFFFFULL)
 #define IOMUX_GET_FLEXCOMM_CLR_MASK(mux) \
-	(((mux) >> 45) & 0x7FFULL)
+	(((mux) >> 46) & 0x7FFULL)
 #define IOMUX_GET_FLEXCOMM_CLR_IDX(mux) \
-	(((mux) >> 56) & 0xF)
+	(((mux) >> 57) & 0xF)
 
 /* Pin mux type and gpio offset macros */
 #define IOMUX_GPIO_IDX(x) ((x) & 0x7F)
@@ -74,11 +74,10 @@
 /* Pin configuration settings */
 #define IOMUX_PAD_PULL(x) (((x) & 0x3) << 19)
 #define IOMUX_PAD_SLEW(x) (((x) & 0x3) << 21)
-#define IOMUX_PAD_SLEEP_FORCE(en, val) \
-	((((en) & 0x1) << 24) | (((val) & 0x1) << 23))
+#define IOMUX_PAD_SLEEP_FORCE(en) (((en) & 0x3) << 23)
 #define IOMUX_PAD_GET_PULL(mux) (((mux) >> 19) & 0x3)
 #define IOMUX_PAD_GET_SLEW(mux) (((mux) >> 21) & 0x3)
-#define IOMUX_PAD_GET_SLEEP_FORCE_EN(mux) (((mux) >> 24) & 0x1)
+#define IOMUX_PAD_GET_SLEEP_FORCE(mux) (((mux) >> 23) & 0x3)
 #define IOMUX_PAD_GET_SLEEP_FORCE_VAL(mux) (((mux) >> 23) & 0x1)
 
 /*
@@ -284,49 +283,42 @@
 
 #define IOMUX_GPIO_CLR_28 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */
 
 #define IOMUX_GPIO_CLR_29 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */
 
 #define IOMUX_GPIO_CLR_30 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */
 
 #define IOMUX_GPIO_CLR_31 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */
 
 #define IOMUX_GPIO_CLR_32 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */
 
 #define IOMUX_GPIO_CLR_33 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */
 
 #define IOMUX_GPIO_CLR_34 \
 	(IOMUX_FLEXCOMM_CLR(0x0ULL, 0x0ULL) | /* Flexcomm bits to clear */ \
-	IOMUX_FSEL_CLR(0x2ULL) | /* FSEL bits to clear */ \
 	IOMUX_CTIMER_CLR(0ULL, 0ULL) | /* CTIMER offset to clear */ \
 	IOMUX_SCTIMER_IN_CLR(0ULL, 0ULL) | /* SCTIMER input offset to clear */ \
 	IOMUX_SCTIMER_OUT_CLR(0ULL, 0ULL)) /* SCTIMER output offset to clear */

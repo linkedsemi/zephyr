@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(sockets_echo_client_self_test)
@@ -22,8 +22,8 @@ set(echo_client_path ${ZEPHYR_BASE}/samples/net/sockets/echo_client)
 target_include_directories(app PRIVATE ${echo_client_path}/src/)
 
 target_sources(app PRIVATE
-	src/echo_test.c
-	src/test_main.c
+  src/echo_test.c
+  src/test_main.c
 )
 
 target_sources(                     app PRIVATE ${echo_client_path}/src/echo-client.c)

@@ -17,12 +17,9 @@
 
 #define DT_DRV_COMPAT zephyr_bt_hci_test
 
-struct driver_data {
-};
-
 #define EXPECTED_ERROR -ENOSYS
 
-static int driver_open(const struct device *dev, bt_hci_recv_t recv)
+static int driver_open(const struct device *dev)
 {
 	TC_PRINT("driver: %s\n", __func__);
 
@@ -35,15 +32,17 @@ static int driver_send(const struct device *dev, struct net_buf *buf)
 	return 0;
 }
 
-static const struct bt_hci_driver_api driver_api = {
+static DEVICE_API(bt_hci, driver_api) = {
 	.open = driver_open,
 	.send = driver_send,
 };
 
 #define TEST_DEVICE_INIT(inst) \
-	static struct driver_data driver_data_##inst = { \
+	static struct bt_hci_driver_data driver_data_##inst = { \
 	}; \
-	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &driver_data_##inst, NULL, \
+	static const struct bt_hci_driver_config driver_config_##inst = \
+						BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst); \
+	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &driver_data_##inst, &driver_config_##inst, \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &driver_api)
 
 DT_INST_FOREACH_STATUS_OKAY(TEST_DEVICE_INIT)

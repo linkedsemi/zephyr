@@ -13,6 +13,7 @@ LOG_MODULE_DECLARE(net_ipv6, CONFIG_NET_IPV6_LOG_LEVEL);
 
 #include <errno.h>
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_stats.h>
 #include <zephyr/net/net_context.h>
@@ -46,6 +47,11 @@ static bool reassembly_init_done;
 static struct net_ipv6_reassembly
 reassembly[CONFIG_NET_IPV6_FRAGMENT_MAX_COUNT];
 
+/* Serializes the reassembly array between the RX path and the timeout handler,
+ * which run on different threads.
+ */
+static K_MUTEX_DEFINE(reass_lock);
+
 int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, uint16_t *next_hdr_off,
 			       uint16_t *last_hdr_off)
 {
@@ -53,6 +59,7 @@ int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, uint16_t *next_hdr_off,
 	struct net_ipv6_hdr *hdr;
 	uint8_t next_nexthdr;
 	uint8_t nexthdr;
+	int ret;
 
 	if (!pkt || !pkt->frags || !next_hdr_off || !last_hdr_off) {
 		return -EINVAL;
@@ -65,7 +72,10 @@ int net_ipv6_find_last_ext_hdr(struct net_pkt *pkt, uint16_t *next_hdr_off,
 		return -ENOBUFS;
 	}
 
-	net_pkt_acknowledge_data(pkt, &ipv6_access);
+	ret = net_pkt_acknowledge_data(pkt, &ipv6_access);
+	if (ret < 0) {
+		return ret;
+	}
 
 	nexthdr = hdr->nexthdr;
 
@@ -121,16 +131,16 @@ fail:
 }
 
 static struct net_ipv6_reassembly *reassembly_get(uint32_t id,
-						  struct in6_addr *src,
-						  struct in6_addr *dst)
+						  const uint8_t *src,
+						  const uint8_t *dst)
 {
 	int i, avail = -1;
 
 	for (i = 0; i < CONFIG_NET_IPV6_FRAGMENT_MAX_COUNT; i++) {
 		if (k_work_delayable_remaining_get(&reassembly[i].timer) &&
 		    reassembly[i].id == id &&
-		    net_ipv6_addr_cmp(src, &reassembly[i].src) &&
-		    net_ipv6_addr_cmp(dst, &reassembly[i].dst)) {
+		    net_ipv6_addr_cmp_raw(src, reassembly[i].src.s6_addr) &&
+		    net_ipv6_addr_cmp_raw(dst, reassembly[i].dst.s6_addr)) {
 			return &reassembly[i];
 		}
 
@@ -149,8 +159,8 @@ static struct net_ipv6_reassembly *reassembly_get(uint32_t id,
 
 	k_work_reschedule(&reassembly[avail].timer, IPV6_REASSEMBLY_TIMEOUT);
 
-	net_ipaddr_copy(&reassembly[avail].src, src);
-	net_ipaddr_copy(&reassembly[avail].dst, dst);
+	net_ipv6_addr_copy_raw(reassembly[avail].src.s6_addr, src);
+	net_ipv6_addr_copy_raw(reassembly[avail].dst.s6_addr, dst);
 
 	reassembly[avail].id = id;
 
@@ -158,8 +168,8 @@ static struct net_ipv6_reassembly *reassembly_get(uint32_t id,
 }
 
 static bool reassembly_cancel(uint32_t id,
-			      struct in6_addr *src,
-			      struct in6_addr *dst)
+			      struct net_in6_addr *src,
+			      struct net_in6_addr *dst)
 {
 	int i, j;
 
@@ -216,18 +226,40 @@ static void reassembly_timeout(struct k_work *work)
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 	struct net_ipv6_reassembly *reass =
 		CONTAINER_OF(dwork, struct net_ipv6_reassembly, timer);
+	struct net_pkt *first = NULL;
+
+	k_mutex_lock(&reass_lock, K_FOREVER);
+
+	/* A pending timer means the slot holds a new datagram, stored while
+	 * this handler was waiting for the lock.
+	 */
+	if (k_work_delayable_remaining_get(dwork) != 0) {
+		k_mutex_unlock(&reass_lock);
+		return;
+	}
 
 	reassembly_info("Reassembly cancelled", reass);
 
-	/* Send a ICMPv6 Time Exceeded only if we received the first fragment (RFC 2460 Sec. 5) */
+	/* Detach the first fragment so the ICMP error can be sent without
+	 * holding the lock; sending may block on buffers and the TX path.
+	 */
 	if (reass->pkt[0] && net_pkt_ipv6_fragment_offset(reass->pkt[0]) == 0) {
-		net_icmpv6_send_error(reass->pkt[0], NET_ICMPV6_TIME_EXCEEDED, 1, 0);
+		first = reass->pkt[0];
+		reass->pkt[0] = NULL;
 	}
 
 	reassembly_cancel(reass->id, &reass->src, &reass->dst);
+
+	k_mutex_unlock(&reass_lock);
+
+	/* Send a ICMPv6 Time Exceeded only if we received the first fragment (RFC 2460 Sec. 5) */
+	if (first != NULL) {
+		net_icmpv6_send_error(first, NET_ICMPV6_TIME_EXCEEDED, 1, 0);
+		net_pkt_unref(first);
+	}
 }
 
-static void reassemble_packet(struct net_ipv6_reassembly *reass)
+static struct net_pkt *reassemble_packet(struct net_ipv6_reassembly *reass)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(ipv6_access, struct net_ipv6_hdr);
 	NET_PKT_DATA_ACCESS_DEFINE(frag_access, struct net_ipv6_frag_hdr);
@@ -239,7 +271,7 @@ static void reassemble_packet(struct net_ipv6_reassembly *reass)
 	struct net_pkt *pkt;
 	struct net_buf *last;
 	uint8_t next_hdr;
-	int i, len;
+	int i, len, ret;
 
 	k_work_cancel_delayable(&reass->timer);
 
@@ -272,7 +304,7 @@ static void reassemble_packet(struct net_ipv6_reassembly *reass)
 		if (net_pkt_pull(pkt, removed_len)) {
 			NET_ERR("Failed to pull headers");
 			reassembly_cancel(reass->id, &reass->src, &reass->dst);
-			return;
+			return NULL;
 		}
 
 		/* Attach the data to previous pkt */
@@ -335,30 +367,36 @@ static void reassemble_packet(struct net_ipv6_reassembly *reass)
 
 	len = net_pkt_get_len(pkt) - sizeof(struct net_ipv6_hdr);
 
-	ipv6.hdr->len = htons(len);
+	ipv6.hdr->len = net_htons(len);
 
-	net_pkt_set_data(pkt, &ipv6_access);
+	ret = net_pkt_set_data(pkt, &ipv6_access);
+	if (ret < 0) {
+		goto error;
+	}
+
 	net_pkt_set_ip_reassembled(pkt, true);
 
 	NET_DBG("New pkt %p IPv6 len is %d bytes", pkt,
 		len + NET_IPV6H_LEN);
 
-	/* We need to use the queue when feeding the packet back into the
-	 * IP stack as we might run out of stack if we call processing_data()
-	 * directly. As the packet does not contain link layer header, we
-	 * MUST NOT pass it to L2 so there will be a special check for that
-	 * in process_data() when handling the packet.
+	/* The packet carries no link layer header, so it MUST NOT be passed to
+	 * L2; mark it as l2_processed. The caller hands it back to the IP stack
+	 * once the reassembly lock is released.
 	 */
-	if (net_recv_data(net_pkt_iface(pkt), pkt) >= 0) {
-		return;
-	}
+	net_pkt_set_l2_processed(pkt, true);
+
+	return pkt;
 error:
 	net_pkt_unref(pkt);
+
+	return NULL;
 }
 
 void net_ipv6_frag_foreach(net_ipv6_frag_cb_t cb, void *user_data)
 {
 	int i;
+
+	k_mutex_lock(&reass_lock, K_FOREVER);
 
 	for (i = 0; reassembly_init_done &&
 		     i < CONFIG_NET_IPV6_FRAGMENT_MAX_COUNT; i++) {
@@ -368,6 +406,8 @@ void net_ipv6_frag_foreach(net_ipv6_frag_cb_t cb, void *user_data)
 
 		cb(&reassembly[i], user_data);
 	}
+
+	k_mutex_unlock(&reass_lock);
 }
 
 /* Verify that we have all the fragments received and in correct order.
@@ -462,12 +502,39 @@ enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 					      uint8_t nexthdr)
 {
 	struct net_ipv6_reassembly *reass = NULL;
+	struct net_pkt *reass_pkt = NULL;
 	uint16_t flag;
 	bool found;
 	uint8_t more;
 	uint32_t id;
 	int ret;
 	int i;
+
+	/* Each fragment has a fragment header, however since we already
+	 * read the nexthdr part of it, we are not going to use
+	 * net_pkt_get_data() and access the header directly: the cursor
+	 * being 1 byte too far, let's just read the next relevant pieces.
+	 */
+	if (net_pkt_skip(pkt, 1) || /* reserved */
+	    net_pkt_read_be16(pkt, &flag) ||
+	    net_pkt_read_be32(pkt, &id)) {
+		return NET_DROP;
+	}
+
+	more = flag & 0x01;
+	net_pkt_set_ipv6_fragment_flags(pkt, flag);
+
+	if (more && net_pkt_get_len(pkt) % 8) {
+		/* Fragment length is not multiple of 8, discard
+		 * the packet and send parameter problem error with the
+		 * offset of the "Payload Length" field in the IPv6 header.
+		 */
+		net_icmpv6_send_error(pkt, NET_ICMPV6_PARAM_PROBLEM,
+				      NET_ICMPV6_PARAM_PROB_HEADER, NET_IPV6H_LENGTH_OFFSET);
+		return NET_DROP;
+	}
+
+	k_mutex_lock(&reass_lock, K_FOREVER);
 
 	if (!reassembly_init_done) {
 		/* Static initializing does not work here because of the array
@@ -481,34 +548,9 @@ enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 		reassembly_init_done = true;
 	}
 
-	/* Each fragment has a fragment header, however since we already
-	 * read the nexthdr part of it, we are not going to use
-	 * net_pkt_get_data() and access the header directly: the cursor
-	 * being 1 byte too far, let's just read the next relevant pieces.
-	 */
-	if (net_pkt_skip(pkt, 1) || /* reserved */
-	    net_pkt_read_be16(pkt, &flag) ||
-	    net_pkt_read_be32(pkt, &id)) {
-		goto drop;
-	}
-
-	reass = reassembly_get(id, (struct in6_addr *)hdr->src,
-			       (struct in6_addr *)hdr->dst);
-	if (!reass) {
+	reass = reassembly_get(id, hdr->src, hdr->dst);
+	if (reass == NULL) {
 		NET_DBG("Cannot get reassembly slot, dropping pkt %p", pkt);
-		goto drop;
-	}
-
-	more = flag & 0x01;
-	net_pkt_set_ipv6_fragment_flags(pkt, flag);
-
-	if (more && net_pkt_get_len(pkt) % 8) {
-		/* Fragment length is not multiple of 8, discard
-		 * the packet and send parameter problem error with the
-		 * offset of the "Payload Length" field in the IPv6 header.
-		 */
-		net_icmpv6_send_error(pkt, NET_ICMPV6_PARAM_PROBLEM,
-				      NET_ICMPV6_PARAM_PROB_HEADER, NET_IPV6H_LENGTH_OFFSET);
 		goto drop;
 	}
 
@@ -569,18 +611,31 @@ enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 	reassembly_info("Reassembly last pkt", reass);
 
 	/* The last fragment received, reassemble the packet */
-	reassemble_packet(reass);
+	reass_pkt = reassemble_packet(reass);
 
 accept:
+	k_mutex_unlock(&reass_lock);
+
+	if (reass_pkt != NULL) {
+		/* Feed the packet back into the IP stack through the RX queue,
+		 * as processing it here might run out of stack.
+		 */
+		if (net_recv_data(net_pkt_iface(reass_pkt), reass_pkt) < 0) {
+			net_pkt_unref(reass_pkt);
+		}
+	}
+
 	return NET_OK;
 
 drop:
 	if (reass) {
 		if (reassembly_cancel(reass->id, &reass->src, &reass->dst)) {
+			k_mutex_unlock(&reass_lock);
 			return NET_OK;
 		}
 	}
 
+	k_mutex_unlock(&reass_lock);
 	return NET_DROP;
 }
 
@@ -602,12 +657,14 @@ static int send_ipv6_fragment(struct net_pkt *pkt,
 	frag_pkt = net_pkt_alloc_with_buffer(net_pkt_iface(pkt), fit_len +
 					     net_pkt_ipv6_ext_len(pkt) +
 					     NET_IPV6_FRAGH_LEN,
-					     AF_INET6, 0, BUF_ALLOC_TIMEOUT);
+					     NET_AF_INET6, 0, BUF_ALLOC_TIMEOUT);
 	if (!frag_pkt) {
 		return -ENOMEM;
 	}
 
 	net_pkt_cursor_init(pkt);
+
+	net_pkt_set_ll_proto_type(frag_pkt, net_pkt_ll_proto_type(pkt));
 
 	/* We copy original headers back to the fragment packet
 	 * Note that we insert the right next header to point to fragment header
@@ -634,7 +691,7 @@ static int send_ipv6_fragment(struct net_pkt *pkt,
 	frag_hdr->nexthdr = next_hdr;
 	frag_hdr->reserved = 0U;
 	frag_hdr->id = net_pkt_ipv6_fragment_id(pkt);
-	frag_hdr->offset = htons(((frag_offset / 8U) << 3) | !final);
+	frag_hdr->offset = net_htons(((frag_offset / 8U) << 3) | !final);
 
 	net_pkt_set_chksum_done(frag_pkt, true);
 
@@ -686,7 +743,7 @@ fail:
 }
 
 int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
-				 uint16_t pkt_len)
+				 uint16_t pkt_len, uint16_t mtu)
 {
 	uint16_t next_hdr_off;
 	uint16_t last_hdr_off;
@@ -713,12 +770,16 @@ int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 	/* The Maximum payload can fit into each packet after IPv6 header,
 	 * Extension headers and Fragmentation header.
 	 */
-	fit_len = NET_IPV6_MTU - NET_IPV6_FRAGH_LEN -
+	fit_len = (int)mtu - NET_IPV6_FRAGH_LEN -
 		(net_pkt_ip_hdr_len(pkt) + net_pkt_ipv6_ext_len(pkt));
+
+	/* The data we want to sent in one fragment must be multiple of 8 */
+	fit_len = ROUND_DOWN(fit_len, 8);
+
 	if (fit_len <= 0) {
 		/* Must be invalid extension headers length */
 		NET_DBG("No room for IPv6 payload MTU %d hdrs_len %d",
-			NET_IPV6_MTU, NET_IPV6_FRAGH_LEN +
+			mtu, NET_IPV6_FRAGH_LEN +
 			net_pkt_ip_hdr_len(pkt) + net_pkt_ipv6_ext_len(pkt));
 		return -EINVAL;
 	}
@@ -728,16 +789,18 @@ int net_ipv6_send_fragmented_pkt(struct net_if *iface, struct net_pkt *pkt,
 	/* Calculate the L4 checksum (if not done already) before the fragmentation. */
 	if (!net_pkt_is_chksum_done(pkt)) {
 		net_pkt_cursor_init(pkt);
-		net_pkt_skip(pkt, last_hdr_off);
+		if (net_pkt_skip(pkt, last_hdr_off) < 0) {
+			return -ENOBUFS;
+		}
 
 		switch (next_hdr) {
-		case IPPROTO_ICMPV6:
+		case NET_IPPROTO_ICMPV6:
 			ret = net_icmpv6_finalize(pkt, true);
 			break;
-		case IPPROTO_TCP:
+		case NET_IPPROTO_TCP:
 			ret = net_tcp_finalize(pkt, true);
 			break;
-		case IPPROTO_UDP:
+		case NET_IPPROTO_UDP:
 			ret = net_udp_finalize(pkt, true);
 			break;
 		default:

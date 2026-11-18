@@ -10,18 +10,12 @@
  * They are meant to be called only by the ITS implementation.
  * This header may be included when providing a custom implementation of the
  * ITS transform module (@kconfig{CONFIG_SECURE_STORAGE_ITS_TRANSFORM_IMPLEMENTATION_CUSTOM}).
+ *
+ * The functions declared here must not themselves call PSA Crypto functions that take key IDs
+ * because the PSA Crypto implementation calls into the ITS to store persistent keys, so doing
+ * an operation on a key while another one is ongoing corrupts the PSA Crypto key store.
  */
 #include <zephyr/secure_storage/its/common.h>
-
-/** The maximum size, in bytes, of an entry's data after it has been transformed for storage. */
-enum { SECURE_STORAGE_ITS_TRANSFORM_MAX_STORED_DATA_SIZE
-	= CONFIG_SECURE_STORAGE_ITS_MAX_DATA_SIZE
-	  + sizeof(secure_storage_packed_create_flags_t)
-	  + CONFIG_SECURE_STORAGE_ITS_TRANSFORM_OUTPUT_OVERHEAD };
-
-#define SECURE_STORAGE_ITS_TRANSFORM_DATA_SIZE(stored_data_len) \
-	(stored_data_len - (SECURE_STORAGE_ITS_TRANSFORM_MAX_STORED_DATA_SIZE \
-			    - CONFIG_SECURE_STORAGE_ITS_MAX_DATA_SIZE))
 
 /** @brief Transforms the data of an ITS entry for storage.
  *
@@ -51,7 +45,10 @@ psa_status_t secure_storage_its_transform_to_store(
  * @param[out] data_len        On success, the number of bytes written to `stored_data`.
  * @param[out] create_flags    On success, the entry's create flags.
  *
- * @return `PSA_SUCCESS` on success, anything else on failure.
+ * @retval PSA_SUCCESS                 The operation succeeded.
+ * @retval PSA_ERROR_INVALID_SIGNATURE The data failed authentication.
+ * @retval PSA_ERROR_DATA_CORRUPT      The data is corrupt.
+ * @return Any other `PSA_ERROR_*` code on other errors.
  */
 psa_status_t secure_storage_its_transform_from_store(
 		secure_storage_its_uid_t uid, size_t stored_data_len,

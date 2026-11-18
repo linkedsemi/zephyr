@@ -658,7 +658,7 @@ unlock:
     return ret;
 }
 
-static const struct rtc_driver_api rtc_au1901c_api = {
+static DEVICE_API(rtc, rtc_au1901c_api) = {
     .set_time = rtc_au1901c_set_time,
     .get_time = rtc_au1901c_get_time,
 };

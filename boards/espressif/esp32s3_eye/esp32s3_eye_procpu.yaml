@@ -9,16 +9,15 @@ supported:
   - uart
   - i2c
   - spi
-  - can
   - counter
   - watchdog
   - entropy
   - pwm
+  - sdhc
   - dma
   - input
   - video
-testing:
-  ignore_tags:
-    - net
-    - bluetooth
+  - crypto
+  - retained_mem
+  - netif:wifi
 vendor: espressif

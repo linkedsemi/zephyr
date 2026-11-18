@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024 Vitrolife A/S
+ * Copyright (c) 2025 Prevas A/S
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -49,6 +49,7 @@ struct mfd_ad559x_config {
 #endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
 	int (*bus_init)(const struct device *dev);
 	bool has_pointer_byte_map;
+	uint32_t reset_recovery_time_us;
 };
 
 struct mfd_ad559x_data {

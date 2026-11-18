@@ -7,6 +7,7 @@
 /**
  * @file
  * @brief Macros to abstract toolchain specific capabilities
+ * @ingroup toolchain
  *
  * This file contains various macros to abstract compiler capabilities that
  * utilize toolchain specific attributes and/or pragmas.
@@ -16,11 +17,23 @@
 #define ZEPHYR_INCLUDE_TOOLCHAIN_H_
 
 /**
+ * @addtogroup toolchain
+ * @{
+ */
+
+/** @name Compiler builtins, versions, and feature probes
+ * @{
+ */
+
+/**
  * @def HAS_BUILTIN(x)
  * @brief Check if the compiler supports the built-in function \a x.
  *
  * This macro is for use with conditional compilation to enable code using a
  * builtin function that may not be available in every compiler.
+ *
+ * @param x Built-in function identifier, including the leading underscores.
+ * @return Nonzero if the built-in function is supported, or zero otherwise.
  */
 #ifdef __has_builtin
 #define HAS_BUILTIN(x) __has_builtin(x)
@@ -44,7 +57,10 @@
 #include <zephyr/toolchain/mwdt.h>
 #elif defined(__ARMCOMPILER_VERSION)
 #include <zephyr/toolchain/armclang.h>
-#elif defined(__llvm__) || (defined(_LINKER) && defined(__LLD_LINKER_CMD__))
+#elif defined(__IAR_SYSTEMS_ICC__)
+#include <zephyr/toolchain/iar.h>
+#elif defined(__llvm__) ||                                                                         \
+	(defined(_LINKER) && (defined(__LLD_LINKER_CMD__) || defined(__ELD_LINKER_CMD__)))
 #include <zephyr/toolchain/llvm.h>
 #elif defined(__GNUC__) || (defined(_LINKER) && defined(__GCC_LINKER_CMD__))
 #include <zephyr/toolchain/gcc.h>
@@ -124,26 +140,263 @@
 #endif
 
 /**
- * @def TOOLCHAIN_IGNORE_WSHADOW_BEGIN
- * @brief Begin of block to ignore -Wshadow.
+ * @def TOOLCHAIN_PRAGMA
+ * @brief Helper for using pragma in macros.
  *
- * To be used inside another macro.
- * Only for toolchain supporting _Pragma("GCC diagnostic ...").
+ * @param x Pragma directive body.
  */
-#ifndef TOOLCHAIN_IGNORE_WSHADOW_BEGIN
-#define TOOLCHAIN_IGNORE_WSHADOW_BEGIN
+#if TOOLCHAIN_HAS_PRAGMA_DIAG
+#define TOOLCHAIN_PRAGMA(x) _Pragma(#x)
+#else
+#define TOOLCHAIN_PRAGMA(x)
+#endif
+
+/** @} */
+
+/** @name Compiler warning identifiers
+ * @{
+ */
+
+/**
+ * @def TOOLCHAIN_WARNING_ADDRESS_OF_PACKED_MEMBER
+ * @brief Toolchain-specific warning for taking the address of a packed member.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_ADDRESS_OF_PACKED_MEMBER
+#define TOOLCHAIN_WARNING_ADDRESS_OF_PACKED_MEMBER
 #endif
 
 /**
- * @def TOOLCHAIN_IGNORE_WSHADOW_END
- * @brief End of block to ignore -Wshadow.
+ * @def TOOLCHAIN_WARNING_ARRAY_BOUNDS
+ * @brief Toolchain-specific warning for array bounds violations.
  *
- * To be used inside another macro.
- * Only for toolchain supporting _Pragma("GCC diagnostic ...").
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
  */
-#ifndef TOOLCHAIN_IGNORE_WSHADOW_END
-#define TOOLCHAIN_IGNORE_WSHADOW_END
+#ifndef TOOLCHAIN_WARNING_ARRAY_BOUNDS
+#define TOOLCHAIN_WARNING_ARRAY_BOUNDS
 #endif
+
+/**
+ * @def TOOLCHAIN_WARNING_ATTRIBUTES
+ * @brief Toolchain-specific warning for unknown attributes.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_ATTRIBUTES
+#define TOOLCHAIN_WARNING_ATTRIBUTES
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_DELETE_NON_VIRTUAL_DTOR
+ * @brief Toolchain-specific warning for deleting a pointer to an object
+ * with a non-virtual destructor.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_DELETE_NON_VIRTUAL_DTOR
+#define TOOLCHAIN_WARNING_DELETE_NON_VIRTUAL_DTOR
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_EXTRA
+ * @brief Toolchain-specific warning for extra warnings.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_EXTRA
+#define TOOLCHAIN_WARNING_EXTRA
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_ARM_INTERRUPT_VFP_CLOBBER
+ * @brief Toolchain-specific warning for ARM interrupt service routines with VFP enabled that may
+ * clobber the VFP state.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_ARM_INTERRUPT_VFP_CLOBBER
+#define TOOLCHAIN_WARNING_ARM_INTERRUPT_VFP_CLOBBER
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_NONNULL
+ * @brief Toolchain-specific warning for null pointer arguments to functions marked with "nonnull".
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_NONNULL
+#define TOOLCHAIN_WARNING_NONNULL
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_POINTER_ARITH
+ * @brief Toolchain-specific warning for pointer arithmetic.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_POINTER_ARITH
+#define TOOLCHAIN_WARNING_POINTER_ARITH
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_SHADOW
+ * @brief Toolchain-specific warning for shadow variables.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_SHADOW
+#define TOOLCHAIN_WARNING_SHADOW
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_UNUSED_LABEL
+ * @brief Toolchain-specific warning for unused labels.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_UNUSED_LABEL
+#define TOOLCHAIN_WARNING_UNUSED_LABEL
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_UNUSED_VARIABLE
+ * @brief Toolchain-specific warning for unused variables.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_UNUSED_VARIABLE
+#define TOOLCHAIN_WARNING_UNUSED_VARIABLE
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_ALWAYS_INLINE
+ * @brief Toolchain-specific warning for inline functions.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_ALWAYS_INLINE
+#define TOOLCHAIN_WARNING_ALWAYS_INLINE
+#endif
+
+/**
+ * @def TOOLCHAIN_WARNING_CAST_QUAL
+ * @brief Toolchain-specific warning for pointer casts removing a type qualifier.
+ *
+ * Use this as an argument to the @ref TOOLCHAIN_DISABLE_WARNING and
+ * @ref TOOLCHAIN_ENABLE_WARNING family of macros.
+ */
+#ifndef TOOLCHAIN_WARNING_CAST_QUAL
+#define TOOLCHAIN_WARNING_CAST_QUAL
+#endif
+
+/** @} */
+
+/** @name Compiler warning control
+ * @{
+ */
+
+/**
+ * @def TOOLCHAIN_DISABLE_WARNING
+ * @brief Disable the specified compiler warning for all compilers.
+ *
+ * @param warning Toolchain-specific warning identifier.
+ */
+#ifndef TOOLCHAIN_DISABLE_WARNING
+#define TOOLCHAIN_DISABLE_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_ENABLE_WARNING
+ * @brief Re-enable the specified compiler warning for all compilers.
+ *
+ * Can only be used after a call to @ref TOOLCHAIN_DISABLE_WARNING.
+ *
+ * @param warning Toolchain-specific warning identifier.
+ */
+#ifndef TOOLCHAIN_ENABLE_WARNING
+#define TOOLCHAIN_ENABLE_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_DISABLE_CLANG_WARNING
+ * @brief Disable the specified compiler warning for clang.
+ *
+ * @param warning Clang warning identifier.
+ */
+#ifndef TOOLCHAIN_DISABLE_CLANG_WARNING
+#define TOOLCHAIN_DISABLE_CLANG_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_ENABLE_CLANG_WARNING
+ * @brief Re-enable the specified compiler warning for clang.
+ *
+ * Can only be used after a call to @ref TOOLCHAIN_DISABLE_CLANG_WARNING.
+ *
+ * @param warning Clang warning identifier.
+ */
+#ifndef TOOLCHAIN_ENABLE_CLANG_WARNING
+#define TOOLCHAIN_ENABLE_CLANG_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_DISABLE_GCC_WARNING
+ * @brief Disable the specified compiler warning for gcc.
+ *
+ * @param warning GCC warning identifier.
+ */
+#ifndef TOOLCHAIN_DISABLE_GCC_WARNING
+#define TOOLCHAIN_DISABLE_GCC_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_ENABLE_GCC_WARNING
+ * @brief Re-enable the specified compiler warning for gcc.
+ *
+ * Can only be used after a call to @ref TOOLCHAIN_DISABLE_GCC_WARNING.
+ *
+ * @param warning GCC warning identifier.
+ */
+#ifndef TOOLCHAIN_ENABLE_GCC_WARNING
+#define TOOLCHAIN_ENABLE_GCC_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_DISABLE_IAR_WARNING
+ * @brief Disable the specified compiler warning for IAR compilers.
+ *
+ * @param warning IAR warning identifier.
+ */
+#ifndef TOOLCHAIN_DISABLE_IAR_WARNING
+#define TOOLCHAIN_DISABLE_IAR_WARNING(warning)
+#endif
+
+/**
+ * @def TOOLCHAIN_ENABLE_IAR_WARNING
+ * @brief Re-enable the specified compiler warning for IAR compilers.
+ *
+ * Can only be used after a call to @ref TOOLCHAIN_DISABLE_IAR_WARNING.
+ *
+ * @param warning IAR warning identifier.
+ */
+#ifndef TOOLCHAIN_ENABLE_IAR_WARNING
+#define TOOLCHAIN_ENABLE_IAR_WARNING(warning)
+#endif
+
+/** @} */
 
 /*
  * Ensure that __BYTE_ORDER__ and related preprocessor definitions are defined,
@@ -184,5 +437,7 @@
 #endif /* all _ORDER_ macros defined */
 
 #endif /* !_LINKER */
+
+/** @} */
 
 #endif /* ZEPHYR_INCLUDE_TOOLCHAIN_H_ */

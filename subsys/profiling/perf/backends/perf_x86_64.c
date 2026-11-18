@@ -6,6 +6,7 @@
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/linker/linker-defs.h>
 
 static bool valid_stack(uintptr_t addr, k_tid_t current)
 {
@@ -15,9 +16,7 @@ static bool valid_stack(uintptr_t addr, k_tid_t current)
 
 static inline bool in_text_region(uintptr_t addr)
 {
-	extern uintptr_t __text_region_start, __text_region_end;
-
-	return (addr >= (uintptr_t)&__text_region_start) && (addr < (uintptr_t)&__text_region_end);
+	return (addr >= (uintptr_t)__text_region_start) && (addr < (uintptr_t)__text_region_end);
 }
 
 /*
@@ -25,7 +24,7 @@ static inline bool in_text_region(uintptr_t addr)
  * Return addresses are translated in corresponding function's names using .elf file.
  * So we get function call trace
  */
-size_t arch_perf_current_stack_trace(uintptr_t *buf, size_t size)
+int arch_perf_current_stack_trace(uintptr_t *buf, size_t size)
 {
 	if (size < 1U) {
 		return 0;
@@ -76,5 +75,5 @@ size_t arch_perf_current_stack_trace(uintptr_t *buf, size_t size)
 		fp = new_fp;
 	}
 
-	return idx;
+	return (int)idx;
 }

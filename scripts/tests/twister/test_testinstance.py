@@ -7,30 +7,27 @@
 Tests for testinstance class
 """
 
-from contextlib import nullcontext
 import os
-import sys
+from contextlib import nullcontext
+from unittest import mock
+
 import pytest
-import mock
-
-ZEPHYR_BASE = os.getenv("ZEPHYR_BASE")
-sys.path.insert(0, os.path.join(ZEPHYR_BASE, "scripts/pylib/twister"))
-
+from expr_parser import reserved
+from twisterlib.error import BuildError
+from twisterlib.handlers import QEMUHandler
+from twisterlib.platform import Simulator
+from twisterlib.runner import TwisterRunner
+from twisterlib.sidecars.virtiofs import VirtiofsSidecar
 from twisterlib.statuses import TwisterStatus
 from twisterlib.testinstance import TestInstance
-from twisterlib.error import BuildError
-from twisterlib.runner import TwisterRunner
-from twisterlib.handlers import QEMUHandler
-from expr_parser import reserved
-
 
 TESTDATA_PART_1 = [
-    (False, False, "console", "na", "qemu", False, [], (False, True)),
+    (False, False, "console", None, "qemu", False, [], (False, True)),
     (False, False, "console", "native", "qemu", False, [], (False, True)),
     (True, False, "console", "native", "nsim", False, [], (True, False)),
     (True, True, "console", "native", "renode", False, [], (True, False)),
     (False, False, "sensor", "native", "", False, [], (True, False)),
-    (False, False, "sensor", "na", "", False, [], (True, False)),
+    (False, False, "sensor", None, "", False, [], (True, False)),
     (False, True, "sensor", "native", "", True, [], (True, False)),
 ]
 @pytest.mark.parametrize(
@@ -55,52 +52,86 @@ def test_check_build_or_run(
     Scenario 2: Test if build_only is enabled when the OS is Windows"""
 
     class_testplan.testsuites = all_testsuites_dict
-    testsuite = class_testplan.testsuites.get('scripts/tests/twister/test_data/testsuites/tests/'
-                                              'test_a/test_a.check_1')
+    testsuite = class_testplan.testsuites.get('test_a.check_1')
     print(testsuite)
 
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
     platform.type = platform_type
-    platform.simulation = platform_sim
+    platform.simulators = [Simulator({"name": platform_sim})] if platform_sim else []
     testsuite.harness = harness
     testsuite.build_only = build_only
     testsuite.slow = slow
 
-    testinstance = TestInstance(testsuite, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
     env = mock.Mock(
         options=mock.Mock(
             device_testing=False,
             enable_slow=slow,
             fixtures=fixture,
-            filter=""
-        )
+            filter="",
+            sim_name=platform_sim
+        ),
+        hwm=mock.Mock(duts=[])
     )
-    run = testinstance.check_runnable(env.options)
+    run = testinstance.check_runnable(env.options, env.hwm)
     _, r = expected
     assert run == r
 
-    with mock.patch('os.name', 'nt'):
-        # path to QEMU binary is not in QEMU_BIN_PATH environment variable
-        run = testinstance.check_runnable(env.options)
+    # existing QEMU_BIN_PATH
+    with mock.patch('os.environ', {'QEMU_BIN_PATH': '/tmp'}), \
+         mock.patch('os.path.exists', return_value=True):
+        run = testinstance.check_runnable(env.options, env.hwm)
+        _, r = expected
+        assert run == r
+
+    # non-existing QEMU_BIN_PATH
+    with mock.patch('os.environ', {'QEMU_BIN_PATH': '/invalid'}), \
+         mock.patch('os.path.exists', return_value=False):
+        run = testinstance.check_runnable(env.options, env.hwm)
         assert not run
 
-        # mock path to QEMU binary in QEMU_BIN_PATH environment variable
-        with mock.patch('os.environ', {'QEMU_BIN_PATH': ''}):
-            run = testinstance.check_runnable(env.options)
-            _, r = expected
-            assert run == r
+def test_check_runnable_sidecar_host(class_testplan, all_testsuites_dict, platforms_list):
+    """A sidecar whose host requirements are not met demotes the instance to build-only."""
+    class_testplan.testsuites = all_testsuites_dict
+    testsuite = class_testplan.testsuites.get('test_a.check_1')
+    class_testplan.platforms = platforms_list
+    platform = class_testplan.get_platform("demo_board_2")
+    platform.type = 'sim'
+    platform.simulators = [Simulator({"name": "qemu"})]
+    testsuite.harness = 'ztest'
+    testsuite.build_only = False
+    testsuite.slow = False
+    testsuite.sidecar = 'virtiofs'
+
+    testinstance = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
+    env = mock.Mock(
+        options=mock.Mock(
+            device_testing=False,
+            enable_slow=False,
+            fixtures=[],
+            filter="",
+            sim_name="qemu"
+        ),
+        hwm=mock.Mock(duts=[])
+    )
+
+    with mock.patch.object(VirtiofsSidecar, 'find_virtiofsd', return_value=None):
+        assert not testinstance.check_runnable(env.options, env.hwm)
+
+    with mock.patch.object(VirtiofsSidecar, 'find_virtiofsd', return_value='/found'):
+        assert testinstance.check_runnable(env.options, env.hwm)
 
 
 TESTDATA_PART_2 = [
     (True, True, True, ["demo_board_2/unit_testing"], "native",
-     None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y\nCONFIG_ASAN=y\nCONFIG_UBSAN=y'),
+     None, '\nCONFIG_COVERAGE=y\nCONFIG_ASAN=y\nCONFIG_UBSAN=y'),
     (True, False, True, ["demo_board_2/unit_testing"], "native",
-     None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y\nCONFIG_ASAN=y'),
+     None, '\nCONFIG_COVERAGE=y\nCONFIG_ASAN=y'),
     (False, False, True, ["demo_board_2/unit_testing"], 'native',
-     None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y'),
+     None, '\nCONFIG_COVERAGE=y'),
     (True, False, True, ["demo_board_2/unit_testing"], 'mcu',
-     None, '\nCONFIG_COVERAGE=y\nCONFIG_COVERAGE_DUMP=y'),
+     None, '\nCONFIG_COVERAGE=y'),
     (False, False, False, ["demo_board_2/unit_testing"], 'native', None, ''),
     (False, False, True, ['demo_board_1'], 'native', None, ''),
     (True, False, False, ["demo_board_2"], 'native', None, '\nCONFIG_ASAN=y'),
@@ -136,8 +167,7 @@ def test_create_overlay(
 ):
     """Test correct content is written to testcase_extra.conf based on if conditions."""
     class_testplan.testsuites = all_testsuites_dict
-    testcase = class_testplan.testsuites.get('scripts/tests/twister/test_data/testsuites/samples/'
-                                             'test_app/sample_test.app')
+    testcase = class_testplan.testsuites.get('sample_test.app')
 
     if extra_configs:
         testcase.extra_configs = extra_configs
@@ -145,18 +175,17 @@ def test_create_overlay(
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
 
-    testinstance = TestInstance(testcase, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testcase, platform, 'zephyr', class_testplan.env.outdir)
     platform.type = platform_type
     assert testinstance.create_overlay(platform, enable_asan, enable_ubsan, enable_coverage, coverage_platform) == expected_content
 
 def test_calculate_sizes(class_testplan, all_testsuites_dict, platforms_list):
     """ Test Calculate sizes method for zephyr elf"""
     class_testplan.testsuites = all_testsuites_dict
-    testcase = class_testplan.testsuites.get('scripts/tests/twister/test_data/testsuites/samples/'
-                                             'test_app/sample_test.app')
+    testcase = class_testplan.testsuites.get('sample_test.app')
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
-    testinstance = TestInstance(testcase, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testcase, platform, 'zephyr', class_testplan.env.outdir)
 
     with pytest.raises(BuildError):
         assert testinstance.calculate_sizes() == "Missing/multiple output ELF binary"
@@ -171,14 +200,17 @@ TESTDATA_PART_3 = [
     (
         '(dt_compat_enabled("st,stm32-flash-controller") or' \
         ' dt_compat_enabled("st,stm32h7-flash-controller")) and' \
-        ' dt_label_with_parent_compat_enabled("storage_partition", "fixed-partitions")',
+        ' (dt_label_with_parent_compat_enabled("storage_partition", "fixed-partitions") or' \
+        '  dt_label_compat_enabled("storage_partition", "zephyr,mapped-partition"))',
         ['dts']
     ),
     (
         '((CONFIG_FLASH_HAS_DRIVER_ENABLED and not CONFIG_TRUSTED_EXECUTION_NONSECURE) and' \
-        ' dt_label_with_parent_compat_enabled("storage_partition", "fixed-partitions")) or' \
+        ' (dt_label_with_parent_compat_enabled("storage_partition", "fixed-partitions") or' \
+        '  dt_label_compat_enabled("storage_partition", "zephyr,mapped-partition"))) or' \
         ' (CONFIG_FLASH_HAS_DRIVER_ENABLED and CONFIG_TRUSTED_EXECUTION_NONSECURE and' \
-        ' dt_label_with_parent_compat_enabled("slot1_ns_partition", "fixed-partitions"))',
+        '  (dt_label_with_parent_compat_enabled("slot1_ns_partition", "fixed-partitions") or' \
+        '   dt_label_compat_enabled("slot1_ns_partition", "zephyr,mapped-partition")))',
         ['dts', 'kconfig']
     ),
     (
@@ -197,18 +229,19 @@ def test_which_filter_stages(filter_expr, expected_stages):
 
 @pytest.fixture(name='testinstance')
 def sample_testinstance(all_testsuites_dict, class_testplan, platforms_list, request):
-    testsuite_path = 'scripts/tests/twister/test_data/testsuites'
     if request.param['testsuite_kind']  == 'sample':
-        testsuite_path += '/samples/test_app/sample_test.app'
+        testsuite_id = 'sample_test.app'
     elif request.param['testsuite_kind'] == 'tests':
-        testsuite_path += '/tests/test_a/test_a.check_1'
+        testsuite_id = 'test_a.check_1'
+    else:
+        raise ValueError(f"Unknown testsuite_kind: {request.param['testsuite_kind']}")
 
     class_testplan.testsuites = all_testsuites_dict
-    testsuite = class_testplan.testsuites.get(testsuite_path)
+    testsuite = class_testplan.testsuites.get(testsuite_id)
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform(request.param.get('board_name', 'demo_board_2'))
 
-    testinstance = TestInstance(testsuite, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
     return testinstance
 
 
@@ -219,19 +252,19 @@ TESTDATA_1 = [
 
 @pytest.mark.parametrize('detailed_test_id', TESTDATA_1)
 def test_testinstance_init(all_testsuites_dict, class_testplan, platforms_list, detailed_test_id):
-    testsuite_path = 'scripts/tests/twister/test_data/testsuites/samples/test_app/sample_test.app'
+    testsuite_id = 'sample_test.app'
     class_testplan.testsuites = all_testsuites_dict
-    testsuite = class_testplan.testsuites.get(testsuite_path)
+    testsuite = class_testplan.testsuites.get(testsuite_id)
     testsuite.detailed_test_id = detailed_test_id
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2/unit_testing")
 
-    testinstance = TestInstance(testsuite, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
 
     if detailed_test_id:
-        assert testinstance.build_dir == os.path.join(class_testplan.env.outdir, platform.normalized_name, testsuite_path)
+        assert testinstance.build_dir == os.path.join(class_testplan.env.outdir, platform.normalized_name, 'zephyr', testsuite.name)
     else:
-        assert testinstance.build_dir == os.path.join(class_testplan.env.outdir, platform.normalized_name, testsuite.source_dir_rel, testsuite.name)
+        assert testinstance.build_dir == os.path.join(class_testplan.env.outdir, platform.normalized_name, 'zephyr', testsuite.source_dir_rel, testsuite.name)
 
 
 @pytest.mark.parametrize('testinstance', [{'testsuite_kind': 'sample'}], indirect=True)
@@ -258,7 +291,7 @@ def test_testinstance_record(testinstance):
 
     mock_file.assert_called_with(
         os.path.join(testinstance.build_dir, 'recording.csv'),
-        'wt'
+        'w'
     )
 
     mock_writeheader.assert_has_calls([mock.call({ k:k for k in recording[0]})])
@@ -279,13 +312,13 @@ def test_testinstance_add_filter(testinstance):
 
 
 def test_testinstance_init_cases(all_testsuites_dict, class_testplan, platforms_list):
-    testsuite_path = 'scripts/tests/twister/test_data/testsuites/tests/test_a/test_a.check_1'
+    testsuite_id = 'test_a.check_1'
     class_testplan.testsuites = all_testsuites_dict
-    testsuite = class_testplan.testsuites.get(testsuite_path)
+    testsuite = class_testplan.testsuites.get(testsuite_id)
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
 
-    testinstance = TestInstance(testsuite, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
 
     testinstance.init_cases()
 
@@ -333,14 +366,14 @@ def test_testinstance_add_missing_case_status(testinstance, reason, expected_rea
 
 
 def test_testinstance_dunders(all_testsuites_dict, class_testplan, platforms_list):
-    testsuite_path = 'scripts/tests/twister/test_data/testsuites/samples/test_app/sample_test.app'
+    testsuite_id = 'sample_test.app'
     class_testplan.testsuites = all_testsuites_dict
-    testsuite = class_testplan.testsuites.get(testsuite_path)
+    testsuite = class_testplan.testsuites.get(testsuite_id)
     class_testplan.platforms = platforms_list
     platform = class_testplan.get_platform("demo_board_2")
 
-    testinstance = TestInstance(testsuite, platform, class_testplan.env.outdir)
-    testinstance_copy = TestInstance(testsuite, platform, class_testplan.env.outdir)
+    testinstance = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
+    testinstance_copy = TestInstance(testsuite, platform, 'zephyr', class_testplan.env.outdir)
 
     d = testinstance.__getstate__()
 
@@ -357,7 +390,7 @@ def test_testinstance_dunders(all_testsuites_dict, class_testplan, platforms_lis
     assert not testinstance < testinstance_copy
     assert not testinstance_copy < testinstance
 
-    assert testinstance.__repr__() == f'<TestSuite {testsuite_path} on demo_board_2/unit_testing>'
+    assert testinstance.__repr__() == f'<TestSuite {testsuite.name} on demo_board_2/unit_testing>'
 
 
 @pytest.mark.parametrize('testinstance', [{'testsuite_kind': 'tests'}], indirect=True)
@@ -418,46 +451,13 @@ def test_testinstance_get_case_or_create(caplog, testinstance):
     assert 'Could not find a matching testcase for test_a.check_1.3a' in caplog.text
 
 
-TESTDATA_3 = [
-    (None, 'nonexistent harness', False),
-    ('nonexistent fixture', 'console', False),
-    (None, 'console', True),
-    ('dummy fixture', 'console', True),
-]
-
-@pytest.mark.parametrize(
-    'fixture, harness, expected_can_run',
-    TESTDATA_3,
-    ids=['improper harness', 'fixture not in list', 'no fixture specified', 'fixture in list']
-)
-def test_testinstance_testsuite_runnable(
-    all_testsuites_dict,
-    class_testplan,
-    fixture,
-    harness,
-    expected_can_run
-):
-    testsuite_path = 'scripts/tests/twister/test_data/testsuites/samples/test_app/sample_test.app'
-    class_testplan.testsuites = all_testsuites_dict
-    testsuite = class_testplan.testsuites.get(testsuite_path)
-
-    testsuite.harness = harness
-    testsuite.harness_config['fixture'] = fixture
-
-    fixtures = ['dummy fixture']
-
-    can_run = TestInstance.testsuite_runnable(testsuite, fixtures)\
-
-    assert can_run == expected_can_run
-
-
 TESTDATA_4 = [
     (True, mock.ANY, mock.ANY, mock.ANY, None, [], False),
     (False, True, mock.ANY, mock.ANY, 'device', [], True),
     (False, False, 'qemu', mock.ANY, 'qemu', ['QEMU_PIPE=1'], True),
-    (False, False, 'dummy sim', mock.ANY, 'dummy sim', [], True),
-    (False, False, 'na', 'unit', 'unit', ['COVERAGE=1'], True),
-    (False, False, 'na', 'dummy type', '', [], False),
+    (False, False, 'armfvp', mock.ANY, 'armfvp', [], True),
+    (False, False, None, 'unit', 'unit', ['COVERAGE=1'], True),
+    (False, False, None, 'dummy type', '', [], False),
 ]
 
 @pytest.mark.parametrize(
@@ -479,13 +479,13 @@ def test_testinstance_setup_handler(
     expected_handler_ready
 ):
     testinstance.handler = mock.Mock() if preexisting_handler else None
-    testinstance.platform.simulation = platform_sim
-    testinstance.platform.simulation_exec = 'dummy exec'
+    testinstance.platform.simulators = [Simulator({"name": platform_sim, "exec": 'dummy exec'})] if platform_sim else []
     testinstance.testsuite.type = testsuite_type
     env = mock.Mock(
         options=mock.Mock(
             device_testing=device_testing,
-            enable_coverage=True
+            enable_coverage=True,
+            sim_name=platform_sim,
         )
     )
 
@@ -520,7 +520,9 @@ TESTDATA_5 = [
      mock.ANY, 'not runnable', mock.ANY, None, False),
     ('linux', 'qemu', mock.ANY, mock.ANY,
      False, mock.ANY, 'console',
-     mock.ANY, 'not runnable', ['?'], mock.Mock(duts=[mock.Mock(platform='demo_board_2', fixtures=[])]), True),
+     mock.ANY, 'not runnable', ['?'],
+     mock.Mock(duts=[mock.Mock(platform='demo_board_2/unit_testing',
+                               serial='dummy_serial', fixtures=[])]), True),
 ]
 
 @pytest.mark.parametrize(
@@ -546,8 +548,7 @@ def test_testinstance_check_runnable(
     hardware_map,
     expected
 ):
-    testinstance.platform.simulation = platform_sim
-    testinstance.platform.simulation_exec = platform_sim_exec
+    testinstance.platform.simulators = [Simulator({"name": platform_sim, "exec": platform_sim_exec})]
     testinstance.testsuite.build_only = testsuite_build_only
     testinstance.testsuite.slow = testsuite_slow
     testinstance.testsuite.harness = testsuite_harness
@@ -557,14 +558,51 @@ def test_testinstance_check_runnable(
             device_testing=False,
             enable_slow=enable_slow,
             fixtures=fixtures,
-            filter=filter
-        )
+            filter=filter,
+            sim_name=platform_sim
+        ),
+        hwm=hardware_map or mock.Mock(duts=[])
     )
     with mock.patch('os.name', os_name), \
          mock.patch('shutil.which', return_value=exec_exists):
-        res = testinstance.check_runnable(env.options, hardware_map)
+        res = testinstance.check_runnable(env.options, env.hwm)
 
     assert res == expected
+
+
+@pytest.mark.parametrize(
+    ('fixture', 'run_with_fixture_only', 'expected'),
+    [
+        (None, True, False),
+        (['fixture1'], True, True),
+        (['fixture2'], True, False),
+        (None, False, True),
+    ],
+)
+@pytest.mark.parametrize('testinstance', [{'testsuite_kind': 'tests'}], indirect=True)
+def test_testinstance_check_runnable_fixture_only_dut(
+    testinstance, fixture, run_with_fixture_only, expected
+):
+    testinstance.testsuite.harness = 'console'
+    testinstance.testsuite.build_only = False
+    testinstance.testsuite.slow = False
+    testinstance.testsuite.harness_config.fixture = fixture
+    dut = mock.Mock(
+        platform=testinstance.platform.name,
+        serial='dummy_serial',
+        serial_pty=None,
+        fixtures=['fixture1'],
+        run_with_fixture_only=run_with_fixture_only,
+    )
+    options = mock.Mock(
+        device_testing=True,
+        enable_slow=True,
+        filter='runnable',
+        fixture=[],
+        sim_name='qemu',
+    )
+
+    assert testinstance.check_runnable(options, mock.Mock(duts=[dut])) == expected
 
 
 TESTDATA_6 = [
@@ -649,3 +687,38 @@ def test_testinstance_get_buildlog_file(tmp_path, testinstance, create_build_log
 
     if expected_error is None:
         assert res == str(build_log)
+
+
+TESTDATA_9 = [
+    (
+        {'ztest_suite_repeat': 5, 'ztest_test_repeat': 10, 'ztest_test_shuffle': True},
+        '\nCONFIG_ZTEST_REPEAT=y\nCONFIG_ZTEST_SUITE_REPEAT_COUNT=5\nCONFIG_ZTEST_TEST_REPEAT_COUNT=10\nCONFIG_ZTEST_SHUFFLE=y'
+    ),
+    (
+        {'ztest_suite_repeat': 3},
+        '\nCONFIG_ZTEST_REPEAT=y\nCONFIG_ZTEST_SUITE_REPEAT_COUNT=3'
+    ),
+    (
+        {'ztest_test_repeat': 7},
+        '\nCONFIG_ZTEST_REPEAT=y\nCONFIG_ZTEST_TEST_REPEAT_COUNT=7'
+    ),
+    (
+        {'ztest_test_shuffle': True},
+        '\nCONFIG_ZTEST_REPEAT=y\nCONFIG_ZTEST_SHUFFLE=y'
+    ),
+    (
+        {},
+        ''
+    ),
+]
+
+@pytest.mark.parametrize('harness_config, expected_content', TESTDATA_9)
+def test_create_overlay_with_harness_config(class_testplan, all_testsuites_dict, platforms_list, harness_config, expected_content):
+    testsuite_id = 'sample_test.app'
+    class_testplan.testsuites = all_testsuites_dict
+    testsuite = class_testplan.testsuites.get(testsuite_id)
+    testsuite.harness_config = harness_config
+    class_testplan.platforms = platforms_list
+    platform = class_testplan.get_platform("demo_board_2")
+    testinstance = TestInstance(testsuite, platform,'zephyr', class_testplan.env.outdir)
+    assert testinstance.create_overlay(platform) == expected_content

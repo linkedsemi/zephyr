@@ -4,13 +4,19 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef H_ENUM_MGMT_
-#define H_ENUM_MGMT_
+/**
+ * @file
+ * @brief Header file for the MCUmgr enumeration management group API.
+ * @ingroup mcumgr_enum_mgmt
+ */
+
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_ENUM_MGMT_ENUM_MGMT_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_ENUM_MGMT_ENUM_MGMT_H_
 
 /**
- * @brief MCUmgr enum_mgmt API
- * @defgroup mcumgr_enum_mgmt MCUmgr enum_mgmt API
- * @ingroup mcumgr
+ * @brief MCUmgr Enumeration Management API
+ * @defgroup mcumgr_enum_mgmt Enumeration Management
+ * @ingroup mcumgr_mgmt_api
  * @{
  */
 
@@ -19,12 +25,16 @@ extern "C" {
 #endif
 
 /**
- * Command IDs for enumeration management group.
+ * @name Command IDs for enumeration management group.
+ * @{
  */
-#define ENUM_MGMT_ID_COUNT     0
-#define ENUM_MGMT_ID_LIST      1
-#define ENUM_MGMT_ID_SINGLE    2
-#define ENUM_MGMT_ID_DETAILS   3
+#define ENUM_MGMT_ID_COUNT   0 /**< Count of supported groups */
+#define ENUM_MGMT_ID_LIST    1 /**< List supported groups */
+#define ENUM_MGMT_ID_SINGLE  2 /**< Fetch single group ID */
+#define ENUM_MGMT_ID_DETAILS 3 /**< Details on supported groups */
+/**
+ * @}
+ */
 
 /**
  * Command result codes for enumeration management group.
@@ -54,4 +64,4 @@ enum enum_mgmt_err_code_t {
 }
 #endif
 
-#endif /* H_ENUM_MGMT_ */
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_ENUM_MGMT_ENUM_MGMT_H_ */

@@ -22,6 +22,8 @@ LOG_MODULE_REGISTER(LOG_DOMAIN);
 
 #include "alh.h"
 
+#define ALH_ARRAY_INDEX(dir) ((dir) == DAI_DIR_RX ? DAI_DIR_CAPTURE : DAI_DIR_PLAYBACK)
+
 /* global data shared between all alh instances */
 struct dai_alh_global_shared dai_alh_global;
 
@@ -124,7 +126,7 @@ static int dai_alh_config_get(const struct device *dev, struct dai_config *cfg,
 }
 
 static int dai_alh_config_set(const struct device *dev, const struct dai_config *cfg,
-				  const void *bespoke_cfg)
+				  const void *bespoke_cfg, size_t size)
 {
 	struct dai_intel_alh *dp = (struct dai_intel_alh *)dev->data;
 
@@ -137,23 +139,54 @@ static int dai_alh_config_set(const struct device *dev, const struct dai_config 
 	}
 }
 
-static const struct dai_properties *dai_alh_get_properties(const struct device *dev,
-							   enum dai_dir dir, int stream_id)
+static int dai_alh_get_properties_copy(const struct device *dev,
+				       enum dai_dir dir, int stream_id,
+				       struct dai_properties *prop)
 {
 	struct dai_intel_alh *dp = (struct dai_intel_alh *)dev->data;
 	struct dai_intel_alh_pdata *alh = dai_get_drvdata(dp);
-	struct dai_properties *prop = &alh->props;
 	uint32_t offset = dir == DAI_DIR_PLAYBACK ?
 		ALH_TXDA_OFFSET : ALH_RXDA_OFFSET;
 
+	if (!prop) {
+		return -EINVAL;
+	}
+
+	if (stream_id < 0 || (size_t)stream_id >= ARRAY_SIZE(alh_handshake_map)) {
+		LOG_ERR("invalid stream_id %d", stream_id);
+		return -ENOENT;
+	}
+
+	/*
+	 * Fill the caller-provided object directly. When invoked through
+	 * dai_get_properties_copy() the destination is the (private) memory of
+	 * the calling thread, so no shared scratch object is touched and
+	 * concurrent queries from separate TX/RX threads cannot race.
+	 */
 	prop->fifo_address = dai_base(dp) + offset + ALH_STREAM_OFFSET * stream_id;
 	prop->fifo_depth = ALH_GPDMA_BURST_LENGTH;
 	prop->dma_hs_id = alh_handshake_map[stream_id];
+	prop->reg_init_delay = 0;
 	prop->stream_id = alh->params.stream_id;
 
 	LOG_DBG("dai_index %u", dp->index);
 	LOG_DBG("fifo %u", prop->fifo_address);
 	LOG_DBG("handshake %u", prop->dma_hs_id);
+
+	return 0;
+}
+
+static const struct dai_properties *dai_alh_get_properties(const struct device *dev,
+							   enum dai_dir dir, int stream_id)
+{
+	struct dai_intel_alh *dp = (struct dai_intel_alh *)dev->data;
+	struct dai_intel_alh_pdata *alh = dai_get_drvdata(dp);
+	int array_index = ALH_ARRAY_INDEX(dir);
+	struct dai_properties *prop = &alh->props[array_index];
+
+	if (dai_alh_get_properties_copy(dev, dir, stream_id, prop) < 0) {
+		return NULL;
+	}
 
 	return prop;
 }
@@ -194,13 +227,14 @@ static int dai_alh_remove(const struct device *dev)
 	return 0;
 }
 
-static const struct dai_driver_api dai_intel_alh_api_funcs = {
+static DEVICE_API(dai, dai_intel_alh_api_funcs) = {
 	.probe			= dai_alh_probe,
 	.remove			= dai_alh_remove,
 	.config_set		= dai_alh_config_set,
 	.config_get		= dai_alh_config_get,
 	.trigger		= dai_alh_trigger,
 	.get_properties		= dai_alh_get_properties,
+	.get_properties_copy	= dai_alh_get_properties_copy,
 };
 
 #define DAI_INTEL_ALH_DEVICE_INIT(n)						\

@@ -23,128 +23,119 @@
 #include <zephyr/shell/shell_string_conv.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
 
 #include "host/shell/bt.h"
+#include "common/bt_shell_private.h"
 
 static struct bt_vcp_included vcp_included;
 
 static void vcp_vol_rend_state_cb(struct bt_conn *conn, int err, uint8_t volume, uint8_t mute)
 {
-	if (err) {
-		shell_error(ctx_shell, "VCP state get failed (%d)", err);
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
+		bt_shell_error("VCP state get failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP volume %u, mute %u", volume, mute);
+		bt_shell_print("VCP volume %u, mute %u", volume, mute);
 	}
 }
 
 static void vcp_vol_rend_flags_cb(struct bt_conn *conn, int err, uint8_t flags)
 {
-	if (err) {
-		shell_error(ctx_shell, "VCP flags get failed (%d)", err);
+	ARG_UNUSED(conn);
+
+	if (err != 0) {
+		bt_shell_error("VCP flags get failed (%d)", err);
 	} else {
-		shell_print(ctx_shell, "VCP flags 0x%02X", flags);
+		bt_shell_print("VCP flags 0x%02X", flags);
 	}
 }
 
 static void aics_state_cb(struct bt_aics *inst, int err, int8_t gain,
 			  uint8_t mute, uint8_t mode)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "AICS state get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("AICS state get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell,
-			    "AICS inst %p state gain %d, mute %u, mode %u",
-			    inst, gain, mute, mode);
+		bt_shell_print("AICS inst %p state gain %d, mute %u, mode %s (0x%02X)", inst, gain,
+			       mute, bt_aics_mode_to_str(mode), mode);
 	}
 }
 
 static void aics_gain_setting_cb(struct bt_aics *inst, int err, uint8_t units,
 				 int8_t minimum, int8_t maximum)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "AICS gain settings get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("AICS gain settings get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell,
-			    "AICS inst %p gain settings units %u, min %d, max %d",
-			    inst, units, minimum, maximum);
+		bt_shell_print("AICS inst %p gain settings units %u, min %d, max %d",
+			       inst, units, minimum, maximum);
 	}
 }
 
 static void aics_input_type_cb(struct bt_aics *inst, int err,
 			       uint8_t input_type)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "AICS input type get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("AICS input type get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell, "AICS inst %p input type %u",
-			    inst, input_type);
+		bt_shell_print("AICS inst %p input type %u",
+			       inst, input_type);
 	}
 }
 
 static void aics_status_cb(struct bt_aics *inst, int err, bool active)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "AICS status get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("AICS status get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell, "AICS inst %p status %s",
-			    inst, active ? "active" : "inactive");
+		bt_shell_print("AICS inst %p status %s",
+			       inst, active ? "active" : "inactive");
 	}
-
 }
 
 static void aics_description_cb(struct bt_aics *inst, int err,
 				char *description)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "AICS description get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("AICS description get failed (%d) for inst %p",
+			       err, inst);
 	} else {
-		shell_print(ctx_shell, "AICS inst %p description %s",
-			    inst, description);
+		bt_shell_print("AICS inst %p description %s",
+			       inst, description);
 	}
 }
 
 static void vocs_state_cb(struct bt_vocs *inst, int err, int16_t offset)
 {
-	if (err) {
-		shell_error(ctx_shell, "VOCS state get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("VOCS state get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "VOCS inst %p offset %d", inst, offset);
+		bt_shell_print("VOCS inst %p offset %d", inst, offset);
 	}
 }
 
 static void vocs_location_cb(struct bt_vocs *inst, int err, uint32_t location)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "VOCS location get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("VOCS location get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "VOCS inst %p location %u",
-			    inst, location);
+		bt_shell_print("VOCS inst %p location 0x%08X", inst, location);
 	}
 }
 
 static void vocs_description_cb(struct bt_vocs *inst, int err,
 				char *description)
 {
-	if (err) {
-		shell_error(ctx_shell,
-			    "VOCS description get failed (%d) for inst %p",
-			    err, inst);
+	if (err != 0) {
+		bt_shell_error("VOCS description get failed (%d) for inst %p", err, inst);
 	} else {
-		shell_print(ctx_shell, "VOCS inst %p description %s",
-			    inst, description);
+		bt_shell_print("VOCS inst %p description %s", inst, description);
 	}
 }
 
@@ -175,10 +166,6 @@ static int cmd_vcp_vol_rend_init(const struct shell *sh, size_t argc,
 	char input_desc[CONFIG_BT_VCP_VOL_REND_AICS_INSTANCE_COUNT][16];
 	char output_desc[CONFIG_BT_VCP_VOL_REND_VOCS_INSTANCE_COUNT][16];
 	static const char assignment_operator[] = "=";
-
-	if (!ctx_shell) {
-		ctx_shell = sh;
-	}
 
 	memset(&vcp_register_param, 0, sizeof(vcp_register_param));
 
@@ -212,7 +199,7 @@ static int cmd_vcp_vol_rend_init(const struct shell *sh, size_t argc,
 	/* Default values */
 	vcp_register_param.step = 1;
 	vcp_register_param.mute = BT_VCP_STATE_UNMUTED;
-	vcp_register_param.volume = 100;
+	vcp_register_param.volume = 100U;
 
 	for (int i = 1; i < argc; i++) {
 		const char *operator = strstr(argv[i], assignment_operator);
@@ -263,6 +250,8 @@ static int cmd_vcp_vol_rend_volume_step(const struct shell *sh, size_t argc,
 	unsigned long step;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	step = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse step: %d", result);
@@ -289,6 +278,9 @@ static int cmd_vcp_vol_rend_state_get(const struct shell *sh, size_t argc,
 {
 	int result = bt_vcp_vol_rend_get_state();
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
 	}
@@ -301,6 +293,9 @@ static int cmd_vcp_vol_rend_flags_get(const struct shell *sh, size_t argc,
 {
 	int result = bt_vcp_vol_rend_get_flags();
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
 	}
@@ -312,6 +307,9 @@ static int cmd_vcp_vol_rend_volume_down(const struct shell *sh, size_t argc,
 					char **argv)
 {
 	int result = bt_vcp_vol_rend_vol_down();
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
@@ -326,6 +324,9 @@ static int cmd_vcp_vol_rend_volume_up(const struct shell *sh, size_t argc,
 {
 	int result = bt_vcp_vol_rend_vol_up();
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
 	}
@@ -338,6 +339,9 @@ static int cmd_vcp_vol_rend_unmute_volume_down(const struct shell *sh,
 {
 	int result = bt_vcp_vol_rend_unmute_vol_down();
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
 	}
@@ -349,6 +353,9 @@ static int cmd_vcp_vol_rend_unmute_volume_up(const struct shell *sh,
 					     size_t argc, char **argv)
 {
 	int result = bt_vcp_vol_rend_unmute_vol_up();
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
@@ -363,6 +370,8 @@ static int cmd_vcp_vol_rend_volume_set(const struct shell *sh, size_t argc,
 {
 	unsigned long volume;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	volume = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -390,6 +399,9 @@ static int cmd_vcp_vol_rend_unmute(const struct shell *sh, size_t argc,
 {
 	int result = bt_vcp_vol_rend_unmute();
 
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
+
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
 	}
@@ -401,6 +413,9 @@ static int cmd_vcp_vol_rend_mute(const struct shell *sh, size_t argc,
 				 char **argv)
 {
 	int result = bt_vcp_vol_rend_mute();
+
+	ARG_UNUSED(argc);
+	ARG_UNUSED(argv);
 
 	if (result) {
 		shell_print(sh, "Fail: %d", result);
@@ -415,6 +430,8 @@ static int cmd_vcp_vol_rend_vocs_state_get(const struct shell *sh, size_t argc,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -443,6 +460,8 @@ static int cmd_vcp_vol_rend_vocs_location_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -470,6 +489,8 @@ static int cmd_vcp_vol_rend_vocs_location_set(const struct shell *sh,
 	unsigned long location;
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
@@ -518,6 +539,8 @@ static int cmd_vcp_vol_rend_vocs_offset_set(const struct shell *sh, size_t argc,
 	int result = 0;
 	long offset;
 
+	ARG_UNUSED(argc);
+
 	if (default_conn == NULL) {
 		shell_error(sh, "Not connected");
 		return -ENOEXEC;
@@ -565,6 +588,8 @@ static int cmd_vcp_vol_rend_vocs_output_description_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -592,6 +617,8 @@ static int cmd_vcp_vol_rend_vocs_output_description_set(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -622,6 +649,8 @@ static int cmd_vcp_vol_rend_aics_input_state_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -648,6 +677,8 @@ static int cmd_vcp_vol_rend_aics_gain_setting_get(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -676,6 +707,8 @@ static int cmd_vcp_vol_rend_aics_input_type_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -702,6 +735,8 @@ static int cmd_vcp_vol_rend_aics_input_status_get(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -730,6 +765,8 @@ static int cmd_vcp_vol_rend_aics_input_unmute(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -756,6 +793,8 @@ static int cmd_vcp_vol_rend_aics_input_mute(const struct shell *sh, size_t argc,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -785,6 +824,8 @@ static int cmd_vcp_vol_rend_aics_manual_input_gain_set(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -813,6 +854,8 @@ static int cmd_vcp_vol_rend_aics_auto_input_gain_set(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -840,6 +883,8 @@ static int cmd_vcp_vol_rend_aics_gain_set(const struct shell *sh, size_t argc,
 	unsigned long index;
 	int result = 0;
 	long gain;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
@@ -883,6 +928,8 @@ static int cmd_vcp_vol_rend_aics_input_description_get(const struct shell *sh,
 	unsigned long index;
 	int result = 0;
 
+	ARG_UNUSED(argc);
+
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {
 		shell_error(sh, "Failed to parse index: %d", result);
@@ -908,6 +955,8 @@ static int cmd_vcp_vol_rend_aics_input_description_set(const struct shell *sh,
 {
 	unsigned long index;
 	int result = 0;
+
+	ARG_UNUSED(argc);
 
 	index = shell_strtoul(argv[1], 0, &result);
 	if (result != 0) {

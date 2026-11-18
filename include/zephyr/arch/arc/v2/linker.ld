@@ -80,10 +80,7 @@ MEMORY {
 SECTIONS {
 
 #include <zephyr/linker/rel-sections.ld>
-
-#ifdef CONFIG_LLEXT
 #include <zephyr/linker/llext-sections.ld>
-#endif
 
 	GROUP_START(ROMABLE_REGION)
 
@@ -95,7 +92,10 @@ SECTIONS {
  * zephyr_linker_sources() Cmake function.
  */
 #include <snippets-rom-start.ld>
-		*(.text .text.*)
+
+		*(.text)
+		*(.text.*)
+		*(.text$*)
 		*(.gnu.linkonce.t.*)
 
 	. = ALIGN(4);
@@ -113,7 +113,9 @@ SECTIONS {
 #ifdef __MWDT_LINKER_CMD__
 	SECTION_DATA_PROLOGUE(tdata,,)
 	{
-		*(.tls .tls.*);
+		*(.tls);
+		*(.tls.*);
+		*(.tls$*);
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
 	#ifdef CONFIG_XIP
@@ -134,20 +136,19 @@ SECTIONS {
 	SECTION_PROLOGUE(_RODATA_SECTION_NAME,,) {
 		*(".rodata")
 		*(".rodata.*")
+		*(".rodata$*")
 		*(.gnu.linkonce.r.*)
+#if defined(CONFIG_LLEXT) && defined(CONFIG_HARVARD) && \
+	!defined(CONFIG_LLEXT_CUSTOM_HEAP_PLACEMENT)
+		*(".llext_instr_heap")
+		*(".llext_instr_heap.*")
+#endif /* CONFIG_LLEXT && CONFIG_HARVARD && !CONFIG_LLEXT_CUSTOM_HEAP_PLACEMENT */
 
 /* Located in generated directory. This file is populated by the
  * zephyr_linker_sources() Cmake function.
  */
 #include <snippets-rodata.ld>
 #include <zephyr/linker/kobject-rom.ld>
-
-#if defined(CONFIG_CPP) && !defined(CONFIG_STATIC_INIT_GNU) && defined(__MWDT_LINKER_CMD__)
-		. = ALIGN(4);
-		_fctors = .;
-		KEEP(*(.ctors*))
-		_ectors = .;
-#endif /* CONFIG_CPP && !CONFIG_STATIC_INIT_GNU && __MWDT_LINKER_CMD__ */
 
 /* This extra MPU alignment of RAMABLE_REGION is only required if we put ROMABLE_REGION and
  * RAMABLE_REGION into the same (continuous) memory - otherwise we can get beginning of the
@@ -188,29 +189,6 @@ SECTIONS {
 	_app_smem_rom_start = LOADADDR(_APP_SMEM_SECTION_NAME);
 #endif /* CONFIG_USERSPACE */
 
-	SECTION_DATA_PROLOGUE(_BSS_SECTION_NAME,(NOLOAD),) {
-		MPU_MIN_SIZE_ALIGN
-		/*
-		 * For performance, BSS section is assumed to be 4 byte aligned and
-		 * a multiple of 4 bytes
-		 */
-		. = ALIGN(4);
-		__bss_start = .;
-		__kernel_ram_start = .;
-		*(".bss")
-		*(".bss.*")
-		*(COMMON)
-		*(".kernel_bss.*")
-
-		/*
-		 * BSP clears this memory in words only and doesn't clear any
-		 * potential left over bytes.
-		 */
-		__bss_end = ALIGN(4);
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
-
-#include <zephyr/linker/common-noinit.ld>
-
 	GROUP_START(DATA_REGION)
 
 	SECTION_DATA_PROLOGUE(_DATA_SECTION_NAME,,) {
@@ -218,9 +196,30 @@ SECTIONS {
 /* when XIP, .text is in ROM, but vector table must be at start of .data */
 		__data_region_start = .;
 		__data_start = .;
+		__kernel_ram_start = .;
+
 		*(".data")
 		*(".data.*")
+		*(".data$*")
 		*(".kernel.*")
+#if defined(CONFIG_LLEXT) && !defined(CONFIG_LLEXT_CUSTOM_HEAP_PLACEMENT)
+		*(".llext_metadata_heap")
+		*(".llext_metadata_heap.*")
+#ifdef CONFIG_HARVARD
+		*(".llext_data_heap")
+		*(".llext_data_heap.*")
+#else
+		*(".llext_heap")
+		*(".llext_heap.*")
+		*(".llext_ext_heap")
+		*(".llext_ext_heap.*")
+#endif /* CONFIG_HARVARD */
+#endif /* CONFIG_LLEXT && !CONFIG_LLEXT_CUSTOM_HEAP_PLACEMENT */
+
+/* This is an MWDT-specific section, created when -Hccm option is enabled */
+		*(".rodata_in_data")
+		*(".rodata_in_data.*")
+		*(".rodata_in_data$*")
 
 /* Located in generated directory. This file is populated by the
  * zephyr_linker_sources() Cmake function.
@@ -251,6 +250,35 @@ SECTIONS {
 #include <snippets-data-sections.ld>
 
 	__data_region_end = .;
+
+	SECTION_DATA_PROLOGUE(_BSS_SECTION_NAME,(NOLOAD),) {
+		MPU_MIN_SIZE_ALIGN
+		/*
+		 * For performance, BSS section is assumed to be 4 byte aligned and
+		 * a multiple of 4 bytes
+		 */
+		. = ALIGN(4);
+		__bss_start = .;
+
+/* Located in generated directory. This file is populated by the
+ * zephyr_linker_sources() Cmake function.
+ */
+#include <snippets-bss.ld>
+
+		*(".bss")
+		*(".bss.*")
+		*(".bss$*")
+		*(COMMON)
+		*(".kernel_bss.*")
+
+		/*
+		 * BSP clears this memory in words only and doesn't clear any
+		 * potential left over bytes.
+		 */
+		__bss_end = ALIGN(4);
+	} GROUP_DATA_LINK_IN(RAMABLE_REGION, RAMABLE_REGION)
+
+#include <zephyr/linker/common-noinit.ld>
 
 	MPU_MIN_SIZE_ALIGN
 	/* Define linker symbols */
@@ -291,9 +319,16 @@ SECTIONS {
 
 #include <zephyr/linker/ram-end.ld>
 
-    GROUP_END(RAMABLE_REGION)
+	GROUP_END(RAMABLE_REGION)
 
 #include <zephyr/linker/debug-sections.ld>
+
+	SECTION_PROLOGUE(.arcextmap, 0,) {
+		*(.arcextmap)
+		*(.arcextmap.*)
+		*(.arcextmap$*)
+		*(.gnu.linkonce.arcextmap.*)
+	}
 
 	SECTION_PROLOGUE(.ARC.attributes, 0,) {
 		KEEP(*(.ARC.attributes))
@@ -311,12 +346,9 @@ SECTIONS {
 #endif
 
 	/DISCARD/ : {
-#if defined(CONFIG_CPP) && !defined(CONFIG_STATIC_INIT_GNU) && defined(__MWDT_LINKER_CMD__)
+		/* Discard all destructors */
 		*(.dtors*)
 		*(.fini*)
-		*(.eh_frame*)
-#endif /* CONFIG_CPP && !CONFIG_STATIC_INIT_GNU && __MWDT_LINKER_CMD__ */
-		*(.note.GNU-stack)
 		*(.got.plt)
 		*(.igot.plt)
 		*(.got)

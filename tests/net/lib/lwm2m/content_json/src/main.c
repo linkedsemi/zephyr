@@ -525,6 +525,10 @@ ZTEST(net_content_json, test_get_s64)
 		TEST_PAYLOAD(TEST_RES_S64, "v", "9223372036854775807"),
 		TEST_PAYLOAD(TEST_RES_S64, "v", "-9223372036854775808"),
 	};
+	char * const payload_overflow[] = {
+		TEST_PAYLOAD(TEST_RES_S64, "v", "9223372036854775808"),
+		TEST_PAYLOAD(TEST_RES_S64, "v", "-9223372036854775809"),
+	};
 	int64_t expected_value[] = { 0, INT64_MAX, INT64_MIN };
 
 	test_msg.path.res_id = TEST_RES_S64;
@@ -535,6 +539,13 @@ ZTEST(net_content_json, test_get_s64)
 		ret = do_write_op_json(&test_msg);
 		zassert_true(ret >= 0, "Error reported");
 		zassert_equal(test_s64, expected_value[i], "Invalid value parsed");
+	}
+
+	for (i = 0; i < ARRAY_SIZE(payload_overflow); i++) {
+		test_payload_set(payload_overflow[i]);
+
+		ret = do_write_op_json(&test_msg);
+		zassert_equal(ret, -EINVAL, "Error expected on too large value");
 	}
 }
 
@@ -563,6 +574,37 @@ ZTEST(net_content_json, test_get_string)
 	zassert_true(ret >= 0, "Error reported");
 	zassert_mem_equal(test_string, expected_value, strlen(expected_value),
 			  "Invalid value parsed");
+
+	/* Should not truncate but return an error */
+	const char *long_payload =
+		TEST_PAYLOAD(TEST_RES_STRING, "sv", "\"test_stringtest_string\"");
+	test_payload_set(long_payload);
+	ret = do_write_op_json(&test_msg);
+	zassert_equal(ret, -ENOMEM);
+}
+
+ZTEST(net_content_json, test_get_string_utf8)
+{
+	int ret;
+	const char *payload =
+		TEST_PAYLOAD(TEST_RES_STRING, "sv", "\"👨‍👩🤡\"");
+	static const char expected_value[] = "👨‍👩🤡";
+
+	test_msg.path.res_id = TEST_RES_STRING;
+
+	test_payload_set(payload);
+
+	ret = do_write_op_json(&test_msg);
+	zassert_true(ret >= 0, "Error reported");
+	zassert_mem_equal(test_string, expected_value, strlen(expected_value),
+			  "Invalid value parsed");
+
+	/* Should not truncate but return an error */
+	const char *long_payload =
+		TEST_PAYLOAD(TEST_RES_STRING, "sv", "\"👨‍👩🤡🤴\"");
+	test_payload_set(long_payload);
+	ret = do_write_op_json(&test_msg);
+	zassert_equal(ret, -ENOMEM);
 }
 
 ZTEST(net_content_json_nodata, test_get_string_nodata)
@@ -681,6 +723,29 @@ ZTEST(net_content_json_nodata, test_get_objlnk_nodata)
 
 	ret = do_write_op_json(&test_msg);
 	zassert_equal(ret, -EINVAL, "Invalid error code returned");
+}
+
+ZTEST(net_content_json, test_write_security_obj)
+{
+	struct lwm2m_ctx ctx = { 0 };
+	int ret;
+
+	/* The request targets the test object, the payload the Security object */
+	test_msg.ctx = &ctx;
+	test_msg.path.res_id = TEST_RES_STRING;
+	test_payload_set("{\"bn\":\"/0/0/\",\"e\":[{\"n\":\"0\",\"sv\":\"coap://test\"}]}");
+
+	ret = do_write_op_json(&test_msg);
+	zassert_equal(ret, -EACCES, "Security object written outside bootstrap");
+
+	context_reset();
+	ctx.bootstrap_mode = true;
+	test_msg.ctx = &ctx;
+	test_msg.path.res_id = TEST_RES_STRING;
+	test_payload_set("{\"bn\":\"/0/0/\",\"e\":[{\"n\":\"0\",\"sv\":\"coap://test\"}]}");
+
+	ret = do_write_op_json(&test_msg);
+	zassert_not_equal(ret, -EACCES, "Bootstrap write to Security object denied");
 }
 
 ZTEST_SUITE(net_content_json, NULL, test_obj_init, test_prepare, NULL, NULL);

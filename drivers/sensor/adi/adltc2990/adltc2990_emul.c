@@ -1,4 +1,5 @@
 /*
+ * SPDX-FileCopyrightText: Copyright (c) 2025 Jilay Sandeep Pandya
  * SPDX-FileCopyrightText: Copyright (c) 2023 Carl Zeiss Meditec AG
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,19 +14,16 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
-#include "adltc2990.h"
+#include "adltc2990_internal.h"
 #include "adltc2990_reg.h"
 #include "adltc2990_emul.h"
 
 LOG_MODULE_DECLARE(adltc2990, CONFIG_SENSOR_LOG_LEVEL);
 
-#define ADLTC2990_NUM_REGS ADLTC2990_REG_VCC_LSB
+#define ADLTC2990_NUM_REGS ADLTC2990_REG_VCC_LSB + 1
 
 struct adltc2990_emul_data {
 	uint8_t reg[ADLTC2990_NUM_REGS];
-};
-
-struct adltc2990_emul_cfg {
 };
 
 void adltc2990_emul_set_reg(const struct emul *target, uint8_t reg_addr, const uint8_t *val)
@@ -74,6 +72,7 @@ static int adltc2990_emul_transfer_i2c(const struct emul *target, struct i2c_msg
 				       int num_msgs, int addr)
 {
 	struct adltc2990_emul_data *data = target->data;
+	uint8_t regn = msgs->buf[0];
 
 	i2c_dump_msgs_rw(target->dev, msgs, num_msgs, addr, false);
 
@@ -90,7 +89,6 @@ static int adltc2990_emul_transfer_i2c(const struct emul *target, struct i2c_msg
 		return -EIO;
 	}
 
-	uint8_t regn = msgs->buf[0];
 	bool is_read = FIELD_GET(I2C_MSG_READ, msgs->flags) == 1;
 	bool is_stop = FIELD_GET(I2C_MSG_STOP, msgs->flags) == 1;
 
@@ -128,9 +126,8 @@ static const struct i2c_emul_api adltc2990_emul_api_i2c = {
 };
 
 #define ADLTC2990_EMUL(n)                                                                          \
-	const struct adltc2990_emul_cfg adltc2990_emul_cfg_##n;                                    \
 	struct adltc2990_emul_data adltc2990_emul_data_##n;                                        \
-	EMUL_DT_INST_DEFINE(n, adltc2990_emul_init, &adltc2990_emul_data_##n,                      \
-			    &adltc2990_emul_cfg_##n, &adltc2990_emul_api_i2c, NULL)
+	EMUL_DT_INST_DEFINE(n, adltc2990_emul_init, &adltc2990_emul_data_##n, NULL,                \
+			    &adltc2990_emul_api_i2c, NULL)
 
 DT_INST_FOREACH_STATUS_OKAY(ADLTC2990_EMUL)

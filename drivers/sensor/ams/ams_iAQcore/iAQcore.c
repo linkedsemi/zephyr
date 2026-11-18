@@ -93,7 +93,7 @@ static int iaqcore_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api iaq_core_driver_api = {
+static DEVICE_API(sensor, iaq_core_driver_api) = {
 	.sample_fetch = iaqcore_sample_fetch,
 	.channel_get = iaqcore_channel_get,
 };
@@ -103,7 +103,7 @@ static int iaq_core_init(const struct device *dev)
 	const struct iaq_core_config *config = dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

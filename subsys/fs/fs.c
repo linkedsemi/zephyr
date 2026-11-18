@@ -15,11 +15,10 @@
 #include <zephyr/fs/fs.h>
 #include <zephyr/fs/fs_sys.h>
 #include <zephyr/sys/check.h>
+#include <zephyr/sys/minmax.h>
 
-
-#define LOG_LEVEL CONFIG_FS_LOG_LEVEL
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(fs);
+LOG_MODULE_REGISTER(fs, CONFIG_FS_LOG_LEVEL);
 
 /* list of mounted file systems */
 static sys_dlist_t fs_mnt_list = SYS_DLIST_STATIC_INIT(&fs_mnt_list);
@@ -129,6 +128,14 @@ static int fs_get_mnt_point(struct fs_mount_t **mnt_pntp,
 	return 0;
 }
 
+static inline void fs_copy_mnt_point_to_entry(struct fs_mount_t *mnt, struct fs_dirent *entry)
+{
+	entry->type = FS_DIR_ENTRY_DIR;
+	memcpy(entry->name, &mnt->mnt_point[1], min(sizeof(entry->name) - 1, mnt->mountp_len));
+	entry->name[sizeof(entry->name) - 1] = 0;
+	entry->size = 0;
+}
+
 /* File operations */
 int fs_open(struct fs_file_t *zfp, const char *file_name, fs_mode_t flags)
 {
@@ -136,8 +143,7 @@ int fs_open(struct fs_file_t *zfp, const char *file_name, fs_mode_t flags)
 	int rc = -EINVAL;
 	bool truncate_file = false;
 
-	if ((file_name == NULL) ||
-			(strlen(file_name) <= 1) || (file_name[0] != '/')) {
+	if ((file_name == NULL) || (file_name[0] != '/') || (file_name[1] == '\0')) {
 		LOG_ERR("invalid file name!!");
 		return -EINVAL;
 	}
@@ -190,6 +196,19 @@ int fs_open(struct fs_file_t *zfp, const char *file_name, fs_mode_t flags)
 		rc = mp->fs->truncate(zfp, 0);
 		if (rc < 0) {
 			LOG_ERR("file truncation failed (%d)", rc);
+			/* The backend file was opened successfully above, so we
+			 * must close it here to avoid leaking the backend file
+			 * handle and any associated resources. fs_close() cannot
+			 * do this for the caller because we clear zfp->mp below.
+			 */
+			if (mp->fs->close != NULL) {
+				int close_rc = mp->fs->close(zfp);
+
+				if (close_rc < 0) {
+					LOG_ERR("failed file close after truncate failure (%d)",
+						close_rc);
+				}
+			}
 			zfp->mp = NULL;
 			return rc;
 		}
@@ -347,8 +366,7 @@ int fs_opendir(struct fs_dir_t *zdp, const char *abs_path)
 	struct fs_mount_t *mp;
 	int rc = -EINVAL;
 
-	if ((abs_path == NULL) ||
-			(strlen(abs_path) < 1) || (abs_path[0] != '/')) {
+	if ((abs_path == NULL) || (abs_path[0] != '/')) {
 		LOG_ERR("invalid directory name!!");
 		return -EINVAL;
 	}
@@ -447,11 +465,7 @@ int fs_readdir(struct fs_dir_t *zdp, struct fs_dirent *entry)
 
 			mnt = CONTAINER_OF(node, struct fs_mount_t, node);
 
-			entry->type = FS_DIR_ENTRY_DIR;
-			strncpy(entry->name, mnt->mnt_point + 1,
-				sizeof(entry->name) - 1);
-			entry->name[sizeof(entry->name) - 1] = 0;
-			entry->size = 0;
+			fs_copy_mnt_point_to_entry(mnt, entry);
 
 			/* Save pointer to the next one, for later */
 			next = sys_dlist_peek_next(&fs_mnt_list, node);
@@ -503,8 +517,7 @@ int fs_mkdir(const char *abs_path)
 	struct fs_mount_t *mp;
 	int rc = -EINVAL;
 
-	if ((abs_path == NULL) ||
-			(strlen(abs_path) <= 1) || (abs_path[0] != '/')) {
+	if ((abs_path == NULL) || (abs_path[0] != '/') || (abs_path[1] == '\0')) {
 		LOG_ERR("invalid directory name!!");
 		return -EINVAL;
 	}
@@ -536,8 +549,7 @@ int fs_unlink(const char *abs_path)
 	struct fs_mount_t *mp;
 	int rc = -EINVAL;
 
-	if ((abs_path == NULL) ||
-			(strlen(abs_path) <= 1) || (abs_path[0] != '/')) {
+	if ((abs_path == NULL) || (abs_path[0] != '/') || (abs_path[1] == '\0')) {
 		LOG_ERR("invalid file name!!");
 		return -EINVAL;
 	}
@@ -570,8 +582,8 @@ int fs_rename(const char *from, const char *to)
 	size_t match_len;
 	int rc = -EINVAL;
 
-	if ((from == NULL) || (strlen(from) <= 1) || (from[0] != '/') ||
-			(to == NULL) || (strlen(to) <= 1) || (to[0] != '/')) {
+	if ((from == NULL) || (from[0] != '/') || (from[1] == '\0') ||
+			(to == NULL) || (to[0] != '/') || (to[1] == '\0')) {
 		LOG_ERR("invalid file name!!");
 		return -EINVAL;
 	}
@@ -608,17 +620,35 @@ int fs_stat(const char *abs_path, struct fs_dirent *entry)
 {
 	struct fs_mount_t *mp;
 	int rc = -EINVAL;
+	size_t mp_len;
+	size_t path_len;
 
-	if ((abs_path == NULL) ||
-			(strlen(abs_path) <= 1) || (abs_path[0] != '/')) {
+	if ((abs_path == NULL) || (abs_path[0] != '/')) {
 		LOG_ERR("invalid file or dir name!!");
 		return -EINVAL;
 	}
 
-	rc = fs_get_mnt_point(&mp, abs_path, NULL);
+	path_len = strlen(abs_path);
+	if (path_len == 1) {
+		/* Stat on the root directory */
+		entry->type = FS_DIR_ENTRY_DIR;
+		entry->name[0] = '/';
+		entry->name[1] = '\0';
+		entry->size = 0;
+		return 0;
+	}
+
+	rc = fs_get_mnt_point(&mp, abs_path, &mp_len);
 	if (rc < 0) {
 		LOG_ERR("mount point not found!!");
 		return rc;
+	}
+
+	/* abs_path can have a / at the end, unlike mnt_point. */
+	if (path_len - mp_len <= 1U) {
+		/* Stat on the mount point itself */
+		fs_copy_mnt_point_to_entry(mp, entry);
+		return 0;
 	}
 
 	CHECKIF(mp->fs->stat == NULL) {
@@ -639,8 +669,7 @@ int fs_statvfs(const char *abs_path, struct fs_statvfs *stat)
 	struct fs_mount_t *mp;
 	int rc;
 
-	if ((abs_path == NULL) ||
-			(strlen(abs_path) <= 1) || (abs_path[0] != '/')) {
+	if ((abs_path == NULL) || (abs_path[0] != '/') || (abs_path[1] == '\0')) {
 		LOG_ERR("invalid file or dir name!!");
 		return -EINVAL;
 	}
@@ -662,6 +691,90 @@ int fs_statvfs(const char *abs_path, struct fs_statvfs *stat)
 
 	return rc;
 }
+
+int fs_normalize_path(const char *path, char *buf, size_t len)
+{
+	size_t dst_len = 0;
+	size_t src = 0;
+
+	if ((path == NULL) || (path[0] != '/') || (buf == NULL) || (len == 0)) {
+		LOG_ERR("invalid path or output buffer!!");
+		return -EINVAL;
+	}
+
+	while (path[src] != '\0') {
+		size_t seg_start;
+		size_t seg_len;
+		size_t i;
+
+		/* Skipping sequence of /, like /// */
+		if (path[src] == '/') {
+			++src;
+			continue;
+		}
+
+		seg_start = src;
+		while ((path[src] != '\0') && (path[src] != '/')) {
+			src++;
+		}
+		seg_len = src - seg_start;
+
+		if ((seg_len == 1) && (path[seg_start] == '.')) {
+			continue;
+		}
+
+		if ((seg_len == 2) && (path[seg_start] == '.') && (path[seg_start + 1] == '.')) {
+			while ((dst_len > 0) && (buf[dst_len - 1] != '/')) {
+				dst_len--;
+			}
+			if (dst_len > 0) {
+				dst_len--;
+			}
+			continue;
+		}
+
+		if ((dst_len + 1 + seg_len + 1) > len) {
+			return -ENAMETOOLONG;
+		}
+
+		buf[dst_len] = '/';
+		for (i = 0; i < seg_len; i++) {
+			buf[dst_len + 1 + i] = path[seg_start + i];
+		}
+		dst_len += 1 + seg_len;
+	}
+
+	if (dst_len == 0) {
+		if (len < 2) {
+			return -ENAMETOOLONG;
+		}
+		buf[dst_len] = '/';
+		dst_len++;
+	}
+	buf[dst_len] = '\0';
+
+	return 0;
+}
+
+#if defined(CONFIG_FILE_SYSTEM_GC)
+
+int fs_gc(struct fs_mount_t *mp)
+{
+	int rc;
+
+	CHECKIF(mp->fs->gc == NULL) {
+		return -ENOTSUP;
+	}
+
+	rc = mp->fs->gc(mp);
+	if (rc < 0) {
+		LOG_ERR("failed to run garbage collection (%d)", rc);
+	}
+
+	return rc;
+}
+
+#endif /* CONFIG_FILE_SYSTEM_GC */
 
 int fs_mount(struct fs_mount_t *mp)
 {
@@ -686,7 +799,7 @@ int fs_mount(struct fs_mount_t *mp)
 
 	len = strlen(mp->mnt_point);
 
-	if ((len <= 1) || (mp->mnt_point[0] != '/')) {
+	if ((len == 0) || (mp->mnt_point[0] != '/')) {
 		LOG_ERR("invalid mount point!!");
 		return -EINVAL;
 	}
@@ -696,15 +809,22 @@ int fs_mount(struct fs_mount_t *mp)
 	/* Check if mount point already exists */
 	SYS_DLIST_FOR_EACH_NODE(&fs_mnt_list, node) {
 		itr = CONTAINER_OF(node, struct fs_mount_t, node);
-		/* continue if length does not match */
-		if (len != itr->mountp_len) {
-			continue;
-		}
 
-		CHECKIF(mp->fs_data == itr->fs_data) {
+		/* A file system's private state may only be owned by a single
+		 * mount point, no matter how the mount point strings compare,
+		 * fs_data may still be NULL here for file systems that
+		 * allocate their state while mounting, such as ext2, and NULL
+		 * must not be treated as a collision.
+		 */
+		if ((mp->fs_data != NULL) && (mp->fs_data == itr->fs_data)) {
 			LOG_ERR("file system already mounted!!");
 			rc = -EBUSY;
 			goto mount_err;
+		}
+
+		/* continue if length does not match */
+		if (len != itr->mountp_len) {
+			continue;
 		}
 
 		if (strncmp(mp->mnt_point, itr->mnt_point, len) == 0) {

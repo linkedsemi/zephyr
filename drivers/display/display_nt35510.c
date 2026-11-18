@@ -178,7 +178,7 @@ static int nt35510_write_sequence(const struct device *dev, const struct nt35510
 {
 	int ret = 0;
 
-	/* Loop trough all commands as long as writes are successful*/
+	/* Loop through all commands as long as writes are successful*/
 	for (int i = 0; i < nr_cmds && ret == 0; i++) {
 		ret = nt35510_write_reg(dev, cmd->reg, cmd->cmd, cmd->cmd_len);
 		cmd++;
@@ -272,7 +272,6 @@ static void nt35510_get_capabilities(const struct device *dev,
 	const struct nt35510_config *cfg = dev->config;
 	struct nt35510_data *data = dev->data;
 
-	memset(capabilities, 0, sizeof(struct display_capabilities));
 	capabilities->x_resolution = cfg->width;
 	capabilities->y_resolution = cfg->height;
 	capabilities->supported_pixel_formats = PIXEL_FORMAT_RGB_565 | PIXEL_FORMAT_RGB_888;
@@ -410,7 +409,7 @@ static int nt35510_init(const struct device *dev)
 	return 0;
 }
 
-static const struct display_driver_api nt35510_api = {
+static DEVICE_API(display, nt35510_api) = {
 	.blanking_on = nt35510_blanking_on,
 	.blanking_off = nt35510_blanking_off,
 	.set_brightness = nt35510_set_brightness,

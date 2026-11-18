@@ -5,11 +5,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT	nxp_kinetis_dspi
+#define DT_DRV_COMPAT	nxp_dspi
 
 #include <errno.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/drivers/clock_control.h>
 #include <fsl_dspi.h>
 #include <zephyr/drivers/pinctrl.h>
@@ -139,19 +139,19 @@ static int spi_mcux_transfer_next_packet(const struct device *dev)
 	DSPI_StartTransfer(base);
 
 	if (config->is_dma_chn_shared) {
-		/* in master mode start tx */
+		/* in controller mode start tx */
 		dma_start(data->tx_dma_config.dma_dev, data->tx_dma_config.dma_channel);
 		/* TBD kDSPI_TxFifoFillRequestFlag */
 		DSPI_EnableInterrupts(base,
 				      (uint32_t)kDSPI_RxFifoDrainRequestFlag);
-		LOG_DBG("trigger tx to start master");
+		LOG_DBG("trigger tx to start controller");
 	}
 
 	return 0;
 #endif
 
 	transfer.configFlags = kDSPI_MasterCtar0 | kDSPI_MasterPcsContinuous |
-			       (ctx->config->slave << DSPI_MASTER_PCS_SHIFT);
+			       (ctx->config->peripheral << DSPI_MASTER_PCS_SHIFT);
 
 	if (ctx->tx_len == 0) {
 		/* rx only, nothing to tx */
@@ -549,7 +549,7 @@ static void dma_callback(const struct device *dma_dev, void *callback_arg,
 
 #else
 
-static void spi_mcux_master_transfer_callback(SPI_Type *base,
+static void spi_mcux_transfer_callback(SPI_Type *base,
 	      dspi_master_handle_t *handle, status_t status, void *userData)
 {
 	struct spi_mcux_data *data = userData;
@@ -568,11 +568,11 @@ static int spi_mcux_configure(const struct device *dev,
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
 	SPI_Type *base = config->base;
-	dspi_master_config_t master_config;
+	dspi_master_config_t controller_config;
 	uint32_t clock_freq;
 	uint32_t word_size;
 
-	dspi_master_ctar_config_t *ctar_config = &master_config.ctarConfig;
+	dspi_master_ctar_config_t *ctar_config = &controller_config.ctarConfig;
 
 	if (spi_context_configured(&data->ctx, spi_cfg)) {
 		/* This configuration is already in use */
@@ -584,23 +584,23 @@ static int spi_mcux_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	DSPI_MasterGetDefaultConfig(&master_config);
+	DSPI_MasterGetDefaultConfig(&controller_config);
 
-	master_config.whichPcs = 1U << spi_cfg->slave;
-	master_config.whichCtar = config->which_ctar;
-	master_config.pcsActiveHighOrLow =
+	controller_config.whichPcs = 1U << spi_cfg->peripheral;
+	controller_config.whichCtar = config->which_ctar;
+	controller_config.pcsActiveHighOrLow =
 		(spi_cfg->operation & SPI_CS_ACTIVE_HIGH) ?
 			kDSPI_PcsActiveHigh :
 			kDSPI_PcsActiveLow;
-	master_config.samplePoint = config->samplePoint;
-	master_config.enableContinuousSCK = config->enable_continuous_sck;
-	master_config.enableRxFifoOverWrite = config->enable_rxfifo_overwrite;
-	master_config.enableModifiedTimingFormat =
+	controller_config.samplePoint = config->samplePoint;
+	controller_config.enableContinuousSCK = config->enable_continuous_sck;
+	controller_config.enableRxFifoOverWrite = config->enable_rxfifo_overwrite;
+	controller_config.enableModifiedTimingFormat =
 		config->enable_modified_timing_format;
 
-	if (spi_cfg->slave > FSL_FEATURE_DSPI_CHIP_SELECT_COUNT) {
-		LOG_ERR("Slave %d is greater than %d",
-			    spi_cfg->slave, FSL_FEATURE_DSPI_CHIP_SELECT_COUNT);
+	if (spi_cfg->peripheral > FSL_FEATURE_DSPI_CHIP_SELECT_COUNT) {
+		LOG_ERR("Peripheral %d is greater than %d",
+			    spi_cfg->peripheral, FSL_FEATURE_DSPI_CHIP_SELECT_COUNT);
 		return -EINVAL;
 	}
 
@@ -646,7 +646,7 @@ static int spi_mcux_configure(const struct device *dev,
 
 	LOG_DBG("clock_freq is %d", clock_freq);
 
-	DSPI_MasterInit(base, &master_config, clock_freq);
+	DSPI_MasterInit(base, &controller_config, clock_freq);
 
 #ifdef CONFIG_DSPI_MCUX_EDMA
 	DSPI_StopTransfer(base);
@@ -655,13 +655,13 @@ static int spi_mcux_configure(const struct device *dev,
 	/* record frame_size setting for DMA */
 	data->frame_size = word_size;
 	/* keep the pcs settings */
-	data->which_pcs = 1U << spi_cfg->slave;
+	data->which_pcs = 1U << spi_cfg->peripheral;
 #ifdef CONFIG_MCUX_DSPI_EDMA_SHUFFLE_DATA
 	mcux_init_inner_buffer_with_cmd(dev, 0);
 #endif
 #else
 	DSPI_MasterTransferCreateHandle(base, &data->handle,
-					spi_mcux_master_transfer_callback,
+					spi_mcux_transfer_callback,
 					data);
 
 	DSPI_SetDummyData(base, 0);
@@ -694,6 +694,7 @@ static int transceive(const struct device *dev,
 		goto out;
 	}
 
+
 	spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, 1);
 
 	spi_context_cs_control(&data->ctx, true);
@@ -704,7 +705,10 @@ static int transceive(const struct device *dev,
 	DSPI_ClearStatusFlags(base, (uint32_t)kDSPI_AllStatusFlag);
 	/* setup the tx buffer with end  */
 	mcux_init_inner_buffer_with_cmd(dev, 0);
-	mcux_spi_context_data_update(dev);
+	ret = mcux_spi_context_data_update(dev);
+	if (ret) {
+		goto out;
+	}
 	if (config->is_dma_chn_shared) {
 		data->transfer_len = data->frame_size >> 3;
 	} else {
@@ -723,6 +727,7 @@ static int transceive(const struct device *dev,
 	}
 
 	ret = spi_context_wait_for_completion(&data->ctx);
+
 out:
 	spi_context_release(&data->ctx, ret);
 
@@ -795,7 +800,7 @@ static int spi_mcux_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api spi_mcux_driver_api = {
+static DEVICE_API(spi, spi_mcux_driver_api) = {
 	.transceive = spi_mcux_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_mcux_transceive_async,
@@ -906,23 +911,23 @@ static const struct spi_driver_api spi_mcux_driver_api = {
 		    DT_INST_PROP_OR(id, ctar, 0),			\
 		.samplePoint =						\
 		    DT_INST_PROP_OR(id, sample_point, 0),		\
-		.enable_continuous_sck =					\
+		.enable_continuous_sck =				\
 		    DT_INST_PROP(id, continuous_sck),			\
 		.enable_rxfifo_overwrite =				\
 		    DT_INST_PROP(id, rx_fifo_overwrite),		\
-		.enable_modified_timing_format =				\
+		.enable_modified_timing_format =			\
 		    DT_INST_PROP(id, modified_timing_format),		\
 		.is_dma_chn_shared =					\
 		    DT_INST_PROP(id, nxp_rx_tx_chn_share),		\
 		.pincfg = PINCTRL_DT_INST_DEV_CONFIG_GET(id),		\
 	};								\
-	DEVICE_DT_INST_DEFINE(id,					\
+	SPI_DEVICE_DT_INST_DEFINE(id,					\
 			    spi_mcux_init,				\
 			    NULL,					\
 			    &spi_mcux_data_##id,			\
 			    &spi_mcux_config_##id,			\
 			    POST_KERNEL,				\
-			    CONFIG_SPI_INIT_PRIORITY,		\
+			    CONFIG_SPI_INIT_PRIORITY,			\
 			    &spi_mcux_driver_api);			\
 	static void spi_mcux_config_func_##id(const struct device *dev)	\
 	{								\

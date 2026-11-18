@@ -28,7 +28,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/sys/byteorder.h>
 #include <string.h>
 #include <zephyr/random/random.h>
-#include <zephyr/debug/stack.h>
 
 #include <zephyr/drivers/gpio.h>
 
@@ -564,12 +563,28 @@ static inline void mcr20a_rx(const struct device *dev, uint8_t len)
 	uint16_t rssi;
 	uint8_t lqi;
 
+	/* The frame length register carries the PHR, so mask off the reserved
+	 * bits and reject a length that cannot hold the FCS: the subtraction
+	 * below would otherwise wrap and drive an oversized FIFO read.
+	 */
+	len &= MCR20A_RX_FRM_LENGTH_MASK;
+	if (len < MCR20A_FCS_LENGTH) {
+		LOG_ERR("Invalid frame length %u", len);
+		goto out;
+	}
+
 	pkt_len = len - MCR20A_FCS_LENGTH;
 
 	pkt = net_pkt_rx_alloc_with_buffer(mcr20a->iface, pkt_len,
-					   AF_UNSPEC, 0, K_NO_WAIT);
+					   NET_AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
 		LOG_ERR("No buf available");
+		goto out;
+	}
+
+	/* read_rxfifo_content() reads into the first fragment only. */
+	if (net_buf_tailroom(pkt->buffer) < pkt_len) {
+		LOG_ERR("Frame too long for RX buffer: %u", pkt_len);
 		goto out;
 	}
 
@@ -1115,7 +1130,7 @@ static int mcr20a_tx(const struct device *dev,
 	int retval;
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
-		NET_ERR("TX mode %d not supported", mode);
+		LOG_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
 	}
 
@@ -1442,7 +1457,7 @@ static void mcr20a_iface_init(struct net_if *iface)
 }
 
 static const struct mcr20a_config mcr20a_config = {
-	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8), 0),
+	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8)),
 	.irq_gpio = GPIO_DT_SPEC_INST_GET(0, irqb_gpios),
 	.reset_gpio = GPIO_DT_SPEC_INST_GET(0, reset_gpios),
 };

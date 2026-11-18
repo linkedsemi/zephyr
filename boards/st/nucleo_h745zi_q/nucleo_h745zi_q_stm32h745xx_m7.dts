@@ -26,6 +26,7 @@
 		zephyr,dtcm = &dtcm;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
+		zephyr,canbus = &fdcan1;
 	};
 
 	pwmleds {
@@ -40,6 +41,7 @@
 	aliases {
 		led0 = &green_led;
 		pwm-led0 = &red_pwm_led;
+		rtc = &rtc;
 		sw0 = &user_button;
 	};
 };
@@ -58,9 +60,14 @@
 	status = "okay";
 };
 
+/*
+ * In its default hardware configuration, this board uses the
+ * SMPS as power supply which prevents entry in VOS0 power mode.
+ * Configure the board to run at the maximum VOS1 speed: 400 MHz.
+ */
 &pll {
 	div-m = <1>;
-	mul-n = <120>;
+	mul-n = <100>;
 	div-p = <2>;
 	div-q = <8>;
 	div-r = <2>;
@@ -70,7 +77,14 @@
 
 &rcc {
 	clocks = <&pll>;
-	clock-frequency = <DT_FREQ_M(480)>;
+	clock-frequency = <DT_FREQ_M(400)>;
+};
+
+&lpuart1 {
+	pinctrl-0 = <&lpuart1_tx_pb6 &lpuart1_rx_pb7>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
+	status = "okay";
 };
 
 &usart3 {
@@ -81,7 +95,7 @@
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB4 0x00010000>,
+	clocks = <&rcc STM32_CLOCK(APB4, 16)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
@@ -89,6 +103,8 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -114,6 +130,8 @@
 		     &eth_txd0_pg13
 		     &eth_txd1_pb13>;
 	pinctrl-names = "default";
+	phy-connection-type = "rmii";
+	phy-handle = <&eth_phy>;
 };
 
 &mdio {
@@ -121,10 +139,9 @@
 	pinctrl-0 = <&eth_mdio_pa2 &eth_mdc_pc1>;
 	pinctrl-names = "default";
 
-	ethernet-phy@0 {
+	eth_phy: ethernet-phy@0 {
 		compatible = "ethernet-phy";
 		reg = <0x00>;
-		status = "okay";
 	};
 };
 
@@ -141,6 +158,17 @@
 
 zephyr_udc0: &usbotg_fs {
 	pinctrl-0 = <&usb_otg_fs_dm_pa11 &usb_otg_fs_dp_pa12>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&fdcan1 {
+	pinctrl-0 = <&fdcan1_rx_pd0 &fdcan1_tx_pd1>;
+	/* HSE will be used by default. Uncomment below to enable APB1.2 120MHz clock */
+	/*
+	 * clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
+	 *	   <&rcc STM32_SRC_PLL1_Q FDCAN_SEL(1)>;
+	 */
 	pinctrl-names = "default";
 	status = "okay";
 };

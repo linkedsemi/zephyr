@@ -5,10 +5,10 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 512
 flash: 2048
 supported:
+  - ptp_clock
   - uart
   - gpio
   - counter

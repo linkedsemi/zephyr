@@ -39,10 +39,20 @@ static int cmd_read(const struct shell *sh, size_t argc, char **argv)
 	size_t upto;
 	int err;
 
-	addr = strtoul(argv[args_indx.offset], NULL, 0);
-	len = strtoul(argv[args_indx.length], NULL, 0);
+	err = 0;
+	addr = shell_strtoul(argv[args_indx.offset], 0, &err);
+	if (err) {
+		shell_error(sh, "Error parsing offset");
+		return -EINVAL;
+	}
+	err = 0;
+	len = shell_strtoul(argv[args_indx.length], 0, &err);
+	if (err) {
+		shell_error(sh, "Error parsing length");
+		return -EINVAL;
+	}
 
-	eeprom = device_get_binding(argv[args_indx.device]);
+	eeprom = shell_device_get_binding(argv[args_indx.device]);
 	if (!eeprom) {
 		shell_error(sh, "EEPROM device not found");
 		return -EINVAL;
@@ -80,7 +90,12 @@ static int cmd_write(const struct shell *sh, size_t argc, char **argv)
 	int err;
 	int i;
 
-	offset = strtoul(argv[args_indx.offset], NULL, 0);
+	err = 0;
+	offset = shell_strtoul(argv[args_indx.offset], 0, &err);
+	if (err) {
+		shell_error(sh, "Error parsing offset");
+		return -EINVAL;
+	}
 	len = argc - args_indx.data;
 
 	if (len > sizeof(wr_buf)) {
@@ -90,15 +105,16 @@ static int cmd_write(const struct shell *sh, size_t argc, char **argv)
 	}
 
 	for (i = 0; i < len; i++) {
-		byte = strtoul(argv[args_indx.data + i], NULL, 0);
-		if (byte > UINT8_MAX) {
-			shell_error(sh, "Error parsing data byte %d", i);
+		err = 0;
+		byte = shell_strtoul(argv[args_indx.data + i], 0, &err);
+		if ((byte > UINT8_MAX) || err) {
+			shell_error(sh, "Error parsing b%d: <%s>", i, argv[args_indx.data + i]);
 			return -EINVAL;
 		}
 		wr_buf[i] = byte;
 	}
 
-	eeprom = device_get_binding(argv[args_indx.device]);
+	eeprom = shell_device_get_binding(argv[args_indx.device]);
 	if (!eeprom) {
 		shell_error(sh, "EEPROM device not found");
 		return -EINVAL;
@@ -134,7 +150,7 @@ static int cmd_size(const struct shell *sh, size_t argc, char **argv)
 {
 	const struct device *eeprom;
 
-	eeprom = device_get_binding(argv[args_indx.device]);
+	eeprom = shell_device_get_binding(argv[args_indx.device]);
 	if (!eeprom) {
 		shell_error(sh, "EEPROM device not found");
 		return -EINVAL;
@@ -157,17 +173,28 @@ static int cmd_fill(const struct shell *sh, size_t argc, char **argv)
 	size_t upto;
 	int err;
 
-	initial_offset = strtoul(argv[args_indx.offset], NULL, 0);
-	len = strtoul(argv[args_indx.length], NULL, 0);
+	err = 0;
+	initial_offset = shell_strtoul(argv[args_indx.offset], 0, &err);
+	if (err) {
+		shell_error(sh, "Error parsing offset");
+		return -EINVAL;
+	}
+	err = 0;
+	len = shell_strtoul(argv[args_indx.length], 0, &err);
+	if (err) {
+		shell_error(sh, "Error parsing length");
+		return -EINVAL;
+	}
 
-	pattern = strtoul(argv[args_indx.pattern], NULL, 0);
-	if (pattern > UINT8_MAX) {
+	err = 0;
+	pattern = shell_strtoul(argv[args_indx.pattern], 0, &err);
+	if (err || pattern > UINT8_MAX) {
 		shell_error(sh, "Error parsing pattern byte");
 		return -EINVAL;
 	}
 	memset(wr_buf, pattern, MIN(len, CONFIG_EEPROM_SHELL_BUFFER_SIZE));
 
-	eeprom = device_get_binding(argv[args_indx.device]);
+	eeprom = shell_device_get_binding(argv[args_indx.device]);
 	if (!eeprom) {
 		shell_error(sh, "EEPROM device not found");
 		return -EINVAL;
@@ -213,10 +240,15 @@ static int cmd_fill(const struct shell *sh, size_t argc, char **argv)
 	return 0;
 }
 
+static bool device_is_eeprom(const struct device *dev)
+{
+	return DEVICE_API_IS(eeprom, dev);
+}
+
 /* Device name autocompletion support */
 static void device_name_get(size_t idx, struct shell_static_entry *entry)
 {
-	const struct device *dev = shell_device_lookup(idx, NULL);
+	const struct device *dev = shell_device_filter(idx, device_is_eeprom);
 
 	entry->syntax = (dev != NULL) ? dev->name : NULL;
 	entry->handler = NULL;

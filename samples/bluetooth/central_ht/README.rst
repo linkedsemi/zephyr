@@ -20,7 +20,16 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/central_ht` in the
-Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/central_ht
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+After flashing, the sample scans for peripherals advertising the Health
+Thermometer Service (HTS). When one is found, it connects and subscribes
+to Temperature Measurement indications. Use the
+:zephyr:code-sample:`ble_peripheral_ht` sample on a second board as the
+peripheral.

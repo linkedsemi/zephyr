@@ -1,5 +1,0 @@
-tests:
-  kernel.message_queue.usage:
-    tags:
-      - kernel
-      - message queue

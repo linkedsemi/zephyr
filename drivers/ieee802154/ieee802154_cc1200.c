@@ -400,8 +400,11 @@ static inline uint8_t get_packet_length(const struct device *dev)
 static inline bool verify_rxfifo_validity(const struct device *dev,
 					  uint8_t pkt_len)
 {
-	/* packet should be at least 3 bytes as a ACK */
-	if (pkt_len < 3 ||
+	/* packet should be at least 3 bytes as a ACK and must not exceed
+	 * the IEEE 802.15.4 maximum PHY packet size; otherwise pkt_len
+	 * (radio-supplied, up to 255) would drive an oversized net_buf alloc.
+	 */
+	if (!IN_RANGE(pkt_len, 3, IEEE802154_MAX_PHY_PACKET_SIZE) ||
 	    read_reg_num_rxbytes(dev) > (pkt_len + CC1200_FCS_LEN)) {
 		return false;
 	}
@@ -471,7 +474,7 @@ static void cc1200_rx(void *p1, void *p2, void *p3)
 		}
 
 		pkt = net_pkt_rx_alloc_with_buffer(cc1200->iface, pkt_len,
-						   AF_UNSPEC, 0, K_NO_WAIT);
+						   NET_AF_UNSPEC, 0, K_NO_WAIT);
 		if (!pkt) {
 			LOG_ERR("No free pkt available");
 			goto flush;
@@ -612,7 +615,7 @@ static int cc1200_tx(const struct device *dev,
 	bool status = false;
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
-		NET_ERR("TX mode %d not supported", mode);
+		LOG_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
 	}
 
@@ -805,7 +808,7 @@ static void cc1200_iface_init(struct net_if *iface)
 }
 
 static const struct cc1200_config cc1200_config = {
-	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8), 0),
+	.bus = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8)),
 	.interrupt = GPIO_DT_SPEC_INST_GET(0, int_gpios)
 };
 

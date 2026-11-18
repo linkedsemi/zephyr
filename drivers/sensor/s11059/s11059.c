@@ -262,7 +262,7 @@ static int s11059_init(const struct device *dev)
 
 	/* device set */
 	if (!i2c_is_ready_dt(&cfg->bus)) {
-		LOG_ERR("%s, device is not ready.", dev->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->bus.bus);
 		return -ENODEV;
 	}
 
@@ -290,7 +290,7 @@ static int s11059_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api s11059_driver_api = {
+static DEVICE_API(sensor, s11059_driver_api) = {
 	.sample_fetch = s11059_sample_fetch,
 	.channel_get = s11059_channel_get,
 };

@@ -52,6 +52,18 @@ config NORDIC_QSPI_NOR_XIP
 	  QSPI NOR flash chip is executed until the driver has been setup.
 	  This will also disable power management for the QSPI NOR flash chip.
 
+config NORDIC_QSPI_NOR_XIP_FLASH_SCHED_LOCK
+	bool "Hold scheduler lock during QSPI NOR program/erase when XIP"
+	depends on NORDIC_QSPI_NOR_XIP
+	depends on MULTITHREADING
+	help
+	  When executing code from external QSPI flash (XIP), other threads must
+	  not fetch instructions from the same device while it is programming or
+	  erasing. Taking the scheduler lock for the duration of each flash
+	  operation prevents other threads from running XIP code concurrently.
+	  WIP polling uses busy-wait instead of sleeping so the lock is not
+	  violated. Enable for split XIP + DFU workloads.
+
 config NORDIC_QSPI_NOR_TIMEOUT_MS
 	int "Timeout for QSPI operations (ms)"
 	default 500
@@ -60,5 +72,16 @@ config NORDIC_QSPI_NOR_TIMEOUT_MS
 	  Primarily intended for long running operations such as
 	  a flash sector erase. The 500 ms default allows for
 	  most typical NOR flash chips to erase a sector.
+
+config NORDIC_QSPI_NOR_ACTIVE_DWELL_MS
+	int "Dwell period (ms) after last use to stay in active mode"
+	depends on PM_DEVICE_RUNTIME
+	default 10
+	help
+	  Flash accesses commonly occur in bursts, where entering and exiting DPD
+	  mode between each access adds significantly to the total operation time.
+	  This option controls how long to remain in active mode after each API
+	  call, eliminating the active->idle->active transition sequence if another
+	  transaction occurs before the dwell period expires.
 
 endif # NORDIC_QSPI_NOR

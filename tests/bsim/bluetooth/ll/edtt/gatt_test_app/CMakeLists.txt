@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2019 Oticon A/S
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(peripheral_test)
@@ -14,9 +14,13 @@ target_sources(app PRIVATE
   ${gatt_sources}
 )
 
-zephyr_library_include_directories(${ZEPHYR_BASE}/samples/bluetooth
+target_include_directories(app PRIVATE
   ../common/
   src/
+  ${ZEPHYR_BASE}/samples/bluetooth
+)
+
+zephyr_library_include_directories(
   ${BSIM_COMPONENTS_PATH}/libUtilv1/src/
   ${BSIM_COMPONENTS_PATH}/libPhyComv1/src/
 )

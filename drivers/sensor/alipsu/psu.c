@@ -22,7 +22,7 @@ LOG_MODULE_REGISTER(ALIPSU, CONFIG_SENSOR_LOG_LEVEL);
 
 #define I2C_SMBUS_BLOCK_MAX  32
 
-static const struct sensor_driver_api ali_psu_api = {
+static DEVICE_API(sensor, ali_psu_api) = {
 	.sample_fetch = ali_psu_sample_fetch,
     .channel_get  = ali_psu_channel_get,
 };

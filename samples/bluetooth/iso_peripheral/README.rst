@@ -1,6 +1,6 @@
 .. zephyr:code-sample:: ble_peripheral_iso
    :name: ISO (Peripheral)
-   :relevant-api: bt_bas bluetooth
+   :relevant-api: bt_iso bluetooth
 
    Implement a Bluetooth LE Peripheral that uses isochronous channels.
 
@@ -23,7 +23,13 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/iso_peripheral` in the Zephyr tree.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/iso_peripheral
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+After flashing, check the following:
 
 1. Start the application.
    In the terminal window, check that it is advertising.
@@ -33,7 +39,7 @@ This sample can be found under :zephyr_file:`samples/bluetooth/iso_peripheral` i
 
 2. Observe that the central device connects and sets up an isochronous channel.
 
-      Connected E8:DC:8D:B3:47:69 (random)
+      Connected R:E8:DC:8D:B3:47:69
       Incoming request from 0x20002260
       ISO Channel 0x20000698 connected
 

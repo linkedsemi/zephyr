@@ -15,10 +15,10 @@ supported:
   - gpio
   - usb_device
   - i2c
-  - kscan
   - pm
   - pwm
   - tach
   - uart
   - watchdog
+  - rtc
 vendor: ite

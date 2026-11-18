@@ -2,12 +2,11 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig NET_CONNECTION_MANAGER
-	bool "Network connection manager [EXPERIMENTAL]"
+	bool "Network connection manager"
 	depends on NET_IPV6 || NET_IPV4
 	select NET_MGMT
 	select NET_MGMT_EVENT
 	select NET_MGMT_EVENT_INFO
-	select EXPERIMENTAL
 	help
 	  When enabled, this will start the connection manager that will
 	  listen to network interface and IP events in order to verify
@@ -26,7 +25,8 @@ config NET_CONNECTION_MANAGER_MONITOR_STACK_SIZE
 	int "Size of the stack allocated for the conn_mgr_monitor thread"
 	default 512
 	help
-	  Sets the stack size which will be used by the connection manager for connectivity monitoring.
+	  Sets the stack size which will be used by the connection manager for
+	  connectivity monitoring.
 
 config NET_CONNECTION_MANAGER_MONITOR_PRIORITY
 	int "Monitoring thread starting priority"

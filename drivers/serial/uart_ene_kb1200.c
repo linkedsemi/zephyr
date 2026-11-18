@@ -128,8 +128,8 @@ static int kb1200_uart_fifo_fill(const struct device *dev, const uint8_t *tx_dat
 
 	while ((size - tx_bytes) > 0) {
 		/* Check Tx FIFO not Full*/
-		while (config->ser->SERSTS & SERSTS_TX_FULL)
-			;
+		while (config->ser->SERSTS & SERSTS_TX_FULL) {
+		}
 		/* Put a character into	Tx FIFO	*/
 		config->ser->SERTBUF = tx_data[tx_bytes];
 		tx_bytes++;
@@ -220,7 +220,7 @@ static int kb1200_uart_irq_is_pending(const struct device *dev)
 	return (data->pending_flag_data) ? 1 : 0;
 }
 
-static int kb1200_uart_irq_update(const struct device *dev)
+static void kb1200_uart_irq_update(const struct device *dev)
 {
 	struct kb1200_uart_data *data = dev->data;
 	const struct kb1200_uart_config *config = dev->config;
@@ -228,7 +228,6 @@ static int kb1200_uart_irq_update(const struct device *dev)
 	data->pending_flag_data = (config->ser->SERPF) & (config->ser->SERIE);
 	/*clear	pending	flag*/
 	config->ser->SERPF = data->pending_flag_data;
-	return 1;
 }
 
 static void kb1200_uart_irq_callback_set(const struct device *dev, uart_irq_callback_user_data_t cb,
@@ -276,14 +275,13 @@ static void kb1200_uart_poll_out(const struct device *dev, unsigned char c)
 
 	/* Wait	Tx FIFO	not Full*/
 	while (config->ser->SERSTS & SER_TxFull) {
-		;
 	}
 	/* Put a character into	Tx FIFO */
 	config->ser->SERTBUF = c;
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 }
 
-static const struct uart_driver_api kb1200_uart_api = {
+static DEVICE_API(uart, kb1200_uart_api) = {
 	.poll_in = kb1200_uart_poll_in,
 	.poll_out = kb1200_uart_poll_out,
 	.err_check = kb1200_uart_err_check,
@@ -310,9 +308,10 @@ static const struct uart_driver_api kb1200_uart_api = {
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 
-/* GPIO module instances */
-#define KB1200_UART_DEV(inst) DEVICE_DT_INST_GET(inst),
-static const struct device *const uart_devices[] = {DT_INST_FOREACH_STATUS_OKAY(KB1200_UART_DEV)};
+/* UART module instances */
+static const struct device *const uart_devices[] = {
+	DT_INST_FOREACH_STATUS_OKAY(DEVICE_DT_INST_GET_COMMA)
+};
 static void kb1200_uart_isr_wrap(const struct device *dev)
 {
 	for (size_t i = 0; i < ARRAY_SIZE(uart_devices); i++) {

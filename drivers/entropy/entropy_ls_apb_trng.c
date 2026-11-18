@@ -164,10 +164,10 @@ static void ls_apb_trng_isr(const struct device *dev)
 	if ((stat & TRNG_IRQ_MATCH) != 0U) {
 		uint16_t s = (uint16_t)(r->trng_out >> TRNG_OUT_RAND_DAT_SHF);
 		uint8_t bytes[2] = {(uint8_t)(s & 0xFF), (uint8_t)(s >> 8)};
-		size_t written = 0;
+		int written;
 		r->intr_clr = TRNG_IRQ_ALL;
-		k_pipe_put(&data->pool, bytes, 2, &written, 2, K_NO_WAIT);
-		if (written == 0) {
+		written = k_pipe_write(&data->pool, bytes, 2, K_NO_WAIT);
+		if (written != 2) {
 			r->intr_msk &= ~TRNG_IRQ_MATCH;
 			return;
 		}
@@ -204,12 +204,12 @@ static int ls_apb_trng_get_entropy(const struct device *dev,
 	}
 	k_mutex_lock(&data->mutex, K_FOREVER);
 	while (copied < len) {
-		size_t got = 0;
+		int got;
 		trng_irq_enable(r);
-		(void)k_pipe_get(&data->pool, &buf[copied], len - copied,
-				 &got, 1, K_MSEC(200));
+		got = k_pipe_read(&data->pool, &buf[copied], len - copied,
+				  K_MSEC(200));
 		if (got > 0) {
-			copied += got;
+			copied += (uint16_t)got;
 			continue;
 		}
 		if (trng_hw_recover(cfg) != 0) {
@@ -228,18 +228,21 @@ static int ls_apb_trng_get_entropy_isr(const struct device *dev,
 	const struct entropy_ls_apb_trng_config *cfg = dev->config;
 	struct entropy_ls_apb_trng_data *data = dev->data;
 	volatile struct trng_apb_regs *r = cfg->regs;
-	size_t got = 0;
+	int got;
 	uint16_t i;
 
 	if (!buf || !len) {
 		return -EINVAL;
 	}
 
-	(void)k_pipe_get(&data->pool, buf, len, &got, 1, K_NO_WAIT);
+	got = k_pipe_read(&data->pool, buf, len, K_NO_WAIT);
+	if (got < 0) {
+		got = 0;
+	}
 
 	if ((flags & ENTROPY_BUSYWAIT) == 0U) {
 		trng_irq_enable(r);
-		return got ? (int)got : -ENODATA;
+		return got > 0 ? got : -ENODATA;
 	}
 
 	i = (uint16_t)got;
@@ -298,7 +301,7 @@ static int ls_apb_trng_init(const struct device *dev)
 	return 0;
 }
 
-static const struct entropy_driver_api ls_apb_trng_api = {
+static DEVICE_API(entropy, ls_apb_trng_api) = {
 	.get_entropy = ls_apb_trng_get_entropy,
 	.get_entropy_isr = ls_apb_trng_get_entropy_isr,
 };

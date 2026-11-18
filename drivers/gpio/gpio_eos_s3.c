@@ -394,7 +394,7 @@ static int gpio_eos_s3_port_get_direction(const struct device *port, gpio_port_p
 }
 #endif /* CONFIG_GPIO_GET_DIRECTION */
 
-static const struct gpio_driver_api gpio_eos_s3_driver_api = {
+static DEVICE_API(gpio, gpio_eos_s3_driver_api) = {
 	.pin_configure = gpio_eos_s3_configure,
 	.port_get_raw = gpio_eos_s3_port_get_raw,
 	.port_set_masked_raw = gpio_eos_s3_port_set_masked_raw,
@@ -423,9 +423,7 @@ static int gpio_eos_s3_init(const struct device *dev)
 }
 
 const struct gpio_eos_s3_config gpio_eos_s3_config = {
-	.common = {
-		.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(0),
-	},
+	.common = GPIO_COMMON_CONFIG_FROM_DT_INST(0),
 	.pin_secondary_config = DT_INST_PROP(0, pin_secondary_config),
 };
 

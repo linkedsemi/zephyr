@@ -22,6 +22,8 @@
 
 #include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/conn.h>
+#include <zephyr/net_buf.h>
+#include <zephyr/sys/util_macro.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -71,8 +73,8 @@ struct bt_le_cs_set_default_settings_param {
 	/** Antenna identifier to be used for CS_SYNC packets by the local controller.
 	 */
 	enum bt_le_cs_sync_antenna_selection_opt cs_sync_antenna_selection;
-	/** Maximum output power (Effective Isotropic Radiated Power) to be used
-	 *  for all CS transmissions.
+	/** Maximum output power (Effective Isotropic Radiated Power) in dBm,
+	 *  to be used for all CS transmissions.
 	 *
 	 *  Value range is @ref BT_HCI_OP_LE_CS_MIN_MAX_TX_POWER to
 	 *  @ref BT_HCI_OP_LE_CS_MAX_MAX_TX_POWER.
@@ -88,24 +90,14 @@ enum bt_le_cs_test_cs_sync_antenna_selection {
 	BT_LE_CS_TEST_CS_SYNC_ANTENNA_SELECTION_FOUR = BT_HCI_OP_LE_CS_ANTENNA_SEL_FOUR,
 };
 
-/** CS Test Initiator SNR control options */
-enum bt_le_cs_initiator_snr_control {
-	BT_LE_CS_INITIATOR_SNR_CONTROL_18dB = BT_HCI_OP_LE_CS_INITIATOR_SNR_18,
-	BT_LE_CS_INITIATOR_SNR_CONTROL_21dB = BT_HCI_OP_LE_CS_INITIATOR_SNR_21,
-	BT_LE_CS_INITIATOR_SNR_CONTROL_24dB = BT_HCI_OP_LE_CS_INITIATOR_SNR_24,
-	BT_LE_CS_INITIATOR_SNR_CONTROL_27dB = BT_HCI_OP_LE_CS_INITIATOR_SNR_27,
-	BT_LE_CS_INITIATOR_SNR_CONTROL_30dB = BT_HCI_OP_LE_CS_INITIATOR_SNR_30,
-	BT_LE_CS_INITIATOR_SNR_CONTROL_NOT_USED = BT_HCI_OP_LE_CS_INITIATOR_SNR_NOT_USED,
-};
-
-/** CS Test Reflector SNR control options */
-enum bt_le_cs_reflector_snr_control {
-	BT_LE_CS_REFLECTOR_SNR_CONTROL_18dB = BT_HCI_OP_LE_CS_REFLECTOR_SNR_18,
-	BT_LE_CS_REFLECTOR_SNR_CONTROL_21dB = BT_HCI_OP_LE_CS_REFLECTOR_SNR_21,
-	BT_LE_CS_REFLECTOR_SNR_CONTROL_24dB = BT_HCI_OP_LE_CS_REFLECTOR_SNR_24,
-	BT_LE_CS_REFLECTOR_SNR_CONTROL_27dB = BT_HCI_OP_LE_CS_REFLECTOR_SNR_27,
-	BT_LE_CS_REFLECTOR_SNR_CONTROL_30dB = BT_HCI_OP_LE_CS_REFLECTOR_SNR_30,
-	BT_LE_CS_REFLECTOR_SNR_CONTROL_NOT_USED = BT_HCI_OP_LE_CS_REFLECTOR_SNR_NOT_USED,
+/** CS SNR control options */
+enum bt_le_cs_snr_control {
+	BT_LE_CS_SNR_CONTROL_18dB = BT_HCI_OP_LE_CS_SNR_18,
+	BT_LE_CS_SNR_CONTROL_21dB = BT_HCI_OP_LE_CS_SNR_21,
+	BT_LE_CS_SNR_CONTROL_24dB = BT_HCI_OP_LE_CS_SNR_24,
+	BT_LE_CS_SNR_CONTROL_27dB = BT_HCI_OP_LE_CS_SNR_27,
+	BT_LE_CS_SNR_CONTROL_30dB = BT_HCI_OP_LE_CS_SNR_30,
+	BT_LE_CS_SNR_CONTROL_NOT_USED = BT_HCI_OP_LE_CS_SNR_NOT_USED,
 };
 
 /** CS Test Override 3 T_PM Tone Extension */
@@ -215,7 +207,7 @@ enum bt_le_cs_test_override_4_tone_antenna_permutation {
 	BT_LE_CS_TEST_OVERRIDE_4_ANTENNA_PERMUTATION_INDEX_21 = BT_HCI_OP_LE_CS_TEST_AP_INDEX_21,
 	BT_LE_CS_TEST_OVERRIDE_4_ANTENNA_PERMUTATION_INDEX_22 = BT_HCI_OP_LE_CS_TEST_AP_INDEX_22,
 	BT_LE_CS_TEST_OVERRIDE_4_ANTENNA_PERMUTATION_INDEX_23 = BT_HCI_OP_LE_CS_TEST_AP_INDEX_23,
-	/** Loop through all valid Antenna Permuation Indices starting
+	/** Loop through all valid Antenna Permutation Indices starting
 	 *  from the lowest index.
 	 */
 	BT_LE_CS_TEST_OVERRIDE_4_ANTENNA_PERMUTATION_INDEX_LOOP =
@@ -254,10 +246,8 @@ enum bt_le_cs_test_override_8_cs_sync_payload_pattern {
 
 /** CS Test parameters */
 struct bt_le_cs_test_param {
-	/** CS mode to be used during the CS procedure. */
-	enum bt_conn_le_cs_main_mode main_mode;
-	/** CS sub-mode to be used during the CS procedure. */
-	enum bt_conn_le_cs_sub_mode sub_mode;
+	/** CS main and sub mode to be used during the CS procedure. */
+	enum bt_conn_le_cs_mode mode;
 	/** Number of main mode steps taken from the end of the last CS subevent
 	 * to be repeated at the beginning of the current CS subevent directly
 	 * after the last mode-0 step of that event.
@@ -288,7 +278,7 @@ struct bt_le_cs_test_param {
 	 *  A value of 0 means that this parameter is ignored.
 	 */
 	uint8_t max_num_subevents;
-	/** Desired TX power level for the CS procedure.
+	/** Desired TX power level for the CS procedure, in dBm.
 	 *
 	 *  Value range is @ref BT_HCI_OP_LE_CS_MIN_MAX_TX_POWER to
 	 *  @ref BT_HCI_OP_LE_CS_MAX_MAX_TX_POWER.
@@ -364,9 +354,9 @@ struct bt_le_cs_test_param {
 	 */
 	enum bt_conn_le_cs_tone_antenna_config_selection tone_antenna_config_selection;
 	/** Initiator SNR control options */
-	enum bt_le_cs_initiator_snr_control initiator_snr_control;
+	enum bt_le_cs_snr_control initiator_snr_control;
 	/** Reflector SNR control options */
-	enum bt_le_cs_reflector_snr_control reflector_snr_control;
+	enum bt_le_cs_snr_control reflector_snr_control;
 	/** Determines octets 14 and 15 of the initial value of the DRBG nonce. */
 	uint16_t drbg_nonce;
 
@@ -489,10 +479,8 @@ enum bt_le_cs_create_config_context {
 struct bt_le_cs_create_config_params {
 	/** CS configuration ID */
 	uint8_t id;
-	/** Main CS mode type */
-	enum bt_conn_le_cs_main_mode main_mode_type;
-	/** Sub CS mode type */
-	enum bt_conn_le_cs_sub_mode sub_mode_type;
+	/** Main and sub CS mode */
+	enum bt_conn_le_cs_mode mode;
 	/** Minimum number of CS main mode steps to be executed before a submode step is executed */
 	uint8_t min_main_mode_steps;
 	/** Maximum number of CS main mode steps to be executed before a submode step is executed */
@@ -510,6 +498,12 @@ struct bt_le_cs_create_config_params {
 	enum bt_conn_le_cs_rtt_type rtt_type;
 	/** CS Sync PHY */
 	enum bt_conn_le_cs_sync_phy cs_sync_phy;
+	/** Channel map used for CS procedure
+	 *  Channels n = 0, 1, 23, 24, 25, 77, and 78 are not allowed and shall be set to zero.
+	 *  Channel 79 is reserved for future use and shall be set to zero.
+	 *  At least 15 channels shall be enabled.
+	 */
+	 uint8_t channel_map[10];
 	/** The number of times the Channel_Map field will be cycled through for non-mode-0 steps
 	 * within a CS procedure
 	 */
@@ -520,19 +514,15 @@ struct bt_le_cs_create_config_params {
 	enum bt_conn_le_cs_ch3c_shape ch3c_shape;
 	/** Number of channels skipped in each rising and falling sequence  */
 	uint8_t ch3c_jump;
-	/** Channel map used for CS procedure
-	 *  Channels n = 0, 1, 23, 24, 25, 77, and 78 are not allowed and shall be set to zero.
-	 *  Channel 79 is reserved for future use and shall be set to zero.
-	 *  At least 15 channels shall be enabled.
-	 */
-	uint8_t channel_map[10];
+	/** CS enhancements 1 */
+	uint8_t cs_enhancements_1;
 };
 
 /** Callbacks for CS Test */
 struct bt_le_cs_test_cb {
 	/**@brief CS Test Subevent data.
 	 *
-	 * @param[in] Subevent results.
+	 * @param[in] data Subevent results.
 	 */
 	void (*le_cs_test_subevent_data_available)(struct bt_conn_le_cs_subevent_result *data);
 	/**@brief CS Test End Complete. */
@@ -574,7 +564,7 @@ struct bt_le_cs_iq_sample bt_le_cs_parse_pct(const uint8_t pct[3]);
  * This command is used to enable all valid channels in a
  * given CS channel map
  *
- * @param channel_map  Chanel map
+ * @param channel_map  Channel map
  */
 void bt_le_cs_set_valid_chmap_bits(uint8_t channel_map[10]);
 
@@ -611,6 +601,12 @@ int bt_le_cs_set_default_settings(struct bt_conn *conn,
  * This command is used to read the per-channel mode-0 Frequency Actuation Error
  * table of the remote Controller.
  *
+ * If the remote controller supports a Frequency Actuation Error of zero relative
+ * to its mode-0 transmissions in the reflector role
+ * (see @ref bt_conn_le_cs_capabilities::cs_without_fae_supported), calling this
+ * function is not needed and the read remote FAE table complete event will be
+ * generated with an error code.
+ *
  * @note To use this API @kconfig{CONFIG_BT_CHANNEL_SOUNDING} must be set.
  *
  * @param conn   Connection Object.
@@ -638,7 +634,7 @@ int bt_le_cs_test_cb_register(struct bt_le_cs_test_cb cs_test_cb);
  * of either the initiator or reflector.
  *
  * The first mode-0 channel in the list is used as the starting channel for
- * the test. At the beginning of any test, the IUT in the flector role shall
+ * the test. At the beginning of any test, the IUT in the reflector role shall
  * listen on the first mode-0 channel until it receives the first transmission
  * from the initiator. Similarly, with the IUT in the initiator role, the tester
  * will start by listening on the first mode-0 channel and the IUT shall transmit
@@ -671,7 +667,7 @@ int bt_le_cs_start_test(const struct bt_le_cs_test_param *params);
 int bt_le_cs_create_config(struct bt_conn *conn, struct bt_le_cs_create_config_params *params,
 			   enum bt_le_cs_create_config_context context);
 
-/** @brief Create CS configuration
+/** @brief Remove CS configuration
  *
  * This command is used to remove a CS configuration from the local controller
  * identified by the config_id
@@ -718,7 +714,7 @@ void bt_le_cs_step_data_parse(struct net_buf_simple *step_data_buf,
 
 /** @brief CS Security Enable
  *
- * This commmand is used to start or restart the Channel Sounding Security
+ * This command is used to start or restart the Channel Sounding Security
  * Start procedure in the local Controller for the ACL connection identified
  * in the conn parameter.
  *
@@ -753,7 +749,7 @@ int bt_le_cs_procedure_enable(struct bt_conn *conn,
 
 enum bt_le_cs_procedure_phy {
 	BT_LE_CS_PROCEDURE_PHY_1M = BT_HCI_OP_LE_CS_PROCEDURE_PHY_1M,
-	BT_LE_CS_PROCEUDRE_PHY_2M = BT_HCI_OP_LE_CS_PROCEDURE_PHY_2M,
+	BT_LE_CS_PROCEDURE_PHY_2M = BT_HCI_OP_LE_CS_PROCEDURE_PHY_2M,
 	BT_LE_CS_PROCEDURE_PHY_CODED_S8 = BT_HCI_OP_LE_CS_PROCEDURE_PHY_CODED_S8,
 	BT_LE_CS_PROCEDURE_PHY_CODED_S2 = BT_HCI_OP_LE_CS_PROCEDURE_PHY_CODED_S2,
 };
@@ -803,10 +799,10 @@ struct bt_le_cs_set_procedure_parameters_param {
 	uint8_t preferred_peer_antenna;
 
 	/* Initiator SNR control adjustment */
-	enum bt_le_cs_initiator_snr_control snr_control_initiator;
+	enum bt_le_cs_snr_control snr_control_initiator;
 
 	/* Reflector SNR control adjustment */
-	enum bt_le_cs_reflector_snr_control snr_control_reflector;
+	enum bt_le_cs_snr_control snr_control_reflector;
 };
 
 /** @brief CS Set Procedure Parameters
@@ -858,6 +854,19 @@ int bt_le_cs_set_channel_classification(uint8_t channel_classification[10]);
  */
 int bt_le_cs_read_local_supported_capabilities(struct bt_conn_le_cs_capabilities *ret);
 
+/** @brief CS Read Local Supported Capabilities V2
+ *
+ *  This command is used to read the CS capabilities that are supported
+ *  by the local Controller.
+ *
+ * @note To use this API @kconfig{CONFIG_BT_CHANNEL_SOUNDING} must be set.
+ *
+ * @param ret Return values for the CS Procedure Enable command.
+ *
+ * @return Zero on success or (negative) error code on failure.
+ */
+int bt_le_cs_read_local_supported_capabilities_v2(struct bt_conn_le_cs_capabilities *ret);
+
 /** @brief CS Write Cached Remote Supported Capabilities
  *
  *  This command is used to write the cached copy of the CS capabilities
@@ -874,10 +883,31 @@ int bt_le_cs_read_local_supported_capabilities(struct bt_conn_le_cs_capabilities
 int bt_le_cs_write_cached_remote_supported_capabilities(
 	struct bt_conn *conn, const struct bt_conn_le_cs_capabilities *params);
 
+/** @brief CS Write Cached Remote Supported Capabilities V2
+ *
+ *  This command is used to write the cached copy of the CS capabilities
+ *  that are supported by the remote Controller for the connection
+ *  identified.
+ *
+ * @note To use this API @kconfig{CONFIG_BT_CHANNEL_SOUNDING} must be set.
+ *
+ * @param conn   Connection Object.
+ * @param params Parameters for the CS Write Cached Remote Supported Capabilities command.
+ *
+ * @return Zero on success or (negative) error code on failure.
+ */
+int bt_le_cs_write_cached_remote_supported_capabilities_v2(
+	struct bt_conn *conn, const struct bt_conn_le_cs_capabilities *params);
+
 /** @brief CS Write Cached Remote FAE Table
  *
  *  This command is used to write a cached copy of the per-channel mode-0
  *  Frequency Actuation Error table of the remote device in the local Controller.
+ *
+ *  If the remote controller supports a Frequency Actuation Error of zero relative
+ *  to its mode-0 transmissions in the reflector role
+ *  (see @ref bt_conn_le_cs_capabilities::cs_without_fae_supported), calling this
+ *  function is not needed. An error code will be returned.
  *
  * @note To use this API @kconfig{CONFIG_BT_CHANNEL_SOUNDING} must be set.
  *
@@ -886,7 +916,28 @@ int bt_le_cs_write_cached_remote_supported_capabilities(
  *
  * @return Zero on success or (negative) error code on failure.
  */
-int bt_le_cs_write_cached_remote_fae_table(struct bt_conn *conn, uint8_t remote_fae_table[72]);
+int bt_le_cs_write_cached_remote_fae_table(struct bt_conn *conn, int8_t remote_fae_table[72]);
+
+/** @brief Get antenna path used for the CS tone exchange
+ *	   when using multiple antenna paths for mode-2 or mode-3
+ *	   CS procedure.
+ *
+ *	   The function implements antenna path permutation defined in
+ *	   Bluetooth Core Specification 6.0, Vol. 6, Part H, Section 4.7.5.
+ *
+ * @note To use this API @kconfig{CONFIG_BT_CHANNEL_SOUNDING} must be set.
+ *
+ * @param n_ap				 The number of antenna paths, range: [1, 4].
+ * @param antenna_path_permutation_index Antenna Path Permutation Index.
+ * @param tone_index			 Index of the tone in the CS step, range [0, n_ap].
+ *					 tone_index = n_ap corresponds to extension slot.
+ *
+ * @return Antenna path used to exchange CS tones, range: [0, 3].
+ * @return -EINVAL if arguments are invalid.
+ */
+int bt_le_cs_get_antenna_path(uint8_t n_ap,
+			      uint8_t antenna_path_permutation_index,
+			      uint8_t tone_index);
 
 #ifdef __cplusplus
 }

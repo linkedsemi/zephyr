@@ -57,7 +57,7 @@ def expected_gdb():
     re.compile(r'Breakpoint 1, test '),
     re.compile(r'Breakpoint 2, main '),
     re.compile(r'GDB:PASSED'),
-    re.compile(r'Breakpoint 3, k_thread_abort '),
+    re.compile(r'Breakpoint 3.*, k_thread_abort '),
     re.compile(r'2 .* breakpoint .* in main '),
     ]
 
@@ -80,7 +80,7 @@ def test_gdbstub(dut: DeviceAdapter, gdb_process, expected_app, expected_gdb, ex
     """
     Test gdbstub feature using a GDB script. We connect to the DUT, run the
     GDB script then evaluate return code and expected patterns at the GDB
-    and Test Applicaiton outputs.
+    and Test Application outputs.
     """
     logger.debug(f"GDB output:\n{gdb_process.stdout}\n")
     assert gdb_process.returncode == 0

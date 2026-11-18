@@ -63,7 +63,7 @@ static int tcn75a_channel_get(const struct device *dev, enum sensor_channel chan
 	return 0;
 }
 
-static const struct sensor_driver_api tcn75a_api = {
+static DEVICE_API(sensor, tcn75a_api) = {
 	.sample_fetch = &tcn75a_sample_fetch,
 	.channel_get = &tcn75a_channel_get,
 #ifdef CONFIG_TCN75A_TRIGGER
@@ -79,7 +79,7 @@ static int tcn75a_init(const struct device *dev)
 	uint8_t adc_conf[2] = {TCN75A_CONFIG_REG, 0x0};
 
 	if (!i2c_is_ready_dt(&config->i2c_spec)) {
-		LOG_ERR("I2C bus is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c_spec.bus);
 		return -ENODEV;
 	}
 

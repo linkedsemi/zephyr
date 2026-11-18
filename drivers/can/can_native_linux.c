@@ -18,6 +18,7 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/socketcan.h>
 #include <zephyr/net/socketcan_utils.h>
+#include <zephyr/sys/util.h>
 
 #include "can_native_linux_adapt.h"
 #include "nsi_host_trampolines.h"
@@ -32,7 +33,7 @@ struct can_filter_context {
 
 struct can_native_linux_data {
 	struct can_driver_data common;
-	struct can_filter_context filters[CONFIG_CAN_MAX_FILTER];
+	struct can_filter_context filters[CONFIG_CAN_NATIVE_LINUX_MAX_FILTERS];
 	struct k_mutex filter_mutex;
 	struct k_sem tx_idle;
 	can_tx_callback_t tx_callback;
@@ -375,19 +376,12 @@ static int can_native_linux_get_state(const struct device *dev, enum can_state *
 	return 0;
 }
 
-static void can_native_linux_set_state_change_callback(const struct device *dev,
-						       can_state_change_callback_t cb,
-						       void *user_data)
-{
-	ARG_UNUSED(dev);
-	ARG_UNUSED(cb);
-	ARG_UNUSED(user_data);
-}
-
 static int can_native_linux_get_core_clock(const struct device *dev, uint32_t *rate)
 {
-	/* Return 16MHz as an realistic value for the testcases */
-	*rate = 16000000;
+	ARG_UNUSED(dev);
+
+	/* Recommended CAN clock from CiA 601-3 */
+	*rate = MHZ(80);
 
 	return 0;
 }
@@ -396,10 +390,10 @@ static int can_native_linux_get_max_filters(const struct device *dev, bool ide)
 {
 	ARG_UNUSED(ide);
 
-	return CONFIG_CAN_MAX_FILTER;
+	return CONFIG_CAN_NATIVE_LINUX_MAX_FILTERS;
 }
 
-static const struct can_driver_api can_native_linux_driver_api = {
+static DEVICE_API(can, can_native_linux_driver_api) = {
 	.start = can_native_linux_start,
 	.stop = can_native_linux_stop,
 	.get_capabilities = can_native_linux_get_capabilities,
@@ -409,38 +403,39 @@ static const struct can_driver_api can_native_linux_driver_api = {
 	.add_rx_filter = can_native_linux_add_rx_filter,
 	.remove_rx_filter = can_native_linux_remove_rx_filter,
 	.get_state = can_native_linux_get_state,
-	.set_state_change_callback = can_native_linux_set_state_change_callback,
 	.get_core_clock = can_native_linux_get_core_clock,
 	.get_max_filters = can_native_linux_get_max_filters,
+	/* Recommended configuration ranges from CiA 601-2 */
 	.timing_min = {
-		.sjw = 0x1,
-		.prop_seg = 0x01,
-		.phase_seg1 = 0x01,
-		.phase_seg2 = 0x01,
-		.prescaler = 0x01
+		.sjw = 1,
+		.prop_seg = 0,
+		.phase_seg1 = 2,
+		.phase_seg2 = 2,
+		.prescaler = 1
 	},
 	.timing_max = {
-		.sjw = 0x0F,
-		.prop_seg = 0x0F,
-		.phase_seg1 = 0x0F,
-		.phase_seg2 = 0x0F,
-		.prescaler = 0xFFFF
+		.sjw = 128,
+		.prop_seg = 0,
+		.phase_seg1 = 256,
+		.phase_seg2 = 128,
+		.prescaler = 32
 	},
 #ifdef CONFIG_CAN_FD_MODE
 	.set_timing_data = can_native_linux_set_timing_data,
+	/* Recommended configuration ranges from CiA 601-2 */
 	.timing_data_min = {
-		.sjw = 0x1,
-		.prop_seg = 0x01,
-		.phase_seg1 = 0x01,
-		.phase_seg2 = 0x01,
-		.prescaler = 0x01
+		.sjw = 1,
+		.prop_seg = 0,
+		.phase_seg1 = 1,
+		.phase_seg2 = 1,
+		.prescaler = 1
 	},
 	.timing_data_max = {
-		.sjw = 0x0F,
-		.prop_seg = 0x0F,
-		.phase_seg1 = 0x0F,
-		.phase_seg2 = 0x0F,
-		.prescaler = 0xFFFF
+		.sjw = 16,
+		.prop_seg = 0,
+		.phase_seg1 = 32,
+		.phase_seg2 = 16,
+		.prescaler = 32
 	},
 #endif /* CONFIG_CAN_FD_MODE */
 };
@@ -451,6 +446,7 @@ static int can_native_linux_init(const struct device *dev)
 	struct can_native_linux_data *data = dev->data;
 	const char *if_name;
 
+	sys_slist_init(&data->common.state_change_callbacks);
 	k_mutex_init(&data->filter_mutex);
 	k_sem_init(&data->tx_idle, 1, 1);
 
@@ -478,10 +474,16 @@ static int can_native_linux_init(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_CAN_FD_MODE
+#define CAN_NATIVE_LINUX_MAX_BITRATE 8000000
+#else /* CONFIG_CAN_FD_MODE */
+#define CAN_NATIVE_LINUX_MAX_BITRATE 1000000
+#endif /* CONFIG_CAN_FD_MODE */
+
 #define CAN_NATIVE_LINUX_INIT(inst)						\
 										\
 static const struct can_native_linux_config can_native_linux_cfg_##inst = {	\
-	.common = CAN_DT_DRIVER_CONFIG_INST_GET(inst, 0, 0),			\
+	.common = CAN_DT_DRIVER_CONFIG_INST_GET(inst, 0, CAN_NATIVE_LINUX_MAX_BITRATE),	\
 	.if_name = DT_INST_PROP(inst, host_interface),				\
 };										\
 										\

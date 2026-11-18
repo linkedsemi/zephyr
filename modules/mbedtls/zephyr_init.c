@@ -12,21 +12,18 @@
  */
 
 #include <zephyr/init.h>
+#include <zephyr/kernel.h>
 #include <zephyr/app_memory/app_memdomain.h>
 #include <mbedtls/platform_time.h>
+#include <errno.h>
 
 #include <mbedtls/debug.h>
 
-#if defined(CONFIG_MBEDTLS)
-#if !defined(CONFIG_MBEDTLS_CFG_FILE)
-#include "mbedtls/config.h"
-#else
-#include CONFIG_MBEDTLS_CFG_FILE
-#endif /* CONFIG_MBEDTLS_CFG_FILE */
+#if defined(CONFIG_MBEDTLS_PSA_CRYPTO_CLIENT)
+#include <psa/crypto.h>
 #endif
 
-#if defined(CONFIG_MBEDTLS_ENABLE_HEAP) && \
-	defined(MBEDTLS_MEMORY_BUFFER_ALLOC_C)
+#if defined(CONFIG_MBEDTLS_ENABLE_HEAP)
 #include <mbedtls/memory_buffer_alloc.h>
 
 #ifdef CONFIG_MBEDTLS_HEAP_CUSTOM_SECTION
@@ -42,7 +39,7 @@ static void init_heap(void)
 }
 #else
 #define init_heap(...)
-#endif /* CONFIG_MBEDTLS_ENABLE_HEAP && MBEDTLS_MEMORY_BUFFER_ALLOC_C */
+#endif /* CONFIG_MBEDTLS_ENABLE_HEAP */
 #if defined(MBEDTLS_THREADING_ALT)
 void mbedtls_zephyr_threading_init(void);
 #endif

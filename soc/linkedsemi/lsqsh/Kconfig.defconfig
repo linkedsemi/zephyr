@@ -225,6 +225,7 @@ config MDIO
 	default y
 
 config MDIO_RESET_MAC
+	bool
 	default y
 
 config NETWORKING_AUTO_INIT

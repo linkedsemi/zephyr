@@ -7,11 +7,10 @@
 
 import glob
 import os
-import signal
 import sys
 from pathlib import Path
 
-from runners.core import ZephyrBinaryRunner, RunnerCaps
+from runners.core import RunnerCaps, ZephyrBinaryRunner
 
 try:
     import serial.tools.list_ports
@@ -170,42 +169,33 @@ class BlackMagicProbeRunner(ZephyrBinaryRunner):
 
         command = (self.gdb +
                    ['-ex', "set confirm off",
-                    '-ex', "target extended-remote {}".format(
-                        self.gdb_serial)] +
+                    '-ex', "set pagination off",
+                    '-ex', f"target extended-remote {self.gdb_serial}"] +
                     self.connect_rst_enable_arg +
                    ['-ex', "monitor swdp_scan",
                     '-ex', "attach 1",
-                    '-ex', "load {}".format(flash_file),
+                    '-ex', f"load {flash_file}",
                     '-ex', "kill",
                     '-ex', "quit",
                     '-silent'])
         self.check_call(command)
 
-    def check_call_ignore_sigint(self, command):
-        previous = signal.signal(signal.SIGINT, signal.SIG_IGN)
-        try:
-            self.check_call(command)
-        finally:
-            signal.signal(signal.SIGINT, previous)
-
     def bmp_attach(self, command, **kwargs):
         if self.elf_file is None:
             command = (self.gdb +
                        ['-ex', "set confirm off",
-                        '-ex', "target extended-remote {}".format(
-                            self.gdb_serial)] +
+                        '-ex', f"target extended-remote {self.gdb_serial}"] +
                         self.connect_rst_disable_arg +
                        ['-ex', "monitor swdp_scan",
                         '-ex', "attach 1"])
         else:
             command = (self.gdb +
                        ['-ex', "set confirm off",
-                        '-ex', "target extended-remote {}".format(
-                            self.gdb_serial)] +
+                        '-ex', f"target extended-remote {self.gdb_serial}"] +
                         self.connect_rst_disable_arg +
                        ['-ex', "monitor swdp_scan",
                         '-ex', "attach 1",
-                        '-ex', "file {}".format(self.elf_file)])
+                        '-ex', f"file {self.elf_file}"])
         self.check_call_ignore_sigint(command)
 
     def bmp_debug(self, command, **kwargs):
@@ -213,13 +203,12 @@ class BlackMagicProbeRunner(ZephyrBinaryRunner):
             raise ValueError('Cannot debug; elf file is missing')
         command = (self.gdb +
                    ['-ex', "set confirm off",
-                    '-ex', "target extended-remote {}".format(
-                        self.gdb_serial)] +
+                    '-ex', f"target extended-remote {self.gdb_serial}"] +
                     self.connect_rst_enable_arg +
                    ['-ex', "monitor swdp_scan",
                     '-ex', "attach 1",
-                    '-ex', "file {}".format(self.elf_file),
-                    '-ex', "load {}".format(self.elf_file)])
+                    '-ex', f"file {self.elf_file}",
+                    '-ex', f"load {self.elf_file}"])
         self.check_call_ignore_sigint(command)
 
     def do_run(self, command, **kwargs):

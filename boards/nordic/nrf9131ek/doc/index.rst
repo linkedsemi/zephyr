@@ -1,7 +1,4 @@
-.. _nrf9131ek_nrf9131:
-
-nRF9131 EK
-##########
+.. zephyr:board:: nrf9131ek
 
 Overview
 ********
@@ -9,32 +6,10 @@ Overview
 The nRF9131 EK (PCA10165) is a single-board evaluation kit for the nRF9131 SiP
 for DECT NR+ and LTE-M/NB-IoT with GNSS.
 The ``nrf9131ek/nrf9131`` board configuration provides support for the Nordic Semiconductor nRF9131 ARM
-Cortex-M33F CPU with ARMv8-M Security Extension and the following devices:
-
-* :abbr:`ADC (Analog to Digital Converter)`
-* CLOCK
-* FLASH
-* :abbr:`GPIO (General Purpose Input Output)`
-* :abbr:`I2C (Inter-Integrated Circuit)`
-* :abbr:`MPU (Memory Protection Unit)`
-* :abbr:`NVIC (Nested Vectored Interrupt Controller)`
-* :abbr:`PWM (Pulse Width Modulation)`
-* :abbr:`RTC (nRF RTC System Clock)`
-* Segger RTT (RTT Console)
-* :abbr:`SPI (Serial Peripheral Interface)`
-* :abbr:`UARTE (Universal asynchronous receiver-transmitter with EasyDMA)`
-* :abbr:`WDT (Watchdog Timer)`
-* :abbr:`IDAU (Implementation Defined Attribution Unit)`
-
-.. figure:: img/nrf9131ek_nrf9131.webp
-     :align: center
-     :alt: nRF9131 EK
-
-     nRF9131 EK (Credit: Nordic Semiconductor)
+Cortex-M33F CPU with ARMv8-M Security Extension.
 
 The `Nordic Semiconductor TechDocs`_ will soon
 contain the processor's information and the datasheet.
-
 
 Hardware
 ********
@@ -46,40 +21,7 @@ is 32 MHz.
 Supported Features
 ==================
 
-The ``nrf9131ek/nrf9131`` board configuration supports the following
-hardware features:
-
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| ADC       | on-chip    | adc                  |
-+-----------+------------+----------------------+
-| CLOCK     | on-chip    | clock_control        |
-+-----------+------------+----------------------+
-| FLASH     | on-chip    | flash                |
-+-----------+------------+----------------------+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| I2C(M)    | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| MPU       | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| NVIC      | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| PWM       | on-chip    | pwm                  |
-+-----------+------------+----------------------+
-| RTC       | on-chip    | system clock         |
-+-----------+------------+----------------------+
-| RTT       | Segger     | console              |
-+-----------+------------+----------------------+
-| SPI(M/S)  | on-chip    | spi                  |
-+-----------+------------+----------------------+
-| SPU       | on-chip    | system protection    |
-+-----------+------------+----------------------+
-| UARTE     | on-chip    | serial               |
-+-----------+------------+----------------------+
-| WDT       | on-chip    | watchdog             |
-+-----------+------------+----------------------+
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -110,11 +52,13 @@ Security components
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 ``nrf9131ek/nrf9131`` supports the Armv8m Security Extension, and by default boots
 in the Secure state.
 
-Building Secure/Non-Secure Zephyr applications with Arm |reg| TrustZone |reg|
-=============================================================================
+Building Secure/Non-Secure Zephyr applications with Arm® TrustZone®
+===================================================================
 
 Applications on the nRF9131 may contain a Secure and a Non-Secure firmware
 image. The Secure image can be built using either Zephyr or

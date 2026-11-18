@@ -3,18 +3,32 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Header file for the STMESP logging frontend.
+ * @ingroup log_frontend_stmesp
+ */
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_FRONTEND_STMESP_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_FRONTEND_STMESP_H_
 
 #include <errno.h>
 #include <zephyr/types.h>
 #ifdef CONFIG_LOG_FRONTEND_STMESP
-#include <zephyr/drivers/misc/coresight/stmesp.h>
+#include <zephyr/drivers/debug/stmesp.h>
 #endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+/**
+ * @defgroup log_frontend_stmesp STMESP frontend
+ * @ingroup log_frontend
+ * @brief Logging frontend that emits messages and trace points over STM (STMESP).
+ * @{
+ */
 
 /** @brief Notify frontend that ETR/STM is ready.
  *
@@ -44,7 +58,7 @@ void log_frontend_stmesp_dummy_write(void);
 /** @brief Trace point
  *
  * Write a trace point information using STM. Number of unique trace points is limited
- * to 65536 - CONFIG_LOG_FRONTEND_STMESP_TP_CHAN_BASE per core.
+ * to 32768 - CONFIG_LOG_FRONTEND_STMESP_TP_CHAN_BASE per core.
  *
  * @param x Trace point ID.
  */
@@ -65,7 +79,7 @@ static inline void log_frontend_stmesp_tp(uint16_t x)
 /** @brief Trace point with 32 bit data.
  *
  * Write a trace point information using STM. Number of unique trace points is limited
- * to 65536 - CONFIG_LOG_FRONTEND_STMESP_TP_CHAN_BASE per core.
+ * to 32768 - CONFIG_LOG_FRONTEND_STMESP_TP_CHAN_BASE per core.
  *
  * @param x Trace point ID.
  * @param d Data. 32 bit word.
@@ -83,6 +97,66 @@ static inline void log_frontend_stmesp_tp_d32(uint16_t x, uint32_t d)
 	}
 #endif
 }
+
+/** @brief Function called for log message with no arguments when turbo logging is enabled.
+ *
+ * @param source Pointer to the source structure.
+ * @param x Index of the string used for the log message.
+ */
+void log_frontend_stmesp_log0(const void *source, uint32_t x);
+
+/** @brief Function called for log message with one argument when turbo logging is enabled.
+ *
+ * @param source Pointer to the source structure.
+ * @param x Index of the string used for the log message.
+ * @param arg Argument.
+ */
+void log_frontend_stmesp_log1(const void *source, uint32_t x, uint32_t arg);
+
+/** @cond INTERNAL_HIDDEN */
+TYPE_SECTION_START_EXTERN(const char *, log_stmesp_ptr);
+/** @endcond */
+
+/** @brief Macro for handling a turbo log message with no arguments.
+ *
+ * @param _source Pointer to the source structure.
+ * @param ... String.
+ */
+
+#define LOG_FRONTEND_STMESP_LOG0(_source, ...)                                                     \
+	do {                                                                                       \
+		static const char _str[] __in_section(_log_stmesp_str, static, __COUNTER__)        \
+			IF_ENABLED(CONFIG_LOG_FRONTEND_STMESP_DICT, (__used))                      \
+			__noasan __aligned(sizeof(uint32_t)) = GET_ARG_N(1, __VA_ARGS__);          \
+		static const char *str_ptr __in_section(_log_stmesp_ptr, static, __COUNTER__)      \
+			IF_ENABLED(CONFIG_LOG_FRONTEND_STMESP_DICT, (__used))                      \
+			__noasan = _str;                                                           \
+		uint32_t _idx =                                                                    \
+			((uintptr_t)&str_ptr - (uintptr_t)TYPE_SECTION_START(log_stmesp_ptr)) /    \
+			sizeof(void *);                                                            \
+		log_frontend_stmesp_log0(_source, _idx);                                           \
+	} while (0)
+
+/** @brief Macro for handling a turbo log message with one argument.
+ *
+ * @param _source Pointer to the source structure.
+ * @param ... String with one numeric argument.
+ */
+#define LOG_FRONTEND_STMESP_LOG1(_source, ...)                                                     \
+	do {                                                                                       \
+		static const char _str[] __in_section(_log_stmesp_str, static, __COUNTER__)        \
+			IF_ENABLED(CONFIG_LOG_FRONTEND_STMESP_DICT, (__used))                      \
+			__noasan __aligned(sizeof(uint32_t)) = GET_ARG_N(1, __VA_ARGS__);          \
+		static const char *str_ptr __in_section(_log_stmesp_ptr, static, __COUNTER__)      \
+			IF_ENABLED(CONFIG_LOG_FRONTEND_STMESP_DICT, (__used))                      \
+			__noasan = _str;                                                           \
+		uint32_t _idx =                                                                    \
+			((uintptr_t)&str_ptr - (uintptr_t)TYPE_SECTION_START(log_stmesp_ptr)) /    \
+			sizeof(void *);                                                            \
+		log_frontend_stmesp_log1(_source, _idx, (uintptr_t)(GET_ARG_N(2, __VA_ARGS__)));   \
+	} while (0)
+
+/** @} */
 
 #ifdef __cplusplus
 }

@@ -1,7 +1,8 @@
-.. _x-nucleo-iks4a1-std-sample:
+.. zephyr:code-sample:: x-nucleo-iks4a1-std
+   :name: X-NUCLEO-IKS4A1 shield - Standard (Mode 1)
+   :relevant-api: sensor_interface
 
-X-NUCLEO-IKS4A1 shield Standard (Mode 1) sample
-###############################################
+   Interact with all the sensors of an X-NUCLEO-IKS4A1 shield using Standard mode.
 
 Overview
 ********
@@ -15,7 +16,9 @@ periodically reads and displays data from the shield sensors:
 - LSM6DSV16X 6-Axis acceleration and angular velocity
 - LSM6DSO16IS 6-Axis acceleration and angular velocity
 - LPS22DF ambient temperature and atmospheric pressure
+- STTS22H ambient temperature
 - LIS2MDL 3-Axis magnetic field intensity
+- LIS2DUXS12 3-Axis acceleration
 
 Requirements
 ************
@@ -44,19 +47,24 @@ Sample Output
 
     X-NUCLEO-IKS4A1 sensor dashboard
 
-    LIS2MDL: Magn (gauss): x: -0.364, y: -0.523, z: -0.399
+    LIS2MDL: Magn (G): x: -0.364, y: -0.523, z: -0.399
     LIS2MDL: Temperature: 22.4 C
-    LSM6DSO16IS: Accel (m.s-2): x: -0.167, y: -0.249, z: 9.954
-    LSM6DSO16IS: GYro (dps): x: 0.047, y: -0.052, z: -0.042
+    LSM6DSO16IS: Accel (m/s^2): x: -0.167, y: -0.249, z: 9.954
+    LSM6DSO16IS: Gyro (rad/s): x: 0.047, y: -0.052, z: -0.042
     LSM6DSO16IS: Temperature: 25.8 C
-    LSM6DSV16X: Accel (m.s-2): x: 0.005, y: 0.053, z: 9.930
-    LSM6DSV16X: GYro (dps): x: -0.000, y: 0.000, z: 0.005
+    LSM6DSV16X: Accel (m/s^2): x: 0.005, y: 0.053, z: 9.930
+    LSM6DSV16X: Gyro (rad/s): x: -0.000, y: 0.000, z: 0.005
     LPS22DF: Temperature: 25.2 C
-    LPS22DF: Pressure:98.121 kpa
+    LPS22DF: Pressure:98.121 kPa
+    STTS22H: Temperature: 25.7 C
+    LIS2DUXS12: Accel (m/s^2): x: 0.689, y: -0.306, z: 9.571
+    LIS2DUXS12: Temperature: 23.9 C
+
     10:: lis2mdl trig 1839
     10:: lsm6dso16is acc trig 3892
     10:: lsm6dsv16x acc trig 4412
     10:: lps22df trig 174
+    10:: lis2duxs12 acc trig 3681
 
     <updated endlessly every 2 seconds>
 

@@ -7,13 +7,12 @@ flash: 1024
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - i2c
   - spi
   - gpio
   - usb_device
-  - ble
+  - bluetooth
   - pwm
   - arduino_i2c
   - arduino_spi

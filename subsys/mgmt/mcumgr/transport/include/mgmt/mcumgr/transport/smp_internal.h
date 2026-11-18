@@ -11,7 +11,9 @@
 #include <stdint.h>
 #include <zephyr/kernel.h>
 #include <zephyr/net_buf.h>
+#include <zephyr/mgmt/mcumgr/smp/smp.h>
 #include <zephyr/mgmt/mcumgr/transport/smp.h>
+#include <zcbor_encode.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,12 +52,22 @@ void smp_rx_req(struct smp_transport *smtp, struct net_buf *nb);
 
 #ifdef CONFIG_SMP_CLIENT
 /**
- * @brief Trig SMP client request packet for transmission.
+ * @brief Get work queue for SMP client.
  *
- * @param work	The transport to use to send the corresponding response(s).
+ * @return SMP work queue object.
  */
-void smp_tx_req(struct k_work *work);
+struct k_work_q *smp_get_wq(void);
 #endif
+
+/**
+ * @brief Allocates a request buffer.
+ *
+ * @param arg		The streamer providing the callback.
+ *
+ * @return	Newly-allocated buffer on success
+ *		NULL on failure.
+ */
+struct net_buf *smp_alloc_req(void *arg, void *priv);
 
 /**
  * @brief Allocates a response buffer.
@@ -78,6 +90,54 @@ void *smp_alloc_rsp(const void *req, void *arg);
  * @param arg		The streamer providing the callback.
  */
 void smp_free_buf(void *buf, void *arg);
+
+/**
+ * @brief	Reeset a zcbor encoder to allow a new response.
+ *
+ * If a response has already been (partially) generated than this will allow resetting back to
+ * the default state so that new response can be used (e.g. an error).
+ *
+ * @param streamer	The streamer providing the required SMP callbacks.
+ *
+ * @return	true on success, false on failure (memory error).
+ */
+static inline bool smp_mgmt_reset_zse(struct smp_streamer *streamer)
+{
+	zcbor_state_t *zse = streamer->writer->zs;
+
+	/* Because there is already data in the buffer, it must be cleared first */
+	net_buf_reset(streamer->writer->nb);
+	streamer->writer->nb->len = sizeof(struct smp_hdr);
+	zcbor_new_encode_state(zse, ARRAY_SIZE(streamer->writer->zs),
+			       streamer->writer->nb->data + sizeof(struct smp_hdr),
+			       net_buf_tailroom(streamer->writer->nb), 0);
+
+	return zcbor_map_start_encode(zse, CONFIG_MCUMGR_SMP_CBOR_MAX_MAIN_MAP_ENTRIES);
+}
+
+/**
+ * @brief	Reset a zcbor encoder to allow a new response.
+ *
+ * If a response has already been (partially) generated then this will allow resetting back to
+ * the default state so that new response can be used (e.g. an error).
+ *
+ * @param zce	The zcbor encoding object, which is part of a cbor_nb_writer object.
+ *
+ * @return	true on success, false on failure (memory error).
+ */
+static inline bool smp_mgmt_reset_writer(zcbor_state_t *zse)
+{
+	struct cbor_nb_writer *writer = CONTAINER_OF(zse, struct cbor_nb_writer, zs[0]);
+
+	/* Because there is already data in the buffer, it must be cleared first */
+	net_buf_reset(writer->nb);
+	writer->nb->len = sizeof(struct smp_hdr);
+	zcbor_new_encode_state(zse, ARRAY_SIZE(writer->zs),
+			       writer->nb->data + sizeof(struct smp_hdr),
+			       net_buf_tailroom(writer->nb), 0);
+
+	return zcbor_map_start_encode(zse, CONFIG_MCUMGR_SMP_CBOR_MAX_MAIN_MAP_ENTRIES);
+}
 
 #ifdef __cplusplus
 }

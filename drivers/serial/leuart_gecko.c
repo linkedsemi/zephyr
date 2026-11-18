@@ -215,11 +215,6 @@ static int leuart_gecko_irq_is_pending(const struct device *dev)
 	return leuart_gecko_irq_tx_ready(dev) || leuart_gecko_irq_rx_ready(dev);
 }
 
-static int leuart_gecko_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 static void leuart_gecko_irq_callback_set(const struct device *dev,
 					  uart_irq_callback_user_data_t cb,
 					  void *cb_data)
@@ -273,12 +268,6 @@ static int leuart_gecko_init(const struct device *dev)
 
 	leuartInit.baudrate = config->baud_rate;
 
-	/* Enable CORE LE clock in order to access LE modules */
-	CMU_ClockEnable(cmuClock_CORELE, true);
-
-	/* Select LFXO for LEUARTs (and wait for it to stabilize) */
-	CMU_ClockSelectSet(cmuClock_LFB, cmuSelect_LFXO);
-
 	/* Enable LEUART clock */
 	CMU_ClockEnable(config->clock, true);
 
@@ -295,7 +284,7 @@ static int leuart_gecko_init(const struct device *dev)
 	return 0;
 }
 
-static const struct uart_driver_api leuart_gecko_driver_api = {
+static DEVICE_API(uart, leuart_gecko_driver_api) = {
 	.poll_in = leuart_gecko_poll_in,
 	.poll_out = leuart_gecko_poll_out,
 	.err_check = leuart_gecko_err_check,
@@ -312,7 +301,6 @@ static const struct uart_driver_api leuart_gecko_driver_api = {
 	.irq_err_enable = leuart_gecko_irq_err_enable,
 	.irq_err_disable = leuart_gecko_irq_err_disable,
 	.irq_is_pending = leuart_gecko_irq_is_pending,
-	.irq_update = leuart_gecko_irq_update,
 	.irq_callback_set = leuart_gecko_irq_callback_set,
 #endif
 };
@@ -351,7 +339,7 @@ static const struct leuart_gecko_config leuart_gecko_0_config = {
 
 static struct leuart_gecko_data leuart_gecko_0_data;
 
-DEVICE_DT_INST_DEFINE(0, &leuart_gecko_init,
+DEVICE_DT_INST_DEFINE(0, leuart_gecko_init,
 		    NULL, &leuart_gecko_0_data,
 		    &leuart_gecko_0_config, PRE_KERNEL_1,
 		    CONFIG_SERIAL_INIT_PRIORITY,
@@ -404,7 +392,7 @@ static const struct leuart_gecko_config leuart_gecko_1_config = {
 
 static struct leuart_gecko_data leuart_gecko_1_data;
 
-DEVICE_DT_INST_DEFINE(1, &leuart_gecko_init,
+DEVICE_DT_INST_DEFINE(1, leuart_gecko_init,
 		    NULL, &leuart_gecko_1_data,
 		    &leuart_gecko_1_config, PRE_KERNEL_1,
 		    CONFIG_SERIAL_INIT_PRIORITY,

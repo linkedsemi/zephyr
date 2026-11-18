@@ -213,7 +213,7 @@ int lwm2m_security_index_to_inst_id(int index);
 
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_OBJ_SUPPORT)
 /**
- * @brief Sets the update state (as specified in  LWM2M SPEC E.6 regarding the firmware update)
+ * @brief Sets the update state (as specified in  LwM2M SPEC E.6 regarding the firmware update)
  * of the Firmware object instance given by @p obj_inst_id to @p state.
  * (i.e Sets the value of resource 5/ @p obj_inst_id /3)
  *
@@ -223,7 +223,7 @@ int lwm2m_security_index_to_inst_id(int index);
 void lwm2m_firmware_set_update_state_inst(uint16_t obj_inst_id, uint8_t state);
 
 /**
- * @brief Sets the result state (as specified in  LWM2M SPEC E.6 regarding the firmware update)
+ * @brief Sets the result state (as specified in  LwM2M SPEC E.6 regarding the firmware update)
  * of the Firmware object instance given by @p obj_inst_id to @p result.
  * (i.e Sets the value of resource 5/ @p obj_inst_id /5)
  *
@@ -247,7 +247,7 @@ void lwm2m_firmware_set_update_state(uint8_t state);
 void lwm2m_firmware_set_update_result(uint8_t result);
 
 /**
- * @brief Returns the update state (as specified in  LWM2M SPEC E.6 regarding the firmware update)
+ * @brief Returns the update state (as specified in  LwM2M SPEC E.6 regarding the firmware update)
  * of the Firmware object instance given by @p obj_inst_id.
  * (i.e Gets the value of resource 5/ @p obj_inst_id /3)
  * @param[in] obj_inst_id Object instance id of the firmware object
@@ -263,7 +263,7 @@ uint8_t lwm2m_firmware_get_update_state_inst(uint16_t obj_inst_id);
 uint8_t lwm2m_firmware_get_update_state(void);
 
 /**
- * @brief Returns the result state (as specified in  LWM2M SPEC E.6 regarding the firmware update)
+ * @brief Returns the result state (as specified in  LwM2M SPEC E.6 regarding the firmware update)
  * of the Firmware object instance given by @p obj_inst_id.
  * (i.e Gets the value of resource 5/ @p obj_inst_id /5)
  * @param[in] obj_inst_id Object instance id of the firmware object
@@ -398,5 +398,16 @@ void lwm2m_client_lock(struct lwm2m_ctx *ctx);
  * @param[in] client_ctx LwM2M context
  */
 void lwm2m_client_unlock(struct lwm2m_ctx *ctx);
+
+/**
+ * @brief Hints the RD client about the current socket state.
+ *
+ * Prevents the RD client from going to QUEUE_RX_OFF state when the socket is
+ * in use.
+ *
+ * @param ctx LwM2M context
+ * @param state Current socket state
+ */
+void lwm2m_rd_client_hint_socket_state(struct lwm2m_ctx *ctx, enum lwm2m_socket_states state);
 
 #endif /* LWM2M_ENGINE_H */

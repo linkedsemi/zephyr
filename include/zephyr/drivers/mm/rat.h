@@ -5,21 +5,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_RAT_H_
-#define ZEPHYR_INCLUDE_RAT_H_
+#ifndef ZEPHYR_INCLUDE_DRIVERS_MM_RAT_H_
+#define ZEPHYR_INCLUDE_DRIVERS_MM_RAT_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #include <stdint.h>
-
-#define ADDR_TRANSLATE_MAX_REGIONS (16u)
-#define RAT_CTRL(base_addr, i)     (base_addr + 0x20 + 0x10 * (i))
-#define RAT_BASE(base_addr, i)     (base_addr + 0x24 + 0x10 * (i))
-#define RAT_TRANS_L(base_addr, i)  (base_addr + 0x28 + 0x10 * (i))
-#define RAT_TRANS_H(base_addr, i)  (base_addr + 0x2C + 0x10 * (i))
-#define RAT_CTRL_W(enable, size)   (((enable & 0x1) << 31u) | (size & 0x3F))
 
 /**
  * @brief Enum's to represent different possible region size for the address translate module
@@ -69,19 +62,11 @@ struct address_trans_region_config {
 	uint32_t size;
 };
 
-/**
- * @brief Parameters for address_trans_init
- */
-struct address_trans_params {
-	uint32_t num_regions;
-	uint32_t rat_base_addr;
-	struct address_trans_region_config *region_config;
-};
-
-void sys_mm_drv_ti_rat_init(void *region_config, uint64_t rat_base_addr, uint8_t translate_regions);
+void sys_mm_drv_ti_rat_init(struct address_trans_region_config *region_config,
+			    uint64_t rat_base_addr, uint8_t translate_regions);
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_RAT_H_ */
+#endif /* ZEPHYR_INCLUDE_DRIVERS_MM_RAT_H_ */

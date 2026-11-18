@@ -15,7 +15,7 @@
 
 #include <mesh/access.h>
 #include <mesh/net.h>
-#include "argparse.h"
+#include "bsim_args_runner.h"
 
 LOG_MODULE_REGISTER(test_lcd, LOG_LEVEL_INF);
 
@@ -434,7 +434,7 @@ static void test_srv_comp_data_status_respond(void)
 		atomic_set_bit(bt_mesh.flags, BT_MESH_COMP_DIRTY);
 	}
 
-	/* No server callback available. Wait 10 sec for message to be recived */
+	/* No server callback available. Wait 10 sec for message to be received */
 	k_sleep(K_SECONDS(10));
 
 	PASS();
@@ -449,7 +449,7 @@ static void test_srv_metadata_status_respond(void)
 		FAIL("Metadata is dirty. Test is not suited for this purpose.");
 	}
 
-	/* No server callback available. Wait 10 sec for message to be recived */
+	/* No server callback available. Wait 10 sec for message to be received */
 	k_sleep(K_SECONDS(10));
 
 	PASS();

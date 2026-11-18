@@ -826,7 +826,7 @@ void ls_adc_isr(void *arg)
 }
 
 
-static const struct adc_driver_api adc_ls_driver_api = {
+static DEVICE_API(adc, adc_ls_driver_api) = {
     .channel_setup  = adc_ls_channel_setup,
     .read           = adc_ls_read,
 #ifdef CONFIG_ADC_ASYNC

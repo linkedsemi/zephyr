@@ -26,8 +26,8 @@ struct usbd_msg_pkt {
 	struct usbd_msg msg;
 };
 
-K_MEM_SLAB_DEFINE_STATIC(usbd_msg_slab, sizeof(struct usbd_msg_pkt),
-			 CONFIG_USBD_MSG_SLAB_COUNT, sizeof(void *));
+K_MEM_SLAB_DEFINE_STATIC_TYPE(usbd_msg_slab, struct usbd_msg_pkt,
+			      CONFIG_USBD_MSG_SLAB_COUNT);
 
 static inline void usbd_msg_pub(struct usbd_context *const ctx,
 				const struct usbd_msg msg)
@@ -94,8 +94,8 @@ int usbd_msg_register_cb(struct usbd_context *const uds_ctx,
 
 	usbd_device_lock(uds_ctx);
 
-	if (uds_ctx->msg_cb != NULL) {
-		ret = -EALREADY;
+	if (usbd_is_enabled(uds_ctx)) {
+		ret = -EBUSY;
 		goto register_cb_exit;
 	}
 
@@ -116,7 +116,11 @@ void usbd_msg_pub_simple(struct usbd_context *const ctx,
 	};
 
 	if (ctx->msg_cb != NULL) {
-		usbd_msg_pub(ctx, msg);
+		if (IS_ENABLED(CONFIG_USBD_MSG_DEFERRED_MODE)) {
+			usbd_msg_pub(ctx, msg);
+		} else {
+			ctx->msg_cb(ctx, &msg);
+		}
 	}
 }
 
@@ -129,6 +133,10 @@ void usbd_msg_pub_device(struct usbd_context *const ctx,
 	};
 
 	if (ctx->msg_cb != NULL) {
-		usbd_msg_pub(ctx, msg);
+		if (IS_ENABLED(CONFIG_USBD_MSG_DEFERRED_MODE)) {
+			usbd_msg_pub(ctx, msg);
+		} else {
+			ctx->msg_cb(ctx, &msg);
+		}
 	}
 }

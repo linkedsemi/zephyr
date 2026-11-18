@@ -179,10 +179,8 @@ SECTIONS
 #endif
 
 #include <zephyr/linker/rel-sections.ld>
-
-#ifdef CONFIG_LLEXT
 #include <zephyr/linker/llext-sections.ld>
-#endif
+
   .ResetVector.text : ALIGN(4)
   {
     _ResetVector_text_start = ABSOLUTE(.);
@@ -476,6 +474,14 @@ SECTIONS
   .debug_typenames  0 :  { *(.debug_typenames) }
   .debug_varnames  0 :  { *(.debug_varnames) }
   .debug_ranges  0 :  { *(.debug_ranges) }
+  .debug_addr  0 :  { *(.debug_addr) }
+  .debug_line_str  0 :  { *(.debug_line_str) }
+  .debug_loclists  0 :  { *(.debug_loclists) }
+  .debug_macro  0 :  { *(.debug_macro) }
+  .debug_names  0 :  { *(.debug_names) }
+  .debug_rnglists  0 :  { *(.debug_rnglists) }
+  .debug_str_offsets  0 :  { *(.debug_str_offsets) }
+  .debug_sup  0 :  { *(.debug_sup) }
   .xtensa.info  0 :  { *(.xtensa.info) }
   .xt.insn 0 :
   {
@@ -529,5 +535,4 @@ SECTIONS
     . = ALIGN(_EXT_MAN_ALIGN_);
   } >fw_metadata_seg :metadata_entries_phdr
 
-  /DISCARD/ : { *(.note.GNU-stack) }
 }

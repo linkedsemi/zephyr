@@ -15,9 +15,10 @@
 #include <zephyr/drivers/flash.h>
 #include <string.h>
 #include <nrfx_nvmc.h>
-#include <nrf_erratas.h>
+#include <soc_secure.h>
 
 #include "soc_flash_nrf.h"
+#include "flash_priv.h"
 
 #define LOG_LEVEL CONFIG_FLASH_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -35,7 +36,8 @@ LOG_MODULE_REGISTER(flash_nrf);
 #error No matching compatible for soc_flash_nrf.c
 #endif
 
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
+#define SOC_NV_FLASH_NODE SOC_NV_FLASH_CHILD_NODE(0)
+
 
 #ifndef CONFIG_SOC_FLASH_NRF_RADIO_SYNC_NONE
 #define FLASH_SLOT_WRITE     7500
@@ -116,7 +118,7 @@ static inline bool is_uicr_addr_valid(off_t addr, size_t len)
 #endif /* CONFIG_SOC_FLASH_NRF_UICR */
 }
 
-#if CONFIG_SOC_FLASH_NRF_UICR && IS_ENABLED(NRF91_ERRATA_7_ENABLE_WORKAROUND)
+#if CONFIG_SOC_FLASH_NRF_UICR && NRF_ERRATA_STATIC_CHECK(91, 7)
 static inline void nrf91_errata_7_enter(void)
 {
 	__disable_irq();
@@ -159,12 +161,16 @@ static int flash_nrf_read(const struct device *dev, off_t addr,
 		return 0;
 	}
 
-#if CONFIG_SOC_FLASH_NRF_UICR && IS_ENABLED(NRF91_ERRATA_7_ENABLE_WORKAROUND)
+#if CONFIG_SOC_FLASH_NRF_UICR && NRF_ERRATA_STATIC_CHECK(91, 7)
 	if (within_uicr) {
 		nrf_buffer_read_91_uicr(data, (uint32_t)addr, len);
 		return 0;
 	}
 #endif
+
+	if (soc_secure_flash_range_is_secure((uintptr_t)addr, len)) {
+		return soc_secure_mem_read(data, (void *)(uintptr_t)addr, len);
+	}
 
 	nrf_nvmc_buffer_read(data, (uint32_t)addr, len);
 
@@ -261,6 +267,15 @@ static int flash_nrf_erase(const struct device *dev, off_t addr, size_t size)
 	return ret;
 }
 
+static int flash_nrf_get_size(const struct device *dev, uint64_t *size)
+{
+	ARG_UNUSED(dev);
+
+	*size = (uint64_t)nrfx_nvmc_flash_size_get();
+
+	return 0;
+}
+
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 static struct flash_pages_layout dev_layout;
 
@@ -281,11 +296,12 @@ flash_nrf_get_parameters(const struct device *dev)
 	return &flash_nrf_parameters;
 }
 
-static const struct flash_driver_api flash_nrf_api = {
+static DEVICE_API(flash, flash_nrf_api) = {
 	.read = flash_nrf_read,
 	.write = flash_nrf_write,
 	.erase = flash_nrf_erase,
 	.get_parameters = flash_nrf_get_parameters,
+	.get_size = flash_nrf_get_size,
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 	.page_layout = flash_nrf_pages_layout,
 #endif
@@ -546,7 +562,7 @@ static bool pofcon_enabled;
 
 static int suspend_pofwarn(void)
 {
-	if (!nrf52_errata_242()) {
+	if (!NRF_ERRATA_DYNAMIC_CHECK(52, 242)) {
 		return 0;
 	}
 

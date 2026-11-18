@@ -53,7 +53,8 @@ struct eth_ivshmem_cfg_data {
 };
 
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
-static struct net_stats_eth *eth_ivshmem_get_stats(const struct device *dev)
+static struct net_stats_eth *eth_ivshmem_get_stats(const struct device *dev,
+						   struct net_if *iface __unused)
 {
 	struct eth_ivshmem_dev_data *dev_data = dev->data;
 
@@ -61,7 +62,7 @@ static struct net_stats_eth *eth_ivshmem_get_stats(const struct device *dev)
 }
 #endif
 
-static int eth_ivshmem_start(const struct device *dev)
+static int eth_ivshmem_start(const struct device *dev, struct net_if *iface __unused)
 {
 	struct eth_ivshmem_dev_data *dev_data = dev->data;
 
@@ -73,7 +74,7 @@ static int eth_ivshmem_start(const struct device *dev)
 	return 0;
 }
 
-static int eth_ivshmem_stop(const struct device *dev)
+static int eth_ivshmem_stop(const struct device *dev, struct net_if *iface __unused)
 {
 	struct eth_ivshmem_dev_data *dev_data = dev->data;
 
@@ -85,10 +86,10 @@ static int eth_ivshmem_stop(const struct device *dev)
 	return 0;
 }
 
-static enum ethernet_hw_caps eth_ivshmem_caps(const struct device *dev)
+static enum ethernet_hw_caps eth_ivshmem_caps(const struct device *dev __unused,
+					      struct net_if *iface __unused)
 {
-	ARG_UNUSED(dev);
-	return ETHERNET_LINK_10BASE_T | ETHERNET_LINK_100BASE_T | ETHERNET_LINK_1000BASE_T;
+	return ETHERNET_LINK_10BASE | ETHERNET_LINK_100BASE | ETHERNET_LINK_1000BASE;
 }
 
 static int eth_ivshmem_send(const struct device *dev, struct net_pkt *pkt)
@@ -102,13 +103,11 @@ static int eth_ivshmem_send(const struct device *dev, struct net_pkt *pkt)
 
 	if (res != 0) {
 		LOG_ERR("Failed to allocate tx buffer");
-		eth_stats_update_errors_tx(dev_data->iface);
 		return res;
 	}
 
 	if (net_pkt_read(pkt, data, len)) {
 		LOG_ERR("Failed to read tx packet");
-		eth_stats_update_errors_tx(dev_data->iface);
 		return -EIO;
 	}
 
@@ -139,7 +138,7 @@ static struct net_pkt *eth_ivshmem_rx(const struct device *dev)
 	}
 
 	struct net_pkt *pkt = net_pkt_rx_alloc_with_buffer(
-		dev_data->iface, rx_len, AF_UNSPEC, 0, K_MSEC(100));
+		dev_data->iface, rx_len, NET_AF_UNSPEC, 0, K_MSEC(100));
 	if (pkt == NULL) {
 		LOG_ERR("Failed to allocate rx buffer");
 		eth_stats_update_errors_rx(dev_data->iface);
@@ -358,9 +357,7 @@ static void eth_ivshmem_iface_init(struct net_if *iface)
 	const struct device *dev = net_if_get_device(iface);
 	struct eth_ivshmem_dev_data *dev_data = dev->data;
 
-	if (dev_data->iface == NULL) {
-		dev_data->iface = iface;
-	}
+	dev_data->iface = iface;
 
 	net_if_set_link_addr(
 		iface, dev_data->mac_addr,

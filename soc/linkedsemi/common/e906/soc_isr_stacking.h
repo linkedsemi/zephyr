@@ -39,6 +39,10 @@ struct arch_esf {
 	unsigned long a7;		/* function argument */
 #endif /* !CONFIG_RISCV_ISA_RV32E */
 
+#ifdef CONFIG_CLIC_SUPPORT_INTERRUPT_LEVEL
+	unsigned long mcause;		/* machine cause register */
+#endif /* CONFIG_CLIC_SUPPORT_INTERRUPT_LEVEL */
+
 	unsigned long mepc;		/* machine exception program counter */
 	unsigned long mstatus;	/* machine status register */
 
@@ -48,9 +52,9 @@ struct arch_esf {
 	unsigned long sp;		/* preserved (user or kernel) stack pointer */
 #endif
 
-#ifdef CONFIG_EXTRA_EXCEPTION_INFO
-	_callee_saved_t *csf;		/* pointer to callee-saved-registers */
-#endif /* CONFIG_EXTRA_EXCEPTION_INFO */
+#ifdef CONFIG_EXCEPTION_DEBUG
+	struct _callee_saved *csf;	/* pointer to callee-saved-registers */
+#endif /* CONFIG_EXCEPTION_DEBUG */
 
 #ifdef CONFIG_RISCV_SOC_CONTEXT_SAVE
 	struct soc_esf soc_context;
@@ -58,9 +62,10 @@ struct arch_esf {
 } __aligned(16);
 
 #define SOC_ISR_STACKING_ESF_DECLARE
+#define SOC_ISR_STACKING_ESR_INIT
 #endif /* RISCV_SOC_HAS_ISR_STACKING*/
 
-#else
+#else /* _ASMLANGUAGE */
 
 #ifndef DO_CALLER_SAVED
 /* Convenience macro for loading/storing register states. */
@@ -81,23 +86,6 @@ struct arch_esf {
 	RV_I(	op a6, __struct_arch_esf_a6_OFFSET(sp)	);\
 	RV_I(	op a7, __struct_arch_esf_a7_OFFSET(sp)	);\
 	RV_E(	op ra, __struct_arch_esf_ra_OFFSET(sp)	)
-
-#ifdef CONFIG_EXCEPTION_DEBUG
-/* Convenience macro for storing callee saved register [s0 - s11] states. */
-#define STORE_CALLEE_SAVED() \
-	RV_E(	sr s0, ___callee_saved_t_s0_OFFSET(sp)		);\
-	RV_E(	sr s1, ___callee_saved_t_s1_OFFSET(sp)		);\
-	RV_I(	sr s2, ___callee_saved_t_s2_OFFSET(sp)		);\
-	RV_I(	sr s3, ___callee_saved_t_s3_OFFSET(sp)		);\
-	RV_I(	sr s4, ___callee_saved_t_s4_OFFSET(sp)		);\
-	RV_I(	sr s5, ___callee_saved_t_s5_OFFSET(sp)		);\
-	RV_I(	sr s6, ___callee_saved_t_s6_OFFSET(sp)		);\
-	RV_I(	sr s7, ___callee_saved_t_s7_OFFSET(sp)		);\
-	RV_I(	sr s8, ___callee_saved_t_s8_OFFSET(sp)		);\
-	RV_I(	sr s9, ___callee_saved_t_s9_OFFSET(sp)		);\
-	RV_I(	sr s10, ___callee_saved_t_s10_OFFSET(sp)	);\
-	RV_I(	sr s11, ___callee_saved_t_s11_OFFSET(sp)	)
-#endif /* CONFIG_EXCEPTION_DEBUG */
 #endif /*DO_CALLER_SAVED*/
 
 GDATA(irq_nested_level)

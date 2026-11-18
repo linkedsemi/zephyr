@@ -5,18 +5,33 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef H_STAT_MGMT_
-#define H_STAT_MGMT_
+/**
+ * @file
+ * @brief Header file for the MCUmgr statistics management group API.
+ * @ingroup mcumgr_stat_mgmt
+ */
+
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_STAT_MGMT_STAT_MGMT_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_STAT_MGMT_STAT_MGMT_H_
+
+/**
+ * @brief MCUmgr Statistics Management API
+ * @defgroup mcumgr_stat_mgmt Statistics Management
+ * @ingroup mcumgr_mgmt_api
+ * @{
+ */
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * Command IDs for statistics management group.
+ * @name Command IDs for Statistics Management group.
+ * @{
  */
-#define STAT_MGMT_ID_SHOW   0
-#define STAT_MGMT_ID_LIST   1
+#define STAT_MGMT_ID_SHOW 0 /**< Group data */
+#define STAT_MGMT_ID_LIST 1 /**< List groups */
+/** @} */
 
 /**
  * Command result codes for statistics management group.
@@ -45,7 +60,10 @@ enum stat_mgmt_err_code_t {
  * @brief Represents a single value in a statistics group.
  */
 struct stat_mgmt_entry {
+	/** Name of the statistic */
 	const char *name;
+
+	/** Value of the statistic */
 	uint64_t value;
 };
 
@@ -53,4 +71,8 @@ struct stat_mgmt_entry {
 }
 #endif
 
-#endif /* H_STAT_MGMT_ */
+/**
+ * @}
+ */
+
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_STAT_MGMT_STAT_MGMT_H_ */

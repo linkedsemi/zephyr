@@ -5,7 +5,7 @@ Building, Flashing and Debugging
 
 Zephyr provides several :ref:`west extension commands <west-extensions>` for
 building, flashing, and interacting with Zephyr programs running on a board:
-``build``, ``flash``, ``debug``, ``debugserver`` and ``attach``.
+``build``, ``flash``, ``debug``, ``debugserver``, ``rtt``, and ``attach``.
 
 For information on adding board support for the flashing and debugging
 commands, see :ref:`flash-and-debug-support` in the board porting guide.
@@ -395,10 +395,25 @@ You can :ref:`configure <west-config-cmd>` ``west build`` using these options.
        west whenever it needs to create or locate a build folder. The currently
        available arguments are:
 
+         - ``west_topdir``: The absolute path to the west workspace, as
+           returned by the ``west_topdir`` command
          - ``board``: The board name
-         - ``source_dir``: The relative path from the current working directory
-           to the source directory. If the current working directory is inside
-           the source directory this will be set to an empty string.
+         - ``source_dir``: Path to the CMake source directory, relative to the
+           current working directory. If the current working directory is
+           inside the source directory, this is an empty string, as it is on
+           Windows for a source directory on another drive, which has no
+           relative path to the current one. If no source directory is
+           specified, it defaults to current working directory.
+           E.g. if ``west build ../app`` is run from ``<west_topdir>/app1``,
+           ``source_dir`` resolves to ``../app`` (which is the relative path
+           to the current working dir).
+         - ``source_dir_workspace``: Path to the source directory, relative to
+           ``west_topdir`` (if it is inside the workspace). Otherwise, it is
+           relative to the filesystem root (``/`` on Unix, respectively
+           ``C:/`` on Windows).
+           E.g. if ``west build ../app`` is run from ``<west_topdir>/app1``,
+           ``source_dir`` resolves to ``app`` (which is the relative path to
+           the west workspace dir).
          - ``app``: The name of the source directory.
    * - ``build.generator``
      - String, default ``Ninja``. The `CMake Generator`_ to use to create a
@@ -445,9 +460,6 @@ From a Zephyr build directory, re-build the binary and flash it to
 your board::
 
   west flash
-
-Without options, the behavior is the same as ``ninja flash`` (or
-``make flash``, etc.).
 
 To specify the build directory, use ``--build-dir`` (or ``-d``)::
 
@@ -551,6 +563,22 @@ only the image from this domain::
 
 .. _west-debugging:
 
+Configuration Options
+=====================
+
+You can :ref:`configure <west-config-cmd>` ``west flash`` using these options.
+
+.. NOTE: docs authors: keep this table sorted alphabetically
+
+.. list-table::
+   :widths: 10 30
+   :header-rows: 1
+
+   * - Option
+     - Description
+   * - ``flash.rebuild``
+     - Boolean, default ``true``. If ``false``, do not rebuild on west flash.
+
 Debugging: ``west debug``, ``west debugserver``
 ***********************************************
 
@@ -570,9 +598,6 @@ To attach a debugger to your board and open up a local network port
 you can connect a debugger to (e.g. an IDE debugger)::
 
   west debugserver
-
-Without options, the behavior is the same as ``ninja debug`` and
-``ninja debugserver`` (or ``make debug``, etc.).
 
 To specify the build directory, use ``--build-dir`` (or ``-d``)::
 
@@ -683,6 +708,25 @@ to debug::
 
 .. _west-runner:
 
+Configuration Options
+=====================
+
+You can :ref:`configure <west-config-cmd>` ``west debug`` and
+:ref:`configure <west-config-cmd>` ``west debugserver`` using these options.
+
+.. NOTE: docs authors: keep this table sorted alphabetically
+
+.. list-table::
+   :widths: 10 30
+   :header-rows: 1
+
+   * - Option
+     - Description
+   * - ``debug.rebuild``
+     - Boolean, default ``true``. If ``false``, do not rebuild on west debug.
+   * - ``debugserver.rebuild``
+     - Boolean, default ``true``. If ``false``, do not rebuild on west debugserver.
+
 Flash and debug runners
 ***********************
 
@@ -765,7 +809,7 @@ From that point on Renode can be used normally in both console and window modes.
 For details on using Renode see `Renode - documentation`_.
 
 .. _Renode - documentation:
-   http://docs.renode.io
+   https://docs.renode.io
 
 Runner-Specific Overrides
 =========================
@@ -779,17 +823,25 @@ To view all available options Renode supports, use::
 
   west simulate --runner=renode --renode-help
 
+Out of tree runners
+*******************
+
+:ref:`Zephyr modules <modules>` can have external runners discovered by adding python
+files in their :ref:`module.yml <modules-runners>`. Create an external runner class by
+inheriting from ``ZephyrBinaryRunner`` and implement all abstract methods.
+
+.. note::
+
+   Support for custom out-of-tree runners makes the ``runners.core`` module part of
+   the public API and backwards incompatible changes need to undergo the
+   :ref:`deprecation process <breaking_api_changes>`.
+
 Hacking
 *******
 
 This section documents the ``runners.core`` module used by the
 flash and debug commands. This is the core abstraction used to implement
 support for these features.
-
-.. warning::
-
-   These APIs are provided for reference, but they are more "shared code" used
-   to implement multiple extension commands than a stable API.
 
 Developers can add support for new ways to flash and debug Zephyr programs by
 implementing additional runners. To get this support into upstream Zephyr, the

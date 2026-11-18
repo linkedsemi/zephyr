@@ -22,41 +22,7 @@ Hardware
 Supported Features
 ==================
 
-The adafruit_itsybitsy_m4_express board configuration supports the following
-hardware features:
-
-+-----------+------------+------------------------------------------+
-| Interface | Controller | Driver/Component                         |
-+===========+============+==========================================+
-| NVIC      | on-chip    | Nested vector interrupt controller       |
-+-----------+------------+------------------------------------------+
-| SYSTICK   | on-chip    | systick                                  |
-+-----------+------------+------------------------------------------+
-| WDT       | on-chip    | Watchdog                                 |
-+-----------+------------+------------------------------------------+
-| GPIO      | on-chip    | I/O ports                                |
-+-----------+------------+------------------------------------------+
-| USART     | on-chip    | Serial ports                             |
-+-----------+------------+------------------------------------------+
-| SPI       | on-chip    | Serial Peripheral Interface ports        |
-+-----------+------------+------------------------------------------+
-| TRNG      | on-chip    | True Random Number Generator             |
-+-----------+------------+------------------------------------------+
-| HWINFO    | on-chip    | Unique 128 bit serial number             |
-+-----------+------------+------------------------------------------+
-| RTC       | on-chip    | Real-Time Counter                        |
-+-----------+------------+------------------------------------------+
-| USB       | on-chip    | USB device                               |
-+-----------+------------+------------------------------------------+
-| WDT       | on-chip    | Watchdog Timer                           |
-+-----------+------------+------------------------------------------+
-| PWM       | on-chip    | PWM                                      |
-+-----------+------------+------------------------------------------+
-
-Other hardware features are not currently supported by Zephyr.
-
-The default configuration can be found in the Kconfig file
-:zephyr_file:`boards/adafruit/itsybitsy_m4_express/adafruit_itsybitsy_m4_express_defconfig`.
+.. zephyr:board-supported-hw::
 
 Zephyr can use the default Cortex-M SYSTICK timer or the SAM0 specific RTC.
 To use the RTC, set :code:`CONFIG_CORTEX_M_SYSTICK=n` and set
@@ -106,7 +72,9 @@ serial port that echos characters back to the host PC.
 Programming and Debugging
 *************************
 
-The ItsyBitsy ships with a the BOSSA compatible UF2 bootloader.  The
+.. zephyr:board-supported-runners::
+
+The ItsyBitsy ships with the BOSSA compatible UF2 bootloader.  The
 bootloader can be entered by quickly tapping the reset button twice.
 
 Additionally, if :code:`CONFIG_USB_CDC_ACM` is enabled then the bootloader

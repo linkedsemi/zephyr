@@ -11,6 +11,7 @@ menuconfig IMG_MANAGER
 	bool "DFU image manager"
 	depends on STREAM_FLASH
 	depends on !MCUBOOT_BOOTLOADER_MODE_RAM_LOAD || RETENTION_BOOTLOADER_INFO_OUTPUT_FUNCTION
+	depends on !MCUBOOT_BOOTLOADER_MODE_RAM_LOAD_WITH_REVERT || RETENTION_BOOTLOADER_INFO_OUTPUT_FUNCTION
 	help
 	  Enable support for managing DFU image.
 
@@ -86,6 +87,18 @@ config IMG_ENABLE_IMAGE_CHECK
 	  Another use is to ensure that firmware upgrade routines from internet
 	  server to flash slot are performing properly.
 
+config IMG_CUSTOM_SECTOR_SIZE
+	int "Sector size for MCUboot images"
+	depends on MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET
+	default 0
+	range 0 $(UINT32_MAX)
+	help
+	  Use this to set a custom sector size for swap-using-offset images to be offset by, a
+	  value of 0 means to use the default sector size of the flash area by querying it.
+	  This should only be manually set by advanced users that are using a different erase
+	  sector size in the MCUboot image for optimisation reasons (e.g. to reduce the size of
+	  the swap status area).
+
 endif # MCUBOOT_IMG_MANAGER
 
 module = IMG_MANAGER
@@ -93,13 +106,15 @@ module-str = image manager
 source "subsys/logging/Kconfig.template.log_config"
 
 if !MCUBOOT
+
 config UPDATEABLE_IMAGE_NUMBER
 	int "Number of updateable images"
 	default 1
-	range 1 3
+	range 1 8
 	help
 	  If value is set to 2 or greater then, this enables support needed when
 	  application is combined with MCUboot multi-image boot.
+
 endif
 
 endif # IMG_MANAGER

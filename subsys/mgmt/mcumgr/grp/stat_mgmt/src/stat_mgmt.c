@@ -48,7 +48,7 @@ stat_mgmt_count(const char *group_name, size_t *counter)
 
 	*counter = 0;
 
-	return stats_walk(hdr, stats_mgmt_count_plus_one, &counter);
+	return stats_walk(hdr, stats_mgmt_count_plus_one, counter);
 }
 
 static int
@@ -111,7 +111,7 @@ static int
 stat_mgmt_cb_encode(zcbor_state_t *zse, struct stat_mgmt_entry *entry)
 {
 	bool ok = zcbor_tstr_put_term(zse, entry->name, CONFIG_MCUMGR_GRP_STAT_MAX_NAME_LEN) &&
-		  zcbor_uint32_put(zse, entry->value);
+		  zcbor_uint64_put(zse, entry->value);
 
 	return ok ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
 }
@@ -145,7 +145,7 @@ stat_mgmt_show(struct smp_streamer *ctxt)
 
 	if (stat_mgmt_count(stat_name, &counter) != 0) {
 		LOG_ERR("Invalid stat name: %s", stat_name);
-		ok = smp_add_cmd_err(zse, ZEPHYR_MGMT_GRP_BASIC,
+		ok = smp_add_cmd_err(zse, MGMT_GROUP_ID_STAT,
 				     STAT_MGMT_ERR_INVALID_STAT_NAME);
 		goto end;
 	}
@@ -172,7 +172,7 @@ stat_mgmt_show(struct smp_streamer *ctxt)
 				rc = STAT_MGMT_ERR_WALK_ABORTED;
 			}
 
-			ok = smp_add_cmd_err(zse, ZEPHYR_MGMT_GRP_BASIC, rc);
+			ok = smp_add_cmd_err(zse, MGMT_GROUP_ID_STAT, rc);
 		}
 	}
 

@@ -318,7 +318,6 @@ static int tca6424a_pin_config(const struct device *dev, gpio_pin_t pin, gpio_fl
 
 static int tca6424a_port_get_raw(const struct device *dev, gpio_port_value_t *value)
 {
-	struct tca6424a_drv_data *const drv_data = dev->data;
 	uint32_t buf;
 	int ret;
 
@@ -327,14 +326,11 @@ static int tca6424a_port_get_raw(const struct device *dev, gpio_port_value_t *va
 		return -EWOULDBLOCK;
 	}
 
-	k_sem_take(&drv_data->lock, K_FOREVER);
-
-	ret = update_input_regs(dev, &buf);
+	ret = read_port_regs(dev, TCA6424A_REG_INPUT, &buf);
 	if (ret == 0) {
 		*value = buf;
 	}
 
-	k_sem_give(&drv_data->lock);
 	return ret;
 }
 
@@ -437,7 +433,7 @@ static int tca6424a_manage_callback(const struct device *dev, struct gpio_callba
 	return gpio_manage_callback(&drv_data->callbacks, callback, set);
 }
 
-static const struct gpio_driver_api tca6424a_drv_api = {
+static DEVICE_API(gpio, tca6424a_drv_api) = {
 	.pin_configure = tca6424a_pin_config,
 	.port_get_raw = tca6424a_port_get_raw,
 	.port_set_masked_raw = tca6424a_port_set_masked_raw,
@@ -558,9 +554,7 @@ static int tca6424a_init(const struct device *dev)
 
 #define TCA6424A_INST(idx)                                                                         \
 	static const struct tca6424a_drv_cfg tca6424a_cfg##idx = {                                 \
-		.common = {                                                                        \
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(idx),                     \
-		},                                                                                 \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(idx),                                    \
 		.i2c_spec = I2C_DT_SPEC_INST_GET(idx),                                             \
 		.int_gpio = GPIO_DT_SPEC_INST_GET_OR(idx, int_gpios, {0}),                         \
 		.reset_gpio = GPIO_DT_SPEC_INST_GET_OR(idx, reset_gpios, {0}),                     \

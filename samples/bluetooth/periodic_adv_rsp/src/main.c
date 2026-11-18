@@ -36,7 +36,7 @@ static const struct bt_le_per_adv_param per_adv_params = {
 	.options = 0,
 	.num_subevents = NUM_SUBEVENTS,
 	.subevent_interval = 0x30,
-	.response_slot_delay = 0x5,
+	.response_slot_delay = 0x8,
 	.response_slot_spacing = 0x50,
 	.num_response_slots = NUM_RSP_SLOTS,
 };
@@ -114,8 +114,7 @@ void connected_cb(struct bt_conn *conn, uint8_t err)
 	__ASSERT(conn == default_conn, "Unexpected connected callback");
 
 	if (err) {
-		bt_conn_unref(default_conn);
-		default_conn = NULL;
+		bt_conn_drop(&default_conn);
 	}
 }
 
@@ -158,7 +157,6 @@ static bool data_cb(struct bt_data *data, void *user_data)
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
-	char addr_str[BT_ADDR_LE_STR_LEN];
 	char name[NAME_LEN];
 	int err;
 
@@ -185,7 +183,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT,
 				&default_conn);
 	if (err) {
-		printk("Create conn to %s failed (%u)\n", addr_str, err);
+		printk("Create conn to %s failed (%u)\n", bt_addr_le_str(addr), err);
 	}
 }
 
@@ -377,7 +375,7 @@ int main(void)
 		printk("PAwR config written to sync %d, disconnecting\n", num_synced - 1);
 
 disconnect:
-		/* Adding delay (2ms * interval value, using 2ms intead of the 1.25ms
+		/* Adding delay (2ms * interval value, using 2ms instead of the 1.25ms
 		 * used by controller) to ensure sync is established before
 		 * disconnection.
 		 */
@@ -391,11 +389,10 @@ disconnect:
 disconnected:
 		k_sem_take(&sem_disconnected, K_FOREVER);
 
-		bt_conn_unref(default_conn);
-		default_conn = NULL;
+		bt_conn_drop(&default_conn);
 	}
 
-	printk("Maximum numnber of syncs onboarded\n");
+	printk("Maximum number of syncs onboarded\n");
 
 	while (true) {
 		k_sleep(K_SECONDS(1));

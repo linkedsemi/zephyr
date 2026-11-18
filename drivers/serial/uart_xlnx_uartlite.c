@@ -307,11 +307,6 @@ static int xlnx_uartlite_irq_is_pending(const struct device *dev)
 		xlnx_uartlite_irq_rx_ready(dev));
 }
 
-static int xlnx_uartlite_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
 static void xlnx_uartlite_irq_callback_set(const struct device *dev,
 					   uart_irq_callback_user_data_t cb,
 					   void *user_data)
@@ -354,7 +349,7 @@ static int xlnx_uartlite_init(const struct device *dev)
 	return 0;
 }
 
-static const struct uart_driver_api xlnx_uartlite_driver_api = {
+static DEVICE_API(uart, xlnx_uartlite_driver_api) = {
 	.poll_in = xlnx_uartlite_poll_in,
 	.poll_out = xlnx_uartlite_poll_out,
 	.err_check = xlnx_uartlite_err_check,
@@ -369,20 +364,21 @@ static const struct uart_driver_api xlnx_uartlite_driver_api = {
 	.irq_rx_disable = xlnx_uartlite_irq_rx_disable,
 	.irq_rx_ready = xlnx_uartlite_irq_rx_ready,
 	.irq_is_pending = xlnx_uartlite_irq_is_pending,
-	.irq_update = xlnx_uartlite_irq_update,
 	.irq_callback_set = xlnx_uartlite_irq_callback_set,
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 };
 
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
-#define XLNX_UARTLITE_IRQ_INIT(n, i)					\
-	do {								\
-		IRQ_CONNECT(DT_INST_IRQN_BY_IDX(n, i),			\
-			    DT_INST_IRQ_BY_IDX(n, i, priority),		\
-			    xlnx_uartlite_isr,				\
-			    DEVICE_DT_INST_GET(n), 0);			\
-									\
-		irq_enable(DT_INST_IRQ_BY_IDX(n, i, irq));		\
+#define XLNX_UARTLITE_IRQ_INIT(n, i)						\
+	do {									\
+		IRQ_CONNECT(DT_INST_IRQN_BY_IDX(n, i),				\
+			DT_INST_IRQ_BY_IDX(n, i, priority),			\
+			xlnx_uartlite_isr, DEVICE_DT_INST_GET(n),		\
+			COND_CODE_1(DT_INST_IRQ_HAS_CELL_AT_IDX(n, i, flags),	\
+				(DT_INST_IRQ_BY_IDX(n, i, flags)),		\
+				(0)));						\
+										\
+		irq_enable(DT_INST_IRQN_BY_IDX(n, i));				\
 	} while (false)
 #define XLNX_UARTLITE_CONFIG_FUNC(n)					\
 	static void xlnx_uartlite_config_func_##n(const struct device *dev) \
@@ -414,7 +410,7 @@ static const struct xlnx_uartlite_config xlnx_uartlite_##n##_config = {	\
 	static const struct xlnx_uartlite_config xlnx_uartlite_##n##_config;\
 									\
 	DEVICE_DT_INST_DEFINE(n,					\
-			    &xlnx_uartlite_init,			\
+			    xlnx_uartlite_init,				\
 			    NULL,					\
 			    &xlnx_uartlite_##n##_data,			\
 			    &xlnx_uartlite_##n##_config,		\

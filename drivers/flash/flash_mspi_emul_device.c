@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  * Emulate a memory device on MSPI emulator bus
  */
-#define DT_DRV_COMPAT zephyr_mspi_emul_flash
+#define DT_DRV_COMPAT zephyr_emul_flash
 
 #include <zephyr/logging/log.h>
 #include <zephyr/kernel.h>
@@ -30,7 +30,7 @@ struct flash_mspi_emul_device_config {
 
 	struct mspi_dev_id                  dev_id;
 	struct mspi_dev_cfg                 tar_dev_cfg;
-	struct mspi_xip_cfg                 tar_xip_cfg;
+	struct mspi_memmap_cfg              tar_memmap_cfg;
 	struct mspi_scramble_cfg            tar_scramble_cfg;
 
 	bool                                sw_multi_periph;
@@ -39,7 +39,7 @@ struct flash_mspi_emul_device_config {
 struct flash_mspi_emul_device_data {
 	const struct device                 *bus;
 	struct mspi_dev_cfg                 dev_cfg;
-	struct mspi_xip_cfg                 xip_cfg;
+	struct mspi_memmap_cfg              memmap_cfg;
 	struct mspi_scramble_cfg            scramble_cfg;
 	mspi_timing_cfg                     timing_cfg;
 
@@ -215,7 +215,7 @@ static int flash_mspi_emul_write(const struct device *flash, off_t offset,
 	data->xfer.cmd_length          = data->dev_cfg.cmd_length;
 	data->xfer.addr_length         = data->dev_cfg.addr_length;
 	data->xfer.hold_ce             = false;
-	data->xfer.priority            = 1;
+	data->xfer.priority            = MSPI_XFER_PRIORITY_MEDIUM;
 	data->xfer.packets             = &data->packet;
 	data->xfer.num_packet          = 1;
 	data->xfer.timeout             = CONFIG_MSPI_COMPLETION_TIMEOUT_TOLERANCE;
@@ -288,7 +288,7 @@ static int flash_mspi_emul_read(const struct device *flash, off_t offset,
 	data->xfer.cmd_length          = data->dev_cfg.cmd_length;
 	data->xfer.addr_length         = data->dev_cfg.addr_length;
 	data->xfer.hold_ce             = false;
-	data->xfer.priority            = 1;
+	data->xfer.priority            = MSPI_XFER_PRIORITY_MEDIUM;
 	data->xfer.packets             = &data->packet;
 	data->xfer.num_packet          = 1;
 	data->xfer.timeout             = CONFIG_MSPI_COMPLETION_TIMEOUT_TOLERANCE;
@@ -339,7 +339,7 @@ static void flash_mspi_emul_pages_layout(const struct device *flash,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
-static const struct flash_driver_api flash_mspi_emul_device_api = {
+static DEVICE_API(flash, flash_mspi_emul_device_api) = {
 	.erase = flash_mspi_emul_erase,
 	.write = flash_mspi_emul_write,
 	.read = flash_mspi_emul_read,
@@ -374,13 +374,13 @@ static int emul_mspi_device_init(const struct emul *emul_flash, const struct dev
 	}
 	data->dev_cfg = cfg->tar_dev_cfg;
 
-#if CONFIG_MSPI_XIP
-	if (cfg->tar_xip_cfg.enable) {
-		if (mspi_xip_config(data->bus, &cfg->dev_id, &cfg->tar_xip_cfg)) {
+#if CONFIG_MSPI_MEMMAP
+	if (cfg->tar_memmap_cfg.enable) {
+		if (mspi_memmap_config(data->bus, &cfg->dev_id, &cfg->tar_memmap_cfg)) {
 			LOG_ERR("%u, Failed to enable XIP.", __LINE__);
 			return -EIO;
 		}
-		data->xip_cfg = cfg->tar_xip_cfg;
+		data->memmap_cfg = cfg->tar_memmap_cfg;
 	}
 #endif
 
@@ -429,7 +429,7 @@ static int flash_mspi_emul_device_init_stub(const struct device *dev)
 			},                                                                        \
 		.dev_id                   = MSPI_DEVICE_ID_DT_INST(n),                            \
 		.tar_dev_cfg              = MSPI_DEVICE_CONFIG_DT_INST(n),                        \
-		.tar_xip_cfg              = MSPI_XIP_CONFIG_DT_INST(n),                           \
+		.tar_memmap_cfg           = MSPI_MEMMAP_CONFIG_DT_INST(n),                        \
 		.tar_scramble_cfg         = MSPI_SCRAMBLE_CONFIG_DT_INST(n),                      \
 		.sw_multi_periph          = DT_PROP(DT_INST_BUS(n), software_multiperipheral)     \
 	};                                                                                        \

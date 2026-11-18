@@ -9,7 +9,6 @@
 
 #include <zephyr/kernel.h>
 #include <stdio.h>
-#include <zephyr/kernel_structs.h>
 #include <zephyr/drivers/gpio.h>
 
 #include <zephyr/net/wifi_mgmt.h>
@@ -141,7 +140,7 @@ int __eswifi_off_start_client(struct eswifi_dev *eswifi,
 int __eswifi_listen(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket, int backlog);
 int __eswifi_accept(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket);
 int __eswifi_bind(struct eswifi_dev *eswifi, struct eswifi_off_socket *socket,
-		  const struct sockaddr *addr, socklen_t addrlen);
+		  const struct net_sockaddr *addr, net_socklen_t addrlen);
 #if defined(CONFIG_NET_SOCKETS_OFFLOAD)
 int eswifi_socket_offload_init(struct eswifi_dev *leswifi);
 #endif

@@ -503,6 +503,15 @@ static inline void kw41z_rx(struct kw41z_context *kw41z, uint8_t len)
 
 	LOG_DBG("ENTRY: len: %d", len);
 
+	/* The length comes from the radio's IRQSTS frame-length field. Only a
+	 * non-zero check is done at the call site, so a length below the FCS
+	 * size underflows the subtraction below.
+	 */
+	if (len < KW41Z_FCS_LENGTH) {
+		LOG_ERR("Invalid frame length %u", len);
+		return;
+	}
+
 #if defined(CONFIG_NET_L2_OPENTHREAD)
 	/*
 	 * OpenThread stack expects a receive frame to include the FCS
@@ -513,13 +522,19 @@ static inline void kw41z_rx(struct kw41z_context *kw41z, uint8_t len)
 #endif
 
 	pkt = net_pkt_rx_alloc_with_buffer(kw41z->iface, pkt_len,
-					   AF_UNSPEC, 0, K_NO_WAIT);
+					   NET_AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
 		LOG_ERR("No buf available");
 		goto out;
 	}
 
 	buf = pkt->buffer;
+
+	/* The copy loops below write into the first fragment only. */
+	if (net_buf_tailroom(buf) < pkt_len) {
+		LOG_ERR("Frame too long for RX buffer: %u", pkt_len);
+		goto out;
+	}
 
 #if CONFIG_SOC_MKW41Z4
 	/* PKT_BUFFER_RX needs to be accessed aligned to 16 bits */
@@ -581,7 +596,7 @@ static void handle_ack(struct kw41z_context *kw41z, uint8_t seq_number)
 	uint8_t ack_psdu[ACK_FRAME_LEN];
 
 	ack_pkt = net_pkt_rx_alloc_with_buffer(kw41z->iface, ACK_FRAME_LEN,
-					       AF_UNSPEC, 0, K_NO_WAIT);
+					       NET_AF_UNSPEC, 0, K_NO_WAIT);
 	if (!ack_pkt) {
 		LOG_ERR("No free packet available.");
 		return;
@@ -622,7 +637,7 @@ static int kw41z_tx(const struct device *dev, enum ieee802154_tx_mode mode,
 	unsigned int key;
 
 	if (mode != IEEE802154_TX_MODE_DIRECT) {
-		NET_ERR("TX mode %d not supported", mode);
+		LOG_ERR("TX mode %d not supported", mode);
 		return -ENOTSUP;
 	}
 
@@ -1046,7 +1061,7 @@ static int kw41z_init(const struct device *dev)
 	ZLL->PHY_CTRL &= ~ZLL_PHY_CTRL_TRCV_MSK_MASK;
 
 	/* Configure Radio IRQ */
-	NVIC_ClearPendingIRQ(Radio_1_IRQn);
+	k_irq_clear_pending(Radio_1_IRQn);
 	IRQ_CONNECT(Radio_1_IRQn, RADIO_0_IRQ_PRIO, kw41z_isr, 0, 0);
 
 	return 0;

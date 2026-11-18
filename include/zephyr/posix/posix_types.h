@@ -4,10 +4,10 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_POSIX_TYPES_H_
-#define ZEPHYR_INCLUDE_POSIX_TYPES_H_
+#ifndef ZEPHYR_INCLUDE_POSIX_POSIX_TYPES_H_
+#define ZEPHYR_INCLUDE_POSIX_POSIX_TYPES_H_
 
-#if !(defined(CONFIG_ARCH_POSIX) && defined(CONFIG_EXTERNAL_LIBC))
+#if !(defined(CONFIG_NATIVE_LIBC))
 #include <sys/types.h>
 #endif
 
@@ -79,29 +79,25 @@ typedef unsigned long blkcnt_t;
 typedef int pid_t;
 #endif
 
-#ifndef __useconds_t_defined
+#if !defined(_USECONDS_T_DECLARED) && !defined(__useconds_t_defined)
 typedef unsigned long useconds_t;
 #endif
 
 /* time related attributes */
-#if !defined(CONFIG_NEWLIB_LIBC) && !defined(CONFIG_ARCMWDT_LIBC)
-#if !defined(__clockid_t_defined) && !defined(_CLOCKID_T_DECLARED)
-typedef uint32_t clockid_t;
-#endif
-#endif /* !CONFIG_NEWLIB_LIBC && !CONFIG_ARCMWDT_LIBC */
 #if !defined(__timer_t_defined) && !defined(_TIMER_T_DECLARED)
 typedef unsigned long timer_t;
 #endif
 
 /* Thread attributes */
-struct pthread_attr {
-	void *stack;
-	uint32_t details[2];
-};
-
 #if !defined(CONFIG_NEWLIB_LIBC)
-typedef struct pthread_attr pthread_attr_t;
-BUILD_ASSERT(sizeof(pthread_attr_t) >= sizeof(struct pthread_attr));
+#if !defined(_PTHREAD_ATTR_T_DECLARED) && !defined(__pthread_attr_t_defined)
+typedef struct {
+	void *stack;
+	unsigned int details[2];
+} pthread_attr_t;
+#define _PTHREAD_ATTR_T_DECLARED
+#define __pthread_attr_t_defined
+#endif
 #endif
 
 typedef uint32_t pthread_t;
@@ -160,4 +156,4 @@ BUILD_ASSERT(sizeof(pthread_once_t) >= sizeof(struct pthread_once));
 }
 #endif
 
-#endif	/* ZEPHYR_INCLUDE_POSIX_TYPES_H_ */
+#endif /* ZEPHYR_INCLUDE_POSIX_POSIX_TYPES_H_ */

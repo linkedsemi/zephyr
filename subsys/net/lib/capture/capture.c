@@ -13,6 +13,7 @@ LOG_MODULE_REGISTER(net_capture, CONFIG_NET_CAPTURE_LOG_LEVEL);
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/virtual.h>
 #include <zephyr/net/virtual_mgmt.h>
@@ -76,13 +77,13 @@ struct net_capture {
 	/**
 	 * Peer (inner) tunnel IP address.
 	 */
-	struct sockaddr peer;
+	struct net_sockaddr_storage peer;
 
 	/**
 	 * Local (inner) tunnel IP address. This will be set
 	 * as a local address to tunnel network interface.
 	 */
-	struct sockaddr local;
+	struct net_sockaddr_storage local;
 
 	/**
 	 * Is this context setup already
@@ -128,8 +129,8 @@ void net_capture_foreach(net_capture_cb_t cb, void *user_data)
 		info.capture_dev = ctx->dev;
 		info.capture_iface = ctx->capture_iface;
 		info.tunnel_iface = ctx->tunnel_iface;
-		info.peer = &ctx->peer;
-		info.local = &ctx->local;
+		info.peer = net_sad(&ctx->peer);
+		info.local = net_sad(&ctx->local);
 		info.is_enabled = ctx->is_enabled;
 
 		k_mutex_unlock(&lock);
@@ -192,7 +193,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 }
 
 static int setup_iface(struct net_if *iface, const char *ipaddr,
-		       struct sockaddr *addr, int *addr_len)
+		       struct net_sockaddr *addr, int *addr_len)
 {
 	struct net_if_addr *ifaddr;
 
@@ -202,7 +203,7 @@ static int setup_iface(struct net_if *iface, const char *ipaddr,
 		return -EINVAL;
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV6) && addr->sa_family == AF_INET6) {
+	if (IS_ENABLED(CONFIG_NET_IPV6) && addr->sa_family == NET_AF_INET6) {
 		/* No need to have dual address for IPIP tunnel interface */
 		net_if_flag_clear(iface, NET_IF_IPV4);
 		net_if_flag_set(iface, NET_IF_IPV6);
@@ -215,10 +216,10 @@ static int setup_iface(struct net_if *iface, const char *ipaddr,
 			return -EINVAL;
 		}
 
-		*addr_len = sizeof(struct sockaddr_in6);
+		*addr_len = sizeof(struct net_sockaddr_in6);
 
-	} else if (IS_ENABLED(CONFIG_NET_IPV4) && addr->sa_family == AF_INET) {
-		struct in_addr netmask = { { { 255, 255, 255, 255 } } };
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) && addr->sa_family == NET_AF_INET) {
+		struct net_in_addr netmask = { { { 255, 255, 255, 255 } } };
 
 		net_if_flag_clear(iface, NET_IF_IPV6);
 		net_if_flag_set(iface, NET_IF_IPV4);
@@ -238,7 +239,7 @@ static int setup_iface(struct net_if *iface, const char *ipaddr,
 						&net_sin(addr)->sin_addr,
 						&netmask);
 
-		*addr_len = sizeof(struct sockaddr_in);
+		*addr_len = sizeof(struct net_sockaddr_in);
 	} else {
 		return -EINVAL;
 	}
@@ -246,11 +247,11 @@ static int setup_iface(struct net_if *iface, const char *ipaddr,
 	return 0;
 }
 
-static int cleanup_iface(struct net_if *iface, struct sockaddr *addr)
+static int cleanup_iface(struct net_if *iface, struct net_sockaddr *addr)
 {
 	int ret = -EINVAL;
 
-	if (IS_ENABLED(CONFIG_NET_IPV6) && addr->sa_family == AF_INET6) {
+	if (IS_ENABLED(CONFIG_NET_IPV6) && addr->sa_family == NET_AF_INET6) {
 		ret = net_if_ipv6_addr_rm(iface, &net_sin6(addr)->sin6_addr);
 		if (!ret) {
 			NET_ERR("Cannot remove %s from interface %d",
@@ -261,7 +262,7 @@ static int cleanup_iface(struct net_if *iface, struct sockaddr *addr)
 
 		net_if_flag_clear(iface, NET_IF_IPV6);
 
-	} else if (IS_ENABLED(CONFIG_NET_IPV4) && addr->sa_family == AF_INET) {
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) && addr->sa_family == NET_AF_INET) {
 		ret = net_if_ipv4_addr_rm(iface, &net_sin(addr)->sin_addr);
 		if (!ret) {
 			NET_ERR("Cannot remove %s from interface %d",
@@ -281,9 +282,10 @@ int net_capture_setup(const char *remote_addr, const char *my_local_addr,
 	struct virtual_interface_req_params params = { 0 };
 	struct net_context *context = NULL;
 	struct net_if *ipip_iface = NULL;
-	struct sockaddr remote = { 0 };
-	struct sockaddr local = { 0 };
-	struct sockaddr peer = { 0 };
+	struct net_sockaddr_storage remote = { 0 };
+	struct net_sockaddr_storage local = { 0 };
+	struct net_sockaddr_storage peer = { 0 };
+	struct net_sockaddr *remote_sa = net_sad(&remote);
 	struct net_if *remote_iface;
 	struct net_capture *ctx;
 	int local_addr_len;
@@ -297,40 +299,40 @@ int net_capture_setup(const char *remote_addr, const char *my_local_addr,
 		goto fail;
 	}
 
-	if (!net_ipaddr_parse(remote_addr, strlen(remote_addr), &remote)) {
+	if (!net_ipaddr_parse(remote_addr, strlen(remote_addr), remote_sa)) {
 		NET_ERR("IPIP tunnel %s address \"%s\" invalid.",
 			"remote", remote_addr);
 		ret = -EINVAL;
 		goto fail;
 	}
 
-	if (!net_ipaddr_parse(peer_addr, strlen(peer_addr), &peer)) {
+	if (!net_ipaddr_parse(peer_addr, strlen(peer_addr), net_sad(&peer))) {
 		NET_ERR("IPIP tunnel %s address \"%s\" invalid.",
 			"peer", peer_addr);
 		ret = -EINVAL;
 		goto fail;
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV6) && remote.sa_family == AF_INET6) {
+	if (IS_ENABLED(CONFIG_NET_IPV6) && remote.ss_family == NET_AF_INET6) {
 		remote_iface = net_if_ipv6_select_src_iface(
-						&net_sin6(&remote)->sin6_addr);
-		params.family = AF_INET6;
+						&net_sin6(remote_sa)->sin6_addr);
+		params.family = NET_AF_INET6;
 		net_ipaddr_copy(&params.peer6addr,
-				&net_sin6(&remote)->sin6_addr);
+				&net_sin6(remote_sa)->sin6_addr);
 		orig_mtu = net_if_get_mtu(remote_iface);
 		mtu = orig_mtu - sizeof(struct net_ipv6_hdr) -
 			sizeof(struct net_udp_hdr);
-	} else if (IS_ENABLED(CONFIG_NET_IPV4) && remote.sa_family == AF_INET) {
+	} else if (IS_ENABLED(CONFIG_NET_IPV4) && remote.ss_family == NET_AF_INET) {
 		remote_iface = net_if_ipv4_select_src_iface(
-						&net_sin(&remote)->sin_addr);
-		params.family = AF_INET;
+						&net_sin(remote_sa)->sin_addr);
+		params.family = NET_AF_INET;
 		net_ipaddr_copy(&params.peer4addr,
-				&net_sin(&remote)->sin_addr);
+				&net_sin(remote_sa)->sin_addr);
 		orig_mtu = net_if_get_mtu(remote_iface);
 		mtu = orig_mtu - sizeof(struct net_ipv4_hdr) -
 			sizeof(struct net_udp_hdr);
 	} else {
-		NET_ERR("Invalid address family %d", remote.sa_family);
+		NET_ERR("Invalid address family %d", remote.ss_family);
 		ret = -EINVAL;
 		goto fail;
 	}
@@ -344,7 +346,7 @@ int net_capture_setup(const char *remote_addr, const char *my_local_addr,
 	/* We only get net_context so that net_pkt allocation routines
 	 * can allocate net_buf's from our net_buf pool.
 	 */
-	ret = net_context_get(params.family, SOCK_DGRAM, IPPROTO_UDP,
+	ret = net_context_get(params.family, NET_SOCK_DGRAM, NET_IPPROTO_UDP,
 			      &context);
 	if (ret < 0) {
 		NET_ERR("Cannot allocate net_context (%d)", ret);
@@ -379,16 +381,16 @@ int net_capture_setup(const char *remote_addr, const char *my_local_addr,
 		goto fail;
 	}
 
-	ret = setup_iface(ipip_iface, my_local_addr, &local, &local_addr_len);
+	ret = setup_iface(ipip_iface, my_local_addr, net_sad(&local), &local_addr_len);
 	if (ret < 0) {
 		NET_ERR("Cannot set IP address %s to tunnel interface",
 			my_local_addr);
 		goto fail;
 	}
 
-	if (peer.sa_family != local.sa_family) {
+	if (peer.ss_family != local.ss_family) {
 		NET_ERR("Peer and local address are not the same family "
-			"(%d vs %d)", peer.sa_family, local.sa_family);
+			"(%d vs %d)", peer.ss_family, local.ss_family);
 		ret = -EINVAL;
 		goto fail;
 	}
@@ -411,12 +413,12 @@ int net_capture_setup(const char *remote_addr, const char *my_local_addr,
 	memcpy(&ctx->peer, &peer, local_addr_len);
 	memcpy(&ctx->local, &local, local_addr_len);
 
-	if (net_sin(&ctx->peer)->sin_port == 0) {
-		net_sin(&ctx->peer)->sin_port = htons(DEFAULT_PORT);
+	if (net_sin(net_sad(&ctx->peer))->sin_port == 0) {
+		net_sin(net_sad(&ctx->peer))->sin_port = net_htons(DEFAULT_PORT);
 	}
 
-	if (net_sin(&ctx->local)->sin_port == 0) {
-		net_sin(&ctx->local)->sin_port = htons(DEFAULT_PORT);
+	if (net_sin(net_sad(&ctx->local))->sin_port == 0) {
+		net_sin(net_sad(&ctx->local))->sin_port = net_htons(DEFAULT_PORT);
 	}
 
 	ret = net_virtual_interface_attach(ctx->tunnel_iface, remote_iface);
@@ -455,7 +457,7 @@ static int capture_cleanup(const struct device *dev)
 		net_context_put(ctx->context);
 	}
 
-	(void)cleanup_iface(ctx->tunnel_iface, &ctx->local);
+	(void)cleanup_iface(ctx->tunnel_iface, net_sad(&ctx->local));
 
 	ctx->tunnel_iface = NULL;
 	ctx->in_use = false;
@@ -610,6 +612,8 @@ static int capture_send(const struct device *dev, struct net_if *iface,
 			struct net_pkt *pkt)
 {
 	struct net_capture *ctx = dev->data;
+	struct net_sockaddr *ctx_local = net_sad(&ctx->local);
+	struct net_sockaddr *ctx_peer = net_sad(&ctx->peer);
 	enum net_verdict verdict;
 	struct net_pkt *ip;
 	int ret;
@@ -619,9 +623,9 @@ static int capture_send(const struct device *dev, struct net_if *iface,
 		return -ENOENT;
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.sa_family == AF_INET) {
+	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.ss_family == NET_AF_INET) {
 		len = sizeof(struct net_ipv4_hdr);
-	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.sa_family == AF_INET6) {
+	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.ss_family == NET_AF_INET6) {
 		len = sizeof(struct net_ipv6_hdr);
 	} else {
 		return -EINVAL;
@@ -636,24 +640,24 @@ static int capture_send(const struct device *dev, struct net_if *iface,
 	}
 
 	net_pkt_set_context(ip, ctx->context);
-	net_pkt_set_family(ip, ctx->local.sa_family);
+	net_pkt_set_family(ip, ctx->local.ss_family);
 	net_pkt_set_iface(ip, ctx->tunnel_iface);
 
-	ret = net_pkt_alloc_buffer(ip, len, IPPROTO_UDP, PKT_ALLOC_TIME);
+	ret = net_pkt_alloc_buffer(ip, len, NET_IPPROTO_UDP, PKT_ALLOC_TIME);
 	if (ret < 0) {
 		net_pkt_unref(ip);
 		return ret;
 	}
 
-	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.sa_family == AF_INET) {
+	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.ss_family == NET_AF_INET) {
 		net_pkt_set_ipv4_ttl(ip,
 				     net_if_ipv4_get_ttl(ctx->tunnel_iface));
 
-		ret = net_ipv4_create(ip, &net_sin(&ctx->local)->sin_addr,
-				      &net_sin(&ctx->peer)->sin_addr);
-	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.sa_family == AF_INET6) {
-		ret = net_ipv6_create(ip, &net_sin6(&ctx->local)->sin6_addr,
-				      &net_sin6(&ctx->peer)->sin6_addr);
+		ret = net_ipv4_create(ip, &net_sin(ctx_local)->sin_addr,
+				      &net_sin(ctx_peer)->sin_addr);
+	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.ss_family == NET_AF_INET6) {
+		ret = net_ipv6_create(ip, &net_sin6(ctx_local)->sin6_addr,
+				      &net_sin6(ctx_peer)->sin6_addr);
 	} else {
 		CODE_UNREACHABLE;
 	}
@@ -663,8 +667,8 @@ static int capture_send(const struct device *dev, struct net_if *iface,
 		return ret;
 	}
 
-	(void)net_udp_create(ip, net_sin(&ctx->local)->sin_port,
-			     net_sin(&ctx->peer)->sin_port);
+	(void)net_udp_create(ip, net_sin(ctx_local)->sin_port,
+			     net_sin(ctx_peer)->sin_port);
 
 	net_buf_frag_add(ip->buffer, pkt->buffer);
 	pkt->buffer = ip->buffer;
@@ -677,21 +681,21 @@ static int capture_send(const struct device *dev, struct net_if *iface,
 	net_pkt_set_context(pkt, NULL);
 	net_pkt_set_captured(pkt, true);
 	net_pkt_set_iface(pkt, ctx->tunnel_iface);
-	net_pkt_set_family(pkt, ctx->local.sa_family);
+	net_pkt_set_family(pkt, ctx->local.ss_family);
 	net_pkt_set_ipv6_ext_len(pkt, 0);
 
 	net_pkt_cursor_init(pkt);
 
-	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.sa_family == AF_INET) {
+	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.ss_family == NET_AF_INET) {
 		net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
 		net_pkt_set_ipv4_opts_len(pkt, 0);
 
-		net_ipv4_finalize(pkt, IPPROTO_UDP);
-	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.sa_family == AF_INET6) {
+		net_ipv4_finalize(pkt, NET_IPPROTO_UDP);
+	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.ss_family == NET_AF_INET6) {
 		net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv6_hdr));
 		net_pkt_set_ipv6_ext_opt_len(pkt, 0);
 
-		net_ipv6_finalize(pkt, IPPROTO_UDP);
+		net_ipv6_finalize(pkt, NET_IPPROTO_UDP);
 	} else {
 		CODE_UNREACHABLE;
 	}

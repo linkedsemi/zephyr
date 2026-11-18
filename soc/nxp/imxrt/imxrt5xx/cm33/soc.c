@@ -17,8 +17,8 @@
 #include <zephyr/linker/sections.h>
 #include <zephyr/logging/log.h>
 #include <soc.h>
-#include "fsl_power.h"
-#include "fsl_clock.h"
+#include <fsl_power.h>
+#include <fsl_clock.h>
 #include <fsl_cache.h>
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
@@ -27,17 +27,15 @@ LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 #include "flash_clock_setup.h"
 #endif
 
-#if CONFIG_USB_DC_NXP_LPCIP3511
-#include "usb_phy.h"
-#include "usb.h"
+#if CONFIG_USB_DC_NXP_LPCIP3511 || CONFIG_UDC_NXP_IP3511
+#include <usb_phy.h>
+#include <usb.h>
 #endif
 
 /* Board System oscillator settling time in us */
 #define BOARD_SYSOSC_SETTLING_US 100U
 /* Board xtal frequency in Hz */
 #define BOARD_XTAL_SYS_CLK_HZ    24000000U
-/* Core clock frequency: 198000000Hz */
-#define CLOCK_INIT_CORE_CLOCK    198000000U
 
 #define CTIMER_CLOCK_SOURCE(node_id)                                                               \
 	TO_CTIMER_CLOCK_SOURCE(DT_CLOCKS_CELL(node_id, name), DT_PROP(node_id, clk_source))
@@ -71,8 +69,8 @@ const clock_frg_clk_config_t g_frg0Config_clock_init = {
 const clock_frg_clk_config_t g_frg12Config_clock_init = {
 	.num = 12, .sfg_clock_src = kCLOCK_FrgMainClk, .divider = 255U, .mult = 167};
 
-#if CONFIG_USB_DC_NXP_LPCIP3511
-/* USB PHY condfiguration */
+#if CONFIG_USB_DC_NXP_LPCIP3511 || CONFIG_UDC_NXP_IP3511
+/* USB PHY configuration */
 #define BOARD_USB_PHY_D_CAL     (0x0CU)
 #define BOARD_USB_PHY_TXCAL45DP (0x06U)
 #define BOARD_USB_PHY_TXCAL45DM (0x06U)
@@ -99,6 +97,12 @@ extern void z_arm_pendsv(void);
 extern void sys_clock_isr(void);
 extern void z_arm_exc_spurious(void);
 
+#ifdef CONFIG_USE_SWITCH
+#define PENDSV_VEC z_arm_exc_spurious
+#else
+#define PENDSV_VEC z_arm_pendsv
+#endif
+
 __imx_boot_ivt_section void (*const image_vector_table[])(void) = {
 	(void (*)())(z_main_stack + CONFIG_MAIN_STACK_SIZE), /* 0x00 */
 	z_arm_reset,                                         /* 0x04 */
@@ -118,7 +122,7 @@ __imx_boot_ivt_section void (*const image_vector_table[])(void) = {
 	z_arm_svc,                      /* 0x2C */
 	z_arm_debug_monitor,            /* 0x30 */
 	(void (*)())image_vector_table, /* 0x34, imageLoadAddress. */
-	z_arm_pendsv,                   /* 0x38 */
+	PENDSV_VEC,                     /* 0x38 */
 #if defined(CONFIG_SYS_CLOCK_EXISTS) && defined(CONFIG_CORTEX_M_SYSTICK_INSTALL_ISR)
 	sys_clock_isr, /* 0x3C */
 #else
@@ -127,7 +131,7 @@ __imx_boot_ivt_section void (*const image_vector_table[])(void) = {
 };
 #endif /* CONFIG_NXP_IMXRT_BOOT_HEADER */
 
-#if CONFIG_USB_DC_NXP_LPCIP3511
+#if CONFIG_USB_DC_NXP_LPCIP3511 || CONFIG_UDC_NXP_IP3511
 
 static void usb_device_clock_init(void)
 {
@@ -177,7 +181,7 @@ static void usb_device_clock_init(void)
 	while (SYSCTL0->USB0CLKSTAT & SYSCTL0_USB0CLKSTAT_HOST_NEED_CLKST_MASK) {
 		__ASM("nop");
 	}
-	/* According to reference mannual, device mode setting has to be set by access
+	/* According to reference manual, device mode setting has to be set by access
 	 * usb host register
 	 */
 	USBHSH->PORTMODE |= USBHSH_PORTMODE_DEV_ENABLE_MASK;
@@ -280,7 +284,7 @@ void __weak rt5xx_clock_init(void)
 	CLOCK_AttachClk(kFRO_DIV4_to_FLEXCOMM0);
 #endif
 #endif
-#if CONFIG_USB_DC_NXP_LPCIP3511
+#if CONFIG_USB_DC_NXP_LPCIP3511 || CONFIG_UDC_NXP_IP3511
 	usb_device_clock_init();
 #endif
 
@@ -318,6 +322,10 @@ void __weak rt5xx_clock_init(void)
 	CLOCK_AttachClk(kFRO_DIV4_to_FLEXCOMM16);
 #endif
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm12), nxp_lpc_usart, okay)
+	/* Switch FLEXCOMM12 to FRG */
+	CLOCK_AttachClk(kFRG_to_FLEXCOMM12);
+#endif
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm12), nxp_lpc_spi, okay)
 	/* Switch FLEXCOMM12 to FRG */
 	CLOCK_AttachClk(kFRG_to_FLEXCOMM12);
 #endif
@@ -383,6 +391,12 @@ void __weak rt5xx_clock_init(void)
 	CLOCK_EnableClock(kCLOCK_Smartdma);
 #endif
 
+#if CONFIG_DSP_BACKEND_POWERQUAD
+	/* Power up PowerQuad SRAM */
+	POWER_DisablePD(kPDRUNCFG_PPD_PQ_SRAM);
+	POWER_ApplyPD();
+#endif
+
 	DT_FOREACH_STATUS_OKAY(nxp_lpc_ctimer, CTIMER_CLOCK_SETUP)
 
 	/* Set up dividers. */
@@ -441,7 +455,7 @@ void __weak rt5xx_clock_init(void)
 #endif
 
 	/* Set SystemCoreClock variable. */
-	SystemCoreClock = CLOCK_INIT_CORE_CLOCK;
+	SystemCoreClock = DT_PROP(DT_PATH(cpus, cpu_0), clock_frequency);
 
 	/* Set main clock to FRO as deep sleep clock by default. */
 	POWER_SetDeepSleepClock(kDeepSleepClk_Fro);

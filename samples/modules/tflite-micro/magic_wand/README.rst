@@ -32,7 +32,7 @@ Add the tflite-micro module to your West manifest and pull it:
     west config manifest.project-filter -- +tflite-micro
     west update
 
-The application can be built for the :ref:`litex-vexriscv` for
+The application can be built for the :zephyr:board:`litex_vexriscv` for
 emulation in Renode as follows:
 
 .. zephyr-app-commands::
@@ -54,7 +54,7 @@ start the emulator:
     https://github.com/renode/renode/releases/
 
 .. _Renode GitHub README:
-    https://github.com/renode/renode/blob/master/README.rst
+    https://github.com/renode/renode/blob/master/README.md
 
 Sample Output
 =============

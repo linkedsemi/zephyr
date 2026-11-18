@@ -1,29 +1,56 @@
 # SPDX-License-Identifier: Apache-2.0
+# Copyright 2024-2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
 
-set(SUPPORTED_EMU_PLATFORMS qemu)
+board_set_debugger_ifnset(pyocd)
+board_set_flasher_ifnset(pyocd)
+
+if(CONFIG_BOARD_MPS2_AN521_CPU0 OR CONFIG_BOARD_MPS2_AN521_CPU0_NS OR CONFIG_BOARD_MPS2_AN521_CPU1)
+  board_runner_args(pyocd "--target=mps2_an521")
+else()
+  board_runner_args(pyocd "--target=cortex_m")
+endif()
+
+include(${ZEPHYR_BASE}/boards/common/pyocd.board.cmake)
 
 if(CONFIG_BOARD_MPS2_AN385)
-  set(QEMU_CPU_TYPE_${ARCH} cortex-m3)
-  set(QEMU_FLAGS_${ARCH}
-    -cpu ${QEMU_CPU_TYPE_${ARCH}}
+  set(SUPPORTED_EMU_PLATFORMS qemu armfvp)
+  set(QEMU_CPU_TYPE cortex-m3)
+  set(QEMU_BOARD_FLAGS
+    -cpu ${QEMU_CPU_TYPE}
     -machine mps2-an385
-    -nographic
     -vga none
     )
+  set(ARMFVP_BIN_NAME FVP_MPS2_Cortex-M3)
+elseif(CONFIG_BOARD_MPS2_AN383)
+  set(SUPPORTED_EMU_PLATFORMS armfvp)
+  set(ARMFVP_BIN_NAME FVP_MPS2_Cortex-M0plus)
+  set(ARMFVP_FLAGS
+    -C armcortexm0plusct.NUM_MPU_REGION=8
+    -C armcortexm0plusct.USER=1
+    -C armcortexm0plusct.VTOR=1
+    )
+elseif(CONFIG_BOARD_MPS2_AN386)
+  set(SUPPORTED_EMU_PLATFORMS qemu armfvp)
+  set(ARMFVP_BIN_NAME FVP_MPS2_Cortex-M4)
+  set(QEMU_CPU_TYPE cortex-m4)
+  set(QEMU_BOARD_FLAGS
+    -cpu ${QEMU_CPU_TYPE}
+    -machine mps2-an386
+    -vga none
+    )
+elseif(CONFIG_BOARD_MPS2_AN500)
+  set(SUPPORTED_EMU_PLATFORMS armfvp)
+  set(ARMFVP_BIN_NAME FVP_MPS2_Cortex-M7)
 elseif(CONFIG_BOARD_MPS2_AN521_CPU0 OR CONFIG_BOARD_MPS2_AN521_CPU0_NS OR CONFIG_BOARD_MPS2_AN521_CPU1)
-  set(QEMU_CPU_TYPE_${ARCH} cortex-m33)
-  set(QEMU_FLAGS_${ARCH}
-    -cpu ${QEMU_CPU_TYPE_${ARCH}}
+  set(SUPPORTED_EMU_PLATFORMS qemu)
+  set(QEMU_CPU_TYPE cortex-m33)
+  set(QEMU_BOARD_FLAGS
+    -cpu ${QEMU_CPU_TYPE}
     -machine mps2-an521
-    -nographic
     -m 16
     -vga none
     )
-endif()
 
-board_set_debugger_ifnset(qemu)
-
-if(CONFIG_BOARD_MPS2_AN521_CPU0 OR CONFIG_BOARD_MPS2_AN521_CPU0_NS OR CONFIG_BOARD_MPS2_AN521_CPU1)
   # To enable a host tty switch between serial and pty
   #  -chardev serial,path=/dev/ttyS0,id=hostS0
   # pty is not available on Windows.
@@ -36,6 +63,8 @@ if(CONFIG_BOARD_MPS2_AN521_CPU0 OR CONFIG_BOARD_MPS2_AN521_CPU0_NS OR CONFIG_BOA
     # TF-M (Secure) & Zephyr (Non Secure) image (when running
     # in-tree tests).
     set(QEMU_KERNEL_OPTION "-device;loader,file=${CMAKE_BINARY_DIR}/zephyr/tfm_merged.hex")
+
+    set(ARMFVP_FLAGS ${ARMFVP_FLAGS} -a ${APPLICATION_BINARY_DIR}/zephyr/tfm_merged.hex)
   elseif(CONFIG_OPENAMP)
     set(QEMU_EXTRA_FLAGS "-device;loader,file=${REMOTE_ZEPHYR_DIR}/zephyr.elf")
   elseif(CONFIG_BOARD_MPS2_AN521_CPU1)
@@ -44,3 +73,18 @@ if(CONFIG_BOARD_MPS2_AN521_CPU0 OR CONFIG_BOARD_MPS2_AN521_CPU0_NS OR CONFIG_BOA
     list(APPEND QEMU_EXTRA_FLAGS "-device;loader,file=${PROJECT_BINARY_DIR}/${KERNEL_ELF_NAME}")
   endif()
 endif()
+
+set(ARMFVP_FLAGS ${ARMFVP_FLAGS}
+-C fvp_mps2.telnetterminal0.start_telnet=0
+-C fvp_mps2.telnetterminal1.start_telnet=0
+-C fvp_mps2.telnetterminal2.start_telnet=0
+-C fvp_mps2.UART0.out_file=-
+-C fvp_mps2.UART0.unbuffered_output=1
+-C fvp_mps2.UART1.out_file=-
+-C fvp_mps2.UART1.unbuffered_output=1
+-C fvp_mps2.UART2.out_file=-
+-C fvp_mps2.UART2.unbuffered_output=1
+-C fvp_mps2.mps2_visualisation.disable-visualisation=1
+)
+
+include(${ZEPHYR_BASE}/boards/common/qemu.board.cmake)

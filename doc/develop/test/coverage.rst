@@ -60,34 +60,36 @@ These steps will produce an HTML coverage report for a single application.
 
    .. code-block:: console
 
-      ninja -Cbuild run | tee log.log
-
-   or
-
-   .. code-block:: console
-
-      ninja -Cbuild run | tee log.log
+     $ ninja -Cbuild run | tee log.log
 
 #. Generate the gcov ``.gcda`` and ``.gcno`` files from the log file that was
-   saved::
+   saved:
+
+   .. code-block:: console
 
      $ python3 scripts/gen_gcov_files.py -i log.log
 
 #. Find the gcov binary placed in the SDK. You will need to pass the path to
    the gcov binary for the appropriate architecture when you later invoke
-   ``gcovr``::
+   ``gcovr``:
+
+   .. code-block:: console
 
      $ find $ZEPHYR_SDK_INSTALL_DIR -iregex ".*gcov"
 
-#. Create an output directory for the reports::
+#. Create an output directory for the reports:
 
-     $ mkdir -p gcov_report
+   .. code-block:: console
 
-#. Run ``gcovr`` to get the reports::
+     $ mkdir -p coverage-report
 
-     $ gcovr -r $ZEPHYR_BASE . --html -o gcov_report/coverage.html --html-details --gcov-executable <gcov_path_in_SDK>
+#. Run ``gcovr`` to get the reports:
 
-.. _coverage_posix:
+   .. code-block:: console
+
+     $ gcovr -r $ZEPHYR_BASE . --html -o coverage-report/coverage.html --html-details --gcov-executable <gcov_path_in_SDK>
+
+   .. _coverage_posix:
 
 Coverage reports using the POSIX architecture
 *********************************************
@@ -117,8 +119,8 @@ You may postprocess these with your preferred tools. For example:
 
    $ ./build/zephyr/zephyr.exe
    # Press Ctrl+C to exit
-   lcov --capture --directory ./ --output-file lcov.info -q --rc lcov_branch_coverage=1
-   genhtml lcov.info --output-directory lcov_html -q --ignore-errors source --branch-coverage --highlight --legend
+   $ lcov --capture --directory ./ --output-file lcov.info -q --rc lcov_branch_coverage=1
+   $ genhtml lcov.info --output-directory lcov_html -q --ignore-errors source --branch-coverage --highlight --legend
 
 .. note::
 
@@ -134,13 +136,17 @@ Zephyr's :ref:`twister script <twister_script>` can automatically
 generate a coverage report from the tests which were executed.
 You just need to invoke it with the ``--coverage`` command line option.
 
-For example, you may invoke::
+For example, you may invoke:
 
-    $ twister --coverage -p qemu_x86 -T tests/kernel
+.. code-block:: console
 
-or::
+    $ west twister --coverage -p qemu_x86 -T tests/kernel
 
-    $ twister --coverage -p native_sim -T tests/bluetooth
+or:
+
+.. code-block:: console
+
+    $ west twister --coverage -p native_sim -T tests/bluetooth
 
 which will produce ``twister-out/coverage/index.html`` report as well as
 the coverage data collected by ``gcovr`` tool in ``twister-out/coverage.json``.
@@ -148,12 +154,92 @@ the coverage data collected by ``gcovr`` tool in ``twister-out/coverage.json``.
 Other reports might be chosen with ``--coverage-tool`` and ``--coverage-formats``
 command line options.
 
-The process differs for unit tests, which are built with the host
-toolchain and require a different board::
+To generate code coverage report including Zephyr sources as well as your application
+code outside of Zephyr repository (see :ref:`Application Types <zephyr-app-types>`)
+call Twister from your project directory with ``--coverage-basedir $ZEPHYR_BASE``
+command line option, for example:
 
-    $ twister --coverage -p unit_testing -T tests/unit
+.. code-block:: console
+
+   $ west twister --coverage -p native_sim --coverage-basedir $ZEPHYR_BASE -T your_project_dir
+
+.. note::
+
+   By default, Twister calls ``gcovr`` tool which filters source files assuming real paths
+   are everywhere with `all symlinks resolved <gcovr_symlinks_>`_, so when your development
+   environment has directories with symlinks then, to avoid incomplete ``gcovr`` reports,
+   either your :ref:`ZEPHYR_BASE <important-build-vars>` should contain a real path,
+   or ``lcov`` tool used instead of ``gcovr`` with additional Twister command line
+   option ``--coverage-tool lcov``.
+
+The process differs for unit tests, which are built with the host
+toolchain and require a different board:
+
+.. code-block:: console
+
+   $ west twister --coverage -p unit_testing -T tests/unit
 
 which produces a report in the same location as non-unit testing.
+
+Per-test coverage matrix
+========================
+
+By default coverage is aggregated per test scenario. To attribute coverage
+down to individual :ref:`Ztest <test-framework>` test cases -- for example to
+answer "which tests exercised line X of ``foo.c``" -- pass ``--coverage-per-test``:
+
+.. code-block:: console
+
+   $ west twister -p mps2/an385 -T tests/kernel --coverage --coverage-tool lcov \
+       --coverage-per-test
+
+This enables :kconfig:option:`CONFIG_ZTEST_COVERAGE_PER_TEST`, which resets the
+gcov counters before each test case and dumps an isolated, test-tagged coverage
+artifact after it. On platforms that support semihosting (ARM, RISC-V and Xtensa
+targets under QEMU, such as ``mps2/an385``) the per-test data is written straight
+to the host filesystem, avoiding the large amount of serial console traffic that
+per-test dumping would otherwise produce; other platforms fall back to the serial
+console transport.
+
+In addition to the usual aggregated coverage report, this produces:
+
+* one ``<scenario>.<test>.info`` tracefile per test under each build's
+  ``coverage/tests/`` directory, and
+* ``twister-out/coverage/test_matrix.json``, a machine-readable matrix with a
+  ``by_line`` view (``{file: {line: [tests]}}``) and a ``by_test`` view
+  (``{test: {file: [lines]}}``).
+
+Per-test attribution is carried by the matrix (and its dashboard), not by the
+aggregated lcov report: each instance's coverage is collapsed to a single
+tracefile before aggregation, so the end-of-run reporting stays proportional to
+the number of instances rather than the total number of test cases.
+
+.. note::
+
+   ``--coverage-per-test`` requires the ``lcov`` coverage tool, because the
+   matrix relies on lcov's per-test ``TN`` tracefile records; ``gcovr`` has no
+   equivalent. It also implies ``--coverage``.
+
+Visualizing the matrix
+----------------------
+
+``test_matrix.json`` can be turned into a self-contained, interactive HTML
+dashboard with the standalone :zephyr_file:`scripts/gen_test_matrix_dashboard.py`
+script (it has no dependency on Twister and can be run on any previously
+generated matrix):
+
+.. code-block:: console
+
+   $ scripts/gen_test_matrix_dashboard.py -i twister-out/coverage/test_matrix.json
+
+This writes ``twister-out/coverage/test_matrix.html``, which lists -- per test
+-- how many files and lines it covers and how many lines it covers *uniquely*
+(that no other test reaches, useful for spotting redundant or load-bearing
+tests), and lets you drill into the files a test covers or look up which tests
+cover a given file and line.
+
+.. _gcovr_symlinks:
+   https://github.com/gcovr/gcovr/blob/main/doc/source/guide/filters.rst#filters-for-symlinks
 
 .. _gcov:
    https://gcc.gnu.org/onlinedocs/gcc/Gcov.html

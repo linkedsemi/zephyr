@@ -26,6 +26,7 @@ oscillators: clock-controller@4000 {
 		compatible = "nordic,nrf53-hfxo";
 		#clock-cells = <0>;
 		clock-frequency = <DT_FREQ_M(32)>;
+		startup-time-us = <1400>;
 	};
 };
 
@@ -65,6 +66,26 @@ clock: clock@5000 {
 	reg = <0x5000 0x1000>;
 	interrupts = <5 NRF_DEFAULT_IRQ_PRIORITY>;
 	status = "okay";
+
+	hfclk: hfclk {
+		compatible = "nordic,nrf-clock-hfclk";
+		status = "okay";
+	};
+
+	lfclk: lfclk {
+		compatible = "nordic,nrf-clock-lfclk";
+		status = "okay";
+	};
+
+	hfclk192m: hfclk192m {
+		compatible = "nordic,nrf-clock-hfclk192m";
+		status = "okay";
+	};
+
+	hfclkaudio: hfclkaudio {
+		compatible = "nordic,nrf-clock-hfclkaudio";
+		status = "okay";
+	};
 };
 
 power: power@5000 {
@@ -284,9 +305,12 @@ uart3: uart@c000 {
 adc: adc@e000 {
 	compatible = "nordic,nrf-saadc";
 	reg = <0xe000 0x1000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
 	interrupts = <14 NRF_DEFAULT_IRQ_PRIORITY>;
 	status = "disabled";
 	#io-channel-cells = <1>;
+	zephyr,pm-device-runtime-auto;
 };
 
 timer0: timer@f000 {
@@ -339,10 +363,12 @@ rtc1: rtc@15000 {
 	prescaler = <1>;
 };
 
-dppic: dppic@17000 {
+dppic0: dppic: dppic@17000 {
 	compatible = "nordic,nrf-dppic";
 	reg = <0x17000 0x1000>;
 	status = "okay";
+	channels = <32>;
+	groups = <6>;
 };
 
 wdt: wdt0: watchdog@18000 {
@@ -524,22 +550,6 @@ usbreg: regulator@37000 {
 	reg = <0x37000 0x1000>;
 	interrupts = <55 NRF_DEFAULT_IRQ_PRIORITY>;
 	status = "okay";
-};
-
-flash_controller: flash-controller@39000 {
-	compatible = "nordic,nrf53-flash-controller";
-	reg = <0x39000 0x1000>;
-	partial-erase;
-
-	#address-cells = <1>;
-	#size-cells = <1>;
-
-
-	flash0: flash@0 {
-		compatible = "soc-nv-flash";
-		erase-block-size = <4096>;
-		write-block-size = <4>;
-	};
 };
 
 kmu: kmu@39000 {

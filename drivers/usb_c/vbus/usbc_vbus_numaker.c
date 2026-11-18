@@ -97,7 +97,7 @@ static int numaker_vbus_discharge(const struct device *dev, bool enable)
 }
 
 /**
- * @brief Controls a pin that enables VBUS measurments
+ * @brief Controls a pin that enables VBUS measurements
  *
  * @retval 0 on success
  * @retval -EIO on failure
@@ -110,7 +110,7 @@ static int numaker_vbus_enable(const struct device *dev, bool enable)
 	return numaker_tcpc_vbus_enable(tcpc_dev, enable);
 }
 
-static const struct usbc_vbus_driver_api numaker_vbus_driver_api = {
+static DEVICE_API(usbc_vbus, numaker_vbus_driver_api) = {
 	.check_level = numaker_vbus_check_level,
 	.measure = numaker_vbus_measure,
 	.discharge = numaker_vbus_discharge,

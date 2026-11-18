@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright(c) 2022 Intel Corporation. All rights reserved.
+# Copyright (c) 2022 Intel Corporation. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
@@ -25,7 +25,7 @@ CMD_DOWNLOAD = "download"
 MAX_CMD_SZ = 16
 
 # Define the header format and size for
-# transmiting the firmware
+# transmitting the firmware
 PACKET_HEADER_FORMAT_FW = 'I 42s 32s'
 
 logging.basicConfig()
@@ -62,7 +62,8 @@ class cavstool_client():
         fname = os.path.basename(filename)
         fsize = os.path.getsize(filename)
 
-        md5_tx = hashlib.md5(open(filename,'rb').read()).hexdigest()
+        md5_tx = hashlib.md5(open(filename,'rb').read(),
+                             usedforsecurity=False).hexdigest()
 
         # Pack the header and the expecting packed size is 78 bytes.
         # The header by convention includes:

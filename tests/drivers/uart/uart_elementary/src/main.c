@@ -11,7 +11,11 @@
  * @}
  */
 
+#include <string.h>
+
 #include <zephyr/drivers/uart.h>
+#include <zephyr/pm/device_runtime.h>
+#include <zephyr/pm/pm.h>
 #include <zephyr/ztest.h>
 
 #if DT_NODE_EXISTS(DT_NODELABEL(dut))
@@ -28,6 +32,8 @@
 
 #define SLEEP_TIME_US 1000
 #define TEST_BUFFER_LEN 10
+
+#define UART_BAUDRATE DT_PROP_OR(UART_NODE, current_speed, 115200)
 
 static const struct device *const uart_dev = DEVICE_DT_GET(UART_NODE);
 
@@ -96,6 +102,7 @@ static void interrupt_driven_uart_callback_main_uart(const struct device *dev, v
 		if (uart_irq_tx_ready(dev)) {
 			uart_tx_interrupt_service(dev, &tx_byte_offset);
 		}
+		uart_irq_update(dev);
 	}
 }
 
@@ -121,6 +128,7 @@ static void interrupt_driven_uart_callback_aux_uart(const struct device *dev, vo
 		if (uart_irq_tx_ready(dev)) {
 			uart_tx_interrupt_service(dev, &tx_byte_offset_aux);
 		}
+		uart_irq_update(dev);
 	}
 }
 #endif /* CONFIG_DUAL_UART_TEST */
@@ -134,7 +142,7 @@ ZTEST(uart_elementary, test_uart_proper_configuration)
 
 	int err;
 	struct uart_config test_expected_uart_config;
-	struct uart_config test_uart_config = { .baudrate = 115200,
+	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
 						.parity = UART_CFG_PARITY_NONE,
 						.stop_bits = UART_CFG_STOP_BITS_1,
 						.data_bits = UART_CFG_DATA_BITS_8,
@@ -175,7 +183,7 @@ ZTEST(uart_elementary, test_uart_improper_configuration)
 	Z_TEST_SKIP_IFDEF(CONFIG_DUAL_UART_TEST);
 
 	int err;
-	struct uart_config test_uart_config = { .baudrate = 115200,
+	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
 						.parity = 7,
 						.stop_bits = UART_CFG_STOP_BITS_1,
 						.data_bits = UART_CFG_DATA_BITS_8,
@@ -184,7 +192,7 @@ ZTEST(uart_elementary, test_uart_improper_configuration)
 	err = uart_configure(uart_dev, &test_uart_config);
 	zassert_not_equal(
 		err, 0,
-		"'uart_configure' with incorrect configuration havent't raised an error, err=%d",
+		"'uart_configure' with incorrect configuration has not raised an error, err=%d",
 		err);
 }
 
@@ -195,7 +203,7 @@ ZTEST(uart_elementary, test_uart_improper_configuration)
 ZTEST(uart_elementary, test_uart_basic_transmission)
 {
 	int err;
-	struct uart_config test_uart_config = { .baudrate = 115200,
+	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
 						.parity = UART_CFG_PARITY_ODD,
 						.stop_bits = UART_CFG_STOP_BITS_1,
 						.data_bits = UART_CFG_DATA_BITS_8,
@@ -225,6 +233,105 @@ ZTEST(uart_elementary, test_uart_basic_transmission)
 			      test_buffer[index], test_pattern[index]);
 	}
 }
+
+#if defined(CONFIG_PM)
+static int pm_tx_offset;
+static int pm_rx_offset;
+static atomic_t pm_state_entered;
+
+static void pm_state_entry(enum pm_state state)
+{
+	ARG_UNUSED(state);
+
+	atomic_inc(&pm_state_entered);
+}
+
+static struct pm_notifier pm_light_sleep_notifier = {
+	.state_entry = pm_state_entry,
+};
+
+static void uart_pm_callback(const struct device *dev, void *user_data)
+{
+	int err;
+
+	uart_irq_update(dev);
+
+	err = uart_err_check(dev);
+	if (err != 0) {
+		uart_error_counter++;
+	}
+
+	while (uart_irq_is_pending(dev)) {
+		if (uart_irq_rx_ready(dev)) {
+			uart_rx_interrupt_service(dev, (uint8_t *)user_data, &pm_rx_offset);
+		}
+
+		if (uart_irq_tx_ready(dev)) {
+			uart_tx_interrupt_service(dev, &pm_tx_offset);
+		}
+
+		uart_irq_update(dev);
+	}
+}
+
+/*
+ * Test UART interrupt transmission across light sleep.
+ *
+ * First idle is after configure (fresh peripheral state). Second idle is after a
+ * completed IRQ TX/RX burst, when PM locks have been taken and released — a
+ * different driver state than post-configure alone.
+ */
+ZTEST(uart_elementary, test_uart_pm_light_sleep)
+{
+	int err;
+	struct uart_config test_uart_config = {.baudrate = UART_BAUDRATE,
+					       .parity = UART_CFG_PARITY_ODD,
+					       .stop_bits = UART_CFG_STOP_BITS_1,
+					       .data_bits = UART_CFG_DATA_BITS_8,
+					       .flow_ctrl = UART_CFG_FLOW_CTRL_RTS_CTS};
+
+	err = uart_configure(uart_dev, &test_uart_config);
+	zassert_equal(err, 0, "Unexpected error when configuring UART0: %d", err);
+
+	err = uart_irq_callback_user_data_set(uart_dev, uart_pm_callback, (void *)test_buffer);
+	zassert_equal(err, 0, "Unexpected error when setting callback %d", err);
+
+	pm_notifier_register(&pm_light_sleep_notifier);
+
+	for (int tx_cycle = 0; tx_cycle < 2; tx_cycle++) {
+		atomic_clear(&pm_state_entered);
+		k_sleep(K_MSEC(100));
+		zassert_true(atomic_get(&pm_state_entered) > 0,
+			     "System stayed active during the idle window");
+
+		pm_tx_offset = 0;
+		pm_rx_offset = 0;
+		uart_error_counter = 0;
+		memset(test_buffer, 0, sizeof(test_buffer));
+		uart_irq_err_enable(uart_dev);
+		uart_irq_rx_enable(uart_dev);
+		uart_irq_tx_enable(uart_dev);
+
+		/* wait for the tramission to finish (no polling is intentional) */
+		k_sleep(K_USEC(100 * SLEEP_TIME_US));
+
+		uart_irq_tx_disable(uart_dev);
+		uart_irq_rx_disable(uart_dev);
+		uart_irq_err_disable(uart_dev);
+
+		zassert_equal(uart_error_counter, 0, "UART errors reported after light sleep: %d",
+			      uart_error_counter);
+
+		for (int index = 0; index < TEST_BUFFER_LEN; index++) {
+			zassert_equal(test_buffer[index], test_pattern[index],
+				      "Received data byte %d does not match pattern 0x%x != 0x%x",
+				      index, test_buffer[index], test_pattern[index]);
+		}
+	}
+
+	pm_notifier_unregister(&pm_light_sleep_notifier);
+}
+#endif /* CONFIG_PM */
 #else
 /*
  * Test UART interrupt based transmission between two ports
@@ -232,14 +339,14 @@ ZTEST(uart_elementary, test_uart_basic_transmission)
 ZTEST(uart_elementary, test_uart_dual_port_transmission)
 {
 	int err;
-	struct uart_config test_uart_config = { .baudrate = 115200,
+	struct uart_config test_uart_config = { .baudrate = UART_BAUDRATE,
 						.parity = UART_CFG_PARITY_EVEN,
 						.stop_bits = UART_CFG_STOP_BITS_2,
 						.data_bits = UART_CFG_DATA_BITS_8,
 						.flow_ctrl = UART_CFG_FLOW_CTRL_NONE };
 
 #if defined(CONFIG_SETUP_MISMATCH_TEST)
-	struct uart_config test_uart_config_aux = { .baudrate = 9600,
+	struct uart_config test_uart_config_aux = { .baudrate = CONFIG_UART_BAUDRATE_MISMATCH,
 						    .parity = UART_CFG_PARITY_EVEN,
 						    .stop_bits = UART_CFG_STOP_BITS_2,
 						    .data_bits = UART_CFG_DATA_BITS_8,
@@ -268,14 +375,24 @@ ZTEST(uart_elementary, test_uart_dual_port_transmission)
 					      (void *)test_buffer_aux);
 	zassert_equal(err, 0, "Unexpected error when setting user data for UART1 callback %d", err);
 
+	if (IS_ENABLED(CONFIG_PM_DEVICE_RUNTIME)) {
+		int usage = pm_device_runtime_usage(uart_dev);
+		int usage_aux = pm_device_runtime_usage(uart_dev_aux);
+
+		zassert_equal(usage, 0);
+		zassert_equal(usage_aux, 0);
+		pm_device_runtime_get(uart_dev);
+		pm_device_runtime_get(uart_dev_aux);
+	}
+
 	uart_irq_err_enable(uart_dev);
 	uart_irq_err_enable(uart_dev_aux);
 
-	uart_irq_tx_enable(uart_dev);
-	uart_irq_tx_enable(uart_dev_aux);
-
 	uart_irq_rx_enable(uart_dev);
 	uart_irq_rx_enable(uart_dev_aux);
+
+	uart_irq_tx_enable(uart_dev);
+	uart_irq_tx_enable(uart_dev_aux);
 
 	/* wait for the tramission to finish (no polling is intentional) */
 	k_sleep(K_USEC(100 * SLEEP_TIME_US));
@@ -286,6 +403,17 @@ ZTEST(uart_elementary, test_uart_dual_port_transmission)
 	uart_irq_rx_disable(uart_dev_aux);
 	uart_irq_err_disable(uart_dev);
 	uart_irq_err_disable(uart_dev_aux);
+
+	if (IS_ENABLED(CONFIG_PM_DEVICE_RUNTIME)) {
+		pm_device_runtime_put(uart_dev);
+		pm_device_runtime_put(uart_dev_aux);
+
+		int usage = pm_device_runtime_usage(uart_dev);
+		int usage_aux = pm_device_runtime_usage(uart_dev_aux);
+
+		zassert_equal(usage, 0);
+		zassert_equal(usage_aux, 0);
+	}
 
 #if defined(CONFIG_SETUP_MISMATCH_TEST)
 	TC_PRINT("Mismatched configuration test\n");

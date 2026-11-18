@@ -4,13 +4,18 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_INPUT_KBD_MATRIX_H_
-#define ZEPHYR_INCLUDE_INPUT_KBD_MATRIX_H_
+/**
+ * @file
+ * @ingroup input_kbd_matrix
+ * @brief Main header file for keyboard matrix input devices.
+ */
+
+#ifndef ZEPHYR_INCLUDE_INPUT_INPUT_KBD_MATRIX_H_
+#define ZEPHYR_INCLUDE_INPUT_INPUT_KBD_MATRIX_H_
 
 /**
- * @brief Keyboard Matrix API
- * @defgroup input_kbd_matrix Keyboard Matrix API
- * @ingroup io_interfaces
+ * @defgroup input_kbd_matrix Keyboard Matrix
+ * @ingroup input_interface
  * @{
  */
 
@@ -19,7 +24,7 @@
 #include <zephyr/pm/device.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/util.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/toolchain.h>
 
 /** Special drive_column argument for not driving any column */
@@ -98,7 +103,7 @@ struct input_kbd_matrix_api {
 	 * interrupts row pin changes.
 	 *
 	 * @param dev Pointer to the keyboard matrix device.
-	 * @param enable Whether detection mode has to be enabled or disabled.
+	 * @param enabled Whether detection mode has to be enabled or disabled.
 	 */
 	void (*set_detect_mode)(const struct device *dev, bool enabled);
 };
@@ -113,6 +118,7 @@ struct input_kbd_matrix_common_config {
 	uint8_t row_size;
 	uint8_t col_size;
 	uint32_t poll_period_us;
+	uint32_t stable_poll_period_us;
 	uint32_t poll_timeout_ms;
 	uint32_t debounce_down_us;
 	uint32_t debounce_up_us;
@@ -191,7 +197,9 @@ struct input_kbd_matrix_common_config {
 		.api = _api, \
 		.row_size = _row_size, \
 		.col_size = _col_size, \
-		.poll_period_us = DT_PROP(node_id, poll_period_ms) * USEC_PER_MSEC, \
+		.poll_period_us = DT_PROP(node_id, poll_period_us), \
+		.stable_poll_period_us = DT_PROP_OR(node_id, stable_poll_period_us, \
+						    DT_PROP(node_id, poll_period_us)), \
 		.poll_timeout_ms = DT_PROP(node_id, poll_timeout_ms), \
 		.debounce_down_us = DT_PROP(node_id, debounce_down_ms) * USEC_PER_MSEC, \
 		.debounce_up_us = DT_PROP(node_id, debounce_up_ms) * USEC_PER_MSEC, \
@@ -324,6 +332,41 @@ int input_kbd_matrix_pm_action(const struct device *dev,
 			       enum pm_device_action action);
 #endif
 
+/**
+ * @brief Check whether the current keyboard matrix state has ghost keys.
+ *
+ * @param dev Keyboard matrix device instance.
+ *
+ * @retval true  Ghosting key detected.
+ * @retval false No ghosting key detected.
+ */
+bool input_kbd_matrix_ghosting(const struct device *dev);
+
+/**
+ * @brief Update the keyboard matrix state and apply debouncing.
+ *
+ * The driver must first fill @ref input_kbd_matrix_common_config and
+ * @ref input_kbd_matrix_common_data for the kbd matrix.
+ * This function then updates the stable and unstable states,
+ * performs per-key debouncing, and reports key events to the input subsystem.
+ *
+ * @param dev Keyboard matrix device instance.
+ */
+void input_kbd_matrix_update_state(const struct device *dev);
+
+/**
+ * @brief Returns true if the matrix is considered active.
+ *
+ * Returns true if the matrix is considered active, that is if either a key is
+ * pressed or waiting to be debounced or released.
+ *
+ * @param dev Keyboard matrix device instance.
+ *
+ * @retval true  The matrix is a active.
+ * @retval false The matrix is idle, all keys have been released.
+ */
+bool input_kbd_matrix_active(const struct device *dev);
+
 /** @} */
 
-#endif /* ZEPHYR_INCLUDE_INPUT_KBD_MATRIX_H_ */
+#endif /* ZEPHYR_INCLUDE_INPUT_INPUT_KBD_MATRIX_H_ */

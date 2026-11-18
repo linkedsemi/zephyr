@@ -13,4 +13,15 @@ config COMPILER_ISA_THUMB2
 
 endif
 
+if SPI_NOR
+
+choice SPI_NOR_SFDP
+	default SPI_NOR_SFDP_DEVICETREE
+endchoice
+
+endif
+
+configdefault ISR_STACK_SIZE
+	default 512
+
 endif # BOARD_QEMU_CORTEX_R5

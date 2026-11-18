@@ -19,20 +19,23 @@
 		zephyr,shell-uart = &usart3;
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
-		zephyr,ccm = &ccm0;
+		zephyr,dtcm = &ccm0;
 		zephyr,code-partition = &slot0_partition;
 	};
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led_1: led_1 {
 			gpios = <&gpiob 0 GPIO_ACTIVE_HIGH>;
 			label = "User LD1";
 		};
+
 		blue_led_1: led_2 {
 			gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
 		};
+
 		red_led_1: led_3 {
 			gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
 			label = "User LD3";
@@ -41,6 +44,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -55,6 +59,7 @@
 		sw0 = &user_button;
 		watchdog0 = &iwdg;
 		die-temp0 = &die_temp;
+		rtc = &rtc;
 		volt-sensor0 = &vref;
 		volt-sensor1 = &vbat;
 	};
@@ -87,11 +92,14 @@
 	apb2-prescaler = <2>;
 };
 
+&adc123_common {
+	st,adc-prescaler = <2>;
+	status = "okay";
+};
+
 &adc1 {
 	pinctrl-0 = <&adc1_in0_pa0>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <2>;
 	status = "okay";
 };
 
@@ -108,6 +116,8 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -115,6 +125,8 @@
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pb10 &i2c2_sda_pb11>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 10 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 11 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -132,6 +144,7 @@
 	current-speed = <115200>;
 	status = "okay";
 };
+
 &usart6 {
 	pinctrl-0 = <&usart6_tx_pg14 &usart6_rx_pg9>;
 	pinctrl-names = "default";
@@ -157,7 +170,7 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
+	clocks = <&rcc STM32_CLOCK(APB1, 28)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
@@ -176,55 +189,76 @@ zephyr_udc0: &usbotg_fs {
 
 &mac {
 	status = "okay";
-	pinctrl-0 = <&eth_mdc_pc1
-		     &eth_rxd0_pc4
+	pinctrl-0 = <&eth_rxd0_pc4
 		     &eth_rxd1_pc5
 		     &eth_ref_clk_pa1
-		     &eth_mdio_pa2
 		     &eth_crs_dv_pa7
 		     &eth_tx_en_pg11
 		     &eth_txd0_pg13
 		     &eth_txd1_pb13>;
 	pinctrl-names = "default";
+	phy-connection-type = "rmii";
+	phy-handle = <&eth_phy>;
+};
+
+&mdio {
+	status = "okay";
+	pinctrl-0 = <&eth_mdio_pa2 &eth_mdc_pc1>;
+	pinctrl-names = "default";
+
+	eth_phy: ethernet-phy@0 {
+		compatible = "ethernet-phy";
+		reg = <0x00>;
+	};
 };
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 
-		/* 64KB for bootloader */
+		/* 32KB for bootloader */
 		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "mcuboot";
-			reg = <0x00000000 DT_SIZE_K(64)>;
+			reg = <0x00000000 DT_SIZE_K(32)>;
 			read-only;
 		};
 
-		/* storage: 64KB for settings */
-		storage_partition: partition@10000 {
-			label = "storage";
-			reg = <0x00010000 DT_SIZE_K(64)>;
-		};
+		/*
+		 * nvs subsystem requires 2 sectors with a max total of 32K
+		 * On F4 series, the only option is to use the following
+		 * partition, which is compatible with mcuboot usage.
+		 * Keep it commented in order it is not used by CI.
+		 *
+		 * storage_partition: partition@8000 {
+		 *	compatible = "zephyr,mapped-partition";
+		 *	label = "storage";
+		 *	reg = <0x0008000 DT_SIZE_K(32)>;
+		 * };
+		 */
 
 		/* application image slot: 256KB */
 		slot0_partition: partition@20000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x00020000 DT_SIZE_K(256)>;
 		};
 
 		/* backup slot: 256KB */
 		slot1_partition: partition@60000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
 			reg = <0x00060000 DT_SIZE_K(256)>;
 		};
 
 		/* swap slot: 128KB */
 		scratch_partition: partition@a0000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-scratch";
 			reg = <0x000a0000 DT_SIZE_K(128)>;
 		};
-
 	};
 };
 

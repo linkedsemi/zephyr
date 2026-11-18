@@ -7,6 +7,7 @@
 #define DT_DRV_COMPAT atmel_sam0_usb
 
 #define LOG_LEVEL CONFIG_USB_DRIVER_LOG_LEVEL
+#include <zephyr/sys/minmax.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(usb_dc_sam0);
 
@@ -608,7 +609,7 @@ int usb_dc_ep_write(uint8_t ep, const uint8_t *buf, uint32_t len, uint32_t *ret_
 		return -EAGAIN;
 	}
 
-	len = Z_MIN(len, capacity);
+	len = min(len, capacity);
 
 	/* Note that this code does not use the hardware's
 	 * multi-packet and automatic zero-length packet features as

@@ -27,14 +27,17 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		green_led: led_1 {
 			gpios = <&gpiob 0 GPIO_ACTIVE_HIGH>;
 			label = "User LD1";
 		};
+
 		blue_led: led_2 {
 			gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
 		};
+
 		red_led: led_3 {
 			gpios = <&gpiob 14 GPIO_ACTIVE_HIGH>;
 			label = "User LD3";
@@ -43,6 +46,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -64,10 +68,6 @@
 &clk_hse {
 	clock-frequency = <DT_FREQ_M(8)>;
 	status = "okay";
-};
-
-&clk_hsi {
-	status = "disabled";
 };
 
 &clk_lsi {
@@ -94,16 +94,20 @@
 &sdmmc1 {
 	status = "okay";
 	pinctrl-0 = <&sdmmc1_d0_pc8 &sdmmc1_d1_pc9 &sdmmc1_d2_pc10
-		&sdmmc1_d3_pc11 &sdmmc1_ck_pc12 &sdmmc1_cmd_pd2>;
+		     &sdmmc1_d3_pc11 &sdmmc1_ck_pc12 &sdmmc1_cmd_pd2>;
 	pinctrl-names = "default";
 	cd-gpios = <&gpioi 15 GPIO_ACTIVE_LOW>;
+	disk-name = "SD";
+};
+
+&adc123_common {
+	st,adc-prescaler = <2>;
+	status = "okay";
 };
 
 &adc1 {
 	pinctrl-0 = <&adc1_in3_pa3 &adc1_in10_pc0>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <2>;
 	status = "okay";
 };
 
@@ -116,6 +120,8 @@
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pf1 &i2c2_sda_pf0>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiof 1 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiof 0 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -143,6 +149,8 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 };
 
@@ -177,8 +185,8 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB1 0x10000000>,
-		<&rcc STM32_SRC_LSI RTC_SEL(2)>;
+	clocks = <&rcc STM32_CLOCK(APB1, 28)>,
+		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 };
 
@@ -209,21 +217,21 @@ zephyr_udc0: &usbotg_fs {
 &quadspi {
 	pinctrl-names = "default";
 	pinctrl-0 = <&quadspi_clk_pb2 &quadspi_bk1_ncs_pb6
-				&quadspi_bk1_io0_pd11 &quadspi_bk1_io1_pd12
-				&quadspi_bk1_io2_pe2 &quadspi_bk1_io3_pd13>;
+		     &quadspi_bk1_io0_pd11 &quadspi_bk1_io1_pd12
+		     &quadspi_bk1_io2_pe2 &quadspi_bk1_io3_pd13>;
 	flash-id = <1>;
 	status = "okay";
 };
 
 &flash0 {
-
 	partitions {
-		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+		ranges;
 
 		/* sectors 0-3 */
 		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "mcuboot";
 			reg = <0x00000000 DT_SIZE_K(64)>;
 			read-only;
@@ -231,24 +239,28 @@ zephyr_udc0: &usbotg_fs {
 
 		/* sector 4 */
 		storage_partition: partition@10000 {
+			compatible = "zephyr,mapped-partition";
 			label = "storage";
 			reg = <0x00010000 DT_SIZE_K(64)>;
 		};
 
 		/* sector 5 */
 		slot0_partition: partition@20000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-0";
 			reg = <0x00020000 DT_SIZE_K(128)>;
 		};
 
 		/* sector 6 */
 		slot1_partition: partition@40000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-1";
 			reg = <0x00040000 DT_SIZE_K(128)>;
 		};
 
 		/* sector 7 */
 		scratch_partition: partition@60000 {
+			compatible = "zephyr,mapped-partition";
 			label = "image-scratch";
 			reg = <0x00060000 DT_SIZE_K(128)>;
 		};

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2023 The Chromium OS Authors
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -30,9 +31,16 @@ LOG_MODULE_DECLARE(usbc_stack, CONFIG_USBC_STACK_LOG_LEVEL);
 void tc_unattached_src_entry(void *obj)
 {
 	LOG_INF("Unattached.SRC");
+
+#ifdef CONFIG_USBC_CSM_DRP
+	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
+
+	/* Start DRP toggle timer with tDRP Source time */
+	usbc_timer_start_with_value(&tc->tc_t_drp_toggle, TC_T_DRP_SRC_MS);
+#endif
 }
 
-void tc_unattached_src_run(void *obj)
+enum smf_state_result tc_unattached_src_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
@@ -45,8 +53,25 @@ void tc_unattached_src_run(void *obj)
 	 *   SRC.Ra will not be checked.
 	 */
 	if (tcpc_is_cc_at_least_one_rd(tc->cc1, tc->cc2)) {
+#ifdef CONFIG_USBC_CSM_DRP
+		/* Stop DRP toggle timer when CC connection detected */
+		usbc_timer_stop(&tc->tc_t_drp_toggle);
+#endif
 		tc_set_state(dev, TC_ATTACH_WAIT_SRC_STATE);
+		return SMF_EVENT_HANDLED;
 	}
+
+#ifdef CONFIG_USBC_CSM_DRP
+	/* Check if DRP toggle timer expired - transition to Unattached.SNK */
+	if (usbc_timer_expired(&tc->tc_t_drp_toggle)) {
+		tc_set_state(dev, TC_UNATTACHED_SNK_STATE);
+		/* Execute transition immediately to improve DRP timing accuracy */
+		usbc_bypass_next_sleep(tc->dev);
+		return SMF_EVENT_HANDLED;
+	}
+#endif
+
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -84,7 +109,7 @@ void tc_unattached_wait_src_entry(void *obj)
 	usbc_timer_start(&tc->tc_t_vconn_off);
 }
 
-void tc_unattached_wait_src_run(void *obj)
+enum smf_state_result tc_unattached_wait_src_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
@@ -93,6 +118,7 @@ void tc_unattached_wait_src_run(void *obj)
 	if (usbc_timer_expired(&tc->tc_t_vconn_off)) {
 		tc_set_state(dev, TC_UNATTACHED_SRC_STATE);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 void tc_unattached_wait_src_exit(void *obj)
@@ -122,14 +148,19 @@ void tc_unattached_wait_src_exit(void *obj)
 void tc_attach_wait_src_entry(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
+	const struct device *dev = tc->dev;
+	struct usbc_port_data *data = dev->data;
+	const struct device *vbus = data->vbus;
 
 	LOG_INF("AttachWait.SRC");
 
 	/* Initialize the cc state to open */
 	tc->cc_state = TC_CC_NONE;
+
+	usbc_vbus_enable(vbus, true);
 }
 
-void tc_attach_wait_src_run(void *obj)
+enum smf_state_result tc_attach_wait_src_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
@@ -144,20 +175,20 @@ void tc_attach_wait_src_run(void *obj)
 	} else {
 		/* No UFP */
 		tc_set_state(dev, TC_UNATTACHED_SRC_STATE);
-		return;
+		return SMF_EVENT_HANDLED;
 	}
 
 	/* Debounce the cc state */
 	if (new_cc_state != tc->cc_state) {
-		/* Start debouce timer */
+		/* Start debounce timer */
 		usbc_timer_start(&tc->tc_t_cc_debounce);
 		tc->cc_state = new_cc_state;
 	}
 
 	/* Wait for CC debounce */
 	if (usbc_timer_running(&tc->tc_t_cc_debounce) &&
-		!usbc_timer_expired(&tc->tc_t_cc_debounce)) {
-		return;
+	    !usbc_timer_expired(&tc->tc_t_cc_debounce)) {
+		return SMF_EVENT_PROPAGATE;
 	}
 
 	/*
@@ -170,6 +201,7 @@ void tc_attach_wait_src_run(void *obj)
 			tc_set_state(dev, TC_ATTACHED_SRC_STATE);
 		}
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 void tc_attach_wait_src_exit(void *obj)
@@ -264,7 +296,7 @@ void tc_attached_src_entry(void *obj)
 	}
 }
 
-void tc_attached_src_run(void *obj)
+enum smf_state_result tc_attached_src_run(void *obj)
 {
 	struct tc_sm_t *tc = (struct tc_sm_t *)obj;
 	const struct device *dev = tc->dev;
@@ -294,6 +326,7 @@ void tc_attached_src_run(void *obj)
 			tc_set_state(dev, TC_UNATTACHED_SRC_STATE);
 		}
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 void tc_attached_src_exit(void *obj)

@@ -43,7 +43,7 @@ static int lis2de12_enable_xl_int(const struct device *dev, int enable)
 		return ret;
 	}
 
-	val.i1_zyxda = 1;
+	val.i1_zyxda = enable ? 1 : 0;
 
 	return lis2de12_pin_int1_config_set(ctx, &val);
 }
@@ -101,9 +101,12 @@ static void lis2de12_handle_interrupt(const struct device *dev)
 			break;
 		}
 
-		if ((status.zyxda) && (lis2de12->handler_drdy_acc != NULL)) {
-			lis2de12->handler_drdy_acc(dev, lis2de12->trig_drdy_acc);
+		if (lis2de12->handler_drdy_acc == NULL) {
+			/* ZYXDA is only cleared by reading the output registers */
+			break;
 		}
+
+		lis2de12->handler_drdy_acc(dev, lis2de12->trig_drdy_acc);
 	}
 
 	gpio_pin_interrupt_configure_dt(lis2de12->drdy_gpio,
@@ -157,8 +160,7 @@ int lis2de12_init_interrupt(const struct device *dev)
 
 	/* setup data ready gpio interrupt */
 	if (!gpio_is_ready_dt(lis2de12->drdy_gpio)) {
-		LOG_ERR("Cannot get pointer to drdy_gpio device (%p)",
-			lis2de12->drdy_gpio);
+		LOG_ERR_DEVICE_NOT_READY(lis2de12->drdy_gpio->port);
 		return -EINVAL;
 	}
 

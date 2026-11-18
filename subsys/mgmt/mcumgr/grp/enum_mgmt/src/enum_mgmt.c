@@ -47,6 +47,7 @@ struct enum_mgmt_details_arg {
 	zcbor_state_t *zse;
 	uint16_t *allowed_group_ids;
 	uint16_t allowed_group_id_size;
+	uint16_t groups;
 #if defined(CONFIG_MCUMGR_GRP_ENUM_DETAILS_HOOK)
 	enum mgmt_cb_return status;
 	int32_t err_rc;
@@ -62,6 +63,25 @@ static bool enum_mgmt_cb_count(const struct mgmt_group *group, void *user_data)
 
 	return true;
 }
+
+#ifdef CONFIG_MCUMGR_GRP_ENUM_DETAILS
+static bool enum_mgmt_cb_count_limited(const struct mgmt_group *group, void *user_data)
+{
+	struct enum_mgmt_details_arg *data = (struct enum_mgmt_details_arg *)user_data;
+	uint16_t i = 0;
+
+	while (i < data->allowed_group_id_size) {
+		if (data->allowed_group_ids[i] == group->mg_group_id) {
+			++data->groups;
+			break;
+		}
+
+		++i;
+	}
+
+	return true;
+}
+#endif
 
 static bool enum_mgmt_cb_single(const struct mgmt_group *group, void *user_data)
 {
@@ -303,7 +323,6 @@ static int enum_mgmt_details(struct smp_streamer *ctxt)
 {
 	zcbor_state_t *zse = ctxt->writer->zs;
 	zcbor_state_t *zsd = ctxt->reader->zs;
-	uint32_t count = 0;
 	bool ok;
 	size_t backup_element_count_reader = zsd->elem_count;
 	size_t entries = 0;
@@ -313,6 +332,7 @@ static int enum_mgmt_details(struct smp_streamer *ctxt)
 		.zse = zse,
 		.allowed_group_ids = NULL,
 		.allowed_group_id_size = 0,
+		.groups = 0,
 #if defined(CONFIG_MCUMGR_GRP_ENUM_DETAILS_HOOK)
 		.status = MGMT_CB_OK,
 #endif
@@ -351,7 +371,7 @@ static int enum_mgmt_details(struct smp_streamer *ctxt)
 	if (entries > 0) {
 		/* Return details on selected groups only */
 #ifdef CONFIG_MCUMGR_GRP_ENUM_DETAILS_BUFFER_TYPE_HEAP
-		uint16_t *entry_list = malloc(sizeof(uint16_t) * entries);
+		uint16_t *entry_list = k_malloc(sizeof(uint16_t) * entries);
 #else
 		uint16_t entry_list[CONFIG_MCUMGR_GRP_ENUM_DETAILS_BUFFER_TYPE_STACK_ENTRIES];
 #endif
@@ -375,14 +395,16 @@ static int enum_mgmt_details(struct smp_streamer *ctxt)
 
 		if (!ok) {
 #ifdef CONFIG_MCUMGR_GRP_ENUM_DETAILS_BUFFER_TYPE_HEAP
-			free(entry_list);
+			k_free(entry_list);
 #endif
 
 			return MGMT_ERR_EINVAL;
 		}
 
+		mgmt_groups_foreach(enum_mgmt_cb_count_limited, (void *)&arguments);
+
 		ok = zcbor_tstr_put_lit(zse, "groups") &&
-		     zcbor_list_start_encode(zse, count);
+		     zcbor_list_start_encode(zse, arguments.groups);
 
 		if (!ok) {
 			goto cleanup;
@@ -392,7 +414,7 @@ static int enum_mgmt_details(struct smp_streamer *ctxt)
 
 cleanup:
 #ifdef CONFIG_MCUMGR_GRP_ENUM_DETAILS_BUFFER_TYPE_HEAP
-		free(entry_list);
+		k_free(entry_list);
 #endif
 
 		if (!ok) {
@@ -400,10 +422,10 @@ cleanup:
 		}
 	} else {
 		/* Return details on all groups */
-		mgmt_groups_foreach(enum_mgmt_cb_count, (void *)&count);
+		mgmt_groups_foreach(enum_mgmt_cb_count, (void *)&arguments.groups);
 
 		ok = zcbor_tstr_put_lit(zse, "groups") &&
-		     zcbor_list_start_encode(zse, count);
+		     zcbor_list_start_encode(zse, arguments.groups);
 
 		if (!ok) {
 			goto failure;
@@ -433,7 +455,7 @@ cleanup:
 	}
 #endif
 
-	ok = zcbor_list_end_encode(zse, count);
+	ok = zcbor_list_end_encode(zse, arguments.groups);
 
 failure:
 	return ok ? MGMT_ERR_EOK : MGMT_ERR_ECORRUPT;

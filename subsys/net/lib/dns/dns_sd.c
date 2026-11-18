@@ -14,6 +14,8 @@
 
 #include <zephyr/net/net_context.h>
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
+#include <zephyr/net/socket.h>
 #include <zephyr/net/dns_sd.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/kernel.h>
@@ -297,6 +299,11 @@ bool rec_is_valid(const struct dns_sd_rec *inst)
 	;
 }
 
+bool dns_sd_rec_is_valid(const struct dns_sd_rec *rec)
+{
+	return rec_is_valid(rec);
+}
+
 int add_a_record(const struct dns_sd_rec *inst, uint32_t ttl,
 		 uint16_t host_offset, uint32_t addr, uint8_t *buf,
 		 uint16_t buf_offset, uint16_t buf_size)
@@ -327,19 +334,19 @@ int add_a_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	/* insert a pointer to the instance + service name */
 	inst_offs = host_offset;
 	inst_offs |= DNS_SD_PTR_MASK;
-	inst_offs = htons(inst_offs);
+	inst_offs = net_htons(inst_offs);
 	memcpy(&buf[offset], &inst_offs, sizeof(inst_offs));
 	offset += sizeof(inst_offs);
 
 	rr = (struct dns_rr *)&buf[offset];
-	rr->type = htons(DNS_RR_TYPE_A);
-	rr->class_ = htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
-	rr->ttl = htonl(ttl);
-	rr->rdlength = htons(sizeof(*rdata));
+	rr->type = net_htons(DNS_RR_TYPE_A);
+	rr->class_ = net_htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
+	rr->ttl = net_htonl(ttl);
+	rr->rdlength = net_htons(sizeof(*rdata));
 	offset += sizeof(*rr);
 
 	rdata = (struct dns_a_rdata *)&buf[offset];
-	rdata->address = htonl(addr);
+	rdata->address = net_htonl(addr);
 	offset += sizeof(*rdata);
 
 	__ASSERT_NO_MSG(total_size == offset - buf_offset);
@@ -439,10 +446,10 @@ int add_ptr_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	__ASSERT_NO_MSG(svc_offs + sp_size == offset);
 
 	rr = (struct dns_rr *)&buf[offset];
-	rr->type = htons(DNS_RR_TYPE_PTR);
-	rr->class_ = htons(DNS_CLASS_IN);
-	rr->ttl = htonl(ttl);
-	rr->rdlength = htons(
+	rr->type = net_htons(DNS_RR_TYPE_PTR);
+	rr->class_ = net_htons(DNS_CLASS_IN);
+	rr->ttl = net_htonl(ttl);
+	rr->rdlength = net_htons(
 		DNS_LABEL_LEN_SIZE +
 		strlen(inst->instance)
 		+ DNS_POINTER_SIZE);
@@ -457,7 +464,7 @@ int add_ptr_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	offset += label_size;
 
 	svc_offs |= DNS_SD_PTR_MASK;
-	svc_offs = htons(svc_offs);
+	svc_offs = net_htons(svc_offs);
 	memcpy(&buf[offset], &svc_offs, sizeof(svc_offs));
 	offset += sizeof(svc_offs);
 
@@ -495,15 +502,15 @@ int add_txt_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	/* insert a pointer to the instance + service name */
 	inst_offs = instance_offset;
 	inst_offs |= DNS_SD_PTR_MASK;
-	inst_offs = htons(inst_offs);
+	inst_offs = net_htons(inst_offs);
 	memcpy(&buf[offset], &inst_offs, sizeof(inst_offs));
 	offset += sizeof(inst_offs);
 
 	rr = (struct dns_rr *)&buf[offset];
-	rr->type = htons(DNS_RR_TYPE_TXT);
-	rr->class_ = htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
-	rr->ttl = htonl(ttl);
-	rr->rdlength = htons(dns_sd_txt_size(inst));
+	rr->type = net_htons(DNS_RR_TYPE_TXT);
+	rr->class_ = net_htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
+	rr->ttl = net_htonl(ttl);
+	rr->rdlength = net_htons(dns_sd_txt_size(inst));
 	offset += sizeof(*rr);
 
 	memcpy(&buf[offset], inst->text, dns_sd_txt_size(inst));
@@ -544,15 +551,15 @@ int add_aaaa_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	/* insert a pointer to the instance + service name */
 	inst_offs = host_offset;
 	inst_offs |= DNS_SD_PTR_MASK;
-	inst_offs = htons(inst_offs);
+	inst_offs = net_htons(inst_offs);
 	memcpy(&buf[offset], &inst_offs, sizeof(inst_offs));
 	offset += sizeof(inst_offs);
 
 	rr = (struct dns_rr *)&buf[offset];
-	rr->type = htons(DNS_RR_TYPE_AAAA);
-	rr->class_ = htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
-	rr->ttl = htonl(ttl);
-	rr->rdlength = htons(sizeof(*rdata));
+	rr->type = net_htons(DNS_RR_TYPE_AAAA);
+	rr->class_ = net_htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
+	rr->ttl = net_htonl(ttl);
+	rr->rdlength = net_htons(sizeof(*rdata));
 	offset += sizeof(*rr);
 
 	rdata = (struct dns_aaaa_rdata *)&buf[offset];
@@ -562,6 +569,114 @@ int add_aaaa_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	__ASSERT_NO_MSG(total_size == offset - buf_offset);
 
 	return offset - buf_offset;
+}
+
+struct answer_addr_ctx {
+	uint8_t *buf;
+	uint16_t buf_offset;
+	uint16_t buf_size;
+	union {
+		const struct net_in_addr *skip_addr4;
+		const struct net_in6_addr *skip_addr6;
+	};
+	int answer_count;
+	const struct dns_sd_rec *inst;
+	uint16_t host_offset;
+	enum dns_rr_type qtype;
+};
+
+static void answer_addr_cb(struct net_if *iface, struct net_if_addr *ifaddr,
+			   void *user_data)
+{
+	struct answer_addr_ctx *ctx = (struct answer_addr_ctx *)user_data;
+	int ret;
+
+	if (ifaddr->addr_state != NET_ADDR_PREFERRED &&
+	    ifaddr->addr_state != NET_ADDR_DEPRECATED) {
+		return;
+	}
+
+	if (ctx->qtype == DNS_RR_TYPE_AAAA) {
+		if (ctx->skip_addr6 != NULL &&
+		    net_ipv6_addr_cmp(&ifaddr->address.in6_addr, ctx->skip_addr6)) {
+			/* Already included */
+			return;
+		}
+
+		ret = add_aaaa_record(ctx->inst, DNS_SD_AAAA_TTL, ctx->host_offset,
+				      ifaddr->address.in6_addr.s6_addr,
+				      ctx->buf, ctx->buf_offset, ctx->buf_size);
+	} else {
+		if (ctx->skip_addr4 != NULL &&
+		    net_ipv4_addr_cmp(&ifaddr->address.in_addr, ctx->skip_addr4)) {
+			/* Already included */
+			return;
+		}
+
+		ret = add_a_record(ctx->inst, DNS_SD_A_TTL, ctx->host_offset,
+				   net_htonl(ifaddr->address.in_addr.s_addr),
+				   ctx->buf, ctx->buf_offset, ctx->buf_size);
+	}
+
+	if (ret > 0) {
+		ctx->buf_offset += ret;
+		ctx->answer_count++;
+	} else {
+		NET_DBG("Not enough buffer space to include additional A/AAAA record");
+	}
+}
+
+
+int add_remaining_a_records(struct net_if *iface, const struct dns_sd_rec *inst,
+			    uint16_t host_offset, const struct net_in_addr *addr4,
+			    uint8_t *buf, uint16_t *buf_offset, uint16_t buf_size)
+{
+	struct answer_addr_ctx ctx = {
+		.buf = buf,
+		.buf_offset = *buf_offset,
+		.buf_size = buf_size,
+		.skip_addr4 = addr4,
+		.answer_count = 0,
+		.inst = inst,
+		.host_offset = host_offset,
+		.qtype = DNS_RR_TYPE_A,
+	};
+
+	if (iface == NULL) {
+		return 0;
+	}
+
+	net_if_ipv4_addr_foreach(iface, answer_addr_cb, &ctx);
+
+	*buf_offset = ctx.buf_offset;
+
+	return ctx.answer_count;
+}
+
+int add_remaining_aaaa_records(struct net_if *iface, const struct dns_sd_rec *inst,
+			       uint16_t host_offset, const struct net_in6_addr *addr6,
+			       uint8_t *buf, uint16_t *buf_offset, uint16_t buf_size)
+{
+	struct answer_addr_ctx ctx = {
+		.buf = buf,
+		.buf_offset = *buf_offset,
+		.buf_size = buf_size,
+		.skip_addr6 = addr6,
+		.answer_count = 0,
+		.inst = inst,
+		.host_offset = host_offset,
+		.qtype = DNS_RR_TYPE_AAAA,
+	};
+
+	if (iface == NULL) {
+		return 0;
+	}
+
+	net_if_ipv6_addr_foreach(iface, answer_addr_cb, &ctx);
+
+	*buf_offset = ctx.buf_offset;
+
+	return ctx.answer_count;
 }
 
 int add_srv_record(const struct dns_sd_rec *inst, uint32_t ttl,
@@ -608,16 +723,16 @@ int add_srv_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	/* insert a pointer to the instance + service name */
 	inst_offs = instance_offset;
 	inst_offs |= DNS_SD_PTR_MASK;
-	inst_offs = htons(inst_offs);
+	inst_offs = net_htons(inst_offs);
 	memcpy(&buf[offset], &inst_offs, sizeof(inst_offs));
 	offset += sizeof(inst_offs);
 
 	rr = (struct dns_rr *)&buf[offset];
-	rr->type = htons(DNS_RR_TYPE_SRV);
-	rr->class_ = htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
-	rr->ttl = htonl(ttl);
+	rr->type = net_htons(DNS_RR_TYPE_SRV);
+	rr->class_ = net_htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
+	rr->ttl = net_htonl(ttl);
 	/* .<Instance>.local. */
-	rr->rdlength = htons(sizeof(*rdata) + DNS_LABEL_LEN_SIZE
+	rr->rdlength = net_htons(sizeof(*rdata) + DNS_LABEL_LEN_SIZE
 			     + strlen(inst->instance) +
 			     DNS_POINTER_SIZE);
 	offset += sizeof(*rr);
@@ -636,7 +751,7 @@ int add_srv_record(const struct dns_sd_rec *inst, uint32_t ttl,
 	offset += label_size;
 
 	domain_offset |= DNS_SD_PTR_MASK;
-	domain_offset = htons(domain_offset);
+	domain_offset = net_htons(domain_offset);
 	memcpy(&buf[offset], &domain_offset, sizeof(domain_offset));
 	offset += sizeof(domain_offset);
 
@@ -647,53 +762,52 @@ int add_srv_record(const struct dns_sd_rec *inst, uint32_t ttl,
 
 #ifndef CONFIG_NET_TEST
 static bool port_in_use_sockaddr(uint16_t proto, uint16_t port,
-	const struct sockaddr *addr)
+	const struct net_sockaddr *addr)
 {
-	const struct sockaddr_in any = {
-		.sin_family = AF_INET,
-		.sin_addr.s_addr = INADDR_ANY,
+	const struct net_sockaddr_in any = {
+		.sin_family = NET_AF_INET,
+		.sin_addr.s_addr = NET_INADDR_ANY,
 	};
-	const struct sockaddr_in6 any6 = {
-		.sin6_family = AF_INET6,
-		.sin6_addr = in6addr_any,
+	const struct net_sockaddr_in6 any6 = {
+		.sin6_family = NET_AF_INET6,
+		.sin6_addr = net_in6addr_any,
 	};
-	const struct sockaddr *anyp =
-		(addr->sa_family == AF_INET)
-		? (const struct sockaddr *) &any
-		: (const struct sockaddr *) &any6;
+	const struct net_sockaddr *anyp =
+		(addr->sa_family == NET_AF_INET)
+		? (const struct net_sockaddr *) &any
+		: (const struct net_sockaddr *) &any6;
 
-	return
-		net_context_port_in_use(proto, port, addr)
-		|| net_context_port_in_use(proto, port, anyp);
+	return net_socket_port_in_use(proto, port, addr) ||
+	       net_socket_port_in_use(proto, port, anyp);
 }
 
 static bool port_in_use(uint16_t proto, uint16_t port,
-			const struct in_addr *addr4,
-			const struct in6_addr *addr6)
+			const struct net_in_addr *addr4,
+			const struct net_in6_addr *addr6)
 {
 	bool ret = false;
 
 	if (addr4 != NULL) {
-		struct sockaddr_in sa = { 0 };
+		struct net_sockaddr_in sa = { 0 };
 
-		sa.sin_family = AF_INET;
+		sa.sin_family = NET_AF_INET;
 		sa.sin_addr = *addr4;
 
 		ret = port_in_use_sockaddr(proto, port,
-					   (struct sockaddr *)&sa);
+					   (struct net_sockaddr *)&sa);
 		if (ret) {
 			goto out;
 		}
 	}
 
 	if (addr6 != NULL) {
-		struct sockaddr_in6 sa = { 0 };
+		struct net_sockaddr_in6 sa = { 0 };
 
-		sa.sin6_family = AF_INET6;
+		sa.sin6_family = NET_AF_INET6;
 		sa.sin6_addr = *addr6;
 
 		ret = port_in_use_sockaddr(proto, port,
-					   (struct sockaddr *)&sa);
+					   (struct net_sockaddr *)&sa);
 		if (ret) {
 			goto out;
 		}
@@ -703,8 +817,8 @@ out:
 	return ret;
 }
 #else /* CONFIG_NET_TEST */
-static inline bool port_in_use(uint16_t proto, uint16_t port, const struct in_addr *addr4,
-	const struct in6_addr *addr6)
+static inline bool port_in_use(uint16_t proto, uint16_t port, const struct net_in_addr *addr4,
+	const struct net_in6_addr *addr6)
 {
 	ARG_UNUSED(port);
 	ARG_UNUSED(addr4);
@@ -714,8 +828,9 @@ static inline bool port_in_use(uint16_t proto, uint16_t port, const struct in_ad
 #endif /* CONFIG_NET_TEST */
 
 
-int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr *addr4,
-			    const struct in6_addr *addr6, uint8_t *buf, uint16_t buf_size)
+int dns_sd_handle_ptr_query(struct net_if *iface, const struct dns_sd_rec *inst,
+			    const struct net_in_addr *addr4, const struct net_in6_addr *addr6,
+			    uint8_t *buf, uint16_t buf_size, bool announce)
 {
 	/*
 	 * RFC 6763 Section 12.1
@@ -729,6 +844,14 @@ int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr 
 	 * o  All address records (type "A" and "AAAA") named in the SRV rdata.
 	 *	contain the SRV record(s), the TXT record(s), and the address
 	 *      records (A or AAAA)
+	 *
+	 * RFC 6762 Section 8.3
+	 *
+	 * Unlike a response to an explicit query, an unsolicited announcement
+	 * MUST place every record being announced in the Answer Section, not
+	 * the Additional Record Section. When @p announce is true, the SRV,
+	 * TXT and address records below are counted towards ancount instead
+	 * of arcount to reflect this.
 	 */
 
 	uint16_t instance_offset;
@@ -738,6 +861,12 @@ int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr 
 	uint16_t proto;
 	uint16_t offset = sizeof(struct dns_header);
 	struct dns_header *rsp = (struct dns_header *)buf;
+	/* Additional records for a direct query response; part of the Answer
+	 * section instead when this packet is an unsolicited announcement.
+	 * Accumulated locally since &rsp->ancount/&rsp->arcount can't be taken
+	 * (rsp is packed).
+	 */
+	uint16_t extra_count = 0;
 	uint32_t tmp;
 	int r;
 
@@ -749,27 +878,27 @@ int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr 
 
 	if (*(inst->port) == 0) {
 		NET_DBG("Ephemeral port %u for %s.%s.%s.%s not initialized",
-			ntohs(*(inst->port)), inst->instance, inst->service, inst->proto,
+			net_ntohs(*(inst->port)), inst->instance, inst->service, inst->proto,
 			inst->domain);
 		return -EHOSTDOWN;
 	}
 
 	if (strncmp("_tcp", inst->proto, DNS_SD_PROTO_SIZE) == 0) {
-		proto = IPPROTO_TCP;
+		proto = NET_IPPROTO_TCP;
 	} else if (strncmp("_udp", inst->proto, DNS_SD_PROTO_SIZE) == 0) {
-		proto = IPPROTO_UDP;
+		proto = NET_IPPROTO_UDP;
 	} else {
 		NET_DBG("invalid protocol %s", inst->proto);
 		return -EINVAL;
 	}
 
-	if (!port_in_use(proto, ntohs(*(inst->port)), addr4, addr6)) {
+	if (!port_in_use(proto, net_ntohs(*(inst->port)), addr4, addr6)) {
 		/* Service is not yet bound, so do not advertise */
 		return -EHOSTDOWN;
 	}
 
 	/* first add the answer record */
-	r = add_ptr_record(inst, DNS_SD_PTR_TTL, buf, offset, buf_size - offset, &service_offset,
+	r = add_ptr_record(inst, DNS_SD_PTR_TTL, buf, offset, buf_size, &service_offset,
 			   &instance_offset, &domain_offset);
 	if (r < 0) {
 		return r; /* LCOV_EXCL_LINE */
@@ -778,58 +907,83 @@ int dns_sd_handle_ptr_query(const struct dns_sd_rec *inst, const struct in_addr 
 	rsp->ancount++;
 	offset += r;
 
-	/* then add the additional records */
-	r = add_txt_record(inst, DNS_SD_TXT_TTL, instance_offset, buf, offset, buf_size - offset);
+	r = add_txt_record(inst, DNS_SD_TXT_TTL, instance_offset, buf, offset, buf_size);
 	if (r < 0) {
 		return r; /* LCOV_EXCL_LINE */
 	}
 
-	rsp->arcount++;
+	extra_count++;
 	offset += r;
 
 	r = add_srv_record(inst, DNS_SD_SRV_TTL, instance_offset, domain_offset, buf, offset,
-			   buf_size - offset, &host_offset);
+			   buf_size, &host_offset);
 	if (r < 0) {
 		return r; /* LCOV_EXCL_LINE */
 	}
 
-	rsp->arcount++;
+	extra_count++;
 	offset += r;
 
-	if (addr6 != NULL) {
+	if (addr6 != NULL && !net_ipv6_is_addr_unspecified(addr6)) {
 		r = add_aaaa_record(inst, DNS_SD_AAAA_TTL, host_offset, addr6->s6_addr, buf, offset,
-				    buf_size - offset); /* LCOV_EXCL_LINE */
+				    buf_size); /* LCOV_EXCL_LINE */
 		if (r < 0) {
 			return r; /* LCOV_EXCL_LINE */
 		}
 
-		rsp->arcount++;
+		extra_count++;
 		offset += r;
 	}
 
-	if (addr4 != NULL) {
-		tmp = htonl(*(addr4->s4_addr32));
+	if (addr4 != NULL && !net_ipv4_is_addr_unspecified(addr4)) {
+		tmp = net_htonl(*(addr4->s4_addr32));
 		r = add_a_record(inst, DNS_SD_A_TTL, host_offset, tmp, buf, offset,
-				 buf_size - offset);
+				 buf_size);
 		if (r < 0) {
 			return r; /* LCOV_EXCL_LINE */
 		}
 
-		rsp->arcount++;
+		extra_count++;
 		offset += r;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_IPV6)) {
+		/* Best effort here, include AAAA records for the remaining IPv6
+		 * addresses if they fit.
+		 */
+		r = add_remaining_aaaa_records(iface, inst, host_offset, addr6,
+					       buf, &offset, buf_size);
+		/* offset was updated inside the function */
+		extra_count += r;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_IPV4)) {
+		/* Best effort here, include A records for the remaining IPv4
+		 * addresses if they fit.
+		 */
+		r = add_remaining_a_records(iface, inst, host_offset, addr4,
+					    buf, &offset, buf_size);
+		/* offset was updated inside the function */
+		extra_count += r;
+	}
+
+	if (announce) {
+		rsp->ancount += extra_count;
+	} else {
+		rsp->arcount = extra_count;
 	}
 
 	/* Set the Response and AA bits */
-	rsp->flags = htons(BIT(15) | BIT(10));
-	rsp->ancount = htons(rsp->ancount);
-	rsp->arcount = htons(rsp->arcount);
+	rsp->flags = net_htons(BIT(15) | BIT(10));
+	rsp->ancount = net_htons(rsp->ancount);
+	rsp->arcount = net_htons(rsp->arcount);
 
 	return offset;
 }
 
-int dns_sd_handle_service_type_enum(const struct dns_sd_rec *inst,
-				    const struct in_addr *addr4, const struct in6_addr *addr6,
-				    uint8_t *buf, uint16_t buf_size)
+int dns_sd_handle_service_type_enum(const struct dns_sd_rec *inst, const struct net_in_addr *addr4,
+				    const struct net_in6_addr *addr6, uint8_t *buf,
+				    uint16_t buf_size)
 {
 	static const char query[] = { "\x09_services\x07_dns-sd\x04_udp\x05local" };
 	/* offset of '.local' in the above */
@@ -848,21 +1002,21 @@ int dns_sd_handle_service_type_enum(const struct dns_sd_rec *inst,
 	if (*(inst->port) == 0) {
 		NET_DBG("Ephemeral port %u for %s.%s.%s.%s "
 			"not initialized",
-			ntohs(*(inst->port)), inst->instance, inst->service, inst->proto,
+			net_ntohs(*(inst->port)), inst->instance, inst->service, inst->proto,
 			inst->domain);
 		return -EHOSTDOWN;
 	}
 
 	if (strncmp("_tcp", inst->proto, DNS_SD_PROTO_SIZE) == 0) {
-		proto = IPPROTO_TCP;
+		proto = NET_IPPROTO_TCP;
 	} else if (strncmp("_udp", inst->proto, DNS_SD_PROTO_SIZE) == 0) {
-		proto = IPPROTO_UDP;
+		proto = NET_IPPROTO_UDP;
 	} else {
 		NET_DBG("invalid protocol %s", inst->proto);
 		return -EINVAL;
 	}
 
-	if (!port_in_use(proto, ntohs(*(inst->port)), addr4, addr6)) {
+	if (!port_in_use(proto, net_ntohs(*(inst->port)), addr4, addr6)) {
 		/* Service is not yet bound, so do not advertise */
 		NET_DBG("service not bound");
 		return -EHOSTDOWN;
@@ -889,10 +1043,10 @@ int dns_sd_handle_service_type_enum(const struct dns_sd_rec *inst,
 	offset += sizeof(query);
 
 	rr = (struct dns_rr *)&buf[offset];
-	rr->type = htons(DNS_RR_TYPE_PTR);
-	rr->class_ = htons(DNS_CLASS_IN);
-	rr->ttl = htonl(DNS_SD_PTR_TTL);
-	rr->rdlength = htons(0
+	rr->type = net_htons(DNS_RR_TYPE_PTR);
+	rr->class_ = net_htons(DNS_CLASS_IN);
+	rr->ttl = net_htonl(DNS_SD_PTR_TTL);
+	rr->rdlength = net_htons(0
 		+ DNS_LABEL_LEN_SIZE + service_size
 		+ DNS_LABEL_LEN_SIZE + DNS_SD_PROTO_SIZE
 		+ DNS_POINTER_SIZE);
@@ -904,19 +1058,231 @@ int dns_sd_handle_service_type_enum(const struct dns_sd_rec *inst,
 	buf[offset++] = DNS_SD_PROTO_SIZE;
 	memcpy(&buf[offset], inst->proto, DNS_SD_PROTO_SIZE);
 	offset += DNS_SD_PROTO_SIZE;
-	domain_offset = htons(domain_offset);
+	domain_offset = net_htons(domain_offset);
 	memcpy(&buf[offset], &domain_offset, sizeof(domain_offset));
 	offset += sizeof(domain_offset);
 
 	/* Set the Response and AA bits */
-	rsp->flags = htons(BIT(15) | BIT(10));
-	rsp->ancount = htons(1);
+	rsp->flags = net_htons(BIT(15) | BIT(10));
+	rsp->ancount = net_htons(1);
 
 	return offset;
 }
 
-/* TODO: dns_sd_handle_srv_query() */
-/* TODO: dns_sd_handle_txt_query() */
+static int dns_sd_service_is_available(const struct dns_sd_rec *inst,
+				       const struct net_in_addr *addr4,
+				       const struct net_in6_addr *addr6)
+{
+	uint16_t proto;
+
+	if (!rec_is_valid(inst)) {
+		return -EINVAL;
+	}
+
+	if (*(inst->port) == 0U) {
+		return -EHOSTDOWN;
+	}
+
+	if (strncmp("_tcp", inst->proto, DNS_SD_PROTO_SIZE) == 0) {
+		proto = NET_IPPROTO_TCP;
+	} else if (strncmp("_udp", inst->proto, DNS_SD_PROTO_SIZE) == 0) {
+		proto = NET_IPPROTO_UDP;
+	} else {
+		return -EINVAL;
+	}
+
+	if (!port_in_use(proto, net_ntohs(*(inst->port)), addr4, addr6)) {
+		return -EHOSTDOWN;
+	}
+
+	return 0;
+}
+
+static int add_instance_name(const struct dns_sd_rec *inst, uint8_t *buf,
+			     uint16_t buf_offset, uint16_t buf_size,
+			     uint16_t *domain_offset)
+{
+	const char *const labels[] = {
+		inst->instance,
+		inst->service,
+		inst->proto,
+		inst->domain,
+	};
+	size_t name_size = 1U;
+	uint16_t offset = buf_offset;
+
+	ARRAY_FOR_EACH(labels, i) {
+		name_size += DNS_LABEL_LEN_SIZE + strlen(labels[i]);
+	}
+
+	if (offset > buf_size || name_size > buf_size - offset) {
+		return -ENOSPC;
+	}
+
+	ARRAY_FOR_EACH(labels, i) {
+		size_t label_size = strlen(labels[i]);
+
+		if (domain_offset != NULL && i == ARRAY_SIZE(labels) - 1U) {
+			*domain_offset = offset;
+		}
+
+		buf[offset++] = label_size;
+		memcpy(&buf[offset], labels[i], label_size);
+		offset += label_size;
+	}
+
+	buf[offset++] = '\0';
+
+	return offset - buf_offset;
+}
+
+int dns_sd_handle_srv_query(struct net_if *iface, const struct dns_sd_rec *inst,
+			    const struct net_in_addr *addr4,
+			    const struct net_in6_addr *addr6,
+			    uint8_t *buf, uint16_t buf_size)
+{
+	struct dns_header *rsp = (struct dns_header *)buf;
+	struct dns_srv_rdata *rdata;
+	struct dns_rr *rr;
+	uint16_t domain_offset;
+	uint16_t host_offset;
+	uint16_t offset = sizeof(*rsp);
+	uint16_t additional_count = 0U;
+	uint16_t compressed_domain;
+	size_t instance_size;
+	size_t record_size;
+	uint32_t tmp;
+	int ret;
+
+	ret = dns_sd_service_is_available(inst, addr4, addr6);
+	if (ret < 0) {
+		return ret;
+	}
+
+	memset(rsp, 0, sizeof(*rsp));
+
+	ret = add_instance_name(inst, buf, offset, buf_size, &domain_offset);
+	if (ret < 0) {
+		return ret;
+	}
+	offset += ret;
+
+	instance_size = strlen(inst->instance);
+	record_size = sizeof(*rr) + sizeof(*rdata) + DNS_LABEL_LEN_SIZE +
+		      instance_size + DNS_POINTER_SIZE;
+	if (offset > buf_size || record_size > buf_size - offset) {
+		return -ENOSPC;
+	}
+
+	rr = (struct dns_rr *)&buf[offset];
+	rr->type = net_htons(DNS_RR_TYPE_SRV);
+	rr->class_ = net_htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
+	rr->ttl = net_htonl(DNS_SD_SRV_TTL);
+	rr->rdlength = net_htons(sizeof(*rdata) + DNS_LABEL_LEN_SIZE +
+				 instance_size + DNS_POINTER_SIZE);
+	offset += sizeof(*rr);
+
+	rdata = (struct dns_srv_rdata *)&buf[offset];
+	rdata->priority = 0U;
+	rdata->weight = 0U;
+	rdata->port = *(inst->port);
+	offset += sizeof(*rdata);
+
+	host_offset = offset;
+	buf[offset++] = instance_size;
+	memcpy(&buf[offset], inst->instance, instance_size);
+	offset += instance_size;
+
+	compressed_domain = net_htons(domain_offset | DNS_SD_PTR_MASK);
+	memcpy(&buf[offset], &compressed_domain, sizeof(compressed_domain));
+	offset += sizeof(compressed_domain);
+
+	if (addr6 != NULL && !net_ipv6_is_addr_unspecified(addr6)) {
+		ret = add_aaaa_record(inst, DNS_SD_AAAA_TTL, host_offset, addr6->s6_addr,
+				      buf, offset, buf_size);
+		if (ret < 0) {
+			return ret;
+		}
+
+		additional_count++;
+		offset += ret;
+	}
+
+	if (addr4 != NULL && !net_ipv4_is_addr_unspecified(addr4)) {
+		tmp = net_htonl(*(addr4->s4_addr32));
+		ret = add_a_record(inst, DNS_SD_A_TTL, host_offset, tmp, buf, offset,
+				   buf_size);
+		if (ret < 0) {
+			return ret;
+		}
+
+		additional_count++;
+		offset += ret;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_IPV6)) {
+		ret = add_remaining_aaaa_records(iface, inst, host_offset, addr6,
+					       buf, &offset, buf_size);
+		additional_count += ret;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_IPV4)) {
+		ret = add_remaining_a_records(iface, inst, host_offset, addr4,
+					    buf, &offset, buf_size);
+		additional_count += ret;
+	}
+
+	rsp->flags = net_htons(BIT(15) | BIT(10));
+	rsp->ancount = net_htons(1U);
+	rsp->arcount = net_htons(additional_count);
+
+	return offset;
+}
+
+int dns_sd_handle_txt_query(const struct dns_sd_rec *inst,
+			    const struct net_in_addr *addr4,
+			    const struct net_in6_addr *addr6,
+			    uint8_t *buf, uint16_t buf_size)
+{
+	struct dns_header *rsp = (struct dns_header *)buf;
+	struct dns_rr *rr;
+	uint16_t offset = sizeof(*rsp);
+	size_t record_size;
+	int ret;
+
+	ret = dns_sd_service_is_available(inst, addr4, addr6);
+	if (ret < 0) {
+		return ret;
+	}
+
+	memset(rsp, 0, sizeof(*rsp));
+
+	ret = add_instance_name(inst, buf, offset, buf_size, NULL);
+	if (ret < 0) {
+		return ret;
+	}
+	offset += ret;
+
+	record_size = sizeof(*rr) + dns_sd_txt_size(inst);
+	if (offset > buf_size || record_size > buf_size - offset) {
+		return -ENOSPC;
+	}
+
+	rr = (struct dns_rr *)&buf[offset];
+	rr->type = net_htons(DNS_RR_TYPE_TXT);
+	rr->class_ = net_htons(DNS_CLASS_IN | DNS_CLASS_FLUSH);
+	rr->ttl = net_htonl(DNS_SD_TXT_TTL);
+	rr->rdlength = net_htons(dns_sd_txt_size(inst));
+	offset += sizeof(*rr);
+
+	memcpy(&buf[offset], inst->text, dns_sd_txt_size(inst));
+	offset += dns_sd_txt_size(inst);
+
+	rsp->flags = net_htons(BIT(15) | BIT(10));
+	rsp->ancount = net_htons(1U);
+
+	return offset;
+}
 
 bool dns_sd_rec_match(const struct dns_sd_rec *record,
 		      const struct dns_sd_rec *filter)
@@ -988,93 +1354,15 @@ bool dns_sd_rec_match(const struct dns_sd_rec *record,
 	return true;
 }
 
-int dns_sd_query_extract(const uint8_t *query, size_t query_size, struct dns_sd_rec *record,
-			 char **label, size_t *size, size_t *n)
+/* Validates the label count against the two supported DNS-SD name shapes and
+ * assigns label[] into the matching record fields.
+ */
+static int dns_sd_validate_and_assign(size_t qlabels, size_t label_capacity, char **label,
+				      struct dns_sd_rec *record)
 {
-	size_t i;
-	size_t offset;
-	size_t qlabels;
-	size_t qsize;
-	const size_t N = (n) ? (*n) : 0;
-
-	/*
-	 * See RFC 6763, 7.2. Service Name Length Limits
-	 *
-	 *            <sn>._tcp.<servicedomain>.<parentdomain>.
-	 * <Instance>.<sn>._tcp.<servicedomain>.<parentdomain>.
-	 * <sub>._sub.<sn>._tcp.<servicedomain>.<parentdomain>.
-	 */
-	__ASSERT(DNS_SD_MIN_LABELS <= N, "invalid number of labels %zu", N);
-	__ASSERT(!(query == NULL || label == NULL || size == NULL || n == NULL),
-		 "one or more required arguments are NULL");
-	__ASSERT(query + query_size >= query, "query %p + query_size %zu  wraps NULL", query,
-		 query_size);
-	__ASSERT(label + N >= label, "label %p + n %zu  wraps NULL", label, N);
-	__ASSERT(size + N >= size, "size %p + n %zu  wraps NULL", size, N);
-	for (i = 0; i < N; ++i) {
-		if (label[i] == NULL) {
-			__ASSERT(label[i] != NULL, "label[%zu] is NULL", i);
-		}
-	}
-
-	if (query_size <= DNS_MSG_HEADER_SIZE) {
-		NET_DBG("query size %zu is less than DNS_MSG_HEADER_SIZE %d", query_size,
-			DNS_MSG_HEADER_SIZE);
-		return -EINVAL;
-	}
-
-	query += DNS_MSG_HEADER_SIZE;
-	query_size -= DNS_MSG_HEADER_SIZE;
-	offset = DNS_MSG_HEADER_SIZE;
-	dns_sd_create_wildcard_filter(record);
-	/* valid record must have non-NULL port */
-	record->port = &dns_sd_port_zero;
-
-	/* also counts labels */
-	for (i = 0, qlabels = 0; query_size > 0;) {
-		qsize = *query;
-		++offset;
-		++query;
-		--query_size;
-
-		if (qsize == 0) {
-			break;
-		}
-
-		++qlabels;
-		if (qsize >= query_size) {
-			NET_DBG("claimed query size %zu > query buffer size %zu", qsize,
-				query_size);
-			return -EINVAL;
-		}
-
-		if (qsize >= size[i]) {
-			NET_DBG("qsize %zu >= size[%zu] %zu", qsize, i, size[i]);
-			return -ENOBUFS;
-		}
-
-		if (i < N) {
-			/* only extract the label if there is storage for it */
-			memcpy(label[i], query, qsize);
-			label[i][qsize] = '\0';
-			size[i] = qsize;
-			++i;
-		}
-
-		offset += qsize;
-		query += qsize;
-		query_size -= qsize;
-	}
-
-	/* write-out the actual number of labels in 'n' */
-	for (*n = i; i < N; ++i) {
-		label[i] = NULL;
-		size[i] = 0;
-	}
-
-	if (qlabels > N) {
-		NET_DBG("too few buffers to extract query: qlabels: %zu, N: %zu",
-			qlabels, N);
+	if (qlabels > label_capacity) {
+		NET_DBG("too few buffers to extract query: qlabels: %zu, label_capacity: %zu",
+			qlabels, label_capacity);
 		return -ENOBUFS;
 	}
 
@@ -1082,7 +1370,9 @@ int dns_sd_query_extract(const uint8_t *query, size_t query_size, struct dns_sd_
 		NET_DBG("too few labels in query %zu, DNS_SD_MIN_LABELS: %d", qlabels,
 			DNS_SD_MIN_LABELS);
 		return -EINVAL;
-	} else if (qlabels == DNS_SD_MIN_LABELS) {
+	}
+
+	if (qlabels == DNS_SD_MIN_LABELS) {
 		/* e.g. _zephyr._tcp.local */
 		record->service = label[0];
 		record->proto = label[1];
@@ -1102,41 +1392,110 @@ int dns_sd_query_extract(const uint8_t *query, size_t query_size, struct dns_sd_
 			NET_DBG("domain '%s' is invalid", record->domain);
 			return -EINVAL;
 		}
-	} else if (qlabels > DNS_SD_MIN_LABELS && qlabels < DNS_SD_MAX_LABELS) {
-		NET_DBG("unsupported number of labels %zu", qlabels);
-		return -EINVAL;
-	} else if (qlabels >= DNS_SD_MAX_LABELS) {
-		/* e.g.
-		 * "Zephyr 42"._zephyr._tcp.local, or
-		 * _domains._dns-sd._udp.local
-		 */
-		record->instance = label[0];
-		record->service = label[1];
-		record->proto = label[2];
-		record->domain = label[3];
 
-		if (!instance_is_valid(record->instance)) {
-			NET_DBG("service '%s' is invalid", record->instance);
-			return -EINVAL;
-		}
-
-		if (!service_is_valid(record->service)) {
-			NET_DBG("service '%s' is invalid", record->service);
-			return -EINVAL;
-		}
-
-		if (!proto_is_valid(record->proto)) {
-			NET_DBG("proto '%s' is invalid", record->proto);
-			return -EINVAL;
-		}
-
-		if (!domain_is_valid(record->domain)) {
-			NET_DBG("domain '%s' is invalid", record->domain);
-			return -EINVAL;
-		}
+		return 0;
 	}
 
-	return offset;
+	if ((qlabels > DNS_SD_MIN_LABELS && qlabels < DNS_SD_MAX_LABELS) ||
+	    qlabels > DNS_SD_MAX_LABELS) {
+		NET_DBG("unsupported number of labels %zu", qlabels);
+		return -EINVAL;
+	}
+
+	/* e.g.
+	 * "Zephyr 42"._zephyr._tcp.local, or
+	 * _domains._dns-sd._udp.local
+	 */
+	record->instance = label[0];
+	record->service = label[1];
+	record->proto = label[2];
+	record->domain = label[3];
+
+	if (!instance_is_valid(record->instance)) {
+		NET_DBG("instance '%s' is invalid", record->instance);
+		return -EINVAL;
+	}
+
+	if (!service_is_valid(record->service)) {
+		NET_DBG("service '%s' is invalid", record->service);
+		return -EINVAL;
+	}
+
+	if (!proto_is_valid(record->proto)) {
+		NET_DBG("proto '%s' is invalid", record->proto);
+		return -EINVAL;
+	}
+
+	if (!domain_is_valid(record->domain)) {
+		NET_DBG("domain '%s' is invalid", record->domain);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int dns_sd_query_extract(const char *name, size_t name_len, struct dns_sd_rec *record,
+			 char **label, size_t *size, size_t *n)
+{
+	size_t i = 0;
+	size_t qlabels = 0;
+	size_t seg_start = 0;
+	size_t seg_len;
+	const size_t label_capacity = n ? *n : 0;
+	int ret;
+
+	/*
+	 * See RFC 6763, 7.2. Service Name Length Limits
+	 *
+	 *            <sn>._tcp.<servicedomain>.<parentdomain>.
+	 * <Instance>.<sn>._tcp.<servicedomain>.<parentdomain>.
+	 * <sub>._sub.<sn>._tcp.<servicedomain>.<parentdomain>.
+	 */
+	__ASSERT(DNS_SD_MIN_LABELS <= label_capacity, "invalid number of labels %zu",
+		 label_capacity);
+	__ASSERT(!(name == NULL || label == NULL || size == NULL || n == NULL),
+		 "one or more required arguments are NULL");
+
+	dns_sd_create_wildcard_filter(record);
+	/* valid record must have non-NULL port */
+	record->port = &dns_sd_port_zero;
+
+	for (size_t pos = 0; pos <= name_len; ++pos) {
+		if (pos != name_len && name[pos] != '.') {
+			continue;
+		}
+
+		seg_len = pos - seg_start;
+		if (seg_len == 0) {
+			NET_DBG("empty label in query '%.*s'", (int)name_len, name);
+			return -EINVAL;
+		}
+
+		++qlabels;
+		if (i < label_capacity) {
+			if (seg_len >= size[i]) {
+				NET_DBG("label len %zu >= size[%zu] %zu", seg_len, i, size[i]);
+				return -ENOBUFS;
+			}
+			memcpy(label[i], &name[seg_start], seg_len);
+			label[i][seg_len] = '\0';
+			size[i] = seg_len;
+			++i;
+		}
+		seg_start = pos + 1;
+	}
+
+	for (*n = i; i < label_capacity; ++i) {
+		label[i] = NULL;
+		size[i] = 0;
+	}
+
+	ret = dns_sd_validate_and_assign(qlabels, label_capacity, label, record);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return (int)name_len;
 }
 
 bool dns_sd_is_service_type_enumeration(const struct dns_sd_rec *rec)

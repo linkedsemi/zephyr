@@ -27,22 +27,18 @@ extern "C" {
 #elif defined(CONFIG_ARCH_CACHE)
 #include <zephyr/arch/cache.h>
 
+#elif defined(CONFIG_SOC_CACHE)
+#include <soc_cache.h>
+
 #endif
 
 /**
  * @defgroup cache_interface Cache Interface
+ * @since 3.3
+ * @version 1.0.0
  * @ingroup os_services
  * @{
  */
-
-/**
- * @cond INTERNAL_HIDDEN
- *
- */
-
-#define _CPU DT_PATH(cpus, cpu_0)
-
-/** @endcond */
 
 /**
  * @brief Enable the d-cache
@@ -101,9 +97,8 @@ static ALWAYS_INLINE void sys_cache_instr_disable(void)
  *
  * Flush the whole data cache.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_data_flush_all(void)
 {
@@ -118,9 +113,8 @@ static ALWAYS_INLINE int sys_cache_data_flush_all(void)
  *
  * Flush the whole instruction cache.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_instr_flush_all(void)
 {
@@ -135,9 +129,8 @@ static ALWAYS_INLINE int sys_cache_instr_flush_all(void)
  *
  * Invalidate the whole data cache.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_data_invd_all(void)
 {
@@ -152,9 +145,8 @@ static ALWAYS_INLINE int sys_cache_data_invd_all(void)
  *
  * Invalidate the whole instruction cache.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_instr_invd_all(void)
 {
@@ -169,9 +161,8 @@ static ALWAYS_INLINE int sys_cache_instr_invd_all(void)
  *
  * Flush and Invalidate the whole data cache.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_data_flush_and_invd_all(void)
 {
@@ -186,9 +177,8 @@ static ALWAYS_INLINE int sys_cache_data_flush_and_invd_all(void)
  *
  * Flush and Invalidate the whole instruction cache.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_instr_flush_and_invd_all(void)
 {
@@ -213,9 +203,8 @@ static ALWAYS_INLINE int sys_cache_instr_flush_and_invd_all(void)
  * @param addr Starting address to flush.
  * @param size Range size.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 __syscall_always_inline int sys_cache_data_flush_range(void *addr, size_t size);
 
@@ -245,9 +234,8 @@ static ALWAYS_INLINE int z_impl_sys_cache_data_flush_range(void *addr, size_t si
  * @param addr Starting address to flush.
  * @param size Range size.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_instr_flush_range(void *addr, size_t size)
 {
@@ -276,9 +264,8 @@ static ALWAYS_INLINE int sys_cache_instr_flush_range(void *addr, size_t size)
  * @param addr Starting address to invalidate.
  * @param size Range size.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 __syscall_always_inline int sys_cache_data_invd_range(void *addr, size_t size);
 
@@ -309,9 +296,8 @@ static ALWAYS_INLINE int z_impl_sys_cache_data_invd_range(void *addr, size_t siz
  * @param addr Starting address to invalidate.
  * @param size Range size.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_instr_invd_range(void *addr, size_t size)
 {
@@ -340,9 +326,8 @@ static ALWAYS_INLINE int sys_cache_instr_invd_range(void *addr, size_t size)
  * @param addr Starting address to flush and invalidate.
  * @param size Range size.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 __syscall_always_inline int sys_cache_data_flush_and_invd_range(void *addr, size_t size);
 
@@ -373,9 +358,8 @@ static ALWAYS_INLINE int z_impl_sys_cache_data_flush_and_invd_range(void *addr, 
  * @param addr Starting address to flush and invalidate.
  * @param size Range size.
  *
- * @retval 0 If succeeded.
+ * @return 0 on success, negative errno value on failure.
  * @retval -ENOTSUP If not supported.
- * @retval -errno Negative errno for other failures.
  */
 static ALWAYS_INLINE int sys_cache_instr_flush_and_invd_range(void *addr, size_t size)
 {
@@ -394,12 +378,11 @@ static ALWAYS_INLINE int sys_cache_instr_flush_and_invd_range(void *addr, size_t
  *
  * The API is provided to get the data cache line.
  *
- * The cache line size is calculated (in order of priority):
+ * The cache line size is obtained (in order of priority):
  *
  * - At run-time when @kconfig{CONFIG_DCACHE_LINE_SIZE_DETECT} is set.
- * - At compile time using the value set in @kconfig{CONFIG_DCACHE_LINE_SIZE}.
- * - At compile time using the `d-cache-line-size` CPU0 property of the DT.
- * - 0 otherwise
+ * - From compile time @kconfig{CONFIG_DCACHE_LINE_SIZE} value.
+ * - 0 if DCache is disabled
  *
  * @retval size Size of the d-cache line.
  * @retval 0 If the d-cache is not enabled.
@@ -407,11 +390,15 @@ static ALWAYS_INLINE int sys_cache_instr_flush_and_invd_range(void *addr, size_t
 static ALWAYS_INLINE size_t sys_cache_data_line_size_get(void)
 {
 #ifdef CONFIG_DCACHE_LINE_SIZE_DETECT
-	return cache_data_line_size_get();
-#elif (CONFIG_DCACHE_LINE_SIZE != 0)
+	size_t dcache_line_size = cache_data_line_size_get();
+
+	__ASSERT(dcache_line_size > 0);
+	__ASSERT(dcache_line_size == CONFIG_DCACHE_LINE_SIZE);
+	return dcache_line_size;
+#elif defined(CONFIG_DCACHE)
 	return CONFIG_DCACHE_LINE_SIZE;
 #else
-	return DT_PROP_OR(_CPU, d_cache_line_size, 0);
+	return 0;
 #endif
 }
 
@@ -421,12 +408,11 @@ static ALWAYS_INLINE size_t sys_cache_data_line_size_get(void)
  *
  * The API is provided to get the instruction cache line.
  *
- * The cache line size is calculated (in order of priority):
+ * The cache line size is obtained (in order of priority):
  *
  * - At run-time when @kconfig{CONFIG_ICACHE_LINE_SIZE_DETECT} is set.
- * - At compile time using the value set in @kconfig{CONFIG_ICACHE_LINE_SIZE}.
- * - At compile time using the `i-cache-line-size` CPU0 property of the DT.
- * - 0 otherwise
+ * - From compile time @kconfig{CONFIG_ICACHE_LINE_SIZE} value.
+ * - 0 if ICache is disabled
  *
  * @retval size Size of the d-cache line.
  * @retval 0 If the d-cache is not enabled.
@@ -434,11 +420,15 @@ static ALWAYS_INLINE size_t sys_cache_data_line_size_get(void)
 static ALWAYS_INLINE size_t sys_cache_instr_line_size_get(void)
 {
 #ifdef CONFIG_ICACHE_LINE_SIZE_DETECT
-	return cache_instr_line_size_get();
-#elif (CONFIG_ICACHE_LINE_SIZE != 0)
+	size_t icache_line_size = cache_instr_line_size_get();
+
+	__ASSERT(icache_line_size > 0);
+	__ASSERT(icache_line_size == CONFIG_ICACHE_LINE_SIZE);
+	return icache_line_size;
+#elif defined(CONFIG_ICACHE)
 	return CONFIG_ICACHE_LINE_SIZE;
 #else
-	return DT_PROP_OR(_CPU, i_cache_line_size, 0);
+	return 0;
 #endif
 }
 
@@ -457,7 +447,7 @@ static ALWAYS_INLINE size_t sys_cache_instr_line_size_get(void)
  */
 static ALWAYS_INLINE bool sys_cache_is_ptr_cached(void *ptr)
 {
-#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_DOUBLEMAP)
+#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS)
 	return cache_is_ptr_cached(ptr);
 #else
 	ARG_UNUSED(ptr);
@@ -481,7 +471,7 @@ static ALWAYS_INLINE bool sys_cache_is_ptr_cached(void *ptr)
  */
 static ALWAYS_INLINE bool sys_cache_is_ptr_uncached(void *ptr)
 {
-#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_DOUBLEMAP)
+#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS)
 	return cache_is_ptr_uncached(ptr);
 #else
 	ARG_UNUSED(ptr);
@@ -500,8 +490,8 @@ static ALWAYS_INLINE bool sys_cache_is_ptr_uncached(void *ptr)
  * the current CPU if they exist, and writes will go first into the
  * cache and be written back later.
  *
- * @note This API returns the same pointer if CONFIG_CACHE_DOUBLEMAP is not
- * enabled.
+ * @note This API returns the same pointer if
+ * CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS is not enabled.
  *
  * @see arch_uncached_ptr()
  *
@@ -510,7 +500,7 @@ static ALWAYS_INLINE bool sys_cache_is_ptr_uncached(void *ptr)
  */
 static ALWAYS_INLINE void __sparse_cache *sys_cache_cached_ptr_get(void *ptr)
 {
-#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_DOUBLEMAP)
+#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS)
 	return cache_cached_ptr(ptr);
 #else
 	return (__sparse_force void __sparse_cache *)ptr;
@@ -525,8 +515,8 @@ static ALWAYS_INLINE void __sparse_cache *sys_cache_cached_ptr_get(void *ptr)
  * refer to the same memory while bypassing the L1 data cache.  Data
  * in the L1 cache will not be inspected nor modified by the access.
  *
- * @note This API returns the same pointer if CONFIG_CACHE_DOUBLEMAP is not
- * enabled.
+ * @note This API returns the same pointer if
+ * CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS is not enabled.
  *
  * @see arch_cached_ptr()
  *
@@ -535,7 +525,7 @@ static ALWAYS_INLINE void __sparse_cache *sys_cache_cached_ptr_get(void *ptr)
  */
 static ALWAYS_INLINE void *sys_cache_uncached_ptr_get(void __sparse_cache *ptr)
 {
-#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_DOUBLEMAP)
+#if defined(CONFIG_CACHE_MANAGEMENT) && defined(CONFIG_CACHE_HAS_MIRRORED_MEMORY_REGIONS)
 	return cache_uncached_ptr(ptr);
 #else
 	return (__sparse_force void *)ptr;
@@ -549,6 +539,30 @@ static ALWAYS_INLINE void sys_cache_flush(void *addr, size_t size)
 	sys_cache_data_flush_range(addr, size);
 }
 #endif
+
+#if defined(CONFIG_CACHE_CAN_SAY_MEM_COHERENCE) || defined(__DOXYGEN__)
+/**
+ * @brief Detect memory coherence type
+ *
+ * This function returns true if the byte pointed to lies within
+ * "coherence regions" (typically implemented with uncached memory) and
+ * can safely be used in multiprocessor code without explicit flush or
+ * invalidate operations.
+ *
+ * @note The result is for only the single byte at the specified
+ * address, this API is not required to check region boundaries or to
+ * expect aligned pointers.  The expectation is that the code above
+ * will have queried the appropriate address(es).
+ *
+ * @param ptr Pointer to be checked.
+ *
+ * @return True if pointer is in any coherence regions, false otherwise.
+ */
+static ALWAYS_INLINE bool sys_cache_is_mem_coherent(void *ptr)
+{
+	return cache_is_mem_coherent(ptr);
+}
+#endif /* CONFIG_CACHE_CAN_SAY_MEM_COHERENCE */
 
 #include <zephyr/syscalls/cache.h>
 #ifdef __cplusplus

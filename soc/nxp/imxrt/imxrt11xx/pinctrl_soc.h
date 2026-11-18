@@ -9,7 +9,7 @@
 
 #include <zephyr/devicetree.h>
 #include <zephyr/types.h>
-#include "fsl_common.h"
+#include <fsl_common.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -58,7 +58,7 @@ extern "C" {
 	IF_ENABLED(DT_PROP(node_id, bias_pull_up),						\
 		(MCUX_IMX_PULL_PULLUP << MCUX_IMX_PULL_SHIFT) |)				\
 	(MCUX_IMX_NOPULL(node_id) << MCUX_IMX_PULL_SHIFT) |					\
-	(DT_ENUM_IDX_OR(node_id, drive_strength, 0) << MCUX_IMX_PDRV_SHIFT) |			\
+	((!DT_ENUM_IDX_OR(node_id, drive_strength, 0)) << MCUX_IMX_PDRV_SHIFT) |		\
 	(DT_PROP(node_id, drive_open_drain) << MCUX_IMX_ODE_SHIFT) |				\
 	(DT_PROP(node_id, input_enable) << MCUX_IMX_INPUT_ENABLE_SHIFT)
 

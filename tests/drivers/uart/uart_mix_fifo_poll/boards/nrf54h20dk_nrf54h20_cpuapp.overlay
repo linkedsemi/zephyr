@@ -6,6 +6,16 @@
 	memory-regions = <&cpuapp_dma_region>;
 };
 
+&dma_fast_region {
+	status = "okay";
+};
+
+&dut2 {
+	/* Change to "okay" to test fast uart instance. */
+	status = "disabled";
+	memory-regions = <&dma_fast_region>;
+};
+
 &grtc {
 	interrupts = <109 2>;
 };

@@ -6,7 +6,7 @@
  */
 
 #include <zephyr/drivers/can.h>
-#include <zephyr/drivers/can/can_mcan.h>
+#include "can_mcan.h"
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 #include <soc.h>
@@ -18,6 +18,13 @@ LOG_MODULE_REGISTER(can_sam, CONFIG_CAN_LOG_LEVEL);
 
 #define DT_DRV_COMPAT atmel_sam_can
 
+enum can_memory_addr_cfg {
+	/* CCFG_CANx gives the 16-bit MSB of the CAN DMA base address */
+	CAN_MEM_ADDR_CFG_MSB16_HIGH,
+	/* CANx accesses the lower or upper 64K SRAM controlled the bits in SFR_CAN_SRAM_SEL */
+	CAN_MEM_ADDR_CFG_SRAM_SEL,
+};
+
 struct can_sam_config {
 	mm_reg_t base;
 	mem_addr_t mram;
@@ -25,7 +32,10 @@ struct can_sam_config {
 	const struct atmel_sam_pmc_config clock_cfg;
 	const struct pinctrl_dev_config *pcfg;
 	int divider;
+	int instance;
+	enum can_memory_addr_cfg mem_addr_cfg;
 	mm_reg_t dma_base;
+	mm_reg_t sram_sel;
 };
 
 static int can_sam_read_reg(const struct device *dev, uint16_t reg, uint32_t *val)
@@ -74,19 +84,27 @@ static int can_sam_get_core_clock(const struct device *dev, uint32_t *rate)
 	const struct can_mcan_config *mcan_cfg = dev->config;
 	const struct can_sam_config *sam_cfg = mcan_cfg->custom;
 
+#ifdef CONFIG_SOC_SERIES_SAMX7X
 	*rate = SOC_ATMEL_SAM_UPLLCK_FREQ_HZ / (sam_cfg->divider);
 
 	return 0;
+#else
+	return clock_control_get_rate(SAM_DT_PMC_CONTROLLER,
+				      (clock_control_subsys_t)&sam_cfg->clock_cfg,
+				      rate);
+#endif
 }
 
 static void can_sam_clock_enable(const struct can_sam_config *sam_cfg)
 {
+#ifdef CONFIG_SOC_SERIES_SAMX7X
 	REG_PMC_PCK5 = PMC_PCK_CSS_UPLL_CLK | PMC_PCK_PRES(sam_cfg->divider - 1);
 	PMC->PMC_SCER |= PMC_SCER_PCK5;
 
 	/* Enable CAN clock in PMC */
 	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
 			       (clock_control_subsys_t)&sam_cfg->clock_cfg);
+#endif /* CONFIG_SOC_SERIES_SAMX7X */
 }
 
 static int can_sam_init(const struct device *dev)
@@ -103,10 +121,27 @@ static int can_sam_init(const struct device *dev)
 	}
 
 	/* get actual message ram base address */
-	uint32_t mrba = sam_cfg->mram & 0xFFFF0000;
+	uint32_t mrba = sam_cfg->mram & 0xFFFF0000U;
 
-	/* keep lower 16bit; update DMA Base Register */
-	sys_write32((sys_read32(sam_cfg->dma_base) & 0x0000FFFF) | mrba, sam_cfg->dma_base);
+	switch (sam_cfg->mem_addr_cfg) {
+	case CAN_MEM_ADDR_CFG_MSB16_HIGH:
+		/* keep lower 16bit; update DMA Base Register */
+		sys_write32((sys_read32(sam_cfg->dma_base) & 0x0000FFFF) | mrba,
+			    sam_cfg->dma_base);
+		break;
+	case CAN_MEM_ADDR_CFG_SRAM_SEL:
+		if (mrba < IRAM_ADDR + KB(64)) {
+			sys_write32(sys_read32(sam_cfg->sram_sel) & (~BIT(sam_cfg->instance)),
+				    sam_cfg->sram_sel);
+		} else {
+			sys_write32(sys_read32(sam_cfg->sram_sel) | BIT(sam_cfg->instance),
+				    sam_cfg->sram_sel);
+		}
+		break;
+	default:
+		LOG_ERR("Configure CAN memory with an invalid method");
+		return -EINVAL;
+	}
 
 	ret = can_mcan_configure_mram(dev, mrba, sam_cfg->mram);
 	if (ret != 0) {
@@ -123,7 +158,7 @@ static int can_sam_init(const struct device *dev)
 	return ret;
 }
 
-static const struct can_driver_api can_sam_driver_api = {
+static DEVICE_API(can, can_sam_driver_api) = {
 	.get_capabilities = can_mcan_get_capabilities,
 	.start = can_mcan_start,
 	.stop = can_mcan_stop,
@@ -138,7 +173,6 @@ static const struct can_driver_api can_sam_driver_api = {
 #endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
 	.get_core_clock = can_sam_get_core_clock,
 	.get_max_filters = can_mcan_get_max_filters,
-	.set_state_change_callback =  can_mcan_set_state_change_callback,
 	.timing_min = CAN_MCAN_TIMING_MIN_INITIALIZER,
 	.timing_max = CAN_MCAN_TIMING_MAX_INITIALIZER,
 #ifdef CONFIG_CAN_FD_MODE
@@ -170,18 +204,45 @@ static void config_can_##inst##_irq(void)                                       
 	irq_enable(DT_INST_IRQ_BY_NAME(inst, int1, irq));                                      \
 }
 
+#define CAN_SAM_MRAM_DEFINE(inst)								\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, dma_base),				\
+			   (CAN_MCAN_DT_INST_MRAM_DEFINE(inst, can_sam_mram_##inst);))
+
+#define CAN_SAM_MEMORY_DEFINE(inst)								\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, dma_base),				\
+			   (.mram = (mem_addr_t)POINTER_TO_UINT(&can_sam_mram_##inst),))	\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, message_ram),				\
+			   (.mram = (mm_reg_t)CAN_MCAN_DT_INST_MRAM_ADDR(inst),))		\
+												\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, dma_base),				\
+			   (.mem_addr_cfg = CAN_MEM_ADDR_CFG_MSB16_HIGH,))			\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, dma_base),				\
+			   (.dma_base = (mm_reg_t)DT_INST_REG_ADDR_BY_NAME(inst, dma_base),))	\
+												\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, sram_sel),				\
+			   (.mem_addr_cfg = CAN_MEM_ADDR_CFG_SRAM_SEL,))			\
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, sram_sel),				\
+			   (.sram_sel = (mm_reg_t)DT_INST_REG_ADDR_BY_NAME(inst, sram_sel),))
+
+#define CAN_SAM_CLOCK_DIVIDER_DEFINE(inst)							\
+		IF_ENABLED(CONFIG_SOC_SERIES_SAMX7X, (.divider = DT_INST_PROP(inst, divider),))
+
+#define CAN_INSTANCE_BY_NAME(inst)					\
+	((DT_INST_REG_ADDR_BY_NAME(inst, m_can) - MCAN0_BASE_ADDRESS) / 0x4000U)
+
 #define CAN_SAM_CFG_INST(inst)						\
 	CAN_MCAN_DT_INST_CALLBACKS_DEFINE(inst, can_sam_cbs_##inst);	\
-	CAN_MCAN_DT_INST_MRAM_DEFINE(inst, can_sam_mram_##inst);	\
+	CAN_SAM_MRAM_DEFINE(inst)					\
 									\
 	static const struct can_sam_config can_sam_cfg_##inst = {	\
 		.base = CAN_MCAN_DT_INST_MCAN_ADDR(inst),		\
-		.mram = (mem_addr_t)POINTER_TO_UINT(&can_sam_mram_##inst), \
+		IF_ENABLED(DT_INST_REG_HAS_NAME(inst, sram_sel),	\
+			(.instance = CAN_INSTANCE_BY_NAME(inst),))	\
+		CAN_SAM_MEMORY_DEFINE(inst)				\
 		.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(inst),		\
-		.divider = DT_INST_PROP(inst, divider),			\
+		CAN_SAM_CLOCK_DIVIDER_DEFINE(inst)			\
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst),		\
 		.config_irq = config_can_##inst##_irq,			\
-		.dma_base = (mm_reg_t) DT_INST_REG_ADDR_BY_NAME(inst, dma_base) \
 	};								\
 									\
 	static const struct can_mcan_config can_mcan_cfg_##inst =	\
@@ -189,9 +250,7 @@ static void config_can_##inst##_irq(void)                                       
 					    &can_sam_ops,		\
 					    &can_sam_cbs_##inst);
 
-#define CAN_SAM_DATA_INST(inst)						\
-	static struct can_mcan_data can_mcan_data_##inst =		\
-		CAN_MCAN_DATA_INITIALIZER(NULL);
+#define CAN_SAM_DATA_INST(inst) CAN_MCAN_DATA_DEFINE(can_mcan_data_##inst, NULL);
 
 #define CAN_SAM_DEVICE_INST(inst)						\
 	CAN_DEVICE_DT_INST_DEFINE(inst, can_sam_init, NULL,			\

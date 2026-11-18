@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Copyright(c) 2022 Intel Corporation. All rights reserved.
+# Copyright (c) 2022 Intel Corporation. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 import os
 import sys
@@ -37,8 +37,14 @@ WINDOW_STRIDE_ACE = 0x8000
 
 DEBUG_SLOT_SIZE = 4096
 DEBUG_SLOT_SHELL = 0
+DEBUG_SLOT_SHELL_TYPE = 0x73686c6c
 SHELL_RX_SIZE = 256
 SHELL_MAX_VALID_SLOT_SIZE = 16777216
+
+# mtrace debug-window logging (log_backend_adsp_mtrace.c)
+MTRACE_SLOT_TYPE = 0x474f4c00   # ADSP_DW_SLOT_DEBUG_LOG, low byte = core id
+MTRACE_CORE = 0
+MTRACE_BUF_SIZE = DEBUG_SLOT_SIZE - 8   # u32 host_ptr + u32 dsp_ptr header
 
 # pylint: disable=duplicate-code
 
@@ -47,6 +53,9 @@ CRST   = 0
 CSTALL = 8
 SPA    = 16
 CPA    = 24
+
+# LCTL bits
+OFLEN  = 4
 
 class HDAStream:
     # creates an hda stream with at 2 buffers of buf_len
@@ -198,7 +207,7 @@ class HDAStream:
         log.info(f"Reset stream {self.stream_id}")
 
 def adsp_is_ace():
-    return ace15 or ace20 or ace30
+    return ace15 or ace20 or ace30 or ace40
 
 def adsp_mem_window_config():
     if adsp_is_ace():
@@ -211,17 +220,22 @@ def adsp_mem_window_config():
     return (base, stride)
 
 def map_regs(log_only):
-    p = runx(f"grep -iEl 'PCI_CLASS=40(10|38)0' /sys/bus/pci/devices/*/uevent")
+    try:
+        p = runx(f"grep -iEl 'PCI_CLASS=40(10|38)0' /sys/bus/pci/devices/*/uevent")
+    except subprocess.CalledProcessError:
+        # if no device found, also try 40300 class no-DSP devices
+        p = runx(f"grep -iEl 'PCI_CLASS=40300' /sys/bus/pci/devices/*/uevent")
     pcidir = os.path.dirname(p)
 
     # Platform/quirk detection.  ID lists cribbed from the SOF kernel driver
-    global cavs25, ace15, ace20, ace30
+    global cavs25, ace15, ace20, ace30, ace40
     did = int(open(f"{pcidir}/device").read().rstrip(), 16)
     cavs25 = did in [ 0x43c8, 0x4b55, 0x4b58, 0x51c8, 0x51ca, 0x51cb, 0x51ce, 0x51cf, 0x54c8,
                       0x7ad0, 0xa0c8 ]
     ace15 = did in [ 0x7728, 0x7f50, 0x7e28 ]
     ace20 = did in [ 0xa828 ]
-    ace30 = did in [ 0xe428 ]
+    ace30 = did in [ 0xe428, 0x4d28 ]
+    ace40 = did in [ 0x6e50 ]
 
     # Check sysfs for a loaded driver and remove it
     if os.path.exists(f"{pcidir}/driver"):
@@ -252,12 +266,14 @@ def map_regs(log_only):
     hda.SPBFCTL = 0x0704
     hda.PPCTL   = 0x0804
 
+    if ace20 or ace30 or ace40:
+        hda.HDAML_I2S_LCTL = 0x0C40 + 0x40 * 3 + 4
+
     # Find the ID of the first output stream
     hda_ostream_id = (hda.GCAP >> 8) & 0x0f # number of input streams
     log.info(f"Selected output stream {hda_ostream_id} (GCAP = 0x{hda.GCAP:x})")
     hda.SD_SPIB = 0x0708 + (8 * hda_ostream_id)
     hda.freeze()
-
 
     # Standard HD Audio Stream Descriptor
     sd = Regs(hdamem + 0x0080 + (hda_ostream_id * 0x20))
@@ -322,6 +338,8 @@ def setup_dma_mem(fw_bytes):
     return (phys_addr + bdl_off, 2)
 
 global_mmaps = [] # protect mmap mappings from garbage collection!
+
+mtrace_slot_base = None # cached offset of the mtrace debug-window slot
 
 # Maps 2M of contiguous memory using a single page from hugetlbfs,
 # then locates its physical address for use as a DMA buffer.
@@ -390,8 +408,7 @@ def runx(cmd):
     return subprocess.check_output(cmd, shell=True).decode().rstrip()
 
 def mask(bit):
-    if cavs25:
-        return 0b1 << bit
+    return 0b1 << bit
 
 def load_firmware(fw_file):
     try:
@@ -533,6 +550,12 @@ def load_firmware_ace(fw_file):
     while not dsp.HFDSSCS & (1 << 24):
         log.info("Waiting for DSP subsystem power on")
         time.sleep(0.1)
+
+    if ace20 or ace30 or ace40:
+        log.info(f"Enabling offload for I2S link")
+        # needed to allow DSP to access SSP DAI
+        hda.HDAML_I2S_LCTL |= mask(OFLEN)
+        log.debug(f"HDAML.I2S_LCTL 0x{hda.HDAML_I2S_LCTL:x}")
 
     log.info("Turning on Domain0")
     dsp.HFPWRCTL |= 0x1 # set SPA bit
@@ -765,19 +788,71 @@ def debug_slot_offset_by_type(the_type, timeout_s=0.2):
     return None
 
 def shell_base_offset():
-    return debug_offset() + DEBUG_SLOT_SIZE * (1 + DEBUG_SLOT_SHELL)
+    return debug_slot_offset_by_type(DEBUG_SLOT_SHELL_TYPE)
+
+def mtrace_offset():
+    # The mtrace slot only appears after the FW has booted, and the type scan
+    # has a timeout, so resolve it once and cache the result.
+    global mtrace_slot_base
+    if mtrace_slot_base is None:
+        mtrace_slot_base = debug_slot_offset_by_type(MTRACE_SLOT_TYPE | (MTRACE_CORE & 0xff))
+    return mtrace_slot_base
+
+def mtrace_reg_hdr(base):
+    hdr = Regs(bar4_mem + base)
+    hdr.HOST_PTR = 0x00
+    hdr.DSP_PTR  = 0x04
+    hdr.freeze()
+    return hdr
+
+# Passive read of one mtrace ring-buffer slot. Tracks our OWN cursor
+# (last_read); it never writes host_ptr, so the SOF driver keeps full control
+# of log consumption and buffer reuse.
+def mtrace_read(base, last_read):
+    N = MTRACE_BUF_SIZE
+    hdr = mtrace_reg_hdr(base)
+    r = hdr.HOST_PTR      # SOF driver's read pointer (read-only to us)
+    w = hdr.DSP_PTR       # DSP write pointer
+    # Powered off / uninitialised slot -> pointers out of range
+    if r >= N or w >= N:
+        return (last_read, "")
+    if last_read is None:
+        last_read = r     # start at the pending backlog (host read ptr)
+    # Clamp our cursor into the currently-valid window [r, w] (mod N). If the
+    # SOF driver consumed past where we were, that data was overwritten by the
+    # DSP -> resync to r (best-effort, some bytes are lost).
+    if (last_read - r) % N > (w - r) % N:
+        last_read = r
+    n = (w - last_read) % N
+    if n == 0:
+        return (last_read, "")
+    data_base = base + 8
+    suffix = min(n, N - last_read)
+    result = win_read(data_base, last_read, suffix)
+    if suffix < n:
+        result += win_read(data_base, 0, n - suffix)
+    return (w, result.decode("utf-8", "replace"))
 
 def read_from_shell_memwindow_winstream(last_seq):
-    offset = shell_base_offset() + SHELL_RX_SIZE
-    (last_seq, output) = winstream_read(offset, last_seq)
-    if output:
-        os.write(shell_client_port, output.encode("utf-8"))
+    offset = shell_base_offset()
+    if offset is not None:
+        offset += SHELL_RX_SIZE
+        (last_seq, output) = winstream_read(offset, last_seq)
+        if output:
+            os.write(shell_client_port, output.encode("utf-8"))
+    else:
+        log.info("Shell debug window is not available")
+
     return last_seq
 
 def write_to_shell_memwindow_winstream():
     msg = os.read(shell_client_port, 1)
     if len(msg) > 0:
-        winstream_write(shell_base_offset(), msg)
+        offset = shell_base_offset()
+        if offset is not None:
+            winstream_write(offset, msg)
+        else:
+            log.info("Shell debug window is not available")
 
 def create_shell_pty():
     global shell_client_port
@@ -938,8 +1013,12 @@ async def main():
     #TODO this bit me, remove the globals, write a little FirmwareLoader class or something to contain.
     global hda, sd, dsp, hda_ostream_id, hda_streams
 
+    # mtrace monitoring is passive: like -l it must not load firmware, unload
+    # the running SOF driver, or drive IPC.
+    passive = args.log_only or args.mtrace
+
     try:
-        (hda, sd, dsp, hda_ostream_id) = map_regs(args.log_only)
+        (hda, sd, dsp, hda_ostream_id) = map_regs(passive)
     except Exception as e:
         log.error("Could not map device in sysfs; run as root?")
         log.error(e)
@@ -947,7 +1026,7 @@ async def main():
 
     log.info(f"Detected a supported cAVS/ACE hardware version")
 
-    if args.log_only:
+    if passive:
         wait_fw_entered(dsp, timeout_s=None)
     else:
         if not args.fw_file:
@@ -970,15 +1049,21 @@ async def main():
 
     last_seq = 0
     last_seq_shell = 0
+    last_mtrace = None
     while start_output is True:
         await asyncio.sleep(0.03)
         if args.shell_pty:
             last_seq_shell = read_from_shell_memwindow_winstream(last_seq_shell)
-        (last_seq, output) = winstream_read(winstream_offset(), last_seq)
+        if args.mtrace:
+            base = mtrace_offset()
+            if base is not None:
+                (last_mtrace, output) = mtrace_read(base, last_mtrace)
+        else:
+            (last_seq, output) = winstream_read(winstream_offset(), last_seq)
         if output:
             sys.stdout.write(output)
             sys.stdout.flush()
-        if not args.log_only:
+        if not passive:
             handle_ipc()
 
 def args_parse():
@@ -990,6 +1075,9 @@ def args_parse():
                     help="More loader output, DEBUG logging level")
     ap.add_argument("-l", "--log-only", action="store_true",
                     help="Don't load firmware, just show log output")
+    ap.add_argument("-m", "--mtrace", action="store_true",
+                    help="Passively monitor mtrace debug-window logs "
+                         "(read-only, safe alongside the SOF driver)")
     ap.add_argument("-p", "--shell-pty", action="store_true",
                     help="Create a Zephyr shell pty if enabled in firmware")
     ap.add_argument("-n", "--no-history", action="store_true",

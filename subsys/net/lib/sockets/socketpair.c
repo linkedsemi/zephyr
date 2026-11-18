@@ -6,7 +6,6 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/net/socket.h>
-#include <zephyr/posix/fcntl.h>
 #include <zephyr/internal/syscall_handler.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/fdtable.h>
@@ -47,7 +46,7 @@ __net_socket struct spair {
 	int remote; /**< the remote endpoint file descriptor */
 	uint32_t flags; /**< status and option bits */
 	struct k_sem sem; /**< semaphore for exclusive structure access */
-	struct k_pipe recv_q; /**< receive queue of local endpoint */
+	struct ring_buf recv_q;
 	/** indicates local @a recv_q isn't empty */
 	struct k_poll_signal readable;
 	/** indicates local @a recv_q isn't full */
@@ -57,8 +56,7 @@ __net_socket struct spair {
 };
 
 #ifdef CONFIG_NET_SOCKETPAIR_STATIC
-K_MEM_SLAB_DEFINE_STATIC(spair_slab, sizeof(struct spair), CONFIG_NET_SOCKETPAIR_MAX * 2,
-			 __alignof__(struct spair));
+K_MEM_SLAB_DEFINE_STATIC_TYPE(spair_slab, struct spair, CONFIG_NET_SOCKETPAIR_MAX * 2);
 #endif /* CONFIG_NET_SOCKETPAIR_STATIC */
 
 /* forward declaration */
@@ -106,7 +104,7 @@ static inline size_t spair_write_avail(struct spair *spair)
 		return 0;
 	}
 
-	return k_pipe_write_avail(&remote->recv_q);
+	return ring_buf_space_get(&remote->recv_q);
 }
 
 /**
@@ -117,7 +115,7 @@ static inline size_t spair_write_avail(struct spair *spair)
  */
 static inline size_t spair_read_avail(struct spair *spair)
 {
-	return k_pipe_read_avail(&spair->recv_q);
+	return ring_buf_size_get(&spair->recv_q);
 }
 
 /** Swap two 32-bit integers */
@@ -250,7 +248,7 @@ static struct spair *spair_new(void)
 	spair->flags = SPAIR_FLAGS_DEFAULT;
 
 	k_sem_init(&spair->sem, 1, 1);
-	k_pipe_init(&spair->recv_q, spair->buf, sizeof(spair->buf));
+	ring_buf_init(&spair->recv_q, sizeof(spair->buf), spair->buf);
 	k_poll_signal_init(&spair->readable);
 	k_poll_signal_init(&spair->writeable);
 
@@ -283,15 +281,15 @@ int z_impl_zsock_socketpair(int family, int type, int proto, int *sv)
 	size_t i;
 	struct spair *obj[2] = {};
 
-	SYS_PORT_TRACING_OBJ_FUNC_ENTER(socket, socketpair, family, type, proto, sv);
+	SYS_PORT_TRACING_FUNC_ENTER(socket, socketpair, family, type, proto, sv);
 
-	if (family != AF_UNIX) {
+	if (family != NET_AF_UNIX) {
 		errno = EAFNOSUPPORT;
 		res = -1;
 		goto errout;
 	}
 
-	if (type != SOCK_STREAM) {
+	if (type != NET_SOCK_STREAM) {
 		errno = EPROTOTYPE;
 		res = -1;
 		goto errout;
@@ -326,7 +324,7 @@ int z_impl_zsock_socketpair(int family, int type, int proto, int *sv)
 		k_sem_give(&obj[0]->sem);
 	}
 
-	SYS_PORT_TRACING_OBJ_FUNC_EXIT(socket, socketpair, sv[0], sv[1], 0);
+	SYS_PORT_TRACING_FUNC_EXIT(socket, socketpair, sv[0], sv[1], 0);
 
 	return 0;
 
@@ -336,7 +334,7 @@ cleanup:
 	}
 
 errout:
-	SYS_PORT_TRACING_OBJ_FUNC_EXIT(socket, socketpair, -1, -1, -errno);
+	SYS_PORT_TRACING_FUNC_EXIT(socket, socketpair, -1, -1, -errno);
 
 	return res;
 }
@@ -550,10 +548,7 @@ static ssize_t spair_write(void *obj, const void *buffer, size_t count)
 		}
 	}
 
-	res = k_pipe_put(&remote->recv_q, (void *)buffer, count,
-			 &bytes_written, 1, K_NO_WAIT);
-	__ASSERT(res == 0, "k_pipe_put() failed: %d", res);
-
+	bytes_written = ring_buf_put(&remote->recv_q, (void *)buffer, count);
 	if (spair_write_avail(spair) == 0) {
 		k_poll_signal_reset(&remote->writeable);
 	}
@@ -724,10 +719,7 @@ static ssize_t spair_read(void *obj, void *buffer, size_t count)
 		}
 	}
 
-	res = k_pipe_get(&spair->recv_q, (void *)buffer, count, &bytes_read,
-			 1, K_NO_WAIT);
-	__ASSERT(res == 0, "k_pipe_get() failed: %d", res);
-
+	bytes_read = ring_buf_get(&spair->recv_q, (void *)buffer, count);
 	if (spair_read_avail(spair) == 0 && !sock_is_eof(spair)) {
 		k_poll_signal_reset(&spair->readable);
 	}
@@ -748,7 +740,7 @@ out:
 	return res;
 }
 
-static int zsock_poll_prepare_ctx(struct spair *const spair,
+static int spair_poll_prepare_ctx(struct spair *const obj,
 				  struct zsock_pollfd *const pfd,
 				  struct k_poll_event **pev,
 				  struct k_poll_event *pev_end)
@@ -761,7 +753,7 @@ static int zsock_poll_prepare_ctx(struct spair *const spair,
 	if (pfd->events & ZSOCK_POLLIN) {
 
 		/* Tell poll() to short-circuit wait */
-		if (sock_is_eof(spair)) {
+		if (sock_is_eof(obj)) {
 			res = -EALREADY;
 			goto out;
 		}
@@ -772,13 +764,13 @@ static int zsock_poll_prepare_ctx(struct spair *const spair,
 		}
 
 		/* Wait until data has been written to the local end */
-		(*pev)->obj = &spair->readable;
+		(*pev)->obj = &obj->readable;
 	}
 
 	if (pfd->events & ZSOCK_POLLOUT) {
 
 		/* Tell poll() to short-circuit wait */
-		if (!sock_is_connected(spair)) {
+		if (!sock_is_connected(obj)) {
 			res = -EALREADY;
 			goto out;
 		}
@@ -788,7 +780,7 @@ static int zsock_poll_prepare_ctx(struct spair *const spair,
 			goto out;
 		}
 
-		remote = zvfs_get_fd_obj(spair->remote,
+		remote = zvfs_get_fd_obj(obj->remote,
 			(const struct fd_op_vtable *)
 			&spair_fd_op_vtable, 0);
 
@@ -822,7 +814,7 @@ out:
 	return res;
 }
 
-static int zsock_poll_update_ctx(struct spair *const spair,
+static int spair_poll_update_ctx(struct spair *const obj,
 				 struct zsock_pollfd *const pfd,
 				 struct k_poll_event **pev)
 {
@@ -833,12 +825,12 @@ static int zsock_poll_update_ctx(struct spair *const spair,
 	bool have_remote_sem = false;
 
 	if (pfd->events & ZSOCK_POLLOUT) {
-		if (!sock_is_connected(spair)) {
+		if (!sock_is_connected(obj)) {
 			pfd->revents |= ZSOCK_POLLHUP;
 			goto pollout_done;
 		}
 
-		remote = zvfs_get_fd_obj(spair->remote,
+		remote = zvfs_get_fd_obj(obj->remote,
 			(const struct fd_op_vtable *) &spair_fd_op_vtable, 0);
 
 		__ASSERT(remote != NULL, "remote is NULL");
@@ -851,7 +843,7 @@ static int zsock_poll_update_ctx(struct spair *const spair,
 
 		have_remote_sem = true;
 
-		if (spair_write_avail(spair) > 0) {
+		if (spair_write_avail(obj) > 0) {
 			pfd->revents |= ZSOCK_POLLOUT;
 			goto pollout_done;
 		}
@@ -873,19 +865,19 @@ static int zsock_poll_update_ctx(struct spair *const spair,
 pollout_done:
 
 	if (pfd->events & ZSOCK_POLLIN) {
-		if (sock_is_eof(spair)) {
+		if (sock_is_eof(obj)) {
 			pfd->revents |= ZSOCK_POLLIN;
 			goto pollin_done;
 		}
 
-		if (spair_read_avail(spair) > 0) {
+		if (spair_read_avail(obj) > 0) {
 			pfd->revents |= ZSOCK_POLLIN;
 			goto pollin_done;
 		}
 
 		/* check to see if op was canceled */
 		signaled = false;
-		k_poll_signal_check(&spair->readable, &signaled, &result);
+		k_poll_signal_check(&obj->readable, &signaled, &result);
 		if (signaled) {
 			/* Cannot be SPAIR_SIG_DATA, because
 			 * spair_read_avail() would have
@@ -935,19 +927,19 @@ static int spair_ioctl(void *obj, unsigned int request, va_list args)
 	have_local_sem = true;
 
 	switch (request) {
-		case F_GETFL: {
+		case ZVFS_F_GETFL: {
 			if (sock_is_nonblock(spair)) {
-				flags |= O_NONBLOCK;
+				flags |= ZVFS_O_NONBLOCK;
 			}
 
 			res = flags;
 			goto out;
 		}
 
-		case F_SETFL: {
+		case ZVFS_F_SETFL: {
 			flags = va_arg(args, int);
 
-			if (flags & O_NONBLOCK) {
+			if (flags & ZVFS_O_NONBLOCK) {
 				spair->flags |= SPAIR_FLAG_NONBLOCK;
 			} else {
 				spair->flags &= ~SPAIR_FLAG_NONBLOCK;
@@ -978,7 +970,7 @@ static int spair_ioctl(void *obj, unsigned int request, va_list args)
 			pev = va_arg(args, struct k_poll_event **);
 			pev_end = va_arg(args, struct k_poll_event *);
 
-			res = zsock_poll_prepare_ctx(obj, pfd, pev, pev_end);
+			res = spair_poll_prepare_ctx(obj, pfd, pev, pev_end);
 			goto out;
 		}
 
@@ -986,7 +978,7 @@ static int spair_ioctl(void *obj, unsigned int request, va_list args)
 			pfd = va_arg(args, struct zsock_pollfd *);
 			pev = va_arg(args, struct k_poll_event **);
 
-			res = zsock_poll_update_ctx(obj, pfd, pev);
+			res = spair_poll_update_ctx(obj, pfd, pev);
 			goto out;
 		}
 
@@ -1005,8 +997,8 @@ out:
 	return res;
 }
 
-static int spair_bind(void *obj, const struct sockaddr *addr,
-		      socklen_t addrlen)
+static int spair_bind(void *obj, const struct net_sockaddr *addr,
+		      net_socklen_t addrlen)
 {
 	ARG_UNUSED(obj);
 	ARG_UNUSED(addr);
@@ -1016,8 +1008,8 @@ static int spair_bind(void *obj, const struct sockaddr *addr,
 	return -1;
 }
 
-static int spair_connect(void *obj, const struct sockaddr *addr,
-			 socklen_t addrlen)
+static int spair_connect(void *obj, const struct net_sockaddr *addr,
+			 net_socklen_t addrlen)
 {
 	ARG_UNUSED(obj);
 	ARG_UNUSED(addr);
@@ -1036,8 +1028,8 @@ static int spair_listen(void *obj, int backlog)
 	return -1;
 }
 
-static int spair_accept(void *obj, struct sockaddr *addr,
-			socklen_t *addrlen)
+static int spair_accept(void *obj, struct net_sockaddr *addr,
+			net_socklen_t *addrlen)
 {
 	ARG_UNUSED(obj);
 	ARG_UNUSED(addr);
@@ -1048,8 +1040,8 @@ static int spair_accept(void *obj, struct sockaddr *addr,
 }
 
 static ssize_t spair_sendto(void *obj, const void *buf, size_t len,
-			    int flags, const struct sockaddr *dest_addr,
-				 socklen_t addrlen)
+			    int flags, const struct net_sockaddr *dest_addr,
+			    net_socklen_t addrlen)
 {
 	ARG_UNUSED(flags);
 	ARG_UNUSED(dest_addr);
@@ -1058,7 +1050,7 @@ static ssize_t spair_sendto(void *obj, const void *buf, size_t len,
 	return spair_write(obj, buf, len);
 }
 
-static ssize_t spair_sendmsg(void *obj, const struct msghdr *msg,
+static ssize_t spair_sendmsg(void *obj, const struct net_msghdr *msg,
 			     int flags)
 {
 	ARG_UNUSED(flags);
@@ -1118,8 +1110,8 @@ out:
 }
 
 static ssize_t spair_recvfrom(void *obj, void *buf, size_t max_len,
-			      int flags, struct sockaddr *src_addr,
-				   socklen_t *addrlen)
+			      int flags, struct net_sockaddr *src_addr,
+			      net_socklen_t *addrlen)
 {
 	(void)flags;
 	(void)src_addr;
@@ -1142,7 +1134,7 @@ static ssize_t spair_recvfrom(void *obj, void *buf, size_t max_len,
 }
 
 static int spair_getsockopt(void *obj, int level, int optname,
-			    void *optval, socklen_t *optlen)
+			    void *optval, net_socklen_t *optlen)
 {
 	ARG_UNUSED(obj);
 	ARG_UNUSED(level);
@@ -1155,7 +1147,7 @@ static int spair_getsockopt(void *obj, int level, int optname,
 }
 
 static int spair_setsockopt(void *obj, int level, int optname,
-			    const void *optval, socklen_t optlen)
+			    const void *optval, net_socklen_t optlen)
 {
 	ARG_UNUSED(obj);
 	ARG_UNUSED(level);
@@ -1167,10 +1159,12 @@ static int spair_setsockopt(void *obj, int level, int optname,
 	return -1;
 }
 
-static int spair_close(void *obj)
+static int spair_close(void *obj, int fd)
 {
 	struct spair *const spair = (struct spair *)obj;
 	int res;
+
+	ARG_UNUSED(fd);
 
 	res = k_sem_take(&spair->sem, K_FOREVER);
 	__ASSERT(res == 0, "failed to take local sem: %d", res);
@@ -1187,7 +1181,7 @@ static const struct socket_op_vtable spair_fd_op_vtable = {
 	.fd_vtable = {
 		.read = spair_read,
 		.write = spair_write,
-		.close = spair_close,
+		.close2 = spair_close,
 		.ioctl = spair_ioctl,
 	},
 	.bind = spair_bind,

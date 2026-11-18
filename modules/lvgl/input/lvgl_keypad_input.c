@@ -36,11 +36,11 @@ static void lvgl_keypad_process_event(struct input_event *evt, void *user_data)
 	}
 
 	if (i == cfg->num_codes) {
-		LOG_WRN("Ignored input event: %u", evt->code);
+		LOG_DBG("Ignored input event: %u", evt->code);
 		return;
 	}
 
-	data->pending_event.state = evt->value ? LV_INDEV_STATE_PR : LV_INDEV_STATE_REL;
+	data->pending_event.state = evt->value ? LV_INDEV_STATE_PRESSED : LV_INDEV_STATE_RELEASED;
 	if (k_msgq_put(cfg->common_config.event_msgq, &data->pending_event, K_NO_WAIT) != 0) {
 		LOG_WRN("Could not put input data into keypad queue");
 	}
@@ -57,12 +57,14 @@ int lvgl_keypad_input_init(const struct device *dev)
 
 #define LVGL_KEYPAD_INPUT_DEFINE(inst)                                                             \
 	ASSERT_PROPERTIES(inst);                                                                   \
-	LVGL_INPUT_DEFINE(inst, keypad, CONFIG_LV_Z_KEYPAD_INPUT_MSGQ_COUNT,                       \
-			  lvgl_keypad_process_event);                                              \
+	LVGL_INPUT_INST_DEFINE(inst, keypad, CONFIG_LV_Z_KEYPAD_INPUT_MSGQ_COUNT,                  \
+			       lvgl_keypad_process_event);                                         \
 	static const uint16_t lvgl_keypad_input_codes_##inst[] = DT_INST_PROP(inst, input_codes);  \
 	static const uint16_t lvgl_keypad_lvgl_codes_##inst[] = DT_INST_PROP(inst, lvgl_codes);    \
 	static const struct lvgl_keypad_input_config lvgl_keypad_input_config_##inst = {           \
 		.common_config.event_msgq = &LVGL_INPUT_EVENT_MSGQ(inst, keypad),                  \
+		.common_config.display_dev =                                                       \
+			DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(inst, display)),                     \
 		.input_codes = lvgl_keypad_input_codes_##inst,                                     \
 		.lvgl_codes = lvgl_keypad_lvgl_codes_##inst,                                       \
 		.num_codes = DT_INST_PROP_LEN(inst, input_codes),                                  \

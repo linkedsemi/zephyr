@@ -273,7 +273,7 @@ static uint32_t gpio_sedi_get_pending(const struct device *dev)
 	return sedi_gpio_get_gisr(gpio_dev, 0);
 }
 
-static const struct gpio_driver_api gpio_sedi_driver_api = {
+static DEVICE_API(gpio, gpio_sedi_driver_api) = {
 	.pin_configure = gpio_sedi_configure,
 	.port_get_raw = gpio_sedi_get_raw,
 	.port_set_masked_raw = gpio_sedi_set_masked_raw,
@@ -308,10 +308,10 @@ static int gpio_sedi_init(const struct device *dev)
 	return 0;
 }
 
-#define GPIO_SEDI_IRQ_FLAGS_SENSE0(n) 0
-#define GPIO_SEDI_IRQ_FLAGS_SENSE1(n) DT_INST_IRQ(n, sense)
+#define GPIO_SEDI_IRQ_FLAGS0(n) 0
+#define GPIO_SEDI_IRQ_FLAGS1(n) DT_INST_IRQ(n, flags)
 #define GPIO_SEDI_IRQ_FLAGS(n) \
-	_CONCAT(GPIO_SEDI_IRQ_FLAGS_SENSE, DT_INST_IRQ_HAS_CELL(n, sense))(n)
+	_CONCAT(GPIO_SEDI_IRQ_FLAGS, DT_INST_IRQ_HAS_CELL(n, flags))(n)
 
 #define GPIO_DEVICE_INIT_SEDI(n)				       \
 	static struct gpio_sedi_data gpio##n##_data;	               \
@@ -324,7 +324,7 @@ static int gpio_sedi_init(const struct device *dev)
 	};							       \
 	static const struct gpio_sedi_config gpio##n##_config = {      \
 		DEVICE_MMIO_ROM_INIT(DT_DRV_INST(n)),                  \
-		.common = { 0xFFFFFFFF },			       \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),	       \
 		.device = DT_INST_PROP(n, peripheral_id),              \
 		.pin_nums = DT_INST_PROP(n, ngpios),                   \
 		.irq_config = gpio_sedi_irq_config_##n,	               \

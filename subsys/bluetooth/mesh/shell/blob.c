@@ -11,9 +11,8 @@
 #include <zephyr/bluetooth/mesh.h>
 #include <zephyr/bluetooth/mesh/shell.h>
 
+#include "common/bt_shell_private.h"
 #include "utils.h"
-
-extern const struct shell *bt_mesh_shell_ctx_shell;
 
 /***************************************************************************************************
  * Implementation of models' instances
@@ -85,8 +84,7 @@ static void blob_cli_lost_target(struct bt_mesh_blob_cli *cli,
 				 struct bt_mesh_blob_target *target,
 				 enum bt_mesh_blob_status reason)
 {
-	shell_print(bt_mesh_shell_ctx_shell, "Mesh Blob: Lost target 0x%04x (reason: %u)",
-		    target->addr, reason);
+	bt_shell_print("Mesh Blob: Lost target 0x%04x (reason: %u)", target->addr, reason);
 }
 
 static void blob_cli_caps(struct bt_mesh_blob_cli *cli,
@@ -100,30 +98,29 @@ static void blob_cli_caps(struct bt_mesh_blob_cli *cli,
 	};
 
 	if (!caps) {
-		shell_print(bt_mesh_shell_ctx_shell,
-			    "None of the targets can be used for BLOB transfer");
+		bt_shell_print("None of the targets can be used for BLOB transfer");
 		return;
 	}
 
-	shell_print(bt_mesh_shell_ctx_shell, "Mesh BLOB: capabilities:");
-	shell_print(bt_mesh_shell_ctx_shell, "\tMax BLOB size: %u bytes", caps->max_size);
-	shell_print(bt_mesh_shell_ctx_shell, "\tBlock size: %u-%u (%u-%u bytes)",
-		    caps->min_block_size_log, caps->max_block_size_log,
-		    1 << caps->min_block_size_log,
-		    1 << caps->max_block_size_log);
-	shell_print(bt_mesh_shell_ctx_shell, "\tMax chunks: %u", caps->max_chunks);
-	shell_print(bt_mesh_shell_ctx_shell, "\tChunk size: %u", caps->max_chunk_size);
-	shell_print(bt_mesh_shell_ctx_shell, "\tMTU size: %u", caps->mtu_size);
-	shell_print(bt_mesh_shell_ctx_shell, "\tModes: %s", modes[caps->modes]);
+	bt_shell_print("Mesh BLOB: capabilities:");
+	bt_shell_print("\tMax BLOB size: %u bytes", caps->max_size);
+	bt_shell_print("\tBlock size: %u-%u (%u-%u bytes)",
+		       caps->min_block_size_log, caps->max_block_size_log,
+		       1 << caps->min_block_size_log,
+		       1 << caps->max_block_size_log);
+	bt_shell_print("\tMax chunks: %u", caps->max_chunks);
+	bt_shell_print("\tChunk size: %u", caps->max_chunk_size);
+	bt_shell_print("\tMTU size: %u", caps->mtu_size);
+	bt_shell_print("\tModes: %s", modes[caps->modes]);
 }
 
 static void blob_cli_end(struct bt_mesh_blob_cli *cli,
 			 const struct bt_mesh_blob_xfer *xfer, bool success)
 {
 	if (success) {
-		shell_print(bt_mesh_shell_ctx_shell, "Mesh BLOB transfer complete.");
+		bt_shell_print("Mesh BLOB transfer complete.");
 	} else {
-		shell_print(bt_mesh_shell_ctx_shell, "Mesh BLOB transfer failed.");
+		bt_shell_print("Mesh BLOB transfer failed.");
 	}
 }
 
@@ -131,18 +128,20 @@ static uint8_t get_progress(const struct bt_mesh_blob_xfer_info *info)
 {
 	uint8_t total_blocks;
 	uint8_t blocks_not_rxed = 0;
-	uint8_t blocks_not_rxed_size;
-	int i;
 
 	total_blocks = DIV_ROUND_UP(info->size, 1U << info->block_size_log);
 
-	blocks_not_rxed_size = DIV_ROUND_UP(total_blocks, 8);
-
-	for (i = 0; i < blocks_not_rxed_size; i++) {
-		blocks_not_rxed += info->missing_blocks[i % 8] & (1 << (i % 8));
+	if (total_blocks == 0) {
+		return 0;
 	}
 
-	return  (total_blocks - blocks_not_rxed) / total_blocks;
+	for (int i = 0; i < total_blocks; i++) {
+		if (info->missing_blocks[i / 8] & (1 << (i % 8))) {
+			blocks_not_rxed++;
+		}
+	}
+
+	return (100U * (total_blocks - blocks_not_rxed)) / total_blocks;
 }
 
 static void xfer_progress(struct bt_mesh_blob_cli *cli,
@@ -151,16 +150,15 @@ static void xfer_progress(struct bt_mesh_blob_cli *cli,
 {
 	uint8_t progress = get_progress(info);
 
-	shell_print(bt_mesh_shell_ctx_shell,
-		    "BLOB transfer progress received from target 0x%04x:\n"
-		    "\tphase: %d\n"
-		    "\tprogress: %u%%",
-		    target->addr, info->phase, progress);
+	bt_shell_print("BLOB transfer progress received from target 0x%04x:\n"
+		       "\tphase: %d\n"
+		       "\tprogress: %u%%",
+		       target->addr, info->phase, progress);
 }
 
 static void xfer_progress_complete(struct bt_mesh_blob_cli *cli)
 {
-	shell_print(bt_mesh_shell_ctx_shell, "Determine BLOB transfer progress procedure complete");
+	bt_shell_print("Determine BLOB transfer progress procedure complete");
 }
 
 static const struct bt_mesh_blob_cli_cb blob_cli_handlers = {
@@ -185,7 +183,7 @@ static int blob_srv_start(struct bt_mesh_blob_srv *srv,
 			  struct bt_mesh_msg_ctx *ctx,
 			  struct bt_mesh_blob_xfer *xfer)
 {
-	shell_print(bt_mesh_shell_ctx_shell, "BLOB start");
+	bt_shell_print("BLOB start");
 	blob_time = k_uptime_get();
 	return 0;
 }
@@ -196,11 +194,11 @@ static void blob_srv_end(struct bt_mesh_blob_srv *srv, uint64_t id,
 	if (success) {
 		int64_t duration = k_uptime_delta(&blob_time);
 
-		shell_print(bt_mesh_shell_ctx_shell, "BLOB completed in %u.%03u s",
-			(uint32_t)(duration / MSEC_PER_SEC),
-			(uint32_t)(duration % MSEC_PER_SEC));
+		bt_shell_print("BLOB completed in %u.%03u s",
+			       (uint32_t)(duration / MSEC_PER_SEC),
+			       (uint32_t)(duration % MSEC_PER_SEC));
 	} else {
-		shell_print(bt_mesh_shell_ctx_shell, "BLOB cancelled");
+		bt_shell_print("BLOB cancelled");
 	}
 }
 

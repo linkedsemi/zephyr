@@ -9,13 +9,13 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/usbd.h>
 #include <zephyr/usb/class/usbd_msc.h>
+#include <zephyr/storage/disk_access.h>
 #include <zephyr/fs/fs.h>
 #include <stdio.h>
 
-LOG_MODULE_REGISTER(main);
+LOG_MODULE_REGISTER(main, LOG_LEVEL_INF);
 
 #if CONFIG_DISK_DRIVER_FLASH
 #include <zephyr/storage/flash_map.h>
@@ -37,11 +37,10 @@ FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(storage);
 #endif
 
 #define STORAGE_PARTITION		storage_partition
-#define STORAGE_PARTITION_ID		FIXED_PARTITION_ID(STORAGE_PARTITION)
+#define STORAGE_PARTITION_ID		PARTITION_ID(STORAGE_PARTITION)
 
 static struct fs_mount_t fs_mnt;
 
-#if defined(CONFIG_USB_DEVICE_STACK_NEXT)
 static struct usbd_context *sample_usbd;
 
 #if CONFIG_DISK_DRIVER_RAM
@@ -55,28 +54,6 @@ USBD_DEFINE_MSC_LUN(nand, "NAND", "Zephyr", "FlashDisk", "0.00");
 #if CONFIG_DISK_DRIVER_SDMMC
 USBD_DEFINE_MSC_LUN(sd, "SD", "Zephyr", "SD", "0.00");
 #endif
-
-static int enable_usb_device_next(void)
-{
-	int err;
-
-	sample_usbd = sample_usbd_init_device(NULL);
-	if (sample_usbd == NULL) {
-		LOG_ERR("Failed to initialize USB device");
-		return -ENODEV;
-	}
-
-	err = usbd_enable(sample_usbd);
-	if (err) {
-		LOG_ERR("Failed to enable device support");
-		return err;
-	}
-
-	LOG_DBG("USB device support enabled");
-
-	return 0;
-}
-#endif /* defined(CONFIG_USB_DEVICE_STACK_NEXT) */
 
 static int setup_flash(struct fs_mount_t *mnt)
 {
@@ -131,6 +108,32 @@ static int mount_app_fs(struct fs_mount_t *mnt)
 	rc = fs_mount(mnt);
 
 	return rc;
+}
+
+static void init_disk(void)
+{
+	int rc = 0;
+
+	if (IS_ENABLED(CONFIG_DISK_DRIVER_FLASH)) {
+		rc = disk_access_ioctl("NAND", DISK_IOCTL_CTRL_INIT, NULL);
+		if (rc != 0) {
+			LOG_ERR("Failed to initialize NAND disk: %d", rc);
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_DISK_DRIVER_RAM)) {
+		rc = disk_access_ioctl("RAM", DISK_IOCTL_CTRL_INIT, NULL);
+		if (rc != 0) {
+			LOG_ERR("Failed to initialize RAM disk: %d", rc);
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_DISK_DRIVER_SDMMC)) {
+		rc = disk_access_ioctl("SD", DISK_IOCTL_CTRL_INIT, NULL);
+		if (rc != -ENODEV && rc != 0) {
+			LOG_ERR("Failed to initialize SD disk: %d", rc);
+		}
+	}
 }
 
 static void setup_disk(void)
@@ -198,7 +201,7 @@ static void setup_disk(void)
 			printk("End of files\n");
 			break;
 		}
-		printk("  %c %u %s\n",
+		printk("  %c %zu %s\n",
 		       (ent.type == FS_DIR_ENTRY_FILE) ? 'F' : 'D',
 		       ent.size,
 		       ent.name);
@@ -213,18 +216,27 @@ int main(void)
 {
 	int ret;
 
+	init_disk();
 	setup_disk();
 
-#if defined(CONFIG_USB_DEVICE_STACK_NEXT)
-	ret = enable_usb_device_next();
-#else
-	ret = usb_enable(NULL);
-#endif
+	sample_usbd = sample_usbd_init_device(NULL);
+	if (sample_usbd == NULL) {
+		LOG_ERR("Failed to initialize USB device");
+		return -ENODEV;
+	}
+
+	ret = usbd_enable(sample_usbd);
+	if (ret) {
+		LOG_ERR("Failed to enable device support");
+		return ret;
+	}
+
 	if (ret != 0) {
 		LOG_ERR("Failed to enable USB");
 		return 0;
 	}
 
-	LOG_INF("The device is put in USB mass storage mode.\n");
+	LOG_INF("The device is put in USB mass storage mode");
+
 	return 0;
 }

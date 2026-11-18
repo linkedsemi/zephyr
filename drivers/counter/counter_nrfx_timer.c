@@ -3,7 +3,9 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <soc.h>
 #include <zephyr/drivers/counter.h>
+#include <zephyr/devicetree.h>
 #include <hal/nrf_timer.h>
 #include <zephyr/sys/atomic.h>
 
@@ -70,7 +72,12 @@ static int stop(const struct device *dev)
 {
 	const struct counter_nrfx_config *config = dev->config;
 
+#if NRF_TIMER_HAS_SHUTDOWN
 	nrf_timer_task_trigger(config->timer, NRF_TIMER_TASK_SHUTDOWN);
+#else
+	nrf_timer_task_trigger(config->timer, NRF_TIMER_TASK_STOP);
+	nrf_timer_task_trigger(config->timer, NRF_TIMER_TASK_CLEAR);
+#endif
 
 	return 0;
 }
@@ -97,6 +104,14 @@ static uint32_t read(const struct device *dev)
 static int get_value(const struct device *dev, uint32_t *ticks)
 {
 	*ticks = read(dev);
+	return 0;
+}
+
+static int reset(const struct device *dev)
+{
+	const struct counter_nrfx_config *config = dev->config;
+
+	nrf_timer_task_trigger(config->timer, NRF_TIMER_TASK_CLEAR);
 	return 0;
 }
 
@@ -128,7 +143,7 @@ static void set_cc_int_pending(const struct device *dev, uint8_t chan)
 	const struct counter_nrfx_config *config = dev->config;
 	struct counter_nrfx_data *data = dev->data;
 
-	atomic_or(&data->cc_int_pending, BIT(chan));
+	atomic_or(&data->cc_int_pending, BIT(chan + TIMER_INTENSET_COMPARE0_Pos));
 	NRFX_IRQ_PENDING_SET(NRFX_IRQ_NUMBER_GET(config->timer));
 }
 
@@ -330,70 +345,51 @@ static int set_guard_period(const struct device *dev, uint32_t guard,
 	return 0;
 }
 
-static void top_irq_handle(const struct device *dev)
+static void alarm_handle(const struct device *dev, uint32_t ch, uint32_t cc_val)
 {
 	const struct counter_nrfx_config *config = dev->config;
-	struct counter_nrfx_data *data = dev->data;
+	counter_alarm_callback_t cb = config->ch_data[ch].callback;
 
-	NRF_TIMER_Type *reg = config->timer;
-	counter_top_callback_t cb = data->top_cb;
-
-	if (nrf_timer_event_check(reg, COUNTER_TOP_EVT) &&
-		nrf_timer_int_enable_check(reg, COUNTER_TOP_INT_MASK)) {
-		nrf_timer_event_clear(reg, COUNTER_TOP_EVT);
-		__ASSERT(cb != NULL, "top event enabled - expecting callback");
-		cb(dev, data->top_user_data);
-	}
-}
-
-static void alarm_irq_handle(const struct device *dev, uint32_t id)
-{
-	const struct counter_nrfx_config *config = dev->config;
-	struct counter_nrfx_data *data = dev->data;
-
-	uint32_t cc = ID_TO_CC(id);
-	NRF_TIMER_Type *reg = config->timer;
-	uint32_t int_mask = nrf_timer_compare_int_get(cc);
-	nrf_timer_event_t evt = nrf_timer_compare_event_get(cc);
-	bool hw_irq_pending = nrf_timer_event_check(reg, evt) &&
-			      nrf_timer_int_enable_check(reg, int_mask);
-	bool sw_irq_pending = data->cc_int_pending & BIT(cc);
-
-	if (hw_irq_pending || sw_irq_pending) {
-		struct counter_nrfx_ch_data *chdata;
-		counter_alarm_callback_t cb;
-
-		nrf_timer_event_clear(reg, evt);
-		atomic_and(&data->cc_int_pending, ~BIT(cc));
-		nrf_timer_int_disable(reg, int_mask);
-
-		chdata = &config->ch_data[id];
-		cb = chdata->callback;
-		chdata->callback = NULL;
-
-		if (cb) {
-			uint32_t cc_val = nrf_timer_cc_get(reg, cc);
-
-			cb(dev, id, cc_val, chdata->user_data);
-		}
+	config->ch_data[ch].callback = NULL;
+	if (cb) {
+		cb(dev, ch, cc_val, config->ch_data[ch].user_data);
 	}
 }
 
 static void irq_handler(const void *arg)
 {
 	const struct device *dev = arg;
+	const struct counter_nrfx_config *config = dev->config;
+	struct counter_nrfx_data *data = dev->data;
+	NRF_TIMER_Type *reg = config->timer;
+	uint32_t int_en_mask = nrf_timer_int_enable_check(reg, UINT32_MAX);
+	uint32_t int_sw_pending = atomic_set(&data->cc_int_pending, 0);
+	uint32_t idx, ch;
+	nrf_timer_event_t event;
 
-	top_irq_handle(dev);
-
-	for (uint32_t i = 0; i < counter_get_num_of_channels(dev); i++) {
-		alarm_irq_handle(dev, i);
+	int_en_mask |= int_sw_pending;
+	while (int_en_mask) {
+		idx = __builtin_ctz(int_en_mask);
+		event = (nrf_timer_event_t)NRFY_INT_BITPOS_TO_EVENT(idx);
+		int_en_mask &= ~BIT(idx);
+		ch = idx - TIMER_INTENSET_COMPARE0_Pos;
+		if (nrf_timer_event_check(reg, event) || (int_sw_pending & BIT(idx))) {
+			nrf_timer_event_clear(reg, event);
+			if (ch == TOP_CH) {
+				data->top_cb(dev, data->top_user_data);
+			} else {
+				nrf_timer_int_disable(reg, BIT(idx));
+				alarm_handle(dev, CC_TO_ID(ch), nrf_timer_cc_get(reg, ch));
+			}
+		}
 	}
 }
 
-static const struct counter_driver_api counter_nrfx_driver_api = {
+static DEVICE_API(counter, counter_nrfx_driver_api) = {
 	.start = start,
 	.stop = stop,
 	.get_value = get_value,
+	.reset = reset,
 	.set_alarm = set_alarm,
 	.cancel_alarm = cancel_alarm,
 	.set_top_value = set_top_value,
@@ -418,14 +414,6 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
 		(IRQ_CONNECT(DT_INST_IRQN(idx), DT_INST_IRQ(idx, priority),	\
 			    irq_handler, DEVICE_DT_INST_GET(idx), 0))		\
 	)
-
-#if !defined(CONFIG_SOC_SERIES_BSIM_NRFXX)
-#define CHECK_MAX_FREQ(idx)									\
-		BUILD_ASSERT(DT_INST_PROP(idx, max_frequency) ==				\
-			NRF_TIMER_BASE_FREQUENCY_GET((NRF_TIMER_Type *)DT_INST_REG_ADDR(idx)))
-#else
-#define CHECK_MAX_FREQ(idx)
-#endif
 
 #define COUNTER_NRFX_TIMER_DEVICE(idx)								\
 	BUILD_ASSERT(DT_INST_PROP(idx, prescaler) <=						\
@@ -456,7 +444,7 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
 	static MAYBE_CONST_CONFIG struct counter_nrfx_config nrfx_counter_##idx##_config = {	\
 		.info = {									\
 			.max_top_value = (uint32_t)BIT64_MASK(DT_INST_PROP(idx, max_bit_width)),\
-			.freq = DT_INST_PROP(idx, max_frequency) /				\
+			.freq = NRF_PERIPH_GET_FREQUENCY(DT_DRV_INST(idx)) /			\
 				BIT(DT_INST_PROP(idx, prescaler)),				\
 			.flags = COUNTER_CONFIG_INFO_COUNT_UP,					\
 			.channels = CC_TO_ID(DT_INST_PROP(idx, cc_num)),			\
@@ -465,7 +453,6 @@ static const struct counter_driver_api counter_nrfx_driver_api = {
 		.timer = (NRF_TIMER_Type *)DT_INST_REG_ADDR(idx),				\
 		LOG_INSTANCE_PTR_INIT(log, LOG_MODULE_NAME, idx)				\
 	};											\
-	CHECK_MAX_FREQ(idx);									\
 	DEVICE_DT_INST_DEFINE(idx,								\
 			    counter_##idx##_init,						\
 			    NULL,								\

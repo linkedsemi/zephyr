@@ -6,7 +6,7 @@
  */
 
 #include "lorawan_services.h"
-#include "../lw_priv.h"
+#include <lw_priv.h>
 
 #include <LoRaMac.h>
 #include <zephyr/lorawan/lorawan.h>
@@ -107,7 +107,7 @@ static int32_t multicast_schedule_class_c_session(uint8_t id, uint32_t session_t
 	return time_to_start;
 }
 
-static void multicast_package_callback(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
+static void multicast_package_callback(uint8_t port, uint8_t flags, int16_t rssi, int8_t snr,
 				       uint8_t len, const uint8_t *rx_buf)
 {
 	uint8_t tx_buf[MAX_MULTICAST_CMDS_PER_PACKAGE * MAX_MULTICAST_ANS_LEN];
@@ -135,6 +135,11 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 			LOG_ERR("McGroupStatusReq not implemented");
 			return;
 		case MULTICAST_CMD_MC_GROUP_SETUP: {
+			/* 1 (id) + 4 (McAddr) + 16 (McKeyE) + 4 (FCountMin) + 4 (FCountMax) */
+			if ((len - rx_pos) < 29U) {
+				LOG_ERR("McGroupSetupReq too short");
+				return;
+			}
 			uint8_t id = rx_buf[rx_pos++] & 0x03;
 			McChannelParams_t channel = {
 				.IsRemotelySetup = true,
@@ -257,10 +262,10 @@ static void multicast_package_callback(uint8_t port, bool data_pending, int16_t 
 
 	if (tx_pos > 0) {
 		/* Random delay 2+-1 seconds according to RP002-1.0.3, chapter 2.3 */
-		uint32_t delay = 1 + sys_rand32_get() % 3;
+		uint32_t delay_ms = MSEC_PER_SEC + (sys_rand32_get() % (2 * MSEC_PER_SEC));
 
 		lorawan_services_schedule_uplink(LORAWAN_PORT_MULTICAST_SETUP, tx_buf, tx_pos,
-						 delay);
+						 delay_ms);
 	}
 }
 

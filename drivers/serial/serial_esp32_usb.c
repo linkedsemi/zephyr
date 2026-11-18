@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2022 Libre Solar Technologies GmbH
+ * Copyright (c) 2025 Espressif Systems (Shanghai) Co., Ltd.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -13,20 +14,12 @@
 #include <errno.h>
 #include <soc.h>
 #include <zephyr/drivers/uart.h>
-#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
-#include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
-#else
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
-#endif
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/util.h>
 #include <esp_attr.h>
-
-#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
-#define ISR_HANDLER isr_handler_t
-#else
-#define ISR_HANDLER intr_handler_t
-#endif
+#include <esp_rom_serial_output.h>
+#include <esp_rom_sys.h>
 
 /*
  * Timeout after which the poll_out function stops waiting for space in the tx fifo.
@@ -73,6 +66,14 @@ static int serial_esp32_usb_poll_in(const struct device *dev, unsigned char *p_c
 static void serial_esp32_usb_poll_out(const struct device *dev, unsigned char c)
 {
 	struct serial_esp32_usb_data *data = dev->data;
+	int64_t start_time = k_uptime_get();
+
+	/* WR_DONE is ignored while the host still owns the IN FIFO. It only
+	 * recommits data whose commit was dropped by a USB bus reset.
+	 */
+	if (usb_serial_jtag_ll_txfifo_writable() == 0) {
+		usb_serial_jtag_ll_txfifo_flush();
+	}
 
 	/*
 	 * If there is no USB host connected, this function will busy-wait once for the timeout
@@ -85,7 +86,8 @@ static void serial_esp32_usb_poll_out(const struct device *dev, unsigned char c)
 			data->last_tx_time = k_uptime_get();
 			return;
 		}
-	} while ((k_uptime_get() - data->last_tx_time) < USBSERIAL_POLL_OUT_TIMEOUT_MS);
+	} while ((k_uptime_get() - start_time) < USBSERIAL_POLL_OUT_TIMEOUT_MS &&
+		 (k_uptime_get() - data->last_tx_time) < USBSERIAL_POLL_OUT_TIMEOUT_MS);
 }
 
 static int serial_esp32_usb_err_check(const struct device *dev)
@@ -109,12 +111,25 @@ static int serial_esp32_usb_init(const struct device *dev)
 		return ret;
 	}
 
+	usb_serial_jtag_ll_phy_enable_pad(true);
+
+#if defined(CONFIG_SOC_SERIES_ESP32C5) || defined(CONFIG_SOC_SERIES_ESP32C61) ||                   \
+	defined(CONFIG_SOC_SERIES_ESP32C6) || defined(CONFIG_SOC_SERIES_ESP32H2) ||                \
+	defined(CONFIG_SOC_SERIES_ESP32P4)
+	usb_serial_jtag_ll_phy_set_defaults();
+#endif
+
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	ret = esp_intr_alloc(config->irq_source,
-			ESP_PRIO_TO_FLAGS(config->irq_priority) |
-			ESP_INT_FLAGS_CHECK(config->irq_flags),
-			(ISR_HANDLER)serial_esp32_usb_isr,
-			(void *)dev, NULL);
+			     ESP_PRIO_TO_FLAGS(config->irq_priority) |
+				     ESP_INT_FLAGS_CHECK(config->irq_flags) | ESP_INTR_FLAG_IRAM,
+			     (intr_handler_t)serial_esp32_usb_isr, (void *)dev, NULL);
+	if (ret != 0) {
+		return ret;
+	}
+
+	usb_serial_jtag_ll_clr_intsts_mask(USB_SERIAL_JTAG_INTR_BUS_RESET);
+	usb_serial_jtag_ll_ena_intr_mask(USB_SERIAL_JTAG_INTR_BUS_RESET);
 #endif
 	return ret;
 }
@@ -149,7 +164,7 @@ static void serial_esp32_usb_irq_tx_enable(const struct device *dev)
 	if (data->irq_cb != NULL) {
 		unsigned int key = irq_lock();
 		data->irq_cb(dev, data->irq_cb_data);
-		arch_irq_unlock(key);
+		irq_unlock(key);
 	}
 }
 
@@ -212,14 +227,12 @@ static int serial_esp32_usb_irq_is_pending(const struct device *dev)
 	return serial_esp32_usb_irq_rx_ready(dev) || serial_esp32_usb_irq_tx_ready(dev);
 }
 
-static int serial_esp32_usb_irq_update(const struct device *dev)
+static void serial_esp32_usb_irq_update(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 
 	usb_serial_jtag_ll_clr_intsts_mask(USB_SERIAL_JTAG_INTR_SERIAL_OUT_RECV_PKT);
 	usb_serial_jtag_ll_clr_intsts_mask(USB_SERIAL_JTAG_INTR_SERIAL_IN_EMPTY);
-
-	return 1;
 }
 
 static void serial_esp32_usb_irq_callback_set(const struct device *dev,
@@ -231,7 +244,7 @@ static void serial_esp32_usb_irq_callback_set(const struct device *dev,
 	data->irq_cb = cb;
 }
 
-static void serial_esp32_usb_isr(void *arg)
+static void IRAM_ATTR serial_esp32_usb_isr(void *arg)
 {
 	const struct device *dev = (const struct device *)arg;
 	struct serial_esp32_usb_data *data = dev->data;
@@ -242,6 +255,23 @@ static void serial_esp32_usb_isr(void *arg)
 	}
 	usb_serial_jtag_ll_clr_intsts_mask(uart_intr_status);
 
+	/* Every bus reset can drop a pending commit. Arm the EP1 IN token
+	 * interrupt for one token only: it fires on every host poll once
+	 * the port is open, and flushing before the host reads EP1 does
+	 * not recover the data.
+	 */
+	if ((uart_intr_status & USB_SERIAL_JTAG_INTR_BUS_RESET) != 0U) {
+		usb_serial_jtag_ll_clr_intsts_mask(USB_SERIAL_JTAG_INTR_TOKEN_REC_IN_EP1);
+		usb_serial_jtag_ll_ena_intr_mask(USB_SERIAL_JTAG_INTR_TOKEN_REC_IN_EP1);
+	}
+
+	if ((uart_intr_status & USB_SERIAL_JTAG_INTR_TOKEN_REC_IN_EP1) != 0U) {
+		usb_serial_jtag_ll_disable_intr_mask(USB_SERIAL_JTAG_INTR_TOKEN_REC_IN_EP1);
+		if (usb_serial_jtag_ll_txfifo_writable() == 0) {
+			usb_serial_jtag_ll_txfifo_flush();
+		}
+	}
+
 	if (data->irq_cb != NULL) {
 		data->irq_cb(dev, data->irq_cb_data);
 	}
@@ -249,7 +279,7 @@ static void serial_esp32_usb_isr(void *arg)
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
-static const DRAM_ATTR struct uart_driver_api serial_esp32_usb_api = {
+static DEVICE_API(uart, serial_esp32_usb_api) = {
 	.poll_in = serial_esp32_usb_poll_in,
 	.poll_out = serial_esp32_usb_poll_out,
 	.err_check = serial_esp32_usb_err_check,

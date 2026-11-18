@@ -64,7 +64,7 @@ static int tle9104_diagnostics_channel_get(const struct device *dev, enum sensor
 	}
 }
 
-static const struct sensor_driver_api tle9104_diagnostics_driver_api = {
+static DEVICE_API(sensor, tle9104_diagnostics_driver_api) = {
 	.sample_fetch = tle9104_diagnostics_sample_fetch,
 	.channel_get = tle9104_diagnostics_channel_get,
 };
@@ -74,7 +74,7 @@ int tle9104_diagnostics_init(const struct device *dev)
 	const struct tle9104_diagnostics_config *config = dev->config;
 
 	if (!device_is_ready(config->parent)) {
-		LOG_ERR("%s: parent device is not ready", dev->name);
+		LOG_ERR_DEVICE_NOT_READY(config->parent);
 		return -ENODEV;
 	}
 

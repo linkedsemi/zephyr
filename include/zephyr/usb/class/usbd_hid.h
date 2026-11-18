@@ -25,7 +25,7 @@ extern "C" {
  * @defgroup usbd_hid_device USBD HID device API
  * @ingroup usb
  * @since 3.7
- * @version 0.1.0
+ * @version 0.4.0
  * @{
  */
 
@@ -104,6 +104,21 @@ struct hid_device_ops {
 	void (*iface_ready)(const struct device *dev, const bool ready);
 
 	/**
+	 * Optional callback invoked before allocating the buffer used to handle
+	 * a HID Get Report request. The callback should validate the request
+	 * parameters, such as the report type and report ID, and return the
+	 * size of the requested report. It should return zero or a negative
+	 * value if the report type is unsupported or the report ID is unknown.
+	 *
+	 * Implementing this callback allows the stack to bound the buffer
+	 * allocation to the size of the requested report instead of allocating
+	 * a buffer as large as the host-supplied wLength. If this callback is
+	 * not implemented, the stack allocates a buffer of size wLength.
+	 */
+	int (*get_report_size)(const struct device *dev,
+			       const uint8_t type, const uint8_t id);
+
+	/**
 	 * This callback is called for the HID Get Report request to get a
 	 * feature, input, or output report, which is specified by the argument
 	 * type. If there is no report ID in the report descriptor, the id
@@ -116,6 +131,18 @@ struct hid_device_ops {
 	int (*get_report)(const struct device *dev,
 			  const uint8_t type, const uint8_t id,
 			  const uint16_t len, uint8_t *const buf);
+
+	/**
+	 * This callback is called for the HID Set Report request before the
+	 * actual report payload is received. The callback implementation is
+	 * expected to check the arguments, such as whether the report type is
+	 * supported, and return a nonzero value to indicate an unsupported type
+	 * or an error. If callback is not implemented, then report payload will
+	 * be received unconditionally.
+	 */
+	int (*verify_set_report)(const struct device *dev,
+				 const uint8_t type, const uint8_t id,
+				 const uint16_t len);
 
 	/**
 	 * This callback is called for the HID Set Report request to set a
@@ -159,7 +186,8 @@ struct hid_device_ops {
 	 * If the device does not use the callback, hid_device_submit_report()
 	 * will be processed synchronously.
 	 */
-	void (*input_report_done)(const struct device *dev);
+	void (*input_report_done)(const struct device *dev,
+				  const uint8_t *const report);
 
 	/**
 	 * New output report callback. Callback will only be called for reports
@@ -210,6 +238,38 @@ int hid_device_register(const struct device *dev,
  */
 int hid_device_submit_report(const struct device *dev,
 			     const uint16_t size, const uint8_t *const report);
+
+/**
+ * @brief Set input report polling period
+ *
+ * Similar to devicetree property in-polling-period-us, but it allows setting
+ * different polling periods at runtime.
+ *
+ * @kconfig_dep{CONFIG_USBD_HID_SET_POLLING_PERIOD}
+ *
+ * @param[in] dev       Pointer to HID device
+ * @param[in] period_us Polling period in microseconds
+ *
+ * @return 0 on success, negative errno code on failure.
+ * @retval -ENOTSUP If API is not enabled.
+ */
+int hid_device_set_in_polling(const struct device *dev, const unsigned int period_us);
+
+/**
+ * @brief Set output report polling period
+ *
+ * Similar to devicetree property out-polling-period-us, but it allows setting
+ * different polling periods at runtime.
+ *
+ * @kconfig_dep{CONFIG_USBD_HID_SET_POLLING_PERIOD}
+ *
+ * @param[in] dev       Pointer to HID device
+ * @param[in] period_us Polling period in microseconds
+ *
+ * @return 0 on success, negative errno code on failure.
+ * @retval -ENOTSUP If API is not enabled.
+ */
+int hid_device_set_out_polling(const struct device *dev, const unsigned int period_us);
 
 /**
  * @}

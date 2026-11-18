@@ -5,11 +5,11 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - adc
   - dma
   - gpio
+  - ptp_clock
   - spi
   - uart
   - watchdog

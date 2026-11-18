@@ -65,10 +65,10 @@ struct can_xmc4xxx_data {
 	struct can_xmc4xxx_tx_callback tx_callbacks[CONFIG_CAN_XMC4XXX_MAX_TX_QUEUE];
 
 	uint32_t filter_usage;
-	struct can_xmc4xxx_rx_callback rx_callbacks[CONFIG_CAN_MAX_FILTER];
-	struct can_xmc4xxx_rx_fifo rx_fifos[CONFIG_CAN_MAX_FILTER];
+	struct can_xmc4xxx_rx_callback rx_callbacks[CONFIG_CAN_XMC4XXX_MAX_FILTERS];
+	struct can_xmc4xxx_rx_fifo rx_fifos[CONFIG_CAN_XMC4XXX_MAX_FILTERS];
 #if defined(CONFIG_CAN_ACCEPT_RTR)
-	struct can_xmc4xxx_rx_fifo rtr_fifos[CONFIG_CAN_MAX_FILTER];
+	struct can_xmc4xxx_rx_fifo rtr_fifos[CONFIG_CAN_XMC4XXX_MAX_FILTERS];
 #endif
 
 	CAN_MO_TypeDef *tx_mo[CONFIG_CAN_XMC4XXX_MAX_TX_QUEUE];
@@ -362,13 +362,13 @@ static int can_xmc4xxx_add_rx_filter(const struct device *dev, can_rx_callback_t
 
 	k_mutex_lock(&dev_data->mutex, K_FOREVER);
 
-	for (filter_idx = 0; filter_idx < CONFIG_CAN_MAX_FILTER; filter_idx++) {
+	for (filter_idx = 0; filter_idx < CONFIG_CAN_XMC4XXX_MAX_FILTERS; filter_idx++) {
 		if ((BIT(filter_idx) & dev_data->filter_usage) == 0) {
 			break;
 		}
 	}
 
-	if (filter_idx >= CONFIG_CAN_MAX_FILTER) {
+	if (filter_idx >= CONFIG_CAN_XMC4XXX_MAX_FILTERS) {
 		filter_idx = -ENOSPC;
 	} else {
 		unsigned int key = irq_lock();
@@ -408,7 +408,7 @@ static void can_xmc4xxx_remove_rx_filter(const struct device *dev, int filter_id
 	struct can_xmc4xxx_data *dev_data = dev->data;
 	unsigned int key;
 
-	if (filter_idx < 0 || filter_idx >= CONFIG_CAN_MAX_FILTER) {
+	if (filter_idx < 0 || filter_idx >= CONFIG_CAN_XMC4XXX_MAX_FILTERS) {
 		LOG_ERR("Filter ID %d out of bounds", filter_idx);
 		return;
 	}
@@ -434,26 +434,13 @@ static void can_xmc4xxx_remove_rx_filter(const struct device *dev, int filter_id
 	k_mutex_unlock(&dev_data->mutex);
 }
 
-static void can_xmc4xxx_set_state_change_callback(const struct device *dev,
-						  can_state_change_callback_t cb, void *user_data)
-{
-	struct can_xmc4xxx_data *dev_data = dev->data;
-	unsigned int key;
-
-	key = irq_lock();
-	/* critical section so that state_change_cb and state_change_cb_data are consistent */
-	dev_data->common.state_change_cb = cb;
-	dev_data->common.state_change_cb_user_data = user_data;
-	irq_unlock(key);
-}
-
 static void can_xmc4xxx_get_state_from_status(const struct device *dev, enum can_state *state,
 					      struct can_bus_err_cnt *err_cnt, uint32_t *status)
 {
 	struct can_xmc4xxx_data *dev_data = dev->data;
 	const struct can_xmc4xxx_config *dev_cfg = dev->config;
 	uint8_t tec = XMC_CAN_NODE_GetTransmitErrorCounter(dev_cfg->can);
-	uint8_t rec = XMC_CAN_NODE_GetTransmitErrorCounter(dev_cfg->can);
+	uint8_t rec = XMC_CAN_NODE_GetReceiveErrorCounter(dev_cfg->can);
 
 	if (err_cnt != NULL) {
 		err_cnt->tx_err_cnt = tec;
@@ -509,7 +496,7 @@ static int can_xmc4xxx_get_max_filters(const struct device *dev, bool ide)
 {
 	ARG_UNUSED(ide);
 
-	return CONFIG_CAN_MAX_FILTER;
+	return CONFIG_CAN_XMC4XXX_MAX_FILTERS;
 }
 
 static void can_xmc4xxx_reset_tx_fifos(const struct device *dev, int status)
@@ -640,7 +627,7 @@ static void can_xmc4xxx_rx_handler(const struct device *dev)
 {
 	struct can_xmc4xxx_data *dev_data = dev->data;
 
-	for (int i = 0; i < CONFIG_CAN_MAX_FILTER; i++) {
+	for (int i = 0; i < CONFIG_CAN_XMC4XXX_MAX_FILTERS; i++) {
 		if ((BIT(i) & dev_data->filter_usage) == 0) {
 			continue;
 		}
@@ -665,11 +652,7 @@ static void can_xmc4xxx_state_change_handler(const struct device *dev, uint32_t 
 
 	can_xmc4xxx_get_state_from_status(dev, &new_state, &err_cnt, &status);
 	if (dev_data->state != new_state) {
-		if (dev_data->common.state_change_cb) {
-			dev_data->common.state_change_cb(
-				dev, new_state, err_cnt,
-				dev_data->common.state_change_cb_user_data);
-		}
+		can_fire_state_change_callbacks(dev, new_state, err_cnt);
 
 		if (dev_data->state != CAN_STATE_STOPPED && new_state == CAN_STATE_BUS_OFF) {
 			/* re-enable the node after auto bus-off recovery completes */
@@ -791,6 +774,7 @@ static int can_xmc4xxx_init(const struct device *dev)
 	CAN_MO_TypeDef *mo;
 	uint8_t mo_index = 0;
 
+	sys_slist_init(&dev_data->common.state_change_callbacks);
 	k_sem_init(&dev_data->tx_sem, CONFIG_CAN_XMC4XXX_MAX_TX_QUEUE,
 		   CONFIG_CAN_XMC4XXX_MAX_TX_QUEUE);
 	k_mutex_init(&dev_data->mutex);
@@ -882,7 +866,7 @@ static int can_xmc4xxx_init(const struct device *dev)
 	return can_set_timing(dev, &timing);
 }
 
-static const struct can_driver_api can_xmc4xxx_api_funcs = {
+static DEVICE_API(can, can_xmc4xxx_api_funcs) = {
 	.get_capabilities = can_xmc4xxx_get_capabilities,
 	.set_mode = can_xmc4xxx_set_mode,
 	.set_timing = can_xmc4xxx_set_timing,
@@ -892,7 +876,6 @@ static const struct can_driver_api can_xmc4xxx_api_funcs = {
 	.add_rx_filter = can_xmc4xxx_add_rx_filter,
 	.remove_rx_filter = can_xmc4xxx_remove_rx_filter,
 	.get_state = can_xmc4xxx_get_state,
-	.set_state_change_callback = can_xmc4xxx_set_state_change_callback,
 	.get_core_clock = can_xmc4xxx_get_core_clock,
 	.get_max_filters = can_xmc4xxx_get_max_filters,
 	.timing_min = {

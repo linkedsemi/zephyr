@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018 Linaro Limited.
+ * Copyright 2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,6 +28,7 @@
 #include <zephyr/types.h>
 #include <stdbool.h>
 #include <zephyr/arch/arm/misc.h>
+#include <zephyr/sys/util_macro.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +37,13 @@ extern "C" {
 
 /* Syscall invocation macros. arm-specific machine constraints used to ensure
  * args land in the proper registers.
+ *
+ * Note: r6 carries the syscall call_id into the SVC. The SVC handler
+ * (z_arm_do_syscall) clobbers r6 while indexing the syscall dispatch table and
+ * the exception return does not restore it. r6 must therefore be declared as a
+ * read-write ("+r") operand, otherwise the compiler may assume it survives the
+ * SVC and hoist the (loop-invariant) call_id load out of a retry loop, causing
+ * subsequent iterations to issue the SVC with a corrupted call_id.
  */
 static inline uintptr_t arch_syscall_invoke6(uintptr_t arg1, uintptr_t arg2,
 					     uintptr_t arg3, uintptr_t arg4,
@@ -50,10 +59,11 @@ static inline uintptr_t arch_syscall_invoke6(uintptr_t arg1, uintptr_t arg2,
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret), "=r"(r1), "=r"(r2), "=r"(r3)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "=r"(r1), "=r"(r2), "=r"(r3), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
 			   "r" (ret), "r" (r1), "r" (r2), "r" (r3),
-			   "r" (r4), "r" (r5), "r" (r6)
+			   "r" (r4), "r" (r5)
 			 : "r8", "memory", "ip");
 
 	return ret;
@@ -72,10 +82,11 @@ static inline uintptr_t arch_syscall_invoke5(uintptr_t arg1, uintptr_t arg2,
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret), "=r"(r1), "=r"(r2), "=r"(r3)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "=r"(r1), "=r"(r2), "=r"(r3), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
 			   "r" (ret), "r" (r1), "r" (r2), "r" (r3),
-			   "r" (r4), "r" (r6)
+			   "r" (r4)
 			 : "r8", "memory", "ip");
 
 	return ret;
@@ -92,10 +103,10 @@ static inline uintptr_t arch_syscall_invoke4(uintptr_t arg1, uintptr_t arg2,
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret), "=r"(r1), "=r"(r2), "=r"(r3)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "=r"(r1), "=r"(r2), "=r"(r3), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
-			   "r" (ret), "r" (r1), "r" (r2), "r" (r3),
-			   "r" (r6)
+			   "r" (ret), "r" (r1), "r" (r2), "r" (r3)
 			 : "r8", "memory", "ip");
 
 	return ret;
@@ -111,9 +122,10 @@ static inline uintptr_t arch_syscall_invoke3(uintptr_t arg1, uintptr_t arg2,
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret), "=r"(r1), "=r"(r2)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "=r"(r1), "=r"(r2), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
-			   "r" (ret), "r" (r1), "r" (r2), "r" (r6)
+			   "r" (ret), "r" (r1), "r" (r2)
 			 : "r8", "memory", "r3", "ip");
 
 	return ret;
@@ -127,9 +139,10 @@ static inline uintptr_t arch_syscall_invoke2(uintptr_t arg1, uintptr_t arg2,
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret), "=r"(r1)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "=r"(r1), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
-			   "r" (ret), "r" (r1), "r" (r6)
+			   "r" (ret), "r" (r1)
 			 : "r8", "memory", "r2", "r3", "ip");
 
 	return ret;
@@ -142,9 +155,10 @@ static inline uintptr_t arch_syscall_invoke1(uintptr_t arg1,
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
-			   "r" (ret), "r" (r6)
+			   "r" (ret)
 			 : "r8", "memory", "r1", "r2", "r3", "ip");
 	return ret;
 }
@@ -155,9 +169,10 @@ static inline uintptr_t arch_syscall_invoke0(uintptr_t call_id)
 	register uint32_t r6 __asm__("r6") = call_id;
 
 	__asm__ volatile("svc %[svid]\n"
-			 : "=r"(ret)
+			 IF_ENABLED(CONFIG_ARM_BTI, ("bti\n"))
+			 : "=r"(ret), "+r" (r6)
 			 : [svid] "i" (_SVC_CALL_SYSTEM_CALL),
-			   "r" (ret), "r" (r6)
+			   "r" (ret)
 			 : "r8", "memory", "r1", "r2", "r3", "ip");
 
 	return ret;

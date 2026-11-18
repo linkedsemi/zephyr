@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2017 Google LLC.
+ * Copyright (c) 2024 Gerson Fernando Budke <nandojve@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -17,16 +18,20 @@
 #include <string.h>
 #include <zephyr/irq.h>
 
+/* clang-format off */
+
 #ifndef SERCOM_USART_CTRLA_MODE_USART_INT_CLK
 #define SERCOM_USART_CTRLA_MODE_USART_INT_CLK SERCOM_USART_CTRLA_MODE(0x1)
 #endif
 
 /*
- * Interrupt error flag is only supported in devices with
- * SERCOM revision 0x500
+ * Interrupt error flag is not supported in devices with
+ * SERCOM revision 0x102
  */
-#if defined(SERCOM_U2201) && (REV_SERCOM == 0x500)
-#define SERCOM_REV500
+#if (REV_SERCOM == 0x102)
+#define SAM0_SERCOM_HAS_ERROR_FLAGS 0
+#else
+#define SAM0_SERCOM_HAS_ERROR_FLAGS 1
 #endif
 
 /* Device constant configuration parameters */
@@ -35,14 +40,11 @@ struct uart_sam0_dev_cfg {
 	uint32_t baudrate;
 	uint32_t pads;
 	bool     collision_detect;
-#ifdef MCLK
 	volatile uint32_t *mclk;
 	uint32_t mclk_mask;
-	uint16_t gclk_core_id;
-#else
-	uint32_t pm_apbcmask;
-	uint16_t gclk_clkctrl_id;
-#endif
+	uint32_t gclk_gen;
+	uint16_t gclk_id;
+
 #if CONFIG_UART_INTERRUPT_DRIVEN || CONFIG_UART_SAM0_ASYNC
 	void (*irq_config_func)(const struct device *dev);
 #endif
@@ -361,7 +363,7 @@ static void uart_sam0_rx_timeout(struct k_work *work)
 		return;
 	}
 
-	uint32_t now = k_uptime_get_32();
+	uint32_t now = USEC_PER_MSEC * k_uptime_get_32();
 	uint32_t elapsed = now - dev_data->rx_timeout_start;
 
 	if (elapsed >= dev_data->rx_timeout_time) {
@@ -466,7 +468,7 @@ static int uart_sam0_configure(const struct device *dev,
 
 	dev_data->config_cache.data_bits = new_cfg->data_bits;
 
-#if defined(SERCOM_REV500)
+#if (SAM0_SERCOM_HAS_ERROR_FLAGS)
 	CTRLB_temp.bit.COLDEN = cfg->pads;
 #endif
 
@@ -510,20 +512,15 @@ static int uart_sam0_init(const struct device *dev)
 
 	SercomUsart * const usart = cfg->regs;
 
-#ifdef MCLK
-	/* Enable the GCLK */
-	GCLK->PCHCTRL[cfg->gclk_core_id].reg = GCLK_PCHCTRL_GEN_GCLK0 |
-					       GCLK_PCHCTRL_CHEN;
-
-	/* Enable SERCOM clock in MCLK */
 	*cfg->mclk |= cfg->mclk_mask;
-#else
-	/* Enable the GCLK */
-	GCLK->CLKCTRL.reg = cfg->gclk_clkctrl_id | GCLK_CLKCTRL_GEN_GCLK0 |
-			    GCLK_CLKCTRL_CLKEN;
 
-	/* Enable SERCOM clock in PM */
-	PM->APBCMASK.reg |= cfg->pm_apbcmask;
+#ifdef MCLK
+	GCLK->PCHCTRL[cfg->gclk_id].reg = GCLK_PCHCTRL_CHEN
+					| GCLK_PCHCTRL_GEN(cfg->gclk_gen);
+#else
+	GCLK->CLKCTRL.reg = GCLK_CLKCTRL_CLKEN
+			  | GCLK_CLKCTRL_GEN(cfg->gclk_gen)
+			  | GCLK_CLKCTRL_ID(cfg->gclk_id);
 #endif
 
 	/* Disable all USART interrupts */
@@ -675,14 +672,14 @@ static int uart_sam0_err_check(const struct device *dev)
 	}
 
 	if (regs->STATUS.reg & SERCOM_USART_STATUS_FERR) {
-		err |= UART_ERROR_PARITY;
-	}
-
-	if (regs->STATUS.reg & SERCOM_USART_STATUS_PERR) {
 		err |= UART_ERROR_FRAMING;
 	}
 
-#if defined(SERCOM_REV500)
+	if (regs->STATUS.reg & SERCOM_USART_STATUS_PERR) {
+		err |= UART_ERROR_PARITY;
+	}
+
+#if (SAM0_SERCOM_HAS_ERROR_FLAGS)
 	if (regs->STATUS.reg & SERCOM_USART_STATUS_ISF) {
 		err |= UART_BREAK;
 	}
@@ -767,7 +764,7 @@ static void uart_sam0_isr(const struct device *dev)
 		 */
 		if (dev_data->rx_timeout_time != SYS_FOREVER_US) {
 			dev_data->rx_timeout_from_isr = true;
-			dev_data->rx_timeout_start = k_uptime_get_32();
+			dev_data->rx_timeout_start = USEC_PER_MSEC * k_uptime_get_32();
 			k_work_reschedule(&dev_data->rx_timeout_work,
 					      K_USEC(dev_data->rx_timeout_chunk));
 		}
@@ -852,7 +849,7 @@ static int uart_sam0_irq_rx_ready(const struct device *dev)
 	const struct uart_sam0_dev_cfg *config = dev->config;
 	SercomUsart * const regs = config->regs;
 
-	return regs->INTFLAG.bit.RXC != 0;
+	return (regs->INTFLAG.bit.RXC != 0) && (regs->INTENSET.bit.RXC != 0);
 }
 
 static int uart_sam0_fifo_read(const struct device *dev, uint8_t *rx_data,
@@ -882,7 +879,7 @@ static int uart_sam0_irq_is_pending(const struct device *dev)
 	return (regs->INTENSET.reg & regs->INTFLAG.reg) != 0;
 }
 
-#if defined(SERCOM_REV500)
+#if (SAM0_SERCOM_HAS_ERROR_FLAGS)
 static void uart_sam0_irq_err_enable(const struct device *dev)
 {
 	const struct uart_sam0_dev_cfg *config = dev->config;
@@ -902,13 +899,12 @@ static void uart_sam0_irq_err_disable(const struct device *dev)
 }
 #endif
 
-static int uart_sam0_irq_update(const struct device *dev)
+static void uart_sam0_irq_update(const struct device *dev)
 {
 	/* Clear sticky interrupts */
 	const struct uart_sam0_dev_cfg *config = dev->config;
 	SercomUsart * const regs = config->regs;
 
-#if defined(SERCOM_REV500)
 	/*
 	 * Cache the TXC flag, and use this cached value to clear the interrupt
 	 * if we do not used the cached value, there is a chance TXC will set
@@ -917,6 +913,7 @@ static int uart_sam0_irq_update(const struct device *dev)
 	struct uart_sam0_dev_data *const dev_data = dev->data;
 
 	dev_data->txc_cache = regs->INTFLAG.bit.TXC;
+#if (SAM0_SERCOM_HAS_ERROR_FLAGS)
 	regs->INTFLAG.reg = SERCOM_USART_INTENCLR_ERROR
 			  | SERCOM_USART_INTENCLR_RXBRK
 			  | SERCOM_USART_INTENCLR_CTSIC
@@ -925,7 +922,6 @@ static int uart_sam0_irq_update(const struct device *dev)
 #else
 	regs->INTFLAG.reg = SERCOM_USART_INTENCLR_RXS;
 #endif
-	return 1;
 }
 
 static void uart_sam0_irq_callback_set(const struct device *dev,
@@ -1180,7 +1176,7 @@ static int uart_sam0_rx_disable(const struct device *dev)
 
 #endif
 
-static const struct uart_driver_api uart_sam0_driver_api = {
+static DEVICE_API(uart, uart_sam0_driver_api) = {
 	.poll_in = uart_sam0_poll_in,
 	.poll_out = uart_sam0_poll_out,
 #ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
@@ -1199,7 +1195,7 @@ static const struct uart_driver_api uart_sam0_driver_api = {
 	.irq_rx_disable = uart_sam0_irq_rx_disable,
 	.irq_rx_ready = uart_sam0_irq_rx_ready,
 	.irq_is_pending = uart_sam0_irq_is_pending,
-#if defined(SERCOM_REV500)
+#if (SAM0_SERCOM_HAS_ERROR_FLAGS)
 	.irq_err_enable = uart_sam0_irq_err_enable,
 	.irq_err_disable = uart_sam0_irq_err_disable,
 #endif
@@ -1272,34 +1268,23 @@ static void uart_sam0_irq_config_##n(const struct device *dev)		\
 #define UART_SAM0_SERCOM_COLLISION_DETECT(n) \
 	(DT_INST_PROP(n, collision_detection))
 
-#ifdef MCLK
+#define ASSIGNED_CLOCKS_CELL_BY_NAME					\
+	ATMEL_SAM0_DT_INST_ASSIGNED_CLOCKS_CELL_BY_NAME
+
 #define UART_SAM0_CONFIG_DEFN(n)					\
 static const struct uart_sam0_dev_cfg uart_sam0_config_##n = {		\
 	.regs = (SercomUsart *)DT_INST_REG_ADDR(n),			\
 	.baudrate = DT_INST_PROP(n, current_speed),			\
-	.mclk = (volatile uint32_t *)MCLK_MASK_DT_INT_REG_ADDR(n),	\
-	.mclk_mask = BIT(DT_INST_CLOCKS_CELL_BY_NAME(n, mclk, bit)),	\
-	.gclk_core_id = DT_INST_CLOCKS_CELL_BY_NAME(n, gclk, periph_ch),\
+	.gclk_gen = ASSIGNED_CLOCKS_CELL_BY_NAME(n, gclk, gen),		\
+	.gclk_id = DT_INST_CLOCKS_CELL_BY_NAME(n, gclk, id),		\
+	.mclk = ATMEL_SAM0_DT_INST_MCLK_PM_REG_ADDR_OFFSET(n),		\
+	.mclk_mask = ATMEL_SAM0_DT_INST_MCLK_PM_PERIPH_MASK(n, bit),	\
 	.pads = UART_SAM0_SERCOM_PADS(n),				\
 	.collision_detect = UART_SAM0_SERCOM_COLLISION_DETECT(n),	\
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),			\
 	UART_SAM0_IRQ_HANDLER_FUNC(n)					\
 	UART_SAM0_DMA_CHANNELS(n)					\
 }
-#else
-#define UART_SAM0_CONFIG_DEFN(n)					\
-static const struct uart_sam0_dev_cfg uart_sam0_config_##n = {		\
-	.regs = (SercomUsart *)DT_INST_REG_ADDR(n),			\
-	.baudrate = DT_INST_PROP(n, current_speed),			\
-	.pm_apbcmask = BIT(DT_INST_CLOCKS_CELL_BY_NAME(n, pm, bit)),	\
-	.gclk_clkctrl_id = DT_INST_CLOCKS_CELL_BY_NAME(n, gclk, clkctrl_id),\
-	.pads = UART_SAM0_SERCOM_PADS(n),				\
-	.collision_detect = UART_SAM0_SERCOM_COLLISION_DETECT(n),	\
-	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n),			\
-	UART_SAM0_IRQ_HANDLER_FUNC(n)					\
-	UART_SAM0_DMA_CHANNELS(n)					\
-}
-#endif
 
 #define UART_SAM0_DEVICE_INIT(n)					\
 PINCTRL_DT_INST_DEFINE(n);						\
@@ -1314,3 +1299,5 @@ DEVICE_DT_INST_DEFINE(n, uart_sam0_init, NULL,				\
 UART_SAM0_IRQ_HANDLER(n)
 
 DT_INST_FOREACH_STATUS_OKAY(UART_SAM0_DEVICE_INIT)
+
+/* clang-format on */

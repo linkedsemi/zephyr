@@ -18,7 +18,6 @@ config MODEM_RECEIVER
 	bool "Modem receiver helper driver"
 	depends on SERIAL_SUPPORT_INTERRUPT
 	select UART_INTERRUPT_DRIVEN
-	select RING_BUFFER
 	help
 	  This driver allows modem drivers to communicate over UART with custom
 	  defined protocols. Driver doesn't inspect received data and all
@@ -64,7 +63,6 @@ config MODEM_CONTEXT_VERBOSE_DEBUG
 
 config MODEM_IFACE_UART
 	bool "UART-based modem interface"
-	select RING_BUFFER
 	help
 	  To configure this layer for use, create a modem_iface_uart_data
 	  object and pass it's reference to modem_iface_uart_init()
@@ -135,6 +133,7 @@ config MODEM_CMD_HANDLER
 config MODEM_CMD_HANDLER_MAX_PARAM_COUNT
 	int "Maximum number of params parsed per command"
 	depends on MODEM_CMD_HANDLER
+	default 14 if MODEM_SIM7080
 	default 6
 	help
 	  This option sets the maximum number of parameters which may be
@@ -146,6 +145,7 @@ endif # MODEM_CONTEXT
 
 config MODEM_SOCKET
 	bool "Generic modem socket support layer"
+	depends on NET_SOCKETS
 	help
 	  This layer provides much of the groundwork for keeping track of
 	  modem "sockets" throughout their lifecycle (from the initial offload
@@ -186,13 +186,11 @@ config MODEM_CELL_INFO
 	help
 	  Query for numerical operator id, location area code and cell id.
 
-source "drivers/modem/Kconfig.ublox-sara-r4"
-source "drivers/modem/Kconfig.quectel-bg9x"
-source "drivers/modem/Kconfig.wncm14a2a"
-source "drivers/modem/Kconfig.cellular"
+# zephyr-keep-sorted-start
 source "drivers/modem/Kconfig.at_shell"
-
-source "drivers/modem/Kconfig.hl7800"
-source "drivers/modem/Kconfig.simcom-sim7080"
+source "drivers/modem/Kconfig.cellular"
+source "drivers/modem/vendor_modem_cellular/Kconfig"
+source "drivers/modem/vendor_standalone/Kconfig"
+# zephyr-keep-sorted-stop
 
 endif # MODEM

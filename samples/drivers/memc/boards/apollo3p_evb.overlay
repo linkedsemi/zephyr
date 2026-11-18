@@ -19,11 +19,10 @@
 };
 
 &mspi1 {
-
 	pinctrl-0 = <&mspi1_default>;
 	pinctrl-1 = <&mspi1_sleep>;
 	pinctrl-2 = <&mspi1_psram>;
-	pinctrl-names = "default","sleep","psram";
+	pinctrl-names = "default", "sleep", "psram";
 	status = "okay";
 
 	ce-gpios = <&gpio64_95 5 GPIO_ACTIVE_LOW>,
@@ -33,7 +32,7 @@
 	cmdq-buffer-size = <256>;
 
 	aps6404l: aps6404l@0 {
-		compatible = "ambiq,mspi-device", "mspi-aps6404l";
+		compatible = "ambiq,mspi-device", "aps6404l";
 		size = <DT_SIZE_M(64)>;
 		reg = <0>;
 		status = "okay";
@@ -41,24 +40,21 @@
 		mspi-io-mode = "MSPI_IO_MODE_QUAD";
 		mspi-data-rate = "MSPI_DATA_RATE_SINGLE";
 		mspi-hardware-ce-num = <0>;
-		read-command = <0xEB>;
+		read-command = <0xeb>;
 		write-command = <0x38>;
 		command-length = "INSTR_1_BYTE";
 		address-length = "ADDR_3_BYTE";
 		rx-dummy = <6>;
 		tx-dummy = <0>;
-		xip-config = <1 0 0 0>;
+		memmap-config = <1 0 0 0>;
 		ce-break-config = <1024 3>;
 		ambiq,timing-config-mask = <3>;
 		ambiq,timing-config = <0 6 0 0 0 0 0 0>;
 	};
-
 };
 
 &pinctrl {
-
-	mspi1_sleep: mspi1_sleep{
-
+	mspi1_sleep: mspi1_sleep {
 		group1 {
 			pinmux = <GPIO_P51>,
 				 <GPIO_P52>,
@@ -72,11 +68,9 @@
 				 <GPIO_P69>,
 				 <GPIO_P50>;
 		};
-
 	};
 
-	mspi1_psram: mspi1_psram{
-
+	mspi1_psram: mspi1_psram {
 		group1 {
 			pinmux = <MSPI1_0_P51>,
 				 <MSPI1_1_P52>,

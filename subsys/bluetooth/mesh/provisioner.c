@@ -19,6 +19,7 @@
 #include <zephyr/bluetooth/uuid.h>
 
 #include "common/bt_str.h"
+#include "common/long_wq.h"
 
 #include "crypto.h"
 #include "mesh.h"
@@ -172,8 +173,12 @@ static bool prov_check_method(struct bt_mesh_dev_capabilities *caps)
 				return false;
 			}
 		} else {
+#if defined CONFIG_BT_MESH_PROV_OOB_API_LEGACY
 			if (!bt_mesh_prov->output_number) {
-				LOG_WRN("Not support output number");
+#else
+			if (!bt_mesh_prov->output_numeric) {
+#endif
+				LOG_WRN("Not support output numeric");
 				return false;
 			}
 		}
@@ -466,7 +471,7 @@ static void prov_pub_key(const uint8_t *data)
 	memcpy(bt_mesh_prov_link.conf_inputs.pub_key_device, data, PUB_KEY_SIZE);
 	bt_mesh_prov_link.bearer->clear_tx();
 
-	k_work_submit(&dh_gen_work);
+	bt_long_wq_submit(&dh_gen_work);
 }
 
 static void notify_input_complete(void)
@@ -577,10 +582,9 @@ static void prov_complete(const uint8_t *data)
 		bt_hex(&provisionee.new_dev_key, 16), node->net_idx,
 		node->num_elem, node->addr);
 
-	bt_mesh_prov_link.expect = PROV_NO_PDU;
 	atomic_set_bit(bt_mesh_prov_link.flags, COMPLETE);
 
-	bt_mesh_prov_link.bearer->link_close(PROV_BEARER_LINK_STATUS_SUCCESS);
+	prov_link_close(PROV_BEARER_LINK_STATUS_SUCCESS);
 }
 
 static void prov_node_add(void)
@@ -589,18 +593,16 @@ static void prov_node_add(void)
 	struct bt_mesh_cdb_node *node = provisionee.node;
 	int err;
 
-	if (atomic_test_bit(bt_mesh_prov_link.flags, REPROVISION)) {
-		bt_mesh_cdb_node_update(node, bt_mesh_prov_link.addr,
-					provisionee.elem_count);
-	}
-
 	err = bt_mesh_cdb_node_key_import(node, provisionee.new_dev_key);
 	if (err) {
 		LOG_ERR("Failed to import node device key");
 		return;
 	}
 
-	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
+	if (atomic_test_bit(bt_mesh_prov_link.flags, REPROVISION)) {
+		bt_mesh_cdb_node_update(node, bt_mesh_prov_link.addr,
+					provisionee.elem_count);
+	} else if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
 		bt_mesh_cdb_node_store(node);
 	}
 
@@ -687,7 +689,7 @@ static void prov_confirm(const uint8_t *data)
 static void prov_failed(const uint8_t *data)
 {
 	LOG_WRN("Error: 0x%02x", data[0]);
-	reset_state();
+	prov_link_close(PROV_BEARER_LINK_STATUS_FAIL);
 }
 
 static void local_input_complete(void)

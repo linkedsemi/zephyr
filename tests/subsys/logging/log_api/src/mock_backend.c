@@ -100,7 +100,7 @@ void mock_log_backend_validate(const struct log_backend *backend, bool panic)
 	zassert_equal(mock->exp_drop_cnt, mock->drop_cnt,
 		      "Got: %u, Expected: %u", mock->drop_cnt, mock->exp_drop_cnt);
 	zassert_equal(mock->msg_rec_idx, mock->msg_proc_idx,
-			"%p Recored:%d, Got: %d", mock, mock->msg_rec_idx, mock->msg_proc_idx);
+			"%p Recorded:%d, Got: %d", mock, mock->msg_rec_idx, mock->msg_proc_idx);
 	zassert_equal(mock->panic, panic);
 
 #if defined(CONFIG_LOG_MODE_DEFERRED) && \
@@ -160,7 +160,7 @@ static void process(const struct log_backend *const backend,
 		source_id = log_source_id(source);
 	}
 
-	zassert_equal(source_id, exp->source_id, "source_id:%p (exp: %d)",
+	zassert_equal(source_id, exp->source_id, "source_id:%d (exp: %d)",
 		      source_id, exp->source_id);
 
 	size_t len;

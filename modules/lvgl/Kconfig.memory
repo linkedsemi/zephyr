@@ -6,11 +6,12 @@ menu "Memory manager settings"
 
 config LV_Z_BITS_PER_PIXEL
 	int "Bits per pixel"
-	default 32
-	range 1 32
-	depends on LV_Z_BUFFER_ALLOC_STATIC
+	default 0
+	range 0 32
 	help
-	  Number of bits per pixel.
+	  Number of bits per pixel the render buffers are sized for. 0 uses
+	  the bits per pixel of the LVGL default color format
+	  (CONFIG_LV_COLOR_FORMAT_*).
 
 choice LV_Z_MEMORY_POOL
 	prompt "Memory pool"
@@ -48,9 +49,26 @@ config LV_Z_MEMORY_POOL_CUSTOM_SECTION
 	  memory pool to a custom location, such as tightly coupled or
 	  external memory.
 
+config LV_Z_MEMORY_POOL_ZEPHYR_REGION
+	bool "Place LVGL memory pool in a Zephyr memory-region"
+	depends on LV_Z_MEM_POOL_SYS_HEAP
+	depends on !LV_Z_MEMORY_POOL_CUSTOM_SECTION
+	help
+	  Place LVGL memory pool in a section, automatically
+	  created from a 'zephyr,memory-region' compatible node,
+	  whose name is specified in LV_Z_MEMORY_POOL_ZEPHYR_REGION_NAME.
+
+config LV_Z_MEMORY_POOL_ZEPHYR_REGION_NAME
+	string "Name of the zephyr memory-region for memory pool"
+	depends on LV_Z_MEMORY_POOL_ZEPHYR_REGION
+	help
+	  Name of the Zephyr memory-region where LVGL memory pool is placed.
+
 config LV_Z_VDB_SIZE
 	int "Rendering buffer size"
 	default 100 if LV_Z_FULL_REFRESH
+	default 100 if LV_Z_DIRECT_RENDERING
+	range 100 100 if LV_Z_FULL_REFRESH || LV_Z_DIRECT_RENDERING
 	default 10
 	range 1 100
 	help
@@ -62,24 +80,55 @@ config LV_Z_DOUBLE_VDB
 	help
 	  Use two buffers to render and flush data in parallel
 
-config LV_Z_FULL_REFRESH
-	bool "Force full refresh mode"
+choice LV_Z_RENDERING_MODE
+	prompt "Rendering Mode"
+	default LV_Z_PARTIAL_REFRESH
 	help
-	  Force full refresh of display on update. When combined with
-	  LV_Z_VDB_SIZE, this setting can improve performance for display
-	  controllers that require a framebuffer to be present in system memory,
-	  since the controller can render the LVGL framebuffer directly
+	  Select the rendering mode for LVGL.
+
+config LV_Z_PARTIAL_REFRESH
+	bool "Partial Refresh Mode"
+	help
+	  Use the buffer(s) to render to the display using buffers smaller
+	  than the size of the display. Use of buffers at least 1/10 display
+	  size is recommended. In the Flush Callback, the rendered images
+	  need to be copied to the given area of the display. In this mode
+	  if a button is pressed, only the button's area will be redrawn.
+
+config LV_Z_DIRECT_RENDERING
+	bool "Direct Rendering Mode"
+	help
+	  The buffer size(s) must match the size of the display. LVGL will
+	  render into the correct location of the buffer. Using this method,
+	  the buffer(s) always contain the whole display image. If two buffers
+	  are used, the rendered areas are automatically copied to the other
+	  buffer after flushing. This mode can benefit from the performance
+	  gained by use zero copying (available also for LV_Z_FULL_REFRESH)
+	  and partial redraws (same as for LV_Z_PARTIAL_REFRESH).
+
+config LV_Z_FULL_REFRESH
+	bool "Force Full Refresh Mode"
+	help
+	  Force full refresh of the display on update. LVGL will always redraw
+	  the whole screen even if only 1 pixel has been changed
+	  When combined with LV_Z_VDB_SIZE, this setting can improve
+	  performance for display controllers that require a framebuffer
+	  to be present in system memory, since the controller can render
+	  the LVGL framebuffer directly.
+
+endchoice
 
 config LV_Z_VDB_ALIGN
 	int "Rending buffer alignment"
 	default 4
+	default 8 if DISPLAY_MCUX_ELCDIF
 	depends on LV_Z_BUFFER_ALLOC_STATIC
 	help
 	  Rendering buffer alignment. Depending on chosen color depth,
 	  buffer may be accessed as a uint8_t *, uint16_t *, or uint32_t *,
 	  so buffer must be aligned to prevent unaligned memory access
 
-config LV_Z_VBD_CUSTOM_SECTION
+config LV_Z_VDB_CUSTOM_SECTION
 	bool "Link rendering buffers to custom section"
 	depends on LV_Z_BUFFER_ALLOC_STATIC
 	help
@@ -87,6 +136,28 @@ config LV_Z_VBD_CUSTOM_SECTION
 	  This can be used by custom linker scripts to relocate the LVGL
 	  rendering buffers to a custom location, such as tightly coupled or
 	  external memory.
+
+config LV_Z_VDB_ZEPHYR_REGION
+	bool "Place LVGL rendering buffers in a Zephyr memory-region"
+	depends on LV_Z_BUFFER_ALLOC_STATIC
+	depends on !LV_Z_VDB_CUSTOM_SECTION
+	help
+	  Place LVGL rendering buffers in a section, automatically
+	  created from a 'zephyr,memory-region' compatible node,
+	  whose name is specified in LV_Z_VDB_ZEPHYR_REGION_NAME.
+
+config LV_Z_VDB_ZEPHYR_REGION_NAME
+	string "Name of the Zephyr memory-region for rendering buffers"
+	depends on LV_Z_VDB_ZEPHYR_REGION
+	help
+	  Name of the Zephyr memory-region where LVGL rendering buffers are placed.
+
+config LV_Z_MONOCHROME_CONVERSION_BUFFER
+	bool "Use intermediate conversion buffer for monochrome displays"
+	default y
+	help
+	  When using a monochrome display an intermediate buffer with LV_Z_VDB_SIZE
+	  is needed to perform the conversion.
 
 choice LV_Z_RENDERING_BUFFER_ALLOCATION
 	prompt "Rendering Buffer Allocation"

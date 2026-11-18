@@ -4,33 +4,39 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef INCLUDE_ZEPHYR_LINKER_ITERABLE_SECTIONS_H_
-#define INCLUDE_ZEPHYR_LINKER_ITERABLE_SECTIONS_H_
+#ifndef ZEPHYR_INCLUDE_LINKER_ITERABLE_SECTIONS_H_
+#define ZEPHYR_INCLUDE_LINKER_ITERABLE_SECTIONS_H_
 
 /**
  * @addtogroup iterable_section_apis
  * @{
  */
 
+/* clang-format off */
 #define Z_LINK_ITERABLE(struct_type) \
-	_CONCAT(_##struct_type, _list_start) = .; \
+	PLACE_SYMBOL_HERE(_CONCAT(_##struct_type, _list_start)); \
 	KEEP(*(SORT_BY_NAME(._##struct_type.static.*))); \
-	_CONCAT(_##struct_type, _list_end) = .
+	PLACE_SYMBOL_HERE(_CONCAT(_##struct_type, _list_end));
+
 
 #define Z_LINK_ITERABLE_NUMERIC(struct_type) \
-	_CONCAT(_##struct_type, _list_start) = .; \
+	PLACE_SYMBOL_HERE(_CONCAT(_##struct_type, _list_start)); \
 	KEEP(*(SORT(._##struct_type.static.*_?_*))); \
 	KEEP(*(SORT(._##struct_type.static.*_??_*))); \
-	_CONCAT(_##struct_type, _list_end) = .
+	KEEP(*(SORT(._##struct_type.static.*_???_*))); \
+	KEEP(*(SORT(._##struct_type.static.*_????_*))); \
+	KEEP(*(SORT(._##struct_type.static.*_?????_*))); \
+	PLACE_SYMBOL_HERE(_CONCAT(_##struct_type, _list_end));
 
 #define Z_LINK_ITERABLE_ALIGNED(struct_type, align) \
 	. = ALIGN(align); \
 	Z_LINK_ITERABLE(struct_type);
 
 #define Z_LINK_ITERABLE_GC_ALLOWED(struct_type) \
-	_CONCAT(_##struct_type, _list_start) = .; \
+	PLACE_SYMBOL_HERE(_CONCAT(_##struct_type, _list_start)); \
 	*(SORT_BY_NAME(._##struct_type.static.*)); \
-	_CONCAT(_##struct_type, _list_end) = .
+	PLACE_SYMBOL_HERE(_CONCAT(_##struct_type, _list_end));
+/* clang-format on */
 
 #define Z_LINK_ITERABLE_SUBALIGN CONFIG_LINKER_ITERABLE_SUBALIGN
 
@@ -49,7 +55,7 @@
  * are indirectly referenced by iterating through the section.
  */
 #define ITERABLE_SECTION_ROM(struct_type, subalign) \
-	SECTION_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
+	SECTION_PROLOGUE(struct_type##_area, ,) \
 	{ \
 		Z_LINK_ITERABLE(struct_type); \
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -64,7 +70,7 @@
  * @see ITERABLE_SECTION_ROM()
  */
 #define ITERABLE_SECTION_ROM_NUMERIC(struct_type, subalign) \
-	SECTION_PROLOGUE(struct_type##_area, EMPTY, SUBALIGN(subalign)) \
+	SECTION_PROLOGUE(struct_type##_area, EMPTY,) \
 	{ \
 		Z_LINK_ITERABLE_NUMERIC(struct_type); \
 	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -82,7 +88,7 @@
  * Note that the symbols within the section can be garbage collected.
  */
 #define ITERABLE_SECTION_ROM_GC_ALLOWED(struct_type, subalign) \
-	SECTION_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
+	SECTION_PROLOGUE(struct_type##_area, ,) \
 	{ \
 		Z_LINK_ITERABLE_GC_ALLOWED(struct_type); \
 	} GROUP_LINK_IN(ROMABLE_REGION)
@@ -102,7 +108,7 @@
  * are indirectly referenced by iterating through the section.
  */
 #define ITERABLE_SECTION_RAM(struct_type, subalign) \
-	SECTION_DATA_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
+	SECTION_DATA_PROLOGUE(struct_type##_area, ,) \
 	{ \
 		Z_LINK_ITERABLE(struct_type); \
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -117,7 +123,7 @@
  * @see ITERABLE_SECTION_RAM()
  */
 #define ITERABLE_SECTION_RAM_NUMERIC(struct_type, subalign) \
-	SECTION_PROLOGUE(struct_type##_area, EMPTY, SUBALIGN(subalign)) \
+	SECTION_PROLOGUE(struct_type##_area, EMPTY,) \
 	{ \
 		Z_LINK_ITERABLE_NUMERIC(struct_type); \
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -135,7 +141,7 @@
  * Note that the symbols within the section can be garbage collected.
  */
 #define ITERABLE_SECTION_RAM_GC_ALLOWED(struct_type, subalign) \
-	SECTION_DATA_PROLOGUE(struct_type##_area,,SUBALIGN(subalign)) \
+	SECTION_DATA_PROLOGUE(struct_type##_area, ,) \
 	{ \
 		Z_LINK_ITERABLE_GC_ALLOWED(struct_type); \
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
@@ -144,4 +150,4 @@
  * @}
  */ /* end of struct_section_apis */
 
-#endif /* INCLUDE_ZEPHYR_LINKER_ITERABLE_SECTIONS_H_ */
+#endif /* ZEPHYR_INCLUDE_LINKER_ITERABLE_SECTIONS_H_ */

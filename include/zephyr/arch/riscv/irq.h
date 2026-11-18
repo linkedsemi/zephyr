@@ -18,6 +18,7 @@
 extern "C" {
 #endif
 
+#include <zephyr/arch/riscv/arch_inlines.h>
 #include <zephyr/sys/util_macro.h>
 
 #ifndef _ASMLANGUAGE
@@ -30,15 +31,23 @@ extern "C" {
 
 /* Exceptions 0-15 (MCAUSE interrupt=0) */
 
+/** Breakpoint exception */
+#define RISCV_EXC_BREAKPOINT 3
 /* Environment Call from U-mode */
 #define RISCV_EXC_ECALLU 8
+/** Environment Call from S-mode */
+#define RISCV_EXC_ECALLS  9
 /** Environment Call from M-mode */
 #define RISCV_EXC_ECALLM 11
 
 /* IRQs 0-15 (MCAUSE interrupt=1) */
 
+/** Supervisor Software Interrupt */
+#define RISCV_IRQ_SSOFT 1
 /** Machine Software Interrupt */
 #define RISCV_IRQ_MSOFT 3
+/** Supervisor External Interrupt */
+#define RISCV_IRQ_SEXT  9
 /** Machine External Interrupt */
 #define RISCV_IRQ_MEXT  11
 
@@ -56,7 +65,8 @@ extern void arch_irq_enable(unsigned int irq);
 extern void arch_irq_disable(unsigned int irq);
 extern int arch_irq_is_enabled(unsigned int irq);
 
-#if defined(CONFIG_RISCV_HAS_PLIC) || defined(CONFIG_RISCV_HAS_CLIC)
+#if defined(CONFIG_RISCV_HAS_PLIC) || defined(CONFIG_RISCV_HAS_CLIC) ||                            \
+	defined(CONFIG_RISCV_HAS_AIA)
 extern void z_riscv_irq_priority_set(unsigned int irq,
 				     unsigned int prio,
 				     uint32_t flags);
@@ -85,6 +95,15 @@ extern void z_riscv_irq_vector_set(unsigned int irq);
 	z_riscv_irq_vector_set(irq_p); \
 }
 
+#ifdef CONFIG_PM
+extern void arch_isr_direct_pm(void);
+#define ARCH_ISR_DIRECT_PM() arch_isr_direct_pm()
+#else
+#define ARCH_ISR_DIRECT_PM()                                                                       \
+	do {                                                                                       \
+	} while (false)
+#endif
+
 #define ARCH_ISR_DIRECT_HEADER() arch_isr_direct_header()
 #define ARCH_ISR_DIRECT_FOOTER(swap) arch_isr_direct_footer(swap)
 
@@ -102,19 +121,22 @@ static inline void arch_isr_direct_header(void)
 	++(arch_curr_cpu()->nested);
 }
 
-extern void __soc_handle_irq(unsigned long mcause);
+extern unsigned long __soc_handle_irq(unsigned long mcause);
 
 static inline void arch_isr_direct_footer(int swap)
 {
 	ARG_UNUSED(swap);
-	unsigned long mcause;
+	unsigned long cause;
 
-	/* Get the IRQ number */
-	__asm__ volatile("csrr %0, mcause" : "=r" (mcause));
-	mcause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
+#ifdef CONFIG_RISCV_S_MODE
+	__asm__ volatile("csrr %0, scause" : "=r" (cause));
+#else
+	__asm__ volatile("csrr %0, mcause" : "=r" (cause));
+#endif
+	cause &= CONFIG_RISCV_MCAUSE_EXCEPTION_MASK;
 
 	/* Clear the pending IRQ */
-	__soc_handle_irq(mcause);
+	__soc_handle_irq(cause);
 
 	/* We are not in the ISR anymore */
 	--(arch_curr_cpu()->nested);
@@ -127,6 +149,17 @@ static inline void arch_isr_direct_footer(int swap)
 /*
  * TODO: Add support for rescheduling
  */
+#ifdef CONFIG_RISCV_S_MODE
+#define ARCH_ISR_DIRECT_DECLARE(name) \
+	static inline int name##_body(void); \
+	__attribute__ ((interrupt("supervisor"))) void name(void) \
+	{ \
+		ISR_DIRECT_HEADER(); \
+		name##_body(); \
+		ISR_DIRECT_FOOTER(0); \
+	} \
+	static inline int name##_body(void)
+#else
 #define ARCH_ISR_DIRECT_DECLARE(name) \
 	static inline int name##_body(void); \
 	__attribute__ ((interrupt)) void name(void) \
@@ -136,6 +169,7 @@ static inline void arch_isr_direct_footer(int swap)
 		ISR_DIRECT_FOOTER(0); \
 	} \
 	static inline int name##_body(void)
+#endif
 
 #endif /* _ASMLANGUAGE */
 

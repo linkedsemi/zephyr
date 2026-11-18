@@ -193,7 +193,7 @@ int sht3xd_init_interrupt(const struct device *dev)
 	int rc;
 
 	if (!gpio_is_ready_dt(&cfg->alert_gpio)) {
-		LOG_ERR("GPIO device not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->alert_gpio.port);
 		return -ENODEV;
 	}
 
@@ -233,7 +233,7 @@ int sht3xd_init_interrupt(const struct device *dev)
 		return -EIO;
 	}
 
-	if (sht3xd_write_reg(dev, SHT3XD_CMD_WRITE_TH_LOW_SET, 0) < 0) {
+	if (sht3xd_write_reg(dev, SHT3XD_CMD_WRITE_TH_LOW_CLEAR, 0) < 0) {
 		LOG_DBG("Failed to write threshold low clear value!");
 		return -EIO;
 	}

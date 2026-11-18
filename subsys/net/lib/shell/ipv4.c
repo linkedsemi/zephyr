@@ -14,7 +14,7 @@ LOG_MODULE_DECLARE(net_shell);
 #include "../ip/ipv4.h"
 
 #if defined(CONFIG_NET_IPV4)
-static void ip_address_lifetime_cb(struct net_if *iface, void *user_data)
+static void ip_address_info_cb(struct net_if *iface, void *user_data)
 {
 	struct net_shell_user_data *data = user_data;
 	const struct shell *sh = data->sh;
@@ -32,11 +32,12 @@ static void ip_address_lifetime_cb(struct net_if *iface, void *user_data)
 		return;
 	}
 
+	PR("Unicast:\n\n");
 	PR("Type      \tState    \tRef\tAddress\n");
 
 	ARRAY_FOR_EACH(ipv4->unicast, i) {
 		if (!ipv4->unicast[i].ipv4.is_used ||
-		    ipv4->unicast[i].ipv4.address.family != AF_INET) {
+		    ipv4->unicast[i].ipv4.address.family != NET_AF_INET) {
 			continue;
 		}
 
@@ -48,6 +49,21 @@ static void ip_address_lifetime_cb(struct net_if *iface, void *user_data)
 			   &ipv4->unicast[i].ipv4.address.in_addr),
 		   net_sprint_ipv4_addr(
 			   &ipv4->unicast[i].netmask));
+	}
+
+	PR("\nMulticast:\n\n");
+	PR("Joined\tRef\tAddress\n");
+
+	ARRAY_FOR_EACH(ipv4->mcast, i) {
+		if (!ipv4->mcast[i].is_used ||
+		    ipv4->mcast[i].address.family != NET_AF_INET) {
+			continue;
+		}
+
+		PR("%s\t%ld\t%s\n",
+		   ipv4->mcast[i].is_joined ? "yes" : "no",
+		   atomic_get(&ipv4->mcast[i].atomic_ref),
+		   net_sprint_ipv4_addr(&ipv4->mcast[i].address.in6_addr));
 	}
 }
 #endif /* CONFIG_NET_IPV4 */
@@ -68,6 +84,8 @@ static int cmd_net_ipv4(const struct shell *sh, size_t argc, char *argv[])
 	PR("IPv4 conflict detection support           : %s\n",
 	   IS_ENABLED(CONFIG_NET_IPV4_ACD) ? "enabled" :
 	   "disabled");
+	PR("Path MTU Discovery (PMTU)                 : %s\n",
+	   IS_ENABLED(CONFIG_NET_IPV4_PMTU) ? "enabled" : "disabled");
 #endif /* CONFIG_NET_NATIVE_IPV4 */
 
 #if defined(CONFIG_NET_IPV4)
@@ -87,7 +105,7 @@ static int cmd_net_ipv4(const struct shell *sh, size_t argc, char *argv[])
 	user_data.user_data = NULL;
 
 	/* Print information about address lifetime */
-	net_if_foreach(ip_address_lifetime_cb, &user_data);
+	net_if_foreach(ip_address_info_cb, &user_data);
 #endif /* CONFIG_NET_IPV4 */
 
 	return 0;
@@ -98,7 +116,7 @@ static int cmd_net_ip_add(const struct shell *sh, size_t argc, char *argv[])
 #if defined(CONFIG_NET_IPV4)
 	struct net_if *iface = NULL;
 	int idx;
-	struct in_addr addr;
+	struct net_in_addr addr;
 
 	if (argc < 3) {
 		PR_ERROR("Correct usage: net ipv4 add <index> <address> [<netmask>]\n");
@@ -116,7 +134,7 @@ static int cmd_net_ip_add(const struct shell *sh, size_t argc, char *argv[])
 		return -ENOEXEC;
 	}
 
-	if (net_addr_pton(AF_INET, argv[2], &addr)) {
+	if (net_addr_pton(NET_AF_INET, argv[2], &addr)) {
 		PR_ERROR("Invalid address: %s\n", argv[2]);
 		return -EINVAL;
 	}
@@ -128,11 +146,15 @@ static int cmd_net_ip_add(const struct shell *sh, size_t argc, char *argv[])
 		if (ret < 0) {
 			PR_ERROR("Cannot %s multicast group %s for interface %d (%d)\n",
 				 "join", net_sprint_ipv4_addr(&addr), idx, ret);
+			if (ret == -ENOSYS) {
+				PR_INFO("Enable CONFIG_NET_IPV4_IGMP for %s multicast "
+					"group\n", "joining");
+			}
 			return ret;
 		}
 	} else {
 		struct net_if_addr *ifaddr;
-		struct in_addr netmask;
+		struct net_in_addr netmask;
 
 		if (argc < 4) {
 			PR_ERROR("Netmask is missing.\n");
@@ -146,7 +168,7 @@ static int cmd_net_ip_add(const struct shell *sh, size_t argc, char *argv[])
 			return -ENOMEM;
 		}
 
-		if (net_addr_pton(AF_INET, argv[3], &netmask)) {
+		if (net_addr_pton(NET_AF_INET, argv[3], &netmask)) {
 			PR_ERROR("Invalid netmask: %s", argv[3]);
 			return -EINVAL;
 		}
@@ -165,7 +187,7 @@ static int cmd_net_ip_del(const struct shell *sh, size_t argc, char *argv[])
 #if defined(CONFIG_NET_IPV4)
 	struct net_if *iface = NULL;
 	int idx;
-	struct in_addr addr;
+	struct net_in_addr addr;
 
 	if (argc != 3) {
 		PR_ERROR("Correct usage: net ipv4 del <index> <address>");
@@ -183,7 +205,7 @@ static int cmd_net_ip_del(const struct shell *sh, size_t argc, char *argv[])
 		return -ENOEXEC;
 	}
 
-	if (net_addr_pton(AF_INET, argv[2], &addr)) {
+	if (net_addr_pton(NET_AF_INET, argv[2], &addr)) {
 		PR_ERROR("Invalid address: %s\n", argv[2]);
 		return -EINVAL;
 	}
@@ -195,6 +217,10 @@ static int cmd_net_ip_del(const struct shell *sh, size_t argc, char *argv[])
 		if (ret < 0) {
 			PR_ERROR("Cannot %s multicast group %s for interface %d (%d)\n",
 				 "leave", net_sprint_ipv4_addr(&addr), idx, ret);
+			if (ret == -ENOSYS) {
+				PR_INFO("Enable CONFIG_NET_IPV4_IGMP for %s multicast "
+					"group\n", "leaving");
+			}
 			return ret;
 		}
 	} else {
@@ -214,7 +240,7 @@ static int cmd_net_ip_gateway(const struct shell *sh, size_t argc, char *argv[])
 #if defined(CONFIG_NET_IPV4)
 	struct net_if *iface;
 	int idx;
-	struct in_addr addr;
+	struct net_in_addr addr;
 
 	if (argc != 3) {
 		PR_ERROR("Correct usage: net ipv4 gateway <index> <gateway_ip>\n");
@@ -232,7 +258,7 @@ static int cmd_net_ip_gateway(const struct shell *sh, size_t argc, char *argv[])
 		return -ENOEXEC;
 	}
 
-	if (net_addr_pton(AF_INET, argv[2], &addr)) {
+	if (net_addr_pton(NET_AF_INET, argv[2], &addr)) {
 		PR_ERROR("Invalid address: %s\n", argv[2]);
 		return -EINVAL;
 	}
@@ -247,13 +273,16 @@ static int cmd_net_ip_gateway(const struct shell *sh, size_t argc, char *argv[])
 
 SHELL_STATIC_SUBCMD_SET_CREATE(net_cmd_ip,
 	SHELL_CMD(add, NULL,
-		  "'net ipv4 add <index> <address> [<netmask>]' adds the address to the interface.",
+		  SHELL_HELP("Adds the address to the interface",
+			     "<index> <address> [<netmask>]"),
 		  cmd_net_ip_add),
 	SHELL_CMD(del, NULL,
-		  "'net ipv4 del <index> <address>' deletes the address from the interface.",
+		  SHELL_HELP("Deletes the address from the interface",
+			     "<index> <address>"),
 		  cmd_net_ip_del),
 	SHELL_CMD(gateway, NULL,
-		  "'net ipv4 gateway <index> <gateway_ip>' sets IPv4 gateway for the interface.",
+		  SHELL_HELP("Sets IPv4 gateway for the interface",
+			     "<index> <gateway_ip>"),
 		  cmd_net_ip_gateway),
 	SHELL_SUBCMD_SET_END
 );

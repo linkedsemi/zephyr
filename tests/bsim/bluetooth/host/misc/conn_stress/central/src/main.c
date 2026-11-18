@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Nordic Semiconductor ASA
+ * Copyright (c) 2023-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -27,8 +27,9 @@ LOG_MODULE_REGISTER(central, LOG_LEVEL_INF);
 #include "bstests.h"
 #include "bs_types.h"
 #include "bs_tracing.h"
-#include "bstests.h"
 #include "bs_pc_backchannel.h"
+
+#include "babblekit/testcase.h"
 
 #define DEFAULT_CONN_INTERVAL	   20
 #define PERIPHERAL_DEVICE_NAME	   "Zephyr Peripheral"
@@ -50,6 +51,8 @@ BUILD_ASSERT(NOTIFICATION_DATA_LEN <= CHARACTERISTIC_DATA_MAX_LEN);
 #define PERIPHERAL_SERVICE_UUID	       BT_UUID_DECLARE_128(PERIPHERAL_SERVICE_UUID_VAL)
 #define PERIPHERAL_CHARACTERISTIC_UUID BT_UUID_DECLARE_128(PERIPHERAL_CHARACTERISTIC_UUID_VAL)
 
+#define EXPECTED_CONN_CYCLES	1
+
 static struct bt_uuid_128 vnd_uuid =
 	BT_UUID_INIT_128(BT_UUID_128_ENCODE(0x12345678, 0x1234, 0x5678, 0x1234, 0x56789abcdea0));
 
@@ -69,6 +72,7 @@ enum {
 	CONN_INFO_MTU_EXCHANGED,
 	CONN_INFO_DISCOVERING,
 	CONN_INFO_DISCOVER_PAUSED,
+	CONN_INFO_SUBSCRIPTION_FAILED,
 	CONN_INFO_SUBSCRIBED,
 
 	/* Total number of flags - must be at the end of the enum */
@@ -89,6 +93,7 @@ struct conn_info {
 	struct bt_gatt_discover_params discover_params;
 	struct bt_gatt_subscribe_params subscribe_params;
 	bt_addr_le_t addr;
+	atomic_t conn_count;
 };
 
 static struct conn_info conn_infos[CONFIG_BT_MAX_CONN] = {0};
@@ -180,12 +185,9 @@ static uint8_t notify_func(struct bt_conn *conn, struct bt_gatt_subscribe_params
 	const char *data_ptr = (const char *)data + NOTIFICATION_DATA_PREFIX_LEN;
 	uint32_t received_counter;
 	struct conn_info *conn_info_ref;
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	if (!data) {
-		LOG_INF("[UNSUBSCRIBED] addr %s", addr);
+		LOG_INF("[UNSUBSCRIBED] bt_conn_dst_str(conn) %s", bt_conn_dst_str(conn));
 		params->value_handle = 0U;
 		return BT_GATT_ITER_STOP;
 	}
@@ -195,17 +197,34 @@ static uint8_t notify_func(struct bt_conn *conn, struct bt_gatt_subscribe_params
 
 	received_counter = strtoul(data_ptr, NULL, 0);
 
-	LOG_DBG("[NOTIFICATION] addr %s data %s length %u cnt %u",
-		addr, data, length, received_counter);
+	LOG_DBG("[NOTIFICATION] bt_conn_dst_str(conn) %s data %s length %u cnt %u",
+		bt_conn_dst_str(conn), data, length, received_counter);
 
 	LOG_HEXDUMP_DBG(data, length, "RX");
 
 	__ASSERT(conn_info_ref->notify_counter == received_counter,
-		 "addr %s expected counter : %u , received counter : %u",
-		 addr, conn_info_ref->notify_counter, received_counter);
+		 "bt_conn_dst_str(conn) %s expected counter : %u , received counter : %u",
+		 bt_conn_dst_str(conn), conn_info_ref->notify_counter, received_counter);
 	conn_info_ref->notify_counter++;
 
 	return BT_GATT_ITER_CONTINUE;
+}
+
+static void subscribe_func(struct bt_conn *conn, uint8_t err,
+			      struct bt_gatt_subscribe_params *params)
+{
+	struct conn_info *conn_info_ref;
+
+	__ASSERT(!err, "Subscribe failed for bt_conn_dst_str(conn) %s (err %d)",
+		 bt_conn_dst_str(conn), err);
+
+	conn_info_ref = get_conn_info_ref(conn);
+	__ASSERT_NO_MSG(conn_info_ref);
+
+	atomic_clear_bit(conn_info_ref->flags, CONN_INFO_SUBSCRIPTION_FAILED);
+	atomic_set_bit(conn_info_ref->flags, CONN_INFO_SUBSCRIBED);
+
+	LOG_DBG("[SUBSCRIBED] bt_conn_dst_str(conn) %s", bt_conn_dst_str(conn));
 }
 
 static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *attr,
@@ -232,8 +251,6 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 	conn_info_ref = get_connected_conn_info_ref(conn);
 	__ASSERT_NO_MSG(conn_info_ref);
 
-	atomic_clear_bit(conn_info_ref->flags, CONN_INFO_DISCOVER_PAUSED);
-
 	if (conn_info_ref->discover_params.type == BT_GATT_DISCOVER_PRIMARY) {
 		LOG_DBG("Primary Service Found");
 		memcpy(&conn_info_ref->uuid,
@@ -245,6 +262,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 		err = bt_gatt_discover(conn, &conn_info_ref->discover_params);
 		if (err == -ENOMEM || err == -ENOTCONN) {
+			atomic_set_bit(conn_info_ref->flags, CONN_INFO_DISCOVER_PAUSED);
 			goto retry;
 		}
 
@@ -260,6 +278,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 		err = bt_gatt_discover(conn, &conn_info_ref->discover_params);
 		if (err == -ENOMEM || err == -ENOTCONN) {
+			atomic_set_bit(conn_info_ref->flags, CONN_INFO_DISCOVER_PAUSED);
 			goto retry;
 		}
 
@@ -267,26 +286,19 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 	} else {
 		conn_info_ref->subscribe_params.notify = notify_func;
+		conn_info_ref->subscribe_params.subscribe = subscribe_func;
 		conn_info_ref->subscribe_params.value = BT_GATT_CCC_NOTIFY;
 		conn_info_ref->subscribe_params.ccc_handle = attr->handle;
 
 		err = bt_gatt_subscribe(conn, &conn_info_ref->subscribe_params);
-		if (err == -ENOMEM || err == -ENOTCONN) {
+		if (err == -ENOMEM || err == -ENOTCONN || err == -EALREADY) {
+			LOG_DBG("Subscription failed (err %d)", err);
+			atomic_set_bit(conn_info_ref->flags, CONN_INFO_SUBSCRIPTION_FAILED);
 			goto retry;
-		}
-
-		if (err != -EALREADY) {
-			__ASSERT(!err, "Subscribe failed (err %d)", err);
 		}
 
 		__ASSERT_NO_MSG(atomic_test_bit(conn_info_ref->flags, CONN_INFO_DISCOVERING));
 		__ASSERT_NO_MSG(!atomic_test_bit(conn_info_ref->flags, CONN_INFO_SUBSCRIBED));
-		atomic_set_bit(conn_info_ref->flags, CONN_INFO_SUBSCRIBED);
-
-		char addr[BT_ADDR_LE_STR_LEN];
-
-		bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-		LOG_INF("[SUBSCRIBED] addr %s", addr);
 	}
 
 	return BT_GATT_ITER_STOP;
@@ -295,8 +307,7 @@ retry:
 	/* if we're out of buffers or metadata contexts, continue discovery
 	 * later.
 	 */
-	LOG_INF("out of memory/not connected, continuing sub later");
-	atomic_set_bit(conn_info_ref->flags, CONN_INFO_DISCOVER_PAUSED);
+	LOG_INF("out of memory/not connected, continuing sub later (err %d)", err);
 
 	return BT_GATT_ITER_STOP;
 }
@@ -328,6 +339,17 @@ static bool check_if_peer_connected(const bt_addr_le_t *addr)
 	return false;
 }
 
+static bool check_if_completed(void)
+{
+	for (size_t i = 0; i < ARRAY_SIZE(conn_infos); i++) {
+		if (atomic_get(&conn_infos[i].conn_count) < EXPECTED_CONN_CYCLES) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static bool parse_ad(struct bt_data *data, void *user_data)
 {
 	bt_addr_le_t *addr = user_data;
@@ -351,10 +373,7 @@ static bool parse_ad(struct bt_data *data, void *user_data)
 
 		stop_scan();
 
-		char addr_str[BT_ADDR_LE_STR_LEN];
-
-		bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-		LOG_INF("Connecting to %s", addr_str);
+		LOG_INF("Connecting to %s", bt_addr_le_str(addr));
 
 		struct bt_le_conn_param *param = BT_LE_CONN_PARAM_DEFAULT;
 		int err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, param,
@@ -397,13 +416,11 @@ static void start_scan(void)
 static void connected_cb(struct bt_conn *conn, uint8_t conn_err)
 {
 	struct conn_info *conn_info_ref;
-	char addr[BT_ADDR_LE_STR_LEN];
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	__ASSERT(conn_err == BT_HCI_ERR_SUCCESS, "Failed to connect to %s (%u)",
+		 bt_conn_dst_str(conn), conn_err);
 
-	__ASSERT(conn_err == BT_HCI_ERR_SUCCESS, "Failed to connect to %s (%u)", addr, conn_err);
-
-	LOG_INF("Connection %p established : %s", conn, addr);
+	LOG_INF("Connection %p established : %s", conn, bt_conn_dst_str(conn));
 
 	atomic_inc(&conn_count);
 	LOG_DBG("connected to %u devices", atomic_get(&conn_count));
@@ -433,11 +450,8 @@ static void connected_cb(struct bt_conn *conn, uint8_t conn_err)
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
 	struct conn_info *conn_info_ref;
-	char addr[BT_ADDR_LE_STR_LEN];
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	LOG_INF("Disconnected: %s (reason 0x%02x)", addr, reason);
+	LOG_INF("Disconnected: %s (reason 0x%02x)", bt_conn_dst_str(conn), reason);
 
 	conn_info_ref = get_conn_info_ref(conn);
 	__ASSERT_NO_MSG(conn_info_ref->conn_ref != NULL);
@@ -451,17 +465,14 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 	bt_conn_unref(conn);
 	clear_info(conn_info_ref);
 	atomic_dec(&conn_count);
+	atomic_inc(&conn_info_ref->conn_count);
 }
 
 #if defined(CONFIG_BT_SMP)
 static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
-	__ASSERT(!err, "Security for %s failed", addr);
-	LOG_INF("Security for %s changed: level %u", addr, level);
+	__ASSERT(!err, "Security for %s failed", bt_conn_dst_str(conn));
+	LOG_INF("Security for %s changed: level %u", bt_conn_dst_str(conn), level);
 
 	if (err) {
 		LOG_ERR("Security failed, disconnecting");
@@ -473,14 +484,9 @@ static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_
 static void identity_resolved(struct bt_conn *conn, const bt_addr_le_t *rpa,
 			      const bt_addr_le_t *identity)
 {
-	char addr_identity[BT_ADDR_LE_STR_LEN];
-	char addr_rpa[BT_ADDR_LE_STR_LEN];
 	struct conn_info *conn_info_ref;
 
-	bt_addr_le_to_str(identity, addr_identity, sizeof(addr_identity));
-	bt_addr_le_to_str(rpa, addr_rpa, sizeof(addr_rpa));
-
-	LOG_ERR("Identity resolved %s -> %s", addr_rpa, addr_identity);
+	LOG_ERR("Identity resolved %s -> %s", bt_addr_le_str(rpa), bt_addr_le_str(identity));
 
 	/* overwrite RPA */
 	conn_info_ref = get_conn_info_ref(conn);
@@ -507,14 +513,11 @@ static void mtu_exchange_cb(struct bt_conn *conn, uint8_t err,
 			    struct bt_gatt_exchange_params *params)
 {
 	struct conn_info *conn_info_ref;
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	conn_info_ref = get_conn_info_ref(conn);
 	__ASSERT_NO_MSG(conn_info_ref);
 
-	LOG_DBG("MTU exchange addr %s conn %s", addr,
+	LOG_DBG("MTU exchange bt_conn_dst_str(conn) %s conn %s", bt_conn_dst_str(conn),
 		   err == 0U ? "successful" : "failed");
 
 	atomic_set_bit(conn_info_ref->flags, CONN_INFO_MTU_EXCHANGED);
@@ -523,20 +526,17 @@ static void mtu_exchange_cb(struct bt_conn *conn, uint8_t err,
 static void exchange_mtu(struct bt_conn *conn, void *data)
 {
 	struct conn_info *conn_info_ref;
-	char addr[BT_ADDR_LE_STR_LEN];
 	int err;
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	conn_info_ref = get_connected_conn_info_ref(conn);
 	if (conn_info_ref == NULL) {
-		LOG_DBG("not connected: %s", addr);
+		LOG_DBG("not connected: %s", bt_conn_dst_str(conn));
 		return;
 	}
 
 	if (!atomic_test_bit(conn_info_ref->flags, CONN_INFO_MTU_EXCHANGED) &&
 	    !atomic_test_and_set_bit(conn_info_ref->flags, CONN_INFO_SENT_MTU_EXCHANGE)) {
-		LOG_DBG("Updating MTU for %s to %u", addr, bt_gatt_get_mtu(conn));
+		LOG_DBG("Updating MTU for %s to %u", bt_conn_dst_str(conn), bt_gatt_get_mtu(conn));
 
 		mtu_exchange_params.func = mtu_exchange_cb;
 		err = bt_gatt_exchange_mtu(conn, &mtu_exchange_params);
@@ -554,14 +554,23 @@ static void subscribe_to_service(struct bt_conn *conn, void *data)
 	struct conn_info *conn_info_ref;
 	int err;
 	int *p_err = (int *)data;
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	conn_info_ref = get_connected_conn_info_ref(conn);
 	if (conn_info_ref == NULL) {
-		LOG_DBG("not connected: %s", addr);
+		LOG_DBG("not connected: %s", bt_conn_dst_str(conn));
 		return;
+	}
+
+	/* If subscription attempt failed before (due to most likely lack of TX buffers),
+	 *  make a new attempt here.
+	 */
+	if (atomic_test_bit(conn_info_ref->flags, CONN_INFO_SUBSCRIPTION_FAILED)) {
+		err = bt_gatt_subscribe(conn, &conn_info_ref->subscribe_params);
+		if (err != -ENOMEM) {
+			__ASSERT(!err, "Subscription failed");
+		} else {
+			return;
+		}
 	}
 
 	/* start subscription procedure if:
@@ -586,9 +595,9 @@ static void subscribe_to_service(struct bt_conn *conn, void *data)
 			conn_info_ref->discover_params.start_handle = BT_ATT_FIRST_ATTRIBUTE_HANDLE;
 			conn_info_ref->discover_params.end_handle = BT_ATT_LAST_ATTRIBUTE_HANDLE;
 			conn_info_ref->discover_params.type = BT_GATT_DISCOVER_PRIMARY;
-			LOG_INF("start discovery of %s", addr);
+			LOG_INF("start discovery of %s", bt_conn_dst_str(conn));
 		} else {
-			LOG_INF("resume discovery of %s", addr);
+			LOG_INF("resume discovery of %s", bt_conn_dst_str(conn));
 		}
 
 		err = bt_gatt_discover(conn, &conn_info_ref->discover_params);
@@ -602,6 +611,8 @@ static void subscribe_to_service(struct bt_conn *conn, void *data)
 		if (err != -ENOMEM && err != -ENOTCONN) {
 			__ASSERT(!err, "Subscribe failed (err %d)", err);
 		}
+
+		atomic_clear_bit(conn_info_ref->flags, CONN_INFO_DISCOVER_PAUSED);
 	}
 }
 
@@ -610,13 +621,10 @@ static void notify_peers(struct bt_conn *conn, void *data)
 	int err;
 	struct bt_gatt_attr *vnd_attr = (struct bt_gatt_attr *)data;
 	struct conn_info *conn_info_ref;
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	conn_info_ref = get_connected_conn_info_ref(conn);
 	if (conn_info_ref == NULL) {
-		LOG_DBG("not connected: %s", addr);
+		LOG_DBG("not connected: %s", bt_conn_dst_str(conn));
 		return;
 	}
 
@@ -630,14 +638,15 @@ static void notify_peers(struct bt_conn *conn, void *data)
 	memset(vnd_value, 0x00, sizeof(vnd_value));
 	snprintk(vnd_value, notification_size, "%s%u", NOTIFICATION_DATA_PREFIX,
 		 conn_info_ref->tx_notify_counter);
-	LOG_INF("notify: %s", addr);
+	LOG_INF("notify: %s", bt_conn_dst_str(conn));
 	err = bt_gatt_notify(conn, vnd_attr, vnd_value, notification_size);
 	if (err) {
 		LOG_ERR("Couldn't send GATT notification");
 		return;
 	}
 
-	LOG_DBG("central notified: %s %d", addr, conn_info_ref->tx_notify_counter);
+	LOG_DBG("central notified: %s %d", bt_conn_dst_str(conn),
+		conn_info_ref->tx_notify_counter);
 
 	conn_info_ref->tx_notify_counter++;
 }
@@ -647,7 +656,6 @@ void test_central_main(void)
 	int err;
 	struct bt_gatt_attr *vnd_attr;
 	char str[BT_UUID_STR_LEN];
-	char addr[BT_ADDR_LE_STR_LEN];
 
 	memset(&conn_infos, 0x00, sizeof(conn_infos));
 
@@ -669,7 +677,7 @@ void test_central_main(void)
 
 	start_scan();
 
-	while (true) {
+	while (!check_if_completed()) {
 		/* reconnect peripherals when they drop out */
 		if (atomic_get(&conn_count) < CONFIG_BT_MAX_CONN &&
 		    !atomic_test_bit(status_flags, DEVICE_IS_SCANNING) &&
@@ -677,9 +685,8 @@ void test_central_main(void)
 			start_scan();
 		} else {
 			if (atomic_test_bit(status_flags, DEVICE_IS_CONNECTING)) {
-				bt_addr_le_to_str(bt_conn_get_dst(conn_connecting),
-						  addr, sizeof(addr));
-				LOG_INF("already connecting to: %s", addr);
+				LOG_INF("already connecting to: %s",
+					bt_conn_dst_str(conn_connecting));
 			}
 		}
 
@@ -698,6 +705,14 @@ void test_central_main(void)
 		}
 		k_msleep(10);
 	}
+
+	err = bt_gatt_cb_unregister(&gatt_callbacks);
+	if (err != 0) {
+		TEST_FAIL("Unregister GATT callbacks failed (%d)", err);
+		return;
+	}
+
+	TEST_PASS("Central tests passed");
 }
 
 void test_init(void)
@@ -705,6 +720,7 @@ void test_init(void)
 	extern enum bst_result_t bst_result;
 
 	LOG_INF("Initializing Test");
+	bst_ticker_set_next_tick_absolute(100*1e6);
 	/* The peripherals determines whether the test passed. */
 	bst_result = Passed;
 }
@@ -720,7 +736,7 @@ static void test_args(int argc, char **argv)
 		ptr = strstr(argv[0], "notify_size=");
 		if (ptr != NULL) {
 			ptr += strlen("notify_size=");
-			notification_size = atol(ptr);
+			notification_size = strtol(ptr, NULL, 10);
 			notification_size = MIN(NOTIFICATION_DATA_LEN, notification_size);
 		}
 	}
@@ -731,12 +747,22 @@ static void test_args(int argc, char **argv)
 		ptr = strstr(argv[1], "conn_interval=");
 		if (ptr != NULL) {
 			ptr += strlen("conn_interval=");
-			conn_interval_max = atol(ptr);
+			conn_interval_max = strtol(ptr, NULL, 10);
 		}
 	}
 
 	bs_trace_raw(0, "Connection interval max : %d\n", conn_interval_max);
 	bs_trace_raw(0, "Notification data size : %d\n", notification_size);
+}
+
+static void test_tick(bs_time_t HW_device_time)
+{
+	if (bst_result != Passed) {
+		TEST_FAIL("Test timeout (not passed after %lu seconds)",
+			  (unsigned long)(HW_device_time / USEC_PER_SEC));
+	}
+
+	bs_trace_silent_exit(0);
 }
 
 static const struct bst_test_instance test_def[] = {
@@ -745,6 +771,7 @@ static const struct bst_test_instance test_def[] = {
 		.test_descr = "Central Connection Stress",
 		.test_args_f = test_args,
 		.test_pre_init_f = test_init,
+		.test_tick_f = test_tick,
 		.test_main_f = test_central_main
 	},
 	BSTEST_END_MARKER

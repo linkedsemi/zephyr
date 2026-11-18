@@ -10,19 +10,27 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/irq.h>
+#include <zephyr/kernel.h>
+#if __has_include("soc.h")
 #include <soc.h>
+#endif
 #include <fsl_common.h>
 #include <fsl_gpio.h>
 
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/dt-bindings/gpio/nxp-imx-igpio.h>
 
 #include <zephyr/drivers/gpio/gpio_utils.h>
 
+#define DEV_CFG(_dev) ((const struct mcux_igpio_config *)(_dev)->config)
+#define DEV_DATA(_dev) ((struct mcux_igpio_data *)(_dev)->data)
 
 struct mcux_igpio_config {
 	/* gpio_driver_config needs to be first */
 	struct gpio_driver_config common;
-	GPIO_Type *base;
+
+	DEVICE_MMIO_NAMED_ROM(igpio_mmio);
+
 	const struct pinctrl_soc_pinmux *pin_muxes;
 	uint8_t mux_count;
 };
@@ -30,15 +38,27 @@ struct mcux_igpio_config {
 struct mcux_igpio_data {
 	/* gpio_driver_data needs to be first */
 	struct gpio_driver_data general;
+
+	DEVICE_MMIO_NAMED_RAM(igpio_mmio);
+
 	/* port ISR callback routine address */
 	sys_slist_t callbacks;
+
+	/* serializes the read-modify-write of DR and GDIR */
+	struct k_spinlock lock;
 };
+
+static GPIO_Type *get_base(const struct device *dev)
+{
+	return (GPIO_Type *)DEVICE_MMIO_NAMED_GET(dev, igpio_mmio);
+}
 
 static int mcux_igpio_configure(const struct device *dev,
 				gpio_pin_t pin, gpio_flags_t flags)
 {
 	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	struct mcux_igpio_data *data = dev->data;
+	GPIO_Type *base = get_base(dev);
 
 	struct pinctrl_soc_pin pin_cfg;
 	int cfg_idx = pin, i;
@@ -63,7 +83,7 @@ static int mcux_igpio_configure(const struct device *dev,
 
 	/* Set appropriate bits in pin configuration register */
 	volatile uint32_t *gpio_cfg_reg =
-		(volatile uint32_t *)config->pin_muxes[cfg_idx].config_register;
+		(volatile uint32_t *)(uintptr_t)config->pin_muxes[cfg_idx].config_register;
 	uint32_t reg = *gpio_cfg_reg;
 
 #ifdef CONFIG_SOC_SERIES_IMXRT10XX
@@ -76,8 +96,13 @@ static int mcux_igpio_configure(const struct device *dev,
 	if (((flags & GPIO_PULL_UP) != 0) || ((flags & GPIO_PULL_DOWN) != 0)) {
 		reg |= IOMUXC_SW_PAD_CTL_PAD_PUE_MASK;
 		if (((flags & GPIO_PULL_UP) != 0)) {
-			/* Use 100K pullup */
-			reg |= IOMUXC_SW_PAD_CTL_PAD_PUS(2);
+			if ((flags & NXP_IGPIO_PULL_STRONG) != 0) {
+				/* Use 22K pullup */
+				reg |= IOMUXC_SW_PAD_CTL_PAD_PUS(3);
+			} else {
+				/* Use 100K pullup */
+				reg |= IOMUXC_SW_PAD_CTL_PAD_PUS(2);
+			}
 		} else {
 			/* 100K pulldown */
 			reg &= ~IOMUXC_SW_PAD_CTL_PAD_PUS_MASK;
@@ -87,7 +112,7 @@ static int mcux_igpio_configure(const struct device *dev,
 		reg &= ~IOMUXC_SW_PAD_CTL_PAD_PUE_MASK;
 	}
 #elif defined(CONFIG_SOC_SERIES_IMXRT11XX)
-	if (config->pin_muxes[pin].pue_mux) {
+	if (config->pin_muxes[cfg_idx].pue_mux) {
 		/* PUE type register layout (GPIO_AD pins) */
 		if ((flags & GPIO_SINGLE_ENDED) != 0) {
 			/* Set ODE bit */
@@ -156,7 +181,7 @@ static int mcux_igpio_configure(const struct device *dev,
 	if ((flags & GPIO_PULL_UP) != 0) {
 		reg |= (0x1 << MCUX_IMX_BIAS_PULL_UP_SHIFT);
 	}
-	if ((flag & GPIO_PULL_DOWN) != 0) {
+	if ((flags & GPIO_PULL_DOWN) != 0) {
 		return -ENOTSUP;
 	}
 #else
@@ -180,6 +205,9 @@ static int mcux_igpio_configure(const struct device *dev,
 	}
 #endif /* CONFIG_SOC_SERIES_IMXRT10XX */
 
+	/* Enable input buffer via Software Input On (SION). */
+	reg |= 0x1 << MCUX_IMX_INPUT_ENABLE_SHIFT;
+
 	memcpy(&pin_cfg.pinmux, &config->pin_muxes[cfg_idx], sizeof(pin_cfg.pinmux));
 	/* cfg register will be set by pinctrl_configure_pins */
 	pin_cfg.pin_ctrl_flags = reg;
@@ -189,25 +217,27 @@ static int mcux_igpio_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (flags & GPIO_OUTPUT_INIT_HIGH) {
-		GPIO_WritePinOutput(base, pin, 1);
-	}
+	K_SPINLOCK(&data->lock) {
+		if (flags & GPIO_OUTPUT_INIT_HIGH) {
+			GPIO_PinWrite(base, pin, 1);
+		}
 
-	if (flags & GPIO_OUTPUT_INIT_LOW) {
-		GPIO_WritePinOutput(base, pin, 0);
-	}
+		if (flags & GPIO_OUTPUT_INIT_LOW) {
+			GPIO_PinWrite(base, pin, 0);
+		}
 
-	WRITE_BIT(base->GDIR, pin, flags & GPIO_OUTPUT);
+		WRITE_BIT(base->GDIR, pin, flags & GPIO_OUTPUT);
+	}
 
 	return 0;
 }
 
 static int mcux_igpio_port_get_raw(const struct device *dev, uint32_t *value)
 {
-	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	GPIO_Type *base = get_base(dev);
 
-	*value = base->DR;
+	/* Read the Pad Status Register to get current input value */
+	*value = base->PSR;
 
 	return 0;
 }
@@ -216,10 +246,12 @@ static int mcux_igpio_port_set_masked_raw(const struct device *dev,
 					  uint32_t mask,
 					  uint32_t value)
 {
-	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	struct mcux_igpio_data *data = dev->data;
+	GPIO_Type *base = get_base(dev);
 
-	base->DR = (base->DR & ~mask) | (mask & value);
+	K_SPINLOCK(&data->lock) {
+		base->DR = (base->DR & ~mask) | (mask & value);
+	}
 
 	return 0;
 }
@@ -227,10 +259,12 @@ static int mcux_igpio_port_set_masked_raw(const struct device *dev,
 static int mcux_igpio_port_set_bits_raw(const struct device *dev,
 					uint32_t mask)
 {
-	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	struct mcux_igpio_data *data = dev->data;
+	GPIO_Type *base = get_base(dev);
 
-	GPIO_PortSet(base, mask);
+	K_SPINLOCK(&data->lock) {
+		GPIO_PortSet(base, mask);
+	}
 
 	return 0;
 }
@@ -238,10 +272,12 @@ static int mcux_igpio_port_set_bits_raw(const struct device *dev,
 static int mcux_igpio_port_clear_bits_raw(const struct device *dev,
 					  uint32_t mask)
 {
-	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	struct mcux_igpio_data *data = dev->data;
+	GPIO_Type *base = get_base(dev);
 
-	GPIO_PortClear(base, mask);
+	K_SPINLOCK(&data->lock) {
+		GPIO_PortClear(base, mask);
+	}
 
 	return 0;
 }
@@ -249,10 +285,12 @@ static int mcux_igpio_port_clear_bits_raw(const struct device *dev,
 static int mcux_igpio_port_toggle_bits(const struct device *dev,
 				       uint32_t mask)
 {
-	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	struct mcux_igpio_data *data = dev->data;
+	GPIO_Type *base = get_base(dev);
 
-	GPIO_PortToggle(base, mask);
+	K_SPINLOCK(&data->lock) {
+		GPIO_PortToggle(base, mask);
+	}
 
 	return 0;
 }
@@ -263,7 +301,7 @@ static int mcux_igpio_pin_interrupt_configure(const struct device *dev,
 					      enum gpio_int_trig trig)
 {
 	const struct mcux_igpio_config *config = dev->config;
-	GPIO_Type *base = config->base;
+	GPIO_Type *base = get_base(dev);
 	unsigned int key;
 	uint8_t icr;
 	int shift;
@@ -271,6 +309,10 @@ static int mcux_igpio_pin_interrupt_configure(const struct device *dev,
 	/* Make sure pin is supported */
 	if ((config->common.port_pin_mask & BIT(pin)) == 0) {
 		return -ENOTSUP;
+	}
+
+	if (pin >= 32) {
+		return -EINVAL;
 	}
 
 	if (mode == GPIO_INT_MODE_DISABLED) {
@@ -295,20 +337,18 @@ static int mcux_igpio_pin_interrupt_configure(const struct device *dev,
 		icr = 0;
 	}
 
+	key = irq_lock();
+
 	if (pin < 16) {
 		shift = 2 * pin;
 		base->ICR1 = (base->ICR1 & ~(3 << shift)) | (icr << shift);
-	} else if (pin < 32) {
+	} else {
 		shift = 2 * (pin - 16);
 		base->ICR2 = (base->ICR2 & ~(3 << shift)) | (icr << shift);
-	} else {
-		return -EINVAL;
 	}
 
-	key = irq_lock();
-
 	WRITE_BIT(base->EDGE_SEL, pin, trig == GPIO_INT_TRIG_BOTH);
-	WRITE_BIT(base->ISR, pin, 1);
+	base->ISR = BIT(pin);
 	WRITE_BIT(base->IMR, pin, 1);
 
 	irq_unlock(key);
@@ -327,9 +367,8 @@ static int mcux_igpio_manage_callback(const struct device *dev,
 
 static void mcux_igpio_port_isr(const struct device *dev)
 {
-	const struct mcux_igpio_config *config = dev->config;
 	struct mcux_igpio_data *data = dev->data;
-	GPIO_Type *base = config->base;
+	GPIO_Type *base = get_base(dev);
 	uint32_t int_flags;
 
 	int_flags = base->ISR;
@@ -338,7 +377,7 @@ static void mcux_igpio_port_isr(const struct device *dev)
 	gpio_fire_callbacks(&data->callbacks, dev, int_flags);
 }
 
-static const struct gpio_driver_api mcux_igpio_driver_api = {
+static DEVICE_API(gpio, mcux_igpio_driver_api) = {
 	.pin_configure = mcux_igpio_configure,
 	.port_get_raw = mcux_igpio_port_get_raw,
 	.port_set_masked_raw = mcux_igpio_port_set_masked_raw,
@@ -375,11 +414,8 @@ static const struct gpio_driver_api mcux_igpio_driver_api = {
 	static int mcux_igpio_##n##_init(const struct device *dev);	\
 									\
 	static const struct mcux_igpio_config mcux_igpio_##n##_config = {\
-		.common = {						\
-			.port_pin_mask = GPIO_DT_INST_PORT_PIN_MASK_NGPIOS_EXC(\
-				n, DT_INST_PROP(n, ngpios)),\
-		},							\
-		.base = (GPIO_Type *)DT_INST_REG_ADDR(n),		\
+		DEVICE_MMIO_NAMED_ROM_INIT(igpio_mmio, DT_DRV_INST(n)),	\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),		\
 		MCUX_IGPIO_PIN_INIT(n)					\
 	};								\
 									\
@@ -396,8 +432,16 @@ static const struct gpio_driver_api mcux_igpio_driver_api = {
 									\
 	static int mcux_igpio_##n##_init(const struct device *dev)	\
 	{								\
+		GPIO_Type *base;					\
+									\
+		DEVICE_MMIO_NAMED_MAP(dev, igpio_mmio, K_MEM_CACHE_NONE | K_MEM_DIRECT_MAP); \
+									\
+		base = get_base(dev);					\
+		base->IMR = 0U;						\
+		base->ISR = 0xFFFFFFFFU;				\
+									\
 		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 0),			\
-		   (MCUX_IGPIO_IRQ_INIT(n, 0);))		\
+		   (MCUX_IGPIO_IRQ_INIT(n, 0);))			\
 									\
 		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 1),			\
 			   (MCUX_IGPIO_IRQ_INIT(n, 1);))		\

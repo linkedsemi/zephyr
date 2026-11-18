@@ -3,15 +3,25 @@
 # Copyright (c) 2024 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-if SOC_NRF54H20_CPUAPP || SOC_NRF54H20_ENGB_CPUAPP
+if SOC_NRF54H20_CPUAPP
 
 config NUM_IRQS
 	default 471
 
-config NRF_REGTOOL_GENERATE_UICR
+config SHELL_BACKEND_SERIAL
+	default n if DEBUG_NRF_ETR_SHELL
+
+config POWER_DOMAIN
 	default y
 
-config SHELL_BACKEND_SERIAL
-	default n if NRF_ETR_SHELL
+config CODE_DATA_RELOCATION
+	default y if (PM || POWEROFF) && !MCUBOOT
 
-endif # SOC_NRF54H20_CPUAPP || SOC_NRF54H20_ENGB_CPUAPP
+config NRF_PERIPHCONF_SECTION
+	default y
+
+choice SEGGER_RTT_SECTION
+	default SEGGER_RTT_SECTION_CUSTOM_DTS_REGION
+endchoice
+
+endif # SOC_NRF54H20_CPUAPP

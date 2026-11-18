@@ -87,26 +87,87 @@ Changes which require an RFC proposal include:
 Maintainers have the discretion to request that contributors create an RFC for
 PRs that are too large or complicated.
 
+.. _pr_requirements:
+
 PR Requirements
 ***************
 
+.. important::
+
+   Pull requests that do not meet the quality expectations outlined below are less likely to receive
+   reviewer engagement, and reviewers may request changes on such pull requests without detailed
+   feedback.
+
+   Contributors are expected to self-review their changes and ensure all requirements are met before
+   requesting a review.
+
 - Each commit in the PR must provide a commit message following the
   :ref:`commit-guidelines`.
+
+- No fixup or merge commits are allowed, see :ref:`Contribution workflow` for
+  more information.
 
 - The PR description must include a summary of the changes and their rationales.
 
 - All files in the PR must comply with :ref:`Licensing
   Requirements<licensing_requirements>`.
 
-- Follow the Zephyr :ref:`coding_style` and :ref:`coding_guidelines`.
+- The code must follow the Zephyr :ref:`coding_style` and :ref:`coding_guidelines`.
 
-- PRs must pass all CI checks. This is a requirement to merge the PR.
+- The PR must pass all CI checks, as described in :ref:`merge_criteria`.
   Contributors may mark a PR as draft and explicitly request reviewers to
   provide early feedback, even with failing CI checks.
 
-- When breaking a PR into multiple commits, each commit must build cleanly. The
-  CI system does not enforce this policy, so it is the PR author's
-  responsibility to verify.
+- Commits in a pull request should represent clear, logical units of change that are easy to review
+  and maintain bisectability. The following guidelines expand on this principle:
+
+  1. Distinct, Logical Units of Change
+
+     Each commit should correspond to a self-contained, meaningful change. For example, adding a
+     feature, fixing a bug, or refactoring existing code should be separate commits. Avoid mixing
+     different types of changes (e.g., feature implementation and unrelated refactoring) in the same
+     commit.
+
+  2. Retain Bisectability
+
+     Every commit in the pull request must build successfully and pass all relevant tests. This
+     ensures that git bisect can be used effectively to identify the specific commit that introduced
+     a bug or issue.
+
+  3. Squash Intermediary or Non-Final Development History
+
+     During development, commits may include intermediary changes (e.g., partial implementations,
+     temporary files, or debugging code). These should be squashed or rewritten before submitting the
+     pull request. Remove non-final artifacts, such as:
+
+     * Temporary renaming of files that are later renamed again.
+     * Code that was rewritten or significantly changed in later commits.
+
+  4. Ensure Clean History Before Submission
+
+     Use interactive rebasing (git rebase -i) to clean up the commit history before submitting the
+     pull request. This helps in:
+
+     * Squashing small, incomplete commits into a single cohesive commit.
+     * Ensuring that each commit remains bisectable.
+     * Maintaining proper attribution of authorship while improving clarity.
+
+  5. Renaming and Code Rewrites
+
+     If files or code are renamed or rewritten in later commits during development, squash or rewrite
+     earlier commits to reflect the final structure. This ensures that:
+
+     * The history remains clean and easy to follow.
+     * Bisectability is preserved by eliminating redundant renaming or partial rewrites.
+
+  6. Attribution of Authorship
+
+     While cleaning up the commit history, ensure that authorship attribution remains accurate.
+
+  7. Readable and Reviewable History
+
+     The final commit history should be easy to understand for future maintainers. Logical units of
+     change should be grouped into commits that tell a clear, coherent story of the work done.
 
 - When major new functionality is added, tests for the new functionality shall
   be added to the automated test suite. All API functions should have test cases
@@ -133,6 +194,13 @@ PR Requirements
 - Changes to APIs must increment the API version number according to the API
   version rules.
 
+- Documentation must be added and/or updated to reflect the changes in the code
+  introduced by the PR. The documentation changes must use the proper
+  terminology as present in the existing pages, and must be written in American
+  English. If you include images as part of the documentation, those must follow
+  the rules in :ref:`doc_images`. Please refer to :ref:`doc_guidelines` for
+  additional information.
+
 - PRs must also satisfy all :ref:`merge_criteria` before a member of the release
   engineering team merges the PR into the zephyr tree.
 
@@ -144,61 +212,57 @@ request that they create an :ref:`RFC proposal <rfcs>`.
 Workflow Suggestions That Help Reviewers
 ========================================
 
-- Unless they applied the reviewer's recommendation exactly, authors must not
-  resolve and hide comments, they must let the initial reviewer do it. The
-  Zephyr project does not require all comments to be resolved before merge.
-  Leaving some completed discussions open can sometimes be useful to understand
-  the greater picture.
+- Describe in the PR what you tested and how: which boards or emulators, which twister scenarios
+  or samples, and what was not tested (for example, hardware you do not have). Reviewers cannot
+  tell the difference between "tested on hardware" and "compiles", so say which it is. For a bug
+  fix, say how the bug was reproduced and that the added test fails without the fix.
 
-- Respond to comments using the "Start Review" and "Add Review" green buttons in
-  the "Files changed" view. This allows responding to multiple comments and
-  publishing the responses in bulk. This reduces the number of emails sent to
-  reviewers.
+- Push follow-up changes as amendments to the commits they belong to (see the
+  :ref:`Contribution workflow`), not as extra "fix review comments" commits.
 
-- As GitHub does not implement |git range-diff|_, try to minimize rebases in the
-  middle of a review. If a rebase is required, push this as a separate update
-  with no other changes since the last push of the PR. When pushing a rebase
-  only, add a comment to the PR indicating which commit is the rebase.
+- Make dependencies between PRs explicit. If a PR carries commits from another open PR, say
+  so at the top of the description ("Depends on #N; the first two commits belong to #N, review
+  them there") so reviewers do not review the same code twice or comment in the wrong PR. Where
+  possible, keep such a dependent PR as a draft until the PR it depends on has merged, or put
+  both changes in one PR.
+
+- Do not rebase the PR onto ``main`` while a review is in progress unless there is a merge
+  conflict or CI needs a change that is only on ``main``. GitHub does not implement
+  |git range-diff|_, so after a rebase the reviewer can no longer see what changed since the
+  last round and has to re-read the whole PR, and existing approvals are dismissed. Rebasing
+  after the PR has been approved is fine. If a rebase is unavoidable, push it as a separate
+  update with no other changes and add a comment saying so.
+
+- Reply to every review comment, either with the change you made or with why you did not make
+  it. Do not resolve and hide a comment yourself unless you applied the reviewer's
+  recommendation exactly; leave that to the reviewer who raised it. The Zephyr project does not
+  require all comments to be resolved before merge. Leaving some completed discussions open can
+  sometimes be useful to understand the greater picture.
+
+- Respond to comments using the "Start Review" and "Add Review" green buttons in the "Files
+  changed" view. This allows responding to multiple comments and publishing the responses in
+  bulk. This reduces the number of emails sent to reviewers.
+
+- After pushing changes that address review comments, click "Re-request review" next to each
+  reviewer who requested changes, so the PR shows up in their review queue again. If the push
+  also contains changes that no review comment asked for, such as a rebase or an unrelated fix,
+  say so in a PR comment.
 
 .. |git range-diff| replace:: ``git range-diff``
 .. _`git range-diff`: https://git-scm.com/docs/git-range-diff
 
-PR Review Escalation
+Getting PRs Reviewed
 ====================
 
 The Zephyr community is a diverse group of individuals, with different levels of
 commitment and priorities. As such, reviewers and maintainers may not get to a
 PR right away.
 
-The `Zephyr Dev Meeting`_ performs a triage of PRs missing reviewer approval,
-following this process:
-
-#. Identify and update PRs missing an Assignee.
-#. Identify PRs without any comments or reviews, ping the PR Assignee to start a
-   review or assign to a different maintainer.
-#. For PRs that have otherwise stalled, the Zephyr Dev Meeting pings the
-   Assignee and any reviewers that have left comments on the PR.
-
-Contributors may escalate PRs outside of the Zephyr Dev Meeting triage process
-as follows:
-
 - After 1 week of inactivity, ping the Assignee or reviewers on the PR by adding
   a comment to the PR.
 
 - After 2 weeks of inactivity, post a message on the `#pr-help`_ channel on
   Discord linking to the PR.
-
-- After 2 weeks of inactivity, add the `dev-review`_ label to the PR. This
-  explicitly adds the PR to the agenda for the next `Zephyr Dev Meeting`_
-  independent of the triage process. Not all contributors have the required
-  privileges to add labels to PRs, in this case the contributor should request
-  help on Discord or send an email to the `Zephyr devel mailing list`_.
-
-Note that for new PRs, contributors should generally wait for at least one
-Zephyr Dev Meeting before escalating the PR themselves.
-
-.. _Zephyr devel mailing list: https://lists.zephyrproject.org/g/devel
-
 
 .. _pr_technical_escalation:
 
@@ -213,12 +277,6 @@ Before escalation of technical disagreements, follow the steps below:
 - Resolve in the PR among assignee, maintainers and reviewer.
 
   - Assignee to act as moderator if applicable.
-
-- Optionally resolve in the next `Zephyr Dev Meeting`_  meeting with more
-  Maintainers and project stakeholders.
-
-  - The involved parties and the Assignee to be present when the  issue is
-    discussed.
 
 - If no progress is made, the assignee (maintainer) has the right to dismiss
   stale, unrelated or irrelevant change requests by reviewers giving the
@@ -252,69 +310,6 @@ the steps below:
 
 .. _#pr-help: https://discord.com/channels/720317445772017664/997527108844798012
 
-.. _dev-review: https://github.com/zephyrproject-rtos/zephyr/labels/dev-review
-
-.. _Zephyr Dev Meeting: https://github.com/zephyrproject-rtos/zephyr/wiki/Zephyr-Committee-and-Working-Groups#zephyr-dev-meeting
-
 .. _Architecture Project: https://github.com/zephyrproject-rtos/zephyr/projects/18
 
 .. _Architecture Working Group: https://github.com/zephyrproject-rtos/zephyr/wiki/Architecture-Working-Group
-
-
-.. _reviewer-expectations:
-
-Reviewer Expectations
-*********************
-
-- Be respectful when commenting on PRs. Refer to the Zephyr `Code of Conduct`_
-  for more details.
-
-- The Zephyr Project recognizes that reviewers and maintainers have limited
-  bandwidth. As a reviewer, prioritize review requests in the following order:
-
-    #. PRs related to items in the `Zephyr Release Plan`_ or those targeting
-       the next release during the stabilization period (after RC1).
-    #. PRs where the reviewer has requested blocking changes.
-    #. PRs assigned to the reviewer as the area maintainer.
-    #. All other PRs.
-
-- Reviewers shall strive to advance the PR to a mergeable state with their
-  feedback and engagement with the PR author.
-
-- Try to provide feedback on the entire PR in one shot. This provides the
-  contributor an opportunity to address all comments in the next PR update.
-
-- Partial reviews are permitted, but the reviewer must add a comment indicating
-  what portion of the PR they reviewed. Examples of useful partial reviews
-  include:
-
-  - Domain specific reviews (e.g. Devicetree).
-  - Code style changes that impact the readability of the PR.
-  - Reviewing commits separately when the requested changes cascade into the
-    later commits.
-
-- Avoid increasing scope of the PR by requesting new features, especially when
-  there is a corresponding :ref:`RFC <rfcs>` associated with the PR. Instead,
-  reviewers should add suggestions as a comment to the :ref:`RFC <rfcs>`. This
-  also encourages more collaboration as it is easier for multiple contributors
-  to work on a feature once the minimum implementation has merged.
-
-- When using the "Request Changes" option, mark trivial, non-functional,
-  requests as "Non-blocking" in the comment. Reviewers should approve PRs once
-  only non-blocking changes remain. The PR author has discretion as to whether
-  they address all non-blocking comments. PR authors should acknowledge every
-  review comment in some way, even if it's just with an emoticon.
-
-- Reviewers shall be *clear* and *concise* what changes they are requesting when the
-  "Request Changes" option is used. Requested changes shall be in the scope of
-  the PR in question and following the contribution and style guidelines of the
-  project.
-
-- Reviewers shall not close a PR due to technical or structural disagreement.
-  If requested changes cannot be resolved within the review process, the
-  :ref:`pr_technical_escalation` path shall be used for any potential resolution
-  path, which may include closing the PR.
-
-.. _Code of Conduct: https://github.com/zephyrproject-rtos/zephyr/blob/main/CODE_OF_CONDUCT.md
-
-.. _Zephyr Release Plan: https://github.com/orgs/zephyrproject-rtos/projects/13

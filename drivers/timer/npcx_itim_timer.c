@@ -38,7 +38,8 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
+#include <zephyr/sys/minmax.h>
 #include <zephyr/spinlock.h>
 #include <soc.h>
 
@@ -80,6 +81,11 @@ static uint32_t cyc_evt_timeout;
 __unused static uint64_t cyc_sys_compensated;
 /* Current cycles in event timer when ec entered "sleep/deep sleep" mode */
 __unused static uint32_t cyc_evt_enter_deep_idle;
+
+static inline uint32_t npcx_itim_evt_counter_val(void)
+{
+	return max(cyc_evt_timeout - 1, 1);
+}
 
 /* ITIM local inline functions */
 static inline uint64_t npcx_itim_get_sys_cyc64(void)
@@ -140,33 +146,29 @@ static inline void npcx_itim_evt_disable(void)
 /* ITIM local functions */
 static int npcx_itim_start_evt_tmr_by_tick(int32_t ticks)
 {
-	k_spinlock_key_t key = k_spin_lock(&lock);
-
 	/*
 	 * Get desired cycles of event timer from the requested ticks which
 	 * round up to next tick boundary.
 	 */
 
-	if (ticks == K_TICKS_FOREVER) {
-		cyc_evt_timeout = NPCX_ITIM32_MAX_CNT;
+	uint64_t next_cycs;
+	uint64_t curr = npcx_itim_get_sys_cyc64();
+	uint64_t dcycles;
+
+	if (ticks == 0) {
+		ticks = 1;
+	}
+
+	next_cycs = (last_ticks + last_elapsed + ticks) * SYS_CYCLES_PER_TICK;
+	if (unlikely(next_cycs <= curr)) {
+		cyc_evt_timeout = 1;
 	} else {
-		uint64_t next_cycs;
-		uint64_t curr = npcx_itim_get_sys_cyc64();
-		uint32_t dcycles;
+		uint32_t dticks;
 
-		if (ticks <= 0) {
-			ticks = 1;
-		}
-
-		next_cycs = (last_ticks + last_elapsed + ticks) * SYS_CYCLES_PER_TICK;
-		if (unlikely(next_cycs <= curr)) {
-			cyc_evt_timeout = 1;
-		} else {
-			dcycles = next_cycs - curr;
-			cyc_evt_timeout =
-				CLAMP((dcycles / SYS_CYC_PER_EVT_CYC), 1, NPCX_ITIM32_MAX_CNT);
-		}
-
+		dcycles = next_cycs - curr;
+		dticks = DIV_ROUND_UP(dcycles * EVT_CYCLES_PER_SEC,
+				      sys_clock_hw_cycles_per_sec());
+		cyc_evt_timeout = CLAMP(dticks, 1, NPCX_ITIM32_MAX_CNT);
 	}
 	LOG_DBG("ticks %x, cyc_evt_timeout %x", ticks, cyc_evt_timeout);
 
@@ -176,9 +178,8 @@ static int npcx_itim_start_evt_tmr_by_tick(int32_t ticks)
 	}
 
 	/* Upload counter of event timer */
-	evt_tmr->ITCNT32 = MAX(cyc_evt_timeout - 1, 1);
+	evt_tmr->ITCNT32 = npcx_itim_evt_counter_val();
 
-	k_spin_unlock(&lock, key);
 	/* Enable event timer and start ticking */
 	return npcx_itim_evt_enable();
 }
@@ -218,15 +219,18 @@ static inline uint32_t npcx_itim_get_evt_cyc32(void)
 {
 	uint32_t cnt1, cnt2;
 
-	cnt1 = evt_tmr->ITCNT32;
-	/*
-	 * Wait for two consecutive equal values are read since the source clock
-	 * of event timer is 32KHz.
-	 */
-	while ((cnt2 = evt_tmr->ITCNT32) != cnt1) {
-		cnt1 = cnt2;
-	}
-
+	__asm__ volatile(
+		"ldr    %[c2], [%[tmr], %[itcnt32_off]]\n\t"
+		".read_itim_cnt_loop_%=:\n\t"
+		"mov    %[c1], %[c2]\n\t"
+		"ldr    %[c2], [%[tmr], %[itcnt32_off]]\n\t"
+		"nop\n\t"
+		"nop\n\t"
+		"cmp    %[c1], %[c2]\n\t"
+		"bne    .read_itim_cnt_loop_%=\n\t"
+		: [c1] "=&r"(cnt1), [c2] "=&r"(cnt2)
+		: [tmr] "r"(evt_tmr), [itcnt32_off] "i"(offsetof(struct itim32_reg, ITCNT32))
+		: "memory");
 	/* Return current value of 32-bit counter of event timer  */
 	return cnt2;
 }
@@ -235,13 +239,13 @@ static uint32_t npcx_itim_evt_elapsed_cyc32(void)
 {
 	uint32_t cnt1 = npcx_itim_get_evt_cyc32();
 	uint8_t  sys_cts = evt_tmr->ITCTS32;
-	uint16_t cnt2 = npcx_itim_get_evt_cyc32();
+	uint32_t cnt2 = npcx_itim_get_evt_cyc32();
 
 	/* Event has been triggered but timer ISR doesn't handle it */
 	if (IS_BIT_SET(sys_cts, NPCX_ITCTSXX_TO_STS) || (cnt2 > cnt1)) {
 		cnt2 = cyc_evt_timeout;
 	} else {
-		cnt2 = cyc_evt_timeout - cnt2;
+		cnt2 = npcx_itim_evt_counter_val() - cnt2;
 	}
 
 	/* Return elapsed cycles of 32-bit counter of event timer  */
@@ -250,7 +254,7 @@ static uint32_t npcx_itim_evt_elapsed_cyc32(void)
 #endif /* CONFIG_PM */
 
 /* System timer api functions */
-void sys_clock_set_timeout(int32_t ticks, bool idle)
+void sys_clock_set_timeout(uint32_t ticks, bool idle)
 {
 	ARG_UNUSED(idle);
 
@@ -261,7 +265,10 @@ void sys_clock_set_timeout(int32_t ticks, bool idle)
 
 	LOG_DBG("timeout is %d", ticks);
 	/* Start a event timer in ticks */
+
+	k_spinlock_key_t key = k_spin_lock(&lock);
 	npcx_itim_start_evt_tmr_by_tick(ticks);
+	k_spin_unlock(&lock, key);
 }
 
 uint32_t sys_clock_elapsed(void)
@@ -273,7 +280,7 @@ uint32_t sys_clock_elapsed(void)
 
 	k_spinlock_key_t key = k_spin_lock(&lock);
 	uint64_t delta_cycle = npcx_itim_get_sys_cyc64() - cyc_sys_announced;
-	uint32_t delta_ticks = (uint32_t)delta_cycle / SYS_CYCLES_PER_TICK;
+	uint32_t delta_ticks = (uint32_t)(delta_cycle / SYS_CYCLES_PER_TICK);
 
 	last_elapsed = delta_ticks;
 	k_spin_unlock(&lock, key);

@@ -12,18 +12,21 @@
 
 #ifndef __BT_H
 #define __BT_H
+#include <stddef.h>
+#include <stdint.h>
 
+#include <zephyr/autoconf.h>
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/net_buf.h>
 #include <sys/types.h>
 
-extern const struct shell *ctx_shell;
 extern struct bt_conn *default_conn;
 
 bool passes_scan_filter(const struct bt_le_scan_recv_info *info, const struct net_buf_simple *buf);
 
-#if defined(CONFIG_BT_ISO)
+#if defined(CONFIG_BT_ISO_UNICAST)
 extern struct bt_iso_chan iso_chan;
-#endif /* CONFIG_BT_ISO */
+#endif /* CONFIG_BT_ISO_UNICAST */
 
 #if defined(CONFIG_BT_EXT_ADV)
 extern uint8_t selected_adv;
@@ -33,8 +36,6 @@ extern size_t selected_per_adv_sync;
 extern struct bt_le_per_adv_sync *per_adv_syncs[CONFIG_BT_PER_ADV_SYNC_MAX];
 #endif /* CONFIG_BT_PER_ADV_SYNC */
 #endif /* CONFIG_BT_EXT_ADV */
-
-void conn_addr_str(struct bt_conn *conn, char *addr, size_t len);
 
 /**
  * @brief Compares two strings without case sensitivity

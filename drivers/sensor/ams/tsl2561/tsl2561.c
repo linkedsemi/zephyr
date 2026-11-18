@@ -245,7 +245,7 @@ static int tsl2561_channel_get(const struct device *dev, enum sensor_channel cha
 	return 0;
 }
 
-static const struct sensor_driver_api tsl2561_driver_api = {
+static DEVICE_API(sensor, tsl2561_driver_api) = {
 	.sample_fetch = tsl2561_sample_fetch,
 	.channel_get = tsl2561_channel_get
 };
@@ -320,7 +320,7 @@ static int tsl2561_init(const struct device *dev)
 	int ret;
 
 	if (!i2c_is_ready_dt(&config->i2c)) {
-		LOG_ERR("I2C dev %s not ready", config->i2c.bus->name);
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

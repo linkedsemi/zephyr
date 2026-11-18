@@ -6,6 +6,7 @@
 #include <ctype.h>
 #include <zephyr/device.h>
 #include <zephyr/sys/iterable_sections.h>
+#include <zephyr/shell/shell_remote.h>
 #include <stdlib.h>
 #include "shell_utils.h"
 #include "shell_wildcard.h"
@@ -18,6 +19,10 @@ TYPE_SECTION_END_EXTERN(union shell_cmd_entry, shell_dynamic_subcmds);
 
 TYPE_SECTION_START_EXTERN(union shell_cmd_entry, shell_subcmds);
 TYPE_SECTION_END_EXTERN(union shell_cmd_entry, shell_subcmds);
+
+#if defined(CONFIG_SHELL_ALIASES)
+extern const struct shell_alias shell_aliases[];
+#endif
 
 /* Macro creates empty entry at the bottom of the memory section with subcommands
  * it is used to detect end of subcommand set that is located before this marker.
@@ -57,14 +62,14 @@ static inline bool is_section_cmd(const union shell_cmd_entry *entry)
 
 /* Calculates relative line number of given position in buffer */
 static uint32_t line_num_with_buffer_offset_get(struct shell_multiline_cons *cons,
-					     uint16_t buffer_pos)
+						uint16_t buffer_pos)
 {
 	return ((buffer_pos + cons->name_len) / cons->terminal_wid);
 }
 
 /* Calculates column number of given position in buffer */
 static uint32_t col_num_with_buffer_offset_get(struct shell_multiline_cons *cons,
-					    uint16_t buffer_pos)
+					       uint16_t buffer_pos)
 {
 	/* columns are counted from 1 */
 	return (1 + ((buffer_pos + cons->name_len) % cons->terminal_wid));
@@ -74,16 +79,16 @@ int32_t z_column_span_with_buffer_offsets_get(struct shell_multiline_cons *cons,
 					      uint16_t offset1,
 					      uint16_t offset2)
 {
-	return col_num_with_buffer_offset_get(cons, offset2)
-			- col_num_with_buffer_offset_get(cons, offset1);
+	return col_num_with_buffer_offset_get(cons, offset2) -
+	       col_num_with_buffer_offset_get(cons, offset1);
 }
 
 int32_t z_row_span_with_buffer_offsets_get(struct shell_multiline_cons *cons,
 					   uint16_t offset1,
 					   uint16_t offset2)
 {
-	return line_num_with_buffer_offset_get(cons, offset2)
-		- line_num_with_buffer_offset_get(cons, offset1);
+	return line_num_with_buffer_offset_get(cons, offset2) -
+	       line_num_with_buffer_offset_get(cons, offset1);
 }
 
 void z_shell_multiline_data_calc(struct shell_multiline_cons *cons,
@@ -197,7 +202,7 @@ static char make_argv(char **ppcmd, uint8_t c)
 			}
 		}
 
-		if (!quote && isspace((int) c) != 0) {
+		if (!quote && isspace((int)c) != 0) {
 			break;
 		}
 
@@ -222,7 +227,7 @@ char z_shell_make_argv(size_t *argc, const char **argv, char *cmd,
 			break;
 		}
 
-		if (isspace((int) c) != 0) {
+		if (isspace((int)c) != 0) {
 			*cmd++ = '\0';
 			continue;
 		}
@@ -249,7 +254,7 @@ void z_shell_pattern_remove(char *buff, uint16_t *buff_len, const char *pattern)
 
 	if (pattern_addr > buff) {
 		if (*(pattern_addr - 1) == ' ') {
-			pattern_len++; /* space needs to be removed as well */
+			pattern_len++;  /* space needs to be removed as well */
 			pattern_addr--; /* set pointer to space */
 		}
 	}
@@ -299,8 +304,14 @@ const struct shell_static_entry *z_shell_cmd_get(
 
 	__ASSERT_NO_MSG(dloc != NULL);
 
+	if (IS_ENABLED(CONFIG_SHELL_REMOTE) && (parent->args.remote_cmd)) {
+		/* Remote command */
+		return z_shell_remote_cmd_get(parent, idx, dloc);
+	}
+
 	if (parent->subcmd) {
 		if (is_dynamic_cmd(parent->subcmd)) {
+			dloc->args.remote_cmd = 0;
 			parent->subcmd->dynamic_get(idx, dloc);
 			if (dloc->syntax != NULL) {
 				res = dloc;
@@ -316,7 +327,6 @@ const struct shell_static_entry *z_shell_cmd_get(
 			} else {
 				entry_list = parent->subcmd->entry;
 			}
-
 
 			if (entry_list[idx].syntax != NULL) {
 				res = &entry_list[idx];
@@ -369,6 +379,101 @@ const struct shell_static_entry *z_shell_find_cmd(
 	}
 
 	return NULL;
+}
+
+/* Function returns pointer to a command matching given alias.
+ *
+ * @param cmd_str  Command pattern to be found.
+ * @param output   The actual command to execute instead of the alias.
+ *
+ * @return 0 if alias was found and output is set, -ENOENT if alias was
+ *         not found and -ENOTSUP if aliases are not supported.
+ */
+int z_shell_find_alias(const char *cmd_str, const char **output)
+{
+#if defined(CONFIG_SHELL_ALIASES)
+	int idx = 0;
+
+	while (shell_aliases[idx].alias != NULL) {
+		if (strcmp(shell_aliases[idx].alias, cmd_str) == 0) {
+			*output = shell_aliases[idx].command;
+			return 0;
+		}
+
+		idx++;
+	}
+
+	return -ENOENT;
+#else
+	ARG_UNUSED(cmd_str);
+	ARG_UNUSED(output);
+	return -ENOTSUP;
+#endif
+}
+
+int z_shell_expand_alias(char *cmd_buf, size_t cmd_buf_size)
+{
+#if defined(CONFIG_SHELL_ALIASES)
+	const char *alias = NULL;
+	char *first_space = strstr(cmd_buf, " ");
+	char *remaining_cmd = first_space ? first_space + 1 : NULL;
+	size_t alias_len;
+	size_t cmd_buf_len;
+	size_t separator_len;
+	size_t new_cmd_len;
+	int ret;
+
+	if (first_space != NULL) {
+		/* Temporarily terminate command buffer at first space to get root
+		 * command for alias search.
+		 */
+		*first_space = '\0';
+	}
+
+	ret = z_shell_find_alias(cmd_buf, &alias);
+	if ((ret != 0) || (alias == NULL)) {
+		if (first_space != NULL) {
+			*first_space = ' ';
+		}
+
+		return ret;
+	}
+
+	alias_len = z_shell_strlen(alias);
+	cmd_buf_len = z_shell_strlen(remaining_cmd);
+	separator_len = (remaining_cmd != NULL) ? 1U : 0U;
+	new_cmd_len = alias_len + separator_len + cmd_buf_len + 1U;
+
+	if (new_cmd_len > cmd_buf_size) {
+		if (first_space != NULL) {
+			*first_space = ' ';
+		}
+
+		return -E2BIG;
+	}
+
+	/* Move the part of command buffer after root command to the end of the
+	 * alias.
+	 */
+	if (remaining_cmd != NULL) {
+		memmove(cmd_buf + alias_len + 1, remaining_cmd, cmd_buf_len + 1);
+	}
+
+	/* Copy alias to the beginning of command buffer. */
+	memcpy(cmd_buf, alias, alias_len);
+
+	if (remaining_cmd == NULL) {
+		cmd_buf[alias_len] = '\0';
+	} else {
+		cmd_buf[alias_len] = ' ';
+	}
+
+	return 0;
+#else
+	ARG_UNUSED(cmd_buf);
+	ARG_UNUSED(cmd_buf_size);
+	return -ENOTSUP;
+#endif
 }
 
 const struct shell_static_entry *z_shell_get_last_command(
@@ -428,9 +533,6 @@ int shell_set_root_cmd(const char *cmd)
 	return 0;
 }
 
-
-
-
 void z_shell_spaces_trim(char *str)
 {
 	uint16_t len = z_shell_strlen(str);
@@ -475,7 +577,7 @@ static void buffer_trim(char *buff, uint16_t *buff_len)
 		return;
 	}
 
-	while (isspace((int) buff[*buff_len - 1U]) != 0) {
+	while (isspace((int)buff[*buff_len - 1U]) != 0) {
 		*buff_len -= 1U;
 		if (*buff_len == 0U) {
 			buff[0] = '\0';
@@ -487,9 +589,8 @@ static void buffer_trim(char *buff, uint16_t *buff_len)
 	/* Counting whitespace characters starting from beginning of the
 	 * command.
 	 */
-	while (isspace((int) buff[i++]) != 0) {
+	while (isspace((int)buff[i++]) != 0) {
 	}
-
 
 	/* Removing counted whitespace characters. */
 	if (--i > 0) {
@@ -504,23 +605,30 @@ void z_shell_cmd_trim(const struct shell *sh)
 	sh->ctx->cmd_buff_pos = sh->ctx->cmd_buff_len;
 }
 
+enum shell_device_status {
+	SHELL_DEVICE_STATUS_ANY,
+	SHELL_DEVICE_STATUS_READY,
+	SHELL_DEVICE_STATUS_NON_READY
+};
+
 static const struct device *shell_device_internal(size_t idx,
 						  const char *prefix,
-						  shell_device_filter_t filter)
+						  shell_device_filter_t filter,
+						  enum shell_device_status status)
 {
 	size_t match_idx = 0;
 	const struct device *dev;
 	size_t len = z_device_get_all_static(&dev);
 	const struct device *dev_end = dev + len;
+	size_t prefix_len = z_shell_strlen(prefix);
 
 	while (dev < dev_end) {
-		if (device_is_ready(dev)
-		    && (dev->name != NULL)
-		    && (strlen(dev->name) != 0)
-		    && ((prefix == NULL)
-			|| (strncmp(prefix, dev->name,
-				    strlen(prefix)) == 0))
-		    && (filter == NULL || filter(dev))) {
+		if ((status == SHELL_DEVICE_STATUS_ANY ||
+		     (status == SHELL_DEVICE_STATUS_READY && device_is_ready(dev)) ||
+		     (status == SHELL_DEVICE_STATUS_NON_READY && !device_is_ready(dev))) &&
+		    (z_shell_strlen(dev->name) != 0) &&
+		    ((prefix == NULL) || (strncmp(prefix, dev->name, prefix_len) == 0)) &&
+		    (filter == NULL || filter(dev))) {
 			if (match_idx == idx) {
 				return dev;
 			}
@@ -535,19 +643,95 @@ static const struct device *shell_device_internal(size_t idx,
 const struct device *shell_device_filter(size_t idx,
 					 shell_device_filter_t filter)
 {
-	return shell_device_internal(idx, NULL, filter);
+	return shell_device_internal(idx, NULL, filter,
+				     SHELL_DEVICE_STATUS_READY);
 }
 
 const struct device *shell_device_lookup(size_t idx,
 					 const char *prefix)
 {
-	return shell_device_internal(idx, prefix, NULL);
+	return shell_device_internal(idx, prefix, NULL,
+				     SHELL_DEVICE_STATUS_READY);
+}
+
+const struct device *shell_device_lookup_all(size_t idx,
+					     const char *prefix)
+{
+	return shell_device_internal(idx, prefix, NULL,
+				     SHELL_DEVICE_STATUS_ANY);
+}
+
+const struct device *shell_device_lookup_non_ready(size_t idx,
+						   const char *prefix)
+{
+	return shell_device_internal(idx, prefix, NULL,
+				     SHELL_DEVICE_STATUS_NON_READY);
+}
+
+const struct device *shell_device_get_binding(const char *name)
+{
+	const struct device *dev = device_get_binding(name);
+
+	if (IS_ENABLED(CONFIG_DEVICE_DT_METADATA) && dev == NULL) {
+		dev = device_get_by_dt_nodelabel(name);
+	}
+
+	return dev;
+}
+
+#ifdef CONFIG_DEVICE_DT_METADATA
+static inline bool device_has_nodelabel(const struct device *dev,
+					const char *name)
+{
+	const struct device_dt_nodelabels *nl;
+
+	nl = device_get_dt_nodelabels(dev);
+	if (nl != NULL) {
+		size_t i;
+		size_t name_len = strlen(name);
+
+		for (i = 0; i < nl->num_nodelabels; i++) {
+			const char *dev_nl = nl->nodelabels[i];
+
+			if ((strlen(dev_nl) == name_len) &&
+			    (strcmp(name, dev_nl) == 0)) {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+#else
+#define device_has_nodelabel(...) false
+#endif /* CONFIG_DEVICE_DT_METADATA */
+
+const struct device *shell_device_get_binding_all(const char *name)
+{
+	const struct device *dev;
+	size_t len = z_device_get_all_static(&dev);
+	const struct device *dev_end = dev + len;
+
+	if (name != NULL) {
+		size_t name_len = strlen(name);
+
+		for (; dev < dev_end; dev++) {
+			if (((dev->name != NULL)
+			     && (strlen(dev->name) == name_len)
+			     && (strcmp(name, dev->name) == 0))
+			    || device_has_nodelabel(dev, name)) {
+				return dev;
+			}
+		}
+	}
+
+	return NULL;
 }
 
 long shell_strtol(const char *str, int base, int *err)
 {
 	long val;
-	char *endptr = NULL;
+	char *endptr;
 
 	errno = 0;
 	val = strtol(str, &endptr, base);
@@ -565,7 +749,7 @@ long shell_strtol(const char *str, int base, int *err)
 unsigned long shell_strtoul(const char *str, int base, int *err)
 {
 	unsigned long val;
-	char *endptr = NULL;
+	char *endptr;
 
 	if (*str == '-') {
 		*err = -EINVAL;
@@ -588,7 +772,7 @@ unsigned long shell_strtoul(const char *str, int base, int *err)
 unsigned long long shell_strtoull(const char *str, int base, int *err)
 {
 	unsigned long long val;
-	char *endptr = NULL;
+	char *endptr;
 
 	if (*str == '-') {
 		*err = -EINVAL;
@@ -619,4 +803,63 @@ bool shell_strtobool(const char *str, int base, int *err)
 	}
 
 	return shell_strtoul(str, base, err);
+}
+
+void shell_hexdump_line(const struct shell *sh, unsigned int offset,
+			const uint8_t *data, size_t len)
+{
+	__ASSERT_NO_MSG(sh);
+
+	int i;
+
+	shell_fprintf_normal(sh, "%08X: ", offset);
+
+	for (i = 0; i < SHELL_HEXDUMP_BYTES_IN_LINE; i++) {
+		if (i > 0 && !(i % 8)) {
+			shell_fprintf_normal(sh, " ");
+		}
+
+		if (i < len) {
+			shell_fprintf_normal(sh, "%02x ",
+					     data[i] & 0xFF);
+		} else {
+			shell_fprintf_normal(sh, "   ");
+		}
+	}
+
+	shell_fprintf_normal(sh, "|");
+
+	for (i = 0; i < SHELL_HEXDUMP_BYTES_IN_LINE; i++) {
+		if (i > 0 && !(i % 8)) {
+			shell_fprintf_normal(sh, " ");
+		}
+
+		if (i < len) {
+			char c = data[i];
+
+			shell_fprintf_normal(sh, "%c",
+					     isprint((int)c) != 0 ? c : '.');
+		} else {
+			shell_fprintf_normal(sh, " ");
+		}
+	}
+
+	shell_print(sh, "|");
+}
+
+void shell_hexdump(const struct shell *sh, const uint8_t *data, size_t len)
+{
+	__ASSERT_NO_MSG(sh);
+
+	const uint8_t *p = data;
+	size_t line_len;
+
+	while (len) {
+		line_len = MIN(len, SHELL_HEXDUMP_BYTES_IN_LINE);
+
+		shell_hexdump_line(sh, p - data, p, line_len);
+
+		len -= line_len;
+		p += line_len;
+	}
 }

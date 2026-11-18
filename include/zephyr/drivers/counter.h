@@ -1,25 +1,32 @@
 /*
- * Copyright (c) 2018 Nordic Semiconductor ASA
  * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2018 Nordic Semiconductor ASA
+ * Copyright (c) 2026 Meta Platforms
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /**
  * @file
- * @brief Public API for counter and timer drivers
+ * @ingroup counter_interface
+ * @brief Main header file for counter driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_COUNTER_H_
 #define ZEPHYR_INCLUDE_DRIVERS_COUNTER_H_
 
 /**
- * @brief Counter Interface
- * @defgroup counter_interface Counter Interface
+ * @brief Interfaces for counters.
+ * @defgroup counter_interface Counter
  * @since 1.14
- * @version 0.8.0
+ * @version 1.1.0
  * @ingroup io_interfaces
  * @{
+ *
+ * @defgroup counter_interface_ext Device-specific Counter API extensions
+ *
+ * @{
+ * @}
  */
 
 #include <errno.h>
@@ -27,8 +34,12 @@
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <zephyr/device.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/devicetree.h>
+#include <zephyr/devicetree/counter-capture.h>
+#include <zephyr/sys/clock.h>
 #include <stdbool.h>
+
+#include <zephyr/dt-bindings/counter/counter-capture.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -92,7 +103,7 @@ extern "C" {
  *
  * Alarm callback must be called from the same context as if it was set on time.
  */
-#define COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE  BIT(1)
+#define COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE BIT(1)
 
 /**@} */
 
@@ -112,6 +123,359 @@ extern "C" {
 
 /**@} */
 
+/**
+ * @anchor COUNTER_CAPTURE_FLAGS
+ * @name Counter capture flags
+ *
+ * @brief Used by @ref counter_capture_configure.
+ * @{
+ */
+
+/* Bit 0 and 1 are used for COUNTER_CAPTURE_RISING_EDGE/COUNTER_CAPTURE_FALLING_EDGE */
+
+/**
+ * @brief Capture an event continuously until stopped.
+ */
+#define COUNTER_CAPTURE_CONTINUOUS 0
+
+/**
+ * @brief Capture a single event
+ */
+#define COUNTER_CAPTURE_SINGLE_SHOT BIT(2)
+
+/**
+ * @brief Provides a type to hold Counter Capture configuration flags.
+ *
+ * The lower 8 bits are used for standard flags.
+ * The upper 24 bits are reserved for SoC specific flags.
+ *
+ * @see @ref COUNTER_CAPTURE_FLAGS.
+ */
+
+typedef uint32_t counter_capture_flags_t;
+
+/**
+ * @brief Container for counter capture information specified in devicetree.
+ *
+ * This type contains a pointer to a counter device, a channel number
+ * (controlled by the counter device), and capture flags applicable to the
+ * channel.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME_OR
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR
+ * @see COUNTER_CAPTURE_DT_SPEC_GET
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_OR
+ */
+struct counter_capture_dt_spec {
+	/** Counter device instance. */
+	const struct device *dev;
+	/** Capture flags. */
+	counter_capture_flags_t flags;
+	/** Channel ID. */
+	uint8_t chan_id;
+};
+
+/**
+ * @brief Static initializer for a struct counter_capture_dt_spec
+ *
+ * This returns a static initializer for a struct counter_capture_dt_spec given
+ * a devicetree node identifier and a name.
+ *
+ * Example devicetree fragment:
+ *
+ * @code{.dts}
+ *    n: node {
+ *        counter-captures = <&counter1 1 COUNTER_CAPTURE_RISING_EDGE>,
+ *                           <&counter2 3 COUNTER_CAPTURE_BOTH_EDGES>;
+ *        counter-capture-names = "alpha", "beta";
+ *    };
+ * @endcode
+ *
+ * Example usage:
+ *
+ * @code{.c}
+ *    const struct counter_capture_dt_spec spec =
+ *        COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME(DT_NODELABEL(n), counter_captures, alpha);
+ *
+ *    // Initializes 'spec' to:
+ *    // {
+ *    //         .dev = DEVICE_DT_GET(DT_NODELABEL(counter1)),
+ *    //         .chan_id = 1,
+ *    //         .flags = COUNTER_CAPTURE_RISING_EDGE,
+ *    // }
+ * @endcode
+ *
+ * The device (dev) must still be checked for readiness, e.g. using
+ * device_is_ready(). It is an error to use this macro unless the node exists,
+ * has the 'counter-captures' property, and that 'counter-captures' property
+ * specifies a counter controller, a channel and optionally flags.
+ *
+ * @param node_id Devicetree node identifier.
+ * @param prop lowercase-and-underscores property name
+ * @param name Lowercase-and-underscores name of a counter-captures element as
+ *             defined by the node's counter-capture-names property.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_NAME
+ */
+#define COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME(node_id, prop, name)                                   \
+	{                                                                                          \
+		.dev = DEVICE_DT_GET(DT_COUNTER_CAPTURES_CTLR_BY_NAME(node_id, prop, name)),       \
+		.chan_id = (uint8_t)DT_COUNTER_CAPTURES_CHANNEL_BY_NAME(node_id, prop, name),      \
+		.flags = DT_COUNTER_CAPTURES_FLAGS_BY_NAME(node_id, prop, name),                   \
+	}
+
+/**
+ * @brief Static initializer for a struct counter_capture_dt_spec from a
+ *        DT_DRV_COMPAT instance.
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param prop lowercase-and-underscores property name
+ * @param name Lowercase-and-underscores name of a counter-captures element as
+ *             defined by the node's counter-capture-names property.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME
+ */
+#define COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_NAME(inst, prop, name)                                 \
+	COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME(DT_DRV_INST(inst), prop, name)
+
+/**
+ * @brief Like COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME(), with a fallback to a
+ *        default value.
+ *
+ * If the devicetree node identifier 'node_id' refers to a node with a
+ * property 'counter-captures', this expands to
+ * <tt>COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME(node_id, prop, name)</tt>. The
+ * @p default_value parameter is not expanded in this case. Otherwise, this
+ * expands to @p default_value.
+ *
+ * @param node_id Devicetree node identifier.
+ * @param prop lowercase-and-underscores property name
+ * @param name Lowercase-and-underscores name of a counter-captures element as
+ *             defined by the node's counter-capture-names property.
+ * @param default_value Fallback value to expand to.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property, or @p default_value if the node or property do not exist.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_NAME_OR
+ */
+#define COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME_OR(node_id, prop, name, default_value)                 \
+	COND_CODE_1(DT_NODE_HAS_PROP(node_id, prop),                                               \
+			(COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME(node_id, prop, name)),                \
+			(default_value))
+
+/**
+ * @brief Like COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_NAME(), with a fallback to a
+ *        default value.
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param prop lowercase-and-underscores property name
+ * @param name Lowercase-and-underscores name of a counter-captures element as
+ *             defined by the node's counter-capture-names property.
+ * @param default_value Fallback value to expand to.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property, or @p default_value if the node or property do not exist.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME_OR
+ */
+#define COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_NAME_OR(inst, prop, name, default_value)               \
+	COUNTER_CAPTURE_DT_SPEC_GET_BY_NAME_OR(DT_DRV_INST(inst), prop, name, default_value)
+
+/**
+ * @brief Static initializer for a struct counter_capture_dt_spec
+ *
+ * This returns a static initializer for a struct counter_capture_dt_spec given
+ * a devicetree node identifier and an index.
+ *
+ * Example devicetree fragment:
+ *
+ * @code{.dts}
+ *    n: node {
+ *        counter-captures = <&counter1 1 COUNTER_CAPTURE_RISING_EDGE>,
+ *                           <&counter2 3 COUNTER_CAPTURE_BOTH_EDGES>;
+ *    };
+ * @endcode
+ *
+ * Example usage:
+ *
+ * @code{.c}
+ *    const struct counter_capture_dt_spec spec =
+ *        COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(DT_NODELABEL(n), counter_captures, 1);
+ *
+ *    // Initializes 'spec' to:
+ *    // {
+ *    //         .dev = DEVICE_DT_GET(DT_NODELABEL(counter2)),
+ *    //         .chan_id = 3,
+ *    //         .flags = COUNTER_CAPTURE_BOTH_EDGES,
+ *    // }
+ * @endcode
+ *
+ * The device (dev) must still be checked for readiness, e.g. using
+ * device_is_ready(). It is an error to use this macro unless the node exists,
+ * has the 'counter-captures' property, and that 'counter-captures' property
+ * specifies a counter controller, a channel and optionally flags.
+ *
+ * @param node_id Devicetree node identifier.
+ * @param prop lowercase-and-underscores property name
+ * @param idx Logical index into 'counter-captures' property.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX
+ */
+#define COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(node_id, prop, idx)                                     \
+	{                                                                                          \
+		.dev = DEVICE_DT_GET(DT_COUNTER_CAPTURES_CTLR_BY_IDX(node_id, prop, idx)),         \
+		.chan_id = (uint8_t)DT_COUNTER_CAPTURES_CHANNEL_BY_IDX(node_id, prop, idx),        \
+		.flags = DT_COUNTER_CAPTURES_FLAGS_BY_IDX(node_id, prop, idx),                     \
+	}
+
+/**
+ * @brief Static initializer for a struct counter_capture_dt_spec from a
+ *        DT_DRV_COMPAT instance.
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param prop lowercase-and-underscores property name
+ * @param idx Logical index into 'counter-captures' property.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX
+ */
+#define COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX(inst, prop, idx)                                   \
+	COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(DT_DRV_INST(inst), prop, idx)
+
+/**
+ * @brief Like COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(), with a fallback to a
+ *        default value.
+ *
+ * If the devicetree node identifier 'node_id' refers to a node with a
+ * property 'counter-captures', this expands to
+ * <tt>COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(node_id, idx)</tt>. The
+ * @p default_value parameter is not expanded in this case. Otherwise, this
+ * expands to @p default_value.
+ *
+ * @param node_id Devicetree node identifier.
+ * @param prop lowercase-and-underscores property name
+ * @param idx Logical index into 'counter-captures' property.
+ * @param default_value Fallback value to expand to.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property, or @p default_value if the node or property do not exist.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX_OR
+ */
+#define COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR(node_id, prop, idx, default_value)                   \
+	COND_CODE_1(DT_NODE_HAS_PROP(node_id, prop),                                               \
+			(COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(node_id, prop, idx)),                  \
+			(default_value))
+
+/**
+ * @brief Like COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX(), with a fallback to a
+ *        default value.
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param prop lowercase-and-underscores property name
+ * @param idx Logical index into 'counter-captures' property.
+ * @param default_value Fallback value to expand to.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property, or @p default_value if the node or property do not exist.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR
+ */
+#define COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX_OR(inst, prop, idx, default_value)                 \
+	COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR(DT_DRV_INST(inst), prop, idx, default_value)
+
+/**
+ * @brief Equivalent to <tt>COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(node_id, 0)</tt>.
+ *
+ * @param node_id Devicetree node identifier.
+ * @param prop lowercase-and-underscores property name
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET
+ */
+#define COUNTER_CAPTURE_DT_SPEC_GET(node_id, prop)                                                 \
+	COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX(node_id, prop, 0)
+
+/**
+ * @brief Equivalent to <tt>COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX(inst, 0)</tt>.
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param prop lowercase-and-underscores property name
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX
+ * @see COUNTER_CAPTURE_DT_SPEC_GET
+ */
+#define COUNTER_CAPTURE_DT_SPEC_INST_GET(inst, prop)                                               \
+	COUNTER_CAPTURE_DT_SPEC_GET(DT_DRV_INST(inst), prop)
+
+/**
+ * @brief Equivalent to
+ *        <tt>COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR(node_id, 0, default_value)</tt>.
+ *
+ * @param node_id Devicetree node identifier.
+ * @param prop lowercase-and-underscores property name
+ * @param default_value Fallback value to expand to.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_OR
+ */
+#define COUNTER_CAPTURE_DT_SPEC_GET_OR(node_id, prop, default_value)                               \
+	COUNTER_CAPTURE_DT_SPEC_GET_BY_IDX_OR(node_id, prop, 0, default_value)
+
+/**
+ * @brief Equivalent to
+ *        <tt>COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX_OR(inst, 0, default_value)</tt>.
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param prop lowercase-and-underscores property name
+ * @param default_value Fallback value to expand to.
+ *
+ * @return Static initializer for a struct counter_capture_dt_spec for the
+ *         property.
+ *
+ * @see COUNTER_CAPTURE_DT_SPEC_INST_GET_BY_IDX_OR
+ * @see COUNTER_CAPTURE_DT_SPEC_GET_OR
+ */
+#define COUNTER_CAPTURE_DT_SPEC_INST_GET_OR(inst, prop, default_value)                             \
+	COUNTER_CAPTURE_DT_SPEC_GET_OR(DT_DRV_INST(inst), prop, default_value)
+
+/**@} */
+
+/** @brief Counter capture callback
+ *
+ * @param dev       Pointer to the device structure for the driver instance
+ * @param chan_id   Channel ID
+ * @param flags     Configuration flags (@ref COUNTER_CAPTURE_FLAGS)
+ * @param ticks     Counter value that triggered the capture
+ * @param user_data User data
+ */
+typedef void (*counter_capture_cb_t)(const struct device *dev, uint8_t chan_id,
+				     counter_capture_flags_t flags, uint32_t ticks,
+				     void *user_data);
+
 /** @brief Alarm callback
  *
  * @param dev       Pointer to the device structure for the driver instance.
@@ -119,8 +483,7 @@ extern "C" {
  * @param ticks     Counter value that triggered the alarm.
  * @param user_data User data.
  */
-typedef void (*counter_alarm_callback_t)(const struct device *dev,
-					 uint8_t chan_id, uint32_t ticks,
+typedef void (*counter_alarm_callback_t)(const struct device *dev, uint8_t chan_id, uint32_t ticks,
 					 void *user_data);
 
 /** @brief Alarm callback structure.
@@ -162,8 +525,7 @@ struct counter_alarm_cfg {
  * @param dev       Pointer to the device structure for the driver instance.
  * @param user_data User data provided in @ref counter_set_top_value.
  */
-typedef void (*counter_top_callback_t)(const struct device *dev,
-				       void *user_data);
+typedef void (*counter_top_callback_t)(const struct device *dev, void *user_data);
 
 /** @brief Top value configuration structure.
  */
@@ -190,13 +552,32 @@ struct counter_top_cfg {
  */
 struct counter_config_info {
 	/**
-	 * Maximal (default) top value on which counter is reset (cleared or reloaded).
-	 */
-	uint32_t max_top_value;
-	/**
 	 * Frequency of the source clock if synchronous events are counted.
 	 */
+#ifdef CONFIG_COUNTER_64BITS_FREQ
+	uint64_t freq;
+#else
 	uint32_t freq;
+#endif
+	/**
+	 * Maximal (default) top value on which counter is reset (cleared or reloaded).
+	 */
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	union {
+		uint64_t max_top_value_64;
+		struct {
+#ifdef CONFIG_BIG_ENDIAN
+			uint32_t reserved;
+			uint32_t max_top_value;
+#else
+			uint32_t max_top_value;
+			uint32_t reserved;
+#endif /* CONFIG_BIG_ENDIAN */
+		};
+	};
+#else
+	uint32_t max_top_value;
+#endif /* CONFIG_COUNTER_64BITS_TICKS */
 	/**
 	 * Flags (see @ref COUNTER_FLAGS).
 	 */
@@ -209,42 +590,295 @@ struct counter_config_info {
 	uint8_t channels;
 };
 
+/** @brief Alarm callback
+ *
+ * @param dev       Pointer to the device structure for the driver instance.
+ * @param chan_id   Channel ID.
+ * @param ticks     Counter value that triggered the alarm.
+ * @param user_data User data.
+ */
+typedef void (*counter_alarm_callback_64_t)(const struct device *dev, uint8_t chan_id,
+					    uint64_t ticks, void *user_data);
+
+/** @brief Alarm callback structure.
+ */
+struct counter_alarm_cfg_64 {
+	/**
+	 * Number of ticks that triggers the alarm.
+	 *
+	 * It can be relative (to now) or an absolute value (see @ref
+	 * COUNTER_ALARM_CFG_ABSOLUTE). Both, relative and absolute, alarm
+	 * values can be any value between zero and the current top value (see
+	 * @ref counter_get_top_value). When setting an absolute alarm value
+	 * close to the current counter value there is a risk that the counter
+	 * will have counted past the given absolute value before the driver
+	 * manages to activate the alarm. Therefore a guard period can be
+	 * defined that lets the driver decide unambiguously whether it is late
+	 * or not (see @ref counter_set_guard_period). If the counter is clock
+	 * driven then ticks can be converted to microseconds (see @ref
+	 * counter_ticks_to_us). Alternatively, the counter implementation may
+	 * count asynchronous events.
+	 */
+	uint64_t ticks;
+	/**
+	 * Callback called on alarm (cannot be NULL).
+	 */
+	counter_alarm_callback_64_t callback;
+	/**
+	 * User data returned in callback.
+	 */
+	void *user_data;
+	/**
+	 * Alarm flags (see @ref COUNTER_ALARM_FLAGS).
+	 */
+	uint32_t flags;
+};
+
+/** @brief Top value configuration structure.
+ */
+struct counter_top_cfg_64 {
+	/**
+	 * Top value.
+	 */
+	uint64_t ticks;
+	/**
+	 * Callback function (can be NULL).
+	 */
+	counter_top_callback_t callback;
+	/**
+	 * User data passed to callback function (not valid if callback is NULL).
+	 */
+	void *user_data;
+	/**
+	 * Flags (see @ref COUNTER_TOP_FLAGS).
+	 */
+	uint32_t flags;
+};
+
+/** @brief Counter capture callback for 64 bits ticks
+ *
+ * @param dev       Pointer to the device structure for the driver instance
+ * @param chan_id   Channel ID
+ * @param flags     Configuration flags (@ref COUNTER_CAPTURE_FLAGS)
+ * @param ticks     Counter value that triggered the capture in 64 bits
+ * @param user_data User data
+ */
+typedef void (*counter_capture_cb_64_t)(const struct device *dev, uint8_t chan_id,
+					counter_capture_flags_t flags, uint64_t ticks,
+					void *user_data);
+
+/**
+ * @def_driverbackendgroup{Counter,counter_interface}
+ * @{
+ */
+
+/** @brief Callback API to start the counter. */
 typedef int (*counter_api_start)(const struct device *dev);
+/** @brief Callback API to stop the counter. */
 typedef int (*counter_api_stop)(const struct device *dev);
-typedef int (*counter_api_get_value)(const struct device *dev,
-				     uint32_t *ticks);
-typedef int (*counter_api_get_value_64)(const struct device *dev,
-			uint64_t *ticks);
-typedef int (*counter_api_set_alarm)(const struct device *dev,
-				     uint8_t chan_id,
+/** @brief Callback API to get the current counter value. */
+typedef int (*counter_api_get_value)(const struct device *dev, uint32_t *ticks);
+/** @brief Callback API to reset the counter to the initial value. */
+typedef int (*counter_api_reset)(const struct device *dev);
+/** @brief Callback API to set the current counter value. */
+typedef int (*counter_api_set_value)(const struct device *dev, uint32_t ticks);
+/** @brief Callback API to set a single shot alarm on a channel. */
+typedef int (*counter_api_set_alarm)(const struct device *dev, uint8_t chan_id,
 				     const struct counter_alarm_cfg *alarm_cfg);
-typedef int (*counter_api_cancel_alarm)(const struct device *dev,
-					uint8_t chan_id);
+/** @brief Callback API to cancel an alarm on a channel. */
+typedef int (*counter_api_cancel_alarm)(const struct device *dev, uint8_t chan_id);
+/** @brief Callback API to set the counter top value. */
 typedef int (*counter_api_set_top_value)(const struct device *dev,
 					 const struct counter_top_cfg *cfg);
+/** @brief Callback API to get pending counter interrupts. */
 typedef uint32_t (*counter_api_get_pending_int)(const struct device *dev);
+/** @brief Callback API to retrieve the current top value. */
 typedef uint32_t (*counter_api_get_top_value)(const struct device *dev);
-typedef uint32_t (*counter_api_get_guard_period)(const struct device *dev,
-						 uint32_t flags);
-typedef int (*counter_api_set_guard_period)(const struct device *dev,
-						uint32_t ticks,
-						uint32_t flags);
+/** @brief Callback API to retrieve the guard period in ticks. */
+typedef uint32_t (*counter_api_get_guard_period)(const struct device *dev, uint32_t flags);
+/** @brief Callback API to set the guard period in ticks. */
+typedef int (*counter_api_set_guard_period)(const struct device *dev, uint32_t ticks,
+					    uint32_t flags);
+/** @brief Callback API to get the counter frequency in Hz. */
 typedef uint32_t (*counter_api_get_freq)(const struct device *dev);
+/** @brief Callback API to get the counter frequency in Hz (64 bits). */
+typedef uint64_t (*counter_api_get_freq_64)(const struct device *dev);
 
+/** @brief Callback API to get the current counter value (64 bits). */
+typedef int (*counter_api_get_value_64)(const struct device *dev, uint64_t *ticks);
+/** @brief Callback API to set the current counter value (64 bits). */
+typedef int (*counter_api_set_value_64)(const struct device *dev, uint64_t ticks);
+/** @brief Callback API to set a single shot alarm on a channel (64 bits). */
+typedef int (*counter_api_set_alarm_64)(const struct device *dev, uint8_t chan_id,
+					const struct counter_alarm_cfg_64 *alarm_cfg);
+/** @brief Callback API to retrieve the guard period in ticks (64 bits). */
+typedef uint64_t (*counter_api_get_guard_period_64)(const struct device *dev, uint32_t flags);
+/** @brief Callback API to set the guard period in ticks (64 bits). */
+typedef int (*counter_api_set_guard_period_64)(const struct device *dev, uint64_t ticks,
+					       uint32_t flags);
+/** @brief Callback API to retrieve the current top value (64 bits). */
+typedef uint64_t (*counter_api_get_top_value_64)(const struct device *dev);
+/** @brief Callback API to set the counter top value (64 bits). */
+typedef int (*counter_api_set_top_value_64)(const struct device *dev,
+					    const struct counter_top_cfg_64 *cfg);
+/** @brief Callback API to configure counter capture on a channel. */
+typedef int (*counter_api_capture_configure)(const struct device *dev, uint8_t chan_id,
+					     counter_capture_flags_t flags,
+					     counter_capture_cb_t cb, void *user_data);
+/** @brief Callback API to configure counter capture on a channel with 64-bit ticks. */
+typedef int (*counter_api_capture_configure_64)(const struct device *dev, uint8_t chan_id,
+						counter_capture_flags_t flags,
+						counter_capture_cb_64_t cb, void *user_data);
+/** @brief Callback API to enable counter capture on a channel. */
+typedef int (*counter_api_enable_capture)(const struct device *dev, uint8_t chan_id);
+/** @brief Callback API to disable counter capture on a channel. */
+typedef int (*counter_api_disable_capture)(const struct device *dev, uint8_t chan_id);
+
+/** @brief Callback API to set counter calibration in parts per billion. */
+typedef int (*counter_api_set_calibration)(const struct device *dev, int32_t calibration);
+/** @brief Callback API to get counter calibration in parts per billion. */
+typedef int (*counter_api_get_calibration)(const struct device *dev, int32_t *calibration);
+
+/**
+ * @driver_ops{Counter}
+ */
 __subsystem struct counter_driver_api {
+	/**
+	 * @driver_ops_mandatory @copybrief counter_start
+	 */
 	counter_api_start start;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_stop
+	 */
 	counter_api_stop stop;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_get_value
+	 */
 	counter_api_get_value get_value;
-	counter_api_get_value_64 get_value_64;
+	/**
+	 * @driver_ops_optional @copybrief counter_reset
+	 */
+	counter_api_reset reset;
+	/**
+	 * @driver_ops_optional @copybrief counter_set_value
+	 */
+	counter_api_set_value set_value;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_set_channel_alarm
+	 */
 	counter_api_set_alarm set_alarm;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_cancel_channel_alarm
+	 */
 	counter_api_cancel_alarm cancel_alarm;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_set_top_value
+	 */
 	counter_api_set_top_value set_top_value;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_get_pending_int
+	 */
 	counter_api_get_pending_int get_pending_int;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_get_top_value
+	 */
 	counter_api_get_top_value get_top_value;
+	/**
+	 * @driver_ops_optional @copybrief counter_get_guard_period
+	 */
 	counter_api_get_guard_period get_guard_period;
+	/**
+	 * @driver_ops_optional @copybrief counter_set_guard_period
+	 */
 	counter_api_set_guard_period set_guard_period;
+	/**
+	 * @driver_ops_optional @copybrief counter_get_frequency
+	 */
 	counter_api_get_freq get_freq;
+#if defined(CONFIG_COUNTER_64BITS_FREQ) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief counter_get_frequency_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_FREQ}
+	 */
+	counter_api_get_freq_64 get_freq_64;
+#endif /* CONFIG_COUNTER_64BITS_FREQ */
+#if defined(CONFIG_COUNTER_64BITS_TICKS) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief counter_get_value_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_get_value_64 get_value_64;
+	/**
+	 * @driver_ops_optional @copybrief counter_set_value_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_set_value_64 set_value_64;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_set_channel_alarm_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_set_alarm_64 set_alarm_64;
+	/**
+	 * @driver_ops_optional @copybrief counter_get_guard_period_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_get_guard_period_64 get_guard_period_64;
+	/**
+	 * @driver_ops_optional @copybrief counter_set_guard_period_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_set_guard_period_64 set_guard_period_64;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_get_top_value_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_get_top_value_64 get_top_value_64;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_set_top_value_64
+	 * @kconfig_dep{CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_set_top_value_64 set_top_value_64;
+#endif /* CONFIG_COUNTER_64BITS_TICKS */
+#if defined(CONFIG_COUNTER_CAPTURE) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_mandatory @copybrief counter_capture_configure
+	 * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+	 */
+	counter_api_capture_configure capture_configure;
+#if defined(CONFIG_COUNTER_64BITS_TICKS) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_mandatory @copybrief counter_capture_configure_64
+	 * @kconfig_dep{CONFIG_COUNTER_CAPTURE,CONFIG_COUNTER_64BITS_TICKS}
+	 */
+	counter_api_capture_configure_64 capture_configure_64;
+#endif /* CONFIG_COUNTER_64BITS_TICKS */
+	/**
+	 * @driver_ops_mandatory @copybrief counter_enable_capture
+	 * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+	 */
+	counter_api_enable_capture enable_capture;
+	/**
+	 * @driver_ops_mandatory @copybrief counter_disable_capture
+	 * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+	 */
+	counter_api_disable_capture disable_capture;
+#endif /* CONFIG_COUNTER_CAPTURE */
+#if defined(CONFIG_COUNTER_CALIBRATION) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief counter_set_calibration
+	 * @kconfig_dep{CONFIG_COUNTER_CALIBRATION}
+	 */
+	counter_api_set_calibration set_calibration;
+	/**
+	 * @driver_ops_optional @copybrief counter_get_calibration
+	 * @kconfig_dep{CONFIG_COUNTER_CALIBRATION}
+	 */
+	counter_api_get_calibration get_calibration;
+#endif /* CONFIG_COUNTER_CALIBRATION */
 };
+/**
+ * @}
+ */
 
 /**
  * @brief Function to check if counter is counting up.
@@ -258,8 +892,7 @@ __syscall bool counter_is_counting_up(const struct device *dev);
 
 static inline bool z_impl_counter_is_counting_up(const struct device *dev)
 {
-	const struct counter_config_info *config =
-			(const struct counter_config_info *)dev->config;
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
 
 	return config->flags & COUNTER_CONFIG_INFO_COUNT_UP;
 }
@@ -275,11 +908,37 @@ __syscall uint8_t counter_get_num_of_channels(const struct device *dev);
 
 static inline uint8_t z_impl_counter_get_num_of_channels(const struct device *dev)
 {
-	const struct counter_config_info *config =
-			(const struct counter_config_info *)dev->config;
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
 
 	return config->channels;
 }
+
+__syscall uint32_t counter_get_frequency(const struct device *dev);
+
+#ifdef CONFIG_COUNTER_64BITS_FREQ
+/**
+ * @brief Function to get counter frequency.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ *
+ * @return Frequency of the counter in Hz, or zero if the counter does
+ * not have a fixed frequency, or UINT32_MAX if the counter frequency
+ * is higher or equal to UINT32_MAX, in which case it is recommended to
+ * use counter_get_frequency_64().
+ */
+static inline uint32_t z_impl_counter_get_frequency(const struct device *dev)
+{
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (api->get_freq) {
+		return api->get_freq(dev);
+	} else {
+		return config->freq > UINT32_MAX ? UINT32_MAX : (uint32_t)config->freq;
+	}
+}
+
+#else
 
 /**
  * @brief Function to get counter frequency.
@@ -289,17 +948,49 @@ static inline uint8_t z_impl_counter_get_num_of_channels(const struct device *de
  * @return Frequency of the counter in Hz, or zero if the counter does
  * not have a fixed frequency.
  */
-__syscall uint32_t counter_get_frequency(const struct device *dev);
-
 static inline uint32_t z_impl_counter_get_frequency(const struct device *dev)
 {
-	const struct counter_config_info *config =
-			(const struct counter_config_info *)dev->config;
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
 	return api->get_freq ? api->get_freq(dev) : config->freq;
 }
+#endif
+
+/**
+ * @brief Function to get counter frequency in 64bits.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ *
+ * @return Frequency of the counter in Hz, or zero if the counter does
+ * not have a fixed frequency. When CONFIG_COUNTER_64BITS_FREQ is
+ * disabled, this falls back to counter_get_frequency().
+ */
+__syscall uint64_t counter_get_frequency_64(const struct device *dev);
+
+static inline uint64_t z_impl_counter_get_frequency_64(const struct device *dev)
+{
+#ifdef CONFIG_COUNTER_64BITS_FREQ
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (api->get_freq_64) {
+		return api->get_freq_64(dev);
+	} else if (api->get_freq) {
+		return (uint64_t)api->get_freq(dev);
+	} else {
+		return config->freq;
+	}
+#else
+	return z_impl_counter_get_frequency(dev);
+#endif
+}
+
+#ifdef CONFIG_COUNTER_64BITS_FREQ
+#define z_counter_get_frequency z_impl_counter_get_frequency_64
+#else
+#define z_counter_get_frequency z_impl_counter_get_frequency
+#endif
 
 /**
  * @brief Function to convert microseconds to ticks.
@@ -311,12 +1002,37 @@ static inline uint32_t z_impl_counter_get_frequency(const struct device *dev)
  */
 __syscall uint32_t counter_us_to_ticks(const struct device *dev, uint64_t us);
 
-static inline uint32_t z_impl_counter_us_to_ticks(const struct device *dev,
-					       uint64_t us)
+static inline uint32_t z_impl_counter_us_to_ticks(const struct device *dev, uint64_t us)
 {
-	uint64_t ticks = (us * z_impl_counter_get_frequency(dev)) / USEC_PER_SEC;
+	uint64_t freq = z_counter_get_frequency(dev);
+	uint64_t whole = us / USEC_PER_SEC;
+	uint64_t ticks;
+
+	/* Saturate early: whole * freq alone can wrap the uint64_t math below. */
+	if ((freq != 0U) && (whole > (uint64_t)UINT32_MAX / freq)) {
+		return UINT32_MAX;
+	}
+
+	ticks = whole * freq + ((us % USEC_PER_SEC) * freq) / USEC_PER_SEC;
 
 	return (ticks > (uint64_t)UINT32_MAX) ? UINT32_MAX : ticks;
+}
+
+/**
+ * @brief Function to convert microseconds to ticks with 64 bits.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ * @param[in]  us     Microseconds.
+ *
+ * @return Converted ticks as a uint64_t
+ */
+__syscall uint64_t counter_us_to_ticks_64(const struct device *dev, uint64_t us);
+
+static inline uint64_t z_impl_counter_us_to_ticks_64(const struct device *dev, uint64_t us)
+{
+	uint64_t freq = z_counter_get_frequency(dev);
+
+	return (us / USEC_PER_SEC) * freq + ((us % USEC_PER_SEC) * freq) / USEC_PER_SEC;
 }
 
 /**
@@ -329,10 +1045,101 @@ static inline uint32_t z_impl_counter_us_to_ticks(const struct device *dev,
  */
 __syscall uint64_t counter_ticks_to_us(const struct device *dev, uint32_t ticks);
 
-static inline uint64_t z_impl_counter_ticks_to_us(const struct device *dev,
-					       uint32_t ticks)
+static inline uint64_t z_impl_counter_ticks_to_us(const struct device *dev, uint32_t ticks)
 {
-	return ((uint64_t)ticks * USEC_PER_SEC) / z_impl_counter_get_frequency(dev);
+	return ((uint64_t)ticks * USEC_PER_SEC) / z_counter_get_frequency(dev);
+}
+
+/**
+ * @brief Function to convert ticks with 64 bits to microseconds.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ * @param[in]  ticks  Ticks in 64 bits.
+ *
+ * @return Converted microseconds.
+ */
+__syscall uint64_t counter_ticks_to_us_64(const struct device *dev, uint64_t ticks);
+
+static inline uint64_t z_impl_counter_ticks_to_us_64(const struct device *dev, uint64_t ticks)
+{
+	uint64_t freq = z_counter_get_frequency(dev);
+
+	return (ticks / freq) * USEC_PER_SEC + ((ticks % freq) * USEC_PER_SEC) / freq;
+}
+
+/**
+ * @brief Function to convert nanoseconds to ticks.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ * @param[in]  ns     Nanoseconds.
+ *
+ * @return Converted ticks. Ticks will be saturated if exceed 32 bits.
+ */
+__syscall uint32_t counter_ns_to_ticks(const struct device *dev, uint64_t ns);
+
+static inline uint32_t z_impl_counter_ns_to_ticks(const struct device *dev, uint64_t ns)
+{
+	uint64_t freq = z_counter_get_frequency(dev);
+	uint64_t whole = ns / NSEC_PER_SEC;
+	uint64_t ticks;
+
+	/* Saturate early: whole * freq alone can wrap the uint64_t math below. */
+	if ((freq != 0U) && (whole > (uint64_t)UINT32_MAX / freq)) {
+		return UINT32_MAX;
+	}
+
+	ticks = whole * freq + ((ns % NSEC_PER_SEC) * freq) / NSEC_PER_SEC;
+
+	return (ticks > (uint64_t)UINT32_MAX) ? UINT32_MAX : ticks;
+}
+
+/**
+ * @brief Function to convert nanoseconds to ticks with 64 bits.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ * @param[in]  ns     Nanoseconds.
+ *
+ * @return Converted ticks as a uint64_t.
+ */
+__syscall uint64_t counter_ns_to_ticks_64(const struct device *dev, uint64_t ns);
+
+static inline uint64_t z_impl_counter_ns_to_ticks_64(const struct device *dev, uint64_t ns)
+{
+	uint64_t freq = z_counter_get_frequency(dev);
+
+	return (ns / NSEC_PER_SEC) * freq + ((ns % NSEC_PER_SEC) * freq) / NSEC_PER_SEC;
+}
+
+/**
+ * @brief Function to convert ticks to nanoseconds.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ * @param[in]  ticks  Ticks.
+ *
+ * @return Converted nanoseconds.
+ */
+__syscall uint64_t counter_ticks_to_ns(const struct device *dev, uint32_t ticks);
+
+static inline uint64_t z_impl_counter_ticks_to_ns(const struct device *dev, uint32_t ticks)
+{
+	return ((uint64_t)ticks * NSEC_PER_SEC) / z_counter_get_frequency(dev);
+}
+
+/**
+ * @brief Function to convert ticks with 64 bits to nanoseconds.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ * @param[in]  ticks  Ticks in 64 bits.
+ *
+ * @return Converted nanoseconds.
+ */
+__syscall uint64_t counter_ticks_to_ns_64(const struct device *dev, uint64_t ticks);
+
+static inline uint64_t z_impl_counter_ticks_to_ns_64(const struct device *dev, uint64_t ticks)
+{
+	uint64_t freq = z_counter_get_frequency(dev);
+
+	return (ticks / freq) * NSEC_PER_SEC + ((ticks % freq) * NSEC_PER_SEC) / freq;
 }
 
 /**
@@ -340,14 +1147,17 @@ static inline uint64_t z_impl_counter_ticks_to_us(const struct device *dev,
  *
  * @param[in]  dev    Pointer to the device structure for the driver instance.
  *
+ * @warning With `CONFIG_COUNTER_64BITS_TICKS` enabled this function returns only the lower
+ *          32 bits of the max top value. Use `counter_get_max_top_value_64()` to get
+ *          the full 64 bit value if it is expected to exceed 32 bits.
+ *
  * @return Max top value.
  */
 __syscall uint32_t counter_get_max_top_value(const struct device *dev);
 
 static inline uint32_t z_impl_counter_get_max_top_value(const struct device *dev)
 {
-	const struct counter_config_info *config =
-			(const struct counter_config_info *)dev->config;
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
 
 	return config->max_top_value;
 }
@@ -357,17 +1167,13 @@ static inline uint32_t z_impl_counter_get_max_top_value(const struct device *dev
  *
  * @param dev Pointer to the device structure for the driver instance.
  *
- * @retval 0 If successful.
- * @retval Negative errno code if failure.
+ * @return 0 on success, negative errno value on failure.
  */
 __syscall int counter_start(const struct device *dev);
 
 static inline int z_impl_counter_start(const struct device *dev)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
-
-	return api->start(dev);
+	return DEVICE_API_GET(counter, dev)->start(dev);
 }
 
 /**
@@ -375,18 +1181,15 @@ static inline int z_impl_counter_start(const struct device *dev)
  *
  * @param dev Pointer to the device structure for the driver instance.
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP if the device doesn't support stopping the
+ * @retval 0 on success.
+ * @retval -ENOTSUP Device doesn't support stopping the
  *                        counter.
  */
 __syscall int counter_stop(const struct device *dev);
 
 static inline int z_impl_counter_stop(const struct device *dev)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
-
-	return api->stop(dev);
+	return DEVICE_API_GET(counter, dev)->stop(dev);
 }
 
 /**
@@ -394,41 +1197,52 @@ static inline int z_impl_counter_stop(const struct device *dev)
  * @param dev Pointer to the device structure for the driver instance.
  * @param ticks Pointer to where to store the current counter value
  *
- * @retval 0 If successful.
- * @retval Negative error code on failure getting the counter value
+ * @return 0 on success, negative errno value on failure.
  */
 __syscall int counter_get_value(const struct device *dev, uint32_t *ticks);
 
-static inline int z_impl_counter_get_value(const struct device *dev,
-					   uint32_t *ticks)
+static inline int z_impl_counter_get_value(const struct device *dev, uint32_t *ticks)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
-
-	return api->get_value(dev, ticks);
+	return DEVICE_API_GET(counter, dev)->get_value(dev, ticks);
 }
 
 /**
- * @brief Get current counter 64-bit value.
+ * @brief Reset the counter to the initial value.
  * @param dev Pointer to the device structure for the driver instance.
- * @param ticks Pointer to where to store the current counter value
  *
- * @retval 0 If successful.
- * @retval Negative error code on failure getting the counter value
+ * @return 0 on success, negative errno value on failure.
  */
-__syscall int counter_get_value_64(const struct device *dev, uint64_t *ticks);
+__syscall int counter_reset(const struct device *dev);
 
-static inline int z_impl_counter_get_value_64(const struct device *dev,
-					   uint64_t *ticks)
+static inline int z_impl_counter_reset(const struct device *dev)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
-	if (!api->get_value_64) {
-		return -ENOTSUP;
+	if (!api->reset) {
+		return -ENOSYS;
 	}
 
-	return api->get_value_64(dev, ticks);
+	return api->reset(dev);
+}
+
+/**
+ * @brief Set current counter value.
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param ticks Tick value to set
+ *
+ * @return 0 on success, negative errno value on failure.
+ */
+__syscall int counter_set_value(const struct device *dev, uint32_t ticks);
+
+static inline int z_impl_counter_set_value(const struct device *dev, uint32_t ticks)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->set_value) {
+		return -ENOSYS;
+	}
+
+	return api->set_value(dev, ticks);
 }
 
 /**
@@ -444,23 +1258,20 @@ static inline int z_impl_counter_get_value_64(const struct device *dev,
  * @param chan_id	Channel ID.
  * @param alarm_cfg	Alarm configuration.
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP if request is not supported (device does not support
+ * @retval 0 on success.
+ * @retval -ENOTSUP Request is not supported (device does not support
  *		    interrupts or requested channel).
- * @retval -EINVAL if alarm settings are invalid.
- * @retval -ETIME  if absolute alarm was set too late.
- * @retval -EBUSY  if alarm is already active.
+ * @retval -EINVAL Alarm settings are invalid.
+ * @retval -ETIME  Absolute alarm was set too late.
+ * @retval -EBUSY  Alarm is already active.
  */
-__syscall int counter_set_channel_alarm(const struct device *dev,
-					uint8_t chan_id,
+__syscall int counter_set_channel_alarm(const struct device *dev, uint8_t chan_id,
 					const struct counter_alarm_cfg *alarm_cfg);
 
-static inline int z_impl_counter_set_channel_alarm(const struct device *dev,
-						   uint8_t chan_id,
+static inline int z_impl_counter_set_channel_alarm(const struct device *dev, uint8_t chan_id,
 						   const struct counter_alarm_cfg *alarm_cfg)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
 	if (chan_id >= counter_get_num_of_channels(dev)) {
 		return -ENOTSUP;
@@ -477,18 +1288,15 @@ static inline int z_impl_counter_set_channel_alarm(const struct device *dev,
  * @param dev		Pointer to the device structure for the driver instance.
  * @param chan_id	Channel ID.
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP if request is not supported or the counter was not started
+ * @retval 0 on success.
+ * @retval -ENOTSUP Request is not supported or the counter was not started
  *		    yet.
  */
-__syscall int counter_cancel_channel_alarm(const struct device *dev,
-					   uint8_t chan_id);
+__syscall int counter_cancel_channel_alarm(const struct device *dev, uint8_t chan_id);
 
-static inline int z_impl_counter_cancel_channel_alarm(const struct device *dev,
-						      uint8_t chan_id)
+static inline int z_impl_counter_cancel_channel_alarm(const struct device *dev, uint8_t chan_id)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
 	if (chan_id >= counter_get_num_of_channels(dev)) {
 		return -ENOTSUP;
@@ -510,26 +1318,27 @@ static inline int z_impl_counter_cancel_channel_alarm(const struct device *dev,
  * outside the new top value. In that case, error is returned and optionally
  * driver can reset the counter (see @ref COUNTER_TOP_CFG_RESET_WHEN_LATE).
  *
+ * @warning With `CONFIG_COUNTER_64BITS_TICKS` enabled this function sets the lower
+ *          32 bits of the max top value. Use `counter_set_top_value_64()` to get
+ *          the full 64 bit value if it is expected to exceed 32 bits.
+ *
  * @param dev		Pointer to the device structure for the driver instance.
  * @param cfg		Configuration. Cannot be NULL.
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP if request is not supported (e.g. top value cannot be
+ * @retval 0 on success.
+ * @retval -ENOTSUP Request is not supported (e.g. top value cannot be
  *		    changed or counter cannot/must be reset during top value
 		    update).
- * @retval -EBUSY if any alarm is active.
- * @retval -ETIME if @ref COUNTER_TOP_CFG_DONT_RESET was set and new top value
+ * @retval -EBUSY Any alarm is active.
+ * @retval -ETIME @ref COUNTER_TOP_CFG_DONT_RESET was set and new top value
  *		  is smaller than current counter value (counter counting up).
  */
-__syscall int counter_set_top_value(const struct device *dev,
-				    const struct counter_top_cfg *cfg);
+__syscall int counter_set_top_value(const struct device *dev, const struct counter_top_cfg *cfg);
 
 static inline int z_impl_counter_set_top_value(const struct device *dev,
-					       const struct counter_top_cfg
-					       *cfg)
+					       const struct counter_top_cfg *cfg)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
 	if (cfg->ticks > counter_get_max_top_value(dev)) {
 		return -EINVAL;
@@ -551,14 +1360,11 @@ static inline int z_impl_counter_set_top_value(const struct device *dev,
  * @retval 1 if any counter interrupt is pending.
  * @retval 0 if no counter interrupt is pending.
  */
-__syscall int counter_get_pending_int(const struct device *dev);
+__syscall uint32_t counter_get_pending_int(const struct device *dev);
 
-static inline int z_impl_counter_get_pending_int(const struct device *dev)
+static inline uint32_t z_impl_counter_get_pending_int(const struct device *dev)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
-
-	return api->get_pending_int(dev);
+	return DEVICE_API_GET(counter, dev)->get_pending_int(dev);
 }
 
 /**
@@ -572,10 +1378,7 @@ __syscall uint32_t counter_get_top_value(const struct device *dev);
 
 static inline uint32_t z_impl_counter_get_top_value(const struct device *dev)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
-
-	return api->get_top_value(dev);
+	return DEVICE_API_GET(counter, dev)->get_top_value(dev);
 }
 
 /**
@@ -603,18 +1406,24 @@ static inline uint32_t z_impl_counter_get_top_value(const struct device *dev)
  *
  * More precisely:
  *
- * - When counting upwards (see @ref COUNTER_CONFIG_INFO_COUNT_UP) the given
- *   absolute tick value must be above (now + guard_period) % top_value to be
- *   accepted by the driver.
- * - When counting downwards, the given absolute tick value must be less than
- *   (now + top_value - guard_period) % top_value to be accepted.
+ * - When counting upwards (see @ref COUNTER_CONFIG_INFO_COUNT_UP), an alarm
+ *   is rejected as "late" if the counter has advanced past the given absolute
+ *   tick value by fewer than guard_period ticks:
+ *   (now - target) % top_value < guard_period.
+ *   Otherwise the alarm is accepted (target is still in the future, or far
+ *   enough in the past to be considered an intentional future wrap).
+ * - When counting downwards, an alarm is "late" if:
+ *   (target - now) % top_value < guard_period.
+ *   Otherwise the alarm is accepted.
  *
  * Examples:
  *
  * - counting upwards, now = 4950, top value = 5000, guard period = 100:
- *      absolute tick value >= (4950 + 100) % 5000 = 50
+ *      late zone: (4950 - target) % 5000 < 100, i.e. target in [4851, 4950]
+ *      accepted: target in [0, 4850] or [4951, 4999]
  * - counting downwards, now = 50, top value = 5000, guard period = 100:
- *      absolute tick value <= (50 + 5000 - * 100) % 5000 = 4950
+ *      late zone: (target - 50) % 5000 < 100, i.e. target in [50, 149]
+ *      accepted: target in [0, 49] or [150, 4999]
  *
  * If you need only short alarm periods, you can set the guard period very high
  * (e.g. half of the counter top value) which will make it highly unlikely that
@@ -626,22 +1435,19 @@ static inline uint32_t z_impl_counter_get_top_value(const struct device *dev)
  * @param ticks		Guard period in counter ticks.
  * @param flags		See @ref COUNTER_GUARD_PERIOD_FLAGS.
  *
- * @retval 0 if successful.
- * @retval -ENOTSUP if function or flags are not supported.
- * @retval -EINVAL if ticks value is invalid.
+ * @retval 0 on success.
+ * @retval -ENOSYS Function or flags are not supported.
+ * @retval -EINVAL Ticks value is invalid.
  */
-__syscall int counter_set_guard_period(const struct device *dev,
-					uint32_t ticks,
-					uint32_t flags);
+__syscall int counter_set_guard_period(const struct device *dev, uint32_t ticks, uint32_t flags);
 
-static inline int z_impl_counter_set_guard_period(const struct device *dev,
-						   uint32_t ticks, uint32_t flags)
+static inline int z_impl_counter_set_guard_period(const struct device *dev, uint32_t ticks,
+						  uint32_t flags)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
 	if (!api->set_guard_period) {
-		return -ENOTSUP;
+		return -ENOSYS;
 	}
 
 	return api->set_guard_period(dev, ticks, flags);
@@ -658,17 +1464,582 @@ static inline int z_impl_counter_set_guard_period(const struct device *dev,
  * @return Guard period given in counter ticks or 0 if function or flags are
  *	   not supported.
  */
-__syscall uint32_t counter_get_guard_period(const struct device *dev,
-					    uint32_t flags);
+__syscall uint32_t counter_get_guard_period(const struct device *dev, uint32_t flags);
 
-static inline uint32_t z_impl_counter_get_guard_period(const struct device *dev,
-							uint32_t flags)
+static inline uint32_t z_impl_counter_get_guard_period(const struct device *dev, uint32_t flags)
 {
-	const struct counter_driver_api *api =
-				(struct counter_driver_api *)dev->api;
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
 
 	return (api->get_guard_period) ? api->get_guard_period(dev, flags) : 0;
 }
+
+/**
+ * @brief Function to retrieve maximum top value that can be set for 64 bits.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ *
+ * @return Max top value in 64 bits. When CONFIG_COUNTER_64BITS_TICKS is
+ * disabled, this falls back to counter_get_max_top_value().
+ */
+__syscall uint64_t counter_get_max_top_value_64(const struct device *dev);
+
+static inline uint64_t z_impl_counter_get_max_top_value_64(const struct device *dev)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_config_info *config = (const struct counter_config_info *)dev->config;
+
+	return config->max_top_value_64;
+#else
+	return z_impl_counter_get_max_top_value(dev);
+#endif
+}
+
+/**
+ * @brief Set counter top value for 64 bits.
+ *
+ * Function sets top value and optionally resets the counter to 0 or top value
+ * depending on counter direction. On turnaround, counter can be reset and
+ * optional callback is periodically called. Top value can only be changed when
+ * there is no active channel alarm.
+ *
+ * @ref COUNTER_TOP_CFG_DONT_RESET prevents counter reset. When counter is
+ * running while top value is updated, it is possible that counter progresses
+ * outside the new top value. In that case, error is returned and optionally
+ * driver can reset the counter (see @ref COUNTER_TOP_CFG_RESET_WHEN_LATE).
+ *
+ * @param dev		Pointer to the device structure for the driver instance.
+ * @param cfg		Configuration. Cannot be NULL.
+ *
+ * @retval 0 on success.
+ * @retval -ENOTSUP Request is not supported (e.g. top value cannot be
+ *		    changed or counter cannot/must be reset during top value
+		    update).
+ * @retval -EBUSY Any alarm is active.
+ * @retval -ETIME @ref COUNTER_TOP_CFG_DONT_RESET was set and new top value
+ *		  is smaller than current counter value (counter counting up).
+ */
+__syscall int counter_set_top_value_64(const struct device *dev,
+				       const struct counter_top_cfg_64 *cfg);
+
+static inline int z_impl_counter_set_top_value_64(const struct device *dev,
+						  const struct counter_top_cfg_64 *cfg)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (cfg->ticks > counter_get_max_top_value_64(dev)) {
+		return -EINVAL;
+	}
+
+	return api->set_top_value_64(dev, cfg);
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(cfg);
+	return -ENOTSUP;
+#endif
+}
+
+/**
+ * @brief Set a single shot alarm on a channel for 64 bits.
+ *
+ * After expiration alarm can be set again, disabling is not needed. When alarm
+ * expiration handler is called, channel is considered available and can be
+ * set again in that context.
+ *
+ * @note API is not thread safe.
+ *
+ * @param dev		Pointer to the device structure for the driver instance.
+ * @param chan_id	Channel ID.
+ * @param alarm_cfg	Alarm configuration.
+ *
+ * @retval 0 on success.
+ * @retval -ENOTSUP Request is not supported (device does not support
+ *		    interrupts or requested channel).
+ * @retval -EINVAL Alarm settings are invalid.
+ * @retval -ETIME  Absolute alarm was set too late.
+ * @retval -EBUSY  Alarm is already active.
+ */
+__syscall int counter_set_channel_alarm_64(const struct device *dev, uint8_t chan_id,
+					   const struct counter_alarm_cfg_64 *alarm_cfg);
+
+static inline int z_impl_counter_set_channel_alarm_64(const struct device *dev, uint8_t chan_id,
+						      const struct counter_alarm_cfg_64 *alarm_cfg)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (chan_id >= counter_get_num_of_channels(dev)) {
+		return -ENOTSUP;
+	}
+
+	return api->set_alarm_64(dev, chan_id, alarm_cfg);
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(chan_id);
+	ARG_UNUSED(alarm_cfg);
+	return -ENOTSUP;
+#endif
+}
+
+/**
+ * @brief Function to retrieve current top value for 64 bits.
+ *
+ * @param[in]  dev    Pointer to the device structure for the driver instance.
+ *
+ * @return Top value in 64 bits.
+ */
+__syscall uint64_t counter_get_top_value_64(const struct device *dev);
+
+static inline uint64_t z_impl_counter_get_top_value_64(const struct device *dev)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	return DEVICE_API_GET(counter, dev)->get_top_value_64(dev);
+#else
+	ARG_UNUSED(dev);
+	return 0;
+#endif
+}
+
+/**
+ * @brief Set guard period in counter ticks for 64 bits.
+ *
+ * When setting an absolute alarm value close to the current counter value there
+ * is a risk that the counter will have counted past the given absolute value
+ * before the driver manages to activate the alarm. If this would go unnoticed
+ * then the alarm would only expire after the timer has wrapped and reached the
+ * given absolute value again after a full timer period. This could take a long
+ * time in case of a 32 bit timer. Setting a sufficiently large guard period will
+ * help the driver detect unambiguously whether it is late or not.
+ *
+ * The guard period should be as many counter ticks as the driver will need at
+ * most to actually activate the alarm after the driver API has been called. If
+ * the driver finds that the counter has just passed beyond the given absolute
+ * tick value but is still close enough to fall within the guard period, it will
+ * assume that it is "late", i.e. that the intended expiry time has already passed.
+ * Depending on the @ref COUNTER_ALARM_CFG_EXPIRE_WHEN_LATE flag the driver will
+ * either ignore the alarm or expire it immediately in such a case.
+ *
+ * If, however, the counter is past the given absolute tick value but outside
+ * the guard period, then the driver will assume that this is intentional and
+ * let the counter wrap around to/from zero before it expires.
+ *
+ * More precisely:
+ *
+ * - When counting upwards (see @ref COUNTER_CONFIG_INFO_COUNT_UP), an alarm
+ *   is rejected as "late" if the counter has advanced past the given absolute
+ *   tick value by fewer than guard_period ticks:
+ *   (now - target) % top_value < guard_period.
+ *   Otherwise the alarm is accepted (target is still in the future, or far
+ *   enough in the past to be considered an intentional future wrap).
+ * - When counting downwards, an alarm is "late" if:
+ *   (target - now) % top_value < guard_period.
+ *   Otherwise the alarm is accepted.
+ *
+ * Examples:
+ *
+ * - counting upwards, now = 4950, top value = 5000, guard period = 100:
+ *      late zone: (4950 - target) % 5000 < 100, i.e. target in [4851, 4950]
+ *      accepted: target in [0, 4850] or [4951, 4999]
+ * - counting downwards, now = 50, top value = 5000, guard period = 100:
+ *      late zone: (target - 50) % 5000 < 100, i.e. target in [50, 149]
+ *      accepted: target in [0, 49] or [150, 4999]
+ *
+ * If you need only short alarm periods, you can set the guard period very high
+ * (e.g. half of the counter top value) which will make it highly unlikely that
+ * the counter will ever unintentionally wrap.
+ *
+ * The guard period is set to 0 on initialization (no protection).
+ *
+ * @param dev		Pointer to the device structure for the driver instance.
+ * @param ticks		Guard period in counter ticks of 64 bits.
+ * @param flags		See @ref COUNTER_GUARD_PERIOD_FLAGS.
+ *
+ * @retval 0 on success.
+ * @retval -ENOSYS Function or flags are not supported.
+ * @retval -EINVAL Ticks value is invalid.
+ */
+__syscall int counter_set_guard_period_64(const struct device *dev, uint64_t ticks, uint32_t flags);
+
+static inline int z_impl_counter_set_guard_period_64(const struct device *dev, uint64_t ticks,
+						     uint32_t flags)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->set_guard_period_64) {
+		return -ENOSYS;
+	}
+
+	return api->set_guard_period_64(dev, ticks, flags);
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(ticks);
+	ARG_UNUSED(flags);
+	return -ENOTSUP;
+#endif
+}
+
+/**
+ * @brief Return guard period for 64 bits.
+ *
+ * @see counter_set_guard_period_64.
+ *
+ * @param dev	Pointer to the device structure for the driver instance.
+ * @param flags	See @ref COUNTER_GUARD_PERIOD_FLAGS.
+ *
+ * @return Guard period given in counter ticks or 0 if function or flags are
+ *	   not supported. When CONFIG_COUNTER_64BITS_TICKS is disabled, this
+ *	   falls back to counter_get_guard_period().
+ */
+__syscall uint64_t counter_get_guard_period_64(const struct device *dev, uint32_t flags);
+
+static inline uint64_t z_impl_counter_get_guard_period_64(const struct device *dev, uint32_t flags)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	return (api->get_guard_period_64) ? api->get_guard_period_64(dev, flags) : 0;
+#else
+	return z_impl_counter_get_guard_period(dev, flags);
+#endif
+}
+
+/**
+ * @brief Get current counter 64-bit value.
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param ticks Pointer to where to store the current counter value in 64 bits.
+ *
+ * @return 0 on success, negative errno value on failure.
+ */
+__syscall int counter_get_value_64(const struct device *dev, uint64_t *ticks);
+
+static inline int z_impl_counter_get_value_64(const struct device *dev, uint64_t *ticks)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->get_value_64) {
+		return -ENOSYS;
+	}
+
+	return api->get_value_64(dev, ticks);
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(ticks);
+	return -ENOTSUP;
+#endif
+}
+
+/**
+ * @brief Set current counter 64-bit value.
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param ticks Tick value to set in 64 bits
+ *
+ * @return 0 on success, negative errno value on failure.
+ */
+__syscall int counter_set_value_64(const struct device *dev, uint64_t ticks);
+
+static inline int z_impl_counter_set_value_64(const struct device *dev, uint64_t ticks)
+{
+#ifdef CONFIG_COUNTER_64BITS_TICKS
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->set_value_64) {
+		return -ENOSYS;
+	}
+
+	return api->set_value_64(dev, ticks);
+#else
+	ARG_UNUSED(dev);
+	ARG_UNUSED(ticks);
+	return -ENOTSUP;
+#endif
+}
+
+#if defined(CONFIG_COUNTER_CAPTURE) || defined(__DOXYGEN__)
+/**
+ * @brief Counter capture APIs.
+ * @defgroup counter_capture Counter capture APIs
+ * @ingroup counter_interface
+ * @{
+ *
+ * [Experimental] Users should note that the APIs can change
+ * as a part of ongoing development.
+ */
+
+/**
+ * @brief Configure a capture channel and register its callback
+ *
+ * Configures the edge polarity and capture mode (single-shot vs
+ * continuous) for a capture channel, and registers the callback that
+ * delivers captured tick values.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+ *
+ * @note The mapping from a capture channel to its input source (e.g. a
+ *       physical pad or an internal signal) is vendor-specific and
+ *       is not part of this API. On most SoCs the channel-to-pin
+ *       association is fixed by the hardware and exposed through
+ *       devicetree (typically via pinctrl or a dedicated property on the
+ *       counter node). Refer to the binding for your counter device for
+ *       how to select the input. Future revisions of this API may add a
+ *       runtime source-selection call (e.g. counter_capture_set_source or
+ *       add a source argument to this function) if SoCs with a configurable
+ *       input fabric require it.
+ *
+ * @param dev  Pointer to the device structure for the driver instance
+ * @param chan_id Channel ID
+ * @param flags Configuration flags (@ref COUNTER_CAPTURE_FLAGS)
+ * @param cb Callback function reference
+ * @param user_data Argument passed to the callback function
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure
+ */
+static inline int counter_capture_configure(const struct device *dev, uint8_t chan_id,
+					    counter_capture_flags_t flags,
+					    counter_capture_cb_t cb, void *user_data)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (api->capture_configure == NULL) {
+		return -ENOTSUP;
+	}
+
+	if (chan_id >= counter_get_num_of_channels(dev)) {
+		return -ENOTSUP;
+	}
+
+	return api->capture_configure(dev, chan_id, flags, cb, user_data);
+}
+
+/**
+ * @brief Configure a capture channel and register its callback using a DT spec.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+ *
+ * @param spec Pointer to the counter capture DT spec.
+ * @param cb Callback function reference.
+ * @param user_data Argument passed to the callback function.
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure.
+ */
+static inline int counter_capture_configure_dt(const struct counter_capture_dt_spec *spec,
+					       counter_capture_cb_t cb, void *user_data)
+{
+	return counter_capture_configure(spec->dev, spec->chan_id, spec->flags, cb, user_data);
+}
+
+#if defined(CONFIG_COUNTER_64BITS_TICKS) || defined(__DOXYGEN__)
+/**
+ * @brief Configure a capture channel and register its callback for 64 bits ticks
+ *
+ * Configures the edge polarity and capture mode (single-shot vs
+ * continuous) for a capture channel, and registers the 64b callback that
+ * delivers captured tick values.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE,CONFIG_COUNTER_64BITS_TICKS}
+ *
+ * @note The mapping from a capture channel to its input source (e.g. a
+ *       physical pad or an internal signal) is vendor-specific and
+ *       is not part of this API. On most SoCs the channel-to-pin
+ *       association is fixed by the hardware and exposed through
+ *       devicetree (typically via pinctrl or a dedicated property on the
+ *       counter node). Refer to the binding for your counter device for
+ *       how to select the input. Future revisions of this API may add a
+ *       runtime source-selection call (e.g. counter_capture_set_source or
+ *       add a source argument to this function) if SoCs with a configurable
+ *       input fabric require it.
+ *
+ * @param dev  Pointer to the device structure for the driver instance
+ * @param chan_id Channel ID
+ * @param flags Configuration flags (@ref COUNTER_CAPTURE_FLAGS)
+ * @param cb Callback function reference
+ * @param user_data Argument passed to the callback function
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure
+ */
+static inline int counter_capture_configure_64(const struct device *dev, uint8_t chan_id,
+					       counter_capture_flags_t flags,
+					       counter_capture_cb_64_t cb, void *user_data)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (api->capture_configure_64 == NULL) {
+		return -ENOTSUP;
+	}
+
+	if (chan_id >= counter_get_num_of_channels(dev)) {
+		return -ENOTSUP;
+	}
+
+	return api->capture_configure_64(dev, chan_id, flags, cb, user_data);
+}
+
+/**
+ * @brief Configure a capture channel and register its 64-bit callback using a DT spec.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE,CONFIG_COUNTER_64BITS_TICKS}
+ *
+ * @param spec Pointer to the counter capture DT spec.
+ * @param cb Callback function reference.
+ * @param user_data Argument passed to the callback function.
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure.
+ */
+static inline int counter_capture_configure_64_dt(const struct counter_capture_dt_spec *spec,
+						   counter_capture_cb_64_t cb, void *user_data)
+{
+	return counter_capture_configure_64(spec->dev, spec->chan_id, spec->flags, cb,
+					    user_data);
+}
+#endif /* CONFIG_COUNTER_64BITS_TICKS */
+
+/**
+ * @brief Enable capture on a channel.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+ *
+ * @param dev  Pointer to the device structure for the driver instance.
+ * @param chan_id Channel ID.
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure
+ */
+__syscall int counter_enable_capture(const struct device *dev, uint8_t chan_id);
+
+static inline int z_impl_counter_enable_capture(const struct device *dev, uint8_t chan_id)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (api->enable_capture == NULL) {
+		return -ENOTSUP;
+	}
+
+	if (chan_id >= counter_get_num_of_channels(dev)) {
+		return -ENOTSUP;
+	}
+
+	return api->enable_capture(dev, chan_id);
+}
+
+/**
+ * @brief Enable capture on a channel using a DT spec.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+ *
+ * @param spec Pointer to the counter capture DT spec.
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure.
+ */
+static inline int counter_enable_capture_dt(const struct counter_capture_dt_spec *spec)
+{
+	return counter_enable_capture(spec->dev, spec->chan_id);
+}
+
+/**
+ * @brief Disable capture on a channel.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+ *
+ * @param dev  Pointer to the device structure for the driver instance.
+ * @param chan_id Channel ID.
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure
+ */
+__syscall int counter_disable_capture(const struct device *dev, uint8_t chan_id);
+
+static inline int z_impl_counter_disable_capture(const struct device *dev, uint8_t chan_id)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (api->disable_capture == NULL) {
+		return -ENOTSUP;
+	}
+
+	if (chan_id >= counter_get_num_of_channels(dev)) {
+		return -ENOTSUP;
+	}
+
+	return api->disable_capture(dev, chan_id);
+}
+
+/**
+ * @brief Disable capture on a channel using a DT spec.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CAPTURE}
+ *
+ * @param spec Pointer to the counter capture DT spec.
+ *
+ * @retval 0 If successful.
+ * @retval Negative error code on failure.
+ */
+static inline int counter_disable_capture_dt(const struct counter_capture_dt_spec *spec)
+{
+	return counter_disable_capture(spec->dev, spec->chan_id);
+}
+
+/** @} */
+#endif /* CONFIG_COUNTER_CAPTURE */
+
+#if defined(CONFIG_COUNTER_CALIBRATION) || defined(__DOXYGEN__)
+/**
+ * @brief Set counter calibration value.
+ *
+ * Calibration is specified in parts per billion (ppb). A positive value
+ * speeds up the counter, a negative value slows it down.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CALIBRATION}
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param calibration Calibration value in ppb.
+ *
+ * @retval 0 If successful.
+ * @retval -EINVAL if calibration value is out of range.
+ * @retval -ENOSYS if not supported by the driver.
+ */
+__syscall int counter_set_calibration(const struct device *dev, int32_t calibration);
+
+static inline int z_impl_counter_set_calibration(const struct device *dev, int32_t calibration)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->set_calibration) {
+		return -ENOSYS;
+	}
+
+	return api->set_calibration(dev, calibration);
+}
+
+/**
+ * @brief Get counter calibration value.
+ *
+ * @kconfig_dep{CONFIG_COUNTER_CALIBRATION}
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param calibration Pointer to store the calibration value in ppb.
+ *
+ * @retval 0 If successful.
+ * @retval -ENOSYS if not supported by the driver.
+ */
+__syscall int counter_get_calibration(const struct device *dev, int32_t *calibration);
+
+static inline int z_impl_counter_get_calibration(const struct device *dev, int32_t *calibration)
+{
+	const struct counter_driver_api *api = DEVICE_API_GET(counter, dev);
+
+	if (!api->get_calibration) {
+		return -ENOSYS;
+	}
+
+	return api->get_calibration(dev, calibration);
+}
+#endif /* CONFIG_COUNTER_CALIBRATION */
 
 #ifdef __cplusplus
 }

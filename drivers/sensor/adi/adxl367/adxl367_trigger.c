@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT adi_adxl367
-
 #include <zephyr/device.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/sys/util.h>
@@ -16,6 +14,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(ADXL367, CONFIG_SENSOR_LOG_LEVEL);
 
+#if defined(CONFIG_ADXL367_TRIGGER_OWN_THREAD) || defined(CONFIG_ADXL367_TRIGGER_GLOBAL_THREAD)
 static void adxl367_thread_cb(const struct device *dev)
 {
 	const struct adxl367_dev_config *cfg = dev->config;
@@ -23,8 +22,8 @@ static void adxl367_thread_cb(const struct device *dev)
 	uint8_t status;
 	int ret;
 
-	/* Clear the status */
-	ret = drv_data->hw_tf->read_reg(dev, ADXL367_STATUS, &status);
+	/* Check status_copy register to determine trigger source */
+	ret = drv_data->hw_tf->read_reg(dev, ADXL367_STATUS_COPY, &status);
 	if (ret != 0) {
 		return;
 	}
@@ -45,6 +44,7 @@ static void adxl367_thread_cb(const struct device *dev)
 					      GPIO_INT_EDGE_TO_ACTIVE);
 	__ASSERT(ret == 0, "Interrupt configuration failed");
 }
+#endif /* CONFIG_ADXL367_TRIGGER_OWN_THREAD || CONFIG_ADXL367_TRIGGER_GLOBAL_THREAD */
 
 static void adxl367_gpio_callback(const struct device *dev,
 				  struct gpio_callback *cb, uint32_t pins)
@@ -54,6 +54,10 @@ static void adxl367_gpio_callback(const struct device *dev,
 	const struct adxl367_dev_config *cfg = drv_data->dev->config;
 
 	gpio_pin_interrupt_configure_dt(&cfg->interrupt, GPIO_INT_DISABLE);
+
+	if (IS_ENABLED(CONFIG_ADXL367_STREAM)) {
+		adxl367_stream_irq_handler(drv_data->dev);
+	}
 
 #if defined(CONFIG_ADXL367_TRIGGER_OWN_THREAD)
 	k_sem_give(&drv_data->gpio_sem);
@@ -118,7 +122,7 @@ int adxl367_trigger_set(const struct device *dev,
 		int_en = 0U;
 	}
 
-	ret = drv_data->hw_tf->write_reg_mask(dev, ADXL367_INTMAP1_LOWER, int_mask, int_en);
+	ret = drv_data->hw_tf->write_reg_mask(dev, cfg->int_map_reg, int_mask, int_en);
 	if (ret != 0) {
 		return ret;
 	}
@@ -145,7 +149,7 @@ int adxl367_init_interrupt(const struct device *dev)
 	int ret;
 
 	if (!gpio_is_ready_dt(&cfg->interrupt)) {
-		LOG_ERR("GPIO port %s not ready", cfg->interrupt.port->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->interrupt.port);
 		return -EINVAL;
 	}
 

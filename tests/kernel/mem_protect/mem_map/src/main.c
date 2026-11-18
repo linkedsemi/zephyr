@@ -8,6 +8,7 @@
 #include <zephyr/toolchain.h>
 #include <mmu.h>
 #include <zephyr/linker/sections.h>
+#include <zephyr/cache.h>
 
 #ifdef CONFIG_DEMAND_PAGING
 #include <zephyr/kernel/mm/demand_paging.h>
@@ -30,7 +31,6 @@ volatile bool expect_fault;
 
 #define TEST_PAGE_SZ	ROUND_UP(BUF_OFFSET + BUF_SIZE, CONFIG_MMU_PAGE_SIZE)
 
-__pinned_noinit
 static uint8_t __aligned(CONFIG_MMU_PAGE_SIZE) test_page[TEST_PAGE_SZ];
 
 void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
@@ -48,16 +48,47 @@ void k_sys_fatal_error_handler(unsigned int reason, const struct arch_esf *pEsf)
 }
 
 /**
- * Show that mapping an irregular size buffer works and RW flag is respected
+ * @brief Verify that k_mem_map_phys_bare() honours size, aliasing and the RW
+ *        flag.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Mapping the same unaligned physical buffer twice -- once writable, once
+ * read-only -- must produce two virtual aliases of the same memory: bytes
+ * written through the writable alias have to appear in the backing buffer and
+ * through the read-only alias, and a write through the read-only alias has to
+ * fault. The suite's fatal error handler passes the case when the expected
+ * fault arrives, so falling through the write is the failure.
+ *
+ * Test steps:
+ * - Map an unaligned buffer with K_MEM_PERM_RW and again with read-only
+ *   permissions.
+ * - Fill the writable alias and compare the backing buffer and the read-only
+ *   alias against what was written, with cache flushes where configured.
+ * - Write through the read-only alias.
+ *
+ * Expected result:
+ * - Both aliases show the written data and the read-only write faults.
+ *
+ * @see k_mem_map_phys_bare()
  */
 ZTEST(mem_map, test_k_mem_map_phys_bare_rw)
 {
 	uint8_t *mapped_rw, *mapped_ro;
 	uint8_t *buf = test_page + BUF_OFFSET;
+	uintptr_t aligned_addr;
+	size_t aligned_size;
+	size_t aligned_offset;
 
 	expect_fault = false;
+
+	if (IS_ENABLED(CONFIG_DCACHE)) {
+		/* Flush everything and invalidating all addresses to
+		 * prepare for comparison test below.
+		 */
+		sys_cache_data_flush_and_invd_all();
+	}
 
 	/* Map in a page that allows writes */
 	k_mem_map_phys_bare(&mapped_rw, k_mem_phys_addr(buf),
@@ -70,6 +101,17 @@ ZTEST(mem_map, test_k_mem_map_phys_bare_rw)
 	/* Initialize read-write buf with some bytes */
 	for (int i = 0; i < BUF_SIZE; i++) {
 		mapped_rw[i] = (uint8_t)(i % 256);
+	}
+
+	if (IS_ENABLED(CONFIG_DCACHE)) {
+		/* Flush the data to memory after write. */
+		aligned_offset =
+			k_mem_region_align(&aligned_addr, &aligned_size, (uintptr_t)mapped_rw,
+					   BUF_SIZE, CONFIG_MMU_PAGE_SIZE);
+		zassert_equal(aligned_offset, BUF_OFFSET,
+			      "unexpected mapped_rw aligned offset: %zu != %u", aligned_offset,
+			      BUF_OFFSET);
+		sys_cache_data_flush_and_invd_range((void *)aligned_addr, aligned_size);
 	}
 
 	/* Check that the backing buffer contains the expected data. */
@@ -118,9 +160,26 @@ static void transplanted_function(bool *executed)
 #endif
 
 /**
- * Show that mapping with/without K_MEM_PERM_EXEC works as expected
+ * @brief Verify that K_MEM_PERM_EXEC controls execution from a mapping.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * The same function body is mapped twice: with execute permission, calling
+ * into the mapping must work, and without it, the call must fault. This is
+ * the mapping-level half of execute protection -- the region is the same, so
+ * only the permission decides. Skipped where the platform cannot fault
+ * execution.
+ *
+ * Test steps:
+ * - Map the page holding a transplanted function with K_MEM_PERM_EXEC and
+ *   call it through the mapping.
+ * - Map the same page without execute permission and call it again.
+ *
+ * Expected result:
+ * - The executable mapping runs the function; the non-executable one faults.
+ *
+ * @see k_mem_map_phys_bare()
  */
 ZTEST(mem_map, test_k_mem_map_phys_bare_exec)
 {
@@ -163,9 +222,25 @@ ZTEST(mem_map, test_k_mem_map_phys_bare_exec)
 }
 
 /**
- * Show that memory mapping doesn't have unintended side effects
+ * @brief Verify that a new mapping leaves existing memory untouched.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Creating a mapping must not disturb anything already in memory: the data of
+ * this test, the page being mapped, and the kernel's own state have to be
+ * exactly as they were. The test seeds a buffer, maps it, and checks the
+ * contents through the original address rather than the new mapping.
+ *
+ * Test steps:
+ * - Fill the test page with a known pattern.
+ * - Map it read-only with k_mem_map_phys_bare().
+ * - Compare the buffer through its original address against the pattern.
+ *
+ * Expected result:
+ * - The buffer is unchanged by the act of mapping it.
+ *
+ * @see k_mem_map_phys_bare()
  */
 ZTEST(mem_map, test_k_mem_map_phys_bare_side_effect)
 {
@@ -191,10 +266,25 @@ ZTEST(mem_map, test_k_mem_map_phys_bare_side_effect)
 }
 
 /**
- * Test that k_mem_unmap_phys_bare() unmaps the memory and it is no longer
- * accessible afterwards.
+ * @brief Verify that k_mem_unmap_phys_bare() revokes access to the mapping.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * After an unmap the virtual address must no longer reach the memory: a read
+ * through it has to fault rather than return stale data. The mapping is first
+ * exercised to show it worked, so the later fault can only come from the
+ * unmap.
+ *
+ * Test steps:
+ * - Map the test page read-only and read through the mapping.
+ * - Unmap it with k_mem_unmap_phys_bare().
+ * - Read through the now-stale virtual address.
+ *
+ * Expected result:
+ * - The read after the unmap faults; the code after it is never reached.
+ *
+ * @see k_mem_unmap_phys_bare()
  */
 ZTEST(mem_map, test_k_mem_unmap_phys_bare)
 {
@@ -220,9 +310,27 @@ ZTEST(mem_map, test_k_mem_unmap_phys_bare)
 }
 
 /**
- * Show that k_mem_unmap_phys_bare() can reclaim the virtual region correctly.
+ * @brief Verify that an unmapped virtual region can be mapped again.
  *
  * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Unmapping has to return the virtual region to the allocator, otherwise
+ * repeated map/unmap cycles leak address space. Mapping, unmapping and
+ * mapping again must eventually hand back the same virtual address, which is
+ * what shows the region was reclaimed rather than abandoned.
+ *
+ * Test steps:
+ * - Map the test page and record the virtual address.
+ * - Unmap it, then map the same page repeatedly, unmapping after each try,
+ *   until the recorded address comes back or an attempt limit is reached.
+ *
+ * Expected result:
+ * - The originally returned virtual address is handed out again, showing the
+ *   unmap reclaimed the region.
+ *
+ * @see k_mem_map_phys_bare()
+ * @see k_mem_unmap_phys_bare()
  */
 ZTEST(mem_map, test_k_mem_map_phys_bare_unmap_reclaim_addr)
 {
@@ -259,9 +367,30 @@ ZTEST(mem_map, test_k_mem_map_phys_bare_unmap_reclaim_addr)
 }
 
 /**
- * Basic k_mem_map() and k_mem_unmap() functionality
+ * @brief Verify that k_mem_map() provides usable anonymous memory and
+ *        k_mem_unmap() takes it back.
  *
- * Does not exercise K_MEM_MAP_* control flags, just default behavior
+ * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * The anonymous mapping API must hand out zeroed, writable pages backed by
+ * real frames, and unmapping must release both the frames and the virtual
+ * region so a subsequent map can reuse them. Default behaviour only; the
+ * K_MEM_MAP_* control flags are not exercised here.
+ *
+ * Test steps:
+ * - Map a page with k_mem_map(), check it reads back as zeroes, and write a
+ *   pattern into it.
+ * - Check the number of free page frames dropped by the mapping's worth.
+ * - Unmap it, check the free frame count is restored, and map again to see
+ *   the region reused.
+ *
+ * Expected result:
+ * - The page is zero-filled and writable, and unmapping returns both the
+ *   frames and the virtual region.
+ *
+ * @see k_mem_map()
+ * @see k_mem_unmap()
  */
 ZTEST(mem_map_api, test_k_mem_map_unmap)
 {
@@ -288,6 +417,10 @@ ZTEST(mem_map_api, test_k_mem_map_unmap)
 		}
 		last_mapped = mapped;
 
+		if (IS_ENABLED(CONFIG_DCACHE)) {
+			sys_cache_data_flush_and_invd_range((void *)mapped, CONFIG_MMU_PAGE_SIZE);
+		}
+
 		/* Page should be zeroed */
 		for (i = 0; i < CONFIG_MMU_PAGE_SIZE; i++) {
 			zassert_equal(mapped[i], '\x00', "page not zeroed");
@@ -300,6 +433,11 @@ ZTEST(mem_map_api, test_k_mem_map_unmap)
 
 		/* Show we can write to page without exploding */
 		(void)memset(mapped, '\xFF', CONFIG_MMU_PAGE_SIZE);
+
+		if (IS_ENABLED(CONFIG_DCACHE)) {
+			sys_cache_data_flush_and_invd_range((void *)mapped, CONFIG_MMU_PAGE_SIZE);
+		}
+
 		for (i = 0; i < CONFIG_MMU_PAGE_SIZE; i++) {
 			zassert_true(mapped[i] == '\xFF',
 				"incorrect value 0x%hhx read at index %d",
@@ -324,7 +462,26 @@ ZTEST(mem_map_api, test_k_mem_map_unmap)
 }
 
 /**
- * Test that the "before" guard page is in place for k_mem_map().
+ * @brief Verify that k_mem_map() places a guard page before the mapping.
+ *
+ * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Anonymous mappings are bracketed by unmapped guard pages, so an underrun
+ * off the start of the region faults immediately instead of touching a
+ * neighbouring mapping. The fatal error handler passes the case when the
+ * expected fault arrives.
+ *
+ * Test steps:
+ * - Map a page with k_mem_map() and write to its first byte, which must
+ *   succeed.
+ * - Write just before the start of the mapping.
+ *
+ * Expected result:
+ * - The in-bounds write succeeds and the underrun faults in the guard page;
+ *   the code after it is never reached.
+ *
+ * @see k_mem_map()
  */
 ZTEST(mem_map_api, test_k_mem_map_guard_before)
 {
@@ -352,7 +509,25 @@ ZTEST(mem_map_api, test_k_mem_map_guard_before)
 }
 
 /**
- * Test that the "after" guard page is in place for k_mem_map().
+ * @brief Verify that k_mem_map() places a guard page after the mapping.
+ *
+ * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * The counterpart of the "before" case: an overrun off the end of the region
+ * must fault in the trailing guard page rather than reach whatever is mapped
+ * next.
+ *
+ * Test steps:
+ * - Map a page with k_mem_map() and write to its last byte, which must
+ *   succeed.
+ * - Write just past the end of the mapping.
+ *
+ * Expected result:
+ * - The in-bounds write succeeds and the overrun faults in the guard page;
+ *   the code after it is never reached.
+ *
+ * @see k_mem_map()
  */
 ZTEST(mem_map_api, test_k_mem_map_guard_after)
 {
@@ -379,6 +554,33 @@ ZTEST(mem_map_api, test_k_mem_map_guard_after)
 	ztest_test_fail();
 }
 
+/**
+ * @brief Verify that k_mem_map() fails cleanly when memory is exhausted.
+ *
+ * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * Whichever runs out first -- page frames or virtual address space -- the
+ * mapping call has to return NULL rather than fault or hand out a partial
+ * region, and everything mapped before the failure must still be released
+ * cleanly. The test maps pages until failure, then unmaps them all, which
+ * also demonstrates the exhaustion is recoverable.
+ *
+ * Test steps:
+ * - Record the free memory figure, then map pages one at a time until
+ *   k_mem_map() returns NULL, writing into each mapped page.
+ * - Compare the number of pages obtained and the free memory remaining
+ *   against what the initial figure predicted.
+ * - Unmap every page and compare the free memory against the starting
+ *   figure.
+ *
+ * Expected result:
+ * - Exhaustion is reported as NULL after exactly the predicted number of
+ *   pages, and unmapping restores the free memory to its initial value.
+ *
+ * @see k_mem_map()
+ * @see k_mem_unmap()
+ */
 ZTEST(mem_map_api, test_k_mem_map_exhaustion)
 {
 	/* With demand paging enabled, there is backing store
@@ -440,7 +642,7 @@ ZTEST(mem_map_api, test_k_mem_map_exhaustion)
 
 	printk("Mapped %zu pages\n", cnt);
 	zassert_equal(cnt, expected_cnt,
-		      "number of pages mapped: expected %u, got %u",
+		      "number of pages mapped: expected %zu, got %zu",
 		      expected_cnt, cnt);
 
 	free_mem_now = k_mem_free_get();
@@ -460,7 +662,7 @@ ZTEST(mem_map_api, test_k_mem_map_exhaustion)
 
 	printk("Unmapped %zu pages\n", cnt);
 	zassert_equal(cnt, expected_cnt,
-		      "number of pages unmapped: expected %u, got %u",
+		      "number of pages unmapped: expected %zu, got %zu",
 		      expected_cnt, cnt);
 
 	free_mem_now = k_mem_free_get();
@@ -488,8 +690,29 @@ static void user_function(void *p1, void *p2, void *p3)
 #endif /* CONFIG_USERSPACE */
 
 /**
- * Test that the allocated region will be only accessible to userspace when
- * K_MEM_PERM_USER is used.
+ * @brief Verify that K_MEM_PERM_USER controls user access to a mapping.
+ *
+ * @ingroup kernel_memprotect_tests
+ *
+ * @details
+ * A mapping created without K_MEM_PERM_USER must be invisible to user
+ * threads, and one created with it must be usable from user mode. The same
+ * physical page is mapped each way in turn and a user thread is spawned to
+ * touch it; the access to the kernel-only mapping has to fault, which the
+ * suite's fatal error handler accepts as the expected outcome. Skipped
+ * without userspace.
+ *
+ * Test steps:
+ * - Map the test page with K_MEM_PERM_USER, spawn a user thread to access it
+ *   and join it.
+ * - Unmap, then map the same page without K_MEM_PERM_USER.
+ * - Spawn the user thread again to access the new mapping.
+ *
+ * Expected result:
+ * - The access to the user-permitted mapping succeeds; the access to the
+ *   kernel-only mapping faults.
+ *
+ * @see k_mem_map_phys_bare()
  */
 ZTEST(mem_map_api, test_k_mem_map_user)
 {
@@ -560,5 +783,18 @@ void *mem_map_env_setup(void)
 	return NULL;
 }
 
-ZTEST_SUITE(mem_map, NULL, NULL, NULL, NULL, NULL);
-ZTEST_SUITE(mem_map_api, NULL, mem_map_env_setup, NULL, NULL, NULL);
+/* For CPUs with incoherent cache under SMP, the tests to read/write
+ * buffer (... majority of tests here) may not work correctly if
+ * the test thread jumps between CPUs. So use the test infrastructure
+ * to limit the test to 1 CPU.
+ */
+#ifdef CONFIG_CPU_CACHE_INCOHERENT
+#define FUNC_BEFORE ztest_simple_1cpu_before
+#define FUNC_AFTER  ztest_simple_1cpu_after
+#else
+#define FUNC_BEFORE NULL
+#define FUNC_AFTER  NULL
+#endif
+
+ZTEST_SUITE(mem_map, NULL, NULL, FUNC_BEFORE, FUNC_AFTER, NULL);
+ZTEST_SUITE(mem_map_api, NULL, mem_map_env_setup, FUNC_BEFORE, FUNC_AFTER, NULL);

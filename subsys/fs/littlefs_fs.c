@@ -30,6 +30,8 @@
 
 /* Used on devices that have no explicit erase */
 #define LITTLEFS_DEFAULT_BLOCK_SIZE     4096
+/* Rounded up from minimal block size for littlefs working */
+#define LITTLEFS_MINIMUM_BLOCK_SIZE     128
 
 /* note: one of the next options have to be enabled, at least */
 BUILD_ASSERT(IS_ENABLED(CONFIG_FS_LITTLEFS_BLK_DEV) ||
@@ -44,10 +46,10 @@ struct lfs_file_data {
 #define LFS_FILEP(fp) (&((struct lfs_file_data *)(fp->filep))->file)
 
 /* Global memory pool for open files and dirs */
-K_MEM_SLAB_DEFINE_STATIC(file_data_pool, sizeof(struct lfs_file_data),
-			 CONFIG_FS_LITTLEFS_NUM_FILES, 4);
-K_MEM_SLAB_DEFINE_STATIC(lfs_dir_pool, sizeof(struct lfs_dir),
-			 CONFIG_FS_LITTLEFS_NUM_DIRS, 4);
+K_MEM_SLAB_DEFINE_STATIC_TYPE(file_data_pool, struct lfs_file_data,
+			      CONFIG_FS_LITTLEFS_NUM_FILES);
+K_MEM_SLAB_DEFINE_STATIC_TYPE(lfs_dir_pool, struct lfs_dir,
+			      CONFIG_FS_LITTLEFS_NUM_DIRS);
 
 /* Inferred overhead, in bytes, for each k_heap_aligned allocation for
  * the filecache heap.  This relates to the CHUNK_UNIT parameter in
@@ -582,6 +584,25 @@ static int littlefs_statvfs(struct fs_mount_t *mountp,
 	return lfs_to_errno(ret);
 }
 
+#if defined(CONFIG_FILE_SYSTEM_GC)
+
+static int littlefs_gc(struct fs_mount_t *mountp)
+{
+	ssize_t ret;
+	struct fs_littlefs *fs = mountp->fs_data;
+	struct lfs *lfs = &fs->lfs;
+
+	fs_lock(fs);
+
+	ret = lfs_fs_gc(lfs);
+
+	fs_unlock(fs);
+
+	return lfs_to_errno(ret);
+}
+
+#endif /* CONFIG_FILE_SYSTEM_GC */
+
 #ifdef CONFIG_FS_LITTLEFS_FMP_DEV
 
 #if defined(CONFIG_FLASH_HAS_EXPLICIT_ERASE)
@@ -657,7 +678,7 @@ static int littlefs_flash_init(struct fs_littlefs *fs, void *dev_id)
 	/* Open flash area */
 	ret = flash_area_open(area_id, fap);
 	if ((ret < 0) || (*fap == NULL)) {
-		LOG_ERR("can't open flash area %d", area_id);
+		LOG_ERR("can't open flash area %d, err %d", area_id, ret);
 		return -ENODEV;
 	}
 
@@ -767,6 +788,12 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 		return -EINVAL;
 	}
 
+	if (block_size < LITTLEFS_MINIMUM_BLOCK_SIZE) {
+		LOG_WRN("LittleFS block_size of %d smaller than required minimum %d, rounding up.",
+			block_size, LITTLEFS_MINIMUM_BLOCK_SIZE);
+		block_size = LITTLEFS_MINIMUM_BLOCK_SIZE;
+	}
+
 	int32_t block_cycles = lcp->block_cycles;
 
 	if (block_cycles == 0) {
@@ -788,6 +815,17 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 	if (lookahead_size == 0) {
 		lookahead_size = CONFIG_FS_LITTLEFS_LOOKAHEAD_SIZE;
 	}
+
+#ifdef CONFIG_FS_LITTLEFS_DISK_VERSION
+	uint32_t disk_version = lcp->disk_version;
+
+	if (disk_version == 0) {
+		disk_version = CONFIG_FS_LITTLEFS_DISK_VERSION_NUMBER;
+		if (disk_version == 0) {
+			disk_version = LFS_DISK_VERSION;
+		}
+	}
+#endif /* CONFIG_FS_LITTLEFS_DISK_VERSION */
 
 	/* No, you don't get to override this. */
 	lfs_size_t block_count = 0;
@@ -817,7 +855,7 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 			dev->name,
 			(uint32_t)((struct flash_area *)fs->backend)->fa_off,
 			block_count, block_size, block_cycles);
-		LOG_INF("sizes: rd %u ; pr %u ; ca %u ; la %u",
+		LOG_INF("partition sizes: rd %u ; pr %u ; ca %u ; la %u",
 			read_size, prog_size, cache_size, lookahead_size);
 	}
 #endif /* CONFIG_FS_LITTLEFS_FMP_DEV */
@@ -836,9 +874,6 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 	lcp->context = fs->backend;
 	/* Set the validated/defaulted values. */
 	if (littlefs_on_blkdev(flags)) {
-		lfs_size_t new_cache_size = block_size;
-		lfs_size_t new_lookahead_size = block_size * 4;
-
 		lcp->read = lfs_api_read_blk;
 		lcp->prog = lfs_api_prog_blk;
 		lcp->erase = lfs_api_erase_blk;
@@ -846,23 +881,17 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 		lcp->read_size = block_size;
 		lcp->prog_size = block_size;
 
-		if (lcp->cache_size < new_cache_size) {
-			LOG_ERR("Configured cache size is too small: %d < %d", lcp->cache_size,
-				new_cache_size);
-			return -ENOMEM;
+		if (cache_size < block_size) {
+			LOG_ERR("Configured cache size is too small: %d < %d", cache_size,
+				block_size);
 		}
-		lcp->cache_size = new_cache_size;
+		lcp->cache_size = ROUND_DOWN(cache_size, block_size);
 
-		if (lcp->lookahead_size < new_lookahead_size) {
-			LOG_ERR("Configured lookahead size is too small: %d < %d",
-				lcp->lookahead_size, new_lookahead_size);
-			return -ENOMEM;
-		}
-		lcp->lookahead_size = new_lookahead_size;
+		lcp->lookahead_size = lookahead_size;
 
 		lcp->sync = lfs_api_sync_blk;
 
-		LOG_INF("sizes: rd %u ; pr %u ; ca %u ; la %u",
+		LOG_INF("partition sizes: rd %u ; pr %u ; ca %u ; la %u",
 			lcp->read_size, lcp->prog_size, lcp->cache_size,
 			lcp->lookahead_size);
 	} else {
@@ -881,6 +910,13 @@ static int littlefs_init_cfg(struct fs_littlefs *fs, int flags)
 		lcp->lookahead_size = lookahead_size;
 		lcp->sync = lfs_api_sync;
 	}
+
+#ifdef CONFIG_FS_LITTLEFS_DISK_VERSION
+	lcp->disk_version = disk_version;
+	LOG_INF("partition disk version: %u.%u",
+		(uint32_t)FS_LITTLEFS_DISK_VERSION_MAJOR_GET(disk_version),
+		(uint32_t)FS_LITTLEFS_DISK_VERSION_MINOR_GET(disk_version));
+#endif /* CONFIG_FS_LITTLEFS_DISK_VERSION */
 
 	lcp->block_size = block_size;
 	lcp->block_count = block_count;
@@ -916,6 +952,19 @@ static int littlefs_mount(struct fs_mount_t *mountp)
 {
 	int ret = 0;
 	struct fs_littlefs *fs = mountp->fs_data;
+
+	/* littlefs requires a pre-allocated fs_littlefs; it does not
+	 * allocate one from a NULL fs_data the way ext2 does.
+	 */
+	if (fs == NULL) {
+		LOG_ERR("fs_data is required for littlefs");
+		return -EINVAL;
+	}
+
+	if (fs->backend != NULL) {
+		LOG_ERR("littlefs instance is already mounted");
+		return -EBUSY;
+	}
 
 	/* Create and take mutex. */
 	k_mutex_init(&fs->mutex);
@@ -1047,6 +1096,9 @@ static const struct fs_file_system_t littlefs_fs = {
 	.mkdir = littlefs_mkdir,
 	.stat = littlefs_stat,
 	.statvfs = littlefs_statvfs,
+#if defined(CONFIG_FILE_SYSTEM_GC)
+	.gc = littlefs_gc,
+#endif
 #if defined(CONFIG_FILE_SYSTEM_MKFS)
 	.mkfs = littlefs_mkfs,
 #endif
@@ -1054,6 +1106,12 @@ static const struct fs_file_system_t littlefs_fs = {
 
 #define DT_DRV_COMPAT zephyr_fstab_littlefs
 #define FS_PARTITION(inst) DT_PHANDLE_BY_IDX(DT_DRV_INST(inst), partition, 0)
+#ifdef CONFIG_FS_LITTLEFS_DISK_VERSION
+#define FS_DISK_VERSION(inst) \
+	.disk_version = DT_INST_PROP_OR(inst, disk_version, LFS_DISK_VERSION),
+#else
+#define FS_DISK_VERSION(inst)
+#endif
 
 #define DEFINE_FS(inst) \
 static uint8_t __aligned(4) \
@@ -1081,52 +1139,54 @@ static struct fs_littlefs fs_data_##inst = { \
 		.read_buffer = read_buffer_##inst, \
 		.prog_buffer = prog_buffer_##inst, \
 		.lookahead_buffer = lookahead_buffer_##inst, \
+		FS_DISK_VERSION(inst) \
 	}, \
 }; \
 struct fs_mount_t FS_FSTAB_ENTRY(DT_DRV_INST(inst)) = { \
 	.type = FS_LITTLEFS, \
-	.mnt_point = DT_INST_PROP(inst, mount_point), \
+	.mnt_point = FSTAB_ENTRY_DT_INST_MOUNT_POINT(inst), \
 	.fs_data = &fs_data_##inst, \
-	.storage_dev = (void *)DT_FIXED_PARTITION_ID(FS_PARTITION(inst)), \
+	.storage_dev = (void *)DT_PARTITION_ID(FS_PARTITION(inst)), \
 	.flags = FSTAB_ENTRY_DT_MOUNT_FLAGS(DT_DRV_INST(inst)), \
 };
 
 DT_INST_FOREACH_STATUS_OKAY(DEFINE_FS)
 
-#define REFERENCE_MOUNT(inst) (&FS_FSTAB_ENTRY(DT_DRV_INST(inst))),
+#ifdef CONFIG_FS_LITTLEFS_FSTAB_AUTOMOUNT
+#define REFERENCE_MOUNT(inst)                                                                      \
+	IF_ENABLED(DT_INST_PROP(inst, automount), ((&FS_FSTAB_ENTRY(DT_DRV_INST(inst))),))
 
-static void mount_init(struct fs_mount_t *mp)
+static void automount_if_enabled(struct fs_mount_t *mountp)
 {
+	int ret;
 
-	LOG_INF("littlefs partition at %s", mp->mnt_point);
-	if ((mp->flags & FS_MOUNT_FLAG_AUTOMOUNT) != 0) {
-		int rc = fs_mount(mp);
+	/* We already filter it during build. */
+	__ASSERT_NO_MSG((mountp->flags & FS_MOUNT_FLAG_AUTOMOUNT) != 0);
 
-		if (rc < 0) {
-			LOG_ERR("Automount %s failed: %d",
-				mp->mnt_point, rc);
-		} else {
-			LOG_INF("Automount %s succeeded",
-				mp->mnt_point);
-		}
+	ret = fs_mount(mountp);
+	if (ret < 0) {
+		LOG_ERR("Error mounting filesystem: at %s: %d", mountp->mnt_point, ret);
+	} else {
+		LOG_DBG("LITTLEFS Filesystem \"%s\" initialized", mountp->mnt_point);
 	}
 }
+#endif /* CONFIG_FS_LITTLEFS_FSTAB_AUTOMOUNT */
 
 static int littlefs_init(void)
 {
-	static struct fs_mount_t *partitions[] = {
-		DT_INST_FOREACH_STATUS_OKAY(REFERENCE_MOUNT)
-	};
-
 	int rc = fs_register(FS_LITTLEFS, &littlefs_fs);
 
+#ifdef CONFIG_FS_LITTLEFS_FSTAB_AUTOMOUNT
 	if (rc == 0) {
-		struct fs_mount_t **mpi = partitions;
+		struct fs_mount_t *partitions[] = {DT_INST_FOREACH_STATUS_OKAY(REFERENCE_MOUNT)};
 
-		while (mpi < (partitions + ARRAY_SIZE(partitions))) {
-			mount_init(*mpi++);
+		for (size_t i = 0; i < ARRAY_SIZE(partitions); i++) {
+			struct fs_mount_t *mpi = partitions[i];
+
+			automount_if_enabled(mpi);
 		}
 	}
+#endif /* CONFIG_FS_LITTLEFS_FSTAB_AUTOMOUNT */
 
 	return rc;
 }

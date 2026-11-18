@@ -30,14 +30,17 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		led0: led_0 {
 			gpios = <&porta 17 0>;
 			label = "LED";
 		};
+
 		led1: led_1 {
 			gpios = <&porta 27 0>;
 			label = "TX";
 		};
+
 		led2: led_2 {
 			gpios = <&portb 3 0>;
 			label = "RX";
@@ -102,6 +105,13 @@
 	pinctrl-names = "default";
 };
 
+&adc {
+	status = "okay";
+
+	pinctrl-0 = <&adc_default>;
+	pinctrl-names = "default";
+};
+
 &dac0 {
 	status = "okay";
 
@@ -111,7 +121,7 @@
 
 &flash0 {
 	partitions {
-		compatible = "fixed-partitions";
+		ranges;
 		#address-cells = <1>;
 		#size-cells = <1>;
 
@@ -121,6 +131,7 @@
 		 * if enabled.
 		 */
 		storage_partition: partition@3c000 {
+			compatible = "zephyr,mapped-partition";
 			label = "storage";
 			reg = <0x0003c000 0x00004000>;
 		};

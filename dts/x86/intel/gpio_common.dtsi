@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "skeleton.dtsi"
+#include <skeleton.dtsi>
 #include <zephyr/dt-bindings/interrupt-controller/intel-ioapic.h>
 #include <zephyr/dt-bindings/acpi/acpi.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
@@ -137,6 +137,15 @@
 		};
 
 		gpio_u: gpio_u {
+			compatible = "intel,gpio";
+			interrupt-parent = <&intc>;
+			interrupts = <ACPI_IRQ_DETECT ACPI_IRQ_FLAG_DETECT 3>;
+			gpio-controller;
+			#gpio-cells = <2>;
+			status = "disabled";
+		};
+
+		gpio_v: gpio_v {
 			compatible = "intel,gpio";
 			interrupt-parent = <&intc>;
 			interrupts = <ACPI_IRQ_DETECT ACPI_IRQ_FLAG_DETECT 3>;

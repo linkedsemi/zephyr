@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Intel Corporation
+ * Copyright (c) 2026 Qualcomm Technologies, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -54,10 +55,16 @@ extern "C" {
  * put the two values somewhere else, though it would make
  * SYS_HEAP_DEFINE a little hairy to write.
  */
+/* Forward declaration; full definition in <zephyr/sys/bitarray.h>. */
+struct sys_bitarray;
+
 struct sys_heap {
 	struct z_heap *heap;
 	void *init_mem;
 	size_t init_bytes;
+#ifdef CONFIG_SYS_HEAP_KASAN
+	struct sys_bitarray *kasan_ba;
+#endif
 };
 
 struct z_heap_stress_result {
@@ -69,17 +76,17 @@ struct z_heap_stress_result {
 
 /**
  * @defgroup low_level_heap_allocator Low Level Heap Allocator
+ * @since 2.3
+ * @version 1.0.0
  * @ingroup heaps
  * @{
  */
-
-#ifdef CONFIG_SYS_HEAP_RUNTIME_STATS
 
 /**
  * @brief Get the runtime statistics of a sys_heap
  *
  * @param heap Pointer to specified sys_heap
- * @param stats_t Pointer to struct to copy statistics into
+ * @param stats Pointer to struct to copy statistics into
  * @return -EINVAL if null pointers, otherwise 0
  */
 int sys_heap_runtime_stats_get(struct sys_heap *heap,
@@ -96,7 +103,18 @@ int sys_heap_runtime_stats_get(struct sys_heap *heap,
  */
 int sys_heap_runtime_stats_reset_max(struct sys_heap *heap);
 
-#endif
+/** @brief Get the size of the largest free block in a sys_heap
+ *
+ * Writes to @a bytes the number of usable bytes available in the single
+ * largest contiguous free block currently in the heap: the largest value
+ * that could currently be passed to sys_heap_alloc() and still succeed,
+ * absent further fragmentation from intervening allocations or frees.
+ *
+ * @param heap Pointer to specified sys_heap
+ * @param bytes Pointer to size_t to store the result in
+ * @return -EINVAL if null pointers, otherwise 0
+ */
+int sys_heap_get_largest_free_block(struct sys_heap *heap, size_t *bytes);
 
 /** @brief Initialize sys_heap
  *
@@ -142,6 +160,18 @@ void *sys_heap_alloc(struct sys_heap *heap, size_t bytes);
  */
 void *sys_heap_aligned_alloc(struct sys_heap *heap, size_t align, size_t bytes);
 
+/** @brief Allocate memory from a sys_heap
+ *
+ * This is a wrapper for sys_heap_alloc() whose purpose is to provide the same
+ * function signature as sys_heap_aligned_alloc().
+ *
+ * @param heap Heap from which to allocate
+ * @param align Ignored placeholder
+ * @param bytes Number of bytes requested
+ * @return Pointer to memory the caller can now use
+ */
+void *sys_heap_noalign_alloc(struct sys_heap *heap, size_t align, size_t bytes);
+
 /** @brief Free memory into a sys_heap
  *
  * De-allocates a pointer to memory previously returned from
@@ -171,15 +201,28 @@ void sys_heap_free(struct sys_heap *heap, void *mem);
  *
  * @param heap Heap from which to allocate
  * @param ptr Original pointer returned from a previous allocation
+ * @param bytes Number of bytes requested for the new block
+ * @return Pointer to memory the caller can now use, or NULL
+ */
+void *sys_heap_realloc(struct sys_heap *heap, void *ptr, size_t bytes);
+
+/** @brief Expand the size of an existing allocation
+ *
+ * Behaves in all ways like sys_heap_realloc(), except that the returned
+ * memory (if available) will have a starting address in memory which
+ * is a multiple of the specified power-of-two alignment value in
+ * bytes. In-place expansion will be attempted only if the provided memory
+ * pointer conforms to the specified alignment value otherwise the data will be
+ * moved to a new memory block.
+ *
+ * @param heap Heap from which to allocate
+ * @param ptr Original pointer returned from a previous allocation
  * @param align Alignment in bytes, must be a power of two
  * @param bytes Number of bytes requested for the new block
  * @return Pointer to memory the caller can now use, or NULL
  */
 void *sys_heap_aligned_realloc(struct sys_heap *heap, void *ptr,
 			       size_t align, size_t bytes);
-
-#define sys_heap_realloc(heap, ptr, bytes) \
-	sys_heap_aligned_realloc(heap, ptr, 0, bytes)
 
 /** @brief Return allocated memory size
  *
@@ -234,7 +277,7 @@ static inline bool sys_heap_validate(struct sys_heap *heap)
  * @param alloc_fn Callback to perform an allocation.  Passes back the @a
  *              arg parameter as a context handle.
  * @param free_fn Callback to perform a free of a pointer returned from
- *             @a alloc.  Passes back the @a arg parameter as a
+ *             @a alloc_fn.  Passes back the @a arg parameter as a
  *             context handle.
  * @param arg Context handle to pass back to the callbacks
  * @param total_bytes Size of the byte array the heap was initialized in
@@ -267,6 +310,61 @@ void sys_heap_stress(void *(*alloc_fn)(void *arg, size_t bytes),
  */
 void sys_heap_print_info(struct sys_heap *heap, bool dump_chunks);
 
+/** @brief Save the heap pointer
+ *
+ * The heap pointer is saved into an internal array, if there is space.
+ *
+ * @param heap Heap to save
+ * @return -EINVAL if null pointer or array is full, otherwise 0
+ */
+int sys_heap_array_save(struct sys_heap *heap);
+
+/** @brief Get the array of saved heap pointers
+ *
+ * Returns the pointer to the array of heap pointers.
+ *
+ * @param heap Heap array
+ * @return -EINVAL if null pointer, otherwise number of saved pointers
+ */
+int sys_heap_array_get(struct sys_heap ***heap);
+
+/** @brief Log per-thread heap allocation statistics
+ *
+ * Prints per-thread allocation statistics for the given heap using the
+ * kernel logging subsystem at INFO level.
+ *
+ * Available only when CONFIG_SYS_HEAP_THREAD_STATS is set.
+ *
+ * Concurrency: the caller must ensure no concurrent allocation or free
+ * on the same heap; the same serialisation contract as sys_heap itself.
+ *
+ * @param heap Heap whose per-thread statistics are to be logged
+ */
+#ifdef CONFIG_SYS_HEAP_THREAD_STATS
+void sys_heap_stats_log(struct sys_heap *heap);
+#endif
+
+/** @brief Return the call-site address recorded for an allocation
+ *
+ * Returns the return address captured by __builtin_return_address() at
+ * the moment @a mem was allocated.  The depth at which the address is
+ * captured is controlled by CONFIG_SYS_HEAP_CALLER_LEVEL.  For blocks
+ * that have been resized in-place by sys_heap_realloc() or
+ * sys_heap_aligned_realloc(), the original allocation call site is
+ * returned, not the realloc site.
+ *
+ * @param heap Heap that owns the allocation
+ * @param mem  Pointer previously returned by sys_heap_alloc() or
+ *             sys_heap_aligned_alloc()
+ * @return     Captured return address, or NULL if:
+ *               - @a heap or @a mem is NULL,
+ *               - @a mem is outside the heap's address span,
+ *               - the chunk at @a mem is not currently allocated.
+ */
+#ifdef CONFIG_SYS_HEAP_CALLER_POINTER
+void *sys_heap_get_caller(struct sys_heap *heap, void *mem);
+#endif
+
 /**
  * @}
  */
@@ -274,5 +372,23 @@ void sys_heap_print_info(struct sys_heap *heap, bool dump_chunks);
 #ifdef __cplusplus
 }
 #endif
+
+/** @cond INTERNAL_HIDDEN */
+
+/**
+ * @brief Heap memory release hook
+ *
+ * Provided by the consumer that selects CONFIG_SYS_HEAP_RELEASE_HOOK. Called
+ * with the memory still valid, from sys_heap_free() with the released block
+ * and from an in-place shrink with the released tail. The caller may hold a
+ * heap lock, so the hook must not allocate from or free to a heap. With
+ * CONFIG_USERSPACE the common libc free() may enter it from user mode.
+ *
+ * @param mem Start of the released memory
+ * @param bytes Size of the released memory
+ */
+void sys_heap_release_hook(void *mem, size_t bytes);
+
+/** @endcond */
 
 #endif /* ZEPHYR_INCLUDE_SYS_SYS_HEAP_H_ */

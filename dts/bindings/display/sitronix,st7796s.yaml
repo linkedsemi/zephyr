@@ -1,7 +1,11 @@
 # Copyright 2023 NXP
 # SPDX-License-Identifier: Apache-2.0
 
-description: ST7796S Display controller
+title: Sitronix ST7796S Display controller
+
+description: |
+  The Sitronix ST7796S is a 262K colors TFT-LCD controller
+  with a maximum 320RGBx480 resolution.
 
 compatible: "sitronix,st7796s"
 
@@ -113,3 +117,12 @@ properties:
       as the inverted value of the RGB pixel-format specified in MADCTL.
       This option is convenient for supporting displays with bugs
       where the actual color is different from the pixel format of MADCTL.
+
+  tear-scanline:
+    type: int
+    default: 0
+    description: |
+      Set Tear ScanLine (STE) command value. This configures the scanline
+      where the Tearing Effect (TE) signal becomes active. The value ranges
+      from 0 to 0xFFFF, representing the scanline number N where TE output
+      is generated. Default is 0 (TE signal disabled).

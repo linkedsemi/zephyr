@@ -11,16 +11,16 @@
 #include <string.h>
 
 #include <zephyr/settings/settings.h>
-#include "settings/settings_fcb.h"
+#include <settings/settings_fcb.h>
 #include "settings_priv.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_DECLARE(settings, CONFIG_SETTINGS_LOG_LEVEL);
 
 #if DT_HAS_CHOSEN(zephyr_settings_partition)
-#define SETTINGS_PARTITION DT_FIXED_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
+#define SETTINGS_PARTITION DT_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
 #else
-#define SETTINGS_PARTITION FIXED_PARTITION_ID(storage_partition)
+#define SETTINGS_PARTITION PARTITION_ID(storage_partition)
 #endif
 
 #define SETTINGS_FCB_VERS		1

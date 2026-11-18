@@ -1,4 +1,8 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright (c) 2020 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <arm/armv6-m.dtsi>
 #include <nordic/nrf_common.dtsi>
@@ -22,7 +26,18 @@
 		};
 	};
 
+	clocks {
+		hfxo: hfxo {
+			compatible = "nordic,nrf51-hfxo";
+			clock-frequency = <16000000>;
+			startup-time-us = <1400>;
+			#clock-cells = <0>;
+		};
+	};
+
 	soc {
+		compatible = "simple-bus";
+
 		ficr: ficr@10000000 {
 			compatible = "nordic,nrf-ficr";
 			reg = <0x10000000 0x1000>;
@@ -33,11 +48,16 @@
 		uicr: uicr@10001000 {
 			compatible = "nordic,nrf-uicr";
 			reg = <0x10001000 0x1000>;
+			ranges = <0x0 0x10001000 0x1000>;
 			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		sram0: memory@20000000 {
 			compatible = "mmio-sram";
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		power: power@40000000 {
@@ -62,6 +82,16 @@
 			reg = <0x40000000 0x1000>;
 			interrupts = <0 NRF_DEFAULT_IRQ_PRIORITY>;
 			status = "okay";
+
+			hfclk: hfclk {
+				compatible = "nordic,nrf-clock-hfclk";
+				status = "okay";
+			};
+
+			lfclk: lfclk {
+				compatible = "nordic,nrf-clock-lfclk";
+				status = "okay";
+			};
 		};
 
 		nrf_mpu: nrf-mpu@40000000 {
@@ -298,15 +328,17 @@
 		flash_controller: flash-controller@4001e000 {
 			compatible = "nordic,nrf51-flash-controller";
 			reg = <0x4001e000 0x1000>;
-
+			ranges;
 			#address-cells = <1>;
 			#size-cells = <1>;
-
 
 			flash0: flash@0 {
 				compatible = "soc-nv-flash";
 				erase-block-size = <1024>;
 				write-block-size = <4>;
+				status = "okay";
+				#address-cells = <1>;
+				#size-cells = <1>;
 			};
 		};
 

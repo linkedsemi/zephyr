@@ -44,8 +44,8 @@ LOG_MODULE_REGISTER(smartbond_display, CONFIG_DISPLAY_LOG_LEVEL);
 	(((_val) << LCDC_LCDC_LAYER0_OFFSETX_REG_ ## _field ## _Pos) &	\
 	LCDC_LCDC_LAYER0_OFFSETX_REG_ ## _field ## _Msk)
 
-#define DISPLAY_SMARTBOND_PIXEL_SIZE(inst)	\
-	(DISPLAY_BITS_PER_PIXEL(DT_INST_PROP(inst, pixel_format)) / 8)
+#define DISPLAY_SMARTBOND_PIXEL_SIZE(inst)                                                         \
+	(DISPLAY_BITS_PER_PIXEL(DT_INST_PROP(inst, pixel_format)) / BITS_PER_BYTE)
 
 #if CONFIG_DISPLAY_RENESAS_LCDC_BUFFER_PSRAM
 #define DISPLAY_BUFFER_LINKER_SECTION \
@@ -440,8 +440,6 @@ static void *display_smartbond_get_framebuffer(const struct device *dev)
 static void display_smartbond_get_capabilities(const struct device *dev,
 			struct display_capabilities *capabilities)
 {
-	memset(capabilities, 0, sizeof(*capabilities));
-
 	/*
 	 * Multiple color formats should be supported by LCDC. Currently, RGB56 and ARGB888
 	 * exposed by display API are supported. In the future we should consider supporting
@@ -614,7 +612,7 @@ static int display_smartbond_pm_action(const struct device *dev, enum pm_device_
 }
 #endif
 
-static const struct display_driver_api display_smartbond_driver_api = {
+static DEVICE_API(display, display_smartbond_driver_api) = {
 	.write =  display_smartbond_write,
 	.read = display_smartbond_read,
 	.get_framebuffer = display_smartbond_get_framebuffer,
@@ -654,7 +652,7 @@ static const struct display_driver_api display_smartbond_driver_api = {
 		.mode.vsync_pol =	\
 			DT_PROP(DT_INST_CHILD(inst, display_timings), vsync_active) ? 0 : 1,	\
 		.mode.hsync_pol =	\
-			DT_PROP(DT_INST_CHILD(inst, display_timings), vsync_active) ? 0 : 1,	\
+			DT_PROP(DT_INST_CHILD(inst, display_timings), hsync_active) ? 0 : 1,	\
 		.mode.de_pol =	\
 			DT_PROP(DT_INST_CHILD(inst, display_timings), de_active) ? 0 : 1,	\
 		.mode.pixelclk_pol =	\

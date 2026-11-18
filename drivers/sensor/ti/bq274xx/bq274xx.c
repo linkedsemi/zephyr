@@ -363,7 +363,7 @@ static int bq274xx_ensure_chemistry(const struct device *dev)
 
 		uint16_t cmd;
 
-		switch (val) {
+		switch (chem_id) {
 		case BQ27427_CHEM_ID_A:
 			cmd = BQ27427_CTRL_CHEM_A;
 			break;
@@ -418,7 +418,8 @@ static int bq274xx_gauge_configure(const struct device *dev)
 	}
 	regs = data->regs;
 
-	designenergy_mwh = (uint32_t)config->design_capacity * 37 / 10; /* x3.7 */
+	designenergy_mwh = (uint32_t)config->design_capacity *
+					((uint32_t)config->design_voltage) / 1000;
 	taperrate = config->design_capacity * 10 / config->taper_current;
 
 	ret = bq274xx_ctrl_reg_write(dev, BQ274XX_UNSEAL_KEY_A);
@@ -720,13 +721,13 @@ static int bq274xx_gauge_init(const struct device *dev)
 	int ret = 0;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 
 #if defined(CONFIG_BQ274XX_PM) || defined(CONFIG_BQ274XX_TRIGGER)
 	if (!gpio_is_ready_dt(&config->int_gpios)) {
-		LOG_ERR("GPIO device pointer is not ready to be used");
+		LOG_ERR_DEVICE_NOT_READY(config->int_gpios.port);
 		return -ENODEV;
 	}
 #endif
@@ -787,7 +788,11 @@ static int bq274xx_enter_shutdown_mode(const struct device *dev)
 static int bq274xx_exit_shutdown_mode(const struct device *dev)
 {
 	const struct bq274xx_config *const config = dev->config;
+	struct bq274xx_data *data = dev->data;
 	int ret;
+
+	/* Leaving shutdown mode triggers a POR, the gauge configuration is lost */
+	data->configured = false;
 
 	ret = gpio_pin_configure_dt(&config->int_gpios, GPIO_OUTPUT | GPIO_OPEN_DRAIN);
 	if (ret < 0) {
@@ -828,11 +833,15 @@ static int bq274xx_pm_action(const struct device *dev,
 	int ret;
 
 	switch (action) {
-	case PM_DEVICE_ACTION_TURN_OFF:
+	case PM_DEVICE_ACTION_SUSPEND:
 		ret = bq274xx_enter_shutdown_mode(dev);
 		break;
 	case PM_DEVICE_ACTION_RESUME:
 		ret = bq274xx_exit_shutdown_mode(dev);
+		break;
+	case PM_DEVICE_ACTION_TURN_ON:
+	case PM_DEVICE_ACTION_TURN_OFF:
+		ret = 0;
 		break;
 	default:
 		ret = -ENOTSUP;
@@ -843,7 +852,7 @@ static int bq274xx_pm_action(const struct device *dev,
 }
 #endif /* CONFIG_BQ274XX_PM */
 
-static const struct sensor_driver_api bq274xx_battery_driver_api = {
+static DEVICE_API(sensor, bq274xx_battery_driver_api) = {
 	.sample_fetch = bq274xx_sample_fetch,
 	.channel_get = bq274xx_channel_get,
 #ifdef CONFIG_BQ274XX_TRIGGER

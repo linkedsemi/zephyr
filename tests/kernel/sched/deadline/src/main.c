@@ -13,7 +13,12 @@
  */
 #define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 
+#define MSEC_TO_CYCLES(msec)  (int)(((uint64_t)(msec) * \
+				     (uint64_t)sys_clock_hw_cycles_per_sec()) / \
+				    (uint64_t)MSEC_PER_SEC)
+
 struct k_thread worker_threads[NUM_THREADS];
+volatile struct k_thread *expected_thread;
 k_tid_t worker_tids[NUM_THREADS];
 
 K_THREAD_STACK_ARRAY_DEFINE(worker_stacks, NUM_THREADS, STACK_SIZE);
@@ -48,6 +53,27 @@ void worker(void *p1, void *p2, void *p3)
 	}
 }
 
+/**
+ * @brief Verify EDF threads run in earliest-deadline-first order.
+ *
+ * @details
+ * At equal priority the scheduler must order runnable threads by their deadline
+ * (set via k_thread_deadline_set()), running the earliest deadline first.
+ * Several equal-priority threads are given random deadlines and must execute in
+ * ascending-deadline order.
+ *
+ * Test steps:
+ * - Create NUM_THREADS equal-priority threads, each recording its run order.
+ * - Assign each a random deadline, then sleep to let them run.
+ * - Verify their execution order matches ascending deadline order.
+ *
+ * Expected result:
+ * - Threads execute earliest-deadline-first.
+ *
+ * @ingroup tests_kernel_sched
+ *
+ * @see k_thread_deadline_set()
+ */
 ZTEST(suite_deadline, test_deadline)
 {
 	int i;
@@ -63,7 +89,7 @@ ZTEST(suite_deadline, test_deadline)
 				worker_stacks[i], STACK_SIZE,
 				worker, INT_TO_POINTER(i), NULL, NULL,
 				K_LOWEST_APPLICATION_THREAD_PRIO,
-				0, K_NO_WAIT);
+				0, K_FOREVER);
 
 		/* Positive-definite number with the bottom 8 bits
 		 * masked off to prevent aliasing where "very close"
@@ -83,16 +109,18 @@ ZTEST(suite_deadline, test_deadline)
 		thread_deadlines[i] = sys_rand32_get() & 0x3fffff00;
 	}
 
-	zassert_true(n_exec == 0, "threads ran too soon");
-
-	/* Similarly do the deadline setting in one quick pass to
-	 * minimize aliasing with "now"
+	/*
+	 * Assign all worker deadlines before making the workers runnable.
+	 * Updating already-queued workers could temporarily mix their initial
+	 * zero deadlines with absolute cycle deadlines.
 	 */
 	for (i = 0; i < NUM_THREADS; i++) {
 		k_thread_deadline_set(&worker_threads[i], thread_deadlines[i]);
 	}
 
-	zassert_true(n_exec == 0, "threads ran too soon");
+	for (i = 0; i < NUM_THREADS; i++) {
+		k_thread_start(&worker_threads[i]);
+	}
 
 	k_sleep(K_MSEC(100));
 
@@ -129,6 +157,26 @@ void yield_worker(void *p1, void *p2, void *p3)
 	CODE_UNREACHABLE;
 }
 
+/**
+ * @brief Verify k_yield() rotates among equal deadline/priority threads.
+ *
+ * @details
+ * Threads at the same priority and deadline (0) must each get to run when they
+ * cooperatively yield. Each worker increments a counter and yields; all must
+ * have run by the time the test wakes.
+ *
+ * Test steps:
+ * - Create NUM_THREADS equal-priority/deadline threads that bump a counter and
+ *   k_yield().
+ * - Sleep and verify all threads ran.
+ *
+ * Expected result:
+ * - Every thread runs, confirming yield rotates among equal peers.
+ *
+ * @ingroup tests_kernel_sched
+ *
+ * @see k_yield()
+ */
 ZTEST(suite_deadline, test_yield)
 {
 	/* Test that yield works across threads with the
@@ -173,13 +221,26 @@ void unqueue_worker(void *p1, void *p2, void *p3)
 }
 
 /**
- * @brief Validate the behavior of deadline_set when the thread is not queued
+ * @brief Verify k_thread_deadline_set() does not wake a not-yet-started thread.
  *
- * @details Create a bunch of threads with scheduling delay which make the
- * thread in unqueued state. The k_thread_deadline_set() call should not make
- * these threads run before there delay time pass.
+ * @details
+ * Setting a deadline on a thread that is still in its start delay (unqueued)
+ * must not make it run before its delay elapses. Threads are created with a
+ * start delay, given deadlines while unqueued, and must stay dormant until the
+ * delay passes.
  *
- * @ingroup kernel_sched_tests
+ * Test steps:
+ * - Create NUM_THREADS threads with a start delay (unqueued).
+ * - Set a random deadline on each and sleep less than the delay; none must run.
+ * - Sleep past the delay and confirm all threads then run.
+ *
+ * Expected result:
+ * - Deadline-set does not start an unqueued thread early; threads run only after
+ *   their start delay.
+ *
+ * @ingroup tests_kernel_sched
+ *
+ * @see k_thread_deadline_set()
  */
 ZTEST(suite_deadline, test_unqueued)
 {
@@ -214,5 +275,129 @@ ZTEST(suite_deadline, test_unqueued)
 		k_thread_abort(worker_tids[i]);
 	}
 }
+
+#if (CONFIG_MP_MAX_NUM_CPUS == 1)
+static void reschedule_wrapper(const void *param)
+{
+	ARG_UNUSED(param);
+
+	k_reschedule();
+}
+
+static void test_reschedule_helper0(void *p1, void *p2, void *p3)
+{
+	/* 4. Reschedule brings us here */
+
+	zassert_true(expected_thread == _current, "");
+
+	expected_thread = &worker_threads[1];
+}
+
+static void test_reschedule_helper1(void *p1, void *p2, void *p3)
+{
+	void (*offload)(void (*f)(const void *p), const void *param) = p1;
+
+	/* 1. First helper expected to execute */
+
+	zassert_true(expected_thread == _current, "");
+
+	offload(reschedule_wrapper, NULL);
+
+	/* 2. Deadlines have not changed. Expected no changes */
+
+	zassert_true(expected_thread == _current, "");
+
+	k_thread_deadline_set(_current, MSEC_TO_CYCLES(1000));
+
+	/* 3. Deadline changed, but there was no reschedule */
+
+	zassert_true(expected_thread == _current, "");
+
+	expected_thread = &worker_threads[0];
+	offload(reschedule_wrapper, NULL);
+
+	/* 5. test_thread_reschedule_helper0 executed */
+
+	zassert_true(expected_thread == _current, "");
+}
+
+static void thread_offload(void (*f)(const void *p), const void *param)
+{
+	f(param);
+}
+
+/**
+ * @brief Verify a deadline change takes effect only on k_reschedule().
+ *
+ * @details
+ * Changing a thread's deadline does not by itself trigger a context switch; an
+ * explicit k_reschedule() must re-evaluate the ready queue and switch to the now
+ * earliest-deadline thread. The test orchestrates two EDF helpers and checks the
+ * expected thread is selected only after k_reschedule() (exercised via a direct
+ * call and, on non-SMP, via irq_offload). Built for single-CPU configs only.
+ *
+ * Test steps:
+ * - Create two EDF helper threads with different deadlines.
+ * - Confirm changing a deadline alone causes no switch.
+ * - Invoke k_reschedule() and confirm the expected thread is then selected.
+ *
+ * Expected result:
+ * - The scheduler switches to the earliest-deadline thread only on reschedule.
+ *
+ * @ingroup tests_kernel_sched
+ *
+ * @see k_reschedule()
+ * @see k_thread_deadline_set()
+ */
+ZTEST(suite_deadline, test_thread_reschedule)
+{
+	k_thread_create(&worker_threads[0], worker_stacks[0], STACK_SIZE,
+			test_reschedule_helper0,
+			thread_offload, NULL, NULL,
+			K_LOWEST_APPLICATION_THREAD_PRIO,
+			0, K_NO_WAIT);
+
+	k_thread_create(&worker_threads[1], worker_stacks[1], STACK_SIZE,
+			test_reschedule_helper1,
+			thread_offload, NULL, NULL,
+			K_LOWEST_APPLICATION_THREAD_PRIO,
+			0, K_NO_WAIT);
+
+	k_thread_deadline_set(&worker_threads[0], MSEC_TO_CYCLES(500));
+	k_thread_deadline_set(&worker_threads[1], MSEC_TO_CYCLES(10));
+
+	expected_thread = &worker_threads[1];
+
+	k_thread_join(&worker_threads[1], K_FOREVER);
+	k_thread_join(&worker_threads[0], K_FOREVER);
+
+#ifndef CONFIG_SMP
+	/*
+	 * When SMP is enabled, there is always a reschedule performed
+	 * at the end of the ISR.
+	 */
+	k_thread_create(&worker_threads[0], worker_stacks[0], STACK_SIZE,
+			test_reschedule_helper0,
+			irq_offload, NULL, NULL,
+			K_LOWEST_APPLICATION_THREAD_PRIO,
+			0, K_NO_WAIT);
+
+	k_thread_create(&worker_threads[1], worker_stacks[1], STACK_SIZE,
+			test_reschedule_helper1,
+			irq_offload, NULL, NULL,
+			K_LOWEST_APPLICATION_THREAD_PRIO,
+			0, K_NO_WAIT);
+
+	k_thread_deadline_set(&worker_threads[0], MSEC_TO_CYCLES(500));
+	k_thread_deadline_set(&worker_threads[1], MSEC_TO_CYCLES(10));
+
+	expected_thread = &worker_threads[1];
+
+	k_thread_join(&worker_threads[1], K_FOREVER);
+	k_thread_join(&worker_threads[0], K_FOREVER);
+
+#endif /* !CONFIG_SMP */
+}
+#endif /* CONFIG_MP_MAX_NUM_CPUS == 1 */
 
 ZTEST_SUITE(suite_deadline, NULL, NULL, NULL, NULL, NULL);

@@ -3,13 +3,13 @@
  * @brief Header for Bluetooth TMAP.
  *
  * Copyright 2023 NXP
- * Copyright (c) 2024 Nordic Semiconductor ASA
+ * Copyright (c) 2024-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_TMAP_
-#define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_TMAP_
+#ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_TMAP_H_
+#define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_TMAP_H_
 
 /**
  * @brief Telephone and Media Audio Profile (TMAP)
@@ -31,37 +31,6 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/util_macro.h>
 
-/** Call Gateway (CG) supported */
-#define BT_TMAP_CG_SUPPORTED                                                                       \
-	(IS_ENABLED(CONFIG_BT_CAP_INITIATOR) && IS_ENABLED(CONFIG_BT_BAP_UNICAST_CLIENT) &&        \
-	 IS_ENABLED(CONFIG_BT_TBS) && IS_ENABLED(CONFIG_BT_VCP_VOL_CTLR))
-
-/** Call Terminal (CT) supported */
-#define BT_TMAP_CT_SUPPORTED                                                                       \
-	(IS_ENABLED(CONFIG_BT_CAP_ACCEPTOR) && IS_ENABLED(CONFIG_BT_BAP_UNICAST_SERVER) &&         \
-	 IS_ENABLED(CONFIG_BT_TBS_CLIENT) &&                                                       \
-	 (IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK) &&                                                    \
-	  IS_ENABLED(CONFIG_BT_VCP_VOL_REND) == IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)))
-
-/** Unicast Media Sender (UMS) supported */
-#define BT_TMAP_UMS_SUPPORTED                                                                      \
-	(IS_ENABLED(CONFIG_BT_CAP_INITIATOR) &&                                                    \
-	 IS_ENABLED(CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK) && IS_ENABLED(CONFIG_BT_VCP_VOL_CTLR) && \
-	 IS_ENABLED(CONFIG_BT_MCS))
-
-/** Unicast Media Receiver (UMR) supported */
-#define BT_TMAP_UMR_SUPPORTED                                                                      \
-	(IS_ENABLED(CONFIG_BT_CAP_ACCEPTOR) && IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK) &&               \
-	 IS_ENABLED(CONFIG_BT_VCP_VOL_REND))
-
-/** Broadcast Media Sender (BMS) supported */
-#define BT_TMAP_BMS_SUPPORTED                                                                      \
-	(IS_ENABLED(CONFIG_BT_CAP_INITIATOR) && IS_ENABLED(CONFIG_BT_BAP_BROADCAST_SOURCE))
-
-/** Broadcast Media Receiver (BMR) supported */
-#define BT_TMAP_BMR_SUPPORTED                                                                      \
-	(IS_ENABLED(CONFIG_BT_CAP_ACCEPTOR) && IS_ENABLED(CONFIG_BT_BAP_BROADCAST_SINK))
-
 /** @brief TMAP Role characteristic */
 enum bt_tmap_role {
 	/**
@@ -71,7 +40,7 @@ enum bt_tmap_role {
 	 * to control calls on a remote TMAP Call Terminal.
 	 * Audio streams in this role are typically bi-directional.
 	 */
-	BT_TMAP_ROLE_CG = BIT(0),
+	BT_TMAP_ROLE_CG = BIT(0U),
 	/**
 	 * @brief TMAP Call Terminal role
 	 *
@@ -79,35 +48,35 @@ enum bt_tmap_role {
 	 * to expose calls to remote TMAP Call Gateways.
 	 * Audio streams in this role are typically bi-directional.
 	 */
-	BT_TMAP_ROLE_CT = BIT(1),
+	BT_TMAP_ROLE_CT = BIT(1U),
 	/**
 	 * @brief TMAP Unicast Media Sender role
 	 *
 	 * This role is defined send media audio to TMAP Unicast Media Receivers.
 	 * Audio streams in this role are typically uni-directional.
 	 */
-	BT_TMAP_ROLE_UMS = BIT(2),
+	BT_TMAP_ROLE_UMS = BIT(2U),
 	/**
 	 * @brief TMAP Unicast Media Receiver role
 	 *
 	 * This role is defined receive media audio to TMAP Unicast Media Senders.
 	 * Audio streams in this role are typically uni-directional.
 	 */
-	BT_TMAP_ROLE_UMR = BIT(3),
+	BT_TMAP_ROLE_UMR = BIT(3U),
 	/**
 	 * @brief TMAP Broadcast Media Sender role
 	 *
 	 * This role is defined send media audio to TMAP Broadcast Media Receivers.
 	 * Audio streams in this role are always uni-directional.
 	 */
-	BT_TMAP_ROLE_BMS = BIT(4),
+	BT_TMAP_ROLE_BMS = BIT(4U),
 	/**
 	 * @brief TMAP Broadcast Media Receiver role
 	 *
-	 * This role is defined send media audio to TMAP Broadcast Media Senders.
+	 * This role is defined to receive media audio from TMAP Broadcast Media Senders.
 	 * Audio streams in this role are always uni-directional.
 	 */
-	BT_TMAP_ROLE_BMR = BIT(5),
+	BT_TMAP_ROLE_BMR = BIT(5U),
 };
 
 /** @brief TMAP callback structure. */
@@ -157,4 +126,4 @@ void bt_tmap_set_role(enum bt_tmap_role role);
  * @}
  */
 
-#endif /* ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_TMAP_ */
+#endif /* ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_TMAP_H_ */

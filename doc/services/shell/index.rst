@@ -19,8 +19,9 @@ interaction is required. This module is a Unix-like shell with these features:
 * Support for static and dynamic commands.
 * Support for dictionary commands.
 * Smart command completion with the :kbd:`Tab` key.
-* Built-in commands: :command:`clear`, :command:`shell`, :command:`colors`,
-  :command:`echo`, :command:`history` and :command:`resize`.
+* Built-in commands: :command:`aliases`, :command:`clear`, :command:`shell`,
+  :command:`colors`, :command:`echo`, :command:`history` and
+  :command:`resize`.
 * Viewing recently executed commands using keys: :kbd:`↑` :kbd:`↓` or meta keys.
 * Text edition using keys: :kbd:`←`, :kbd:`→`, :kbd:`Backspace`,
   :kbd:`Delete`, :kbd:`End`, :kbd:`Home`, :kbd:`Insert`.
@@ -110,7 +111,7 @@ Details on the configuration settings are captured in the following files:
 - :zephyr_file:`snippets/nus-console/nus-console.conf`.
 - :zephyr_file:`snippets/nus-console/nus-console.overlay`.
 
-Segget RTT
+Segger RTT
 ==========
 
 To configure Segger RTT backend, add the following configurations to your build:
@@ -121,6 +122,51 @@ To configure Segger RTT backend, add the following configurations to your build:
 
 Details on additional configuration settings are captured in:
 :zephyr_file:`samples/subsys/shell/shell_module/prj_minimal_rtt.conf`.
+
+.. _shell_rtt_west:
+
+Using west
+-----------
+
+Attach to and configure RTT with:
+
+.. code-block:: console
+
+   $ west rtt
+
+.. note::
+
+   If your default runner does not have support for RTT, check your board's documentation page for
+   any other runners that support RTT. You may then use the ``--runner`` option to specify a
+   different runner.
+
+  .. code-block:: console
+
+     $ west rtt --runner <runner>
+
+.. _shell_rtt_putty:
+
+Using PuTTY
+-----------
+
+Use following procedure:
+
+* Open debug session and continue running the application.
+
+  .. code-block:: none
+
+     west attach
+
+* Open ``PuTTY``. Use telnet port 19021 and specific Terminal configuration. Set ``Local echo``
+  to ``Force off`` and ``Local line editing`` to ``Force off`` (see image below).
+
+
+.. image:: images/putty_rtt.png
+      :align: center
+      :alt: RTT PuTTY terminal configuration.
+
+* Now you should have a network connection to RTT that will let you enter input
+  to the shell.
 
 Connecting to Segger RTT via TCP (on macOS, for example)
 --------------------------------------------------------
@@ -143,7 +189,9 @@ procedure:
      nc localhost 19021
 
 * Now you should have a network connection to RTT that will let you enter input
-  to the shell.
+  to the shell. However, contrary to `PuTTY <shell_rtt_putty_>`_ some features like
+  ``Tab`` completion do not work.
+
 
 Commands
 ********
@@ -193,6 +241,13 @@ File-System
 
 - :kconfig:option:`CONFIG_FILE_SYSTEM`
 - :kconfig:option:`CONFIG_FILE_SYSTEM_SHELL`
+
+ADC
+---
+
+- :kconfig:option:`CONFIG_ADC`
+- :kconfig:option:`CONFIG_ADC_SHELL`
+- :kconfig:option:`CONFIG_ADC_EMUL_SHELL` (requires :kconfig:option:`CONFIG_ADC_EMUL`)
 
 Creating commands
 =================
@@ -444,7 +499,7 @@ Simple command handler implementation:
 		ARG_UNUSED(argc);
 		ARG_UNUSED(argv);
 
-		shell_fprintf(shell, SHELL_INFO, "Print info message\n");
+		shell_fprintf(sh, SHELL_INFO, "Print info message\n");
 
 		shell_print(sh, "Print simple text.");
 
@@ -510,6 +565,8 @@ Built-in commands
 
 These commands are activated by :kconfig:option:`CONFIG_SHELL_CMDS` set to ``y``.
 
+* :command:`aliases` - Shows currently configured aliases. This command needs
+  extra activation: :kconfig:option:`CONFIG_SHELL_CMDS_ALIASES` set to ``y``.
 * :command:`clear` - Clears the screen.
 * :command:`history` - Shows the recently entered commands.
 * :command:`resize` - Must be executed when terminal width is different than 80
@@ -532,6 +589,47 @@ These commands are activated by :kconfig:option:`CONFIG_SHELL_CMDS` set to ``y``
         * :command:`colors` - Toggles colored syntax. This might be helpful in
           case of Bluetooth shell to limit the amount of transferred bytes.
 	* :command:`stats` - Shows shell statistics.
+
+Alias support
+*************
+
+The shell can expand aliases before executing a command when
+:kconfig:option:`CONFIG_SHELL_ALIASES` is enabled. Zephyr always provides the
+built-in alias :command:`?`, which expands to :command:`help`.
+
+To load additional aliases from a host file, set
+:kconfig:option:`CONFIG_SHELL_ALIASES_FILE` and generate the corresponding
+include file from the application ``CMakeLists.txt`` file. When
+:kconfig:option:`CONFIG_SHELL_ALIASES_FILE` is non-empty,
+:kconfig:option:`CONFIG_SHELL_ALIASES_HAS_FILE` is enabled automatically.
+
+.. code-block:: cmake
+
+   if(CONFIG_SHELL_ALIASES_HAS_FILE)
+     set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)
+     set(aliases_src ${CONFIG_SHELL_ALIASES_FILE})
+
+     generate_shell_aliases_inc_file_for_target(
+       app
+       ${aliases_src}
+       ${gen_dir}/generated-shell-aliases.inc
+     )
+   endif()
+
+The aliases file uses one ``alias=command`` entry per line. Lines beginning
+with ``#`` are comments, and command strings containing spaces must be quoted.
+The sample at :zephyr_file:`samples/net/sockets/echo_service/shell_aliases.txt`
+uses the following format:
+
+.. code-block:: none
+
+   # Example shell aliases file
+   stacks="kernel thread stacks"
+   scan="wifi scan"
+   connect="wifi connect"
+
+Use the :command:`aliases` command to inspect the aliases available in the
+running shell.
 
 .. _tab-feature:
 
@@ -584,6 +682,10 @@ modules you can execute the following command:
 
 This feature is activated by :kconfig:option:`CONFIG_SHELL_WILDCARD` set to ``y``.
 
+.. note::
+	When the wildcard feature is enabled, the characters ``*`` and ``?``
+	cannot be used as normal characters in commands or arguments.
+
 Meta Keys Feature
 *****************
 
@@ -617,6 +719,8 @@ The shell module supports the following meta keys:
      - Moves in history to next entry.
    * - :kbd:`Ctrl+p`
      - Moves in history to previous entry.
+   * - :kbd:`Ctrl+t`
+     - Toggles logs output on the shell when :kconfig:option:`CONFIG_SHELL_LOG_BACKEND` is set.
    * - :kbd:`Ctrl+u`
      - Clears the currently typed command.
    * - :kbd:`Ctrl+w`
@@ -629,16 +733,16 @@ The shell module supports the following meta keys:
 
 This feature is activated by :kconfig:option:`CONFIG_SHELL_METAKEYS` set to ``y``.
 
-Getopt Feature
-*****************
+sys_getopt Feature
+******************
 
 Some shell users apart from subcommands might need to use options as well.
 the arguments string, looking for supported options. Typically, this task
 is accomplished by the ``getopt`` family functions.
 
-For this purpose shell supports the getopt and getopt_long libraries available
-in the FreeBSD project. This feature is activated by:
-:kconfig:option:`CONFIG_POSIX_C_LIB_EXT` set to ``y`` and :kconfig:option:`CONFIG_GETOPT_LONG`
+For this purpose shell supports a variant of the getopt and getopt_long libraries from
+the FreeBSD project called sys_getopt and sys_getopt_long. This feature is activated by:
+:kconfig:option:`CONFIG_GETOPT` set to ``y`` and :kconfig:option:`CONFIG_GETOPT_LONG`
 set to ``y``.
 
 This feature can be used in thread safe as well as non thread safe manner.
@@ -650,10 +754,10 @@ An example non-thread safe usage:
 .. code-block:: c
 
   char *cvalue = NULL;
-  while ((char c = getopt(argc, argv, "abhc:")) != -1) {
+  while ((char c = sys_getopt(argc, argv, "abhc:")) != -1) {
         switch (c) {
         case 'c':
-                cvalue = optarg;
+                cvalue = sys_getopt_optarg;
                 break;
         default:
                 break;
@@ -665,9 +769,9 @@ An example thread safe usage:
 .. code-block:: c
 
   char *cvalue = NULL;
-  struct getopt_state *state;
-  while ((char c = getopt(argc, argv, "abhc:")) != -1) {
-        state = getopt_state_get();
+  struct sys_getopt_state *state;
+  while ((char c = sys_getopt(argc, argv, "abhc:")) != -1) {
+        state = sys_getopt_state_get();
         switch (c) {
         case 'c':
                 cvalue = state->optarg;
@@ -677,7 +781,7 @@ An example thread safe usage:
         }
   }
 
-Thread safe getopt functionality is activated by
+Thread safe sys_getopt functionality is activated by
 :kconfig:option:`CONFIG_SHELL_GETOPT` set to ``y``.
 
 Obscured Input Feature
@@ -702,6 +806,59 @@ of any other command besides a login command, by means of the
 ``shell_set_root_cmd`` function. Likewise, :kconfig:option:`CONFIG_SHELL_PROMPT_UART`
 allows you to set the prompt upon startup, but it can be changed later with the
 ``shell_prompt_change`` function.
+
+.. _shell-readline:
+
+Reading User Input
+******************
+
+The shell provides a :c:func:`shell_readline` function that allows command handlers
+to interactively read a line of input from the user. This is useful for implementing
+commands that need to prompt the user for additional information, such as confirmation
+dialogs, multi-step wizards, or interactive data entry.
+
+The function reads from the shell transport until a newline character is received,
+storing the data in a provided buffer. The newline character itself is not included
+in the buffer. The buffer is automatically null-terminated on success.
+
+Use :c:func:`shell_readline_prompt_set` before calling :c:func:`shell_readline` to
+display a prompt string (e.g. ``"Proceed? [y/N]: "``). The prompt is printed
+automatically at the start of readline and restored after any log messages that
+interrupt the input line. It is cleared when :c:func:`shell_readline` returns.
+
+.. note::
+
+   The :c:func:`shell_readline` function should be called from the shell thread in a
+   shell command handler and blocks the thread until a result is returned.
+
+Example usage:
+
+.. code-block:: c
+
+   static int cmd_read_secret(const struct shell *sh, size_t argc, char **argv)
+   {
+           uint8_t input_buf[256];
+           int ret;
+
+           shell_obscure_set(sh, true);
+           shell_readline_prompt_set(sh, "Enter your secret: ");
+           ret = shell_readline(sh, input_buf, sizeof(input_buf), K_SECONDS(10));
+           shell_obscure_set(sh, false);
+
+           if (ret < 0) {
+                   if (ret == -ETIMEDOUT) {
+                           shell_error(sh, "Timeout waiting for input");
+                   } else if (ret == -ECANCELED) {
+                           shell_error(sh, "Input canceled");
+                   } else if (ret == -ENOBUFS) {
+                           shell_error(sh, "Input too long");
+                   }
+                   return ret;
+           }
+
+           shell_print(sh, "Secret input received (%d bytes)", ret);
+           return 0;
+   }
 
 Shell Logger Backend Feature
 ****************************
@@ -732,6 +889,29 @@ This feature is activated by: :kconfig:option:`CONFIG_SHELL_LOG_BACKEND` set to 
 	RTT (:kconfig:option:`CONFIG_LOG_BACKEND_RTT`), which are available earlier
 	during system initialization.
 
+.. note::
+	The shell log backend is enabled by :c:func:`shell_start`. With
+	:kconfig:option:`CONFIG_SHELL_AUTOSTART` set to ``y`` this happens in the
+	shell thread, when it is scheduled for the first time. The shell thread runs
+	at a low priority by default, so this moment depends on when higher priority
+	threads, including the main thread executing system initialization, block or
+	finish. Log messages and ``printk()`` output routed through the logger
+	(:kconfig:option:`CONFIG_LOG_PRINTK`) issued before that point are handled by
+	the logging core, not by the shell:
+
+	* In deferred mode (:kconfig:option:`CONFIG_LOG_MODE_DEFERRED`) they are
+	  buffered and printed once the shell starts, as long as they fit in
+	  :kconfig:option:`CONFIG_LOG_BUFFER_SIZE`.
+	* In immediate mode (:kconfig:option:`CONFIG_LOG_MODE_IMMEDIATE`) they are
+	  lost, because there is no active backend to output them.
+
+	If the application needs early output on the shell, set
+	:kconfig:option:`CONFIG_SHELL_AUTOSTART` to ``n`` and call
+	:c:func:`shell_start` explicitly, for example from a :c:macro:`SYS_INIT`
+	hook with a priority higher than the shell backend initialization priority
+	(e.g. :kconfig:option:`CONFIG_SHELL_BACKEND_SERIAL_INIT_PRIORITY`).
+	Alternatively, do not route ``printk()`` through the logger.
+
 RTT Backend Channel Selection
 *****************************
 
@@ -754,6 +934,101 @@ This allows interactive use of the shell through JLinkRTTViewer, while the log
 is written to file.
 
 See `shell backends <backends_>`_ for details on how to enable RTT as a Shell backend.
+
+.. _shell_remote:
+
+Remote Shell
+************
+
+The shell module supports remote shell. Remote shell allows to execute commands
+on the remote core using the main core shell interface. User interface features
+like ``Tab`` autocompletion or history navigation are supported on the remote
+shell client. There can be multiple remote clients connected to the main core shell.
+Each remote client has its own tree of commands. Remote client commands are executed
+in the context of the remote client core. Remote shell is using :ref:`ipc_service` to
+communicate with the remote core.
+
+If only a single remote client is enabled then ``remote_shell`` command is registered as a root
+command for the remote core tree of commands. If multiple remote clients are enabled
+then ``remote_shell <core_name>`` is used as a root for the given remote client.
+
+Remote client implementation supports case where threads are disabled
+(:kconfig:option:`CONFIG_MULTITHREADING` set to ``n``).
+
+This approach has two main benefits:
+
+1. It allows to use the same shell interface for both the main and the remote cores.
+2. Full shell implementation is present only on the host core, significantly reducing the
+   memory footprint of the remote cores. Implementation uses less than 3 kB per remote client.
+   Half of the memory is used for string formatting and can be shared with other
+   modules that use string formatting (for example, logging).
+
+See :zephyr:code-sample:`shell-module` for details on how to enable remote shell.
+
+Security considerations
+=======================
+
+The host and the remote client validate commands and message lengths received from each other.
+Print messages are not validated: the host formats the :ref:`cbprintf package <cbprintf_packaging>`
+received from the remote client as is. The format string and string arguments in the package can
+point to any host address, and ``%n`` writes to host memory when
+:kconfig:option:`CONFIG_CBPRINTF_N_SPECIFIER` is enabled. With
+:kconfig:option:`CONFIG_SHELL_REMOTE_CLI_SKIP_RO_STRINGS` enabled, the host reads read-only
+strings directly from the remote core memory by design. Enable
+:kconfig:option:`CONFIG_SHELL_REMOTE` only if the host core trusts every remote client core.
+
+Configuration
+=============
+
+Following Kconfig options are available for remote shell host configuration:
+
+:kconfig:option:`CONFIG_SHELL_REMOTE`: Enables remote shell on the host core.
+
+:kconfig:option:`CONFIG_SHELL_REMOTE_MULTI_CLI`: Enables multiple remote clients.
+
+:kconfig:option:`CONFIG_SHELL_REMOTE_TMP_BUF_SIZE`: Size of the temporary buffer for remote shell
+command data. Need to be large enough to hold the command and its arguments.
+
+Following Kconfig options are available for remote shell client configuration:
+
+:kconfig:option:`CONFIG_SHELL_REMOTE_CLI`: Enables remote shell client on the remote core.
+
+:kconfig:option:`CONFIG_SHELL_REMOTE_CLI_BUF_SIZE`: Size of the internal buffer used for
+remote messages. Need to be large enough to hold the command syntax and help text.
+Help text is truncated if the buffer is too small. It is also used to hold data for
+shell print messages. If it is too small then the print message is replaced with
+the error message.
+
+:kconfig:option:`CONFIG_SHELL_REMOTE_CLI_KWORK`: Use kwork context for command execution.
+
+:kconfig:option:`CONFIG_SHELL_REMOTE_CLI_STACK_SIZE`: Thread stack size for remote shell client.
+
+If a single client is used then IPC service device is automatically chosen based on the devicetree
+configuration. User can specify the IPC device tree node using chosen node. If not specified then
+if there is only a single IPC device available that one is used.
+
+IPC service device tree node configuration example:
+
+.. code-block:: dts
+
+	chosen {
+		zephyr,ipc_shell = &ipc0;
+	};
+
+
+Limitations
+============
+
+Some shell features are not supported on the remote shell client:
+
+* Bypass mode is not supported on the remote shell client.
+* Select mode is not supported on the remote shell client.
+
+IPC communication assumes same endianness and alignment of the data on both sides. It has been
+tested on the following core pairs:
+
+* Cortex-M33 (host) and Cortex-M33 (client)
+* Cortex-M33 (host) and RISC-V 32 (client)
 
 Usage
 *****

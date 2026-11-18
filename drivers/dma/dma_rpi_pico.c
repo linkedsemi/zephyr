@@ -10,7 +10,11 @@
 #include <zephyr/drivers/reset.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
-#include <zephyr/dt-bindings/dma/rpi_pico_dma.h>
+#if defined(CONFIG_SOC_SERIES_RP2040)
+#include <zephyr/dt-bindings/dma/rpi-pico-dma-rp2040.h>
+#elif defined(CONFIG_SOC_SERIES_RP2350)
+#include <zephyr/dt-bindings/dma/rpi-pico-dma-rp2350.h>
+#endif
 
 #include <hardware/dma.h>
 
@@ -39,6 +43,7 @@ struct dma_rpi_pico_channel {
 	void *source_address;
 	void *dest_address;
 	size_t block_size;
+	uint32_t source_data_size;
 };
 
 struct dma_rpi_pico_data {
@@ -193,6 +198,7 @@ static int dma_rpi_pico_config(const struct device *dev, uint32_t channel,
 
 	data->channels[channel].callback = dma_cfg->dma_callback;
 	data->channels[channel].user_data = dma_cfg->user_data;
+	data->channels[channel].source_data_size = dma_cfg->source_data_size;
 	data->channels[channel].direction = dma_cfg->channel_direction;
 
 	return 0;
@@ -213,11 +219,15 @@ static int dma_rpi_pico_reload(const struct device *dev, uint32_t ch, uint32_t s
 		return -EBUSY;
 	}
 
+	dma_irqn_acknowledge_channel(dma_rpi_pico_channel_irq(dev, ch), ch);
+	dma_irqn_set_channel_enabled(dma_rpi_pico_channel_irq(dev, ch), ch, true);
+
 	data->channels[ch].source_address = (void *)src;
 	data->channels[ch].dest_address = (void *)dst;
 	data->channels[ch].block_size = size;
 	dma_channel_configure(ch, &data->channels[ch].config, data->channels[ch].dest_address,
-			      data->channels[ch].source_address, data->channels[ch].block_size,
+			      data->channels[ch].source_address,
+			      data->channels[ch].block_size / data->channels[ch].source_data_size,
 			      true);
 
 	return 0;
@@ -233,11 +243,16 @@ static int dma_rpi_pico_start(const struct device *dev, uint32_t ch)
 		return -EINVAL;
 	}
 
+	if (dma_channel_is_busy(ch)) {
+		return 0;
+	}
+
 	dma_irqn_acknowledge_channel(dma_rpi_pico_channel_irq(dev, ch), ch);
 	dma_irqn_set_channel_enabled(dma_rpi_pico_channel_irq(dev, ch), ch, true);
 
 	dma_channel_configure(ch, &data->channels[ch].config, data->channels[ch].dest_address,
-			      data->channels[ch].source_address, data->channels[ch].block_size,
+			      data->channels[ch].source_address,
+			      data->channels[ch].block_size / data->channels[ch].source_data_size,
 			      true);
 
 	return 0;
@@ -288,8 +303,7 @@ static bool dma_rpi_pico_api_chan_filter(const struct device *dev, int ch, void 
 	uint32_t filter;
 
 	if (!filter_param) {
-		LOG_ERR("filter_param must not be NULL");
-		return false;
+		return true;
 	}
 
 	filter = *((uint32_t *)filter_param);
@@ -312,9 +326,10 @@ static void dma_rpi_pico_isr(const struct device *dev)
 {
 	const struct dma_rpi_pico_config *cfg = dev->config;
 	struct dma_rpi_pico_data *data = dev->data;
-	int err = 0;
 
 	for (uint32_t i = 0; i < cfg->channels; i++) {
+		int err = 0;
+
 		if (!dma_irqn_get_channel_status(dma_rpi_pico_channel_irq(dev, i), i)) {
 			continue;
 		}
@@ -333,7 +348,7 @@ static void dma_rpi_pico_isr(const struct device *dev)
 	}
 }
 
-static const struct dma_driver_api dma_rpi_pico_driver_api = {
+static DEVICE_API(dma, dma_rpi_pico_driver_api) = {
 	.config = dma_rpi_pico_config,
 	.reload = dma_rpi_pico_reload,
 	.start = dma_rpi_pico_start,
@@ -377,7 +392,7 @@ static const struct dma_driver_api dma_rpi_pico_driver_api = {
 		.channels = dma_rpi_pico##inst##_channels,                                         \
 	};                                                                                         \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(inst, &dma_rpi_pico_init, NULL, &dma_rpi_pico##inst##_data,          \
+	DEVICE_DT_INST_DEFINE(inst, dma_rpi_pico_init, NULL, &dma_rpi_pico##inst##_data,           \
 			      &dma_rpi_pico##inst##_config, POST_KERNEL, CONFIG_DMA_INIT_PRIORITY, \
 			      &dma_rpi_pico_driver_api);
 

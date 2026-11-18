@@ -5,14 +5,6 @@ if SHIELD_ADAFRUIT_2_8_TFT_TOUCH_V2 || SHIELD_ADAFRUIT_2_8_TFT_TOUCH_V2_NANO
 
 if DISPLAY
 
-if INPUT
-
-# NOTE: Enable if IRQ line is available (requires to solder jumper)
-config INPUT_FT5336_INTERRUPT
-	default n
-
-endif # INPUT
-
 if LVGL
 
 config LV_Z_VDB_SIZE
@@ -21,8 +13,8 @@ config LV_Z_VDB_SIZE
 config LV_Z_BITS_PER_PIXEL
 	default 24
 
-choice LV_COLOR_DEPTH
-	default LV_COLOR_DEPTH_32
+choice LV_Z_COLOR_FORMAT
+	default LV_Z_COLOR_FORMAT_XRGB8888
 endchoice
 
 config INPUT
@@ -31,12 +23,5 @@ config INPUT
 endif # LVGL
 
 endif # DISPLAY
-
-if DISK_DRIVERS
-
-config DISK_DRIVER_SDMMC
-	default y
-
-endif # DISK_DRIVERS
 
 endif # SHIELD_ADAFRUIT_2_8_TFT_TOUCH_V2

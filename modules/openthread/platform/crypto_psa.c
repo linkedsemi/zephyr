@@ -9,6 +9,7 @@
 #include <psa/crypto.h>
 
 #include <zephyr/sys/__assert.h>
+#include <zephyr/sys/util.h>
 
 #if !defined(CONFIG_BUILD_WITH_TFM) && defined(CONFIG_OPENTHREAD_CRYPTO_PSA)
 #include <zephyr/settings/settings.h>
@@ -44,6 +45,8 @@ static psa_key_type_t toPsaKeyType(otCryptoKeyType aType)
 		return PSA_KEY_TYPE_HMAC;
 	case OT_CRYPTO_KEY_TYPE_ECDSA:
 		return PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1);
+	case OT_CRYPTO_KEY_TYPE_DERIVE:
+		return PSA_KEY_TYPE_DERIVE;
 	default:
 		return PSA_KEY_TYPE_NONE;
 	}
@@ -58,6 +61,8 @@ static psa_algorithm_t toPsaAlgorithm(otCryptoKeyAlgorithm aAlgorithm)
 		return PSA_ALG_HMAC(PSA_ALG_SHA_256);
 	case OT_CRYPTO_KEY_ALG_ECDSA:
 		return PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_256);
+	case OT_CRYPTO_KEY_ALG_HKDF_SHA256:
+		return PSA_ALG_HKDF(PSA_ALG_SHA_256);
 	default:
 		/*
 		 * There is currently no constant like PSA_ALG_NONE, but 0 is used
@@ -91,6 +96,10 @@ static psa_key_usage_t toPsaKeyUsage(int aUsage)
 		usage |= PSA_KEY_USAGE_VERIFY_HASH;
 	}
 
+	if (aUsage & OT_CRYPTO_KEY_USAGE_DERIVE) {
+		usage |= PSA_KEY_USAGE_DERIVE;
+	}
+
 	return usage;
 }
 
@@ -99,7 +108,7 @@ static bool checkKeyUsage(int aUsage)
 	/* Check if only supported flags have been passed */
 	int supported_flags = OT_CRYPTO_KEY_USAGE_EXPORT | OT_CRYPTO_KEY_USAGE_ENCRYPT |
 			      OT_CRYPTO_KEY_USAGE_DECRYPT | OT_CRYPTO_KEY_USAGE_SIGN_HASH |
-			      OT_CRYPTO_KEY_USAGE_VERIFY_HASH;
+			      OT_CRYPTO_KEY_USAGE_VERIFY_HASH | OT_CRYPTO_KEY_USAGE_DERIVE;
 
 	return (aUsage & ~supported_flags) == 0;
 }
@@ -123,6 +132,44 @@ void otPlatCryptoInit(void)
 	__ASSERT_EVAL((void)settings_subsys_init(), int err = settings_subsys_init(), !err,
 		      "Failed to initialize settings");
 #endif
+}
+
+static otError import_literal_aes_key(psa_key_id_t *key_ref, const otCryptoKey *key)
+{
+	psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+	psa_status_t status;
+
+	if (key->mKey == NULL) {
+		return OT_ERROR_INVALID_ARGS;
+	}
+
+	psa_set_key_type(&attributes, PSA_KEY_TYPE_AES);
+	psa_set_key_algorithm(&attributes, PSA_ALG_ECB_NO_PADDING);
+	psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_ENCRYPT);
+	psa_set_key_lifetime(&attributes, PSA_KEY_LIFETIME_VOLATILE);
+
+	status = psa_import_key(&attributes, key->mKey, key->mKeyLength, key_ref);
+	psa_reset_key_attributes(&attributes);
+
+	return psaToOtError(status);
+}
+
+static otError destroy_literal_key(psa_key_id_t *key_ref)
+{
+	psa_status_t status;
+
+	if (*key_ref == PSA_KEY_ID_NULL) {
+		return OT_ERROR_NONE;
+	}
+
+	status = psa_destroy_key(*key_ref);
+	if (status != PSA_SUCCESS) {
+		return psaToOtError(status);
+	}
+
+	*key_ref = PSA_KEY_ID_NULL;
+
+	return OT_ERROR_NONE;
 }
 
 otError otPlatCryptoImportKey(otCryptoKeyRef *aKeyRef, otCryptoKeyType aKeyType,
@@ -226,7 +273,7 @@ otError otPlatCryptoHmacSha256Init(otCryptoContext *aContext)
 	}
 
 	operation = aContext->mContext;
-	*operation = psa_mac_operation_init();
+	memset(operation, 0, sizeof(*operation));
 
 	return OT_ERROR_NONE;
 }
@@ -287,6 +334,143 @@ otError otPlatCryptoHmacSha256Finish(otCryptoContext *aContext, uint8_t *aBuf, s
 	return psaToOtError(psa_mac_sign_finish(operation, aBuf, aBufLength, &mac_length));
 }
 
+
+otError otPlatCryptoHkdfInit(otCryptoContext *aContext)
+{
+	psa_key_derivation_operation_t *operation;
+
+	if (!checkContext(aContext, sizeof(psa_key_derivation_operation_t))) {
+		return OT_ERROR_INVALID_ARGS;
+	}
+
+	operation = aContext->mContext;
+
+	memset(operation, 0, sizeof(psa_key_derivation_operation_t));
+
+	return psaToOtError(psa_key_derivation_setup(operation, PSA_ALG_HKDF(PSA_ALG_SHA_256)));
+}
+
+otError otPlatCryptoHkdfExtract(otCryptoContext *aContext,
+				const uint8_t *aSalt,
+				uint16_t aSaltLength,
+				const otCryptoKey *aInputKey)
+{
+	otError error = OT_ERROR_NONE;
+	psa_status_t status = PSA_SUCCESS;
+	psa_key_derivation_operation_t *operation = NULL;
+	otCryptoKeyRef key_ref = PSA_KEY_ID_NULL;
+	psa_key_attributes_t attributes = PSA_KEY_ATTRIBUTES_INIT;
+	psa_algorithm_t key_alg = PSA_ALG_NONE;
+	size_t key_length = 0;
+	const size_t key_buffer_size = 16;
+	uint8_t key_buffer[key_buffer_size];
+
+	if (!checkContext(aContext, sizeof(psa_key_derivation_operation_t)) ||
+	    (aInputKey == NULL) || (aSalt == NULL) || (aSaltLength == 0)) {
+		return OT_ERROR_INVALID_ARGS;
+	}
+
+	operation = aContext->mContext;
+
+	status = psa_key_derivation_input_bytes(operation, PSA_KEY_DERIVATION_INPUT_SALT, aSalt,
+						aSaltLength);
+	if (status != PSA_SUCCESS) {
+		error = psaToOtError(status);
+		goto exit;
+	}
+
+	status = psa_get_key_attributes(aInputKey->mKeyRef, &attributes);
+	if (status != PSA_SUCCESS) {
+		error = psaToOtError(status);
+		goto exit;
+	}
+
+	key_alg = psa_get_key_algorithm(&attributes);
+
+	/* The PSA API enforces a policy that restricts each key to a single algorithm.
+	 * If the key is already HKDF-SHA256, we can use it directly.
+	 * Otherwise, export and re-import it as a volatile HKDF key.
+	 */
+	if (key_alg != toPsaAlgorithm(OT_CRYPTO_KEY_ALG_HKDF_SHA256)) {
+		error = otPlatCryptoExportKey(aInputKey->mKeyRef, key_buffer, sizeof(key_buffer),
+					      &key_length);
+		if (error != OT_ERROR_NONE) {
+			goto exit;
+		}
+		error = otPlatCryptoImportKey(&key_ref, OT_CRYPTO_KEY_TYPE_DERIVE,
+					      OT_CRYPTO_KEY_ALG_HKDF_SHA256,
+					      OT_CRYPTO_KEY_USAGE_DERIVE,
+					      OT_CRYPTO_KEY_STORAGE_VOLATILE,
+					      key_buffer, key_length);
+		if (error != OT_ERROR_NONE) {
+			goto exit;
+		}
+
+		status = psa_key_derivation_input_key(operation, PSA_KEY_DERIVATION_INPUT_SECRET,
+						      key_ref);
+		if (status != PSA_SUCCESS) {
+			error = psaToOtError(status);
+			goto exit;
+		}
+	} else {
+		status = psa_key_derivation_input_key(operation, PSA_KEY_DERIVATION_INPUT_SECRET,
+						      aInputKey->mKeyRef);
+		if (status != PSA_SUCCESS) {
+			error = psaToOtError(status);
+			goto exit;
+		}
+	}
+
+exit:
+	psa_reset_key_attributes(&attributes);
+	otPlatCryptoDestroyKey(key_ref);
+
+	return error;
+}
+
+otError otPlatCryptoHkdfExpand(otCryptoContext *aContext,
+				const uint8_t *aInfo,
+				uint16_t aInfoLength,
+				uint8_t *aOutputKey,
+				uint16_t aOutputKeyLength)
+{
+	psa_status_t status = PSA_SUCCESS;
+	psa_key_derivation_operation_t *operation;
+
+	if (!checkContext(aContext, sizeof(psa_key_derivation_operation_t)) ||
+	    (aOutputKey == NULL) || (aOutputKeyLength == 0)) {
+		return OT_ERROR_INVALID_ARGS;
+	}
+
+	operation = aContext->mContext;
+
+	status = psa_key_derivation_input_bytes(operation, PSA_KEY_DERIVATION_INPUT_INFO,
+						aInfo, aInfoLength);
+	if (status != PSA_SUCCESS) {
+		return psaToOtError(status);
+	}
+
+	status = psa_key_derivation_output_bytes(operation, aOutputKey, aOutputKeyLength);
+	if (status != PSA_SUCCESS) {
+		return psaToOtError(status);
+	}
+
+	return OT_ERROR_NONE;
+}
+
+otError otPlatCryptoHkdfDeinit(otCryptoContext *aContext)
+{
+	psa_key_derivation_operation_t *operation;
+
+	if (!checkContext(aContext, sizeof(psa_key_derivation_operation_t))) {
+		return OT_ERROR_INVALID_ARGS;
+	}
+
+	operation = aContext->mContext;
+
+	return psaToOtError(psa_key_derivation_abort(operation));
+}
+
 otError otPlatCryptoAesInit(otCryptoContext *aContext)
 {
 	psa_key_id_t *key_ref;
@@ -304,15 +488,28 @@ otError otPlatCryptoAesInit(otCryptoContext *aContext)
 otError otPlatCryptoAesSetKey(otCryptoContext *aContext, const otCryptoKey *aKey)
 {
 	psa_key_id_t *key_ref;
+	otError error;
 
 	if (aKey == NULL || !checkContext(aContext, sizeof(psa_key_id_t))) {
 		return OT_ERROR_INVALID_ARGS;
 	}
 
 	key_ref = aContext->mContext;
-	*key_ref = aKey->mKeyRef;
 
-	return OT_ERROR_NONE;
+	if (IS_ENABLED(CONFIG_OPENTHREAD_PLATFORM_KEY_REF)) {
+		*key_ref = aKey->mKeyRef;
+		return OT_ERROR_NONE;
+	}
+
+	/* Literal key: the context only holds a key ID, so import the key
+	 * material as a volatile PSA key owned by this context.
+	 */
+	error = destroy_literal_key(key_ref);
+	if (error != OT_ERROR_NONE) {
+		return error;
+	}
+
+	return import_literal_aes_key(key_ref, aKey);
 }
 
 otError otPlatCryptoAesEncrypt(otCryptoContext *aContext, const uint8_t *aInput, uint8_t *aOutput)
@@ -335,6 +532,14 @@ otError otPlatCryptoAesEncrypt(otCryptoContext *aContext, const uint8_t *aInput,
 
 otError otPlatCryptoAesFree(otCryptoContext *aContext)
 {
+	if (!checkContext(aContext, sizeof(psa_key_id_t))) {
+		return OT_ERROR_INVALID_ARGS;
+	}
+
+	if (!IS_ENABLED(CONFIG_OPENTHREAD_PLATFORM_KEY_REF)) {
+		return destroy_literal_key(aContext->mContext);
+	}
+
 	return OT_ERROR_NONE;
 }
 
@@ -347,7 +552,7 @@ otError otPlatCryptoSha256Init(otCryptoContext *aContext)
 	}
 
 	operation = aContext->mContext;
-	*operation = psa_hash_operation_init();
+	memset(operation, 0, sizeof(*operation));
 
 	return OT_ERROR_NONE;
 }

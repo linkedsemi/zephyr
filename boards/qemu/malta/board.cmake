@@ -2,12 +2,11 @@
 
 set(SUPPORTED_EMU_PLATFORMS qemu)
 
-set(QEMU_CPU_TYPE_${ARCH} 24Kc)
+set(QEMU_CPU_TYPE 24Kc)
 
-set(QEMU_FLAGS_${ARCH}
+set(QEMU_BOARD_FLAGS
   -machine malta
-  -nographic
   -serial null
   -serial null
   )
-board_set_debugger_ifnset(qemu)
+include(${ZEPHYR_BASE}/boards/common/qemu.board.cmake)

@@ -11,8 +11,9 @@
 LOG_MODULE_REGISTER(dmic_sample);
 
 #define MAX_SAMPLE_RATE  16000
-#define SAMPLE_BIT_WIDTH 16
-#define BYTES_PER_SAMPLE sizeof(int16_t)
+#define SAMPLE_BIT_WIDTH CONFIG_SAMPLE_BIT_WIDTH
+#define PDM_CTL_IDX      CONFIG_SAMPLE_HW_CHANNEL_INDEX
+#define BYTES_PER_SAMPLE SAMPLE_BIT_WIDTH / 8
 /* Milliseconds to wait for a block to be read. */
 #define READ_TIMEOUT     1000
 
@@ -26,7 +27,19 @@ LOG_MODULE_REGISTER(dmic_sample);
  */
 #define MAX_BLOCK_SIZE   BLOCK_SIZE(MAX_SAMPLE_RATE, 2)
 #define BLOCK_COUNT      4
-K_MEM_SLAB_DEFINE_STATIC(mem_slab, MAX_BLOCK_SIZE, BLOCK_COUNT, 4);
+
+/* Cache-line align the blocks so cache maintenance on one block cannot
+ * corrupt a neighbouring block
+ */
+#ifdef CONFIG_DCACHE_LINE_SIZE
+#define SLAB_ALIGN MAX(4, CONFIG_DCACHE_LINE_SIZE)
+#else
+#define SLAB_ALIGN 4
+#endif
+
+K_MEM_SLAB_DEFINE_STATIC(mem_slab, MAX_BLOCK_SIZE, BLOCK_COUNT, SLAB_ALIGN);
+
+static uint8_t capture_storage[BLOCK_COUNT * MAX_BLOCK_SIZE * 2];
 
 static int do_pdm_transfer(const struct device *dmic_dev,
 			   struct dmic_cfg *cfg,
@@ -51,7 +64,7 @@ static int do_pdm_transfer(const struct device *dmic_dev,
 
 	for (int i = 0; i < block_count; ++i) {
 		void *buffer;
-		uint32_t size;
+		size_t size;
 
 		ret = dmic_read(dmic_dev, 0, &buffer, &size, READ_TIMEOUT);
 		if (ret < 0) {
@@ -61,6 +74,11 @@ static int do_pdm_transfer(const struct device *dmic_dev,
 
 		LOG_INF("%d - got buffer %p of %u bytes", i, buffer, size);
 
+		if (size <= sizeof(capture_storage)) {
+			memcpy(capture_storage + i * size, buffer, size);
+		} else {
+			LOG_WRN_ONCE("capture_storage overflow");
+		}
 		k_mem_slab_free(&mem_slab, buffer);
 	}
 
@@ -75,7 +93,7 @@ static int do_pdm_transfer(const struct device *dmic_dev,
 
 int main(void)
 {
-	const struct device *const dmic_dev = DEVICE_DT_GET(DT_NODELABEL(dmic_dev));
+	const struct device *const dmic_dev = DEVICE_DT_GET(DT_ALIAS(dmic0));
 	int ret;
 
 	LOG_INF("DMIC sample");
@@ -108,7 +126,7 @@ int main(void)
 
 	cfg.channel.req_num_chan = 1;
 	cfg.channel.req_chan_map_lo =
-		dmic_build_channel_map(0, 0, PDM_CHAN_LEFT);
+		dmic_build_channel_map(0, PDM_CTL_IDX, PDM_CHAN_LEFT);
 	cfg.streams[0].pcm_rate = MAX_SAMPLE_RATE;
 	cfg.streams[0].block_size =
 		BLOCK_SIZE(cfg.streams[0].pcm_rate, cfg.channel.req_num_chan);
@@ -120,8 +138,8 @@ int main(void)
 
 	cfg.channel.req_num_chan = 2;
 	cfg.channel.req_chan_map_lo =
-		dmic_build_channel_map(0, 0, PDM_CHAN_LEFT) |
-		dmic_build_channel_map(1, 0, PDM_CHAN_RIGHT);
+		dmic_build_channel_map(0, PDM_CTL_IDX, PDM_CHAN_LEFT) |
+		dmic_build_channel_map(1, PDM_CTL_IDX, PDM_CHAN_RIGHT);
 	cfg.streams[0].pcm_rate = MAX_SAMPLE_RATE;
 	cfg.streams[0].block_size =
 		BLOCK_SIZE(cfg.streams[0].pcm_rate, cfg.channel.req_num_chan);

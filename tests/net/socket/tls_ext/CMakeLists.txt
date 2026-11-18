@@ -1,12 +1,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(tls_socket_api_extension)
 
 set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)
 
-if (${CONFIG_TLS_CREDENTIALS})
+if(${CONFIG_TLS_CREDENTIALS})
   generate_inc_file_for_target(
     app
     ${ZEPHYR_BASE}/samples/net/sockets/echo_server/src/ca.der

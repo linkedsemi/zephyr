@@ -9,7 +9,14 @@
 
 #include <zephyr/dt-bindings/pinctrl/stm32-pinctrl-common.h>
 
-/* Adapted from Linux: include/dt-bindings/pinctrl/stm32-pinfunc.h */
+/**
+ * Originally derived from Linux: include/dt-bindings/pinctrl/stm32-pinfunc.h
+ *
+ * For compatibility with Linux, the STM32_PINMUX macro and `pinmux` property
+ * have been retained. However, the resulting value is not saved as-is inside
+ * the image: during compilation, information is extracted from `pinmux` and
+ * saved in a custom format (c.f. `soc/st/stm32/common/pinctrl_soc.h`)
+ */
 
 /**
  * @brief Pin modes
@@ -55,62 +62,13 @@
  * - line [ 5 : 8 ]
  * - port [ 9 : 13 ]
  *
- * @param port Port ('A'..'P')
+ * @param port Port ('A'..'Q', 'Z')
  * @param line Pin (0..15)
- * @param mode Mode (ANALOG, GPIO_IN, ALTERNATE).
+ * @param mode Mode (ANALOG, GPIO, ALTERNATE).
  */
 #define STM32_PINMUX(port, line, mode)					       \
 		(((((port) - 'A') & STM32_PORT_MASK) << STM32_PORT_SHIFT) |    \
 		(((line) & STM32_LINE_MASK) << STM32_LINE_SHIFT) |	       \
 		(((STM32_ ## mode) & STM32_MODE_MASK) << STM32_MODE_SHIFT))
-
-/**
- * @brief PIN configuration bitfield
- *
- * Pin configuration is coded with the following
- * fields
- *    Alternate Functions [ 0 : 3 ]
- *    GPIO Mode           [ 4 : 5 ]
- *    GPIO Output type    [ 6 ]
- *    GPIO Speed          [ 7 : 8 ]
- *    GPIO PUPD config    [ 9 : 10 ]
- *    GPIO Output data     [ 11 ]
- *
- */
-
-/* GPIO Mode */
-#define STM32_MODER_INPUT_MODE		(0x0 << STM32_MODER_SHIFT)
-#define STM32_MODER_OUTPUT_MODE		(0x1 << STM32_MODER_SHIFT)
-#define STM32_MODER_ALT_MODE		(0x2 << STM32_MODER_SHIFT)
-#define STM32_MODER_ANALOG_MODE		(0x3 << STM32_MODER_SHIFT)
-#define STM32_MODER_MASK	 	0x3
-#define STM32_MODER_SHIFT		4
-
-/* GPIO Output type */
-#define STM32_OTYPER_PUSH_PULL		(0x0 << STM32_OTYPER_SHIFT)
-#define STM32_OTYPER_OPEN_DRAIN		(0x1 << STM32_OTYPER_SHIFT)
-#define STM32_OTYPER_MASK		0x1
-#define STM32_OTYPER_SHIFT		6
-
-/* GPIO speed */
-#define STM32_OSPEEDR_LOW_SPEED		(0x0 << STM32_OSPEEDR_SHIFT)
-#define STM32_OSPEEDR_MEDIUM_SPEED	(0x1 << STM32_OSPEEDR_SHIFT)
-#define STM32_OSPEEDR_HIGH_SPEED	(0x2 << STM32_OSPEEDR_SHIFT)
-#define STM32_OSPEEDR_VERY_HIGH_SPEED	(0x3 << STM32_OSPEEDR_SHIFT)
-#define STM32_OSPEEDR_MASK		0x3
-#define STM32_OSPEEDR_SHIFT		7
-
-/* GPIO High impedance/Pull-up/pull-down */
-#define STM32_PUPDR_NO_PULL		(0x0 << STM32_PUPDR_SHIFT)
-#define STM32_PUPDR_PULL_UP		(0x1 << STM32_PUPDR_SHIFT)
-#define STM32_PUPDR_PULL_DOWN		(0x2 << STM32_PUPDR_SHIFT)
-#define STM32_PUPDR_MASK		0x3
-#define STM32_PUPDR_SHIFT		9
-
-/* GPIO plain output value */
-#define STM32_ODR_0			(0x0 << STM32_ODR_SHIFT)
-#define STM32_ODR_1			(0x1 << STM32_ODR_SHIFT)
-#define STM32_ODR_MASK			0x1
-#define STM32_ODR_SHIFT			11
 
 #endif	/* ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_STM32_PINCTRL_H_ */

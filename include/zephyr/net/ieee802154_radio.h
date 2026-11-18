@@ -485,40 +485,14 @@ enum ieee802154_hw_caps {
 	/** TX at specified time supported */
 	IEEE802154_HW_TXTIME = BIT(8),
 
-	/** TX directly from sleep supported
-	 *
-	 *  @note This HW capability does not conform to the requirements
-	 *  specified in #61227 as it closely couples the driver to OpenThread's
-	 *  capability and device model which is different from Zephyr's:
-	 *   - "Sleeping" is a well defined term in Zephyr related to internal
-	 *     power and thread management and different from "RX off" as
-	 *     defined in OT.
-	 *   - Currently all OT-capable drivers have the "sleep to TX"
-	 *     capability anyway plus we expect future drivers to implement it
-	 *     ootb as well, so no information is actually conveyed by this
-	 *     capability.
-	 *   - The `start()`/`stop()` API of a net device controls the
-	 *     interface's operational state. Drivers MUST respond with
-	 *     -ENETDOWN when calling `tx()` while their operational state is
-	 *     "DOWN", only devices in the "UP" state MAY transmit packets (RFC
-	 *     2863).
-	 *   - A migration path has been defined in #63670 for actual removal of
-	 *     this capability in favor of a standard compliant
-	 *     `configure(rx_on/rx_off)` call, see there for details.
-	 *
-	 * @deprecated Drivers and L2 SHALL not introduce additional references
-	 * to this capability and remove existing ones as outlined in #63670.
-	 */
-	IEEE802154_HW_SLEEP_TO_TX = BIT(9),
-
 	/** Timed RX window scheduling supported */
-	IEEE802154_HW_RXTIME = BIT(10),
+	IEEE802154_HW_RXTIME = BIT(9),
 
 	/** TX security supported (key management, encryption and authentication) */
-	IEEE802154_HW_TX_SEC = BIT(11),
+	IEEE802154_HW_TX_SEC = BIT(10),
 
 	/** RxOnWhenIdle handling supported */
-	IEEE802154_RX_ON_WHEN_IDLE = BIT(12),
+	IEEE802154_RX_ON_WHEN_IDLE = BIT(11),
 
 	/** Support for timed transmissions on selective channel.
 	 *
@@ -531,7 +505,7 @@ enum ieee802154_hw_caps {
 	 *
 	 *  Please refer to the `ieee802154_radio_api::tx` documentation for details.
 	 */
-	IEEE802154_HW_SELECTIVE_TXCHANNEL = BIT(13),
+	IEEE802154_HW_SELECTIVE_TXCHANNEL = BIT(12),
 
 	/* Note: Update also IEEE802154_HW_CAPS_BITS_COMMON_COUNT when changing
 	 * the ieee802154_hw_caps type.
@@ -539,7 +513,7 @@ enum ieee802154_hw_caps {
 };
 
 /** @brief Number of bits used by ieee802154_hw_caps type. */
-#define IEEE802154_HW_CAPS_BITS_COMMON_COUNT (14)
+#define IEEE802154_HW_CAPS_BITS_COMMON_COUNT (13)
 
 /** @brief This and higher values are specific to the protocol- or driver-specific extensions. */
 #define IEEE802154_HW_CAPS_BITS_PRIV_START IEEE802154_HW_CAPS_BITS_COMMON_COUNT
@@ -577,6 +551,10 @@ enum ieee802154_rx_fail_reason {
 	IEEE802154_RX_FAIL_INVALID_FCS,
 	/** Address did not match */
 	IEEE802154_RX_FAIL_ADDR_FILTERED,
+	/** No buffer available */
+	IEEE802154_RX_FAIL_NO_BUFS,
+	/** Aborted */
+	IEEE802154_RX_FAIL_ABORT,
 	/** General reason */
 	IEEE802154_RX_FAIL_OTHER
 };
@@ -1113,6 +1091,13 @@ enum ieee802154_config_type {
 	 */
 	IEEE802154_CONFIG_RX_ON_WHEN_IDLE,
 
+	/** The maximum number of backoffs the CSMA-CA algorithm will attempt before declaring a
+	 * channel access failure.
+	 *
+	 * @note requires IEEE802154_HW_CSMA capability.
+	 */
+	IEEE802154_CONFIG_CSMA_CA_BACKOFFS,
+
 	/** Number of types defined in ieee802154_config_type. */
 	IEEE802154_CONFIG_COMMON_COUNT,
 
@@ -1164,6 +1149,9 @@ struct ieee802154_config {
 
 		/** see @ref IEEE802154_CONFIG_EVENT_HANDLER */
 		ieee802154_event_cb_t event_handler;
+
+		/** see @ref IEEE802154_CONFIG_CSMA_CA_BACKOFFS */
+		uint8_t csma_ca_backoffs;
 
 		/**
 		 * @brief see @ref IEEE802154_CONFIG_MAC_KEYS
@@ -1463,7 +1451,7 @@ static inline int ieee802154_attr_get_channel_page_and_range(
  * The following rules apply:
  * * An interface is considered "UP" when it is able to transmit and receive
  *   packets, "DOWN" otherwise (see precise definitions of the corresponding
- *   ifOperStatus values in RFC 2863, section 3.1.14, @ref net_if_oper_state and
+ *   ifOperStatus values in @rfc{2863,section-3.1.14}, @ref net_if_oper_state and
  *   the `continuous_carrier()` exception below). A device that has its receiver
  *   temporarily disabled during "UP" state due to an active receive window
  *   configuration is still considered "UP".
@@ -1491,14 +1479,14 @@ static inline int ieee802154_attr_get_channel_page_and_range(
  * * The driver SHALL NOT change the interface's "UP"/"DOWN" state on its own.
  *   Initially, the interface SHALL be in the "DOWN" state.
  * * Drivers that implement the optional `continuous_carrier()` operation will
- *   be considered to be in the RFC 2863 "testing" ifOperStatus state if that
+ *   be considered to be in the @rfc{2863} "testing" ifOperStatus state if that
  *   operation returns zero. This state is active until either `start()` or
  *   `stop()` is called. If `continuous_carrier()` returns a non-zero value then
  *   the previous state is assumed by upper layers.
  * * If calls to `start()`/`stop()` return any other value than zero or
  *   `-EALREADY`, upper layers will consider the interface to be in a
- *   "lowerLayerDown" state as defined in RFC 2863.
- * * The RFC 2863 "dormant", "unknown" and "notPresent" ifOperStatus states are
+ *   "lowerLayerDown" state as defined in @rfc{2863}.
+ * * The @rfc{2863} "dormant", "unknown" and "notPresent" ifOperStatus states are
  *   currently not supported. The "lowerLevelUp" state.
  * * The `ed_scan()`, `cca()` and `tx()` operations SHALL only be supported in
  *   the "UP" state and return `-ENETDOWN` in any other state. See the
@@ -1563,8 +1551,6 @@ struct ieee802154_radio_api {
 	 * @param channel the number of the channel to be set in CPU byte order
 	 *
 	 * @retval 0 channel was successfully set
-	 * @retval -EALREADY The previous channel is the same as the requested
-	 * channel.
 	 * @retval -EINVAL The given channel is not within the range of valid
 	 * channels of the driver's current channel page, see the
 	 * IEEE802154_ATTR_PHY_SUPPORTED_CHANNEL_RANGES driver attribute.
@@ -1765,6 +1751,7 @@ struct ieee802154_radio_api {
 	 */
 	int (*stop)(const struct device *dev);
 
+#if defined(CONFIG_IEEE802154_CARRIER_FUNCTIONS)
 	/**
 	 * @brief Start continuous carrier wave transmission.
 	 *
@@ -1785,6 +1772,30 @@ struct ieee802154_radio_api {
 	 * @retval -EIO not started
 	 */
 	int (*continuous_carrier)(const struct device *dev);
+
+	/**
+	 * @brief Start modulated carrier wave transmission.
+	 *
+	 * @details When the radio is emitting modulated carrier signals, it
+	 * blocks all transmissions on the selected channel.
+	 * This function is to be called only during radio
+	 * tests. Do not use it during normal device operation.
+	 *
+	 * @note Implementations MAY **sleep** and will usually NOT be
+	 * **isr-ok**. MAY be called in any interface state once the driver is
+	 * fully initialized ("ready").
+	 *
+	 * @param dev pointer to IEEE 802.15.4 driver device
+	 * @param data Pointer to a buffer to modulate the carrier with.
+	 * The first byte is the data length.
+	 *
+	 * @retval 0 modulated carrier wave transmission started
+	 * @retval -EALREADY The driver was already in "TESTING" state and
+	 * emitting a modulated carrier.
+	 * @retval -EIO not started
+	 */
+	int (*modulated_carrier)(const struct device *dev, const uint8_t *data);
+#endif /* CONFIG_IEEE802154_CARRIER_FUNCTIONS */
 
 	/**
 	 * @brief Set or update driver configuration.

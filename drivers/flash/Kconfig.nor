@@ -22,6 +22,8 @@ choice SPI_NOR_SFDP
 
 config SPI_NOR_SFDP_MINIMAL
 	bool "Fixed flash configuration"
+	depends on $(dt_compat_all_has_prop,$(DT_COMPAT_JEDEC_SPI_NOR),size)
+	depends on $(dt_compat_all_has_prop,$(DT_COMPAT_JEDEC_SPI_NOR),jedec-id)
 	help
 	  Synthesize a minimal configuration assuming 256 By page size (or as
 	  set by the page-size devicetree property) and
@@ -30,6 +32,9 @@ config SPI_NOR_SFDP_MINIMAL
 
 config SPI_NOR_SFDP_DEVICETREE
 	bool "Basic Flash Parameters from devicetree node"
+	depends on $(dt_compat_all_has_prop,$(DT_COMPAT_JEDEC_SPI_NOR),size)
+	depends on $(dt_compat_all_has_prop,$(DT_COMPAT_JEDEC_SPI_NOR),jedec-id)
+	depends on $(dt_compat_all_has_prop,$(DT_COMPAT_JEDEC_SPI_NOR),sfdp-bfp)
 	help
 	  The JESD216 Basic Flash Parameters table must be provided in the
 	  sfdp-bfp property in devicetree.  The size and jedec-id properties are
@@ -52,12 +57,6 @@ config SPI_NOR_INIT_PRIORITY
 	  Device is connected to SPI bus, it has to
 	  be initialized after SPI driver.
 
-config SPI_NOR_CS_WAIT_DELAY
-	int "Delay time in us"
-	default 0
-	help
-	  This is the wait delay (in us) to allow for CS switching to take effect
-
 config SPI_NOR_SLEEP_WHILE_WAITING_UNTIL_READY
 	bool "Sleep while waiting for flash operations to complete"
 	default y
@@ -67,6 +66,15 @@ config SPI_NOR_SLEEP_WHILE_WAITING_UNTIL_READY
 	  status register for slow operations. Disabling this option can
 	  result in significant flash savings if this driver is the only user
 	  of "k_sleep". This can be the case when building as a bootloader.
+
+config SPI_NOR_SLEEP_ERASE_MS
+	int "Delay between polls while waiting for an erase operation in ms"
+	default 50
+	depends on SPI_NOR_SLEEP_WHILE_WAITING_UNTIL_READY
+	help
+	  The delay between polling while waiting for the flash to finish
+	  an erase operation.
+
 
 config SPI_NOR_FLASH_LAYOUT_PAGE_SIZE
 	int "Page size to use for FLASH_LAYOUT feature"

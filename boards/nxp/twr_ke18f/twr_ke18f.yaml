@@ -5,7 +5,6 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 32
 flash: 512
 supported:
@@ -14,8 +13,11 @@ supported:
   - counter
   - dac
   - dma
+  - hwinfo
   - i2c
+  - flash
   - pwm
   - spi
   - watchdog
+  - crc
 vendor: nxp

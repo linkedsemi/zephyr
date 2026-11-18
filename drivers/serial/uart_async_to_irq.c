@@ -56,6 +56,8 @@ static uint32_t get_rx_timeout(const struct device *dev)
 		baudrate = get_config(dev)->baudrate;
 	}
 
+	__ASSERT_NO_MSG(baudrate != 0);
+
 	uint32_t us = (CONFIG_UART_ASYNC_TO_INT_DRIVEN_RX_TIMEOUT * 1000000) / baudrate;
 
 	return us;
@@ -316,12 +318,6 @@ int z_uart_async_to_irq_irq_is_pending(const struct device *dev)
 	bool err_pending = atomic_and(&data->flags, ~A2I_ERR_PENDING) & A2I_ERR_PENDING;
 
 	return tx_rdy || rx_rdy || err_pending;
-}
-
-/** Interrupt driven interrupt update function */
-int z_uart_async_to_irq_irq_update(const struct device *dev)
-{
-	return 1;
 }
 
 /** Set the irq callback function */

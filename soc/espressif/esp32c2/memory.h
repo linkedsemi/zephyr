@@ -4,14 +4,16 @@
  */
 #pragma once
 
+#define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
+
 /* SRAM0 (16kB) memory */
-#define SRAM0_IRAM_START   0x4037c000
-#define SRAM0_SIZE         0x4000
+#define SRAM0_IRAM_START   DT_REG_ADDR(DT_NODELABEL(sram0))
+#define SRAM0_SIZE         DT_REG_SIZE(DT_NODELABEL(sram0))
 
 /* SRAM1 (256kB) memory */
-#define SRAM1_DRAM_START   0x3fca0000
-#define SRAM1_IRAM_START   0x40380000
-#define SRAM1_SIZE         0x40000
+#define SRAM1_IRAM_START   (SRAM1_DRAM_START + IRAM_DRAM_OFFSET)
+#define SRAM1_DRAM_START   DT_REG_ADDR(DT_NODELABEL(sram1))
+#define SRAM1_SIZE         DT_REG_SIZE(DT_NODELABEL(sram1))
 
 /* ICache size is fixed to 16KB on ESP32-C2 */
 #define ICACHE_SIZE        SRAM0_SIZE
@@ -33,38 +35,49 @@
  */
 #define IRAM_DRAM_OFFSET         0x6e0000
 
-#define DRAM_BUFFERS_START       0x3fccb264
-#define DRAM_STACK_START         0x3fcdcb70
+#define DRAM_SHARED_BUFFERS_START       0x3fccb264
+#define DRAM_SHARED_BUFFERS_END         0x3fcdcb70
 #define DRAM_ROM_BSS_DATA_START  0x3fcdeb70
 
-#define DRAM_RESERVED_START      DRAM_STACK_START
+/* Upper boundary of user-usable SRAM */
+#define DRAM_USER_END      DRAM_SHARED_BUFFERS_END
 
-/* For safety margin between bootloader data section and startup stacks */
-#define BOOTLOADER_STACK_OVERHEAD      0x0
-/* These lengths can be adjusted, if necessary: */
-#define BOOTLOADER_DRAM_SEG_LEN        0xb000
-#define BOOTLOADER_IRAM_SEG_LEN        0xc800
-#define BOOTLOADER_IRAM_LOADER_SEG_LEN 0x1400
+/* Safety margin between MCUboot segments and ROM stack */
+#define BOOTLOADER_STACK_OVERHEAD      0x2000
 
-/* Base address used for calculating memory layout
- * counted from Dbus backwards and back to the Ibus
+#define BOOTLOADER_IRAM_LOADER_SEG_LEN 0x1C00
+#define BOOTLOADER_DRAM_LOADER_SEG_LEN 0x0C00
+
+/* Upper limit of SRAM available for MCUboot bootloader segments */
+#define BOOTLOADER_USER_DRAM_END (DRAM_SHARED_BUFFERS_END - BOOTLOADER_STACK_OVERHEAD)
+
+/* MCUboot iram/dram segments: stacked in upper SRAM, below dram_loader_seg.
+ * On split-bus SoCs, iram_seg and dram_seg MUST occupy separate physical
+ * SRAM regions (IRAM and DRAM buses map to the same physical memory).
+ * Layout (in physical/DRAM space, top-down):
+ *   iram_loader_seg  (IRAM bus)
+ *   dram_loader_seg  (DRAM bus)
+ *   iram_seg         (IRAM bus, 256-byte aligned start)
+ *   dram_seg         (DRAM bus)
  */
-#define BOOTLOADER_USER_DRAM_END (DRAM_BUFFERS_START + BOOTLOADER_STACK_OVERHEAD)
-
-/* Start of the lower region is determined by region size and the end of the higher region */
 #define BOOTLOADER_IRAM_LOADER_SEG_START \
-	(BOOTLOADER_USER_DRAM_END - BOOTLOADER_IRAM_LOADER_SEG_LEN + IRAM_DRAM_OFFSET)
+	(BOOTLOADER_USER_DRAM_END + IRAM_DRAM_OFFSET - BOOTLOADER_IRAM_LOADER_SEG_LEN)
+#define BOOTLOADER_DRAM_LOADER_SEG_START \
+	(BOOTLOADER_IRAM_LOADER_SEG_START - IRAM_DRAM_OFFSET - BOOTLOADER_DRAM_LOADER_SEG_LEN)
+#define BOOTLOADER_IRAM_SEG_TARGET_LEN \
+	((BOOTLOADER_DRAM_LOADER_SEG_START - (SRAM1_DRAM_START + ICACHE_SIZE)) / 4)
 #define BOOTLOADER_IRAM_SEG_START \
-	(BOOTLOADER_IRAM_LOADER_SEG_START - BOOTLOADER_IRAM_SEG_LEN)
+	ALIGN_UP(BOOTLOADER_DRAM_LOADER_SEG_START + IRAM_DRAM_OFFSET - \
+	  BOOTLOADER_IRAM_SEG_TARGET_LEN, 0x100)
+#define BOOTLOADER_IRAM_SEG_LEN \
+	(BOOTLOADER_DRAM_LOADER_SEG_START + IRAM_DRAM_OFFSET - BOOTLOADER_IRAM_SEG_START)
+#define BOOTLOADER_DRAM_SEG_LEN   BOOTLOADER_IRAM_SEG_LEN
 #define BOOTLOADER_DRAM_SEG_START \
-	(BOOTLOADER_IRAM_SEG_START - BOOTLOADER_DRAM_SEG_LEN - IRAM_DRAM_OFFSET)
+	(BOOTLOADER_IRAM_SEG_START - IRAM_DRAM_OFFSET - BOOTLOADER_DRAM_SEG_LEN)
 
 /* Flash */
-#ifdef CONFIG_FLASH_SIZE
-#define FLASH_SIZE         CONFIG_FLASH_SIZE
-#else
-#define FLASH_SIZE         0x400000
-#endif
+#define FLASH_SIZE         DT_REG_SIZE(DT_CHOSEN(zephyr_flash))
+#define FLASH_BASE_ADDRESS DT_REG_ADDR(DT_CHOSEN(zephyr_flash))
 
 /* Cached memory */
 #define CACHE_ALIGN        CONFIG_MMU_PAGE_SIZE

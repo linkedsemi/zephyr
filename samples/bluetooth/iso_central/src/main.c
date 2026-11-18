@@ -1,9 +1,10 @@
 /*
- * Copyright (c) 2021 2021 Nordic Semiconductor ASA
+ * Copyright (c) 2021-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/bluetooth/gap.h>
 #include <zephyr/types.h>
 #include <stddef.h>
 #include <errno.h>
@@ -15,6 +16,7 @@
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/iso.h>
 #include <zephyr/settings/settings.h>
 #include <zephyr/sys/byteorder.h>
@@ -90,7 +92,9 @@ static void iso_timer_timeout(struct k_work *work)
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 			 struct net_buf_simple *ad)
 {
-	char addr_str[BT_ADDR_LE_STR_LEN];
+	const struct bt_le_conn_param *conn_param =
+		BT_LE_CONN_PARAM(BT_GAP_MS_TO_CONN_INTERVAL(60), BT_GAP_MS_TO_CONN_INTERVAL(60), 0,
+				 BT_GAP_MS_TO_CONN_TIMEOUT(4000));
 	int err;
 
 	if (default_conn) {
@@ -103,8 +107,7 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 		return;
 	}
 
-	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	printk("Device found: %s (RSSI %d)\n", addr_str, rssi);
+	printk("Device found: %s (RSSI %d)\n", bt_addr_le_str(addr), rssi);
 
 	/* connect only to devices in close proximity */
 	if (rssi < -50) {
@@ -115,10 +118,9 @@ static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
 		return;
 	}
 
-	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT,
-				&default_conn);
+	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, conn_param, &default_conn);
 	if (err) {
-		printk("Create conn to %s failed (%u)\n", addr_str, err);
+		printk("Create conn to %s failed (%u)\n", bt_addr_le_str(addr), err);
 		start_scan();
 	}
 }
@@ -139,18 +141,36 @@ static void start_scan(void)
 
 static void iso_connected(struct bt_iso_chan *chan)
 {
+	const struct bt_iso_chan_path hci_path = {
+		.pid = BT_ISO_DATA_PATH_HCI,
+		.format = BT_HCI_CODING_FORMAT_TRANSPARENT,
+	};
+	int err;
+
 	printk("ISO Channel %p connected\n", chan);
 
 	seq_num = 0U;
 
-	/* Start send timer */
-	k_work_schedule(&iso_send_work, K_MSEC(0));
+	err = bt_iso_setup_data_path(chan, BT_HCI_DATAPATH_DIR_HOST_TO_CTLR, &hci_path);
+	if (err != 0) {
+		printk("Failed to setup ISO TX data path: %d\n", err);
+	} else {
+		/* Start send timer */
+		k_work_schedule(&iso_send_work, K_NO_WAIT);
+	}
 }
 
 static void iso_disconnected(struct bt_iso_chan *chan, uint8_t reason)
 {
+	int err;
+
 	printk("ISO Channel %p disconnected (reason 0x%02x)\n", chan, reason);
 	k_work_cancel_delayable(&iso_send_work);
+
+	err = bt_iso_remove_data_path(chan, BT_HCI_DATAPATH_DIR_HOST_TO_CTLR);
+	if (err != 0) {
+		printk("Failed to setup ISO TX data path: %d\n", err);
+	}
 }
 
 static struct bt_iso_chan_ops iso_ops = {
@@ -162,7 +182,6 @@ static struct bt_iso_chan_io_qos iso_tx = {
 	.sdu = CONFIG_BT_ISO_TX_MTU,
 	.phy = BT_GAP_LE_PHY_2M,
 	.rtn = 1,
-	.path = NULL,
 };
 
 static struct bt_iso_chan_qos iso_qos = {
@@ -172,17 +191,14 @@ static struct bt_iso_chan_qos iso_qos = {
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
 	int iso_err;
 	struct bt_iso_connect_param connect_param;
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (err) {
-		printk("Failed to connect to %s %u %s\n", addr, err, bt_hci_err_to_str(err));
+		printk("Failed to connect to %s %u %s\n", bt_conn_dst_str(conn),
+		       err, bt_hci_err_to_str(err));
 
-		bt_conn_unref(default_conn);
-		default_conn = NULL;
+		bt_conn_drop(&default_conn);
 
 		start_scan();
 		return;
@@ -192,7 +208,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 		return;
 	}
 
-	printk("Connected: %s\n", addr);
+	printk("Connected: %s\n", bt_conn_dst_str(conn));
 
 	connect_param.acl = conn;
 	connect_param.iso_chan = &iso_chan;
@@ -207,18 +223,14 @@ static void connected(struct bt_conn *conn, uint8_t err)
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
 	if (conn != default_conn) {
 		return;
 	}
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	printk("Disconnected: %s, reason 0x%02x %s\n", bt_conn_dst_str(conn),
+	       reason, bt_hci_err_to_str(reason));
 
-	printk("Disconnected: %s, reason 0x%02x %s\n", addr, reason, bt_hci_err_to_str(reason));
-
-	bt_conn_unref(default_conn);
-	default_conn = NULL;
+	bt_conn_drop(&default_conn);
 
 	start_scan();
 }
@@ -250,9 +262,6 @@ int main(void)
 
 	iso_chan.ops = &iso_ops;
 	iso_chan.qos = &iso_qos;
-#if defined(CONFIG_BT_SMP)
-	iso_chan.required_sec_level = BT_SECURITY_L2,
-#endif /* CONFIG_BT_SMP */
 
 	channels[0] = &iso_chan;
 	param.cis_channels = channels;

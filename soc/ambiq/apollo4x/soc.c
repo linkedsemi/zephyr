@@ -5,12 +5,17 @@
  */
 
 #include <zephyr/init.h>
+#include <zephyr/logging/log.h>
+#include <soc.h>
 
-#include <am_mcu_apollo.h>
+LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
 extern void ambiq_power_init(void);
 void soc_early_init_hook(void)
 {
+	/* Configure and enable cache for proper interrupt timing */
+	am_hal_cachectrl_config(&am_hal_cachectrl_defaults);
+	am_hal_cachectrl_enable();
 
 	/* Initialize for low power in the power control block */
 	am_hal_pwrctrl_low_power_init();
@@ -22,5 +27,11 @@ void soc_early_init_hook(void)
 	am_hal_rtc_osc_disable();
 #ifdef CONFIG_PM
 	ambiq_power_init();
+#endif
+
+#ifdef CONFIG_LOG_BACKEND_SWO
+	/* Select HFRC 48MHz for the TPIU clock source */
+	MCUCTRL->DBGCTRL_b.CM4CLKSEL = MCUCTRL_DBGCTRL_CM4CLKSEL_HFRC48;
+	MCUCTRL->DBGCTRL_b.CM4TPIUENABLE = MCUCTRL_DBGCTRL_CM4TPIUENABLE_EN;
 #endif
 }

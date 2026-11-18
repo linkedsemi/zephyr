@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "skeleton.dtsi"
+#include <skeleton.dtsi>
 
 / {
 	cpus {
@@ -29,6 +29,5 @@
 		#size-cells = <1>;
 		compatible = "simple-bus";
 		ranges;
-
 	};
 };

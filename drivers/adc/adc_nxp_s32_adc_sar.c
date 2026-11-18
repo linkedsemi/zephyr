@@ -1,5 +1,5 @@
 /*
- * Copyright 2023-2024 NXP
+ * Copyright 2023-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -8,7 +8,6 @@
 #include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/irq.h>
-#include <Adc_Sar_Ip_HwAccess.h>
 #include <Adc_Sar_Ip.h>
 #include <Adc_Sar_Ip_Irq.h>
 
@@ -18,9 +17,19 @@
 #define DT_DRV_COMPAT nxp_s32_adc_sar
 LOG_MODULE_REGISTER(adc_nxp_s32_adc_sar, CONFIG_ADC_LOG_LEVEL);
 
+/* Define the hardware register size when calculating bit positions */
+#define ADC_SAR_IP_HW_REG_SIZE 32
+
+/* Definitions to compute bit positions from channel index */
+#define ADC_SAR_IP_CHAN_2_BIT(CHNIDX)  ((CHNIDX) % ADC_SAR_IP_HW_REG_SIZE)
+
 /* Convert channel of group ADC to channel of physical ADC instance */
 #define ADC_NXP_S32_GROUPCHAN_2_PHYCHAN(group, channel)	\
 						(ADC_SAR_IP_HW_REG_SIZE * group + channel)
+
+#if !defined(FEATURE_ADC_MAX_CHN_COUNT)
+#define FEATURE_ADC_MAX_CHN_COUNT ADC_SAR_IP_MAX_CHN_COUNT
+#endif
 
 struct adc_nxp_s32_config {
 	ADC_Type *base;
@@ -131,7 +140,7 @@ static int adc_nxp_s32_validate_buffer_size(const struct device *dev,
 	}
 
 	if (sequence->buffer_size < needed_size) {
-		return -ENOSPC;
+		return -ENOMEM;
 	}
 
 	return 0;
@@ -334,7 +343,7 @@ static void adc_nxp_s32_isr(const struct device *dev)
 }
 
 #define ADC_NXP_S32_DRIVER_API(n)						\
-	static const struct adc_driver_api adc_nxp_s32_driver_api_##n = {	\
+	static DEVICE_API(adc, adc_nxp_s32_driver_api_##n) = {			\
 		.channel_setup = adc_nxp_s32_channel_setup,			\
 		.read = adc_nxp_s32_read,					\
 		IF_ENABLED(CONFIG_ADC_ASYNC, (.read_async = adc_nxp_s32_read_async,))\
@@ -447,7 +456,7 @@ static void adc_nxp_s32_isr(const struct device *dev)
 				(PINCTRL_DT_INST_DEV_CONFIG_GET(n)), (NULL)),	\
 	};									\
 	DEVICE_DT_INST_DEFINE(n,						\
-			&adc_nxp_s32_init,					\
+			adc_nxp_s32_init,					\
 			NULL,							\
 			&adc_nxp_s32_data_##n,					\
 			&adc_nxp_s32_config_##n,				\

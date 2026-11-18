@@ -175,25 +175,25 @@ Here is an example for defining a I3C controller in device tree:
    i3c0: i3c@10000 {
            compatible = "vendor,i3c";
 
-           #address-cells = < 0x3 >;
-           #size-cells = < 0x0 >;
+           #address-cells = <0x3>;
+           #size-cells = <0x0>;
 
-           reg = < 0x10000 0x1000 >;
-           interrupts = < 0x1F 0x0 >;
+           reg = <0x10000 0x1000>;
+           interrupts = <0x1F 0x0>;
 
-           pinctrl-0 = < &pinmux-i3c >;
+           pinctrl-0 = <&pinmux-i3c>;
            pinctrl-names = "default";
 
-           i2c-scl-hz = < 400000 >;
+           i2c-scl-hz = <400000>;
 
-           i3c-scl-hz = < 12000000 >;
+           i3c-scl-hz = <12000000>;
 
            status = "okay";
 
            i3c-dev0: i3c-dev0@420000ABCD12345678 {
                    compatible = "vendor,i3c-dev";
 
-                   reg = < 0x42 0xABCD 0x12345678 >;
+                   reg = <0x42 0xABCD 0x12345678>;
 
                    status = "okay";
            };
@@ -201,7 +201,7 @@ Here is an example for defining a I3C controller in device tree:
            i2c-dev0: i2c-dev0@380000000000000050 {
                    compatible = "vendor-i2c-dev";
 
-                   reg = < 0x38 0x0 0x50 >;
+                   reg = <0x38 0x0 0x50>;
 
                    status = "okay";
            };
@@ -224,6 +224,12 @@ For I3C devices, the ``reg`` property has 3 elements:
 * Second element is the upper 16-bit of the Provisioned ID (PID)
   which contains the manufacturer ID left-shifted by 1. This is
   the bits 33-47 (zero-based) of the 48-bit Provisioned ID.
+
+  * Must be non-zero. A zero second element marks the node as an
+    I\ :sup:`2`\ C device, as described below, so the helper macros
+    create a legacy I\ :sup:`2`\ C descriptor for it instead of an
+    I3C one. Specify the PID even when the device is addressed by
+    SETDASA and the PID is otherwise unused.
 
 * Third element contains the lower 32-bit of the Provisioned ID
   which is a combination of the part ID (left-shifted by 16,
@@ -335,7 +341,7 @@ adding an intermediate node in the device tree:
            i2c-dev0: i2c-dev0@420000000000000050 {
                    compatible = "vendor-i2c-dev";
 
-                   reg = < 0x42 0x0 0x50 >;
+                   reg = <0x42 0x0 0x50>;
 
                    status = "okay";
            };
@@ -347,7 +353,6 @@ Configuration Options
 Related configuration options:
 
 * :kconfig:option:`CONFIG_I3C`
-* :kconfig:option:`CONFIG_I3C_USE_GROUP_ADDR`
 * :kconfig:option:`CONFIG_I3C_USE_IBI`
 * :kconfig:option:`CONFIG_I3C_IBI_MAX_PAYLOAD_SIZE`
 * :kconfig:option:`CONFIG_I3C_CONTROLLER_INIT_PRIORITY`

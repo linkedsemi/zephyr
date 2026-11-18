@@ -12,8 +12,11 @@
  */
 
 #include <zephyr/kernel.h>
-#include <ksched.h>
+#include <kernel_internal.h>
 #include <zephyr/arch/cpu.h>
+#ifdef CONFIG_ARM_PAC_PER_THREAD
+#include <zephyr/arch/arm64/pac.h>
+#endif
 
 /*
  * Note about stack usage:
@@ -30,7 +33,7 @@
  *   privileged portion of the user stack without touching SP_EL0. This portion
  *   is marked as not user accessible in the MMU/MPU.
  *
- * - a stack guard region will be added bellow the kernel stack when
+ * - a stack guard region will be added below the kernel stack when
  *   ARM64_STACK_PROTECTION is enabled. In this case, SP_EL0 will always point
  *   to the safe exception stack in the kernel space. For the kernel thread,
  *   SP_EL0 will not change always pointing to safe exception stack. For the
@@ -149,6 +152,11 @@ void arch_new_thread(struct k_thread *thread, k_thread_stack_t *stack,
 	thread->arch.stack_limit = (uint64_t)stack + Z_ARM64_STACK_GUARD_SIZE;
 	z_arm64_thread_mem_domains_init(thread);
 #endif
+
+#ifdef CONFIG_ARM_PAC_PER_THREAD
+	/* Generate unique PAC keys for this thread */
+	z_arm64_pac_keys_generate(&thread->arch.pac_keys);
+#endif
 }
 
 #ifdef CONFIG_USERSPACE
@@ -169,13 +177,21 @@ FUNC_NORETURN void arch_user_mode_enter(k_thread_entry_t user_entry,
 	/* Top of the privileged non-user-accessible part of the stack */
 	stack_el1 = (uintptr_t)(_current->stack_obj + ARCH_THREAD_STACK_RESERVED);
 
+	/* We don't want to be disturbed when playing with SPSR and ELR.
+	 *
+	 * Lock interrupts before pinning the entry point and arguments into
+	 * x0-x3 below. arch_irq_lock() is normally inlined, but when the build
+	 * disables inlining (e.g. code coverage adds -fno-inline) it is emitted
+	 * as a real call. Such a call between the register assignments and the
+	 * eret would clobber those caller-saved registers, so keep it ahead of
+	 * them: no function call must sit between the assignments and the eret.
+	 */
+	arch_irq_lock();
+
 	register void *x0 __asm__("x0") = user_entry;
 	register void *x1 __asm__("x1") = p1;
 	register void *x2 __asm__("x2") = p2;
 	register void *x3 __asm__("x3") = p3;
-
-	/* we don't want to be disturbed when playing with SPSR and ELR */
-	arch_irq_lock();
 
 	/* set up and drop into EL0 */
 	__asm__ volatile (
@@ -199,3 +215,12 @@ FUNC_NORETURN void arch_user_mode_enter(k_thread_entry_t user_entry,
 	CODE_UNREACHABLE;
 }
 #endif
+
+int arch_coprocessors_disable(struct k_thread *thread)
+{
+#if defined(CONFIG_FPU_SHARING)
+	return arch_float_disable(thread);
+#else
+	return -ENOTSUP;
+#endif
+}

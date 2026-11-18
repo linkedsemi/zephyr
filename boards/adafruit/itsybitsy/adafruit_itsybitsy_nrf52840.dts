@@ -16,16 +16,12 @@
 	compatible = "adafruit,itsybitsy-nrf52840";
 
 	chosen {
-		zephyr,console = &cdc_acm_uart0;
-		zephyr,shell-uart = &cdc_acm_uart0;
-		zephyr,uart-mcumgr = &cdc_acm_uart0;
-		zephyr,bt-mon-uart = &cdc_acm_uart0;
-		zephyr,bt-c2h-uart = &cdc_acm_uart0;
 		zephyr,ieee802154 = &ieee802154;
 	};
 
 	leds {
 		compatible = "gpio-leds";
+
 		led0: led_0 {
 			gpios = <&gpio0 6 GPIO_ACTIVE_HIGH>;
 			label = "Red LED";
@@ -34,6 +30,7 @@
 
 	buttons {
 		compatible = "gpio-keys";
+
 		button0: button_0 {
 			gpios = <&gpio0 29 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button switch";
@@ -105,6 +102,7 @@
 	pinctrl-0 = <&spi2_default>;
 	pinctrl-1 = <&spi2_sleep>;
 	pinctrl-names = "default", "sleep";
+
 	apa102: apa102@0 {
 		compatible = "apa,apa102";
 		reg = <0>;
@@ -121,6 +119,7 @@
 	pinctrl-0 = <&qspi_default>;
 	pinctrl-1 = <&qspi_sleep>;
 	pinctrl-names = "default", "sleep";
+
 	gd25q16: gd25q16@0 {
 		compatible = "nordic,qspi-nor";
 		reg = <0>;
@@ -145,6 +144,7 @@
 		compatible = "fixed-partitions";
 		#address-cells = <1>;
 		#size-cells = <1>;
+
 		lfs_partition: partition@0 {
 			label = "lfs_storage";
 			reg = <0x00000000 DT_SIZE_M(2)>;
@@ -155,8 +155,6 @@
 zephyr_udc0: &usbd {
 	compatible = "nordic,nrf-usbd";
 	status = "okay";
-
-	cdc_acm_uart0: cdc_acm_uart0 {
-		compatible = "zephyr,cdc-acm-uart";
-	};
 };
+
+#include <../boards/common/usb/cdc_acm_serial.dtsi>

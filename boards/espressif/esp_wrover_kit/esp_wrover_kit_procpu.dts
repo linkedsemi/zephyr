@@ -5,9 +5,9 @@
  */
 /dts-v1/;
 
-#include <espressif/esp32/esp32_wrover_e_n4r8.dtsi>
+#include <espressif/esp32/esp32.dtsi>
 #include "esp_wrover_kit-pinctrl.dtsi"
-#include <espressif/partitions_0x1000_default.dtsi>
+#include <espressif/partitions_0x1000_amp.dtsi>
 
 / {
 	model = "Espressif ESP32-Wrover-Kit PROCPU";
@@ -30,13 +30,12 @@
 	};
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
 		zephyr,display = &ili9341;
-		zephyr,sdhc = &sdhc1;
 		zephyr,bt-hci = &esp32_bt_hci;
 	};
 
@@ -44,31 +43,34 @@
 		compatible = "gpio-leds";
 
 		blue_led: led_0 {
-			gpios =  <&gpio0 4 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio0 4 GPIO_ACTIVE_HIGH>;
 			label = "Blue - LED0";
 		};
 
 		green_led: led_1 {
-			gpios =  <&gpio0 2 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio0 2 GPIO_ACTIVE_HIGH>;
 			label = "Green - LED1";
 		};
 
 		red_led: led_2 {
-			gpios =  <&gpio0 0 GPIO_ACTIVE_HIGH>;
+			gpios = <&gpio0 0 GPIO_ACTIVE_HIGH>;
 			label = "Red - LED2";
 		};
 	};
 
 	pwmleds {
 		compatible = "pwm-leds";
+
 		pwm_led_red: pwm_led_0 {
 			label = "Red PWM LED";
 			pwms = <&ledc0 0 PWM_HZ(100) PWM_POLARITY_NORMAL>;
 		};
+
 		pwm_led_green: pwm_led_1 {
 			label = "Green PWM LED";
 			pwms = <&ledc0 1 PWM_HZ(100) PWM_POLARITY_NORMAL>;
 		};
+
 		pwm_led_blue: pwm_led_2 {
 			label = "Blue PWM LED";
 			pwms = <&ledc0 2 PWM_HZ(100) PWM_POLARITY_NORMAL>;
@@ -96,6 +98,15 @@
 	};
 };
 
+&flash0 {
+	reg = <0x0 DT_SIZE_M(4)>;
+	ranges = <0x0 0x0 DT_SIZE_M(4)>;
+};
+
+&psram0 {
+	size = <DT_SIZE_M(8)>;
+};
+
 &uart0 {
 	status = "okay";
 	current-speed = <115200>;
@@ -111,6 +122,7 @@
 };
 
 &gpio0 {
+	gpio-reserved-ranges = <6 6>, <16 2>, <20 1>, <24 1>, <28 4>;
 	status = "okay";
 
 	/* FIXME: should be part of the display node */
@@ -122,6 +134,7 @@
 };
 
 &gpio1 {
+	gpio-reserved-ranges = <5 2>;
 	status = "okay";
 };
 
@@ -156,14 +169,17 @@
 	status = "okay";
 	#address-cells = <1>;
 	#size-cells = <0>;
+
 	channel0@0 {
 		reg = <0x0>;
 		timer = <0>;
 	};
+
 	channel1@1 {
 		reg = <0x1>;
 		timer = <1>;
 	};
+
 	channel2@2 {
 		reg = <0x2>;
 		timer = <2>;
@@ -216,5 +232,9 @@
 };
 
 &esp32_bt_hci {
+	status = "okay";
+};
+
+&wifi {
 	status = "okay";
 };

@@ -12,18 +12,20 @@ Hardware
 ********
 
 - NXP S32K146
-    - Arm Cortex-M4F @ up to 112 Mhz
-    - 1 MB Flash
-    - 128 KB SRAM
-    - up to 127 I/Os
-    - 3x FlexCAN with 2x FD
-    - eDMA, 12-bit ADC, MPU, ECC and more.
+
+  - Arm Cortex-M4F @ up to 112 Mhz
+  - 1 MB Flash
+  - 128 KB SRAM
+  - up to 127 I/Os
+  - 3x FlexCAN with 2x FD
+  - eDMA, 12-bit ADC, MPU, ECC and more.
 
 - Interfaces:
-    - DCD-LZ debug interface with SWD + Console / UART
-    - Dual CAN FD PHYs with dual connectors for daisy chain operation
-    - JST-GH DroneCode compliant standard connectors and I/O headers
-    - user RGB LED and button.
+
+  - DCD-LZ debug interface with SWD + Console / UART
+  - Dual CAN FD PHYs with dual connectors for daisy chain operation
+  - JST-GH DroneCode compliant standard connectors and I/O headers
+  - User RGB LED and button.
 
 More information about the hardware and design resources can be found at
 `NXP UCANS32K1SIC`_ website.
@@ -31,26 +33,7 @@ More information about the hardware and design resources can be found at
 Supported Features
 ==================
 
-The ``ucans32k1sic`` board configuration supports the following hardware features:
-
-============  ==========  ================================
-Interface     Controller  Driver/Component
-============  ==========  ================================
-SYSMPU        on-chip     mpu
-PORT          on-chip     pinctrl
-GPIO          on-chip     gpio
-LPUART        on-chip     serial
-LPI2C         on-chip     i2c
-LPSPI         on-chip     spi
-FTM           on-chip     pwm
-FlexCAN       on-chip     can
-Watchdog      on-chip     watchdog
-RTC           on-chip     counter
-ADC           on-chip     adc
-============  ==========  ================================
-
-The default configuration can be found in the Kconfig file
-:zephyr_file:`boards/nxp/ucans32k1sic/ucans32k1sic_defconfig`.
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -60,7 +43,7 @@ This board has 5 GPIO ports named from ``gpioa`` to ``gpioe``.
 Pin control can be further configured from your application overlay by adding
 children nodes with the desired pinmux configuration to the singleton node
 ``pinctrl``. Supported properties are described in
-:zephyr_file:`dts/bindings/pinctrl/nxp,kinetis-pinctrl.yaml`.
+:zephyr_file:`dts/bindings/pinctrl/nxp,port-pinctrl.yaml`.
 
 LEDs
 ----
@@ -124,6 +107,8 @@ The Arm Cortex-M4F core is configured to run at 80 MHz (RUN mode).
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 Applications for the ``ucans32k1sic`` board can be built in the usual way as
 documented in :ref:`build_an_application`.
 
@@ -172,6 +157,8 @@ Debugging
 Run the ``west debug`` command to start a GDB session using SEGGER J-Link.
 Alternatively, run ``west debug -r trace32`` to launch the Lauterbach TRACE32
 software debugging interface.
+
+.. include:: ../../common/board-footer.rst.inc
 
 References
 **********

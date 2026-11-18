@@ -18,19 +18,29 @@
 #define DUMMY_PORT_2    "dummy_driver"
 #define DUMMY_NOINIT    "dummy_noinit"
 #define BAD_DRIVER	"bad_driver"
+#define DUMMY_DEINIT    "dummy_deinit"
 
-#define MY_DRIVER_A     "my_driver_A"
-#define MY_DRIVER_B     "my_driver_B"
+#define MY_DRIVER_A        "my_driver_A"
+#define MY_DRIVER_B        "my_driver_B"
+#define CHILD_DRIVER       "my_child_driver"
+#define GRANDCHILD_DRIVER  "my_grandchild_driver"
+#define SIBLING_DRIVER     "my_sibling_driver"
 
 #define FAKEDEFERDRIVER0	DEVICE_DT_GET(DT_PATH(fakedeferdriver_e7000000))
 #define FAKEDEFERDRIVER1	DEVICE_DT_GET(DT_PATH(fakedeferdriver_e8000000))
+#define FAKEDEFERDRIVER2        DEVICE_DT_GET(DT_PATH(fakedeferdriver_f9000000))
+#define FAKEDEFERDRIVER3        DEVICE_DT_GET(DT_PATH(fakedeferdriver_fa000000))
 
+#define FAKEDRIVER0_NODEID    DT_PATH(fakedriver_e0000000)
+#define FAKEDRIVER0_NODELABEL "fake_driver_label"
+
+/** @cond INTERNAL_HIDDEN */
 /* A device without init call */
 DEVICE_DEFINE(dummy_noinit, DUMMY_NOINIT, NULL, NULL, NULL, NULL,
 	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, NULL);
 
 /* To access from userspace, the device needs an API. Use a dummy GPIO one */
-static const struct gpio_driver_api fakedeferdriverapi;
+static DEVICE_API(gpio, fakedeferdriverapi);
 
 /* Fake deferred devices */
 DEVICE_DT_DEFINE(DT_INST(0, fakedeferdriver), NULL, NULL, NULL, NULL,
@@ -38,6 +48,21 @@ DEVICE_DT_DEFINE(DT_INST(0, fakedeferdriver), NULL, NULL, NULL, NULL,
 DEVICE_DT_DEFINE(DT_INST(1, fakedeferdriver), NULL, NULL, NULL, NULL,
 	      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,
 	      &fakedeferdriverapi);
+
+/* fake devices used to test deferred initialization failure */
+static int fakedeferdriver_init(const struct device *dev);
+
+DEVICE_DT_DEFINE(DT_INST(2, fakedeferdriver), fakedeferdriver_init, NULL, NULL, NULL, POST_KERNEL,
+		 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, NULL);
+
+/* fake device whose initialization fails once and succeeds afterwards */
+static int fakedeferdriver_retry_init(const struct device *dev);
+static int fakedeferdriver_retry_deinit(const struct device *dev);
+
+DEVICE_DT_DEINIT_DEFINE(DT_PATH(fakedeferdriver_fa000000), fakedeferdriver_retry_init,
+			fakedeferdriver_retry_deinit, NULL, NULL, NULL, POST_KERNEL,
+			CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, NULL);
+/** @endcond */
 
 /**
  * @brief Test cases to verify device objects
@@ -65,7 +90,8 @@ DEVICE_DT_DEFINE(DT_INST(1, fakedeferdriver), NULL, NULL, NULL, NULL,
  *
  * @ingroup kernel_device_tests
  *
- * @see device_get_binding(), DEVICE_DEFINE()
+ * @see device_get_binding()
+ * @see DEVICE_DEFINE()
  */
 ZTEST(device, test_dummy_device)
 {
@@ -95,7 +121,8 @@ ZTEST(device, test_dummy_device)
  *
  * Validates device binding for an existing device object.
  *
- * @see device_get_binding(), DEVICE_DEFINE()
+ * @see device_get_binding()
+ * @see DEVICE_DEFINE()
  */
 ZTEST_USER(device, test_dynamic_name)
 {
@@ -113,7 +140,8 @@ ZTEST_USER(device, test_dynamic_name)
  * Validates binding of a random device driver(non-defined driver) named
  * "ANOTHER_BOGUS_NAME".
  *
- * @see device_get_binding(), DEVICE_DEFINE()
+ * @see device_get_binding()
+ * @see DEVICE_DEFINE()
  */
 ZTEST_USER(device, test_bogus_dynamic_name)
 {
@@ -130,7 +158,8 @@ ZTEST_USER(device, test_bogus_dynamic_name)
  *
  * Validates device binding for device object when given dynamic name is null.
  *
- * @see device_get_binding(), DEVICE_DEFINE()
+ * @see device_get_binding()
+ * @see DEVICE_DEFINE()
  */
 ZTEST_USER(device, test_null_dynamic_name)
 {
@@ -148,7 +177,6 @@ ZTEST_USER(device, test_null_dynamic_name)
 #endif
 }
 
-__pinned_bss
 static struct init_record {
 	bool pre_kernel;
 	bool is_in_isr;
@@ -156,10 +184,8 @@ static struct init_record {
 	bool could_yield;
 } init_records[4];
 
-__pinned_data
 static struct init_record *rp = init_records;
 
-__pinned_func
 static int add_init_record(bool pre_kernel)
 {
 	rp->pre_kernel = pre_kernel;
@@ -170,13 +196,11 @@ static int add_init_record(bool pre_kernel)
 	return 0;
 }
 
-__pinned_func
 static int pre1_fn(void)
 {
 	return add_init_record(true);
 }
 
-__pinned_func
 static int pre2_fn(void)
 {
 	return add_init_record(true);
@@ -254,8 +278,19 @@ ZTEST(device, test_device_list)
 {
 	struct device const *devices;
 	size_t devcount = z_device_get_all_static(&devices);
+	bool found = false;
 
-	zassert_false((devcount == 0));
+	zassert_true(devcount > 0, "Should have at least one static device");
+	zassert_not_null(devices);
+	for (size_t i = 0; i < devcount; i++) {
+		struct device const *dev = devices + i;
+
+		if (strcmp(dev->name, DUMMY_NOINIT) == 0) {
+			found = true;
+			break;
+		}
+	}
+	zassert_true(found, "%s should be present in static device list", DUMMY_NOINIT);
 }
 
 static int sys_init_counter;
@@ -270,10 +305,25 @@ SYS_INIT(init_fn, APPLICATION, 0);
 SYS_INIT_NAMED(init1, init_fn, APPLICATION, 1);
 SYS_INIT_NAMED(init2, init_fn, APPLICATION, 2);
 SYS_INIT_NAMED(init3, init_fn, APPLICATION, 2);
+SYS_INIT_NAMED(init4, init_fn, APPLICATION, 99);
+SYS_INIT_NAMED(init5, init_fn, APPLICATION, 999);
 
+/**
+ * @brief Test registering multiple initialization functions
+ *
+ * @ingroup kernel_device_tests
+ *
+ * @details Register the same initialization function multiple times with
+ * SYS_INIT() and SYS_INIT_NAMED() at the same initialization level but
+ * different priorities, and verify that every registered entry is invoked
+ * during system initialization.
+ *
+ * @see SYS_INIT()
+ * @see SYS_INIT_NAMED()
+ */
 ZTEST(device, test_sys_init_multiple)
 {
-	zassert_equal(sys_init_counter, 4, "");
+	zassert_equal(sys_init_counter, 6, "");
 }
 
 /* this is for storing sequence during initialization */
@@ -384,20 +434,20 @@ ZTEST(device, test_abstraction_driver_common)
 	dev = device_get_binding(MY_DRIVER_A);
 	zassert_false((dev == NULL));
 
-	ret = subsystem_do_this(dev, foo, bar);
+	ret = abstract_do_this(dev, foo, bar);
 	zassert_true(ret == (foo + bar), "common API do_this fail");
 
-	subsystem_do_that(dev, &baz);
+	abstract_do_that(dev, &baz);
 	zassert_true(baz == 1, "common API do_that fail");
 
 	/* verify driver B API has called */
 	dev = device_get_binding(MY_DRIVER_B);
 	zassert_false((dev == NULL));
 
-	ret = subsystem_do_this(dev, foo, bar);
+	ret = abstract_do_this(dev, foo, bar);
 	zassert_true(ret == (foo - bar), "common API do_this fail");
 
-	subsystem_do_that(dev, &baz);
+	abstract_do_that(dev, &baz);
 	zassert_true(baz == 2, "common API do_that fail");
 }
 
@@ -413,6 +463,226 @@ ZTEST(device, test_deferred_init)
 	zassert_true(device_is_ready(FAKEDEFERDRIVER0));
 }
 
+static unsigned int fakedeferdriver_init_calls;
+
+static int fakedeferdriver_init(const struct device *dev)
+{
+	fakedeferdriver_init_calls++;
+
+	return -EIO;
+}
+
+/**
+ * @brief Test deferred initialization error
+ *
+ * @details Verify device_init error cases and expected device states
+ *
+ * - case -errno: if the device initialization fails
+ * - the device stays uninitialized: device_deinit() refuses it and
+ *   device_init() runs the initialization function again.
+ *
+ * @see device_init
+ * @see device_deinit
+ * @ingroup kernel_device_tests
+ */
+ZTEST(device, test_deferred_init_failure)
+{
+	int ret;
+	const struct device *dev = FAKEDEFERDRIVER2;
+
+	zassert_false(device_is_ready(dev));
+	ret = device_init(dev);
+	zassert_equal(ret, -EIO);
+	zassert_equal(fakedeferdriver_init_calls, 1);
+	zassert_false(device_is_ready(dev));
+	zassert_false(dev->state->initialized);
+	zassert_equal(dev->state->init_res, EIO);
+
+	ret = device_deinit(dev);
+	zassert_equal(ret, -EPERM);
+
+	ret = device_init(dev);
+	zassert_equal(ret, -EIO);
+	zassert_equal(fakedeferdriver_init_calls, 2);
+	zassert_false(device_is_ready(dev));
+	zassert_equal(dev->state->init_res, EIO);
+}
+
+static bool fakedeferdriver_retry_fail = true;
+static unsigned int fakedeferdriver_retry_deinit_calls;
+
+static int fakedeferdriver_retry_init(const struct device *dev)
+{
+	if (fakedeferdriver_retry_fail) {
+		fakedeferdriver_retry_fail = false;
+		return -ENODEV;
+	}
+
+	return 0;
+}
+
+static int fakedeferdriver_retry_deinit(const struct device *dev)
+{
+	fakedeferdriver_retry_deinit_calls++;
+
+	return 0;
+}
+
+/**
+ * @brief Test initialization retry after a failure
+ *
+ * @details Verify that a device whose initialization failed can be
+ * initialized again, that the recorded error is cleared once it succeeds,
+ * and that it can then go through a de-initialization cycle.
+ *
+ * @see device_init
+ * @see device_deinit
+ * @see device_is_ready
+ * @ingroup kernel_device_tests
+ */
+ZTEST(device, test_deferred_init_retry)
+{
+	int ret;
+	const struct device *dev = FAKEDEFERDRIVER3;
+
+	ret = device_init(dev);
+	zassert_equal(ret, -ENODEV);
+	zassert_false(device_is_ready(dev));
+	zassert_equal(dev->state->init_res, ENODEV);
+
+	/* nothing to release after a failed initialization */
+	ret = device_deinit(dev);
+	zassert_equal(ret, -EPERM);
+	zassert_equal(fakedeferdriver_retry_deinit_calls, 0);
+
+	ret = device_init(dev);
+	zassert_equal(ret, 0);
+	zassert_true(device_is_ready(dev));
+	zassert_equal(dev->state->init_res, 0);
+
+	ret = device_init(dev);
+	zassert_equal(ret, -EALREADY);
+
+	ret = device_deinit(dev);
+	zassert_equal(ret, 0);
+	zassert_equal(fakedeferdriver_retry_deinit_calls, 1);
+	zassert_false(device_is_ready(dev));
+
+	ret = device_init(dev);
+	zassert_equal(ret, 0);
+	zassert_true(device_is_ready(dev));
+}
+
+ZTEST(device, test_device_api)
+{
+	const struct device *dev;
+
+	dev = device_get_binding(MY_DRIVER_A);
+	zexpect_true(DEVICE_API_IS(abstract, dev));
+
+	dev = device_get_binding(MY_DRIVER_B);
+	zexpect_true(DEVICE_API_IS(abstract, dev));
+
+	/* Child, grandchild, and sibling all extend abstract */
+	dev = device_get_binding(CHILD_DRIVER);
+	zexpect_true(DEVICE_API_IS(abstract, dev));
+
+	dev = device_get_binding(GRANDCHILD_DRIVER);
+	zexpect_true(DEVICE_API_IS(abstract, dev));
+
+	dev = device_get_binding(SIBLING_DRIVER);
+	zexpect_true(DEVICE_API_IS(abstract, dev));
+
+	dev = device_get_binding(DUMMY_NOINIT);
+	zexpect_false(DEVICE_API_IS(abstract, dev));
+}
+
+ZTEST(device, test_device_api_extends)
+{
+	const struct device *dev;
+	unsigned int baz;
+	int ret;
+
+	dev = device_get_binding(CHILD_DRIVER);
+
+	/* Both APIs should return true */
+	zassert_true(DEVICE_API_IS(abstract, dev));
+	zassert_true(DEVICE_API_IS(abstract_child, dev));
+
+	/* Child is not a grandchild or sibling */
+	zassert_false(DEVICE_API_IS(abstract_grandchild, dev));
+	zassert_false(DEVICE_API_IS(abstract_sibling, dev));
+
+	ret = abstract_do_this(dev, 2, 3);
+	zexpect_equal(ret, 6);
+
+	abstract_do_that(dev, &baz);
+	zexpect_equal(baz, 3);
+
+	ret = abstract_child_do_these(dev);
+	zexpect_equal(ret, 9);
+}
+
+ZTEST(device, test_device_api_extends_grandchild)
+{
+	const struct device *dev;
+	unsigned int baz;
+	int ret;
+
+	dev = device_get_binding(GRANDCHILD_DRIVER);
+
+	/* All three levels should return true */
+	zassert_true(DEVICE_API_IS(abstract, dev));
+	zassert_true(DEVICE_API_IS(abstract_child, dev));
+	zassert_true(DEVICE_API_IS(abstract_grandchild, dev));
+
+	/* Should not match sibling */
+	zassert_false(DEVICE_API_IS(abstract_sibling, dev));
+
+	/* Parent (abstract) API works: 2 + 3 + 1 = 6 */
+	ret = abstract_do_this(dev, 2, 3);
+	zexpect_equal(ret, 6);
+
+	abstract_do_that(dev, &baz);
+	zexpect_equal(baz, 4);
+
+	/* Child API works: do_that(4) then do_this(4,4) = 4+4+1 = 9 */
+	ret = abstract_child_do_these(dev);
+	zexpect_equal(ret, 9);
+
+	/* Grandchild API: do_these(9) + val(10) = 19 */
+	ret = abstract_grandchild_do_all(dev, 10);
+	zexpect_equal(ret, 19);
+}
+
+ZTEST(device, test_device_api_extends_sibling)
+{
+	const struct device *dev;
+	unsigned int baz;
+	int ret;
+
+	dev = device_get_binding(SIBLING_DRIVER);
+
+	/* Sibling is an abstract device */
+	zassert_true(DEVICE_API_IS(abstract, dev));
+	zassert_true(DEVICE_API_IS(abstract_sibling, dev));
+
+	/* Sibling is NOT a child or grandchild */
+	zassert_false(DEVICE_API_IS(abstract_child, dev));
+	zassert_false(DEVICE_API_IS(abstract_grandchild, dev));
+
+	/* Parent API works: 7 % 3 = 1 */
+	ret = abstract_do_this(dev, 7, 3);
+	zexpect_equal(ret, 1);
+
+	abstract_do_that(dev, &baz);
+	zexpect_equal(baz, 5);
+
+	/* Sibling-specific API: 5 * 10 = 50 */
+	ret = abstract_sibling_do_other(dev, 5);
+	zexpect_equal(ret, 50);
+}
+
 ZTEST_USER(device, test_deferred_init_user)
 {
 	int ret;
@@ -424,6 +694,74 @@ ZTEST_USER(device, test_deferred_init_user)
 
 	zassert_true(device_is_ready(FAKEDEFERDRIVER1));
 }
+
+/**
+ * @brief Test device_is_ready() with a NULL pointer from user mode
+ *
+ * @details Verify that device_is_ready(NULL) returns false from a user
+ * thread instead of faulting in the syscall verifier.
+ *
+ * @see device_is_ready
+ * @ingroup kernel_device_tests
+ */
+ZTEST_USER(device, test_device_is_ready_null_user)
+{
+	zassert_false(device_is_ready(NULL));
+}
+
+ZTEST(device, test_deinit_not_supported)
+{
+	const struct device *dev = device_get_binding(DUMMY_NOINIT);
+	int ret;
+
+	zassert_not_null(dev);
+
+	ret = device_deinit(dev);
+	zassert_equal(ret, -ENOTSUP, "Expected -ENOTSUP for device_deinit when not supported");
+}
+
+static int dummy_deinit(const struct device *dev)
+{
+	return 0;
+}
+
+/* A device with de-initialization function */
+DEVICE_DEINIT_DEFINE(dummy_deinit, DUMMY_DEINIT, NULL, dummy_deinit, NULL, NULL, NULL, POST_KERNEL,
+		     CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, NULL);
+
+ZTEST(device, test_deinit_success_and_redeinit)
+{
+	const struct device *dev = device_get_binding(DUMMY_DEINIT);
+	int ret;
+
+	zassert_not_null(dev);
+
+	ret = device_deinit(dev);
+	zassert_equal(ret, 0, "device_deinit should succeed");
+
+	ret = device_deinit(dev);
+	zassert_equal(ret, -EPERM, "device_deinit should fail when not init or already deinit");
+}
+
+#ifdef CONFIG_DEVICE_DT_METADATA
+DEVICE_DT_DEFINE(FAKEDRIVER0_NODEID, NULL, NULL, NULL, NULL, POST_KERNEL,
+		 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, NULL);
+
+ZTEST(device, test_device_get_by_dt_nodelabel)
+{
+	const struct device *dev = DEVICE_DT_GET(FAKEDRIVER0_NODEID);
+
+	zassert_not_null(dev);
+
+	const struct device *valid = device_get_by_dt_nodelabel(FAKEDRIVER0_NODELABEL);
+
+	zassert_not_null(valid, "Valid DT nodelabel should return a device");
+
+	const struct device *invalid = device_get_by_dt_nodelabel("does_not_exist");
+
+	zassert_is_null(invalid, "Invalid DT nodelabel should return NULL");
+}
+#endif
 
 void *user_setup(void)
 {

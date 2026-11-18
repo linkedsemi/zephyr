@@ -4,6 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#ifndef ZEPHYR_DRIVERS_I2C_I2C_BITBANG_H
+#define ZEPHYR_DRIVERS_I2C_I2C_BITBANG_H
+
+#include <zephyr/drivers/i2c.h>
+
 /**
  * @brief Functions for setting and getting the state of the I2C lines.
  *
@@ -12,6 +17,10 @@
 struct i2c_bitbang_io {
 	/* Set the state of the SCL line (zero/non-zero value) */
 	void (*set_scl)(void *io_context, int state);
+#ifdef CONFIG_I2C_GPIO_CLOCK_STRETCHING
+	/* Return the state of the SCL line (zero/non-zero value) */
+	int (*get_scl)(void *io_context);
+#endif
 	/* Set the state of the SDA line (zero/non-zero value) */
 	void (*set_sda)(void *io_context, int state);
 	/* Return the state of the SDA line (zero/non-zero value) */
@@ -67,4 +76,6 @@ int i2c_bitbang_recover_bus(struct i2c_bitbang *bitbang);
  */
 int i2c_bitbang_transfer(struct i2c_bitbang *bitbang,
 			   struct i2c_msg *msgs, uint8_t num_msgs,
-			   uint16_t slave_address);
+			   uint16_t target_address);
+
+#endif /* ZEPHYR_DRIVERS_I2C_I2C_BITBANG_H */

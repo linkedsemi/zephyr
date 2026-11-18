@@ -8,7 +8,7 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
@@ -121,18 +121,27 @@ static void xlnx_quadspi_cs_control(const struct device *dev, bool on)
 	const struct xlnx_quadspi_config *config = dev->config;
 	struct xlnx_quadspi_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	uint32_t spissr = BIT_MASK(config->num_ss_bits);
+	uint32_t spissr;
 
-	if (IS_ENABLED(CONFIG_SPI_SLAVE) && spi_context_is_slave(ctx)) {
-		/* Skip slave select assert/de-assert in slave mode */
+	if (ctx->config->operation & SPI_CS_ACTIVE_HIGH)
+		spissr = 0;
+	else
+		spissr = BIT_MASK(config->num_ss_bits);
+
+	if (IS_ENABLED(CONFIG_SPI_PERIPHERAL) && spi_context_is_peripheral(ctx)) {
+		/* Skip chip select assert/de-assert in peripheral mode */
 		return;
 	}
 
 	if (on) {
-		/* SPISSR is one-hot, active-low */
-		spissr &= ~BIT(ctx->config->slave);
+		if (ctx->config->operation & SPI_CS_ACTIVE_HIGH) {
+			spissr |= BIT(ctx->config->peripheral);
+		} else {
+			/* SPISSR is one-hot, active-low */
+			spissr &= ~BIT(ctx->config->peripheral);
+		}
 	} else if (ctx->config->operation & SPI_HOLD_ON_CS) {
-		/* Skip slave select de-assert */
+		/* Skip chip select de-assert */
 		return;
 	}
 
@@ -163,20 +172,15 @@ static int xlnx_quadspi_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (spi_cfg->slave >= config->num_ss_bits) {
-		LOG_ERR("unsupported slave %d, num_ss_bits %d",
-			spi_cfg->slave, config->num_ss_bits);
+	if (spi_cfg->peripheral >= config->num_ss_bits) {
+		LOG_ERR("unsupported peripheral %d, num_ss_bits %d",
+			spi_cfg->peripheral, config->num_ss_bits);
 		return -ENOTSUP;
 	}
 
-	if (spi_cfg->operation & SPI_CS_ACTIVE_HIGH) {
-		LOG_ERR("unsupported CS polarity active high");
-		return -ENOTSUP;
-	}
-
-	if (!IS_ENABLED(CONFIG_SPI_SLAVE) && \
-	    (spi_cfg->operation & SPI_OP_MODE_SLAVE)) {
-		LOG_ERR("slave mode support not enabled");
+	if (!IS_ENABLED(CONFIG_SPI_PERIPHERAL) &&
+	    (spi_cfg->operation & SPI_OP_MODE_PERIPHERAL)) {
+		LOG_ERR("peripheral mode support not enabled");
 		return -ENOTSUP;
 	}
 
@@ -190,9 +194,9 @@ static int xlnx_quadspi_configure(const struct device *dev,
 	/* Reset FIFOs, SPI IOs enabled */
 	spicr = SPICR_TX_FIFO_RESET | SPICR_RX_FIFO_RESET | SPICR_SPE;
 
-	/* Master mode, inhibit master transmit, manual slave select */
-	if (!IS_ENABLED(CONFIG_SPI_SLAVE) ||
-	    (spi_cfg->operation & SPI_OP_MODE_SLAVE) == 0U) {
+	/* Controller mode, inhibit controller transmit, manual chip select */
+	if (!IS_ENABLED(CONFIG_SPI_PERIPHERAL) ||
+	    (spi_cfg->operation & SPI_OP_MODE_PERIPHERAL) == 0U) {
 		spicr |= SPICR_MASTER | SPICR_MASTER_XFER_INH | SPICR_MANUAL_SS;
 	}
 
@@ -243,7 +247,7 @@ static bool xlnx_quadspi_start_tx(const struct device *dev)
 	bool complete = false;
 
 	if (!spi_context_tx_on(ctx) && !spi_context_rx_on(ctx)) {
-		/* All done, de-assert slave select */
+		/* All done, de-assert chip select */
 		xlnx_quadspi_cs_control(dev, false);
 
 		if ((ctx->config->operation & SPI_HOLD_ON_CS) == 0U) {
@@ -258,8 +262,8 @@ static bool xlnx_quadspi_start_tx(const struct device *dev)
 		return complete;
 	}
 
-	if (!IS_ENABLED(CONFIG_SPI_SLAVE) || !spi_context_is_slave(ctx)) {
-		/* Inhibit master transaction while writing TX data */
+	if (!IS_ENABLED(CONFIG_SPI_PERIPHERAL) || !spi_context_is_peripheral(ctx)) {
+		/* Inhibit controller transaction while writing TX data */
 		spicr = xlnx_quadspi_read32(dev, SPICR_OFFSET);
 		spicr |= SPICR_MASTER_XFER_INH;
 		xlnx_quadspi_write32(dev, spicr, SPICR_OFFSET);
@@ -326,8 +330,8 @@ static bool xlnx_quadspi_start_tx(const struct device *dev)
 		complete = true;
 	}
 
-	if (!IS_ENABLED(CONFIG_SPI_SLAVE) || !spi_context_is_slave(ctx)) {
-		/* Uninhibit master transaction */
+	if (!IS_ENABLED(CONFIG_SPI_PERIPHERAL) || !spi_context_is_peripheral(ctx)) {
+		/* Uninhibit controller transaction */
 		spicr &= ~(SPICR_MASTER_XFER_INH);
 		xlnx_quadspi_write32(dev, spicr, SPICR_OFFSET);
 	}
@@ -457,7 +461,7 @@ static int xlnx_quadspi_release(const struct device *dev,
 	struct xlnx_quadspi_data *data = dev->data;
 	uint32_t spicr;
 
-	/* Force slave select de-assert */
+	/* Force chip select de-assert */
 	xlnx_quadspi_write32(dev, BIT_MASK(config->num_ss_bits), SPISSR_OFFSET);
 
 	/* Tri-state SPI IOs */
@@ -585,7 +589,7 @@ static int xlnx_quadspi_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api xlnx_quadspi_driver_api = {
+static DEVICE_API(spi, xlnx_quadspi_driver_api) = {
 	.transceive = xlnx_quadspi_transceive_blocking,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = xlnx_quadspi_transceive_async,
@@ -601,38 +605,31 @@ static const struct spi_driver_api xlnx_quadspi_driver_api = {
 #define STARTUP_BLOCK_INIT(n)
 #endif
 
-#define XLNX_QUADSPI_INIT(n)						\
-	static void xlnx_quadspi_config_func_##n(const struct device *dev);	\
-									\
-	static const struct xlnx_quadspi_config xlnx_quadspi_config_##n = { \
-		.base = DT_INST_REG_ADDR(n),				\
-		.irq_config_func = xlnx_quadspi_config_func_##n,	\
-		.num_ss_bits = DT_INST_PROP(n, xlnx_num_ss_bits),	\
-		.num_xfer_bytes =					\
-			DT_INST_PROP(n, xlnx_num_transfer_bits) / 8,	\
-		.fifo_size = DT_INST_PROP_OR(n, fifo_size, 0),		\
-		STARTUP_BLOCK_INIT(n)					\
-	};								\
-									\
-	static struct xlnx_quadspi_data xlnx_quadspi_data_##n = {	\
-		SPI_CONTEXT_INIT_LOCK(xlnx_quadspi_data_##n, ctx),	\
-		SPI_CONTEXT_INIT_SYNC(xlnx_quadspi_data_##n, ctx),	\
-		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(n), ctx)	\
-	};								\
-									\
-	DEVICE_DT_INST_DEFINE(n, &xlnx_quadspi_init,			\
-			    NULL,					\
-			    &xlnx_quadspi_data_##n,			\
-			    &xlnx_quadspi_config_##n, POST_KERNEL,	\
-			    CONFIG_SPI_INIT_PRIORITY,			\
-			    &xlnx_quadspi_driver_api);			\
-									\
-	static void xlnx_quadspi_config_func_##n(const struct device *dev)	\
-	{								\
-		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),	\
-			    xlnx_quadspi_isr,				\
-			    DEVICE_DT_INST_GET(n), 0);			\
-		irq_enable(DT_INST_IRQN(n));				\
+#define XLNX_QUADSPI_INIT(n)                                                                       \
+	static void xlnx_quadspi_config_func_##n(const struct device *dev);                        \
+                                                                                                   \
+	static const struct xlnx_quadspi_config xlnx_quadspi_config_##n = {                        \
+		.base = DT_INST_REG_ADDR(n),                                                       \
+		.irq_config_func = xlnx_quadspi_config_func_##n,                                   \
+		.num_ss_bits = DT_INST_PROP(n, xlnx_num_ss_bits),                                  \
+		.num_xfer_bytes = DT_INST_PROP(n, xlnx_num_transfer_bits) / 8,                     \
+		.fifo_size = DT_INST_PROP_OR(n, fifo_size, 0),                                     \
+		STARTUP_BLOCK_INIT(n)};                                                            \
+                                                                                                   \
+	static struct xlnx_quadspi_data xlnx_quadspi_data_##n = {                                  \
+		SPI_CONTEXT_INIT_LOCK(xlnx_quadspi_data_##n, ctx),                                 \
+		SPI_CONTEXT_INIT_SYNC(xlnx_quadspi_data_##n, ctx),                                 \
+		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(n), ctx)};                             \
+                                                                                                   \
+	SPI_DEVICE_DT_INST_DEFINE(n, &xlnx_quadspi_init, NULL, &xlnx_quadspi_data_##n,             \
+				  &xlnx_quadspi_config_##n, POST_KERNEL, CONFIG_SPI_INIT_PRIORITY, \
+				  &xlnx_quadspi_driver_api);                                       \
+                                                                                                   \
+	static void xlnx_quadspi_config_func_##n(const struct device *dev)                         \
+	{                                                                                          \
+		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority), xlnx_quadspi_isr,           \
+			    DEVICE_DT_INST_GET(n), 0);                                             \
+		irq_enable(DT_INST_IRQN(n));                                                       \
 	}
 
 DT_INST_FOREACH_STATUS_OKAY(XLNX_QUADSPI_INIT)

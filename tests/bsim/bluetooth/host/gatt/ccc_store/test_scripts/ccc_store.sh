@@ -5,8 +5,9 @@
 source ${ZEPHYR_BASE}/tests/bsim/sh_common.source
 
 test_exe="bs_${BOARD_TS}_$(guess_test_long_name)_prj_conf"
-simulation_id="ccc_store"
+simulation_id="${BOARD_TS}_ccc_store"
 verbosity_level=2
+EXECUTE_TIMEOUT=60
 
 cd ${BSIM_OUT_PATH}/bin
 

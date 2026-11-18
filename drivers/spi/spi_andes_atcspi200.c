@@ -23,7 +23,6 @@ typedef void (*atcspi200_cfg_func_t)(void);
 struct stream {
 	const struct device *dma_dev;
 	uint32_t channel;
-	uint32_t block_idx;
 	struct dma_config dma_cfg;
 	struct dma_block_config dma_blk_cfg;
 	struct dma_block_config chain_block[MAX_CHAIN_SIZE];
@@ -37,7 +36,9 @@ struct spi_atcspi200_data {
 	struct spi_context ctx;
 	uint32_t tx_fifo_size;
 	uint32_t rx_fifo_size;
+	int dfs;
 	int tx_cnt;
+	int rx_cnt;
 	size_t chunk_len;
 	bool busy;
 #ifdef CONFIG_ANDES_SPI_DMA_MODE
@@ -51,7 +52,7 @@ struct spi_atcspi200_cfg {
 	uint32_t base;
 	uint32_t irq_num;
 	uint32_t f_sys;
-	bool xip;
+	bool spi_cfg_rom;
 };
 
 /* API Functions */
@@ -66,7 +67,7 @@ static int spi_config(const struct device *dev,
 	sys_clear_bits(SPI_TIMIN(cfg->base), TIMIN_SCLK_DIV_MSK);
 	sys_set_bits(SPI_TIMIN(cfg->base), sclk_div);
 
-	/* Set Master mode */
+	/* Set Controller mode */
 	sys_clear_bits(SPI_TFMAT(cfg->base), TFMAT_SLVMODE_MSK);
 
 	/* Disable data merge mode */
@@ -112,32 +113,31 @@ static int spi_transfer(const struct device *dev)
 	struct spi_atcspi200_data * const data = dev->data;
 	const struct spi_atcspi200_cfg * const cfg = dev->config;
 	struct spi_context *ctx = &data->ctx;
-	uint32_t data_len, tctrl, int_msk;
+	uint32_t cnt, reg_cnt, tctrl, int_msk;
 
-	if (data->chunk_len != 0) {
-		data_len = data->chunk_len - 1;
-	} else {
-		data_len = 0;
-	}
+	cnt = data->chunk_len / data->dfs;
 
-	if (data_len > MAX_TRANSFER_CNT) {
+	if (cnt == 0 || cnt > MAX_TRANSFER_CNT) {
 		return -EINVAL;
 	}
 
-	data->tx_cnt = 0;
+	data->tx_cnt = data->rx_cnt = cnt;
+
+	/* Actual transfer count = register value + 1 */
+	reg_cnt = cnt - 1;
 
 	if (!spi_context_rx_on(ctx)) {
 		tctrl = (TRNS_MODE_WRITE_ONLY << TCTRL_TRNS_MODE_OFFSET) |
-			(data_len << TCTRL_WR_TCNT_OFFSET);
+			(reg_cnt << TCTRL_WR_TCNT_OFFSET);
 		int_msk = IEN_TX_FIFO_MSK | IEN_END_MSK;
 	} else if (!spi_context_tx_on(ctx)) {
 		tctrl = (TRNS_MODE_READ_ONLY << TCTRL_TRNS_MODE_OFFSET) |
-			(data_len << TCTRL_RD_TCNT_OFFSET);
+			(reg_cnt << TCTRL_RD_TCNT_OFFSET);
 		int_msk = IEN_RX_FIFO_MSK | IEN_END_MSK;
 	} else {
 		tctrl = (TRNS_MODE_WRITE_READ << TCTRL_TRNS_MODE_OFFSET) |
-			(data_len << TCTRL_WR_TCNT_OFFSET) |
-			(data_len << TCTRL_RD_TCNT_OFFSET);
+			(reg_cnt << TCTRL_WR_TCNT_OFFSET) |
+			(reg_cnt << TCTRL_RD_TCNT_OFFSET);
 		int_msk = IEN_TX_FIFO_MSK |
 			  IEN_RX_FIFO_MSK |
 			  IEN_END_MSK;
@@ -166,8 +166,8 @@ static int configure(const struct device *dev,
 		return 0;
 	}
 
-	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_MASTER) {
-		LOG_ERR("Slave mode is not supported on %s",
+	if (SPI_OP_MODE_GET(config->operation) != SPI_OP_MODE_CONTROLLER) {
+		LOG_ERR("Peripheral mode is not supported on %s",
 			    dev->name);
 		return -EINVAL;
 	}
@@ -180,6 +180,13 @@ static int configure(const struct device *dev,
 	if ((config->operation & SPI_LINES_MASK) != SPI_LINES_SINGLE) {
 		LOG_ERR("Only single line mode is supported");
 		return -EINVAL;
+	}
+
+	data->dfs = (SPI_WORD_SIZE_GET(config->operation) + 7) >> 3;
+
+	/* As there is no uint24_t, it is assumed uint32_t will be used as the buffer base type. */
+	if (data->dfs == 3) {
+		data->dfs = 4;
 	}
 
 	ctx->config = config;
@@ -255,13 +262,12 @@ static inline void dma_rx_callback(const struct device *dev, void *user_data,
 {
 	const struct device *spi_dev = (struct device *)user_data;
 	struct spi_atcspi200_data *data = spi_dev->data;
-	struct spi_context *ctx = &data->ctx;
 	int error;
 
 	dma_stop(data->dma_rx.dma_dev, data->dma_rx.channel);
 	spi_rx_dma_disable(spi_dev);
 
-	if (spi_context_rx_on(ctx)) {
+	if (data->rx_cnt) {
 		if (spi_dma_rx_load(spi_dev) != 0) {
 			return;
 		}
@@ -276,13 +282,12 @@ static inline void dma_tx_callback(const struct device *dev, void *user_data,
 {
 	const struct device *spi_dev = (struct device *)user_data;
 	struct spi_atcspi200_data *data = spi_dev->data;
-	struct spi_context *ctx = &data->ctx;
 	int error;
 
 	dma_stop(data->dma_tx.dma_dev, data->dma_tx.channel);
 	spi_tx_dma_disable(spi_dev);
 
-	if (spi_context_tx_on(ctx)) {
+	if (data->tx_cnt) {
 		if (spi_dma_tx_load(spi_dev) != 0) {
 			return;
 		}
@@ -303,103 +308,91 @@ static int spi_dma_tx_load(const struct device *dev)
 	const struct spi_atcspi200_cfg * const cfg = dev->config;
 	struct spi_atcspi200_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	int remain_len, ret, dfs;
+	int ret;
 
 	/* prepare the block for this TX DMA channel */
 	memset(&data->dma_tx.dma_blk_cfg, 0, sizeof(struct dma_block_config));
 
-	if (ctx->current_tx->len > data->chunk_len) {
-		data->dma_tx.dma_blk_cfg.block_size = data->chunk_len /
-					data->dma_tx.dma_cfg.dest_data_size;
-	} else {
-		data->dma_tx.dma_blk_cfg.block_size = ctx->current_tx->len /
-					data->dma_tx.dma_cfg.dest_data_size;
-	}
-
 	/* tx direction has memory as source and periph as dest. */
-	if (ctx->current_tx->buf == NULL) {
+	if (ctx->tx_buf == NULL && ctx->tx_count == 0) {
 		dummy_rx_tx_buffer = 0;
+		data->dma_tx.dma_blk_cfg.block_size = data->tx_cnt * data->dfs;
 		/* if tx buff is null, then sends NOP on the line. */
 		data->dma_tx.dma_blk_cfg.source_address = (uintptr_t)&dummy_rx_tx_buffer;
 		data->dma_tx.dma_blk_cfg.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+		data->tx_cnt = 0;
 	} else {
-		data->dma_tx.dma_blk_cfg.source_address = (uintptr_t)ctx->current_tx->buf;
-		if (data->dma_tx.src_addr_increment) {
+		data->dma_tx.dma_blk_cfg.block_size = ctx->current_tx->len;
+		if (ctx->current_tx->buf != NULL) {
+			data->dma_tx.dma_blk_cfg.source_address = (uintptr_t)ctx->current_tx->buf;
 			data->dma_tx.dma_blk_cfg.source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 		} else {
+			dummy_rx_tx_buffer = 0;
+			data->dma_tx.dma_blk_cfg.source_address = (uintptr_t)&dummy_rx_tx_buffer;
 			data->dma_tx.dma_blk_cfg.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
+		data->tx_cnt -= (ctx->current_tx->len / data->dfs);
+		spi_context_update_tx(ctx, data->dfs, ctx->current_tx->len / data->dfs);
 	}
-
-	dfs = SPI_WORD_SIZE_GET(ctx->config->operation) >> 3;
-	remain_len = data->chunk_len - ctx->current_tx->len;
-	spi_context_update_tx(ctx, dfs, ctx->current_tx->len);
 
 	data->dma_tx.dma_blk_cfg.dest_address = (uint32_t)SPI_DATA(cfg->base);
-	/* fifo mode NOT USED there */
-	if (data->dma_tx.dst_addr_increment) {
-		data->dma_tx.dma_blk_cfg.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
-	} else {
-		data->dma_tx.dma_blk_cfg.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
-	}
+	data->dma_tx.dma_blk_cfg.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 
+	/* transfer data width (in bytes) */
+	data->dma_tx.dma_cfg.source_data_size = data->dfs;
+	data->dma_tx.dma_cfg.dest_data_size = data->dfs;
 	/* direction is given by the DT */
+	data->dma_tx.dma_cfg.block_count = 1;
 	data->dma_tx.dma_cfg.head_block = &data->dma_tx.dma_blk_cfg;
 	data->dma_tx.dma_cfg.head_block->next_block = NULL;
 	/* give the client dev as arg, as the callback comes from the dma */
 	data->dma_tx.dma_cfg.user_data = (void *)dev;
 
 	if (data->dma_tx.dma_cfg.source_chaining_en) {
-		data->dma_tx.dma_cfg.block_count = ctx->tx_count;
 		data->dma_tx.dma_cfg.dma_callback = NULL;
-		data->dma_tx.block_idx = 0;
 		struct dma_block_config *blk_cfg = &data->dma_tx.dma_blk_cfg;
-		const struct spi_buf *current_tx = ctx->current_tx;
 
-		while (remain_len > 0) {
+		while (data->tx_cnt > 0) {
 			struct dma_block_config *next_blk_cfg;
 
-			next_blk_cfg = &data->dma_tx.chain_block[data->dma_tx.block_idx];
-			data->dma_tx.block_idx += 1;
-
+			next_blk_cfg =
+				&data->dma_tx.chain_block[data->dma_tx.dma_cfg.block_count - 1];
+			data->dma_tx.dma_cfg.block_count += 1;
 			blk_cfg->next_block = next_blk_cfg;
-			current_tx = ctx->current_tx;
-
-			next_blk_cfg->block_size = current_tx->len /
-						data->dma_tx.dma_cfg.dest_data_size;
 
 			/* tx direction has memory as source and periph as dest. */
-			if (current_tx->buf == NULL) {
+			if (ctx->tx_buf == NULL && ctx->tx_count == 0) {
 				dummy_rx_tx_buffer = 0;
+				next_blk_cfg->block_size = data->tx_cnt * data->dfs;
 				/* if tx buff is null, then sends NOP on the line. */
 				next_blk_cfg->source_address = (uintptr_t)&dummy_rx_tx_buffer;
 				next_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+				data->tx_cnt = 0;
 			} else {
-				next_blk_cfg->source_address = (uintptr_t)current_tx->buf;
-				if (data->dma_tx.src_addr_increment) {
+				next_blk_cfg->block_size = ctx->current_tx->len;
+				if (ctx->current_tx->buf != NULL) {
+					next_blk_cfg->source_address =
+								(uintptr_t)ctx->current_tx->buf;
 					next_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 				} else {
+					next_blk_cfg->source_address =
+								(uintptr_t)&dummy_rx_tx_buffer;
 					next_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 				}
+				data->tx_cnt -= (ctx->current_tx->len / data->dfs);
+				spi_context_update_tx(ctx, data->dfs,
+						      ctx->current_tx->len / data->dfs);
 			}
 
 			next_blk_cfg->dest_address = (uint32_t)SPI_DATA(cfg->base);
-			/* fifo mode NOT USED there */
-			if (data->dma_tx.dst_addr_increment) {
-				next_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
-			} else {
-				next_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
-			}
+			next_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 
 			blk_cfg = next_blk_cfg;
 			next_blk_cfg->next_block = NULL;
-			remain_len -= ctx->current_tx->len;
-			spi_context_update_tx(ctx, dfs, ctx->current_tx->len);
 		}
 
 	} else {
 		data->dma_tx.dma_blk_cfg.next_block = NULL;
-		data->dma_tx.dma_cfg.block_count = 1;
 		data->dma_tx.dma_cfg.dma_callback = dma_tx_callback;
 	}
 
@@ -408,7 +401,7 @@ static int spi_dma_tx_load(const struct device *dev)
 			&data->dma_tx.dma_cfg);
 	/* the channel is the actual stream from 0 */
 	if (ret != 0) {
-		data->dma_tx.block_idx = 0;
+		data->dma_tx.dma_cfg.block_count = 0;
 		data->dma_tx.dma_blk_cfg.next_block = NULL;
 		return ret;
 	}
@@ -421,94 +414,83 @@ static int spi_dma_rx_load(const struct device *dev)
 	const struct spi_atcspi200_cfg * const cfg = dev->config;
 	struct spi_atcspi200_data *data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	int remain_len, ret, dfs;
+	int ret;
 
 	/* prepare the block for this RX DMA channel */
 	memset(&data->dma_rx.dma_blk_cfg, 0, sizeof(struct dma_block_config));
 
-	if (ctx->current_rx->len > data->chunk_len) {
-		data->dma_rx.dma_blk_cfg.block_size = data->chunk_len /
-					data->dma_rx.dma_cfg.dest_data_size;
-	} else {
-		data->dma_rx.dma_blk_cfg.block_size = ctx->current_rx->len /
-					data->dma_rx.dma_cfg.dest_data_size;
-	}
-
 	/* rx direction has periph as source and mem as dest. */
-	if (ctx->current_rx->buf == NULL) {
+	if (ctx->rx_buf == NULL && ctx->rx_count == 0) {
+		data->dma_rx.dma_blk_cfg.block_size = data->rx_cnt * data->dfs;
 		/* if rx buff is null, then write data to dummy address. */
 		data->dma_rx.dma_blk_cfg.dest_address = (uintptr_t)&dummy_rx_tx_buffer;
 		data->dma_rx.dma_blk_cfg.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+		data->rx_cnt = 0;
 	} else {
-		data->dma_rx.dma_blk_cfg.dest_address = (uintptr_t)ctx->current_rx->buf;
-		if (data->dma_rx.dst_addr_increment) {
+		data->dma_rx.dma_blk_cfg.block_size = ctx->current_rx->len;
+		if (ctx->current_rx->buf != NULL) {
+			data->dma_rx.dma_blk_cfg.dest_address = (uintptr_t)ctx->current_rx->buf;
 			data->dma_rx.dma_blk_cfg.dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 		} else {
+			data->dma_rx.dma_blk_cfg.dest_address = (uintptr_t)&dummy_rx_tx_buffer;
 			data->dma_rx.dma_blk_cfg.dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 		}
+		data->rx_cnt -= (ctx->current_rx->len / data->dfs);
+		spi_context_update_rx(ctx, data->dfs, ctx->current_rx->len / data->dfs);
 	}
-
-	dfs = SPI_WORD_SIZE_GET(ctx->config->operation) >> 3;
-	remain_len = data->chunk_len - ctx->current_rx->len;
-	spi_context_update_rx(ctx, dfs, ctx->current_rx->len);
 
 	data->dma_rx.dma_blk_cfg.source_address = (uint32_t)SPI_DATA(cfg->base);
+	data->dma_rx.dma_blk_cfg.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 
-	if (data->dma_rx.src_addr_increment) {
-		data->dma_rx.dma_blk_cfg.source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
-	} else {
-		data->dma_rx.dma_blk_cfg.source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
-	}
-
+	data->dma_rx.dma_cfg.source_data_size = data->dfs;
+	data->dma_rx.dma_cfg.dest_data_size = data->dfs;
+	data->dma_rx.dma_cfg.block_count = 1;
 	data->dma_rx.dma_cfg.head_block = &data->dma_rx.dma_blk_cfg;
 	data->dma_rx.dma_cfg.head_block->next_block = NULL;
 	data->dma_rx.dma_cfg.user_data = (void *)dev;
 
 	if (data->dma_rx.dma_cfg.source_chaining_en) {
-		data->dma_rx.dma_cfg.block_count = ctx->rx_count;
 		data->dma_rx.dma_cfg.dma_callback = NULL;
-		data->dma_rx.block_idx = 0;
 		struct dma_block_config *blk_cfg = &data->dma_rx.dma_blk_cfg;
-		const struct spi_buf *current_rx = ctx->current_rx;
 
-		while (remain_len > 0) {
+		while (data->rx_cnt > 0) {
 			struct dma_block_config *next_blk_cfg;
 
-			next_blk_cfg = &data->dma_rx.chain_block[data->dma_rx.block_idx];
-			data->dma_rx.block_idx += 1;
-
+			next_blk_cfg =
+				&data->dma_rx.chain_block[data->dma_rx.dma_cfg.block_count - 1];
+			data->dma_rx.dma_cfg.block_count += 1;
 			blk_cfg->next_block = next_blk_cfg;
-			current_rx = ctx->current_rx;
-
-			next_blk_cfg->block_size = current_rx->len /
-						data->dma_rx.dma_cfg.dest_data_size;
 
 			/* rx direction has periph as source and mem as dest. */
-			if (current_rx->buf == NULL) {
+			if (ctx->rx_buf == NULL && ctx->rx_count == 0) {
+				next_blk_cfg->block_size = data->rx_cnt * data->dfs;
 				/* if rx buff is null, then write data to dummy address. */
 				next_blk_cfg->dest_address = (uintptr_t)&dummy_rx_tx_buffer;
 				next_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
+				data->rx_cnt = 0;
 			} else {
-				next_blk_cfg->dest_address = (uintptr_t)current_rx->buf;
-				if (data->dma_rx.dst_addr_increment) {
+				next_blk_cfg->block_size = ctx->current_rx->len;
+
+				if (ctx->current_rx->buf != NULL) {
+					next_blk_cfg->dest_address =
+								(uintptr_t)ctx->current_rx->buf;
 					next_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_INCREMENT;
 				} else {
+					next_blk_cfg->dest_address =
+								(uintptr_t)&dummy_rx_tx_buffer;
 					next_blk_cfg->dest_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 				}
+
+				data->rx_cnt -= (ctx->current_rx->len / data->dfs);
+				spi_context_update_rx(ctx, data->dfs,
+						      ctx->current_rx->len / data->dfs);
 			}
 
 			next_blk_cfg->source_address = (uint32_t)SPI_DATA(cfg->base);
-
-			if (data->dma_rx.src_addr_increment) {
-				next_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_INCREMENT;
-			} else {
-				next_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
-			}
+			next_blk_cfg->source_addr_adj = DMA_ADDR_ADJ_NO_CHANGE;
 
 			blk_cfg = next_blk_cfg;
 			next_blk_cfg->next_block = NULL;
-			remain_len -= ctx->current_rx->len;
-			spi_context_update_rx(ctx, dfs, ctx->current_rx->len);
 		}
 	} else {
 		data->dma_rx.dma_blk_cfg.next_block = NULL;
@@ -521,7 +503,7 @@ static int spi_dma_rx_load(const struct device *dev)
 			&data->dma_rx.dma_cfg);
 	/* the channel is the actual stream from 0 */
 	if (ret != 0) {
-		data->dma_rx.block_idx = 0;
+		data->dma_rx.dma_cfg.block_count = 0;
 		data->dma_rx.dma_blk_cfg.next_block = NULL;
 		return ret;
 	}
@@ -534,36 +516,39 @@ static int spi_transfer_dma(const struct device *dev)
 	const struct spi_atcspi200_cfg * const cfg = dev->config;
 	struct spi_atcspi200_data * const data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	uint32_t data_len, tctrl, dma_rx_enable, dma_tx_enable;
+	uint32_t cnt, reg_cnt, tctrl, dma_rx_enable, dma_tx_enable;
 	int error = 0;
 
-	data_len = data->chunk_len - 1;
-	if (data_len > MAX_TRANSFER_CNT) {
+	cnt = data->chunk_len / data->dfs;
+
+	if (cnt == 0 || cnt > MAX_TRANSFER_CNT) {
 		return -EINVAL;
 	}
 
+	data->tx_cnt = data->rx_cnt = cnt;
+
+	/* Actual transfer count = register value + 1 */
+	reg_cnt = cnt - 1;
+
 	if (!spi_context_rx_on(ctx)) {
 		tctrl = (TRNS_MODE_WRITE_ONLY << TCTRL_TRNS_MODE_OFFSET) |
-			(data_len << TCTRL_WR_TCNT_OFFSET);
+			(reg_cnt << TCTRL_WR_TCNT_OFFSET);
 		dma_rx_enable = 0;
 		dma_tx_enable = 1;
 	} else if (!spi_context_tx_on(ctx)) {
 		tctrl = (TRNS_MODE_READ_ONLY << TCTRL_TRNS_MODE_OFFSET) |
-			(data_len << TCTRL_RD_TCNT_OFFSET);
+			(reg_cnt << TCTRL_RD_TCNT_OFFSET);
 		dma_rx_enable = 1;
 		dma_tx_enable = 0;
 	} else {
 		tctrl = (TRNS_MODE_WRITE_READ << TCTRL_TRNS_MODE_OFFSET) |
-			(data_len << TCTRL_WR_TCNT_OFFSET) |
-			(data_len << TCTRL_RD_TCNT_OFFSET);
+			(reg_cnt << TCTRL_WR_TCNT_OFFSET) |
+			(reg_cnt << TCTRL_RD_TCNT_OFFSET);
 		dma_rx_enable = 1;
 		dma_tx_enable = 1;
 	}
 
 	sys_write32(tctrl, SPI_TCTRL(cfg->base));
-
-	/* Set sclk_div to zero */
-	sys_clear_bits(SPI_TIMIN(cfg->base), 0xff);
 
 	/* Enable END Interrupts */
 	sys_write32(IEN_END_MSK, SPI_INTEN(cfg->base));
@@ -607,7 +592,7 @@ static int transceive(const struct device *dev,
 	const struct spi_atcspi200_cfg * const cfg = dev->config;
 	struct spi_atcspi200_data * const data = dev->data;
 	struct spi_context *ctx = &data->ctx;
-	int error, dfs;
+	int error;
 	size_t chunk_len;
 
 	spi_context_lock(ctx, asynchronous, cb, userdata, config);
@@ -615,8 +600,12 @@ static int transceive(const struct device *dev,
 	if (error == 0) {
 		data->busy = true;
 
-		dfs = SPI_WORD_SIZE_GET(ctx->config->operation) >> 3;
-		spi_context_buffers_setup(ctx, tx_bufs, rx_bufs, dfs);
+		spi_context_buffers_setup(ctx, tx_bufs, rx_bufs, data->dfs);
+
+		if (ctx->tx_buf == NULL && ctx->rx_buf == NULL) {
+			goto done;
+		}
+
 		spi_context_cs_control(ctx, true);
 
 		sys_set_bits(SPI_CTRL(cfg->base), CTRL_TX_FIFO_RST_MSK);
@@ -630,7 +619,7 @@ static int transceive(const struct device *dev,
 			size_t rx_len = spi_context_total_rx_len(ctx);
 			size_t tx_len = spi_context_total_tx_len(ctx);
 
-			chunk_len = MIN(rx_len, tx_len);
+			chunk_len = MAX(rx_len, tx_len);
 		}
 
 		data->chunk_len = chunk_len;
@@ -639,16 +628,14 @@ static int transceive(const struct device *dev,
 		if ((data->dma_tx.dma_dev != NULL) && (data->dma_rx.dma_dev != NULL)) {
 			error = spi_transfer_dma(dev);
 			if (error != 0) {
-				spi_context_cs_control(ctx, false);
-				goto out;
+				return error;
 			}
 		} else {
 #endif /* CONFIG_ANDES_SPI_DMA_MODE */
 
 			error = spi_transfer(dev);
 			if (error != 0) {
-				spi_context_cs_control(ctx, false);
-				goto out;
+				return error;
 			}
 
 #ifdef CONFIG_ANDES_SPI_DMA_MODE
@@ -657,7 +644,8 @@ static int transceive(const struct device *dev,
 		error = spi_context_wait_for_completion(ctx);
 		spi_context_cs_control(ctx, false);
 	}
-out:
+
+done:
 	spi_context_release(ctx, error);
 
 	return error;
@@ -705,7 +693,7 @@ int spi_atcspi200_init(const struct device *dev)
 	int err = 0;
 
 	/* we should not configure the device we are running on */
-	if (cfg->xip) {
+	if (cfg->spi_cfg_rom) {
 		return -EINVAL;
 	}
 
@@ -739,13 +727,10 @@ int spi_atcspi200_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api spi_atcspi200_api = {
+static DEVICE_API(spi, spi_atcspi200_api) = {
 	.transceive = spi_atcspi200_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_atcspi200_transceive_async,
-#endif
-#ifdef CONFIG_SPI_RTIO
-	.iodev_submit = spi_rtio_iodev_default_submit,
 #endif
 	.release = spi_atcspi200_release
 };
@@ -757,12 +742,11 @@ static void spi_atcspi200_irq_handler(void *arg)
 	struct spi_atcspi200_data * const data = dev->data;
 	struct spi_context *ctx = &data->ctx;
 	uint32_t rx_data, cur_tx_fifo_num, cur_rx_fifo_num;
-	uint32_t i, dfs, intr_status, spi_status;
+	uint32_t i, intr_status, spi_status;
 	uint32_t tx_num = 0, tx_data = 0;
 	int error = 0;
 
 	intr_status = sys_read32(SPI_INTST(cfg->base));
-	dfs = SPI_WORD_SIZE_GET(ctx->config->operation) >> 3;
 
 	if ((intr_status & INTST_TX_FIFO_INT_MSK) &&
 	    !(intr_status & INTST_END_INT_MSK)) {
@@ -774,37 +758,42 @@ static void spi_atcspi200_irq_handler(void *arg)
 
 		for (i = tx_num; i > 0; i--) {
 
-			if (data->tx_cnt >= data->chunk_len) {
-				/* Have already sent a chunk of data, so stop
-				 * sending data!
-				 */
-				sys_clear_bits(SPI_INTEN(cfg->base), IEN_TX_FIFO_MSK);
-				break;
-			}
-
 			if (spi_context_tx_buf_on(ctx)) {
 
-				switch (dfs) {
+				switch (data->dfs) {
 				case 1:
 					tx_data = *ctx->tx_buf;
 					break;
 				case 2:
-					tx_data = *(uint16_t *)ctx->tx_buf;
+					tx_data = *(const uint16_t *)ctx->tx_buf;
+					break;
+				case 4:
+					tx_data = *(const uint32_t *)ctx->tx_buf;
+					break;
+				default:
+					__ASSERT(false, "Invalid data frame size");
+					tx_data = 0;
 					break;
 				}
 
 			} else if (spi_context_tx_on(ctx)) {
 				tx_data = 0;
 			} else {
-				sys_clear_bits(SPI_INTEN(cfg->base), IEN_TX_FIFO_MSK);
-				break;
+				tx_data = 0;
 			}
 
 			sys_write32(tx_data, SPI_DATA(cfg->base));
 
-			spi_context_update_tx(ctx, dfs, 1);
+			spi_context_update_tx(ctx, data->dfs, 1);
 
-			data->tx_cnt++;
+			data->tx_cnt--;
+			if (data->tx_cnt == 0) {
+				/* Have already sent a chunk of data, so stop
+				 * sending data!
+				 */
+				sys_clear_bits(SPI_INTEN(cfg->base), IEN_TX_FIFO_MSK);
+				break;
+			}
 		}
 		sys_write32(INTST_TX_FIFO_INT_MSK, SPI_INTST(cfg->base));
 
@@ -819,20 +808,33 @@ static void spi_atcspi200_irq_handler(void *arg)
 
 			if (spi_context_rx_buf_on(ctx)) {
 
-				switch (dfs) {
+				switch (data->dfs) {
 				case 1:
 					*ctx->rx_buf = rx_data;
 					break;
 				case 2:
 					*(uint16_t *)ctx->rx_buf = rx_data;
 					break;
+				case 4:
+					*(uint32_t *)ctx->rx_buf = rx_data;
+					break;
+				default:
+					__ASSERT(false, "Invalid data frame size");
+					break;
 				}
 
-			} else if (!spi_context_rx_on(ctx)) {
-				sys_clear_bits(SPI_INTEN(cfg->base), IEN_RX_FIFO_MSK);
 			}
 
-			spi_context_update_rx(ctx, dfs, 1);
+			data->rx_cnt--;
+			if (data->rx_cnt == 0) {
+				/* Have already sent a chunk of data, so stop
+				 * sending data!
+				 */
+				sys_clear_bits(SPI_INTEN(cfg->base), IEN_RX_FIFO_MSK);
+				break;
+			}
+
+			spi_context_update_rx(ctx, data->dfs, 1);
 		}
 		sys_write32(INTST_RX_FIFO_INT_MSK, SPI_INTST(cfg->base));
 	}
@@ -850,7 +852,7 @@ static void spi_atcspi200_irq_handler(void *arg)
 
 			spi_tx_dma_disable(dev);
 			dma_stop(data->dma_tx.dma_dev, data->dma_tx.channel);
-			data->dma_tx.block_idx = 0;
+			data->dma_tx.dma_cfg.block_count = 0;
 			data->dma_tx.dma_blk_cfg.next_block = NULL;
 		}
 
@@ -858,7 +860,7 @@ static void spi_atcspi200_irq_handler(void *arg)
 
 			spi_rx_dma_disable(dev);
 			dma_stop(data->dma_rx.dma_dev, data->dma_rx.channel);
-			data->dma_rx.block_idx = 0;
+			data->dma_rx.dma_cfg.block_count = 0;
 			data->dma_rx.dma_blk_cfg.next_block = NULL;
 		}
 #endif /* CONFIG_ANDES_SPI_DMA_MODE */
@@ -934,10 +936,20 @@ static void spi_atcspi200_irq_handler(void *arg)
 #define SPI_BUSY_INIT .busy = false,
 
 #if (CONFIG_XIP)
-#define SPI_ROM_CFG_XIP(node_id) DT_SAME_NODE(node_id, DT_BUS(DT_CHOSEN(zephyr_flash)))
+#define SPI_FLASH_BASE DT_REG_ADDR_BY_IDX(DT_PARENT(DT_CHOSEN(zephyr_flash)), 1)
+#define SPI_FLASH_SIZE DT_REG_SIZE_BY_IDX(DT_PARENT(DT_CHOSEN(zephyr_flash)), 1)
+#define SPI_FLASH_END (SPI_FLASH_BASE + SPI_FLASH_SIZE)
+
+#if ((SPI_FLASH_BASE <= CONFIG_FLASH_BASE_ADDRESS) && \
+	(CONFIG_FLASH_BASE_ADDRESS <= SPI_FLASH_END))
+#define SPI_CFG_ROM(node_id) DT_SAME_NODE(node_id, DT_BUS(DT_CHOSEN(zephyr_flash)))
 #else
-#define SPI_ROM_CFG_XIP(node_id) false
+#define SPI_CFG_ROM(node_id) false
 #endif
+
+#else /* CONFIG_XIP */
+#define SPI_CFG_ROM(node_id) false
+#endif /* CONFIG_XIP */
 
 #define SPI_INIT(n)							\
 	static struct spi_atcspi200_data spi_atcspi200_dev_data_##n = { \
@@ -954,10 +966,10 @@ static void spi_atcspi200_irq_handler(void *arg)
 		.base = DT_INST_REG_ADDR(n),				\
 		.irq_num = DT_INST_IRQN(n),				\
 		.f_sys = DT_INST_PROP(n, clock_frequency),		\
-		.xip = SPI_ROM_CFG_XIP(DT_DRV_INST(n)),			\
+		.spi_cfg_rom = SPI_CFG_ROM(DT_DRV_INST(n)),		\
 	};								\
 									\
-	DEVICE_DT_INST_DEFINE(n,					\
+	SPI_DEVICE_DT_INST_DEFINE(n,					\
 		spi_atcspi200_init,					\
 		NULL,							\
 		&spi_atcspi200_dev_data_##n,				\

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_DRIVERS_DMA_ESP32_H_
-#define ZEPHYR_INCLUDE_DRIVERS_DMA_ESP32_H_
+#ifndef ZEPHYR_INCLUDE_DRIVERS_DMA_DMA_ESP32_H_
+#define ZEPHYR_INCLUDE_DRIVERS_DMA_DMA_ESP32_H_
 
 enum gdma_trigger_peripheral {
 	ESP_GDMA_TRIG_PERIPH_M2M = -1,
@@ -14,6 +14,7 @@ enum gdma_trigger_peripheral {
 	ESP_GDMA_TRIG_PERIPH_UHCI0 = 2,
 	ESP_GDMA_TRIG_PERIPH_I2S0 = 3,
 	ESP_GDMA_TRIG_PERIPH_I2S1 = 4,
+	ESP_GDMA_TRIG_PERIPH_I2S2 = 5, /**< Shares trigger 5 with LCD0 and CAM0 */
 	ESP_GDMA_TRIG_PERIPH_LCD0 = 5,
 	ESP_GDMA_TRIG_PERIPH_CAM0 = 5,
 	ESP_GDMA_TRIG_PERIPH_AES = 6,
@@ -35,4 +36,4 @@ enum gdma_trigger_peripheral {
 		    (0xff))
 
 
-#endif /* ZEPHYR_INCLUDE_DRIVERS_DMA_ESP32_H_ */
+#endif /* ZEPHYR_INCLUDE_DRIVERS_DMA_DMA_ESP32_H_ */

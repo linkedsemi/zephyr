@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_PROMETHEUS_LABEL_H_
-#define ZEPHYR_INCLUDE_PROMETHEUS_LABEL_H_
+#ifndef ZEPHYR_INCLUDE_NET_PROMETHEUS_LABEL_H_
+#define ZEPHYR_INCLUDE_NET_PROMETHEUS_LABEL_H_
 
 /**
  * @file
@@ -16,12 +16,12 @@
  * @{
  */
 
-/* maximum length of label key */
-#define MAX_PROMETHEUS_LABEL_KEY_LENGTH   16
-/* maximum length of label value */
-#define MAX_PROMETHEUS_LABEL_VALUE_LENGTH 16
-/* maximum namber of labels per metric */
-#define MAX_PROMETHEUS_LABELS_PER_METRIC  5
+#if defined(CONFIG_PROMETHEUS)
+/** Maximum number of labels per metric */
+#define MAX_PROMETHEUS_LABELS_PER_METRIC CONFIG_PROMETHEUS_LABEL_MAX_COUNT
+#else
+#define MAX_PROMETHEUS_LABELS_PER_METRIC 1
+#endif /* CONFIG_PROMETHEUS */
 
 /**
  * @brief Prometheus label definition.
@@ -30,13 +30,13 @@
  */
 struct prometheus_label {
 	/** Prometheus metric label key */
-	char key[MAX_PROMETHEUS_LABEL_KEY_LENGTH];
+	const char *key;
 	/** Prometheus metric label value */
-	char value[MAX_PROMETHEUS_LABEL_VALUE_LENGTH];
+	const char *value;
 };
 
 /**
  * @}
  */
 
-#endif /* ZEPHYR_INCLUDE_PROMETHEUS_LABEL_H_ */
+#endif /* ZEPHYR_INCLUDE_NET_PROMETHEUS_LABEL_H_ */

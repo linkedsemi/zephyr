@@ -17,6 +17,7 @@ LOG_MODULE_REGISTER(ssd16xx);
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mipi_dbi.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
 
 #include <zephyr/display/ssd16xx.h>
 #include "ssd16xx_regs.h"
@@ -31,6 +32,9 @@ LOG_MODULE_REGISTER(ssd16xx);
 #define SSD16XX_PIXELS_PER_BYTE		8
 #define SSD16XX_DEFAULT_TR_VALUE	25U
 #define SSD16XX_TR_SCALE_FACTOR		256U
+#define SSD16XX_DISPLAY_OPTION_LEN	10U
+#define SSD16XX_DISPLAY_OPTION_F	5U
+#define SSD16XX_DISPLAY_OPTION_RAM_PINGPONG	BIT(6)
 
 
 enum ssd16xx_profile_type {
@@ -60,6 +64,12 @@ struct ssd16xx_quirks {
 	 * SSD16XX_CMD_UPDATE_CTRL2 for a partial refresh.
 	 */
 	uint8_t ctrl2_partial;
+	/*
+	 * The controller keeps the black/red buffers in place after a
+	 * partial refresh, so the new image must be copied to the red
+	 * buffer, which holds the previous image.
+	 */
+	bool partial_keeps_ram;
 };
 
 struct ssd16xx_data {
@@ -104,6 +114,7 @@ struct ssd16xx_config {
 	uint16_t rotation;
 	uint16_t height;
 	uint16_t width;
+	bool ram_ping_pong_mode2;
 	uint8_t tssv;
 };
 
@@ -385,8 +396,8 @@ static int ssd16xx_set_window(const struct device *dev,
 	case DISPLAY_ORIENTATION_ROTATED_180:
 		x_start = y / SSD16XX_PIXELS_PER_BYTE;
 		x_end = (y + desc->height - 1) / SSD16XX_PIXELS_PER_BYTE;
-		y_start = (x + desc->width - 1);
-		y_end = x;
+		y_start = (config->width - 1 - x);
+		y_end = (config->width - 1 - (x + desc->width - 1));
 		break;
 	case DISPLAY_ORIENTATION_ROTATED_270:
 		x_start = x / SSD16XX_PIXELS_PER_BYTE;
@@ -474,15 +485,19 @@ static int ssd16xx_write(const struct device *dev, const uint16_t x,
 			return err;
 		}
 	} else if (partial_refresh) {
+		const uint8_t ram_cmd = config->quirks->partial_keeps_ram
+						? SSD16XX_CMD_WRITE_RED_RAM
+						: SSD16XX_CMD_WRITE_RAM;
+
 		/*
 		 * We just performed a partial refresh. After the
 		 * refresh, the controller swaps the black/red buffers
-		 * containing the current and new image. We need to
-		 * perform a second write here to ensure that future
-		 * updates work on an up-to-date framebuffer.
+		 * containing the current and new image, or leaves
+		 * them in place. We need to perform a second write
+		 * here to ensure that future updates work on an
+		 * up-to-date framebuffer.
 		 */
-		err = ssd16xx_write_cmd(dev, SSD16XX_CMD_WRITE_RAM,
-					(uint8_t *)buf, buf_len);
+		err = ssd16xx_write_cmd(dev, ram_cmd, (uint8_t *)buf, buf_len);
 		if (err < 0) {
 			return err;
 		}
@@ -558,12 +573,11 @@ static void ssd16xx_get_capabilities(const struct device *dev,
 	const struct ssd16xx_config *config = dev->config;
 	struct ssd16xx_data *data = dev->data;
 
-	memset(caps, 0, sizeof(struct display_capabilities));
 	caps->x_resolution = config->width;
 	caps->y_resolution = config->height -
 			     config->height % EPD_PANEL_NUMOF_ROWS_PER_PAGE;
-	caps->supported_pixel_formats = PIXEL_FORMAT_MONO10;
-	caps->current_pixel_format = PIXEL_FORMAT_MONO10;
+	caps->supported_pixel_formats = PIXEL_FORMAT_MONO01;
+	caps->current_pixel_format = PIXEL_FORMAT_MONO01;
 	caps->screen_info = SCREEN_INFO_MONO_MSB_FIRST | SCREEN_INFO_EPD;
 
 	if (data->orientation == DISPLAY_ORIENTATION_NORMAL ||
@@ -577,7 +591,7 @@ static void ssd16xx_get_capabilities(const struct device *dev,
 static int ssd16xx_set_pixel_format(const struct device *dev,
 				    const enum display_pixel_format pf)
 {
-	if (pf == PIXEL_FORMAT_MONO10) {
+	if (pf == PIXEL_FORMAT_MONO01) {
 		return 0;
 	}
 
@@ -645,7 +659,16 @@ static int ssd16xx_clear_cntlr_mem(const struct device *dev, uint8_t ram_cmd)
 		return err;
 	}
 
-	memset(clear_page, 0xff, sizeof(clear_page));
+	if (config->profiles[SSD16XX_PROFILE_PARTIAL] == NULL
+		&& ram_cmd == SSD16XX_CMD_WRITE_RED_RAM) {
+		/* Display doesn't support partial refresh, so it either doesn't matter what is in
+		 * red Ram, or it needs to be inverted because this is a black/white/red display
+		 * and for red 0 is off, the opposite of black.
+		 */
+		memset(clear_page, 0x00, sizeof(clear_page));
+	} else {
+		memset(clear_page, 0xff, sizeof(clear_page));
+	}
 	for (int h = 0; h < panel_h; h++) {
 		size_t x = config->width;
 
@@ -721,6 +744,18 @@ static int ssd16xx_load_lut(const struct device *dev,
 			return ssd16xx_load_ws_from_otp(dev);
 		}
 	}
+}
+
+static int ssd16xx_enable_ram_pingpong(const struct device *dev)
+{
+	uint8_t display_option[SSD16XX_DISPLAY_OPTION_LEN] = { 0 };
+
+	/* F[6] enables RAM ping-pong for display mode 2. */
+	display_option[SSD16XX_DISPLAY_OPTION_F] =
+		SSD16XX_DISPLAY_OPTION_RAM_PINGPONG;
+
+	return ssd16xx_write_cmd(dev, SSD16XX_CMD_OTP_SELECTION_CTRL,
+				      display_option, sizeof(display_option));
 }
 
 static int ssd16xx_set_profile(const struct device *dev,
@@ -834,6 +869,13 @@ static int ssd16xx_set_profile(const struct device *dev,
 		}
 	}
 
+	if (type == SSD16XX_PROFILE_PARTIAL && config->ram_ping_pong_mode2) {
+		err = ssd16xx_enable_ram_pingpong(dev);
+		if (err < 0) {
+			return err;
+		}
+	}
+
 	err = ssd16xx_write_uint8(dev, SSD16XX_CMD_ENTRY_MODE, data->scan_mode);
 	if (err < 0) {
 		return err;
@@ -937,7 +979,7 @@ static int ssd16xx_init(const struct device *dev)
 	return ssd16xx_controller_init(dev);
 }
 
-static const struct display_driver_api ssd16xx_driver_api = {
+static DEVICE_API(display, ssd16xx_driver_api) = {
 	.blanking_on = ssd16xx_blanking_on,
 	.blanking_off = ssd16xx_blanking_off,
 	.write = ssd16xx_write,
@@ -977,6 +1019,7 @@ static struct ssd16xx_quirks quirks_solomon_ssd1675a = {
 	.pp_height_bits = 16,
 	.ctrl2_full = SSD16XX_GEN1_CTRL2_TO_PATTERN,
 	.ctrl2_partial = SSD16XX_GEN1_CTRL2_TO_PATTERN,
+	.partial_keeps_ram = true,
 };
 #endif
 
@@ -995,6 +1038,17 @@ static const struct ssd16xx_quirks quirks_solomon_ssd1680 = {
 static struct ssd16xx_quirks quirks_solomon_ssd1681 = {
 	.max_width = 200,
 	.max_height = 200,
+	.pp_width_bits = 8,
+	.pp_height_bits = 16,
+	.ctrl2_full = SSD16XX_GEN2_CTRL2_DISPLAY,
+	.ctrl2_partial = SSD16XX_GEN2_CTRL2_DISPLAY | SSD16XX_GEN2_CTRL2_MODE2,
+};
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(solomon_ssd1683)
+static struct ssd16xx_quirks quirks_solomon_ssd1683 = {
+	.max_width = 300,
+	.max_height = 400,
 	.pp_width_bits = 8,
 	.pp_height_bits = 16,
 	.ctrl2_full = SSD16XX_GEN2_CTRL2_DISPLAY,
@@ -1055,13 +1109,14 @@ static struct ssd16xx_quirks quirks_solomon_ssd1681 = {
 		.dbi_config = {                                         \
 			.mode = MIPI_DBI_MODE_SPI_4WIRE,                \
 			.config = MIPI_DBI_SPI_CONFIG_DT(n,             \
-				SPI_OP_MODE_MASTER | SPI_WORD_SET(8) |  \
+				SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8) | \
 				SPI_HOLD_ON_CS | SPI_LOCK_ON, 0),       \
 		},                                                      \
 		.busy_gpio = GPIO_DT_SPEC_GET(n, busy_gpios),		\
 		.quirks = quirks_ptr,					\
 		.height = DT_PROP(n, height),				\
 		.width = DT_PROP(n, width),				\
+		.ram_ping_pong_mode2 = DT_PROP_OR(n, ram_ping_pong_mode2, false),	\
 		.rotation = DT_PROP(n, rotation),			\
 		.tssv = DT_PROP_OR(n, tssv, 0),				\
 		.softstart = SSD16XX_ASSIGN_ARRAY(n, softstart),	\
@@ -1093,3 +1148,5 @@ DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1680, SSD16XX_DEFINE,
 			     &quirks_solomon_ssd1680);
 DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1681, SSD16XX_DEFINE,
 			     &quirks_solomon_ssd1681);
+DT_FOREACH_STATUS_OKAY_VARGS(solomon_ssd1683, SSD16XX_DEFINE,
+			     &quirks_solomon_ssd1683);

@@ -53,6 +53,42 @@ extern "C" {
 	I3C_DEVICE_ID_DT(DT_DRV_INST(inst))
 
 /**
+ * @name I3C device flags.
+ * @anchor I3C_DEVICE_FLAGS
+ * @{
+ */
+
+/** Device supports SETAASA CCC */
+#define I3C_SUPPORTS_SETAASA		BIT(0)
+/** Device supports I3C v1.0 */
+#define I3C_V1P0_SUPPORT		BIT(1)
+
+/** @} */
+
+/**
+ * @name I3C driver config flags.
+ * @anchor I3C_CONTROLLER_CONFIG_FLAGS
+ * @{
+ */
+
+/** Disable i3c_bus_init during driver initialization */
+#define I3C_CONTROLLER_FLAG_DISABLE_BUS_INIT		BIT(0)
+/** Disable Hot-Join ACK during driver initialization */
+#define I3C_CONTROLLER_FLAG_DISABLE_HJ_AT_INIT		BIT(1)
+
+/** @} */
+
+/**
+ * @brief Get I3C driver config flags from devicetree instance
+ * @param inst Devicetree instance number of the I3C controller
+ */
+#define I3C_CONTROLLER_CONFIG_FLAGS_DT_INST(inst)					\
+	(FIELD_PREP(I3C_CONTROLLER_FLAG_DISABLE_BUS_INIT,				\
+		    DT_INST_PROP(inst, disable_bus_init)) |				\
+	 FIELD_PREP(I3C_CONTROLLER_FLAG_DISABLE_HJ_AT_INIT,				\
+		    DT_INST_PROP(inst, disable_hj_at_init)))
+
+/**
  * @brief Structure initializer for i3c_device_desc from devicetree
  *
  * This helper macro expands to a static initializer for a <tt>struct
@@ -62,16 +98,16 @@ extern "C" {
  * @param node_id Devicetree node identifier for the I3C device whose
  *                struct i3c_device_desc to create an initializer for
  */
-#define I3C_DEVICE_DESC_DT(node_id)					\
-	{								\
-		.bus = DEVICE_DT_GET(DT_BUS(node_id)),			\
-		.dev = DEVICE_DT_GET(node_id),				\
-		.static_addr = DT_PROP_BY_IDX(node_id, reg, 0),		\
-		.pid = ((uint64_t)DT_PROP_BY_IDX(node_id, reg, 1) << 32)\
-		       | DT_PROP_BY_IDX(node_id, reg, 2),		\
-		.init_dynamic_addr =					\
-			DT_PROP_OR(node_id, assigned_address, 0),	\
-		.supports_setaasa = DT_PROP(node_id, supports_setaasa), \
+#define I3C_DEVICE_DESC_DT(node_id)                                                                \
+	{                                                                                          \
+		.bus = DEVICE_DT_GET(DT_BUS(node_id)),                                             \
+		.dev = DEVICE_DT_GET(node_id),                                                     \
+		.static_addr = DT_PROP_BY_IDX(node_id, reg, 0),                                    \
+		.pid = ((uint64_t)DT_PROP_BY_IDX(node_id, reg, 1) << 32) |                         \
+		       DT_PROP_BY_IDX(node_id, reg, 2),                                            \
+		.init_dynamic_addr = DT_PROP_OR(node_id, assigned_address, 0),                     \
+		.flags = FIELD_PREP(I3C_SUPPORTS_SETAASA, DT_PROP(node_id, supports_setaasa)) |    \
+			 FIELD_PREP(I3C_V1P0_SUPPORT, DT_PROP(node_id, v1p0_support)),             \
 	},
 
 /**
@@ -157,10 +193,10 @@ extern "C" {
 			 prio, api, __VA_ARGS__)
 
 /**
- * @brief Like I3C_TARGET_DT_DEFINE() for an instance of a DT_DRV_COMPAT compatible
+ * @brief Like I3C_TARGET_DT_DEFINE() for an instance of a @c DT_DRV_COMPAT compatible
  *
- * @param inst instance number. This is replaced by
- * `DT_DRV_COMPAT(inst)` in the call to I3C_TARGET_DT_DEFINE().
+ * @param inst instance number. This is replaced by <tt>DT_DRV_INST(inst)</tt> in the call
+ * to I3C_TARGET_DT_DEFINE().
  *
  * @param ... other parameters as expected by I3C_TARGET_DT_DEFINE().
  */

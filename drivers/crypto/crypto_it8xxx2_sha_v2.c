@@ -120,7 +120,7 @@ static int it8xxx2_sha256_module_calculation(void)
 		gctrl_regs->GCTRL_WNCKR = IT8XXX2_GCTRL_WN65K;
 
 		if ((sys_read8(IT8XXX2_SHA_REGS_BASE + IT8XXX2_REG_SHASR) & IT8XXX2_SHAIS)) {
-			timeout = 0;
+			timeout = false;
 			break;
 		}
 	}
@@ -262,7 +262,7 @@ static int it8xxx2_hash_handler(struct hash_ctx *ctx, struct hash_pkt *pkt,
 
 			if ((sys_read8(IT8XXX2_SHA_REGS_BASE + IT8XXX2_REG_SHASR)
 			      & IT8XXX2_SHAIS)) {
-				timeout = 0;
+				timeout = false;
 				break;
 			}
 		}
@@ -308,12 +308,12 @@ static int it8xxx2_hash_begin_session(const struct device *dev,
 {
 	if (algo != CRYPTO_HASH_ALGO_SHA256) {
 		LOG_ERR("Unsupported algorithm");
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	if (ctx->flags & ~(it8xxx2_query_hw_caps(dev))) {
 		LOG_ERR("Unsupported flag");
-		return -EINVAL;
+		return -ENOTSUP;
 	}
 
 	it8xxx2_sha256_init(true);
@@ -340,7 +340,7 @@ static int it8xxx2_sha_init(const struct device *dev)
 	return 0;
 }
 
-static const struct crypto_driver_api it8xxx2_crypto_api = {
+static DEVICE_API(crypto, it8xxx2_crypto_api) = {
 	.hash_begin_session = it8xxx2_hash_begin_session,
 	.hash_free_session = it8xxx2_hash_session_free,
 	.query_hw_caps = it8xxx2_query_hw_caps,

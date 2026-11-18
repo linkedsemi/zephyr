@@ -20,11 +20,15 @@
 #include <zephyr/types.h>
 #include <zephyr/device.h>
 #include <zephyr/logging/log.h>
+#include <zephyr/drivers/sensor/vl53l0x.h>
 
 #include "vl53l0x_api.h"
 #include "vl53l0x_platform.h"
 
 LOG_MODULE_REGISTER(VL53L0X, CONFIG_SENSOR_LOG_LEVEL);
+
+#define VL53L0X_FIXPOINT1616_SCALE_FACTOR (65536)
+#define VL53L0X_SENSOR_CHANNEL_VAL2_FACTOR (1000000)
 
 /* All the values used in this driver are coming from ST datasheet and examples.
  * It can be found here:
@@ -178,7 +182,7 @@ static int vl53l0x_start(const struct device *dev)
 	if (config->xshut.port) {
 		r = gpio_pin_configure_dt(&config->xshut, GPIO_OUTPUT_INACTIVE);
 		if (r < 0) {
-			LOG_ERR("[%s] Unable to inactivate XSHUT: %d",
+			LOG_ERR("[%s] Unable to deactivate XSHUT: %d",
 				dev->name, r);
 			return -EIO;
 		}
@@ -262,7 +266,7 @@ static int vl53l0x_sample_fetch(const struct device *dev,
 	ret = VL53L0X_PerformSingleRangingMeasurement(&drv_data->vl53l0x,
 						      &drv_data->RangingMeasurementData);
 	if (ret < 0) {
-		LOG_ERR("[%s] Could not perform measurment (error=%d)",
+		LOG_ERR("[%s] Could not perform measurement (error=%d)",
 			dev->name, ret);
 		return -EINVAL;
 	}
@@ -276,6 +280,7 @@ static int vl53l0x_channel_get(const struct device *dev,
 			       struct sensor_value *val)
 {
 	struct vl53l0x_data *drv_data = dev->data;
+	int ret = 0;
 
 	if (chan == SENSOR_CHAN_PROX) {
 		if (drv_data->RangingMeasurementData.RangeMilliMeter <=
@@ -286,16 +291,36 @@ static int vl53l0x_channel_get(const struct device *dev,
 		}
 		val->val2 = 0;
 	} else if (chan == SENSOR_CHAN_DISTANCE) {
-		val->val1 = drv_data->RangingMeasurementData.RangeMilliMeter / 1000;
-		val->val2 = (drv_data->RangingMeasurementData.RangeMilliMeter % 1000) * 1000;
+		ret = sensor_value_from_milli(val,
+					      drv_data->RangingMeasurementData.RangeMilliMeter);
+	} else if ((enum sensor_channel_vl53l0x)chan ==
+			SENSOR_CHAN_VL53L0X_EFFECTIVE_SPAD_RTN_COUNT) {
+		val->val1 = drv_data->RangingMeasurementData.EffectiveSpadRtnCount / 256;
+		val->val2 = 0;
+	} else if ((enum sensor_channel_vl53l0x)chan == SENSOR_CHAN_VL53L0X_AMBIENT_RATE_RTN_CPS) {
+		val->val1 = (drv_data->RangingMeasurementData.AmbientRateRtnMegaCps >> 16) +
+			(((drv_data->RangingMeasurementData.AmbientRateRtnMegaCps & 0xFFFF) *
+			  VL53L0X_SENSOR_CHANNEL_VAL2_FACTOR) / VL53L0X_FIXPOINT1616_SCALE_FACTOR);
+		val->val2 = 0;
+	} else if ((enum sensor_channel_vl53l0x)chan == SENSOR_CHAN_VL53L0X_SIGNAL_RATE_RTN_CPS) {
+		val->val1 = (drv_data->RangingMeasurementData.SignalRateRtnMegaCps >> 16) +
+			(((drv_data->RangingMeasurementData.SignalRateRtnMegaCps & 0xFFFF) *
+			  VL53L0X_SENSOR_CHANNEL_VAL2_FACTOR) / VL53L0X_FIXPOINT1616_SCALE_FACTOR);
+		val->val2 = 0;
+	} else if ((enum sensor_channel_vl53l0x)chan == SENSOR_CHAN_VL53L0X_RANGE_DMAX) {
+		ret = sensor_value_from_milli(val,
+					      drv_data->RangingMeasurementData.RangeDMaxMilliMeter);
+	} else if ((enum sensor_channel_vl53l0x)chan == SENSOR_CHAN_VL53L0X_RANGE_STATUS) {
+		val->val1 = drv_data->RangingMeasurementData.RangeStatus;
+		val->val2 = 0;
 	} else {
-		return -ENOTSUP;
+		ret = -ENOTSUP;
 	}
 
-	return 0;
+	return ret;
 }
 
-static const struct sensor_driver_api vl53l0x_api_funcs = {
+static DEVICE_API(sensor, vl53l0x_api_funcs) = {
 	.sample_fetch = vl53l0x_sample_fetch,
 	.channel_get = vl53l0x_channel_get,
 };

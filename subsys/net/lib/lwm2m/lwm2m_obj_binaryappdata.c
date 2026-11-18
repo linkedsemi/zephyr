@@ -29,11 +29,8 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define BINARYAPPDATA_VERSION_MINOR 0
 #define BINARYAPPDATA_MAX_ID 6
 
-/* Support 2 instances of binary data in one object */
-#define BINARYAPPDATA_DATA_INSTANCE_MAX 2
-
-/* Support 2 multi instance object */
-#define MAX_INSTANCE_COUNT	2
+#define MAX_INSTANCE_COUNT              CONFIG_LWM2M_BINARYAPPDATA_INSTANCE_COUNT
+#define BINARYAPPDATA_DATA_INSTANCE_MAX CONFIG_LWM2M_BINARYAPPDATA_DATA_INSTANCE_COUNT
 
 /*
  * Calculate resource instances as follows:
@@ -100,7 +97,7 @@ static struct lwm2m_engine_obj_inst *lwm2m_binaryappdata_create(uint16_t obj_ins
 	inst[avail].resources = res[avail];
 	inst[avail].resource_count = i;
 
-	LOG_DBG("Created LWM2M binary app data container instance: %d", obj_inst_id);
+	LOG_DBG("Created LwM2M binary app data container instance: %d", obj_inst_id);
 	return &inst[avail];
 }
 

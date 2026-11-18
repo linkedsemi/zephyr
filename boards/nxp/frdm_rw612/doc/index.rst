@@ -17,77 +17,51 @@ operation in a space- and cost-efficient wireless MCU requiring only a single 3.
 Hardware
 ********
 
-- 260 MHz ARM Cortex-M33, tri-radio cores for Wifi 6 + BLE 5.3 + 802.15.4
+- 260 MHz ARM Cortex-M33, tri-radio cores for Wi-Fi 6 + BLE 5.3 + 802.15.4
 - 1.2 MB on-chip SRAM
+- External Quad SPI NOR flash (64 MB) over FlexSPI
+- USB Type-C connector (J10) for power, UART console, and debug
+- 10/100 Mbps Ethernet
+- Integrated Wi-Fi 6 (802.11ax) radio
+- Integrated Bluetooth Low Energy 5.3 radio
+- Integrated 802.15.4 radio (for Zigbee/Thread)
+- Arduino Uno R3 compatible headers
+- mikroBUS header
+- On-board MCU-Link debugger (CMSIS-DAP / J-Link)
+- Single 3.3 V power supply
+
+For more information about the RW612 SoC and FRDM-RW612 board, see:
+
+- `RW612 SoC Website`_
+- `RW612 Datasheet`_
+- `RW612 Reference Manual`_
+- `FRDM-RW612 Website`_
+- `FRDM-RW612 User Guide`_
+- `FRDM-RW612 Board User Manual`_
+- `FRDM-RW612 Schematics`_
 
 Supported Features
 ==================
 
-+-----------+------------+-----------------------------------+
-| Interface | Controller | Driver/Component                  |
-+===========+============+===================================+
-| NVIC      | on-chip    | nested vector interrupt controller|
-+-----------+------------+-----------------------------------+
-| SYSTICK   | on-chip    | systick                           |
-+-----------+------------+-----------------------------------+
-| MCI_IOMUX | on-chip    | pinmux                            |
-+-----------+------------+-----------------------------------+
-| GPIO      | on-chip    | gpio                              |
-+-----------+------------+-----------------------------------+
-| USART     | on-chip    | serial                            |
-+-----------+------------+-----------------------------------+
-| BLE       | on-chip    | Bluetooth                         |
-+-----------+------------+-----------------------------------+
-| DMA       | on-chip    | dma                               |
-+-----------+------------+-----------------------------------+
-| SPI       | on-chip    | spi                               |
-+-----------+------------+-----------------------------------+
-| I2C       | on-chip    | i2c                               |
-+-----------+------------+-----------------------------------+
-| TRNG      | on-chip    | entropy                           |
-+-----------+------------+-----------------------------------+
-| WWDT      | on-chip    | watchdog                          |
-+-----------+------------+-----------------------------------+
-| USBOTG    | on-chip    | usb                               |
-+-----------+------------+-----------------------------------+
-| CTIMER    | on-chip    | counter                           |
-+-----------+------------+-----------------------------------+
-| SCTIMER   | on-chip    | pwm                               |
-+-----------+------------+-----------------------------------+
-| MRT       | on-chip    | counter                           |
-+-----------+------------+-----------------------------------+
-| OS_TIMER  | on-chip    | os timer                          |
-+-----------+------------+-----------------------------------+
-| PM        | on-chip    | power management; uses SoC Power  |
-|           |            | Modes 1 and 2                     |
-+-----------+------------+-----------------------------------+
-| BLE       | on-chip    | Bluetooth                         |
-+-----------+------------+-----------------------------------+
-| ADC       | on-chip    | adc                               |
-+-----------+------------+-----------------------------------+
-| DAC       | on-chip    | dac                               |
-+-----------+------------+-----------------------------------+
-| ENET      | on-chip    | ethernet                          |
-+-----------+------------+-----------------------------------+
+.. zephyr:board-supported-hw::
 
-The default configuration can be found in the defconfig file:
+.. note::
 
-   :zephyr_file:`boards/nxp/frdm_rw612/frdm_rw612_defconfig`
+   Power modes 1, 2 and 3 are supported when using System Power Management.
 
-Other hardware features are not currently supported
+Shields for Supported Features
+==============================
 
-Fetch Binary Blobs
-******************
+Some features in the table above are tested with Zephyr shields.  These shields
+are tested on this board:
 
-To support Bluetooth, frdm_rw612 requires fetching binary blobs, which can be
-achieved by running the following command:
-
-.. code-block:: console
-
-   west blobs fetch hal_nxp
+- :ref:`lcd_par_s035` - supports the Display interface.  This board uses the
+  SPI interface of the shield, connected to the LCDIC on-chip peripheral.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 Build and flash applications as usual (see :ref:`build_an_application` and
 :ref:`application_run` for more details).
@@ -147,6 +121,53 @@ should see the following message in the terminal:
    ***** Booting Zephyr OS zephyr-v3.6.0 *****
    Hello World! frdm_rw612
 
+SRAM Bus Access Partitioning
+****************************
+
+RW612 supports shared access of the SRAM from both the code bus and data bus.
+The bus used to access the SRAM is determined using two separate memory mapped address spaces.
+The application can configure the partitioning of the SRAM access regions by a devicetree overlay.
+For example, below is part of an overlay to change the whole SRAM to be used for data.
+
+.. code-block:: devicetree
+
+   &sram_data {
+        reg = <0x0 DT_SIZE_K(1216)>;
+   };
+
+
+NAND Flash (Board Rework)
+*************************
+
+The FlexSPI PortB1 on FRDM-RW612 is pin-compatible with SPI NAND flash.
+A Winbond W25N01GV (1 Gbit) can be fitted at U12 by board rework, providing
+128 MB of NAND storage accessible via the FlexSPI controller.
+
+The ``w25n01gv`` device tree node is present in the board DTS but disabled
+by default. Enable it with a devicetree overlay:
+
+.. code-block:: devicetree
+
+   &w25n01gv {
+       status = "okay";
+   };
+
+The :zephyr:code-sample:`littlefs` sample provides ready-made board files
+(``boards/frdm_rw612_nand.*``) that run LittleFS over Dhara FTL on this NAND.
+
+Wireless Connectivity Support
+*****************************
+
+Fetch Binary Blobs
+==================
+
+To support Bluetooth or Wi-Fi, frdm_rw612 requires fetching binary blobs, which can be
+achieved by running the following command:
+
+.. code-block:: console
+
+   west blobs fetch hal_nxp
+
 Bluetooth
 =========
 
@@ -157,8 +178,46 @@ frdm_rw612 platform supports the monolithic feature. The required binary blob
 ``<zephyr workspace>/modules/hal/nxp/zephyr/blobs/rw61x_sb_ble_a2.bin`` will be linked
 with the application image directly, forming one single monolithic image.
 
-Resources
-=========
+Wi-Fi
+=====
 
-.. _RW612 Website:
+Wi-Fi functionality requires to fetch binary blobs, so make sure to follow
+the ``Fetch Binary Blobs`` section first.
+
+frdm_rw612 platform supports the monolithic feature. The required binary blob
+``<zephyr workspace>/modules/hal/nxp/zephyr/blobs/rw61x_sb_wifi_a2.bin`` will be linked
+with the application image directly, forming one single monolithic image.
+
+RTC Sub-Second Counter
+======================
+
+To use the RTC sub-second counter which is clocked at a 32kHZ rate, make the
+following modifications to the board hardware:
+
+1. Move the short on SJ21 from 1 and 2 to short 2 and 3.
+2. Move the short on SJ22 from 1 and 2 to short 2 and 3.
+
+After this change, the ENET will stop functioning on the board.
+
+.. include:: ../../common/board-footer.rst.inc
+
+.. _RW612 SoC Website:
    https://www.nxp.com/products/wireless-connectivity/wi-fi-plus-bluetooth-plus-802-15-4/wireless-mcu-with-integrated-tri-radiobr1x1-wi-fi-6-plus-bluetooth-low-energy-5-3-802-15-4:RW612
+
+.. _RW612 Datasheet:
+   https://www.nxp.com/docs/en/data-sheet/RW612.pdf
+
+.. _RW612 Reference Manual:
+   https://www.nxp.com/webapp/Download?colCode=RM00278
+
+.. _FRDM-RW612 Website:
+   https://www.nxp.com/design/design-center/development-boards/general-purpose-mcus/freedom-development-board-for-rw612-wireless-mcu:FRDM-RW612
+
+.. _FRDM-RW612 User Guide:
+   https://www.nxp.com/document/guide/getting-started-with-frdm-rw612:GS-FRDM-RW612
+
+.. _FRDM-RW612 Board User Manual:
+   https://www.nxp.com/webapp/Download?colCode=UM12160
+
+.. _FRDM-RW612 Schematics:
+   https://www.nxp.com/webapp/Download?colCode=FRDM-RW612-SCH

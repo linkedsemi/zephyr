@@ -5,6 +5,8 @@ Optimization Tools
 
 The available optimization tools let you analyse :ref:`footprint_tools`
 and :ref:`data_structure_tools` using different build system targets.
+An :ref:`HTML dashboard <dashboard>` can also be generated for a
+more dynamic view of build artifacts and metrics.
 
 .. _footprint_tools:
 
@@ -157,6 +159,41 @@ These commands will generate something similar to the output below::
     ========================================================================================
                                                                   21652
 
+.. _footprint_tools_plot:
+
+Build Targets: ram_plot/rom_plot
+================================
+
+Similar to the ``ram_report`` and ``rom_report`` build targets, these targets generate memory usage
+reports in a sunburst chart as a visual representation.
+A user can click on segments to navigate through the directory structures, and hover over segments
+to get more details.
+
+Running the targets will first generate the CLI report and then open a browser window.
+
+.. zephyr-app-commands::
+    :tool: all
+    :zephyr-app: samples/hello_world
+    :board: reel_board
+    :goals: ram_plot
+
+.. image:: ram_plot.png
+   :align: center
+   :alt: RAM usage sunburst chart
+
+And similarly for the ROM usage.
+
+.. zephyr-app-commands::
+    :tool: all
+    :zephyr-app: samples/hello_world
+    :board: reel_board
+    :goals: rom_plot
+
+.. image:: rom_plot.png
+   :align: center
+   :alt: ROM usage sunburst chart
+
+
 Build Target: puncover
 ======================
 
@@ -168,7 +205,7 @@ the files and view their ROM, RAM, and stack usage.
 Before you can use this
 target, install the puncover Python module::
 
-    pip3 install git+https://github.com/HBehrens/puncover --user
+    pip3 install --user puncover
 
 .. warning::
 
@@ -186,8 +223,12 @@ If you are using :ref:`sysbuild`, see :ref:`sysbuild_dedicated_image_build_targe
     :board: reel_board
     :goals: puncover
 
+The ``puncover`` target will start a local web server on ``localhost:5000`` by default.
+The host IP and port the HTTP server runs on can be changed by setting the environment
+variables ``PUNCOVER_HOST`` and ``PUNCOVER_PORT``. Further arguments to puncover can be
+provided by defining them in ``EXTRA_PUNCOVER_ARGS``.
 
-To view worst-case stack usage analysis, build this with the
+To view worst-case stack usage analysis in the interactive web app, build with the
 :kconfig:option:`CONFIG_STACK_USAGE` enabled.
 
 .. zephyr-app-commands::
@@ -195,7 +236,46 @@ To view worst-case stack usage analysis, build this with the
     :zephyr-app: samples/hello_world
     :board: reel_board
     :goals: puncover
-    :gen-args: -DCONFIG_STACK_USAGE=y
+    :gen-args: -DCONFIG_STACK_USAGE=y -DCONFIG_CALLGRAPH_INFO=y
+
+If you want a report in a JSON file about the worst-case stack usages found, without launching
+the web app you can add the option ``--generate-report --non-interactive --report-type json``
+for non-interactive use. And add all functions you are interested in the report by adding each
+as an argument in the form of ``--report-max-static-stack-usage FUNCTION_NAME:::MAXIMAL_STACK_SIZE``
+for example to export ``log_process_thread_func``, ``shell_thread``, ``bg_thread_main`` and
+``work_queue_main`` this would look like this:
+
+.. zephyr-app-commands::
+    :tool: all
+    :zephyr-app: samples/hello_world
+    :board: reel_board
+    :goals: puncover
+    :gen-args: -DCONFIG_STACK_USAGE=y -DCONFIG_CALLGRAPH_INFO=y -DEXTRA_PUNCOVER_ARGS="--generate-report;--non-interactive;--report-type;json;--report-max-static-stack-usage;log_process_thread_func:::832;--report-max-static-stack-usage;shell_thread:::4160;--report-max-static-stack-usage;bg_thread_main:::2112;--report-max-static-stack-usage;work_queue_main:::1088;--report-filename;$PWD/report"
+
+All arguments can also for better maintainability and overview be put in a yaml config:
+
+.. code-block:: yaml
+
+      elf_file: ~/zephyrproject/zephyr/samples/net/mqtt_publisher/build/zephyr/zephyr.elf
+      gcc-tools-base: ~/zephyr-sdk-1.0.1/gnu/arm-zephyr-eabi/bin/arm-zephyr-eabi-
+      src_root: ~/zephyrproject/zephyr
+      build_dir: ~/zephyrproject/zephyr/samples/net/mqtt_publisher/build
+      generate-report: true
+      non-interactive: true
+      report-type: json
+      report-max-static-stack-usage:
+         - log_process_thread_func:::832
+         - shell_thread:::4160
+         - bg_thread_main:::2112
+         - work_queue_main:::1088
+         - mgmt_event_work_handler:::896
+
+.. zephyr-app-commands::
+    :tool: all
+    :zephyr-app: samples/hello_world
+    :board: reel_board
+    :goals: puncover
+    :gen-args: -DCONFIG_STACK_USAGE=y -DCONFIG_CALLGRAPH_INFO=y -DEXTRA_PUNCOVER_ARGS="-c puncover_config.yaml"
 
 
 .. _data_structure_tools:
@@ -262,3 +342,37 @@ Pahole will generate something similar to the output below in the console::
     };
     ...
     ...
+
+.. _dashboard:
+
+Dashboard
+*********
+
+An HTML dashboard can be generated that consolidates the various tool
+outputs and artifacts into one simple view. In addition to a basic summary of
+the build results, the following details are included:
+
+* Full memory reports (ram, rom) in drill-down table form as well as
+  :ref:`plots <footprint_tools_plot>` (as per the ``footprint``, ``ram_plot``,
+  and ``rom_plot`` build targets).
+* Kconfig symbol values and sources (as per the ``traceconfig`` build target).
+* Init-levels with function names, and report on any priority issues with sys-init
+  against devicetree (as per the ``initlevels`` build target).
+* Navigable devicetree view with property values and details from any bindings.
+
+Use the ``dashboard`` target with your board, as in the following example.
+If you are using :ref:`sysbuild`, see :ref:`sysbuild_dedicated_image_build_targets` instead.
+
+.. zephyr-app-commands::
+    :tool: all
+    :zephyr-app: samples/hello_world
+    :board: reel_board
+    :goals: dashboard
+
+This will generate the following output file and open it in the default browser::
+
+    build/dashboard/index.html
+
+.. image:: dashboard.webp
+   :align: center
+   :alt: Dashboard

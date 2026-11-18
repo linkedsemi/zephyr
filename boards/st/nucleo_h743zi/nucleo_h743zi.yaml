@@ -5,12 +5,12 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 512
 flash: 2048
 supported:
   - arduino_gpio
   - arduino_i2c
+  - ptp_clock
   - uart
   - gpio
   - counter

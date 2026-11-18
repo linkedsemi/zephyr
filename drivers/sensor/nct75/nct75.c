@@ -80,7 +80,7 @@ static int nct75_channel_get(const struct device *dev, enum sensor_channel chan,
 	return 0;
 }
 
-static const struct sensor_driver_api nct75_api = {
+static DEVICE_API(sensor, nct75_api) = {
 	.sample_fetch = nct75_sample_fetch,
 	.channel_get = nct75_channel_get,
 };
@@ -92,7 +92,7 @@ static int nct75_init(const struct device *dev)
 	int result;
 
 	if (!i2c_is_ready_dt(&config->i2c)) {
-		LOG_ERR("I2C device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

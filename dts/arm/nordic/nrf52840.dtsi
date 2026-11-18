@@ -1,8 +1,12 @@
-/* SPDX-License-Identifier: Apache-2.0 */
+/*
+ * Copyright (c) 2017 Nordic Semiconductor ASA
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
 
 #include <arm/armv7-m.dtsi>
 #include <nordic/nrf_common.dtsi>
-#include <zephyr/dt-bindings/adc/nrf-saadc-v3.h>
+#include <zephyr/dt-bindings/adc/nrf-saadc.h>
 #include <zephyr/dt-bindings/regulator/nrf5x.h>
 
 / {
@@ -31,7 +35,18 @@
 		};
 	};
 
+	clocks {
+		hfxo: hfxo {
+			compatible = "nordic,nrf52-hfxo";
+			clock-frequency = <64000000>;
+			startup-time-us = <1400>;
+			#clock-cells = <0>;
+		};
+	};
+
 	soc {
+		compatible = "simple-bus";
+
 		ficr: ficr@10000000 {
 			compatible = "nordic,nrf-ficr";
 			reg = <0x10000000 0x1000>;
@@ -42,11 +57,18 @@
 		uicr: uicr@10001000 {
 			compatible = "nordic,nrf-uicr";
 			reg = <0x10001000 0x1000>;
+			ranges = <0x0 0x10001000 0x1000>;
 			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		sram0: memory@20000000 {
 			compatible = "mmio-sram";
+			reg = <0x20000000 DT_SIZE_K(256)>;
+			ranges = <0x0 0x20000000 DT_SIZE_K(256)>;
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		clock: clock@40000000 {
@@ -54,6 +76,16 @@
 			reg = <0x40000000 0x1000>;
 			interrupts = <0 NRF_DEFAULT_IRQ_PRIORITY>;
 			status = "okay";
+
+			hfclk: hfclk {
+				compatible = "nordic,nrf-clock-hfclk";
+				status = "okay";
+			};
+
+			lfclk: lfclk {
+				compatible = "nordic,nrf-clock-lfclk";
+				status = "okay";
+			};
 		};
 
 		power: power@40000000 {
@@ -96,7 +128,7 @@
 			ieee802154-supported;
 			ble-2mbps-supported;
 			ble-coded-phy-supported;
-			tx-high-power-supported;
+			radio-tx-high-power-supported;
 
 			ieee802154: ieee802154 {
 				compatible = "nordic,nrf-ieee802154";
@@ -211,9 +243,12 @@
 		adc: adc@40007000 {
 			compatible = "nordic,nrf-saadc";
 			reg = <0x40007000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			interrupts = <7 NRF_DEFAULT_IRQ_PRIORITY>;
 			status = "disabled";
 			#io-channel-cells = <1>;
+			zephyr,pm-device-runtime-auto;
 		};
 
 		timer0: timer@40008000 {
@@ -406,16 +441,20 @@
 		flash_controller: flash-controller@4001e000 {
 			compatible = "nordic,nrf52-flash-controller";
 			reg = <0x4001e000 0x1000>;
+			ranges;
 			partial-erase;
-
 			#address-cells = <1>;
 			#size-cells = <1>;
-
 
 			flash0: flash@0 {
 				compatible = "soc-nv-flash";
 				erase-block-size = <4096>;
 				write-block-size = <4>;
+				reg = <0x0 DT_SIZE_K(1024)>;
+				ranges = <0x0 0x0 DT_SIZE_K(1024)>;
+				status = "okay";
+				#address-cells = <1>;
+				#size-cells = <1>;
 			};
 		};
 
@@ -558,7 +597,7 @@
 		};
 
 		cryptocell: crypto@5002a000 {
-			compatible = "nordic,cryptocell", "arm,cryptocell-310";
+			compatible = "arm,cryptocell-310";
 			reg = <0x5002a000 0x1000>, <0x5002b000 0x1000>;
 			reg-names = "wrapper", "core";
 			interrupts = <42 NRF_DEFAULT_IRQ_PRIORITY>;

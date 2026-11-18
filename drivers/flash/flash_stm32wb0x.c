@@ -19,9 +19,11 @@
  * _MEMORY_FLASH_SIZE_ respectively.
  */
 #include <soc.h>
+#include <stm32_bitops.h>
 #include <stm32_ll_bus.h>
 #include <stm32_ll_rcc.h>
 #include <stm32_ll_system.h>
+#include <stm32_ll_utils.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(flash_stm32wb0x, CONFIG_FLASH_LOG_LEVEL);
@@ -73,7 +75,7 @@ static inline size_t get_flash_size_in_bytes(void)
 	 * minus one.
 	 */
 	const uint32_t words_in_flash =
-		READ_BIT(FLASH->SIZE, FLASH_FLASH_SIZE_FLASH_SIZE) + 1;
+		stm32_reg_read_bits(&FLASH->SIZE, FLASH_FLASH_SIZE_FLASH_SIZE) + 1;
 
 	return words_in_flash * WORD_SIZE;
 }
@@ -400,12 +402,24 @@ int flash_wb0x_erase(const struct device *dev, off_t offset, size_t size)
 const struct flash_parameters *flash_wb0x_get_parameters(
 					const struct device *dev)
 {
+	ARG_UNUSED(dev);
+
 	static const struct flash_parameters fp = {
 		.write_block_size = WRITE_BLOCK_SIZE,
 		.erase_value = 0xff,
 	};
 
 	return &fp;
+}
+
+/* Gives the total logical device size in bytes and return 0. */
+static int flash_wb0x_get_size(const struct device *dev, uint64_t *size)
+{
+	struct flash_wb0x_data *data = dev->data;
+
+	*size = (uint64_t)data->flash_size;
+
+	return 0;
 }
 
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
@@ -427,11 +441,12 @@ void flash_wb0x_pages_layout(const struct device *dev,
 }
 #endif /* CONFIG_FLASH_PAGE_LAYOUT */
 
-static const struct flash_driver_api flash_wb0x_api = {
+static DEVICE_API(flash, flash_wb0x_api) = {
 	.erase = flash_wb0x_erase,
 	.write = flash_wb0x_write,
 	.read = flash_wb0x_read,
 	.get_parameters = flash_wb0x_get_parameters,
+	.get_size = flash_wb0x_get_size,
 #ifdef CONFIG_FLASH_PAGE_LAYOUT
 	.page_layout = flash_wb0x_pages_layout,
 #endif
@@ -455,5 +470,5 @@ int stm32wb0x_flash_init(const struct device *dev)
 static struct flash_wb0x_data wb0x_flash_drv_data;
 
 DEVICE_DT_INST_DEFINE(0, stm32wb0x_flash_init, NULL,
-		    &wb0x_flash_drv_data, NULL, POST_KERNEL,
+		    &wb0x_flash_drv_data, NULL, PRE_KERNEL_1,
 		    CONFIG_FLASH_INIT_PRIORITY, &flash_wb0x_api);

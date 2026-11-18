@@ -5,13 +5,14 @@
  */
 
 #include <arm/armv6-m.dtsi>
-#include <zephyr/dt-bindings/i2c/i2c.h>
 #include <zephyr/dt-bindings/adc/adc.h>
-#include <zephyr/dt-bindings/pwm/pwm.h>
-#include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/clock/stm32wb0_clock.h>
-#include <zephyr/dt-bindings/reset/stm32wb0_reset.h>
 #include <zephyr/dt-bindings/dma/stm32_dma.h>
+#include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/dt-bindings/i2c/i2c.h>
+#include <zephyr/dt-bindings/pwm/pwm.h>
+#include <zephyr/dt-bindings/reset/stm32wb0_reset.h>
+#include <zephyr/dt-bindings/sensor/qdec_stm32.h>
 #include <freq.h>
 #include <mem.h>
 
@@ -22,7 +23,10 @@
  */
 / {
 	chosen {
+		zephyr,crc = &crc;
 		zephyr,flash-controller = &flash;
+		zephyr,bt-hci = &bt_hci_wb0;
+		zephyr,entropy = &rng;
 	};
 
 	cpus {
@@ -32,12 +36,29 @@
 		cpu0: cpu@0 {
 			device_type = "cpu";
 			compatible = "arm,cortex-m0+";
+			cpu-power-states = <&deepstop>;
 			reg = <0>;
+		};
+
+		power-states {
+			deepstop: state0 {
+				compatible = "zephyr,power-state";
+				power-state-name = "suspend-to-ram";
+				substate-id = <0>;
+
+				/* 1.5ms seems to be a sufficient margin. */
+				min-residency-us = <1500>;
+
+				/* exit-latency-us property is not needed
+				 * since the same concept is applied by the hardware automatically.
+				 */
+			};
 		};
 	};
 
 	sram0: memory@20000000 {
-		compatible = "mmio-sram";
+		compatible = "zephyr,memory-region", "mmio-sram";
+		zephyr,memory-region = "SRAM0";
 	};
 
 	clocks {
@@ -111,9 +132,36 @@
 
 			#address-cells = <1>;
 			#size-cells = <1>;
+			ranges;
+
+			st_nvm_user_otp: flash@10001800 {
+				compatible = "st,stm32-nvm-otp";
+				reg = <0x10001800 DT_SIZE_K(1)>;
+				status = "disabled";
+			};
+
+			/* Undocumented/unnamed RO area */
+			flash@10001e00 {
+				compatible = "st,stm32-nvm-otp";
+				reg = <0x10001e00 256>;
+
+				nvmem-layout {
+					compatible = "fixed-layout";
+					#address-cells = <1>;
+					#size-cells = <1>;
+
+					ts_c30_otp: c30@60 {
+						reg = <0x60 0x4>;
+						#nvmem-cell-cells = <0>;
+						read-only;
+					};
+				};
+			};
 
 			flash0: flash@10040000 {
 				compatible = "st,stm32-nv-flash", "soc-nv-flash";
+				#address-cells = <1>;
+				#size-cells = <1>;
 				write-block-size = <4>;
 				erase-block-size = <2048>;
 				/* maximum erase time(ms) for a page (2K) */
@@ -159,6 +207,7 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 			reg = <0x48000000 DT_SIZE_M(2)>;
+			ranges;
 
 			gpioa: gpio@48000000 {
 				compatible = "st,stm32-gpio";
@@ -175,6 +224,14 @@
 				reg = <0x48100000 DT_SIZE_K(1)>;
 				clocks = <&rcc STM32_CLOCK(AHB0, 3)>;
 			};
+		};
+
+		rtc: rtc@40004000 {
+			compatible = "st,stm32-rtc";
+			reg = <0x40004000 DT_SIZE_K(1)>;
+			interrupts = <11 0>;
+			clocks = <&rcc STM32_CLOCK(APB0, 12)>;
+			status = "disabled";
 		};
 
 		usart1: serial@41004000 {
@@ -215,6 +272,7 @@
 			reg = <0x41007000 DT_SIZE_K(1)>;
 			clocks = <&rcc STM32_CLOCK(APB1, 14)>;
 			interrupts = <7 0>;
+			st,spi-data-width = "full-4-to-16-bit";
 			status = "disabled";
 		};
 
@@ -239,7 +297,7 @@
 			#dma-cells = <2>;
 			reg = <0x48700000 256>;
 			clocks = <&rcc STM32_CLOCK(AHB0, 0)>;
-			interrupts = <17 0 17 0 17 0 17 0 17 0 17 0 17 0 17 0>;
+			interrupts = <17 0>, <17 0>, <17 0>, <17 0>, <17 0>, <17 0>, <17 0>, <17 0>;
 			dma-requests = <8>;
 			dma-offset = <0>;
 			status = "disabled";
@@ -255,9 +313,60 @@
 			#dma-cells = <3>;
 			dma-channels = <8>;
 			dma-generators = <1>;
-			dma-requests= <25>;
+			dma-requests = <25>;
 			status = "disabled";
 		};
+
+		/**
+		 * This node is valid for STM32WB05, STM32WB06 and
+		 * STM32WB07, all equipped with the same IRQ-less
+		 * TRNG instance. Since all those properties are
+		 * also valid on STM32SWB09, except "compatible",
+		 * we pretend this node is valid for all SoCs of
+		 * the series and clean up in `stm32wb09.dtsi`.
+		 */
+		rng: rng@48600000 {
+			compatible = "st,stm32-rng-noirq";
+			reg = <0x48600000 DT_SIZE_K(4)>;
+			clocks = <&rcc STM32_CLOCK(AHB0, 18)>;
+			generation-delay-ns = <1250>; /* 1.25us */
+			status = "disabled";
+		};
+
+		iwdg: watchdog@40003000 {
+			compatible = "st,stm32-watchdog";
+			reg = <0x40003000 DT_SIZE_K(1)>;
+			clocks = <&rcc STM32_CLOCK(APB0, 14)>;
+			status = "disabled";
+		};
+
+		crc: crc@48200000 {
+			compatible = "st,stm32-crc";
+			reg = <0x48200000 DT_SIZE_K(1)>;
+			clocks = <&rcc STM32_CLOCK(AHB0, 12)>;
+			resets = <&rctl STM32_RESET(AHB0, 12)>;
+			status = "disabled";
+		};
+	};
+
+	bt_hci_wb0: bt_hci_wb0 {
+		compatible = "st,hci-stm32wb0";
+		interrupt-parent = <&nvic>;
+		interrupts = <18 0>, <22 0>, <25 0>;
+		interrupt-names = "radio-txrx", "radio-rrm", "radio-txrx-seq";
+		status = "disabled";
+	};
+
+	radio_timer: radio_timer {
+		compatible = "st,stm32wb0-radio-timer";
+		interrupt-parent = <&nvic>;
+		interrupts = <20 0>, <23 0>, <24 0>;
+		interrupt-names = "radio-timer-error",
+				  "radio-timer-cpu-wkup",
+				  "radio-timer-txrx-wkup";
+		compensated-timer-freq = <409600>;
+		max-hs-startup-time = <320>;
+		status = "disabled";
 	};
 };
 

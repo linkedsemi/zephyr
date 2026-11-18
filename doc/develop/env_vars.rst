@@ -88,8 +88,16 @@ your environment when you are using Zephyr.
 
    .. group-tab:: Linux/macOS
 
-      Create a file named :file:`~/.zephyrrc` if it doesn't exist, then add this
-      line to it:
+      Zephyr supports multiple locations for your :file:`zephyrrc` file,
+      following the XDG Base Directory Specification when possible. Create a
+      zephyrrc file in one of the following locations (they will be checked in
+      order):
+
+      #. :file:`$XDG_CONFIG_HOME/zephyr/zephyrrc`
+      #. :file:`$HOME/.config/zephyr/zephyrrc`
+      #. :file:`$HOME/.zephyrrc`
+
+      Add this line to the file in your preferred location:
 
       .. code-block:: console
 
@@ -97,7 +105,8 @@ your environment when you are using Zephyr.
 
       To get this value back into your current terminal environment, **you must
       run** ``source zephyr-env.sh`` from the main ``zephyr`` repository. Among
-      other things, this script sources :file:`~/.zephyrrc`.
+      other things, this script sources your :file:`zephyrrc` (the first one it
+      finds from the list of locations above).
 
       The value will be lost if you close the window, etc.; run ``source
       zephyr-env.sh`` again to get it back.
@@ -211,8 +220,9 @@ the :ref:`toolchain <gs_toolchain>` used to build Zephyr applications.
 .. envvar:: {TOOLCHAIN}_TOOLCHAIN_PATH
 
    Path to the toolchain specified by :envvar:`ZEPHYR_TOOLCHAIN_VARIANT`. For
-   example, if ``ZEPHYR_TOOLCHAIN_VARIANT=llvm``, use ``LLVM_TOOLCHAIN_PATH``.
-   (Note the capitalization when forming the environment variable name.)
+   example, if ``ZEPHYR_TOOLCHAIN_VARIANT=host/llvm``, use
+   ``LLVM_TOOLCHAIN_PATH``.  (Note the capitalization when forming the
+   environment variable name.)
 
 You might need to update some of these variables when you
 :ref:`update the Zephyr SDK toolchain <gs_toolchain_update>`.

@@ -10,7 +10,6 @@
 #include <errno.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/sys/check.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/crc.h>
 
@@ -29,6 +28,7 @@ LOG_MODULE_DECLARE(bt_ots, CONFIG_BT_OTS_LOG_LEVEL);
 #if defined(CONFIG_BT_OTS_OACP_WRITE_SUPPORT)
 static ssize_t oacp_write_proc_cb(struct bt_gatt_ots_l2cap *l2cap_ctx,
 			struct bt_conn *conn, struct net_buf *buf);
+#endif
 
 static void oacp_l2cap_closed(struct bt_gatt_ots_l2cap *l2cap_ctx,
 			struct bt_conn *conn)
@@ -45,7 +45,6 @@ static void oacp_l2cap_closed(struct bt_gatt_ots_l2cap *l2cap_ctx,
 	l2cap_ctx->rx_done = NULL;
 	l2cap_ctx->tx_done = NULL;
 }
-#endif
 
 #if defined(CONFIG_BT_OTS_OACP_CREATE_SUPPORT)
 static enum bt_gatt_ots_oacp_res_code oacp_create_proc_validate(
@@ -396,6 +395,7 @@ static int oacp_command_decode(const uint8_t *buf, uint16_t len,
 
 		return 0;
 #endif
+#if defined(CONFIG_BT_OTS_OACP_CHECKSUM_SUPPORT)
 	case BT_GATT_OTS_OACP_PROC_CHECKSUM_CALC:
 		if (net_buf.len != BT_GATT_OTS_OACP_CS_CALC_PARAMS_SIZE) {
 			return -EBADMSG;
@@ -406,6 +406,7 @@ static int oacp_command_decode(const uint8_t *buf, uint16_t len,
 			net_buf_simple_pull_le32(&net_buf);
 
 		return 0;
+#endif
 	case BT_GATT_OTS_OACP_PROC_EXECUTE:
 		if (net_buf.len != 0) {
 			return -EBADMSG;
@@ -506,6 +507,7 @@ static void oacp_read_proc_cb(struct bt_gatt_ots_l2cap *l2cap_ctx,
 	}
 
 	ots->l2cap.tx_done = oacp_read_proc_cb;
+	ots->l2cap.closed = oacp_l2cap_closed;
 	err = bt_gatt_ots_l2cap_send(&ots->l2cap, obj_chunk, len);
 	if (err) {
 		LOG_ERR("L2CAP CoC error: %d while trying to execute OACP "
@@ -648,7 +650,9 @@ static void oacp_ind_send(const struct bt_gatt_attr *oacp_attr,
 	oacp_res[oacp_res_len++] = oacp_proc.type;
 	oacp_res[oacp_res_len++] = oacp_status;
 
-	if (oacp_proc.type == BT_GATT_OTS_OACP_PROC_CHECKSUM_CALC) {
+	/* The Checksum Value field is only present when the procedure succeeded. */
+	if (oacp_proc.type == BT_GATT_OTS_OACP_PROC_CHECKSUM_CALC &&
+	    oacp_status == BT_GATT_OTS_OACP_RES_SUCCESS) {
 		sys_put_le32(net_buf_simple_pull_le32(resp_param), (oacp_res + oacp_res_len));
 		oacp_res_len += sizeof(uint32_t);
 	}
@@ -727,7 +731,7 @@ void bt_gatt_ots_oacp_cfg_changed(const struct bt_gatt_attr *attr,
 				      uint16_t value)
 {
 	struct bt_gatt_ots_indicate *oacp_ind =
-	    CONTAINER_OF((struct _bt_gatt_ccc *) attr->user_data,
+	    CONTAINER_OF((struct bt_gatt_ccc_managed_user_data *) attr->user_data,
 			 struct bt_gatt_ots_indicate, ccc);
 
 	LOG_DBG("Object Action Control Point CCCD value: 0x%04X", value);

@@ -24,10 +24,12 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_1 {
 			gpios = <&gpioc 2 GPIO_ACTIVE_LOW>;
 			label = "User LD2";
 		};
+
 		green_led: led_2 {
 			gpios = <&gpioc 3 GPIO_ACTIVE_LOW>;
 			label = "User LD1";
@@ -36,6 +38,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -48,6 +51,11 @@
 		led1 = &green_led;
 		sw0 = &user_button;
 		volt-sensor1 = &vbat;
+	};
+
+	/* Redefine MPU attributes MemoryMapping in the external Memory area */
+	ext_memory: memory@90000000 {
+		zephyr,memory-attr = <DT_MEM_ARM(ATTR_MPU_IO)>;
 	};
 };
 
@@ -99,6 +107,14 @@
 	d3ppre = <2>;
 };
 
+&pwr {
+	power-supply = "smps-direct";
+};
+
+&cryp {
+	status = "okay";
+};
+
 &usart3 {
 	pinctrl-0 = <&usart3_tx_pd8 &usart3_rx_pd9>;
 	pinctrl-names = "default";
@@ -115,17 +131,23 @@
 &i2c4 {
 	pinctrl-0 = <&i2c4_scl_pf14 &i2c4_sda_pf15>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiof 14 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiof 15 GPIO_ACTIVE_HIGH>;
 };
 
 &rng {
 	status = "okay";
 };
 
+&adc12_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
 &adc1 {
 	pinctrl-0 = <&adc1_inp0_pa0_c>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <4>;
 	status = "okay";
 };
 
@@ -138,6 +160,8 @@
 		     &eth_txd0_pb12
 		     &eth_txd1_pb13>;
 	pinctrl-names = "default";
+	phy-connection-type = "rmii";
+	phy-handle = <&eth_phy>;
 	status = "okay";
 };
 
@@ -146,10 +170,9 @@
 	pinctrl-0 = <&eth_mdio_pa2 &eth_mdc_pc1>;
 	pinctrl-names = "default";
 
-	ethernet-phy@0 {
+	eth_phy: ethernet-phy@0 {
 		compatible = "ethernet-phy";
 		reg = <0x00>;
-		status = "okay";
 	};
 };
 
@@ -162,9 +185,14 @@
 		     &sdmmc1_cmd_pd2>;
 	pinctrl-names = "default";
 	cd-gpios = <&gpiof 5 GPIO_ACTIVE_LOW>;
+	disk-name = "SD";
+	bus-width = <4>;
+	status = "okay";
 };
 
 &octospi1 {
+	compatible = "st,stm32-ospi-controller";
+	op-mode = "MSPI_OP_MODE_CONTROLLER";
 	pinctrl-0 = <&octospim_p1_clk_pf10 &octospim_p1_ncs_pg6
 		     &octospim_p1_io0_pd11 &octospim_p1_io1_pd12
 		     &octospim_p1_io2_pe2 &octospim_p1_io3_pd13
@@ -172,32 +200,62 @@
 		     &octospim_p1_io6_pg9 &octospim_p1_io7_pd7
 		     &octospim_p1_dqs_pb2>;
 	pinctrl-names = "default";
+	clock-frequency = <DT_FREQ_M(50)>;
+	st,dqs-port = <2>;
+	st,csbound = <0>;
 
 	status = "okay";
 
-	mx25lm51245: ospi-nor-flash@90000000 {
-		compatible = "st,stm32-ospi-nor";
-		reg = <0x90000000 DT_SIZE_M(64)>; /* 512 Mbits */
-		ospi-max-frequency = <DT_FREQ_M(50)>;
-		spi-bus-width = <OSPI_OPI_MODE>;
-		data-rate = <OSPI_DTR_TRANSFER>;
+	ext_flash_ctrl: nor-flash-controller@0 {
+		compatible = "st,nor", "mxicy,mx25u", "jedec,nor";
+		reg = <0>;
+		size = <DT_SIZE_M(512)>; /* 512 Megabits */
+		mspi-max-frequency = <DT_FREQ_M(50)>;
+		mspi-io-mode = "MSPI_IO_MODE_OCTAL";
+		mspi-data-rate = "MSPI_DATA_RATE_DUAL";
+		mspi-hardware-ce-num = <0>;
+		read-command = <0xee11>;                /* ReaD 4Bytes */
+		command-length = "INSTR_2_BYTE";
+		write-command = <0x12ed>; /* WRite 4Bytes */
+		rx-dummy = <20>;
+		st,mem-type = "macronix";
+
+		/* Allow Rd and Wr in MemoryMapped mode (permission = 0) */
+		memmap-config = <1 0 DT_SIZE_M(64) 0>;
+
+		/* external flash mapping */
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		ranges = <0x0 0x90000000 DT_SIZE_M(64)>; /* Ext Flash mem-mapped to 0x90000000 */
+
 		status = "okay";
 
-		partitions {
-			   compatible = "fixed-partitions";
-			   #address-cells = <1>;
-			   #size-cells = <1>;
+		ext_flash: mx25lm51245: ext-flash@0 {
+			compatible = "soc-nv-flash";
+			reg = <0x0 DT_SIZE_M(64)>;
+			write-block-size = <1>;
+			erase-block-size = <DT_SIZE_K(4)>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+			ranges;
 
-			   partition@0 {
-			       label = "nor";
-			       reg = <0x00000000 DT_SIZE_M(4)>;
-			   };
+			partitions {
+				compatible = "fixed-partitions";
+				#address-cells = <1>;
+				#size-cells = <1>;
+
+				partition@0 {
+					label = "nor";
+					reg = <0x00000000 DT_SIZE_M(4)>;
+				};
+			};
 		};
 	};
 };
 
 &rtc {
-	clocks = <&rcc STM32_CLOCK_BUS_APB4 0x00010000>,
+	clocks = <&rcc STM32_CLOCK(APB4, 16)>,
 		 <&rcc STM32_SRC_LSI RTC_SEL(2)>;
 	status = "okay";
 
@@ -209,7 +267,7 @@
 &fdcan1 {
 	pinctrl-0 = <&fdcan1_rx_ph14 &fdcan1_tx_ph13>;
 	pinctrl-names = "default";
-	clocks = <&rcc STM32_CLOCK_BUS_APB1_2 0x00000100>,
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
 		 <&rcc STM32_SRC_PLL2_Q FDCAN_SEL(2)>;
 	status = "okay";
 
@@ -221,7 +279,7 @@
 &fdcan2 {
 	pinctrl-0 = <&fdcan2_rx_pb5 &fdcan2_tx_pb6>;
 	pinctrl-names = "default";
-	clocks = <&rcc STM32_CLOCK_BUS_APB1_2 0x00000100>,
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
 		 <&rcc STM32_SRC_PLL2_Q FDCAN_SEL(2)>;
 	status = "okay";
 
@@ -233,7 +291,7 @@
 &fdcan3 {
 	pinctrl-0 = <&fdcan3_rx_pf6 &fdcan3_tx_pf7>;
 	pinctrl-names = "default";
-	clocks = <&rcc STM32_CLOCK_BUS_APB1_2 0x00000100>,
+	clocks = <&rcc STM32_CLOCK(APB1_2, 8)>,
 		 <&rcc STM32_SRC_PLL2_Q FDCAN_SEL(2)>;
 	/* Solder bridges SB29 and SB30 need to be closed for this to work */
 	status = "disabled";

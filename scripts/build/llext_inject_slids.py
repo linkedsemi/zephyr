@@ -23,78 +23,75 @@ import logging
 import shutil
 import sys
 
+import llext_slidlib
 from elftools.elf.elffile import ELFFile
 from elftools.elf.sections import SymbolTableSection
 
-import llext_slidlib
 
-class LLEXTSymtabPreparator():
+class LLEXTSymtabPreparator:
     def __init__(self, elf_path, log):
         self.log = log
         self.elf_path = elf_path
-        self.elf_fd = open(elf_path, "rb+")
+        self.elf_fd = open(elf_path, "rb+")  # noqa: SIM115
         self.elf = ELFFile(self.elf_fd)
 
     def _find_symtab(self):
-        supported_symtab_sections = [
-            ".symtab",
-            ".dynsym",
-        ]
+        e_type = self.elf.header['e_type']
+        if e_type == 'ET_DYN':
+            symtab_name = ".dynsym"
+        elif e_type == 'ET_REL':
+            symtab_name = ".symtab"
+        else:
+            self.log.error(f"unexpected ELF file type {e_type}")
+            return None
 
-        symtab = None
-        for section_name in supported_symtab_sections:
-            symtab = self.elf.get_section_by_name(section_name)
-            if not isinstance(symtab, SymbolTableSection):
-                self.log.debug(f"section {section_name} not found.")
-            else:
-                self.log.info(f"processing '{section_name}' symbol table...")
-                self.log.debug(f"(symbol table is at file offset 0x{symtab['sh_offset']:X})")
-                break
+        symtab = self.elf.get_section_by_name(symtab_name)
+        if not isinstance(symtab, SymbolTableSection):
+            self.log.debug(f"section {symtab_name} not found.")
+            return None
+
+        self.log.info(f"processing symbol table from '{symtab_name}'...")
+        self.log.debug(f"(symbol table is at file offset 0x{symtab['sh_offset']:X})")
         return symtab
 
     def _find_imports_in_symtab(self, symtab):
-        i = 0
         imports = []
-        for sym in symtab.iter_symbols():
-            #Check if symbol is an import
-            if sym.entry['st_info']['type'] == 'STT_NOTYPE' and \
-                sym.entry['st_info']['bind'] == 'STB_GLOBAL' and \
-                sym.entry['st_shndx'] == 'SHN_UNDEF':
-
+        for i, sym in enumerate(symtab.iter_symbols()):
+            # Check if symbol is an import
+            if (
+                sym.entry['st_info']['type'] == 'STT_NOTYPE'
+                and sym.entry['st_info']['bind'] == 'STB_GLOBAL'
+                and sym.entry['st_shndx'] == 'SHN_UNDEF'
+            ):
                 self.log.debug(f"found imported symbol '{sym.name}' at index {i}")
                 imports.append((i, sym))
-
-            i += 1
         return imports
 
     def _prepare_inner(self):
-        #1) Locate the symbol table
+        # 1) Locate the symbol table
         symtab = self._find_symtab()
         if symtab is None:
             self.log.error("no symbol table found in file")
             return 1
 
-        #2) Find imported symbols in symbol table
+        # 2) Find imported symbols in symbol table
         imports = self._find_imports_in_symtab(symtab)
         self.log.info(f"LLEXT has {len(imports)} import(s)")
 
-        #3) Write SLIDs in each symbol's 'st_value' field
+        # 3) Write SLIDs in each symbol's 'st_value' field
         def make_stvalue_reader_writer():
             byteorder = "little" if self.elf.little_endian else "big"
             if self.elf.elfclass == 32:
-                sizeof_Elf_Sym = 0x10    #sizeof(Elf32_Sym)
-                offsetof_st_value = 0x4  #offsetof(Elf32_Sym, st_value)
-                sizeof_st_value = 0x4    #sizeof(Elf32_Sym.st_value)
+                sizeof_Elf_Sym = 0x10  # sizeof(Elf32_Sym)
+                offsetof_st_value = 0x4  # offsetof(Elf32_Sym, st_value)
+                sizeof_st_value = 0x4  # sizeof(Elf32_Sym.st_value)
             else:
                 sizeof_Elf_Sym = 0x18
                 offsetof_st_value = 0x8
                 sizeof_st_value = 0x8
 
             def seek(symidx):
-                self.elf_fd.seek(
-                    symtab['sh_offset'] +
-                    symidx * sizeof_Elf_Sym +
-                    offsetof_st_value)
+                self.elf_fd.seek(symtab['sh_offset'] + symidx * sizeof_Elf_Sym + offsetof_st_value)
 
             def reader(symbol_index):
                 seek(symbol_index)
@@ -109,7 +106,7 @@ class LLEXTSymtabPreparator():
         rd_st_val, wr_st_val = make_stvalue_reader_writer()
         slid_size = self.elf.elfclass // 8
 
-        for (index, symbol) in imports:
+        for index, symbol in imports:
             slid = llext_slidlib.generate_slid(symbol.name, slid_size)
             slid_as_str = llext_slidlib.format_slid(slid, slid_size)
             msg = f"{symbol.name} -> {slid_as_str}"
@@ -131,6 +128,7 @@ class LLEXTSymtabPreparator():
         self.elf_fd.close()
         return res
 
+
 # Disable duplicate code warning for the code that follows,
 # as it is expected for these functions to be similar.
 # pylint: disable=duplicate-code
@@ -139,22 +137,28 @@ def _parse_args(argv):
     parser = argparse.ArgumentParser(
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        allow_abbrev=False)
+        allow_abbrev=False,
+    )
 
-    parser.add_argument("-f", "--elf-file", required=True,
-                        help="LLEXT ELF file to process")
-    parser.add_argument("-o", "--output-file",
-                        help=("Additional output file where processed ELF "
-                        "will be copied"))
-    parser.add_argument("-sl", "--slid-listing",
-                        help="write the SLID listing to a file")
-    parser.add_argument("-v", "--verbose", action="count",
-                        help=("enable verbose output, can be used multiple times "
-                              "to increase verbosity level"))
-    parser.add_argument("--always-succeed", action="store_true",
-                        help="always exit with a return code of 0, used for testing")
+    parser.add_argument("-f", "--elf-file", required=True, help="LLEXT ELF file to process")
+    parser.add_argument(
+        "-o", "--output-file", help=("Additional output file where processed ELF will be copied")
+    )
+    parser.add_argument("-sl", "--slid-listing", help="write the SLID listing to a file")
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="count",
+        help=("enable verbose output, can be used multiple times to increase verbosity level"),
+    )
+    parser.add_argument(
+        "--always-succeed",
+        action="store_true",
+        help="always exit with a return code of 0, used for testing",
+    )
 
     return parser.parse_args(argv)
+
 
 def _init_log(verbose):
     """Initialize a logger object."""
@@ -172,6 +176,7 @@ def _init_log(verbose):
         log.setLevel(logging.WARNING)
 
     return log
+
 
 def main(argv=None):
     args = _parse_args(argv)
@@ -191,6 +196,7 @@ def main(argv=None):
         shutil.copy(args.elf_file, args.output_file)
 
     return res
+
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

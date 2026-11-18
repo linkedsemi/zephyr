@@ -112,7 +112,7 @@ struct uart_stellaris_dev_data_t {
 #define UARTMIS_RXMIS 0x00000010
 #define UARTMIS_TXMIS 0x00000020
 
-static const struct uart_driver_api uart_stellaris_driver_api;
+static DEVICE_API(uart, uart_stellaris_driver_api);
 
 /**
  * @brief Set the baud rate
@@ -503,18 +503,6 @@ static int uart_stellaris_irq_is_pending(const struct device *dev)
 }
 
 /**
- * @brief Update IRQ status
- *
- * @param dev UART device struct
- *
- * @return Always 1
- */
-static int uart_stellaris_irq_update(const struct device *dev)
-{
-	return 1;
-}
-
-/**
  * @brief Set the callback function pointer for IRQ.
  *
  * @param dev UART device struct
@@ -549,7 +537,7 @@ static void uart_stellaris_isr(const struct device *dev)
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
 
-static const struct uart_driver_api uart_stellaris_driver_api = {
+static DEVICE_API(uart, uart_stellaris_driver_api) = {
 	.poll_in = uart_stellaris_poll_in,
 	.poll_out = uart_stellaris_poll_out,
 
@@ -566,7 +554,6 @@ static const struct uart_driver_api uart_stellaris_driver_api = {
 	.irq_err_enable = uart_stellaris_irq_err_enable,
 	.irq_err_disable = uart_stellaris_irq_err_disable,
 	.irq_is_pending = uart_stellaris_irq_is_pending,
-	.irq_update = uart_stellaris_irq_update,
 	.irq_callback_set = uart_stellaris_irq_callback_set,
 
 #endif
@@ -618,7 +605,7 @@ static void irq_config_func_0(const struct device *dev)
 static void irq_config_func_1(const struct device *port);
 #endif
 
-static struct uart_stellaris_config uart_stellaris_dev_cfg_1 = {
+static const struct uart_stellaris_config uart_stellaris_dev_cfg_1 = {
 	.uart = (volatile struct _uart *)DT_INST_REG_ADDR(1),
 	.sys_clk_freq = DT_INST_PROP_BY_PHANDLE(1, clocks, clock_frequency),
 

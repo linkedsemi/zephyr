@@ -17,6 +17,25 @@
 
 #include <kernel_arch_data.h>
 #include <pmp.h>
+#include <counters.h>
+
+#include <zephyr/platform/hooks.h>
+
+#ifdef CONFIG_CUSTOM_STACK_GUARD
+void z_riscv_custom_stack_guard_init(void);
+
+/*
+ * Enable the custom stack guard for the given thread's stack.
+ *
+ * @thread may be NULL when CONFIG_MULTITHREADING is disabled, since no
+ * thread object exists for the main thread in that mode; implementations
+ * must handle NULL and guard the main stack instead.
+ */
+void z_riscv_custom_stack_guard_enable(struct k_thread *thread);
+
+void z_riscv_custom_stack_guard_disable(void);
+bool z_riscv_custom_stack_guard_is_fault(struct arch_esf *esf);
+#endif /* CONFIG_CUSTOM_STACK_GUARD */
 
 #ifdef __cplusplus
 extern "C" {
@@ -26,19 +45,30 @@ extern "C" {
 
 static ALWAYS_INLINE void arch_kernel_init(void)
 {
-#ifdef CONFIG_THREAD_LOCAL_STORAGE
+#if defined(CONFIG_THREAD_LOCAL_STORAGE) && !defined(CONFIG_STACK_CANARIES_TLS_PREPEND)
 	__asm__ volatile ("li tp, 0");
 #endif
 #if defined(CONFIG_SMP) || defined(CONFIG_USERSPACE)
+#ifdef CONFIG_RISCV_S_MODE
+	csr_write(sscratch, &_kernel.cpus[0]);
+#else
 	csr_write(mscratch, &_kernel.cpus[0]);
 #endif
+#endif
 #ifdef CONFIG_SMP
+#ifdef CONFIG_RISCV_S_MODE_EXTERNAL_SBI
+	/* mhartid is an M-mode CSR and traps from S-mode; use the boot hart id
+	 * kconfig variable.
+	 */
+	_kernel.cpus[0].arch.hartid = CONFIG_RV_BOOT_HART;
+#else
 	_kernel.cpus[0].arch.hartid = csr_read(mhartid);
+#endif /* CONFIG_RISCV_S_MODE_EXTERNAL_SBI */
 	_kernel.cpus[0].arch.online = true;
 #endif
 #if ((CONFIG_MP_MAX_NUM_CPUS) > 1)
 	unsigned int cpu_node_list[] = {
-		DT_FOREACH_CHILD_STATUS_OKAY_SEP(DT_PATH(cpus), DT_REG_ADDR, (,))
+		DT_FOREACH_CPU_STATUS_OKAY_SEP(DT_REG_ADDR, (,))
 	};
 	unsigned int cpu_num, hart_x;
 
@@ -50,9 +80,16 @@ static ALWAYS_INLINE void arch_kernel_init(void)
 		hart_x++;
 	}
 #endif
-#ifdef CONFIG_RISCV_PMP
+#if defined(CONFIG_RISCV_PMP) && !defined(CONFIG_RISCV_S_MODE)
 	z_riscv_pmp_init();
 #endif
+#ifdef CONFIG_RISCV_USER_COUNTER_ACCESS
+	z_riscv_counteren_init();
+#endif
+#ifdef CONFIG_CUSTOM_STACK_GUARD
+	z_riscv_custom_stack_guard_init();
+#endif /* CONFIG_CUSTOM_STACK_GUARD */
+	soc_per_core_init_hook();
 }
 
 static ALWAYS_INLINE void
@@ -69,12 +106,8 @@ arch_switch(void *switch_to, void **switched_from)
 #endif
 }
 
-/* Thin wrapper around z_riscv_fatal_error_csf */
-FUNC_NORETURN void z_riscv_fatal_error(unsigned int reason,
+void z_riscv_fatal_error(unsigned int reason,
 				       const struct arch_esf *esf);
-
-FUNC_NORETURN void z_riscv_fatal_error_csf(unsigned int reason, const struct arch_esf *esf,
-					   const _callee_saved_t *csf);
 
 static inline bool arch_is_in_isr(void)
 {
@@ -101,6 +134,7 @@ int z_irq_do_offload(void);
 #ifdef CONFIG_FPU_SHARING
 void arch_flush_local_fpu(void);
 void arch_flush_fpu_ipi(unsigned int cpu);
+void z_riscv_fpu_flush_thread(struct k_thread *thread);
 #endif
 
 #ifndef CONFIG_MULTITHREADING

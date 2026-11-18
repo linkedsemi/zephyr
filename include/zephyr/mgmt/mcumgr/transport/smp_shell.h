@@ -6,11 +6,21 @@
 
 /** @file
  * @brief Shell transport for the mcumgr SMP protocol.
+ * @ingroup mcumgr_transport_shell
  */
 
-#ifndef ZEPHYR_INCLUDE_MGMT_SMP_SHELL_H_
-#define ZEPHYR_INCLUDE_MGMT_SMP_SHELL_H_
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_TRANSPORT_SMP_SHELL_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_TRANSPORT_SMP_SHELL_H_
 
+/**
+ * @brief This allows to use the MCUmgr SMP protocol over Zephyr shell.
+ * @defgroup mcumgr_transport_shell Shell transport
+ * @ingroup mcumgr_transport
+ * @{
+ */
+
+#include <zephyr/device.h>
+#include <zephyr/kernel.h>
 #include <zephyr/types.h>
 
 #ifdef __cplusplus
@@ -21,10 +31,16 @@ extern "C" {
 
 /** @brief Data used by SMP shell */
 struct smp_shell_data {
+	/** Network buffer pool for received frames */
 	struct net_buf_pool *buf_pool;
+	/** FIFO of frames ready to be processed */
 	struct k_fifo buf_ready;
+	/** Currently active receive buffer */
 	struct net_buf *buf;
+	/** Which parts of the SMP over console frame have been detected */
 	atomic_t esc_state;
+	/** Receiving UART shell object */
+	const struct shell_uart_common *uart;
 };
 
 /**
@@ -65,4 +81,8 @@ int smp_shell_init(void);
 }
 #endif
 
-#endif
+/**
+ * @}
+ */
+
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_TRANSPORT_SMP_SHELL_H_ */

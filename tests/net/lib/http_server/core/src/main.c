@@ -12,7 +12,7 @@
 
 #include <zephyr/net/http/service.h>
 #include <zephyr/net/socket.h>
-#include <zephyr/posix/sys/eventfd.h>
+#include <zephyr/sys/fdtable.h>
 #include <zephyr/ztest.h>
 
 #define BUFFER_SIZE                    1024
@@ -27,6 +27,9 @@
 #define TEST_DYNAMIC_POST_PAYLOAD "Test dynamic POST"
 #define TEST_DYNAMIC_GET_PAYLOAD "Test dynamic GET"
 #define TEST_STATIC_PAYLOAD "Hello, World!"
+#define TEST_STATIC_FS_PAYLOAD "Hello, World from static file!"
+#define TEST_LONG_HEADER_NAME "Test-Header-With-A-Name-Longer-Than-The-Response-Format-Buffer"
+#define TEST_LONG_CONTENT_TYPE "application/vnd.zephyr.example-type+json"
 
 /* Random base64 encoded data */
 #define TEST_LONG_PAYLOAD_CHUNK_1                                                                  \
@@ -44,7 +47,18 @@ BUILD_ASSERT(sizeof(long_payload) - 1 > CONFIG_HTTP_SERVER_CLIENT_BUFFER_SIZE,
 	     "long_payload should be longer than client buffer to test payload being sent to "
 	     "application across multiple calls to dynamic resource callback");
 
-/* Individual HTTP2 frames, used to compose requests. */
+/* Individual HTTP2 frames, used to compose requests.
+ *
+ * Headers and data frames can be composed based on a "real" request by copying the frame from a
+ * wireshark capture (Copy --> ...as a hex stream) and formatting into a C array initializer using
+ * xxd:
+ *
+ *   echo "<frame_as_hex_stream>" | xxd -r -p | xxd -i
+ *
+ * For example:
+ *   $ echo "01234567" | xxd -r -p | xxd -i
+ *     0x01, 0x23, 0x45, 0x67
+ */
 #define TEST_HTTP2_MAGIC \
 	0x50, 0x52, 0x49, 0x20, 0x2a, 0x20, 0x48, 0x54, 0x54, 0x50, 0x2f, 0x32, \
 	0x2e, 0x30, 0x0d, 0x0a, 0x0d, 0x0a, 0x53, 0x4d, 0x0d, 0x0a, 0x0d, 0x0a
@@ -106,6 +120,22 @@ BUILD_ASSERT(sizeof(long_payload) - 1 > CONFIG_HTTP_SERVER_CLIENT_BUFFER_SIZE,
 	0x9f, 0x87, 0x49, 0x50, 0x98, 0xbb, 0x8e, 0x8b, 0x4b, 0x40, 0x88, 0x49, \
 	0x50, 0x95, 0xa7, 0x28, 0xe4, 0x2d, 0x82, 0x88, 0x49, 0x50, 0x98, 0xbb, \
 	0x8e, 0x8b, 0x4a, 0x2f
+#define TEST_HTTP2_HEADERS_POST_HEADER_CAPTURE_WITH_TESTHEADER_STREAM_1 \
+	0x00, 0x00, 0x4b, 0x01, 0x04, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x83, 0x04, 0x8b, 0x62, 0x72, 0x8e, 0x42, 0xd9, 0x11, 0x07, 0x5a, 0x6d, \
+	0xb0, 0xbf, 0x86, 0x41, 0x87, 0x0b, 0xe2, 0x5c, 0x0b, 0x89, 0x70, 0xff, \
+	0x7a, 0x88, 0x25, 0xb6, 0x50, 0xc3, 0xab, 0xbc, 0x15, 0xc1, 0x53, 0x03, \
+	0x2a, 0x2f, 0x2a, 0x40, 0x88, 0x49, 0x50, 0x95, 0xa7, 0x28, 0xe4, 0x2d, \
+	0x9f, 0x87, 0x49, 0x50, 0x98, 0xbb, 0x8e, 0x8b, 0x4b, 0x5f, 0x8b, 0x1d, \
+	0x75, 0xd0, 0x62, 0x0d, 0x26, 0x3d, 0x4c, 0x74, 0x41, 0xea, 0x0f, 0x0d, \
+	0x02, 0x31, 0x30
+#define TEST_HTTP2_HEADERS_POST_HEADER_CAPTURE2_NO_TESTHEADER_STREAM_2 \
+	0x00, 0x00, 0x39, 0x01, 0x04, 0x00, 0x00, 0x00, TEST_STREAM_ID_2, \
+	0x83, 0x04, 0x8b, 0x62, 0x72, 0x8e, 0x42, 0xd9, 0x11, 0x07, 0x5a, 0x6d, \
+	0xb0, 0xa2, 0x86, 0x41, 0x87, 0x0b, 0xe2, 0x5c, 0x0b, 0x89, 0x70, 0xff, \
+	0x7a, 0x88, 0x25, 0xb6, 0x50, 0xc3, 0xab, 0xbc, 0x15, 0xc1, 0x53, 0x03, \
+	0x2a, 0x2f, 0x2a, 0x5f, 0x8b, 0x1d, 0x75, 0xd0, 0x62, 0x0d, 0x26, 0x3d, \
+	0x4c, 0x74, 0x41, 0xea, 0x0f, 0x0d, 0x02, 0x31, 0x30
 #define TEST_HTTP2_HEADERS_GET_RESPONSE_HEADERS_STREAM_1 \
 	0x00, 0x00, 0x28, 0x01, 0x05, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
 	0x82, 0x04, 0x8c, 0x62, 0xc2, 0xa2, 0xb3, 0xd4, 0x82, 0xc5, 0x39, 0x47, \
@@ -148,6 +178,19 @@ BUILD_ASSERT(sizeof(long_payload) - 1 > CONFIG_HTTP_SERVER_CLIENT_BUFFER_SIZE,
 	0x00, 0x00, 0x10, 0x09, 0x04, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
 	0x2f, 0x2a, 0x5f, 0x87, 0x49, 0x7c, 0xa5, 0x8a, 0xe8, 0x19, 0xaa, 0x0f, \
 	0x0d, 0x02, 0x31, 0x37
+/* Same header block as above, but split exactly on a header field boundary,
+ * so that the continuation frame header is processed by the regular frame
+ * header handler instead of being consumed by the incomplete header handling.
+ */
+#define TEST_HTTP2_PARTIAL_HEADERS_POST_DYNAMIC_STREAM_1_ALIGNED \
+	0x00, 0x00, 0x22, 0x01, 0x00, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x83, 0x86, 0x41, 0x87, 0x0b, 0xe2, 0x5c, 0x0b, 0x89, 0x70, 0xff, 0x04, \
+	0x86, 0x62, 0x4f, 0x55, 0x0e, 0x93, 0x13, 0x7a, 0x88, 0x25, 0xb6, 0x50, \
+	0xc3, 0xcb, 0xbc, 0xb8, 0x3f, 0x53, 0x03, 0x2a, 0x2f, 0x2a
+#define TEST_HTTP2_CONTINUATION_POST_DYNAMIC_STREAM_1_ALIGNED \
+	0x00, 0x00, 0x0e, 0x09, 0x04, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x5f, 0x87, 0x49, 0x7c, 0xa5, 0x8a, 0xe8, 0x19, 0xaa, 0x0f, 0x0d, 0x02, \
+	0x31, 0x37
 #define TEST_HTTP2_DATA_POST_DYNAMIC_STREAM_1 \
 	0x00, 0x00, 0x11, 0x00, 0x01, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
 	0x54, 0x65, 0x73, 0x74, 0x20, 0x64, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, \
@@ -163,16 +206,51 @@ BUILD_ASSERT(sizeof(long_payload) - 1 > CONFIG_HTTP_SERVER_CLIENT_BUFFER_SIZE,
 	0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
 	0x54, 0x65, 0x73, 0x74, 0x20, 0x64, 0x79, 0x6e, 0x61, 0x6d, 0x69, 0x63, \
 	0x20, 0x50, 0x4f, 0x53, 0x54
+#define TEST_HTTP2_DATA_POST_HEADER_CAPTURE_STREAM_1                                               \
+	0x00, 0x00, 0x0a, 0x00, 0x01, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x7b, 0x22, 0x74, 0x65, 0x73, 0x74, 0x22, 0x3a, 0x31, 0x7d
+#define TEST_HTTP2_DATA_POST_HEADER_CAPTURE_STREAM_2                                               \
+	0x00, 0x00, 0x0a, 0x00, 0x01, 0x00, 0x00, 0x00, TEST_STREAM_ID_2, \
+	0x7b, 0x22, 0x74, 0x65,	0x73, 0x74, 0x22, 0x3a, 0x31, 0x7d
 #define TEST_HTTP2_TRAILING_HEADER_STREAM_1 \
 	0x00, 0x00, 0x0c, 0x01, 0x05, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
 	0x40, 0x84, 0x92, 0xda, 0x69, 0xf5, 0x85, 0x9c, 0xa3, 0x90, 0xb6, 0x7f
 #define TEST_HTTP2_RST_STREAM_STREAM_1 \
 	0x00, 0x00, 0x04, 0x03, 0x00, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
 	0xaa, 0xaa, 0xaa, 0xaa
+#define TEST_HTTP2_HEADERS_PUT_DYNAMIC_STREAM_1 \
+	0x00, 0x00, 0x34, 0x01, 0x04, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x42, 0x03, 0x50, 0x55, 0x54, 0x86, 0x41, 0x87, 0x0b, 0xe2, 0x5c, 0x0b, \
+	0x89, 0x70, 0xff, 0x04, 0x86, 0x62, 0x4f, 0x55, 0x0e, 0x93, 0x13, 0x7a, \
+	0x88, 0x25, 0xb6, 0x50, 0xc3, 0xcb, 0xbc, 0xb8, 0x3f, 0x53, 0x03, 0x2a, \
+	0x2f, 0x2a, 0x5f, 0x87, 0x49, 0x7c, 0xa5, 0x8a, 0xe8, 0x19, 0xaa, 0x0f, \
+	0x0d, 0x02, 0x31, 0x37
+#define TEST_HTTP2_HEADERS_PATCH_DYNAMIC_STREAM_1 \
+	0x00, 0x00, 0x36, 0x01, 0x04, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x42, 0x05, 0x50, 0x41, 0x54, 0x43, 0x48, 0x86, 0x41, 0x87, 0x0b, 0xe2, \
+	0x5c, 0x0b, 0x89, 0x70, 0xff, 0x04, 0x86, 0x62, 0x4f, 0x55, 0x0e, 0x93, \
+	0x13, 0x7a, 0x88, 0x25, 0xb6, 0x50, 0xc3, 0xcb, 0xbc, 0xb8, 0x3f, 0x53, \
+	0x03, 0x2a, 0x2f, 0x2a, 0x5f, 0x87, 0x49, 0x7c, 0xa5, 0x8a, 0xe8, 0x19, \
+	0xaa, 0x0f, 0x0d, 0x02, 0x31, 0x37
+#define TEST_HTTP2_DATA_PUT_DYNAMIC_STREAM_1 TEST_HTTP2_DATA_POST_DYNAMIC_STREAM_1
+#define TEST_HTTP2_DATA_PATCH_DYNAMIC_STREAM_1 TEST_HTTP2_DATA_POST_DYNAMIC_STREAM_1
+#define TEST_HTTP2_HEADERS_DELETE_DYNAMIC_STREAM_1 \
+	0x00, 0x00, 0x32, 0x01, 0x05, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x42, 0x06, 0x44, 0x45, 0x4c, 0x45, 0x54, 0x45, 0x86, 0x41, 0x87, 0x0b, \
+	0xe2, 0x5c, 0x0b, 0x89, 0x70, 0xff, 0x04, 0x86, 0x62, 0x4f, 0x55, 0x0e, \
+	0x93, 0x13, 0x7a, 0x88, 0x25, 0xb6, 0x50, 0xc3, 0xcb, 0xbc, 0xb8, 0x3f, \
+	0x53, 0x03, 0x2a, 0x2f, 0x2a, 0x5f, 0x87, 0x49, 0x7c, 0xa5, 0x8a, 0xe8, \
+	0x19, 0xaa
+#define TEST_HTTP2_HEADERS_POST_ROOT_STREAM_1 \
+	0x00, 0x00, 0x21, 0x01, 0x05, 0x00, 0x00, 0x00, TEST_STREAM_ID_1, \
+	0x83, 0x84, 0x86, 0x41, 0x8a, 0x0b, 0xe2, 0x5c, 0x0b, 0x89, 0x70, 0xdc, \
+	0x78, 0x0f, 0x03, 0x53, 0x03, 0x2a, 0x2f, 0x2a, 0x90, 0x7a, 0x8a, 0xaa, \
+	0x69, 0xd2, 0x9a, 0xc4, 0xc0, 0x57, 0x68, 0x0b, 0x83
+#define TEST_HTTP2_DATA_POST_ROOT_STREAM_1 TEST_HTTP2_DATA_POST_DYNAMIC_STREAM_1
 
 static uint16_t test_http_service_port = SERVER_PORT;
 HTTP_SERVICE_DEFINE(test_http_service, SERVER_IPV4_ADDR,
-		    &test_http_service_port, 1, 10, NULL);
+		    &test_http_service_port, 1, 10, NULL, NULL, NULL);
 
 static const char static_resource_payload[] = TEST_STATIC_PAYLOAD;
 struct http_resource_detail_static static_resource_detail = {
@@ -189,15 +267,28 @@ HTTP_RESOURCE_DEFINE(static_resource, test_http_service, "/",
 
 static uint8_t dynamic_payload[32];
 static size_t dynamic_payload_len = sizeof(dynamic_payload);
+static bool dynamic_error;
+static bool dynamic_complete;
 
-static int dynamic_cb(struct http_client_ctx *client, enum http_data_status status, uint8_t *buffer,
-		      size_t len, struct http_response_ctx *response_ctx, void *user_data)
+static int dynamic_cb(struct http_client_ctx *client, enum http_transaction_status status,
+		      const struct http_request_ctx *request_ctx,
+		      struct http_response_ctx *response_ctx, void *user_data)
 {
 	static size_t offset;
 
-	if (status == HTTP_SERVER_DATA_ABORTED) {
+	if (status == HTTP_SERVER_TRANSACTION_ABORTED ||
+	    status == HTTP_SERVER_TRANSACTION_COMPLETE) {
 		offset = 0;
+		if (status == HTTP_SERVER_TRANSACTION_COMPLETE) {
+			zassert_false(dynamic_complete,
+				      "Transaction complete called multiple times");
+			dynamic_complete = true;
+		}
 		return 0;
+	}
+
+	if (dynamic_error) {
+		return -ENOMEM;
 	}
 
 	switch (client->method) {
@@ -206,17 +297,24 @@ static int dynamic_cb(struct http_client_ctx *client, enum http_data_status stat
 		response_ctx->body_len = dynamic_payload_len;
 		response_ctx->final_chunk = true;
 		break;
+	case HTTP_DELETE:
+		response_ctx->body = NULL;
+		response_ctx->body_len = 0;
+		response_ctx->final_chunk = true;
+		break;
 	case HTTP_POST:
-		if (len + offset > sizeof(dynamic_payload)) {
+	case HTTP_PUT:
+	case HTTP_PATCH:
+		if (request_ctx->data_len + offset > sizeof(dynamic_payload)) {
 			return -ENOMEM;
 		}
 
-		if (len > 0) {
-			memcpy(dynamic_payload + offset, buffer, len);
-			offset += len;
+		if (request_ctx->data_len > 0) {
+			memcpy(dynamic_payload + offset, request_ctx->data, request_ctx->data_len);
+			offset += request_ctx->data_len;
 		}
 
-		if (status == HTTP_SERVER_DATA_FINAL) {
+		if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
 			/* All data received, reset progress. */
 			dynamic_payload_len = offset;
 			offset = 0;
@@ -234,7 +332,8 @@ struct http_resource_detail_dynamic dynamic_detail = {
 	.common = {
 		.type = HTTP_RESOURCE_TYPE_DYNAMIC,
 		.bitmask_of_supported_http_methods =
-			BIT(HTTP_GET) | BIT(HTTP_POST),
+			BIT(HTTP_GET) | BIT(HTTP_DELETE) | BIT(HTTP_POST) |
+			BIT(HTTP_PUT) | BIT(HTTP_PATCH),
 		.content_type = "text/plain",
 	},
 	.cb = dynamic_cb,
@@ -244,43 +343,61 @@ struct http_resource_detail_dynamic dynamic_detail = {
 HTTP_RESOURCE_DEFINE(dynamic_resource, test_http_service, "/dynamic",
 		     &dynamic_detail);
 
-static struct http_header_capture_ctx header_capture_ctx_clone;
+struct test_headers_clone {
+	uint8_t buffer[CONFIG_HTTP_SERVER_CAPTURE_HEADER_BUFFER_SIZE];
+	struct http_header headers[CONFIG_HTTP_SERVER_CAPTURE_HEADER_COUNT];
+	size_t count;
+	enum http_header_status status;
+};
 
-static int dynamic_request_headers_cb(struct http_client_ctx *client, enum http_data_status status,
-				      uint8_t *buffer, size_t len,
+static int dynamic_request_headers_cb(struct http_client_ctx *client,
+				      enum http_transaction_status status,
+				      const struct http_request_ctx *request_ctx,
 				      struct http_response_ctx *response_ctx, void *user_data)
 {
-	ptrdiff_t offset;
 	struct http_header *hdrs_src;
 	struct http_header *hdrs_dst;
+	struct test_headers_clone *clone = (struct test_headers_clone *)user_data;
+	const char *src_buffer = (const char *)client->header_capture_ctx.buffer;
 
-	if (status == HTTP_SERVER_DATA_FINAL) {
+	if (status == HTTP_SERVER_TRANSACTION_ABORTED ||
+	    status == HTTP_SERVER_TRANSACTION_COMPLETE) {
+		return 0;
+	}
+
+	if (request_ctx->header_count != 0) {
 		/* Copy the captured header info to static buffer for later assertions in testcase.
 		 * Don't assume that the buffer inside client context remains valid after return
-		 * from the callback - this is currently the case at the time of writing but could
-		 * change. Also need to update pointers within structure with an offset to point at
-		 * new buffer.
+		 * from the callback. Also need to update pointers within structure with an offset
+		 * to point at new buffer.
 		 */
-		memcpy(&header_capture_ctx_clone, &client->header_capture_ctx,
-		       sizeof(header_capture_ctx_clone));
+		memcpy(clone->buffer, &client->header_capture_ctx, sizeof(clone->buffer));
 
-		hdrs_src = client->header_capture_ctx.headers;
-		hdrs_dst = header_capture_ctx_clone.headers;
-		offset = header_capture_ctx_clone.buffer - client->header_capture_ctx.buffer;
+		clone->count = request_ctx->header_count;
+		clone->status = request_ctx->headers_status;
 
-		for (int i = 0; i < CONFIG_HTTP_SERVER_CAPTURE_HEADER_COUNT; i++) {
+		hdrs_src = request_ctx->headers;
+		hdrs_dst = clone->headers;
+
+		for (int i = 0; i < request_ctx->header_count; i++) {
 			if (hdrs_src[i].name != NULL) {
-				hdrs_dst[i].name = hdrs_src[i].name + offset;
+				hdrs_dst[i].name =
+					(char *)clone->buffer + (hdrs_src[i].name - src_buffer);
 			}
 
-			if (hdrs_dst[i].value != NULL) {
-				hdrs_dst[i].value = hdrs_src[i].value + offset;
+			if (hdrs_src[i].value != NULL) {
+				hdrs_dst[i].value =
+					(char *)clone->buffer + (hdrs_src[i].value - src_buffer);
 			}
 		}
 	}
 
 	return 0;
 }
+
+/* Define two resources for testing header capture, so that we can check concurrent streams */
+static struct test_headers_clone request_headers_clone;
+static struct test_headers_clone request_headers_clone2;
 
 struct http_resource_detail_dynamic dynamic_request_headers_detail = {
 	.common = {
@@ -289,11 +406,24 @@ struct http_resource_detail_dynamic dynamic_request_headers_detail = {
 			.content_type = "text/plain",
 		},
 	.cb = dynamic_request_headers_cb,
-	.user_data = NULL
+	.user_data = &request_headers_clone,
+};
+
+struct http_resource_detail_dynamic dynamic_request_headers_detail2 = {
+	.common = {
+			.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+			.bitmask_of_supported_http_methods = BIT(HTTP_GET) | BIT(HTTP_POST),
+			.content_type = "text/plain",
+		},
+	.cb = dynamic_request_headers_cb,
+	.user_data = &request_headers_clone2,
 };
 
 HTTP_RESOURCE_DEFINE(dynamic_request_headers_resource, test_http_service, "/header_capture",
 		     &dynamic_request_headers_detail);
+
+HTTP_RESOURCE_DEFINE(dynamic_request_headers_resource2, test_http_service, "/header_capture2",
+		     &dynamic_request_headers_detail2);
 
 HTTP_SERVER_REGISTER_HEADER_CAPTURE(capture_user_agent, "User-Agent");
 HTTP_SERVER_REGISTER_HEADER_CAPTURE(capture_test_header, "Test-Header");
@@ -320,13 +450,23 @@ enum dynamic_response_headers_variant {
 
 	/* Long body data split across multiple callbacks */
 	DYNAMIC_RESPONSE_HEADERS_VARIANT_BODY_LONG,
+
+	/* Send a header with a long name */
+	DYNAMIC_RESPONSE_HEADERS_VARIANT_LONG_HEADER_NAME,
+
+	/* Headers too long for the server to assemble in a single piece */
+	DYNAMIC_RESPONSE_HEADERS_VARIANT_LONG_HEADERS,
+
+	/* Send body data before all request data is received, nothing on final data */
+	DYNAMIC_RESPONSE_HEADERS_VARIANT_BODY_EARLY,
 };
 
 static uint8_t dynamic_response_headers_variant;
 static uint8_t dynamic_response_headers_buffer[sizeof(long_payload)];
 
-static int dynamic_response_headers_cb(struct http_client_ctx *client, enum http_data_status status,
-				       uint8_t *buffer, size_t len,
+static int dynamic_response_headers_cb(struct http_client_ctx *client,
+				       enum http_transaction_status status,
+				       const struct http_request_ctx *request_ctx,
 				       struct http_response_ctx *response_ctx, void *user_data)
 {
 	static bool request_continuation;
@@ -339,6 +479,31 @@ static int dynamic_response_headers_cb(struct http_client_ctx *client, enum http
 	static const struct http_header override_headers[] = {
 		{.name = "Content-Type", .value = "application/json"},
 	};
+
+	static const struct http_header long_name_headers[] = {
+		{.name = TEST_LONG_HEADER_NAME, .value = "test_data"},
+	};
+
+	static const struct http_header long_headers[] = {
+		{.name = "Test-Header", .value = "test_data"},
+		{.name = "Test-Long-Header", .value = TEST_LONG_PAYLOAD_CHUNK_1},
+		{.name = "Test-Header2", .value = "test_data2"},
+	};
+
+	if (status == HTTP_SERVER_TRANSACTION_ABORTED ||
+	    status == HTTP_SERVER_TRANSACTION_COMPLETE) {
+		offset = 0;
+		return 0;
+	}
+
+	if (status != HTTP_SERVER_REQUEST_DATA_FINAL &&
+	    dynamic_response_headers_variant != DYNAMIC_RESPONSE_HEADERS_VARIANT_BODY_LONG &&
+	    dynamic_response_headers_variant != DYNAMIC_RESPONSE_HEADERS_VARIANT_BODY_EARLY) {
+		/* Long body and early body variants are the only ones which need to take some
+		 * action before final data has been received from server
+		 */
+		return 0;
+	}
 
 	switch (dynamic_response_headers_variant) {
 	case DYNAMIC_RESPONSE_HEADERS_VARIANT_NONE:
@@ -358,6 +523,12 @@ static int dynamic_response_headers_cb(struct http_client_ctx *client, enum http
 	case DYNAMIC_RESPONSE_HEADERS_VARIANT_OVERRIDE_HEADER:
 		response_ctx->headers = override_headers;
 		response_ctx->header_count = ARRAY_SIZE(extra_headers);
+		response_ctx->final_chunk = true;
+		break;
+
+	case DYNAMIC_RESPONSE_HEADERS_VARIANT_LONG_HEADER_NAME:
+		response_ctx->headers = long_name_headers;
+		response_ctx->header_count = ARRAY_SIZE(long_name_headers);
 		response_ctx->final_chunk = true;
 		break;
 
@@ -400,16 +571,33 @@ static int dynamic_response_headers_cb(struct http_client_ctx *client, enum http
 			}
 		} else if (client->method == HTTP_POST) {
 			/* Copy POST payload into buffer for later comparison */
-			zassert(offset + len <= sizeof(dynamic_response_headers_buffer),
+			zassert(offset + request_ctx->data_len <=
+					sizeof(dynamic_response_headers_buffer),
 				"POST data too long for buffer");
-			memcpy(dynamic_response_headers_buffer + offset, buffer, len);
-			offset += len;
+			memcpy(dynamic_response_headers_buffer + offset, request_ctx->data,
+			       request_ctx->data_len);
+			offset += request_ctx->data_len;
 
-			if (status == HTTP_SERVER_DATA_FINAL) {
+			if (status == HTTP_SERVER_REQUEST_DATA_FINAL) {
 				offset = 0;
 			}
 		} else {
 			zassert(false, "unexpected HTTP method");
+		}
+		break;
+
+	case DYNAMIC_RESPONSE_HEADERS_VARIANT_LONG_HEADERS:
+		response_ctx->headers = long_headers;
+		response_ctx->header_count = ARRAY_SIZE(long_headers);
+		response_ctx->body = TEST_DYNAMIC_GET_PAYLOAD;
+		response_ctx->body_len = strlen(response_ctx->body);
+		response_ctx->final_chunk = true;
+		break;
+
+	case DYNAMIC_RESPONSE_HEADERS_VARIANT_BODY_EARLY:
+		if (status == HTTP_SERVER_REQUEST_DATA_MORE) {
+			response_ctx->body = TEST_DYNAMIC_GET_PAYLOAD;
+			response_ctx->body_len = strlen(response_ctx->body);
 		}
 		break;
 	}
@@ -429,6 +617,205 @@ struct http_resource_detail_dynamic dynamic_response_headers_detail = {
 
 HTTP_RESOURCE_DEFINE(dynamic_response_headers_resource, test_http_service, "/response_headers",
 		     &dynamic_response_headers_detail);
+
+struct http_resource_detail_dynamic dynamic_long_content_type_detail = {
+	.common = {
+		.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+		.bitmask_of_supported_http_methods = BIT(HTTP_GET) | BIT(HTTP_POST),
+		.content_type = TEST_LONG_CONTENT_TYPE,
+	},
+	.cb = dynamic_response_headers_cb,
+	.user_data = NULL
+};
+
+HTTP_RESOURCE_DEFINE(dynamic_long_content_type_resource, test_http_service, "/long_content_type",
+		     &dynamic_long_content_type_detail);
+
+/* Fake socket standing in for a client connection, to check how
+ * http_server_sendall_iov() copes with partial writes and with sockets that
+ * do not support sendmsg(), and how many calls a response is sent in.
+ */
+struct fake_socket_ctx {
+	/* Largest number of bytes accepted by one call, 0 for no limit */
+	size_t max_write;
+	/* errno to fail sendmsg() with, 0 to let it succeed */
+	int sendmsg_errno;
+	size_t sendmsg_calls;
+	size_t sendto_calls;
+	bool empty_iov_seen;
+	uint8_t data[128];
+	size_t data_len;
+};
+
+static struct fake_socket_ctx fake_socket;
+
+static size_t fake_socket_store(struct fake_socket_ctx *sock, const void *buf, size_t len)
+{
+	len = MIN(len, sizeof(sock->data) - sock->data_len);
+	memcpy(&sock->data[sock->data_len], buf, len);
+	sock->data_len += len;
+
+	return len;
+}
+
+static ssize_t fake_socket_sendto(void *obj, const void *buf, size_t len, int flags,
+				  const struct net_sockaddr *dest_addr, net_socklen_t addrlen)
+{
+	struct fake_socket_ctx *sock = obj;
+
+	sock->sendto_calls++;
+
+	if (sock->max_write > 0) {
+		len = MIN(len, sock->max_write);
+	}
+
+	return fake_socket_store(sock, buf, len);
+}
+
+static ssize_t fake_socket_sendmsg(void *obj, const struct net_msghdr *msg, int flags)
+{
+	struct fake_socket_ctx *sock = obj;
+	size_t budget = sock->max_write > 0 ? sock->max_write : SIZE_MAX;
+	size_t sent = 0;
+
+	sock->sendmsg_calls++;
+
+	if (sock->sendmsg_errno != 0) {
+		errno = sock->sendmsg_errno;
+		return -1;
+	}
+
+	for (size_t i = 0; i < msg->msg_iovlen && sent < budget; i++) {
+		if (msg->msg_iov[i].iov_len == 0) {
+			sock->empty_iov_seen = true;
+		}
+
+		sent += fake_socket_store(sock, msg->msg_iov[i].iov_base,
+					  MIN(msg->msg_iov[i].iov_len, budget - sent));
+	}
+
+	return sent;
+}
+
+static const struct socket_op_vtable fake_socket_vtable = {
+	.sendto = fake_socket_sendto,
+	.sendmsg = fake_socket_sendmsg,
+};
+
+static const struct socket_op_vtable fake_socket_no_sendmsg_vtable = {
+	.sendto = fake_socket_sendto,
+};
+
+/* Reset the fake socket and return a file descriptor for it */
+static int fake_socket_open(const struct socket_op_vtable *vtable, size_t max_write,
+			    int sendmsg_errno)
+{
+	int fd;
+
+	memset(&fake_socket, 0, sizeof(fake_socket));
+	fake_socket.max_write = max_write;
+	fake_socket.sendmsg_errno = sendmsg_errno;
+
+	fd = zvfs_reserve_fd();
+	zassert_true(fd >= 0, "Failed to reserve fd (%d)", errno);
+	zvfs_finalize_typed_fd(fd, &fake_socket, &vtable->fd_vtable, ZVFS_MODE_IFSOCK);
+
+	return fd;
+}
+
+/* Buffers passed to http_server_sendall_iov(), including empty ones */
+static const char *const sendall_iov_buffers[] = {"", "Hello", ", ", "", "gathered", " world", ""};
+#define SENDALL_IOV_NON_EMPTY_BUFFERS 4
+#define SENDALL_IOV_DATA              "Hello, gathered world"
+
+static int sendall_iov_fd = -1;
+static int sendall_iov_ret;
+
+static int sendall_iov_cb(struct http_client_ctx *client, enum http_transaction_status status,
+			  const struct http_request_ctx *request_ctx,
+			  struct http_response_ctx *response_ctx, void *user_data)
+{
+	struct net_iovec iov[ARRAY_SIZE(sendall_iov_buffers)];
+	int real_fd = client->fd;
+
+	if (status != HTTP_SERVER_REQUEST_DATA_FINAL) {
+		return 0;
+	}
+
+	ARRAY_FOR_EACH(sendall_iov_buffers, i) {
+		iov[i].iov_base = (void *)sendall_iov_buffers[i];
+		iov[i].iov_len = strlen(sendall_iov_buffers[i]);
+	}
+
+	/* Send through the fake socket, then put the real one back to complete
+	 * the HTTP transaction.
+	 */
+	client->fd = sendall_iov_fd;
+	sendall_iov_ret = http_server_sendall_iov(client, iov, ARRAY_SIZE(iov));
+	client->fd = real_fd;
+
+	response_ctx->final_chunk = true;
+
+	return 0;
+}
+
+struct http_resource_detail_dynamic sendall_iov_detail = {
+	.common = {
+		.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+		.bitmask_of_supported_http_methods = BIT(HTTP_GET),
+		.content_type = "text/plain",
+	},
+	.cb = sendall_iov_cb,
+	.user_data = NULL
+};
+
+HTTP_RESOURCE_DEFINE(sendall_iov_resource, test_http_service, "/sendall_iov", &sendall_iov_detail);
+
+static int response_writes_fd = -1;
+static int response_writes_real_fd = -1;
+static K_SEM_DEFINE(response_writes_done, 0, 1);
+
+/* Respond in a single callback, with the response sent through the fake socket
+ * to count the calls it is sent in.
+ */
+static int response_writes_cb(struct http_client_ctx *client, enum http_transaction_status status,
+			      const struct http_request_ctx *request_ctx,
+			      struct http_response_ctx *response_ctx, void *user_data)
+{
+	if (status == HTTP_SERVER_TRANSACTION_ABORTED ||
+	    status == HTTP_SERVER_TRANSACTION_COMPLETE) {
+		/* Put the real socket back for the rest of the connection */
+		client->fd = response_writes_real_fd;
+		k_sem_give(&response_writes_done);
+		return 0;
+	}
+
+	if (status != HTTP_SERVER_REQUEST_DATA_FINAL) {
+		return 0;
+	}
+
+	response_writes_real_fd = client->fd;
+	client->fd = response_writes_fd;
+
+	response_ctx->body = (const uint8_t *)TEST_DYNAMIC_GET_PAYLOAD;
+	response_ctx->body_len = strlen(TEST_DYNAMIC_GET_PAYLOAD);
+	response_ctx->final_chunk = true;
+
+	return 0;
+}
+
+struct http_resource_detail_dynamic response_writes_detail = {
+	.common = {
+		.type = HTTP_RESOURCE_TYPE_DYNAMIC,
+		.bitmask_of_supported_http_methods = BIT(HTTP_GET) | BIT(HTTP_POST),
+		.content_type = "text/plain",
+	},
+	.cb = response_writes_cb,
+	.user_data = NULL
+};
+
+HTTP_RESOURCE_DEFINE(response_writes_resource, test_http_service, "/response_writes",
+		     &response_writes_detail);
 
 static int client_fd = -1;
 static uint8_t buf[BUFFER_SIZE];
@@ -544,10 +931,12 @@ static void expect_http2_headers_frame(size_t *offset, int stream_id, uint8_t fl
 
 	test_get_frame_header(offset, &frame);
 
-	zassert_equal(frame.type, HTTP2_HEADERS_FRAME, "Expected headers frame");
+	zassert_equal(frame.type, HTTP2_HEADERS_FRAME, "Expected headers frame, got frame type %u",
+		      frame.type);
 	zassert_equal(frame.stream_identifier, stream_id,
 		      "Invalid headers frame stream ID");
-	zassert_equal(frame.flags, flags, "Unexpected flags received");
+	zassert_equal(frame.flags, flags, "Unexpected flags received (expected %x got %x)", flags,
+		      frame.flags);
 
 	/* Consume headers payload */
 	test_read_data(offset, frame.length);
@@ -559,6 +948,7 @@ static void expect_http2_headers_frame(size_t *offset, int stream_id, uint8_t fl
 	test_consume_data(offset, frame.length);
 }
 
+/* "payload" may be NULL to skip data frame content validation. */
 static void expect_http2_data_frame(size_t *offset, int stream_id,
 				    const uint8_t *payload, size_t payload_len,
 				    uint8_t flags)
@@ -571,11 +961,17 @@ static void expect_http2_data_frame(size_t *offset, int stream_id,
 	zassert_equal(frame.stream_identifier, stream_id,
 		      "Invalid data frame stream ID");
 	zassert_equal(frame.flags, flags, "Unexpected flags received");
-	zassert_equal(frame.length, payload_len, "Unexpected data frame length");
+	if (payload != NULL) {
+		zassert_equal(frame.length, payload_len,
+			      "Unexpected data frame length");
+	}
 
 	/* Verify data payload */
 	test_read_data(offset, frame.length);
-	zassert_mem_equal(buf, payload, payload_len, "Unexpected data payload");
+	if (payload != NULL) {
+		zassert_mem_equal(buf, payload, payload_len,
+				  "Unexpected data payload");
+	}
 	test_consume_data(offset, frame.length);
 }
 
@@ -588,7 +984,8 @@ static void expect_http2_window_update_frame(size_t *offset, int stream_id)
 	zassert_equal(frame.type, HTTP2_WINDOW_UPDATE_FRAME,
 		      "Expected window update frame");
 	zassert_equal(frame.stream_identifier, stream_id,
-		      "Invalid window update frame stream ID");
+		      "Invalid window update frame stream ID (expected %d got %d)", stream_id,
+		      frame.stream_identifier);
 	zassert_equal(frame.flags, 0, "Unexpected flags received");
 	zassert_equal(frame.length, sizeof(uint32_t),
 		      "Unexpected window update frame length");
@@ -714,6 +1111,7 @@ ZTEST(server_function_tests, test_http1_static_get)
 			  "Received data doesn't match expected response");
 }
 
+/* Common code to verify POST/PUT/PATCH */
 static void common_verify_http2_dynamic_post_request(const uint8_t *request,
 						     size_t request_len)
 {
@@ -734,6 +1132,7 @@ static void common_verify_http2_dynamic_post_request(const uint8_t *request,
 		      "Wrong dynamic resource length");
 	zassert_mem_equal(dynamic_payload, TEST_DYNAMIC_POST_PAYLOAD,
 			  dynamic_payload_len, "Wrong dynamic resource data");
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
 }
 
 ZTEST(server_function_tests, test_http2_dynamic_post)
@@ -751,10 +1150,11 @@ ZTEST(server_function_tests, test_http2_dynamic_post)
 						 sizeof(request_post_dynamic));
 }
 
-ZTEST(server_function_tests, test_http1_dynamic_upgrade_post)
+/* Common code to verify POST/PUT/PATCH */
+static void common_verify_http1_dynamic_upgrade_post(const uint8_t *method)
 {
 	static const char http1_request[] =
-		"POST /dynamic HTTP/1.1\r\n"
+		" /dynamic HTTP/1.1\r\n"
 		"Host: 127.0.0.1:8080\r\n"
 		"User-Agent: curl/7.68.0\r\n"
 		"Accept: */*\r\n"
@@ -766,6 +1166,9 @@ ZTEST(server_function_tests, test_http1_dynamic_upgrade_post)
 		TEST_DYNAMIC_POST_PAYLOAD;
 	size_t offset = 0;
 	int ret;
+
+	ret = zsock_send(client_fd, method, strlen(method), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
 
 	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
 	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
@@ -784,12 +1187,19 @@ ZTEST(server_function_tests, test_http1_dynamic_upgrade_post)
 		      "Wrong dynamic resource length");
 	zassert_mem_equal(dynamic_payload, TEST_DYNAMIC_POST_PAYLOAD,
 			  dynamic_payload_len, "Wrong dynamic resource data");
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
 }
 
-ZTEST(server_function_tests, test_http1_dynamic_post)
+ZTEST(server_function_tests, test_http1_dynamic_upgrade_post)
+{
+	common_verify_http1_dynamic_upgrade_post("POST");
+}
+
+/* Common code to verify POST/PUT/PATCH */
+static void common_verify_http1_dynamic_post(const uint8_t *method)
 {
 	static const char http1_request[] =
-		"POST /dynamic HTTP/1.1\r\n"
+		" /dynamic HTTP/1.1\r\n"
 		"Host: 127.0.0.1:8080\r\n"
 		"User-Agent: curl/7.68.0\r\n"
 		"Accept: */*\r\n"
@@ -804,6 +1214,9 @@ ZTEST(server_function_tests, test_http1_dynamic_post)
 	size_t offset = 0;
 	int ret;
 
+	ret = zsock_send(client_fd, method, strlen(method), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
 	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
 	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
 
@@ -817,6 +1230,12 @@ ZTEST(server_function_tests, test_http1_dynamic_post)
 		      "Wrong dynamic resource length");
 	zassert_mem_equal(dynamic_payload, TEST_DYNAMIC_POST_PAYLOAD,
 			  dynamic_payload_len, "Wrong dynamic resource data");
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_post)
+{
+	common_verify_http1_dynamic_post("POST");
 }
 
 static void common_verify_http2_dynamic_get_request(const uint8_t *request,
@@ -838,6 +1257,7 @@ static void common_verify_http2_dynamic_get_request(const uint8_t *request,
 	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1, HTTP2_FLAG_END_HEADERS, NULL, 0);
 	expect_http2_data_frame(&offset, TEST_STREAM_ID_1, TEST_DYNAMIC_GET_PAYLOAD,
 				strlen(TEST_DYNAMIC_GET_PAYLOAD), HTTP2_FLAG_END_STREAM);
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
 }
 
 ZTEST(server_function_tests, test_http2_dynamic_get)
@@ -885,6 +1305,7 @@ ZTEST(server_function_tests, test_http1_dynamic_upgrade_get)
 	expect_http2_headers_frame(&offset, UPGRADE_STREAM_ID, HTTP2_FLAG_END_HEADERS, NULL, 0);
 	expect_http2_data_frame(&offset, UPGRADE_STREAM_ID, TEST_DYNAMIC_GET_PAYLOAD,
 				strlen(TEST_DYNAMIC_GET_PAYLOAD), HTTP2_FLAG_END_STREAM);
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
 }
 
 ZTEST(server_function_tests, test_http1_dynamic_get)
@@ -907,6 +1328,135 @@ ZTEST(server_function_tests, test_http1_dynamic_get)
 
 	dynamic_payload_len = strlen(TEST_DYNAMIC_GET_PAYLOAD);
 	memcpy(dynamic_payload, TEST_DYNAMIC_GET_PAYLOAD, dynamic_payload_len);
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, sizeof(expected_response) - 1);
+	zassert_mem_equal(buf, expected_response, sizeof(expected_response) - 1,
+			  "Received data doesn't match expected response");
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
+}
+
+ZTEST(server_function_tests, test_http2_dynamic_put)
+{
+	static const uint8_t request_put_dynamic[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_PUT_DYNAMIC_STREAM_1,
+		TEST_HTTP2_DATA_PUT_DYNAMIC_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+
+	common_verify_http2_dynamic_post_request(request_put_dynamic,
+						 sizeof(request_put_dynamic));
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_upgrade_put)
+{
+	common_verify_http1_dynamic_upgrade_post("PUT");
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_put)
+{
+	common_verify_http1_dynamic_post("PUT");
+}
+
+ZTEST(server_function_tests, test_http2_dynamic_patch)
+{
+	static const uint8_t request_patch_dynamic[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_PATCH_DYNAMIC_STREAM_1,
+		TEST_HTTP2_DATA_PATCH_DYNAMIC_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+
+	common_verify_http2_dynamic_post_request(request_patch_dynamic,
+						 sizeof(request_patch_dynamic));
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_upgrade_patch)
+{
+	common_verify_http1_dynamic_upgrade_post("PATCH");
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_patch)
+{
+	common_verify_http1_dynamic_post("PATCH");
+}
+
+ZTEST(server_function_tests, test_http2_dynamic_delete)
+{
+	static const uint8_t request_delete_dynamic[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_DELETE_DYNAMIC_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+	size_t offset = 0;
+	int ret;
+
+	ret = zsock_send(client_fd, request_delete_dynamic,
+			 sizeof(request_delete_dynamic), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1,
+				   HTTP2_FLAG_END_HEADERS | HTTP2_FLAG_END_STREAM,
+				   NULL, 0);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_upgrade_delete)
+{
+	static const char http1_request[] =
+		"DELETE /dynamic HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Connection: Upgrade, HTTP2-Settings\r\n"
+		"Upgrade: h2c\r\n"
+		"HTTP2-Settings: AAMAAABkAAQAoAAAAAIAAAAA\r\n"
+		"\r\n";
+	size_t offset = 0;
+	int ret;
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	/* Verify HTTP1 switching protocols response. */
+	expect_http1_switching_protocols(&offset);
+
+	/* Verify HTTP2 frames. */
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_headers_frame(&offset, UPGRADE_STREAM_ID,
+				   HTTP2_FLAG_END_HEADERS | HTTP2_FLAG_END_STREAM,
+				   NULL, 0);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_delete)
+{
+	static const char http1_request[] =
+		"DELETE /dynamic HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"\r\n";
+	static const char expected_response[] = "HTTP/1.1 200\r\n"
+						"Transfer-Encoding: chunked\r\n"
+						"Content-Type: text/plain\r\n"
+						"\r\n"
+						"0\r\n\r\n";
+	size_t offset = 0;
+	int ret;
 
 	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
 	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
@@ -1064,6 +1614,50 @@ ZTEST(server_function_tests, test_http2_post_missing_continuation)
 	zassert_equal(ret, 0, "Connection should've been closed");
 }
 
+ZTEST(server_function_tests, test_http2_post_headers_with_continuation_aligned)
+{
+	static const uint8_t request_post_dynamic[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_PARTIAL_HEADERS_POST_DYNAMIC_STREAM_1_ALIGNED,
+		TEST_HTTP2_CONTINUATION_POST_DYNAMIC_STREAM_1_ALIGNED,
+		TEST_HTTP2_DATA_POST_DYNAMIC_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+
+	common_verify_http2_dynamic_post_request(request_post_dynamic,
+						 sizeof(request_post_dynamic));
+}
+
+ZTEST(server_function_tests, test_http2_unexpected_continuation)
+{
+	static const uint8_t request_post_dynamic[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_CONTINUATION_POST_DYNAMIC_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+	size_t offset = 0;
+	int ret;
+
+	(void)memset(buf, 0, sizeof(buf));
+
+	ret = zsock_send(client_fd, request_post_dynamic,
+			 sizeof(request_post_dynamic), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	/* A continuation frame which is not preceded by a headers frame is a
+	 * protocol error, the connection should be closed.
+	 */
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+
+	ret = zsock_recv(client_fd, buf, sizeof(buf), 0);
+	zassert_equal(ret, 0, "Connection should've been closed");
+}
+
 ZTEST(server_function_tests, test_http2_post_trailing_headers)
 {
 	static const uint8_t request_post_dynamic[] = {
@@ -1100,6 +1694,7 @@ ZTEST(server_function_tests, test_http2_post_trailing_headers)
 		      "Wrong dynamic resource length");
 	zassert_mem_equal(dynamic_payload, TEST_DYNAMIC_POST_PAYLOAD,
 			  dynamic_payload_len, "Wrong dynamic resource data");
+	zassert_true(dynamic_complete, "Callback not called with transaction complete status");
 }
 
 ZTEST(server_function_tests, test_http2_get_headers_with_padding)
@@ -1163,6 +1758,8 @@ static void test_http1_header_capture_common(const char *request)
 	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
 
 	test_read_data(&offset, sizeof(http1_header_capture_common_response) - 1);
+	zassert_mem_equal(buf, http1_header_capture_common_response,
+			  sizeof(http1_header_capture_common_response) - 1);
 }
 
 ZTEST(server_function_tests, test_http1_header_capture)
@@ -1173,14 +1770,14 @@ ZTEST(server_function_tests, test_http1_header_capture)
 				      "Accept: */*\r\n"
 				      "Accept-Encoding: deflate, gzip, br\r\n"
 				      "\r\n";
-	struct http_header *hdrs = header_capture_ctx_clone.headers;
+	struct http_header *hdrs = request_headers_clone.headers;
 	int ret;
 
 	test_http1_header_capture_common(request);
 
-	zassert_equal(header_capture_ctx_clone.count, 2,
+	zassert_equal(request_headers_clone.count, 2,
 		      "Didn't capture the expected number of headers");
-	zassert_equal(header_capture_ctx_clone.status, HTTP_HEADER_STATUS_OK,
+	zassert_equal(request_headers_clone.status, HTTP_HEADER_STATUS_OK,
 		      "Header capture status was not OK");
 
 	zassert_not_equal(hdrs[0].name, NULL, "First header name is NULL");
@@ -1207,14 +1804,14 @@ ZTEST(server_function_tests, test_http1_header_too_long)
 		"Accept: */*\r\n"
 		"Accept-Encoding: deflate, gzip, br\r\n"
 		"\r\n";
-	struct http_header *hdrs = header_capture_ctx_clone.headers;
+	struct http_header *hdrs = request_headers_clone.headers;
 	int ret;
 
 	test_http1_header_capture_common(request);
 
-	zassert_equal(header_capture_ctx_clone.count, 1,
+	zassert_equal(request_headers_clone.count, 1,
 		      "Didn't capture the expected number of headers");
-	zassert_equal(header_capture_ctx_clone.status, HTTP_HEADER_STATUS_DROPPED,
+	zassert_equal(request_headers_clone.status, HTTP_HEADER_STATUS_DROPPED,
 		      "Header capture status was OK, but should not have been");
 
 	/* First header too long should not stop second header being captured into first slot */
@@ -1236,14 +1833,14 @@ ZTEST(server_function_tests, test_http1_header_too_many)
 				      "Accept: */*\r\n"
 				      "Accept-Encoding: deflate, gzip, br\r\n"
 				      "\r\n";
-	struct http_header *hdrs = header_capture_ctx_clone.headers;
+	struct http_header *hdrs = request_headers_clone.headers;
 	int ret;
 
 	test_http1_header_capture_common(request);
 
-	zassert_equal(header_capture_ctx_clone.count, 2,
+	zassert_equal(request_headers_clone.count, 2,
 		      "Didn't capture the expected number of headers");
-	zassert_equal(header_capture_ctx_clone.status, HTTP_HEADER_STATUS_DROPPED,
+	zassert_equal(request_headers_clone.status, HTTP_HEADER_STATUS_DROPPED,
 		      "Header capture status OK, but should not have been");
 
 	zassert_not_equal(hdrs[0].name, NULL, "First header name is NULL");
@@ -1290,14 +1887,14 @@ ZTEST(server_function_tests, test_http2_header_capture)
 		TEST_HTTP2_HEADERS_GET_HEADER_CAPTURE1_STREAM_1,
 		TEST_HTTP2_GOAWAY,
 	};
-	struct http_header *hdrs = header_capture_ctx_clone.headers;
+	struct http_header *hdrs = request_headers_clone.headers;
 	int ret;
 
 	common_verify_http2_get_header_capture_request(request, sizeof(request));
 
-	zassert_equal(header_capture_ctx_clone.count, 2,
+	zassert_equal(request_headers_clone.count, 2,
 		      "Didn't capture the expected number of headers");
-	zassert_equal(header_capture_ctx_clone.status, HTTP_HEADER_STATUS_OK,
+	zassert_equal(request_headers_clone.status, HTTP_HEADER_STATUS_OK,
 		      "Header capture status was not OK");
 
 	zassert_not_equal(hdrs[0].name, NULL, "First header name is NULL");
@@ -1324,14 +1921,14 @@ ZTEST(server_function_tests, test_http2_header_too_long)
 		TEST_HTTP2_HEADERS_GET_HEADER_CAPTURE2_STREAM_1,
 		TEST_HTTP2_GOAWAY,
 	};
-	struct http_header *hdrs = header_capture_ctx_clone.headers;
+	struct http_header *hdrs = request_headers_clone.headers;
 	int ret;
 
 	common_verify_http2_get_header_capture_request(request, sizeof(request));
 
-	zassert_equal(header_capture_ctx_clone.count, 1,
+	zassert_equal(request_headers_clone.count, 1,
 		      "Didn't capture the expected number of headers");
-	zassert_equal(header_capture_ctx_clone.status, HTTP_HEADER_STATUS_DROPPED,
+	zassert_equal(request_headers_clone.status, HTTP_HEADER_STATUS_DROPPED,
 		      "Header capture status was OK, but should not have been");
 
 	/* First header too long should not stop second header being captured into first slot */
@@ -1353,14 +1950,14 @@ ZTEST(server_function_tests, test_http2_header_too_many)
 		TEST_HTTP2_HEADERS_GET_HEADER_CAPTURE3_STREAM_1,
 		TEST_HTTP2_GOAWAY,
 	};
-	struct http_header *hdrs = header_capture_ctx_clone.headers;
+	struct http_header *hdrs = request_headers_clone.headers;
 	int ret;
 
 	common_verify_http2_get_header_capture_request(request, sizeof(request));
 
-	zassert_equal(header_capture_ctx_clone.count, 2,
+	zassert_equal(request_headers_clone.count, 2,
 		      "Didn't capture the expected number of headers");
-	zassert_equal(header_capture_ctx_clone.status, HTTP_HEADER_STATUS_DROPPED,
+	zassert_equal(request_headers_clone.status, HTTP_HEADER_STATUS_DROPPED,
 		      "Header capture status OK, but should not have been");
 
 	zassert_not_equal(hdrs[0].name, NULL, "First header name is NULL");
@@ -1375,6 +1972,73 @@ ZTEST(server_function_tests, test_http2_header_too_many)
 	ret = strcmp(hdrs[1].name, "Test-Header");
 	zassert_equal(0, ret, "Header strings did not match");
 	ret = strcmp(hdrs[1].value, "test_value");
+	zassert_equal(0, ret, "Header strings did not match");
+}
+
+ZTEST(server_function_tests, test_http2_header_concurrent)
+{
+	/* Two POST requests which are concurrent, ie. headers1, headers2, data1, data2 */
+	static const uint8_t request[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_POST_HEADER_CAPTURE_WITH_TESTHEADER_STREAM_1,
+		TEST_HTTP2_HEADERS_POST_HEADER_CAPTURE2_NO_TESTHEADER_STREAM_2,
+		TEST_HTTP2_DATA_POST_HEADER_CAPTURE_STREAM_1,
+		TEST_HTTP2_DATA_POST_HEADER_CAPTURE_STREAM_2,
+		TEST_HTTP2_GOAWAY,
+	};
+
+	struct http_header *hdrs = request_headers_clone.headers;
+	struct http_header *hdrs2 = request_headers_clone2.headers;
+	int ret;
+	size_t offset = 0;
+
+	ret = zsock_send(client_fd, request, sizeof(request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	/* Wait for response on both resources before checking captured headers */
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1,
+				   HTTP2_FLAG_END_HEADERS | HTTP2_FLAG_END_STREAM, NULL, 0);
+	expect_http2_window_update_frame(&offset, TEST_STREAM_ID_1);
+	expect_http2_window_update_frame(&offset, 0);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_2,
+				   HTTP2_FLAG_END_HEADERS | HTTP2_FLAG_END_STREAM, NULL, 0);
+
+	/* Headers captured on /header_capture path should have two headers including the
+	 * Test-Header
+	 */
+	zassert_equal(request_headers_clone.count, 2,
+		      "Didn't capture the expected number of headers");
+
+	zassert_not_equal(hdrs[0].name, NULL, "First header name is NULL");
+	zassert_not_equal(hdrs[0].value, NULL, "First header value is NULL");
+	zassert_not_equal(hdrs[1].name, NULL, "Second header name is NULL");
+	zassert_not_equal(hdrs[1].value, NULL, "Second header value is NULL");
+
+	ret = strcmp(hdrs[0].name, "User-Agent");
+	zassert_equal(0, ret, "Header strings did not match");
+	ret = strcmp(hdrs[0].value, "curl/7.81.0");
+	zassert_equal(0, ret, "Header strings did not match");
+	ret = strcmp(hdrs[1].name, "Test-Header");
+	zassert_equal(0, ret, "Header strings did not match");
+	ret = strcmp(hdrs[1].value, "test_value");
+	zassert_equal(0, ret, "Header strings did not match");
+
+	/* Headers captured on the /header_capture2 path should have only one header, not including
+	 * the Test-Header
+	 */
+	zassert_equal(request_headers_clone2.count, 1,
+		      "Didn't capture the expected number of headers");
+
+	zassert_not_equal(hdrs2[0].name, NULL, "First header name is NULL");
+	zassert_not_equal(hdrs2[0].value, NULL, "First header value is NULL");
+
+	ret = strcmp(hdrs2[0].name, "User-Agent");
+	zassert_equal(0, ret, "Header strings did not match");
+	ret = strcmp(hdrs2[0].value, "curl/7.81.0");
 	zassert_equal(0, ret, "Header strings did not match");
 }
 
@@ -1619,6 +2283,60 @@ ZTEST(server_function_tests, test_http1_dynamic_post_response_header_override)
 	test_http1_dynamic_response_header_override(true);
 }
 
+static void test_http1_dynamic_response_header_long_name(bool post)
+{
+	static const char response[] = "HTTP/1.1 200\r\n"
+				       "Transfer-Encoding: chunked\r\n"
+				       TEST_LONG_HEADER_NAME ": test_data\r\n"
+				       "Content-Type: text/plain\r\n"
+				       "\r\n"
+				       "0\r\n\r\n";
+
+	dynamic_response_headers_variant = DYNAMIC_RESPONSE_HEADERS_VARIANT_LONG_HEADER_NAME;
+
+	test_http1_dynamic_response_headers_default(response, post);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_get_response_header_long_name)
+{
+	test_http1_dynamic_response_header_long_name(false);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_post_response_header_long_name)
+{
+	test_http1_dynamic_response_header_long_name(true);
+}
+
+static void test_http1_dynamic_response_long_content_type(bool post)
+{
+	static const char get_request[] = "GET /long_content_type HTTP/1.1\r\n"
+					  "Accept: */*\r\n"
+					  "\r\n";
+	static const char post_request[] = "POST /long_content_type HTTP/1.1\r\n"
+					   "Accept: */*\r\n"
+					   "Content-Length: 17\r\n"
+					   "\r\n" TEST_DYNAMIC_POST_PAYLOAD;
+	static const char response[] = "HTTP/1.1 200\r\n"
+				       "Transfer-Encoding: chunked\r\n"
+				       "Content-Type: " TEST_LONG_CONTENT_TYPE "\r\n"
+				       "\r\n"
+				       "0\r\n\r\n";
+
+	dynamic_response_headers_variant = DYNAMIC_RESPONSE_HEADERS_VARIANT_NONE;
+
+	test_http1_dynamic_response_headers(post ? post_request : get_request, response);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_get_response_long_content_type)
+{
+	test_http1_dynamic_response_long_content_type(false);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_post_response_long_content_type)
+{
+	test_http1_dynamic_response_long_content_type(true);
+}
+
 static void test_http2_dynamic_response_header_override(bool post)
 {
 	size_t offset = 0;
@@ -1837,15 +2555,403 @@ ZTEST(server_function_tests, test_http2_dynamic_post_response_header_long)
 	zassert_mem_equal(dynamic_response_headers_buffer, long_payload, strlen(long_payload));
 }
 
-ZTEST(server_function_tests_no_init, test_http_server_start_stop)
+static void test_http1_dynamic_response_header_long_headers(bool post)
 {
-	struct sockaddr_in sa = { 0 };
+	static const char response[] = "HTTP/1.1 200\r\n"
+				       "Transfer-Encoding: chunked\r\n"
+				       "Test-Header: test_data\r\n"
+				       "Test-Long-Header: " TEST_LONG_PAYLOAD_CHUNK_1 "\r\n"
+				       "Test-Header2: test_data2\r\n"
+				       "Content-Type: text/plain\r\n"
+				       "\r\n"
+				       "10\r\n" TEST_DYNAMIC_GET_PAYLOAD "\r\n"
+				       "0\r\n\r\n";
+
+	dynamic_response_headers_variant = DYNAMIC_RESPONSE_HEADERS_VARIANT_LONG_HEADERS;
+
+	test_http1_dynamic_response_headers_default(response, post);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_get_response_header_long_headers)
+{
+	test_http1_dynamic_response_header_long_headers(false);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_post_response_header_long_headers)
+{
+	test_http1_dynamic_response_header_long_headers(true);
+}
+
+static void test_sendall_iov(const struct socket_op_vtable *vtable, size_t max_write,
+			     int sendmsg_errno)
+{
+	static const char request[] = "GET /sendall_iov HTTP/1.1\r\n"
+				      "Accept: */*\r\n"
+				      "\r\n";
+	static const char response[] = "HTTP/1.1 200\r\n"
+				       "Transfer-Encoding: chunked\r\n"
+				       "Content-Type: text/plain\r\n"
+				       "\r\n"
+				       "0\r\n\r\n";
+	size_t offset = 0;
 	int ret;
 
-	sa.sin_family = AF_INET;
-	sa.sin_port = htons(SERVER_PORT);
+	sendall_iov_fd = fake_socket_open(vtable, max_write, sendmsg_errno);
 
-	ret = zsock_inet_pton(AF_INET, SERVER_IPV4_ADDR, &sa.sin_addr.s_addr);
+	ret = zsock_send(client_fd, request, strlen(request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	test_read_data(&offset, strlen(response));
+	zassert_mem_equal(buf, response, strlen(response));
+
+	(void)zsock_close(sendall_iov_fd);
+	sendall_iov_fd = -1;
+}
+
+static void test_sendall_iov_check_data(void)
+{
+	zassert_equal(sendall_iov_ret, 0, "Unexpected result (%d)", sendall_iov_ret);
+	zassert_false(fake_socket.empty_iov_seen, "Empty buffer passed to sendmsg()");
+	zassert_equal(fake_socket.data_len, strlen(SENDALL_IOV_DATA));
+	zassert_mem_equal(fake_socket.data, SENDALL_IOV_DATA, strlen(SENDALL_IOV_DATA));
+}
+
+ZTEST(server_function_tests, test_sendall_iov_gather)
+{
+	test_sendall_iov(&fake_socket_vtable, 0, 0);
+
+	test_sendall_iov_check_data();
+	zassert_equal(fake_socket.sendmsg_calls, 1);
+	zassert_equal(fake_socket.sendto_calls, 0);
+}
+
+ZTEST(server_function_tests, test_sendall_iov_partial_writes)
+{
+	const size_t max_write = 4;
+
+	test_sendall_iov(&fake_socket_vtable, max_write, 0);
+
+	test_sendall_iov_check_data();
+	zassert_equal(fake_socket.sendmsg_calls, DIV_ROUND_UP(strlen(SENDALL_IOV_DATA), max_write));
+	zassert_equal(fake_socket.sendto_calls, 0);
+}
+
+ZTEST(server_function_tests, test_sendall_iov_no_sendmsg)
+{
+	test_sendall_iov(&fake_socket_no_sendmsg_vtable, 0, 0);
+
+	test_sendall_iov_check_data();
+	zassert_equal(fake_socket.sendmsg_calls, 0);
+	zassert_equal(fake_socket.sendto_calls, SENDALL_IOV_NON_EMPTY_BUFFERS);
+}
+
+ZTEST(server_function_tests, test_sendall_iov_sendmsg_enotsup)
+{
+	test_sendall_iov(&fake_socket_vtable, 0, ENOTSUP);
+
+	test_sendall_iov_check_data();
+	zassert_equal(fake_socket.sendmsg_calls, 1);
+	zassert_equal(fake_socket.sendto_calls, SENDALL_IOV_NON_EMPTY_BUFFERS);
+}
+
+ZTEST(server_function_tests, test_sendall_iov_sendmsg_error)
+{
+	test_sendall_iov(&fake_socket_vtable, 0, EIO);
+
+	zassert_equal(sendall_iov_ret, -EIO, "Unexpected result (%d)", sendall_iov_ret);
+	zassert_equal(fake_socket.sendmsg_calls, 1);
+	zassert_equal(fake_socket.sendto_calls, 0);
+	zassert_equal(fake_socket.data_len, 0);
+}
+
+static void test_http1_dynamic_response_writes(bool post)
+{
+	static const char get_request[] = "GET /response_writes HTTP/1.1\r\n"
+					  "Accept: */*\r\n"
+					  "\r\n";
+	static const char post_request[] = "POST /response_writes HTTP/1.1\r\n"
+					   "Accept: */*\r\n"
+					   "Content-Length: 17\r\n"
+					   "\r\n" TEST_DYNAMIC_POST_PAYLOAD;
+	static const char response[] = "HTTP/1.1 200\r\n"
+				       "Transfer-Encoding: chunked\r\n"
+				       "Content-Type: text/plain\r\n"
+				       "\r\n"
+				       "10\r\n" TEST_DYNAMIC_GET_PAYLOAD "\r\n"
+				       "0\r\n\r\n";
+	const char *request = post ? post_request : get_request;
+	int ret;
+
+	BUILD_ASSERT(sizeof(response) - 1 <= sizeof(fake_socket.data));
+
+	response_writes_fd = fake_socket_open(&fake_socket_vtable, 0, 0);
+	k_sem_reset(&response_writes_done);
+
+	ret = zsock_send(client_fd, request, strlen(request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	ret = k_sem_take(&response_writes_done, K_SECONDS(TIMEOUT_S));
+	zassert_ok(ret, "Transaction not completed");
+
+	(void)zsock_close(response_writes_fd);
+	response_writes_fd = -1;
+
+	/* Headers, body chunk and terminating chunk go out in one call */
+	zassert_equal(fake_socket.data_len, strlen(response));
+	zassert_mem_equal(fake_socket.data, response, strlen(response));
+	zassert_equal(fake_socket.sendmsg_calls, 1);
+	zassert_equal(fake_socket.sendto_calls, 0);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_get_response_single_write)
+{
+	test_http1_dynamic_response_writes(false);
+}
+
+ZTEST(server_function_tests, test_http1_dynamic_post_response_single_write)
+{
+	test_http1_dynamic_response_writes(true);
+}
+
+/* The response is started while request data is still arriving and nothing
+ * is added once the request is complete, so the server has to terminate the
+ * response on its own, exactly once.
+ */
+ZTEST(server_function_tests, test_http1_dynamic_post_response_early_body)
+{
+	static const char request_part1[] = "POST /response_headers HTTP/1.1\r\n"
+					    "Accept: */*\r\n"
+					    "Content-Length: 17\r\n"
+					    "\r\n"
+					    "Test dyn";
+	static const char request_part2[] = "amic POST";
+	static const char response_part1[] = "HTTP/1.1 200\r\n"
+					     "Transfer-Encoding: chunked\r\n"
+					     "Content-Type: text/plain\r\n"
+					     "\r\n"
+					     "10\r\n" TEST_DYNAMIC_GET_PAYLOAD "\r\n";
+	static const char response_part2[] = "0\r\n\r\n";
+	size_t offset = 0;
+	int ret;
+
+	dynamic_response_headers_variant = DYNAMIC_RESPONSE_HEADERS_VARIANT_BODY_EARLY;
+
+	ret = zsock_send(client_fd, request_part1, strlen(request_part1), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	test_read_data(&offset, strlen(response_part1));
+	zassert_equal(offset, strlen(response_part1), "Unexpected data before request completed");
+	zassert_mem_equal(buf, response_part1, strlen(response_part1));
+	test_consume_data(&offset, strlen(response_part1));
+
+	ret = zsock_send(client_fd, request_part2, strlen(request_part2), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	test_read_data(&offset, strlen(response_part2));
+	zassert_mem_equal(buf, response_part2, strlen(response_part2));
+	test_consume_data(&offset, strlen(response_part2));
+
+	/* Give a duplicate terminating chunk time to arrive */
+	k_msleep(100);
+
+	ret = zsock_recv(client_fd, buf, sizeof(buf), ZSOCK_MSG_DONTWAIT);
+	zassert_true(offset == 0 && ret < 0 && errno == EAGAIN, "Unexpected trailing data");
+}
+
+ZTEST(server_function_tests, test_http1_409_method_not_allowed)
+{
+	static const char http1_request[] =
+		"POST / HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"Content-Type: text/html\r\n"
+		"Content-Length: 13\r\n\r\n"
+		TEST_STATIC_PAYLOAD;
+	static const char expected_response[] =
+		"HTTP/1.1 405 Method Not Allowed\r\n";
+	size_t offset = 0;
+	int ret;
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, sizeof(expected_response) - 1);
+	zassert_mem_equal(buf, expected_response, sizeof(expected_response) - 1,
+			  "Received data doesn't match expected response");
+}
+
+ZTEST(server_function_tests, test_http1_upgrade_409_method_not_allowed)
+{
+	static const char http1_request[] =
+		"POST / HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"Content-Type: text/html\r\n"
+		"Content-Length: 13\r\n"
+		"Connection: Upgrade, HTTP2-Settings\r\n"
+		"Upgrade: h2c\r\n"
+		"HTTP2-Settings: AAMAAABkAAQAoAAAAAIAAAAA\r\n\r\n"
+		TEST_STATIC_PAYLOAD;
+	const struct http_header expected_headers[] = {
+		{.name = ":status", .value = "405"}
+	};
+	size_t offset = 0;
+	int ret;
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	/* Verify HTTP1 switching protocols response. */
+	expect_http1_switching_protocols(&offset);
+
+	/* Verify HTTP2 frames. */
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_headers_frame(&offset, UPGRADE_STREAM_ID,
+				   HTTP2_FLAG_END_HEADERS | HTTP2_FLAG_END_STREAM,
+				   expected_headers, 1);
+}
+
+ZTEST(server_function_tests, test_http2_409_method_not_allowed)
+{
+	static const uint8_t request_post_static[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_POST_ROOT_STREAM_1,
+		TEST_HTTP2_DATA_POST_ROOT_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+	const struct http_header expected_headers[] = {
+		{.name = ":status", .value = "405"}
+	};
+	size_t offset = 0;
+	int ret;
+
+	ret = zsock_send(client_fd, request_post_static,
+			 sizeof(request_post_static), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1,
+				   HTTP2_FLAG_END_HEADERS | HTTP2_FLAG_END_STREAM,
+				   expected_headers, 1);
+}
+
+ZTEST(server_function_tests, test_http1_500_internal_server_error)
+{
+	static const char http1_request[] =
+		"GET /dynamic HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Accept: */*\r\n"
+		"Accept-Encoding: deflate, gzip, br\r\n"
+		"\r\n";
+	static const char expected_response[] =
+		"HTTP/1.1 500 Internal Server Error\r\n";
+	size_t offset = 0;
+	int ret;
+
+	dynamic_error = true;
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, sizeof(expected_response) - 1);
+	zassert_mem_equal(buf, expected_response, sizeof(expected_response) - 1,
+			  "Received data doesn't match expected response");
+}
+
+ZTEST(server_function_tests, test_http1_upgrade_500_internal_server_error)
+{
+	static const char http1_request[] =
+		"GET /dynamic HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Accept: */*\r\n"
+		"Accept-Encoding: deflate, gzip, br\r\n"
+		"Connection: Upgrade, HTTP2-Settings\r\n"
+		"Upgrade: h2c\r\n"
+		"HTTP2-Settings: AAMAAABkAAQAoAAAAAIAAAAA\r\n"
+		"\r\n";
+	const struct http_header expected_headers[] = {
+		{.name = ":status", .value = "500"}
+	};
+	size_t offset = 0;
+	int ret;
+
+	dynamic_error = true;
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	/* Verify HTTP1 switching protocols response. */
+	expect_http1_switching_protocols(&offset);
+
+	/* Verify HTTP2 frames. */
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_headers_frame(&offset, UPGRADE_STREAM_ID,
+				   HTTP2_FLAG_END_HEADERS,
+				   expected_headers, 1);
+	/* Expect data frame with reason but don't check the content as it may
+	 * depend on libc being used (i. e. string returned by strerror()).
+	 */
+	expect_http2_data_frame(&offset, UPGRADE_STREAM_ID, NULL, 0,
+				HTTP2_FLAG_END_STREAM);
+}
+
+ZTEST(server_function_tests, test_http2_500_internal_server_error)
+{
+	static const uint8_t request_get_dynamic[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_GET_DYNAMIC_STREAM_1,
+		TEST_HTTP2_GOAWAY,
+	};
+	const struct http_header expected_headers[] = {
+		{.name = ":status", .value = "500"}
+	};
+	size_t offset = 0;
+	int ret;
+
+	dynamic_error = true;
+
+	ret = zsock_send(client_fd, request_get_dynamic,
+			 sizeof(request_get_dynamic), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1,
+				   HTTP2_FLAG_END_HEADERS,
+				   expected_headers, 1);
+	/* Expect data frame with reason but don't check the content as it may
+	 * depend on libc being used (i. e. string returned by strerror()).
+	 */
+	expect_http2_data_frame(&offset, TEST_STREAM_ID_1, NULL, 0,
+				HTTP2_FLAG_END_STREAM);
+}
+
+ZTEST(server_function_tests_no_init, test_http_server_start_stop)
+{
+	struct net_sockaddr_in sa = { 0 };
+	int ret;
+
+	sa.sin_family = NET_AF_INET;
+	sa.sin_port = net_htons(SERVER_PORT);
+
+	ret = zsock_inet_pton(NET_AF_INET, SERVER_IPV4_ADDR, &sa.sin_addr.s_addr);
 	zassert_equal(1, ret, "inet_pton() failed to convert %s", SERVER_IPV4_ADDR);
 
 	zassert_ok(http_server_start(), "Failed to start the server");
@@ -1857,11 +2963,11 @@ ZTEST(server_function_tests_no_init, test_http_server_start_stop)
 	zassert_ok(http_server_start(), "Failed to start the server");
 
 	/* Server should be listening now. */
-	ret = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	ret = zsock_socket(NET_AF_INET, NET_SOCK_STREAM, NET_IPPROTO_TCP);
 	zassert_not_equal(ret, -1, "failed to create client socket (%d)", errno);
 	client_fd = ret;
 
-	zassert_ok(zsock_connect(client_fd, (struct sockaddr *)&sa, sizeof(sa)),
+	zassert_ok(zsock_connect(client_fd, (struct net_sockaddr *)&sa, sizeof(sa)),
 		   "failed to connect to the server (%d)", errno);
 	zassert_ok(zsock_close(client_fd), "close() failed on the client fd (%d)", errno);
 	client_fd = -1;
@@ -1871,13 +2977,13 @@ ZTEST(server_function_tests_no_init, test_http_server_start_stop)
 	zassert_ok(http_server_start(), "Failed to start the server");
 
 	/* Let the server thread run. */
-	k_msleep(CONFIG_HTTP_SERVER_RESTART_DELAY + 10);
+	k_msleep(CONFIG_HTTP_SERVER_RESTART_DELAY + 50);
 
-	ret = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	ret = zsock_socket(NET_AF_INET, NET_SOCK_STREAM, NET_IPPROTO_TCP);
 	zassert_not_equal(ret, -1, "failed to create client socket (%d)", errno);
 	client_fd = ret;
 
-	zassert_ok(zsock_connect(client_fd, (struct sockaddr *)&sa, sizeof(sa)),
+	zassert_ok(zsock_connect(client_fd, (struct net_sockaddr *)&sa, sizeof(sa)),
 		   "failed to connect to the server (%d)", errno);
 	zassert_ok(zsock_close(client_fd), "close() failed on the client fd (%d)", errno);
 	client_fd = -1;
@@ -1969,9 +3075,509 @@ ZTEST(server_function_tests_no_init, test_parse_http_frames)
 		      "Expected stream_identifier for the 2nd frame doesn't match");
 }
 
+#if DT_HAS_COMPAT_STATUS_OKAY(zephyr_ram_disk)
+
+#include <zephyr/fs/fs.h>
+#include <zephyr/fs/littlefs.h>
+
+FS_LITTLEFS_DECLARE_DEFAULT_CONFIG(storage);
+
+#define TEST_PARTITION		storage_partition
+#define TEST_PARTITION_ID	PARTITION_ID(TEST_PARTITION)
+
+#define LFS_MNTP		"/littlefs"
+#define TEST_FILE		"static_file.html"
+#define TEST_DIR		"/files"
+#define TEST_DIR_PATH		LFS_MNTP TEST_DIR
+
+static struct http_resource_detail_static_fs static_file_resource_detail = {
+	.common = {
+			.type = HTTP_RESOURCE_TYPE_STATIC_FS,
+			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
+			.content_type = "text/html",
+		},
+	.fs_path = TEST_DIR_PATH,
+};
+
+HTTP_RESOURCE_DEFINE(static_file_resource, test_http_service, "/static_file.html",
+		     &static_file_resource_detail);
+
+struct fs_mount_t littlefs_mnt = {
+	.type = FS_LITTLEFS,
+	.fs_data = &storage,
+	.storage_dev = (void *)TEST_PARTITION_ID,
+	.mnt_point = LFS_MNTP,
+};
+
+void test_clear_flash(void)
+{
+	int rc;
+	const struct flash_area *fap;
+
+	rc = flash_area_open(TEST_PARTITION_ID, &fap);
+	zassert_equal(rc, 0, "Opening flash area for erase [%d]\n", rc);
+
+	rc = flash_area_flatten(fap, 0, fap->fa_size);
+	zassert_equal(rc, 0, "Erasing flash area [%d]\n", rc);
+}
+
+static int test_mount(void)
+{
+	int ret;
+
+	ret = fs_mount(&littlefs_mnt);
+	if (ret < 0) {
+		TC_PRINT("Error mounting fs [%d]\n", ret);
+		return TC_FAIL;
+	}
+
+	return TC_PASS;
+}
+
+static int test_unmount(void)
+{
+	int ret;
+
+	ret = fs_unmount(&littlefs_mnt);
+	if (ret < 0 && ret != -EINVAL) {
+		TC_PRINT("Error unmounting fs [%d]\n", ret);
+		return TC_FAIL;
+	}
+
+	return TC_PASS;
+}
+
+#ifndef PATH_MAX
+#define PATH_MAX 64
+#endif
+
+int check_file_dir_exists(const char *fpath)
+{
+	int res;
+	struct fs_dirent entry;
+
+	res = fs_stat(fpath, &entry);
+
+	return !res;
+}
+
+int test_file_write(struct fs_file_t *filep, const char *test_str)
+{
+	ssize_t brw;
+	int res;
+
+	TC_PRINT("\nWrite tests:\n");
+
+	/* Verify fs_seek() */
+	res = fs_seek(filep, 0, FS_SEEK_SET);
+	if (res) {
+		TC_PRINT("fs_seek failed [%d]\n", res);
+		fs_close(filep);
+		return res;
+	}
+
+	TC_PRINT("Data written:\"%s\"\n\n", test_str);
+
+	/* Verify fs_write() */
+	brw = fs_write(filep, (char *)test_str, strlen(test_str));
+	if (brw < 0) {
+		TC_PRINT("Failed writing to file [%zd]\n", brw);
+		fs_close(filep);
+		return brw;
+	}
+
+	if (brw < strlen(test_str)) {
+		TC_PRINT("Unable to complete write. Volume full.\n");
+		TC_PRINT("Number of bytes written: [%zd]\n", brw);
+		fs_close(filep);
+		return TC_FAIL;
+	}
+
+	TC_PRINT("Data successfully written!\n");
+
+	return res;
+}
+
+int test_mkdir(const char *dir_path, const char *file)
+{
+	int res;
+	struct fs_file_t filep;
+	char file_path[PATH_MAX] = { 0 };
+
+	fs_file_t_init(&filep);
+	res = sprintf(file_path, "%s/%s", dir_path, file);
+	__ASSERT_NO_MSG(res < sizeof(file_path));
+
+	if (check_file_dir_exists(dir_path)) {
+		TC_PRINT("Dir %s exists\n", dir_path);
+		return TC_FAIL;
+	}
+
+	TC_PRINT("Creating new dir %s\n", dir_path);
+
+	/* Verify fs_mkdir() */
+	res = fs_mkdir(dir_path);
+	if (res) {
+		TC_PRINT("Error creating dir[%d]\n", res);
+		return res;
+	}
+
+	res = fs_open(&filep, file_path, FS_O_CREATE | FS_O_RDWR);
+	if (res) {
+		TC_PRINT("Failed opening file [%d]\n", res);
+		return res;
+	}
+
+	TC_PRINT("Testing write to file %s\n", file_path);
+	res = test_file_write(&filep, TEST_STATIC_FS_PAYLOAD);
+	if (res) {
+		fs_close(&filep);
+		return res;
+	}
+
+	res = fs_close(&filep);
+	if (res) {
+		TC_PRINT("Error closing file [%d]\n", res);
+		return res;
+	}
+
+	TC_PRINT("Created dir %s!\n", dir_path);
+
+	return res;
+}
+
+static int setup_fs(const char *file_ending)
+{
+	char filename_buf[sizeof(TEST_FILE)+5] = TEST_FILE;
+
+	strcat(filename_buf, file_ending);
+	test_clear_flash();
+
+	zassert_equal(test_unmount(), TC_PASS, "Failed to unmount fs");
+	zassert_equal(test_mount(), TC_PASS, "Failed to mount fs");
+
+	return test_mkdir(TEST_DIR_PATH, filename_buf);
+}
+
+ZTEST(server_function_tests, test_http1_static_fs)
+{
+	static const char http1_request[] =
+		"GET /static_file.html HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Accept: */*\r\n"
+		"\r\n";
+	static const char expected_response[] =
+		"HTTP/1.1 200 OK\r\n"
+		"Content-Length: 30\r\n"
+		"Content-Type: text/html\r\n"
+		"\r\n"
+		TEST_STATIC_FS_PAYLOAD;
+	size_t offset = 0;
+	int ret;
+
+	ret = setup_fs("");
+	zassert_equal(ret, TC_PASS, "Failed to mount fs");
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, sizeof(expected_response) - 1);
+	zassert_mem_equal(buf, expected_response, sizeof(expected_response) - 1,
+			  "Received data doesn't match expected response");
+}
+
+ZTEST(server_function_tests, test_http1_static_fs_query)
+{
+	static const char http1_request[] =
+		"GET /static_file.html?v=1 HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Accept: */*\r\n"
+		"\r\n";
+	static const char expected_response[] =
+		"HTTP/1.1 200 OK\r\n"
+		"Content-Length: 30\r\n"
+		"Content-Type: text/html\r\n"
+		"\r\n"
+		TEST_STATIC_FS_PAYLOAD;
+	size_t offset = 0;
+	int ret;
+
+	ret = setup_fs("");
+	zassert_equal(ret, TC_PASS, "Failed to mount fs");
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, sizeof(expected_response) - 1);
+	zassert_mem_equal(buf, expected_response, sizeof(expected_response) - 1,
+			  "Received data doesn't match expected response");
+}
+
+/* HPACK-encoded "GET /static_file.html" request, END_STREAM | END_HEADERS set.
+ * :method: GET (indexed, 0x82), :scheme: http (indexed, 0x86) and :path with an
+ * indexed name (4) and a literal, non-Huffman value.
+ */
+#define TEST_HTTP2_HEADERS_GET_STATIC_FS(_stream_id) \
+	0x00, 0x00, 0x15, 0x01, 0x05, 0x00, 0x00, 0x00, _stream_id, \
+	0x82, 0x86, 0x04, 0x11, 0x2f, 0x73, 0x74, 0x61, 0x74, 0x69, 0x63, 0x5f, \
+	0x66, 0x69, 0x6c, 0x65, 0x2e, 0x68, 0x74, 0x6d, 0x6c
+
+ZTEST(server_function_tests, test_http2_static_fs)
+{
+	static const uint8_t request_get_static_fs[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_GET_STATIC_FS(TEST_STREAM_ID_1),
+	};
+	/* Second request, sent once the first one has been served. Serving a
+	 * static filesystem resource must not clobber the connection RX state,
+	 * so the server has to keep processing the connection normally.
+	 */
+	static const uint8_t request_get_static_fs_again[] = {
+		TEST_HTTP2_HEADERS_GET_STATIC_FS(TEST_STREAM_ID_2),
+		TEST_HTTP2_GOAWAY,
+	};
+	size_t offset = 0;
+	int ret;
+
+	ret = setup_fs("");
+	zassert_equal(ret, TC_PASS, "Failed to mount fs");
+
+	ret = zsock_send(client_fd, request_get_static_fs,
+			 sizeof(request_get_static_fs), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1, HTTP2_FLAG_END_HEADERS, NULL, 0);
+	expect_http2_data_frame(&offset, TEST_STREAM_ID_1, TEST_STATIC_FS_PAYLOAD,
+				strlen(TEST_STATIC_FS_PAYLOAD), HTTP2_FLAG_END_STREAM);
+
+	ret = zsock_send(client_fd, request_get_static_fs_again,
+			 sizeof(request_get_static_fs_again), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_2, HTTP2_FLAG_END_HEADERS, NULL, 0);
+	expect_http2_data_frame(&offset, TEST_STREAM_ID_2, TEST_STATIC_FS_PAYLOAD,
+				strlen(TEST_STATIC_FS_PAYLOAD), HTTP2_FLAG_END_STREAM);
+}
+
+/* HPACK-encoded "GET /static_file.html?v=1" request, encoded as above. */
+#define TEST_HTTP2_HEADERS_GET_STATIC_FS_QUERY(_stream_id) \
+	0x00, 0x00, 0x19, 0x01, 0x05, 0x00, 0x00, 0x00, _stream_id, \
+	0x82, 0x86, 0x04, 0x15, 0x2f, 0x73, 0x74, 0x61, 0x74, 0x69, 0x63, 0x5f, \
+	0x66, 0x69, 0x6c, 0x65, 0x2e, 0x68, 0x74, 0x6d, 0x6c, 0x3f, 0x76, 0x3d, \
+	0x31
+
+ZTEST(server_function_tests, test_http2_static_fs_query)
+{
+	static const uint8_t request_get_static_fs[] = {
+		TEST_HTTP2_MAGIC,
+		TEST_HTTP2_SETTINGS,
+		TEST_HTTP2_SETTINGS_ACK,
+		TEST_HTTP2_HEADERS_GET_STATIC_FS_QUERY(TEST_STREAM_ID_1),
+		TEST_HTTP2_GOAWAY,
+	};
+	size_t offset = 0;
+	int ret;
+
+	ret = setup_fs("");
+	zassert_equal(ret, TC_PASS, "Failed to mount fs");
+
+	ret = zsock_send(client_fd, request_get_static_fs,
+			 sizeof(request_get_static_fs), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	expect_http2_settings_frame(&offset, false);
+	expect_http2_settings_frame(&offset, true);
+	expect_http2_headers_frame(&offset, TEST_STREAM_ID_1, HTTP2_FLAG_END_HEADERS, NULL, 0);
+	expect_http2_data_frame(&offset, TEST_STREAM_ID_1, TEST_STATIC_FS_PAYLOAD,
+				strlen(TEST_STATIC_FS_PAYLOAD), HTTP2_FLAG_END_STREAM);
+}
+
+ZTEST(server_function_tests, test_http1_static_fs_compression)
+{
+#define HTTP1_COMPRESSION_REQUEST                                                                  \
+	"GET /static_file.html HTTP/1.1\r\n"                                                       \
+	"Host: 127.0.0.1:8080\r\n"                                                                 \
+	"User-Agent: curl/7.68.0\r\n"                                                              \
+	"Accept: */*\r\n"                                                                          \
+	"Accept-Encoding: %s\r\n"                                                                  \
+	"\r\n"
+#define HTTP1_COMPRESSION_RESPONSE                                                                 \
+	"HTTP/1.1 200 OK\r\n"                                                                      \
+	"Content-Length: 30\r\n"                                                                   \
+	"Content-Type: text/html\r\n"                                                              \
+	"Content-Encoding: %s\r\n"                                                                 \
+	"\r\n" TEST_STATIC_FS_PAYLOAD
+
+	static const char mixed_compression_str[] = "gzip, deflate, br";
+	static char http1_request[sizeof(HTTP1_COMPRESSION_REQUEST) +
+				  ARRAY_SIZE(mixed_compression_str)] = {0};
+	static char expected_response[sizeof(HTTP1_COMPRESSION_RESPONSE) +
+				      HTTP_COMPRESSION_MAX_STRING_LEN] = {0};
+	static const char *const file_ending_map[] = {[HTTP_GZIP] = ".gz",
+						      [HTTP_COMPRESS] = ".lzw",
+						      [HTTP_DEFLATE] = ".zz",
+						      [HTTP_BR] = ".br",
+						      [HTTP_ZSTD] = ".zst"};
+	size_t offset;
+	int ret;
+	int expected_response_size;
+
+	for (enum http_compression i = 0; compression_value_is_valid(i); ++i) {
+		offset = 0;
+
+		if (i == HTTP_NONE) {
+			continue;
+		}
+		TC_PRINT("Testing %s compression...\n", http_compression_text(i));
+		zassert(i < ARRAY_SIZE(file_ending_map), "No file ending defined for compression");
+
+		sprintf(http1_request, HTTP1_COMPRESSION_REQUEST, http_compression_text(i));
+		expected_response_size = sprintf(expected_response, HTTP1_COMPRESSION_RESPONSE,
+						 http_compression_text(i));
+
+		ret = setup_fs(file_ending_map[i]);
+		zassert_equal(ret, TC_PASS, "Failed to mount fs");
+
+		ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+		zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+		memset(buf, 0, sizeof(buf));
+
+		test_read_data(&offset, expected_response_size);
+		zassert_mem_equal(buf, expected_response, expected_response_size,
+				  "Received data doesn't match expected response");
+	}
+
+	offset = 0;
+	TC_PRINT("Testing mixed compression...\n");
+	sprintf(http1_request, HTTP1_COMPRESSION_REQUEST, mixed_compression_str);
+	expected_response_size = sprintf(expected_response, HTTP1_COMPRESSION_RESPONSE,
+					 http_compression_text(HTTP_BR));
+	ret = setup_fs(file_ending_map[HTTP_BR]);
+	zassert_equal(ret, TC_PASS, "Failed to mount fs");
+
+	ret = zsock_send(client_fd, http1_request, strlen(http1_request), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, expected_response_size);
+	zassert_mem_equal(buf, expected_response, expected_response_size,
+			  "Received data doesn't match expected response");
+}
+
+#define TEST_DIR_OVERLAP	LFS_MNTP "/testfs"
+#define TEST_FILE_OVERLAP	"test_file"
+
+static struct http_resource_detail_static_fs static_file_resource_detail_dir = {
+	.common = {
+			.type = HTTP_RESOURCE_TYPE_STATIC_FS,
+			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
+			.content_type = "text/html",
+		},
+	.fs_path = LFS_MNTP,
+};
+
+HTTP_RESOURCE_DEFINE(static_fs_resource_dir, test_http_service, "/testfs",
+		     &static_file_resource_detail_dir);
+
+static const char static_overlap_resource_payload[] = TEST_STATIC_PAYLOAD;
+struct http_resource_detail_static static_overlap_resource_detail = {
+	.common = {
+			.type = HTTP_RESOURCE_TYPE_STATIC,
+			.bitmask_of_supported_http_methods = BIT(HTTP_GET),
+		},
+	.static_data = static_overlap_resource_payload,
+	.static_data_len = sizeof(static_overlap_resource_payload) - 1,
+};
+
+HTTP_RESOURCE_DEFINE(static_overlap_resource, test_http_service, "/testfs/static",
+		     &static_overlap_resource_detail);
+
+static void setup_fs_with_subdir(void)
+{
+	test_clear_flash();
+
+	zassert_equal(test_unmount(), TC_PASS, "Failed to unmount fs");
+	zassert_equal(test_mount(), TC_PASS, "Failed to mount fs");
+
+	zassert_equal(test_mkdir(TEST_DIR_OVERLAP, TEST_FILE_OVERLAP), TC_PASS,
+		      "Failed to create dir");
+}
+
+/* Verify that if the filesystem resource overlaps with a statically defined one,
+ * the latter takes preference.
+ */
+ZTEST(server_function_tests, test_http1_static_fs_overlap)
+{
+	static const char http1_request_file[] =
+		"GET /testfs/test_file HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Accept: */*\r\n"
+		"\r\n";
+	static const char expected_response_file[] =
+		"HTTP/1.1 200 OK\r\n"
+		"Content-Length: 30\r\n"
+		"Content-Type: text/html\r\n"
+		"\r\n"
+		TEST_STATIC_FS_PAYLOAD;
+	static const char http1_request_static[] =
+		"GET /testfs/static HTTP/1.1\r\n"
+		"Host: 127.0.0.1:8080\r\n"
+		"User-Agent: curl/7.68.0\r\n"
+		"Accept: */*\r\n"
+		"\r\n";
+	static const char expected_response_static[] =
+		"HTTP/1.1 200 OK\r\n"
+		"Content-Type: text/html\r\n"
+		"Content-Length: 13\r\n"
+		"\r\n"
+		TEST_STATIC_PAYLOAD;
+	size_t offset = 0;
+	int ret;
+
+	setup_fs_with_subdir();
+
+	ret = zsock_send(client_fd, http1_request_static, strlen(http1_request_static), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+
+	test_read_data(&offset, sizeof(expected_response_static) - 1);
+	zassert_mem_equal(buf, expected_response_static, sizeof(expected_response_static) - 1,
+			  "Received data doesn't match expected response");
+
+	ret = zsock_send(client_fd, http1_request_file, strlen(http1_request_file), 0);
+	zassert_not_equal(ret, -1, "send() failed (%d)", errno);
+
+	memset(buf, 0, sizeof(buf));
+	offset = 0;
+
+	test_read_data(&offset, sizeof(expected_response_file) - 1);
+	zassert_mem_equal(buf, expected_response_file, sizeof(expected_response_file) - 1,
+			  "Received data doesn't match expected response");
+}
+
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(zephyr_ram_disk) */
+
 static void http_server_tests_before(void *fixture)
 {
-	struct sockaddr_in sa;
+	struct net_sockaddr_in sa;
 	struct timeval optval = {
 		.tv_sec = TIMEOUT_S,
 		.tv_usec = 0,
@@ -1982,7 +3588,11 @@ static void http_server_tests_before(void *fixture)
 
 	memset(dynamic_payload, 0, sizeof(dynamic_payload));
 	memset(dynamic_response_headers_buffer, 0, sizeof(dynamic_response_headers_buffer));
+	memset(&request_headers_clone, 0, sizeof(request_headers_clone));
+	memset(&request_headers_clone2, 0, sizeof(request_headers_clone2));
 	dynamic_payload_len = 0;
+	dynamic_error = false;
+	dynamic_complete = false;
 
 	ret = http_server_start();
 	if (ret < 0) {
@@ -1990,30 +3600,30 @@ static void http_server_tests_before(void *fixture)
 		return;
 	}
 
-	ret = zsock_socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	ret = zsock_socket(NET_AF_INET, NET_SOCK_STREAM, NET_IPPROTO_TCP);
 	if (ret < 0) {
 		printk("Failed to create client socket (%d)\n", errno);
 		return;
 	}
 	client_fd = ret;
 
-	ret = zsock_setsockopt(client_fd, SOL_SOCKET, SO_RCVTIMEO, &optval,
+	ret = zsock_setsockopt(client_fd, ZSOCK_SOL_SOCKET, ZSOCK_SO_RCVTIMEO, &optval,
 			       sizeof(optval));
 	if (ret < 0) {
 		printk("Failed to set timeout (%d)\n", errno);
 		return;
 	}
 
-	sa.sin_family = AF_INET;
-	sa.sin_port = htons(SERVER_PORT);
+	sa.sin_family = NET_AF_INET;
+	sa.sin_port = net_htons(SERVER_PORT);
 
-	ret = zsock_inet_pton(AF_INET, SERVER_IPV4_ADDR, &sa.sin_addr.s_addr);
+	ret = zsock_inet_pton(NET_AF_INET, SERVER_IPV4_ADDR, &sa.sin_addr.s_addr);
 	if (ret != 1) {
 		printk("inet_pton() failed to convert %s\n", SERVER_IPV4_ADDR);
 		return;
 	}
 
-	ret = zsock_connect(client_fd, (struct sockaddr *)&sa, sizeof(sa));
+	ret = zsock_connect(client_fd, (struct net_sockaddr *)&sa, sizeof(sa));
 	if (ret < 0) {
 		printk("Failed to connect (%d)\n", errno);
 	}
@@ -2029,6 +3639,8 @@ static void http_server_tests_after(void *fixture)
 	}
 
 	(void)http_server_stop();
+
+	k_yield();
 }
 
 ZTEST_SUITE(server_function_tests, NULL, NULL, http_server_tests_before,

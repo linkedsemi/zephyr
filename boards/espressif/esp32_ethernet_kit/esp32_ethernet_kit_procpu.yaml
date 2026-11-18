@@ -10,8 +10,9 @@ supported:
   - uart
   - nvs
   - pwm
-testing:
-  ignore_tags:
-    - net
-    - bluetooth
+  - i2s
+  - crypto
+  - retained_mem
+  - netif:wifi
+  - netif:eth
 vendor: espressif

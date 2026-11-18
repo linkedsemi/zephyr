@@ -62,16 +62,9 @@ struct _callee_saved {
 	unsigned long esp;
 
 	/*
-	 * The following registers are considered non-volatile, i.e.
-	 * callee-save,
-	 * but their values are pushed onto the stack rather than stored in the
-	 * TCS
-	 * structure:
-	 *
-	 *  unsigned long ebp;
-	 *  unsigned long ebx;
-	 *  unsigned long esi;
-	 *  unsigned long edi;
+	 * The EBP, EBX, ESI and EDI registers are also considered
+	 * non-volatile, i.e. callee-save, but their values are pushed onto
+	 * the stack rather than stored in the TCS structure.
 	 */
 
 };
@@ -236,6 +229,12 @@ struct _thread_arch {
 #endif /* CONFIG_LAZY_FPU_SHARING */
 
 	tPreempFloatReg preempFloatReg; /* volatile float register storage */
+
+#ifdef CONFIG_HW_SHADOW_STACK
+	long *shstk_addr;
+	long *shstk_base;
+	size_t shstk_size;
+#endif
 };
 
 typedef struct _thread_arch _thread_arch_t;

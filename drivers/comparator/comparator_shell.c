@@ -30,7 +30,7 @@ static int get_device_from_str(const struct shell *sh,
 			       const char *dev_str,
 			       const struct device **dev)
 {
-	*dev = device_get_binding(dev_str);
+	*dev = shell_device_get_binding(dev_str);
 
 	if (*dev == NULL) {
 		shell_error(sh, "%s not %s", dev_str, "found");
@@ -216,6 +216,11 @@ static int cmd_trigger_is_pending(const struct shell *sh, size_t argc, char **ar
 	return 0;
 }
 
+static bool device_is_comp(const struct device *dev)
+{
+	return DEVICE_API_IS(comparator, dev);
+}
+
 static void dsub_set_trigger_lookup_1(size_t idx, struct shell_static_entry *entry)
 {
 	entry->syntax = (idx < ARRAY_SIZE(trigger_lookup)) ? trigger_lookup[idx] : NULL;
@@ -228,7 +233,7 @@ SHELL_DYNAMIC_CMD_CREATE(dsub_set_trigger_1, dsub_set_trigger_lookup_1);
 
 static void dsub_set_trigger_lookup_0(size_t idx, struct shell_static_entry *entry)
 {
-	const struct device *dev = shell_device_lookup(idx, NULL);
+	const struct device *dev = shell_device_filter(idx, device_is_comp);
 
 	entry->syntax = dev != NULL ? dev->name : NULL;
 	entry->handler = NULL;
@@ -240,7 +245,7 @@ SHELL_DYNAMIC_CMD_CREATE(dsub_set_trigger_0, dsub_set_trigger_lookup_0);
 
 static void dsub_device_lookup_0(size_t idx, struct shell_static_entry *entry)
 {
-	const struct device *dev = shell_device_lookup(idx, NULL);
+	const struct device *dev = shell_device_filter(idx, device_is_comp);
 
 	entry->syntax = (dev != NULL) ? dev->name : NULL;
 	entry->handler = NULL;
@@ -250,21 +255,19 @@ static void dsub_device_lookup_0(size_t idx, struct shell_static_entry *entry)
 
 SHELL_DYNAMIC_CMD_CREATE(dsub_device_0, dsub_device_lookup_0);
 
-#define GET_OUTPUT_HELP \
-	("comp get_output <device>")
+#define GET_OUTPUT_HELP SHELL_HELP("Read comparator output", "<device>")
 
-#define SET_TRIGGER_HELP \
-	("comp set_trigger <device> <NONE | RISING_EDGE | FALLING_EDGE | BOTH_EDGES>")
+#define SET_TRIGGER_HELP                                                                           \
+	SHELL_HELP("Set comparator trigger",                                                       \
+		   "<device> <NONE | RISING_EDGE | FALLING_EDGE | BOTH_EDGES>")
 
-#define AWAIT_TRIGGER_HELP								\
-	("comp await_trigger <device> [timeout] (default "				\
-	 STRINGIFY(AWAIT_TRIGGER_DEFAULT_TIMEOUT)					\
-	 "s, max "									\
-	 STRINGIFY(AWAIT_TRIGGER_MAX_TIMEOUT)						\
-	 "s)")
+#define AWAIT_TRIGGER_HELP                                                                         \
+	SHELL_HELP("Await comparator trigger",                                                     \
+		   "<device> [timeout]\n"                                                          \
+		   "timeout: default=" STRINGIFY(AWAIT_TRIGGER_DEFAULT_TIMEOUT) "s, "              \
+		   "max=" STRINGIFY(AWAIT_TRIGGER_MAX_TIMEOUT) "s")
 
-#define TRIGGER_PENDING_HELP \
-	("comp trigger_is_pending <device>")
+#define TRIGGER_PENDING_HELP SHELL_HELP("Check comparator trigger status", "<device>")
 
 SHELL_STATIC_SUBCMD_SET_CREATE(
 	sub_comp,

@@ -4,7 +4,7 @@
 
    Measure packet loss and sync loss of an ISO broadcaster against one or more receivers.
 
-The ISO Broadcast Benchmark sample measures and report packet loss and sync loss
+The ISO Broadcast Benchmark sample measures and reports packet loss and sync loss
 of an ISO broadcaster against one or more ISO broadcast receivers.
 
 Overview
@@ -27,19 +27,19 @@ Requirements
 * A remote board running the same sample as the reversed role that supports
   setting CONFIG_BT_CTLR_SYNC_ISO
 
-Building and running
+Building and Running
 ********************
 
-This sample can be found under
-:zephyr_file:`samples/bluetooth/iso_broadcast_benchmark` in the Zephyr tree.
-
-See :zephyr:code-sample-category:`bluetooth` samples for details.
-
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/iso_broadcast_benchmark
+   :board: <board>
+   :goals: build flash
+   :compact:
 
 Testing
 =======
 
-After programming the sample to both boards, test it by performing the following
+After flashing the sample to both boards, test it by performing the following
 steps:
 
 1. Connect to both boards with a terminal emulator (for example, PuTTY or
@@ -64,7 +64,7 @@ The receiver will output statistics for overall (since boot), current sync
    Receiver role
    [00:00:05.784,698] <inf> iso_broadcast_receiver: Scan started
    [00:00:05.784,698] <inf> iso_broadcast_receiver: Waiting for periodic advertiser
-   [00:00:05.793,304] <inf> iso_broadcast_receiver: Found broadcaster with address 28:3B:AD:F5:EE:0C (random) (RSSI -33)
+   [00:00:05.793,304] <inf> iso_broadcast_receiver: Found broadcaster with address R:28:3B:AD:F5:EE:0C (RSSI -33)
    [00:00:05.793,334] <inf> iso_broadcast_receiver: Periodic advertiser found
    [00:00:05.793,701] <inf> iso_broadcast_receiver: Scan stopped
    [00:00:05.793,701] <inf> iso_broadcast_receiver: Creating Periodic Advertising Sync

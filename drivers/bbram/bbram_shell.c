@@ -61,7 +61,7 @@ static inline int parse_device(const struct shell *sh, size_t argc, char *argv[]
 		return -EINVAL;
 	}
 
-	*bbram_dev = device_get_binding(argv[1]);
+	*bbram_dev = shell_device_get_binding(argv[1]);
 	if (!*bbram_dev) {
 		shell_error(sh, "Given BBRAM device was not found");
 		return -ENODEV;
@@ -187,10 +187,13 @@ SHELL_DYNAMIC_CMD_CREATE(dsub_device_name, device_name_get);
 
 SHELL_STATIC_SUBCMD_SET_CREATE(bbram_cmds,
 			       SHELL_CMD_ARG(read, &dsub_device_name,
-					     "<device> [<address>] [<count>]", cmd_read, 2, 2),
+					     SHELL_HELP("Read data from BBRAM",
+							"<device> [<address> [<count>]]"),
+					     cmd_read, 2, 2),
 			       SHELL_CMD_ARG(write, &dsub_device_name,
-					     "<device> <address> <byte> [<byte>...]", cmd_write, 4,
-					     BUF_ARRAY_CNT),
+					     SHELL_HELP("Write data to BBRAM",
+							 "<device> <address> <byte> [<byte>...]"),
+					     cmd_write, 4, BUF_ARRAY_CNT),
 			       SHELL_SUBCMD_SET_END);
 
 static int cmd_bbram(const struct shell *sh, size_t argc, char **argv)

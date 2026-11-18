@@ -6,16 +6,6 @@
 
 if BOARD_SPARKFUN_THING_PLUS_MATTER_MGM240P
 
-config CMU_HFXO_FREQ
-	default 40000000
-
-config CMU_LFXO_FREQ
-	default 32768
-
-config FLASH_BASE_ADDRESS
-	hex
-	default 0x08000000
-
 if SOC_GECKO_USE_RAIL
 
 config FPU
@@ -27,9 +17,6 @@ if BT
 
 config FPU
 	default y
-
-config COMMON_LIBC_MALLOC_ARENA_SIZE
-	default 8192
 
 config MAIN_STACK_SIZE
 	default 2304

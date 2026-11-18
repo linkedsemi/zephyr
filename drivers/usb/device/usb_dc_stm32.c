@@ -25,7 +25,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pinctrl.h>
-#include "stm32_hsem.h"
+#include <stm32_hsem.h>
 
 #define LOG_LEVEL CONFIG_USB_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -67,15 +67,16 @@ LOG_MODULE_REGISTER(usb_dc_stm32);
 
 static const struct stm32_pclken pclken[] = STM32_DT_INST_CLOCKS(0);
 
-#if DT_INST_NODE_HAS_PROP(0, maximum_speed)
-#define USB_MAXIMUM_SPEED	DT_INST_PROP(0, maximum_speed)
-#endif
-
+#if !DT_HAS_COMPAT_STATUS_OKAY(st_stm32n6_otghs)
 PINCTRL_DT_INST_DEFINE(0);
 static const struct pinctrl_dev_config *usb_pcfg =
 					PINCTRL_DT_INST_DEV_CONFIG_GET(0);
+#endif
 
-#define USB_OTG_HS_EMB_PHY (DT_HAS_COMPAT_STATUS_OKAY(st_stm32_usbphyc) && \
+#define USB_OTG_HS_EMB_PHYC (DT_HAS_COMPAT_STATUS_OKAY(st_stm32_usbphyc) && \
+			     DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs))
+
+#define USB_OTG_HS_EMB_PHY (DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_otghs_phy) && \
 			    DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs))
 
 #define USB_OTG_HS_ULPI_PHY (DT_HAS_COMPAT_STATUS_OKAY(usb_ulpi_phy) && \
@@ -84,6 +85,27 @@ static const struct pinctrl_dev_config *usb_pcfg =
 #if USB_OTG_HS_ULPI_PHY
 static const struct gpio_dt_spec ulpi_reset =
 	GPIO_DT_SPEC_GET_OR(DT_PHANDLE(DT_INST(0, st_stm32_otghs), phys), reset_gpios, {0});
+#endif
+
+/**
+ * The following defines are used to map the value of the "maxiumum-speed"
+ * DT property to the corresponding definition used by the STM32 HAL.
+ */
+#if defined(CONFIG_SOC_SERIES_STM32H7X) || defined(USB_OTG_HS_EMB_PHYC) || \
+	defined(USB_OTG_HS_EMB_PHY)
+#define USB_DC_STM32_HIGH_SPEED             USB_OTG_SPEED_HIGH_IN_FULL
+#else
+#define USB_DC_STM32_HIGH_SPEED             USB_OTG_SPEED_HIGH
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_usb)
+#define USB_DC_STM32_FULL_SPEED             PCD_SPEED_FULL
+#else
+#define USB_DC_STM32_FULL_SPEED             USB_OTG_SPEED_FULL
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32n6_otghs)
+#define USB_USBPHYC_CR_FSEL_24MHZ           USB_USBPHYC_CR_FSEL_1
 #endif
 
 /*
@@ -142,6 +164,18 @@ static const struct gpio_dt_spec ulpi_reset =
 
 #endif /* USB */
 
+/* Priority of ISR lower half thread */
+#define USB_ISR_LOWER_HALF_THREAD_PRIO K_PRIO_COOP(2)
+
+/* Size of ISR lower half thread stack */
+#define USB_ISR_LOWER_HALF_THREAD_STACK_SIZE 1024
+
+/* Number of messages in ISR -> lower half thread msgq */
+#define USB_ISR_MSGQ_SIZE 16
+
+/* Special "target" indicating message targets USB stack */
+#define USB_MSG_TARGET_STACK 0xFFu
+
 /* Size of a USB SETUP packet */
 #define SETUP_SIZE 8
 
@@ -162,22 +196,126 @@ struct usb_dc_stm32_ep_state {
 	struct k_sem write_sem;	/** Write boolean semaphore */
 };
 
+/* ISR -> lower half message */
+struct usb_dc_stm32_msg {
+	union {
+		enum usb_dc_status_code stack_cb_status;
+		enum usb_dc_ep_cb_status_code ep_cb_status;
+	};
+	/* endpoint address or USB_MSG_TARGET_STACK */
+	uint8_t target;
+};
+
 /* Driver state */
 struct usb_dc_stm32_state {
 	PCD_HandleTypeDef pcd;	/* Storage for the HAL_PCD api */
 	usb_dc_status_callback status_cb; /* Status callback */
 	struct usb_dc_stm32_ep_state out_ep_state[USB_NUM_BIDIR_ENDPOINTS];
 	struct usb_dc_stm32_ep_state in_ep_state[USB_NUM_BIDIR_ENDPOINTS];
+	struct k_thread isr_lower_half_thread;
+	struct k_msgq isr_msgq;
 	uint8_t ep_buf[USB_NUM_BIDIR_ENDPOINTS][EP_MPS];
+	char msgq_buf[USB_ISR_MSGQ_SIZE * sizeof(struct usb_dc_stm32_msg)];
 
 #if defined(USB) || defined(USB_DRD_FS)
 	uint32_t pma_offset;
 #endif /* USB */
 };
 
+K_THREAD_STACK_DEFINE(usb_dc_stm32_thr_stk, USB_ISR_LOWER_HALF_THREAD_STACK_SIZE);
+
 static struct usb_dc_stm32_state usb_dc_stm32_state;
 
 /* Internal functions */
+
+/* these helpers are defined as macros such that LOG_ERR() call
+ * is performed in caller's scope and has proper function name
+ */
+#define SEND_MSG_TO_LOWERHALF(_status_field, _status, _target)			\
+	do {									\
+		struct usb_dc_stm32_msg msg = {					\
+			. _status_field = _status,				\
+			.target = _target,					\
+		};								\
+										\
+		int _errcode = k_msgq_put(					\
+			&usb_dc_stm32_state.isr_msgq, &msg, K_NO_WAIT);		\
+		if (_errcode != 0) {						\
+			LOG_ERR("k_msgq_put() failed: %d", _errcode);		\
+			__ASSERT_NO_MSG(0);					\
+		}								\
+	} while (0)
+
+#define usb_dc_stm32_send_stack_msg(_status)				\
+	SEND_MSG_TO_LOWERHALF(stack_cb_status, _status, USB_MSG_TARGET_STACK)
+
+#define usb_dc_stm32_send_ep_msg(_ep, _status)				\
+	SEND_MSG_TO_LOWERHALF(ep_cb_status, _status, _ep)
+
+int usb_dc_ep_start_read(uint8_t ep, uint8_t *data, uint32_t max_data_len);
+
+static void usb_dc_stm32_isr_lower_half(void *a1, void *a2, void *a3)
+{
+	ARG_UNUSED(a1);
+	ARG_UNUSED(a2);
+	ARG_UNUSED(a3);
+
+	struct usb_dc_stm32_state *state = &usb_dc_stm32_state;
+	struct usb_dc_stm32_msg msg;
+	int res;
+
+	while (true) {
+		res = k_msgq_get(&state->isr_msgq, &msg, K_FOREVER);
+		__ASSERT_NO_MSG(res == 0);
+
+		if (msg.target == USB_MSG_TARGET_STACK) {
+			if (state->status_cb != NULL) {
+				state->status_cb(msg.stack_cb_status, NULL);
+			}
+
+			continue;
+		}
+
+		/* Endpoint target */
+		struct usb_dc_stm32_ep_state *ep_state;
+		const uint8_t ep_idx = USB_EP_GET_IDX(msg.target);
+
+		if (USB_EP_DIR_IS_IN(msg.target)) {
+			ep_state = &usb_dc_stm32_state.in_ep_state[ep_idx];
+		} else { /* target is OUT ep */
+			ep_state =  &usb_dc_stm32_state.out_ep_state[ep_idx];
+		}
+
+		if (ep_state->cb == NULL) {
+			continue;
+		}
+
+		ep_state->cb(msg.target, msg.ep_cb_status);
+
+		/* Special handling for SETUP event */
+		if (msg.ep_cb_status == USB_DC_EP_SETUP) {
+			struct usb_setup_packet *setup =
+				(void *)usb_dc_stm32_state.pcd.Setup;
+
+			if (!(setup->wLength == 0U) &&
+				usb_reqtype_is_to_device(setup)) {
+				usb_dc_ep_start_read(EP0_OUT,
+						     usb_dc_stm32_state.ep_buf[EP0_IDX],
+						     setup->wLength);
+			}
+		}
+	}
+}
+
+static bool usb_dc_stm32_clock_enabled(void)
+{
+	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
+
+	enum clock_control_status status = clock_control_get_status(
+						clk, (clock_control_subsys_t)&pclken[0]);
+
+	return status == CLOCK_CONTROL_STATUS_ON;
+}
 
 static struct usb_dc_stm32_ep_state *usb_dc_stm32_get_ep_state(uint8_t ep)
 {
@@ -204,21 +342,72 @@ static void usb_dc_stm32_isr(const void *arg)
 #ifdef CONFIG_USB_DEVICE_SOF
 void HAL_PCD_SOFCallback(PCD_HandleTypeDef *hpcd)
 {
-	usb_dc_stm32_state.status_cb(USB_DC_SOF, NULL);
+	usb_dc_stm32_send_stack_msg(USB_DC_SOF);
 }
 #endif
 
-static int usb_dc_stm32_clock_enable(void)
-{
-	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_otghs_phy)
 
-	if (!device_is_ready(clk)) {
-		LOG_ERR("clock control device not ready");
-		return -ENODEV;
+static const struct stm32_pclken phy_pclken[] = STM32_DT_CLOCKS(DT_INST_PHANDLE(0, phys));
+
+static int usb_dc_stm32u5_phy_clock_select(const struct device *const clk)
+{
+	static const struct {
+		uint32_t freq;
+		uint32_t ref_clk;
+	} clk_select[] = {
+		{ MHZ(16),    SYSCFG_OTG_HS_PHY_CLK_SELECT_1 },
+		{ KHZ(19200), SYSCFG_OTG_HS_PHY_CLK_SELECT_2 },
+		{ MHZ(20),    SYSCFG_OTG_HS_PHY_CLK_SELECT_3 },
+		{ MHZ(24),    SYSCFG_OTG_HS_PHY_CLK_SELECT_4 },
+		{ MHZ(26),    SYSCFG_OTG_HS_PHY_CLK_SELECT_5 },
+		{ MHZ(32),    SYSCFG_OTG_HS_PHY_CLK_SELECT_6 },
+	};
+	uint32_t freq;
+
+	if (clock_control_get_rate(clk,
+				   (clock_control_subsys_t)&phy_pclken[1],
+				   &freq) != 0) {
+		LOG_ERR("Failed to get USB_PHY clock source rate");
+		return -EIO;
 	}
 
-#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs) && defined(CONFIG_SOC_SERIES_STM32U5X)
-	/* Sequence to enable the power of the OTG HS on a stm32U5 serie : Enable VDDUSB */
+	for (size_t i = 0; ARRAY_SIZE(clk_select); i++) {
+		if (clk_select[i].freq == freq) {
+			HAL_SYSCFG_SetOTGPHYReferenceClockSelection(clk_select[i].ref_clk);
+			return 0;
+		}
+	}
+
+	LOG_ERR("Unsupported PHY clock source frequency (%"PRIu32")", freq);
+
+	return -EINVAL;
+}
+
+static int usb_dc_stm32u5_phy_clock_enable(const struct device *const clk)
+{
+	int err;
+
+	err = clock_control_configure(clk, (clock_control_subsys_t)&phy_pclken[1], NULL);
+	if (err) {
+		LOG_ERR("Could not select USB_PHY clock source");
+		return -EIO;
+	}
+
+	err = clock_control_on(clk, (clock_control_subsys_t)&phy_pclken[0]);
+	if (err) {
+		LOG_ERR("Unable to enable USB_PHY clock");
+		return -EIO;
+	}
+
+	return usb_dc_stm32u5_phy_clock_select(clk);
+}
+
+static int usb_dc_stm32_phy_specific_clock_enable(const struct device *const clk)
+{
+	int err;
+
+	/* Sequence to enable the power of the OTG HS on a stm32U5 series : Enable VDDUSB */
 	bool pwr_clk = LL_AHB3_GRP1_IsEnabledClock(LL_AHB3_GRP1_PERIPH_PWR);
 
 	if (!pwr_clk) {
@@ -246,15 +435,41 @@ static int usb_dc_stm32_clock_enable(void)
 
 	/* Set the OTG PHY reference clock selection (through SYSCFG) block */
 	LL_APB3_GRP1_EnableClock(LL_APB3_GRP1_PERIPH_SYSCFG);
-	HAL_SYSCFG_SetOTGPHYReferenceClockSelection(SYSCFG_OTG_HS_PHY_CLK_SELECT_1);
+
+	err = usb_dc_stm32u5_phy_clock_enable(clk);
+	if (err) {
+		return err;
+	}
+
 	/* Configuring the SYSCFG registers OTG_HS PHY : OTG_HS PHY enable*/
 	HAL_SYSCFG_EnableOTGPHY(SYSCFG_OTG_HS_PHY_ENABLE);
-#elif defined(PWR_USBSCR_USB33SV) || defined(PWR_SVMCR_USV)
+
+	if (clock_control_on(clk, (clock_control_subsys_t)&pclken[0]) != 0) {
+		LOG_ERR("Unable to enable USB clock");
+		return -EIO;
+	}
+
+	return 0;
+}
+
+#else /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_otghs_phy) */
+
+static int usb_dc_stm32_phy_specific_clock_enable(const struct device *const clk)
+{
+#if defined(PWR_USBSCR_USB33SV) || defined(PWR_SVMCR_USV)
 	/*
 	 * VDDUSB independent USB supply (PWR clock is on)
 	 * with LL_PWR_EnableVDDUSB function (higher case)
 	 */
 	LL_PWR_EnableVDDUSB();
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32n6_otghs)
+	/* Enable Vdd USB voltage monitoring */
+	LL_PWR_EnableVddUSBMonitoring();
+	while (!__HAL_PWR_GET_FLAG(PWR_FLAG_USB33RDY)) {
+		/* Wait for VDD33USB ready */
+	}
+	/* Enable VDDUSB */
+	LL_PWR_EnableVddUSB();
 #endif
 
 	if (DT_INST_NUM_CLOCKS(0) > 1) {
@@ -286,6 +501,26 @@ static int usb_dc_stm32_clock_enable(void)
 		}
 	}
 
+	return 0;
+}
+
+#endif /* DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_otghs_phy) */
+
+static int usb_dc_stm32_clock_enable(void)
+{
+	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
+	int err;
+
+	if (!device_is_ready(clk)) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
+	}
+
+	err = usb_dc_stm32_phy_specific_clock_enable(clk);
+	if (err) {
+		return err;
+	}
+
 	/* Previous check won't work in case of F1/F3. Add build time check */
 #if defined(RCC_CFGR_OTGFSPRE) || defined(RCC_CFGR_USBPRE)
 
@@ -310,15 +545,26 @@ static int usb_dc_stm32_clock_enable(void)
 	LL_AHB1_GRP1_DisableClockSleep(LL_AHB1_GRP1_PERIPH_USB1OTGHSULPI);
 #elif defined(CONFIG_SOC_SERIES_STM32U5X)
 	LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_USBPHY);
-	/* Both OTG HS and USBPHY sleep clock MUST be disabled here at the same time */
-	LL_AHB2_GRP1_DisableClockStopSleep(LL_AHB2_GRP1_PERIPH_OTG_HS ||
-						LL_AHB2_GRP1_PERIPH_USBPHY);
+#elif DT_HAS_COMPAT_STATUS_OKAY(st_stm32n6_otghs)
+	/* Reset specific configuration bits before setting new values */
+	USB1_HS_PHYC->USBPHYC_CR &= ~USB_USBPHYC_CR_FSEL_Msk;
+
+	/* Configure the USB PHY Control Register to operate in the High frequency "24 MHz"
+	 * by setting the Frequency Selection (FSEL) bits 4 and 5 to 10,
+	 * which ensures proper communication.
+	 */
+	USB1_HS_PHYC->USBPHYC_CR |= USB_USBPHYC_CR_FSEL_24MHZ;
+
+	/* Peripheral OTGPHY clock enable */
+	LL_AHB5_GRP1_EnableClock(LL_AHB5_GRP1_PERIPH_OTGPHY1);
 #else
 	LL_AHB1_GRP1_DisableClockLowPower(LL_AHB1_GRP1_PERIPH_OTGHSULPI);
 #endif
 
-#if USB_OTG_HS_EMB_PHY
+#if USB_OTG_HS_EMB_PHYC
+#if !DT_HAS_COMPAT_STATUS_OKAY(st_stm32n6_otghs)
 	LL_APB2_GRP1_EnableClock(LL_APB2_GRP1_PERIPH_OTGPHYC);
+#endif
 #endif
 #endif /* USB_OTG_HS_ULPI_PHY */
 
@@ -333,52 +579,20 @@ static int usb_dc_stm32_clock_disable(void)
 		LOG_ERR("Unable to disable USB clock");
 		return -EIO;
 	}
-#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs) && defined(CONFIG_SOC_SERIES_STM32U5X)
-	LL_AHB2_GRP1_DisableClock(LL_AHB2_GRP1_PERIPH_USBPHY);
+#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32u5_otghs_phy)
+	clock_control_off(clk, (clock_control_subsys_t)&phy_pclken[0]);
 #endif
 
 	return 0;
 }
 
-#if defined(USB_OTG_FS) || defined(USB_OTG_HS)
-static uint32_t usb_dc_stm32_get_maximum_speed(void)
-{
-	/*
-	 * If max-speed is not passed via DT, set it to USB controller's
-	 * maximum hardware capability.
-	 */
-#if USB_OTG_HS_EMB_PHY || USB_OTG_HS_ULPI_PHY
-	uint32_t speed = USB_OTG_SPEED_HIGH;
-#else
-	uint32_t speed = USB_OTG_SPEED_FULL;
-#endif
-
-#ifdef USB_MAXIMUM_SPEED
-
-	if (!strncmp(USB_MAXIMUM_SPEED, "high-speed", 10)) {
-		speed = USB_OTG_SPEED_HIGH;
-	} else if (!strncmp(USB_MAXIMUM_SPEED, "full-speed", 10)) {
-#if defined(CONFIG_SOC_SERIES_STM32H7X) || defined(USB_OTG_HS_EMB_PHY)
-		speed = USB_OTG_SPEED_HIGH_IN_FULL;
-#else
-		speed = USB_OTG_SPEED_FULL;
-#endif
-	} else {
-		LOG_DBG("Unsupported maximum speed defined in device tree. "
-			"USB controller will default to its maximum HW "
-			"capability");
-	}
-#endif
-
-	return speed;
-}
-#endif /* USB_OTG_FS || USB_OTG_HS */
-
 static int usb_dc_stm32_init(void)
 {
 	HAL_StatusTypeDef status;
-	int ret;
 	unsigned int i;
+
+	usb_dc_stm32_state.pcd.Init.speed =
+			UTIL_CAT(USB_DC_STM32_, DT_INST_STRING_UPPER_TOKEN(0, maximum_speed));
 
 #if defined(USB) || defined(USB_DRD_FS)
 #ifdef USB
@@ -386,20 +600,14 @@ static int usb_dc_stm32_init(void)
 #else
 	usb_dc_stm32_state.pcd.Instance = USB_DRD_FS;
 #endif
-	usb_dc_stm32_state.pcd.Init.speed = PCD_SPEED_FULL;
 	usb_dc_stm32_state.pcd.Init.dev_endpoints = USB_NUM_BIDIR_ENDPOINTS;
 	usb_dc_stm32_state.pcd.Init.phy_itface = PCD_PHY_EMBEDDED;
 	usb_dc_stm32_state.pcd.Init.ep0_mps = PCD_EP0MPS_64;
 	usb_dc_stm32_state.pcd.Init.low_power_enable = 0;
 #else /* USB_OTG_FS || USB_OTG_HS */
-#if DT_HAS_COMPAT_STATUS_OKAY(st_stm32_otghs)
-	usb_dc_stm32_state.pcd.Instance = USB_OTG_HS;
-#else
-	usb_dc_stm32_state.pcd.Instance = USB_OTG_FS;
-#endif
+	usb_dc_stm32_state.pcd.Instance = (USB_OTG_GlobalTypeDef *)USB_BASE_ADDRESS;
 	usb_dc_stm32_state.pcd.Init.dev_endpoints = USB_NUM_BIDIR_ENDPOINTS;
-	usb_dc_stm32_state.pcd.Init.speed = usb_dc_stm32_get_maximum_speed();
-#if USB_OTG_HS_EMB_PHY
+#if USB_OTG_HS_EMB_PHYC || USB_OTG_HS_EMB_PHY
 	usb_dc_stm32_state.pcd.Init.phy_itface = USB_OTG_HS_EMBEDDED_PHY;
 #elif USB_OTG_HS_ULPI_PHY
 	usb_dc_stm32_state.pcd.Init.phy_itface = USB_OTG_ULPI_PHY;
@@ -440,12 +648,14 @@ static int usb_dc_stm32_init(void)
 	}
 #endif
 
+#if !DT_HAS_COMPAT_STATUS_OKAY(st_stm32n6_otghs)
 	LOG_DBG("Pinctrl signals configuration");
-	ret = pinctrl_apply_state(usb_pcfg, PINCTRL_STATE_DEFAULT);
+	int ret = pinctrl_apply_state(usb_pcfg, PINCTRL_STATE_DEFAULT);
 	if (ret < 0) {
 		LOG_ERR("USB pinctrl setup failed (%d)", ret);
 		return ret;
 	}
+#endif
 
 	LOG_DBG("HAL_PCD_Init");
 	status = HAL_PCD_Init(&usb_dc_stm32_state.pcd);
@@ -499,6 +709,17 @@ static int usb_dc_stm32_init(void)
 		k_sem_init(&usb_dc_stm32_state.in_ep_state[i].write_sem, 1, 1);
 	}
 #endif /* USB */
+
+	k_msgq_init(&usb_dc_stm32_state.isr_msgq, usb_dc_stm32_state.msgq_buf,
+		    sizeof(struct usb_dc_stm32_msg), USB_ISR_MSGQ_SIZE);
+
+	k_thread_create(&usb_dc_stm32_state.isr_lower_half_thread,
+			usb_dc_stm32_thr_stk,
+			K_THREAD_STACK_SIZEOF(usb_dc_stm32_thr_stk),
+			usb_dc_stm32_isr_lower_half,
+			NULL, NULL, NULL,
+			USB_ISR_LOWER_HALF_THREAD_PRIO,
+			K_ESSENTIAL, K_NO_WAIT);
 
 	IRQ_CONNECT(USB_IRQ, USB_IRQ_PRI,
 		    usb_dc_stm32_isr, 0, 0);
@@ -772,6 +993,10 @@ int usb_dc_ep_clear_stall(const uint8_t ep)
 		return -EINVAL;
 	}
 
+	if (!ep_state->ep_stalled) {
+		return 0;
+	}
+
 	status = HAL_PCD_EP_ClrStall(&usb_dc_stm32_state.pcd, ep);
 	if (status != HAL_OK) {
 		LOG_ERR("HAL_PCD_EP_ClrStall failed(0x%02x), %d", ep,
@@ -840,6 +1065,17 @@ int usb_dc_ep_disable(const uint8_t ep)
 
 	if (!ep_state) {
 		return -EINVAL;
+	}
+
+	if (!usb_dc_stm32_clock_enabled()) {
+		/*
+		 * During device teardown, EP disable is attempted after
+		 * the USB controller clock has been turned off. Accessing
+		 * it would do nothing and even deadlocks the SoC on certain
+		 * series: don't even bother trying. Return success as all
+		 * endpoints are disabled anyways when USB controller is off.
+		 */
+		return 0;
 	}
 
 	status = HAL_PCD_EP_Close(&usb_dc_stm32_state.pcd, ep);
@@ -1083,50 +1319,39 @@ void HAL_PCD_ResetCallback(PCD_HandleTypeDef *hpcd)
 		k_sem_give(&usb_dc_stm32_state.in_ep_state[i].write_sem);
 	}
 
-	if (usb_dc_stm32_state.status_cb) {
-		usb_dc_stm32_state.status_cb(USB_DC_RESET, NULL);
-	}
+	usb_dc_stm32_send_stack_msg(USB_DC_RESET);
 }
 
 void HAL_PCD_ConnectCallback(PCD_HandleTypeDef *hpcd)
 {
 	LOG_DBG("");
 
-	if (usb_dc_stm32_state.status_cb) {
-		usb_dc_stm32_state.status_cb(USB_DC_CONNECTED, NULL);
-	}
+	usb_dc_stm32_send_stack_msg(USB_DC_CONNECTED);
 }
 
 void HAL_PCD_DisconnectCallback(PCD_HandleTypeDef *hpcd)
 {
 	LOG_DBG("");
 
-	if (usb_dc_stm32_state.status_cb) {
-		usb_dc_stm32_state.status_cb(USB_DC_DISCONNECTED, NULL);
-	}
+	usb_dc_stm32_send_stack_msg(USB_DC_DISCONNECTED);
 }
 
 void HAL_PCD_SuspendCallback(PCD_HandleTypeDef *hpcd)
 {
 	LOG_DBG("");
 
-	if (usb_dc_stm32_state.status_cb) {
-		usb_dc_stm32_state.status_cb(USB_DC_SUSPEND, NULL);
-	}
+	usb_dc_stm32_send_stack_msg(USB_DC_SUSPEND);
 }
 
 void HAL_PCD_ResumeCallback(PCD_HandleTypeDef *hpcd)
 {
 	LOG_DBG("");
 
-	if (usb_dc_stm32_state.status_cb) {
-		usb_dc_stm32_state.status_cb(USB_DC_RESUME, NULL);
-	}
+	usb_dc_stm32_send_stack_msg(USB_DC_RESUME);
 }
 
 void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd)
 {
-	struct usb_setup_packet *setup = (void *)usb_dc_stm32_state.pcd.Setup;
 	struct usb_dc_stm32_ep_state *ep_state;
 
 	LOG_DBG("");
@@ -1139,16 +1364,7 @@ void HAL_PCD_SetupStageCallback(PCD_HandleTypeDef *hpcd)
 	memcpy(&usb_dc_stm32_state.ep_buf[EP0_IDX],
 	       usb_dc_stm32_state.pcd.Setup, ep_state->read_count);
 
-	if (ep_state->cb) {
-		ep_state->cb(EP0_OUT, USB_DC_EP_SETUP);
-
-		if (!(setup->wLength == 0U) &&
-		    usb_reqtype_is_to_device(setup)) {
-			usb_dc_ep_start_read(EP0_OUT,
-					     usb_dc_stm32_state.ep_buf[EP0_IDX],
-					     setup->wLength);
-		}
-	}
+	usb_dc_stm32_send_ep_msg(EP0_OUT, USB_DC_EP_SETUP);
 }
 
 void HAL_PCD_DataOutStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
@@ -1166,9 +1382,7 @@ void HAL_PCD_DataOutStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 	usb_dc_ep_get_read_count(ep, &ep_state->read_count);
 	ep_state->read_offset = 0U;
 
-	if (ep_state->cb) {
-		ep_state->cb(ep, USB_DC_EP_DATA_OUT);
-	}
+	usb_dc_stm32_send_ep_msg(ep, USB_DC_EP_DATA_OUT);
 }
 
 void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
@@ -1183,9 +1397,20 @@ void HAL_PCD_DataInStageCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
 
 	k_sem_give(&ep_state->write_sem);
 
-	if (ep_state->cb) {
-		ep_state->cb(ep, USB_DC_EP_DATA_IN);
-	}
+	usb_dc_stm32_send_ep_msg(ep, USB_DC_EP_DATA_IN);
+}
+
+void HAL_PCD_ISOINIncompleteCallback(PCD_HandleTypeDef *hpcd, uint8_t epnum)
+{
+	uint8_t ep_idx = USB_EP_GET_IDX(epnum);
+	uint8_t ep = ep_idx | USB_EP_DIR_IN;
+	struct usb_dc_stm32_ep_state *ep_state = usb_dc_stm32_get_ep_state(ep);
+
+	LOG_DBG("epnum 0x%02x", epnum);
+
+	__ASSERT(ep_state, "No corresponding ep_state for ep");
+
+	k_sem_give(&ep_state->write_sem);
 }
 
 #if (defined(USB) || defined(USB_DRD_FS)) && DT_INST_NODE_HAS_PROP(0, disconnect_gpios)

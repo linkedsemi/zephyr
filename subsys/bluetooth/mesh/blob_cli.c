@@ -101,9 +101,16 @@ static struct bt_mesh_blob_target *target_get(struct bt_mesh_blob_cli *cli,
 {
 	struct bt_mesh_blob_target *target;
 
+	if (cli->inputs == NULL) {
+		return NULL;
+	}
+
 	TARGETS_FOR_EACH(cli, target) {
 		if (target->addr == addr) {
-			return target;
+			/* A skipped target can still receive and answer a group-addressed
+			 * message. It is not part of the current step, so ignore its response.
+			 */
+			return target->skip ? NULL : target;
 		}
 	}
 
@@ -123,19 +130,19 @@ static void target_drop(struct bt_mesh_blob_cli *cli,
 	}
 }
 
-static uint32_t targets_reset(struct bt_mesh_blob_cli *cli)
+static bool targets_reset(struct bt_mesh_blob_cli *cli)
 {
 	struct bt_mesh_blob_target *target;
-	uint32_t count = 0;
+	bool active = false;
 
 	TARGETS_FOR_EACH(cli, target) {
 		if (target->status == BT_MESH_BLOB_SUCCESS) {
 			target->acked = 0U;
-			count++;
+			active = true;
 		}
 	}
 
-	return count;
+	return active;
 }
 
 static bool targets_active(struct bt_mesh_blob_cli *cli)
@@ -514,6 +521,8 @@ static void retry_timeout(struct k_work *work)
 void blob_cli_broadcast(struct bt_mesh_blob_cli *cli,
 			const struct blob_cli_broadcast_ctx *ctx)
 {
+	struct bt_mesh_blob_target *target;
+
 	if (cli->tx.ctx.is_inited || cli->tx.sending) {
 		LOG_ERR("BLOB cli busy");
 		return;
@@ -524,7 +533,15 @@ void blob_cli_broadcast(struct bt_mesh_blob_cli *cli,
 	cli->tx.ctx = *ctx;
 	cli->tx.ctx.is_inited = 1U;
 
-	cli->tx.pending = targets_reset(cli);
+	(void)targets_reset(cli);
+
+	cli->tx.pending = 0U;
+	TARGETS_FOR_EACH(cli, target) {
+		/* Skipped targets are not sent to and must not hold the broadcast open. */
+		if (target->status == BT_MESH_BLOB_SUCCESS && !target->skip) {
+			cli->tx.pending++;
+		}
+	}
 
 	LOG_DBG("%u targets", cli->tx.pending);
 
@@ -546,7 +563,8 @@ void blob_cli_broadcast_tx_complete(struct bt_mesh_blob_cli *cli)
 void blob_cli_broadcast_rsp(struct bt_mesh_blob_cli *cli,
 			    struct bt_mesh_blob_target *target)
 {
-	if (target->acked) {
+	/* Skipped targets are not counted in tx.pending. */
+	if (target->acked || target->skip) {
 		return;
 	}
 
@@ -1086,7 +1104,7 @@ static void progress_checked(struct bt_mesh_blob_cli *cli)
 
 	cli->state = BT_MESH_BLOB_CLI_STATE_NONE;
 
-	if (cli->cb && cli->cb->end) {
+	if (cli->cb && cli->cb->xfer_progress_complete) {
 		cli->cb->xfer_progress_complete(cli);
 	}
 }
@@ -1248,6 +1266,16 @@ static int handle_xfer_status(const struct bt_mesh_model *mod, struct bt_mesh_ms
 
 	if (cli->state == BT_MESH_BLOB_CLI_STATE_START) {
 		expected_phase = BT_MESH_BLOB_XFER_PHASE_WAITING_FOR_BLOCK;
+		/* If a transfer is resumed quickly (before the server's rx_timeout
+		 * fires), the server is still in WAITING_FOR_CHUNK. The server's
+		 * idempotency logic replies Success without changing its phase.
+		 * Accept WAITING_FOR_CHUNK here so the client can proceed to
+		 * BLOCK_START, which will reset the server's timeout timer.
+		 */
+		if (info.status == BT_MESH_BLOB_SUCCESS &&
+		    info.phase == BT_MESH_BLOB_XFER_PHASE_WAITING_FOR_CHUNK) {
+			expected_phase = info.phase;
+		}
 	} else if (cli->state == BT_MESH_BLOB_CLI_STATE_XFER_CHECK) {
 		expected_phase = BT_MESH_BLOB_XFER_PHASE_COMPLETE;
 	} else if (cli->state != BT_MESH_BLOB_CLI_STATE_XFER_PROGRESS_GET) {
@@ -1340,6 +1368,13 @@ static int handle_block_status(const struct bt_mesh_model *mod, struct bt_mesh_m
 	size_t len;
 	int idx;
 
+	if (cli->state != BT_MESH_BLOB_CLI_STATE_BLOCK_START &&
+	    cli->state != BT_MESH_BLOB_CLI_STATE_BLOCK_SEND &&
+	    cli->state != BT_MESH_BLOB_CLI_STATE_BLOCK_CHECK) {
+		LOG_WRN("Wrong state: %d", cli->state);
+		return -EBUSY;
+	}
+
 	target = target_get(cli, ctx->addr);
 	if (!target) {
 		return -ENOENT;
@@ -1350,6 +1385,12 @@ static int handle_block_status(const struct bt_mesh_model *mod, struct bt_mesh_m
 	status.missing = status_and_format >> 6;
 	status.block.number = net_buf_simple_pull_le16(buf);
 	chunk_size = net_buf_simple_pull_le16(buf);
+	/* Chunk Size 0 is Prohibited (MshMBTv1.0 3.1.2.3) */
+	if (chunk_size == 0U) {
+		LOG_WRN("Invalid chunk size");
+		return -EINVAL;
+	}
+
 	status.block.chunk_count =
 		DIV_ROUND_UP(cli->block.size, chunk_size);
 
@@ -1601,7 +1642,14 @@ int bt_mesh_blob_cli_resume(struct bt_mesh_blob_cli *cli)
 		return -ENODEV;
 	}
 
-	block_set(cli, 0);
+	/* Resume from the current block, not block 0. If the server hasn't
+	 * timed out yet (still in WAITING_FOR_CHUNK), it will reject a
+	 * BLOCK_START for a different block number with WRONG_PHASE
+	 * (MshMBTv1.0 5.2.2.3). Starting from the same block the client
+	 * was on when it suspended avoids this mismatch. Earlier blocks
+	 * are already completed by all active targets.
+	 */
+	block_set(cli, cli->block.number);
 	return xfer_start(cli);
 }
 

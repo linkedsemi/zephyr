@@ -8,7 +8,7 @@
 # Include these first so that any properties (e.g. defaults) below can be
 # overridden (by defining symbols in multiple locations)
 
-source "$(ARCH_DIR)/Kconfig.$(HWM_SCHEME)"
+source "$(KCONFIG_BINARY_DIR)/arch/Kconfig"
 
 # ToDo: Generate a Kconfig.arch for loading of additional arch in HWMv2.
 osource "$(KCONFIG_BINARY_DIR)/Kconfig.arch"
@@ -24,7 +24,10 @@ config ARC
 	imply XIP
 	select ARCH_HAS_THREAD_LOCAL_STORAGE
 	select ARCH_SUPPORTS_ROM_START
+	select ARCH_SUPPORTS_ROM_OFFSET
 	select ARCH_HAS_DIRECTED_IPIS
+	select ARCH_HAS_DIRECT_INTERRUPTS
+	select ARCH_HAS_IRQ_OFFLOAD_NESTED if SMP
 	help
 	  ARC architecture
 
@@ -33,11 +36,18 @@ config ARM
 	select ARCH_IS_SET
 	select ARCH_SUPPORTS_COREDUMP if CPU_CORTEX_M
 	select ARCH_SUPPORTS_COREDUMP_THREADS if CPU_CORTEX_M
+	select ARCH_SUPPORTS_COREDUMP_STACK_PTR if CPU_CORTEX_M
 	# FIXME: current state of the code for all ARM requires this, but
 	# is really only necessary for Cortex-M with ARM MPU!
 	select GEN_PRIV_STACKS
 	select ARCH_HAS_THREAD_LOCAL_STORAGE if CPU_AARCH32_CORTEX_R || CPU_CORTEX_M || CPU_AARCH32_CORTEX_A
 	select BARRIER_OPERATIONS_ARCH
+	select ARCH_HAS_IRQ_OFFLOAD_NESTED if CPU_AARCH32_CORTEX_A || CPU_AARCH32_CORTEX_R
+	select ARCH_HAS_SEMIHOST
+	select ARCH_HAS_ISR_TABLES_LOCAL_DECLARATION
+	select ARCH_SUPPORTS_ROM_OFFSET
+	select ARCH_HAS_CPU_IDLE_HOOKS if CPU_CORTEX_M
+	select ARCH_HAS_DIRECT_INTERRUPTS
 	help
 	  ARM architecture
 
@@ -45,16 +55,27 @@ config ARM64
 	bool
 	select ARCH_IS_SET
 	select 64BIT
+	select ARCH_HAS_FWARGS_HANDLER_HOOK
 	select ARCH_SUPPORTS_COREDUMP
 	select HAS_ARM_SMCCC
 	select ARCH_HAS_THREAD_LOCAL_STORAGE
 	select USE_SWITCH
 	select USE_SWITCH_SUPPORTED
-	select IRQ_OFFLOAD_NESTED if IRQ_OFFLOAD
 	select BARRIER_OPERATIONS_ARCH
+	select ARCH_HAS_BIT_REV
 	select ARCH_HAS_DIRECTED_IPIS
 	select ARCH_HAS_DEMAND_PAGING
 	select ARCH_HAS_DEMAND_MAPPING
+	select ARCH_SUPPORTS_EVICTION_TRACKING
+	select EVICTION_TRACKING if DEMAND_PAGING
+	select MEM_DOMAIN_HAS_THREAD_LIST if ARM_MPU && USERSPACE
+	select ARCH_HAS_IRQ_OFFLOAD_NESTED
+	select ARCH_HAS_SEMIHOST
+	select ARCH_HAS_ISR_TABLES_LOCAL_DECLARATION
+	select ARCH_SUPPORTS_ROM_OFFSET
+	select ARCH_HAS_CPU_IDLE_HOOKS
+	# Backed by the GIC distributor ICPENDR/ISPENDR registers.
+	select ARCH_HAS_IRQ_PENDING_OPS if !ARM_CUSTOM_INTERRUPT_CONTROLLER
 	help
 	  ARM64 (AArch64) architecture
 
@@ -64,6 +85,18 @@ config MIPS
 	select ATOMIC_OPERATIONS_C
 	help
 	  MIPS architecture
+
+config OPENRISC
+	bool
+	select ARCH_IS_SET
+	select ATOMIC_OPERATIONS_BUILTIN
+	select BIG_ENDIAN
+	select USE_SWITCH
+	select USE_SWITCH_SUPPORTED
+	select ARCH_HAS_THREAD_LOCAL_STORAGE
+	select ARCH_HAS_CODE_DATA_RELOCATION
+	help
+	  OpenRISC architecture
 
 config SPARC
 	bool
@@ -93,41 +126,53 @@ config X86
 	select ARCH_HAS_THREAD_LOCAL_STORAGE
 	select ARCH_HAS_DEMAND_PAGING if !X86_64
 	select ARCH_HAS_DEMAND_MAPPING if ARCH_HAS_DEMAND_PAGING
-	select IRQ_OFFLOAD_NESTED if IRQ_OFFLOAD
+	select ARCH_SUPPORTS_EVICTION_TRACKING if ARCH_HAS_DEMAND_PAGING && !X86_KPTI
+	select EVICTION_TRACKING if DEMAND_PAGING && !X86_KPTI
 	select NEED_LIBC_MEM_PARTITION if USERSPACE && TIMING_FUNCTIONS \
 					  && !BOARD_HAS_TIMING_FUNCTIONS \
 					  && !SOC_HAS_TIMING_FUNCTIONS
 	select ARCH_HAS_STACK_CANARIES_TLS
 	select ARCH_SUPPORTS_MEM_MAPPED_STACKS if X86_MMU && !DEMAND_PAGING
 	select ARCH_HAS_THREAD_PRIV_STACK_SPACE_GET if USERSPACE
+	select ARCH_HAS_IRQ_OFFLOAD_NESTED
+	select ARCH_SUPPORTS_ROM_OFFSET
+	# Only the 32-bit (ia32) interrupt stub emits the ISR entry hook that
+	# closes the idle window; intel64 does not have one yet.
+	select ARCH_HAS_CPU_IDLE_HOOKS if !X86_64
+	# Only the 32-bit (ia32) variant implements the direct interrupt hooks.
+	select ARCH_HAS_DIRECT_INTERRUPTS if !X86_64
 	help
 	  x86 architecture
-
-config NIOS2
-	bool
-	select ARCH_IS_SET
-	select ATOMIC_OPERATIONS_C
-	imply XIP
-	select ARCH_HAS_TIMING_FUNCTIONS
-	help
-	  Nios II Gen 2 architecture
 
 config RISCV
 	bool
 	select ARCH_IS_SET
+	select ATOMIC_OPERATIONS_C if (!RISCV_ISA_EXT_A && !ATOMIC_OPERATIONS_ARCH)
+	select ATOMIC_OPERATIONS_BUILTIN if RISCV_ISA_EXT_A
 	select ARCH_SUPPORTS_COREDUMP
 	select ARCH_SUPPORTS_COREDUMP_PRIV_STACKS
+	select ARCH_SUPPORTS_COREDUMP_THREADS if !SMP
+	select ARCH_SUPPORTS_COREDUMP_STACK_PTR
 	select ARCH_SUPPORTS_ROM_START if !SOC_FAMILY_ESPRESSIF_ESP32
 	select ARCH_SUPPORTS_EMPTY_IRQ_SPURIOUS
 	select ARCH_HAS_CODE_DATA_RELOCATION
 	select ARCH_HAS_THREAD_LOCAL_STORAGE
-	select IRQ_OFFLOAD_NESTED if IRQ_OFFLOAD
+	select ARCH_HAS_SUSPEND_TO_RAM
 	select USE_SWITCH_SUPPORTED
 	select USE_SWITCH
 	select SCHED_IPI_SUPPORTED if SMP
 	select ARCH_HAS_DIRECTED_IPIS
-	select BARRIER_OPERATIONS_BUILTIN
+	select BARRIER_OPERATIONS_BUILTIN if RISCV_ISA_BASE_FENCE
 	select ARCH_HAS_THREAD_PRIV_STACK_SPACE_GET if USERSPACE
+	select ARCH_HAS_STACK_CANARIES_TLS
+	select STACK_CANARIES_TLS_PREPEND if STACK_CANARIES_TLS
+	select ARCH_HAS_IRQ_OFFLOAD_NESTED
+	select ARCH_HAS_SEMIHOST
+	select ARCH_HAS_ISR_TABLES_LOCAL_DECLARATION
+	select ARCH_SUPPORTS_ROM_OFFSET
+	depends on DT_HAS_RISCV_ENABLED
+	select ARCH_HAS_CPU_IDLE_HOOKS
+	select ARCH_HAS_DIRECT_INTERRUPTS
 	help
 	  RISCV architecture
 
@@ -136,15 +181,34 @@ config XTENSA
 	select ARCH_IS_SET
 	select USE_SWITCH
 	select USE_SWITCH_SUPPORTED
-	select IRQ_OFFLOAD_NESTED if IRQ_OFFLOAD
 	select ARCH_HAS_CODE_DATA_RELOCATION
 	select ARCH_HAS_TIMING_FUNCTIONS
 	select ARCH_MEM_DOMAIN_DATA if USERSPACE
-	select ARCH_HAS_DIRECTED_IPIS
 	select THREAD_STACK_INFO
 	select ARCH_HAS_THREAD_PRIV_STACK_SPACE_GET if USERSPACE
+	select ARCH_SUPPORTS_COREDUMP_STACK_PTR if !SMP
+	select ARCH_HAS_USERSPACE if XTENSA_MMU || XTENSA_MPU
+	imply ARCH_HAS_RESERVED_PAGE_FRAMES if XTENSA_MMU
+	select ARCH_HAS_IRQ_OFFLOAD_NESTED
+	select ARCH_HAS_SEMIHOST
+	select ARCH_HAS_CPU_IDLE_HOOKS
 	help
 	  Xtensa architecture
+
+config TRICORE
+	bool
+	select ARCH_IS_SET
+	select USE_SWITCH
+	select USE_SWITCH_SUPPORTED
+	select ATOMIC_OPERATIONS_BUILTIN if "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "llvm"
+	select ATOMIC_OPERATIONS_C if "$(ZEPHYR_TOOLCHAIN_VARIANT)" != "llvm"
+	select ARCH_HAS_CODE_DATA_RELOCATION
+	select ARCH_SUPPORTS_ROM_START
+	select ARCH_HAS_THREAD_ABORT
+	select BARRIER_OPERATIONS_BUILTIN if "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "llvm"
+	imply XIP
+	help
+	  TriCore architecture
 
 config ARCH_POSIX
 	bool
@@ -159,14 +223,31 @@ config ARCH_POSIX
 	select BARRIER_OPERATIONS_BUILTIN
 	# POSIX arch based targets get their memory cleared on entry by the host OS
 	select SKIP_BSS_CLEAR
-	# Override the C standard used for compilation to C 2011
-	# This is due to some tests using _Static_assert which is a 2011 feature, but
-	# otherwise relying on compilers supporting it also when set to C99.
-	# This was in general ok, but with some host compilers and C library versions
-	# it led to problems. So we override it to 2011 for the native targets.
-	select REQUIRES_STD_C11
+	# The direct interrupt hooks are provided by the board's board_irq.h
+	# (boards/native/common/irq/board_irq.h for the in-tree boards).
+	select ARCH_HAS_DIRECT_INTERRUPTS
 	help
 	  POSIX (native) architecture
+
+config HEXAGON
+	bool
+	select ARCH_IS_SET
+	select ATOMIC_OPERATIONS_BUILTIN
+	select ARCH_HAS_CUSTOM_BUSY_WAIT
+	select ARCH_HAS_THREAD_LOCAL_STORAGE
+	select USE_SWITCH
+	select USE_SWITCH_SUPPORTED
+	help
+	  Qualcomm Hexagon DSP architecture
+
+config RX
+	bool
+	select ARCH_IS_SET
+	select ATOMIC_OPERATIONS_C
+	select USE_SWITCH
+	select USE_SWITCH_SUPPORTED
+	help
+	  Renesas RX architecture
 
 config ARCH_IS_SET
 	bool
@@ -210,26 +291,58 @@ config 64BIT
 	  soc/**/Kconfig, or boards/**/Kconfig and the user should generally
 	  avoid modifying it.
 
+config SRAM_DEPRECATED_KCONFIG_SET
+	bool
+	default y if SRAM_SIZE != $(dt_chosen_reg_size_int,$(DT_CHOSEN_Z_SRAM),0,K)
+	default y if SRAM_BASE_ADDRESS != $(dt_chosen_reg_addr_hex,$(DT_CHOSEN_Z_SRAM))
+	default n
+	select DEPRECATED
+	help
+	  Indicates that either `CONFIG_SRAM_SIZE` or `CONFIG_SRAM_BASE_ADDRESS` have been
+	  manually set, these Kconfigs are now deprecated and should be replaced by referencing
+	  the devicetree `zephyr,sram` chosen node instead.
+
 # Workaround for not being able to have commas in macro arguments
 DT_CHOSEN_Z_SRAM := zephyr,sram
 
 config SRAM_SIZE
-	int "SRAM Size in kB"
+	int "SRAM Size in kB [DEPRECATED]"
 	default $(dt_chosen_reg_size_int,$(DT_CHOSEN_Z_SRAM),0,K)
 	help
 	  The SRAM size in kB. The default value comes from /chosen/zephyr,sram in
 	  devicetree. The user should generally avoid changing it via menuconfig or
-	  in configuration files.
+	  in configuration files. This option is now deprecated and must be replaced by referencing
+	  the devicetree `zephyr,sram` chosen node instead.
 
 config SRAM_BASE_ADDRESS
-	hex "SRAM Base Address"
+	hex "SRAM Base Address [DEPRECATED]"
 	default $(dt_chosen_reg_addr_hex,$(DT_CHOSEN_Z_SRAM))
 	help
 	  The SRAM base address. The default value comes from
 	  /chosen/zephyr,sram in devicetree. The user should generally avoid
-	  changing it via menuconfig or in configuration files.
+	  changing it via menuconfig or in configuration files. This option is now deprecated and
+	  must be replaced by referencing the devicetree `zephyr,sram` chosen node instead.
 
-if ARC || ARM || ARM64 || NIOS2 || X86 || RISCV
+config XIP
+	bool "Execute in place"
+	help
+	  Execute application code directly from non-volatile storage
+	  (e.g. Flash/MRAM) without copying it to RAM first. Not all targets
+	  support this option, so it must be used with care.
+
+	  When enabled, the linker aligns Load Memory Addresses (LMA) with Virtual
+	  Memory Addresses (VMA) for code (.text) and read-only data (.rodata)
+	  sections, so they are fetched directly from their storage location.
+	  Mutable initialized data (.data) is still copied to RAM during
+	  early boot sequence. This reduces RAM usage at the cost of slower
+	  execution compared to running from RAM.
+
+	  Applications that are relocated to RAM before being run (such as
+	  those built for RAM-loading bootloader modes) should have this
+	  option disabled.
+
+
+if ARC || ARM || ARM64 || X86 || RISCV || RX || OPENRISC || ARCH_POSIX || HEXAGON || TRICORE
 
 # Workaround for not being able to have commas in macro arguments
 DT_CHOSEN_Z_FLASH := zephyr,flash
@@ -252,7 +365,7 @@ config FLASH_BASE_ADDRESS
 	  normally set by the board's defconfig file and the user should generally
 	  avoid modifying it via the menu configuration.
 
-endif # ARM || ARM64 || ARC || NIOS2 || X86 || RISCV
+endif # ARM || ARM64 || ARC || X86 || RISCV || RX || OPENRISC || ARCH_POSIX || HEXAGON || TRICORE
 
 if ARCH_HAS_TRUSTED_EXECUTION
 
@@ -299,7 +412,6 @@ config HW_STACK_PROTECTION
 config USERSPACE
 	bool "User mode threads"
 	depends on ARCH_HAS_USERSPACE
-	depends on RUNTIME_ERROR_CHECKS
 	depends on SRAM_REGION_PERMISSIONS
 	select THREAD_STACK_INFO
 	select LINKER_USE_NO_RELAX
@@ -315,11 +427,21 @@ config USERSPACE
 	  privileged mode or handling a system call; to ensure these are always
 	  caught, enable CONFIG_HW_STACK_PROTECTION.
 
+config NOINIT_SNIPPET_FIRST
+	bool "Place the no-init linker script snippet first"
+	help
+	  By default the include/zephyr/linker/common-noinit.ld file inserts the
+	  snippets-noinit.ld file at the end of the section.  There are times when
+	  the directives in the snippets-noinit.ld file apply to the other directives
+	  in this file.  And in that case the include statement for the snippets-noinit.ld
+	  file needs to come at the start of the section.  This configuration option
+	  allows that to happen.
+
 config PRIVILEGED_STACK_SIZE
 	int "Size of privileged stack"
 	default 2048 if EMUL
 	default 1024
-	depends on ARCH_HAS_USERSPACE
+	depends on USERSPACE
 	help
 	  This option sets the privileged stack region size that will be used
 	  in addition to the user mode thread stack.  During normal execution,
@@ -329,18 +451,20 @@ config PRIVILEGED_STACK_SIZE
 
 config KOBJECT_TEXT_AREA
 	int "Size of kobject text area"
+	default 1024 if UBSAN
 	default 512 if COVERAGE_GCOV
 	default 512 if NO_OPTIMIZATIONS
+	default 512 if STACK_CANARIES_ALL
 	default 512 if STACK_CANARIES && RISCV
 	default 256
-	depends on ARCH_HAS_USERSPACE
+	depends on USERSPACE
 	help
 	  Size of kernel object text area. Used in linker script.
 
 config KOBJECT_DATA_AREA_RESERVE_EXTRA_PERCENT
 	int "Reserve extra kobject data area (in percentage)"
 	default 100
-	depends on ARCH_HAS_USERSPACE
+	depends on USERSPACE
 	help
 	  Multiplication factor used to calculate the size of placeholder to
 	  reserve space for kobject metadata hash table. The hash table is
@@ -354,7 +478,7 @@ config KOBJECT_DATA_AREA_RESERVE_EXTRA_PERCENT
 config KOBJECT_RODATA_AREA_EXTRA_BYTES
 	int "Reserve extra bytes for kobject rodata area"
 	default 16
-	depends on ARCH_HAS_USERSPACE
+	depends on USERSPACE
 	help
 	  Reserve a few more bytes for the RODATA region for kobject metadata.
 	  This is to account for the uncertainty of tables generated by gperf.
@@ -386,6 +510,9 @@ config NO_UNUSED_STACK_INSPECTION
 
 config MAX_THREAD_BYTES
 	int "Bytes to use when tracking object thread permissions"
+	default 5 if MP_MAX_NUM_CPUS > 4
+	default 4 if MP_MAX_NUM_CPUS > 2
+	default 3 if MP_MAX_NUM_CPUS > 1
 	default 2
 	depends on USERSPACE
 	help
@@ -393,6 +520,10 @@ config MAX_THREAD_BYTES
 	  thread permissions for that object. This controls the size of the
 	  bitfield (in bytes) and imposes a limit on how many threads can
 	  be created in the system.
+
+	  The default scales with the number of CPUs, since the kernel
+	  creates one idle thread per CPU. An application that declares many
+	  threads of its own still has to raise it further.
 
 config DYNAMIC_OBJECTS
 	bool "Allow kernel objects to be allocated at runtime"
@@ -406,6 +537,17 @@ config DYNAMIC_OBJECTS
 	  Objects allocated in this way can be freed with a supervisor-only
 	  API call, or when the number of references to that object drops to
 	  zero.
+
+config DYNAMIC_OBJECTS_FORCE_STACK_CACHED
+	bool "Force allocated thread stack objects to be in cached area"
+	default y
+	depends on USERSPACE
+	depends on KERNEL_COHERENCE
+	help
+	  With kernel coherence enabled, it is possible that the stack has been
+	  allocated on uncached area, which has performance implications.
+	  If this is enabled, the stack pointer will be forcibly converted to be
+	  in cached area.
 
 config NOCACHE_MEMORY
 	bool "Support for uncached memory"
@@ -440,20 +582,26 @@ config ARCH_STACKWALK_MAX_FRAMES
 
 menu "Interrupt Configuration"
 
+config TOOLCHAIN_SUPPORTS_ISR_TABLES_LOCAL_DECLARATION
+	bool
+	help
+	  Hidden option to signal that toolchain supports local declaration of
+	  interrupt tables.
+
 config ISR_TABLES_LOCAL_DECLARATION_SUPPORTED
 	bool
 	default y
 	# Userspace is currently not supported
 	depends on !USERSPACE
 	# List of currently supported architectures
-	depends on ARM || ARM64
+	depends on ARCH_HAS_ISR_TABLES_LOCAL_DECLARATION
 	# List of currently supported toolchains
-	depends on "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "zephyr" || "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "gnuarmemb"
+	depends on "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "zephyr" || "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "gnuarmemb" || "$(ZEPHYR_TOOLCHAIN_VARIANT)" = "llvm" || TOOLCHAIN_SUPPORTS_ISR_TABLES_LOCAL_DECLARATION
 
 config ISR_TABLES_LOCAL_DECLARATION
-	bool "ISR tables created locally and placed by linker [EXPERIMENTAL]"
+	bool "ISR tables created locally and placed by linker"
 	depends on ISR_TABLES_LOCAL_DECLARATION_SUPPORTED
-	select EXPERIMENTAL
+	depends on GEN_IRQ_VECTOR_TABLE
 	help
 	  Enable new scheme of interrupt tables generation.
 	  This is totally different generator that would create tables entries locally
@@ -465,13 +613,19 @@ config ISR_TABLES_LOCAL_DECLARATION
 
 config DYNAMIC_INTERRUPTS
 	bool "Installation of IRQs at runtime"
+	depends on !GEN_SW_ISR_TABLE_SWITCH
+	select SRAM_SW_ISR_TABLE
 	help
 	  Enable installation of interrupts at runtime, which will move some
 	  interrupt-related data structures to RAM instead of ROM, and
 	  on some architectures increase code size.
 
+	  This requires a software ISR table that can be written to, so it is
+	  unavailable with CONFIG_GEN_SW_ISR_TABLE_SWITCH, where the table is
+	  a generated switch statement instead of an array.
+
 config SHARED_INTERRUPTS
-	bool "Set this to enable support for shared interrupts"
+	bool "Set this to enable support for shared interrupts [EXPERIMENTAL]"
 	depends on GEN_SW_ISR_TABLE
 	select EXPERIMENTAL
 	help
@@ -516,6 +670,12 @@ config ARCH_IRQ_VECTOR_TABLE_ALIGN
 	  to be aligned to architecture specific size.  The default
 	  size is 0 for no alignment.
 
+config ARCH_DEVICE_STATE_ALIGN
+	int "Alignment size of device state"
+	default 4
+	help
+	  This option controls alignment size of device state.
+
 choice IRQ_VECTOR_TABLE_TYPE
 	prompt "IRQ vector table type"
 	depends on GEN_IRQ_VECTOR_TABLE
@@ -541,9 +701,36 @@ config GEN_SW_ISR_TABLE
 	depends on GEN_ISR_TABLES
 	help
 	  This option controls whether a platform using gen_isr_tables
-	  needs a software ISR table table created. This is an array of struct
-	  _isr_table_entry containing the interrupt service routine and supplied
-	  parameter.
+	  needs a software ISR table created.
+	  It can be generated as either an array or a switch-case.
+	  See CONFIG_GEN_SW_ISR_TABLE_TYPE.
+
+choice GEN_SW_ISR_TABLE_TYPE
+	prompt "Allows to chose how ISR table is implemented"
+	depends on GEN_SW_ISR_TABLE
+	default GEN_SW_ISR_TABLE_ARRAY
+	help
+	  CONFIG_GEN_SW_ISR_TABLE_ARRAY is a default option.
+	  It should be used when in doubt.
+	  GEN_SW_ISR_TABLE_SWITCH allows for binary size optimization
+	  in certain scenarios, but may also increase latency, to execution of ISR with higher number, if there is significant number of ISR assigned in your system.
+
+config GEN_SW_ISR_TABLE_ARRAY
+	bool "Generate an array of ISR entries"
+	help
+	  This is an array of struct _isr_table_entry containing
+	  the interrupt service routine and supplied parameter.
+	  All interrupts have their own entry.
+
+config GEN_SW_ISR_TABLE_SWITCH
+	bool "Generate a function with a switch-case"
+	help
+	  Use a switch-case instead of an array.
+	  This helps to limit binary size when most of the IRQs are not used.
+	  In such case common, duplicated entries are grouped in a single default block
+	  while few used interrupts have their own case blocks.
+
+endchoice
 
 config ARCH_SW_ISR_TABLE_ALIGN
 	int "Alignment size of a software ISR table"
@@ -576,14 +763,30 @@ config IRQ_OFFLOAD
 	  run in interrupt context. Only useful for test cases that need
 	  to validate the correctness of kernel objects in IRQ context.
 
+config SRAM_VECTOR_TABLE
+	bool "Place the vector table in SRAM instead of flash"
+	depends on ARCH_HAS_VECTOR_TABLE_RELOCATION
+	depends on XIP
+	depends on !ROMSTART_RELOCATION_ROM
+	help
+	  When XiP is enabled, this option will result in the vector table being
+	  relocated from Flash to SRAM.
+
+config SRAM_SW_ISR_TABLE
+	bool "Place the software ISR table in SRAM instead of flash"
+	help
+	  The option specifies that the software interrupts vector table will be
+	  placed inside SRAM instead of the flash.
+
 config IRQ_OFFLOAD_NESTED
 	bool "irq_offload() supports nested IRQs"
 	depends on IRQ_OFFLOAD
+	default y if ARCH_HAS_IRQ_OFFLOAD_NESTED
 	help
-	  When set by the arch layer, indicates that irq_offload() may
-	  legally be called in interrupt context to cause a
-	  synchronous nested interrupt on the current CPU.  Not all
-	  hardware is capable.
+	  When set by the platform layers, indicates that
+	  irq_offload() may legally be called in interrupt context to
+	  cause a synchronous nested interrupt on the current CPU.
+	  Not all hardware is capable.
 
 config EXCEPTION_DEBUG
 	bool "Unhandled exception debugging"
@@ -648,6 +851,28 @@ endmenu
 #
 # Architecture Capabilities
 #
+config ARCH_MEM_DOMAIN_SUPPORTS_ISOLATED_STACKS
+	bool
+	help
+	  This hidden option is selected by the target architecture if
+	  the architecture supports isolating thread stacks for threads
+	  within the same memory domain.
+
+config ARCH_MEM_DOMAIN_SUPPORTS_DEINIT
+	bool
+	select MEM_DOMAIN_HAS_THREAD_LIST
+	help
+	  This hidden option is selected by the target architecture if
+	  the architecture supports de-initializing a memory domain.
+
+config ARCH_HAS_BIT_REV
+	bool
+	help
+	  This hidden option is selected by the target architecture if
+	  the architecture provides arch_sys_bit_rev8(), arch_sys_bit_rev16()
+	  and arch_sys_bit_rev32() implementations, which are used by the
+	  sys_bit_rev*() helpers when the toolchain does not offer a
+	  __builtin_bitreverse*() equivalent.
 
 config ARCH_HAS_SINGLE_THREAD_SUPPORT
 	bool
@@ -673,8 +898,87 @@ config ARCH_HAS_NOCACHE_MEMORY_SUPPORT
 config ARCH_HAS_RAMFUNC_SUPPORT
 	bool
 
+config ARCH_HAS_VECTOR_TABLE_RELOCATION
+	bool
+
 config ARCH_HAS_NESTED_EXCEPTION_DETECTION
 	bool
+
+config ARCH_HAS_IRQ_OFFLOAD_NESTED
+	bool
+	help
+	  This option is selected by architectures whose irq_offload()
+	  implementation may legally be called in interrupt context to cause a
+	  synchronous nested interrupt on the current CPU. It gates the default
+	  value of CONFIG_IRQ_OFFLOAD_NESTED.
+
+config ARCH_HAS_IRQ_PENDING_OPS
+	bool
+	help
+	  Selected by architectures whose interrupt controller can set, clear
+	  and query the latched pending state of an individual interrupt
+	  line, providing arch_irq_set_pending(), arch_irq_clear_pending()
+	  and arch_irq_is_pending() and therefore the k_irq_*_pending() API.
+
+config ARCH_HAS_IRQ_GET_ACTIVE
+	bool
+	help
+	  Selected by architectures that can report the interrupt line being
+	  serviced on the local CPU through arch_irq_get_active() and
+	  therefore k_irq_get_active(). Some interrupt controllers expose
+	  this in a register; others record it in the interrupt dispatch
+	  path.
+
+config ARCH_HAS_DIRECT_INTERRUPTS
+	bool
+	help
+	  This option is selected by architectures that implement the direct
+	  interrupt hooks, i.e. ARCH_IRQ_DIRECT_CONNECT() and
+	  ARCH_ISR_DIRECT_DECLARE() together with the ARCH_ISR_DIRECT_HEADER(),
+	  ARCH_ISR_DIRECT_FOOTER() and ARCH_ISR_DIRECT_PM() hooks they expand
+	  to. It is a prerequisite for any code using IRQ_DIRECT_CONNECT() or
+	  ISR_DIRECT_DECLARE().
+
+config ARCH_HAS_SEMIHOST
+	bool
+	help
+	  This option is selected by architectures that provide a semihosting
+	  implementation (arch/*/core/semihost.c). It is a prerequisite for
+	  CONFIG_SEMIHOST.
+
+config ARCH_HAS_ISR_TABLES_LOCAL_DECLARATION
+	bool
+	help
+	  This option is selected by architectures that support local
+	  declaration of interrupt tables placed by the linker. It is a
+	  prerequisite for CONFIG_ISR_TABLES_LOCAL_DECLARATION_SUPPORTED.
+
+config ARCH_HAS_CPU_IDLE_HOOKS
+	bool
+	help
+	  This option is selected by architectures that can tell the CPU load
+	  module when the CPU enters and leaves idle (gated by
+	  CONFIG_SYS_IDLE_HOOKS). It requires the idle path to emit
+	  sys_trace_idle() on entry, and the idle window to be closed again by
+	  either of:
+
+	  - sys_trace_idle_exit() after the wait, for architectures that wait with
+	    interrupts locked (Arm, RISC-V). The wait returns without servicing the
+	    interrupt, so the exit hook runs before any ISR.
+	  - sys_trace_isr_enter() at ISR entry, for architectures that wait with
+	    interrupts enabled (x86 "sti; hlt", Xtensa "waiti 0"). There the wake-up
+	    ISR runs first and may reschedule away from the idle thread, which would
+	    defer the exit hook long past the end of idle, so the ISR entry closes
+	    the window instead.
+
+	  It is a prerequisite for the idle-hook CPU load backend
+	  (CONFIG_CPU_LOAD_BACKEND_IDLE_HOOK).
+
+config ARCH_HAS_FWARGS_HANDLER_HOOK
+	bool
+	help
+	  This option is selected by architectures that support calling a firmware
+	  argument handler hook during initialization.
 
 config ARCH_SUPPORTS_COREDUMP
 	bool
@@ -682,7 +986,18 @@ config ARCH_SUPPORTS_COREDUMP
 config ARCH_SUPPORTS_COREDUMP_THREADS
 	bool
 
+config ARCH_SUPPORTS_COREDUMP_SMP_FREEZE
+	bool
+	help
+	  Architecture can freeze other CPUs during a coredump and capture
+	  their live register state (not just each thread's last-swapped-out
+	  callee-saved context), for accurate backtraces of threads that were
+	  actively running elsewhere at panic time.
+
 config ARCH_SUPPORTS_COREDUMP_PRIV_STACKS
+	bool
+
+config ARCH_SUPPORTS_COREDUMP_STACK_PTR
 	bool
 
 config ARCH_SUPPORTS_ARCH_HW_INIT
@@ -694,18 +1009,17 @@ config ARCH_SUPPORTS_ROM_START
 config ARCH_SUPPORTS_EMPTY_IRQ_SPURIOUS
 	bool
 
+config ARCH_SUPPORTS_EVICTION_TRACKING
+	bool
+	help
+	  Architecture code supports page tracking for eviction algorithms
+	  when demand paging is enabled.
+
 config ARCH_HAS_EXTRA_EXCEPTION_INFO
 	bool
 
 config ARCH_HAS_GDBSTUB
 	bool
-
-config ARCH_HAS_COHERENCE
-	bool
-	help
-	  When selected, the architecture supports the
-	  arch_mem_coherent() API and can link into incoherent/cached
-	  memory using the ".cached" linker section.
 
 config ARCH_HAS_THREAD_LOCAL_STORAGE
 	bool
@@ -718,6 +1032,31 @@ config ARCH_HAS_SUSPEND_TO_RAM
 config ARCH_HAS_STACK_CANARIES_TLS
 	bool
 
+config STACK_CANARIES_TLS_PREPEND
+	bool
+	depends on STACK_CANARIES_TLS
+	help
+	  The stack canary (.stack_chk.guard) is placed as the first section
+	  in the TLS block at offset 0, before .tdata/.tbss. Required on
+	  architectures where the compiler accesses the canary via a fixed
+	  offset from the TLS base pointer (e.g. RISC-V).
+
+config STACK_CANARIES_TLS_GUARD_REG
+	string
+	default "tp" if RISCV
+	depends on STACK_CANARIES_TLS_PREPEND
+	help
+	  The register used as the TLS base pointer for stack canary access.
+	  Sets -mstack-protector-guard-reg=<reg>.
+
+config STACK_CANARIES_TLS_GUARD_OFFSET
+	int
+	default 0
+	depends on STACK_CANARIES_TLS_PREPEND
+	help
+	  The byte offset from the TLS base register to the stack canary.
+	  Sets -mstack-protector-guard-offset=<offset>.
+
 config ARCH_SUPPORTS_MEM_MAPPED_STACKS
 	bool
 	help
@@ -727,6 +1066,9 @@ config ARCH_HAS_THREAD_PRIV_STACK_SPACE_GET
 	bool
 	help
 	  Select when the architecture implements arch_thread_priv_stack_space_get().
+
+config ARCH_HAS_HW_SHADOW_STACK
+	bool
 
 #
 # Other architecture related options
@@ -740,6 +1082,14 @@ config ARCH_HAS_CODE_DATA_RELOCATION
 	help
 	  When selected, the architecture/SoC implements support for
 	  CODE_DATA_RELOCATION in its linker scripts.
+
+config ARCH_HAS_PMU
+	bool
+	help
+	  When set, the CPU or SoC is expected to provide hardware performance
+	  counters usable by the Zephyr PMU API (<zephyr/arch/pmu.h>). For AArch64,
+	  Cortex-A profiles select this option; enable CONFIG_ARM64_PMUV3 to build
+	  the ARMv8-A PMUv3 driver backend.
 
 #
 # Hidden CPU family configs
@@ -980,7 +1330,10 @@ config FPU
 
 	  If it is necessary for multiple threads to perform concurrent floating
 	  point operations, the "FPU register sharing" option must be enabled to
-	  preserve the floating point registers across context switches.
+	  preserve the floating point registers across context switches. This is
+	  done automatically if the platform enables an architecture-specific option
+	  enabling the compiler to generate FP instructions for general purpose
+	  integer work.
 
 	  Note that this option cannot be selected for the platforms that do not
 	  include a hardware floating point unit; the floating point support for
@@ -989,7 +1342,7 @@ config FPU
 
 config FPU_SHARING
 	bool "FPU register sharing"
-	depends on FPU && MULTITHREADING
+	depends on FPU
 	help
 	  This option enables preservation of the hardware floating point registers
 	  across context switches to allow multiple threads to perform concurrent
@@ -1022,10 +1375,22 @@ config ICACHE
 	help
 	  This option enables the support for the instruction cache (i-cache).
 
-config CACHE_DOUBLEMAP
-	bool "Cache double-mapping support"
+config CACHE_HAS_MIRRORED_MEMORY_REGIONS
+	bool "Mirrored memory region(s) for both cached and uncached access"
 	depends on CPU_CACHE_INCOHERENT
-	default y
+	help
+	  Enable this if hardware has mirrored memory regions at different
+	  addressed when accessing one would go through cache, but accessing
+	  the other would go to memory directly. A pointer can be cheaply
+	  converted to cached or uncached access.
+
+	  This applies to intra-CPU multiprocessing incoherence and makes only
+	  sense when MP_MAX_NUM_CPUS > 1.
+
+config CACHE_DOUBLEMAP
+	bool "Cache double-mapping support [DEPRECATED]"
+	select CACHE_HAS_MIRRORED_MEMORY_REGIONS
+	select DEPRECATED
 	help
 	  Double-mapping behavior where a pointer can be cheaply converted to
 	  point to the same cached/uncached memory at different locations.
@@ -1040,54 +1405,72 @@ config CACHE_MANAGEMENT
 	  This option enables the cache management functions backed by arch or
 	  driver code.
 
+config DCACHE_LINE_SIZE_DETECT_SUPPORT
+	bool
+	help
+	  Platform implements querying some SoC register for finding the d-cache
+	  line size.
+
+	  Only the software component (arch/SoC layer, driver) implementing the
+	  cache API shall select this option.
+
+if DCACHE
+
 config DCACHE_LINE_SIZE_DETECT
 	bool "Detect d-cache line size at runtime"
-	depends on CACHE_MANAGEMENT && DCACHE
+	depends on CACHE_MANAGEMENT && DCACHE_LINE_SIZE_DETECT_SUPPORT
 	help
-	  This option enables querying some architecture-specific hardware for
-	  finding the d-cache line size at the expense of taking more memory and
-	  code and a slightly increased boot time.
-
-	  If the CPU's d-cache line size is known in advance, disable this option and
-	  manually enter the value for DCACHE_LINE_SIZE or set it in the DT
-	  using the 'd-cache-line-size' property.
+	  Enable querying some SoC register for finding the d-cache
+	  line size at the expense of taking more memory and code and a slightly
+	  increased boot time.
 
 config DCACHE_LINE_SIZE
 	int "d-cache line size"
-	depends on CACHE_MANAGEMENT && DCACHE && !DCACHE_LINE_SIZE_DETECT
-	default 0
+	range 2 $(UINT32_MAX)
+	default $(dt_node_int_prop_int,/cpus/cpu@0,d-cache-line-size) \
+		  if $(dt_node_has_prop,/cpus/cpu@0,d-cache-line-size)
+	default 64 if 64BIT
+	default 32
 	help
-	  Size in bytes of a CPU d-cache line. If this is set to 0 the value is
-	  obtained from the 'd-cache-line-size' DT property instead if present.
+	  Size in bytes of a CPU d-cache line.
 
+endif # DCACHE
 
-	  Detect automatically at runtime by selecting DCACHE_LINE_SIZE_DETECT.
+config ICACHE_LINE_SIZE_DETECT_SUPPORT
+	bool
+	help
+	  Platform implements querying some SoC register for finding the i-cache
+	  line size.
+
+	  Only the software component (arch/SoC layer, driver) implementing the
+	  cache API shall select this option.
+
+if ICACHE
 
 config ICACHE_LINE_SIZE_DETECT
 	bool "Detect i-cache line size at runtime"
-	depends on CACHE_MANAGEMENT && ICACHE
+	depends on CACHE_MANAGEMENT && ICACHE_LINE_SIZE_DETECT_SUPPORT
 	help
-	  This option enables querying some architecture-specific hardware for
-	  finding the i-cache line size at the expense of taking more memory and
-	  code and a slightly increased boot time.
-
-	  If the CPU's i-cache line size is known in advance, disable this option and
-	  manually enter the value for ICACHE_LINE_SIZE or set it in the DT
-	  using the 'i-cache-line-size' property.
+	  Enable querying some SoC register for finding the i-cache
+	  line size at the expense of taking more memory and code and a slightly
+	  increased boot time.
 
 config ICACHE_LINE_SIZE
 	int "i-cache line size"
-	depends on CACHE_MANAGEMENT && ICACHE && !ICACHE_LINE_SIZE_DETECT
-	default 0
+	range 2 $(UINT32_MAX)
+	default $(dt_node_int_prop_int,/cpus/cpu@0,i-cache-line-size) \
+		  if $(dt_node_has_prop,/cpus/cpu@0,i-cache-line-size)
+	default 64 if 64BIT
+	default 32
 	help
-	  Size in bytes of a CPU i-cache line. If this is set to 0 the value is
-	  obtained from the 'i-cache-line-size' DT property instead if present.
+	  Size in bytes of a CPU i-cache line.
 
-	  Detect automatically at runtime by selecting ICACHE_LINE_SIZE_DETECT.
+endif # ICACHE
+
+if CACHE_MANAGEMENT
 
 choice CACHE_TYPE
 	prompt "Cache type"
-	depends on CACHE_MANAGEMENT
 	default ARCH_CACHE
 
 config ARCH_CACHE
@@ -1095,12 +1478,30 @@ config ARCH_CACHE
 	help
 	  Integrated on-core cache controller
 
+config SOC_CACHE
+	bool "SoC specific cache controller"
+	depends on SOC_HAS_CACHE_FUNCTIONS
+	help
+	  SoC specific cache controller.
+
+	  This requires soc_cache.h file to exist in search path.
+
 config EXTERNAL_CACHE
 	bool "External cache controller"
 	help
 	  External cache controller
 
 endchoice
+
+config CACHE_CAN_SAY_MEM_COHERENCE
+	bool
+	help
+	  sys_cache_is_mem_coherent() is defined when enabled. This function can be
+	  used to determine if a pointer lies inside "coherence regions" and can be
+	  safely used in multiprocessor code without explicit flush or invalidate
+	  operations.
+
+endif # CACHE_MANAGEMENT
 
 endmenu
 
@@ -1130,9 +1531,9 @@ config ARCH_HAS_CUSTOM_CPU_ATOMIC_IDLE
 config ARCH_HAS_CUSTOM_SWAP_TO_MAIN
 	bool
 	help
-	  It's possible that an architecture port cannot use _Swap() to swap to
-	  the _main() thread, but instead must do something custom. It must
-	  enable this option in that case.
+	  It's possible that an architecture port cannot use z_swap_unlocked()
+	  to swap to the main thread (bg_thread_main), but instead must do
+	  something custom. It must enable this option in that case.
 
 config ARCH_HAS_CUSTOM_BUSY_WAIT
 	bool
@@ -1140,3 +1541,15 @@ config ARCH_HAS_CUSTOM_BUSY_WAIT
 	  It's possible that an architecture port cannot or does not want to use
 	  the provided k_busy_wait(), but instead must do something custom. It must
 	  enable this option in that case.
+
+config ARCH_HAS_CUSTOM_CURRENT_IMPL
+	bool
+	help
+	  Select when architecture implements arch_current_thread() &
+	  arch_current_thread_set().
+
+config ARCH_IPI_LAZY_COPROCESSORS_SAVE
+	bool
+	help
+	  Select when the architecture has multi-CPU lazy context switching
+	  of coprocessor registers.

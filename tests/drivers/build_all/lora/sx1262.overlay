@@ -4,6 +4,10 @@
  */
 
 / {
+	aliases {
+		lora0 = &test_semtech_sx1262;
+	};
+
 	test {
 		#address-cells = <1>;
 		#size-cells = <1>;
@@ -24,8 +28,8 @@
 			status = "okay";
 
 			cs-gpios = <&test_gpio 0 0>,
-			<&test_gpio 0 0>,
-			<&test_gpio 0 0>;
+				   <&test_gpio 0 0>,
+				   <&test_gpio 0 0>;
 
 			test_semtech_sx1262: sx1262@0 {
 				compatible = "semtech,sx1262";

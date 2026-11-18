@@ -9,7 +9,7 @@
 
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/math/ilog2.h>
 #include <zephyr/drivers/reset.h>
 #include <zephyr/drivers/clock_control.h>
@@ -148,7 +148,7 @@ int dw_wdt_disable(const struct device *dev)
 	return ret;
 }
 
-static const struct wdt_driver_api dw_wdt_api = {
+static DEVICE_API(wdt, dw_wdt_api) = {
 	.setup = dw_wdt_setup,
 	.disable = dw_wdt_disable,
 	.install_timeout = dw_wdt_install_timeout,
@@ -197,15 +197,6 @@ static int dw_wdt_init(const struct device *dev)
 	}
 #endif
 
-	/*
-	 * Enable watchdog if it needs to be enabled at boot.
-	 * watchdog timer will be started with maximum timeout
-	 * that is the default value.
-	 */
-	if (!IS_ENABLED(CONFIG_WDT_DISABLE_AT_BOOT)) {
-		dw_wdt_enable((uint32_t)reg_base);
-	}
-
 	return 0;
 }
 
@@ -237,7 +228,7 @@ static void dw_wdt_isr(const struct device *dev)
 
 /* Bindings to the platform */
 #define DW_WDT_IRQ_FLAGS(inst) \
-	COND_CODE_1(DT_INST_IRQ_HAS_CELL(inst, sense), (DT_INST_IRQ(inst, sense)), (0))
+	COND_CODE_1(DT_INST_IRQ_HAS_CELL(inst, flags), (DT_INST_IRQ(inst, flags)), (0))
 
 #define DW_WDT_RESET_SPEC_INIT(inst) \
 	.reset_spec = RESET_DT_SPEC_INST_GET(inst),

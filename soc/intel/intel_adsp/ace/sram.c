@@ -1,4 +1,4 @@
-/* Copyright(c) 2021 Intel Corporation. All rights reserved.
+/* Copyright (c) 2021 Intel Corporation. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,7 +11,6 @@
 #include <adsp_shim.h>
 #include <adsp_memory.h>
 #include <cpu_init.h>
-#include "manifest.h"
 
 __imr void hp_sram_init(uint32_t memory_size)
 {

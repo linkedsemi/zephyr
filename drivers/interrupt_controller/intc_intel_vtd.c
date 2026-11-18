@@ -295,7 +295,7 @@ static void vtd_fault_event_init(const struct device *dev)
 		(uintptr_t)(16 * VTD_CAP_FRO(value));
 
 	/* Allocating IRQ & vector and connecting the ISR handler,
-	 * by-passing remapping by using x86 functions directly.
+	 * bypassing remapping by using x86 functions directly.
 	 */
 	data->fault_irq = arch_irq_allocate();
 	data->fault_vector = z_x86_allocate_vector(0, -1);
@@ -369,7 +369,7 @@ static int vtd_ictl_remap(const struct device *dev,
 	}
 
 	delivery_mode = (flags & IOAPIC_DELIVERY_MODE_MASK);
-	if ((delivery_mode != IOAPIC_FIXED) ||
+	if ((delivery_mode != IOAPIC_FIXED) &&
 	    (delivery_mode != IOAPIC_LOW)) {
 		delivery_mode = IOAPIC_LOW;
 	}
@@ -523,7 +523,7 @@ out:
 	return ret;
 }
 
-static const struct vtd_driver_api vtd_api = {
+static DEVICE_API(vtd, vtd_api) = {
 	.allocate_entries = vtd_ictl_allocate_entries,
 	.remap_msi = vtd_ictl_remap_msi,
 	.remap = vtd_ictl_remap,

@@ -205,7 +205,7 @@ static int transfer_request(struct coap_block_context *ctx, uint8_t *token, uint
 	/* send request */
 	ret = lwm2m_send_message_async(msg);
 	if (ret < 0) {
-		LOG_ERR("Error sending LWM2M packet (err:%d).", ret);
+		LOG_ERR("Error sending LwM2M packet (err:%d).", ret);
 		goto cleanup;
 	}
 
@@ -217,7 +217,7 @@ cleanup:
 }
 
 static int do_firmware_transfer_reply_cb(const struct coap_packet *response,
-					 struct coap_reply *reply, const struct sockaddr *from)
+					 struct coap_reply *reply, const struct net_sockaddr *from)
 {
 	int ret;
 	bool last_block;
@@ -311,7 +311,7 @@ static int do_firmware_transfer_reply_cb(const struct coap_packet *response,
 		}
 
 		if (context.write_cb) {
-			size_t offset = context.block_ctx.current;
+			size_t offset = received_block_ctx.current;
 
 			/* flush incoming data to write_cb */
 			while (payload_len > 0) {
@@ -426,6 +426,12 @@ int lwm2m_pull_context_start_transfer(char *uri, struct requesting_object req, k
 		return -EINVAL;
 	}
 
+	if (strlen(uri) >= sizeof(context.uri)) {
+		LOG_ERR("URI too long, maximum supported length is %zu characters",
+			sizeof(context.uri) - 1U);
+		return -ENOMEM;
+	}
+
 	ret = start_service();
 	if (ret) {
 		LOG_ERR("Failed to start the pull-service");
@@ -441,16 +447,20 @@ int lwm2m_pull_context_start_transfer(char *uri, struct requesting_object req, k
 	k_sem_give(&lwm2m_pull_sem);
 
 	context.obj_inst_id = req.obj_inst_id;
-	memcpy(context.uri, uri, LWM2M_PACKAGE_URI_LEN);
+	strcpy(context.uri, uri);
 	context.is_firmware_uri = req.is_firmware_uri;
 	context.result_cb = req.result_cb;
 	context.write_cb = req.write_cb;
 
-	(void)memset(&context.firmware_ctx, 0, sizeof(struct lwm2m_ctx));
 	(void)memset(&context.block_ctx, 0, sizeof(struct coap_block_context));
 	context.firmware_ctx.sock_fd = -1;
 
 	firmware_transfer();
 
 	return 0;
+}
+
+void lwm2m_pull_context_set_sockopt_callback(lwm2m_set_sockopt_cb_t set_sockopt_cb)
+{
+	context.firmware_ctx.set_socketoptions = set_sockopt_cb;
 }

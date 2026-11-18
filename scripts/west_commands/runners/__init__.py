@@ -5,7 +5,7 @@
 import importlib
 import logging
 
-from runners.core import ZephyrBinaryRunner, MissingProgram
+from runners.core import MissingProgram, ZephyrBinaryRunner
 
 _logger = logging.getLogger('runners')
 
@@ -26,40 +26,59 @@ def _import_runner_module(runner_name):
 
 _names = [
     # zephyr-keep-sorted-start
+    'amebaflash',
+    'bflb_flash_command',
+    'bflb_mcu_tool',
     'blackmagicprobe',
     'bossac',
     'canopen_program',
     'dediprog',
     'dfu',
+    'ecpprog',
     'esp32',
     'ezflashcli',
     'gd32isp',
     'hifive1',
+    'iar',
     'intel_adsp',
     'intel_cyclonev',
     'jlink',
     'linkserver',
+    'lldbac',
     'mdb',
+    'minichlink',
     'misc',
+    'mpcli',
+    'mplab_ipe',
     'native',
-    'nios2',
     'nrfjprog',
     'nrfutil',
     'nsim',
     'nxp_s32dbg',
+    'openfpgaloader',
     'openocd',
     'probe_rs',
     'pyocd',
     'qemu',
     'renode',
     'renode-robot',
+    'rfp',
+    'rtkprog',
+    'rtsflash',
+    'sftool',
     'silabs_commander',
     'spi_burn',
+    'spsdk',
+    'stlink_gdbserver',
     'stm32cubeprogrammer',
     'stm32flash',
+    'sy1xx',
     'teensy',
     'trace32',
     'uf2',
+    'vegadude',
+    'wchisp',
+    'wlink',
     'xsdb',
     'xtensa',
     # zephyr-keep-sorted-stop
@@ -73,6 +92,6 @@ def get_runner_cls(runner):
     for cls in ZephyrBinaryRunner.get_runners():
         if cls.name() == runner:
             return cls
-    raise ValueError('unknown runner "{}"'.format(runner))
+    raise ValueError(f'unknown runner "{runner}"')
 
-__all__ = ['ZephyrBinaryRunner', 'get_runner_cls']
+__all__ = ['ZephyrBinaryRunner', 'MissingProgram', 'get_runner_cls']

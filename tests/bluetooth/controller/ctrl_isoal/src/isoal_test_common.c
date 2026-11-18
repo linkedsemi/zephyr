@@ -44,7 +44,7 @@
 #define ULL_TIME_SPAN_FULL_US		(ULL_TIME_WRAPPING_POINT_US + 1)
 
 /**
- * Intializes a RX PDU buffer
+ * Initializes a RX PDU buffer
  * @param[in] buf Pointer to buffer structure
  */
 void isoal_test_init_rx_pdu_buffer(struct rx_pdu_meta_buffer *buf)
@@ -94,7 +94,9 @@ void isoal_test_create_unframed_pdu(uint8_t llid,
 
 	pdu_meta->pdu->ll_id = llid;
 	pdu_meta->pdu->len = length;
-	memcpy(pdu_meta->pdu->payload, dataptr, length);
+	if (dataptr != NULL) {
+		(void)memcpy(pdu_meta->pdu->payload, dataptr, length);
+	}
 
 	isoal_test_debug_print_rx_pdu(pdu_meta);
 }
@@ -246,7 +248,7 @@ uint16_t isoal_test_add_framed_pdu_end(uint8_t *dataptr,
 }
 
 /**
- * Intializes a TX PDU buffer
+ * Initializes a TX PDU buffer
  * @param[in] buf Pointer to buffer structure
  */
 void isoal_test_init_tx_pdu_buffer(struct tx_pdu_meta_buffer *buf)

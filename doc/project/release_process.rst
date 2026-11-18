@@ -9,33 +9,24 @@ companies, and individuals from the community.
 
 A time-based release process enables the Zephyr project to provide users with a
 balance of the latest technologies and features and excellent overall quality. A
-roughly 4-month release cycle allows the project to coordinate development of
+roughly 6-month release cycle allows the project to coordinate development of
 the features that have actually been implemented, allowing the project to
 maintain the quality of the overall release without delays because of one or two
 features that are not ready yet.
 
-The Zephyr release model was loosely based on the Linux kernel model:
+Release Phases Overview
+***********************
 
-- Release tagging procedure:
+Each release cycle consists of a *development phase* followed by a
+*stabilization phase*. Release candidates will be created during the
+stabilization phase.
 
-  - linear mode on main branch,
-  - release branches for maintenance after release tagging.
-- Each release period will consist of a development phase followed by a
-  stabilization phase. Release candidates will be tagged during the
-  stabilization phase. During the stabilization phase, only stabilization
-  changes such as bug fixes and documentation will be merged unless granted a
-  special exemption by the Technical Steering Committee.
-
-  - Development phase: all changes are considered and merged, subject to
-    approval from the respective maintainers.
-  - Stabilisation phase: the release manager creates a vN-rc1 tag and the tree
-    enters the stabilization phase
-  - CI sees the tag, builds and runs tests; Test teams analyse the report from the
-    build and test run and give an ACK/NAK to the build
-  - The release owner, with test teams and any other needed input, determines if the
-    release candidate is a go for release
-  - If it is a go for a release, the release owner lays a tag release vN at the
-    same point
+During the development phase, all sorts of changes can be merged. This is
+called the *merge window* for the main branch for this reason. During the
+stabilization phase, the project and its maintainers focus on fixing bugs and
+documenting the release. During this time, new features are generally not
+accepted. The main branch is in *feature freeze* during the stabilization
+phase.
 
 .. figure:: release_cycle.svg
     :align: center
@@ -45,57 +36,230 @@ The Zephyr release model was loosely based on the Linux kernel model:
 
     Release Cycle
 
+The milestones for the current major version can be found on the
+`Official GitHub Wiki <https://github.com/zephyrproject-rtos/zephyr/wiki/Release-Management>`_.
+Information on previous releases can be found :ref:`here <zephyr_release_notes>`.
+
 .. note::
 
-    The milestones for the current major version can be found on the
-    `Official GitHub Wiki <https://github.com/zephyrproject-rtos/zephyr/wiki/Release-Management>`_.
-    Information on previous releases can be found :ref:`here <zephyr_release_notes>`.
+   After each stable release is made, a new "release branch" for that release
+   is created.
 
-Development Phase
-*****************
+   For example, after Zephyr stable release v4.4.0 was announced, a new branch
+   ``v4.4-branch`` was created. Commits intended for v4.4.x point releases
+   (v4.4.1, v4.4.2, etc.) should be proposed with that branch as a target.
 
-A relatively straightforward discipline is followed with regard to the merging
-of patches for each release.  At the beginning of each development cycle, the
-main branch is said to be open for development.  At that time, code which is deemed to be
-sufficiently stable (and which is accepted by the maintainers and the wide community) is
-merged into the mainline tree.  The bulk of changes for a new development cycle
-(and all of the major changes) will be merged during this time.
+   This page currently does not document the point release process in detail.
 
-The development phase lasts for approximately three months.  At the end of this time,
-the release owner will declare that the development phase is over and releases the first
-of the release candidates.  For the codebase release which is destined to be
-3.1.0, for example, the release which happens at the end of the development phase
-will be called 3.1.0-rc1.  The -rc1 release is the signal that the time to merge
-new features has passed, and that the time to stabilize the next release of the
-code base has begun.
+.. _merge_window:
 
-Stabilization Phase
-*******************
+Merge Window (Development Phase)
+================================
 
-Over the next weeks and depending on the release milestone, only stabilization,
-cosmetic changes, tests, bug and doc fixes are allowed (See :ref:`table
-<release_milestones>` below).
+After tagging a release, the release managers open the `main branch
+<https://github.com/zephyrproject-rtos/zephyr/tree/main>`_ for development for
+the next release cycle. We call this time the *merge window* or the
+*development phase* for each release. During the merge window, any code which
+meets the :ref:`merge_criteria` can be merged into the main branch. Most
+changes for each release are made during its merge window.
 
-On occasion, more significant changes and new features will be allowed, but such
-occasions are rare and require a TSC approval and a justification. As a general
-rule, if you miss submitting your code during the development phase for a given
-feature, the best thing to do is to wait for the next development cycle. (An
-occasional exception is made for drivers for previously unsupported hardware; if
-they do not touch any other in-tree code, they cannot cause regressions and
-should be safe to add at any time).
+Each release's merge window lasts approximately five months.
 
-As fixes make their way into the mainline, the patch rate will slow over time.
-The mainline release owner releases new -rc drops once or twice a week; a normal
-series will get up to somewhere between -rc4 and -rc6 before the code base is
-considered to be sufficiently stable and the release criteria have been achieved
-at which point the final 3.1.0 release is made.
+After the merge window, the release team tags the first *release candidate* for
+the upcoming release. At that point, the main branch is closed for most feature
+development, and the project is in :ref:`feature freeze <feature_freeze>` for
+the next release. Feature freeze is described in the next section.
 
-At that point, the whole process starts over again.
+Here is an example timeline for a merge window:
+
+- the merge window opened when `v4.3.0
+  <https://github.com/zephyrproject-rtos/zephyr/tree/v4.3.0>`_ was tagged on 13
+  November 2025. At this point, the main branch was open for merges for the
+  next release, which was v4.4.0.
+
+- the merge window for v4.4.0 closed when `v4.4.0-rc1
+  <https://github.com/zephyrproject-rtos/zephyr/tree/v4.4.0-rc1>`_ was tagged
+  on 24 March 2026. At this time, the project entered feature freeze for the
+  v4.4.0 release.
+
+.. _feature_freeze:
+
+Feature Freeze (Stabilization Phase)
+====================================
+
+When the first release candidate is tagged, the release's merge window is
+closed. This is called the *feature freeze* or *stabilization phase* for that
+release. During feature freeze, no new features will be merged for that release
+without a :ref:`tsc` approved exception.
+
+Please be patient during the stabilization phase while waiting for pull request
+review for new features.
+
+As mentioned, the exception process for merging features during the feature
+freeze requires TSC approval and a justification. As a general rule, if your
+pull request is not yet merged and feature freeze is declared, the best thing
+to do is to wait for the next :ref:`merge window <merge_window>` to open.
+
+If you believe your feature merits an exception and should be merged during
+feature freeze, contact the TSC. See the `TSC wiki
+<https://github.com/zephyrproject-rtos/zephyr/wiki/Technical-Steering-Committee-%28TSC%29>`_
+page for general contact information.
+
+Here is an example timeline for a feature freeze:
+
+- The feature freeze for v4.4.0 began when `v4.4.0-rc1
+  <https://github.com/zephyrproject-rtos/zephyr/tree/v4.4.0-rc1>`_ was tagged
+  on 24 March 2026. At that time, new features required a TSC exception
+  in order to be merged to the main branch.
+
+- The feature freeze for v4.4.0 ended when `v4.4.0
+  <https://github.com/zephyrproject-rtos/zephyr/tree/v4.4.0>`_ was tagged on 14
+  April 2026. At that time, the main branch was open again for the next
+  release's :ref:`merge window <merge_window>`.
+
+The following sections describe the feature freeze in more detail.
+
+Allowed Changes
+---------------
+
+After feature freeze, **only** stabilization-related changes **shall** be accepted:
+
+* Bug fixes addressing functional defects
+* Stabilization fixes improving reliability, build stability, or test behavior
+* Documentation updates (clarifications, corrections, improvements)
+* Tests for existing functionality (no new feature enablement)
+
+For more details on when certain changes are accepted, see :ref:`table <release_milestones>`.
+
+Exceptions to these allowed changes are rare and require both explicit
+justification and TSC approval. As a general rule, if a feature misses the
+development phase window, it should wait for the next development cycle.
+
+Disallowed Changes
+------------------
+
+The following changes **shall not** be accepted after feature freeze:
+
+* New features or feature enhancements
+* API changes, unless required to resolve a critical defect
+* Refactoring not directly tied to a bug fix or stabilization effort
+* New subsystems, drivers, boards, or architectural changes
+
+Issue Tracking during Feature Freeze
+************************************
+
+Referencing a GitHub issue in a pull request is **recommended** but **not required**
+during feature freeze.
+
+Pull requests **must** include a clear description of:
+
+* The issue being addressed
+* The impact of the issue
+* How the change resolves the issue
+
+Maintainers and release engineers **may** request additional clarification when
+the intent or scope of a pull request is not clear.
+
+Mandatory Issue Usage
+=====================
+
+A GitHub issue **shall** be required in the following cases:
+
+* Release blockers
+* Fixes targeting maintenance of already released branches
+
+
+Review and Approval
+===================
+
+All pull requests **shall** follow the standard review and approval process.
+
+Maintainers **shall** ensure that:
+
+* Changes comply with this policy
+* Scope is minimal and focused on stabilization
+* Risk is appropriate for the release phase
+
+Release engineers **may**:
+
+* Reject or defer changes based on risk assessment
+* Request changes or additional justification
+
+Risk Expectations
+=================
+
+Changes accepted during stabilization **shall** be:
+
+* Minimal in scope
+* Low risk
+* Adequately tested
+
+Changes introducing significant risk **may** be deferred to a future release,
+even if they qualify as bug fixes.
+
+.. _merge_criteria:
+
+Pull Request Merge Criteria
+***************************
+
+The following criteria apply during all release phases.
+
+.. figure:: img/img_release_activity.png
+      :width: 663px
+      :align: center
+      :alt: Release Activity
+
+* All :ref:`pr_requirements` must be met.
+* Minimal of 2 approvals, including an approval by the designated assignee.
+* Pull requests should be reviewed by at least a maintainer or collaborator of
+  each affected area; Unless the changes to a given area are considered trivial
+  enough, in which case approvals by other affected subsystems
+  maintainers/collaborators would suffice.
+* Four eye principle on the organisation level. We already require at least 2
+  approvals (basic four eye principle), however, such reviews and approvals
+  might be unintentionally biased in the case where the submitter is from the
+  same organisation as the approvers. To allow for project wide review and
+  approvals, the merge criteria is extended with the guidelines below:
+
+  * Changes or additions to common and shared code shall have approvals from
+    different organisations (at least one approval from an
+    organisation different than the submitters').
+    Common and shared code is defined as anything that does not fall under
+    :file:`soc`, :file:`boards` and :file:`drivers/*/*`.
+  * Changes or additions to hardware support (driver, SoC, boards) shall at
+    least have the merger be from a different organisation. This applies only
+    to implementation of an API supporting vendor specific hardware and not the
+    APIs.
+  * Release engineers may make exceptions for areas with contributions primarily
+    coming from one organisation and where reviews from other organisations are
+    not possible, however, merges shall be completed by a person from a different
+    organisation. In such cases, the minimum review period of at least 2 days
+    shall be strictly followed to allow for additional reviews.
+  * Release engineers shall not merge code changes originating and reviewed
+    only by their own organisation. To be able to merge such changes, at least
+    one review shall be from a different organisation.
+
+* A minimum review period of 2 business days, 4 hours for trivial changes (see
+  :ref:`review_time`).
+* Hotfixes can be merged at any time after CI has passed and are excluded from
+  most of the conditions listed above.
+* All required checks are passing:
+
+  * Device Tree
+  * Documentation
+  * Code linters (Gitlint, Pylint, Ruff, Sphinx, etc.)
+  * Identity/Emails
+  * Kconfig
+  * License checks
+  * Checkpatch (Coding Style)
+  * Integration Tests (Via twister) on emulation/simulation platforms
+  * Simulated Bluetooth Tests
+
 
 .. _release_quality_criteria:
 
-Release Criteria
-****************
+Release Quality Criteria
+************************
 
 The main motivation is to clearly have the criteria in place that must be met
 for a release. This will help define when a release is "done" in terms that most
@@ -148,8 +312,9 @@ guidelines for release blocker bugs:
 .. _release_milestones:
 
 Release Milestones
-*******************
+******************
 
+This table documents milestones associated with each release.
 
 .. list-table:: Release Milestones
    :widths: 15 25 100 25
@@ -167,14 +332,19 @@ Release Milestones
      - Review target milestones
      - Finalize target milestones for features in flight.
      - Release Engineering
-   * - T-4W
+   * - T-5W
      - Release Announcement
      - Release owner announces feature freeze and timeline for release.
      - Release Manager
+   * - T-4W
+     - Release Timeline reminder
+     - Release owner sends a reminder of the feature freeze and timeline for release.
+     - Release Manager
    * - T-3W
      - Feature Freeze (RC1)
-     - No new features after RC1, ONLY stabilization and cosmetic changes, bug and doc
-       fixes are allowed. New tests for existing features are also allowed.
+     - After RC1, no new features may be introduced. Only stabilization,
+       cosmetic updates, bug fixes, documentation improvements, and new tests
+       for existing features are permitted.
      - Release Engineering
    * - T-2W
      - 2nd Release Candidate
@@ -182,7 +352,8 @@ Release Milestones
      - Release Manager
    * - T-1W
      - Hard Freeze (RC3)
-     - Only blocker bug fixes after RC3, documentation and changes to release notes are allowed.
+     - Only blocker bug fixes after RC3, documentation improvements and changes
+       to release notes are allowed.
        Release notes need to be complete by this checkpoint. Release Criteria is
        met.
      - Release Manager
@@ -191,42 +362,13 @@ Release Milestones
      -
      - Release Manager
 
-
-Releases
-*********
-
-The following syntax should be used for releases and tags in Git:
-
-- Release [Major].[Minor].[Patch Level]
-- Release Candidate [Major].[Minor].[Patch Level]-rc[RC Number]
-- Tagging:
-
-  - v[Major].[Minor].[Patch Level]-rc[RC Number]
-  - v[Major].[Minor].[Patch Level]
-  - v[Major].[Minor].99 - A tag applied to main branch to signify that work on
-    v[Major].[Minor+1] has started. For example, v1.7.99 will be tagged at the
-    start of v1.8 process. The tag corresponds to
-    VERSION_MAJOR/VERSION_MINOR/PATCHLEVEL macros as defined for a
-    work-in-progress main branch version. Presence of this tag allows generation of
-    sensible output for "git describe" on main branch, as typically used for
-    automated builds and CI tools.
-
-
-.. figure:: release_flow.png
-    :align: center
-    :alt: Releases
-    :figclass: align-center
-    :width: 80%
-
-    Zephyr Code and Releases
-
 .. _release_process_lts:
 
-Long Term Support (LTS)
-=======================
+Long Term Support (LTS) Releases
+********************************
 
 Long-term support releases are designed to be supported and maintained
-for an extended period and is the recommended release for
+for an extended period and are the recommended release for
 products and the auditable branch used for certification.
 
 An LTS release is defined as:
@@ -235,12 +377,10 @@ An LTS release is defined as:
 - **Extended Stabilisation period**: Allow for more testing and bug fixing
 - **Stable APIs**
 - **Quality Driven Process**
-- **Long Term**: Maintained for an extended period of time (at least 2.5 years)
-  overlapping previous LTS release for at least half a year.
-
+- **Long Term**: Maintained for an extended period of time (at least 5 years).
 
 Product Focused
-+++++++++++++++
+===============
 
 Zephyr LTS is the recommended release for product makers with an extended
 support and maintenance which includes general stability and bug fixes,
@@ -252,7 +392,7 @@ as we move from one LTS to the next giving users access to bleeding edge feature
 and new hardware while keeping a stable foundation that evolves over time.
 
 Extended Stabilisation Period
-+++++++++++++++++++++++++++++
+=============================
 
 Zephyr LTS development cycle differs from regular releases and has an extended
 stabilization period. Feature freeze of regular releases happens 3-4 weeks
@@ -261,7 +401,7 @@ by 3 weeks with the feature freeze occurring 6-7 weeks before the anticipated
 release date. The time between code freeze and release date is extended in this case.
 
 Stable APIs
-+++++++++++
+===========
 
 Zephyr LTS provides a stable and long-lived foundation for developing
 products. To guarantee stability of the APIs and the implementation of such
@@ -295,7 +435,7 @@ supported during the lifetime of the release LTS.
     can be added at any time and should be marked as experimental if applicable
 
 Quality Driven Process
-++++++++++++++++++++++
+======================
 
 The Zephyr project follows industry standards and processes with the goal of
 providing a quality oriented releases. This is achieved by providing the
@@ -321,20 +461,39 @@ Each release is created with the above products to document the quality and the
 state of the software when it was released.
 
 Long Term Support and Maintenance
-++++++++++++++++++++++++++++++++++
+=================================
 
-A Zephyr LTS release is published every 2 years and is branched and maintained
-independently from the main tree for at least 2.5 years after it was
-released. Support and maintenance for an LTS release stops at least half a year
-after the following LTS release is published.
+LTS releases are published every 2.5 to 3 years and are branched and maintained independently from
+the main tree for approximately 5 years after they were released.
 
-.. figure:: lts.svg
-    :align: center
-    :alt: Long Term Support Release
-    :figclass: align-center
-    :width: 80%
+Support is provided in three main phases:
 
-    Long Term Support Release
+- **Phase 1 (first 2 years):** General bug fixes and security fixes, including platform and driver
+  fixes.
+- **Phase 2 (following 3+ years):** Security and OS stability fixes only.
+- **Phase 3:** Extended support may be available through third parties (details to be determined).
+
+Support for a given LTS release (LTS *N*) continues until the initial release of the LTS two
+versions ahead (LTS *N+2*). A final release of LTS *N* occurs shortly after the initial release of
+LTS *N+2*.
+
+The list of currently supported LTS releases and their EOL dates can be found
+:ref:`here <supported_releases>`.
+
+.. mermaid::
+   :caption: Long Term Support Release
+
+   gitGraph
+       commit id: "3.5"
+       commit id: "3.6"
+       commit id: "3.7"
+       branch "LTS"
+       checkout "LTS"
+       commit id: "3.7.1"
+       commit id: "3.7.2"
+       checkout main
+       commit id: "4.0"
+       commit id: "4.1"
 
 Changes and fixes flow in both directions. However, changes from main branch to an
 LTS branch will be limited to fixes that apply to both branches and for existing
@@ -361,9 +520,36 @@ governing board.
 Processes to achieve selected certification will be determined by the Security and
 Safety Working Groups and coordinated with the TSC.
 
+Host Tools Support Policy
+*************************
+
+This section documents policies related to host tools required to develop
+zephyr applications.
+
+Python Version Policy
+=====================
+
+Zephyr tracks the `Python upstream release schedule`_ when determining its minimum supported Python
+version.
+
+The minimum supported version is selected to balance long-term support and practical availability in
+mainstream, actively supported Linux distributions (e.g. current Ubuntu LTS and Debian Stable
+releases).
+
+A Python version is considered for removal when:
+
+* It is approaching or has reached upstream end-of-life (EOL), and
+* Newer Python versions are broadly available in current, actively supported major Linux
+  distributions.
+
+.. _Python upstream release schedule: https://devguide.python.org/versions/
 
 Hardware Support Tiers
-***********************
+**********************
+
+This section documents a rough set of tiers associated with hardware platforms.
+These criteria are not currently formally enforced or evaluated at a board,
+architecture, or SoC level.
 
 Tier 0: Emulation Platforms
 ===========================
@@ -405,9 +591,8 @@ Tier 3: Deprecated and unsupported Platforms
 - Bugs reported against platforms of this tier are NOT considered as
   a general bug in Zephyr.
 
-
 Release Procedure
-******************
+*****************
 
 This section documents the Release manager responsibilities so that it serves as
 a knowledge repository for Release managers.
@@ -422,6 +607,32 @@ created.
 Tagging
 =======
 
+
+The following syntax should be used for releases and tags in Git:
+
+- Release [Major].[Minor].[Patch Level]
+- Release Candidate [Major].[Minor].[Patch Level]-rc[RC Number]
+- Tagging:
+
+  - v[Major].[Minor].[Patch Level]-rc[RC Number]
+  - v[Major].[Minor].[Patch Level]
+  - v[Major].[Minor].99 - A tag applied to main branch to signify that work on
+    v[Major].[Minor+1] has started. For example, v1.7.99 will be tagged at the
+    start of v1.8 process. The tag corresponds to
+    VERSION_MAJOR/VERSION_MINOR/PATCHLEVEL macros as defined for a
+    work-in-progress main branch version. Presence of this tag allows generation of
+    sensible output for "git describe" on main branch, as typically used for
+    automated builds and CI tools.
+
+
+.. figure:: release_flow.png
+    :align: center
+    :alt: Releases
+    :figclass: align-center
+    :width: 80%
+
+    Zephyr Code and Releases
+
 The final release and each release candidate shall be tagged using the following
 steps:
 
@@ -431,8 +642,8 @@ steps:
     interface.  The GitHub release interface does not generate annotated tags (it
     generates 'lightweight' tags regardless of release or pre-release). You should
     also upload your gpg public key to your GitHub account, since the instructions
-    below involve creating signed tags. However, if you do not have a gpg public
-    key you can opt to remove the ``-s`` option from the commands below.
+    below involve creating signed tags. Alternatively, if you don't have a gpg key,
+    you can also use your ssh key for signing.
 
 .. tabs::
 

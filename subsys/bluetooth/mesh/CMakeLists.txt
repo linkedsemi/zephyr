@@ -13,6 +13,7 @@ zephyr_library_sources_ifdef(CONFIG_BT_MESH
     app_keys.c
     heartbeat.c
     crypto.c
+    crypto_psa.c
     access.c
     msg.c
     cfg_srv.c
@@ -25,7 +26,7 @@ zephyr_library_sources_ifdef(CONFIG_BT_MESH_ADV_LEGACY adv_legacy.c)
 
 zephyr_library_sources_ifdef(CONFIG_BT_MESH_ADV_EXT adv_ext.c)
 
-zephyr_library_sources_ifdef(CONFIG_BT_SETTINGS settings.c)
+zephyr_library_sources_ifdef(CONFIG_BT_MESH_PENDING_STORE settings.c)
 
 zephyr_library_sources_ifdef(CONFIG_BT_MESH_RPL_STORAGE_MODE_SETTINGS rpl.c)
 
@@ -123,13 +124,7 @@ zephyr_library_sources_ifdef(CONFIG_BT_MESH_STATISTIC statistic.c)
 
 zephyr_library_sources_ifdef(CONFIG_BT_MESH_ACCESS_DELAYABLE_MSG delayable_msg.c)
 
-if (CONFIG_BT_MESH_USES_TINYCRYPT)
-    zephyr_library_sources(crypto_tc.c)
-else()
-    zephyr_library_sources(crypto_psa.c)
-endif()
-
-zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS mbedTLS)
+zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)
 
 zephyr_library_include_directories_ifdef(CONFIG_BUILD_WITH_TFM
   $<TARGET_PROPERTY:tfm,TFM_BINARY_DIR>/api_ns/interface/include

@@ -83,15 +83,6 @@ int bmp388_trigger_set(
 {
 	struct bmp388_data *data = dev->data;
 
-#ifdef CONFIG_PM_DEVICE
-	enum pm_device_state state;
-
-	(void)pm_device_state_get(dev, &state);
-	if (state != PM_DEVICE_STATE_ACTIVE) {
-		return -EBUSY;
-	}
-#endif
-
 	if (trig->type != SENSOR_TRIG_DATA_READY) {
 		return -ENOTSUP;
 	}
@@ -118,7 +109,7 @@ int bmp388_trigger_mode_init(const struct device *dev)
 	int ret;
 
 	if (!gpio_is_ready_dt(&cfg->gpio_int)) {
-		LOG_ERR("INT device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->gpio_int.port);
 		return -ENODEV;
 	}
 

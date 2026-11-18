@@ -50,7 +50,7 @@ static struct {
 } event;
 
 /* Entropy device */
-static const struct device *const dev_entropy = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
+static const struct device *dev_entropy;
 
 static int init_reset(void);
 #if defined(CONFIG_BT_CTLR_LOW_LAT_ULL_DONE)
@@ -120,6 +120,8 @@ static void swi_ull_low_rv32m1_isr(const void *arg)
 int lll_init(void)
 {
 	int err;
+
+	dev_entropy = entropy_get_default_device();
 
 	/* Check if entropy device is ready */
 	if (!device_is_ready(dev_entropy)) {
@@ -385,16 +387,7 @@ int lll_clk_off(void)
 
 uint32_t lll_event_offset_get(struct ull_hdr *ull)
 {
-	if (0) {
-#if defined(CONFIG_BT_CTLR_XTAL_ADVANCED)
-	} else if (ull->ticks_prepare_to_start & XON_BITMASK) {
-		return MAX(ull->ticks_active_to_start,
-			   ull->ticks_preempt_to_start);
-#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
-	} else {
-		return MAX(ull->ticks_active_to_start,
-			   ull->ticks_prepare_to_start);
-	}
+	return HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
 }
 
 uint32_t lll_preempt_calc(struct ull_hdr *ull, uint8_t ticker_id,
@@ -674,9 +667,8 @@ static uint32_t preempt_ticker_start(struct lll_event *evt,
 	p = &evt->prepare_param;
 	ull = HDR_LLL2ULL(p->param);
 	preempt_anchor = p->ticks_at_expire;
-	preempt_to = MAX(ull->ticks_active_to_start,
-			 ull->ticks_prepare_to_start) -
-		     ull->ticks_preempt_to_start;
+	preempt_to = HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US) -
+		     HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_PREEMPT_MIN_US);
 
 	/* Setup pre empt timeout */
 	ret = ticker_start(TICKER_INSTANCE_ID_CTLR,

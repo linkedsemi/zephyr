@@ -5,21 +5,26 @@
  */
 
 #include "creds/creds.h"
-#include "dhcp.h"
 
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <zephyr/posix/netinet/in.h>
+#include <zephyr/posix/sys/socket.h>
+#include <zephyr/posix/arpa/inet.h>
+#include <zephyr/posix/unistd.h>
+#include <zephyr/posix/netdb.h>
+#include <zephyr/posix/poll.h>
+
 #include <zephyr/net/socket.h>
 #include <zephyr/net/dns_resolve.h>
 #include <zephyr/net/mqtt.h>
-#include <zephyr/net/sntp.h>
 #include <zephyr/net/tls_credentials.h>
 #include <zephyr/data/json.h>
 #include <zephyr/random/random.h>
-#include <zephyr/posix/time.h>
 #include <zephyr/logging/log.h>
+#include "net_sample_common.h"
 
 
 #if defined(CONFIG_MBEDTLS_MEMORY_DEBUG)
@@ -71,7 +76,7 @@ static int setup_credentials(void)
 {
 	int ret;
 
-	ret = tls_credential_add(TLS_TAG_DEVICE_CERTIFICATE, TLS_CREDENTIAL_SERVER_CERTIFICATE,
+	ret = tls_credential_add(TLS_TAG_DEVICE_CERTIFICATE, TLS_CREDENTIAL_PUBLIC_CERTIFICATE,
 				 public_cert, public_cert_len);
 	if (ret < 0) {
 		LOG_ERR("Failed to add device certificate: %d", ret);
@@ -88,7 +93,7 @@ static int setup_credentials(void)
 	ret = tls_credential_add(TLS_TAG_AWS_CA_CERTIFICATE, TLS_CREDENTIAL_CA_CERTIFICATE, ca_cert,
 				 ca_cert_len);
 	if (ret < 0) {
-		LOG_ERR("Failed to add device private key: %d", ret);
+		LOG_ERR("Failed to add ca certificate: %d", ret);
 		goto exit;
 	}
 
@@ -129,6 +134,7 @@ static int publish_message(const char *topic, size_t topic_len, uint8_t *payload
 	struct mqtt_publish_param msg;
 
 	msg.retain_flag = 0u;
+	msg.dup_flag = 0u;
 	msg.message.topic.topic.utf8 = topic;
 	msg.message.topic.topic.size = topic_len;
 	msg.message.topic.qos = CONFIG_AWS_QOS;
@@ -415,30 +421,10 @@ void aws_client_loop(void)
 	}
 
 cleanup:
-	mqtt_disconnect(&client_ctx);
+	mqtt_disconnect(&client_ctx, NULL);
 
 	close(fds.fd);
 	fds.fd = -1;
-}
-
-int sntp_sync_time(void)
-{
-	int rc;
-	struct sntp_time now;
-	struct timespec tspec;
-
-	rc = sntp_simple(SNTP_SERVER, SYS_FOREVER_MS, &now);
-	if (rc == 0) {
-		tspec.tv_sec = now.seconds;
-		tspec.tv_nsec = ((uint64_t)now.fraction * (1000lu * 1000lu * 1000lu)) >> 32;
-
-		clock_settime(CLOCK_REALTIME, &tspec);
-
-		LOG_DBG("Acquired time from NTP server: %u", (uint32_t)tspec.tv_sec);
-	} else {
-		LOG_ERR("Failed to acquire SNTP, code %d\n", rc);
-	}
-	return rc;
 }
 
 static int resolve_broker_addr(struct sockaddr_in *broker)
@@ -473,13 +459,9 @@ static int resolve_broker_addr(struct sockaddr_in *broker)
 
 int main(void)
 {
-#if defined(CONFIG_NET_DHCPV4)
-	app_dhcpv4_startup();
-#endif
-
-	sntp_sync_time();
-
 	setup_credentials();
+
+	wait_for_network();
 
 	for (;;) {
 		resolve_broker_addr(&aws_broker);
@@ -491,7 +473,7 @@ int main(void)
 
 		mbedtls_memory_buffer_alloc_cur_get(&cur_used, &cur_blocks);
 		mbedtls_memory_buffer_alloc_max_get(&max_used, &max_blocks);
-		LOG_INF("mbedTLS heap usage: MAX %u/%u (%u) CUR %u (%u)", max_used,
+		LOG_INF("Mbed TLS heap usage: MAX %u/%u (%u) CUR %u (%u)", max_used,
 			CONFIG_MBEDTLS_HEAP_SIZE, max_blocks, cur_used, cur_blocks);
 #endif
 

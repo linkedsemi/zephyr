@@ -63,7 +63,7 @@ static int vnd_gpio_port_toggle_bits(const struct device *port,
 	return -ENOTSUP;
 }
 
-static const struct gpio_driver_api vnd_gpio_api = {
+static DEVICE_API(gpio, vnd_gpio_api) = {
 	.pin_configure = vnd_gpio_pin_configure,
 	.port_get_raw = vnd_gpio_port_get_raw,
 	.port_set_masked_raw = vnd_gpio_port_set_masked_raw,
@@ -74,9 +74,7 @@ static const struct gpio_driver_api vnd_gpio_api = {
 
 #define VND_GPIO_INIT(n)						\
 	static const struct vnd_gpio_config vnd_gpio_config_##n = {	\
-		.common = {						\
-			.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(n), \
-		},							\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),		\
 	};								\
 									\
 	static struct vnd_gpio_data vnd_gpio_data_##n;			\

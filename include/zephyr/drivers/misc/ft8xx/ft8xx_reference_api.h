@@ -9,8 +9,8 @@
  * @brief FT8XX reference API
  */
 
-#ifndef ZEPHYR_DRIVERS_MISC_FT8XX_FT8XX_REFERENCE_API_H_
-#define ZEPHYR_DRIVERS_MISC_FT8XX_FT8XX_REFERENCE_API_H_
+#ifndef ZEPHYR_INCLUDE_DRIVERS_MISC_FT8XX_FT8XX_REFERENCE_API_H_
+#define ZEPHYR_INCLUDE_DRIVERS_MISC_FT8XX_FT8XX_REFERENCE_API_H_
 
 #include <stdint.h>
 
@@ -46,7 +46,7 @@ extern "C" {
  */
 static inline void wr8(uint32_t address, uint8_t data)
 {
-	ft8xx_wr8(address, data);
+	ft8xx_wr8(DEVICE_DT_GET_ONE(ftdi_ft800), address, data);
 }
 
 /**
@@ -57,7 +57,7 @@ static inline void wr8(uint32_t address, uint8_t data)
  */
 static inline void wr16(uint32_t address, uint16_t data)
 {
-	ft8xx_wr16(address, data);
+	ft8xx_wr16(DEVICE_DT_GET_ONE(ftdi_ft800), address, data);
 }
 
 /**
@@ -68,7 +68,7 @@ static inline void wr16(uint32_t address, uint16_t data)
  */
 static inline void wr32(uint32_t address, uint32_t data)
 {
-	ft8xx_wr32(address, data);
+	ft8xx_wr32(DEVICE_DT_GET_ONE(ftdi_ft800), address, data);
 }
 
 /**
@@ -80,7 +80,7 @@ static inline void wr32(uint32_t address, uint32_t data)
  */
 static inline uint8_t rd8(uint32_t address)
 {
-	return ft8xx_rd8(address);
+	return ft8xx_rd8(DEVICE_DT_GET_ONE(ftdi_ft800), address);
 }
 
 /**
@@ -92,7 +92,7 @@ static inline uint8_t rd8(uint32_t address)
  */
 static inline uint16_t rd16(uint32_t address)
 {
-	return ft8xx_rd16(address);
+	return ft8xx_rd16(DEVICE_DT_GET_ONE(ftdi_ft800), address);
 }
 
 /**
@@ -104,7 +104,7 @@ static inline uint16_t rd16(uint32_t address)
  */
 static inline uint32_t rd32(uint32_t address)
 {
-	return ft8xx_rd32(address);
+	return ft8xx_rd32(DEVICE_DT_GET_ONE(ftdi_ft800), address);
 }
 
 
@@ -152,7 +152,7 @@ static inline uint32_t rd32(uint32_t address)
  */
 static inline void cmd(uint32_t command)
 {
-	ft8xx_copro_cmd(command);
+	ft8xx_copro_cmd(DEVICE_DT_GET_ONE(ftdi_ft800), command);
 }
 
 /**
@@ -160,7 +160,7 @@ static inline void cmd(uint32_t command)
  */
 static inline void cmd_dlstart(void)
 {
-	ft8xx_copro_cmd_dlstart();
+	ft8xx_copro_cmd_dlstart(DEVICE_DT_GET_ONE(ftdi_ft800));
 }
 
 /**
@@ -168,7 +168,147 @@ static inline void cmd_dlstart(void)
  */
 static inline void cmd_swap(void)
 {
-	ft8xx_copro_cmd_swap();
+	ft8xx_copro_cmd_swap(DEVICE_DT_GET_ONE(ftdi_ft800));
+}
+
+/**
+ * @brief Set the foreground color
+ *
+ * New foreground color, as a 24-bit RGB number. Red is the most significant 8
+ * bits, blue is the least. So 0xff0000 is bright red. Foreground color is
+ * applicable for things that the user can move such as handles and buttons
+ * ("affordances").
+ *
+ * @param c Color to set
+ */
+static inline void cmd_fgcolor(uint32_t c)
+{
+	ft8xx_copro_cmd_fgcolor(DEVICE_DT_GET_ONE(ftdi_ft800), c);
+}
+
+/**
+ * @brief Set the background color
+ *
+ * New background color, as a 24-bit RGB number. Red is the most significant 8
+ * bits, blue is the least. So 0xff0000 is bright red.
+ * Background color is applicable for things that the user cannot move. Example
+ * behind gauges and sliders etc.
+ *
+ * @param c Color to set
+ */
+static inline void cmd_bgcolor(uint32_t c)
+{
+	ft8xx_copro_cmd_bgcolor(DEVICE_DT_GET_ONE(ftdi_ft800), c);
+}
+
+/**
+ * @brief Draw a slider
+ *
+ * If width is greater than height, the scroll bar is drawn horizontally.
+ * If height is greater than width, the scroll bar is drawn vertically.
+ *
+ * By default the slider is drawn with a 3D effect. @ref FT8XX_OPT_FLAT removes
+ * the 3D effect.
+ *
+ * @param x x-coordinate of slider top-left, in pixels
+ * @param y y-coordinate of slider top-left, in pixels
+ * @param w Width of slider, in pixels
+ * @param h Height of slider, in pixels
+ * @param options Options to apply
+ * @param val Displayed value of slider, between 0 and range inclusive
+ * @param range Maximum value
+ */
+static inline void cmd_slider(int16_t x,
+			      int16_t y,
+			      int16_t w,
+			      int16_t h,
+			      uint16_t options,
+			      uint16_t val,
+			      uint16_t range)
+{
+	ft8xx_copro_cmd_slider(DEVICE_DT_GET_ONE(ftdi_ft800), x, y, w, h, options, val,
+			       range);
+}
+
+/**
+ * @brief Draw a toggle switch
+ *
+ * By default the toggle is drawn with a 3D effect and the value option is zero.
+ * @ref FT8XX_OPT_FLAT removes the 3D effect and its value is 256.
+ *
+ * In @p s, a character value of 255 (it can be written as @c \\xff ) separates
+ * the off and on labels.
+ *
+ * @param x x-coordinate of top-left of toggle, in pixels
+ * @param y y-coordinate of top-left of toggle, in pixels
+ * @param w Width of toggle, in pixels
+ * @param font Font to use for text, 0-31. 16-31 are ROM fonts
+ * @param options Options to apply
+ * @param state State of the toggle: 0 is off, 65535 is on
+ * @param s String label for toggle
+ */
+static inline void cmd_toggle(int16_t x,
+			      int16_t y,
+			      int16_t w,
+			      int16_t font,
+			      uint16_t options,
+			      uint16_t state,
+			      const char *s)
+{
+	ft8xx_copro_cmd_toggle(DEVICE_DT_GET_ONE(ftdi_ft800), x, y, w, font, options,
+			       state, s);
+}
+
+/**
+ * @brief Track touches for a graphics object
+ *
+ * This command will enable co-processor engine to track the touch on the
+ * particular graphics object with one valid tag value assigned. Then,
+ * co-processor engine will update the REG_TRACKER periodically with the frame
+ * rate of LCD display panel.
+ *
+ * Co-processor engine tracks the graphics object in rotary tracker mode and
+ * linear tracker mode:
+ *
+ * - Rotary tracker mode
+ *   Track the angle between the touching point and the center of graphics
+ *   object specified by @p tag value. The value is in units of 1/65536 of a
+ *   circle. 0 means that the angle is straight down, 0x4000 left, 0x8000 up,
+ *   and 0xC000 right from the center.
+ * - Linear tracker mode
+ *   If @p w is greater than @p h, track the relative distance of touching point
+ *   to the width of graphics object specified by @p tag value. If @p w is not
+ *   greater than @p h, track the relative distance of touching point to the
+ *   height of graphics object specified by @p tag value. The value is in units
+ *   of 1/65536 of the width or height of graphics object. The distance of
+ *   touching point refers to the distance from the top left pixel of graphics
+ *   object to the coordinate of touching point.
+ *
+ * For linear tracker functionality, @p x represents x-coordinate of track area
+ * top-left and @p y represents y-coordinate of track area top-left. Both
+ * parameters are in pixels.
+ *
+ * For rotary tracker functionality, @p x represents x-coordinate of track area
+ * center and @p y represents y-coordinate of track area center. Both
+ * parameters are in pixels.
+ *
+ * @note A @p w and @p h of (1,1) means that the tracker is rotary, and reports
+ *       an angle value in REG_TRACKER. A @p w and @p h of (0,0) disables the
+ *       track functionality of co-processor engine.
+ *
+ * @param x x-coordinate
+ * @param y y-coordinate
+ * @param w Width of track area, in pixels.
+ * @param h Height of track area, in pixels.
+ * @param tag Tag of the graphics object to be tracked, 1-255
+ */
+static inline void cmd_track(int16_t x,
+			     int16_t y,
+			     int16_t w,
+			     int16_t h,
+			     int16_t tag)
+{
+	ft8xx_copro_cmd_track(DEVICE_DT_GET_ONE(ftdi_ft800), x, y, w, h, tag);
 }
 
 /**
@@ -191,7 +331,7 @@ static inline void cmd_text(int16_t x,
 			   uint16_t options,
 			   const char *s)
 {
-	ft8xx_copro_cmd_text(x, y, font, options, s);
+	ft8xx_copro_cmd_text(DEVICE_DT_GET_ONE(ftdi_ft800), x, y, font, options, s);
 }
 
 /**
@@ -218,7 +358,7 @@ static inline void cmd_number(int16_t x,
 			     uint16_t options,
 			     int32_t n)
 {
-	ft8xx_copro_cmd_number(x, y, font, options, n);
+	ft8xx_copro_cmd_number(DEVICE_DT_GET_ONE(ftdi_ft800), x, y, font, options, n);
 }
 
 /**
@@ -234,7 +374,7 @@ static inline void cmd_number(int16_t x,
  */
 static inline void cmd_calibrate(uint32_t *result)
 {
-	ft8xx_copro_cmd_calibrate(result);
+	ft8xx_copro_cmd_calibrate(DEVICE_DT_GET_ONE(ftdi_ft800), result);
 }
 
 
@@ -626,4 +766,4 @@ enum ft8xx_register_address_t {
 }
 #endif
 
-#endif /* ZEPHYR_DRIVERS_MISC_FT8XX_FT8XX_REFERENCE_API_H_ */
+#endif /* ZEPHYR_INCLUDE_DRIVERS_MISC_FT8XX_FT8XX_REFERENCE_API_H_ */

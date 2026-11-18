@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
+/**
  * @file
  * @brief load/store portion of FPU sharing test
  *
@@ -46,7 +46,7 @@
 #endif /* __GNUC__ */
 #elif defined(CONFIG_ARM)
 #if defined(CONFIG_ARMV7_M_ARMV8_M_FP) || defined(CONFIG_ARMV7_R_FP) || defined(CONFIG_CPU_HAS_VFP)
-#if defined(__GNUC__)
+#if defined(__GNUC__) || defined(__ICCARM__)
 #include "float_regs_arm_gcc.h"
 #else
 #include "float_regs_arm_other.h"
@@ -104,8 +104,10 @@ static K_SEM_DEFINE(test_exit_sem, 0, 1);
  *
  * @ingroup kernel_fpsharing_tests
  *
- * @see k_sched_time_slice_set(), memset(),
- * _load_all_float_registers(), _store_all_float_registers()
+ * @see k_sched_time_slice_set()
+ * @see memset()
+ * @see _load_all_float_registers()
+ * @see _store_all_float_registers()
  */
 static void load_store_low(void)
 {
@@ -315,6 +317,17 @@ K_THREAD_DEFINE(load_low, THREAD_STACK_SIZE, load_store_low, NULL, NULL, NULL,
 K_THREAD_DEFINE(load_high, THREAD_STACK_SIZE, load_store_high, NULL, NULL, NULL,
 		THREAD_HIGH_PRIORITY, THREAD_FP_FLAGS, K_TICKS_FOREVER);
 
+/**
+ * @brief Test preservation of the floating point context across context switches
+ *
+ * @details Run two FP-capable threads that continuously load a unique set of
+ * values into all floating point registers and, after being switched out and
+ * back in, verify the register contents are unchanged. This exercises the
+ * kernel saving and restoring each thread's floating point context across
+ * context switches.
+ *
+ * @ingroup kernel_fpsharing_tests
+ */
 ZTEST(fpu_sharing_generic, test_load_store)
 {
 	/* Initialise test states */

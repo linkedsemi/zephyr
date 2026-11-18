@@ -196,7 +196,7 @@ static int gpio_ad559x_pin_interrupt_configure(const struct device *dev,
 	return -ENOTSUP;
 }
 
-static const struct gpio_driver_api gpio_ad559x_api = {
+static DEVICE_API(gpio, gpio_ad559x_api) = {
 	.pin_configure = gpio_ad559x_configure,
 	.port_get_raw = gpio_ad559x_port_get_raw,
 	.port_set_masked_raw = gpio_ad559x_port_set_masked_raw,
@@ -219,10 +219,7 @@ static int gpio_ad559x_init(const struct device *dev)
 
 #define GPIO_AD559X_DEFINE(inst)							\
 	static const struct gpio_ad559x_config gpio_ad559x_config##inst = {		\
-		.common = {								\
-			.port_pin_mask =						\
-			GPIO_PORT_PIN_MASK_FROM_DT_INST(inst),				\
-		},									\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(inst),			\
 		.mfd_dev = DEVICE_DT_GET(DT_INST_PARENT(inst)),				\
 	};										\
 											\

@@ -1,4 +1,4 @@
-.. _reel_board:
+.. zephyr:board:: reel_board
 
 reel board
 ##########
@@ -6,16 +6,17 @@ reel board
 Overview
 ********
 
-`reel board`_ is a evaluation board based on the Nordic Semiconductor
-nRF52840 SoC. The board was developed by PHYTEC Messtechnik GmbH in
-cooperation with Zephyr Project for the Hackathon - "Get Connected".
-The board has a built-in debug adapter based on the DAPLink interface
-firmware and NXP MK20DX128VFM5 SoC.
+The `reel board`_ is an evaluation board based on the Nordic
+Semiconductor nRF52840 SoC. The board was developed by PHYTEC
+Messtechnik GmbH in cooperation with Zephyr Project for the
+Hackathon - "Get Connected". The board has a built-in debug adapter
+based on the DAPLink interface firmware and NXP MK20DX128VFM5 SoC.
 
-It is equipped with the Electrophoretic (electronic ink) Display (EPD),
+It is equipped with an Electrophoretic (electronic ink) Display (EPD),
 environmental (temperature, humidity, light, accelerometer) sensors, and
 Bluetooth connectivity making it easy to experiment and evaluate the
-Zephyr OS in these kinds of use cases:
+wide range of feature offered by Zephyr RTOS.
+In the following are some ideas for applications that can be built with the reel board:
 
 * battery powered sensor node
 * low-power, low-cost human-machine interface (HMI) for remote
@@ -24,21 +25,21 @@ Zephyr OS in these kinds of use cases:
 * product, name or price tag
 * interactive badge for meetings and conferences
 
-The board provides support for the Nordic Semiconductor nRF52840 ARM |reg|
-Cortex |reg|-M4F SoC with an integrated 2.4 GHz transceiver supporting Bluetooth
-|reg| Low Energy and IEEE |reg| 802.15.4.
+The board provides support for the Nordic Semiconductor nRF52840 ARM®
+Cortex®-M4F SoC with an integrated 2.4 GHz transceiver supporting Bluetooth®
+Low Energy and IEEE® 802.15.4.
 
 The schematic can be found on the `reel board website`_.
 
 Hardware
 ********
 
-On the front of the board are RGB-LED, ADPS9960 and HDC1010 sensors,
-and Electrophoretic Display.
-The RGB-LED is controlled by the nRF52840 via GPIO pins.
-Display is controlled by the nRF52840 via SPI and 3 GPIOs.
+On the front of the board is an RGB LED, ADPS9960 and HDC1010 sensors,
+and an Electrophoretic Display.
+The RGB LED is controlled by the nRF52840 via GPIO pins.
+The display is controlled by the nRF52840 via SPI and 3 GPIOs.
 
-On the back side of the board are all other components such as nRF52840,
+On the back side of the board are all other components such as the nRF52840,
 a circuit for the Debug Adapter, On/Off and power source switch, battery holder,
 buttons and the MMA8652FC (accelerometer) sensor.
 
@@ -62,6 +63,8 @@ which can be used as an interrupt source.
 
 Since PCB version 1507.2, the nRF52840 SoC is not soldered directly to
 the board but integrated as a module on a NOTM.2 adapter.
+This makes the board more flexible and allows the user to choose
+other SoCs.
 The wiring is identical for versions 1507.1 and 1507.2.
 
 .. _reel_board_display:
@@ -97,7 +100,7 @@ power source configurations, battery and micro USB connector.
 
 The On/Off switch can choose which power source is used.
 
-reel board uses a TPS610981 boost converter to generate supply voltage
+A TPS610981 boost converter is used to generate supply voltage
 for nRF52840 and peripherals (sensors and EPD).
 The boost converter has two modes:
 
@@ -114,37 +117,7 @@ The mode is controlled by MODE pin (P1.00).
 Supported Features
 ==================
 
-The reel_board board configuration supports the following
-hardware features:
-
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| NVIC      | on-chip    | nested vectored      |
-|           |            | interrupt controller |
-+-----------+------------+----------------------+
-| RTC       | on-chip    | system clock         |
-+-----------+------------+----------------------+
-| UART      | on-chip    | serial port          |
-+-----------+------------+----------------------+
-| I2C       | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| PWM       | on-chip    | pwm                  |
-+-----------+------------+----------------------+
-| SPI       | on-chip    | spi                  |
-+-----------+------------+----------------------+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| FLASH     | on-chip    | flash                |
-+-----------+------------+----------------------+
-| RADIO     | on-chip    | Bluetooth            |
-+-----------+------------+----------------------+
-| SENSOR    | off-chip   | MMA8652FC polling:   |
-|           |            | ADPS9960 polling:    |
-|           |            | HDC1010 polling      |
-+-----------+------------+----------------------+
-
-Other hardware features have not been enabled yet for this board.
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -395,7 +368,7 @@ link board BASE
 link board BASE is a passive expansion board and allows other link boards or
 third party shields in Arduino UNO R3 format to be connected to the reel board.
 In addition, it includes a NOTM.2 connector and more powerful DCDC converter
-then reel board.
+than the reel board.
 
 .. figure:: img/rb_lb_shield.jpg
      :align: center
@@ -563,4 +536,4 @@ References
    https://www.phytec.de/reelboard/
 
 .. _DAPLink reel board Firmware:
-   https://github.com/PHYTEC-Messtechnik-GmbH/DAPLink/tree/reel-board
+   https://github.com/phytec/DAPLink/tree/reel-board

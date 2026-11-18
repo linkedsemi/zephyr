@@ -1,5 +1,6 @@
 /*
  * Copyright 2023 NXP
+ * Copyright (c) 2024 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -22,14 +23,25 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util_macro.h>
+#include <zephyr/toolchain.h>
 #include <zephyr/types.h>
 
 #include "audio_internal.h"
 
 LOG_MODULE_REGISTER(bt_tmap, CONFIG_BT_TMAP_LOG_LEVEL);
 
+/* TMAP mandates the support for CAP Handover if it supports both UMS and BMS */
+BUILD_ASSERT(!(IS_ENABLED(CONFIG_BT_TMAP_UMS_SUPPORTED) &&
+	       IS_ENABLED(CONFIG_BT_TMAP_BMS_SUPPORTED)) ||
+		     IS_ENABLED(CONFIG_BT_CAP_HANDOVER),
+	     "If both TMAP UMS is supported and TMAP BMS is supported, CONFIG_BT_CAP_HANDOVER "
+	     "shall be enabled");
+
 /* Hex value if all TMAP role bits are set */
-#define TMAP_ALL_ROLES		0x3F
+#define TMAP_ALL_ROLES                                                                             \
+	(BT_TMAP_ROLE_CG | BT_TMAP_ROLE_CT | BT_TMAP_ROLE_UMS | BT_TMAP_ROLE_UMR |                 \
+	 BT_TMAP_ROLE_BMS | BT_TMAP_ROLE_BMR)
 
 static uint16_t tmap_role;
 static const struct bt_tmap_cb *cb;
@@ -44,6 +56,8 @@ uint8_t tmap_char_read(struct bt_conn *conn, uint8_t err,
 		       const void *data, uint16_t length)
 {
 	uint16_t peer_role;
+
+	ARG_UNUSED(params);
 
 	/* Check read request result */
 	if (err != BT_ATT_ERR_SUCCESS) {
@@ -109,7 +123,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 		/* Discovered TMAS - Search for TMAP Role characteristic */
 		err = bt_gatt_discover(conn, &discover_params[conn_id]);
-		if (err) {
+		if (err != 0) {
 			LOG_DBG("Discover failed (err %d)\n", err);
 		}
 	} else if (!bt_uuid_cmp(discover_params[conn_id].uuid, BT_UUID_GATT_TMAPR)) {
@@ -155,14 +169,65 @@ static ssize_t read_role(struct bt_conn *conn,
 static struct bt_gatt_attr svc_attrs[] = { BT_TMAS_SERVICE_DEFINITION };
 static struct bt_gatt_service tmas;
 
+static bool valid_tmap_role(enum bt_tmap_role role)
+{
+	if (role == 0U || (role & TMAP_ALL_ROLES) != role) {
+		LOG_DBG("Invalid role %d", role);
+	}
+
+	if ((role & BT_TMAP_ROLE_CG) != 0 && !IS_ENABLED(CONFIG_BT_TMAP_CG_SUPPORTED)) {
+		LOG_DBG("Device does not support the CG role");
+
+		return false;
+	}
+
+	if ((role & BT_TMAP_ROLE_CT) != 0 && !IS_ENABLED(CONFIG_BT_TMAP_CT_SUPPORTED)) {
+		LOG_DBG("Device does not support the CT role");
+
+		return false;
+	}
+
+	if ((role & BT_TMAP_ROLE_UMS) != 0 && !IS_ENABLED(CONFIG_BT_TMAP_UMS_SUPPORTED)) {
+		LOG_DBG("Device does not support the UMS role");
+
+		return false;
+	}
+
+	if ((role & BT_TMAP_ROLE_UMR) != 0 && !IS_ENABLED(CONFIG_BT_TMAP_UMR_SUPPORTED)) {
+		LOG_DBG("Device does not support the UMR role");
+
+		return false;
+	}
+
+	if ((role & BT_TMAP_ROLE_BMS) != 0 && !IS_ENABLED(CONFIG_BT_TMAP_BMS_SUPPORTED)) {
+		LOG_DBG("Device does not support the BMS role");
+
+		return false;
+	}
+
+	if ((role & BT_TMAP_ROLE_BMR) != 0 && !IS_ENABLED(CONFIG_BT_TMAP_BMR_SUPPORTED)) {
+		LOG_DBG("Device does not support the BMR role");
+
+		return false;
+	}
+
+	return true;
+}
+
 int bt_tmap_register(enum bt_tmap_role role)
 {
 	int err;
 
+	if (!valid_tmap_role(role)) {
+		LOG_DBG("Invalid role: %d", role);
+
+		return -EINVAL;
+	}
+
 	tmas = (struct bt_gatt_service)BT_GATT_SERVICE(svc_attrs);
 
 	err = bt_gatt_service_register(&tmas);
-	if (err) {
+	if (err != 0) {
 		LOG_DBG("Could not register the TMAS service");
 		return -ENOEXEC;
 	}

@@ -13,6 +13,8 @@
 #ifndef ZEPHYR_INCLUDE_NET_TLS_CREDENTIALS_H_
 #define ZEPHYR_INCLUDE_NET_TLS_CREDENTIALS_H_
 
+#include <stddef.h>
+
 /**
  * @brief TLS credentials management
  * @defgroup tls_credentials TLS credentials management
@@ -26,6 +28,8 @@
 extern "C" {
 #endif
 
+#include <time.h>
+
 /** TLS credential types */
 enum tls_credential_type {
 	/** Unspecified credential. */
@@ -36,11 +40,11 @@ enum tls_credential_type {
 	 */
 	TLS_CREDENTIAL_CA_CERTIFICATE,
 
-	/** A public server certificate. Use this to register your own server
+	/** A public client or server certificate. Use this to register your own
 	 *  certificate. Should be registered together with a corresponding
 	 *  private key. Used with certificate-based ciphersuites.
 	 */
-	TLS_CREDENTIAL_SERVER_CERTIFICATE,
+	TLS_CREDENTIAL_PUBLIC_CERTIFICATE,
 
 	/** Private key. Should be registered together with a corresponding
 	 *  public certificate. Used with certificate-based ciphersuites.
@@ -55,7 +59,17 @@ enum tls_credential_type {
 	/** Pre-shared key identity. Should be registered together with a
 	 *  corresponding PSK. Used with PSK-based ciphersuites.
 	 */
-	TLS_CREDENTIAL_PSK_ID
+	TLS_CREDENTIAL_PSK_ID,
+
+	/** Private key resident in PSA. The credential buffer holds a
+	 *  @c psa_key_id_t referencing a key already present in PSA (for example
+	 *  one generated on-device with @c psa_generate_key()), not the key
+	 *  material itself. The key never leaves PSA: handshake signatures are
+	 *  performed through @c psa_sign_hash(). Should be registered together
+	 *  with a corresponding public certificate, in place of
+	 *  @ref TLS_CREDENTIAL_PRIVATE_KEY.
+	 */
+	TLS_CREDENTIAL_PRIVATE_KEY_PSA
 };
 
 /** Secure tag, a reference to TLS credential
@@ -64,14 +78,18 @@ enum tls_credential_type {
  * in the system.
  *
  * @note Some TLS credentials come in pairs:
- *    - TLS_CREDENTIAL_SERVER_CERTIFICATE with TLS_CREDENTIAL_PRIVATE_KEY,
+ *    - TLS_CREDENTIAL_PUBLIC_CERTIFICATE with TLS_CREDENTIAL_PRIVATE_KEY,
  *    - TLS_CREDENTIAL_PSK with TLS_CREDENTIAL_PSK_ID.
- *    Such pairs of credentials must be assigned the same secure tag to be
- *    correctly handled in the system.
+ *    Such pairs of credentials should generally be assigned the same secure tag
+ *    when used with subsystems that support fetching multiple credentials per tag,
+ *    such as TLS sockets. However, note that certain subsystems or implementations
+ *    may expect only one credential per secure tag.
  *
  * @note Negative values are reserved for internal use.
  */
 typedef int sec_tag_t;
+
+#define SEC_TAG_TLS_INVALID (-1) /**< Invalid secure tag value. */
 
 /**
  * @brief Add a TLS credential.
@@ -107,6 +125,7 @@ int tls_credential_add(sec_tag_t tag, enum tls_credential_type type,
  * @retval -EACCES Access to the TLS credential subsystem was denied.
  * @retval -ENOENT Requested TLS credential was not found.
  * @retval -EFBIG Requested TLS credential does not fit in the buffer provided.
+ *                Check *credlen for size required.
  */
 int tls_credential_get(sec_tag_t tag, enum tls_credential_type type,
 		       void *cred, size_t *credlen);
@@ -125,6 +144,20 @@ int tls_credential_get(sec_tag_t tag, enum tls_credential_type type,
  * @retval -ENOENT Requested TLS credential was not found.
  */
 int tls_credential_delete(sec_tag_t tag, enum tls_credential_type type);
+
+/**
+ * @brief Get the expiry time of a TLS credential.
+ *
+ * @param tag The security tag of the TLS credential.
+ * @param type The type of the TLS credential.
+ * @param expiry Pointer to store the expiry time.
+ *
+ * @retval 0 TLS credential expiry time successfully obtained.
+ * @retval -EACCES Access to the TLS credential subsystem was denied.
+ * @retval -ENOENT Requested TLS credential was not found.
+ * @retval -ENOTSUP TLS credential storage does not support expiry time retrieval.
+ */
+int tls_credential_expiry(sec_tag_t tag, enum tls_credential_type type, time_t *expiry);
 
 #ifdef __cplusplus
 }

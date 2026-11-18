@@ -2,19 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-    STM32 QSPI device representation. A stm32 quadspi node would typically
-    looks to this:
-
-        &quadspi {
-            pinctrl-0 = <&quadspi_clk_pe10 &quadspi_ncs_pe11
-                         &quadspi_bk1_io0_pe12 &quadspi_bk1_io1_pe13
-                         &quadspi_bk1_io2_pe14 &quadspi_bk1_io3_pe15>;
-
-            dmas = <&dma1 5 5 0x0000 0x03>;
-            dma-names = "tx_rx";
-
-            status = "okay";
-        };
+    STM32 QSPI Controller.
 
 compatible: "st,stm32-qspi"
 
@@ -59,6 +47,13 @@ properties:
       For example
          dma-names = "tx_rx";
 
+  ssht-enable:
+    type: boolean
+    description: |
+      Enables Sample Shifting half-cycle.
+
+      It is recommended to be enabled in STR mode and disabled in DTR mode.
+
   dual-flash:
     type: boolean
     description: |
@@ -78,3 +73,16 @@ properties:
 
       For example
          flash-id = <2>;
+
+examples:
+  - |
+    &quadspi {
+      pinctrl-0 = <&quadspi_clk_pe10 &quadspi_ncs_pe11
+                   &quadspi_bk1_io0_pe12 &quadspi_bk1_io1_pe13
+                   &quadspi_bk1_io2_pe14 &quadspi_bk1_io3_pe15>;
+
+      dmas = <&dma1 5 5 0x0000 0x03>;
+      dma-names = "tx_rx";
+
+      status = "okay";
+    };

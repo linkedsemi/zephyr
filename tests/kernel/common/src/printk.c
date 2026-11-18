@@ -65,7 +65,7 @@ char expected_32[] = "22 113 10000 32768 40000 22\n"
 	"42 42 42 42\n"
 	"42 42 42 42\n"
 	"25542abcdef  42\n"
-#if defined(_WANT_MINIMAL_IO_LONG_LONG)
+#if defined(_WANT_MINIMAL_IO_LONG_LONG) || defined(__IO_MINIMAL_LONG_LONG)
 	"68719476735 -1 18446744073709551615 ffffffffffffffff\n"
 #else
 	"-1 -1 4294967295 ffffffff\n"
@@ -181,17 +181,40 @@ static int ram_console_out(int character)
 	pos = (pos + 1) % BUF_SZ;
 	return _old_char_out(character);
 }
+
 /**
- * @addtogroup kernel_common_tests
+ * @defgroup kernel_printk_tests Printk
+ * @ingroup all_tests
+ * @{
+ * @}
+ *
+ * @addtogroup kernel_printk_tests
  * @{
  */
 
 /**
- * @brief Test printk() functionality
+ * @brief Verify printk() and snprintk() format a wide range of conversions correctly.
  *
- * @see printk(), __printk_get_hook(),
- * __printk_hook_install(), snprintk()
+ * @ingroup kernel_printk_tests
  *
+ * @details
+ * Validates that the kernel's formatted-output path produces byte-for-byte the
+ * expected text for integer width/sign/padding specifiers, hexadecimal, pointers
+ * and 64-bit values, both when streamed through the console hook (printk) and when
+ * rendered into a buffer (snprintk). Passing proves the formatting engine and the
+ * console output-hook mechanism behave identically and match the reference output.
+ *
+ * Test steps:
+ * - Install a RAM console output hook capturing every emitted character.
+ * - Emit a fixed series of printk() format strings covering size/char/short/int/long/
+ *   long-long, hex, width, zero/space padding, left-justify and pointer conversions.
+ * - Restore the original hook and compare the captured buffer to the expected string.
+ * - Render the same series with snprintk() into a buffer and compare to the expected string.
+ *
+ * Expected result:
+ * - Both the captured printk output and the snprintk buffer equal the expected string.
+ *
+ * @see printk()
  */
 ZTEST(printk, test_printk)
 {
@@ -253,9 +276,9 @@ ZTEST(printk, test_printk)
 	zassert_str_equal(pk_console, expected, "snprintk failed");
 }
 
-extern void *common_setup(void);
-ZTEST_SUITE(printk, NULL, common_setup, NULL, NULL, NULL);
 
 /**
  * @}
  */
+extern void *common_setup(void);
+ZTEST_SUITE(printk, NULL, common_setup, NULL, NULL, NULL);

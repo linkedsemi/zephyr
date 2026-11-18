@@ -38,7 +38,8 @@ static inline int lsm9ds0_mfd_reboot_memory(const struct device *dev)
 	return 0;
 }
 
-#if !defined(LSM9DS0_MFD_ACCEL_DISABLED)
+#if !defined(LSM9DS0_MFD_ACCEL_DISABLED) && defined(CONFIG_LSM9DS0_MFD_ACCEL_SAMPLING_RATE_RUNTIME)
+
 static inline int lsm9ds0_mfd_accel_set_odr_raw(const struct device *dev,
 						uint8_t odr)
 {
@@ -49,7 +50,6 @@ static inline int lsm9ds0_mfd_accel_set_odr_raw(const struct device *dev,
 				      odr << LSM9DS0_MFD_SHIFT_CTRL_REG1_XM_AODR);
 }
 
-#if defined(CONFIG_LSM9DS0_MFD_ACCEL_SAMPLING_RATE_RUNTIME)
 static const struct {
 	int freq_int;
 	int freq_micro;
@@ -94,6 +94,8 @@ static inline int lsm9ds0_mfd_accel_set_fs_raw(const struct device *dev,
 	}
 
 #if defined(CONFIG_LSM9DS0_MFD_ACCEL_FULL_SCALE_RUNTIME)
+	struct lsm9ds0_mfd_data *data = dev->data;
+
 	data->accel_fs = fs;
 #endif
 
@@ -122,7 +124,6 @@ static int lsm9ds0_mfd_accel_set_fs(const struct device *dev, int val)
 	return -ENOTSUP;
 }
 #endif
-#endif
 
 #if !defined(LSM9DS0_MFD_MAGN_DISABLED)
 static inline int lsm9ds0_mfd_magn_set_odr_raw(const struct device *dev,
@@ -139,8 +140,7 @@ static inline int lsm9ds0_mfd_magn_set_odr_raw(const struct device *dev,
 static const struct {
 	int freq_int;
 	int freq_micro;
-} lsm9ds0_mfd_magn_odr_map[] = { {0, 0},
-				 {3, 125000},
+} lsm9ds0_mfd_magn_odr_map[] = { {3, 125000},
 				 {6, 250000},
 				 {12, 500000},
 				 {25, 0},
@@ -152,10 +152,10 @@ static int lsm9ds0_mfd_magn_set_odr(const struct device *dev,
 {
 	uint8_t i;
 
-	for (i = 0U; i < ARRAY_SIZE(lsm9ds0_mfd_accel_odr_map); ++i) {
-		if (val->val1 < lsm9ds0_mfd_accel_odr_map[i].freq_int ||
-		    (val->val1 == lsm9ds0_mfd_accel_odr_map[i].freq_int &&
-		     val->val2 <= lsm9ds0_mfd_accel_odr_map[i].freq_micro)) {
+	for (i = 0U; i < ARRAY_SIZE(lsm9ds0_mfd_magn_odr_map); ++i) {
+		if (val->val1 < lsm9ds0_mfd_magn_odr_map[i].freq_int ||
+		    (val->val1 == lsm9ds0_mfd_magn_odr_map[i].freq_int &&
+		     val->val2 <= lsm9ds0_mfd_magn_odr_map[i].freq_micro)) {
 			return lsm9ds0_mfd_magn_set_odr_raw(dev, i);
 		}
 	}
@@ -176,6 +176,8 @@ static inline int lsm9ds0_mfd_magn_set_fs_raw(const struct device *dev,
 	}
 
 #if defined(CONFIG_LSM9DS0_MFD_MAGN_FULL_SCALE_RUNTIME)
+	struct lsm9ds0_mfd_data *data = dev->data;
+
 	data->magn_fs = fs;
 #endif
 
@@ -550,10 +552,17 @@ static int lsm9ds0_mfd_channel_get(const struct device *dev,
 		return lsm9ds0_mfd_get_magn(dev, chan, val);
 #endif
 #if !defined(LSM9DS0_MFD_TEMP_DISABLED)
-	case SENSOR_CHAN_DIE_TEMP:
-		val->val1 = data->sample_temp;
-		val->val2 = 0;
-		return 0;
+	case SENSOR_CHAN_DIE_TEMP: {
+		/*
+		 * OUT_TEMP_[LH]_XM hold a 12-bit right-justified two's
+		 * complement value, 8 LSB/degC, relative to a ~25 degC
+		 * reference. Re-normalise the sign from bit 11 (a no-op when
+		 * the device already sign-extends bits 15:12) and convert.
+		 */
+		int32_t raw = sign_extend((uint32_t)(uint16_t)data->sample_temp, 11);
+
+		return sensor_value_from_micro(val, (int64_t)raw * 125000 + 25000000);
+	}
 #endif
 	default:
 		return -ENOTSUP;
@@ -634,7 +643,7 @@ static int lsm9ds0_mfd_attr_set(const struct device *dev,
 }
 #endif
 
-static const struct sensor_driver_api lsm9ds0_mfd_api_funcs = {
+static DEVICE_API(sensor, lsm9ds0_mfd_api_funcs) = {
 	.sample_fetch = lsm9ds0_mfd_sample_fetch,
 	.channel_get = lsm9ds0_mfd_channel_get,
 #if defined(LSM9DS0_MFD_ATTR_SET)
@@ -739,7 +748,7 @@ int lsm9ds0_mfd_init(const struct device *dev)
 	const struct lsm9ds0_mfd_config * const config = dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

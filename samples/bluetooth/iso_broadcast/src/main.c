@@ -1,10 +1,14 @@
 /*
- * Copyright (c) 2021 Nordic Semiconductor ASA
+ * Copyright (c) 2021-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stddef.h>
+#include <stdint.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/gap.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/iso.h>
 #include <zephyr/sys/byteorder.h>
 
@@ -28,9 +32,20 @@ static uint16_t seq_num;
 
 static void iso_connected(struct bt_iso_chan *chan)
 {
+	const struct bt_iso_chan_path hci_path = {
+		.pid = BT_ISO_DATA_PATH_HCI,
+		.format = BT_HCI_CODING_FORMAT_TRANSPARENT,
+	};
+	int err;
+
 	printk("ISO Channel %p connected\n", chan);
 
 	seq_num = 0U;
+
+	err = bt_iso_setup_data_path(chan, BT_HCI_DATAPATH_DIR_HOST_TO_CTLR, &hci_path);
+	if (err != 0) {
+		printk("Failed to setup ISO TX data path: %d\n", err);
+	}
 
 	k_sem_give(&sem_big_cmplt);
 }
@@ -78,7 +93,9 @@ static struct bt_iso_big_create_param big_create_param = {
 	.bis_channels = bis,
 	.interval = BIG_SDU_INTERVAL_US, /* in microseconds */
 	.latency = 10, /* in milliseconds */
-	.packing = 0, /* 0 - sequential, 1 - interleaved */
+	.packing = (IS_ENABLED(CONFIG_ISO_PACKING_INTERLEAVED) ?
+		    BT_ISO_PACKING_INTERLEAVED :
+		    BT_ISO_PACKING_SEQUENTIAL),
 	.framing = 0, /* 0 - unframed, 1 - framed */
 };
 
@@ -88,6 +105,20 @@ static const struct bt_data ad[] = {
 
 int main(void)
 {
+	/* Some controllers work best while Extended Advertising interval to be a multiple
+	 * of the ISO Interval minus 10 ms (max. advertising random delay). This is
+	 * required to place the AUX_ADV_IND PDUs in a non-overlapping interval with the
+	 * Broadcast ISO radio events.
+	 * For 10ms SDU interval a extended advertising interval of 60 - 10 = 50 is suitable
+	 */
+	const uint16_t adv_interval_ms = 60U;
+	const uint16_t ext_adv_interval_ms = adv_interval_ms - 10U;
+	const struct bt_le_adv_param *ext_adv_param = BT_LE_ADV_PARAM(
+		BT_LE_ADV_OPT_EXT_ADV, BT_GAP_MS_TO_ADV_INTERVAL(ext_adv_interval_ms),
+		BT_GAP_MS_TO_ADV_INTERVAL(ext_adv_interval_ms), NULL);
+	const struct bt_le_per_adv_param *per_adv_param = BT_LE_PER_ADV_PARAM(
+		BT_GAP_MS_TO_PER_ADV_INTERVAL(adv_interval_ms),
+		BT_GAP_MS_TO_PER_ADV_INTERVAL(adv_interval_ms), BT_LE_PER_ADV_OPT_NONE);
 	uint32_t timeout_counter = INITIAL_TIMEOUT_COUNTER;
 	struct bt_le_ext_adv *adv;
 	struct bt_iso_big *big;
@@ -106,7 +137,7 @@ int main(void)
 	}
 
 	/* Create a non-connectable advertising set */
-	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_NCONN, NULL, &adv);
+	err = bt_le_ext_adv_create(ext_adv_param, NULL, &adv);
 	if (err) {
 		printk("Failed to create advertising set (err %d)\n", err);
 		return 0;
@@ -120,7 +151,7 @@ int main(void)
 	}
 
 	/* Set periodic advertising parameters */
-	err = bt_le_per_adv_set_param(adv, BT_LE_PER_ADV_DEFAULT);
+	err = bt_le_per_adv_set_param(adv, per_adv_param);
 	if (err) {
 		printk("Failed to set periodic advertising parameters"
 		       " (err %d)\n", err);

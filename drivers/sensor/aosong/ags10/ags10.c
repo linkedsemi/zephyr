@@ -89,7 +89,7 @@ static int ags10_init(const struct device *dev)
 	int ret;
 
 	if (!i2c_is_ready_dt(&conf->bus)) {
-		LOG_ERR("Device not ready");
+		LOG_ERR_DEVICE_NOT_READY(conf->bus.bus);
 		return -ENODEV;
 	}
 
@@ -118,8 +118,10 @@ static int ags10_init(const struct device *dev)
 	return ret;
 }
 
-static const struct sensor_driver_api ags10_api = {.sample_fetch = ags10_sample_fetch,
-						   .channel_get = ags10_channel_get};
+static DEVICE_API(sensor, ags10_api) = {
+	.sample_fetch = ags10_sample_fetch,
+	.channel_get = ags10_channel_get,
+};
 
 #define AGS10_INIT(n)                                                                              \
 	static struct ags10_data ags10_data_##n;                                                   \

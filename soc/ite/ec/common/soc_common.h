@@ -16,7 +16,21 @@
 
 #ifndef _ASMLANGUAGE
 
+struct ite_clk_cfg {
+	uint8_t ctrl;
+	uint8_t bits;
+};
+
 #ifdef CONFIG_HAS_ITE_INTC
+
+#if CONFIG_NUM_IRQS <= 255
+typedef uint8_t ite_irq_t;
+#else
+BUILD_ASSERT(!IS_ENABLED(CONFIG_SOC_SERIES_IT8XXX2),
+	     "it8xxx2 SoC series only support 8-bit irq number size");
+typedef uint16_t ite_irq_t;
+#endif /* CONFIG_NUM_IRQS <= 255 */
+
 /*
  * Save current interrupt state of soc-level into ier_setting[] with
  * disabling interrupt.
@@ -27,7 +41,7 @@ void ite_intc_restore_interrupts(void);
 
 extern void ite_intc_irq_enable(unsigned int irq);
 extern void ite_intc_irq_disable(unsigned int irq);
-extern uint8_t ite_intc_get_irq_num(void);
+extern ite_irq_t ite_intc_get_irq_num(void);
 extern int ite_intc_irq_is_enable(unsigned int irq);
 extern void ite_intc_irq_polarity_set(unsigned int irq, unsigned int flags);
 extern void ite_intc_isr_clear(unsigned int irq);
@@ -43,11 +57,10 @@ uint32_t chip_get_pll_freq(void);
 void chip_pll_ctrl(enum chip_pll_mode mode);
 void riscv_idle(enum chip_pll_mode mode, unsigned int key);
 
-#ifdef CONFIG_SOC_IT8XXX2_CPU_IDLE_GATING
+/* Functions for managing the CPU idle state */
 void chip_permit_idle(void);
 void chip_block_idle(void);
 bool cpu_idle_not_allowed(void);
-#endif
 
 #endif /* !_ASMLANGUAGE */
 

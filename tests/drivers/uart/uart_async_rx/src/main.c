@@ -144,13 +144,51 @@ ZTEST(uart_async_rx, test_rx_late_consume)
 	zassert_equal(claim_len, 0);
 }
 
+ZTEST(uart_async_rx, test_rx_reclaim_empty_completed_buffers)
+{
+	uint8_t storage[40];
+	uint8_t *allocated[4];
+	uint8_t *claim_buf;
+	struct uart_async_rx async_rx;
+	const struct uart_async_rx_config config = {
+		.buffer = storage,
+		.length = sizeof(storage),
+		.buf_cnt = ARRAY_SIZE(allocated),
+	};
+	int err;
+
+	err = uart_async_rx_init(&async_rx, &config);
+	zassert_ok(err);
+
+	for (size_t i = 0; i < ARRAY_SIZE(allocated); i++) {
+		allocated[i] = uart_async_rx_buf_req(&async_rx);
+		zassert_not_null(allocated[i]);
+	}
+	zassert_is_null(uart_async_rx_buf_req(&async_rx));
+
+	for (size_t i = 0; i < ARRAY_SIZE(allocated); i++) {
+		uart_async_rx_on_buf_rel(&async_rx, allocated[i]);
+	}
+
+	claim_buf = allocated[0];
+	zassert_equal(uart_async_rx_data_claim(&async_rx, &claim_buf, 0), 0);
+	zassert_equal(claim_buf, allocated[0]);
+	zassert_is_null(uart_async_rx_buf_req(&async_rx));
+
+	zassert_equal(uart_async_rx_data_claim(&async_rx, &claim_buf, 1), 0);
+
+	for (size_t i = 0; i < ARRAY_SIZE(allocated); i++) {
+		zassert_equal(uart_async_rx_buf_req(&async_rx), allocated[i]);
+	}
+}
+
 struct test_async_rx {
 	struct uart_async_rx async_rx;
 	atomic_t pending_req;
 	atomic_t total_pending_req;
 	bool in_chunks;
 	uint8_t exp_consume;
-	uint32_t byte_cnt;
+	size_t byte_cnt;
 	uint8_t curr_len;
 	uint8_t *curr_buf;
 	uint8_t *next_buf;
@@ -215,7 +253,7 @@ static bool consumer(void *user_data, uint32_t cnt, bool last, int prio)
 
 		for (int j = 0; j < len; j++) {
 			zassert_equal(buf[j], test_data->exp_consume,
-					"%02x (exp:%02x) len:%d, total:%d",
+					"%02x (exp:%02x) len:%zu, total:%zu",
 					buf[j], test_data->exp_consume, len, test_data->byte_cnt);
 			test_data->exp_consume++;
 		}
@@ -313,7 +351,7 @@ static void stress_test(bool in_chunks)
 				&test_data, 0, 0, Z_TIMEOUT_TICKS(20)),
 		       ZTRESS_THREAD(consumer, &test_data, 0, preempt, Z_TIMEOUT_TICKS(20)));
 
-	TC_PRINT("total bytes: %d\n", test_data.byte_cnt);
+	TC_PRINT("total bytes: %zu\n", test_data.byte_cnt);
 	ztress_set_timeout(K_NO_WAIT);
 }
 

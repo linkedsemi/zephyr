@@ -19,6 +19,8 @@ extern "C" {
 
 /**
  * @defgroup json JSON
+ * @since 1.10
+ * @version 1.0.0
  * @ingroup utilities
  * @{
  */
@@ -35,6 +37,7 @@ enum json_tokens {
 	JSON_TOK_ARRAY_START = '[',
 	JSON_TOK_ARRAY_END = ']',
 	JSON_TOK_STRING = '"',
+	JSON_TOK_STRING_BUF = 's',
 	JSON_TOK_COLON = ':',
 	JSON_TOK_COMMA = ',',
 	JSON_TOK_NUMBER = '0',
@@ -44,8 +47,13 @@ enum json_tokens {
 	JSON_TOK_ENCODED_OBJ = '4',
 	JSON_TOK_INT64 = '5',
 	JSON_TOK_UINT64 = '6',
+	JSON_TOK_FLOAT_FP = '7',
+	JSON_TOK_DOUBLE_FP = '8',
+	JSON_TOK_INT = 'i',
+	JSON_TOK_UINT = 'u',
 	JSON_TOK_TRUE = 't',
 	JSON_TOK_FALSE = 'f',
+	JSON_TOK_MIXED_ARRAY = 'm',
 	JSON_TOK_NULL = 'n',
 	JSON_TOK_ERROR = '!',
 	JSON_TOK_EOF = '\0',
@@ -67,6 +75,22 @@ struct json_lexer {
 
 struct json_obj {
 	struct json_lexer lex;
+};
+
+/**
+ * @brief A single top-level "key": value member of a JSON object.
+ *
+ * Returned by @ref json_obj_next_key_value. Both the key and the value are raw
+ * spans into the parsed payload; the value is returned verbatim (its type is
+ * given by @c value.type) and is not decoded.
+ */
+struct json_obj_key_value {
+	/** Member key text (not NUL-terminated), or NULL at the end of the object. */
+	const char *key;
+	/** Length of the key text in bytes. */
+	size_t key_len;
+	/** Member value, returned as a raw token span. */
+	struct json_token value;
 };
 
 struct json_obj_token {
@@ -108,6 +132,9 @@ struct json_obj_descr {
 			const struct json_obj_descr *element_descr;
 			size_t n_elements;
 		} array;
+		struct {
+			size_t size;
+		} field;
 	};
 };
 
@@ -157,6 +184,9 @@ typedef int (*json_append_bytes_t)(const char *bytes, size_t len,
 		.field_name_len = sizeof(#field_name_) - 1, \
 		.type = type_, \
 		.offset = offsetof(struct_, field_name_), \
+		.field = { \
+			.size = SIZEOF_FIELD(struct_, field_name_) \
+		}, \
 	}
 
 /**
@@ -237,10 +267,21 @@ typedef int (*json_append_bytes_t)(const char *bytes, size_t len,
  * @param elem_descr_len_ Number of elements in elem_descr_
  */
 #define Z_JSON_DESCR_OBJ(elem_descr_, elem_descr_len_) \
-	{ \
 		.object = { \
 			.sub_descr = elem_descr_, \
 			.sub_descr_len = elem_descr_len_, \
+		}, \
+
+/**
+ * @internal @brief Helper macro to declare a field descriptor
+ *
+ * @param struct_ Struct packing the values
+ * @param field_name_ Field name in the struct
+ */
+#define Z_JSON_DESCR_FIELD(struct_, field_name_) \
+	{ \
+		.field = { \
+			.size = SIZEOF_FIELD(struct_, field_name_), \
 		}, \
 	}
 
@@ -276,7 +317,8 @@ typedef int (*json_append_bytes_t)(const char *bytes, size_t len,
 		.offset = offsetof(struct_, field_name_), \
 		.array = { \
 			.element_descr = Z_JSON_ELEMENT_DESCR(struct_, len_field_, \
-				elem_type_,), \
+				elem_type_, \
+				Z_JSON_DESCR_FIELD(struct_, field_name_[0])), \
 			.n_elements = (max_len_), \
 		}, \
 	}
@@ -449,6 +491,9 @@ typedef int (*json_append_bytes_t)(const char *bytes, size_t len,
 		.field_name_len = sizeof(json_field_name_) - 1, \
 		.type = type_, \
 		.offset = offsetof(struct_, struct_field_name_), \
+		.field = { \
+			.size = SIZEOF_FIELD(struct_, struct_field_name_) \
+		}, \
 	}
 
 /**
@@ -504,8 +549,9 @@ typedef int (*json_append_bytes_t)(const char *bytes, size_t len,
 		.type = JSON_TOK_ARRAY_START, \
 		.offset = offsetof(struct_, struct_field_name_), \
 		.array = { \
-			.element_descr = \
-				Z_JSON_ELEMENT_DESCR(struct_, len_field_, elem_type_,), \
+			.element_descr = Z_JSON_ELEMENT_DESCR(struct_, len_field_, \
+				elem_type_, \
+				Z_JSON_DESCR_FIELD(struct_, struct_field_name_[0])), \
 			.n_elements = (max_len_), \
 		}, \
 	}
@@ -586,6 +632,29 @@ typedef int (*json_append_bytes_t)(const char *bytes, size_t len,
  * accepted);
  * (2) no UTF-8 validation is performed; and
  * (3) only integer numbers are supported (no strtod() in the minimal libc).
+ *
+ * @note Polymorphic decoding: Multiple descriptors may share the same field
+ * name to handle fields that can contain different JSON types. This is
+ * primarily intended for scalar types, such as JSON-RPC style "id" fields
+ * that may be either a string or a number.
+ *
+ * When decoding fails for a descriptor, the behavior depends on the actual
+ * JSON token type:
+ *
+ * - Scalar tokens (strings, numbers, booleans): The parser continues to try
+ *   alternate descriptors, since no parsing occurred and the lexer state
+ *   remains valid.
+ *
+ * - Complex tokens (objects, arrays): The parser returns the error immediately,
+ *   since partial parsing may have corrupted the lexer state, making it unsafe
+ *   to continue with other descriptors.
+ *
+ * @warning Only members present in the document are written; an omitted
+ * member keeps whatever the target held before the call, so the struct must
+ * be initialised beforehand. The returned bitmap covers top-level descriptors
+ * only - not sub-object members or array elements past the decoded count -
+ * and is indexed by descriptor position, not document order. On a negative
+ * return, members decoded before the failure may already be written.
  *
  * @param json Pointer to JSON-encoded value to be parsed
  * @param len Length of JSON-encoded value
@@ -671,6 +740,52 @@ int json_arr_separate_object_parse_init(struct json_obj *json, char *payload, si
  */
 int json_arr_separate_parse_object(struct json_obj *json, const struct json_obj_descr *descr,
 				   size_t descr_len, void *val);
+
+/**
+ * @brief Initialize incremental parsing of a JSON object's members.
+ *
+ * JSON-encoded object data is going to be walked one top-level member at a time.
+ * Data is provided by @a payload with the size of @a len bytes.
+ *
+ * Validates that a JSON object start is detected and initializes @a json for
+ * member-by-member parsing with @ref json_obj_next_key_value. Unlike
+ * json_obj_parse(), no descriptor is required up front, which suits callers that
+ * dispatch each member to a handler chosen at run time.
+ *
+ * @param json Provide storage for parser state. To be used when walking the object.
+ * @param payload Pointer to JSON-encoded object to be parsed
+ * @param len Length of JSON-encoded object
+ *
+ * @return 0 if object start is detected and initialization is successful, or a
+ * negative error code in case of failure.
+ */
+int json_obj_separate_parse_init(struct json_obj *json, char *payload, size_t len);
+
+/**
+ * @brief Return the next top-level member of a JSON object.
+ *
+ * Walks one "key": value member of the object initialized by
+ * @ref json_obj_separate_parse_init. The value is returned as a raw, undecoded
+ * span in @a kv->value, leaving the caller to route it by key. A scalar spans the
+ * value text; an object or array spans the whole balanced @c {...} / @c [...]
+ * (its @c type is @ref JSON_TOK_OBJECT_START / @ref JSON_TOK_ARRAY_START). The
+ * value span can therefore be handed straight to a decoder such as
+ * json_obj_parse() or json_arr_parse(), per @a kv->value.type.
+ *
+ * @note @a kv->key and @a kv->value point into the @a payload buffer passed to
+ * @ref json_obj_separate_parse_init; they are borrowed and stay valid only as
+ * long as that buffer does. Copy the span out if a stable or mutable copy is
+ * needed (e.g. before parsing it in place).
+ *
+ * @param json Pointer to JSON-object parser state
+ * @param kv Pointer to storage for the returned key and value
+ *
+ * @return 0 on success with @a kv->key pointing at the member key and
+ * @a kv->value holding the raw value span; 0 at the end of the object with
+ * @a kv->key set to NULL; a negative error code on malformed input or on
+ * container nesting deeper than 64 levels.
+ */
+int json_obj_next_key_value(struct json_obj *json, struct json_obj_key_value *kv);
 
 /**
  * @brief Escapes the string so it can be used to encode JSON objects
@@ -783,6 +898,232 @@ int json_obj_encode(const struct json_obj_descr *descr, size_t descr_len,
  */
 int json_arr_encode(const struct json_obj_descr *descr, const void *val,
 		    json_append_bytes_t append_bytes, void *data);
+
+/**
+ * @brief Descriptor for a mixed-type JSON array.
+ *
+ * This structure describes a top-level JSON array whose elements may be
+ * of different types (primitives, objects, arrays, or nested mixed arrays).
+ * Each element in the array is described by an entry in a descriptor array.
+ *
+ * Mixed arrays are useful for parsing and encoding JSON arrays that do not
+ * have a homogeneous element type, such as:
+ *
+ *   [ "string", 42, { "foo": 1 }, [1,2,3], true ]
+ *
+ * @note This structure and its associated macros are intended for use with
+ *       the mixed array parsing and encoding APIs (see json_mixed_arr_parse()).
+ */
+struct json_mixed_arr_descr {
+	uint32_t type : 7;
+	size_t count_offset;
+
+	union {
+		struct {
+			size_t offset;
+			size_t size;
+		} primitive;
+
+		struct {
+			const struct json_obj_descr *sub_descr;
+			size_t sub_descr_len;
+			size_t offset;
+		} object;
+
+		struct {
+			const struct json_obj_descr *element_descr;
+			size_t n_elements;
+			size_t offset;
+		} array;
+
+		struct {
+			const struct json_mixed_arr_descr *sub_descr;
+			size_t sub_descr_len;
+			size_t offset;
+		} mixed_array;
+	};
+};
+
+/**
+ * @brief Helper macro to declare a mixed array primitive element descriptor.
+ *
+ * @param struct_		Struct containing the value.
+ * @param field_name_	Field name in the struct.
+ * @param type_		Token type for the JSON value (see enum json_tokens).
+ * @param count_field_	Field name in the struct for the number of elements.
+ *
+ * Example:
+ *	struct foo { int x; size_t x_count; };
+ *	const struct json_mixed_arr_descr foo_descr[] = {
+ *		JSON_MIXED_ARR_DESCR_PRIM(struct foo, x, JSON_TOK_NUMBER, x_count),
+ *	};
+ */
+#define JSON_MIXED_ARR_DESCR_PRIM(struct_, field_name_, type_, count_field_) \
+{ \
+	.type = type_, \
+	.count_offset = offsetof(struct_, count_field_), \
+	.primitive = { \
+	    .offset = offsetof(struct_, field_name_), \
+	    .size = SIZEOF_FIELD(struct_, field_name_) \
+	} \
+}
+
+/**
+ * @brief Helper macro to declare a mixed array object element descriptor.
+ *
+ * @param struct_		Struct containing the object.
+ * @param field_name_	Field name in the struct.
+ * @param sub_descr_	Array of json_obj_descr describing the object fields.
+ * @param count_field_	Field name in the struct for the number of elements.
+ *
+ * Example:
+ *	struct bar { int y; };
+ *	struct foo { struct bar b; size_t b_count; };
+ *	const struct json_obj_descr bar_descr[] = { ... };
+ *	const struct json_mixed_arr_descr foo_descr[] = {
+ *		JSON_MIXED_ARR_DESCR_OBJECT(struct foo, b, bar_descr, b_count),
+ *	};
+ */
+#define JSON_MIXED_ARR_DESCR_OBJECT(struct_, field_name_, sub_descr_, count_field_) \
+{ \
+	.type = JSON_TOK_OBJECT_START, \
+	.count_offset = offsetof(struct_, count_field_), \
+	.object = { \
+		.sub_descr = sub_descr_, \
+		.sub_descr_len = ARRAY_SIZE(sub_descr_), \
+		.offset = offsetof(struct_, field_name_) \
+	} \
+}
+
+/**
+ * @brief Helper macro to declare a mixed array homogeneous array element descriptor.
+ *
+ * @param struct_		Struct containing the array.
+ * @param field_name_	Field name in the struct.
+ * @param max_len_		Maximum number of elements in the array.
+ * @param elem_descr_	Element descriptor (pointer to json_obj_descr array).
+ * @param count_field_	Field name in the struct for the number of elements.
+ *
+ * Example:
+ *	struct foo {
+ *		int arr[4];
+ *		size_t arr_count;
+ *	};
+ *	const struct json_obj_descr arr_elem_descr[] = {
+ *		JSON_OBJ_DESCR_ARRAY(struct foo, arr, 4, arr_count, JSON_TOK_NUMBER),
+ *	};
+ *	const struct json_mixed_arr_descr foo_descr[] = {
+ *		JSON_MIXED_ARR_DESCR_ARRAY(struct foo, arr, 4, arr_elem_descr, arr_count),
+ *	};
+ */
+#define JSON_MIXED_ARR_DESCR_ARRAY(struct_, field_name_, max_len_, elem_descr_, count_field_) \
+{ \
+	.type = JSON_TOK_ARRAY_START, \
+	.count_offset = offsetof(struct_, count_field_), \
+	.array = { \
+		.element_descr = elem_descr_, \
+		.n_elements = (max_len_), \
+		.offset = offsetof(struct_, field_name_) \
+	} \
+}
+
+/**
+ * @brief Helper macro to declare a nested mixed array element descriptor.
+ *
+ * @param struct_		Struct containing the nested mixed array.
+ * @param field_name_	Field name in the struct.
+ * @param sub_descr_	Mixed array descriptor for the nested array.
+ * @param count_field_	Field name in the struct for the number of elements.
+ *
+ * Example:
+ *	struct foo { ...; size_t nested_count; };
+ *	const struct json_mixed_arr_descr nested_descr[] = { ... };
+ *	const struct json_mixed_arr_descr foo_descr[] = {
+ *		JSON_MIXED_ARR_DESCR_MIXED_ARRAY(struct foo, nested, nested_descr, nested_count),
+ *	};
+ */
+#define JSON_MIXED_ARR_DESCR_MIXED_ARRAY(struct_, field_name_, sub_descr_, count_field_) \
+{ \
+	.type = JSON_TOK_MIXED_ARRAY, \
+	.count_offset = offsetof(struct_, count_field_), \
+	.mixed_array = { \
+		.sub_descr = sub_descr_, \
+		.sub_descr_len = ARRAY_SIZE(sub_descr_), \
+		.offset = offsetof(struct_, field_name_) \
+	} \
+}
+
+/**
+ * @brief Parse a JSON mixed array into a C structure.
+ *
+ * This function parses a JSON array (which may contain elements of varying types)
+ * according to the provided mixed array descriptor and stores the result in the
+ * user-supplied structure.
+ *
+ * @param json		Pointer to the input JSON string.
+ * @param len		Length of the input JSON string.
+ * @param descr		Descriptor array describing the structure of the mixed array.
+ * @param descr_len	Number of elements in the descriptor array.
+ * @param val		Pointer to the structure to populate with parsed data.
+ *
+ * @return < 0 if error, number of elements parsed on success.
+ */
+int json_mixed_arr_parse(char *json, size_t len,
+			 const struct json_mixed_arr_descr *descr,
+			 size_t descr_len, void *val);
+
+/**
+ * @brief Encode a C structure as a JSON mixed array.
+ *
+ * This function encodes a C structure, described by the mixed array descriptor,
+ * as a JSON array.
+ *
+ * @param descr		Descriptor array describing the structure of the mixed array.
+ * @param descr_len	Number of elements in the descriptor array.
+ * @param val		Pointer to the structure to encode.
+ * @param append_bytes Function to append bytes to the output
+ * @param data Data pointer to be passed to the append_bytes callback
+ * function.
+ *
+ * @return 0 if mixed array has been successfully encoded. Negative error code on failure.
+ */
+int json_mixed_arr_encode(const struct json_mixed_arr_descr *descr,
+			  size_t descr_len, void *val,
+			  json_append_bytes_t append_bytes,
+			  void *data);
+
+/**
+ * @brief Encode a C structure as a JSON mixed array into a buffer.
+ *
+ * This function encodes a C structure, described by the mixed array descriptor,
+ * as a JSON array and writes the result into the provided buffer.
+ *
+ * @param descr		Descriptor array describing the structure of the mixed array.
+ * @param descr_len	Number of elements in the descriptor array.
+ * @param val		Pointer to the structure to encode.
+ * @param buffer	Output buffer to write the JSON string.
+ * @param buf_size	Size of the output buffer.
+ *
+ * @return 0 if mixed array has been successfully encoded. Negative error code on failure.
+ */
+int json_mixed_arr_encode_buf(const struct json_mixed_arr_descr *descr,
+			      size_t descr_len, void *val,
+			      char *buffer, size_t buf_size);
+
+/**
+ * @brief Calculate the length of the encoded JSON mixed array.
+ *
+ * This function calculates the number of bytes required to encode the given
+ * structure as a JSON mixed array, according to the provided descriptor.
+ *
+ * @param descr		Descriptor array describing the structure of the mixed array.
+ * @param descr_len	Number of elements in the descriptor array.
+ * @param val		Pointer to the structure to encode.
+ *
+ * @return		Number of bytes required for encoding, or negative error code.
+ */
+ssize_t json_calc_mixed_arr_len(const struct json_mixed_arr_descr *descr,
+				size_t descr_len, void *val);
 
 #ifdef __cplusplus
 }

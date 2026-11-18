@@ -11,13 +11,9 @@
 #include "st_morpho_connector.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
-
 / {
 	model = "STMicroelectronics STM32H503RB-NUCLEO board";
 	compatible = "st,stm32h503rb-nucleo";
-
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	chosen {
 		zephyr,console = &usart3;
@@ -28,6 +24,7 @@
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led_2: led_2 {
 			gpios = <&gpioa 5 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
@@ -36,6 +33,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -100,6 +98,13 @@
 	status = "okay";
 };
 
+&spi1 {
+	pinctrl-0 = <&spi1_sck_pa5 &spi1_miso_pa6 &spi1_mosi_pa7>;
+	pinctrl-names = "default";
+	cs-gpios = <&gpioc 9 GPIO_ACTIVE_LOW>;
+	status = "okay";
+};
+
 &rng {
 	status = "okay";
 };
@@ -111,6 +116,27 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb6 &i2c1_sda_pb7>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 6 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 7 GPIO_ACTIVE_HIGH>;
 	clock-frequency = <I2C_BITRATE_FAST>;
+	status = "okay";
+};
+
+&i3c1 {
+	pinctrl-0 = <&i3c1_scl_pb6 &i3c1_sda_pb7>;
+	pinctrl-names = "default";
+	/* By default I2C is used */
+	status = "disabled";
+
+	clocks = <&rcc STM32_CLOCK(APB1, 23U)>,
+		 <&rcc STM32_SRC_HSI I3C1_SEL(2)>;
+
+	i2c-scl-hz = <400000>;
+	i3c-scl-hz = <12500000>;
+};
+
+zephyr_udc0: &usb {
+	pinctrl-0 = <&usb_dm_pa11 &usb_dp_pa12>;
+	pinctrl-names = "default";
 	status = "okay";
 };

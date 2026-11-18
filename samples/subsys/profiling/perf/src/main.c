@@ -1,29 +1,32 @@
 /*
  *  Copyright (c) 2023 KNS Group LLC (YADRO)
+ *  Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  *  SPDX-License-Identifier: Apache-2.0
  */
 
 #include <zephyr/kernel.h>
+#include <zephyr/toolchain.h>
 #include <stdio.h>
+
+BUILD_ASSERT(IS_ENABLED(CONFIG_PROFILING_PERF),
+	     "The perf sample requires CONFIG_PROFILING_PERF");
 
 #define WAIT_KOEF 10000
 
-#define NOINLINE __attribute__((noinline))
-
-int NOINLINE func_0_0(void)
+int __noinline func_0_0(void)
 {
 	k_busy_wait(1*WAIT_KOEF);
 	return 0;
 }
 
-int NOINLINE func_0_1(void)
+int __noinline func_0_1(void)
 {
 	k_busy_wait(2*WAIT_KOEF);
 	return 0;
 }
 
-int NOINLINE func_0(void)
+int __noinline func_0(void)
 {
 	k_busy_wait(1*WAIT_KOEF);
 	func_0_0();
@@ -31,13 +34,13 @@ int NOINLINE func_0(void)
 	return 0;
 }
 
-int NOINLINE func_1(void)
+int __noinline func_1(void)
 {
 	k_busy_wait(3*WAIT_KOEF);
 	return 0;
 }
 
-int NOINLINE func_2(void)
+int __noinline func_2(void)
 {
 	k_busy_wait(4*WAIT_KOEF);
 	return 0;

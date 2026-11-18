@@ -275,13 +275,6 @@ static int uart_psoc6_irq_is_pending(const struct device *dev)
 	return (intcause & (CY_SCB_TX_INTR | CY_SCB_RX_INTR));
 }
 
-static int uart_psoc6_irq_update(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	return 1;
-}
-
 static void uart_psoc6_irq_callback_set(const struct device *dev,
 					uart_irq_callback_user_data_t cb,
 					void *cb_data)
@@ -303,7 +296,7 @@ static void uart_psoc6_isr(const struct device *dev)
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 
-static const struct uart_driver_api uart_psoc6_driver_api = {
+static DEVICE_API(uart, uart_psoc6_driver_api) = {
 	.poll_in = uart_psoc6_poll_in,
 	.poll_out = uart_psoc6_poll_out,
 	.err_check = uart_psoc6_err_check,
@@ -320,7 +313,6 @@ static const struct uart_driver_api uart_psoc6_driver_api = {
 	.irq_err_enable = uart_psoc6_irq_err_enable,
 	.irq_err_disable = uart_psoc6_irq_err_disable,
 	.irq_is_pending = uart_psoc6_irq_is_pending,
-	.irq_update = uart_psoc6_irq_update,
 	.irq_callback_set = uart_psoc6_irq_callback_set,
 #endif	/* CONFIG_UART_INTERRUPT_DRIVEN */
 };
@@ -355,7 +347,7 @@ static const struct uart_driver_api uart_psoc6_driver_api = {
 										\
 		CY_PSOC6_UART_IRQ_SET_FUNC(n)					\
 	};									\
-	DEVICE_DT_INST_DEFINE(n, &uart_psoc6_init, NULL,			\
+	DEVICE_DT_INST_DEFINE(n, uart_psoc6_init, NULL,				\
 			      CY_PSOC6_UART_DECL_DATA_PTR(n),			\
 			      &cy_psoc6_uart##n##_config, PRE_KERNEL_1,		\
 			      CONFIG_SERIAL_INIT_PRIORITY,			\

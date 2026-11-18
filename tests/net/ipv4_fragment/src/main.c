@@ -19,9 +19,11 @@ LOG_MODULE_REGISTER(net_ipv4_test, CONFIG_NET_IPV4_LOG_LEVEL);
 #include <zephyr/net/dummy.h>
 #include <zephyr/net_buf.h>
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_pkt.h>
+#include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
-#include <zephyr/posix/fcntl.h>
 #include <zephyr/net/socket.h>
+#include <zephyr/sys/byteorder.h>
 #include <net_private.h>
 #include <ipv4.h>
 #include <udp_internal.h>
@@ -31,12 +33,21 @@ LOG_MODULE_REGISTER(net_ipv4_test, CONFIG_NET_IPV4_LOG_LEVEL);
 #define IPV4_TEST_PACKET_SIZE 2048
 
 /* Wait times for semaphores and buffers */
-#define WAIT_TIME K_SECONDS(2)
+#define WAIT_TIME K_MSEC(1100)
 #define ALLOC_TIMEOUT K_MSEC(500)
 
+/* Reassembly error-path test packet parameters */
+#define REASS_ERR_FRAG_PAYLOAD  16
+#define REASS_ERR_UDP_DGRAM_LEN (REASS_ERR_FRAG_PAYLOAD * 3)
+#define REASS_ERR_FRAG_ID       0xA55A
+
 /* Dummy network addresses, 192.168.8.1 and 192.168.8.2 */
-static struct in_addr my_addr1 = { { { 0xc0, 0xa8, 0x08, 0x01 } } };
-static struct in_addr my_addr2 = { { { 0xc0, 0xa8, 0x08, 0x02 } } };
+static struct net_in_addr my_addr1 = { { { 0xc0, 0xa8, 0x08, 0x01 } } };
+static struct net_in_addr my_addr2 = { { { 0xc0, 0xa8, 0x08, 0x02 } } };
+
+/* Reassembly error-path test addresses, 192.0.2.1 and 192.0.2.2 */
+static struct net_in_addr reass_err_src_addr = { { { 0xc0, 0x00, 0x02, 0x01 } } };
+static struct net_in_addr reass_err_dst_addr = { { { 0xc0, 0x00, 0x02, 0x02 } } };
 
 /* IPv4 TCP packet header */
 static const unsigned char ipv4_tcp[] = {
@@ -152,6 +163,14 @@ static uint8_t net_iface_dummy_data;
 
 static void net_iface_init(struct net_if *iface);
 static int sender_iface(const struct device *dev, struct net_pkt *pkt);
+static int reass_err_rx_pkt_free_count(void);
+static void reass_err_ipv4_hdr_init(struct net_ipv4_hdr *hdr, uint16_t total_len,
+				    uint16_t offset_bytes, bool more);
+static void reass_err_fault_inject_noncontiguous_ipv4_hdr(struct net_pkt *pkt);
+static struct net_pkt *reass_err_make_udp_fragment(struct net_if *iface,
+						   const uint8_t *udp_dgram,
+						   uint16_t offset, uint16_t payload_len,
+						   bool more);
 
 static struct dummy_api net_iface_api = {
 	.iface_api.init = net_iface_init,
@@ -197,6 +216,51 @@ static void reassembly_foreach_cb(struct net_ipv4_reassembly *reassembly, void *
 	++*packets;
 }
 
+/* Reassembly timeout-vs-completion race test state */
+static K_SEM_DEFINE(race_reached, 0, 1);
+static K_SEM_DEFINE(race_resume, 0, 1);
+static K_THREAD_STACK_DEFINE(race_worker_stack, 2048);
+static struct k_thread race_worker;
+static struct net_pkt *race_final_frag;
+static struct net_ipv4_hdr race_final_hdr;
+static struct k_work_delayable *race_timer;
+static bool race_armed;
+
+/* CONFIG_TRACING_USER hook run on entry to k_work_cancel_delayable(), before
+ * the work lock is taken. Reassembly completion cancels the slot timer first;
+ * when armed for that timer, signal the test and block so the slot timeout
+ * can fire against the same slot. One-shot, so the timeout handler's own
+ * cancel passes straight through.
+ */
+void sys_trace_k_work_cancel_delayable_enter_user(struct k_work_delayable *dwork)
+{
+	if (race_armed && dwork == race_timer) {
+		race_armed = false;
+		k_sem_give(&race_reached);
+		k_sem_take(&race_resume, K_FOREVER);
+	}
+}
+
+/* Records the timer of the only active reassembly slot. */
+static void race_timer_cb(struct net_ipv4_reassembly *reassembly, void *data)
+{
+	ARG_UNUSED(data);
+
+	race_timer = &reassembly->timer;
+}
+
+/* Delivers the final fragment from its own thread so the main thread stays free
+ * to advance time while the completion path is paused in the hook.
+ */
+static void race_worker_fn(void *a, void *b, void *c)
+{
+	ARG_UNUSED(a);
+	ARG_UNUSED(b);
+	ARG_UNUSED(c);
+
+	(void)net_ipv4_handle_fragment_hdr(race_final_frag, &race_final_hdr);
+}
+
 /* Checks all IPv4 headers against expected values */
 static void check_ipv4_fragment_header(struct net_pkt *pkt, const uint8_t *orig_hdr, uint16_t id,
 				       uint16_t current_length, bool final)
@@ -205,6 +269,8 @@ static void check_ipv4_fragment_header(struct net_pkt *pkt, const uint8_t *orig_
 	uint16_t pkt_offset;
 	uint8_t pkt_flags;
 	const struct net_ipv4_hdr *hdr = NET_IPV4_HDR(pkt);
+	uint16_t chksum = 0;
+	int ret;
 
 	zassert_equal(hdr->vhl, orig_hdr[offsetof(struct net_ipv4_hdr, vhl)],
 		      "IPv4 header vhl mismatch");
@@ -220,8 +286,8 @@ static void check_ipv4_fragment_header(struct net_pkt *pkt, const uint8_t *orig_
 	zassert_mem_equal(hdr->dst, &orig_hdr[offsetof(struct net_ipv4_hdr, dst)],
 			  NET_IPV4_ADDR_SIZE, "IPv4 header destination IP mismatch");
 
-	pkt_len = ntohs(hdr->len);
-	pkt_offset = ntohs(*((uint16_t *)&hdr->offset));
+	pkt_len = net_ntohs(hdr->len);
+	pkt_offset = net_ntohs(*((uint16_t *)&hdr->offset));
 	pkt_flags = (pkt_offset & ~NET_IPV4_FRAGH_OFFSET_MASK) >> 13;
 	pkt_offset &= NET_IPV4_FRAGH_OFFSET_MASK;
 	pkt_offset *= 8;
@@ -234,7 +300,10 @@ static void check_ipv4_fragment_header(struct net_pkt *pkt, const uint8_t *orig_
 
 	zassert_equal(net_pkt_get_len(pkt), pkt_len, "IPv4 header length mismatch");
 	zassert_equal(pkt_offset, current_length, "IPv4 header length mismatch");
-	zassert_equal(net_calc_chksum_ipv4(pkt), 0, "IPv4 header checksum mismatch");
+
+	ret = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret, 0, "Calculation failed");
+	zassert_equal(chksum, 0, "IPv4 header checksum mismatch");
 }
 
 static int sender_iface(const struct device *dev, struct net_pkt *pkt)
@@ -369,6 +438,8 @@ static enum net_verdict udp_data_received(struct net_conn *conn, struct net_pkt 
 	uint16_t udp_dst_port;
 	uint16_t udp_len;
 	uint16_t udp_checksum;
+	int ret_chksum;
+	uint16_t chksum = 0;
 
 	/* Update counts */
 	++upper_layer_packet_count;
@@ -392,8 +463,8 @@ static enum net_verdict udp_data_received(struct net_conn *conn, struct net_pkt 
 	zassert_mem_equal(hdr->dst, &ipv4_udp[offsetof(struct net_ipv4_hdr, src)],
 			  NET_IPV4_ADDR_SIZE, "IPv4 header destination IP mismatch");
 
-	pkt_len = ntohs(hdr->len);
-	pkt_offset = ntohs(*((uint16_t *)&hdr->offset));
+	pkt_len = net_ntohs(hdr->len);
+	pkt_offset = net_ntohs(*((uint16_t *)&hdr->offset));
 	pkt_flags = (pkt_offset & ~NET_IPV4_FRAGH_OFFSET_MASK) >> 13;
 	pkt_offset &= NET_IPV4_FRAGH_OFFSET_MASK;
 	pkt_offset *= 8;
@@ -401,7 +472,10 @@ static enum net_verdict udp_data_received(struct net_conn *conn, struct net_pkt 
 	zassert_equal(pkt_flags, 0, "IPv4 header fragment flags mismatch");
 	zassert_equal(net_pkt_get_len(pkt), pkt_len, "IPv4 header length mismatch");
 	zassert_equal(pkt_offset, 0, "IPv4 header length mismatch");
-	zassert_equal(net_calc_chksum_ipv4(pkt), 0, "IPv4 header checksum mismatch");
+
+	ret_chksum = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret_chksum, 0, "Calculation failed");
+	zassert_equal(chksum, 0, "IPv4 header checksum mismatch");
 
 	/* Verify IPv4 UDP header is valid */
 	net_pkt_cursor_init(pkt);
@@ -450,6 +524,8 @@ static enum net_verdict tcp_data_received(struct net_conn *conn, struct net_pkt 
 	uint16_t tcp_window_size;
 	uint16_t tcp_checksum;
 	uint16_t tcp_urgent;
+	int ret_chksum;
+	uint16_t chksum = 0;
 
 	/* Update counts */
 	++upper_layer_packet_count;
@@ -473,8 +549,8 @@ static enum net_verdict tcp_data_received(struct net_conn *conn, struct net_pkt 
 	zassert_mem_equal(hdr->dst, &ipv4_tcp[offsetof(struct net_ipv4_hdr, src)],
 			  NET_IPV4_ADDR_SIZE, "IPv4 header destination IP mismatch");
 
-	pkt_len = ntohs(hdr->len);
-	pkt_offset = ntohs(*((uint16_t *)&hdr->offset));
+	pkt_len = net_ntohs(hdr->len);
+	pkt_offset = net_ntohs(*((uint16_t *)&hdr->offset));
 	pkt_flags = (pkt_offset & ~NET_IPV4_FRAGH_OFFSET_MASK) >> 13;
 	pkt_offset &= NET_IPV4_FRAGH_OFFSET_MASK;
 	pkt_offset *= 8;
@@ -482,7 +558,10 @@ static enum net_verdict tcp_data_received(struct net_conn *conn, struct net_pkt 
 	zassert_equal(pkt_flags, 0, "IPv4 header fragment flags mismatch");
 	zassert_equal(net_pkt_get_len(pkt), pkt_len, "IPv4 header length mismatch");
 	zassert_equal(pkt_offset, 0, "IPv4 header length mismatch");
-	zassert_equal(net_calc_chksum_ipv4(pkt), 0, "IPv4 header checksum mismatch");
+
+	ret_chksum = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret_chksum, 0, "Calculation failed");
+	zassert_equal(chksum, 0, "IPv4 header checksum mismatch");
 
 	/* Verify IPv4 UDP header is valid */
 	net_pkt_cursor_init(pkt);
@@ -524,42 +603,44 @@ static enum net_verdict tcp_data_received(struct net_conn *conn, struct net_pkt 
 	return NET_OK;
 }
 
-static void setup_udp_handler(const struct in_addr *raddr, const struct in_addr *laddr,
+static void setup_udp_handler(const struct net_in_addr *raddr, const struct net_in_addr *laddr,
 			      uint16_t remote_port, uint16_t local_port)
 {
 	static struct net_conn_handle *handle;
-	struct sockaddr remote_addr = { 0 };
-	struct sockaddr local_addr = { 0 };
+	struct net_sockaddr remote_addr = { 0 };
+	struct net_sockaddr local_addr = { 0 };
 	int ret;
 
 	net_ipaddr_copy(&net_sin(&local_addr)->sin_addr, laddr);
-	local_addr.sa_family = AF_INET;
+	local_addr.sa_family = NET_AF_INET;
 
 	net_ipaddr_copy(&net_sin(&remote_addr)->sin_addr, raddr);
-	remote_addr.sa_family = AF_INET;
+	remote_addr.sa_family = NET_AF_INET;
 
-	ret = net_udp_register(AF_INET, &local_addr, &remote_addr, local_port, remote_port, NULL,
+	ret = net_udp_register(NET_AF_INET, &local_addr, &remote_addr,
+			       local_port, remote_port, NULL,
 			       udp_data_received, NULL, &handle);
 
 	zassert_equal(ret, 0, "Cannot register UDP connection");
 }
 
-static void setup_tcp_handler(const struct in_addr *raddr, const struct in_addr *laddr,
+static void setup_tcp_handler(const struct net_in_addr *raddr, const struct net_in_addr *laddr,
 			      uint16_t remote_port, uint16_t local_port)
 {
 	static struct net_conn_handle *handle;
-	struct sockaddr remote_addr = { 0 };
-	struct sockaddr local_addr = { 0 };
+	struct net_sockaddr remote_addr = { 0 };
+	struct net_sockaddr local_addr = { 0 };
 	int ret;
 
 	net_ipaddr_copy(&net_sin(&local_addr)->sin_addr, laddr);
-	local_addr.sa_family = AF_INET;
+	local_addr.sa_family = NET_AF_INET;
 
 	net_ipaddr_copy(&net_sin(&remote_addr)->sin_addr, raddr);
-	remote_addr.sa_family = AF_INET;
+	remote_addr.sa_family = NET_AF_INET;
 
-	ret = net_conn_register(IPPROTO_TCP, AF_INET, &local_addr, &remote_addr, local_port,
-				remote_port, NULL, tcp_data_received, NULL, &handle);
+	ret = net_conn_register(NET_IPPROTO_TCP, NET_SOCK_STREAM, NET_AF_INET, &local_addr,
+				&remote_addr, local_port, remote_port, NULL,
+				tcp_data_received, NULL, &handle);
 
 	zassert_equal(ret, 0, "Cannot register TCP connection");
 }
@@ -601,14 +682,15 @@ ZTEST(net_ipv4_fragment, test_udp)
 	int ret;
 	uint16_t i;
 	uint16_t packet_len;
+	uint16_t chksum = 0;
 
 	/* Setup test variables */
 	active_test = TEST_UDP;
 	test_started = true;
 
 	/* Create packet */
-	pkt = net_pkt_alloc_with_buffer(iface1, sizeof(ipv4_udp) + IPV4_TEST_PACKET_SIZE, AF_INET,
-					IPPROTO_UDP, ALLOC_TIMEOUT);
+	pkt = net_pkt_alloc_with_buffer(iface1, sizeof(ipv4_udp) + IPV4_TEST_PACKET_SIZE,
+					NET_AF_INET, NET_IPPROTO_UDP, ALLOC_TIMEOUT);
 	zassert_not_null(pkt, "Packet creation failed");
 
 	/* Add IPv4 and UDP headers */
@@ -625,13 +707,16 @@ ZTEST(net_ipv4_fragment, test_udp)
 
 	/* Setup packet for insertion */
 	net_pkt_set_iface(pkt, iface1);
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
 
 	/* Update IPv4 headers */
 	packet_len = net_pkt_get_len(pkt);
-	NET_IPV4_HDR(pkt)->len = htons(packet_len);
-	NET_IPV4_HDR(pkt)->chksum = net_calc_chksum_ipv4(pkt);
+	NET_IPV4_HDR(pkt)->len = net_htons(packet_len);
+
+	ret = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret, 0, "Calculation failed");
+	NET_IPV4_HDR(pkt)->chksum = chksum;
 
 	net_pkt_cursor_init(pkt);
 	net_pkt_set_overwrite(pkt, true);
@@ -668,6 +753,7 @@ ZTEST(net_ipv4_fragment, test_tcp)
 	uint8_t tmp_buf[256];
 	uint16_t i;
 	uint16_t packet_len;
+	uint16_t chksum = 0;
 
 	/* Setup test variables */
 	active_test = TEST_TCP;
@@ -676,7 +762,7 @@ ZTEST(net_ipv4_fragment, test_tcp)
 	generate_dummy_data(tmp_buf, sizeof(tmp_buf));
 
 	pkt = net_pkt_alloc_with_buffer(iface1, (sizeof(ipv4_tcp) + IPV4_TEST_PACKET_SIZE),
-					AF_INET, IPPROTO_TCP, ALLOC_TIMEOUT);
+					NET_AF_INET, NET_IPPROTO_TCP, ALLOC_TIMEOUT);
 	zassert_not_null(pkt, "Packet creation failure");
 
 	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
@@ -694,13 +780,16 @@ ZTEST(net_ipv4_fragment, test_tcp)
 	}
 
 	net_pkt_set_iface(pkt, iface1);
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
 
 	packet_len = net_pkt_get_len(pkt);
 
-	NET_IPV4_HDR(pkt)->len = htons(packet_len);
-	NET_IPV4_HDR(pkt)->chksum = net_calc_chksum_ipv4(pkt);
+	NET_IPV4_HDR(pkt)->len = net_htons(packet_len);
+
+	ret = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret, 0, "Calculation failed");
+	NET_IPV4_HDR(pkt)->chksum = chksum;
 
 	net_pkt_cursor_init(pkt);
 	net_pkt_set_overwrite(pkt, true);
@@ -738,17 +827,18 @@ ZTEST(net_ipv4_fragment, test_fragment_timeout)
 	int ret;
 	uint8_t packets;
 	int sem_count;
+	uint16_t chksum = 0;
 
 	/* Setup test variables */
 	active_test = TEST_SINGLE_FRAGMENT;
 	test_started = true;
 
 	/* Create a packet for the test */
-	pkt = net_pkt_alloc_with_buffer(iface1, sizeof(ipv4_udp_frag), AF_INET,
-					IPPROTO_UDP, ALLOC_TIMEOUT);
+	pkt = net_pkt_alloc_with_buffer(iface1, sizeof(ipv4_udp_frag), NET_AF_INET,
+					NET_IPPROTO_UDP, ALLOC_TIMEOUT);
 	zassert_not_null(pkt, "Packet creation failure");
 
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
 
 	/* Create packet from base data */
@@ -759,7 +849,11 @@ ZTEST(net_ipv4_fragment, test_fragment_timeout)
 	/* Generate valid checksum for frame */
 	net_pkt_cursor_init(pkt);
 	net_pkt_set_overwrite(pkt, true);
-	NET_IPV4_HDR(pkt)->chksum = net_calc_chksum_ipv4(pkt);
+
+	ret = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret, 0, "Calculation failed");
+
+	NET_IPV4_HDR(pkt)->chksum = chksum;
 	net_pkt_set_overwrite(pkt, false);
 
 	pkt_recv_expected_size = sizeof(ipv4_icmp_reassembly_time);
@@ -776,7 +870,7 @@ ZTEST(net_ipv4_fragment, test_fragment_timeout)
 	zassert_equal(packets, 1, "Expected fragment to be present in buffer");
 
 	/* Delay briefly and re-check number of pending reassembly packets */
-	k_sleep(K_SECONDS(6));
+	k_sleep(K_MSEC(1100));
 	packets = 0;
 	net_ipv4_frag_foreach(reassembly_foreach_cb, &packets);
 	zassert_equal(packets, 0, "Expected fragment to be dropped after timeout");
@@ -790,7 +884,7 @@ ZTEST(net_ipv4_fragment, test_fragment_timeout)
 	zassert_equal(sem_count, 0, "Expected no complete upper-layer packets");
 
 	/* Check packet counts are valid */
-	k_sleep(K_SECONDS(1));
+	k_sleep(K_MSEC(500));
 	zassert_equal(lower_layer_packet_count, 1, "Expected 1 packet at lower layers");
 	zassert_equal(upper_layer_packet_count, 0, "Expected no packets at upper layers");
 	zassert_equal(last_packet_received, 1, "Expected last packet");
@@ -810,6 +904,7 @@ ZTEST(net_ipv4_fragment, test_do_not_fragment)
 	uint8_t tmp_buf[256];
 	uint16_t i;
 	uint16_t packet_len;
+	uint16_t chksum = 0;
 
 	/* Setup test variables */
 	active_test = TEST_NO_FRAGMENT;
@@ -821,7 +916,7 @@ ZTEST(net_ipv4_fragment, test_do_not_fragment)
 	/* Create packet */
 	pkt = net_pkt_alloc_with_buffer(iface1,
 					(sizeof(ipv4_udp_do_not_frag) + IPV4_TEST_PACKET_SIZE),
-					AF_INET, IPPROTO_UDP, ALLOC_TIMEOUT);
+					NET_AF_INET, NET_IPPROTO_UDP, ALLOC_TIMEOUT);
 	zassert_not_null(pkt, "Packet creation failed");
 
 	/* Add IPv4 and UDP headers */
@@ -838,13 +933,16 @@ ZTEST(net_ipv4_fragment, test_do_not_fragment)
 
 	/* Setup packet for insertion */
 	net_pkt_set_iface(pkt, iface1);
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 	net_pkt_set_ip_hdr_len(pkt, sizeof(struct net_ipv4_hdr));
 
 	/* Update IPv4 headers */
 	packet_len = net_pkt_get_len(pkt);
-	NET_IPV4_HDR(pkt)->len = htons(packet_len);
-	NET_IPV4_HDR(pkt)->chksum = net_calc_chksum_ipv4(pkt);
+	NET_IPV4_HDR(pkt)->len = net_htons(packet_len);
+
+	ret = net_calc_chksum_ipv4(pkt, &chksum);
+	zassert_equal(ret, 0, "Calculation failed");
+	NET_IPV4_HDR(pkt)->chksum = chksum;
 
 	net_pkt_cursor_init(pkt);
 	net_pkt_set_overwrite(pkt, true);
@@ -862,7 +960,7 @@ ZTEST(net_ipv4_fragment, test_do_not_fragment)
 		      "Expected timeout waiting for packet to be received");
 
 	/* Check packet counts are valid */
-	k_sleep(K_SECONDS(1));
+	k_sleep(K_MSEC(100));
 	zassert_equal(lower_layer_packet_count, 0, "Expected no packets at lower layers");
 	zassert_equal(upper_layer_packet_count, 0, "Expected no packets at upper layers");
 	zassert_equal(last_packet_received, 0, "Did not expect last packet");
@@ -873,8 +971,221 @@ ZTEST(net_ipv4_fragment, test_do_not_fragment)
 	zassert_equal(pkt_recv_size, pkt_recv_expected_size, "Packet size mismatch");
 }
 
+static int reass_err_rx_pkt_free_count(void)
+{
+	struct k_mem_slab *rx = NULL, *tx = NULL;
+	struct net_buf_pool *rx_data = NULL, *tx_data = NULL;
+
+	net_pkt_get_info(&rx, &tx, &rx_data, &tx_data);
+	zassert_not_null(rx);
+	return k_mem_slab_num_free_get(rx);
+}
+
+static void reass_err_ipv4_hdr_init(struct net_ipv4_hdr *hdr, uint16_t total_len,
+				    uint16_t offset_bytes, bool more)
+{
+	uint16_t off;
+
+	memset(hdr, 0, sizeof(*hdr));
+	hdr->vhl = 0x45;
+	hdr->ttl = 64;
+	hdr->proto = NET_IPPROTO_UDP;
+	sys_put_be16(total_len, (uint8_t *)&hdr->len);
+	sys_put_be16(REASS_ERR_FRAG_ID, hdr->id);
+	off = (offset_bytes / 8);
+	if (more) {
+		off |= NET_IPV4_MORE_FRAG_MASK;
+	}
+	sys_put_be16(off, hdr->offset);
+	memcpy(hdr->src, &reass_err_src_addr, sizeof(reass_err_src_addr));
+	memcpy(hdr->dst, &reass_err_dst_addr, sizeof(reass_err_dst_addr));
+}
+
+static void reass_err_fault_inject_noncontiguous_ipv4_hdr(struct net_pkt *pkt)
+{
+	size_t len;
+	uint8_t copy[NET_IPV4H_LEN + REASS_ERR_FRAG_PAYLOAD];
+	struct net_buf *frag;
+	struct net_buf *b0;
+	struct net_buf *b1;
+
+	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(access, struct net_ipv4_hdr);
+
+	len = net_pkt_get_len(pkt);
+	zassert_true(len >= NET_IPV4H_LEN && len <= sizeof(copy));
+	net_pkt_cursor_init(pkt);
+	zassert_ok(net_pkt_read(pkt, copy, len));
+
+	while (pkt->buffer) {
+		frag = pkt->buffer;
+		pkt->buffer = frag->frags;
+		frag->frags = NULL;
+		net_buf_unref(frag);
+	}
+
+	b0 = net_pkt_get_frag(pkt, 10, K_NO_WAIT);
+	zassert_not_null(b0);
+	net_buf_add_mem(b0, copy, 10);
+	net_pkt_frag_add(pkt, b0);
+
+	b1 = net_pkt_get_frag(pkt, len - 10, K_NO_WAIT);
+	zassert_not_null(b1);
+	net_buf_add_mem(b1, copy + 10, len - 10);
+	net_pkt_frag_add(pkt, b1);
+
+	net_pkt_set_overwrite(pkt, true);
+	net_pkt_set_ip_hdr_len(pkt, NET_IPV4H_LEN);
+	net_pkt_cursor_init(pkt);
+
+	zassert_false(net_pkt_is_contiguous(pkt, NET_IPV4H_LEN));
+	zassert_is_null(net_pkt_get_data(pkt, &access));
+}
+
+static struct net_pkt *reass_err_make_udp_fragment(struct net_if *iface,
+						   const uint8_t *udp_dgram,
+						   uint16_t offset, uint16_t payload_len,
+						   bool more)
+{
+	struct net_pkt *pkt;
+	struct net_ipv4_hdr hdr;
+	uint16_t total_len = NET_IPV4H_LEN + payload_len;
+
+	pkt = net_pkt_rx_alloc_with_buffer(iface, total_len, NET_AF_INET, NET_IPPROTO_UDP,
+					   K_NO_WAIT);
+	zassert_not_null(pkt);
+
+	reass_err_ipv4_hdr_init(&hdr, total_len, offset, more);
+	net_pkt_set_ip_hdr_len(pkt, NET_IPV4H_LEN);
+	net_pkt_set_ipv4_opts_len(pkt, 0);
+	net_pkt_set_iface(pkt, iface);
+	net_pkt_set_family(pkt, NET_AF_INET);
+
+	zassert_ok(net_pkt_write(pkt, &hdr, sizeof(hdr)));
+	zassert_ok(net_pkt_write(pkt, udp_dgram + offset, payload_len));
+	net_pkt_cursor_init(pkt);
+
+	return pkt;
+}
+
+ZTEST(net_ipv4_fragment, test_reassembly_error_path_cleanup)
+{
+	struct net_if *iface = net_if_get_default();
+	uint8_t udp_dgram[REASS_ERR_UDP_DGRAM_LEN];
+	struct net_pkt *frag0, *frag1, *frag2;
+	struct net_ipv4_hdr hdr0, hdr1, hdr2;
+	int free_before, free_after;
+	const int allocated = 3;
+
+	zassert_not_null(iface);
+
+	for (int i = 0; i < REASS_ERR_UDP_DGRAM_LEN; i++) {
+		udp_dgram[i] = (uint8_t)i;
+	}
+
+	frag0 = reass_err_make_udp_fragment(iface, udp_dgram, 0, REASS_ERR_FRAG_PAYLOAD, true);
+	frag1 = reass_err_make_udp_fragment(iface, udp_dgram, REASS_ERR_FRAG_PAYLOAD,
+					    REASS_ERR_FRAG_PAYLOAD, true);
+	frag2 = reass_err_make_udp_fragment(iface, udp_dgram, REASS_ERR_FRAG_PAYLOAD * 2,
+					    REASS_ERR_FRAG_PAYLOAD, false);
+
+	zassert_ok(net_pkt_read(frag0, &hdr0, sizeof(hdr0)));
+	net_pkt_cursor_init(frag0);
+	zassert_ok(net_pkt_read(frag1, &hdr1, sizeof(hdr1)));
+	net_pkt_cursor_init(frag1);
+	zassert_ok(net_pkt_read(frag2, &hdr2, sizeof(hdr2)));
+	net_pkt_cursor_init(frag2);
+
+	reass_err_fault_inject_noncontiguous_ipv4_hdr(frag1);
+	free_before = reass_err_rx_pkt_free_count();
+
+	zassert_equal(net_ipv4_handle_fragment_hdr(frag0, &hdr0), NET_OK);
+	zassert_equal(net_ipv4_handle_fragment_hdr(frag1, &hdr1), NET_OK);
+	zassert_equal(net_ipv4_handle_fragment_hdr(frag2, &hdr2), NET_OK);
+
+	free_after = reass_err_rx_pkt_free_count();
+
+	zassert_equal(free_after, free_before + allocated,
+		      "leaked %d of %d fragments (free count %d -> %d)",
+		      free_before + allocated - free_after, allocated,
+		      free_before, free_after);
+}
+
+/* Exercises the reassembly timeout against completion of the same slot.
+ *
+ * The final fragment drives reassembly completion while the per-slot timeout
+ * handler runs concurrently against the same slot. The timer cancel hook
+ * pins the interleaving: completion is paused at its cancel, the slot timeout
+ * is allowed to fire, then completion resumes. The timeout handler must wait
+ * for completion to finish rather than release the fragments under it, so
+ * reassembly completes and the slot is released.
+ */
+ZTEST(net_ipv4_fragment, test_reassembly_timeout_race)
+{
+	struct net_if *iface = net_if_get_default();
+	uint8_t udp_dgram[REASS_ERR_FRAG_PAYLOAD * 2];
+	struct net_pkt *frag0;
+	struct net_ipv4_hdr hdr0;
+	uint8_t packets;
+
+	zassert_not_null(iface);
+
+	for (unsigned int i = 0; i < sizeof(udp_dgram); i++) {
+		udp_dgram[i] = (uint8_t)i;
+	}
+
+	/* First fragment arms the slot timeout. */
+	frag0 = reass_err_make_udp_fragment(iface, udp_dgram, 0, REASS_ERR_FRAG_PAYLOAD, true);
+	zassert_ok(net_pkt_read(frag0, &hdr0, sizeof(hdr0)));
+	net_pkt_cursor_init(frag0);
+	zassert_equal(net_ipv4_handle_fragment_hdr(frag0, &hdr0), NET_OK);
+
+	packets = 0;
+	net_ipv4_frag_foreach(reassembly_foreach_cb, &packets);
+	zassert_equal(packets, 1, "Expected one pending reassembly");
+
+	race_timer = NULL;
+	net_ipv4_frag_foreach(race_timer_cb, NULL);
+	zassert_not_null(race_timer, "Reassembly slot timer not found");
+
+	/* Prepare the final fragment for delivery from the worker thread. */
+	race_final_frag = reass_err_make_udp_fragment(iface, udp_dgram, REASS_ERR_FRAG_PAYLOAD,
+						      REASS_ERR_FRAG_PAYLOAD, false);
+	zassert_ok(net_pkt_read(race_final_frag, &race_final_hdr, sizeof(race_final_hdr)));
+	net_pkt_cursor_init(race_final_frag);
+
+	race_armed = true;
+
+	k_thread_create(&race_worker, race_worker_stack,
+			K_THREAD_STACK_SIZEOF(race_worker_stack),
+			race_worker_fn, NULL, NULL, NULL,
+			K_PRIO_PREEMPT(0), 0, K_NO_WAIT);
+
+	/* Wait until completion is inside reassembly and paused. */
+	zassert_equal(k_sem_take(&race_reached, K_SECONDS(1)), 0,
+		      "Reassembly completion path was not reached");
+
+	/* Let the slot timeout fire while completion is paused. */
+	k_sleep(K_MSEC(CONFIG_NET_IPV4_FRAGMENT_TIMEOUT * 1000 + 200));
+
+	/* Resume completion. */
+	k_sem_give(&race_resume);
+
+	zassert_equal(k_thread_join(&race_worker, K_SECONDS(2)), 0,
+		      "Reassembly completion did not finish");
+
+	/* The slot must be released after completion. */
+	k_sleep(K_MSEC(100));
+	packets = 0;
+	net_ipv4_frag_foreach(reassembly_foreach_cb, &packets);
+	zassert_equal(packets, 0, "Reassembly slot was not released");
+}
+
 static void test_pre(void *ptr)
 {
+	race_armed = false;
+	k_sem_reset(&race_reached);
+	k_sem_reset(&race_resume);
+
 	k_sem_reset(&wait_data);
 	k_sem_reset(&wait_received_data);
 

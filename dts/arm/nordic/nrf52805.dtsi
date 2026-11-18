@@ -6,7 +6,7 @@
 
 #include <arm/armv7-m.dtsi>
 #include <nordic/nrf_common.dtsi>
-#include <zephyr/dt-bindings/adc/nrf-saadc-v2.h>
+#include <zephyr/dt-bindings/adc/nrf-saadc.h>
 #include <zephyr/dt-bindings/regulator/nrf5x.h>
 
 / {
@@ -27,7 +27,18 @@
 		};
 	};
 
+	clocks {
+		hfxo: hfxo {
+			compatible = "nordic,nrf52-hfxo";
+			clock-frequency = <64000000>;
+			startup-time-us = <1400>;
+			#clock-cells = <0>;
+		};
+	};
+
 	soc {
+		compatible = "simple-bus";
+
 		ficr: ficr@10000000 {
 			compatible = "nordic,nrf-ficr";
 			reg = <0x10000000 0x1000>;
@@ -38,11 +49,16 @@
 		uicr: uicr@10001000 {
 			compatible = "nordic,nrf-uicr";
 			reg = <0x10001000 0x1000>;
+			ranges = <0x0 0x10001000 0x1000>;
 			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		sram0: memory@20000000 {
 			compatible = "mmio-sram";
+			#address-cells = <1>;
+			#size-cells = <1>;
 		};
 
 		clock: clock@40000000 {
@@ -50,6 +66,16 @@
 			reg = <0x40000000 0x1000>;
 			interrupts = <0 NRF_DEFAULT_IRQ_PRIORITY>;
 			status = "okay";
+
+			hfclk: hfclk {
+				compatible = "nordic,nrf-clock-hfclk";
+				status = "okay";
+			};
+
+			lfclk: lfclk {
+				compatible = "nordic,nrf-clock-lfclk";
+				status = "okay";
+			};
 		};
 
 		power: power@40000000 {
@@ -162,9 +188,12 @@
 		adc: adc@40007000 {
 			compatible = "nordic,nrf-saadc";
 			reg = <0x40007000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
 			interrupts = <7 NRF_DEFAULT_IRQ_PRIORITY>;
 			status = "disabled";
 			#io-channel-cells = <1>;
+			zephyr,pm-device-runtime-auto;
 		};
 
 		timer0: timer@40008000 {
@@ -305,16 +334,20 @@
 		flash_controller: flash-controller@4001e000 {
 			compatible = "nordic,nrf52-flash-controller";
 			reg = <0x4001e000 0x1000>;
+			ranges;
 			partial-erase;
-
 			#address-cells = <1>;
 			#size-cells = <1>;
-
 
 			flash0: flash@0 {
 				compatible = "soc-nv-flash";
 				erase-block-size = <4096>;
 				write-block-size = <4>;
+				reg = <0x00000000 DT_SIZE_K(192)>;
+				ranges = <0x0 0x00000000 DT_SIZE_K(192)>;
+				status = "okay";
+				#address-cells = <1>;
+				#size-cells = <1>;
 			};
 		};
 

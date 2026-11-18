@@ -55,8 +55,9 @@
 
 	pinctrl-0 = <&spi1_default>;
 	pinctrl-names = "default";
+
 	bt-hci@0 {
-		compatible = "zephyr,bt-hci-spi-slave";
+		compatible = "zephyr,bt-hci-spi-peripheral";
 		reg = <0>;
 		irq-gpios = <&gpio0 28 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
 	};

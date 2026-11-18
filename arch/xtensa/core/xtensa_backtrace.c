@@ -6,21 +6,32 @@
 
 #include "xtensa/corebits.h"
 #include "xtensa_backtrace.h"
+#include <zephyr/arch/xtensa/xtensa_ptr.h>
 #include <zephyr/sys/printk.h>
-#if defined(CONFIG_SOC_SERIES_ESP32)
-#include <esp_memory_utils.h>
-#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
-#include "debug_helpers.h"
-#elif defined(CONFIG_SOC_XTENSA_DC233C)
-#include "backtrace_helpers.h"
-#endif
+#include <zephyr/arch/exception.h>
 
 #include <xtensa_asm2_context.h>
 #include <xtensa_stack.h>
 
-static int mask, cause;
+#include <zephyr/logging/log.h>
+LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
-static inline uint32_t xtensa_cpu_process_stack_pc(uint32_t pc)
+__weak bool xtensa_soc_stack_ptr_is_sane(uint32_t sp)
+{
+	return true;
+}
+
+__weak bool xtensa_soc_ptr_executable(const void *p)
+{
+	return true;
+}
+
+/* Default code region selector for the top two bits of a return address,
+ * used when the faulting PC cannot be trusted to supply one.
+ */
+#define XTENSA_BACKTRACE_DEFAULT_PC_MASK 0x40000000
+
+static inline uint32_t xtensa_cpu_process_stack_pc(uint32_t pc, uint32_t mask, int cause)
 {
 	if (pc & 0x80000000) {
 		/* Top two bits of a0 (return address) specify window increment.
@@ -29,7 +40,7 @@ static inline uint32_t xtensa_cpu_process_stack_pc(uint32_t pc)
 		if (cause != EXCCAUSE_INSTR_PROHIBITED) {
 			pc = (pc & 0x3fffffff) | mask;
 		} else {
-			pc = (pc & 0x3fffffff) | 0x40000000;
+			pc = (pc & 0x3fffffff) | XTENSA_BACKTRACE_DEFAULT_PC_MASK;
 		}
 	}
 	/* Minus 3 to get PC of previous instruction
@@ -42,18 +53,7 @@ static inline bool xtensa_stack_ptr_is_sane(uint32_t sp)
 {
 	bool valid;
 
-#if defined(CONFIG_SOC_SERIES_ESP32)
-	valid = esp_stack_ptr_is_sane(sp);
-#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
-	valid = intel_adsp_ptr_is_sane(sp);
-#else
-	/* Platform does not have additional requirements on
-	 * whether stack pointer is valid. So use the generic
-	 * test below.
-	 */
-	valid = true;
-#endif
-
+	valid = xtensa_soc_stack_ptr_is_sane(sp);
 	if (valid) {
 		valid = !xtensa_is_outside_stack_bounds(sp, 0, UINT32_MAX);
 	}
@@ -63,15 +63,7 @@ static inline bool xtensa_stack_ptr_is_sane(uint32_t sp)
 
 static inline bool xtensa_ptr_executable(const void *p)
 {
-#if defined(CONFIG_SOC_SERIES_ESP32)
-	return esp_ptr_executable(p);
-#elif defined(CONFIG_SOC_FAMILY_INTEL_ADSP)
-	return intel_adsp_ptr_executable(p);
-#elif defined(CONFIG_SOC_XTENSA_DC233C)
-	return xtensa_dc233c_ptr_executable(p);
-#else
-#warning "xtensa_ptr_executable is not defined for this platform"
-#endif
+	return xtensa_soc_ptr_executable(p);
 }
 
 bool xtensa_backtrace_get_next_frame(struct xtensa_backtrace_frame_t *frame)
@@ -101,8 +93,8 @@ bool xtensa_backtrace_get_next_frame(struct xtensa_backtrace_frame_t *frame)
 	 * false otherwise
 	 */
 	return (xtensa_stack_ptr_is_sane(frame->sp) &&
-			xtensa_ptr_executable((void *)
-				xtensa_cpu_process_stack_pc(frame->pc)));
+		xtensa_ptr_executable(
+			(void *)xtensa_cpu_process_stack_pc(frame->pc, frame->mask, frame->cause)));
 }
 
 int xtensa_backtrace_print(int depth, int *interrupted_stack)
@@ -125,46 +117,51 @@ int xtensa_backtrace_print(int depth, int *interrupted_stack)
 	}
 
 	bsa = frame->ptr_to_bsa;
-	cause = bsa->exccause;
 
 	/* Initialize stk_frame with first frame of stack */
 	struct xtensa_backtrace_frame_t stk_frame;
 
-	xtensa_backtrace_get_start(&(stk_frame.pc), &(stk_frame.sp),
-			&(stk_frame.next_pc), interrupted_stack);
+	stk_frame.cause = bsa->exccause;
+	stk_frame.mask = XTENSA_BACKTRACE_DEFAULT_PC_MASK;
 
-	if (cause != EXCCAUSE_INSTR_PROHIBITED) {
-		mask = stk_frame.pc & 0xc0000000;
+	xtensa_backtrace_get_start(&(stk_frame.pc), &(stk_frame.sp), &(stk_frame.next_pc),
+				   interrupted_stack);
+
+	if (stk_frame.cause != EXCCAUSE_INSTR_PROHIBITED) {
+		stk_frame.mask = stk_frame.pc & 0xc0000000;
 	}
-	printk("\r\n\r\nBacktrace:");
-	printk("0x%08x:0x%08x ",
-			xtensa_cpu_process_stack_pc(stk_frame.pc),
-			stk_frame.sp);
+	EXCEPTION_DUMP("Backtrace:");
+	EXCEPTION_DUMP("0x%08x:0x%08x",
+		       xtensa_cpu_process_stack_pc(stk_frame.pc, stk_frame.mask, stk_frame.cause),
+		       stk_frame.sp);
 
 	/* Check if first frame is valid */
 	bool corrupted = !(xtensa_stack_ptr_is_sane(stk_frame.sp) &&
-				(xtensa_ptr_executable((void *)
-				xtensa_cpu_process_stack_pc(stk_frame.pc)) ||
-	/* Ignore the first corrupted PC in case of InstrFetchProhibited */
-				cause == EXCCAUSE_INSTR_PROHIBITED));
+			   (xtensa_ptr_executable((void *)xtensa_cpu_process_stack_pc(
+				    stk_frame.pc, stk_frame.mask, stk_frame.cause)) ||
+			    /* Ignore the first corrupted PC in case of InstrFetchProhibited */
+			    stk_frame.cause == EXCCAUSE_INSTR_PROHIBITED));
 
 	while (depth-- > 0 && stk_frame.next_pc != 0 && !corrupted) {
 		/* Get previous stack frame */
 		if (!xtensa_backtrace_get_next_frame(&stk_frame)) {
 			corrupted = true;
 		}
-		printk("0x%08x:0x%08x ", xtensa_cpu_process_stack_pc(stk_frame.pc), stk_frame.sp);
+		EXCEPTION_DUMP(
+			"0x%08x:0x%08x",
+			xtensa_cpu_process_stack_pc(stk_frame.pc, stk_frame.mask, stk_frame.cause),
+			stk_frame.sp);
 	}
 
 	/* Print backtrace termination marker */
 	int ret = 0;
 
 	if (corrupted) {
-		printk(" |<-CORRUPTED");
-		ret =  -1;
+		EXCEPTION_DUMP("CORRUPTED");
+		ret = -1;
 	} else if (stk_frame.next_pc != 0) {    /* Backtrace continues */
-		printk(" |<-CONTINUES");
+		EXCEPTION_DUMP("CONTINUES");
 	}
-	printk("\r\n\r\n");
+
 	return ret;
 }

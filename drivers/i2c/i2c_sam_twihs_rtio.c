@@ -97,7 +97,7 @@ static int i2c_sam_twihs_configure(const struct device *dev, uint32_t config)
 	int ret;
 
 	if (!(config & I2C_MODE_CONTROLLER)) {
-		LOG_ERR("Master Mode is not enabled");
+		LOG_ERR("Controller Mode is not enabled");
 		return -EIO;
 	}
 
@@ -159,11 +159,11 @@ static void read_msg_start(Twihs *const twihs, const uint32_t len, const uint8_t
 	/* In single data byte read the START and STOP must both be set */
 	twihs_cr_stop = (len == 1U) ? TWIHS_CR_STOP : 0;
 
-	/* Enable Receive Ready and Transmission Completed interrupts */
-	twihs->TWIHS_IER = TWIHS_IER_RXRDY | TWIHS_IER_TXCOMP | TWIHS_IER_NACK;
-
 	/* Start the transfer by sending START condition */
 	twihs->TWIHS_CR = TWIHS_CR_START | twihs_cr_stop;
+
+	/* Enable Receive Ready and Transmission Completed interrupts */
+	twihs->TWIHS_IER = TWIHS_IER_RXRDY | TWIHS_IER_TXCOMP | TWIHS_IER_NACK;
 }
 
 static void i2c_sam_twihs_complete(const struct device *dev, int status);
@@ -327,7 +327,7 @@ static int i2c_sam_twihs_initialize(const struct device *dev)
 	return 0;
 }
 
-static const struct i2c_driver_api i2c_sam_twihs_driver_api = {
+static DEVICE_API(i2c, i2c_sam_twihs_driver_api) = {
 	.configure = i2c_sam_twihs_configure,
 	.transfer = i2c_sam_twihs_transfer,
 	.iodev_submit = i2c_sam_twihs_submit,

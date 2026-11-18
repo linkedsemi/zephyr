@@ -5,14 +5,21 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - adc
   - arduino_gpio
+  - arduino_serial
+  - arduino_i2c
+  - crc
   - dac
+  - entropy
   - gpio
   - i2c
   - pwm
+  - spi
+  - tsc
   - usart
-ram: 40
+  - usb_device
+  - usbd
+ram: 32
 flash: 256

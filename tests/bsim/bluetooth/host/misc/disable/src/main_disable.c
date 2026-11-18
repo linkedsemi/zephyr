@@ -6,10 +6,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/bluetooth/bluetooth.h>
+
 #define LOG_MODULE_NAME main_disable
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, LOG_LEVEL_DBG);
 
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
 #include "common.h"
 
 extern enum bst_result_t bst_result;
@@ -23,16 +27,16 @@ static void test_disable_main(void)
 
 		err = bt_enable(NULL);
 		if (err != 0) {
-			FAIL("Enable failed (err %d)\n", err);
+			TEST_FAIL("Enable failed (err %d)", err);
 		}
 
 		err = bt_disable();
 		if (err) {
-			FAIL("Enable failed (err %d)\n", err);
+			TEST_FAIL("Enable failed (err %d)", err);
 		}
 	}
 
-	PASS("Disable test passed\n");
+	TEST_PASS("Disable test passed");
 }
 
 static void test_disable_set_default_id(void)
@@ -53,58 +57,104 @@ static void test_disable_set_default_id(void)
 
 		err = bt_id_create(&addr, NULL);
 		if (err != 0) {
-			FAIL("Creating ID failed (err %d)\n", err);
+			TEST_FAIL("Creating ID failed (err %d)", err);
 		}
 
 		err = bt_enable(NULL);
 		if (err != 0) {
-			FAIL("Enable failed (err %d)\n", err);
+			TEST_FAIL("Enable failed (err %d)", err);
 		}
 
 		bt_id_get(NULL, &id_count);
 		if (id_count != 1) {
-			FAIL("Expected only one ID, but got: %u\n", id_count);
+			TEST_FAIL("Expected only one ID, but got: %u", id_count);
 		}
 
 		id_count = 1;
 		bt_id_get(&stored_id, &id_count);
 		if (id_count != 1) {
-			FAIL("Expected only one ID, but got: %u\n", id_count);
+			TEST_FAIL("Expected only one ID, but got: %u", id_count);
 		}
 
 		if (!bt_addr_le_eq(&stored_id, &addr)) {
-			uint8_t addr_set_str[BT_ADDR_LE_STR_LEN];
-			uint8_t addr_stored_str[BT_ADDR_LE_STR_LEN];
-
-			bt_addr_le_to_str(&addr, addr_set_str, BT_ADDR_LE_STR_LEN);
-			bt_addr_le_to_str(&stored_id, addr_stored_str, BT_ADDR_LE_STR_LEN);
-			FAIL("Expected stored ID to be equal to set ID: %s, %s\n",
-			     addr_set_str, addr_stored_str);
+			TEST_FAIL("Expected stored ID to be equal to set ID: %s, %s",
+				  bt_addr_le_str(&addr), bt_addr_le_str(&stored_id));
 		}
 
 		err = bt_disable();
 		if (err) {
-			FAIL("Enable failed (err %d)\n", err);
+			TEST_FAIL("Enable failed (err %d)", err);
 		}
 	}
 
-	PASS("Disable set default ID test passed\n");
+	TEST_PASS("Disable set default ID test passed");
+}
+
+K_SEM_DEFINE(ready_sem, 0, 1);
+
+static void ready_cb(int err)
+{
+	if (err != 0) {
+		TEST_FAIL("bt_enable ready callback error %d", err);
+	} else {
+		k_sem_give(&ready_sem);
+	}
+}
+
+static void test_disable_async_init(void)
+{
+	/* Call bt_enable() with a ready callback so bt_init() runs
+	 * asynchronously on the system workqueue. Immediately call
+	 * bt_disable(); it must return -EAGAIN because init is still
+	 * in progress.
+	 *
+	 * k_sched_lock() prevents the workqueue from running until
+	 * k_sched_unlock() is called, so bt_disable() is guaranteed to
+	 * observe the init work item as queued regardless of
+	 * controller behavior.
+	 */
+	int err;
+
+	k_sched_lock();
+
+	err = bt_enable(ready_cb);
+	if (err != 0) {
+		k_sched_unlock();
+		TEST_FAIL("bt_enable failed (err %d)", err);
+	}
+
+	err = bt_disable();
+	k_sched_unlock();
+	if (err != -EAGAIN) {
+		TEST_FAIL("Expected -EAGAIN from bt_disable before init complete, got %d", err);
+	}
+
+	/* Wait for init to finish, then disable properly. */
+	k_sem_take(&ready_sem, K_FOREVER);
+
+	err = bt_disable();
+	if (err != 0) {
+		TEST_FAIL("bt_disable after init failed (err %d)", err);
+	}
+
+	TEST_PASS("disable async init test passed");
 }
 
 static const struct bst_test_instance test_def[] = {
 	{
 		.test_id = "disable",
 		.test_descr = "disable_test",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_disable_main
 	},
 	{
 		.test_id = "disable_set_default_id",
 		.test_descr = "disable_test where each iteration sets the default ID",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_disable_set_default_id
+	},
+	{
+		.test_id = "disable_async_init",
+		.test_descr = "bt_disable during async bt_init returns -EAGAIN",
+		.test_main_f = test_disable_async_init
 	},
 	BSTEST_END_MARKER
 };

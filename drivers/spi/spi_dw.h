@@ -17,6 +17,10 @@
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/dma.h>
 
+#if defined(CONFIG_CLOCK_CONTROL)
+#include <zephyr/drivers/clock_control.h>
+#endif
+
 #include "spi_context.h"
 
 #if defined(CONFIG_PINCTRL)
@@ -34,6 +38,15 @@
 extern "C" {
 #endif
 
+/* Helper macros for checking property status across instances */
+#define DT_INST_NODE_PROP_NOT_OR(inst, prop) !DT_INST_PROP(inst, prop) ||
+#define DT_ANY_INST_NOT_PROP_STATUS_OKAY(prop)                                                     \
+	(DT_INST_FOREACH_STATUS_OKAY_VARGS(DT_INST_NODE_PROP_NOT_OR, prop) 0)
+
+#define DT_INST_NODE_PROP_AND_OR(inst, prop) DT_INST_PROP(inst, prop) ||
+#define DT_ANY_INST_PROP_STATUS_OKAY(prop)                                                         \
+	(DT_INST_FOREACH_STATUS_OKAY_VARGS(DT_INST_NODE_PROP_AND_OR, prop) 0)
+
 typedef void (*spi_dw_config_t)(void);
 typedef uint32_t (*spi_dw_read_t)(uint8_t size, mm_reg_t addr, uint32_t off);
 typedef void (*spi_dw_write_t)(uint8_t size, uint32_t data, mm_reg_t addr, uint32_t off);
@@ -46,9 +59,16 @@ struct spi_dw_config {
 	DEVICE_MMIO_ROM;
 	uint32_t clock_frequency;
 	spi_dw_config_t config_func;
+	uint16_t fifo_depth;
 	bool serial_target;
-	uint8_t fifo_depth;
 	uint8_t max_xfer_size;
+#ifdef CONFIG_PINCTRL
+	const struct pinctrl_dev_config *pcfg;
+#endif
+#if defined(CONFIG_CLOCK_CONTROL)
+	const struct device *clk_dev;
+	const clock_control_subsys_t clk_id;
+#endif
 	spi_dw_read_t read_func;
 	spi_dw_write_t write_func;
 	spi_dw_set_bit_t set_bit_func;
@@ -81,6 +101,9 @@ struct spi_dw_config {
 struct spi_dw_data {
 	DEVICE_MMIO_RAM;
 	struct spi_context ctx;
+#if !DT_ANY_INST_PROP_STATUS_OKAY(aux_reg)
+	uint32_t version;	/* ssi comp version */
+#endif
 	struct k_sem dma_rx_sem;
 	struct k_sem dma_tx_sem;
 	int dma_status;
@@ -91,47 +114,37 @@ struct spi_dw_data {
 };
 
 /* Register operation functions */
-#define DT_INST_NODE_PROP_NOT_OR(inst, prop) \
-	!DT_INST_PROP(inst, prop) ||
-#define DT_ANY_INST_NOT_PROP_STATUS_OKAY(prop) \
-	(DT_INST_FOREACH_STATUS_OKAY_VARGS(DT_INST_NODE_PROP_NOT_OR, prop) 0)
-
-#define DT_INST_NODE_PROP_AND_OR(inst, prop) \
-	DT_INST_PROP(inst, prop) ||
-#define DT_ANY_INST_PROP_STATUS_OKAY(prop) \
-	(DT_INST_FOREACH_STATUS_OKAY_VARGS(DT_INST_NODE_PROP_AND_OR, prop) 0)
-
 #if DT_ANY_INST_PROP_STATUS_OKAY(aux_reg)
-static uint32_t aux_reg_read(uint8_t size, mm_reg_t addr, uint32_t off)
+__maybe_unused static uint32_t aux_reg_read(uint8_t size, mm_reg_t addr, uint32_t off)
 {
 	ARG_UNUSED(size);
 	return sys_in32(addr + off/4);
 }
 
-static void aux_reg_write(uint8_t size, uint32_t data, mm_reg_t addr, uint32_t off)
+__maybe_unused static void aux_reg_write(uint8_t size, uint32_t data, mm_reg_t addr, uint32_t off)
 {
 	ARG_UNUSED(size);
 	sys_out32(data, addr + off/4);
 }
 
-static void aux_reg_set_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
+__maybe_unused static void aux_reg_set_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 {
 	sys_io_set_bit(addr + off/4, bit);
 }
 
-static void aux_reg_clear_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
+__maybe_unused static void aux_reg_clear_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 {
 	sys_io_clear_bit(addr + off/4, bit);
 }
 
-static int aux_reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
+__maybe_unused static int aux_reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 {
 	return sys_io_test_bit(addr + off/4, bit);
 }
 #endif
 
 #if DT_ANY_INST_NOT_PROP_STATUS_OKAY(aux_reg)
-static uint32_t reg_read(uint8_t size, mm_reg_t addr, uint32_t off)
+__maybe_unused static uint32_t reg_read(uint8_t size, mm_reg_t addr, uint32_t off)
 {
 	switch (size) {
 	case 8:
@@ -145,7 +158,7 @@ static uint32_t reg_read(uint8_t size, mm_reg_t addr, uint32_t off)
 	}
 }
 
-static void reg_write(uint8_t size, uint32_t data, mm_reg_t addr, uint32_t off)
+__maybe_unused static void reg_write(uint8_t size, uint32_t data, mm_reg_t addr, uint32_t off)
 {
 	switch (size) {
 	case 8:
@@ -159,17 +172,17 @@ static void reg_write(uint8_t size, uint32_t data, mm_reg_t addr, uint32_t off)
 	}
 }
 
-static void reg_set_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
+__maybe_unused static void reg_set_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 {
 	sys_set_bit(addr + off, bit);
 }
 
-static void reg_clear_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
+__maybe_unused static void reg_clear_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 {
 	sys_clear_bit(addr + off, bit);
 }
 
-static int reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
+__maybe_unused static int reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 {
 	return sys_test_bit(addr + off, bit);
 }
@@ -230,6 +243,11 @@ static int reg_test_bit(uint8_t bit, mm_reg_t addr, uint32_t off)
 #define DW_SPI_CTRLR0_TMOD_SHIFT	(10)
 #define DW_SPI_CTRLR0_SLV_OE_BIT	(12)
 #define DW_SPI_CTRLR0_SRL_BIT		(13)
+#endif
+
+#if defined(CONFIG_SPI_DW_HSSI) && defined(CONFIG_SPI_EXTENDED_MODES)
+/* TXFTLR setting. Only valid for Controller operation mode. */
+#define DW_SPI_TXFTLR_TXFTLR_SHIFT	(16)
 #endif
 
 #define DW_SPI_CTRLR0_SCPH		BIT(DW_SPI_CTRLR0_SCPH_BIT)
@@ -381,11 +399,13 @@ DEFINE_MM_REG_READ(rxflr, DW_SPI_REG_RXFLR, 32)
 #ifdef CONFIG_SPI_DW_ACCESS_WORD_ONLY
 DEFINE_MM_REG_WRITE(baudr, DW_SPI_REG_BAUDR, 32)
 DEFINE_MM_REG_WRITE(imr, DW_SPI_REG_IMR, 32)
+DEFINE_MM_REG_WRITE(rx_sample_dly, DW_SPI_REG_RX_SAMPLE_DLY, 32)
 DEFINE_MM_REG_READ(imr, DW_SPI_REG_IMR, 32)
 DEFINE_MM_REG_READ(isr, DW_SPI_REG_ISR, 32)
 #else
 DEFINE_MM_REG_WRITE(baudr, DW_SPI_REG_BAUDR, 16)
 DEFINE_MM_REG_WRITE(imr, DW_SPI_REG_IMR, 8)
+DEFINE_MM_REG_WRITE(rx_sample_dly, DW_SPI_REG_RX_SAMPLE_DLY, 8)
 DEFINE_MM_REG_READ(imr, DW_SPI_REG_IMR, 8)
 DEFINE_MM_REG_READ(isr, DW_SPI_REG_ISR, 8)
 #endif

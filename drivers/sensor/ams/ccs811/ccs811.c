@@ -130,7 +130,7 @@ int ccs811_baseline_fetch(const struct device *dev)
 	rc = i2c_write_read_dt(&config->i2c, &cmd, sizeof(cmd), (uint8_t *)&baseline,
 			       sizeof(baseline));
 	set_wake(dev, false);
-	if (rc <= 0) {
+	if (rc == 0) {
 		rc = baseline;
 	}
 
@@ -304,7 +304,7 @@ static int ccs811_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api ccs811_driver_api = {
+static DEVICE_API(sensor, ccs811_driver_api) = {
 #ifdef CONFIG_CCS811_TRIGGER
 	.attr_set = ccs811_attr_set,
 	.trigger_set = ccs811_trigger_set,
@@ -432,13 +432,13 @@ static int ccs811_init(const struct device *dev)
 	uint8_t hw_id;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 
 	if (config->wake_gpio.port) {
 		if (!gpio_is_ready_dt(&config->wake_gpio)) {
-			LOG_ERR("GPIO device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->wake_gpio.port);
 			return -ENODEV;
 		}
 
@@ -455,7 +455,7 @@ static int ccs811_init(const struct device *dev)
 
 	if (config->reset_gpio.port) {
 		if (!gpio_is_ready_dt(&config->reset_gpio)) {
-			LOG_ERR("GPIO device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->reset_gpio.port);
 			return -ENODEV;
 		}
 
@@ -466,7 +466,7 @@ static int ccs811_init(const struct device *dev)
 
 	if (config->irq_gpio.port) {
 		if (!gpio_is_ready_dt(&config->irq_gpio)) {
-			LOG_ERR("GPIO device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->irq_gpio.port);
 			return -ENODEV;
 		}
 	}

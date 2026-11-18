@@ -2,11 +2,12 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
+import argparse
 from argparse import Namespace
 
-from twister_cmd import Twister
 import pytest
-import argparse
+
+from twister_cmd import Twister
 
 TEST_CASES = [
     {

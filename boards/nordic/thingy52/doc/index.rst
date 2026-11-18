@@ -1,7 +1,4 @@
-.. _thingy52_nrf52832:
-
-Thingy:52
-#########
+.. zephyr:board:: thingy52
 
 .. warning::
 
@@ -15,35 +12,9 @@ Zephyr uses the thingy52/nrf52832 (PCA20020) board configuration for building
 for the Thingy:52 board. The board has the nRF52832 MCU with ARM Cortex-M4F
 processor, a set of environmental sensors, a pushbutton, and two RGB LEDs.
 
-* :abbr:`ADC (Analog to Digital Converter)`
-* CLOCK
-* FLASH
-* Gas sensor
-* :abbr:`GPIO (General Purpose Input Output)`
-* GPIO Expander
-* Humidity and temperature sensor
-* :abbr:`I2C (Inter-Integrated Circuit)`
-* :abbr:`MPU (Memory Protection Unit)`
-* :abbr:`NVIC (Nested Vectored Interrupt Controller)`
-* Pressure sensor
-* :abbr:`PWM (Pulse Width Modulation)`
-* RADIO (Bluetooth Low Energy)
-* RGB LEDs
-* :abbr:`RTC (nRF RTC System Clock)`
-* :abbr:`SPI (Serial Peripheral Interface)`
-* :abbr:`UART (Universal asynchronous receiver-transmitter)`
-* :abbr:`WDT (Watchdog Timer)`
-
-.. figure:: img/thingy52_nrf52832.jpg
-     :align: center
-     :alt: nRF52 Thingy:52
-
-     nRF52 Thingy:52 (Credit: Nordic Semiconductor)
-
 More information about the board can be found at the `nRF52 DK website`_. The
 `Nordic Thingy:52 guide`_ contains the processor's information and the
 datasheet.
-
 
 Hardware
 ********
@@ -61,46 +32,7 @@ Thingy:52 has the following features:
 Supported Features
 ==================
 
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| ADC       | on-chip    | adc                  |
-+-----------+------------+----------------------+
-| CLOCK     | on-chip    | clock_control        |
-+-----------+------------+----------------------+
-| FLASH     | on-chip    | flash                |
-+-----------+------------+----------------------+
-| Gas       | on-board   | ccs811               |
-| Sensor    |            |                      |
-+-----------+------------+----------------------+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| GPIO Exp  | on-board   | sx1509b              |
-+-----------+------------+----------------------+
-| Humidity  | on-board   | hts221               |
-| and Temp  |            |                      |
-+-----------+------------+----------------------+
-| I2C(M)    | on-chip    | i2c                  |
-+-----------+------------+----------------------+
-| MPU       | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| NVIC      | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| Pressure  | on-board   | lps22hb_press        |
-| and Temp  |            |                      |
-+-----------+------------+----------------------+
-| PWM       | on-chip    | pwm                  |
-+-----------+------------+----------------------+
-| RADIO     | on-chip    | Bluetooth            |
-+-----------+------------+----------------------+
-| RTC       | on-chip    | system clock         |
-+-----------+------------+----------------------+
-| SPI(M/S)  | on-chip    | spi                  |
-+-----------+------------+----------------------+
-| UART      | on-chip    | serial               |
-+-----------+------------+----------------------+
-| WDT       | on-chip    | watchdog             |
-+-----------+------------+----------------------+
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -348,6 +280,8 @@ CCS811
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 Flashing
 ========
 
@@ -362,7 +296,7 @@ Thingy:52 does not have an on-board J-Link debug IC as some other nRF5
 development boards, however, instructions from the :ref:`nordic_segger` page
 also apply to this board, with the additional step of connecting an external
 debugger. A development board with a Debug out connector such as the
-:ref:`nrf52dk_nrf52832` can be used as a debugger with Thingy:52.
+:zephyr:board:`nrf52dk` can be used as a debugger with Thingy:52.
 
 Testing board features
 **********************

@@ -28,35 +28,57 @@ LOG_MODULE_REGISTER(usbd_core, CONFIG_USBD_LOG_LEVEL);
 static K_KERNEL_STACK_DEFINE(usbd_stack, CONFIG_USBD_THREAD_STACK_SIZE);
 static struct k_thread usbd_thread_data;
 
-K_MSGQ_DEFINE(usbd_msgq, sizeof(struct udc_event),
-	      CONFIG_USBD_MAX_UDC_MSG, sizeof(uint32_t));
+K_MSGQ_DEFINE_STATIC_TYPE(usbd_msgq, struct udc_event, CONFIG_USBD_MAX_UDC_MSG);
 
 static int usbd_event_carrier(const struct device *dev,
 			      const struct udc_event *const event)
 {
+	struct usbd_context *const uds_ctx = (void *)udc_get_event_ctx(dev);
+	k_spinlock_key_t key;
+
+	if (event->type == UDC_EVT_EP_REQUEST) {
+		/*
+		 * Always add completed transfer requests to the list, so they
+		 * do not get lost.
+		 */
+		key = k_spin_lock(&uds_ctx->ep_event_lock);
+		sys_slist_append(&uds_ctx->ep_events, &event->buf->node);
+		k_spin_unlock(&uds_ctx->ep_event_lock, key);
+	}
+
 	return k_msgq_put(&usbd_msgq, event, K_NO_WAIT);
 }
 
-static int event_handler_ep_request(struct usbd_context *const uds_ctx,
-				    const struct udc_event *const event)
+static void event_handler_ep_request(struct usbd_context *const uds_ctx)
 {
 	struct udc_buf_info *bi;
+	k_spinlock_key_t key;
+	struct net_buf *buf;
+	sys_snode_t *node;
 	int ret;
 
-	bi = udc_get_buf_info(event->buf);
+	while (!sys_slist_is_empty(&uds_ctx->ep_events)) {
+		key = k_spin_lock(&uds_ctx->ep_event_lock);
+		node = sys_slist_get(&uds_ctx->ep_events);
+		k_spin_unlock(&uds_ctx->ep_event_lock, key);
 
-	if (USB_EP_GET_IDX(bi->ep) == 0) {
-		ret = usbd_handle_ctrl_xfer(uds_ctx, event->buf, bi->err);
-	} else {
-		ret = usbd_class_handle_xfer(uds_ctx, event->buf, bi->err);
+		buf = SYS_SLIST_CONTAINER(node, buf, node);
+		if (buf == NULL) {
+			break;
+		}
+
+		bi = udc_get_buf_info(buf);
+		if (USB_EP_GET_IDX(bi->ep) == 0) {
+			ret = usbd_handle_ctrl_xfer(uds_ctx, buf, bi->err);
+		} else {
+			ret = usbd_class_handle_xfer(uds_ctx, buf, bi->err);
+		}
+
+		if (ret) {
+			LOG_DBG("Transfer result %d, ep 0x%02x, buf %p",
+				ret, bi->ep, (void *)buf);
+		}
 	}
-
-	if (ret) {
-		LOG_ERR("unrecoverable error %d, ep 0x%02x, buf %p",
-			ret, bi->ep, event->buf);
-	}
-
-	return ret;
 }
 
 static void usbd_class_bcast_event(struct usbd_context *const uds_ctx,
@@ -110,11 +132,6 @@ static int event_handler_bus_reset(struct usbd_context *const uds_ctx)
 		return ret;
 	}
 
-	/* There might be pending data stage transfer */
-	if (usbd_ep_dequeue(uds_ctx, USB_CONTROL_EP_IN)) {
-		LOG_ERR("Failed to dequeue control IN");
-	}
-
 	LOG_INF("Actual device speed %u", udc_device_speed(uds_ctx->dev));
 	udc_speed = udc_device_speed(uds_ctx->dev);
 	switch (udc_speed) {
@@ -137,6 +154,13 @@ static ALWAYS_INLINE void usbd_event_handler(struct usbd_context *const uds_ctx,
 					     struct udc_event *const event)
 {
 	int err = 0;
+
+	/* Always check if there is a completed transfer request. */
+	event_handler_ep_request(uds_ctx);
+	if (event->type == UDC_EVT_EP_REQUEST) {
+		/* It has already been handled and cannot be another event type. */
+		return;
+	}
 
 	switch (event->type) {
 	case UDC_EVT_VBUS_REMOVED:
@@ -166,9 +190,6 @@ static ALWAYS_INLINE void usbd_event_handler(struct usbd_context *const uds_ctx,
 		LOG_DBG("RESET event");
 		err = event_handler_bus_reset(uds_ctx);
 		usbd_msg_pub_simple(uds_ctx, USBD_MSG_RESET, 0);
-		break;
-	case UDC_EVT_EP_REQUEST:
-		err = event_handler_ep_request(uds_ctx, event);
 		break;
 	case UDC_EVT_ERROR:
 		LOG_ERR("UDC error event");
@@ -228,12 +249,14 @@ int usbd_device_shutdown_core(struct usbd_context *const uds_ctx)
 	struct usbd_config_node *cfg_nd;
 	int ret;
 
-	SYS_SLIST_FOR_EACH_CONTAINER(&uds_ctx->hs_configs, cfg_nd, node) {
-		uint8_t cfg_value = usbd_config_get_value(cfg_nd);
+	if (USBD_SUPPORTS_HIGH_SPEED) {
+		SYS_SLIST_FOR_EACH_CONTAINER(&uds_ctx->hs_configs, cfg_nd, node) {
+			uint8_t cfg_value = usbd_config_get_value(cfg_nd);
 
-		ret = usbd_class_remove_all(uds_ctx, USBD_SPEED_HS, cfg_value);
-		if (ret) {
-			LOG_ERR("Failed to cleanup registered classes, %d", ret);
+			ret = usbd_class_remove_all(uds_ctx, USBD_SPEED_HS, cfg_value);
+			if (ret) {
+				LOG_ERR("Failed to cleanup registered classes, %d", ret);
+			}
 		}
 	}
 
@@ -250,6 +273,8 @@ int usbd_device_shutdown_core(struct usbd_context *const uds_ctx)
 	if (ret) {
 		LOG_ERR("Failed to cleanup descriptors, %d", ret);
 	}
+
+	usbd_device_unregister_all_vreq(uds_ctx);
 
 	return udc_shutdown(uds_ctx->dev);
 }

@@ -4,7 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <stdint.h>
 #include <stddef.h>
 
 #include <zephyr/autoconf.h>
@@ -14,11 +13,13 @@
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/services/ias.h>
-#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/types.h>
 
 #include "bstests.h"
 #include "common.h"
+
+LOG_MODULE_REGISTER(ias_test);
 
 #ifdef CONFIG_BT_IAS
 extern enum bst_result_t bst_result;
@@ -50,6 +51,7 @@ BT_IAS_CB_DEFINE(ias_callbacks) = {
 
 static void test_main(void)
 {
+	struct bt_le_ext_adv *ext_adv;
 	int err;
 
 	err = bt_enable(NULL);
@@ -58,18 +60,12 @@ static void test_main(void)
 		return;
 	}
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, AD_SIZE, NULL, 0);
-	if (err) {
-		FAIL("Advertising failed to start (err %d)\n", err);
-		return;
-	}
-
-	printk("Advertising successfully started\n");
+	setup_connectable_adv(&ext_adv);
 
 	WAIT_FOR_FLAG(flag_connected);
 
 	WAIT_FOR_FLAG(g_high_alert_received);
-	printk("High alert received\n");
+	LOG_INF("High alert received");
 
 	err = bt_ias_local_alert_stop();
 	if (err != 0) {
@@ -79,10 +75,10 @@ static void test_main(void)
 	WAIT_FOR_FLAG(g_stop_alert_received);
 
 	WAIT_FOR_FLAG(g_mild_alert_received);
-	printk("Mild alert received\n");
+	LOG_INF("Mild alert received");
 
 	WAIT_FOR_FLAG(g_stop_alert_received);
-	printk("Stop alert received\n");
+	LOG_INF("Stop alert received");
 
 	PASS("IAS test passed\n");
 }

@@ -328,9 +328,8 @@ int uart_ls_irq_is_pending(const struct device *dev)
 	return ret;
 }
 
-int uart_ls_irq_update(const struct device *dev)
+void uart_ls_irq_update(const struct device *dev)
 {
-	return 1;
 }
 
 void uart_ls_irq_callback_set(const struct device *dev,uart_irq_callback_user_data_t cb,void *user_data)
@@ -402,7 +401,7 @@ int uart_ls_fifo_read(const struct device *dev, uint8_t *rx_data,const int size)
 
 #endif
 
-static const  struct uart_driver_api uart_ls_api = {
+static DEVICE_API(uart, uart_ls_api) = {
 	.poll_in = uart_ls_poll_in,
 	.poll_out = uart_ls_poll_out,
 	.err_check = uart_ls_err_check,

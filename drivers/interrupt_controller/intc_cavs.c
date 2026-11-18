@@ -16,7 +16,7 @@
 #include "intc_cavs.h"
 
 #if defined(CONFIG_SMP) && (CONFIG_MP_MAX_NUM_CPUS > 1)
-#if defined(CONFIG_SOC_INTEL_CAVS_V25)
+#if defined(CONFIG_SOC_CAVSV25)
 #define PER_CPU_OFFSET(x)	(0x40 * x)
 #else
 #error "Must define PER_CPU_OFFSET(x) for SoC"
@@ -151,7 +151,7 @@ static const struct irq_next_level_api cavs_apis = {
 	{								\
 		IRQ_CONNECT(DT_INST_IRQN(n), DT_INST_IRQ(n, priority),	\
 			    cavs_ictl_isr, DEVICE_DT_INST_GET(n),	\
-			    DT_INST_IRQ(n, sense));			\
+			    DT_INST_IRQ(n, flags));			\
 	}								\
 	IRQ_PARENT_ENTRY_DEFINE(					\
 		intc_cavs_##n, DEVICE_DT_INST_GET(n), DT_INST_IRQN(n),	\

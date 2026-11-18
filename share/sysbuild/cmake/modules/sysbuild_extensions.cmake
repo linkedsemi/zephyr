@@ -1,6 +1,28 @@
-# Copyright (c) 2021-2023 Nordic Semiconductor
+# Copyright (c) 2021-2026 Nordic Semiconductor
 #
 # SPDX-License-Identifier: Apache-2.0
+
+#[=======================================================================[.rst:
+sysbuild_extensions
+###################
+
+Sysbuild's CMake extension commands.
+
+This module defines the commands used to describe a :ref:`sysbuild <sysbuild>` configuration: which
+images take part in the build, how they are configured, and in which order they are configured and
+flashed.
+
+The commands documented below are available in the :file:`sysbuild.cmake` file of any application or
+Zephyr module that participates in a sysbuild build.
+
+Commands not documented here are used by sysbuild itself and may be removed, renamed, or
+re-purposed without prior notice.
+
+.. contents::
+   :backlinks: entry
+   :local:
+
+#]=======================================================================]
 
 # Usage:
 #   load_cache(IMAGE <image> BINARY_DIR <dir>)
@@ -43,36 +65,50 @@ function(load_cache)
   endforeach()
 endfunction()
 
-# Usage:
-#   sysbuild_get(<variable> IMAGE <image> [VAR <image-variable>] <KCONFIG|CACHE>)
-#
-# This function will return the variable found in the CMakeCache.txt file
-# identified by image.
-# If `VAR` is provided, the name given as parameter will be looked up, but if
-# `VAR` is not given, the `<variable>` name provided will be used both for
-# lookup and value return.
-#
-# The result will be returned in `<variable>`.
-#
-# Example use:
-#   sysbuild_get(PROJECT_NAME IMAGE my_sample CACHE)
-#     will lookup PROJECT_NAME from the CMakeCache identified by `my_sample` and
-#     and return the value in the local variable `PROJECT_NAME`.
-#
-#   sysbuild_get(my_sample_PROJECT_NAME IMAGE my_sample VAR PROJECT_NAME CACHE)
-#     will lookup PROJECT_NAME from the CMakeCache identified by `my_sample` and
-#     and return the value in the local variable `my_sample_PROJECT_NAME`.
-#
-#   sysbuild_get(my_sample_CONFIG_FOO IMAGE my_sample VAR CONFIG_FOO KCONFIG)
-#     will lookup CONFIG_FOO from the KConfig identified by `my_sample` and
-#     and return the value in the local variable `my_sample_CONFIG_FOO`.
-#
-# <variable>: variable used for returning CMake cache value. Also used as lookup
-#             variable if `VAR` is not provided.
-# IMAGE:      image name identifying the cache to use for variable lookup.
-# VAR:        name of the CMake cache variable name to lookup.
-# KCONFIG:    Flag indicating that a Kconfig setting should be fetched.
-# CACHE:      Flag indicating that a CMake cache variable should be fetched.
+#[=======================================================================[.rst:
+.. cmake:signature:: sysbuild_get(<variable> IMAGE <image> [VAR <image-variable>] <KCONFIG|CACHE>)
+
+   Read a CMake cache variable or Kconfig setting from an image.
+
+   Sysbuild can only read an image once that image has been configured, for example from the
+   post-CMake hook of a :ref:`sysbuild module <sysbuild_module_integration>`.
+
+   If ``VAR`` is provided, the name given as parameter will be looked up, but if ``VAR`` is not
+   given, the ``<variable>`` name provided will be used both for lookup and value return.
+
+   The result will be returned in ``<variable>``.
+
+   ``<variable>``
+     Variable used for returning the value. Also used as lookup variable if ``VAR`` is not
+     provided.
+
+   ``IMAGE <image>``
+     Name of the image to read the variable from.
+
+   ``VAR <image-variable>``
+     Name of the variable to look up.
+
+   ``KCONFIG``
+     Flag indicating that a Kconfig setting should be fetched.
+
+   ``CACHE``
+     Flag indicating that a CMake cache variable should be fetched.
+
+   Example usage:
+
+   .. code-block:: cmake
+
+      # Look up PROJECT_NAME from the CMake cache of `my_sample` and return it
+      # in the local variable `PROJECT_NAME`.
+      sysbuild_get(PROJECT_NAME IMAGE my_sample CACHE)
+
+      # Same lookup, but returned in `my_sample_PROJECT_NAME`.
+      sysbuild_get(my_sample_PROJECT_NAME IMAGE my_sample VAR PROJECT_NAME CACHE)
+
+      # Look up the Kconfig setting CONFIG_FOO of `my_sample`.
+      sysbuild_get(my_sample_CONFIG_FOO IMAGE my_sample VAR CONFIG_FOO KCONFIG)
+
+#]=======================================================================]
 function(sysbuild_get variable)
   cmake_parse_arguments(GET_VAR "CACHE;KCONFIG" "IMAGE;VAR" "" ${ARGN})
 
@@ -83,8 +119,8 @@ function(sysbuild_get variable)
   if(DEFINED ${variable} AND NOT DEFINED GET_VAR_VAR)
     message(WARNING "Return variable ${variable} already defined with a value. "
                     "sysbuild_get(${variable} ...) may overwrite existing value. "
-		    "Please use sysbuild_get(<variable> ... VAR <image-variable>) "
-		    "where <variable> is undefined."
+                    "Please use sysbuild_get(<variable> ... VAR <image-variable>) "
+                    "where <variable> is undefined."
     )
   endif()
 
@@ -131,7 +167,7 @@ function(sysbuild_cache)
   get_cmake_property(sysbuild_cache CACHE_VARIABLES)
 
   foreach(var_name ${sysbuild_cache})
-    if(NOT "${var_name}" MATCHES "^(CMAKE_.*|BOARD)$")
+    if(NOT "${var_name}" MATCHES "^(CMAKE_.*|BOARD|APPLICATION_SOURCE_DIR)$")
       # Perform a dummy read to prevent a false warning about unused variables
       # being emitted due to a cmake bug: https://gitlab.kitware.com/cmake/cmake/-/issues/24555
       set(unused_tmp_var ${${var_name}})
@@ -146,9 +182,9 @@ function(sysbuild_cache)
     endif()
   endforeach()
   if(DEFINED BOARD_REVISION)
-    list(APPEND sysbuild_cache_strings "BOARD:STRING=${BOARD}@${BOARD_REVISION}${BOARD_QUALIFIERS}\n")
+    list(APPEND sysbuild_cache_strings "BOARD:STRING=${BOARD}@${BOARD_REVISION}/${BOARD_QUALIFIERS}\n")
   else()
-    list(APPEND sysbuild_cache_strings "BOARD:STRING=${BOARD}${BOARD_QUALIFIERS}\n")
+    list(APPEND sysbuild_cache_strings "BOARD:STRING=${BOARD}/${BOARD_QUALIFIERS}\n")
   endif()
   list(APPEND sysbuild_cache_strings "SYSBUILD_NAME:STRING=${SB_CACHE_APPLICATION}\n")
 
@@ -174,49 +210,66 @@ function(sysbuild_cache)
                     RESULT_VARIABLE compare_res
     )
     if(NOT compare_res EQUAL 0)
-      zephyr_file_copy(${${SB_CACHE_APPLICATION}_CACHE_FILE}.tmp
+      file(COPY_FILE ${${SB_CACHE_APPLICATION}_CACHE_FILE}.tmp
                        ${${SB_CACHE_APPLICATION}_CACHE_FILE}
       )
       ExternalProject_Get_Property(${SB_CACHE_APPLICATION} BINARY_DIR)
       file(TOUCH_NOCREATE ${BINARY_DIR}/CMakeCache.txt)
     endif()
   else()
-    zephyr_file_copy(${${SB_CACHE_APPLICATION}_CACHE_FILE}.tmp
+    file(COPY_FILE ${${SB_CACHE_APPLICATION}_CACHE_FILE}.tmp
                      ${${SB_CACHE_APPLICATION}_CACHE_FILE} ONLY_IF_DIFFERENT
     )
   endif()
+  file(REMOVE ${${SB_CACHE_APPLICATION}_CACHE_FILE}.tmp)
 
 endfunction()
 
-# Usage:
-#   ExternalZephyrProject_Add(APPLICATION <name>
-#                             SOURCE_DIR <dir>
-#                             [BOARD <board> [BOARD_REVISION <revision>]]
-#                             [APP_TYPE <MAIN|BOOTLOADER>]
-#   )
-#
-# This function includes a Zephyr based build system into the multiimage
-# build system
-#
-# APPLICATION: <name>:       Name of the application, name will also be used for build
-#                            folder of the application
-# SOURCE_DIR <dir>:          Source directory of the application
-# BOARD <board>:             Use <board> for application build instead user defined BOARD.
-# BOARD_REVISION <revision>: Use <revision> of <board> for application (only valid if
-#                            <board> is also supplied).
-# APP_TYPE <MAIN|BOOTLOADER>: Application type.
-#                             MAIN indicates this application is the main application
-#                             and where user defined settings should be passed on as-is
-#                             except for multi image build flags.
-#                             For example, -DCONF_FILES=<files> will be passed on to the
-#                             MAIN_APP unmodified.
-#                             BOOTLOADER indicates this app is a bootloader
-# BUILD_ONLY <bool>:          Mark the application as build-only. If <bool> evaluates to
-#                             true, then this application will be excluded from flashing
-#                             and debugging.
-#
+#[=======================================================================[.rst:
+.. cmake:signature::
+   ExternalZephyrProject_Add(APPLICATION <name>
+                             SOURCE_DIR <dir>
+                             [BOARD <board> [BOARD_REVISION <revision>]]
+                             [APP_TYPE <MAIN|BOOTLOADER|FIRMWARE_LOADER>]
+                             [BUILD_ONLY <bool>]
+   )
+
+   Include a Zephyr based build system into the multi-image build system.
+
+   ``APPLICATION <name>``
+     Name of the application. The name will also be used for the build folder of the application.
+
+   ``SOURCE_DIR <dir>``
+     Source directory of the application.
+
+   ``BOARD <board>``
+     Use ``<board>`` for the application build instead of the user defined
+     :cmake:variable:`BOARD`.
+
+   ``BOARD_REVISION <revision>``
+     Use ``<revision>`` of ``<board>`` for the application. Only valid if ``BOARD`` is also
+     supplied.
+
+   ``APP_TYPE <MAIN|BOOTLOADER|FIRMWARE_LOADER>``
+     Application type.
+
+     ``MAIN`` indicates this application is the main application, and where user defined settings
+     should be passed on as-is except for multi image build flags. For example,
+     ``-DCONF_FILE=<files>`` will be passed on to the main application unmodified.
+
+     ``BOOTLOADER`` indicates this application is a bootloader.
+
+     ``FIRMWARE_LOADER`` indicates this application is a firmware loader image for MCUboot.
+
+   ``BUILD_ONLY <bool>``
+     Mark the application as build-only. If ``<bool>`` evaluates to true, then this application
+     will be excluded from flashing and debugging.
+
+   See :ref:`sysbuild_zephyr_application` for a worked example.
+
+#]=======================================================================]
 function(ExternalZephyrProject_Add)
-  set(app_types MAIN BOOTLOADER)
+  set(app_types MAIN BOOTLOADER FIRMWARE_LOADER)
   cmake_parse_arguments(ZBUILD "" "APPLICATION;BOARD;BOARD_REVISION;SOURCE_DIR;APP_TYPE;BUILD_ONLY" "" ${ARGN})
 
   if(ZBUILD_UNPARSED_ARGUMENTS)
@@ -261,7 +314,7 @@ function(ExternalZephyrProject_Add)
   set(sysbuild_image_conf_dir ${APP_DIR}/sysbuild)
   set(sysbuild_image_name_conf_dir ${APP_DIR}/sysbuild/${ZBUILD_APPLICATION})
   # User defined `-D<image>_CONF_FILE=<file.conf>` takes precedence over anything else.
-  if (NOT ${ZBUILD_APPLICATION}_CONF_FILE)
+  if(NOT ${ZBUILD_APPLICATION}_CONF_FILE)
     if(EXISTS ${sysbuild_image_name_conf_dir})
       set(${ZBUILD_APPLICATION}_APPLICATION_CONFIG_DIR ${sysbuild_image_name_conf_dir}
           CACHE INTERNAL "Application configuration dir controlled by sysbuild"
@@ -275,7 +328,7 @@ function(ExternalZephyrProject_Add)
                 NAMES ${ZBUILD_APPLICATION}.conf SUFFIX ${FILE_SUFFIX}
     )
 
-    if (NOT (${ZBUILD_APPLICATION}_OVERLAY_CONFIG OR ${ZBUILD_APPLICATION}_EXTRA_CONF_FILE)
+    if(NOT (${ZBUILD_APPLICATION}_OVERLAY_CONFIG OR ${ZBUILD_APPLICATION}_EXTRA_CONF_FILE)
         AND EXISTS ${sysbuild_image_conf_fragment}
     )
       set(${ZBUILD_APPLICATION}_EXTRA_CONF_FILE ${sysbuild_image_conf_fragment}
@@ -283,12 +336,23 @@ function(ExternalZephyrProject_Add)
       )
     endif()
 
-    # Check for overlay named <ZBUILD_APPLICATION>.overlay.
-    set(sysbuild_image_dts_overlay ${sysbuild_image_conf_dir}/${ZBUILD_APPLICATION}.overlay)
-    if (NOT ${ZBUILD_APPLICATION}_DTC_OVERLAY_FILE AND EXISTS ${sysbuild_image_dts_overlay})
-      set(${ZBUILD_APPLICATION}_DTC_OVERLAY_FILE ${sysbuild_image_dts_overlay}
-          CACHE INTERNAL "devicetree overlay file defined by main application"
-      )
+    if(NOT ${ZBUILD_APPLICATION}_DTC_OVERLAY_FILE)
+      # Check for overlay named <ZBUILD_APPLICATION>.overlay.
+      set(sysbuild_image_dts_overlay_files ${sysbuild_image_conf_dir}/${ZBUILD_APPLICATION}.overlay)
+
+      # Check for overlay named <ZBUILD_APPLICATION>_<FILE_SUFFIX>.overlay.
+      if(FILE_SUFFIX)
+        list(PREPEND sysbuild_image_dts_overlay_files ${sysbuild_image_conf_dir}/${ZBUILD_APPLICATION}_${FILE_SUFFIX}.overlay)
+      endif()
+
+      foreach(overlay_file ${sysbuild_image_dts_overlay_files})
+        if(EXISTS ${overlay_file})
+          set(${ZBUILD_APPLICATION}_DTC_OVERLAY_FILE ${overlay_file}
+            CACHE INTERNAL "devicetree overlay file defined by main application"
+          )
+          break()
+        endif()
+      endforeach()
     endif()
   endif()
 
@@ -309,6 +373,10 @@ function(ExternalZephyrProject_Add)
     shared_cmake_variables_list
     CMAKE_BUILD_TYPE
     CMAKE_VERBOSE_MAKEFILE
+    WEST_PYTHON        # Temporary export. Waiting for #87083 and extensions.cmake to be cleaned up.
+    Python3_EXECUTABLE # Temporary export. Waiting for #87083 and extensions.cmake to be cleaned up.
+    TC_RUNID           # Test run id, consumed at configure time by subsys/testsuite/ztest.
+    ZEPHYR_BASE
   )
 
   set(sysbuild_cache_file ${CMAKE_BINARY_DIR}/${ZBUILD_APPLICATION}_sysbuild_cache.txt)
@@ -316,34 +384,16 @@ function(ExternalZephyrProject_Add)
   set(shared_cmake_vars_argument)
   foreach(shared_var ${shared_cmake_variables_list})
     if(DEFINED CACHE{${ZBUILD_APPLICATION}_${shared_var}})
-      get_property(var_type  CACHE ${ZBUILD_APPLICATION}_${shared_var} PROPERTY TYPE)
+      get_property(var_type CACHE ${ZBUILD_APPLICATION}_${shared_var} PROPERTY TYPE)
       list(APPEND shared_cmake_vars_argument
            "-D${shared_var}:${var_type}=$CACHE{${ZBUILD_APPLICATION}_${shared_var}}"
       )
     elseif(DEFINED CACHE{${shared_var}})
-      get_property(var_type  CACHE ${shared_var} PROPERTY TYPE)
+      get_property(var_type CACHE ${shared_var} PROPERTY TYPE)
       list(APPEND shared_cmake_vars_argument
            "-D${shared_var}:${var_type}=$CACHE{${shared_var}}"
       )
     endif()
-  endforeach()
-
-  foreach(kconfig_target
-      menuconfig
-      hardenconfig
-      guiconfig
-      $CACHE{EXTRA_KCONFIG_TARGETS}
-      )
-
-    if(NOT ZBUILD_APP_TYPE STREQUAL "MAIN")
-      set(image_prefix "${ZBUILD_APPLICATION}_")
-    endif()
-
-    add_custom_target(${image_prefix}${kconfig_target}
-      ${CMAKE_MAKE_PROGRAM} ${kconfig_target}
-      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${ZBUILD_APPLICATION}
-      USES_TERMINAL
-      )
   endforeach()
 
   set(list_separator ",")
@@ -372,6 +422,7 @@ function(ExternalZephyrProject_Add)
     BUILD_ALWAYS True
     USES_TERMINAL_BUILD True
   )
+  set_property(TARGET ${ZBUILD_APPLICATION} PROPERTY APP_SOURCE_DIR ${ZBUILD_SOURCE_DIR})
   set_property(TARGET ${ZBUILD_APPLICATION} PROPERTY APP_TYPE ${ZBUILD_APP_TYPE})
   set_property(TARGET ${ZBUILD_APPLICATION} PROPERTY CONFIG
                "# sysbuild controlled configuration settings\n"
@@ -388,6 +439,17 @@ function(ExternalZephyrProject_Add)
 
   if(DEFINED ZBUILD_APP_TYPE)
     list(APPEND image_default "${CMAKE_SOURCE_DIR}/image_configurations/${ZBUILD_APP_TYPE}_image_default.cmake")
+    set(image_default_dtc_overlay "${CMAKE_SOURCE_DIR}/image_configurations/${ZBUILD_APP_TYPE}_image_default.overlay")
+
+    if(EXISTS ${image_default_dtc_overlay})
+      if(NOT ${image_default_dtc_overlay} IN_LIST ${ZBUILD_APPLICATION}_EXTRA_DTC_OVERLAY_FILE)
+        list(APPEND ${ZBUILD_APPLICATION}_EXTRA_DTC_OVERLAY_FILE ${image_default_dtc_overlay})
+        set(${ZBUILD_APPLICATION}_EXTRA_DTC_OVERLAY_FILE
+            ${${ZBUILD_APPLICATION}_EXTRA_DTC_OVERLAY_FILE}
+            CACHE INTERNAL "Application extra DTC overlay file" FORCE
+        )
+      endif()
+    endif()
   endif()
 
   set_target_properties(${ZBUILD_APPLICATION} PROPERTIES IMAGE_CONF_SCRIPT "${image_default}")
@@ -397,23 +459,17 @@ function(ExternalZephyrProject_Add)
     # The sysbuild BOARD is exported through sysbuild cache, and will be used
     # unless <image>_BOARD is defined.
     if(DEFINED ZBUILD_BOARD_REVISION)
-      # Use provided board revision
-      if(ZBUILD_BOARD MATCHES "/")
-        # HWMv2 requires adding version to the board, split elements up, attach version, then
-        # reassemble into a complete string
-        string(REPLACE "/" ";" split_board_qualifiers "${ZBUILD_BOARD}")
-        list(GET split_board_qualifiers 0 target_board)
-        set(target_board ${target_board}@${ZBUILD_BOARD_REVISION})
-        list(REMOVE_AT split_board_qualifiers 0)
-        list(PREPEND split_board_qualifiers ${target_board})
-        string(REPLACE ";" "/" board_qualifiers "${split_board_qualifiers}")
-        set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BOARD ${board_qualifiers})
-        set(split_board_qualifiers)
-        set(board_qualifiers)
-      else()
-        # Legacy HWMv1 support, version goes at end
-        set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BOARD ${ZBUILD_BOARD}@${ZBUILD_BOARD_REVISION})
-      endif()
+      # Use provided board revision, HWMv2 requires adding version to the board, split elements
+      # up, attach version, then reassemble into a complete string
+      string(REPLACE "/" ";" split_board_qualifiers "${ZBUILD_BOARD}")
+      list(GET split_board_qualifiers 0 target_board)
+      set(target_board ${target_board}@${ZBUILD_BOARD_REVISION})
+      list(REMOVE_AT split_board_qualifiers 0)
+      list(PREPEND split_board_qualifiers ${target_board})
+      string(REPLACE ";" "/" board_qualifiers "${split_board_qualifiers}")
+      set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BOARD ${board_qualifiers})
+      set(split_board_qualifiers)
+      set(board_qualifiers)
     else()
       set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BOARD ${ZBUILD_BOARD})
     endif()
@@ -427,6 +483,216 @@ function(ExternalZephyrProject_Add)
   if(DEFINED ZBUILD_BUILD_ONLY)
     set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BUILD_ONLY ${ZBUILD_BUILD_ONLY})
   endif()
+endfunction()
+
+#[=======================================================================[.rst:
+.. cmake:signature::
+   ExternalZephyrVariantProject_Add(APPLICATION <name>
+                                    SOURCE_APP <name>
+                                    [SNIPPET <snippet>]
+                                    [EXTRA_DTC_OVERLAY_FILE <file>]
+                                    [EXTRA_CONF_FILE <file>]
+                                    [BUILD_ONLY <bool>]
+   )
+
+   Duplicate an existing Zephyr based build system into the multi-image build system with a
+   specified modification.
+
+   This will not create the extra build targets that :cmake:command:`ExternalZephyrProject_Add`
+   adds, for example ``<app>_menuconfig``.
+
+   .. note::
+
+      The variant image must have a :cmake:variable:`CONF_FILE`,
+      :cmake:variable:`EXTRA_CONF_FILE`, :cmake:variable:`EXTRA_DTC_OVERLAY_FILE` or ``SNIPPET``
+      added to it, or it will be invalid and image configuration will result in a fatal error.
+
+   ``APPLICATION <name>``
+     Name of the application. The name will also be used for the build folder of the application.
+
+   ``SOURCE_APP <name>``
+     Name of the existing image to use for duplication.
+
+   ``SNIPPET <snippet>``
+     List of default snippets to apply for the variant image.
+
+   ``EXTRA_DTC_OVERLAY_FILE <file>``
+     List of default extra devicetree overlay files to apply for the variant image.
+
+   ``EXTRA_CONF_FILE <file>``
+     List of default extra Kconfig fragments to apply for the variant image.
+
+   ``BUILD_ONLY <bool>``
+     Mark the application as build-only. If ``<bool>`` evaluates to true, then this application
+     will be excluded from flashing and debugging.
+
+#]=======================================================================]
+function(ExternalZephyrVariantProject_Add)
+  cmake_parse_arguments(ZBUILD "" "SOURCE_APP;APPLICATION;SNIPPET;EXTRA_DTC_OVERLAY_FILE;EXTRA_CONF_FILE;BUILD_ONLY" "" ${ARGN})
+
+  if(ZBUILD_UNPARSED_ARGUMENTS)
+    message(FATAL_ERROR
+      "ExternalZephyrVariantProject_Add(${ARGV0} <val> ...) given unknown arguments:"
+      " ${ZBUILD_UNPARSED_ARGUMENTS}"
+    )
+  endif()
+
+  if(TARGET ${ZBUILD_APPLICATION})
+    message(FATAL_ERROR
+      "ExternalZephyrVariantProject_Add(APPLICATION ${ZBUILD_APPLICATION} ...) "
+      "already exists. Application names must be unique."
+    )
+  endif()
+
+  if(NOT DEFINED ZBUILD_SOURCE_APP OR NOT TARGET ${ZBUILD_SOURCE_APP})
+    message(FATAL_ERROR
+      "ExternalZephyrVariantProject_Add(SOURCE_APP ${ZBUILD_SOURCE_APP} ...) "
+      "does not exist. Existing image must already exist."
+    )
+  endif()
+
+  if(NOT DEFINED SYSBUILD_CURRENT_SOURCE_DIR)
+    message(FATAL_ERROR
+      "ExternalZephyrVariantProject_Add(${ARGV0} <val> ...) must not be called outside of"
+      " sysbuild_add_subdirectory(). SYSBUILD_CURRENT_SOURCE_DIR is undefined."
+    )
+  endif()
+
+  get_target_property(ZBUILD_BOARD ${ZBUILD_SOURCE_APP} BOARD)
+  get_target_property(ZBUILD_SOURCE_DIR ${ZBUILD_SOURCE_APP} APP_SOURCE_DIR)
+  get_property(var_type CACHE ${ZBUILD_SOURCE_APP}_${shared_var} PROPERTY TYPE)
+
+  set_property(
+    DIRECTORY "${SYSBUILD_CURRENT_SOURCE_DIR}"
+    APPEND PROPERTY sysbuild_images ${ZBUILD_APPLICATION}
+  )
+  set_property(
+    GLOBAL
+    APPEND PROPERTY sysbuild_images ${ZBUILD_APPLICATION}
+  )
+
+  # Update ROOT variables with relative paths to use absolute paths based on
+  # the source application directory.
+  foreach(type MODULE_EXT BOARD SOC ARCH SCA)
+    if(DEFINED CACHE{${ZBUILD_APPLICATION}_${type}_ROOT} AND NOT IS_ABSOLUTE $CACHE{${ZBUILD_APPLICATION}_${type}_ROOT})
+      set(rel_path $CACHE{${ZBUILD_APPLICATION}_${type}_ROOT})
+      cmake_path(ABSOLUTE_PATH rel_path BASE_DIRECTORY "${ZBUILD_SOURCE_DIR}" NORMALIZE OUTPUT_VARIABLE abs_path)
+      set(${ZBUILD_APPLICATION}_${type}_ROOT ${abs_path} CACHE PATH "Sysbuild adjusted absolute path" FORCE)
+    endif()
+  endforeach()
+
+  # CMake variables which must be known by all Zephyr CMake build systems
+  # Those are settings which controls the build and must be known to CMake at
+  # invocation time, and thus cannot be passed through the sysbuild cache file.
+  set(
+    shared_cmake_variables_list
+    CMAKE_BUILD_TYPE
+    CMAKE_VERBOSE_MAKEFILE
+    WEST_PYTHON        # Temporary export. Waiting for #87083 and extensions.cmake to be cleaned up.
+    Python3_EXECUTABLE # Temporary export. Waiting for #87083 and extensions.cmake to be cleaned up.
+  )
+
+  set(sysbuild_cache_file ${CMAKE_BINARY_DIR}/${ZBUILD_APPLICATION}_sysbuild_cache.txt)
+  set(shared_cmake_vars_argument)
+
+  foreach(shared_var ${shared_cmake_variables_list})
+    if(DEFINED CACHE{${ZBUILD_SOURCE_APP}_${shared_var}})
+      get_property(var_type CACHE ${ZBUILD_SOURCE_APP}_${shared_var} PROPERTY TYPE)
+      list(APPEND shared_cmake_vars_argument
+           "-D${shared_var}:${var_type}=$CACHE{${ZBUILD_SOURCE_APP}_${shared_var}}"
+      )
+    elseif(DEFINED CACHE{${ZBUILD_APPLICATION}_${shared_var}})
+      get_property(var_type CACHE ${ZBUILD_APPLICATION}_${shared_var} PROPERTY TYPE)
+      list(APPEND shared_cmake_vars_argument
+           "-D${shared_var}:${var_type}=$CACHE{${ZBUILD_APPLICATION}_${shared_var}}"
+      )
+    elseif(DEFINED CACHE{${shared_var}})
+      get_property(var_type CACHE ${shared_var} PROPERTY TYPE)
+      list(APPEND shared_cmake_vars_argument
+           "-D${shared_var}:${var_type}=$CACHE{${shared_var}}"
+      )
+    endif()
+  endforeach()
+
+  # Add the variant image CMake module path to replace the normal Zephyr module path
+  list(APPEND shared_cmake_vars_argument
+    "-DCMAKE_MODULE_PATH:PATH=${CMAKE_SOURCE_DIR}/cmake/zephyr/variant"
+  )
+
+  set(list_separator ",")
+
+  include(ExternalProject)
+  set(application_binary_dir ${CMAKE_BINARY_DIR}/${ZBUILD_APPLICATION})
+  ExternalProject_Add(
+    ${ZBUILD_APPLICATION}
+    SOURCE_DIR ${ZBUILD_SOURCE_DIR}
+    BINARY_DIR ${application_binary_dir}
+    CONFIGURE_COMMAND ""
+    LIST_SEPARATOR "${list_separator}"
+    CMAKE_ARGS -DSYSBUILD:BOOL=True
+               -DSYSBUILD_CACHE:FILEPATH=${sysbuild_cache_file}
+               ${shared_cmake_vars_argument}
+    BUILD_COMMAND ${CMAKE_COMMAND} --build .
+    INSTALL_COMMAND ""
+    BUILD_ALWAYS True
+    USES_TERMINAL_BUILD True
+  )
+
+  get_property(${ZBUILD_SOURCE_APP}_APP_TYPE TARGET ${ZBUILD_SOURCE_APP} PROPERTY APP_TYPE)
+
+  set_property(TARGET ${ZBUILD_APPLICATION} PROPERTY APP_TYPE ${${ZBUILD_SOURCE_APP}_APP_TYPE})
+  set_property(TARGET ${ZBUILD_APPLICATION} PROPERTY CONFIG
+               "# sysbuild controlled configuration settings\n"
+  )
+  set_target_properties(${ZBUILD_APPLICATION} PROPERTIES CACHE_FILE ${sysbuild_cache_file})
+  set_target_properties(${ZBUILD_APPLICATION} PROPERTIES KCONFIG_BINARY_DIR
+                        ${application_binary_dir}/Kconfig
+  )
+
+  if("${${ZBUILD_SOURCE_APP}_APP_TYPE}" STREQUAL "MAIN")
+    set_target_properties(${ZBUILD_APPLICATION} PROPERTIES MAIN_APP True)
+  endif()
+
+  set(${ZBUILD_APPLICATION}_DTS_SOURCE ${CMAKE_BINARY_DIR}/${ZBUILD_SOURCE_APP}/zephyr/zephyr.dts
+      CACHE INTERNAL "Application DTC file" FORCE
+  )
+
+  set(${ZBUILD_APPLICATION}_DTS_DEPS ${CMAKE_BINARY_DIR}/${ZBUILD_SOURCE_APP}/zephyr/zephyr.dts.d
+      CACHE INTERNAL "Application DTC dependency file" FORCE
+  )
+
+  set(${ZBUILD_APPLICATION}_KCONFIG_VARIANT_SOURCE
+      ${CMAKE_BINARY_DIR}/${ZBUILD_SOURCE_APP}/zephyr/.config
+      CACHE INTERNAL "Application config file" FORCE
+  )
+
+  set(${ZBUILD_APPLICATION}_SNIPPET ${ZBUILD_SNIPPET}
+      CACHE INTERNAL "Application snippet" FORCE
+  )
+
+  set(${ZBUILD_APPLICATION}_EXTRA_DTC_OVERLAY_FILE ${ZBUILD_EXTRA_DTC_OVERLAY_FILE}
+      CACHE INTERNAL "Application extra DTC overlay file" FORCE
+  )
+
+  set(${ZBUILD_APPLICATION}_EXTRA_CONF_FILE ${ZBUILD_EXTRA_CONF_FILE}
+      CACHE INTERNAL "Application extra config file" FORCE
+  )
+
+  set_target_properties(${ZBUILD_APPLICATION} PROPERTIES IMAGE_CONF_SCRIPT "")
+  set_target_properties(${ZBUILD_APPLICATION} PROPERTIES APP_CLONE ${ZBUILD_SOURCE_APP})
+
+  if(DEFINED ZBUILD_BOARD)
+    # Only set image specific board if provided.
+    # The sysbuild BOARD is exported through sysbuild cache, and will be used
+    # unless <image>_BOARD is defined.
+    set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BOARD ${ZBUILD_BOARD})
+  endif()
+
+  if(DEFINED ZBUILD_BUILD_ONLY)
+    set_target_properties(${ZBUILD_APPLICATION} PROPERTIES BUILD_ONLY ${ZBUILD_BUILD_ONLY})
+  endif()
+
+  sysbuild_add_dependencies(CONFIGURE ${ZBUILD_APPLICATION} ${ZBUILD_SOURCE_APP})
 endfunction()
 
 # Usage:
@@ -482,18 +748,32 @@ function(ExternalZephyrProject_Cmake)
 
   ExternalProject_Get_Property(${ZCMAKE_APPLICATION} SOURCE_DIR BINARY_DIR CMAKE_ARGS LIST_SEPARATOR)
   get_target_property(${ZCMAKE_APPLICATION}_BOARD      ${ZCMAKE_APPLICATION} BOARD)
+  get_target_property(${ZCMAKE_APPLICATION}_APP_CLONE ${ZCMAKE_APPLICATION} APP_CLONE)
+  set(dotconfigsysbuild ${BINARY_DIR}/zephyr/.config.sysbuild)
+  sysbuild_cache(CREATE APPLICATION ${ZCMAKE_APPLICATION})
 
   get_property(${ZCMAKE_APPLICATION}_CONF_SCRIPT TARGET ${ZCMAKE_APPLICATION}
                PROPERTY IMAGE_CONF_SCRIPT
   )
 
-  sysbuild_cache(CREATE APPLICATION ${ZCMAKE_APPLICATION})
+  if(${ZCMAKE_APPLICATION}_APP_CLONE)
+    if(NOT ${ZCMAKE_APPLICATION}_CONF_SCRIPT AND NOT ${ZCMAKE_APPLICATION}_EXTRA_CONF_FILE AND NOT
+      ${ZCMAKE_APPLICATION}_EXTRA_DTC_OVERLAY_FILE AND NOT ${ZCMAKE_APPLICATION}_SNIPPET
+    )
+      message(FATAL_ERROR
+        "${ZCMAKE_APPLICATION} is a variant application but has no CONF_SCRIPT, EXTRA_CONF_FILE, "
+        "EXTRA_DTC_OVERLAY_FILE or SNIPPET variables defined, which is not valid."
+      )
+    endif()
+
+    get_target_property(config_content ${${ZCMAKE_APPLICATION}_APP_CLONE} CONFIG)
+    set_property(TARGET ${ZCMAKE_APPLICATION} PROPERTY CONFIG ${config_content})
+  endif()
 
   foreach(script ${${ZCMAKE_APPLICATION}_CONF_SCRIPT})
     include(${script})
   endforeach()
 
-  set(dotconfigsysbuild ${BINARY_DIR}/zephyr/.config.sysbuild)
   get_target_property(config_content ${ZCMAKE_APPLICATION} CONFIG)
   string(CONFIGURE "${config_content}" config_content)
   file(WRITE ${dotconfigsysbuild} ${config_content})
@@ -517,7 +797,14 @@ function(ExternalZephyrProject_Cmake)
     )
   endif()
   load_cache(IMAGE ${ZCMAKE_APPLICATION} BINARY_DIR ${BINARY_DIR})
-  import_kconfig(CONFIG_ ${BINARY_DIR}/zephyr/.config TARGET ${ZCMAKE_APPLICATION})
+
+  if(EXISTS ${BINARY_DIR}/zephyr/.config)
+    import_kconfig(CONFIG_ ${BINARY_DIR}/zephyr/.config TARGET ${ZCMAKE_APPLICATION})
+  endif()
+
+  if(EXISTS ${BINARY_DIR}/zephyr/edt.pickle)
+    zephyr_dt_import(EDT_PICKLE_FILE ${BINARY_DIR}/zephyr/edt.pickle TARGET ${ZCMAKE_APPLICATION})
+  endif()
 
   # This custom target informs CMake how the BYPRODUCTS are generated if a target
   # depends directly on the BYPRODUCT instead of depending on the image target.
@@ -527,6 +814,25 @@ function(ExternalZephyrProject_Cmake)
                     BYPRODUCTS ${${ZCMAKE_APPLICATION}_byproducts}
                     DEPENDS ${ZCMAKE_APPLICATION}
   )
+
+  get_target_property(${ZCMAKE_APPLICATION}_shared_targets
+    ${ZCMAKE_APPLICATION}_cache
+    ZEPHYR_SHARED_TARGETS
+  )
+
+  get_target_property(${ZCMAKE_APPLICATION}_MAIN_APP ${ZCMAKE_APPLICATION} MAIN_APP)
+  foreach(shared_target ${${ZCMAKE_APPLICATION}_shared_targets})
+    if(NOT ${ZCMAKE_APPLICATION}_MAIN_APP)
+      set(image_prefix "${ZCMAKE_APPLICATION}_")
+    endif()
+
+    add_custom_target(${image_prefix}${shared_target}
+      ${CMAKE_MAKE_PROGRAM} ${shared_target}
+      WORKING_DIRECTORY ${CMAKE_BINARY_DIR}/${ZCMAKE_APPLICATION}
+      USES_TERMINAL
+    )
+  endforeach()
+
 endfunction()
 
 # Usage:
@@ -585,26 +891,34 @@ function(sysbuild_module_call)
   endforeach()
 endfunction()
 
-# Usage:
-#   sysbuild_cache_set(VAR <variable> [APPEND [REMOVE_DUPLICATES]] <value>)
-#
-# This function will set the specified value of the sysbuild cache variable in
-# the CMakeCache.txt file which can then be accessed by images.
-# `VAR` specifies the variable name to set/update.
-#
-# The result will be returned in `<variable>`.
-#
-# Example use:
-#   sysbuild_cache_set(VAR ATTRIBUTES APPEND REMOVE_DUPLICATES battery)
-#     Will add the item `battery` to the `ATTRIBUTES` variable as a new element
-#     in the list in the CMakeCache and remove any duplicates from the list.
-#
-# <variable>:        Name of variable in CMake cache.
-# APPEND:            If specified then will append the supplied data to the
-#                    existing value as a list.
-# REMOVE_DUPLICATES: If specified then remove duplicate entries contained
-#                    within the list before saving to the cache.
-# <value>:           Value to set/update.
+#[=======================================================================[.rst:
+.. cmake:signature:: sysbuild_cache_set(VAR <variable> [APPEND [REMOVE_DUPLICATES]] <value>)
+
+   Set a sysbuild cache variable, which can then be accessed by images.
+
+   The result will be returned in ``<variable>``.
+
+   ``VAR <variable>``
+     Name of the variable in the CMake cache.
+
+   ``APPEND``
+     If specified, append the supplied data to the existing value as a list.
+
+   ``REMOVE_DUPLICATES``
+     If specified, remove duplicate entries contained within the list before saving to the cache.
+
+   ``<value>``
+     Value to set or update.
+
+   Example usage:
+
+   .. code-block:: cmake
+
+      # Add `battery` to the `ATTRIBUTES` list in the CMake cache, removing
+      # any duplicates from the list.
+      sysbuild_cache_set(VAR ATTRIBUTES APPEND REMOVE_DUPLICATES battery)
+
+#]=======================================================================]
 function(sysbuild_cache_set)
   cmake_parse_arguments(VARS "APPEND;REMOVE_DUPLICATES" "VAR" "" ${ARGN})
 
@@ -649,6 +963,38 @@ function(sysbuild_cache_set)
   set(${VARS_VAR} "${var_new}" CACHE "${var_type}" "${var_help}" FORCE)
 endfunction()
 
+#[=======================================================================[.rst:
+Setting Kconfig values on an image
+==================================
+
+The following commands add a Kconfig fragment line to ``<image>``. They are the supported way for
+a :file:`sysbuild.cmake` file to configure an image it has added.
+
+The collected fragment is passed to the image as a forced input configuration, so it is applied
+last and takes precedence over the image's own Kconfig fragments. See
+:ref:`sysbuild_kconfig_namespacing` for how these relate to ``SB_CONFIG_`` options.
+
+.. cmake:signature:: set_config_bool(<image> <setting> <value>)
+
+   Set a boolean Kconfig option to ``y`` if ``<value>`` evaluates to true, and to ``n`` otherwise.
+
+.. cmake:signature:: set_config_string(<image> <setting> <value>)
+
+   Set a string Kconfig option to ``<value>``.
+
+.. cmake:signature:: set_config_int(<image> <setting> <value>)
+
+   Set an int or hex Kconfig option to ``<value>``.
+
+   Example usage:
+
+   .. code-block:: cmake
+
+      set_config_bool(${DEFAULT_IMAGE} CONFIG_BOOTLOADER_MCUBOOT y)
+      set_config_string(${DEFAULT_IMAGE} CONFIG_MCUBOOT_SIGNATURE_KEY_FILE "${keyfile}")
+      set_config_int(mcuboot CONFIG_LOG_MAX_LEVEL 2)
+
+#]=======================================================================]
 function(set_config_bool image setting value)
   if(${value})
     set_property(TARGET ${image} APPEND_STRING PROPERTY CONFIG "${setting}=y\n")
@@ -666,16 +1012,63 @@ function(set_config_int image setting value)
 endfunction()
 
 # Usage:
-#   sysbuild_add_subdirectory(<source_dir> [<binary_dir>])
+#   sysbuild_mcuboot_resolve_signature_key_files(<out_var> <key_files>)
 #
-# This function extends the standard add_subdirectory() command with additional,
-# recursive processing of the sysbuild images added via <source_dir>.
+# Normalize a BOOT_SIGNATURE_KEY_FILE value -- a single path or a comma-separated
+# list -- for forwarding to an image: strip surrounding whitespace from each
+# entry and warn on (and skip) an empty entry (a stray comma). Entries are
+# forwarded verbatim for each consumer to resolve, and stay comma-separated
+# (';' would not survive set_config_string() or -D overrides).
+function(sysbuild_mcuboot_resolve_signature_key_files out_var key_files)
+  string(REPLACE "," ";" key_list "${key_files}")
+  set(resolved "")
+  # IN LISTS keeps empty elements (unlike unquoted expansion, which drops them),
+  # so a stray/leading/trailing/double comma is warned about below instead of
+  # silently collapsing the key set.
+  foreach(key_path IN LISTS key_list)
+    string(STRIP "${key_path}" key_path)
+    if(key_path STREQUAL "")
+      message(WARNING
+        "Empty entry in a BOOT_SIGNATURE_KEY_FILE list (\"${key_files}\"); "
+        "check for a stray, leading, or trailing comma."
+      )
+      continue()
+    endif()
+    list(APPEND resolved "${key_path}")
+  endforeach()
+  string(REPLACE ";" "," resolved "${resolved}")
+  set(${out_var} "${resolved}" PARENT_SCOPE)
+endfunction()
+
+# Usage:
+#   sysbuild_mcuboot_application_signature_key_file(<out_var> <key_files>)
 #
-# After exiting <source_dir>, this function will take every image added so far,
-# and include() its sysbuild.cmake file (if found). If more images get added at
-# this stage, their sysbuild.cmake files will be included as well, and so on.
-# This continues until all expected images have been added, before returning.
-#
+# Set <out_var> to the key the application is signed with: the first entry of
+# the resolved <key_files> list (the MCUboot bootloader embeds the public half
+# of every entry; the application is signed with exactly one).
+function(sysbuild_mcuboot_application_signature_key_file out_var key_files)
+  sysbuild_mcuboot_resolve_signature_key_files(resolved "${key_files}")
+  if(NOT resolved STREQUAL "")
+    string(REPLACE "," ";" resolved "${resolved}")
+    list(GET resolved 0 resolved)
+  endif()
+  set(${out_var} "${resolved}" PARENT_SCOPE)
+endfunction()
+
+#[=======================================================================[.rst:
+.. cmake:signature:: sysbuild_add_subdirectory(<source_dir> [<binary_dir>])
+
+   Add a subdirectory, and recursively process the sysbuild images it adds.
+
+   This command extends :cmake:command:`add_subdirectory <command:add_subdirectory>` with
+   additional, recursive processing of the sysbuild images added via ``<source_dir>``.
+
+   After exiting ``<source_dir>``, this command will take every image added so far and
+   :cmake:command:`include() <command:include>` its :file:`sysbuild.cmake` file, if found. If more
+   images get added at this stage, their :file:`sysbuild.cmake` files will be included as well, and
+   so on. This continues until all expected images have been added, before returning.
+
+#]=======================================================================]
 function(sysbuild_add_subdirectory source_dir)
   if(ARGC GREATER 2)
     message(FATAL_ERROR
@@ -704,18 +1097,24 @@ function(sysbuild_add_subdirectory source_dir)
   endwhile()
 endfunction()
 
-# Usage:
-#   sysbuild_add_dependencies(<CONFIGURE | FLASH> <image> [<image-dependency> ...])
-#
-# This function makes an image depend on other images in the configuration or
-# flashing order. Each image named "<image-dependency>" will be ordered before
-# the image named "<image>".
-#
-# CONFIGURE: Add CMake configuration dependencies. This will determine the order
-#            in which `ExternalZephyrProject_Cmake()` will be called.
-# FLASH:     Add flashing dependencies. This will determine the order in which
-#            all images will appear in `domains.yaml`.
-#
+#[=======================================================================[.rst:
+.. cmake:signature:: sysbuild_add_dependencies(<CONFIGURE | FLASH> <image> [<image-dependency> ...])
+
+   Make an image depend on other images in the configuration or flashing order.
+
+   Each image named ``<image-dependency>`` will be ordered before the image named ``<image>``.
+
+   ``CONFIGURE``
+     Add CMake configuration dependencies. This will determine the order in which images are
+     configured.
+
+   ``FLASH``
+     Add flashing dependencies. This will determine the order in which all images will appear in
+     :file:`domains.yaml`.
+
+   See :ref:`sysbuild_zephyr_application_dependencies` for a worked example.
+
+#]=======================================================================]
 function(sysbuild_add_dependencies dependency_type image)
   set(valid_dependency_types CONFIGURE FLASH)
   if(NOT dependency_type IN_LIST valid_dependency_types)
@@ -745,13 +1144,15 @@ function(sysbuild_add_dependencies dependency_type image)
   set_property(TARGET ${image} APPEND PROPERTY ${property_name} ${ARGN})
 endfunction()
 
-# Usage:
-#   sysbuild_images_order(<variable> <CONFIGURE | FLASH> IMAGES <images>)
-#
-# This function will sort the provided `<images>` to satisfy the dependencies
-# specified using `sysbuild_add_dependencies()`. The result will be returned in
-# `<variable>`.
-#
+#[=======================================================================[.rst:
+.. cmake:signature:: sysbuild_images_order(<variable> <CONFIGURE | FLASH> IMAGES <images>)
+
+   Sort the provided ``<images>`` to satisfy the dependencies specified using
+   :cmake:command:`sysbuild_add_dependencies`.
+
+   The result will be returned in ``<variable>``.
+
+#]=======================================================================]
 function(sysbuild_images_order variable dependency_type)
   cmake_parse_arguments(SIS "" "" "IMAGES" ${ARGN})
   zephyr_check_arguments_required_all("sysbuild_images_order" SIS IMAGES)

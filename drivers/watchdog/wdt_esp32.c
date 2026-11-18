@@ -1,15 +1,16 @@
 /*
  * Copyright (C) 2017 Intel Corporation
+ * Copyright (c) 2025-2026 Espressif Systems (Shanghai) Co., Ltd.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #define DT_DRV_COMPAT espressif_esp32_watchdog
 
-/* Include esp-idf headers first to avoid redefining BIT() macro */
-#if defined(CONFIG_SOC_SERIES_ESP32C6)
+#if defined(CONFIG_SOC_SERIES_ESP32C5) || defined(CONFIG_SOC_SERIES_ESP32C61) ||                   \
+	defined(CONFIG_SOC_SERIES_ESP32C6) || defined(CONFIG_SOC_SERIES_ESP32H2)
 #include <soc/lp_aon_reg.h>
-#else
+#elif !defined(CONFIG_SOC_SERIES_ESP32P4)
 #include <soc/rtc_cntl_reg.h>
 #endif
 #include <soc/timer_group_reg.h>
@@ -19,21 +20,22 @@
 #include <string.h>
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/drivers/clock_control.h>
-#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
-#include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
-#else
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
-#endif
 #include <zephyr/device.h>
+
+#if CONFIG_ESP32_PM_POWER_DOWN_PERIPHERAL_IN_LIGHT_SLEEP && SOC_MWDT_SUPPORT_SLEEP_RETENTION
+#define WDT_SLEEP_RETENTION_ENABLED 1
+#else
+#define WDT_SLEEP_RETENTION_ENABLED 0
+#endif
+
+#if WDT_SLEEP_RETENTION_ENABLED
+#include <hal/mwdt_periph.h>
+#include <esp_private/sleep_retention.h>
+#endif
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(wdt_esp32, CONFIG_WDT_LOG_LEVEL);
-
-#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
-#define ISR_HANDLER isr_handler_t
-#else
-#define ISR_HANDLER intr_handler_t
-#endif
 
 #define MWDT_TICK_PRESCALER		40000
 #define MWDT_TICKS_PER_US		500
@@ -154,10 +156,48 @@ static int wdt_esp32_install_timeout(const struct device *dev,
 	return 0;
 }
 
+#if WDT_SLEEP_RETENTION_ENABLED
+static esp_err_t wdt_create_sleep_retention_cb(void *arg)
+{
+	uint32_t group_id = (uint32_t)(uintptr_t)arg;
+	sleep_retention_module_t module =
+		(group_id == 0) ? SLEEP_RETENTION_MODULE_TG0_WDT : SLEEP_RETENTION_MODULE_TG1_WDT;
+
+	return sleep_retention_entries_create(tg_wdt_regs_retention[group_id].link_list,
+					      tg_wdt_regs_retention[group_id].link_num,
+					      REGDMA_LINK_PRI_SYS_PERIPH_LOW, module);
+}
+
+static void wdt_esp32_sleep_retention_init(uint32_t group_id)
+{
+	sleep_retention_module_t module =
+		(group_id == 0) ? SLEEP_RETENTION_MODULE_TG0_WDT : SLEEP_RETENTION_MODULE_TG1_WDT;
+
+	sleep_retention_module_init_param_t init_param = {
+		.cbs = {.create = {.handle = wdt_create_sleep_retention_cb,
+				   .arg = (void *)(uintptr_t)group_id}},
+		.attribute = SLEEP_RETENTION_MODULE_ATTR_ATTACH,
+		.depends = RETENTION_MODULE_BITMAP_INIT(CLOCK_SYSTEM)};
+
+	esp_err_t err = sleep_retention_module_init(module, &init_param);
+
+	if (err == ESP_OK) {
+		err = sleep_retention_module_allocate(module);
+	}
+	if (err == ESP_OK) {
+		err = sleep_retention_module_attach(module);
+	}
+	if (err != ESP_OK) {
+		LOG_WRN("WDT%d sleep retention init failed (%d)", group_id, err);
+	}
+}
+#endif /* WDT_SLEEP_RETENTION_ENABLED */
+
 static int wdt_esp32_init(const struct device *dev)
 {
 	const struct wdt_esp32_config *const config = dev->config;
 	struct wdt_esp32_data *data = dev->data;
+	int ret, flags;
 
 	if (!device_is_ready(config->clock_dev)) {
 		LOG_ERR("clock control device not ready");
@@ -168,26 +208,24 @@ static int wdt_esp32_init(const struct device *dev)
 
 	wdt_hal_init(&data->hal, config->wdt_inst, MWDT_TICK_PRESCALER, true);
 
-	int ret = esp_intr_alloc(config->irq_source,
-				ESP_PRIO_TO_FLAGS(config->irq_priority) |
-				ESP_INT_FLAGS_CHECK(config->irq_flags),
-				(ISR_HANDLER)wdt_esp32_isr,
-				(void *)dev,
-				NULL);
+	flags = ESP_PRIO_TO_FLAGS(config->irq_priority) | ESP_INT_FLAGS_CHECK(config->irq_flags) |
+		ESP_INTR_FLAG_IRAM;
+	ret = esp_intr_alloc(config->irq_source, flags, (intr_handler_t)wdt_esp32_isr, (void *)dev,
+			     NULL);
 
 	if (ret != 0) {
 		LOG_ERR("could not allocate interrupt (err %d)", ret);
 		return ret;
 	}
 
-#ifndef CONFIG_WDT_DISABLE_AT_BOOT
-	wdt_esp32_enable(dev);
+#if WDT_SLEEP_RETENTION_ENABLED
+	wdt_esp32_sleep_retention_init(config->wdt_inst - WDT_MWDT0);
 #endif
 
 	return 0;
 }
 
-static const struct wdt_driver_api wdt_api = {
+static DEVICE_API(wdt, wdt_api) = {
 	.setup = wdt_esp32_set_config,
 	.disable = wdt_esp32_disable,
 	.install_timeout = wdt_esp32_install_timeout,
@@ -213,7 +251,7 @@ static const struct wdt_driver_api wdt_api = {
 			      PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE,	   \
 			      &wdt_api)
 
-static void wdt_esp32_isr(void *arg)
+static void IRAM_ATTR wdt_esp32_isr(void *arg)
 {
 	const struct device *dev = (const struct device *)arg;
 	struct wdt_esp32_data *data = dev->data;

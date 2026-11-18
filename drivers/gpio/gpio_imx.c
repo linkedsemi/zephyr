@@ -253,7 +253,7 @@ static void imx_gpio_port_isr(const struct device *port)
 	gpio_fire_callbacks(&data->callbacks, port, int_status);
 }
 
-static const struct gpio_driver_api imx_gpio_driver_api = {
+static DEVICE_API(gpio, imx_gpio_driver_api) = {
 	.pin_configure = imx_gpio_configure,
 	.port_get_raw = imx_gpio_port_get_raw,
 	.port_set_masked_raw = imx_gpio_port_set_masked_raw,
@@ -279,10 +279,7 @@ static const struct gpio_driver_api imx_gpio_driver_api = {
 	static int imx_gpio_##n##_init(const struct device *port);	\
 									\
 	static const struct imx_gpio_config imx_gpio_##n##_config = {	\
-		.common = {						\
-			.port_pin_mask =				\
-				GPIO_PORT_PIN_MASK_FROM_DT_INST(n),	\
-		},							\
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(n),		\
 		.base = (GPIO_Type *)DT_INST_REG_ADDR(n),		\
 		IMX_IGPIO_PIN_INIT(n)					\
 	};								\

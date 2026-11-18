@@ -29,6 +29,10 @@
 		zephyr,console = &xen_hvc;
 	};
 
+	aliases {
+		watchdog0 = &xen_wdt;
+	};
+
 	cpus {
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
@@ -47,7 +51,7 @@
 	};
 
 	ram: memory@40000000 {
-		device_type = "mmio-sram";
+		device_type = "memory";
 		reg = <0x00 0x40000000 0x00 DT_SIZE_M(16)>;
 	};
 
@@ -76,6 +80,11 @@
 
 	xen_hvc: hvc {
 		compatible = "xen,hvc-uart";
+		status = "okay";
+	};
+
+	xen_wdt: watchdog {
+		compatible = "xen,watchdog";
 		status = "okay";
 	};
 };

@@ -136,13 +136,39 @@ Keeping Zephyr updated
 To update the Zephyr project source code, you need to get the latest
 changes via ``git``. Afterwards, run ``west update`` as mentioned in
 the previous paragraph.
+Additionally, check for updated or added Python dependencies.
 
-.. code-block:: console
+.. tabs::
 
-   # replace zephyrproject with the path you gave west init
-   cd zephyrproject/zephyr
-   git pull
-   west update
+   .. group-tab:: Linux/macOS
+
+      .. code-block:: console
+
+         # replace zephyrproject with the path you gave west init
+         cd zephyrproject/zephyr
+         git pull
+         west update
+         west packages pip --install
+
+   .. group-tab:: Windows
+
+      .. tabs::
+
+         .. code-tab:: bat
+
+            :: replace zephyrproject with the path you gave west init
+            cd zephyrproject\zephyr
+            git pull
+            west update
+            cmd /c scripts\utils\west-packages-pip-install.cmd
+
+         .. code-tab:: powershell
+
+            # replace zephyrproject with the path you gave west init
+            cd zephyrproject\zephyr
+            git pull
+            west update
+            python -m pip install @((west packages pip) -split ' ')
 
 Export Zephyr CMake package
 ***************************
@@ -178,7 +204,7 @@ Build and Run an Application
 You can build, flash, and run Zephyr applications on real
 hardware using a supported host system. Depending on your operating system,
 you can also run it in emulation with QEMU, or as a native application with
-:ref:`native_sim <native_sim>`.
+:zephyr:board:`native_sim <native_sim>`.
 Additional information about building applications can be found in the
 :ref:`build_an_application` section.
 
@@ -188,11 +214,11 @@ Build Blinky
 Let's build the :zephyr:code-sample:`blinky` sample application.
 
 Zephyr applications are built to run on specific hardware, called a
-"board"\ [#board_misnomer]_. We'll use the Phytec :ref:`reel_board
-<reel_board>` here, but you can change the ``reel_board`` build target
-to another value if you have a different board. See :ref:`boards` or run
-``west boards`` from anywhere inside the ``zephyrproject`` directory for
-a list of supported boards.
+"board"\ [#board_misnomer]_. We'll use the Phytec
+:zephyr:board:`reel_board<reel_board>` here, but you can change the
+``reel_board`` build target to another value if you have a different
+board. See :ref:`boards` or run ``west boards`` from anywhere inside
+the ``zephyrproject`` directory for a list of supported boards.
 
 #. Go to the zephyr repository:
 
@@ -274,17 +300,17 @@ needed.
 Run the Application in QEMU
 ===========================
 
-On Linux and macOS, you can run Zephyr applications via emulation on your host
-system using `QEMU <https://www.qemu.org/>`_ when targeting either
-the x86 or ARM Cortex-M3 architectures. (QEMU is included with the Zephyr
-SDK installation.)
+You can run Zephyr applications via emulation on your host system using
+`QEMU <https://www.qemu.org/>`_ when targeting either the x86 or ARM
+Cortex-M3 architectures. QEMU is included with the Zephyr SDK.
 
-On Windows, you need to install QEMU manually from
-`Download QEMU <https://www.qemu.org/download/#windows>`_. After installation,
-add path to QEMU installation folder to PATH environment variable.
-To enable QEMU in Test Runner (Twister) on Windows,
-:ref:`set the environment variable <env_vars>`
-``QEMU_BIN_PATH`` to the path of QEMU installation folder.
+If using a manual QEMU installation, ensure it is available in the system
+``PATH`` environment variable.
+
+``QEMU_BIN_PATH`` can be used as an optional override to specify the
+location of QEMU binaries used by Twister. When provided, Twister
+validates that the specified path exists. Otherwise, Twister relies on
+SDK or other QEMU discovery mechanisms.
 
 For example, you can build and run the :zephyr:code-sample:`hello_world` sample using
 the x86 emulation board configuration (``qemu_x86``), with:
@@ -305,7 +331,7 @@ Run a Sample Application natively (Linux)
 =========================================
 
 You can compile some samples to run as host programs
-on Linux. See :ref:`native_sim` for more information. On 64-bit host operating systems, you
+on Linux. See :zephyr:board:`native_sim` for more information. On 64-bit host operating systems, you
 need to install a 32-bit C library, or build targeting :ref:`native_sim/native/64<native_sim32_64>`.
 
 First, build Hello World for ``native_sim``.

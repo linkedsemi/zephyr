@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2019-2020, Prevas A/S
- * Copyright (c) 2022-2023 Nordic Semiconductor ASA
+ * Copyright (c) 2022-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -25,6 +25,10 @@
 #include <zephyr/net/conn_mgr_monitor.h>
 #include <errno.h>
 
+#if defined(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS)
+#include <zephyr/net/tls_credentials.h>
+#endif
+
 #include <mgmt/mcumgr/transport/smp_internal.h>
 
 #define LOG_LEVEL CONFIG_MCUMGR_LOG_LEVEL
@@ -38,14 +42,8 @@ BUILD_ASSERT(0, "Either IPv4 or IPv6 SMP must be enabled for the MCUmgr UDP SMP 
 		"CONFIG_MCUMGR_TRANSPORT_UDP_IPV4 or CONFIG_MCUMGR_TRANSPORT_UDP_IPV6");
 #endif
 
-BUILD_ASSERT(sizeof(struct sockaddr) <= CONFIG_MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE,
-	     "CONFIG_MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE must be >= sizeof(struct sockaddr)");
-
-#define IS_THREAD_RUNNING(thread)					\
-	(thread.base.thread_state & (_THREAD_PENDING |			\
-				     _THREAD_PRESTART |			\
-				     _THREAD_SUSPENDED |		\
-				     _THREAD_QUEUED) ? true : false)
+BUILD_ASSERT(sizeof(struct net_sockaddr) <= CONFIG_MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE,
+	     "CONFIG_MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE must be >= sizeof(struct net_sockaddr)");
 
 enum proto_type {
 	PROTOCOL_IPV4 = 0,
@@ -77,6 +75,8 @@ struct configs {
 #endif
 };
 
+static bool threads_created;
+
 static struct configs smp_udp_configs;
 
 static struct net_mgmt_event_callback smp_udp_mgmt_cb;
@@ -102,7 +102,7 @@ static const char *smp_udp_proto_to_name(enum proto_type proto)
 static int smp_udp4_tx(struct net_buf *nb)
 {
 	int ret;
-	struct sockaddr *addr = net_buf_user_data(nb);
+	struct net_sockaddr *addr = net_buf_user_data(nb);
 
 	ret = zsock_sendto(smp_udp_configs.ipv4.sock, nb->data, nb->len, 0, addr, sizeof(*addr));
 
@@ -126,7 +126,7 @@ static int smp_udp4_tx(struct net_buf *nb)
 static int smp_udp6_tx(struct net_buf *nb)
 {
 	int ret;
-	struct sockaddr *addr = net_buf_user_data(nb);
+	struct net_sockaddr *addr = net_buf_user_data(nb);
 
 	ret = zsock_sendto(smp_udp_configs.ipv6.sock, nb->data, nb->len, 0, addr, sizeof(*addr));
 
@@ -155,49 +155,61 @@ static uint16_t smp_udp_get_mtu(const struct net_buf *nb)
 
 static int smp_udp_ud_copy(struct net_buf *dst, const struct net_buf *src)
 {
-	struct sockaddr *src_ud = net_buf_user_data(src);
-	struct sockaddr *dst_ud = net_buf_user_data(dst);
+	struct net_sockaddr *src_ud = net_buf_user_data(src);
+	struct net_sockaddr *dst_ud = net_buf_user_data(dst);
 
-	net_ipaddr_copy(dst_ud, src_ud);
+	memcpy(dst_ud, src_ud, sizeof(struct net_sockaddr));
 
 	return MGMT_ERR_EOK;
+}
+
+static void smp_udp_ud_init(struct net_buf *nb, void *priv)
+{
+	struct net_sockaddr *ud = net_buf_user_data(nb);
+	const struct net_sockaddr *addr = priv;
+
+	if (addr) {
+		memcpy(ud, addr, sizeof(*addr));
+	}
 }
 
 static int create_socket(enum proto_type proto, int *sock)
 {
 	int tmp_sock;
 	int err;
-	struct sockaddr *addr;
+	struct net_sockaddr_storage addr_storage;
+	struct net_sockaddr *addr = (struct net_sockaddr *)&addr_storage;
+	net_socklen_t addr_len = 0;
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
-	struct sockaddr_in addr4;
+#if defined(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS)
+	int socket_role = ZSOCK_TLS_DTLS_ROLE_SERVER;
 #endif
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV6
-	struct sockaddr_in6 addr6;
-#endif
+	if (IS_ENABLED(CONFIG_MCUMGR_TRANSPORT_UDP_IPV4) &&
+	    proto == PROTOCOL_IPV4) {
+		struct net_sockaddr_in *addr4 = (struct net_sockaddr_in *)addr;
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
-	if (proto == PROTOCOL_IPV4) {
-		memset(&addr4, 0, sizeof(addr4));
-		addr4.sin_family = AF_INET;
-		addr4.sin_port = htons(CONFIG_MCUMGR_TRANSPORT_UDP_PORT);
-		addr4.sin_addr.s_addr = htonl(INADDR_ANY);
-		addr = (struct sockaddr *)&addr4;
+		addr_len = sizeof(*addr4);
+		memset(addr4, 0, sizeof(*addr4));
+		addr4->sin_family = NET_AF_INET;
+		addr4->sin_port = net_htons(CONFIG_MCUMGR_TRANSPORT_UDP_PORT);
+		addr4->sin_addr.s_addr = net_htonl(NET_INADDR_ANY);
+	} else if (IS_ENABLED(CONFIG_MCUMGR_TRANSPORT_UDP_IPV6) &&
+		   proto == PROTOCOL_IPV6) {
+		struct net_sockaddr_in6 *addr6 = (struct net_sockaddr_in6 *)addr;
+
+		addr_len = sizeof(*addr6);
+		memset(addr6, 0, sizeof(*addr6));
+		addr6->sin6_family = NET_AF_INET6;
+		addr6->sin6_port = net_htons(CONFIG_MCUMGR_TRANSPORT_UDP_PORT);
+		addr6->sin6_addr = net_in6addr_any;
 	}
-#endif
 
-#ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV6
-	if (proto == PROTOCOL_IPV6) {
-		memset(&addr6, 0, sizeof(addr6));
-		addr6.sin6_family = AF_INET6;
-		addr6.sin6_port = htons(CONFIG_MCUMGR_TRANSPORT_UDP_PORT);
-		addr6.sin6_addr = in6addr_any;
-		addr = (struct sockaddr *)&addr6;
-	}
+#if defined(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS)
+	tmp_sock = zsock_socket(addr->sa_family, NET_SOCK_DGRAM, NET_IPPROTO_DTLS_1_2);
+#else
+	tmp_sock = zsock_socket(addr->sa_family, NET_SOCK_DGRAM, NET_IPPROTO_UDP);
 #endif
-
-	tmp_sock = zsock_socket(addr->sa_family, SOCK_DGRAM, IPPROTO_UDP);
 	err = errno;
 
 	if (tmp_sock < 0) {
@@ -207,7 +219,30 @@ static int create_socket(enum proto_type proto, int *sock)
 		return -err;
 	}
 
-	if (zsock_bind(tmp_sock, addr, sizeof(*addr)) < 0) {
+#if defined(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS)
+	sec_tag_t sec_tag_list[] = {
+		CONFIG_MCUMGR_TRANSPORT_UDP_DTLS_TLS_TAG,
+	};
+
+	err = zsock_setsockopt(tmp_sock, ZSOCK_SOL_TLS, ZSOCK_TLS_SEC_TAG_LIST, sec_tag_list,
+			       sizeof(sec_tag_list));
+
+	if (err < 0) {
+		LOG_ERR("Failed to set UDP secure option: %d", errno);
+		return err;
+	}
+
+	/* Set role to DTLS server */
+	err = zsock_setsockopt(tmp_sock, ZSOCK_SOL_TLS, ZSOCK_TLS_DTLS_ROLE, &socket_role,
+			       sizeof(socket_role));
+
+	if (err < 0) {
+		LOG_ERR("Failed to set DTLS role secure option: %d", errno);
+		return err;
+	}
+#endif
+
+	if (zsock_bind(tmp_sock, addr, addr_len) < 0) {
 		err = errno;
 		LOG_ERR("Could not bind to receive socket (%s), err: %i",
 			smp_udp_proto_to_name(proto), err);
@@ -240,14 +275,14 @@ static void smp_udp_receive_thread(void *p1, void *p2, void *p3)
 	LOG_INF("Started (%s)", smp_udp_proto_to_name(conf->proto));
 
 	while (1) {
-		struct sockaddr addr;
-		socklen_t addr_len = sizeof(addr);
+		struct net_sockaddr addr;
+		net_socklen_t addr_len = sizeof(addr);
 
 		int len = zsock_recvfrom(conf->sock, conf->recv_buffer,
 					 CONFIG_MCUMGR_TRANSPORT_UDP_MTU, 0, &addr, &addr_len);
 
 		if (len > 0) {
-			struct sockaddr *ud;
+			struct net_sockaddr *ud;
 			struct net_buf *nb;
 
 			/* Store sender address in user data for reply */
@@ -257,9 +292,17 @@ static void smp_udp_receive_thread(void *p1, void *p2, void *p3)
 				/* No free space, drop SMP frame */
 				continue;
 			}
+
+			if (net_buf_tailroom(nb) < (size_t)len) {
+				LOG_ERR("SMP frame (%d) exceeds mcumgr buffer (%zu)", len,
+					net_buf_tailroom(nb));
+				smp_packet_free(nb);
+				continue;
+			}
+
 			net_buf_add_mem(nb, conf->recv_buffer, len);
 			ud = net_buf_user_data(nb);
-			net_ipaddr_copy(ud, &addr);
+			memcpy(ud, &addr, sizeof(addr));
 
 			smp_rx_req(&conf->smp_transport, nb);
 		} else if (len < 0) {
@@ -276,21 +319,21 @@ static void smp_udp_open_iface(struct net_if *iface, void *user_data)
 	if (net_if_is_up(iface)) {
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
 		if (net_if_flag_is_set(iface, NET_IF_IPV4) &&
-		    IS_THREAD_RUNNING(smp_udp_configs.ipv4.thread)) {
+		    k_thread_join(&smp_udp_configs.ipv4.thread, K_NO_WAIT) == -EBUSY) {
 			k_sem_give(&smp_udp_configs.ipv4.network_ready_sem);
 		}
 #endif
 
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV6
 		if (net_if_flag_is_set(iface, NET_IF_IPV6) &&
-		    IS_THREAD_RUNNING(smp_udp_configs.ipv6.thread)) {
+		    k_thread_join(&smp_udp_configs.ipv6.thread, K_NO_WAIT) == -EBUSY) {
 			k_sem_give(&smp_udp_configs.ipv6.network_ready_sem);
 		}
 #endif
 	}
 }
 
-static void smp_udp_net_event_handler(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
+static void smp_udp_net_event_handler(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
 				      struct net_if *iface)
 {
 	ARG_UNUSED(cb);
@@ -315,8 +358,31 @@ int smp_udp_open(void)
 {
 	bool started = false;
 
+#if defined(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS)
+	int rc;
+	size_t len = 0;
+
+	rc = tls_credential_get(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS_TLS_TAG,
+				TLS_CREDENTIAL_PUBLIC_CERTIFICATE, NULL, &len);
+
+	if (rc == -ENOENT) {
+		LOG_ERR("Missing DTLS public certificate credential");
+		return rc;
+	}
+
+	len = 0;
+	rc = tls_credential_get(CONFIG_MCUMGR_TRANSPORT_UDP_DTLS_TLS_TAG,
+				TLS_CREDENTIAL_PRIVATE_KEY, NULL, &len);
+
+	if (rc == -ENOENT) {
+		LOG_ERR("Missing DTLS private key credential");
+		return rc;
+	}
+#endif
+
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
-	if (!IS_THREAD_RUNNING(smp_udp_configs.ipv4.thread)) {
+	if (k_thread_join(&smp_udp_configs.ipv4.thread, K_NO_WAIT) == 0 ||
+	    threads_created == false) {
 		(void)k_sem_reset(&smp_udp_configs.ipv4.network_ready_sem);
 		create_thread(&smp_udp_configs.ipv4, "smp_udp4");
 		started = true;
@@ -326,7 +392,8 @@ int smp_udp_open(void)
 #endif
 
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV6
-	if (!IS_THREAD_RUNNING(smp_udp_configs.ipv6.thread)) {
+	if (k_thread_join(&smp_udp_configs.ipv6.thread, K_NO_WAIT) == 0 ||
+	    threads_created == false) {
 		(void)k_sem_reset(&smp_udp_configs.ipv6.network_ready_sem);
 		create_thread(&smp_udp_configs.ipv6, "smp_udp6");
 		started = true;
@@ -337,6 +404,7 @@ int smp_udp_open(void)
 
 	if (started) {
 		/* One or more threads were started, check existing interfaces */
+		threads_created = true;
 		net_if_foreach(smp_udp_open_iface, NULL);
 	}
 
@@ -346,7 +414,7 @@ int smp_udp_open(void)
 int smp_udp_close(void)
 {
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
-	if (IS_THREAD_RUNNING(smp_udp_configs.ipv4.thread)) {
+	if (k_thread_join(&smp_udp_configs.ipv4.thread, K_NO_WAIT) == -EBUSY) {
 		k_thread_abort(&(smp_udp_configs.ipv4.thread));
 
 		if (smp_udp_configs.ipv4.sock >= 0) {
@@ -359,7 +427,7 @@ int smp_udp_close(void)
 #endif
 
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV6
-	if (IS_THREAD_RUNNING(smp_udp_configs.ipv6.thread)) {
+	if (k_thread_join(&smp_udp_configs.ipv6.thread, K_NO_WAIT) == -EBUSY) {
 		k_thread_abort(&(smp_udp_configs.ipv6.thread));
 
 		if (smp_udp_configs.ipv6.sock >= 0) {
@@ -378,14 +446,19 @@ static void smp_udp_start(void)
 {
 	int rc;
 
+	threads_created = false;
+
 #ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
 	smp_udp_configs.ipv4.proto = PROTOCOL_IPV4;
 	smp_udp_configs.ipv4.sock = -1;
 
 	k_sem_init(&smp_udp_configs.ipv4.network_ready_sem, 0, 1);
 	smp_udp_configs.ipv4.smp_transport.functions.output = smp_udp4_tx;
+	TOOLCHAIN_DISABLE_WARNING(TOOLCHAIN_WARNING_DEPRECATED_DECLARATIONS);
 	smp_udp_configs.ipv4.smp_transport.functions.get_mtu = smp_udp_get_mtu;
+	TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_DEPRECATED_DECLARATIONS);
 	smp_udp_configs.ipv4.smp_transport.functions.ud_copy = smp_udp_ud_copy;
+	smp_udp_configs.ipv4.smp_transport.functions.ud_init = smp_udp_ud_init;
 
 	rc = smp_transport_init(&smp_udp_configs.ipv4.smp_transport);
 #ifdef CONFIG_SMP_CLIENT
@@ -406,8 +479,11 @@ static void smp_udp_start(void)
 
 	k_sem_init(&smp_udp_configs.ipv6.network_ready_sem, 0, 1);
 	smp_udp_configs.ipv6.smp_transport.functions.output = smp_udp6_tx;
+	TOOLCHAIN_DISABLE_WARNING(TOOLCHAIN_WARNING_DEPRECATED_DECLARATIONS);
 	smp_udp_configs.ipv6.smp_transport.functions.get_mtu = smp_udp_get_mtu;
+	TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_DEPRECATED_DECLARATIONS);
 	smp_udp_configs.ipv6.smp_transport.functions.ud_copy = smp_udp_ud_copy;
+	smp_udp_configs.ipv6.smp_transport.functions.ud_init = smp_udp_ud_init;
 
 	rc = smp_transport_init(&smp_udp_configs.ipv6.smp_transport);
 #ifdef CONFIG_SMP_CLIENT
@@ -430,5 +506,25 @@ static void smp_udp_start(void)
 	smp_udp_open();
 #endif
 }
+
+#ifdef CONFIG_SMP_CLIENT
+int smp_client_udp_set_host_addr(struct smp_client_object *obj, struct net_sockaddr *addr)
+{
+#ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV4
+	if (obj->smpt == smp_udp_configs.ipv4_transport.smpt && addr->sa_family == NET_AF_INET) {
+		smp_client_object_set_data(obj, addr);
+		return 0;
+	}
+#endif
+#ifdef CONFIG_MCUMGR_TRANSPORT_UDP_IPV6
+	if (obj->smpt == smp_udp_configs.ipv6_transport.smpt && addr->sa_family == NET_AF_INET6) {
+		smp_client_object_set_data(obj, addr);
+		return 0;
+	}
+#endif
+
+	return -EINVAL;
+}
+#endif
 
 MCUMGR_HANDLER_DEFINE(smp_udp, smp_udp_start);

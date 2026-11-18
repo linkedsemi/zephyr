@@ -48,20 +48,10 @@ typedef unsigned __int64 uint64_t;
 #include <zephyr/net/http/method.h>
 #include <zephyr/net/http/parser_state.h>
 #include <zephyr/net/http/parser_url.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
-#endif
-
-/* Maximum header size allowed. If the macro is not defined
- * before including this header then the default is used. To
- * change the maximum header size, define the macro in the build
- * environment (e.g. -DHTTP_MAX_HEADER_SIZE=<value>). To remove
- * the effective limit on the size of the header, define the macro
- * to a very large number (e.g. -DHTTP_MAX_HEADER_SIZE=0x7fffffff)
- */
-#ifndef HTTP_MAX_HEADER_SIZE
-# define HTTP_MAX_HEADER_SIZE (80 * 1024)
 #endif
 
 struct http_parser;
@@ -133,6 +123,8 @@ enum http_errno {
 	HPE_INVALID_CONTENT_LENGTH,
 	HPE_UNEXPECTED_CONTENT_LENGTH,
 	HPE_INVALID_CHUNK_SIZE,
+	HPE_INVALID_CONTENT_RANGE,
+	HPE_UNEXPECTED_CONTENT_RANGE,
 	HPE_INVALID_CONSTANT,
 	HPE_INVALID_INTERNAL_STATE,
 	HPE_STRICT,
@@ -143,6 +135,11 @@ enum http_errno {
 /* Get an http_errno value from an http_parser */
 #define HTTP_PARSER_ERRNO(p)            ((enum http_errno) (p)->http_errno)
 
+struct http_content_range {
+	uint64_t start;
+	uint64_t end;
+	uint64_t total;
+};
 
 struct http_parser {
 	/** PRIVATE **/
@@ -160,6 +157,8 @@ struct http_parser {
 	uint64_t content_length; /* # bytes in body (0 if no Content-Length
 				  * header)
 				  */
+	bool content_range_present;
+	struct http_content_range content_range;
 	/** READ-ONLY **/
 	unsigned short http_major;
 	unsigned short http_minor;
@@ -183,7 +182,7 @@ struct http_parser {
 	/* Remote socket address of http connection, where parser can initiate
 	 * replies if necessary.
 	 */
-	const struct sockaddr *addr;
+	const struct net_sockaddr *addr;
 };
 
 

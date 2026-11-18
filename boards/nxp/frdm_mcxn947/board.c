@@ -1,5 +1,5 @@
 /*
- * Copyright 2024  NXP
+ * Copyright 2024-2026 NXP
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <zephyr/init.h>
@@ -8,14 +8,21 @@
 #include <fsl_clock.h>
 #include <fsl_spc.h>
 #include <soc.h>
+#if defined(CONFIG_PM) || defined(CONFIG_POWEROFF)
+#include <fsl_vbat.h>
+#endif
 #if CONFIG_USB_DC_NXP_EHCI
-#include "usb_phy.h"
-#include "usb.h"
+#include <usb_phy.h>
+#include <usb.h>
 
-/* USB PHY condfiguration */
+/* USB PHY configuration */
 #define BOARD_USB_PHY_D_CAL     (0x04U)
 #define BOARD_USB_PHY_TXCAL45DP (0x07U)
 #define BOARD_USB_PHY_TXCAL45DM (0x07U)
+
+usb_phy_config_struct_t usbPhyConfig = {
+	BOARD_USB_PHY_D_CAL, BOARD_USB_PHY_TXCAL45DP, BOARD_USB_PHY_TXCAL45DM,
+};
 #endif
 
 /* Board xtal frequency in Hz */
@@ -80,7 +87,7 @@ __ramfunc static void enable_cache64(void)
 }
 #endif
 
-static int frdm_mcxn947_init(void)
+void board_early_init_hook(void)
 {
 	power_mode_od();
 
@@ -95,6 +102,11 @@ static int frdm_mcxn947_init(void)
 	/* Configure Flash wait-states to support 1.2V voltage level and 150000000Hz frequency */
 	FMU0->FCTRL = (FMU0->FCTRL & ~((uint32_t)FMU_FCTRL_RWSC_MASK)) | (FMU_FCTRL_RWSC(0x3U));
 
+#ifdef CONFIG_FLASH
+	/* Enable clock for internal FMU flash */
+	CLOCK_SetupClockCtrl(SYSCON_CLOCK_CTRL_FRO12MHZ_ENA_MASK);
+#endif
+
 	/* Enable FRO HF(48MHz) output */
 	CLOCK_SetupFROHFClocking(48000000U);
 
@@ -105,15 +117,17 @@ static int frdm_mcxn947_init(void)
 	flexspi_clock_safe_config();
 #endif
 
-	/* Set up PLL0 */
-	const pll_setup_t pll0Setup = {
-		.pllctrl = SCG_APLLCTRL_SOURCE(1U) | SCG_APLLCTRL_SELI(27U) |
-			   SCG_APLLCTRL_SELP(13U),
-		.pllndiv = SCG_APLLNDIV_NDIV(8U),
-		.pllpdiv = SCG_APLLPDIV_PDIV(1U),
-		.pllmdiv = SCG_APLLMDIV_MDIV(50U),
-		.pllRate = 150000000U
-	};
+	CLOCK_SetupExtClocking(BOARD_XTAL0_CLK_HZ);
+
+	/* Set up PLL0 from the 24 MHz system oscillator. This keeps the CPU
+	 * clock at 150 MHz while giving ENET PTP a crystal-backed reference.
+	 */
+	const pll_setup_t pll0Setup = {.pllctrl = SCG_APLLCTRL_SOURCE(0U) | SCG_APLLCTRL_SELI(27U) |
+						  SCG_APLLCTRL_SELP(13U),
+				       .pllndiv = SCG_APLLNDIV_NDIV(4U),
+				       .pllpdiv = SCG_APLLPDIV_PDIV(1U),
+				       .pllmdiv = SCG_APLLMDIV_MDIV(50U),
+				       .pllRate = 150000000U};
 	/* Configure PLL0 to the desired values */
 	CLOCK_SetPLL0Freq(&pll0Setup);
 	/* PLL0 Monitor is disabled */
@@ -125,45 +139,84 @@ static int frdm_mcxn947_init(void)
 	/* Set AHBCLKDIV divider to value 1 */
 	CLOCK_SetClkDiv(kCLOCK_DivAhbClk, 1U);
 
-	CLOCK_SetupExtClocking(BOARD_XTAL0_CLK_HZ);
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(sai0)) || DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(sai1))
+/* PLL fractional M divider: 86.016 */
+#define PLL1_SS_MDIV_LSB_VALUE 2886218023U
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcan0))
-	/* Set up PLL1 for 80 MHz FlexCAN clock */
-	const pll_setup_t pll1Setup = {
-		.pllctrl = SCG_SPLLCTRL_SOURCE(1U) | SCG_SPLLCTRL_SELI(27U) |
-			   SCG_SPLLCTRL_SELP(13U),
-		.pllndiv = SCG_SPLLNDIV_NDIV(3U),
-		.pllpdiv = SCG_SPLLPDIV_PDIV(1U),
-		.pllmdiv = SCG_SPLLMDIV_MDIV(10U),
-		.pllRate = 80000000U
-	};
+	/* < Set up PLL1 */
+	const pll_setup_t pll1_Setup = {
+		.pllctrl = SCG_SPLLCTRL_SOURCE(1U) | SCG_SPLLCTRL_LIMUPOFF(1U) |
+			   SCG_SPLLCTRL_SELR(4U) | SCG_SPLLCTRL_SELI(4U) | SCG_SPLLCTRL_SELP(3U),
+		.pllndiv = SCG_SPLLNDIV_NDIV(12U),
+		.pllpdiv = SCG_SPLLPDIV_PDIV(7U),
+		.pllsscg[0] = PLL1_SS_MDIV_LSB_VALUE,
+		.pllsscg[1] = SCG_SPLLSSCG1_SEL_SS_MDIV(1U),
+		.pllRate = 24576000U};
 
 	/* Configure PLL1 to the desired values */
-	CLOCK_SetPLL1Freq(&pll1Setup);
-	/* PLL1 Monitor is disabled */
-	CLOCK_SetPll1MonitorMode(kSCG_Pll1MonitorDisable);
-	/* Set PLL1 CLK0 divider to value 1 */
-	CLOCK_SetClkDiv(kCLOCK_DivPLL1Clk0, 1U);
+	CLOCK_SetPLL1Freq(&pll1_Setup);
+	/* Set PLL1 CLK0 divider to value 2, then the clock is 12288000Hz. */
+	CLOCK_SetClkDiv(kCLOCK_DivPLL1Clk0, 2U);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm0))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom0Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM0);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm1))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
 	CLOCK_SetClkDiv(kCLOCK_DivFlexcom1Clk, 1u);
-	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM1);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM1);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm2))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
 	CLOCK_SetClkDiv(kCLOCK_DivFlexcom2Clk, 1u);
-	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM2);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM2);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm3))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom3Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM3);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm4))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
 	CLOCK_SetClkDiv(kCLOCK_DivFlexcom4Clk, 1u);
-	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM4);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM4);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm5))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom5Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM5);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm6))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom6Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM6);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm7))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
 	CLOCK_SetClkDiv(kCLOCK_DivFlexcom7Clk, 1u);
-	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM7);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM7);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm8))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom8Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM8);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcomm9))
+	/* Configure input clock to be able to reach the datasheet specified SPI band rate. */
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom9Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_DIV_to_FLEXCOMM9);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(os_timer))
@@ -190,10 +243,6 @@ static int frdm_mcxn947_init(void)
 	CLOCK_EnableClock(kCLOCK_Gpio4);
 #endif
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(gpio5))
-	CLOCK_EnableClock(kCLOCK_Gpio5);
-#endif
-
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(dac0))
 	SPC_EnableActiveModeAnalogModules(SPC0, kSPC_controlDac0);
 	CLOCK_SetClkDiv(kCLOCK_DivDac0Clk, 1u);
@@ -212,6 +261,11 @@ static int frdm_mcxn947_init(void)
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet))
 	CLOCK_AttachClk(kNONE_to_ENETRMII);
+#if defined(CONFIG_PTP_CLOCK_NXP_ENET_QOS) || defined(CONFIG_PTP_CLOCK_DWC_MAC)
+	/* Attach PLL0 (150 MHz) to the ENET QoS PTP reference clock. */
+	CLOCK_AttachClk(kPLL0_to_ENETPTPREF);
+	CLOCK_SetClkDiv(kCLOCK_DivEnetptprefClk, 1u);
+#endif
 	CLOCK_EnableClock(kCLOCK_Enet);
 	SYSCON0->PRESETCTRL2 = SYSCON_PRESETCTRL2_ENET_RST_MASK;
 	SYSCON0->PRESETCTRL2 &= ~SYSCON_PRESETCTRL2_ENET_RST_MASK;
@@ -249,8 +303,8 @@ static int frdm_mcxn947_init(void)
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexcan0))
-	CLOCK_SetClkDiv(kCLOCK_DivFlexcan0Clk, 1U);
-	CLOCK_AttachClk(kPLL1_CLK0_to_FLEXCAN0);
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcan0Clk, 3U);
+	CLOCK_AttachClk(kPLL0_to_FLEXCAN0);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc0))
@@ -261,20 +315,23 @@ static int frdm_mcxn947_init(void)
 #if CONFIG_FLASH_MCUX_FLEXSPI_NOR || CONFIG_FLASH_MCUX_FLEXSPI_XIP
 	/* Setup the FlexSPI clock */
 	flexspi_clock_set_freq(MCUX_FLEXSPI_CLK,
-			       DT_PROP(DT_NODELABEL(w25q64jvssiq), spi_max_frequency));
+			       DT_PROP(DT_NODELABEL(ext_flash_ctrl), spi_max_frequency));
 	enable_cache64();
+#elif CONFIG_FLASH_MCUX_FLEXSPI_NAND
+	flexspi_clock_set_freq(MCUX_FLEXSPI_CLK,
+			       DT_PROP(DT_NODELABEL(mx35lf1ge4ab), spi_max_frequency));
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(smartdma))
 	CLOCK_EnableClock(kCLOCK_Smartdma);
 	RESET_PeripheralReset(kSMART_DMA_RST_SHIFT_RSTn);
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(video_sdma))
-	/* Drive CLKOUT from main clock, divided by 25 to yield 6MHz clock
+	/* Drive CLKOUT from main clock, divided by 6 to yield 25MHz clock
 	 * The camera will use this clock signal to generate
 	 * PCLK, HSYNC, and VSYNC
 	 */
 	CLOCK_AttachClk(kMAIN_CLK_to_CLKOUT);
-	CLOCK_SetClkDiv(kCLOCK_DivClkOut, 25U);
+	CLOCK_SetClkDiv(kCLOCK_DivClkOut, 6U);
 #endif
 #endif
 
@@ -288,11 +345,12 @@ static int frdm_mcxn947_init(void)
 	CLOCK_AttachClk(kFRO_HF_to_ADC0);
 #endif
 
-#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usb1)) && CONFIG_USB_DC_NXP_EHCI
-	usb_phy_config_struct_t usbPhyConfig = {
-		BOARD_USB_PHY_D_CAL, BOARD_USB_PHY_TXCAL45DP, BOARD_USB_PHY_TXCAL45DM,
-	};
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lpadc1))
+	CLOCK_SetClkDiv(kCLOCK_DivAdc1Clk, 1U);
+	CLOCK_AttachClk(kFRO_HF_to_ADC1);
+#endif
 
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usb1)) && (CONFIG_USB_DC_NXP_EHCI || CONFIG_UDC_NXP_EHCI)
 	SPC0->ACTIVE_VDELAY = 0x0500;
 	/* Change the power DCDC to 1.8v (By default, DCDC is 1.8V), CORELDO to 1.1v (By default,
 	 * CORELDO is 1.0V)
@@ -327,13 +385,27 @@ static int frdm_mcxn947_init(void)
 	CLOCK_EnableClock(kCLOCK_UsbHsPhy);
 	CLOCK_EnableUsbhsPhyPllClock(kCLOCK_Usbphy480M, BOARD_XTAL0_CLK_HZ);
 	CLOCK_EnableUsbhsClock();
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usb1)) && CONFIG_USB_DC_NXP_EHCI
 	USB_EhciPhyInit(kUSB_ControllerEhci0, BOARD_XTAL0_CLK_HZ, &usbPhyConfig);
+#endif
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lpcmp0))
 	CLOCK_SetClkDiv(kCLOCK_DivCmp0FClk, 1U);
 	CLOCK_AttachClk(kFRO12M_to_CMP0F);
 	SPC_EnableActiveModeAnalogModules(SPC0, (kSPC_controlCmp0 | kSPC_controlCmp0Dac));
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(opamp0))
+	SPC_EnableActiveModeAnalogModules(SPC0, kSPC_controlOpamp0);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(opamp1))
+	SPC_EnableActiveModeAnalogModules(SPC0, kSPC_controlOpamp1);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(opamp2))
+	SPC_EnableActiveModeAnalogModules(SPC0, kSPC_controlOpamp2);
 #endif
 
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lptmr0))
@@ -350,6 +422,9 @@ static int frdm_mcxn947_init(void)
 	CLOCK_SetupClockCtrl(kCLOCK_FRO12MHZ_ENA);
 #elif DT_PROP(DT_NODELABEL(lptmr0), clk_source) == 0x1
 	CLOCK_SetupClk16KClocking(kCLOCK_Clk16KToVsys);
+#if defined(CONFIG_PM) || defined(CONFIG_POWEROFF)
+	VBAT_EnableFRO16k(VBAT0, true);
+#endif
 #elif DT_PROP(DT_NODELABEL(lptmr0), clk_source) == 0x2
 	CLOCK_SetupOsc32KClocking(kCLOCK_Osc32kToVsys);
 #elif DT_PROP(DT_NODELABEL(lptmr0), clk_source) == 0x3
@@ -365,7 +440,7 @@ static int frdm_mcxn947_init(void)
 	CLOCK_AttachClk(kPLL0_to_FLEXIO);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i3c1), okay)
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(i3c1))
 	/* Enable 1MHz clock. */
 	SYSCON->CLOCK_CTRL |= SYSCON_CLOCK_CTRL_FRO1MHZ_CLK_ENA_MASK;
 
@@ -379,10 +454,30 @@ static int frdm_mcxn947_init(void)
 	CLOCK_AttachClk(kI3C1FCLK_to_I3C1FCLKSTC);
 #endif
 
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(sc_timer))
+	/* attach FRO HF to SCT */
+	CLOCK_SetClkDiv(kCLOCK_DivSctClk, 1u);
+	CLOCK_AttachClk(kFRO_HF_to_SCT);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(sai0))
+	CLOCK_SetClkDiv(kCLOCK_DivSai0Clk, 1u);
+	CLOCK_AttachClk(kPLL1_CLK0_to_SAI0);
+	CLOCK_EnableClock(kCLOCK_Sai0);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(sai1))
+	CLOCK_SetClkDiv(kCLOCK_DivSai1Clk, 1u);
+	CLOCK_AttachClk(kPLL1_CLK0_to_SAI1);
+	CLOCK_EnableClock(kCLOCK_Sai1);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(ewm0))
+	CLOCK_SetupClk16KClocking(kCLOCK_Clk16KToWake);
+	CLOCK_AttachClk(kCLK_16K2_to_EWM0);
+	CLOCK_EnableClock(kCLOCK_Ewm0);
+#endif
+
 	/* Set SystemCoreClock variable. */
 	SystemCoreClock = CLOCK_INIT_CORE_CLOCK;
-
-	return 0;
 }
-
-SYS_INIT(frdm_mcxn947_init, PRE_KERNEL_1, CONFIG_BOARD_INIT_PRIORITY);

@@ -704,7 +704,7 @@ static int rtc_ins5710c_init(const struct device *dev)
 }
 
 /* RTC driver API */
-static const struct rtc_driver_api rtc_ins5710c_api = {
+static DEVICE_API(rtc, rtc_ins5710c_api) = {
 	.set_time = rtc_ins5710c_set_time,
 	.get_time = rtc_ins5710c_get_time,
 #if defined(CONFIG_RTC_ALARM)

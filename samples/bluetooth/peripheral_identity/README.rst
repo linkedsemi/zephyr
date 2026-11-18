@@ -19,7 +19,15 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/peripheral_identity`
-in the Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/peripheral_identity
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+After flashing, the device advertises using one identity at a time. Each time a central
+connects, a new identity is created and advertising restarts, allowing subsequent centrals
+to connect on distinct identities. Use multiple central devices (e.g. smartphones with
+nRF Connect) to establish several simultaneous connections.

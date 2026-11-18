@@ -17,16 +17,26 @@
 #include <zephyr/drivers/pm_cpu_ops.h>
 #include <zephyr/arch/common/exc_handle.h>
 #include <zephyr/kernel.h>
+#include <zephyr/linker/linker-defs.h>
+#include <kernel_internal.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/poweroff.h>
 #include <kernel_arch_func.h>
+#include <kernel_arch_interface.h>
+#include <zephyr/arch/exception.h>
 
 #include "paging.h"
+#ifdef CONFIG_ARM_MMU
+#include "mmu.h"
+#endif
+#ifdef CONFIG_ARM_PAC
+#include <zephyr/arch/arm64/pac.h>
+#endif
 
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 #ifdef CONFIG_ARM64_SAFE_EXCEPTION_STACK
-K_KERNEL_PINNED_STACK_ARRAY_DEFINE(z_arm64_safe_exception_stacks,
+K_KERNEL_STACK_ARRAY_DEFINE(z_arm64_safe_exception_stacks,
 				   CONFIG_MP_MAX_NUM_CPUS,
 				   CONFIG_ARM64_SAFE_EXCEPTION_STACK_SIZE);
 
@@ -173,36 +183,107 @@ static void dump_esr(uint64_t esr, bool *dump_far)
 	case 0b111100: /* 0x3c */
 		err = "BRK instruction execution in AArch64 state.";
 		break;
+	case 0b011100: /* 0x1c */
+		err = "FPAC - Pointer Authentication failure";
+		break;
 	default:
 		err = "Unknown";
 	}
 
-	LOG_ERR("ESR_ELn: 0x%016llx", esr);
-	LOG_ERR("  EC:  0x%llx (%s)", GET_ESR_EC(esr), err);
-	LOG_ERR("  IL:  0x%llx", GET_ESR_IL(esr));
-	LOG_ERR("  ISS: 0x%llx", GET_ESR_ISS(esr));
+	EXCEPTION_DUMP("ESR_ELn: 0x%016llx", esr);
+	EXCEPTION_DUMP("  EC:  0x%llx (%s)", GET_ESR_EC(esr), err);
+	EXCEPTION_DUMP("  IL:  0x%llx", GET_ESR_IL(esr));
+	EXCEPTION_DUMP("  ISS: 0x%llx", GET_ESR_ISS(esr));
 }
 
 static void esf_dump(const struct arch_esf *esf)
 {
-	LOG_ERR("x0:  0x%016llx  x1:  0x%016llx", esf->x0, esf->x1);
-	LOG_ERR("x2:  0x%016llx  x3:  0x%016llx", esf->x2, esf->x3);
-	LOG_ERR("x4:  0x%016llx  x5:  0x%016llx", esf->x4, esf->x5);
-	LOG_ERR("x6:  0x%016llx  x7:  0x%016llx", esf->x6, esf->x7);
-	LOG_ERR("x8:  0x%016llx  x9:  0x%016llx", esf->x8, esf->x9);
-	LOG_ERR("x10: 0x%016llx  x11: 0x%016llx", esf->x10, esf->x11);
-	LOG_ERR("x12: 0x%016llx  x13: 0x%016llx", esf->x12, esf->x13);
-	LOG_ERR("x14: 0x%016llx  x15: 0x%016llx", esf->x14, esf->x15);
-	LOG_ERR("x16: 0x%016llx  x17: 0x%016llx", esf->x16, esf->x17);
-	LOG_ERR("x18: 0x%016llx  lr:  0x%016llx", esf->x18, esf->lr);
+	EXCEPTION_DUMP("x0:  0x%016llx  x1:  0x%016llx", esf->x0, esf->x1);
+	EXCEPTION_DUMP("x2:  0x%016llx  x3:  0x%016llx", esf->x2, esf->x3);
+	EXCEPTION_DUMP("x4:  0x%016llx  x5:  0x%016llx", esf->x4, esf->x5);
+	EXCEPTION_DUMP("x6:  0x%016llx  x7:  0x%016llx", esf->x6, esf->x7);
+	EXCEPTION_DUMP("x8:  0x%016llx  x9:  0x%016llx", esf->x8, esf->x9);
+	EXCEPTION_DUMP("x10: 0x%016llx  x11: 0x%016llx", esf->x10, esf->x11);
+	EXCEPTION_DUMP("x12: 0x%016llx  x13: 0x%016llx", esf->x12, esf->x13);
+	EXCEPTION_DUMP("x14: 0x%016llx  x15: 0x%016llx", esf->x14, esf->x15);
+	EXCEPTION_DUMP("x16: 0x%016llx  x17: 0x%016llx", esf->x16, esf->x17);
+	EXCEPTION_DUMP("x18: 0x%016llx  lr:  0x%016llx", esf->x18, esf->lr);
 }
 #endif /* CONFIG_EXCEPTION_DEBUG */
 
 #ifdef CONFIG_ARCH_STACKWALK
 typedef bool (*arm64_stacktrace_cb)(void *cookie, unsigned long addr, void *fp);
+typedef bool (*stack_verify_fn)(uintptr_t, const struct k_thread *const, const struct arch_esf *);
 
-static void walk_stackframe(arm64_stacktrace_cb cb, void *cookie, const struct arch_esf *esf,
-			    int max_frames)
+static inline bool is_address_mapped(uintptr_t addr)
+{
+#ifdef CONFIG_ARM_MMU
+	uintptr_t *phys = NULL;
+
+	return !arch_page_phys_get((void *) addr, phys);
+#else
+	ARG_UNUSED(addr);
+	return true;
+#endif
+}
+
+static inline bool in_kernel_thread_stack_bound(uintptr_t addr, const struct k_thread *const thread)
+{
+#ifdef CONFIG_THREAD_STACK_INFO
+	uintptr_t start, end;
+
+	start = thread->stack_info.start;
+	end = Z_STACK_PTR_ALIGN(thread->stack_info.start + thread->stack_info.size);
+	return (addr >= start) && (addr < end) && is_address_mapped(addr);
+#elif defined(CONFIG_THREAD_LOCAL_STORAGE)
+	uintptr_t end;
+
+	end = thread->tls;
+	return (addr < end) && is_address_mapped(addr);
+#else
+	ARG_UNUSED(thread);
+	return is_address_mapped(addr);
+#endif
+}
+
+#ifdef CONFIG_USERSPACE
+static inline bool in_user_thread_stack_bound(uintptr_t addr, const struct k_thread *const thread)
+{
+	uintptr_t start, end;
+
+	start = thread->stack_info.start - CONFIG_PRIVILEGED_STACK_SIZE;
+	end = Z_STACK_PTR_ALIGN(thread->stack_info.start + thread->stack_info.size);
+
+	return (addr >= start) && (addr < end) && is_address_mapped(addr);
+}
+#endif /* CONFIG_USERSPACE */
+
+static bool in_stack_bound(uintptr_t addr, const struct k_thread *const thread,
+			   const struct arch_esf *esf)
+{
+	ARG_UNUSED(esf);
+
+	if (!IS_ALIGNED(addr, sizeof(uintptr_t *))) {
+		return false;
+	}
+
+#ifdef CONFIG_USERSPACE
+	if ((thread->base.user_options & K_USER) != 0) {
+		return in_user_thread_stack_bound(addr, thread);
+	}
+#endif /* CONFIG_USERSPACE */
+
+	return in_kernel_thread_stack_bound(addr, thread);
+}
+
+static inline bool in_text_region(uintptr_t addr)
+{
+	return (addr >= (uintptr_t)__text_region_start) && (addr < (uintptr_t)__text_region_end)
+		&& IS_ALIGNED(addr, sizeof(uint32_t));
+}
+
+static void walk_stackframe(arm64_stacktrace_cb cb, void *cookie, const struct k_thread *thread,
+			    const struct arch_esf *esf, stack_verify_fn vrfy, int max_frames)
 {
 	/*
 	 * For GCC:
@@ -224,35 +305,78 @@ static void walk_stackframe(arm64_stacktrace_cb cb, void *cookie, const struct a
 	 *  +  +-----------------+
 	 */
 
-	uint64_t *fp;
-	uint64_t lr;
+	uintptr_t *fp, *last_fp = NULL;
+	uintptr_t lr;
 
 	if (esf != NULL) {
-		fp = (uint64_t *) esf->fp;
+		fp = (uintptr_t *) esf->fp;
+	} else if (thread == _current) {
+		fp = (uintptr_t *) __builtin_frame_address(0);
 	} else {
-		return;
+		fp = (uintptr_t *) thread->callee_saved.x29;
+		if (thread->callee_saved.sp_elx == thread->callee_saved.x29) {
+			/* not idle thread: show z_swap() as riscv */
+			lr = thread->callee_saved.lr;
+			if (in_text_region(lr) && !cb(cookie, lr, fp)) {
+				return;
+			}
+		}
 	}
 
-	for (int i = 0; (fp != NULL) && (i < max_frames); i++) {
-		lr = fp[1];
-		if (!cb(cookie, lr, fp)) {
+	for (int i = 0; i < max_frames; i++) {
+		if ((fp <= last_fp) || !vrfy((uintptr_t)fp, thread, esf)) {
 			break;
 		}
-		fp = (uint64_t *) fp[0];
+		lr = fp[1];
+		if (!in_text_region(lr) || !cb(cookie, lr, fp)) {
+			break;
+		}
+		last_fp = fp;
+		fp = (uintptr_t *) fp[0];
 	}
 }
 
 void arch_stack_walk(stack_trace_callback_fn callback_fn, void *cookie,
 		     const struct k_thread *thread, const struct arch_esf *esf)
 {
-	ARG_UNUSED(thread);
+	if (thread == NULL) {
+		/* In case `thread` is NULL, default that to `_current` and try to unwind */
+		thread = _current;
+	}
 
-	walk_stackframe((arm64_stacktrace_cb)callback_fn, cookie, esf,
+	walk_stackframe((arm64_stacktrace_cb)callback_fn, cookie, thread, esf, in_stack_bound,
 			CONFIG_ARCH_STACKWALK_MAX_FRAMES);
 }
 #endif /* CONFIG_ARCH_STACKWALK */
 
 #ifdef CONFIG_EXCEPTION_STACK_TRACE
+static inline bool in_irq_stack_bound(uintptr_t addr, uint8_t cpu_id)
+{
+	uintptr_t start, end;
+
+	start = (uintptr_t)K_KERNEL_STACK_BUFFER(z_interrupt_stacks[cpu_id]);
+	end = start + CONFIG_ISR_STACK_SIZE;
+
+	return (addr >= start) && (addr < end) && is_address_mapped(addr);
+}
+
+static bool in_fatal_stack_bound(uintptr_t addr, const struct k_thread *const thread,
+				 const struct arch_esf *esf)
+{
+	if (!IS_ALIGNED(addr, sizeof(uintptr_t *))) {
+		return false;
+	}
+
+	if ((thread == NULL) || arch_is_in_isr()) {
+		/* We were servicing an interrupt */
+		uint8_t cpu_id = IS_ENABLED(CONFIG_SMP) ? arch_curr_cpu()->id : 0U;
+
+		return in_irq_stack_bound(addr, cpu_id);
+	}
+
+	return in_stack_bound(addr, thread, esf);
+}
+
 static bool print_trace_address(void *arg, unsigned long lr, void *fp)
 {
 	int *i = arg;
@@ -260,10 +384,11 @@ static bool print_trace_address(void *arg, unsigned long lr, void *fp)
 	uint32_t offset = 0;
 	const char *name = symtab_find_symbol_name(lr, &offset);
 
-	LOG_ERR("     %d: fp: 0x%016llx lr: 0x%016lx [%s+0x%x]", (*i)++, (uint64_t)fp, lr, name,
-		offset);
+	EXCEPTION_DUMP("     %d: fp: 0x%016llx lr: 0x%016lx [%s+0x%x]",
+			(*i)++, (uint64_t)fp, lr, name, offset);
 #else
-	LOG_ERR("     %d: fp: 0x%016llx lr: 0x%016lx", (*i)++, (uint64_t)fp, lr);
+	EXCEPTION_DUMP("     %d: fp: 0x%016llx lr: 0x%016lx",
+			(*i)++, (uint64_t)fp, lr);
 #endif /* CONFIG_SYMTAB */
 
 	return true;
@@ -273,10 +398,11 @@ static void esf_unwind(const struct arch_esf *esf)
 {
 	int i = 0;
 
-	LOG_ERR("");
-	LOG_ERR("call trace:");
-	walk_stackframe(print_trace_address, &i, esf, CONFIG_ARCH_STACKWALK_MAX_FRAMES);
-	LOG_ERR("");
+	EXCEPTION_DUMP("");
+	EXCEPTION_DUMP("call trace:");
+	walk_stackframe(print_trace_address, &i, _current, esf, in_fatal_stack_bound,
+			CONFIG_ARCH_STACKWALK_MAX_FRAMES);
+	EXCEPTION_DUMP("");
 }
 #endif /* CONFIG_EXCEPTION_STACK_TRACE */
 
@@ -297,10 +423,11 @@ static bool z_arm64_stack_corruption_check(struct arch_esf *esf, uint64_t esr, u
 			 * a new nested exception triggered by FPU accessing (var_args).
 			 */
 			arch_flush_local_fpu();
-			write_cpacr_el1(read_cpacr_el1() | CPACR_EL1_FPEN_NOTRAP);
+			write_cpacr_el1(read_cpacr_el1() | CPACR_EL1_FPEN);
 #endif
 			arch_curr_cpu()->arch.corrupted_sp = 0UL;
-			LOG_ERR("STACK OVERFLOW FROM KERNEL, SP: 0x%llx OR FAR: 0x%llx INVALID,"
+			EXCEPTION_DUMP("STACK OVERFLOW FROM KERNEL,"
+				" SP: 0x%llx OR FAR: 0x%llx INVALID,"
 				" SP LIMIT: 0x%llx", sp, far, sp_limit);
 			return true;
 		}
@@ -308,11 +435,12 @@ static bool z_arm64_stack_corruption_check(struct arch_esf *esf, uint64_t esr, u
 #ifdef CONFIG_USERSPACE
 	else if ((_current->base.user_options & K_USER) != 0 && GET_ESR_EC(esr) == 0x24) {
 		sp_limit = (uint64_t)_current->stack_info.start;
-		guard_start = sp_limit - Z_ARM64_STACK_GUARD_SIZE;
+		guard_start = sp_limit - CONFIG_PRIVILEGED_STACK_SIZE - Z_ARM64_STACK_GUARD_SIZE;
 		sp = esf->sp;
 		if (sp <= sp_limit || (guard_start <= far && far <= sp_limit)) {
-			LOG_ERR("STACK OVERFLOW FROM USERSPACE, SP: 0x%llx OR FAR: 0x%llx INVALID,"
-				" SP LIMIT: 0x%llx", sp, far, sp_limit);
+			EXCEPTION_DUMP("STACK OVERFLOW FROM USERSPACE,"
+					"SP: 0x%llx OR FAR: 0x%llx INVALID,"
+					" SP LIMIT: 0x%llx", sp, far, sp_limit);
 			return true;
 		}
 	}
@@ -321,9 +449,86 @@ static bool z_arm64_stack_corruption_check(struct arch_esf *esf, uint64_t esr, u
 }
 #endif
 
+/**
+ * @brief Check if exception is a BTI violation
+ */
+static bool is_bti_violation(uint64_t esr)
+{
+#ifdef CONFIG_ARM_BTI
+	/* BTI violations have Exception Class 0x0d */
+	return (GET_ESR_EC(esr) == 0x0d);
+#else
+	ARG_UNUSED(esr);
+	return false;
+#endif
+}
+
+/**
+ * @brief Check if exception is a PAC authentication failure
+ *
+ * PAC authentication failures typically manifest as FPAC exceptions
+ * with Exception Class (EC) 0x1c.
+ */
+static bool is_pac_failure(uint64_t esr, uint64_t far)
+{
+#ifdef CONFIG_ARM_PAC
+	uint64_t ec = GET_ESR_EC(esr);
+
+	/* Check for FPAC exception (EC 0x1c) - dedicated PAC authentication failure */
+	if (ec == 0x1c) {
+		return true;
+	}
+#else
+	ARG_UNUSED(esr);
+	ARG_UNUSED(far);
+#endif
+	return false;
+}
+
+/**
+ * @brief Handle PACBTI-related exceptions
+ *
+ * @param esf Exception stack frame
+ * @param esr Exception syndrome register value
+ * @param far Fault address register value
+ * @return true if this was a PACBTI exception and was handled, false otherwise
+ */
+static bool z_arm64_handle_pacbti_exception(struct arch_esf *esf, uint64_t esr, uint64_t far)
+{
+	ARG_UNUSED(esf);
+
+	if (is_pac_failure(esr, far)) {
+		EXCEPTION_DUMP("PAC AUTHENTICATION FAILURE");
+		EXCEPTION_DUMP("This indicates a potential ROP/JOP attack or corrupted pointer");
+#ifdef CONFIG_THREAD_NAME
+		EXCEPTION_DUMP("Thread: %s", _current ? _current->name : "unknown");
+#else
+		EXCEPTION_DUMP("Thread: %p", _current);
+#endif
+		return true;  /* Treat as fatal */
+	}
+
+	if (is_bti_violation(esr)) {
+		EXCEPTION_DUMP("BTI VIOLATION - Indirect branch to invalid target");
+		EXCEPTION_DUMP("This indicates a potential JOP attack or software bug");
+#ifdef CONFIG_THREAD_NAME
+		EXCEPTION_DUMP("Thread: %s", _current ? _current->name : "unknown");
+#else
+		EXCEPTION_DUMP("Thread: %p", _current);
+#endif
+		return true;  /* Treat as fatal */
+	}
+
+	return false;
+}
+
 static bool is_recoverable(struct arch_esf *esf, uint64_t esr, uint64_t far,
 			   uint64_t elr)
 {
+	ARG_UNUSED(esr);
+	ARG_UNUSED(far);
+	ARG_UNUSED(elr);
+
 	if (!esf) {
 		return false;
 	}
@@ -343,6 +548,41 @@ static bool is_recoverable(struct arch_esf *esf, uint64_t esr, uint64_t far,
 
 	return false;
 }
+
+#if defined(CONFIG_EXCEPTION_DEBUG) && defined(CONFIG_ARM_MMU)
+static void dump_ptable_walk(uintptr_t addr)
+{
+	uint64_t ttbr0 = read_ttbr0_el1();
+	uint64_t *table = (uint64_t *)(ttbr0 & PTE_PHYSADDR_MASK);
+	unsigned int level = BASE_XLAT_LEVEL;
+
+	EXCEPTION_DUMP("PTE walk for 0x%lx (TTBR0=0x%016llx):",
+		       (unsigned long)addr, ttbr0);
+
+	for (;;) {
+		unsigned int idx = XLAT_TABLE_VA_IDX(addr, level);
+		uint64_t pte = table[idx];
+
+		EXCEPTION_DUMP("  L%d[%03d] @ %p = 0x%016llx",
+			       level, idx, &table[idx], pte);
+
+		if ((pte & PTE_DESC_TYPE_MASK) == 0) {
+			break;
+		}
+		if (level == XLAT_LAST_LEVEL || (pte & PTE_DESC_TYPE_MASK) != PTE_TABLE_DESC) {
+			EXCEPTION_DUMP("    %s AP=%s%s%s%s",
+				level == XLAT_LAST_LEVEL ? "page" : "block",
+				(pte & PTE_BLOCK_DESC_AP_ELx) ? "ELx" : "EL_higher",
+				(pte & PTE_BLOCK_DESC_AP_RO)  ? " RO" : " RW",
+				(pte & PTE_BLOCK_DESC_NG)     ? " nG" : " G",
+				(pte & PTE_BLOCK_DESC_AF)     ? " AF" : "");
+			break;
+		}
+		table = (uint64_t *)(pte & PTE_PHYSADDR_MASK);
+		level++;
+	}
+}
+#endif
 
 void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
 {
@@ -375,6 +615,11 @@ void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
 		}
 #endif
 
+		/* Check for PACBTI-related exceptions */
+		if (z_arm64_handle_pacbti_exception(esf, esr, far)) {
+			reason = K_ERR_CPU_EXCEPTION;
+		}
+
 		if (IS_ENABLED(CONFIG_DEMAND_PAGING) &&
 		    reason != K_ERR_STACK_CHK_FAIL &&
 		    z_arm64_do_demand_paging(esf, esr, far)) {
@@ -385,15 +630,18 @@ void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
 #ifdef CONFIG_EXCEPTION_DEBUG
 			bool dump_far = false;
 
-			LOG_ERR("ELR_ELn: 0x%016llx", elr);
+			EXCEPTION_DUMP("ELR_ELn: 0x%016llx", elr);
 
 			dump_esr(esr, &dump_far);
 
 			if (dump_far) {
-				LOG_ERR("FAR_ELn: 0x%016llx", far);
+				EXCEPTION_DUMP("FAR_ELn: 0x%016llx", far);
+#ifdef CONFIG_ARM_MMU
+				dump_ptable_walk(far);
+#endif
 			}
 
-			LOG_ERR("TPIDRRO: 0x%016llx", read_tpidrro_el0());
+			EXCEPTION_DUMP("TPIDRRO: 0x%016llx", read_tpidrro_el0());
 #endif /* CONFIG_EXCEPTION_DEBUG */
 
 			if (is_recoverable(esf, esr, far, elr) &&
@@ -414,8 +662,6 @@ void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf)
 #endif /* CONFIG_EXCEPTION_DEBUG */
 
 	z_fatal_error(reason, esf);
-
-	CODE_UNREACHABLE;
 }
 
 /**

@@ -68,7 +68,7 @@ MEMORY
   iram0_18_seg : org = 0x400003C0, len = 0x40
   iram0_19_seg : org = 0x40000400, len = 0x1FC00
 #ifdef CONFIG_MPU
-  vec_helpers  : org = 0x40002400, len = (PHYS_RAM_ADDR - 0x00002400)
+  vec_helpers  : org = 0x40002400, len = (PHYS_ROM0_ADDR - 0x40002400)
 #endif
   srom0_seg    : org = PHYS_ROM0_ADDR, len = PHYS_ROM0_SIZE
   RAM          : org = PHYS_RAM_ADDR, len = PHYS_RAM_SIZE
@@ -150,6 +150,7 @@ SECTIONS
 {
 
 #include <zephyr/linker/rel-sections.ld>
+#include <zephyr/linker/llext-sections.ld>
 
 #ifdef CONFIG_GEN_ISR_TABLES
 #include <zephyr/linker/intlist.ld>
@@ -585,4 +586,5 @@ SECTIONS
   {
     KEEP (*(.debug.xt.callgraph .debug.xt.callgraph.* .gnu.linkonce.xt.callgraph.*))
   }
+
 }

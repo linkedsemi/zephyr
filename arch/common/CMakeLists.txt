@@ -17,6 +17,11 @@ if(CONFIG_GEN_ISR_TABLES)
   )
 endif()
 
+add_subdirectory_ifdef(CONFIG_ACPI acpi)
+zephyr_library_sources(init.c)
+zephyr_library_sources_ifdef(CONFIG_PM pm.c)
+zephyr_library_sources_ifdef(CONFIG_XIP xip.c)
+
 zephyr_library_sources_ifdef(
   CONFIG_ISR_TABLE_SHELL
   isr_tables_shell.c
@@ -26,8 +31,6 @@ zephyr_library_sources_ifdef(
   CONFIG_MULTI_LEVEL_INTERRUPTS
   multilevel_irq.c
   )
-
-zephyr_library_sources_ifdef(CONFIG_LEGACY_MULTI_LEVEL_TABLE_GENERATION multilevel_irq_legacy.c)
 
 zephyr_library_sources_ifdef(CONFIG_SHARED_INTERRUPTS shared_irq.c)
 
@@ -58,13 +61,24 @@ zephyr_linker_sources_ifdef(CONFIG_GEN_IRQ_VECTOR_TABLE
 )
 
 if(CONFIG_GEN_ISR_TABLES)
-  zephyr_linker_section(NAME .intList VMA IDT_LIST LMA IDT_LIST NOINPUT PASS NOT LINKER_ZEPHYR_FINAL)
-  zephyr_linker_section_configure(SECTION .intList KEEP INPUT ".irq_info" FIRST)
-  zephyr_linker_section_configure(SECTION .intList KEEP INPUT ".intList")
+  # IAR Toolchain is having problems with discarding .intList
+  # This will always keep .intList in a harmless location
+  # until we can implement a proper DISCARD.
+  if(ZEPHYR_TOOLCHAIN_VARIANT STREQUAL "iar")
+    zephyr_linker_section(NAME .intList GROUP RODATA_REGION NOINPUT)
+    zephyr_linker_section_configure(SECTION .intList KEEP INPUT ".irq_info" FIRST)
+    zephyr_linker_section_configure(SECTION .intList KEEP INPUT ".intList")
+  else()
+    zephyr_linker_section(NAME .intList VMA IDT_LIST LMA IDT_LIST NOINPUT PASS NOT LINKER_ZEPHYR_FINAL)
+    zephyr_linker_section_configure(SECTION .intList KEEP INPUT ".irq_info" FIRST)
+    zephyr_linker_section_configure(SECTION .intList KEEP INPUT ".intList")
 
-  zephyr_linker_section_configure(SECTION /DISCARD/ KEEP INPUT ".irq_info" PASS LINKER_ZEPHYR_FINAL)
-  zephyr_linker_section_configure(SECTION /DISCARD/ KEEP INPUT ".intList"  PASS LINKER_ZEPHYR_FINAL)
+    zephyr_linker_section_configure(SECTION /DISCARD/ KEEP INPUT ".irq_info" PASS LINKER_ZEPHYR_FINAL)
+    zephyr_linker_section_configure(SECTION /DISCARD/ KEEP INPUT ".intList"  PASS LINKER_ZEPHYR_FINAL)
+  endif()
 endif()
+
+zephyr_linker_section_configure(SECTION /DISCARD/ INPUT ".note.GNU-stack")
 
 zephyr_linker_sources_ifdef(CONFIG_ARCH_HAS_RAMFUNC_SUPPORT
   RAM_SECTIONS
@@ -76,9 +90,7 @@ zephyr_linker_sources_ifdef(CONFIG_NOCACHE_MEMORY
   nocache.ld
 )
 
-# Only ARM, X86 and OPENISA_RV32M1_RISCV32 use ROM_START_OFFSET.
-if (DEFINED CONFIG_ARM OR DEFINED CONFIG_X86 OR DEFINED CONFIG_ARM64
-    OR DEFINED CONFIG_SOC_OPENISA_RV32M1)
+if(DEFINED CONFIG_ARCH_SUPPORTS_ROM_OFFSET)
   # Exclamation mark is printable character with lowest number in ASCII table.
   # We are sure that this file will be included as a first.
   zephyr_linker_sources(ROM_START SORT_KEY ! rom_start_address.ld)
@@ -90,10 +102,18 @@ if (DEFINED CONFIG_ARM OR DEFINED CONFIG_X86 OR DEFINED CONFIG_ARM64
   # Handled in ld.cmake
 endif()
 
+zephyr_library_sources_ifdef(
+  CONFIG_EXCEPTION_DUMP_HOOK
+  exception.c
+)
+
+zephyr_library_sources(
+  instr_mem.c
+)
 
 # isr_tables is a normal CMake library and not a zephyr_library because it
 # should not be --whole-archive'd
-if (CONFIG_GEN_ISR_TABLES)
+if(CONFIG_GEN_ISR_TABLES)
   add_library(isr_tables
     isr_tables.c
   )
@@ -101,6 +121,9 @@ if (CONFIG_GEN_ISR_TABLES)
   add_dependencies(isr_tables zephyr_generated_headers)
   target_link_libraries(isr_tables zephyr_interface)
   zephyr_library_link_libraries(isr_tables)
+
+  zephyr_link_libraries($<TARGET_PROPERTY:linker,undefined>_sw_isr_table)
+  zephyr_link_libraries($<TARGET_PROPERTY:linker,undefined>_irq_vector_table)
 endif()
 
 if(CONFIG_COVERAGE)

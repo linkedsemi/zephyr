@@ -47,14 +47,15 @@ LOG_OUTPUT_DEFINE(log_output, mock_output_func,
 
 ZTEST(test_log_output, test_no_flags)
 {
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	static const char *exp_str = SNAME ": " TEST_STR "\r\n";
 	int err;
 
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 0, NULL, SNAME, NULL, LOG_LEVEL_INF, package, NULL, 0, 0);
+	log_output_process(&log_output, 0, NULL, SNAME, NULL, 0, LOG_LEVEL_INF,
+			   package, NULL, 0, 0);
 
 	mock_buffer[mock_len] = '\0';
 	zassert_str_equal(exp_str, mock_buffer);
@@ -62,14 +63,14 @@ ZTEST(test_log_output, test_no_flags)
 
 ZTEST(test_log_output, test_raw)
 {
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	static const char *exp_str = TEST_STR;
 	int err;
 
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 0, NULL, SNAME, NULL, LOG_LEVEL_INTERNAL_RAW_STRING,
+	log_output_process(&log_output, 0, NULL, SNAME, NULL, 0, LOG_LEVEL_INTERNAL_RAW_STRING,
 			   package, NULL, 0, 0);
 
 	mock_buffer[mock_len] = '\0';
@@ -78,14 +79,15 @@ ZTEST(test_log_output, test_raw)
 
 ZTEST(test_log_output, test_no_flags_dname)
 {
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	static const char *exp_str = DNAME "/" SNAME ": " TEST_STR "\r\n";
 	int err;
 
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 0, DNAME, SNAME, NULL, LOG_LEVEL_INF, package, NULL, 0, 0);
+	log_output_process(&log_output, 0, DNAME, SNAME, NULL, 0, LOG_LEVEL_INF,
+			   package, NULL, 0, 0);
 
 	mock_buffer[mock_len] = '\0';
 	zassert_str_equal(exp_str, mock_buffer);
@@ -93,7 +95,7 @@ ZTEST(test_log_output, test_no_flags_dname)
 
 ZTEST(test_log_output, test_level_flag)
 {
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	static const char *exp_str = "<inf> " DNAME "/" SNAME ": " TEST_STR "\r\n";
 	uint32_t flags = LOG_OUTPUT_FLAG_LEVEL;
 	int err;
@@ -101,7 +103,7 @@ ZTEST(test_log_output, test_level_flag)
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 0, DNAME, SNAME, NULL, LOG_LEVEL_INF,
+	log_output_process(&log_output, 0, DNAME, SNAME, NULL, 0, LOG_LEVEL_INF,
 			   package, NULL, 0, flags);
 
 	mock_buffer[mock_len] = '\0';
@@ -110,17 +112,17 @@ ZTEST(test_log_output, test_level_flag)
 
 ZTEST(test_log_output, test_ts_flag)
 {
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	static const char *exp_str = IS_ENABLED(CONFIG_LOG_TIMESTAMP_64BIT) ?
-		"[0000000000000000] " DNAME "/" SNAME ": " TEST_STR "\r\n" :
-		"[00000000] " DNAME "/" SNAME ": " TEST_STR "\r\n";
+		"[00000000000000000000] " DNAME "/" SNAME ": " TEST_STR "\r\n" :
+		"[0000000000] " DNAME "/" SNAME ": " TEST_STR "\r\n";
 	uint32_t flags = LOG_OUTPUT_FLAG_TIMESTAMP;
 	int err;
 
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 0, DNAME, SNAME, NULL, LOG_LEVEL_INF,
+	log_output_process(&log_output, 0, DNAME, SNAME, NULL, 0, LOG_LEVEL_INF,
 			   package, NULL, 0, flags);
 
 	mock_buffer[mock_len] = '\0';
@@ -136,7 +138,7 @@ ZTEST(test_log_output, test_format_ts)
 #else
 #define TIMESTAMP_STR "[00:00:01.000,000] "
 #endif
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	static const char *exp_str = TIMESTAMP_STR DNAME "/" SNAME ": " TEST_STR "\r\n";
 	uint32_t flags = LOG_OUTPUT_FLAG_TIMESTAMP | LOG_OUTPUT_FLAG_FORMAT_TIMESTAMP;
 	int err;
@@ -146,11 +148,50 @@ ZTEST(test_log_output, test_format_ts)
 	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 1000000, DNAME, SNAME, NULL, LOG_LEVEL_INF,
+	log_output_process(&log_output, 1000000, DNAME, SNAME, NULL, 0, LOG_LEVEL_INF,
 			   package, NULL, 0, flags);
 
 	mock_buffer[mock_len] = '\0';
 	printk("%s", mock_buffer);
+	zassert_str_equal(exp_str, mock_buffer);
+}
+
+ZTEST(test_log_output, test_format_ts_64)
+{
+	if (!IS_ENABLED(CONFIG_LOG_TIMESTAMP_64BIT) ||
+	    IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_DATE_TIMESTAMP) ||
+	    IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_ISO8601_TIMESTAMP) ||
+	    IS_ENABLED(CONFIG_LOG_OUTPUT_FORMAT_CUSTOM_TIMESTAMP)) {
+		/* Large timestamps are only checked against the default
+		 * HH:MM:SS format. The date/iso8601 formats convert through
+		 * time_t, which is 32-bit with some C libraries and cannot
+		 * represent the value used here.
+		 */
+		return;
+	}
+
+#ifdef CONFIG_LOG_OUTPUT_FORMAT_LINUX_TIMESTAMP
+#define TIMESTAMP64_STR "[4294967297.000000] "
+#else
+#define TIMESTAMP64_STR "[1193046:28:17.000,000] "
+#endif
+	char __aligned(sizeof(void *)) package[256];
+	static const char *exp_str = TIMESTAMP64_STR DNAME "/" SNAME ": " TEST_STR "\r\n";
+	uint32_t flags = LOG_OUTPUT_FLAG_TIMESTAMP | LOG_OUTPUT_FLAG_FORMAT_TIMESTAMP;
+	int err;
+
+	log_output_timestamp_freq_set(1000000);
+
+	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
+	zassert_true(err > 0);
+
+	/* 2^32 + 1 seconds, i.e. one second past the point where a uint32_t
+	 * seconds counter wraps (~136 years). Must not be truncated to 32 bits.
+	 */
+	log_output_process(&log_output, (log_timestamp_t)((UINT64_C(0x100000000) + 1) * 1000000),
+			   DNAME, SNAME, NULL, 0, LOG_LEVEL_INF, package, NULL, 0, flags);
+
+	mock_buffer[mock_len] = '\0';
 	zassert_str_equal(exp_str, mock_buffer);
 }
 
@@ -165,30 +206,58 @@ ZTEST(test_log_output, test_ts_to_us)
 	zassert_equal(log_output_timestamp_to_us(10), 305);
 }
 
+static bool use_func_prefix(uint8_t level)
+{
+	switch (level) {
+	case LOG_LEVEL_ERR:
+		return IS_ENABLED(CONFIG_LOG_FUNC_NAME_PREFIX_ERR);
+	case LOG_LEVEL_WRN:
+		return IS_ENABLED(CONFIG_LOG_FUNC_NAME_PREFIX_WRN);
+	case LOG_LEVEL_INF:
+		return IS_ENABLED(CONFIG_LOG_FUNC_NAME_PREFIX_INF);
+	case LOG_LEVEL_DBG:
+		return IS_ENABLED(CONFIG_LOG_FUNC_NAME_PREFIX_DBG);
+	default:
+		return false;
+	}
+}
+
 ZTEST(test_log_output, test_levels)
 {
-	char package[256];
-	static const char *const exp_strs[] = {
-		"<err> " SNAME ": " TEST_STR "\r\n",
-		"<wrn> " SNAME ": " TEST_STR "\r\n",
-		"<inf> " SNAME ": " TEST_STR "\r\n",
-		"<dbg> " SNAME ": " TEST_STR "\r\n"
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
+	static const char *const level_strs[] = {
+		"<err>",
+		"<wrn>",
+		"<inf>",
+		"<dbg>"
 	};
 	uint8_t levels[] = {LOG_LEVEL_ERR, LOG_LEVEL_WRN, LOG_LEVEL_INF, LOG_LEVEL_DBG};
 	uint32_t flags = LOG_OUTPUT_FLAG_LEVEL;
+	char exp_str[128];
 	int err;
 
-	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
-	zassert_true(err > 0);
+	ARRAY_FOR_EACH(levels, i) {
+		int slen;
 
-	for (int i = 0; i < ARRAY_SIZE(exp_strs); i++) {
 		reset_mock_buffer();
 
-		log_output_process(&log_output, 0, NULL, SNAME, NULL, levels[i],
+		if (use_func_prefix(levels[i])) {
+			slen = sprintf(exp_str, "%s %s.%s: %s\r\n",
+				level_strs[i], SNAME, __func__, TEST_STR);
+			err = cbprintf_package(package, sizeof(package), 0,
+						"%s: " TEST_STR, __func__);
+		} else {
+			slen = sprintf(exp_str, "%s %s: %s\r\n", level_strs[i], SNAME, TEST_STR);
+			err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
+		}
+		zassert_true(err > 0);
+
+		log_output_process(&log_output, 0, NULL, SNAME, NULL, 0, levels[i],
 				   package, NULL, 0, flags);
 
 		mock_buffer[mock_len] = '\0';
-		zassert_str_equal(exp_strs[i], mock_buffer);
+		zassert_equal(mock_len, slen);
+		zassert_str_equal(exp_str, mock_buffer, "exp:%s, got:%s", exp_str, mock_buffer);
 	}
 }
 
@@ -212,28 +281,49 @@ ZTEST(test_log_output, test_colors)
 #define LOG_COLOR_DBG          LOG_COLOR_CODE_DEFAULT
 #endif /* CONFIG_LOG_BACKEND_SHOW_COLOR */
 
-	char package[256];
-	static const char *const exp_strs[] = {
-		LOG_COLOR_ERR "<err> " SNAME ": " TEST_STR LOG_COLOR_CODE_DEFAULT "\r\n",
-		LOG_COLOR_WRN "<wrn> " SNAME ": " TEST_STR LOG_COLOR_CODE_DEFAULT "\r\n",
-		LOG_COLOR_INF "<inf> " SNAME ": " TEST_STR LOG_COLOR_CODE_DEFAULT "\r\n",
-		LOG_COLOR_DBG "<dbg> " SNAME ": " TEST_STR LOG_COLOR_CODE_DEFAULT "\r\n"
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
+	static const char *const color_strs[] = {
+		LOG_COLOR_ERR,
+		LOG_COLOR_WRN,
+		LOG_COLOR_INF,
+		LOG_COLOR_DBG
+	};
+	static const char *const level_strs[] = {
+		"<err>",
+		"<wrn>",
+		"<inf>",
+		"<dbg>"
 	};
 	uint8_t levels[] = {LOG_LEVEL_ERR, LOG_LEVEL_WRN, LOG_LEVEL_INF, LOG_LEVEL_DBG};
 	uint32_t flags = LOG_OUTPUT_FLAG_LEVEL | LOG_OUTPUT_FLAG_COLORS;
+	char exp_str[128];
 	int err;
 
-	err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
-	zassert_true(err > 0);
+	ARRAY_FOR_EACH(levels, i) {
+		int slen;
 
-	for (int i = 0; i < ARRAY_SIZE(exp_strs); i++) {
+		if (use_func_prefix(levels[i])) {
+			slen = sprintf(exp_str, "%s%s %s.%s: %s%s\r\n",
+				color_strs[i], level_strs[i], SNAME, __func__, TEST_STR,
+				LOG_COLOR_CODE_DEFAULT);
+			err = cbprintf_package(package, sizeof(package), 0,
+						"%s: " TEST_STR, __func__);
+			zassert_true(err >= 0);
+		} else {
+			slen = sprintf(exp_str, "%s%s %s: %s%s\r\n",
+				color_strs[i], level_strs[i], SNAME, TEST_STR,
+				LOG_COLOR_CODE_DEFAULT);
+			err = cbprintf_package(package, sizeof(package), 0, TEST_STR);
+			zassert_true(err >= 0);
+		}
 		reset_mock_buffer();
 
-		log_output_process(&log_output, 0, NULL, SNAME, NULL, levels[i],
+		log_output_process(&log_output, 0, NULL, SNAME, NULL, 0, levels[i],
 				   package, NULL, 0, flags);
 
 		mock_buffer[mock_len] = '\0';
-		zassert_str_equal(exp_strs[i], mock_buffer);
+		zassert_equal(mock_len, slen);
+		zassert_str_equal(exp_str, mock_buffer, "exp:%s got:%s", exp_str, mock_buffer);
 	}
 }
 
@@ -244,12 +334,16 @@ ZTEST(test_log_output, test_thread_id)
 	}
 
 	char exp_str[256];
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
+
+	k_tid_t tid = k_current_get();
+	const char *name = k_thread_name_get(tid);
+	int prio = k_thread_priority_get(tid);
 
 	if (IS_ENABLED(CONFIG_THREAD_NAME)) {
-		sprintf(exp_str, "<err> [%s] src: Test\r\n", k_thread_name_get(k_current_get()));
+		sprintf(exp_str, "<err> [%3d %s] src: Test\r\n", prio, name);
 	} else {
-		sprintf(exp_str, "<err> [%p] src: Test\r\n", k_current_get());
+		sprintf(exp_str, "<err> [%3d %p] src: Test\r\n", prio, tid);
 	}
 
 	uint32_t flags = LOG_OUTPUT_FLAG_LEVEL | LOG_OUTPUT_FLAG_THREAD;
@@ -258,7 +352,7 @@ ZTEST(test_log_output, test_thread_id)
 	err = cbprintf_package(package, sizeof(package), 0, "Test");
 	zassert_true(err > 0);
 
-	log_output_process(&log_output, 0, NULL, SNAME, k_current_get(), 1,
+	log_output_process(&log_output, 0, NULL, SNAME, k_current_get(), 0, 1,
 			   package, NULL, 0, flags);
 
 	mock_buffer[mock_len] = '\0';
@@ -268,7 +362,7 @@ ZTEST(test_log_output, test_thread_id)
 
 ZTEST(test_log_output, test_skip_src)
 {
-	char package[256];
+	char __aligned(Z_LOG_MSG_ALIGNMENT) package[256];
 	const char exp_str[] = TEST_STR "\r\n";
 	uint32_t flags = LOG_OUTPUT_FLAG_SKIP_SOURCE;
 	int err;
@@ -277,7 +371,7 @@ ZTEST(test_log_output, test_skip_src)
 	zassert_true(err > 0);
 
 	reset_mock_buffer();
-	log_output_process(&log_output, 0, NULL, SNAME, NULL, LOG_LEVEL_INF,
+	log_output_process(&log_output, 0, NULL, SNAME, NULL, 0, LOG_LEVEL_INF,
 			   package, NULL, 0, flags);
 
 	mock_buffer[mock_len] = '\0';

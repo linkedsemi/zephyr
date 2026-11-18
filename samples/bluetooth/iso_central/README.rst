@@ -12,8 +12,6 @@ The sample scans for a peripheral, establishes a connection, and sets up a conne
 Once the isochronous channel is connected, isochronous data is transferred to the peer device every 10 milliseconds.
 It is recommended to run this sample together with the :zephyr:code-sample:`ble_peripheral_iso` sample.
 
-To run the sample with an encrypted isochronous channel, enable :kconfig:option:`CONFIG_BT_SMP`.
-
 Requirements
 ************
 
@@ -24,23 +22,32 @@ Requirements
 
 Building and Running
 ********************
-This sample can be found under :zephyr_file:`samples/bluetooth/iso_central` in
-the Zephyr tree.
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/iso_central
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+Use ``-DEXTRA_CONF_FILE=overlay-bt_ll_sw_split.conf`` to enable
+required ISO feature support in Zephyr Bluetooth Controller on supported boards.
+
+After flashing, check the following:
 
 1. Start the application.
    In the terminal window, check that it is scanning for other devices.
 
       Bluetooth initialized
       Scanning successfully started
-      Device found: D3:3A:5D:F5:73:33 (random) (RSSI -78)
-      Device found: 70:7B:F4:2B:76:AD (random) (RSSI -68)
-      Device found: 65:CF:20:0D:CB:9D (random) (RSSI -82)
+      Device found: R:D3:3A:5D:F5:73:33 (RSSI -78)
+      Device found: R:70:7B:F4:2B:76:AD (RSSI -68)
+      Device found: R:65:CF:20:0D:CB:9D (RSSI -82)
 
 2. Observe that the device connects.
 
-      Connected: 65:CF:20:0D:CB:9D (random)
+      Connected: R:65:CF:20:0D:CB:9D
 
-3. Observe that the ISO channel is connected
+3. Observe that the ISO channel is connected.
 
       ISO Channel 0x200048f8 connected
 

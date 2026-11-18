@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(nxp_dai_sai);
 
 #ifdef CONFIG_SAI_HAS_MCLK_CONFIG_OPTION
 #define SAI_MCLK_MCR_MSEL_SHIFT 24
-#define SAI_MCLK_MCR_MSEL_MASK GENMASK(24, 25)
+#define SAI_MCLK_MCR_MSEL_MASK GENMASK(25, 24)
 #endif /* CONFIG_SAI_HAS_MCLK_CONFIG_OPTION */
 /* workaround the fact that device_map() doesn't exist for SoCs with no MMU */
 #ifndef DEVICE_MMIO_IS_IN_RAM
@@ -142,14 +142,29 @@ LOG_MODULE_REGISTER(nxp_dai_sai);
  * is computed as follows:
  *	handshake = CHANNEL_ID | (MUX_VALUE << 8)
  * The channel ID and MUX value are each encoded in 8 bits.
+ *
+ * NOTE: the DMA specifier cell names differ per DMA controller binding.
+ * nxp,edma and nxp,sdma declare dma-cells as [channel, mux] while
+ * nxp,mcux-edma declares them as [mux, source]. In both cases the first
+ * cell encodes the low byte and the second cell encodes the high byte, so
+ * we select the proper cell names based on which binding is in use.
  */
+#define _SAI_DMAS_IDX_BY_NAME(inst, dir)\
+	DT_PHA_ELEM_IDX_BY_NAME(DT_DRV_INST(inst), dmas, dir)
+
+#define _SAI_TX_RX_DMA_HANDSHAKE(inst, dir, lo_cell, hi_cell)\
+	((DT_INST_DMAS_CELL_BY_NAME(inst, dir, lo_cell) & GENMASK(7, 0)) |\
+	 ((DT_INST_DMAS_CELL_BY_NAME(inst, dir, hi_cell) << 8) & GENMASK(15, 8)))
+
 #define SAI_TX_RX_DMA_HANDSHAKE(inst, dir)\
-	((DT_INST_DMAS_CELL_BY_NAME(inst, dir, channel) & GENMASK(7, 0)) |\
-	 ((DT_INST_DMAS_CELL_BY_NAME(inst, dir, mux) << 8) & GENMASK(15, 8)))
+	COND_CODE_1(DT_PHA_HAS_CELL_AT_IDX(DT_DRV_INST(inst), dmas,\
+					   _SAI_DMAS_IDX_BY_NAME(inst, dir), channel),\
+		    (_SAI_TX_RX_DMA_HANDSHAKE(inst, dir, channel, mux)),\
+		    (_SAI_TX_RX_DMA_HANDSHAKE(inst, dir, mux, source)))
 
 /* used to retrieve the number of supported transmission/receive lines */
-#define SAI_DLINE_COUNT(inst)\
-	FSL_FEATURE_SAI_CHANNEL_COUNTn(UINT_TO_I2S(DT_INST_REG_ADDR(inst)))
+#define SAI_DLINE_COUNT(base)\
+	FSL_FEATURE_SAI_CHANNEL_COUNTn(UINT_TO_I2S(base))
 
 /* used to retrieve the index of the transmission line */
 #define SAI_TX_DLINE_INDEX(inst) DT_INST_PROP_OR(inst, tx_dataline, 0)

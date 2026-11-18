@@ -14,17 +14,22 @@
 #define NSOS_MID_PF_UNSPEC       0          /**< Unspecified protocol family.  */
 #define NSOS_MID_PF_INET         1          /**< IP protocol family version 4. */
 #define NSOS_MID_PF_INET6        2          /**< IP protocol family version 6. */
+#define NSOS_MID_PF_UNIX         6          /**< Unix protocol.                */
+#define NSOS_MID_PF_PACKET       3          /**< Packet family.                */
 
 /* Address families. */
 #define NSOS_MID_AF_UNSPEC      NSOS_MID_PF_UNSPEC   /**< Unspecified address family.   */
 #define NSOS_MID_AF_INET        NSOS_MID_PF_INET     /**< IP protocol family version 4. */
 #define NSOS_MID_AF_INET6       NSOS_MID_PF_INET6    /**< IP protocol family version 6. */
+#define NSOS_MID_AF_UNIX        NSOS_MID_PF_UNIX     /**< Unix protocol.                */
+#define NSOS_MID_AF_PACKET      NSOS_MID_PF_PACKET   /**< Packet family.                */
 
 /** Protocol numbers from IANA/BSD */
 enum nsos_mid_net_ip_protocol {
 	NSOS_MID_IPPROTO_IP = 0,            /**< IP protocol (pseudo-val for setsockopt() */
 	NSOS_MID_IPPROTO_ICMP = 1,          /**< ICMP protocol   */
 	NSOS_MID_IPPROTO_IGMP = 2,          /**< IGMP protocol   */
+	NSOS_MID_IPPROTO_ETH_P_ALL = 3,     /**< Every packet. from linux if_ether.h  */
 	NSOS_MID_IPPROTO_IPIP = 4,          /**< IPIP tunnels    */
 	NSOS_MID_IPPROTO_TCP = 6,           /**< TCP protocol    */
 	NSOS_MID_IPPROTO_UDP = 17,          /**< UDP protocol    */
@@ -63,10 +68,28 @@ struct nsos_mid_sockaddr_in6 {
 	uint32_t sin6_scope_id;  /* Set of interfaces for a scope */
 };
 
+#define UNIX_PATH_MAX 108
+struct nsos_mid_sockaddr_un {
+	uint16_t    sun_family;              /* AF_UNIX */
+	char        sun_path[UNIX_PATH_MAX]; /* pathname */
+};
+
+struct nsos_mid_sockaddr_ll {
+	uint16_t    sll_family;   /**< Always AF_PACKET                   */
+	uint16_t    sll_protocol; /**< Physical-layer protocol            */
+	int         sll_ifindex;  /**< Interface number                   */
+	uint16_t    sll_hatype;   /**< ARP hardware type                  */
+	uint8_t     sll_pkttype;  /**< Packet type                        */
+	uint8_t     sll_halen;    /**< Length of address                  */
+	uint8_t     sll_addr[8];  /**< Physical-layer address, big endian */
+};
+
 struct nsos_mid_sockaddr_storage {
 	union {
 		struct nsos_mid_sockaddr_in sockaddr_in;
 		struct nsos_mid_sockaddr_in6 sockaddr_in6;
+		struct nsos_mid_sockaddr_un sockaddr_un;
+		struct nsos_mid_sockaddr_ll sockaddr_ll;
 	};
 };
 
@@ -87,6 +110,12 @@ struct nsos_mid_addrinfo {
 	struct nsos_mid_sockaddr *ai_addr;
 	char                     *ai_canonname;
 	struct nsos_mid_addrinfo *ai_next;
+};
+
+struct nsos_mid_ifaddr {
+	uint16_t family;    /* NSOS_MID_AF_INET or NSOS_MID_AF_INET6 */
+	uint8_t addr[16];   /* Address in network byte order */
+	uint8_t prefix_len; /* Netmask prefix length in bits */
 };
 
 struct nsos_mid_iovec {
@@ -121,15 +150,20 @@ int nsos_adapt_bind(int fd, const struct nsos_mid_sockaddr *addr, size_t addrlen
 int nsos_adapt_connect(int fd, const struct nsos_mid_sockaddr *addr, size_t addrlen);
 int nsos_adapt_listen(int fd, int backlog);
 int nsos_adapt_accept(int fd, struct nsos_mid_sockaddr *addr, size_t *addrlen);
-int nsos_adapt_sendto(int fd, const void *buf, size_t len, int flags,
+int nsos_adapt_sendto(int fd, const void *buf, size_t len, int flags_mid,
 		      const struct nsos_mid_sockaddr *addr, size_t addrlen);
-int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags);
-int nsos_adapt_recvfrom(int fd, void *buf, size_t len, int flags,
+int nsos_adapt_sendmsg(int fd, const struct nsos_mid_msghdr *msg_mid, int flags_mid);
+int nsos_adapt_recvfrom(int fd, void *buf, size_t len, int flags_mid,
 			struct nsos_mid_sockaddr *addr, size_t *addrlen);
 int nsos_adapt_getsockopt(int fd, int level, int optname,
 			  void *optval, size_t *optlen);
 int nsos_adapt_setsockopt(int fd, int level, int optname,
 			  const void *optval, size_t optlen);
+int nsos_adapt_host_ifindex(const char *name);
+int nsos_adapt_getpeername(int fd, struct nsos_mid_sockaddr *addr,
+			   size_t *addrlen);
+int nsos_adapt_getsockname(int fd, struct nsos_mid_sockaddr *addr,
+			   size_t *addrlen);
 
 void nsos_adapt_poll_add(struct nsos_mid_pollfd *pollfd);
 void nsos_adapt_poll_remove(struct nsos_mid_pollfd *pollfd);
@@ -147,5 +181,7 @@ int nsos_adapt_getaddrinfo(const char *node, const char *service,
 			   struct nsos_mid_addrinfo **res,
 			   int *system_errno);
 void nsos_adapt_freeaddrinfo(struct nsos_mid_addrinfo *res);
+
+int nsos_adapt_get_ifaddrs(int ifindex, struct nsos_mid_ifaddr *addrs, size_t *count);
 
 #endif /* __DRIVERS_NET_NSOS_H__ */

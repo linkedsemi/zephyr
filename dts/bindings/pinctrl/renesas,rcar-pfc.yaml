@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-    Renesas R-Car Pin Function Controller node
-    This binding gives a base representation of the R-Car pins configuration.
+    Renesas R-Car Gen3/4 Pin Function Controller
+
+    This binding gives a representation of the R-Car Gen3/4 pin configuration.
     The R-Car pin controller is a singleton node responsible for controlling
     pin function selection and pin properties. For example, you can use this
     node to route CAN0 TX A to pin 'RD', and enable pull-up resistor as well
@@ -23,7 +24,7 @@ description: |
        */
 
       /* include pre-defined pins and functions for the SoC used by the board */
-      #include <dt-bindings/pinctrl/renesas/pinctrl-r8a77951.h>
+      #include <zephyr/dt-bindings/pinctrl/renesas/pinctrl-r8a77951.h>
 
       &pfc {
         /* configuration for can0 data a tx default state */
@@ -74,7 +75,7 @@ properties:
 
 child-binding:
   description: |
-     This binding gives a base representation of the R-Car pins configuration.
+    This binding gives a representation of the R-Car Gen3/4 pin configuration.
 
   include:
     - name: pincfg-node.yaml

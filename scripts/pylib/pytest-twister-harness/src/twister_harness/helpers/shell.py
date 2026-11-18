@@ -22,7 +22,9 @@ class Shell:
     Helper class that provides methods used to interact with shell application.
     """
 
-    def __init__(self, device: DeviceAdapter, prompt: str = 'uart:~$', timeout: float | None = None) -> None:
+    def __init__(
+        self, device: DeviceAdapter, prompt: str = 'uart:~$', timeout: float | None = None
+    ) -> None:
         self._device: DeviceAdapter = device
         self.prompt: str = prompt
         self.base_timeout: float = timeout or device.base_timeout
@@ -48,12 +50,28 @@ class Shell:
                 return True
         return False
 
-    def exec_command(self, command: str, timeout: float | None = None, print_output: bool = True) -> list[str]:
+    def exec_command(
+        self,
+        command: str,
+        timeout: float | None = None,
+        print_output: bool = True,
+        *,
+        get_full_output: bool = False,
+        full_output_timeout: float | None = None,
+    ) -> list[str]:
         """
         Send shell command to a device and return response. Passed command
         is extended by double enter sings - first one to execute this command
         on a device, second one to receive next prompt what is a signal that
         execution was finished. Method returns printout of the executed command.
+
+        :param get_full_output: If True, after the shell prompt is seen, keep
+            reading lines until ``full_output_timeout`` elapses (wall clock).
+            Use this when output (e.g. decoded logs) continues to arrive after
+            the prompt.
+        :param full_output_timeout: Seconds to spend draining additional lines
+            after the prompt. When ``get_full_output`` is True and this is
+            omitted, ``timeout`` (or :attr:`base_timeout`) is used.
         """
         timeout = timeout or self.base_timeout
         command_ext = f'{command}\n\n'
@@ -63,20 +81,60 @@ class Shell:
         self._device.write(command_ext.encode())
         lines: list[str] = []
         # wait for device command print - it should be done immediately after sending command to device
-        lines.extend(self._device.readlines_until(regex=regex_command, timeout=1.0, print_output=print_output))
+        lines.extend(
+            self._device.readlines_until(
+                regex=regex_command, timeout=1.0, print_output=print_output
+            )
+        )
         # wait for device command execution
-        lines.extend(self._device.readlines_until(regex=regex_prompt, timeout=timeout, print_output=print_output))
+        lines.extend(
+            self._device.readlines_until(
+                regex=regex_prompt, timeout=timeout, print_output=print_output
+            )
+        )
+        if get_full_output:
+            drain_budget = full_output_timeout if full_output_timeout is not None else timeout
+            lines.extend(self._read_lines_for_duration(drain_budget, print_output=print_output))
+        return lines
+
+    def _read_lines_for_duration(self, duration_s: float, print_output: bool) -> list[str]:
+        """Read lines from the device for up to ``duration_s`` wall-clock seconds."""
+        lines: list[str] = []
+        deadline = time.time() + duration_s
+        while time.time() < deadline:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                break
+            try:
+                line = self._device.readline(timeout=min(0.2, remaining), print_output=print_output)
+                lines.append(line)
+            except TwisterHarnessTimeoutException:
+                pass
         return lines
 
     def get_filtered_output(self, command_lines: list[str]) -> list[str]:
+        """
+        Filter out prompts and log messages
+
+        Take the output of exec_command, which can contain log messages and command prompts,
+        and filter them to obtain only the command output.
+
+        Example:
+            >>> # equivalent to `lines = shell.exec_command("kernel version")`
+            >>> lines = [
+            >>>    'uart:~$',                    # filter prompts
+            >>>    'Zephyr version 3.6.0',       # keep this line
+            >>>    'uart:~$ <dbg> debug message' # filter log messages
+            >>> ]
+            >>> filtered_output = shell.get_filtered_output(output)
+            >>> filtered_output
+            ['Zephyr version 3.6.0']
+
+        :param command_lines: List of strings i.e. the output of `exec_command`.
+        :return: A list of strings containing, excluding prompts and log messages.
+        """
         regex_filter = re.compile(
-            '|'.join([
-                re.escape(self.prompt),
-                '<dbg>',
-                '<inf>',
-                '<wrn>',
-                '<err>'
-            ])
+            '|'.join([re.escape(self.prompt), '<dbg>', '<inf>', '<wrn>', '<err>'])
         )
         return list(filter(lambda l: not regex_filter.search(l), command_lines))
 
@@ -106,6 +164,7 @@ class ShellMCUbootCommandParsed:
     """
     Helper class to keep data from `mcuboot` shell command.
     """
+
     areas: list[ShellMCUbootArea] = field(default_factory=list)
 
     @classmethod

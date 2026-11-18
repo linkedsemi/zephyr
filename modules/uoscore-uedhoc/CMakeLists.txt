@@ -1,7 +1,7 @@
 # Copyright (c) 2022 Nordic Semiconductor ASA
 # SPDX-License-Identifier: Apache-2.0
 
-if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
+if(CONFIG_UOSCORE OR CONFIG_UEDHOC)
 
   set(UOSCORE_UEDHOC_SRC_DIR ${ZEPHYR_CURRENT_MODULE_DIR}/src)
   set(UOSCORE_UEDHOC_INCLUDE_DIR ${ZEPHYR_CURRENT_MODULE_DIR}/inc)
@@ -14,7 +14,7 @@ if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
 
   zephyr_library_compile_definitions(MBEDTLS)
 
-  if (CONFIG_UOSCORE_DEBUG OR CONFIG_UEDHOC_DEBUG)
+  if(CONFIG_UOSCORE_DEBUG OR CONFIG_UEDHOC_DEBUG)
     zephyr_library_compile_definitions(DEBUG_PRINT)
   endif()
 
@@ -25,9 +25,9 @@ if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
     ${UOSCORE_UEDHOC_SRC_DIR}/common/print_util.c
   )
 
-  zephyr_library_link_libraries(mbedTLS)
+  zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)
 
-  if (CONFIG_BUILD_WITH_TFM)
+  if(CONFIG_BUILD_WITH_TFM)
     zephyr_library_include_directories(
       $<TARGET_PROPERTY:tfm,TFM_BINARY_DIR>/api_ns/interface/include
     )
@@ -35,14 +35,18 @@ if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
 
 # UOSCORE
 
-  if (CONFIG_UOSCORE)
+  if(CONFIG_UOSCORE)
 
     zephyr_library_named(uoscore)
 
     zephyr_library_compile_definitions(MBEDTLS)
 
-    if (CONFIG_UOSCORE_DEBUG)
+    if(CONFIG_UOSCORE_DEBUG)
       zephyr_library_compile_definitions(DEBUG_PRINT)
+    endif()
+
+    if(CONFIG_UOSCORE_NVM_SUPPORT)
+      zephyr_library_compile_definitions(OSCORE_NVM_SUPPORT)
     endif()
 
     zephyr_library_sources(
@@ -63,19 +67,23 @@ if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/oscore_info.c
     )
 
-    zephyr_library_link_libraries(mbedTLS)
+    zephyr_library_sources_ifdef(CONFIG_UOSCORE_NVM_SUPPORT
+      ${CMAKE_CURRENT_LIST_DIR}/uoscore_nvm.c
+    )
+
+    zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)
 
   endif() # CONFIG_UOSCORE
 
 # UEDHOC
 
-  if (CONFIG_UEDHOC)
+  if(CONFIG_UEDHOC)
 
     zephyr_library_named(uedhoc)
 
     zephyr_library_compile_definitions(MBEDTLS)
 
-    if (CONFIG_UEDHOC_DEBUG)
+    if(CONFIG_UEDHOC_DEBUG)
       zephyr_library_compile_definitions(DEBUG_PRINT)
     endif()
 
@@ -107,7 +115,8 @@ if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_decode_message_1.c
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_decode_message_2.c
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_decode_message_3.c
-      ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_decode_plaintext.c
+      ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_decode_plaintext2.c
+      ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_decode_plaintext3.c
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_encode_bstr_type.c
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_encode_data_2.c
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_encode_enc_structure.c
@@ -122,7 +131,7 @@ if (CONFIG_UOSCORE OR CONFIG_UEDHOC)
       ${UOSCORE_UEDHOC_SRC_DIR}/cbor/edhoc_encode_th2.c
     )
 
-    zephyr_library_link_libraries(mbedTLS)
+    zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)
 
   endif() # CONFIG_UEDHOC
 

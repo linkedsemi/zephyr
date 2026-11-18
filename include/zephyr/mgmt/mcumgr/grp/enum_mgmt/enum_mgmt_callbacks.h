@@ -4,19 +4,37 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef H_MCUMGR_ENUM_MGMT_CALLBACKS_
-#define H_MCUMGR_ENUM_MGMT_CALLBACKS_
+/**
+ * @file
+ * @brief Header file for MCUmgr enumeration management callback definitions.
+ * @ingroup mcumgr_callback_api_enum_mgmt
+ */
+
+#ifndef ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_ENUM_MGMT_ENUM_MGMT_CALLBACKS_H_
+#define ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_ENUM_MGMT_ENUM_MGMT_CALLBACKS_H_
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /**
- * @brief MCUmgr enum_mgmt callback API
- * @defgroup mcumgr_callback_api_enum_mgmt MCUmgr enum_mgmt callback API
+ * @brief MCUmgr Enumeration Management Callbacks API
+ * @defgroup mcumgr_callback_api_enum_mgmt Enumeration Management Callbacks
+ * @ingroup mcumgr_enum_mgmt
  * @ingroup mcumgr_callback_api
  * @{
  */
+
+/**
+ * MGMT event opcodes for enumeration management group.
+ */
+enum enum_mgmt_group_events {
+	/** Callback when fetching details on supported command groups. */
+	MGMT_EVT_OP_ENUM_MGMT_DETAILS		= MGMT_DEF_EVT_OP_ID(MGMT_EVT_GRP_ENUM, 0),
+
+	/** Used to enable all enum_mgmt_group events. */
+	MGMT_EVT_OP_ENUM_MGMT_ALL		= MGMT_DEF_EVT_OP_ALL(MGMT_EVT_GRP_ENUM),
+};
 
 /**
  * Structure provided in the #MGMT_EVT_OP_ENUM_MGMT_DETAILS notification callback: This callback
@@ -42,4 +60,4 @@ struct enum_mgmt_detail_output {
 }
 #endif
 
-#endif
+#endif /* ZEPHYR_INCLUDE_MGMT_MCUMGR_GRP_ENUM_MGMT_ENUM_MGMT_CALLBACKS_H_ */

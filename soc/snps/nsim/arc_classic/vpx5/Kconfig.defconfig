@@ -27,7 +27,10 @@ config HARVARD
 config ARC_FIRQ
 	default n
 
-config CACHE_MANAGEMENT
+configdefault CACHE_MANAGEMENT
 	default y
+
+config ARC_MPU_VER
+	default 3 if ARC_MPU_ENABLE
 
 endif # SOC_NSIM_VPX5

@@ -2,12 +2,12 @@
 # SPDX-License-Identifier: Apache-2.0
 
 config UART_BT
-	bool "UART over NUS Bluetooth LE"
+	bool "UART over NUS Bluetooth LE [EXPERIMENTAL]"
 	depends on BT_ZEPHYR_NUS
 	depends on DT_HAS_ZEPHYR_NUS_UART_ENABLED
 	select UART_INTERRUPT_DRIVEN
-	select RING_BUFFER
 	select EXPERIMENTAL
+	select SERIAL_SUPPORT_INTERRUPT
 	help
 	  Enable the UART over NUS Bluetooth driver, which can be used to pipe
 	  serial data over Bluetooth LE GATT using NUS (Nordic UART Service).

@@ -13,12 +13,14 @@ LOG_MODULE_REGISTER(spi_mcux_ecspi, CONFIG_SPI_LOG_LEVEL);
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <fsl_ecspi.h>
 
 #include "spi_context.h"
 
 #define SPI_MCUX_ECSPI_MAX_BURST 4096
+/* One FIFO word carries a burst of up to 32 bits. */
+#define SPI_MCUX_ECSPI_WORD_BITS 32U
 
 struct spi_mcux_config {
 	ECSPI_Type *base;
@@ -34,9 +36,14 @@ struct spi_mcux_data {
 
 	uint16_t dfs;
 	uint16_t word_size;
+	/* Frames in the burst being transferred. */
+	uint16_t frames;
 
 	uint32_t rx_data;
 	uint32_t tx_data;
+
+	/* Set on completion timeout; makes a late SDK callback a no-op */
+	bool aborted;
 };
 
 static inline uint16_t bytes_per_word(uint16_t bits_per_word)
@@ -49,6 +56,45 @@ static inline uint16_t bytes_per_word(uint16_t bits_per_word)
 	}
 
 	return 4U;
+}
+
+static inline void spi_mcux_set_burst_length(ECSPI_Type *base, uint16_t bits)
+{
+	base->CONREG = (base->CONREG & ~ECSPI_CONREG_BURST_LENGTH_MASK) |
+		       ECSPI_CONREG_BURST_LENGTH(bits - 1U);
+}
+
+static inline uint32_t spi_mcux_frame_get(const uint8_t *buf, uint16_t dfs)
+{
+	switch (dfs) {
+	case 1U:
+		return UNALIGNED_GET((const uint8_t *)buf);
+	case 2U:
+		return UNALIGNED_GET((const uint16_t *)buf);
+	default:
+		return UNALIGNED_GET((const uint32_t *)buf);
+	}
+}
+
+static inline void spi_mcux_frame_put(uint8_t *buf, uint16_t dfs, uint32_t frame)
+{
+	switch (dfs) {
+	case 1U:
+		UNALIGNED_PUT(frame, (uint8_t *)buf);
+		break;
+	case 2U:
+		UNALIGNED_PUT(frame, (uint16_t *)buf);
+		break;
+	default:
+		UNALIGNED_PUT(frame, (uint32_t *)buf);
+		break;
+	}
+}
+
+/* Bit position of the frame sent first: it takes the top field of the word. */
+static inline int spi_mcux_frame_shift(const struct spi_mcux_data *data)
+{
+	return (data->frames - 1) * data->word_size;
 }
 
 static void spi_mcux_transfer_next_packet(const struct device *dev)
@@ -67,7 +113,7 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 		return;
 	}
 
-	transfer.channel = ctx->config->slave;
+	transfer.channel = spi_cs_is_gpio(ctx->config) ? kECSPI_Channel0 : ctx->config->peripheral;
 
 	if (spi_context_rx_buf_on(ctx)) {
 		transfer.rxData = &data->rx_data;
@@ -75,17 +121,22 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 		transfer.rxData = NULL;
 	}
 
+	/* As many frames as fit the FIFO word go out under one chip select. The
+	 * length is written here, between bursts, because the MCUX driver takes
+	 * one through ECSPI_MasterInit() only, which resets the peripheral.
+	 */
+	data->frames = MIN(spi_context_max_continuous_chunk(ctx),
+			   SPI_MCUX_ECSPI_WORD_BITS / data->word_size);
+	spi_mcux_set_burst_length(base, data->frames * data->word_size);
+
+	data->tx_data = 0U;
 	if (spi_context_tx_buf_on(ctx)) {
-		switch (data->dfs) {
-		case 1U:
-			data->tx_data = UNALIGNED_GET((uint8_t *)ctx->tx_buf);
-			break;
-		case 2U:
-			data->tx_data = UNALIGNED_GET((uint16_t *)ctx->tx_buf);
-			break;
-		case 4U:
-			data->tx_data = UNALIGNED_GET((uint32_t *)ctx->tx_buf);
-			break;
+		const uint32_t mask = GENMASK(data->word_size - 1U, 0);
+		const uint8_t *buf = ctx->tx_buf;
+
+		for (int shift = spi_mcux_frame_shift(data); shift >= 0; shift -= data->word_size) {
+			data->tx_data |= (spi_mcux_frame_get(buf, data->dfs) & mask) << shift;
+			buf += data->dfs;
 		}
 
 		transfer.txData = &data->tx_data;
@@ -93,7 +144,7 @@ static void spi_mcux_transfer_next_packet(const struct device *dev)
 		transfer.txData = NULL;
 	}
 
-	transfer.dataSize = data->dfs;
+	transfer.dataSize = 1;
 
 	status = ECSPI_MasterTransferNonBlocking(base, &data->handle, &transfer);
 	if (status != kStatus_Success) {
@@ -112,28 +163,28 @@ static void spi_mcux_isr(const struct device *dev)
 	ECSPI_MasterTransferHandleIRQ(base, &data->handle);
 }
 
-static void spi_mcux_master_transfer_callback(ECSPI_Type *base, ecspi_master_handle_t *handle,
-					      status_t status, void *user_data)
+static void spi_mcux_transfer_callback(ECSPI_Type *base, ecspi_master_handle_t *handle,
+				       status_t status, void *user_data)
 {
 	const struct device *dev = (const struct device *)user_data;
 	struct spi_mcux_data *data = dev->data;
 
+	if (data->aborted) {
+		return;
+	}
+
 	if (spi_context_rx_buf_on(&data->ctx)) {
-		switch (data->dfs) {
-		case 1:
-			UNALIGNED_PUT(data->rx_data, (uint8_t *)data->ctx.rx_buf);
-			break;
-		case 2:
-			UNALIGNED_PUT(data->rx_data, (uint16_t *)data->ctx.rx_buf);
-			break;
-		case 4:
-			UNALIGNED_PUT(data->rx_data, (uint32_t *)data->ctx.rx_buf);
-			break;
+		const uint32_t mask = GENMASK(data->word_size - 1U, 0);
+		uint8_t *buf = data->ctx.rx_buf;
+
+		for (int shift = spi_mcux_frame_shift(data); shift >= 0; shift -= data->word_size) {
+			spi_mcux_frame_put(buf, data->dfs, (data->rx_data >> shift) & mask);
+			buf += data->dfs;
 		}
 	}
 
-	spi_context_update_tx(&data->ctx, data->dfs, 1);
-	spi_context_update_rx(&data->ctx, data->dfs, 1);
+	spi_context_update_tx(&data->ctx, data->dfs, data->frames);
+	spi_context_update_rx(&data->ctx, data->dfs, data->frames);
 
 	spi_mcux_transfer_next_packet(dev);
 }
@@ -144,7 +195,7 @@ static int spi_mcux_configure(const struct device *dev,
 	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
 	ECSPI_Type *base = config->base;
-	ecspi_master_config_t master_config;
+	ecspi_master_config_t controller_config;
 	uint32_t clock_freq;
 	uint16_t word_size;
 
@@ -163,8 +214,8 @@ static int spi_mcux_configure(const struct device *dev,
 		return -ENOTSUP;
 	}
 
-	if (spi_cfg->slave > kECSPI_Channel3) {
-		LOG_ERR("Slave %d is greater than %d", spi_cfg->slave, kECSPI_Channel3);
+	if (!spi_cs_is_gpio(spi_cfg) && spi_cfg->peripheral > kECSPI_Channel3) {
+		LOG_ERR("Peripheral %d is greater than %d", spi_cfg->peripheral, kECSPI_Channel3);
 		return -EINVAL;
 	}
 
@@ -179,21 +230,28 @@ static int spi_mcux_configure(const struct device *dev,
 		return -EINVAL;
 	}
 
-	ECSPI_MasterGetDefaultConfig(&master_config);
+	ECSPI_MasterGetDefaultConfig(&controller_config);
 
-	master_config.channel = (ecspi_channel_source_t)spi_cfg->slave;
-	master_config.channelConfig.polarity =
+	controller_config.channel =
+		spi_cs_is_gpio(spi_cfg) ? kECSPI_Channel0
+					: (ecspi_channel_source_t)spi_cfg->peripheral;
+	controller_config.channelConfig.clockInactiveState =
+		(SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPOL)
+		? kECSPI_ClockInactiveStateHigh
+		: kECSPI_ClockInactiveStateLow;
+	controller_config.channelConfig.polarity =
 		(SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPOL)
 		? kECSPI_PolarityActiveLow
 		: kECSPI_PolarityActiveHigh;
-	master_config.channelConfig.phase =
+	controller_config.channelConfig.phase =
 		(SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_CPHA)
 		? kECSPI_ClockPhaseSecondEdge
 		: kECSPI_ClockPhaseFirstEdge;
-	master_config.baudRate_Bps = spi_cfg->frequency;
-	master_config.burstLength = word_size;
+	controller_config.baudRate_Bps = spi_cfg->frequency;
+	/* Non-zero for the register value init derives; replaced per burst. */
+	controller_config.burstLength = word_size;
 
-	master_config.enableLoopback = (SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_LOOP);
+	controller_config.enableLoopback = (SPI_MODE_GET(spi_cfg->operation) & SPI_MODE_LOOP);
 
 	if (!spi_cs_is_gpio(spi_cfg)) {
 		uint32_t clock_cycles =
@@ -203,12 +261,12 @@ static int spi_mcux_configure(const struct device *dev,
 			LOG_ERR("CS delay is greater than 63 clock cycles (%u)", clock_cycles);
 			return -EINVAL;
 		}
-		master_config.chipSelectDelay = (uint8_t)clock_cycles;
+		controller_config.chipSelectDelay = (uint8_t)clock_cycles;
 	}
 
-	ECSPI_MasterInit(base, &master_config, clock_freq);
+	ECSPI_MasterInit(base, &controller_config, clock_freq);
 	ECSPI_MasterTransferCreateHandle(base, &data->handle,
-					 spi_mcux_master_transfer_callback,
+					 spi_mcux_transfer_callback,
 					 (void *)dev);
 
 	data->word_size = word_size;
@@ -226,6 +284,7 @@ static int transceive(const struct device *dev,
 		      spi_callback_t cb,
 		      void *userdata)
 {
+	const struct spi_mcux_config *config = dev->config;
 	struct spi_mcux_data *data = dev->data;
 	int ret;
 
@@ -239,8 +298,29 @@ static int transceive(const struct device *dev,
 	spi_context_buffers_setup(&data->ctx, tx_bufs, rx_bufs, data->dfs);
 	spi_context_cs_control(&data->ctx, true);
 
+	data->aborted = false;
 	spi_mcux_transfer_next_packet(dev);
 	ret = spi_context_wait_for_completion(&data->ctx);
+	if (ret != 0) {
+		/*
+		 * Sync path only (async never times out here). Abort so the
+		 * SDK handle does not stay busy. The SDK ISR does not check
+		 * the handle state, so disarm the callback first and drop a
+		 * completion that raced in before the abort.
+		 */
+		unsigned int key = irq_lock();
+
+		data->aborted = true;
+		ECSPI_MasterTransferAbort(config->base, &data->handle);
+		irq_unlock(key);
+
+		spi_context_cs_control(&data->ctx, false);
+#ifdef CONFIG_MULTITHREADING
+		k_sem_reset(&data->ctx.sync);
+#else
+		atomic_set(&data->ctx.ready, 0);
+#endif
+	}
 
 out:
 	spi_context_release(&data->ctx, ret);
@@ -302,7 +382,7 @@ static int spi_mcux_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api spi_mcux_driver_api = {
+static DEVICE_API(spi, spi_mcux_driver_api) = {
 	.transceive = spi_mcux_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_mcux_transceive_async,
@@ -331,7 +411,7 @@ static const struct spi_driver_api spi_mcux_driver_api = {
 		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(n), ctx)				\
 	};											\
 												\
-	DEVICE_DT_INST_DEFINE(n, spi_mcux_init, NULL,						\
+	SPI_DEVICE_DT_INST_DEFINE(n, spi_mcux_init, NULL,					\
 			      &spi_mcux_data_##n, &spi_mcux_config_##n,				\
 			      POST_KERNEL, CONFIG_SPI_INIT_PRIORITY,				\
 			      &spi_mcux_driver_api);						\

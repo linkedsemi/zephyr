@@ -4,8 +4,23 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @ingroup ptp_clock_interface
+ * @brief Main header file for PTP (Precision Time Protocol) clock driver API.
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_PTP_CLOCK_H_
 #define ZEPHYR_INCLUDE_DRIVERS_PTP_CLOCK_H_
+
+/**
+ * @brief Interfaces for Precision Time Protocol (PTP) clocks.
+ * @defgroup ptp_clock_interface PTP Clock
+ * @since 1.13
+ * @version 1.0.0
+ * @ingroup io_interfaces
+ * @{
+ */
 
 #include <zephyr/kernel.h>
 #include <stdint.h>
@@ -22,12 +37,58 @@ extern "C" {
 #define PTP_CLOCK_NAME "PTP_CLOCK"
 #endif
 
+/**
+ * @def_driverbackendgroup{PTP Clock,ptp_clock_interface}
+ * @{
+ */
+
+/**
+ * @brief Set the time of the PTP clock.
+ * See ptp_clock_set() for argument description.
+ */
+typedef int (*ptp_clock_api_set_t)(const struct device *dev, struct net_ptp_time *tm);
+
+/**
+ * @brief Get the time of the PTP clock.
+ * See ptp_clock_get() for argument description.
+ */
+typedef int (*ptp_clock_api_get_t)(const struct device *dev, struct net_ptp_time *tm);
+
+/**
+ * @brief Adjust the PTP clock time.
+ * See ptp_clock_adjust() for argument description.
+ */
+typedef int (*ptp_clock_api_adjust_t)(const struct device *dev, int increment);
+
+/**
+ * @brief Adjust the PTP clock rate ratio based on its nominal frequency.
+ * See ptp_clock_rate_adjust() for argument description.
+ */
+typedef int (*ptp_clock_api_rate_adjust_t)(const struct device *dev, double ratio);
+
+/**
+ * @driver_ops{PTP Clock}
+ */
 __subsystem struct ptp_clock_driver_api {
-	int (*set)(const struct device *dev, struct net_ptp_time *tm);
-	int (*get)(const struct device *dev, struct net_ptp_time *tm);
-	int (*adjust)(const struct device *dev, int increment);
-	int (*rate_adjust)(const struct device *dev, double ratio);
+	/**
+	 * @driver_ops_mandatory @copybrief ptp_clock_set
+	 */
+	ptp_clock_api_set_t set;
+	/**
+	 * @driver_ops_mandatory @copybrief ptp_clock_get
+	 */
+	ptp_clock_api_get_t get;
+	/**
+	 * @driver_ops_mandatory @copybrief ptp_clock_adjust
+	 */
+	ptp_clock_api_adjust_t adjust;
+	/**
+	 * @driver_ops_mandatory @copybrief ptp_clock_rate_adjust
+	 */
+	ptp_clock_api_rate_adjust_t rate_adjust;
 };
+
+/** @} */
 
 /**
  * @brief Set the time of the PTP clock.
@@ -40,10 +101,7 @@ __subsystem struct ptp_clock_driver_api {
 static inline int ptp_clock_set(const struct device *dev,
 				struct net_ptp_time *tm)
 {
-	const struct ptp_clock_driver_api *api =
-		(const struct ptp_clock_driver_api *)dev->api;
-
-	return api->set(dev, tm);
+	return DEVICE_API_GET(ptp_clock, dev)->set(dev, tm);
 }
 
 /**
@@ -59,10 +117,7 @@ __syscall int ptp_clock_get(const struct device *dev, struct net_ptp_time *tm);
 static inline int z_impl_ptp_clock_get(const struct device *dev,
 				       struct net_ptp_time *tm)
 {
-	const struct ptp_clock_driver_api *api =
-		(const struct ptp_clock_driver_api *)dev->api;
-
-	return api->get(dev, tm);
+	return DEVICE_API_GET(ptp_clock, dev)->get(dev, tm);
 }
 
 /**
@@ -75,26 +130,20 @@ static inline int z_impl_ptp_clock_get(const struct device *dev,
  */
 static inline int ptp_clock_adjust(const struct device *dev, int increment)
 {
-	const struct ptp_clock_driver_api *api =
-		(const struct ptp_clock_driver_api *)dev->api;
-
-	return api->adjust(dev, increment);
+	return DEVICE_API_GET(ptp_clock, dev)->adjust(dev, increment);
 }
 
 /**
- * @brief Adjust the PTP clock time change rate when compared to its neighbor.
+ * @brief Adjust the PTP clock rate ratio based on its nominal frequency
  *
  * @param dev PTP clock device
- * @param rate Rate of the clock time change
+ * @param rate Rate ratio based on its nominal frequency
  *
  * @return 0 if ok, <0 if error
  */
 static inline int ptp_clock_rate_adjust(const struct device *dev, double rate)
 {
-	const struct ptp_clock_driver_api *api =
-		(const struct ptp_clock_driver_api *)dev->api;
-
-	return api->rate_adjust(dev, rate);
+	return DEVICE_API_GET(ptp_clock, dev)->rate_adjust(dev, rate);
 }
 
 #ifdef __cplusplus
@@ -102,5 +151,9 @@ static inline int ptp_clock_rate_adjust(const struct device *dev, double rate)
 #endif
 
 #include <zephyr/syscalls/ptp_clock.h>
+
+/**
+ * @}
+ */
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_PTP_CLOCK_H_ */

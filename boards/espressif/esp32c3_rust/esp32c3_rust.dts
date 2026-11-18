@@ -6,7 +6,7 @@
 
 /dts-v1/;
 
-#include <espressif/esp32c3/esp32c3_mini_n4.dtsi>
+#include <espressif/esp32c3/esp32c3.dtsi>
 #include "esp32c3_rust-pinctrl.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <zephyr/dt-bindings/led/led.h>
@@ -17,7 +17,7 @@
 	compatible = "espressif,esp32c3_rust";
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &usb_serial;
 		zephyr,shell-uart = &usb_serial;
 		zephyr,flash = &flash0;
@@ -34,6 +34,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button1: button_1 {
 			label = "User SW1";
 			gpios = <&gpio0 9 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
@@ -43,18 +44,22 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led_0: led_0 {
 			gpios = <&gpio0 7 GPIO_ACTIVE_HIGH>;
 			label = "User LD0";
 		};
 	};
+};
 
+&flash0 {
+	reg = <0x0 DT_SIZE_M(4)>;
+	ranges = <0x0 0x0 DT_SIZE_M(4)>;
 };
 
 &spi2 {
 	#address-cells = <1>;
 	#size-cells = <0>;
-	status = "okay";
 	pinctrl-0 = <&spim2_default>;
 	pinctrl-names = "default";
 
@@ -63,27 +68,26 @@
 	status = "okay";
 
 	led_strip: ws2812@0 {
-			compatible = "worldsemi,ws2812-spi";
+		compatible = "worldsemi,ws2812-spi";
 
-			/* SPI */
-			reg = <0>; /* ignored, but necessary for SPI bindings */
-			spi-max-frequency = <6400000>;
+		/* SPI */
+		reg = <0>; /* ignored, but necessary for SPI bindings */
+		spi-max-frequency = <6400000>;
 
-			/* WS2812 */
-			chain-length = <1>; /* arbitrary; change at will */
-			spi-cpha;
-			spi-one-frame = <0xf0>; /* 11110000: 625 ns high and 625 ns low */
-			spi-zero-frame = <0xc0>; /* 11000000: 312.5 ns high and 937.5 ns low */
-			color-mapping = <LED_COLOR_ID_GREEN
-					LED_COLOR_ID_RED
-					LED_COLOR_ID_BLUE>;
+		/* WS2812 */
+		chain-length = <1>; /* arbitrary; change at will */
+		spi-cpha;
+		spi-one-frame = <0xf0>; /* 11110000: 625 ns high and 625 ns low */
+		spi-zero-frame = <0xc0>; /* 11000000: 312.5 ns high and 937.5 ns low */
+		color-mapping = <LED_COLOR_ID_GREEN
+				 LED_COLOR_ID_RED
+				 LED_COLOR_ID_BLUE>;
 	};
 };
 
 &usb_serial {
 	status = "okay";
 };
-
 
 &i2c0 {
 	status = "okay";
@@ -126,5 +130,9 @@
 };
 
 &esp32_bt_hci {
+	status = "okay";
+};
+
+&wifi {
 	status = "okay";
 };

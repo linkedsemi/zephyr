@@ -15,6 +15,11 @@
 
 #include <zephyr/net/coap.h>
 #include <zephyr/sys/iterable_sections.h>
+#include <zephyr/net/tls_credentials.h>
+
+#if defined(CONFIG_COAP_OSCORE)
+#include <zephyr/net/coap_oscore.h>
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -44,8 +49,27 @@ extern "C" {
 
 struct coap_service_data {
 	int sock_fd;
+	bool close_requested;
 	struct coap_observer observers[CONFIG_COAP_SERVICE_OBSERVERS];
 	struct coap_pending pending[CONFIG_COAP_SERVICE_PENDING_MESSAGES];
+#if defined(CONFIG_COAP_OSCORE) || defined(__DOXYGEN__)
+	/**
+	 * OSCORE exchange cache tracking which responses need OSCORE protection.
+	 * Points to a statically allocated per-service array, or NULL when the
+	 * service is not OSCORE-enabled.
+	 * @kconfig_dep{CONFIG_COAP_OSCORE}
+	 */
+	struct coap_oscore_exchange *oscore_exchange_cache;
+#endif /* CONFIG_COAP_OSCORE */
+	/* Local address to send the reply from; NET_AF_UNSPEC means let the OS pick. */
+	struct net_sockaddr_storage current_local_addr;
+	struct net_sockaddr_storage pending_local_addr[CONFIG_COAP_SERVICE_PENDING_MESSAGES];
+	/* Cached at coap_service_start() so the hot receive path doesn't recompute it. */
+	bool secure;
+	/* Set when the socket agreed to turn on PKTINFO. Some offloaded
+	 * sockets support recvfrom() but not recvmsg().
+	 */
+	bool pktinfo_supported;
 };
 
 struct coap_service {
@@ -56,21 +80,62 @@ struct coap_service {
 	struct coap_resource *res_begin;
 	struct coap_resource *res_end;
 	struct coap_service_data *data;
+#if defined(CONFIG_NET_SOCKETS_ENABLE_DTLS)
+	const sec_tag_t *sec_tag_list;
+	size_t sec_tag_list_size;
+#endif
+#if defined(CONFIG_COAP_OSCORE) || defined(__DOXYGEN__)
+	/**
+	 * If true, requests without OSCORE are rejected with 4.01 Unauthorized.
+	 * @kconfig_dep{CONFIG_COAP_OSCORE}
+	 */
+	bool oscore_required;
+#endif
 };
 
-#define __z_coap_service_define(_name, _host, _port, _flags, _res_begin, _res_end)		\
-	static struct coap_service_data _CONCAT(coap_service_data_, _name) = {			\
-		.sock_fd = -1,									\
-	};											\
-	const STRUCT_SECTION_ITERABLE(coap_service, _name) = {					\
-		.name = STRINGIFY(_name),							\
-		.host = _host,									\
-		.port = (uint16_t *)(_port),							\
-		.flags = _flags,								\
-		.res_begin = (_res_begin),							\
-		.res_end = (_res_end),								\
-		.data = &_CONCAT(coap_service_data_, _name),					\
+#if defined(CONFIG_NET_SOCKETS_ENABLE_DTLS)
+#define __z_coap_service_secure(_sec_tag_list, _sec_tag_list_size)				\
+		.sec_tag_list = _sec_tag_list,							\
+		.sec_tag_list_size = _sec_tag_list_size,
+#else
+#define __z_coap_service_secure(...)
+#endif
+
+#if defined(CONFIG_COAP_OSCORE)
+/* Statically define the per-service OSCORE exchange cache. */
+#define __z_coap_oscore_cache_define(_name)                                                        \
+	static struct coap_oscore_exchange _CONCAT(coap_oscore_exchange_cache_,                    \
+						   _name)[CONFIG_COAP_OSCORE_EXCHANGE_CACHE_SIZE];
+#define __z_coap_oscore_cache_ptr(_name) (_CONCAT(coap_oscore_exchange_cache_, _name))
+#define __z_coap_service_oscore(_required) .oscore_required = (_required),
+#define __z_coap_service_oscore_data(_cache)                                                       \
+	.oscore_exchange_cache = (_cache),
+#else
+#define __z_coap_service_oscore(...)
+#define __z_coap_oscore_cache_define(_name)
+#define __z_coap_oscore_cache_ptr(_name) NULL
+#define __z_coap_service_oscore_data(...)
+#endif
+
+/* clang-format off */
+#define __z_coap_service_define(_name, _host, _port, _flags, _res_begin, _res_end, _sec_tag_list,  \
+				_sec_tag_list_size, _oscore_required, _oscore_cache)               \
+	static struct coap_service_data _CONCAT(coap_service_data_, _name) = {                     \
+		.sock_fd = -1,                                                                     \
+		__z_coap_service_oscore_data(_oscore_cache)                                        \
+	};                                                                                         \
+	const STRUCT_SECTION_ITERABLE(coap_service, _name) = {                                     \
+		.name = STRINGIFY(_name),                                                          \
+		.host = _host,                                                                     \
+		.port = (uint16_t *)(_port),                                                       \
+		.flags = _flags,                                                                   \
+		.res_begin = (_res_begin),                                                         \
+		.res_end = (_res_end),                                                             \
+		.data = &_CONCAT(coap_service_data_, _name),                                       \
+		__z_coap_service_secure(_sec_tag_list, _sec_tag_list_size)                         \
+		__z_coap_service_oscore(_oscore_required)                                          \
 	}
+/* clang-format on */
 
 /** @endcond */
 
@@ -85,7 +150,7 @@ struct coap_service {
  *     static const struct gpio_dt_spec led = GPIO_DT_SPEC_GET(DT_ALIAS(led0), gpios);
  *
  *     static int led_put(struct coap_resource *resource, struct coap_packet *request,
- *                        struct sockaddr *addr, socklen_t addr_len)
+ *                        struct net_sockaddr *addr, net_socklen_t addr_len)
  *     {
  *             const uint8_t *payload;
  *             uint16_t payload_len;
@@ -131,12 +196,98 @@ struct coap_service {
  * @param[inout] _port Pointer to port associated with the service.
  * @param _flags Configuration flags @see @ref COAP_SERVICE_FLAGS.
  */
-#define COAP_SERVICE_DEFINE(_name, _host, _port, _flags)					\
-	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[];	\
-	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[];	\
-	__z_coap_service_define(_name, _host, _port, _flags,					\
-				&_CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[0],	\
-				&_CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[0])
+#define COAP_SERVICE_DEFINE(_name, _host, _port, _flags)                                           \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[];       \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[];         \
+	__z_coap_service_define(_name, _host, _port, _flags,                                       \
+				&_CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[0],         \
+				&_CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[0], NULL, 0,  \
+				false, NULL)
+
+/**
+ * @brief Define a CoAP secure service with static resources.
+ *
+ * @note The @p _host parameter can be `NULL`. If not, it is used to specify an IP address either in
+ * IPv4 or IPv6 format a fully-qualified hostname or a virtual host, otherwise the any address is
+ * used.
+ *
+ * @note The @p _port parameter must be non-`NULL`. It points to a location that specifies the port
+ * number to use for the service. If the specified port number is zero, then an ephemeral port
+ * number will be used and the actual port number assigned will be written back to memory. For
+ * ephemeral port numbers, the memory pointed to by @p _port must be writeable.
+ *
+ * @note @kconfig{CONFIG_NET_SOCKETS_ENABLE_DTLS} has to be enabled for CoAP secure support.
+ *
+ * @param _name Name of the service.
+ * @param _host IP address or hostname associated with the service.
+ * @param[inout] _port Pointer to port associated with the service.
+ * @param _flags Configuration flags @see @ref COAP_SERVICE_FLAGS.
+ * @param _sec_tag_list DTLS security tag list used to setup a COAPS socket.
+ * @param _sec_tag_list_size DTLS security tag list size used to setup a COAPS socket.
+ */
+#define COAPS_SERVICE_DEFINE(_name, _host, _port, _flags, _sec_tag_list, _sec_tag_list_size)       \
+	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_ENABLE_DTLS),                                   \
+		     "DTLS is required for CoAP secure (CONFIG_NET_SOCKETS_ENABLE_DTLS)");         \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[];       \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[];         \
+	__z_coap_service_define(_name, _host, _port, _flags,                                       \
+				&_CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[0],         \
+				&_CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[0],           \
+				_sec_tag_list, _sec_tag_list_size, false, NULL)
+
+/**
+ * @brief Define an OSCORE-enabled CoAP service with static resources.
+ *
+ * Behaves like @ref COAP_SERVICE_DEFINE but additionally wires OSCORE support
+ * (@rfc{8613}) into the service. A per-service OSCORE exchange cache is allocated
+ * statically.
+ *
+ * @note Requires @kconfig{CONFIG_COAP_OSCORE}. When that option is disabled the
+ * service degrades to a plain @ref COAP_SERVICE_DEFINE.
+ *
+ * @param _name Name of the service.
+ * @param _host IP address or hostname associated with the service.
+ * @param[inout] _port Pointer to port associated with the service.
+ * @param _flags Configuration flags @see @ref COAP_SERVICE_FLAGS.
+ * @param _oscore_required If true, requests without OSCORE are rejected with
+ *        4.01 Unauthorized.
+ */
+#define COAP_SERVICE_DEFINE_OSCORE(_name, _host, _port, _flags, _oscore_required)                 \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[];       \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[];         \
+	__z_coap_oscore_cache_define(_name) __z_coap_service_define(                               \
+		_name, _host, _port, _flags,                                                       \
+		&_CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[0],                         \
+		&_CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[0], NULL, 0,                  \
+		(_oscore_required), __z_coap_oscore_cache_ptr(_name))
+
+/**
+ * @brief Define an OSCORE-enabled CoAP secure (DTLS) service with static resources.
+ *
+ * Combines @ref COAPS_SERVICE_DEFINE with OSCORE support as described in
+ * @ref COAP_SERVICE_DEFINE_OSCORE.
+ *
+ * @param _name Name of the service.
+ * @param _host IP address or hostname associated with the service.
+ * @param[inout] _port Pointer to port associated with the service.
+ * @param _flags Configuration flags @see @ref COAP_SERVICE_FLAGS.
+ * @param _sec_tag_list DTLS security tag list used to setup a COAPS socket.
+ * @param _sec_tag_list_size DTLS security tag list size used to setup a COAPS socket.
+ * @param _oscore_required If true, requests without OSCORE are rejected with
+ *        4.01 Unauthorized.
+ */
+#define COAPS_SERVICE_DEFINE_OSCORE(_name, _host, _port, _flags, _sec_tag_list,                    \
+				    _sec_tag_list_size, _oscore_required)                          \
+	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_ENABLE_DTLS),                                   \
+		     "DTLS is required for CoAP secure (CONFIG_NET_SOCKETS_ENABLE_DTLS)");         \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[];       \
+	extern struct coap_resource _CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[];         \
+	__z_coap_oscore_cache_define(_name)                                                        \
+		__z_coap_service_define(_name, _host, _port, _flags,                               \
+					&_CONCAT(_CONCAT(_coap_resource_, _name), _list_start)[0], \
+					&_CONCAT(_CONCAT(_coap_resource_, _name), _list_end)[0],   \
+					_sec_tag_list, _sec_tag_list_size,                         \
+					(_oscore_required), __z_coap_oscore_cache_ptr(_name))
 
 /**
  * @brief Count the number of CoAP services.
@@ -224,7 +375,7 @@ int coap_service_stop(const struct coap_service *service);
  * @param service Pointer to CoAP service
  * @retval 1 if the service is running
  * @retval 0 if the service is stopped
- * @retval negative in case of an error.
+ * @retval <0 negative in case of an error.
  */
 int coap_service_is_running(const struct coap_service *service);
 
@@ -241,7 +392,7 @@ int coap_service_is_running(const struct coap_service *service);
  * @return 0 in case of success or negative in case of error.
  */
 int coap_service_send(const struct coap_service *service, const struct coap_packet *cpkt,
-		      const struct sockaddr *addr, socklen_t addr_len,
+		      const struct net_sockaddr *addr, net_socklen_t addr_len,
 		      const struct coap_transmission_parameters *params);
 
 /**
@@ -257,7 +408,7 @@ int coap_service_send(const struct coap_service *service, const struct coap_pack
  * @return 0 in case of success or negative in case of error.
  */
 int coap_resource_send(const struct coap_resource *resource, const struct coap_packet *cpkt,
-		       const struct sockaddr *addr, socklen_t addr_len,
+		       const struct net_sockaddr *addr, net_socklen_t addr_len,
 		       const struct coap_transmission_parameters *params);
 
 /**
@@ -274,7 +425,7 @@ int coap_resource_send(const struct coap_resource *resource, const struct coap_p
  * @return the observe option value in case of success or negative in case of error.
  */
 int coap_resource_parse_observe(struct coap_resource *resource, const struct coap_packet *request,
-				const struct sockaddr *addr);
+				const struct net_sockaddr *addr);
 
 /**
  * @brief Lookup an observer by address and remove it from the @p resource .
@@ -286,7 +437,7 @@ int coap_resource_parse_observe(struct coap_resource *resource, const struct coa
  * @return 0 in case of success or negative in case of error.
  */
 int coap_resource_remove_observer_by_addr(struct coap_resource *resource,
-					  const struct sockaddr *addr);
+					  const struct net_sockaddr *addr);
 
 /**
  * @brief Lookup an observer by token and remove it from the @p resource .

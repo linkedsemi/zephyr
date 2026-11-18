@@ -5,7 +5,6 @@
 import argparse
 import os
 
-from west import log
 from west.commands import WestCommand
 
 # Relative to the folder where this script lives
@@ -37,6 +36,14 @@ to stdout. Using the completion scripts:
     # permanent
     west completion fish > $HOME/.config/fish/completions/west.fish
 
+  powershell:
+    # one-time
+    west completion powershell | Out-String | Invoke-Expression
+    # permanent
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+    New-item -type file -force $PROFILE
+    (Add-Content -Path $PROFILE -Value ". '{$HOME/west-completion.ps1}'")
+
 positional arguments:
   source_dir            application source directory
   cmake_opt             extra options to pass to cmake; implies -c
@@ -45,25 +52,29 @@ positional arguments:
 
 
 class Completion(WestCommand):
+    _EXT_MAPPING = {
+        "bash": "bash",
+        "fish": "fish",
+        "powershell": "ps1",
+        "zsh": "zsh",
+    }
 
     def __init__(self):
         super().__init__(
             'completion',
-            # Keep this in sync with the string in west-commands.yml.
-            'output shell completion scripts',
-            COMP_DESCRIPTION,
+            '',
+            description=COMP_DESCRIPTION,
             accepts_unknown_args=False)
 
     def do_add_parser(self, parser_adder):
         parser = parser_adder.add_parser(
             self.name,
-            help=self.help,
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description=self.description)
 
         # Remember to update west-completion.bash if you add or remove
         # flags
-        parser.add_argument('shell', nargs=1, choices=['bash', 'zsh', 'fish'],
+        parser.add_argument('shell', nargs=1, choices=self._EXT_MAPPING.keys(),
                             help='''Shell that which the completion
                             script is intended for.''')
         return parser
@@ -72,10 +83,10 @@ class Completion(WestCommand):
         cf = os.path.join(os.path.dirname(os.path.realpath(__file__)),
                           *COMPLETION_REL_PATH.split('/'))
 
-        cf += '.' + args.shell[0]
+        cf += '.' + self._EXT_MAPPING[args.shell[0]]
 
         try:
-            with open(cf, 'r') as f:
+            with open(cf) as f:
                 print(f.read())
         except FileNotFoundError as e:
-            log.die('Unable to find completion file: {}'.format(e))
+            self.die(f'Unable to find completion file: {e}')

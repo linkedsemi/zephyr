@@ -5,7 +5,7 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - gpio
 vendor: arm
+twister: false

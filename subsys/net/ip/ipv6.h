@@ -19,6 +19,9 @@
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_context.h>
+#if defined(CONFIG_NET_IPV6_IID_STABLE) || defined(CONFIG_NET_IPV6_PE)
+#include <psa/crypto.h>
+#endif
 
 #include "icmpv6.h"
 #include "nbr.h"
@@ -56,8 +59,47 @@
  */
 #define NET_IPV6_EXT_HDR_OPT_PAD1  0
 #define NET_IPV6_EXT_HDR_OPT_PADN  1
+#define NET_IPV6_EXT_HDR_OPT_RTR_ALERT 5
 #define NET_IPV6_EXT_HDR_OPT_RPL   0x63
 
+/**
+ * @typedef net_ipv6_ext_hdr_option_cb_t
+ * @brief Extension header option callback of net_ipv6_parse_ext_hdr_options()
+ *
+ * @param pkt Network packet, with the cursor at the option data
+ * @param hdr_type Type of the extension header carrying the option, one of
+ *                 NET_IPV6_NEXTHDR_HBHO or NET_IPV6_NEXTHDR_DESTO
+ * @param opt_type Option type
+ * @param opt_len Option data length
+ * @param user_data User data given to net_ipv6_parse_ext_hdr_options()
+ *
+ * @retval 0 Continue with the next option
+ * @retval 1 Stop parsing
+ * @retval <0 Stop parsing with an error
+ */
+typedef int (*net_ipv6_ext_hdr_option_cb_t)(struct net_pkt *pkt, uint8_t hdr_type,
+					    uint8_t opt_type, uint8_t opt_len, void *user_data);
+
+/**
+ * @brief Walk the options of the extension headers of a packet
+ *
+ * Follows the extension header chain from the IPv6 header up to the upper
+ * layer header. The options of every Hop-by-Hop and Destination Options
+ * header are handed to the callback, except for the padding options.
+ * Routing and Fragment headers are stepped over. The packet cursor is left
+ * where it was.
+ *
+ * @param pkt Network packet
+ * @param cb Callback called for each option
+ * @param user_data User data passed to the callback
+ *
+ * @retval 0 All options were walked
+ * @retval 1 The callback stopped the walk
+ * @retval -EINVAL A header is malformed
+ * @retval <0 The negative value returned by the callback
+ */
+int net_ipv6_parse_ext_hdr_options(struct net_pkt *pkt, net_ipv6_ext_hdr_option_cb_t cb,
+				   void *user_data);
 /**
  * @brief Multicast Listener Record v2 record types.
  */
@@ -85,10 +127,10 @@ const char *net_ipv6_nbr_state2str(enum net_ipv6_nbr_state state);
  */
 struct net_ipv6_nbr_data {
 	/** Any pending packet waiting ND to finish. */
-	struct net_pkt *pending;
+	struct k_fifo pending_queue;
 
 	/** IPv6 address. */
-	struct in6_addr addr;
+	struct net_in6_addr addr;
 
 	/** Reachable timer. */
 	int64_t reachable;
@@ -109,7 +151,10 @@ struct net_ipv6_nbr_data {
 	uint8_t ns_count;
 
 	/** Is the neighbor a router */
-	bool is_router;
+	bool is_router : 1;
+
+	/** Have we initialized the pending queue */
+	bool pending_queue_initialized : 1;
 
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) || defined(CONFIG_NET_IPV6_ND)
 	/** Stale counter used to removed oldest nbr in STALE state,
@@ -129,23 +174,44 @@ int net_ipv6_start_dad(struct net_if *iface, struct net_if_addr *ifaddr);
 #endif
 
 int net_ipv6_send_ns(struct net_if *iface, struct net_pkt *pending,
-		     const struct in6_addr *src, const struct in6_addr *dst,
-		     const struct in6_addr *tgt, bool is_my_address);
+		     const struct net_in6_addr *src, const struct net_in6_addr *dst,
+		     const struct net_in6_addr *tgt, bool is_my_address);
 
 int net_ipv6_send_rs(struct net_if *iface);
 int net_ipv6_start_rs(struct net_if *iface);
 
-int net_ipv6_send_na(struct net_if *iface, const struct in6_addr *src,
-		     const struct in6_addr *dst, const struct in6_addr *tgt,
+#if defined(CONFIG_NET_IPV6_ND_RA_TX)
+/**
+ * @brief Send an IPv6 Router Advertisement on the given interface.
+ *
+ * @param iface Network interface to send on
+ * @param dst Destination address, or NULL to use the all-nodes multicast
+ *            address (unsolicited advertisement).
+ *
+ * @return 0 on success, negative errno otherwise.
+ */
+int net_ipv6_send_ra(struct net_if *iface, const struct net_in6_addr *dst);
+
+/**
+ * @brief Start or stop the unsolicited Router Advertisement timer depending
+ * on whether any interface currently has the router role enabled.
+ *
+ * Called when the router role of an interface changes.
+ */
+void net_ipv6_ra_update_timer(void);
+#endif
+
+int net_ipv6_send_na(struct net_if *iface, const struct net_in6_addr *src,
+		     const struct net_in6_addr *dst, const struct net_in6_addr *tgt,
 		     uint8_t flags);
 
 
 static inline bool net_ipv6_is_nexthdr_upper_layer(uint8_t nexthdr)
 {
-	return (nexthdr == IPPROTO_ICMPV6 || nexthdr == IPPROTO_UDP ||
-		nexthdr == IPPROTO_TCP ||
+	return (nexthdr == NET_IPPROTO_ICMPV6 || nexthdr == NET_IPPROTO_UDP ||
+		nexthdr == NET_IPPROTO_TCP ||
 		(IS_ENABLED(CONFIG_NET_L2_VIRTUAL) &&
-		 ((nexthdr == IPPROTO_IPV6) || (nexthdr == IPPROTO_IPIP))));
+		 ((nexthdr == NET_IPPROTO_IPV6) || (nexthdr == NET_IPPROTO_IPIP))));
 }
 
 /**
@@ -159,12 +225,12 @@ static inline bool net_ipv6_is_nexthdr_upper_layer(uint8_t nexthdr)
  */
 #if defined(CONFIG_NET_NATIVE_IPV6)
 int net_ipv6_create(struct net_pkt *pkt,
-		    const struct in6_addr *src,
-		    const struct in6_addr *dst);
+		    const struct net_in6_addr *src,
+		    const struct net_in6_addr *dst);
 #else
 static inline int net_ipv6_create(struct net_pkt *pkt,
-				  const struct in6_addr *src,
-				  const struct in6_addr *dst)
+				  const struct net_in6_addr *src,
+				  const struct net_in6_addr *dst)
 {
 	ARG_UNUSED(pkt);
 	ARG_UNUSED(src);
@@ -208,16 +274,40 @@ static inline int net_ipv6_finalize(struct net_pkt *pkt,
  * @return Return 0 if leaving is done, <0 otherwise.
  */
 #if defined(CONFIG_NET_IPV6_MLD)
-int net_ipv6_mld_send_single(struct net_if *iface, const struct in6_addr *addr, uint8_t mode);
+int net_ipv6_mld_send_single(struct net_if *iface, const struct net_in6_addr *addr, uint8_t mode);
+
+/**
+ * @brief Maximum Response Delay of a Multicast Listener Query in milliseconds
+ *
+ * @param code Maximum Response Code of the query
+ * @param mldv2 Decode the floating point MLDv2 form of codes 32768 and above
+ *
+ * @return Maximum Response Delay in milliseconds.
+ */
+uint32_t net_ipv6_mld_max_resp_delay(uint16_t code, bool mldv2);
+
+/**
+ * @brief Report every multicast group listened to on the interface again
+ *
+ * Called when a link-local address becomes valid, as reports sent before
+ * that carried the unspecified source address (RFC 3810 ch 5.2.13).
+ *
+ * @param iface Network interface
+ */
+void net_ipv6_mld_report_all(struct net_if *iface);
 #else
 static inline int
-net_ipv6_mld_send_single(struct net_if *iface, const struct in6_addr *addr, uint8_t mode)
+net_ipv6_mld_send_single(struct net_if *iface, const struct net_in6_addr *addr, uint8_t mode)
 {
 	ARG_UNUSED(iface);
 	ARG_UNUSED(addr);
 	ARG_UNUSED(mode);
 
 	return -ENOTSUP;
+}
+static inline void net_ipv6_mld_report_all(struct net_if *iface)
+{
+	ARG_UNUSED(iface);
 }
 #endif /* CONFIG_NET_IPV6_MLD */
 
@@ -276,10 +366,10 @@ void net_ipv6_nbr_unlock(void);
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
 struct net_nbr *net_ipv6_nbr_lookup(struct net_if *iface,
-				    struct in6_addr *addr);
+				    const struct net_in6_addr *addr);
 #else
 static inline struct net_nbr *net_ipv6_nbr_lookup(struct net_if *iface,
-						  struct in6_addr *addr)
+						  const struct net_in6_addr *addr)
 {
 	return NULL;
 }
@@ -306,11 +396,11 @@ struct net_nbr *net_ipv6_get_nbr(struct net_if *iface, uint8_t idx);
  * @return A valid pointer on a neighbor on success, NULL otherwise
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
-struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
+struct net_in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
 					      uint8_t idx);
 #else
 static inline
-struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
+struct net_in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
 					      uint8_t idx)
 {
 	return NULL;
@@ -334,13 +424,13 @@ struct in6_addr *net_ipv6_nbr_lookup_by_index(struct net_if *iface,
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
 struct net_nbr *net_ipv6_nbr_add(struct net_if *iface,
-				 const struct in6_addr *addr,
+				 const struct net_in6_addr *addr,
 				 const struct net_linkaddr *lladdr,
 				 bool is_router,
 				 enum net_ipv6_nbr_state state);
 #else
 static inline struct net_nbr *net_ipv6_nbr_add(struct net_if *iface,
-					       const struct in6_addr *addr,
+					       const struct net_in6_addr *addr,
 					       const struct net_linkaddr *lladdr,
 					       bool is_router,
 					       enum net_ipv6_nbr_state state)
@@ -358,11 +448,32 @@ static inline struct net_nbr *net_ipv6_nbr_add(struct net_if *iface,
  * @return True if neighbor could be removed, False otherwise
  */
 #if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
-bool net_ipv6_nbr_rm(struct net_if *iface, struct in6_addr *addr);
+bool net_ipv6_nbr_rm(struct net_if *iface, struct net_in6_addr *addr);
 #else
-static inline bool net_ipv6_nbr_rm(struct net_if *iface, struct in6_addr *addr)
+static inline bool net_ipv6_nbr_rm(struct net_if *iface, struct net_in6_addr *addr)
 {
 	return true;
+}
+#endif
+
+/**
+ * @brief Remove all non-static IPv6 neighbor cache entries of an interface.
+ *
+ * Called when the interface link goes down so that cached neighbor entries,
+ * whose reachability is no longer valid, are re-resolved once the link is
+ * back. Re-resolution emits a Neighbor Solicitation carrying our link-layer
+ * address, letting peers relearn this node. This is the IPv6 counterpart of
+ * clearing the ARP cache on link down.
+ *
+ * @param iface Network interface, or NULL to clear the cache of every
+ *              interface.
+ */
+#if defined(CONFIG_NET_IPV6_NBR_CACHE) && defined(CONFIG_NET_NATIVE_IPV6)
+void net_ipv6_nbr_clear_cache(struct net_if *iface);
+#else
+static inline void net_ipv6_nbr_clear_cache(struct net_if *iface)
+{
+	ARG_UNUSED(iface);
 }
 #endif
 
@@ -394,10 +505,10 @@ static inline void net_ipv6_nbr_foreach(net_nbr_cb_t cb, void *user_data)
  * @param ipv6_addr Pointer to the IPv6 address of the neighbor node.
  */
 #if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
-void net_ipv6_nbr_reachability_hint(struct net_if *iface, const struct in6_addr *ipv6_addr);
+void net_ipv6_nbr_reachability_hint(struct net_if *iface, const struct net_in6_addr *ipv6_addr);
 #else
 static inline void net_ipv6_nbr_reachability_hint(struct net_if *iface,
-						  const struct in6_addr *ipv6_addr)
+						  const struct net_in6_addr *ipv6_addr)
 {
 	ARG_UNUSED(iface);
 	ARG_UNUSED(ipv6_addr);
@@ -425,10 +536,10 @@ static inline void net_ipv6_nbr_set_reachable_timer(struct net_if *iface,
 /** Store pending IPv6 fragment information that is needed for reassembly. */
 struct net_ipv6_reassembly {
 	/** IPv6 source address of the fragment */
-	struct in6_addr src;
+	struct net_in6_addr src;
 
 	/** IPv6 destination address of the fragment */
-	struct in6_addr dst;
+	struct net_in6_addr dst;
 
 	/**
 	 * Timeout for cancelling the reassembly. The timer is used
@@ -504,6 +615,18 @@ enum net_verdict net_ipv6_handle_fragment_hdr(struct net_pkt *pkt,
 	return NET_DROP;
 }
 #endif /* CONFIG_NET_IPV6_FRAGMENT */
+
+#if defined(CONFIG_NET_IPV6_IID_STABLE) || defined(CONFIG_NET_IPV6_PE)
+/**
+ * @brief Get the HMAC key used to derive interface identifiers, generating
+ * it on first use.
+ *
+ * @param cached Caller's key id, PSA_KEY_ID_NULL until the key exists.
+ *
+ * @return The key id, or PSA_KEY_ID_NULL if the key could not be generated.
+ */
+psa_key_id_t net_ipv6_iid_key_get(psa_key_id_t *cached);
+#endif /* CONFIG_NET_IPV6_IID_STABLE || CONFIG_NET_IPV6_PE */
 
 #if defined(CONFIG_NET_NATIVE_IPV6)
 void net_ipv6_init(void);
@@ -585,12 +708,12 @@ static inline void net_ipv6_set_ecn(uint8_t *tc, uint8_t ecn)
  * @param preferred_lifetime Preferred lifetime of this IPv6 prefix (in seconds)
  */
 #if defined(CONFIG_NET_IPV6_PE)
-void net_ipv6_pe_start(struct net_if *iface, const struct in6_addr *prefix,
+void net_ipv6_pe_start(struct net_if *iface, const struct net_in6_addr *prefix,
 		       uint32_t vlifetime, uint32_t preferred_lifetime);
 
 #else
 static inline void net_ipv6_pe_start(struct net_if *iface,
-				     const struct in6_addr *prefix,
+				     const struct net_in6_addr *prefix,
 				     uint32_t vlifetime,
 				     uint32_t preferred_lifetime)
 {
@@ -640,8 +763,8 @@ static inline int net_ipv6_pe_init(struct net_if *iface)
 }
 #endif /* CONFIG_NET_IPV6_PE */
 
-typedef void (*net_ipv6_pe_filter_cb_t)(struct in6_addr *prefix,
-					bool is_blacklist,
+typedef void (*net_ipv6_pe_filter_cb_t)(struct net_in6_addr *prefix,
+					bool is_denylist,
 					void *user_data);
 
 /**

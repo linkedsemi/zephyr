@@ -6,11 +6,10 @@
 /dts-v1/;
 
 #include <broadcom/valkyrie.dtsi>
+
 / {
 	model = "Broadcom BCM958401M2";
 	compatible = "brcm,valkyrie";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	chosen {
 		zephyr,console = &uart1;

@@ -50,10 +50,10 @@ static uint8_t entropy_buffer[BUFFER_LENGTH] = {0};
 
 #define FRAME_SIZE (8)
 
-#define SPI_OP(frame_size) SPI_OP_MODE_MASTER | SPI_MODE_CPOL | \
+#define SPI_OP(frame_size) SPI_OP_MODE_CONTROLLER | SPI_MODE_CPOL | \
 	       SPI_MODE_CPHA | SPI_WORD_SET(frame_size) | SPI_LINES_SINGLE
 
-static struct spi_dt_spec spi_test_dev = SPI_DT_SPEC_GET(SPI_TEST_DEV, SPI_OP(FRAME_SIZE), 0);
+static struct spi_dt_spec spi_test_dev = SPI_DT_SPEC_GET(SPI_TEST_DEV, SPI_OP(FRAME_SIZE));
 
 #define SPI_BUF_SIZE 18
 
@@ -220,7 +220,7 @@ int main(void)
 {
 	__ASSERT_NO_MSG(gpio_is_ready_dt(&led));
 
-	rng_dev = DEVICE_DT_GET(DT_CHOSEN(zephyr_entropy));
+	rng_dev = entropy_get_default_device();
 	if (!device_is_ready(rng_dev)) {
 		printk("error: random device not ready");
 	}

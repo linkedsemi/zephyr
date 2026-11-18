@@ -16,10 +16,6 @@ include(${ZEPHYR_BASE}/cmake/gcc-m-fpu.cmake)
 # 'cortex-m33+nodsp' we need that to be 'cortex-m33' for CMAKE_SYSTEM_PROCESSOR
 string(REGEX REPLACE "\\+.*" "" CMAKE_SYSTEM_PROCESSOR ${GCC_M_CPU})
 
-list(APPEND TOOLCHAIN_C_FLAGS
-  -fshort-enums
-  )
-
 if(CONFIG_ARM64)
   list(APPEND TOOLCHAIN_C_FLAGS   -mcpu=${GCC_M_CPU})
 
@@ -38,7 +34,7 @@ else()
     if(NOT "${GCC_M_FPU}" STREQUAL "auto")
       list(APPEND TOOLCHAIN_C_FLAGS   -mfpu=${GCC_M_FPU})
     endif()
-    if    (CONFIG_FP_SOFTABI)
+    if(CONFIG_FP_SOFTABI)
       list(APPEND TOOLCHAIN_C_FLAGS   -mfloat-abi=softfp)
     elseif(CONFIG_FP_HARDABI)
       list(APPEND TOOLCHAIN_C_FLAGS   -mfloat-abi=hard)
@@ -63,11 +59,18 @@ foreach(isystem_include_dir ${NOSTDINC})
   list(APPEND isystem_include_flags -isystem ${isystem_include_dir})
 endforeach()
 
-set(CMAKE_REQUIRED_FLAGS ${isystem_include_flags})
+set(CMAKE_REQUIRED_FLAGS -mcpu=${GCC_M_CPU} ${isystem_include_flags})
 string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")
 
 if(CONFIG_ARMCLANG_STD_LIBC)
   # Zephyr requires AEABI portability to ensure correct functioning of the C
   # library, for example error numbers, errno.h.
-  list(APPEND TOOLCHAIN_C_FLAGS -D_AEABI_PORTABILITY_LEVEL=1)
+  list(APPEND TOOLCHAIN_C_FLAGS
+    $<$<COMPILE_LANGUAGE:C>:-D_AEABI_PORTABILITY_LEVEL=1>
+    $<$<COMPILE_LANGUAGE:ASM>:-D_AEABI_PORTABILITY_LEVEL=1>
+  )
 endif()
+
+# The empty function is to make sure GCC runtime library flags like -lgcc are not passed.
+function(compiler_set_linker_properties)
+endfunction()

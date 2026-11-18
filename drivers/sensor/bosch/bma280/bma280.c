@@ -106,7 +106,7 @@ static int bma280_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api bma280_driver_api = {
+static DEVICE_API(sensor, bma280_driver_api) = {
 #if CONFIG_BMA280_TRIGGER
 	.attr_set = bma280_attr_set,
 	.trigger_set = bma280_trigger_set,
@@ -121,7 +121,7 @@ int bma280_init(const struct device *dev)
 	uint8_t id = 0U;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

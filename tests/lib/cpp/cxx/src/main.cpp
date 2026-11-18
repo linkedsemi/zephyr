@@ -50,7 +50,6 @@
 #include <zephyr/drivers/i2s.h>
 #include <zephyr/drivers/i3c.h>
 #include <zephyr/drivers/ipm.h>
-#include <zephyr/drivers/kscan.h>
 #include <zephyr/drivers/led.h>
 #include <zephyr/drivers/led_strip.h>
 #include <zephyr/drivers/lora.h>
@@ -74,7 +73,6 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/usb/usb_device.h>
 #include <zephyr/usb/class/usb_hid.h>
-#include <zephyr/drivers/video-controls.h>
 #include <zephyr/drivers/video.h>
 #include <zephyr/drivers/watchdog.h>
 
@@ -82,6 +80,8 @@
 #include <zephyr/rtio/rtio.h>
 #include <zephyr/sys/spsc_lockfree.h>
 #include <zephyr/sys/mpsc_lockfree.h>
+
+#include <zephyr/video/video.h>
 
 #include <zephyr/ztest.h>
 

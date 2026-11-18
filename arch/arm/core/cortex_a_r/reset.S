@@ -47,8 +47,54 @@ GTEXT(soc_reset_hook)
  * setting up the system for running C code.
  *
  */
+#if defined(CONFIG_AARCH32_ARMV8_R)
+/*
+ * ARMv8-R AArch32 cores use RVBAR (Reset Vector Base Address Register) to
+ * determine the CPU start address on reset.  RVBAR only stores bits [31:5];
+ * bits [4:0] are RES0.  This means the reset
+ * vector address is implicitly rounded down to a 32-byte boundary.
+ *
+ * If __start is not 32-byte aligned, any firmware or boot-loader that
+ * programs RVBAR from the ELF entry point will silently truncate the
+ * address, causing the CPU to begin executing at the wrong location.
+ */
+	.section .text._reset_section, "ax"
+	.align 5
+z_arm_reset:
+__start:
+#else
 SECTION_SUBSEC_FUNC(TEXT, _reset_section, z_arm_reset)
 SECTION_SUBSEC_FUNC(TEXT, _reset_section, __start)
+#endif
+#if defined(CONFIG_AARCH32_ARMV8_A_MONITOR_INIT)
+    /*
+     * ARMv8-A AArch32 Monitor mode (EL3 AArch32) initialization.
+     * Analogous to z_arm64_el3_init() in the arm64 port.
+     *
+     * On bare-metal ARMv8-A AArch32 platforms the core resets into
+     * Secure SVC mode. Registers accessible only from Monitor mode
+     * must be configured before Zephyr starts. Switch to Monitor mode
+     * briefly, configure the required registers, then return to
+     * Secure SVC mode.
+     */
+
+    /* Switch to Monitor mode */
+    cps #MODE_MON
+    isb
+
+#if defined(CONFIG_GIC_V3)
+    /* Configure ICC_MSRE: enable GICv3 system register interface at lower levels */
+    mrc p15, 6, r0, c12, c12, 5    /* Read ICC_MSRE */
+    orr r0, r0, #ICC_MSRE_INIT
+    mcr p15, 6, r0, c12, c12, 5    /* Write ICC_MSRE */
+    isb
+#endif /* CONFIG_GIC_V3 */
+
+    /* Return to Secure SVC mode */
+    cps #MODE_SVC
+    isb
+#endif /* CONFIG_AARCH32_ARMV8_A_MONITOR_INIT */
+
 #if defined(CONFIG_AARCH32_ARMV8_R)
     /* Check if we are starting in HYP mode */
     mrs r0, cpsr
@@ -56,9 +102,12 @@ SECTION_SUBSEC_FUNC(TEXT, _reset_section, __start)
     cmp r0, #MODE_HYP
     bne EL1_Reset_Handler
 
-    /* Init HSCTLR see Armv8-R AArch32 architecture profile */
-    ldr r0, =(HSCTLR_RES1 | SCTLR_I_BIT | SCTLR_C_BIT)
-    mcr p15, 4, r0, c1, c0, 0
+    /*
+     * The HSCTLR register provides top-level control of system operation in Hyp mode.
+     * Since the OS is not running in Hyp mode, and considering the Armv8-R AArch32
+     * architecture profile, there's no need to modify HSCTLR configuration unless
+     * Fast Interrupts need to be enabled.
+     */
 
     /* Init HACTLR: Enable EL1 access to all IMP DEF registers */
     ldr r0, =HACTLR_INIT
@@ -200,6 +249,12 @@ EL1_Reset_Handler:
 
 #endif /* CONFIG_DCLS */
 
+#if defined(CONFIG_CPU_CORTEX_R52_CACHE_SEGREGATION)
+    ldr r0, =IMP_CSCTLR(CONFIG_CPU_CORTEX_R52_ICACHE_FLASH_WAY,
+                        CONFIG_CPU_CORTEX_R52_DCACHE_FLASH_WAY)
+    mcr p15, 1, r0, c9, c1, 0
+#endif
+
     ldr r0, =arm_cpu_boot_params
 
 #if CONFIG_MP_MAX_NUM_CPUS > 1
@@ -218,12 +273,12 @@ EL1_Reset_Handler:
     /* signal our desire to vote */
     mov r5, #1
     strb r5, [r4, r2]
+    mov r7, #0
     ldr r3, [r0, #BOOT_PARAM_MPID_OFFSET]
     cmn r3, #1
     beq 1f
 
     /* some core already won, release */
-    mov r7, #0
     strb r7, [r4, r2]
     b _secondary_core
 

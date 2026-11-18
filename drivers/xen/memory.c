@@ -3,10 +3,11 @@
  * Copyright (c) 2023 EPAM Systems
  */
 
+#include <xen/public/xen.h>
+#include <xen/public/memory.h>
+
 #include <zephyr/arch/arm64/hypercall.h>
 #include <zephyr/xen/generic.h>
-#include <zephyr/xen/public/memory.h>
-#include <zephyr/xen/public/xen.h>
 
 #include <zephyr/kernel.h>
 
@@ -51,9 +52,11 @@ int xendom_remove_from_physmap(int domid, xen_pfn_t gpfn)
 	return HYPERVISOR_memory_op(XENMEM_remove_from_physmap, &xrfp);
 }
 
-int xendom_populate_physmap(int domid, unsigned int extent_order,
-			    unsigned int nr_extents, unsigned int mem_flags,
-			    xen_pfn_t *extent_start)
+static int xendom_memory_reservation_op(unsigned int cmd, int domid,
+					unsigned int extent_order,
+					unsigned int nr_extents,
+					unsigned int mem_flags,
+					xen_pfn_t *extent_start)
 {
 	struct xen_memory_reservation reservation = {
 		.domid = domid,
@@ -64,5 +67,54 @@ int xendom_populate_physmap(int domid, unsigned int extent_order,
 
 	set_xen_guest_handle(reservation.extent_start, extent_start);
 
-	return HYPERVISOR_memory_op(XENMEM_populate_physmap, &reservation);
+	return HYPERVISOR_memory_op(cmd, &reservation);
+}
+
+int xendom_increase_reservation(int domid, unsigned int extent_order,
+				unsigned int nr_extents, unsigned int mem_flags,
+				xen_pfn_t *extent_start)
+{
+	return xendom_memory_reservation_op(XENMEM_increase_reservation, domid,
+					    extent_order, nr_extents, mem_flags,
+					    extent_start);
+}
+
+int xendom_decrease_reservation(int domid, unsigned int extent_order,
+				unsigned int nr_extents, unsigned int mem_flags,
+				xen_pfn_t *extent_start)
+{
+	return xendom_memory_reservation_op(XENMEM_decrease_reservation, domid,
+					    extent_order, nr_extents, mem_flags,
+					    extent_start);
+}
+
+int xendom_populate_physmap(int domid, unsigned int extent_order,
+			    unsigned int nr_extents, unsigned int mem_flags,
+			    xen_pfn_t *extent_start)
+{
+	return xendom_memory_reservation_op(XENMEM_populate_physmap, domid,
+					    extent_order, nr_extents, mem_flags,
+					    extent_start);
+}
+
+int xendom_acquire_resource(domid_t domid, uint16_t type, uint32_t id, uint64_t frame,
+			    uint32_t *nr_frames, xen_pfn_t *frame_list)
+{
+	struct xen_mem_acquire_resource acquire_res = {
+		.domid = domid,
+		.type = type,
+		.id = id,
+		.pad = 0,
+		.frame = frame,
+		.nr_frames = *nr_frames,
+	};
+	int ret;
+
+	set_xen_guest_handle(acquire_res.frame_list, frame_list);
+
+	ret = HYPERVISOR_memory_op(XENMEM_acquire_resource, &acquire_res);
+
+	*nr_frames = acquire_res.nr_frames;
+
+	return ret;
 }

@@ -4,21 +4,28 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_SENSING_DATATYPES_H_
-#define ZEPHYR_INCLUDE_SENSING_DATATYPES_H_
+/**
+ * @file
+ * @brief Header file for Sensing subsystem data type definitions.
+ * @ingroup sensing_datatypes
+ */
+
+#ifndef ZEPHYR_INCLUDE_SENSING_SENSING_DATATYPES_H_
+#define ZEPHYR_INCLUDE_SENSING_SENSING_DATATYPES_H_
 
 #include <stdint.h>
 #include <zephyr/dsp/types.h>
 
 /**
- * @brief Data Types
- * @addtogroup sensing_datatypes
+ * @defgroup sensing_datatypes Data Types
+ * @ingroup sensing_api
+ * @brief Sensor data structures used by the sensing subsystem
+ *
  * @{
  */
 
 /**
- * @struct sensing_sensor_value_header
- * @brief sensor value header
+ * @brief Common header for all sensor value payloads.
  *
  * Each sensor value data structure should have this header
  *
@@ -132,4 +139,4 @@ struct sensing_sensor_value_q31 {
  * @}
  */
 
-#endif /*ZEPHYR_INCLUDE_SENSING_DATATYPES_H_*/
+#endif /* ZEPHYR_INCLUDE_SENSING_SENSING_DATATYPES_H_ */

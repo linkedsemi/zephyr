@@ -9,6 +9,7 @@ LOG_MODULE_REGISTER(net_ethernet_vlan, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/ethernet.h>
@@ -26,10 +27,11 @@ LOG_MODULE_REGISTER(net_ethernet_vlan, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 #define DEBUG_RX 0
 #endif
 
-#define MAX_VLAN_NAME_LEN MIN(sizeof("VLAN-<#####>"), \
-			      CONFIG_NET_INTERFACE_NAME_LEN)
-#define MAX_VIRT_NAME_LEN MIN(sizeof("<not attached>"), \
-			      CONFIG_NET_L2_VIRTUAL_MAX_NAME_LEN)
+/* If the VLAN interface count is 0, then only priority tagged (tag 0)
+ * Ethernet frames can be received. In this case we do not need to
+ * allocate any memory for VLAN interfaces.
+ */
+#if CONFIG_NET_VLAN_COUNT > 0
 
 static void vlan_iface_init(struct net_if *iface);
 static int vlan_interface_attach(struct net_if *vlan_iface,
@@ -40,7 +42,6 @@ static int vlan_interface_send(struct net_if *iface, struct net_pkt *pkt);
 static int vlan_interface_stop(const struct device *dev);
 static enum virtual_interface_caps vlan_get_capabilities(struct net_if *iface);
 static int vlan_interface_start(const struct device *dev);
-static int virt_dev_init(const struct device *dev);
 
 static K_MUTEX_DEFINE(lock);
 
@@ -48,9 +49,8 @@ struct vlan_context {
 	struct net_if *iface;
 	struct net_if *attached_to;
 	uint16_t tag;
-	bool status : 1;    /* Is the interface enabled or not */
-	bool is_used : 1;   /* Is there active config on this context */
-	bool init_done : 1; /* Is interface init called for this context */
+	bool status;    /* Is the interface enabled or not */
+	bool is_used;   /* Is there active config on this context */
 };
 
 static const struct virtual_interface_api vlan_iface_api = {
@@ -65,19 +65,23 @@ static const struct virtual_interface_api vlan_iface_api = {
 };
 
 #define ETH_DEFINE_VLAN(x, _)						\
-	static struct vlan_context vlan_context_data_##x = {		\
-		.tag = NET_VLAN_TAG_UNSPEC,				\
-	};								\
+	static struct vlan_context vlan_context_data_##x;		\
+									\
 	NET_VIRTUAL_INTERFACE_INIT_INSTANCE(vlan_##x,			\
 					    "VLAN_" #x,			\
 					    x,				\
-					    virt_dev_init,		\
+					    NULL,			\
 					    NULL,			\
 					    &vlan_context_data_##x,	\
 					    NULL, /* config */		\
 					    CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, \
 					    &vlan_iface_api,		\
-					    NET_ETH_MTU)
+					    NET_ETH_MTU)		\
+									\
+	static struct vlan_context vlan_context_data_##x = {		\
+		.iface = NET_IF_GET(vlan_##x, x),			\
+		.tag = NET_VLAN_TAG_UNSPEC,				\
+	};								\
 
 LISTIFY(CONFIG_NET_VLAN_COUNT, ETH_DEFINE_VLAN, (;), _);
 
@@ -87,31 +91,6 @@ LISTIFY(CONFIG_NET_VLAN_COUNT, ETH_DEFINE_VLAN, (;), _);
 static struct vlan_context *vlan_ctx[] = {
 	LISTIFY(CONFIG_NET_VLAN_COUNT, INIT_VLAN_CONTEXT_PTR, (,), _)
 };
-
-#define INIT_VLAN_CONTEXT_IFACE(x, _)					\
-	vlan_context_data_##x.iface = NET_IF_GET(vlan_##x, x)
-
-static void init_context_iface(void)
-{
-	static bool init_done;
-
-	if (init_done) {
-		return;
-	}
-
-	init_done = true;
-
-	LISTIFY(CONFIG_NET_VLAN_COUNT, INIT_VLAN_CONTEXT_IFACE, (;), _);
-}
-
-static int virt_dev_init(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-
-	init_context_iface();
-
-	return 0;
-}
 
 static struct vlan_context *get_vlan_ctx(struct net_if *main_iface,
 					 uint16_t vlan_tag,
@@ -125,6 +104,7 @@ static struct vlan_context *get_vlan_ctx(struct net_if *main_iface,
 
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(interfaces, vctx, tmp, node) {
 		enum virtual_interface_caps caps;
+		const struct device *dev;
 
 		if (vctx->virtual_iface == NULL) {
 			continue;
@@ -135,8 +115,11 @@ static struct vlan_context *get_vlan_ctx(struct net_if *main_iface,
 			continue;
 		}
 
-		ctx = net_if_get_device(vctx->virtual_iface)->data;
-		NET_ASSERT(vctx != NULL);
+		dev = net_if_get_device(vctx->virtual_iface);
+
+		NET_ASSERT(dev != NULL);
+
+		ctx = dev->data;
 
 		if (any_tag) {
 			if (ctx->tag != NET_VLAN_TAG_UNSPEC) {
@@ -215,29 +198,24 @@ struct net_if *net_eth_get_vlan_iface(struct net_if *iface, uint16_t tag)
 
 	ctx = get_vlan(iface, tag);
 	if (ctx == NULL) {
+		if (tag == NET_VLAN_TAG_PRIORITY) {
+			return iface;
+		}
+
 		return NULL;
 	}
 
 	return ctx->iface;
 }
 
-struct net_if *net_eth_get_vlan_main(struct net_if *iface)
-{
-	struct vlan_context *ctx;
-
-	ctx = get_vlan(iface, NET_VLAN_TAG_UNSPEC);
-	if (ctx == NULL) {
-		return NULL;
-	}
-
-	return ctx->attached_to;
-}
-
 static bool enable_vlan_iface(struct vlan_context *ctx,
 			      struct net_if *iface)
 {
 	int iface_idx = net_if_get_by_iface(iface);
-	char name[MAX(MAX_VLAN_NAME_LEN, MAX_VIRT_NAME_LEN)];
+	/* Sized for the widest %d; net_virtual_set_name() truncates to
+	 * CONFIG_NET_L2_VIRTUAL_MAX_NAME_LEN.
+	 */
+	char name[sizeof("VLAN to -2147483648")];
 	int ret;
 
 	if (iface_idx < 0) {
@@ -254,9 +232,6 @@ static bool enable_vlan_iface(struct vlan_context *ctx,
 
 	ctx->is_used = true;
 
-	snprintk(name, sizeof(name), "VLAN-%d", ctx->tag);
-	net_if_set_name(ctx->iface, name);
-
 	snprintk(name, sizeof(name), "VLAN to %d",
 		 net_if_get_by_iface(ctx->attached_to));
 	net_virtual_set_name(ctx->iface, name);
@@ -268,7 +243,6 @@ static bool disable_vlan_iface(struct vlan_context *ctx,
 			       struct net_if *iface)
 {
 	int iface_idx = net_if_get_by_iface(iface);
-	char name[MAX(MAX_VLAN_NAME_LEN, MAX_VIRT_NAME_LEN)];
 
 	if (iface_idx < 0) {
 		return false;
@@ -277,11 +251,7 @@ static bool disable_vlan_iface(struct vlan_context *ctx,
 	(void)net_virtual_interface_attach(iface, NULL);
 	ctx->is_used = false;
 
-	snprintk(name, sizeof(name), "VLAN-<free>");
-	net_if_set_name(iface, name);
-
-	snprintk(name, sizeof(name), "<not attached>");
-	net_virtual_set_name(iface, name);
+	net_virtual_set_name(iface, "not attached");
 
 	return true;
 }
@@ -375,6 +345,8 @@ static void setup_link_address(struct vlan_context *ctx)
 
 	ll_addr = net_if_get_link_addr(ctx->attached_to);
 
+	NET_ASSERT(ll_addr != NULL);
+
 	(void)net_if_set_link_addr(ctx->iface,
 				   ll_addr->addr,
 				   ll_addr->len,
@@ -384,9 +356,15 @@ static void setup_link_address(struct vlan_context *ctx)
 int net_eth_vlan_enable(struct net_if *iface, uint16_t tag)
 {
 	struct ethernet_context *ctx = net_if_l2_data(iface);
-	const struct ethernet_api *eth = net_if_get_device(iface)->api;
+	const struct device *dev = net_if_get_device(iface);
+	const struct ethernet_api *eth;
 	struct vlan_context *vlan;
 	int ret;
+
+	NET_ASSERT(ctx != NULL);
+	NET_ASSERT(dev != NULL);
+
+	eth = dev->api;
 
 	if (!eth) {
 		return -ENOENT;
@@ -439,7 +417,7 @@ int net_eth_vlan_enable(struct net_if *iface, uint16_t tag)
 			continue;
 		}
 
-		NET_DBG("[%d] Adding vlan tag %d to iface %d (%p) attached to %d (%p)",
+		NET_DBG("[%zd] Adding vlan tag %d to iface %d (%p) attached to %d (%p)",
 			i, vlan->tag, net_if_get_by_iface(vlan->iface), vlan->iface,
 			net_if_get_by_iface(iface), iface);
 
@@ -449,8 +427,7 @@ int net_eth_vlan_enable(struct net_if *iface, uint16_t tag)
 		setup_link_address(vlan);
 
 		if (eth->vlan_setup) {
-			eth->vlan_setup(net_if_get_device(iface),
-					iface, vlan->tag, true);
+			eth->vlan_setup(dev, iface, vlan->tag, true);
 		}
 
 		ethernet_mgmt_raise_vlan_enabled_event(vlan->iface, vlan->tag);
@@ -467,6 +444,7 @@ int net_eth_vlan_enable(struct net_if *iface, uint16_t tag)
 int net_eth_vlan_disable(struct net_if *iface, uint16_t tag)
 {
 	const struct ethernet_api *eth;
+	const struct device *dev;
 	struct vlan_context *vlan;
 
 	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET) &&
@@ -483,7 +461,13 @@ int net_eth_vlan_disable(struct net_if *iface, uint16_t tag)
 		return -ESRCH;
 	}
 
-	eth = net_if_get_device(vlan->attached_to)->api;
+	dev = net_if_get_device(vlan->attached_to);
+
+	NET_ASSERT(dev != NULL);
+
+	eth = dev->api;
+
+	NET_ASSERT(eth != NULL);
 
 	k_mutex_lock(&lock, K_FOREVER);
 
@@ -494,8 +478,7 @@ int net_eth_vlan_disable(struct net_if *iface, uint16_t tag)
 	vlan->tag = NET_VLAN_TAG_UNSPEC;
 
 	if (eth->vlan_setup) {
-		eth->vlan_setup(net_if_get_device(vlan->attached_to),
-				vlan->attached_to, tag, false);
+		eth->vlan_setup(dev, vlan->attached_to, tag, false);
 	}
 
 	ethernet_mgmt_raise_vlan_disabled_event(vlan->iface, tag);
@@ -566,7 +549,14 @@ static int vlan_interface_stop(const struct device *dev)
 
 static int vlan_interface_send(struct net_if *iface, struct net_pkt *pkt)
 {
-	struct vlan_context *ctx = net_if_get_device(iface)->data;
+	const struct device *dev = net_if_get_device(iface);
+	struct vlan_context *ctx;
+
+	NET_ASSERT(dev != NULL);
+
+	ctx = dev->data;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (ctx->attached_to == NULL) {
 		return -ENOENT;
@@ -592,7 +582,14 @@ static int vlan_interface_send(struct net_if *iface, struct net_pkt *pkt)
 static enum net_verdict vlan_interface_recv(struct net_if *iface,
 					    struct net_pkt *pkt)
 {
-	struct vlan_context *ctx = net_if_get_device(iface)->data;
+	const struct device *dev = net_if_get_device(iface);
+	struct vlan_context *ctx;
+
+	NET_ASSERT(dev != NULL);
+
+	ctx = dev->data;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (net_pkt_vlan_tag(pkt) != ctx->tag) {
 		return NET_CONTINUE;
@@ -611,10 +608,45 @@ static enum net_verdict vlan_interface_recv(struct net_if *iface,
 	return NET_OK;
 }
 
+int vlan_alloc_buffer(struct net_if *iface, struct net_pkt *pkt, size_t size,
+		      enum net_ip_protocol proto, k_timeout_t timeout)
+{
+	size_t reserve = sizeof(struct net_eth_vlan_hdr);
+	enum virtual_interface_caps caps;
+
+	caps = net_virtual_get_iface_capabilities(iface);
+	if (!(caps & VIRTUAL_INTERFACE_VLAN)) {
+		return -ENOTSUP;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_L2_ETHERNET_EXTRA_TX_PKT_HEADROOM)) {
+		struct ethernet_config config;
+
+		iface = net_eth_get_vlan_main(iface);
+		if (iface == NULL) {
+			return -ENOENT;
+		}
+
+		if (net_eth_get_hw_config(iface, ETHERNET_CONFIG_TYPE_EXTRA_TX_PKT_HEADROOM,
+					  &config) == 0) {
+			reserve += config.extra_tx_pkt_headroom;
+		}
+	}
+
+	return net_pkt_alloc_buffer_with_reserve(pkt, size, reserve, proto, timeout);
+}
+
 static int vlan_interface_attach(struct net_if *vlan_iface,
 				 struct net_if *iface)
 {
-	struct vlan_context *ctx = net_if_get_device(vlan_iface)->data;
+	const struct device *dev = net_if_get_device(vlan_iface);
+	struct vlan_context *ctx;
+
+	NET_ASSERT(dev != NULL);
+
+	ctx = dev->data;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (iface == NULL) {
 		NET_DBG("VLAN interface %d (%p) detached from %d (%p)",
@@ -633,23 +665,20 @@ static int vlan_interface_attach(struct net_if *vlan_iface,
 
 static void vlan_iface_init(struct net_if *iface)
 {
-	struct vlan_context *ctx = net_if_get_device(iface)->data;
-	char name[MAX(MAX_VLAN_NAME_LEN, MAX_VIRT_NAME_LEN)];
+	const struct device *dev = net_if_get_device(iface);
+	struct vlan_context *ctx;
 
-	if (ctx->init_done) {
-		return;
-	}
+	NET_ASSERT(dev != NULL);
 
-	ctx->iface = iface;
+	ctx = dev->data;
+
+	NET_ASSERT(ctx != NULL);
+
 	net_if_flag_set(iface, NET_IF_NO_AUTO_START);
 
-	snprintk(name, sizeof(name), "VLAN-<free>");
-	net_if_set_name(iface, name);
-
-	snprintk(name, sizeof(name), "not attached");
-	net_virtual_set_name(iface, name);
+	net_virtual_set_name(iface, "not attached");
 
 	(void)net_virtual_set_flags(ctx->iface, NET_L2_MULTICAST);
-
-	ctx->init_done = true;
 }
+
+#endif /* CONFIG_NET_VLAN_COUNT > 0 */

@@ -6,7 +6,6 @@ import os
 import re
 import tempfile
 from copy import deepcopy
-from typing import Optional
 
 import pytest
 
@@ -25,6 +24,19 @@ from devicetree import dtlib
 #   - to drop into a debugger on failure, use '--pdb'
 #   - to run a particular test function or functions, use
 #     '-k test_function_pattern_goes_here'
+
+def uncomment(dts):
+    '''Trim added comments from a DT string.'''
+
+    # remove node comments, including leading empty line
+    # but keep the one before the root node
+    dts = re.sub(r'\n\n[ \t]*/\*.*?\*/\n', '\n', dts, flags=re.DOTALL)
+    dts = re.sub(r'\n/ {\n', r'\n\n/ {\n', dts)
+
+    # remove property comments
+    dts = re.sub(r'[ \t]*/\*.*?\*/\n', '\n', dts)
+
+    return dts
 
 def parse(dts, include_path=(), **kwargs):
     '''Parse a DTS string 'dts', using the given include path.
@@ -48,7 +60,7 @@ def verify_parse(dts, expected, include_path=()):
 
     dt = parse(dts[1:], include_path)
 
-    actual = str(dt)
+    actual = uncomment(str(dt))
     expected = expected[1:-1]
     assert actual == expected, f'unexpected round-trip on {dts}'
 
@@ -94,9 +106,9 @@ def temporary_chdir(dirname):
         os.chdir(here)
 
 @contextlib.contextmanager
-def dtlib_raises(err: Optional[str] = None,
-                 err_endswith: Optional[str] = None,
-                 err_matches: Optional[str] = None):
+def dtlib_raises(err: str | None = None,
+                 err_endswith: str | None = None,
+                 err_matches: str | None = None):
     '''A context manager for running a block of code that should raise
     DTError. Exactly one of the arguments 'err', 'err_endswith',
     and 'err_matches' must be given. The semantics are:
@@ -150,6 +162,8 @@ def test_cell_parsing():
 	j = /bits/ 32 < 0x10 0x20 (-1) >;
 	k = /bits/ 64 < 0x10 0x20 (-1) >;
 	l = < 'a' 'b' 'c' >;
+	m = [ 00 01 02 03 04 05 06 07 08 09 0a 0b 0c 0d 0e 0f 10 11 12 13 14 15 16 17 18 19 1a 1b ];
+	n = < 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 >;
 };
 """,
 """
@@ -168,6 +182,10 @@ def test_cell_parsing():
 	j = < 0x10 0x20 0xffffffff >;
 	k = /bits/ 64 < 0x10 0x20 0xffffffffffffffff >;
 	l = < 0x61 0x62 0x63 >;
+	m = [ 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F 10 11 12 13 14 15 16 17 18 19 1A
+	      1B ];
+	n = < 0x0 0x1 0x2 0x3 0x4 0x5 0x6 0x7 0x8 0x9 0xa 0xb 0xc 0xd 0xe 0xf 0x10 0x11 0x12 0x13
+	      0x14 >;
 };
 """)
 
@@ -530,7 +548,9 @@ def test_property_offset_labels():
 /dts-v1/;
 
 / {
-	a = l01: l02: < l03: &node l04: l05: 0x2 l06: l07: l08: >, [ l09: 03 l10: l11: 04 l12: l13: l14: ], "A";
+	a = l01: l02: < l03: &node l04: l05: 0x2 l06: l07: l08: >,
+	    [ l09: 03 l10: l11: 04 l12: l13: l14: ],
+	    "A";
 	b = < 0x0 l23: l24: >;
 	node: node {
 		phandle = < 0x1 >;
@@ -577,7 +597,7 @@ def test_unit_addr():
 / {
 	no-unit-addr {
 	};
-	unit-addr@ABC {
+	unit-addr@abc {
 	};
 	unit-addr-non-numeric@foo-bar {
 	};
@@ -585,7 +605,7 @@ def test_unit_addr():
 """)
 
     verify_unit_addr("/no-unit-addr", "")
-    verify_unit_addr("/unit-addr@ABC", "ABC")
+    verify_unit_addr("/unit-addr@ABC", "abc")
     verify_unit_addr("/unit-addr-non-numeric@foo-bar", "foo-bar")
 
 def test_node_path_references():
@@ -610,8 +630,11 @@ def test_node_path_references():
 
 / {
 	a = &label;
-	b = [ 01 ], &label;
-	c = [ 01 ], &label, < 0x2 >;
+	b = [ 01 ],
+	    &label;
+	c = [ 01 ],
+	    &label,
+	    < 0x2 >;
 	d = &{/abc};
 	label: abc {
 		e = &label;
@@ -641,6 +664,74 @@ def test_node_path_references():
 };
 """,
 "/sub: component 'missing' in path '/sub/missing' does not exist")
+
+    verify_parse("""
+/dts-v1/;
+
+/ {
+	sub {
+		x = &{/sub/unambiguous_path};
+		unambiguous_path@10 {};
+	};
+};
+""",
+"""
+/dts-v1/;
+
+/ {
+	sub {
+		x = &{/sub/unambiguous_path};
+		unambiguous_path@10 {
+		};
+	};
+};
+""")
+
+    verify_error("""
+/dts-v1/;
+
+/ {
+	sub {
+		x = &{/sub/ambiguous_path};
+		ambiguous_path@10 {
+		};
+		ambiguous_path@20 {
+		};
+	};
+};
+""",
+"/sub: component 'ambiguous_path' in path '/sub/ambiguous_path' does not exist")
+
+    verify_parse("""
+/dts-v1/;
+
+/ {
+	sub {
+		a = &{/sub/case_insesitive1@ABC};
+		b = &{/sub/case_insesitive1@abc};
+		c = &{/sub/case_insesitive2@ABC};
+		d = &{/sub/case_insesitive2@abc};
+		case_insesitive1@abc {};
+		case_insesitive2@ABC {};
+	};
+};
+""",
+"""
+/dts-v1/;
+
+/ {
+	sub {
+		a = &{/sub/case_insesitive1@ABC};
+		b = &{/sub/case_insesitive1@abc};
+		c = &{/sub/case_insesitive2@ABC};
+		d = &{/sub/case_insesitive2@abc};
+		case_insesitive1@abc {
+		};
+		case_insesitive2@abc {
+		};
+	};
+};
+""")
 
 def test_phandles():
     '''Various tests related to phandles.'''
@@ -867,7 +958,12 @@ def test_mixed_assign():
 /dts-v1/;
 
 / {
-	x = [ FF FF ], &abc, < 0xff &abc 0xff &abc >, &abc, [ FF FF ], "abc";
+	x = [ FF FF ],
+	    &abc,
+	    < 0xff &abc 0xff &abc >,
+	    &abc,
+	    [ FF FF ],
+	    "abc";
 	abc: abc {
 		phandle = < 0x1 >;
 	};
@@ -1019,7 +1115,7 @@ def test_include_curdir(tmp_path):
 };
 """)
         dt = dtlib.DT("test.dts")
-        assert str(dt) == """
+        assert uncomment(str(dt)) == """
 /dts-v1/;
 
 / {
@@ -1076,7 +1172,7 @@ y /include/ "via-include-path-1"
 	y = < 0x2 >;
 };
 """[1:-1]
-    assert str(dt) == expected_dt
+    assert uncomment(str(dt)) == expected_dt
 
 def test_include_misc(tmp_path):
     '''Miscellaneous /include/ tests.'''
@@ -1180,7 +1276,8 @@ def test_omit_if_no_ref():
 /dts-v1/;
 
 / {
-	x = < &{/referenced} >, &referenced2;
+	x = < &{/referenced} >,
+	    &referenced2;
 	referenced {
 		phandle = < 0x1 >;
 	};
@@ -1639,6 +1736,10 @@ def test_prop_type_casting():
 	zero = < >;
 	two_u = < 1 2 >;
 	two_s = < 0xFFFFFFFF 0xFFFFFFFE >;
+	neg_lit = < (-1) >;
+	neg_expr = < (4 - 6) >;
+	hex_max = < 0xFFFFFFFF >;
+	mixed = < (-100) 0xFFFFFFFF 0 >;
 	three_u = < 1 2 3 >;
 	three_u_split = < 1 >, < 2 >, < 3 >;
 	empty_string = "";
@@ -1678,6 +1779,16 @@ def test_prop_type_casting():
     verify_to_num("u", True, 1)
     verify_to_num("s", False, 0xFFFFFFFF)
     verify_to_num("s", True, -1)
+
+    # signed_aware=True: negative literal -> signed, hex/positive -> unsigned
+    assert dt.root.props["neg_lit"].to_num(signed_aware=True) == -1, \
+        "neg_lit: negative literal should decode to -1 with signed_aware"
+    assert dt.root.props["neg_expr"].to_num(signed_aware=True) == -2, \
+        "neg_expr: negative expression result should decode to -2 with signed_aware"
+    assert dt.root.props["hex_max"].to_num(signed_aware=True) == 0xFFFFFFFF, \
+        "hex_max: 0xFFFFFFFF should stay unsigned with signed_aware"
+    assert dt.root.props["u"].to_num(signed_aware=True) == 1, \
+        "u: positive literal should stay unsigned with signed_aware"
 
     verify_to_num_error_matches(
         "two_u",
@@ -1720,6 +1831,16 @@ def test_prop_type_casting():
     verify_to_nums("two_s", True, [-1, -2])
     verify_to_nums("three_u", False, [1, 2, 3])
     verify_to_nums("three_u_split", False, [1, 2, 3])
+
+    # signed_aware=True: only cells written as negative literals are signed
+    assert dt.root.props["neg_lit"].to_nums(signed_aware=True) == [-1], \
+        "neg_lit: negative literal should decode to [-1] with signed_aware"
+    assert dt.root.props["neg_expr"].to_nums(signed_aware=True) == [-2], \
+        "neg_expr: negative expression result should decode to [-2] with signed_aware"
+    assert dt.root.props["hex_max"].to_nums(signed_aware=True) == [0xFFFFFFFF], \
+        "hex_max: 0xFFFFFFFF should stay unsigned with signed_aware"
+    assert dt.root.props["mixed"].to_nums(signed_aware=True) == [-100, 0xFFFFFFFF, 0], \
+        "mixed: only negative-literal cells should be signed with signed_aware"
 
     verify_to_nums_error_matches(
         "empty",
@@ -1775,7 +1896,7 @@ def test_prop_type_casting():
         "strings",
         "expected property 'strings' on / in .* to be assigned with " +
         re.escape("'strings = \"string\";', ")+
-        re.escape("not 'strings = \"foo\", \"bar\", \"baz\";'"))
+        "not 'strings = \"foo\",\\s*\"bar\",\\s*\"baz\";'")
     verify_to_string_error_matches(
         "invalid_string",
         re.escape(r"value of property 'invalid_string' (b'\xff\x00') on / ") +
@@ -1904,6 +2025,36 @@ def test_prop_type_casting():
     verify_raw_to_num_error(dtlib.to_nums, 0, 0, "'0' has type 'int', expected 'bytes'")
     verify_raw_to_num_error(dtlib.to_nums, b"", 0, "'length' must be greater than zero, was 0")
     verify_raw_to_num_error(dtlib.to_nums, b"foooo", 2, "b'foooo' is 5 bytes long, expected a length that's a multiple of 2")
+
+def test_signed_cell_offsets_cleared_on_override():
+    '''
+    Overriding a property must clear _signed_cell_offsets so stale signed
+    offsets from the previous assignment do not corrupt the new value.
+    '''
+
+    dt = parse(r"""
+/dts-v1/;
+
+/ {
+	a = < (-1) >;
+	a = < 0xFFFFFFFF >;
+
+	b = < (-1) (-2) >;
+	b = < 1 2 >;
+};
+""")
+
+    # After override with an unsigned literal, to_num(signed_aware=True)
+    # must treat the cell as unsigned (0xFFFFFFFF), not signed (-1).
+    val_a = dt.root.props['a'].to_num(signed_aware=True)
+    assert val_a == 0xFFFFFFFF, \
+        f"stale _signed_cell_offsets: expected 0xFFFFFFFF, got {val_a}"
+
+    # After override with unsigned literals, to_nums(signed_aware=True)
+    # must return the unsigned values.
+    vals_b = dt.root.props['b'].to_nums(signed_aware=True)
+    assert vals_b == [1, 2], \
+        f"stale _signed_cell_offsets: expected [1, 2], got {vals_b}"
 
 def test_duplicate_labels():
     '''
@@ -2076,7 +2227,9 @@ def test_duplicate_labels():
 
 / {
 	label: foo {
-		x = &{/foo}, &label, < &label >;
+		x = &{/foo},
+		    &label,
+		    < &label >;
 		phandle = < 0x1 >;
 	};
 };
@@ -2134,9 +2287,9 @@ def test_reprs():
 
     assert re.fullmatch(r"DT\(filename='.*', include_path=.'foo', 'bar'.\)",
                         repr(dt))
-    assert re.fullmatch("<Property 'x' at '/' in '.*'>",
+    assert re.fullmatch("<Property 'x' on / in .*:5>",
                         repr(dt.root.props["x"]))
-    assert re.fullmatch("<Node /sub in '.*'>",
+    assert re.fullmatch("<Node /sub in .*:6>",
                         repr(dt.root.nodes["sub"]))
 
     dt = parse(dts, include_path=iter(("foo", "bar")))
@@ -2151,7 +2304,7 @@ def test_names():
 /dts-v1/;
 
 / {
-	// A leading \ is accepted but ignored in node/propert names
+	// A leading \ is accepted but ignored in node/property names
 	\aA0,._+*#?- = &_, &{/aA0,._+@-};
 
 	// Names that overlap with operators and integer literals
@@ -2175,7 +2328,8 @@ def test_names():
 /dts-v1/;
 
 / {
-	aA0,._+*#?- = &_, &{/aA0,._+@-};
+	aA0,._+*#?- = &_,
+	              &{/aA0,._+@-};
 	+ = [ 00 ];
 	* = [ 02 ];
 	- = [ 01 ];
@@ -2232,7 +2386,9 @@ def test_dense_input():
 / {
 	l1: l2: foo {
 		l3: l4: bar {
-			l5: x = l6: [ l7: 01 l8: 02 l9: ], [ 03 ], "a";
+			l5: x = l6: [ l7: 01 l8: 02 l9: ],
+			        [ 03 ],
+			        "a";
 		};
 	};
 };
@@ -2499,3 +2655,83 @@ def test_move_node():
     with dtlib_raises("can't move '/newpath' to '/foo/bar': "
                       "parent node '/foo' doesn't exist"):
         dt.move_node(parent, '/foo/bar')
+
+def test_filename_and_lineno():
+    """Test that filename and lineno are correctly tracked for nodes and properties."""
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        included_file = os.path.join(tmpdir, 'included.dtsi')
+        with open(included_file, 'w') as f:
+            f.write('''/* a new node */
+/ {
+	node1: test-node1 {
+		prop1A = "short value 1A";
+	};
+};
+''')
+
+        main_file = os.path.join(tmpdir, 'test_with_include.dts')
+        with open(main_file, 'w') as f:
+            f.write('''/dts-v1/;
+
+/include/ "included.dtsi"
+
+/ {
+	node2: test-node2 {
+		prop2A = "value 2A";
+		prop2B = "multi", "line", "value", "2B";
+	};
+};
+
+&node1 {
+	prop1B = "longer value 1B";
+};
+''')
+
+        dt = dtlib.DT(main_file, include_path=[tmpdir], base_dir=tmpdir)
+
+        test_node2 = dt.get_node('/test-node2')
+        prop2A = test_node2.props['prop2A']
+        prop2B = test_node2.props['prop2B']
+
+        assert os.path.samefile(test_node2.filename, main_file)
+        assert test_node2.lineno == 6
+        assert os.path.samefile(prop2A.filename, main_file)
+        assert prop2A.lineno == 7
+        assert os.path.samefile(prop2B.filename, main_file)
+        assert prop2B.lineno == 8
+
+        test_node1 = dt.get_node('/test-node1')
+        prop1A = test_node1.props['prop1A']
+        prop1B = test_node1.props['prop1B']
+
+        assert os.path.samefile(test_node1.filename, included_file)
+        assert test_node1.lineno == 3
+        assert os.path.samefile(prop1A.filename, included_file)
+        assert prop1A.lineno == 4
+        assert os.path.samefile(prop1B.filename, main_file)
+        assert prop1B.lineno == 13
+
+        # Test contents and alignment of the generated file comments
+        assert str(dt) == '''
+/dts-v1/;
+
+/* node '/' defined in included.dtsi:2 */
+/ {
+
+	/* node '/test-node1' defined in included.dtsi:3 */
+	node1: test-node1 {
+		prop1A = "short value 1A";  /* in included.dtsi:4 */
+		prop1B = "longer value 1B"; /* in test_with_include.dts:13 */
+	};
+
+	/* node '/test-node2' defined in test_with_include.dts:6 */
+	node2: test-node2 {
+		prop2A = "value 2A"; /* in test_with_include.dts:7 */
+		prop2B = "multi",
+		         "line",
+		         "value",
+		         "2B";       /* in test_with_include.dts:8 */
+	};
+};
+'''[1:-1]

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 Nordic Semiconductor ASA
+ * Copyright (c) 2020-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,6 +12,7 @@
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/bluetooth/iso.h>
 
 #include "subsys/bluetooth/host/hci_core.h"
@@ -71,14 +72,12 @@ static struct bt_iso_chan_ops iso_ops = {
 	.recv		= iso_recv,
 };
 
-static struct bt_iso_chan_path iso_path_rx = {
-	.pid = BT_HCI_DATAPATH_ID_HCI
-};
-
 static struct bt_iso_chan_qos bis_iso_qos;
 static struct bt_iso_chan_io_qos iso_tx_qos;
-static struct bt_iso_chan_io_qos iso_rx_qos = {
-	.path = &iso_path_rx
+static struct bt_iso_chan_io_qos iso_rx_qos;
+static struct bt_iso_chan_path hci_path = {
+	.pid = BT_HCI_DATAPATH_ID_HCI,
+	.format = BT_HCI_CODING_FORMAT_TRANSPARENT,
 };
 
 static struct bt_iso_chan bis_iso_chan = {
@@ -149,7 +148,14 @@ bool ll_data_path_sink_create(uint16_t handle, struct ll_iso_datapath *datapath,
 }
 #endif /* CONFIG_BT_CTLR_ISO_VENDOR_DATA_PATH */
 
-#define BUF_ALLOC_TIMEOUT_MS (30) /* milliseconds */
+/* Have timeout unit sufficient to wait for all enqueued SDU to be transmitted.
+ * We retry allocation by yielding out of the system work queue to mitigate
+ * deadlock.
+ */
+#define BUF_ALLOC_TIMEOUT_MS       (10)   /* milliseconds */
+#define BUF_ALLOC_RETRY_TIMEOUT_US (1000) /* microseconds */
+#define BUF_ALLOC_RETRY_COUNT      (10U)
+
 NET_BUF_POOL_FIXED_DEFINE(tx_pool, CONFIG_BT_ISO_TX_BUF_COUNT,
 			  BT_ISO_SDU_BUF_SIZE(CONFIG_BT_ISO_TX_MTU),
 			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
@@ -162,6 +168,7 @@ static void iso_send(struct k_work *work)
 {
 	static uint8_t iso_data[CONFIG_BT_ISO_TX_MTU];
 	static bool data_initialized;
+	static uint8_t retry_yield_wq;
 	struct net_buf *buf;
 	size_t iso_data_len;
 	int ret;
@@ -176,9 +183,21 @@ static void iso_send(struct k_work *work)
 
 	buf = net_buf_alloc(&tx_pool, K_MSEC(BUF_ALLOC_TIMEOUT_MS));
 	if (!buf) {
-		FAIL("Data buffer allocate timeout on channel\n");
+		/* Blocking in system work queue causes deadlock, hence yield
+		 * and try getting the buffer again.
+		 */
+		if (retry_yield_wq) {
+			retry_yield_wq--;
+
+			k_work_schedule(&iso_send_work, K_USEC(BUF_ALLOC_RETRY_TIMEOUT_US));
+		} else {
+			FAIL("Data buffer allocate timeout on channel\n");
+		}
+
 		return;
 	}
+
+	retry_yield_wq = BUF_ALLOC_RETRY_COUNT;
 
 	net_buf_reserve(buf, BT_ISO_CHAN_SEND_RESERVE);
 	sys_put_le16(seq_num, iso_data);
@@ -193,7 +212,17 @@ static void iso_send(struct k_work *work)
 		return;
 	}
 
-	k_work_schedule(&iso_send_work, K_USEC(9970));
+	/* Ideally we can wait 10 ms to enqueue next SDU, but to mitigate clock
+	 * drift between OS clock and Bluetooth Sleep Clock, lets send/enqueue
+	 * early towards the Controller so that the SDU is not considered stale
+	 * by the Controller.
+	 *
+	 * As we use `net_buf_alloc()` which will indirectly wait for Number of
+	 * Completed Packet event processing in the Host leading to availability
+	 * of next buffer, sending early will eventually get sync-ed with the
+	 * interval at which the Controller is sending the SDU on-air.
+	 */
+	k_work_schedule(&iso_send_work, K_USEC(9900));
 }
 #endif /* !CONFIG_TEST_LL_INTERFACE */
 
@@ -319,7 +348,9 @@ static void create_big(struct bt_le_ext_adv *adv, struct bt_iso_big **big)
 	big_create_param.encryption = false;
 	big_create_param.interval = 10000; /* us */
 	big_create_param.latency = 10; /* milliseconds */
-	big_create_param.packing = 0; /* 0 - sequential; 1 - interleaved */
+	big_create_param.packing = (IS_ENABLED(CONFIG_TEST_ISO_PACKING_INTERLEAVED) ?
+				    BT_ISO_PACKING_INTERLEAVED :
+				    BT_ISO_PACKING_SEQUENTIAL);
 	big_create_param.framing = 0; /* 0 - unframed; 1 - framed */
 	iso_tx_qos.sdu = CONFIG_BT_ISO_TX_MTU; /* bytes */
 	iso_tx_qos.rtn = 2;
@@ -579,10 +610,34 @@ static void iso_recv(struct bt_iso_chan *chan,
 
 static void iso_connected(struct bt_iso_chan *chan)
 {
+	struct bt_iso_info iso_info;
+	int err;
+
 	printk("ISO Channel %p connected\n", chan);
 
 	seq_num = 0U;
 	is_iso_connected = true;
+
+	err = bt_iso_chan_get_info(chan, &iso_info);
+	if (err != 0) {
+		FAIL("Failed to get ISO info: %d\n", err);
+	} else {
+		if (iso_info.can_recv) {
+			err = bt_iso_setup_data_path(chan, BT_HCI_DATAPATH_DIR_CTLR_TO_HOST,
+						     &hci_path);
+			if (err != 0) {
+				FAIL("Failed to setup ISO RX data path: %d\n", err);
+			}
+		}
+
+		if (iso_info.can_send) {
+			err = bt_iso_setup_data_path(chan, BT_HCI_DATAPATH_DIR_HOST_TO_CTLR,
+						     &hci_path);
+			if (err != 0) {
+				FAIL("Failed to setup ISO TX data path: %d\n", err);
+			}
+		}
+	}
 }
 
 static void iso_disconnected(struct bt_iso_chan *chan, uint8_t reason)
@@ -598,13 +653,9 @@ static bool volatile is_sync;
 static void pa_sync_cb(struct bt_le_per_adv_sync *sync,
 		     struct bt_le_per_adv_sync_synced_info *info)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-
 	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s synced, "
 	       "Interval 0x%04x (%u ms), PHY %s\n",
-	       bt_le_per_adv_sync_get_index(sync), le_addr,
+	       bt_le_per_adv_sync_get_index(sync), bt_addr_le_str(info->addr),
 	       info->interval, info->interval * 5 / 4, phy2str(info->phy));
 
 	is_sync = true;
@@ -613,12 +664,8 @@ static void pa_sync_cb(struct bt_le_per_adv_sync *sync,
 static void pa_terminated_cb(struct bt_le_per_adv_sync *sync,
 			     const struct bt_le_per_adv_sync_term_info *info)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-
 	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s sync terminated\n",
-	       bt_le_per_adv_sync_get_index(sync), le_addr);
+	       bt_le_per_adv_sync_get_index(sync), bt_addr_le_str(info->addr));
 
 	if (!deleting_pa_sync) {
 		FAIL("PA terminated unexpectedly\n");
@@ -633,13 +680,9 @@ static void pa_recv_cb(struct bt_le_per_adv_sync *sync,
 		       const struct bt_le_per_adv_sync_recv_info *info,
 		       struct net_buf_simple *buf)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
-
 	printk("PER_ADV_SYNC[%u]: [DEVICE]: %s, tx_power %i, "
 	       "RSSI %i, CTE %u, data length %u\n",
-	       bt_le_per_adv_sync_get_index(sync), le_addr, info->tx_power,
+	       bt_le_per_adv_sync_get_index(sync), bt_addr_le_str(info->addr), info->tx_power,
 	       info->rssi, info->cte_type, buf->len);
 
 	is_sync_recv = true;
@@ -659,15 +702,12 @@ static bool volatile is_big_info;
 static void pa_biginfo_cb(struct bt_le_per_adv_sync *sync,
 			  const struct bt_iso_biginfo *biginfo)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(biginfo->addr, le_addr, sizeof(le_addr));
 	printk("BIG INFO[%u]: [DEVICE]: %s, sid 0x%02x, "
 	       "num_bis %u, nse %u, interval 0x%04x (%u ms), "
 	       "bn %u, pto %u, irc %u, max_pdu %u, "
 	       "sdu_interval %u us, max_sdu %u, phy %s, "
 	       "%s framing, %sencrypted\n",
-	       bt_le_per_adv_sync_get_index(sync), le_addr, biginfo->sid,
+	       bt_le_per_adv_sync_get_index(sync), bt_addr_le_str(biginfo->addr), biginfo->sid,
 	       biginfo->num_bis, biginfo->sub_evt_count,
 	       biginfo->iso_interval,
 	       (biginfo->iso_interval * 5 / 4),
@@ -713,18 +753,16 @@ static uint8_t per_sid;
 static void scan_recv(const struct bt_le_scan_recv_info *info,
 		      struct net_buf_simple *buf)
 {
-	char le_addr[BT_ADDR_LE_STR_LEN];
 	char name[NAME_LEN];
 
 	(void)memset(name, 0, sizeof(name));
 
 	bt_data_parse(buf, data_cb, name);
 
-	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
 	printk("[DEVICE]: %s, AD evt type %u, Tx Pwr: %i, RSSI %i %s "
 	       "C:%u S:%u D:%u SR:%u E:%u Prim: %s, Secn: %s, "
 	       "Interval: 0x%04x (%u ms), SID: %u\n",
-	       le_addr, info->adv_type, info->tx_power, info->rssi, name,
+	       bt_addr_le_str(info->addr), info->adv_type, info->tx_power, info->rssi, name,
 	       (info->adv_props & BT_GAP_ADV_PROP_CONNECTABLE) != 0,
 	       (info->adv_props & BT_GAP_ADV_PROP_SCANNABLE) != 0,
 	       (info->adv_props & BT_GAP_ADV_PROP_DIRECTED) != 0,
@@ -846,6 +884,7 @@ static void test_iso_recv_main(void)
 	k_sleep(K_MSEC(5000));
 
 	printk("Terminating BIG Sync...");
+
 	struct node_rx_pdu *node_rx = NULL;
 
 	err = ll_big_sync_terminate(big_handle, (void **)&node_rx);
@@ -908,7 +947,7 @@ static void test_iso_recv_main(void)
 	big_param.mse = 1;
 	big_param.sync_timeout = 100; /* 1000 ms */
 	big_param.encryption = false;
-	iso_path_rx.pid = BT_HCI_DATAPATH_ID_HCI;
+	hci_path.pid = BT_HCI_DATAPATH_ID_HCI;
 	memset(big_param.bcode, 0, sizeof(big_param.bcode));
 	err = bt_iso_big_sync(sync, &big_param, &big);
 	if (err) {
@@ -1019,6 +1058,236 @@ static void test_iso_recv_main(void)
 	PASS("ISO recv test Passed\n");
 }
 
+#if !defined(CONFIG_TEST_LL_INTERFACE)
+#define RESYNC_COUNT           10U
+#define RESYNC_DURATION_MS     500U
+#define RESYNC_SDU_INTERVAL_MS 10U
+#define RESYNC_RELEASE_WAIT_MS 1000U
+
+static uint32_t volatile resync_valid_sdu_count;
+static int64_t volatile resync_connected_ms;
+static int64_t volatile resync_disconnected_ms;
+
+static void iso_resync_connected(struct bt_iso_chan *chan)
+{
+	resync_connected_ms = k_uptime_get();
+	iso_connected(chan);
+}
+
+static void iso_resync_disconnected(struct bt_iso_chan *chan, uint8_t reason)
+{
+	resync_disconnected_ms = k_uptime_get();
+	iso_disconnected(chan, reason);
+}
+
+static void iso_resync_recv(struct bt_iso_chan *chan, const struct bt_iso_recv_info *info,
+			    struct net_buf *buf)
+{
+	if ((info->flags & BT_ISO_FLAGS_VALID) != 0U) {
+		resync_valid_sdu_count++;
+	}
+}
+
+static uint8_t iso_rx_free_count(void)
+{
+	uint8_t count = 0U;
+
+	if (IS_ENABLED(CONFIG_BT_CTLR_SYNC_ISO)) {
+		while (ull_iso_pdu_rx_alloc_peek(count + 1U) != NULL) {
+			count++;
+		}
+	}
+
+	return count;
+}
+
+static struct bt_iso_chan_ops iso_resync_ops = {
+	.connected = iso_resync_connected,
+	.disconnected = iso_resync_disconnected,
+	.recv = iso_resync_recv,
+};
+
+static void test_iso_resync_main(void)
+{
+	struct bt_le_ext_adv *adv;
+	struct bt_iso_big *big;
+	int err;
+
+	printk("\n*ISO broadcast for re-sync test*\n");
+
+	err = bt_enable(NULL);
+	if (err != 0) {
+		FAIL("Could not init BT: %d\n", err);
+		return;
+	}
+
+	setup_ext_adv(&adv);
+
+	create_big(adv, &big);
+
+	k_work_init_delayable(&iso_send_work, iso_send);
+	err = k_work_schedule(&iso_send_work, K_NO_WAIT);
+	if (err < 0) {
+		FAIL("Could not schedule ISO send: %d\n", err);
+		return;
+	}
+
+	PASS("ISO broadcast for re-sync test Passed\n");
+}
+
+static void test_iso_recv_resync_main(void)
+{
+	struct bt_le_scan_param scan_param = {
+		.type = BT_LE_SCAN_TYPE_ACTIVE,
+		.options = BT_LE_SCAN_OPT_NONE,
+		.interval = 0x0004,
+		.window = 0x0004,
+	};
+	struct bt_le_per_adv_sync_param sync_create_param;
+	struct bt_iso_big_sync_param big_param = {0};
+	struct bt_le_per_adv_sync *sync = NULL;
+	struct bt_iso_big *big;
+	int err;
+
+	printk("\n*ISO receive re-sync test*\n");
+
+	err = bt_enable(NULL);
+	if (err != 0) {
+		FAIL("Could not init BT: %d\n", err);
+		return;
+	}
+
+	err = bt_le_scan_cb_register(&scan_callbacks);
+	if (err != 0) {
+		FAIL("Could not register scan callbacks: %d\n", err);
+		return;
+	}
+
+	err = bt_le_per_adv_sync_cb_register(&sync_cb);
+	if (err != 0) {
+		FAIL("Could not register PA sync callbacks: %d\n", err);
+		return;
+	}
+
+	is_periodic = false;
+	err = bt_le_scan_start(&scan_param, NULL);
+	if (err != 0) {
+		FAIL("Could not start scan: %d\n", err);
+		return;
+	}
+
+	while (!is_periodic) {
+		k_sleep(K_MSEC(100));
+	}
+
+	is_sync = false;
+	bt_addr_le_copy(&sync_create_param.addr, &per_addr);
+	sync_create_param.options = BT_LE_PER_ADV_SYNC_OPT_REPORTING_INITIALLY_DISABLED;
+	sync_create_param.sid = per_sid;
+	sync_create_param.skip = 0;
+	sync_create_param.timeout = 0xa;
+	err = bt_le_per_adv_sync_create(&sync_create_param, &sync);
+	if (err != 0) {
+		FAIL("Could not create sync: %d\n", err);
+		return;
+	}
+
+	while (!is_sync) {
+		k_sleep(K_MSEC(100));
+	}
+
+	err = bt_le_scan_stop();
+	if (err != 0) {
+		FAIL("Could not stop scan: %d\n", err);
+		return;
+	}
+
+	is_big_info = false;
+	while (!is_big_info) {
+		k_sleep(K_MSEC(100));
+	}
+
+	bis_iso_chan.ops = &iso_resync_ops;
+	bis_iso_qos.tx = NULL;
+	bis_iso_qos.rx = &iso_rx_qos;
+	big_param.bis_channels = bis_channels;
+	big_param.num_bis = BIS_ISO_CHAN_COUNT;
+	big_param.bis_bitfield = BT_ISO_BIS_INDEX_BIT(1); /* BIS 1 selected */
+	big_param.mse = 1;
+	big_param.sync_timeout = 100; /* 1000 ms */
+	big_param.encryption = false;
+
+	const uint8_t iso_rx_free = iso_rx_free_count();
+
+	for (uint8_t i = 0U; i < RESYNC_COUNT; i++) {
+		uint32_t expected;
+		uint32_t wait_ms;
+
+		is_iso_connected = false;
+		is_iso_disconnected = 0U;
+		resync_valid_sdu_count = 0U;
+		err = bt_iso_big_sync(sync, &big_param, &big);
+		if (err != 0) {
+			FAIL("Could not create BIG sync: %d\n", err);
+			return;
+		}
+
+		while (!is_iso_connected) {
+			k_sleep(K_MSEC(100));
+		}
+
+		k_sleep(K_MSEC(RESYNC_DURATION_MS));
+
+		err = bt_iso_big_terminate(big);
+		if (err != 0) {
+			FAIL("Could not terminate BIG sync: %d\n", err);
+			return;
+		}
+
+		while (is_iso_disconnected == 0U) {
+			k_sleep(K_MSEC(100));
+		}
+
+		if (is_iso_disconnected != BT_HCI_ERR_LOCALHOST_TERM_CONN) {
+			FAIL("Unexpected BIG sync termination reason 0x%02x\n",
+			     is_iso_disconnected);
+			return;
+		}
+
+		wait_ms = 0U;
+		while ((iso_rx_free_count() != iso_rx_free) && (wait_ms < RESYNC_RELEASE_WAIT_MS)) {
+			k_sleep(K_MSEC(10));
+			wait_ms += 10U;
+		}
+
+		if (iso_rx_free_count() != iso_rx_free) {
+			FAIL("BIG sync %u: %u of %u ISO Rx buffers free\n", i + 1U,
+			     iso_rx_free_count(), iso_rx_free);
+			return;
+		}
+
+		expected = (resync_disconnected_ms - resync_connected_ms) / RESYNC_SDU_INTERVAL_MS;
+
+		printk("BIG sync %u: received %u of %u SDUs\n", i + 1U, resync_valid_sdu_count,
+		       expected);
+		if (resync_valid_sdu_count < (expected - (expected / 10U))) {
+			FAIL("BIG sync %u: received %u of %u SDUs\n", i + 1U,
+			     resync_valid_sdu_count, expected);
+			return;
+		}
+	}
+
+	deleting_pa_sync = true;
+	err = bt_le_per_adv_sync_delete(sync);
+	if (err != 0) {
+		FAIL("Failed to delete periodic advertising sync (err %d)\n", err);
+		return;
+	}
+
+	PASS("ISO re-sync test Passed\n");
+}
+#endif /* !CONFIG_TEST_LL_INTERFACE */
+
 #if defined(CONFIG_BT_CTLR_ISO_VENDOR_DATA_PATH)
 static void test_iso_recv_vs_dp_main(void)
 {
@@ -1128,7 +1397,7 @@ static void test_iso_recv_vs_dp_main(void)
 	is_iso_connected = false;
 	is_iso_disconnected = 0U;
 	is_iso_vs_emitted = false;
-	iso_path_rx.pid = BT_HCI_DATAPATH_ID_VS;
+	hci_path.pid = BT_HCI_DATAPATH_ID_VS;
 
 	err = bt_iso_big_sync(sync, &big_param, &big);
 	if (err) {
@@ -1212,6 +1481,22 @@ static const struct bst_test_instance test_def[] = {
 		.test_tick_f = test_iso_tick,
 		.test_main_f = test_iso_recv_main
 	},
+#if !defined(CONFIG_TEST_LL_INTERFACE)
+	{
+		.test_id = "broadcast_resync",
+		.test_descr = "ISO broadcast for re-sync",
+		.test_pre_init_f = test_iso_init,
+		.test_tick_f = test_iso_tick,
+		.test_main_f = test_iso_resync_main
+	},
+	{
+		.test_id = "receive_resync",
+		.test_descr = "ISO receive, terminate and re-sync BIG repeatedly",
+		.test_pre_init_f = test_iso_init,
+		.test_tick_f = test_iso_tick,
+		.test_main_f = test_iso_recv_resync_main
+	},
+#endif /* !CONFIG_TEST_LL_INTERFACE */
 #if defined(CONFIG_BT_CTLR_ISO_VENDOR_DATA_PATH)
 	{
 		.test_id = "receive_vs_dp",

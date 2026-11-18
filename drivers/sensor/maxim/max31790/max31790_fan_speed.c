@@ -105,7 +105,7 @@ static int max31790_fan_speed_channel_get(const struct device *dev, enum sensor_
 	return 0;
 }
 
-static const struct sensor_driver_api max31790_fan_speed_api = {
+static DEVICE_API(sensor, max31790_fan_speed_api) = {
 	.sample_fetch = max31790_fan_speed_sample_fetch,
 	.channel_get = max31790_fan_speed_channel_get,
 };
@@ -115,7 +115,7 @@ static int max31790_fan_speed_init(const struct device *dev)
 	const struct max31790_fan_speed_config *config = dev->config;
 
 	if (!i2c_is_ready_dt(&config->i2c)) {
-		LOG_ERR("I2C device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

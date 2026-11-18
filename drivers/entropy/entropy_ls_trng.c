@@ -257,7 +257,7 @@ static int ls_trng_init(const struct device *dev)
 	return 0;
 }
 
-static const struct entropy_driver_api ls_trng_api = {
+static DEVICE_API(entropy, ls_trng_api) = {
 	.get_entropy = ls_trng_get_entropy,
 	.get_entropy_isr = ls_trng_get_entropy_isr,
 };

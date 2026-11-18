@@ -227,7 +227,7 @@ static int max17262_gauge_init(const struct device *dev)
 	int rc;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -363,7 +363,7 @@ static int max17262_gauge_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api max17262_battery_driver_api = {
+static DEVICE_API(sensor, max17262_battery_driver_api) = {
 	.sample_fetch = max17262_sample_fetch,
 	.channel_get = max17262_channel_get,
 };

@@ -976,7 +976,7 @@ SHELL_CMD_REGISTER(sdhc_errors, NULL,
                    cmd_sdhc_errors);
 #endif
 
-static const struct sdhc_driver_api linkedsemi_sdhci_api = {
+static DEVICE_API(sdhc, linkedsemi_sdhci_api) = {
     .reset = linkedsemi_sdhci_reset,
     .get_host_props = linkedsemi_sdhci_get_host_props,
     .set_io = linkedsemi_sdhci_set_io,

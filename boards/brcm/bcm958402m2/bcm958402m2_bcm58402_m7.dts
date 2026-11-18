@@ -7,11 +7,10 @@
 /dts-v1/;
 
 #include <broadcom/viper-m7.dtsi>
+
 / {
 	model = "Broadcom BCM958402M2_M7";
 	compatible = "brcm,viper";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	chosen {
 		zephyr,console = &uart1;

@@ -14,18 +14,19 @@
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/types.h>
 #include <zephyr/drivers/gpio.h>
-#include <zephyr/drivers/spi.h>
 #include <zephyr/sys/util.h>
 #include <stmemsc.h>
 #include "lsm6dso_reg.h"
 
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+#if DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso, spi) || \
+	DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso32, spi)
 #include <zephyr/drivers/spi.h>
-#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(spi) */
+#endif
 
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+#if DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso, i2c) || \
+	DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso32, i2c)
 #include <zephyr/drivers/i2c.h>
-#endif /* DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c) */
+#endif
 
 #define LSM6DSO_EN_BIT					0x01
 #define LSM6DSO_DIS_BIT					0x00
@@ -39,15 +40,18 @@
 struct lsm6dso_config {
 	stmdev_ctx_t ctx;
 	union {
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+#if DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso, i2c) || \
+	DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso32, i2c)
 		const struct i2c_dt_spec i2c;
 #endif
-#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+#if DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso, spi) || \
+	DT_HAS_COMPAT_ON_BUS_STATUS_OKAY(st_lsm6dso32, spi)
 		const struct spi_dt_spec spi;
 #endif
 	} stmemsc_cfg;
 	uint8_t accel_pm;
 	uint8_t accel_odr;
+	uint8_t accel_lp_filter;
 #define ACCEL_RANGE_DOUBLE	BIT(7)
 #define ACCEL_RANGE_MASK	BIT_MASK(6)
 	uint8_t accel_range;
@@ -59,6 +63,13 @@ struct lsm6dso_config {
 	const struct gpio_dt_spec gpio_drdy;
 	uint8_t int_pin;
 	bool trig_enabled;
+#ifdef CONFIG_LSM6DSO_TAP
+	uint8_t tap_mode;
+	uint8_t tap_threshold[3];
+	uint8_t tap_shock;
+	uint8_t tap_latency;
+	uint8_t tap_quiet;
+#endif /* CONFIG_LSM6DSO_TAP */
 #endif /* CONFIG_LSM6DSO_TRIGGER */
 };
 
@@ -101,6 +112,18 @@ struct lsm6dso_data {
 	const struct sensor_trigger *trig_drdy_gyr;
 	sensor_trigger_handler_t handler_drdy_temp;
 	const struct sensor_trigger *trig_drdy_temp;
+
+#ifdef CONFIG_LSM6DSO_TILT
+	sensor_trigger_handler_t handler_tilt;
+	const struct sensor_trigger *trig_tilt;
+#endif /* CONFIG_LSM6DSO_TILT */
+
+#ifdef CONFIG_LSM6DSO_TAP
+	sensor_trigger_handler_t handler_tap;
+	const struct sensor_trigger *trig_tap;
+	sensor_trigger_handler_t handler_double_tap;
+	const struct sensor_trigger *trig_double_tap;
+#endif /* CONFIG_LSM6DSO_TAP */
 
 #if defined(CONFIG_LSM6DSO_TRIGGER_OWN_THREAD)
 	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_LSM6DSO_THREAD_STACK_SIZE);

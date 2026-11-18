@@ -9,9 +9,9 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <zephyr/kernel.h>
-#include <zephyr/posix/time.h>
 #include <zephyr/posix/unistd.h>
 #include <zephyr/posix/sched.h>
 
@@ -429,11 +429,13 @@ int pthread_attr_setinheritsched(pthread_attr_t *attr, int inheritsched);
 int pthread_once(pthread_once_t *once, void (*initFunc)(void));
 #endif
 FUNC_NORETURN void pthread_exit(void *retval);
+int pthread_timedjoin_np(pthread_t thread, void **status, const struct timespec *abstime);
+int pthread_tryjoin_np(pthread_t thread, void **status);
 int pthread_join(pthread_t thread, void **status);
 int pthread_cancel(pthread_t pthread);
 int pthread_detach(pthread_t thread);
 int pthread_create(pthread_t *newthread, const pthread_attr_t *attr,
-		   void *(*threadroutine)(void *), void *arg);
+		   void *(*threadroutine)(void *arg), void *arg);
 int pthread_setcancelstate(int state, int *oldstate);
 int pthread_setcanceltype(int type, int *oldtype);
 void pthread_testcancel(void);
@@ -455,7 +457,7 @@ int pthread_rwlock_trywrlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_unlock(pthread_rwlock_t *rwlock);
 int pthread_rwlock_wrlock(pthread_rwlock_t *rwlock);
 int pthread_key_create(pthread_key_t *key,
-		void (*destructor)(void *));
+		void (*destructor)(void *value));
 int pthread_key_delete(pthread_key_t key);
 int pthread_setspecific(pthread_key_t key, const void *value);
 void *pthread_getspecific(pthread_key_t key);
@@ -488,7 +490,7 @@ void __z_pthread_cleanup_pop(int execute);
  * @retval 0 Success
  * @retval ESRCH Thread does not exist
  * @retval EINVAL Name buffer is NULL
- * @retval Negative value if kernel function error
+ * @retval <0 Negative value if kernel function error
  *
  */
 int pthread_setname_np(pthread_t thread, const char *name);
@@ -506,7 +508,7 @@ int pthread_setname_np(pthread_t thread, const char *name);
  * @retval 0 Success
  * @retval ESRCH Thread does not exist
  * @retval EINVAL Name buffer is NULL
- * @retval Negative value if kernel function error
+ * @retval <0 negative value if kernel function error
  */
 int pthread_getname_np(pthread_t thread, char *name, size_t len);
 

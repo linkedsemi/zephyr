@@ -112,15 +112,15 @@ GEN_OFFSET_STRUCT(arch_esf, a7);
 GEN_OFFSET_STRUCT(arch_esf, mepc);
 GEN_OFFSET_STRUCT(arch_esf, mstatus);
 
+#ifdef CONFIG_CLIC_SUPPORT_INTERRUPT_LEVEL
+GEN_OFFSET_STRUCT(arch_esf, mcause);
+#endif /* CONFIG_CLIC_SUPPORT_INTERRUPT_LEVEL */
+
 GEN_OFFSET_STRUCT(arch_esf, s0);
 
 #ifdef CONFIG_USERSPACE
 GEN_OFFSET_STRUCT(arch_esf, sp);
 #endif
-
-#ifdef CONFIG_EXTRA_EXCEPTION_INFO
-GEN_OFFSET_STRUCT(arch_esf, csf);
-#endif /* CONFIG_EXTRA_EXCEPTION_INFO */
 
 #if defined(CONFIG_RISCV_SOC_CONTEXT_SAVE)
 GEN_OFFSET_STRUCT(arch_esf, soc_context);
@@ -132,6 +132,7 @@ GEN_SOC_OFFSET_SYMS();
 GEN_ABSOLUTE_SYM(__struct_arch_esf_SIZEOF, sizeof(struct arch_esf));
 
 #ifdef CONFIG_EXCEPTION_DEBUG
+GEN_OFFSET_STRUCT(arch_esf, csf);
 GEN_ABSOLUTE_SYM(__callee_saved_t_SIZEOF, ROUND_UP(sizeof(_callee_saved_t), ARCH_STACK_PTR_ALIGN));
 #endif /* CONFIG_EXCEPTION_DEBUG */
 
@@ -140,5 +141,19 @@ GEN_OFFSET_SYM(_cpu_arch_t, user_exc_sp);
 GEN_OFFSET_SYM(_cpu_arch_t, user_exc_tmp0);
 GEN_OFFSET_SYM(_cpu_arch_t, user_exc_tmp1);
 #endif
+
+#ifdef CONFIG_PM_S2RAM
+#include <pm_s2ram_struct.h>
+
+GEN_OFFSET_SYM(_cpu_context_t, mstatus);
+GEN_OFFSET_SYM(_cpu_context_t, mtvec);
+GEN_OFFSET_SYM(_cpu_context_t, mscratch);
+#ifdef CONFIG_RISCV_HAS_CLIC
+GEN_OFFSET_SYM(_cpu_context_t, mtvt);
+#else
+GEN_OFFSET_SYM(_cpu_context_t, mie);
+#endif
+GEN_OFFSET_SYM(_cpu_context_t, sp);
+#endif /* CONFIG_PM_S2RAM */
 
 GEN_ABS_SYM_END

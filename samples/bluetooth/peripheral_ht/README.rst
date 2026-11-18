@@ -10,9 +10,10 @@ Overview
 Similar to the :zephyr:code-sample:`ble_peripheral` sample, except that this
 application specifically exposes the HT (Health Thermometer) GATT Service.
 
-On Nordic nRF devices, this sample uses the built-in TEMP peripheral to return
-die temperature values. On other boards, it will generate dummy temperature
-values.
+On boards with a ``dht0`` Devicetree alias node, this sample uses this sensor to
+return ambient temperature values. On Nordic nRF devices, it uses the built-in
+TEMP peripheral to return die temperature values.  On other boards, it will
+generate dummy temperature values.
 
 
 Requirements
@@ -24,7 +25,14 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/peripheral_ht` in the
-Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/peripheral_ht
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+After flashing, use a Bluetooth scanner app (e.g. nRF Connect) to connect to the device
+and enable indications on the Temperature Measurement characteristic to receive temperature
+readings via the Health Thermometer (HT) service.

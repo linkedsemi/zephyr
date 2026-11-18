@@ -19,16 +19,49 @@ LOG_MODULE_REGISTER(llext, CONFIG_LLEXT_LOG_LEVEL);
 
 #include "llext_priv.h"
 
-static sys_slist_t _llext_list = SYS_SLIST_STATIC_INIT(&_llext_list);
+STRUCT_SECTION_START_EXTERN(llext_const_symbol);
 
-static struct k_mutex llext_lock = Z_MUTEX_INITIALIZER(llext_lock);
+sys_slist_t llext_list = SYS_SLIST_STATIC_INIT(&llext_list);
+
+K_MUTEX_DEFINE(llext_lock);
+
+int llext_section_shndx(const struct llext_loader *ldr, const struct llext *ext,
+			const char *sect_name)
+{
+	unsigned int i;
+
+	for (i = 1; i < ext->sect_cnt; i++) {
+		const char *name = llext_section_name(ldr, ext, ext->sect_hdrs + i);
+
+		if (name == NULL) {
+			LOG_ERR("Out of bounds string table index %u "
+				"for section name of section %d",
+				ext->sect_hdrs[i].sh_name, i);
+			return -ENOEXEC;
+		} else if (strcmp(name, sect_name) == 0) {
+			return i;
+		}
+	}
+
+	return -ENOENT;
+}
+
+int llext_get_section_header(const struct llext_loader *ldr, const struct llext *ext,
+			     const char *search_name, elf_shdr_t *shdr)
+{
+	int ret;
+
+	ret = llext_section_shndx(ldr, ext, search_name);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*shdr = ext->sect_hdrs[ret];
+	return 0;
+}
 
 ssize_t llext_find_section(struct llext_loader *ldr, const char *search_name)
 {
-	/* Note that this API is used after llext_load(), so the ldr->sect_hdrs
-	 * cache is already freed. A direct search covers all situations.
-	 */
-
 	elf_shdr_t *shdr;
 	unsigned int i;
 	size_t pos;
@@ -37,14 +70,20 @@ ssize_t llext_find_section(struct llext_loader *ldr, const char *search_name)
 	     i < ldr->hdr.e_shnum;
 	     i++, pos += ldr->hdr.e_shentsize) {
 		shdr = llext_peek(ldr, pos);
-		if (!shdr) {
-			/* The peek() method isn't supported */
+		if (shdr == NULL) {
+			/* The peek() method isn't supported, or - less likely - shdr is
+			 * out of bounds
+			 */
 			return -ENOTSUP;
 		}
 
 		const char *name = llext_peek(ldr,
 					      ldr->sects[LLEXT_MEM_SHSTRTAB].sh_offset +
 					      shdr->sh_name);
+
+		if (name == NULL) {
+			return -ENOEXEC;
+		}
 
 		if (!strcmp(name, search_name)) {
 			return shdr->sh_offset;
@@ -64,12 +103,12 @@ struct llext *llext_by_name(const char *name)
 {
 	k_mutex_lock(&llext_lock, K_FOREVER);
 
-	for (sys_snode_t *node = sys_slist_peek_head(&_llext_list);
+	for (sys_snode_t *node = sys_slist_peek_head(&llext_list);
 	     node != NULL;
 	     node = sys_slist_peek_next(node)) {
-		struct llext *ext = CONTAINER_OF(node, struct llext, _llext_list);
+		struct llext *ext = CONTAINER_OF(node, struct llext, llext_list);
 
-		if (strncmp(ext->name, name, sizeof(ext->name)) == 0) {
+		if (strncmp(ext->name, name, LLEXT_MAX_NAME_LEN) == 0) {
 			k_mutex_unlock(&llext_lock);
 			return ext;
 		}
@@ -86,10 +125,10 @@ int llext_iterate(int (*fn)(struct llext *ext, void *arg), void *arg)
 
 	k_mutex_lock(&llext_lock, K_FOREVER);
 
-	for (node = sys_slist_peek_head(&_llext_list);
+	for (node = sys_slist_peek_head(&llext_list);
 	     node;
 	     node = sys_slist_peek_next(node)) {
-		struct llext *ext = CONTAINER_OF(node, struct llext, _llext_list);
+		struct llext *ext = CONTAINER_OF(node, struct llext, llext_list);
 
 		ret = fn(ext, arg);
 		if (ret) {
@@ -101,25 +140,92 @@ int llext_iterate(int (*fn)(struct llext *ext, void *arg), void *arg)
 	return ret;
 }
 
+static const void *llext_bsearch_sym(const struct llext_symtable *sym_table, const char *sym_name)
+{
+	const struct llext_const_symbol *const_syms = NULL;
+	const struct llext_symbol *ext_syms = NULL;
+	size_t sym_cnt = 0U;
+	size_t left = 0U;
+	size_t right;
+	size_t mid;
+	int cmp;
+
+	if (sym_table == NULL) {
+		const_syms = STRUCT_SECTION_START(llext_const_symbol);
+		STRUCT_SECTION_COUNT(llext_const_symbol, &sym_cnt);
+		right = sym_cnt;
+	} else {
+		ext_syms = sym_table->syms;
+		right = sym_table->sym_cnt;
+	}
+
+	while (left < right) {
+		mid = left + (right - left) / 2U;
+
+		if (sym_table == NULL) {
+#ifdef CONFIG_LLEXT_EXPORT_BUILTINS_BY_SLID
+			cmp = (const_syms[mid].slid < (uintptr_t)sym_name)   ? -1
+			      : (const_syms[mid].slid > (uintptr_t)sym_name) ? 1
+									     : 0;
+#else
+			cmp = strcmp(const_syms[mid].name, sym_name);
+#endif
+			if (cmp == 0) {
+				return const_syms[mid].addr;
+			}
+		} else {
+			cmp = strcmp(ext_syms[mid].name, sym_name);
+
+			if (cmp == 0) {
+				return ext_syms[mid].addr;
+			}
+		}
+
+		if (cmp < 0) {
+			left = mid + 1U;
+		} else {
+			right = mid;
+		}
+	}
+
+	return NULL;
+}
+
 const void *llext_find_sym(const struct llext_symtable *sym_table, const char *sym_name)
 {
 	if (sym_table == NULL) {
 		/* Built-in symbol table */
 #ifdef CONFIG_LLEXT_EXPORT_BUILTINS_BY_SLID
-		/* 'sym_name' is actually a SLID to search for */
-		uintptr_t slid = (uintptr_t)sym_name;
-
-		/* TODO: perform a binary search instead of linear.
-		 * Note that - as of writing - the llext_const_symbol_area
-		 * section is sorted in ascending SLID order.
-		 * (see scripts/build/llext_prepare_exptab.py)
+		/*
+		 * The SLID export table is sorted at build time
+		 * by `scripts/build/llext_prepare_exptab.py`.
 		 */
-		STRUCT_SECTION_FOREACH(llext_const_symbol, sym) {
-			if (slid == sym->slid) {
-				return sym->addr;
+		return llext_bsearch_sym(NULL, sym_name);
+#else
+		static int ordering_state;
+		const struct llext_const_symbol *const_syms;
+		size_t sym_cnt;
+
+		if (ordering_state == 0) {
+			const_syms = STRUCT_SECTION_START(llext_const_symbol);
+			STRUCT_SECTION_COUNT(llext_const_symbol, &sym_cnt);
+			/* Assume the table is sorted; downgrade to a linear scan as
+			 * soon as an out-of-order pair is found. The assignment must
+			 * not happen after the loop, or it would clobber the result.
+			 */
+			ordering_state = 1;
+			for (size_t i = 1; i < sym_cnt; i++) {
+				if (strcmp(const_syms[i - 1].name, const_syms[i].name) > 0) {
+					ordering_state = -1;
+					break;
+				}
 			}
 		}
-#else
+
+		if (ordering_state == 1) {
+			return llext_bsearch_sym(NULL, sym_name);
+		}
+
 		STRUCT_SECTION_FOREACH(llext_const_symbol, sym) {
 			if (strcmp(sym->name, sym_name) == 0) {
 				return sym->addr;
@@ -127,12 +233,7 @@ const void *llext_find_sym(const struct llext_symtable *sym_table, const char *s
 		}
 #endif
 	} else {
-		/* find symbols in module */
-		for (size_t i = 0; i < sym_table->sym_cnt; i++) {
-			if (strcmp(sym_table->syms[i].name, sym_name) == 0) {
-				return sym_table->syms[i].addr;
-			}
-		}
+		return llext_bsearch_sym(sym_table, sym_name);
 	}
 
 	return NULL;
@@ -153,7 +254,7 @@ int llext_load(struct llext_loader *ldr, const char *name, struct llext **ext,
 		goto out;
 	}
 
-	*ext = llext_alloc(sizeof(struct llext));
+	*ext = llext_alloc_metadata(sizeof(struct llext));
 	if (*ext == NULL) {
 		LOG_ERR("Not enough memory for extension metadata");
 		ret = -ENOMEM;
@@ -162,16 +263,17 @@ int llext_load(struct llext_loader *ldr, const char *name, struct llext **ext,
 
 	ret = do_llext_load(ldr, *ext, ldr_parm);
 	if (ret < 0) {
-		llext_free(*ext);
+		llext_free_metadata(*ext);
 		*ext = NULL;
 		goto out;
 	}
 
-	strncpy((*ext)->name, name, sizeof((*ext)->name));
-	(*ext)->name[sizeof((*ext)->name) - 1] = '\0';
+	/* The (*ext)->name array is LLEXT_MAX_NAME_LEN + 1 bytes long */
+	strncpy((*ext)->name, name, LLEXT_MAX_NAME_LEN);
+	(*ext)->name[LLEXT_MAX_NAME_LEN] = '\0';
 	(*ext)->use_count++;
 
-	sys_slist_append(&_llext_list, &(*ext)->_llext_list);
+	sys_slist_append(&llext_list, &(*ext)->llext_list);
 	LOG_INF("Loaded extension %s", (*ext)->name);
 
 out:
@@ -181,60 +283,17 @@ out:
 
 #include <zephyr/logging/log_ctrl.h>
 
-static void llext_log_flush(void)
-{
-#ifdef CONFIG_LOG_MODE_DEFERRED
-	extern struct k_thread logging_thread;
-	int cur_prio = k_thread_priority_get(k_current_get());
-	int log_prio = k_thread_priority_get(&logging_thread);
-	int target_prio;
-	bool adjust_cur, adjust_log;
-
-	/*
-	 * Our goal is to raise the logger thread priority above current, but if
-	 * current has the highest possble priority, both need to be adjusted,
-	 * particularly if the logger thread has the lowest possible priority
-	 */
-	if (log_prio < cur_prio) {
-		adjust_cur = false;
-		adjust_log = false;
-		target_prio = 0;
-	} else if (cur_prio == K_HIGHEST_THREAD_PRIO) {
-		adjust_cur = true;
-		adjust_log = true;
-		target_prio = cur_prio;
-		k_thread_priority_set(k_current_get(), cur_prio + 1);
-	} else {
-		adjust_cur = false;
-		adjust_log = true;
-		target_prio = cur_prio - 1;
-	}
-
-	/* adjust logging thread priority if needed */
-	if (adjust_log) {
-		k_thread_priority_set(&logging_thread, target_prio);
-	}
-
-	log_thread_trigger();
-	k_yield();
-
-	if (adjust_log) {
-		k_thread_priority_set(&logging_thread, log_prio);
-	}
-	if (adjust_cur) {
-		k_thread_priority_set(&logging_thread, cur_prio);
-	}
-#endif
-}
-
 int llext_unload(struct llext **ext)
 {
 	__ASSERT(*ext, "Expected non-null extension");
 	struct llext *tmp = *ext;
 
-	k_mutex_lock(&llext_lock, K_FOREVER);
+	/* Flush pending log messages, as the deferred formatting may be referencing
+	 * strings/args in the extension we are about to unload
+	 */
+	log_flush();
 
-	llext_log_flush();
+	k_mutex_lock(&llext_lock, K_FOREVER);
 
 	__ASSERT(tmp->use_count, "A valid LLEXT cannot have a zero use-count!");
 
@@ -246,17 +305,21 @@ int llext_unload(struct llext **ext)
 	}
 
 	/* FIXME: protect the global list */
-	sys_slist_find_and_remove(&_llext_list, &tmp->_llext_list);
+	sys_slist_find_and_remove(&llext_list, &tmp->llext_list);
 
 	llext_dependency_remove_all(tmp);
 
 	*ext = NULL;
 	k_mutex_unlock(&llext_lock);
 
+	if (tmp->sect_hdrs_on_heap) {
+		llext_free_metadata(tmp->sect_hdrs);
+	}
+
 	llext_free_regions(tmp);
-	llext_free(tmp->sym_tab.syms);
-	llext_free(tmp->exp_tab.syms);
-	llext_free(tmp);
+	llext_free_metadata(tmp->sym_tab.syms);
+	llext_free_metadata(tmp->exp_tab.syms);
+	llext_free_metadata(tmp);
 
 	return 0;
 }
@@ -278,7 +341,7 @@ static int call_fn_table(struct llext *ext, bool is_init)
 {
 	ssize_t ret;
 
-	ret = llext_get_fn_table(ext, is_init, NULL, 0);
+	ret = llext_get_fn_table_entry(ext, is_init, NULL, 0);
 	if (ret < 0) {
 		LOG_ERR("Failed to get table size: %d", (int)ret);
 		return ret;
@@ -286,19 +349,21 @@ static int call_fn_table(struct llext *ext, bool is_init)
 
 	typedef void (*elf_void_fn_t)(void);
 
-	int fn_count = ret / sizeof(elf_void_fn_t);
-	elf_void_fn_t fn_table[fn_count];
-
-	ret = llext_get_fn_table(ext, is_init, &fn_table, sizeof(fn_table));
-	if (ret < 0) {
-		LOG_ERR("Failed to get function table: %d", (int)ret);
-		return ret;
-	}
+	int fn_count = ret;
 
 	for (int i = 0; i < fn_count; i++) {
+		elf_void_fn_t fn;
+
+		ret = llext_get_fn_table_entry(ext, is_init, (void **)&fn, i);
+		if (ret < 0) {
+			LOG_ERR("Failed to get %s function %d: %d",
+				is_init ? "bringup" : "teardown", i, (int)ret);
+			return ret;
+		}
+
 		LOG_DBG("calling %s function %p()",
-			is_init ? "bringup" : "teardown", (void *)fn_table[i]);
-		fn_table[i]();
+			is_init ? "bringup" : "teardown", (void *)fn);
+		fn();
 	}
 
 	return 0;

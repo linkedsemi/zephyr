@@ -12,8 +12,8 @@
  * driver. Only one instance is permitted on the system.
  */
 
-#ifndef ZEPHYR_INCLUDE_DRIVERS_SYSTEM_MM_H_
-#define ZEPHYR_INCLUDE_DRIVERS_SYSTEM_MM_H_
+#ifndef ZEPHYR_INCLUDE_DRIVERS_MM_SYSTEM_MM_H_
+#define ZEPHYR_INCLUDE_DRIVERS_MM_SYSTEM_MM_H_
 
 #include <zephyr/types.h>
 
@@ -53,6 +53,18 @@ extern "C" {
 
 /** Reserved bits for cache modes */
 #define SYS_MM_MEM_CACHE_MASK		(BIT(3) - 1)
+
+/**
+ * @brief Represents an available memory region.
+ *
+ * A memory region that can be used by allocators. Driver defined
+ * attributes can be used to guide the proper usage of each region.
+ */
+struct sys_mm_drv_region {
+	void *addr; /**< @brief Address of the memory region */
+	size_t size; /**< @brief Size of the memory region */
+	uint32_t attr; /**< @brief Driver defined attributes of the memory region */
+};
 
 /**
  * @}
@@ -110,6 +122,18 @@ extern "C" {
 int sys_mm_drv_map_page(void *virt, uintptr_t phys, uint32_t flags);
 
 /**
+ * @brief Map one physical page into the virtual address space with region check
+ *
+ * This maps one physical page into the virtual address space by calling
+ * sys_mm_drv_map_page. Refer to sys_mm_drv_map_page for references
+ *
+ * Before call it performs a safety check by verifying if the mapped virtual memory page
+ * fits into a given virtual region
+ */
+int sys_mm_drv_map_page_safe(const struct sys_mm_drv_region *virtual_region,
+			     void *virt, uintptr_t phys, uint32_t flags);
+
+/**
  * @brief Map a region of physical memory into the virtual address space
  *
  * This maps a region of physical memory into the virtual address space.
@@ -132,6 +156,19 @@ int sys_mm_drv_map_page(void *virt, uintptr_t phys, uint32_t flags);
  */
 int sys_mm_drv_map_region(void *virt, uintptr_t phys,
 			  size_t size, uint32_t flags);
+
+/**
+ * @brief Map a region of physical memory into the virtual address space with region check
+ *
+ * This maps a region of physical memory into the virtual address space by calling
+ * sys_mm_drv_map_region. Refer to sys_mm_drv_map_region for references
+ *
+ * Before call it performs a safety check by verifying if the mapped virtual memory pages
+ * fit into a given virtual region
+ */
+int sys_mm_drv_map_region_safe(const struct sys_mm_drv_region *virtual_region,
+			       void *virt, uintptr_t phys, size_t size,
+			       uint32_t flags);
 
 /**
  * @brief Map an array of physical memory into the virtual address space
@@ -402,18 +439,6 @@ int sys_mm_drv_update_region_flags(void *virt, size_t size, uint32_t flags);
  */
 int sys_mm_drv_page_phys_get(void *virt, uintptr_t *phys);
 
-/**
- * @brief Represents an available memory region.
- *
- * A memory region that can be used by allocators. Driver defined
- * attributes can be used to guide the proper usage of each region.
- */
-struct sys_mm_drv_region {
-	void *addr; /**< @brief Address of the memory region */
-	size_t size; /**< @brief Size of the memory region */
-	uint32_t attr; /**< @brief Driver defined attributes of the memory region */
-};
-
 /* TODO is it safe to assume no valid region has size == 0? */
 /**
  * @brief Iterates over an array of regions returned by #sys_mm_drv_query_memory_regions
@@ -463,4 +488,4 @@ void sys_mm_drv_query_memory_regions_free(const struct sys_mm_drv_region *region
 
 #endif /* _ASMLANGUAGE */
 
-#endif /* ZEPHYR_INCLUDE_DRIVERS_SYSTEM_MM_H_ */
+#endif /* ZEPHYR_INCLUDE_DRIVERS_MM_SYSTEM_MM_H_ */

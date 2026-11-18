@@ -9,8 +9,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/audio/ascs.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -20,32 +22,31 @@
 #include <zephyr/sys/slist.h>
 #include <zephyr/types.h>
 
-#include "ascs_internal.h"
 #include "bap_stream.h"
 
 #if defined(CONFIG_BT_BAP_UNICAST_CLIENT)
 #define UNICAST_GROUP_CNT	 CONFIG_BT_BAP_UNICAST_CLIENT_GROUP_COUNT
 #define UNICAST_GROUP_STREAM_CNT CONFIG_BT_BAP_UNICAST_CLIENT_GROUP_STREAM_COUNT
 #else /* !CONFIG_BT_BAP_UNICAST_CLIENT */
-#define UNICAST_GROUP_CNT 0
-#define UNICAST_GROUP_STREAM_CNT 0
+#define UNICAST_GROUP_CNT 0U
+#define UNICAST_GROUP_STREAM_CNT 0U
 #endif /* CONFIG_BT_BAP_UNICAST_CLIENT */
 #if defined(CONFIG_BT_BAP_BROADCAST_SOURCE)
 #define BROADCAST_STREAM_CNT CONFIG_BT_BAP_BROADCAST_SRC_STREAM_COUNT
 #else /* !CONFIG_BT_BAP_BROADCAST_SOURCE */
-#define BROADCAST_STREAM_CNT 0
+#define BROADCAST_STREAM_CNT 0U
 #endif /* CONFIG_BT_BAP_BROADCAST_SOURCE */
 
 /* Temp struct declarations to handle circular dependencies */
 struct bt_bap_unicast_group;
 struct bt_bap_broadcast_source;
-struct bt_bap_broadcast_sink;
 
 struct bt_bap_ep {
-	uint8_t  dir;
-	uint8_t  cig_id;
-	uint8_t  cis_id;
-	struct bt_ascs_ase_status status;
+	uint8_t dir;
+	uint8_t cig_id;
+	uint8_t cis_id;
+	uint8_t id; /* ASE ID or BIS ID (BIS index - 1) */
+	enum bt_bap_ep_state state;
 	struct bt_bap_stream *stream;
 	struct bt_audio_codec_cfg codec_cfg;
 	struct bt_bap_qos_cfg qos;
@@ -57,11 +58,6 @@ struct bt_bap_ep {
 
 	/* Used by the unicast server and client */
 	bool receiver_ready;
-
-	/* TODO: Create a union to reduce memory usage */
-	struct bt_bap_unicast_group *unicast_group;
-	struct bt_bap_broadcast_source *broadcast_source;
-	struct bt_bap_broadcast_sink *broadcast_sink;
 };
 
 struct bt_bap_unicast_group_cig_param {
@@ -93,16 +89,19 @@ struct bt_bap_unicast_group {
 	/* The ISO API for CIG creation requires an array of pointers to ISO channels */
 	struct bt_iso_chan *cis[UNICAST_GROUP_STREAM_CNT];
 	sys_slist_t streams;
+
+	/* Configured sink presentation delay */
+	uint32_t sink_pd;
+	/* Configured source presentation delay */
+	uint32_t source_pd;
 };
 
-#if CONFIG_BT_AUDIO_CODEC_CFG_MAX_DATA_SIZE > 0
 struct bt_audio_broadcast_stream_data {
 	/** Codec Specific Data len */
 	size_t data_len;
 	/** Codec Specific Data */
 	uint8_t data[CONFIG_BT_AUDIO_CODEC_CFG_MAX_DATA_SIZE];
 };
-#endif /* CONFIG_BT_AUDIO_CODEC_CFG_MAX_DATA_SIZE > 0 */
 
 struct bt_bap_broadcast_source {
 	uint8_t stream_count;
@@ -110,7 +109,6 @@ struct bt_bap_broadcast_source {
 	bool encryption;
 
 	struct bt_iso_big *big;
-	struct bt_bap_qos_cfg *qos;
 #if defined(CONFIG_BT_ISO_TEST_PARAMS)
 	/* Stored advanced parameters */
 	uint8_t irc;
@@ -118,16 +116,9 @@ struct bt_bap_broadcast_source {
 	uint16_t iso_interval;
 #endif /* CONFIG_BT_ISO_TEST_PARAMS */
 
-#if CONFIG_BT_AUDIO_CODEC_CFG_MAX_DATA_SIZE > 0
 	/* The codec specific configured data for each stream in the subgroup */
 	struct bt_audio_broadcast_stream_data stream_data[BROADCAST_STREAM_CNT];
-#endif /* CONFIG_BT_AUDIO_CODEC_CFG_MAX_DATA_SIZE > 0 */
 	uint8_t broadcast_code[BT_ISO_BROADCAST_CODE_SIZE];
-
-	/* The complete codec specific configured data for each stream in the subgroup.
-	 * This contains both the subgroup and the BIS-specific data for each stream.
-	 */
-	struct bt_audio_codec_cfg codec_cfg[BROADCAST_STREAM_CNT];
 
 	/* The subgroups containing the streams used to create the broadcast source */
 	sys_slist_t subgroups;
@@ -163,7 +154,6 @@ struct bt_bap_broadcast_sink_subgroup {
 struct bt_bap_broadcast_sink_bis {
 	uint8_t index;
 	struct bt_iso_chan *chan;
-	struct bt_audio_codec_cfg codec_cfg;
 };
 
 #if defined(CONFIG_BT_BAP_BROADCAST_SINK)
@@ -172,14 +162,14 @@ struct bt_bap_broadcast_sink {
 	uint8_t stream_count;
 	uint8_t bass_src_id;
 	uint8_t subgroup_count;
-	uint16_t iso_interval;
-	uint16_t biginfo_num_bis;
 	uint32_t broadcast_id; /* 24 bit */
 	uint32_t indexes_bitfield;
 	uint32_t valid_indexes_bitfield; /* based on codec support */
-	struct bt_bap_qos_cfg qos_cfg;
+	struct bt_iso_biginfo biginfo;
 	struct bt_le_per_adv_sync *pa_sync;
 	struct bt_iso_big *big;
+	uint8_t base_size;
+	uint8_t base[BT_BASE_MAX_SIZE];
 	struct bt_bap_broadcast_sink_bis bis[CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT];
 	struct bt_bap_broadcast_sink_subgroup subgroups[CONFIG_BT_BAP_BROADCAST_SNK_SUBGROUP_COUNT];
 	const struct bt_bap_scan_delegator_recv_state *recv_state;
@@ -191,7 +181,7 @@ struct bt_bap_broadcast_sink {
 };
 #endif /* CONFIG_BT_BAP_BROADCAST_SINK */
 
-static inline const char *bt_bap_ep_state_str(uint8_t state)
+static inline const char *bt_bap_ep_state_str(enum bt_bap_ep_state state)
 {
 	switch (state) {
 	case BT_BAP_EP_STATE_IDLE:
@@ -212,7 +202,3 @@ static inline const char *bt_bap_ep_state_str(uint8_t state)
 		return "unknown";
 	}
 }
-
-bool bt_bap_ep_is_broadcast_snk(const struct bt_bap_ep *ep);
-bool bt_bap_ep_is_broadcast_src(const struct bt_bap_ep *ep);
-bool bt_bap_ep_is_unicast_client(const struct bt_bap_ep *ep);

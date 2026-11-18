@@ -1,21 +1,23 @@
-/**
- * @file drivers/entropy.h
- *
- * @brief Public APIs for the entropy driver.
- */
-
 /*
  * Copyright (c) 2016 ARM Ltd.
  * Copyright (c) 2017 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#ifndef ZEPHYR_INCLUDE_DRIVERS_ENTROPY_H_
+
+/**
+ * @file
+ * @ingroup entropy_interface
+ * @brief Main header file for entropy driver API.
+ */
+
+
+ #ifndef ZEPHYR_INCLUDE_DRIVERS_ENTROPY_H_
 #define ZEPHYR_INCLUDE_DRIVERS_ENTROPY_H_
 
 /**
- * @brief Entropy Interface
- * @defgroup entropy_interface Entropy Interface
+ * @brief Interfaces for entropy hardware.
+ * @defgroup entropy_interface Entropy
  * @since 1.10
  * @version 1.0.0
  * @ingroup io_interfaces
@@ -31,11 +33,19 @@
 extern "C" {
 #endif
 
-/** @brief Driver is allowed to busy-wait for random data to be ready */
+/** @brief Driver is allowed to busy-wait for random data to be ready
+ *
+ * Flag possibly set in @p flags argument of entropy_get_entropy_isr().
+ */
 #define ENTROPY_BUSYWAIT  BIT(0)
 
 /**
- * @typedef entropy_get_entropy_t
+ * @def_driverbackendgroup{Entropy,entropy_interface}
+ * @ingroup entropy_interface
+ * @{
+ */
+
+/**
  * @brief Callback API to get entropy.
  *
  * @note This call has to be thread safe to satisfy requirements
@@ -46,8 +56,8 @@ extern "C" {
 typedef int (*entropy_get_entropy_t)(const struct device *dev,
 				     uint8_t *buffer,
 				     uint16_t length);
+
 /**
- * @typedef entropy_get_entropy_isr_t
  * @brief Callback API to get entropy from an ISR.
  *
  * See entropy_get_entropy_isr() for argument description
@@ -58,14 +68,43 @@ typedef int (*entropy_get_entropy_isr_t)(const struct device *dev,
 					 uint32_t flags);
 
 /**
- * @brief Entropy driver API structure.
- *
- * This is the mandatory API any Entropy driver needs to expose.
+ * @driver_ops{Entropy}
  */
 __subsystem struct entropy_driver_api {
+	/** @driver_ops_mandatory @copybrief entropy_get_entropy */
 	entropy_get_entropy_t     get_entropy;
+	/** @driver_ops_optional @copybrief entropy_get_entropy_isr */
 	entropy_get_entropy_isr_t get_entropy_isr;
 };
+
+/** @} */
+
+/**
+ * @brief Return the default entropy device if available.
+ *
+ * Returns in the following order:
+ *
+ * - The device chosen as "zephyr,entropy", if available.
+ * - The architectural entropy device, if enabled.
+ * - NULL.
+ *
+ * @retval Pointer to default entropy device.
+ * @retval NULL if not available.
+ */
+static inline const struct device *entropy_get_default_device(void)
+{
+	const struct device *device = DEVICE_DT_GET_OR_NULL(DT_CHOSEN(zephyr_entropy));
+
+#ifdef CONFIG_ARCH_HAS_ENTROPY
+	if (device == NULL) {
+		extern const struct device *const z_arch_entropy_dev;
+
+		device = z_arch_entropy_dev;
+	}
+#endif
+
+	return device;
+}
 
 /**
  * @brief Fills a buffer with entropy. Blocks if required in order to
@@ -85,8 +124,7 @@ static inline int z_impl_entropy_get_entropy(const struct device *dev,
 					     uint8_t *buffer,
 					     uint16_t length)
 {
-	const struct entropy_driver_api *api =
-		(const struct entropy_driver_api *)dev->api;
+	const struct entropy_driver_api *api = DEVICE_API_GET(entropy, dev);
 
 	__ASSERT(api->get_entropy != NULL,
 		"Callback pointer should not be NULL");
@@ -100,19 +138,19 @@ static inline int z_impl_entropy_get_entropy(const struct device *dev,
  * @param dev Pointer to the device structure.
  * @param buffer Buffer to fill with entropy.
  * @param length Buffer length.
- * @param flags Flags to modify the behavior of the call.
- * @retval number of bytes filled with entropy or -error.
+ * @param flags Flags to modify the behavior of the call: ENTROPY_BUSYWAIT.
+ * @return number of bytes filled with entropy or -error.
+ * @retval -ENOSYS Driver does not implement the function
  */
 static inline int entropy_get_entropy_isr(const struct device *dev,
 					  uint8_t *buffer,
 					  uint16_t length,
 					  uint32_t flags)
 {
-	const struct entropy_driver_api *api =
-		(const struct entropy_driver_api *)dev->api;
+	const struct entropy_driver_api *api = DEVICE_API_GET(entropy, dev);
 
-	if (unlikely(!api->get_entropy_isr)) {
-		return -ENOTSUP;
+	if (unlikely(api->get_entropy_isr == NULL)) {
+		return -ENOSYS;
 	}
 
 	return api->get_entropy_isr(dev, buffer, length, flags);

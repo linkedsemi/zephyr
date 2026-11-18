@@ -5,7 +5,6 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 flash: 2048
 ram: 384
 supported:
@@ -20,11 +19,14 @@ supported:
   - hwinfo
   - gpio
   - i2s
+  - ptp_clock
   - pwm
   - netif:eth
   - rtc
+  - sdhc
   - spi
   - usb_device
+  - usbd
   - watchdog
   - xpro_gpio
   - xpro_i2c

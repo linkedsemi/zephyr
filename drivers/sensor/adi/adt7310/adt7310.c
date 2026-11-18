@@ -255,7 +255,7 @@ static int adt7310_init(const struct device *dev)
 	int ret;
 
 	if (!spi_is_ready_dt(&cfg->bus)) {
-		LOG_ERR("SPI bus %s not ready", cfg->bus.bus->name);
+		LOG_ERR_DEVICE_NOT_READY(cfg->bus.bus);
 		return -ENODEV;
 	}
 
@@ -276,7 +276,7 @@ static int adt7310_init(const struct device *dev)
 	return ret;
 }
 
-static const struct sensor_driver_api adt7310_driver_api = {
+static DEVICE_API(sensor, adt7310_driver_api) = {
 	.attr_set = adt7310_attr_set,
 	.sample_fetch = adt7310_sample_fetch,
 	.channel_get  = adt7310_channel_get,
@@ -291,7 +291,7 @@ static const struct sensor_driver_api adt7310_driver_api = {
 	static const struct adt7310_dev_config adt7310_config_##inst = {                           \
 		.bus = SPI_DT_SPEC_INST_GET(                                                       \
 			inst,                                                                      \
-			(SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_MODE_CPOL | SPI_MODE_CPHA), 0),  \
+			(SPI_WORD_SET(8) | SPI_TRANSFER_MSB | SPI_MODE_CPOL | SPI_MODE_CPHA)),     \
                                                                                                    \
 		IF_ENABLED(CONFIG_ADT7310_TRIGGER,                                                 \
 			   (.int_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, int_gpios, {0}),))};        \

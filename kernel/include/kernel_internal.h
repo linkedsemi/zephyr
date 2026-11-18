@@ -16,6 +16,7 @@
 
 #include <zephyr/kernel.h>
 #include <kernel_arch_interface.h>
+#include <kthread.h>
 #include <string.h>
 
 #ifndef _ASMLANGUAGE
@@ -31,41 +32,45 @@ void z_init_cpu(int id);
 void z_init_thread_base(struct _thread_base *thread_base, int priority,
 			uint32_t initial_state, unsigned int options);
 
-/* Early boot functions */
-void z_early_memset(void *dst, int c, size_t n);
-void z_early_memcpy(void *dst, const void *src, size_t n);
-
-void z_bss_zero(void);
-#ifdef CONFIG_XIP
-void z_data_copy(void);
-#else
-static inline void z_data_copy(void)
-{
-	/* Do nothing */
-}
-#endif /* CONFIG_XIP */
-
-#ifdef CONFIG_LINKER_USE_BOOT_SECTION
-void z_bss_zero_boot(void);
-#else
-static inline void z_bss_zero_boot(void)
-{
-	/* Do nothing */
-}
-#endif /* CONFIG_LINKER_USE_BOOT_SECTION */
-
-#ifdef CONFIG_LINKER_USE_PINNED_SECTION
-void z_bss_zero_pinned(void);
-#else
-static inline void z_bss_zero_pinned(void)
-{
-	/* Do nothing */
-}
-#endif /* CONFIG_LINKER_USE_PINNED_SECTION */
 
 FUNC_NORETURN void z_cstart(void);
 
-void z_device_state_init(void);
+/*
+ * Lean kernel-internal init model.
+ *
+ * A subsystem registers a parameterless init function that the boot path runs
+ * at a fixed phase, without the SYS_INIT level/priority machinery (kernel init
+ * order is fixed at compile time). Each entry is emitted into the subsystem's
+ * own translation unit, so it -- and its init -- is linked only when the
+ * subsystem itself is linked, preserving the pay-per-use linkage that SYS_INIT
+ * provides. The entry holds a single function pointer (no device back-pointer
+ * and no priority), so it is half the size of a SYS_INIT init_entry.
+ */
+struct k_kernel_init_pre_entry {
+	void (*init_fn)(void);
+};
+
+struct k_kernel_init_post_entry {
+	void (*init_fn)(void);
+};
+
+/* Register a kernel init function to run before multithreading starts (the
+ * PRE_KERNEL phase), ahead of PRE_KERNEL device init.
+ */
+#define K_KERNEL_INIT_PRE(_fn)                                                 \
+	static const STRUCT_SECTION_ITERABLE(k_kernel_init_pre_entry,          \
+					     _kernel_init_pre_##_fn) = {       \
+		.init_fn = (_fn),                                              \
+	}
+
+/* Register a kernel init function to run after the kernel is up (the
+ * POST_KERNEL phase), before POST_KERNEL device init.
+ */
+#define K_KERNEL_INIT_POST(_fn)                                                \
+	static const STRUCT_SECTION_ITERABLE(k_kernel_init_post_entry,         \
+					     _kernel_init_post_##_fn) = {      \
+		.init_fn = (_fn),                                              \
+	}
 
 extern FUNC_NORETURN void z_thread_entry(k_thread_entry_t entry,
 			  void *p1, void *p2, void *p3);
@@ -105,10 +110,7 @@ void *z_thread_aligned_alloc(size_t align, size_t size);
  * @return A pointer to the allocated memory, or NULL if there is insufficient
  * RAM in the pool or there is no pool to draw memory from
  */
-static inline void *z_thread_malloc(size_t size)
-{
-	return z_thread_aligned_alloc(0, size);
-}
+void *z_thread_malloc(size_t size);
 
 
 #ifdef CONFIG_USE_SWITCH
@@ -144,14 +146,14 @@ extern void z_early_rand_get(uint8_t *buf, size_t length);
 extern int z_stack_adjust_initialized;
 #endif /* CONFIG_STACK_POINTER_RANDOM */
 
-extern struct k_thread z_main_thread;
-
-
 #ifdef CONFIG_MULTITHREADING
-extern struct k_thread z_idle_threads[CONFIG_MP_MAX_NUM_CPUS];
+extern struct k_thread z_main_thread;
 #endif /* CONFIG_MULTITHREADING */
-K_KERNEL_PINNED_STACK_ARRAY_DECLARE(z_interrupt_stacks, CONFIG_MP_MAX_NUM_CPUS,
+
+
+K_KERNEL_STACK_ARRAY_DECLARE(z_interrupt_stacks, CONFIG_MP_MAX_NUM_CPUS,
 				    CONFIG_ISR_STACK_SIZE);
+K_THREAD_STACK_DECLARE(z_main_stack, CONFIG_MAIN_STACK_SIZE);
 
 #ifdef CONFIG_GEN_PRIV_STACKS
 extern uint8_t *z_priv_stack_find(k_thread_stack_t *stack);
@@ -220,7 +222,7 @@ void z_mem_manage_init(void);
 void z_mem_manage_boot_finish(void);
 
 
-void z_handle_obj_poll_events(sys_dlist_t *events, uint32_t state);
+bool z_handle_obj_poll_events(sys_dlist_t *events, uint32_t state);
 
 #ifdef CONFIG_PM
 
@@ -236,8 +238,11 @@ void z_handle_obj_poll_events(sys_dlist_t *events, uint32_t state);
  * This function assumes that a wake up event has already been set up by the
  * application.
  *
- * This function is entered with interrupts disabled. It should re-enable
- * interrupts if it had entered a power state.
+ * This function is entered with the idle thread's interrupt lock held. If it
+ * enters a power state, it returns before the idle thread restores the saved
+ * interrupt key. SoC PM code may use architecture helpers around the
+ * low-power instruction, but normal IRQ dispatch must remain blocked until
+ * that final idle-thread restore.
  *
  * @return True if the system suspended, otherwise return false
  */

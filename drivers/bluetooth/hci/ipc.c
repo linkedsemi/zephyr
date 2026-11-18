@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2019 Nordic Semiconductor ASA
+ * Copyright 2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +10,7 @@
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/drivers/bluetooth.h>
 
 #include <zephyr/device.h>
@@ -18,16 +20,52 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_hci_driver);
 
+#include "util_hci_evt.h"
+
+BUILD_ASSERT(!IS_ENABLED(CONFIG_BT_CONN) || IS_ENABLED(CONFIG_BT_HCI_ACL_FLOW_CONTROL),
+	     "HCI IPC driver can drop ACL data without Controller-to-Host ACL flow control");
+
 #define DT_DRV_COMPAT zephyr_bt_hci_ipc
 
-#define IPC_BOUND_TIMEOUT_IN_MS K_MSEC(1000)
+#define IPC_BOUND_TIMEOUT_IN_MS K_MSEC(CONFIG_BT_HCI_IPC_ENDPOINT_BOUND_TIMEOUT_MS)
+
+/* The icbmsg backend invokes the endpoint receive callback from the IPC interrupt handler. */
+#define IS_IPC_RECV_IN_IRQ_CONTEXT(inst) \
+	DT_NODE_HAS_COMPAT(DT_INST_PARENT(inst), zephyr_ipc_icbmsg)
+
+#define IS_IPC_RECV_IN_IRQ_CONTEXT_PLUS(inst) IS_IPC_RECV_IN_IRQ_CONTEXT(inst) +
+
+#if (DT_INST_FOREACH_STATUS_OKAY(IS_IPC_RECV_IN_IRQ_CONTEXT_PLUS) 0) > 0
+/* Support for deferring to thread is needed. */
+#define ANY_INST_RECV_IN_IRQ_CONTEXT 1
+#endif
+
+struct ipc_block_item {
+	const void *ptr;
+	size_t len;
+};
+
+/* The retry of ipc_service_send function requires a small (tens of us) delay.
+ * In order to ensure proper delay k_usleep is used when the system clock is
+ * precise enough and available (CONFIG_SYS_CLOCK_TICKS_PER_SEC different than 0).
+ */
+#define USE_SLEEP_BETWEEN_IPC_RETRIES COND_CODE_0(CONFIG_SYS_CLOCK_TICKS_PER_SEC, \
+	(false), \
+	((USEC_PER_SEC / CONFIG_SYS_CLOCK_TICKS_PER_SEC) > CONFIG_BT_HCI_IPC_SEND_RETRY_DELAY_US))
 
 struct ipc_data {
-	bt_hci_recv_t recv;
+	/* bt_hci_driver_data must be first */
+	struct bt_hci_driver_data common;
 	struct ipc_ept hci_ept;
 	struct ipc_ept_cfg hci_ept_cfg;
 	struct k_sem bound_sem;
 	const struct device *ipc;
+#if defined(CONFIG_BT_EXT_ADV)
+	struct hci_ext_adv_discard_ctx ext_adv_discard;
+#endif
+#ifdef ANY_INST_RECV_IN_IRQ_CONTEXT
+	struct k_msgq *rx_msgq;
+#endif
 };
 
 static bool is_hci_event_discardable(const uint8_t *evt_data)
@@ -51,10 +89,10 @@ static bool is_hci_event_discardable(const uint8_t *evt_data)
 		{
 			const struct bt_hci_evt_le_ext_advertising_report *ext_adv =
 				(void *)&evt_data[3];
+			uint16_t adv_evt_type = sys_le16_to_cpu(ext_adv->adv_info[0].evt_type);
 
 			return (ext_adv->num_reports == 1) &&
-				   ((ext_adv->adv_info[0].evt_type &
-					 BT_HCI_LE_ADV_EVT_TYPE_LEGACY) != 0);
+			       ((adv_evt_type & BT_HCI_LE_ADV_EVT_TYPE_LEGACY) != 0);
 		}
 #endif
 		default:
@@ -74,7 +112,7 @@ static struct net_buf *bt_ipc_evt_recv(const uint8_t *data, size_t remaining)
 	size_t buf_tailroom;
 
 	if (remaining < sizeof(hdr)) {
-		LOG_ERR("Not enough data for event header");
+		LOG_ERR("Not enough data (%u) for event header (%zu)", remaining, sizeof(hdr));
 		return NULL;
 	}
 
@@ -85,7 +123,7 @@ static struct net_buf *bt_ipc_evt_recv(const uint8_t *data, size_t remaining)
 	remaining -= sizeof(hdr);
 
 	if (remaining != hdr.len) {
-		LOG_ERR("Event payload length is not correct");
+		LOG_ERR("Event payload length is not correct (%u != %u)", remaining, hdr.len);
 		return NULL;
 	}
 	LOG_DBG("len %u", hdr.len);
@@ -122,7 +160,7 @@ static struct net_buf *bt_ipc_acl_recv(const uint8_t *data, size_t remaining)
 	size_t buf_tailroom;
 
 	if (remaining < sizeof(hdr)) {
-		LOG_ERR("Not enough data for ACL header");
+		LOG_ERR("Not enough data (%u) for ACL header (%zu)", remaining, sizeof(hdr));
 		return NULL;
 	}
 
@@ -139,7 +177,8 @@ static struct net_buf *bt_ipc_acl_recv(const uint8_t *data, size_t remaining)
 	}
 
 	if (remaining != sys_le16_to_cpu(hdr.len)) {
-		LOG_ERR("ACL payload length is not correct");
+		LOG_ERR("ACL payload length is not correct (%u != %u)", remaining,
+			sys_le16_to_cpu(hdr.len));
 		net_buf_unref(buf);
 		return NULL;
 	}
@@ -165,7 +204,7 @@ static struct net_buf *bt_ipc_iso_recv(const uint8_t *data, size_t remaining)
 	size_t buf_tailroom;
 
 	if (remaining < sizeof(hdr)) {
-		LOG_ERR("Not enough data for ISO header");
+		LOG_ERR("Not enough data (%u) for ISO header (%zu)", remaining, sizeof(hdr));
 		return NULL;
 	}
 
@@ -189,7 +228,8 @@ static struct net_buf *bt_ipc_iso_recv(const uint8_t *data, size_t remaining)
 	}
 
 	if (remaining != bt_iso_hdr_len(sys_le16_to_cpu(hdr.len))) {
-		LOG_ERR("ISO payload length is not correct");
+		LOG_ERR("ISO payload length is not correct (%u != %lu)", remaining,
+			bt_iso_hdr_len(sys_le16_to_cpu(hdr.len)));
 		net_buf_unref(buf);
 		return NULL;
 	}
@@ -209,7 +249,6 @@ static struct net_buf *bt_ipc_iso_recv(const uint8_t *data, size_t remaining)
 
 static void bt_ipc_rx(const struct device *dev, const uint8_t *data, size_t len)
 {
-	struct ipc_data *ipc = dev->data;
 	uint8_t pkt_indicator;
 	struct net_buf *buf = NULL;
 	size_t remaining = len;
@@ -220,9 +259,17 @@ static void bt_ipc_rx(const struct device *dev, const uint8_t *data, size_t len)
 	remaining -= sizeof(pkt_indicator);
 
 	switch (pkt_indicator) {
-	case BT_HCI_H4_EVT:
+	case BT_HCI_H4_EVT: {
+#if defined(CONFIG_BT_EXT_ADV)
+		struct ipc_data *ipc = dev->data;
+
+		if (hci_ext_adv_report_process(&ipc->ext_adv_discard, data, remaining, &buf)) {
+			break;
+		}
+#endif /* CONFIG_BT_EXT_ADV */
 		buf = bt_ipc_evt_recv(data, remaining);
 		break;
+	}
 
 	case BT_HCI_H4_ACL:
 		buf = bt_ipc_acl_recv(data, remaining);
@@ -238,10 +285,10 @@ static void bt_ipc_rx(const struct device *dev, const uint8_t *data, size_t len)
 	}
 
 	if (buf) {
-		LOG_DBG("Calling bt_recv(%p)", buf);
-		ipc->recv(dev, buf);
-
 		LOG_HEXDUMP_DBG(buf->data, buf->len, "RX buf payload:");
+		LOG_DBG("Calling bt_hci_recv(%p)", buf);
+		bt_hci_recv(dev, buf);
+
 	}
 }
 
@@ -249,34 +296,29 @@ static int bt_ipc_send(const struct device *dev, struct net_buf *buf)
 {
 	struct ipc_data *data = dev->data;
 	int err;
-	uint8_t pkt_indicator;
 
-	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
+	LOG_DBG("buf %p type %u len %u", buf, buf->data[0], buf->len);
 
-	switch (bt_buf_get_type(buf)) {
-	case BT_BUF_ACL_OUT:
-		pkt_indicator = BT_HCI_H4_ACL;
-		break;
-	case BT_BUF_CMD:
-		pkt_indicator = BT_HCI_H4_CMD;
-		break;
-	case BT_BUF_ISO_OUT:
-		pkt_indicator = BT_HCI_H4_ISO;
-		break;
-	default:
-		LOG_ERR("Unknown type %u", bt_buf_get_type(buf));
-		goto done;
+	for (int retries = 0; retries < CONFIG_BT_HCI_IPC_SEND_RETRY_COUNT + 1; retries++) {
+		err = ipc_service_send(&data->hci_ept, buf->data, buf->len);
+		if ((err >= 0) || (err != -ENOMEM)) {
+			break;
+		}
+
+		if (USE_SLEEP_BETWEEN_IPC_RETRIES) {
+			k_usleep(CONFIG_BT_HCI_IPC_SEND_RETRY_DELAY_US);
+		} else {
+			k_busy_wait(CONFIG_BT_HCI_IPC_SEND_RETRY_DELAY_US);
+		}
 	}
-	net_buf_push_u8(buf, pkt_indicator);
 
-	LOG_HEXDUMP_DBG(buf->data, buf->len, "Final HCI buffer:");
-	err = ipc_service_send(&data->hci_ept, buf->data, buf->len);
 	if (err < 0) {
 		LOG_ERR("Failed to send (err %d)", err);
+		return err;
 	}
 
-done:
 	net_buf_unref(buf);
+
 	return 0;
 }
 
@@ -288,10 +330,69 @@ static void hci_ept_bound(void *priv)
 	k_sem_give(&ipc->bound_sem);
 }
 
+#ifdef ANY_INST_RECV_IN_IRQ_CONTEXT
+/* Function defers processing of the received data to a thread.
+ * It utilizes RX buffer holding feature of the IPC service API.
+ */
+static void recv_defer_to_thread(const void *data, size_t len, const struct device *dev)
+{
+	struct ipc_data *ipc = dev->data;
+	struct ipc_block_item block;
+	int err;
+
+	block.ptr = data;
+	block.len = len;
+
+	err = ipc_service_hold_rx_buffer(&ipc->hci_ept, (void *)data);
+	if (err < 0) {
+		LOG_ERR("Failed to hold rx buffer: %d.", err);
+		return;
+	}
+
+	err = k_msgq_put(ipc->rx_msgq, &block, K_NO_WAIT);
+	if (err < 0) {
+		LOG_ERR("Failed to put data into msgq: %d.", err);
+		err = ipc_service_release_rx_buffer(&ipc->hci_ept, (void *)block.ptr);
+		__ASSERT(err == 0, "Failed to release rx buffer: %d.", err);
+	}
+}
+
+static void recv_thread(void *arg0, void *arg1, void *arg2)
+{
+	struct ipc_block_item block;
+	const struct device *dev = arg0;
+	struct ipc_data *ipc = dev->data;
+	int err;
+
+	while (1) {
+		err = k_msgq_get(ipc->rx_msgq, &block, K_FOREVER);
+		if (err < 0) {
+			LOG_ERR("Failed to get data from msgq: %d.", err);
+			continue;
+		}
+
+		bt_ipc_rx(dev, block.ptr, block.len);
+
+		err = ipc_service_release_rx_buffer(&ipc->hci_ept, (void *)block.ptr);
+		if (err < 0) {
+			LOG_ERR("Failed to release rx buffer: %d.", err);
+		}
+	}
+}
+#endif
+
 static void hci_ept_recv(const void *data, size_t len, void *priv)
 {
 	const struct device *dev = priv;
 
+#ifdef ANY_INST_RECV_IN_IRQ_CONTEXT
+	struct ipc_data *ipc = dev->data;
+
+	if (ipc->rx_msgq != NULL) {
+		recv_defer_to_thread(data, len, dev);
+		return;
+	}
+#endif
 	bt_ipc_rx(dev, data, len);
 }
 
@@ -307,7 +408,7 @@ int __weak bt_hci_transport_teardown(const struct device *dev)
 	return 0;
 }
 
-static int bt_ipc_open(const struct device *dev, bt_hci_recv_t recv)
+static int bt_ipc_open(const struct device *dev)
 {
 	struct ipc_data *ipc = dev->data;
 	int err;
@@ -338,8 +439,6 @@ static int bt_ipc_open(const struct device *dev, bt_hci_recv_t recv)
 		return err;
 	}
 
-	ipc->recv = recv;
-
 	return 0;
 }
 
@@ -347,14 +446,6 @@ static int bt_ipc_close(const struct device *dev)
 {
 	struct ipc_data *ipc = dev->data;
 	int err;
-
-	if (IS_ENABLED(CONFIG_BT_HCI_HOST)) {
-		err = bt_hci_cmd_send_sync(BT_HCI_OP_RESET, NULL, NULL);
-		if (err) {
-			LOG_ERR("Sending reset command failed with: %d", err);
-			return err;
-		}
-	}
 
 	err = ipc_service_deregister_endpoint(&ipc->hci_ept);
 	if (err) {
@@ -374,18 +465,29 @@ static int bt_ipc_close(const struct device *dev)
 		return err;
 	}
 
-	ipc->recv = NULL;
-
 	return 0;
 }
 
-static const struct bt_hci_driver_api drv = {
+static DEVICE_API(bt_hci, drv) = {
 	.open		= bt_ipc_open,
 	.close		= bt_ipc_close,
 	.send		= bt_ipc_send,
 };
 
+/* Define the maximum number of IPC blocks for the instance. */
+#define MAX_IPC_BLOCKS(inst) \
+	COND_CODE_1(DT_NODE_HAS_COMPAT(DT_INST_PARENT(inst), zephyr_ipc_icbmsg), \
+		(DT_PROP(DT_INST_PARENT(inst), rx_blocks)), \
+		(16))
+
 #define IPC_DEVICE_INIT(inst) \
+	IF_ENABLED(IS_IPC_RECV_IN_IRQ_CONTEXT(inst), ( \
+		K_MSGQ_DEFINE(ipc_msg_queue_##inst, sizeof(struct ipc_block_item), \
+				MAX_IPC_BLOCKS(inst), sizeof(void *)); \
+		K_THREAD_DEFINE(rx_thread_id_##inst, CONFIG_BT_DRV_RX_STACK_SIZE, recv_thread, \
+			DEVICE_DT_INST_GET(inst), NULL, NULL, \
+			K_PRIO_COOP(CONFIG_BT_RX_PRIO), 0, 0); \
+	)) \
 	static struct ipc_data ipc_data_##inst = { \
 		.bound_sem = Z_SEM_INITIALIZER(ipc_data_##inst.bound_sem, 0, 1), \
 		.hci_ept_cfg = { \
@@ -397,8 +499,11 @@ static const struct bt_hci_driver_api drv = {
 			.priv = (void *)DEVICE_DT_INST_GET(inst), \
 		}, \
 		.ipc = DEVICE_DT_GET(DT_INST_PARENT(inst)), \
+		IF_ENABLED(IS_IPC_RECV_IN_IRQ_CONTEXT(inst), (.rx_msgq = &ipc_msg_queue_##inst,)) \
 	}; \
-	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &ipc_data_##inst, NULL, \
+	static const struct bt_hci_driver_config ipc_config_##inst = \
+		BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst); \
+	DEVICE_DT_INST_DEFINE(inst, NULL, NULL, &ipc_data_##inst, &ipc_config_##inst, \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &drv)
 
 DT_INST_FOREACH_STATUS_OKAY(IPC_DEVICE_INIT)

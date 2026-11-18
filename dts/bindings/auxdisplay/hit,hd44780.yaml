@@ -41,13 +41,14 @@ properties:
       contain 8 entries ascending from DB0 to DB7, for 4-bit interface
       displays, the first 4 must be set as `<0>`
 
-  brightness-gpios:
-    type: phandle-array
-    description: Optional GPIO used for controlling the brightness (contrast)
-
   backlight-gpios:
     type: phandle-array
     description: Optional GPIO used for enabling the backlight
+
+  brightness-dac:
+    type: phandle-array
+    specifier-space: io-channel
+    description: Optional DAC channel for controlling the brightness (contrast)
 
   line-addresses:
     type: uint8-array
@@ -56,19 +57,26 @@ properties:
       Array of addresses for each row, will use defaults if not provided.
       Default is as per Hitachi HD44780 specification.
 
-  enable-line-rise-delay-us:
+  enable-line-rise-delay-ns:
     type: int
-    default: 800
+    default: 450
     description: |
-      Delay time (in us) to wait after enable line rises before setting low.
+      Delay time (in ns) to wait after enable line rises before setting low.
       Default is as per Hitachi HD44780 specification.
 
-  enable-line-fall-delay-us:
+  enable-line-fall-delay-ns:
     type: int
-    default: 100
+    default: 550
     description: |
-      Delay time (in us) to wait after enable line falls before sending
+      Delay time (in ns) to wait after enable line falls before sending
       another command. Default is as per Hitachi HD44780 specification.
+
+  rs-line-delay-ns:
+    type: int
+    default: 60
+    description: |
+      Delay time (in ns) to wait after rs/rw line state has been set up before
+      sending another command. Default is as per Hitachi HD44780 specification.
 
   clear-command-delay-us:
     type: int

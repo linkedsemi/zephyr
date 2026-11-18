@@ -18,6 +18,8 @@
  * @brief CAN ISO-TP Protocol
  * @defgroup can_isotp CAN ISO-TP Protocol
  * @ingroup connectivity
+ * @since 2.2
+ * @version 1.0.0
  * @{
  */
 
@@ -275,7 +277,7 @@ void isotp_unbind(struct isotp_recv_ctx *rctx);
  * @param len     Size of the buffer.
  * @param timeout Timeout for incoming data.
  *
- * @retval Number of bytes copied on success
+ * @return Number of bytes copied on success
  * @retval ISOTP_RECV_TIMEOUT when "timeout" timed out
  * @retval ISOTP_N_* on error
  */
@@ -295,7 +297,7 @@ int isotp_recv(struct isotp_recv_ctx *rctx, uint8_t *data, size_t len, k_timeout
  * @param buffer  Pointer where the net_buf pointer is written to.
  * @param timeout Timeout for incoming data.
  *
- * @retval Remaining data length for this transfer if BS > 0, 0 for BS = 0
+ * @return Remaining data length for this transfer if BS > 0, 0 for BS = 0
  * @retval ISOTP_RECV_TIMEOUT when "timeout" timed out
  * @retval ISOTP_N_* on error
  */

@@ -10,36 +10,7 @@
 
 / {
 	cpus {
-		cpu@0 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@1 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@2 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@3 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@4 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@5 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@6 {
-			riscv,isa = "rv32gc";
-		};
-
-		cpu@7 {
-			riscv,isa = "rv32gc";
-		};
+		riscv,isa-base = "rv32i";
+		riscv,isa-extensions = "i", "m", "a", "f", "d", "c", "zicsr", "zifencei", "zkr";
 	};
 };

@@ -22,6 +22,7 @@ GEN_OFFSET_SYM(_xtensa_irq_bsa_t, a2);
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, a3);
 
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, exccause);
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, excvaddr);
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, pc);
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, ps);
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, sar);
@@ -34,6 +35,10 @@ GEN_OFFSET_SYM(_xtensa_irq_bsa_t, lend);
 
 #if XCHAL_HAVE_S32C1I
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, scompare1);
+#endif
+
+#if XCHAL_HAVE_BOOLEANS
+GEN_OFFSET_SYM(_xtensa_irq_bsa_t, br);
 #endif
 
 #if XCHAL_HAVE_THREADPTR
@@ -61,14 +66,29 @@ GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu14);
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, fpu15);
 #endif
 
-#if defined(CONFIG_XTENSA_HIFI_SHARING)
+#if defined(CONFIG_XTENSA_EAGER_HIFI_SHARING)
 GEN_OFFSET_SYM(_xtensa_irq_bsa_t, hifi);
 #endif
 
 #ifdef CONFIG_USERSPACE
 GEN_OFFSET_SYM(_thread_arch_t, psp);
+GEN_OFFSET_SYM(_thread_arch_t, return_ps);
+GEN_OFFSET_SYM(_thread_t, switch_handle);
+
+GEN_OFFSET_SYM(_thread_t, mem_domain_info);
+GEN_OFFSET_SYM(_mem_domain_info_t, mem_domain);
+GEN_OFFSET_SYM(k_mem_domain_t, arch);
+
 #ifdef CONFIG_XTENSA_MMU
 GEN_OFFSET_SYM(_thread_arch_t, ptables);
+
+GEN_OFFSET_SYM(arch_mem_domain_t, reg_asid);
+GEN_OFFSET_SYM(arch_mem_domain_t, reg_ptevaddr);
+GEN_OFFSET_SYM(arch_mem_domain_t, reg_ptepin_as);
+GEN_OFFSET_SYM(arch_mem_domain_t, reg_ptepin_at);
+GEN_OFFSET_SYM(arch_mem_domain_t, reg_vecpin_as);
+GEN_OFFSET_SYM(arch_mem_domain_t, reg_vecpin_at);
+
 #endif
 #ifdef CONFIG_XTENSA_MPU
 GEN_OFFSET_SYM(_thread_arch_t, mpu_map);

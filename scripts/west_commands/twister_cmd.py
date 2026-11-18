@@ -6,8 +6,7 @@ import argparse
 import os
 import sys
 
-from west import log
-from west.commands import WestCommand
+from west.commands import Verbosity, WestCommand
 
 from zephyr_ext_common import ZEPHYR_SCRIPTS
 
@@ -19,7 +18,7 @@ sys.path.insert(0, str(twister_path))
 sys.path.insert(0, str(twister_path / "pylib" / "twister"))
 
 from twisterlib.environment import add_parse_arguments, parse_arguments, python_version_guard
-from twisterlib.twister_main import main
+from twisterlib.twister_main import Twister as TwisterMain
 
 TWISTER_DESCRIPTION = """\
 Convenience wrapper for twister. The below options are shared with the twister
@@ -32,9 +31,8 @@ class Twister(WestCommand):
     def __init__(self):
         super(Twister, self).__init__(
             "twister",
-            # Keep this in sync with the string in west-commands.yml.
-            "west twister wrapper",
-            TWISTER_DESCRIPTION,
+            "",
+            description=TWISTER_DESCRIPTION,
             accepts_unknown_args=True,
         )
         python_version_guard()
@@ -42,7 +40,6 @@ class Twister(WestCommand):
     def do_add_parser(self, parser_adder):
         parser = parser_adder.add_parser(
             self.name,
-            help=self.help,
             formatter_class=argparse.RawDescriptionHelpFormatter,
             description=self.description,
             allow_abbrev=False
@@ -53,13 +50,13 @@ class Twister(WestCommand):
         return parser
 
     def do_run(self, args, remainder):
-        log.dbg(
-            "args: {} remainder: {}".format(args, remainder), level=log.VERBOSE_EXTREME
+        self.dbg(
+            "args: {} remainder: {}".format(args, remainder), level=Verbosity.DBG_EXTREME
         )
 
         options = parse_arguments(self.parser, args=remainder, options=args)
         default_options = parse_arguments(self.parser, args=[], on_init=False)
-        ret = main(options, default_options)
+        ret = TwisterMain(options, default_options).run()
         sys.exit(ret)
 
     def _parse_arguments(self, args, options):

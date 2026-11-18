@@ -45,7 +45,7 @@ struct settings_line_dup_check_arg {
 };
 
 #ifdef CONFIG_SETTINGS_ENCODE_LEN
-/* in storage line contex */
+/* in storage line context */
 struct line_entry_ctx {
 	void *stor_ctx;
 	off_t seek; /* offset of id-value pair within the file */
@@ -110,6 +110,12 @@ void settings_line_io_init(int (*read_cb)(void *ctx, off_t off, char *buf,
 extern sys_slist_t settings_load_srcs;
 extern sys_slist_t settings_handlers;
 extern struct settings_store *settings_save_dst;
+
+/** Takes the settings mutex lock (if multithreading is enabled) */
+void settings_lock_take(void);
+
+/** Releases the settings mutex lock (if multithreading is enabled) */
+void settings_lock_release(void);
 
 #ifdef __cplusplus
 }

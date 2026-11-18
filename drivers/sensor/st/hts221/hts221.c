@@ -72,7 +72,8 @@ static int hts221_sample_fetch(const struct device *dev,
 	uint8_t buf[4];
 	int status;
 
-	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
+	__ASSERT_NO_MSG(chan == SENSOR_CHAN_HUMIDITY || chan == SENSOR_CHAN_AMBIENT_TEMP ||
+			chan == SENSOR_CHAN_ALL);
 
 	status = hts221_read_reg(ctx, HTS221_HUMIDITY_OUT_L |
 				 HTS221_AUTOINCREMENT_ADDR, buf, 4);
@@ -114,7 +115,7 @@ static int hts221_read_conversion_data(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api hts221_driver_api = {
+static DEVICE_API(sensor, hts221_driver_api) = {
 #ifdef CONFIG_HTS221_TRIGGER
 	.trigger_set = hts221_trigger_set,
 #endif
@@ -229,7 +230,7 @@ int hts221_init(const struct device *dev)
 		(HTS221_CFG_IRQ(inst)), ())
 
 #define HTS221_SPI_OPERATION (SPI_WORD_SET(8) |				\
-			      SPI_OP_MODE_MASTER |			\
+			      SPI_OP_MODE_CONTROLLER |			\
 			      SPI_MODE_CPOL |				\
 			      SPI_MODE_CPHA |				\
 			      SPI_HALF_DUPLEX)				\
@@ -239,8 +240,7 @@ int hts221_init(const struct device *dev)
 		STMEMSC_CTX_SPI(&hts221_config_##inst.stmemsc_cfg),		\
 		.stmemsc_cfg = {						\
 			.spi = SPI_DT_SPEC_INST_GET(inst,			\
-						    HTS221_SPI_OPERATION,	\
-						    0),				\
+						    HTS221_SPI_OPERATION)	\
 		},								\
 		HTS221_CONFIG_COMMON(inst)					\
 	}

@@ -148,7 +148,7 @@ static int pin_config(const struct device *dev,
 	return -ENOTSUP;
 }
 
-static const struct gpio_driver_api api_table = {
+static DEVICE_API(gpio, api_table) = {
 	.pin_configure = pin_config,
 	.port_get_raw = port_get,
 	.port_set_masked_raw = port_set_masked,
@@ -158,9 +158,7 @@ static const struct gpio_driver_api api_table = {
 };
 
 static const struct creg_gpio_config creg_gpio_cfg = {
-	.common = {
-		.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_INST(0),
-	},
+	.common = GPIO_COMMON_CONFIG_FROM_DT_INST(0),
 	.ngpios = DT_INST_PROP(0, ngpios),
 	.bit_per_gpio = DT_INST_PROP(0, bit_per_gpio),
 	.off_val = DT_INST_PROP(0, off_val),

@@ -158,7 +158,7 @@ static int i2c_sc18im_transfer_msg(const struct device *dev,
 		return -EINVAL;
 	}
 
-	start[1] = addr | (msg->flags & I2C_MSG_RW_MASK);
+	start[1] = (addr << 1) | (msg->flags & I2C_MSG_RW_MASK);
 	start[2] = msg->len;
 
 	ret = sc18im704_transfer(dev, start, sizeof(start), NULL, 0);
@@ -195,10 +195,6 @@ static int i2c_sc18im_transfer(const struct device *dev,
 			       uint8_t num_msgs, uint16_t addr)
 {
 	int ret;
-
-	if (num_msgs == 0) {
-		return 0;
-	}
 
 	ret = sc18im704_claim(dev);
 	if (ret < 0) {
@@ -306,7 +302,7 @@ static int i2c_sc18im_init(const struct device *dev)
 		}
 
 		/* Make sure UART buffer is sent */
-		k_msleep(1);
+		k_msleep(2);
 
 		/* Re-configure the UART controller with the new baudrate */
 		uart_cfg.baudrate = cfg->bus_speed;
@@ -320,7 +316,7 @@ static int i2c_sc18im_init(const struct device *dev)
 	return 0;
 }
 
-static const struct i2c_driver_api i2c_sc18im_driver_api = {
+static DEVICE_API(i2c, i2c_sc18im_driver_api) = {
 	.configure = i2c_sc18im_configure,
 	.get_config = i2c_sc18im_get_config,
 	.transfer = i2c_sc18im_transfer,
@@ -340,7 +336,7 @@ static const struct i2c_driver_api i2c_sc18im_driver_api = {
 		.i2c_config = I2C_MODE_CONTROLLER | (I2C_SPEED_STANDARD << I2C_SPEED_SHIFT),	\
 	};											\
 												\
-	DEVICE_DT_INST_DEFINE(n, i2c_sc18im_init, NULL,						\
+	I2C_DEVICE_DT_INST_DEFINE(n, i2c_sc18im_init, NULL,					\
 			      &i2c_sc18im_data_##n, &i2c_sc18im_config_##n,			\
 			      POST_KERNEL, CONFIG_I2C_SC18IM704_INIT_PRIORITY,			\
 			      &i2c_sc18im_driver_api);

@@ -1,21 +1,24 @@
-/**
- * @file
- *
- * @brief Public APIs for MDIO drivers.
- */
-
 /*
  * Copyright (c) 2021 IP-Logix Inc.
  * Copyright 2023 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @ingroup mdio_interface
+ * @brief Main header file for MDIO (Management Data Input/Output) driver API.
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_MDIO_H_
 #define ZEPHYR_INCLUDE_DRIVERS_MDIO_H_
 
 /**
- * @brief MDIO Interface
- * @defgroup mdio_interface MDIO Interface
+ * @brief Interfaces for Management Data Input/Output (MDIO) controllers.
+ * @defgroup mdio_interface MDIO
+ * @since 2.7
+ * @version 0.8.0
  * @ingroup io_interfaces
  * @{
  */
@@ -28,73 +31,58 @@ extern "C" {
 #endif
 
 /**
- * @cond INTERNAL_HIDDEN
- *
- * These are for internal use only, so skip these in
- * public documentation.
+ * @def_driverbackendgroup{MDIO,mdio_interface}
+ * @{
+ */
+
+/**
+ * @brief Read data from MDIO bus.
+ * See mdio_read() for argument description.
+ */
+typedef int (*mdio_api_read_t)(const struct device *dev, uint8_t prtad, uint8_t regad,
+			       uint16_t *data);
+
+/**
+ * @brief Write data to MDIO bus.
+ * See mdio_write() for argument description.
+ */
+typedef int (*mdio_api_write_t)(const struct device *dev, uint8_t prtad, uint8_t regad,
+				uint16_t data);
+
+/**
+ * @brief Read data from MDIO bus using Clause 45 access.
+ * See mdio_read_c45() for argument description.
+ */
+typedef int (*mdio_api_read_c45_t)(const struct device *dev, uint8_t prtad, uint8_t devad,
+				   uint16_t regad, uint16_t *data);
+
+/**
+ * @brief Write data to MDIO bus using Clause 45 access.
+ * See mdio_write_c45() for argument description.
+ */
+typedef int (*mdio_api_write_c45_t)(const struct device *dev, uint8_t prtad, uint8_t devad,
+				    uint16_t regad, uint16_t data);
+
+/**
+ * @driver_ops{MDIO}
  */
 __subsystem struct mdio_driver_api {
-	/** Enable the MDIO bus device */
-	void (*bus_enable)(const struct device *dev);
+	/** @driver_ops_optional @copybrief mdio_read */
+	mdio_api_read_t read;
 
-	/** Disable the MDIO bus device */
-	void (*bus_disable)(const struct device *dev);
+	/** @driver_ops_optional @copybrief mdio_write */
+	mdio_api_write_t write;
 
-	/** Read data from MDIO bus */
-	int (*read)(const struct device *dev, uint8_t prtad, uint8_t regad,
-		    uint16_t *data);
+	/** @driver_ops_optional @copybrief mdio_read_c45 */
+	mdio_api_read_c45_t read_c45;
 
-	/** Write data to MDIO bus */
-	int (*write)(const struct device *dev, uint8_t prtad, uint8_t regad,
-		     uint16_t data);
-
-	/** Read data from MDIO bus using Clause 45 access */
-	int (*read_c45)(const struct device *dev, uint8_t prtad, uint8_t devad,
-			uint16_t regad, uint16_t *data);
-
-	/** Write data to MDIO bus using Clause 45 access */
-	int (*write_c45)(const struct device *dev, uint8_t prtad, uint8_t devad,
-			 uint16_t regad, uint16_t data);
+	/** @driver_ops_optional @copybrief mdio_write_c45 */
+	mdio_api_write_c45_t write_c45;
 };
-/**
- * @endcond
- */
 
 /**
- * @brief      Enable MDIO bus
- *
- * @param[in]  dev   Pointer to the device structure for the controller
- *
+ * @}
  */
-__syscall void mdio_bus_enable(const struct device *dev);
-
-static inline void z_impl_mdio_bus_enable(const struct device *dev)
-{
-	const struct mdio_driver_api *api =
-		(const struct mdio_driver_api *)dev->api;
-
-	if (api->bus_enable != NULL) {
-		api->bus_enable(dev);
-	}
-}
-
-/**
- * @brief      Disable MDIO bus and tri-state drivers
- *
- * @param[in]  dev   Pointer to the device structure for the controller
- *
- */
-__syscall void mdio_bus_disable(const struct device *dev);
-
-static inline void z_impl_mdio_bus_disable(const struct device *dev)
-{
-	const struct mdio_driver_api *api =
-		(const struct mdio_driver_api *)dev->api;
-
-	if (api->bus_disable != NULL) {
-		api->bus_disable(dev);
-	}
-}
 
 /**
  * @brief      Read from MDIO Bus
@@ -118,14 +106,11 @@ __syscall int mdio_read(const struct device *dev, uint8_t prtad, uint8_t regad,
 static inline int z_impl_mdio_read(const struct device *dev, uint8_t prtad,
 				   uint8_t regad, uint16_t *data)
 {
-	const struct mdio_driver_api *api =
-		(const struct mdio_driver_api *)dev->api;
-
-	if (api->read == NULL) {
+	if (DEVICE_API_GET(mdio, dev)->read == NULL) {
 		return -ENOSYS;
 	}
 
-	return api->read(dev, prtad, regad, data);
+	return DEVICE_API_GET(mdio, dev)->read(dev, prtad, regad, data);
 }
 
 
@@ -151,14 +136,11 @@ __syscall int mdio_write(const struct device *dev, uint8_t prtad, uint8_t regad,
 static inline int z_impl_mdio_write(const struct device *dev, uint8_t prtad,
 				    uint8_t regad, uint16_t data)
 {
-	const struct mdio_driver_api *api =
-		(const struct mdio_driver_api *)dev->api;
-
-	if (api->write == NULL) {
+	if (DEVICE_API_GET(mdio, dev)->write == NULL) {
 		return -ENOSYS;
 	}
 
-	return api->write(dev, prtad, regad, data);
+	return DEVICE_API_GET(mdio, dev)->write(dev, prtad, regad, data);
 }
 
 /**
@@ -176,7 +158,7 @@ static inline int z_impl_mdio_write(const struct device *dev, uint8_t prtad,
  * @retval 0 If successful.
  * @retval -EIO General input / output error.
  * @retval -ETIMEDOUT If transaction timedout on the bus
- * @retval -ENOSYS if write using Clause 45 access is not supported
+ * @retval -ENOSYS if read using Clause 45 access is not supported
  */
 __syscall int mdio_read_c45(const struct device *dev, uint8_t prtad,
 			    uint8_t devad, uint16_t regad, uint16_t *data);
@@ -185,14 +167,11 @@ static inline int z_impl_mdio_read_c45(const struct device *dev, uint8_t prtad,
 				       uint8_t devad, uint16_t regad,
 				       uint16_t *data)
 {
-	const struct mdio_driver_api *api =
-		(const struct mdio_driver_api *)dev->api;
-
-	if (api->read_c45 == NULL) {
+	if (DEVICE_API_GET(mdio, dev)->read_c45 == NULL) {
 		return -ENOSYS;
 	}
 
-	return api->read_c45(dev, prtad, devad, regad, data);
+	return DEVICE_API_GET(mdio, dev)->read_c45(dev, prtad, devad, regad, data);
 }
 
 /**
@@ -219,14 +198,11 @@ static inline int z_impl_mdio_write_c45(const struct device *dev, uint8_t prtad,
 					uint8_t devad, uint16_t regad,
 					uint16_t data)
 {
-	const struct mdio_driver_api *api =
-		(const struct mdio_driver_api *)dev->api;
-
-	if (api->write_c45 == NULL) {
+	if (DEVICE_API_GET(mdio, dev)->write_c45 == NULL) {
 		return -ENOSYS;
 	}
 
-	return api->write_c45(dev, prtad, devad, regad, data);
+	return DEVICE_API_GET(mdio, dev)->write_c45(dev, prtad, devad, regad, data);
 }
 
 #ifdef __cplusplus

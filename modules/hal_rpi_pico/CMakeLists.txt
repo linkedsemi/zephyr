@@ -4,11 +4,12 @@ include(ExternalProject)
 
 if(CONFIG_HAS_RPI_PICO)
   zephyr_library()
+  zephyr_library_compile_options(-std=gnu11)
 
   set(rp2_common_dir ${ZEPHYR_HAL_RPI_PICO_MODULE_DIR}/src/rp2_common)
-  set(rp2040_dir ${ZEPHYR_HAL_RPI_PICO_MODULE_DIR}/src/rp2040)
+  set(rp2xxx_dir ${ZEPHYR_HAL_RPI_PICO_MODULE_DIR}/src/${CONFIG_SOC_SERIES})
   set(common_dir ${ZEPHYR_HAL_RPI_PICO_MODULE_DIR}/src/common)
-  set(boot_stage_dir ${rp2040_dir}/boot_stage2)
+  set(boot_stage_dir ${rp2xxx_dir}/boot_stage2)
 
   # The Second Stage Bootloader is only linked to the app that resides
   # at 0x100. Therefore, only if the app's offset is 0x100, the second
@@ -37,6 +38,7 @@ if(CONFIG_HAS_RPI_PICO)
         -DFLASH_TYPE=${flash_type}
         -DPYTHON_EXECUTABLE=${Python3_EXECUTABLE}
         -DRP2_BOOTLOADER_BYPRODUCT=${rp2_bootloader_asm}
+        -DCONFIG_PICOLIBC=${CONFIG_PICOLIBC}
       INSTALL_COMMAND "" # No installation needed
       BUILD_BYPRODUCTS ${rp2_bootloader_asm}
       BUILD_ALWAYS TRUE
@@ -46,7 +48,11 @@ if(CONFIG_HAS_RPI_PICO)
       zephyr_library_sources(${rp2_bootloader_asm})
   endif()
 
-  zephyr_compile_definitions(PICO_RP2040)
+  if(CONFIG_SOC_SERIES_RP2040)
+    zephyr_compile_definitions(PICO_RP2040)
+  elseif(CONFIG_SOC_SERIES_RP2350)
+    zephyr_compile_definitions(PICO_RP2350)
+  endif()
 
   # Pico sources and headers necessary for every build.
   # These contain definitions and implementation used mostly for
@@ -56,35 +62,43 @@ if(CONFIG_HAS_RPI_PICO)
     ${rp2_common_dir}/hardware_clocks/clocks.c
     ${rp2_common_dir}/hardware_pll/pll.c
     ${rp2_common_dir}/hardware_xosc/xosc.c
-    ${rp2_common_dir}/hardware_watchdog/watchdog.c
+    ${rp2_common_dir}/hardware_sync_spin_lock/sync_spin_lock.c
+    ${rp2_common_dir}/hardware_ticks/ticks.c
     ${rp2_common_dir}/pico_bootrom/bootrom.c
-    ${rp2040_dir}/pico_platform/platform.c
+    ${rp2xxx_dir}/pico_platform/platform.c
   )
 
   zephyr_include_directories(
+    ${CMAKE_CURRENT_LIST_DIR}
+    ${common_dir}/boot_picobin_headers/include
+    ${common_dir}/boot_picoboot_headers/include
     ${common_dir}/pico_base_headers/include
+    ${common_dir}/pico_binary_info/include
+    ${common_dir}/pico_util/include/
+    ${rp2_common_dir}/boot_bootrom_headers/include
     ${rp2_common_dir}/hardware_base/include
+    ${rp2_common_dir}/hardware_boot_lock/include
     ${rp2_common_dir}/hardware_clocks/include
+    ${rp2_common_dir}/hardware_irq/include
+    ${rp2_common_dir}/hardware_pll/include
+    ${rp2_common_dir}/hardware_rcp/include
+    ${rp2_common_dir}/hardware_resets/include
+    ${rp2_common_dir}/hardware_sync_spin_lock/include
+    ${rp2_common_dir}/hardware_sync/include
+    ${rp2_common_dir}/hardware_ticks/include
+    ${rp2_common_dir}/hardware_timer/include
     ${rp2_common_dir}/hardware_watchdog/include
     ${rp2_common_dir}/hardware_xosc/include
-    ${rp2_common_dir}/hardware_pll/include
-    ${rp2_common_dir}/hardware_irq/include
-    ${rp2_common_dir}/hardware_sync/include
-    ${rp2_common_dir}/hardware_timer/include
-    ${rp2_common_dir}/hardware_resets/include
-    ${rp2_common_dir}/hardware_boot_lock/include
-    ${rp2_common_dir}/hardware_ticks/include
-    ${rp2_common_dir}/hardware_sync_spin_lock/include
     ${rp2_common_dir}/pico_bootrom/include
+    ${rp2_common_dir}/pico_flash/include
+    ${rp2_common_dir}/pico_platform_common/include
     ${rp2_common_dir}/pico_platform_compiler/include
-    ${rp2_common_dir}/pico_platform_sections/include
     ${rp2_common_dir}/pico_platform_panic/include
-    ${common_dir}/boot_picoboot_headers/include
-    ${common_dir}/boot_picobin_headers/include
-    ${rp2040_dir}/hardware_regs/include
-    ${rp2040_dir}/hardware_structs/include
-    ${rp2040_dir}/pico_platform/include
-    ${CMAKE_CURRENT_LIST_DIR}
+    ${rp2_common_dir}/pico_platform_sections/include
+    ${rp2xxx_dir}/hardware_regs/include
+    ${rp2xxx_dir}/hardware_structs/include
+    ${rp2xxx_dir}/pico_platform/include
+    ${boot_stage_dir}/include
   )
 
   zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_GPIO
@@ -96,9 +110,11 @@ if(CONFIG_HAS_RPI_PICO)
           ${rp2_common_dir}/hardware_uart/include)
 
   zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_FLASH
-          ${rp2_common_dir}/hardware_flash/flash.c)
+          ${rp2_common_dir}/hardware_flash/flash.c
+          ${rp2_common_dir}/hardware_xip_cache/xip_cache.c)
   zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_FLASH
-          ${rp2_common_dir}/hardware_flash/include)
+          ${rp2_common_dir}/hardware_flash/include
+          ${rp2_common_dir}/hardware_xip_cache/include)
 
   zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_PWM
           ${rp2_common_dir}/hardware_pwm/include)
@@ -123,6 +139,11 @@ if(CONFIG_HAS_RPI_PICO)
   zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_RTC
           ${rp2_common_dir}/hardware_rtc/include)
 
+  zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_POWMAN
+          ${rp2_common_dir}/hardware_powman/powman.c)
+  zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_POWMAN
+          ${rp2_common_dir}/hardware_powman/include)
+
   zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_PIO
           ${rp2_common_dir}/hardware_pio/pio.c)
   zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_PIO
@@ -144,5 +165,38 @@ if(CONFIG_HAS_RPI_PICO)
           ${common_dir}/hardware_claim/claim.c)
   zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_CLAIM
           ${common_dir}/hardware_claim/include)
+
+  zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_SHA256
+          ${rp2_common_dir}/pico_sha256/sha256.c)
+  zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_SHA256
+          ${rp2_common_dir}/hardware_sha256/include
+          ${rp2_common_dir}/pico_sha256/include)
+
+  zephyr_library_sources_ifdef(CONFIG_PICOSDK_USE_RAND
+          ${rp2_common_dir}/pico_rand/rand.c
+  )
+  zephyr_include_directories_ifdef(CONFIG_PICOSDK_USE_RAND
+          ${common_dir}/pico_sync/include
+          ${common_dir}/pico_time/include
+          ${rp2_common_dir}/pico_rand/include
+          ${rp2_common_dir}/pico_time_adapter/include
+          ${rp2_common_dir}/pico_unique_id/include
+  )
+  zephyr_linker_sources_ifdef(CONFIG_PICOSDK_USE_RAND NOINIT uninit_data.ld)
+
+  zephyr_include_directories_ifdef(CONFIG_RISCV
+          ${common_dir}/pico_sync/include
+          ${common_dir}/pico_time/include
+          ${rp2_common_dir}/hardware_hazard3/include
+          ${rp2_common_dir}/hardware_riscv_platform_timer/include
+          ${rp2_common_dir}/hardware_riscv/include)
+  zephyr_library_sources_ifdef(CONFIG_RISCV
+          ${rp2_common_dir}/hardware_irq/irq.c)
+
+  zephyr_library_sources_ifdef(CONFIG_SOC_SERIES_RP2350
+          ${rp2_common_dir}/pico_runtime_init/runtime_init.c)
+  zephyr_include_directories_ifdef(CONFIG_SOC_SERIES_RP2350
+          ${rp2_common_dir}/pico_runtime/include
+          ${rp2_common_dir}/pico_runtime_init/include)
 
 endif()

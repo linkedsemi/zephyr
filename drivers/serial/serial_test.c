@@ -23,14 +23,13 @@ LOG_MODULE_REGISTER(mock_serial, CONFIG_LOG_DEFAULT_LEVEL);
 
 #define DT_DRV_COMPAT vnd_serial
 struct serial_vnd_data {
-#ifdef CONFIG_RING_BUFFER
 	struct ring_buf *written;
 	struct ring_buf *read_queue;
-#endif
 	serial_vnd_write_cb_t callback;
 	void *callback_data;
 #ifdef CONFIG_UART_INTERRUPT_DRIVEN
 	uart_irq_callback_user_data_t irq_isr;
+	void *irq_isr_user_data;
 	bool irq_rx_enabled;
 	bool irq_tx_enabled;
 #endif
@@ -80,7 +79,7 @@ static void irq_process(const struct device *dev)
 			LOG_ERR("no isr registered");
 			break;
 		}
-		data->irq_isr(dev, NULL);
+		data->irq_isr(dev, data->irq_isr_user_data);
 	};
 }
 
@@ -136,15 +135,18 @@ static int irq_tx_ready(const struct device *dev)
 	return available;
 }
 
+static int irq_is_pending(const struct device *dev)
+{
+	struct serial_vnd_data *data = dev->data;
+
+	return (data->irq_rx_enabled && !ring_buf_is_empty(data->read_queue)) ||
+	       (data->irq_tx_enabled && ring_buf_space_get(data->written) > 0) ? 1 : 0;
+}
+
 static void irq_callback_set(const struct device *dev, uart_irq_callback_user_data_t cb,
 			     void *user_data)
 {
 	struct serial_vnd_data *data = dev->data;
-
-	/* Not implemented. Ok because `user_data` is always NULL in the current
-	 * implementation of core UART API.
-	 */
-	__ASSERT_NO_MSG(user_data == NULL);
 
 #if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS) && defined(CONFIG_UART_ASYNC_API)
 	if (data->read_buf) {
@@ -155,6 +157,7 @@ static void irq_callback_set(const struct device *dev, uart_irq_callback_user_da
 #endif
 
 	data->irq_isr = cb;
+	data->irq_isr_user_data = user_data;
 	LOG_DBG("callback set");
 }
 
@@ -181,7 +184,6 @@ static int fifo_read(const struct device *dev, uint8_t *rx_data, const int size)
 
 static int serial_vnd_poll_in(const struct device *dev, unsigned char *c)
 {
-#ifdef CONFIG_RING_BUFFER
 	struct serial_vnd_data *data = dev->data;
 	uint32_t bytes_read;
 
@@ -193,21 +195,18 @@ static int serial_vnd_poll_in(const struct device *dev, unsigned char *c)
 		return 0;
 	}
 	return -1;
-#else
-	return -ENOTSUP;
-#endif
 }
 
 static void serial_vnd_poll_out(const struct device *dev, unsigned char c)
 {
 	struct serial_vnd_data *data = dev->data;
 
-#ifdef CONFIG_RING_BUFFER
+
 	if (data == NULL || data->written == NULL) {
 		return;
 	}
 	ring_buf_put(data->written, &c, 1);
-#endif
+
 	if (data->callback) {
 		data->callback(dev, data->callback_data);
 	}
@@ -217,7 +216,6 @@ static void serial_vnd_poll_out(const struct device *dev, unsigned char c)
 static void async_rx_run(const struct device *dev);
 #endif
 
-#ifdef CONFIG_RING_BUFFER
 int serial_vnd_queue_in_data(const struct device *dev, const unsigned char *c, uint32_t size)
 {
 	struct serial_vnd_data *data = dev->data;
@@ -273,7 +271,6 @@ uint32_t serial_vnd_peek_out_data(const struct device *dev, unsigned char *out_d
 	}
 	return ring_buf_peek(data->written, out_data, size);
 }
-#endif
 
 void serial_vnd_set_callback(const struct device *dev, serial_vnd_write_cb_t callback,
 			     void *user_data)
@@ -414,7 +411,7 @@ static int serial_vnd_rx_enable(const struct device *dev, uint8_t *read_buf, siz
 		return -EINVAL;
 	}
 
-	__ASSERT(timeout == SYS_FOREVER_MS, "Async timeout not implemented.");
+	__ASSERT(timeout == SYS_FOREVER_US, "Async timeout not implemented.");
 
 	data->read_buf = read_buf;
 	data->read_size = read_size;
@@ -426,7 +423,7 @@ static int serial_vnd_rx_enable(const struct device *dev, uint8_t *read_buf, siz
 }
 #endif /* CONFIG_UART_ASYNC_API */
 
-static const struct uart_driver_api serial_vnd_api = {
+static DEVICE_API(uart, serial_vnd_api) = {
 	.poll_in = serial_vnd_poll_in,
 	.poll_out = serial_vnd_poll_out,
 	.err_check = serial_vnd_err_check,
@@ -442,6 +439,7 @@ static const struct uart_driver_api serial_vnd_api = {
 	.irq_tx_enable = irq_tx_enable,
 	.irq_tx_disable = irq_tx_disable,
 	.irq_tx_ready = irq_tx_ready,
+	.irq_is_pending = irq_is_pending,
 	.fifo_read = fifo_read,
 	.fifo_fill = fifo_fill,
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */

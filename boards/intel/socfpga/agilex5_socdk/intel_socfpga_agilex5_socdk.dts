@@ -11,18 +11,37 @@
 / {
 	model = "Intel SoC FPGA Agilex5";
 	compatible = "intel,socfpga-agilex5";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	chosen {
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,sram = &mem0;
 	};
+
+	aliases {
+		led0 = &led0;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		led0: led0 {
+			gpios = <&gpio0 11 GPIO_ACTIVE_HIGH>;
+		};
+	};
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
 };
 
 &sdmmc {
 	status = "okay";
+
 	mmc {
 		/*SD Disk Access */
 		compatible = "zephyr,sdmmc-disk";
@@ -38,7 +57,7 @@
 
 &xgmac0 {
 	full-duplex-mode-en;
-	num-dma-ch   = <1>;
+	num-dma-ch = <1>;
 	num-tx-queues = <1>;
 	num-rx-queues = <1>;
 	num-tc = <1>;
@@ -51,7 +70,7 @@
 	phy-handle = <&phy0>;
 };
 
-&mdio0  {
+&mdio0 {
 	csr-clock-indx = <4>;
 
 	phy0: phy@0 {

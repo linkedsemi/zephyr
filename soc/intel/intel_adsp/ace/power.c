@@ -5,6 +5,7 @@
  */
 #include <zephyr/kernel.h>
 #include <zephyr/pm/pm.h>
+#include <zephyr/pm/policy.h>
 #include <zephyr/pm/device_runtime.h>
 #include <zephyr/device.h>
 #include <zephyr/debug/sparse.h>
@@ -23,12 +24,12 @@
 #define LPSRAM_MAGIC_VALUE      0x13579BDF
 #define LPSCTL_BATTR_MASK       GENMASK(16, 12)
 
-#if CONFIG_SOC_INTEL_ACE15_MTPM
+#if CONFIG_SOC_ACE15_MTPM
 /* Used to force any pending transaction by HW issuing an upstream read before
  * power down host domain.
  */
 uint8_t adsp_pending_buffer[CONFIG_DCACHE_LINE_SIZE] __aligned(CONFIG_DCACHE_LINE_SIZE);
-#endif /* CONFIG_SOC_INTEL_ACE15_MTPM */
+#endif /* CONFIG_SOC_ACE15_MTPM */
 
 __imr void power_init(void)
 {
@@ -40,13 +41,13 @@ __imr void power_init(void)
 	DSPCS.bootctl[0].bctl |= DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
 #endif /* CONFIG_ADSP_IDLE_CLOCK_GATING */
 
-#if CONFIG_SOC_INTEL_ACE15_MTPM
+#if CONFIG_SOC_ACE15_MTPM
 	*((__sparse_force uint32_t *)sys_cache_cached_ptr_get(&adsp_pending_buffer)) =
 		INTEL_ADSP_ACE15_MAGIC_KEY;
 	sys_cache_data_flush_range((__sparse_force void *)
 			sys_cache_cached_ptr_get(&adsp_pending_buffer),
 			sizeof(adsp_pending_buffer));
-#endif /* CONFIG_SOC_INTEL_ACE15_MTPM */
+#endif /* CONFIG_SOC_ACE15_MTPM */
 }
 
 #ifdef CONFIG_PM
@@ -68,11 +69,10 @@ __imr void power_init(void)
  * NOTE: there's no return from this function.
  *
  * @param disable_lpsram        flag if LPSRAM is to be disabled (whole)
- * @param hpsram_pg_mask pointer to memory segments power gating mask
- * (each bit corresponds to one ebb)
+ * @param disable_hpsram        flag if HPSRAM is to be disabled (whole)
  * @param response_to_ipc       flag if ipc response should be send during power down
  */
-void power_down(bool disable_lpsram, bool hpsram_mask, bool response_to_ipc);
+void power_down(bool disable_lpsram, bool disable_hpsram, bool response_to_ipc);
 
 #ifdef CONFIG_ADSP_IMR_CONTEXT_SAVE
 /**
@@ -82,17 +82,17 @@ void power_down(bool disable_lpsram, bool hpsram_mask, bool response_to_ipc);
  */
 extern void platform_context_restore(void);
 
-/*
+/**
  * @brief pointer to a persistent storage space, to be set by platform code
  */
 uint8_t *global_imr_ram_storage;
 
-/*8
- * @biref a d3 restore boot entry point
+/**
+ * @brief a d3 restore boot entry point
  */
 extern void boot_entry_d3_restore(void);
 
-/*
+/**
  * @brief re-enables IDC interrupt for all cores after exiting D3 state
  *
  * Called once from core 0
@@ -101,8 +101,8 @@ extern void soc_mp_on_d3_exit(void);
 
 #else
 
-/*
- * @biref FW entry point called by ROM during normal boot flow
+/**
+ * @brief FW entry point called by ROM during normal boot flow
  */
 extern void rom_entry(void);
 
@@ -274,9 +274,6 @@ __imr void pm_state_imr_restore(void)
 }
 #endif /* CONFIG_ADSP_IMR_CONTEXT_SAVE */
 
-#include "asm_memory_management.h"
-extern uint32_t hpsram_mask[MAX_MEMORY_SEGMENTS];
-
 void pm_state_set(enum pm_state state, uint8_t substate_id)
 {
 	ARG_UNUSED(substate_id);
@@ -343,17 +340,13 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 					(void *)rom_entry;
 			sys_cache_data_flush_range((void *)imr_layout, sizeof(*imr_layout));
 #endif /* CONFIG_ADSP_IMR_CONTEXT_SAVE */
-#ifdef CONFIG_ADSP_POWER_DOWN_HPSRAM
-			/* turn off all HPSRAM banks - get a full bitmap */
-			uint32_t ebb_banks = ace_hpsram_get_bank_count();
-			hpsram_mask[0] = (1 << ebb_banks) - 1;
-#define HPSRAM_MASK true
-#else
-#define HPSRAM_MASK false
-#endif /* CONFIG_ADSP_POWER_DOWN_HPSRAM */
 			/* do power down - this function won't return */
-			power_down(true, HPSRAM_MASK, true);
+			power_down(true, IS_ENABLED(CONFIG_ADSP_POWER_DOWN_HPSRAM), true);
 		} else {
+			/* When all secondary cores are turned off, power gating for the primary
+			 * core will be re-enabled.
+			 */
+			pm_policy_state_lock_put(PM_STATE_RUNTIME_IDLE, PM_ALL_SUBSTATES);
 			power_gate_entry(cpu);
 		}
 		break;
@@ -450,7 +443,9 @@ void arch_cpu_idle(void)
 {
 	uint32_t cpu = arch_proc_id();
 
+#if defined(CONFIG_SYS_IDLE_HOOKS)
 	sys_trace_idle();
+#endif
 
 	/*
 	 * unlock and invalidate icache if clock gating is allowed

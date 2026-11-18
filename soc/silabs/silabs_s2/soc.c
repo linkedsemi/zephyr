@@ -9,6 +9,7 @@
  * @brief SoC initialization for Silicon Labs Series 2 products
  */
 
+#include <zephyr/irq.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 
@@ -17,6 +18,9 @@
 #include <sl_clock_manager_init.h>
 #include <sl_hfxo_manager.h>
 #include <sl_power_manager.h>
+#include <sl_sleeptimer.h>
+
+#include <soc_radio.h>
 
 #if defined(CONFIG_PRINTK) || defined(CONFIG_LOG)
 #define PR_EXC(...) LOG_ERR(__VA_ARGS__)
@@ -32,7 +36,7 @@
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
-#if defined(CONFIG_SOC_SILABS_HFXO_MANAGER)
+#if defined(CONFIG_SILABS_SISDK_HFXO_MANAGER)
 Z_ISR_DECLARE_DIRECT(DT_IRQ(DT_NODELABEL(hfxo), irq), 0, sl_hfxo_manager_irq_handler);
 #endif
 
@@ -46,13 +50,29 @@ void soc_early_init_hook(void)
 	}
 	sl_clock_manager_init();
 
-	if (IS_ENABLED(CONFIG_SOC_SILABS_HFXO_MANAGER)) {
+	if (IS_ENABLED(CONFIG_SILABS_SISDK_SLEEPTIMER)) {
+		sl_sleeptimer_init();
+	}
+
+	if (IS_ENABLED(CONFIG_SILABS_SISDK_HFXO_MANAGER)) {
 		sl_hfxo_manager_init_hardware();
 		sl_hfxo_manager_init();
 	}
 	if (IS_ENABLED(CONFIG_PM)) {
 		sl_power_manager_init();
 	}
+	if (IS_ENABLED(CONFIG_SOC_GECKO_USE_RAIL)) {
+		soc_radio_init();
+	}
+
+#if defined(CONFIG_SILABS_SISDK_SE) && defined(CONFIG_MULTITHREADING) &&                           \
+	DT_IRQ_HAS_NAME(DT_NODELABEL(se), sembrx)
+	/* The SE Manager signals the thread waiting for mailbox command completion from
+	 * this handler. It enables the interrupt itself in sl_se_init().
+	 */
+	IRQ_CONNECT(DT_IRQ_BY_NAME(DT_NODELABEL(se), sembrx, irq),
+		    DT_IRQ_BY_NAME(DT_NODELABEL(se), sembrx, priority), SEMBRX_IRQHandler, NULL, 0);
+#endif
 }
 
 #if defined(CONFIG_ARM_SECURE_FIRMWARE) && !defined(CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS)
@@ -81,25 +101,34 @@ void soc_prep_hook(void)
 	 * all bus transactions from the CPU have non-secure attribution.
 	 * This makes the secure-only app behave more like a non-secure app, allowing the use of
 	 * libraries that only expect to use non-secure peripherals, such as the radio subsystem.
+	 * If MCUboot is used, assume that the bootloader has configured the SMU and SAU
+	 * appropriately, and only connect the IRQ for SMU faults.
 	 */
 #if defined(CONFIG_ARM_SECURE_FIRMWARE) && !defined(CONFIG_ARM_FIRMWARE_HAS_SECURE_ENTRY_FUNCS)
+#if !defined(CONFIG_BOOTLOADER_MCUBOOT)
 #if defined(CMU_CLKEN1_SMU)
 	CMU_S->CLKEN1_SET = CMU_CLKEN1_SMU;
 #endif
 	SMU->PPUSATD0_CLR = _SMU_PPUSATD0_MASK;
-#if defined(SEMAILBOX_PRESENT)
+#if defined(SEMAILBOX_PRESENT) && defined(SMU_PPUSATD1_SEMAILBOX)
 	SMU->PPUSATD1_CLR = (_SMU_PPUSATD1_MASK & (~SMU_PPUSATD1_SMU & ~SMU_PPUSATD1_SEMAILBOX));
 #else
 	SMU->PPUSATD1_CLR = (_SMU_PPUSATD1_MASK & ~SMU_PPUSATD1_SMU);
+#endif
+#if defined(SEMAILBOX_PRESENT) && defined(SMU_PPUSATD2_SEMAILBOX)
+	SMU->PPUSATD2_CLR = (_SMU_PPUSATD2_MASK & ~SMU_PPUSATD2_SEMAILBOX);
+#elif defined(_SMU_PPUSATD2_MASK)
+	SMU->PPUSATD2_CLR = _SMU_PPUSATD2_MASK;
 #endif
 
 	SAU->CTRL = SAU_CTRL_ALLNS_Msk;
 	__DSB();
 	__ISB();
 
-	NVIC_ClearPendingIRQ(SMU_SECURE_IRQn);
+	k_irq_clear_pending(SMU_SECURE_IRQn);
 	SMU->IF_CLR = SMU_IF_PPUSEC | SMU_IF_BMPUSEC;
 	SMU->IEN = SMU_IEN_PPUSEC | SMU_IEN_BMPUSEC;
+#endif
 
 	IRQ_DIRECT_CONNECT(SMU_SECURE_IRQn, 0, smu_fault, 0);
 	irq_enable(SMU_SECURE_IRQn);

@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(spi_smartbond);
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/policy.h>
 #include <zephyr/pm/device_runtime.h>
@@ -261,8 +261,8 @@ static int spi_smartbond_configure(const struct spi_smartbond_cfg *cfg,
 		return 0;
 	}
 
-	if (spi_cfg->operation & SPI_OP_MODE_SLAVE) {
-		LOG_ERR("Slave mode not yet supported");
+	if (spi_cfg->operation & SPI_OP_MODE_PERIPHERAL) {
+		LOG_ERR("Peripheral mode not yet supported");
 		return -ENOTSUP;
 	}
 
@@ -583,7 +583,7 @@ static void spi_smartbond_isr_trigger(const struct device *dev)
 	case SPI_SMARTBOND_TRANSFER_NONE:
 		__fallthrough;
 	default:
-		__ASSERT_MSG_INFO("Invalid transfer mode");
+		LOG_ERR("Invalid transfer mode");
 		break;
 	}
 
@@ -641,7 +641,7 @@ static void spi_smartbond_isr(void *args)
 		spi_smartbond_write(dev);
 		break;
 	case SPI_SMARTBOND_TRANSFER_TX_RX:
-		/* Exersice the type of the next sub-transfer */
+		/* Exercise the type of the next sub-transfer */
 		if (!data->rx_len && !data->tx_len) {
 			spi_smartbond_transfer_mode_check_and_update(dev);
 
@@ -664,7 +664,7 @@ static void spi_smartbond_isr(void *args)
 	case SPI_SMARTBOND_TRANSFER_NONE:
 		__fallthrough;
 	default:
-		__ASSERT_MSG_INFO("Invalid transfer mode");
+		LOG_ERR("Invalid transfer mode");
 		break;
 	}
 
@@ -676,7 +676,7 @@ static void spi_smartbond_isr(void *args)
 		spi_context_complete(ctx, dev, 0);
 
 		spi_context_cs_control(ctx, false);
-		spi_smartbond_pm_policy_state_lock_put(data);
+		spi_smartbond_pm_policy_state_lock_put(dev);
 	}
 #endif
 }
@@ -897,7 +897,7 @@ static int spi_smartbond_dma_config(const struct device *dev)
 
 	/* Do not change */
 	rx_block->source_addr_adj = 0x2;
-	/* Incremenetal */
+	/* Incremental */
 	rx_block->dest_addr_adj = 0x0;
 	rx_block->source_address = (uint32_t)&config->regs->SPI_RX_TX_REG;
 
@@ -1024,7 +1024,7 @@ static int spi_smartbond_dma_trigger(const struct device *dev)
 			/*
 			 * Regardless of whether or not the RX FIFO is enabled, received
 			 * bytes are pushed into it. As such, the RXI FIFO should be
-			 * flushed so that a next read access retrives the correct bytes
+			 * flushed so that a next read access retrieves the correct bytes
 			 * and not old ones.
 			 */
 			if (!ctx->rx_buf) {
@@ -1034,7 +1034,7 @@ static int spi_smartbond_dma_trigger(const struct device *dev)
 		case SPI_SMARTBOND_TRANSFER_NONE:
 			__fallthrough;
 		default:
-			__ASSERT_MSG_INFO("Invalid transfer mode");
+			LOG_ERR("Invalid transfer mode");
 			break;
 		}
 
@@ -1118,7 +1118,7 @@ static int spi_smartbond_release(const struct device *dev, const struct spi_conf
 	return 0;
 }
 
-static const struct spi_driver_api spi_smartbond_driver_api = {
+static DEVICE_API(spi, spi_smartbond_driver_api) = {
 	.transceive = spi_smartbond_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_smartbond_transceive_async,
@@ -1328,7 +1328,7 @@ static int spi_smartbond_init(const struct device *dev)
 		SPI_CONTEXT_INIT_SYNC(spi_smartbond_##id##_data, ctx),                             \
 		SPI_CONTEXT_CS_GPIOS_INITIALIZE(DT_DRV_INST(id), ctx)};                            \
 	PM_DEVICE_DT_INST_DEFINE(id, spi_smartbond_pm_action);                                     \
-	DEVICE_DT_INST_DEFINE(id,                                                                  \
+	SPI_DEVICE_DT_INST_DEFINE(id,                                                              \
 			      spi_smartbond_init,                                                  \
 			      PM_DEVICE_DT_INST_GET(id),                                           \
 			      &spi_smartbond_##id##_data,                                          \

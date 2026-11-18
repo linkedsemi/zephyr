@@ -6,6 +6,7 @@
 
 /dts-v1/;
 
+#include <freq.h>
 #include <mem.h>
 
 #define DT_DRAM_SIZE	DT_SIZE_K(8192)
@@ -16,6 +17,17 @@
 / {
 	model = "ACRN";
 	compatible = "acrn";
+
+	cpus {
+		timebase-frequency = <DT_FREQ_M(25)>;
+
+		cpu@1 {
+			device_type = "cpu";
+			compatible = "intel,x86_64";
+			d-cache-line-size = <64>;
+			reg = <1>;
+		};
+	};
 
 	aliases {
 		uart-0 = &uart0;
@@ -45,4 +57,8 @@
 &uart1 {
 	status = "okay";
 	current-speed = <115200>;
+};
+
+&cpu {
+	compatible = "intel,x86_64";
 };

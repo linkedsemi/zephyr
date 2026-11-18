@@ -5,15 +5,21 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 64
 flash: 512
 supported:
   - adc
   - arduino_i2c
   - arduino_spi
+  - counter
+  - crc
   - dma
   - gpio
+  - hwinfo
   - i2c
+  - pwm
+  - rtc
   - spi
+  - watchdog
+  - bluetooth
 vendor: st

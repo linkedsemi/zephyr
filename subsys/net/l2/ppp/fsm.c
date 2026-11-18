@@ -8,6 +8,7 @@
 LOG_MODULE_DECLARE(net_l2_ppp, CONFIG_NET_L2_PPP_LOG_LEVEL);
 
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_if.h>
 
@@ -48,9 +49,19 @@ struct net_if *ppp_fsm_iface(struct ppp_fsm *fsm)
 {
 	struct ppp_context *ctx = ppp_fsm_ctx(fsm);
 
-	NET_ASSERT(ctx->iface);
+	NET_ASSERT(ctx != NULL);
+	NET_ASSERT(ctx->iface != NULL);
 
 	return ctx->iface;
+}
+
+static bool ppp_fsm_is_dead(struct ppp_fsm *fsm)
+{
+	struct ppp_context *ctx = ppp_fsm_ctx(fsm);
+
+	NET_ASSERT(ctx != NULL);
+
+	return ctx->phase == PPP_DEAD;
 }
 
 static void fsm_send_configure_req(struct ppp_fsm *fsm, bool retransmit)
@@ -165,7 +176,7 @@ void ppp_fsm_init(struct ppp_fsm *fsm, uint16_t protocol)
 {
 	fsm->protocol = protocol;
 	fsm->state = PPP_INITIAL;
-	fsm->flags = 0U;
+	fsm->flags = FSM_RESTART;
 
 	k_work_init_delayable(&fsm->timer, ppp_fsm_timeout);
 }
@@ -246,6 +257,10 @@ void ppp_fsm_close(struct ppp_fsm *fsm, const uint8_t *reason)
 
 	case PPP_STOPPING:
 		ppp_change_state(fsm, PPP_CLOSING);
+		if (ppp_fsm_is_dead(fsm)) {
+			fsm->retransmits = 0;
+			k_work_reschedule(&fsm->timer, K_NO_WAIT);
+		}
 		break;
 
 	default:
@@ -306,6 +321,10 @@ void ppp_fsm_lower_up(struct ppp_fsm *fsm)
 
 	switch (fsm->state) {
 	case PPP_CLOSED:
+	case PPP_STOPPED:
+		/* Nothing to do,
+		 * ppp_fsm_open() drives the STOPPED/CLOSED -> REQUEST_SENT restart.
+		 */
 		break;
 
 	case PPP_INITIAL:
@@ -403,6 +422,8 @@ int ppp_send_pkt(struct ppp_fsm *fsm, struct net_if *iface,
 	case PPP_CODE_REJ: {
 		struct ppp_context *ctx = ppp_fsm_ctx(fsm);
 
+		NET_ASSERT(ctx != NULL);
+
 		len = net_pkt_get_len(req_pkt);
 		len = MIN(len, ctx->lcp.my_options.mru);
 		break;
@@ -451,12 +472,12 @@ int ppp_send_pkt(struct ppp_fsm *fsm, struct net_if *iface,
 
 	ppp.code = type;
 	ppp.id = id;
-	ppp.length = htons(len);
+	ppp.length = net_htons(len);
 
 	if (!pkt) {
 		pkt = net_pkt_alloc_with_buffer(iface,
 						sizeof(uint16_t) + len,
-						AF_UNSPEC, 0,
+						NET_AF_UNSPEC, 0,
 						PPP_BUF_ALLOC_TIMEOUT);
 		if (!pkt) {
 			goto out_of_mem;
@@ -609,7 +630,7 @@ static enum net_verdict fsm_recv_configure_req(struct ppp_fsm *fsm,
 					sizeof(uint16_t) + sizeof(uint16_t) +
 						sizeof(uint8_t) + sizeof(uint8_t) +
 						remaining_len,
-					AF_UNSPEC, 0, PPP_BUF_ALLOC_TIMEOUT);
+					NET_AF_UNSPEC, 0, PPP_BUF_ALLOC_TIMEOUT);
 	if (!out) {
 		return NET_DROP;
 	}
@@ -1032,6 +1053,8 @@ enum net_verdict ppp_fsm_input(struct ppp_fsm *fsm, uint16_t proto,
 	int ret;
 	struct ppp_context *ctx = ppp_fsm_ctx(fsm);
 
+	NET_ASSERT(ctx != NULL);
+
 	ret = net_pkt_read_u8(pkt, &code);
 	if (ret < 0) {
 		NET_DBG("[%s/%p] Cannot read %s (pkt len %zd)",
@@ -1111,14 +1134,55 @@ enum net_verdict ppp_fsm_input(struct ppp_fsm *fsm, uint16_t proto,
 	return NET_DROP;
 }
 
+static struct ppp_fsm *ppp_proto_fsm(struct ppp_context *ctx, uint16_t protocol)
+{
+	switch (protocol) {
+#if defined(CONFIG_NET_IPV4)
+	case PPP_IPCP:
+		return &ctx->ipcp.fsm;
+#endif
+#if defined(CONFIG_NET_IPV6)
+	case PPP_IPV6CP:
+		return &ctx->ipv6cp.fsm;
+#endif
+#if defined(CONFIG_NET_L2_PPP_PAP)
+	case PPP_PAP:
+		return &ctx->pap.fsm;
+#endif
+	default:
+		return NULL;
+	}
+}
+
 enum net_verdict ppp_fsm_recv_protocol_rej(struct ppp_fsm *fsm,
 					   uint8_t id,
 					   struct net_pkt *pkt)
 {
+	struct ppp_fsm *rejected_fsm;
+	uint16_t protocol;
+
 	NET_DBG("[%s/%p] Current state %s (%d)", fsm->name, fsm,
 		ppp_state_str(fsm->state), fsm->state);
 
-	return NET_DROP;
+	/* RFC 1661 chapter 5.7 - discard outside LCP Opened, don't Code-Reject */
+	if (fsm->state != PPP_OPENED) {
+		return NET_OK;
+	}
+
+	if (net_pkt_read_be16(pkt, &protocol) < 0) {
+		return NET_OK;
+	}
+
+	NET_DBG("[%s/%p] Peer rejected protocol %s (0x%04x)", fsm->name, fsm,
+		ppp_proto2str(protocol), protocol);
+
+	/* RFC 1661 chapter 4.2 - RXJ+: LCP stays up, rejected protocol must stop */
+	rejected_fsm = ppp_proto_fsm(ppp_fsm_ctx(fsm), protocol);
+	if (rejected_fsm != NULL && rejected_fsm->cb.proto_reject != NULL) {
+		rejected_fsm->cb.proto_reject(rejected_fsm);
+	}
+
+	return NET_OK;
 }
 
 enum net_verdict ppp_fsm_recv_echo_req(struct ppp_fsm *fsm,

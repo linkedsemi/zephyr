@@ -14,6 +14,7 @@
 #define OPENTHREAD_CORE_ZEPHYR_CONFIG_H_
 
 #include <zephyr/devicetree.h>
+#include <zephyr/psa/key_ids.h>
 #include <zephyr/toolchain.h>
 
 /**
@@ -210,11 +211,32 @@
  * in platform.
  *
  */
-#define OPENTHREAD_CONFIG_PLATFORM_USEC_TIMER_ENABLE                                               \
-	(CONFIG_OPENTHREAD_CSL_RECEIVER &&                                                         \
-	 (OPENTHREAD_CONFIG_THREAD_VERSION >= OT_THREAD_VERSION_1_2))
+#ifdef CONFIG_OPENTHREAD_PLATFORM_USEC_TIMER
+#define OPENTHREAD_CONFIG_PLATFORM_USEC_TIMER_ENABLE CONFIG_OPENTHREAD_PLATFORM_USEC_TIMER
+#else
+#define OPENTHREAD_CONFIG_PLATFORM_USEC_TIMER_ENABLE 0
+#endif /* CONFIG_OPENTHREAD_PLATFORM_USEC_TIMER */
 
-/* Zephyr does not use OpenThread's heap. mbedTLS will use heap memory allocated
+/**
+ * @def OPENTHREAD_CONFIG_MAC_BEACON_PAYLOAD_PARSING_ENABLE
+ *
+ * Define to 1 if you want to enable MAC beacon payload parsing support.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_MAC_BEACON_PAYLOAD_PARSING
+#define OPENTHREAD_CONFIG_MAC_BEACON_PAYLOAD_PARSING_ENABLE                                        \
+	CONFIG_OPENTHREAD_MAC_BEACON_PAYLOAD_PARSING
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_NUM
+ *
+ * Set the number of OpenThread instances for static buffer allocation.
+ *
+ */
+#define OPENTHREAD_CONFIG_MULTIPLE_INSTANCE_NUM CONFIG_OPENTHREAD_MULTIPLE_INSTANCE_NUM
+
+/* Zephyr does not use OpenThread's heap. Mbed TLS will use heap memory allocated
  * by Zephyr. Here, we use some dummy values to prevent OpenThread warnings.
  */
 
@@ -242,7 +264,13 @@
  * The number of short source address table entries.
  *
  */
+#ifndef RADIO_CONFIG_SRC_MATCH_SHORT_ENTRY_NUM
+#ifdef CONFIG_OPENTHREAD_MAX_CHILDREN
+#define RADIO_CONFIG_SRC_MATCH_SHORT_ENTRY_NUM CONFIG_OPENTHREAD_MAX_CHILDREN
+#else
 #define RADIO_CONFIG_SRC_MATCH_SHORT_ENTRY_NUM 0
+#endif
+#endif
 
 /**
  * @def OPENTHREAD_CONFIG_PLATFORM_INFO
@@ -281,7 +309,13 @@
  * The number of extended source address table entries.
  *
  */
+#ifndef RADIO_CONFIG_SRC_MATCH_EXT_ENTRY_NUM
+#ifdef CONFIG_OPENTHREAD_MAX_CHILDREN
+#define RADIO_CONFIG_SRC_MATCH_EXT_ENTRY_NUM CONFIG_OPENTHREAD_MAX_CHILDREN
+#else
 #define RADIO_CONFIG_SRC_MATCH_EXT_ENTRY_NUM 0
+#endif
+#endif
 
 /**
  * @def OPENTHREAD_CONFIG_MAC_CSL_REQUEST_AHEAD_US
@@ -358,6 +392,17 @@
 #endif /* CONFIG_OPENTHREAD_CLI_MAX_LINE_LENGTH */
 
 /**
+ * @def OPENTHREAD_CONFIG_CLI_LINK_METRICS_ENH_ACK_VERBOSE_ENABLE
+ *
+ * Enable unsolicited CLI output of Link Metrics data received in
+ * Enhanced-ACK frames.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_CLI_LINK_METRICS_ENH_ACK_VERBOSE
+#define OPENTHREAD_CONFIG_CLI_LINK_METRICS_ENH_ACK_VERBOSE_ENABLE 1
+#endif /* CONFIG_OPENTHREAD_CLI_LINK_METRICS_ENH_ACK_VERBOSE */
+
+/**
  * @def OPENTHREAD_CONFIG_CLI_PROMPT_ENABLE
  *
  * Enable CLI prompt.
@@ -407,6 +452,16 @@
 #endif
 
 /**
+ * @def OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE
+ *
+ * Enable radio coexistence support.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_PLATFORM_RADIO_COEX_ENABLE
+#define OPENTHREAD_CONFIG_PLATFORM_RADIO_COEX_ENABLE 1
+#endif
+
+/**
  * @def OPENTHREAD_CONFIG_PLATFORM_MAC_KEYS_EXPORTABLE_ENABLE
  *
  * Set to 1 if you want to make MAC keys exportable.
@@ -424,6 +479,16 @@
  */
 #ifdef CONFIG_OPENTHREAD_MESSAGE_BUFFER_SIZE
 #define OPENTHREAD_CONFIG_MESSAGE_BUFFER_SIZE CONFIG_OPENTHREAD_MESSAGE_BUFFER_SIZE
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_PLATFORM_MESSAGE_MANAGEMENT
+ *
+ * The message pool is managed by platform defined logic.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_PLATFORM_MESSAGE_MANAGEMENT
+#define OPENTHREAD_CONFIG_PLATFORM_MESSAGE_MANAGEMENT CONFIG_OPENTHREAD_PLATFORM_MESSAGE_MANAGEMENT
 #endif
 
 /**
@@ -467,5 +532,49 @@
 #ifdef CONFIG_OPENTHREAD_STORE_FRAME_COUNTER_AHEAD
 #define OPENTHREAD_CONFIG_STORE_FRAME_COUNTER_AHEAD CONFIG_OPENTHREAD_STORE_FRAME_COUNTER_AHEAD
 #endif
+
+/**
+ * @def OPENTHREAD_CONFIG_CHILD_SUPERVISION_CHECK_TIMEOUT
+ *
+ * The value of the child supervision check timeout in seconds.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_CHILD_SUPERVISION_CHECK_TIMEOUT
+#define OPENTHREAD_CONFIG_CHILD_SUPERVISION_CHECK_TIMEOUT                                          \
+	CONFIG_OPENTHREAD_CHILD_SUPERVISION_CHECK_TIMEOUT
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_CHILD_SUPERVISION_INTERVAL
+ *
+ * The value of the child supervision interval in seconds.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_CHILD_SUPERVISION_INTERVAL
+#define OPENTHREAD_CONFIG_CHILD_SUPERVISION_INTERVAL CONFIG_OPENTHREAD_CHILD_SUPERVISION_INTERVAL
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_MLE_CHILD_TIMEOUT_DEFAULT
+ *
+ * The value of the MLE child timeout in seconds.
+ *
+ */
+#ifdef CONFIG_OPENTHREAD_MLE_CHILD_TIMEOUT
+#define OPENTHREAD_CONFIG_MLE_CHILD_TIMEOUT_DEFAULT CONFIG_OPENTHREAD_MLE_CHILD_TIMEOUT
+#endif
+
+/**
+ * @def OPENTHREAD_CONFIG_PSA_ITS_NVM_OFFSET
+ *
+ * NVM offset while using key refs.
+ *
+ */
+#define OPENTHREAD_CONFIG_PSA_ITS_NVM_OFFSET ZEPHYR_PSA_OPENTHREAD_KEY_ID_RANGE_BEGIN
+
+#ifdef CONFIG_OPENTHREAD_ZEPHYR_BORDER_ROUTER
+#define OPENTHREAD_CONFIG_MULTICAST_DNS_PUBLIC_API_ENABLE 1
+#define OPENTHREAD_CONFIG_MULTICAST_DNS_AUTO_ENABLE_ON_INFRA_IF 1
+#endif /* CONFIG_OPENTHREAD_ZEPHYR_BORDER_ROUTER */
 
 #endif  /* OPENTHREAD_CORE_ZEPHYR_CONFIG_H_ */

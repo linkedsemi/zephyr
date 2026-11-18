@@ -40,14 +40,15 @@ int fxos8700_read_spi(const struct device *dev,
 {
 	const struct fxos8700_config *cfg = dev->config;
 
-	/* Reads must clock out a dummy byte after sending the address. */
-	uint8_t reg_buf[3] = { DIR_READ(reg), ADDR_7(reg), 0 };
-	const struct spi_buf buf[2] = {
-		{ .buf = reg_buf, .len = 3 },
+	/* The address phase is 2 bytes; data starts on the 3rd byte. */
+	uint8_t reg_buf[2] = { DIR_READ(reg), ADDR_7(reg) };
+	const struct spi_buf tx_buf = { .buf = reg_buf, .len = 2 };
+	const struct spi_buf rx_buf[2] = {
+		{ .buf = NULL, .len = 2 },
 		{ .buf = data, .len = length }
 	};
-	const struct spi_buf_set tx = { .buffers = buf, .count = 1 };
-	const struct spi_buf_set rx = { .buffers = buf, .count = 2 };
+	const struct spi_buf_set tx = { .buffers = &tx_buf, .count = 1 };
+	const struct spi_buf_set rx = { .buffers = rx_buf, .count = 2 };
 
 	return spi_transceive_dt(&cfg->bus_cfg.spi, &tx, &rx);
 }
@@ -516,7 +517,7 @@ static int fxos8700_init(const struct device *dev)
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
 	if (config->inst_on_bus == FXOS8700_BUS_I2C) {
 		if (!device_is_ready(config->bus_cfg.i2c.bus)) {
-			LOG_ERR("I2C bus device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->bus_cfg.i2c.bus);
 			return -ENODEV;
 		}
 	}
@@ -525,7 +526,7 @@ static int fxos8700_init(const struct device *dev)
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
 	if (config->inst_on_bus == FXOS8700_BUS_SPI) {
 		if (!device_is_ready(config->bus_cfg.spi.bus)) {
-			LOG_ERR("SPI bus device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->bus_cfg.spi.bus);
 			return -ENODEV;
 		}
 	}
@@ -537,7 +538,7 @@ static int fxos8700_init(const struct device *dev)
 		 */
 
 		if (!gpio_is_ready_dt(&config->reset_gpio)) {
-			LOG_ERR("GPIO device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->reset_gpio.port);
 			return -ENODEV;
 		}
 
@@ -656,7 +657,7 @@ static int fxos8700_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api fxos8700_driver_api = {
+static DEVICE_API(sensor, fxos8700_driver_api) = {
 	.sample_fetch = fxos8700_sample_fetch,
 	.channel_get = fxos8700_channel_get,
 	.attr_set = fxos8700_attr_set,
@@ -744,14 +745,14 @@ static const struct sensor_driver_api fxos8700_driver_api = {
 
 #define FXOS8700_CONFIG_SPI(n)						\
 		.bus_cfg = { .spi = SPI_DT_SPEC_INST_GET(n,		\
-			SPI_OP_MODE_MASTER | SPI_WORD_SET(8), 0) },	\
+			SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8)) },	\
 		.ops = &fxos8700_spi_ops,				\
 		.power_mode =  DT_INST_PROP(n, power_mode),		\
 		.range = DT_INST_PROP(n, range),			\
 		.inst_on_bus = FXOS8700_BUS_SPI,			\
 
 #define FXOS8700_SPI_OPERATION (SPI_WORD_SET(8) |			\
-				SPI_OP_MODE_MASTER)			\
+				SPI_OP_MODE_CONTROLLER)			\
 
 #define FXOS8700_INIT(n)						\
 	static const struct fxos8700_config fxos8700_config_##n = {	\

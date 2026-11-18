@@ -305,10 +305,13 @@ static void rndis_bulk_out(uint8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 		return;
 	}
 
-	/* We already use frame keeping with len, warn here about
-	 * receiving frame delimiter
+	/* A single 0x00 byte is only a frame delimiter when no packet is
+	 * currently being assembled. When a packet is in progress, the same
+	 * byte can be the genuine trailing byte of a frame whose length is
+	 * not a multiple of the bulk endpoint size, so it must be kept and
+	 * written to complete the frame instead of being skipped.
 	 */
-	if (len == 1U && !rx_buf[0]) {
+	if (len == 1U && !rx_buf[0] && rndis.in_pkt == NULL) {
 		LOG_DBG("Got frame delimiter, skip");
 		return;
 	}
@@ -345,7 +348,7 @@ static void rndis_bulk_out(uint8_t ep, enum usb_dc_ep_cb_status_code ep_status)
 		}
 
 		pkt = net_pkt_rx_alloc_with_buffer(netusb_net_iface(),
-						   rndis.in_pkt_len, AF_UNSPEC,
+						   rndis.in_pkt_len, NET_AF_UNSPEC,
 						   0, K_NO_WAIT);
 		if (!pkt) {
 			/* In case of low memory: skip the whole packet
@@ -931,7 +934,7 @@ static int rndis_send(struct net_pkt *pkt)
 	size_t len = net_pkt_get_len(pkt);
 	int ret;
 
-	LOG_DBG("send pkt %p len %u", pkt, len);
+	LOG_DBG("send pkt %p len %zu", pkt, len);
 
 	if (rndis.media_status == RNDIS_OBJECT_ID_MEDIA_DISCONNECTED) {
 		LOG_DBG("Media disconnected, drop pkt %p", pkt);

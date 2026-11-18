@@ -5,19 +5,20 @@
 #
 
 identifier: mimxrt1170_evk@B/mimxrt1176/cm4
-name: NXP MIMXRT1170-EVKB CM4
+name: NXP MIMXRT1170-EVKB (CM4)
 type: mcu
 arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 128
 flash: 128
 supported:
+  - dac
   - dma
+  - flash
   - gpio
   - i2c
-  - spi
   - pwm
+  - spi
 vendor: nxp

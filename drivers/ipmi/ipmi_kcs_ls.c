@@ -330,7 +330,7 @@ static int ipmi_add_callback(const struct device *dev, ipmi_callback_t callback,
     return 0;
 }
 
-static const struct ipmi_driver_api ipmi_kcs_ls_api = {
+static DEVICE_API(ipmi, ipmi_kcs_ls_api) = {
     .read = ipmi_kcs_ls_read,
     .write = ipmi_kcs_ls_write,
     .update_status = ipmi_kcs_ls_update_status,

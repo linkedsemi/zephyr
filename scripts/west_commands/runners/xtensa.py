@@ -6,7 +6,7 @@
 
 from os import path
 
-from runners.core import ZephyrBinaryRunner, RunnerCaps
+from runners.core import RunnerCaps, ZephyrBinaryRunner
 
 
 class XtensaBinaryRunner(ZephyrBinaryRunner):
@@ -34,4 +34,4 @@ class XtensaBinaryRunner(ZephyrBinaryRunner):
     def do_run(self, command, **kwargs):
         gdb_cmd = [self.cfg.gdb, self.cfg.elf_file]
         self.require(gdb_cmd[0])
-        self.check_call(gdb_cmd)
+        self.check_call_ignore_sigint(gdb_cmd)

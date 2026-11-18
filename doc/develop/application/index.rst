@@ -341,7 +341,7 @@ Zephyr's :zephyr:code-sample-category:`samples` as a starting point is likely to
 
    .. code-block:: cmake
 
-      cmake_minimum_required(VERSION 3.20.0)
+      cmake_minimum_required(VERSION 3.28.0)
 
       find_package(Zephyr)
       project(my_zephyr_app)
@@ -448,6 +448,10 @@ should know about.
 * :makevar:`FILE_SUFFIX`: Optional suffix for filenames that will be added to Kconfig
   fragments and devicetree overlays (if these files exists, otherwise will fallback to
   the name without the prefix). See :ref:`application-file-suffixes` for details.
+
+* :makevar:`KCONFIG_WARNING_AS_ERROR`: Treat every Kconfig warning as an error,
+  including the ones which are only printed by default. See
+  :ref:`kconfig_warning_as_error` for details.
 
 .. note::
 
@@ -599,10 +603,11 @@ storage used to cache values between runs, including compile and build
 options and paths to library dependencies. This cache file is created
 when CMake is run in an empty build folder.
 
-For more details about the CMakeCache.txt file see the official CMake
-documentation `runningcmake`_ .
+For more details about the CMakeCache.txt file see the official `CMake Cache`_
+documentation.
 
-.. _runningcmake: http://cmake.org/runningcmake/
+.. _CMake Cache: https://cmake.org/cmake/help/book/mastering-cmake/chapter/CMake%20Cache.html
+
 
 Application Configuration
 *************************
@@ -712,21 +717,15 @@ Given the following example project layout:
 * If this is built normally without ``FILE_SUFFIX`` being defined for ``native_sim`` then
   ``prj.conf`` and ``boards/native_sim.overlay`` will be used.
 
-* If this is build normally without ``FILE_SUFFIX`` being defined for ``qemu_cortex_m3`` then
+* If this is built normally without ``FILE_SUFFIX`` being defined for ``qemu_cortex_m3`` then
   ``prj.conf`` will be used, no application devicetree overlay will be used.
 
 * If this is built with ``FILE_SUFFIX`` set to ``mouse`` for ``native_sim`` then
   ``prj_mouse.conf`` and ``boards/native_sim.overlay`` will be used (there is no
   ``native_sim_mouse.overlay`` file so it falls back to ``native_sim.overlay``).
 
-* If this is build with ``FILE_SUFFIX`` set to ``mouse`` for ``qemu_cortex_m3`` then
+* If this is built with ``FILE_SUFFIX`` set to ``mouse`` for ``qemu_cortex_m3`` then
   ``prj_mouse.conf`` will be used and ``boards/qemu_cortex_m3_mouse.overlay`` will be used.
-
-.. note::
-
-   When ``CONF_FILE`` is set in the form of ``prj_X.conf`` then the ``X`` will be used as the
-   build type. If this is combined with ``FILE_SUFFIX`` then the file suffix option will take
-   priority over the build type.
 
 Application-Specific Code
 *************************
@@ -979,13 +978,14 @@ support files to make minor adjustments to a board configuration without
 duplicating all the files described in :ref:`create-your-board-directory` for
 each revision.
 
-To build for a particular revision, use ``<board>@<revision>`` instead of plain
-``<board>``. For example:
+To build for a particular revision, use ``<board>@<revision>`` or
+``<board>@<revision>/<qualifiers>`` instead of plain ``<board>`` or
+``<board>/<qualifiers>``. For example:
 
 .. zephyr-app-commands::
    :tool: all
    :cd-into:
-   :board: <board>@<revision>
+   :board: nrf9160dk@0.14.0/nrf9160/ns
    :goals: build
    :compact:
 
@@ -1012,7 +1012,7 @@ Running on a Board
 ==================
 
 Most boards supported by Zephyr let you flash a compiled binary using
-the ``flash`` target to copy the binary to the board and run it.
+``west flash`` to copy the binary to the board and run it.
 Follow these instructions to flash and run an application on real
 hardware:
 
@@ -1021,19 +1021,13 @@ hardware:
 #. Make sure your board is attached to your host computer. Usually, you'll do
    this via USB.
 
-#. Run one of these console commands from the build directory,
+#. Run this console command from the build directory,
    :file:`<app>/build`, to flash the compiled Zephyr image and run it on
    your board:
 
    .. code-block:: console
 
       west flash
-
-   or
-
-   .. code-block:: console
-
-      ninja flash
 
 The Zephyr build system integrates with the board support files to
 use hardware-specific tools to flash the Zephyr binary to your
@@ -1099,7 +1093,7 @@ again.
 
 .. note::
 
-   If the (Linux only) :ref:`Zephyr SDK <toolchain_zephyr_sdk>` is installed, the ``run``
+   If the :ref:`Zephyr SDK <toolchain_zephyr_sdk>` is installed, the ``run``
    target will use the SDK's QEMU binary by default. To use another version of
    QEMU, :ref:`set the environment variable <env_vars>` ``QEMU_BIN_PATH``
    to the path of the QEMU binary you want to use instead.
@@ -1165,6 +1159,7 @@ will be needed when submitting to Zephyr.
 The contents of ``my_custom_board`` should follow the same guidelines for any
 Zephyr board, and provide the following files::
 
+    board.yml
     my_custom_board_defconfig
     my_custom_board.dts
     my_custom_board.yaml
@@ -1203,6 +1198,11 @@ boilerplate with ``find_package(Zephyr ...)``.
    When using ``-DBOARD_ROOT=<board-root>`` both absolute and relative paths can
    be used. Relative paths are treated relatively to the application directory.
 
+.. note::
+
+   When using sysbuild, then ``BOARD_ROOT`` must defined in a module or in the sysbuild
+   ``CMakeLists.txt`` file, see :ref:`sysbuild_var_override` for details.
+
 SOC Definitions
 ===============
 
@@ -1240,7 +1240,7 @@ more SoCs into the menu.
 
 The Kconfig files above may describe the SoC or load additional SoC Kconfig files.
 
-An example of loading ``stm31l0`` specific Kconfig files in this structure:
+An example of loading ``stm32l0`` specific Kconfig files in this structure:
 
 .. code-block:: none
 

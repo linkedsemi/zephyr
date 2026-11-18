@@ -11,7 +11,7 @@
 #include "mesh/mesh.h"
 #include "mesh/foundation.h"
 #include "mesh/crypto.h"
-#include "argparse.h"
+#include "bsim_args_runner.h"
 #include "mesh/proxy_cli.h"
 #include "mesh/proxy.h"
 
@@ -338,7 +338,7 @@ static struct {
 static void beacon_scan_cb(const bt_addr_le_t *addr, int8_t rssi, uint8_t adv_type,
 			   struct net_buf_simple *buf)
 {
-	const uint8_t *net_id;
+	const uint8_t *net_id = NULL;
 	uint8_t ad_data_type, beacon_type, length;
 
 	ASSERT_EQUAL(BT_GAP_ADV_TYPE_ADV_NONCONN_IND, adv_type);
@@ -1056,6 +1056,70 @@ static void test_tx_beacon_cache(void)
 	PASS();
 }
 
+static void snb_recv_ivu(const struct bt_mesh_snb *snb)
+{
+	ASSERT_EQUAL(snb->flags, 0x02);
+	ASSERT_EQUAL(snb->iv_idx, 1);
+	snb_cnt++;
+	k_sem_give(&beacon_sem);
+}
+
+static void test_rx_beacon_cache_ivu_test_mode(void)
+{
+	k_sem_init(&beacon_sem, 0, 1);
+	snb_cb_ptr = snb_recv_ivu;
+
+	bt_mesh_test_cfg_set(&rx_cfg, WAIT_TIME);
+	bt_mesh_test_setup();
+
+	/* Test mode is left off, so the first beacon is refused by the 96-hour limit. */
+	ASSERT_OK_MSG(k_sem_take(&beacon_sem, K_SECONDS(20)), "Didn't receive first SNB");
+	ASSERT_EQUAL(bt_mesh.iv_index, 0);
+	ASSERT_FALSE(atomic_test_bit(bt_mesh.flags, BT_MESH_IVU_IN_PROGRESS));
+
+	bt_mesh_iv_update_test(true);
+
+	/* The repeated beacon must not be filtered out as a duplicate now that the limit
+	 * no longer applies.
+	 */
+	ASSERT_OK_MSG(k_sem_take(&beacon_sem, K_SECONDS(20)), "Cached SNB was not reprocessed");
+	ASSERT_EQUAL(bt_mesh.iv_index, 1);
+	ASSERT_TRUE(atomic_test_bit(bt_mesh.flags, BT_MESH_IVU_IN_PROGRESS));
+
+	bt_mesh_iv_update_test(false);
+
+	ASSERT_OK_MSG(k_sem_take(&beacon_sem, K_SECONDS(20)), "Cached SNB was not reprocessed");
+
+	/* Duplicate filtering is unaffected by test mode, so the fourth beacon is dropped. */
+	ASSERT_TRUE(k_sem_take(&beacon_sem, K_SECONDS(20)) != 0);
+	ASSERT_EQUAL(snb_cnt, 3);
+
+	PASS();
+}
+
+static void test_tx_beacon_cache_ivu_test_mode(void)
+{
+	NET_BUF_SIMPLE_DEFINE(iv1, 22);
+
+	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
+	bt_mesh_crypto_init();
+	ASSERT_OK_MSG(bt_enable(NULL), "Bluetooth init failed");
+
+	beacon_create(&iv1, test_net_key, 0x02, 0x0001);
+
+	/* The rx device sends its own beacons on a 10 second cycle. Offset the transmissions by
+	 * half a cycle, otherwise they collide with those and the rx device never sees them.
+	 */
+	k_sleep(K_SECONDS(5));
+
+	for (size_t i = 0; i < 4; i++) {
+		send_beacon(&iv1);
+		k_sleep(K_SECONDS(10));
+	}
+
+	PASS();
+}
+
 typedef void (*priv_beacon_cb)(const struct bt_mesh_prb *prb);
 
 static priv_beacon_cb priv_beacon_cb_ptr;
@@ -1073,6 +1137,8 @@ BT_MESH_BEACON_CB_DEFINE(priv_beacon) = {
 
 static bool private_beacon_check(const uint8_t *net_id, void *ctx)
 {
+	ARG_UNUSED(net_id);
+
 	bool ret;
 	bool same_random = *(bool *)ctx;
 
@@ -1766,7 +1832,7 @@ static void test_tx_priv_node_id(void)
 	/* Wait for Node ID advertising to end */
 	k_sleep(K_SECONDS(65));
 
-	/* Check that advertisment has stopped */
+	/* Check that advertisement has stopped */
 	ASSERT_OK_MSG(bt_mesh_subnet_priv_node_id_get(TEST_NET_IDX1, &state),
 		      "Failed to get private node ID");
 	ASSERT_EQUAL(state, BT_MESH_NODE_IDENTITY_STOPPED);
@@ -1796,7 +1862,7 @@ static void test_rx_priv_node_id(void)
 
 	uint64_t last_pp_random = beacon.pp_random;
 
-	/* Wait for first node ID advertisment to finish, then scan for
+	/* Wait for first node ID advertisement to finish, then scan for
 	 * second node ID and verify that random field has changed
 	 */
 
@@ -2098,7 +2164,7 @@ static void test_rx_priv_multi_net_id(void)
 			if (beacon.pp_hash ==
 			    proxy_adv_hash_calc(net_ctx[i].net, beacon.pp_random, NULL, true)) {
 				if (old_idx == 0xff) {
-					/* Received first Net ID advertisment */
+					/* Received first Net ID advertisement */
 					old_idx = i;
 					net_ctx[i].start = k_uptime_get();
 					net_ctx[i].recv_cnt++;
@@ -2112,7 +2178,7 @@ static void test_rx_priv_multi_net_id(void)
 					net_ctx[old_idx].recv_cnt = 0;
 					old_idx = i;
 
-					/* The test ends when all itterations are completed */
+					/* The test ends when all iterations are completed */
 					itr--;
 
 					net_ctx[i].start = k_uptime_get();
@@ -2211,6 +2277,7 @@ static const struct bst_test_instance test_beacon[] = {
 	TEST_CASE(tx, multiple_netkeys, "Beacon: multiple Net Keys"),
 	TEST_CASE(tx, secure_beacon_interval, "Beacon: send secure beacons"),
 	TEST_CASE(tx, beacon_cache,   "Beacon: advertise duplicate SNBs"),
+	TEST_CASE(tx, beacon_cache_ivu_test_mode, "Beacon: duplicate SNB, IVU test mode"),
 	TEST_CASE(tx, priv_on_iv_update,   "Private Beacon: send on IV update"),
 	TEST_CASE(tx, priv_on_key_refresh,   "Private Beacon: send on Key Refresh"),
 	TEST_CASE(tx, priv_adv,   "Private Beacon: advertise Private Beacons"),
@@ -2233,6 +2300,7 @@ static const struct bst_test_instance test_beacon[] = {
 	TEST_CASE(rx, multiple_netkeys, "Beacon: multiple Net Keys"),
 	TEST_CASE(rx, secure_beacon_interval, "Beacon: receive and send secure beacons"),
 	TEST_CASE(rx, beacon_cache,   "Beacon: receive duplicate SNBs"),
+	TEST_CASE(rx, beacon_cache_ivu_test_mode, "Beacon: duplicate SNB, IVU test mode"),
 	TEST_CASE(rx, priv_adv,   "Private Beacon: verify random regeneration"),
 	TEST_CASE(rx, priv_invalid,   "Private Beacon: receive invalid beacons"),
 	TEST_CASE(rx, priv_interleave,   "Private Beacon: interleaved with SNB"),

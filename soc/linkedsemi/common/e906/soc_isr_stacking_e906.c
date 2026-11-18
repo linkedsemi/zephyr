@@ -94,7 +94,7 @@ void __soc_handle_all_irqs(void)
 	while (1) {
         uint32_t mnxti = mnxti_get_no_set_mie();
         uint32_t irq_num = mnxti >> 2;
-        struct _isr_table_entry *entry;
+        const struct _isr_table_entry *entry;
         uint32_t _cpu_id = get_cur_cpu_id();
         if (0 == mnxti) {
             break;

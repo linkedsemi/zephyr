@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @ingroup espi_emul_interface
+ * @brief Main header file for eSPI emulation driver API.
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_ESPI_SPI_EMUL_H_
 #define ZEPHYR_INCLUDE_DRIVERS_ESPI_SPI_EMUL_H_
 
@@ -14,15 +20,10 @@
 #include <zephyr/types.h>
 
 /**
- * @file
- *
- * @brief Public APIs for the eSPI emulation drivers.
- */
-
-/**
  * @brief eSPI Emulation Interface
  * @defgroup espi_emul_interface eSPI Emulation Interface
  * @ingroup io_emulators
+ * @ingroup espi_interface
  * @{
  */
 
@@ -62,16 +63,16 @@ typedef int (*emul_espi_api_set_vw)(const struct emul *target, enum espi_vwire_s
 typedef int (*emul_espi_api_get_vw)(const struct emul *target, enum espi_vwire_signal vw,
 				    uint8_t *level);
 
-#ifdef CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION
 /**
  * Get the ACPI shared memory address owned by the emulator.
  *
+ * @kconfig_dep{CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION}
+ *
  * @param target The device Emulator instance
  *
- * @retval The address of the memory.
+ * @return The address of the memory.
  */
 typedef uintptr_t (*emul_espi_api_get_acpi_shm)(const struct emul *target);
-#endif
 
 /**
  * Find an emulator present on a eSPI bus
@@ -100,9 +101,14 @@ typedef int (*emul_trigger_event)(const struct device *dev, struct espi_event *e
 
 /** Definition of the eSPI device emulator API */
 struct emul_espi_device_api {
+	/** eSPI virtual wires set handler */
 	emul_espi_api_set_vw set_vw;
+	/** eSPI virtual wires get handler */
 	emul_espi_api_get_vw get_vw;
-#ifdef CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION
+#if defined(CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION) || defined(__DOXYGEN__)
+	/** ACPI shared memory address get handler
+	 * @kconfig_dep{CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION}
+	 */
 	emul_espi_api_get_acpi_shm get_acpi_shm;
 #endif
 };
@@ -119,7 +125,7 @@ struct espi_emul {
 };
 
 /** Definition of the eSPI controller emulator API */
-struct emul_espi_driver_api {
+__subsystem struct emul_espi_driver_api {
 	/* The struct espi_driver_api has to be first in
 	 * struct emul_espi_driver_api to make pointer casting working
 	 */
@@ -128,6 +134,10 @@ struct emul_espi_driver_api {
 	emul_trigger_event trigger_event;
 	emul_find_emul find_emul;
 };
+
+/** @cond INTERNAL_HIDDEN */
+DEVICE_API_EXTENDS(emul_espi, espi, espi_api);
+/** @endcond */
 
 /**
  * Register an emulated device on the controller
@@ -163,16 +173,16 @@ int emul_espi_host_send_vw(const struct device *espi_dev, enum espi_vwire_signal
  */
 int emul_espi_host_port80_write(const struct device *espi_dev, uint32_t data);
 
-#ifdef CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION
 /**
  * Get the host device's ACPI shared memory start address. The size of the region is
  * CONFIG_EMUL_ESPI_HOST_ACPI_SHM_REGION_SIZE.
+ *
+ * @kconfig_dep{CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION}
  *
  * @param espi_dev eSPI emulation controller device.
  * @return Address of the start of the ACPI shared memory.
  */
 uintptr_t emul_espi_host_get_acpi_shm(const struct device *espi_dev);
-#endif
 
 #ifdef __cplusplus
 }

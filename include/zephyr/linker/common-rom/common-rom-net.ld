@@ -2,6 +2,10 @@
 
 #include <zephyr/linker/iterable_sections.h>
 
+#if defined(CONFIG_NETWORKING)
+	ITERABLE_SECTION_ROM(net_l3_register, Z_LINK_ITERABLE_SUBALIGN)
+#endif
+
 #if defined(CONFIG_NET_SOCKETS)
 	ITERABLE_SECTION_ROM(net_socket_register, Z_LINK_ITERABLE_SUBALIGN)
 #endif
@@ -28,4 +32,8 @@
 
 #if defined(CONFIG_NET_SOCKETS_SERVICE)
 	ITERABLE_SECTION_ROM(net_socket_service_desc, Z_LINK_ITERABLE_SUBALIGN)
+#endif
+
+#if defined(CONFIG_NET_DSA)
+	ITERABLE_SECTION_ROM(dsa_tag_register, Z_LINK_ITERABLE_SUBALIGN)
 #endif

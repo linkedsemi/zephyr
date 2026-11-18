@@ -47,7 +47,7 @@ static int tmd2620_configure_interrupt(const struct device *dev)
 	LOG_DBG("Configuring Interrupt.");
 
 	if (!gpio_is_ready_dt(&config->int_gpio)) {
-		LOG_ERR("Interrupt GPIO device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->int_gpio.port);
 		return -ENODEV;
 	}
 
@@ -322,7 +322,7 @@ static int tmd2620_init(const struct device *dev)
 #endif
 
 	if (!i2c_is_ready_dt(&config->i2c)) {
-		LOG_ERR("I2C bus not ready!");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -387,7 +387,7 @@ static int tmd2620_pm_action(const struct device *dev, enum pm_device_action act
 }
 #endif
 
-static const struct sensor_driver_api tmd2620_driver_api = {
+static DEVICE_API(sensor, tmd2620_driver_api) = {
 	.sample_fetch = tmd2620_sample_fetch,
 	.channel_get = tmd2620_channel_get,
 #ifdef CONFIG_TMD2620_TRIGGER

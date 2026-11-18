@@ -16,7 +16,7 @@
 #include <zephyr/shell/shell_websocket.h>
 #include <zephyr/logging/log_backend_ws.h>
 
-LOG_MODULE_REGISTER(shell_websocket, CONFIG_SHELL_WEBSOCKET_INIT_LOG_LEVEL);
+LOG_MODULE_REGISTER(shell_websocket, CONFIG_SHELL_WEBSOCKET_LOG_LEVEL);
 
 #define WEBSOCKET_LINE_SIZE CONFIG_SHELL_WEBSOCKET_LINE_BUF_SIZE
 #define WEBSOCKET_TIMEOUT   CONFIG_SHELL_WEBSOCKET_SEND_TIMEOUT
@@ -35,7 +35,11 @@ static void ws_end_client_connection(struct shell_websocket *ws)
 
 	LOG_DBG("Closing connection to #%d", ws->fds[0].fd);
 
-	(void)log_backend_ws_unregister(ws->fds[0].fd);
+	k_mutex_lock(&ws->socket_lock, K_FOREVER);
+
+	if (IS_ENABLED(CONFIG_LOG_BACKEND_WS)) {
+		(void)log_backend_ws_unregister(ws->fds[0].fd);
+	}
 
 	(void)websocket_unregister(ws->fds[0].fd);
 
@@ -49,6 +53,8 @@ static void ws_end_client_connection(struct shell_websocket *ws)
 	if (ret < 0) {
 		LOG_ERR("Failed to re-register socket service (%d)", ret);
 	}
+
+	k_mutex_unlock(&ws->socket_lock);
 }
 
 static int ws_send(struct shell_websocket *ws, bool block)
@@ -100,10 +106,13 @@ static void ws_send_prematurely(struct k_work *work)
 	struct shell_websocket *ws = CONTAINER_OF(dwork,
 						  struct shell_websocket,
 						  send_work);
-	int ret;
+	int ret = -EAGAIN;
 
 	/* Use non-blocking send to prevent system workqueue blocking. */
-	ret = ws_send(ws, false);
+	if (k_mutex_lock(&ws->socket_lock, K_NO_WAIT) == 0) {
+		ret = ws_send(ws, false);
+		k_mutex_unlock(&ws->socket_lock);
+	}
 	if (ret == -EAGAIN) {
 		/* Not all data was sent, reschedule the work. */
 		k_work_reschedule(&ws->send_work, K_MSEC(WEBSOCKET_TIMEOUT));
@@ -138,12 +147,6 @@ static void ws_recv(struct shell_websocket *ws, struct zsock_pollfd *pollfd)
 	}
 
 	len = ret;
-
-	if (len == 0) {
-		k_mutex_unlock(&ws->rx_lock);
-		return;
-	}
-
 	ws->rx_len += len;
 
 	k_mutex_unlock(&ws->rx_lock);
@@ -159,7 +162,7 @@ error:
 
 static void ws_server_cb(struct net_socket_service_event *evt)
 {
-	socklen_t optlen = sizeof(int);
+	net_socklen_t optlen = sizeof(int);
 	struct shell_websocket *ws;
 	int sock_error;
 
@@ -167,8 +170,8 @@ static void ws_server_cb(struct net_socket_service_event *evt)
 
 	if ((evt->event.revents & ZSOCK_POLLERR) ||
 	    (evt->event.revents & ZSOCK_POLLNVAL)) {
-		(void)zsock_getsockopt(evt->event.fd, SOL_SOCKET,
-				       SO_ERROR, &sock_error, &optlen);
+		(void)zsock_getsockopt(evt->event.fd, ZSOCK_SOL_SOCKET,
+				       ZSOCK_SO_ERROR, &sock_error, &optlen);
 		LOG_ERR("Websocket socket %d error (%d)", evt->event.fd, sock_error);
 
 		if (evt->event.fd == ws->fds[0].fd) {
@@ -212,8 +215,9 @@ static int shell_ws_init(struct shell_websocket *ctx, int ws_socket)
 		LOG_ERR("Failed to register socket service, %d", ret);
 		goto error;
 	}
-
-	log_backend_ws_register(ws_socket);
+	if (IS_ENABLED(CONFIG_LOG_BACKEND_WS)) {
+		log_backend_ws_register(ws_socket);
+	}
 
 	return 0;
 
@@ -247,6 +251,7 @@ static int init(const struct shell_transport *transport,
 
 	k_work_init_delayable(&ws->send_work, ws_send_prematurely);
 	k_mutex_init(&ws->rx_lock);
+	k_mutex_init(&ws->socket_lock);
 
 	return 0;
 }
@@ -278,11 +283,6 @@ static int sh_write(const struct shell_transport *transport,
 
 	ws = (struct shell_websocket *)transport->ctx;
 
-	if (ws->fds[0].fd < 0 || ws->output_lock) {
-		*cnt = length;
-		return 0;
-	}
-
 	*cnt = 0;
 	lb = &ws->line_out;
 
@@ -305,9 +305,19 @@ static int sh_write(const struct shell_transport *transport,
 		 * is recognized.
 		 */
 		if (lb->buf[lb->len - 1] == '\n' || lb->len == WEBSOCKET_LINE_SIZE) {
+			k_mutex_lock(&ws->socket_lock, K_FOREVER);
+			if (ws->fds[0].fd < 0 || ws->output_lock) {
+				*cnt = length;
+				k_mutex_unlock(&ws->socket_lock);
+				return 0;
+			}
 			ret = ws_send(ws, true);
+			k_mutex_unlock(&ws->socket_lock);
 			if (ret != 0) {
 				*cnt = length;
+				if (ret == -ENOTCONN || ret == -ECONNRESET || ret == -EPIPE) {
+					return 0;
+				}
 				return ret;
 			}
 		}
@@ -377,7 +387,7 @@ const struct shell_transport_api shell_websocket_transport_api = {
 	.read = sh_read
 };
 
-int shell_websocket_setup(int ws_socket, void *user_data)
+int shell_websocket_setup(int ws_socket, struct http_request_ctx *request_ctx, void *user_data)
 {
 	struct shell_websocket *ws = user_data;
 
@@ -386,7 +396,8 @@ int shell_websocket_setup(int ws_socket, void *user_data)
 
 int shell_websocket_enable(const struct shell *sh)
 {
-	bool log_backend = CONFIG_SHELL_WEBSOCKET_INIT_LOG_LEVEL > 0;
+	bool log_backend = CONFIG_SHELL_WEBSOCKET_INIT_LOG_LEVEL > 0 &&
+			   !IS_ENABLED(CONFIG_LOG_BACKEND_WS);
 	uint32_t level = (CONFIG_SHELL_WEBSOCKET_INIT_LOG_LEVEL > LOG_LEVEL_DBG) ?
 		CONFIG_LOG_MAX_LEVEL : CONFIG_SHELL_WEBSOCKET_INIT_LOG_LEVEL;
 	static const struct shell_backend_config_flags cfg_flags =

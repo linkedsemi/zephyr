@@ -19,7 +19,6 @@
 
 #include "common/bt_str.h"
 
-#include "mesh.h"
 #include "net.h"
 #include "rpl.h"
 #include "transport.h"
@@ -28,15 +27,13 @@
 #include "foundation.h"
 #include "access.h"
 #include "proxy.h"
+#include "gatt.h"
 #include "proxy_msg.h"
 #include "crypto.h"
 
 #define LOG_LEVEL CONFIG_BT_MESH_PROXY_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_mesh_gatt);
-
-#define PROXY_SVC_INIT_TIMEOUT K_MSEC(10)
-#define PROXY_SVC_REG_ATTEMPTS 5
 
 /* Interval to update random value in (10 minutes).
  *
@@ -74,6 +71,7 @@ static struct bt_mesh_proxy_client {
 };
 
 static bool service_registered;
+static bool adv_restart_pending;
 
 static struct bt_mesh_proxy_client *find_client(struct bt_conn *conn)
 {
@@ -482,12 +480,6 @@ static const struct bt_data net_id_ad[] = {
 	BT_DATA(BT_DATA_SVC_DATA16, proxy_svc_data, NET_ID_LEN),
 };
 
-static const struct bt_data sd[] = {
-#if defined(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME)
-	BT_DATA(BT_DATA_NAME_COMPLETE, CONFIG_BT_DEVICE_NAME, sizeof(CONFIG_BT_DEVICE_NAME) - 1),
-#endif
-};
-
 static int randomize_bt_addr(void)
 {
 	/* TODO: There appears to be no way to force an RPA/NRPA refresh. */
@@ -509,6 +501,7 @@ static int enc_id_adv(struct bt_mesh_subnet *sub, uint8_t type,
 					 type == BT_MESH_ID_TYPE_PRIV_NODE),
 		ADV_FAST_INT,
 	};
+	struct bt_data sd[1];
 	int err;
 
 	err = bt_mesh_encrypt(&sub->keys[SUBNET_KEY_TX_IDX(sub)].identity, hash, hash);
@@ -528,9 +521,17 @@ static int enc_id_adv(struct bt_mesh_subnet *sub, uint8_t type,
 	proxy_svc_data[2] = type;
 	memcpy(&proxy_svc_data[3], &hash[8], 8);
 
+	if (IS_ENABLED(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME)) {
+		sd[0].type = BT_DATA_NAME_COMPLETE;
+		sd[0].data_len = BT_DEVICE_NAME_LEN;
+		sd[0].data = BT_DEVICE_NAME;
+	}
+
 	err = bt_mesh_adv_gatt_start(
 		type == BT_MESH_ID_TYPE_PRIV_NET ? &slow_adv_param : &fast_adv_param,
-		duration, enc_id_ad, ARRAY_SIZE(enc_id_ad), sd, ARRAY_SIZE(sd));
+		duration, enc_id_ad, ARRAY_SIZE(enc_id_ad),
+		IS_ENABLED(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME) ? sd : NULL,
+		IS_ENABLED(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME) ? ARRAY_SIZE(sd) : 0);
 	if (err) {
 		LOG_WRN("Failed to advertise using type 0x%02x (err %d)", type, err);
 		return err;
@@ -606,6 +607,7 @@ static int net_id_adv(struct bt_mesh_subnet *sub, int32_t duration)
 		.options = ADV_OPT_PROXY(false),
 		ADV_SLOW_INT,
 	};
+	struct bt_data sd[1];
 	int err;
 
 	proxy_svc_data[2] = BT_MESH_ID_TYPE_NET;
@@ -614,8 +616,17 @@ static int net_id_adv(struct bt_mesh_subnet *sub, int32_t duration)
 
 	memcpy(proxy_svc_data + 3, sub->keys[SUBNET_KEY_TX_IDX(sub)].net_id, 8);
 
+	if (IS_ENABLED(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME)) {
+		sd[0].type = BT_DATA_NAME_COMPLETE;
+		sd[0].data_len = BT_DEVICE_NAME_LEN;
+		sd[0].data = BT_DEVICE_NAME;
+	}
+
 	err = bt_mesh_adv_gatt_start(&slow_adv_param, duration, net_id_ad,
-				     ARRAY_SIZE(net_id_ad), sd, ARRAY_SIZE(sd));
+				     ARRAY_SIZE(net_id_ad),
+				     IS_ENABLED(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME) ? sd : NULL,
+				     IS_ENABLED(CONFIG_BT_MESH_PROXY_USE_DEVICE_NAME) ?
+					ARRAY_SIZE(sd) : 0);
 	if (err) {
 		LOG_WRN("Failed to advertise using Network ID (err %d)", err);
 		return err;
@@ -886,10 +897,13 @@ static void subnet_evt(struct bt_mesh_subnet *sub, enum bt_mesh_key_evt evt)
 		if (sub == beacon_sub) {
 			beacon_sub = NULL;
 		}
+
+		bt_mesh_proxy_identity_stop(sub);
 	} else {
 		bt_mesh_proxy_beacon_send(sub);
-		bt_mesh_adv_gatt_update();
 	}
+
+	bt_mesh_adv_gatt_update();
 }
 
 BT_MESH_SUBNET_CB_DEFINE(gatt_services) = {
@@ -923,8 +937,8 @@ static ssize_t proxy_ccc_write(struct bt_conn *conn,
 }
 
 /* Mesh Proxy Service Declaration */
-static struct _bt_gatt_ccc proxy_ccc =
-	BT_GATT_CCC_INITIALIZER(proxy_ccc_changed, proxy_ccc_write, NULL);
+static struct bt_gatt_ccc_managed_user_data proxy_ccc =
+	BT_GATT_CCC_MANAGED_USER_DATA_INIT(proxy_ccc_changed, proxy_ccc_write, NULL);
 
 static struct bt_gatt_attr proxy_attrs[] = {
 	BT_GATT_PRIMARY_SERVICE(BT_UUID_MESH_PROXY),
@@ -943,22 +957,23 @@ static struct bt_gatt_attr proxy_attrs[] = {
 };
 
 static struct bt_gatt_service proxy_svc = BT_GATT_SERVICE(proxy_attrs);
-static void svc_reg_work_handler(struct k_work *work);
-static struct k_work_delayable svc_reg_work = Z_WORK_DELAYABLE_INITIALIZER(svc_reg_work_handler);
-static uint32_t svc_reg_attempts;
 
-static void svc_reg_work_handler(struct k_work *work)
+static int proxy_gatt_service_register(void)
 {
 	int err;
 
+	if (!bt_mesh_is_provisioned()) {
+		return -ENOTSUP;
+	}
+
+	if (service_registered) {
+		return -EBUSY;
+	}
+
 	err = bt_gatt_service_register(&proxy_svc);
-	if ((err == -EINVAL) && ((--svc_reg_attempts) > 0)) {
-		/* settings_load() didn't finish yet. Try again. */
-		(void)k_work_schedule(&svc_reg_work, PROXY_SVC_INIT_TIMEOUT);
-		return;
-	} else if (err) {
+	if (err) {
 		LOG_ERR("Unable to register Mesh Proxy Service (err %d)", err);
-		return;
+		return err;
 	}
 
 	service_registered = true;
@@ -969,7 +984,7 @@ static void svc_reg_work_handler(struct k_work *work)
 		}
 	}
 
-	bt_mesh_adv_gatt_update();
+	return 0;
 }
 
 int bt_mesh_proxy_gatt_enable(void)
@@ -978,20 +993,12 @@ int bt_mesh_proxy_gatt_enable(void)
 
 	LOG_DBG("");
 
-	if (!bt_mesh_is_provisioned()) {
-		return -ENOTSUP;
-	}
-
-	if (service_registered) {
-		return -EBUSY;
-	}
-
-	svc_reg_attempts = PROXY_SVC_REG_ATTEMPTS;
-	err = k_work_schedule(&svc_reg_work, PROXY_SVC_INIT_TIMEOUT);
-	if (err < 0) {
-		LOG_ERR("Enabling GATT proxy failed (err %d)", err);
+	err = proxy_gatt_service_register();
+	if (err) {
 		return err;
 	}
+
+	bt_mesh_adv_gatt_update();
 
 	return 0;
 }
@@ -1174,7 +1181,8 @@ static void gatt_disconnected(struct bt_conn *conn, uint8_t reason)
 	}
 
 	if (!service_registered && bt_mesh_is_provisioned()) {
-		(void)bt_mesh_proxy_gatt_enable();
+		(void)proxy_gatt_service_register();
+		adv_restart_pending = true;
 		return;
 	}
 
@@ -1182,6 +1190,7 @@ static void gatt_disconnected(struct bt_conn *conn, uint8_t reason)
 	if (client->cli) {
 		bt_mesh_proxy_role_cleanup(client->cli);
 		client->cli = NULL;
+		adv_restart_pending = true;
 	}
 }
 
@@ -1213,9 +1222,18 @@ int bt_mesh_proxy_adv_start(void)
 	return gatt_proxy_advertise();
 }
 
+static void conn_recycled(void)
+{
+	if (adv_restart_pending) {
+		adv_restart_pending = false;
+		bt_mesh_adv_gatt_update();
+	}
+}
+
 BT_CONN_CB_DEFINE(conn_callbacks) = {
 	.connected = gatt_connected,
 	.disconnected = gatt_disconnected,
+	.recycled = conn_recycled,
 };
 
 uint8_t bt_mesh_proxy_srv_connected_cnt(void)

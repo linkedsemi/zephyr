@@ -284,7 +284,7 @@ static int auxdisplay_pt6314_init(const struct device *dev)
 	return 0;
 }
 
-static const struct auxdisplay_driver_api auxdisplay_pt6314_auxdisplay_api = {
+static DEVICE_API(auxdisplay, auxdisplay_pt6314_auxdisplay_api) = {
 	.display_on = auxdisplay_pt6314_display_on,
 	.display_off = auxdisplay_pt6314_display_off,
 	.cursor_set_enabled = auxdisplay_pt6314_cursor_set_enabled,
@@ -312,9 +312,8 @@ static const struct auxdisplay_driver_api auxdisplay_pt6314_auxdisplay_api = {
 				.custom_characters = 0,                                            \
 			},                                                                         \
 		.bus = SPI_DT_SPEC_INST_GET(n,                                                     \
-					    SPI_OP_MODE_MASTER | SPI_MODE_CPOL | SPI_MODE_CPHA |   \
-						    SPI_TRANSFER_MSB | SPI_WORD_SET(8),            \
-					    0),                                                    \
+					    SPI_OP_MODE_CONTROLLER | SPI_MODE_CPOL |               \
+					    SPI_MODE_CPHA | SPI_TRANSFER_MSB | SPI_WORD_SET(8))    \
 	};                                                                                         \
                                                                                                    \
 	static struct auxdisplay_pt6314_data auxdisplay_pt6314_data_##n = {                        \

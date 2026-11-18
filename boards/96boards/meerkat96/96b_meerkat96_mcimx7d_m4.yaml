@@ -13,10 +13,8 @@ flash: 32
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 supported:
   - gpio
-  - shell
 testing:
   ignore_tags:
     - net

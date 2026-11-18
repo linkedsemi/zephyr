@@ -6,6 +6,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Header file for the Atomic operations API.
+ * @ingroup atomic_apis
+ */
+
 #ifndef ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 #define ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 
@@ -31,15 +37,20 @@ extern "C" {
 # ifdef CONFIG_XTENSA
 /* Not all Xtensa toolchains support GCC-style atomic intrinsics */
 # include <zephyr/arch/xtensa/atomic_xtensa.h>
+# elif defined(CONFIG_ARC)
+/* MWDT ignores the memory-order argument of the atomic builtins */
+# include <zephyr/arch/arc/atomic_arc.h>
 # else
 /* Other arch specific implementation */
 # include <zephyr/sys/atomic_arch.h>
 # endif /* CONFIG_XTENSA */
 #elif defined(CONFIG_ATOMIC_OPERATIONS_E906)
 #include <zephyr/sys/atomic_e906.h>
-#else
+#elif defined(CONFIG_ATOMIC_OPERATIONS_BUILTIN)
 /* Default.  See this file for the Doxygen reference: */
 #include <zephyr/sys/atomic_builtin.h>
+#else
+#error "CONFIG_ATOMIC_OPERATIONS_* not defined"
 #endif
 
 /* Portable higher-level utilities: */
@@ -75,7 +86,7 @@ extern "C" {
  * @cond INTERNAL_HIDDEN
  */
 
-#define ATOMIC_BITS (sizeof(atomic_val_t) * 8)
+#define ATOMIC_BITS            (sizeof(atomic_val_t) * BITS_PER_BYTE)
 #define ATOMIC_MASK(bit) BIT((unsigned long)(bit) & (ATOMIC_BITS - 1U))
 #define ATOMIC_ELEM(addr, bit) ((addr) + ((bit) / ATOMIC_BITS))
 
@@ -180,6 +191,31 @@ static inline bool atomic_test_and_set_bit(atomic_t *target, int bit)
 }
 
 /**
+ * @brief Atomically set a bit to a given value and report if it was changed.
+ *
+ * Atomically set bit number @a bit of @a target to value @a val.
+ * The target may be a single atomic variable or an array of them.
+ *
+ * @note @atomic_api
+ *
+ * @param target Address of atomic variable or array.
+ * @param bit Bit number (starting from 0).
+ * @param val true for 1, false for 0.
+ *
+ * @return true if the bit was changed, false if it wasn't.
+ */
+static inline bool atomic_test_and_set_bit_to(atomic_t *target, int bit, bool val)
+{
+	atomic_val_t mask = ATOMIC_MASK(bit);
+
+	if (val) {
+		return (atomic_or(ATOMIC_ELEM(target, bit), mask) & mask) == 0;
+	}
+
+	return (atomic_and(ATOMIC_ELEM(target, bit), ~mask) & mask) != 0;
+}
+
+/**
  * @brief Atomically clear a bit.
  *
  * Atomically clear bit number @a bit of @a target.
@@ -237,6 +273,15 @@ static inline void atomic_set_bit_to(atomic_t *target, int bit, bool val)
 		(void)atomic_and(ATOMIC_ELEM(target, bit), ~mask);
 	}
 }
+
+/*
+ * The declarations below exist only so that Doxygen has a single place to
+ * document the low-level atomic API.  Every backend selected above already
+ * declares these functions, and does so with internal linkage when they are
+ * static inline, so repeating them here unqualified would violate MISRA
+ * C:2012 Rule 8.8.
+ */
+#ifdef __DOXYGEN__
 
 /**
  * @brief Atomic compare-and-set.
@@ -470,6 +515,8 @@ atomic_val_t atomic_and(atomic_t *target, atomic_val_t value);
  * @return Previous value of @a target.
  */
 atomic_val_t atomic_nand(atomic_t *target, atomic_val_t value);
+
+#endif /* __DOXYGEN__ */
 
 /**
  * @}

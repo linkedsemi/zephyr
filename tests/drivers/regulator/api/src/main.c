@@ -23,23 +23,28 @@ static const struct device *const reg4 = DEVICE_DT_GET(DT_NODELABEL(reg4));
 /* REG5: regulator-boot-off and is_enabled */
 static const struct device *const reg5 = DEVICE_DT_GET(DT_NODELABEL(reg5));
 
+static DEVICE_API(regulator, dummy_regulator_api);
+static DEVICE_API(regulator_parent, dummy_regulator_parent_api);
+
+DEVICE_DEFINE(dummy_regulator, "dummy_regulator", NULL, NULL, NULL, NULL, POST_KERNEL,
+	      CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &dummy_regulator_api);
+DEVICE_DEFINE(dummy_regulator_parent, "dummy_regulator_parent", NULL, NULL, NULL, NULL, POST_KERNEL,
+	      CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &dummy_regulator_parent_api);
+
+/* Dummy regulator: empty API */
+static const struct device *const dummy_reg = DEVICE_GET(dummy_regulator);
+/* Dummy parent regulator: empty API */
+static const struct device *const dummy_parent = DEVICE_GET(dummy_regulator_parent);
+
 ZTEST(regulator_api, test_parent_dvs_state_set_not_implemented)
 {
-	int ret;
-	struct regulator_parent_driver_api *api = (struct regulator_parent_driver_api *)parent->api;
-	regulator_dvs_state_set_t dvs_state_set = api->dvs_state_set;
-
-	api->dvs_state_set = NULL;
-	ret = regulator_parent_dvs_state_set(parent, 0);
-	api->dvs_state_set = dvs_state_set;
+	int ret = regulator_parent_dvs_state_set(dummy_parent, 0);
 
 	zassert_equal(ret, -ENOSYS);
 }
 
 ZTEST(regulator_api, test_parent_dvs_state_set_ok)
 {
-	RESET_FAKE(regulator_parent_fake_dvs_state_set);
-
 	regulator_parent_fake_dvs_state_set_fake.return_val = 0;
 
 	zassert_equal(regulator_parent_dvs_state_set(parent, 0U), 0);
@@ -50,8 +55,6 @@ ZTEST(regulator_api, test_parent_dvs_state_set_ok)
 
 ZTEST(regulator_api, test_parent_dvs_state_set_fail)
 {
-	RESET_FAKE(regulator_parent_fake_dvs_state_set);
-
 	regulator_parent_fake_dvs_state_set_fake.return_val = -ENOTSUP;
 
 	zassert_equal(regulator_parent_dvs_state_set(parent, 0U), -ENOTSUP);
@@ -62,21 +65,13 @@ ZTEST(regulator_api, test_parent_dvs_state_set_fail)
 
 ZTEST(regulator_api, test_parent_ship_mode_not_implemented)
 {
-	int ret;
-	struct regulator_parent_driver_api *api = (struct regulator_parent_driver_api *)parent->api;
-	regulator_ship_mode_t ship_mode = api->ship_mode;
-
-	api->ship_mode = NULL;
-	ret = regulator_parent_ship_mode(parent);
-	api->ship_mode = ship_mode;
+	int ret = regulator_parent_ship_mode(dummy_parent);
 
 	zassert_equal(ret, -ENOSYS);
 }
 
 ZTEST(regulator_api, test_parent_ship_mode_ok)
 {
-	RESET_FAKE(regulator_parent_fake_ship_mode);
-
 	regulator_parent_fake_ship_mode_fake.return_val = 0;
 
 	zassert_equal(regulator_parent_ship_mode(parent), 0);
@@ -86,8 +81,6 @@ ZTEST(regulator_api, test_parent_ship_mode_ok)
 
 ZTEST(regulator_api, test_parent_ship_mode_fail)
 {
-	RESET_FAKE(regulator_parent_fake_ship_mode);
-
 	regulator_parent_fake_ship_mode_fake.return_val = -ENOTSUP;
 
 	zassert_equal(regulator_parent_ship_mode(parent), -ENOTSUP);
@@ -146,9 +139,6 @@ ZTEST(regulator_api, test_common_is_init_enabled)
 
 ZTEST(regulator_api, test_enable_disable)
 {
-	RESET_FAKE(regulator_fake_enable);
-	RESET_FAKE(regulator_fake_disable);
-
 	/* REG1 already enabled, not enabled again */
 	zassert_equal(regulator_enable(reg1), 0);
 	zassert_equal(regulator_fake_enable_fake.call_count, 0U);
@@ -188,21 +178,13 @@ ZTEST(regulator_api, test_enable_disable)
 
 ZTEST(regulator_api, test_count_voltages_not_implemented)
 {
-	unsigned int count;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_count_voltages_t count_voltages = api->count_voltages;
-
-	api->count_voltages = NULL;
-	count = regulator_count_voltages(reg0);
-	api->count_voltages = count_voltages;
+	unsigned int count = regulator_count_voltages(dummy_reg);
 
 	zassert_equal(count, 0U);
 }
 
 ZTEST(regulator_api, test_count_voltages)
 {
-	RESET_FAKE(regulator_fake_count_voltages);
-
 	regulator_fake_count_voltages_fake.return_val = 10U;
 
 	zassert_equal(regulator_count_voltages(reg0), 10U);
@@ -212,13 +194,7 @@ ZTEST(regulator_api, test_count_voltages)
 
 ZTEST(regulator_api, test_list_voltage_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_list_voltage_t list_voltage = api->list_voltage;
-
-	api->list_voltage = NULL;
-	ret = regulator_list_voltage(reg0, 0, NULL);
-	api->list_voltage = list_voltage;
+	int ret = regulator_list_voltage(dummy_reg, 0, NULL);
 
 	zassert_equal(ret, -EINVAL);
 }
@@ -236,8 +212,6 @@ static int list_voltage_ok(const struct device *dev, unsigned int idx, int32_t *
 ZTEST(regulator_api, test_list_voltage_valid)
 {
 	int32_t volt_uv;
-
-	RESET_FAKE(regulator_fake_list_voltage);
 
 	regulator_fake_list_voltage_fake.custom_fake = list_voltage_ok;
 
@@ -260,8 +234,6 @@ static int list_voltage_invalid(const struct device *dev, unsigned int idx, int3
 
 ZTEST(regulator_api, test_list_voltage_invalid)
 {
-	RESET_FAKE(regulator_fake_list_voltage);
-
 	regulator_fake_list_voltage_fake.custom_fake = list_voltage_invalid;
 
 	zassert_equal(regulator_list_voltage(reg0, 0, NULL), -EINVAL);
@@ -297,9 +269,6 @@ static int list_voltage(const struct device *dev, unsigned int idx, int32_t *vol
 
 ZTEST(regulator_api, test_is_supported_voltage)
 {
-	RESET_FAKE(regulator_fake_count_voltages);
-	RESET_FAKE(regulator_fake_list_voltage);
-
 	regulator_fake_count_voltages_fake.return_val = 4U;
 	regulator_fake_list_voltage_fake.custom_fake = list_voltage;
 
@@ -318,9 +287,6 @@ ZTEST(regulator_api, test_is_supported_voltage)
 
 ZTEST(regulator_api, test_is_supported_voltage_dt_limit)
 {
-	RESET_FAKE(regulator_fake_count_voltages);
-	RESET_FAKE(regulator_fake_list_voltage);
-
 	regulator_fake_count_voltages_fake.return_val = 4U;
 	regulator_fake_list_voltage_fake.custom_fake = list_voltage;
 
@@ -339,21 +305,13 @@ ZTEST(regulator_api, test_is_supported_voltage_dt_limit)
 
 ZTEST(regulator_api, test_set_voltage_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_set_voltage_t set_voltage = api->set_voltage;
-
-	api->set_voltage = NULL;
-	ret = regulator_set_voltage(reg0, 0, 0);
-	api->set_voltage = set_voltage;
+	int ret = regulator_set_voltage(dummy_reg, 0, 0);
 
 	zassert_equal(ret, -ENOSYS);
 }
 
 ZTEST(regulator_api, test_set_voltage_ok)
 {
-	RESET_FAKE(regulator_fake_set_voltage);
-
 	regulator_fake_set_voltage_fake.return_val = 0;
 
 	zassert_equal(regulator_set_voltage(reg0, 0, 0), 0);
@@ -365,8 +323,6 @@ ZTEST(regulator_api, test_set_voltage_ok)
 
 ZTEST(regulator_api, test_set_voltage_fail)
 {
-	RESET_FAKE(regulator_fake_set_voltage);
-
 	regulator_fake_set_voltage_fake.return_val = -EINVAL;
 
 	zassert_equal(regulator_set_voltage(reg0, 0, 0), -EINVAL);
@@ -378,8 +334,6 @@ ZTEST(regulator_api, test_set_voltage_fail)
 
 ZTEST(regulator_api, test_set_voltage_dt_limit)
 {
-	RESET_FAKE(regulator_fake_set_voltage);
-
 	regulator_fake_set_voltage_fake.return_val = 0;
 
 	zassert_equal(regulator_set_voltage(reg3, 300, 400), -EINVAL);
@@ -388,13 +342,7 @@ ZTEST(regulator_api, test_set_voltage_dt_limit)
 
 ZTEST(regulator_api, test_get_voltage_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_get_voltage_t get_voltage = api->get_voltage;
-
-	api->get_voltage = NULL;
-	ret = regulator_get_voltage(reg0, NULL);
-	api->get_voltage = get_voltage;
+	int ret = regulator_get_voltage(dummy_reg, NULL);
 
 	zassert_equal(ret, -ENOSYS);
 }
@@ -411,8 +359,6 @@ static int get_voltage_ok(const struct device *dev, int32_t *volt_uv)
 ZTEST(regulator_api, test_get_voltage_ok)
 {
 	int32_t volt_uv;
-
-	RESET_FAKE(regulator_fake_get_voltage);
 
 	regulator_fake_get_voltage_fake.custom_fake = get_voltage_ok;
 
@@ -433,8 +379,6 @@ static int get_voltage_fail(const struct device *dev, int32_t *volt_uv)
 
 ZTEST(regulator_api, test_get_voltage_error)
 {
-	RESET_FAKE(regulator_fake_get_voltage);
-
 	regulator_fake_get_voltage_fake.custom_fake = get_voltage_fail;
 
 	zassert_equal(regulator_get_voltage(reg0, NULL), -EIO);
@@ -443,23 +387,82 @@ ZTEST(regulator_api, test_get_voltage_error)
 	zassert_equal(regulator_fake_get_voltage_fake.arg1_val, NULL);
 }
 
+ZTEST(regulator_api, test_count_current_limits_not_implemented)
+{
+	unsigned int ret = regulator_count_current_limits(dummy_reg);
+
+	zassert_equal(ret, 0);
+}
+
+ZTEST(regulator_api, test_count_current_limits_ok)
+{
+	regulator_fake_count_current_limits_fake.return_val = 10;
+
+	zassert_equal(regulator_count_current_limits(reg0), 10U);
+	zassert_equal(regulator_fake_count_current_limits_fake.arg0_val, reg0);
+	zassert_equal(regulator_fake_count_current_limits_fake.call_count, 1U);
+}
+
+ZTEST(regulator_api, test_count_current_limits_fail)
+{
+	regulator_fake_count_current_limits_fake.return_val = -EINVAL;
+
+	zassert_equal(regulator_count_current_limits(reg0), -EINVAL);
+	zassert_equal(regulator_fake_count_current_limits_fake.arg0_val, reg0);
+	zassert_equal(regulator_fake_count_current_limits_fake.call_count, 1U);
+}
+
+ZTEST(regulator_api, test_list_current_limit_not_implemented)
+{
+	zassert_equal(regulator_list_current_limit(dummy_reg, 0, NULL), -EINVAL);
+}
+
+static int list_current_limit_ok(const struct device *dev, unsigned int idx, int32_t *curr_ua)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(idx);
+
+	*curr_ua = 100;
+
+	return 0;
+}
+
+ZTEST(regulator_api, test_list_current_limit_ok)
+{
+	int32_t curr_ua;
+
+	regulator_fake_list_current_limit_fake.custom_fake = list_current_limit_ok;
+
+	zassert_equal(regulator_list_current_limit(reg0, 1, &curr_ua), 0);
+	zassert_equal(curr_ua, 100);
+	zassert_equal(regulator_fake_list_current_limit_fake.arg0_val, reg0);
+	zassert_equal(regulator_fake_list_current_limit_fake.arg1_val, 1U);
+	zassert_equal(regulator_fake_list_current_limit_fake.arg2_val, &curr_ua);
+	zassert_equal(regulator_fake_list_current_limit_fake.call_count, 1U);
+}
+
+ZTEST(regulator_api, test_list_current_limit_fail)
+{
+	int32_t curr_ua;
+
+	regulator_fake_list_current_limit_fake.return_val = -EIO;
+
+	zassert_equal(regulator_list_current_limit(reg0, 1, &curr_ua), -EIO);
+	zassert_equal(regulator_fake_list_current_limit_fake.arg0_val, reg0);
+	zassert_equal(regulator_fake_list_current_limit_fake.arg1_val, 1U);
+	zassert_equal(regulator_fake_list_current_limit_fake.arg2_val, &curr_ua);
+	zassert_equal(regulator_fake_list_current_limit_fake.call_count, 1U);
+}
+
 ZTEST(regulator_api, test_set_current_limit_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_set_current_limit_t set_current_limit = api->set_current_limit;
-
-	api->set_current_limit = NULL;
-	ret = regulator_set_current_limit(reg0, 0, 0);
-	api->set_current_limit = set_current_limit;
+	int ret = regulator_set_current_limit(dummy_reg, 0, 0);
 
 	zassert_equal(ret, -ENOSYS);
 }
 
 ZTEST(regulator_api, test_set_current_limit_ok)
 {
-	RESET_FAKE(regulator_fake_set_current_limit);
-
 	regulator_fake_set_current_limit_fake.return_val = 0;
 
 	zassert_equal(regulator_set_current_limit(reg0, 0, 0), 0);
@@ -471,8 +474,6 @@ ZTEST(regulator_api, test_set_current_limit_ok)
 
 ZTEST(regulator_api, test_set_current_limit_fail)
 {
-	RESET_FAKE(regulator_fake_set_current_limit);
-
 	regulator_fake_set_current_limit_fake.return_val = -EINVAL;
 
 	zassert_equal(regulator_set_current_limit(reg0, 0, 0), -EINVAL);
@@ -484,8 +485,6 @@ ZTEST(regulator_api, test_set_current_limit_fail)
 
 ZTEST(regulator_api, test_set_current_limit_dt_limit)
 {
-	RESET_FAKE(regulator_fake_set_current_limit);
-
 	regulator_fake_set_current_limit_fake.return_val = 0;
 
 	zassert_equal(regulator_set_current_limit(reg3, 300, 400), -EINVAL);
@@ -494,13 +493,7 @@ ZTEST(regulator_api, test_set_current_limit_dt_limit)
 
 ZTEST(regulator_api, test_get_current_limit_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_get_current_limit_t get_current_limit = api->get_current_limit;
-
-	api->get_current_limit = NULL;
-	ret = regulator_get_current_limit(reg0, NULL);
-	api->get_current_limit = get_current_limit;
+	int ret = regulator_get_current_limit(dummy_reg, NULL);
 
 	zassert_equal(ret, -ENOSYS);
 }
@@ -517,8 +510,6 @@ static int get_current_limit_ok(const struct device *dev, int32_t *curr_ua)
 ZTEST(regulator_api, test_get_current_limit_ok)
 {
 	int32_t curr_ua;
-
-	RESET_FAKE(regulator_fake_get_current_limit);
 
 	regulator_fake_get_current_limit_fake.custom_fake = get_current_limit_ok;
 
@@ -539,8 +530,6 @@ static int get_current_limit_fail(const struct device *dev, int32_t *curr_ua)
 
 ZTEST(regulator_api, test_get_current_limit_error)
 {
-	RESET_FAKE(regulator_fake_get_current_limit);
-
 	regulator_fake_get_current_limit_fake.custom_fake = get_current_limit_fail;
 
 	zassert_equal(regulator_get_current_limit(reg0, NULL), -EIO);
@@ -551,21 +540,13 @@ ZTEST(regulator_api, test_get_current_limit_error)
 
 ZTEST(regulator_api, test_set_mode_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_set_mode_t set_mode = api->set_mode;
-
-	api->set_mode = NULL;
-	ret = regulator_set_mode(reg0, 0);
-	api->set_mode = set_mode;
+	int ret = regulator_set_mode(dummy_reg, 0);
 
 	zassert_equal(ret, -ENOSYS);
 }
 
 ZTEST(regulator_api, test_set_mode_ok)
 {
-	RESET_FAKE(regulator_fake_set_mode);
-
 	regulator_fake_set_mode_fake.return_val = 0;
 
 	zassert_equal(regulator_set_mode(reg0, 0), 0);
@@ -576,8 +557,6 @@ ZTEST(regulator_api, test_set_mode_ok)
 
 ZTEST(regulator_api, test_set_mode_fail)
 {
-	RESET_FAKE(regulator_fake_set_mode);
-
 	regulator_fake_set_mode_fake.return_val = -ENOTSUP;
 
 	zassert_equal(regulator_set_mode(reg0, 0), -ENOTSUP);
@@ -588,8 +567,6 @@ ZTEST(regulator_api, test_set_mode_fail)
 
 ZTEST(regulator_api, test_set_mode_dt_limit)
 {
-	RESET_FAKE(regulator_fake_set_mode);
-
 	regulator_fake_set_mode_fake.return_val = 0;
 
 	zassert_equal(regulator_set_mode(reg3, 0), -ENOTSUP);
@@ -600,26 +577,14 @@ ZTEST(regulator_api, test_set_mode_dt_limit)
 
 ZTEST(regulator_api, test_get_mode_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_get_mode_t get_mode = api->get_mode;
-
-	api->get_mode = NULL;
-	ret = regulator_get_mode(reg0, NULL);
-	api->get_mode = get_mode;
+	int ret = regulator_get_mode(dummy_reg, NULL);
 
 	zassert_equal(ret, -ENOSYS);
 }
 
 ZTEST(regulator_api, test_set_active_discharge_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_set_active_discharge_t set_active_discharge = api->set_active_discharge;
-
-	api->set_active_discharge = NULL;
-	ret = regulator_set_active_discharge(reg0, false);
-	api->set_active_discharge = set_active_discharge;
+	int ret = regulator_set_active_discharge(dummy_reg, false);
 
 	zassert_equal(ret, -ENOSYS);
 }
@@ -637,8 +602,6 @@ ZTEST(regulator_api, test_get_active_discharge_ok)
 {
 	bool active_discharge;
 
-	RESET_FAKE(regulator_fake_get_active_discharge);
-
 	regulator_fake_get_active_discharge_fake.custom_fake = get_active_discharge_ok;
 
 	zassert_equal(regulator_get_active_discharge(reg0, &active_discharge), false);
@@ -650,13 +613,7 @@ ZTEST(regulator_api, test_get_active_discharge_ok)
 
 ZTEST(regulator_api, test_get_active_discharge_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_get_active_discharge_t get_active_discharge = api->get_active_discharge;
-
-	api->get_active_discharge = NULL;
-	ret = regulator_get_active_discharge(reg0, NULL);
-	api->get_active_discharge = get_active_discharge;
+	int ret = regulator_get_active_discharge(dummy_reg, NULL);
 
 	zassert_equal(ret, -ENOSYS);
 }
@@ -673,8 +630,6 @@ static int get_mode_ok(const struct device *dev, regulator_mode_t *mode)
 ZTEST(regulator_api, test_get_mode_ok)
 {
 	regulator_mode_t mode;
-
-	RESET_FAKE(regulator_fake_get_mode);
 
 	regulator_fake_get_mode_fake.custom_fake = get_mode_ok;
 
@@ -695,8 +650,6 @@ static int get_mode_fail(const struct device *dev, regulator_mode_t *mode)
 
 ZTEST(regulator_api, test_get_mode_error)
 {
-	RESET_FAKE(regulator_fake_get_mode);
-
 	regulator_fake_get_mode_fake.custom_fake = get_mode_fail;
 
 	zassert_equal(regulator_get_mode(reg0, NULL), -EIO);
@@ -707,13 +660,7 @@ ZTEST(regulator_api, test_get_mode_error)
 
 ZTEST(regulator_api, test_get_error_flags_not_implemented)
 {
-	int ret;
-	struct regulator_driver_api *api = (struct regulator_driver_api *)reg0->api;
-	regulator_get_error_flags_t get_error_flags = api->get_error_flags;
-
-	api->get_error_flags = NULL;
-	ret = regulator_get_error_flags(reg0, NULL);
-	api->get_error_flags = get_error_flags;
+	int ret = regulator_get_error_flags(dummy_reg, NULL);
 
 	zassert_equal(ret, -ENOSYS);
 }
@@ -730,8 +677,6 @@ static int get_error_flags_ok(const struct device *dev, regulator_error_flags_t 
 ZTEST(regulator_api, test_get_error_flags_ok)
 {
 	regulator_error_flags_t flags;
-
-	RESET_FAKE(regulator_fake_get_error_flags);
 
 	regulator_fake_get_error_flags_fake.custom_fake = get_error_flags_ok;
 
@@ -778,8 +723,6 @@ ZTEST(regulator_api, test_get_min_voltage)
 
 ZTEST(regulator_api, test_get_error_flags_error)
 {
-	RESET_FAKE(regulator_fake_get_error_flags);
-
 	regulator_fake_get_error_flags_fake.custom_fake = get_error_flags_fail;
 
 	zassert_equal(regulator_get_error_flags(reg0, NULL), -EIO);

@@ -4,16 +4,24 @@
  */
 #pragma once
 
-/* LP-SRAM (16kB) memory */
-#define LPSRAM_IRAM_START  0x50000000
-#define LPSRAM_SIZE        0x4000
+#define ALIGN_UP(num, align) (((num) + ((align) - 1)) & ~((align) - 1))
+
+/* LP-SRAM memory */
+#define LPSRAM_IRAM_START      DT_REG_ADDR(DT_NODELABEL(sramlp))
+#define LPSRAM_SIZE            DT_REG_SIZE(DT_NODELABEL(sramlp))
+#define LPSRAM_RTC_START             DT_REG_ADDR(DT_NODELABEL(lp_rtc))
+#define LPSRAM_RTC_SIZE              DT_REG_SIZE(DT_NODELABEL(lp_rtc))
+#define ESP32_ULP_COPROC_RESERVE_MEM CONFIG_ESP32_ULP_COPROC_RESERVE_MEM
+#define ESP32_ULP_SHARED_MEM_SIZE    DT_REG_SIZE(DT_NODELABEL(ulp_shm))
+#define ESP32_ULP_SHARED_MEM_ADDR    DT_REG_ADDR(DT_NODELABEL(ulp_shm))
+
 /* HP-SRAM (512kB) memory */
-#define HPSRAM_START       0x40800000
-#define HPSRAM_SIZE        0x80000
-#define HPSRAM_DRAM_START  0x40800000
-#define HPSRAM_IRAM_START  0x40800000
+#define HPSRAM_START          DT_REG_ADDR(DT_NODELABEL(sramhp))
+#define HPSRAM_SIZE           DT_REG_SIZE(DT_NODELABEL(sramhp))
+#define HPSRAM_DRAM_START     HPSRAM_START
+#define HPSRAM_IRAM_START     HPSRAM_START
 /* ICache size is fixed to 32KB on ESP32-C6 */
-#define ICACHE_SIZE        0x8000
+#define ICACHE_SIZE           0x8000
 
 /** Simplified memory map for the bootloader.
  *  Make sure the bootloader can load into main memory without overwriting itself.
@@ -27,39 +35,56 @@
  *  buffers area (0x4087c610).
  */
 
-#define DRAM_BUFFERS_START       0x4086ad08
-#define DRAM_BUFFERS_END         0x4087c610
-#define DRAM_STACK_START         DRAM_BUFFERS_END
-#define DRAM_ROM_BSS_DATA_START  0x4087e610
+#define DRAM_SHARED_BUFFERS_START      0x4086ad08
+#define DRAM_SHARED_BUFFERS_END        0x4087c610
+#define DRAM_ROM_BSS_DATA_START 0x4087e610
 
-/* Set the limit for the application runtime dynamic allocations */
-#define DRAM_RESERVED_START      DRAM_BUFFERS_END
+/* Upper boundary of user-usable SRAM */
+#define DRAM_USER_END DRAM_SHARED_BUFFERS_END
 
-/* For safety margin between bootloader data section and startup stacks */
-#define BOOTLOADER_STACK_OVERHEAD      0x0
-/* These lengths can be adjusted, if necessary: FIXME: optimize ram usage */
-#define BOOTLOADER_DRAM_SEG_LEN        0xA000
-#define BOOTLOADER_IRAM_LOADER_SEG_LEN 0x3000
-#define BOOTLOADER_IRAM_SEG_LEN        0xC000
+/* Safety margin between MCUboot segments and ROM stack */
+#define BOOTLOADER_STACK_OVERHEAD      0x2000
 
-/* Base address used for calculating memory layout
- * counted from Dbus backwards and back to the Ibus
+#define BOOTLOADER_IRAM_LOADER_SEG_LEN 0x1C00
+#define BOOTLOADER_DRAM_LOADER_SEG_LEN 0x0C00
+
+/* Upper limit of SRAM available for MCUboot bootloader segments */
+#define BOOTLOADER_USER_DRAM_END (DRAM_SHARED_BUFFERS_END - BOOTLOADER_STACK_OVERHEAD)
+
+/* MCUboot iram/dram segments: placed in upper half of SRAM, below dram_loader_seg.
+ * On unified-address SoCs (C6, H2) these are the same physical memory.
+ * The lower half is reserved for the application image.
  */
-#define BOOTLOADER_USER_SRAM_END (DRAM_BUFFERS_START - BOOTLOADER_STACK_OVERHEAD)
-
-/* Start of the lower region is determined by region size and the end of the higher region */
-#define BOOTLOADER_IRAM_LOADER_SEG_START (BOOTLOADER_USER_SRAM_END - BOOTLOADER_IRAM_LOADER_SEG_LEN)
-#define BOOTLOADER_IRAM_SEG_START (BOOTLOADER_IRAM_LOADER_SEG_START - BOOTLOADER_IRAM_SEG_LEN)
-#define BOOTLOADER_DRAM_SEG_START (BOOTLOADER_IRAM_SEG_START - BOOTLOADER_DRAM_SEG_LEN)
+#define BOOTLOADER_IRAM_LOADER_SEG_START \
+	(BOOTLOADER_USER_DRAM_END - BOOTLOADER_IRAM_LOADER_SEG_LEN)
+#define BOOTLOADER_DRAM_LOADER_SEG_START \
+	(BOOTLOADER_IRAM_LOADER_SEG_START - BOOTLOADER_DRAM_LOADER_SEG_LEN)
+#define BOOTLOADER_IRAM_SEG_TARGET_LEN \
+	((BOOTLOADER_DRAM_LOADER_SEG_START - (HPSRAM_START + ICACHE_SIZE)) / 4)
+#define BOOTLOADER_IRAM_SEG_START \
+	ALIGN_UP(BOOTLOADER_DRAM_LOADER_SEG_START - BOOTLOADER_IRAM_SEG_TARGET_LEN, 0x100)
+#define BOOTLOADER_IRAM_SEG_LEN \
+	(BOOTLOADER_DRAM_LOADER_SEG_START - BOOTLOADER_IRAM_SEG_START)
+#define BOOTLOADER_DRAM_SEG_LEN   BOOTLOADER_IRAM_SEG_LEN
+#define BOOTLOADER_DRAM_SEG_START \
+	(BOOTLOADER_IRAM_SEG_START - BOOTLOADER_DRAM_SEG_LEN)
 
 /* Flash */
-#ifdef CONFIG_FLASH_SIZE
-#define FLASH_SIZE         CONFIG_FLASH_SIZE
-#else
-#define FLASH_SIZE         0x400000
-#endif
+#define FLASH_SIZE         DT_REG_SIZE(DT_CHOSEN(zephyr_flash))
+#define FLASH_BASE_ADDRESS DT_REG_ADDR(DT_CHOSEN(zephyr_flash))
 
-/* Cached memory */
-#define CACHE_ALIGN        CONFIG_MMU_PAGE_SIZE
-#define CACHED_ORG         0x42000000
-#define CACHED_SIZE        FLASH_SIZE
+/* Cached memory - ESP32-C6 uses unified I/D address space
+ * From HAL ext_mem_defs.h: SOC_IRAM0_CACHE_ADDRESS_LOW = 0x42000000
+ */
+#define CACHE_ALIGN  CONFIG_MMU_PAGE_SIZE
+#define IROM_SEG_ORG 0x42000000
+#define IROM_SEG_LEN FLASH_SIZE
+/* DROM shares the unified-cache linear address space with IROM. Placing
+ * drom0_0_seg at the same origin lets the linker emit .flash.rodata
+ * immediately after .text, so the linear range the memory mapper
+ * reserves for the image (irom_len + drom_len) matches the virtual
+ * range the image actually occupies and later mappings cannot land on
+ * it.
+ */
+#define DROM_SEG_ORG IROM_SEG_ORG
+#define DROM_SEG_LEN FLASH_SIZE

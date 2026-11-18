@@ -6,7 +6,7 @@
 config ADC_MCUX_ADC12
 	bool "MCUX ADC12 driver"
 	default y
-	depends on DT_HAS_NXP_KINETIS_ADC12_ENABLED
+	depends on DT_HAS_NXP_ADC12_ENABLED
 	select PINCTRL
 	help
 	  Enable the MCUX ADC12 driver.
@@ -37,11 +37,13 @@ config ADC_MCUX_LPADC
 	help
 	  Enable the MCUX LPADC driver.
 
-config ADC_MCUX_ETC
-	bool "MCUX ADC ETC driver"
-	depends on HAS_MCUX_ADC_ETC
+config ADC_NXP_SAR_ADC
+	bool "NXP SAR ADC driver"
+	default y
+	select ADC_CONFIGURABLE_INPUTS
+	depends on DT_HAS_NXP_SAR_ADC_ENABLED
 	help
-	  Enable the MCUX ADC ETC driver.
+	  Enable the NXP SAR ADC driver.
 
 config ADC_MCUX_GAU
 	bool "MCUX GAU ADC driver"
@@ -85,7 +87,7 @@ endchoice
 
 config ADC_MCUX_ADC16_ENABLE_EDMA
 	bool "EDMA for adc driver"
-	depends on HAS_MCUX_ADC16 && HAS_MCUX_EDMA
+	depends on DMA_MCUX_EDMA
 	help
 	  Enable the MCUX ADC16 driver.
 
@@ -106,18 +108,54 @@ if ADC_MCUX_LPADC
 
 config LPADC_DO_OFFSET_CALIBRATION
 	bool "Do offset calibration"
+	default y
 	help
 	  Do offset calibration
 
-config LPADC_CHANNEL_COUNT
-	int "LPADC channel count"
-	default 15
-	range 1 15
+config ADC_MCUX_LPADC_ACQUISITION_TIMEOUT_MS
+	int "LPADC acquisition timeout (ms)"
+	default 1000
+	range 1 60000
 	help
-	  Amount of hardware command channels to use, reduce to save RAM.
-	  The user can reduce this value if their application uses fewer than
-	  15 ADC channels. This value corresponds to how many of the CMD
-	  registers can be configured within the ADC.
+	  Upper bound on how long a blocking adc_read() waits for the conversion
+	  sequence to complete. Without a bound, a sequence that can never finish
+	  (for example a trigger issued while the converter is disabled) blocks the
+	  calling thread forever. On expiry the driver stops the sequence and
+	  returns -EAGAIN. Raise this if you chain many channels with a high
+	  hardware average count on a slow ADCK.
 
+config ADC_MCUX_LPADC_DMA_DRIVEN
+	bool "Use DMA to transfer data"
+	select DMA
+	depends on $(dt_compat_any_has_prop,$(DT_COMPAT_NXP_LPC_LPADC),dmas) && \
+		   $(dt_compat_any_has_prop,$(DT_COMPAT_NXP_LPC_LPADC),dma-names)
+	help
+	  Use DMA in the LPADC driver to transfer data.
 
 endif # ADC_MCUX_LPADC
+
+if ADC_NXP_SAR_ADC
+
+config ADC_NXP_SAR_ADC_INTERRUPT
+	bool "NXP SAR ADC interrupt-driven mode"
+	help
+	  Use interrupt-driven conversions. When enabled the driver waits
+	  on the hardware end-of-conversion interrupt for each sample.
+
+config ADC_NXP_SAR_ADC_INTERRUPT_TIMEOUT
+	int "NXP SAR ADC interrupt timeout in us"
+	default 0
+	depends on ADC_NXP_SAR_ADC_INTERRUPT
+	help
+	  Timeout in microseconds to wait for the ECH interrupt.
+	  Set to 0 to wait forever.
+
+config ADC_NXP_SAR_ADC_POLL_TIMEOUT
+	int "NXP SAR ADC poll timeout in us"
+	default 1000
+	depends on !ADC_NXP_SAR_ADC_INTERRUPT
+	help
+	  Timeout in microseconds for polling mode conversions.
+	  Only used when ADC_NXP_SAR_ADC_INTERRUPT is not enabled.
+
+endif # ADC_NXP_SAR_ADC

@@ -6,7 +6,7 @@ Interrupts
 An :dfn:`interrupt service routine` (ISR) is a function that executes
 asynchronously in response to a hardware or software interrupt.
 An ISR normally preempts the execution of the current thread,
-allowing the response to occur with very low overhead.
+allowing the response to occur with very low latency.
 Thread execution resumes only once all ISR work has been completed.
 
 .. contents::
@@ -80,17 +80,24 @@ illustrated and explained below:
 
 .. code-block:: none
 
-                 9             2   0
-           _ _ _ _ _ _ _ _ _ _ _ _ _         (LEVEL 1)
-         5       |         A   |
-       _ _ _ _ _ _ _         _ _ _ _ _ _ _   (LEVEL 2)
-         |   C                       B
-       _ _ _ _ _ _ _                         (LEVEL 3)
-               D
+              9                           2       0
+    ┌───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┬───┐
+    │   │   │ ╷ │   │   │   │   │ A │   │ ╷ │   │   │               (LEVEL 1)
+    └───┴───┴─│─┴───┴───┴───┴───┴───┴───┴─│─┴───┴───┘
+              └─────────────────┐         └─────────────────────┐
+          5                     v                               v
+    ┌───┬───┬───┬───┬───┬───┬───┐   ┌───┬───┬───┬───┬───┬───┬───┐
+    │   │ ╷ │   │ C │   │   │   │   │   │   │   │   │ B │   │   │   (LEVEL 2)
+    └───┴─│─┴───┴───┴───┴───┴───┘   └───┴───┴───┴───┴───┴───┴───┘
+          └─────────────────────┐
+                                v
+    ┌───┬───┬───┬───┬───┬───┬───┐
+    │   │   │   │   │ D │   │   │                                   (LEVEL 3)
+    └───┴───┴───┴───┴───┴───┴───┘
 
 There are three interrupt levels shown here.
 
-* '-' means interrupt line and is numbered from 0 (right most).
+* A cell represents an interrupt line and is numbered from 0 (right most).
 * LEVEL 1 has 12 interrupt lines, with two lines (2 and 9) connected
   to nested controllers and one device 'A' on line 4.
 * One of the LEVEL 2 controllers has interrupt line 5 connected to
@@ -133,26 +140,8 @@ before interrupts can be once again processed by the kernel while the thread
 is running.
 
 .. important::
-    The IRQ lock is thread-specific. If thread A locks out interrupts
-    then performs an operation that puts itself to sleep (e.g. sleeping
-    for N milliseconds), the thread's IRQ lock no longer applies once
-    thread A is swapped out and the next ready thread B starts to
-    run.
-
-    This means that interrupts can be processed while thread B is
-    running unless thread B has also locked out interrupts using its own
-    IRQ lock.  (Whether interrupts can be processed while the kernel is
-    switching between two threads that are using the IRQ lock is
-    architecture-specific.)
-
-    When thread A eventually becomes the current thread once again, the kernel
-    re-establishes thread A's IRQ lock. This ensures thread A won't be
-    interrupted until it has explicitly unlocked its IRQ lock.
-
-    If thread A does not sleep but does make a higher-priority thread B
-    ready, the IRQ lock will inhibit any preemption that would otherwise
-    occur.  Thread B will not run until the next :ref:`reschedule point
-    <scheduling_v2>` reached after releasing the IRQ lock.
+    A thread is not allowed to :ref:`sleep <thread_sleeping>` while holding
+    an IRQ lock; only :ref:`isr-ok <api_term_isr-ok>` functions may be called.
 
 Alternatively, a thread may temporarily **disable** a specified IRQ
 so its associated ISR does not execute when the IRQ is signaled.
@@ -161,6 +150,8 @@ The IRQ must be subsequently **enabled** to permit the ISR to execute.
 .. important::
     Disabling an IRQ prevents *all* threads in the system from being preempted
     by the associated ISR, not just the thread that disabled the IRQ.
+
+.. _zlis:
 
 Zero Latency Interrupts
 -----------------------
@@ -173,10 +164,14 @@ The kernel addresses such use-cases by allowing interrupts with critical
 latency constraints to execute at a priority level that cannot be blocked
 by interrupt locking. These interrupts are defined as
 *zero-latency interrupts*. The support for zero-latency interrupts requires
-:kconfig:option:`CONFIG_ZERO_LATENCY_IRQS` to be enabled. In addition to that, the
-flag :c:macro:`IRQ_ZERO_LATENCY` must be passed to :c:macro:`IRQ_CONNECT` or
-:c:macro:`IRQ_DIRECT_CONNECT` macros to configure the particular interrupt
-with zero latency.
+:kconfig:option:`CONFIG_ZERO_LATENCY_IRQS` to be enabled. Any interrupts
+configured as zero-latency must also be declared as :ref:`direct ISRs
+<direct_isrs>` (and must not use the :c:macro:`ISR_DIRECT_PM` in them), since
+regular ISRs interact with the kernel. In addition to that, the flag
+:c:macro:`IRQ_ZERO_LATENCY` must be passed to the :c:macro:`IRQ_DIRECT_CONNECT`
+macro to configure the particular interrupt with
+zero latency. Declaring a zero-latency interrupt ISR to be both direct and
+dynamic is possible on some architectures, see :ref:`direct_isrs`.
 
 Zero-latency interrupts are expected to be used to manage hardware events
 directly, and not to interoperate with the kernel code at all. They should
@@ -186,10 +181,24 @@ verifying correct behavior). Zero-latency interrupts may not modify any data
 inspected by kernel APIs invoked from normal Zephyr contexts and shall not
 generate exceptions that need to be handled synchronously (e.g. kernel panic).
 
+When system power management keeps interrupts locked across PM resume, a
+zero-latency interrupt is outside the locked-resume ordering and may be
+dispatched during PM suspend/resume logic, before PM resume bookkeeping and
+SoC/device hardware restore have completed. Such an ISR must be PM-wake-safe, or
+the interrupt source must be masked or disabled while the system state does not
+allow the ISR to execute. See :ref:`device power policy constraints
+<pm-device-constraint>` for one way to keep unsafe states out of policy
+selection while a device path that can produce a zero-latency interrupt is
+active.
+
 .. important::
     Zero-latency interrupts are supported on an architecture-specific basis.
     The feature is currently implemented in the ARM Cortex-M architecture
     variant.
+
+.. tip::
+    To mitigate flash access latency, consider relocating ISRs and all related
+    symbols to RAM.
 
 Offloading ISR Work
 ===================
@@ -256,6 +265,12 @@ Defining a regular ISR
 An ISR is defined at runtime by calling :c:macro:`IRQ_CONNECT`. It must
 then be enabled by calling :c:func:`irq_enable`.
 
+.. note::
+    The unprefixed interrupt control APIs such as :c:func:`irq_enable` and
+    :c:func:`irq_lock` are the legacy spelling. New code should use their
+    namespaced equivalents, :c:func:`k_irq_enable`, :c:func:`k_irq_lock` and
+    so on. The unprefixed names remain fully supported.
+
 .. important::
     IRQ_CONNECT() is not a C function and does some inline assembly magic
     behind the scenes. All its arguments must be known at build time.
@@ -306,6 +321,8 @@ Dynamic interrupts require the :kconfig:option:`CONFIG_DYNAMIC_INTERRUPTS` optio
 be enabled. Removing or re-configuring a dynamic interrupt is currently
 unsupported.
 
+.. _direct_isrs:
+
 Defining a 'direct' ISR
 =======================
 
@@ -322,12 +339,21 @@ for some low-latency use-cases. Specifically:
   need to switch to the interrupt stack in code
 
 * After the interrupt is serviced, the OS then performs some logic to
-  potentially make a scheduling decision.
+  potentially make a scheduling decision
+
+* :ref:`zlis` must always be declared as direct ISRs, since regular
+  ISRs interact with the kernel
 
 Zephyr supports so-called 'direct' interrupts, which are installed via
-:c:macro:`IRQ_DIRECT_CONNECT`. These direct interrupts have some special
-implementation requirements and a reduced feature set; see the definition
-of :c:macro:`IRQ_DIRECT_CONNECT` for details.
+:c:macro:`IRQ_DIRECT_CONNECT` and whose handlers are declared using
+:c:macro:`ISR_DIRECT_DECLARE`. These direct interrupts have some special
+implementation requirements and a reduced feature set; see the definitions
+of :c:macro:`IRQ_DIRECT_CONNECT` and :c:macro:`ISR_DIRECT_DECLARE` for details.
+
+Direct interrupts are only available on architectures selecting
+:kconfig:option:`CONFIG_ARCH_HAS_DIRECT_INTERRUPTS`. Using
+:c:macro:`IRQ_DIRECT_CONNECT` or :c:macro:`ISR_DIRECT_DECLARE` on any other
+architecture fails the build.
 
 The following code demonstrates a direct ISR:
 
@@ -335,14 +361,17 @@ The following code demonstrates a direct ISR:
 
     #define MY_DEV_IRQ  24       /* device uses IRQ 24 */
     #define MY_DEV_PRIO  2       /* device uses interrupt priority 2 */
-    /* argument passed to my_isr(), in this case a pointer to the device */
     #define MY_IRQ_FLAGS 0       /* IRQ flags */
 
     ISR_DIRECT_DECLARE(my_isr)
     {
        do_stuff();
-       ISR_DIRECT_PM(); /* PM done after servicing interrupt for best latency */
-       return 1; /* We should check if scheduling decision should be made */
+       /* PM done after servicing interrupt for best latency. This cannot be
+       used for zero-latency IRQs because it accesses kernel data. */
+       ISR_DIRECT_PM();
+       /* Ask the kernel to check if scheduling decision should be made. If the
+       ISR is for a zero-latency IRQ then the return value must always be 0. */
+       return 1;
     }
 
     void my_isr_installer(void)
@@ -354,9 +383,21 @@ The following code demonstrates a direct ISR:
     }
 
 Installation of dynamic direct interrupts is supported on an
-architecture-specific basis. (The feature is currently implemented in
-ARM Cortex-M architecture variant. Dynamic direct interrupts feature is
-exposed to the user via an ARM-only API.)
+architecture-specific basis. The feature is currently implemented in the Arm
+Cortex-M architecture variant via the macro
+:c:macro:`ARM_IRQ_DIRECT_DYNAMIC_CONNECT`, which can be used to declare a direct
+and dynamic interrupt.
+
+RAM-based ISR Execution
+=======================
+
+For ultra-low latency, ISRs and vector tables can be relocated to RAM to
+eliminate flash access delays. That can be achieved by enabling the
+:kconfig:option:`CONFIG_SRAM_VECTOR_TABLE` and
+:kconfig:option:`CONFIG_SRAM_SW_ISR_TABLE` options which will result in vector
+tables being placed in RAM.
+Then, Zephyr :ref:`Code and Data Relocation <code_data_relocation>` can be
+used to relocate the ISR code and all the related symbols to RAM as well.
 
 Sharing an interrupt line
 =========================
@@ -472,17 +513,18 @@ The limitation of this parser is the fact that after the arrays are generated
 it is expected for the code not to relocate.
 Any relocation on this stage may lead to the situation where the entry in the interrupt array
 is no longer pointing to the function that was expected.
-It means that this parser, being more compatible is limiting us from using Link Time Optimization.
+It means that this parser, being more compatible, is limiting us from using Link Time Optimization.
 
-The local isr declaration parser uses different approach to construct
-the same arrays at binnary level.
+The local ISR declaration parser uses a different approach to construct
+the same arrays at the binary level.
 All the entries to the arrays are declared and defined locally,
 directly in the file where :c:macro:`IRQ_CONNECT` is used.
-They are placed in a section with the unique, synthesized name.
-The name of the section is then placed in .intList section and it is used to create linker script
-to properly place the created entry in the right place in the memory.
-This parser is now limited to the supported architectures and toolchains but in reward it keeps
-the information about object relations for linker thus allowing the Link Time Optimization.
+They are placed in a section with a unique, synthesized name.
+The name of that section is then placed in the .intList section, which is used to
+generate a linker script fragment placing the entry at the right address.
+This parser is currently limited to the supported architectures and toolchains,
+but in return, it preserves the information about object relations for the linker,
+thus enabling Link Time Optimization.
 
 Implementation using C arrays
 -----------------------------
@@ -548,10 +590,9 @@ for IRQ line n, and the function pointers are:
    spurious IRQ handler will be placed here. The spurious IRQ handler
    causes a system fatal error if encountered.
 
-Some architectures (such as the Nios II internal interrupt controller) have a
-common entry point for all interrupts and do not support a vector table, in
-which case the :kconfig:option:`CONFIG_GEN_IRQ_VECTOR_TABLE` option should be
-disabled.
+Some architectures have a common entry point for all interrupts and do not
+support a vector table, in which case the
+:kconfig:option:`CONFIG_GEN_IRQ_VECTOR_TABLE` option should be disabled.
 
 Some architectures may reserve some initial vectors for system exceptions
 and declare this in a table elsewhere, in which case
@@ -594,14 +635,14 @@ Implementation using linker script
 ----------------------------------
 
 This way of prepare and parse .isrList section to implement interrupt vectors arrays
-is called local isr declaration.
+is called local ISR declaration.
 The name comes from the fact that all the entries to the arrays that would create
 interrupt vectors are created locally in place of invocation of :c:macro:`IRQ_CONNECT` macro.
 Then automatically generated linker scripts are used to place it in the right place in the memory.
 
-This option requires enabling by the choose of :kconfig:option:`ISR_TABLES_LOCAL_DECLARATION`.
+This option requires enabling by the choose of :kconfig:option:`CONFIG_ISR_TABLES_LOCAL_DECLARATION`.
 If this configuration is supported by the used architecture and toolchaing the
-:kconfig:option:`ISR_TABLES_LOCAL_DECLARATION_SUPPORTED` is set.
+:kconfig:option:`CONFIG_ISR_TABLES_LOCAL_DECLARATION_SUPPORTED` is set.
 See details of this option for the information about currently supported configurations.
 
 Any invocation of :c:macro:`IRQ_CONNECT` or :c:macro:`IRQ_DIRECT_CONNECT` will declare an instance
@@ -659,17 +700,17 @@ Files generated by the script
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The interrupt tables generator script creates 3 files:
-isr_tables.c, isr_tables_swi.ld, and isr_tables_vt.ld.
+:file:`isr_tables.c`, :file:`isr_tables_swi.ld`, and :file:`isr_tables_vt.ld`.
 
-The isr_tables.c will contain all the structures for interrupts, direct interrupts and
+The :file:`isr_tables.c` will contain all the structures for interrupts, direct interrupts and
 shared interrupts (if enabled). This file implements only all the structures that
 are not implemented by the application, leaving a comment where the interrupt
 not implemented here can be found.
 
-Then two linker files are used. The isr_tables_vt.ld file is included in place
+Then two linker files are used. The :file:`isr_tables_vt.ld` file is included in place
 where the interrupt vectors are required to be placed in the selected architecture.
-The isr_tables_swi.ld file describes the placement of the software interrupt table
-elements. The separated file is required as it might be placed in writable on nonwritable
+The :file:`isr_tables_swi.ld` file describes the placement of the software interrupt table
+elements. The separated file is required as it might be placed in writable or nonwritable
 section, depending on the current configuration.
 
 x86 Details

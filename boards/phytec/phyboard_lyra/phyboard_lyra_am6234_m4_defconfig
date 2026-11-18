@@ -11,9 +11,6 @@ CONFIG_CORTEX_M_SYSTICK=y
 # Zephyr Kernel Configuration
 CONFIG_XIP=n
 
-# Enable Pinctrl
-CONFIG_PINCTRL=y
-
 # Serial Driver
 CONFIG_SERIAL=y
 
@@ -23,3 +20,6 @@ CONFIG_GPIO=y
 # Enable Console
 CONFIG_CONSOLE=y
 CONFIG_UART_CONSOLE=y
+
+# Enable OpenAMP resource table needed for remoteproc booting
+CONFIG_OPENAMP_RSC_TABLE=y

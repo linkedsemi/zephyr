@@ -16,7 +16,7 @@
 #include <zephyr/timing/timing.h>
 #include <cortex_m/dwt.h>
 #include <cmsis_core.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 /**
  * @brief Return the current frequency of the cycle counter
@@ -28,8 +28,7 @@
  */
 static inline uint64_t z_arm_dwt_freq_get(void)
 {
-#if defined(CONFIG_SOC_FAMILY_NORDIC_NRF) || \
-	defined(CONFIG_SOC_SERIES_IMXRT6XX)
+#if defined(CONFIG_CMSIS_CORE_HAS_SYSTEM_CORE_CLOCK)
 	/*
 	 * DWT frequency is taken directly from the
 	 * System Core clock (CPU) frequency, if the
@@ -51,8 +50,14 @@ static inline uint64_t z_arm_dwt_freq_get(void)
 	uint64_t dcyc, ddwt;
 
 	if (!dwt_frequency) {
+		bool cyccnt_enabled;
 
 		z_arm_dwt_init();
+
+		cyccnt_enabled = (DWT->CTRL & DWT_CTRL_CYCCNTENA_Msk) != 0;
+
+		/* enable cyccnt timer for measurement */
+		DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
 
 		do {
 			cyc_start = k_cycle_get_32();
@@ -73,11 +78,15 @@ static inline uint64_t z_arm_dwt_freq_get(void)
 			ddwt = dwt_end - dwt_start;
 		} while ((dcyc == 0) || (ddwt == 0));
 
-		dwt_frequency = (cyc_freq * ddwt) / dcyc;
+		/* restore cyccnt timer state */
+		if (!cyccnt_enabled) {
+			DWT->CTRL &= ~DWT_CTRL_CYCCNTENA_Msk;
+		}
 
+		dwt_frequency = (cyc_freq * ddwt) / dcyc;
 	}
 	return dwt_frequency;
-#endif /* CONFIG_SOC_FAMILY_NORDIC_NRF */
+#endif
 }
 
 void arch_timing_init(void)
@@ -101,8 +110,7 @@ timing_t arch_timing_counter_get(void)
 	return (timing_t)z_arm_dwt_get_cycles();
 }
 
-uint64_t arch_timing_cycles_get(volatile timing_t *const start,
-				volatile timing_t *const end)
+uint64_t arch_timing_cycles_get(volatile timing_t *const start, volatile timing_t *const end)
 {
 	return ((uint32_t)*end - (uint32_t)*start);
 }

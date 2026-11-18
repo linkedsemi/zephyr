@@ -9,6 +9,7 @@ LOG_MODULE_REGISTER(net_virtual, CONFIG_NET_L2_VIRTUAL_LOG_LEVEL);
 
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_l2.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/virtual.h>
@@ -25,8 +26,10 @@ static enum net_verdict virtual_recv(struct net_if *iface,
 {
 	struct virtual_interface_context *ctx, *tmp;
 	const struct virtual_interface_api *api;
+	struct net_if *filtered_iface = NULL;
 	enum net_verdict verdict;
 	sys_slist_t *interfaces;
+	const struct device *dev;
 
 	interfaces = &iface->config.virtual_interfaces;
 
@@ -35,7 +38,11 @@ static enum net_verdict virtual_recv(struct net_if *iface,
 			continue;
 		}
 
-		api = net_if_get_device(ctx->virtual_iface)->api;
+		dev = net_if_get_device(ctx->virtual_iface);
+
+		NET_ASSERT(dev != NULL);
+
+		api = dev->api;
 		if (!api || api->recv == NULL) {
 			continue;
 		}
@@ -44,6 +51,28 @@ static enum net_verdict virtual_recv(struct net_if *iface,
 			NET_DBG("Interface %d is down.",
 				net_if_get_by_iface(ctx->virtual_iface));
 			continue;
+		}
+
+		if (IS_ENABLED(CONFIG_NET_PKT_FILTER)) {
+			struct net_if *tmp_iface;
+
+			tmp_iface = net_pkt_iface(pkt);
+			net_pkt_set_iface(pkt, ctx->virtual_iface);
+
+			if (!net_pkt_filter_recv_ok(pkt)) {
+				/* We cannot update the statistics here because
+				 * the interface might not be the correct one for
+				 * the packet. We would know that only after the
+				 * call to api->recv() which is too late. So mark
+				 * the interface as filtered and continue and
+				 * update the filter statistics out of the loop.
+				 */
+				net_pkt_set_iface(pkt, tmp_iface);
+				filtered_iface = tmp_iface;
+				continue;
+			}
+
+			net_pkt_set_iface(pkt, tmp_iface);
 		}
 
 		verdict = api->recv(ctx->virtual_iface, pkt);
@@ -69,16 +98,74 @@ static enum net_verdict virtual_recv(struct net_if *iface,
 		return verdict;
 	}
 
+	if (IS_ENABLED(CONFIG_NET_PKT_FILTER) && filtered_iface != NULL) {
+		/* We need to update the statistics for the filtered iface here.
+		 */
+		net_stats_update_filter_rx_drop(filtered_iface);
+		goto silent_drop;
+	}
+
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(VIRTUAL)) {
+		goto silent_drop;
+	}
+
+	/* If there are no virtual interfaces attached, then pass the packet
+	 * to the actual virtual network interface.
+	 */
+	dev = net_if_get_device(iface);
+
+	NET_ASSERT(dev != NULL);
+
+	api = dev->api;
+	if (!api || api->recv == NULL) {
+		goto drop;
+	}
+
+	if (!net_if_is_up(iface)) {
+		NET_DBG("Interface %d is down.", net_if_get_by_iface(iface));
+		goto silent_drop;
+	}
+
+	if (!net_pkt_filter_recv_ok(pkt)) {
+		net_stats_update_filter_rx_drop(iface);
+		goto silent_drop;
+	}
+
+	verdict = api->recv(iface, pkt);
+
+	if (IS_ENABLED(CONFIG_NET_STATISTICS)) {
+		size_t pkt_len;
+
+		pkt_len = net_pkt_get_len(pkt);
+
+		NET_DBG("Received pkt %p len %zu", pkt, pkt_len);
+
+		net_stats_update_bytes_recv(iface, pkt_len);
+	}
+
+	if (verdict == NET_DROP) {
+		net_stats_update_processing_error(iface);
+	}
+
+	return verdict;
+
+drop:
 	NET_DBG("No handler, dropping pkt %p len %zu", pkt, net_pkt_get_len(pkt));
 
+silent_drop:
 	return NET_DROP;
 }
 
 static int virtual_send(struct net_if *iface, struct net_pkt *pkt)
 {
-	const struct virtual_interface_api *api = net_if_get_device(iface)->api;
+	const struct device *dev = net_if_get_device(iface);
+	const struct virtual_interface_api *api;
 	size_t pkt_len;
 	int ret;
+
+	NET_ASSERT(dev != NULL);
+
+	api = dev->api;
 
 	if (!api) {
 		return -ENOENT;
@@ -110,14 +197,21 @@ static int virtual_enable(struct net_if *iface, bool state)
 {
 	const struct virtual_interface_api *virt;
 	struct virtual_interface_context *ctx;
+	const struct device *dev;
 	int ret = 0;
 
-	virt = net_if_get_device(iface)->api;
+	dev = net_if_get_device(iface);
+
+	NET_ASSERT(dev != NULL);
+
+	virt = dev->api;
 	if (!virt) {
 		return -ENOENT;
 	}
 
 	ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
 
 	if (state) {
 		/* Take the interfaces below this interface up as
@@ -142,17 +236,19 @@ static int virtual_enable(struct net_if *iface, bool state)
 
 			net_if_up(ctx->iface);
 			ctx = net_if_l2_data(ctx->iface);
+
+			NET_ASSERT(ctx != NULL);
 		}
 
 		if (virt->start) {
-			ret = virt->start(net_if_get_device(iface));
+			ret = virt->start(dev);
 		}
 
 		return ret;
 	}
 
 	if (virt->stop) {
-		ret = virt->stop(net_if_get_device(iface));
+		ret = virt->stop(dev);
 	}
 
 	return ret;
@@ -162,17 +258,30 @@ enum net_l2_flags virtual_flags(struct net_if *iface)
 {
 	struct virtual_interface_context *ctx = net_if_l2_data(iface);
 
+	NET_ASSERT(ctx != NULL);
+
 	return ctx->virtual_l2_flags;
 }
 
+#if defined(CONFIG_NET_L2_ETHERNET_RESERVE_HEADER) && defined(CONFIG_NET_VLAN) \
+	&& CONFIG_NET_VLAN_COUNT > 0
+extern int vlan_alloc_buffer(struct net_if *iface, struct net_pkt *pkt, size_t size,
+			     enum net_ip_protocol proto, k_timeout_t timeout);
+
+#define virtual_l2_alloc vlan_alloc_buffer
+#else
+#define virtual_l2_alloc NULL
+#endif
+
 NET_L2_INIT(VIRTUAL_L2, virtual_recv, virtual_send, virtual_enable,
-	    virtual_flags);
+	    virtual_flags, virtual_l2_alloc);
 
 static void random_linkaddr(uint8_t *linkaddr, size_t len)
 {
 	sys_rand_get(linkaddr, len);
 
-	linkaddr[0] |= 0x02; /* force LAA bit */
+	linkaddr[0] |= 0x02;  /* force LAA bit */
+	linkaddr[0] &= ~0x01; /* clear multicast bit */
 }
 
 int net_virtual_interface_attach(struct net_if *virtual_iface,
@@ -180,6 +289,7 @@ int net_virtual_interface_attach(struct net_if *virtual_iface,
 {
 	const struct virtual_interface_api *api;
 	struct virtual_interface_context *ctx;
+	const struct device *dev;
 	bool up = false;
 
 	if (net_if_get_by_iface(virtual_iface) < 0 ||
@@ -191,12 +301,18 @@ int net_virtual_interface_attach(struct net_if *virtual_iface,
 		return -EINVAL;
 	}
 
-	api = net_if_get_device(virtual_iface)->api;
-	if (api->attach == NULL) {
+	dev = net_if_get_device(virtual_iface);
+
+	NET_ASSERT(dev != NULL);
+
+	api = dev->api;
+	if (api == NULL || api->attach == NULL) {
 		return -ENOENT;
 	}
 
 	ctx = net_if_l2_data(virtual_iface);
+
+	NET_ASSERT(ctx != NULL);
 
 	if (ctx->iface) {
 		if (iface != NULL) {
@@ -311,6 +427,8 @@ struct net_if *net_virtual_get_iface(struct net_if *iface)
 
 	ctx = net_if_l2_data(iface);
 
+	NET_ASSERT(ctx != NULL);
+
 	return ctx->iface;
 }
 
@@ -327,6 +445,8 @@ char *net_virtual_get_name(struct net_if *iface, char *buf, size_t len)
 	}
 
 	ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
 
 	strncpy(buf, ctx->name, MIN(len, sizeof(ctx->name)));
 	buf[len - 1] = '\0';
@@ -348,8 +468,10 @@ void net_virtual_set_name(struct net_if *iface, const char *name)
 
 	ctx = net_if_l2_data(iface);
 
-	strncpy(ctx->name, name, CONFIG_NET_L2_VIRTUAL_MAX_NAME_LEN);
-	ctx->name[CONFIG_NET_L2_VIRTUAL_MAX_NAME_LEN - 1] = '\0';
+	NET_ASSERT(ctx != NULL);
+
+	strncpy(ctx->name, name, ARRAY_SIZE(ctx->name) - 1);
+	ctx->name[ARRAY_SIZE(ctx->name) - 1] = '\0';
 }
 
 enum net_l2_flags net_virtual_set_flags(struct net_if *iface,
@@ -367,6 +489,9 @@ enum net_l2_flags net_virtual_set_flags(struct net_if *iface,
 	}
 
 	ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
+
 	old_flags = ctx->virtual_l2_flags;
 	ctx->virtual_l2_flags = flags;
 
@@ -384,6 +509,9 @@ void net_virtual_init(struct net_if *iface)
 	}
 
 	ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
+
 	if (ctx->is_init) {
 		return;
 	}

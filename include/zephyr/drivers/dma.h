@@ -1,13 +1,13 @@
-/**
- * @file
- *
- * @brief Public APIs for the DMA drivers.
- */
-
 /*
  * Copyright (c) 2016 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * @file
+ * @ingroup dma_interface
+ * @brief Main header file for DMA (Direct Memory Access) driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_DMA_H_
@@ -20,12 +20,11 @@
 extern "C" {
 #endif
 
-
 /**
- * @brief DMA Interface
- * @defgroup dma_interface DMA Interface
+ * @brief Interfaces for DMA (Direct Memory Access) controllers.
+ * @defgroup dma_interface DMA
  * @since 1.5
- * @version 1.0.0
+ * @version 1.1.0
  * @ingroup io_interfaces
  * @{
  */
@@ -82,17 +81,21 @@ enum dma_addr_adj {
  * @brief DMA channel attributes
  */
 enum dma_channel_filter {
-	DMA_CHANNEL_NORMAL, /* normal DMA channel */
-	DMA_CHANNEL_PERIODIC, /* can be triggered by periodic sources */
+	DMA_CHANNEL_NORMAL,   /**< Normal DMA channel. */
+	DMA_CHANNEL_PERIODIC, /**< Channel that can be triggered by periodic sources. */
 };
 
 /**
  * @brief DMA attributes
  */
 enum dma_attribute_type {
+	/** Required alignment of buffer addresses, in bytes. */
 	DMA_ATTR_BUFFER_ADDRESS_ALIGNMENT,
+	/** Required alignment of buffer sizes, in bytes. */
 	DMA_ATTR_BUFFER_SIZE_ALIGNMENT,
+	/** Required alignment of memory-to-memory copies, in bytes. */
 	DMA_ATTR_COPY_ALIGNMENT,
+	/** Maximum number of blocks in a single transfer. */
 	DMA_ATTR_MAX_BLOCK_COUNT,
 };
 
@@ -165,12 +168,13 @@ struct dma_block_config {
 };
 
 /** The DMA callback event has occurred at the completion of a transfer list */
-#define DMA_STATUS_COMPLETE	0
+#define DMA_STATUS_COMPLETE			0
 /** The DMA callback has occurred at the completion of a single transfer block in a transfer list */
-#define DMA_STATUS_BLOCK	1
+#define DMA_STATUS_BLOCK			1
+/** The DMA callback event has occurred at the half completion of a single transfer block */
+#define DMA_STATUS_HALF_COMPLETE	2
 
 /**
- * @typedef dma_callback_t
  * @brief Callback function for DMA transfer completion
  *
  *  If enabled, callback function will be invoked at transfer or block completion,
@@ -209,6 +213,8 @@ struct dma_config {
 	 * - others hardware specific
 	 */
 	uint32_t  channel_direction :    3;
+	/** enable half completion callback when set to 1 */
+	uint32_t  half_complete_callback_en : 1;
 	/**
 	 * Completion callback enable
 	 *
@@ -250,7 +256,7 @@ struct dma_config {
 	/** Cyclic transfer list, HW specific */
 	uint32_t  cyclic :				 1;
 
-	uint32_t  _reserved :             3;
+	uint32_t  _reserved :             2;
 	/** Width of source data (in bytes) */
 	uint32_t  source_data_size :    16;
 	/** Width of destination data (in bytes) */
@@ -307,14 +313,21 @@ struct dma_context {
 #define DMA_MAGIC 0x47494749
 
 /**
- * @cond INTERNAL_HIDDEN
- *
- * These are for internal use only, so skip these in
- * public documentation.
+ * @def_driverbackendgroup{DMA,dma_interface}
+ * @{
+ */
+
+/**
+ * @brief Configure individual channel for DMA transfer.
+ * See dma_config() for argument descriptions.
  */
 typedef int (*dma_api_config)(const struct device *dev, uint32_t channel,
 			      struct dma_config *config);
 
+/**
+ * @brief Reload buffer(s) for a DMA channel.
+ * See dma_reload() for argument descriptions.
+ */
 #ifdef CONFIG_DMA_64BIT
 typedef int (*dma_api_reload)(const struct device *dev, uint32_t channel,
 			      uint64_t src, uint64_t dst, size_t size);
@@ -323,21 +336,44 @@ typedef int (*dma_api_reload)(const struct device *dev, uint32_t channel,
 			      uint32_t src, uint32_t dst, size_t size);
 #endif
 
+/**
+ * @brief Enable DMA channel and start the transfer.
+ * See dma_start() for argument descriptions.
+ */
 typedef int (*dma_api_start)(const struct device *dev, uint32_t channel);
 
+/**
+ * @brief Stop the DMA transfer and disable the channel.
+ * See dma_stop() for argument descriptions.
+ */
 typedef int (*dma_api_stop)(const struct device *dev, uint32_t channel);
 
+/**
+ * @brief Suspend a DMA channel transfer.
+ * See dma_suspend() for argument descriptions.
+ */
 typedef int (*dma_api_suspend)(const struct device *dev, uint32_t channel);
 
+/**
+ * @brief Resume a DMA channel transfer.
+ * See dma_resume() for argument descriptions.
+ */
 typedef int (*dma_api_resume)(const struct device *dev, uint32_t channel);
 
+/**
+ * @brief Get current runtime status of DMA transfer.
+ * See dma_get_status() for argument descriptions.
+ */
 typedef int (*dma_api_get_status)(const struct device *dev, uint32_t channel,
 				  struct dma_status *status);
 
+/**
+ * @brief Get attribute of a DMA controller.
+ * See dma_get_attribute() for argument descriptions.
+ */
 typedef int (*dma_api_get_attribute)(const struct device *dev, uint32_t type, uint32_t *value);
 
 /**
- * @typedef dma_chan_filter
  * @brief channel filter function call
  *
  * filter function that is used to find the matched internal dma channel
@@ -347,25 +383,55 @@ typedef int (*dma_api_get_attribute)(const struct device *dev, uint32_t type, ui
  * @param channel the channel id to use
  * @param filter_param filter function parameter, can be NULL
  *
- * @retval True on filter matched otherwise return False.
+ * @return True on filter matched otherwise return False.
  */
 typedef bool (*dma_api_chan_filter)(const struct device *dev,
 				int channel, void *filter_param);
 
-__subsystem struct dma_driver_api {
-	dma_api_config config;
-	dma_api_reload reload;
-	dma_api_start start;
-	dma_api_stop stop;
-	dma_api_suspend suspend;
-	dma_api_resume resume;
-	dma_api_get_status get_status;
-	dma_api_get_attribute get_attribute;
-	dma_api_chan_filter chan_filter;
-};
 /**
- * @endcond
+ * @brief channel release function call
+ *
+ * used to release channel resources "allocated" during the
+ * request phase. These resources can refer to enabled PDs, IRQs
+ * etc...
+ *
+ * @param dev Pointer to the DMA device instance
+ * @param channel channel id to use
  */
+typedef void (*dma_api_chan_release)(const struct device *dev,
+				     uint32_t channel);
+
+/**
+ * @driver_ops{DMA}
+ */
+__subsystem struct dma_driver_api {
+	/** @driver_ops_mandatory @copybrief dma_config */
+	dma_api_config config;
+	/** @driver_ops_optional @copybrief dma_reload */
+	dma_api_reload reload;
+	/** @driver_ops_mandatory @copybrief dma_start */
+	dma_api_start start;
+	/** @driver_ops_optional @copybrief dma_stop */
+	dma_api_stop stop;
+	/** @driver_ops_optional @copybrief dma_suspend */
+	dma_api_suspend suspend;
+	/** @driver_ops_optional @copybrief dma_resume */
+	dma_api_resume resume;
+	/** @driver_ops_optional @copybrief dma_get_status */
+	dma_api_get_status get_status;
+	/** @driver_ops_optional @copybrief dma_get_attribute */
+	dma_api_get_attribute get_attribute;
+	/** @driver_ops_optional @copybrief dma_chan_filter */
+	dma_api_chan_filter chan_filter;
+	/**
+	 * @driver_ops_optional Release channel resources allocated during the
+	 * request phase.
+	 * See dma_release_channel() for details.
+	 */
+	dma_api_chan_release chan_release;
+};
+
+/** @} */
 
 /**
  * @brief Configure individual channel for DMA transfer.
@@ -375,16 +441,12 @@ __subsystem struct dma_driver_api {
  * @param config  Data structure containing the intended configuration for the
  *                selected channel
  *
- * @retval 0 if successful.
- * @retval Negative errno code if failure.
+ * @return 0 on success, negative errno value on failure.
  */
 static inline int dma_config(const struct device *dev, uint32_t channel,
 			     struct dma_config *config)
 {
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
-
-	return api->config(dev, channel, config);
+	return DEVICE_API_GET(dma, dev)->config(dev, channel, config);
 }
 
 /**
@@ -397,8 +459,7 @@ static inline int dma_config(const struct device *dev, uint32_t channel,
  * @param dst     destination address for the DMA transfer
  * @param size    size of DMA transfer
  *
- * @retval 0 if successful.
- * @retval Negative errno code if failure.
+ * @return 0 on success, negative errno value on failure.
  */
 #ifdef CONFIG_DMA_64BIT
 static inline int dma_reload(const struct device *dev, uint32_t channel,
@@ -408,8 +469,7 @@ static inline int dma_reload(const struct device *dev, uint32_t channel,
 		uint32_t src, uint32_t dst, size_t size)
 #endif
 {
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
 	if (api->reload) {
 		return api->reload(dev, channel, src, dst, size);
@@ -428,23 +488,17 @@ static inline int dma_reload(const struct device *dev, uint32_t channel,
  * Start is allowed on channels that have already been started and must report
  * success.
  *
- * @funcprops \isr_ok
+ * @isr_ok
  *
  * @param dev     Pointer to the device structure for the driver instance.
  * @param channel Numeric identification of the channel where the transfer will
  *                be processed
  *
- * @retval 0 if successful.
- * @retval Negative errno code if failure.
+ * @return 0 on success, negative errno value on failure.
  */
-__syscall int dma_start(const struct device *dev, uint32_t channel);
-
-static inline int z_impl_dma_start(const struct device *dev, uint32_t channel)
+static inline int dma_start(const struct device *dev, uint32_t channel)
 {
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
-
-	return api->start(dev, channel);
+	return DEVICE_API_GET(dma, dev)->start(dev, channel);
 }
 
 /**
@@ -456,25 +510,25 @@ static inline int z_impl_dma_start(const struct device *dev, uint32_t channel)
  * Stop is allowed on channels that have already been stopped and must report
  * success.
  *
- * @funcprops \isr_ok
+ * @isr_ok
  *
  * @param dev     Pointer to the device structure for the driver instance.
  * @param channel Numeric identification of the channel where the transfer was
  *                being processed
  *
- * @retval 0 if successful.
- * @retval Negative errno code if failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS Not implemented.
+ * @retval -EINVAL Invalid channel id.
  */
-__syscall int dma_stop(const struct device *dev, uint32_t channel);
-
-static inline int z_impl_dma_stop(const struct device *dev, uint32_t channel)
+static inline int dma_stop(const struct device *dev, uint32_t channel)
 {
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
+	if (api->stop == NULL) {
+		return -ENOSYS;
+	}
 	return api->stop(dev, channel);
 }
-
 
 /**
  * @brief Suspend a DMA channel transfer
@@ -482,21 +536,18 @@ static inline int z_impl_dma_stop(const struct device *dev, uint32_t channel)
  * Implementations must check the validity of the channel state and ID passed
  * in and return -EINVAL if either are invalid.
  *
- * @funcprops \isr_ok
+ * @isr_ok
  *
  * @param dev Pointer to the device structure for the driver instance.
  * @param channel Numeric identification of the channel to suspend
  *
- * @retval 0 If successful.
- * @retval -ENOSYS If not implemented.
- * @retval -EINVAL If invalid channel id or state.
- * @retval -errno Other negative errno code failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS Not implemented.
+ * @retval -EINVAL Invalid channel id or state.
  */
-__syscall int dma_suspend(const struct device *dev, uint32_t channel);
-
-static inline int z_impl_dma_suspend(const struct device *dev, uint32_t channel)
+static inline int dma_suspend(const struct device *dev, uint32_t channel)
 {
-	const struct dma_driver_api *api = (const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
 	if (api->suspend == NULL) {
 		return -ENOSYS;
@@ -510,21 +561,18 @@ static inline int z_impl_dma_suspend(const struct device *dev, uint32_t channel)
  * Implementations must check the validity of the channel state and ID passed
  * in and return -EINVAL if either are invalid.
  *
- * @funcprops \isr_ok
+ * @isr_ok
  *
  * @param dev Pointer to the device structure for the driver instance.
  * @param channel Numeric identification of the channel to resume
  *
- * @retval 0 If successful.
- * @retval -ENOSYS If not implemented
- * @retval -EINVAL If invalid channel id or state.
- * @retval -errno Other negative errno code failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS Not implemented.
+ * @retval -EINVAL Invalid channel id or state.
  */
-__syscall int dma_resume(const struct device *dev, uint32_t channel);
-
-static inline int z_impl_dma_resume(const struct device *dev, uint32_t channel)
+static inline int dma_resume(const struct device *dev, uint32_t channel)
 {
-	const struct dma_driver_api *api = (const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
 	if (api->resume == NULL) {
 		return -ENOSYS;
@@ -538,24 +586,20 @@ static inline int z_impl_dma_resume(const struct device *dev, uint32_t channel)
  * request DMA channel resources
  * return -EINVAL if there is no valid channel available.
  *
- * @funcprops \isr_ok
+ * @note It is safe to use this function in contexts where blocking
+ * is not allowed, e.g. ISR, provided the implementation of the filter
+ * function does not block.
  *
  * @param dev Pointer to the device structure for the driver instance.
  * @param filter_param filter function parameter
  *
- * @retval dma channel if successful.
- * @retval Negative errno code if failure.
+ * @return DMA channel on success, negative errno value on failure.
  */
-__syscall int dma_request_channel(const struct device *dev,
-				  void *filter_param);
-
-static inline int z_impl_dma_request_channel(const struct device *dev,
-					     void *filter_param)
+static inline int dma_request_channel(const struct device *dev, void *filter_param)
 {
 	int i = 0;
 	int channel = -EINVAL;
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 	/* dma_context shall be the first one in dev data */
 	struct dma_context *dma_ctx = (struct dma_context *)dev->data;
 
@@ -583,18 +627,17 @@ static inline int z_impl_dma_request_channel(const struct device *dev,
  *
  * release DMA channel resources
  *
- * @funcprops \isr_ok
+ * @note It is safe to use this function in contexts where blocking
+ * is not allowed, e.g. ISR, provided the implementation of the release
+ * function does not block.
  *
  * @param dev  Pointer to the device structure for the driver instance.
  * @param channel  channel number
  *
  */
-__syscall void dma_release_channel(const struct device *dev,
-				   uint32_t channel);
-
-static inline void z_impl_dma_release_channel(const struct device *dev,
-					      uint32_t channel)
+static inline void dma_release_channel(const struct device *dev, uint32_t channel)
 {
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 	struct dma_context *dma_ctx = (struct dma_context *)dev->data;
 
 	if (dma_ctx->magic != DMA_MAGIC) {
@@ -602,6 +645,10 @@ static inline void z_impl_dma_release_channel(const struct device *dev,
 	}
 
 	if ((int)channel < dma_ctx->dma_channels) {
+		if (api->chan_release) {
+			api->chan_release(dev, channel);
+		}
+
 		atomic_clear_bit(dma_ctx->atomic, channel);
 	}
 
@@ -616,17 +663,11 @@ static inline void z_impl_dma_release_channel(const struct device *dev,
  * @param channel  channel number
  * @param filter_param filter attribute
  *
- * @retval Negative errno code if not support
- *
+ * @return Non-negative value on success, negative errno value on failure.
  */
-__syscall int dma_chan_filter(const struct device *dev,
-				   int channel, void *filter_param);
-
-static inline int z_impl_dma_chan_filter(const struct device *dev,
-					      int channel, void *filter_param)
+static inline int dma_chan_filter(const struct device *dev, int channel, void *filter_param)
 {
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
 	if (api->chan_filter) {
 		return api->chan_filter(dev, channel, filter_param);
@@ -641,21 +682,19 @@ static inline int z_impl_dma_chan_filter(const struct device *dev,
  * Implementations must check the validity of the channel ID passed in and
  * return -EINVAL if it is invalid or -ENOSYS if not supported.
  *
- * @funcprops \isr_ok
+ * @isr_ok
  *
  * @param dev     Pointer to the device structure for the driver instance.
  * @param channel Numeric identification of the channel where the transfer was
  *                being processed
  * @param stat   a non-NULL dma_status object for storing DMA status
  *
- * @retval non-negative if successful.
- * @retval Negative errno code if failure.
+ * @return Non-negative value on success, negative errno value on failure.
  */
 static inline int dma_get_status(const struct device *dev, uint32_t channel,
 				 struct dma_status *stat)
 {
-	const struct dma_driver_api *api =
-		(const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
 	if (api->get_status) {
 		return api->get_status(dev, channel, stat);
@@ -672,18 +711,17 @@ static inline int dma_get_status(const struct device *dev, uint32_t channel,
  * Implementations must check the validity of the type passed in and
  * return -EINVAL if it is invalid or -ENOSYS if not supported.
  *
- * @funcprops \isr_ok
+ * @isr_ok
  *
  * @param dev     Pointer to the device structure for the driver instance.
  * @param type    Numeric identification of the attribute
  * @param value   A non-NULL pointer to the variable where the read value is to be placed
  *
- * @retval non-negative if successful.
- * @retval Negative errno code if failure.
+ * @return Non-negative value on success, negative errno value on failure.
  */
 static inline int dma_get_attribute(const struct device *dev, uint32_t type, uint32_t *value)
 {
-	const struct dma_driver_api *api = (const struct dma_driver_api *)dev->api;
+	const struct dma_driver_api *api = DEVICE_API_GET(dma, dev);
 
 	if (api->get_attribute) {
 		return api->get_attribute(dev, type, value);
@@ -703,7 +741,7 @@ static inline int dma_get_attribute(const struct device *dev, uint32_t type, uin
  *
  * @param size: width of bus (in bytes)
  *
- * @retval common DMA index to be placed into registers.
+ * @return common DMA index to be placed into registers.
  */
 static inline uint32_t dma_width_index(uint32_t size)
 {
@@ -732,7 +770,7 @@ static inline uint32_t dma_width_index(uint32_t size)
  *
  * @param burst: number of bytes to be sent in a single burst
  *
- * @retval common DMA index to be placed into registers.
+ * @return common DMA index to be placed into registers.
  */
 static inline uint32_t dma_burst_index(uint32_t burst)
 {
@@ -787,7 +825,5 @@ static inline uint32_t dma_burst_index(uint32_t burst)
 #ifdef __cplusplus
 }
 #endif
-
-#include <zephyr/syscalls/dma.h>
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_DMA_H_ */

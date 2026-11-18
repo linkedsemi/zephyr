@@ -41,6 +41,13 @@ LOG_MODULE_REGISTER(usb_dc_kinetis);
 #define KINETIS_ADDR2IDX(addr)	((addr) & (KINETIS_EP_NUMOF_MASK))
 
 /*
+ * In some SoC USB0 base register is defined as USBFS0
+ */
+#if !defined(USB0) && defined(USBFS0)
+#define USB0				USBFS0
+#endif
+
+/*
  * Buffer Descriptor (BD) entry provides endpoint buffer control
  * information for USBFS controller. Every endpoint direction requires
  * two BD entries.
@@ -130,7 +137,7 @@ struct cb_msg {
 	uint32_t cb;
 };
 
-K_MSGQ_DEFINE(usb_dc_msgq, sizeof(struct cb_msg), 10, 4);
+K_MSGQ_DEFINE_STATIC_TYPE(usb_dc_msgq, struct cb_msg, 10);
 static void usb_kinetis_isr_handler(void);
 
 /*
@@ -229,7 +236,7 @@ int usb_dc_attach(void)
 	 */
 	usb_dc_reset();
 
-	dev_data.attached = 1;
+	dev_data.attached = true;
 	LOG_DBG("attached");
 
 	/* non-OTG device mode, enable DP Pullup */

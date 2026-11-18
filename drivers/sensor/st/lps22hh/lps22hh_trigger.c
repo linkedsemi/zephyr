@@ -31,7 +31,7 @@ static int lps22hh_enable_int(const struct device *dev, int enable)
 	/* set interrupt */
 	lps22hh_pin_int_route_get(ctx, &int_route);
 	int_route.drdy_pres = enable;
-	return lps22hh_pin_int_route_set(ctx, &int_route);
+	return lps22hh_pin_int_route_set(ctx, int_route);
 }
 
 /**
@@ -176,8 +176,7 @@ int lps22hh_init_interrupt(const struct device *dev)
 #endif
 	   ) {
 		if (cfg->gpio_int.port) {
-			LOG_ERR("%s: device %s is not ready", dev->name,
-						cfg->gpio_int.port->name);
+			LOG_ERR_DEVICE_NOT_READY(cfg->gpio_int.port);
 			return -ENODEV;
 		}
 

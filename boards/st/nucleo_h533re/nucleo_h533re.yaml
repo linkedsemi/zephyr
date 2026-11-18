@@ -7,10 +7,14 @@ type: mcu
 arch: arm
 toolchain:
   - zephyr
-ram: 272
+ram: 128
 flash: 512
 supported:
+  - arduino_gpio
+  - arduino_serial
+  - arduino_spi
   - gpio
+  - spi
   - watchdog
   - pwm
   - rtc

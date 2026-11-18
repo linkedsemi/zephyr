@@ -117,6 +117,7 @@ void posix_irq_handler(void)
 
 		currently_running_irq = irq_nbr;
 		vector_to_irq(irq_nbr, &may_swap);
+		nrfbsim_clear_excl_access();
 		currently_running_irq = last_running_irq;
 
 		hw_irq_ctrl_reeval_level_irq(cpu_n, irq_nbr);
@@ -235,6 +236,14 @@ int posix_irq_is_enabled(unsigned int irq)
 	return hw_irq_ctrl_is_irq_enabled(CONFIG_NATIVE_SIMULATOR_MCU_N, irq);
 }
 
+/**
+ * Report whether an irq is pending (not necessarily active)
+ */
+int posix_irq_is_pending(unsigned int irq)
+{
+	return hw_irq_ctrl_is_irq_pending(CONFIG_NATIVE_SIMULATOR_MCU_N, irq);
+}
+
 int posix_get_current_irq(void)
 {
 	return currently_running_irq;
@@ -278,6 +287,11 @@ void posix_isr_declare(unsigned int irq_p, int flags, void isr_p(const void *),
  */
 void posix_irq_priority_set(unsigned int irq, unsigned int prio, uint32_t flags)
 {
+	if (irq >= NHW_INTCTRL_MAX_INTLINES) {
+		bs_trace_error_time_line("Attempted to configure not existent interrupt %u\n",
+					 irq);
+		return;
+	}
 	hw_irq_ctrl_prio_set(CONFIG_NATIVE_SIMULATOR_MCU_N, irq, prio);
 }
 

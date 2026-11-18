@@ -18,7 +18,7 @@
  */
 ZTEST_USER(i2s_states, test_i2s_state_not_ready_neg)
 {
-	struct i2s_config i2s_cfg;
+	struct i2s_config i2s_cfg = {0};
 	size_t rx_size;
 	int ret;
 	char rx_buf[BLOCK_SIZE];
@@ -233,7 +233,7 @@ ZTEST_USER(i2s_states, test_i2s_state_stopping_neg)
 	ret = rx_block_read(dev_i2s_rx, 0);
 	zassert_equal(ret, TC_PASS);
 
-	/* This is incase the RX channel is stuck in STOPPING state.
+	/* This is in case the RX channel is stuck in STOPPING state.
 	 * Clear out the state before running the next test.
 	 */
 	ret = i2s_trigger(dev_i2s_rx, I2S_DIR_RX, I2S_TRIGGER_DROP);

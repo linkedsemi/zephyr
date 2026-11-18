@@ -27,7 +27,7 @@
 
 #define P3T1755_TEMPERATURE_REG_SHIFT (0x04U)
 #define P3T1755_TEMPERATURE_SCALE     62500
-#define P3T1755_TEMPERATURE_SIGN_BIT  BIT(12)
+#define P3T1755_TEMPERATURE_SIGN_BIT  BIT(11)
 #define P3T1755_TEMPERATURE_ABS_MASK  ((uint16_t)(P3T1755_TEMPERATURE_SIGN_BIT - 1U))
 
 #define P3T1755_CONFIG_REG_OS BIT(7)
@@ -36,6 +36,8 @@
 struct p3t1755_io_ops {
 	int (*read)(const struct device *dev, uint8_t reg, uint8_t *byte, uint8_t len);
 	int (*write)(const struct device *dev, uint8_t reg, uint8_t *byte, uint8_t len);
+	int (*get)(const struct device *dev);
+	int (*put)(const struct device *dev);
 };
 
 union p3t1755_bus_cfg {

@@ -69,7 +69,7 @@ static unsigned int get_page(off_t offset)
 
 static int write_dword(const struct device *dev, off_t offset, uint64_t val)
 {
-	volatile uint32_t *flash = (uint32_t *)(offset + FLASH_STM32_BASE_ADDRESS);
+	volatile uint32_t *flash = (uint32_t *)((uintptr_t)offset + FLASH_STM32_BASE_ADDRESS);
 	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
 #ifdef CONTROL_DCACHE
 	bool dcache_enabled = false;
@@ -246,8 +246,8 @@ int flash_stm32_write_range(const struct device *dev, unsigned int offset,
 	return rc;
 }
 
-static __unused int write_optb(const struct device *dev, uint32_t mask,
-			       uint32_t value)
+int flash_stm32_option_bytes_write(const struct device *dev, uint32_t mask,
+				   uint32_t value)
 {
 	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
 	int rc;
@@ -276,7 +276,17 @@ static __unused int write_optb(const struct device *dev, uint32_t mask,
 		return rc;
 	}
 
-	return 0;
+	/* Force the option byte loading */
+	regs->CR |= FLASH_CR_OBL_LAUNCH;
+
+	return flash_stm32_wait_flash_idle(dev);
+}
+
+uint32_t flash_stm32_option_bytes_read(const struct device *dev)
+{
+	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
+
+	return regs->OPTR;
 }
 
 #if defined(CONFIG_FLASH_STM32_WRITE_PROTECT)
@@ -303,10 +313,10 @@ uint8_t flash_stm32_get_rdp_level(const struct device *dev)
 	return (regs->OPTR & FLASH_OPTR_RDP_Msk) >> FLASH_OPTR_RDP_Pos;
 }
 
-void flash_stm32_set_rdp_level(const struct device *dev, uint8_t level)
+int flash_stm32_set_rdp_level(const struct device *dev, uint8_t level)
 {
-	write_optb(dev, FLASH_OPTR_RDP_Msk,
-		(uint32_t)level << FLASH_OPTR_RDP_Pos);
+	return flash_stm32_option_bytes_write(dev, FLASH_OPTR_RDP_Msk,
+					      (uint32_t)level << FLASH_OPTR_RDP_Pos);
 }
 #endif /* CONFIG_FLASH_STM32_READOUT_PROTECTION */
 

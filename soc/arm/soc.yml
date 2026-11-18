@@ -3,15 +3,25 @@ family:
   series:
   - name: mps2
     socs:
+    - name: an383
     - name: an385
+    - name: an386
+    - name: an500
     - name: an521
       cpuclusters:
       - name: cpu0
       - name: cpu1
   - name: mps3
     socs:
+    - name: an536
+      cpuclusters:
+      - name: cpu0
     - name: corstone300
     - name: corstone310
+  - name: mps4
+    socs:
+    - name: corstone315
+    - name: corstone320
   - name: musca
     socs:
     - name: musca_b1
@@ -20,11 +30,17 @@ family:
     socs:
     - name: designstart_fpga_cortex_m1
     - name: designstart_fpga_cortex_m3
+  - name: beetle
+    socs:
+    - name: beetle_r0
 - name: arm64
   series:
-  - name: fvp_aemv8a
+  - name: fvp_aem
     socs:
-    - name: fvp_base_revc_2xaemv8a
+    - name: v8a
+    - name: v9a
+    - name: a320
+    - name: v8a_aarch32
   - name: fvp_aemv8r
     socs:
     - name: fvp_aemv8r_aarch64

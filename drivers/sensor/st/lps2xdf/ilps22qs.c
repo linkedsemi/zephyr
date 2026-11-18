@@ -74,17 +74,7 @@ static int ilps22qs_trigger_set(const struct device *dev,
 }
 #endif /* CONFIG_LPS2XDF_TRIGGER */
 
-const struct lps2xdf_chip_api st_ilps22qs_chip_api = {
-	.mode_set_odr_raw = ilps22qs_mode_set_odr_raw,
-	.sample_fetch = ilps22qs_sample_fetch,
-#if CONFIG_LPS2XDF_TRIGGER
-	.config_interrupt = ilps22qs_config_interrupt,
-	.handle_interrupt = ilps22qs_handle_interrupt,
-	.trigger_set = ilps22qs_trigger_set,
-#endif
-};
-
-int st_ilps22qs_init(const struct device *dev)
+static int st_ilps22qs_init(const struct device *dev)
 {
 	const struct lps2xdf_config *const cfg = dev->config;
 	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
@@ -149,7 +139,7 @@ int st_ilps22qs_init(const struct device *dev)
 
 		/* Select bus interface */
 		ilps22qs_bus_mode_get(ctx, &bus_mode);
-		bus_mode.filter = ILPS22QS_AUTO;
+		bus_mode.filter = ILPS22QS_FILTER_AUTO;
 		bus_mode.interface = ILPS22QS_SEL_BY_HW;
 		ilps22qs_bus_mode_set(ctx, &bus_mode);
 	}
@@ -162,6 +152,9 @@ int st_ilps22qs_init(const struct device *dev)
 		return ret;
 	}
 
+	/* Store odr for PM resume */
+	((struct lps2xdf_data *)dev->data)->odr = cfg->odr;
+
 #ifdef CONFIG_LPS2XDF_TRIGGER
 	if (cfg->trig_enabled) {
 		if (lps2xdf_init_interrupt(dev, DEVICE_VARIANT_ILPS22QS) < 0) {
@@ -173,3 +166,14 @@ int st_ilps22qs_init(const struct device *dev)
 
 	return 0;
 }
+
+const struct lps2xdf_chip_api st_ilps22qs_chip_api = {
+	.mode_set_odr_raw = ilps22qs_mode_set_odr_raw,
+	.sample_fetch = ilps22qs_sample_fetch,
+	.power_on = st_ilps22qs_init,
+#if CONFIG_LPS2XDF_TRIGGER
+	.config_interrupt = ilps22qs_config_interrupt,
+	.handle_interrupt = ilps22qs_handle_interrupt,
+	.trigger_set = ilps22qs_trigger_set,
+#endif
+};

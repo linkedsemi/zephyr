@@ -10,11 +10,11 @@
 #include <zephyr/input/input.h>
 #include <zephyr/input/input_kbd_matrix.h>
 #include <zephyr/kernel.h>
-#include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/pm/device.h>
 #include <zephyr/pm/device_runtime.h>
 #include <zephyr/sys/atomic.h>
+#include <zephyr/sys/minmax.h>
 #include <zephyr/sys/util.h>
 
 LOG_MODULE_REGISTER(input_kbd_matrix, CONFIG_INPUT_LOG_LEVEL);
@@ -26,7 +26,7 @@ void input_kbd_matrix_poll_start(const struct device *dev)
 	k_sem_give(&data->poll_lock);
 }
 
-static bool input_kbd_matrix_ghosting(const struct device *dev)
+bool input_kbd_matrix_ghosting(const struct device *dev)
 {
 	const struct input_kbd_matrix_common_config *cfg = dev->config;
 	const kbd_row_t *state = cfg->matrix_new_state;
@@ -56,7 +56,7 @@ static bool input_kbd_matrix_ghosting(const struct device *dev)
 			 * indication of ghosting, due to current flowing from
 			 * a key which was never pressed. In our case, current
 			 * flowing is a bit set to 1 as we flipped the bits
-			 * when the matrix was scanned. Now we OR the colums
+			 * when the matrix was scanned. Now we OR the columns
 			 * using z&(z-1) which is non-zero only if z has more
 			 * than one bit set.
 			 */
@@ -94,12 +94,11 @@ static bool input_kbd_matrix_is_suspended(const struct device *dev)
 #endif
 }
 
-static bool input_kbd_matrix_scan(const struct device *dev)
+static void input_kbd_matrix_scan(const struct device *dev)
 {
 	const struct input_kbd_matrix_common_config *cfg = dev->config;
 	const struct input_kbd_matrix_api *api = cfg->api;
 	kbd_row_t row;
-	kbd_row_t key_event = 0U;
 
 	for (int col = 0; col < cfg->col_size; col++) {
 		if (cfg->actual_key_mask != NULL &&
@@ -124,15 +123,12 @@ static bool input_kbd_matrix_scan(const struct device *dev)
 		}
 
 		cfg->matrix_new_state[col] = row;
-		key_event |= row;
 	}
 
 	input_kbd_matrix_drive_column(dev, INPUT_KBD_MATRIX_COLUMN_DRIVE_NONE);
-
-	return key_event != 0U;
 }
 
-static void input_kbd_matrix_update_state(const struct device *dev)
+void input_kbd_matrix_update_state(const struct device *dev)
 {
 	const struct input_kbd_matrix_common_config *cfg = dev->config;
 	struct input_kbd_matrix_common_data *data = dev->data;
@@ -158,7 +154,7 @@ static void input_kbd_matrix_update_state(const struct device *dev)
 		}
 
 		for (int r = 0; r < cfg->row_size; r++) {
-			uint8_t cyc_idx = c * cfg->row_size + r;
+			uint16_t cyc_idx = c * cfg->row_size + r;
 
 			/*
 			 * Index all they keys that changed for each row in
@@ -190,7 +186,7 @@ static void input_kbd_matrix_update_state(const struct device *dev)
 				continue;
 			}
 
-			uint8_t cyc_idx = c * cfg->row_size + r;
+			uint16_t cyc_idx = c * cfg->row_size + r;
 			uint8_t scan_cyc_idx = cfg->scan_cycle_idx[cyc_idx];
 			uint32_t scan_clk_cycle = data->scan_clk_cycle[scan_cyc_idx];
 
@@ -227,13 +223,12 @@ static void input_kbd_matrix_update_state(const struct device *dev)
 	data->scan_cycles_idx = (data->scan_cycles_idx + 1) % INPUT_KBD_MATRIX_SCAN_OCURRENCES;
 }
 
-static bool input_kbd_matrix_check_key_events(const struct device *dev)
+static void input_kbd_matrix_check_key_events(const struct device *dev)
 {
 	const struct input_kbd_matrix_common_config *cfg = dev->config;
-	bool key_pressed;
 
 	/* Scan the matrix */
-	key_pressed = input_kbd_matrix_scan(dev);
+	input_kbd_matrix_scan(dev);
 
 	for (int c = 0; c < cfg->col_size; c++) {
 		LOG_DBG("c=%2d u=%" PRIkbdrow " p=%" PRIkbdrow " n=%" PRIkbdrow,
@@ -245,12 +240,28 @@ static bool input_kbd_matrix_check_key_events(const struct device *dev)
 
 	/* Abort if ghosting is detected */
 	if (cfg->ghostkey_check && input_kbd_matrix_ghosting(dev)) {
-		return key_pressed;
+		return;
 	}
 
 	input_kbd_matrix_update_state(dev);
+}
 
-	return key_pressed;
+bool input_kbd_matrix_active(const struct device *dev)
+{
+	const struct input_kbd_matrix_common_config *cfg = dev->config;
+
+	for (int c = 0; c < cfg->col_size; c++) {
+		/* Active if any keys is currently pressed or waiting to be
+		 * released or being debounced.
+		 */
+		if (cfg->matrix_stable_state[c] != 0 ||
+		    cfg->matrix_unstable_state[c] != 0 ||
+		    cfg->matrix_new_state[c] != 0)  {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 static k_timepoint_t input_kbd_matrix_poll_timeout(const struct device *dev)
@@ -264,6 +275,19 @@ static k_timepoint_t input_kbd_matrix_poll_timeout(const struct device *dev)
 	return sys_timepoint_calc(K_MSEC(cfg->poll_timeout_ms));
 }
 
+static bool input_kbd_matrix_is_unstable(const struct device *dev)
+{
+	const struct input_kbd_matrix_common_config *cfg = dev->config;
+
+	for (uint8_t c = 0; c < cfg->col_size; c++) {
+		if (cfg->matrix_unstable_state[c] != 0) {
+			return true;
+		}
+	}
+
+	return false;
+}
+
 static void input_kbd_matrix_poll(const struct device *dev)
 {
 	const struct input_kbd_matrix_common_config *cfg = dev->config;
@@ -271,13 +295,16 @@ static void input_kbd_matrix_poll(const struct device *dev)
 	uint32_t current_cycles;
 	uint32_t cycles_diff;
 	uint32_t wait_period_us;
+	uint32_t poll_period_us;
 
 	poll_time_end = input_kbd_matrix_poll_timeout(dev);
 
 	while (true) {
 		uint32_t start_period_cycles = k_cycle_get_32();
 
-		if (input_kbd_matrix_check_key_events(dev)) {
+		input_kbd_matrix_check_key_events(dev);
+
+		if (input_kbd_matrix_active(dev)) {
 			poll_time_end = input_kbd_matrix_poll_timeout(dev);
 		} else if (sys_timepoint_expired(poll_time_end)) {
 			break;
@@ -289,10 +316,14 @@ static void input_kbd_matrix_poll(const struct device *dev)
 		 */
 		current_cycles = k_cycle_get_32();
 		cycles_diff = current_cycles - start_period_cycles;
-		wait_period_us = cfg->poll_period_us - k_cyc_to_us_floor32(cycles_diff);
 
-		wait_period_us = CLAMP(wait_period_us,
-				       USEC_PER_MSEC, cfg->poll_period_us);
+		if (input_kbd_matrix_is_unstable(dev)) {
+			poll_period_us = cfg->poll_period_us;
+		} else {
+			poll_period_us = cfg->stable_poll_period_us;
+		}
+		wait_period_us = clamp(poll_period_us - k_cyc_to_us_floor32(cycles_diff),
+				       USEC_PER_MSEC, poll_period_us);
 
 		LOG_DBG("wait_period_us: %d", wait_period_us);
 

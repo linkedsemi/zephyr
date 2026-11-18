@@ -9,14 +9,13 @@ identifier: mps3/corstone300/an547/ns
 name: Arm MPS3-Corstone300-AN547_ns
 type: mcu
 arch: arm
-ram: 2048
-flash: 512
-simulation: qemu
+ram: 3968
+flash: 3072
 toolchain:
   - gnuarmemb
   - zephyr
-  - xtools
 testing:
   default: true
   only_tags:
     - trusted-firmware-m
+    - integration

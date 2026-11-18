@@ -26,7 +26,14 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/peripheral_hids` in the
-Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/peripheral_hids
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+After flashing, the device will advertise as a HID peripheral. Pair it with a host
+(a passkey will be displayed on the peripheral's console and must be entered on the host).
+Once paired, the device should be recognized as a generic mouse by the operating system.

@@ -9,7 +9,7 @@
 #include <string.h>
 
 #include <zephyr/settings/settings.h>
-#include "settings/settings_nvs.h"
+#include <settings/settings_nvs.h>
 #include <zephyr/sys/crc.h>
 #include "settings_priv.h"
 #include <zephyr/storage/flash_map.h>
@@ -18,9 +18,9 @@
 LOG_MODULE_DECLARE(settings, CONFIG_SETTINGS_LOG_LEVEL);
 
 #if DT_HAS_CHOSEN(zephyr_settings_partition)
-#define SETTINGS_PARTITION DT_FIXED_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
+#define SETTINGS_PARTITION DT_PARTITION_ID(DT_CHOSEN(zephyr_settings_partition))
 #else
-#define SETTINGS_PARTITION FIXED_PARTITION_ID(storage_partition)
+#define SETTINGS_PARTITION PARTITION_ID(storage_partition)
 #endif
 
 struct settings_nvs_read_fn_arg {
@@ -34,7 +34,7 @@ static int settings_nvs_save(struct settings_store *cs, const char *name,
 			     const char *value, size_t val_len);
 static void *settings_nvs_storage_get(struct settings_store *cs);
 
-static struct settings_store_itf settings_nvs_itf = {
+static const struct settings_store_itf settings_nvs_itf = {
 	.csi_load = settings_nvs_load,
 	.csi_save = settings_nvs_save,
 	.csi_storage_get = settings_nvs_storage_get
@@ -104,6 +104,10 @@ static uint16_t settings_nvs_cache_match(struct settings_nvs *cf, const char *na
 
 		rc = nvs_read(&cf->cf_nvs, cf->cache[i].name_id, rdname, len);
 		if (rc < 0) {
+			continue;
+		}
+
+		if ((size_t)rc >= len) {
 			continue;
 		}
 
@@ -191,6 +195,10 @@ static int settings_nvs_load(struct settings_store *cs,
 			continue;
 		}
 
+		if ((size_t)rc1 >= sizeof(name)) {
+			continue;
+		}
+
 		/* Found a name, this might not include a trailing \0 */
 		name[rc1] = '\0';
 		read_fn_arg.fs = &cf->cf_nvs;
@@ -264,6 +272,10 @@ static int settings_nvs_save(struct settings_store *cs, const char *name,
 			if (rc == -ENOENT) {
 				write_name_id = name_id;
 			}
+			continue;
+		}
+
+		if ((size_t)rc >= sizeof(rdname)) {
 			continue;
 		}
 

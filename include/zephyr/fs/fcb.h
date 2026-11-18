@@ -4,6 +4,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Flash Circular Buffer (FCB) API.
+ * @ingroup fcb
+ */
+
 #ifndef ZEPHYR_INCLUDE_FS_FCB_H_
 #define ZEPHYR_INCLUDE_FS_FCB_H_
 
@@ -103,7 +110,7 @@ struct fcb {
 	 */
 
 	uint8_t f_version; /**<  Current version number of the data */
-	uint8_t f_sector_cnt; /**< Number of elements in sector array */
+	uint16_t f_sector_cnt; /**< Number of elements in sector array */
 	uint8_t f_scratch_cnt;
 	/**< Number of sectors to keep empty. This can be used if you need
 	 * to have scratch space for garbage collecting when FCB fills up.

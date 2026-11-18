@@ -19,6 +19,16 @@ zephyr_library_sources_ifdef(
   )
 
 zephyr_library_sources_ifdef(
+  CONFIG_DEBUG_COREDUMP_BACKEND_LOGGING_UDP
+  coredump_backend_logging_udp.c
+  )
+
+zephyr_library_sources_ifdef(
+  CONFIG_DEBUG_COREDUMP_FATAL_UNLOCK_IRQS
+  coredump_fatal_irq.c
+  )
+
+zephyr_library_sources_ifdef(
   CONFIG_DEBUG_COREDUMP_BACKEND_FLASH_PARTITION
   coredump_backend_flash_partition.c
   )
@@ -28,14 +38,27 @@ zephyr_library_sources_ifdef(
   coredump_backend_intel_adsp_mem_window.c
   )
 
+zephyr_library_sources_ifdef(
+  CONFIG_DEBUG_COREDUMP_BACKEND_AMD_ACP_PANIC_DUMP
+  coredump_backend_amd_acp_panic_dump.c
+  )
+
+zephyr_library_sources_ifdef(
+  CONFIG_DEBUG_COREDUMP_SHELL
+  coredump_shell.c
+  )
+
+zephyr_library_sources_ifdef(
+  CONFIG_DEBUG_COREDUMP_BACKEND_IN_MEMORY
+  coredump_backend_in_memory.c
+  )
+
   # @Intent: Set XTENSA_TOOLCHAIN_VARIANT macro required for Xtensa coredump
 if(CONFIG_XTENSA)
   if(${ZEPHYR_TOOLCHAIN_VARIANT} STREQUAL "zephyr")
     zephyr_compile_options(-DXTENSA_TOOLCHAIN_VARIANT=1)
   elseif(${ZEPHYR_TOOLCHAIN_VARIANT} STREQUAL "xcc")
     zephyr_compile_options(-DXTENSA_TOOLCHAIN_VARIANT=2)
-  elseif(${ZEPHYR_TOOLCHAIN_VARIANT} STREQUAL "espressif")
-    zephyr_compile_options(-DXTENSA_TOOLCHAIN_VARIANT=3)
   else()
     zephyr_compile_options(-DXTENSA_TOOLCHAIN_VARIANT=0)
   endif()

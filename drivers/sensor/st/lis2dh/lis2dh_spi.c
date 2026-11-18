@@ -133,8 +133,13 @@ static int lis2dh_spi_update_reg(const struct device *dev, uint8_t reg_addr,
 				  uint8_t mask, uint8_t value)
 {
 	uint8_t tmp_val;
+	int status;
 
-	lis2dh_raw_read(dev, reg_addr, &tmp_val, 1);
+	status = lis2dh_raw_read(dev, reg_addr, &tmp_val, 1);
+	if (status < 0) {
+		return status;
+	}
+
 	tmp_val = (tmp_val & ~mask) | (value & mask);
 
 	return lis2dh_raw_write(dev, reg_addr, &tmp_val, 1);
@@ -156,7 +161,7 @@ int lis2dh_spi_init(const struct device *dev)
 	data->hw_tf = &lis2dh_spi_transfer_fn;
 
 	if (!spi_is_ready_dt(&cfg->bus_cfg.spi)) {
-		LOG_ERR("SPI bus is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->bus_cfg.spi.bus);
 		return -ENODEV;
 	}
 

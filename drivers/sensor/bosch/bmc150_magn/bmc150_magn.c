@@ -453,8 +453,7 @@ static int bmc150_magn_attr_set(const struct device *dev,
 #endif
 #if defined(BMC150_MAGN_SET_ATTR_REP)
 	case SENSOR_ATTR_OVERSAMPLING:
-		bmc150_magn_attr_set_rep(dev, chan, val);
-		break;
+		return bmc150_magn_attr_set_rep(dev, chan, val);
 #endif
 	default:
 		return -EINVAL;
@@ -464,7 +463,7 @@ static int bmc150_magn_attr_set(const struct device *dev,
 }
 #endif
 
-static const struct sensor_driver_api bmc150_magn_api_funcs = {
+static DEVICE_API(sensor, bmc150_magn_api_funcs) = {
 #if defined(BMC150_MAGN_SET_ATTR)
 	.attr_set = bmc150_magn_attr_set,
 #endif
@@ -567,7 +566,7 @@ static int bmc150_magn_init(const struct device *dev)
 					  dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("I2C bus device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
 	}
 

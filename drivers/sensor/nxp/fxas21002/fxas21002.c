@@ -13,6 +13,9 @@
 
 LOG_MODULE_REGISTER(FXAS21002, CONFIG_SENSOR_LOG_LEVEL);
 
+/* Datasheet: I2C/SPI is accessible 50 ms after VDD/VDDIO power-up or reset. */
+#define FXAS21002_BOOT_TIME_MS 50
+
 /* Sample period in microseconds, indexed by output data rate encoding (DR) */
 static const uint32_t sample_period[] = {
 	1250, 2500, 5000, 10000, 20000, 40000, 80000, 80000
@@ -40,7 +43,7 @@ int fxas21002_read_spi(const struct device *dev,
 	const struct fxas21002_config *cfg = dev->config;
 
 	/* Reads must clock out a dummy byte after sending the address. */
-	uint8_t reg_buf[2] = { DIR_READ(reg), 0 };
+	uint8_t reg_buf[3] = { DIR_READ(reg), 0, 0 };
 	const struct spi_buf buf[2] = {
 		{ .buf = reg_buf, .len = 3 },
 		{ .buf = data, .len = length }
@@ -321,7 +324,7 @@ static int fxas21002_init(const struct device *dev)
 
 	if (config->inst_on_bus == FXAS21002_BUS_I2C) {
 		if (!device_is_ready(config->bus_cfg.i2c.bus)) {
-			LOG_ERR("I2C bus device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->bus_cfg.i2c.bus);
 			return -ENODEV;
 		}
 	}
@@ -330,7 +333,7 @@ static int fxas21002_init(const struct device *dev)
 #if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
 	if (config->inst_on_bus == FXAS21002_BUS_SPI) {
 		if (!device_is_ready(config->bus_cfg.spi.bus)) {
-			LOG_ERR("SPI bus device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->bus_cfg.spi.bus);
 			return -ENODEV;
 		}
 
@@ -339,7 +342,7 @@ static int fxas21002_init(const struct device *dev)
 			 * the sensor.
 			 */
 			if (!gpio_is_ready_dt(&config->reset_gpio)) {
-				LOG_ERR("GPIO device not ready");
+				LOG_ERR_DEVICE_NOT_READY(config->reset_gpio.port);
 				return -ENODEV;
 			}
 
@@ -381,6 +384,9 @@ static int fxas21002_init(const struct device *dev)
 		 */
 		config->ops->byte_write(dev, FXAS21002_REG_CTRLREG1,
 					FXAS21002_CTRLREG1_RST_MASK);
+
+		/* Chip NACKs until the same 50 ms boot time as POR. */
+		k_msleep(FXAS21002_BOOT_TIME_MS);
 
 		/* Wait for the reset sequence to complete */
 		do {
@@ -437,7 +443,7 @@ static int fxas21002_init(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api fxas21002_driver_api = {
+static DEVICE_API(sensor, fxas21002_driver_api) = {
 	.sample_fetch = fxas21002_sample_fetch,
 	.channel_get = fxas21002_channel_get,
 #if CONFIG_FXAS21002_TRIGGER
@@ -452,7 +458,7 @@ static const struct sensor_driver_api fxas21002_driver_api = {
 
 #define FXAS21002_CONFIG_SPI(inst)								\
 		.bus_cfg = {.spi = SPI_DT_SPEC_INST_GET(inst,					\
-			SPI_OP_MODE_MASTER | SPI_WORD_SET(8), 0) },				\
+			SPI_OP_MODE_CONTROLLER | SPI_WORD_SET(8)) },				\
 		.ops = &fxas21002_spi_ops,							\
 		.reset_gpio = GPIO_DT_SPEC_INST_GET(inst, reset_gpios),				\
 		.inst_on_bus = FXAS21002_BUS_SPI,						\

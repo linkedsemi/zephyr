@@ -27,6 +27,8 @@
 
 LOG_MODULE_REGISTER(gpio_it8xxx2, LOG_LEVEL_ERR);
 
+#define ITE_GPIO_MAX_PINS 8
+
 /*
  * Structure gpio_ite_cfg is about the setting of GPIO
  * this config will be used at initial time
@@ -49,7 +51,7 @@ struct gpio_ite_cfg {
 	/* Wake up control mask */
 	uint8_t wuc_mask[8];
 	/* GPIO's irq */
-	uint8_t gpio_irq[8];
+	ite_irq_t gpio_irq[8];
 	/* Support input voltage selection */
 	uint8_t has_volt_sel[8];
 	/* Number of pins per group of GPIO */
@@ -373,10 +375,10 @@ static int gpio_ite_manage_callback(const struct device *dev,
 
 static void gpio_ite_isr(const void *arg)
 {
-	const struct device *dev = arg;
-	const struct gpio_ite_cfg *gpio_config = dev->config;
-	struct gpio_ite_data *data = dev->data;
-	uint8_t irq = ite_intc_get_irq_num();
+	const struct device *dev = (const struct device *)arg;
+	const struct gpio_ite_cfg *gpio_config = (const struct gpio_ite_cfg *)dev->config;
+	struct gpio_ite_data *data = (struct gpio_ite_data *)dev->data;
+	ite_irq_t irq = ite_intc_get_irq_num();
 	uint8_t num_pins = gpio_config->num_pins;
 	uint8_t pin;
 
@@ -395,17 +397,22 @@ static void gpio_ite_isr(const void *arg)
 			 */
 			gpio_fire_callbacks(&data->callbacks, dev, BIT(pin));
 
+			if (((data->level_isr_high | data->level_isr_low) & BIT(pin)) &&
+			    irq_is_enabled(irq)) {
+				k_work_submit(&data->interrupt_worker);
+			}
+
 			break;
 		}
 	}
-	/* Reschedule worker */
-	k_work_submit(&data->interrupt_worker);
 }
 
 static void gpio_ite_interrupt_worker(struct k_work *work)
 {
 	struct gpio_ite_data * const data = CONTAINER_OF(
 		work, struct gpio_ite_data, interrupt_worker);
+	const struct gpio_ite_cfg *gpio_config = data->instance->config;
+	uint8_t num_pins = gpio_config->num_pins;
 	gpio_port_value_t value;
 	gpio_port_value_t triggered_int;
 
@@ -415,6 +422,15 @@ static void gpio_ite_interrupt_worker(struct k_work *work)
 
 	triggered_int = (value & data->level_isr_high) | (~value & data->level_isr_low);
 	k_spin_unlock(&data->lock, key);
+
+	if (triggered_int != 0) {
+		for (uint8_t pin = 0; pin < num_pins; pin++) {
+			if ((triggered_int & BIT(pin)) &&
+			    !irq_is_enabled(gpio_config->gpio_irq[pin])) {
+				triggered_int &= ~BIT(pin);
+			}
+		}
+	}
 
 	if (triggered_int != 0) {
 		gpio_fire_callbacks(&data->callbacks, data->instance,
@@ -430,7 +446,7 @@ static int gpio_ite_pin_interrupt_configure(const struct device *dev,
 					    enum gpio_int_trig trig)
 {
 	const struct gpio_ite_cfg *gpio_config = dev->config;
-	uint8_t gpio_irq = gpio_config->gpio_irq[pin];
+	ite_irq_t gpio_irq = gpio_config->gpio_irq[pin];
 	struct gpio_ite_data *data = dev->data;
 
 #ifdef CONFIG_GPIO_ENABLE_DISABLE_INTERRUPT
@@ -440,11 +456,21 @@ static int gpio_ite_pin_interrupt_configure(const struct device *dev,
 #endif /* CONFIG_GPIO_ENABLE_DISABLE_INTERRUPT */
 		/* Disable GPIO interrupt */
 		irq_disable(gpio_irq);
+		if (mode == GPIO_INT_MODE_DISABLED) {
+			k_spinlock_key_t key = k_spin_lock(&data->lock);
+
+			data->level_isr_low &= ~BIT(pin);
+			data->level_isr_high &= ~BIT(pin);
+			k_spin_unlock(&data->lock, key);
+		}
 		return 0;
 #ifdef CONFIG_GPIO_ENABLE_DISABLE_INTERRUPT
 	} else if (mode == GPIO_INT_MODE_ENABLE_ONLY) {
 		/* Only enable GPIO interrupt */
 		irq_enable(gpio_irq);
+		if ((data->level_isr_high | data->level_isr_low) & BIT(pin)) {
+			k_work_submit(&data->interrupt_worker);
+		}
 		return 0;
 #endif /* CONFIG_GPIO_ENABLE_DISABLE_INTERRUPT */
 	}
@@ -497,12 +523,14 @@ static int gpio_ite_pin_interrupt_configure(const struct device *dev,
 	/* Enable GPIO interrupt */
 	irq_connect_dynamic(gpio_irq, 0, gpio_ite_isr, dev, 0);
 	irq_enable(gpio_irq);
-	k_work_submit(&data->interrupt_worker);
+	if (mode == GPIO_INT_MODE_LEVEL) {
+		k_work_submit(&data->interrupt_worker);
+	}
 
 	return 0;
 }
 
-static const struct gpio_driver_api gpio_ite_driver_api = {
+static DEVICE_API(gpio, gpio_ite_driver_api) = {
 	.pin_configure = gpio_ite_configure,
 #ifdef CONFIG_GPIO_GET_CONFIG
 	.pin_get_config = gpio_ite_get_config,
@@ -529,33 +557,27 @@ static int gpio_ite_init(const struct device *dev)
 	return 0;
 }
 
-#define GPIO_ITE_DEV_CFG_DATA(inst)                                \
-static struct gpio_ite_data gpio_ite_data_##inst;                  \
-static const struct gpio_ite_cfg gpio_ite_cfg_##inst = {           \
-	.common = {                                                \
-		.port_pin_mask =                                   \
-			GPIO_PORT_PIN_MASK_FROM_DT_INST(inst)      \
-	},                                                         \
-	.reg_gpdr = DT_INST_REG_ADDR_BY_IDX(inst, 0),              \
-	.reg_gpdmr = DT_INST_REG_ADDR_BY_IDX(inst, 1),             \
-	.reg_gpotr = DT_INST_REG_ADDR_BY_IDX(inst, 2),             \
-	.reg_p18scr = DT_INST_REG_ADDR_BY_IDX(inst, 3),            \
-	.reg_gpcr = DT_INST_REG_ADDR_BY_IDX(inst, 4),              \
-	.wuc_base = DT_INST_PROP_OR(inst, wuc_base, {0}),          \
-	.wuc_mask = DT_INST_PROP_OR(inst, wuc_mask, {0}),          \
-	.gpio_irq = IT8XXX2_DT_GPIO_IRQ_LIST(inst),                \
-	.has_volt_sel = DT_INST_PROP_OR(inst, has_volt_sel, {0}),  \
-	.num_pins = DT_INST_PROP(inst, ngpios),                    \
-	.kbs_ctrl = DT_INST_PROP_OR(inst, keyboard_controller, 0), \
-	};                                                         \
-DEVICE_DT_INST_DEFINE(inst,                                        \
-		      gpio_ite_init,                               \
-		      NULL,                                        \
-		      &gpio_ite_data_##inst,                       \
-		      &gpio_ite_cfg_##inst,                        \
-		      PRE_KERNEL_1,                                \
-		      CONFIG_GPIO_INIT_PRIORITY,                   \
-		      &gpio_ite_driver_api);
+#define GPIO_ITE_DEV_CFG_DATA(inst)                                                                \
+	BUILD_ASSERT(DT_INST_PROP(inst, ngpios) <= ITE_GPIO_MAX_PINS,                              \
+		     "The maximum number of pins per port is 8.");                                 \
+	static struct gpio_ite_data gpio_ite_data_##inst;                                          \
+	static const struct gpio_ite_cfg gpio_ite_cfg_##inst = {                                   \
+		.common = GPIO_COMMON_CONFIG_FROM_DT_INST(inst),                                   \
+		.reg_gpdr = DT_INST_REG_ADDR_BY_IDX(inst, 0),                                      \
+		.reg_gpdmr = DT_INST_REG_ADDR_BY_IDX(inst, 1),                                     \
+		.reg_gpotr = DT_INST_REG_ADDR_BY_IDX(inst, 2),                                     \
+		.reg_p18scr = DT_INST_REG_ADDR_BY_IDX(inst, 3),                                    \
+		.reg_gpcr = DT_INST_REG_ADDR_BY_IDX(inst, 4),                                      \
+		.wuc_base = DT_INST_PROP_OR(inst, wuc_base, {0}),                                  \
+		.wuc_mask = DT_INST_PROP_OR(inst, wuc_mask, {0}),                                  \
+		.gpio_irq = IT8XXX2_DT_GPIO_IRQ_LIST(inst),                                        \
+		.has_volt_sel = DT_INST_PROP_OR(inst, has_volt_sel, {0}),                          \
+		.num_pins = DT_INST_PROP(inst, ngpios),                                            \
+		.kbs_ctrl = DT_INST_PROP_OR(inst, keyboard_controller, 0),                         \
+	};                                                                                         \
+	DEVICE_DT_INST_DEFINE(inst, gpio_ite_init, NULL, &gpio_ite_data_##inst,                    \
+			      &gpio_ite_cfg_##inst, PRE_KERNEL_1, CONFIG_GPIO_INIT_PRIORITY,       \
+			      &gpio_ite_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(GPIO_ITE_DEV_CFG_DATA)
 

@@ -47,8 +47,7 @@ struct udc_vrt_event {
 	struct uvb_packet *pkt;
 };
 
-K_MEM_SLAB_DEFINE(udc_vrt_slab, sizeof(struct udc_vrt_event),
-		  16, sizeof(void *));
+K_MEM_SLAB_DEFINE_TYPE(udc_vrt_slab, struct udc_vrt_event, 16);
 
 /* Reuse request packet for reply */
 static int vrt_request_reply(const struct device *dev,
@@ -73,87 +72,18 @@ static void ctrl_ep_clear_halt(const struct device *dev)
 	cfg->stat.halted = false;
 }
 
-static int vrt_ctrl_feed_dout(const struct device *dev,
-			      const size_t length)
-{
-	struct udc_ep_config *ep_cfg = udc_get_ep_cfg(dev, USB_CONTROL_EP_OUT);
-	struct net_buf *buf;
-
-	buf = udc_ctrl_alloc(dev, USB_CONTROL_EP_OUT, length);
-	if (buf == NULL) {
-		return -ENOMEM;
-	}
-
-	udc_buf_put(ep_cfg, buf);
-
-	return 0;
-}
-
 static int vrt_handle_setup(const struct device *dev,
 			    struct uvb_packet *const pkt)
 {
-	struct net_buf *buf;
-	int err, ret;
-
-	buf = udc_ctrl_alloc(dev, USB_CONTROL_EP_OUT, 8);
-	if (buf == NULL) {
-		return -ENOMEM;
+	if (pkt->length != sizeof(struct usb_setup_packet)) {
+		/* Incorrect SETUP DATA0, device should timeout */
+		return vrt_request_reply(dev, pkt, UVB_REPLY_TIMEOUT);
 	}
 
-	net_buf_add_mem(buf, pkt->data, pkt->length);
-	udc_ep_buf_set_setup(buf);
+	udc_setup_received(dev, pkt->data);
 	ctrl_ep_clear_halt(dev);
 
-	/* Update to next stage of control transfer */
-	udc_ctrl_update_stage(dev, buf);
-
-	if (udc_ctrl_stage_is_data_out(dev)) {
-		/*  Allocate and feed buffer for data OUT stage */
-		LOG_DBG("s: %p | feed for -out-", buf);
-		err = vrt_ctrl_feed_dout(dev, udc_data_stage_length(buf));
-		if (err == -ENOMEM) {
-			/*
-			 * Pass it on to the higher level which will
-			 * halt control OUT endpoint.
-			 */
-			err = udc_submit_ep_event(dev, buf, err);
-		}
-	} else if (udc_ctrl_stage_is_data_in(dev)) {
-		LOG_DBG("s: %p | submit for -in-", buf);
-		/* Allocate buffer for data IN and submit to upper layer */
-		err = udc_ctrl_submit_s_in_status(dev);
-	} else {
-		LOG_DBG("s:%p | submit for -status", buf);
-		/*
-		 * For all other cases we feed with a buffer
-		 * large enough for setup packet.
-		 */
-		err = udc_ctrl_submit_s_status(dev);
-	}
-
-	ret = vrt_request_reply(dev, pkt, UVB_REPLY_ACK);
-
-	return ret ? ret : err;
-}
-
-static int vrt_handle_ctrl_out(const struct device *dev,
-			       struct net_buf *const buf)
-{
-	int err = 0;
-
-	if (udc_ctrl_stage_is_status_out(dev)) {
-		/* Status stage finished, notify upper layer */
-		err = udc_ctrl_submit_status(dev, buf);
-	}
-
-	/* Update to next stage of control transfer */
-	udc_ctrl_update_stage(dev, buf);
-
-	if (udc_ctrl_stage_is_status_in(dev)) {
-		return udc_ctrl_submit_s_out_status(dev, buf);
-	}
-
-	return err;
+	return vrt_request_reply(dev, pkt, UVB_REPLY_ACK);
 }
 
 static int vrt_handle_out(const struct device *dev,
@@ -172,7 +102,7 @@ static int vrt_handle_out(const struct device *dev,
 		return vrt_request_reply(dev, pkt, UVB_REPLY_STALL);
 	}
 
-	buf = udc_buf_peek(dev, ep);
+	buf = udc_buf_peek(ep_cfg);
 	if (buf == NULL) {
 		LOG_DBG("reply NACK ep 0x%02x", ep);
 		return vrt_request_reply(dev, pkt, UVB_REPLY_NACK);
@@ -184,43 +114,14 @@ static int vrt_handle_out(const struct device *dev,
 	LOG_DBG("Handle data OUT, %zu | %zu", pkt->length, net_buf_tailroom(buf));
 
 	if (net_buf_tailroom(buf) == 0 || pkt->length < udc_mps_ep_size(ep_cfg)) {
-		buf = udc_buf_get(dev, ep);
+		buf = udc_buf_get(ep_cfg);
 
-		if (ep == USB_CONTROL_EP_OUT) {
-			err = vrt_handle_ctrl_out(dev, buf);
-		} else {
-			err = udc_submit_ep_event(dev, buf, 0);
-		}
+		err = udc_submit_ep_event(dev, buf, 0);
 	}
 
 	ret = vrt_request_reply(dev, pkt, UVB_REPLY_ACK);
 
 	return ret ? ret : err;
-}
-
-static int isr_handle_ctrl_in(const struct device *dev,
-			      struct net_buf *const buf)
-{
-	int err = 0;
-
-	if (udc_ctrl_stage_is_status_in(dev) || udc_ctrl_stage_is_no_data(dev)) {
-		/* Status stage finished, notify upper layer */
-		err = udc_ctrl_submit_status(dev, buf);
-	}
-
-	/* Update to next stage of control transfer */
-	udc_ctrl_update_stage(dev, buf);
-
-	if (udc_ctrl_stage_is_status_out(dev)) {
-		/*
-		 * IN transfer finished, release buffer,
-		 * Feed control OUT buffer for status stage.
-		 */
-		net_buf_unref(buf);
-		return vrt_ctrl_feed_dout(dev, 0);
-	}
-
-	return err;
 }
 
 static int vrt_handle_in(const struct device *dev,
@@ -239,7 +140,7 @@ static int vrt_handle_in(const struct device *dev,
 		return vrt_request_reply(dev, pkt, UVB_REPLY_STALL);
 	}
 
-	buf = udc_buf_peek(dev, ep);
+	buf = udc_buf_peek(ep_cfg);
 	if (buf == NULL) {
 		LOG_DBG("reply NACK ep 0x%02x", ep);
 		return vrt_request_reply(dev, pkt, UVB_REPLY_NACK);
@@ -259,13 +160,9 @@ static int vrt_handle_in(const struct device *dev,
 		}
 
 		LOG_DBG("Finish data IN %zu | %u", pkt->length, buf->len);
-		buf = udc_buf_get(dev, ep);
+		buf = udc_buf_get(ep_cfg);
 
-		if (ep == USB_CONTROL_EP_IN) {
-			err = isr_handle_ctrl_in(dev, buf);
-		} else {
-			err = udc_submit_ep_event(dev, buf, 0);
-		}
+		err = udc_submit_ep_event(dev, buf, 0);
 	}
 
 continue_in:
@@ -393,6 +290,7 @@ static int udc_vrt_ep_enqueue(const struct device *dev,
 			      struct net_buf *buf)
 {
 	LOG_DBG("%p enqueue %p", dev, buf);
+
 	udc_buf_put(cfg, buf);
 
 	if (cfg->stat.halted) {
@@ -407,14 +305,10 @@ static int udc_vrt_ep_dequeue(const struct device *dev,
 			      struct udc_ep_config *cfg)
 {
 	unsigned int lock_key;
-	struct net_buf *buf;
 
 	lock_key = irq_lock();
 	/* Draft dequeue implementation */
-	buf = udc_buf_get_all(dev, cfg->addr);
-	if (buf) {
-		udc_submit_ep_event(dev, buf, -ECONNABORTED);
-	}
+	udc_ep_cancel_queued(dev, cfg);
 	irq_unlock(lock_key);
 
 	return 0;
@@ -612,14 +506,14 @@ static int udc_vrt_driver_preinit(const struct device *dev)
 	return 0;
 }
 
-static int udc_vrt_lock(const struct device *dev)
+static void udc_vrt_lock(const struct device *dev)
 {
-	return udc_lock_internal(dev, K_FOREVER);
+	udc_lock_internal(dev, K_FOREVER);
 }
 
-static int udc_vrt_unlock(const struct device *dev)
+static void udc_vrt_unlock(const struct device *dev)
 {
-	return udc_unlock_internal(dev);
+	udc_unlock_internal(dev);
 }
 
 static const struct udc_api udc_vrt_api = {
@@ -669,9 +563,9 @@ static const struct udc_api udc_vrt_api = {
 	}									\
 										\
 	static struct udc_ep_config						\
-		ep_cfg_out[DT_INST_PROP(n, num_bidir_endpoints)];		\
+		ep_cfg_out_##n[DT_INST_PROP(n, num_bidir_endpoints)];		\
 	static struct udc_ep_config						\
-		ep_cfg_in[DT_INST_PROP(n, num_bidir_endpoints)];		\
+		ep_cfg_in_##n[DT_INST_PROP(n, num_bidir_endpoints)];		\
 										\
 	static struct uvb_node udc_vrt_dev_node##n = {				\
 		.name = DT_NODE_FULL_NAME(DT_DRV_INST(n)),			\
@@ -680,8 +574,8 @@ static const struct udc_api udc_vrt_api = {
 										\
 	static const struct udc_vrt_config udc_vrt_config_##n = {		\
 		.num_of_eps = DT_INST_PROP(n, num_bidir_endpoints),		\
-		.ep_cfg_in = ep_cfg_out,					\
-		.ep_cfg_out = ep_cfg_in,					\
+		.ep_cfg_in = ep_cfg_out_##n,					\
+		.ep_cfg_out = ep_cfg_in_##n,					\
 		.make_thread = udc_vrt_make_thread_##n,				\
 		.dev_node = &udc_vrt_dev_node##n,				\
 		.speed_idx = DT_ENUM_IDX(DT_DRV_INST(n), maximum_speed),	\

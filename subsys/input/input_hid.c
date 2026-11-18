@@ -9,7 +9,7 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/usb/class/hid.h>
 
-static uint8_t input_to_hid_map[] = {
+static const uint8_t input_to_hid_map[] = {
 	[INPUT_KEY_A] = HID_KEY_A,
 	[INPUT_KEY_B] = HID_KEY_B,
 	[INPUT_KEY_C] = HID_KEY_C,
@@ -104,6 +104,8 @@ static uint8_t input_to_hid_map[] = {
 	[INPUT_KEY_KP8] = HID_KEY_KP_8,
 	[INPUT_KEY_KP9] = HID_KEY_KP_9,
 	[INPUT_KEY_KP0] = HID_KEY_KP_0,
+	[INPUT_KEY_KPDOT] = HID_KEY_KPDOT,
+	[INPUT_KEY_MENU] = HID_KEY_MENU,
 };
 
 int16_t input_to_hid_code(uint16_t input_code)

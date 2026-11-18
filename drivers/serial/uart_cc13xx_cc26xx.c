@@ -168,10 +168,8 @@ static int uart_cc13xx_cc26xx_configure(const struct device *dev,
 			    line_ctrl);
 
 	/* Clear all UART interrupts */
-	UARTIntClear(config->reg,
-		UART_INT_OE | UART_INT_BE | UART_INT_PE |
-		UART_INT_FE | UART_INT_RT | UART_INT_TX |
-		UART_INT_RX | UART_INT_CTS);
+	UARTIntClear(config->reg, UART_INT_OE | UART_INT_BE | UART_INT_PE | UART_INT_FE |
+					  UART_INT_RT | UART_INT_RX | UART_INT_CTS);
 
 	if (flow_ctrl) {
 		UARTHwFlowControlEnable(config->reg);
@@ -282,8 +280,9 @@ static void uart_cc13xx_cc26xx_irq_tx_disable(const struct device *dev)
 static int uart_cc13xx_cc26xx_irq_tx_ready(const struct device *dev)
 {
 	const struct uart_cc13xx_cc26xx_config *config = dev->config;
+	uint32_t status = UARTIntStatus(config->reg, true);
 
-	return UARTSpaceAvail(config->reg) ? 1 : 0;
+	return (status & UART_INT_TX) ? 1 : 0;
 }
 
 static void uart_cc13xx_cc26xx_irq_rx_enable(const struct device *dev)
@@ -355,12 +354,6 @@ static int uart_cc13xx_cc26xx_irq_is_pending(const struct device *dev)
 	uint32_t status = UARTIntStatus(config->reg, true);
 
 	return status & (UART_INT_TX | UART_INT_RX) ? 1 : 0;
-}
-
-static int uart_cc13xx_cc26xx_irq_update(const struct device *dev)
-{
-	ARG_UNUSED(dev);
-	return 1;
 }
 
 static void uart_cc13xx_cc26xx_irq_callback_set(const struct device *dev,
@@ -464,7 +457,7 @@ static int uart_cc13xx_cc26xx_pm_action(const struct device *dev,
 }
 #endif /* CONFIG_PM_DEVICE */
 
-static const struct uart_driver_api uart_cc13xx_cc26xx_driver_api = {
+static DEVICE_API(uart, uart_cc13xx_cc26xx_driver_api) = {
 	.poll_in = uart_cc13xx_cc26xx_poll_in,
 	.poll_out = uart_cc13xx_cc26xx_poll_out,
 	.err_check = uart_cc13xx_cc26xx_err_check,
@@ -485,7 +478,6 @@ static const struct uart_driver_api uart_cc13xx_cc26xx_driver_api = {
 	.irq_err_enable = uart_cc13xx_cc26xx_irq_err_enable,
 	.irq_err_disable = uart_cc13xx_cc26xx_irq_err_disable,
 	.irq_is_pending = uart_cc13xx_cc26xx_irq_is_pending,
-	.irq_update = uart_cc13xx_cc26xx_irq_update,
 	.irq_callback_set = uart_cc13xx_cc26xx_irq_callback_set,
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
 };
@@ -617,9 +609,9 @@ static const struct uart_driver_api uart_cc13xx_cc26xx_driver_api = {
 		uart_cc13xx_cc26xx_data_##n = {			     \
 		.uart_config = {				     \
 			.baudrate = DT_INST_PROP(n, current_speed),  \
-			.parity = UART_CFG_PARITY_NONE,		     \
-			.stop_bits = UART_CFG_STOP_BITS_1,	     \
-			.data_bits = UART_CFG_DATA_BITS_8,	     \
+			.parity = DT_INST_ENUM_IDX(n, parity),	     \
+			.stop_bits = DT_INST_ENUM_IDX(n, stop_bits), \
+			.data_bits = DT_INST_ENUM_IDX(n, data_bits), \
 			.flow_ctrl = UART_CFG_FLOW_CTRL_NONE,	     \
 		},						     \
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(n), \

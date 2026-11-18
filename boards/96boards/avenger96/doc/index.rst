@@ -1,4 +1,4 @@
-.. _96b_avenger96:
+.. zephyr:board:: 96b_avenger96
 
 96Boards Avenger96
 ##################
@@ -147,25 +147,7 @@ More information about STM32P157A can be found here:
 Supported Features
 ==================
 
-The Zephyr 96b_avenger96 board configuration supports the following hardware
-features:
-
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
-| PINMUX    | on-chip    | pinmux                              |
-+-----------+------------+-------------------------------------+
-
-The default configuration can be found in
-:zephyr_file:`boards/96boards/avenger96/96b_avenger96_defconfig`
-
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -252,13 +234,12 @@ install `stm32mp1 developer package`_.
 
       # On Linux
       cd $ZEPHYR_BASE/samples/hello_world
-      mkdir -p build && cd build
 
-      # Use cmake to configure a Ninja-based build system:
-      cmake -GNinja -DBOARD=96b_avenger96 ..
+      # Build the application:
+      west build -b 96b_avenger96
 
-      # Now run ninja on the generated build system:
-      ninja debug
+      # Now start a debug session:
+      west debug
 
 .. _96Boards website:
    https://www.96boards.org/product/avenger96/

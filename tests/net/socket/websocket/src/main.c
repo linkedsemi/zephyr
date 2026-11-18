@@ -11,6 +11,7 @@ LOG_MODULE_REGISTER(net_test, CONFIG_NET_WEBSOCKET_LOG_LEVEL);
 
 #include <zephyr/misc/lorem_ipsum.h>
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/websocket.h>
 #include <zephyr/sys/fdtable.h>
@@ -258,7 +259,7 @@ static void test_recv_2(int count)
 
 	memcpy(feed_buf, &frame2, sizeof(frame2));
 
-	NET_DBG("Reading %d bytes at a time, frame %zd hdr %zd", count,
+	NET_DBG("Reading %d bytes at a time, frame %zu hdr %zu", count,
 		sizeof(frame2), FRAME1_HDR_SIZE);
 
 	total_read = test_recv_buf(&feed_buf[0], count, &ctx, &msg_type,
@@ -289,13 +290,22 @@ ZTEST(net_websocket, test_recv_two_msg)
 	test_recv_2(sizeof(frame1) + FRAME1_HDR_SIZE / 2);
 }
 
-int verify_sent_and_received_msg(struct msghdr *msg, bool split_msg)
+int verify_sent_and_received_msg(struct net_msghdr *msg, bool split_msg)
 {
 	static struct websocket_context ctx;
 	uint32_t msg_type = -1;
 	uint64_t remaining = -1;
 	size_t split_len = 0, total_read = 0;
 	int ret;
+
+	/* The handshake tests close their socket when they are done, which
+	 * sends an empty CLOSE frame through here. There is no payload to feed
+	 * back for that one.
+	 */
+	if ((((uint8_t *)msg->msg_iov[0].iov_base)[0] & 0x0f) ==
+	    WEBSOCKET_OPCODE_CLOSE) {
+		return msg->msg_iov[0].iov_len;
+	}
 
 	memset(&ctx, 0, sizeof(ctx));
 
@@ -340,17 +350,17 @@ int verify_sent_and_received_msg(struct msghdr *msg, bool split_msg)
 					"Received message should be");
 			LOG_HEXDUMP_ERR(recv_buf, ret, "but it was instead");
 			zassert_true(false, "Invalid received message "
-				     "after %d bytes", total_read);
+				     "after %zu bytes", total_read);
 		}
 
 		total_read += ret;
 	}
 
 	zassert_equal(total_read, test_msg_len,
-		      "Msg body not valid, received %d instead of %zd",
+		      "Msg body not valid, received %zu instead of %zu",
 		      total_read, test_msg_len);
 
-	NET_DBG("Received %zd header and %zd body",
+	NET_DBG("Received %zu header and %zu body",
 		msg->msg_iov[0].iov_len, total_read);
 
 	return msg->msg_iov[0].iov_len + total_read;
@@ -459,6 +469,40 @@ ZTEST(net_websocket, test_recv_in_small_buffer)
 	zassert_equal(total_read, frame1_msg_size, "Received not whole message");
 	zassert_mem_equal(recv_buf, frame1_msg, frame1_msg_size,
 			  "Invalid message, should be '%s' was '%s'", frame1_msg, recv_buf);
+}
+
+ZTEST(net_websocket, test_partial_receive_reports_metadata)
+{
+	struct websocket_context ctx = {0};
+	uint32_t msg_type = 0;
+	uint64_t remaining = UINT64_MAX;
+	const size_t first_payload_len = 4;
+	const size_t first_input_len = FRAME1_HDR_SIZE + first_payload_len;
+	int ret;
+
+	ctx.recv_buf.buf = temp_recv_buf;
+	ctx.recv_buf.size = sizeof(temp_recv_buf);
+	memcpy(feed_buf, frame1, sizeof(frame1));
+
+	/* Input ends mid-frame before the caller's receive buffer is full. */
+	ret = test_recv_buf(feed_buf, first_input_len, &ctx, &msg_type, &remaining, recv_buf,
+			    sizeof(recv_buf));
+	zassert_equal(ret, first_payload_len, "Partial payload was not returned");
+	zassert_equal(remaining, sizeof(frame1_msg) - 1 - first_payload_len,
+		      "Remaining length was not updated after timeout");
+	zassert_equal(msg_type, WEBSOCKET_FLAG_TEXT | WEBSOCKET_FLAG_FINAL,
+		      "Message type was not updated after timeout");
+	zassert_mem_equal(recv_buf, frame1_msg, first_payload_len,
+			  "Partial payload was not unmasked");
+
+	ret = test_recv_buf(feed_buf + first_input_len, sizeof(frame1) - first_input_len, &ctx,
+			    &msg_type, &remaining, recv_buf + first_payload_len,
+			    sizeof(recv_buf) - first_payload_len);
+	zassert_equal(ret, sizeof(frame1_msg) - 1 - first_payload_len);
+	zassert_equal(remaining, 0);
+	zassert_equal(msg_type, WEBSOCKET_FLAG_TEXT | WEBSOCKET_FLAG_FINAL);
+	zassert_mem_equal(recv_buf, frame1_msg, sizeof(frame1_msg) - 1,
+			  "Payload did not resume correctly after timeout");
 }
 
 static void *setup(void)

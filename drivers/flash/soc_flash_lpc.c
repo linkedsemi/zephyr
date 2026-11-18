@@ -25,7 +25,8 @@
 #error No matching compatible for soc_flash_lpc.c
 #endif
 
-#define SOC_NV_FLASH_NODE DT_INST(0, soc_nv_flash)
+#define SOC_NV_FLASH_NODE SOC_NV_FLASH_CHILD_NODE(0)
+
 
 struct flash_priv {
 	/* HACK: flash write protection is managed in software. */
@@ -145,7 +146,7 @@ flash_lpc_get_parameters(const struct device *dev)
 
 static struct flash_priv flash_data;
 
-static const struct flash_driver_api flash_lpc_api = {
+static DEVICE_API(flash, flash_lpc_api) = {
 	.erase = flash_lpc_erase,
 	.write = flash_lpc_write,
 	.read = flash_lpc_read,

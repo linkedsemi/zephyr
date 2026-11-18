@@ -78,7 +78,7 @@ MSPI bus inside the device driver initialization function:
 
    #. Call API for additional setups if supported by hardware
 
-      * :c:func:`mspi_xip_config` for :term:`XIP` feature
+      * :c:func:`mspi_memmap_config` for memory mapped access (e.g. :term:`XIP`)
 
       * :c:func:`mspi_scramble_config` for scrambling feature
 
@@ -100,10 +100,12 @@ whether to support scatter IO and callback management. The controller can determ
 which user callback to trigger based on :c:enum:`mspi_bus_event_cb_mask` upon completion
 of each async/sync transfer if the callback had been registered using
 :c:func:`mspi_register_callback`. Or not to trigger any callback at all with
-:c:enum:`MSPI_BUS_NO_CB` even if the callbacks are already registered.
-In which case that a controller supports hardware command queue, user could take full
-advantage of the hardware performance if scatter IO and callback management are supported
-by the driver implementation.
+:c:enum:`MSPI_BUS_NO_CB` even if the callbacks are already registered. If the implemented
+driver support it, the API supports :c:enum:`MSPI_BUS_XFER_COMPLETE_CB` to signal when a
+transfer finishes and :c:enum:`MSPI_BUS_TIMEOUT_CB` to signal when a transfer or request
+has timed-out. In which case that a controller supports hardware command queue, user could
+take full advantage of the hardware performance if scatter IO and callback management are
+supported by the driver implementation.
 
 Device Tree
 ===========
@@ -117,17 +119,17 @@ The mspi controller's bindings should reference mspi-controller.yaml as one of t
             status = "okay";
             compatible = "zephyr,mspi-emul-controller";
 
-            reg = < 0x400 0x4 >;
-            #address-cells = < 0x1 >;
-            #size-cells = < 0x0 >;
+            reg = <0x400 0x4>;
+            #address-cells = <0x1>;
+            #size-cells = <0x0>;
 
-            clock-frequency = < 0x17d7840 >;
+            clock-frequency = <0x17d7840>;
             op-mode = "MSPI_CONTROLLER";
             duplex = "MSPI_HALF_DUPLEX";
-            ce-gpios = < &gpio0 0x5 0x1 >, < &gpio0 0x12 0x1 >;
+            ce-gpios = <&gpio0 0x5 0x1>, <&gpio0 0x12 0x1>;
             dqs-support;
 
-            pinctrl-0 = < &pinmux-mspi0 >;
+            pinctrl-0 = <&pinmux-mspi0>;
             pinctrl-names = "default";
    };
 
@@ -142,21 +144,21 @@ The mspi device's bindings should reference mspi-device.yaml as one of the base.
                      status = "okay";
                      compatible = "zephyr,mspi-emul-device";
 
-                     reg = < 0x0 >;
-                     size = < 0x10000 >;
+                     reg = <0x0>;
+                     size = <0x10000>;
 
-                     mspi-max-frequency = < 0x2dc6c00 >;
+                     mspi-max-frequency = <0x2dc6c00>;
                      mspi-io-mode = "MSPI_IO_MODE_QUAD";
                      mspi-data-rate = "MSPI_DATA_RATE_SINGLE";
-                     mspi-hardware-ce-num = < 0x0 >;
-                     read-instruction = < 0xb >;
-                     write-instruction = < 0x2 >;
+                     mspi-hardware-ce-num = <0x0>;
+                     read-instruction = <0xb>;
+                     write-instruction = <0x2>;
                      instruction-length = "INSTR_1_BYTE";
                      address-length = "ADDR_4_BYTE";
-                     rx-dummy = < 0x8 >;
-                     tx-dummy = < 0x0 >;
-                     xip-config = < 0x0 0x0 0x0 0x0 >;
-                     ce-break-config = < 0x0 0x0 >;
+                     rx-dummy = <0x8>;
+                     tx-dummy = <0x0>;
+                     memmap-config = <0x0 0x0 0x0 0x0>;
+                     ce-break-config = <0x0 0x0>;
             };
 
    };
@@ -187,11 +189,12 @@ Related configuration options:
 * :kconfig:option:`CONFIG_MSPI`
 * :kconfig:option:`CONFIG_MSPI_ASYNC`
 * :kconfig:option:`CONFIG_MSPI_PERIPHERAL`
-* :kconfig:option:`CONFIG_MSPI_XIP`
+* :kconfig:option:`CONFIG_MSPI_MEMMAP`
 * :kconfig:option:`CONFIG_MSPI_SCRAMBLE`
 * :kconfig:option:`CONFIG_MSPI_TIMING`
 * :kconfig:option:`CONFIG_MSPI_INIT_PRIORITY`
 * :kconfig:option:`CONFIG_MSPI_COMPLETION_TIMEOUT_TOLERANCE`
+* :kconfig:option:`CONFIG_MSPI_DMA`
 
 API Reference
 *************

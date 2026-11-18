@@ -1,12 +1,12 @@
 /*
- * Copyright (c) 2019, NXP
+ * Copyright (c) 2019, 2026 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
-#include <nxp/nxp_lpc55S6x_ns.dtsi>
+#include <nxp/lpc/lpc55xxx/nxp_lpc55S6x_ns.dtsi>
 #include "lpcxpresso55s69.dtsi"
 
 / {
@@ -22,6 +22,7 @@
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_ns_partition;
 		zephyr,entropy = &rng;
+		zephyr,crc = &crc;
 	};
 };
 
@@ -41,7 +42,6 @@
 	reg = <0x20030000 DT_SIZE_K(80)>;
 };
 
-
 &gpio0 {
 	status = "okay";
 };
@@ -60,4 +60,16 @@
 
 &mma8652fc {
 	status = "disabled";
+};
+
+&gint0 {
+	status = "okay";
+};
+
+&gint1 {
+	status = "okay";
+};
+
+&crc {
+	status = "okay";
 };

@@ -334,7 +334,7 @@ static int iis2iclx_lps22hh_conf(const struct device *dev, uint8_t i2c_addr,
 {
 	switch (attr) {
 	case SENSOR_ATTR_SAMPLING_FREQUENCY:
-		return iis2iclx_lps22hh_odr_set(data, i2c_addr, val->val1);
+		return iis2iclx_lps22hh_odr_set(dev, i2c_addr, val->val1);
 	default:
 		LOG_ERR("shub: LPS22HH attribute not supported.");
 		return -ENOTSUP;
@@ -363,7 +363,7 @@ static struct iis2iclx_shub_slist {
 	{
 		/* LIS2MDL */
 		.type		= SENSOR_CHAN_MAGN_XYZ,
-		.i2c_addr       = { 0x1E },
+		.i2c_addr	= { 0x3C }, /* 8-bit address */
 		.wai_addr       = 0x4F,
 		.wai_val        = 0x40,
 		.out_data_addr  = 0x68,
@@ -377,7 +377,7 @@ static struct iis2iclx_shub_slist {
 	{
 		/* HTS221 */
 		.type		= SENSOR_CHAN_HUMIDITY,
-		.i2c_addr       = { 0x5F },
+		.i2c_addr	= { 0xBE }, /* 8-bit address */
 		.wai_addr       = 0x0F,
 		.wai_val        = 0xBC,
 		.out_data_addr  = 0x28 | HTS221_AUTOINCREMENT,
@@ -391,7 +391,7 @@ static struct iis2iclx_shub_slist {
 	{
 		/* LPS22HB */
 		.type		= SENSOR_CHAN_PRESS,
-		.i2c_addr       = { 0x5C, 0x5D },
+		.i2c_addr	= { 0xB8, 0xBA }, /* 8-bit address */
 		.wai_addr       = 0x0F,
 		.wai_val        = 0xB1,
 		.out_data_addr  = 0x28,
@@ -404,7 +404,7 @@ static struct iis2iclx_shub_slist {
 	{
 		/* LPS22HH */
 		.type		= SENSOR_CHAN_PRESS,
-		.i2c_addr       = { 0x5C, 0x5D },
+		.i2c_addr	= { 0xB8, 0xBA }, /* 8-bit address */
 		.wai_addr       = 0x0F,
 		.wai_val        = 0xB3,
 		.out_data_addr  = 0x28,

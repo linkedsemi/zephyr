@@ -17,7 +17,7 @@
 
 LOG_MODULE_REGISTER(ethernet_test, LOG_LEVEL_INF);
 
-#include "net_private.h"
+#include <net_private.h>
 
 #define DHCP_OPTION_NTP (42)
 #define TEST_DATA       "ICMP dummy data"
@@ -30,33 +30,37 @@ static uint8_t ntp_server[4];
 static struct net_mgmt_event_callback mgmt_cb;
 static struct net_dhcpv4_option_callback dhcp_cb;
 
-static void ipv4_event(struct net_mgmt_event_callback *cb, uint32_t mgmt_event,
+static void ipv4_event(struct net_mgmt_event_callback *cb, uint64_t mgmt_event,
 		       struct net_if *iface)
 {
+	struct net_if_config *cfg = net_if_get_config(iface);
+
 	if ((mgmt_event != NET_EVENT_IPV4_ADDR_ADD) ||
-	    (iface->config.ip.ipv4->unicast[0].ipv4.addr_type != NET_ADDR_DHCP)) {
+	    (cfg->ip.ipv4->unicast[0].ipv4.addr_type != NET_ADDR_DHCP)) {
 		return;
 	}
 
 	char buf[NET_IPV4_ADDR_LEN];
 
 	LOG_INF("Address[%d]: %s", net_if_get_by_iface(iface),
-		net_addr_ntop(AF_INET, &iface->config.ip.ipv4->unicast[0].ipv4.address.in_addr, buf,
+		net_addr_ntop(NET_AF_INET,
+			      &cfg->ip.ipv4->unicast[0].ipv4.address.in_addr, buf,
 			      sizeof(buf)));
 	LOG_INF("Subnet[%d]: %s", net_if_get_by_iface(iface),
-		net_addr_ntop(AF_INET, &iface->config.ip.ipv4->unicast[0].netmask, buf,
+		net_addr_ntop(NET_AF_INET, &cfg->ip.ipv4->unicast[0].netmask, buf,
 			      sizeof(buf)));
 	LOG_INF("Router[%d]: %s", net_if_get_by_iface(iface),
-		net_addr_ntop(AF_INET, &iface->config.ip.ipv4->gw, buf, sizeof(buf)));
+		net_addr_ntop(NET_AF_INET, &cfg->ip.ipv4->gw, buf, sizeof(buf)));
 	LOG_INF("Lease time[%d]: %u seconds", net_if_get_by_iface(iface),
-		iface->config.dhcpv4.lease_time);
+		cfg->dhcpv4.lease_time);
 
 	/* release processing of IPV4 event by test case */
 	k_sem_give(&net_event);
 }
 
-static int icmp_event(struct net_icmp_ctx *ctx, struct net_pkt *pkt, struct net_icmp_ip_hdr *hdr,
-		      struct net_icmp_hdr *icmp_hdr, void *user_data)
+static enum net_verdict icmp_event(struct net_icmp_ctx *ctx, struct net_pkt *pkt,
+				   struct net_icmp_ip_hdr *hdr, struct net_icmp_hdr *icmp_hdr,
+				   void *user_data)
 {
 	struct net_ipv4_hdr *ip_hdr = hdr->ipv4;
 
@@ -64,7 +68,7 @@ static int icmp_event(struct net_icmp_ctx *ctx, struct net_pkt *pkt, struct net_
 
 	k_sem_give(&net_event);
 
-	return 0;
+	return NET_OK;
 }
 
 static void option_handler(struct net_dhcpv4_option_callback *cb, size_t length,
@@ -73,7 +77,7 @@ static void option_handler(struct net_dhcpv4_option_callback *cb, size_t length,
 	char buf[NET_IPV4_ADDR_LEN];
 
 	LOG_INF("DHCP Option %d: %s", cb->option,
-		net_addr_ntop(AF_INET, cb->data, buf, sizeof(buf)));
+		net_addr_ntop(NET_AF_INET, cb->data, buf, sizeof(buf)));
 }
 
 ZTEST(ethernet, test_dhcp_check)
@@ -90,17 +94,17 @@ ZTEST(ethernet, test_icmp_check)
 {
 	struct net_icmp_ping_params params;
 	struct net_icmp_ctx ctx;
-	struct in_addr gw_addr_4;
-	struct sockaddr_in dst4 = {0};
+	struct net_in_addr gw_addr_4;
+	struct net_sockaddr_in dst4 = {0};
 	int ret;
 
 	gw_addr_4 = net_if_ipv4_get_gw(iface);
 	zassert_not_equal(gw_addr_4.s_addr, 0, "Gateway address is not set");
 
-	ret = net_icmp_init_ctx(&ctx, NET_ICMPV4_ECHO_REPLY, 0, icmp_event);
+	ret = net_icmp_init_ctx(&ctx, NET_AF_INET, NET_ICMPV4_ECHO_REPLY, 0, icmp_event);
 	zassert_equal(ret, 0, "Cannot init ICMP (%d)", ret);
 
-	dst4.sin_family = AF_INET;
+	dst4.sin_family = NET_AF_INET;
 	memcpy(&dst4.sin_addr, &gw_addr_4, sizeof(gw_addr_4));
 
 	params.identifier = 1234;
@@ -112,7 +116,7 @@ ZTEST(ethernet, test_icmp_check)
 
 	LOG_INF("Pinging the gateway...");
 
-	ret = net_icmp_send_echo_request(&ctx, iface, (struct sockaddr *)&dst4, &params, NULL);
+	ret = net_icmp_send_echo_request(&ctx, iface, (struct net_sockaddr *)&dst4, &params, NULL);
 	zassert_equal(ret, 0, "Cannot send ICMP echo request (%d)", ret);
 
 	zassert_equal(k_sem_take(&net_event, K_SECONDS(CONFIG_GATEWAY_PING_TIMEOUT)), 0,

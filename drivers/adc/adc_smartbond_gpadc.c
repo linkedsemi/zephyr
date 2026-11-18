@@ -381,15 +381,15 @@ static int adc_smartbond_init(const struct device *dev)
 	IRQ_CONNECT(DT_INST_IRQN(0), DT_INST_IRQ(0, priority),
 		    adc_smartbond_isr, DEVICE_DT_INST_GET(0), 0);
 
-	NVIC_ClearPendingIRQ(DT_INST_IRQN(0));
-	NVIC_EnableIRQ(DT_INST_IRQN(0));
+	k_irq_clear_pending(DT_INST_IRQN(0));
+	irq_enable(DT_INST_IRQN(0));
 
 	adc_context_unlock_unconditionally(&data->ctx);
 
 	return ret;
 }
 
-static const struct adc_driver_api adc_smartbond_driver_api = {
+static DEVICE_API(adc, adc_smartbond_driver_api) = {
 	.channel_setup = adc_smartbond_channel_setup,
 	.read          = adc_smartbond_read,
 #ifdef CONFIG_ADC_ASYNC

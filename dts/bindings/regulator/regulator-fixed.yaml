@@ -10,6 +10,7 @@ include:
     property-allowlist:
       - regulator-name
       - regulator-boot-on
+      - regulator-boot-off
       - regulator-always-on
       - regulator-min-microvolt
       - regulator-max-microvolt
@@ -23,6 +24,8 @@ properties:
     required: true
 
   enable-gpios:
+    min-len: 1
+    max-len: 1
     type: phandle-array
     description: |
       GPIO to use to enable/disable the regulator.

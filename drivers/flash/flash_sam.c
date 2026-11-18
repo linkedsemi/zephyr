@@ -221,7 +221,7 @@ static int sam_flash_read(const struct device *dev, off_t offset, void *data, si
 	}
 
 	key = k_spin_lock(&sam_data->lock);
-	memcpy(data, (uint8_t *)(sam_config->area_address + offset), len);
+	memcpy(data, (uint8_t *)(uintptr_t)(sam_config->area_address + offset), len);
 	k_spin_unlock(&sam_data->lock, key);
 	return 0;
 }
@@ -244,7 +244,7 @@ static int sam_flash_write_latch_buffer_to_previous_page(const struct device *de
 
 static void sam_flash_write_dword_to_latch_buffer(off_t offset, uint32_t dword)
 {
-	*((uint32_t *)offset) = dword;
+	*((uint32_t *)(uintptr_t)offset) = dword;
 	barrier_dsync_fence_full();
 }
 
@@ -396,17 +396,12 @@ static bool sam_flash_erase_foreach_page(const struct flash_pages_info *info, vo
 	/* Check if we've reached the end of pages to erase */
 	if (info->start_offset >= erase_data->section_end) {
 		/* Succeeded, stop iterating */
-		erase_data->succeeded = true;
 		return false;
 	}
 
-	if (sam_flash_unlock_page(dev, info) < 0) {
-		/* Failed to unlock page, stop iterating */
-		return false;
-	}
-
-	if (sam_flash_erase_page(dev, info) < 0) {
-		/* Failed to erase page, stop iterating */
+	if (sam_flash_unlock_page(dev, info) || sam_flash_erase_page(dev, info)) {
+		/* Failed to unlock page and erase page, stop iterating */
+		erase_data->succeeded = false;
 		return false;
 	}
 
@@ -436,7 +431,7 @@ static int sam_flash_erase(const struct device *dev, off_t offset, size_t size)
 	key = k_spin_lock(&sam_data->lock);
 	sam_data->erase_data.section_start = offset;
 	sam_data->erase_data.section_end = offset + size;
-	sam_data->erase_data.succeeded = false;
+	sam_data->erase_data.succeeded = true;
 	flash_page_foreach(dev, sam_flash_erase_foreach_page, sam_data);
 	if (!sam_data->erase_data.succeeded) {
 		k_spin_unlock(&sam_data->lock, key);
@@ -464,7 +459,7 @@ static void sam_flash_api_pages_layout(const struct device *dev,
 	*layout_size = config->pages_layouts_size;
 }
 
-static struct flash_driver_api sam_flash_api = {
+static DEVICE_API(flash, sam_flash_api) = {
 	.read = sam_flash_read,
 	.write = sam_flash_write,
 	.erase = sam_flash_erase,

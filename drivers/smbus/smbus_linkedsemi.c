@@ -280,7 +280,7 @@ static int smbus_linkedsemi_block_read(const struct device *dev,
     return ret;
 }
 
-static const struct smbus_driver_api smbus_linkedsemi_api = {
+static DEVICE_API(smbus, smbus_linkedsemi_api) = {
     .configure = smbus_linkedsemi_configure,
     .get_config = smbus_linkedsemi_get_config,
     .smbus_quick = smbus_linkedsemi_quick,

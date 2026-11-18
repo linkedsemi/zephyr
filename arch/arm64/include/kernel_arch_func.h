@@ -22,30 +22,28 @@
 
 #include <kernel_arch_data.h>
 
+#include <zephyr/platform/hooks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #ifndef _ASMLANGUAGE
 
-extern void xen_enlighten_init(void);
-
 static ALWAYS_INLINE void arch_kernel_init(void)
 {
-#ifdef CONFIG_XEN
-	xen_enlighten_init();
-#endif
+	soc_per_core_init_hook();
 }
 
 static inline void arch_switch(void *switch_to, void **switched_from)
 {
-	extern void z_arm64_context_switch(struct k_thread *new,
+	extern void z_arm64_context_switch(struct k_thread *new_thread,
 					   struct k_thread *old);
-	struct k_thread *new = switch_to;
+	struct k_thread *new_thread = switch_to;
 	struct k_thread *old = CONTAINER_OF(switched_from, struct k_thread,
 					    switch_handle);
 
-	z_arm64_context_switch(new, old);
+	z_arm64_context_switch(new_thread, old);
 }
 
 extern void z_arm64_fatal_error(unsigned int reason, struct arch_esf *esf);
@@ -60,6 +58,25 @@ void arch_flush_fpu_ipi(unsigned int cpu);
 #ifdef CONFIG_ARM64_SAFE_EXCEPTION_STACK
 void z_arm64_safe_exception_stack_init(void);
 #endif
+
+#ifdef CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS
+/*
+ * arch_coredump_freeze_other_cpus()/arch_coredump_thaw_other_cpus() are the
+ * generic hooks (declared in kernel_arch_interface.h) implemented in smp.c.
+ *
+ * Retrieve the raw live snapshot captured for the given CPU index.
+ * Returns false if that CPU was never successfully frozen (self, never
+ * booted, or timed out) -- in which case *esf, *x19_x29, *sp and *thread
+ * are left untouched. *sp is the pre-interrupt stack pointer computed at
+ * capture time; it is NOT simply (*esf + sizeof(**esf)), since *esf points
+ * into this snapshot's own storage, not the original stack.
+ */
+bool arm64_coredump_freeze_get_snapshot(unsigned int cpu,
+					 const struct arch_esf **esf,
+					 const uint64_t **x19_x29,
+					 uintptr_t *sp,
+					 struct k_thread **thread);
+#endif /* CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS */
 
 #endif /* _ASMLANGUAGE */
 

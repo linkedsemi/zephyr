@@ -38,6 +38,7 @@
  */
 #define INPUT_KEY_RESERVED 0            /**< Reserved, do not use */
 
+/* zephyr-keep-sorted-start */
 #define INPUT_KEY_0 11                  /**< 0 Key */
 #define INPUT_KEY_1 2                   /**< 1 Key */
 #define INPUT_KEY_2 3                   /**< 2 Key */
@@ -55,23 +56,28 @@
 #define INPUT_KEY_BACKSLASH 43          /**< Backslash Key */
 #define INPUT_KEY_BACKSPACE 14          /**< Backspace Key */
 #define INPUT_KEY_BLUETOOTH 237         /**< Bluetooth Key */
-#define INPUT_KEY_BRIGHTNESSDOWN 224    /**< Brightness Up Key */
-#define INPUT_KEY_BRIGHTNESSUP 225      /**< Brightneess Down Key */
+#define INPUT_KEY_BRIGHTNESSDOWN 224    /**< Brightness Down Key */
+#define INPUT_KEY_BRIGHTNESSUP 225      /**< Brightness Up Key */
 #define INPUT_KEY_C 46                  /**< C Key */
 #define INPUT_KEY_CAPSLOCK 58           /**< Caps Lock Key */
+#define INPUT_KEY_CLOSECD 160           /**< Close CD Key */
 #define INPUT_KEY_COFFEE 152            /**< Screen Saver Key */
 #define INPUT_KEY_COMMA 51              /**< Comma Key */
 #define INPUT_KEY_COMPOSE 127           /**< Compose Key */
 #define INPUT_KEY_CONNECT 218           /**< Connect Key */
 #define INPUT_KEY_D 32                  /**< D Key */
 #define INPUT_KEY_DELETE 111            /**< Delete Key */
+#define INPUT_KEY_DOLLAR 0x1b2          /**< Dollar Key */
 #define INPUT_KEY_DOT 52                /**< Dot Key */
 #define INPUT_KEY_DOWN 108              /**< Down Key */
 #define INPUT_KEY_E 18                  /**< E Key */
+#define INPUT_KEY_EJECTCD 161           /**< Eject CD Key */
+#define INPUT_KEY_EJECTCLOSECD 162      /**< Eject/Close CD Toggle Key */
 #define INPUT_KEY_END 107               /**< End Key */
 #define INPUT_KEY_ENTER 28              /**< Enter Key */
 #define INPUT_KEY_EQUAL 13              /**< Equal Key */
 #define INPUT_KEY_ESC 1                 /**< Escape Key */
+#define INPUT_KEY_EURO 0x1b3            /**< Euro Key */
 #define INPUT_KEY_F 33                  /**< F Key */
 #define INPUT_KEY_F1 59                 /**< F1 Key */
 #define INPUT_KEY_F10 68                /**< F10 Key */
@@ -98,6 +104,7 @@
 #define INPUT_KEY_F8 66                 /**< F8 Key */
 #define INPUT_KEY_F9 67                 /**< F9 Key */
 #define INPUT_KEY_FASTFORWARD 208       /**< Fast Forward Key */
+#define INPUT_KEY_FAVORITES 364         /**< Favorites Key */
 #define INPUT_KEY_FORWARD 159           /**< Forward Key */
 #define INPUT_KEY_G 34                  /**< G Key */
 #define INPUT_KEY_GRAVE 41              /**< Grave (backtick) Key */
@@ -138,6 +145,7 @@
 #define INPUT_KEY_MINUS 12              /**< Minus Key */
 #define INPUT_KEY_MUTE 113              /**< Mute Key */
 #define INPUT_KEY_N 49                  /**< N Key */
+#define INPUT_KEY_NEXTSONG 163          /**< Next Song Key */
 #define INPUT_KEY_NUMLOCK 69            /**< Num Lock Key */
 #define INPUT_KEY_O 24                  /**< O Key */
 #define INPUT_KEY_P 25                  /**< P Key */
@@ -145,10 +153,14 @@
 #define INPUT_KEY_PAGEUP 104            /**< Page UpKey */
 #define INPUT_KEY_PAUSE 119             /**< Pause Key */
 #define INPUT_KEY_PLAY 207              /**< Play Key */
+#define INPUT_KEY_PLAYPAUSE 164         /**< Play/Pause Toggle Key */
 #define INPUT_KEY_POWER 116             /**< Power Key */
+#define INPUT_KEY_PREVIOUSSONG 165      /**< Previous Song Key */
 #define INPUT_KEY_PRINT 210             /**< Print Key */
 #define INPUT_KEY_Q 16                  /**< Q Key */
 #define INPUT_KEY_R 19                  /**< R Key */
+#define INPUT_KEY_RECORD 167            /**< Record Key */
+#define INPUT_KEY_REWIND 168            /**< Rewind Key */
 #define INPUT_KEY_RIGHT 106             /**< Right Key */
 #define INPUT_KEY_RIGHTALT 100          /**< Right Alt Key */
 #define INPUT_KEY_RIGHTBRACE 27         /**< Right Brace Key */
@@ -162,6 +174,7 @@
 #define INPUT_KEY_SLASH 53              /**< Slash Key */
 #define INPUT_KEY_SLEEP 142             /**< System Sleep Key */
 #define INPUT_KEY_SPACE 57              /**< Space Key */
+#define INPUT_KEY_STOPCD 166            /**< Stop CD Key */
 #define INPUT_KEY_SYSRQ 99              /**< SysReq Key */
 #define INPUT_KEY_T 20                  /**< T Key */
 #define INPUT_KEY_TAB 15                /**< Tab Key*/
@@ -177,6 +190,7 @@
 #define INPUT_KEY_X 45                  /**< X Key */
 #define INPUT_KEY_Y 21                  /**< Y Key */
 #define INPUT_KEY_Z 44                  /**< Z Key */
+/* zephyr-keep-sorted-stop */
 /** @} */
 
 
@@ -185,6 +199,7 @@
  * @anchor INPUT_BTN_CODES
  * @{
  */
+/* zephyr-keep-sorted-start */
 #define INPUT_BTN_0 0x100               /**< 0 button */
 #define INPUT_BTN_1 0x101               /**< 1 button */
 #define INPUT_BTN_2 0x102               /**< 2 button */
@@ -195,8 +210,8 @@
 #define INPUT_BTN_7 0x107               /**< 7 button */
 #define INPUT_BTN_8 0x108               /**< 8 button */
 #define INPUT_BTN_9 0x109               /**< 9 button */
-#define INPUT_BTN_A BTN_SOUTH           /**< A button */
-#define INPUT_BTN_B BTN_EAST            /**< B button */
+#define INPUT_BTN_A INPUT_BTN_SOUTH     /**< A button */
+#define INPUT_BTN_B INPUT_BTN_EAST      /**< B button */
 #define INPUT_BTN_BACK 0x116		/**< Back button */
 #define INPUT_BTN_C 0x132               /**< C button */
 #define INPUT_BTN_DPAD_DOWN 0x221       /**< Directional pad Down */
@@ -206,8 +221,8 @@
 #define INPUT_BTN_EAST 0x131            /**< East button */
 #define INPUT_BTN_EXTRA 0x114		/**< Extra button */
 #define INPUT_BTN_FORWARD 0x115		/**< Forward button */
-#define INPUT_BTN_GEAR_DOWN 0x150       /**< Gear Up button */
-#define INPUT_BTN_GEAR_UP 0x151         /**< Gear Down button */
+#define INPUT_BTN_GEAR_DOWN 0x150       /**< Gear Down button */
+#define INPUT_BTN_GEAR_UP 0x151         /**< Gear Up button */
 #define INPUT_BTN_LEFT 0x110            /**< Left button */
 #define INPUT_BTN_MIDDLE 0x112          /**< Middle button */
 #define INPUT_BTN_MODE 0x13c            /**< Mode button */
@@ -226,9 +241,10 @@
 #define INPUT_BTN_TR 0x137              /**< Right trigger (R1) */
 #define INPUT_BTN_TR2 0x139             /**< Right trigger 2 (R2) */
 #define INPUT_BTN_WEST 0x134            /**< West button */
-#define INPUT_BTN_X BTN_NORTH           /**< X button */
-#define INPUT_BTN_Y BTN_WEST            /**< Y button */
+#define INPUT_BTN_X INPUT_BTN_NORTH     /**< X button */
+#define INPUT_BTN_Y INPUT_BTN_WEST      /**< Y button */
 #define INPUT_BTN_Z 0x135               /**< Z button */
+/* zephyr-keep-sorted-stop */
 /** @} */
 
 /**
@@ -236,6 +252,7 @@
  * @anchor INPUT_ABS_CODES
  * @{
  */
+/* zephyr-keep-sorted-start */
 #define INPUT_ABS_BRAKE 0x0a            /**< Absolute brake position */
 #define INPUT_ABS_GAS 0x09              /**< Absolute gas position */
 #define INPUT_ABS_MT_SLOT 0x2f          /**< Absolute multitouch slot identifier */
@@ -248,6 +265,7 @@
 #define INPUT_ABS_X 0x00                /**< Absolute X coordinate */
 #define INPUT_ABS_Y 0x01                /**< Absolute Y coordinate */
 #define INPUT_ABS_Z 0x02                /**< Absolute Z coordinate */
+/* zephyr-keep-sorted-stop */
 /** @} */
 
 /**
@@ -255,6 +273,7 @@
  * @anchor INPUT_REL_CODES
  * @{
  */
+/* zephyr-keep-sorted-start */
 #define INPUT_REL_DIAL 0x07             /**< Relative dial coordinate */
 #define INPUT_REL_HWHEEL 0x06           /**< Relative horizontal wheel coordinate */
 #define INPUT_REL_MISC 0x09             /**< Relative misc coordinate */
@@ -265,6 +284,7 @@
 #define INPUT_REL_X 0x00                /**< Relative X coordinate */
 #define INPUT_REL_Y 0x01                /**< Relative Y coordinate */
 #define INPUT_REL_Z 0x02                /**< Relative Z coordinate */
+/* zephyr-keep-sorted-stop */
 /** @} */
 
 /**
@@ -272,7 +292,9 @@
  * @anchor INPUT_MSC_CODES
  * @{
  */
+/* zephyr-keep-sorted-start */
 #define INPUT_MSC_SCAN 0x04             /**< Scan code */
+/* zephyr-keep-sorted-stop */
 /** @} */
 
 /** @} */

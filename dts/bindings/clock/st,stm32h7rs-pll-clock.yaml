@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  PLL node binding for STM32H7RS devices
+  STM32H7RS main PLL.
 
   It can be used to describe 3 different PLLs: PLL1 (Main PLL), PLL2 and PLL3.
 
@@ -31,10 +31,12 @@ properties:
     type: int
     description: |
         PLL division factor for pllx_s_ck : valid for PLL1, 2, 3
-        Valid range: 1 - 8
+    min: 1
+    max: 8
 
   div-t:
     type: int
     description: |
         PLL division factor for pllx_t_ck : valid for PLL2
-        Valid range: 1 - 8
+    min: 1
+    max: 8

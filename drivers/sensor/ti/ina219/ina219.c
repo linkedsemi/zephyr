@@ -110,6 +110,7 @@ static int ina219_sample_fetch(const struct device *dev,
 
 	if (chan != SENSOR_CHAN_ALL &&
 		chan != SENSOR_CHAN_VOLTAGE &&
+		chan != SENSOR_CHAN_VSHUNT &&
 		chan != SENSOR_CHAN_POWER &&
 		chan != SENSOR_CHAN_CURRENT) {
 		return -ENOTSUP;
@@ -159,6 +160,17 @@ static int ina219_sample_fetch(const struct device *dev,
 	}
 
 	if (chan == SENSOR_CHAN_ALL ||
+		chan == SENSOR_CHAN_VSHUNT) {
+
+		rc = ina219_reg_read(dev, INA219_REG_V_SHUNT, &tmp);
+		if (rc) {
+			LOG_ERR("Error reading shunt voltage.");
+			return rc;
+		}
+		data->v_shunt = tmp;
+	}
+
+	if (chan == SENSOR_CHAN_ALL ||
 		chan == SENSOR_CHAN_POWER)	{
 
 		rc = ina219_reg_read(dev, INA219_REG_POWER, &tmp);
@@ -190,21 +202,19 @@ static int ina219_channel_get(const struct device *dev,
 	const struct ina219_config *cfg = dev->config;
 	struct ina219_data *data = dev->data;
 	double tmp;
-	int8_t sign = 1;
 
 	switch (chan) {
 	case SENSOR_CHAN_VOLTAGE:
 		tmp = data->v_bus * INA219_V_BUS_MUL;
 		break;
+	case SENSOR_CHAN_VSHUNT:
+		tmp = (int16_t)data->v_shunt * INA219_V_SHUNT_MUL;
+		break;
 	case SENSOR_CHAN_POWER:
-		tmp = data->power * cfg->current_lsb * INA219_POWER_MUL * INA219_SI_MUL;
+		tmp = data->power * (cfg->current_lsb * INA219_POWER_MUL * INA219_SI_MUL);
 		break;
 	case SENSOR_CHAN_CURRENT:
-		if (INA219_SIGN_BIT(data->current)) {
-			data->current = ~data->current + 1;
-			sign = -1;
-		}
-		tmp = sign * data->current * cfg->current_lsb * INA219_SI_MUL;
+		tmp = (int16_t)data->current * (cfg->current_lsb * INA219_SI_MUL);
 		break;
 	default:
 		LOG_DBG("Channel not supported by device!");
@@ -246,7 +256,7 @@ static int ina219_init(const struct device *dev)
 	int rc;
 
 	if (!device_is_ready(cfg->bus.bus)) {
-		LOG_ERR("Device not ready.");
+		LOG_ERR_DEVICE_NOT_READY(cfg->bus.bus);
 		return -ENODEV;
 	}
 
@@ -269,18 +279,14 @@ static int ina219_init(const struct device *dev)
 	}
 
 	/* Set measurement delay */
-	rc = ina219_set_msr_delay(dev);
-	if (rc) {
-		LOG_ERR("Could not get measurement delay.");
-		return rc;
-	}
+	ina219_set_msr_delay(dev);
 
 	k_sleep(K_USEC(INA219_WAIT_STARTUP));
 
 	return 0;
 }
 
-static const struct sensor_driver_api ina219_api = {
+static DEVICE_API(sensor, ina219_api) = {
 	.sample_fetch = ina219_sample_fetch,
 	.channel_get = ina219_channel_get,
 };

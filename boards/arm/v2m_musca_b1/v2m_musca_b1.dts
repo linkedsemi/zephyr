@@ -1,17 +1,17 @@
 /*
  * Copyright (c) 2019 Linaro Limited
+ * Copyright 2026 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /dts-v1/;
 
+#include <freq.h>
 #include <arm/armv8-m.dtsi>
 
 / {
 	compatible = "arm,v2m-musca";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	aliases {
 		led0 = &green_led;
@@ -28,14 +28,17 @@
 
 	leds {
 		compatible = "gpio-leds";
+
 		red_led: led_0 {
 			gpios = <&gpio 2 0>;
 			label = "User LED1";
 		};
+
 		green_led: led_1 {
 			gpios = <&gpio 3 0>;
 			label = "User LED2";
 		};
+
 		blue_led: led_2 {
 			gpios = <&gpio 4 0>;
 			label = "User LED3";
@@ -45,6 +48,7 @@
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
+		timebase-frequency = <DT_FREQ_M(40)>;
 
 		cpu@0 {
 			device_type = "cpu";
@@ -87,12 +91,22 @@
 			#size-cells = <1>;
 			ranges = <0x0 0x50000000 0x10000000>;
 
-			#include "v2m_musca_b1-common.dtsi"
+			pinctrl: pinctrl {
+				compatible = "arm,v2m_musca_b1-pinctrl";
+			};
+
+#include "v2m_musca_b1-common.dtsi"
 		};
 	};
-
 };
 
 &nvic {
 	arm,num-irq-priority-bits = <3>;
 };
+
+&uart0 {
+	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+};
+
+#include "v2m_musca_b1-pinctrl.dtsi"

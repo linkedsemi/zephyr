@@ -7,7 +7,7 @@
 
 /dts-v1/;
 
-#include <rpi_pico/rp2040.dtsi>
+#include <raspberrypi/rpi_pico/rp2040.dtsi>
 #include "adafruit_qt_py_rp2040-pinctrl.dtsi"
 #include "seeed_xiao_connector.dtsi"
 #include <freq.h>
@@ -27,18 +27,29 @@
 		watchdog0 = &wdt0;
 		led-strip = &ws2812;
 	};
+
+	stemma_connector: stemma_connector {
+		compatible = "stemma-qt-connector";
+		#gpio-cells = <2>;
+		gpio-map-mask = <0xffffffff 0xffffffc0>;
+		gpio-map-pass-thru = <0 0x3f>;
+		gpio-map = <0 0 &gpio0 23 0>,
+			   <1 0 &gpio0 22 0>;
+	};
 };
 
 &flash0 {
 	reg = <0x10000000 DT_SIZE_M(8)>;
+	ranges = <0x0 0x10000000 DT_SIZE_M(8)>;
 
 	partitions {
-		compatible = "fixed-partitions";
+		ranges;
 		#address-cells = <1>;
 		#size-cells = <1>;
 
 		/* Reserved memory for the second stage bootloader */
 		second_stage_bootloader: partition@0 {
+			compatible = "zephyr,mapped-partition";
 			label = "second_stage_bootloader";
 			reg = <0x00000000 0x100>;
 			read-only;
@@ -49,16 +60,12 @@
 		 * size is 8MB minus the 0x100 bytes taken by the bootloader.
 		 */
 		code_partition: partition@100 {
+			compatible = "zephyr,mapped-partition";
 			label = "code-partition";
 			reg = <0x100 (DT_SIZE_M(8) - 0x100)>;
 			read-only;
 		};
 	};
-};
-
-&clocks {
-	pinctrl-0 = <&clocks_default>;
-	pinctrl-names = "default";
 };
 
 &uart1 {
@@ -84,16 +91,16 @@
 };
 
 &i2c0 {
-	clock-frequency = <I2C_BITRATE_FAST>;
 	status = "okay";
 	pinctrl-0 = <&i2c0_default>;
 	pinctrl-names = "default";
+	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
-&i2c1 {
+zephyr_i2c: &i2c1 {
+	status = "okay";
 	pinctrl-0 = <&i2c1_default>;
 	pinctrl-names = "default";
-	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
 
@@ -154,6 +161,9 @@ zephyr_udc0: &usbd {
 };
 
 &vreg {
-	regulator-always-on;
-	regulator-allowed-modes = <REGULATOR_RPI_PICO_MODE_NORMAL>;
+	status = "okay";
+};
+
+&xosc {
+	startup-delay-multiplier = <64>;
 };

@@ -7,20 +7,21 @@
 """
 
 import argparse
-from pathlib import Path
-import platform
+import functools
 import os
+import platform
 import shlex
 import shutil
-from typing import List, Optional, ClassVar, Dict
+from pathlib import Path
+from typing import ClassVar
 
-from runners.core import ZephyrBinaryRunner, RunnerCaps, RunnerConfig
+from runners.core import RunnerCaps, RunnerConfig, ZephyrBinaryRunner
 
 
 class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
     """Runner front-end for STM32CubeProgrammer CLI."""
 
-    _RESET_MODES: ClassVar[Dict[str, str]] = {
+    _RESET_MODES: ClassVar[dict[str, str]] = {
         "sw": "SWrst",
         "hw": "HWrst",
         "core": "Crst",
@@ -31,19 +32,37 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
         self,
         cfg: RunnerConfig,
         port: str,
-        frequency: Optional[int],
-        reset_mode: Optional[str],
-        conn_modifiers: Optional[str],
-        cli: Optional[Path],
+        dev_id: str | None,
+        frequency: int | None,
+        reset_mode: str | None,
+        download_address: int | None,
+        download_modifiers: list[str],
+        start_address: int | None,
+        start_modifiers: list[str],
+        conn_modifiers: str | None,
+        cli: Path | None,
         use_elf: bool,
         erase: bool,
-        extload: Optional[str],
-        tool_opt: List[str],
+        reset_system: bool,
+        extload: str | None,
+        tool_opt: list[str],
     ) -> None:
         super().__init__(cfg)
 
         self._port = port
+        self._dev_id = dev_id
         self._frequency = frequency
+
+        self._download_address = download_address
+        self._download_modifiers: list[str] = list()
+        for opts in [shlex.split(opt) for opt in download_modifiers]:
+            self._download_modifiers += opts
+
+        self._start_address = start_address
+        self._start_modifiers: list[str] = list()
+        for opts in [shlex.split(opt) for opt in start_modifiers]:
+            self._start_modifiers += opts
+
         self._reset_mode = reset_mode
         self._conn_modifiers = conn_modifiers
         self._cli = (
@@ -51,14 +70,18 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
         )
         self._use_elf = use_elf
         self._erase = erase
+        self._reset = reset_system
 
         if extload:
-            p = STM32CubeProgrammerBinaryRunner._get_stm32cubeprogrammer_path().parent.resolve() / 'ExternalLoader'
+            p = (
+                STM32CubeProgrammerBinaryRunner._get_stm32cubeprogrammer_path().parent.resolve()
+                / 'ExternalLoader'
+            )
             self._extload = ['-el', str(p / extload)]
         else:
             self._extload = []
 
-        self._tool_opt: List[str] = list()
+        self._tool_opt: list[str] = list()
         for opts in [shlex.split(opt) for opt in tool_opt]:
             self._tool_opt += opts
 
@@ -103,17 +126,26 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
             return Path(os.environ["PROGRAMW6432"]) / cli
 
         if platform.system() == "Darwin":
-            return (
+            cmd = shutil.which("STM32_Programmer_CLI")
+            if cmd is not None:
+                return Path(cmd)
+
+            app_path = (
                 Path("/Applications")
                 / "STMicroelectronics"
                 / "STM32Cube"
                 / "STM32CubeProgrammer"
                 / "STM32CubeProgrammer.app"
                 / "Contents"
-                / "MacOs"
-                / "bin"
-                / "STM32_Programmer_CLI"
             )
+
+            exe_path = app_path / "MacOS/bin/STM32_Programmer_CLI"
+
+            if not exe_path.exists():
+                # Some older STM32CubeProgrammer versions place
+                # the executable in a "Resources" subfolder instead
+                exe_path = app_path / "Resources/bin/STM32_Programmer_CLI"
+            return exe_path
 
         raise NotImplementedError("Could not determine STM32_Programmer_CLI path")
 
@@ -123,10 +155,17 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def capabilities(cls):
-        return RunnerCaps(commands={"flash"}, erase=True, extload=True, tool_opt=True)
+        return RunnerCaps(commands={"flash"}, dev_id=True, erase=True, extload=True, tool_opt=True,
+                          reset=True, reset_types=True, reset_types_supported=
+                                         list(STM32CubeProgrammerBinaryRunner._RESET_MODES.keys())
+                          )
 
     @classmethod
     def do_add_parser(cls, parser):
+        # To accept arguments in hex format, a wrapper lambda around int() must be used.
+        # Wrapping the lambda with functools.wraps() makes it so that 'invalid int value'
+        # is displayed when an invalid value is provided for these arguments.
+        multi_base=functools.wraps(int)(lambda s: int(s, base=0))
         parser.add_argument(
             "--port",
             type=str,
@@ -139,9 +178,36 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
         parser.add_argument(
             "--reset-mode",
             type=str,
+            dest="reset_type",
             required=False,
-            choices=["sw", "hw", "core"],
-            help="Reset mode",
+            choices=list(STM32CubeProgrammerBinaryRunner._RESET_MODES.keys()),
+            help="Obsolete synonym for --reset-type",
+        )
+        parser.add_argument(
+            "--download-address",
+            type=multi_base,
+            required=False,
+            help="Flashing location address. If present, .bin used instead of .hex"
+        )
+        parser.add_argument(
+            "--download-modifiers",
+            default=[],
+            required=False,
+            action='append',
+            help="Additional options for the --download argument"
+        )
+        parser.add_argument(
+            "--start-address",
+            type=multi_base,
+            required=False,
+            help="Address where execution should begin after flashing"
+        )
+        parser.add_argument(
+            "--start-modifiers",
+            default=[],
+            required=False,
+            action='append',
+            help="Additional options for the --start argument"
         )
         parser.add_argument(
             "--conn-modifiers",
@@ -177,12 +243,18 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
         return STM32CubeProgrammerBinaryRunner(
             cfg,
             port=args.port,
+            dev_id=args.dev_id,
             frequency=args.frequency,
-            reset_mode=args.reset_mode,
+            reset_mode=args.reset_type,
+            download_address=args.download_address,
+            download_modifiers=args.download_modifiers,
+            start_address=args.start_address,
+            start_modifiers=args.start_modifiers,
             conn_modifiers=args.conn_modifiers,
             cli=args.cli,
             use_elf=args.use_elf,
             erase=args.erase,
+            reset_system=args.reset,
             extload=args.extload,
             tool_opt=args.tool_opt,
         )
@@ -205,6 +277,8 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
             connect_opts += f" reset={reset_mode}"
         if self._conn_modifiers:
             connect_opts += f" {self._conn_modifiers}"
+        if self._dev_id:
+            connect_opts += f" sn={self._dev_id}"
 
         cmd += ["--connect", connect_opts]
         cmd += self._tool_opt
@@ -216,10 +290,44 @@ class STM32CubeProgrammerBinaryRunner(ZephyrBinaryRunner):
         if self._erase:
             self.check_call(cmd + ["--erase", "all"])
 
-        # flash image and run application
-        dl_file = self.cfg.elf_file if self._use_elf else self.cfg.hex_file
+        # Define binary to be loaded
+        dl_file = None
+
+        if self._use_elf:
+            # Use elf file if instructed to do so.
+            dl_file = self.cfg.elf_file
+        elif (self.cfg.bin_file is not None and
+               (self._download_address is not None or
+                  (str(self._port).startswith("usb") and self._download_modifiers is not None))):
+            # Use bin file if a binary is available and
+            # --download-address provided
+            # or flashing by dfu (port=usb and download-modifier used)
+            dl_file = self.cfg.bin_file
+        elif self.cfg.hex_file is not None:
+            # Neither --use-elf nor --download-address are present:
+            # default to flashing using hex file.
+            dl_file = self.cfg.hex_file
+
+        # Verify file configuration
         if dl_file is None:
             raise RuntimeError('cannot flash; no download file was specified')
         elif not os.path.isfile(dl_file):
             raise RuntimeError(f'download file {dl_file} does not exist')
-        self.check_call(cmd + ["--download", dl_file, "--start"])
+
+        flash_and_run_args = ["--download", dl_file]
+        if self._download_address is not None:
+            flash_and_run_args.append(f"0x{self._download_address:X}")
+        flash_and_run_args += self._download_modifiers
+
+        if self._reset:
+            # Start execution through a system reset ('-rst') unless a
+            # start address or a start modifier is provided as runner argument.
+            if self._start_address is not None or self._start_modifiers:
+                flash_and_run_args.append("--start")
+                if self._start_address is not None:
+                    flash_and_run_args.append(f"0x{self._start_address:X}")
+                flash_and_run_args += self._start_modifiers
+            else:
+                flash_and_run_args.append("-rst")
+
+        self.check_call(cmd + flash_and_run_args)

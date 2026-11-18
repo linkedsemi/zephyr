@@ -40,7 +40,14 @@
 #define PACKET_SIZE_MAX CONFIG_NET_ZPERF_MAX_PACKET_SIZE
 
 #define MY_SRC_PORT 50000
+/* The port each iperf version listens on by default */
+#if defined(CONFIG_NET_ZPERF_IPERF3)
+#define DEF_PORT 5201
+#define ZPERF_PROTOCOL "iperf3"
+#else
 #define DEF_PORT 5001
+#define ZPERF_PROTOCOL "iperf2"
+#endif
 #define DEF_PORT_STR STRINGIFY(DEF_PORT)
 
 /* Upload defaults */
@@ -53,13 +60,28 @@
 
 #define ZPERF_VERSION "1.1"
 
+enum session_proto {
+	SESSION_UDP = 0,
+	SESSION_TCP = 1,
+	SESSION_RAW = 2,
+	SESSION_PROTO_END
+};
+
 struct zperf_udp_datagram {
-	int32_t id;
+	uint32_t id;
 	uint32_t tv_sec;
 	uint32_t tv_usec;
+#ifndef CONFIG_NET_ZPERF_LEGACY_HEADER_COMPAT
+	uint32_t id2;
+#endif
 } __packed;
 
 BUILD_ASSERT(sizeof(struct zperf_udp_datagram) <= PACKET_SIZE_MAX, "Invalid PACKET_SIZE_MAX");
+
+#define ZPERF_FLAGS_VERSION1      0x80000000
+#define ZPERF_FLAGS_EXTEND        0x40000000
+#define ZPERF_FLAGS_UDPTESTS      0x20000000
+#define ZPERF_FLAGS_SEQNO64B      0x08000000
 
 struct zperf_client_hdr_v1 {
 	int32_t flags;
@@ -95,22 +117,71 @@ static inline uint32_t time_delta(uint32_t ts, uint32_t t)
 	return (t >= ts) ? (t - ts) : (ULONG_MAX - ts + t);
 }
 
-int zperf_get_ipv6_addr(char *host, char *prefix_str, struct in6_addr *addr);
-struct sockaddr_in6 *zperf_get_sin6(void);
+int zperf_get_ipv6_addr(char *host, char *prefix_str, struct net_in6_addr *addr);
+struct net_sockaddr_in6 *zperf_get_sin6(void);
 
-int zperf_get_ipv4_addr(char *host, struct in_addr *addr);
-struct sockaddr_in *zperf_get_sin(void);
+int zperf_get_ipv4_addr(char *host, struct net_in_addr *addr);
+struct net_sockaddr_in *zperf_get_sin(void);
 
 extern void connect_ap(char *ssid);
 
-int zperf_prepare_upload_sock(const struct sockaddr *peer_addr, uint8_t tos,
-			      int priority, int tcp_nodelay, int proto);
+struct zperf_work {
+	struct k_work_q *queue;
+	struct z_thread_stack_element *stack;
+	struct k_event *start_event;
+	size_t stack_size;
+};
+
+#define START_EVENT 0x0001
+extern void start_jobs(void);
+extern struct zperf_work *get_queue(enum session_proto proto, int session_id);
+
+/* if_name, when not NULL or empty, is the interface to bind the socket to
+ * before it is connected.
+ */
+int zperf_prepare_upload_sock(const struct net_sockaddr *peer_addr, uint8_t tos,
+			      int priority, int tcp_nodelay, int proto, const char *if_name);
 
 uint32_t zperf_packet_duration(uint32_t packet_size, uint32_t rate_in_kbps);
 
-void zperf_async_work_submit(struct k_work *work);
+void zperf_async_work_submit(enum session_proto proto, int session_id, struct k_work *work);
+
+/* What zperf_api.c calls to do the work of the public functions of the same
+ * names. It has checked the arguments.
+ */
+int zperf_iperf2_udp_upload(const struct zperf_upload_params *param,
+			    struct zperf_results *result);
+int zperf_iperf2_tcp_upload(const struct zperf_upload_params *param,
+			    struct zperf_results *result);
+int zperf_iperf2_udp_upload_async(const struct zperf_upload_params *param,
+				  zperf_callback callback, void *user_data);
+int zperf_iperf2_tcp_upload_async(const struct zperf_upload_params *param,
+				  zperf_callback callback, void *user_data);
+int zperf_iperf2_udp_download(const struct zperf_download_params *param,
+			      zperf_callback callback, void *user_data);
+int zperf_iperf2_tcp_download(const struct zperf_download_params *param,
+			      zperf_callback callback, void *user_data);
+int zperf_iperf2_udp_download_stop(void);
+int zperf_iperf2_tcp_download_stop(void);
+
+int zperf_iperf3_udp_upload(const struct zperf_upload_params *param,
+			    struct zperf_results *result);
+int zperf_iperf3_tcp_upload(const struct zperf_upload_params *param,
+			    struct zperf_results *result);
+int zperf_iperf3_udp_upload_async(const struct zperf_upload_params *param,
+				  zperf_callback callback, void *user_data);
+int zperf_iperf3_tcp_upload_async(const struct zperf_upload_params *param,
+				  zperf_callback callback, void *user_data);
+int zperf_iperf3_udp_download(const struct zperf_download_params *param,
+			      zperf_callback callback, void *user_data);
+int zperf_iperf3_tcp_download(const struct zperf_download_params *param,
+			      zperf_callback callback, void *user_data);
+int zperf_iperf3_udp_download_stop(void);
+int zperf_iperf3_tcp_download_stop(void);
+
 void zperf_udp_uploader_init(void);
 void zperf_tcp_uploader_init(void);
+void zperf_raw_uploader_init(void);
 
 void zperf_shell_init(void);
 

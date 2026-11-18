@@ -5,7 +5,7 @@ description: Linkedsemi RISC-V CPU
 
 compatible: "linkedsemi,riscv"
 
-include: riscv,cpus.yaml
+include: riscv-common.yaml
 
 properties:
   clock-source:

@@ -7,16 +7,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <zephyr/bluetooth/assigned_numbers.h>
+#include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/byteorder.h>
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
+#include <zephyr/logging/log.h>
 #include <zephyr/sys/util.h>
 
 #include "bstests.h"
 #include "common.h"
+
+LOG_MODULE_REGISTER(bap_bass_broadcaster_test);
 
 extern enum bst_result_t bst_result;
 
@@ -25,59 +29,34 @@ extern enum bst_result_t bst_result;
 static void test_main(void)
 {
 	int err;
-	uint32_t broadcast_id = 1234;
+	uint32_t broadcast_id = 1234U;
 	struct bt_le_ext_adv *adv;
 	struct bt_data ad[2] = {
 		BT_DATA_BYTES(BT_DATA_FLAGS, BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR),
-		BT_DATA_BYTES(BT_DATA_SVC_DATA16,
-			      BT_UUID_16_ENCODE(BT_UUID_BROADCAST_AUDIO_VAL),
+		BT_DATA_BYTES(BT_DATA_SVC_DATA16, BT_UUID_16_ENCODE(BT_UUID_BROADCAST_AUDIO_VAL),
 			      BT_BYTES_LIST_LE24(broadcast_id)),
 	};
 
 	err = bt_enable(NULL);
-	if (err) {
+	if (err != 0) {
 		FAIL("Bluetooth init failed (err %d)\n", err);
 		return;
 	}
 
-	printk("Bluetooth initialized\n");
+	LOG_INF("Bluetooth initialized");
 
-	/* Create a non-connectable advertising set */
-	err = bt_le_ext_adv_create(BT_LE_EXT_ADV_NCONN, NULL, &adv);
-	if (err) {
-		FAIL("Failed to create advertising set (err %d)\n", err);
-		return;
-	}
-
-	/* Set periodic advertising parameters */
-	err = bt_le_per_adv_set_param(adv, BT_LE_PER_ADV_DEFAULT);
-	if (err) {
-		FAIL("Failed to set periodic advertising parameters (err %d)\n", err);
-		return;
-	}
+	setup_broadcast_adv(&adv);
 
 	/* Set adv data */
 	err = bt_le_ext_adv_set_data(adv, ad, ARRAY_SIZE(ad), NULL, 0);
-	if (err) {
+	if (err != 0) {
 		FAIL("Failed to set advertising data (err %d)\n", err);
 		return;
 	}
 
-	/* Enable Periodic Advertising */
-	err = bt_le_per_adv_start(adv);
-	if (err) {
-		FAIL("Failed to enable periodic advertising (err %d)\n", err);
-		return;
-	}
+	start_broadcast_adv(adv);
 
-	/* Start extended advertising */
-	err = bt_le_ext_adv_start(adv, BT_LE_EXT_ADV_START_DEFAULT);
-	if (err) {
-		FAIL("Failed to start extended advertising (err %d)\n", err);
-		return;
-	}
-
-	printk("Advertising successfully started\n");
+	LOG_INF("Advertising successfully started");
 
 	k_sleep(K_SECONDS(10));
 

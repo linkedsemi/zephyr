@@ -20,15 +20,12 @@
 #include <zephyr/init.h>
 #include <zephyr/drivers/uart.h>
 
-#include <zephyr/usb/usb_device.h>
-
 #include <zephyr/net_buf.h>
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/l2cap.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/buf.h>
 #include <zephyr/bluetooth/hci_raw.h>
-#include <zephyr/drivers/bluetooth/hci_driver.h>
 
 #define LOG_MODULE_NAME hci_uart_3wire
 LOG_MODULE_REGISTER(LOG_MODULE_NAME);
@@ -429,16 +426,10 @@ static void bt_uart_isr(const struct device *unused, void *user_data)
 	ARG_UNUSED(unused);
 	ARG_UNUSED(user_data);
 
-	while (uart_irq_update(h5_dev) &&
-	       uart_irq_is_pending(h5_dev)) {
+	while (true) {
+		uart_irq_update(h5_dev);
 
-		if (!uart_irq_rx_ready(h5_dev)) {
-			if (uart_irq_tx_ready(h5_dev)) {
-				LOG_DBG("transmit ready");
-			} else {
-				LOG_DBG("spurious interrupt");
-			}
-			/* Only the UART RX path is interrupt-enabled */
+		if (uart_irq_rx_ready(h5_dev) <= 0) {
 			break;
 		}
 
@@ -482,8 +473,8 @@ static void bt_uart_isr(const struct device *unused, void *user_data)
 			case HCI_COMMAND_PKT:
 			case HCI_ACLDATA_PKT:
 			case HCI_ISODATA_PKT:
-				h5.rx_buf = bt_buf_get_tx(BT_BUF_H4, K_NO_WAIT,
-							  &type, sizeof(type));
+				h5.rx_buf = bt_buf_get_tx(bt_buf_type_from_h4(type, BT_BUF_OUT),
+							  K_NO_WAIT, NULL, 0);
 				if (!h5.rx_buf) {
 					LOG_WRN("No available data buffers");
 					h5_reset_rx();
@@ -568,7 +559,7 @@ static void bt_uart_isr(const struct device *unused, void *user_data)
 
 static int h5_queue(struct net_buf *buf)
 {
-	LOG_DBG("buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
+	LOG_DBG("buf %p type %u len %u", buf, buf->data[0], buf->len);
 
 	k_fifo_put(&h5.tx_queue, buf);
 
@@ -751,13 +742,6 @@ static void rx_thread(void *p1, void *p2, void *p3)
 static int hci_uart_init(void)
 {
 	LOG_DBG("");
-
-	if (IS_ENABLED(CONFIG_USB_CDC_ACM)) {
-		if (usb_enable(NULL)) {
-			LOG_ERR("Failed to enable USB");
-			return -EINVAL;
-		}
-	}
 
 	if (!device_is_ready(h5_dev)) {
 		LOG_ERR("HCI UART %s is not ready", h5_dev->name);

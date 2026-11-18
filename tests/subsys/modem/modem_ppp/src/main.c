@@ -12,6 +12,7 @@
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_l2.h>
+#include <zephyr/net/ethernet.h>
 #include <zephyr/net/ppp.h>
 #include <zephyr/sys/crc.h>
 #include <string.h>
@@ -28,6 +29,12 @@
 #define TEST_MODEM_PPP_IP_FRAME_SEND_LARGE_N	(2048)
 #define TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N (2048)
 
+/* Number of FCS bytes the receiver strips from the tail of a frame */
+#define TEST_MODEM_PPP_FCS_SIZE			(2)
+/* Frame sizes used by the bulk-write (span) receive regression tests */
+#define TEST_MODEM_PPP_IP_FRAME_RECEIVE_CLEAN_N	 (2048)
+#define TEST_MODEM_PPP_IP_FRAME_RECEIVE_ESCAPE_N (600)
+
 /*************************************************************************************************/
 /*                                          Mock pipe                                            */
 /*************************************************************************************************/
@@ -43,6 +50,27 @@ static uint8_t ppp_frame_wrapped[] = {0x7E, 0xFF, 0x7D, 0x23, 0xC0, 0x21, 0x7D, 
 				      0x21, 0x7D, 0x20, 0x7D, 0x24, 0xD1, 0xB5, 0x7E};
 
 static uint8_t ppp_frame_unwrapped[] = {0xC0, 0x21, 0x01, 0x01, 0x00, 0x04};
+
+/*
+ * Same frame as ppp_frame_wrapped but with the Address (0xFF) and Control
+ * (0x03) fields omitted (ACFC). The receiver must start the frame on the first
+ * non-0xFF byte and deliver the same payload. The LCP protocol (0xC0 0x21) is
+ * used because its first octet is not an HDLC-escaped value.
+ */
+static uint8_t ppp_frame_wrapped_acfc[] = {0x7E, 0xC0, 0x21, 0x7D, 0x21, 0x7D, 0x21,
+					   0x7D, 0x20, 0x7D, 0x24, 0xD1, 0xB5, 0x7E};
+
+/* Custom ACCM (Only 0-15 need to be escaped) */
+static uint32_t accm_custom1 = 0x0000ffff;
+static uint8_t ppp_frame_wrapped_accm1[] = {0x7E, 0xFF, 0x7D, 0x23, 0xC0, 0x21, 0x16, 0x7D,
+					    0x21, 0x7D, 0x20, 0x7D, 0x24, 0x51, 0x21, 0x7E};
+
+/* Custom ACCM (Only 16-31 need to be escaped) */
+static uint32_t accm_custom2 = 0xffff0000;
+static uint8_t ppp_frame_wrapped_accm2[] = {0x7E, 0xFF, 0x7D, 0x23, 0xC0, 0x21, 0x7D, 0x36,
+					    0x01, 0x00, 0x04, 0x51, 0x21, 0x7E};
+
+static uint8_t ppp_frame_unwrapped_accm[] = {0xC0, 0x21, 0x16, 0x01, 0x00, 0x04};
 
 static uint8_t ip_frame_wrapped[] = {
 	0x7E, 0xFF, 0x7D, 0x23, 0x7D, 0x20, 0x21, 0x45, 0x7D, 0x20, 0x7D, 0x20, 0x29, 0x87, 0x6E,
@@ -61,6 +89,31 @@ static uint8_t ip_frame_unwrapped_with_protocol[] = {
 	0xFB, 0x05, 0x20, 0x0A, 0x2B, 0x36, 0x26, 0x25, 0x12, 0x8C, 0x3E, 0x00, 0x15, 0xBD, 0xF3,
 	0x2D, 0x00, 0x0B, 0x00, 0x07, 0x00, 0x04, 0x00, 0x04, 0x0A, 0x00, 0x0A, 0x00};
 
+/*
+ * Same IP frame as ip_frame_wrapped but with the FF 03 Address/Control header
+ * omitted (ACFC). The 2-octet IP protocol 0x0021 keeps its high octet 0x00,
+ * which HDLC escapes to 0x7D 0x20, so the receiver must unescape the first
+ * protocol octet when it starts the frame.
+ */
+static uint8_t ip_frame_wrapped_acfc[] = {
+	0x7E, 0x7D, 0x20, 0x21, 0x45, 0x7D, 0x20, 0x7D, 0x20, 0x29, 0x87, 0x6E, 0x40, 0x7D,
+	0x20, 0xE8, 0x7D, 0x31, 0xC1, 0xE9, 0x7D, 0x23, 0xFB, 0x7D, 0x25, 0x20, 0x7D, 0x2A,
+	0x2B, 0x36, 0x26, 0x25, 0x7D, 0x32, 0x8C, 0x3E, 0x7D, 0x20, 0x7D, 0x35, 0xBD, 0xF3,
+	0x2D, 0x7D, 0x20, 0x7D, 0x2B, 0x7D, 0x20, 0x7D, 0x27, 0x7D, 0x20, 0x7D, 0x24, 0x7D,
+	0x20, 0x7D, 0x24, 0x7D, 0x2A, 0x7D, 0x20, 0x7D, 0x2A, 0x7D, 0x20, 0xD4, 0x31, 0x7E};
+
+/*
+ * Same IP frame with both ACFC and PFC applied, as the Neoway N717 sends
+ * IP data once ACFC is negotiated: no FF 03 header and the protocol
+ * compressed to the single octet 0x21.
+ */
+static uint8_t ip_frame_wrapped_pfc_acfc[] = {
+	0x7E, 0x21, 0x45, 0x7D, 0x20, 0x7D, 0x20, 0x29, 0x87, 0x6E, 0x40, 0x7D, 0x20, 0xE8,
+	0x7D, 0x31, 0xC1, 0xE9, 0x7D, 0x23, 0xFB, 0x7D, 0x25, 0x20, 0x7D, 0x2A, 0x2B, 0x36,
+	0x26, 0x25, 0x7D, 0x32, 0x8C, 0x3E, 0x7D, 0x20, 0x7D, 0x35, 0xBD, 0xF3, 0x2D, 0x7D,
+	0x20, 0x7D, 0x2B, 0x7D, 0x20, 0x7D, 0x27, 0x7D, 0x20, 0x7D, 0x24, 0x7D, 0x20, 0x7D,
+	0x24, 0x7D, 0x2A, 0x7D, 0x20, 0x7D, 0x2A, 0x7D, 0x20, 0xD4, 0x31, 0x7E};
+
 static uint8_t corrupt_start_end_ppp_frame_wrapped[] = {0x2A, 0x46, 0x7E, 0x7E, 0xFF, 0x7D, 0x23,
 							0xC0, 0x21, 0x7D, 0x21, 0x7D, 0x21, 0x7D,
 							0x20, 0x7D, 0x24, 0xD1, 0xB5, 0x7E};
@@ -77,7 +130,7 @@ static uint8_t wrapped_buffer[4096];
 /*************************************************************************************************/
 /*                                  Mock network interface                                       */
 /*************************************************************************************************/
-static uint8_t test_net_link_addr[] = {0x00, 0x00, 0x5E, 0x00, 0x53, 0x01};
+static K_SEM_DEFINE(rx_pkt_sem, 0, K_SEM_MAX_LIMIT);
 
 static enum net_verdict test_net_l2_recv(struct net_if *iface, struct net_pkt *pkt)
 {
@@ -88,6 +141,7 @@ static enum net_verdict test_net_l2_recv(struct net_if *iface, struct net_pkt *p
 	/* Store pointer to received packet */
 	received_packets[received_packets_len] = pkt;
 	received_packets_len++;
+	k_sem_give(&rx_pkt_sem);
 	return NET_OK;
 }
 
@@ -95,12 +149,17 @@ static enum net_verdict test_net_l2_recv(struct net_if *iface, struct net_pkt *p
 static struct net_l2 test_net_l2 = {
 	.recv = test_net_l2_recv,
 };
+static struct ppp_context test_net_l2_data = {
+	.phase = PPP_RUNNING,
+	.lcp.peer_options.async_map = NET_PPP_DEFAULT_ASYNC_MAP,
+};
 
 /* This emulates the network interface device which will receive unwrapped network packets */
 static struct net_if_dev test_net_if_dev = {
 	.l2 = &test_net_l2,
-	.link_addr.addr = test_net_link_addr,
-	.link_addr.len = sizeof(test_net_link_addr),
+	.l2_data = &test_net_l2_data,
+	.link_addr.addr = {0x00, 0x00, 0x5E, 0x00, 0x53, 0x01},
+	.link_addr.len = NET_ETH_ADDR_LEN,
 	.link_addr.type = NET_LINK_DUMMY,
 	.mtu = 1500,
 	.oper_state = NET_IF_OPER_UP,
@@ -229,6 +288,55 @@ static void test_modem_ppp_generate_ppp_frame(uint8_t *frame, size_t size)
 	frame[size - 1] = fcs;
 }
 
+/*
+ * Generate a PPP frame whose body never contains a byte that HDLC has to escape
+ * (< 0x20, 0x7D or 0x7E). The whole body therefore travels through the
+ * bulk-write span path on receive, stressing the mid-span fragment allocation.
+ * The last two bytes act as the FCS and are stripped by the receiver.
+ */
+static void test_modem_ppp_generate_clean_ppp_frame(uint8_t *frame, size_t size)
+{
+	uint8_t byte = 0x20;
+
+	frame[0] = 0x00;
+	frame[1] = 0x21;
+
+	for (size_t i = 2; i < size; i++) {
+		if ((byte == 0x7D) || (byte == 0x7E)) {
+			byte = 0x7F;
+		}
+		frame[i] = byte;
+		byte = (byte == 0xFF) ? 0x20 : (byte + 1);
+	}
+}
+
+/*
+ * Generate a PPP frame with bytes that HDLC must escape sprinkled between short
+ * runs of clean bytes, including consecutive escapes. On receive this keeps
+ * switching between the span path and the per-byte path (spans of length 0/1
+ * fall back to per-byte), which the bulk-write optimisation must leave intact.
+ * The last two bytes act as the FCS and are stripped by the receiver.
+ */
+static void test_modem_ppp_generate_escape_heavy_ppp_frame(uint8_t *frame, size_t size)
+{
+	frame[0] = 0x00;
+	frame[1] = 0x21;
+
+	for (size_t i = 2; i < size; i++) {
+		switch (i % 8) {
+		case 0:
+			frame[i] = 0x7E; /* delimiter code, escaped to 7D 5E */
+			break;
+		case 1:
+			frame[i] = 0x11; /* control char (< 0x20), escaped */
+			break;
+		default:
+			frame[i] = (uint8_t)(0x40 + (i % 0x30)); /* clean run */
+			break;
+		}
+	}
+}
+
 static size_t test_modem_ppp_wrap_ppp_frame(uint8_t *wrapped, const uint8_t *frame, size_t size)
 {
 	size_t wrapped_pos = 4;
@@ -288,17 +396,25 @@ static void test_modem_ppp_before(void *f)
 		net_pkt_unref(received_packets[i]);
 	}
 
+	/* Reset ACCM */
+	test_net_l2_data.lcp.peer_options.async_map = 0xffffffff;
+
 	/* Reset packets received buffer */
 	received_packets_len = 0;
+	k_sem_reset(&rx_pkt_sem);
 
 	/* Reset mock pipe */
 	modem_backend_mock_reset(&mock);
+
+	/* Reset the attached pipe */
+	modem_ppp_release(&ppp);
+	modem_ppp_attach(&ppp, mock_pipe);
 }
 
 /*************************************************************************************************/
 /*                                             Tests                                             */
 /*************************************************************************************************/
-ZTEST(modem_ppp, test_ppp_frame_receive)
+static void put_and_validate_wrapped_frame(void)
 {
 	struct net_pkt *pkt;
 	size_t pkt_len;
@@ -306,8 +422,8 @@ ZTEST(modem_ppp, test_ppp_frame_receive)
 	/* Put wrapped frame */
 	modem_backend_mock_put(&mock, ppp_frame_wrapped, sizeof(ppp_frame_wrapped));
 
-	/* Give modem ppp time to process received frame */
-	k_msleep(1000);
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_SECONDS(1)), "Timeout waiting for received frame");
 
 	/* Validate frame received on mock network interface */
 	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
@@ -323,7 +439,76 @@ ZTEST(modem_ppp, test_ppp_frame_receive)
 	net_pkt_read(pkt, buffer, pkt_len);
 
 	zassert_true(memcmp(buffer, ppp_frame_unwrapped, pkt_len) == 0,
-		     "Recevied net pkt data incorrect");
+		     "Received net pkt data incorrect");
+}
+
+ZTEST(modem_ppp, test_ppp_frame_receive)
+{
+	/* Basic wrapped frame */
+	put_and_validate_wrapped_frame();
+}
+
+ZTEST(modem_ppp, test_carrier_follows_attach_release)
+{
+	/* Attached by the test fixture */
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on while attached");
+
+	modem_ppp_release(&ppp);
+	zassert_false(net_if_is_carrier_ok(&test_iface), "Carrier should be off after release");
+
+	zassert_ok(modem_ppp_attach(&ppp, mock_pipe), "Failed to reattach PPP");
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on after attach");
+}
+
+ZTEST(modem_ppp, test_ppp_no_carrier_received)
+{
+	static const char *unsolicited_no_carrier = "\r\nNO CARRIER\r\n";
+
+	/* Not dead to start with */
+	zassert_false(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on before NO CARRIER");
+
+	/* Partial message doesn't result in anything */
+	modem_backend_mock_put(&mock, unsolicited_no_carrier, strlen(unsolicited_no_carrier) - 1);
+
+	/* Link continues to work */
+	put_and_validate_wrapped_frame();
+	zassert_true(net_if_is_carrier_ok(&test_iface),
+		     "Partial NO CARRIER should leave carrier on");
+
+	/* Put full 'NO CARRIER' message */
+	modem_backend_mock_put(&mock, unsolicited_no_carrier, strlen(unsolicited_no_carrier));
+
+	/* Give modem ppp time to process received frame */
+	k_msleep(1000);
+
+	/* Dead after receiving the 'NO CARRIER' message */
+	zassert_true(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_false(net_if_is_carrier_ok(&test_iface), "NO CARRIER should turn carrier off");
+	modem_ppp_release(&ppp);
+
+	zassert_ok(modem_ppp_attach(&ppp, mock_pipe), "Failed to reattach PPP");
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on after attach");
+	zassert_false(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT), "Attach should clear dead state");
+}
+
+ZTEST(modem_ppp, test_ppp_no_carrier_received_first)
+{
+	static const char *unsolicited_no_carrier = "\r\nNO CARRIER\r\n";
+
+	/* Not dead to start with */
+	zassert_false(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_true(net_if_is_carrier_ok(&test_iface), "Carrier should be on before NO CARRIER");
+
+	/* Put full 'NO CARRIER' message as first message on pipe */
+	modem_backend_mock_put(&mock, unsolicited_no_carrier, strlen(unsolicited_no_carrier));
+
+	/* Give modem ppp time to process received frame */
+	k_msleep(1000);
+
+	/* Dead after receiving the 'NO CARRIER' message */
+	zassert_true(ppp.state & BIT(MODEM_PPP_STATE_DEAD_BIT));
+	zassert_false(net_if_is_carrier_ok(&test_iface), "NO CARRIER should turn carrier off");
 }
 
 ZTEST(modem_ppp, test_corrupt_start_end_ppp_frame_receive)
@@ -335,8 +520,8 @@ ZTEST(modem_ppp, test_corrupt_start_end_ppp_frame_receive)
 	modem_backend_mock_put(&mock, corrupt_start_end_ppp_frame_wrapped,
 			       sizeof(corrupt_start_end_ppp_frame_wrapped));
 
-	/* Give modem ppp time to process received frame */
-	k_msleep(1000);
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_SECONDS(1)), "Timeout waiting for received frame");
 
 	/* Validate frame received on mock network interface */
 	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
@@ -350,7 +535,92 @@ ZTEST(modem_ppp, test_corrupt_start_end_ppp_frame_receive)
 	net_pkt_cursor_init(pkt);
 	net_pkt_read(pkt, buffer, pkt_len);
 	zassert_true(memcmp(buffer, ppp_frame_unwrapped, pkt_len) == 0,
-		     "Recevied net pkt data incorrect");
+		     "Received net pkt data incorrect");
+}
+
+ZTEST(modem_ppp, test_acfc_ppp_frame_receive)
+{
+	struct net_pkt *pkt;
+	size_t pkt_len;
+
+	/* Frame with the FF 03 Address/Control header omitted (ACFC) */
+	modem_backend_mock_put(&mock, ppp_frame_wrapped_acfc, sizeof(ppp_frame_wrapped_acfc));
+
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_SECONDS(1)), "Timeout waiting for received frame");
+
+	/* Validate frame received on mock network interface */
+	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
+
+	pkt = received_packets[0];
+	pkt_len = net_pkt_get_len(pkt);
+
+	/* An ACFC frame must decode to the same payload as the FF 03 form */
+	zassert_true(pkt_len == sizeof(ppp_frame_unwrapped), "Received net pkt data len incorrect");
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_read(pkt, buffer, pkt_len);
+	zassert_true(memcmp(buffer, ppp_frame_unwrapped, pkt_len) == 0,
+		     "Received net pkt data incorrect");
+}
+
+/*
+ * Pure ACFC for IP: the frame omits FF 03 and carries the full 2-octet IP
+ * protocol 0x0021, whose high octet 0x00 is HDLC-escaped (0x7D 0x20), so the
+ * first protocol octet must be unescaped when the frame starts.
+ */
+ZTEST(modem_ppp, test_acfc_ip_frame_receive)
+{
+	struct net_pkt *pkt;
+	size_t pkt_len;
+
+	/* IP frame with the FF 03 header omitted (ACFC), 2-octet protocol */
+	modem_backend_mock_put(&mock, ip_frame_wrapped_acfc, sizeof(ip_frame_wrapped_acfc));
+
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_SECONDS(1)), "Timeout waiting for received frame");
+
+	/* Validate frame received on mock network interface */
+	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
+
+	pkt = received_packets[0];
+	pkt_len = net_pkt_get_len(pkt);
+
+	/* Must decode to the same payload as the FF 03 form, including protocol */
+	zassert_true(pkt_len == sizeof(ip_frame_unwrapped_with_protocol),
+		     "Received net pkt data len incorrect");
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_read(pkt, buffer, pkt_len);
+	zassert_true(memcmp(buffer, ip_frame_unwrapped_with_protocol, pkt_len) == 0,
+		     "Received net pkt data incorrect");
+}
+
+ZTEST(modem_ppp, test_pfc_acfc_ip_frame_receive)
+{
+	struct net_pkt *pkt;
+	size_t pkt_len;
+
+	/* IP frame with no FF 03 header and a 1-octet protocol (PFC + ACFC) */
+	modem_backend_mock_put(&mock, ip_frame_wrapped_pfc_acfc, sizeof(ip_frame_wrapped_pfc_acfc));
+
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_SECONDS(1)), "Timeout waiting for received frame");
+
+	/* Validate frame received on mock network interface */
+	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
+
+	pkt = received_packets[0];
+	pkt_len = net_pkt_get_len(pkt);
+
+	/* Must decode to the compressed 1-octet protocol followed by the IP packet */
+	zassert_true(pkt_len == sizeof(ip_frame_unwrapped_with_protocol) - 1,
+		     "Received net pkt data len incorrect");
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_read(pkt, buffer, pkt_len);
+	zassert_true(memcmp(buffer, &ip_frame_unwrapped_with_protocol[1], pkt_len) == 0,
+		     "Received net pkt data incorrect");
 }
 
 ZTEST(modem_ppp, test_ppp_frame_send)
@@ -359,7 +629,7 @@ ZTEST(modem_ppp, test_ppp_frame_send)
 	int ret;
 
 	/* Allocate net pkt */
-	pkt = net_pkt_alloc_with_buffer(&test_iface, 256, AF_UNSPEC, 0, K_NO_WAIT);
+	pkt = net_pkt_alloc_with_buffer(&test_iface, 256, NET_AF_UNSPEC, 0, K_NO_WAIT);
 
 	zassert_true(pkt != NULL, "Failed to allocate network packet");
 
@@ -382,6 +652,68 @@ ZTEST(modem_ppp, test_ppp_frame_send)
 		     "Wrapped frame content is incorrect");
 }
 
+ZTEST(modem_ppp, test_ppp_frame_send_custom_accm1)
+{
+	struct net_pkt *pkt;
+	int ret;
+
+	/* Allocate net pkt */
+	pkt = net_pkt_alloc_with_buffer(&test_iface, 256, NET_AF_UNSPEC, 0, K_NO_WAIT);
+
+	zassert_true(pkt != NULL, "Failed to allocate network packet");
+
+	/* Set network packet data */
+	net_pkt_cursor_init(pkt);
+	ret = net_pkt_write(pkt, ppp_frame_unwrapped_accm, sizeof(ppp_frame_unwrapped_accm));
+	zassert_true(ret == 0, "Failed to write data to allocated network packet");
+	net_pkt_set_ppp(pkt, true);
+
+	test_net_l2_data.lcp.peer_options.async_map = accm_custom1;
+
+	/* Send network packet */
+	zassert_true(test_net_send(pkt) == 0, "Failed to send PPP pkt");
+
+	/* Give modem ppp time to wrap and send frame */
+	k_msleep(1000);
+
+	/* Get any sent data */
+	ret = modem_backend_mock_get(&mock, buffer, sizeof(buffer));
+	zassert_true(ret == sizeof(ppp_frame_wrapped_accm1), "Wrapped frame length incorrect");
+	zassert_true(memcmp(buffer, ppp_frame_wrapped_accm1, ret) == 0,
+		     "Wrapped frame content is incorrect");
+}
+
+ZTEST(modem_ppp, test_ppp_frame_send_custom_accm2)
+{
+	struct net_pkt *pkt;
+	int ret;
+
+	/* Allocate net pkt */
+	pkt = net_pkt_alloc_with_buffer(&test_iface, 256, NET_AF_UNSPEC, 0, K_NO_WAIT);
+
+	zassert_true(pkt != NULL, "Failed to allocate network packet");
+
+	/* Set network packet data */
+	net_pkt_cursor_init(pkt);
+	ret = net_pkt_write(pkt, ppp_frame_unwrapped_accm, sizeof(ppp_frame_unwrapped_accm));
+	zassert_true(ret == 0, "Failed to write data to allocated network packet");
+	net_pkt_set_ppp(pkt, true);
+
+	test_net_l2_data.lcp.peer_options.async_map = accm_custom2;
+
+	/* Send network packet */
+	zassert_true(test_net_send(pkt) == 0, "Failed to send PPP pkt");
+
+	/* Give modem ppp time to wrap and send frame */
+	k_msleep(1000);
+
+	/* Get any sent data */
+	ret = modem_backend_mock_get(&mock, buffer, sizeof(buffer));
+	zassert_true(ret == sizeof(ppp_frame_wrapped_accm2), "Wrapped frame length incorrect");
+	zassert_true(memcmp(buffer, ppp_frame_wrapped_accm2, ret) == 0,
+		     "Wrapped frame content is incorrect");
+}
+
 ZTEST(modem_ppp, test_ip_frame_receive)
 {
 	struct net_pkt *pkt;
@@ -390,8 +722,8 @@ ZTEST(modem_ppp, test_ip_frame_receive)
 	/* Put wrapped frame */
 	modem_backend_mock_put(&mock, ip_frame_wrapped, sizeof(ip_frame_wrapped));
 
-	/* Give modem ppp time to process received frame */
-	k_msleep(1000);
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_SECONDS(1)), "Timeout waiting for received frame");
 
 	/* Validate frame received on mock network interface */
 	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
@@ -406,7 +738,7 @@ ZTEST(modem_ppp, test_ip_frame_receive)
 	net_pkt_cursor_init(pkt);
 	net_pkt_read(pkt, buffer, pkt_len);
 	zassert_true(memcmp(buffer, ip_frame_unwrapped_with_protocol, pkt_len) == 0,
-		     "Recevied net pkt data incorrect");
+		     "Received net pkt data incorrect");
 }
 
 ZTEST(modem_ppp, test_ip_frame_send)
@@ -415,14 +747,14 @@ ZTEST(modem_ppp, test_ip_frame_send)
 	int ret;
 
 	/* Allocate net pkt */
-	pkt = net_pkt_alloc_with_buffer(&test_iface, 256, AF_UNSPEC, 0, K_NO_WAIT);
+	pkt = net_pkt_alloc_with_buffer(&test_iface, 256, NET_AF_UNSPEC, 0, K_NO_WAIT);
 	zassert_true(pkt != NULL, "Failed to allocate network packet");
 
 	/* Set network packet data */
 	net_pkt_cursor_init(pkt);
 	ret = net_pkt_write(pkt, ip_frame_unwrapped, sizeof(ip_frame_unwrapped));
 	zassert_true(ret == 0, "Failed to write data to allocated network packet");
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 
 	/* Send network packet */
 	test_net_send(pkt);
@@ -444,12 +776,12 @@ ZTEST(modem_ppp, test_ip_frame_send_multiple)
 
 	/* Allocate net pkts */
 	for (uint8_t i = 0; i < TEST_MODEM_PPP_IP_FRAME_SEND_MULT_N; i++) {
-		pkts[i] = net_pkt_alloc_with_buffer(&test_iface, 256, AF_UNSPEC, 0, K_NO_WAIT);
+		pkts[i] = net_pkt_alloc_with_buffer(&test_iface, 256, NET_AF_UNSPEC, 0, K_NO_WAIT);
 		zassert_true(pkts[i] != NULL, "Failed to allocate network packet");
 		net_pkt_cursor_init(pkts[i]);
 		ret = net_pkt_write(pkts[i], ip_frame_unwrapped, sizeof(ip_frame_unwrapped));
 		zassert_true(ret == 0, "Failed to write data to allocated network packet");
-		net_pkt_set_family(pkts[i], AF_INET);
+		net_pkt_set_family(pkts[i], NET_AF_INET);
 	}
 
 	/* Send net pkts */
@@ -471,10 +803,10 @@ ZTEST(modem_ppp, test_ip_frame_send_large)
 	int ret;
 
 	pkt = net_pkt_alloc_with_buffer(&test_iface, TEST_MODEM_PPP_IP_FRAME_SEND_LARGE_N,
-					AF_UNSPEC, 0, K_NO_WAIT);
+					NET_AF_UNSPEC, 0, K_NO_WAIT);
 
 	net_pkt_cursor_init(pkt);
-	net_pkt_set_family(pkt, AF_INET);
+	net_pkt_set_family(pkt, NET_AF_INET);
 	size = test_modem_ppp_fill_net_pkt(pkt, TEST_MODEM_PPP_IP_FRAME_SEND_LARGE_N);
 	zassert_true(size == TEST_MODEM_PPP_IP_FRAME_SEND_LARGE_N, "Failed to fill net pkt");
 	test_net_send(pkt);
@@ -508,7 +840,9 @@ ZTEST(modem_ppp, test_ip_frame_receive_large)
 	zassert_true(size > TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N, "Failed to wrap data");
 	modem_backend_mock_put(&mock, wrapped_buffer, size);
 
-	k_msleep(TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N * 2);
+	/* Wait for the frame to be processed and delivered */
+	zassert_ok(k_sem_take(&rx_pkt_sem, K_MSEC(TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N * 2)),
+		   "Timeout waiting for received frame");
 
 	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
 	pkt = received_packets[0];
@@ -517,6 +851,74 @@ ZTEST(modem_ppp, test_ip_frame_receive_large)
 	/* FCS is removed from packet data */
 	zassert_true(pkt_len == (TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N - 2),
 		     "Incorrect length of net packet received");
+}
+
+/*
+ * Bulk-write (span) receive regression tests.
+ *
+ * The RX path writes runs of payload bytes that are free of HDLC delimiter and
+ * escape codes with a single net_pkt_write instead of one net_pkt_write_u8 per
+ * byte. These tests feed frames that exercise that span path and assert the
+ * reconstructed payload is byte-for-byte identical to what the per-byte path
+ * would have produced, across net_buf fragment boundaries.
+ */
+static void put_frame_and_validate_content(const uint8_t *frame, size_t frame_size)
+{
+	struct net_pkt *pkt;
+	size_t wrapped_size;
+	size_t pkt_len;
+
+	wrapped_size = test_modem_ppp_wrap_ppp_frame(wrapped_buffer, frame, frame_size);
+	zassert_true(wrapped_size > frame_size, "Failed to wrap data");
+	zassert_true(wrapped_size <= sizeof(wrapped_buffer), "Wrapped frame exceeds test buffer");
+
+	modem_backend_mock_put(&mock, wrapped_buffer, wrapped_size);
+
+	/* Give modem ppp time to process received frame */
+	k_msleep(frame_size * 2);
+
+	zassert_true(received_packets_len == 1, "Expected to receive one network packet");
+	pkt = received_packets[0];
+	pkt_len = net_pkt_get_len(pkt);
+
+	/* FCS is stripped from the received frame */
+	zassert_equal(pkt_len, frame_size - TEST_MODEM_PPP_FCS_SIZE,
+		      "Received net pkt data len incorrect");
+
+	net_pkt_cursor_init(pkt);
+	net_pkt_read(pkt, unwrapped_buffer, pkt_len);
+	zassert_true(memcmp(unwrapped_buffer, frame, pkt_len) == 0,
+		     "Received net pkt data does not match (bulk-write span corruption?)");
+}
+
+ZTEST(modem_ppp, test_ip_frame_receive_large_validate)
+{
+	/*
+	 * Realistic mix of span runs and escaped bytes spanning many fragments;
+	 * unlike test_ip_frame_receive_large this validates the full payload.
+	 */
+	test_modem_ppp_generate_ppp_frame(buffer, TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N);
+	put_frame_and_validate_content(buffer, TEST_MODEM_PPP_IP_FRAME_RECEIVE_LARGE_N);
+}
+
+ZTEST(modem_ppp, test_ip_frame_receive_clean_runs)
+{
+	/* Escape-free body: entire payload goes through the span path and forces
+	 * mid-span fragment allocation as fragments fill up.
+	 */
+	test_modem_ppp_generate_clean_ppp_frame(buffer, TEST_MODEM_PPP_IP_FRAME_RECEIVE_CLEAN_N);
+	put_frame_and_validate_content(buffer, TEST_MODEM_PPP_IP_FRAME_RECEIVE_CLEAN_N);
+}
+
+ZTEST(modem_ppp, test_ip_frame_receive_escape_heavy)
+{
+	/* Escapes interleaved with short clean runs, including consecutive
+	 * escapes, so the receiver keeps alternating between the span path and
+	 * the per-byte fallback.
+	 */
+	test_modem_ppp_generate_escape_heavy_ppp_frame(buffer,
+						       TEST_MODEM_PPP_IP_FRAME_RECEIVE_ESCAPE_N);
+	put_frame_and_validate_content(buffer, TEST_MODEM_PPP_IP_FRAME_RECEIVE_ESCAPE_N);
 }
 
 ZTEST_SUITE(modem_ppp, NULL, test_modem_ppp_setup, test_modem_ppp_before, NULL, NULL);

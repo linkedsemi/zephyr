@@ -48,18 +48,19 @@ LOG_MODULE_REGISTER(net_test, CONFIG_DNS_RESOLVER_LOG_LEVEL);
 
 #if defined(CONFIG_NET_IPV6)
 /* Interface 1 addresses */
-static struct in6_addr my_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
-					0, 0, 0, 0, 0, 0, 0, 0x1 } } };
+static struct net_in6_addr my_addr1 = { { { 0x20, 0x01, 0x0d, 0xb8, 1, 0, 0, 0,
+					    0, 0, 0, 0, 0, 0, 0, 0x1 } } };
 #endif
 
 #if defined(CONFIG_NET_IPV4)
 /* Interface 1 addresses */
-static struct in_addr my_addr2 = { { { 192, 0, 2, 1 } } };
+static struct net_in_addr my_addr2 = { { { 192, 0, 2, 1 } } };
 #endif
 
 static struct net_mgmt_event_callback mgmt_cb;
 static struct k_sem dns_added;
 static struct k_sem dns_removed;
+static struct k_sem dns_reconfigured;
 
 static struct net_if *iface1;
 
@@ -71,6 +72,8 @@ static struct dns_resolve_context resv_ipv4_2;
 static struct dns_resolve_context resv_ipv6;
 static struct dns_resolve_context resv_ipv6_2;
 #endif
+/* Only test_dns_is_active() touches this one */
+static struct dns_resolve_context resv_lifecycle;
 
 /* this must be higher that the DNS_TIMEOUT */
 #define WAIT_TIME K_MSEC((DNS_TIMEOUT + 300) * 3)
@@ -139,12 +142,16 @@ NET_DEVICE_INIT_INSTANCE(net_iface1_test,
 			 127);
 
 static void dns_evt_handler(struct net_mgmt_event_callback *cb,
-			      uint32_t mgmt_event, struct net_if *iface)
+			      uint64_t mgmt_event, struct net_if *iface)
 {
 	if (mgmt_event == NET_EVENT_DNS_SERVER_ADD) {
 		k_sem_give(&dns_added);
 	} else if (mgmt_event == NET_EVENT_DNS_SERVER_DEL) {
 		k_sem_give(&dns_removed);
+	} else if (mgmt_event == NET_EVENT_DNS_SERVERS_RECONFIGURED) {
+		k_sem_give(&dns_reconfigured);
+	} else {
+		/* Ignore other events. */
 	}
 }
 
@@ -180,7 +187,7 @@ static void *test_init(void)
 		return NULL;
 	}
 
-	/* For testing purposes we need to set the adddresses preferred */
+	/* For testing purposes we need to set the addresses preferred */
 	ifaddr->addr_state = NET_ADDR_PREFERRED;
 #endif
 
@@ -202,10 +209,12 @@ static void *test_init(void)
 
 	k_sem_init(&dns_added, 0, 1);
 	k_sem_init(&dns_removed, 0, 1);
+	k_sem_init(&dns_reconfigured, 0, 1);
 
 	net_mgmt_init_event_callback(&mgmt_cb, dns_evt_handler,
 				     NET_EVENT_DNS_SERVER_ADD |
-				     NET_EVENT_DNS_SERVER_DEL);
+				     NET_EVENT_DNS_SERVER_DEL |
+				     NET_EVENT_DNS_SERVERS_RECONFIGURED);
 	net_mgmt_add_event_callback(&mgmt_cb);
 
 	return NULL;
@@ -466,19 +475,22 @@ ZTEST(dns_addremove, test_dns_reconfigure_callback)
 			     "Timeout while waiting for DNS added callback");
 	}
 
-	ret = dns_resolve_reconfigure(&resv_ipv4, dns2_servers_str, NULL);
+	ret = dns_resolve_reconfigure(&resv_ipv4, dns2_servers_str, NULL,
+				      DNS_SOURCE_MANUAL);
 	zassert_equal(ret, 0, "Cannot reconfigure DNS server");
 
 	/* Wait for DNS removed callback after reconfiguring DNS */
-	if (k_sem_take(&dns_removed, WAIT_TIME)) {
-		zassert_true(false,
-			     "Timeout while waiting for DNS removed callback");
-	}
+	if (IS_ENABLED(CONFIG_DNS_RECONFIGURE_CLEANUP)) {
+		if (k_sem_take(&dns_removed, WAIT_TIME)) {
+			zassert_true(false,
+				     "Timeout while waiting for DNS removed callback");
+		}
 
-	/* Wait for DNS added callback after reconfiguring DNS */
-	if (k_sem_take(&dns_added, WAIT_TIME)) {
-		zassert_true(false,
-			     "Timeout while waiting for DNS added callback");
+		/* Wait for DNS added callback after reconfiguring DNS */
+		if (k_sem_take(&dns_added, WAIT_TIME)) {
+			zassert_true(false,
+				     "Timeout while waiting for DNS added callback");
+		}
 	}
 
 	ret = dns_resolve_close(&resv_ipv4);
@@ -491,6 +503,75 @@ ZTEST(dns_addremove, test_dns_reconfigure_callback)
 		zassert_true(false,
 			     "Timeout while waiting for DNS removed callback");
 	}
+#endif
+}
+
+ZTEST(dns_addremove, test_dns_reconfigure_event)
+{
+#if defined(CONFIG_NET_IPV4)
+	struct dns_resolve_context *dnsCtx = &resv_ipv4;
+	int ret;
+
+	/* test_init() left resv_ipv4 open with no servers; drain any
+	 * callbacks pending from prior tests in the suite.
+	 */
+	dns_resolve_close(dnsCtx);
+	k_yield();
+	k_sem_reset(&dns_added);
+	k_sem_reset(&dns_removed);
+	k_sem_reset(&dns_reconfigured);
+
+	/* Initial add: ADD fires; RECONFIGURED does not fire from the
+	 * init path (it is specific to dns_resolve_reconfigure).
+	 */
+	ret = dns_resolve_init(dnsCtx,
+			       (const char *[]){ DNS_NAME_IPV4, NULL }, NULL);
+	zassert_equal(ret, 0, "dns_resolve_init fail (%d)", ret);
+
+	k_yield();
+
+	if (k_sem_take(&dns_added, WAIT_TIME)) {
+		zassert_true(false,
+			     "Timeout waiting for ADD callback after init");
+	}
+	zassert_not_equal(k_sem_take(&dns_reconfigured, K_NO_WAIT), 0,
+			  "Unexpected RECONFIGURED callback from init path");
+
+	/* Reconfigure with an identical server set: dns_servers_exists()
+	 * short-circuits and ADD is suppressed; RECONFIGURED still fires
+	 * as the configuration-refresh signal.
+	 */
+	ret = dns_resolve_reconfigure(dnsCtx,
+				      (const char *[]){ DNS_NAME_IPV4, NULL },
+				      NULL, DNS_SOURCE_MANUAL);
+	zassert_equal(ret, 0, "reconfigure (dedup) fail (%d)", ret);
+
+	k_yield();
+
+	if (k_sem_take(&dns_reconfigured, WAIT_TIME)) {
+		zassert_true(false,
+			     "Timeout waiting for RECONFIGURED on dedup re-push");
+	}
+	zassert_not_equal(k_sem_take(&dns_added, K_NO_WAIT), 0,
+			  "Unexpected ADD callback on identical re-push");
+
+	/* Reconfigure with a different server set: RECONFIGURED fires
+	 * again on the post-init success path.
+	 */
+	ret = dns_resolve_reconfigure(dnsCtx,
+				      (const char *[]){ DNS2_NAME_IPV4, NULL },
+				      NULL, DNS_SOURCE_MANUAL);
+	zassert_equal(ret, 0, "reconfigure (changed) fail (%d)", ret);
+
+	k_yield();
+
+	if (k_sem_take(&dns_reconfigured, WAIT_TIME)) {
+		zassert_true(false,
+			     "Timeout waiting for RECONFIGURED on changed reconfigure");
+	}
+
+	ret = dns_resolve_close(dnsCtx);
+	zassert_equal(ret, 0, "dns_resolve_close fail (%d)", ret);
 #endif
 }
 
@@ -623,6 +704,37 @@ ZTEST(dns_addremove, test_dns_addremove_v4)
 	test_dns_add_callback();
 	test_dns_remove_callback();
 	test_dns_remove_none_callback();
+}
+
+ZTEST(dns_addremove, test_dns_is_active)
+{
+#if defined(CONFIG_NET_IPV4)
+	const char *server = DNS_NAME_IPV4;
+#else
+	const char *server = DNS_NAME_IPV6;
+#endif
+	struct dns_resolve_context *dnsCtx = &resv_lifecycle;
+	int ret;
+
+	zassert_false(dns_resolve_is_active(NULL), "NULL context is active");
+
+	/* Initialized, but without any server */
+	ret = dns_resolve_init(dnsCtx, NULL, NULL);
+	zassert_true(ret < 0, "dns_resolve_init without servers (%d)", ret);
+	zassert_false(dns_resolve_is_active(dnsCtx), "Context without servers is active");
+
+	ret = dns_resolve_init(dnsCtx, (const char *[]){server, NULL}, NULL);
+	zassert_equal(ret, 0, "dns_resolve_init fail (%d)", ret);
+	zassert_true(dns_resolve_is_active(dnsCtx), "Initialized context is not active");
+
+	ret = dns_resolve_close(dnsCtx);
+	zassert_equal(ret, 0, "dns_resolve_close fail (%d)", ret);
+	zassert_false(dns_resolve_is_active(dnsCtx), "Closed context is active");
+
+	/* Do not leave the ADD/DEL events of this test to the next one */
+	k_yield();
+	k_sem_reset(&dns_added);
+	k_sem_reset(&dns_removed);
 }
 
 ZTEST_SUITE(dns_addremove, NULL, test_init, NULL, NULL, NULL);

@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 menuconfig GNSS
-	bool "GNSS drivers"
+	bool "Global Navigation Satellite System (GNSS) drivers [EXPERIMENTAL]"
 	select EXPERIMENTAL
 	help
 	  Enable GNSS drivers and configuration.
@@ -12,7 +12,7 @@ if GNSS
 config GNSS_SATELLITES
 	bool "GNSS satellites support"
 	help
-	  Enable GNSS sattelites callback.
+	  Enable GNSS satellites callback.
 
 config GNSS_DUMP
 	bool "GNSS dump support"
@@ -61,10 +61,15 @@ config GNSS_INIT_PRIORITY
 	  Driver initialization priority for GNSS drivers.
 
 config GNSS_U_BLOX_PROTOCOL
-	bool "GNSS U-BLOX protocol"
+	bool
 	select MODEM_UBX
 	help
-	  Enable gnss u-blox protocol.
+	  Hidden option that enables gnss u-blox protocol.
+
+config GNSS_U_BLOX
+	bool
+	help
+	  Hidden option that enables gnss u-blox common configuration.
 
 choice GNSS_REFERENCE_FRAME
 	bool "GNSS reference frame datum"
@@ -79,10 +84,14 @@ module = GNSS
 module-str = gnss
 source "subsys/logging/Kconfig.template.log_config"
 
+# zephyr-keep-sorted-start
 rsource "Kconfig.emul"
+rsource "Kconfig.ericsson_f5521gw"
 rsource "Kconfig.generic"
-rsource "Kconfig.quectel_lcx6g"
-rsource "Kconfig.u_blox_m8"
+rsource "Kconfig.globaltop_pa6h"
 rsource "Kconfig.luatos_air530z"
+rsource "Kconfig.quectel_lcx6g"
+rsource "u_blox/Kconfig"
+# zephyr-keep-sorted-stop
 
 endif

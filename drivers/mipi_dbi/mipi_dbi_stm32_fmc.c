@@ -6,9 +6,11 @@
 
 #define DT_DRV_COMPAT st_stm32_fmc_mipi_dbi
 
+#include <soc.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mipi_dbi.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
+#include <zephyr/drivers/memc/memc_stm32.h>
 #include <zephyr/sys/barrier.h>
 #include <zephyr/sys/sys_io.h>
 #include <zephyr/sys/byteorder.h>
@@ -38,29 +40,36 @@ int mipi_dbi_stm32_fmc_check_config(const struct device *dev,
 	const struct mipi_dbi_stm32_fmc_config *config = dev->config;
 	struct mipi_dbi_stm32_fmc_data *data = dev->data;
 	uint32_t fmc_write_cycles;
+	uint32_t fmc_freq;
 
 	if (data->dbi_config == dbi_config) {
 		return 0;
 	}
 
-	if (dbi_config->mode != MIPI_DBI_MODE_8080_BUS_16_BIT) {
-		LOG_ERR("Only support Intel 8080 16-bits");
+	if (dbi_config->mode == MIPI_DBI_MODE_8080_BUS_16_BIT) {
+		if (config->fmc_memory_width != FMC_NORSRAM_MEM_BUS_WIDTH_16) {
+			LOG_ERR("16-bit mode requires 16-bit bus width");
+			return -EINVAL;
+		}
+	} else if (dbi_config->mode == MIPI_DBI_MODE_8080_BUS_8_BIT) {
+		if (config->fmc_memory_width != FMC_NORSRAM_MEM_BUS_WIDTH_8) {
+			LOG_ERR("8-bit mode requires 8-bit bus width");
+			return -EINVAL;
+		}
+	} else {
+		LOG_ERR("Only Intel 8080 8-bit and 16-bit modes are supported");
 		return -ENOTSUP;
 	}
-
-	if (config->fmc_memory_width != FMC_NORSRAM_MEM_BUS_WIDTH_16) {
-		LOG_ERR("Only supports 16-bit bus width");
+	if (memc_stm32_fmc_clock_rate(&fmc_freq) < 0) {
+		LOG_ERR("Unable to get FMC frequency");
 		return -EINVAL;
 	}
-
-	uint32_t hclk_freq =
-		STM32_AHB_PRESCALER * DT_PROP(STM32_CLOCK_CONTROL_NODE, clock_frequency);
 
 	/* According to the FMC documentation*/
 	fmc_write_cycles =
 		((config->fmc_address_setup_time + 1) + (config->fmc_data_setup_time + 1)) * 1;
 
-	if (hclk_freq / fmc_write_cycles > dbi_config->config.frequency) {
+	if (fmc_freq / fmc_write_cycles > dbi_config->config.frequency) {
 		LOG_ERR("Frequency is too high for the display controller");
 		return -EINVAL;
 	}
@@ -82,16 +91,28 @@ int mipi_dbi_stm32_fmc_command_write(const struct device *dev,
 		return ret;
 	}
 
-	sys_write16(cmd, config->register_addr);
-	if (IS_ENABLED(CONFIG_MIPI_DBI_STM32_FMC_MEM_BARRIER)) {
-		barrier_dsync_fence_full();
-	}
-
-	for (i = 0U; i < len; i++) {
-		sys_write16((uint16_t)data_buf[i], config->data_addr);
+	if (dbi_config->mode == MIPI_DBI_MODE_8080_BUS_8_BIT) {
+		sys_write8(cmd, config->register_addr);
 		if (IS_ENABLED(CONFIG_MIPI_DBI_STM32_FMC_MEM_BARRIER)) {
 			barrier_dsync_fence_full();
 		}
+
+		for (i = 0U; i < len; i++) {
+			sys_write8(data_buf[i], config->data_addr);
+		}
+	} else {
+		sys_write16(cmd, config->register_addr);
+		if (IS_ENABLED(CONFIG_MIPI_DBI_STM32_FMC_MEM_BARRIER)) {
+			barrier_dsync_fence_full();
+		}
+
+		for (i = 0U; i < len; i++) {
+			sys_write16((uint16_t)data_buf[i], config->data_addr);
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_MIPI_DBI_STM32_FMC_MEM_BARRIER) && (len != 0U)) {
+		barrier_dsync_fence_full();
 	}
 
 	return 0;
@@ -107,16 +128,31 @@ static int mipi_dbi_stm32_fmc_write_display(const struct device *dev,
 	size_t i;
 	int ret;
 
+	ARG_UNUSED(pixfmt);
+
 	ret = mipi_dbi_stm32_fmc_check_config(dev, dbi_config);
 	if (ret < 0) {
 		return ret;
 	}
 
-	for (i = 0U; i < desc->buf_size; i += 2) {
-		sys_write16(sys_get_le16(&framebuf[i]), config->data_addr);
-		if (IS_ENABLED(CONFIG_MIPI_DBI_STM32_FMC_MEM_BARRIER)) {
-			barrier_dsync_fence_full();
+	if (dbi_config->mode == MIPI_DBI_MODE_8080_BUS_8_BIT) {
+		for (i = 0U; i < desc->buf_size; i++) {
+			sys_write8(framebuf[i], config->data_addr);
 		}
+	} else {
+		/* 16-bit mode */
+		if ((desc->buf_size & 1U) != 0U) {
+			LOG_ERR("Buffer size %zu must be even in 16-bit mode", desc->buf_size);
+			return -EINVAL;
+		}
+
+		for (i = 0U; i < desc->buf_size; i += 2U) {
+			sys_write16(sys_get_le16(&framebuf[i]), config->data_addr);
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_MIPI_DBI_STM32_FMC_MEM_BARRIER)) {
+		barrier_dsync_fence_full();
 	}
 
 	return 0;
@@ -172,19 +208,33 @@ static int mipi_dbi_stm32_fmc_init(const struct device *dev)
 	return 0;
 }
 
-static struct mipi_dbi_driver_api mipi_dbi_stm32_fmc_driver_api = {
+static DEVICE_API(mipi_dbi, mipi_dbi_stm32_fmc_driver_api) = {
 	.reset = mipi_dbi_stm32_fmc_reset,
 	.command_write = mipi_dbi_stm32_fmc_command_write,
 	.write_display = mipi_dbi_stm32_fmc_write_display,
 };
 
-#define MIPI_DBI_FMC_GET_ADDRESS(n) _CONCAT(FMC_BANK1_,                                            \
-					UTIL_INC(DT_REG_ADDR_RAW(DT_INST_PARENT(n))))
+#define MIPI_DBI_FMC_GET_ADDRESS(n)                                                                \
+	DT_INST_PROP_OR(n, bank_address,                                                           \
+			_CONCAT(FMC_BANK1_, UTIL_INC(DT_REG_ADDR_RAW(DT_INST_PARENT(n)))))
+
+/*
+ * In 16-bit mode, FMC_A[x] outputs HADDR[x + 1] (shift by 1).
+ * In 8-bit mode, FMC_A[x] outputs HADDR[x] (shift by 0).
+ */
+#define MIPI_DBI_FMC_ADDR_SHIFT(n)                                                                 \
+	((DT_PROP_BY_IDX(DT_INST_PARENT(n), st_control, 2) == FMC_NORSRAM_MEM_BUS_WIDTH_16) ? 1 : 0)
 
 #define MIPI_DBI_FMC_GET_DATA_ADDRESS(n)                                                           \
-	MIPI_DBI_FMC_GET_ADDRESS(n) + (1 << (DT_INST_PROP(n, register_select_pin) + 1))
+	(MIPI_DBI_FMC_GET_ADDRESS(n) +                                                             \
+	 BIT(DT_INST_PROP(n, register_select_pin) + MIPI_DBI_FMC_ADDR_SHIFT(n)))
 
 #define MIPI_DBI_STM32_FMC_INIT(n)                                                                 \
+	BUILD_ASSERT((DT_PROP_BY_IDX(DT_INST_PARENT(n), st_control, 2) ==                         \
+		      FMC_NORSRAM_MEM_BUS_WIDTH_8) ||                                             \
+		     (DT_PROP_BY_IDX(DT_INST_PARENT(n), st_control, 2) ==                         \
+		      FMC_NORSRAM_MEM_BUS_WIDTH_16),                                              \
+		     "Unsupported FMC bus width; only 8-bit and 16-bit supported");                \
 	static const struct mipi_dbi_stm32_fmc_config mipi_dbi_stm32_fmc_config_##n = {            \
 		.reset = GPIO_DT_SPEC_INST_GET_OR(n, reset_gpios, {}),                             \
 		.power = GPIO_DT_SPEC_INST_GET_OR(n, power_gpios, {}),                             \

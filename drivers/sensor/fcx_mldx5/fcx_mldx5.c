@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024, Vitrolife A/S
+ * Copyright (c) 2025 Prevas A/S
  *
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -190,16 +190,13 @@ static void fcx_mldx5_uart_isr(const struct device *uart_dev, void *user_data)
 	int rc, read_len;
 
 	if (!device_is_ready(uart_dev)) {
-		LOG_DBG("UART device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(uart_dev);
 		return;
 	}
 
-	if (!uart_irq_update(uart_dev)) {
-		LOG_DBG("Unable to process interrupts");
-		return;
-	}
+	uart_irq_update(uart_dev);
 
-	if (!uart_irq_rx_ready(uart_dev)) {
+	if (uart_irq_rx_ready(uart_dev) <= 0) {
 		LOG_DBG("No RX data");
 		return;
 	}
@@ -235,9 +232,16 @@ static void fcx_mldx5_uart_send(const struct device *dev, enum fcx_mldx5_cmd cmd
 
 	buf[FCX_MLDX5_STX_INDEX] = FCX_MLDX5_STX;
 	memcpy(&buf[FCX_MLDX5_CMD_INDEX], fcx_mldx5_cmds[cmd], FCX_MLDX5_CMD_LEN);
+
 	if (cmd_data_len != 0) {
-		memcpy(&buf[FCX_MLDX5_DATA_INDEX], cmd_data, strlen(cmd_data));
+		if ((FCX_MLDX5_DATA_INDEX + cmd_data_len) <= FCX_MLDX5_MAX_FRAME_LEN) {
+			memcpy(&buf[FCX_MLDX5_DATA_INDEX], cmd_data, cmd_data_len);
+		} else {
+			LOG_ERR("%s: cmd_data too large for buffer", __func__);
+			return;
+		}
 	}
+
 	checksum = fcx_mldx5_calculate_checksum(&buf[FCX_MLDX5_CMD_INDEX],
 						FCX_MLDX5_CMD_LEN + cmd_data_len);
 	bin2hex(&checksum, 1, &buf[FCX_MLDX5_CHECKSUM_INDEX(frame_len)],
@@ -416,7 +420,7 @@ static int fcx_mldx5_channel_get(const struct device *dev, enum sensor_channel c
 	return 0;
 }
 
-static const struct sensor_driver_api fcx_mldx5_api_funcs = {
+static DEVICE_API(sensor, fcx_mldx5_api_funcs) = {
 	.attr_get = fcx_mldx5_attr_get,
 	.sample_fetch = fcx_mldx5_sample_fetch,
 	.channel_get = fcx_mldx5_channel_get,

@@ -8,8 +8,6 @@
  * https://www.st.com/resource/en/datasheet/lsm6dsv16x.pdf
  */
 
-#define DT_DRV_COMPAT st_lsm6dsv16x
-
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/__assert.h>
@@ -428,7 +426,7 @@ static struct lsm6dsv16x_shub_slist {
 	{
 		/* LIS2MDL */
 		.type		= SENSOR_CHAN_MAGN_XYZ,
-		.i2c_addr	= { 0x1E },
+		.i2c_addr	= { 0x3C }, /* 8-bit address */
 		.wai_addr	= 0x4F,
 		.wai_val	= 0x40,
 		.out_data_addr  = 0x68,
@@ -442,7 +440,7 @@ static struct lsm6dsv16x_shub_slist {
 	{
 		/* HTS221 */
 		.type		= SENSOR_CHAN_HUMIDITY,
-		.i2c_addr	= { 0x5F },
+		.i2c_addr	= { 0xBE }, /* 8-bit address */
 		.wai_addr	= 0x0F,
 		.wai_val	= 0xBC,
 		.out_data_addr  = 0x28 | HTS221_AUTOINCREMENT,
@@ -456,7 +454,7 @@ static struct lsm6dsv16x_shub_slist {
 	{
 		/* LPS22HB */
 		.type		= SENSOR_CHAN_PRESS,
-		.i2c_addr	= { 0x5C, 0x5D },
+		.i2c_addr	= { 0xB8, 0xBA }, /* 8-bit address */
 		.wai_addr	= 0x0F,
 		.wai_val	= 0xB1,
 		.out_data_addr  = 0x28,
@@ -469,7 +467,7 @@ static struct lsm6dsv16x_shub_slist {
 	{
 		/* LPS22HH */
 		.type		= SENSOR_CHAN_PRESS,
-		.i2c_addr	= { 0x5C, 0x5D },
+		.i2c_addr	= { 0xB8, 0xBA }, /* 8-bit address */
 		.wai_addr	= 0x0F,
 		.wai_val	= 0xB3,
 		.out_data_addr  = 0x28,
@@ -483,7 +481,7 @@ static struct lsm6dsv16x_shub_slist {
 	{
 		/* LPS22DF */
 		.type		= SENSOR_CHAN_PRESS,
-		.i2c_addr	= { 0x5C, 0x5D },
+		.i2c_addr	= { 0xB8, 0xBA }, /* 8-bit address */
 		.wai_addr	= 0x0F,
 		.wai_val	= 0xB4,
 		.out_data_addr  = 0x28,
@@ -493,6 +491,18 @@ static struct lsm6dsv16x_shub_slist {
 	},
 #endif /* CONFIG_LSM6DSV16X_EXT_LPS22DF */
 };
+
+enum sensor_channel lsm6dsv16x_shub_type(uint8_t k)
+{
+	struct lsm6dsv16x_shub_slist *sp;
+
+	if (k >= ARRAY_SIZE(lsm6dsv16x_shub_slist)) {
+		return SENSOR_CHAN_COMMON_COUNT;
+	}
+
+	sp = &lsm6dsv16x_shub_slist[k];
+	return sp->type;
+}
 
 static int lsm6dsv16x_shub_wait_completed(stmdev_ctx_t *ctx)
 {
@@ -595,6 +605,10 @@ static int lsm6dsv16x_shub_read_target_reg(const struct device *dev,
 		lsm6dsv16x_shub_enable(dev, 0);
 		return -EIO;
 	}
+
+	/* clean the read numop just to avoid issues when reading from FIFO */
+	trgt_cfg.slv_len = 0;
+	lsm6dsv16x_sh_slv_cfg_read(ctx, 0, &trgt_cfg);
 
 	lsm6dsv16x_shub_enable(dev, 0);
 	return 0;

@@ -4,39 +4,53 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef WIFI_CREDENTIALS_H__
-#define WIFI_CREDENTIALS_H__
+/**
+ * @file
+ * @brief Library for storing and loading Wi-Fi credentials.
+ * @ingroup wifi_credentials
+ */
+
+#ifndef ZEPHYR_INCLUDE_NET_WIFI_CREDENTIALS_H_
+#define ZEPHYR_INCLUDE_NET_WIFI_CREDENTIALS_H_
 
 #include <zephyr/types.h>
 #include <zephyr/net/wifi.h>
 #include <zephyr/kernel.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
+ * @brief Library that provides a way to store and load Wi-Fi credentials.
  * @defgroup wifi_credentials Wi-Fi credentials library
  * @ingroup networking
  * @since 4.0
  * @version 0.1.0
  * @{
- * @brief Library that provides a way to store and load Wi-Fi credentials.
  */
 
-#ifdef __cplusplus
-extern "C" {
-#endif
 
-/* this entry contains a BSSID */
+/** This entry contains a BSSID */
 #define WIFI_CREDENTIALS_FLAG_BSSID        BIT(0)
-/* this entry is to be preferred over others */
+/** This entry is to be preferred over others */
 #define WIFI_CREDENTIALS_FLAG_FAVORITE     BIT(1)
-/* this entry can use the 2.4 GHz band */
+/** This entry can use the 2.4 GHz band */
 #define WIFI_CREDENTIALS_FLAG_2_4GHz       BIT(2)
-/* this entry can use the 5 GHz band */
+/** This entry can use the 5 GHz band */
 #define WIFI_CREDENTIALS_FLAG_5GHz         BIT(3)
-/* this entry requires management frame protection */
-#define WIFI_CREDENTIALS_FLAG_MFP_REQUIRED BIT(4)
-/* this entry disables management frame protection */
-#define WIFI_CREDENTIALS_FLAG_MFP_DISABLED BIT(5)
+/** This entry can use the 6 GHz band */
+#define WIFI_CREDENTIALS_FLAG_6GHz         BIT(4)
+/** This entry requires management frame protection */
+#define WIFI_CREDENTIALS_FLAG_MFP_REQUIRED BIT(5)
+/** This entry disables management frame protection */
+#define WIFI_CREDENTIALS_FLAG_MFP_DISABLED BIT(6)
+/** This entry has anonymous identity configured */
+#define WIFI_CREDENTIALS_FLAG_ANONYMOUS_IDENTITY  BIT(7)
+/** This entry has key password configured */
+#define WIFI_CREDENTIALS_FLAG_KEY_PASSWORD  BIT(8)
 
+/** Maximum length of the password */
 #define WIFI_CREDENTIALS_MAX_PASSWORD_LEN                                                          \
 	MAX(WIFI_PSK_MAX_LEN, CONFIG_WIFI_CREDENTIALS_SAE_PASSWORD_LENGTH)
 
@@ -49,13 +63,38 @@ extern "C" {
  *
  */
 struct wifi_credentials_header {
-	enum wifi_security_type type;     /**< Wi-Fi security type */
-	char ssid[WIFI_SSID_MAX_LEN];     /**< SSID (Service Set Identifier) */
-	size_t ssid_len;                  /**< Length of the SSID */
-	uint32_t flags;                   /**< Flags for controlling detail settings */
-	uint32_t timeout;                 /**< Timeout for connecting to the network */
-	uint8_t bssid[WIFI_MAC_ADDR_LEN]; /**< BSSID (Basic Service Set Identifier) */
-	uint8_t channel;                  /**< Channel on which the network operates */
+	/** Wi-Fi security type */
+	enum wifi_security_type type;
+
+	/** SSID (Service Set Identifier) */
+	char ssid[WIFI_SSID_MAX_LEN];
+
+	/** Length of the SSID */
+	size_t ssid_len;
+
+	/** Flags for controlling detail settings */
+	uint32_t flags;
+
+	/** Timeout for connecting to the network */
+	uint32_t timeout;
+
+	/** BSSID (Basic Service Set Identifier) */
+	uint8_t bssid[WIFI_MAC_ADDR_LEN];
+
+	/** Channel on which the network operates */
+	uint8_t channel;
+
+	/** Anonymous identifier (Limited to 16 bytes due to settings subsystem overflow) */
+	char anon_id[16];
+
+	/** Length of the Anonymous identifier */
+	uint8_t aid_length;
+
+	/** Password/PSK (Limited to 16 bytes due to settings subsystem overflow) */
+	char key_passwd[16];
+
+	/** Length of the Password */
+	uint8_t key_passwd_length;
 };
 
 /**
@@ -67,9 +106,14 @@ struct wifi_credentials_header {
  *
  */
 struct wifi_credentials_personal {
-	struct wifi_credentials_header header;            /**< Header */
-	char password[WIFI_CREDENTIALS_MAX_PASSWORD_LEN]; /**< Password/PSK */
-	size_t password_len;                              /**< Length of the password */
+	/** Header */
+	struct wifi_credentials_header header;
+
+	/** Password/PSK */
+	char password[WIFI_CREDENTIALS_MAX_PASSWORD_LEN];
+
+	/** Length of the password */
+	size_t password_len;
 };
 
 /**
@@ -77,14 +121,29 @@ struct wifi_credentials_personal {
  * @note This functionality is not yet implemented.
  */
 struct wifi_credentials_enterprise {
-	struct wifi_credentials_header header; /**< Header */
-	size_t identity_len;                   /**< Length of the identity */
-	size_t anonymous_identity_len;         /**< Length of the anonymous identity */
-	size_t password_len;                   /**< Length of the password */
-	size_t ca_cert_len;                    /**< Length of the CA certificate */
-	size_t client_cert_len;                /**< Length of the client certificate */
-	size_t private_key_len;                /**< Length of the private key */
-	size_t private_key_pw_len;             /**< Length of the private key password */
+	/** Header */
+	struct wifi_credentials_header header;
+
+	/** Length of the identity */
+	size_t identity_len;
+
+	/** Length of the anonymous identity */
+	size_t anonymous_identity_len;
+
+	/** Length of the password */
+	size_t password_len;
+
+	/** Length of the CA certificate */
+	size_t ca_cert_len;
+
+	/** Length of the client certificate */
+	size_t client_cert_len;
+
+	/** Length of the private key */
+	size_t private_key_len;
+
+	/** Length of the private key password */
+	size_t private_key_pw_len;
 };
 
 /**
@@ -115,6 +174,9 @@ int wifi_credentials_get_by_ssid_personal(const char *ssid, size_t ssid_len,
 
 /**
  * @brief Set credentials for given SSID.
+ *
+ * @note Storing credentials for an SSID that is already stored overwrites the existing
+ *       entry rather than adding a second one. Only distinct SSIDs consume storage slots.
  *
  * @param[in] ssid		SSID to look for
  * @param[in] ssid_len		length of SSID
@@ -155,6 +217,9 @@ int wifi_credentials_get_by_ssid_personal_struct(const char *ssid, size_t ssid_l
 /**
  * @brief Set credentials for given SSID by struct.
  *
+ * @note Storing credentials for an SSID that is already stored overwrites the existing
+ *       entry rather than adding a second one. Only distinct SSIDs consume storage slots.
+ *
  * @param[in] creds		credentials Pointer to struct from which credentials are loaded
  *
  * @return 0			Success.
@@ -194,6 +259,7 @@ int wifi_credentials_delete_all(void);
 
 /**
  * @brief Callback type for wifi_credentials_for_each_ssid.
+ *
  * @param[in] cb_arg      arguments for the callback function. Appropriate cb_arg is
  *                        transferred by wifi_credentials_for_each_ssid.
  * @param[in] ssid        SSID
@@ -215,4 +281,4 @@ void wifi_credentials_for_each_ssid(wifi_credentials_ssid_cb cb, void *cb_arg);
 
 /** @} */
 
-#endif /* WIFI_CREDENTIALS_H__ */
+#endif /* ZEPHYR_INCLUDE_NET_WIFI_CREDENTIALS_H_ */

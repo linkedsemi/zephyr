@@ -12,8 +12,8 @@
 #define SLOT0_PARTITION		slot0_partition
 #define SLOT1_PARTITION		slot1_partition
 
-#define SLOT0_PARTITION_ID	FIXED_PARTITION_ID(SLOT0_PARTITION)
-#define SLOT1_PARTITION_ID	FIXED_PARTITION_ID(SLOT1_PARTITION)
+#define SLOT0_PARTITION_ID	PARTITION_ID(SLOT0_PARTITION)
+#define SLOT1_PARTITION_ID	PARTITION_ID(SLOT1_PARTITION)
 
 #define BOOT_MAGIC_VAL_W0 0xf395c277
 #define BOOT_MAGIC_VAL_W1 0x7fefd260
@@ -116,6 +116,13 @@ ZTEST(mcuboot_interface, test_write_confirm)
 		return;
 	}
 
+	/*
+	 * Under normal circumstances, it is not allowed to erase the active
+	 * slot. However, since the USE_DT_CODE_PARTITION Kconfig option is
+	 * not set, the code will in fact use the boot_partition.
+	 * As a result, it is possible to erase the slot0_partition, which
+	 * leads to more repeatable test results.
+	 */
 	zassert(boot_erase_img_bank(SLOT0_PARTITION_ID) == 0,
 		"pass", "fail");
 
@@ -133,6 +140,12 @@ ZTEST(mcuboot_interface, test_write_confirm)
 	ret = flash_area_write(fa, fa->fa_size - 32, &flag, sizeof(flag));
 	zassert_true(ret == 0, "Write to flash");
 
+	/*
+	 * Set the confirmed flag on the active slot.
+	 * This will mark the slot0_partition as confirmed, even though
+	 * the code uses the boot_partition, because whenever MCUboot is used,
+	 * the USE_DT_CODE_PARTITION Kconfig option is set.
+	 */
 	ret = boot_write_img_confirmed();
 	zassert(ret == 0, "pass", "fail (%d)", ret);
 

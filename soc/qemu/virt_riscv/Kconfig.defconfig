@@ -4,13 +4,7 @@
 
 if SOC_FAMILY_QEMU_VIRT_RISCV
 
-config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default 10000000
-
 config RISCV_SOC_INTERRUPT_INIT
-	default y
-
-config RISCV_GP
 	default y
 
 config 2ND_LVL_ISR_TBL_OFFSET
@@ -30,5 +24,8 @@ config NUM_IRQS
 
 config PMP_SLOTS
 	default 16
+
+config RISCV_HAS_PLIC
+	default y if !RISCV_HAS_AIA
 
 endif # SOC_FAMILY_QEMU_VIRT_RISCV

@@ -6,12 +6,14 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/can.h>
-#include <zephyr/drivers/can/can_mcan.h>
+#include "can_mcan.h"
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 
 LOG_MODULE_REGISTER(can_tcan4x5x, CONFIG_CAN_LOG_LEVEL);
 
@@ -99,6 +101,10 @@ LOG_MODULE_REGISTER(can_tcan4x5x, CONFIG_CAN_LOG_LEVEL);
 #define CAN_TCAN4X5X_MODE_CONFIG_DEVICE_RESET     BIT(2)
 #define CAN_TCAN4X5X_MODE_CONFIG_SWE_DIS          BIT(1)
 #define CAN_TCAN4X5X_MODE_CONFIG_TEST_MODE_CONFIG BIT(0)
+
+#define CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_SLEEP   0
+#define CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_STANDBY 1
+#define CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_NORMAL  2
 
 /* Timestamp Prescaler register */
 #define CAN_TCAN4X5X_TIMESTAMP_PRESCALER      0x0804
@@ -200,10 +206,14 @@ LOG_MODULE_REGISTER(can_tcan4x5x, CONFIG_CAN_LOG_LEVEL);
 #define CAN_TCAN4X5X_READ_B_FL  0x41
 
 /* TCAN4x5x timing requirements */
-#define CAN_TCAN4X5X_T_MODE_STBY_NOM_US 70
-#define CAN_TCAN4X5X_T_WAKE_US          50
-#define CAN_TCAN4X5X_T_PULSE_WIDTH_US   30
-#define CAN_TCAN4X5X_T_RESET_US         1000
+#define CAN_TCAN4X5X_T_MODE_STBY_NOM_US           70
+#define CAN_TCAN4X5X_T_MODE_NOM_SLP_US            200
+#define CAN_TCAN4X5X_T_MODE_NOM_STBY_US           200
+#define CAN_TCAN4X5X_T_MODE_SLP_STBY_US           200
+#define CAN_TCAN4X5X_T_MODE_SLP_STBY_VCCOUT_ON_US 1500
+#define CAN_TCAN4X5X_T_WAKE_US                    50
+#define CAN_TCAN4X5X_T_PULSE_WIDTH_US             30
+#define CAN_TCAN4X5X_T_RESET_US                   1000
 
 /*
  * Only compile in support for the optional GPIOs if at least one enabled tcan4x5x device tree node
@@ -226,6 +236,7 @@ struct tcan4x5x_config {
 #endif /* TCAN4X5X_WAKE_GPIO_SUPPORT */
 	struct gpio_dt_spec int_gpio;
 	uint32_t clk_freq;
+	bool nwkrq_voltage_vio;
 };
 
 struct tcan4x5x_data {
@@ -500,6 +511,8 @@ static int tcan4x5x_wake(const struct device *dev)
 			LOG_ERR("failed to deassert WAKE GPIO (err %d)", err);
 			return err;
 		}
+
+		k_usleep(CAN_TCAN4X5X_T_MODE_SLP_STBY_VCCOUT_ON_US);
 	}
 #endif /* TCAN4X5X_WAKE_GPIO_SUPPORT*/
 
@@ -508,8 +521,10 @@ static int tcan4x5x_wake(const struct device *dev)
 
 static int tcan4x5x_reset(const struct device *dev)
 {
+#if TCAN4X5X_RST_GPIO_SUPPORT
 	const struct can_mcan_config *mcan_config = dev->config;
 	const struct tcan4x5x_config *tcan_config = mcan_config->custom;
+#endif /* TCAN4X5X_RST_GPIO_SUPPORT */
 	int err;
 
 	err = tcan4x5x_wake(dev);
@@ -544,9 +559,160 @@ static int tcan4x5x_reset(const struct device *dev)
 	}
 #endif /* TCAN4X5X_RST_GPIO_SUPPORT */
 
-	k_busy_wait(CAN_TCAN4X5X_T_RESET_US);
+	k_usleep(CAN_TCAN4X5X_T_RESET_US);
 
 	return 0;
+}
+
+static int tcan4x5x_set_config_mode_sel(const struct device *dev, uint8_t mode, uint32_t *reg)
+{
+	int err;
+	uint8_t current_mode;
+
+	switch (mode) {
+	case CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_SLEEP:
+	case CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_STANDBY:
+	case CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_NORMAL:
+		break;
+	default:
+		LOG_ERR("invalid mode %u", mode);
+		return -EINVAL;
+	}
+
+	err = tcan4x5x_read_tcan_reg(dev, CAN_TCAN4X5X_MODE_CONFIG, reg);
+	if (err != 0) {
+		LOG_ERR("failed to read configuration register (err %d)", err);
+		return -EIO;
+	}
+
+	current_mode = FIELD_GET(CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL, *reg);
+	LOG_DBG("current mode %u, new mode %u", current_mode, mode);
+
+	*reg &= ~(CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL);
+	*reg |= FIELD_PREP(CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL, mode);
+
+	err = tcan4x5x_write_tcan_reg(dev, CAN_TCAN4X5X_MODE_CONFIG, *reg);
+	if (err != 0) {
+		LOG_ERR("failed to write configuration register (err %d)", err);
+		return -EIO;
+	}
+
+	if (current_mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_STANDBY &&
+	    mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_NORMAL) {
+		/* Wait for standby to normal mode switch */
+		k_busy_wait(CAN_TCAN4X5X_T_MODE_STBY_NOM_US);
+	} else if (current_mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_NORMAL &&
+		   mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_SLEEP) {
+		/* Wait for normal to sleep mode switch */
+		k_busy_wait(CAN_TCAN4X5X_T_MODE_NOM_SLP_US);
+	} else if (current_mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_NORMAL &&
+		   mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_STANDBY) {
+		/* Wait for normal to standby mode switch */
+		k_busy_wait(CAN_TCAN4X5X_T_MODE_NOM_STBY_US);
+	} else if (current_mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_SLEEP &&
+		   mode == CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_STANDBY) {
+		/* Wait for sleep to standby mode switch */
+		k_busy_wait(CAN_TCAN4X5X_T_MODE_SLP_STBY_US);
+	}
+
+	return 0;
+}
+
+static int tcan4x5x_init_normal_mode(const struct device *dev)
+{
+	const struct can_mcan_config *mcan_config = dev->config;
+	const struct tcan4x5x_config *tcan_config = mcan_config->custom;
+	int err = 0;
+	uint32_t reg;
+
+	/* Set TCAN4x5x mode normal */
+	err = tcan4x5x_set_config_mode_sel(dev, CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_NORMAL, &reg);
+	if (err != 0) {
+		return -ENODEV;
+	}
+
+	/* Configure the frequency reference */
+	if (tcan_config->clk_freq == MHZ(20)) {
+		/* 20 MHz frequency reference */
+		reg &= ~(CAN_TCAN4X5X_MODE_CONFIG_CLK_REF);
+	} else {
+		/* 40 MHz frequency reference */
+		reg |= CAN_TCAN4X5X_MODE_CONFIG_CLK_REF;
+	}
+
+	if (tcan_config->nwkrq_voltage_vio) {
+		/* Set nWKRQ voltage to VIO, open-drain */
+		reg |= CAN_TCAN4X5X_MODE_CONFIG_NWKRQ_VOLTAGE;
+	} else {
+		/* Set nWKRQ voltage to use internal voltage rail, push-pull */
+		reg &= ~(CAN_TCAN4X5X_MODE_CONFIG_NWKRQ_VOLTAGE);
+	}
+
+	/* Write remaining configuration to the device */
+	err = tcan4x5x_write_tcan_reg(dev, CAN_TCAN4X5X_MODE_CONFIG, reg);
+	if (err != 0) {
+		LOG_ERR("failed to write configuration register (err %d)", err);
+		return -EIO;
+	}
+
+	/* Configure Message RAM */
+	err = can_mcan_configure_mram(dev, CAN_TCAN4X5X_MRAM_BASE, CAN_TCAN4X5X_MRAM_BASE);
+	if (err != 0) {
+		return -EIO;
+	}
+
+	/* Initialize M_CAN */
+	err = can_mcan_init(dev);
+	if (err != 0) {
+		LOG_ERR("failed to initialize mcan (err %d)", err);
+		return err;
+	}
+
+	return err;
+}
+
+static int tcan4x5x_pm_control(const struct device *dev, enum pm_device_action action)
+{
+	int err = 0;
+	uint32_t reg;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		if (pm_device_is_busy(dev)) {
+			LOG_DBG("Cannot suspend while device is busy");
+			return -EBUSY;
+		}
+
+		/*
+		 * Enter sleep mode.
+		 * NOTE: All RX filters are cleared when entering sleep mode.
+		 * User must remove and re-add filters at the application layer.
+		 */
+		err = tcan4x5x_set_config_mode_sel(dev, CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL_SLEEP,
+						   &reg);
+		return err;
+	case PM_DEVICE_ACTION_RESUME:
+		/* Wake up the device */
+#if TCAN4X5X_WAKE_GPIO_SUPPORT
+		LOG_DBG("Waking up TCAN4x5x via WAKE GPIO");
+		err = tcan4x5x_wake(dev);
+		if (err != 0) {
+			return err;
+		}
+#else
+		LOG_DBG("Waking up TCAN4x5x via reset");
+		err = tcan4x5x_reset(dev);
+		if (err != 0) {
+			return err;
+		}
+#endif
+		/* Enter normal mode */
+		return tcan4x5x_init_normal_mode(dev);
+	default:
+		break;
+	}
+
+	return -ENOTSUP;
 }
 
 static int tcan4x5x_init(const struct device *dev)
@@ -556,21 +722,20 @@ static int tcan4x5x_init(const struct device *dev)
 	struct can_mcan_data *mcan_data = dev->data;
 	struct tcan4x5x_data *tcan_data = mcan_data->custom;
 	k_tid_t tid;
-	uint32_t reg;
 	int err;
 
 	/* Initialize int_sem to 1 to ensure any pending IRQ is serviced */
 	k_sem_init(&tcan_data->int_sem, 1, 1);
 
 	if (!spi_is_ready_dt(&tcan_config->spi)) {
-		LOG_ERR("SPI bus not ready");
+		LOG_ERR_DEVICE_NOT_READY(tcan_config->spi.bus);
 		return -ENODEV;
 	}
 
 #if TCAN4X5X_RST_GPIO_SUPPORT
 	if (tcan_config->rst_gpio.port != NULL) {
 		if (!gpio_is_ready_dt(&tcan_config->rst_gpio)) {
-			LOG_ERR("RST GPIO not ready");
+			LOG_ERR_DEVICE_NOT_READY(tcan_config->rst_gpio.port);
 			return -ENODEV;
 		}
 
@@ -585,7 +750,7 @@ static int tcan4x5x_init(const struct device *dev)
 #if TCAN4X5X_NWKRQ_GPIO_SUPPORT
 	if (tcan_config->nwkrq_gpio.port != NULL) {
 		if (!gpio_is_ready_dt(&tcan_config->nwkrq_gpio)) {
-			LOG_ERR("nWKRQ GPIO not ready");
+			LOG_ERR_DEVICE_NOT_READY(tcan_config->nwkrq_gpio.port);
 			return -ENODEV;
 		}
 
@@ -600,7 +765,7 @@ static int tcan4x5x_init(const struct device *dev)
 #if TCAN4X5X_WAKE_GPIO_SUPPORT
 	if (tcan_config->wake_gpio.port != NULL) {
 		if (!gpio_is_ready_dt(&tcan_config->wake_gpio)) {
-			LOG_ERR("WAKE GPIO not ready");
+			LOG_ERR_DEVICE_NOT_READY(tcan_config->wake_gpio.port);
 			return -ENODEV;
 		}
 
@@ -613,7 +778,7 @@ static int tcan4x5x_init(const struct device *dev)
 #endif /* TCAN4X5X_WAKE_GPIO_SUPPORT */
 
 	if (!gpio_is_ready_dt(&tcan_config->int_gpio)) {
-		LOG_ERR("nINT GPIO not ready");
+		LOG_ERR_DEVICE_NOT_READY(tcan_config->int_gpio.port);
 		return -ENODEV;
 	}
 
@@ -669,51 +834,10 @@ static int tcan4x5x_init(const struct device *dev)
 		FIELD_GET(GENMASK(15, 8), info[2]), FIELD_GET(GENMASK(7, 0), info[2]));
 #endif /* CONFIG_CAN_LOG_LEVEL >= LOG_LEVEL_DBG */
 
-	/* Set TCAN4x5x mode normal */
-	err = tcan4x5x_read_tcan_reg(dev, CAN_TCAN4X5X_MODE_CONFIG, &reg);
-	if (err != 0) {
-		LOG_ERR("failed to read configuration register (err %d)", err);
-		return -ENODEV;
-	}
-
-	reg &= ~(CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL);
-	reg |= FIELD_PREP(CAN_TCAN4X5X_MODE_CONFIG_MODE_SEL, 0x02);
-	reg |= CAN_TCAN4X5X_MODE_CONFIG_WAKE_CONFIG;
-
-	if (tcan_config->clk_freq == MHZ(20)) {
-		/* 20 MHz frequency reference */
-		reg &= ~(CAN_TCAN4X5X_MODE_CONFIG_CLK_REF);
-	} else {
-		/* 40 MHz frequency reference */
-		reg |= CAN_TCAN4X5X_MODE_CONFIG_CLK_REF;
-	}
-
-	err = tcan4x5x_write_tcan_reg(dev, CAN_TCAN4X5X_MODE_CONFIG, reg);
-	if (err != 0) {
-		LOG_ERR("failed to write configuration register (err %d)", err);
-		return -ENODEV;
-	}
-
-	/* Wait for standby to normal mode switch */
-	k_busy_wait(CAN_TCAN4X5X_T_MODE_STBY_NOM_US);
-
-	/* Configure Message RAM */
-	err = can_mcan_configure_mram(dev, CAN_TCAN4X5X_MRAM_BASE, CAN_TCAN4X5X_MRAM_BASE);
-	if (err != 0) {
-		return -EIO;
-	}
-
-	/* Initialize M_CAN */
-	err = can_mcan_init(dev);
-	if (err != 0) {
-		LOG_ERR("failed to initialize mcan (err %d)", err);
-		return err;
-	}
-
-	return 0;
+	return pm_device_driver_init(dev, tcan4x5x_pm_control);
 }
 
-static const struct can_driver_api tcan4x5x_driver_api = {
+static DEVICE_API(can, tcan4x5x_driver_api) = {
 	.get_capabilities = can_mcan_get_capabilities,
 	.start = can_mcan_start,
 	.stop = can_mcan_stop,
@@ -726,7 +850,6 @@ static const struct can_driver_api tcan4x5x_driver_api = {
 	.recover = can_mcan_recover,
 #endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
 	.get_state = can_mcan_get_state,
-	.set_state_change_callback = can_mcan_set_state_change_callback,
 	.get_core_clock = tcan4x5x_get_core_clock,
 	.get_max_filters = can_mcan_get_max_filters,
 	.timing_min = CAN_MCAN_TIMING_MIN_INITIALIZER,
@@ -776,9 +899,10 @@ static const struct can_mcan_ops tcan4x5x_ops = {
 	CAN_MCAN_DT_INST_CALLBACKS_DEFINE(inst, tcan4x5x_cbs_##inst);                              \
                                                                                                    \
 	static const struct tcan4x5x_config tcan4x5x_config_##inst = {                             \
-		.spi = SPI_DT_SPEC_INST_GET(inst, SPI_WORD_SET(8), 0),                             \
+		.spi = SPI_DT_SPEC_INST_GET(inst, SPI_WORD_SET(8)),                                \
 		.int_gpio = GPIO_DT_SPEC_INST_GET(inst, int_gpios),                                \
 		.clk_freq = DT_INST_PROP(inst, clock_frequency),                                   \
+		.nwkrq_voltage_vio = DT_INST_PROP(inst, ti_nwkrq_voltage_vio),                     \
 		TCAN4X5X_RST_GPIO_INIT(inst)                                                       \
 		TCAN4X5X_NWKRQ_GPIO_INIT(inst)                                                     \
 		TCAN4X5X_WAKE_GPIO_INIT(inst)                                                      \
@@ -789,11 +913,11 @@ static const struct can_mcan_ops tcan4x5x_ops = {
                                                                                                    \
 	static struct tcan4x5x_data tcan4x5x_data_##inst;                                          \
                                                                                                    \
-	static struct can_mcan_data can_mcan_data_##inst =                                         \
-		CAN_MCAN_DATA_INITIALIZER(&tcan4x5x_data_##inst);                                  \
+	CAN_MCAN_DATA_DEFINE(can_mcan_data_##inst, &tcan4x5x_data_##inst);                         \
                                                                                                    \
-	CAN_DEVICE_DT_INST_DEFINE(inst, tcan4x5x_init, NULL, &can_mcan_data_##inst,                \
-				  &can_mcan_config_##inst, POST_KERNEL, CONFIG_CAN_INIT_PRIORITY,  \
-				  &tcan4x5x_driver_api);
+	PM_DEVICE_DT_INST_DEFINE(inst, tcan4x5x_pm_control);                                       \
+	CAN_DEVICE_DT_INST_DEFINE(inst, tcan4x5x_init, PM_DEVICE_DT_INST_GET(inst),                \
+				  &can_mcan_data_##inst, &can_mcan_config_##inst, POST_KERNEL,     \
+				  CONFIG_CAN_INIT_PRIORITY, &tcan4x5x_driver_api);
 
 DT_INST_FOREACH_STATUS_OKAY(TCAN4X5X_INIT)

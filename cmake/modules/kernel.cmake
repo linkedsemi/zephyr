@@ -2,23 +2,66 @@
 #
 # Copyright (c) 2021, Nordic Semiconductor ASA
 
-# Zephyr Kernel CMake module.
-#
-# This is the main Zephyr Kernel CMake module which is responsible for creation
-# of Zephyr libraries and the Zephyr executable.
-#
-# This CMake module creates 'project(Zephyr-Kernel)'
-#
-# It defines properties to use while configuring libraries to be built as well
-# as using add_subdirectory() to add the main <ZEPHYR_BASE>/CMakeLists.txt file.
-#
-# Outcome:
-# - Zephyr build system.
-# - Zephyr project
-#
-# Important libraries:
-# - app: This is the main application library where the application can add
-#        source files that must be included when building Zephyr
+#[=======================================================================[.rst:
+kernel
+******
+
+Main Zephyr Kernel CMake module.
+
+This module is responsible for creating Zephyr libraries and the Zephyr executable.
+It creates a CMake project named `Zephyr-Kernel` and defines properties used while
+configuring libraries to be built.
+
+Variables
+=========
+
+After loading this module, the following global variables are defined:
+
+.. cmake:variable:: ZEPHYR_LIBS
+
+   Global list of all Zephyr CMake libraries that should be linked in.
+   :cmake:command:`zephyr_library()` appends libraries to this list.
+
+.. cmake:variable:: ZEPHYR_INTERFACE_LIBS
+
+   Global list of all Zephyr interface libraries that should be linked in.
+   :cmake:command:`zephyr_interface_library_named()` appends libraries to this list.
+
+.. cmake:variable:: GENERATED_APP_SOURCE_FILES
+
+   Source files that are generated after Zephyr has been linked once.
+   May include dev_handles.c etc.
+
+.. cmake:variable:: GENERATED_KERNEL_OBJECT_FILES
+
+   Object files that are generated after symbol addresses are fixed.
+   May include mmu tables, etc.
+
+.. cmake:variable:: GENERATED_KERNEL_SOURCE_FILES
+
+   Source files that are generated after symbol addresses are fixed.
+   May include isr_tables.c etc.
+
+Targets
+=======
+
+.. cmake:variable:: code_data_relocation_target
+
+   Custom target for code data relocation.
+
+
+.. cmake:variable:: app
+
+   CMake library containing all the application code.
+   Modified by the entry point ${APPLICATION_SOURCE_DIR}/CMakeLists.txt.
+
+Usage
+=====
+
+This module is not intended for direct loading, but should be loaded through
+:cmake:command:`find_package(Zephyr)`. It won't load any Zephyr CMake modules by itself.
+
+#]=======================================================================]
 
 include_guard(GLOBAL)
 
@@ -78,6 +121,7 @@ add_custom_target(code_data_relocation_target)
 # bin_file         "zephyr.bin" file for flashing
 # hex_file         "zephyr.hex" file for flashing
 # elf_file         "zephyr.elf" file for flashing or debugging
+# mot_file         "zephyr.mot" file for flashing
 # yaml_contents    generated contents of runners.yaml
 #
 # Note: there are quotes around "zephyr.bin" etc. because the actual
@@ -143,7 +187,7 @@ enable_language(ASM)
 # won't be able to test for compatibility with certain C flags.
 zephyr_check_compiler_flag(C "" toolchain_is_ok)
 assert(toolchain_is_ok "The toolchain is unable to build a dummy C file.\
- Move ${USER_CACHE_DIR}, re-run and look at CMakeError.log")
+ Move ${USER_CACHE_DIR}, re-run and look at CMakeConfigureLog.yaml")
 
 include(${ZEPHYR_BASE}/cmake/target_toolchain_flags.cmake)
 
@@ -166,7 +210,9 @@ set(KERNEL_EXE_NAME   ${KERNEL_NAME}.exe)
 set(KERNEL_STAT_NAME  ${KERNEL_NAME}.stat)
 set(KERNEL_STRIP_NAME ${KERNEL_NAME}.strip)
 set(KERNEL_META_NAME  ${KERNEL_NAME}.meta)
+set(KERNEL_MOT_NAME  ${KERNEL_NAME}.mot)
 set(KERNEL_SYMBOLS_NAME    ${KERNEL_NAME}.symbols)
+set(KERNEL_VERILOG_NAME    ${KERNEL_NAME}.mem)
 
 # Enable dynamic library support when required by LLEXT.
 if(CONFIG_LLEXT AND CONFIG_LLEXT_TYPE_ELF_SHAREDLIB)
@@ -176,34 +222,6 @@ endif()
 foreach(dir ${BOARD_DIRECTORIES})
   include(${dir}/board.cmake OPTIONAL)
 endforeach()
-
-# If we are using a suitable ethernet driver inside qemu, then these options
-# must be set, otherwise a zephyr instance cannot receive any network packets.
-# The Qemu supported ethernet driver should define CONFIG_ETH_NIC_MODEL
-# string that tells what nic model Qemu should use.
-if(CONFIG_QEMU_TARGET)
-  if ((CONFIG_NET_QEMU_ETHERNET OR CONFIG_NET_QEMU_USER) AND NOT CONFIG_ETH_NIC_MODEL)
-    message(FATAL_ERROR "
-      No Qemu ethernet driver configured!
-      Enable Qemu supported ethernet driver like e1000 at drivers/ethernet"
-    )
-  elseif(CONFIG_NET_QEMU_ETHERNET)
-    if(CONFIG_ETH_QEMU_EXTRA_ARGS)
-      set(NET_QEMU_ETH_EXTRA_ARGS ",${CONFIG_ETH_QEMU_EXTRA_ARGS}")
-    endif()
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -nic tap,model=${CONFIG_ETH_NIC_MODEL},script=no,downscript=no,ifname=${CONFIG_ETH_QEMU_IFACE_NAME}${NET_QEMU_ETH_EXTRA_ARGS}
-    )
-  elseif(CONFIG_NET_QEMU_USER)
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -nic user,model=${CONFIG_ETH_NIC_MODEL},${CONFIG_NET_QEMU_USER_EXTRA_ARGS}
-    )
-  else()
-    list(APPEND QEMU_FLAGS_${ARCH}
-      -net none
-    )
-  endif()
-endif()
 
 # General purpose Zephyr target.
 # This target can be used for custom zephyr settings that needs to be used elsewhere in the build system

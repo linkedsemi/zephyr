@@ -5,15 +5,7 @@
 
 if BOARD_NUCLEO_H723ZG
 
-if NETWORKING
-
-config NET_L2_ETHERNET
+configdefault ETH_DRIVER
 	default y
-
-endif # NETWORKING
-
-config USB_DC_HAS_HS_SUPPORT
-	default y
-	depends on USB_DC_STM32
 
 endif # BOARD_NUCLEO_H723ZG

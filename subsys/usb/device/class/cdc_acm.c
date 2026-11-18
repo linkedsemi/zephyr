@@ -1,6 +1,6 @@
 /*******************************************************************************
  *
- * Copyright(c) 2015-2019 Intel Corporation.
+ * Copyright (c) 2015-2019 Intel Corporation.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -138,7 +138,7 @@ struct cdc_acm_dev_data_t {
 };
 
 static sys_slist_t cdc_acm_data_devlist;
-static const struct uart_driver_api cdc_acm_driver_api;
+static DEVICE_API(uart, cdc_acm_driver_api);
 
 /**
  * @brief Handler called for Class requests not handled by the USB stack.
@@ -269,8 +269,7 @@ static void tx_work_handler(struct k_work *work)
 		return;
 	}
 
-	len = ring_buf_get_claim(dev_data->tx_ringbuf, &data,
-				 CONFIG_USB_CDC_ACM_RINGBUF_SIZE);
+	len = ring_buf_get_ptr(dev_data->tx_ringbuf, &data, 0);
 
 	if (!len) {
 		LOG_DBG("Nothing to send");
@@ -294,7 +293,7 @@ static void tx_work_handler(struct k_work *work)
 	usb_transfer(ep, data, len, USB_TRANS_WRITE,
 		     cdc_acm_write_cb, dev_data);
 
-	ring_buf_get_finish(dev_data->tx_ringbuf, len);
+	ring_buf_consume(dev_data->tx_ringbuf, len);
 }
 
 static void cdc_acm_read_cb(uint8_t ep, int size, void *priv)
@@ -687,10 +686,8 @@ static int cdc_acm_irq_is_pending(const struct device *dev)
  * @brief Update IRQ status
  *
  * @param dev CDC ACM device struct.
- *
- * @return Always 1
  */
-static int cdc_acm_irq_update(const struct device *dev)
+static void cdc_acm_irq_update(const struct device *dev)
 {
 	struct cdc_acm_dev_data_t * const dev_data = dev->data;
 
@@ -701,8 +698,6 @@ static int cdc_acm_irq_update(const struct device *dev)
 	if (ring_buf_is_empty(dev_data->rx_ringbuf)) {
 		dev_data->rx_ready = false;
 	}
-
-	return 1;
 }
 
 /**
@@ -823,7 +818,7 @@ static int cdc_acm_line_ctrl_set(const struct device *dev,
 		if (val) {
 			dev_data->serial_state |= SERIAL_STATE_RX_CARRIER;
 		}
-		cdc_acm_send_notification(dev, SERIAL_STATE_RX_CARRIER);
+		cdc_acm_send_notification(dev, dev_data->serial_state);
 		return 0;
 	case USB_CDC_LINE_CTRL_DSR:
 		dev_data->serial_state &= ~SERIAL_STATE_TX_CARRIER;
@@ -1053,7 +1048,7 @@ static void cdc_acm_poll_out(const struct device *dev, unsigned char c)
 	k_work_schedule_for_queue(&USB_WORK_Q, &dev_data->tx_work, K_MSEC(1));
 }
 
-static const struct uart_driver_api cdc_acm_driver_api = {
+static DEVICE_API(uart, cdc_acm_driver_api) = {
 	.poll_in = cdc_acm_poll_in,
 	.poll_out = cdc_acm_poll_out,
 	.fifo_fill = cdc_acm_fifo_fill,

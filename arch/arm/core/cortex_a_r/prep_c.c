@@ -24,16 +24,18 @@
 #include <zephyr/arch/arm/cortex_a_r/lib_helpers.h>
 #include <zephyr/platform/hooks.h>
 #include <zephyr/arch/cache.h>
+#include <zephyr/arch/common/xip.h>
+#include <zephyr/arch/common/init.h>
 
-#if defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
+#if defined(CONFIG_ARMV7_R) || defined(CONFIG_ARM_A_PROFILE_AARCH32)
 #include <cortex_a_r/stack.h>
 #endif
 
 #ifdef CONFIG_ARM_MPU
-extern void z_arm_mpu_init(void);
+extern int z_arm_mpu_init(void);
 extern void z_arm_configure_static_mpu_regions(void);
 #elif defined(CONFIG_ARM_AARCH32_MMU)
-extern int z_arm_mmu_init(void);
+extern int z_arm_mmu_init(bool is_primary_core);
 #endif
 
 #if defined(CONFIG_CPU_HAS_FPU)
@@ -96,20 +98,20 @@ extern FUNC_NORETURN void z_cstart(void);
  * This routine prepares for the execution of and runs C code.
  *
  */
-void z_prep_c(void)
+FUNC_NORETURN void z_prep_c(void)
 {
-#if defined(CONFIG_SOC_PREP_HOOK)
 	soc_prep_hook();
-#endif
+
 	/* Initialize tpidruro with our struct _cpu instance address */
 	write_tpidruro((uintptr_t)&_kernel.cpus[0]);
 
 #if defined(CONFIG_CPU_HAS_FPU)
 	z_arm_floating_point_init();
 #endif
-	z_bss_zero();
-	z_data_copy();
-#if ((defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)) && defined(CONFIG_INIT_STACKS))
+	arch_bss_zero();
+	arch_data_copy();
+#if (defined(CONFIG_ARMV7_R) || defined(CONFIG_ARM_A_PROFILE_AARCH32)) &&                          \
+	defined(CONFIG_INIT_STACKS)
 	z_arm_init_stacks();
 #endif
 	z_arm_interrupt_init();
@@ -120,7 +122,7 @@ void z_prep_c(void)
 	z_arm_mpu_init();
 	z_arm_configure_static_mpu_regions();
 #elif defined(CONFIG_ARM_AARCH32_MMU)
-	z_arm_mmu_init();
+	z_arm_mmu_init(true);
 #endif
 	z_cstart();
 	CODE_UNREACHABLE;

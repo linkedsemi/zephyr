@@ -4,18 +4,29 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/kernel.h>
+#include <zephyr/types.h>
+#include <stddef.h>
+#include <errno.h>
+
 #include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
 
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
+#include "babblekit/sync.h"
 #include "common.h"
 
-CREATE_FLAG(flag_is_connected);
-CREATE_FLAG(flag_discover_complete);
-CREATE_FLAG(flag_write_complete);
-CREATE_FLAG(flag_chan_1_read);
-CREATE_FLAG(flag_chan_2_read);
-CREATE_FLAG(flag_db_hash_read);
-CREATE_FLAG(flag_encrypted);
+DEFINE_FLAG_STATIC(flag_is_connected);
+DEFINE_FLAG_STATIC(flag_discover_complete);
+DEFINE_FLAG_STATIC(flag_write_complete);
+DEFINE_FLAG_STATIC(flag_chan_1_read);
+DEFINE_FLAG_STATIC(flag_chan_2_read);
+DEFINE_FLAG_STATIC(flag_db_hash_read);
+DEFINE_FLAG_STATIC(flag_encrypted);
 
 static struct bt_conn *g_conn;
 static uint16_t chrc_handle;
@@ -24,45 +35,36 @@ static const struct bt_uuid *test_svc_uuid = TEST_SERVICE_UUID;
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (err != 0) {
-		FAIL("Failed to connect to %s (%u)\n", addr, err);
+		TEST_FAIL("Failed to connect to %s (%u)", bt_conn_dst_str(conn), err);
 
 		return;
 	}
 
-	printk("Connected to %s\n", addr);
+	printk("Connected to %s\n", bt_conn_dst_str(conn));
 
 	SET_FLAG(flag_is_connected);
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
 	if (conn != g_conn) {
 		return;
 	}
 
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
+	printk("Disconnected: %s (reason 0x%02x)\n", bt_conn_dst_str(conn), reason);
 
-	printk("Disconnected: %s (reason 0x%02x)\n", addr, reason);
+	bt_conn_drop(&g_conn);
 
-	bt_conn_unref(g_conn);
-
-	g_conn = NULL;
 	UNSET_FLAG(flag_is_connected);
 }
 
 void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
 {
 	if (err != BT_SECURITY_ERR_SUCCESS) {
-		FAIL("Encryption failed\n");
+		TEST_FAIL("Encryption failed");
 	} else if (level < BT_SECURITY_L2) {
-		FAIL("Insufficient security\n");
+		TEST_FAIL("Insufficient security");
 	} else {
 		SET_FLAG(flag_encrypted);
 	}
@@ -76,7 +78,6 @@ BT_CONN_CB_DEFINE(conn_callbacks) = {
 
 void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type, struct net_buf_simple *ad)
 {
-	char addr_str[BT_ADDR_LE_STR_LEN];
 	int err;
 
 	if (g_conn != NULL) {
@@ -88,20 +89,19 @@ void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type, struct ne
 		return;
 	}
 
-	bt_addr_le_to_str(addr, addr_str, sizeof(addr_str));
-	printk("Device found: %s (RSSI %d)\n", addr_str, rssi);
+	printk("Device found: %s (RSSI %d)\n", bt_addr_le_str(addr), rssi);
 
 	printk("Stopping scan\n");
 	err = bt_le_scan_stop();
 	if (err != 0) {
-		FAIL("Could not stop scan (err %d)\n");
+		TEST_FAIL("Could not stop scan (err %d)");
 
 		return;
 	}
 
 	err = bt_conn_le_create(addr, BT_CONN_LE_CREATE_CONN, BT_LE_CONN_PARAM_DEFAULT, &g_conn);
 	if (err != 0) {
-		FAIL("Could not connect to peer (err %d)", err);
+		TEST_FAIL("Could not connect to peer (err %d)", err);
 	}
 }
 
@@ -112,7 +112,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 	if (attr == NULL) {
 		if (chrc_handle == 0) {
-			FAIL("Did not discover chrc (%x)\n", chrc_handle);
+			TEST_FAIL("Did not discover chrc (%x)", chrc_handle);
 		}
 
 		(void)memset(params, 0, sizeof(*params));
@@ -133,7 +133,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 
 		err = bt_gatt_discover(conn, params);
 		if (err != 0) {
-			FAIL("Discover failed (err %d)\n", err);
+			TEST_FAIL("Discover failed (err %d)", err);
 		}
 
 		return BT_GATT_ITER_STOP;
@@ -171,7 +171,7 @@ static void gatt_discover(const struct bt_uuid *uuid, uint8_t type)
 
 	err = bt_gatt_discover(g_conn, &discover_params);
 	if (err != 0) {
-		FAIL("Discover failed(err %d)\n", err);
+		TEST_FAIL("Discover failed (err %d)", err);
 	}
 
 	WAIT_FOR_FLAG(flag_discover_complete);
@@ -203,10 +203,10 @@ static struct bt_gatt_read_params db_hash_read = {
 	.chan_opt = BT_ATT_CHAN_OPT_NONE,
 };
 
-void expect_status(uint8_t err, uint8_t status)
+static void expect_status(uint8_t err, uint8_t status)
 {
 	if (err != status) {
-		FAIL("Unexpected status from read: 0x%02X, expected 0x%02X\n", err, status);
+		TEST_FAIL("Unexpected status from read: 0x%02X, expected 0x%02X", err, status);
 	}
 }
 
@@ -224,7 +224,7 @@ static uint8_t gatt_read_expect_success_cb(struct bt_conn *conn, uint8_t err,
 	} else if (params == &chan_2_read) {
 		SET_FLAG(flag_chan_2_read);
 	} else {
-		FAIL("Unexpected params\n");
+		TEST_FAIL("Unexpected params");
 	}
 
 	return 0;
@@ -242,7 +242,7 @@ static uint8_t gatt_read_expect_err_unlikely_cb(struct bt_conn *conn, uint8_t er
 	} else if (params == &chan_2_read) {
 		SET_FLAG(flag_chan_2_read);
 	} else {
-		FAIL("Unexpected params\n");
+		TEST_FAIL("Unexpected params");
 	}
 
 	return 0;
@@ -260,7 +260,7 @@ static uint8_t gatt_read_expect_err_out_of_sync_cb(struct bt_conn *conn, uint8_t
 	} else if (params == &chan_2_read) {
 		SET_FLAG(flag_chan_2_read);
 	} else {
-		FAIL("Unexpected params\n");
+		TEST_FAIL("Unexpected params");
 	}
 
 	return 0;
@@ -274,14 +274,14 @@ static void gatt_read(struct bt_gatt_read_params *read_params)
 
 	err = bt_gatt_read(g_conn, read_params);
 	if (err != 0) {
-		FAIL("bt_gatt_read failed: %d\n", err);
+		TEST_FAIL("bt_gatt_read failed: %d", err);
 	}
 }
 
 static void write_cb(struct bt_conn *conn, uint8_t err, struct bt_gatt_write_params *params)
 {
 	if (err != BT_ATT_ERR_SUCCESS) {
-		FAIL("Write failed: 0x%02X\n", err);
+		TEST_FAIL("Write failed: 0x%02X", err);
 	}
 
 	SET_FLAG(flag_write_complete);
@@ -310,7 +310,7 @@ static void enable_robust_caching(void)
 
 	err = bt_gatt_write(g_conn, &write_params);
 	if (err) {
-		FAIL("bt_gatt_write failed (err %d)\n", err);
+		TEST_FAIL("bt_gatt_write failed (err %d)", err);
 	}
 
 	WAIT_FOR_FLAG(flag_write_complete);
@@ -321,16 +321,16 @@ static void test_main_common(bool connect_eatt)
 {
 	int err;
 
-	backchannel_init();
+	TEST_ASSERT(bk_sync_init() == 0, "Failed to open backchannel");
 
 	err = bt_enable(NULL);
 	if (err != 0) {
-		FAIL("Bluetooth discover failed (err %d)\n", err);
+		TEST_FAIL("Bluetooth discover failed (err %d)", err);
 	}
 
 	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
 	if (err != 0) {
-		FAIL("Scanning failed to start (err %d)\n", err);
+		TEST_FAIL("Scanning failed to start (err %d)", err);
 	}
 
 	printk("Scanning successfully started\n");
@@ -339,7 +339,7 @@ static void test_main_common(bool connect_eatt)
 
 	err = bt_conn_set_security(g_conn, BT_SECURITY_L2);
 	if (err) {
-		FAIL("Failed to start encryption procedure\n");
+		TEST_FAIL("Failed to start encryption procedure");
 	}
 
 	WAIT_FOR_FLAG(flag_encrypted);
@@ -357,10 +357,10 @@ static void test_main_common(bool connect_eatt)
 	}
 
 	/* Tell the server to register additional service */
-	backchannel_sync_send();
+	bk_sync_send();
 
 	/* Wait for new service to be added by server */
-	backchannel_sync_wait();
+	bk_sync_wait();
 
 	chan_1_read.single.handle = chrc_handle;
 	chan_2_read.single.handle = chrc_handle;
@@ -386,9 +386,9 @@ static void test_main_db_hash_read_eatt(void)
 	WAIT_FOR_FLAG(flag_chan_2_read);
 
 	/* Signal to server that reads are done */
-	backchannel_sync_send();
+	bk_sync_send();
 
-	PASS("GATT client Passed\n");
+	TEST_PASS("GATT client Passed");
 }
 
 static void test_main_out_of_sync_eatt(void)
@@ -423,9 +423,9 @@ static void test_main_out_of_sync_eatt(void)
 	WAIT_FOR_FLAG(flag_chan_2_read);
 
 	/* Signal to server that reads are done */
-	backchannel_sync_send();
+	bk_sync_send();
 
-	PASS("GATT client Passed\n");
+	TEST_PASS("GATT client Passed");
 }
 
 static void test_main_retry_reads_eatt(void)
@@ -455,9 +455,9 @@ static void test_main_retry_reads_eatt(void)
 	WAIT_FOR_FLAG(flag_chan_2_read);
 
 	/* Signal to server that reads are done */
-	backchannel_sync_send();
+	bk_sync_send();
 
-	PASS("GATT client Passed\n");
+	TEST_PASS("GATT client Passed");
 }
 
 static void test_main_db_hash_read_no_eatt(void)
@@ -476,9 +476,9 @@ static void test_main_db_hash_read_no_eatt(void)
 	WAIT_FOR_FLAG(flag_chan_1_read);
 
 	/* Signal to server that reads are done */
-	backchannel_sync_send();
+	bk_sync_send();
 
-	PASS("GATT client Passed\n");
+	TEST_PASS("GATT client Passed");
 }
 
 static void test_main_out_of_sync_no_eatt(void)
@@ -501,9 +501,9 @@ static void test_main_out_of_sync_no_eatt(void)
 	WAIT_FOR_FLAG(flag_chan_1_read);
 
 	/* Signal to server that reads are done */
-	backchannel_sync_send();
+	bk_sync_send();
 
-	PASS("GATT client Passed\n");
+	TEST_PASS("GATT client Passed");
 }
 
 static void test_main_retry_reads_no_eatt(void)
@@ -521,46 +521,34 @@ static void test_main_retry_reads_no_eatt(void)
 	WAIT_FOR_FLAG(flag_chan_1_read);
 
 	/* Signal to server that reads are done */
-	backchannel_sync_send();
+	bk_sync_send();
 
-	PASS("GATT client Passed\n");
+	TEST_PASS("GATT client Passed");
 }
 
 static const struct bst_test_instance test_vcs[] = {
 	{
 		.test_id = "gatt_client_db_hash_read_eatt",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_main_db_hash_read_eatt,
 	},
 	{
 		.test_id = "gatt_client_out_of_sync_eatt",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_main_out_of_sync_eatt,
 	},
 	{
 		.test_id = "gatt_client_retry_reads_eatt",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_main_retry_reads_eatt,
 	},
 	{
 		.test_id = "gatt_client_db_hash_read_no_eatt",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_main_db_hash_read_no_eatt,
 	},
 	{
 		.test_id = "gatt_client_out_of_sync_no_eatt",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_main_out_of_sync_no_eatt,
 	},
 	{
 		.test_id = "gatt_client_retry_reads_no_eatt",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_main_retry_reads_no_eatt,
 	},
 	BSTEST_END_MARKER,

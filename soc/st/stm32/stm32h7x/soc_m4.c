@@ -18,7 +18,7 @@
 #include <stm32_ll_pwr.h>
 #include <stm32_ll_rcc.h>
 #include <stm32_ll_system.h>
-#include "stm32_hsem.h"
+#include <stm32_hsem.h>
 
 #include <cmsis_core.h>
 
@@ -29,27 +29,32 @@
  */
 void soc_early_init_hook(void)
 {
+	uint32_t art_base = DT_REG_ADDR(DT_CHOSEN(zephyr_flash));
+
+#ifdef CONFIG_FLASH_LOAD_OFFSET
+	art_base += CONFIG_FLASH_LOAD_OFFSET;
+#endif
 	/* Enable ART Flash cache accelerator */
 	LL_AHB1_GRP1_EnableClock(LL_AHB1_GRP1_PERIPH_ART);
-	LL_ART_SetBaseAddress(DT_REG_ADDR(DT_CHOSEN(zephyr_flash)));
+	LL_ART_SetBaseAddress(art_base);
 	LL_ART_Enable();
 
 	/* Enable hardware semaphore clock */
 	LL_AHB4_GRP1_EnableClock(LL_AHB4_GRP1_PERIPH_HSEM);
 
-	/* In case CM4 has not been forced boot by CM7,
-	 * CM4 needs to wait until CM7 has setup clock configuration
+	/**
+	 * Cortex-M7 is responsible for initializing the system.
+	 *
+	 * CM7 will start CM4 ("forced boot") at the end of system
+	 * initialization if the core is not already running - in
+	 * this scenario, we don't have to wait because the system
+	 * is initialized. Otherwise, wait for CM7 to initialize the
+	 * system before proceeding with the boot process. CM7 will
+	 * acquire a specific HSEM to indicate that CM4 can proceed.
 	 */
 	if (!LL_RCC_IsCM4BootForced()) {
-		/*
-		 * Domain D2 is waiting for Cortex-M7 to perform
-		 * system initialization
-		 * (system clock config, external memory configuration.. ).
-		 * End of system initialization is reached when CM7 takes HSEM.
-		 */
-		while ((HSEM->RLR[CFG_HW_ENTRY_STOP_MODE_SEMID] & HSEM_R_LOCK)
-				!= HSEM_R_LOCK) {
-			;
+		while (!LL_HSEM_IsSemaphoreLocked(HSEM, CFG_HW_ENTRY_STOP_MODE_SEMID)) {
+			/* Wait for CM7 to lock the HSEM after system initialization */
 		}
 	}
 }

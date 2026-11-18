@@ -154,11 +154,14 @@ int bmc150_magn_init_interrupt(const struct device *dev)
 			K_PRIO_COOP(10), 0, K_NO_WAIT);
 
 	if (!gpio_is_ready_dt(&config->int_gpio)) {
-		LOG_ERR("GPIO device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->int_gpio.port);
 		return -ENODEV;
 	}
 
-	gpio_pin_configure_dt(&config->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+	if (gpio_pin_configure_dt(&config->int_gpio, GPIO_INPUT) < 0) {
+		LOG_DBG("failed to configure DRDY gpio");
+		return -EIO;
+	}
 
 	gpio_init_callback(&data->gpio_cb,
 			   bmc150_magn_gpio_drdy_callback,

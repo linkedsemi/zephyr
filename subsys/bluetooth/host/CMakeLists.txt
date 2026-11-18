@@ -8,10 +8,8 @@ add_subdirectory_ifdef(CONFIG_BT_SHELL shell)
 
 zephyr_library_sources_ifdef(CONFIG_BT_HCI_RAW          hci_raw.c hci_common.c)
 zephyr_library_sources_ifdef(CONFIG_BT_MONITOR          monitor.c)
-zephyr_library_sources_ifdef(CONFIG_BT_TINYCRYPT_ECC    hci_ecc.c)
 zephyr_library_sources_ifdef(CONFIG_BT_SETTINGS         settings.c)
 zephyr_library_sources_ifdef(CONFIG_BT_HOST_CCM         aes_ccm.c)
-zephyr_library_sources_ifdef(CONFIG_BT_LONG_WQ          long_wq.c)
 
 if(CONFIG_BT_HCI_HOST)
   zephyr_library_sources(
@@ -32,11 +30,10 @@ if(CONFIG_BT_HCI_HOST)
     scan.c
     )
 
-  if(CONFIG_BT_USE_PSA_API)
-    zephyr_library_sources_ifdef(CONFIG_BT_HOST_CRYPTO    crypto_psa.c)
-  else()
-    zephyr_library_sources_ifdef(CONFIG_BT_HOST_CRYPTO    crypto_tc.c)
-  endif()
+  zephyr_library_sources_ifdef(
+    CONFIG_BT_HOST_CRYPTO
+    crypto_psa.c
+    )
 
   zephyr_library_sources_ifdef(
     CONFIG_BT_ECC
@@ -49,6 +46,11 @@ if(CONFIG_BT_HCI_HOST)
       l2cap.c
       att.c
       gatt.c
+      )
+
+    zephyr_library_sources_ifdef(
+      CONFIG_BT_GATT_GAP_SVC_VALIDATE
+      gatt_gap_svc_validate.c
       )
 
     if(CONFIG_BT_SMP)
@@ -88,12 +90,6 @@ if(CONFIG_BT_SMP_LOG_LEVEL_DBG OR CONFIG_BT_KEYS_LOG_LEVEL_DBG OR CONFIG_BT_LOG_
   production."
     )
 endif()
-if(CONFIG_BT_FIXED_PASSKEY)
-  message(WARNING "CONFIG_BT_FIXED_PASSKEY is enabled
-  A fixed passkey is easy to deduce during the pairing procedure, do not use in
-  production."
-    )
-endif()
 if(CONFIG_BT_OOB_DATA_FIXED)
   message(WARNING "CONFIG_BT_OOB_DATA_FIXED is enabled.
   A hardcoded OOB data set will be stored in the image, do not use in
@@ -116,16 +112,14 @@ if(CONFIG_BT_CONN_DISABLE_SECURITY)
     )
 endif()
 
-if(CONFIG_BT_USE_PSA_API)
-    zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS mbedTLS)
-    zephyr_library_include_directories_ifdef(CONFIG_BUILD_WITH_TFM
-      $<TARGET_PROPERTY:tfm,TFM_BINARY_DIR>/api_ns/interface/include
-    )
-endif()
+zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)
+zephyr_library_include_directories_ifdef(CONFIG_BUILD_WITH_TFM
+  $<TARGET_PROPERTY:tfm,TFM_BINARY_DIR>/api_ns/interface/include
+)
 
 # Bluetooth Mesh has test dependencies in the host.
 # In order to compile Bsim tests with these test features
 # and PSA enabled, the libraries must be linked.
 if(CONFIG_BT_MESH AND CONFIG_BT_TESTING)
-  zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS mbedTLS)
+  zephyr_library_link_libraries_ifdef(CONFIG_MBEDTLS_BUILTIN mbedtls_iface)
 endif()

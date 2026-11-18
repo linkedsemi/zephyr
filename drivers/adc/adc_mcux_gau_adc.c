@@ -16,6 +16,8 @@ LOG_MODULE_REGISTER(adc_mcux_gau_adc, CONFIG_ADC_LOG_LEVEL);
 #define ADC_CONTEXT_USES_KERNEL_TIMER
 #include "adc_context.h"
 
+#include "adc_common.h"
+
 #include <fsl_adc.h>
 
 #define NUM_ADC_CHANNELS 16
@@ -139,7 +141,7 @@ static void mcux_gau_adc_read_samples(struct k_work *work)
 	/* using this variable to prevent buffer overflow */
 	size_t length = data->results_length;
 
-	while ((ADC_GetFifoDataCount(base) > 0) && (--length > 0)) {
+	while ((ADC_GetFifoDataCount(base) > 0) && (length-- > 0)) {
 		*(data->results++) = (uint16_t)ADC_GetConversionResult(base);
 	}
 
@@ -192,7 +194,8 @@ static int mcux_gau_adc_do_read(const struct device *dev,
 	const struct mcux_gau_adc_config *config = dev->config;
 	ADC_Type *base = config->base;
 	struct mcux_gau_adc_data *data = dev->data;
-	uint8_t num_channels = 0;
+	uint8_t num_channels;
+	int ret;
 
 	/* if user selected channel >= NUM_ADC_CHANNELS that is invalid */
 	if (sequence->channels & (0xFFFF << NUM_ADC_CHANNELS)) {
@@ -201,16 +204,13 @@ static int mcux_gau_adc_do_read(const struct device *dev,
 	}
 
 	/* Count channels */
-	for (int i = 0; i < NUM_ADC_CHANNELS; i++) {
-		num_channels += ((sequence->channels & (0x1 << i)) ? 1 : 0);
-	}
+	num_channels = POPCOUNT(sequence->channels);
 
 	/* Buffer must hold (number of samples per channel) * (number of channels) samples */
-	if ((sequence->options != NULL && sequence->buffer_size <
-	    ((1 + sequence->options->extra_samplings) * num_channels)) ||
-	    (sequence->options == NULL && sequence->buffer_size < num_channels)) {
+	ret = adc_sequence_validate_buffer(sequence, num_channels, sizeof(uint16_t));
+	if (ret < 0) {
 		LOG_ERR("Buffer size too small");
-		return -ENOMEM;
+		return ret;
 	}
 
 	/* Set scan length in data struct for isr to understand & set scan length register */
@@ -267,7 +267,7 @@ static int mcux_gau_adc_do_read(const struct device *dev,
 	}
 
 	data->results = sequence->buffer;
-	data->results_length = sequence->buffer_size;
+	data->results_length = sequence->buffer_size / sizeof(uint16_t);
 	data->repeat = sequence->buffer;
 
 	adc_context_start_read(&data->ctx, sequence);
@@ -351,7 +351,7 @@ static int mcux_gau_adc_init(const struct device *dev)
 	return 0;
 }
 
-static const struct adc_driver_api mcux_gau_adc_driver_api = {
+static DEVICE_API(adc, mcux_gau_adc_driver_api) = {
 	.channel_setup = mcux_gau_adc_channel_setup,
 	.read = mcux_gau_adc_read,
 #ifdef CONFIG_ADC_ASYNC
@@ -377,7 +377,7 @@ static const struct adc_driver_api mcux_gau_adc_driver_api = {
 										\
 	static struct mcux_gau_adc_data mcux_gau_adc_data_##n = {0};		\
 										\
-	DEVICE_DT_INST_DEFINE(n, &mcux_gau_adc_init, NULL,			\
+	DEVICE_DT_INST_DEFINE(n, mcux_gau_adc_init, NULL,			\
 			      &mcux_gau_adc_data_##n, &mcux_gau_adc_config_##n,	\
 			      POST_KERNEL, CONFIG_ADC_INIT_PRIORITY,		\
 			      &mcux_gau_adc_driver_api);			\

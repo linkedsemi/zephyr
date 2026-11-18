@@ -4,8 +4,34 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_DT_BINDINGS_INTERRUPT_CONTROLLER_ESP32C6_INTMUX_H_
-#define ZEPHYR_INCLUDE_DT_BINDINGS_INTERRUPT_CONTROLLER_ESP32C6_INTMUX_H_
+/**
+ * @file
+ * @brief Espressif ESP32-C6 interrupt source definitions for devicetree
+ * @ingroup dt_esp32c6_intmux
+ */
+
+#ifndef ZEPHYR_INCLUDE_DT_BINDINGS_INTERRUPT_CONTROLLER_ESP_ESP32C6_INTMUX_H_
+#define ZEPHYR_INCLUDE_DT_BINDINGS_INTERRUPT_CONTROLLER_ESP_ESP32C6_INTMUX_H_
+
+/**
+ * @defgroup dt_esp32c6_intmux Espressif ESP32-C6 interrupt allocator
+ * @brief Devicetree interrupt source numbers for the Espressif ESP32-C6.
+ * @ingroup devicetree-interrupt_controller
+ *
+ * Interrupt source numbers for the Espressif ESP32-C6 interrupt allocator, used with the
+ * <tt>espressif,esp32-intc</tt> compatible interrupt controller. An interrupt is described by three
+ * cells: the interrupt source, the priority and a flags cell. Source numbers follow the pattern
+ * @c \<SIGNAL\>_INTR_SOURCE; @ref IRQ_DEFAULT_PRIORITY selects the default priority.
+ *
+ * @code{.dts}
+ * &uart0 {
+ *         interrupts = <UART0_INTR_SOURCE IRQ_DEFAULT_PRIORITY 0>;
+ * };
+ * @endcode
+ * @{
+ */
+
+/** @cond INTERNAL_HIDDEN */
 
 #define WIFI_MAC_INTR_SOURCE                0  /* interrupt of WiFi MAC, level*/
 #define WIFI_MAC_NMI_SOURCE                 1  /* interrupt of WiFi MAC, NMI*/
@@ -86,12 +112,20 @@
 #define ECC_INTR_SOURCE                    76  /* interrupt of ECC accelerator, level*/
 #define MAX_INTR_SOURCE                    77
 
-/* RISC-V supports priority values from 1 (lowest) to 15.
- * As interrupt controller for Xtensa and RISC-V is shared, this is
- * set to an intermediate and compatible value.
- */
-#define IRQ_DEFAULT_PRIORITY	3
+/* Zero will allocate low/medium levels of priority (ESP_INTR_FLAG_LOWMED) */
+#define IRQ_DEFAULT_PRIORITY	0
 
 #define ESP_INTR_FLAG_SHARED	(1<<8)	/* Interrupt can be shared between ISRs */
 
-#endif /* ZEPHYR_INCLUDE_DT_BINDINGS_INTERRUPT_CONTROLLER_ESP32C6_INTMUX_H_ */
+/* LP Core intmux */
+#define LP_CORE_IO_INTR_SOURCE    0
+#define LP_CORE_I2C_INTR_SOURCE   1
+#define LP_CORE_UART_INTR_SOURCE  2
+#define LP_CORE_TIMER_INTR_SOURCE 3
+#define LP_CORE_PMU_INTR_SOURCE   5
+
+/** @endcond */
+
+/** @} */
+
+#endif /* ZEPHYR_INCLUDE_DT_BINDINGS_INTERRUPT_CONTROLLER_ESP_ESP32C6_INTMUX_H_ */

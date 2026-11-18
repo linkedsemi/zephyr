@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Header file for the Device Power Management API.
+ * @ingroup subsys_pm_device
+ */
+
 #ifndef ZEPHYR_INCLUDE_PM_DEVICE_H_
 #define ZEPHYR_INCLUDE_PM_DEVICE_H_
 
@@ -19,6 +25,8 @@ extern "C" {
 /**
  * @brief Device Power Management API
  * @defgroup subsys_pm_device Device
+ * @since 2.7
+ * @version 1.0.0
  * @ingroup subsys_pm
  * @{
  */
@@ -50,6 +58,8 @@ enum pm_device_flag {
 	PM_DEVICE_FLAG_RUNTIME_AUTO,
 	/** Indicates that device runtime PM supports suspending and resuming from any context. */
 	PM_DEVICE_FLAG_ISR_SAFE,
+	/** Indicates the device was suspended by its power domain and must be resumed by it. */
+	PM_DEVICE_FLAG_PD_SUSPENDED,
 };
 
 /** @endcond */
@@ -66,22 +76,76 @@ enum pm_device_flag {
 
 /** @brief Device power states. */
 enum pm_device_state {
-	/** Device is in active or regular state. */
+	/**
+	 * @brief Device hardware is powered, and the device is needed by the system.
+	 *
+	 * @details The device should be enabled in this state. Any device driver API
+	 * may be called in this state.
+	 */
 	PM_DEVICE_STATE_ACTIVE,
 	/**
-	 * Device is suspended.
+	 * @brief Device hardware is powered, but the device is not needed by the
+	 * system.
 	 *
-	 * @note
-	 *     Device context may be lost.
+	 * @details The device should be put into its lowest internal power state,
+	 * commonly named "disabled" or "stopped".
+	 *
+	 * If a device has been specified as this device's power domain, and said
+	 * device is no longer needed by the system, this device will be
+	 * transitioned into the @ref PM_DEVICE_STATE_OFF state, followed by the
+	 * power domain device being transitioned to the
+	 * @ref PM_DEVICE_STATE_SUSPENDED state.
+	 *
+	 * A device driver may be deinitialized in this state. Once the device
+	 * driver has been deinitialized, we implicitly move to the
+	 * @ref PM_DEVICE_STATE_OFF state as the device hardware may lose power,
+	 * with no device driver to respond to the corresponding
+	 * @ref PM_DEVICE_ACTION_TURN_OFF action.
+	 *
+	 * @note This state is NOT a "low-power"/"partially operable" state,
+	 * those are configured using device driver specific APIs, and apply only
+	 * while the device is in the @ref PM_DEVICE_STATE_ACTIVE state.
 	 */
 	PM_DEVICE_STATE_SUSPENDED,
-	/** Device is being suspended. */
+	/**
+	 * @brief Device hardware is powered, but the device has been scheduled to
+	 * be suspended, as it is no longer needed by the system.
+	 *
+	 * @details This state is used when delegating suspension of a device to
+	 * the PM subsystem, optionally with residency to avoid unnecessary
+	 * suspend/resume cycles, resulting from a call to
+	 * @ref pm_device_runtime_put_async. The device will be unscheduled in case
+	 * the device becomes needed by the system.
+	 *
+	 * No device driver API calls must occur in this state.
+	 *
+	 * @note that this state is opaque to the device driver (no
+	 * @ref pm_device_action is called as this state is entered) and is used
+	 * solely by PM_DEVICE_RUNTIME.
+	 */
 	PM_DEVICE_STATE_SUSPENDING,
 	/**
-	 * Device is turned off (power removed).
+	 * @brief Device hardware is not powered. This is the initial state from
+	 * which a device driver is initialized.
 	 *
-	 * @note
-	 *     Device context is lost.
+	 * @details When a device driver is initialized, we do not know the state
+	 * of the device. As a result, the @ref PM_DEVICE_ACTION_TURN_ON action
+	 * should be able to transition the device from any internal state into
+	 * @ref PM_DEVICE_STATE_SUSPENDED, since no guarantees can be made across
+	 * resets. This is typically achieved through toggling a reset pin or
+	 * triggering a software reset through a register write before performing
+	 * any additional configuration needed to meet the requirements of
+	 * @ref PM_DEVICE_STATE_SUSPENDED. For devices where this is not possible,
+	 * the device driver must presume the device is in either the
+	 * @ref PM_DEVICE_STATE_OFF or @ref PM_DEVICE_STATE_SUSPENDED state at
+	 * time of initialization, as these are the states within which device
+	 * drivers may be deinitialized.
+	 *
+	 * If a device has been specified as this device's power domain, and said
+	 * device becomes needed by the system, the power domain device will be
+	 * transitioned into the @ref PM_DEVICE_STATE_ACTIVE state, followed by this
+	 * device being transitioned to the
+	 * @ref PM_DEVICE_STATE_SUSPENDED state.
 	 */
 	PM_DEVICE_STATE_OFF
 };
@@ -94,14 +158,25 @@ enum pm_device_action {
 	PM_DEVICE_ACTION_RESUME,
 	/**
 	 * Turn off.
-	 * @note
-	 *     Action triggered only by a power domain.
+	 * @brief Action triggered only by a power domain.
+	 *
+	 * @details This action serves as a notification to the device that its power
+	 * domain is about to be powered off. After this action completes,
+	 * the device must have disabled IRQs, released resources, and be
+	 * fully prepared for power loss.
+	 *
+	 * The actual power domain power-off timing is platform-specific and
+	 * may occur immediately, be deferred, or be handled as part of a
+	 * system-level power transition. This action only indicates that
+	 * the device should prepare for potential power loss.
 	 */
 	PM_DEVICE_ACTION_TURN_OFF,
 	/**
 	 * Turn on.
-	 * @note
-	 *     Action triggered only by a power domain.
+	 * @brief Action triggered only by a power domain.
+	 *
+	 * @details This action serves as a notification to the device that its power
+	 * domain has been powered on.
 	 */
 	PM_DEVICE_ACTION_TURN_ON,
 };
@@ -112,9 +187,8 @@ enum pm_device_action {
  * @param dev Device instance.
  * @param action Requested action.
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP If the requested action is not supported.
- * @retval Errno Other negative errno on failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOTSUP Requested action is not supported.
  */
 typedef int (*pm_device_action_cb_t)(const struct device *dev,
 				     enum pm_device_action action);
@@ -168,10 +242,12 @@ struct pm_device {
 	const struct device *dev;
 	/** Lock to synchronize the get/put operations */
 	struct k_sem lock;
+#if defined(CONFIG_PM_DEVICE_RUNTIME_ASYNC) || defined(__DOXYGEN__)
 	/** Event var to listen to the sync request events */
 	struct k_event event;
 	/** Work object for asynchronous calls */
 	struct k_work_delayable work;
+#endif /* CONFIG_PM_DEVICE_RUNTIME_ASYNC */
 #endif /* CONFIG_PM_DEVICE_RUNTIME */
 };
 
@@ -197,10 +273,13 @@ BUILD_ASSERT(offsetof(struct pm_device_isr, base) == 0);
 
 /** @cond INTERNAL_HIDDEN */
 
-#ifdef CONFIG_PM_DEVICE_RUNTIME
+#ifdef CONFIG_PM_DEVICE_RUNTIME_ASYNC
 #define Z_PM_DEVICE_RUNTIME_INIT(obj)			\
 	.lock = Z_SEM_INITIALIZER(obj.lock, 1, 1),	\
 	.event = Z_EVENT_INITIALIZER(obj.event),
+#elif CONFIG_PM_DEVICE_RUNTIME
+#define Z_PM_DEVICE_RUNTIME_INIT(obj)			\
+	.lock = Z_SEM_INITIALIZER(obj.lock, 1, 1),
 #else
 #define Z_PM_DEVICE_RUNTIME_INIT(obj)
 #endif /* CONFIG_PM_DEVICE_RUNTIME */
@@ -416,13 +495,13 @@ const char *pm_device_state_str(enum pm_device_state state);
  * @param dev Device instance.
  * @param action Device pm action.
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP If requested state is not supported.
- * @retval -EALREADY If device is already at the requested state.
- * @retval -EBUSY If device is changing its state.
- * @retval -ENOSYS If device does not support PM.
- * @retval -EPERM If device has power state locked.
- * @retval Errno Other negative errno on failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOTSUP Requested action is not supported from the device's
+ *         current state.
+ * @retval -EALREADY Device is already in the state implied by the requested action.
+ * @retval -EBUSY Device is changing its state.
+ * @retval -ENOSYS Device does not support PM.
+ * @retval -EPERM Device has power state locked.
  */
 int pm_device_action_run(const struct device *dev,
 		enum pm_device_action action);
@@ -448,8 +527,8 @@ void pm_device_children_action_run(const struct device *dev,
  * @param dev Device instance.
  * @param state Pointer where device power state will be stored.
  *
- * @retval 0 If successful.
- * @retval -ENOSYS If device does not implement power management.
+ * @retval 0 on success.
+ * @retval -ENOSYS Device does not implement power management.
  */
 int pm_device_state_get(const struct device *dev,
 			enum pm_device_state *state);
@@ -517,8 +596,8 @@ void pm_device_busy_clear(const struct device *dev);
 /**
  * @brief Check if any device is busy.
  *
- * @retval false If no device is busy
- * @retval true If one or more devices are busy
+ * @retval false No device is busy.
+ * @retval true One or more devices are busy.
  */
 bool pm_device_is_any_busy(void);
 
@@ -527,8 +606,8 @@ bool pm_device_is_any_busy(void);
  *
  * @param dev Device instance.
  *
- * @retval false If the device is not busy
- * @retval true If the device is busy
+ * @retval false Device is not busy.
+ * @retval true Device is busy.
  */
 bool pm_device_is_busy(const struct device *dev);
 
@@ -542,8 +621,8 @@ bool pm_device_is_busy(const struct device *dev);
  * @param dev Device instance.
  * @param enable @c true to enable or @c false to disable
  *
- * @retval true If the wakeup source was successfully enabled.
- * @retval false If the wakeup source was not successfully enabled.
+ * @retval true Wakeup source was successfully enabled.
+ * @retval false Wakeup source was not successfully enabled.
  */
 bool pm_device_wakeup_enable(const struct device *dev, bool enable);
 
@@ -552,8 +631,8 @@ bool pm_device_wakeup_enable(const struct device *dev, bool enable);
  *
  * @param dev Device instance.
  *
- * @retval true if the wakeup source is enabled.
- * @retval false if the wakeup source is not enabled.
+ * @retval true Wakeup source is enabled.
+ * @retval false Wakeup source is not enabled.
  */
 bool pm_device_wakeup_is_enabled(const struct device *dev);
 
@@ -562,8 +641,8 @@ bool pm_device_wakeup_is_enabled(const struct device *dev);
  *
  * @param dev Device instance.
  *
- * @retval true If the device is wake up capable.
- * @retval false If the device is not wake up capable.
+ * @retval true Device is wake up capable.
+ * @retval false Device is not wake up capable.
  */
 bool pm_device_wakeup_is_capable(const struct device *dev);
 
@@ -572,8 +651,8 @@ bool pm_device_wakeup_is_capable(const struct device *dev);
  *
  * @param dev Device instance.
  *
- * @retval true If device is on a switchable power domain.
- * @retval false If device is not on a switchable power domain.
+ * @retval true Device is on a switchable power domain.
+ * @retval false Device is not on a switchable power domain.
  */
 bool pm_device_on_power_domain(const struct device *dev);
 
@@ -585,10 +664,10 @@ bool pm_device_on_power_domain(const struct device *dev);
  * @param dev Device to be added to the power domain.
  * @param domain Power domain.
  *
- * @retval 0 If successful.
- * @retval -EALREADY If device is already part of the power domain.
- * @retval -ENOSYS If the application was built without power domain support.
- * @retval -ENOSPC If there is no space available in the power domain to add the device.
+ * @retval 0 on success.
+ * @retval -EALREADY Device is already part of the power domain.
+ * @retval -ENOSYS Application was built without power domain support.
+ * @retval -ENOSPC No space available in the power domain to add the device.
  */
 int pm_device_power_domain_add(const struct device *dev,
 			       const struct device *domain);
@@ -601,9 +680,9 @@ int pm_device_power_domain_add(const struct device *dev,
  * @param dev Device to be removed from the power domain.
  * @param domain Power domain.
  *
- * @retval 0 If successful.
- * @retval -ENOSYS If the application was built without power domain support.
- * @retval -ENOENT If device is not in the given domain.
+ * @retval 0 on success.
+ * @retval -ENOSYS Application was built without power domain support.
+ * @retval -ENOENT Device is not in the given domain.
  */
 int pm_device_power_domain_remove(const struct device *dev,
 				  const struct device *domain);
@@ -613,28 +692,54 @@ int pm_device_power_domain_remove(const struct device *dev,
  *
  * @param dev Device instance.
  *
- * @retval true If device is currently powered, or is assumed to be powered
- * (i.e. it does not support PM or is not under a PM domain)
- * @retval false If device is not currently powered
+ * @retval true Device is currently powered, or is assumed to be powered
+ * (i.e. it does not support PM or is not under a PM domain).
+ * @retval false Device is not currently powered.
  */
 bool pm_device_is_powered(const struct device *dev);
 
 /**
- * @brief Setup a device driver into the lowest valid power mode
+ * @brief Move a device driver into its initial device power state.
  *
- * This helper function is intended to be called at the end of a driver
- * init function to automatically setup the device into the lowest power
- * mode. It assumes that the device has been configured as if it is in
- * @ref PM_DEVICE_STATE_OFF, or @ref PM_DEVICE_STATE_SUSPENDED if device can
- * never be powered off.
+ * @details This function uses the device driver's internal PM hook to
+ * move the device from the OFF state to the initial power state expected
+ * by the system.
+ *
+ * The initial power state expected by the system is:
+ *
+ * - ACTIVE if CONFIG_PM_DEVICE=n or (CONFIG_PM_DEVICE=y and
+ *   CONFIG_PM_DEVICE_RUNTIME=n) or (CONFIG_PM_DEVICE_RUNTIME=y and
+ *   !pm_device_runtime_is_enabled(dev)).
+ * - SUSPENDED if CONFIG_PM_DEVICE_RUNTIME=y and device's parent power domain is ACTIVE.
+ * - OFF if CONFIG_PM_DEVICE_RUNTIME=y and device's parent power domain is SUSPENDED.
+ *
+ * @note This function must be called at the end of a driver's init
+ * function.
  *
  * @param dev Device instance.
  * @param action_cb Device PM control callback function.
- * @retval 0 On success.
- * @retval -errno Error code from @a action_cb on failure.
+ * @return 0 on success, negative errno value on failure.
  */
 int pm_device_driver_init(const struct device *dev, pm_device_action_cb_t action_cb);
 
+/**
+ * @brief Prepare PM device for device driver deinit
+ *
+ * @details Ensures device is either SUSPENDED or OFF. If CONFIG_PM_DEVICE=y,
+ * the function checks whether power management has moved the device to
+ * either the SUSPENDED or OFF states. If CONFIG_PM_DEVICE=n, the function
+ * uses the device driver's internal PM hook to move the device to the
+ * SUSPENDED state.
+ *
+ * @note This function must be called at the beginning of a driver's deinit
+ * function.
+ *
+ * @param dev Device instance.
+ * @param action_cb Device PM control callback function.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -EBUSY Device is not SUSPENDED nor OFF.
+ */
+int pm_device_driver_deinit(const struct device *dev, pm_device_action_cb_t action_cb);
 #else
 static inline int pm_device_state_get(const struct device *dev,
 				      enum pm_device_state *state)
@@ -729,6 +834,11 @@ static inline int pm_device_driver_init(const struct device *dev, pm_device_acti
 	}
 
 	return 0;
+}
+
+static inline int pm_device_driver_deinit(const struct device *dev, pm_device_action_cb_t action_cb)
+{
+	return action_cb(dev, PM_DEVICE_ACTION_SUSPEND);
 }
 
 #endif /* CONFIG_PM_DEVICE */

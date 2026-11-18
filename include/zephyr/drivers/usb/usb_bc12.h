@@ -19,9 +19,9 @@ extern "C" {
 #endif
 
 /**
- * @brief BC1.2 driver APIs
- * @defgroup b12_interface BC1.2 driver APIs
- * @ingroup io_interfaces
+ * @brief USB Battery Charging (BC1.2) driver APIs
+ * @defgroup b12_interface Battery Charging (BC1.2)
+ * @ingroup usb_interfaces
  * @{
  */
 
@@ -63,9 +63,9 @@ extern "C" {
 
 /** @brief BC1.2 device role. */
 enum bc12_role {
-	BC12_DISCONNECTED,
-	BC12_PORTABLE_DEVICE,
-	BC12_CHARGING_PORT,
+	BC12_DISCONNECTED,    /**< No BC1.2 device connected */
+	BC12_PORTABLE_DEVICE, /**< BC1.2 device is a portable device */
+	BC12_CHARGING_PORT,   /**< BC1.2 device is a charging port */
 };
 
 /** @brief BC1.2 charging partner type. */
@@ -88,25 +88,33 @@ enum bc12_type {
 
 /**
  * @brief BC1.2 detected partner state.
- *
- * @param bc12_role Current role of the BC1.2 device.
- * @param type Charging partner type. Valid when bc12_role is BC12_PORTABLE_DEVICE.
- * @param current_ma Current, in uA, that the charging partner provides. Valid when bc12_role is
- * BC12_PORTABLE_DEVICE.
- * @param voltage_mv Voltage, in uV, that the charging partner provides. Valid when bc12_role is
- * BC12_PORTABLE_DEVICE.
- * @param pd_partner_connected True if a PD partner is currently connected. Valid when bc12_role is
- * BC12_CHARGING_PORT.
  */
 struct bc12_partner_state {
+	/** Current role of the BC1.2 device. */
 	enum bc12_role bc12_role;
 	union {
 		struct {
+			/**
+			 * Charging partner type.
+			 * Valid when @ref bc12_role is @ref BC12_PORTABLE_DEVICE.
+			 */
 			enum bc12_type type;
+			/**
+			 * Current, in uA, that the charging partner provides.
+			 * Valid when @ref bc12_role is @ref BC12_PORTABLE_DEVICE.
+			 */
 			int current_ua;
+			/**
+			 * Voltage, in uV, that the charging partner provides.
+			 * Valid when @ref bc12_role is @ref BC12_PORTABLE_DEVICE.
+			 */
 			int voltage_uv;
 		};
 		struct {
+			/**
+			 * True if a PD partner is currently connected.
+			 * Valid when @ref bc12_role is @ref BC12_CHARGING_PORT.
+			 */
 			bool pd_partner_connected;
 		};
 	};
@@ -151,9 +159,7 @@ __syscall int bc12_set_role(const struct device *dev, enum bc12_role role);
 
 static inline int z_impl_bc12_set_role(const struct device *dev, enum bc12_role role)
 {
-	const struct bc12_driver_api *api = (const struct bc12_driver_api *)dev->api;
-
-	return api->set_role(dev, role);
+	return DEVICE_API_GET(bc12, dev)->set_role(dev, role);
 }
 
 /**
@@ -171,9 +177,7 @@ __syscall int bc12_set_result_cb(const struct device *dev, bc12_callback_t cb, v
 static inline int z_impl_bc12_set_result_cb(const struct device *dev, bc12_callback_t cb,
 					    void *user_data)
 {
-	const struct bc12_driver_api *api = (const struct bc12_driver_api *)dev->api;
-
-	return api->set_result_cb(dev, cb, user_data);
+	return DEVICE_API_GET(bc12, dev)->set_result_cb(dev, cb, user_data);
 }
 
 #ifdef __cplusplus

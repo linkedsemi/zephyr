@@ -7,11 +7,11 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
+#include <zephyr/drivers/regulator.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/__assert.h>
-#include <zephyr/drivers/i2c.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <zephyr/sys/util.h>
@@ -27,6 +27,7 @@ struct si7006_data {
 
 struct si7006_config {
 	struct i2c_dt_spec i2c;
+	const struct device *vin_supply;
 	/** Use "read temp" vs "read old temp" command, the latter only with SiLabs sensors. */
 	uint8_t read_temp_cmd;
 };
@@ -122,7 +123,7 @@ static int si7006_channel_get(const struct device *dev,
 		 * (temp * 22492 - 393006285) / 2^23
 		 *
 		 * There is a very small amount of round-off error in the factor of 22492.  To
-		 * compenstate, a constant of 5246 is used to center the error about 0, thus
+		 * compensate, a constant of 5246 is used to center the error about 0, thus
 		 * reducing the overall MSE.
 		 */
 
@@ -172,7 +173,7 @@ static int si7006_channel_get(const struct device *dev,
 	}
 }
 
-static const struct sensor_driver_api si7006_api = {
+static DEVICE_API(sensor, si7006_api) = {
 	.sample_fetch = &si7006_sample_fetch,
 	.channel_get = &si7006_channel_get,
 };
@@ -188,8 +189,15 @@ static int si7006_init(const struct device *dev)
 	const struct si7006_config *config = dev->config;
 
 	if (!device_is_ready(config->i2c.bus)) {
-		LOG_ERR("Bus device is not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->i2c.bus);
 		return -ENODEV;
+	}
+
+	if (IS_ENABLED(CONFIG_REGULATOR) && config->vin_supply) {
+		regulator_enable(config->vin_supply);
+
+		/* As stated by the Si7006 spec - Maximum powerup time is 80ms */
+		k_msleep(80);
 	}
 
 	LOG_DBG("si7006 init ok");
@@ -202,6 +210,7 @@ static int si7006_init(const struct device *dev)
 											\
 	static const struct si7006_config si7006_config_##name##_##inst = {		\
 		.i2c = I2C_DT_SPEC_INST_GET(inst),					\
+		.vin_supply = DEVICE_DT_GET_OR_NULL(DT_INST_PHANDLE(inst, vin_supply)),	\
 		.read_temp_cmd = temp_cmd,						\
 	};										\
 											\
@@ -216,4 +225,8 @@ DT_INST_FOREACH_STATUS_OKAY_VARGS(SI7006_DEFINE, DT_DRV_COMPAT, SI7006_READ_OLD_
 
 #undef DT_DRV_COMPAT
 #define DT_DRV_COMPAT sensirion_sht21
+DT_INST_FOREACH_STATUS_OKAY_VARGS(SI7006_DEFINE, DT_DRV_COMPAT, SI7006_MEAS_TEMP_MASTER_MODE);
+
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT meas_htu21d
 DT_INST_FOREACH_STATUS_OKAY_VARGS(SI7006_DEFINE, DT_DRV_COMPAT, SI7006_MEAS_TEMP_MASTER_MODE);

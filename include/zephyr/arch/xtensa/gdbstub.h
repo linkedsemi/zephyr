@@ -6,8 +6,8 @@
 
 #include <inttypes.h>
 
-#ifndef ZEPHYR_INCLUDE_ARCH_XTENSA_GDBSTUB_SYS_H_
-#define ZEPHYR_INCLUDE_ARCH_XTENSA_GDBSTUB_SYS_H_
+#ifndef ZEPHYR_INCLUDE_ARCH_XTENSA_GDBSTUB_H_
+#define ZEPHYR_INCLUDE_ARCH_XTENSA_GDBSTUB_H_
 
 #ifdef CONFIG_GDBSTUB
 
@@ -39,7 +39,7 @@ struct xtensa_register {
 	uint32_t	val;
 
 	/** GDB register index (for p/P packets) */
-	uint8_t		idx;
+	uint32_t	idx;
 
 	/** Size of register */
 	uint8_t		byte_size;
@@ -57,7 +57,7 @@ struct xtensa_register {
 	 * Offset of saved register in stack frame.
 	 * 0 if not saved in stack frame.
 	 */
-	int8_t		stack_offset;
+	int16_t		stack_offset;
 
 	/** Sequence number */
 	uint8_t		seqno;
@@ -103,8 +103,8 @@ struct gdb_ctx {
 	/** Index in register descriptions of AR0 register */
 	uint8_t			ar_idx;
 
-	/** Index in register descriptions of WINDOWBASE register */
-	uint8_t			wb_idx;
+	/** Index in register descriptions of PS register */
+	uint8_t			ps_idx;
 };
 
 /**
@@ -171,4 +171,4 @@ static inline bool gdb_xtensa_is_user_reg(struct xtensa_register *reg)
 
 #endif /* CONFIG_GDBSTUB */
 
-#endif /* ZEPHYR_INCLUDE_ARCH_XTENSA_GDBSTUB_SYS_H_ */
+#endif /* ZEPHYR_INCLUDE_ARCH_XTENSA_GDBSTUB_H_ */

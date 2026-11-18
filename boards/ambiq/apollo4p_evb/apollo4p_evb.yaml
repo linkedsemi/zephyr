@@ -14,9 +14,12 @@ supported:
   - gpio
   - spi
   - i2c
+  - i2c_target
   - rtc
   - adc
   - hwinfo
+  - usbd
+  - sdhc
 testing:
   ignore_tags:
     - net

@@ -3,9 +3,12 @@
 
 menuconfig NVME
 	bool "NVMe disk"
-	depends on PCIE
+	select PCIE
+	select PCIE_MSI
 	select PCIE_MSI_X
 	select PCIE_MSI_MULTI_VECTOR
+	depends on DT_HAS_NVME_CONTROLLER_ENABLED
+	default y
 	help
 	  NVMe disk(s) might be present on the system through PCIe, enable this
 	  driver to support these. It will enable MSI-X and MSI multi-vector
@@ -49,8 +52,15 @@ config NVME_REQUEST_TIMEOUT
 	range 5 120
 	default 5
 	help
-	  This sets the waiting time for a request to succeed.
+	  This sets the waiting time for a request to succeed, in seconds.
 	  Do not touch this unless you know what you are doing.
+
+config NVME_PRP_PAGE_SIZE
+	hex "NVMe PRP Page Size"
+	default MMU_PAGE_SIZE if MMU
+	default 0x1000
+	help
+	  Set the PRP page size. If MMU is enabled, this will default to the MMU page size.
 
 config NVME_PRP_LIST_AMOUNT
 	int "Number of allocated PRP list"

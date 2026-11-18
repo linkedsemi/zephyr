@@ -367,10 +367,10 @@ static int init_ring(struct dma_iproc_pax_data *pd, enum ring_idx idx)
 
 	k_mutex_lock(&pd->dma_lock, K_FOREVER);
 
-	/*  Read cmpl write ptr incase previous dma stopped */
+	/*  Read cmpl write ptr in case previous dma stopped */
 	sys_read32(RM_RING_REG(pd, idx, RING_CMPL_WRITE_PTR));
 
-	/* Inactivate ring */
+	/* Deactivate ring */
 	sys_write32(0x0, RM_RING_REG(pd, idx, RING_CONTROL));
 
 	/* Flush ring before loading new descriptor */
@@ -902,14 +902,14 @@ static int dma_iproc_pax_configure(const struct device *dev, uint32_t channel,
 
 #ifdef CONFIG_DMA_IPROC_PAX_DEBUG
 	if (xfer_sz > PAX_DMA_MAX_SIZE) {
-		LOG_ERR("Unsupported size: %d\n", xfer_size);
+		LOG_ERR("Unsupported size: %d\n", xfer_sz);
 		ring->ring_active = 0;
 		ret = -EINVAL;
 		goto err;
 	}
 
 	if (xfer_sz % PAX_DMA_MIN_SIZE) {
-		LOG_ERR("Unaligned size 0x%x\n", xfer_size);
+		LOG_ERR("Unaligned size 0x%x\n", xfer_sz);
 		ring->ring_active = 0;
 		ret = -EINVAL;
 		goto err;
@@ -965,7 +965,7 @@ static int dma_iproc_pax_transfer_stop(const struct device *dev,
 	return 0;
 }
 
-static const struct dma_driver_api pax_dma_driver_api = {
+static DEVICE_API(dma, pax_dma_driver_api) = {
 	.config = dma_iproc_pax_configure,
 	.start = dma_iproc_pax_transfer_start,
 	.stop = dma_iproc_pax_transfer_stop,
@@ -982,7 +982,7 @@ static const struct dma_iproc_pax_cfg pax_dma_cfg = {
 };
 
 DEVICE_DT_INST_DEFINE(0,
-		    &dma_iproc_pax_init,
+		    dma_iproc_pax_init,
 		    NULL,
 		    &pax_dma_data,
 		    &pax_dma_cfg,

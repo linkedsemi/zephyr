@@ -905,8 +905,28 @@ static int json_append_bytes_base64(const char *bytes, size_t len, void *data)
 			/* No space available for base64 data */
 			return -ENOMEM;
 		}
+
+		/* Change base64 data to URL-safe BASE64 data without padding */
+		int padding_removed = 0;
+
+		for (int i = 0; i < temp_length; i++) {
+			switch (CPKT_BUF_W_PTR(out->out_cpkt)[i]) {
+			case '+':
+				CPKT_BUF_W_PTR(out->out_cpkt)[i] = '-';
+				break;
+			case '/':
+				CPKT_BUF_W_PTR(out->out_cpkt)[i] = '_';
+				break;
+			case '=':
+				CPKT_BUF_W_PTR(out->out_cpkt)[i] = 0;
+				padding_removed++;
+				break;
+			default:
+				break;
+			}
+		}
 		/* Update Data offset */
-		out->out_cpkt->offset += temp_length;
+		out->out_cpkt->offset += (temp_length - padding_removed);
 	} else {
 		if (buf_append(CPKT_BUF_WRITE(fd->out->out_cpkt), bytes, len) < 0) {
 			return -ENOMEM;
@@ -1096,9 +1116,9 @@ static int get_string(struct lwm2m_input_context *in, uint8_t *buf, size_t bufle
 
 	string_length = strlen(fd->senml_object.val_string);
 
-	if (string_length > buflen) {
-		LOG_WRN("Buffer too small to accommodate string, truncating");
-		string_length = buflen - 1;
+	if (string_length >= buflen) {
+		LOG_WRN("Buffer too small to accommodate string");
+		return -ENOMEM;
 	}
 	memcpy(buf, fd->senml_object.val_string, string_length);
 
@@ -1233,7 +1253,7 @@ static int get_opaque(struct lwm2m_input_context *in, uint8_t *value, size_t buf
 	/* Decode from url safe to normal */
 	base64_url_safe_decode(data_ptr, val_opaque->length);
 
-	if (opaque->remaining == 0) {
+	if (opaque->offset == 0) {
 		size_t original_size = val_opaque->length;
 		size_t base64_length;
 
@@ -1260,10 +1280,9 @@ static int get_opaque(struct lwm2m_input_context *in, uint8_t *value, size_t buf
 			val_opaque->length += buffer_base64_length;
 		}
 		opaque->len = val_opaque->length;
-		opaque->remaining = val_opaque->length;
 	}
 
-	in_len = opaque->remaining;
+	in_len = opaque->len - opaque->offset;
 
 	if (in_len > buflen) {
 		in_len = buflen;
@@ -1273,8 +1292,7 @@ static int get_opaque(struct lwm2m_input_context *in, uint8_t *value, size_t buf
 		in_len = val_opaque->length;
 	}
 
-	opaque->remaining -= in_len;
-	if (opaque->remaining == 0U) {
+	if (opaque->offset + in_len >= opaque->len) {
 		*last_block = true;
 	}
 	/* Copy data to buffer */
@@ -1535,6 +1553,13 @@ int do_write_op_senml_json(struct lwm2m_message *msg)
 		}
 
 		msg->path = resource_path;
+
+		/* The record path comes from the payload, check it before any write */
+		ret = lwm2m_check_path_access(msg);
+		if (ret < 0) {
+			goto end_of_operation;
+		}
+
 		ret = lwm2m_senml_write_operation(msg, &fd);
 
 		/*

@@ -8,7 +8,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <zephyr/spinlock.h>
+#include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/pm/device.h>
+#include <zephyr/pm/device_runtime.h>
 #include <zephyr/logging/log.h>
 
 #define DT_DRV_COMPAT intel_hda_dai
@@ -64,7 +67,7 @@ static int dai_hda_config_get(const struct device *dev, struct dai_config *cfg, 
 }
 
 static int dai_hda_config_set(const struct device *dev, const struct dai_config *cfg,
-				  const void *bespoke_cfg)
+				  const void *bespoke_cfg, size_t size)
 {
 	struct dai_intel_hda *dp = (struct dai_intel_hda *)dev->data;
 
@@ -89,6 +92,25 @@ static const struct dai_properties *dai_hda_get_properties(const struct device *
 	return prop;
 }
 
+static int dai_hda_get_properties_copy(const struct device *dev,
+				       enum dai_dir dir, int stream_id,
+				       struct dai_properties *prop)
+{
+	const struct dai_properties *kernel_prop = dai_hda_get_properties(dev, dir, stream_id);
+
+	if (!prop) {
+		return -EINVAL;
+	}
+
+	if (!kernel_prop) {
+		return -ENOENT;
+	}
+
+	memcpy(prop, kernel_prop, sizeof(*kernel_prop));
+
+	return 0;
+}
+
 static int dai_hda_probe(const struct device *dev)
 {
 	LOG_DBG("%s", __func__);
@@ -103,13 +125,40 @@ static int dai_hda_remove(const struct device *dev)
 	return 0;
 }
 
-static const struct dai_driver_api dai_intel_hda_api_funcs = {
-	.probe			= dai_hda_probe,
-	.remove			= dai_hda_remove,
+static int hda_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	switch (action) {
+	case PM_DEVICE_ACTION_SUSPEND:
+		dai_hda_remove(dev);
+		break;
+	case PM_DEVICE_ACTION_RESUME:
+		dai_hda_probe(dev);
+		break;
+	case PM_DEVICE_ACTION_TURN_OFF:
+	case PM_DEVICE_ACTION_TURN_ON:
+		/* All device pm is handled during resume and suspend */
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static int hda_init(const struct device *dev)
+{
+	LOG_DBG("%s", __func__);
+	return pm_device_driver_init(dev, hda_pm_action);
+}
+
+static DEVICE_API(dai, dai_intel_hda_api_funcs) = {
+	.probe			= pm_device_runtime_get,
+	.remove			= pm_device_runtime_put,
 	.config_set		= dai_hda_config_set,
 	.config_get		= dai_hda_config_get,
 	.trigger		= dai_hda_trigger,
 	.get_properties		= dai_hda_get_properties,
+	.get_properties_copy	= dai_hda_get_properties_copy,
 };
 
 #define DAI_INTEL_HDA_DEVICE_INIT(n)				\
@@ -122,11 +171,14 @@ static const struct dai_driver_api dai_intel_hda_api_funcs = {
 								\
 	};							\
 								\
+	PM_DEVICE_DT_INST_DEFINE(n, hda_pm_action);		\
+								\
 	DEVICE_DT_INST_DEFINE(n,				\
-			NULL, NULL,				\
+			hda_init, PM_DEVICE_DT_INST_GET(n),	\
 			&dai_intel_hda_data_##n,		\
 			&dai_intel_hda_config_##n,		\
-			POST_KERNEL, 32,			\
+			POST_KERNEL,				\
+			CONFIG_DAI_INIT_PRIORITY,		\
 			&dai_intel_hda_api_funcs);
 
 DT_INST_FOREACH_STATUS_OKAY(DAI_INTEL_HDA_DEVICE_INIT)

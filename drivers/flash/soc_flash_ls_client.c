@@ -523,7 +523,7 @@ __ramfunc int flash_ls_ex_op(const struct device *dev, uint16_t code,
 #endif
 #endif
 
-static struct flash_driver_api flash_ls_client_api = {
+static DEVICE_API(flash, flash_ls_client_api) = {
 	.erase = flash_ls_client_erase,
 	.write = flash_ls_client_write_align,
 	.read = flash_ls_client_read_align,

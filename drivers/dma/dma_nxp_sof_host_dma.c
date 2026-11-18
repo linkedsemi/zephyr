@@ -28,7 +28,7 @@ LOG_MODULE_REGISTER(nxp_sof_host_dma);
 /* note: This driver doesn't attempt to provide
  * a generic software-based DMA engine implementation.
  * As its name suggests, its only usage is in SOF
- * (Sound Open Firmware) for NXP plaforms which are
+ * (Sound Open Firmware) for NXP platforms which are
  * able to access the host memory directly from the
  * core on which the firmware is running.
  */
@@ -271,7 +271,7 @@ static int sof_host_dma_get_attribute(const struct device *dev, uint32_t type, u
 	return 0;
 }
 
-static const struct dma_driver_api sof_host_dma_api = {
+static DEVICE_API(dma, sof_host_dma_api) = {
 	.reload = sof_host_dma_reload,
 	.config = sof_host_dma_config,
 	.start = sof_host_dma_start,

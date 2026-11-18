@@ -8,6 +8,7 @@
 LOG_MODULE_DECLARE(net_l2_ppp, CONFIG_NET_L2_PPP_LOG_LEVEL);
 
 #include <zephyr/net/net_core.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/net_pkt.h>
 
 #include <zephyr/net/ppp.h>
@@ -49,13 +50,20 @@ static void validate_phase_transition(enum ppp_phase current,
 		[PPP_ESTABLISH] = 1 << PPP_DEAD |
 				1 << PPP_AUTH |
 				1 << PPP_TERMINATE,
-		[PPP_AUTH] = 1 << PPP_TERMINATE |
+		[PPP_AUTH] = 1 << PPP_DEAD |
+				1 << PPP_ESTABLISH |
+				1 << PPP_TERMINATE |
 				1 << PPP_NETWORK,
-		[PPP_NETWORK] = 1 << PPP_TERMINATE |
+		[PPP_NETWORK] = 1 << PPP_DEAD |
+				1 << PPP_ESTABLISH |
+				1 << PPP_TERMINATE |
 				1 << PPP_RUNNING,
-		[PPP_RUNNING] = 1 << PPP_TERMINATE |
+		[PPP_RUNNING] = 1 << PPP_DEAD |
+				1 << PPP_ESTABLISH |
+				1 << PPP_TERMINATE |
 				1 << PPP_NETWORK,
-		[PPP_TERMINATE] = 1 << PPP_DEAD,
+		[PPP_TERMINATE] = 1 << PPP_DEAD |
+				1 << PPP_ESTABLISH,
 	};
 
 	if (!(valid_transitions[current] & 1 << new)) {
@@ -366,10 +374,8 @@ const char *ppp_option2str(enum ppp_protocol_type protocol,
 
 void ppp_fsm_name_set(struct ppp_fsm *fsm, const char *name)
 {
-#if CONFIG_NET_L2_PPP_LOG_LEVEL >= LOG_LEVEL_DBG
-	fsm->name = name;
-#else
-	ARG_UNUSED(fsm);
-	ARG_UNUSED(name);
-#endif
+	/* Always set name: NET_ERR/NET_WRN in ipv6cp/ipcp/lcp use fsm->name
+	 * regardless of CONFIG_NET_L2_PPP_LOG_LEVEL.
+	 */
+	fsm->name = (name != NULL) ? name : "";
 }

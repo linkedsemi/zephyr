@@ -1,4 +1,5 @@
 # Copyright (c) 2017 Linaro Limited.
+# Copyright (c) 2024 Tenstorrent AI ULC
 #
 # SPDX-License-Identifier: Apache-2.0
 #
@@ -6,21 +7,28 @@
 
 '''Runner for openocd.'''
 
+import argparse
+import logging
 import re
-import socket
 import subprocess
-import time
-
+from os import name as os_name
 from os import path
 from pathlib import Path
+
 from zephyr_ext_common import ZEPHYR_BASE
 
-try:
+if os_name != "nt":
+    import sys
+    import termios
+
+try:  # noqa SIM105
     from elftools.elf.elffile import ELFFile
 except ImportError:
     pass
 
-from runners.core import ZephyrBinaryRunner, RunnerCaps
+from runners.core import FileType, RunnerCaps, ZephyrBinaryRunner
+
+_logger = logging.getLogger('runners')
 
 DEFAULT_OPENOCD_TCL_PORT = 6333
 DEFAULT_OPENOCD_TELNET_PORT = 4444
@@ -29,28 +37,44 @@ DEFAULT_OPENOCD_RTT_PORT = 5555
 DEFAULT_OPENOCD_RESET_HALT_CMD = 'reset init'
 DEFAULT_OPENOCD_TARGET_HANDLE = "_TARGETNAME"
 
+def to_num(number):
+    dev_match = re.search(r"^\d*\+dev", number)
+    dev_version = dev_match is not None
+
+    num_match = re.search(r"^\d*", number)
+    num = int(num_match.group(0))
+
+    if dev_version:
+        num += 1
+
+    return num
+
 class OpenOcdBinaryRunner(ZephyrBinaryRunner):
     '''Runner front-end for openocd.'''
 
-    def __init__(self, cfg, pre_init=None, reset_halt_cmd=DEFAULT_OPENOCD_RESET_HALT_CMD,
-                 pre_load=None, load_cmd=None, verify_cmd=None, post_verify=None,
-                 do_verify=False, do_verify_only=False,
-                 tui=None, config=None, serial=None, use_elf=None,
-                 no_halt=False, no_init=False, no_targets=False,
+    def __init__(self, cfg, pre_init=None, pre_init_flash=None,
+                 reset_halt_cmd=DEFAULT_OPENOCD_RESET_HALT_CMD,
+                 pre_load=None, erase_cmd=None, load_cmd=None, verify_cmd=None,
+                 post_verify=None, do_verify=False, do_verify_only=False, do_erase=False,
+                 tui=None, config=None, serial=None, image_type=None,
+                 flash_address=None, no_halt=False, no_init=False, no_targets=False,
                  tcl_port=DEFAULT_OPENOCD_TCL_PORT,
                  telnet_port=DEFAULT_OPENOCD_TELNET_PORT,
+                 log_file=None,
                  gdb_port=DEFAULT_OPENOCD_GDB_PORT,
                  gdb_client_port=DEFAULT_OPENOCD_GDB_PORT,
-                 gdb_init=None, no_load=False,
+                 gdb_init=None, load=True,
                  target_handle=DEFAULT_OPENOCD_TARGET_HANDLE,
-                 rtt_port=DEFAULT_OPENOCD_RTT_PORT):
+                 rtt_port=DEFAULT_OPENOCD_RTT_PORT, rtt_server=False,
+                 gdb_pre_debug=None):
         super().__init__(cfg)
 
         if not path.exists(cfg.board_dir):
             # try to find the board support in-tree
             cfg_board_path = path.normpath(cfg.board_dir)
-            _temp_path = cfg_board_path.split("boards/")[1]
-            support = path.join(ZEPHYR_BASE, "boards", _temp_path, 'support')
+            boards_parent = cfg_board_path.split('boards')[0]
+            boards_and_below = path.relpath(cfg_board_path, boards_parent)
+            support = path.join(ZEPHYR_BASE, boards_and_below, 'support')
         else:
             support = path.join(cfg.board_dir, 'support')
 
@@ -78,15 +102,21 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         self.openocd_cmd = [cfg.openocd or 'openocd'] + search_args
         # openocd doesn't cope with Windows path names, so convert
         # them to POSIX style just to be sure.
+        self.file = Path(cfg.file).as_posix() if cfg.file else None
         self.elf_name = Path(cfg.elf_file).as_posix() if cfg.elf_file else None
+        self.hex_name = Path(cfg.hex_file).as_posix() if cfg.hex_file else None
+        self.bin_name = Path(cfg.bin_file).as_posix() if cfg.bin_file else None
+        self.pre_init_flash = pre_init_flash or []
         self.pre_init = pre_init or []
         self.reset_halt_cmd = reset_halt_cmd
         self.pre_load = pre_load or []
+        self.erase_cmd = erase_cmd
         self.load_cmd = load_cmd
         self.verify_cmd = verify_cmd
         self.post_verify = post_verify or []
         self.do_verify = do_verify or False
         self.do_verify_only = do_verify_only or False
+        self.do_erase = do_erase or False
         self.tcl_port = tcl_port
         self.telnet_port = telnet_port
         self.gdb_port = gdb_port
@@ -97,11 +127,15 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         self.init_arg = [] if no_init else ['-c init']
         self.targets_arg = [] if no_targets else ['-c targets']
         self.serial = ['-c set _ZEPHYR_BOARD_SERIAL ' + serial] if serial else []
-        self.use_elf = use_elf
-        self.gdb_init = gdb_init
-        self.load_arg = [] if no_load else ['-ex', 'load']
+        self.image_type = image_type
+        self.flash_address = flash_address
+        self.gdb_init = gdb_init or []
+        self.load_arg = ['-ex', 'load'] if load else []
         self.target_handle = target_handle
+        self.log_file = Path(log_file).as_posix() if log_file else None
         self.rtt_port = rtt_port
+        self.rtt_server = rtt_server
+        self.gdb_pre_debug = gdb_pre_debug or []
 
     @classmethod
     def name(cls):
@@ -109,27 +143,51 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
 
     @classmethod
     def capabilities(cls):
-        return RunnerCaps(commands={'flash', 'debug', 'debugserver', 'attach', 'rtt'}, rtt=True)
+        return RunnerCaps(commands={'flash', 'debug', 'debugserver', 'attach', 'rtt'},
+                          dev_id=True, rtt=True, erase=True, skip_load=True, file=True,
+                          gdb_init=True)
+
+    @classmethod
+    def dev_id_help(cls) -> str:
+        return '''Selects the debug adapter by its serial number. The value is
+                  passed to the OpenOCD config as _ZEPHYR_BOARD_SERIAL.'''
 
     @classmethod
     def do_add_parser(cls, parser):
         parser.add_argument('--config', action='append',
                             help='''if given, override default config file;
                             may be given multiple times''')
-        parser.add_argument('--serial', default="",
-                            help='if given, selects FTDI instance by its serial number, defaults to empty')
-        parser.add_argument('--use-elf', default=False, action='store_true',
-                            help='if given, Elf file will be used for loading instead of HEX image')
+        parser.add_argument('--serial', dest='dev_id', default="",
+                            help='''Deprecated: use -i/--dev-id instead. Selects the
+                            debug adapter by its serial number.''')
+        # Deprecated --use-* flags for backward compatibility
+        parser.add_argument('--use-hex', action='store_const',
+                            dest='use_image_type', const='hex',
+                            help=argparse.SUPPRESS)
+        parser.add_argument('--use-elf', action='store_const',
+                            dest='use_image_type', const='elf',
+                            help=argparse.SUPPRESS)
+        parser.add_argument('--use-bin', action='store_const',
+                            dest='use_image_type', const='bin',
+                            help=argparse.SUPPRESS)
+        parser.add_argument('--flash-address', default=None,
+                            help='flash address to use when flashing BIN file')
         # Options for flashing:
         parser.add_argument('--cmd-pre-init', action='append',
                             help='''Command to run before calling init;
                             may be given multiple times''')
+        parser.add_argument('--cmd-pre-init-flash', action='append',
+                            help='''Command to run before calling init when performing a flash;
+                            may be given multiple times;
+                            When set, existing --cmd-pre-init will be ignored when flashing''')
         parser.add_argument('--cmd-reset-halt', default=DEFAULT_OPENOCD_RESET_HALT_CMD,
                             help=f'''Command to run for resetting and halting the target,
                             defaults to "{DEFAULT_OPENOCD_RESET_HALT_CMD}"''')
         parser.add_argument('--cmd-pre-load', action='append',
                             help='''Command to run before flashing;
                             may be given multiple times''')
+        parser.add_argument('--cmd-erase', action='append',
+                            help='''Command to erase device; may be given multiple times''')
         parser.add_argument('--cmd-load',
                             help='''Command to load/flash binary
                             (required when flashing)''')
@@ -146,6 +204,10 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         # Options for debugging:
         parser.add_argument('--tui', default=False, action='store_true',
                             help='if given, GDB uses -tui')
+        parser.add_argument('--log-file',
+                            default=None,
+                            help='''Select the file to use as log output (overwritten) using
+                            openocd --log_output option''')
         parser.add_argument('--tcl-port', default=DEFAULT_OPENOCD_TCL_PORT,
                             help='openocd TCL port, defaults to 6333')
         parser.add_argument('--telnet-port',
@@ -156,43 +218,66 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         parser.add_argument('--gdb-client-port', default=DEFAULT_OPENOCD_GDB_PORT,
                             help='''openocd gdb client port if multiple ports come
                             up, defaults to 3333''')
-        parser.add_argument('--gdb-init', action='append',
-                            help='if given, add GDB init commands')
         parser.add_argument('--no-halt', action='store_true',
                             help='if given, no halt issued in gdb server cmd')
         parser.add_argument('--no-init', action='store_true',
                             help='if given, no init issued in gdb server cmd')
         parser.add_argument('--no-targets', action='store_true',
                             help='if given, no target issued in gdb server cmd')
-        parser.add_argument('--no-load', action='store_true',
-                            help='if given, no load issued in gdb server cmd')
         parser.add_argument('--target-handle', default=DEFAULT_OPENOCD_TARGET_HANDLE,
                             help=f'''Internal handle used in openocd targets cfg
                             files, defaults to "{DEFAULT_OPENOCD_TARGET_HANDLE}".
                             ''')
         parser.add_argument('--rtt-port', default=DEFAULT_OPENOCD_RTT_PORT,
                             help='openocd rtt port, defaults to 5555')
+        parser.add_argument('--rtt-server', default=False, action='store_true',
+                            help='''start the RTT server while debugging.
+                            To view the RTT log, connect to the rtt port using
+                            a command like telnet.''')
+        parser.add_argument('--gdb-pre-debug', action='append',
+                            help='''if given, gdb command (-ex) to run
+                            after loading the image during 'debug';
+                            may be given multiple times''')
 
 
     @classmethod
     def do_create(cls, cfg, args):
+        # Handle deprecated --use-* flags
+        if args.use_image_type:
+            _logger.warning('--use-hex/--use-elf/--use-bin are deprecated, '
+                            'use --file-type instead')
+            if cfg.file_type == FileType.OTHER or cfg.file_type is None:
+                # Map deprecated string to FileType enum
+                type_map = {'hex': FileType.HEX, 'elf': FileType.ELF, 'bin': FileType.BIN}
+                image_type = type_map.get(args.use_image_type)
+            else:
+                image_type = cfg.file_type
+        else:
+            image_type = cfg.file_type
+
         return OpenOcdBinaryRunner(
             cfg,
-            pre_init=args.cmd_pre_init, reset_halt_cmd=args.cmd_reset_halt,
-            pre_load=args.cmd_pre_load, load_cmd=args.cmd_load,
+            pre_init=args.cmd_pre_init, pre_init_flash=args.cmd_pre_init_flash,
+            reset_halt_cmd=args.cmd_reset_halt,
+            pre_load=args.cmd_pre_load, erase_cmd=args.cmd_erase, load_cmd=args.cmd_load,
             verify_cmd=args.cmd_verify, post_verify=args.cmd_post_verify,
-            do_verify=args.verify, do_verify_only=args.verify_only,
-            tui=args.tui, config=args.config, serial=args.serial,
-            use_elf=args.use_elf, no_halt=args.no_halt, no_init=args.no_init,
+            do_verify=args.verify, do_verify_only=args.verify_only, do_erase=args.erase,
+            tui=args.tui, config=args.config, serial=args.dev_id,
+            image_type=image_type,
+            flash_address=args.flash_address, no_halt=args.no_halt, no_init=args.no_init,
             no_targets=args.no_targets, tcl_port=args.tcl_port,
-            telnet_port=args.telnet_port, gdb_port=args.gdb_port,
+            telnet_port=args.telnet_port, log_file=args.log_file, gdb_port=args.gdb_port,
             gdb_client_port=args.gdb_client_port, gdb_init=args.gdb_init,
-            no_load=args.no_load, target_handle=args.target_handle,
-            rtt_port=args.rtt_port)
+            load=args.load, target_handle=args.target_handle,
+            rtt_port=args.rtt_port, rtt_server=args.rtt_server,
+            gdb_pre_debug=args.gdb_pre_debug)
 
     def print_gdbserver_message(self):
         if not self.thread_info_enabled:
             thread_msg = '; no thread info available'
+        elif not self.target_supports_rtos():
+            thread_msg = '; no thread info available (OpenOCD Zephyr RTOS ' \
+                         'awareness is not supported on this architecture)'
         elif self.supports_thread_info():
             thread_msg = '; thread info enabled'
         else:
@@ -200,18 +285,8 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         self.logger.info('OpenOCD GDB server running on port '
                          f'{self.gdb_port}{thread_msg}')
 
-    # pylint: disable=R0201
-    def to_num(self, number):
-        dev_match = re.search(r"^\d*\+dev", number)
-        dev_version = not dev_match is None
-
-        num_match = re.search(r"^\d*", number)
-        num = int(num_match.group(0))
-
-        if dev_version:
-            num += 1
-
-        return num
+    def print_rttserver_message(self):
+        self.logger.info(f'OpenOCD RTT server running on port {self.rtt_port}')
 
     def read_version(self):
         self.require(self.openocd_cmd[0])
@@ -220,15 +295,27 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         out = self.check_output([self.openocd_cmd[0], '--version'],
                                 stderr=subprocess.STDOUT).decode()
 
-        version_match = re.search(r"Open On-Chip Debugger (\d+.\d+.\d+)", out)
+        # Account for version info format of ADI fork of OpenOCD as well
+        version_match = re.search(r"Open On-Chip Debugger.* v?(\d+.\d+.\d+)", out)
         version = version_match.group(1).split('.')
 
-        return [self.to_num(i) for i in version]
+        return [to_num(i) for i in version]
 
     def supports_thread_info(self):
         # Zephyr rtos was introduced after 0.11.0
         (major, minor, rev) = self.read_version()
         return (major, minor, rev) > (0, 11, 0)
+
+    def target_supports_rtos(self):
+        # OpenOCD's '-rtos Zephyr' awareness is only implemented for a
+        # subset of target architectures (cortex_m, cortex_r4, hla_target
+        # and arcv2). Appending it for any other architecture makes OpenOCD
+        # abort with "Could not find target in Zephyr compatibility list",
+        # which surfaces as a silent 'west debug' timeout. Gate on the arch
+        # so unsupported targets degrade gracefully instead.
+        return (self.build_conf.getboolean('CONFIG_CPU_CORTEX_M') or
+                self.build_conf.getboolean('CONFIG_CPU_AARCH32_CORTEX_R') or
+                self.build_conf.getboolean('CONFIG_ISA_ARCV2'))
 
     def do_run(self, command, **kwargs):
         self.require(self.openocd_cmd[0])
@@ -242,109 +329,114 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
                 self.cfg_cmd.append('-f')
                 self.cfg_cmd.append(i)
 
-        if command == 'flash' and self.use_elf:
-            self.do_flash_elf(**kwargs)
-        elif command == 'flash':
+        if self.log_file is not None:
+            self.logger.info(f'OpenOCD log file: {self.log_file}')
+            self.openocd_cmd += ['--log_output', self.log_file]
+
+        if command == 'flash':
             self.do_flash(**kwargs)
-        elif command in ('attach', 'debug'):
-            self.do_attach_debug(command, **kwargs)
+        elif command in ('attach', 'debug', 'rtt'):
+            self.do_attach_debug_rtt(command, **kwargs)
         elif command == 'load':
             self.do_load(**kwargs)
-        elif command == 'rtt':
-            self.do_rtt(**kwargs)
         else:
             self.do_debugserver(**kwargs)
 
+    def _openocd_cmd(self, cmd_list):
+        """Convert a list of commands to openocd -c arguments."""
+        return [x for cmd in cmd_list for x in ("-c", cmd)]
+
     def do_flash(self, **kwargs):
-        self.ensure_output('hex')
-        if self.load_cmd is None:
-            raise ValueError('Cannot flash; load command is missing')
-        if self.verify_cmd is None:
-            raise ValueError('Cannot flash; verify command is missing')
+        if self.file is not None:
+            image_file = self.file
+        elif self.image_type == FileType.ELF:
+            if self.elf_name is None:
+                raise ValueError('Cannot flash; no .elf specified')
+            image_file = self.elf_name
+        elif self.image_type == FileType.BIN:
+            self.ensure_output('bin')
+            image_file = self.bin_name
+        else:
+            self.ensure_output('hex')
+            image_file = self.hex_name
 
-        # openocd doesn't cope with Windows path names, so convert
-        # them to POSIX style just to be sure.
-        hex_name = Path(self.cfg.hex_file).as_posix()
+        if self.image_type == FileType.BIN:
+            if self.load_cmd is None:
+                raise ValueError('Cannot flash; load command is missing')
+            if self.flash_address is None:
+                raise ValueError('Cannot flash; flash address is missing')
+        elif self.image_type != FileType.ELF:
+            if self.load_cmd is None:
+                raise ValueError('Cannot flash; load command is missing')
+            if self.verify_cmd is None:
+                raise ValueError('Cannot flash; verify command is missing')
 
-        self.logger.info(f'Flashing file: {hex_name}')
+        ep_addr = None
+        if self.image_type == FileType.ELF:
+            with open(image_file, 'rb') as f:
+                ep_addr = f"0x{ELFFile(f).header['e_entry']:016x}"
 
-        pre_init_cmd = []
-        pre_load_cmd = []
-        post_verify_cmd = []
-        for i in self.pre_init:
-            pre_init_cmd.append("-c")
-            pre_init_cmd.append(i)
+        self.logger.info(f'Flashing file: {image_file}')
 
-        for i in self.pre_load:
-            pre_load_cmd.append("-c")
-            pre_load_cmd.append(i)
+        pre_init = self.pre_init_flash if self.pre_init_flash else self.pre_init
+        pre_init_cmd = self._openocd_cmd(pre_init)
 
-        for i in self.post_verify:
-            post_verify_cmd.append("-c")
-            post_verify_cmd.append(i)
+        if self.image_type == FileType.ELF:
+            pre_load_cmd = []
+            load_image = []
+            if not self.do_verify_only:
+                pre_load_cmd = self._openocd_cmd(self.pre_load)
+                load_image = ['-c', self.reset_halt_cmd,
+                              '-c', 'load_image ' + image_file]
 
-        load_image = []
-        if not self.do_verify_only:
-            load_image = ['-c', self.reset_halt_cmd,
-                          '-c', self.load_cmd + ' ' + hex_name]
+            verify_image = []
+            post_verify_cmd = []
+            if self.do_verify or self.do_verify_only:
+                verify_image = ['-c', 'verify_image ' + image_file]
+                post_verify_cmd = self._openocd_cmd(self.post_verify)
 
-        verify_image = []
-        if self.do_verify or self.do_verify_only:
-            verify_image = ['-c', self.reset_halt_cmd,
-                            '-c', self.verify_cmd + ' ' + hex_name]
+            epilogue = ['-c', 'resume ' + ep_addr, '-c', 'shutdown']
+
+        else:
+            pre_load_cmd = self._openocd_cmd(self.pre_load)
+            post_verify_cmd = self._openocd_cmd(self.post_verify)
+
+            load_image = []
+            if not self.do_verify_only:
+                load_image = ['-c', self.reset_halt_cmd]
+                if self.do_erase:
+                    if self.erase_cmd is None:
+                        self.logger.error('--erase not supported for target without --cmd-erase')
+                        return
+                    load_image += self._openocd_cmd(self.erase_cmd)
+                    if self.image_type != FileType.BIN and self.load_cmd.endswith(' erase'):
+                        self.load_cmd = self.load_cmd[:-6]
+
+                if self.image_type == FileType.BIN:
+                    load_image += ['-c', f'{self.load_cmd} {image_file} {self.flash_address}']
+                else:
+                    load_image += ['-c', f'{self.load_cmd} {image_file}']
+
+            verify_image = []
+            if self.do_verify or self.do_verify_only:
+                if self.image_type == FileType.BIN:
+                    if self.verify_cmd:
+                        verify_cmd = f'{self.verify_cmd} {image_file} {self.flash_address}'
+                        verify_image = ['-c', self.reset_halt_cmd, '-c', verify_cmd]
+                else:
+                    verify_image = ['-c', self.reset_halt_cmd,
+                                    '-c', f'{self.verify_cmd} {image_file}']
+
+            epilogue = ['-c', 'reset run', '-c', 'shutdown']
 
         cmd = (self.openocd_cmd + self.serial + self.cfg_cmd +
                pre_init_cmd + self.init_arg + self.targets_arg +
                pre_load_cmd + load_image +
-               verify_image +
-               post_verify_cmd +
-               ['-c', 'reset run',
-                '-c', 'shutdown'])
-        self.check_call(cmd)
-
-    def do_flash_elf(self, **kwargs):
-        if self.elf_name is None:
-            raise ValueError('Cannot debug; no .elf specified')
-
-        # Extract entry point address from Elf to use it later with
-        # "resume" command of OpenOCD.
-        with open(self.elf_name, 'rb') as f:
-            ep_addr = f"0x{ELFFile(f).header['e_entry']:016x}"
-
-        pre_init_cmd = []
-        for i in self.pre_init:
-            pre_init_cmd.append("-c")
-            pre_init_cmd.append(i)
-
-        pre_load_cmd = []
-        load_image = []
-        if not self.do_verify_only:
-            for i in self.pre_load:
-                pre_load_cmd.append("-c")
-                pre_load_cmd.append(i)
-            load_image = ['-c', 'load_image ' + self.elf_name]
-
-        verify_image = []
-        post_verify_cmd = []
-        if self.do_verify or self.do_verify_only:
-            verify_image = ['-c', 'verify_image ' + self.elf_name]
-            for i in self.post_verify:
-                post_verify_cmd.append("-c")
-                post_verify_cmd.append(i)
-
-        prologue = ['-c', 'resume ' + ep_addr,
-                    '-c', 'shutdown']
-
-        cmd = (self.openocd_cmd + self.serial + self.cfg_cmd +
-               pre_init_cmd + self.init_arg + self.targets_arg +
-               pre_load_cmd + ['-c', self.reset_halt_cmd] +
-               load_image +
                verify_image + post_verify_cmd +
-               prologue)
-
+               epilogue)
         self.check_call(cmd)
 
-    def do_attach_debug(self, command, **kwargs):
+    def do_attach_debug_rtt(self, command, **kwargs):
         if self.gdb_cmd is None:
             raise ValueError('Cannot debug; no gdb specified')
         if self.elf_name is None:
@@ -355,7 +447,8 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
             pre_init_cmd.append("-c")
             pre_init_cmd.append(i)
 
-        if self.thread_info_enabled and self.supports_thread_info():
+        if (self.thread_info_enabled and self.supports_thread_info() and
+                self.target_supports_rtos()):
             pre_init_cmd.append("-c")
             rtos_command = f'${self.target_handle} configure -rtos Zephyr'
             pre_init_cmd.append(rtos_command)
@@ -366,19 +459,86 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
                        '-c', f'gdb_port {self.gdb_port}'] +
                       pre_init_cmd + self.init_arg + self.targets_arg +
                       self.halt_arg)
-        gdb_cmd = (self.gdb_cmd + self.tui_arg +
+
+        if self.rtt_server and command != 'rtt':
+            rtt_address = self.get_rtt_address()
+            if rtt_address is None:
+                raise ValueError("RTT Control block not found")
+
+            server_cmd = (
+                server_cmd
+                + ['-c', f'rtt setup 0x{rtt_address:x} 0x10 "SEGGER RTT"']
+                + ['-c', 'rtt start']
+                + ['-c', f'rtt server start {self.rtt_port} 0']
+            )
+
+        if command == 'rtt':
+            # Run GDB in batch mode. This will disable pagination automatically
+            gdb_args = ['--batch']
+        else:
+            gdb_args = []
+        gdb_cmd = (self.gdb_cmd + gdb_args + self.tui_arg +
                    ['-ex', f'target extended-remote :{self.gdb_client_port}',
                     self.elf_name])
         if command == 'debug':
             gdb_cmd.extend(self.load_arg)
-        if self.gdb_init is not None:
-            for i in self.gdb_init:
+            for i in self.gdb_pre_debug:
                 gdb_cmd.append("-ex")
                 gdb_cmd.append(i)
+        gdb_cmd.extend(self.gdb_ex_args(self.gdb_init))
+        if command == 'rtt':
+            rtt_address = self.get_rtt_address()
+            if rtt_address is None:
+                raise ValueError("RTT Control block not found")
+
+            # start the internal openocd rtt service via gdb monitor commands
+            gdb_cmd.extend(
+                ['-ex', f'monitor rtt setup 0x{rtt_address:x} 0x10 "SEGGER RTT"'])
+            gdb_cmd.extend(['-ex', 'monitor reset run'])
+            gdb_cmd.extend(['-ex', 'monitor rtt start'])
+            gdb_cmd.extend(
+                ['-ex', f'monitor rtt server start {self.rtt_port} 0'])
+            # detach from the target and quit the gdb client session
+            gdb_cmd.extend(['-ex', 'detach', '-ex', 'quit'])
 
         self.require(gdb_cmd[0])
         self.print_gdbserver_message()
-        self.run_server_and_client(server_cmd, gdb_cmd)
+
+        server_proc = self.popen_ignore_int(server_cmd)
+
+        if command in ('attach', 'debug'):
+            try:
+                self.check_call_ignore_sigint(gdb_cmd)
+            finally:
+                server_proc.terminate()
+                server_proc.wait()
+        elif command == 'rtt':
+            self.print_rttserver_message()
+
+            if os_name != 'nt':
+                # Save the terminal settings
+                fd = sys.stdin.fileno()
+                new_term = termios.tcgetattr(fd)
+                old_term = termios.tcgetattr(fd)
+
+                # New terminal setting unbuffered
+                new_term[3] = new_term[3] & ~termios.ICANON & ~termios.ECHO
+                termios.tcsetattr(fd, termios.TCSAFLUSH, new_term)
+            else:
+                fd = None
+                old_term = None
+
+            try:
+                # run the binary with gdb, set up the rtt server (runs to completion)
+                subprocess.run(gdb_cmd)
+                # run the rtt client in the foreground
+                self.run_telnet_client('localhost', self.rtt_port)
+            finally:
+                if old_term is not None and fd is not None:
+                    termios.tcsetattr(fd, termios.TCSAFLUSH, old_term)
+
+                server_proc.terminate()
+                server_proc.wait()
 
     def do_debugserver(self, **kwargs):
         pre_init_cmd = []
@@ -386,7 +546,8 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
             pre_init_cmd.append("-c")
             pre_init_cmd.append(i)
 
-        if self.thread_info_enabled and self.supports_thread_info():
+        if (self.thread_info_enabled and self.supports_thread_info() and
+                self.target_supports_rtos()):
             pre_init_cmd.append("-c")
             rtos_command = f'${self.target_handle} configure -rtos Zephyr'
             pre_init_cmd.append(rtos_command)
@@ -397,63 +558,18 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
                 '-c', f'gdb_port {self.gdb_port}'] +
                pre_init_cmd + self.init_arg + self.targets_arg +
                ['-c', self.reset_halt_cmd])
+
+        if self.rtt_server:
+            rtt_address = self.get_rtt_address()
+            if rtt_address is None:
+                raise ValueError("RTT Control block not found")
+
+            cmd = (
+                cmd
+                + ['-c', f'rtt setup 0x{rtt_address:x} 0x10 "SEGGER RTT"']
+                + ['-c', 'rtt start']
+                + ['-c', f'rtt server start {self.rtt_port} 0']
+            )
+
         self.print_gdbserver_message()
         self.check_call(cmd)
-
-    def do_rtt(self, **kwargs):
-        pre_init_cmd = []
-        for i in self.pre_init:
-            pre_init_cmd.append("-c")
-            pre_init_cmd.append(i)
-
-        if self.thread_info_enabled and self.supports_thread_info():
-            pre_init_cmd.append("-c")
-            rtos_command = f'${self.target_handle} configure -rtos Zephyr'
-            pre_init_cmd.append(rtos_command)
-
-        rtt_address = self.get_rtt_address()
-        if rtt_address is None:
-            raise ValueError("RTT Control block not be found")
-
-        rtt_cmds = [
-            '-c', f'rtt setup 0x{rtt_address:x} 0x10 "SEGGER RTT"',
-            '-c', f'rtt server start {self.rtt_port} 0',
-            '-c', 'rtt start',
-        ]
-
-        server_cmd = (self.openocd_cmd + self.cfg_cmd +
-                      ['-c', f'tcl_port {self.tcl_port}',
-                       '-c', f'telnet_port {self.telnet_port}',
-                       '-c', f'gdb_port {self.gdb_port}'] +
-                      pre_init_cmd + self.init_arg + self.targets_arg +
-                       ['-c', self.reset_halt_cmd] +
-                       rtt_cmds
-                      )
-        self.print_gdbserver_message()
-        server_proc = self.popen_ignore_int(server_cmd)
-        # The target gets halted after all commands passed on the commandline are run.
-        # The only way to run resume here, to not have to connect a GDB, is to connect
-        # to the tcl port and run the command. When the TCL port comes up, initialization
-        # is done.
-        try:
-            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            # As long as the server process is still running, keep retrying the connection
-            while server_proc.poll() is None:
-                try:
-                    sock.connect(('localhost', self.tcl_port))
-                    break
-                except ConnectionRefusedError:
-                    time.sleep(0.1)
-            # \x1a is the command terminator for the openocd tcl rpc
-            sock.send(b'resume\x1a')
-            sock.shutdown(socket.SHUT_RDWR)
-            # Run the client. Since rtt is initialized before the tcl rpc comes up,
-            # the port is open now.
-            self.logger.info("Opening RTT")
-            time.sleep(0.1) # Give the server a moment to output log messages first
-            self.run_telnet_client('localhost', self.rtt_port)
-        except Exception as e:
-            self.logger.error(e)
-        finally:
-            server_proc.terminate()
-            server_proc.wait()

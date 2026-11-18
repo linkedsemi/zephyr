@@ -12,15 +12,12 @@
 / {
 	model = "Intel SoC FPGA Agilex";
 	compatible = "intel,socfpga-agilex";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	chosen {
 		zephyr,console = &uart0;
 		zephyr,shell-uart = &uart0;
 		zephyr,sram = &mem0;
 	};
-
 };
 
 &uart0 {
@@ -30,6 +27,7 @@
 
 &qspi {
 	status = "okay";
+
 	mt25qu02g@0 {
 		compatible = "micron,mt25qu02g";
 		reg = <0>;

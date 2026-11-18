@@ -2,22 +2,18 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-  STM32 lptim : low power timer
-  The lptim node to be used for counting ticks during lowpower modes
-  must be named stm32_lp_tick_source in the DTS, as follows:
-  stm32_lp_tick_source: &lptim1 {
-   status = "okay";
-  }
+  STM32 low-power timer (LPTIM).
 
 compatible: "st,stm32-lptim"
 
 include:
   - name: st,stm32-timers.yaml
     property-blocklist:
-      # 'resets' property is not supported yet
-      - resets
       - st,prescaler
       - st,countermode
+      - st,mastermode
+      - st,slavemode
+      - st,trigger-selection
 
 properties:
   st,prescaler:
@@ -45,3 +41,29 @@ properties:
       - 32
       - 64
       - 128
+
+  st,timeout:
+    type: int
+    description: |
+        Gives the LPTIM an exact counting value (s) for timeout expiration.
+        Value must be consistent with st,prescaler pre-defined setting otherwise
+        driver fails to initialize for the related device.
+    min: 1
+    max: 256
+
+examples:
+  - |
+    /*
+     * Usage of LPTIM as system timer:
+     * (1) enable and configure selected LPTIM instance
+     */
+    &lptim1 {
+      status = "okay";
+    }
+
+    /* (2) select instance as system timer */
+    / {
+      chosen {
+        zephyr,system-timer = &lptim1;
+      };
+    };

@@ -25,6 +25,7 @@ LOG_MODULE_REGISTER(pwm_numaker, CONFIG_PWM_LOG_LEVEL);
 #define NUMAKER_SYSCLK_FREQ       DT_PROP(DT_NODELABEL(sysclk), clock_frequency)
 /* EPWM channel 0~5 mask */
 #define NUMAKER_PWM_CHANNEL_MASK  (0x3FU)
+#define NUMAKER_PWM_HCLK0         1U
 
 /* Device config */
 struct pwm_numaker_config {
@@ -359,8 +360,12 @@ static void pwm_numaker_isr(const struct device *dev, uint32_t st_channel, uint3
 	uint32_t int_mask = (BIT(st_channel) | BIT(end_channel));
 	uint32_t cap_int_rise_mask, cap_int_fall_mask;
 	uint32_t cap_int_mask =
+#if defined(CONFIG_SOC_SERIES_M031X)
+		(NUMAKER_PWM_CHANNEL_MASK << 8 | NUMAKER_PWM_CHANNEL_MASK);
+#else
 		(EPWM_CAPIF_CFLIF0_Msk << st_channel | EPWM_CAPIF_CRLIF0_Msk << st_channel |
 		 EPWM_CAPIF_CFLIF0_Msk << end_channel | EPWM_CAPIF_CRLIF0_Msk << end_channel);
+#endif
 
 	/* Get Output int status */
 	int_status = epwm->AINTSTS & int_mask;
@@ -396,6 +401,13 @@ static void pwm_numaker_isr(const struct device *dev, uint32_t st_channel, uint3
 	}
 }
 
+#if defined(CONFIG_SOC_SERIES_M031X)
+static void pwm_numaker_pair_isr(const struct device *dev)
+{
+	/* Pair service channel 0 to 5 */
+	pwm_numaker_isr(dev, 0, 5);
+}
+#else
 static void pwm_numaker_p0_isr(const struct device *dev)
 {
 	/* Pair0 service channel 0, 1 */
@@ -413,10 +425,11 @@ static void pwm_numaker_p2_isr(const struct device *dev)
 	/* Pair2 service channel 4, 5 */
 	pwm_numaker_isr(dev, 4, 5);
 }
+#endif /* CONFIG_SOC_SERIES_M031X */
 #endif /* CONFIG_PWM_CAPTURE */
 
 /* PWM driver registration */
-static const struct pwm_driver_api pwm_numaker_driver_api = {
+static DEVICE_API(pwm, pwm_numaker_driver_api) = {
 	.set_cycles = pwm_numaker_set_cycles,
 	.get_cycles_per_sec = pwm_numaker_get_cycles_per_sec,
 #ifdef CONFIG_PWM_CAPTURE
@@ -432,6 +445,29 @@ static int pwm_numaker_clk_get_rate(EPWM_T *epwm, uint32_t *rate)
 	uint32_t clk_src;
 	uint32_t epwm_clk_src;
 
+#if defined(CONFIG_SOC_SERIES_M55M1X)
+	if (epwm == EPWM0) {
+		clk_src = CLK->EPWMSEL & CLK_EPWMSEL_EPWM0SEL_Msk;
+	} else if (epwm == EPWM1) {
+		clk_src = CLK->EPWMSEL & CLK_EPWMSEL_EPWM1SEL_Msk;
+	} else {
+		LOG_ERR("Invalid EPWM node");
+		return -EINVAL;
+	}
+
+	if (clk_src == NUMAKER_PWM_HCLK0) {
+		/* clock source is from HCLK0 clock */
+		epwm_clk_src = CLK_GetHCLK0Freq();
+	} else {
+		/* clock source is from PCLK */
+		SystemCoreClockUpdate();
+		if (epwm == EPWM0) {
+			epwm_clk_src = CLK_GetPCLK0Freq();
+		} else { /* (epwm == EPWM1) */
+			epwm_clk_src = CLK_GetPCLK2Freq();
+		}
+	}
+#else
 	if (epwm == EPWM0) {
 		clk_src = CLK->CLKSEL2 & CLK_CLKSEL2_EPWM0SEL_Msk;
 	} else if (epwm == EPWM1) {
@@ -453,6 +489,7 @@ static int pwm_numaker_clk_get_rate(EPWM_T *epwm, uint32_t *rate)
 			epwm_clk_src = CLK_GetPCLK1Freq();
 		}
 	}
+#endif
 	*rate = epwm_clk_src;
 	return 0;
 }
@@ -527,6 +564,17 @@ done:
 }
 
 #ifdef CONFIG_PWM_CAPTURE
+#if defined(CONFIG_SOC_SERIES_M031X)
+#define NUMAKER_PWM_IRQ_CONFIG_FUNC(n)                                                             \
+	static void pwm_numaker_irq_config_##n(const struct device *dev)                           \
+	{                                                                                          \
+		IRQ_CONNECT(DT_INST_IRQN(n),                                                       \
+			    DT_INST_IRQ(n, priority), pwm_numaker_pair_isr,                        \
+			    DEVICE_DT_INST_GET(n), 0);                                             \
+                                                                                                   \
+		irq_enable(DT_INST_IRQN(n));                                                       \
+	}
+#else
 #define NUMAKER_PWM_IRQ_CONFIG_FUNC(n)                                                             \
 	static void pwm_numaker_irq_config_##n(const struct device *dev)                           \
 	{                                                                                          \
@@ -548,6 +596,7 @@ done:
                                                                                                    \
 		irq_enable(DT_INST_IRQ_BY_NAME(n, pair2, irq));                                    \
 	}
+#endif
 #define IRQ_FUNC_INIT(n) .irq_config_func = pwm_numaker_irq_config_##n
 #else
 #define NUMAKER_PWM_IRQ_CONFIG_FUNC(n)

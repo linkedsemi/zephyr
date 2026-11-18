@@ -1,9 +1,11 @@
 identifier: nsim/nsim_em
 name: EM Nsim simulator
 type: sim
-simulation: nsim
-simulation_exec: nsimdrv
+simulation:
+  - name: nsim
+    exec: nsimdrv
 arch: arc
+ram: 2048
 toolchain:
   - zephyr
   - cross-compile

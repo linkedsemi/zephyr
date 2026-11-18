@@ -2,8 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 
 description: |
-    ST STM32 family USB Type-C / Power Delivery. The default values were
-    taken from the LL_UCPD_StructInit function defined in the HAL.
+    STM32 USB Type-C / Power Delivery.
+
+    The default values were taken from the LL_UCPD_StructInit function defined in the HAL.
 
 compatible: "st,stm32-ucpd"
 
@@ -45,7 +46,8 @@ properties:
       inter-frame gap timer clock (tInterFrameGap).
       The division ratio 15 is to apply for Tx clock at the USB PD 2.0
       specification nominal value.
-      Valid range: 2 - 32
+    min: 2
+    max: 32
 
   transwin:
     type: int
@@ -53,7 +55,8 @@ properties:
     description: |
       Determines the division ratio of a hbit_clk divider producing
       tTransitionWindow interval.
-      Valid range: 2 - 32
+    min: 2
+    max: 32
 
   hbitclkdiv:
     type: int
@@ -61,7 +64,8 @@ properties:
     description: |
       Determines the division ratio of a ucpd_clk divider producing
       half-bit clock (hbit_clk)
-      Valid range: 1 - 64
+    min: 1
+    max: 64
 
   dead-battery:
     type: boolean

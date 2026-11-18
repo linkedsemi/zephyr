@@ -8,12 +8,15 @@ Overview
 ********
 
 This sample controls 9 LEDs connected to an LP5569 driver. The sample turns
-all LEDs on and switches all LEDs off again within a one second interval.
+all LEDs on one by one with a 1 second delay between each. Then it fades all
+LEDs until they are off again. Afterwards, it turns them all on at once, waits
+a second, and turns them all back off.
+This pattern then repeats indefinitely.
 
 Building and Running
 ********************
 
-Build the application for the :ref:`nrf52840dk_nrf52840` board, and connect
+Build the application for the :zephyr:board:`nrf52840dk` board, and connect
 a LP5569 LED controller on the bus I2C0 at the address 0x32.
 
 .. zephyr-app-commands::
@@ -23,7 +26,7 @@ a LP5569 LED controller on the bus I2C0 at the address 0x32.
    :compact:
 
 For flashing the application, refer to the Flashing section of the
-:ref:`nrf52840dk_nrf52840` board documentation.
+:zephyr:board:`nrf52840dk` board documentation.
 
 .. code-block:: none
 

@@ -13,6 +13,7 @@
 #include <string.h>
 
 #include <zephyr/autoconf.h>
+#include <zephyr/bluetooth/assigned_numbers.h>
 #include <zephyr/bluetooth/att.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/vocs.h>
@@ -27,7 +28,6 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/atomic.h>
-#include <zephyr/sys/check.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/types.h>
 
@@ -39,7 +39,7 @@ static struct bt_vocs_client insts[CONFIG_BT_MAX_CONN * CONFIG_BT_VOCS_CLIENT_MA
 
 static struct bt_vocs_client *lookup_vocs_by_handle(struct bt_conn *conn, uint16_t handle)
 {
-	__ASSERT(handle != 0, "Handle cannot be 0");
+	__ASSERT(handle != 0U, "Handle cannot be 0");
 	__ASSERT(conn, "Conn cannot be NULL");
 
 	for (int i = 0; i < ARRAY_SIZE(insts); i++) {
@@ -213,7 +213,7 @@ static uint8_t internal_read_volume_offset_state_cb(struct bt_conn *conn, uint8_
 		return BT_GATT_ITER_STOP;
 	}
 
-	if (err) {
+	if (err != 0) {
 		LOG_WRN("Volume offset state read failed: %d", err);
 		cb_err = BT_ATT_ERR_UNLIKELY;
 	} else if (data) {
@@ -278,7 +278,7 @@ static void vocs_client_write_vocs_cp_cb(struct bt_conn *conn, uint8_t err,
 		LOG_DBG("Invalid change counter. Reading volume offset state from server.");
 
 		inst->read_params.func = internal_read_volume_offset_state_cb;
-		inst->read_params.handle_count = 1;
+		inst->read_params.handle_count = 1U;
 		inst->read_params.single.handle = inst->state_handle;
 
 		atomic_set_bit(inst->flags, BT_VOCS_CLIENT_FLAG_CP_RETRIED);
@@ -382,16 +382,17 @@ static uint8_t vocs_discover_func(struct bt_conn *conn, const struct bt_gatt_att
 			inst->start_handle = chrc->value_handle;
 		}
 		inst->end_handle = chrc->value_handle;
-
 		if (!bt_uuid_cmp(chrc->uuid, BT_UUID_VOCS_STATE)) {
 			LOG_DBG("Volume offset state");
 			inst->state_handle = chrc->value_handle;
 			sub_params = &inst->state_sub_params;
+			sub_params->disc_params = &inst->state_ccc_disc_params;
 		} else if (!bt_uuid_cmp(chrc->uuid, BT_UUID_VOCS_LOCATION)) {
 			LOG_DBG("Location");
 			inst->location_handle = chrc->value_handle;
 			if (chrc->properties & BT_GATT_CHRC_NOTIFY) {
 				sub_params = &inst->location_sub_params;
+				sub_params->disc_params = &inst->location_ccc_disc_params;
 			}
 			if (chrc->properties & BT_GATT_CHRC_WRITE_WITHOUT_RESP) {
 				atomic_set_bit(inst->flags, BT_VOCS_CLIENT_FLAG_LOC_WRITABLE);
@@ -404,6 +405,7 @@ static uint8_t vocs_discover_func(struct bt_conn *conn, const struct bt_gatt_att
 			inst->desc_handle = chrc->value_handle;
 			if (chrc->properties & BT_GATT_CHRC_NOTIFY) {
 				sub_params = &inst->desc_sub_params;
+				sub_params->disc_params = &inst->desc_ccc_disc_params;
 			}
 			if (chrc->properties & BT_GATT_CHRC_WRITE_WITHOUT_RESP) {
 				atomic_set_bit(inst->flags, BT_VOCS_CLIENT_FLAG_DESC_WRITABLE);
@@ -415,11 +417,12 @@ static uint8_t vocs_discover_func(struct bt_conn *conn, const struct bt_gatt_att
 
 			sub_params->value = BT_GATT_CCC_NOTIFY;
 			sub_params->value_handle = chrc->value_handle;
-			/*
-			 * TODO: Don't assume that CCC is at handle + 2;
-			 * do proper discovery;
-			 */
-			sub_params->ccc_handle = attr->handle + 2;
+
+			/* Use auto-discovery with the DEDICATED params we assigned above */
+			sub_params->ccc_handle = BT_GATT_AUTO_DISCOVER_CCC_HANDLE;
+
+			/* Set the end handle to the end of the ENTIRE service discovery */
+			sub_params->end_handle = inst->discover_params.end_handle;
 			sub_params->notify = vocs_client_notify_handler;
 			atomic_set_bit(sub_params->flags, BT_GATT_SUBSCRIBE_FLAG_VOLATILE);
 
@@ -441,12 +444,12 @@ int bt_vocs_client_state_get(struct bt_vocs_client *inst)
 {
 	int err;
 
-	CHECKIF(!inst) {
+	if (!inst) {
 		LOG_DBG("NULL instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(inst->conn == NULL) {
+	if (inst->conn == NULL) {
 		LOG_DBG("NULL conn");
 		return -EINVAL;
 	}
@@ -462,7 +465,7 @@ int bt_vocs_client_state_get(struct bt_vocs_client *inst)
 	}
 
 	inst->read_params.func = vocs_client_read_offset_state_cb;
-	inst->read_params.handle_count = 1;
+	inst->read_params.handle_count = 1U;
 	inst->read_params.single.handle = inst->state_handle;
 	inst->read_params.single.offset = 0U;
 
@@ -476,17 +479,17 @@ int bt_vocs_client_state_get(struct bt_vocs_client *inst)
 
 int bt_vocs_client_location_set(struct bt_vocs_client *inst, uint32_t location)
 {
-	CHECKIF(!inst) {
+	if (!inst) {
 		LOG_DBG("NULL instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(inst->conn == NULL) {
+	if (inst->conn == NULL) {
 		LOG_DBG("NULL conn");
 		return -EINVAL;
 	}
 
-	CHECKIF(location > BT_AUDIO_LOCATION_ANY) {
+	if (location > BT_AUDIO_LOCATION_ANY) {
 		LOG_DBG("Invalid location 0x%08X", location);
 		return -EINVAL;
 	}
@@ -514,12 +517,12 @@ int bt_vocs_client_location_get(struct bt_vocs_client *inst)
 {
 	int err;
 
-	CHECKIF(!inst) {
+	if (!inst) {
 		LOG_DBG("NULL instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(inst->conn == NULL) {
+	if (inst->conn == NULL) {
 		LOG_DBG("NULL conn");
 		return -EINVAL;
 	}
@@ -533,7 +536,7 @@ int bt_vocs_client_location_get(struct bt_vocs_client *inst)
 	}
 
 	inst->read_params.func = vocs_client_read_location_cb;
-	inst->read_params.handle_count = 1;
+	inst->read_params.handle_count = 1U;
 	inst->read_params.single.handle = inst->location_handle;
 	inst->read_params.single.offset = 0U;
 
@@ -549,17 +552,17 @@ int bt_vocs_client_state_set(struct bt_vocs_client *inst, int16_t offset)
 {
 	int err;
 
-	CHECKIF(!inst) {
+	if (!inst) {
 		LOG_DBG("NULL instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(inst->conn == NULL) {
+	if (inst->conn == NULL) {
 		LOG_DBG("NULL conn");
 		return -EINVAL;
 	}
 
-	CHECKIF(!IN_RANGE(offset, BT_VOCS_MIN_OFFSET, BT_VOCS_MAX_OFFSET)) {
+	if (!IN_RANGE(offset, BT_VOCS_MIN_OFFSET, BT_VOCS_MAX_OFFSET)) {
 		LOG_DBG("Invalid offset: %d", offset);
 		return -EINVAL;
 	}
@@ -594,12 +597,12 @@ int bt_vocs_client_description_get(struct bt_vocs_client *inst)
 {
 	int err;
 
-	CHECKIF(!inst) {
+	if (!inst) {
 		LOG_DBG("NULL instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(inst->conn == NULL) {
+	if (inst->conn == NULL) {
 		LOG_DBG("NULL conn");
 		return -EINVAL;
 	}
@@ -613,7 +616,7 @@ int bt_vocs_client_description_get(struct bt_vocs_client *inst)
 	}
 
 	inst->read_params.func = vocs_client_read_output_desc_cb;
-	inst->read_params.handle_count = 1;
+	inst->read_params.handle_count = 1U;
 	inst->read_params.single.handle = inst->desc_handle;
 	inst->read_params.single.offset = 0U;
 
@@ -628,12 +631,12 @@ int bt_vocs_client_description_get(struct bt_vocs_client *inst)
 int bt_vocs_client_description_set(struct bt_vocs_client *inst,
 				   const char *description)
 {
-	CHECKIF(!inst) {
+	if (!inst) {
 		LOG_DBG("NULL instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(inst->conn == NULL) {
+	if (inst->conn == NULL) {
 		LOG_DBG("NULL conn");
 		return -EINVAL;
 	}
@@ -673,12 +676,12 @@ int bt_vocs_client_conn_get(const struct bt_vocs *vocs, struct bt_conn **conn)
 {
 	struct bt_vocs_client *inst;
 
-	CHECKIF(vocs == NULL) {
+	if (vocs == NULL) {
 		LOG_DBG("NULL vocs pointer");
 		return -EINVAL;
 	}
 
-	CHECKIF(!vocs->client_instance) {
+	if (!vocs->client_instance) {
 		LOG_DBG("vocs pointer shall be client instance");
 		return -EINVAL;
 	}
@@ -702,41 +705,65 @@ static void vocs_client_reset(struct bt_vocs_client *inst)
 	atomic_clear_bit(inst->flags, BT_VOCS_CLIENT_FLAG_DESC_WRITABLE);
 	atomic_clear_bit(inst->flags, BT_VOCS_CLIENT_FLAG_CP_RETRIED);
 
-	inst->location = 0;
-	inst->start_handle = 0;
-	inst->end_handle = 0;
-	inst->state_handle = 0;
-	inst->location_handle = 0;
-	inst->control_handle = 0;
-	inst->desc_handle = 0;
+	inst->location = 0U;
+	inst->start_handle = 0U;
+	inst->end_handle = 0U;
+	inst->state_handle = 0U;
+	inst->location_handle = 0U;
+	inst->control_handle = 0U;
+	inst->desc_handle = 0U;
 
-	if (inst->conn != NULL) {
-		struct bt_conn *conn = inst->conn;
+	bt_conn_drop(&inst->conn);
+}
 
-		bt_conn_unref(conn);
-		inst->conn = NULL;
+int bt_vocs_client_free_instance(struct bt_vocs *vocs)
+{
+	ARRAY_FOR_EACH_PTR(insts, inst) {
+		if (vocs == &inst->vocs) {
+			if (!atomic_test_bit(inst->flags, BT_VOCS_CLIENT_FLAG_ACTIVE)) {
+				return -EALREADY;
+			}
+
+			/* Test and set the BT_VOCS_CLIENT_FLAG_BUSY flag here to reduce, but not
+			 * eliminate, chance of any operations happening while we are free'ing this
+			 * instance.
+			 */
+			if (atomic_test_and_set_bit(inst->flags, BT_VOCS_CLIENT_FLAG_BUSY)) {
+				return -EBUSY;
+			}
+
+			vocs_client_reset(inst);
+
+			atomic_clear_bit(inst->flags, BT_VOCS_CLIENT_FLAG_BUSY);
+			atomic_clear_bit(inst->flags, BT_VOCS_CLIENT_FLAG_ACTIVE);
+
+			return 0;
+		}
 	}
+
+	return -EINVAL;
 }
 
 int bt_vocs_discover(struct bt_conn *conn, struct bt_vocs *vocs,
 		     const struct bt_vocs_discover_param *param)
 {
 	struct bt_vocs_client *inst;
+	struct bt_conn *ref;
 	int err = 0;
 
-	CHECKIF(!vocs || !conn || !param) {
+	if (!vocs || !conn || !param) {
 		LOG_DBG("%s cannot be NULL", vocs == NULL   ? "vocs"
 					     : conn == NULL ? "conn"
 							    : "param");
 		return -EINVAL;
 	}
 
-	CHECKIF(!vocs->client_instance) {
+	if (!vocs->client_instance) {
 		LOG_DBG("vocs pointer shall be client instance");
 		return -EINVAL;
 	}
 
-	CHECKIF(param->end_handle < param->start_handle) {
+	if (param->end_handle < param->start_handle) {
 		LOG_DBG("start_handle (%u) shall be less than end_handle (%u)", param->start_handle,
 			param->end_handle);
 		return -EINVAL;
@@ -752,20 +779,33 @@ int bt_vocs_discover(struct bt_conn *conn, struct bt_vocs *vocs,
 		return -EBUSY;
 	}
 
+	ref = bt_conn_ref(conn);
+	if (ref == NULL) {
+		err = -ENOTCONN;
+		goto cleanup;
+	}
+
 	vocs_client_reset(inst);
 
-	inst->conn = bt_conn_ref(conn);
 	inst->discover_params.start_handle = param->start_handle;
 	inst->discover_params.end_handle = param->end_handle;
 	inst->discover_params.type = BT_GATT_DISCOVER_CHARACTERISTIC;
 	inst->discover_params.func = vocs_discover_func;
 
+	inst->conn = ref;
+
 	err = bt_gatt_discover(conn, &inst->discover_params);
 	if (err != 0) {
 		LOG_DBG("Discover failed (err %d)", err);
-		atomic_clear_bit(inst->flags, BT_VOCS_CLIENT_FLAG_BUSY);
+		bt_conn_unref(ref);
+		inst->conn = NULL;
+		goto cleanup;
 	}
 
+	return 0;
+
+cleanup:
+	atomic_clear_bit(inst->flags, BT_VOCS_CLIENT_FLAG_BUSY);
 	return err;
 }
 
@@ -773,12 +813,12 @@ void bt_vocs_client_cb_register(struct bt_vocs *vocs, struct bt_vocs_cb *cb)
 {
 	struct bt_vocs_client *inst;
 
-	CHECKIF(!vocs) {
+	if (!vocs) {
 		LOG_DBG("inst cannot be NULL");
 		return;
 	}
 
-	CHECKIF(!vocs->client_instance) {
+	if (!vocs->client_instance) {
 		LOG_DBG("vocs pointer shall be client instance");
 		return;
 	}

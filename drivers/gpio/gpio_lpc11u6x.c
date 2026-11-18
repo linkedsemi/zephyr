@@ -482,7 +482,7 @@ static void gpio_lpc11u6x_isr(const void *arg)
 #endif
 }
 
-static const struct gpio_driver_api gpio_lpc11u6x_driver_api = {
+static DEVICE_API(gpio, gpio_lpc11u6x_driver_api) = {
 	.pin_configure = gpio_lpc11u6x_pin_configure,
 	.port_get_raw = gpio_lpc11u6x_port_get_raw,
 	.port_set_masked_raw = gpio_lpc11u6x_port_set_masked_raw,
@@ -568,10 +568,8 @@ static int gpio_lpc11u6x_init(const struct device *dev)
 #define GPIO_LPC11U6X_INIT(id)						\
 static const struct gpio_lpc11u6x_config				\
 			gpio_lpc11u6x_config_##id = {			\
-	.common = {							\
-		.port_pin_mask = GPIO_PORT_PIN_MASK_FROM_DT_NODE(	\
+	.common = GPIO_COMMON_CONFIG_FROM_DT_NODE(			\
 					DT_NODELABEL(gpio##id)),	\
-	},								\
 	.shared = &gpio_lpc11u6x_shared,				\
 	.port_num = id,							\
 	.ngpios = DT_PROP(DT_NODELABEL(gpio##id), ngpios),		\

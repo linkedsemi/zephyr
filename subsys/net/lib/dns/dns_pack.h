@@ -87,20 +87,27 @@ struct dns_msg_t {
 
 enum dns_rr_type {
 	DNS_RR_TYPE_INVALID = 0,
-	DNS_RR_TYPE_A	= 1,		/* IPv4  */
-	DNS_RR_TYPE_CNAME = 5,		/* CNAME */
-	DNS_RR_TYPE_PTR = 12,		/* PTR   */
-	DNS_RR_TYPE_TXT = 16,		/* TXT   */
-	DNS_RR_TYPE_AAAA = 28,		/* IPv6  */
-	DNS_RR_TYPE_SRV = 33,		/* SRV   */
-	DNS_RR_TYPE_ANY = 0xff,		/* ANY (all records)   */
+	DNS_RR_TYPE_A	= 1,			/* IPv4  */
+	DNS_RR_TYPE_CNAME = 5,			/* CNAME */
+	DNS_RR_TYPE_PTR = 12,			/* PTR   */
+	DNS_RR_TYPE_TXT = 16,			/* TXT   */
+	DNS_RR_TYPE_AAAA = 28,			/* IPv6  */
+	DNS_RR_TYPE_SRV = 33,			/* SRV   */
+	DNS_RR_TYPE_HTTPS = 65,			/* HTTPS */
+	DNS_RR_TYPE_ANY = 0xff,			/* ANY (all records)   */
+	DNS_RR_TYPE_PRIVATE_START = 65280,	/* Private use start */
+	DNS_RR_TYPE_PRIVATE_END = 65534,	/* Private use end */
 };
 
 enum dns_response_type {
 	DNS_RESPONSE_INVALID = -EINVAL,
-	DNS_RESPONSE_IP,
+	DNS_RESPONSE_IP = 1,
+	DNS_RESPONSE_DATA,
+	DNS_RESPONSE_TXT,
+	DNS_RESPONSE_SRV,
 	DNS_RESPONSE_CNAME_WITH_IP,
-	DNS_RESPONSE_CNAME_NO_IP
+	DNS_RESPONSE_CNAME_NO_IP,
+	DNS_RESPONSE_PRIVATE,
 };
 
 enum dns_class {
@@ -183,7 +190,7 @@ struct dns_aaaa_rdata {
 /** It returns the ID field in the DNS msg header	*/
 static inline int dns_header_id(uint8_t *header)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(header)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(header)));
 }
 
 /* inline unpack routines are used to unpack data from network
@@ -192,7 +199,7 @@ static inline int dns_header_id(uint8_t *header)
  */
 static inline int dns_unpack_header_id(uint8_t *header)
 {
-	return ntohs(UNALIGNED_GET((uint16_t *)(header)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(header)));
 }
 
 /** It returns the QR field in the DNS msg header	*/
@@ -246,78 +253,93 @@ static inline int dns_header_rcode(uint8_t *header)
 /** It returns the QDCOUNT field in the DNS msg header	*/
 static inline int dns_header_qdcount(uint8_t *header)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(header + 4)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(header + 4)));
 }
 
 static inline int dns_unpack_header_qdcount(uint8_t *header)
 {
-	return ntohs(UNALIGNED_GET((uint16_t *)(header + 4)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(header + 4)));
 }
 
 /** It returns the ANCOUNT field in the DNS msg header	*/
 static inline int dns_header_ancount(uint8_t *header)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(header + 6)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(header + 6)));
 }
 
 static inline int dns_unpack_header_ancount(uint8_t *header)
 {
-	return ntohs(UNALIGNED_GET((uint16_t *)(header + 6)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(header + 6)));
 }
 
 /** It returns the NSCOUNT field in the DNS msg header	*/
 static inline int dns_header_nscount(uint8_t *header)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(header + 8)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(header + 8)));
 }
 
 /** It returns the ARCOUNT field in the DNS msg header	*/
 static inline int dns_header_arcount(uint8_t *header)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(header + 10)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(header + 10)));
 }
 
 static inline int dns_query_qtype(uint8_t *question)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(question + 0)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(question + 0)));
 }
 
 static inline int dns_unpack_query_qtype(const uint8_t *question)
 {
-	return ntohs(UNALIGNED_GET((uint16_t *)(question + 0)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(question + 0)));
 }
 
 static inline int dns_query_qclass(uint8_t *question)
 {
-	return htons(UNALIGNED_GET((uint16_t *)(question + 2)));
+	return net_htons(UNALIGNED_GET((uint16_t *)(question + 2)));
 }
 
 static inline int dns_unpack_query_qclass(const uint8_t *question)
 {
-	return ntohs(UNALIGNED_GET((uint16_t *)(question + 2)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(question + 2)));
 }
 
 static inline int dns_answer_type(uint16_t dname_size, uint8_t *answer)
 {
 	/* 4.1.3. Resource record format */
-	return ntohs(UNALIGNED_GET((uint16_t *)(answer + dname_size + 0)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(answer + dname_size + 0)));
 }
 
 static inline int dns_answer_class(uint16_t dname_size, uint8_t *answer)
 {
 	/* 4.1.3. Resource record format */
-	return ntohs(UNALIGNED_GET((uint16_t *)(answer + dname_size + 2)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(answer + dname_size + 2)));
 }
 
 static inline int dns_answer_ttl(uint16_t dname_size, uint8_t *answer)
 {
-	return ntohl(UNALIGNED_GET((uint32_t *)(answer + dname_size + 4)));
+	return net_ntohl(UNALIGNED_GET((uint32_t *)(answer + dname_size + 4)));
 }
 
 static inline int dns_answer_rdlength(uint16_t dname_size,
 					     uint8_t *answer)
 {
-	return ntohs(UNALIGNED_GET((uint16_t *)(answer + dname_size + 8)));
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(answer + dname_size + 8)));
+}
+
+static inline int dns_unpack_srv_priority(const uint8_t *srv)
+{
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(srv + 0)));
+}
+
+static inline int dns_unpack_srv_weight(const uint8_t *srv)
+{
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(srv + 2)));
+}
+
+static inline int dns_unpack_srv_port(const uint8_t *srv)
+{
+	return net_ntohs(UNALIGNED_GET((uint16_t *)(srv + 4)));
 }
 
 /**
@@ -329,7 +351,9 @@ static inline int dns_answer_rdlength(uint16_t dname_size,
  * @param domain_name Something like www.example.com
  * @retval 0 on success
  * @retval -ENOMEM if there is no enough space to store the resultant QNAME
- * @retval -EINVAL if an invalid parameter was passed as an argument
+ * @retval -EINVAL if an invalid parameter was passed as an argument, or if
+ *         the name has an empty label other than the root, a label longer
+ *         than 63 octets or packs to more than 255 octets
  */
 int dns_msg_pack_qname(uint16_t *len, uint8_t *buf, uint16_t size,
 		       const char *domain_name);
@@ -471,5 +495,8 @@ int dns_unpack_query(struct dns_msg_t *dns_msg, struct net_buf *buf,
  * @return Printable query type name.
  */
 const char *dns_qtype_to_str(enum dns_rr_type qtype);
+
+int dns_unpack_name(const uint8_t *msg, int maxlen, const uint8_t *src,
+		    struct net_buf *buf, const uint8_t **eol);
 
 #endif

@@ -14,9 +14,6 @@
 	model = "STMicroelectronics STM32U83RC-NUCLEO board";
 	compatible = "st,stm32u031r8-nucleo";
 
-	#address-cells = <1>;
-	#size-cells = <1>;
-
 	chosen {
 		zephyr,console = &usart2;
 		zephyr,shell-uart = &usart2;
@@ -26,6 +23,7 @@
 
 	leds: leds {
 		compatible = "gpio-leds";
+
 		green_led_1: led_1 {
 			gpios = <&gpioa 5 GPIO_ACTIVE_HIGH>;
 			label = "User LD4";
@@ -34,6 +32,7 @@
 
 	gpio_keys {
 		compatible = "gpio-keys";
+
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
@@ -91,6 +90,8 @@
 &i2c1 {
 	pinctrl-0 = <&i2c1_scl_pb8 &i2c1_sda_pb9>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpiob 8 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpiob 9 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
 };
@@ -98,17 +99,22 @@
 &i2c2 {
 	pinctrl-0 = <&i2c2_scl_pa7 &i2c2_sda_pa6>;
 	pinctrl-names = "default";
+	scl-gpios = <&gpioa 7 GPIO_ACTIVE_HIGH>;
+	sda-gpios = <&gpioa 6 GPIO_ACTIVE_HIGH>;
 	status = "okay";
 	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+&adc1_common {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
 };
 
 &adc1 {
 	pinctrl-0 = <&adc1_in0_pc0 &adc1_in1_pc1>;
 	pinctrl-names = "default";
-	st,adc-clock-source = <SYNC>;
-	st,adc-prescaler = <4>;
 	status = "okay";
-	vref-mv = <3300>;
 };
 
 &timers1 {

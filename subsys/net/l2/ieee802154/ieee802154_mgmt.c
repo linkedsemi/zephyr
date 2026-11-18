@@ -19,11 +19,12 @@ LOG_MODULE_REGISTER(net_ieee802154_mgmt, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 #include <errno.h>
 
 #include <zephyr/net/net_if.h>
+#include <zephyr/net/net_log.h>
 #include <zephyr/net/ieee802154_radio.h>
 #include <zephyr/net/ieee802154_mgmt.h>
 #include <zephyr/net/ieee802154.h>
 
-#include "ieee802154_frame.h"
+#include <zephyr/net/ieee802154_frame.h>
 #include "ieee802154_mgmt_priv.h"
 #include "ieee802154_priv.h"
 #include "ieee802154_security.h"
@@ -38,6 +39,8 @@ enum net_verdict ieee802154_handle_beacon(struct net_if *iface,
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	int beacon_hdr_len;
+
+	NET_ASSERT(ctx != NULL);
 
 	NET_DBG("Beacon received");
 
@@ -74,10 +77,12 @@ enum net_verdict ieee802154_handle_beacon(struct net_if *iface,
 	return NET_CONTINUE;
 }
 
-static int ieee802154_cancel_scan(uint32_t mgmt_request, struct net_if *iface,
+static int ieee802154_cancel_scan(uint64_t mgmt_request, struct net_if *iface,
 				  void *data, size_t len)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
 
 	ARG_UNUSED(data);
 	ARG_UNUSED(len);
@@ -94,7 +99,7 @@ static int ieee802154_cancel_scan(uint32_t mgmt_request, struct net_if *iface,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_CANCEL_SCAN,
 				  ieee802154_cancel_scan);
 
-static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
+static int ieee802154_scan(uint64_t mgmt_request, struct net_if *iface,
 			   void *data, size_t len)
 {
 	const struct ieee802154_phy_supported_channels *supported_channels;
@@ -103,6 +108,8 @@ static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
 	struct ieee802154_req_params *scan;
 	struct net_pkt *pkt = NULL;
 	int ret;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (len != sizeof(struct ieee802154_req_params) || !data) {
 		return -EINVAL;
@@ -150,11 +157,15 @@ static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
 	k_sem_give(&ctx->ctx_lock);
 	ieee802154_radio_filter_pan_id(iface, IEEE802154_BROADCAST_PAN_ID);
 
-	if (ieee802154_radio_start(iface)) {
+	/* The radio is already started when the interface is up */
+	ret = ieee802154_radio_start(iface);
+	if (ret != 0 && ret != -EALREADY) {
 		NET_ERR("Scan request failed: could not start device");
 		ret = -EIO;
 		goto out;
 	}
+
+	ret = 0;
 
 	if (ieee802154_radio_attr_get(iface, IEEE802154_ATTR_PHY_SUPPORTED_CHANNEL_RANGES,
 				      &attr_value)) {
@@ -178,9 +189,6 @@ static int ieee802154_scan(uint32_t mgmt_request, struct net_if *iface,
 
 			/* Active scan sends a beacon request */
 			if (mgmt_request == NET_REQUEST_IEEE802154_ACTIVE_SCAN) {
-				net_pkt_ref(pkt);
-				net_pkt_frag_ref(pkt->buffer);
-
 				ret = ieee802154_radio_send(iface, pkt, pkt->buffer);
 				if (ret) {
 					NET_ERR("Scan request failed: could not send Beacon "
@@ -271,7 +279,7 @@ static inline void set_association(struct net_if *iface, struct ieee802154_conte
 		set_linkaddr_to_ext_addr(iface, ctx);
 	} else {
 		ctx->linkaddr.len = IEEE802154_SHORT_ADDR_LENGTH;
-		short_addr_be = htons(short_addr);
+		short_addr_be = net_htons(short_addr);
 		memcpy(ctx->linkaddr.addr, &short_addr_be, IEEE802154_SHORT_ADDR_LENGTH);
 		update_net_if_link_addr(iface, ctx);
 		ieee802154_radio_filter_short_addr(iface, ctx->short_addr);
@@ -314,6 +322,8 @@ enum net_verdict ieee802154_handle_mac_command(struct net_if *iface,
 					       struct ieee802154_mpdu *mpdu)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
 
 	if (mpdu->command->cfi == IEEE802154_CFI_ASSOCIATION_RESPONSE) {
 		if (mpdu->command->assoc_res.status !=
@@ -437,7 +447,7 @@ out:
 	return NET_DROP;
 }
 
-static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
+static int ieee802154_associate(uint64_t mgmt_request, struct net_if *iface,
 				void *data, size_t len)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
@@ -446,6 +456,8 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 	struct ieee802154_command *cmd;
 	struct net_pkt *pkt;
 	int ret = 0;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (len != sizeof(struct ieee802154_req_params) || !data) {
 		NET_ERR("Could not associate: invalid request");
@@ -565,7 +577,6 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 	 * existing PAN.
 	 */
 	if (ieee802154_radio_send(iface, pkt, pkt->buffer)) {
-		net_pkt_unref(pkt);
 		ret = -EIO;
 		k_sem_give(&ctx->scan_ctx_lock);
 		NET_ERR("Could not associate: cannot send association request");
@@ -578,7 +589,30 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 	 * TODO: The Association Response command shall be sent to the device
 	 *       requesting association using indirect transmission.
 	 */
-	k_sem_take(&ctx->scan_ctx_lock, K_USEC(ieee802154_get_response_wait_time_us(iface)));
+	ret = k_sem_take(&ctx->scan_ctx_lock, K_USEC(ieee802154_get_response_wait_time_us(iface)));
+
+	if (ret == -EAGAIN) {
+		/* Timeout, send DATA_REQUEST */
+		net_pkt_unref(pkt);
+		pkt = ieee802154_create_mac_cmd_frame(iface, IEEE802154_CFI_DATA_REQUEST, &params);
+		if (pkt == NULL) {
+			ret = -ENOBUFS;
+			k_sem_give(&ctx->scan_ctx_lock);
+			NET_ERR("Could not associate: cannot allocate DATA request frame");
+			goto out;
+		}
+		ieee802154_mac_cmd_finalize(pkt, IEEE802154_CFI_DATA_REQUEST);
+
+		if (ieee802154_radio_send(iface, pkt, pkt->buffer)) {
+			ret = -EIO;
+			k_sem_give(&ctx->scan_ctx_lock);
+			NET_ERR("Could not associate: cannot send DATA request");
+			goto out;
+		}
+
+		k_sem_take(&ctx->scan_ctx_lock,
+			   K_USEC(ieee802154_get_response_wait_time_us(iface)));
+	}
 
 	/* Release the scan lock in case an association response was not received
 	 * within macResponseWaitTime and we got a timeout instead.
@@ -611,6 +645,7 @@ static int ieee802154_associate(uint32_t mgmt_request, struct net_if *iface,
 		}
 
 		ctx->channel = req->channel;
+		ret = 0;
 	} else {
 		ret = -EACCES;
 	}
@@ -625,19 +660,26 @@ out:
 		k_sem_give(&ctx->ctx_lock);
 	}
 
+	if (pkt) {
+		net_pkt_unref(pkt);
+	}
+
 	return ret;
 }
 
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_ASSOCIATE,
 				  ieee802154_associate);
 
-static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
+static int ieee802154_disassociate(uint64_t mgmt_request, struct net_if *iface,
 				   void *data, size_t len)
 {
+	int ret;
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	struct ieee802154_frame_params params = {0};
 	struct ieee802154_command *cmd;
 	struct net_pkt *pkt;
+
+	NET_ASSERT(ctx != NULL);
 
 	ARG_UNUSED(data);
 	ARG_UNUSED(len);
@@ -690,8 +732,9 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 	ieee802154_mac_cmd_finalize(
 		pkt, IEEE802154_CFI_DISASSOCIATION_NOTIFICATION);
 
-	if (ieee802154_radio_send(iface, pkt, pkt->buffer)) {
-		net_pkt_unref(pkt);
+	ret = ieee802154_radio_send(iface, pkt, pkt->buffer);
+	net_pkt_unref(pkt);
+	if (ret) {
 		NET_ERR("Could not disassociate: cannot send disassociation notification");
 		return -EIO;
 	}
@@ -706,10 +749,12 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_DISASSOCIATE,
 				  ieee802154_disassociate);
 
-static int ieee802154_set_ack(uint32_t mgmt_request, struct net_if *iface,
+static int ieee802154_set_ack(uint64_t mgmt_request, struct net_if *iface,
 			      void *data, size_t len)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+
+	NET_ASSERT(ctx != NULL);
 
 	ARG_UNUSED(data);
 	ARG_UNUSED(len);
@@ -733,7 +778,7 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_ACK,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_UNSET_ACK,
 				  ieee802154_set_ack);
 
-static int ieee802154_set_parameters(uint32_t mgmt_request,
+static int ieee802154_set_parameters(uint64_t mgmt_request,
 				     struct net_if *iface,
 				     void *data, size_t len)
 {
@@ -741,11 +786,14 @@ static int ieee802154_set_parameters(uint32_t mgmt_request,
 	uint16_t value;
 	int ret = 0;
 
+	NET_ASSERT(ctx != NULL);
+
 	if (!data) {
 		return -EINVAL;
 	}
 
-	if (mgmt_request == NET_REQUEST_IEEE802154_SET_EXT_ADDR) {
+	if ((mgmt_request == NET_REQUEST_IEEE802154_SET_EXT_ADDR) ||
+	    (mgmt_request == NET_REQUEST_IEEE802154_SET_COORD_EXT_ADDR)) {
 		if (len != IEEE802154_EXT_ADDR_LENGTH) {
 			return -EINVAL;
 		}
@@ -789,15 +837,22 @@ static int ieee802154_set_parameters(uint32_t mgmt_request,
 			ctx->pan_id = value;
 			ieee802154_radio_filter_pan_id(iface, ctx->pan_id);
 		}
+	} else if (mgmt_request == NET_REQUEST_IEEE802154_SET_COORD_EXT_ADDR) {
+		sys_memcpy_swap(ctx->coord_ext_addr, data, IEEE802154_EXT_ADDR_LENGTH);
+	} else if (mgmt_request == NET_REQUEST_IEEE802154_SET_COORD_SHORT_ADDR) {
+		ctx->coord_short_addr = value;
 	} else if (mgmt_request == NET_REQUEST_IEEE802154_SET_EXT_ADDR) {
+		struct net_linkaddr *link_addr = net_if_get_link_addr(iface);
 		uint8_t ext_addr_le[IEEE802154_EXT_ADDR_LENGTH];
+
+		NET_ASSERT(link_addr != NULL);
 
 		sys_memcpy_swap(ext_addr_le, data, IEEE802154_EXT_ADDR_LENGTH);
 
 		if (memcmp(ctx->ext_addr, ext_addr_le, IEEE802154_EXT_ADDR_LENGTH)) {
 			memcpy(ctx->ext_addr, ext_addr_le, IEEE802154_EXT_ADDR_LENGTH);
 
-			if (net_if_get_link_addr(iface)->len == IEEE802154_EXT_ADDR_LENGTH) {
+			if (link_addr->len == IEEE802154_EXT_ADDR_LENGTH) {
 				set_linkaddr_to_ext_addr(iface, ctx);
 			}
 
@@ -851,7 +906,13 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_SHORT_ADDR,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_TX_POWER,
 				  ieee802154_set_parameters);
 
-static int ieee802154_get_parameters(uint32_t mgmt_request,
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_COORD_EXT_ADDR,
+				  ieee802154_set_parameters);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_COORD_SHORT_ADDR,
+				  ieee802154_set_parameters);
+
+static int ieee802154_get_parameters(uint64_t mgmt_request,
 				     struct net_if *iface,
 				     void *data, size_t len)
 {
@@ -859,11 +920,14 @@ static int ieee802154_get_parameters(uint32_t mgmt_request,
 	uint16_t *value;
 	int ret = 0;
 
+	NET_ASSERT(ctx != NULL);
+
 	if (!data) {
 		return -EINVAL;
 	}
 
-	if (mgmt_request == NET_REQUEST_IEEE802154_GET_EXT_ADDR) {
+	if (mgmt_request == NET_REQUEST_IEEE802154_GET_EXT_ADDR ||
+	    mgmt_request == NET_REQUEST_IEEE802154_GET_COORD_EXT_ADDR) {
 		if (len != IEEE802154_EXT_ADDR_LENGTH) {
 			NET_ERR("Could not get parameter: invalid extended address length");
 			return -EINVAL;
@@ -887,6 +951,10 @@ static int ieee802154_get_parameters(uint32_t mgmt_request,
 		sys_memcpy_swap(data, ctx->ext_addr, IEEE802154_EXT_ADDR_LENGTH);
 	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_SHORT_ADDR) {
 		*value = ctx->short_addr;
+	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_COORD_EXT_ADDR) {
+		sys_memcpy_swap(data, ctx->coord_ext_addr, IEEE802154_EXT_ADDR_LENGTH);
+	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_COORD_SHORT_ADDR) {
+		*value = ctx->coord_short_addr;
 	} else if (mgmt_request == NET_REQUEST_IEEE802154_GET_TX_POWER) {
 		int16_t *s_value = (int16_t *)data;
 
@@ -909,18 +977,26 @@ NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_EXT_ADDR,
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_SHORT_ADDR,
 				  ieee802154_get_parameters);
 
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_COORD_EXT_ADDR,
+				  ieee802154_get_parameters);
+
+NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_COORD_SHORT_ADDR,
+				  ieee802154_get_parameters);
+
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_GET_TX_POWER,
 				  ieee802154_get_parameters);
 
 #ifdef CONFIG_NET_L2_IEEE802154_SECURITY
 
-static int ieee802154_set_security_settings(uint32_t mgmt_request,
+static int ieee802154_set_security_settings(uint64_t mgmt_request,
 					    struct net_if *iface,
 					    void *data, size_t len)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	struct ieee802154_security_params *params;
 	int ret = 0;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (len != sizeof(struct ieee802154_security_params) || !data) {
 		return -EINVAL;
@@ -953,12 +1029,14 @@ out:
 NET_MGMT_REGISTER_REQUEST_HANDLER(NET_REQUEST_IEEE802154_SET_SECURITY_SETTINGS,
 				  ieee802154_set_security_settings);
 
-static int ieee802154_get_security_settings(uint32_t mgmt_request,
+static int ieee802154_get_security_settings(uint64_t mgmt_request,
 					    struct net_if *iface,
 					    void *data, size_t len)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
 	struct ieee802154_security_params *params;
+
+	NET_ASSERT(ctx != NULL);
 
 	if (len != sizeof(struct ieee802154_security_params) || !data) {
 		return -EINVAL;

@@ -19,7 +19,7 @@ supply and programming/debug interface is the base to plug a
 RAK11722 (WisBlock Core module with the RAK11720) in.
 
 - Apollo3 Blue SoC with up to 96 MHz operating frequency
-- ARM® Cortex® M4F core
+- ARM® Cortex®-M4F core
 - 16 kB 2-way Associative/Direct-Mapped Cache per core
 - Up to 1 MB of flash memory for code/data
 - Up to 384 KB of low leakage / low power RAM for code/data
@@ -37,35 +37,12 @@ For more information about the RAK11720 stamp module:
 Supported Features
 ==================
 
-The RAK11720 module configuration supports the following hardware features:
-
-+-----------+------------+----------------------+
-| Interface | Controller | Driver/Component     |
-+===========+============+======================+
-| MPU       | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| NVIC      | on-chip    | arch/arm             |
-+-----------+------------+----------------------+
-| SYSTICK   | on-chip    | systick              |
-+-----------+------------+----------------------+
-| STIMER    | on-chip    | stimer               |
-+-----------+------------+----------------------+
-| GPIO      | on-chip    | gpio                 |
-+-----------+------------+----------------------+
-| UART      | on-chip    | serial               |
-+-----------+------------+----------------------+
-| WDT       | on-chip    | watchdog             |
-+-----------+------------+----------------------+
-| RADIO     | on-chip    | bluetooth            |
-+-----------+------------+----------------------+
-| RADIO     | on-board   | LoRa (SX1262)        |
-+-----------+------------+----------------------+
-
-The default configuration can be found in the defconfig file:
-``boards/rak/rak11720/rak11720_defconfig``.
+.. zephyr:board-supported-hw::
 
 Programming and Debugging
 =========================
+
+.. zephyr:board-supported-runners::
 
 The RAK11720 board shall be connected to a Segger Embedded Debugger Unit
 `J-Link OB <https://www.segger.com/jlink-ob.html>`_. This provides a debug
@@ -103,10 +80,10 @@ the following message:
    Hello World! rak11720/apollo3_blue
 
 .. _WisDuo RAK11720 Website:
-   https://docs.rakwireless.com/Product-Categories/WisDuo/RAK11720-Module/Overview/#product-description
+   https://docs.rakwireless.com/product-categories/wisduo/rak11720-module/overview/
 
 .. _WisBlock RAK11722 Website:
-   https://docs.rakwireless.com/Product-Categories/WisBlock/RAK11722/Overview/#product-description
+   https://docs.rakwireless.com/product-categories/wisblock/rak11722/overview/
 
 .. _SEGGER J-Link software:
    https://www.segger.com/downloads/jlink

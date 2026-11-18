@@ -10,8 +10,10 @@
 
 #include <zephyr/init.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/byteorder.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/drivers/bluetooth.h>
+#include <zephyr/drivers/bluetooth/hci_lockstep.h>
 #include <zephyr/bluetooth/addr.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
 #include <zephyr/irq.h>
@@ -21,9 +23,13 @@
 #include "shci.h"
 #include "shci_tl.h"
 
-struct hci_data {
-	bt_hci_recv_t recv;
-};
+#define STM32_IPCC_RX_IRQ	DT_INST_IRQ_BY_NAME(0, rx, irq)
+#define STM32_IPCC_RX_IRQ_PRIO	DT_INST_IRQ_BY_NAME(0, rx, priority)
+#define STM32_IPCC_TX_IRQ	DT_INST_IRQ_BY_NAME(0, tx, irq)
+#define STM32_IPCC_TX_IRQ_PRIO	DT_INST_IRQ_BY_NAME(0, tx, priority)
+
+BUILD_ASSERT(STM32_IPCC_RX_IRQ == IPCC_C1_RX_IRQn, "Unexpected IRQ number for IPCC Rx");
+BUILD_ASSERT(STM32_IPCC_TX_IRQ == IPCC_C1_TX_IRQn, "Unexpected IRQ number for IPCC Tx");
 
 static const struct stm32_pclken clk_cfg[] = STM32_DT_CLOCKS(DT_DRV_INST(0));
 
@@ -57,6 +63,12 @@ static K_SEM_DEFINE(ble_sys_wait_cmd_rsp, 0, 1);
 static K_SEM_DEFINE(acl_data_ack, 1, 1);
 static K_SEM_DEFINE(ipm_busy, 1, 1);
 
+struct ipm_data {
+	/* bt_hci_driver_data must be first */
+	struct bt_hci_driver_data common;
+	struct bt_hci_lockstep lockstep;
+};
+
 struct aci_set_tx_power {
 	uint8_t cmd;
 	uint8_t value[2];
@@ -68,14 +80,18 @@ struct aci_set_ble_addr {
 	uint8_t value[6];
 } __packed;
 
-#ifdef CONFIG_BT_HCI_HOST
-#define ACI_WRITE_SET_TX_POWER_LEVEL       BT_OP(BT_OGF_VS, 0xFC0F)
-#define ACI_HAL_WRITE_CONFIG_DATA	   BT_OP(BT_OGF_VS, 0xFC0C)
-#define ACI_HAL_STACK_RESET		   BT_OP(BT_OGF_VS, 0xFC3B)
+struct aci_reset {
+	uint8_t mode;
+	uint32_t options;
+} __packed;
+
+#define ACI_WRITE_SET_TX_POWER_LEVEL	BT_OP(BT_OGF_VS, 0xFC0F)
+#define ACI_HAL_WRITE_CONFIG_DATA	BT_OP(BT_OGF_VS, 0xFC0C)
 
 #define HCI_CONFIG_DATA_PUBADDR_OFFSET		0
 static bt_addr_t bd_addr_udn;
-#endif /* CONFIG_BT_HCI_HOST */
+
+#define ACI_RESET			BT_OP(BT_OGF_VS, 0xFF00)
 
 /* Rx thread definitions */
 K_FIFO_DEFINE(ipm_rx_events_fifo);
@@ -84,12 +100,173 @@ static struct k_thread ipm_rx_thread_data;
 
 static bool c2_started_flag;
 
+#if defined(CONFIG_BT_STM32_IPM_FW_INFO_CHECK)
+static const char *stm32wb_stack_type_str(uint8_t stack_type)
+{
+	switch (stack_type) {
+	case INFO_STACK_TYPE_BLE_HCI:
+		return "INFO_STACK_TYPE_BLE_HCI";
+	case INFO_STACK_TYPE_BLE_HCI_EXT_ADV:
+		return "INFO_STACK_TYPE_BLE_HCI_EXT_ADV";
+	default:
+		return "INFO_STACK_TYPE_UNKNOWN";
+	}
+}
+
+static bool stm32wb_stack_type_is_compatible(uint8_t stack_type)
+{
+#if defined(CONFIG_BT_EXT_ADV)
+	return stack_type == INFO_STACK_TYPE_BLE_HCI_EXT_ADV;
+#else
+	return (stack_type == INFO_STACK_TYPE_BLE_HCI) ||
+	       (stack_type == INFO_STACK_TYPE_BLE_HCI_EXT_ADV);
+#endif
+}
+
+static int stm32wb_check_wireless_fw(void)
+{
+	WirelessFwInfo_t fw_info;
+	SHCI_CmdStatus_t status;
+	bool version_match;
+	bool stack_match;
+
+	status = SHCI_GetWirelessFwInfo(&fw_info);
+	if (status != SHCI_Success) {
+		LOG_ERR("Cannot read CPU2 wireless FW info (status: 0x%02x)", status);
+		return -EIO;
+	}
+
+	version_match = (fw_info.VersionMajor == CONFIG_BT_FW_EXPECTED_VERSION_MAJOR) &&
+			(fw_info.VersionMinor == CONFIG_BT_FW_EXPECTED_VERSION_MINOR) &&
+			(fw_info.VersionSub == CONFIG_BT_FW_EXPECTED_VERSION_SUB);
+	stack_match = stm32wb_stack_type_is_compatible(fw_info.StackType);
+
+	if (!version_match) {
+		LOG_ERR("CPU2 wireless FW mismatch: found v%u.%u.%u,expected v%d.%d.%d",
+			fw_info.VersionMajor, fw_info.VersionMinor, fw_info.VersionSub,
+			CONFIG_BT_FW_EXPECTED_VERSION_MAJOR,
+			CONFIG_BT_FW_EXPECTED_VERSION_MINOR,
+			CONFIG_BT_FW_EXPECTED_VERSION_SUB);
+		return -EINVAL;
+	}
+
+	if (!stack_match) {
+		LOG_ERR("CPU2 wireless FW build mismatch: found stack=%s,expected %s",
+			stm32wb_stack_type_str(fw_info.StackType),
+#if defined(CONFIG_BT_EXT_ADV)
+			"INFO_STACK_TYPE_BLE_HCI_EXT_ADV");
+#else
+			"INFO_STACK_TYPE_BLE_HCI or INFO_STACK_TYPE_BLE_HCI_EXT_ADV");
+#endif
+		return -EINVAL;
+	}
+
+	LOG_INF("CPU2 wireless FW: v%u.%u.%u",
+		fw_info.VersionMajor, fw_info.VersionMinor,
+		fw_info.VersionSub);
+	LOG_INF("CPU2 wireless FW build: %s (0x%02x)",
+		stm32wb_stack_type_str(fw_info.StackType), fw_info.StackType);
+	LOG_INF("FUS version %d.%d.%d",
+		fw_info.FusVersionMajor, fw_info.FusVersionMinor,
+		fw_info.FusVersionSub);
+
+	return 0;
+}
+#endif
+
+static void stm32wb_set_stack_options(SHCI_C2_Ble_Init_Cmd_Packet_t *ble_init_cmd_packet)
+{
+	ble_init_cmd_packet->Param.Options =
+		SHCI_C2_BLE_INIT_OPTIONS_LL_HOST |
+		SHCI_C2_BLE_INIT_OPTIONS_WITH_SVC_CHANGE_DESC |
+		SHCI_C2_BLE_INIT_OPTIONS_FULL_GATTDB_NVM |
+		SHCI_C2_BLE_INIT_OPTIONS_POWER_CLASS_2_3;
+	ble_init_cmd_packet->Param.Options_extension = 0;
+
+#if !defined(CONFIG_BT_DEVICE_NAME_GATT_WRITABLE)
+	ble_init_cmd_packet->Param.Options |=
+		SHCI_C2_BLE_INIT_OPTIONS_DEVICE_NAME_RO;
+#endif
+
+#if defined(CONFIG_BT_EXT_ADV)
+	ble_init_cmd_packet->Param.Options |=
+		SHCI_C2_BLE_INIT_OPTIONS_EXT_ADV |
+		SHCI_C2_BLE_INIT_OPTIONS_CS_ALGO2;
+#endif
+
+#if defined(CONFIG_BT_GATT_CACHING)
+	ble_init_cmd_packet->Param.Options |=
+		SHCI_C2_BLE_INIT_OPTIONS_GATT_CACHING_USED;
+#endif
+
+#if defined(CONFIG_BT_DEVICE_APPEARANCE_GATT_WRITABLE)
+	ble_init_cmd_packet->Param.Options_extension |=
+		SHCI_C2_BLE_INIT_OPTIONS_APPEARANCE_WRITABLE;
+#endif
+
+#if defined(CONFIG_BT_EATT)
+	ble_init_cmd_packet->Param.Options_extension |=
+		SHCI_C2_BLE_INIT_OPTIONS_ENHANCED_ATT_SUPPORTED;
+#endif
+
+#if defined(CONFIG_BT_EXT_ADV_MAX_ADV_SET)
+#if (CONFIG_BT_EXT_ADV_MAX_ADV_SET > 8)
+	ble_init_cmd_packet->Param.max_adv_set_nbr = 1;
+#else
+	ble_init_cmd_packet->Param.max_adv_set_nbr = CONFIG_BT_EXT_ADV_MAX_ADV_SET;
+#endif
+#else
+	ble_init_cmd_packet->Param.max_adv_set_nbr = 1;
+#endif
+
+	if (ble_init_cmd_packet->Param.max_adv_set_nbr < 4) {
+		ble_init_cmd_packet->Param.max_adv_data_len = 1650;
+	} else if (ble_init_cmd_packet->Param.max_adv_set_nbr == 4) {
+		ble_init_cmd_packet->Param.max_adv_data_len = 1035;
+	} else if (ble_init_cmd_packet->Param.max_adv_set_nbr == 5) {
+		ble_init_cmd_packet->Param.max_adv_data_len = 621;
+	} else if (ble_init_cmd_packet->Param.max_adv_set_nbr == 6) {
+		ble_init_cmd_packet->Param.max_adv_data_len = 414;
+	} else {
+		ble_init_cmd_packet->Param.max_adv_data_len = 207;
+	}
+
+#if defined(CONFIG_BT_EATT_MAX)
+#if (CONFIG_BT_EATT_MAX > 4)
+	ble_init_cmd_packet->Param.MaxAddEattBearers = 4;
+#else
+	ble_init_cmd_packet->Param.MaxAddEattBearers = CONFIG_BT_EATT_MAX;
+#endif
+#else
+	ble_init_cmd_packet->Param.MaxAddEattBearers = 4;
+#endif
+}
+
+/*
+ * Select the BLE low speed (RF wakeup) clock configuration (LsSource) from the
+ * RF wakeup clock source set in the "clocks" property of the ble_rf devicetree
+ * node. CFG_BLE_LS_SOURCE (from app_conf.h) provides the calibration and device
+ * type bits together with the LSE clock bit; HSE/1024 additionally sets the
+ * HSE/1024 clock bit.
+ */
+static uint8_t stm32wb_rf_wakeup_ls_source(uint32_t rf_clock)
+{
+	switch (rf_clock) {
+	case STM32_SRC_LSE:
+		return CFG_BLE_LS_SOURCE;
+	case STM32_SRC_HSE:
+		return CFG_BLE_LS_SOURCE | SHCI_C2_BLE_INIT_CFG_BLE_LS_CLK_HSE_1024;
+	default:
+		return 0;
+	}
+}
+
 static void stm32wb_start_ble(uint32_t rf_clock)
 {
 	SHCI_C2_Ble_Init_Cmd_Packet_t ble_init_cmd_packet = {
-	  { { 0, 0, 0 } },                     /**< Header unused */
-	  { 0,                                 /** pBleBufferAddress not used */
-	    0,                                 /** BleBufferSize not used */
+	  { { 0, 0, 0 } },                 /**< Header unused */
+	  { 0,                             /** pBleBufferAddress not used */
+	    0,                             /** BleBufferSize not used */
 	    CFG_BLE_NUM_GATT_ATTRIBUTES,
 	    CFG_BLE_NUM_GATT_SERVICES,
 	    CFG_BLE_ATT_VALUE_ARRAY_SIZE,
@@ -100,13 +277,30 @@ static void stm32wb_start_ble(uint32_t rf_clock)
 	    CFG_BLE_MAX_ATT_MTU,
 	    CFG_BLE_PERIPHERAL_SCA,
 	    CFG_BLE_CENTRAL_SCA,
-	    (rf_clock == STM32_SRC_LSE) ? CFG_BLE_LS_SOURCE : 0,
+	    stm32wb_rf_wakeup_ls_source(rf_clock),
 	    CFG_BLE_MAX_CONN_EVENT_LENGTH,
 	    CFG_BLE_HSE_STARTUP_TIME,
 	    CFG_BLE_VITERBI_MODE,
 	    CFG_BLE_OPTIONS,
-	    0 }
+	    0,
+	    CFG_BLE_MAX_COC_INITIATOR_NBR,
+	    CFG_BLE_MIN_TX_POWER,
+	    CFG_BLE_MAX_TX_POWER,
+	    CFG_BLE_RX_MODEL_CONFIG,
+	    CFG_BLE_MAX_ADV_SET_NBR,
+	    CFG_BLE_MAX_ADV_DATA_LEN,
+	    CFG_BLE_TX_PATH_COMPENS,
+	    CFG_BLE_RX_PATH_COMPENS,
+	    CFG_BLE_CORE_VERSION,
+	    CFG_BLE_OPTIONS_EXT,
+	    CFG_BLE_MAX_ADD_EATT_BEARERS }
 	};
+
+	/**
+	 * Set BLE Options, Options_extension, max_adv_set_nbr,
+	 * max_adv_data_len and MaxAddEattBearers according zephyr KConfig
+	 */
+	stm32wb_set_stack_options(&ble_init_cmd_packet);
 
 	/**
 	 * Starts the BLE Stack on CPU2
@@ -148,8 +342,7 @@ static void tryfix_event(TL_Evt_t *tev)
 
 	if (bt_addr_eq(&evt->peer_addr.a, BT_ADDR_NONE)) {
 		LOG_WRN("Invalid peer addr %s", bt_addr_le_str(&evt->peer_addr));
-		bt_addr_copy(&evt->peer_addr.a, &evt->peer_rpa);
-		evt->peer_addr.type = BT_ADDR_LE_RANDOM;
+		bt_addr_le_copy_addr(&evt->peer_addr, &evt->peer_rpa, BT_ADDR_LE_RANDOM);
 	}
 }
 
@@ -161,7 +354,7 @@ void TM_EvtReceivedCb(TL_EvtPacket_t *hcievt)
 static void bt_ipm_rx_thread(void *p1, void *p2, void *p3)
 {
 	const struct device *dev = p1;
-	struct hci_data *hci = dev->data;
+	struct ipm_data *data = dev->data;
 
 	ARG_UNUSED(p2);
 	ARG_UNUSED(p3);
@@ -251,7 +444,13 @@ static void bt_ipm_rx_thread(void *p1, void *p2, void *p3)
 
 		TL_MM_EvtDone(hcievt);
 
-		hci->recv(dev, buf);
+		/* Responses to the driver's own commands, sent while opening and closing */
+		if (bt_hci_lockstep_feed(&data->lockstep, buf->data, buf->len)) {
+			net_buf_unref(buf);
+			goto end_loop;
+		}
+
+		bt_hci_recv(dev, buf);
 end_loop:
 		k_sem_give(&ipm_busy);
 	}
@@ -311,8 +510,8 @@ void ipcc_reset(void)
 		LL_IPCC_CHANNEL_4 | LL_IPCC_CHANNEL_5 | LL_IPCC_CHANNEL_6);
 
 	/* Set IPCC default IRQ handlers */
-	IRQ_CONNECT(IPCC_C1_RX_IRQn, 0, HW_IPCC_Rx_Handler, NULL, 0);
-	IRQ_CONNECT(IPCC_C1_TX_IRQn, 0, HW_IPCC_Tx_Handler, NULL, 0);
+	IRQ_CONNECT(STM32_IPCC_RX_IRQ, STM32_IPCC_RX_IRQ_PRIO, HW_IPCC_Rx_Handler, NULL, 0);
+	IRQ_CONNECT(STM32_IPCC_TX_IRQ, STM32_IPCC_TX_IRQ_PRIO, HW_IPCC_Tx_Handler, NULL, 0);
 }
 
 void transport_init(void)
@@ -353,7 +552,7 @@ void transport_init(void)
 	TL_Enable();
 }
 
-static int bt_ipm_send(const struct device *dev, struct net_buf *buf)
+static int bt_ipm_send_raw(const struct device *dev, const uint8_t *pkt, size_t len)
 {
 	TL_CmdPacket_t *ble_cmd_buff = &BleCmdBuffer;
 
@@ -361,22 +560,19 @@ static int bt_ipm_send(const struct device *dev, struct net_buf *buf)
 
 	k_sem_take(&ipm_busy, K_FOREVER);
 
-	switch (bt_buf_get_type(buf)) {
-	case BT_BUF_ACL_OUT:
-		LOG_DBG("ACL: buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
+	switch (pkt[0]) {
+	case BT_HCI_H4_ACL:
+		LOG_DBG("ACL: type %u len %zu", pkt[0], len);
 		k_sem_take(&acl_data_ack, K_FOREVER);
-		net_buf_push_u8(buf, BT_HCI_H4_ACL);
-		memcpy((void *)
-		       &((TL_AclDataPacket_t *)HciAclDataBuffer)->AclDataSerial,
-		       buf->data, buf->len);
+		memcpy((void *)&((TL_AclDataPacket_t *)HciAclDataBuffer)->AclDataSerial, pkt, len);
 		TL_BLE_SendAclData(NULL, 0);
 		break;
-	case BT_BUF_CMD:
-		LOG_DBG("CMD: buf %p type %u len %u", buf, bt_buf_get_type(buf), buf->len);
-		ble_cmd_buff->cmdserial.type = BT_HCI_H4_CMD;
-		ble_cmd_buff->cmdserial.cmd.plen = buf->len;
-		memcpy((void *)&ble_cmd_buff->cmdserial.cmd, buf->data,
-		       buf->len);
+	case BT_HCI_H4_CMD:
+		LOG_DBG("CMD: type %u len %zu", pkt[0], len);
+		ble_cmd_buff->cmdserial.type = pkt[0];
+		ble_cmd_buff->cmdserial.cmd.plen = len - sizeof(uint8_t);
+		memcpy((void *)&ble_cmd_buff->cmdserial.cmd, &pkt[sizeof(uint8_t)],
+		       len - sizeof(uint8_t));
 		TL_BLE_SendCmd(NULL, 0);
 		break;
 	default:
@@ -387,12 +583,23 @@ static int bt_ipm_send(const struct device *dev, struct net_buf *buf)
 
 	k_sem_give(&ipm_busy);
 
+	return 0;
+}
+
+static int bt_ipm_send(const struct device *dev, struct net_buf *buf)
+{
+	int err;
+
+	err = bt_ipm_send_raw(dev, buf->data, buf->len);
+	if (err != 0) {
+		return err;
+	}
+
 	net_buf_unref(buf);
 
 	return 0;
 }
 
-#ifdef CONFIG_BT_HCI_HOST
 bt_addr_t *bt_get_ble_addr(void)
 {
 	bt_addr_t *bd_addr;
@@ -424,35 +631,26 @@ bt_addr_t *bt_get_ble_addr(void)
 	return bd_addr;
 }
 
-static int bt_ipm_set_addr(void)
+static int bt_ipm_set_addr(struct ipm_data *data)
 {
-	bt_addr_t *uid_addr;
 	struct aci_set_ble_addr *param;
-	struct net_buf *buf;
+	bt_addr_t *uid_addr;
 	int err;
+
+	BT_HCI_PKT_CMD_DEFINE(cmd, sizeof(*param));
 
 	uid_addr = bt_get_ble_addr();
 	if (!uid_addr) {
 		return -ENOMSG;
 	}
 
-	buf = bt_hci_cmd_create(ACI_HAL_WRITE_CONFIG_DATA, sizeof(*param));
-
-	if (!buf) {
-		return -ENOBUFS;
-	}
-
-	param = net_buf_add(buf, sizeof(*param));
+	param = net_buf_simple_add(&cmd, sizeof(*param));
 	param->config_offset = HCI_CONFIG_DATA_PUBADDR_OFFSET;
-	param->length = 6;
-	param->value[0] = uid_addr->val[0];
-	param->value[1] = uid_addr->val[1];
-	param->value[2] = uid_addr->val[2];
-	param->value[3] = uid_addr->val[3];
-	param->value[4] = uid_addr->val[4];
-	param->value[5] = uid_addr->val[5];
+	param->length = sizeof(uid_addr->val);
+	(void)memcpy(param->value, uid_addr->val, sizeof(uid_addr->val));
 
-	err = bt_hci_cmd_send_sync(ACI_HAL_WRITE_CONFIG_DATA, buf, NULL);
+	err = bt_hci_lockstep_cmd_send_sync(&data->lockstep, ACI_HAL_WRITE_CONFIG_DATA, &cmd,
+					    NULL);
 	if (err) {
 		return err;
 	}
@@ -460,44 +658,38 @@ static int bt_ipm_set_addr(void)
 	return 0;
 }
 
-static int bt_ipm_ble_init(void)
+static int bt_ipm_ble_init(struct ipm_data *data)
 {
 	struct aci_set_tx_power *param;
-	struct net_buf *buf;
 	int err;
 
-	err = bt_ipm_set_addr();
-	if (err) {
-		LOG_ERR("Can't set BLE UID addr");
+	BT_HCI_PKT_CMD_DEFINE(cmd, sizeof(*param));
+
+	err = bt_ipm_set_addr(data);
+	if (err != 0) {
+		LOG_ERR("Can't set BLE UID addr (err %d)", err);
+		return err;
 	}
+
 	/* Send ACI_WRITE_SET_TX_POWER_LEVEL */
-	buf = bt_hci_cmd_create(ACI_WRITE_SET_TX_POWER_LEVEL, 3);
-	if (!buf) {
-		return -ENOBUFS;
-	}
-	param = net_buf_add(buf, sizeof(*param));
+	param = net_buf_simple_add(&cmd, sizeof(*param));
 	param->cmd = 0x0F;
-	param->value[0] = 0x18;
+	param->value[0] = CFG_TX_POWER; /* app_conf.h define: 0x18 => -0.15dBm */
 	param->value[1] = 0x01;
 
-	err = bt_hci_cmd_send_sync(ACI_WRITE_SET_TX_POWER_LEVEL, buf, NULL);
+	err = bt_hci_lockstep_cmd_send_sync(&data->lockstep, ACI_WRITE_SET_TX_POWER_LEVEL, &cmd,
+					    NULL);
 	if (err) {
 		return err;
 	}
 
 	return 0;
 }
-#endif /* CONFIG_BT_HCI_HOST */
 
 static int c2_reset(void)
 {
 	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
 	int err;
-
-	if (!device_is_ready(clk)) {
-		LOG_ERR("clock control device not ready");
-		return -ENODEV;
-	}
 
 	err = clock_control_configure(clk, (clock_control_subsys_t) &clk_cfg[1],
 					NULL);
@@ -534,6 +726,17 @@ static int c2_reset(void)
 	}
 	LOG_DBG("C2 unlocked");
 
+#if defined(CONFIG_BT_STM32_IPM_FW_INFO_CHECK)
+	err = stm32wb_check_wireless_fw();
+	if (err) {
+#if defined(CONFIG_BT_STM32_IPM_FW_CHECK_STRICT)
+		return err;
+#else
+		LOG_WRN("Continuing with mismatched CPU2 wireless FW");
+#endif
+	}
+#endif
+
 	stm32wb_start_ble(clk_cfg[1].bus);
 
 	c2_started_flag = true;
@@ -541,9 +744,9 @@ static int c2_reset(void)
 	return 0;
 }
 
-static int bt_ipm_open(const struct device *dev, bt_hci_recv_t recv)
+static int bt_ipm_open(const struct device *dev)
 {
-	struct hci_data *hci = dev->data;
+	struct ipm_data *data = dev->data;
 	int err;
 
 	if (!c2_started_flag) {
@@ -556,6 +759,9 @@ static int bt_ipm_open(const struct device *dev, bt_hci_recv_t recv)
 		if (err) {
 			return err;
 		}
+
+		/* The coprocessor starts afresh, allowing one command again */
+		bt_hci_lockstep_reset(&data->lockstep);
 	}
 
 	/* Start RX thread */
@@ -565,39 +771,35 @@ static int bt_ipm_open(const struct device *dev, bt_hci_recv_t recv)
 			K_PRIO_COOP(CONFIG_BT_DRIVER_RX_HIGH_PRIO),
 			0, K_NO_WAIT);
 
-	hci->recv = recv;
+	err = bt_ipm_ble_init(data);
+	if (err) {
+		/* The caller may try again, and k_thread_create() on a thread
+		 * that is still running is a fault of its own.
+		 */
+		k_thread_abort(&ipm_rx_thread_data);
+		return err;
+	}
 
 	LOG_DBG("IPM Channel Open Completed");
 
 	return 0;
 }
 
-static int bt_ipm_setup(const struct device *dev, const struct bt_hci_setup_params *params)
-{
-	ARG_UNUSED(params);
-	ARG_UNUSED(dev);
-	int err;
-
-#ifdef CONFIG_BT_HCI_HOST
-	err = bt_ipm_ble_init();
-	if (err) {
-		return err;
-	}
-#endif /* CONFIG_BT_HCI_HOST */
-
-	LOG_DBG("IPM Channel Setup Completed");
-
-	return 0;
-}
-
-#ifdef CONFIG_BT_HCI_HOST
 static int bt_ipm_close(const struct device *dev)
 {
-	struct hci_data *hci = dev->data;
+	struct ipm_data *data = dev->data;
+	struct aci_reset *param;
 	int err;
 
-	err = bt_hci_cmd_send_sync(ACI_HAL_STACK_RESET, NULL, NULL);
-	if (err) {
+	BT_HCI_PKT_CMD_DEFINE(cmd, sizeof(*param));
+
+	param = net_buf_simple_add(&cmd, sizeof(*param));
+	param->mode = 0x00;  /* 0x00: Reset without BLE stack options change */
+	param->options = sys_cpu_to_le32(0x00);
+
+	/* The RX thread is still running and feeds the response to the helper */
+	err = bt_hci_lockstep_cmd_send_sync(&data->lockstep, ACI_RESET, &cmd, NULL);
+	if (err != 0) {
 		LOG_ERR("IPM Channel Close Issue");
 		return err;
 	}
@@ -610,41 +812,37 @@ static int bt_ipm_close(const struct device *dev)
 
 	k_thread_abort(&ipm_rx_thread_data);
 
-	hci->recv = NULL;
-
 	LOG_DBG("IPM Channel Close Completed");
 
 	return err;
 }
-#endif /* CONFIG_BT_HCI_HOST */
 
-static const struct bt_hci_driver_api drv = {
+static DEVICE_API(bt_hci, drv) = {
 	.open           = bt_ipm_open,
-#ifdef CONFIG_BT_HCI_HOST
 	.close          = bt_ipm_close,
-#endif
 	.send           = bt_ipm_send,
-	.setup          = bt_ipm_setup,
 };
 
 static int _bt_ipm_init(const struct device *dev)
 {
+	struct ipm_data *data = dev->data;
 	int err;
-
-	ARG_UNUSED(dev);
 
 	err = c2_reset();
 	if (err) {
 		return err;
 	}
 
+	bt_hci_lockstep_init(&data->lockstep, dev, bt_ipm_send_raw);
+
 	return 0;
 }
 
 #define HCI_DEVICE_INIT(inst) \
-	static struct hci_data hci_data_##inst = { \
-	}; \
-	DEVICE_DT_INST_DEFINE(inst, _bt_ipm_init, NULL, &hci_data_##inst, NULL, \
+	static struct ipm_data hci_data_##inst; \
+	static const struct bt_hci_driver_config hci_config_##inst = \
+		BT_DT_HCI_DRIVER_CONFIG_INST_GET(inst); \
+	DEVICE_DT_INST_DEFINE(inst, _bt_ipm_init, NULL, &hci_data_##inst, &hci_config_##inst, \
 			      POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, &drv)
 
 /* Only one instance supported right now */

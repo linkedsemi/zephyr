@@ -1,5 +1,5 @@
 /*
- * Copyright 2017-2022,2024 NXP
+ * Copyright 2017-2022,2024-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -44,6 +44,8 @@
 #define IMX_CCM_UART4_CLK		0x0803UL
 
 #define IMX_CCM_CAN_CLK			0x0900UL
+#define IMX_CCM_CAN1_CLK		0x0900UL
+#define IMX_CCM_CAN2_CLK		0x0901UL
 
 #define IMX_CCM_GPT_CLK			0x0A00UL
 
@@ -71,5 +73,38 @@
 #define IMX_CCM_ECSPI3_CLK		0x1202UL
 
 #define IMX_CCM_GPT_IPG_CLK		0x1300UL
+
+#define IMX_CCM_I2C1_CLK		0x1400UL
+#define IMX_CCM_I2C2_CLK		0x1401UL
+#define IMX_CCM_I2C3_CLK		0x1402UL
+#define IMX_CCM_I2C4_CLK		0x1403UL
+#define IMX_CCM_I2C5_CLK		0x1404UL
+#define IMX_CCM_I2C6_CLK		0x1405UL
+
+#define IMX_CCM_ESAI0_CLK		0x1500UL
+#define IMX_CCM_ESAI1_CLK		0x1501UL
+
+#define IMX_CCM_AUD_PLL_DIV_CLK0		0x1600UL
+
+#define IMX_CCM_OCOTP_CLK		0x1700UL
+
+/** XBAR1 peripheral clock identifier */
+#define IMX_CCM_XBAR1_CLK		0x1800UL
+/** XBAR2 peripheral clock identifier */
+#define IMX_CCM_XBAR2_CLK		0x1801UL
+/** XBAR3 peripheral clock identifier */
+#define IMX_CCM_XBAR3_CLK		0x1802UL
+
+/*
+ * i.MX PWM ("ipwm") instances, as found on the i.MX8M family
+ */
+/** PWM1 peripheral clock identifier */
+#define IMX_CCM_PWM1_CLK		0x1900UL
+/** PWM2 peripheral clock identifier */
+#define IMX_CCM_PWM2_CLK		0x1901UL
+/** PWM3 peripheral clock identifier */
+#define IMX_CCM_PWM3_CLK		0x1902UL
+/** PWM4 peripheral clock identifier */
+#define IMX_CCM_PWM4_CLK		0x1903UL
 
 #endif /* ZEPHYR_INCLUDE_DT_BINDINGS_CLOCK_IMX_CCM_H_ */

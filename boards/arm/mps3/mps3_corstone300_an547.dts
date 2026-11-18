@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 Linaro Limited
- * Copyright 2024 Arm Limited and/or its affiliates <open-source-office@arm.com>
+ * Copyright 2024-2025 Arm Limited and/or its affiliates <open-source-office@arm.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -11,12 +11,9 @@
 #include <zephyr/dt-bindings/i2c/i2c.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 #include <mem.h>
-#include "mps3_common.dtsi"
 
 / {
 	compatible = "arm,mps3-an547";
-	#address-cells = <1>;
-	#size-cells = <1>;
 
 	chosen {
 		zephyr,console = &uart0;
@@ -91,7 +88,8 @@
 			#size-cells = <1>;
 			ranges = <0x0 0x50000000 0x10000000>;
 
-			#include "mps3_common_soc_peripheral.dtsi"
+#include "mps3_common_soc_peripheral.dtsi"
 		};
 	};
 };
+#include "mps3_common.dtsi"

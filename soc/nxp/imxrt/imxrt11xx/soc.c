@@ -1,5 +1,5 @@
 /*
- * Copyright 2021-2024 NXP
+ * Copyright 2021-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,7 +19,7 @@
 
 LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 
-#ifdef CONFIG_NXP_IMXRT_BOOT_HEADER
+#if defined(CONFIG_NXP_IMXRT_BOOT_HEADER) && defined(CONFIG_CPU_CORTEX_M7)
 #include <fsl_flexspi_nor_boot.h>
 #endif
 #include <zephyr/dt-bindings/clock/imx_ccm_rev2.h>
@@ -34,14 +34,37 @@ LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 	       (uint32_t *)(SEGMENT_LMA_ADDRESS_##n), (SEGMENT_SIZE_##n))
 #endif
 #if CONFIG_USB_DC_NXP_EHCI
-#include "usb_phy.h"
-#include "usb.h"
+#include <usb_phy.h>
+#include <usb.h>
 #endif
-#include "memc_nxp_flexram.h"
+#include <zephyr/drivers/misc/flexram/nxp_flexram.h>
 
 #include <cmsis_core.h>
 
-#define DUAL_CORE_MU_ENABLED (CONFIG_SECOND_CORE_MCUX && CONFIG_IPM && CONFIG_IPM_IMX)
+#define DUAL_CORE_MU_ENABLED   (CONFIG_SECOND_CORE_MCUX && CONFIG_IPM && CONFIG_IPM_IMX)
+#define ARM_PLL_NODE           DT_COMPAT_GET_ANY_STATUS_OKAY(nxp_imxrt11xx_arm_pll)
+#define ARM_PLL_HAS_LOOP_DIV   DT_NODE_HAS_PROP(ARM_PLL_NODE, loop_div)
+#define ARM_PLL_HAS_POST_DIV   DT_NODE_HAS_PROP(ARM_PLL_NODE, post_div)
+#define ARM_PLL_HAS_CLOCK_DIV  DT_NODE_HAS_PROP(ARM_PLL_NODE, clock_div)
+#define ARM_PLL_HAS_CLOCK_MULT DT_NODE_HAS_PROP(ARM_PLL_NODE, clock_mult)
+
+#if ARM_PLL_HAS_CLOCK_MULT
+#define ARM_PLL_LOOP_DIV (DT_PROP(ARM_PLL_NODE, clock_mult) * 2)
+#else
+#define ARM_PLL_LOOP_DIV DT_PROP(ARM_PLL_NODE, loop_div)
+#endif
+
+#if ARM_PLL_HAS_CLOCK_DIV
+#define ARM_PLL_POST_DIV DT_PROP(ARM_PLL_NODE, clock_div)
+#else
+#define ARM_PLL_POST_DIV DT_PROP(ARM_PLL_NODE, post_div)
+#endif
+
+#define ARM_PLL_POST_DIV_ENUM                                                                      \
+	((ARM_PLL_POST_DIV == 1)   ? kCLOCK_PllPostDiv1                                            \
+	 : (ARM_PLL_POST_DIV == 2) ? kCLOCK_PllPostDiv2                                            \
+	 : (ARM_PLL_POST_DIV == 4) ? kCLOCK_PllPostDiv4                                            \
+				   : kCLOCK_PllPostDiv8)
 
 #if DUAL_CORE_MU_ENABLED
 /* Dual core mode is enabled, and messaging unit is present */
@@ -56,31 +79,6 @@ LOG_MODULE_REGISTER(soc, CONFIG_SOC_LOG_LEVEL);
 #define BOARD_USB_PHY_TXCAL45DM (0x06U)
 #endif
 
-#ifdef CONFIG_INIT_ARM_PLL
-
-#if defined(CONFIG_SOC_MIMXRT1176)
-#define DEFAULT_LOOPDIV 83
-#define DEFAULT_POSTDIV 2
-#elif defined(CONFIG_SOC_MIMXRT1166)
-#define DEFAULT_LOOPDIV 100
-#define DEFAULT_POSTDIV 4
-#else
-/*
- * Check that the ARM PLL has a multiplier and divider set
- */
-BUILD_ASSERT(DT_NODE_HAS_PROP(DT_NODELABEL(arm_pll), clock_mult),
-	     "ARM PLL must have clock-mult property");
-BUILD_ASSERT(DT_NODE_HAS_PROP(DT_NODELABEL(arm_pll), clock_div),
-	     "ARM PLL must have clock-div property");
-#endif
-
-static const clock_arm_pll_config_t armPllConfig = {
-	.postDivider = CONCAT(kCLOCK_PllPostDiv,
-			      DT_PROP_OR(DT_NODELABEL(arm_pll), clock_div, DEFAULT_POSTDIV)),
-	.loopDivider = DT_PROP_OR(DT_NODELABEL(arm_pll), clock_mult, DEFAULT_LOOPDIV) * 2,
-};
-#endif
-
 static const clock_sys_pll2_config_t sysPll2Config = {
 	/* Denominator of spread spectrum */
 	.mfd = 268435455,
@@ -90,35 +88,6 @@ static const clock_sys_pll2_config_t sysPll2Config = {
 	.ssEnable = false,
 };
 
-#ifdef CONFIG_INIT_ENET_PLL
-static const clock_sys_pll1_config_t sysPll1Config = {
-	.pllDiv2En = true,
-};
-#endif
-
-#ifdef CONFIG_INIT_VIDEO_PLL
-static const clock_video_pll_config_t videoPllConfig = {
-	/* PLL Loop divider, valid range for DIV_SELECT divider value: 27 ~ 54. */
-	.loopDivider = 41,
-	/* Divider after PLL, should only be 1, 2, 4, 8, 16, 32 */
-	.postDivider = 0,
-	/*
-	 * 30 bit numerator of fractional loop divider,
-	 * Fout = Fin * ( loopDivider + numerator / denominator )
-	 */
-	.numerator = 1,
-	/*
-	 * 30 bit denominator of fractional loop divider,
-	 * Fout = Fin * ( loopDivider + numerator / denominator )
-	 */
-	.denominator = 960000,
-	/* Spread spectrum parameter */
-	.ss = NULL,
-	/* Enable spread spectrum or not */
-	.ssEnable = false,
-};
-#endif
-
 #if CONFIG_USB_DC_NXP_EHCI
 usb_phy_config_struct_t usbPhyConfig = {
 	BOARD_USB_PHY_D_CAL,
@@ -127,13 +96,13 @@ usb_phy_config_struct_t usbPhyConfig = {
 };
 #endif
 
-#ifdef CONFIG_NXP_IMXRT_BOOT_HEADER
+#if defined(CONFIG_NXP_IMXRT_BOOT_HEADER) && defined(CONFIG_CPU_CORTEX_M7)
 const __imx_boot_data_section BOOT_DATA_T boot_data = {
 #ifdef CONFIG_XIP
 	.start = CONFIG_FLASH_BASE_ADDRESS,
 	.size = (uint32_t)&_flash_used,
 #else
-	.start = CONFIG_SRAM_BASE_ADDRESS,
+	.start = DT_CHOSEN_SRAM_ADDR,
 	.size = (uint32_t)&_image_ram_size,
 #endif
 	.plugin = PLUGIN_FLAG,
@@ -160,16 +129,21 @@ const __imx_boot_ivt_section ivt image_vector_table = {
 /**
  * @brief Initialize the system clock
  */
-static ALWAYS_INLINE void clock_init(void)
+__weak void clock_init(void)
 {
 	clock_root_config_t rootCfg = {0};
 
-#if CONFIG_ADJUST_DCDC
-	DCDC_SetVDD1P0BuckModeTargetVoltage(DCDC, kDCDC_1P0BuckTarget1P15V);
-#endif
+	if (IS_ENABLED(CONFIG_ADJUST_DCDC)) {
+		DCDC_SetVDD1P0BuckModeTargetVoltage(DCDC, kDCDC_1P0BuckTarget1P15V);
+	}
 
-/* RT1160 does not have Forward Body Biasing on the CM7 core */
-#if defined(CONFIG_SOC_MIMXRT1176_CM4) || defined(CONFIG_SOC_MIMXRT1176_CM7)
+/*
+ * Enable Forward Body Biasing on SoCs supporting it (the RT1160 does
+ * not have FBB on the CM7 core)
+ */
+#if defined(CONFIG_SOC_MIMXRT1176_CM4) || defined(CONFIG_SOC_MIMXRT1176_CM7) ||                    \
+	defined(CONFIG_SOC_MIMXRT1175_CM4) || defined(CONFIG_SOC_MIMXRT1175_CM7) ||                \
+	defined(CONFIG_SOC_IMXRT11XX_SINGLE_CORE)
 	/* Check if FBB need to be enabled in OverDrive(OD) mode */
 	if (((OCOTP->FUSEN[7].FUSE & 0x10U) >> 4U) != 1) {
 		PMU_EnableBodyBias(ANADIG_PMU, kPMU_FBB_CM7, true);
@@ -178,28 +152,28 @@ static ALWAYS_INLINE void clock_init(void)
 	}
 #endif
 
-#if CONFIG_BYPASS_LDO_LPSR
-	PMU_StaticEnableLpsrAnaLdoBypassMode(ANADIG_LDO_SNVS, true);
-	PMU_StaticEnableLpsrDigLdoBypassMode(ANADIG_LDO_SNVS, true);
-#endif
-
-#if CONFIG_ADJUST_LDO
-	pmu_static_lpsr_ana_ldo_config_t lpsrAnaConfig;
-	pmu_static_lpsr_dig_config_t lpsrDigConfig;
-
-	if ((ANADIG_LDO_SNVS->PMU_LDO_LPSR_ANA &
-	     ANADIG_LDO_SNVS_PMU_LDO_LPSR_ANA_BYPASS_MODE_EN_MASK) == 0UL) {
-		PMU_StaticGetLpsrAnaLdoDefaultConfig(&lpsrAnaConfig);
-		PMU_StaticLpsrAnaLdoInit(ANADIG_LDO_SNVS, &lpsrAnaConfig);
+	if (IS_ENABLED(CONFIG_BYPASS_LDO_LPSR)) {
+		PMU_StaticEnableLpsrAnaLdoBypassMode(ANADIG_LDO_SNVS, true);
+		PMU_StaticEnableLpsrDigLdoBypassMode(ANADIG_LDO_SNVS, true);
 	}
 
-	if ((ANADIG_LDO_SNVS->PMU_LDO_LPSR_DIG &
-	     ANADIG_LDO_SNVS_PMU_LDO_LPSR_DIG_BYPASS_MODE_MASK) == 0UL) {
-		PMU_StaticGetLpsrDigLdoDefaultConfig(&lpsrDigConfig);
-		lpsrDigConfig.targetVoltage = kPMU_LpsrDigTargetStableVoltage1P117V;
-		PMU_StaticLpsrDigLdoInit(ANADIG_LDO_SNVS, &lpsrDigConfig);
+	if (IS_ENABLED(CONFIG_ADJUST_LDO)) {
+		pmu_static_lpsr_ana_ldo_config_t lpsrAnaConfig;
+		pmu_static_lpsr_dig_config_t lpsrDigConfig;
+
+		if ((ANADIG_LDO_SNVS->PMU_LDO_LPSR_ANA &
+		     ANADIG_LDO_SNVS_PMU_LDO_LPSR_ANA_BYPASS_MODE_EN_MASK) == 0UL) {
+			PMU_StaticGetLpsrAnaLdoDefaultConfig(&lpsrAnaConfig);
+			PMU_StaticLpsrAnaLdoInit(ANADIG_LDO_SNVS, &lpsrAnaConfig);
+		}
+
+		if ((ANADIG_LDO_SNVS->PMU_LDO_LPSR_DIG &
+		     ANADIG_LDO_SNVS_PMU_LDO_LPSR_DIG_BYPASS_MODE_MASK) == 0UL) {
+			PMU_StaticGetLpsrDigLdoDefaultConfig(&lpsrDigConfig);
+			lpsrDigConfig.targetVoltage = kPMU_LpsrDigTargetStableVoltage1P117V;
+			PMU_StaticLpsrDigLdoInit(ANADIG_LDO_SNVS, &lpsrDigConfig);
+		}
 	}
-#endif
 
 	/* PLL LDO shall be enabled first before enable PLLs */
 
@@ -211,7 +185,6 @@ static ALWAYS_INLINE void clock_init(void)
 
 	/* Init OSC RC 400M */
 	CLOCK_OSC_EnableOscRc400M();
-	CLOCK_OSC_GateOscRc400M(true);
 
 	/* Init OSC RC 48M */
 	CLOCK_OSC_EnableOsc48M(true);
@@ -256,61 +229,113 @@ static ALWAYS_INLINE void clock_init(void)
 	 * changed in the following PLL/PFD configuration code.
 	 */
 
-#ifdef CONFIG_INIT_ARM_PLL
-	/* Init Arm Pll. */
-	CLOCK_InitArmPll(&armPllConfig);
-#endif
+	BUILD_ASSERT(ARM_PLL_HAS_LOOP_DIV || ARM_PLL_HAS_CLOCK_MULT,
+		     "ARM PLL requires loop-div or deprecated clock-mult");
+	BUILD_ASSERT(ARM_PLL_HAS_POST_DIV || ARM_PLL_HAS_CLOCK_DIV,
+		     "ARM PLL requires post-div or deprecated clock-div");
+	BUILD_ASSERT((ARM_PLL_POST_DIV == 1) || (ARM_PLL_POST_DIV == 2) ||
+			     (ARM_PLL_POST_DIV == 4) || (ARM_PLL_POST_DIV == 8),
+		     "ARM PLL post divider must be 1, 2, 4, or 8");
+	BUILD_ASSERT(ARM_PLL_LOOP_DIV >= 104 && ARM_PLL_LOOP_DIV <= 208,
+		     "ARM PLL loop divider must be in range 104-208");
 
-#ifdef CONFIG_INIT_ENET_PLL
-	CLOCK_InitSysPll1(&sysPll1Config);
-#else
-#ifndef CONFIG_SECOND_CORE_MCUX
-	/* Bypass Sys Pll1. */
-	CLOCK_SetPllBypass(kCLOCK_PllSys1, true);
+	static const clock_arm_pll_config_t armPllConfig = {
+		.postDivider = ARM_PLL_POST_DIV_ENUM,
+		.loopDivider = ARM_PLL_LOOP_DIV,
+	};
 
-	/* DeInit Sys Pll1. */
-	CLOCK_DeinitSysPll1();
-#endif
-#endif
+	if (IS_ENABLED(CONFIG_INIT_ARM_PLL)) {
+		CLOCK_InitArmPll(&armPllConfig);
+	}
+
+	if (IS_ENABLED(CONFIG_ETH_NXP_ENET)) {
+		/* For default clocking, we will only use pll1 for div2 output for enet */
+		static const clock_sys_pll1_config_t sysPll1Config = {
+			.pllDiv2En = true,
+		};
+		CLOCK_InitSysPll1(&sysPll1Config);
+	} else if (!IS_ENABLED(CONFIG_SECOND_CORE_MCUX)) {
+		/* PLL1 not used otherwise, so bypass first then deinit */
+		CLOCK_SetPllBypass(kCLOCK_PllSys1, true);
+		CLOCK_DeinitSysPll1();
+	}
 
 	/* Init Sys Pll2. */
 	CLOCK_InitSysPll2(&sysPll2Config);
 
 	/* Init System Pll2 pfd0. */
-	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd0, 27);
+	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd0, CONFIG_SYS_PLL2_PFD0_DIV);
 
 	/* Init System Pll2 pfd1. */
-	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd1, 16);
+	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd1, CONFIG_SYS_PLL2_PFD1_DIV);
 
 	/* Init System Pll2 pfd2. */
-	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd2, 24);
+	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd2, CONFIG_SYS_PLL2_PFD2_DIV);
 
 	/* Init System Pll2 pfd3. */
-	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd3, 32);
+	CLOCK_InitPfd(kCLOCK_PllSys2, kCLOCK_Pfd3, CONFIG_SYS_PLL2_PFD3_DIV);
 
 	/* Init Sys Pll3. */
 	CLOCK_InitSysPll3();
 
 	/* Init System Pll3 pfd0. */
-	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd0, 13);
+	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd0, CONFIG_SYS_PLL3_PFD0_DIV);
 
 	/* Init System Pll3 pfd1. */
-	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd1, 17);
+	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd1, CONFIG_SYS_PLL3_PFD1_DIV);
 
 	/* Init System Pll3 pfd2. */
-	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd2, 32);
+	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd2, CONFIG_SYS_PLL3_PFD2_DIV);
 
 	/* Init System Pll3 pfd3. */
-	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd3, 22);
+	CLOCK_InitPfd(kCLOCK_PllSys3, kCLOCK_Pfd3, CONFIG_SYS_PLL3_PFD3_DIV);
 
-#ifdef CONFIG_INIT_VIDEO_PLL
-	/* Init Video Pll. */
-	CLOCK_InitVideoPll(&videoPllConfig);
-#endif
+	static const clock_video_pll_config_t videoPllConfig = {
+		/* PLL Loop divider, valid range for DIV_SELECT divider value: 27 ~ 54. */
+		.loopDivider = 41,
+		/* Divider after PLL, should only be 1, 2, 4, 8, 16, 32 */
+		.postDivider = 0,
+		/*
+		 * 30 bit numerator of fractional loop divider,
+		 * Fout = Fin * ( loopDivider + numerator / denominator )
+		 */
+		.numerator = 1,
+		/*
+		 * 30 bit denominator of fractional loop divider,
+		 * Fout = Fin * ( loopDivider + numerator / denominator )
+		 */
+		.denominator = 960000,
+		/* Spread spectrum parameter */
+		.ss = NULL,
+		/* Enable spread spectrum or not */
+		.ssEnable = false,
+	};
+
+	if (IS_ENABLED(CONFIG_INIT_VIDEO_PLL)) {
+		/* Init Video Pll. */
+		CLOCK_InitVideoPll(&videoPllConfig);
+	}
 
 	/* Module clock root configurations. */
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(micfil))
+	/*
+	 * MICFIL/PDM clocking on RT11xx:
+	 * - MIC root clock (kCLOCK_Root_Mic) feeds PDM_CLK_ROOT
+	 * - MIC root mux=Audio PLL OUT, div=16 gives 24.576MHz when Audio PLL=393.216MHz
+	 *
+	 * Note: This only selects/divides the root. The Audio PLL must be configured
+	 * to 393.216MHz elsewhere if you need an exact 24.576MHz root.
+	 */
+	rootCfg.mux = kCLOCK_MIC_ClockRoot_MuxAudioPllOut; /* mux=6 */
+	rootCfg.div = 16;                                  /* div=16 */
+	CLOCK_SetRootClock(kCLOCK_Root_Mic, &rootCfg);
+
+#endif
+
 	/* Configure M7 using ARM_PLL_CLK */
-#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7)
+#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7) ||                    \
+	defined(CONFIG_SOC_MIMXRT1175_CM7) || defined(CONFIG_SOC_IMXRT11XX_SINGLE_CORE)
 	rootCfg.mux = kCLOCK_M7_ClockRoot_MuxArmPllOut;
 	rootCfg.div = 1;
 	CLOCK_SetRootClock(kCLOCK_Root_M7, &rootCfg);
@@ -321,14 +346,15 @@ static ALWAYS_INLINE void clock_init(void)
 	rootCfg.mux = kCLOCK_M4_ClockRoot_MuxSysPll3Out;
 	rootCfg.div = 2;
 	CLOCK_SetRootClock(kCLOCK_Root_M4, &rootCfg);
-#elif defined(CONFIG_SOC_MIMXRT1176_CM4)
+#elif defined(CONFIG_SOC_MIMXRT1176_CM4) || defined(CONFIG_SOC_MIMXRT1175_CM4)
 	/* Configure M4 using SYS_PLL3_CLK_PFD3_CLK */
 	rootCfg.mux = kCLOCK_M4_ClockRoot_MuxSysPll3Pfd3;
 	rootCfg.div = 1;
 	CLOCK_SetRootClock(kCLOCK_Root_M4, &rootCfg);
 #endif
 
-#if CONFIG_SOC_MIMXRT1176_CM7
+#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1175_CM7) ||                    \
+	defined(CONFIG_SOC_IMXRT11XX_SINGLE_CORE)
 	/* Keep root bus clock at default 240M */
 	rootCfg.mux = kCLOCK_BUS_ClockRoot_MuxSysPll3Out;
 	rootCfg.div = 2;
@@ -341,7 +367,7 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 
 	/* Configure BUS_LPSR using SYS_PLL3_CLK */
-#if defined(CONFIG_SOC_MIMXRT1176_CM4)
+#if defined(CONFIG_SOC_MIMXRT1176_CM4) || defined(CONFIG_SOC_MIMXRT1175_CM4)
 	rootCfg.mux = kCLOCK_BUS_LPSR_ClockRoot_MuxSysPll3Out;
 	rootCfg.div = 3;
 	CLOCK_SetRootClock(kCLOCK_Root_Bus_Lpsr, &rootCfg);
@@ -349,7 +375,8 @@ static ALWAYS_INLINE void clock_init(void)
 	rootCfg.mux = kCLOCK_BUS_LPSR_ClockRoot_MuxSysPll3Out;
 	rootCfg.div = 4;
 	CLOCK_SetRootClock(kCLOCK_Root_Bus_Lpsr, &rootCfg);
-#elif defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7)
+#elif defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7) ||                  \
+	defined(CONFIG_SOC_MIMXRT1175_CM7) || defined(CONFIG_SOC_IMXRT11XX_SINGLE_CORE)
 	rootCfg.mux = kCLOCK_BUS_LPSR_ClockRoot_MuxSysPll3Out;
 	rootCfg.div = 2;
 	CLOCK_SetRootClock(kCLOCK_Root_Bus_Lpsr, &rootCfg);
@@ -366,14 +393,16 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_SetRootClock(kCLOCK_Root_Cstrace, &rootCfg);
 
 	/* Configure M4_SYSTICK using OSC_RC_48M_DIV2 */
-#if defined(CONFIG_SOC_MIMXRT1176_CM4) || defined(CONFIG_SOC_MIMXRT1166_CM4)
+#if defined(CONFIG_SOC_MIMXRT1176_CM4) || defined(CONFIG_SOC_MIMXRT1166_CM4) ||                    \
+	defined(CONFIG_SOC_MIMXRT1175_CM4)
 	rootCfg.mux = kCLOCK_M4_SYSTICK_ClockRoot_MuxOscRc48MDiv2;
 	rootCfg.div = 1;
 	CLOCK_SetRootClock(kCLOCK_Root_M4_Systick, &rootCfg);
 #endif
 
 	/* Configure M7_SYSTICK using OSC_RC_48M_DIV2 */
-#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7)
+#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7) ||                    \
+	defined(CONFIG_SOC_MIMXRT1175_CM7) || defined(CONFIG_SOC_IMXRT11XX_SINGLE_CORE)
 	rootCfg.mux = kCLOCK_M7_SYSTICK_ClockRoot_MuxOscRc48MDiv2;
 	rootCfg.div = 240;
 	CLOCK_SetRootClock(kCLOCK_Root_M7_Systick, &rootCfg);
@@ -389,6 +418,18 @@ static ALWAYS_INLINE void clock_init(void)
 	rootCfg.mux = kCLOCK_LPUART2_ClockRoot_MuxSysPll2Out;
 	rootCfg.div = 22;
 	CLOCK_SetRootClock(kCLOCK_Root_Lpuart2, &rootCfg);
+#endif
+
+#ifdef CONFIG_MCUX_FLEXIO
+	/* Configure flexio1 with oscRC400M */
+	rootCfg.mux = kCLOCK_FLEXIO1_ClockRoot_MuxOscRc400M;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Flexio1, &rootCfg);
+
+	/* Configure flexio2 using oscRC400M */
+	rootCfg.mux = kCLOCK_FLEXIO2_ClockRoot_MuxOscRc400M;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Flexio2, &rootCfg);
 #endif
 
 #ifdef CONFIG_I2C_MCUX_LPI2C
@@ -408,13 +449,13 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_SetRootClock(kCLOCK_Root_Lpi2c6, &rootCfg);
 #endif
 
-#if CONFIG_ETH_MCUX || CONFIG_ETH_NXP_ENET
+#if CONFIG_ETH_NXP_ENET
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet))
 	/* 50 MHz ENET clock */
 	rootCfg.mux = kCLOCK_ENET1_ClockRoot_MuxSysPll1Div2;
 	rootCfg.div = 10;
 	CLOCK_SetRootClock(kCLOCK_Root_Enet1, &rootCfg);
-#if CONFIG_ETH_MCUX_RMII_EXT_CLK
+#if CONFIG_ETH_NXP_ENET_RMII_EXT_CLK
 	/* Set ENET_REF_CLK as an input driven by PHY */
 	IOMUXC_GPR->GPR4 &= ~IOMUXC_GPR_GPR4_ENET_REF_CLK_DIR(0x01U);
 	IOMUXC_GPR->GPR4 |= IOMUXC_GPR_GPR4_ENET_TX_CLK_SEL(0x1U);
@@ -442,7 +483,7 @@ static ALWAYS_INLINE void clock_init(void)
 	 */
 	rootCfg.div = 10;
 	CLOCK_SetRootClock(kCLOCK_Root_Enet2, &rootCfg);
-#if CONFIG_ETH_MCUX_RMII_EXT_CLK
+#if CONFIG_ETH_NXP_ENET_RMII_EXT_CLK
 	/* Set ENET1G_REF_CLK as an input driven by PHY */
 	IOMUXC_GPR->GPR5 &= ~IOMUXC_GPR_GPR5_ENET1G_REF_CLK_DIR(0x01U);
 	IOMUXC_GPR->GPR5 |= IOMUXC_GPR_GPR5_ENET1G_TX_CLK_SEL(0x1U);
@@ -455,19 +496,65 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 #endif
 
-#if defined(CONFIG_PTP_CLOCK_MCUX) || defined(CONFIG_PTP_CLOCK_NXP_ENET)
-	/* 24MHz PTP clock */
-	rootCfg.mux = kCLOCK_ENET_TIMER1_ClockRoot_MuxOscRc48MDiv2;
-	rootCfg.div = 1;
+#if defined(CONFIG_PTP_CLOCK_NXP_ENET)
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet))
+	/* 100MHz enet PTP clock */
+	rootCfg.mux = kCLOCK_ENET_TIMER1_ClockRoot_MuxSysPll1Div2;
+	rootCfg.div = 5;
 	CLOCK_SetRootClock(kCLOCK_Root_Enet_Timer1, &rootCfg);
 #endif
 
-#ifdef CONFIG_SPI_MCUX_LPSPI
-	/* Configure lpspi using Osc48MDiv2 */
-	rootCfg.mux = kCLOCK_LPSPI1_ClockRoot_MuxOscRc48MDiv2;
-	rootCfg.div = 1;
-	CLOCK_SetRootClock(kCLOCK_Root_Lpspi1, &rootCfg);
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet1g))
+	/* 100MHz enet1g PTP clock */
+	rootCfg.mux = kCLOCK_ENET_TIMER2_ClockRoot_MuxSysPll1Div2;
+	rootCfg.div = 5;
+	CLOCK_SetRootClock(kCLOCK_Root_Enet_Timer2, &rootCfg);
 #endif
+#endif
+
+#ifdef CONFIG_SPI_NXP_LPSPI
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi1), okay)
+	/* Configure input clock to be able to reach the datasheet specified baud rate. */
+	rootCfg.mux = kCLOCK_LPSPI1_ClockRoot_MuxSysPll3Pfd2;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Lpspi1, &rootCfg);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi1), okay) */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi2), okay)
+	/* Configure input clock to be able to reach the datasheet specified baud rate. */
+	rootCfg.mux = kCLOCK_LPSPI2_ClockRoot_MuxSysPll3Pfd2;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Lpspi2, &rootCfg);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi2), okay) */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi3), okay)
+	/* Configure input clock to be able to reach the datasheet specified baud rate. */
+	rootCfg.mux = kCLOCK_LPSPI3_ClockRoot_MuxSysPll3Pfd2;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Lpspi3, &rootCfg);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi3), okay) */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi4), okay)
+	/* Configure input clock to be able to reach the datasheet specified baud rate. */
+	rootCfg.mux = kCLOCK_LPSPI4_ClockRoot_MuxSysPll3Pfd2;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Lpspi4, &rootCfg);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi4), okay) */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi5), okay)
+	/* Configure input clock to be able to reach the datasheet specified baud rate. */
+	rootCfg.mux = kCLOCK_LPSPI5_ClockRoot_MuxSysPll3Pfd2;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Lpspi5, &rootCfg);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi5), okay) */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi6), okay)
+	/* Configure input clock to be able to reach the datasheet specified baud rate. */
+	rootCfg.mux = kCLOCK_LPSPI6_ClockRoot_MuxSysPll3Pfd2;
+	rootCfg.div = 2;
+	CLOCK_SetRootClock(kCLOCK_Root_Lpspi6, &rootCfg);
+#endif /* DT_NODE_HAS_STATUS(DT_NODELABEL(lpspi6), okay) */
+#endif /* CONFIG_SPI_NXP_LPSPI */
 
 #ifdef CONFIG_VIDEO_MCUX_MIPI_CSI2RX
 	/* MIPI CSI-2 Rx connects to CSI via Video Mux */
@@ -494,7 +581,7 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 #endif
 
-#ifdef CONFIG_MCUX_ACMP
+#if defined(CONFIG_COMPARATOR_MCUX_ACMP) || defined(CONFIG_SENSOR_MCUX_ACMP)
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(acmp1))
 	/* Configure ACMP1 using Osc48MDiv2*/
 	rootCfg.mux = kCLOCK_ACMP_ClockRoot_MuxOscRc48MDiv2;
@@ -509,10 +596,24 @@ static ALWAYS_INLINE void clock_init(void)
 	 * PLL2 is fixed at 528MHz. Use desired panel clock clock to
 	 * calculate LCDIF clock.
 	 */
-	rootCfg.div = ((SYS_PLL2_FREQ /
-			DT_PROP(DT_CHILD(DT_NODELABEL(lcdif), display_timings), clock_frequency)) +
-		       1);
+	rootCfg.div =
+		((SYS_PLL2_FREQ /
+		  DT_PROP(DT_CHILD(DT_INST(0, nxp_imx_elcdif), display_timings), clock_frequency)) +
+		 1);
 	CLOCK_SetRootClock(kCLOCK_Root_Lcdif, &rootCfg);
+#endif
+
+#ifdef CONFIG_DISPLAY_MCUX_LCDIFV2
+	rootCfg.mux = kCLOCK_LCDIF_ClockRoot_MuxSysPll2Out;
+	/*
+	 * PLL2 is fixed at 528MHz. Use desired panel clock clock to
+	 * calculate LCDIF clock.
+	 */
+	rootCfg.div =
+		((SYS_PLL2_FREQ / DT_PROP(DT_CHILD(DT_INST(0, nxp_imx_lcdifv2), display_timings),
+					  clock_frequency)) +
+		 1);
+	CLOCK_SetRootClock(kCLOCK_Root_Lcdifv2, &rootCfg);
 #endif
 
 #ifdef CONFIG_COUNTER_MCUX_GPT
@@ -541,7 +642,7 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 #endif
 
-#if CONFIG_IMX_USDHC
+#if defined(CONFIG_IMX_USDHC)
 #if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc1))
 	/* Configure USDHC1 using  SysPll2Pfd2*/
 	rootCfg.mux = kCLOCK_USDHC1_ClockRoot_MuxSysPll2Pfd2;
@@ -559,12 +660,29 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 #endif
 
-#if !(DT_NODE_HAS_COMPAT(DT_PARENT(DT_CHOSEN(zephyr_flash)), nxp_imx_flexspi)) &&  \
-	defined(CONFIG_MEMC_MCUX_FLEXSPI) && DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexspi))
+/* Never reclock a FlexSPI the image executes in place from */
+#define FLEXSPI_IS_XIP(node_id)                                                                    \
+	(IS_ENABLED(CONFIG_XIP) &&                                                                 \
+	 (CONFIG_FLASH_BASE_ADDRESS >= DT_REG_ADDR_BY_IDX(node_id, 1)) &&                          \
+	 (CONFIG_FLASH_BASE_ADDRESS <                                                              \
+	  (DT_REG_ADDR_BY_IDX(node_id, 1) + DT_REG_SIZE_BY_IDX(node_id, 1))))
+
+#if !(DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_flash_controller), nxp_imx_flexspi_nor)) &&              \
+	defined(CONFIG_MEMC_MCUX_FLEXSPI) && DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexspi)) &&     \
+	!FLEXSPI_IS_XIP(DT_NODELABEL(flexspi))
 	/* Configure FLEXSPI1 using OSC_RC_48M_DIV2 */
 	rootCfg.mux = kCLOCK_FLEXSPI1_ClockRoot_MuxOscRc48MDiv2;
 	rootCfg.div = 1;
 	CLOCK_SetRootClock(kCLOCK_Root_Flexspi1, &rootCfg);
+#endif
+
+#if !(DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_flash_controller), nxp_imx_flexspi_nor)) &&              \
+	defined(CONFIG_MEMC_MCUX_FLEXSPI) && DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexspi2)) &&    \
+	!FLEXSPI_IS_XIP(DT_NODELABEL(flexspi2))
+	/* Configure FLEXSPI2 using OSC_RC_48M_DIV2 */
+	rootCfg.mux = kCLOCK_FLEXSPI2_ClockRoot_MuxOscRc48MDiv2;
+	rootCfg.div = 1;
+	CLOCK_SetRootClock(kCLOCK_Root_Flexspi2, &rootCfg);
 #endif
 
 	/* Keep core clock ungated during WFI */
@@ -619,7 +737,11 @@ void imxrt_pre_init_display_interface(void)
 {
 	/* elcdif output to MIPI DSI */
 	CLOCK_EnableClock(kCLOCK_Video_Mux);
+#if CONFIG_DISPLAY_MCUX_ELCDIF
 	VIDEO_MUX->VID_MUX_CTRL.CLR = VIDEO_MUX_VID_MUX_CTRL_MIPI_DSI_SEL_MASK;
+#elif CONFIG_DISPLAY_MCUX_LCDIFV2
+	VIDEO_MUX->VID_MUX_CTRL.SET = VIDEO_MUX_VID_MUX_CTRL_MIPI_DSI_SEL_MASK;
+#endif
 
 	/* Power on and isolation off. */
 	PGMC_BPC4->BPC_POWER_CTRL |= (PGMC_BPC_BPC_POWER_CTRL_PSW_ON_SOFT_MASK |
@@ -742,13 +864,39 @@ static int imxrt_init(void)
 	MU_SetFlags(MU_BASE, BOOT_FLAG);
 #endif
 
-#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7)
+#if defined(CONFIG_SOC_MIMXRT1176_CM7) || defined(CONFIG_SOC_MIMXRT1166_CM7) ||                    \
+	defined(CONFIG_SOC_MIMXRT1175_CM7) || defined(CONFIG_SOC_IMXRT11XX_SINGLE_CORE)
 	sys_cache_instr_enable();
 	sys_cache_data_enable();
 #endif
 
 	/* Initialize system clock */
 	clock_init();
+
+#if defined(CONFIG_CPU_CORTEX_M7)
+	/* ERR050396
+	 * Errata description:
+	 *  AXI to AHB conversion for CM7 AHBS port (port to access CM7 to TCM) is by a NIC301
+	 *  block, instead of XHB400 block. NIC301 doesn't support sparse write conversion.
+	 *  Any AXI to AHB conversion need XHB400, not by NIC. This will result in data corruption
+	 *  in case of AXI sparse write reaches the NIC301 ahead of AHBS.
+	 * Errata workaround:
+	 *  For uSDHC, don't set the bit#1 of IOMUXC_GPR28 (AXI transaction is cacheable), if write
+	 *  data to TCM aligned in 4 bytes; No such write access limitation for OCRAM or external
+	 *  RAM.
+	 *  For ENET, clear CACHE_ENET if TCM is used as the write destination.
+	 */
+#if defined(CONFIG_IMX_USDHC) && (DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc1)) ||                 \
+				  DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc2)))
+	/* USDHC ERR050396 workaround */
+	IOMUXC_GPR->GPR28 &= (~IOMUXC_GPR_GPR28_AWCACHE_USDHC_MASK);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet)) && defined(IOMUXC_GPR_GPR28_CACHE_ENET_MASK)
+	/* ENET ERR050396 workaround */
+	IOMUXC_GPR->GPR28 &= (~IOMUXC_GPR_GPR28_CACHE_ENET_MASK);
+#endif
+#endif
 
 	return 0;
 }
@@ -760,22 +908,20 @@ static int imxrt_init(void)
  */
 
 #ifdef CONFIG_SOC_RESET_HOOK
-__asm__ (
-	".global soc_reset_hook\n"
+__asm__(".global soc_reset_hook\n"
 	"soc_reset_hook:\n"
-	"ldr r0, =z_main_stack+"STRINGIFY(CONFIG_MAIN_STACK_SIZE)";\n"
-	"msr msp, r0;\n"
-	"b _soc_reset_hook;\n"
-);
+	"ldr r0, =z_main_stack+" STRINGIFY(CONFIG_MAIN_STACK_SIZE)";\n"
+								  "msr msp, r0;\n"
+								  "b _soc_reset_hook;\n");
 
 void __used _soc_reset_hook(void)
 {
-	SystemInit();
-
 #if defined(FLEXRAM_RUNTIME_BANKS_USED)
 	/* Configure flexram if not running from RAM */
-	memc_flexram_dt_partition();
+	flexram_dt_partition();
 #endif
+
+	SystemInit();
 }
 #endif
 

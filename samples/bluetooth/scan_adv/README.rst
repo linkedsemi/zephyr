@@ -22,7 +22,15 @@ Requirements
 Building and Running
 ********************
 
-This sample can be found under :zephyr_file:`samples/bluetooth/scan_adv` in the
-Zephyr tree.
+Build and flash the sample as follows, replacing ``<board>`` with your target board:
 
-See :zephyr:code-sample-category:`bluetooth` samples for details.
+.. zephyr-app-commands::
+   :zephyr-app: samples/bluetooth/scan_adv
+   :board: <board>
+   :goals: build flash
+   :compact:
+
+The sample interleaves advertising and scanning for nearby Bluetooth LE devices. The manufacturer
+data byte in the outgoing advertising packets reflects the number of advertising packets received.
+Use a Bluetooth scanner app (e.g. nRF Connect) to observe the advertising packets and watch
+the manufacturer data byte increment as the device receives packets from nearby devices.

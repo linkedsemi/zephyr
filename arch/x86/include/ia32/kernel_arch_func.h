@@ -14,13 +14,15 @@
 
 #include <stddef.h> /* For size_t */
 
+#include <zephyr/platform/hooks.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 static inline void arch_kernel_init(void)
 {
-	/* No-op on this arch */
+	soc_per_core_init_hook();
 }
 
 static ALWAYS_INLINE void
@@ -32,6 +34,8 @@ arch_thread_return_value_set(struct k_thread *thread, unsigned int value)
 }
 
 extern void arch_cpu_atomic_idle(unsigned int key);
+
+int arch_swap(unsigned int key);
 
 /* ASM code to fiddle with registers to enable the MMU with PAE paging */
 void z_x86_enable_paging(void);

@@ -12,6 +12,7 @@
 LOG_MODULE_DECLARE(usbc_stack, CONFIG_USBC_STACK_LOG_LEVEL);
 
 #include "usbc_stack.h"
+#include "usbc_config.h"
 
 /**
  * @file
@@ -51,6 +52,8 @@ enum prl_flags {
 	PRL_FLAGS_FIRST_MSG_PENDING = 8,
 	/* Flag to note that PRL requested to set SINK_NG CC state */
 	PRL_FLAGS_SINK_NG = 9,
+	/** Flag to note a message has been received */
+	PRL_FLAGS_RX_COMPLETE = 10,
 };
 
 /**
@@ -105,6 +108,91 @@ enum usbc_prl_hr_state_t {
 
 static const struct smf_state prl_tx_states[PRL_TX_STATE_COUNT];
 static const struct smf_state prl_hr_states[PRL_HR_STATE_COUNT];
+
+#ifdef CONFIG_USBC_LOG_PD_MSG_NAMES
+/**
+ * @brief Human-readable names for PD Control Message types.
+ *	  Names match Table 6.4 Control Message Types in the PD specification.
+ */
+static const char *const pd_ctrl_msg_names[PD_CTRL_MSG_COUNT] = {
+	[PD_CTRL_GOOD_CRC] = "GoodCRC",
+	[PD_CTRL_GOTO_MIN] = "GotoMin",
+	[PD_CTRL_ACCEPT] = "Accept",
+	[PD_CTRL_REJECT] = "Reject",
+	[PD_CTRL_PING] = "Ping",
+	[PD_CTRL_PS_RDY] = "PS_RDY",
+	[PD_CTRL_GET_SOURCE_CAP] = "Get_Source_Cap",
+	[PD_CTRL_GET_SINK_CAP] = "Get_Sink_Cap",
+	[PD_CTRL_DR_SWAP] = "DR_Swap",
+	[PD_CTRL_PR_SWAP] = "PR_Swap",
+	[PD_CTRL_VCONN_SWAP] = "VCONN_Swap",
+	[PD_CTRL_WAIT] = "Wait",
+	[PD_CTRL_SOFT_RESET] = "Soft_Reset",
+	[PD_CTRL_DATA_RESET] = "Data_Reset",
+	[PD_CTRL_DATA_RESET_COMPLETE] = "Data_Reset_Complete",
+	[PD_CTRL_NOT_SUPPORTED] = "Not_Supported",
+	[PD_CTRL_GET_SOURCE_CAP_EXT] = "Get_Source_Cap_Extended",
+	[PD_CTRL_GET_STATUS] = "Get_Status",
+	[PD_CTRL_FR_SWAP] = "FR_Swap",
+	[PD_CTRL_GET_PPS_STATUS] = "Get_PPS_Status",
+	[PD_CTRL_GET_COUNTRY_CODES] = "Get_Country_Codes",
+	[PD_CTRL_GET_SINK_CAP_EXT] = "Get_Sink_Cap_Extended",
+	[PD_CTRL_GET_SOURCE_INFO] = "Get_Source_Info",
+	[PD_CTRL_GET_REVISION] = "Get_Revision",
+};
+BUILD_ASSERT(ARRAY_SIZE(pd_ctrl_msg_names) == PD_CTRL_MSG_COUNT,
+	     "pd_ctrl_msg_names array size mismatch with pd_ctrl_msg_type enum");
+
+/**
+ * @brief Human-readable names for PD Data Message types.
+ *	  Names match Table 6.5 Data Message Types in the PD specification.
+ */
+static const char *const pd_data_msg_names[PD_DATA_MSG_COUNT] = {
+	[PD_DATA_SOURCE_CAP] = "Source_Capabilities",
+	[PD_DATA_REQUEST] = "Request",
+	[PD_DATA_BIST] = "BIST",
+	[PD_DATA_SINK_CAP] = "Sink_Capabilities",
+	[PD_DATA_BATTERY_STATUS] = "Battery_Status",
+	[PD_DATA_ALERT] = "Alert",
+	[PD_DATA_GET_COUNTRY_INFO] = "Get_Country_Info",
+	[PD_DATA_ENTER_USB] = "Enter_USB",
+	[PD_DATA_EPR_REQUEST] = "EPR_Request",
+	[PD_DATA_EPR_MODE] = "EPR_Mode",
+	[PD_DATA_SOURCE_INFO] = "Source_Info",
+	[PD_DATA_REVISION] = "Revision",
+	[PD_DATA_VENDOR_DEF] = "Vendor_Defined",
+};
+BUILD_ASSERT(ARRAY_SIZE(pd_data_msg_names) == PD_DATA_MSG_COUNT,
+	     "pd_data_msg_names array size mismatch with pd_data_msg_type enum");
+
+/**
+ * @brief Human-readable names for PD Extended Message types.
+ *	  Names match Table 6.47 Extended Message Types in the PD specification.
+ */
+static const char *const pd_ext_msg_names[PD_EXT_MSG_COUNT] = {
+	[PD_EXT_SOURCE_CAP] = "Source_Capabilities_Extended",
+	[PD_EXT_STATUS] = "Status",
+	[PD_EXT_GET_BATTERY_CAP] = "Get_Battery_Cap",
+	[PD_EXT_GET_BATTERY_STATUS] = "Get_Battery_Status",
+	[PD_EXT_BATTERY_CAP] = "Battery_Capabilities",
+	[PD_EXT_GET_MANUFACTURER_INFO] = "Get_Manufacturer_Info",
+	[PD_EXT_MANUFACTURER_INFO] = "Manufacturer_Info",
+	[PD_EXT_SECURITY_REQUEST] = "Security_Request",
+	[PD_EXT_SECURITY_RESPONSE] = "Security_Response",
+	[PD_EXT_FIRMWARE_UPDATE_REQUEST] = "Firmware_Update_Request",
+	[PD_EXT_FIRMWARE_UPDATE_RESPONSE] = "Firmware_Update_Response",
+	[PD_EXT_PPS_STATUS] = "PPS_Status",
+	[PD_EXT_COUNTRY_INFO] = "Country_Info",
+	[PD_EXT_COUNTRY_CODES] = "Country_Codes",
+	[PD_EXT_SINK_CAP] = "Sink_Capabilities_Extended",
+	[PD_EXT_EXTENDED_CONTROL] = "Extended_Control",
+	[PD_EXT_EPR_SOURCE_CAP] = "EPR_Source_Capabilities",
+	[PD_EXT_EPR_SINK_CAP] = "EPR_Sink_Capabilities",
+	[PD_EXT_VENDOR_DEFINED] = "Vendor_Defined_Extended",
+};
+BUILD_ASSERT(ARRAY_SIZE(pd_ext_msg_names) == PD_EXT_MSG_COUNT,
+	     "pd_ext_msg_names array size mismatch with pd_ext_msg_type enum");
+#endif /* CONFIG_USBC_LOG_PD_MSG_NAMES */
 
 static void prl_tx_construct_message(const struct device *dev);
 static void prl_rx_wait_for_phy_message(const struct device *dev);
@@ -325,7 +413,10 @@ void prl_run(const struct device *dev)
 		 */
 		if (prl_hr_get_state(dev) == PRL_HR_WAIT_FOR_REQUEST) {
 			/* Run Protocol Layer Message Reception */
-			prl_rx_wait_for_phy_message(dev);
+			if (atomic_test_and_clear_bit(&data->prl_rx->flags,
+						      PRL_FLAGS_RX_COMPLETE)) {
+				prl_rx_wait_for_phy_message(dev);
+			}
 
 			/* Run Protocol Layer Message Tx state machine */
 			smf_run_state(SMF_CTX(prl_tx));
@@ -360,16 +451,54 @@ enum pd_rev_type prl_get_rev(const struct device *dev, const enum pd_packet_type
 /** Private Protocol Layer API below */
 
 /**
+ * @brief Get the human-readable name of a PD message, selecting the
+ *	  Control, Data, or Extended lookup table based on the header fields.
+ *
+ * @param msg Message to get the name of
+ * @return String name of the message type
+ */
+static const char *pd_msg_name(const struct pd_msg *msg)
+{
+#ifdef CONFIG_USBC_LOG_PD_MSG_NAMES
+	const uint8_t msg_type = msg->header.message_type;
+
+	if (msg->header.extended) {
+		/* Extended Message */
+		return (msg_type < ARRAY_SIZE(pd_ext_msg_names) && pd_ext_msg_names[msg_type])
+			       ? pd_ext_msg_names[msg_type]
+			       : "Unknown Extended message";
+	} else if (msg->header.number_of_data_objects > 0) {
+		/* Data Message */
+		return (msg_type < ARRAY_SIZE(pd_data_msg_names) && pd_data_msg_names[msg_type])
+			       ? pd_data_msg_names[msg_type]
+			       : "Unknown Data message";
+	}
+	/* Control Message */
+	return (msg_type < ARRAY_SIZE(pd_ctrl_msg_names) && pd_ctrl_msg_names[msg_type])
+		       ? pd_ctrl_msg_names[msg_type]
+		       : "Unknown Control message";
+#else
+	ARG_UNUSED(msg);
+
+	return "";
+#endif /* CONFIG_USBC_LOG_PD_MSG_NAMES */
+}
+
+/**
  * @brief Alert Handler called by the TCPC driver
  */
 static void alert_handler(const struct device *tcpc, void *port_dev, enum tcpc_alert alert)
 {
 	const struct device *dev = (const struct device *)port_dev;
 	struct usbc_port_data *data = dev->data;
+	struct protocol_layer_rx_t *prl_rx = data->prl_rx;
 	struct protocol_layer_tx_t *prl_tx = data->prl_tx;
 	struct protocol_hard_reset_t *prl_hr = data->prl_hr;
 
 	switch (alert) {
+	case TCPC_ALERT_MSG_STATUS:
+		atomic_set_bit(&prl_rx->flags, PRL_FLAGS_RX_COMPLETE);
+		break;
 	case TCPC_ALERT_HARD_RESET_RECEIVED:
 		atomic_set_bit(&prl_hr->flags, PRL_FLAGS_PORT_PARTNER_HARD_RESET);
 		break;
@@ -473,6 +602,8 @@ static void prl_tx_construct_message(const struct device *dev)
 	struct usbc_port_data *data = dev->data;
 	struct protocol_layer_tx_t *prl_tx = data->prl_tx;
 	const struct device *tcpc = data->tcpc;
+	uint8_t num_data_objs;
+	int i;
 
 	/* The header is unused for hard reset, etc. */
 	prl_tx->emsg.header.raw_value =
@@ -490,6 +621,15 @@ static void prl_tx_construct_message(const struct device *dev)
 
 	/* Clear PRL_FLAGS_MSG_XMIT flag */
 	atomic_clear_bit(&prl_tx->flags, PRL_FLAGS_MSG_XMIT);
+
+	num_data_objs = prl_tx->emsg.header.number_of_data_objects;
+
+	/* Log the outgoing message */
+	LOG_INF("SEND 0x%04x/%d[%s]", prl_tx->emsg.header.raw_value, num_data_objs,
+		pd_msg_name(&prl_tx->emsg));
+	for (i = 0; i < num_data_objs; i++) {
+		LOG_INF("\t[%d]%08X ", i, *((uint32_t *)prl_tx->emsg.data + i));
+	}
 
 	/*
 	 * Pass message to PHY Layer. It handles retries in hardware as
@@ -516,7 +656,7 @@ static void prl_hr_send_msg_to_phy(const struct device *dev)
 	 * Policy Engine is informed of the previous transmission. Clear the
 	 * flags so that this message can be sent.
 	 */
-	data->prl_tx->flags = ATOMIC_INIT(0);
+	atomic_clear(&data->prl_tx->flags);
 
 	/* Pass message to PHY Layer */
 	tcpc_transmit_data(tcpc, &prl_tx->emsg);
@@ -545,12 +685,12 @@ static void prl_init(const struct device *dev)
 	tcpc_set_alert_handler_cb(data->tcpc, alert_handler, (void *)dev);
 
 	/* Initialize the PRL_HR state machine */
-	prl_hr->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_hr->flags);
 	usbc_timer_init(&prl_hr->pd_t_hard_reset_complete, PD_T_HARD_RESET_COMPLETE_MAX_MS);
 	prl_hr_set_state(dev, PRL_HR_WAIT_FOR_REQUEST);
 
 	/* Initialize the PRL_TX state machine */
-	prl_tx->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_tx->flags);
 	prl_tx->last_xmit_type = PD_PACKET_SOP;
 	for (i = 0; i < NUM_SOP_STAR_TYPES; i++) {
 		prl_tx->msg_id_counter[i] = 0;
@@ -560,7 +700,7 @@ static void prl_init(const struct device *dev)
 	prl_tx_set_state(dev, PRL_TX_PHY_LAYER_RESET);
 
 	/* Initialize the PRL_RX state machine */
-	prl_rx->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_rx->flags);
 	for (i = 0; i < NUM_SOP_STAR_TYPES; i++) {
 		prl_rx->msg_id[i] = -1;
 	}
@@ -595,13 +735,13 @@ static void prl_tx_wait_for_message_request_entry(void *obj)
 	LOG_INF("PRL_Tx_Wait_for_Message_Request");
 
 	/* Clear outstanding messages */
-	prl_tx->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_tx->flags);
 }
 
 /**
  * @brief PRL_Tx_Wait_for_Message_Request Run State
  */
-static void prl_tx_wait_for_message_request_run(void *obj)
+static enum smf_state_result prl_tx_wait_for_message_request_run(void *obj)
 {
 	struct protocol_layer_tx_t *prl_tx = (struct protocol_layer_tx_t *)obj;
 	const struct device *dev = prl_tx->dev;
@@ -609,12 +749,12 @@ static void prl_tx_wait_for_message_request_run(void *obj)
 
 	/* Clear any AMS flags and state if we are no longer in an AMS */
 	if (pe_dpm_initiated_ams(dev) == false) {
-#ifdef CONFIG_USBC_CSM_SOURCE_ONLY
-		/* Note PRL_Tx_Src_Sink_Tx is embedded here. */
-		if (atomic_test_and_clear_bit(&prl_tx->flags, PRL_FLAGS_SINK_NG)) {
-			tc_select_src_collision_rp(dev, SINK_TX_OK);
+		if (IS_ENABLED(CONFIG_USBC_CSM_SUPPORTS_SOURCE)) {
+			/* Note PRL_Tx_Src_Sink_Tx is embedded here. */
+			if (atomic_test_and_clear_bit(&prl_tx->flags, PRL_FLAGS_SINK_NG)) {
+				tc_select_src_collision_rp(dev, SINK_TX_OK);
+			}
 		}
-#endif
 		atomic_clear_bit(&prl_tx->flags, PRL_FLAGS_WAIT_SINK_OK);
 	}
 
@@ -624,7 +764,7 @@ static void prl_tx_wait_for_message_request_run(void *obj)
 	 */
 	if (data->rev[PD_PACKET_SOP] == PD_REV30 && pe_dpm_initiated_ams(dev)) {
 		if (atomic_test_bit(&prl_tx->flags, PRL_FLAGS_WAIT_SINK_OK) ||
-			atomic_test_bit(&prl_tx->flags, PRL_FLAGS_SINK_NG)) {
+		    atomic_test_bit(&prl_tx->flags, PRL_FLAGS_SINK_NG)) {
 			/*
 			 * If we are already in an AMS then allow the
 			 * multi-message AMS to continue.
@@ -636,15 +776,15 @@ static void prl_tx_wait_for_message_request_run(void *obj)
 			 * Start of AMS notification received from
 			 * Policy Engine
 			 */
-			if (IS_ENABLED(CONFIG_USBC_CSM_SOURCE_ONLY) &&
-				pe_get_power_role(dev) == TC_ROLE_SOURCE) {
+			if (IS_ENABLED(CONFIG_USBC_CSM_SUPPORTS_SOURCE) &&
+			    pe_get_power_role(dev) == TC_ROLE_SOURCE) {
 				atomic_set_bit(&prl_tx->flags, PRL_FLAGS_SINK_NG);
 				prl_tx_set_state(dev, PRL_TX_SRC_SOURCE_TX);
 			} else {
 				atomic_set_bit(&prl_tx->flags, PRL_FLAGS_WAIT_SINK_OK);
 				prl_tx_set_state(dev, PRL_TX_SNK_START_AMS);
 			}
-			return;
+			return SMF_EVENT_PROPAGATE;
 		}
 	}
 
@@ -662,8 +802,9 @@ static void prl_tx_wait_for_message_request_run(void *obj)
 			prl_tx_construct_message(dev);
 			prl_tx_set_state(dev, PRL_TX_WAIT_FOR_PHY_RESPONSE);
 		}
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -716,7 +857,7 @@ static void prl_tx_wait_for_phy_response_entry(void *obj)
 /**
  * @brief PRL_Tx_Wait_for_PHY_response Run State
  */
-static void prl_tx_wait_for_phy_response_run(void *obj)
+static enum smf_state_result prl_tx_wait_for_phy_response_run(void *obj)
 {
 	struct protocol_layer_tx_t *prl_tx = (struct protocol_layer_tx_t *)obj;
 	const struct device *dev = prl_tx->dev;
@@ -727,7 +868,7 @@ static void prl_tx_wait_for_phy_response_run(void *obj)
 		/* Inform Policy Engine Message was discarded */
 		pe_report_discard(dev);
 		prl_tx_set_state(dev, PRL_TX_PHY_LAYER_RESET);
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
 	if (atomic_test_bit(&prl_tx->flags, PRL_FLAGS_TX_COMPLETE)) {
 		/* NOTE: PRL_TX_Message_Sent State embedded here. */
@@ -738,7 +879,7 @@ static void prl_tx_wait_for_phy_response_run(void *obj)
 		 * of the transmission by one state machine cycle
 		 */
 		prl_tx_set_state(dev, PRL_TX_WAIT_FOR_MESSAGE_REQUEST);
-		return;
+		return SMF_EVENT_PROPAGATE;
 	} else if (usbc_timer_expired(&prl_tx->pd_t_tx_timeout) ||
 		   atomic_test_bit(&prl_tx->flags, PRL_FLAGS_TX_ERROR)) {
 		/*
@@ -748,8 +889,9 @@ static void prl_tx_wait_for_phy_response_run(void *obj)
 		/* Report Error To Policy Engine */
 		pe_report_error(dev, ERR_XMIT, prl_tx->last_xmit_type);
 		prl_tx_set_state(dev, PRL_TX_WAIT_FOR_MESSAGE_REQUEST);
-		return;
+		return SMF_EVENT_PROPAGATE;
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -766,7 +908,7 @@ static void prl_tx_wait_for_phy_response_exit(void *obj)
 	increment_msgid_counter(dev);
 }
 
-#ifdef CONFIG_USBC_CSM_SOURCE_ONLY
+#ifdef CONFIG_USBC_CSM_SUPPORTS_SOURCE
 /**
  * @brief 6.11.2.2.2.1 PRL_Tx_Src_Source_Tx
  */
@@ -781,7 +923,7 @@ static void prl_tx_src_source_tx_entry(void *obj)
 	tc_select_src_collision_rp(dev, SINK_TX_NG);
 }
 
-static void prl_tx_src_source_tx_run(void *obj)
+static enum smf_state_result prl_tx_src_source_tx_run(void *obj)
 {
 	struct protocol_layer_tx_t *prl_tx = (struct protocol_layer_tx_t *)obj;
 	const struct device *dev = prl_tx->dev;
@@ -793,9 +935,10 @@ static void prl_tx_src_source_tx_run(void *obj)
 		 */
 		prl_tx_set_state(dev, PRL_TX_SRC_PENDING);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 #endif
-#if CONFIG_USBC_CSM_SINK_ONLY
+#ifdef CONFIG_USBC_CSM_SUPPORTS_SINK
 /**
  * @brief PRL_Tx_Snk_Start_of_AMS Entry State
  */
@@ -807,7 +950,7 @@ static void prl_tx_snk_start_ams_entry(void *obj)
 /**
  * @brief PRL_Tx_Snk_Start_of_AMS Run State
  */
-static void prl_tx_snk_start_ams_run(void *obj)
+static enum smf_state_result prl_tx_snk_start_ams_run(void *obj)
 {
 	struct protocol_layer_tx_t *prl_tx = (struct protocol_layer_tx_t *)obj;
 	const struct device *dev = prl_tx->dev;
@@ -819,9 +962,10 @@ static void prl_tx_snk_start_ams_run(void *obj)
 		 */
 		prl_tx_set_state(dev, PRL_TX_SNK_PENDING);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 #endif
-#ifdef CONFIG_USBC_CSM_SOURCE_ONLY
+#ifdef CONFIG_USBC_CSM_SUPPORTS_SOURCE
 /**
  * @brief PRL_Tx_Src_Pending Entry State
  */
@@ -838,7 +982,7 @@ static void prl_tx_src_pending_entry(void *obj)
 /**
  * @brief PRL_Tx_Src_Pending Run State
  */
-static void prl_tx_src_pending_run(void *obj)
+static enum smf_state_result prl_tx_src_pending_run(void *obj)
 {
 	struct protocol_layer_tx_t *prl_tx = (struct protocol_layer_tx_t *)obj;
 	const struct device *dev = prl_tx->dev;
@@ -866,6 +1010,7 @@ static void prl_tx_src_pending_run(void *obj)
 			prl_tx_set_state(dev, PRL_TX_WAIT_FOR_PHY_RESPONSE);
 		}
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -880,7 +1025,7 @@ static void prl_tx_src_pending_exit(void *obj)
 }
 #endif
 
-#ifdef CONFIG_USBC_CSM_SINK_ONLY
+#ifdef CONFIG_USBC_CSM_SUPPORTS_SINK
 /**
  * @brief PRL_Tx_Snk_Pending Entry State
  */
@@ -892,7 +1037,7 @@ static void prl_tx_snk_pending_entry(void *obj)
 /**
  * @brief PRL_Tx_Snk_Pending Run State
  */
-static void prl_tx_snk_pending_run(void *obj)
+static enum smf_state_result prl_tx_snk_pending_run(void *obj)
 {
 	struct protocol_layer_tx_t *prl_tx = (struct protocol_layer_tx_t *)obj;
 	const struct device *dev = prl_tx->dev;
@@ -939,6 +1084,7 @@ static void prl_tx_snk_pending_run(void *obj)
 		prl_tx_construct_message(dev);
 		prl_tx_set_state(dev, PRL_TX_WAIT_FOR_PHY_RESPONSE);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 #endif
 
@@ -947,9 +1093,10 @@ static void prl_tx_suspend_entry(void *obj)
 	LOG_INF("PRL_TX_SUSPEND");
 }
 
-static void prl_tx_suspend_run(void *obj)
+static enum smf_state_result prl_tx_suspend_run(void *obj)
 {
 	/* Do nothing */
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -971,13 +1118,13 @@ static void prl_hr_wait_for_request_entry(void *obj)
 	LOG_INF("PRL_HR_Wait_for_Request");
 
 	/* Reset all Protocol Layer Hard Reset flags */
-	prl_hr->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_hr->flags);
 }
 
 /**
  * @brief PRL_HR_Wait_for_Request Run State
  */
-static void prl_hr_wait_for_request_run(void *obj)
+static enum smf_state_result prl_hr_wait_for_request_run(void *obj)
 {
 	struct protocol_hard_reset_t *prl_hr = (struct protocol_hard_reset_t *)obj;
 	const struct device *dev = prl_hr->dev;
@@ -994,6 +1141,7 @@ static void prl_hr_wait_for_request_run(void *obj)
 		/* Start Hard Reset */
 		prl_hr_set_state(dev, PRL_HR_RESET_LAYER);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -1012,9 +1160,9 @@ static void prl_hr_reset_layer_entry(void *obj)
 	LOG_INF("PRL_HR_Reset_Layer");
 
 	/* Reset all Protocol Layer message reception flags */
-	prl_rx->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_rx->flags);
 	/* Reset all Protocol Layer message transmission flags */
-	prl_tx->flags = ATOMIC_INIT(0);
+	atomic_clear(&prl_tx->flags);
 
 	/* Hard reset resets messageIDCounters for all TX types */
 	for (i = 0; i < NUM_SOP_STAR_TYPES; i++) {
@@ -1093,7 +1241,7 @@ static void prl_hr_wait_for_phy_hard_reset_complete_entry(void *obj)
 /**
  * @brief PRL_HR_Wait_for_PHY_Hard_Reset_Complete Run State
  */
-static void prl_hr_wait_for_phy_hard_reset_complete_run(void *obj)
+static enum smf_state_result prl_hr_wait_for_phy_hard_reset_complete_run(void *obj)
 {
 	struct protocol_hard_reset_t *prl_hr = (struct protocol_hard_reset_t *)obj;
 	const struct device *dev = prl_hr->dev;
@@ -1110,6 +1258,7 @@ static void prl_hr_wait_for_phy_hard_reset_complete_run(void *obj)
 		pe_hard_reset_sent(dev);
 		prl_hr_set_state(dev, PRL_HR_WAIT_FOR_PE_HARD_RESET_COMPLETE);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -1134,7 +1283,7 @@ static void prl_hr_wait_for_pe_hard_reset_complete_entry(void *obj)
 /**
  * @brief PRL_HR_Wait_For_PE_Hard_Reset_Complete Run State
  */
-static void prl_hr_wait_for_pe_hard_reset_complete_run(void *obj)
+static enum smf_state_result prl_hr_wait_for_pe_hard_reset_complete_run(void *obj)
 {
 	struct protocol_hard_reset_t *prl_hr = (struct protocol_hard_reset_t *)obj;
 	const struct device *dev = prl_hr->dev;
@@ -1143,6 +1292,7 @@ static void prl_hr_wait_for_pe_hard_reset_complete_run(void *obj)
 	if (atomic_test_bit(&prl_hr->flags, PRL_FLAGS_HARD_RESET_COMPLETE)) {
 		prl_hr_set_state(dev, PRL_HR_WAIT_FOR_REQUEST);
 	}
+	return SMF_EVENT_PROPAGATE;
 }
 
 static void prl_hr_suspend_entry(void *obj)
@@ -1150,9 +1300,10 @@ static void prl_hr_suspend_entry(void *obj)
 	LOG_INF("PRL_HR_SUSPEND");
 }
 
-static void prl_hr_suspend_run(void *obj)
+static enum smf_state_result prl_hr_suspend_run(void *obj)
 {
 	/* Do nothing */
+	return SMF_EVENT_PROPAGATE;
 }
 
 /**
@@ -1171,10 +1322,10 @@ static void prl_rx_wait_for_phy_message(const struct device *dev)
 	const struct device *tcpc = data->tcpc;
 	uint8_t msg_type;
 	uint8_t pkt_type;
-	uint8_t ext;
 	int8_t msid;
 	uint8_t num_data_objs;
 	uint8_t power_role;
+	int i;
 
 	/* Get the message */
 	if (tcpc_get_rx_pending_msg(tcpc, rx_emsg) <= 0) {
@@ -1185,18 +1336,14 @@ static void prl_rx_wait_for_phy_message(const struct device *dev)
 	num_data_objs = rx_emsg->header.number_of_data_objects;
 	msid = rx_emsg->header.message_id;
 	msg_type = rx_emsg->header.message_type;
-	ext = rx_emsg->header.extended;
 	pkt_type = rx_emsg->type;
 	power_role = rx_emsg->header.port_power_role;
 
-	/* Dump the received packet content, except for Pings */
-	if (msg_type != PD_CTRL_PING) {
-		int p;
-
-		LOG_INF("RECV %04x/%d ", rx_emsg->header.raw_value, num_data_objs);
-		for (p = 0; p < num_data_objs; p++) {
-			LOG_INF("\t[%d]%08x ", p, *((uint32_t *)rx_emsg->data + p));
-		}
+	/* Dump the received packet content */
+	LOG_INF("RECV 0x%04x/%d[%s]", rx_emsg->header.raw_value, num_data_objs,
+		pd_msg_name(rx_emsg));
+	for (i = 0; i < num_data_objs; i++) {
+		LOG_INF("\t[%d]%08X ", i, *((uint32_t *)rx_emsg->data + i));
 	}
 
 	/* Ignore messages sent to the cable from our port partner */
@@ -1257,6 +1404,7 @@ static void prl_rx_wait_for_phy_message(const struct device *dev)
 	pe_message_received(dev);
 }
 
+/* clang-format off */
 /**
  * @brief Protocol Layer Transmit State table
  */
@@ -1291,7 +1439,7 @@ static const struct smf_state prl_tx_states[PRL_TX_STATE_COUNT] = {
 		NULL,
 		NULL,
 		NULL),
-#ifdef CONFIG_USBC_CSM_SINK_ONLY
+#ifdef CONFIG_USBC_CSM_SUPPORTS_SINK
 	[PRL_TX_SNK_START_AMS] = SMF_CREATE_STATE(
 		prl_tx_snk_start_ams_entry,
 		prl_tx_snk_start_ams_run,
@@ -1305,7 +1453,7 @@ static const struct smf_state prl_tx_states[PRL_TX_STATE_COUNT] = {
 		NULL,
 		NULL),
 #endif
-#ifdef CONFIG_USBC_CSM_SOURCE_ONLY
+#ifdef CONFIG_USBC_CSM_SUPPORTS_SOURCE
 	[PRL_TX_SRC_SOURCE_TX] = SMF_CREATE_STATE(
 		prl_tx_src_source_tx_entry,
 		prl_tx_src_source_tx_run,
@@ -1357,4 +1505,5 @@ static const struct smf_state prl_hr_states[PRL_HR_STATE_COUNT] = {
 		NULL,
 		NULL),
 };
+/* clang-format on */
 BUILD_ASSERT(ARRAY_SIZE(prl_hr_states) == PRL_HR_STATE_COUNT);

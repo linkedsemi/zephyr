@@ -12,7 +12,21 @@ hardware supports them and your Zephyr board directory's :file:`board.cmake`
 file declares that support properly. See :ref:`west-build-flash-debug` for
 more information on these commands.
 
+.. _runner_blackmagicprobe:
+
+Black Magic Probe
+*****************
+
+Black Magic Probe (BMP) is an open-source debugging hardware incorporating GDB debug
+server functionality into the firmware.
+There is no need for a GDB server program, so there is no program equivalent
+to host-tool.
+
+For more details, including usage instructions and supported targets,
+see :ref:`black-magic-probe`.
+
 .. _atmel_sam_ba_bootloader:
+.. _runner_bossac:
 
 SAM Boot Assistant (SAM-BA)
 ***************************
@@ -28,7 +42,14 @@ The typical command to flash the board is:
 
 .. code-block:: console
 
-	west flash [ -r bossac ] [ -p /dev/ttyX ]
+	west flash [ -r bossac ] [ -p /dev/ttyX ] [ --erase ]
+
+.. note::
+
+    By default, flashing with bossac will only erase the flash pages containing
+    the flashed application, leaving other pages untouched. Should you wish to
+    erase the entire flash of the target when flashing, pass the ``--erase``
+    parameter when flashing.
 
 Flash configuration for devices:
 
@@ -97,17 +118,19 @@ A typical flash layout for devices without a ROM bootloader is:
 
 	&flash0 {
 		partitions {
-			compatible = "fixed-partitions";
 			#address-cells = <1>;
 			#size-cells = <1>;
+			ranges;
 
 			boot_partition: partition@0 {
+				compatible = "zephyr,mapped-partition";
 				label = "sam-ba";
 				reg = <0x00000000 0x2000>;
 				read-only;
 			};
 
 			code_partition: partition@2000 {
+				compatible = "zephyr,mapped-partition";
 				label = "code";
 				reg = <0x2000 0x3a000>;
 				read-only;
@@ -119,6 +142,7 @@ A typical flash layout for devices without a ROM bootloader is:
 			* if enabled.
 			*/
 			storage_partition: partition@3c000 {
+				compatible = "zephyr,mapped-partition";
 				label = "storage";
 				reg = <0x0003c000 0x00004000>;
 			};
@@ -138,11 +162,12 @@ partition is:
 
 	&flash0 {
 		partitions {
-			compatible = "fixed-partitions";
 			#address-cells = <1>;
 			#size-cells = <1>;
+			ranges;
 
 			code_partition: partition@0 {
+				compatible = "zephyr,mapped-partition";
 				label = "code";
 				reg = <0x0 0xF0000>;
 				read-only;
@@ -154,6 +179,7 @@ partition is:
 			* if enabled.
 			*/
 			storage_partition: partition@F0000 {
+				compatible = "zephyr,mapped-partition";
 				label = "storage";
 				reg = <0x000F0000 0x00100000>;
 			};
@@ -178,8 +204,8 @@ As a quick reference, see these three board documentation pages:
 
   - :zephyr:board:`sam4e_xpro` (ROM bootloader)
   - :zephyr:board:`adafruit_feather_m0_basic_proto` (Adafruit UF2 bootloader)
-  - :ref:`arduino_nano_33_iot` (Arduino bootloader)
-  - :ref:`arduino_nano_33_ble` (Arduino legacy bootloader)
+  - :zephyr:board:`arduino_nano_33_iot` (Arduino bootloader)
+  - :zephyr:board:`arduino_nano_33_ble` (Arduino legacy bootloader)
 
 Enabling BOSSAC on Windows Native [Experimental]
 ------------------------------------------------
@@ -200,6 +226,7 @@ Windows PATH. A specific bossac executable can be used by passing the
 
 
 .. _linkserver-debug-host-tools:
+.. _runner_linkserver:
 
 LinkServer Debug  Host Tools
 ****************************
@@ -232,6 +259,12 @@ path to add is:
       .. code-block:: console
 
          /usr/local/LinkServer
+
+   .. group-tab:: macOS
+
+      .. code-block:: console
+
+         /Applications/LinkServer_<version>
 
    .. group-tab:: Windows
 
@@ -274,7 +307,18 @@ LinkServer west runner   ``--probe`` option to pass the probe index.
    you would like to single step from the start of their application, you
    will need to add a breakpoint at ``main`` or the reset handler manually.
 
+5. That breakpoint, and any other GDB command, can be installed automatically
+   with ``--gdb-init``, which this runner appends to the GDB client for
+   ``west debug`` and ``west attach``, e.g.:
+
+   .. code-block:: console
+
+      west debug --runner=linkserver --gdb-init 'b main'
+
+   See :ref:`gdb-init-runner-option`.
+
 .. _jlink-debug-host-tools:
+.. _runner_jlink:
 
 J-Link Debug Host Tools
 ***********************
@@ -304,7 +348,43 @@ required.
 
 Note that the J-Link GDB server does not yet support Zephyr RTOS-awareness.
 
+.. _gdb-init-runner-option:
+
+Passing Extra GDB Commands
+--------------------------
+
+The ``jlink`` runner accepts ``--gdb-init``, which appends a command to the GDB
+client started by ``west debug`` and ``west attach``. The option can be given
+multiple times and the commands run in the order given, last of everything the
+runner sends to GDB and before the target is resumed. Since they are only
+appended, they cannot change the runner's own connect, load and reset sequence.
+``west flash``, ``west reset``, ``west rtt`` and ``west debugserver`` are
+unaffected.
+
+For example, to enable J-Link semihosting for the duration of a debug session:
+
+.. code-block:: console
+
+   west debug -r jlink --gdb-init 'monitor semihosting enable' \
+     --gdb-init 'monitor semihosting basedir .'
+
+The same commands can be made the default for a board by adding them to its
+:file:`board.cmake`:
+
+.. code-block:: cmake
+
+   board_runner_args(jlink "--gdb-init=monitor semihosting enable")
+
+Note that ``--gdb-init`` only reaches the GDB client. Options for the J-Link GDB
+server itself are passed with ``--tool-opt``, and J-Link Commander commands run
+while flashing are passed with ``--pre-script-cmd``.
+
+The ``linkserver``, ``openocd`` and ``intel_cyclonev`` runners accept the same
+option. Which commands it applies to, and where the commands are inserted, is up
+to each runner.
+
 .. _openocd-debug-host-tools:
+.. _runner_openocd:
 
 OpenOCD Debug Host Tools
 ************************
@@ -332,6 +412,7 @@ Check if your SoC is listed in `OpenOCD Supported Devices`_.
    - Add ``C:\Program Files\OpenOCD\bin`` to 'PATH' environment variable
 
 .. _pyocd-debug-host-tools:
+.. _runner_pyocd:
 
 pyOCD Debug Host Tools
 **********************
@@ -351,6 +432,7 @@ These debug host tools are compatible with the following debug probes:
 Check if your SoC is listed in `pyOCD Supported Devices`_.
 
 .. _lauterbach-trace32-debug-host-tools:
+.. _runner_trace32:
 
 Lauterbach TRACE32 Debug Host Tools
 ***********************************
@@ -402,6 +484,7 @@ To enable Zephyr RTOS awareness follow the steps described in
 `Lauterbach TRACE32 Zephyr OS Awareness Manual`_.
 
 .. _nxp-s32-debug-host-tools:
+.. _runner_nxp_s32dbg:
 
 NXP S32 Debug Probe Host Tools
 ******************************
@@ -435,13 +518,13 @@ the runner on each invocation via ``--s32ds-path`` as shown below:
 
       .. code-block:: console
 
-         west debug --s32ds-path=/opt/NXP/S32DS.3.5
+         west debug --s32ds-path=/opt/NXP/S32DS.3.6
 
    .. group-tab:: Windows
 
       .. code-block:: console
 
-         west debug --s32ds-path=C:\NXP\S32DS.3.5
+         west debug --s32ds-path=C:\NXP\S32DS.3.6
 
 If multiple S32 debug probes are connected to the host via USB, the runner will
 ask the user to select one via command line prompt before continuing. The
@@ -464,6 +547,20 @@ afterwards detach the debug session:
 
    west debug --tool-opt='--batch'
 
+Requirements
+------------
+
+- **S32 Design Studio version**: 3.6.0 or newer.
+- **S32DebugProbe OS (firmware)**: 1.1.0 or newer.
+
+S32 Debug Probe OS Upgrade Procedure
+------------------------------------
+
+Refer to the “Reprogramming S32 Debug Probe Firmware Images” chapter
+in the `S32 Debug Probe User Guide`_ to upgrade the OS of the S32DebugProbe.
+
+.. _runner_probe_rs:
+
 probe-rs Debug Host Tools
 *************************
 
@@ -475,13 +572,79 @@ Check `probe-rs Installation`_ for more setup details.
 
 Check if your SoC is listed in `probe-rs Supported Devices`_.
 
+.. _runner_rfp:
+
+Renesas Flash Programmer (RFP) Host Tools
+*****************************************
+
+Renesas provides `Renesas Flash Programmer`_ as an official programming tool for Renesas boards
+using the Renesas standard boot firmware. It is available as a GUI and CLI.
+
+For boards configured with the ``rfp`` west runner, the RFP CLI can be easily used to flash Zephyr.
+
+Supported west commands:
+
+1. flash
+
+Once downloaded, if ``rfp-cli`` is not placed somewhere in your system PATH, you can pass the location
+to ``rfp-cli`` when flashing:
+
+.. code-block:: console
+
+   west flash --rfp-cli ~/Downloads/RFP_CLI_Linux_V31800_x64/linux-x64/rfp-cli
+
+.. _stm32cubeclt-host-tools:
+.. _runner_stlink_gdbserver:
+
+STM32CubeCLT Flash & Debug Host Tools
+*************************************
+
+STMicroelectronics provides `STM32CubeCLT`_ as an official all-in-one toolset compatible with
+Linux®, macOS® and Windows®, allowing the use of STMicroelectronics proprietary
+tools within third-party development environments.
+
+It notably provides a GDB debugging server (the *ST-LINK GDB Server*) that can be used to debug
+applications on STM32 boards thanks to on-board or external ST-LINK debug probes.
+
+It is compatible with the following debug probes:
+
+- :ref:`stlink-v21-onboard-debug-probe`
+- Standalone `ST-LINK-V2`_, `ST-LINK-V3`_, and `STLINK-V3PWR`_ probes
+
+Install STM32CubeCLT
+--------------------
+
+The easiest way to get the ST-LINK GDB Server is to install `STM32CubeCLT`_ from STMicroelectronics' website.
+A valid email address is needed to receive the downloading link.
+
+Basic usage
+-----------
+
+The ST-Link GDB Server can be used through the ``west attach``, ``west debug`` or ``west debugserver`` commands
+to debug Zephyr applications.
+
+.. code-block:: console
+
+   west debug --runner stlink_gdbserver
+
+.. note::
+
+   The `STM32CubeProgrammer`_ version contained in the `STM32CubeCLT`_ installation can also be used to flash
+   applications. To do so, the dedicated :ref:`STM32CubeProgrammer runner <runner_stm32cubeprogrammer>` should
+   be used instead of ``stlink_gdbserver``, as done in the following example:
+
+   .. code-block:: console
+
+      west flash --runner stm32cubeprogrammer
+
 .. _stm32cubeprog-flash-host-tools:
+.. _runner_stm32cubeprogrammer:
 
 STM32CubeProgrammer Flash Host Tools
 ************************************
 
 STMicroelectronics provides `STM32CubeProgrammer`_ (STM32CubeProg) as an official programming tool
-for STM32 boards on Linux |reg|, macOS |reg|, and Windows |reg| operating systems.
+for STM32 boards on Linux®, macOS®, and Windows® operating systems.
 
 It provides an easy-to-use and efficient environment for reading, writing, and verifying device memory
 through both the debug interface (JTAG and SWD) and the bootloader interface (UART and USB DFU, I2C, SPI, and CAN).
@@ -523,6 +686,118 @@ It can be used through the ``west flash`` command to flash Zephyr applications.
 
 For advanced usage via the GUI or CLI, check out the `STM32CubeProgrammer User Manual`_.
 
+.. _runner_xsdb:
+
+XSDB Flash & Debug Host Tools
+*****************************
+
+The AMD XSDB utility (Xilinx Software Command-line Tool for Debug) is the
+command-line tool used to program and debug many AMD adaptive SoC and FPGA
+platforms.
+It is **not** included in the Zephyr SDK: install `AMD Vitis`_ (or the equivalent
+AMD toolchain distribution for your platform) and ensure the ``xsdb``
+executable is on your system :ref:`PATH <env_vars>`.
+
+Boards that select the ``xsdb`` west runner normally ship a board-specific
+``support/xsdb.cfg`` next to the board definition. See your board's documentation
+for required boot artifacts (PDI, bitstream, FSBL, etc.).
+
+Supported west commands include ``flash``, ``debug``, and ``debugserver``.
+
+For this runner, ``west debug`` and ``west debugserver`` both start the same
+native XSDB interactive session. Unlike GDB-based runners (where
+``debugserver`` starts a remote stub for an IDE), the xsdb runner always
+launches XSDB directly, loads the application through the board ``xsdb.cfg``,
+and leaves you at the XSDB prompt.
+
+.. code-block:: console
+
+   west flash --runner xsdb
+
+   west debug --runner xsdb
+
+   west debugserver --runner xsdb
+
+.. note::
+
+   This is the same class of dependency as other proprietary host tools in this
+   chapter (for example :ref:`J-Link <jlink-debug-host-tools>` or
+   :ref:`STM32CubeCLT <stm32cubeclt-host-tools>`): Zephyr integrates with the
+   tool via the west runner; obtaining and licensing the toolchain is the user's
+   responsibility.
+
+.. _runner_uf2:
+
+UF2 Uploader
+************
+
+The uf2 runner supports flashing some boards using the UF2 (USB Flashing Format).
+UF2 is a user-friendly file format designed for drag-and-drop programming via a USB mass storage device.
+
+It relies on the target device entering a special bootloader mode where it appears to the host
+as a USB mass storage device.
+Once in this mode, the application image can be uploaded by copying a ``.uf2`` file to the
+mounted volume.
+
+.. code-block:: console
+
+   west flash --runner uf2
+
+If the UF2 volume is not automatically detected, you may need to manually specify the mount point
+using the ``--device`` option:
+
+For more about the UF2 format and its tooling, see `USB Flashing Format (UF2)`_.
+
+.. _runner_rtkprog:
+
+Realtek Alternate Flash Programmer (rtkprog)
+********************************************
+
+``rtkprog`` is an open source implementation of the protocol needed to flash Realtek Bee family SoCs via UART.
+
+.. code-block:: console
+
+   west flash --runner rtkprog
+
+.. _rtkprog Source Code: https://github.com/a-labs-io/rtkprog
+.. _rtkprog Python package: https://pypi.org/p/rtkprog
+
+
+.. _runner_mpcli:
+
+Realtek Bee Flash Programmer (MPCli) Host Tools
+***********************************************
+
+Realtek provides `Realtek Flash Programmer (MPCli)`_ as an official programming tool for the Bee
+series, supporting Linux, macOS, and Windows operating systems. MPCli enables In‑System Programming
+(ISP) via a UART interface, eliminating the need for external programming hardware. On most
+official Bee‑series evaluation boards, a built‑in UART‑to‑USB converter is included for
+ready‑to‑use programming and logging.
+
+After downloading the archive of MPCli, extract it and choose the version compatible with your
+operating system. Then, add the directory containing the ``mpcli`` executable to your system
+:ref:`PATH environment variable <env_vars>`.
+
+Before starting, ensure your board is in download mode. Please refer to the board documentation
+at: `Realtek Supported Boards`_
+
+.. code-block:: console
+
+   west flash [--runner mpcli] --port /dev/ttyX
+
+
+.. _iar-debug-host-tools:
+.. _runner_iar:
+
+IAR EW & C-Spy Host Tools
+*************************
+
+IAR provides Embedded Workbench and CSpyBat for debugging and flashing. The iar runner works with
+EWARM 10.10 or newer.
+
+.. _AMD Vitis:
+   https://www.amd.com/en/products/software/adaptive-socs-and-fpgas/vitis.html
+
 .. _J-Link Software and Documentation Pack:
    https://www.segger.com/downloads/jlink/#J-LinkSoftwareAndDocumentationPack
 
@@ -539,13 +814,13 @@ For advanced usage via the GUI or CLI, check out the `STM32CubeProgrammer User M
    https://github.com/pyocd/pyOCD/tree/main/pyocd/target/builtin
 
 .. _OpenOCD Windows:
-    http://gnutoolchains.com/arm-eabi/openocd/
+    https://gnutoolchains.com/arm-eabi/openocd/
 
 .. _Lauterbach TRACE32:
     https://www.lauterbach.com/
 
 .. _Lauterbach TRACE32 download website:
-   http://www.lauterbach.com/download_trace32.html
+   https://www.lauterbach.com/download_trace32.html
 
 .. _Lauterbach TRACE32 Installation Guide:
    https://www2.lauterbach.com/pdf/installation.pdf
@@ -560,13 +835,19 @@ For advanced usage via the GUI or CLI, check out the `STM32CubeProgrammer User M
 	https://www.nxp.com/design/software/development-software/mcuxpresso-software-and-tools-/mcuxpresso-for-visual-studio-code:MCUXPRESSO-VSC
 
 .. _MCUXpresso Installer:
-	https://github.com/nxp-mcuxpresso/vscode-for-mcux/wiki/Dependency-Installation
+	https://mcuxpresso.nxp.com/mcux-vscode/latest/html/MCUXpresso-Installer.html
 
 .. _NXP S32 Design Studio for S32 Platform:
    https://www.nxp.com/design/software/development-software/s32-design-studio-ide/s32-design-studio-for-s32-platform:S32DS-S32PLATFORM
 
+.. _Renesas Flash Programmer:
+   https://www.renesas.com/en/software-tool/renesas-flash-programmer-programming-gui
+
 .. _S32 Design Studio for S32 Platform Installation User Guide:
    https://www.nxp.com/webapp/Download?colCode=S32DSIG
+
+.. _S32 Debug Probe User Guide:
+   https://www.nxp.com/docs/en/user-guide/S32DBGUG.pdf
 
 .. _probe-rs Installation:
    https://probe.rs/docs/getting-started/installation/
@@ -574,11 +855,11 @@ For advanced usage via the GUI or CLI, check out the `STM32CubeProgrammer User M
 .. _probe-rs Supported Devices:
    https://probe.rs/targets/
 
-.. _STM32CubeProgrammer:
-   https://www.st.com/en/development-tools/stm32cubeprog.html
-
 .. _STM32CubeCLT:
    https://www.st.com/en/development-tools/stm32cubeclt.html
+
+.. _STM32CubeProgrammer:
+   https://www.st.com/en/development-tools/stm32cubeprog.html
 
 .. _STM32CubeProgrammer User Manual:
    https://www.st.com/resource/en/user_manual/um2237-stm32cubeprogrammer-software-description-stmicroelectronics.pdf
@@ -591,3 +872,12 @@ For advanced usage via the GUI or CLI, check out the `STM32CubeProgrammer User M
 
 .. _STLINK-V3PWR:
    https://www.st.com/en/development-tools/stlink-v3pwr.html
+
+.. _USB Flashing Format (UF2):
+   https://github.com/microsoft/uf2
+
+.. _Realtek Flash Programmer (MPCli):
+   https://docs.realmcu.com/tools/mpcli_tool/en/latest/mpcli/text_en/README.html
+
+.. _Realtek Supported Boards:
+   https://docs.zephyrproject.org/latest/boards/realtek/index.html

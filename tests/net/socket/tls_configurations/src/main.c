@@ -10,33 +10,30 @@ LOG_MODULE_REGISTER(tls_configuration_sample, LOG_LEVEL_INF);
 #include <errno.h>
 #include <stdio.h>
 
-#include <zephyr/posix/sys/eventfd.h>
-
 #include <zephyr/net/socket.h>
+#include <zephyr/net/socket_poll.h>
 #include <zephyr/net/tls_credentials.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/sys/util.h>
 
-/* This include is required for the definition of the Mbed TLS internal symbol
- * MBEDTLS_SSL_HANDSHAKE_WITH_PSK_ENABLED.
- */
-#include <mbedtls/ssl_ciphersuites.h>
+#if defined(CONFIG_NET_TEST)
+#include <mbedtls/ssl.h>
 
-#if defined(MBEDTLS_SSL_HANDSHAKE_WITH_PSK_ENABLED)
+int ztls_get_cached_session(int fd, mbedtls_ssl_session *session);
+#endif
+
+#if defined(CONFIG_MBEDTLS_CIPHERSUITE_TLS_PSK_WITH_AES_256_CBC_SHA384) || \
+	defined(CONFIG_MBEDTLS_SSL_TLS1_3_KEY_EXCHANGE_MODE_PSK_ENABLED)
+#define USE_PSK_KEY_EXCHANGE
+#endif
+
+#if defined(USE_PSK_KEY_EXCHANGE)
 static const unsigned char psk[] = { 0x01, 0x02, 0x03, 0x04, 0x05 };
 static const char psk_id[] = "PSK_identity";
-#endif /* MBEDTLS_SSL_HANDSHAKE_WITH_PSK_ENABLED */
+#endif /* USE_PSK_KEY_EXCHANGE */
 
-/* Following certificates (*.inc files) are:
- * - generated from "create-certs.sh" script
- * - converted in C array shape in the CMakeList file
- */
-#if defined(CONFIG_PSA_WANT_ALG_RSA_PKCS1V15_SIGN) || defined(CONFIG_PSA_WANT_ALG_RSA_PSS)
-#define USE_CERTIFICATE
-static const unsigned char certificate[] = {
-#include "rsa.crt.inc"
-};
-#elif defined(CONFIG_PSA_WANT_ALG_ECDSA)
+/* Server certificate is only used when not using PSK key exchanges for simplicity. */
+#if !defined(USE_PSK_KEY_EXCHANGE)
 #define USE_CERTIFICATE
 static const unsigned char certificate[] = {
 #include "ec.crt.inc"
@@ -52,17 +49,36 @@ enum {
 #if defined(USE_CERTIFICATE)
 	CA_CERTIFICATE_TAG,
 #endif
-#if defined(MBEDTLS_SSL_HANDSHAKE_WITH_PSK_ENABLED)
+#if defined(USE_PSK_KEY_EXCHANGE)
 	PSK_TAG,
 #endif
 };
 
 static int socket_fd = INVALID_SOCKET;
-static struct pollfd fds[1];
+static struct zsock_pollfd fds[1];
 
 /* Keep the new line because openssl uses that to start processing the incoming data */
 #define TEST_STRING "hello world\n"
 static uint8_t test_buf[sizeof(TEST_STRING)];
+
+static int check_cached_ticket(void)
+{
+#if defined(CONFIG_NET_TEST)
+	mbedtls_ssl_session session;
+	int ret;
+
+	mbedtls_ssl_session_init(&session);
+	ret = ztls_get_cached_session(socket_fd, &session);
+	if (ret == 0 && session.MBEDTLS_PRIVATE(ticket_len) == 0) {
+		ret = -ENOENT;
+	}
+
+	mbedtls_ssl_session_free(&session);
+	return ret;
+#else
+	return 0;
+#endif
+}
 
 static int wait_for_event(void)
 {
@@ -71,7 +87,7 @@ static int wait_for_event(void)
 	/* Wait for event on any socket used. Once event occurs,
 	 * we'll check them all.
 	 */
-	ret = poll(fds, ARRAY_SIZE(fds), -1);
+	ret = zsock_poll(fds, ARRAY_SIZE(fds), -1);
 	if (ret < 0) {
 		LOG_ERR("Error in poll (%d)", errno);
 		return ret;
@@ -83,16 +99,16 @@ static int wait_for_event(void)
 static int create_socket(void)
 {
 	int ret = 0;
-	struct sockaddr_in addr;
+	struct net_sockaddr_in addr;
 
-	addr.sin_family = AF_INET;
-	addr.sin_port = htons(CONFIG_SERVER_PORT);
-	inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+	addr.sin_family = NET_AF_INET;
+	addr.sin_port = net_htons(CONFIG_SERVER_PORT);
+	zsock_inet_pton(NET_AF_INET, "127.0.0.1", &addr.sin_addr);
 
-#if defined(CONFIG_MBEDTLS_TLS_VERSION_1_3)
-	socket_fd = socket(addr.sin_family, SOCK_STREAM, IPPROTO_TLS_1_3);
+#if defined(CONFIG_MBEDTLS_SSL_PROTO_TLS1_3)
+	socket_fd = zsock_socket(addr.sin_family, NET_SOCK_STREAM, NET_IPPROTO_TLS_1_3);
 #else
-	socket_fd = socket(addr.sin_family, SOCK_STREAM, IPPROTO_TLS_1_2);
+	socket_fd = zsock_socket(addr.sin_family, NET_SOCK_STREAM, NET_IPPROTO_TLS_1_2);
 #endif
 	if (socket_fd < 0) {
 		LOG_ERR("Failed to create TLS socket (%d)", errno);
@@ -103,13 +119,13 @@ static int create_socket(void)
 #if defined(USE_CERTIFICATE)
 		CA_CERTIFICATE_TAG,
 #endif
-#if defined(MBEDTLS_SSL_HANDSHAKE_WITH_PSK_ENABLED)
+#if defined(USE_PSK_KEY_EXCHANGE)
 		PSK_TAG,
 #endif
 	};
 
-	ret = setsockopt(socket_fd, SOL_TLS, TLS_SEC_TAG_LIST,
-			sec_tag_list, sizeof(sec_tag_list));
+	ret = zsock_setsockopt(socket_fd, ZSOCK_SOL_TLS, ZSOCK_TLS_SEC_TAG_LIST, sec_tag_list,
+			       sizeof(sec_tag_list));
 	if (ret < 0) {
 		LOG_ERR("Failed to set TLS_SEC_TAG_LIST option (%d)", errno);
 		return -errno;
@@ -117,15 +133,26 @@ static int create_socket(void)
 
 	/* HOSTNAME is only required for key exchanges that use a certificate. */
 #if defined(USE_CERTIFICATE)
-	ret = setsockopt(socket_fd, SOL_TLS, TLS_HOSTNAME,
-			 "localhost", sizeof("localhost"));
+	ret = zsock_setsockopt(socket_fd, ZSOCK_SOL_TLS, ZSOCK_TLS_HOSTNAME, "localhost",
+			       sizeof("localhost"));
 	if (ret < 0) {
 		LOG_ERR("Failed to set TLS_HOSTNAME option (%d)", errno);
 		return -errno;
 	}
 #endif
 
-	ret = connect(socket_fd, (struct sockaddr *) &addr, sizeof(addr));
+#if defined(CONFIG_NET_TEST)
+	int session_cache = ZSOCK_TLS_SESSION_CACHE_ENABLED;
+
+	ret = zsock_setsockopt(socket_fd, ZSOCK_SOL_TLS, ZSOCK_TLS_SESSION_CACHE,
+			       &session_cache, sizeof(session_cache));
+	if (ret < 0) {
+		LOG_ERR("Failed to enable TLS session cache (%d)", errno);
+		return -errno;
+	}
+#endif
+
+	ret = zsock_connect(socket_fd, (struct net_sockaddr *)&addr, sizeof(addr));
 	if (ret < 0) {
 		LOG_ERR("Cannot connect to TCP remote (%d)", errno);
 		return -errno;
@@ -133,7 +160,7 @@ static int create_socket(void)
 
 	/* Prepare file descriptor for polling */
 	fds[0].fd = socket_fd;
-	fds[0].events = POLLIN;
+	fds[0].events = ZSOCK_POLLIN;
 
 	return ret;
 }
@@ -141,13 +168,13 @@ static int create_socket(void)
 void close_socket(void)
 {
 	if (socket_fd != INVALID_SOCKET) {
-		close(socket_fd);
+		zsock_close(socket_fd);
 	}
 }
 
 static int setup_credentials(void)
 {
-	int err;
+	__maybe_unused int err;
 
 #if defined(USE_CERTIFICATE)
 	err = tls_credential_add(CA_CERTIFICATE_TAG,
@@ -160,7 +187,7 @@ static int setup_credentials(void)
 	}
 #endif
 
-#if defined(MBEDTLS_SSL_HANDSHAKE_WITH_PSK_ENABLED)
+#if defined(USE_PSK_KEY_EXCHANGE)
 	err = tls_credential_add(PSK_TAG,
 				TLS_CREDENTIAL_PSK,
 				psk,
@@ -210,7 +237,7 @@ int main(void)
 	 */
 	for (int i = 0; i < 2; i++) {
 		LOG_DBG("Send: %s", test_buf);
-		ret = send(socket_fd, test_buf, data_len, 0);
+		ret = zsock_send(socket_fd, test_buf, data_len, 0);
 		if (ret < 0) {
 			LOG_ERR("Error sending test string (%d)", errno);
 			goto exit;
@@ -220,7 +247,7 @@ int main(void)
 
 		wait_for_event();
 
-		ret = recv(socket_fd, test_buf, data_len, MSG_WAITALL);
+		ret = zsock_recv(socket_fd, test_buf, data_len, ZSOCK_MSG_WAITALL);
 		if (ret == 0) {
 			LOG_ERR("Server terminated unexpectedly");
 			ret = -EIO;
@@ -230,11 +257,17 @@ int main(void)
 			goto exit;
 		}
 		if (ret != data_len) {
-			LOG_ERR("Sent %d bytes, but received %d", data_len, ret);
+			LOG_ERR("Sent %zu bytes, but received %d", data_len, ret);
 			ret = -EINVAL;
 			goto exit;
 		}
 		LOG_DBG("Received: %s", test_buf);
+	}
+
+	ret = check_cached_ticket();
+	if (ret < 0) {
+		LOG_ERR("TLS session ticket was not cached (%d)", ret);
+		goto exit;
 	}
 
 	ret = memcmp(TEST_STRING, test_buf, data_len);

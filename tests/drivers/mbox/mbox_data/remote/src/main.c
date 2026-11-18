@@ -12,31 +12,20 @@
 
 static K_SEM_DEFINE(g_mbox_data_rx_sem, 0, 1);
 
-static uint32_t g_mbox_received_data;
+static uint64_t g_mbox_received_data;
 static uint32_t g_mbox_received_channel;
 
-#define CHANNELS_TO_TEST 4
 #define TX_CHANNEL_INDEX 0
 #define RX_CHANNEL_INDEX 1
 
-static const struct mbox_dt_spec channels[CHANNELS_TO_TEST][2] = {
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx0),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx0),
-	},
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx1),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx1),
-	},
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx2),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx2),
-	},
-	{
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), tx3),
-		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), rx3),
-	},
-};
+#define CHANNEL_ENTRY(_i, ...)                                                                     \
+	{                                                                                          \
+		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), CONCAT(tx, _i)),                          \
+		MBOX_DT_SPEC_GET(DT_PATH(mbox_consumer), CONCAT(rx, _i)),                          \
+	}
+
+static const struct mbox_dt_spec channels[CONFIG_CHANNELS_TO_TEST][2] = {
+	LISTIFY(CONFIG_CHANNELS_TO_TEST, CHANNEL_ENTRY, (,)) };
 
 static void callback(const struct device *dev, uint32_t channel, void *user_data,
 		     struct mbox_msg *data)
@@ -52,15 +41,15 @@ static void callback(const struct device *dev, uint32_t channel, void *user_data
 int main(void)
 {
 	struct mbox_msg msg = {0};
-	uint32_t message = 0;
+	uint64_t message = 0;
 
 	for (int i = 0; i < ARRAY_SIZE(channels); i++) {
 		const struct mbox_dt_spec *tx_channel = &channels[i][TX_CHANNEL_INDEX];
 		const struct mbox_dt_spec *rx_channel = &channels[i][RX_CHANNEL_INDEX];
 
 		const int max_transfer_size_bytes = mbox_mtu_get_dt(tx_channel);
-		/* Sample currently supports only transfer size up to 4 bytes */
-		if ((max_transfer_size_bytes <= 0) || (max_transfer_size_bytes > 4)) {
+		/* Sample currently supports only transfer size up to 8 bytes */
+		if ((max_transfer_size_bytes <= 0) || (max_transfer_size_bytes > 8)) {
 			printk("mbox_mtu_get() error\n");
 			return 0;
 		}

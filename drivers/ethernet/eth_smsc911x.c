@@ -412,15 +412,14 @@ int smsc_init(void)
 
 /* Driver functions */
 
-static enum ethernet_hw_caps eth_smsc911x_get_capabilities(const struct device *dev)
+static enum ethernet_hw_caps eth_smsc911x_get_capabilities(const struct device *dev __unused,
+							struct net_if *iface __unused)
 {
-	ARG_UNUSED(dev);
-
-	return ETHERNET_LINK_10BASE_T | ETHERNET_LINK_100BASE_T;
+	return ETHERNET_LINK_10BASE | ETHERNET_LINK_100BASE;
 }
 
 #if defined(CONFIG_NET_STATISTICS_ETHERNET)
-static struct net_stats_eth *get_stats(const struct device *dev)
+static struct net_stats_eth *get_stats(const struct device *dev, struct net_if *iface __unused)
 {
 	struct eth_context *context = dev->data;
 
@@ -475,10 +474,18 @@ static int smsc_write_tx_fifo(const uint8_t *buf, uint32_t len, bool is_last)
 static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 {
 	uint16_t total_len = net_pkt_get_len(pkt);
-	static uint8_t tx_buf[NET_ETH_MAX_FRAME_SIZE] __aligned(4);
+	/* smsc_write_tx_fifo() pads the last fragment up to a DWORD, so the
+	 * staging buffer is rounded up to keep those reads in bounds.
+	 */
+	static uint8_t tx_buf[ROUND_UP(NET_ETH_MAX_FRAME_SIZE, sizeof(uint32_t))] __aligned(4);
 	uint32_t txcmd_a, txcmd_b;
 	uint32_t tx_stat;
 	int res;
+
+	if (total_len > NET_ETH_MAX_FRAME_SIZE) {
+		LOG_ERR("Frame too large: %u", total_len);
+		return -EMSGSIZE;
+	}
 
 	txcmd_a = (1/*is_first_segment*/ << 13) | (1/*is_last_segment*/ << 12)
 		  | total_len;
@@ -567,7 +574,7 @@ static struct net_pkt *smsc_recv_pkt(const struct device *dev,
 	rem_size -= 4U;
 
 	pkt = net_pkt_rx_alloc_with_buffer(context->iface, rem_size,
-					   AF_UNSPEC, 0, K_NO_WAIT);
+					   NET_AF_UNSPEC, 0, K_NO_WAIT);
 	if (!pkt) {
 		LOG_ERR("Failed to obtain RX buffer");
 		smsc_discard_pkt();

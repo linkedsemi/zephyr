@@ -16,9 +16,9 @@
 #include <zephyr/net/dhcpv6.h>
 
 #define DHCPV6_DUID_TYPE_SIZE 2
-#define DHVPV6_DUID_LL_HW_TYPE_SIZE 2
+#define DHCPV6_DUID_LL_HW_TYPE_SIZE 2
 #define DHCPV6_DUID_LL_HEADER_SIZE (DHCPV6_DUID_TYPE_SIZE + \
-				    DHVPV6_DUID_LL_HW_TYPE_SIZE)
+				    DHCPV6_DUID_LL_HW_TYPE_SIZE)
 
 #define DHCPV6_MSG_TYPE_SIZE 1
 #define DHCPV6_HEADER_SIZE (DHCPV6_MSG_TYPE_SIZE + DHCPV6_TID_SIZE)
@@ -51,6 +51,13 @@
 #define DHCPV6_SOL_MAX_DELAY 1000 /* Max delay of first Solicit, milliseconds */
 #define DHCPV6_SOL_TIMEOUT 1000 /* Initial Solicit timeout, milliseconds */
 #define DHCPV6_SOL_MAX_RT 3600000 /* Max Solicit timeout value, milliseconds */
+#define DHCPV6_INF_TIMEOUT 1000 /* Initial Information-request timeout, milliseconds */
+#define DHCPV6_INF_MAX_RT 3600000 /* Max Information-request timeout value, milliseconds */
+#define DHCPV6_MAX_RT_MIN 60000 /* Minimum server-provided max RT, milliseconds */
+#define DHCPV6_MAX_RT_MAX 86400000 /* Maximum server-provided max RT, milliseconds */
+#define DHCPV6_IRT_DEFAULT 86400 /* Default Information Refresh Time, seconds */
+#define DHCPV6_IRT_MINIMUM 600 /* Minimum Information Refresh Time, seconds */
+#define DHCPV6_IRT_INFINITY 0xffffffffUL /* Information Refresh Time infinity value */
 #define DHCPV6_REQ_TIMEOUT 1000 /* Initial Request timeout, milliseconds */
 #define DHCPV6_REQ_MAX_RT 30000 /* Max Request timeout value, milliseconds */
 #define DHCPV6_REQ_MAX_RC 10 /* Max Request retry attempts */
@@ -92,7 +99,7 @@ struct dhcpv6_msg_hdr {
 struct dhcpv6_iaaddr {
 	uint32_t preferred_lifetime;
 	uint32_t valid_lifetime;
-	struct in6_addr addr;
+	struct net_in6_addr addr;
 	uint16_t status;
 };
 
@@ -107,7 +114,7 @@ struct dhcpv6_ia_na {
 struct dhcpv6_iaprefix {
 	uint32_t preferred_lifetime;
 	uint32_t valid_lifetime;
-	struct in6_addr prefix;
+	struct net_in6_addr prefix;
 	uint8_t prefix_len;
 	uint16_t status;
 };
@@ -158,6 +165,7 @@ enum dhcpv6_option_code {
 	DHCPV6_OPTION_CODE_INTERFACE_ID = 18,
 	DHCPV6_OPTION_CODE_RECONF_MSG = 19,
 	DHCPV6_OPTION_CODE_RECONF_ACCEPT = 20,
+	DHCPV6_OPTION_CODE_OPTION_DNS_SERVERS = 23,
 	DHCPV6_OPTION_CODE_IA_PD = 25,
 	DHCPV6_OPTION_CODE_IAPREFIX = 26,
 	DHCPV6_OPTION_CODE_INFORMATION_REFRESH_TIME = 32,

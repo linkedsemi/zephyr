@@ -48,7 +48,7 @@ ZTEST(test_pbuf, test_rw)
 	 * order to avoid clang complains about memory_area not being constant
 	 * expression.
 	 */
-	static PBUF_MAYBE_CONST struct pbuf_cfg cfg = PBUF_CFG_INIT(memory_area, MEM_AREA_SZ, 0);
+	static PBUF_MAYBE_CONST struct pbuf_cfg cfg = PBUF_CFG_INIT(memory_area, MEM_AREA_SZ, 0, 0);
 
 	static struct pbuf pb = {
 		.cfg = &cfg,
@@ -77,7 +77,7 @@ ZTEST(test_pbuf, test_rw)
 	/* Read the packet. */
 	ret = pbuf_read(&pb, read_buf, ret);
 	zassert_equal(ret, MSGA_SZ);
-	/* Check data corectness. */
+	/* Check data correctness. */
 	zassert_mem_equal(read_buf, write_buf, ret);
 
 	/* Get the number of bytes stored. */
@@ -86,7 +86,7 @@ ZTEST(test_pbuf, test_rw)
 	/* Read the packet. */
 	ret = pbuf_read(&pb, read_buf, ret);
 	zassert_equal(ret, MSGB_SZ);
-	/* Check data corectness. */
+	/* Check data correctness. */
 	zassert_mem_equal(read_buf, write_buf+MSGA_SZ, ret);
 
 	/* Get the number of bytes stored. */
@@ -99,10 +99,10 @@ ZTEST(test_pbuf, test_rw)
 	/* Get the number of bytes stored. */
 	ret = pbuf_read(&pb, NULL, 0);
 	zassert_equal(ret, MPS);
-	/* Read  max packet size with wrapp around. */
+	/* Read  max packet size with wrap around. */
 	ret = pbuf_read(&pb, read_buf, ret);
 	zassert_equal(ret, MPS);
-	/* Check data corectness. */
+	/* Check data correctness. */
 	zassert_mem_equal(write_buf, read_buf, MPS);
 }
 
@@ -115,9 +115,11 @@ ZTEST(test_pbuf, test_retcodes)
 	 * order to avoid clang complains about memory_area not being constant
 	 * expression.
 	 */
-	static PBUF_MAYBE_CONST struct pbuf_cfg cfg0 = PBUF_CFG_INIT(memory_area, MEM_AREA_SZ, 32);
-	static PBUF_MAYBE_CONST struct pbuf_cfg cfg1 = PBUF_CFG_INIT(memory_area, MEM_AREA_SZ, 0);
-	static PBUF_MAYBE_CONST struct pbuf_cfg cfg2 = PBUF_CFG_INIT(memory_area, 20, 4);
+	static PBUF_MAYBE_CONST struct pbuf_cfg cfg0 = PBUF_CFG_INIT(memory_area, MEM_AREA_SZ,
+								     32, 0);
+	static PBUF_MAYBE_CONST struct pbuf_cfg cfg1 = PBUF_CFG_INIT(memory_area, MEM_AREA_SZ,
+								     0, 0);
+	static PBUF_MAYBE_CONST struct pbuf_cfg cfg2 = PBUF_CFG_INIT(memory_area, 20, 4, 0);
 
 	static struct pbuf pb0 = {
 		.cfg = &cfg0,
@@ -268,7 +270,7 @@ ZTEST(test_pbuf, test_stress)
 	 * order to avoid clang complains about buffer not being constant
 	 * expression.
 	 */
-	static PBUF_MAYBE_CONST struct pbuf_cfg cfg = PBUF_CFG_INIT(buffer, MEM_AREA_SZ, 4);
+	static PBUF_MAYBE_CONST struct pbuf_cfg cfg = PBUF_CFG_INIT(buffer, MEM_AREA_SZ, 4, 0);
 
 	static struct pbuf pb = {
 		.cfg = &cfg,

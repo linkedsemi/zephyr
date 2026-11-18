@@ -21,12 +21,12 @@
 static uint8_t server_mac_addr[] = { 0x00, 0x00, 0x5E, 0x00, 0x53, 0x01 };
 static uint8_t client_mac_addr[] = { 0x00, 0x00, 0x5E, 0x00, 0x53, 0x02 };
 
-static struct in_addr server_addr = { { { 192, 0, 2, 1 } } };
-static struct in_addr netmask = { { { 255, 255, 255, 0 } } };
-static struct in_addr test_base_addr = { { { 192, 0, 2, 10 } } };
+static struct net_in_addr server_addr = { { { 192, 0, 2, 1 } } };
+static struct net_in_addr netmask = { { { 255, 255, 255, 0 } } };
+static struct net_in_addr test_base_addr = { { { 192, 0, 2, 10 } } };
 
 /* Only to test Inform. */
-static struct in_addr client_addr_static = { { { 192, 0, 2, 2 } } };
+static struct net_in_addr client_addr_static = { { { 192, 0, 2, 2 } } };
 
 typedef void (*test_dhcpv4_server_fn_t)(struct net_if *iface,
 					struct net_pkt *pkt);
@@ -36,14 +36,19 @@ static struct test_dhcpv4_server_ctx {
 	struct net_if *iface;
 	struct k_sem test_proceed;
 	struct net_pkt *pkt;
-	struct in_addr assigned_ip;
-	struct in_addr declined_ip;
+	struct net_in_addr assigned_ip;
+	struct net_in_addr declined_ip;
 
 	/* Request params */
 	const char *client_id;
 	int lease_time;
 	bool broadcast;
 	bool send_echo_reply;
+	/* When true, append DHCP option 114 (RFC 8910 captive portal URI) to
+	 * the Parameter Request List in the next Discover/Request, and expect
+	 * the server reply to carry option 114.
+	 */
+	bool request_captive_portal;
 } test_ctx;
 
 struct test_lease_count {
@@ -57,7 +62,7 @@ struct test_lease_count {
 #define NO_LEASE_TIME -1
 #define TEST_XID 0x12345678
 
-#define TEST_TIMEOUT K_MSEC(100)
+#define TEST_TIMEOUT K_MSEC(500)
 
 static void server_iface_init(struct net_if *iface)
 {
@@ -78,11 +83,11 @@ static void send_icmp_echo_reply(struct net_pkt *pkt,
 			     NET_ICMPH_LEN;
 
 	reply = net_pkt_alloc_with_buffer(net_pkt_iface(pkt), payload_len,
-					  AF_INET, IPPROTO_ICMP, K_FOREVER);
+					  NET_AF_INET, NET_IPPROTO_ICMP, K_FOREVER);
 	zassert_not_null(reply, "Failed to allocate echo reply");
 
-	zassert_ok(net_ipv4_create(reply, (struct in_addr *)ipv4_hdr->dst,
-				   (struct in_addr *)ipv4_hdr->src),
+	zassert_ok(net_ipv4_create(reply, (struct net_in_addr *)ipv4_hdr->dst,
+				   (struct net_in_addr *)ipv4_hdr->src),
 		   "Failed to create IPv4 header");
 
 	zassert_ok(net_icmpv4_create(reply, NET_ICMPV4_ECHO_REPLY, 0),
@@ -91,7 +96,7 @@ static void send_icmp_echo_reply(struct net_pkt *pkt,
 		   "Failed to copy payload");
 
 	net_pkt_cursor_init(reply);
-	net_ipv4_finalize(reply, IPPROTO_ICMP);
+	net_ipv4_finalize(reply, NET_IPPROTO_ICMP);
 
 	zassert_ok(net_recv_data(test_ctx.iface, reply), "Failed to receive data");
 }
@@ -104,11 +109,11 @@ static int server_send(const struct device *dev, struct net_pkt *pkt)
 	ipv4_hdr = (struct net_ipv4_hdr *)net_pkt_get_data(pkt, &ipv4_access);
 	zassert_not_null(ipv4_hdr, "Failed to access IPv4 header.");
 
-	if (ipv4_hdr->proto == IPPROTO_ICMP) {
+	if (ipv4_hdr->proto == NET_IPPROTO_ICMP) {
 		if (test_ctx.send_echo_reply) {
 			test_ctx.send_echo_reply = false;
 			memcpy(&test_ctx.declined_ip, ipv4_hdr->dst,
-			       sizeof(struct in_addr));
+			       sizeof(struct net_in_addr));
 			send_icmp_echo_reply(pkt, ipv4_hdr);
 		}
 
@@ -143,32 +148,32 @@ static void test_pkt_free(void)
 }
 
 static void client_prepare_test_msg(
-	const struct in_addr *src_addr, const struct in_addr *dst_addr,
-	enum net_dhcpv4_msg_type type, const struct in_addr *server_id,
-	const struct in_addr *requested_ip, const struct in_addr *ciaddr)
+	const struct net_in_addr *src_addr, const struct net_in_addr *dst_addr,
+	enum net_dhcpv4_msg_type type, const struct net_in_addr *server_id,
+	const struct net_in_addr *requested_ip, const struct net_in_addr *ciaddr)
 {
 	struct dhcp_msg msg = { 0 };
 	uint8_t empty_buf[SIZE_OF_FILE] = { 0 };
 	struct net_pkt *pkt;
 
-	pkt = net_pkt_alloc_with_buffer(test_ctx.iface, NET_IPV4_MTU, AF_INET,
-					IPPROTO_UDP, K_FOREVER);
+	pkt = net_pkt_alloc_with_buffer(test_ctx.iface, NET_IPV4_MTU, NET_AF_INET,
+					NET_IPPROTO_UDP, K_FOREVER);
 	zassert_not_null(pkt, "Failed to allocate packet");
 
 	net_pkt_set_ipv4_ttl(pkt, 1);
 
 	zassert_ok(net_ipv4_create(pkt, src_addr, dst_addr),
 		   "Failed to create IPv4 header");
-	zassert_ok(net_udp_create(pkt, htons(DHCPV4_CLIENT_PORT),
-				  htons(DHCPV4_SERVER_PORT)),
+	zassert_ok(net_udp_create(pkt, net_htons(DHCPV4_CLIENT_PORT),
+				  net_htons(DHCPV4_SERVER_PORT)),
 		   "Failed to create UDP header");
 
 	msg.op = DHCPV4_MSG_BOOT_REQUEST;
 	msg.htype = HARDWARE_ETHERNET_TYPE;
 	msg.hlen = sizeof(client_mac_addr);
-	msg.xid = htonl(TEST_XID);
+	msg.xid = net_htonl(TEST_XID);
 	if (test_ctx.broadcast) {
-		msg.flags = htons(DHCPV4_MSG_BROADCAST);
+		msg.flags = net_htons(DHCPV4_MSG_BROADCAST);
 	}
 
 	if (ciaddr) {
@@ -205,8 +210,14 @@ static void client_prepare_test_msg(
 	}
 
 	net_pkt_write_u8(pkt, DHCPV4_OPTIONS_REQ_LIST);
-	net_pkt_write_u8(pkt, 1);
-	net_pkt_write_u8(pkt, DHCPV4_OPTIONS_SUBNET_MASK);
+	if (test_ctx.request_captive_portal) {
+		net_pkt_write_u8(pkt, 2);
+		net_pkt_write_u8(pkt, DHCPV4_OPTIONS_SUBNET_MASK);
+		net_pkt_write_u8(pkt, DHCPV4_OPTIONS_CAPTIVE_PORTAL);
+	} else {
+		net_pkt_write_u8(pkt, 1);
+		net_pkt_write_u8(pkt, DHCPV4_OPTIONS_SUBNET_MASK);
+	}
 
 	if (test_ctx.client_id) {
 		net_pkt_write_u8(pkt, DHCPV4_OPTIONS_CLIENT_ID);
@@ -223,7 +234,7 @@ static void client_prepare_test_msg(
 	net_pkt_write_u8(pkt, DHCPV4_OPTIONS_END);
 
 	net_pkt_cursor_init(pkt);
-	net_ipv4_finalize(pkt, IPPROTO_UDP);
+	net_ipv4_finalize(pkt, NET_IPPROTO_UDP);
 
 	zassert_ok(net_recv_data(test_ctx.iface, pkt), "Failed to receive data");
 }
@@ -291,7 +302,7 @@ static void client_send_release(void)
 		&test_ctx.assigned_ip);
 
 	/* Small delay to let the DHCP server process the packet */
-	k_msleep(10);
+	k_msleep(50);
 }
 
 static void client_send_decline(void)
@@ -302,7 +313,7 @@ static void client_send_decline(void)
 		&test_ctx.assigned_ip, NULL);
 
 	/* Small delay to let the DHCP server process the packet */
-	k_msleep(10);
+	k_msleep(50);
 }
 
 static void client_send_inform(void)
@@ -372,14 +383,14 @@ static void get_reserved_cb(struct net_if *iface,
 			    struct dhcpv4_addr_slot *lease,
 			    void *user_data)
 {
-	struct in_addr *reserved = user_data;
+	struct net_in_addr *reserved = user_data;
 
 	if (lease->state == DHCPV4_SERVER_ADDR_RESERVED) {
 		reserved->s_addr = lease->addr.s_addr;
 	}
 }
 
-static void get_reserved_address(struct in_addr *reserved)
+static void get_reserved_address(struct net_in_addr *reserved)
 {
 	int ret;
 
@@ -471,7 +482,7 @@ static void verify_option(struct net_pkt *pkt, uint8_t opt_type,
 static void verify_option_uint32(struct net_pkt *pkt, uint8_t opt_type,
 				 uint32_t optval)
 {
-	optval = htonl(optval);
+	optval = net_htonl(optval);
 
 	verify_option(pkt, opt_type, &optval, sizeof(optval));
 }
@@ -480,6 +491,59 @@ static void verify_option_uint8(struct net_pkt *pkt, uint8_t opt_type,
 				uint8_t optval)
 {
 	verify_option(pkt, opt_type, &optval, sizeof(optval));
+}
+
+#if defined(CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL)
+/* Build the URI the server is expected to return in DHCP option 114, mirroring
+ * the encoding logic in subsys/net/lib/dhcpv4/dhcpv4_server.c
+ * dhcpv4_encode_captive_portal_uri_option(): use the Kconfig override when
+ * non-empty, otherwise "http://<server_addr>/generate_204".
+ */
+static void verify_captive_portal_in_reply(struct net_pkt *pkt)
+{
+	char auto_uri[NET_IPV4_ADDR_LEN + sizeof("http://") + sizeof("/generate_204")];
+	const char *override = CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL_URI;
+	const char *expected;
+	size_t expected_len;
+
+	if (override[0] != '\0') {
+		expected = override;
+		expected_len = strlen(override);
+	} else {
+		char addr_str[NET_IPV4_ADDR_LEN];
+		int n;
+
+		zassert_not_null(net_addr_ntop(NET_AF_INET, &server_addr, addr_str,
+					       sizeof(addr_str)),
+				 "Could not format server address");
+		n = snprintk(auto_uri, sizeof(auto_uri), "http://%s/generate_204",
+			     addr_str);
+		zassert_true(n > 0 && (size_t)n < sizeof(auto_uri),
+			     "Auto captive portal URI did not fit");
+		expected = auto_uri;
+		expected_len = (size_t)n;
+	}
+
+	zassert_true(expected_len <= UINT8_MAX,
+		     "Expected captive portal URI exceeds DHCP option length");
+
+	verify_option(pkt, DHCPV4_OPTIONS_CAPTIVE_PORTAL, expected,
+		      (uint8_t)expected_len);
+}
+#endif /* CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL */
+
+static void verify_captive_portal_in_reply_or_absent(struct net_pkt *pkt)
+{
+	if (test_ctx.request_captive_portal) {
+#if defined(CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL)
+		verify_captive_portal_in_reply(pkt);
+#else
+		zassert_unreachable("request_captive_portal set without "
+				    "CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL");
+#endif
+	} else {
+		verify_no_option(pkt, DHCPV4_OPTIONS_CAPTIVE_PORTAL);
+	}
 }
 
 static void verify_offer(bool broadcast)
@@ -508,22 +572,22 @@ static void verify_offer(bool broadcast)
 
 	/* IPv4 */
 	zassert_mem_equal(ipv4_hdr->src, server_addr.s4_addr,
-			  sizeof(struct in_addr), "Incorrect source address");
+			  sizeof(struct net_in_addr), "Incorrect source address");
 	if (broadcast) {
 		zassert_mem_equal(ipv4_hdr->dst, net_ipv4_broadcast_address(),
-				  sizeof(struct in_addr),
+				  sizeof(struct net_in_addr),
 				  "Destination should be broadcast");
 	} else {
 		zassert_mem_equal(ipv4_hdr->dst, msg->yiaddr,
-				  sizeof(struct in_addr),
+				  sizeof(struct net_in_addr),
 				  "Destination should match address lease");
 	}
-	zassert_equal(ipv4_hdr->proto, IPPROTO_UDP, "Wrong protocol");
+	zassert_equal(ipv4_hdr->proto, NET_IPPROTO_UDP, "Wrong protocol");
 
 	/* UDP */
-	zassert_equal(udp_hdr->src_port, htons(DHCPV4_SERVER_PORT),
+	zassert_equal(udp_hdr->src_port, net_htons(DHCPV4_SERVER_PORT),
 		      "Wrong source port");
-	zassert_equal(udp_hdr->dst_port, htons(DHCPV4_CLIENT_PORT),
+	zassert_equal(udp_hdr->dst_port, net_htons(DHCPV4_CLIENT_PORT),
 		      "Wrong client port");
 
 	/* DHCPv4 */
@@ -531,7 +595,7 @@ static void verify_offer(bool broadcast)
 	zassert_equal(msg->htype, HARDWARE_ETHERNET_TYPE, "Incorrect %s value", "htype");
 	zassert_equal(msg->hlen, sizeof(client_mac_addr), "Incorrect %s value", "hlen");
 	zassert_equal(msg->hops, 0, "Incorrect %s value", "hops");
-	zassert_equal(msg->xid, htonl(TEST_XID), "Incorrect %s value", "xid");
+	zassert_equal(msg->xid, net_htonl(TEST_XID), "Incorrect %s value", "xid");
 	zassert_equal(msg->secs, 0, "Incorrect %s value", "secs");
 	zassert_equal(sys_get_be32(msg->ciaddr), 0, "Incorrect %s value", "ciaddr");
 	zassert_true((sys_get_be32(msg->yiaddr) >=
@@ -542,7 +606,7 @@ static void verify_offer(bool broadcast)
 		     "Assigned DHCP address outside of address pool");
 	zassert_equal(sys_get_be32(msg->siaddr), 0, "Incorrect %s value", "siaddr");
 	if (broadcast) {
-		zassert_equal(msg->flags, htons(DHCPV4_MSG_BROADCAST),
+		zassert_equal(msg->flags, net_htons(DHCPV4_MSG_BROADCAST),
 			      "Incorrect %s value", "flags");
 	} else {
 		zassert_equal(msg->flags, 0, "Incorrect %s value", "flags");
@@ -551,7 +615,7 @@ static void verify_offer(bool broadcast)
 	zassert_mem_equal(msg->chaddr, client_mac_addr, sizeof(client_mac_addr),
 			  "Incorrect %s value", "chaddr");
 
-	memcpy(&test_ctx.assigned_ip, msg->yiaddr, sizeof(struct in_addr));
+	memcpy(&test_ctx.assigned_ip, msg->yiaddr, sizeof(struct net_in_addr));
 
 	ret = net_pkt_skip(pkt, SIZE_OF_SNAME + SIZE_OF_FILE);
 	zassert_ok(ret, "DHCP Offer too short");
@@ -566,11 +630,12 @@ static void verify_offer(bool broadcast)
 	verify_option_uint8(pkt, DHCPV4_OPTIONS_MSG_TYPE,
 			    NET_DHCPV4_MSG_TYPE_OFFER);
 	verify_option(pkt, DHCPV4_OPTIONS_SERVER_ID, server_addr.s4_addr,
-		      sizeof(struct in_addr));
+		      sizeof(struct net_in_addr));
 	verify_option(pkt, DHCPV4_OPTIONS_CLIENT_ID, test_ctx.client_id,
 		      strlen(test_ctx.client_id));
 	verify_option(pkt, DHCPV4_OPTIONS_SUBNET_MASK, netmask.s4_addr,
-		      sizeof(struct in_addr));
+		      sizeof(struct net_in_addr));
+	verify_captive_portal_in_reply_or_absent(pkt);
 	verify_no_option(pkt, DHCPV4_OPTIONS_REQ_IPADDR);
 	verify_no_option(pkt, DHCPV4_OPTIONS_REQ_LIST);
 }
@@ -579,7 +644,7 @@ static void reserved_address_cb(struct net_if *iface,
 				struct dhcpv4_addr_slot *lease,
 				void *user_data)
 {
-	struct in_addr *reserved = user_data;
+	struct net_in_addr *reserved = user_data;
 
 	zassert_equal(lease->state, DHCPV4_SERVER_ADDR_RESERVED,
 		      "Wrong lease state");
@@ -587,7 +652,7 @@ static void reserved_address_cb(struct net_if *iface,
 		      "Reserved wrong address");
 }
 
-static void verify_reserved_address(struct in_addr *reserved)
+static void verify_reserved_address(struct net_in_addr *reserved)
 {
 	int ret;
 
@@ -613,7 +678,7 @@ ZTEST(dhcpv4_server_tests, test_discover)
  */
 ZTEST(dhcpv4_server_tests, test_discover_repeat)
 {
-	struct in_addr first_addr;
+	struct net_in_addr first_addr;
 
 	client_send_discover();
 	verify_offer(false);
@@ -682,21 +747,21 @@ static void verify_ack(bool inform, bool renew)
 
 	/* IPv4 */
 	zassert_mem_equal(ipv4_hdr->src, server_addr.s4_addr,
-			  sizeof(struct in_addr), "Incorrect source address");
+			  sizeof(struct net_in_addr), "Incorrect source address");
 	if (inform || renew) {
-		zassert_mem_equal(ipv4_hdr->dst, msg->ciaddr, sizeof(struct in_addr),
+		zassert_mem_equal(ipv4_hdr->dst, msg->ciaddr, sizeof(struct net_in_addr),
 				  "Destination should match client address");
 	} else {
-		zassert_mem_equal(ipv4_hdr->dst, msg->yiaddr, sizeof(struct in_addr),
+		zassert_mem_equal(ipv4_hdr->dst, msg->yiaddr, sizeof(struct net_in_addr),
 				  "Destination should match client address");
 	}
 
-	zassert_equal(ipv4_hdr->proto, IPPROTO_UDP, "Wrong protocol");
+	zassert_equal(ipv4_hdr->proto, NET_IPPROTO_UDP, "Wrong protocol");
 
 	/* UDP */
-	zassert_equal(udp_hdr->src_port, htons(DHCPV4_SERVER_PORT),
+	zassert_equal(udp_hdr->src_port, net_htons(DHCPV4_SERVER_PORT),
 		      "Wrong source port");
-	zassert_equal(udp_hdr->dst_port, htons(DHCPV4_CLIENT_PORT),
+	zassert_equal(udp_hdr->dst_port, net_htons(DHCPV4_CLIENT_PORT),
 		      "Wrong client port");
 
 	/* DHCPv4 */
@@ -704,16 +769,16 @@ static void verify_ack(bool inform, bool renew)
 	zassert_equal(msg->htype, HARDWARE_ETHERNET_TYPE, "Incorrect %s value", "htype");
 	zassert_equal(msg->hlen, sizeof(client_mac_addr), "Incorrect %s value", "hlen");
 	zassert_equal(msg->hops, 0, "Incorrect %s value", "hops");
-	zassert_equal(msg->xid, htonl(TEST_XID), "Incorrect %s value", "xid");
+	zassert_equal(msg->xid, net_htonl(TEST_XID), "Incorrect %s value", "xid");
 	zassert_equal(msg->secs, 0, "Incorrect %s value", "secs");
 
 	if (inform) {
 		zassert_mem_equal(msg->ciaddr, client_addr_static.s4_addr,
-				  sizeof(struct in_addr),
+				  sizeof(struct net_in_addr),
 				  "Incorrect %s value", "ciaddr");
 	} else if (renew) {
 		zassert_mem_equal(msg->ciaddr, test_ctx.assigned_ip.s4_addr,
-				  sizeof(struct in_addr),
+				  sizeof(struct net_in_addr),
 				  "Incorrect %s value", "ciaddr");
 	} else {
 		zassert_equal(sys_get_be32(msg->ciaddr), 0, "Incorrect %s value", "ciaddr");
@@ -723,7 +788,7 @@ static void verify_ack(bool inform, bool renew)
 		zassert_equal(sys_get_be32(msg->yiaddr), 0, "Incorrect %s value", "yiaddr");
 	} else {
 		zassert_mem_equal(msg->yiaddr, test_ctx.assigned_ip.s4_addr,
-				  sizeof(struct in_addr), "Incorrect %s value", "yiaddr");
+				  sizeof(struct net_in_addr), "Incorrect %s value", "yiaddr");
 	}
 
 	zassert_equal(sys_get_be32(msg->siaddr), 0, "Incorrect %s value", "siaddr");
@@ -733,7 +798,7 @@ static void verify_ack(bool inform, bool renew)
 			  "Incorrect %s value", "chaddr");
 
 	if (!inform) {
-		memcpy(&test_ctx.assigned_ip, msg->yiaddr, sizeof(struct in_addr));
+		memcpy(&test_ctx.assigned_ip, msg->yiaddr, sizeof(struct net_in_addr));
 	}
 
 	ret = net_pkt_skip(pkt, SIZE_OF_SNAME + SIZE_OF_FILE);
@@ -754,7 +819,7 @@ static void verify_ack(bool inform, bool renew)
 	verify_option_uint8(pkt, DHCPV4_OPTIONS_MSG_TYPE,
 			    NET_DHCPV4_MSG_TYPE_ACK);
 	verify_option(pkt, DHCPV4_OPTIONS_SERVER_ID, server_addr.s4_addr,
-		      sizeof(struct in_addr));
+		      sizeof(struct net_in_addr));
 	if (inform) {
 		verify_no_option(pkt, DHCPV4_OPTIONS_CLIENT_ID);
 	} else {
@@ -762,7 +827,8 @@ static void verify_ack(bool inform, bool renew)
 			      strlen(test_ctx.client_id));
 	}
 	verify_option(pkt, DHCPV4_OPTIONS_SUBNET_MASK, netmask.s4_addr,
-		      sizeof(struct in_addr));
+		      sizeof(struct net_in_addr));
+	verify_captive_portal_in_reply_or_absent(pkt);
 	verify_no_option(pkt, DHCPV4_OPTIONS_REQ_IPADDR);
 	verify_no_option(pkt, DHCPV4_OPTIONS_REQ_LIST);
 }
@@ -771,7 +837,7 @@ static void allocated_address_cb(struct net_if *iface,
 				 struct dhcpv4_addr_slot *lease,
 				 void *user_data)
 {
-	struct in_addr *allocated = user_data;
+	struct net_in_addr *allocated = user_data;
 
 	zassert_equal(lease->state, DHCPV4_SERVER_ADDR_ALLOCATED,
 		      "Wrong lease state");
@@ -779,7 +845,7 @@ static void allocated_address_cb(struct net_if *iface,
 		      "Reserved wrong address");
 }
 
-static void verify_allocated_address(struct in_addr *allocated)
+static void verify_allocated_address(struct net_in_addr *allocated)
 {
 	int ret;
 
@@ -836,8 +902,8 @@ ZTEST(dhcpv4_server_tests, test_expiry)
 	test_ctx.lease_time = 1;
 	client_get_lease(true);
 
-	/* Add extra 10ms to avoid race. */
-	k_msleep(1000 + 10);
+	/* Add extra 50ms to avoid race. */
+	k_msleep(1000 + 50);
 	verify_lease_count(0, 0, 0);
 }
 
@@ -856,7 +922,7 @@ static void declined_address_cb(struct net_if *iface,
 				struct dhcpv4_addr_slot *lease,
 				void *user_data)
 {
-	struct in_addr *declined = user_data;
+	struct net_in_addr *declined = user_data;
 
 	zassert_equal(lease->state, DHCPV4_SERVER_ADDR_DECLINED,
 		      "Wrong lease state");
@@ -864,7 +930,7 @@ static void declined_address_cb(struct net_if *iface,
 		      "Declined wrong address");
 }
 
-static void verify_declined_address(struct in_addr *declined)
+static void verify_declined_address(struct net_in_addr *declined)
 {
 	int ret;
 
@@ -886,8 +952,8 @@ ZTEST(dhcpv4_server_tests, test_decline)
 	verify_lease_count(0, 0, 1);
 	verify_declined_address(&test_ctx.assigned_ip);
 
-	/* Add extra 10ms to avoid race. */
-	k_msleep(1000 + 10);
+	/* Add extra 50ms to avoid race. */
+	k_msleep(1000 + 50);
 	verify_lease_count(0, 0, 0);
 }
 
@@ -896,7 +962,7 @@ ZTEST(dhcpv4_server_tests, test_decline)
  */
 ZTEST(dhcpv4_server_tests, test_declined_reuse)
 {
-	struct in_addr oldest_addr;
+	struct net_in_addr oldest_addr;
 
 	for (int i = 0; i < CONFIG_NET_DHCPV4_SERVER_ADDR_COUNT; i++) {
 		client_get_lease(false);
@@ -904,7 +970,7 @@ ZTEST(dhcpv4_server_tests, test_declined_reuse)
 			oldest_addr = test_ctx.assigned_ip;
 		}
 		client_send_decline();
-		k_msleep(10);
+		k_msleep(50);
 	}
 
 	verify_lease_count(0, 0, 4);
@@ -920,7 +986,7 @@ ZTEST(dhcpv4_server_tests, test_declined_reuse)
 	test_pkt_free();
 
 	zassert_equal(oldest_addr.s_addr, test_ctx.assigned_ip.s_addr,
-		      "Should've reassing oldest declined address");
+		      "Should've reassign oldest declined address");
 }
 
 /* Verify that the DHCP server replies with ACK for a Inform message, w/o
@@ -983,8 +1049,8 @@ ZTEST(dhcpv4_server_tests, test_icmp_probe)
 /* Verify that the DHCP server can start and validate input properly. */
 ZTEST(dhcpv4_server_tests_no_init, test_initialization)
 {
-	struct in_addr base_addr_wrong_subnet = { { { 192, 0, 3, 10 } } };
-	struct in_addr base_addr_overlap = { { { 192, 0, 2, 1 } } };
+	struct net_in_addr base_addr_wrong_subnet = { { { 192, 0, 3, 10 } } };
+	struct net_in_addr base_addr_overlap = { { { 192, 0, 2, 1 } } };
 	int ret;
 
 	ret = net_dhcpv4_server_start(test_ctx.iface, &base_addr_wrong_subnet);
@@ -999,6 +1065,43 @@ ZTEST(dhcpv4_server_tests_no_init, test_initialization)
 	net_dhcpv4_server_stop(test_ctx.iface);
 }
 
+#if defined(CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL)
+/* Verify that the DHCP server includes option 114 (RFC 8910 captive portal URI)
+ * in the Offer when the client lists 114 in the Parameter Request List.
+ */
+ZTEST(dhcpv4_server_tests, test_discover_captive_portal)
+{
+	test_ctx.request_captive_portal = true;
+
+	client_send_discover();
+	verify_offer(false);
+	test_pkt_free();
+
+	verify_lease_count(1, 0, 0);
+	verify_reserved_address(&test_ctx.assigned_ip);
+}
+
+/* Verify that the DHCP server also includes option 114 in the Ack of a full
+ * Discover+Request cycle, not just in the Offer.
+ */
+ZTEST(dhcpv4_server_tests, test_request_captive_portal)
+{
+	test_ctx.request_captive_portal = true;
+
+	client_send_discover();
+	verify_offer(false);
+	verify_lease_count(1, 0, 0);
+	test_pkt_free();
+
+	client_send_request_solicit();
+	verify_ack(false, false);
+	test_pkt_free();
+
+	verify_lease_count(0, 1, 0);
+	verify_allocated_address(&test_ctx.assigned_ip);
+}
+#endif /* CONFIG_NET_DHCPV4_SERVER_OPTION_CAPTIVE_PORTAL */
+
 static void dhcpv4_server_tests_before(void *fixture)
 {
 	ARG_UNUSED(fixture);
@@ -1009,6 +1112,7 @@ static void dhcpv4_server_tests_before(void *fixture)
 	test_ctx.pkt = NULL;
 	test_ctx.lease_time = NO_LEASE_TIME;
 	test_ctx.send_echo_reply = false;
+	test_ctx.request_captive_portal = false;
 	memset(&test_ctx.assigned_ip, 0, sizeof(test_ctx.assigned_ip));
 
 	net_dhcpv4_server_start(test_ctx.iface, &test_base_addr);

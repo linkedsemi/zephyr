@@ -165,7 +165,7 @@ void cdns_sdhc_set_sdmmc_params(struct sdhc_cdns_combo_phy *sdhc_cdns_combo_phy_
 	sdhc_cdns_sdmmc_reg->sdhc_wrdata1_sdclk_dly = 0;
 }
 
-/* Phy register programing for phy init */
+/* Phy register programming for phy init */
 static int sdhc_cdns_program_phy_reg(struct sdhc_cdns_combo_phy *sdhc_cdns_combo_phy_reg,
 	struct sdhc_cdns_sdmmc *sdhc_cdns_sdmmc_reg)
 {
@@ -735,7 +735,7 @@ static int sdhc_cdns_send_cmd(struct sdmmc_cmd *cmd, struct sdhc_data *data)
 		return -EIO;
 	}
 
-	if ((op & RES_TYPE_SEL_48) || (op & RES_TYPE_SEL_136)) {
+	if (op & (RES_TYPE_SEL_48 | RES_TYPE_SEL_136)) {
 		cmd->resp_data[0] = sys_read32(cdns_params.reg_base + SDHC_CDNS_SRS04);
 		if (op & RES_TYPE_SEL_136) {
 			cmd->resp_data[1] = sys_read32(cdns_params.reg_base + SDHC_CDNS_SRS05);
@@ -745,7 +745,7 @@ static int sdhc_cdns_send_cmd(struct sdmmc_cmd *cmd, struct sdhc_data *data)
 			/* 136-bit: RTS=01b, Response field R[127:8] - RESP3[23:0],
 			 * RESP2[31:0], RESP1[31:0], RESP0[31:0]
 			 * Subsystem expects 128 bits response but cadence SDHC sends
-			 * 120 bits response from R[127:8]. Bits manupulation to address
+			 * 120 bits response from R[127:8]. Bits manipulation to address
 			 * the correct responses for the 136 bit response type.
 			 */
 			cmd->resp_data[3] = ((cmd->resp_data[3] << 8) | ((cmd->resp_data[2] >> 24)

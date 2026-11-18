@@ -87,8 +87,10 @@ automatically implies that the imported source code becomes part of the
 - The code is subject to the same checks and verification requirements as the
   rest of the code in the main tree, including static analysis
 - All files contain an SPDX tag if not already present
-- If the source is not Apache 2.0 licensed,
-  an entry is added to the :ref:`licensing page <zephyr_licensing>`.
+- If the source is not Apache 2.0 licensed, an ``[[annotations]]`` entry
+  describing the component is added to the :zephyr_file:`REUSE.toml` file at the
+  root of the repository. This is what the :ref:`licensing page
+  <zephyr_licensing>` is generated from.
 
 This mode of integration can be applicable to both small and large external
 codebases, but it is typically used more commonly with the former.
@@ -173,7 +175,7 @@ Follow the steps below to begin the submission process:
    detail, so that you are informed of the criteria used by the TSC and board in
    order to approve or reject a request
 #. Use the :github:`New External Source Code Issue
-   <new?assignees=&labels=RFC&template=007_ext-source.md&title=>` to open an issue
+   <new?assignees=&labels=RFC&template=007_ext-source.yml>` to open an issue
 #. Fill out all required sections, making sure you provide enough detail for the
    TSC to assess the merit of the request. Optionally you can also create a Pull
    Request that demonstrates the integration of the external source code and

@@ -55,7 +55,7 @@ static char  transport_binding[MAX_INSTANCE_COUNT][TRANSPORT_BINDING_LEN];
 /* Server object version 1.1 */
 static uint8_t priority[MAX_INSTANCE_COUNT];
 static bool mute_send[MAX_INSTANCE_COUNT];
-static bool boostrap_on_fail[MAX_INSTANCE_COUNT];
+static bool bootstrap_on_fail[MAX_INSTANCE_COUNT];
 
 static struct lwm2m_engine_obj server;
 static struct lwm2m_engine_obj_field fields[] = {
@@ -348,14 +348,14 @@ static struct lwm2m_engine_obj_inst *server_create(uint16_t obj_inst_id)
 	}
 
 	/* Set default values */
-	disabled_until[i] = sys_timepoint_calc(K_NO_WAIT);
+	disabled_until[index] = sys_timepoint_calc(K_NO_WAIT);
 	server_flag_store_notify[index] = 0U;
 	server_id[index] = index + 1;
 	lifetime[index] = CONFIG_LWM2M_ENGINE_DEFAULT_LIFETIME;
 	default_min_period[index] = CONFIG_LWM2M_SERVER_DEFAULT_PMIN;
 	default_max_period[index] = CONFIG_LWM2M_SERVER_DEFAULT_PMAX;
 	disabled_timeout[index] = 86400U;
-	boostrap_on_fail[index] = true;
+	bootstrap_on_fail[index] = IS_ENABLED(CONFIG_LWM2M_SERVER_BOOTSTRAP_ON_FAIL);
 
 	lwm2m_engine_get_binding(transport_binding[index]);
 
@@ -410,7 +410,7 @@ static struct lwm2m_engine_obj_inst *server_create(uint16_t obj_inst_id)
 		INIT_OBJ_RES_OPTDATA(SERVER_REGISTRATION_FAILURE_BLOCK_ID, res[index], i,
 				     res_inst[index], j);
 		INIT_OBJ_RES_DATA(SERVER_BOOTSTRAP_ON_REGISTRATION_FAILURE_ID, res[index], i,
-				  res_inst[index], j, &boostrap_on_fail[index], sizeof(bool));
+				  res_inst[index], j, &bootstrap_on_fail[index], sizeof(bool));
 		INIT_OBJ_RES_OPTDATA(SERVER_COMMUNICATION_RETRY_COUNT_ID, res[index], i,
 				     res_inst[index], j);
 		INIT_OBJ_RES_OPTDATA(SERVER_COMMUNICATION_RETRY_TIMER_ID, res[index], i,
@@ -428,7 +428,7 @@ static struct lwm2m_engine_obj_inst *server_create(uint16_t obj_inst_id)
 
 	inst[index].resources = res[index];
 	inst[index].resource_count = i;
-	LOG_DBG("Create LWM2M server instance: %d", obj_inst_id);
+	LOG_DBG("Create LwM2M server instance: %d", obj_inst_id);
 	return &inst[index];
 }
 
@@ -452,7 +452,7 @@ static int lwm2m_server_init(void)
 
 		ret = lwm2m_create_obj_inst(LWM2M_OBJECT_SERVER_ID, 0, &obj_inst);
 		if (ret < 0) {
-			LOG_ERR("Create LWM2M server instance 0 error: %d", ret);
+			LOG_ERR("Create LwM2M server instance 0 error: %d", ret);
 		}
 	}
 

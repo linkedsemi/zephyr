@@ -72,12 +72,14 @@ config NET_MGMT_EVENT_QUEUE_SIZE
 	default 16 if NET_MGMT_EVENT_MONITOR
 	default 5
 	range 1 1024
-	depends on NET_MGMT_EVENT_QUEUE
+	depends on NET_MGMT_EVENT_QUEUE || NET_MGMT_EVENT_MONITOR
 	help
 	  Numbers of events which can be queued at same time. Note that if a
 	  3rd event comes in, the first will be removed without generating any
 	  notification. Thus the size of this queue has to be tweaked depending
 	  on the load of the system, planned for the usage.
+	  The net shell events monitor queues the events it prints in a queue
+	  of the same size.
 
 config NET_MGMT_EVENT_QUEUE_TIMEOUT
 	int "Timeout for event queue"
@@ -95,15 +97,25 @@ config NET_MGMT_EVENT_INFO
 	  and listeners will then be able to get it. Such information depends
 	  on the type of event.
 
+if NET_MGMT_EVENT_INFO
+
+config NET_MGMT_EVENT_INFO_DEFAULT_DATA_SIZE
+	int "Default size of event information data"
+	default 32
+	help
+	  The default size of the data which can be passed along with an event.
+
 config NET_MGMT_EVENT_MONITOR
 	bool "Monitor network events from net shell"
-	depends on NET_SHELL && NET_MGMT_EVENT_INFO
+	depends on NET_SHELL
 	help
 	  Allow user to monitor network events from net shell using
 	  "net events [on|off]" command. The monitoring is disabled by
 	  default. Note that you should probably increase the value of
 	  NET_MGMT_EVENT_QUEUE_SIZE from the default in order not to miss
 	  any events.
+
+endif # NET_MGMT_EVENT_INFO
 
 config NET_MGMT_EVENT_MONITOR_STACK_SIZE
 	int "Size of the stack allocated for the event_mon_stack thread"
@@ -137,6 +149,7 @@ config NET_MGMT_THREAD_PRIO_CUSTOM
 	bool "Customize net mgmt thread priority"
 
 if NET_MGMT_THREAD_PRIO_CUSTOM
+
 config NET_MGMT_THREAD_PRIORITY
 	int "Priority of net_mgmt thread"
 	default NUM_PREEMPT_PRIORITIES

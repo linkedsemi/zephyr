@@ -8,6 +8,9 @@
 set -ue
 : "${ZEPHYR_BASE:?ZEPHYR_BASE must be set to point to the zephyr root directory}"
 
+echo "This script is deprecated and will be removed in a future release.\
+ Please build these tests using twister"
+
 source ${ZEPHYR_BASE}/tests/bsim/sh_common.source
 
 # Note: We do not parallelize the call into the build of the host, ll and mesh images as those
@@ -21,8 +24,9 @@ ${ZEPHYR_BASE}/tests/bsim/bluetooth/host/compile.sh
 ${ZEPHYR_BASE}/tests/bsim/bluetooth/ll/compile.sh
 ${ZEPHYR_BASE}/tests/bsim/bluetooth/mesh/compile.sh
 ${ZEPHYR_BASE}/tests/bsim/bluetooth/samples/compile.sh
-if [ ${BOARD} == "nrf52_bsim" ]; then
+if [ ${BOARD} == "nrf52_bsim/native" ]; then
 	${ZEPHYR_BASE}/tests/bsim/bluetooth/hci_uart/compile.sh
 fi
+${ZEPHYR_BASE}/tests/bsim/bluetooth/tester/compile.sh
 
 wait_for_background_jobs

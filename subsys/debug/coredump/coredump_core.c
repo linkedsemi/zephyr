@@ -8,6 +8,7 @@
 #include <kernel_internal.h>
 #include <zephyr/toolchain.h>
 #include <zephyr/debug/coredump.h>
+#include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/util.h>
 
@@ -16,6 +17,9 @@
 extern struct coredump_backend_api coredump_backend_logging;
 static struct coredump_backend_api
 	*backend_api = &coredump_backend_logging;
+#elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_LOGGING_UDP)
+extern struct coredump_backend_api coredump_backend_logging_udp;
+static struct coredump_backend_api *backend_api = &coredump_backend_logging_udp;
 #elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_FLASH_PARTITION)
 extern struct coredump_backend_api coredump_backend_flash_partition;
 static struct coredump_backend_api
@@ -24,6 +28,14 @@ static struct coredump_backend_api
 extern struct coredump_backend_api coredump_backend_intel_adsp_mem_window;
 static struct coredump_backend_api
 	*backend_api = &coredump_backend_intel_adsp_mem_window;
+#elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_IN_MEMORY)
+extern struct coredump_backend_api coredump_backend_in_memory;
+static struct coredump_backend_api
+	*backend_api = &coredump_backend_in_memory;
+#elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_AMD_ACP_PANIC_DUMP)
+extern struct coredump_backend_api coredump_backend_amd_acp_panic_dump;
+static struct coredump_backend_api
+	*backend_api = &coredump_backend_amd_acp_panic_dump;
 #elif defined(CONFIG_DEBUG_COREDUMP_BACKEND_EMMC)
 extern struct coredump_backend_api coredump_backend_emmc;
 static struct coredump_backend_api
@@ -40,6 +52,38 @@ static struct coredump_backend_api
 #include <zephyr/drivers/coredump.h>
 #define DT_DRV_COMPAT zephyr_coredump
 #endif
+
+/*
+ * Upper bound on the number of threads snapshotted (see the SMP path in
+ * process_memory_region_list()) while z_thread_monitor_lock is held, before
+ * releasing it and running the slow per-thread dump I/O lock-free. Exposed as
+ * CONFIG_DEBUG_COREDUMP_THREAD_SNAPSHOT_MAX so a system with more monitored
+ * threads than the default can capture all of them (at the cost of that many
+ * pointers of fatal-path stack); systems that exceed it dump only the first N.
+ */
+#if defined(CONFIG_DEBUG_COREDUMP_THREAD_SNAPSHOT_MAX)
+#define COREDUMP_THREAD_SNAPSHOT_MAX CONFIG_DEBUG_COREDUMP_THREAD_SNAPSHOT_MAX
+#else
+#define COREDUMP_THREAD_SNAPSHOT_MAX 64
+#endif
+
+#if defined(CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP_LIMIT_FOR_CURRENT) &&                           \
+	CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP_LIMIT_FOR_CURRENT >= 0
+#define STACK_TOP_LIMIT_FOR_CURRENT                                                                \
+	((size_t)CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP_LIMIT_FOR_CURRENT)
+#else
+#define STACK_TOP_LIMIT_FOR_CURRENT SIZE_MAX
+#endif
+
+#if defined(CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP_LIMIT) &&                                       \
+	CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP_LIMIT >= 0
+#define STACK_TOP_LIMIT ((size_t)CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP_LIMIT)
+#else
+#define STACK_TOP_LIMIT SIZE_MAX
+#endif
+
+/* Context of the dump in progress (NULL if none), see coredump(). */
+static atomic_ptr_t coredump_owner;
 
 #if defined(CONFIG_DEBUG_COREDUMP_DUMP_THREAD_PRIV_STACK)
 __weak void arch_coredump_priv_stack_dump(struct k_thread *thread)
@@ -70,10 +114,37 @@ static void dump_header(unsigned int reason)
 	backend_api->buffer_output((uint8_t *)&hdr, sizeof(hdr));
 }
 
-#if defined(CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_MIN) || \
+#if defined(CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_MIN) ||                                              \
 	defined(CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_THREADS)
-static void dump_thread(struct k_thread *thread)
+
+static inline void select_stack_region(const struct k_thread *thread, bool is_current,
+				       uintptr_t *start, uintptr_t *end)
 {
+	uintptr_t sp;
+	size_t limit;
+
+	*start = thread->stack_info.start;
+	*end = thread->stack_info.start + thread->stack_info.size;
+
+	if (!IS_ENABLED(CONFIG_DEBUG_COREDUMP_THREAD_STACK_TOP)) {
+		return;
+	}
+
+	sp = arch_coredump_stack_ptr_get(thread);
+
+	if (IN_RANGE(sp, *start, *end)) {
+		/* Skip ahead to the stack pointer. */
+		*start = sp;
+	}
+
+	/* Make sure no more than STACK_TOP_LIMIT[_FOR_CURRENT] bytes of the stack are dumped. */
+	limit = (is_current ? STACK_TOP_LIMIT_FOR_CURRENT : STACK_TOP_LIMIT);
+	*end = *start + MIN((size_t)(*end - *start), limit);
+}
+
+static void dump_thread(struct k_thread *thread, bool is_current)
+{
+	uintptr_t start_addr;
 	uintptr_t end_addr;
 
 	/*
@@ -86,13 +157,12 @@ static void dump_thread(struct k_thread *thread)
 		return;
 	}
 
-	end_addr = POINTER_TO_UINT(thread) + sizeof(*thread);
+	start_addr = POINTER_TO_UINT(thread);
+	end_addr = start_addr + sizeof(*thread);
+	coredump_memory_dump(start_addr, end_addr);
 
-	coredump_memory_dump(POINTER_TO_UINT(thread), end_addr);
-
-	end_addr = thread->stack_info.start + thread->stack_info.size;
-
-	coredump_memory_dump(thread->stack_info.start, end_addr);
+	select_stack_region(thread, is_current, &start_addr, &end_addr);
+	coredump_memory_dump(start_addr, end_addr);
 
 #if defined(CONFIG_DEBUG_COREDUMP_DUMP_THREAD_PRIV_STACK)
 	if ((thread->base.user_options & K_USER) == K_USER) {
@@ -105,13 +175,11 @@ static void dump_thread(struct k_thread *thread)
 #if defined(CONFIG_COREDUMP_DEVICE)
 static void process_coredump_dev_memory(const struct device *dev)
 {
-	struct coredump_driver_api *api = (struct coredump_driver_api *)dev->api;
-
-	api->dump(dev);
+	DEVICE_API_GET(coredump, dev)->dump(dev);
 }
 #endif
 
-void process_memory_region_list(void)
+void process_memory_region_list(struct k_thread *current)
 {
 #ifdef CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_LINKER_RAM
 	unsigned int idx = 0;
@@ -131,21 +199,122 @@ void process_memory_region_list(void)
 #endif
 
 #ifdef CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_THREADS
-	/*
-	 * Content of _kernel.threads not being modified during dump
-	 * capture so no need to lock z_thread_monitor_lock.
-	 */
-	struct k_thread *current;
+	{
+		struct k_thread *thread;
+		unsigned int n;
+		/*
+		 * Defensive bound on the walk below: not a real thread-count
+		 * limit, just insurance against an infinite loop if the list
+		 * is ever seen mid-corruption (e.g. a concurrent unlink on
+		 * another CPU leaves next_thread pointing back into itself).
+		 */
+		const unsigned int max_threads = 4096U;
+#ifdef CONFIG_SMP
+		k_spinlock_key_t key = {0};
+		bool locked = false;
+		/*
+		 * Snapshot the thread pointers while holding
+		 * z_thread_monitor_lock, then release it before calling
+		 * dump_thread() for each snapshotted thread below.
+		 * dump_thread() can be slow (e.g. the UDP backend transmits
+		 * every thread's stack over the network), and holding this
+		 * lock across that I/O starves any other CPU whose thread
+		 * naturally exits while the dump is in progress: its
+		 * k_thread_abort() -> halt_thread() -> z_thread_monitor_exit()
+		 * path needs this same lock, so that CPU would spin for the
+		 * entire dump duration instead of completing a normal exit.
+		 *
+		 * Like k_thread_foreach_unlocked(), the snapshot stabilizes the
+		 * list for traversal but does not pin each thread object against
+		 * concurrent teardown once the lock is dropped. This is safe here
+		 * because it runs only from the fatal path: the panicking CPU has
+		 * IRQs locked and does not reschedule, so it cannot itself free a
+		 * thread mid-dump, and a peer CPU that aborts a thread blocks in
+		 * halt_thread() -> z_thread_monitor_exit() waiting on the very
+		 * lock this loop just released and re-derefs nothing until the
+		 * dump completes. (The freeze/thaw follow-up additionally holds
+		 * the peers frozen for the duration.)
+		 */
+		struct k_thread *snapshot[COREDUMP_THREAD_SNAPSHOT_MAX];
+		unsigned int snapshot_count = 0;
 
-	for (current = _kernel.threads; current; current = current->next_thread) {
-		dump_thread(current);
+		/*
+		 * Try to take z_thread_monitor_lock so the list is stable
+		 * against concurrent k_thread_create()/k_thread_abort() on
+		 * another CPU. Use trylock rather than a blocking lock: if
+		 * the crashing CPU itself already holds this lock (e.g. it
+		 * faulted inside k_thread_create()/k_thread_abort()),
+		 * blocking here would deadlock the dump on the same CPU and
+		 * lose the entire capture. If the lock is contended or held,
+		 * fall back to a bounded lock-free walk -- a racy read of a
+		 * single thread entry is preferable to no dump at all.
+		 *
+		 * When CONFIG_SPIN_VALIDATE is enabled, k_spin_trylock()
+		 * asserts (via z_spinlock_validate_pre()) that the current
+		 * CPU does not already hold the lock. In the fatal path the
+		 * crashing CPU may indeed already hold it, so calling trylock
+		 * would trip the assert and recurse into the fault handler.
+		 * Probe with z_spin_lock_valid() first and skip locking in
+		 * that case, falling back to the bounded lock-free walk.
+		 */
+#ifdef CONFIG_SPIN_VALIDATE
+		if (z_spin_lock_valid(&z_thread_monitor_lock)) {
+			locked = k_spin_trylock(&z_thread_monitor_lock, &key) == 0;
+		}
+#else
+		locked = k_spin_trylock(&z_thread_monitor_lock, &key) == 0;
+#endif /* CONFIG_SPIN_VALIDATE */
+
+		for (thread = _kernel.threads, n = 0;
+		     (thread != NULL) && (n < max_threads);
+		     thread = thread->next_thread, n++) {
+			if (snapshot_count < COREDUMP_THREAD_SNAPSHOT_MAX) {
+				snapshot[snapshot_count++] = thread;
+			}
+			/*
+			 * If the list is longer than the snapshot capacity the
+			 * dump is truncated to the first N threads rather than
+			 * risking unbounded fatal-path stack; raise
+			 * CONFIG_DEBUG_COREDUMP_THREAD_SNAPSHOT_MAX to capture
+			 * more. A mid-dump diagnostic is deliberately not
+			 * emitted here: it would inject stray bytes into the
+			 * backend's coredump stream and break host-side parsing.
+			 */
+		}
+
+		if (locked) {
+			k_spin_unlock(&z_thread_monitor_lock, key);
+		}
+
+		for (n = 0; n < snapshot_count; n++) {
+			dump_thread(snapshot[n], snapshot[n] == current);
+		}
+#else
+		/*
+		 * On uniprocessor, IRQs are already locked by the exception
+		 * entry path so no other context can modify the list.
+		 */
+		for (thread = _kernel.threads, n = 0;
+		     (thread != NULL) && (n < max_threads);
+		     thread = thread->next_thread, n++) {
+			dump_thread(thread, thread == current);
+		}
+#endif /* CONFIG_SMP */
+
+		/*
+		 * Dump the ISR (interrupt) stack for every CPU so that crashes
+		 * occurring inside an interrupt handler on any core are captured.
+		 * On uniprocessor this is identical to the original single-CPU
+		 * dump; on SMP it covers all CONFIG_MP_MAX_NUM_CPUS cores.
+		 */
+		for (int cpu = 0; cpu < CONFIG_MP_MAX_NUM_CPUS; cpu++) {
+			char *irq_sp = _kernel.cpus[cpu].irq_stack;
+			uintptr_t isr_start =
+				POINTER_TO_UINT(irq_sp) - CONFIG_ISR_STACK_SIZE;
+
+			coredump_memory_dump(isr_start, POINTER_TO_UINT(irq_sp));
+		}
 	}
-
-	/* Also add interrupt stack, in case error occurred in an interrupt */
-	char *irq_stack = _kernel.cpus[0].irq_stack;
-	uintptr_t start_addr = POINTER_TO_UINT(irq_stack) - CONFIG_ISR_STACK_SIZE;
-
-	coredump_memory_dump(start_addr, POINTER_TO_UINT(irq_stack));
 #endif /* CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_THREADS */
 
 #if defined(CONFIG_COREDUMP_DEVICE)
@@ -173,7 +342,33 @@ static void dump_threads_metadata(void)
 void coredump(unsigned int reason, const struct arch_esf *esf,
 	      struct k_thread *thread)
 {
+	void *self = (thread != NULL) ? (void *)thread : (void *)&coredump_owner;
+
+	/*
+	 * Only one dump may run at a time. A fatal error raised from within
+	 * a dump (e.g. an assertion or a fault in the backend) must not
+	 * re-enter the backend, so it is not dumped. As the interrupted dump
+	 * may never resume, it is abandoned so that later errors still get
+	 * dumped if the system recovers from this one.
+	 */
+	if (!atomic_ptr_cas(&coredump_owner, NULL, self)) {
+		(void)atomic_ptr_cas(&coredump_owner, self, NULL);
+		return;
+	}
+
 	z_coredump_start();
+
+#ifdef CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS
+	/*
+	 * Freeze every other CPU as early as possible so their captured
+	 * register state reflects the moment of the panic, not whatever
+	 * they've done since. Thawed at the very end, after the
+	 * memory-region walk below has read each thread's (possibly
+	 * frozen) stack/struct, to avoid a torn read if a frozen thread
+	 * resumed mid-dump.
+	 */
+	arch_coredump_freeze_other_cpus();
+#endif
 
 	dump_header(reason);
 
@@ -185,15 +380,27 @@ void coredump(unsigned int reason, const struct arch_esf *esf,
 	dump_threads_metadata();
 #endif
 
+#ifdef CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS
+	for (unsigned int cpu = 0; cpu < CONFIG_MP_MAX_NUM_CPUS; cpu++) {
+		arch_coredump_cpu_snapshot_dump(cpu);
+	}
+#endif
+
 	if (thread != NULL) {
 #ifdef CONFIG_DEBUG_COREDUMP_MEMORY_DUMP_MIN
-		dump_thread(thread);
+		dump_thread(thread, /* is_current */ true);
 #endif
 	}
 
-	process_memory_region_list();
+	process_memory_region_list(thread);
+
+#ifdef CONFIG_DEBUG_COREDUMP_SMP_FREEZE_CPUS
+	arch_coredump_thaw_other_cpus();
+#endif
 
 	z_coredump_end();
+
+	(void)atomic_ptr_cas(&coredump_owner, self, NULL);
 }
 
 void z_coredump_start(void)

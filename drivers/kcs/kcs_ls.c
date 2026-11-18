@@ -97,7 +97,7 @@ static int kcs_ls_set_ibf_callback(const struct device *dev,ibf_callback_t callb
     return 0;
 }
 
-static const struct kcs_driver_api kcs_ls_driver_api = {
+static DEVICE_API(kcs, kcs_ls_driver_api) = {
     .read_data = kcs_ls_read_data,
     .write_data = kcs_ls_write_data,
     .read_status = kcs_ls_read_status,

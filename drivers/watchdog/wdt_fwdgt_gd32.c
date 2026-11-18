@@ -8,7 +8,7 @@
 
 #include <zephyr/drivers/watchdog.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 
 #include <gd32_fwdgt.h>
 
@@ -146,7 +146,7 @@ static int gd32_fwdgt_feed(const struct device *dev, int channel_id)
 	return 0;
 }
 
-static const struct wdt_driver_api fwdgt_gd32_api = {
+static DEVICE_API(wdt, fwdgt_gd32_api) = {
 	.setup = gd32_fwdgt_setup,
 	.disable = gd32_fwdgt_disable,
 	.install_timeout = gd32_fwdgt_install_timeout,
@@ -161,14 +161,6 @@ static int gd32_fwdgt_init(const struct device *dev)
 	rcu_osci_on(RCU_IRC_LOW_SPEED);
 	while (!rcu_osci_stab_wait(RCU_IRC_LOW_SPEED)) {
 	}
-
-#if !defined(CONFIG_WDT_DISABLE_AT_BOOT)
-	const struct wdt_timeout_cfg config = {
-		.window.max = FWDGT_INITIAL_TIMEOUT
-	};
-
-	ret = gd32_fwdgt_install_timeout(dev, &config);
-#endif
 
 	return ret;
 }

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2023 Nordic Semiconductor ASA
+ * Copyright (c) 2023-2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -29,11 +29,11 @@ LOG_MODULE_REGISTER(peripheral, LOG_LEVEL_INF);
 #include "bstests.h"
 #include "bs_types.h"
 #include "bs_tracing.h"
-#include "bstests.h"
 #include "bs_pc_backchannel.h"
-#include "argparse.h"
+#include "bsim_args_runner.h"
 
-#define TEST_ROUNDS 10
+#include "babblekit/testcase.h"
+
 #define MIN_NOTIFICATIONS 50
 
 #define NOTIFICATION_DATA_PREFIX     "Counter:"
@@ -51,6 +51,8 @@ BUILD_ASSERT(NOTIFICATION_DATA_LEN <= CHARACTERISTIC_DATA_MAX_LEN);
 
 #define CENTRAL_SERVICE_UUID	    BT_UUID_DECLARE_128(CENTRAL_SERVICE_UUID_VAL)
 #define CENTRAL_CHARACTERISTIC_UUID BT_UUID_DECLARE_128(CENTRAL_CHARACTERISTIC_UUID_VAL)
+
+#define EXPECTED_CONN_CYCLES	1
 
 /* Custom Service Variables */
 static struct bt_uuid_128 vnd_uuid =
@@ -116,12 +118,8 @@ void mtu_updated(struct bt_conn *conn, uint16_t tx, uint16_t rx)
 	LOG_INF("Updated MTU: TX: %d RX: %d bytes", tx, rx);
 
 	if (tx == CONFIG_BT_L2CAP_TX_MTU && rx == CONFIG_BT_L2CAP_TX_MTU) {
-		char addr[BT_ADDR_LE_STR_LEN];
-
-		bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 		atomic_set_bit(conn_info.flags, CONN_INFO_MTU_EXCHANGED);
-		LOG_INF("Updating MTU succeeded %s", addr);
+		LOG_INF("Updating MTU succeeded %s", bt_conn_dst_str(conn));
 	}
 }
 
@@ -129,15 +127,11 @@ static struct bt_gatt_cb gatt_callbacks = {.att_mtu_updated = mtu_updated};
 
 static void connected(struct bt_conn *conn, uint8_t err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
 	if (err) {
 		memset(&conn_info, 0x00, sizeof(struct active_conn_info));
 		LOG_ERR("Connection failed (err 0x%02x)", err);
 		return;
 	}
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	rounds++;
 	conn_info.conn_ref = conn;
@@ -146,7 +140,7 @@ static void connected(struct bt_conn *conn, uint8_t err)
 	atomic_set(&conn_info.notify_counter, 0);
 	atomic_set_bit(conn_info.flags, CONN_INFO_CONNECTED);
 
-	LOG_INF("Connection %p established : %s", conn, addr);
+	LOG_INF("Connection %p established : %s", conn, bt_conn_dst_str(conn));
 }
 
 static void disconnected(struct bt_conn *conn, uint8_t reason)
@@ -164,7 +158,7 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 	memset(&conn_info, 0x00, sizeof(struct active_conn_info));
 
-	if (rounds >= TEST_ROUNDS) {
+	if (rounds >= EXPECTED_CONN_CYCLES) {
 		LOG_INF("Number of conn/disconn cycles reached, stopping advertiser...");
 		bt_le_adv_stop();
 
@@ -178,12 +172,8 @@ static void disconnected(struct bt_conn *conn, uint8_t reason)
 
 static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	LOG_DBG("LE conn param req: %s int (0x%04x (~%u ms), 0x%04x (~%u ms)) lat %d to %d",
-		addr, param->interval_min, (uint32_t)(param->interval_min * 1.25),
+		bt_conn_dst_str(conn), param->interval_min, (uint32_t)(param->interval_min * 1.25),
 		param->interval_max, (uint32_t)(param->interval_max * 1.25), param->latency,
 		param->timeout);
 
@@ -193,16 +183,13 @@ static bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param)
 #if defined(CONFIG_BT_SMP)
 static void security_changed(struct bt_conn *conn, bt_security_t level, enum bt_security_err err)
 {
-	char addr[BT_ADDR_LE_STR_LEN];
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-
 	if (err) {
-		LOG_ERR("Security for %p failed: %s level %u err %d", conn, addr, level, err);
+		LOG_ERR("Security for %p failed: %s level %u err %d", conn, bt_conn_dst_str(conn),
+			level, err);
 		return;
 	}
 
-	LOG_INF("Security for %p changed: %s level %u", conn, addr, level);
+	LOG_INF("Security for %p changed: %s level %u", conn, bt_conn_dst_str(conn), level);
 	atomic_set_bit(conn_info.flags, CONN_INFO_SECURITY_LEVEL_UPDATED);
 }
 #endif /* CONFIG_BT_SMP */
@@ -221,7 +208,6 @@ static uint8_t rx_notification(struct bt_conn *conn, struct bt_gatt_subscribe_pa
 {
 	const char *data_ptr = (const char *)data + NOTIFICATION_DATA_PREFIX_LEN;
 	uint32_t received_counter;
-	char addr[BT_ADDR_LE_STR_LEN];
 
 	if (!data) {
 		LOG_INF("[UNSUBSCRIBED]");
@@ -231,8 +217,6 @@ static uint8_t rx_notification(struct bt_conn *conn, struct bt_gatt_subscribe_pa
 
 	/* TODO: enable */
 	/* __ASSERT_NO_MSG(atomic_test_bit(conn_info.flags, CONN_INFO_SUBSCRIBED)); */
-
-	bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 	received_counter = strtoul(data_ptr, NULL, 0);
 	LOG_INF("RX %d", received_counter);
@@ -311,10 +295,7 @@ static uint8_t discover_func(struct bt_conn *conn, const struct bt_gatt_attr *at
 		__ASSERT_NO_MSG(!atomic_test_bit(conn_info.flags, CONN_INFO_SUBSCRIBED));
 		atomic_set_bit(conn_info.flags, CONN_INFO_SUBSCRIBED);
 
-		char addr[BT_ADDR_LE_STR_LEN];
-
-		bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
-		LOG_INF("[SUBSCRIBED] addr %s", addr);
+		LOG_INF("[SUBSCRIBED] bt_conn_dst_str(conn) %s", bt_conn_dst_str(conn));
 	}
 
 	return BT_GATT_ITER_STOP;
@@ -334,9 +315,6 @@ static void subscribe_to_service(struct bt_conn *conn)
 	while (!atomic_test_and_set_bit(conn_info.flags, CONN_INFO_DISCOVERING) &&
 	       !atomic_test_bit(conn_info.flags, CONN_INFO_SUBSCRIBED)) {
 		int err;
-		char addr[BT_ADDR_LE_STR_LEN];
-
-		bt_addr_le_to_str(bt_conn_get_dst(conn), addr, sizeof(addr));
 
 		memcpy(&uuid, CENTRAL_SERVICE_UUID, sizeof(uuid));
 		discover_params.uuid = &uuid.uuid;
@@ -400,7 +378,23 @@ void test_peripheral_main(void)
 	sprintf(name, "per-%d", get_device_nbr());
 	bt_set_name(name);
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, NULL, 0, NULL, 0);
+	struct bt_le_adv_param adv_param = {
+		.id = BT_ID_DEFAULT,
+		.sid = 0,
+		.secondary_max_skip = 0,
+		.options = BT_LE_ADV_OPT_CONN | BT_LE_ADV_OPT_SCANNABLE,
+		.interval_min = 0x0020, /* 20 ms */
+		.interval_max = 0x0020, /* 20 ms */
+		.peer = NULL,
+	};
+
+	struct bt_data sd[1];
+
+	sd[0].type = BT_DATA_NAME_COMPLETE;
+	sd[0].data_len = sizeof(CONFIG_BT_DEVICE_NAME) - 1;
+	sd[0].data = CONFIG_BT_DEVICE_NAME;
+
+	err = bt_le_adv_start(&adv_param, sd, 1, sd, 1);
 	if (err) {
 		LOG_ERR("Advertising failed to start (err %d)", err);
 		__ASSERT_NO_MSG(err);
@@ -411,7 +405,7 @@ void test_peripheral_main(void)
 
 	vnd_attr = bt_gatt_find_by_uuid(vnd_svc.attrs, vnd_svc.attr_count, &vnd_enc_uuid.uuid);
 
-	while (true) {
+	for (size_t i = 0; i < EXPECTED_CONN_CYCLES; i++) {
 		LOG_DBG("Waiting for connection from central..");
 		while (!atomic_test_bit(conn_info.flags, CONN_INFO_CONNECTED)) {
 			k_sleep(K_MSEC(10));
@@ -425,6 +419,7 @@ void test_peripheral_main(void)
 			k_sleep(K_MSEC(10));
 		}
 
+		LOG_DBG("Waiting until MTU exchange..");
 		while (!atomic_test_bit(conn_info.flags, CONN_INFO_MTU_EXCHANGED)) {
 			k_sleep(K_MSEC(10));
 		}
@@ -453,6 +448,14 @@ void test_peripheral_main(void)
 			}
 		}
 	}
+
+	err = bt_gatt_cb_unregister(&gatt_callbacks);
+	if (err != 0) {
+		TEST_FAIL("Unregister GATT callbacks failed (%d)", err);
+		return;
+	}
+
+	TEST_PASS("Peripheral tests passed");
 }
 
 void test_init(void)
@@ -460,6 +463,7 @@ void test_init(void)
 	extern enum bst_result_t bst_result;
 
 	LOG_INF("Initializing Test");
+	bst_ticker_set_next_tick_absolute(100*1e6);
 	bst_result = Failed;
 }
 
@@ -473,12 +477,22 @@ static void test_args(int argc, char **argv)
 		ptr = strstr(argv[0], "notify_size=");
 		if (ptr != NULL) {
 			ptr += strlen("notify_size=");
-			notification_size = atol(ptr);
+			notification_size = strtol(ptr, NULL, 10);
 			notification_size = MIN(NOTIFICATION_DATA_LEN, notification_size);
 		}
 	}
 
 	bs_trace_raw(0, "Notification data size : %d\n", notification_size);
+}
+
+static void test_tick(bs_time_t HW_device_time)
+{
+	if (bst_result != Passed) {
+		TEST_FAIL("Test timeout (not passed after %lu seconds)",
+			  (unsigned long)(HW_device_time / USEC_PER_SEC));
+	}
+
+	bs_trace_silent_exit(0);
 }
 
 static const struct bst_test_instance test_def[] = {
@@ -487,6 +501,7 @@ static const struct bst_test_instance test_def[] = {
 		.test_descr = "Peripheral Connection Stress",
 		.test_args_f = test_args,
 		.test_pre_init_f = test_init,
+		.test_tick_f = test_tick,
 		.test_main_f = test_peripheral_main
 	},
 	BSTEST_END_MARKER

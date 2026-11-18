@@ -241,7 +241,7 @@ static int tcs3400_sensor_setup(const struct device *dev)
 	return 0;
 }
 
-static const struct sensor_driver_api tcs3400_api = {
+static DEVICE_API(sensor, tcs3400_api) = {
 	.sample_fetch = tcs3400_sample_fetch,
 	.channel_get = tcs3400_channel_get,
 	.attr_set = tcs3400_attr_set,
@@ -257,7 +257,7 @@ static int tcs3400_init(const struct device *dev)
 	data->dev = dev;
 
 	if (!i2c_is_ready_dt(&cfg->i2c)) {
-		LOG_ERR("I2C bus is not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->i2c.bus);
 		return -ENODEV;
 	}
 
@@ -268,7 +268,7 @@ static int tcs3400_init(const struct device *dev)
 	}
 
 	if (!gpio_is_ready_dt(&cfg->int_gpio)) {
-		LOG_ERR("Interrupt GPIO device not ready");
+		LOG_ERR_DEVICE_NOT_READY(cfg->int_gpio.port);
 		return -ENODEV;
 	}
 

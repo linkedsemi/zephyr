@@ -9,11 +9,14 @@ if NET_DRIVERS
 #
 # PPP options
 #
+
+DT_CHOSEN_ZEPHYR_PPP_UART := zephyr,ppp-uart
+
 menuconfig NET_PPP
 	bool "Point-to-point (PPP) UART based driver"
 	depends on NET_L2_PPP
 	depends on NET_NATIVE
-	select RING_BUFFER
+	depends on NET_TEST || $(dt_chosen_enabled,$(DT_CHOSEN_ZEPHYR_PPP_UART))
 	select CRC
 
 if NET_PPP
@@ -193,14 +196,14 @@ menuconfig NET_LOOPBACK
 if NET_LOOPBACK
 
 config NET_LOOPBACK_SIMULATE_PACKET_DROP
-	bool "Controlable packet drop"
+	bool "Controllable packet drop"
 	help
-	  Enable interface to have a controlable packet drop rate, only for
+	  Enable interface to have a controllable packet drop rate, only for
 	  testing, should not be enabled for normal applications
 
 config NET_LOOPBACK_MTU
 	int "MTU for loopback interface"
-	default 576
+	default 1500
 	help
 	  This option sets the MTU for loopback interface.
 
@@ -217,6 +220,8 @@ endif
 #
 menuconfig NET_CANBUS
 	bool "Controller Area Network (CAN) bus network driver"
+	depends on CAN
+	select NET_L2_CANBUS_RAW
 	help
 	  Enable the CAN bus network driver. This driver provides a network interface on top of the
 	  CAN controller driver API.
@@ -238,7 +243,7 @@ config NET_CANBUS_INIT_PRIORITY
 	  The priority needs to be lower than the network stack and higher than the CAN controller
 	  driver.
 
-endif # NET_CAN
+endif # NET_CANBUS
 
 #
 # Native simulator offloaded sockets
@@ -247,8 +252,9 @@ endif # NET_CAN
 menuconfig NET_NATIVE_OFFLOADED_SOCKETS
 	bool "Native Simulator offloaded sockets"
 	depends on ARCH_POSIX
-	depends on NATIVE_LIBRARY
 	depends on NET_SOCKETS_OFFLOAD
+	select NATIVE_USE_NSI_ERRNO
+	select NATIVE_USE_NSI_FCNTL
 	help
 	  Offloaded sockets for Native Simulator utilize host BSD sockets API (like socket(),
 	  connect(), send(), recvfrom(), etc.) in order to provide networking capability.
@@ -267,6 +273,38 @@ config NET_NATIVE_OFFLOADED_SOCKETS_EPOLL_WAIT_INTERVAL
 
 	  Decrease that value when lower network traffic latency is expected, at the expense of more
 	  CPU processing overhead.
+
+config NET_NATIVE_OFFLOADED_SOCKETS_HOST_IF_NAME
+	string "Represented host interface for the offloaded interface"
+	default ""
+	help
+	  Name of the Linux host network interface that the offloaded interface
+	  represents: its addresses are mirrored onto the Zephyr net_if and its
+	  host ifindex pins multicast joins, egress and IPv6 scope. The Zephyr
+	  interface name does not exist on the host, so it cannot be used
+	  directly. When left empty, the interface used for the default route
+	  (default gateway) is used.
+
+config NET_NATIVE_OFFLOADED_SOCKETS_CONNECTIVITY_SIM
+	bool "Support for the network connectivity API"
+	help
+	  Simulate an interface that transitions through the dormant state based on calls
+	  to the network connectivity API, after some delay.
+
+config NET_NATIVE_OFFLOADED_SOCKETS_CONNECTIVITY_SIM_AUTO_CONNECT
+	bool "Automatically connect"
+	depends on NET_NATIVE_OFFLOADED_SOCKETS_CONNECTIVITY_SIM
+	help
+	  If this option is set the Connection Manager will automatically call connect after the
+	  network interface has been brought up. This option sets the default value, the option has
+	  a corresponding flag that can be set at run time by calling conn_mgr_if_set_flag().
+
+config HEAP_MEM_POOL_ADD_SIZE_NET_NATIVE_SOCKETS_GETADDRINFO
+	# Defaults to heap memory required for 8 zsock_addrinfo_wrap structures.
+	# Single queries have been observed to return 6 results.
+	# Excessive memory consumption is not a concern for native sockets.
+	int
+	default 2304
 
 endif # NET_NATIVE_OFFLOADED_SOCKETS
 

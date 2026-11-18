@@ -102,7 +102,7 @@ static void smp_client_transport_work_fn(struct k_work *work)
 			time_stamp_cmp = entry->timestamp - time_stamp_ref;
 			if (time_stamp_cmp < CONFIG_SMP_CMD_RETRY_TIME &&
 			    time_stamp_cmp < backoff_ms) {
-				/* Update new shorter shedule */
+				/* Update new shorter schedule */
 				backoff_ms = time_stamp_cmp;
 			}
 			continue;
@@ -112,7 +112,7 @@ static void smp_client_transport_work_fn(struct k_work *work)
 			entry->retry_cnt--;
 			entry->timestamp = time_stamp_ref + CONFIG_SMP_CMD_RETRY_TIME;
 			k_fifo_put(&entry->smp_client->tx_fifo, entry->nb);
-			smp_tx_req(&entry->smp_client->work);
+			k_work_submit_to_queue(smp_get_wq(), &entry->smp_client->work);
 			continue;
 		}
 
@@ -126,7 +126,8 @@ static void smp_client_transport_work_fn(struct k_work *work)
 
 	if (!sys_slist_is_empty(&smp_client_data.cmd_list)) {
 		/* Re-schedule new timeout to next */
-		k_work_reschedule(&smp_client_data.work_delay, K_MSEC(backoff_ms));
+		k_work_reschedule_for_queue(smp_get_wq(), &smp_client_data.work_delay,
+					    K_MSEC(backoff_ms));
 	}
 }
 
@@ -160,7 +161,8 @@ static void smp_cmd_add_to_list(struct smp_client_cmd_req *cmd_req)
 {
 	if (sys_slist_is_empty(&smp_client_data.cmd_list)) {
 		/* Enable timer */
-		k_work_reschedule(&smp_client_data.work_delay, K_MSEC(CONFIG_SMP_CMD_RETRY_TIME));
+		k_work_reschedule_for_queue(smp_get_wq(), &smp_client_data.work_delay,
+					    K_MSEC(CONFIG_SMP_CMD_RETRY_TIME));
 	}
 	sys_slist_append(&smp_client_data.cmd_list, &cmd_req->node);
 }
@@ -179,7 +181,8 @@ static void smp_client_cmd_req_free(struct smp_client_cmd_req *cmd_req)
 	}
 }
 
-static struct smp_client_cmd_req *smp_client_response_discover(const struct smp_hdr *res_hdr)
+static struct smp_client_cmd_req *smp_client_response_discover(const struct smp_transport *smpt,
+							       const struct smp_hdr *res_hdr)
 {
 	struct smp_hdr smp_header;
 	enum mcumgr_op_t response;
@@ -190,6 +193,11 @@ static struct smp_client_cmd_req *smp_client_response_discover(const struct smp_
 	}
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&smp_client_data.cmd_list, cmd_req, node) {
+		/* Only a command sent on the receiving transport can be answered */
+		if (cmd_req->smp_client->smpt != smpt) {
+			continue;
+		}
+
 		smp_read_hdr(cmd_req->nb, &smp_header);
 		if (smp_header.nh_op == MGMT_OP_READ) {
 			response = MGMT_OP_READ_RSP;
@@ -200,6 +208,14 @@ static struct smp_client_cmd_req *smp_client_response_discover(const struct smp_
 		if (smp_header.nh_seq != res_hdr->nh_seq) {
 			continue;
 		} else if (res_hdr->nh_op != response) {
+			continue;
+		}
+
+		/* Sequence numbers are per client object and wrap, so also match the
+		 * group and command id, which the server echoes in every response.
+		 */
+		if (smp_header.nh_group != res_hdr->nh_group ||
+		    smp_header.nh_id != res_hdr->nh_id) {
 			continue;
 		}
 
@@ -222,14 +238,15 @@ int smp_client_object_init(struct smp_client_object *smp_client, int smp_type)
 	return MGMT_ERR_EOK;
 }
 
-int smp_client_single_response(struct net_buf *nb, const struct smp_hdr *res_hdr)
+int smp_client_single_response(const struct smp_transport *smpt, struct net_buf *nb,
+			       const struct smp_hdr *res_hdr)
 {
 	struct smp_client_cmd_req *cmd_req;
 	smp_client_res_fn cb;
 	void *user_data;
 
 	/* Discover request for incoming response */
-	cmd_req = smp_client_response_discover(res_hdr);
+	cmd_req = smp_client_response_discover(smpt, res_hdr);
 	LOG_DBG("Response Header len %d, flags %d OP: %d group %d id %d seq %d", res_hdr->nh_len,
 		res_hdr->nh_flags, res_hdr->nh_op, res_hdr->nh_group, res_hdr->nh_id,
 		res_hdr->nh_seq);
@@ -254,7 +271,7 @@ struct net_buf *smp_client_buf_allocation(struct smp_client_object *smp_client, 
 	struct net_buf *nb;
 	struct smp_hdr smp_header;
 
-	nb = smp_packet_alloc();
+	nb = smp_alloc_req(smp_client->smpt, smp_client_object_get_data(smp_client));
 
 	if (nb) {
 		/* Write SMP header with payload length 0 */
@@ -320,7 +337,7 @@ int smp_client_send_cmd(struct smp_client_object *smp_client, struct net_buf *nb
 	nb = net_buf_ref(nb);
 	smp_cmd_add_to_list(cmd_req);
 	k_fifo_put(&smp_client->tx_fifo, nb);
-	smp_tx_req(&smp_client->work);
+	k_work_submit_to_queue(smp_get_wq(), &smp_client->work);
 	return MGMT_ERR_EOK;
 }
 

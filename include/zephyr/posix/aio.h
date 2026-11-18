@@ -4,12 +4,14 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_ZEPHYR_POSIX_AIO_H_
-#define ZEPHYR_INCLUDE_ZEPHYR_POSIX_AIO_H_
+#ifndef ZEPHYR_INCLUDE_POSIX_AIO_H_
+#define ZEPHYR_INCLUDE_POSIX_AIO_H_
 
 #include <signal.h>
 #include <sys/types.h>
 #include <time.h>
+
+#include <zephyr/toolchain.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -43,4 +45,4 @@ int lio_listio(int mode, struct aiocb *const ZRESTRICT list[], int nent,
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_ZEPHYR_POSIX_AIO_H_ */
+#endif /* ZEPHYR_INCLUDE_POSIX_AIO_H_ */

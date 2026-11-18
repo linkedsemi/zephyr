@@ -1,15 +1,22 @@
 /*
- * Copyright (c) 2023-2024 Analog Devices, Inc.
+ * Copyright (c) 2023-2026 Analog Devices, Inc.
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/drivers/clock_control/adi_max32_clock_control.h>
+#include <zephyr/drivers/pinctrl.h>
 
 #include <wrap_max32_sys.h>
 
 #define DT_DRV_COMPAT adi_max32_gcr
+
+#define MAX32_32K_CLK_CTLR DT_CLOCKS_CTLR_BY_IDX(DT_NODELABEL(clk_32k), 0)
+
+struct max32_clock_config {
+	const struct pinctrl_dev_config *pctrl_rtc_in;
+};
 
 static inline int api_on(const struct device *dev, clock_control_subsys_t clkcfg)
 {
@@ -85,6 +92,9 @@ static int api_get_rate(const struct device *dev, clock_control_subsys_t clkcfg,
 	case ADI_MAX32_PRPH_CLK_SRC_IBRO_DIV8:
 		*rate = ADI_MAX32_CLK_IBRO_FREQ / 8;
 		break;
+	case ADI_MAX32_PRPH_CLK_SRC_IPLL:
+		*rate = ADI_MAX32_CLK_IPLL_FREQ;
+		break;
 	default:
 		*rate = 0U;
 		/* Invalid parameters */
@@ -94,7 +104,7 @@ static int api_get_rate(const struct device *dev, clock_control_subsys_t clkcfg,
 	return 0;
 }
 
-static const struct clock_control_driver_api max32_clkctrl_api = {
+static DEVICE_API(clock_control, max32_clkctrl_api) = {
 	.on = api_on,
 	.off = api_off,
 	.get_rate = api_get_rate,
@@ -130,18 +140,38 @@ static void setup_fixed_clocks(void)
 	MXC_SYS_ClockSourceEnable(ADI_MAX32_CLK_ERTCO);
 #endif
 
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(clk_ipll))
+	MXC_SYS_ClockSourceEnable(ADI_MAX32_CLK_IPLL);
+#endif
+
 /* Some device does not support external clock */
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(clk_extclk), fixed_clock, okay)
 	MXC_SYS_ClockSourceEnable(ADI_MAX32_CLK_EXTCLK);
+#endif
+
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(clk_32k))
+#if DT_SAME_NODE(MAX32_32K_CLK_CTLR, DT_NODELABEL(clk_ertco))
+	Wrap_MXC_SYS_Select32KClockSource(ADI_MAX32_PRPH_CLK_SRC_ERTCO);
+#elif DT_SAME_NODE(MAX32_32K_CLK_CTLR, DT_NODELABEL(clk_inro))
+	Wrap_MXC_SYS_Select32KClockSource(ADI_MAX32_PRPH_CLK_SRC_INRO);
+#elif DT_SAME_NODE(MAX32_32K_CLK_CTLR, DT_NODELABEL(clk_rtc_in))
+	Wrap_MXC_SYS_Select32KClockSource(ADI_MAX32_PRPH_CLK_SRC_EXTCLK);
+#else
+#error "32K clock source is not supported by this SoC"
+#endif
 #endif
 }
 
 static int max32_clkctrl_init(const struct device *dev)
 {
-	ARG_UNUSED(dev);
+	const struct max32_clock_config *cfg = dev->config;
 
 	/* Setup fixed clocks if enabled */
 	setup_fixed_clocks();
+
+	if (cfg->pctrl_rtc_in) {
+		pinctrl_apply_state(cfg->pctrl_rtc_in, PINCTRL_STATE_DEFAULT);
+	}
 
 	/* Setup device clock source */
 	MXC_SYS_Clock_Select(ADI_MAX32_SYSCLK_SRC);
@@ -151,8 +181,26 @@ static int max32_clkctrl_init(const struct device *dev)
 	Wrap_MXC_SYS_SetClockDiv(sysclk_prescaler(ADI_MAX32_SYSCLK_PRESCALER));
 #endif
 
+#if defined(CONFIG_SOC_MAX32657) && DT_NODE_HAS_PROP(DT_NODELABEL(clk_erfo), capacitance_erfoctrl)
+	/* Setup capacitance for ERFO */
+	int erfo_cap = DT_PROP(DT_NODELABEL(clk_erfo), capacitance_erfoctrl);
+
+	MXC_FCR->erfoctrl = erfo_cap;
+#endif
+
 	return 0;
 }
 
-DEVICE_DT_INST_DEFINE(0, max32_clkctrl_init, NULL, NULL, NULL, PRE_KERNEL_1,
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(clk_rtc_in))
+PINCTRL_DT_DEFINE(DT_NODELABEL(clk_rtc_in));
+#define PINCTRL_RTC_IN PINCTRL_DT_DEV_CONFIG_GET(DT_NODELABEL(clk_rtc_in))
+#else
+#define PINCTRL_RTC_IN NULL
+#endif
+
+static const struct max32_clock_config max32_clkctrl_config = {
+	.pctrl_rtc_in = PINCTRL_RTC_IN,
+};
+
+DEVICE_DT_INST_DEFINE(0, max32_clkctrl_init, NULL, NULL, &max32_clkctrl_config, PRE_KERNEL_1,
 		      CONFIG_CLOCK_CONTROL_INIT_PRIORITY, &max32_clkctrl_api);

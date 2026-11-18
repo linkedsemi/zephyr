@@ -21,89 +21,59 @@ The Zephyr port is running on the MAX32655 MCU.
 Hardware
 ********
 
-- MAX32655 MCU:
+MAX32655 MCU:
 
-  - Ultra-Low-Power Wireless Microcontroller
-    - Internal 100MHz Oscillator
-    - Flexible Low-Power Modes with 7.3728MHz System Clock Option
-    - 512KB Flash and 128KB SRAM (Optional ECC on One 32KB SRAM Bank)
-    - 16KB Instruction Cache
-  - Bluetooth 5.2 LE Radio
-    - Dedicated, Ultra-Low-Power, 32-Bit RISC-V Coprocessor to Offload Timing-Critical Bluetooth Processing
-    - Fully Open-Source Bluetooth 5.2 Stack Available
-    - Supports AoA, AoD, LE Audio, and Mesh
-    - High-Throughput (2Mbps) Mode
-    - Long-Range (125kbps and 500kbps) Modes
-    - Rx Sensitivity: -97.5dBm; Tx Power: +4.5dBm
-    - Single-Ended Antenna Connection (50Ω)
-  - Power Management Maximizes Battery Life
-    - 2.0V to 3.6V Supply Voltage Range
-    - Integrated SIMO Power Regulator
-    - Dynamic Voltage Scaling (DVS)
-    - 23.8μA/MHz Active Current at 3.0V
-    - 4.4μA at 3.0V Retention Current for 32KB
-    - Selectable SRAM Retention + RTC in Low-Power Modes
-  - Multiple Peripherals for System Control
-    - Up to Two High-Speed SPI Master/Slave
-    - Up to Three High-Speed I2C Master/Slave (3.4Mbps)
-    - Up to Four UART, One I2S Master/Slave
-    - Up to 8-Input, 10-Bit Sigma-Delta ADC 7.8ksps
-    - Up to Four Micro-Power Comparators
-    - Timers: Up to Two Four 32-Bit, Two LP, TwoWatchdog Timers
-    - 1-Wire® Master
-    - Up to Four Pulse Train (PWM) Engines
-    - RTC with Wake-Up Timer
-    - Up to 52 GPIOs
-  - Security and Integrity​
-    - Available Secure Boot
-    - TRNG Seed Generator
-    - AES 128/192/256 Hardware Acceleration Engine
+Ultra-Low-Power Wireless Microcontroller
+  - Internal 100MHz Oscillator
+  - Flexible Low-Power Modes with 7.3728MHz System Clock Option
+  - 512KB Flash and 128KB SRAM (Optional ECC on One 32KB SRAM Bank)
+  - 16KB Instruction Cache
 
-- External devices connected to the MAX32655 EVKIT:
+Bluetooth 5.2 LE Radio
+  - Dedicated, Ultra-Low-Power, 32-Bit RISC-V Coprocessor to Offload Timing-Critical Bluetooth Processing
+  - Fully Open-Source Bluetooth 5.2 Stack Available
+  - Supports AoA, AoD, LE Audio, and Mesh
+  - High-Throughput (2Mbps) Mode
+  - Long-Range (125kbps and 500kbps) Modes
+  - Rx Sensitivity: -97.5dBm; Tx Power: +4.5dBm
+  - Single-Ended Antenna Connection (50Ω)
 
-  - Color TFT Display
-  - Audio Stereo Codec Interface
-  - Digital Microphone
-  - A 128Mb QSPI flash
+Power Management Maximizes Battery Life
+  - 2.0V to 3.6V Supply Voltage Range
+  - Integrated SIMO Power Regulator
+  - Dynamic Voltage Scaling (DVS)
+  - 23.8μA/MHz Active Current at 3.0V
+  - 4.4μA at 3.0V Retention Current for 32KB
+  - Selectable SRAM Retention + RTC in Low-Power Modes
+
+Multiple Peripherals for System Control
+  - Up to Two High-Speed SPI Master/Slave
+  - Up to Three High-Speed I2C Master/Slave (3.4Mbps)
+  - Up to Four UART, One I2S Master/Slave
+  - Up to 8-Input, 10-Bit Sigma-Delta ADC 7.8ksps
+  - Up to Four Micro-Power Comparators
+  - Timers: Up to Two Four 32-Bit, Two LP, TwoWatchdog Timers
+  - 1-Wire® Master
+  - Up to Four Pulse Train (PWM) Engines
+  - RTC with Wake-Up Timer
+  - Up to 52 GPIOs
+
+Security and Integrity​
+  - Available Secure Boot
+  - TRNG Seed Generator
+  - AES 128/192/256 Hardware Acceleration Engine
+
+External devices connected to the MAX32655 EVKIT:
+
+- Color TFT Display
+- Audio Stereo Codec Interface
+- Digital Microphone
+- A 128Mb QSPI flash
 
 Supported Features
 ==================
 
-Below are the interfaces supported by Zephyr on MAX32655EVKIT.
-
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| SYSTICK   | on-chip    | systick                             |
-+-----------+------------+-------------------------------------+
-| CLOCK     | on-chip    | clock and reset control             |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial                              |
-+-----------+------------+-------------------------------------+
-| TRNG      | on-chip    | entropy                             |
-+-----------+------------+-------------------------------------+
-| I2C       | on-chip    | i2c                                 |
-+-----------+------------+-------------------------------------+
-| DMA       | on-chip    | dma controller                      |
-+-----------+------------+-------------------------------------+
-| Watchdog  | on-chip    | watchdog                            |
-+-----------+------------+-------------------------------------+
-| SPI       | on-chip    | spi                                 |
-+-----------+------------+-------------------------------------+
-| ADC       | on-chip    | adc                                 |
-+-----------+------------+-------------------------------------+
-| Timer     | on-chip    | counter                             |
-+-----------+------------+-------------------------------------+
-| PWM       | on-chip    | pwm                                 |
-+-----------+------------+-------------------------------------+
-| W1        | on-chip    | one wire master                     |
-+-----------+------------+-------------------------------------+
-| Flash     | on-chip    | flash                               |
-+-----------+------------+-------------------------------------+
+.. zephyr:board-supported-hw::
 
 Connections and IOs
 ===================
@@ -161,6 +131,8 @@ Connections and IOs
 Programming and Debugging
 *************************
 
+.. zephyr:board-supported-runners::
+
 Flashing
 ========
 
@@ -169,7 +141,8 @@ SWD port. SWD debug can be accessed through the Cortex 10-pin connector, JH3.
 Logic levels are fixed to VDDIO (1.8V).
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 
@@ -185,10 +158,49 @@ Debugging
 Please refer to the `Flashing`_ section and run the ``west debug`` command
 instead of ``west flash``.
 
+Dual Core Support
+*****************
+
+An experimental board ID for the secondary RISC-V core is available with ID
+``max32655evkit/max32655/m4``.
+
+The primary Arm core uses Kconfig options,
+:kconfig:option:`CONFIG_MAX32_SECONDARY_RV32` to enable the secondary
+RISC-V core. The devicetree chosen property ``zephyr,code-rv32-partition``,
+is used to determine the address for the RV32 core to start executing.
+
+:zephyr:code-sample:`sysbuild_hello_world` supports building the Arm and RISC-V
+images:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/sysbuild/hello_world
+   :board: max32655evkit/max32655/m4
+   :west-args: -T sample.sysbuild.hello_world
+   :goals: build
+   :compact:
+
+Currently, flashing both images requires using the JLink runner with a
+connected JLink device:
+
+.. zephyr-app-commands::
+   :zephyr-app: samples/sysbuild/hello_world
+   :board: max32655evkit/max32655/m4
+   :flash-args: -r jlink
+   :goals: flash
+   :compact:
+
+To view the console for the RV32 core using the USB connection on the kit, move
+jumpers JP4 and JP5 to their "LP" positions.
+
 References
 **********
 
 - `MAX32655EVKIT web page`_
 
+- `zero-riscy user manual`_
+
 .. _MAX32655EVKIT web page:
    https://www.analog.com/en/design-center/evaluation-hardware-and-software/evaluation-boards-kits/max32655evkit.html#eb-overview
+
+.. _zero-riscy user manual:
+   https://pulp-platform.org/docs/user_manual.pdf

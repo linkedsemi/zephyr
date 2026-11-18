@@ -81,9 +81,9 @@ LOG_MODULE_REGISTER(SI7210, CONFIG_SENSOR_LOG_LEVEL);
 #define SI7210_OTPREG_2000G_SCALE_A0	0x27
 #define SI7210_OTPREG_2000G_SCALE_A1	0x28
 #define SI7210_OTPREG_2000G_SCALE_A2	0x29
-#define SI7210_OTPREG_2000G_SCALE_A3	0x30
-#define SI7210_OTPREG_2000G_SCALE_A4	0x31
-#define SI7210_OTPREG_2000G_SCALE_A5	0x32
+#define SI7210_OTPREG_2000G_SCALE_A3	0x2A
+#define SI7210_OTPREG_2000G_SCALE_A4	0x2B
+#define SI7210_OTPREG_2000G_SCALE_A5	0x2C
 
 enum si7210_scale {
 	si7210_scale_200G,
@@ -328,15 +328,6 @@ static int si7210_sample_fetch(const struct device *dev, enum sensor_channel cha
 			chan == SENSOR_CHAN_AMBIENT_TEMP ||
 			chan == SENSOR_CHAN_MAGN_Z);
 
-#ifdef CONFIG_PM_DEVICE
-	enum pm_device_state state;
-	(void)pm_device_state_get(dev, &state);
-	/* Do not allow sample fetching from suspended state */
-	if (state == PM_DEVICE_STATE_SUSPENDED) {
-		return -EIO;
-	}
-#endif
-
 	/* Prevent going into suspend in the middle of the conversion */
 	pm_device_busy_set(dev);
 
@@ -421,7 +412,7 @@ static int si7210_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api si7210_api_funcs = {
+static DEVICE_API(sensor, si7210_api_funcs) = {
 	.sample_fetch = si7210_sample_fetch,
 	.channel_get = si7210_channel_get,
 };
@@ -459,7 +450,7 @@ static int si7210_init(const struct device *dev)
 	int rc;
 
 	if (!device_is_ready(config->bus.bus)) {
-		LOG_ERR("I2C bus %s not ready!", config->bus.bus->name);
+		LOG_ERR_DEVICE_NOT_READY(config->bus.bus);
 		return -ENODEV;
 	}
 

@@ -4,8 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef ZEPHYR_INCLUDE_ZEPHYR_POSIX_SYS_MMAN_H_
-#define ZEPHYR_INCLUDE_ZEPHYR_POSIX_SYS_MMAN_H_
+#ifndef ZEPHYR_INCLUDE_POSIX_SYS_MMAN_H_
+#define ZEPHYR_INCLUDE_POSIX_SYS_MMAN_H_
 
 #include <stddef.h>
 #include <sys/types.h>
@@ -51,4 +51,4 @@ int mprotect(void *addr, size_t len, int prot);
 }
 #endif
 
-#endif /* ZEPHYR_INCLUDE_ZEPHYR_POSIX_SYS_MMAN_H_ */
+#endif /* ZEPHYR_INCLUDE_POSIX_SYS_MMAN_H_ */

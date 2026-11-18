@@ -1,25 +1,32 @@
 /*
  * Copyright (c) 2016 Intel Corporation.
  * Copyright (c) 2020-2021 Vestas Wind Systems A/S
+ * Copyright (c) 2025 Basalte bv
  *
  * SPDX-License-Identifier: Apache-2.0
  */
 
 /**
  * @file
- * @brief Public PWM Driver APIs
+ * @ingroup pwm_interface
+ * @brief Main header file for PWM (Pulse Width Modulation) driver API.
  */
 
 #ifndef ZEPHYR_INCLUDE_DRIVERS_PWM_H_
 #define ZEPHYR_INCLUDE_DRIVERS_PWM_H_
 
 /**
- * @brief PWM Interface
- * @defgroup pwm_interface PWM Interface
+ * @brief Interfaces for Pulse Width Modulation (PWM) controllers.
+ * @defgroup pwm_interface PWM
  * @since 1.0
  * @version 1.0.0
  * @ingroup io_interfaces
  * @{
+ *
+ * @defgroup pwm_interface_ext Device-specific PWM API extensions
+ *
+ * @{
+ * @}
  */
 
 #include <errno.h>
@@ -27,8 +34,9 @@
 
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
-#include <zephyr/sys_clock.h>
+#include <zephyr/sys/clock.h>
 #include <zephyr/sys/math_extras.h>
+#include <zephyr/sys/slist.h>
 #include <zephyr/toolchain.h>
 
 #include <zephyr/dt-bindings/pwm/pwm.h>
@@ -70,6 +78,33 @@ extern "C" {
 /** @} */
 
 /**
+ * @name PWM event types
+ * @anchor PWM_EVENT_TYPES
+ * @{
+ */
+
+#define PWM_EVENT_TYPE_SHIFT		0U
+
+/** Configure the event to trigger at the end of each PWM period */
+#define PWM_EVENT_TYPE_PERIOD		(1U << PWM_EVENT_TYPE_SHIFT)
+
+/** Configure the event to trigger at a fault. These can be used to
+ * react to error events that caused a change of behaviour of the PWM
+ * peripheral (often disabling the output). These error events can have
+ * an internal (e.g., oscillator malfunction) or external (e.g., pio)
+ * source
+ */
+#define PWM_EVENT_TYPE_FAULT		(2U << PWM_EVENT_TYPE_SHIFT)
+
+/** Configure the event to trigger at a compare/capture match. This fires
+ * when the counter reaches the compare value (output compare mode) or
+ * when an external edge is captured (input capture mode).
+ */
+#define PWM_EVENT_TYPE_COMPARE_CAPTURE	(4U << PWM_EVENT_TYPE_SHIFT)
+
+/** @} */
+
+/**
  * @brief Provides a type to hold PWM configuration flags.
  *
  * The lower 8 bits are used for standard flags.
@@ -79,6 +114,14 @@ extern "C" {
  */
 
 typedef uint16_t pwm_flags_t;
+
+/**
+ * @brief Provides a type to hold PWM events.
+ *
+ * @see @ref PWM_EVENT_TYPES.
+ */
+
+typedef uint16_t pwm_events_t;
 
 /**
  * @brief Container for PWM information specified in devicetree.
@@ -159,10 +202,10 @@ struct pwm_dt_spec {
 	}
 
 /**
- * @brief Static initializer for a struct pwm_dt_spec from a DT_DRV_COMPAT
+ * @brief Static initializer for a struct pwm_dt_spec from a @c DT_DRV_COMPAT
  *        instance.
  *
- * @param inst DT_DRV_COMPAT instance number
+ * @param inst @c DT_DRV_COMPAT instance number
  * @param name Lowercase-and-underscores name of a pwms element as defined by
  *             the node's pwm-names property.
  *
@@ -200,7 +243,7 @@ struct pwm_dt_spec {
  * @brief Like PWM_DT_SPEC_INST_GET_BY_NAME(), with a fallback to a default
  *        value.
  *
- * @param inst DT_DRV_COMPAT instance number
+ * @param inst @c DT_DRV_COMPAT instance number
  * @param name Lowercase-and-underscores name of a pwms element as defined by
  *             the node's pwm-names property.
  * @param default_value Fallback value to expand to.
@@ -264,10 +307,10 @@ struct pwm_dt_spec {
 	}
 
 /**
- * @brief Static initializer for a struct pwm_dt_spec from a DT_DRV_COMPAT
+ * @brief Static initializer for a struct pwm_dt_spec from a @c DT_DRV_COMPAT
  *        instance.
  *
- * @param inst DT_DRV_COMPAT instance number
+ * @param inst @c DT_DRV_COMPAT instance number
  * @param idx Logical index into 'pwms' property.
  *
  * @return Static initializer for a struct pwm_dt_spec for the property.
@@ -303,7 +346,7 @@ struct pwm_dt_spec {
  * @brief Like PWM_DT_SPEC_INST_GET_BY_IDX(), with a fallback to a default
  *        value.
  *
- * @param inst DT_DRV_COMPAT instance number
+ * @param inst @c DT_DRV_COMPAT instance number
  * @param idx Logical index into 'pwms' property.
  * @param default_value Fallback value to expand to.
  *
@@ -330,7 +373,7 @@ struct pwm_dt_spec {
 /**
  * @brief Equivalent to <tt>PWM_DT_SPEC_INST_GET_BY_IDX(inst, 0)</tt>.
  *
- * @param inst DT_DRV_COMPAT instance number
+ * @param inst @c DT_DRV_COMPAT instance number
  *
  * @return Static initializer for a struct pwm_dt_spec for the property.
  *
@@ -358,7 +401,7 @@ struct pwm_dt_spec {
  * @brief Equivalent to
  *        <tt>PWM_DT_SPEC_INST_GET_BY_IDX_OR(inst, 0, default_value)</tt>.
  *
- * @param inst DT_DRV_COMPAT instance number
+ * @param inst @c DT_DRV_COMPAT instance number
  * @param default_value Fallback value to expand to.
  *
  * @return Static initializer for a struct pwm_dt_spec for the property.
@@ -394,26 +437,76 @@ typedef void (*pwm_capture_callback_handler_t)(const struct device *dev,
 					       uint32_t pulse_cycles,
 					       int status, void *user_data);
 
-/** @cond INTERNAL_HIDDEN */
+struct pwm_event_callback;
+
 /**
- * @brief PWM driver API call to configure PWM pin period and pulse width.
- * @see pwm_set_cycles() for argument description.
+ * @brief PWM event callback handler function signature.
+ *
+ * @note The callback handler can be called in an interrupt context.
+ *
+ * @note @kconfig{CONFIG_PWM_EVENT} must be selected to enable PWM event
+ * support.
+ *
+ * @param[in] dev PWM device instance.
+ * @param callback Original struct pwm_event_callback owning this handler.
+ * @param channel PWM channel.
+ * @param events Event mask. See @ref PWM_EVENT_TYPES.
+ *
+ */
+typedef void (*pwm_event_callback_handler_t)(const struct device *dev,
+					     struct pwm_event_callback *callback, uint32_t channel,
+					     pwm_events_t events);
+
+/**
+ * @brief PWM event callback structure
+ *
+ * Used to register an event callback in the driver instance callback list.
+ * As many callbacks as needed can be added as long as each of them
+ * are unique pointers of struct pwm_event_callback.
+ * Beware such structure should not be allocated on stack.
+ *
+ * Note: to help setting it, see pwm_init_event_callback().
+ *
+ */
+struct pwm_event_callback {
+	/** @cond INTERNAL_HIDDEN */
+	sys_snode_t node;
+	/** @endcond */
+
+	/** Actual callback function being called when relevant. */
+	pwm_event_callback_handler_t handler;
+
+	/** Channel the callback is interested in. */
+	uint32_t channel;
+
+	/** A mask of events the callback is interested in. */
+	pwm_events_t event_mask;
+};
+
+/**
+ * @def_driverbackendgroup{PWM,pwm_interface}
+ * @{
+ */
+
+/**
+ * @brief Callback API to configure PWM pin period and pulse width.
+ * See @a pwm_set_cycles() for argument description.
  */
 typedef int (*pwm_set_cycles_t)(const struct device *dev, uint32_t channel,
 				uint32_t period_cycles, uint32_t pulse_cycles,
 				pwm_flags_t flags);
 
 /**
- * @brief PWM driver API call to obtain the PWM cycles per second (frequency).
- * @see pwm_get_cycles_per_sec() for argument description
+ * @brief Callback API to obtain PWM cycles per second (frequency).
+ * See @a pwm_get_cycles_per_sec() for argument description.
  */
 typedef int (*pwm_get_cycles_per_sec_t)(const struct device *dev,
 					uint32_t channel, uint64_t *cycles);
 
-#ifdef CONFIG_PWM_CAPTURE
+#if defined(CONFIG_PWM_CAPTURE) || defined(__DOXYGEN__)
 /**
- * @brief PWM driver API call to configure PWM capture.
- * @see pwm_configure_capture() for argument description.
+ * @brief Callback API to configure PWM capture.
+ * See @a pwm_configure_capture() for argument description.
  */
 typedef int (*pwm_configure_capture_t)(const struct device *dev,
 				       uint32_t channel, pwm_flags_t flags,
@@ -421,30 +514,69 @@ typedef int (*pwm_configure_capture_t)(const struct device *dev,
 				       void *user_data);
 
 /**
- * @brief PWM driver API call to enable PWM capture.
- * @see pwm_enable_capture() for argument description.
+ * @brief Callback API to enable PWM capture.
+ * See @a pwm_enable_capture() for argument description.
  */
 typedef int (*pwm_enable_capture_t)(const struct device *dev, uint32_t channel);
 
 /**
- * @brief PWM driver API call to disable PWM capture.
- * @see pwm_disable_capture() for argument description
+ * @brief Callback API to disable PWM capture.
+ * See @a pwm_disable_capture() for argument description.
  */
 typedef int (*pwm_disable_capture_t)(const struct device *dev,
 				     uint32_t channel);
 #endif /* CONFIG_PWM_CAPTURE */
 
-/** @brief PWM driver API definition. */
+#if defined(CONFIG_PWM_EVENT) || defined(__DOXYGEN__)
+/**
+ * @brief Callback API to manage event callbacks.
+ * See @a pwm_add_event_callback() and @a pwm_remove_event_callback() for argument description.
+ */
+typedef int (*pwm_manage_event_callback_t)(const struct device *dev,
+					   struct pwm_event_callback *callback, bool set);
+#endif /* CONFIG_PWM_EVENT */
+
+/**
+ * @driver_ops{PWM}
+ */
 __subsystem struct pwm_driver_api {
+	/**
+	 * @driver_ops_mandatory @copybrief pwm_set_cycles
+	 */
 	pwm_set_cycles_t set_cycles;
+	/**
+	 * @driver_ops_mandatory @copybrief pwm_get_cycles_per_sec
+	 */
 	pwm_get_cycles_per_sec_t get_cycles_per_sec;
-#ifdef CONFIG_PWM_CAPTURE
+#if defined(CONFIG_PWM_CAPTURE) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief pwm_configure_capture
+	 * @kconfig_dep{CONFIG_PWM_CAPTURE}
+	 */
 	pwm_configure_capture_t configure_capture;
+	/**
+	 * @driver_ops_optional @copybrief pwm_enable_capture
+	 * @kconfig_dep{CONFIG_PWM_CAPTURE}
+	 */
 	pwm_enable_capture_t enable_capture;
+	/**
+	 * @driver_ops_optional @copybrief pwm_disable_capture
+	 * @kconfig_dep{CONFIG_PWM_CAPTURE}
+	 */
 	pwm_disable_capture_t disable_capture;
 #endif /* CONFIG_PWM_CAPTURE */
+#if defined(CONFIG_PWM_EVENT) || defined(__DOXYGEN__)
+	/**
+	 * @driver_ops_optional @copybrief pwm_add_event_callback
+	 * @kconfig_dep{CONFIG_PWM_EVENT}
+	 */
+	pwm_manage_event_callback_t manage_event_callback;
+#endif /* CONFIG_PWM_EVENT */
 };
-/** @endcond */
+
+/**
+ * @}
+ */
 
 /**
  * @brief Set the period and pulse width for a single PWM output.
@@ -472,9 +604,8 @@ __subsystem struct pwm_driver_api {
  * @param pulse Pulse width (in clock cycles) set to the PWM. HW specific.
  * @param flags Flags for pin configuration.
  *
- * @retval 0 If successful.
- * @retval -EINVAL If pulse > period.
- * @retval -errno Negative errno code on failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -EINVAL Pulse width exceeds period.
  */
 __syscall int pwm_set_cycles(const struct device *dev, uint32_t channel,
 			     uint32_t period, uint32_t pulse,
@@ -484,14 +615,11 @@ static inline int z_impl_pwm_set_cycles(const struct device *dev,
 					uint32_t channel, uint32_t period,
 					uint32_t pulse, pwm_flags_t flags)
 {
-	const struct pwm_driver_api *api =
-		(const struct pwm_driver_api *)dev->api;
-
 	if (pulse > period) {
 		return -EINVAL;
 	}
 
-	return api->set_cycles(dev, channel, period, pulse, flags);
+	return DEVICE_API_GET(pwm, dev)->set_cycles(dev, channel, period, pulse, flags);
 }
 
 /**
@@ -502,8 +630,7 @@ static inline int z_impl_pwm_set_cycles(const struct device *dev,
  * @param[out] cycles Pointer to the memory to store clock rate (cycles per
  *                    sec). HW specific.
  *
- * @retval 0 If successful.
- * @retval -errno Negative errno code on failure.
+ * @return 0 on success, negative errno value on failure.
  */
 __syscall int pwm_get_cycles_per_sec(const struct device *dev, uint32_t channel,
 				     uint64_t *cycles);
@@ -512,10 +639,7 @@ static inline int z_impl_pwm_get_cycles_per_sec(const struct device *dev,
 						uint32_t channel,
 						uint64_t *cycles)
 {
-	const struct pwm_driver_api *api =
-		(const struct pwm_driver_api *)dev->api;
-
-	return api->get_cycles_per_sec(dev, channel, cycles);
+	return DEVICE_API_GET(pwm, dev)->get_cycles_per_sec(dev, channel, cycles);
 }
 
 /**
@@ -530,9 +654,8 @@ static inline int z_impl_pwm_get_cycles_per_sec(const struct device *dev,
  * @param pulse Pulse width (in nanoseconds) set to the PWM.
  * @param flags Flags for pin configuration (polarity).
  *
- * @retval 0 If successful.
- * @retval -ENOTSUP If requested period or pulse cycles are not supported.
- * @retval -errno Other negative errno code on failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOTSUP Requested period or pulse cycles are not supported.
  */
 static inline int pwm_set(const struct device *dev, uint32_t channel,
 			  uint32_t period, uint32_t pulse, pwm_flags_t flags)
@@ -616,9 +739,8 @@ static inline int pwm_set_pulse_dt(const struct pwm_dt_spec *spec,
  * @param cycles Cycles to be converted.
  * @param[out] usec Pointer to the memory to store calculated usec.
  *
- * @retval 0 If successful.
- * @retval -ERANGE If result is too large.
- * @retval -errno Other negative errno code on failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ERANGE Result is too large.
  */
 static inline int pwm_cycles_to_usec(const struct device *dev, uint32_t channel,
 				     uint32_t cycles, uint64_t *usec)
@@ -649,9 +771,8 @@ static inline int pwm_cycles_to_usec(const struct device *dev, uint32_t channel,
  * @param cycles Cycles to be converted.
  * @param[out] nsec Pointer to the memory to store the calculated nsec.
  *
- * @retval 0 If successful.
- * @retval -ERANGE If result is too large.
- * @retval -errno Other negative errno code on failure.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ERANGE Result is too large.
  */
 static inline int pwm_cycles_to_nsec(const struct device *dev, uint32_t channel,
 				     uint32_t cycles, uint64_t *nsec)
@@ -687,8 +808,7 @@ static inline int pwm_cycles_to_nsec(const struct device *dev, uint32_t channel,
  * (pwm_capture_cycles(), pwm_capture_usec(), or
  * pwm_capture_nsec()) can be used instead.
  *
- * @note @kconfig{CONFIG_PWM_CAPTURE} must be selected for this function to be
- * available.
+ * @kconfig_dep{CONFIG_PWM_CAPTURE}
  *
  * @param[in] dev PWM device instance.
  * @param channel PWM channel.
@@ -697,19 +817,19 @@ static inline int pwm_cycles_to_nsec(const struct device *dev, uint32_t channel,
  * @param[in] user_data User data to pass to the application callback handler
  *                      function
  *
- * @retval -EINVAL if invalid function parameters were given
- * @retval -ENOSYS if PWM capture is not supported or the given flags are not
- *                  supported
- * @retval -EIO if IO error occurred while configuring
- * @retval -EBUSY if PWM capture is already in progress
+ * @retval 0 on success.
+ * @retval -EINVAL Invalid function parameters were given.
+ * @retval -ENOSYS PWM capture is not supported or the given flags are not
+ *                 supported.
+ * @retval -EIO IO error occurred while configuring.
+ * @retval -EBUSY PWM capture is already in progress.
  */
 static inline int pwm_configure_capture(const struct device *dev,
 					uint32_t channel, pwm_flags_t flags,
 					pwm_capture_callback_handler_t cb,
 					void *user_data)
 {
-	const struct pwm_driver_api *api =
-		(const struct pwm_driver_api *)dev->api;
+	const struct pwm_driver_api *api = DEVICE_API_GET(pwm, dev);
 
 	if (api->configure_capture == NULL) {
 		return -ENOSYS;
@@ -732,11 +852,11 @@ static inline int pwm_configure_capture(const struct device *dev,
  * @param[in] dev PWM device instance.
  * @param channel PWM channel.
  *
- * @retval 0 If successful.
- * @retval -EINVAL if invalid function parameters were given
- * @retval -ENOSYS if PWM capture is not supported
- * @retval -EIO if IO error occurred while enabling PWM capture
- * @retval -EBUSY if PWM capture is already in progress
+ * @retval 0 on success.
+ * @retval -EINVAL Invalid function parameters were given.
+ * @retval -ENOSYS PWM capture is not supported.
+ * @retval -EIO IO error occurred while enabling PWM capture.
+ * @retval -EBUSY PWM capture is already in progress.
  */
 __syscall int pwm_enable_capture(const struct device *dev, uint32_t channel);
 
@@ -744,8 +864,7 @@ __syscall int pwm_enable_capture(const struct device *dev, uint32_t channel);
 static inline int z_impl_pwm_enable_capture(const struct device *dev,
 					    uint32_t channel)
 {
-	const struct pwm_driver_api *api =
-		(const struct pwm_driver_api *)dev->api;
+	const struct pwm_driver_api *api = DEVICE_API_GET(pwm, dev);
 
 	if (api->enable_capture == NULL) {
 		return -ENOSYS;
@@ -758,16 +877,15 @@ static inline int z_impl_pwm_enable_capture(const struct device *dev,
 /**
  * @brief Disable PWM period/pulse width capture for a single PWM input.
  *
- * @note @kconfig{CONFIG_PWM_CAPTURE} must be selected for this function to be
- * available.
+ * @kconfig_dep{CONFIG_PWM_CAPTURE}
  *
  * @param[in] dev PWM device instance.
  * @param channel PWM channel.
  *
- * @retval 0 If successful.
- * @retval -EINVAL if invalid function parameters were given
- * @retval -ENOSYS if PWM capture is not supported
- * @retval -EIO if IO error occurred while disabling PWM capture
+ * @retval 0 on success.
+ * @retval -EINVAL Invalid function parameters were given.
+ * @retval -ENOSYS PWM capture is not supported.
+ * @retval -EIO IO error occurred while disabling PWM capture.
  */
 __syscall int pwm_disable_capture(const struct device *dev, uint32_t channel);
 
@@ -775,8 +893,7 @@ __syscall int pwm_disable_capture(const struct device *dev, uint32_t channel);
 static inline int z_impl_pwm_disable_capture(const struct device *dev,
 					     uint32_t channel)
 {
-	const struct pwm_driver_api *api =
-		(const struct pwm_driver_api *)dev->api;
+	const struct pwm_driver_api *api = DEVICE_API_GET(pwm, dev);
 
 	if (api->disable_capture == NULL) {
 		return -ENOSYS;
@@ -795,8 +912,7 @@ static inline int z_impl_pwm_disable_capture(const struct device *dev,
  * the capture result to the caller. The function is blocking until either the
  * PWM capture is completed or a timeout occurs.
  *
- * @note @kconfig{CONFIG_PWM_CAPTURE} must be selected for this function to be
- * available.
+ * @kconfig_dep{CONFIG_PWM_CAPTURE}
  *
  * @param[in] dev PWM device instance.
  * @param channel PWM channel.
@@ -805,13 +921,15 @@ static inline int z_impl_pwm_disable_capture(const struct device *dev,
  *                    width (in clock cycles). HW specific.
  * @param[out] pulse Pointer to the memory to store the captured PWM pulse width
  *                   (in clock cycles). HW specific.
- * @param timeout Waiting period for the capture to complete.
+ * @param timeout Waiting period for the capture to complete. K_NO_WAIT is not
+ *                supported.
  *
- * @retval 0 If successful.
+ * @retval 0 on success.
+ * @retval -EINVAL A K_NO_WAIT timeout was given.
  * @retval -EBUSY PWM capture already in progress.
  * @retval -EAGAIN Waiting period timed out.
  * @retval -EIO IO error while capturing.
- * @retval -ERANGE If result is too large.
+ * @retval -ERANGE Result is too large.
  */
 __syscall int pwm_capture_cycles(const struct device *dev, uint32_t channel,
 				 pwm_flags_t flags, uint32_t *period,
@@ -826,8 +944,7 @@ __syscall int pwm_capture_cycles(const struct device *dev, uint32_t channel,
  * function is blocking until either the PWM capture is completed or a timeout
  * occurs.
  *
- * @note @kconfig{CONFIG_PWM_CAPTURE} must be selected for this function to be
- * available.
+ * @kconfig_dep{CONFIG_PWM_CAPTURE}
  *
  * @param[in] dev PWM device instance.
  * @param channel PWM channel.
@@ -836,14 +953,15 @@ __syscall int pwm_capture_cycles(const struct device *dev, uint32_t channel,
  *                    width (in usec).
  * @param[out] pulse Pointer to the memory to store the captured PWM pulse width
  *                   (in usec).
- * @param timeout Waiting period for the capture to complete.
+ * @param timeout Waiting period for the capture to complete. K_NO_WAIT is not
+ *                supported.
  *
- * @retval 0 If successful.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -EINVAL A K_NO_WAIT timeout was given.
  * @retval -EBUSY PWM capture already in progress.
  * @retval -EAGAIN Waiting period timed out.
  * @retval -EIO IO error while capturing.
- * @retval -ERANGE If result is too large.
- * @retval -errno Other negative errno code on failure.
+ * @retval -ERANGE Result is too large.
  */
 static inline int pwm_capture_usec(const struct device *dev, uint32_t channel,
 				   pwm_flags_t flags, uint64_t *period,
@@ -881,8 +999,7 @@ static inline int pwm_capture_usec(const struct device *dev, uint32_t channel,
  * function is blocking until either the PWM capture is completed or a timeout
  * occurs.
  *
- * @note @kconfig{CONFIG_PWM_CAPTURE} must be selected for this function to be
- * available.
+ * @kconfig_dep{CONFIG_PWM_CAPTURE}
  *
  * @param[in] dev PWM device instance.
  * @param channel PWM channel.
@@ -891,14 +1008,15 @@ static inline int pwm_capture_usec(const struct device *dev, uint32_t channel,
  *                    width (in nsec).
  * @param[out] pulse Pointer to the memory to store the captured PWM pulse width
  *                   (in nsec).
- * @param timeout Waiting period for the capture to complete.
+ * @param timeout Waiting period for the capture to complete. K_NO_WAIT is not
+ *                supported.
  *
- * @retval 0 If successful.
+ * @return 0 on success, negative errno value on failure.
+ * @retval -EINVAL A K_NO_WAIT timeout was given.
  * @retval -EBUSY PWM capture already in progress.
  * @retval -EAGAIN Waiting period timed out.
  * @retval -EIO IO error while capturing.
- * @retval -ERANGE If result is too large.
- * @retval -errno Other negative errno code on failure.
+ * @retval -ERANGE Result is too large.
  */
 static inline int pwm_capture_nsec(const struct device *dev, uint32_t channel,
 				   pwm_flags_t flags, uint64_t *period,
@@ -927,13 +1045,85 @@ static inline int pwm_capture_nsec(const struct device *dev, uint32_t channel,
 	return 0;
 }
 
+#if defined(CONFIG_PWM_EVENT) || defined(__DOXYGEN__)
+/**
+ * @brief Helper to initialize a struct pwm_event_callback properly.
+ *
+ * @param callback A valid application's callback structure pointer.
+ * @param handler A valid handler function pointer.
+ * @param channel Relevant channel for the handler.
+ * @param event_mask A bit mask of relevant events for the handler.
+ *
+ * @kconfig_dep{CONFIG_PWM_EVENT}
+ */
+static inline void pwm_init_event_callback(struct pwm_event_callback *callback,
+					   pwm_event_callback_handler_t handler, uint32_t channel,
+					   pwm_events_t event_mask)
+{
+	__ASSERT_NO_MSG(callback != NULL);
+	__ASSERT_NO_MSG(handler != NULL);
+
+	callback->handler = handler;
+	callback->channel = channel;
+	callback->event_mask = event_mask;
+}
+
+/**
+ * @brief Add an application event callback.
+ *
+ * @note As many callbacks as needed can be added on a PWM device instance.
+ *
+ * @param[in] dev PWM device instance.
+ * @param callback A valid applications callback structure pointer.
+ *
+ * @kconfig_dep{CONFIG_PWM_EVENT}
+ *
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS Driver does not manage event callbacks.
+ */
+static inline int pwm_add_event_callback(const struct device *dev,
+					 struct pwm_event_callback *callback)
+{
+	const struct pwm_driver_api *api = DEVICE_API_GET(pwm, dev);
+
+	if (api->manage_event_callback == NULL) {
+		return -ENOSYS;
+	}
+
+	return api->manage_event_callback(dev, callback, true);
+}
+
+/**
+ * @brief Remove an application event callback.
+ *
+ * @param[in] dev PWM device instance.
+ * @param callback A valid applications callback structure pointer.
+ *
+ * @kconfig_dep{CONFIG_PWM_EVENT}
+ *
+ * @return 0 on success, negative errno value on failure.
+ * @retval -ENOSYS Driver does not manage event callbacks.
+ */
+static inline int pwm_remove_event_callback(const struct device *dev,
+					    struct pwm_event_callback *callback)
+{
+	const struct pwm_driver_api *api = DEVICE_API_GET(pwm, dev);
+
+	if (api->manage_event_callback == NULL) {
+		return -ENOSYS;
+	}
+
+	return api->manage_event_callback(dev, callback, false);
+}
+#endif /* defined(CONFIG_PWM_EVENT) || defined(__DOXYGEN__) */
+
 /**
  * @brief Validate that the PWM device is ready.
  *
  * @param spec PWM specification from devicetree
  *
- * @retval true If the PWM device is ready for use
- * @retval false If the PWM device is not ready for use
+ * @retval true The PWM device is ready for use.
+ * @retval false The PWM device is not ready for use.
  */
 static inline bool pwm_is_ready_dt(const struct pwm_dt_spec *spec)
 {

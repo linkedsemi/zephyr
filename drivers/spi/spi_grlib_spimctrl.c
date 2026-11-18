@@ -7,7 +7,7 @@
 #define DT_DRV_COMPAT gaisler_spimctrl
 
 #include <zephyr/drivers/spi.h>
-#include <zephyr/drivers/spi/rtio.h>
+#include "spi_rtio.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(spi_spimctrl);
@@ -45,8 +45,8 @@ struct data {
 
 static int spi_config(struct spi_context *ctx, const struct spi_config *config)
 {
-	if (config->slave != 0) {
-		LOG_ERR("More slaves than supported");
+	if (config->peripheral != 0) {
+		LOG_ERR("More peripherals than supported");
 		return -ENOTSUP;
 	}
 
@@ -80,8 +80,8 @@ static int spi_config(struct spi_context *ctx, const struct spi_config *config)
 		return -ENOTSUP;
 	}
 
-	if (config->operation & SPI_OP_MODE_SLAVE) {
-		LOG_ERR("Slave mode not supported");
+	if (config->operation & SPI_OP_MODE_PERIPHERAL) {
+		LOG_ERR("Peripheral mode not supported");
 		return -ENOTSUP;
 	}
 
@@ -215,7 +215,7 @@ static int init(const struct device *dev)
 	return 0;
 }
 
-static struct spi_driver_api api = {
+static DEVICE_API(spi, api) = {
 	.transceive             = transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async       = transceive_async,
@@ -236,7 +236,7 @@ static struct spi_driver_api api = {
 		SPI_CONTEXT_INIT_LOCK(data_##n, ctx),                   \
 		SPI_CONTEXT_INIT_SYNC(data_##n, ctx),                   \
 	};                                                              \
-	DEVICE_DT_INST_DEFINE(n,                                        \
+	SPI_DEVICE_DT_INST_DEFINE(n,                                        \
 			init,                                           \
 			NULL,                                           \
 			&data_##n,                                      \

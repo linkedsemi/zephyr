@@ -12,11 +12,15 @@
 
 #include <zephyr/init.h>
 #include <zephyr/drivers/clock_control.h>
+#include <zephyr/drivers/dma.h>
 #include <zephyr/drivers/dma/dma_stm32.h>
 #include <zephyr/dt-bindings/memory-attr/memory-attr-arm.h>
 
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
+
+#include <string.h>
+
 LOG_MODULE_REGISTER(dma_stm32_bdma, CONFIG_DMA_LOG_LEVEL);
 
 #define DT_DRV_COMPAT st_stm32_bdma
@@ -440,6 +444,237 @@ static int bdma_stm32_get_periph_increment(enum dma_addr_adj increment,
 	return 0;
 }
 
+#if !defined(CONFIG_DMA_STM32_V1) && !defined(CONFIG_DMA_STM32_V2)
+static int bdma_stm32_hal_map_direction(uint32_t z_dir, uint32_t *hal_dir)
+{
+	switch (z_dir) {
+	case MEMORY_TO_MEMORY:
+		*hal_dir = DMA_MEMORY_TO_MEMORY;
+		return 0;
+	case MEMORY_TO_PERIPHERAL:
+		*hal_dir = DMA_MEMORY_TO_PERIPH;
+		return 0;
+	case PERIPHERAL_TO_MEMORY:
+		*hal_dir = DMA_PERIPH_TO_MEMORY;
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+static int bdma_stm32_hal_map_priority(uint32_t z_prio, uint32_t *hal_prio)
+{
+	switch (z_prio) {
+	case 0:
+		*hal_prio = DMA_PRIORITY_LOW;
+		return 0;
+	case 1:
+		*hal_prio = DMA_PRIORITY_MEDIUM;
+		return 0;
+	case 2:
+		*hal_prio = DMA_PRIORITY_HIGH;
+		return 0;
+	case 3:
+		*hal_prio = DMA_PRIORITY_VERY_HIGH;
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+static int bdma_stm32_hal_map_data_size(uint32_t z_size, uint32_t *hal_size, uint32_t hal_byte,
+					uint32_t hal_halfword, uint32_t hal_word)
+{
+	switch (z_size) {
+	case 1:
+		*hal_size = hal_byte;
+		return 0;
+	case 2:
+		*hal_size = hal_halfword;
+		return 0;
+	case 4:
+		*hal_size = hal_word;
+		return 0;
+	default:
+		return -ENOTSUP;
+	}
+}
+
+static int bdma_stm32_hal_map_mode(const struct dma_config *cfg, uint32_t *hal_mode)
+{
+	if (cfg->cyclic) {
+#ifdef DMA_CIRCULAR
+		*hal_mode = DMA_CIRCULAR;
+#else
+		return -ENOTSUP;
+#endif
+	} else {
+		*hal_mode = DMA_NORMAL;
+	}
+
+	return 0;
+}
+
+static int bdma_stm32_hal_map_addr_adj(enum dma_addr_adj z_adj, uint32_t *hal_inc,
+				       uint32_t hal_inc_val, uint32_t hal_noinc_val)
+{
+	switch (z_adj) {
+	case DMA_ADDR_ADJ_INCREMENT:
+		*hal_inc = hal_inc_val;
+		return 0;
+	case DMA_ADDR_ADJ_NO_CHANGE:
+		*hal_inc = hal_noinc_val;
+		return 0;
+	case DMA_ADDR_ADJ_DECREMENT:
+		return -ENOTSUP;
+	default:
+		return -EINVAL;
+	}
+}
+
+static int bdma_stm32_hal_config_widths(const struct dma_config *cfg, DMA_InitTypeDef *hal_config)
+{
+	uint32_t periph_dsize, mem_dsize;
+	int ret;
+
+	switch (cfg->channel_direction) {
+	case PERIPHERAL_TO_MEMORY:
+		periph_dsize = cfg->source_data_size;
+		mem_dsize = cfg->dest_data_size;
+		break;
+	case MEMORY_TO_MEMORY:
+		if (cfg->source_data_size != cfg->dest_data_size) {
+			return -ENOTSUP;
+		}
+		__fallthrough;
+	case MEMORY_TO_PERIPHERAL:
+		periph_dsize = cfg->dest_data_size;
+		mem_dsize = cfg->source_data_size;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	ret = bdma_stm32_hal_map_data_size(periph_dsize, &hal_config->PeriphDataAlignment,
+					   DMA_PDATAALIGN_BYTE, DMA_PDATAALIGN_HALFWORD,
+					   DMA_PDATAALIGN_WORD);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return bdma_stm32_hal_map_data_size(mem_dsize, &hal_config->MemDataAlignment,
+					    DMA_MDATAALIGN_BYTE, DMA_MDATAALIGN_HALFWORD,
+					    DMA_MDATAALIGN_WORD);
+}
+
+static int bdma_stm32_hal_config_increments(uint32_t direction, DMA_InitTypeDef *hal_config,
+					    uint16_t source_addr_adj, uint16_t dest_addr_adj)
+{
+	enum dma_addr_adj periph_adj, mem_adj;
+	int ret;
+
+	switch (direction) {
+	case MEMORY_TO_PERIPHERAL:
+		mem_adj = source_addr_adj;
+		periph_adj = dest_addr_adj;
+		break;
+	case PERIPHERAL_TO_MEMORY:
+	case MEMORY_TO_MEMORY:
+		mem_adj = dest_addr_adj;
+		periph_adj = source_addr_adj;
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	ret = bdma_stm32_hal_map_addr_adj(periph_adj, &hal_config->PeriphInc, DMA_PINC_ENABLE,
+					  DMA_PINC_DISABLE);
+	if (ret < 0) {
+		return ret;
+	}
+
+	return bdma_stm32_hal_map_addr_adj(mem_adj, &hal_config->MemInc, DMA_MINC_ENABLE,
+					   DMA_MINC_DISABLE);
+}
+
+/*
+ * Default BDMA driver configuration relies on these values,
+ * in case the fields have not been initialized in the @p zephyr_config.
+ *
+ * hal_config->Request			= DMA_REQUEST_MEM2MEM;
+ * hal_config->Direction		= DMA_PERIPH_TO_MEMORY;
+ * hal_config->PeriphInc		= DMA_PINC_DISABLE;
+ * hal_config->MemInc			= DMA_MINC_DISABLE;
+ * hal_config->PeriphDataAlignment	= DMA_PDATAALIGN_BYTE;
+ * hal_config->MemDataAlignment		= DMA_MDATAALIGN_BYTE;
+ * hal_config->Mode			= DMA_NORMAL;
+ * hal_config->Priority			= DMA_PRIORITY_LOW;
+ * hal_config->FIFOMode			= DMA_FIFOMODE_DISABLE;
+ * hal_config->FIFOThreshold		= DMA_FIFO_THRESHOLD_1QUARTERFULL;
+ * hal_config->MemBurst			= DMA_MBURST_SINGLE;
+ * hal_config->PeriphBurst		= DMA_PBURST_SINGLE;
+ */
+int dma_stm32_zcfg_to_halcfg(const struct device *dma, const struct dma_config *zephyr_config,
+			     DMA_InitTypeDef *hal_config, uint16_t source_addr_adj,
+			     uint16_t dest_addr_adj)
+{
+	int ret;
+
+	__ASSERT_NO_MSG(dma != NULL && zephyr_config != NULL && hal_config != NULL);
+
+	memset(hal_config, 0, sizeof(*hal_config));
+
+	ret = bdma_stm32_hal_map_direction(zephyr_config->channel_direction,
+					   &hal_config->Direction);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = bdma_stm32_hal_map_priority(zephyr_config->channel_priority, &hal_config->Priority);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = bdma_stm32_hal_config_widths(zephyr_config, hal_config);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = bdma_stm32_hal_map_mode(zephyr_config, &hal_config->Mode);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = bdma_stm32_hal_config_increments(zephyr_config->channel_direction, hal_config,
+					       source_addr_adj, dest_addr_adj);
+	if (ret < 0) {
+		return ret;
+	}
+
+	hal_config->SrcBurstLength = zephyr_config->source_burst_length;
+	hal_config->DestBurstLength = zephyr_config->dest_burst_length;
+	hal_config->Request = zephyr_config->dma_slot;
+
+#ifdef DMA_FIFOMODE_DISABLE
+	hal_config->FIFOMode = DMA_FIFOMODE_DISABLE;
+#endif
+
+#ifdef DMA_FIFO_THRESHOLD_FULL
+	hal_config->FIFOThreshold = DMA_FIFO_THRESHOLD_FULL;
+#endif
+
+#ifdef DMA_MBURST_SINGLE
+	hal_config->MemBurst = DMA_MBURST_SINGLE;
+#endif
+
+#ifdef DMA_PBURST_SINGLE
+	hal_config->PeriphBurst = DMA_PBURST_SINGLE;
+#endif
+
+	return 0;
+}
+#endif /* !CONFIG_DMA_STM32_V1 && !CONFIG_DMA_STM32_V2 */
+
 static int bdma_stm32_disable_channel(BDMA_TypeDef *bdma, uint32_t id)
 {
 	int count = 0;
@@ -477,9 +712,9 @@ static bool bdma_stm32_is_valid_memory_address(const uint32_t address, const uin
 }
 
 
-BDMA_STM32_EXPORT_API int bdma_stm32_configure(const struct device *dev,
-					     uint32_t id,
-					     struct dma_config *config)
+static int bdma_stm32_configure(const struct device *dev,
+				uint32_t id,
+				struct dma_config *config)
 {
 	const struct bdma_stm32_config *dev_config = dev->config;
 	struct bdma_stm32_channel *channel =
@@ -674,9 +909,9 @@ BDMA_STM32_EXPORT_API int bdma_stm32_configure(const struct device *dev,
 	return ret;
 }
 
-BDMA_STM32_EXPORT_API int bdma_stm32_reload(const struct device *dev, uint32_t id,
-					  uint32_t src, uint32_t dst,
-					  size_t size)
+static int bdma_stm32_reload(const struct device *dev, uint32_t id,
+			     uint32_t src, uint32_t dst,
+			     size_t size)
 {
 	const struct bdma_stm32_config *config = dev->config;
 	BDMA_TypeDef *bdma = (BDMA_TypeDef *)(config->base);
@@ -722,7 +957,7 @@ BDMA_STM32_EXPORT_API int bdma_stm32_reload(const struct device *dev, uint32_t i
 	return 0;
 }
 
-BDMA_STM32_EXPORT_API int bdma_stm32_start(const struct device *dev, uint32_t id)
+static int bdma_stm32_start(const struct device *dev, uint32_t id)
 {
 	const struct bdma_stm32_config *config = dev->config;
 	BDMA_TypeDef *bdma = (BDMA_TypeDef *)(config->base);
@@ -748,7 +983,7 @@ BDMA_STM32_EXPORT_API int bdma_stm32_start(const struct device *dev, uint32_t id
 	return 0;
 }
 
-BDMA_STM32_EXPORT_API int bdma_stm32_stop(const struct device *dev, uint32_t id)
+static int bdma_stm32_stop(const struct device *dev, uint32_t id)
 {
 	const struct bdma_stm32_config *config = dev->config;
 	struct bdma_stm32_channel *channel = &config->channels[id];
@@ -785,11 +1020,6 @@ static int bdma_stm32_init(const struct device *dev)
 {
 	const struct bdma_stm32_config *config = dev->config;
 	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
-
-	if (!device_is_ready(clk)) {
-		LOG_ERR("clock control device not ready");
-		return -ENODEV;
-	}
 
 	if (clock_control_on(clk,
 		(clock_control_subsys_t) &config->pclken) != 0) {
@@ -830,7 +1060,7 @@ static int bdma_stm32_init(const struct device *dev)
 	return 0;
 }
 
-BDMA_STM32_EXPORT_API int bdma_stm32_get_status(const struct device *dev,
+static int bdma_stm32_get_status(const struct device *dev,
 				uint32_t id, struct dma_status *stat)
 {
 	const struct bdma_stm32_config *config = dev->config;
@@ -849,7 +1079,7 @@ BDMA_STM32_EXPORT_API int bdma_stm32_get_status(const struct device *dev,
 	return 0;
 }
 
-static const struct dma_driver_api dma_funcs = {
+static DEVICE_API(dma, dma_funcs) = {
 	.reload		 = bdma_stm32_reload,
 	.config		 = bdma_stm32_configure,
 	.start		 = bdma_stm32_start,
@@ -864,36 +1094,34 @@ static const struct dma_driver_api dma_funcs = {
 #define BDMA_STM32_OFFSET_INIT(index)
 #endif /* CONFIG_DMAMUX_STM32 */
 
-#define BDMA_STM32_INIT_DEV(index)					\
-static struct bdma_stm32_channel					\
-	bdma_stm32_channels_##index[BDMA_STM32_##index##_CHANNEL_COUNT];\
-									\
-const struct bdma_stm32_config bdma_stm32_config_##index = {		\
-	.pclken = { .bus = DT_INST_CLOCKS_CELL(index, bus),		\
-		    .enr = DT_INST_CLOCKS_CELL(index, bits) },		\
-	.config_irq = bdma_stm32_config_irq_##index,			\
-	.base = DT_INST_REG_ADDR(index),				\
-	.support_m2m = DT_INST_PROP(index, st_mem2mem),			\
-	.max_channels = BDMA_STM32_##index##_CHANNEL_COUNT,		\
-	.channels = bdma_stm32_channels_##index,			\
-	BDMA_STM32_OFFSET_INIT(index)					\
-};									\
-									\
-static struct bdma_stm32_data bdma_stm32_data_##index = {		\
-};									\
-									\
-DEVICE_DT_INST_DEFINE(index,							\
-		    &bdma_stm32_init,						\
-		    NULL,							\
-		    &bdma_stm32_data_##index, &bdma_stm32_config_##index,	\
-		    PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,		\
-		    &dma_funcs)
+#define BDMA_STM32_INIT_DEV(index)						\
+	static struct bdma_stm32_channel					\
+		bdma_stm32_channels_##index[BDMA_STM32_##index##_CHANNEL_COUNT];\
+										\
+	const struct bdma_stm32_config bdma_stm32_config_##index = {		\
+		.pclken = STM32_DT_INST_CLOCK_INFO(index),			\
+		.config_irq = bdma_stm32_config_irq_##index,			\
+		.base = DT_INST_REG_ADDR(index),				\
+		.support_m2m = DT_INST_PROP(index, st_mem2mem),			\
+		.max_channels = BDMA_STM32_##index##_CHANNEL_COUNT,		\
+		.channels = bdma_stm32_channels_##index,			\
+		BDMA_STM32_OFFSET_INIT(index)					\
+	};									\
+										\
+	static struct bdma_stm32_data bdma_stm32_data_##index;			\
+										\
+	DEVICE_DT_INST_DEFINE(index, bdma_stm32_init, NULL,			\
+			      &bdma_stm32_data_##index,				\
+			      &bdma_stm32_config_##index,			\
+			      PRE_KERNEL_1,					\
+			      CONFIG_KERNEL_INIT_PRIORITY_DEFAULT,		\
+			      &dma_funcs)
 
-#define BDMA_STM32_DEFINE_IRQ_HANDLER(bdma, chan)			\
-static void bdma_stm32_irq_##bdma##_##chan(const struct device *dev)	\
-{									\
-	bdma_stm32_irq_handler(dev, chan);				\
-}
+#define BDMA_STM32_DEFINE_IRQ_HANDLER(bdma, chan)				\
+	static void bdma_stm32_irq_##bdma##_##chan(const struct device *dev)	\
+	{									\
+		bdma_stm32_irq_handler(dev, chan);				\
+	}
 
 
 #define BDMA_STM32_IRQ_CONNECT(bdma, chan)				\

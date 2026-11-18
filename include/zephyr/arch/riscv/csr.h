@@ -6,8 +6,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef CSR_H_
-#define CSR_H_
+#ifndef ZEPHYR_INCLUDE_ARCH_RISCV_CSR_H_
+#define ZEPHYR_INCLUDE_ARCH_RISCV_CSR_H_
 
 #define MSTATUS_UIE	0x00000001
 #define MSTATUS_SIE	0x00000002
@@ -114,6 +114,14 @@
 #define SIP_SSIP	MIP_SSIP
 #define SIP_STIP	MIP_STIP
 
+/*
+ * Counter-enable bits. mcounteren, scounteren and hcounteren share this
+ * layout. Each one controls access from the privilege mode below it.
+ */
+#define COUNTEREN_CY	(1 << 0)	/* cycle counter */
+#define COUNTEREN_TM	(1 << 1)	/* time counter */
+#define COUNTEREN_IR	(1 << 2)	/* instret counter */
+
 #define PRV_U	0
 #define PRV_S	1
 #define PRV_H	2
@@ -132,6 +140,15 @@
 #define SATP_MODE_SV48	9
 #define SATP_MODE_SV57	10
 #define SATP_MODE_SV64	11
+
+/**
+ * PMPCFG CSR base address
+ */
+#define CSR_PMPCFG_BASE  0x3a0
+/**
+ * PMPADDR CSR base address
+ */
+#define CSR_PMPADDR_BASE 0x3b0
 
 #define PMP_R		0x01
 #define PMP_W		0x02
@@ -155,6 +172,24 @@
 #define IRQ_M_EXT	11
 #define IRQ_COP		12
 #define IRQ_HOST	13
+
+/* SMRNMI CSR addresses */
+#ifdef CONFIG_RISCV_SMRNMI_ENABLE_NMI_DELIVERY
+#define CSR_MNSCRATCH 0x740
+#define CSR_MNEPC     0x741
+#define CSR_MNCAUSE   0x742
+#define CSR_MNSTATUS  0x744
+
+/* MNSTATUS bit fields */
+#define MNSTATUS_NMIE 0x00000008 /* NMI Enable (bit 3) */
+#endif                           /* CONFIG_RISCV_SMRNMI_ENABLE_NMI_DELIVERY */
+
+/* Zkr CSR addresses */
+#define CSR_SEED    0x015
+#define CSR_MSECCFG 0x747
+
+/* MSECCFG bit fields */
+#define MSECCFG_SSEED 0x00000200 /* S-mode access to the seed CSR (bit 9) */
 
 // #define DEFAULT_RSTVEC	0x00001000
 // #define CLINT_BASE	0x02000000
@@ -182,22 +217,55 @@
 	((val) & ~(which)) | ((fieldval) * ((which) & ~((which)-1)))	\
 )									\
 
+#ifdef CONFIG_RISCV_ISA_EXT_SMCSRIND
+
+#define MISELECT 0x350
+#define MIREG    0x351
+#define MIREG2   0x352
+#define MIREG3   0x353
+#define MIREG4   0x355
+#define MIREG5   0x356
+#define MIREG6   0x357
+
+#endif /* CONFIG_RISCV_ISA_EXT_SMCSRIND */
+
+#ifndef _ASMLANGUAGE
+
 #define csr_read(csr)						\
 ({								\
-	register unsigned long __rv;				\
+	unsigned long __rv;					\
 	__asm__ volatile ("csrr %0, " STRINGIFY(csr)		\
 				: "=r" (__rv));			\
 	__rv;							\
 })
 
-#define csr_write(csr, val)					\
-({								\
-	unsigned long __wv = (unsigned long)(val);		\
-	__asm__ volatile ("csrw " STRINGIFY(csr) ", %0"		\
-				: : "rK" (__wv)			\
-				: "memory");			\
-})
+/**
+ * Same as csr_read, but instead of a name string, the CSR is given as immediate address
+ */
+#define csr_read_imm(csr)                                                                          \
+	({                                                                                         \
+		register unsigned long __rv;                                                       \
+		__asm__ volatile("csrr %0, %1" : "=r"(__rv) : "i"(csr));                           \
+		__rv;                                                                              \
+	})
 
+#define csr_write(csr, val)					\
+	do {							\
+		unsigned long __wv = (unsigned long)(val);	\
+		__asm__ volatile ("csrw " STRINGIFY(csr) ", %0"	\
+				  :				\
+				  : "rK" (__wv)		\
+				  : "memory");		\
+	} while (0)
+
+/**
+ * Same as csr_write, but instead of a name string, the CSR is given as immediate address
+ */
+#define csr_write_imm(csr, val)                                                                    \
+	do {                                                                                       \
+		unsigned long __wv = (unsigned long)(val);                                         \
+		__asm__ volatile("csrw %0, %1" : : "i"(csr), "rK"(__wv) : "memory");               \
+	} while (0)
 
 #define csr_read_set(csr, val)					\
 ({								\
@@ -209,12 +277,13 @@
 })
 
 #define csr_set(csr, val)					\
-({								\
-	unsigned long __sv = (unsigned long)(val);		\
-	__asm__ volatile ("csrs " STRINGIFY(csr) ", %0"		\
-				: : "rK" (__sv)			\
-				: "memory");			\
-})
+	do {							\
+		unsigned long __sv = (unsigned long)(val);	\
+		__asm__ volatile ("csrs " STRINGIFY(csr) ", %0"	\
+				  :				\
+				  : "rK" (__sv)		\
+				  : "memory");		\
+	} while (0)
 
 #define csr_read_clear(csr, val)				\
 ({								\
@@ -226,11 +295,23 @@
 })
 
 #define csr_clear(csr, val)					\
+	do {							\
+		unsigned long __cv = (unsigned long)(val);	\
+		__asm__ volatile ("csrc " STRINGIFY(csr) ", %0"	\
+				  :				\
+				  : "rK" (__cv)		\
+				  : "memory");		\
+	} while (0)
+
+#define csr_swap(csr, val)					\
 ({								\
-	unsigned long __cv = (unsigned long)(val);		\
-	__asm__ volatile ("csrc " STRINGIFY(csr) ", %0"		\
-				: : "rK" (__cv)			\
-				: "memory");			\
+	unsigned long __swv = (unsigned long)(val);		\
+	__asm__ volatile ("csrrw %0, " STRINGIFY(csr) ", %1"	\
+			  : "=r" (__swv) : "rK" (__swv)		\
+			  : "memory");				\
+	__swv;							\
 })
 
-#endif /* CSR_H_ */
+#endif /* !_ASMLANGUAGE */
+
+#endif /* ZEPHYR_INCLUDE_ARCH_RISCV_CSR_H_ */

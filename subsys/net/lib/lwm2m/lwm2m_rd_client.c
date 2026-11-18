@@ -54,6 +54,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <string.h>
 #include <errno.h>
 #include <zephyr/init.h>
+#include <zephyr/sys/minmax.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/net/socket.h>
 
@@ -120,6 +121,7 @@ struct lwm2m_rd_client_info {
 	uint8_t engine_state;
 	uint8_t retries;
 	uint8_t retry_delay;
+	enum lwm2m_socket_states socket_state;
 
 	int64_t last_update;
 	int64_t last_tx;
@@ -168,6 +170,24 @@ struct lwm2m_message *lwm2m_get_ongoing_rd_msg(void)
 		return NULL;
 	}
 	return &client.rd_message;
+}
+
+static bool ongoing_traffic(void)
+{
+	switch (client.socket_state) {
+	case LWM2M_SOCKET_STATE_NO_DATA:
+	case LWM2M_SOCKET_STATE_LAST:
+		return false;
+	default:
+		return true;
+	}
+}
+
+void lwm2m_rd_client_hint_socket_state(struct lwm2m_ctx *ctx, enum lwm2m_socket_states state)
+{
+	if (ctx && client.ctx == ctx) {
+		client.socket_state = state;
+	}
 }
 
 void engine_update_tx_time(void)
@@ -391,6 +411,7 @@ static void socket_fault_cb(int error)
 		sm_handle_timeout_state(ENGINE_NETWORK_ERROR);
 	} else if (client.engine_state != ENGINE_SUSPENDED &&
 		   !client.server_disabled) {
+		lwm2m_engine_stop(client.ctx);
 		sm_handle_timeout_state(ENGINE_IDLE);
 	}
 }
@@ -438,7 +459,7 @@ static inline const char *code2str(uint8_t code)
 #if defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
 static int do_bootstrap_reply_cb(const struct coap_packet *response,
 				 struct coap_reply *reply,
-				 const struct sockaddr *from)
+				 const struct net_sockaddr *from)
 {
 	uint8_t code;
 
@@ -494,7 +515,7 @@ int engine_trigger_bootstrap(void)
 }
 static int do_registration_reply_cb(const struct coap_packet *response,
 				    struct coap_reply *reply,
-				    const struct sockaddr *from)
+				    const struct net_sockaddr *from)
 {
 	struct coap_option options[2];
 	uint8_t code;
@@ -560,7 +581,7 @@ static void do_registration_timeout_cb(struct lwm2m_message *msg)
 
 static int do_update_reply_cb(const struct coap_packet *response,
 			      struct coap_reply *reply,
-			      const struct sockaddr *from)
+			      const struct net_sockaddr *from)
 {
 	uint8_t code;
 
@@ -603,7 +624,7 @@ static void do_update_timeout_cb(struct lwm2m_message *msg)
 
 static int do_deregister_reply_cb(const struct coap_packet *response,
 				  struct coap_reply *reply,
-				  const struct sockaddr *from)
+				  const struct net_sockaddr *from)
 {
 	uint8_t code;
 
@@ -785,7 +806,11 @@ static int sm_send_bootstrap_registration(void)
 	LOG_DBG("Register ID with bootstrap server as '%s'",
 		query_buffer);
 
-	lwm2m_send_message_async(msg);
+	ret = lwm2m_send_message_async(msg);
+	if (ret < 0) {
+		LOG_ERR("Failed to send bootstrap message (err: %d)", ret);
+		goto cleanup;
+	}
 
 	return 0;
 
@@ -815,7 +840,7 @@ static void sm_do_bootstrap_reg(void)
 
 	ret = lwm2m_engine_start(client.ctx);
 	if (ret < 0) {
-		LOG_ERR("Cannot init LWM2M engine (%d)", ret);
+		LOG_ERR("Cannot init LwM2M engine (%d)", ret);
 		set_sm_state(ENGINE_NETWORK_ERROR);
 		return;
 	}
@@ -834,10 +859,14 @@ static void sm_do_bootstrap_reg(void)
 void engine_bootstrap_finish(void)
 {
 	LOG_INF("Bootstrap data transfer done!");
-	/* Delay the state transition, so engine have some time to send ACK
-	 * before we close the socket
+	/* Transition only if the client is bootstrapping, otherwise retransmissions of bootstrap
+	 * finish may restart an already registered client.
+	 * Delay the state transition, so engine have some time to send ACK before we close the
+	 * socket.
 	 */
-	set_sm_state_delayed(ENGINE_BOOTSTRAP_TRANS_DONE, DELAY_BEFORE_CLOSING);
+	if (get_sm_state() == ENGINE_BOOTSTRAP_REG_DONE) {
+		set_sm_state_delayed(ENGINE_BOOTSTRAP_TRANS_DONE, DELAY_BEFORE_CLOSING);
+	}
 }
 
 static int sm_bootstrap_trans_done(void)
@@ -848,6 +877,9 @@ static int sm_bootstrap_trans_done(void)
 	/* reset security object instance */
 	client.ctx->sec_obj_inst = -1;
 	client.use_bootstrap = false;
+
+	/* reset server timestamps */
+	lwm2m_server_reset_timestamps();
 
 	set_sm_state(ENGINE_DO_REGISTRATION);
 
@@ -861,8 +893,8 @@ static int sm_send_registration(bool send_obj_support_data,
 {
 	struct lwm2m_message *msg;
 	int ret;
-	char binding[CLIENT_BINDING_LEN];
-	char queue[CLIENT_QUEUE_LEN];
+	char binding[CLIENT_BINDING_LEN] = { 0 };
+	char queue[CLIENT_QUEUE_LEN] = { 0 };
 
 	msg = rd_get_message();
 	if (!msg) {
@@ -984,11 +1016,14 @@ static int sm_send_registration(bool send_obj_support_data,
 		}
 	}
 
-	lwm2m_send_message_async(msg);
+	ret = lwm2m_send_message_async(msg);
+	if (ret < 0) {
+		goto cleanup;
+	}
 
 	/* log the registration attempt */
 	LOG_DBG("registration sent [%s]",
-		lwm2m_sprint_ip_addr(&client.ctx->remote_addr));
+		lwm2m_sprint_ip_addr(net_sad(&client.ctx->remote_addr_storage)));
 
 	return 0;
 
@@ -1089,7 +1124,7 @@ static void sm_do_registration(void)
 
 		ret = lwm2m_engine_start(client.ctx);
 		if (ret < 0) {
-			LOG_ERR("Cannot init LWM2M engine (%d)", ret);
+			LOG_ERR("Cannot init LwM2M engine (%d)", ret);
 			goto retry;
 		}
 	}
@@ -1129,7 +1164,11 @@ static int64_t next_update(void)
 static int64_t next_rx_off(void)
 {
 	if (IS_ENABLED(CONFIG_LWM2M_QUEUE_MODE_ENABLED)) {
-		return client.last_tx + CONFIG_LWM2M_QUEUE_MODE_UPTIME * MSEC_PER_SEC;
+		if (!ongoing_traffic()) {
+			return client.last_tx + CONFIG_LWM2M_QUEUE_MODE_UPTIME * MSEC_PER_SEC;
+		} else {
+			return k_uptime_get() + CONFIG_LWM2M_QUEUE_MODE_UPTIME * MSEC_PER_SEC;
+		}
 	} else {
 		return next_update();
 	}
@@ -1138,7 +1177,7 @@ static int64_t next_rx_off(void)
 /** Return timestamp to next even whether it is RX_OFF or update event */
 static int64_t calc_next_event(void)
 {
-	return Z_MIN(next_update(), next_rx_off());
+	return min(next_update(), next_rx_off());
 }
 
 static void sm_registration_done(void)
@@ -1256,7 +1295,11 @@ static int sm_do_deregister(void)
 
 	LOG_INF("Deregister from '%s'", client.server_ep);
 
-	lwm2m_send_message_async(msg);
+	ret = lwm2m_send_message_async(msg);
+	if (ret < 0) {
+		LOG_ERR("Failed to send deregistration message (err:%d).", ret);
+		goto cleanup;
+	}
 
 	set_sm_state(ENGINE_DEREGISTER_SENT);
 	return 0;
@@ -1395,6 +1438,7 @@ static void sm_do_network_error(void)
 stop_engine:
 
 	/* We are out of options, stop engine */
+	lwm2m_engine_stop(client.ctx);
 	if (client.ctx->event_cb) {
 		if (client.ctx->bootstrap_mode) {
 			client.ctx->event_cb(client.ctx,
@@ -1571,7 +1615,7 @@ int lwm2m_rd_client_start(struct lwm2m_ctx *client_ctx, const char *ep_name,
 
 	strncpy(client.ep_name, ep_name, CLIENT_EP_LEN - 1);
 	client.ep_name[CLIENT_EP_LEN - 1] = '\0';
-	LOG_INF("Start LWM2M Client: %s", client.ep_name);
+	LOG_INF("Start LwM2M Client: %s", client.ep_name);
 
 	set_sm_state(ENGINE_INIT);
 
@@ -1601,7 +1645,7 @@ int lwm2m_rd_client_stop(struct lwm2m_ctx *client_ctx,
 		set_sm_state(ENGINE_DEREGISTERED);
 	}
 
-	LOG_INF("Stop LWM2M Client: %s", client.ep_name);
+	LOG_INF("Stop LwM2M Client: %s", client.ep_name);
 
 	k_mutex_unlock(&client.mutex);
 

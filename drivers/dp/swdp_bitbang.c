@@ -17,6 +17,8 @@
 
 #define DT_DRV_COMPAT zephyr_swdp_gpio
 
+#include "swdp_common.h"
+
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/swdp.h>
@@ -48,6 +50,7 @@ struct sw_config {
 	void *dnoe_reg;
 	struct gpio_dt_spec noe;
 	struct gpio_dt_spec reset;
+	bool keep_reset_deast;
 	uint32_t port_write_cycles;
 	void *clk_reg;
 };
@@ -58,32 +61,6 @@ struct sw_cfg_data {
 	bool data_phase;
 	bool fast_clock;
 };
-
-/*
- * Move A[2:3], RnW, APnDP bits to their position,
- * add start bit, stop bit(6), park bit and parity bit.
- * For example, reading IDCODE would be APnDP=0, RnW=1, A2=0, A3=0.
- * The request would be 0xa5, which is 10100101 in binary.
- *
- * For more information, see:
- * - CMSIS-DAP Command Specification, DAP_Transfer
- * - ARM Debug Interface v5 Architecture Specification
- */
-const static uint8_t sw_request_lut[16] = {
-	0x81, 0xa3, 0xa5, 0x87, 0xa9, 0x8b, 0x8d, 0xaf,
-	0xb1, 0x93, 0x95, 0xb7, 0x99, 0xbb, 0xbd, 0x9f
-};
-
-static ALWAYS_INLINE uint32_t sw_get32bit_parity(uint32_t data)
-{
-	data ^= data >> 16;
-	data ^= data >> 8;
-	data ^= data >> 4;
-	data ^= data >> 2;
-	data ^= data >> 1;
-
-	return data & 1U;
-}
 
 /* Set SWCLK DAP hardware output pin to high level */
 static ALWAYS_INLINE void pin_swclk_set(const struct device *dev)
@@ -334,12 +311,12 @@ static int sw_transfer(const struct device *dev,
 	LOG_DBG("request 0x%02x idle %u", request, idle_cycles);
 	if (!(request & SWDP_REQUEST_RnW)) {
 		LOG_DBG("write data 0x%08x", *data);
-		parity = sw_get32bit_parity(*data);
+		parity = swd_get32bit_parity(*data);
 	}
 
 	key = irq_lock();
 
-	val = sw_request_lut[request & 0xFU];
+	val = SWD_REQUEST_FROM_LUT(request);
 	for (n = 8U; n; n--) {
 		SW_WRITE_BIT(dev, val, sw_data->clock_delay);
 		val >>= 1;
@@ -373,7 +350,7 @@ static int sw_transfer(const struct device *dev,
 			sw_cycle_turnaround(dev);
 			pin_swdio_out_enable(dev);
 
-			if ((sw_get32bit_parity(val) ^ bit) & 1U) {
+			if ((swd_get32bit_parity(val) ^ bit) & 1U) {
 				ack = SWDP_TRANSFER_ERROR;
 			}
 
@@ -491,10 +468,20 @@ static int sw_set_pins(const struct device *dev,
 
 	if (config->reset.port) {
 		if (pins & BIT(SWDP_nRESET_PIN)) {
+			/*
+			 * CMSIS-DAP DAP_SWJ_Pins uses the raw electrical level
+			 * for the nRESET pin: bit=0 means drive low (asserted),
+			 * bit=1 means drive high (deasserted). Zephyr GPIO
+			 * polarity (GPIO_ACTIVE_LOW) requires us to translate
+			 * the raw level into the logical level — bit=0 maps to
+			 * logical-active (asserted), bit=1 to logical-inactive
+			 * (deasserted). Without this inversion, GPIO_ACTIVE_LOW
+			 * overlays double-invert the runtime assert/deassert.
+			 */
 			if (value & BIT(SWDP_nRESET_PIN)) {
-				gpio_pin_set_dt(&config->reset, 1);
-			} else {
 				gpio_pin_set_dt(&config->reset, 0);
+			} else {
+				gpio_pin_set_dt(&config->reset, 1);
 			}
 		}
 	}
@@ -507,9 +494,18 @@ static int sw_get_pins(const struct device *dev, uint8_t *const state)
 	const struct sw_config *config = dev->config;
 	uint32_t val;
 
+	*state = 0;
+
 	if (config->reset.port) {
+		/*
+		 * Symmetric to sw_set_pins(): the CMSIS-DAP nRESET bit
+		 * reports the raw electrical level. gpio_pin_get_dt()
+		 * returns the polarity-aware logical level — invert so
+		 * logical-active (asserted) reports bit=0 and
+		 * logical-inactive (deasserted) reports bit=1.
+		 */
 		val = gpio_pin_get_dt(&config->reset);
-		*state = val ? BIT(SWDP_nRESET_PIN) : 0;
+		*state |= val ? 0 : BIT(SWDP_nRESET_PIN);
 	}
 
 	val = gpio_pin_get_dt(&config->dio);
@@ -546,7 +542,7 @@ static int sw_set_clock(const struct device *dev, const uint32_t clock)
 
 	sw_data->clock_delay = delay;
 
-	LOG_WRN("cpu_clock %d, delay %d", CPU_CLOCK, sw_data->clock_delay);
+	LOG_DBG("cpu_clock %d, delay %d", CPU_CLOCK, sw_data->clock_delay);
 
 	return 0;
 }
@@ -596,14 +592,27 @@ static int sw_port_on(const struct device *dev)
 		}
 	}
 
-	ret = gpio_pin_configure_dt(&config->clk, GPIO_OUTPUT_ACTIVE);
+	ret = gpio_pin_configure_dt(&config->clk, GPIO_INPUT | GPIO_OUTPUT_ACTIVE);
+	if (ret == -ENOTSUP) {
+		LOG_DBG("Fall back to CLK output only");
+		ret = gpio_pin_configure_dt(&config->clk, GPIO_OUTPUT_ACTIVE);
+	}
+
 	if (ret) {
+		LOG_ERR("Failed to configure CLK GPIO");
 		return ret;
 	}
 
 	if (config->reset.port) {
-		ret = gpio_pin_configure_dt(&config->reset, GPIO_OUTPUT_ACTIVE);
+		ret = gpio_pin_configure_dt(&config->reset,
+					    GPIO_INPUT | GPIO_OUTPUT_INACTIVE);
+		if (ret == -ENOTSUP) {
+			LOG_DBG("Fall back to RESET output only");
+			ret = gpio_pin_configure_dt(&config->reset, GPIO_OUTPUT_INACTIVE);
+		}
+
 		if (ret) {
+			LOG_ERR("Failed to configure RESET GPIO");
 			return ret;
 		}
 	}
@@ -615,6 +624,8 @@ static int sw_port_off(const struct device *dev)
 {
 	const struct sw_config *config = dev->config;
 	int ret;
+	const gpio_flags_t off_flags = IS_ENABLED(CONFIG_SWDP_BITBANG_NO_DISCONNECT) ?
+		GPIO_INPUT : GPIO_DISCONNECTED;
 
 	/* If there is a transceiver connected to IO, pins should always be driven. */
 	if (config->dnoe.port) {
@@ -636,13 +647,13 @@ static int sw_port_off(const struct device *dev)
 		}
 	} else {
 		if (config->dout.port) {
-			ret = gpio_pin_configure_dt(&config->dout, GPIO_DISCONNECTED);
+			ret = gpio_pin_configure_dt(&config->dout, off_flags);
 			if (ret) {
 				return ret;
 			}
 		}
 
-		ret = gpio_pin_configure_dt(&config->dio, GPIO_DISCONNECTED);
+		ret = gpio_pin_configure_dt(&config->dio, off_flags);
 		if (ret) {
 			return ret;
 		}
@@ -661,14 +672,17 @@ static int sw_port_off(const struct device *dev)
 		}
 
 	} else {
-		ret = gpio_pin_configure_dt(&config->clk, GPIO_DISCONNECTED);
+		ret = gpio_pin_configure_dt(&config->clk, off_flags);
 		if (ret) {
 			return ret;
 		}
 	}
 
 	if (config->reset.port) {
-		ret = gpio_pin_configure_dt(&config->reset, GPIO_DISCONNECTED);
+		ret = gpio_pin_configure_dt(&config->reset,
+					    config->keep_reset_deast
+						    ? GPIO_OUTPUT_INACTIVE
+						    : off_flags);
 		if (ret) {
 			return ret;
 		}
@@ -729,6 +743,7 @@ static struct swdp_api swdp_bitbang_api = {
 		.dnoe_reg = SW_GPIOS_GET_REG(n, dnoe_gpios),				\
 		.noe = GPIO_DT_SPEC_INST_GET_OR(n, noe_gpios, {0}),			\
 		.reset = GPIO_DT_SPEC_INST_GET_OR(n, reset_gpios, {0}),			\
+		.keep_reset_deast = DT_INST_PROP(n, keep_reset_deasserted),             \
 		.port_write_cycles = DT_INST_PROP(n, port_write_cycles),		\
 	};										\
 											\

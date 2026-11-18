@@ -8,11 +8,13 @@
 #include <zephyr/arch/cpu.h>
 #include <kernel_arch_data.h>
 #include <kernel_arch_func.h>
-#include <zephyr/kernel_structs.h>
 #include <kernel_internal.h>
 #include <zephyr/arch/x86/multiboot.h>
 #include <x86_mmu.h>
 #include <zephyr/drivers/interrupt_controller/loapic.h>
+#include <cet.h>
+#include <zephyr/arch/common/xip.h>
+#include <zephyr/arch/common/init.h>
 #ifdef CONFIG_ACPI
 #include <zephyr/arch/x86/cpuid.h>
 #include <zephyr/acpi/acpi.h>
@@ -42,6 +44,16 @@ struct x86_cpuboot x86_cpuboot[] = {
 	LISTIFY(CONFIG_MP_MAX_NUM_CPUS, X86_CPU_BOOT_INIT, (,)),
 };
 
+#ifdef CONFIG_HW_SHADOW_STACK
+#define _CPU_IDX(n, _) n
+FOR_EACH(X86_INTERRUPT_SHADOW_STACK_DEFINE, (;),
+	 LISTIFY(CONFIG_MP_MAX_NUM_CPUS, _CPU_IDX, (,)));
+
+struct x86_interrupt_ssp_table issp_table[] = {
+	LISTIFY(CONFIG_MP_MAX_NUM_CPUS, X86_INTERRUPT_SSP_TABLE_INIT, (,)),
+};
+#endif
+
 /*
  * Send the INIT/STARTUP IPI sequence required to start up CPU 'cpu_num', which
  * will enter the kernel at fn(arg), running on the specified stack.
@@ -55,12 +67,61 @@ void arch_cpu_start(int cpu_num, k_thread_stack_t *stack, int sz,
 	uint8_t apic_id;
 
 	IF_ENABLED(CONFIG_ACPI, ({
-		ACPI_MADT_LOCAL_APIC *lapic = acpi_local_apic_get(cpu_num);
+		/*
+		 * Determine the APIC ID for cpu_num and store it in
+		 * x86_cpu_loapics[].
+		 *
+		 * Lookup policy by build mode:
+		 *   CONFIG_X2APIC=y: try MADT Type 9 first, fallback to Type 0.
+		 *   CONFIG_X2APIC=n: try MADT Type 0 only.
+		 *
+		 * If no usable entry is found, assert and return.
+		 * When Type 9 is used, the ID must be <= 0xFF.
+		 */
+		bool found = false;
 
-		if (lapic != NULL) {
-			/* We update the apic_id, __start will need it. */
-			x86_cpu_loapics[cpu_num] = lapic->Id;
-		} else {
+		/*
+		 * CONFIG_X2APIC=y primary path: try MADT Type 9 first.
+		 * If this lookup succeeds, found becomes true and the later fallback
+		 * block is skipped.
+		 */
+		IF_ENABLED(CONFIG_X2APIC, ({
+			ACPI_MADT_LOCAL_X2APIC *x2apic =
+				acpi_local_x2apic_get(cpu_num);
+
+			if (x2apic != NULL) {
+				/* Guard against silent truncation in 8-bit APIC map. */
+				__ASSERT(x2apic->LocalApicId <= 0xFF,
+					 "x2APIC ID exceeds 8-bit xAPIC range");
+				x86_cpu_loapics[cpu_num] =
+					(uint8_t)x2apic->LocalApicId;
+				found = true;
+			}
+		}));
+
+		/*
+		 * Type 0 lookup.
+		 * - When CONFIG_X2APIC=y, this is the fallback if the Type 9 lookup
+		 *   above did not set found.
+		 * - When CONFIG_X2APIC=n, the Type 9 block above is compiled out, so
+		 *   this becomes the primary lookup.
+		 */
+		if (!found) {
+			ACPI_MADT_LOCAL_APIC *lapic =
+				acpi_local_apic_get(cpu_num);
+
+			if (lapic != NULL) {
+				/* We update the apic_id, __start will need it. */
+				x86_cpu_loapics[cpu_num] = lapic->Id;
+				found = true;
+			}
+		}
+
+		/*
+		 * Common failure path for both CONFIG_X2APIC=y and CONFIG_X2APIC=n.
+		 * If none of the lookup paths found a usable APIC ID, assert and stop.
+		 */
+		if (!found) {
 			/* TODO: kernel need to handle the error scenario if someone config
 			 * CONFIG_MP_MAX_NUM_CPUS more than what platform supported.
 			 */
@@ -97,16 +158,18 @@ void arch_cpu_start(int cpu_num, k_thread_stack_t *stack, int sz,
  */
 FUNC_NORETURN void z_x86_cpu_init(struct x86_cpuboot *cpuboot)
 {
-#if defined(CONFIG_ACPI)
-	__ASSERT(z_x86_cpuid_get_current_physical_apic_id() ==
-		 x86_cpu_loapics[cpuboot->cpu_id], "APIC ID miss match!");
+#if defined(CONFIG_ACPI) && !defined(CONFIG_ACRN_COMMON)
+		if (cpuboot->cpu_id != 0U) {
+			__ASSERT(z_x86_cpuid_get_current_physical_apic_id() ==
+			x86_cpu_loapics[cpuboot->cpu_id], "APIC ID mismatch");
+		}
 #endif
 	x86_sse_init(NULL);
 
 	if (cpuboot->cpu_id == 0U) {
 		/* Only need to do these once per boot */
-		z_bss_zero();
-		z_data_copy();
+		arch_bss_zero();
+		arch_data_copy();
 	}
 
 	z_loapic_enable(cpuboot->cpu_id);
@@ -121,6 +184,19 @@ FUNC_NORETURN void z_x86_cpu_init(struct x86_cpuboot *cpuboot)
 	/* Mask applied to RFLAGS when making a syscall */
 	z_x86_msr_write(X86_FMASK_MSR, EFLAGS_SYSCALL);
 #endif
+
+#ifdef CONFIG_X86_CET
+	z_x86_cet_enable();
+#ifdef CONFIG_X86_CET_IBT
+	z_x86_ibt_enable();
+#endif /* CONFIG_X86_CET_IBT */
+#ifdef CONFIG_HW_SHADOW_STACK
+	z_x86_setup_interrupt_ssp_table((uintptr_t)&issp_table[cpuboot->cpu_id]);
+	cpuboot->gs_base->shstk_addr = &issp_table[cpuboot->cpu_id].ist1;
+	cpuboot->gs_base->exception_shstk_addr = issp_table[cpuboot->cpu_id].ist7;
+#endif /* CONFIG_HW_SHADOW_STACK */
+
+#endif /* CONFIG_X86_CET */
 
 	/* Enter kernel, never return */
 	cpuboot->ready++;

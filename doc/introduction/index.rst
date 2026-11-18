@@ -14,12 +14,15 @@ The Zephyr kernel supports multiple architectures, including:
  - ARMv6-M, ARMv7-M, and ARMv8-M (Cortex-M)
  - ARMv7-A and ARMv8-A (Cortex-A, 32- and 64-bit)
  - ARMv7-R, ARMv8-R (Cortex-R, 32- and 64-bit)
+ - Qualcomm Hexagon
  - Intel x86 (32- and 64-bit)
  - MIPS (MIPS32 Release 1 specification)
- - NIOS II Gen 2
+ - OpenRISC (32-bit)
+ - Renesas RX
  - RISC-V (32- and 64-bit)
  - SPARC V8
  - Tensilica Xtensa
+ - TriCore (TC1.6.2 and TC1.8)
 
 The full list of supported boards based on these architectures can be found :ref:`here <boards>`.
 
@@ -154,7 +157,7 @@ Zephyr offers a large and ever growing number of features including:
 
 **Native Linux, macOS, and Windows Development**
    A command-line CMake build environment runs on popular developer OS
-   systems. A native port (:ref:`native_sim <native_sim>`) lets you build and run Zephyr as a native
+   systems. A native port (:zephyr:board:`native_sim <native_sim>`) lets you build and run Zephyr as a native
    application on Linux, aiding development and testing.
 
 **Virtual File System Interface with ext2, FatFs, and LittleFS Support**
@@ -181,7 +184,7 @@ Zephyr offers a large and ever growing number of features including:
   combination of these.
 
 **Native port**
-  :ref:`Native sim <native_sim>` allows running Zephyr as a Linux application with support
+  :zephyr:board:`Native sim <native_sim>` allows running Zephyr as a Linux application with support
   for various subsystems and networking.
 
 

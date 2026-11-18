@@ -1,4 +1,4 @@
-/* Copyright(c) 2021 Intel Corporation. All rights reserved.
+/* Copyright (c) 2021 Intel Corporation. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,7 +14,7 @@
 #include <adsp_shim.h>
 #include <adsp_memory.h>
 #include <cpu_init.h>
-#include "manifest.h"
+#include <manifest.h>
 
 #ifdef CONFIG_PM
 #ifdef CONFIG_ADSP_IMR_CONTEXT_SAVE
@@ -43,10 +43,6 @@ __imr void boot_d3_restore(void)
 #ifdef CONFIG_ADSP_DISABLE_L2CACHE_AT_BOOT
 	ADSP_L2PCFG_REG = 0;
 #endif
-
-	extern void hp_sram_init(uint32_t memory_size);
-	hp_sram_init(L2_SRAM_SIZE);
-
 	extern void lp_sram_init(void);
 	lp_sram_init();
 

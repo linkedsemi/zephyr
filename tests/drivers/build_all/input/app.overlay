@@ -5,6 +5,7 @@
  */
 
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/input/keymap.h>
 
 / {
 	test {
@@ -39,10 +40,12 @@
 			compatible = "adc-keys";
 			io-channels = <&test_adc 0>;
 			keyup-threshold-mv = <0>;
+
 			button_0 {
 				press-thresholds-mv = <1500>, <1750>;
 				zephyr,code = <0>;
 			};
+
 			button_1 {
 				press-thresholds-mv = <2500>, <1750>;
 				zephyr,code = <1>;
@@ -52,6 +55,7 @@
 		gpio-keys {
 			compatible = "gpio-keys";
 			debounce-interval-ms = <30>;
+
 			button_0 {
 				gpios = <&test_gpio 0 0>;
 				zephyr,code = <0>;
@@ -61,11 +65,18 @@
 		gpio-keys-polled {
 			compatible = "gpio-keys";
 			debounce-interval-ms = <30>;
+
 			button_0 {
 				gpios = <&test_gpio 0 0>;
 				zephyr,code = <0>;
 			};
+
 			polling-mode;
+		};
+
+		vs1838b {
+			compatible = "vishay,vs1838b";
+			data-gpios = <&test_gpio 0 0>;
 		};
 
 		evdev {
@@ -83,9 +94,10 @@
 
 			keymap {
 				compatible = "input-keymap";
-				keymap = <0 1 2>;
 				row-size = <2>;
 				col-size = <2>;
+				keymap = <MATRIX_KEY(0, 0, 0) MATRIX_KEY(0, 1, 1)
+					  MATRIX_KEY(1, 0, 2)>;
 			};
 		};
 
@@ -134,6 +146,7 @@
 
 		analog_axis {
 			compatible = "analog-axis";
+
 			axis-x {
 				io-channels = <&test_adc 0>;
 				out-min = <(-127)>;
@@ -160,6 +173,7 @@
 			input = <&double_tap>;
 			compatible = "zephyr,input-double-tap";
 			input-codes = <0>;
+			single-tap-codes = <0>;
 			double-tap-codes = <0>;
 			double-tap-delay-ms = <0>;
 		};
@@ -174,6 +188,22 @@
 
 			sbus {
 				compatible = "futaba,sbus";
+
+				right_stick_x {
+					channel = <1>;
+					type = <INPUT_EV_ABS>;
+					zephyr,code = <INPUT_ABS_RX>;
+				};
+			};
+
+			usb_kb {
+				compatible = "wch,ch9350l";
+				status = "okay";
+			};
+
+			crsf {
+				compatible = "tbs,crsf";
+
 				right_stick_x {
 					channel = <1>;
 					type = <INPUT_EV_ABS>;
@@ -196,6 +226,13 @@
 				int-gpios = <&test_gpio 0 0>;
 			};
 
+			ft6146@0 {
+				compatible = "focaltech,ft6146";
+				reg = <0x0>;
+				int-gpios = <&test_gpio 0 0>;
+				reset-gpios = <&test_gpio 1 0>;
+			};
+
 			gt911@1 {
 				compatible = "goodix,gt911";
 				reg = <0x1>;
@@ -204,17 +241,21 @@
 			};
 
 			cst816s@2 {
-				compatible = "hynitron,cst816s";
+				compatible = "hynitron,cst8xx";
 				reg = <0x2>;
 				irq-gpios = <&test_gpio 0 0>;
 				rst-gpios = <&test_gpio 1 0>;
 			};
 
-			cap1203@3 {
-				compatible = "microchip,cap1203";
+			cap12xx@3 {
+				compatible = "microchip,cap12xx";
 				reg = <0x3>;
 				int-gpios = <&test_gpio 0 0>;
 				input-codes = <0 1 2>;
+				sensor-gain = <1>;
+				sensitivity-delta-sense = <32>;
+				signal-guard = <0 0 0>;
+				calib-sensitivity = <1 1 1>;
 			};
 
 			stmpe811@4 {
@@ -267,6 +308,58 @@
 				reg = <0x9>;
 				irq-gpios = <&test_gpio 0 0>;
 				rst-gpios = <&test_gpio 1 0>;
+			};
+
+			nunchuk@a {
+				reg = <0xa>;
+				compatible = "nintendo,nunchuk";
+			};
+
+			cy8cmbr3xxx@b {
+				compatible = "cypress,cy8cmbr3xxx";
+				status = "okay";
+				reg = <0xb>;
+				int-gpios = <&test_gpio 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+				rst-gpios = <&test_gpio 1 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+				input-codes = <0 1 2 3 4 5 6 7>;
+				proximity-codes = <8>;
+			};
+
+			chsc5x@c {
+				compatible = "chipsemi,chsc5x";
+				reg = <0xc>;
+				int-gpios = <&test_gpio 0 0>;
+				reset-gpios = <&test_gpio 1 0>;
+			};
+
+			tma525b@d {
+				compatible = "parade,tma525b";
+				reg = <0xd>;
+				int-gpios = <&test_gpio 0 0>;
+			};
+
+			seesaw@e {
+				compatible = "adafruit,seesaw-gamepad";
+				reg = <0xe>;
+			};
+
+			modulino-buttons@f {
+				compatible = "i2c-device";
+				reg = <0xf>;
+
+				modulino_buttons {
+					compatible = "arduino,modulino-buttons";
+					zephyr,codes = <0>, <1>, <2>;
+				};
+			};
+
+			tsm12@10 {
+				compatible = "adsemi,tsm12";
+				reg = <0x10>;
+				int-gpios = <&test_gpio 0 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
+				input-codes = <0 1 2>;
+				threshold-windows = "narrow", "wide", "narrow";
+				threshold-midpoints = <3 0 7>;
 			};
 		};
 

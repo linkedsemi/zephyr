@@ -28,8 +28,8 @@ Quoting NXP:
    industrial automation with high reliability. It is built to meet the needs of Smart Home,
    Building, City and Industry 4.0 applications.
 
-The Verdin iMX8M Plus integrates a total of 4 Arm Cortex™-A53 CPUs, operating at 1.6 GHz, alongside
-a single Arm Cortex™-M7F microcontroller operating at 800 MHz.
+The Verdin iMX8M Plus integrates a total of 4 Arm Cortex®-A53 CPUs, operating at 1.6 GHz, alongside
+a single Arm Cortex®-M7F microcontroller operating at 800 MHz.
 
 Regarding the Cortex-A53 cluster, it employs the ARMv8-A architecture as a mid-range and
 energy-efficient processor. With four cores in this cluster, each core is equipped with its own L1
@@ -53,8 +53,8 @@ Hardware
 ********
 
 - SoC name: NXP® i.MX 8M Plus
-- CPU Type:	4x Arm Cortex™-A53 (1.6 GHz)
-- Microcontroller:	1x Arm Cortex™-M7F (800 MHz)
+- CPU Type:	4x Arm Cortex®-A53 (1.6 GHz)
+- Microcontroller:	1x Arm Cortex®-M7F (800 MHz)
 
 - Memory:
 
@@ -96,37 +96,9 @@ For more information about the Verdin iMX8M Plus and the i.MX 8M Plus SoC refer 
 Supported Features
 ==================
 
-The Zephyr verdin_imx8mp_m7 board configuration supports the following hardware features:
-
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| SYSTICK   | on-chip    | systick                             |
-+-----------+------------+-------------------------------------+
-| CLOCK     | on-chip    | clock_control                       |
-+-----------+------------+-------------------------------------+
-| PINMUX    | on-chip    | pinmux                              |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | GPIO output                         |
-|           |            | GPIO input                          |
-+-----------+------------+-------------------------------------+
-
-The default configuration can be found in the defconfig file:
-
-- :zephyr_file:`boards/toradex/verdin_imx8mp/verdin_imx8mp_mimx8ml8_m7_defconfig`, if you choose to use
-  the ITCM memory.
-
-- :zephyr_file:`boards/toradex/verdin_imx8mp/verdin_imx8mp_mimx8ml8_m7_ddr_defconfig`, if you choose to use
-  the DDR memory.
+.. zephyr:board-supported-hw::
 
 It is recommended to disable peripherals used by the M7 core on the Linux host.
-
-Other hardware features are not currently supported by the port.
 
 Connections and IOs
 ===================
@@ -156,7 +128,25 @@ change the UART by changing the ``zephyr,console`` and ``zephyr,shell-uart`` in 
 GPIO
 ----
 
-All the GPIO banks available are enabled in the :zephyr_file:`dts/arm/nxp/nxp_imx8ml_m7.dtsi`.
+All the GPIO banks available are enabled in the :zephyr_file:`dts/arm/nxp/imx/nxp_imx8ml_m7.dtsi`.
+
+PWM
+---
+
+PWM_1 and PWM_2 are enabled and routed to the Verdin connector.
+
++---------------+-----------------+---------------------------+
+| Board Name    | SoC Name        | Verdin connector          |
++===============+=================+===========================+
+| PWM_1         | PWM1            | SODIMM 15                 |
++---------------+-----------------+---------------------------+
+| PWM_2         | PWM2            | SODIMM 16                 |
++---------------+-----------------+---------------------------+
+
+PWM3 and PWM4 are described in :zephyr_file:`dts/arm/nxp/imx/nxp_imx8ml_m7.dtsi` but left
+disabled on this module: the pads that carry them are used for USB_2_EN and CSI_1_MCLK, so
+muxing them to PWM would break the USB and CSI functions. A carrier board that does not need
+those signals can enable the instances with its own pin selection.
 
 System Clock
 ============
@@ -171,6 +161,8 @@ used/tested.
 
 Programming and Debugging
 *************************
+
+.. zephyr:board-supported-runners::
 
 The Verdin iMX8M Plus board doesn't have QSPI flash for the M7, and it needs to be started by the
 A53 core. The A53 core is responsible to load the M7 binary application into the RAM, put the M7 in

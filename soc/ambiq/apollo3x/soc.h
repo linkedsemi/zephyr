@@ -4,13 +4,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#ifndef __SOC_H__
-#define __SOC_H__
+#ifndef ZEPHYR_SOC_AMBIQ_APOLLO_3X_SOC_H_
+#define ZEPHYR_SOC_AMBIQ_APOLLO_3X_SOC_H_
 
-#if defined(CONFIG_SOC_APOLLO3P_BLUE)
-#include <apollo3p.h>
-#elif defined(CONFIG_SOC_APOLLO3_BLUE)
-#include <apollo3.h>
-#endif
+#include <am_mcu_apollo.h>
 
-#endif /* __SOC_H__ */
+#endif /* ZEPHYR_SOC_AMBIQ_APOLLO_3X_SOC_H_ */

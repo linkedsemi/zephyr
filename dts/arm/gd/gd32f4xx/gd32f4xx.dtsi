@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2021, Teslabs Engineering S.L.
- *
+ * Copyright (c) 2025 Aleksandr Senin <al@meshium.net>
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,8 +11,14 @@
 #include <zephyr/dt-bindings/pwm/pwm.h>
 #include <zephyr/dt-bindings/clock/gd32f4xx-clocks.h>
 #include <zephyr/dt-bindings/reset/gd32f4xx.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-sw.h>
 
 / {
+	chosen {
+		zephyr,entropy = &trng0;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -30,10 +36,37 @@
 		};
 	};
 
+	bldo: bldo {
+		compatible = "gd,gd32-bldo";
+		regulator-name = "BLDO_1V2";
+		clocks = <&cctl GD32_CLOCK_PMU>;
+		status = "disabled";
+	};
+
 	soc {
+		tcmsram0: memory@10000000 {
+			compatible = "zephyr,memory-region", "arm,dtcm";
+			reg = <0x10000000 DT_SIZE_K(64)>;
+			zephyr,memory-region = "DTCM";
+			zephyr,memory-attr = <DT_MEM_SW_ALLOC_NON_CACHE>;
+		};
+
 		sram0: memory@20000000 {
-			compatible = "mmio-sram";
-			reg = <0x20000000 DT_SIZE_K(112)>;
+			compatible = "zephyr,memory-region", "mmio-sram";
+			reg = <0x20000000 DT_SIZE_K(128)>;
+			zephyr,memory-region = "SRAM";
+			zephyr,memory-attr = <(DT_MEM_DMA |
+					       DT_MEM_SW_ALLOC_NON_CACHE |
+					       DT_MEM_SW_ALLOC_DMA)>;
+		};
+
+		backup_sram: sram@40024000 {
+			compatible = "gd,gd32-backup-sram", "zephyr,memory-region";
+			reg = <0x40024000 0x1000>;
+			clocks = <&cctl GD32_CLOCK_BKPSRAM>;
+			zephyr,memory-region = "BKPSRAM";
+			zephyr,memory-attr = <DT_MEM_NON_VOLATILE>;
+			status = "disabled";
 		};
 
 		rcu: reset-clock-controller@40023800 {
@@ -57,6 +90,7 @@
 		fmc: flash-controller@40023c00 {
 			compatible = "gd,gd32-flash-controller";
 			reg = <0x40023c00 0x400>;
+			ranges;
 
 			#address-cells = <1>;
 			#size-cells = <1>;
@@ -65,7 +99,17 @@
 				compatible = "gd,gd32-nv-flash-v3", "soc-nv-flash";
 				write-block-size = <2>;
 				max-erase-time-ms = <8000>;
+				#address-cells = <1>;
+				#size-cells = <1>;
 			};
+		};
+
+		trng0: trng@50060800 {
+			compatible = "gd,gd32-trng";
+			reg = <0x50060800 0x400>;
+			clocks = <&cctl GD32_CLOCK_TRNG>;
+			resets = <&rctl GD32_RESET_TRNG>;
+			status = "disabled";
 		};
 
 		usart0: usart@40011000 {
@@ -282,7 +326,7 @@
 
 		wwdgt: watchdog@40002c00 {
 			compatible = "gd,gd32-wwdgt";
-			reg = <0x40002C00 0x400>;
+			reg = <0x40002c00 0x400>;
 			clocks = <&cctl GD32_CLOCK_WWDGT>;
 			resets = <&rctl GD32_RESET_WWDGT>;
 			interrupts = <0 0>;

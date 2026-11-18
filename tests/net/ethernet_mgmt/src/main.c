@@ -25,20 +25,15 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 
 static struct net_if *default_iface;
 
-static const uint8_t mac_addr_init[6] = { 0x01, 0x02, 0x03,
-				       0x04,  0x05,  0x06 };
-
-static const uint8_t mac_addr_change[6] = { 0x01, 0x02, 0x03,
-					 0x04,  0x05,  0x07 };
+/* 00-00-5E-00-53-xx Documentation RFC 7042 */
+static const uint8_t mac_addr_init[6] = {0x00, 0x00, 0x5e, 0x00, 0x53, 0x00};
+/* 00-00-5E-00-53-xx Documentation RFC 7042 */
+static const uint8_t mac_addr_change[6] = {0x00, 0x00, 0x5e, 0x00, 0x53, 0x01};
 
 struct eth_fake_context {
 	struct net_if *iface;
 	uint8_t mac_address[6];
 
-	bool auto_negotiation;
-	bool full_duplex;
-	bool link_10bt;
-	bool link_100bt;
 	bool promisc_mode;
 	struct {
 		bool qav_enabled;
@@ -76,6 +71,8 @@ struct eth_fake_context {
 
 static struct eth_fake_context eth_fake_data;
 
+static struct net_stats_eth eth_fake_stats;
+
 static void eth_fake_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
@@ -99,26 +96,17 @@ static int eth_fake_send(const struct device *dev,
 	return 0;
 }
 
-static enum ethernet_hw_caps eth_fake_get_capabilities(const struct device *dev)
+static enum ethernet_hw_caps eth_fake_get_capabilities(const struct device *dev __unused,
+						       struct net_if *iface __unused)
 {
-	return ETHERNET_AUTO_NEGOTIATION_SET | ETHERNET_LINK_10BASE_T |
-		ETHERNET_LINK_100BASE_T | ETHERNET_DUPLEX_SET | ETHERNET_QAV |
+	return  ETHERNET_LINK_10BASE | ETHERNET_LINK_100BASE | ETHERNET_QAV |
 		ETHERNET_PROMISC_MODE | ETHERNET_PRIORITY_QUEUES |
 		ETHERNET_QBV | ETHERNET_QBU | ETHERNET_TXTIME;
 }
 
 static int eth_fake_get_total_bandwidth(struct eth_fake_context *ctx)
 {
-	if (ctx->link_100bt) {
-		return 100 * 1000 * 1000 / 8;
-	}
-
-	if (ctx->link_10bt) {
-		return 10 * 1000 * 1000 / 8;
-	}
-
-	/* No link */
-	return 0;
+	return 100 * 1000 * 1000 / 8;
 }
 
 static void eth_fake_recalc_qav_delta_bandwidth(struct eth_fake_context *ctx)
@@ -154,6 +142,7 @@ static void eth_fake_recalc_qav_idle_slopes(struct eth_fake_context *ctx)
 }
 
 static int eth_fake_set_config(const struct device *dev,
+			       struct net_if *iface __unused,
 			       enum ethernet_config_type type,
 			       const struct ethernet_config *config)
 {
@@ -167,45 +156,8 @@ static int eth_fake_set_config(const struct device *dev,
 	int queue_id, port_id;
 
 	switch (type) {
-	case ETHERNET_CONFIG_TYPE_AUTO_NEG:
-		if (config->auto_negotiation == ctx->auto_negotiation) {
-			return -EALREADY;
-		}
-
-		ctx->auto_negotiation = config->auto_negotiation;
-
-		break;
-	case ETHERNET_CONFIG_TYPE_LINK:
-		if ((config->l.link_10bt && ctx->link_10bt) ||
-		    (config->l.link_100bt && ctx->link_100bt)) {
-			return -EALREADY;
-		}
-
-		if (config->l.link_10bt) {
-			ctx->link_10bt = true;
-			ctx->link_100bt = false;
-		} else {
-			ctx->link_10bt = false;
-			ctx->link_100bt = true;
-		}
-
-		eth_fake_recalc_qav_idle_slopes(ctx);
-
-		break;
-	case ETHERNET_CONFIG_TYPE_DUPLEX:
-		if (config->full_duplex == ctx->full_duplex) {
-			return -EALREADY;
-		}
-
-		ctx->full_duplex = config->full_duplex;
-
-		break;
 	case ETHERNET_CONFIG_TYPE_MAC_ADDRESS:
 		memcpy(ctx->mac_address, config->mac_address.addr, 6);
-
-		net_if_set_link_addr(ctx->iface, ctx->mac_address,
-				     sizeof(ctx->mac_address),
-				     NET_LINK_ETHERNET);
 		break;
 	case ETHERNET_CONFIG_TYPE_QAV_PARAM:
 		queue_id = config->qav_param.queue_id;
@@ -348,6 +300,7 @@ static int eth_fake_set_config(const struct device *dev,
 }
 
 static int eth_fake_get_config(const struct device *dev,
+			       struct net_if *iface __unused,
 			       enum ethernet_config_type type,
 			       struct ethernet_config *config)
 {
@@ -501,12 +454,19 @@ static int eth_fake_get_config(const struct device *dev,
 	return 0;
 }
 
+static struct net_stats_eth *eth_fake_get_stats(const struct device *dev __unused,
+						struct net_if *iface __unused)
+{
+	return &eth_fake_stats;
+}
+
 static struct ethernet_api eth_fake_api_funcs = {
 	.iface_api.init = eth_fake_iface_init,
 
 	.get_capabilities = eth_fake_get_capabilities,
 	.set_config = eth_fake_set_config,
 	.get_config = eth_fake_get_config,
+	.get_stats = eth_fake_get_stats,
 	.send = eth_fake_send,
 };
 
@@ -514,11 +474,6 @@ static int eth_fake_init(const struct device *dev)
 {
 	struct eth_fake_context *ctx = dev->data;
 	int i;
-
-	ctx->auto_negotiation = true;
-	ctx->full_duplex = true;
-	ctx->link_10bt = true;
-	ctx->link_100bt = false;
 
 	memcpy(ctx->mac_address, mac_addr_init, 6);
 
@@ -570,7 +525,7 @@ static void iface_cb(struct net_if *iface, void *user_data)
 	    net_if_get_by_iface(iface));
 
 	if (net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET)) {
-		if (PART_OF_ARRAY(NET_IF_GET_NAME(eth_fake, 0), iface)) {
+		if (iface == NET_IF_GET(eth_fake, 0)) {
 			*my_iface = iface;
 		}
 	}
@@ -629,141 +584,6 @@ ZTEST(net_ethernet_mgmt, test_change_mac)
 {
 	change_mac_when_up();
 	change_mac_when_down();
-}
-
-static void change_auto_neg(bool is_auto_neg)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params;
-	int ret;
-
-	params.auto_negotiation = is_auto_neg;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_AUTO_NEGOTIATION, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_equal(ret, 0, "invalid auto negotiation change");
-}
-
-static void change_to_same_auto_neg(bool is_auto_neg)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params;
-	int ret;
-
-	params.auto_negotiation = is_auto_neg;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_AUTO_NEGOTIATION, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_not_equal(ret, 0,
-			  "invalid change to already auto negotiation");
-}
-
-ZTEST(net_ethernet_mgmt, test_change_auto_neg)
-{
-	change_auto_neg(false);
-	change_to_same_auto_neg(false);
-	change_auto_neg(true);
-}
-
-static void change_link_10bt(void)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params = { 0 };
-	int ret;
-
-	params.l.link_10bt = true;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_LINK, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_equal(ret, 0, "invalid link change");
-}
-
-static void change_link_100bt(void)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params = { 0 };
-	int ret;
-
-	params.l.link_100bt = true;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_LINK, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_equal(ret, 0, "invalid link change");
-}
-
-static void change_same_link_100bt(void)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params = { 0 };
-	int ret;
-
-	params.l.link_100bt = true;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_LINK, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_not_equal(ret, 0, "invalid same link change");
-}
-
-static void change_unsupported_link_1000bt(void)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params = { 0 };
-	int ret;
-
-	params.l.link_1000bt = true;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_LINK, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_not_equal(ret, 0, "invalid change to unsupported link");
-}
-
-ZTEST(net_ethernet_mgmt, test_change_link)
-{
-	change_link_100bt();
-	change_same_link_100bt();
-	change_unsupported_link_1000bt();
-	change_link_10bt();
-}
-
-static void change_duplex(bool is_full_duplex)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params;
-	int ret;
-
-	params.full_duplex = is_full_duplex;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_DUPLEX, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_equal(ret, 0, "invalid duplex change");
-}
-
-static void change_same_duplex(bool is_full_duplex)
-{
-	struct net_if *iface = default_iface;
-	struct ethernet_req_params params;
-	int ret;
-
-	params.full_duplex = is_full_duplex;
-
-	ret = net_mgmt(NET_REQUEST_ETHERNET_SET_DUPLEX, iface,
-		       &params, sizeof(struct ethernet_req_params));
-
-	zassert_not_equal(ret, 0, "invalid change to already set duplex");
-}
-
-ZTEST(net_ethernet_mgmt, test_change_duplex)
-{
-	change_duplex(false);
-	change_same_duplex(false);
-	change_duplex(true);
 }
 
 ZTEST(net_ethernet_mgmt, test_change_qav_params)
@@ -1448,5 +1268,58 @@ ZTEST(net_ethernet_mgmt, test_change_to_promisc_mode)
 	change_promisc_mode_on();
 	change_to_same_promisc_mode();
 	change_promisc_mode_off();
+}
+
+/* A valid frame with an EtherType that has no handler is counted once, as an
+ * unknown protocol, and not as a processing error of the interface.
+ */
+ZTEST(net_ethernet_mgmt, test_unknown_ethertype_stats)
+{
+	/* IEEE 802 local experimental EtherType 1, no handler in the stack */
+	static const uint16_t ptype = 0x88b5;
+	static const uint8_t src[6] = {0x00, 0x00, 0x5e, 0x00, 0x53, 0x02};
+	struct net_if *iface = default_iface;
+	uint8_t payload[46] = {0};
+	net_stats_t unknown_protocol;
+	net_stats_t processing_error;
+	struct net_eth_hdr hdr;
+	struct net_pkt *pkt;
+	bool was_up;
+	int ret;
+
+	/* Other tests take the interface down to change its configuration */
+	was_up = net_if_is_admin_up(iface);
+	if (!was_up) {
+		zassert_equal(net_if_up(iface), 0, "Cannot take the interface up");
+	}
+
+	memcpy(hdr.dst.addr, net_eth_broadcast_addr()->addr, sizeof(hdr.dst.addr));
+	memcpy(hdr.src.addr, src, sizeof(hdr.src.addr));
+	hdr.type = net_htons(ptype);
+
+	pkt = net_pkt_rx_alloc_with_buffer(iface, sizeof(hdr) + sizeof(payload), NET_AF_UNSPEC, 0,
+					   K_SECONDS(1));
+	zassert_not_null(pkt, "out of mem");
+
+	zassert_equal(net_pkt_write(pkt, &hdr, sizeof(hdr)), 0);
+	zassert_equal(net_pkt_write(pkt, payload, sizeof(payload)), 0);
+
+	unknown_protocol = eth_fake_stats.unknown_protocol;
+	processing_error = iface->stats.processing_error;
+
+	ret = net_recv_data(iface, pkt);
+	zassert_equal(ret, 0, "Cannot receive data (%d)", ret);
+
+	/* Give the RX thread a chance to process the frame. */
+	k_msleep(10);
+
+	zexpect_equal(eth_fake_stats.unknown_protocol, unknown_protocol + 1,
+		      "Frame not counted as an unknown protocol");
+	zexpect_equal(iface->stats.processing_error, processing_error,
+		      "Frame counted as a processing error");
+
+	if (!was_up) {
+		(void)net_if_down(iface);
+	}
 }
 ZTEST_SUITE(net_ethernet_mgmt, NULL, ethernet_mgmt_setup, NULL, NULL, NULL);

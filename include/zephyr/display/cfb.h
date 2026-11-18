@@ -23,12 +23,14 @@ extern "C" {
 /**
  * @brief Public Monochrome Character Framebuffer API
  * @defgroup monochrome_character_framebuffer Monochrome Character Framebuffer
- * @ingroup utilities
+ * @since 1.14.0
+ * @version 0.10.0
+ * @ingroup display_interface
  * @{
  */
 
 enum cfb_display_param {
-	CFB_DISPLAY_HEIGH		= 0,
+	CFB_DISPLAY_HEIGHT		= 0,
 	CFB_DISPLAY_WIDTH,
 	CFB_DISPLAY_PPT,
 	CFB_DISPLAY_ROWS,
@@ -51,8 +53,10 @@ struct cfb_font {
 };
 
 struct cfb_position {
-	uint16_t x;
-	uint16_t y;
+	/** X position */
+	int16_t x;
+	/** Y position */
+	int16_t y;
 };
 
 /**
@@ -86,7 +90,7 @@ struct cfb_position {
  *
  * @return 0 on success, negative value otherwise
  */
-int cfb_print(const struct device *dev, const char *const str, uint16_t x, uint16_t y);
+int cfb_print(const struct device *dev, const char *const str, int16_t x, int16_t y);
 
 /**
  * @brief Print a string into the framebuffer.
@@ -137,6 +141,17 @@ int cfb_draw_rect(const struct device *dev, const struct cfb_position *start,
 		  const struct cfb_position *end);
 
 /**
+ * @brief Draw a circle.
+ *
+ * @param dev Pointer to device structure for driver instance
+ * @param start Center position of the circle
+ * @param radius Radius of the circle
+ *
+ * @return 0 on success, negative value otherwise
+ */
+int cfb_draw_circle(const struct device *dev, const struct cfb_position *start, uint16_t radius);
+
+/**
  * @brief Clear framebuffer.
  *
  * @param dev Pointer to device structure for driver instance
@@ -166,7 +181,7 @@ int cfb_framebuffer_invert(const struct device *dev);
  *
  * @return 0 on success, negative value otherwise
  */
-int cfb_invert_area(const struct device *dev, uint16_t x, uint16_t y,
+int cfb_invert_area(const struct device *dev, int16_t x, int16_t y,
 		    uint16_t width, uint16_t height);
 
 /**

@@ -250,7 +250,7 @@ static int iis2dlpc_sample_fetch(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api iis2dlpc_driver_api = {
+static DEVICE_API(sensor, iis2dlpc_driver_api) = {
 	.attr_set = iis2dlpc_attr_set,
 #if CONFIG_IIS2DLPC_TRIGGER
 	.trigger_set = iis2dlpc_trigger_set,
@@ -298,7 +298,7 @@ static int iis2dlpc_init(const struct device *dev)
 	}
 
 	/* reset device */
-	if (iis2dlpc_reset_set(ctx, PROPERTY_ENABLE) < 0) {
+	if (iis2dlpc_reset_set(ctx) < 0) {
 		return -EIO;
 	}
 
@@ -454,7 +454,7 @@ static int iis2dlpc_init(const struct device *dev)
 		(IIS2DLPC_CFG_IRQ(inst)), ())
 
 #define IIS2DLPC_SPI_OPERATION (SPI_WORD_SET(8) |			\
-				SPI_OP_MODE_MASTER |			\
+				SPI_OP_MODE_CONTROLLER |		\
 				SPI_MODE_CPOL |				\
 				SPI_MODE_CPHA)				\
 
@@ -463,8 +463,7 @@ static int iis2dlpc_init(const struct device *dev)
 		STMEMSC_CTX_SPI(&iis2dlpc_config_##inst.stmemsc_cfg),	\
 		.stmemsc_cfg = {					\
 			.spi = SPI_DT_SPEC_INST_GET(inst,		\
-					   IIS2DLPC_SPI_OPERATION,	\
-					   0),				\
+					   IIS2DLPC_SPI_OPERATION),	\
 		},							\
 		IIS2DLPC_CONFIG_COMMON(inst)				\
 	}

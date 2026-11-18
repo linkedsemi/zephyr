@@ -5,10 +5,10 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 96
 flash: 1024
 supported:
   - gpio
   - counter
+  - dmic
 vendor: st

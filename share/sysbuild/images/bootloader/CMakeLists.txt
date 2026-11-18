@@ -1,4 +1,4 @@
-# Copyright (c) 2022 Nordic Semiconductor
+# Copyright (c) 2022-2026 Nordic Semiconductor
 #
 # SPDX-License-Identifier: Apache-2.0
 
@@ -14,9 +14,19 @@ if(SB_CONFIG_BOOTLOADER_MCUBOOT)
   sysbuild_add_dependencies(CONFIGURE ${DEFAULT_IMAGE} ${image})
   sysbuild_add_dependencies(FLASH ${DEFAULT_IMAGE} ${image})
 
-  set_config_string(${image} CONFIG_BOOT_SIGNATURE_KEY_FILE "${SB_CONFIG_BOOT_SIGNATURE_KEY_FILE}")
-  set_config_bool(${image} CONFIG_BOOT_ENCRYPT_IMAGE "${SB_CONFIG_BOOT_ENCRYPTION}")
-  if(SB_CONFIG_BOOT_ENCRYPTION)
-    set_config_string(${image} CONFIG_BOOT_ENCRYPTION_KEY_FILE "${SB_CONFIG_BOOT_ENCRYPTION_KEY_FILE}")
+  # Link the footer size output of this MCUboot build with the main sysbuild image
+  set_target_properties(${image} PROPERTIES MCUBOOT_FOOTER_UPDATE_IMAGES ${DEFAULT_IMAGE})
+
+  sysbuild_mcuboot_resolve_signature_key_files(
+    resolved_key_files "${SB_CONFIG_BOOT_SIGNATURE_KEY_FILE}"
+  )
+  set_config_string(${image} CONFIG_BOOT_SIGNATURE_KEY_FILE "${resolved_key_files}")
+
+  if(SB_CONFIG_MCUBOOT_DIRECT_XIP_GENERATE_VARIANT)
+    ExternalZephyrVariantProject_Add(
+      APPLICATION ${DEFAULT_IMAGE}_slot1_variant
+      SOURCE_APP ${DEFAULT_IMAGE}
+      SNIPPET slot1-partition
+    )
   endif()
 endif()

@@ -4,14 +4,19 @@
 # SPDX-License-Identifier: Apache-2.0
 #
 
-cmake_minimum_required(VERSION 3.20.0)
+cmake_minimum_required(VERSION 3.28.0)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 
 if(NOT (CONFIG_BOARD_NRF54H20DK_NRF54H20_CPUAPP))
-  message(FATAL_ERROR "${BOARD}${BOARD_QUALIFIERS} is not supported for this sample")
+  message(FATAL_ERROR "${BOARD}/${BOARD_QUALIFIERS} is not supported for this sample")
 endif()
 
 project(nrf_coresight_stm)
 
 target_sources(app PRIVATE src/main.c)
+
+if(CONFIG_CPP)
+  # When testing for C++ force test file C++ compilation
+  set_source_files_properties(src/main.c PROPERTIES LANGUAGE CXX)
+endif()

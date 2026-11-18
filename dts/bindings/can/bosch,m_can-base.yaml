@@ -6,6 +6,8 @@ properties:
   bosch,mram-cfg:
     type: array
     required: true
+    min-len: 8
+    max-len: 8
     description: |
       Bosch M_CAN message RAM configuration. The cells in the array have the following format:
 
@@ -24,3 +26,13 @@ properties:
       Rx Buffers	    0-64 elements / 0-1152 words
       Tx Event FIFO	  0-32 elements / 0-64 words
       Tx Buffers	    0-32 elements / 0-576 words
+
+  bosch,timestamp-counter-prescaler:
+    type: int
+    min: 1
+    max: 16
+    default: 1
+    description: |
+      Configures the internal timestamp counter time unit in multiples of CAN bit times. Valid range
+      is 1 to 16. The default value is a prescaler of 1, such that the time unit equals one CAN bit
+      time.

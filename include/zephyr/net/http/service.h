@@ -19,6 +19,7 @@
  * @{
  */
 
+#include <zephyr/net/http/server.h>
 #include <stdint.h>
 #include <stddef.h>
 
@@ -64,30 +65,126 @@ struct http_resource_desc {
 
 /** @cond INTERNAL_HIDDEN */
 
+struct http_service_runtime_data {
+	int num_clients;
+};
+
+struct http_service_desc;
+
+/** @endcond */
+
+/**
+ * @brief Custom socket creation function type
+ *
+ * @details Allow HTTP service to be customized according to user needs.
+ * For example, this can be used to create a socket with custom options or
+ * to create a socket of a different type for a specific service.
+ *
+ * @param svc HTTP service description for which the socket is being created.
+ * @param af Address family (e.g., AF_INET or AF_INET6) for the socket to be created.
+ * @param proto Protocol (e.g., IPPROTO_TCP) for the socket to be created.
+ * @return Valid socket file descriptor on success, or a negative error code on failure.
+ */
+typedef int (*http_socket_create_fn)(const struct http_service_desc *svc, int af, int proto);
+
+/** Supported HTTP version for this service. If not set, then any configured
+ * version is supported. User can also specify a specific version to only support
+ * that version for the service. The values can be ORed together to support multiple
+ * specific versions.
+ */
+enum http_version {
+	HTTP_VERSION_ANY = 0,  /**< Support any HTTP version configured in the system. */
+	HTTP_VERSION_1 = 0x01, /**< Support HTTP/1.0 and HTTP/1.1 */
+	HTTP_VERSION_2 = 0x02, /**< Support HTTP/2 */
+	HTTP_VERSION_3 = 0x04, /**< Support HTTP/3 */
+};
+
+/** HTTP/3 Alt-Svc advertisement policy for this service. */
+enum http_h3_alt_svc_policy {
+	/** Use the global default policy configured in Kconfig. */
+	HTTP_H3_ALT_SVC_DEFAULT = 0,
+	/** Never advertise HTTP/3 via Alt-Svc for this service. */
+	HTTP_H3_ALT_SVC_DISABLE,
+	/** Always advertise HTTP/3 via Alt-Svc for this service when available. */
+	HTTP_H3_ALT_SVC_ENABLE,
+};
+
+/** HTTP/3 configuration for a service. */
+struct http_service_h3_config {
+	/** HTTP/3 Alt-Svc advertisement policy for the service. */
+	enum http_h3_alt_svc_policy alt_svc_policy;
+	/** Enable QUIC session tickets on the HTTP/3 listener for this service. */
+	bool enable_session_tickets;
+	/**
+	 * HTTP/3 listener early-data limit in bytes.
+	 *
+	 * A value of 0 keeps 0-RTT disabled for newly issued tickets. A non-zero
+	 * value advertises that early-data allowance and implicitly enables
+	 * session-ticket issuance for the HTTP/3 listener.
+	 */
+	uint32_t max_early_data_size;
+};
+
+/** HTTP service configuration */
+struct http_service_config {
+	/** Custom socket creation for the service if needed */
+	http_socket_create_fn socket_create;
+	/** What HTTP version to use for the service. */
+	enum http_version http_ver;
+	/** HTTP/3-specific configuration. */
+	struct http_service_h3_config h3;
+
+	/* If any more service-specific configuration is needed, it can be added here. */
+};
+
+/** @cond INTERNAL_HIDDEN */
+
 struct http_service_desc {
 	const char *host;
 	uint16_t *port;
+	int *fd;
+	/* QUIC listening connection socket for HTTP/3. It is used to accept
+	 * new connections for this service.
+	 * Set to NULL if HTTP/3 is not supported, and set to -1 if HTTP/3 is
+	 * not yet initialized or enabled for this service. If HTTP/3 is supported then
+	 * this pointer cannot be null.
+	 */
+	int *fd_h3;
 	void *detail;
 	size_t concurrent;
 	size_t backlog;
+	struct http_service_runtime_data *data;
 	struct http_resource_desc *res_begin;
 	struct http_resource_desc *res_end;
+	struct http_resource_detail *res_fallback;
+	const struct http_service_config *config;
 #if defined(CONFIG_NET_SOCKETS_SOCKOPT_TLS)
 	const sec_tag_t *sec_tag_list;
 	size_t sec_tag_list_size;
 #endif
 };
 
-#define __z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail, _res_begin,   \
-				_res_end, ...)                                                     \
-	static const STRUCT_SECTION_ITERABLE(http_service_desc, _name) = {                         \
+#define __z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,               \
+				_res_fallback, _res_begin, _res_end, _config, ...)                 \
+	BUILD_ASSERT(_concurrent <= CONFIG_HTTP_SERVER_MAX_CLIENTS,                                \
+		     "can't accept more then MAX_CLIENTS");                                        \
+	BUILD_ASSERT(_backlog > 0, "backlog can't be 0");                                          \
+	static int _name##_fd = -1;                                                                \
+	IF_ENABLED(CONFIG_HTTP_SERVER_VERSION_3, (static int _name##_fd_h3 = -1;))                 \
+	static struct http_service_runtime_data _name##_data = {0};                                \
+	const STRUCT_SECTION_ITERABLE(http_service_desc, _name) = {                                \
 		.host = _host,                                                                     \
 		.port = (uint16_t *)(_port),                                                       \
+		.fd = &_name##_fd,                                                                 \
+		IF_ENABLED(CONFIG_HTTP_SERVER_VERSION_3, (.fd_h3 = &_name##_fd_h3,))               \
 		.detail = (void *)(_detail),                                                       \
 		.concurrent = (_concurrent),                                                       \
 		.backlog = (_backlog),                                                             \
+		.data = &_name##_data,                                                             \
 		.res_begin = (_res_begin),                                                         \
 		.res_end = (_res_end),                                                             \
+		.res_fallback = (_res_fallback),                                                   \
+		.config = (_config),                                                               \
 		COND_CODE_1(CONFIG_NET_SOCKETS_SOCKOPT_TLS,                                        \
 			    (.sec_tag_list = COND_CODE_0(NUM_VA_ARGS_LESS_1(__VA_ARGS__), (NULL),  \
 							 (GET_ARG_N(1, __VA_ARGS__))),), ())       \
@@ -113,12 +210,16 @@ struct http_service_desc {
  * @param _name Name of the service.
  * @param _host IP address or hostname associated with the service.
  * @param[inout] _port Pointer to port associated with the service.
- * @param _concurrent Maximum number of concurrent clients.
- * @param _backlog Maximum number queued connections.
- * @param _detail Implementation-specific detail associated with the service.
+ * @param _concurrent Maximum number of concurrent clients. (max. CONFIG_HTTP_SERVER_MAX_CLIENTS)
+ * @param _backlog Maximum number of queued connections. (min. 1)
+ * @param _detail User-defined detail associated with the service.
+ * @param _res_fallback Fallback resource to be served if no other resource matches path
+ * @param _config Pointer to http_service_config structure (can be NULL for default behavior)
  */
-#define HTTP_SERVICE_DEFINE_EMPTY(_name, _host, _port, _concurrent, _backlog, _detail)             \
-	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail, NULL, NULL)
+#define HTTP_SERVICE_DEFINE_EMPTY(_name, _host, _port, _concurrent, _backlog, _detail,             \
+				  _res_fallback, _config)                                          \
+	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,               \
+				_res_fallback, NULL, NULL, _config)
 
 /**
  * @brief Define an HTTPS service without static resources.
@@ -135,15 +236,18 @@ struct http_service_desc {
  * @param _name Name of the service.
  * @param _host IP address or hostname associated with the service.
  * @param[inout] _port Pointer to port associated with the service.
- * @param _concurrent Maximum number of concurrent clients.
- * @param _backlog Maximum number queued connections.
- * @param _detail Implementation-specific detail associated with the service.
+ * @param _concurrent Maximum number of concurrent clients. (max. CONFIG_HTTP_SERVER_MAX_CLIENTS)
+ * @param _backlog Maximum number of queued connections. (min. 1)
+ * @param _detail User-defined detail associated with the service.
+ * @param _res_fallback Fallback resource to be served if no other resource matches path
+ * @param _config Pointer to http_service_config structure (can be NULL for default behavior)
  * @param _sec_tag_list TLS security tag list used to setup a HTTPS socket.
  * @param _sec_tag_list_size TLS security tag list size used to setup a HTTPS socket.
  */
 #define HTTPS_SERVICE_DEFINE_EMPTY(_name, _host, _port, _concurrent, _backlog, _detail,          \
-				   _sec_tag_list, _sec_tag_list_size)                            \
-	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail, NULL, NULL, \
+				   _res_fallback, _config, _sec_tag_list, _sec_tag_list_size)    \
+	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,             \
+				_res_fallback, NULL, NULL, _config,                              \
 				_sec_tag_list, _sec_tag_list_size);				 \
 	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS),				 \
 		     "TLS is required for HTTP secure (CONFIG_NET_SOCKETS_SOCKOPT_TLS)")
@@ -163,16 +267,20 @@ struct http_service_desc {
  * @param _name Name of the service.
  * @param _host IP address or hostname associated with the service.
  * @param[inout] _port Pointer to port associated with the service.
- * @param _concurrent Maximum number of concurrent clients.
- * @param _backlog Maximum number queued connections.
- * @param _detail Implementation-specific detail associated with the service.
+ * @param _concurrent Maximum number of concurrent clients. (max. CONFIG_HTTP_SERVER_MAX_CLIENTS)
+ * @param _backlog Maximum number of queued connections. (min. 1)
+ * @param _detail User-defined detail associated with the service.
+ * @param _res_fallback Fallback resource to be served if no other resource matches path
+ * @param _config Pointer to http_service_config structure (can be NULL for default behavior)
  */
-#define HTTP_SERVICE_DEFINE(_name, _host, _port, _concurrent, _backlog, _detail)                   \
+#define HTTP_SERVICE_DEFINE(_name, _host, _port, _concurrent, _backlog, _detail, _res_fallback,    \
+			    _config)                                                               \
 	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_start)[];      \
 	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_end)[];        \
 	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,               \
+				_res_fallback,                                                     \
 				&_CONCAT(_http_resource_desc_##_name, _list_start)[0],             \
-				&_CONCAT(_http_resource_desc_##_name, _list_end)[0])
+				&_CONCAT(_http_resource_desc_##_name, _list_end)[0], _config);
 
 /**
  * @brief Define an HTTPS service with static resources.
@@ -189,19 +297,22 @@ struct http_service_desc {
  * @param _name Name of the service.
  * @param _host IP address or hostname associated with the service.
  * @param[inout] _port Pointer to port associated with the service.
- * @param _concurrent Maximum number of concurrent clients.
- * @param _backlog Maximum number queued connections.
- * @param _detail Implementation-specific detail associated with the service.
+ * @param _concurrent Maximum number of concurrent clients. (max. CONFIG_HTTP_SERVER_MAX_CLIENTS)
+ * @param _backlog Maximum number of queued connections. (min. 1)
+ * @param _detail User-defined detail associated with the service.
+ * @param _res_fallback Fallback resource to be served if no other resource matches path
+ * @param _config Pointer to http_service_config structure (can be NULL for default behavior)
  * @param _sec_tag_list TLS security tag list used to setup a HTTPS socket.
  * @param _sec_tag_list_size TLS security tag list size used to setup a HTTPS socket.
  */
 #define HTTPS_SERVICE_DEFINE(_name, _host, _port, _concurrent, _backlog, _detail,              \
-			     _sec_tag_list, _sec_tag_list_size)                                \
+			     _res_fallback, _config, _sec_tag_list, _sec_tag_list_size)        \
 	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_start)[];  \
 	extern struct http_resource_desc _CONCAT(_http_resource_desc_##_name, _list_end)[];    \
 	__z_http_service_define(_name, _host, _port, _concurrent, _backlog, _detail,           \
+				_res_fallback,                                                 \
 				&_CONCAT(_http_resource_desc_##_name, _list_start)[0],         \
-				&_CONCAT(_http_resource_desc_##_name, _list_end)[0],           \
+				&_CONCAT(_http_resource_desc_##_name, _list_end)[0], _config,  \
 				_sec_tag_list, _sec_tag_list_size);                            \
 	BUILD_ASSERT(IS_ENABLED(CONFIG_NET_SOCKETS_SOCKOPT_TLS),                               \
 		     "TLS is required for HTTP secure (CONFIG_NET_SOCKETS_SOCKOPT_TLS)")

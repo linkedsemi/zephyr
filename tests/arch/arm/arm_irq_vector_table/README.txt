@@ -2,39 +2,34 @@ Title: Installation of ISRs Directly in the Vector Table (ARM Only)
 
 Description:
 
-Verify a project can install ISRs directly in the vector table. Only for
-ARM Cortex-M targets.
+This test verifies that a project can install ISRs directly in the interrupt
+vector table. It is supported on ARM Cortex-M Baseline and Mainline targets.
+
+The vector_table suite builds a vector table populated with the addresses of
+the interrupt handlers, pends the interrupts (via NVIC_SetPendingIRQ() or the
+Software Trigger Interrupt Register) and checks that the corresponding
+handlers are invoked.
 
 ---------------------------------------------------------------------------
 
-Building and Running Project:
+Building and Running:
 
-This project outputs to the console.  It can be built and executed on QEMU as
-follows:
+Build and run with twister, for example on a QEMU ARM Cortex-M target:
 
-    make run
+    west twister -p mps2/an385 -T tests/arch/arm/arm_irq_vector_table
 
----------------------------------------------------------------------------
+Or build and run a single platform directly with west:
 
-Troubleshooting:
-
-Problems caused by out-dated project information can be addressed by
-issuing one of the following commands then rebuilding the project:
-
-    make clean          # discard results of previous builds
-                        # but keep existing configuration info
-or
-    make pristine       # discard results of previous builds
-                        # and restore pre-defined configuration info
+    west build -b mps2/an385 tests/arch/arm/arm_irq_vector_table
+    west build -t run
 
 ---------------------------------------------------------------------------
 
 Sample Output:
 
-tc_start() - Test Cortex-M3 IRQ installed directly in vector table
-isr0 ran!
-isr1 ran!
-isr2 ran!
-PASS - main.
+Running TESTSUITE vector_table
 ===================================================================
-PROJECT EXECUTION SUCCESSFUL
+START - test_arm_irq_vector_table
+ PASS - test_arm_irq_vector_table
+===================================================================
+TESTSUITE vector_table succeeded

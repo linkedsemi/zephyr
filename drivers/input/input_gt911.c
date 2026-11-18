@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2020 NXP
+ * Copyright (c) 2020, 2025 NXP
  * Copyright (c) 2020 Mark Olsson <mark@markolsson.se>
  * Copyright (c) 2020 Teslabs Engineering S.L.
  *
@@ -11,59 +11,51 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/input/input.h>
+#include <zephyr/input/input_touch.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/minmax.h>
+#include <zephyr/pm/pm.h>
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(gt911, CONFIG_INPUT_LOG_LEVEL);
 
 /* GT911 used registers */
-#define DEVICE_ID  BSWAP_16(0x8140U)
-#define REG_STATUS BSWAP_16(0x814EU)
+#define GT911_DEVICE_ID  0x8140U
+#define GT911_REG_STATUS 0x814EU
 
 /* REG_TD_STATUS: Touch points. */
-#define TOUCH_POINTS_MSK 0x0FU
+#define GT911_TOUCH_POINTS_MSK 0x0FU
 
 /* REG_TD_STATUS: Pressed. */
-#define TOUCH_STATUS_MSK (1 << 7U)
+#define GT911_TOUCH_STATUS_MSK (1 << 7U)
 
 /* The GT911's config */
-#define REG_GT911_CONFIG            BSWAP_16(0x8047U)
-#define REG_CONFIG_VERSION          REG_GT911_CONFIG
-#define REG_CONFIG_TOUCH_NUM_OFFSET 0x5
-#define REG_CONFIG_SIZE             186U
-#define GT911_PRODUCT_ID            0x00313139U
+#define GT911_REG_CONFIG                  0x8047U
+#define GT911_REG_CONFIG_VERSION          GT911_REG_CONFIG
+#define GT911_REG_CONFIG_TOUCH_NUM_OFFSET 0x5
+#define GT911_REG_CONFIG_SIZE             186U
+#define GT911_PRODUCT_ID                  0x00313139U
+#define GT9271_PRODUCT_ID                 0x31373239U
+#define GT912_PRODUCT_ID                  0x00323139U
+#define GT927_PRODUCT_ID                  0x00373239U
+#define GT928_PRODUCT_ID                  0x00383239U
+#define GT967_PRODUCT_ID                  0x00373639U
 
 /* Points registers */
-#define REG_POINT_0       0x814F
-#define POINT_OFFSET      0x8
-#define REG_POINT_ADDR(n) BSWAP_16(REG_POINT_0 + POINT_OFFSET * n)
+#define GT911_REG_POINT_0       0x814F
+#define GT911_POINT_OFFSET      0x8
+#define GT911_REG_POINT_ADDR(n) (GT911_REG_POINT_0 + GT911_POINT_OFFSET * n)
 
 /** GT911 configuration (DT). */
 struct gt911_config {
+	struct input_touchscreen_common_config common;
 	/** I2C bus. */
 	struct i2c_dt_spec bus;
 	struct gpio_dt_spec rst_gpio;
-	/** Interrupt GPIO information. */
+	/** Interrupt GPIO information. Optional, port is NULL when absent. */
 	struct gpio_dt_spec int_gpio;
 	/* Alternate fallback I2C address */
 	uint8_t alt_addr;
-};
-
-/** GT911 data. */
-struct gt911_data {
-	/** Device pointer. */
-	const struct device *dev;
-	/** Work queue (for deferred read). */
-	struct k_work work;
-	/** Actual device I2C address */
-	uint8_t actual_address;
-#ifdef CONFIG_INPUT_GT911_INTERRUPT
-	/** Interrupt GPIO callback. */
-	struct gpio_callback int_gpio_cb;
-#else
-	/** Timer (polling mode). */
-	struct k_timer timer;
-#endif
 };
 
 /** gt911 point reg */
@@ -77,6 +69,32 @@ struct gt911_point_reg {
 	uint8_t high_size; /*!< High byte of point size. */
 	uint8_t reserved;  /*!< Reserved. */
 };
+
+/** GT911 data. */
+struct gt911_data {
+	/** Device pointer. */
+	const struct device *dev;
+	/** Work queue (for deferred read). */
+	struct k_work work;
+	/** Actual device I2C address */
+	uint8_t actual_address;
+	/** Number of touch points reported by the previous scan. */
+	uint8_t prev_points;
+	/** Touch points reported by the previous scan. */
+	struct gt911_point_reg prev_point_reg[CONFIG_INPUT_GT911_MAX_TOUCH_POINTS];
+#ifdef CONFIG_INPUT_GT911_INTERRUPT
+	/** Interrupt GPIO callback. */
+	struct gpio_callback int_gpio_cb;
+#else
+	/** Timer (polling mode). */
+	struct k_timer timer;
+#endif
+#ifdef CONFIG_PM
+	struct pm_notifier pm_notifier_handle;
+#endif
+};
+
+INPUT_TOUCH_STRUCT_CHECK(struct gt911_config);
 
 /*
  * Device-specific wrappers around i2c_write_dt and i2c_write_read_dt.
@@ -103,6 +121,7 @@ static int gt911_i2c_write_read(const struct device *dev, const void *write_buf,
 
 static int gt911_process(const struct device *dev)
 {
+	struct gt911_data *data = dev->data;
 	int r;
 	uint16_t reg_addr;
 	uint8_t status;
@@ -111,18 +130,16 @@ static int gt911_process(const struct device *dev)
 	uint16_t row;
 	uint16_t col;
 	uint8_t points;
-	static uint8_t prev_points;
 	struct gt911_point_reg point_reg[CONFIG_INPUT_GT911_MAX_TOUCH_POINTS];
-	static struct gt911_point_reg prev_point_reg[CONFIG_INPUT_GT911_MAX_TOUCH_POINTS];
 
 	/* obtain number of touch points */
-	reg_addr = REG_STATUS;
+	reg_addr = sys_cpu_to_be16(GT911_REG_STATUS);
 	r = gt911_i2c_write_read(dev, &reg_addr, sizeof(reg_addr), &status, sizeof(status));
 	if (r < 0) {
 		return r;
 	}
 
-	if (!(status & TOUCH_STATUS_MSK)) {
+	if (!(status & GT911_TOUCH_STATUS_MSK)) {
 		/* Status bit not set, ignore this event */
 		return 0;
 	}
@@ -130,12 +147,14 @@ static int gt911_process(const struct device *dev)
 	/*
 	 * Note- since we program the max number of touch inputs during init,
 	 * the controller won't report more than the maximum number of touch
-	 * points we are configured to support
+	 * points we are configured to support. Clamp anyway so that corrupted
+	 * data on the bus cannot overflow the point array.
 	 */
-	points = status & TOUCH_POINTS_MSK;
+	points = min(status & GT911_TOUCH_POINTS_MSK, CONFIG_INPUT_GT911_MAX_TOUCH_POINTS);
 
 	/* need to clear the status */
-	uint8_t clear_buffer[3] = {(uint8_t)REG_STATUS, (uint8_t)(REG_STATUS >> 8), 0};
+	static const uint8_t clear_buffer[3] = {(uint8_t)(GT911_REG_STATUS >> 8),
+						(uint8_t)GT911_REG_STATUS, 0};
 
 	r = gt911_i2c_write(dev, clear_buffer, sizeof(clear_buffer));
 	if (r < 0) {
@@ -144,7 +163,7 @@ static int gt911_process(const struct device *dev)
 
 	/* current points array */
 	for (i = 0; i < points; i++) {
-		reg_addr = REG_POINT_ADDR(i);
+		reg_addr = sys_cpu_to_be16(GT911_REG_POINT_ADDR(i));
 		r = gt911_i2c_write_read(dev, &reg_addr, sizeof(reg_addr), &point_reg[i],
 					 sizeof(point_reg[i]));
 
@@ -162,35 +181,35 @@ static int gt911_process(const struct device *dev)
 		row = ((point_reg[i].high_y) << 8U) | point_reg[i].low_y;
 		col = ((point_reg[i].high_x) << 8U) | point_reg[i].low_x;
 
-		input_report_abs(dev, INPUT_ABS_X, col, false, K_FOREVER);
-		input_report_abs(dev, INPUT_ABS_Y, row, false, K_FOREVER);
+		input_touchscreen_report_pos(dev, col, row, K_FOREVER);
 		input_report_key(dev, INPUT_BTN_TOUCH, 1, true, K_FOREVER);
 	}
 
 	/* release events */
-	for (i = 0; i < prev_points; i++) {
+	for (i = 0; i < data->prev_points; i++) {
 		/* We look for the prev_point in the current points list */
 		for (j = 0; j < points; j++) {
-			if (prev_point_reg[i].id == point_reg[j].id) {
+			if (data->prev_point_reg[i].id == point_reg[j].id) {
 				break;
 			}
 		}
 
 		if (j == points) {
 			if (CONFIG_INPUT_GT911_MAX_TOUCH_POINTS > 1) {
-				input_report_abs(dev, INPUT_ABS_MT_SLOT, prev_point_reg[i].id, true,
-						 K_FOREVER);
+				input_report_abs(dev, INPUT_ABS_MT_SLOT,
+						 data->prev_point_reg[i].id, true, K_FOREVER);
 			}
-			row = ((prev_point_reg[i].high_y) << 8U) | prev_point_reg[i].low_y;
-			col = ((prev_point_reg[i].high_x) << 8U) | prev_point_reg[i].low_x;
-			input_report_abs(dev, INPUT_ABS_X, col, false, K_FOREVER);
-			input_report_abs(dev, INPUT_ABS_Y, row, false, K_FOREVER);
+			row = ((data->prev_point_reg[i].high_y) << 8U) |
+			      data->prev_point_reg[i].low_y;
+			col = ((data->prev_point_reg[i].high_x) << 8U) |
+			      data->prev_point_reg[i].low_x;
+			input_touchscreen_report_pos(dev, col, row, K_FOREVER);
 			input_report_key(dev, INPUT_BTN_TOUCH, 0, true, K_FOREVER);
 		}
 	}
 
-	memcpy(prev_point_reg, point_reg, sizeof(point_reg));
-	prev_points = points;
+	memcpy(data->prev_point_reg, point_reg, sizeof(point_reg));
+	data->prev_points = points;
 
 	return 0;
 }
@@ -223,7 +242,7 @@ static uint8_t gt911_get_firmware_checksum(const uint8_t *firmware)
 	uint8_t sum = 0;
 	uint16_t i = 0;
 
-	for (i = 0; i < REG_CONFIG_SIZE - 2U; i++) {
+	for (i = 0; i < GT911_REG_CONFIG_SIZE - 2U; i++) {
 		sum += (*firmware);
 		firmware++;
 	}
@@ -233,9 +252,44 @@ static uint8_t gt911_get_firmware_checksum(const uint8_t *firmware)
 
 static bool gt911_verify_firmware(const uint8_t *firmware)
 {
-	return ((firmware[REG_CONFIG_VERSION - REG_GT911_CONFIG] != 0U) &&
-		(gt911_get_firmware_checksum(firmware) == firmware[REG_CONFIG_SIZE - 2U]));
+	return ((firmware[GT911_REG_CONFIG_VERSION - GT911_REG_CONFIG] != 0U) &&
+		(gt911_get_firmware_checksum(firmware) == firmware[GT911_REG_CONFIG_SIZE - 2U]));
 }
+
+#if CONFIG_PM
+static void gt911_pm_state_exit(const struct device *dev, enum pm_state state)
+{
+	switch (state) {
+	case PM_STATE_STANDBY:
+		/* Reconfigure the GPIO interrupt pin on exit from
+		 * certain low power states as we might lose the GPIO state.
+		 */
+		const struct gt911_config *config = dev->config;
+		int r;
+
+		if (config->int_gpio.port == NULL) {
+			break;
+		}
+
+		r = gpio_pin_configure_dt(&config->int_gpio, GPIO_INPUT);
+		if (r < 0) {
+			LOG_ERR("Could not configure interrupt GPIO pin");
+			return;
+		}
+
+#ifdef CONFIG_INPUT_GT911_INTERRUPT
+		r = gpio_pin_interrupt_configure_dt(&config->int_gpio, GPIO_INT_EDGE_TO_ACTIVE);
+		if (r < 0) {
+			LOG_ERR("Could not configure interrupt GPIO interrupt.");
+			return;
+		}
+#endif /* CONFIG_INPUT_GT911_INTERRUPT */
+		break;
+	default:
+		break;
+	}
+}
+#endif /* CONFIG_PM */
 
 static int gt911_init(const struct device *dev)
 {
@@ -243,7 +297,7 @@ static int gt911_init(const struct device *dev)
 	struct gt911_data *data = dev->data;
 
 	if (!i2c_is_ready_dt(&config->bus)) {
-		LOG_ERR("I2C controller device not ready");
+		LOG_ERR_DEVICE_NOT_READY(config->bus.bus);
 		return -ENODEV;
 	}
 
@@ -254,14 +308,14 @@ static int gt911_init(const struct device *dev)
 
 	int r;
 
-	if (!gpio_is_ready_dt(&config->int_gpio)) {
-		LOG_ERR("Interrupt GPIO controller device not ready");
+	if (config->int_gpio.port != NULL && !gpio_is_ready_dt(&config->int_gpio)) {
+		LOG_ERR_DEVICE_NOT_READY(config->int_gpio.port);
 		return -ENODEV;
 	}
 
 	if (config->rst_gpio.port != NULL) {
 		if (!gpio_is_ready_dt(&config->rst_gpio)) {
-			LOG_ERR("Reset GPIO controller device not ready");
+			LOG_ERR_DEVICE_NOT_READY(config->rst_gpio.port);
 			return -ENODEV;
 		}
 
@@ -276,20 +330,22 @@ static int gt911_init(const struct device *dev)
 	 * We need to configure the int-pin to 0, in order to enter the
 	 * AddressMode0. Keeping the INT pin low during the reset sequence
 	 * should result in the device selecting an I2C address of 0x5D.
-	 * Note that if an alternate I2C address is set, we will probe
-	 * for the alternate address if 0x5D does not work. This is useful
-	 * for boards that do not route the INT pin, or only permit it
-	 * to be used as an input
+	 * A board that does not route the pin, or only permits it to be used
+	 * as an input, leaves the address to the strapping on the panel
+	 * instead, so alt-addr has to name the other one for the probing
+	 * below to find the device.
 	 */
-	r = gpio_pin_configure_dt(&config->int_gpio, GPIO_OUTPUT_INACTIVE);
-	if (r < 0) {
-		LOG_ERR("Could not configure int GPIO pin");
-		return r;
+	if (config->int_gpio.port != NULL) {
+		r = gpio_pin_configure_dt(&config->int_gpio, GPIO_OUTPUT_INACTIVE);
+		if (r < 0) {
+			LOG_ERR("Could not configure int GPIO pin");
+			return r;
+		}
 	}
 	/* Delay at least 10 ms after power on before we configure gt911 */
 	k_sleep(K_MSEC(20));
 	if (config->rst_gpio.port != NULL) {
-		/* reset the device and confgiure the addr mode0 */
+		/* reset the device and configure the addr mode0 */
 		gpio_pin_set_dt(&config->rst_gpio, 1);
 		/* hold down at least 1us, 1ms here */
 		k_sleep(K_MSEC(1));
@@ -300,10 +356,12 @@ static int gt911_init(const struct device *dev)
 	/* hold down 50ms to make sure the address available */
 	k_sleep(K_MSEC(50));
 
-	r = gpio_pin_configure_dt(&config->int_gpio, GPIO_INPUT);
-	if (r < 0) {
-		LOG_ERR("Could not configure interrupt GPIO pin");
-		return r;
+	if (config->int_gpio.port != NULL) {
+		r = gpio_pin_configure_dt(&config->int_gpio, GPIO_INPUT);
+		if (r < 0) {
+			LOG_ERR("Could not configure interrupt GPIO pin");
+			return r;
+		}
 	}
 
 #ifdef CONFIG_INPUT_GT911_INTERRUPT
@@ -320,7 +378,7 @@ static int gt911_init(const struct device *dev)
 
 	/* check the Device ID first: '911' */
 	uint32_t reg_id = 0;
-	uint16_t reg_addr = DEVICE_ID;
+	uint16_t reg_addr = sys_cpu_to_be16(GT911_DEVICE_ID);
 
 	if (config->alt_addr != 0x0) {
 		/*
@@ -348,18 +406,26 @@ static int gt911_init(const struct device *dev)
 		LOG_ERR("Device did not respond to I2C request");
 		return r;
 	}
-	if (reg_id != GT911_PRODUCT_ID) {
-		LOG_ERR("The Device ID is not correct");
+	switch (sys_cpu_to_le32(reg_id)) {
+	case GT911_PRODUCT_ID:
+	case GT912_PRODUCT_ID:
+	case GT927_PRODUCT_ID:
+	case GT928_PRODUCT_ID:
+	case GT967_PRODUCT_ID:
+	case GT9271_PRODUCT_ID:
+		break;
+	default:
+		LOG_ERR("Unexpected device id: %08x ", sys_cpu_to_le32(reg_id));
 		return -ENODEV;
 	}
 
 	/* need to setup the firmware first: read and write */
-	uint8_t gt911_config_firmware[REG_CONFIG_SIZE + 2] = {(uint8_t)REG_GT911_CONFIG,
-							      (uint8_t)(REG_GT911_CONFIG >> 8)};
+	uint8_t gt911_config_firmware[GT911_REG_CONFIG_SIZE + 2] = {
+		(uint8_t)(GT911_REG_CONFIG >> 8), (uint8_t)GT911_REG_CONFIG};
 
-	reg_addr = REG_GT911_CONFIG;
+	reg_addr = sys_cpu_to_be16(GT911_REG_CONFIG);
 	r = gt911_i2c_write_read(dev, &reg_addr, sizeof(reg_addr), gt911_config_firmware + 2,
-				 REG_CONFIG_SIZE);
+				 GT911_REG_CONFIG_SIZE);
 	if (r < 0) {
 		return r;
 	}
@@ -367,12 +433,12 @@ static int gt911_init(const struct device *dev)
 		return -ENODEV;
 	}
 
-	gt911_config_firmware[REG_CONFIG_TOUCH_NUM_OFFSET + 2] =
+	gt911_config_firmware[GT911_REG_CONFIG_TOUCH_NUM_OFFSET + 2] =
 		CONFIG_INPUT_GT911_MAX_TOUCH_POINTS;
 
-	gt911_config_firmware[REG_CONFIG_SIZE] =
+	gt911_config_firmware[GT911_REG_CONFIG_SIZE] =
 		gt911_get_firmware_checksum(gt911_config_firmware + 2);
-	gt911_config_firmware[REG_CONFIG_SIZE + 1] = 1;
+	gt911_config_firmware[GT911_REG_CONFIG_SIZE + 1] = 1;
 
 	r = gt911_i2c_write(dev, gt911_config_firmware, sizeof(gt911_config_firmware));
 	if (r < 0) {
@@ -390,17 +456,47 @@ static int gt911_init(const struct device *dev)
 		      K_MSEC(CONFIG_INPUT_GT911_PERIOD_MS));
 #endif
 
+#if CONFIG_PM
+	/* We need to reconfigure the interrupt GPIO when waking up from
+	 * certain low power modes.
+	 */
+	pm_notifier_register(&data->pm_notifier_handle);
+#endif
 	return 0;
 }
 
+#if CONFIG_PM
+#define GT911_PM_NOTIFIER_FUNCS(n)                                                                 \
+static void gt911_##n##_pm_state_exit(enum pm_state state)                                         \
+{                                                                                                  \
+	gt911_pm_state_exit(DEVICE_DT_INST_GET(n), state);                                         \
+}
+
+#define GT911_PM_NOTIFIER(n)                                                                       \
+	.pm_notifier_handle = {                                                                    \
+		.state_exit = gt911_##n##_pm_state_exit,                                           \
+	},
+#else
+#define GT911_PM_NOTIFIER_FUNCS(n)
+#define GT911_PM_NOTIFIER(n)
+#endif /* CONFIG_PM */
+
 #define GT911_INIT(index)                                                                          \
+	BUILD_ASSERT(!IS_ENABLED(CONFIG_INPUT_GT911_INTERRUPT) ||                                  \
+			     DT_INST_NODE_HAS_PROP(index, irq_gpios),                              \
+		     "CONFIG_INPUT_GT911_INTERRUPT applies to every GT911, so none of "            \
+		     "them may leave irq-gpios out");                                              \
 	static const struct gt911_config gt911_config_##index = {                                  \
+		.common = INPUT_TOUCH_DT_INST_COMMON_CONFIG_INIT(index),		           \
 		.bus = I2C_DT_SPEC_INST_GET(index),                                                \
 		.rst_gpio = GPIO_DT_SPEC_INST_GET_OR(index, reset_gpios, {0}),                     \
-		.int_gpio = GPIO_DT_SPEC_INST_GET(index, irq_gpios),                               \
+		.int_gpio = GPIO_DT_SPEC_INST_GET_OR(index, irq_gpios, {0}),                       \
 		.alt_addr = DT_INST_PROP_OR(index, alt_addr, 0),                                   \
 	};                                                                                         \
-	static struct gt911_data gt911_data_##index;                                               \
+	GT911_PM_NOTIFIER_FUNCS(index)                                                             \
+	static struct gt911_data gt911_data_##index = {                                            \
+		GT911_PM_NOTIFIER(index)                                                           \
+	};                                                                                         \
 	DEVICE_DT_INST_DEFINE(index, gt911_init, NULL, &gt911_data_##index, &gt911_config_##index, \
 			      POST_KERNEL, CONFIG_INPUT_INIT_PRIORITY, NULL);
 

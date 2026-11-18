@@ -6,7 +6,8 @@
 
 /dts-v1/;
 
-#include "nrf54l15_cpuapp_common.dtsi"
+#include <nordic/nrf54l15_cpuapp.dtsi>
+#include "nrf54l_05_10_15_cpuapp_common.dtsi"
 
 / {
 	compatible = "nordic,nrf54l15dk_nrf54l15-cpuapp";
@@ -14,6 +15,9 @@
 
 	chosen {
 		zephyr,code-partition = &slot0_partition;
-		zephyr,sram = &cpuapp_sram;
+		zephyr,sram = &cpuapp_sram_app;
 	};
 };
+
+/* Include default memory partition configuration file */
+#include <vendor/nordic/nrf54l15_cpuapp_partition.dtsi>

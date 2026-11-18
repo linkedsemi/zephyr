@@ -5,10 +5,9 @@ arch: arm
 toolchain:
   - zephyr
   - gnuarmemb
-  - xtools
 ram: 16
 supported:
-  - ble
+  - bluetooth
 testing:
   ignore_tags:
     - net

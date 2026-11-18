@@ -16,7 +16,7 @@
 
 LOG_MODULE_REGISTER(smp_lorawan, CONFIG_MCUMGR_TRANSPORT_LORAWAN_LOG_LEVEL);
 
-static void smp_lorawan_downlink(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
+static void smp_lorawan_downlink(uint8_t port, uint8_t flags, int16_t rssi, int8_t snr,
 				 uint8_t len, const uint8_t *hex_data);
 
 static int smp_lorawan_uplink(struct net_buf *nb);
@@ -28,10 +28,12 @@ static struct lorawan_downlink_cb lorawan_smp_downlink_cb = {
 	.cb = smp_lorawan_downlink,
 };
 
+TOOLCHAIN_DISABLE_WARNING(TOOLCHAIN_WARNING_DEPRECATED_DECLARATIONS)
 struct smp_transport smp_lorawan_transport = {
 	.functions.output = smp_lorawan_uplink,
 	.functions.get_mtu = smp_lorawan_get_mtu,
 };
+TOOLCHAIN_ENABLE_WARNING(TOOLCHAIN_WARNING_DEPRECATED_DECLARATIONS)
 
 #ifdef CONFIG_SMP_CLIENT
 struct smp_client_transport_entry smp_lorawan_client_transport = {
@@ -122,10 +124,10 @@ static void smp_lorawan_uplink_thread(void *p1, void *p2, void *p3)
 }
 #endif
 
-static void smp_lorawan_downlink(uint8_t port, bool data_pending, int16_t rssi, int8_t snr,
+static void smp_lorawan_downlink(uint8_t port, uint8_t flags, int16_t rssi, int8_t snr,
 				 uint8_t len, const uint8_t *hex_data)
 {
-	ARG_UNUSED(data_pending);
+	ARG_UNUSED(flags);
 	ARG_UNUSED(rssi);
 	ARG_UNUSED(snr);
 
@@ -248,10 +250,6 @@ static void smp_lorawan_start(void)
 	} else {
 		LOG_ERR("Failed to init LoRaWAN MCUmgr SMP transport: %d", rc);
 	}
-
-#ifdef CONFIG_MCUMGR_TRANSPORT_LORAWAN_REASSEMBLY
-	smp_reassembly_init(&smp_lorawan_transport);
-#endif
 
 #ifdef CONFIG_MCUMGR_TRANSPORT_LORAWAN_POLL_FOR_DATA
 	k_thread_create(&smp_lorawan_thread, smp_lorawan_stack,

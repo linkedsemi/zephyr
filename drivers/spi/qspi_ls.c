@@ -1357,7 +1357,7 @@ static const struct spi_nor_ops qspi_ls_nor_ops = {
 	.write_init = qspi_ls_write_init,
 };
 
-static const struct spi_driver_api qspi_ls_api = {
+static DEVICE_API(spi, qspi_ls_api) = {
 	.transceive = qspi_ls_transceive,
 	.release = qspi_ls_release,
 	.spi_nor_op = &qspi_ls_nor_ops,

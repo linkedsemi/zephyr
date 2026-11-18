@@ -4,14 +4,15 @@
 #
 # SPDX-License-Identifier: Apache-2.0
 
-SIMULATION_ID="cap_unicast_inval"
-VERBOSITY_LEVEL=2
-
 source ${ZEPHYR_BASE}/tests/bsim/sh_common.source
+
+SIMULATION_ID="${BOARD_TS}_cap_unicast_inval"
+VERBOSITY_LEVEL=2
+EXECUTE_TIMEOUT=120
 
 cd ${BSIM_OUT_PATH}/bin
 
-printf "\n\n======== Running CAP unicast test =========\n\n"
+printf "\n\n======== Running CAP unicast inval test =========\n\n"
 
 Execute ./bs_${BOARD_TS}_tests_bsim_bluetooth_audio_prj_conf \
   -v=${VERBOSITY_LEVEL} -s=${SIMULATION_ID} -d=0 -testid=cap_initiator_unicast_inval \

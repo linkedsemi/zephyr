@@ -29,7 +29,6 @@ static int ntc_thermistor_sample_fetch(const struct device *dev, enum sensor_cha
 {
 	struct ntc_thermistor_data *data = dev->data;
 	const struct ntc_thermistor_config *cfg = dev->config;
-	enum pm_device_state pm_state;
 	int res;
 	struct adc_sequence sequence = {
 		.options = NULL,
@@ -37,11 +36,6 @@ static int ntc_thermistor_sample_fetch(const struct device *dev, enum sensor_cha
 		.buffer_size = sizeof(data->raw),
 		.calibrate = false,
 	};
-
-	(void)pm_device_state_get(dev, &pm_state);
-	if (pm_state != PM_DEVICE_STATE_ACTIVE) {
-		return -EIO;
-	}
 
 	k_mutex_lock(&data->mutex, K_FOREVER);
 
@@ -75,8 +69,10 @@ static int ntc_thermistor_channel_get(const struct device *dev, enum sensor_chan
 
 	switch (chan) {
 	case SENSOR_CHAN_AMBIENT_TEMP:
+		k_mutex_lock(&data->mutex, K_FOREVER);
 		ohm = ntc_get_ohm_of_thermistor(&cfg->ntc_cfg, data->sample_val,
 						data->sample_val_max);
+		k_mutex_unlock(&data->mutex);
 		temp = ntc_get_temp_mc(&cfg->ntc_cfg.type, ohm);
 		val->val1 = temp / 1000;
 		val->val2 = (temp % 1000) * 1000;
@@ -87,7 +83,7 @@ static int ntc_thermistor_channel_get(const struct device *dev, enum sensor_chan
 	return 0;
 }
 
-static const struct sensor_driver_api ntc_thermistor_driver_api = {
+static DEVICE_API(sensor, ntc_thermistor_driver_api) = {
 	.sample_fetch = ntc_thermistor_sample_fetch,
 	.channel_get = ntc_thermistor_channel_get,
 };
@@ -98,7 +94,7 @@ static int ntc_thermistor_init(const struct device *dev)
 	int err;
 
 	if (!adc_is_ready_dt(&cfg->adc_channel)) {
-		LOG_ERR("ADC controller device is not ready\n");
+		LOG_ERR_DEVICE_NOT_READY(cfg->adc_channel.dev);
 		return -ENODEV;
 	}
 
@@ -226,11 +222,11 @@ static __unused const struct ntc_compensation comp_murata_ncp15wb473[] = {
 DT_INST_FOREACH_STATUS_OKAY_VARGS(NTC_THERMISTOR_DEFINE, DT_DRV_COMPAT,
 				  comp_murata_ncp15wb473)
 
-/* tdk,ntcg163jf103ft1 */
+/* tdk,ntcgxx3jx103x */
 #undef DT_DRV_COMPAT
-#define DT_DRV_COMPAT tdk_ntcg163jf103ft1
+#define DT_DRV_COMPAT tdk_ntcgxx3jx103x
 
-static __unused const struct ntc_compensation comp_tdk_ntcg163jf103ft1[] = {
+static __unused const struct ntc_compensation comp_tdk_ntcgxx3jx103x[] = {
 	{ -25, 86560 },
 	{ -15, 53460 },
 	{ -5, 33930 },
@@ -250,7 +246,7 @@ static __unused const struct ntc_compensation comp_tdk_ntcg163jf103ft1[] = {
 };
 
 DT_INST_FOREACH_STATUS_OKAY_VARGS(NTC_THERMISTOR_DEFINE, DT_DRV_COMPAT,
-				  comp_tdk_ntcg163jf103ft1)
+				  comp_tdk_ntcgxx3jx103x)
 
 /* murata,ncp15xh103 */
 #undef DT_DRV_COMPAT
@@ -266,7 +262,7 @@ static __unused const struct ntc_compensation comp_murata_ncp15xh103[] = {
 	{  35,  6947 },
 	{  45,  4916 },
 	{  55,  3535 },
-	{  64,  2586 },
+	{  65,  2586 },
 	{  75,  1924 },
 	{  85,  1452 },
 	{  95,  1109 },

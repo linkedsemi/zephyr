@@ -5,7 +5,7 @@
  */
 /dts-v1/;
 
-#include "espressif/esp32s3/esp32s3_wroom_n16r2.dtsi"
+#include <espressif/esp32s3/esp32s3.dtsi>
 #include "walter-pinctrl.dtsi"
 #include <espressif/partitions_0x0_amp_8M.dtsi>
 
@@ -22,13 +22,22 @@
 	};
 
 	chosen {
-		zephyr,sram = &sram0;
+		zephyr,sram = &sram1;
 		zephyr,console = &usb_serial;
 		zephyr,shell-uart = &usb_serial;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
 		zephyr,bt-hci = &esp32_bt_hci;
 	};
+};
+
+&flash0 {
+	reg = <0x0 DT_SIZE_M(16)>;
+	ranges = <0x0 0x0 DT_SIZE_M(16)>;
+};
+
+&psram0 {
+	size = <DT_SIZE_M(2)>;
 };
 
 &usb_serial {
@@ -45,10 +54,12 @@
 	hw-flow-control;
 	pinctrl-0 = <&uart1_default>;
 	pinctrl-names = "default";
+
 	modem: modem {
 		status = "okay";
 		compatible = "sqn,gm02s";
 		mdm-reset-gpios = <&gpio1 13 (GPIO_OPEN_DRAIN | GPIO_ACTIVE_LOW)>;
+		mdm-wake-gpios = <&gpio1 14 (GPIO_OPEN_SOURCE | GPIO_ACTIVE_HIGH)>;
 	};
 };
 
@@ -118,5 +129,9 @@
 };
 
 &esp32_bt_hci {
+	status = "okay";
+};
+
+&wifi {
 	status = "okay";
 };

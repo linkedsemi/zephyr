@@ -3,9 +3,6 @@
 # enable uart driver
 CONFIG_SERIAL=y
 
-# enable GPIO
-CONFIG_GPIO=y
-
 # console
 CONFIG_CONSOLE=y
 CONFIG_UART_CONSOLE=y
@@ -13,6 +10,9 @@ CONFIG_UART_CONSOLE=y
 # Enable MPU
 CONFIG_ARM_MPU=y
 
-CONFIG_ARM_TRUSTZONE_M=y
-CONFIG_RUNTIME_NMI=y
+# Enable TZ non-secure configuration
 CONFIG_TRUSTED_EXECUTION_NONSECURE=y
+CONFIG_RUNTIME_NMI=y
+
+# Set HEX file to program non-secure image using flash secure address range
+CONFIG_SOC_FAMILY_STM32_HEX_FILE_SEC_RANGE=y

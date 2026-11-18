@@ -1,7 +1,10 @@
-# Copyright 2024 NXP
+# Copyright 2024-2026 NXP
 # SPDX-License-Identifier: Apache-2.0
 
 if SOC_SERIES_IMXRT118X
+
+config CORTEX_M_SYSTICK
+	default n if MCUX_LPTMR_TIMER || MCUX_SYSCTR_TIMER
 
 config NUM_IRQS
 	default 239
@@ -9,13 +12,10 @@ config NUM_IRQS
 config GPIO
 	default y
 
-if CORTEX_M_SYSTICK
-
 config SYS_CLOCK_HW_CYCLES_PER_SEC
-	default 240000000 if SOC_MIMXRT1189_CM33
-	default 792000000 if SOC_MIMXRT1189_CM7
-
-endif # CORTEX_M_SYSTICK
+	default $(dt_node_int_prop_int,/cpus/cpu@0,clock-frequency) if CPU_CORTEX_M33 && CORTEX_M_SYSTICK
+	default $(dt_node_int_prop_int,/cpus/cpu@1,clock-frequency) if CPU_CORTEX_M7 && CORTEX_M_SYSTICK
+	default $(dt_node_int_prop_int,$(DT_CHOSEN_ZEPHYR_SYSTEM_TIMER_PATH),clock-frequency) if MCUX_LPTMR_TIMER || MCUX_SYSCTR_TIMER
 
 config DCDC_VALUE
 	default 0x13
@@ -26,12 +26,20 @@ config FLEXSPI_CONFIG_BLOCK_OFFSET
 config ROM_START_OFFSET
 	default 0xb000 if BOOT_FLEXSPI_NOR
 
+config SPI_NXP_LPSPI_MAX_SCK_FREQUENCY
+	default 60000000
+
 if SECOND_CORE_MCUX
 
 # RT Boot header is only needed on primary core
 config NXP_IMXRT_BOOT_HEADER
-	depends on !CPU_CORTEX_M7
+	default y
+	depends on !(CPU_CORTEX_M7 || BOOTLOADER_MCUBOOT)
 
 endif # SECOND_CORE_MCUX
+
+choice CACHE_TYPE
+	default EXTERNAL_CACHE if CPU_CORTEX_M33
+endchoice
 
 endif # SOC_SERIES_IMXRT118X

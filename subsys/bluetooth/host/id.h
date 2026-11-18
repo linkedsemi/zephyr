@@ -4,12 +4,25 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+#include <stdbool.h>
+#include <stdint.h>
+
+#include <zephyr/bluetooth/addr.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/time_units.h>
+#include <zephyr/sys/clock.h>
+
+#include "keys.h"
 
 #define RPA_TIMEOUT_MS(_rpa_timeout) (_rpa_timeout * MSEC_PER_SEC)
 
 static inline bool bt_id_rpa_is_new(void)
 {
 #if defined(CONFIG_BT_PRIVACY)
+	/* TODO: To get bt_dev we should include "hci_core.h" but that gives redefinitions
+	 * Should we have an API to get the rpa_update value?
+	 */
 	uint32_t remaining_ms = k_ticks_to_ms_floor32(
 		k_work_delayable_remaining_get(&bt_dev.rpa_update));
 	/* RPA is considered new if there is less than half a second since the
@@ -32,16 +45,30 @@ int bt_id_set_scan_own_addr(bool active_scan, uint8_t *own_addr_type);
 int bt_id_set_adv_own_addr(struct bt_le_ext_adv *adv, uint32_t options,
 			   bool dir_adv, uint8_t *own_addr_type);
 
+/* Set adv->adv_addr, the address the set advertises with, for the own
+ * address types whose address is not programmed per-set through
+ * bt_id_set_adv_random_addr(): identity addresses, and the device-wide
+ * random address on controllers without the extended advertising feature.
+ * In the advertising parameter setting path this must be called only after
+ * the parameters have been accepted by the controller, so that a failed
+ * parameter command does not change the reported address.
+ */
+void bt_id_save_adv_addr(struct bt_le_ext_adv *adv, uint8_t own_addr_type);
+
 bool bt_id_adv_random_addr_check(const struct bt_le_adv_param *param);
 
 bool bt_id_scan_random_addr_check(void);
 
+bool bt_id_conn_random_addr_check(void);
+
 int bt_id_set_adv_random_addr(struct bt_le_ext_adv *adv,
 			      const bt_addr_t *addr);
-int bt_id_set_adv_private_addr(struct bt_le_ext_adv *adv);
+int bt_id_set_adv_private_addr(struct bt_le_ext_adv *adv, uint32_t options);
 
 int bt_id_set_private_addr(uint8_t id);
 
 void bt_id_pending_keys_update(void);
+
+void bt_id_pending_keys_update_set(struct bt_keys *keys, uint8_t flag);
 
 void bt_id_adv_limited_stopped(struct bt_le_ext_adv *adv);

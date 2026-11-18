@@ -5,13 +5,19 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-
+#include <errno.h>
 #include <stdlib.h>
+#include <string.h>
 
+#include <zephyr/autoconf.h>
 #include <zephyr/bluetooth/audio/cap.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/fff.h>
+#include <zephyr/sys/util.h>
+#include <zephyr/toolchain.h>
+#include <zephyr/ztest_assert.h>
+#include <zephyr/ztest_test.h>
 
-#include "bluetooth.h"
 #include "cap_commander.h"
 #include "conn.h"
 #include "expects_util.h"
@@ -21,11 +27,17 @@ DEFINE_FFF_GLOBALS;
 
 static void mock_init_rule_before(const struct ztest_unit_test *test, void *fixture)
 {
+	ARG_UNUSED(test);
+	ARG_UNUSED(fixture);
+
 	test_mocks_init();
 }
 
 static void mock_destroy_rule_after(const struct ztest_unit_test *test, void *fixture)
 {
+	ARG_UNUSED(test);
+	ARG_UNUSED(fixture);
+
 	test_mocks_cleanup();
 }
 
@@ -37,7 +49,7 @@ struct cap_commander_test_suite_fixture {
 
 static void cap_commander_test_suite_fixture_init(struct cap_commander_test_suite_fixture *fixture)
 {
-	for (size_t i = 0; i < ARRAY_SIZE(fixture->conns); i++) {
+	for (size_t i = 0U; i < ARRAY_SIZE(fixture->conns); i++) {
 		test_conn_init(&fixture->conns[i]);
 	}
 }
@@ -61,10 +73,12 @@ static void cap_commander_test_suite_before(void *f)
 static void cap_commander_test_suite_after(void *f)
 {
 	struct cap_commander_test_suite_fixture *fixture = f;
+	int err;
 
-	bt_cap_commander_unregister_cb(&mock_cap_commander_cb);
+	err = bt_cap_commander_unregister_cb(&mock_cap_commander_cb);
+	zassert_true(err == 0 || err == -EINVAL, "Unexpected error: %d", err);
 
-	for (size_t i = 0; i < ARRAY_SIZE(fixture->conns); i++) {
+	for (size_t i = 0U; i < ARRAY_SIZE(fixture->conns); i++) {
 		mock_bt_conn_disconnected(&fixture->conns[i], BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	}
 }
@@ -145,7 +159,7 @@ ZTEST_F(cap_commander_test_suite, test_commander_discover)
 	err = bt_cap_commander_register_cb(&mock_cap_commander_cb);
 	zassert_equal(0, err, "Unexpected return value %d", err);
 
-	for (size_t i = 0; i < ARRAY_SIZE(fixture->conns); i++) {
+	for (size_t i = 0U; i < ARRAY_SIZE(fixture->conns); i++) {
 		err = bt_cap_commander_discover(&fixture->conns[i]);
 		zassert_equal(0, err, "Unexpected return value %d", err);
 	}

@@ -3,9 +3,17 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/**
+ * @file
+ * @brief Header file for the log output formatter.
+ * @ingroup log_output
+ */
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_OUTPUT_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_OUTPUT_H_
 
+#include <errno.h>
 #include <zephyr/logging/log_msg.h>
 #include <zephyr/sys/util.h>
 #include <stdarg.h>
@@ -17,9 +25,9 @@ extern "C" {
 #endif
 
 /**
- * @brief Log output API
- * @defgroup log_output Log output API
+ * @defgroup log_output Log output
  * @ingroup logger
+ * @brief Formatting of log messages into human-readable or structured output.
  * @{
  */
 
@@ -57,18 +65,32 @@ extern "C" {
 /** @brief Flag forcing to skip logging the source. */
 #define LOG_OUTPUT_FLAG_SKIP_SOURCE		BIT(8)
 
+/** @brief Flag core/processor id prefix. */
+#define LOG_OUTPUT_FLAG_CORE			BIT(9)
+
 /**@} */
 
-/** @brief Supported backend logging format types for use
- * with log_format_set() API to switch log format at runtime.
+/**
+ * @name Output format types
+ *
+ * Values used with log_format_set() and log_backend_format_set() to select the
+ * output format of a backend at run time.
+ * @{
  */
+
+/** @brief Plain text output format. */
 #define LOG_OUTPUT_TEXT 0
 
+/** @brief MIPI Sys-T output format. */
 #define LOG_OUTPUT_SYST 1
 
+/** @brief Dictionary-based (binary) output format. */
 #define LOG_OUTPUT_DICT 2
 
+/** @brief Custom, user-provided output format. */
 #define LOG_OUTPUT_CUSTOM 3
+
+/** @} */
 
 /**
  * @brief Prototype of the function processing output data.
@@ -85,19 +107,31 @@ extern "C" {
  */
 typedef int (*log_output_func_t)(uint8_t *buf, size_t size, void *ctx);
 
-/* @brief Control block structure for log_output instance.  */
+/** @brief Function pointer type for getting available output space.
+ *
+ * @param ctx User context.
+ *
+ * @return Number of bytes available or negative error code.
+ */
+typedef int (*log_output_get_available_t)(void *ctx);
+
+/** @brief Run-time control block for a @ref log_output instance. */
 struct log_output_control_block {
+	/** @cond INTERNAL_HIDDEN */
 	atomic_t offset;
 	void *ctx;
 	const char *hostname;
+	struct k_spinlock lock; /**< Spinlock for atomic output operations. */
+	/** @endcond */
 };
 
-/** @brief Log_output instance structure. */
+/** @brief Log output instance. */
 struct log_output {
-	log_output_func_t func;
-	struct log_output_control_block *control_block;
-	uint8_t *buf;
-	size_t size;
+	log_output_func_t func; /**< Function called to write formatted output. */
+	log_output_get_available_t get_available; /**< Get available output space. */
+	struct log_output_control_block *control_block; /**< Run-time control block. */
+	uint8_t *buf; /**< Buffer holding formatted output before it is written. */
+	size_t size; /**< Size of @ref log_output.buf, in bytes. */
 };
 
 /**
@@ -106,8 +140,6 @@ struct log_output {
  * @param output Pointer to log_output struct.
  * @param msg Pointer to log_msg struct.
  * @param flags Flags used for text formatting options.
- *
- * @return Function pointer based on Kconfigs defined for backends.
  */
 typedef void (*log_format_func_t)(const struct log_output *output,
 					struct log_msg *msg, uint32_t flags);
@@ -124,13 +156,25 @@ log_format_func_t log_format_func_t_get(uint32_t log_type);
  * @param _buf  Pointer to the output buffer.
  * @param _size Size of the output buffer.
  */
-#define LOG_OUTPUT_DEFINE(_name, _func, _buf, _size)			\
-	static struct log_output_control_block _name##_control_block;	\
-	static const struct log_output _name = {			\
-		.func = _func,						\
-		.control_block = &_name##_control_block,		\
-		.buf = _buf,						\
-		.size = _size,						\
+#define LOG_OUTPUT_DEFINE(_name, _func, _buf, _size)                                               \
+	LOG_OUTPUT_EXT_DEFINE(_name, _func, NULL, _buf, _size)
+
+/** @brief Create log_output instance with extended API.
+ *
+ * @param _name Instance name.
+ * @param _func Function for processing output data.
+ * @param _get_available Function for getting available output space (or NULL).
+ * @param _buf  Pointer to the output buffer.
+ * @param _size Size of the output buffer.
+ */
+#define LOG_OUTPUT_EXT_DEFINE(_name, _func, _get_available, _buf, _size)                           \
+	static struct log_output_control_block _name##_control_block;                              \
+	static const struct log_output _name = {                                                   \
+		.func = _func,                                                                     \
+		.get_available = _get_available,                                                   \
+		.control_block = &_name##_control_block,                                           \
+		.buf = _buf,                                                                       \
+		.size = _size,                                                                     \
 	}
 
 /** @brief Process log messages v2 to readable strings.
@@ -152,6 +196,7 @@ void log_output_msg_process(const struct log_output *log_output,
  * @param domain	Domain name string. Can be NULL.
  * @param source	Source name string. Can be NULL.
  * @param tid		Thread ID.
+ * @param core_id	Core ID.
  * @param level		Criticality level.
  * @param package	Cbprintf package with a logging message string.
  * @param data		Data passed to hexdump API. Can be NULL.
@@ -163,6 +208,7 @@ void log_output_process(const struct log_output *log_output,
 			const char *domain,
 			const char *source,
 			k_tid_t tid,
+			uint8_t core_id,
 			uint8_t level,
 			const uint8_t *package,
 			const uint8_t *data,
@@ -239,6 +285,21 @@ static inline void log_output_hostname_set(const struct log_output *output,
 					   const char *hostname)
 {
 	output->control_block->hostname = hostname;
+}
+
+/** @brief Get available space in the output backend.
+ *
+ * @param	output Pointer to the log output instance.
+ *
+ * @return Number of bytes available or negative error if not supported.
+ */
+static inline int log_output_get_available(const struct log_output *output)
+{
+	if (output->get_available == NULL) {
+		return -ENOTSUP;
+	}
+
+	return output->get_available(output->control_block->ctx);
 }
 
 /** @brief Set timestamp frequency.

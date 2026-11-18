@@ -4,11 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <xen/public/xen.h>
+#include <xen/public/memory.h>
+
 #include <zephyr/arch/arm64/hypercall.h>
 #include <zephyr/xen/events.h>
 #include <zephyr/xen/generic.h>
-#include <zephyr/xen/public/xen.h>
-#include <zephyr/xen/public/memory.h>
 
 #include <zephyr/device.h>
 #include <zephyr/init.h>
@@ -42,7 +43,7 @@ static int xen_map_shared_info(const shared_info_t *shared_page)
 	return HYPERVISOR_memory_op(XENMEM_add_to_physmap, &xatp);
 }
 
-int xen_enlighten_init(void)
+static int xen_enlighten_init(void)
 {
 	int ret = 0;
 	shared_info_t *info = (shared_info_t *) shared_info_buf;
@@ -66,3 +67,5 @@ int xen_enlighten_init(void)
 
 	return 0;
 }
+
+SYS_INIT(xen_enlighten_init, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

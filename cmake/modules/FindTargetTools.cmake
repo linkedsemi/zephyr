@@ -10,7 +10,9 @@
 # | Target C-compiler  | Yes      |                               |
 # | Target Assembler   | Yes      |                               |
 # | Target linker      | Yes      |                               |
+# | gperf              | (1)      |  Kernel object hash tables    |
 # +---------------------------------------------------------------+
+# (1) Required if CONFIG_USERSPACE is enabled.
 #
 # The module defines the following variables:
 #
@@ -18,18 +20,42 @@
 # Path to target C compiler.
 # Set to 'CMAKE_C_COMPILER-NOTFOUND' if no C compiler was found.
 #
+# 'GPERF'
+# Path to gperf.
+# Set to 'GPERF-NOTFOUND' if gperf was not found.
+#
 # 'TargetTools_FOUND', 'TARGETTOOLS_FOUND'
 # True if all required host tools were found.
 
+if(NOT DEFINED ENV{CCACHE_IGNOREOPTIONS})
+  # ccache <4.12 are unable to handle `-specs` correctly
+  # https://github.com/ccache/ccache/issues/1625
+  set(ccache_minimum_version 4.12)
+endif()
+find_package(Ccache ${ccache_minimum_version})
 find_package(HostTools)
 
 if(TargetTools_FOUND)
   return()
 endif()
 
+# gperf generates the kernel object hash tables of userspace builds.
+if(CONFIG_USERSPACE)
+  find_program(GPERF gperf REQUIRED)
+else()
+  find_program(GPERF gperf)
+endif()
+
 # Prevent CMake from testing the toolchain
 set(CMAKE_C_COMPILER_FORCED   1)
 set(CMAKE_CXX_COMPILER_FORCED 1)
+
+if(Ccache_FOUND)
+  set(CMAKE_C_COMPILER_LAUNCHER   ${CCACHE})
+  set(CMAKE_C_LINKER_LAUNCHER     ${CCACHE})
+  set(CMAKE_CXX_COMPILER_LAUNCHER ${CCACHE})
+  set(CMAKE_CXX_LINKER_LAUNCHER   ${CCACHE})
+endif()
 
 # https://cmake.org/cmake/help/latest/variable/CMAKE_SYSTEM_NAME.html:
 #   The name of the operating system for which CMake is to build.
@@ -106,6 +132,7 @@ include(${ZEPHYR_BASE}/cmake/bintools/bintools_template.cmake)
 include(${TOOLCHAIN_ROOT}/cmake/bintools/${BINTOOLS}/target.cmake OPTIONAL)
 
 include(${TOOLCHAIN_ROOT}/cmake/linker/target_template.cmake)
+include(${TOOLCHAIN_ROOT}/cmake/compiler/target_template.cmake)
 
 set(TargetTools_FOUND TRUE)
 set(TARGETTOOLS_FOUND TRUE)
