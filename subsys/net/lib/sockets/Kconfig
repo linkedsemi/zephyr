@@ -363,9 +363,29 @@ config NET_UNIX_BUFFER_SIZE
 	default 2048
 	help
 	  Per-socket pipe buffer size in bytes for AF_UNIX sockets.
-	  Buffers are allocated from the system heap when the socket
-	  is created and freed on close, so idle sockets consume no
-	  buffer memory.
+	  Each socket gets a buffer of this size from a statically
+	  allocated pool (NET_UNIX_MAX_SOCKETS entries), so the whole
+	  pool is reserved at link time. Keep it large enough for the
+	  largest single write, otherwise a message is split into
+	  several k_pipe_put() calls.
+
+config NET_UNIX_BUFFER_IN_PSRAM
+	bool "Place the AF_UNIX pipe buffer pool outside SRAM"
+	depends on NET_SOCKETS_AF_UNIX
+	default n
+	help
+	  Move the statically allocated AF_UNIX pipe buffer pool into the
+	  "PSRAM" memory region instead of .bss, so that
+	  NET_UNIX_MAX_SOCKETS * NET_UNIX_BUFFER_SIZE bytes of SRAM are freed.
+
+	  The region name is hard-coded to the devicetree zephyr,memory-region
+	  label "PSRAM" (same one used by CONFIG_NEWLIB_LIBC_MALLOC_SECTION_NAME
+	  on lsqsh boards). Enable this only on SoCs where that region exists,
+	  is CPU-accessible and does not need zero initialisation: the pool
+	  contents are never read before being written, and k_pipe_init()
+	  resets both indices when a socket is created. The pipe_buf_used
+	  bitmap deliberately stays in .bss so that it is still zeroed by the
+	  normal startup path.
 
 config NET_UNIX_MAX_SOCKETS
 	int "Maximum number of AF_UNIX sockets"
@@ -374,9 +394,9 @@ config NET_UNIX_MAX_SOCKETS
 	help
 	  Maximum number of concurrent AF_UNIX sockets. This covers
 	  both listening sockets and connected endpoints (e.g. one
-	  listener + up to 3 connected pairs). Only the socket control
-	  structures are statically allocated; pipe buffers are
-	  heap-allocated on demand.
+	  listener + up to 3 connected pairs). Both the socket control
+	  structures and the pipe buffers are statically allocated, so
+	  this directly bounds the RAM reserved for the AF_UNIX layer.
 
 config HEAP_MEM_POOL_ADD_SIZE_AF_UNIX
 	int

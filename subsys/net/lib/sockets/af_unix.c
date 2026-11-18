@@ -125,10 +125,23 @@ static struct k_mutex registry_lock;
 
 /* ------------------------------------------------------------------ */
 /* Static pipe buffer pool - eliminates heap fragmentation              */
-/* Each socket gets a fixed 2KB buffer from this pre-allocated pool.   */
-/* No k_malloc needed → no fragmentation under heavy object creation. */
+/* Each socket gets a fixed CONFIG_NET_UNIX_BUFFER_SIZE byte buffer     */
+/* from this pre-allocated pool. No k_malloc needed → no fragmentation  */
+/* under heavy object creation.                                        */
+/*                                                                     */
+/* NET_UNIX_BUFFER_IN_PSRAM moves only the pool itself out of .bss:     */
+/* the bitmap below must stay where the startup zeroing reaches it.     */
+/* The region name has to match the devicetree zephyr,memory-region     */
+/* label; "PSRAM.*" is the section prefix the linker collects it into.  */
 /* ------------------------------------------------------------------ */
-static uint8_t unix_pipe_buf_pool[MAX_UNIX_SOCKETS][CONFIG_NET_UNIX_BUFFER_SIZE];
+#ifdef CONFIG_NET_UNIX_BUFFER_IN_PSRAM
+#define UNIX_POOL_SECTION __attribute__((section("PSRAM.unix_pipe_bufs")))
+#else
+#define UNIX_POOL_SECTION
+#endif
+
+static uint8_t unix_pipe_buf_pool[MAX_UNIX_SOCKETS][CONFIG_NET_UNIX_BUFFER_SIZE]
+	UNIX_POOL_SECTION __aligned(8);
 static ATOMIC_DEFINE(pipe_buf_used, MAX_UNIX_SOCKETS);
 
 static uint8_t *pipe_buf_alloc(void)
