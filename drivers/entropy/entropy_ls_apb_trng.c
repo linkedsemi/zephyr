@@ -111,6 +111,7 @@ struct entropy_ls_apb_trng_config {
 
 static int trng_power_cycle(const struct entropy_ls_apb_trng_config *cfg)
 {
+#if !defined(CONFIG_APB_TRNG_LINKEDSEMI_NO_CLOCK_RESET)
 #if defined(CONFIG_CLOCK_CONTROL)
 	if (cfg->ccfg.cctl_dev != NULL) {
 		clock_control_off(cfg->ccfg.cctl_dev,
@@ -131,6 +132,9 @@ static int trng_power_cycle(const struct entropy_ls_apb_trng_config *cfg)
 				 (clock_control_subsys_t)&cfg->ccfg);
 	}
 #endif
+#else
+	ARG_UNUSED(cfg);
+#endif /* !CONFIG_APB_TRNG_LINKEDSEMI_NO_CLOCK_RESET */
 	return 0;
 }
 
@@ -275,6 +279,7 @@ static int ls_apb_trng_init(const struct device *dev)
 {
 	const struct entropy_ls_apb_trng_config *cfg = dev->config;
 	struct entropy_ls_apb_trng_data *data = dev->data;
+#if !defined(CONFIG_APB_TRNG_LINKEDSEMI_NO_CLOCK_RESET)
 #if defined(CONFIG_CLOCK_CONTROL)
 	if (cfg->ccfg.cctl_dev != NULL) {
 		if (!device_is_ready(cfg->ccfg.cctl_dev)) {
@@ -289,6 +294,7 @@ static int ls_apb_trng_init(const struct device *dev)
 		}
 	}
 #endif
+#endif /* !CONFIG_APB_TRNG_LINKEDSEMI_NO_CLOCK_RESET */
 	int rc = trng_power_cycle(cfg);
 	if (rc != 0) {
 		return rc;
