@@ -1,8 +1,0 @@
-board:
-  name: lsqsh_evb
-  full_name: LinkSemi QSH Evaluation Board
-  vendor: linkedsemi
-  socs:
-  - name: lsqsh
-  revision:
-    format: custom
