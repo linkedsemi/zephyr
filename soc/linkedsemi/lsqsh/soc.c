@@ -651,6 +651,7 @@ __weak void soc_early_init_hook(void)
 }
 
 #if !defined(CONFIG_SMP)
+#if defined(CONFIG_BOOT_CPU2)
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 extern uint8_t flash_ls_read_ear(const struct device *dev);
 extern uint8_t flash_ls_write_ear(const struct device *dev, uint8_t ear);
@@ -782,6 +783,7 @@ __maybe_unused int boot_cpu2(const struct device *flash_dev, uint32_t cpu2_boot_
 
     return 0;
 }
+#endif /* CONFIG_BOOT_CPU2 */
 
 __weak void soc_late_init_hook(void)
 {
