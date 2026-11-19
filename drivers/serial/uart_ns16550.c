@@ -1514,15 +1514,21 @@ __maybe_unused static void uart_ns16550_isr(const struct device *dev)
 
 	if (dev_data->cb) {
 		dev_data->cb(dev, dev_data->cb_data);
-	} else if ((IS_ENABLED(CONFIG_UART_NS16550_DW8250_DW_APB)) &&
-	    ((ns16550_inbyte(dev_cfg, IIR(dev)) & IIR_MASK) == IIR_BUSY)) {
-		/*
-		 * The Synopsys DesignWare 8250 has an extra feature whereby
-		 * it detects if the LCR is written whilst busy.
-		 * If it is, then a busy detect interrupt is raised,
-		 * the uart status register need to be read.
-		 */
-		ns16550_inword(dev_cfg, USR(dev));
+	}
+
+	/*
+	 * The DesignWare 8250 raises a busy detect interrupt when the LCR is
+	 * written whilst busy.  It has no IER bit and is only cleared by reading
+	 * USR, so clear it even when a callback is registered; take the IIR from
+	 * the callback's cache to avoid eating a pending THRE event here.
+	 */
+	if (IS_ENABLED(CONFIG_UART_NS16550_DW8250_DW_APB)) {
+		uint8_t iir = dev_data->cb ? dev_data->iir_cache
+					   : ns16550_inbyte(dev_cfg, IIR(dev));
+
+		if ((iir & IIR_MASK) == IIR_BUSY) {
+			ns16550_inword(dev_cfg, USR(dev));
+		}
 	}
 
 #if (IS_ENABLED(CONFIG_UART_ASYNC_API))
