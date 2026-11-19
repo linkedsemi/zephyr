@@ -23,7 +23,6 @@
 #include "ls_hal_qspiv2.h"
 #include "ls_msp_qspiv2.h"
 #include "soc.h"
-#include "ls_crypto_clock.h"
 #include "soc_reset.h"
 #include "soc_boot.h"
 #include "ls_otbn_config.h"
@@ -256,6 +255,13 @@ __maybe_unused void smp_mode_cache_region_init(void)
 extern void SystemInit();
 extern void psram_init(void);
 
+/*
+ * earlier than POST_KERNEL init
+ */
+__weak void soc_peripheral_clock_init_hook(void)
+{
+}
+
 #if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
 #define LS_FLASH_CONTROLLER_CHILD_FLASH_SIZE(node_id) \
     IF_ENABLED(DT_NODE_HAS_COMPAT(node_id, soc_nv_flash), (DT_REG_SIZE(node_id)))
@@ -418,19 +424,11 @@ static void peripheral_init()
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x2);
 
-    /* prepare() is a no-op when the clock is already on, so a CPU1 reset
-     * while CPU2 keeps running does not disturb an engine CPU2 is using. */
-    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_SHA256);
-    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_SHA512);
-    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_SM4);
-    (void)ls_crypto_clock_prepare(LS_CRYPTO_CLK_AES256);
-    ls_clock_control_on_reset_line_toggle_once(OTFAD_AES_CLOCK, OTFAD_AES_RESET);
-    ls_clock_control_on_reset_line_toggle_once(WWDT1_CLOCK, WWDT1_RESET);
-    ls_clock_control_on_reset_line_toggle_once(NIST_TRNG_CLOCK, NIST_TRNG_RESET);
-#if defined(CONFIG_IOPMP_WHITELIST_I2C1_I3C1)
-    ls_clock_control_on_reset_line_toggle_once(I2C1_CLOCK, I2C1_RESET);
-    ls_clock_control_on_reset_line_toggle_once(I3C1_CLOCK, I3C1_RESET);
-#endif
+    /*
+     * app can init clock for peripheral or crypto engine here, if need.
+     */
+    soc_peripheral_clock_init_hook();
+
 }
 
 __ramfunc static void high_frequency_init()
@@ -857,6 +855,10 @@ int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms)
     if (timeout_ms == 0U) {
         return -EINVAL;
     }
+
+#if (DT_NODE_HAS_STATUS(DT_NODELABEL(cpu1), okay))
+    ls_clock_control_on_reset_line_toggle_once(WWDT1_CLOCK, WWDT1_RESET);
+#endif
     ticks = timeout_ms * 32U;
     if (ticks == 0U) {
         ticks = 1U;
