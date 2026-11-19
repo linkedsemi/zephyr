@@ -445,22 +445,6 @@ config FORCE_CLOCK_HSI
 	bool "FORCE_CLOCK_HSI(25MHz)"
 	default n
 
-config SHA256_CLOCK_RESET
-	bool "SHA256_CLOCK_RESET"
-	default n
-
-config SHA512_CLOCK_RESET
-	bool "SHA512_CLOCK_RESET"
-	default n
-
-config SM4_CLOCK_RESET
-	bool "SM4_CLOCK_RESET"
-	default n
-
-config AES_CLOCK_RESET
-	bool "AES_CLOCK_RESET"
-	default n
-
 config VENDER_DEFINE_DMA_DW_LLI_POOL
 	bool "VENDER_DEFINE_DMA_DW_LLI_POOL"
 	default y
