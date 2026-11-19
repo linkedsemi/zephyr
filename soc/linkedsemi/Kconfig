@@ -20,6 +20,16 @@ config ESPI_LPC_HOST_VUART
     help
         Enable Host-side VUART
 
+config HOST_VUART_LOCAL_ONLY
+    bool "Linkedsemi ESPI/LPC HOST VUART local only"
+    default n
+    depends on ESPI_LPC_HOST_VUART
+
+    help
+        Do not exchange data with the peer (BMC side). The host VUART only
+        accesses the local UART hardware, without shared FIFO and host-BMC
+        message exchange.
+
 config ESPI_LPC_HOST_KCS
     bool "Linkedsemi ESPI/LPC HOST KCS"
     default y
