@@ -424,11 +424,6 @@ static void peripheral_init()
     APP_PMU->PECI_PAD_CFG.PD_PU |= 0x2 << 16;
     APP_PMU->PECI_PAD_CFG.DS_IEN &= ~(0x2);
 
-    /*
-     * app can init clock for peripheral or crypto engine here, if need.
-     */
-    soc_peripheral_clock_init_hook();
-
 }
 
 __ramfunc static void high_frequency_init()
@@ -602,6 +597,8 @@ __weak void soc_early_init_hook(void)
     }
 #endif
 #endif /* CONFIG_FORCE_CLOCK_HSI */
+
+    soc_peripheral_clock_init_hook();
 
 #if defined(CONFIG_CACHE)
 #if defined(CONFIG_SMP)
