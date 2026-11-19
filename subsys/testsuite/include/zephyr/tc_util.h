@@ -113,19 +113,29 @@ static inline const char *TC_RESULT_TO_STR(int result)
 	}
 }
 
-static uint32_t tc_start_time;
+static uint64_t tc_start_time;
 static uint32_t tc_spend_time;
 
 static inline void get_start_time_cyc(void)
 {
+#if IS_ENABLED(CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER)
+	tc_start_time = k_cycle_get_64();
+#else
 	tc_start_time = k_cycle_get_32();
+#endif
 }
 
 static inline void get_test_duration_ms(void)
 {
-	uint32_t spend_cycle = k_cycle_get_32() - tc_start_time;
+#if IS_ENABLED(CONFIG_TIMER_HAS_64BIT_CYCLE_COUNTER)
+	uint64_t spend_cycle = k_cycle_get_64() - tc_start_time;
+
+	tc_spend_time = (uint32_t)k_cyc_to_ms_ceil64(spend_cycle);
+#else
+	uint32_t spend_cycle = k_cycle_get_32() - (uint32_t)tc_start_time;
 
 	tc_spend_time = k_cyc_to_ms_ceil32(spend_cycle);
+#endif
 }
 
 #ifndef TC_ERROR
