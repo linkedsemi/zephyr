@@ -10,6 +10,8 @@
 
 #include "soc_common.h"
 
+void soc_peripheral_clock_init_hook(void);
+
 #if defined(CONFIG_LINKEDSEMI_TPM_WWDT)
 int wwdt1_tpm_init(const struct device *tpm_spis_dev, uint32_t timeout_ms);
 #endif
