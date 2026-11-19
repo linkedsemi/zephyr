@@ -11,6 +11,17 @@ config ENTROPY_LS_APB_TRNG
 	  Polling-based; each 16-bit sample waits for FSM match,
 	  then FSM_RST advances to next search.
 
+config APB_TRNG_LINKEDSEMI_NO_CLOCK_RESET
+	bool "Skip APB TRNG CCTL/RCTL access in the driver"
+	depends on ENTROPY_LS_APB_TRNG
+	help
+	  When enabled, the linkedsemi APB TRNG driver does not run
+	  clock_control_off/on or reset_line_toggle in trng_power_cycle().
+	  This covers both ls_apb_trng_init() and the trng_hw_recover()
+	  path. Use this on cores that cannot access SEC_PER (for example
+	  CPU2 when IOPMP blocks it); the clock must then be brought up by
+	  the core that owns it.
+
 config ENTROPY_LS_APB_TRNG_POOL_SIZE
 	int "APB TRNG entropy pipe pool size (bytes)"
 	default 64
