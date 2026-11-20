@@ -8,6 +8,7 @@
 #include <zephyr/pm/policy.h>
 #if defined(CONFIG_PINCTRL)
     #include <zephyr/drivers/pinctrl.h>
+    #define PINCTRL_STATE_DISABLE PINCTRL_STATE_PRIV_START
 #endif
 #if defined(CONFIG_RESET)
     #include <zephyr/drivers/reset.h>
@@ -122,6 +123,15 @@ static int uart_ls_init(const struct device *dev)
 	UART_HandleTypeDef *uart_handle = dev_config->uart_handle;
 	int ret = 0;
 
+#if defined(CONFIG_PINCTRL)
+	if (dev_config->pcfg) {
+		ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DISABLE);
+		if (ret != 0) {
+			LOG_DBG("%s: failed to apply disable state (%d)", dev->name, ret);
+		}
+	}
+#endif
+
 #if defined(CONFIG_CLOCK_CONTROL)
     if (dev_config->ccfg.cctl_dev) {
         const struct device *clk_dev = dev_config->ccfg.cctl_dev;
@@ -155,13 +165,6 @@ static int uart_ls_init(const struct device *dev)
     }
 #endif
 
-#if defined(CONFIG_PINCTRL)
-    ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
-    if (ret < 0) {
-        LOG_DBG("%s: Could not configure pins", dev->name);
-    }
-#endif
-
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,1);
     uart_handle->UARTX->BRR  =  uart_handle->Init.BaudRate;
     REG_FIELD_WR(uart_handle->UARTX->LCR,UART_LCR_BRWEN,0);
@@ -176,6 +179,15 @@ static int uart_ls_init(const struct device *dev)
 	#ifdef CONFIG_PM
 	uart_ls_pm_policy_state_lock_get(dev);
 	#endif
+#endif
+
+#if defined(CONFIG_PINCTRL)
+	if (dev_config->pcfg) {
+		ret = pinctrl_apply_state(dev_config->pcfg, PINCTRL_STATE_DEFAULT);
+		if (ret != 0) {
+			LOG_DBG("%s: Could not configure pins", dev->name);
+		}
+	}
 #endif
 
 	#ifdef CONFIG_UART_INTERRUPT_DRIVEN
@@ -457,6 +469,10 @@ static void uart_ls_irq_config_func_##index(const struct device *dev)	\
 #define LS_UART_INIT(index)	\
 LS_UART_IRQ_HANDLER_DECL(index)	\
 IF_ENABLED(CONFIG_PINCTRL,(PINCTRL_DT_INST_DEFINE(index)));	\
+BUILD_ASSERT(!IS_ENABLED(CONFIG_PINCTRL) \
+		|| (DT_INST_NUM_PINCTRL_STATES(index) == 2 \
+			&& DT_INST_PINCTRL_HAS_NAME(index, default) \
+			&& DT_INST_PINCTRL_HAS_NAME(index, disable))); \
 static UART_HandleTypeDef uart_handle_##index = {	\
 	.UARTX = (reg_uart_t *)DT_INST_REG_ADDR(index),	\
 	.Init.BaudRate = GET_UART_BAUDRATE(index),	\

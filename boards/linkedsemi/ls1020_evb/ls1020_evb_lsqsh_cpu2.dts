@@ -11,6 +11,7 @@
 
 &chosen {
     zephyr,flash = &flash1;
+    zephyr,flash-controller = &qspi1;
     zephyr,console = &uart4;
     zephyr,shell-uart = &uart4;
     zephyr,sram = &sram;
@@ -88,6 +89,14 @@
         };
     };
 
+    qspi1: qspi@40000000 {
+        compatible = "linkedsemi,ls-flash-delegation-client";
+        reg = <0x40000000 0x400>;
+        #address-cells = <1>;
+        #size-cells = <1>;
+        interrupts = <3 3>;
+        mbox = <&mbox_consumer_qspi1>;
+    };
 };
 
 &eth1 {
@@ -130,6 +139,9 @@
 };
 
 &uart4 {
+    pinctrl-0 = <&uart4_tx_pa12 &uart4_rx_pa13>;
+    pinctrl-1 = <&pa12_disabled &pa13_disabled>;
+    pinctrl-names = "default", "disable";
     current-speed = <115200>;
     status = "okay";
 };

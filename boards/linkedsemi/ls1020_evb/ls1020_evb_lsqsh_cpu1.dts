@@ -173,6 +173,9 @@
 };
 
 &uart1 {
+    pinctrl-0 = <&uart1_rx_pn03 &uart1_tx_pn04>;
+    pinctrl-1 = <&pn03_disabled &pn04_disabled>;
+    pinctrl-names = "default", "disable";
     current-speed = <115200>;
     status = "okay";
 };

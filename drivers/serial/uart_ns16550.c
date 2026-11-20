@@ -41,6 +41,7 @@
 
 #if defined(CONFIG_PINCTRL)
 #include <zephyr/drivers/pinctrl.h>
+#define PINCTRL_STATE_DISABLE PINCTRL_STATE_PRIV_START
 #endif
 
 #include <zephyr/drivers/serial/uart_ns16550.h>
@@ -705,11 +706,6 @@ static int uart_ns16550_configure(const struct device *dev,
 			goto out;
 		}
 
-		ret = clock_control_on(dev_cfg->clock_dev, dev_cfg->clock_subsys);
-		if (ret != 0 && ret != -EALREADY && ret != -ENOSYS) {
-			goto out;
-		}
-
 		if (clock_control_get_rate(dev_cfg->clock_dev,
 					   dev_cfg->clock_subsys,
 					   &pclk) != 0) {
@@ -824,6 +820,15 @@ static int uart_ns16550_configure(const struct device *dev,
 	ns16550_outbyte(dev_cfg, IER(dev), 0x00);
 	ret = 0;
 
+#if defined(CONFIG_PINCTRL)
+	if (dev_cfg->pincfg) {
+		ret = pinctrl_apply_state(dev_cfg->pincfg, PINCTRL_STATE_DEFAULT);
+		if (ret != 0) {
+			LOG_DBG("%s: failed to apply disable state (%d)", dev->name, ret);
+		}
+	}
+#endif
+
 out:
 	k_spin_unlock(&dev_data->lock, key);
 	return ret;
@@ -930,6 +935,15 @@ static int uart_ns16550_init(const struct device *dev)
 	uint8_t c;
 
 	ARG_UNUSED(dev_cfg);
+
+#if defined(CONFIG_PINCTRL)
+	if (dev_cfg->pincfg) {
+		ret = pinctrl_apply_state(dev_cfg->pincfg, PINCTRL_STATE_DISABLE);
+		if (ret != 0) {
+			LOG_DBG("%s: failed to apply disable state (%d)", dev->name, ret);
+		}
+	}
+#endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
 #if defined(CONFIG_SOC_FAMILY_LS_MCU)
@@ -1514,15 +1528,21 @@ __maybe_unused static void uart_ns16550_isr(const struct device *dev)
 
 	if (dev_data->cb) {
 		dev_data->cb(dev, dev_data->cb_data);
-	} else if ((IS_ENABLED(CONFIG_UART_NS16550_DW8250_DW_APB)) &&
-	    ((ns16550_inbyte(dev_cfg, IIR(dev)) & IIR_MASK) == IIR_BUSY)) {
-		/*
-		 * The Synopsys DesignWare 8250 has an extra feature whereby
-		 * it detects if the LCR is written whilst busy.
-		 * If it is, then a busy detect interrupt is raised,
-		 * the uart status register need to be read.
-		 */
-		ns16550_inword(dev_cfg, USR(dev));
+	}
+
+	/*
+	 * The DesignWare 8250 raises a busy detect interrupt when the LCR is
+	 * written whilst busy.  It has no IER bit and is only cleared by reading
+	 * USR, so clear it even when a callback is registered; take the IIR from
+	 * the callback's cache to avoid eating a pending THRE event here.
+	 */
+	if (IS_ENABLED(CONFIG_UART_NS16550_DW8250_DW_APB)) {
+		uint8_t iir = dev_data->cb ? dev_data->iir_cache
+					   : ns16550_inbyte(dev_cfg, IIR(dev));
+
+		if ((iir & IIR_MASK) == IIR_BUSY) {
+			ns16550_inword(dev_cfg, USR(dev));
+		}
 	}
 
 #if (IS_ENABLED(CONFIG_UART_ASYNC_API))
@@ -2205,6 +2225,10 @@ static DEVICE_API(uart, uart_ns16550_driver_api) = {
 #define UART_NS16550_DEVICE_IO_MMIO_INIT(n)                                          \
 	UART_NS16550_IRQ_FUNC_DECLARE(n);                                            \
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                     \
+	BUILD_ASSERT(!IS_ENABLED(CONFIG_PINCTRL)                                     \
+			|| (DT_INST_NUM_PINCTRL_STATES(n) == 2                       \
+				&& DT_INST_PINCTRL_HAS_NAME(n, default)              \
+				&& DT_INST_PINCTRL_HAS_NAME(n, disable)));           \
 	static const struct uart_ns16550_dev_config uart_ns16550_dev_cfg_##n = {     \
 		COND_CODE_1(DT_INST_PROP_OR(n, io_mapped, 0),                        \
 			    (.port = DT_INST_REG_ADDR(n),),                          \
