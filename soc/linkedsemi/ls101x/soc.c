@@ -17,6 +17,15 @@
 #include "ls_msp_peci.h"
 #include "soc.h"
 
+#if defined(CONFIG_RISCV_PMP)
+#include <zephyr/arch/riscv/pmp.h>
+#include <reg_base_addr.h>
+
+#define LS101X_BROM_SIZE 0x4000
+
+PMP_SOC_REGION_DEFINE(ls101x_brom, ROM_BASE_ADDR, ROM_BASE_ADDR + LS101X_BROM_SIZE,
+		      PMP_R | PMP_X);
+#endif
 
 #define RV_SOFT_IRQ_IDX 23
 
