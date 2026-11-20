@@ -41,6 +41,7 @@
 
 #if defined(CONFIG_PINCTRL)
 #include <zephyr/drivers/pinctrl.h>
+#define PINCTRL_STATE_DISABLE PINCTRL_STATE_PRIV_START
 #endif
 
 #include <zephyr/drivers/serial/uart_ns16550.h>
@@ -705,11 +706,6 @@ static int uart_ns16550_configure(const struct device *dev,
 			goto out;
 		}
 
-		ret = clock_control_on(dev_cfg->clock_dev, dev_cfg->clock_subsys);
-		if (ret != 0 && ret != -EALREADY && ret != -ENOSYS) {
-			goto out;
-		}
-
 		if (clock_control_get_rate(dev_cfg->clock_dev,
 					   dev_cfg->clock_subsys,
 					   &pclk) != 0) {
@@ -824,6 +820,15 @@ static int uart_ns16550_configure(const struct device *dev,
 	ns16550_outbyte(dev_cfg, IER(dev), 0x00);
 	ret = 0;
 
+#if defined(CONFIG_PINCTRL)
+	if (dev_cfg->pincfg) {
+		ret = pinctrl_apply_state(dev_cfg->pincfg, PINCTRL_STATE_DEFAULT);
+		if (ret != 0) {
+			LOG_DBG("%s: failed to apply disable state (%d)", dev->name, ret);
+		}
+	}
+#endif
+
 out:
 	k_spin_unlock(&dev_data->lock, key);
 	return ret;
@@ -930,6 +935,15 @@ static int uart_ns16550_init(const struct device *dev)
 	uint8_t c;
 
 	ARG_UNUSED(dev_cfg);
+
+#if defined(CONFIG_PINCTRL)
+	if (dev_cfg->pincfg) {
+		ret = pinctrl_apply_state(dev_cfg->pincfg, PINCTRL_STATE_DISABLE);
+		if (ret != 0) {
+			LOG_DBG("%s: failed to apply disable state (%d)", dev->name, ret);
+		}
+	}
+#endif
 
 #if defined(CONFIG_CLOCK_CONTROL)
 #if defined(CONFIG_SOC_FAMILY_LS_MCU)
@@ -2211,6 +2225,10 @@ static DEVICE_API(uart, uart_ns16550_driver_api) = {
 #define UART_NS16550_DEVICE_IO_MMIO_INIT(n)                                          \
 	UART_NS16550_IRQ_FUNC_DECLARE(n);                                            \
 	IF_ENABLED(CONFIG_PINCTRL, (PINCTRL_DT_INST_DEFINE(n)));                     \
+	BUILD_ASSERT(!IS_ENABLED(CONFIG_PINCTRL)                                     \
+			|| (DT_INST_NUM_PINCTRL_STATES(n) == 2                       \
+				&& DT_INST_PINCTRL_HAS_NAME(n, default)              \
+				&& DT_INST_PINCTRL_HAS_NAME(n, disable)));           \
 	static const struct uart_ns16550_dev_config uart_ns16550_dev_cfg_##n = {     \
 		COND_CODE_1(DT_INST_PROP_OR(n, io_mapped, 0),                        \
 			    (.port = DT_INST_REG_ADDR(n),),                          \
