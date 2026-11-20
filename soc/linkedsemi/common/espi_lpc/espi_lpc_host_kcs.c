@@ -138,7 +138,7 @@ static int host_kcs_ls_init(const struct device *dev)
         &host_kcs_ls_init,\
         NULL,\
         &host_kcs_ls_data_##idx,&host_kcs_ls_cfg_##idx,\
-        POST_KERNEL,CONFIG_KCS_INIT_PRIORITY,\
+        POST_KERNEL,CONFIG_KERNEL_INIT_PRIORITY_DEVICE,\
         NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(HOST_KCS_INIT)
