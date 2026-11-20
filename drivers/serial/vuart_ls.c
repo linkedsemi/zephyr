@@ -236,9 +236,9 @@ static int vuart_irq_is_pending(const struct device *dev)
 	return (uart_irq_rx_ready(dev) || uart_irq_tx_ready(dev)) ? 1 : 0;
 }
 
-static int vuart_irq_update(const struct device *dev)
+static void vuart_irq_update(const struct device *dev)
 {
-	return 1;
+	ARG_UNUSED(dev);
 }
 
 void vuart_ls_send_break(const struct device *dev)
