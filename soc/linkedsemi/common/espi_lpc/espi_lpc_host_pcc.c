@@ -84,7 +84,7 @@ static int host_pcc_ls_init(const struct device *dev)
         host_pcc_ls_init,\
         NULL,\
         &host_pcc_ls_data_##idx,&host_pcc_ls_cfg_##idx,\
-        POST_KERNEL,CONFIG_PCC_INIT_PRIORITY,\
+        POST_KERNEL,CONFIG_KERNEL_INIT_PRIORITY_DEVICE,\
         NULL);
 
 DT_INST_FOREACH_STATUS_OKAY(HOST_PCC_INIT)
