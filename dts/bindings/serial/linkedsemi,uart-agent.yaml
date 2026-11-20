@@ -13,6 +13,9 @@ properties:
     type: phandle
 
   uart:
-    type: phandle
+    type: phandles
     required: true
-    description: Phandle to the physical UART controller node
+    description: |
+      Phandles to the physical UART controllers. Every backend receives the
+      data written by the host on the shared virtual UART FIFO, and the data
+      received on all of them is merged into that same FIFO.
