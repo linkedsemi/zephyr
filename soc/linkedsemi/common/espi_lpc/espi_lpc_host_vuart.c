@@ -56,8 +56,10 @@ struct host_vuart_cfg {
     const struct device *espi_lpc; /* eSPI/LPC 控制器 */
     const struct peri_ioport_content *ioport_content;
     const struct upstream_irq_type *up_irq;
+    #ifndef CONFIG_HOST_VUART_LOCAL_ONLY
     struct host_bmc_msg_exch hb_exch;
     struct host_vuart_fifo *vuart_fifo_base;
+    #endif
     reg_dwuart_t *reg;
     uint32_t clock_source;
     uint32_t baudrate;
@@ -72,8 +74,107 @@ struct host_vuart_data {
   bool break_pending;
 };
 
-void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool host_tx_to_vuart);
 static void host_vuart_report_up_irq(const struct device *dev);
+static void local_irq_state_update(const struct device *dev);
+
+#ifdef CONFIG_HOST_VUART_LOCAL_ONLY
+static inline bool host_vuart_rx_from_vuart(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+    return false;
+}
+
+static inline bool host_vuart_rx_available(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+    return false;
+}
+
+static inline void vuart_get_char_b2h(const struct device *dev, uint8_t *out_char)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(out_char);
+}
+
+static inline void vuart_send_char_h2b(const struct device *dev, uint8_t c)
+{
+    ARG_UNUSED(dev);
+    ARG_UNUSED(c);
+}
+
+static inline void host_vuart_cfg_init(const struct device *dev)
+{
+    ARG_UNUSED(dev);
+}
+
+#define HOST_VUART_PEER_CFG_INIT(inst)
+#define HOST_VUART_PEER_CFG_ASSERT(inst)
+
+#else
+static inline bool host_vuart_rx_from_vuart(const struct device *dev)
+{
+    const struct host_vuart_cfg *cfg = dev->config;
+    return cfg->vuart_fifo_base->host_rx_from_vuart;
+}
+
+static inline bool host_vuart_rx_available(const struct device *dev)
+{
+    const struct host_vuart_cfg *cfg = dev->config;
+	return !sw_fifo_empty(&cfg->vuart_fifo_base->b2h);
+}
+
+static void vuart_get_char_b2h(const struct device *dev, uint8_t *out_char)
+{
+	const struct host_vuart_cfg *cfg = dev->config;
+    if(general_fifo_get(&cfg->vuart_fifo_base->b2h,out_char))
+    {
+        if(!host_vuart_rx_available(dev))
+        {
+            vuart_status_send(&cfg->hb_exch,B_TX_EMPTY);
+        }
+    }
+}
+
+static void vuart_send_char_h2b(const struct device *dev, uint8_t c)
+{
+    const struct host_vuart_cfg *cfg = dev->config;
+    if(!sw_fifo_full(&cfg->vuart_fifo_base->h2b))
+    {
+        general_fifo_put(&cfg->vuart_fifo_base->h2b,&c);
+        vuart_status_send(&cfg->hb_exch,B_RX_AVAIL);
+    }
+}
+
+static void host_vuart_cfg_init(const struct device *dev)
+{
+    const struct host_vuart_cfg *cfg = dev->config;
+    host_bmc_msg_exch_init(&cfg->hb_exch);
+    sw_fifo_init(&cfg->vuart_fifo_base->b2h,cfg->vuart_fifo_base->b2h_buf,VUART_FIFO_SIZE,1);
+    sw_fifo_init(&cfg->vuart_fifo_base->h2b,cfg->vuart_fifo_base->h2b_buf,VUART_FIFO_SIZE,1);
+    cfg->vuart_fifo_base->host_tx_to_vuart = false;
+    cfg->vuart_fifo_base->host_rx_from_vuart = false;
+}
+
+static void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool host_tx_to_vuart)
+{
+    const struct host_vuart_cfg *cfg = dev->config;
+    struct host_vuart_data *ptr_data = dev->data;
+    k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
+    cfg->vuart_fifo_base->host_rx_from_vuart = host_rx_from_vuart;
+    if(ptr_data->data_reg.ier & IER_RDA)
+    {
+        if(host_rx_from_vuart)
+        {
+            cfg->reg->DLH_IER &= ~IER_RDA;
+        }else
+        {
+            cfg->reg->DLH_IER |= IER_RDA;
+        }
+    }
+    k_spin_unlock(&ptr_data->lock, key);
+    cfg->vuart_fifo_base->host_tx_to_vuart = host_tx_to_vuart;
+    local_irq_state_update(dev);
+}
 
 void host_vuart_rx_callback(const struct device *dev,void *msg)
 {
@@ -97,17 +198,42 @@ void host_vuart_rx_callback(const struct device *dev,void *msg)
     }
 }
 
-static inline bool host_vuart_rx_available(const struct device *dev)
+#define HOST_VUART_PEER_CFG_INIT(inst)                                                             \
+    .vuart_fifo_base = (struct host_vuart_fifo *)DT_INST_PROP(inst,fifo_base),                     \
+    .hb_exch = HOST_BMC_MSG_EXCH_INIT(inst,host_vuart_rx_callback,bmc_vuart_rx_callback),
+
+#define HOST_VUART_PEER_CFG_ASSERT(inst)                                                           \
+    BUILD_ASSERT(DT_INST_NODE_HAS_PROP(inst, fifo_base),                                           \
+                 "fifo_base is required unless CONFIG_HOST_VUART_LOCAL_ONLY")
+
+static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
 {
-    const struct host_vuart_cfg *cfg = dev->config;
-	return !sw_fifo_empty(&cfg->vuart_fifo_base->b2h);
+    bool host_rx_from_vuart,host_tx_to_vuart;
+    if (argc < 3) {
+        shell_error(sh, "Usage: %s <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>" ,argv[0]);
+        return -EINVAL;
+    }
+
+    const struct device *dev = HOST_VUART_DEV;
+    if (!device_is_ready(dev)) {
+        shell_error(sh, "ls-host-vuart device not ready");
+        return -ENODEV;
+    }
+
+    host_rx_from_vuart = (strcmp(argv[1], "true") == 0);
+    host_tx_to_vuart   = (strcmp(argv[2], "true") == 0);
+
+    host_vuart_mode_set(dev,host_rx_from_vuart,host_tx_to_vuart);
+
+    shell_print(sh, "VUART mode set: host_rx_from_vuart=%s, host_tx_to_vuart=%s",
+                host_rx_from_vuart ? "true" : "false",
+                host_tx_to_vuart ? "true" : "false");
+    return 0;
 }
 
-static inline bool host_vuart_tx_empty(const struct device *dev)
-{
-    const struct host_vuart_cfg *cfg = dev->config;
-    return sw_fifo_empty(&cfg->vuart_fifo_base->h2b);
-}
+SHELL_CMD_ARG_REGISTER(chmode, NULL, "chmod usage: <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>",  cmd_mode,  0, 3);
+
+#endif
 
 static inline bool lsr_tx_empty(uint8_t lsr)
 {
@@ -132,7 +258,7 @@ static uint8_t host_vuart_calc_iir(const struct device *dev)
         iir |= IIR_RLS;
     }
     else {
-        bool rx_avail = cfg->vuart_fifo_base->host_rx_from_vuart ? host_vuart_rx_available(dev) : lsr_rx_avail(lsr);
+        bool rx_avail = host_vuart_rx_from_vuart(dev) ? host_vuart_rx_available(dev) : lsr_rx_avail(lsr);
         if (rx_avail && (ier & IER_RDA)) {
             iir |= IIR_RDA;
         }
@@ -190,19 +316,6 @@ static void host_vuart_local_isr(const void *arg)
     espi_lpc_raise_edge_irq(cfg->espi_lpc, cfg->up_irq->idx);
 }
 
-void vuart_get_char_b2h(const struct device *dev, uint8_t *out_char)
-{
-	const struct host_vuart_cfg *cfg = dev->config;
-    if(general_fifo_get(&cfg->vuart_fifo_base->b2h,out_char))
-    {
-        if(!host_vuart_rx_available(dev))
-        {
-            vuart_status_send(&cfg->hb_exch,B_TX_EMPTY);
-        }
-    }
-
-}
-
 
 static void host_vuart_reg0_read(const struct peri_ioport_content *ioport, uint8_t size, void *res)
 {
@@ -216,20 +329,11 @@ static void host_vuart_reg0_read(const struct peri_ioport_content *ioport, uint8
         uint8_t val1,val2=0;
         val1 = cfg->reg->RBR_THR_DLL;
         vuart_get_char_b2h(dev, &val2);
-        *val = cfg->vuart_fifo_base->host_rx_from_vuart?val2:val1;
+        *val = host_vuart_rx_from_vuart(dev)?val2:val1;
         local_irq_state_update(dev);
     }
 }
 
-static void vuart_send_char_h2b(const struct device *dev, uint8_t c)
-{
-    const struct host_vuart_cfg *cfg = dev->config;
-    if(!sw_fifo_full(&cfg->vuart_fifo_base->h2b))
-    {
-        general_fifo_put(&cfg->vuart_fifo_base->h2b,&c);
-        vuart_status_send(&cfg->hb_exch,B_RX_AVAIL);
-    }
-}
 
 static void host_vuart_reg0_write(const struct peri_ioport_content *ioport, uint8_t size, uint8_t *val)
 {
@@ -267,7 +371,7 @@ static void host_vuart_reg1_write(const struct peri_ioport_content *ioport, uint
         ptr_data->data_reg.dlh = *val;
     } else {
         ptr_data->data_reg.ier = *val;
-        if(cfg->vuart_fifo_base->host_rx_from_vuart) {
+        if(host_vuart_rx_from_vuart(dev)) {
             cfg->reg->DLH_IER = *val & (IER_THRE|IER_ELSI);
             host_vuart_report_up_irq(dev);
         }else {
@@ -345,7 +449,7 @@ static void host_vuart_reg5_read(const struct peri_ioport_content *ioport, uint8
     {
         *val |= LSR_THRE|LSR_TEMT;
     }
-    if (cfg->vuart_fifo_base->host_rx_from_vuart) {
+    if (host_vuart_rx_from_vuart(dev)) {
         if(host_vuart_rx_available(dev)) {
             *val |= LSR_DR;
         }
@@ -442,11 +546,7 @@ static int host_vuart_init(const struct device *dev)
         LOG_DBG("%s: Could not configure pins", dev->name);
     }
 #endif
-    host_bmc_msg_exch_init(&cfg->hb_exch);
-    sw_fifo_init(&cfg->vuart_fifo_base->b2h,cfg->vuart_fifo_base->b2h_buf,VUART_FIFO_SIZE,1);
-    sw_fifo_init(&cfg->vuart_fifo_base->h2b,cfg->vuart_fifo_base->h2b_buf,VUART_FIFO_SIZE,1);
-    cfg->vuart_fifo_base->host_tx_to_vuart = false;
-    cfg->vuart_fifo_base->host_rx_from_vuart = false;
+    host_vuart_cfg_init(dev);
     memset(&ptr_data->lock,0,sizeof(ptr_data->lock));
 
     uint16_t divisor = ((pclk + (cfg->baudrate << 3)) / cfg->baudrate ) >> 4;
@@ -465,26 +565,6 @@ static int host_vuart_init(const struct device *dev)
     return 0;
 }
 
-void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool host_tx_to_vuart)
-{
-    const struct host_vuart_cfg *cfg = dev->config;
-    struct host_vuart_data *ptr_data = dev->data;
-    k_spinlock_key_t key = k_spin_lock(&ptr_data->lock);
-    cfg->vuart_fifo_base->host_rx_from_vuart = host_rx_from_vuart;
-    if(ptr_data->data_reg.ier & IER_RDA)
-    {
-        if(host_rx_from_vuart)
-        {
-            cfg->reg->DLH_IER &= ~IER_RDA;
-        }else
-        {
-            cfg->reg->DLH_IER |= IER_RDA;
-        }
-    }
-    k_spin_unlock(&ptr_data->lock, key);
-    cfg->vuart_fifo_base->host_tx_to_vuart = host_tx_to_vuart;
-    local_irq_state_update(dev);
-}
 
 #define HOST_VUART_INIT(inst)                                                                      \
   static void vuart_ls_irq_config_func_##inst(const struct device *dev)                                      \
@@ -529,6 +609,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
               .addr = DT_INST_PROP(inst, port) + 7},\
   };\
   static struct host_vuart_data host_vuart_data_##inst __noinit; \
+  HOST_VUART_PEER_CFG_ASSERT(inst);                                                          \
   static const struct host_vuart_cfg host_vuart_cfg_##inst = {                               \
     .local_irq = DT_INST_IRQN(inst),                                                                             \
     .ioport_content = host_vuart_ioport_##inst,             \
@@ -536,8 +617,7 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
     .reg = (reg_dwuart_t *)DT_INST_REG_ADDR(inst),                                                                         \
     .clock_source = DT_INST_PROP(inst, clock_source),      \
     .baudrate = DT_INST_PROP_OR(inst, current_speed,115200), \
-    .vuart_fifo_base = (struct host_vuart_fifo *)DT_INST_PROP(inst,fifo_base),\
-    .hb_exch = HOST_BMC_MSG_EXCH_INIT(inst,host_vuart_rx_callback,bmc_vuart_rx_callback),            \
+    HOST_VUART_PEER_CFG_INIT(inst)                                                           \
     .irq_config_func = vuart_ls_irq_config_func_##inst,\
     IF_ENABLED(CONFIG_PINCTRL, (.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(inst), ))                           \
     IF_ENABLED(DT_HAS_CLOCKS(inst), (.ccfg = LS_DT_CLK_CFG_ITEM(inst), ))                                   \
@@ -546,31 +626,3 @@ void host_vuart_mode_set(const struct device *dev,bool host_rx_from_vuart,bool h
   DEVICE_DT_INST_DEFINE(inst, &host_vuart_init, NULL, &host_vuart_data_##inst,               \
             &host_vuart_cfg_##inst, POST_KERNEL, CONFIG_KERNEL_INIT_PRIORITY_DEVICE, NULL);
 DT_INST_FOREACH_STATUS_OKAY(HOST_VUART_INIT)
-
-
-static int cmd_mode(const struct shell *sh, size_t argc, char **argv)
-{
-    bool host_rx_from_vuart,host_tx_to_vuart;
-    if (argc < 3) {
-        shell_error(sh, "Usage: %s <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>" ,argv[0]);
-        return -EINVAL;
-    }
-
-    const struct device *dev = HOST_VUART_DEV;
-    if (!device_is_ready(dev)) {
-        shell_error(sh, "ls-host-vuart device not ready");
-        return -ENODEV;
-    }
-
-    host_rx_from_vuart = (strcmp(argv[1], "true") == 0);
-    host_tx_to_vuart   = (strcmp(argv[2], "true") == 0);
-
-    host_vuart_mode_set(dev,host_rx_from_vuart,host_tx_to_vuart);
-
-    shell_print(sh, "VUART mode set: host_rx_from_vuart=%s, host_tx_to_vuart=%s",
-                host_rx_from_vuart ? "true" : "false",
-                host_tx_to_vuart ? "true" : "false");
-    return 0;
-}
-
-SHELL_CMD_ARG_REGISTER(chmode, NULL, "chmod usage: <host_rx_from_vuart:true|false> <host_tx_to_vuart:true|false>",  cmd_mode,  0, 3);

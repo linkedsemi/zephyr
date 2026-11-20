@@ -28,7 +28,6 @@ properties:
 
   fifo_base:
     type: int
-    required: true
     description: Virtual UART FIFO Base Addr
 
   espi_lpc:
