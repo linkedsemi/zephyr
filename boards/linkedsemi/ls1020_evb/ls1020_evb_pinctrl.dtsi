@@ -65,6 +65,20 @@
         input-enable;
     };
 
+    /omit-if-no-ref/pn03_disabled: pn03_disabled {
+        pinmux = <PN03>;
+    };
+    /omit-if-no-ref/pn04_disabled: pn04_disabled {
+        pinmux = <PN04>;
+    };
+
+    /omit-if-no-ref/pa12_disabled: pa12_disabled {
+        pinmux = <PA12>;
+    };
+    /omit-if-no-ref/pa13_disabled: pa13_disabled {
+        pinmux = <PA13>;
+    };
+
   /omit-if-no-ref/cap1_rx_pa08: cap1_rx_pa08 {
         pinmux = <CAP1_FUNC1_IDX28_PINMUX_PA(08)>;
         input-enable;
