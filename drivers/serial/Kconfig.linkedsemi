@@ -23,3 +23,9 @@ config VIRTUAL_UART_LINKEDSEMI
 config VUART_IRQ_THREAD_PRIORITY
     int "VUART IRQ thread priority"
     default -2
+
+config VUART_IRQ_THREAD_STACK_SIZE
+    int "ESPI VUART driver irq thread stack size"
+    default 2048
+    help
+      Driver irq thread stack size.
