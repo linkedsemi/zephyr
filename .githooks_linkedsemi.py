@@ -62,6 +62,7 @@ FREE_DIRS = ("boards/", "samples/", "tests/", "doc/")
 MAX_OUTSIDE_FREE_DIRS = 1
 
 MAX_REPORTED = 10
+MAX_CI_COMMITS = 100
 MIN_SUBJECT_WORDS = 3
 
 WORD_PATTERN = re.compile(r"[A-Za-z][A-Za-z0-9_.'-]*")
@@ -449,26 +450,60 @@ def check_range(spec):
     return check_commits(range_commits(spec), spec)
 
 
+def is_ancestor(base, head):
+    """True when base is reachable from head, so BASE..HEAD is the pushed set."""
+    result = run_git(["merge-base", "--is-ancestor", base, head], check=False)
+    return result.returncode == 0
+
+
+def target_base(head):
+    """The commit the source branch forked from its merge request target.
+
+    Only a merge request pipeline knows the target branch: GitLab exposes it as
+    CI_MERGE_REQUEST_TARGET_BRANCH_NAME and never for a plain push. The runner
+    checks out the source branch alone, so the target ref is fetched first; an
+    empty result means the caller has to fall back to the push base."""
+    target = os.environ.get("CI_MERGE_REQUEST_TARGET_BRANCH_NAME", "")
+    if not target:
+        return ""
+
+    ref = "refs/remotes/origin/%s" % target
+    run_git(["fetch", "--no-tags", "origin",
+             "+refs/heads/%s:%s" % (target, ref)], check=False)
+    result = run_git(["merge-base", ref, head], check=False)
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
+
+
 def check_ci():
     """Pick the range out of the CI environment, for any pipeline source.
 
-    A merge request pipeline compares against its diff base; a branch pipeline
-    against the commit the push started from. A new branch or a force push has
-    no usable base, so only the tip commit is checked."""
+    A merge request pipeline compares against the commit the branch forked from
+    its target branch, a branch pipeline against the commit the push started
+    from. A force push, a rebased branch or a very stale one can make that base
+    thousands of commits away, so only the newest MAX_CI_COMMITS are checked:
+    the gate exists to catch what is being added now."""
     head = os.environ.get("CI_COMMIT_SHA", "")
     if not head:
         return fail("--check-ci needs CI_COMMIT_SHA")
 
-    base = os.environ.get("CI_MERGE_REQUEST_DIFF_BASE_SHA", "")
+    base = target_base(head)
     if not base:
         before = os.environ.get("CI_COMMIT_BEFORE_SHA", "")
-        if before and before != head and set(before) != {"0"}:
+        if before and before != head and set(before) != {"0"} and is_ancestor(before, head):
             base = before
 
-    if base:
-        return check_commits(range_commits("%s..%s" % (base, head)),
-                             "%s..%s" % (base, head))
-    return check_commits([head], head)
+    label = "%s..%s" % (base, head) if base else head
+    commits = range_commits(label) if base else [head]
+    if len(commits) > MAX_CI_COMMITS:
+        sys.stdout.write("only the newest %d of %d commit(s) in %s are checked\n"
+                         % (MAX_CI_COMMITS, len(commits), label))
+        commits = commits[-MAX_CI_COMMITS:]
+
+    sys.stdout.write("checking %d commit(s) in %s\n" % (len(commits), label))
+    sys.stdout.flush()
+    return check_commits(commits, label)
 
 
 SHIM_MARKER = "linkedsemi commit gate"
@@ -619,7 +654,9 @@ def usage():
         "       bash %s --check-range BASE..HEAD   check commits, for CI\n"
         "       bash %s --check-ci  check the commits this pipeline brings in\n"
         "default BASE for --check-range: CI_MERGE_REQUEST_DIFF_BASE_SHA\n"
-        % (SELF_NAME, SELF_NAME, SELF_NAME, SELF_NAME, SELF_NAME))
+        "--check-ci takes its base from CI_MERGE_REQUEST_TARGET_BRANCH_NAME\n"
+        "or CI_COMMIT_BEFORE_SHA, and checks at most %d commits\n"
+        % (SELF_NAME, SELF_NAME, SELF_NAME, SELF_NAME, SELF_NAME, MAX_CI_COMMITS))
 
 
 def all_installed():
