@@ -368,7 +368,7 @@
 			interrupts = <56 3>;
 			clock-frequency = <144000000>;
             max-xfer-size = <32>;
-			status = "okay";
+			status = "disabled";
 		};
 
         spi2: spi@40087400 {

@@ -50,6 +50,11 @@
 		output-enable;
 		output-high;
 	};
+	/omit-if-no-ref/dwuart1_tx_pb02: dwuart1_tx_pb02 {
+		pinmux = <LS_PINMUX_SET('B', 2, DWUART1_TXD)>;
+		output-enable;
+		output-high;
+	};
 	/omit-if-no-ref/dwuart1_rx_pb07: dwuart1_rx_pb07 {
 		pinmux = <LS_PINMUX_SET('B', 7, DWUART1_RXD)>;
 		bias-pull-up;
