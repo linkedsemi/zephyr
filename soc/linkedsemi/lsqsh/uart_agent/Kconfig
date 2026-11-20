@@ -2,3 +2,13 @@ config UART_AGENT
 	bool "uart agent"
 	default y
 	depends on DT_HAS_LINKEDSEMI_UART_AGENT_ENABLED
+
+config UART_AGENT_MAX_BACKENDS
+	int "Maximum number of uart agent backends"
+	default 4
+	range 1 8
+	depends on UART_AGENT
+	help
+	  Maximum number of UART devices a single uart agent instance can
+	  forward data to. All backends share the same virtual UART FIFO
+	  and the same mbox channel.
