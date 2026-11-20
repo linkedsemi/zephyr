@@ -196,7 +196,7 @@ zephyr_udc0: &usb {
 };
 
 &spi1 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&spi1_sck_pe00 &spi1_nss_pe01
 	             &spi1_mosi_pe02 &spi1_miso_pe03>;
 	pinctrl-names = "default";
