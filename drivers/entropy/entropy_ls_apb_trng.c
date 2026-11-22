@@ -11,7 +11,7 @@
 
 struct trng_apb_regs {
 	uint32_t trng_ctrl;          /* 0x000: [0]=fsm_rst, 1=复位 0=运行 */
-	uint32_t cs_cnt_th_i;        /* 0x004: [19:0] 相干采样计数下界 */
+	uint32_t cs_cnt_th_l;        /* 0x004: [19:0] 相干采样计数下界 */
 	uint32_t cs_cnt_th_h;        /* 0x008: [19:0] 相干采样计数上界 */
 	uint32_t good_th;            /* 0x00C: [27:16]=good_th_h(高阈值) [11:0]=good_th_l(低阈值) */
 	uint32_t nb_smpl_lock_cyc;   /* 0x010: [27:16]=max_lock_cyc [11:0]=nb_smpl */
@@ -33,15 +33,15 @@ struct trng_apb_regs {
 #define TRNG_IRQ_LOCK            BIT(2)
 #define TRNG_IRQ_NO_FOUND        BIT(3)
 #define TRNG_IRQ_ALL             0xFU    
-#define CFG_CS_TH_LO    		 0x00000U
-#define CFG_CS_TH_HI    		 0xFFFFFU
-#define CFG_GOOD_TH_H   		 0x000U
-#define CFG_GOOD_TH_L   		 0xFFFU
-#define CFG_MAX_LOCK_CYC 		 256U
-#define CFG_NB_SMPL     		 4095U
-#define CFG_RO_SEL_OPT  		 0x00000001U
-#define CFG_RO0_DLY_SEL 		 0x00010000U
-#define CFG_RO1_DLY_SEL 		 0x00010000U
+#define CFG_CS_TH_LO             0x00000U
+#define CFG_CS_TH_HI             0xFFFFFU
+#define CFG_GOOD_TH_H            0x080U
+#define CFG_GOOD_TH_L            0x000U
+#define CFG_MAX_LOCK_CYC         768U    /* 256 cycles at 25 MHz scaled to 75 MHz PBUS4. */
+#define CFG_NB_SMPL              256U
+#define CFG_RO_SEL_OPT           0x0000F000U
+#define CFG_RO0_DLY_SEL          0x00000001U
+#define CFG_RO1_DLY_SEL          0x00000002U
 #define GOOD_TH_PACK(good_th_h, good_th_l)       ((((good_th_h) & 0xFFFU) << 16) | ((good_th_l) & 0xFFFU))
 #define NB_SMPL_LOCK_PACK(max_lock_cyc, nb_smpl) ((((max_lock_cyc) & 0xFFFU) << 16) | ((nb_smpl) & 0xFFFU))
 #define TRNG_POLL_TIMEOUT_MS 	 200U
@@ -49,7 +49,7 @@ struct trng_apb_regs {
 static void trng_init(volatile struct trng_apb_regs *r)
 {
 	r->trng_ctrl |= TRNG_CTRL_FSM_RST;
-	r->cs_cnt_th_i = CFG_CS_TH_LO;
+	r->cs_cnt_th_l = CFG_CS_TH_LO;
 	r->cs_cnt_th_h = CFG_CS_TH_HI;
 	r->good_th = GOOD_TH_PACK(CFG_GOOD_TH_H, CFG_GOOD_TH_L);
 	r->nb_smpl_lock_cyc = NB_SMPL_LOCK_PACK(CFG_MAX_LOCK_CYC, CFG_NB_SMPL);
@@ -165,12 +165,13 @@ static void ls_apb_trng_isr(const struct device *dev)
 		uint16_t s = (uint16_t)(r->trng_out >> TRNG_OUT_RAND_DAT_SHF);
 		uint8_t bytes[2] = {(uint8_t)(s & 0xFF), (uint8_t)(s >> 8)};
 		size_t written = 0;
-		r->intr_clr = TRNG_IRQ_ALL;
+
 		k_pipe_put(&data->pool, bytes, 2, &written, 2, K_NO_WAIT);
-		if (written == 0) {
+		if (written == 0U) {
 			r->intr_msk &= ~TRNG_IRQ_MATCH;
 			return;
 		}
+		r->intr_clr = TRNG_IRQ_ALL;
 		trng_fsm_pulse(r);
 		return;
 	}
@@ -178,17 +179,6 @@ static void ls_apb_trng_isr(const struct device *dev)
 	if ((stat & TRNG_IRQ_LOCK) != 0U) {
 		r->intr_clr = TRNG_IRQ_LOCK;
 	}
-}
-
-static int trng_hw_recover(const struct entropy_ls_apb_trng_config *cfg)
-{
-	int rc = trng_power_cycle(cfg);
-	if (rc != 0) {
-		return rc;
-	}
-	trng_init(cfg->regs);
-	cfg->regs->trng_ctrl &= ~TRNG_CTRL_FSM_RST;
-	return 0;
 }
 
 static int ls_apb_trng_get_entropy(const struct device *dev,
@@ -208,17 +198,13 @@ static int ls_apb_trng_get_entropy(const struct device *dev,
 		trng_irq_enable(r);
 		(void)k_pipe_get(&data->pool, &buf[copied], len - copied,
 				 &got, 1, K_MSEC(200));
-		if (got > 0) {
-			copied += got;
-			continue;
+		if (got == 0U) {
+			break;
 		}
-		if (trng_hw_recover(cfg) != 0) {
-			k_mutex_unlock(&data->mutex);
-			return -EIO;
-		}
+		copied += got;
 	}
 	k_mutex_unlock(&data->mutex);
-	return 0;
+	return copied == len ? 0 : -ETIMEDOUT;
 }
 
 static int ls_apb_trng_get_entropy_isr(const struct device *dev,
