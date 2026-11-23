@@ -43,6 +43,16 @@
         bias-pull-up;
         input-enable;
 	};
+	/omit-if-no-ref/uart3_tx_ph05_disabled: uart3_tx_ph05_disabled {
+		pinmux = <LS_PINMUX_SET('H', 5, FIO_DISABLED)>;
+		output-enable;
+		output-high;
+	};
+	/omit-if-no-ref/uart3_rx_ph04_disabled: uart3_rx_ph04_disabled {
+		pinmux = <LS_PINMUX_SET('H', 4, FIO_DISABLED)>;
+		bias-pull-up;
+		input-enable;
+	};
 
 	/* DWUART1 */
 	/omit-if-no-ref/dwuart1_tx_pb06: dwuart1_tx_pb06 {
