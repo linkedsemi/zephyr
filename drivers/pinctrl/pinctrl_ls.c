@@ -69,6 +69,24 @@ static void per_func_enable(uint8_t func_io_num,uint8_t per_func)
     }
 }
 
+static void per_func_disable(uint8_t func_io_num)
+{
+    if(func_io_num >= 96)
+    {
+        SYSC_AWO->PIN_SEL4 &= ~(1<<(func_io_num-96));
+    }else if(func_io_num >= 64)
+    {
+        SYSC_AWO->PIN_SEL3 &= ~(1<<(func_io_num-64));
+    }else if(func_io_num >= 32)
+    {
+        SYSC_AWO->PIN_SEL2 &= ~(1<<(func_io_num-32));
+    }else
+    {
+        SYSC_AWO->PIN_SEL1 &= ~(1<<func_io_num);
+    }
+    MODIFY_REG(SYSC_PER->FUNC_SEL[func_io_num/4],0xff<<8*(func_io_num%4),0);
+}
+
 void gpio_analog_func1_init(uint8_t pin)
 {
     gpio_port_pin_t *x = (gpio_port_pin_t *)&pin;
@@ -152,7 +170,9 @@ static int pinctrl_configure_pin(const pinctrl_soc_pin_t pinmux)
     }
 
 #elif CONFIG_SOC_LS1010 == 1
-	if (alt_fun >= FIO_ESPI_ALERT && alt_fun <= FIO_ESPI_CLK) {
+	if (alt_fun == FIO_DISABLED) {
+		per_func_disable(pin);
+	} else if (alt_fun >= FIO_ESPI_ALERT && alt_fun <= FIO_ESPI_CLK) {
 		ls101x_espi_pin_enable(alt_fun);
 	} else if (alt_fun < 164) {
 		per_func_enable(pin, alt_fun);
