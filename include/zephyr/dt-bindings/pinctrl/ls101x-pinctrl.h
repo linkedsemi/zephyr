@@ -7,6 +7,12 @@
 #ifndef ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_LS101X_PINCTRL_H_
 #define ZEPHYR_INCLUDE_DT_BINDINGS_PINCTRL_LS101X_PINCTRL_H_
 
+/*
+ * Disconnect the peripheral mux: pinctrl clears PIN_SEL and FUNC_SEL.
+ * Peripheral function numbers below start at 1.
+ */
+#define FIO_DISABLED        0
+
 #define FIO_GPTIMA1_CH1     1
 #define FIO_GPTIMA1_CH2     2
 #define FIO_GPTIMA1_CH3     3
