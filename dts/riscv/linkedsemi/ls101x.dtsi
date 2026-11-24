@@ -21,9 +21,9 @@
 		};
     };
 
-    sram0: memory@1000006c{
+    sram0: memory@10000080{
         compatible = "mmio-sram";
-        reg = <0x1000006c 0x1fc00>;
+        reg = <0x10000080 0x1fbf0>;
     };
 
     espivw_shmem: memory@1001fc70 {
