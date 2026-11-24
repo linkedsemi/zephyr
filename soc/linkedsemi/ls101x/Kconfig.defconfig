@@ -28,6 +28,9 @@ config USERSPACE
 config XIP
 	default y
 
+config FLASH
+	default y if DT_HAS_LINKEDSEMI_LS_FLASH_CONTROLLER_ENABLED
+
 config RISCV_PMP
 	default y
 	
