@@ -772,7 +772,7 @@
             status = "disabled";
         };
 
-        i2c8: i2c@40084C00 {
+        i2c8: i2c@40084c00 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x40084C00 0x400>;
             #address-cells = <1>;
@@ -824,7 +824,7 @@
             status = "disabled";
         };
 
-        i2c12: i2c@40085C00 {
+        i2c12: i2c@40085c00 {
             compatible = "linkedsemi,ls-i2c";
             reg = <0x40085C00 0x400>;
             #address-cells = <1>;
